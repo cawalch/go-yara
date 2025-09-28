@@ -1,0 +1,281 @@
+# golangci-lint configuration for go-yara
+# Optimized for Go 1.25+ and LLM-assisted development
+
+version: "2"
+
+run:
+  go: "1.25"
+
+output:
+  formats:
+    text:
+      path: stdout
+      colors: true
+
+linters:
+  settings:
+    # Cyclomatic complexity - keep functions maintainable
+    cyclop:
+      max-complexity: 10
+      package-average: 5.0
+
+    # Function length limits
+    funlen:
+      lines: 80
+      statements: 40
+      ignore-comments: true
+
+    # Cognitive complexity
+    gocognit:
+      min-complexity: 10
+
+    # Code duplication detection
+    dupl:
+      threshold: 100
+
+    # Error handling
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+      exclude-functions:
+        - (*os.File).Close
+        - (*strings.Builder).WriteString
+        - (*strings.Builder).WriteByte
+
+    # Unused code detection
+    unused:
+      field-writes-are-uses: false
+      post-statements-are-reads: false
+      parameters-are-used: true
+      local-variables-are-used: true
+
+    # Performance-related linters
+    prealloc:
+      simple: true
+      range-loops: true
+      for-loops: true
+
+    # Go 1.25+ specific settings
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment # We'll handle this separately for performance-critical code
+      settings:
+        shadow:
+          strict: true
+
+    # Naming conventions
+    revive:
+      rules:
+        - name: exported
+          severity: error
+        - name: package-comments
+          severity: warning
+        - name: var-naming
+          severity: warning
+        - name: function-result-limit
+          severity: warning
+          arguments: [3]
+        - name: argument-limit
+          severity: warning
+          arguments: [5]
+        - name: function-length
+          severity: warning
+          arguments: [80, 40]
+        - name: cognitive-complexity
+          severity: warning
+          arguments: [10]
+
+    # Security checks
+    gosec:
+      severity: medium
+      confidence: medium
+      excludes:
+        - G104 # Audit errors not checked (we handle this with errcheck)
+
+    # Test-specific settings
+    testpackage:
+      skip-regexp: "(export|internal)_test\\.go"
+
+    # Line length
+    lll:
+      line-length: 120
+      tab-width: 4
+
+    # Whitespace
+    wsl:
+      strict-append: true
+      allow-assign-and-call: true
+      allow-multiline-assign: true
+      allow-cuddle-declarations: false
+
+  enable:
+    # Core Go linters (enabled by default)
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+
+    # Code quality
+    - gocyclo
+    - cyclop
+
+    - gocognit
+    - funlen
+    - dupl
+    - goconst
+    - gocritic
+
+    - revive
+
+    # Performance
+    - prealloc
+    - bodyclose
+
+    # Security
+    - gosec
+
+    # Bugs
+    - unconvert
+    - unparam
+    - wastedassign
+
+    # Complexity
+    - nestif
+
+    # Tests
+    - testpackage
+
+  disable:
+    - exhaustive # Too strict for token types
+    - forbidigo # We don't forbid specific functions
+    - godot # Comment periods not required
+    - godox # TODO comments are OK
+    - err113 # Error wrapping not always needed
+    - mnd # Magic numbers are OK in lexer
+    - gomoddirectives # Module directives are fine
+    - gomodguard # No module restrictions
+    - ireturn # Interface returns are OK
+    - nlreturn # Newline returns not required
+    - paralleltest # Not all tests need to be parallel
+    - tagliatelle # Tag naming not relevant
+    - varnamelen # Short variable names are OK
+    - wrapcheck # Error wrapping not always needed
+
+  exclusions:
+    rules:
+      # Exclude some linters from running on tests files
+      - path: '_test\.go'
+        linters:
+          - gocyclo
+          - errcheck
+          - dupl
+          - gosec
+          - funlen
+          - goconst
+          - gocognit
+          - cyclop
+
+      # Exclude some linters from running on benchmark files
+      - path: 'benchmark.*_test\.go'
+        linters:
+          - errcheck
+          - gosec
+
+      # Performance-critical code can have longer functions
+      - path: 'internal/lexer/lexer\.go'
+        text: "Function 'NextToken' has too many statements"
+        linters:
+          - funlen
+
+      # Performance-critical lexer functions can be longer and more complex
+      - path: 'internal/lexer/lexer\.go'
+        text: "function-length"
+        linters:
+          - revive
+
+      # Allow some complexity in the main lexer switch
+      - path: 'internal/lexer/lexer\.go'
+        text: "cyclomatic complexity"
+        linters:
+          - gocyclo
+          - cyclop
+
+      # Lexer parsing functions are inherently complex
+      - path: 'internal/lexer/.*\.go'
+        text: "cognitive complexity"
+        linters:
+          - gocognit
+
+      # Allow higher cyclomatic complexity in lexer parsing files (performance/clarity tradeoff)
+      - path: 'internal/lexer/.*\.go'
+        text: "cyclomatic complexity"
+        linters:
+          - gocyclo
+          - cyclop
+
+      # Lexer parsing functions can have high cognitive complexity (revive)
+      - path: 'internal/lexer/.*\.go'
+        text: "cognitive-complexity"
+        linters:
+          - revive
+
+      # String parsing functions are complex by nature
+      - path: 'internal/lexer/string_parsing\.go'
+        text: "function-length"
+        linters:
+          - revive
+
+      # Complex if-else chains that are more readable than switch statements
+      - path: 'internal/lexer/keywords\.go'
+        text: "ifElseChain: rewrite if-else to switch statement"
+        linters:
+          - gocritic
+
+      - path: 'internal/lexer/string_parsing\.go'
+        text: "ifElseChain: rewrite if-else to switch statement"
+        linters:
+          - gocritic
+
+      # Token constants follow ALL_CAPS convention for consistency - ignore var-naming for ALL_CAPS
+      - path: 'token/token\.go'
+        text: "var-naming: don't use ALL_CAPS in Go names"
+        linters:
+          - revive
+
+      # TokenType is a standard name for token type enums
+      - path: 'token/token\.go'
+        text: "exported: type name will be used as token.TokenType"
+        linters:
+          - revive
+
+      # Empty blocks in test files are acceptable (e.g., benchmarks, intentional no-ops)
+      - path: '.*_test\.go'
+        text: "empty-block"
+        linters:
+          - revive
+
+      # Test functions can be longer and more complex than regular functions
+      - path: '.*_test\.go'
+        text: "function-length"
+        linters:
+          - revive
+
+      - path: '.*_test\.go'
+        text: "cognitive-complexity"
+        linters:
+          - revive
+
+      # Complex if-else chain in hex content analysis is more readable than switch
+      - path: 'internal/lexer/string_parsing\.go'
+        text: "ifElseChain"
+        linters:
+          - gocritic
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+severity:
+  default: error

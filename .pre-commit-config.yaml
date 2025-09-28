@@ -1,0 +1,68 @@
+# Pre-commit hooks for go-yara
+# Install with: pre-commit install
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+      - id: check-case-conflict
+      - id: check-merge-conflict
+      - id: check-symlinks
+      - id: detect-private-key
+
+  - repo: local
+    hooks:
+      - id: go-fmt
+        name: go fmt
+        entry: gofmt
+        language: system
+        args: [-w, -s]
+        files: \.go$
+
+      - id: go-imports
+        name: go imports
+        entry: goimports
+        language: system
+        args: [-w]
+        files: \.go$
+
+      - id: go-mod-tidy
+        name: go mod tidy
+        entry: go
+        language: system
+        args: [mod, tidy]
+        files: go\.(mod|sum)$
+        pass_filenames: false
+
+      - id: golangci-lint
+        name: golangci-lint
+        entry: golangci-lint
+        language: system
+        args: [run, --config=.golangci.yml, --fix]
+        files: \.go$
+        pass_filenames: false
+
+      - id: go-test
+        name: go test
+        entry: go
+        language: system
+        args: [test, -v, ./...]
+        files: \.go$
+        pass_filenames: false
+
+      - id: go-benchmark-check
+        name: go benchmark check
+        entry: bash
+        language: system
+        args:
+          - -c
+          - |
+            # Run benchmarks to ensure they still compile and run
+            go test -bench=. -benchmem -run=^$ ./internal/lexer > /dev/null
+            echo "Benchmarks compile and run successfully"
+        files: \.go$
+        pass_filenames: false

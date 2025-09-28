@@ -1,0 +1,32 @@
+# Build artifacts and test outputs
+*.out
+*.test
+
+# Benchmarks and profiling data
+benchmarks/
+profiles/
+
+# LLM documentation (not for version control)
+LINTING_RESULTS.md
+PROGRESS_SUMMARY.md
+REFACTORING_PLAN.md
+docs/LEXER_ANALYSIS_AND_OPTIMIZATIONS.md
+docs/LINTING_GUIDE.md
+docs/PROFILING.md
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
