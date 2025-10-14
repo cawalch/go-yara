@@ -1,8 +1,9 @@
-package lexer
+package lexer_test
 
 import (
 	"testing"
 
+	"github.com/cawalch/go-yara/internal/lexer"
 	"github.com/cawalch/go-yara/token"
 )
 
@@ -24,7 +25,7 @@ func TestSingleControlFlow(t *testing.T) {
 		{Type: token.EOF, Literal: ""},
 	}
 
-	l := New(input)
+	l := lexer.New(input)
 	for i, expectedToken := range expected {
 		tok := l.NextToken()
 		if tok.Type != expectedToken.Type {

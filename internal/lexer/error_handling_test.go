@@ -103,40 +103,40 @@ func TestErrorRecoveryAfterIllegalTokens(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-			l := lexer.New(tt.input)
-			got := collectTokens(l)
+		l := lexer.New(tt.input)
+		got := collectTokens(l)
 
-			// Debug output
-			fmt.Printf("Input: %q\n", tt.input)
-			fmt.Printf("Got tokens:\n")
-			for i, tok := range got {
-				fmt.Printf("  [%d] %v\n", i, tok)
-			}
-			fmt.Printf("Expected tokens:\n")
-			for i, tok := range tt.expected {
-				fmt.Printf("  [%d] %v\n", i, tok)
-			}
+		// Debug output
+		fmt.Printf("Input: %q\n", tt.input)
+		fmt.Printf("Got tokens:\n")
+		for i, tok := range got {
+			fmt.Printf("  [%d] %v\n", i, tok)
+		}
+		fmt.Printf("Expected tokens:\n")
+		for i, tok := range tt.expected {
+			fmt.Printf("  [%d] %v\n", i, tok)
+		}
 
-			if len(got) != len(tt.expected) {
-				t.Fatalf("token count mismatch: got %d want %d\nGot: %v\nExpected: %v", len(got), len(tt.expected), got, tt.expected)
-			}
+		if len(got) != len(tt.expected) {
+			t.Fatalf("token count mismatch: got %d want %d\nGot: %v\nExpected: %v", len(got), len(tt.expected), got, tt.expected)
+		}
 
-			for i := range tt.expected {
-				if got[i].Type != tt.expected[i].Type || got[i].Literal != tt.expected[i].Literal {
-					t.Fatalf("tok[%d]: got {%v %q} want {%v %q}", i, got[i].Type, got[i].Literal, tt.expected[i].Type, tt.expected[i].Literal)
-				}
+		for i := range tt.expected {
+			if got[i].Type != tt.expected[i].Type || got[i].Literal != tt.expected[i].Literal {
+				t.Fatalf("tok[%d]: got {%v %q} want {%v %q}", i, got[i].Type, got[i].Literal, tt.expected[i].Type, tt.expected[i].Literal)
 			}
+		}
 		t.Run(tt.name, func(t *testing.T) {
-			l := lexer.New(tt.input)
-			got := collectTokens(l)
+			l2 := lexer.New(tt.input)
+			got2 := collectTokens(l2)
 
-			if len(got) != len(tt.expected) {
-				t.Fatalf("token count mismatch: got %d want %d\nGot: %v\nExpected: %v", len(got), len(tt.expected), got, tt.expected)
+			if len(got2) != len(tt.expected) {
+				t.Fatalf("token count mismatch: got %d want %d\nGot: %v\nExpected: %v", len(got2), len(tt.expected), got2, tt.expected)
 			}
 
 			for i := range tt.expected {
-				if got[i].Type != tt.expected[i].Type || got[i].Literal != tt.expected[i].Literal {
-					t.Fatalf("tok[%d]: got {%v %q} want {%v %q}", i, got[i].Type, got[i].Literal, tt.expected[i].Type, tt.expected[i].Literal)
+				if got2[i].Type != tt.expected[i].Type || got2[i].Literal != tt.expected[i].Literal {
+					t.Fatalf("tok[%d]: got {%v %q} want {%v %q}", i, got2[i].Type, got2[i].Literal, tt.expected[i].Type, tt.expected[i].Literal)
 				}
 			}
 		})

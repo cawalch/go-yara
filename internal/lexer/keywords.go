@@ -45,11 +45,20 @@ var keywords = map[string]token.TokenType{
 	"filesize":   token.FILESIZE,
 	"entrypoint": token.ENTRYPOINT,
 	// Control flow keywords (Phase 4)
-	"for":      token.FOR,
-	"in":       token.IN,
-	"at":       token.AT,
-	"them":     token.THEM,
-	"defined":  token.DEFINED,
+	"for":     token.FOR,
+	"in":      token.IN,
+	"at":      token.AT,
+	"them":    token.THEM,
+	"defined": token.DEFINED,
+	// String operations (Phase 4)
+	"contains":    token.CONTAINS,
+	"icontains":   token.ICONTAINS,
+	"startswith":  token.STARTSWITH,
+	"istartswith": token.ISTARTSWITH,
+	"endswith":    token.ENDSWITH,
+	"iendswith":   token.IENDSWITH,
+	"iequals":     token.IEQUALS,
+	"matches":     token.MATCHES,
 }
 
 // Interned keyword strings to reduce allocations

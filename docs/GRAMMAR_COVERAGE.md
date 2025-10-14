@@ -8,20 +8,20 @@ This document tracks the coverage of YARA grammar elements in the go-yara lexer 
 
 | Category | Supported | Partial | Missing | Total |
 |----------|-----------|---------|---------|-------|
-| **Keywords** | 23 | 0 | 41 | 64 |
+| **Keywords** | 29 | 0 | 35 | 64 |
 | **Operators** | 22 | 0 | 0 | 22 |
 | **Literals** | 8 | 0 | 0 | 8 |
 | **Punctuation** | 8 | 0 | 0 | 8 |
 | **Comments** | 2 | 0 | 0 | 2 |
 | **String Types** | 3 | 0 | 0 | 3 |
 
-**Overall Coverage: 68/101 (67%)** ✅ **Phase 3 Complete**
+**Overall Coverage: 74/101 (73%)** ✅ **Phase 4 String Operations Started**
 
 ## Detailed Coverage Analysis
 
 ### 1. Keywords
 
-#### ✅ Supported (23/64)
+#### ✅ Supported (28/64)
 - `rule` - Rule declaration keyword
 - `meta` - Metadata section keyword
 - `strings` - String definition section keyword
@@ -45,21 +45,19 @@ This document tracks the coverage of YARA grammar elements in the go-yara lexer 
 - `base64wide` - Base64 wide encoding string modifier
 - `filesize` - File size variable
 - `entrypoint` - Executable entry point
+- `for` - Loop construct ✅ **ADDED**
+- `in` - Range/set membership ✅ **ADDED**
+- `at` - Position specification ✅ **ADDED**
+- `them` - Reference to all strings ✅ **ADDED**
+- `defined` - Undefined value check ✅ **ADDED**
 
-#### ❌ Missing (41/64)
-**Core Language Keywords:**
-- `for` - Loop construct
-- `in` - Range/set membership
-- `at` - Position specification
-- `them` - Reference to all strings
-- `defined` - Undefined value check
-
+#### ❌ Missing (36/64)
 **Rule Modifiers:**
 - `global` - Global rule modifier
-- `private` - Private rule modifier
+- `private` - Private rule modifier (rule-level, distinct from string private)
 
 **String Operations:**
-- `contains`, `icontains` - Substring search
+- `icontains` - Substring search
 - `startswith`, `istartswith` - Prefix matching
 - `endswith`, `iendswith` - Suffix matching
 - `iequals` - Case-insensitive equality
@@ -226,11 +224,12 @@ The lexer tests cover the following scenarios:
 3. **File operations** - `filesize`, `entrypoint`
 4. **Advanced string operations** - `contains`, `matches`, etc.
 
-### Phase 4: Control Flow and Advanced Features (Lower Priority)
-1. **Control flow** - `for`, `in`, `at`, `them`, `defined`
-2. **Rule modifiers** - `global`, `private`
-3. **Import system** - `import`, `include`
-4. **Module system** - Advanced YARA module support
+### Phase 4: Advanced Features (High Priority)
+1. **String operations** - `contains`, `icontains`, `startswith`, `istartswith`, `endswith`, `iendswith`, `iequals`, `matches`
+2. **Position operator** - `@` operator for string position expressions
+3. **Rule modifiers** - `global`, `private` (rule-level)
+4. **Import system** - `import`, `include`
+5. **Module system** - Advanced YARA module support
 
 ## Recommendations
 
@@ -341,8 +340,18 @@ rule AdvancedRule {
     condition:
         any of them and filesize < 1MB and
         $hex at entrypoint and
-        for all i in (1..#text) : ( @text[i] < 100KB )
+        for all i in (1..#text) : ( @text[i] < 100KB ) and
+        filename contains "malware" and
+        pe.version_info["CompanyName"] iequals "microsoft"
 }
+
+global rule GlobalRule {
+    condition:
+        true
+}
+
+import "pe"
+import "math"
 ```
 
 ## Gap Analysis by YARA Feature
@@ -364,18 +373,20 @@ rule AdvancedRule {
 | Basic comparisons | ✅ Complete | - |
 | Boolean operators | ✅ Complete | - |
 | Arithmetic operators | ✅ Complete | - |
-| Bitwise operators | ❌ Missing | Medium |
+| Bitwise operators | ✅ Complete | - |
 | String operations | ❌ Missing | High |
+| Position operators | ❌ Missing | Medium |
 
 ### Advanced Features
 
 | Feature | Status | Implementation Effort |
 |---------|--------|----------------------|
-| String sets (`of` operator) | ❌ Missing | High |
-| Loops (`for..in`) | ❌ Missing | High |
+| String sets (`of` operator) | ✅ Complete | - |
+| Loops (`for..in`) | ✅ Complete | - |
 | Position operators (`at`) | ❌ Missing | Medium |
-| File operations | ❌ Missing | Medium |
-| Module system | ❌ Missing | Very High |
+| File operations | ✅ Complete | - |
+| Module system | ❌ Missing | High |
+| Rule modifiers | ❌ Missing | Medium |
 
 ## Testing Strategy
 
@@ -558,25 +569,37 @@ After Phase 3 completion (~67% coverage), Phase 4 will focus on the remaining hi
 
 ### Phase 4 Priority Features
 
-#### 4.1: Control Flow Keywords (High Priority)
+#### 4.1: String Operations (High Priority)
 **Missing Keywords:**
-- `for` - Loop construct for iterating over string sets
-- `in` - Range/set membership operator
-- `at` - Position specification operator
-- `them` - Reference to all defined strings
-- `defined` - Undefined value check
+- `icontains` - Substring search (case-sensitive/insensitive)
+- `startswith`, `istartswith` - Prefix matching
+- `endswith`, `iendswith` - Suffix matching
+- `iequals` - Case-insensitive equality
+- `matches` - Regular expression matching
+
+**YARA Examples:**
+```yara
+condition:
+    pe.sections[0].name contains ".text" and
+    filename startswith "malware" and
+    pe.version_info["CompanyName"] iequals "microsoft" and
+    hash.md5(0, filesize) matches /^[a-f0-9]{32}$/
+```
+
+#### 4.2: Position Operator (High Priority)
+**Missing Operator:**
+- `@` - Position operator for accessing string match positions
 
 **YARA Examples:**
 ```yara
 condition:
     for all i in (1..#text) : ( @text[i] < 100KB ) and
-    any of them at entrypoint and
-    defined pe.entry_point
+    any of them at entrypoint
 ```
 
 #### 4.2: Advanced String Operations (Medium Priority)
 **Missing Keywords:**
-- `contains`, `icontains` - Substring search (case-sensitive/insensitive)
+- `icontains` - Substring search (case-sensitive/insensitive)
 - `startswith`, `istartswith` - Prefix matching
 - `endswith`, `iendswith` - Suffix matching
 - `iequals` - Case-insensitive equality
@@ -590,39 +613,54 @@ condition:
     pe.version_info["CompanyName"] iequals "microsoft"
 ```
 
-#### 4.3: Rule Modifiers and Import System (Lower Priority)
+#### 4.3: Rule Modifiers (Medium Priority)
 **Missing Keywords:**
-- `global` - Global rule modifier
-- `private` - Private rule modifier (different from string private)
+- `global` - Global rule modifier (rule-level)
+- `private` - Private rule modifier (rule-level, distinct from string private)
+
+**YARA Examples:**
+```yara
+global rule GlobalRule {
+    // Global rule definition - always evaluated
+}
+
+private rule PrivateRule {
+    // Private rule definition - not reported in matches
+}
+```
+
+#### 4.4: Import System (Lower Priority)
+**Missing Keywords:**
 - `import` - Module import
 - `include` - File inclusion
 
 **YARA Examples:**
 ```yara
 import "pe"
+import "math"
 include "common.yar"
 
-global rule GlobalRule {
-    // Global rule definition
-}
-
-private rule PrivateRule {
-    // Private rule definition
+rule UsesModules {
+    condition:
+        pe.is_pe and
+        math.entropy(0, filesize) > 7.0
 }
 ```
 
 ### Phase 4 Implementation Strategy
 
-1. **Incremental Implementation**: Implement control flow keywords first (highest impact)
-2. **Parser Integration**: Phase 4 may require parser-level changes beyond lexer tokens
-3. **Module System**: Import/include features will need significant architecture work
-4. **Testing Strategy**: Focus on real-world YARA rule compatibility
+1. **Incremental Implementation**: Implement string operations first (highest impact for YARA compatibility)
+2. **Operator Support**: Add position operator `@` for string position expressions
+3. **Rule-Level Features**: Add rule modifiers for advanced rule control
+4. **Module System**: Import/include features for modular rule development
+5. **Testing Strategy**: Focus on real-world YARA rule compatibility and LSP features
 
 ### Expected Phase 4 Outcomes
 
-- **Coverage Target**: 80%+ (81+/101 features)
-- **YARA Compatibility**: Support for most production YARA rules
-- **Advanced Features**: Loop constructs, string operations, module system
+- **Coverage Target**: 85%+ (86+/101 features)
+- **YARA Compatibility**: Support for 95%+ of production YARA rules
+- **Advanced Features**: String operations, position operators, rule modifiers, import system
+- **LSP Support**: Enhanced language server features for advanced YARA constructs
 - **Production Ready**: Comprehensive error handling and performance optimization
 
 ## Recent Changes
@@ -721,64 +759,21 @@ private rule PrivateRule {
 - ✅ **Phase 1 Complete**: Core language support (50% coverage)
 - ✅ **Phase 2 Complete**: String features and modifiers (57% coverage)
 - ✅ **Phase 3 Complete**: Advanced grammar implementation (67% coverage)
+- ✅ **Control Flow Keywords**: Already implemented (additional 5 keywords)
 - ✅ **Refactoring Complete**: Modular lexer architecture
 
 ### Next Body of Work: Phase 4 Implementation
 
-## Phase 4: Control Flow and Advanced Features
+## Phase 4: Advanced YARA Grammar Features
 
-**Target Coverage**: 67% → 82% (83/101 features)
-**Estimated Effort**: 12-16 hours
-**Priority**: HIGH - Enables most production YARA rules
+**Target Coverage**: 72% → 87% (88/101 features)
+**Estimated Effort**: 16-20 hours
+**Priority**: HIGH - Enables advanced YARA rule parsing and LSP features
 
-### Phase 4.1: Control Flow Keywords (HIGH Priority - 4-6 hours)
-
-**Missing Keywords:**
-- `for` - Loop construct for iterating over sets
-- `in` - Range/set membership operator
-- `at` - Position specification for string matches
-- `them` - Reference to all defined strings
-- `defined` - Check for undefined values
-
-**Implementation Tasks:**
-1. **Add Control Flow Tokens** (1-2 hours)
-   - Add `FOR`, `IN`, `AT`, `THEM`, `DEFINED` tokens to `token/token.go`
-   - Update keyword lookup table in `internal/lexer/keywords.go`
-   - Ensure case-sensitive recognition (lowercase only)
-
-2. **Comprehensive Testing** (2-3 hours)
-   - Individual token tests for each control flow keyword
-   - Integration tests with YARA rule contexts:
-     - `for any of them : ( $ at pe.entry_point )`
-     - `for all i in (1..#s) : ( uint32(@s[i]) == 0x5A4D )`
-     - `defined pe.entry_point and them`
-   - Error recovery for malformed control flow syntax
-
-3. **Performance Validation** (1 hour)
-   - Benchmark control flow keyword recognition
-   - Ensure zero-allocation performance maintained
-   - Memory leak detection for complex control flow rules
-
-### Phase 4.2: Rule Modifiers (MEDIUM Priority - 2-3 hours)
+### Phase 4.1: String Operations (HIGH Priority - 4-6 hours)
 
 **Missing Keywords:**
-- `global` - Global rule modifier (rule-level)
-- `private` - Private rule modifier (rule-level)
-
-**Implementation Tasks:**
-1. **Add Rule Modifier Tokens** (1 hour)
-   - Add `GLOBAL`, `PRIVATE` tokens (distinct from string modifier `private`)
-   - Update keyword lookup and ensure proper context handling
-
-2. **Context-Aware Testing** (1-2 hours)
-   - Test rule-level vs string-level `private` disambiguation
-   - Integration with complete YARA rule parsing
-   - Error handling for misplaced modifiers
-
-### Phase 4.3: Advanced String Operations (MEDIUM Priority - 3-4 hours)
-
-**Missing Keywords:**
-- `contains`, `icontains` - Substring search operations
+- `icontains` - Substring search operations
 - `startswith`, `istartswith` - Prefix matching operations
 - `endswith`, `iendswith` - Suffix matching operations
 - `iequals` - Case-insensitive equality comparison
@@ -786,15 +781,55 @@ private rule PrivateRule {
 
 **Implementation Tasks:**
 1. **Add String Operation Tokens** (1-2 hours)
-   - Add all string operation tokens to `token/token.go`
-   - Update keyword lookup table with case-sensitive recognition
+    - Add `CONTAINS`, `ICONTAINS`, `STARTSWITH`, `ISTARTSWITH`, `ENDSWITH`, `IENDSWITH`, `IEQUALS`, `MATCHES` tokens to `token/token.go`
+    - Update keyword lookup table in `internal/lexer/keywords.go`
+    - Ensure case-sensitive recognition (lowercase only)
 
-2. **Integration Testing** (2 hours)
-   - Test string operations in YARA rule conditions
-   - Validate with realistic use cases:
-     - `pe.sections[i].name contains ".text"`
-     - `filename startswith "malware"`
-     - `hash.md5(0, filesize) matches /^[a-f0-9]{32}$/`
+2. **Comprehensive Testing** (2-3 hours)
+    - Individual token tests for each string operation keyword
+    - Integration tests with realistic YARA rule contexts:
+      - `pe.sections[0].name contains ".text"`
+      - `filename startswith "malware"`
+      - `pe.version_info["CompanyName"] iequals "microsoft"`
+      - `hash.md5(0, filesize) matches /^[a-f0-9]{32}$/`
+    - Error recovery for malformed string operation syntax
+
+3. **Performance Validation** (1 hour)
+    - Benchmark string operation keyword recognition
+    - Ensure zero-allocation performance maintained
+    - Memory leak detection for complex string operations
+
+### Phase 4.2: Position Operator (HIGH Priority - 2-3 hours)
+
+**Missing Operator:**
+- `@` - Position operator for accessing string match positions
+
+**Implementation Tasks:**
+1. **Add Position Operator Token** (1 hour)
+    - Add `AT` token to `token/token.go` (already exists, verify operator handling)
+    - Update lexer to recognize `@` as position operator in expressions
+    - Handle context: `@string_var` vs `at` keyword
+
+2. **Position Operator Testing** (1-2 hours)
+    - Test position expressions: `@text[i]`, `@$a[0]`
+    - Integration with control flow: `for all i in (1..#text) : (@text[i] < 100KB)`
+    - Error recovery for malformed position expressions
+
+### Phase 4.3: Rule Modifiers (MEDIUM Priority - 2-3 hours)
+
+**Missing Keywords:**
+- `global` - Global rule modifier (rule-level)
+- `private` - Private rule modifier (rule-level, distinct from string private)
+
+**Implementation Tasks:**
+1. **Add Rule Modifier Tokens** (1 hour)
+    - Add `GLOBAL`, `PRIVATE` tokens (distinct from string modifier `private`)
+    - Update keyword lookup and ensure proper context handling
+
+2. **Context-Aware Testing** (1-2 hours)
+    - Test rule-level vs string-level `private` disambiguation
+    - Integration with complete YARA rule parsing
+    - Error handling for misplaced modifiers
 
 ### Phase 4.4: Import System (LOW Priority - 3-4 hours)
 
@@ -804,27 +839,33 @@ private rule PrivateRule {
 
 **Implementation Tasks:**
 1. **Add Import Tokens** (1 hour)
-   - Add `IMPORT`, `INCLUDE` tokens
-   - Handle import statement parsing context
+    - Add `IMPORT`, `INCLUDE` tokens
+    - Handle import statement parsing context
 
 2. **Module System Testing** (2-3 hours)
-   - Test import statements: `import "pe"`, `import "math"`
-   - Include file handling: `include "common.yar"`
-   - Error recovery for missing modules/files
+    - Test import statements: `import "pe"`, `import "math"`
+    - Include file handling: `include "common.yar"`
+    - Error recovery for missing modules/files
 
 ### Phase 4 Success Criteria
 
 **Coverage Metrics:**
-- Total features: 83/101 (82% coverage)
-- Keywords: 33/64 (52% coverage)
-- All operators: 22/22 (100% coverage)
+- Total features: 88/101 (87% coverage)
+- Keywords: 38/64 (59% coverage)
+- All operators: 23/23 (100% coverage) - including position operator
 - All literals: 8/8 (100% coverage)
 
 **YARA Compatibility:**
-- Support for 90%+ of production YARA rules
-- Complete control flow constructs (`for`, `in`, `at`)
-- Advanced string operations and rule modifiers
-- Basic import system for modular rules
+- Support for 95%+ of production YARA rules
+- Advanced string operations (`contains`, `startswith`, `matches`, etc.)
+- Position operator for string match locations (`@text[i]`)
+- Rule modifiers and import system for modular rules
+
+**LSP Features Enhanced:**
+- Syntax highlighting for all new keywords and operators
+- Semantic analysis support for advanced constructs
+- Auto-completion for string operations and rule modifiers
+- Error diagnostics for malformed advanced syntax
 
 **Performance Requirements:**
 - Maintain zero-allocation performance for hot paths
@@ -842,8 +883,9 @@ private rule PrivateRule {
 1. **Start with Task List**: Use the current task management system to track progress
 2. **Test-Driven Development**: Add tests before implementation for each feature
 3. **Incremental Delivery**: Complete each sub-phase before moving to the next
-4. **Performance Monitoring**: Maintain zero-allocation characteristics
-5. **Documentation Updates**: Update this document as features are completed
+4. **LSP Integration**: Ensure new tokens support enhanced language server features
+5. **Performance Monitoring**: Maintain zero-allocation characteristics
+6. **Documentation Updates**: Update this document as features are completed
 
 ## References
 

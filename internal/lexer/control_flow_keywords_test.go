@@ -1,9 +1,10 @@
-package lexer
+package lexer_test
 
 import (
 	"fmt"
 	"testing"
 
+	"github.com/cawalch/go-yara/internal/lexer"
 	"github.com/cawalch/go-yara/token"
 )
 
@@ -76,7 +77,7 @@ func TestControlFlowKeywords(t *testing.T) {
 
 	for i, tt := range tests {
 		t.Run(fmt.Sprintf("test_%d", i), func(t *testing.T) {
-			l := New(tt.input)
+			l := lexer.New(tt.input)
 			for i, expectedToken := range tt.expected {
 				tok := l.NextToken()
 				if tok.Type != expectedToken.Type {
