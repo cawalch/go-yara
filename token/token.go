@@ -65,6 +65,11 @@ const (
 	AT
 	THEM
 	DEFINED
+	// Rule modifiers (Phase 4)
+	GLOBAL
+	// Import system (Phase 4)
+	IMPORT
+	INCLUDE
 	// String operations (Phase 4)
 	CONTAINS
 	ICONTAINS

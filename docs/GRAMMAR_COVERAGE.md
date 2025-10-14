@@ -15,13 +15,13 @@ This document tracks the coverage of YARA grammar elements in the go-yara lexer 
 | **Comments** | 2 | 0 | 0 | 2 |
 | **String Types** | 3 | 0 | 0 | 3 |
 
-**Overall Coverage: 74/101 (73%)** ✅ **Phase 4 String Operations Started**
+**Overall Coverage: 75/101 (74%)** ✅ **Phase 4 Rule Modifiers Started**
 
 ## Detailed Coverage Analysis
 
 ### 1. Keywords
 
-#### ✅ Supported (28/64)
+#### ✅ Supported (29/64)
 - `rule` - Rule declaration keyword
 - `meta` - Metadata section keyword
 - `strings` - String definition section keyword
@@ -50,10 +50,10 @@ This document tracks the coverage of YARA grammar elements in the go-yara lexer 
 - `at` - Position specification ✅ **ADDED**
 - `them` - Reference to all strings ✅ **ADDED**
 - `defined` - Undefined value check ✅ **ADDED**
+- `global` - Global rule modifier ✅ **ADDED**
 
-#### ❌ Missing (36/64)
+#### ❌ Missing (35/64)
 **Rule Modifiers:**
-- `global` - Global rule modifier
 - `private` - Private rule modifier (rule-level, distinct from string private)
 
 **String Operations:**
@@ -386,7 +386,7 @@ import "math"
 | Position operators (`at`) | ❌ Missing | Medium |
 | File operations | ✅ Complete | - |
 | Module system | ❌ Missing | High |
-| Rule modifiers | ❌ Missing | Medium |
+| Rule modifiers | ✅ Partial | Medium |
 
 ## Testing Strategy
 
@@ -615,8 +615,10 @@ condition:
 
 #### 4.3: Rule Modifiers (Medium Priority)
 **Missing Keywords:**
-- `global` - Global rule modifier (rule-level)
 - `private` - Private rule modifier (rule-level, distinct from string private)
+
+**Implemented Keywords:**
+- `global` - Global rule modifier (rule-level) ✅ **COMPLETED**
 
 **YARA Examples:**
 ```yara
@@ -766,7 +768,7 @@ rule UsesModules {
 
 ## Phase 4: Advanced YARA Grammar Features
 
-**Target Coverage**: 72% → 87% (88/101 features)
+**Target Coverage**: 72% → 88% (89/101 features)
 **Estimated Effort**: 16-20 hours
 **Priority**: HIGH - Enables advanced YARA rule parsing and LSP features
 
@@ -815,11 +817,13 @@ rule UsesModules {
     - Integration with control flow: `for all i in (1..#text) : (@text[i] < 100KB)`
     - Error recovery for malformed position expressions
 
-### Phase 4.3: Rule Modifiers (MEDIUM Priority - 2-3 hours)
+### Phase 4.3: Rule Modifiers (MEDIUM Priority - 2-3 hours) - PARTIAL
 
 **Missing Keywords:**
-- `global` - Global rule modifier (rule-level)
 - `private` - Private rule modifier (rule-level, distinct from string private)
+
+**Implemented Keywords:**
+- `global` - Global rule modifier (rule-level) ✅ **COMPLETED**
 
 **Implementation Tasks:**
 1. **Add Rule Modifier Tokens** (1 hour)
@@ -850,8 +854,8 @@ rule UsesModules {
 ### Phase 4 Success Criteria
 
 **Coverage Metrics:**
-- Total features: 88/101 (87% coverage)
-- Keywords: 38/64 (59% coverage)
+- Total features: 89/101 (88% coverage)
+- Keywords: 39/64 (61% coverage)
 - All operators: 23/23 (100% coverage) - including position operator
 - All literals: 8/8 (100% coverage)
 

@@ -50,6 +50,11 @@ var keywords = map[string]token.TokenType{
 	"at":      token.AT,
 	"them":    token.THEM,
 	"defined": token.DEFINED,
+	// Rule modifiers (Phase 4)
+	"global": token.GLOBAL,
+	// Import system (Phase 4)
+	"import":  token.IMPORT,
+	"include": token.INCLUDE,
 	// String operations (Phase 4)
 	"contains":    token.CONTAINS,
 	"icontains":   token.ICONTAINS,
