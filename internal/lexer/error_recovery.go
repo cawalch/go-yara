@@ -70,3 +70,17 @@ func (l *Lexer) skipWhitespace() {
 		}
 	}
 }
+
+// fastForward advances the lexer's position to the next potential start of a
+// recognizable token. This is used in RecoverySection mode to skip over
+// sections of input that are not valid, until something that looks like a
+// keyword or identifier is found.
+func (l *Lexer) fastForward() {
+	for l.ch() != 0 {
+		ch := l.ch()
+		if ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n' || isLetter(ch) {
+			return
+		}
+		l.readChar()
+	}
+}

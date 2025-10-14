@@ -29,6 +29,12 @@ func (l *Lexer) NextToken() token.Token {
 		return l.makeSimpleToken(token.LPAREN, "(")
 	case ')':
 		return l.makeSimpleToken(token.RPAREN, ")")
+	case '[':
+		return l.makeSimpleToken(token.LBRACKET, "[")
+	case ']':
+		return l.makeSimpleToken(token.RBRACKET, "]")
+	case '#':
+		return l.makeSimpleToken(token.HASH, "#")
 	case '{':
 		return l.handleBraceToken(pos)
 	case '}':

@@ -155,14 +155,15 @@ bench-check-regression:
 	fi
 	@TEMP_BENCH=$$(mktemp); \
 	go test -bench . -benchmem -run ^$$ $(PKG) > $$TEMP_BENCH; \
-	if make benchstat BASE=benchmarks/baseline.txt NEW=$$TEMP_BENCH | grep -E '\+[0-9]+\.[0-9]+%.*ns/op' | grep -v '\+[0-4]\.[0-9]%'; then \
-		echo "⚠️  Performance regression detected!"; \
-		rm $$TEMP_BENCH; \
-		exit 1; \
-	else \
-		echo "✅ No significant performance regression detected."; \
-		rm $$TEMP_BENCH; \
-	fi
+	DIFF=$$(mktemp); \
+	if ! make benchstat BASE=benchmarks/baseline.txt NEW=$$TEMP_BENCH > $$DIFF; then true; fi; \
+	echo "Benchmark comparison written to $$DIFF"; \
+	FAIL=0; \
+	if grep -E '\+([5-9]\.[0-9]|[1-9][0-9]+\.[0-9])%.*ns/op' $$DIFF >/dev/null; then echo "ns/op regression exceeds 5%"; FAIL=1; fi; \
+	if grep -E '\+([5-9]\.[0-9]|[1-9][0-9]+\.[0-9])%.*B/op' $$DIFF >/dev/null; then echo "B/op regression exceeds 5%"; FAIL=1; fi; \
+	if grep -E '\+[1-9][0-9]*\.[0-9]%.*allocs/op' $$DIFF >/dev/null; then echo "allocs/op increased"; FAIL=1; fi; \
+	rm $$TEMP_BENCH; \
+	if [ $$FAIL -ne 0 ]; then echo "❌ Performance budget failed"; exit 1; else echo "✅ Performance within budget"; fi
 
 # Help target
 help:

@@ -59,6 +59,24 @@ jobs:
           exit 1
         fi
 
+
+    - name: Enforce no panics in lexer hot paths
+      run: |
+        if git grep -n "panic(" -- ':!**/*_test.go' internal/lexer | grep -vE '^$'; then
+          echo "panic usage detected in internal/lexer (non-test). Prefer error tokens over panics.";
+          git grep -n "panic(" -- ':!**/*_test.go' internal/lexer || true;
+          exit 1;
+        fi
+
+    - name: Verify go.mod is tidy
+      run: |
+        go mod tidy
+        if [ -n "$(git status --porcelain go.mod go.sum)" ]; then
+          echo "go.mod/go.sum not tidy. Run 'go mod tidy' locally.";
+          git --no-pager diff -- go.mod go.sum || true;
+          exit 1;
+        fi
+
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -137,22 +155,32 @@ jobs:
         go test -bench=. -benchmem -run=^$ ./internal/lexer > benchmark_results.txt
         cat benchmark_results.txt
 
-    - name: Check for performance regressions
+    - name: Enforce performance budget (>=5% regression fails)
+      if: github.event_name == 'pull_request'
       run: |
         # Install benchstat for comparison
         go install golang.org/x/perf/cmd/benchstat@latest
-        
-        # Get baseline from main branch if this is a PR
-        if [ "${{ github.event_name }}" = "pull_request" ]; then
-          git fetch origin main
-          git checkout origin/main
-          go test -bench=. -benchmem -run=^$ ./internal/lexer > baseline_benchmark.txt
-          git checkout ${{ github.sha }}
-          
-          # Compare benchmarks
-          echo "Benchmark comparison:"
-          benchstat baseline_benchmark.txt benchmark_results.txt || true
-        fi
+
+        # Produce baseline from main
+        git fetch origin main
+        git checkout --detach origin/main
+        go test -bench=. -benchmem -run=^$ ./internal/lexer > baseline_benchmark.txt
+        git checkout --detach ${{ github.sha }}
+
+        echo "Benchmark comparison:"
+        benchstat baseline_benchmark.txt benchmark_results.txt | tee benchdiff.txt || true
+
+        echo "Checking for regressions beyond budget..."
+        FAIL=0
+        if grep -E "\+([5-9]\.[0-9]|[1-9][0-9]+\.[0-9])%.*ns/op" benchdiff.txt >/dev/null; then
+          echo "ns/op regression exceeds 5%"; FAIL=1; fi
+        if grep -E "\+([5-9]\.[0-9]|[1-9][0-9]+\.[0-9])%.*B/op" benchdiff.txt >/dev/null; then
+          echo "B/op regression exceeds 5%"; FAIL=1; fi
+        if grep -E "\+[1-9][0-9]*\.[0-9]%.*allocs/op" benchdiff.txt >/dev/null; then
+          echo "allocs/op increased"; FAIL=1; fi
+        if [ "$FAIL" -ne 0 ]; then
+          echo "❌ Performance budget failed (see benchdiff.txt)"; exit 1; fi
+        echo "✅ Performance within budget"
 
     - name: Upload benchmark results
       uses: actions/upload-artifact@v4
@@ -173,20 +201,56 @@ jobs:
       with:
         go-version: ${{ env.GO_VERSION }}
 
+    - name: Install gosec
+      run: go install github.com/securego/gosec/v2/cmd/gosec@latest
+
     - name: Run Gosec Security Scanner
-      uses: securecodewarrior/github-action-gosec@master
-      with:
-        args: '-fmt sarif -out gosec.sarif ./...'
+      run: |
+        $(go env GOPATH)/bin/gosec -fmt sarif -out gosec.sarif ./...
 
     - name: Upload SARIF file
       uses: github/codeql-action/upload-sarif@v3
       with:
         sarif_file: gosec.sarif
 
+
+  memory:
+    name: Memory Leak Check
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Cache Go modules
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Run memory leak analysis (profiling)
+      run: make bench-memory-leaks
+
+    - name: Upload memory profiles
+      uses: actions/upload-artifact@v4
+      with:
+        name: memory-profiles
+        path: profiles/
+
   quality-gate:
     name: Quality Gate
     runs-on: ubuntu-latest
-    needs: [lint, test, benchmark, security]
+    needs: [lint, test, benchmark, security, memory]
     if: always()
     steps:
     - name: Check job results

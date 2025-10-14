@@ -76,7 +76,7 @@ func isDigit(ch byte) bool {
 // startsKnownToken returns true if the character can start a known token
 func startsKnownToken(ch byte) bool {
 	switch ch {
-	case '+', '-', ':', ',', '.', '(', ')', '{', '}', '=', '!', '<', '>', '"', '/', '$':
+	case '+', '-', ':', ',', '.', '(', ')', '{', '}', '=', '!', '<', '>', '"', '/', '$', '#':
 		return true
 	default:
 		return false

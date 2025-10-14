@@ -44,6 +44,12 @@ var keywords = map[string]token.TokenType{
 	// File operations (Phase 3)
 	"filesize":   token.FILESIZE,
 	"entrypoint": token.ENTRYPOINT,
+	// Control flow keywords (Phase 4)
+	"for":      token.FOR,
+	"in":       token.IN,
+	"at":       token.AT,
+	"them":     token.THEM,
+	"defined":  token.DEFINED,
 }
 
 // Interned keyword strings to reduce allocations

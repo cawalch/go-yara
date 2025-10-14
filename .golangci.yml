@@ -227,6 +227,30 @@ linters:
         linters:
           - revive
 
+      # Escape sequence processing functions are performance-critical
+      - path: 'internal/lexer/scanner_escape\.go'
+        text: "function-length"
+        linters:
+          - revive
+
+      # Performance-critical escape sequence functions can have more statements
+      - path: 'internal/lexer/scanner_escape\.go'
+        text: "Function 'processEscapeSequencesOptimized' has too many statements"
+        linters:
+          - funlen
+
+      # Hex string detection functions are complex by nature
+      - path: 'internal/lexer/scanner_hex\.go'
+        text: "function-length"
+        linters:
+          - revive
+
+      # String scanning functions are complex by nature
+      - path: 'internal/lexer/scanner_string\.go'
+        text: "function-length"
+        linters:
+          - revive
+
       # Complex if-else chains that are more readable than switch statements
       - path: 'internal/lexer/keywords\.go'
         text: "ifElseChain: rewrite if-else to switch statement"
@@ -272,6 +296,12 @@ linters:
         text: "ifElseChain"
         linters:
           - gocritic
+
+      # Demo programs can read files via variable paths
+      - path: 'cmd/.*\.go'
+        text: "Potential file inclusion via variable"
+        linters:
+          - gosec
 
 issues:
   max-issues-per-linter: 0

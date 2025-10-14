@@ -17,8 +17,8 @@ func (l *Lexer) readStringIdentifier() string {
 	start := l.position()
 	l.readChar() // skip '$'
 
-	// Read the identifier part (letters, digits, underscores, wildcards)
-	for isLetter(l.ch()) || isDigit(l.ch()) || l.ch() == '_' || l.ch() == '*' {
+	// Read the identifier part (letters, digits, underscores, wildcards, #, @)
+	for isLetter(l.ch()) || isDigit(l.ch()) || l.ch() == '_' || l.ch() == '*' || l.ch() == '#' || l.ch() == '@' {
 		l.readChar()
 	}
 

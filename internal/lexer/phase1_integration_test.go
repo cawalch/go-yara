@@ -256,7 +256,7 @@ func TestPhase1Integration_AllFeaturesCombined(t *testing.T) {
 	expected := []token.Token{
 		{Type: token.ALL, Literal: "all"},
 		{Type: token.OF, Literal: "of"},
-		{Type: token.IDENTIFIER, Literal: "them"},
+		{Type: token.THEM, Literal: "them"},
 		{Type: token.AND, Literal: "and"},
 		{Type: token.SIZE_LIT, Literal: "0x1000KB"},
 		{Type: token.PLUS, Literal: "+"},

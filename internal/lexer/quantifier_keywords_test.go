@@ -72,7 +72,7 @@ func TestQuantifierKeywords_InExpressions(t *testing.T) {
 			expected: []token.Token{
 				{Type: token.ALL, Literal: "all"},
 				{Type: token.OF, Literal: "of"},
-				{Type: token.IDENTIFIER, Literal: "them"},
+				{Type: token.THEM, Literal: "them"},
 				{Type: token.EOF, Literal: ""},
 			},
 		},
@@ -82,7 +82,7 @@ func TestQuantifierKeywords_InExpressions(t *testing.T) {
 			expected: []token.Token{
 				{Type: token.ANY, Literal: "any"},
 				{Type: token.OF, Literal: "of"},
-				{Type: token.IDENTIFIER, Literal: "them"},
+				{Type: token.THEM, Literal: "them"},
 				{Type: token.EOF, Literal: ""},
 			},
 		},
@@ -92,7 +92,7 @@ func TestQuantifierKeywords_InExpressions(t *testing.T) {
 			expected: []token.Token{
 				{Type: token.NONE, Literal: "none"},
 				{Type: token.OF, Literal: "of"},
-				{Type: token.IDENTIFIER, Literal: "them"},
+				{Type: token.THEM, Literal: "them"},
 				{Type: token.EOF, Literal: ""},
 			},
 		},
@@ -163,7 +163,7 @@ func TestQuantifierKeywords_WithOperators(t *testing.T) {
 	helper.AssertTokenSequence("all of them and true", lexer.CreateTokenSequence(
 		token.ALL, "all",
 		token.OF, "of",
-		token.IDENTIFIER, "them",
+		token.THEM, "them",
 		token.AND, "and",
 		token.TRUE, "true",
 	))
@@ -184,7 +184,7 @@ func TestQuantifierKeywords_WithOperators(t *testing.T) {
 		token.NOT, "not",
 		token.NONE, "none",
 		token.OF, "of",
-		token.IDENTIFIER, "them",
+		token.THEM, "them",
 	))
 }
 
@@ -204,7 +204,7 @@ func TestQuantifierKeywords_EdgeCases(t *testing.T) {
 				{Type: token.LPAREN, Literal: "("},
 				{Type: token.ALL, Literal: "all"},
 				{Type: token.OF, Literal: "of"},
-				{Type: token.IDENTIFIER, Literal: "them"},
+				{Type: token.THEM, Literal: "them"},
 				{Type: token.RPAREN, Literal: ")"},
 				{Type: token.EOF, Literal: ""},
 			},
@@ -215,7 +215,7 @@ func TestQuantifierKeywords_EdgeCases(t *testing.T) {
 			expected: []token.Token{
 				{Type: token.INTEGER_LIT, Literal: "2"},
 				{Type: token.OF, Literal: "of"},
-				{Type: token.IDENTIFIER, Literal: "them"},
+				{Type: token.THEM, Literal: "them"},
 				{Type: token.EQ, Literal: "=="},
 				{Type: token.TRUE, Literal: "true"},
 				{Type: token.EOF, Literal: ""},

@@ -44,6 +44,11 @@ func (l *Lexer) handleDefaultToken(pos token.Position) token.Token {
 		return l.makeNumericToken(pos)
 	}
 
+	if l.recoveryMode == RecoverySection {
+		l.fastForward()
+		return l.NextToken()
+	}
+
 	return l.makeIllegalToken(pos)
 }
 

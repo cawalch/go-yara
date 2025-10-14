@@ -59,6 +59,13 @@ const (
 	// File operations (Phase 3)
 	FILESIZE
 	ENTRYPOINT
+	// Control flow keywords (Phase 4)
+	FOR
+	IN
+	AT
+	THEM
+	DEFINED
+	HASH
 	PLUS
 	MINUS
 	MULTIPLY
@@ -86,6 +93,8 @@ const (
 	RBRACE
 	LPAREN
 	RPAREN
+	LBRACKET
+	RBRACKET
 	ILLEGAL
 	EOF
 )
