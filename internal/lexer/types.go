@@ -54,7 +54,6 @@ type Lexer struct {
 	reader       *Reader      // handles character reading and position tracking
 	errors       []Error      // collected errors during lexing
 	recoveryMode RecoveryMode // error recovery strategy
-	insideRuleBody bool       // tracks if we're parsing inside a rule body
 }
 
 // New creates a new lexer for the given input string.

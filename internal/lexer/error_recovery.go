@@ -76,11 +76,18 @@ func (l *Lexer) skipWhitespace() {
 // sections of input that are not valid, until something that looks like a
 // keyword or identifier is found.
 func (l *Lexer) fastForward() {
+	// Skip whitespace first
 	for l.ch() != 0 {
 		ch := l.ch()
-		if ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n' || isLetter(ch) {
+		if ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n' {
+			l.readChar()
+			continue
+		}
+		// Stop at first letter or end of input
+		if isLetter(ch) || ch == 0 {
 			return
 		}
+		// Skip non-whitespace, non-letter characters
 		l.readChar()
 	}
 }

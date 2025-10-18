@@ -140,8 +140,7 @@ func isYARAModifier(word string) bool {
 
 // looksLikeRegex determines if a '/' character starts a regex rather than division
 func (l *Lexer) looksLikeRegex() bool {
-	// If the next character is alphanumeric, underscore, or common regex characters,
-	// it's likely a regex. If it's '/' or '*', it's likely a comment.
+	// Check the character after the '/' to determine if it looks like a regex
 	next := l.peekChar()
 
 	// Definitely comments
@@ -157,7 +156,8 @@ func (l *Lexer) looksLikeRegex() bool {
 	// Common regex starting characters
 	if (next >= 'a' && next <= 'z') || (next >= 'A' && next <= 'Z') ||
 		(next >= '0' && next <= '9') || next == '_' || next == '\\' ||
-		next == '[' || next == '(' || next == '.' || next == '^' || next == '$' {
+		next == '[' || next == '(' || next == '.' || next == '^' || next == '$' ||
+		next == '|' || next == '?' {
 		return true
 	}
 
