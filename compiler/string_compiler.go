@@ -10,14 +10,6 @@ import (
 	"github.com/cawalch/go-yara/ast"
 )
 
-// Atom represents a fixed sequence of bytes extracted from a pattern
-type Atom struct {
-	Data     []byte // The atom data
-	Offset   int    // Offset within the original pattern
-	Length   int    // Length of the atom
-	Quality  int    // Quality score for optimization
-}
-
 // StringCompiler handles compilation of string patterns to bytecode
 type StringCompiler struct {
 	emitter *Emitter
@@ -26,7 +18,7 @@ type StringCompiler struct {
 	// Maps for pattern data
 	patternData map[string][]byte
 	// Extracted atoms for optimization
-	atoms map[string][]Atom
+	atoms map[string][]*Atom
 }
 
 // NewStringCompiler creates a new string compiler
@@ -35,7 +27,7 @@ func NewStringCompiler(emitter *Emitter) *StringCompiler {
 		emitter:       emitter,
 		stringOffsets: make(map[string]int),
 		patternData:   make(map[string][]byte),
-		atoms:         make(map[string][]Atom),
+		atoms:         make(map[string][]*Atom),
 	}
 }
 
@@ -73,7 +65,15 @@ func (sc *StringCompiler) compileString(str *ast.String) error {
 		return fmt.Errorf("unknown pattern type")
 	}
 
+	// Extract atoms for optimization
+	sc.atoms[str.Identifier] = ExtractAtoms(str.Pattern, str.Modifiers)
+
 	return nil
+}
+
+// GetAtoms returns the extracted atoms for a string identifier
+func (sc *StringCompiler) GetAtoms(identifier string) []*Atom {
+	return sc.atoms[identifier]
 }
 
 // compileTextString compiles a text string pattern
@@ -195,7 +195,9 @@ func (sc *StringCompiler) encodeHexString(hexData []byte, modifiers []ast.String
 func (sc *StringCompiler) parseHexString(hexStr string) []byte {
 	// Remove spaces and comments
 	clean := strings.ReplaceAll(hexStr, " ", "")
-	clean = regexp.MustCompile(`/\*.*?\*/`).ReplaceAllString(clean, "")
+	clean = regexp.MustCompile(`/
+*.*?
+*/`).ReplaceAllString(clean, "")
 
 	// Parse hex bytes (simplified - real implementation would handle full hex grammar)
 	var result []byte
@@ -397,10 +399,10 @@ func (sc *StringCompiler) optimizeASCIIPattern(pattern []byte) []byte {
 	return optimized
 }
 
+// Debug printing functions
+
 // EstimatePatternComplexity estimates the complexity/quality of a pattern
-// Based on libyara's yr_atoms_heuristic_quality algorithm
-// Higher quality = better for pattern matching (less false positives)
-// Used for optimization decisions and pattern selection
+// based on libyara's heuristic algorithm
 func (sc *StringCompiler) EstimatePatternComplexity(pattern []byte, modifiers []ast.StringModifier) int {
 	if len(pattern) == 0 {
 		return 0
@@ -408,58 +410,43 @@ func (sc *StringCompiler) EstimatePatternComplexity(pattern []byte, modifiers []
 
 	quality := 0
 	seenBytes := make(map[byte]bool)
+	uniqueBytes := 0
 
-	// Analyze each byte in the pattern
-	for _, b := range pattern {
-		// Track unique bytes
-		if !seenBytes[b] {
-			seenBytes[b] = true
-		}
-
-		// Score based on byte value (libyara heuristic)
+	for i := 0; i < len(pattern); i++ {
+		b := pattern[i]
 		switch b {
 		case 0x00, 0x20, 0xCC, 0xFF:
-			// Common bytes contribute less (12 points)
-			quality += 12
-		case 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
-			'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
-			'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
-			'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z':
-			// Alphabetic characters contribute 18 points
-			quality += 18
+			quality += 12 // Common bytes
 		default:
-			// Other bytes contribute 20 points
-			quality += 20
+			if (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') {
+				quality += 18 // Alphabetic
+			} else {
+				quality += 20 // Other
+			}
+		}
+		if !seenBytes[b] {
+			seenBytes[b] = true
+			uniqueBytes++
 		}
 	}
 
-	// Bonus for unique bytes (2x the number of unique bytes)
-	quality += len(seenBytes) * 2
+	quality += 2 * uniqueBytes
 
-	// Adjust for modifiers
-	for _, mod := range modifiers {
-		switch mod.Type {
-		case ast.StringModifierWide:
-			// Wide strings are more complex (less common)
-			quality = quality * 3 / 2
-		case ast.StringModifierNocase:
-			// Case-insensitive reduces quality (more matches)
-			quality = quality * 2 / 3
-		case ast.StringModifierASCII:
-			// ASCII modifier slightly reduces quality
-			quality = quality * 9 / 10
+	// Penalize patterns with all equal and common bytes
+	if uniqueBytes == 1 {
+		b := pattern[0]
+		if b == 0x00 || b == 0x20 || b == 0x90 || b == 0xCC || b == 0xFF {
+			quality -= 10 * len(pattern)
 		}
 	}
 
 	return quality
 }
 
-// Debug printing functions
-
 // PrintStringInfo prints information about all compiled strings
 func (sc *StringCompiler) PrintStringInfo() {
 	fmt.Println("Compiled String Information:")
-	fmt.Printf("%-8s %-8s %-12s %-s\n", "ID", "Offset", "Size", "Pattern")
+	fmt.Printf("% -8s % -8s % -12s % -s\n", "ID", "Offset", "Size", "Pattern")
 	fmt.Println("─────────────────────────────────────────")
 
 	for _, info := range sc.GetStringInfo() {
@@ -468,128 +455,10 @@ func (sc *StringCompiler) PrintStringInfo() {
 			patternStr = patternStr[:17] + "..."
 		}
 
-		fmt.Printf("%-8s %-8d %-12d %-s\n",
+		fmt.Printf("% -8s % -8d % -12d % -s\n",
 			info.Identifier,
 			info.Offset,
 			len(info.Pattern),
 			patternStr)
 	}
-}
-// ExtractAtomsFromString extracts atoms from a string pattern
-// Based on libyara's yr_atoms_extract_from_string function
-func (sc *StringCompiler) ExtractAtomsFromString(pattern []byte, modifiers []ast.StringModifier) []Atom {
-	var atoms []Atom
-
-	if len(pattern) == 0 {
-		return atoms
-	}
-
-	// Minimum atom length (libyara uses 2)
-	minAtomLength := 2
-
-	// Maximum atom length (libyara uses 4)
-	maxAtomLength := 4
-
-	// Extract atoms of different lengths
-	for length := minAtomLength; length <= maxAtomLength && length <= len(pattern); length++ {
-		for offset := 0; offset <= len(pattern)-length; offset++ {
-			atomData := pattern[offset : offset+length]
-
-			// Calculate quality for this atom
-			quality := sc.calculateAtomQuality(atomData, modifiers)
-
-			atom := Atom{
-				Data:    make([]byte, len(atomData)),
-				Offset:  offset,
-				Length:  length,
-				Quality: quality,
-			}
-			copy(atom.Data, atomData)
-
-			atoms = append(atoms, atom)
-		}
-	}
-
-	return atoms
-}
-
-// calculateAtomQuality calculates quality score for an atom
-func (sc *StringCompiler) calculateAtomQuality(atomData []byte, modifiers []ast.StringModifier) int {
-	if len(atomData) == 0 {
-		return 0
-	}
-
-	quality := 0
-	seenBytes := make(map[byte]bool)
-
-	// Analyze each byte in the atom
-	for _, b := range atomData {
-		// Track unique bytes
-		if !seenBytes[b] {
-			seenBytes[b] = true
-		}
-
-		// Score based on byte value (libyara heuristic)
-		switch b {
-		case 0x00, 0x20, 0xCC, 0xFF:
-			// Common bytes contribute less (12 points)
-			quality += 12
-		case 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
-			'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
-			'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
-			'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z':
-			// Alphabetic characters contribute 18 points
-			quality += 18
-		default:
-			// Other bytes contribute 20 points
-			quality += 20
-		}
-	}
-
-	// Bonus for unique bytes (2x the number of unique bytes)
-	quality += len(seenBytes) * 2
-
-	// Adjust for modifiers
-	for _, mod := range modifiers {
-		switch mod.Type {
-		case ast.StringModifierWide:
-			// Wide strings are more complex (less common)
-			quality = quality * 3 / 2
-		case ast.StringModifierNocase:
-			// Case-insensitive reduces quality (more matches)
-			quality = quality * 2 / 3
-		case ast.StringModifierASCII:
-			// ASCII modifier slightly reduces quality
-			quality = quality * 9 / 10
-		}
-	}
-
-	return quality
-}
-
-// ExtractAtomsFromRegex extracts atoms from a regex pattern
-// This is a simplified implementation - real libyara would compile regex to NFA/DFA first
-func (sc *StringCompiler) ExtractAtomsFromRegex(pattern string, modifiers []ast.StringModifier) []Atom {
-	// For regex patterns, we extract literal strings from the regex
-	// This is a simplified approach - real implementation would be more sophisticated
-
-	// Simple regex literal extraction (not complete regex parsing)
-	var atoms []Atom
-
-	// Look for literal sequences in the regex (simplified)
-	// In a real implementation, this would parse the regex properly
-
-	// For now, return empty atoms for regex patterns
-	// This would be implemented with proper regex parsing in production
-	return atoms
-}
-
-// GetAtoms returns the extracted atoms for a string identifier
-func (sc *StringCompiler) GetAtoms(identifier string) []Atom {
-	return sc.atoms[identifier]
-}
-
-// GetAllAtoms returns all extracted atoms
-func (sc *StringCompiler) GetAllAtoms() map[string][]Atom {
-	return sc.atoms
 }
