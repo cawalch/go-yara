@@ -44,7 +44,7 @@ func TestSkipIdentifierInRange(t *testing.T) {
 		{
 			name:     "start in middle of string",
 			input:    "hello world test",
-			start:    6,  // start at 'w'
+			start:    6, // start at 'w'
 			end:      16,
 			expected: 11, // "world" is 5 characters, 6 + 5 = 11
 		},
@@ -125,52 +125,52 @@ func TestSkipIdentifierInRange(t *testing.T) {
 // Test hasTagsAfterColon function
 func TestHasTagsAfterColon(t *testing.T) {
 	tests := []struct {
-		name        string
-		input       string
-		colonPos    int
-		currentPos  int
-		expected    bool
+		name       string
+		input      string
+		colonPos   int
+		currentPos int
+		expected   bool
 	}{
 		{
 			name:       "simple tag after colon",
 			input:      "strings: $a = { }",
-			colonPos:   7, // position of ':'
-			currentPos: 10, // position of '$'
+			colonPos:   7,     // position of ':'
+			currentPos: 10,    // position of '$'
 			expected:   false, // function looks for rule keywords, not $ identifiers
 		},
 		{
 			name:       "multiple tags after colon",
 			input:      "strings: $a $b $c = { }",
-			colonPos:   7,  // position of ':'
-			currentPos: 11, // position of first '$'
+			colonPos:   7,     // position of ':'
+			currentPos: 11,    // position of first '$'
 			expected:   false, // function looks for rule keywords, not $ identifiers
 		},
 		{
 			name:       "no tags after colon",
 			input:      "condition: $a > 5",
-			colonPos:   9,  // position of ':'
-			currentPos: 11, // position of '$'
+			colonPos:   9,     // position of ':'
+			currentPos: 11,    // position of '$'
 			expected:   false, // function looks for rule keywords, not $ identifiers
 		},
 		{
 			name:       "colon with no content after",
 			input:      "strings:",
-			colonPos:   7,  // position of ':'
-			currentPos: 8,  // position after ':'
+			colonPos:   7, // position of ':'
+			currentPos: 8, // position after ':'
 			expected:   false,
 		},
 		{
 			name:       "whitespace after colon but no tags",
 			input:      "strings: = { }",
-			colonPos:   7,  // position of ':'
-			currentPos: 9,  // position of '='
+			colonPos:   7, // position of ':'
+			currentPos: 9, // position of '='
 			expected:   false,
 		},
 		{
 			name:       "tags with whitespace",
 			input:      "strings: $a\n\t$b = { }",
-			colonPos:   7,  // position of ':'
-			currentPos: 11, // position of '$' (first tag)
+			colonPos:   7,     // position of ':'
+			currentPos: 11,    // position of '$' (first tag)
 			expected:   false, // function looks for rule keywords, not $ identifiers
 		},
 		{
@@ -198,78 +198,78 @@ func TestHasTagsAfterColon(t *testing.T) {
 		{
 			name:       "malformed tag - starts with number",
 			input:      "strings: 123$a = { }",
-			colonPos:   7,  // position of ':'
-			currentPos: 15, // position of '$'
+			colonPos:   7,     // position of ':'
+			currentPos: 15,    // position of '$'
 			expected:   false, // 123$a is not a valid identifier
 		},
 		{
 			name:       "malformed tag - special characters",
 			input:      "strings: $a-b = { }",
-			colonPos:   7,  // position of ':'
-			currentPos: 11, // position of '$'
+			colonPos:   7,     // position of ':'
+			currentPos: 11,    // position of '$'
 			expected:   false, // $a-b is not a valid identifier
 		},
 		{
 			name:       "malformed tag - empty tag name",
 			input:      "strings: $= { }",
-			colonPos:   7,  // position of ':'
-			currentPos: 9,  // position of '$'
+			colonPos:   7,     // position of ':'
+			currentPos: 9,     // position of '$'
 			expected:   false, // $ is not a valid identifier
 		},
 		{
 			name:       "tag with underscore prefix",
 			input:      "strings: $_test = { }",
-			colonPos:   7,  // position of ':'
-			currentPos: 12, // position of '$'
+			colonPos:   7,     // position of ':'
+			currentPos: 12,    // position of '$'
 			expected:   false, // function looks for rule keywords, not $ identifiers
 		},
 		{
 			name:       "tag with numbers in name",
 			input:      "strings: $a123 = { }",
-			colonPos:   7,  // position of ':'
-			currentPos: 11, // position of '$'
+			colonPos:   7,     // position of ':'
+			currentPos: 11,    // position of '$'
 			expected:   false, // function looks for rule keywords, not $ identifiers
 		},
 		{
 			name:       "multiple malformed tags",
 			input:      "strings: $a $ 123$b $= { }",
-			colonPos:   7,  // position of ':'
-			currentPos: 11, // position of first '$'
+			colonPos:   7,     // position of ':'
+			currentPos: 11,    // position of first '$'
 			expected:   false, // contains malformed tags
 		},
 		{
 			name:       "tags with mixed valid and invalid",
 			input:      "strings: $a $b $ $c = { }",
-			colonPos:   7,  // position of ':'
-			currentPos: 11, // position of first '$'
+			colonPos:   7,     // position of ':'
+			currentPos: 11,    // position of first '$'
 			expected:   false, // contains empty tag
 		},
 		{
 			name:       "very long tag name",
 			input:      "strings: $very_long_tag_name_123 = { }",
-			colonPos:   7,  // position of ':'
-			currentPos: 11, // position of '$'
+			colonPos:   7,     // position of ':'
+			currentPos: 11,    // position of '$'
 			expected:   false, // function looks for rule keywords, not $ identifiers
 		},
 		{
 			name:       "tag at end of input",
 			input:      "strings: $a",
-			colonPos:   7,  // position of ':'
-			currentPos: 10, // position of '$'
+			colonPos:   7,     // position of ':'
+			currentPos: 10,    // position of '$'
 			expected:   false, // function looks for rule keywords, not $ identifiers
 		},
 		{
 			name:       "colon at end of input",
 			input:      "strings:",
-			colonPos:   7,  // position of ':'
-			currentPos: 8,  // position after ':'
+			colonPos:   7,     // position of ':'
+			currentPos: 8,     // position after ':'
 			expected:   false, // no tags after colon
 		},
 		{
 			name:       "only whitespace after colon",
 			input:      "strings:   \t\n  ",
-			colonPos:   7,  // position of ':'
-			currentPos: 14, // position at end
+			colonPos:   7,     // position of ':'
+			currentPos: 14,    // position at end
 			expected:   false, // only whitespace, no tags
 		},
 	}

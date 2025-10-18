@@ -23,7 +23,7 @@ func (l *Lexer) handleSlashToken(pos token.Position) token.Token {
 
 	// If we get here, it's a division operator
 	// Comments should have been handled by skipWhitespace
-	return l.makeSimpleToken(token.DIVIDE, "/")
+	return l.makeSimpleToken(token.DIVIDE, "/", pos)
 }
 
 // handleBraceToken handles tokens starting with '{' (hex strings or regular braces)
@@ -33,7 +33,7 @@ func (l *Lexer) handleBraceToken(pos token.Position) token.Token {
 	}
 
 	// If we're not in a rule body, this is a regular brace
-	return l.makeSimpleToken(token.LBRACE, "{")
+	return l.makeSimpleToken(token.LBRACE, "{", pos)
 }
 
 // handleDefaultToken handles identifiers, numbers, and other default cases
@@ -46,12 +46,15 @@ func (l *Lexer) handleDefaultToken(pos token.Position) token.Token {
 		return l.makeNumericToken(pos)
 	}
 
+	// Generate an error for illegal characters even in recovery mode
+	tok := l.makeIllegalToken(pos)
+
 	if l.recoveryMode == RecoverySection {
 		l.fastForward()
 		return l.NextToken()
 	}
 
-	return l.makeIllegalToken(pos)
+	return tok
 }
 
 // handleStringIdentifierToken handles string identifiers starting with '$'

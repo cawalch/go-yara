@@ -5,10 +5,10 @@ import "fmt"
 
 // Position represents a position in the source code.
 type Position struct {
-	Filename string
-	Offset   int
-	Line     int
-	Column   int
+	Filename string // Filename is the name of the file containing this position.
+	Offset   int    // Offset is the byte offset from the start of the file.
+	Line     int    // Line is the 1-based line number.
+	Column   int    // Column is the 1-based column number.
 }
 
 // TokenType represents the type of a lexical token.
@@ -29,7 +29,7 @@ const (
 	OF
 	TRUE
 	FALSE
-	// String modifiers (Phase 2)
+	// String modifiers
 	NOCASE
 	WIDE
 	ASCII
@@ -38,14 +38,14 @@ const (
 	XOR
 	BASE64
 	BASE64WIDE
-	// Bitwise operators (Phase 3)
+	// Bitwise operators
 	BITWISE_AND
 	BITWISE_OR
 	BITWISE_XOR
 	BITWISE_NOT
 	LEFT_SHIFT
 	RIGHT_SHIFT
-	// Data type functions (Phase 3)
+	// Data type functions
 	INT8
 	INT16
 	INT32
@@ -58,21 +58,21 @@ const (
 	UINT8BE
 	UINT16BE
 	UINT32BE
-	// File operations (Phase 3)
+	// File operations
 	FILESIZE
 	ENTRYPOINT
-	// Control flow keywords (Phase 4)
+	// Control flow keywords
 	FOR
 	IN
 	AT
 	THEM
 	DEFINED
-	// Rule modifiers (Phase 4)
+	// Rule modifiers
 	GLOBAL
-	// Import system (Phase 4)
+	// Import system
 	IMPORT
 	INCLUDE
-	// String operations (Phase 4)
+	// String operations
 	CONTAINS
 	ICONTAINS
 	STARTSWITH
@@ -117,108 +117,112 @@ const (
 
 // Token represents a lexical token with its type, literal value, and position.
 type Token struct {
-	Type    TokenType
-	Literal string
-	Pos     Position
+	Type    TokenType // Type is the type of the token.
+	Literal string    // Literal is the literal value of the token.
+	Pos     Position  // Pos is the position of the token in the source.
 }
 
-// String returns a string representation of the token type
+var tokenTypeNames = map[TokenType]string{
+	RULE:              "RULE",
+	META:              "META",
+	STRINGS:           "STRINGS",
+	CONDITION:         "CONDITION",
+	AND:               "AND",
+	OR:                "OR",
+	NOT:               "NOT",
+	ALL:               "ALL",
+	ANY:               "ANY",
+	NONE:              "NONE",
+	OF:                "OF",
+	TRUE:              "TRUE",
+	FALSE:             "FALSE",
+	NOCASE:            "NOCASE",
+	WIDE:              "WIDE",
+	ASCII:             "ASCII",
+	FULLWORD:          "FULLWORD",
+	PRIVATE:           "PRIVATE",
+	XOR:               "XOR",
+	BASE64:            "BASE64",
+	BASE64WIDE:        "BASE64WIDE",
+	BITWISE_AND:       "BITWISE_AND",
+	BITWISE_OR:        "BITWISE_OR",
+	BITWISE_XOR:       "BITWISE_XOR",
+	BITWISE_NOT:       "BITWISE_NOT",
+	LEFT_SHIFT:        "LEFT_SHIFT",
+	RIGHT_SHIFT:       "RIGHT_SHIFT",
+	INT8:              "INT8",
+	INT16:             "INT16",
+	INT32:             "INT32",
+	UINT8:             "UINT8",
+	UINT16:            "UINT16",
+	UINT32:            "UINT32",
+	INT8BE:            "INT8BE",
+	INT16BE:           "INT16BE",
+	INT32BE:           "INT32BE",
+	UINT8BE:           "UINT8BE",
+	UINT16BE:          "UINT16BE",
+	UINT32BE:          "UINT32BE",
+	FILESIZE:          "FILESIZE",
+	ENTRYPOINT:        "ENTRYPOINT",
+	FOR:               "FOR",
+	IN:                "IN",
+	AT:                "AT",
+	THEM:              "THEM",
+	DEFINED:           "DEFINED",
+	GLOBAL:            "GLOBAL",
+	IMPORT:            "IMPORT",
+	INCLUDE:           "INCLUDE",
+	CONTAINS:          "CONTAINS",
+	ICONTAINS:         "ICONTAINS",
+	STARTSWITH:        "STARTSWITH",
+	ISTARTSWITH:       "ISTARTSWITH",
+	ENDSWITH:          "ENDSWITH",
+	IENDSWITH:         "IENDSWITH",
+	IEQUALS:           "IEQUALS",
+	MATCHES:           "MATCHES",
+	HASH:              "HASH",
+	PLUS:              "PLUS",
+	MINUS:             "MINUS",
+	MULTIPLY:          "MULTIPLY",
+	DIVIDE:            "DIVIDE",
+	MODULO:            "MODULO",
+	ASSIGN:            "ASSIGN",
+	EQ:                "EQ",
+	NEQ:               "NEQ",
+	LT:                "LT",
+	LE:                "LE",
+	GT:                "GT",
+	GE:                "GE",
+	COLON:             "COLON",
+	COMMA:             "COMMA",
+	DOT:               "DOT",
+	IDENTIFIER:        "IDENTIFIER",
+	STRING_IDENTIFIER: "STRING_IDENTIFIER",
+	INTEGER_LIT:       "INTEGER_LIT",
+	HEX_INTEGER_LIT:   "HEX_INTEGER_LIT",
+	SIZE_LIT:          "SIZE_LIT",
+	STRING_LIT:        "STRING_LIT",
+	HEX_STRING_LIT:    "HEX_STRING_LIT",
+	REGEX_LIT:         "REGEX_LIT",
+	LBRACE:            "LBRACE",
+	RBRACE:            "RBRACE",
+	LPAREN:            "LPAREN",
+	RPAREN:            "RPAREN",
+	LBRACKET:          "LBRACKET",
+	RBRACKET:          "RBRACKET",
+	ILLEGAL:           "ILLEGAL",
+	EOF:               "EOF",
+}
+
+// String returns a string representation of the token type.
 func (tt TokenType) String() string {
-	switch tt {
-	case RULE: return "RULE"
-	case META: return "META"
-	case STRINGS: return "STRINGS"
-	case CONDITION: return "CONDITION"
-	case AND: return "AND"
-	case OR: return "OR"
-	case NOT: return "NOT"
-	case ALL: return "ALL"
-	case ANY: return "ANY"
-	case NONE: return "NONE"
-	case OF: return "OF"
-	case TRUE: return "TRUE"
-	case FALSE: return "FALSE"
-	case NOCASE: return "NOCASE"
-	case WIDE: return "WIDE"
-	case ASCII: return "ASCII"
-	case FULLWORD: return "FULLWORD"
-	case PRIVATE: return "PRIVATE"
-	case XOR: return "XOR"
-	case BASE64: return "BASE64"
-	case BASE64WIDE: return "BASE64WIDE"
-	case BITWISE_AND: return "BITWISE_AND"
-	case BITWISE_OR: return "BITWISE_OR"
-	case BITWISE_XOR: return "BITWISE_XOR"
-	case BITWISE_NOT: return "BITWISE_NOT"
-	case LEFT_SHIFT: return "LEFT_SHIFT"
-	case RIGHT_SHIFT: return "RIGHT_SHIFT"
-	case INT8: return "INT8"
-	case INT16: return "INT16"
-	case INT32: return "INT32"
-	case UINT8: return "UINT8"
-	case UINT16: return "UINT16"
-	case UINT32: return "UINT32"
-	case INT8BE: return "INT8BE"
-	case INT16BE: return "INT16BE"
-	case INT32BE: return "INT32BE"
-	case UINT8BE: return "UINT8BE"
-	case UINT16BE: return "UINT16BE"
-	case UINT32BE: return "UINT32BE"
-	case FILESIZE: return "FILESIZE"
-	case ENTRYPOINT: return "ENTRYPOINT"
-	case FOR: return "FOR"
-	case IN: return "IN"
-	case AT: return "AT"
-	case THEM: return "THEM"
-	case DEFINED: return "DEFINED"
-	case GLOBAL: return "GLOBAL"
-	case IMPORT: return "IMPORT"
-	case INCLUDE: return "INCLUDE"
-	case CONTAINS: return "CONTAINS"
-	case ICONTAINS: return "ICONTAINS"
-	case STARTSWITH: return "STARTSWITH"
-	case ISTARTSWITH: return "ISTARTSWITH"
-	case ENDSWITH: return "ENDSWITH"
-	case IENDSWITH: return "IENDSWITH"
-	case IEQUALS: return "IEQUALS"
-	case MATCHES: return "MATCHES"
-	case HASH: return "HASH"
-	case PLUS: return "PLUS"
-	case MINUS: return "MINUS"
-	case MULTIPLY: return "MULTIPLY"
-	case DIVIDE: return "DIVIDE"
-	case MODULO: return "MODULO"
-	case ASSIGN: return "ASSIGN"
-	case EQ: return "EQ"
-	case NEQ: return "NEQ"
-	case LT: return "LT"
-	case LE: return "LE"
-	case GT: return "GT"
-	case GE: return "GE"
-	case COLON: return "COLON"
-	case COMMA: return "COMMA"
-	case DOT: return "DOT"
-	case IDENTIFIER: return "IDENTIFIER"
-	case STRING_IDENTIFIER: return "STRING_IDENTIFIER"
-	case INTEGER_LIT: return "INTEGER_LIT"
-	case HEX_INTEGER_LIT: return "HEX_INTEGER_LIT"
-	case SIZE_LIT: return "SIZE_LIT"
-	case STRING_LIT: return "STRING_LIT"
-	case HEX_STRING_LIT: return "HEX_STRING_LIT"
-	case REGEX_LIT: return "REGEX_LIT"
-	case LBRACE: return "LBRACE"
-	case RBRACE: return "RBRACE"
-	case LPAREN: return "LPAREN"
-	case RPAREN: return "RPAREN"
-	case LBRACKET: return "LBRACKET"
-	case RBRACKET: return "RBRACKET"
-	case ILLEGAL: return "ILLEGAL"
-	case EOF: return "EOF"
-	default: return fmt.Sprintf("UNKNOWN(%d)", int(tt))
+	if name, ok := tokenTypeNames[tt]; ok {
+		return name
 	}
+	return fmt.Sprintf("UNKNOWN(%d)", int(tt))
 }
 
-// String returns a string representation of the token for debugging
+// String returns a string representation of the token for debugging.
 func (t Token) String() string {
 	return fmt.Sprintf("{%v %q @ %d:%d}", t.Type, t.Literal, t.Pos.Line, t.Pos.Column)
 }

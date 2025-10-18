@@ -1,6 +1,7 @@
 package token
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -182,6 +183,40 @@ func TestTokenString(t *testing.T) {
 			}
 		})
 	}
+}
+
+// ExamplePosition demonstrates creating and using a Position struct.
+func ExamplePosition() {
+	pos := Position{
+		Filename: "rule.yar",
+		Offset:   50,
+		Line:     3,
+		Column:   8,
+	}
+	fmt.Printf("Position: %s:%d:%d (offset %d)\n", pos.Filename, pos.Line, pos.Column, pos.Offset)
+	// Output: Position: rule.yar:3:8 (offset 50)
+}
+
+// ExampleTokenType_String demonstrates the String method on TokenType.
+func ExampleTokenType_String() {
+	fmt.Println(RULE.String())
+	fmt.Println(IDENTIFIER.String())
+	fmt.Println(EOF.String())
+	// Output:
+	// RULE
+	// IDENTIFIER
+	// EOF
+}
+
+// ExampleToken_String demonstrates the String method on Token.
+func ExampleToken_String() {
+	tok := Token{
+		Type:    IDENTIFIER,
+		Literal: "example",
+		Pos:     Position{Line: 1, Column: 5},
+	}
+	fmt.Println(tok.String())
+	// Output: {IDENTIFIER "example" @ 1:5}
 }
 
 // Test Position struct

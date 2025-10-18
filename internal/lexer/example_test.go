@@ -1,6 +1,7 @@
 package lexer_test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/cawalch/go-yara/internal/lexer"
@@ -15,27 +16,27 @@ func TestExampleUsingHelpers(t *testing.T) {
 
 	// Test basic operators - much more concise than the old pattern
 	helper.AssertTokenSequence("+ - :", lexer.CreateTokenSequence(
-		token.PLUS, "+",
-		token.MINUS, "-",
-		token.COLON, ":",
+		token.PLUS, "+", 1, 1,
+		token.MINUS, "-", 1, 3,
+		token.COLON, ":", 1, 5,
 	))
 
 	// Test YARA meta section - eliminates the duplication found by linter
 	helper.AssertTokenSequence("meta: author = \"test\"", lexer.CreateTokenSequence(
-		token.META, "meta",
-		token.COLON, ":",
-		token.IDENTIFIER, "author",
-		token.ASSIGN, "=",
-		token.STRING_LIT, "test",
+		token.META, "meta", 1, 1,
+		token.COLON, ":", 1, 5,
+		token.IDENTIFIER, "author", 1, 7,
+		token.ASSIGN, "=", 1, 14,
+		token.STRING_LIT, "test", 1, 16,
 	))
 
 	// Test YARA condition section - eliminates the duplication found by linter
 	helper.AssertTokenSequence("condition: 1 == 1", lexer.CreateTokenSequence(
-		token.CONDITION, "condition",
-		token.COLON, ":",
-		token.INTEGER_LIT, "1",
-		token.EQ, "==",
-		token.INTEGER_LIT, "1",
+		token.CONDITION, "condition", 1, 1,
+		token.COLON, ":", 1, 10,
+		token.INTEGER_LIT, "1", 1, 12,
+		token.EQ, "==", 1, 14,
+		token.INTEGER_LIT, "1", 1, 17,
 	))
 
 	// Test single token - useful for simple cases
@@ -76,9 +77,51 @@ func TestExamplePositionTracking(t *testing.T) {
 	tok1 := l.NextToken()
 	helper.AssertPosition(tok1, 1, 1)
 
-	// Second token: "test" at line 2, column 3
+	// Second token: "test" at line 2, column 4
 	tok2 := l.NextToken()
-	helper.AssertPosition(tok2, 2, 3)
+	helper.AssertPosition(tok2, 2, 4)
+}
+
+// ExampleNew demonstrates creating a new lexer instance.
+func ExampleNew() {
+	_ = lexer.New("rule test { condition: true }")
+	fmt.Println("Lexer created successfully")
+	// Output: Lexer created successfully
+}
+
+// ExampleLexer_NextToken demonstrates tokenizing YARA rule syntax.
+func ExampleLexer_NextToken() {
+	l := lexer.New("rule test { condition: true }")
+
+	// Get tokens one by one
+	tok1 := l.NextToken()
+	tok2 := l.NextToken()
+	tok3 := l.NextToken()
+
+	fmt.Printf("First token: %s\n", tok1.String())
+	fmt.Printf("Second token: %s\n", tok2.String())
+	fmt.Printf("Third token: %s\n", tok3.String())
+	// Output:
+	// First token: {RULE "rule" @ 1:1}
+	// Second token: {IDENTIFIER "test" @ 1:6}
+	// Third token: {LBRACE "{" @ 1:11}
+}
+
+// ExampleRecoveryMode demonstrates different error recovery modes.
+func ExampleRecoveryMode() {
+	// Basic recovery mode (default)
+	lexer1 := lexer.New("@")
+	_ = lexer1.NextToken() // This will encounter an error
+
+	// Section recovery mode - more aggressive error recovery
+	lexer2 := lexer.NewWithRecovery("@", lexer.RecoverySection)
+	_ = lexer2.NextToken()
+
+	fmt.Printf("Basic recovery errors: %d\n", len(lexer1.Errors()))
+	fmt.Printf("Section recovery errors: %d\n", len(lexer2.Errors()))
+	// Output:
+	// Basic recovery errors: 1
+	// Section recovery errors: 1
 }
 
 // This shows how the old pattern can be refactored:

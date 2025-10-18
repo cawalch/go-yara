@@ -5,15 +5,15 @@ import "github.com/cawalch/go-yara/token"
 // Token emission and creation functions
 
 // makeSimpleToken creates a token for single-character operators and advances the lexer
-func (l *Lexer) makeSimpleToken(tokenType token.TokenType, literal string) token.Token {
-	tok := token.Token{Type: tokenType, Literal: literal, Pos: l.currentPosition()}
+func (l *Lexer) makeSimpleToken(tokenType token.TokenType, literal string, pos token.Position) token.Token {
+	tok := token.Token{Type: tokenType, Literal: literal, Pos: pos}
 	l.readChar()
 	return tok
 }
 
 // makeTwoCharToken creates a token for two-character operators and advances the lexer
-func (l *Lexer) makeTwoCharToken(tokenType token.TokenType, literal string) token.Token {
-	tok := token.Token{Type: tokenType, Literal: literal, Pos: l.currentPosition()}
+func (l *Lexer) makeTwoCharToken(tokenType token.TokenType, literal string, pos token.Position) token.Token {
+	tok := token.Token{Type: tokenType, Literal: literal, Pos: pos}
 	l.readChar() // advance past second character
 	return tok
 }
@@ -21,11 +21,6 @@ func (l *Lexer) makeTwoCharToken(tokenType token.TokenType, literal string) toke
 // makeToken creates a token with the given type, literal, and position
 func (l *Lexer) makeToken(tokenType token.TokenType, literal string, pos token.Position) token.Token {
 	return token.Token{Type: tokenType, Literal: literal, Pos: pos}
-}
-
-// currentPosition returns the current position in the input
-func (l *Lexer) currentPosition() token.Position {
-	return l.reader.CurrentPosition()
 }
 
 // makeErrorToken creates an ILLEGAL token and adds an error to the lexer

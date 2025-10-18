@@ -46,6 +46,13 @@ func (h *TestHelper) AssertTokenSequence(input string, expected []token.Token) {
 			h.t.Fatalf("token[%d]: got {%v %q} want {%v %q}",
 				i, got[i].Type, got[i].Literal, expected[i].Type, expected[i].Literal)
 		}
+		// Also check position if expected token has non-zero position
+		if expected[i].Pos.Line != 0 || expected[i].Pos.Column != 0 {
+			if got[i].Pos.Line != expected[i].Pos.Line || got[i].Pos.Column != expected[i].Pos.Column {
+				h.t.Fatalf("token[%d] position: got {%d:%d} want {%d:%d}",
+					i, got[i].Pos.Line, got[i].Pos.Column, expected[i].Pos.Line, expected[i].Pos.Column)
+			}
+		}
 	}
 }
 
@@ -119,31 +126,71 @@ func (h *TestHelper) AssertErrorContains(l *Lexer, expectedMessage string) {
 }
 
 // CreateTokenSequence is a helper to create token sequences more concisely.
+// Supports both (type, literal) pairs and (type, literal, line, column) position tuples.
 func CreateTokenSequence(pairs ...interface{}) []token.Token {
-	if len(pairs)%2 != 0 {
-		panic("CreateTokenSequence requires an even number of arguments (type, literal pairs)")
+	if len(pairs) == 0 {
+		// Empty sequence, just return EOF
+		return []token.Token{{Type: token.EOF, Literal: ""}}
 	}
 
 	tokens := make([]token.Token, 0, len(pairs)/2+1) // Pre-allocate for pairs + EOF
-	for i := 0; i < len(pairs); i += 2 {
-		tokenType, ok := pairs[i].(token.TokenType)
-		if !ok {
-			panic(fmt.Sprintf("expected token.TokenType at index %d, got %T", i, pairs[i]))
-		}
-		literal, ok := pairs[i+1].(string)
-		if !ok {
-			panic(fmt.Sprintf("expected string at index %d, got %T", i+1, pairs[i+1]))
-		}
-		tokens = append(tokens, token.Token{
-			Type:    tokenType,
-			Literal: literal,
-		})
-	}
+	tokens = append(tokens, createTokensFromPairs(pairs)...)
 
 	// Always add EOF token
 	tokens = append(tokens, token.Token{Type: token.EOF, Literal: ""})
 
 	return tokens
+}
+
+// createTokensFromPairs processes the pairs and creates tokens.
+func createTokensFromPairs(pairs []interface{}) []token.Token {
+	tokens := make([]token.Token, 0, len(pairs)/2) // Pre-allocate for pairs
+
+	for i := 0; i < len(pairs); i += 2 {
+		tok := createTokenFromPair(pairs, &i)
+		tokens = append(tokens, tok)
+	}
+
+	return tokens
+}
+
+// createTokenFromPair creates a single token from pairs starting at index i.
+func createTokenFromPair(pairs []interface{}, i *int) token.Token {
+	tokenType, ok := pairs[*i].(token.TokenType)
+	if !ok {
+		panic(fmt.Sprintf("expected token.TokenType at index %d, got %T", *i, pairs[*i]))
+	}
+
+	literal, ok := pairs[*i+1].(string)
+	if !ok {
+		panic(fmt.Sprintf("expected string at index %d, got %T", *i+1, pairs[*i+1]))
+	}
+
+	tok := token.Token{Type: tokenType, Literal: literal}
+
+	// Check if position info follows
+	if *i+2 >= len(pairs) {
+		return tok
+	}
+
+	line, ok1 := pairs[*i+2].(int)
+	if !ok1 {
+		return tok
+	}
+
+	if *i+3 >= len(pairs) {
+		panic(fmt.Sprintf("missing column number after line number at index %d", *i+2))
+	}
+
+	column, ok2 := pairs[*i+3].(int)
+	if !ok2 {
+		panic(fmt.Sprintf("expected int column at index %d, got %T", *i+3, pairs[*i+3]))
+	}
+
+	tok.Pos = token.Position{Line: line, Column: column}
+	*i += 2 // Skip the position info
+
+	return tok
 }
 
 // containsString checks if a string contains a substring (simple helper).

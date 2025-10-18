@@ -1,3 +1,4 @@
+// Package lexer provides a YARA lexer implementation.
 package lexer
 
 // Reader handles low-level character reading and position tracking for the lexer.
@@ -66,7 +67,7 @@ func (r *Reader) ReadChar() {
 			r.column++
 		} else {
 			r.line++
-			r.column = 0
+			r.column = 1
 		}
 	} else {
 		r.ch = 0

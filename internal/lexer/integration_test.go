@@ -169,83 +169,82 @@ func TestComplexYARARule(t *testing.T) {
  			($a and $b) or $c and not false
  	}`
 
- 	l := lexer.New(input)
- 	tokens := collectTokens(l)
+	l := lexer.New(input)
+	tokens := collectTokens(l)
 
- 	// Verify we have the expected structure - rule body should be properly parsed
- 	expectedTokenTypes := []token.TokenType{
- 		token.RULE,
- 		token.IDENTIFIER, // ComplexRule
- 		token.COLON,
- 		token.IDENTIFIER, // tag1
- 		token.IDENTIFIER, // tag2
- 		token.LBRACE,
- 		token.META,
- 		token.COLON,
- 		token.IDENTIFIER, // author
- 		token.ASSIGN,
- 		token.STRING_LIT, // "test"
- 		token.IDENTIFIER, // version
- 		token.ASSIGN,
- 		token.INTEGER_LIT, // 1
- 		token.IDENTIFIER, // enabled
- 		token.ASSIGN,
- 		token.TRUE, // true
- 		token.STRINGS,
- 		token.COLON,
- 		token.STRING_IDENTIFIER, // $a
- 		token.ASSIGN,
- 		token.STRING_LIT, // "malware"
- 		token.STRING_IDENTIFIER, // $b
- 		token.ASSIGN,
- 		token.HEX_STRING_LIT, // { E2 34 A1 C8 }
- 		token.STRING_IDENTIFIER, // $c
- 		token.ASSIGN,
- 		token.REGEX_LIT, // /pattern/i
- 		token.CONDITION,
- 		token.COLON,
- 		token.LPAREN,
- 		token.STRING_IDENTIFIER, // $a
- 		token.AND,
- 		token.STRING_IDENTIFIER, // $b
- 		token.RPAREN,
- 		token.OR,
- 		token.STRING_IDENTIFIER, // $c
- 		token.AND,
- 		token.NOT,
- 		token.FALSE,
- 		token.RBRACE,
- 		token.EOF,
- 	}
+	// Verify we have the expected structure - rule body should be properly parsed
+	expectedTokenTypes := []token.TokenType{
+		token.RULE,
+		token.IDENTIFIER, // ComplexRule
+		token.COLON,
+		token.IDENTIFIER, // tag1
+		token.IDENTIFIER, // tag2
+		token.LBRACE,
+		token.META,
+		token.COLON,
+		token.IDENTIFIER, // author
+		token.ASSIGN,
+		token.STRING_LIT, // "test"
+		token.IDENTIFIER, // version
+		token.ASSIGN,
+		token.INTEGER_LIT, // 1
+		token.IDENTIFIER,  // enabled
+		token.ASSIGN,
+		token.TRUE, // true
+		token.STRINGS,
+		token.COLON,
+		token.STRING_IDENTIFIER, // $a
+		token.ASSIGN,
+		token.STRING_LIT,        // "malware"
+		token.STRING_IDENTIFIER, // $b
+		token.ASSIGN,
+		token.HEX_STRING_LIT,    // { E2 34 A1 C8 }
+		token.STRING_IDENTIFIER, // $c
+		token.ASSIGN,
+		token.REGEX_LIT, // /pattern/i
+		token.CONDITION,
+		token.COLON,
+		token.LPAREN,
+		token.STRING_IDENTIFIER, // $a
+		token.AND,
+		token.STRING_IDENTIFIER, // $b
+		token.RPAREN,
+		token.OR,
+		token.STRING_IDENTIFIER, // $c
+		token.AND,
+		token.NOT,
+		token.FALSE,
+		token.RBRACE,
+		token.EOF,
+	}
 
- 	if len(tokens) != len(expectedTokenTypes) {
- 		t.Fatalf("expected %d tokens, got %d\nActual tokens: %v", len(expectedTokenTypes), len(tokens), tokens)
- 	}
+	if len(tokens) != len(expectedTokenTypes) {
+		t.Fatalf("expected %d tokens, got %d\nActual tokens: %v", len(expectedTokenTypes), len(tokens), tokens)
+	}
 
- 	for i, expectedType := range expectedTokenTypes {
- 		if tokens[i].Type != expectedType {
- 			t.Fatalf("token[%d]: expected type %v, got %v", i, expectedType, tokens[i].Type)
- 		}
- 	}
+	for i, expectedType := range expectedTokenTypes {
+		if tokens[i].Type != expectedType {
+			t.Fatalf("token[%d]: expected type %v, got %v", i, expectedType, tokens[i].Type)
+		}
+	}
 
- 	// Verify specific token literals
- 	if tokens[1].Literal != "ComplexRule" {
- 		t.Fatalf("expected rule name 'ComplexRule', got %q", tokens[1].Literal)
- 	}
- 	if tokens[3].Literal != "tag1" {
- 		t.Fatalf("expected tag 'tag1', got %q", tokens[3].Literal)
- 	}
- 	if tokens[4].Literal != "tag2" {
- 		t.Fatalf("expected tag 'tag2', got %q", tokens[4].Literal)
- 	}
- 	if tokens[6].Literal != "meta" {
- 		t.Fatalf("expected meta section, got %q", tokens[6].Literal)
- 	}
- 	if tokens[17].Literal != "strings" {
- 		t.Fatalf("expected strings section, got %q", tokens[17].Literal)
- 	}
- 	if tokens[28].Literal != "condition" {
- 		t.Fatalf("expected condition section, got %q", tokens[28].Literal)
- 	}
+	// Verify specific token literals
+	if tokens[1].Literal != "ComplexRule" {
+		t.Fatalf("expected rule name 'ComplexRule', got %q", tokens[1].Literal)
+	}
+	if tokens[3].Literal != "tag1" {
+		t.Fatalf("expected tag 'tag1', got %q", tokens[3].Literal)
+	}
+	if tokens[4].Literal != "tag2" {
+		t.Fatalf("expected tag 'tag2', got %q", tokens[4].Literal)
+	}
+	if tokens[6].Literal != "meta" {
+		t.Fatalf("expected meta section, got %q", tokens[6].Literal)
+	}
+	if tokens[17].Literal != "strings" {
+		t.Fatalf("expected strings section, got %q", tokens[17].Literal)
+	}
+	if tokens[28].Literal != "condition" {
+		t.Fatalf("expected condition section, got %q", tokens[28].Literal)
+	}
 }
-

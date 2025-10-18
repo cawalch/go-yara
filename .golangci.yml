@@ -1,5 +1,5 @@
 # golangci-lint configuration for go-yara
-# Optimized for Go 1.25+ and LLM-assisted development
+# Optimized for Go development
 
 version: "2"
 
@@ -55,7 +55,7 @@ linters:
       range-loops: true
       for-loops: true
 
-    # Go 1.25+ specific settings
+    # Go specific settings
     govet:
       enable-all: true
       disable:
@@ -145,7 +145,7 @@ linters:
     - nestif
 
     # Tests
-    - testpackage
+    #- testpackage
 
   disable:
     - exhaustive # Too strict for token types

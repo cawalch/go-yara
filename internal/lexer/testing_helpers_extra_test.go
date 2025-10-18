@@ -167,6 +167,7 @@ func Test_containsString(t *testing.T) {
 		}
 	}
 }
+
 // Additional test functions for improved AssertPosition coverage
 
 func TestTestHelper_AssertPosition_EdgeCases(t *testing.T) {
@@ -289,39 +290,38 @@ func TestTestHelper_AssertPosition_EdgeCases(t *testing.T) {
 	}
 }
 
-
 // Additional test functions for improved AssertSingleToken coverage
 
 func TestTestHelper_AssertSingleToken_EdgeCases(t *testing.T) {
 	// Test edge cases for AssertSingleToken - only test cases that should pass
 	tests := []struct {
-		name           string
-		input          string
-		expectedType   token.TokenType
+		name            string
+		input           string
+		expectedType    token.TokenType
 		expectedLiteral string
 	}{
 		{
-			name:           "input with special characters",
-			input:          "{",
-			expectedType:   token.HEX_STRING_LIT,
+			name:            "input with special characters",
+			input:           "{",
+			expectedType:    token.HEX_STRING_LIT,
 			expectedLiteral: "{",
 		},
 		{
-			name:           "input with quotes",
-			input:          "\"hello\"",
-			expectedType:   token.STRING_LIT,
+			name:            "input with quotes",
+			input:           "\"hello\"",
+			expectedType:    token.STRING_LIT,
 			expectedLiteral: "hello",
 		},
 		{
-			name:           "input with regex pattern",
-			input:          "/test/",
-			expectedType:   token.REGEX_LIT,
+			name:            "input with regex pattern",
+			input:           "/test/",
+			expectedType:    token.REGEX_LIT,
 			expectedLiteral: "/test/",
 		},
 		{
-			name:           "input with hex string",
-			input:          "{$a = \"test\"}",
-			expectedType:   token.HEX_STRING_LIT,
+			name:            "input with hex string",
+			input:           "{$a = \"test\"}",
+			expectedType:    token.HEX_STRING_LIT,
 			expectedLiteral: "{$a = \"test\"}",
 		},
 	}
@@ -337,8 +337,8 @@ func TestTestHelper_AssertSingleToken_EdgeCases(t *testing.T) {
 func TestTestHelper_AssertSingleToken_TokenTypeCoverage(t *testing.T) {
 	// Test various token types to ensure comprehensive coverage
 	tests := []struct {
-		input          string
-		expectedType   token.TokenType
+		input           string
+		expectedType    token.TokenType
 		expectedLiteral string
 	}{
 		{"rule", token.RULE, "rule"},

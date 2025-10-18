@@ -12,65 +12,65 @@ func (l *Lexer) NextToken() token.Token {
 
 	switch l.ch() {
 	case '+':
-		return l.makeSimpleToken(token.PLUS, "+")
+		return l.makeSimpleToken(token.PLUS, "+", pos)
 	case '-':
-		return l.makeSimpleToken(token.MINUS, "-")
+		return l.makeSimpleToken(token.MINUS, "-", pos)
 	case '*':
-		return l.makeSimpleToken(token.MULTIPLY, "*")
+		return l.makeSimpleToken(token.MULTIPLY, "*", pos)
 	case '%':
-		return l.makeSimpleToken(token.MODULO, "%")
+		return l.makeSimpleToken(token.MODULO, "%", pos)
 	case ':':
-		return l.makeSimpleToken(token.COLON, ":")
+		return l.makeSimpleToken(token.COLON, ":", pos)
 	case ',':
-		return l.makeSimpleToken(token.COMMA, ",")
+		return l.makeSimpleToken(token.COMMA, ",", pos)
 	case '.':
-		return l.makeSimpleToken(token.DOT, ".")
+		return l.makeSimpleToken(token.DOT, ".", pos)
 	case '(':
-		return l.makeSimpleToken(token.LPAREN, "(")
+		return l.makeSimpleToken(token.LPAREN, "(", pos)
 	case ')':
-		return l.makeSimpleToken(token.RPAREN, ")")
+		return l.makeSimpleToken(token.RPAREN, ")", pos)
 	case '[':
-		return l.makeSimpleToken(token.LBRACKET, "[")
+		return l.makeSimpleToken(token.LBRACKET, "[", pos)
 	case ']':
-		return l.makeSimpleToken(token.RBRACKET, "]")
+		return l.makeSimpleToken(token.RBRACKET, "]", pos)
 	case '#':
-		return l.makeSimpleToken(token.HASH, "#")
+		return l.makeSimpleToken(token.HASH, "#", pos)
 	case '{':
 		return l.handleBraceToken(pos)
 	case '}':
-		return l.makeSimpleToken(token.RBRACE, "}")
+		return l.makeSimpleToken(token.RBRACE, "}", pos)
 	case '=':
 		if l.peekChar() == '=' {
 			l.readChar()
-			return l.makeTwoCharToken(token.EQ, "==")
+			return l.makeTwoCharToken(token.EQ, "==", pos)
 		}
-		return l.makeSimpleToken(token.ASSIGN, "=")
+		return l.makeSimpleToken(token.ASSIGN, "=", pos)
 	case '!':
 		if l.peekChar() == '=' {
 			l.readChar()
-			return l.makeTwoCharToken(token.NEQ, "!=")
+			return l.makeTwoCharToken(token.NEQ, "!=", pos)
 		}
-		return l.makeSimpleToken(token.ILLEGAL, "!")
+		return l.makeSimpleToken(token.ILLEGAL, "!", pos)
 	case '<':
 		if l.peekChar() == '=' {
 			l.readChar()
-			return l.makeTwoCharToken(token.LE, "<=")
+			return l.makeTwoCharToken(token.LE, "<=", pos)
 		}
 		if l.peekChar() == '<' {
 			l.readChar()
-			return l.makeTwoCharToken(token.LEFT_SHIFT, "<<")
+			return l.makeTwoCharToken(token.LEFT_SHIFT, "<<", pos)
 		}
-		return l.makeSimpleToken(token.LT, "<")
+		return l.makeSimpleToken(token.LT, "<", pos)
 	case '>':
 		if l.peekChar() == '=' {
 			l.readChar()
-			return l.makeTwoCharToken(token.GE, ">=")
+			return l.makeTwoCharToken(token.GE, ">=", pos)
 		}
 		if l.peekChar() == '>' {
 			l.readChar()
-			return l.makeTwoCharToken(token.RIGHT_SHIFT, ">>")
+			return l.makeTwoCharToken(token.RIGHT_SHIFT, ">>", pos)
 		}
-		return l.makeSimpleToken(token.GT, ">")
+		return l.makeSimpleToken(token.GT, ">", pos)
 	case '"':
 		return l.handleStringToken(pos)
 	case '/':
@@ -78,17 +78,16 @@ func (l *Lexer) NextToken() token.Token {
 	case '$':
 		return l.handleStringIdentifierToken(pos)
 	case '&':
-		return l.makeSimpleToken(token.BITWISE_AND, "&")
+		return l.makeSimpleToken(token.BITWISE_AND, "&", pos)
 	case '|':
-		return l.makeSimpleToken(token.BITWISE_OR, "|")
+		return l.makeSimpleToken(token.BITWISE_OR, "|", pos)
 	case '^':
-		return l.makeSimpleToken(token.BITWISE_XOR, "^")
+		return l.makeSimpleToken(token.BITWISE_XOR, "^", pos)
 	case '~':
-		return l.makeSimpleToken(token.BITWISE_NOT, "~")
+		return l.makeSimpleToken(token.BITWISE_NOT, "~", pos)
 	case 0:
 		return l.makeToken(token.EOF, "", pos)
 	default:
 		return l.handleDefaultToken(pos)
 	}
 }
-
