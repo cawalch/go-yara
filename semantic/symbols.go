@@ -13,37 +13,41 @@ import (
 type SymbolType int
 
 const (
+	// SymbolRule represents a rule symbol
 	SymbolRule SymbolType = iota
+	// SymbolString represents a string symbol
 	SymbolString
+	// SymbolVariable represents a variable symbol
 	SymbolVariable
+	// SymbolFunction represents a function symbol
 	SymbolFunction
 )
 
 // Symbol represents a symbol in the symbol table
 type Symbol struct {
-	Name      string
-	Type      SymbolType
-	Position  token.Position
-	Node      interface{} // Reference to AST node
-	Scope     *Scope
-	IsGlobal  bool
-	Used      bool // Track if symbol is referenced
+	Name     string
+	Type     SymbolType
+	Position token.Position
+	Node     interface{} // Reference to AST node
+	Scope    *Scope
+	IsGlobal bool
+	Used     bool // Track if symbol is referenced
 }
 
 // Scope represents a scope in the symbol table (global, rule, etc.)
 type Scope struct {
-	Name        string
-	Parent      *Scope
-	Symbols     map[string]*Symbol
-	Children    []*Scope
-	Level       int // Nesting level (0 = global)
+	Name     string
+	Parent   *Scope
+	Symbols  map[string]*Symbol
+	Children []*Scope
+	Level    int // Nesting level (0 = global)
 }
 
 // SymbolTable manages all symbols across different scopes
 type SymbolTable struct {
-	Root      *Scope
-	Current   *Scope
-	Errors    []error
+	Root    *Scope
+	Current *Scope
+	Errors  []error
 }
 
 // NewSymbolTable creates a new symbol table

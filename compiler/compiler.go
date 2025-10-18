@@ -9,15 +9,13 @@ import (
 	"github.com/cawalch/go-yara/internal/lexer"
 	"github.com/cawalch/go-yara/parser"
 	"github.com/cawalch/go-yara/semantic"
-	"github.com/cawalch/go-yara/token"
 )
 
 // Compiler represents the main YARA compiler
 type Compiler struct {
 	// Compilation phases
-	lexer    *lexer.Lexer
-	parser   *parser.Parser
-	analyzer *semantic.Validator
+	parser    *parser.Parser
+	analyzer  *semantic.Validator
 	generator *RuleCompiler
 
 	// Configuration
@@ -37,18 +35,18 @@ type CompilationOptions struct {
 
 // CompilationStats tracks compilation metrics
 type CompilationStats struct {
-	StartTime           time.Time
-	EndTime             time.Time
-	LexerTime           time.Duration
-	ParserTime          time.Duration
-	SemanticTime        time.Duration
-	CodeGenTime         time.Duration
-	TotalTime           time.Duration
-	RulesCompiled       int
-	TotalInstructions    int
-	TotalBytecodeSize   int
-	Errors              []CompilationError
-	Warnings            []CompilationWarning
+	StartTime         time.Time
+	EndTime           time.Time
+	LexerTime         time.Duration
+	ParserTime        time.Duration
+	SemanticTime      time.Duration
+	CodeGenTime       time.Duration
+	TotalTime         time.Duration
+	RulesCompiled     int
+	TotalInstructions int
+	TotalBytecodeSize int
+	Errors            []CompilationError
+	Warnings          []CompilationWarning
 }
 
 // CompilationError represents a compilation error
@@ -98,27 +96,21 @@ func (c *Compiler) CompileSource(source string) (*CompiledProgram, error) {
 		Warnings:  make([]CompilationWarning, 0),
 	}
 
-	// Phase 1: Lexical Analysis (for validation only, parser creates its own lexer)
-	_, err := c.compileLexical(source)
-	if err != nil {
-		return nil, fmt.Errorf("lexical analysis failed: %w", err)
-	}
-
-	// Phase 2: Parsing
+	// Phase 1: Parsing (parser creates its own lexer, no need for separate lexical analysis)
 	program, err := c.compileParse(source)
 	if err != nil {
 		return nil, fmt.Errorf("parsing failed: %w", err)
 	}
 
 	// Phase 3: Semantic Analysis
-	if err := c.compileSemantic(program); err != nil {
-		return nil, fmt.Errorf("semantic analysis failed: %w", err)
+	if semErr := c.compileSemantic(program); semErr != nil {
+		return nil, fmt.Errorf("semantic analysis failed: %w", semErr)
 	}
 
 	// Phase 4: Code Generation
-	compiledProgram, err := c.compileCodeGen(program)
-	if err != nil {
-		return nil, fmt.Errorf("code generation failed: %w", err)
+	compiledProgram, codeGenErr := c.compileCodeGen(program)
+	if codeGenErr != nil {
+		return nil, fmt.Errorf("code generation failed: %w", codeGenErr)
 	}
 
 	c.stats.EndTime = time.Now()
@@ -136,32 +128,6 @@ func (c *Compiler) CompileFile(filename string) (*CompiledProgram, error) {
 	}
 
 	return c.CompileSource(source)
-}
-
-// compileLexical performs lexical analysis
-func (c *Compiler) compileLexical(source string) ([]token.Token, error) {
-	start := time.Now()
-
-	// Create lexer
-	c.lexer = lexer.New(source)
-
-	// Tokenize
-	tokens := make([]token.Token, 0)
-	for {
-		tok := c.lexer.NextToken()
-		tokens = append(tokens, tok)
-
-		if tok.Type == token.EOF {
-			break
-		}
-	}
-
-	c.stats.LexerTime = time.Since(start)
-
-	// Lexer doesn't expose errors directly, so we assume success
-	// In a full implementation, we'd need to check for errors differently
-
-	return tokens, nil
 }
 
 // compileParse performs parsing
@@ -305,7 +271,6 @@ func (c *Compiler) GetOptions() CompilationOptions {
 
 // Reset resets the compiler state
 func (c *Compiler) Reset() {
-	c.lexer = nil
 	c.parser = nil
 	c.analyzer = nil
 	c.generator = nil
@@ -393,7 +358,7 @@ func (c *Compiler) EstimateCompilationTime(sourceSize int) time.Duration {
 	// Rough estimate based on typical compilation speeds
 	// This is a placeholder - real implementation would use historical data
 
-	baseTime := 10 * time.Millisecond // Base overhead
+	baseTime := 10 * time.Millisecond    // Base overhead
 	perByteTime := 100 * time.Nanosecond // Time per source byte
 
 	estimated := baseTime + time.Duration(sourceSize)*perByteTime
@@ -436,16 +401,7 @@ func (c *Compiler) CompileWithProgress(source string, progressCallback func(phas
 		progressCallback("starting", 0)
 	}
 
-	// Lexical analysis
-	if progressCallback != nil {
-		progressCallback("lexical", 10)
-	}
-	_, err := c.compileLexical(source)
-	if err != nil {
-		return nil, err
-	}
-
-	// Parsing
+	// Parsing (parser creates its own lexer)
 	if progressCallback != nil {
 		progressCallback("parsing", 30)
 	}
@@ -458,17 +414,17 @@ func (c *Compiler) CompileWithProgress(source string, progressCallback func(phas
 	if progressCallback != nil {
 		progressCallback("semantic", 60)
 	}
-	if err := c.compileSemantic(program); err != nil {
-		return nil, err
+	if semErr := c.compileSemantic(program); semErr != nil {
+		return nil, semErr
 	}
 
 	// Code generation
 	if progressCallback != nil {
 		progressCallback("codegen", 90)
 	}
-	compiledProgram, err := c.compileCodeGen(program)
-	if err != nil {
-		return nil, err
+	compiledProgram, codeGenErr := c.compileCodeGen(program)
+	if codeGenErr != nil {
+		return nil, codeGenErr
 	}
 
 	if progressCallback != nil {
@@ -481,11 +437,11 @@ func (c *Compiler) CompileWithProgress(source string, progressCallback func(phas
 // GetPhaseDependencies returns the dependencies between compilation phases
 func (c *Compiler) GetPhaseDependencies() map[string][]string {
 	return map[string][]string{
-		"lexical":    {},
-		"parsing":    {"lexical"},
-		"semantic":   {"parsing"},
-		"codegen":    {"semantic"},
-		"optimize":   {"codegen"},
+		"lexical":  {},
+		"parsing":  {"lexical"},
+		"semantic": {"parsing"},
+		"codegen":  {"semantic"},
+		"optimize": {"codegen"},
 	}
 }
 
@@ -509,29 +465,29 @@ func (c *Compiler) ValidateCompilation(program *CompiledProgram) error {
 
 // GetCompilationReport returns a detailed report of the compilation
 func (c *Compiler) GetCompilationReport() string {
-	report := fmt.Sprintf("Go-YARA Compilation Report\n")
-	report += fmt.Sprintf("========================\n\n")
+	report := "Go-YARA Compilation Report\n"
+	report += "========================\n\n"
 	report += fmt.Sprintf("Version: %s\n", c.GetVersion())
 	report += fmt.Sprintf("Target: %s\n", c.options.TargetVersion)
 	report += fmt.Sprintf("Options: Optimizations=%v, Debug=%v, Warnings=%v\n",
 		c.options.EnableOptimizations, c.options.EnableDebugInfo, c.options.EnableWarnings)
-	report += fmt.Sprintf("\n")
+	report += "\n"
 
 	// Timing information
-	report += fmt.Sprintf("Timing:\n")
+	report += "Timing:\n"
 	report += fmt.Sprintf("  Total: %v\n", c.stats.TotalTime)
 	report += fmt.Sprintf("  Lexer: %v\n", c.stats.LexerTime)
 	report += fmt.Sprintf("  Parser: %v\n", c.stats.ParserTime)
 	report += fmt.Sprintf("  Semantic: %v\n", c.stats.SemanticTime)
 	report += fmt.Sprintf("  Code Generation: %v\n", c.stats.CodeGenTime)
-	report += fmt.Sprintf("\n")
+	report += "\n"
 
 	// Results
-	report += fmt.Sprintf("Results:\n")
+	report += "Results:\n"
 	report += fmt.Sprintf("  Rules Compiled: %d\n", c.stats.RulesCompiled)
 	report += fmt.Sprintf("  Total Instructions: %d\n", c.stats.TotalInstructions)
 	report += fmt.Sprintf("  Total Bytecode Size: %d bytes\n", c.stats.TotalBytecodeSize)
-	report += fmt.Sprintf("\n")
+	report += "\n"
 
 	// Errors and warnings
 	if len(c.stats.Errors) > 0 {
@@ -539,7 +495,7 @@ func (c *Compiler) GetCompilationReport() string {
 		for _, err := range c.stats.Errors {
 			report += fmt.Sprintf("  [%s] %s at %d:%d\n", err.Phase, err.Message, err.Line, err.Column)
 		}
-		report += fmt.Sprintf("\n")
+		report += "\n"
 	}
 
 	if len(c.stats.Warnings) > 0 {
@@ -547,7 +503,7 @@ func (c *Compiler) GetCompilationReport() string {
 		for _, warn := range c.stats.Warnings {
 			report += fmt.Sprintf("  [%s] %s at %d:%d\n", warn.Phase, warn.Message, warn.Line, warn.Column)
 		}
-		report += fmt.Sprintf("\n")
+		report += "\n"
 	}
 
 	return report

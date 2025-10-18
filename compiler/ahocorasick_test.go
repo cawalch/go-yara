@@ -1,10 +1,12 @@
 package compiler
 
 import (
+	"fmt"
 	"testing"
 )
 
 // TestACAutomatonBuildTransitionTable tests the transition table building
+// NOTE: BuildTransitionTable is now a no-op, so we just verify it doesn't error
 func TestACAutomatonBuildTransitionTable(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -31,7 +33,7 @@ func TestACAutomatonBuildTransitionTable(t *testing.T) {
 				}
 			}
 
-			// Build transition table
+			// Build transition table (now a no-op)
 			err := ac.BuildTransitionTable()
 
 			if tt.wantError && err == nil {
@@ -43,33 +45,21 @@ func TestACAutomatonBuildTransitionTable(t *testing.T) {
 				return
 			}
 
-			// Verify table was built
-			if !tt.wantError {
-				if ac.TableSize == 0 {
-					t.Errorf("table size is 0")
-				}
-				if len(ac.Transitions) != ac.TableSize {
-					t.Errorf("transitions length %d != table size %d", len(ac.Transitions), ac.TableSize)
-				}
-				if len(ac.MatchTable) != ac.TableSize {
-					t.Errorf("match table length %d != table size %d", len(ac.MatchTable), ac.TableSize)
-				}
-			}
+			// NOTE: Transition table is no longer built, so we just verify no error
 		})
 	}
 }
 
 // TestACAutomatonTableSizeCalculation tests table size calculation
+// NOTE: Table size is no longer calculated since BuildTransitionTable is a no-op
 func TestACAutomatonTableSizeCalculation(t *testing.T) {
 	tests := []struct {
-		name           string
-		numPatterns    int
-		minTableSize   int
-		maxTableSize   int
+		name        string
+		numPatterns int
 	}{
-		{"single_pattern", 1, 512, 65536},
-		{"few_patterns", 5, 512, 65536},
-		{"many_patterns", 100, 25600, 65536},
+		{"single_pattern", 1},
+		{"few_patterns", 5},
+		{"many_patterns", 100},
 	}
 
 	for _, tt := range tests {
@@ -85,19 +75,17 @@ func TestACAutomatonTableSizeCalculation(t *testing.T) {
 				}
 			}
 
-			// Build transition table
+			// Build transition table (now a no-op)
 			err := ac.BuildTransitionTable()
 			if err != nil {
 				t.Errorf("unexpected error: %v", err)
 				return
 			}
 
-			// Verify table size is within expected range
-			if ac.TableSize < tt.minTableSize {
-				t.Errorf("table size %d < min %d", ac.TableSize, tt.minTableSize)
-			}
-			if ac.TableSize > tt.maxTableSize {
-				t.Errorf("table size %d > max %d", ac.TableSize, tt.maxTableSize)
+			// NOTE: Table size is no longer calculated
+			// Just verify the automaton has the expected number of states
+			if len(ac.States) < 1 {
+				t.Errorf("expected at least 1 state (root), got %d", len(ac.States))
 			}
 		})
 	}
@@ -185,6 +173,7 @@ func TestACAutomatonFailureLinks(t *testing.T) {
 }
 
 // TestACAutomatonMatchTable tests match table setup
+// NOTE: Match table is no longer built, so we just verify no error
 func TestACAutomatonMatchTable(t *testing.T) {
 	ac := NewACAutomaton()
 
@@ -198,24 +187,22 @@ func TestACAutomatonMatchTable(t *testing.T) {
 		}
 	}
 
-	// Build transition table
+	// Build transition table (now a no-op)
 	err := ac.BuildTransitionTable()
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 		return
 	}
 
-	// Verify match table entries are valid
-	for i := 0; i < len(ac.MatchTable); i++ {
-		matchID := ac.MatchTable[i]
-		// Match ID should be 0 (no match) or > 0 (valid pattern ID)
-		if matchID < 0 {
-			t.Errorf("invalid match ID %d at index %d", matchID, i)
-		}
+	// NOTE: Match table is no longer built
+	// Just verify the automaton has the expected patterns
+	if ac.StringCount != len(patterns) {
+		t.Errorf("expected %d patterns, got %d", len(patterns), ac.StringCount)
 	}
 }
 
 // TestACAutomatonLargePatternSet tests with many patterns
+// NOTE: Transition table is no longer built, so we just verify patterns are added
 func TestACAutomatonLargePatternSet(t *testing.T) {
 	ac := NewACAutomaton()
 
@@ -230,22 +217,68 @@ func TestACAutomatonLargePatternSet(t *testing.T) {
 		}
 	}
 
-	// Build transition table
+	// Build transition table (now a no-op)
 	err := ac.BuildTransitionTable()
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 		return
 	}
 
-	// Verify table was built successfully
-	if ac.TableSize == 0 {
-		t.Errorf("table size is 0")
+	// Verify patterns were added successfully
+	if ac.StringCount != numPatterns {
+		t.Errorf("expected %d patterns, got %d", numPatterns, ac.StringCount)
 	}
-	if len(ac.Transitions) != ac.TableSize {
-		t.Errorf("transitions length mismatch")
-	}
-	if len(ac.MatchTable) != ac.TableSize {
-		t.Errorf("match table length mismatch")
+	if len(ac.States) < 2 {
+		t.Errorf("expected at least 2 states (root + patterns), got %d", len(ac.States))
 	}
 }
 
+// BenchmarkACAutomatonAddString benchmarks the AddString operation
+func BenchmarkACAutomatonAddString(b *testing.B) {
+	patterns := []string{
+		"test", "pattern", "search", "benchmark", "performance",
+		"hello", "world", "example", "string", "data",
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		ac := NewACAutomaton()
+		for j, pattern := range patterns {
+			ac.AddString(fmt.Sprintf("p%d", j), []byte(pattern), false, false)
+		}
+	}
+}
+
+// BenchmarkACAutomatonAddStringLarge benchmarks AddString with larger patterns
+func BenchmarkACAutomatonAddStringLarge(b *testing.B) {
+	// Create larger patterns
+	patterns := make([]string, 50)
+	for i := 0; i < 50; i++ {
+		patterns[i] = fmt.Sprintf("pattern_%d_with_longer_content_to_simulate_real_world_usage_%d", i, i*2)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		ac := NewACAutomaton()
+		for j, pattern := range patterns {
+			ac.AddString(fmt.Sprintf("p%d", j), []byte(pattern), false, false)
+		}
+	}
+}
+
+// BenchmarkACAutomatonCompile benchmarks the Compile operation
+func BenchmarkACAutomatonCompile(b *testing.B) {
+	patterns := []string{
+		"test", "pattern", "search", "benchmark", "performance",
+		"hello", "world", "example", "string", "data",
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		ac := NewACAutomaton()
+		for j, pattern := range patterns {
+			ac.AddString(fmt.Sprintf("p%d", j), []byte(pattern), false, false)
+		}
+		ac.Compile()
+	}
+}

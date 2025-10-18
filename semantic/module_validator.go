@@ -76,9 +76,9 @@ func (mv *ModuleValidator) isModuleFunction(name string) bool {
 // validateModuleFunction validates a module function call
 func (mv *ModuleValidator) validateModuleFunction(funcName string, pos token.Position) {
 	switch funcName {
-	case "filesize":
+	case filesizeKeyword:
 		mv.validateFilesize(pos)
-	case "entrypoint":
+	case entrypointKeyword:
 		mv.validateEntrypoint(pos)
 	default:
 		// Data type functions (uint32, int16be, etc.)
@@ -122,9 +122,9 @@ func (mv *ModuleValidator) validateDataTypeFunction(funcName string, pos token.P
 // ValidateFunctionCall validates a function call expression
 func (mv *ModuleValidator) ValidateFunctionCall(funcName string, args []ast.Expression, pos token.Position) (*TypeInfo, []error) {
 	switch funcName {
-	case "filesize":
+	case filesizeKeyword:
 		return mv.validateFilesizeCall(args, pos)
-	case "entrypoint":
+	case entrypointKeyword:
 		return mv.validateEntrypointCall(args, pos)
 	default:
 		// Data type functions

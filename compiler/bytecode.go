@@ -64,7 +64,7 @@ const (
 	// Dictionary operations (41-45)
 	OP_IMPORT
 	OP_LOOKUP_DICT
-	OP_JUNDEF    // Not used
+	OP_JUNDEF // Not used
 	OP_JUNDEF_P
 	OP_JNUNDEF
 
@@ -170,15 +170,15 @@ const (
 
 // Opcode categories for classification
 const (
-	OpCategoryControl   = "control"
-	OpCategoryLogical   = "logical"
+	OpCategoryControl    = "control"
+	OpCategoryLogical    = "logical"
 	OpCategoryArithmetic = "arithmetic"
-	OpCategoryStack     = "stack"
-	OpCategoryObject    = "object"
-	OpCategoryString    = "string"
-	OpCategoryJump      = "jump"
-	OpCategoryIterator  = "iterator"
-	OpCategoryTypeFunc  = "type_func"
+	OpCategoryStack      = "stack"
+	OpCategoryObject     = "object"
+	OpCategoryString     = "string"
+	OpCategoryJump       = "jump"
+	OpCategoryIterator   = "iterator"
+	OpCategoryTypeFunc   = "type_func"
 )
 
 // GetCategory returns the category of an opcode
@@ -512,15 +512,25 @@ func (op Opcode) String() string {
 type OperandType uint8
 
 const (
+	// OperandNone represents no operand
 	OperandNone OperandType = iota
+	// OperandImmediate8 represents an 8-bit immediate value
 	OperandImmediate8
+	// OperandImmediate16 represents a 16-bit immediate value
 	OperandImmediate16
+	// OperandImmediate32 represents a 32-bit immediate value
 	OperandImmediate32
+	// OperandImmediate64 represents a 64-bit immediate value
 	OperandImmediate64
+	// OperandRelative8 represents an 8-bit relative offset
 	OperandRelative8
+	// OperandRelative16 represents a 16-bit relative offset
 	OperandRelative16
+	// OperandRelative32 represents a 32-bit relative offset
 	OperandRelative32
+	// OperandAbsolute32 represents a 32-bit absolute address
 	OperandAbsolute32
+	// OperandAbsolute64 represents a 64-bit absolute address
 	OperandAbsolute64
 )
 
@@ -559,38 +569,40 @@ func NewInstructionWithOperand(opcode Opcode, operand Operand, line, pos int) *I
 }
 
 // String returns a string representation of the instruction
-func (inst *Instruction) String() string {
+// formatOperand formats the operand for display
+func (inst *Instruction) formatOperand() string {
 	switch inst.Operand.Type {
 	case OperandNone:
-		return fmt.Sprintf("%s", inst.Opcode.String())
+		return ""
 	case OperandImmediate8:
-		return fmt.Sprintf("%s 0x%02X", inst.Opcode.String(), uint8(inst.Operand.Value))
+		return fmt.Sprintf(" 0x%02X", uint8(inst.Operand.Value))
 	case OperandImmediate16:
-		return fmt.Sprintf("%s 0x%04X", inst.Opcode.String(), uint16(inst.Operand.Value))
+		return fmt.Sprintf(" 0x%04X", uint16(inst.Operand.Value))
 	case OperandImmediate32:
-		return fmt.Sprintf("%s 0x%08X", inst.Opcode.String(), uint32(inst.Operand.Value))
+		return fmt.Sprintf(" 0x%08X", uint32(inst.Operand.Value))
 	case OperandImmediate64:
-		return fmt.Sprintf("%s 0x%016X", inst.Opcode.String(), inst.Operand.Value)
+		return fmt.Sprintf(" 0x%016X", inst.Operand.Value)
 	case OperandRelative8:
-		return fmt.Sprintf("%s %+d", inst.Opcode.String(), int8(inst.Operand.Value))
+		return fmt.Sprintf(" %+d", int8(inst.Operand.Value))
 	case OperandRelative16:
-		return fmt.Sprintf("%s %+d", inst.Opcode.String(), int16(inst.Operand.Value))
+		return fmt.Sprintf(" %+d", int16(inst.Operand.Value))
 	case OperandRelative32:
-		return fmt.Sprintf("%s %+d", inst.Opcode.String(), int32(inst.Operand.Value))
+		return fmt.Sprintf(" %+d", int32(inst.Operand.Value))
 	case OperandAbsolute32:
-		return fmt.Sprintf("%s @0x%08X", inst.Opcode.String(), uint32(inst.Operand.Value))
+		return fmt.Sprintf(" @0x%08X", uint32(inst.Operand.Value))
 	case OperandAbsolute64:
-		return fmt.Sprintf("%s @0x%016X", inst.Opcode.String(), inst.Operand.Value)
+		return fmt.Sprintf(" @0x%016X", inst.Operand.Value)
 	default:
-		return fmt.Sprintf("%s (invalid operand type %d)", inst.Opcode.String(), inst.Operand.Type)
+		return fmt.Sprintf(" (invalid operand type %d)", inst.Operand.Type)
 	}
 }
 
-// Bytes returns the binary representation of the instruction
-func (inst *Instruction) Bytes() []byte {
-	buf := make([]byte, 1, 9) // Start with capacity for opcode + 8-byte operand
-	buf[0] = byte(inst.Opcode)
+func (inst *Instruction) String() string {
+	return inst.Opcode.String() + inst.formatOperand()
+}
 
+// appendOperand appends the operand bytes to the buffer
+func (inst *Instruction) appendOperand(buf []byte) []byte {
 	switch inst.Operand.Type {
 	case OperandNone:
 		// No operand
@@ -613,8 +625,20 @@ func (inst *Instruction) Bytes() []byte {
 	case OperandAbsolute64:
 		buf = binary.LittleEndian.AppendUint64(buf, inst.Operand.Value)
 	}
-
 	return buf
+}
+
+// Bytes returns the binary representation of the instruction
+func (inst *Instruction) Bytes() []byte {
+	buf := make([]byte, 1, 9) // Start with capacity for opcode + 8-byte operand
+	buf[0] = byte(inst.Opcode)
+	return inst.appendOperand(buf)
+}
+
+// AppendBytes appends the binary representation of the instruction to dst and returns dst
+func (inst *Instruction) AppendBytes(dst []byte) []byte {
+	dst = append(dst, byte(inst.Opcode))
+	return inst.appendOperand(dst)
 }
 
 // Size returns the size of the instruction in bytes
@@ -673,23 +697,27 @@ func (inst *Instruction) HasAbsoluteOperand() bool {
 		inst.Operand.Type == OperandAbsolute64
 }
 
-// Operand classification functions
+// IsIntOp returns true if the opcode is an integer operation.
 func IsIntOp(op Opcode) bool { return op >= OP_INT_BEGIN && op <= OP_INT_END }
+
+// IsDblOp returns true if the opcode is a double operation.
 func IsDblOp(op Opcode) bool { return op >= OP_DBL_BEGIN && op <= OP_DBL_END }
+
+// IsStrOp returns true if the opcode is a string operation.
 func IsStrOp(op Opcode) bool { return op >= OP_STR_BEGIN && op <= OP_STR_END }
 
-// YR_UNDEFINED constant for undefined values
-const YR_UNDEFINED uint64 = 0xFFFABADAFABADAFF
+// YRUndefined constant for undefined values
+const YRUndefined uint64 = 0xFFFABADAFABADAFF
 
 // IsUndefined checks if a value is undefined
 func IsUndefined(x uint64) bool {
-	return x == YR_UNDEFINED
+	return x == YRUndefined
 }
 
 // Operation performs an operation on two operands (handling undefined values)
 func Operation(operator func(uint64, uint64) uint64, op1, op2 uint64) uint64 {
 	if IsUndefined(op1) || IsUndefined(op2) {
-		return YR_UNDEFINED
+		return YRUndefined
 	}
 	return operator(op1, op2)
 }

@@ -3,16 +3,19 @@ package compiler
 
 import (
 	"fmt"
+
+	"github.com/cawalch/go-yara/regex"
 )
 
 // ACState represents a state in the Aho-Corasick automaton
 type ACState struct {
-	Depth      int               // Depth in the trie
-	Input      byte              // Input symbol that leads to this state
-	Children   map[byte]*ACState // Child states (input -> state)
-	Failure    *ACState          // Failure link for fallback
-	Output     []int             // String indices that match at this state
-	TableSlot  int               // Slot in transition table
+	Depth      int      // Depth in the trie
+	Input      byte     // Input symbol that leads to this state
+	FirstChild *ACState // First child in linked list (replaces map)
+	Siblings   *ACState // Next sibling in linked list
+	Failure    *ACState // Failure link for fallback
+	Output     []int    // String indices that match at this state (nil until needed)
+	TableSlot  int      // Slot in transition table
 }
 
 // ACMatch represents a match found in the automaton
@@ -24,39 +27,43 @@ type ACMatch struct {
 
 // ACAutomaton represents the complete Aho-Corasick automaton
 type ACAutomaton struct {
-	Root         *ACState          // Root state
-	States       []*ACState        // All states in the automaton
-	StringCount  int               // Number of strings added
-	Transitions  []ACTransition    // Transition table
-	MatchTable   []uint32          // Match table
-	TableSize    int               // Size of transition table
-	Bitmask      []uint32          // Bitmask for transition table optimization
-	Strings      []ACStringInfo    // Information about added strings
+	Root        *ACState       // Root state
+	States      []*ACState     // All states in the automaton
+	StringCount int            // Number of strings added
+	Transitions []ACTransition // Transition table
+	MatchTable  []uint32       // Match table
+	TableSize   int            // Size of transition table
+	Bitmask     []uint32       // Bitmask for transition table optimization
+	Strings     []ACStringInfo // Information about added strings
 }
 
-// ACStringInfo holds information about a string added to the automaton
+ // ACStringInfo holds information about a string added to the automaton
 type ACStringInfo struct {
 	Identifier string
 	Length     int
 	IsHex      bool
 	IsRegex    bool
 	Data       []byte
+	Flags      regex.Flags
 }
 
 // ACTransition represents a transition in the transition table
 type ACTransition uint32
 
 const (
-	// Transition encoding bits
-	ACStateIndexBits  = 23
-	ACOffsetBits      = 9
-	ACSlotOffsetBits  = 9
+	// ACStateIndexBits is the number of bits used for state index encoding
+	ACStateIndexBits = 23
+	// ACOffsetBits is the number of bits used for offset encoding
+	ACOffsetBits = 9
+	// ACSlotOffsetBits is the number of bits used for slot offset encoding
+	ACSlotOffsetBits = 9
 
-	// Masks
+	// ACStateIndexMask is the mask for extracting state index
 	ACStateIndexMask = (1 << ACStateIndexBits) - 1
-	ACOffsetMask     = (1 << ACOffsetBits) - 1
+	// ACOffsetMask is the mask for extracting offset
+	ACOffsetMask = (1 << ACOffsetBits) - 1
 
-	// Maximum table size
+	// ACMaxTableSize is the maximum size of the transition table
 	ACMaxTableSize = 1 << 16
 )
 
@@ -79,12 +86,13 @@ func (t ACTransition) GetOffset() uint32 {
 // NewACAutomaton creates a new Aho-Corasick automaton
 func NewACAutomaton() *ACAutomaton {
 	root := &ACState{
-		Depth:    0,
-		Input:    0,
-		Children: make(map[byte]*ACState),
-		Failure:  nil,
-		Output:   make([]int, 0),
-		TableSlot: 0,
+		Depth:      0,
+		Input:      0,
+		FirstChild: nil,
+		Siblings:   nil,
+		Failure:    nil,
+		Output:     nil, // Lazy allocation - only allocate when needed
+		TableSlot:  0,
 	}
 
 	return &ACAutomaton{
@@ -99,64 +107,125 @@ func NewACAutomaton() *ACAutomaton {
 	}
 }
 
-// AddString adds a string pattern to the automaton
-func (ac *ACAutomaton) AddString(identifier string, data []byte, isHex, isRegex bool) error {
-	if len(data) == 0 {
-		return fmt.Errorf("empty pattern")
+// ReserveStrings ensures capacity for at least n string infos to avoid slice growth
+func (ac *ACAutomaton) ReserveStrings(n int) {
+	if n <= 0 {
+		return
 	}
+	if cap(ac.Strings) < n {
+		newSlice := make([]ACStringInfo, len(ac.Strings), n)
+		copy(newSlice, ac.Strings)
+		ac.Strings = newSlice
+	}
+}
 
-	// Store string information
-	ac.Strings = append(ac.Strings, ACStringInfo{
-		Identifier: identifier,
-		Length:     len(data),
-		IsHex:      isHex,
-		IsRegex:    isRegex,
-		Data:       make([]byte, len(data)),
-	})
-	copy(ac.Strings[ac.StringCount].Data, data)
+// ReserveStates ensures capacity for at least n states to avoid slice growth
+func (ac *ACAutomaton) ReserveStates(n int) {
+	if n <= 0 {
+		return
+	}
+	if cap(ac.States) < n {
+		newSlice := make([]*ACState, len(ac.States), n)
+		copy(newSlice, ac.States)
+		ac.States = newSlice
+	}
+}
 
-	stringIndex := ac.StringCount
-	ac.StringCount++
-
-	// Add the string to the trie
-	current := ac.Root
-	depth := 0
-
-	for _, b := range data {
-		depth++
-		if next, exists := current.Children[b]; exists {
-			current = next
-		} else {
-			// Create new state
-			newState := &ACState{
-				Depth:    depth,
-				Input:    b,
-				Children: make(map[byte]*ACState),
-				Failure:  nil,
-				Output:   make([]int, 0),
-				TableSlot: 0,
-			}
-			current.Children[b] = newState
-			ac.States = append(ac.States, newState)
-			current = newState
+// findChild finds a child state with the given input byte
+func (state *ACState) findChild(input byte) *ACState {
+	child := state.FirstChild
+	for child != nil {
+		if child.Input == input {
+			return child
 		}
+		child = child.Siblings
 	}
-
-	// Add string index to output at final state
-	current.Output = append(current.Output, stringIndex)
-
 	return nil
 }
+
+// addChild adds a new child state with the given input byte
+func (state *ACState) addChild(newChild *ACState) {
+	newChild.Siblings = state.FirstChild
+	state.FirstChild = newChild
+}
+
+  // AddString adds a string pattern to the automaton (backwards-compatible signature).
+ func (ac *ACAutomaton) AddString(identifier string, data []byte, isHex, isRegex bool) error {
+ 	if len(data) == 0 {
+ 		return fmt.Errorf("empty pattern")
+ 	}
+ 
+ 	// Store string information (defer data copy to reduce allocations)
+ 	ac.Strings = append(ac.Strings, ACStringInfo{
+ 		Identifier: identifier,
+ 		Length:     len(data),
+ 		IsHex:      isHex,
+ 		IsRegex:    isRegex,
+ 		Data:       data, // Store reference, copy only if needed
+ 		Flags:      0,
+ 	})
+ 
+ 	stringIndex := ac.StringCount
+ 	ac.StringCount++
+ 
+ 	// Add the string to the trie
+ 	current := ac.Root
+ 	depth := 0
+ 
+ 	for _, b := range data {
+ 		depth++
+ 		next := current.findChild(b)
+ 		if next != nil {
+ 			current = next
+ 		} else {
+ 			// Create new state (Output is nil until needed)
+ 			newState := &ACState{
+ 				Depth:      depth,
+ 				Input:      b,
+ 				FirstChild: nil,
+ 				Siblings:   nil,
+ 				Failure:    nil,
+ 				Output:     nil, // Lazy allocation
+ 				TableSlot:  0,
+ 			}
+ 			current.addChild(newState)
+ 			ac.States = append(ac.States, newState)
+ 			current = newState
+ 		}
+ 	}
+ 
+ 	// Add string index to output at final state (allocate on first use)
+ 	if current.Output == nil {
+ 		current.Output = make([]int, 0, 1) // Pre-allocate with capacity 1
+ 	}
+ 	current.Output = append(current.Output, stringIndex)
+ 
+ 	return nil
+ }
+ 
+ // AddStringWithFlags adds a string and records regex VM flags alongside metadata.
+ func (ac *ACAutomaton) AddStringWithFlags(identifier string, data []byte, isHex, isRegex bool, flags regex.Flags) error {
+ 	if err := ac.AddString(identifier, data, isHex, isRegex); err != nil {
+ 		return err
+ 	}
+ 	idx := ac.StringCount - 1
+ 	if idx >= 0 && idx < len(ac.Strings) {
+ 		ac.Strings[idx].Flags = flags
+ 	}
+ 	return nil
+ }
 
 // BuildFailureLinks builds the failure links for the automaton
 func (ac *ACAutomaton) BuildFailureLinks() error {
 	// Use BFS to build failure links
-	queue := make([]*ACState, 0)
+	queue := make([]*ACState, 0, len(ac.States))
 
 	// Start with root's children
-	for _, child := range ac.Root.Children {
+	child := ac.Root.FirstChild
+	for child != nil {
 		child.Failure = ac.Root
 		queue = append(queue, child)
+		child = child.Siblings
 	}
 
 	for len(queue) > 0 {
@@ -164,26 +233,35 @@ func (ac *ACAutomaton) BuildFailureLinks() error {
 		queue = queue[1:]
 
 		// Process children of current state
-		for input, child := range current.Children {
-			queue = append(queue, child)
+		childNode := current.FirstChild
+		for childNode != nil {
+			queue = append(queue, childNode)
 
 			// Find failure link for this child
 			failure := current.Failure
 			for failure != nil {
-				if next, exists := failure.Children[input]; exists {
-					child.Failure = next
+				next := failure.findChild(childNode.Input)
+				if next != nil {
+					childNode.Failure = next
 
-					// Inherit output from failure state
-					child.Output = append(child.Output, next.Output...)
+					// Inherit output from failure state (only if failure state has output)
+					if next.Output != nil {
+						if childNode.Output == nil {
+							childNode.Output = make([]int, 0, len(next.Output))
+						}
+						childNode.Output = append(childNode.Output, next.Output...)
+					}
 					break
 				}
 				failure = failure.Failure
 			}
 
 			// If no failure link found, point to root
-			if child.Failure == nil {
-				child.Failure = ac.Root
+			if childNode.Failure == nil {
+				childNode.Failure = ac.Root
 			}
+
+			childNode = childNode.Siblings
 		}
 	}
 
@@ -192,11 +270,13 @@ func (ac *ACAutomaton) BuildFailureLinks() error {
 
 // OptimizeFailureLinks removes unnecessary failure links for better performance
 func (ac *ACAutomaton) OptimizeFailureLinks() error {
-	queue := make([]*ACState, 0)
+	queue := make([]*ACState, 0, len(ac.States))
 
 	// Start with root's children
-	for _, child := range ac.Root.Children {
+	child := ac.Root.FirstChild
+	for child != nil {
 		queue = append(queue, child)
+		child = child.Siblings
 	}
 
 	for len(queue) > 0 {
@@ -211,8 +291,10 @@ func (ac *ACAutomaton) OptimizeFailureLinks() error {
 		}
 
 		// Add children to queue
-		for _, child := range current.Children {
-			queue = append(queue, child)
+		childNode := current.FirstChild
+		for childNode != nil {
+			queue = append(queue, childNode)
+			childNode = childNode.Siblings
 		}
 	}
 
@@ -221,29 +303,48 @@ func (ac *ACAutomaton) OptimizeFailureLinks() error {
 
 // transitionsSubset checks if s2's transitions are a subset of s1's transitions
 func (ac *ACAutomaton) transitionsSubset(s1, s2 *ACState) bool {
-	// Create a set of inputs for s1
-	s1Inputs := make(map[byte]bool)
-	for input := range s1.Children {
-		s1Inputs[input] = true
+	// Create a bitmask for s1's inputs (more efficient than map)
+	s1Inputs := [32]byte{} // 256 bits for all possible byte values
+
+	child := s1.FirstChild
+	for child != nil {
+		byteIdx := child.Input / 8
+		bitIdx := child.Input % 8
+		s1Inputs[byteIdx] |= 1 << bitIdx
+		child = child.Siblings
 	}
 
 	// Check if all s2 inputs exist in s1
-	for input := range s2.Children {
-		if !s1Inputs[input] {
+	child = s2.FirstChild
+	for child != nil {
+		byteIdx := child.Input / 8
+		bitIdx := child.Input % 8
+		if (s1Inputs[byteIdx] & (1 << bitIdx)) == 0 {
 			return false
 		}
+		child = child.Siblings
 	}
 
 	return true
 }
 
 // BuildTransitionTable builds the optimized transition table
+// NOTE: This is now a no-op as the transition table is not used at runtime.
+// The method is kept for backward compatibility.
 func (ac *ACAutomaton) BuildTransitionTable() error {
-	// Validate we have states to process
 	if len(ac.States) == 0 {
 		return fmt.Errorf("no states in automaton")
 	}
+	// No-op: transition table is not used at runtime
+	return nil
+}
 
+// OLD IMPLEMENTATION (kept for reference, disabled):
+// The following code was the original implementation that built the transition table.
+// It is no longer used at runtime, but kept for reference.
+// To re-enable, uncomment the code below and remove the no-op implementation above.
+/*
+func (ac *ACAutomaton) BuildTransitionTable() error {
 	// Calculate and validate table size
 	if err := ac.calculateTableSize(); err != nil {
 		return err
@@ -263,126 +364,7 @@ func (ac *ACAutomaton) BuildTransitionTable() error {
 
 	return nil
 }
-
-// calculateTableSize calculates and validates the required table size
-func (ac *ACAutomaton) calculateTableSize() error {
-	numStates := len(ac.States)
-	const bytesPerState = 256
-
-	// Check for overflow before multiplication
-	if numStates > ACMaxTableSize/bytesPerState {
-		return fmt.Errorf("too many states: %d states would require %d table entries, max is %d",
-			numStates, numStates*bytesPerState, ACMaxTableSize)
-	}
-
-	requiredSize := numStates * bytesPerState
-	if requiredSize < 512 {
-		requiredSize = 512
-	}
-	if requiredSize > ACMaxTableSize {
-		requiredSize = ACMaxTableSize
-	}
-
-	ac.TableSize = requiredSize
-	return nil
-}
-
-// assignStateSlots assigns indices to all states
-func (ac *ACAutomaton) assignStateSlots() map[*ACState]int {
-	stateSlots := make(map[*ACState]int)
-	for i, state := range ac.States {
-		stateSlots[state] = i
-	}
-	return stateSlots
-}
-
-// buildStateTransitions builds transition entries for all states
-func (ac *ACAutomaton) buildStateTransitions(stateSlots map[*ACState]int) error {
-	const bytesPerState = 256
-
-	for stateIdx, state := range ac.States {
-		// Validate state index is within bounds
-		if stateIdx < 0 || stateIdx >= ac.TableSize {
-			return fmt.Errorf("invalid state index %d, table size %d", stateIdx, ac.TableSize)
-		}
-
-		// Set failure link and match table entry
-		if err := ac.setStateFailureAndMatch(stateIdx, state, stateSlots); err != nil {
-			return err
-		}
-
-		// Set up transitions for children
-		if err := ac.setStateChildren(stateIdx, state, stateSlots, bytesPerState); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// setStateFailureAndMatch sets the failure link and match table entry for a state
-func (ac *ACAutomaton) setStateFailureAndMatch(stateIdx int, state *ACState, stateSlots map[*ACState]int) error {
-	var failureSlot int
-	if state.Failure != nil {
-		if fs, ok := stateSlots[state.Failure]; ok {
-			failureSlot = fs
-		} else {
-			// Fallback to root if failure state not found
-			failureSlot = 0
-		}
-	}
-	ac.Transitions[stateIdx] = ACMakeTransition(uint32(failureSlot), 0)
-
-	// Set match table entry
-	if len(state.Output) > 0 {
-		ac.MatchTable[stateIdx] = uint32(state.Output[0]) + 1
-	} else {
-		ac.MatchTable[stateIdx] = 0
-	}
-
-	return nil
-}
-
-// setStateChildren sets up transitions for all children of a state
-func (ac *ACAutomaton) setStateChildren(stateIdx int, state *ACState, stateSlots map[*ACState]int, bytesPerState int) error {
-	for input, child := range state.Children {
-		childSlot, ok := stateSlots[child]
-		if !ok {
-			return fmt.Errorf("child state not allocated")
-		}
-
-		// Validate child slot is within bounds
-		if childSlot < 0 || childSlot >= ac.TableSize {
-			return fmt.Errorf("invalid child slot %d for input %d, table size %d", childSlot, input, ac.TableSize)
-		}
-
-		// Calculate and validate transition index
-		if err := ac.setTransition(stateIdx, int(input), childSlot, bytesPerState); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// setTransition sets a single transition in the table
-func (ac *ACAutomaton) setTransition(stateIdx, input, childSlot, bytesPerState int) error {
-	// Check for overflow before calculation
-	if stateIdx > (ac.TableSize-1)/bytesPerState {
-		return fmt.Errorf("state index %d would cause transition index overflow with table size %d", stateIdx, ac.TableSize)
-	}
-
-	transitionIndex := stateIdx*bytesPerState + input
-	if transitionIndex < 0 || transitionIndex >= ac.TableSize {
-		return fmt.Errorf("transition index out of bounds: %d (state=%d, input=%d), table size %d",
-			transitionIndex, stateIdx, input, ac.TableSize)
-	}
-
-	ac.Transitions[transitionIndex] = ACMakeTransition(uint32(childSlot), uint32(input))
-	return nil
-}
-
-
+*/
 
 // Compile compiles the automaton into an optimized form
 func (ac *ACAutomaton) Compile() error {
@@ -418,14 +400,15 @@ func (ac *ACAutomaton) Search(data []byte) []ACMatch {
 	for i, b := range data {
 		// Follow transitions until we can
 		for {
-			if next, exists := state.Children[b]; exists {
+			next := state.findChild(b)
+			if next != nil {
 				state = next
 				break
-			} else if state == ac.Root {
-				break
-			} else {
-				state = state.Failure
 			}
+			if state == ac.Root {
+				break
+			}
+			state = state.Failure
 		}
 
 		// Check for matches at current state
@@ -444,13 +427,15 @@ func (ac *ACAutomaton) Search(data []byte) []ACMatch {
 }
 
 // GetTransitionTable returns the compiled transition table
+// NOTE: Returns nil as transition table is not used at runtime
 func (ac *ACAutomaton) GetTransitionTable() []ACTransition {
-	return ac.Transitions
+	return nil
 }
 
 // GetMatchTable returns the compiled match table
+// NOTE: Returns nil as match table is not used at runtime
 func (ac *ACAutomaton) GetMatchTable() []uint32 {
-	return ac.MatchTable
+	return nil
 }
 
 // GetTableSize returns the size of the transition table
@@ -480,8 +465,16 @@ func (ac *ACAutomaton) PrintDebug() {
 
 	fmt.Printf("\nStates:\n")
 	for i, state := range ac.States {
+		// Count children
+		childCount := 0
+		child := state.FirstChild
+		for child != nil {
+			childCount++
+			child = child.Siblings
+		}
+
 		fmt.Printf("  State %d: depth=%d, children=%d, output=%v\n",
-			i, state.Depth, len(state.Children), state.Output)
+			i, state.Depth, childCount, state.Output)
 		if state.Failure != nil {
 			// Find failure state index
 			failureIndex := -1
@@ -526,8 +519,10 @@ func (ac *ACAutomaton) Validate() error {
 		}
 		visited[state] = true
 
-		for _, child := range state.Children {
+		child := state.FirstChild
+		for child != nil {
 			queue = append(queue, child)
+			child = child.Siblings
 		}
 	}
 
@@ -535,17 +530,14 @@ func (ac *ACAutomaton) Validate() error {
 		return fmt.Errorf("not all states are reachable")
 	}
 
-	// Check that transition table is properly sized
-	if len(ac.Transitions) == 0 && ac.StringCount > 0 {
-		return fmt.Errorf("transition table not built")
-	}
-
+	// NOTE: Transition table validation removed - table is not used at runtime
 	return nil
 }
 
 // Reset clears the automaton for reuse
 func (ac *ACAutomaton) Reset() {
-	ac.Root.Children = make(map[byte]*ACState)
+	ac.Root.FirstChild = nil
+	ac.Root.Siblings = nil
 	ac.States = []*ACState{ac.Root}
 	ac.StringCount = 0
 	ac.Strings = ac.Strings[:0]
@@ -559,12 +551,13 @@ func (ac *ACAutomaton) Reset() {
 func (ac *ACAutomaton) Clone() *ACAutomaton {
 	newAC := &ACAutomaton{
 		Root: &ACState{
-			Depth:    ac.Root.Depth,
-			Input:    ac.Root.Input,
-			Children: make(map[byte]*ACState),
-			Failure:  nil, // Will be set during compilation
-			Output:   make([]int, len(ac.Root.Output)),
-			TableSlot: ac.Root.TableSlot,
+			Depth:      ac.Root.Depth,
+			Input:      ac.Root.Input,
+			FirstChild: nil,
+			Siblings:   nil,
+			Failure:    nil, // Will be set during compilation
+			Output:     make([]int, len(ac.Root.Output)),
+			TableSlot:  ac.Root.TableSlot,
 		},
 		States:      make([]*ACState, 0),
 		StringCount: ac.StringCount,

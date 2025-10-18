@@ -1,6 +1,8 @@
 # Build artifacts and test outputs
 *.out
 *.test
+coverage.out
+coverage.html
 
 # Benchmarks and profiling data
 benchmarks/
@@ -29,4 +31,4 @@ docs/PROFILING.md
 .Trashes
 ehthumbs.db
 Thumbs.db
-
+yara

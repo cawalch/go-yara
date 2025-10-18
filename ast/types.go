@@ -6,7 +6,9 @@ import "github.com/cawalch/go-yara/token"
 type Modifier int
 
 const (
+	// ModifierPrivate marks a rule as private
 	ModifierPrivate Modifier = iota
+	// ModifierGlobal marks a rule as global
 	ModifierGlobal
 )
 
@@ -20,13 +22,21 @@ type StringModifier struct {
 type StringModifierType int
 
 const (
+	// StringModifierNocase makes string matching case-insensitive
 	StringModifierNocase StringModifierType = iota
+	// StringModifierWide matches wide (UTF-16) strings
 	StringModifierWide
+	// StringModifierASCII matches ASCII strings
 	StringModifierASCII
+	// StringModifierFullword matches full words only
 	StringModifierFullword
+	// StringModifierPrivate marks string as private
 	StringModifierPrivate
+	// StringModifierXor applies XOR encoding
 	StringModifierXor
+	// StringModifierBase64 applies Base64 encoding
 	StringModifierBase64
+	// StringModifierBase64Wide applies Base64 encoding to wide strings
 	StringModifierBase64Wide
 )
 
@@ -42,9 +52,14 @@ type TextString struct {
 	Value string
 }
 
-func (t *TextString) node()                    {}
+func (t *TextString) node() {}
+
+// Position returns the position of the TextString node
 func (t *TextString) Position() token.Position { return t.Pos }
-func (t *TextString) pattern()                 {}
+
+func (t *TextString) pattern() {}
+
+// Accept implements the Visitor pattern for TextString
 func (t *TextString) Accept(v Visitor) interface{} {
 	return v.VisitTextString(t)
 }
@@ -55,9 +70,14 @@ type HexString struct {
 	Value string
 }
 
-func (h *HexString) node()                    {}
+func (h *HexString) node() {}
+
+// Position returns the position of the HexString node
 func (h *HexString) Position() token.Position { return h.Pos }
-func (h *HexString) pattern()                 {}
+
+func (h *HexString) pattern() {}
+
+// Accept implements the Visitor pattern for HexString
 func (h *HexString) Accept(v Visitor) interface{} {
 	return v.VisitHexString(h)
 }
@@ -68,9 +88,14 @@ type RegexPattern struct {
 	Value string
 }
 
-func (r *RegexPattern) node()                    {}
+func (r *RegexPattern) node() {}
+
+// Position returns the position of the RegexPattern node
 func (r *RegexPattern) Position() token.Position { return r.Pos }
-func (r *RegexPattern) pattern()                 {}
+
+func (r *RegexPattern) pattern() {}
+
+// Accept implements the Visitor pattern for RegexPattern
 func (r *RegexPattern) Accept(v Visitor) interface{} {
 	return v.VisitRegexPattern(r)
 }

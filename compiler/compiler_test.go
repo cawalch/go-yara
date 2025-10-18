@@ -267,11 +267,11 @@ func TestRuleCompiler(t *testing.T) {
 
 	// Create a simple test rule
 	rule := &ast.Rule{
-		Pos:   token.Position{Line: 1, Column: 1},
-		Name:  "test_rule",
+		Pos:  token.Position{Line: 1, Column: 1},
+		Name: "test_rule",
 		Strings: []*ast.String{
 			{
-				Pos:       token.Position{Line: 2, Column: 1},
+				Pos:        token.Position{Line: 2, Column: 1},
 				Identifier: "$s1",
 				Pattern: &ast.TextString{
 					Pos:   token.Position{Line: 2, Column: 5},
@@ -394,8 +394,8 @@ func TestOpcodeClassification(t *testing.T) {
 
 // TestUndefinedValues tests undefined value handling
 func TestUndefinedValues(t *testing.T) {
-	if !IsUndefined(YR_UNDEFINED) {
-		t.Error("YR_UNDEFINED should be recognized as undefined")
+	if !IsUndefined(YRUndefined) {
+		t.Error("YRUndefined should be recognized as undefined")
 	}
 
 	if IsUndefined(0) {
@@ -407,12 +407,12 @@ func TestUndefinedValues(t *testing.T) {
 	}
 
 	// Test operation with undefined values
-	result := Operation(func(a, b uint64) uint64 { return a + b }, YR_UNDEFINED, 5)
+	result := Operation(func(a, b uint64) uint64 { return a + b }, YRUndefined, 5)
 	if !IsUndefined(result) {
 		t.Error("Operation with undefined operand should return undefined")
 	}
 
-	result = Operation(func(a, b uint64) uint64 { return a + b }, 5, YR_UNDEFINED)
+	result = Operation(func(a, b uint64) uint64 { return a + b }, 5, YRUndefined)
 	if !IsUndefined(result) {
 		t.Error("Operation with undefined operand should return undefined")
 	}
@@ -520,11 +520,11 @@ func TestCompiledRuleMemoryUsage(t *testing.T) {
 	rc := NewRuleCompiler()
 
 	rule := &ast.Rule{
-		Pos:   token.Position{Line: 1, Column: 1},
-		Name:  "memory_test",
+		Pos:  token.Position{Line: 1, Column: 1},
+		Name: "memory_test",
 		Strings: []*ast.String{
 			{
-				Pos:       token.Position{Line: 2, Column: 1},
+				Pos:        token.Position{Line: 2, Column: 1},
 				Identifier: "$s1",
 				Pattern: &ast.TextString{
 					Pos:   token.Position{Line: 2, Column: 5},
@@ -695,10 +695,8 @@ rule test_rule {
 		t.Error("Total time should be greater than 0")
 	}
 
-	if stats.LexerTime == 0 {
-		t.Error("Lexer time should be greater than 0")
-	}
-
+	// LexerTime is no longer tracked separately (parser creates its own lexer)
+	// Just verify ParserTime is set
 	if stats.ParserTime == 0 {
 		t.Error("Parser time should be greater than 0")
 	}
@@ -875,8 +873,8 @@ func TestRegexPatternCompilation(t *testing.T) {
 // TestAtomExtraction tests atom extraction from patterns
 func TestAtomExtraction(t *testing.T) {
 	tests := []struct {
-		name     string
-		pattern  ast.Pattern
+		name      string
+		pattern   ast.Pattern
 		modifiers []ast.StringModifier
 		wantAtoms int
 	}{
@@ -1738,11 +1736,11 @@ func TestStringCompilerApplyNocaseModifier(t *testing.T) {
 	sc := NewStringCompiler(emitter)
 
 	tests := []struct {
-		name     string
-		input    []byte
-		isWide   bool
-		wantLen  int
-		wantErr  bool
+		name    string
+		input   []byte
+		isWide  bool
+		wantLen int
+		wantErr bool
 	}{
 		{
 			name:    "ascii_text",
@@ -1783,7 +1781,7 @@ func TestStringCompilerOptimizeWidePattern(t *testing.T) {
 		{
 			name:    "wide_pattern_with_nulls",
 			pattern: []byte{0x68, 0x00, 0x65, 0x00, 0x6c, 0x00, 0x6c, 0x00, 0x6f, 0x00}, // "hello" in UTF-16LE
-			wantLen: 10, // All characters are non-null
+			wantLen: 10,                                                                 // All characters are non-null
 		},
 		{
 			name:    "empty_pattern",
@@ -2698,38 +2696,41 @@ func TestACTransitionGetOffset(t *testing.T) {
 }
 
 // TestACAutomatonGetTransitionTable tests GetTransitionTable method
+// NOTE: Transition table is no longer built, so this returns nil
 func TestACAutomatonGetTransitionTable(t *testing.T) {
 	ac := NewACAutomaton()
 	ac.AddString("test", []byte("test"), false, false)
 	ac.Compile()
 
 	table := ac.GetTransitionTable()
-	if table == nil {
-		t.Errorf("GetTransitionTable() returned nil")
+	if table != nil {
+		t.Errorf("GetTransitionTable() returned %v, want nil", table)
 	}
 }
 
 // TestACAutomatonGetMatchTable tests GetMatchTable method
+// NOTE: Match table is no longer built, so this returns nil
 func TestACAutomatonGetMatchTable(t *testing.T) {
 	ac := NewACAutomaton()
 	ac.AddString("test", []byte("test"), false, false)
 	ac.Compile()
 
 	table := ac.GetMatchTable()
-	if table == nil {
-		t.Errorf("GetMatchTable() returned nil")
+	if table != nil {
+		t.Errorf("GetMatchTable() returned %v, want nil", table)
 	}
 }
 
 // TestACAutomatonGetTableSize tests GetTableSize method
+// NOTE: Table size is no longer calculated, so this returns 0
 func TestACAutomatonGetTableSize(t *testing.T) {
 	ac := NewACAutomaton()
 	ac.AddString("test", []byte("test"), false, false)
 	ac.Compile()
 
 	size := ac.GetTableSize()
-	if size <= 0 {
-		t.Errorf("GetTableSize() = %d, want > 0", size)
+	if size != 0 {
+		t.Errorf("GetTableSize() = %d, want 0", size)
 	}
 }
 
@@ -3433,10 +3434,10 @@ func TestInstructionString(t *testing.T) {
 // TestInstructionBytes tests Instruction.Bytes method
 func TestInstructionBytes(t *testing.T) {
 	tests := []struct {
-		name        string
-		instr       *Instruction
-		minLen      int
-		firstByte   byte
+		name      string
+		instr     *Instruction
+		minLen    int
+		firstByte byte
 	}{
 		{
 			name:      "no_operand",
@@ -3757,9 +3758,9 @@ func TestRuleCompilerCompileSingleString(t *testing.T) {
 			sc := NewStringCompiler(emitter)
 			ac := NewACAutomaton()
 			rc := &RuleCompiler{
-				emitter:          emitter,
-				stringCompiler:   sc,
-				automaton:        ac,
+				emitter:           emitter,
+				stringCompiler:    sc,
+				automaton:         ac,
 				conditionCompiler: NewConditionCompiler(emitter, make(map[string]int)),
 			}
 
@@ -3989,6 +3990,421 @@ func TestConditionCompilerEstimateComplexityExtended(t *testing.T) {
 			complexity := cc.EstimateComplexity(tt.expr)
 			if complexity < tt.minComplex {
 				t.Errorf("EstimateComplexity() = %d, want >= %d", complexity, tt.minComplex)
+			}
+		})
+	}
+}
+
+// TestACAutomatonEdgeCases tests edge cases in Aho-Corasick automaton
+func TestACAutomatonEdgeCases(t *testing.T) {
+	tests := []struct {
+		name    string
+		strings []string
+		wantErr bool
+	}{
+		{
+			name:    "empty_automaton",
+			strings: []string{},
+			wantErr: false,
+		},
+		{
+			name:    "single_string",
+			strings: []string{"test"},
+			wantErr: false,
+		},
+		{
+			name:    "duplicate_strings",
+			strings: []string{"test", "test"},
+			wantErr: false,
+		},
+		{
+			name:    "overlapping_strings",
+			strings: []string{"test", "est", "st"},
+			wantErr: false,
+		},
+		{
+			name:    "prefix_strings",
+			strings: []string{"a", "ab", "abc", "abcd"},
+			wantErr: false,
+		},
+		{
+			name:    "suffix_strings",
+			strings: []string{"d", "cd", "bcd", "abcd"},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ac := NewACAutomaton()
+			for _, s := range tt.strings {
+				ac.AddString(s, []byte(s), false, false)
+			}
+			err := ac.Compile()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Compile() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestInterpreterStackOperations tests stack operations in interpreter
+func TestInterpreterStackOperations(t *testing.T) {
+	tests := []struct {
+		name     string
+		bytecode []byte
+		wantErr  bool
+	}{
+		{
+			name:     "halt_only",
+			bytecode: []byte{byte(OP_HALT)},
+			wantErr:  false,
+		},
+		{
+			name:     "nop_halt",
+			bytecode: []byte{byte(OP_NOP), byte(OP_HALT)},
+			wantErr:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			interp := NewInterpreter(tt.bytecode)
+			err := interp.Execute()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Execute() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestStringCompilerEdgeCases tests edge cases in string compilation
+func TestStringCompilerEdgeCases(t *testing.T) {
+	tests := []struct {
+		name      string
+		pattern   ast.Pattern
+		modifiers []ast.StringModifier
+		wantErr   bool
+	}{
+		{
+			name:      "empty_text_string",
+			pattern:   &ast.TextString{Value: ""},
+			modifiers: []ast.StringModifier{},
+			wantErr:   false,
+		},
+		{
+			name:      "text_string_with_nocase",
+			pattern:   &ast.TextString{Value: "Test"},
+			modifiers: []ast.StringModifier{{Type: ast.StringModifierNocase}},
+			wantErr:   false,
+		},
+		{
+			name:      "hex_string",
+			pattern:   &ast.HexString{Value: "48656C6C6F"},
+			modifiers: []ast.StringModifier{},
+			wantErr:   false,
+		},
+		{
+			name:      "regex_pattern",
+			pattern:   &ast.RegexPattern{Value: "test.*"},
+			modifiers: []ast.StringModifier{},
+			wantErr:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			emitter := NewEmitter()
+			sc := NewStringCompiler(emitter)
+			str := &ast.String{
+				Identifier: "$test",
+				Pattern:    tt.pattern,
+				Modifiers:  tt.modifiers,
+			}
+			err := sc.CompileStrings(&ast.Rule{
+				Name:      "test_rule",
+				Strings:   []*ast.String{str},
+				Condition: nil,
+			})
+			if (err != nil) != tt.wantErr {
+				t.Errorf("CompileStrings() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestConditionCompilerEdgeCases tests edge cases in condition compilation
+func TestConditionCompilerEdgeCases(t *testing.T) {
+	tests := []struct {
+		name      string
+		condition *ast.Condition
+		wantErr   bool
+	}{
+		{
+			name: "literal_true",
+			condition: &ast.Condition{
+				Expression: &ast.Literal{
+					Type:  token.TRUE,
+					Value: true,
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "literal_false",
+			condition: &ast.Condition{
+				Expression: &ast.Literal{
+					Type:  token.FALSE,
+					Value: false,
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "integer_literal",
+			condition: &ast.Condition{
+				Expression: &ast.Literal{
+					Type:  token.INTEGER_LIT,
+					Value: int64(42),
+				},
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			emitter := NewEmitter()
+			cc := NewConditionCompiler(emitter, make(map[string]int))
+			err := cc.CompileCondition(tt.condition)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("CompileCondition() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestAtomQualityCalculation tests atom quality calculation
+func TestAtomQualityCalculation(t *testing.T) {
+	tests := []struct {
+		name    string
+		atom    *Atom
+		minQual int
+		maxQual int
+	}{
+		{
+			name: "empty_atom",
+			atom: &Atom{
+				Data:   []byte{},
+				Mask:   []byte{},
+				Length: 0,
+			},
+			minQual: 0,
+			maxQual: 0,
+		},
+		{
+			name: "single_byte_full_mask",
+			atom: &Atom{
+				Data:   []byte{0x41},
+				Mask:   []byte{0xFF},
+				Length: 1,
+			},
+			minQual: 10,
+			maxQual: 100,
+		},
+		{
+			name: "common_byte",
+			atom: &Atom{
+				Data:   []byte{0x00},
+				Mask:   []byte{0xFF},
+				Length: 1,
+			},
+			minQual: -10,
+			maxQual: 50,
+		},
+		{
+			name: "partial_mask",
+			atom: &Atom{
+				Data:   []byte{0x41},
+				Mask:   []byte{0x0F},
+				Length: 1,
+			},
+			minQual: 0,
+			maxQual: 10,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			quality := calculateAtomQuality(tt.atom)
+			if quality < tt.minQual || quality > tt.maxQual {
+				t.Errorf("calculateAtomQuality() = %d, want between %d and %d", quality, tt.minQual, tt.maxQual)
+			}
+		})
+	}
+}
+
+// TestEmitterInstructions tests emitter instruction generation
+func TestEmitterInstructions(t *testing.T) {
+	tests := []struct {
+		name    string
+		testFn  func(*Emitter) error
+		wantErr bool
+	}{
+		{
+			name: "emit_opcode",
+			testFn: func(e *Emitter) error {
+				e.EmitOpcode(OP_HALT, 1, 1)
+				return nil
+			},
+			wantErr: false,
+		},
+		{
+			name: "emit_push",
+			testFn: func(e *Emitter) error {
+				e.EmitPush(42, 1, 1)
+				return nil
+			},
+			wantErr: false,
+		},
+		{
+			name: "emit_label",
+			testFn: func(e *Emitter) error {
+				e.EmitLabel(1, 1, 1)
+				return nil
+			},
+			wantErr: false,
+		},
+		{
+			name: "emit_jump",
+			testFn: func(e *Emitter) error {
+				offset := e.EmitJump(OP_JZ, 1, 1, 1)
+				if offset < 0 {
+					return fmt.Errorf("EmitJump returned negative offset")
+				}
+				return nil
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			emitter := NewEmitter()
+			err := tt.testFn(emitter)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("test error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestRuleCompilerIntegration tests full rule compilation
+func TestRuleCompilerIntegration(t *testing.T) {
+	tests := []struct {
+		name    string
+		rule    *ast.Rule
+		wantErr bool
+	}{
+		{
+			name: "simple_rule",
+			rule: &ast.Rule{
+				Name: "test_rule",
+				Strings: []*ast.String{
+					{
+						Identifier: "$test",
+						Pattern: &ast.TextString{
+							Value: "test",
+						},
+						Modifiers: []ast.StringModifier{},
+					},
+				},
+				Condition: &ast.Identifier{
+					Name: "$test",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "rule_with_multiple_strings",
+			rule: &ast.Rule{
+				Name: "multi_string_rule",
+				Strings: []*ast.String{
+					{
+						Identifier: "$s1",
+						Pattern: &ast.TextString{
+							Value: "hello",
+						},
+						Modifiers: []ast.StringModifier{},
+					},
+					{
+						Identifier: "$s2",
+						Pattern: &ast.TextString{
+							Value: "world",
+						},
+						Modifiers: []ast.StringModifier{},
+					},
+				},
+				Condition: &ast.BinaryOp{
+					Left: &ast.Identifier{
+						Name: "$s1",
+					},
+					Op: token.AND,
+					Right: &ast.Identifier{
+						Name: "$s2",
+					},
+				},
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rc := NewRuleCompiler()
+			_, err := rc.CompileRule(tt.rule)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("CompileRule() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestCompilerFullPipeline tests the full compilation pipeline
+func TestCompilerFullPipeline(t *testing.T) {
+	tests := []struct {
+		name    string
+		source  string
+		wantErr bool
+	}{
+		{
+			name: "simple_rule",
+			source: `rule test {
+				strings:
+					$a = "test"
+				condition:
+					$a
+			}`,
+			wantErr: false,
+		},
+		{
+			name: "rule_with_hex",
+			source: `rule hex_test {
+				strings:
+					$hex = { 48 65 6C 6C 6F }
+				condition:
+					$hex
+			}`,
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			compiler := NewCompiler()
+			_, err := compiler.CompileSource(tt.source)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("CompileSource() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}

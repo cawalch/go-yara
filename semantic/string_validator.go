@@ -10,6 +10,8 @@ import (
 	"github.com/cawalch/go-yara/token"
 )
 
+const themKeyword = "them"
+
 // StringValidator handles validation of string references and patterns
 type StringValidator struct {
 	symbolTable *SymbolTable
@@ -162,13 +164,14 @@ func (sv *StringValidator) validateQuantifierExpression(expr *ast.BinaryOp, pos 
 	// Right side should be "them" or a string pattern
 	switch r := right.(type) {
 	case *ast.Identifier:
-		if r.Name == "them" {
+		switch {
+		case r.Name == themKeyword:
 			// "all of them" - validate that we have strings in current rule
 			sv.validateThemReference(r.Position())
-		} else if sv.isStringReference(r.Name) {
+		case sv.isStringReference(r.Name):
 			// "all of ($a*)" - validate the string pattern
 			sv.validateStringReference(r.Name, r.Position())
-		} else {
+		default:
 			sv.addError(&SemanticError{
 				Message:  fmt.Sprintf("invalid quantifier target: %s", r.Name),
 				Position: r.Position(),
@@ -177,7 +180,7 @@ func (sv *StringValidator) validateQuantifierExpression(expr *ast.BinaryOp, pos 
 
 	default:
 		sv.addError(&SemanticError{
-			Message:  "quantifier requires 'them' or string pattern",
+			Message:  fmt.Sprintf("quantifier requires '%s' or string pattern", themKeyword),
 			Position: pos,
 		})
 	}
@@ -204,7 +207,7 @@ func (sv *StringValidator) validateThemReference(pos token.Position) {
 
 	if !hasStrings {
 		sv.addError(&SemanticError{
-			Message:  "'them' refers to no strings in this rule",
+			Message:  fmt.Sprintf("'%s' refers to no strings in this rule", themKeyword),
 			Position: pos,
 		})
 	}

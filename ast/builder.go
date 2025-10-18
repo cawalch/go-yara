@@ -5,10 +5,12 @@ import "github.com/cawalch/go-yara/token"
 // Builder provides convenient methods for constructing AST nodes
 type Builder struct{}
 
+// NewBuilder creates a new AST builder
 func NewBuilder() *Builder {
 	return &Builder{}
 }
 
+// Program creates a new Program node
 func (b *Builder) Program(rules []*Rule) *Program {
 	return &Program{
 		Pos:   token.Position{},
@@ -16,6 +18,7 @@ func (b *Builder) Program(rules []*Rule) *Program {
 	}
 }
 
+// Rule creates a new Rule node
 func (b *Builder) Rule(pos token.Position, name string) *Rule {
 	return &Rule{
 		Pos:  pos,
@@ -23,7 +26,13 @@ func (b *Builder) Rule(pos token.Position, name string) *Rule {
 	}
 }
 
-func (b *Builder) BinaryOp(pos token.Position, left Expression, op token.TokenType, right Expression) *BinaryOp {
+// BinaryOp creates a new BinaryOp node
+func (b *Builder) BinaryOp(
+	pos token.Position,
+	left Expression,
+	op token.TokenType,
+	right Expression,
+) *BinaryOp {
 	return &BinaryOp{
 		Pos:   pos,
 		Left:  left,
@@ -32,6 +41,7 @@ func (b *Builder) BinaryOp(pos token.Position, left Expression, op token.TokenTy
 	}
 }
 
+// UnaryOp creates a new UnaryOp node
 func (b *Builder) UnaryOp(pos token.Position, op token.TokenType, right Expression) *UnaryOp {
 	return &UnaryOp{
 		Pos:   pos,
@@ -40,6 +50,7 @@ func (b *Builder) UnaryOp(pos token.Position, op token.TokenType, right Expressi
 	}
 }
 
+// Identifier creates a new Identifier node
 func (b *Builder) Identifier(pos token.Position, name string) *Identifier {
 	return &Identifier{
 		Pos:  pos,
@@ -47,6 +58,7 @@ func (b *Builder) Identifier(pos token.Position, name string) *Identifier {
 	}
 }
 
+// Literal creates a new Literal node
 func (b *Builder) Literal(pos token.Position, typ token.TokenType, value interface{}) *Literal {
 	return &Literal{
 		Pos:   pos,
@@ -55,6 +67,7 @@ func (b *Builder) Literal(pos token.Position, typ token.TokenType, value interfa
 	}
 }
 
+// TextString creates a new TextString node
 func (b *Builder) TextString(pos token.Position, value string) *TextString {
 	return &TextString{
 		Pos:   pos,
@@ -62,6 +75,7 @@ func (b *Builder) TextString(pos token.Position, value string) *TextString {
 	}
 }
 
+// HexString creates a new HexString node
 func (b *Builder) HexString(pos token.Position, value string) *HexString {
 	return &HexString{
 		Pos:   pos,
@@ -69,6 +83,7 @@ func (b *Builder) HexString(pos token.Position, value string) *HexString {
 	}
 }
 
+// RegexPattern creates a new RegexPattern node
 func (b *Builder) RegexPattern(pos token.Position, value string) *RegexPattern {
 	return &RegexPattern{
 		Pos:   pos,
@@ -76,7 +91,8 @@ func (b *Builder) RegexPattern(pos token.Position, value string) *RegexPattern {
 	}
 }
 
-func (b *Builder) Meta(pos token.Position, key string, value interface{}) *Meta {
+// Meta creates a new Meta node
+func (b *Builder) Meta(pos token.Position, key string, value any) *Meta {
 	return &Meta{
 		Pos:   pos,
 		Key:   key,
@@ -84,7 +100,13 @@ func (b *Builder) Meta(pos token.Position, key string, value interface{}) *Meta 
 	}
 }
 
-func (b *Builder) String(pos token.Position, identifier string, pattern Pattern, modifiers []StringModifier) *String {
+// String creates a new String node
+func (b *Builder) String(
+	pos token.Position,
+	identifier string,
+	pattern Pattern,
+	modifiers []StringModifier,
+) *String {
 	return &String{
 		Pos:        pos,
 		Identifier: identifier,
@@ -93,6 +115,7 @@ func (b *Builder) String(pos token.Position, identifier string, pattern Pattern,
 	}
 }
 
+// Condition creates a new Condition node
 func (b *Builder) Condition(pos token.Position, expr Expression) *Condition {
 	return &Condition{
 		Pos:        pos,

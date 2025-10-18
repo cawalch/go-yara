@@ -1,8 +1,10 @@
 package main
 
 import (
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/cawalch/go-yara/token"
@@ -126,7 +128,7 @@ func TestExecuteModeNoData(t *testing.T) {
 	t.Log("Execute mode without data file test passed")
 }
 
-// TestExecuteModeMultiplePatterns tests execute mode with multiple patterns
+ // TestExecuteModeMultiplePatterns tests execute mode with multiple patterns
 func TestExecuteModeMultiplePatterns(t *testing.T) {
 	tmpDir := t.TempDir()
 
@@ -159,4 +161,208 @@ func TestExecuteModeMultiplePatterns(t *testing.T) {
 		}()
 		runExecuteMode(ruleContent, dataFile)
 	})
+}
+
+// captureOutput captures stdout while running fn and returns it as string.
+func captureOutput(fn func()) string {
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+	defer func() { os.Stdout = old }()
+	fn()
+	_ = w.Close()
+	out, _ := io.ReadAll(r)
+	return string(out)
+}
+
+// TestExecuteMode_RegexInlineFlagsI verifies inline /i is propagated to VM (NO_CASE)
+func TestExecuteMode_RegexInlineFlagsI(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	rule := `rule TestRegexI {
+  strings:
+    $a = /abc/i
+  condition:
+    $a
+}`
+
+	dataFile := filepath.Join(tmpDir, "data.txt")
+	// 'AbC' at offset 2 should match /abc/i
+	if err := os.WriteFile(dataFile, []byte("xxAbCy"), 0644); err != nil {
+		t.Fatalf("Failed to create data file: %v", err)
+	}
+
+	out := captureOutput(func() {
+		runExecuteMode(rule, dataFile)
+	})
+
+	// Expect at least one match and the specific offset/length
+	if !strings.Contains(out, "Pattern matches: 1") {
+		t.Fatalf("expected one pattern match, got output:\n%s", out)
+	}
+	if !strings.Contains(out, "- $a at offset 2 (length: 3)") {
+		t.Fatalf("expected match at offset 2 length 3, got output:\n%s", out)
+	}
+}
+
+// TestExecuteMode_RegexInlineFlagsS verifies inline /s enables DOT_ALL for dot
+func TestExecuteMode_RegexInlineFlagsS(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	rule := `rule TestRegexS {
+  strings:
+    $a = /a.b/s
+  condition:
+    $a
+}`
+
+	dataFile := filepath.Join(tmpDir, "data.txt")
+	// "a\nb" should match /a.b/s starting at offset 0, length 3
+	if err := os.WriteFile(dataFile, []byte("a\nb"), 0644); err != nil {
+		t.Fatalf("Failed to create data file: %v", err)
+	}
+
+	out := captureOutput(func() {
+		runExecuteMode(rule, dataFile)
+	})
+
+	if !strings.Contains(out, "Pattern matches: 1") {
+		t.Fatalf("expected one pattern match, got output:\n%s", out)
+	}
+	if !strings.Contains(out, "- $a at offset 0 (length: 3)") {
+		t.Fatalf("expected match at offset 0 length 3, got output:\n%s", out)
+	}
+}
+
+// TestExecuteMode_RegexEmptyMatch_Scan verifies empty matches are reported under scan mode
+func TestExecuteMode_RegexEmptyMatch_Scan(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	rule := `rule TestRegexEmpty {
+  strings:
+    $a = /a*/
+  condition:
+    $a
+}`
+
+	dataFile := filepath.Join(tmpDir, "empty.txt")
+	// Empty input should produce exactly one empty match at offset 0 for /a*/
+	if err := os.WriteFile(dataFile, []byte(""), 0644); err != nil {
+		t.Fatalf("Failed to create data file: %v", err)
+	}
+
+	out := captureOutput(func() {
+		runExecuteMode(rule, dataFile)
+	})
+
+	if !strings.Contains(out, "Pattern matches: 1") {
+		t.Fatalf("expected one pattern match for empty input, got output:\n%s", out)
+	}
+	if !strings.Contains(out, "- $a at offset 0 (length: 0)") {
+		t.Fatalf("expected empty match at offset 0 length 0, got output:\n%s", out)
+	}
+}
+
+// TestExecuteMode_Count_Regex verifies '#' operator (COUNT) with regex-derived matches
+func TestExecuteMode_Count_Regex(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	rule := `rule TestRegexCount {
+  strings:
+    $a = /ab/
+  condition:
+    #$a == 2
+}`
+
+	dataFile := filepath.Join(tmpDir, "data.txt")
+	// "ab" appears twice → count should be 2
+	if err := os.WriteFile(dataFile, []byte("xxabyyabzz"), 0644); err != nil {
+		t.Fatalf("Failed to create data file: %v", err)
+	}
+
+	out := captureOutput(func() {
+		runExecuteMode(rule, dataFile)
+	})
+
+	if !strings.Contains(out, "Result: MATCH") {
+		t.Fatalf("expected MATCH for #$a == 2, got output:\n%s", out)
+	}
+}
+
+// TestExecuteMode_Offset_Regex verifies '@' operator (OFFSET of first match) with regex-derived matches
+func TestExecuteMode_Offset_Regex(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	rule := `rule TestRegexOffset {
+  strings:
+    $a = /ab/
+  condition:
+    (@$a) == 2
+}`
+
+	dataFile := filepath.Join(tmpDir, "data.txt")
+	// "ab" first occurs at offset 2 in "zzab"
+	if err := os.WriteFile(dataFile, []byte("zzab"), 0644); err != nil {
+		t.Fatalf("Failed to create data file: %v", err)
+	}
+
+	out := captureOutput(func() {
+		runExecuteMode(rule, dataFile)
+	})
+
+	if !strings.Contains(out, "Result: MATCH") {
+		t.Fatalf("expected MATCH for @$a == 2, got output:\n%s", out)
+	}
+}
+
+// TestExecuteMode_Count_String verifies '#' operator (COUNT) with AC (text) matches
+func TestExecuteMode_Count_String(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	rule := `rule TestStringCount {
+  strings:
+    $a = "foo"
+  condition:
+    #$a == 2
+}`
+
+	dataFile := filepath.Join(tmpDir, "data.txt")
+	// "foo" appears twice → count should be 2
+	if err := os.WriteFile(dataFile, []byte("foo bar baz foo"), 0644); err != nil {
+		t.Fatalf("Failed to create data file: %v", err)
+	}
+
+	out := captureOutput(func() {
+		runExecuteMode(rule, dataFile)
+	})
+
+	if !strings.Contains(out, "Result: MATCH") {
+		t.Fatalf("expected MATCH for #$a == 2 (string), got output:\n%s", out)
+	}
+}
+
+// TestExecuteMode_Offset_String verifies '@' operator (OFFSET of first match) with AC (text) matches
+func TestExecuteMode_Offset_String(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	rule := `rule TestStringOffset {
+  strings:
+    $a = "bar"
+  condition:
+    (@$a) == 4
+}`
+
+	dataFile := filepath.Join(tmpDir, "data.txt")
+	// "bar" first occurs at offset 4 in "foo bar"
+	if err := os.WriteFile(dataFile, []byte("foo bar"), 0644); err != nil {
+		t.Fatalf("Failed to create data file: %v", err)
+	}
+
+	out := captureOutput(func() {
+		runExecuteMode(rule, dataFile)
+	})
+
+	if !strings.Contains(out, "Result: MATCH") {
+		t.Fatalf("expected MATCH for @$a == 4 (string), got output:\n%s", out)
+	}
 }

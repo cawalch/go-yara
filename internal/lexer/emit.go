@@ -65,7 +65,7 @@ func (l *Lexer) makeIdentifierToken(pos token.Position) token.Token {
 	return l.makeToken(tokenType, lit, pos)
 }
 
-// makeNumericToken creates a numeric literal token (integer, hex, or size)
+// makeNumericToken creates a numeric literal token (integer, hex, float, or size)
 func (l *Lexer) makeNumericToken(pos token.Position) token.Token {
 	// Check for hexadecimal integer (0x prefix)
 	if l.ch() == '0' && (l.peekChar() == 'x' || l.peekChar() == 'X') {
@@ -80,6 +80,12 @@ func (l *Lexer) makeNumericToken(pos token.Position) token.Token {
 
 	// Read regular number
 	lit := l.readNumber()
+
+	// Check for float literal (digit+ "." digit+)
+	if l.ch() == '.' && isDigit(l.peekChar()) {
+		lit += l.readFloatFraction()
+		return l.makeToken(token.FLOAT_LIT, lit, pos)
+	}
 
 	// Check for size suffix after decimal integer
 	if l.hasSizeSuffix() {

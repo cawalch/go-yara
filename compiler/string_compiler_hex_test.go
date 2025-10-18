@@ -13,10 +13,10 @@ func TestParseHexString(t *testing.T) {
 	}
 
 	tests := []struct {
-		name     string
-		input    string
-		minLen   int
-		maxLen   int
+		name   string
+		input  string
+		minLen int
+		maxLen int
 	}{
 		{"simple_hex", "60 E8 00 00", 4, 4},
 		{"hex_with_spaces", "60 E8 00 00 00 00 58 83", 8, 8},
@@ -108,10 +108,10 @@ func TestParseJump(t *testing.T) {
 	}
 
 	tests := []struct {
-		name     string
-		input    string
-		minVal   int
-		maxVal   int
+		name   string
+		input  string
+		minVal int
+		maxVal int
 	}{
 		{"single_value", "5", 5, 5},
 		{"range", "1-3", 1, 3},
@@ -141,9 +141,9 @@ func TestParseAlternatives(t *testing.T) {
 	}
 
 	tests := []struct {
-		name     string
-		input    string
-		numAlts  int
+		name    string
+		input   string
+		numAlts int
 	}{
 		{"two_alternatives", "60 E8 | 60 E9", 2},
 		{"three_alternatives", "60 | E8 | E9", 3},
@@ -217,4 +217,3 @@ func TestComplexHexPatterns(t *testing.T) {
 		})
 	}
 }
-

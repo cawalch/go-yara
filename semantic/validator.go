@@ -23,7 +23,6 @@ func (e *SemanticError) Error() string {
 type Validator struct {
 	symbolTable *SymbolTable
 	errors      []error
-	currentRule *ast.Rule
 }
 
 // NewValidator creates a new semantic validator
@@ -31,7 +30,6 @@ func NewValidator() *Validator {
 	return &Validator{
 		symbolTable: NewSymbolTable(),
 		errors:      make([]error, 0),
-		currentRule: nil,
 	}
 }
 
@@ -82,8 +80,6 @@ func (v *Validator) collectSymbols(rule *ast.Rule) {
 
 // validateRule performs semantic validation on a single rule
 func (v *Validator) validateRule(rule *ast.Rule) {
-	v.currentRule = rule
-
 	// Enter rule scope for validation
 	v.symbolTable.EnterScope(fmt.Sprintf("rule_%s", rule.Name))
 
@@ -108,8 +104,6 @@ func (v *Validator) validateRule(rule *ast.Rule) {
 
 	// Exit rule scope
 	v.symbolTable.ExitScope()
-
-	v.currentRule = nil
 }
 
 // validateMeta validates the meta section
@@ -150,10 +144,10 @@ func (v *Validator) validateCondition(condition ast.Expression) {
 		conditionType, errs := v.validateExpression(condition)
 		v.errors = append(v.errors, errs...)
 
-		// Condition should evaluate to boolean
-		if conditionType != nil && conditionType.DataType != TypeBoolean {
+		// Condition should evaluate to boolean or numeric (integers/floats are truthy/falsy)
+		if conditionType != nil && conditionType.DataType != TypeBoolean && !conditionType.IsNumeric() {
 			v.addError(&SemanticError{
-				Message:  "condition must evaluate to boolean",
+				Message:  "condition must evaluate to boolean or numeric",
 				Position: condition.Position(),
 			})
 		}
@@ -181,6 +175,11 @@ func (v *Validator) validateExpression(expr ast.Expression) (*TypeInfo, []error)
 			// Quantifier keywords - these are used in "all of them" expressions
 			// They will be handled by the BinaryOp case with OF operator
 			return &TypeInfo{DataType: TypeUnknown}, nil
+		// Data type functions
+		case "uint8", "uint16", "uint32", "uint8be", "uint16be", "uint32be":
+			return &TypeInfo{DataType: TypeInteger, IntegerType: Uint64Type}, nil
+		case "int8", "int16", "int32", "int8be", "int16be", "int32be":
+			return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}, nil
 		}
 
 		// Look up the identifier in symbol table
@@ -275,26 +274,30 @@ func (v *Validator) GetSymbolTable() *SymbolTable {
 	return v.symbolTable
 }
 
-// Visitor interface implementation for AST traversal
+// VisitProgram implements the Visitor pattern for Program nodes
 func (v *Validator) VisitProgram(program *ast.Program) interface{} {
 	return v.ValidateProgram(program)
 }
 
+// VisitRule implements the Visitor pattern for Rule nodes
 func (v *Validator) VisitRule(rule *ast.Rule) interface{} {
 	v.validateRule(rule)
 	return nil
 }
 
+// VisitMeta implements the Visitor pattern for Meta nodes
 func (v *Validator) VisitMeta(meta *ast.Meta) interface{} {
 	// Meta validation is handled in validateMeta
 	return nil
 }
 
+// VisitString implements the Visitor pattern for String nodes
 func (v *Validator) VisitString(str *ast.String) interface{} {
 	// String validation is handled in validateStrings
 	return nil
 }
 
+// VisitCondition implements the Visitor pattern for Condition nodes
 func (v *Validator) VisitCondition(condition *ast.Condition) interface{} {
 	if condition.Expression != nil {
 		v.validateCondition(condition.Expression)
@@ -302,21 +305,25 @@ func (v *Validator) VisitCondition(condition *ast.Condition) interface{} {
 	return nil
 }
 
+// VisitBinaryOp implements the Visitor pattern for BinaryOp nodes
 func (v *Validator) VisitBinaryOp(binaryOp *ast.BinaryOp) interface{} {
 	// Binary operation validation is handled in validateExpression
 	return nil
 }
 
+// VisitUnaryOp implements the Visitor pattern for UnaryOp nodes
 func (v *Validator) VisitUnaryOp(unaryOp *ast.UnaryOp) interface{} {
 	// Unary operation validation is handled in validateExpression
 	return nil
 }
 
+// VisitIdentifier implements the Visitor pattern for Identifier nodes
 func (v *Validator) VisitIdentifier(identifier *ast.Identifier) interface{} {
 	// Identifier validation is handled in validateExpression
 	return nil
 }
 
+// VisitLiteral implements the Visitor pattern for Literal nodes
 func (v *Validator) VisitLiteral(literal *ast.Literal) interface{} {
 	// Literal validation is handled in validateExpression
 	return nil

@@ -1671,10 +1671,10 @@ rule mixed_strings {
 	}
 
 	// Check that we have all three types
-	expectedIds := []string{"$text", "$hex", "$regex"}
+	expectedIDs := []string{"$text", "$hex", "$regex"}
 	for i, str := range rule.Strings {
-		if str.Identifier != expectedIds[i] {
-			t.Errorf("expected string identifier '%s', got '%s'", expectedIds[i], str.Identifier)
+		if str.Identifier != expectedIDs[i] {
+			t.Errorf("expected string identifier '%s', got '%s'", expectedIDs[i], str.Identifier)
 		}
 	}
 }

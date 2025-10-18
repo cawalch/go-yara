@@ -3,23 +3,24 @@ package comparison
 import (
 	"testing"
 
+	"github.com/cawalch/go-yara/compiler"
 	"github.com/cawalch/go-yara/internal/lexer"
 	"github.com/cawalch/go-yara/token"
 )
 
-// BenchmarkGoYaraLexer benchmarks the Go YARA lexer implementation.
+// BenchmarkGoYaraLexer benchmarks the Go YARA lexer implementation (lexical analysis only).
 func BenchmarkGoYaraLexer(b *testing.B) {
 	testData, err := LoadTestData()
 	if err != nil {
 		b.Fatalf("Failed to load test data: %v", err)
 	}
-	
+
 	for _, td := range testData {
 		b.Run(td.Name, func(b *testing.B) {
 			b.ReportAllocs()
 			b.SetBytes(int64(len(td.Content)))
 			b.ResetTimer()
-			
+
 			for i := 0; i < b.N; i++ {
 				l := lexer.New(td.Content)
 				for {
@@ -33,45 +34,70 @@ func BenchmarkGoYaraLexer(b *testing.B) {
 	}
 }
 
-// BenchmarkCYaraCompiler benchmarks the C YARA compiler (includes lexing + parsing).
+// BenchmarkGoYaraCompiler benchmarks the full go-yara compiler (lexer + parser + semantic + codegen).
+// This is the apples-to-apples comparison with C YARA.
+func BenchmarkGoYaraCompiler(b *testing.B) {
+	testData, err := LoadTestData()
+	if err != nil {
+		b.Fatalf("Failed to load test data: %v", err)
+	}
+
+	for _, td := range testData {
+		b.Run(td.Name, func(b *testing.B) {
+			b.ReportAllocs()
+			b.SetBytes(int64(len(td.Content)))
+			b.ResetTimer()
+
+			for i := 0; i < b.N; i++ {
+				comp := compiler.NewCompiler()
+				_, compErr := comp.CompileSource(td.Content)
+				if compErr != nil {
+					b.Fatalf("Compilation failed: %v", compErr)
+				}
+			}
+		})
+	}
+}
+
+// BenchmarkCYaraCompiler benchmarks the C YARA compiler (includes lexing + parsing + codegen).
 func BenchmarkCYaraCompiler(b *testing.B) {
 	testData, err := LoadTestData()
 	if err != nil {
 		b.Fatalf("Failed to load test data: %v", err)
 	}
-	
+
 	for _, td := range testData {
 		b.Run(td.Name, func(b *testing.B) {
-			yc, err := NewYaraCompiler()
-			if err != nil {
-				b.Fatalf("Failed to create YARA compiler: %v", err)
+			yc, yaraErr := NewYaraCompiler()
+			if yaraErr != nil {
+				b.Fatalf("Failed to create YARA compiler: %v", yaraErr)
 			}
 			defer yc.Close()
-			
+
 			b.ReportAllocs()
 			b.SetBytes(int64(len(td.Content)))
 			b.ResetTimer()
-			
+
 			for i := 0; i < b.N; i++ {
-				err := yc.CompileString(td.Content)
-				if err != nil {
-					b.Fatalf("Compilation failed: %v", err)
+				compErr := yc.CompileString(td.Content)
+				if compErr != nil {
+					b.Fatalf("Compilation failed: %v", compErr)
 				}
 			}
 		})
 	}
 }
 
-// BenchmarkGoYaraLexer_Benchmark runs benchmarks on specific benchmark rules.
+// BenchmarkGoYaraLexer_Benchmark runs benchmarks on specific benchmark rules (lexer only).
 func BenchmarkGoYaraLexer_Benchmark(b *testing.B) {
 	benchRules := GetBenchmarkRules()
-	
+
 	for _, td := range benchRules {
 		b.Run(td.Name, func(b *testing.B) {
 			b.ReportAllocs()
 			b.SetBytes(int64(len(td.Content)))
 			b.ResetTimer()
-			
+
 			for i := 0; i < b.N; i++ {
 				l := lexer.New(td.Content)
 				for {
@@ -79,6 +105,28 @@ func BenchmarkGoYaraLexer_Benchmark(b *testing.B) {
 					if tok.Type == token.EOF {
 						break
 					}
+				}
+			}
+		})
+	}
+}
+
+// BenchmarkGoYaraCompiler_Benchmark runs benchmarks on specific benchmark rules (full compiler).
+// This is the apples-to-apples comparison with C YARA.
+func BenchmarkGoYaraCompiler_Benchmark(b *testing.B) {
+	benchRules := GetBenchmarkRules()
+
+	for _, td := range benchRules {
+		b.Run(td.Name, func(b *testing.B) {
+			b.ReportAllocs()
+			b.SetBytes(int64(len(td.Content)))
+			b.ResetTimer()
+
+			for i := 0; i < b.N; i++ {
+				comp := compiler.NewCompiler()
+				_, err := comp.CompileSource(td.Content)
+				if err != nil {
+					b.Fatalf("Compilation failed: %v", err)
 				}
 			}
 		})
@@ -88,7 +136,7 @@ func BenchmarkGoYaraLexer_Benchmark(b *testing.B) {
 // BenchmarkCYaraCompiler_Benchmark runs benchmarks on specific benchmark rules.
 func BenchmarkCYaraCompiler_Benchmark(b *testing.B) {
 	benchRules := GetBenchmarkRules()
-	
+
 	for _, td := range benchRules {
 		b.Run(td.Name, func(b *testing.B) {
 			yc, err := NewYaraCompiler()
@@ -96,11 +144,11 @@ func BenchmarkCYaraCompiler_Benchmark(b *testing.B) {
 				b.Fatalf("Failed to create YARA compiler: %v", err)
 			}
 			defer yc.Close()
-			
+
 			b.ReportAllocs()
 			b.SetBytes(int64(len(td.Content)))
 			b.ResetTimer()
-			
+
 			for i := 0; i < b.N; i++ {
 				err := yc.CompileString(td.Content)
 				if err != nil {
@@ -114,11 +162,11 @@ func BenchmarkCYaraCompiler_Benchmark(b *testing.B) {
 // BenchmarkGoYaraLexer_Simple is a simple benchmark for quick testing.
 func BenchmarkGoYaraLexer_Simple(b *testing.B) {
 	input := `rule test { condition: true }`
-	
+
 	b.ReportAllocs()
 	b.SetBytes(int64(len(input)))
 	b.ResetTimer()
-	
+
 	for i := 0; i < b.N; i++ {
 		l := lexer.New(input)
 		for {
@@ -133,17 +181,17 @@ func BenchmarkGoYaraLexer_Simple(b *testing.B) {
 // BenchmarkCYaraCompiler_Simple is a simple benchmark for quick testing.
 func BenchmarkCYaraCompiler_Simple(b *testing.B) {
 	input := `rule test { condition: true }`
-	
+
 	yc, err := NewYaraCompiler()
 	if err != nil {
 		b.Fatalf("Failed to create YARA compiler: %v", err)
 	}
 	defer yc.Close()
-	
+
 	b.ReportAllocs()
 	b.SetBytes(int64(len(input)))
 	b.ResetTimer()
-	
+
 	for i := 0; i < b.N; i++ {
 		err := yc.CompileString(input)
 		if err != nil {
@@ -214,4 +262,3 @@ func BenchmarkCYaraCompiler_Complex(b *testing.B) {
 		}
 	}
 }
-

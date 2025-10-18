@@ -49,7 +49,7 @@ func TestControlFlowKeywords(t *testing.T) {
 				{Type: token.LPAREN, Literal: "("},
 				{Type: token.UINT32, Literal: "uint32"},
 				{Type: token.LPAREN, Literal: "("},
-				{Type: token.ILLEGAL, Literal: "@"},
+				{Type: token.AT, Literal: "@"},
 				{Type: token.IDENTIFIER, Literal: "s"},
 				{Type: token.LBRACKET, Literal: "["},
 				{Type: token.IDENTIFIER, Literal: "i"},

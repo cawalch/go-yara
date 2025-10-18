@@ -8,8 +8,12 @@ type Program struct {
 	Rules []*Rule
 }
 
-func (p *Program) node()                    {}
+func (p *Program) node() {}
+
+// Position returns the position of the Program node
 func (p *Program) Position() token.Position { return p.Pos }
+
+// Accept implements the Visitor pattern for Program
 func (p *Program) Accept(v Visitor) interface{} {
 	return v.VisitProgram(p)
 }
@@ -25,8 +29,12 @@ type Rule struct {
 	Condition Expression
 }
 
-func (r *Rule) node()                    {}
+func (r *Rule) node() {}
+
+// Position returns the position of the Rule node
 func (r *Rule) Position() token.Position { return r.Pos }
+
+// Accept implements the Visitor pattern for Rule
 func (r *Rule) Accept(v Visitor) interface{} {
 	return v.VisitRule(r)
 }
@@ -38,22 +46,30 @@ type Meta struct {
 	Value interface{} // string, int64, or bool
 }
 
-func (m *Meta) node()                    {}
+func (m *Meta) node() {}
+
+// Position returns the position of the Meta node
 func (m *Meta) Position() token.Position { return m.Pos }
+
+// Accept implements the Visitor pattern for Meta
 func (m *Meta) Accept(v Visitor) interface{} {
 	return v.VisitMeta(m)
 }
 
 // String represents a string definition
 type String struct {
-	Pos       token.Position
+	Pos        token.Position
 	Identifier string
-	Pattern   Pattern
-	Modifiers []StringModifier
+	Pattern    Pattern
+	Modifiers  []StringModifier
 }
 
-func (s *String) node()                    {}
+func (s *String) node() {}
+
+// Position returns the position of the String node
 func (s *String) Position() token.Position { return s.Pos }
+
+// Accept implements the Visitor pattern for String
 func (s *String) Accept(v Visitor) interface{} {
 	return v.VisitString(s)
 }
@@ -64,8 +80,12 @@ type Condition struct {
 	Expression Expression
 }
 
-func (c *Condition) node()                    {}
+func (c *Condition) node() {}
+
+// Position returns the position of the Condition node
 func (c *Condition) Position() token.Position { return c.Pos }
+
+// Accept implements the Visitor pattern for Condition
 func (c *Condition) Accept(v Visitor) interface{} {
 	return v.VisitCondition(c)
 }
@@ -78,9 +98,14 @@ type BinaryOp struct {
 	Right Expression
 }
 
-func (b *BinaryOp) node()                    {}
+func (b *BinaryOp) node() {}
+
+// Position returns the position of the BinaryOp node
 func (b *BinaryOp) Position() token.Position { return b.Pos }
-func (b *BinaryOp) expression()              {}
+
+func (b *BinaryOp) expression() {}
+
+// Accept implements the Visitor pattern for BinaryOp
 func (b *BinaryOp) Accept(v Visitor) interface{} {
 	return v.VisitBinaryOp(b)
 }
@@ -92,9 +117,14 @@ type UnaryOp struct {
 	Right Expression
 }
 
-func (u *UnaryOp) node()                    {}
+func (u *UnaryOp) node() {}
+
+// Position returns the position of the UnaryOp node
 func (u *UnaryOp) Position() token.Position { return u.Pos }
-func (u *UnaryOp) expression()              {}
+
+func (u *UnaryOp) expression() {}
+
+// Accept implements the Visitor pattern for UnaryOp
 func (u *UnaryOp) Accept(v Visitor) interface{} {
 	return v.VisitUnaryOp(u)
 }
@@ -105,9 +135,14 @@ type Identifier struct {
 	Name string
 }
 
-func (i *Identifier) node()                    {}
+func (i *Identifier) node() {}
+
+// Position returns the position of the Identifier node
 func (i *Identifier) Position() token.Position { return i.Pos }
-func (i *Identifier) expression()              {}
+
+func (i *Identifier) expression() {}
+
+// Accept implements the Visitor pattern for Identifier
 func (i *Identifier) Accept(v Visitor) interface{} {
 	return v.VisitIdentifier(i)
 }
@@ -119,9 +154,14 @@ type Literal struct {
 	Value interface{}
 }
 
-func (l *Literal) node()                    {}
+func (l *Literal) node() {}
+
+// Position returns the position of the Literal node
 func (l *Literal) Position() token.Position { return l.Pos }
-func (l *Literal) expression()              {}
+
+func (l *Literal) expression() {}
+
+// Accept implements the Visitor pattern for Literal
 func (l *Literal) Accept(v Visitor) interface{} {
 	return v.VisitLiteral(l)
 }

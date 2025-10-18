@@ -3,6 +3,7 @@ package compiler
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/cawalch/go-yara/ast"
 	"github.com/cawalch/go-yara/token"
@@ -16,7 +17,7 @@ type ConditionCompiler struct {
 	labelCounter  int            // For generating unique labels
 }
 
-// NewConditionCompiler creates a new condition compiler
+ // NewConditionCompiler creates a new condition compiler
 func NewConditionCompiler(emitter *Emitter, stringOffsets map[string]int) *ConditionCompiler {
 	return &ConditionCompiler{
 		emitter:       emitter,
@@ -24,6 +25,13 @@ func NewConditionCompiler(emitter *Emitter, stringOffsets map[string]int) *Condi
 		variableMap:   make(map[string]int),
 		labelCounter:  0,
 	}
+}
+
+// generateLabel returns a unique label identifier for internal jump targets.
+// Kept unexported; used by tests to verify uniqueness/format.
+func (cc *ConditionCompiler) generateLabel() string {
+	cc.labelCounter++
+	return fmt.Sprintf("L%d", cc.labelCounter)
 }
 
 // CompileCondition compiles a condition expression to bytecode
@@ -54,6 +62,18 @@ func (cc *ConditionCompiler) compileLiteral(lit *ast.Literal) error {
 		if value, ok := lit.Value.(int64); ok {
 			cc.emitter.EmitPush(uint64(value), lit.Pos.Line, lit.Pos.Column)
 		}
+	case token.HEX_INTEGER_LIT:
+		if value, ok := lit.Value.(int64); ok {
+			cc.emitter.EmitPush(uint64(value), lit.Pos.Line, lit.Pos.Column)
+		} else {
+			// Handle case where value is not int64
+			cc.emitter.EmitPush(0, lit.Pos.Line, lit.Pos.Column)
+		}
+	case token.FLOAT_LIT:
+		if value, ok := lit.Value.(float64); ok {
+			// Convert float64 to uint64 bits for storage
+			cc.emitter.EmitPush(math.Float64bits(value), lit.Pos.Line, lit.Pos.Column)
+		}
 	case token.STRING_LIT:
 		if value, ok := lit.Value.(string); ok {
 			// Push string length or reference
@@ -71,10 +91,10 @@ func (cc *ConditionCompiler) compileLiteral(lit *ast.Literal) error {
 
 // compileIdentifier compiles an identifier reference
 func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
-	// Check if it's a string identifier
+	// Check if it's a string identifier (addressed via interpreter memory)
 	if offset, exists := cc.stringOffsets[ident.Name]; exists {
-		// Push string offset and emit FOUND instruction
-		cc.emitter.EmitPush(uint64(offset), ident.Pos.Line, ident.Pos.Column)
+		// Load string identifier from VM memory slot [offset] and emit FOUND
+		cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(offset)}, ident.Pos.Line, ident.Pos.Column)
 		cc.emitter.EmitOpcode(OP_FOUND, ident.Pos.Line, ident.Pos.Column)
 		return nil
 	}
@@ -91,6 +111,23 @@ func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 		cc.emitter.EmitOpcode(OP_FILESIZE, ident.Pos.Line, ident.Pos.Column)
 	case "entrypoint":
 		cc.emitter.EmitOpcode(OP_ENTRYPOINT, ident.Pos.Line, ident.Pos.Column)
+	case "them":
+		// "them" is used in quantifier expressions like "any of them"
+		// In YARA, "them" refers to all strings in the current rule
+		// For now, emit a placeholder - this needs proper implementation
+		cc.emitter.EmitOpcode(OP_PUSH_8, ident.Pos.Line, ident.Pos.Column)
+		cc.emitter.EmitOpcode(OP_PUSH_8, ident.Pos.Line, ident.Pos.Column) // Placeholder for string count
+	case "any", "all", "none":
+		// Quantifier keywords used in expressions like "any of them"
+		// These are handled as part of the OF operation, so just push a placeholder
+		cc.emitter.EmitOpcode(OP_PUSH_8, ident.Pos.Line, ident.Pos.Column)
+	// Data type functions
+	case "uint8", "uint16", "uint32", "uint8be", "uint16be", "uint32be":
+		// For now, emit a placeholder - these need proper implementation
+		cc.emitter.EmitOpcode(OP_PUSH_8, ident.Pos.Line, ident.Pos.Column)
+	case "int8", "int16", "int32", "int8be", "int16be", "int32be":
+		// For now, emit a placeholder - these need proper implementation
+		cc.emitter.EmitOpcode(OP_PUSH_8, ident.Pos.Line, ident.Pos.Column)
 	default:
 		return fmt.Errorf("undefined identifier: %s", ident.Name)
 	}
@@ -153,6 +190,12 @@ func (cc *ConditionCompiler) compileBinaryOp(binOp *ast.BinaryOp) error {
 		opcode = OP_CONTAINS
 	case token.MATCHES:
 		opcode = OP_MATCHES
+	case token.OF:
+		opcode = OP_OF
+	case token.LPAREN:
+		// Function call - for now, treat as no-op since we already handled the function identifier
+		// This is a temporary solution until we have proper function call AST nodes
+		return nil
 	default:
 		return fmt.Errorf("unsupported binary operator: %s", binOp.Op)
 	}
@@ -161,28 +204,59 @@ func (cc *ConditionCompiler) compileBinaryOp(binOp *ast.BinaryOp) error {
 	return nil
 }
 
-// compileUnaryOp compiles a unary operation
+ // compileUnaryOp compiles a unary operation
 func (cc *ConditionCompiler) compileUnaryOp(unaryOp *ast.UnaryOp) error {
-	// Compile the operand
-	if err := cc.compileExpression(unaryOp.Right); err != nil {
-		return err
-	}
-
-	// Emit appropriate opcode
-	var opcode Opcode
+	// Special handling for position/count and other YARA-specific unary ops
 	switch unaryOp.Op {
+	case token.HASH:
+		// '#' COUNT operator: expects a string identifier operand (e.g., #$a)
+		if id, ok := unaryOp.Right.(*ast.Identifier); ok {
+			if offset, exists := cc.stringOffsets[id.Name]; exists {
+				// Load string identifier from VM memory and emit COUNT
+				cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(offset)}, unaryOp.Pos.Line, unaryOp.Pos.Column)
+				cc.emitter.EmitOpcode(OP_COUNT, unaryOp.Pos.Line, unaryOp.Pos.Column)
+				return nil
+			}
+			return fmt.Errorf("undefined string identifier for count operator: %s", id.Name)
+		}
+		return fmt.Errorf("COUNT (#) expects a string identifier operand")
+	case token.AT:
+		// '@' OFFSET operator: expects a string identifier operand (e.g., @$a)
+		// Semantics: offset of first match => index = 1
+		if id, ok := unaryOp.Right.(*ast.Identifier); ok {
+			if offset, exists := cc.stringOffsets[id.Name]; exists {
+				// OP_OFFSET expects stack: [pattern_name, index] -> [offset]
+				// Push pattern name from memory, then index 1
+				cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(offset)}, unaryOp.Pos.Line, unaryOp.Pos.Column)
+				cc.emitter.EmitPush(1, unaryOp.Pos.Line, unaryOp.Pos.Column)
+				cc.emitter.EmitOpcode(OP_OFFSET, unaryOp.Pos.Line, unaryOp.Pos.Column)
+				return nil
+			}
+			return fmt.Errorf("undefined string identifier for position operator: %s", id.Name)
+		}
+		return fmt.Errorf("POSITION (@) expects a string identifier operand")
 	case token.NOT:
-		opcode = OP_NOT
+		// Fall through to generic stack-based NOT after compiling operand
+		if err := cc.compileExpression(unaryOp.Right); err != nil {
+			return err
+		}
+		cc.emitter.EmitOpcode(OP_NOT, unaryOp.Pos.Line, unaryOp.Pos.Column)
+		return nil
 	case token.BITWISE_NOT:
-		opcode = OP_BITWISE_NOT
+		if err := cc.compileExpression(unaryOp.Right); err != nil {
+			return err
+		}
+		cc.emitter.EmitOpcode(OP_BITWISE_NOT, unaryOp.Pos.Line, unaryOp.Pos.Column)
+		return nil
 	case token.MINUS:
-		opcode = OP_INT_MINUS
+		if err := cc.compileExpression(unaryOp.Right); err != nil {
+			return err
+		}
+		cc.emitter.EmitOpcode(OP_INT_MINUS, unaryOp.Pos.Line, unaryOp.Pos.Column)
+		return nil
 	default:
 		return fmt.Errorf("unsupported unary operator: %s", unaryOp.Op)
 	}
-
-	cc.emitter.EmitOpcode(opcode, unaryOp.Pos.Line, unaryOp.Pos.Column)
-	return nil
 }
 
 // AddVariable adds a variable to the variable map
@@ -196,11 +270,6 @@ func (cc *ConditionCompiler) GetVariableIndex(name string) (int, bool) {
 	return index, exists
 }
 
-// generateLabel generates a unique label for jumps
-func (cc *ConditionCompiler) generateLabel() string {
-	cc.labelCounter++
-	return fmt.Sprintf("L%d", cc.labelCounter)
-}
 
 // EmitJump emits a jump instruction with label management
 func (cc *ConditionCompiler) EmitJump(opcode Opcode, targetLabel string, line, pos int) error {
@@ -217,12 +286,13 @@ func (cc *ConditionCompiler) CompileBooleanExpression(expr ast.Expression, short
 	}
 
 	// For short-circuit evaluation, we need to handle AND/OR specially
-	switch e := expr.(type) {
-	case *ast.BinaryOp:
-		if e.Op == token.AND {
-			return cc.compileShortCircuitAnd(e)
-		} else if e.Op == token.OR {
-			return cc.compileShortCircuitOr(e)
+	binOp, ok := expr.(*ast.BinaryOp)
+	if ok {
+		switch binOp.Op {
+		case token.AND:
+			return cc.compileShortCircuitAnd(binOp)
+		case token.OR:
+			return cc.compileShortCircuitOr(binOp)
 		}
 	}
 

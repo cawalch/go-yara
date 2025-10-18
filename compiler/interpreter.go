@@ -9,8 +9,8 @@ import (
 
 // Value represents a YARA value that can be int, double, or string
 type Value struct {
-	Type  ValueType
-	IntVal   int64
+	Type      ValueType
+	IntVal    int64
 	DoubleVal float64
 	StringVal string
 }
@@ -19,30 +19,33 @@ type Value struct {
 type ValueType uint8
 
 const (
+	// ValueTypeInt represents an integer value
 	ValueTypeInt ValueType = iota
+	// ValueTypeDouble represents a floating-point value
 	ValueTypeDouble
+	// ValueTypeString represents a string value
 	ValueTypeString
+	// ValueTypeUndefined represents an undefined value
 	ValueTypeUndefined
 )
 
 // Interpreter represents a bytecode interpreter for YARA rules
 type Interpreter struct {
-	bytecode      []byte
-	ip            int           // Instruction pointer
-	stack         []Value       // Execution stack
-	memory        [256]Value    // Memory slots for variables
-	registers     [4]Value      // Working registers (r1-r4)
-	stopped       bool
-	result        error
-	matchContext  *MatchContext // Pattern matching context
+	bytecode     []byte
+	ip           int        // Instruction pointer
+	stack        []Value    // Execution stack
+	memory       [256]Value // Memory slots for variables
+	stopped      bool
+	result       error
+	matchContext *MatchContext // Pattern matching context
 }
 
 // MatchContext holds pattern matching state
 type MatchContext struct {
-	Data          []byte
-	Matches       map[string][]Match // Pattern -> list of matches
-	FileSize      int64
-	EntryPoint    int64
+	Data       []byte
+	Matches    map[string][]Match // Pattern -> list of matches
+	FileSize   int64
+	EntryPoint int64
 }
 
 // Match represents a pattern match
@@ -64,10 +67,10 @@ func (mc *MatchContext) AddMatch(m Match) {
 // NewInterpreter creates a new bytecode interpreter
 func NewInterpreter(bytecode []byte) *Interpreter {
 	return &Interpreter{
-		bytecode:     bytecode,
-		ip:           0,
-		stack:        make([]Value, 0, 256),
-		stopped:      false,
+		bytecode: bytecode,
+		ip:       0,
+		stack:    make([]Value, 0, 256),
+		stopped:  false,
 		matchContext: &MatchContext{
 			Matches: make(map[string][]Match),
 		},
@@ -145,11 +148,12 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 	case OP_NOT:
 		if len(i.stack) > 0 {
 			v := i.stack[len(i.stack)-1]
-			if v.Type == ValueTypeUndefined {
+			switch {
+			case v.Type == ValueTypeUndefined:
 				i.stack[len(i.stack)-1] = Value{Type: ValueTypeInt, IntVal: 0}
-			} else if v.IntVal == 0 {
+			case v.IntVal == 0:
 				i.stack[len(i.stack)-1] = Value{Type: ValueTypeInt, IntVal: 1}
-			} else {
+			default:
 				i.stack[len(i.stack)-1] = Value{Type: ValueTypeInt, IntVal: 0}
 			}
 		}
@@ -709,6 +713,23 @@ func (i *Interpreter) GetMemory(addr int) Value {
 	return Value{Type: ValueTypeUndefined}
 }
 
+// SetMemoryString sets a VM memory slot to a string value
+func (i *Interpreter) SetMemoryString(addr int, s string) {
+	if addr >= 0 && addr < 256 {
+		i.memory[addr] = Value{Type: ValueTypeString, StringVal: s}
+	}
+}
+
+
+// pushComparisonResult pushes the result of a comparison to the stack
+func (i *Interpreter) pushComparisonResult(result bool) {
+	if result {
+		i.push(Value{Type: ValueTypeInt, IntVal: 1})
+	} else {
+		i.push(Value{Type: ValueTypeInt, IntVal: 0})
+	}
+}
+
 // executeComparison executes a comparison operation
 func (i *Interpreter) executeComparison(op func(int64, int64) bool) error {
 	if len(i.stack) < 2 {
@@ -718,10 +739,8 @@ func (i *Interpreter) executeComparison(op func(int64, int64) bool) error {
 	a := i.pop()
 	if a.Type == ValueTypeUndefined || b.Type == ValueTypeUndefined {
 		i.push(Value{Type: ValueTypeInt, IntVal: 0})
-	} else if op(a.IntVal, b.IntVal) {
-		i.push(Value{Type: ValueTypeInt, IntVal: 1})
 	} else {
-		i.push(Value{Type: ValueTypeInt, IntVal: 0})
+		i.pushComparisonResult(op(a.IntVal, b.IntVal))
 	}
 	return nil
 }
@@ -735,10 +754,8 @@ func (i *Interpreter) executeDoubleComparison(op func(float64, float64) bool) er
 	a := i.pop()
 	if a.Type == ValueTypeUndefined || b.Type == ValueTypeUndefined {
 		i.push(Value{Type: ValueTypeInt, IntVal: 0})
-	} else if op(a.DoubleVal, b.DoubleVal) {
-		i.push(Value{Type: ValueTypeInt, IntVal: 1})
 	} else {
-		i.push(Value{Type: ValueTypeInt, IntVal: 0})
+		i.pushComparisonResult(op(a.DoubleVal, b.DoubleVal))
 	}
 	return nil
 }
@@ -799,101 +816,87 @@ func (i *Interpreter) executeStringComparison(op func(string, string) bool) erro
 	a := i.pop()
 	if a.Type == ValueTypeUndefined || b.Type == ValueTypeUndefined {
 		i.push(Value{Type: ValueTypeInt, IntVal: 0})
-	} else if op(a.StringVal, b.StringVal) {
-		i.push(Value{Type: ValueTypeInt, IntVal: 1})
 	} else {
-		i.push(Value{Type: ValueTypeInt, IntVal: 0})
+		i.pushComparisonResult(op(a.StringVal, b.StringVal))
 	}
+	return nil
+}
+
+// readIntFromData reads an integer from data using the specified byte order
+func (i *Interpreter) readIntFromData(size int, unsigned bool, bigEndian bool) (int64, error) {
+	off := int(i.stack[len(i.stack)-1].IntVal)
+	if off < 0 || off+size > len(i.matchContext.Data) {
+		return 0, fmt.Errorf("out of bounds")
+	}
+
+	data := i.matchContext.Data[off : off+size]
+	var val int64
+
+	switch size {
+	case 1:
+		if unsigned {
+			val = int64(data[0])
+		} else {
+			val = int64(int8(data[0]))
+		}
+	case 2:
+		var u16 uint16
+		if bigEndian {
+			u16 = binary.BigEndian.Uint16(data)
+		} else {
+			u16 = binary.LittleEndian.Uint16(data)
+		}
+		if unsigned {
+			val = int64(u16)
+		} else {
+			val = int64(int16(u16))
+		}
+	case 4:
+		var u32 uint32
+		if bigEndian {
+			u32 = binary.BigEndian.Uint32(data)
+		} else {
+			u32 = binary.LittleEndian.Uint32(data)
+		}
+		if unsigned {
+			val = int64(u32)
+		} else {
+			val = int64(int32(u32))
+		}
+	}
+
+	return val, nil
+}
+
+// executeReadIntHelper is a common helper for reading integers
+func (i *Interpreter) executeReadIntHelper(size int, unsigned bool, bigEndian bool) error {
+	if len(i.stack) < 1 {
+		return fmt.Errorf("stack underflow")
+	}
+	offset := i.pop()
+	if offset.Type == ValueTypeUndefined {
+		i.push(Value{Type: ValueTypeUndefined})
+		return nil
+	}
+
+	i.push(offset)
+	val, err := i.readIntFromData(size, unsigned, bigEndian)
+	i.pop()
+	if err != nil {
+		i.push(Value{Type: ValueTypeUndefined})
+		return nil
+	}
+
+	i.push(Value{Type: ValueTypeInt, IntVal: val})
 	return nil
 }
 
 // executeReadInt reads an integer from data at the given offset
 func (i *Interpreter) executeReadInt(size int, unsigned bool) error {
-	if len(i.stack) < 1 {
-		return fmt.Errorf("stack underflow")
-	}
-	offset := i.pop()
-	if offset.Type == ValueTypeUndefined {
-		i.push(Value{Type: ValueTypeUndefined})
-		return nil
-	}
-
-	off := int(offset.IntVal)
-	if off < 0 || off+size > len(i.matchContext.Data) {
-		i.push(Value{Type: ValueTypeUndefined})
-		return nil
-	}
-
-	data := i.matchContext.Data[off : off+size]
-	var val int64
-
-	switch size {
-	case 1:
-		if unsigned {
-			val = int64(data[0])
-		} else {
-			val = int64(int8(data[0]))
-		}
-	case 2:
-		if unsigned {
-			val = int64(binary.LittleEndian.Uint16(data))
-		} else {
-			val = int64(int16(binary.LittleEndian.Uint16(data)))
-		}
-	case 4:
-		if unsigned {
-			val = int64(binary.LittleEndian.Uint32(data))
-		} else {
-			val = int64(int32(binary.LittleEndian.Uint32(data)))
-		}
-	}
-
-	i.push(Value{Type: ValueTypeInt, IntVal: val})
-	return nil
+	return i.executeReadIntHelper(size, unsigned, false)
 }
 
 // executeReadIntBE reads a big-endian integer from data
 func (i *Interpreter) executeReadIntBE(size int, unsigned bool) error {
-	if len(i.stack) < 1 {
-		return fmt.Errorf("stack underflow")
-	}
-	offset := i.pop()
-	if offset.Type == ValueTypeUndefined {
-		i.push(Value{Type: ValueTypeUndefined})
-		return nil
-	}
-
-	off := int(offset.IntVal)
-	if off < 0 || off+size > len(i.matchContext.Data) {
-		i.push(Value{Type: ValueTypeUndefined})
-		return nil
-	}
-
-	data := i.matchContext.Data[off : off+size]
-	var val int64
-
-	switch size {
-	case 1:
-		if unsigned {
-			val = int64(data[0])
-		} else {
-			val = int64(int8(data[0]))
-		}
-	case 2:
-		if unsigned {
-			val = int64(binary.BigEndian.Uint16(data))
-		} else {
-			val = int64(int16(binary.BigEndian.Uint16(data)))
-		}
-	case 4:
-		if unsigned {
-			val = int64(binary.BigEndian.Uint32(data))
-		} else {
-			val = int64(int32(binary.BigEndian.Uint32(data)))
-		}
-	}
-
-	i.push(Value{Type: ValueTypeInt, IntVal: val})
-	return nil
+	return i.executeReadIntHelper(size, unsigned, true)
 }
-

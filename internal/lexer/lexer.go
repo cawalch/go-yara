@@ -85,6 +85,9 @@ func (l *Lexer) NextToken() token.Token {
 		return l.makeSimpleToken(token.BITWISE_XOR, "^", pos)
 	case '~':
 		return l.makeSimpleToken(token.BITWISE_NOT, "~", pos)
+	case '@':
+		// Position operator '@' (AT)
+		return l.makeSimpleToken(token.AT, "@", pos)
 	case 0:
 		return l.makeToken(token.EOF, "", pos)
 	default:

@@ -35,23 +35,23 @@ type TestVisitor struct {
 	visited bool
 }
 
-func (v *TestVisitor) VisitRule(r *Rule) interface{} {
+func (v *TestVisitor) VisitRule(r *Rule) any {
 	v.visited = true
 	return nil
 }
 
 // Implement other visitor methods...
-func (v *TestVisitor) VisitProgram(n *Program) interface{}     { return nil }
-func (v *TestVisitor) VisitMeta(n *Meta) interface{}           { return nil }
-func (v *TestVisitor) VisitString(n *String) interface{}       { return nil }
-func (v *TestVisitor) VisitCondition(n *Condition) interface{} { return nil }
-func (v *TestVisitor) VisitBinaryOp(n *BinaryOp) interface{}   { return nil }
-func (v *TestVisitor) VisitUnaryOp(n *UnaryOp) interface{}     { return nil }
-func (v *TestVisitor) VisitIdentifier(n *Identifier) interface{} { return nil }
-func (v *TestVisitor) VisitLiteral(n *Literal) interface{}     { return nil }
-func (v *TestVisitor) VisitTextString(n *TextString) interface{} { return nil }
-func (v *TestVisitor) VisitHexString(n *HexString) interface{} { return nil }
-func (v *TestVisitor) VisitRegexPattern(n *RegexPattern) interface{} { return nil }
+func (v *TestVisitor) VisitProgram(n *Program) any           { return nil }
+func (v *TestVisitor) VisitMeta(n *Meta) any                 { return nil }
+func (v *TestVisitor) VisitString(n *String) any             { return nil }
+func (v *TestVisitor) VisitCondition(n *Condition) any       { return nil }
+func (v *TestVisitor) VisitBinaryOp(n *BinaryOp) any         { return nil }
+func (v *TestVisitor) VisitUnaryOp(n *UnaryOp) any           { return nil }
+func (v *TestVisitor) VisitIdentifier(n *Identifier) any     { return nil }
+func (v *TestVisitor) VisitLiteral(n *Literal) any           { return nil }
+func (v *TestVisitor) VisitTextString(n *TextString) any     { return nil }
+func (v *TestVisitor) VisitHexString(n *HexString) any       { return nil }
+func (v *TestVisitor) VisitRegexPattern(n *RegexPattern) any { return nil }
 
 func TestBuilderUtilities(t *testing.T) {
 	builder := NewBuilder()

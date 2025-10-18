@@ -11,6 +11,16 @@ func (l *Lexer) readNumber() string {
 	return l.reader.Slice(start)
 }
 
+// readFloatFraction reads the fractional part of a float literal (. followed by digits)
+func (l *Lexer) readFloatFraction() string {
+	start := l.position()
+	l.readChar() // skip '.'
+	for isDigit(l.ch()) {
+		l.readChar()
+	}
+	return l.reader.Slice(start)
+}
+
 // readHexInteger reads a hexadecimal integer literal (0x prefix)
 func (l *Lexer) readHexInteger() string {
 	start := l.position()

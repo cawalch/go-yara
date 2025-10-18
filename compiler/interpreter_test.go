@@ -2,6 +2,8 @@ package compiler
 
 import (
 	"testing"
+
+	"github.com/cawalch/go-yara/regex"
 )
 
 // TestInterpreterBasicStack tests basic stack operations
@@ -577,8 +579,6 @@ func TestInterpreterNegation(t *testing.T) {
 	}
 }
 
-
-
 // TestInterpreterOffsetOperation tests OP_OFFSET operation
 func TestInterpreterOffsetOperation(t *testing.T) {
 	tests := []struct {
@@ -724,9 +724,9 @@ func TestInterpreterFound(t *testing.T) {
 			expected: 0,
 		},
 		{
-			name:    "found_empty_matches",
-			pattern: "test",
-			matches: map[string][]Match{},
+			name:     "found_empty_matches",
+			pattern:  "test",
+			matches:  map[string][]Match{},
 			expected: 0,
 		},
 	}
@@ -780,9 +780,9 @@ func TestInterpreterCount(t *testing.T) {
 			expected: 3,
 		},
 		{
-			name:    "count_no_matches",
-			pattern: "test",
-			matches: map[string][]Match{},
+			name:     "count_no_matches",
+			pattern:  "test",
+			matches:  map[string][]Match{},
 			expected: 0,
 		},
 	}
@@ -866,12 +866,12 @@ func TestInterpreterFoundAt(t *testing.T) {
 // TestInterpreterFoundIn tests OP_FOUND_IN operation
 func TestInterpreterFoundIn(t *testing.T) {
 	tests := []struct {
-		name      string
-		pattern   string
-		startOff  int64
-		endOff    int64
-		matches   map[string][]Match
-		expected  int64
+		name     string
+		pattern  string
+		startOff int64
+		endOff   int64
+		matches  map[string][]Match
+		expected int64
 	}{
 		{
 			name:     "found_in_match_in_range",
@@ -1007,7 +1007,7 @@ func TestInterpreterStackUnderflow(t *testing.T) {
 	}
 }
 
-// TestInterpreterTypeConversion tests type conversion operations
+	// TestInterpreterTypeConversion tests type conversion operations
 func TestInterpreterTypeConversion(t *testing.T) {
 	bytecode := []byte{
 		byte(OP_PUSH_8), 1,
@@ -1028,3 +1028,114 @@ func TestInterpreterTypeConversion(t *testing.T) {
 	}
 }
 
+// Regex-backed FOUND/FOUND_AT/FOUND_IN parity tests (compiler-level)
+func TestInterpreterRegexFoundOps(t *testing.T) {
+	// Compile a simple regex via the internal compiler path
+	sc := NewStringCompiler(NewEmitter())
+	code, err := sc.compileRegex(`/ab+/`, nil)
+	if err != nil {
+		t.Fatalf("compileRegex error: %v", err)
+	}
+
+	// Generate matches using the regex VM (scan semantics like execution pipeline)
+	data := []byte("zabbb zab ab")
+	flags := regex.FlagsScan
+
+	type M = Match
+	var matches []M
+	searchStart := 0
+	for searchStart <= len(data) {
+		ok, start, end := regex.ExecMatch(code, data[searchStart:], flags)
+		if !ok {
+			break
+		}
+		absStart := searchStart + start
+		absEnd := searchStart + end
+		matches = append(matches, M{
+			Pattern: "$a",
+			Offset:  int64(absStart),
+			Length:  absEnd - absStart,
+			Base:    0,
+		})
+		// Advance by one to allow overlapping matches (mirrors cmd/main.go)
+		if absStart+1 > searchStart {
+			searchStart = absStart + 1
+		} else {
+			searchStart++
+		}
+	}
+
+	if len(matches) == 0 {
+		t.Fatalf("expected at least one regex-derived match, got 0")
+	}
+
+	// Interpreter with only HALT; we'll invoke opcodes directly
+	interp := NewInterpreter([]byte{byte(OP_HALT)})
+	interp.matchContext.Matches = map[string][]Match{
+		"$a": matches,
+	}
+
+	// FOUND($a) -> true
+	interp.push(Value{Type: ValueTypeString, StringVal: "$a"})
+	if err := interp.executeOpcode(OP_FOUND); err != nil {
+		t.Fatalf("executeOpcode(OP_FOUND) error = %v", err)
+	}
+	if len(interp.GetStack()) != 1 || interp.GetStack()[0].IntVal != 1 {
+		t.Fatalf("FOUND($a) expected 1, got %+v", interp.GetStack()[0])
+	}
+	interp.stack = interp.stack[:0]
+
+	// FOUND_AT($a, off) where off is an actual match start -> true
+	hitOff := matches[0].Offset
+	interp.push(Value{Type: ValueTypeString, StringVal: "$a"})
+	interp.push(Value{Type: ValueTypeInt, IntVal: hitOff})
+	if err := interp.executeOpcode(OP_FOUND_AT); err != nil {
+		t.Fatalf("executeOpcode(OP_FOUND_AT) error = %v", err)
+	}
+	if len(interp.GetStack()) != 1 || interp.GetStack()[0].IntVal != 1 {
+		t.Fatalf("FOUND_AT($a, %d) expected 1, got %+v", hitOff, interp.GetStack()[0])
+	}
+	interp.stack = interp.stack[:0]
+
+	// FOUND_AT($a, miss) -> false
+	missOff := hitOff + 99
+	interp.push(Value{Type: ValueTypeString, StringVal: "$a"})
+	interp.push(Value{Type: ValueTypeInt, IntVal: missOff})
+	if err := interp.executeOpcode(OP_FOUND_AT); err != nil {
+		t.Fatalf("executeOpcode(OP_FOUND_AT) error = %v", err)
+	}
+	if len(interp.GetStack()) != 1 || interp.GetStack()[0].IntVal != 0 {
+		t.Fatalf("FOUND_AT($a, %d) expected 0, got %+v", missOff, interp.GetStack()[0])
+	}
+	interp.stack = interp.stack[:0]
+
+	// FOUND_IN($a, start, end) covering a known hit -> true
+	startIn := hitOff - 1
+	if startIn < 0 {
+		startIn = 0
+	}
+	endIn := hitOff + 10
+	interp.push(Value{Type: ValueTypeString, StringVal: "$a"})
+	interp.push(Value{Type: ValueTypeInt, IntVal: startIn})
+	interp.push(Value{Type: ValueTypeInt, IntVal: endIn})
+	if err := interp.executeOpcode(OP_FOUND_IN); err != nil {
+		t.Fatalf("executeOpcode(OP_FOUND_IN) error = %v", err)
+	}
+	if len(interp.GetStack()) != 1 || interp.GetStack()[0].IntVal != 1 {
+		t.Fatalf("FOUND_IN($a, %d, %d) expected 1, got %+v", startIn, endIn, interp.GetStack()[0])
+	}
+	interp.stack = interp.stack[:0]
+
+	// FOUND_IN($a, start, end) entirely before the first match -> false
+	beforeStart := int64(0)
+	beforeEnd := hitOff - 1
+	interp.push(Value{Type: ValueTypeString, StringVal: "$a"})
+	interp.push(Value{Type: ValueTypeInt, IntVal: beforeStart})
+	interp.push(Value{Type: ValueTypeInt, IntVal: beforeEnd})
+	if err := interp.executeOpcode(OP_FOUND_IN); err != nil {
+		t.Fatalf("executeOpcode(OP_FOUND_IN) error = %v", err)
+	}
+	if len(interp.GetStack()) != 1 || interp.GetStack()[0].IntVal != 0 {
+		t.Fatalf("FOUND_IN($a, %d, %d) expected 0, got %+v", beforeStart, beforeEnd, interp.GetStack()[0])
+	}
+}

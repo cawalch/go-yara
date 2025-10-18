@@ -26,6 +26,19 @@ func NewEmitter() *Emitter {
 	}
 }
 
+// ReserveInstructions ensures the instruction buffer has capacity for at least n entries
+func (e *Emitter) ReserveInstructions(n int) {
+	if n <= 0 {
+		return
+	}
+	// If current capacity is less than desired, grow to n while preserving contents
+	if cap(e.instructions) < n {
+		newSlice := make([]Instruction, len(e.instructions), n)
+		copy(newSlice, e.instructions)
+		e.instructions = newSlice
+	}
+}
+
 // Emit adds an instruction to the bytecode stream
 func (e *Emitter) Emit(inst *Instruction) int {
 	offset := e.currentOffset
@@ -159,13 +172,11 @@ func (e *Emitter) GetBytecode() ([]byte, error) {
 		return nil, fmt.Errorf("fixing up jumps: %w", err)
 	}
 
-	var bytecode []byte
-	offset := 0
+	// Preallocate final buffer using tracked size to avoid growth
+	bytecode := make([]byte, 0, e.currentOffset)
 
 	for _, inst := range e.instructions {
-		instBytes := inst.Bytes()
-		bytecode = append(bytecode, instBytes...)
-		offset += len(instBytes)
+		bytecode = inst.AppendBytes(bytecode)
 	}
 
 	return bytecode, nil

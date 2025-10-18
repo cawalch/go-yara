@@ -153,7 +153,7 @@ func TestPhase3Integration_ErrorRecovery(t *testing.T) {
 		condition:
 			filesize > 1MB and
 			uint32(0) & 0xFF00 == 0x4D00 and
-			invalid_operator @@ and
+			invalid_operator ?? and
 			uint16(entrypoint) >> 8 < 256
 	}`
 

@@ -110,11 +110,11 @@ func ExampleLexer_NextToken() {
 // ExampleRecoveryMode demonstrates different error recovery modes.
 func ExampleRecoveryMode() {
 	// Basic recovery mode (default)
-	lexer1 := lexer.New("@")
+	lexer1 := lexer.New("?")
 	_ = lexer1.NextToken() // This will encounter an error
 
 	// Section recovery mode - more aggressive error recovery
-	lexer2 := lexer.NewWithRecovery("@", lexer.RecoverySection)
+	lexer2 := lexer.NewWithRecovery("?", lexer.RecoverySection)
 	_ = lexer2.NextToken()
 
 	fmt.Printf("Basic recovery errors: %d\n", len(lexer1.Errors()))

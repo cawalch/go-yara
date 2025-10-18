@@ -1,5 +1,4 @@
 // Package compiler provides bytecode generation and compilation for YARA rules.
-
 package compiler
 
 import (

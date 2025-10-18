@@ -154,9 +154,9 @@ func TestTabsAndCRLF(t *testing.T) {
 }
 
 func TestIllegalUnknownCharacter(t *testing.T) {
-	l := lexer.New("@")
+	l := lexer.New("?")
 	tok := l.NextToken()
-	if tok.Type != token.ILLEGAL || tok.Literal != "@" {
-		t.Fatalf("expected ILLEGAL token with literal '@', got %v %q", tok.Type, tok.Literal)
+	if tok.Type != token.ILLEGAL || tok.Literal != "?" {
+		t.Fatalf("expected ILLEGAL token with literal '?', got %v %q", tok.Type, tok.Literal)
 	}
 }

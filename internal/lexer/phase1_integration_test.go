@@ -93,7 +93,7 @@ func TestPhase1Integration_ErrorRecovery(t *testing.T) {
 			$a = "test"
 		condition:
 			all of them and
-			filesize > @@@ and  // Invalid characters
+			filesize > ??? and  // Invalid characters
 			1 + 2 * 0x100KB
 	}`
 
@@ -211,7 +211,7 @@ func TestPhase1Integration_EdgeCases(t *testing.T) {
 		},
 		{
 			name:     "mixed valid and invalid",
-			input:    "1KB + 0xFF * @@@ / 2MB",
+			input:    "1KB + 0xFF * ??? / 2MB",
 			hasError: true, // Should have ILLEGAL token for @@@
 		},
 	}

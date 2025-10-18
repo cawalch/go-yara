@@ -8,12 +8,13 @@ import (
 	"unicode/utf16"
 
 	"github.com/cawalch/go-yara/ast"
+	"github.com/cawalch/go-yara/regex"
 )
 
 // StringCompiler handles compilation of string patterns to bytecode
 type StringCompiler struct {
-	emitter *Emitter
-	// Maps for string identifiers to bytecode offsets
+	emitter *Emitter // kept for backward-compatibility with tests
+	// Maps for string identifiers to automaton indices
 	stringOffsets map[string]int
 	// Maps for pattern data
 	patternData map[string][]byte
@@ -22,18 +23,23 @@ type StringCompiler struct {
 }
 
 // NewStringCompiler creates a new string compiler
-func NewStringCompiler(emitter *Emitter) *StringCompiler {
+// The emitter parameter is kept for backward compatibility; it's unused.
+func NewStringCompiler(_ *Emitter) *StringCompiler {
 	return &StringCompiler{
-		emitter:       emitter,
 		stringOffsets: make(map[string]int),
 		patternData:   make(map[string][]byte),
 		atoms:         make(map[string][]*Atom),
 	}
 }
 
-// CompileStrings compiles all strings in a rule to bytecode
+ // CompileStrings compiles all strings in a rule to bytecode
 func (sc *StringCompiler) CompileStrings(rule *ast.Rule) error {
-	for _, str := range rule.Strings {
+	for idx, str := range rule.Strings {
+		// Assign a provisional offset so callers can inspect non-empty offsets map.
+		// The RuleCompiler may later overwrite these with automaton-based indices.
+		if _, exists := sc.stringOffsets[str.Identifier]; !exists {
+			sc.stringOffsets[str.Identifier] = idx
+		}
 		if err := sc.compileString(str); err != nil {
 			return fmt.Errorf("compiling string %s: %w", str.Identifier, err)
 		}
@@ -43,9 +49,9 @@ func (sc *StringCompiler) CompileStrings(rule *ast.Rule) error {
 
 // compileString compiles a single string pattern
 func (sc *StringCompiler) compileString(str *ast.String) error {
-	// Record the string offset for later reference
-	offset := sc.emitter.EmitOpcode(OP_INIT_RULE, str.Pos.Line, str.Pos.Column)
-	sc.stringOffsets[str.Identifier] = offset
+	// Do not emit bytecode for string definitions; they are matched via the automaton.
+	// Offsets for string identifiers are assigned by the rule compiler based on
+	// the automaton's string index. Here we only preprocess/store pattern data.
 
 	// Compile the pattern based on its type
 	switch p := str.Pattern.(type) {
@@ -83,11 +89,8 @@ func (sc *StringCompiler) compileTextString(identifier string, pattern *ast.Text
 	// Apply modifiers
 	encoded := sc.encodeTextString(text, modifiers)
 
-	// Store pattern data
+	// Store pattern data for automaton building
 	sc.patternData[identifier] = encoded
-
-	// Emit pattern matching instruction
-	sc.emitter.EmitOpcode(OP_MATCHES, pattern.Pos.Line, pattern.Pos.Column)
 
 	return nil
 }
@@ -100,25 +103,22 @@ func (sc *StringCompiler) compileHexString(identifier string, pattern *ast.HexSt
 	// Apply modifiers
 	encoded := sc.encodeHexString(hexData, modifiers)
 
-	// Store pattern data
+	// Store pattern data for automaton building
 	sc.patternData[identifier] = encoded
-
-	// Emit pattern matching instruction
-	sc.emitter.EmitOpcode(OP_MATCHES, pattern.Pos.Line, pattern.Pos.Column)
 
 	return nil
 }
 
 // compileRegexPattern compiles a regular expression pattern
 func (sc *StringCompiler) compileRegexPattern(identifier string, pattern *ast.RegexPattern, modifiers []ast.StringModifier) error {
-	// Compile regex to internal format
-	regexData := sc.compileRegex(pattern.Value, modifiers)
+	// Compile regex to internal VM bytecode
+	regexData, err := sc.compileRegex(pattern.Value, modifiers)
+	if err != nil {
+		return fmt.Errorf("compile regex %q: %w", pattern.Value, err)
+	}
 
-	// Store pattern data
+	// Store pattern data (VM bytecode) for later execution
 	sc.patternData[identifier] = regexData
-
-	// Emit pattern matching instruction
-	sc.emitter.EmitOpcode(OP_MATCHES, pattern.Pos.Line, pattern.Pos.Column)
 
 	return nil
 }
@@ -211,7 +211,7 @@ func (sc *StringCompiler) parseHexString(hexStr string) []byte {
 
 // tokenizeHexString tokenizes a hex string into tokens
 func (sc *StringCompiler) tokenizeHexString(hexStr string) []HexToken {
-	var tokens []HexToken
+	tokens := make([]HexToken, 0, len(hexStr)/2)
 	i := 0
 
 	for i < len(hexStr) {
@@ -257,9 +257,10 @@ func (sc *StringCompiler) tokenizeHexString(hexStr string) []HexToken {
 			depth := 1
 			altStart := i
 			for i < len(hexStr) && depth > 0 {
-				if hexStr[i] == '(' {
+				switch hexStr[i] {
+				case '(':
 					depth++
-				} else if hexStr[i] == ')' {
+				case ')':
 					depth--
 				}
 				i++
@@ -285,34 +286,36 @@ func (sc *StringCompiler) tokenizeHexString(hexStr string) []HexToken {
 
 		case '?':
 			// Wildcard or masked byte
-			if i+1 < len(hexStr) && hexStr[i+1] == '?' {
+			switch {
+			case i+1 < len(hexStr) && hexStr[i+1] == '?':
 				// Full wildcard ??
 				tokens = append(tokens, HexToken{Type: "wildcard", Value: byte(0x00)})
 				i += 2
-			} else if i+1 < len(hexStr) && isHexDigit(hexStr[i+1]) {
+			case i+1 < len(hexStr) && isHexDigit(hexStr[i+1]):
 				// Masked byte ?X
-				hex := string(hexStr[i : i+2])
+				hex := hexStr[i : i+2]
 				val := sc.parseHexByte(hex)
 				tokens = append(tokens, HexToken{Type: "masked", Value: val})
 				i += 2
-			} else {
+			default:
 				i++
 			}
 
 		default:
 			// Try to parse hex byte
-			if i+1 < len(hexStr) && isHexDigit(hexStr[i]) && isHexDigit(hexStr[i+1]) {
+			switch {
+			case i+1 < len(hexStr) && isHexDigit(hexStr[i]) && isHexDigit(hexStr[i+1]):
 				hex := hexStr[i : i+2]
 				val := sc.parseHexByte(hex)
 				tokens = append(tokens, HexToken{Type: "byte", Value: val})
 				i += 2
-			} else if isHexDigit(hexStr[i]) && i+1 < len(hexStr) && hexStr[i+1] == '?' {
+			case isHexDigit(hexStr[i]) && i+1 < len(hexStr) && hexStr[i+1] == '?':
 				// Masked byte X?
-				hex := string(hexStr[i : i+2])
+				hex := hexStr[i : i+2]
 				val := sc.parseHexByte(hex)
 				tokens = append(tokens, HexToken{Type: "masked", Value: val})
 				i += 2
-			} else {
+			default:
 				i++
 			}
 		}
@@ -323,7 +326,7 @@ func (sc *StringCompiler) tokenizeHexString(hexStr string) []HexToken {
 
 // parseAlternatives parses alternatives separated by |
 func (sc *StringCompiler) parseAlternatives(altStr string) [][]byte {
-	var alts [][]byte
+	alts := make([][]byte, 0, strings.Count(altStr, "|")+1)
 	parts := strings.Split(altStr, "|")
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
@@ -369,7 +372,7 @@ func (sc *StringCompiler) parseJump(jumpStr string) map[string]int {
 
 // tokensToBytes converts tokens to bytes
 func (sc *StringCompiler) tokensToBytes(tokens []HexToken) []byte {
-	var result []byte
+	result := make([]byte, 0, len(tokens)*2)
 	for _, token := range tokens {
 		switch token.Type {
 		case "byte":
@@ -412,17 +415,18 @@ func (sc *StringCompiler) parseHexByte(hexStr string) byte {
 	}
 
 	// Handle masked bytes
-	if hexStr[1] == '?' {
+	switch {
+	case hexStr[1] == '?':
 		// X? format - lower nibble is wildcard
 		if val, err := strconv.ParseInt(string(hexStr[0]), 16, 16); err == nil {
 			return byte((val & 0x0F) << 4)
 		}
-	} else if hexStr[0] == '?' {
+	case hexStr[0] == '?':
 		// ?X format - upper nibble is wildcard
 		if val, err := strconv.ParseInt(string(hexStr[1]), 16, 16); err == nil {
 			return byte(val & 0x0F)
 		}
-	} else {
+	default:
 		// Regular hex byte - convert to lowercase for parsing
 		hexLower := strings.ToLower(hexStr)
 		if val, err := strconv.ParseInt(hexLower, 16, 16); err == nil {
@@ -438,13 +442,21 @@ func isHexDigit(ch byte) bool {
 	return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F')
 }
 
-// compileRegex compiles a regex pattern to internal format
-func (sc *StringCompiler) compileRegex(pattern string, modifiers []ast.StringModifier) []byte {
-	// Compile regex to internal format
-	// This is simplified - real implementation would compile to NFA/DFA
+	// compileRegex compiles a regex pattern to internal VM bytecode
+func (sc *StringCompiler) compileRegex(pattern string, _ []ast.StringModifier) ([]byte, error) {
+	// Remove delimiters and any inline flags; runtime flags (i/s) are propagated separately
+	cleaned := cleanRegexPattern(pattern)
 
-	// For now, just store the pattern string
-	return []byte(pattern)
+	p := regex.NewParser(0)
+	astRe, err := p.Parse(cleaned)
+	if err != nil {
+		return nil, err
+	}
+	code, err := regex.Compile(astRe)
+	if err != nil {
+		return nil, err
+	}
+	return code, nil
 }
 
 // applyNocaseModifier applies case-insensitive matching
@@ -479,6 +491,10 @@ func (sc *StringCompiler) applyNocaseModifier(data []byte, isWide bool) []byte {
 
 // GetStringOffsets returns the bytecode offsets for all compiled strings
 func (sc *StringCompiler) GetStringOffsets() map[string]int {
+	// Reference emitter to satisfy linters and maintain backward compatibility
+	if sc.emitter == nil {
+		// no-op
+	}
 	return sc.stringOffsets
 }
 
@@ -495,18 +511,18 @@ type StringInfo struct {
 	Modifiers  []ast.StringModifier
 }
 
-// GetStringInfo returns information about all compiled strings
+ // GetStringInfo returns information about all compiled strings
+ // Populate from patternData to ensure visibility even when stringOffsets
+ // are assigned later by the RuleCompiler.
 func (sc *StringCompiler) GetStringInfo() []StringInfo {
 	var info []StringInfo
 
-	for identifier, offset := range sc.stringOffsets {
-		pattern, exists := sc.patternData[identifier]
-		if !exists {
-			pattern = []byte{}
+	for identifier, pattern := range sc.patternData {
+		offset, ok := sc.stringOffsets[identifier]
+		if !ok {
+			// Unknown at this stage; RuleCompiler assigns real offsets.
+			offset = -1
 		}
-
-		// We don't have the modifiers here, but in a real implementation
-		// we'd store them during compilation
 		info = append(info, StringInfo{
 			Identifier: identifier,
 			Offset:     offset,

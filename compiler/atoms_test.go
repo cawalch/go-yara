@@ -87,13 +87,13 @@ func TestExtractFromRegexPattern(t *testing.T) {
 	}{
 		{"simple_literal", "/hello/", true, 5},
 		{"literal_with_flags", "/hello/i", true, 5},
-		{"literal_with_dot", "/hello.world/", true, 5}, // "hello" is extracted
-		{"literal_with_star", "/hello*/", true, 5},     // "hello" is extracted
-		{"literal_with_plus", "/hello+/", true, 5},     // "hello" is extracted
-		{"literal_with_question", "/hello?/", true, 5}, // "hello" is extracted
-		{"alternation", "/hello|world/", true, 5},      // "hello" or "world"
-		{"character_class", "/[a-z]+/", true, 3},       // "a-z" is extracted
-		{"escaped_char", "/hel\\.lo/", true, 6},        // "hel.lo"
+		{"literal_with_dot", "/hello.world/", true, 5},         // "hello" is extracted
+		{"literal_with_star", "/hello*/", true, 5},             // "hello" is extracted
+		{"literal_with_plus", "/hello+/", true, 5},             // "hello" is extracted
+		{"literal_with_question", "/hello?/", true, 5},         // "hello" is extracted
+		{"alternation", "/hello|world/", true, 5},              // "hello" or "world"
+		{"character_class", "/[a-z]+/", true, 3},               // "a-z" is extracted
+		{"escaped_char", "/hel\\.lo/", true, 6},                // "hel.lo"
 		{"complex_pattern", "/md5: [0-9a-fA-F]{32}/", true, 9}, // "0-9a-fA-F" is best atom
 		{"empty_pattern", "//", false, 0},
 		{"short_pattern", "/ab/", true, 2}, // "ab" is extracted (even though < MinAtomLength)
@@ -110,10 +110,8 @@ func TestExtractFromRegexPattern(t *testing.T) {
 				if len(atoms[0].Data) != tt.wantLen {
 					t.Errorf("expected atom length %d, got %d (data: %s)", tt.wantLen, len(atoms[0].Data), string(atoms[0].Data))
 				}
-			} else {
-				if len(atoms) > 0 {
-					t.Errorf("expected no atoms, got %d", len(atoms))
-				}
+			} else if len(atoms) > 0 {
+				t.Errorf("expected no atoms, got %d", len(atoms))
 			}
 		})
 	}

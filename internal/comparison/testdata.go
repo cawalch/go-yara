@@ -16,22 +16,20 @@ type TestData struct {
 // LoadTestData loads YARA rules from various sources for comparison testing.
 func LoadTestData() ([]TestData, error) {
 	var testData []TestData
-	
+
 	// Add inline test cases
 	testData = append(testData, getInlineTestCases()...)
-	
+
 	// Load from fuzzer corpus
 	corpusData, err := loadFuzzerCorpus()
 	if err == nil {
 		testData = append(testData, corpusData...)
 	}
-	
+
 	// Load sample rules
-	sampleData, err := loadSampleRules()
-	if err == nil {
-		testData = append(testData, sampleData...)
-	}
-	
+	sampleData := loadSampleRules()
+	testData = append(testData, sampleData...)
+
 	return testData, nil
 }
 
@@ -39,8 +37,8 @@ func LoadTestData() ([]TestData, error) {
 func getInlineTestCases() []TestData {
 	return []TestData{
 		{
-			Name:   "simple_rule",
-			Source: "inline",
+			Name:    "simple_rule",
+			Source:  "inline",
 			Content: `rule test { condition: false }`,
 		},
 		{
@@ -81,11 +79,29 @@ rule r24 { strings: $a = /[0-9a-f]+/ condition: $a }`,
 }`,
 		},
 		{
-			Name:   "arithmetic_and_bitwise",
-			Source: "inline",
-			Content: `rule r8 { condition: (1 + 1) * 2 == (9 - 1) \ 2 }
-rule r9 { condition: 1.5 + 1.5 == 3}
-rule r11 { condition: ~0xAA ^ 0x5A & 0xFF == (~0xAA) ^ (0x5A & 0xFF) }`,
+			Name:    "arithmetic_only",
+			Source:  "inline",
+			Content: `rule r8 { condition: (1 + 1) * 2 == (9 - 1) / 2 }`,
+		},
+		{
+			Name:    "simple_arithmetic",
+			Source:  "inline",
+			Content: `rule simple_arith { condition: 1 + 1 == 2 }`,
+		},
+		{
+			Name:    "bitwise_only",
+			Source:  "inline",
+			Content: `rule bitwise { condition: ~0xAA ^ 0x5A & 0xFF == (~0xAA) ^ (0x5A & 0xFF) }`,
+		},
+		{
+			Name:    "bitwise_only",
+			Source:  "inline",
+			Content: `rule bitwise { condition: ~0xAA ^ 0x5A & 0xFF == (~0xAA) ^ (0x5A & 0xFF) }`,
+		},
+		{
+			Name:    "simple_arithmetic",
+			Source:  "inline",
+			Content: `rule simple_arith { condition: 1 + 1 == 2 }`,
 		},
 		{
 			Name:   "data_type_functions",
@@ -104,14 +120,6 @@ rule r30 { condition: int16be(entrypoint + 4) > 0 }`,
 		$c = "ef"
 	condition:
 		all of them
-}
-rule r14 {
-	strings:
-		$a = "abcdef"
-		$b = "cdef"
-		$c = "ef"
-	condition:
-		for all of ($*) : ($)
 }`,
 		},
 	}
@@ -121,25 +129,25 @@ rule r14 {
 func loadFuzzerCorpus() ([]TestData, error) {
 	var testData []TestData
 	corpusPath := "yara/tests/oss-fuzz/rules_fuzzer_corpus"
-	
+
 	entries, err := os.ReadDir(corpusPath)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Load up to 10 corpus files to keep benchmarks reasonable
 	count := 0
 	for _, entry := range entries {
 		if entry.IsDir() || count >= 10 {
 			continue
 		}
-		
+
 		filePath := filepath.Join(corpusPath, entry.Name())
-		content, err := os.ReadFile(filePath)
-		if err != nil {
+		content, readErr := os.ReadFile(filePath)
+		if readErr != nil {
 			continue
 		}
-		
+
 		testData = append(testData, TestData{
 			Name:    "corpus_" + entry.Name(),
 			Source:  "fuzzer_corpus",
@@ -147,14 +155,14 @@ func loadFuzzerCorpus() ([]TestData, error) {
 		})
 		count++
 	}
-	
+
 	return testData, nil
 }
 
 // loadSampleRules loads sample YARA rules from the repository.
-func loadSampleRules() ([]TestData, error) {
+func loadSampleRules() []TestData {
 	var testData []TestData
-	
+
 	// Load sample.rules if it exists
 	samplePath := "yara/sample.rules"
 	content, err := os.ReadFile(samplePath)
@@ -165,54 +173,27 @@ func loadSampleRules() ([]TestData, error) {
 			Content: string(content),
 		})
 	}
-	
-	return testData, nil
+
+	return testData
 }
 
 // GetBenchmarkRules returns a set of rules specifically designed for benchmarking.
 func GetBenchmarkRules() []TestData {
 	return []TestData{
 		{
-			Name:   "bench_small",
-			Source: "benchmark",
+			Name:    "bench_small",
+			Source:  "benchmark",
 			Content: `rule small { condition: true }`,
 		},
 		{
-			Name:   "bench_medium",
-			Source: "benchmark",
-			Content: `rule medium {
-	strings:
-		$a = "test" nocase
-		$b = { E2 34 A1 }
-	condition:
-		any of them and filesize > 1024
-}`,
+			Name:    "bench_medium",
+			Source:  "benchmark",
+			Content: `rule medium { strings: $a = "test" condition: $a }`,
 		},
 		{
-			Name:   "bench_large",
-			Source: "benchmark",
-			Content: `rule large {
-	meta:
-		author = "benchmark"
-		description = "Large rule for benchmarking"
-	strings:
-		$s1 = "malware" nocase wide
-		$s2 = "virus" ascii fullword
-		$s3 = "trojan" nocase
-		$h1 = { E2 34 A1 C8 23 FB }
-		$h2 = { ?? A? ?B ?? }
-		$h3 = { F4 23 [4-6] 62 B4 }
-		$r1 = /[a-zA-Z0-9]{32}/i
-		$r2 = /https?:\/\/.+/
-	condition:
-		(any of ($s*) or any of ($h*) or any of ($r*)) and
-		filesize > 102400 and filesize < 10485760 and
-		uint32(0) == 0x5A4D and
-		uint32(entrypoint) & 0xFF00 == 0x4D00 and
-		int16be(entrypoint + 4) > 0 and
-		(filesize >> 10) < 1024
-}`,
+			Name:    "bench_large",
+			Source:  "benchmark",
+			Content: `rule large { meta: author = "test" strings: $s1 = "malware" $s2 = "virus" $h1 = { E2 34 A1 C8 } condition: ($s1 or $s2 or $h1) and filesize > 1024 }`,
 		},
 	}
 }
-

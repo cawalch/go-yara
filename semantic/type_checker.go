@@ -95,7 +95,7 @@ func (tc *TypeChecker) checkBinaryOp(binaryOp *ast.BinaryOp) *TypeInfo {
 		return tc.checkArithmeticOp(binaryOp.Op, leftType, rightType, binaryOp.Position())
 
 	case token.BITWISE_AND, token.BITWISE_OR, token.BITWISE_XOR,
-		 token.LEFT_SHIFT, token.RIGHT_SHIFT:
+		token.LEFT_SHIFT, token.RIGHT_SHIFT:
 		return tc.checkBitwiseOp(binaryOp.Op, leftType, rightType, binaryOp.Position())
 
 	case token.EQ, token.NEQ, token.LT, token.LE, token.GT, token.GE:
@@ -105,7 +105,7 @@ func (tc *TypeChecker) checkBinaryOp(binaryOp *ast.BinaryOp) *TypeInfo {
 		return tc.checkLogicalOp(binaryOp.Op, leftType, rightType, binaryOp.Position())
 
 	case token.CONTAINS, token.ICONTAINS, token.STARTSWITH, token.ENDSWITH,
-		 token.ISTARTSWITH, token.IENDSWITH, token.IEQUALS, token.MATCHES:
+		token.ISTARTSWITH, token.IENDSWITH, token.IEQUALS, token.MATCHES:
 		return tc.checkStringOp(binaryOp.Op, leftType, rightType, binaryOp.Position())
 
 	case token.OF:
@@ -120,7 +120,7 @@ func (tc *TypeChecker) checkBinaryOp(binaryOp *ast.BinaryOp) *TypeInfo {
 	}
 }
 
-// checkUnaryOp checks the types of a unary operation
+ // checkUnaryOp checks the types of a unary operation
 func (tc *TypeChecker) checkUnaryOp(unaryOp *ast.UnaryOp) *TypeInfo {
 	operandType := tc.checkExpression(unaryOp.Right)
 
@@ -163,6 +163,14 @@ func (tc *TypeChecker) checkUnaryOp(unaryOp *ast.UnaryOp) *TypeInfo {
 		// DEFINED can work on any type
 		return &TypeInfo{DataType: TypeBoolean}
 
+	case token.HASH:
+		// '#' count returns integer; operand should be a string identifier but we allow validation to proceed
+		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
+
+	case token.AT:
+		// '@' position returns integer offset
+		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
+
 	default:
 		tc.addError(&SemanticError{
 			Message:  fmt.Sprintf("unknown unary operator: %s", unaryOp.Op),
@@ -200,7 +208,7 @@ func (tc *TypeChecker) checkBitwiseOp(op token.TokenType, left, right *TypeInfo,
 	}
 
 	// For shift operations, right operand should be integer
-	if (op == token.LEFT_SHIFT || op == token.RIGHT_SHIFT) {
+	if op == token.LEFT_SHIFT || op == token.RIGHT_SHIFT {
 		if !right.IsInteger() {
 			tc.addError(&SemanticError{
 				Message:  fmt.Sprintf("shift amount must be integer, got %s", right.String()),
@@ -214,7 +222,7 @@ func (tc *TypeChecker) checkBitwiseOp(op token.TokenType, left, right *TypeInfo,
 }
 
 // checkComparisonOp checks comparison operation types
-func (tc *TypeChecker) checkComparisonOp(op token.TokenType, left, right *TypeInfo, pos token.Position) *TypeInfo {
+func (tc *TypeChecker) checkComparisonOp(_ token.TokenType, left, right *TypeInfo, pos token.Position) *TypeInfo {
 	if !left.CanCompare(right) {
 		tc.addError(&SemanticError{
 			Message:  fmt.Sprintf("cannot compare %s and %s", left.String(), right.String()),
@@ -253,7 +261,7 @@ func (tc *TypeChecker) checkStringOp(op token.TokenType, left, right *TypeInfo, 
 }
 
 // checkQuantifierOp checks quantifier operation types
-func (tc *TypeChecker) checkQuantifierOp(left, right *TypeInfo, pos token.Position) *TypeInfo {
+func (tc *TypeChecker) checkQuantifierOp(_ *TypeInfo, _ *TypeInfo, _ token.Position) *TypeInfo {
 	// Left side should be a quantifier (all, any, none) or number
 	// Right side should be a string set or "them"
 

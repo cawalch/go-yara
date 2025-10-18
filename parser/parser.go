@@ -14,11 +14,11 @@ import (
 
 // Parser represents a YARA rule parser
 type Parser struct {
-	lexer     *lexer.Lexer
-	current   token.Token
-	peek      token.Token
-	errors    []error
-	builder   *ast.Builder
+	lexer   *lexer.Lexer
+	current token.Token
+	peek    token.Token
+	errors  []error
+	builder *ast.Builder
 }
 
 // New creates a new parser instance
@@ -40,7 +40,8 @@ func (p *Parser) ParseRules() (*ast.Program, error) {
 
 	for !p.currentTokenIs(token.EOF) {
 		// Check for rule modifiers (private, global) or rule keyword
-		if p.currentTokenIs(token.PRIVATE) || p.currentTokenIs(token.GLOBAL) || p.currentTokenIs(token.RULE) {
+		switch {
+		case p.currentTokenIs(token.PRIVATE) || p.currentTokenIs(token.GLOBAL) || p.currentTokenIs(token.RULE):
 			rule, err := p.parseRule()
 			if err != nil {
 				p.errors = append(p.errors, err)
@@ -48,14 +49,14 @@ func (p *Parser) ParseRules() (*ast.Program, error) {
 				continue
 			}
 			program.Rules = append(program.Rules, rule)
-		} else if p.currentTokenIs(token.IMPORT) {
+		case p.currentTokenIs(token.IMPORT):
 			p.nextToken() // consume IMPORT keyword
 			if err := p.parseImport(); err != nil {
 				p.errors = append(p.errors, err)
 				p.synchronize()
 				continue
 			}
-		} else {
+		default:
 			p.errors = append(p.errors, fmt.Errorf("unexpected token %s at %v", p.current.Type, p.current.Pos))
 			p.synchronize()
 		}
@@ -82,11 +83,6 @@ func (p *Parser) nextToken() {
 // currentTokenIs checks if current token matches the given type
 func (p *Parser) currentTokenIs(t token.TokenType) bool {
 	return p.current.Type == t
-}
-
-// peekTokenIs checks if peek token matches the given type
-func (p *Parser) peekTokenIs(t token.TokenType) bool {
-	return p.peek.Type == t
 }
 
 // expectToken checks for expected token and advances if matched
@@ -226,25 +222,27 @@ func (p *Parser) parseMetaDeclarations() []*ast.Meta {
 		}
 
 		var value interface{}
-		if p.currentTokenIs(token.STRING_LIT) {
+		switch {
+		case p.currentTokenIs(token.STRING_LIT):
 			value = p.current.Literal
 			p.nextToken()
-		} else if p.currentTokenIs(token.INTEGER_LIT) {
+		case p.currentTokenIs(token.INTEGER_LIT):
 			// Parse integer literal properly
 			value = p.parseIntegerLiteral()
 			p.nextToken()
-		} else if p.currentTokenIs(token.TRUE) {
+		case p.currentTokenIs(token.TRUE):
 			value = true
 			p.nextToken()
-		} else if p.currentTokenIs(token.FALSE) {
+		case p.currentTokenIs(token.FALSE):
 			value = false
 			p.nextToken()
-		} else {
+		default:
 			p.errors = append(p.errors, fmt.Errorf("invalid meta value type at %v", p.current.Pos))
-			break
 		}
 
-		meta = append(meta, p.builder.Meta(pos, key, value))
+		if value != nil {
+			meta = append(meta, p.builder.Meta(pos, key, value))
+		}
 	}
 
 	return meta
@@ -270,27 +268,30 @@ func (p *Parser) parseStringDeclarations() []*ast.String {
 		// Parse string patterns - support text strings, hex strings, and regex patterns
 		var pattern ast.Pattern
 
-		if p.currentTokenIs(token.STRING_LIT) {
+		switch {
+		case p.currentTokenIs(token.STRING_LIT):
 			// Text string literal
 			patternValue := p.current.Literal
 			p.nextToken()
 			pattern = p.builder.TextString(pos, patternValue)
-		} else if p.currentTokenIs(token.HEX_STRING_LIT) {
+		case p.currentTokenIs(token.HEX_STRING_LIT):
 			// Hex string literal
 			patternValue := p.current.Literal
 			p.nextToken()
 			pattern = p.builder.HexString(pos, patternValue)
-		} else if p.currentTokenIs(token.REGEX_LIT) {
+		case p.currentTokenIs(token.REGEX_LIT):
 			// Regex pattern literal
 			patternValue := p.current.Literal
 			p.nextToken()
 			pattern = p.builder.RegexPattern(pos, patternValue)
-		} else {
+		default:
 			p.errors = append(p.errors, fmt.Errorf("expected string, hex, or regex literal, got %s at %v", p.current.Type, p.current.Pos))
-			break
 		}
 
-		str := p.builder.String(pos, identifier, pattern, nil)
+		// Parse string modifiers after the pattern
+		modifiers := p.parseStringModifiers()
+
+		str := p.builder.String(pos, identifier, pattern, modifiers)
 		strings = append(strings, str)
 	}
 
@@ -314,9 +315,9 @@ func (p *Parser) parseLogicalOr() (ast.Expression, error) {
 		pos := p.current.Pos
 		p.nextToken()
 
-		right, err := p.parseLogicalAnd()
-		if err != nil {
-			return nil, err
+		right, orErr := p.parseLogicalAnd()
+		if orErr != nil {
+			return nil, orErr
 		}
 
 		left = p.builder.BinaryOp(pos, left, op, right)
@@ -337,9 +338,9 @@ func (p *Parser) parseLogicalAnd() (ast.Expression, error) {
 		pos := p.current.Pos
 		p.nextToken()
 
-		right, err := p.parseLogicalNot()
-		if err != nil {
-			return nil, err
+		right, andErr := p.parseLogicalNot()
+		if andErr != nil {
+			return nil, andErr
 		}
 
 		left = p.builder.BinaryOp(pos, left, op, right)
@@ -368,7 +369,7 @@ func (p *Parser) parseLogicalNot() (ast.Expression, error) {
 
 // parseComparison parses comparison expressions
 func (p *Parser) parseComparison() (ast.Expression, error) {
-	left, err := p.parseAdditive()
+	left, err := p.parseBitwiseOr()
 	if err != nil {
 		return nil, err
 	}
@@ -378,9 +379,9 @@ func (p *Parser) parseComparison() (ast.Expression, error) {
 		pos := p.current.Pos
 		p.nextToken()
 
-		right, err := p.parseAdditive()
-		if err != nil {
-			return nil, err
+		right, cmpErr := p.parseBitwiseOr()
+		if cmpErr != nil {
+			return nil, cmpErr
 		}
 
 		left = p.builder.BinaryOp(pos, left, op, right)
@@ -401,9 +402,9 @@ func (p *Parser) parseAdditive() (ast.Expression, error) {
 		pos := p.current.Pos
 		p.nextToken()
 
-		right, err := p.parseMultiplicative()
-		if err != nil {
-			return nil, err
+		right, addErr := p.parseMultiplicative()
+		if addErr != nil {
+			return nil, addErr
 		}
 
 		left = p.builder.BinaryOp(pos, left, op, right)
@@ -414,7 +415,7 @@ func (p *Parser) parseAdditive() (ast.Expression, error) {
 
 // parseMultiplicative parses multiplication, division, and modulo
 func (p *Parser) parseMultiplicative() (ast.Expression, error) {
-	left, err := p.parsePrimary()
+	left, err := p.parseUnary()
 	if err != nil {
 		return nil, err
 	}
@@ -424,9 +425,119 @@ func (p *Parser) parseMultiplicative() (ast.Expression, error) {
 		pos := p.current.Pos
 		p.nextToken()
 
-		right, err := p.parsePrimary()
+		right, mulErr := p.parseUnary()
+		if mulErr != nil {
+			return nil, mulErr
+		}
+
+		left = p.builder.BinaryOp(pos, left, op, right)
+	}
+
+	return left, nil
+}
+
+// parseUnary parses unary expressions (unary minus, bitwise NOT)
+func (p *Parser) parseUnary() (ast.Expression, error) {
+	if p.currentTokenIs(token.MINUS) || p.currentTokenIs(token.BITWISE_NOT) {
+		op := p.current.Type
+		pos := p.current.Pos
+		p.nextToken()
+
+		right, err := p.parseUnary()
 		if err != nil {
 			return nil, err
+		}
+
+		return p.builder.UnaryOp(pos, op, right), nil
+	}
+
+	return p.parsePrimary()
+}
+
+// parseBitwiseShift parses bitwise shift operations
+func (p *Parser) parseBitwiseShift() (ast.Expression, error) {
+	left, err := p.parseAdditive()
+	if err != nil {
+		return nil, err
+	}
+
+	for p.currentTokenIs(token.LEFT_SHIFT) || p.currentTokenIs(token.RIGHT_SHIFT) {
+		op := p.current.Type
+		pos := p.current.Pos
+		p.nextToken()
+
+		right, shiftErr := p.parseAdditive()
+		if shiftErr != nil {
+			return nil, shiftErr
+		}
+
+		left = p.builder.BinaryOp(pos, left, op, right)
+	}
+
+	return left, nil
+}
+
+// parseBitwiseAnd parses bitwise AND operations
+func (p *Parser) parseBitwiseAnd() (ast.Expression, error) {
+	left, err := p.parseBitwiseShift()
+	if err != nil {
+		return nil, err
+	}
+
+	for p.currentTokenIs(token.BITWISE_AND) {
+		op := p.current.Type
+		pos := p.current.Pos
+		p.nextToken()
+
+		right, andErr := p.parseBitwiseShift()
+		if andErr != nil {
+			return nil, andErr
+		}
+
+		left = p.builder.BinaryOp(pos, left, op, right)
+	}
+
+	return left, nil
+}
+
+// parseBitwiseXor parses bitwise XOR operations
+func (p *Parser) parseBitwiseXor() (ast.Expression, error) {
+	left, err := p.parseBitwiseAnd()
+	if err != nil {
+		return nil, err
+	}
+
+	for p.currentTokenIs(token.BITWISE_XOR) {
+		op := p.current.Type
+		pos := p.current.Pos
+		p.nextToken()
+
+		right, xorErr := p.parseBitwiseAnd()
+		if xorErr != nil {
+			return nil, xorErr
+		}
+
+		left = p.builder.BinaryOp(pos, left, op, right)
+	}
+
+	return left, nil
+}
+
+// parseBitwiseOr parses bitwise OR operations
+func (p *Parser) parseBitwiseOr() (ast.Expression, error) {
+	left, err := p.parseBitwiseXor()
+	if err != nil {
+		return nil, err
+	}
+
+	for p.currentTokenIs(token.BITWISE_OR) {
+		op := p.current.Type
+		pos := p.current.Pos
+		p.nextToken()
+
+		right, orErr := p.parseBitwiseXor()
+		if orErr != nil {
+			return nil, orErr
 		}
 
 		left = p.builder.BinaryOp(pos, left, op, right)
@@ -457,12 +568,17 @@ func (p *Parser) parsePrimary() (ast.Expression, error) {
 	}
 
 	// Try to parse special keywords
-	if expr, err := p.parseSpecialKeyword(pos); expr != nil || err != nil {
-		return expr, err
+	if expr := p.parseSpecialKeyword(pos); expr != nil {
+		return expr, nil
 	}
 
 	// Try to parse unary operators
 	if expr, err := p.parseUnaryOperator(pos); expr != nil || err != nil {
+		return expr, err
+	}
+
+	// Try to parse function calls
+	if expr, err := p.parseFunctionCall(pos); expr != nil || err != nil {
 		return expr, err
 	}
 
@@ -513,6 +629,12 @@ func (p *Parser) parseLiteral(pos token.Position) (ast.Expression, error) {
 		return p.builder.Literal(pos, token.HEX_INTEGER_LIT, value), nil
 	}
 
+	if p.currentTokenIs(token.FLOAT_LIT) {
+		value := p.parseFloatLiteral()
+		p.nextToken()
+		return p.builder.Literal(pos, token.FLOAT_LIT, value), nil
+	}
+
 	if p.currentTokenIs(token.SIZE_LIT) {
 		literal := p.current.Literal
 		p.nextToken()
@@ -543,45 +665,60 @@ func (p *Parser) parseQuantifier(pos token.Position) (ast.Expression, error) {
 
 	// Parse the target (them, string patterns, etc.)
 	var target ast.Expression
-	if p.currentTokenIs(token.THEM) {
+	var err error
+	switch {
+	case p.currentTokenIs(token.THEM):
 		target = p.builder.Identifier(pos, "them")
 		p.nextToken()
-	} else if p.currentTokenIs(token.STRING_IDENTIFIER) {
+	case p.currentTokenIs(token.STRING_IDENTIFIER):
 		target = p.builder.Identifier(pos, p.current.Literal)
 		p.nextToken()
-	} else {
-		return nil, fmt.Errorf("expected 'them' or string pattern after 'of'")
+	case p.currentTokenIs(token.LPAREN):
+		// Handle parenthesized expressions like ($*)
+		p.nextToken()
+		target, err = p.parseExpression()
+		if err != nil {
+			return nil, err
+		}
+		if !p.expectToken(token.RPAREN) {
+			return nil, fmt.Errorf("expected ')' after expression")
+		}
+	default:
+		return nil, fmt.Errorf("expected 'them', string pattern, or '(' after 'of'")
 	}
 
 	return p.builder.BinaryOp(pos, p.builder.Identifier(pos, quantifier), token.OF, target), nil
 }
 
 // parseSpecialKeyword parses special keywords (filesize, entrypoint)
-func (p *Parser) parseSpecialKeyword(pos token.Position) (ast.Expression, error) {
+func (p *Parser) parseSpecialKeyword(pos token.Position) ast.Expression {
 	if p.currentTokenIs(token.FILESIZE) {
 		p.nextToken()
-		return p.builder.Identifier(pos, "filesize"), nil
+		return p.builder.Identifier(pos, "filesize")
 	}
 
 	if p.currentTokenIs(token.ENTRYPOINT) {
 		p.nextToken()
-		return p.builder.Identifier(pos, "entrypoint"), nil
+		return p.builder.Identifier(pos, "entrypoint")
 	}
 
-	return nil, nil
+	return nil
 }
 
-// parseUnaryOperator parses unary operators (defined, at, in)
+ // parseUnaryOperator parses unary operators (defined, at/@, in, #)
 func (p *Parser) parseUnaryOperator(pos token.Position) (ast.Expression, error) {
 	var op token.TokenType
 
-	if p.currentTokenIs(token.DEFINED) {
+	switch {
+	case p.currentTokenIs(token.DEFINED):
 		op = token.DEFINED
-	} else if p.currentTokenIs(token.AT) {
+	case p.currentTokenIs(token.AT): // supports both '@' symbol and 'at' keyword if lexer maps them to AT
 		op = token.AT
-	} else if p.currentTokenIs(token.IN) {
+	case p.currentTokenIs(token.IN):
 		op = token.IN
-	} else {
+	case p.currentTokenIs(token.HASH): // '#' count operator
+		op = token.HASH
+	default:
 		return nil, nil
 	}
 
@@ -595,7 +732,7 @@ func (p *Parser) parseUnaryOperator(pos token.Position) (ast.Expression, error) 
 
 // isComparisonOp checks if a token is a comparison operator
 func (p *Parser) isComparisonOp(t token.TokenType) bool {
-	return t == token.EQ || t == token.NEQ || t == token.LT || t == token.LE || t == token.GT || t == token.GE
+	return t == token.EQ || t == token.NEQ || t == token.LT || t == token.LE || t == token.GT || t == token.GE || t == token.MATCHES
 }
 
 // parseIntegerLiteral parses an integer literal token and returns the int64 value
@@ -628,4 +765,99 @@ func (p *Parser) parseHexIntegerLiteral() int64 {
 	// If parsing fails, return 0 and log error
 	p.errors = append(p.errors, fmt.Errorf("invalid hex integer literal: %s at %v", p.current.Literal, p.current.Pos))
 	return 0
+}
+
+// parseFloatLiteral parses a float literal token and returns the float64 value
+func (p *Parser) parseFloatLiteral() float64 {
+	literal := p.current.Literal
+
+	// Parse float
+	if value, err := strconv.ParseFloat(literal, 64); err == nil {
+		return value
+	}
+
+	// If parsing fails, return 0 and log error
+	p.errors = append(p.errors, fmt.Errorf("invalid float literal: %s at %v", literal, p.current.Pos))
+	return 0
+}
+
+// parseStringModifiers parses string modifiers (nocase, wide, ascii, etc.)
+func (p *Parser) parseStringModifiers() []ast.StringModifier {
+	modifiers := make([]ast.StringModifier, 0)
+
+	for p.isStringModifier(p.current.Type) {
+		var modifierType ast.StringModifierType
+		switch p.current.Type {
+		case token.NOCASE:
+			modifierType = ast.StringModifierNocase
+		case token.WIDE:
+			modifierType = ast.StringModifierWide
+		case token.ASCII:
+			modifierType = ast.StringModifierASCII
+		case token.FULLWORD:
+			modifierType = ast.StringModifierFullword
+		case token.PRIVATE:
+			modifierType = ast.StringModifierPrivate
+		case token.XOR:
+			modifierType = ast.StringModifierXor
+		case token.BASE64:
+			modifierType = ast.StringModifierBase64
+		case token.BASE64WIDE:
+			modifierType = ast.StringModifierBase64Wide
+		}
+
+		modifiers = append(modifiers, ast.StringModifier{Type: modifierType})
+		p.nextToken()
+	}
+
+	return modifiers
+}
+
+// isStringModifier checks if a token is a string modifier
+func (p *Parser) isStringModifier(t token.TokenType) bool {
+	return t == token.NOCASE || t == token.WIDE || t == token.ASCII ||
+		t == token.FULLWORD || t == token.PRIVATE || t == token.XOR ||
+		t == token.BASE64 || t == token.BASE64WIDE
+}
+
+// parseFunctionCall parses function calls like uint32be(0), filesize, etc.
+func (p *Parser) parseFunctionCall(pos token.Position) (ast.Expression, error) {
+	// Check if this is a data type function (uint32, int16be, etc.)
+	if p.isDataTypeFunction(p.current.Type) {
+		funcName := p.current.Literal
+		p.nextToken()
+
+		// Check if this function call has parentheses (arguments)
+		if p.currentTokenIs(token.LPAREN) {
+			p.nextToken() // consume '('
+
+			// Parse the argument expression
+			arg, err := p.parseExpression()
+			if err != nil {
+				return nil, err
+			}
+
+			if !p.expectToken(token.RPAREN) {
+				return nil, fmt.Errorf("expected ')' after function argument")
+			}
+
+			// For now, create a binary operation to represent function call
+			// This is a temporary solution until we have proper FunctionCall AST nodes
+			return p.builder.BinaryOp(pos, p.builder.Identifier(pos, funcName), token.LPAREN, arg), nil
+		} else {
+			// Simple function call without arguments
+			return p.builder.Identifier(pos, funcName), nil
+		}
+	}
+
+	return nil, nil
+}
+
+// isDataTypeFunction checks if a token is a data type function
+func (p *Parser) isDataTypeFunction(t token.TokenType) bool {
+	return t == token.UINT8 || t == token.UINT16 || t == token.UINT32 ||
+		t == token.UINT8BE || t == token.UINT16BE || t == token.UINT32BE ||
+		t == token.INT8 || t == token.INT16 || t == token.INT32 ||
+		t == token.INT8BE || t == token.INT16BE || t == token.INT32BE ||
+		t == token.FILESIZE || t == token.ENTRYPOINT
 }

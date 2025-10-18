@@ -12,11 +12,17 @@ import (
 type DataType int
 
 const (
+	// TypeUnknown represents an unknown data type
 	TypeUnknown DataType = iota
+	// TypeInteger represents an integer type
 	TypeInteger
+	// TypeFloat represents a floating-point type
 	TypeFloat
+	// TypeString represents a string type
 	TypeString
+	// TypeBoolean represents a boolean type
 	TypeBoolean
+	// TypeRegexp represents a regular expression type
 	TypeRegexp
 )
 
@@ -36,76 +42,64 @@ type TypeInfo struct {
 
 // StringType represents string type information
 type StringType struct {
-	IsWide  bool   // UTF-16 string
-	IsASCII bool   // ASCII string
-	IsHex   bool   // Hexadecimal string
-	IsRegex bool   // Regular expression
+	IsWide  bool // UTF-16 string
+	IsASCII bool // ASCII string
+	IsHex   bool // Hexadecimal string
+	IsRegex bool // Regular expression
 }
 
 // Common integer types based on YARA data type functions
 var (
 	// Unsigned integer types
-	Uint8Type = &IntegerType{Size: 1, Signed: false, BigEndian: false}
+	Uint8Type  = &IntegerType{Size: 1, Signed: false, BigEndian: false}
 	Uint16Type = &IntegerType{Size: 2, Signed: false, BigEndian: false}
 	Uint32Type = &IntegerType{Size: 4, Signed: false, BigEndian: false}
 	Uint64Type = &IntegerType{Size: 8, Signed: false, BigEndian: false}
 
 	// Signed integer types
-	Int8Type = &IntegerType{Size: 1, Signed: true, BigEndian: false}
+	Int8Type  = &IntegerType{Size: 1, Signed: true, BigEndian: false}
 	Int16Type = &IntegerType{Size: 2, Signed: true, BigEndian: false}
 	Int32Type = &IntegerType{Size: 4, Signed: true, BigEndian: false}
 	Int64Type = &IntegerType{Size: 8, Signed: true, BigEndian: false}
 
 	// Big-endian variants
-	Uint8BEType = &IntegerType{Size: 1, Signed: false, BigEndian: true}
+	Uint8BEType  = &IntegerType{Size: 1, Signed: false, BigEndian: true}
 	Uint16BEType = &IntegerType{Size: 2, Signed: false, BigEndian: true}
 	Uint32BEType = &IntegerType{Size: 4, Signed: false, BigEndian: true}
 	Uint64BEType = &IntegerType{Size: 8, Signed: false, BigEndian: true}
 
-	Int8BEType = &IntegerType{Size: 1, Signed: true, BigEndian: true}
+	Int8BEType  = &IntegerType{Size: 1, Signed: true, BigEndian: true}
 	Int16BEType = &IntegerType{Size: 2, Signed: true, BigEndian: true}
 	Int32BEType = &IntegerType{Size: 4, Signed: true, BigEndian: true}
 	Int64BEType = &IntegerType{Size: 8, Signed: true, BigEndian: true}
 )
 
+// integerTypeMap maps function names to their corresponding integer types
+var integerTypeMap = map[string]*IntegerType{
+	"uint8": Uint8Type, "u8": Uint8Type,
+	"uint16": Uint16Type, "u16": Uint16Type,
+	"uint32": Uint32Type, "u32": Uint32Type,
+	"uint64": Uint64Type, "u64": Uint64Type,
+	"int8": Int8Type, "i8": Int8Type,
+	"int16": Int16Type, "i16": Int16Type,
+	"int32": Int32Type, "i32": Int32Type,
+	"int64": Int64Type, "i64": Int64Type,
+	"uint8be": Uint8BEType, "u8be": Uint8BEType,
+	"uint16be": Uint16BEType, "u16be": Uint16BEType,
+	"uint32be": Uint32BEType, "u32be": Uint32BEType,
+	"uint64be": Uint64BEType, "u64be": Uint64BEType,
+	"int8be": Int8BEType, "i8be": Int8BEType,
+	"int16be": Int16BEType, "i16be": Int16BEType,
+	"int32be": Int32BEType, "i32be": Int32BEType,
+	"int64be": Int64BEType, "i64be": Int64BEType,
+}
+
 // GetIntegerTypeFromFunction returns the appropriate integer type for a data type function
 func GetIntegerTypeFromFunction(funcName string) (*IntegerType, error) {
-	switch funcName {
-	case "uint8", "u8":
-		return Uint8Type, nil
-	case "uint16", "u16":
-		return Uint16Type, nil
-	case "uint32", "u32":
-		return Uint32Type, nil
-	case "uint64", "u64":
-		return Uint64Type, nil
-	case "int8", "i8":
-		return Int8Type, nil
-	case "int16", "i16":
-		return Int16Type, nil
-	case "int32", "i32":
-		return Int32Type, nil
-	case "int64", "i64":
-		return Int64Type, nil
-	case "uint8be", "u8be":
-		return Uint8BEType, nil
-	case "uint16be", "u16be":
-		return Uint16BEType, nil
-	case "uint32be", "u32be":
-		return Uint32BEType, nil
-	case "uint64be", "u64be":
-		return Uint64BEType, nil
-	case "int8be", "i8be":
-		return Int8BEType, nil
-	case "int16be", "i16be":
-		return Int16BEType, nil
-	case "int32be", "i32be":
-		return Int32BEType, nil
-	case "int64be", "i64be":
-		return Int64BEType, nil
-	default:
-		return nil, fmt.Errorf("unknown integer type function: %s", funcName)
+	if intType, exists := integerTypeMap[funcName]; exists {
+		return intType, nil
 	}
+	return nil, fmt.Errorf("unknown integer type function: %s", funcName)
 }
 
 // String returns a string representation of the type
@@ -282,6 +276,8 @@ func InferTypeFromLiteral(tokenType token.TokenType, value interface{}) *TypeInf
 			DataType:    TypeInteger,
 			IntegerType: Uint64Type, // Default to uint64 for hex literals
 		}
+	case token.FLOAT_LIT:
+		return &TypeInfo{DataType: TypeFloat}
 	case token.SIZE_LIT:
 		return &TypeInfo{
 			DataType:    TypeInteger,
@@ -337,7 +333,7 @@ func InferTypeFromBinaryOp(left *TypeInfo, op token.TokenType, right *TypeInfo) 
 		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}, nil
 
 	case token.BITWISE_AND, token.BITWISE_OR, token.BITWISE_XOR,
-		 token.LEFT_SHIFT, token.RIGHT_SHIFT, token.BITWISE_NOT:
+		token.LEFT_SHIFT, token.RIGHT_SHIFT, token.BITWISE_NOT:
 		if !left.CanPerformBitwise(right) {
 			return nil, fmt.Errorf("cannot perform bitwise operation %s between %s and %s",
 				op, left.String(), right.String())
@@ -351,13 +347,16 @@ func InferTypeFromBinaryOp(left *TypeInfo, op token.TokenType, right *TypeInfo) 
 		return &TypeInfo{DataType: TypeBoolean}, nil
 
 	case token.AND, token.OR:
-		if left.DataType != TypeBoolean || right.DataType != TypeBoolean {
-			return nil, fmt.Errorf("logical operators require boolean operands")
+		// In YARA, logical operators can work with any type (integers, strings, etc.)
+		// They are treated as truthy/falsy values
+		// Both operands must be comparable types, but don't have to be boolean
+		if left.DataType == TypeUnknown || right.DataType == TypeUnknown {
+			return nil, fmt.Errorf("logical operators require known operand types")
 		}
 		return &TypeInfo{DataType: TypeBoolean}, nil
 
 	case token.CONTAINS, token.ICONTAINS, token.STARTSWITH, token.ENDSWITH,
-		 token.ISTARTSWITH, token.IENDSWITH, token.IEQUALS, token.MATCHES:
+		token.ISTARTSWITH, token.IENDSWITH, token.IEQUALS, token.MATCHES:
 		if !left.IsString() || !right.IsString() {
 			return nil, fmt.Errorf("string operations require string operands")
 		}
@@ -368,12 +367,17 @@ func InferTypeFromBinaryOp(left *TypeInfo, op token.TokenType, right *TypeInfo) 
 		// Left operand is the quantifier (all/any/none), right is the target (them or pattern)
 		return &TypeInfo{DataType: TypeBoolean}, nil
 
+	case token.LPAREN:
+		// Function call - return the function's return type
+		// For now, assume data type functions return integers
+		return &TypeInfo{DataType: TypeInteger, IntegerType: Uint64Type}, nil
+
 	default:
 		return nil, fmt.Errorf("unknown binary operator: %s", op)
 	}
 }
 
-// InferTypeFromUnaryOp infers the result type of a unary operation
+ // InferTypeFromUnaryOp infers the result type of a unary operation
 func InferTypeFromUnaryOp(op token.TokenType, operand *TypeInfo) (*TypeInfo, error) {
 	switch op {
 	case token.NOT:
@@ -396,6 +400,14 @@ func InferTypeFromUnaryOp(op token.TokenType, operand *TypeInfo) (*TypeInfo, err
 
 	case token.DEFINED:
 		return &TypeInfo{DataType: TypeBoolean}, nil
+
+	case token.HASH:
+		// '#' count operator yields integer count of matches
+		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}, nil
+
+	case token.AT:
+		// '@' position operator yields integer offset of first match
+		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}, nil
 
 	default:
 		return nil, fmt.Errorf("unknown unary operator: %s", op)

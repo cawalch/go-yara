@@ -9,14 +9,14 @@ import (
 )
 
 func TestIllegalRunAndSynchronization(t *testing.T) {
-	input := "foo @@ bar\nrule r { condition: true }"
+	input := "foo ?? bar\nrule r { condition: true }"
 	l := lexer.New(input)
 	got := collectTokens(l)
 
 	// Should have: IDENTIFIER(foo), ILLEGAL(@@), IDENTIFIER(bar), RULE(rule), IDENTIFIER(r), LBRACE({), CONDITION(condition), COLON(:), TRUE(true), RBRACE(}), EOF
 	want := []token.Token{
 		{Type: token.IDENTIFIER, Literal: "foo"},
-		{Type: token.ILLEGAL, Literal: "@@"},
+		{Type: token.ILLEGAL, Literal: "??"},
 		{Type: token.IDENTIFIER, Literal: "bar"},
 		{Type: token.RULE, Literal: "rule"},
 		{Type: token.IDENTIFIER, Literal: "r"},
@@ -48,29 +48,29 @@ func TestErrorRecoveryAfterIllegalTokens(t *testing.T) {
 	}{
 		{
 			name:  "single illegal character",
-			input: "rule @ condition",
+			input: "rule ? condition",
 			expected: []token.Token{
 				{Type: token.RULE, Literal: "rule"},
-				{Type: token.ILLEGAL, Literal: "@"},
+				{Type: token.ILLEGAL, Literal: "?"},
 				{Type: token.CONDITION, Literal: "condition"},
 				{Type: token.EOF, Literal: ""},
 			},
 		},
 		{
 			name:  "multiple illegal characters",
-			input: "rule @@@ condition",
+			input: "rule ??? condition",
 			expected: []token.Token{
 				{Type: token.RULE, Literal: "rule"},
-				{Type: token.ILLEGAL, Literal: "@@@"},
+				{Type: token.ILLEGAL, Literal: "???"},
 				{Type: token.CONDITION, Literal: "condition"},
 				{Type: token.EOF, Literal: ""},
 			},
 		},
 		{
 			name:  "illegal at start",
-			input: "@@@ rule condition",
+			input: "??? rule condition",
 			expected: []token.Token{
-				{Type: token.ILLEGAL, Literal: "@@@"},
+				{Type: token.ILLEGAL, Literal: "???"},
 				{Type: token.RULE, Literal: "rule"},
 				{Type: token.CONDITION, Literal: "condition"},
 				{Type: token.EOF, Literal: ""},
@@ -78,22 +78,22 @@ func TestErrorRecoveryAfterIllegalTokens(t *testing.T) {
 		},
 		{
 			name:  "illegal at end",
-			input: "rule condition @@@",
+			input: "rule condition ???",
 			expected: []token.Token{
 				{Type: token.RULE, Literal: "rule"},
 				{Type: token.CONDITION, Literal: "condition"},
-				{Type: token.ILLEGAL, Literal: "@@@"},
+				{Type: token.ILLEGAL, Literal: "???"},
 				{Type: token.EOF, Literal: ""},
 			},
 		},
 		{
 			name:  "mixed illegal and valid",
-			input: "rule @ and @@@ or # condition",
+			input: "rule ? and ??? or # condition",
 			expected: []token.Token{
 				{Type: token.RULE, Literal: "rule"},
-				{Type: token.ILLEGAL, Literal: "@"},
+				{Type: token.ILLEGAL, Literal: "?"},
 				{Type: token.AND, Literal: "and"},
-				{Type: token.ILLEGAL, Literal: "@@@"},
+				{Type: token.ILLEGAL, Literal: "???"},
 				{Type: token.OR, Literal: "or"},
 				{Type: token.HASH, Literal: "#"},
 				{Type: token.CONDITION, Literal: "condition"},
@@ -207,7 +207,7 @@ func TestLexerErrorCollection(t *testing.T) {
 
 func TestFastForwardRecovery(t *testing.T) {
 	// Test section recovery mode
-	input := "@@@ illegal @@@ rule test { condition: true }"
+	input := "??? illegal ??? rule test { condition: true }"
 
 	// Test basic recovery mode (default)
 	l1 := lexer.New(input)

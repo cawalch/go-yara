@@ -1,3 +1,6 @@
+// Package ast provides abstract syntax tree (AST) definitions for YARA rules.
+// It defines the structure and interfaces for representing YARA language constructs
+// in a tree format that can be traversed and analyzed.
 package ast
 
 import "github.com/cawalch/go-yara/token"
@@ -9,7 +12,7 @@ type Node interface {
 	// Position returns the position of the node in the source
 	Position() token.Position
 	// Accept accepts a visitor
-	Accept(Visitor) interface{}
+	Accept(Visitor) any
 }
 
 // Expression is the interface for expression nodes

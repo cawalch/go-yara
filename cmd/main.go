@@ -8,8 +8,16 @@ import (
 	"github.com/cawalch/go-yara/compiler"
 	"github.com/cawalch/go-yara/internal/lexer"
 	"github.com/cawalch/go-yara/parser"
+	"github.com/cawalch/go-yara/regex"
 	"github.com/cawalch/go-yara/semantic"
 	"github.com/cawalch/go-yara/token"
+)
+
+const (
+	modeCompile = "compile"
+	modeLex     = "lex"
+	modeParse   = "parse"
+	modeExecute = "execute"
 )
 
 // formatToken formats a token for display
@@ -32,20 +40,20 @@ func main() {
 	}
 
 	filename := os.Args[1]
-	mode := "compile" // default mode
+	mode := modeCompile // default mode
 	var dataFile string
 
 	// Check for mode flags
 	for i := 2; i < len(os.Args); i++ {
 		switch os.Args[i] {
 		case "--lex":
-			mode = "lex"
+			mode = modeLex
 		case "--parse":
-			mode = "parse"
+			mode = modeParse
 		case "--compile":
-			mode = "compile"
+			mode = modeCompile
 		case "--execute":
-			mode = "execute"
+			mode = modeExecute
 		case "--data":
 			if i+1 < len(os.Args) {
 				dataFile = os.Args[i+1]
@@ -64,13 +72,13 @@ func main() {
 	fmt.Printf("File content:\n%s\n\n", string(content))
 
 	switch mode {
-	case "lex":
+	case modeLex:
 		runLexerMode(string(content))
-	case "parse":
+	case modeParse:
 		runParserMode(string(content))
-	case "compile":
+	case modeCompile:
 		runCompileMode(string(content))
-	case "execute":
+	case modeExecute:
 		runExecuteMode(string(content), dataFile)
 	default:
 		fmt.Printf("Unknown mode: %s\n", mode)
@@ -189,7 +197,7 @@ func runCompileMode(content string) {
 	comp := compiler.NewCompiler()
 
 	// Compile program
-	compiledProgram, err := comp.CompileSource(string(content))
+	compiledProgram, err := comp.CompileSource(content)
 	if err != nil {
 		fmt.Printf("Compilation error: %v\n", err)
 		os.Exit(1)
@@ -216,14 +224,14 @@ func runExecuteMode(content string, dataFile string) {
 	// Validate data file is provided
 	if dataFile == "" {
 		fmt.Println("Error: --execute mode requires --data <data-file>")
-		os.Exit(1)
+		return
 	}
 
 	// Read data file
 	data, err := os.ReadFile(dataFile)
 	if err != nil {
 		fmt.Printf("Error reading data file %s: %v\n", dataFile, err)
-		os.Exit(1)
+		return
 	}
 
 	fmt.Printf("Data file: %s (%d bytes)\n", dataFile, len(data))
@@ -239,7 +247,7 @@ func runExecuteMode(content string, dataFile string) {
 	compiledProgram, err := comp.CompileSource(content)
 	if err != nil {
 		fmt.Printf("Compilation error: %v\n", err)
-		os.Exit(1)
+		return
 	}
 
 	compilationErrors := comp.GetErrors()
@@ -248,7 +256,7 @@ func runExecuteMode(content string, dataFile string) {
 		for _, cerr := range compilationErrors {
 			fmt.Printf("  [%s] %s\n", cerr.Phase, cerr.Message)
 		}
-		os.Exit(1)
+		return
 	}
 
 	fmt.Printf("Compilation: Successfully compiled %d rules\n\n", len(compiledProgram.Rules))
@@ -258,42 +266,89 @@ func runExecuteMode(content string, dataFile string) {
 	for _, rule := range compiledProgram.Rules {
 		fmt.Printf("Executing rule: %s\n", rule.GetName())
 
-		// Perform pattern matching using the automaton
-		if rule.Automaton != nil {
-			matches := rule.Automaton.Search(data)
-			fmt.Printf("  Pattern matches: %d\n", len(matches))
+		// Aggregate matches from AC automaton (text/hex) and regex VM for this rule
+		type printEntry struct {
+			id     string
+			offset int
+			length int
+		}
+		printEntries := make([]printEntry, 0, 16)
 
-			if len(matches) > 0 {
-				for _, match := range matches {
-					offset := match.Backtrack
-					fmt.Printf("    - %s at offset %d (length: %d)\n",
-						match.StringID, offset, len(rule.Automaton.Strings[match.StringIndex].Data))
-					totalMatches++
+		var acRaw []compiler.ACMatch
+		if rule.Automaton != nil {
+			// AC matches (for text/hex patterns)
+			acRaw = rule.Automaton.Search(data)
+			for _, match := range acRaw {
+				if match.StringIndex >= 0 && match.StringIndex < len(rule.Automaton.Strings) {
+					si := rule.Automaton.Strings[match.StringIndex]
+					printEntries = append(printEntries, printEntry{
+						id:     si.Identifier,
+						offset: match.Backtrack,
+						length: si.Length,
+					})
 				}
 			}
+
+			// Regex matches (execute VM with stored flags and bytecode)
+			for _, s := range rule.Automaton.Strings {
+				if s.IsRegex {
+					flags := s.Flags | regex.FlagsScan
+					searchStart := 0
+					for searchStart <= len(data) {
+						ok, start, end := regex.ExecMatch(s.Data, data[searchStart:], flags)
+						if !ok {
+							break
+						}
+						absStart := searchStart + start
+						absEnd := searchStart + end
+						printEntries = append(printEntries, printEntry{
+							id:     s.Identifier,
+							offset: absStart,
+							length: absEnd - absStart,
+						})
+						// Advance by one to allow overlapping matches
+						if absStart+1 > searchStart {
+							searchStart = absStart + 1
+						} else {
+							searchStart++
+						}
+					}
+				}
+			}
+		}
+
+		// Print summary and individual matches
+		fmt.Printf("  Pattern matches: %d\n", len(printEntries))
+		for _, e := range printEntries {
+			fmt.Printf("    - %s at offset %d (length: %d)\n", e.id, e.offset, e.length)
+			totalMatches++
 		}
 
 		// Execute bytecode with match context
 		interp := compiler.NewInterpreter(rule.GetBytecode())
 
-		// Populate match context from automaton matches
-		if rule.Automaton != nil {
-			matches := rule.Automaton.Search(data)
-			for _, match := range matches {
-				stringInfo := rule.Automaton.Strings[match.StringIndex]
-				m := compiler.Match{
-					Pattern: stringInfo.Identifier,
-					Offset:  int64(match.Backtrack),
-					Length:  stringInfo.Length,
-					Base:    0,
-				}
-				interp.GetMatchContext().AddMatch(m)
-			}
+		// Populate match context with both AC and regex-derived matches
+		for _, e := range printEntries {
+			interp.GetMatchContext().AddMatch(compiler.Match{
+				Pattern: e.id,
+				Offset:  int64(e.offset),
+				Length:  e.length,
+				Base:    0,
+			})
 		}
 
+            // Initialize VM memory slots with string identifiers by index
+            if rule.Automaton != nil {
+                for idx, s := range rule.Automaton.Strings {
+                    interp.SetMemoryString(idx, s.Identifier)
+                }
+            }
+
+
 		// Execute the bytecode
-		if err := interp.Execute(); err != nil {
-			fmt.Printf("  Execution error: %v\n", err)
+		execErr := interp.Execute()
+		if execErr != nil {
+			fmt.Printf("  Execution error: %v\n", execErr)
 		} else {
 			fmt.Printf("  Execution: Success\n")
 		}
