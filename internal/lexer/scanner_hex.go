@@ -29,9 +29,6 @@ func (l *Lexer) isHexStringStart() bool {
 	savedPos := l.reader.Position()
 	defer l.reader.SetPosition(savedPos)
 
-	// Context hint: tags before brace (e.g., strings: $a = { ... })
-	hasTagsContext := l.hasTagsBeforeBrace()
-
 	// Move past '{' and skip immediate whitespace
 	l.readChar()
 	l.skipWhitespace()
@@ -40,6 +37,28 @@ func (l *Lexer) isHexStringStart() bool {
 	if l.ch() == '}' {
 		return true
 	}
+
+	// Bounded scan ahead for rule structure keywords followed by ':'
+	// Check this first to prioritize rule body detection over tags context
+	startScan := l.reader.Position()
+	for (l.reader.Position()-startScan) < 128 && l.ch() != 0 && l.ch() != '}' {
+		if isLetter(l.ch()) {
+			wordStart := l.position()
+			for isLetter(l.ch()) {
+				l.readChar()
+			}
+			word := l.reader.Slice(wordStart)
+			l.skipWhitespace()
+			if l.ch() == ':' && isRuleKeyword(word) {
+				return false // Regular rule body
+			}
+		} else {
+			l.readChar()
+		}
+	}
+
+	// Context hint: tags before brace (e.g., strings: $a = { ... })
+	hasTagsContext := l.hasTagsBeforeBrace()
 
 	if hasTagsContext {
 		// In a strings/tags context, braces typically denote a hex string
@@ -58,25 +77,7 @@ func (l *Lexer) isHexStringStart() bool {
 			if isHexDigit(next) || next == ' ' || next == '\t' || next == '\n' || next == '\r' || next == '}' || next == '?' || next == '~' || next == '(' || next == '[' {
 				return true
 			}
-			// Otherwise, could be an identifier; fall through to rule-structure scan
-		}
-	}
-
-	// Bounded scan ahead for rule structure keywords followed by ':'
-	startScan := l.reader.Position()
-	for (l.reader.Position()-startScan) < 128 && l.ch() != 0 && l.ch() != '}' {
-		if isLetter(l.ch()) {
-			wordStart := l.position()
-			for isLetter(l.ch()) {
-				l.readChar()
-			}
-			word := l.reader.Slice(wordStart)
-			l.skipWhitespace()
-			if l.ch() == ':' && isRuleKeyword(word) {
-				return false // Regular rule body
-			}
-		} else {
-			l.readChar()
+			// Otherwise, could be an identifier; fall through to default
 		}
 	}
 

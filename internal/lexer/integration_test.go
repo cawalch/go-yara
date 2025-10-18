@@ -114,7 +114,17 @@ func TestYARALike_Header_Condition_WithComparisons(t *testing.T) {
 		{Type: token.IDENTIFIER, Literal: "r"},
 		{Type: token.COLON, Literal: ":"},
 		{Type: token.IDENTIFIER, Literal: "tag1"},
-		{Type: token.HEX_STRING_LIT, Literal: "{\n  condition: 1 >= 2 and 3 != 4\n}"},
+		{Type: token.LBRACE, Literal: "{"},
+		{Type: token.CONDITION, Literal: "condition"},
+		{Type: token.COLON, Literal: ":"},
+		{Type: token.INTEGER_LIT, Literal: "1"},
+		{Type: token.GE, Literal: ">="},
+		{Type: token.INTEGER_LIT, Literal: "2"},
+		{Type: token.AND, Literal: "and"},
+		{Type: token.INTEGER_LIT, Literal: "3"},
+		{Type: token.NEQ, Literal: "!="},
+		{Type: token.INTEGER_LIT, Literal: "4"},
+		{Type: token.RBRACE, Literal: "}"},
 		{Type: token.EOF, Literal: ""},
 	}
 
@@ -147,55 +157,96 @@ func TestYARALike_Header_Condition_WithComparisons(t *testing.T) {
 func TestComplexYARARule(t *testing.T) {
 	// Test a more complex YARA rule structure
 	input := `rule ComplexRule : tag1 tag2 {
-		meta:
-			author = "test"
-			version = 1
-			enabled = true
-		strings:
-			$a = "malware"
-			$b = { E2 34 A1 C8 }
-			$c = /pattern/i
-		condition:
-			($a and $b) or $c and not false
-	}`
+ 		meta:
+ 			author = "test"
+ 			version = 1
+ 			enabled = true
+ 		strings:
+ 			$a = "malware"
+ 			$b = { E2 34 A1 C8 }
+ 			$c = /pattern/i
+ 		condition:
+ 			($a and $b) or $c and not false
+ 	}`
 
-	l := lexer.New(input)
-	tokens := collectTokens(l)
+ 	l := lexer.New(input)
+ 	tokens := collectTokens(l)
 
-	// Verify we have the expected structure
-	expectedTokenTypes := []token.TokenType{
-		token.RULE,
-		token.IDENTIFIER, // ComplexRule
-		token.COLON,
-		token.IDENTIFIER,     // tag1
-		token.IDENTIFIER,     // tag2
-		token.HEX_STRING_LIT, // { ... }
-		token.EOF,
-	}
+ 	// Verify we have the expected structure - rule body should be properly parsed
+ 	expectedTokenTypes := []token.TokenType{
+ 		token.RULE,
+ 		token.IDENTIFIER, // ComplexRule
+ 		token.COLON,
+ 		token.IDENTIFIER, // tag1
+ 		token.IDENTIFIER, // tag2
+ 		token.LBRACE,
+ 		token.META,
+ 		token.COLON,
+ 		token.IDENTIFIER, // author
+ 		token.ASSIGN,
+ 		token.STRING_LIT, // "test"
+ 		token.IDENTIFIER, // version
+ 		token.ASSIGN,
+ 		token.INTEGER_LIT, // 1
+ 		token.IDENTIFIER, // enabled
+ 		token.ASSIGN,
+ 		token.TRUE, // true
+ 		token.STRINGS,
+ 		token.COLON,
+ 		token.STRING_IDENTIFIER, // $a
+ 		token.ASSIGN,
+ 		token.STRING_LIT, // "malware"
+ 		token.STRING_IDENTIFIER, // $b
+ 		token.ASSIGN,
+ 		token.HEX_STRING_LIT, // { E2 34 A1 C8 }
+ 		token.STRING_IDENTIFIER, // $c
+ 		token.ASSIGN,
+ 		token.REGEX_LIT, // /pattern/i
+ 		token.CONDITION,
+ 		token.COLON,
+ 		token.LPAREN,
+ 		token.STRING_IDENTIFIER, // $a
+ 		token.AND,
+ 		token.STRING_IDENTIFIER, // $b
+ 		token.RPAREN,
+ 		token.OR,
+ 		token.STRING_IDENTIFIER, // $c
+ 		token.AND,
+ 		token.NOT,
+ 		token.FALSE,
+ 		token.RBRACE,
+ 		token.EOF,
+ 	}
 
-	if len(tokens) != len(expectedTokenTypes) {
-		t.Fatalf("expected %d tokens, got %d\nActual tokens: %v", len(expectedTokenTypes), len(tokens), tokens)
-	}
+ 	if len(tokens) != len(expectedTokenTypes) {
+ 		t.Fatalf("expected %d tokens, got %d\nActual tokens: %v", len(expectedTokenTypes), len(tokens), tokens)
+ 	}
 
-	for i, expectedType := range expectedTokenTypes {
-		if tokens[i].Type != expectedType {
-			t.Fatalf("token[%d]: expected type %v, got %v", i, expectedType, tokens[i].Type)
-		}
-	}
+ 	for i, expectedType := range expectedTokenTypes {
+ 		if tokens[i].Type != expectedType {
+ 			t.Fatalf("token[%d]: expected type %v, got %v", i, expectedType, tokens[i].Type)
+ 		}
+ 	}
 
-	// Verify the hex string contains the expected content
-	hexStringToken := tokens[5]
-	if hexStringToken.Type != token.HEX_STRING_LIT {
-		t.Fatalf("expected HEX_STRING_LIT token, got %v", hexStringToken.Type)
-	}
-
-	// The hex string should contain the entire rule body
-	expectedSubstrings := []string{"meta:", "strings:", "condition:", "author", "malware", "E2 34 A1 C8", "pattern"}
-	for _, substr := range expectedSubstrings {
-		if !contains(hexStringToken.Literal, substr) {
-			t.Fatalf("hex string token should contain %q, but got: %q", substr, hexStringToken.Literal)
-		}
-	}
+ 	// Verify specific token literals
+ 	if tokens[1].Literal != "ComplexRule" {
+ 		t.Fatalf("expected rule name 'ComplexRule', got %q", tokens[1].Literal)
+ 	}
+ 	if tokens[3].Literal != "tag1" {
+ 		t.Fatalf("expected tag 'tag1', got %q", tokens[3].Literal)
+ 	}
+ 	if tokens[4].Literal != "tag2" {
+ 		t.Fatalf("expected tag 'tag2', got %q", tokens[4].Literal)
+ 	}
+ 	if tokens[6].Literal != "meta" {
+ 		t.Fatalf("expected meta section, got %q", tokens[6].Literal)
+ 	}
+ 	if tokens[17].Literal != "strings" {
+ 		t.Fatalf("expected strings section, got %q", tokens[17].Literal)
+ 	}
+ 	if tokens[28].Literal != "condition" {
+ 		t.Fatalf("expected condition section, got %q", tokens[28].Literal)
+ 	}
 }
 
 // Helper function to check if a string contains a substring

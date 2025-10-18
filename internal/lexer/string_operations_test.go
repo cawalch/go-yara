@@ -105,7 +105,7 @@ func TestStringOperations(t *testing.T) {
 		{
 			input: "hash.md5(0, filesize) matches /^[a-f0-9]{32}$/",
 			expected: []token.Token{
-				{Type: token.IDENTIFIER, Literal: "hash"},
+				{Type: token.HASH, Literal: "hash"},
 				{Type: token.DOT, Literal: "."},
 				{Type: token.IDENTIFIER, Literal: "md5"},
 				{Type: token.LPAREN, Literal: "("},

@@ -1,6 +1,8 @@
 // Package token defines the token types and structures used by the YARA lexer.
 package token
 
+import "fmt"
+
 // Position represents a position in the source code.
 type Position struct {
 	Filename string
@@ -118,4 +120,9 @@ type Token struct {
 	Type    TokenType
 	Literal string
 	Pos     Position
+}
+
+// String returns a string representation of the token for debugging
+func (t Token) String() string {
+	return fmt.Sprintf("{%s %q @ %d:%d}", t.Type, t.Literal, t.Pos.Line, t.Pos.Column)
 }

@@ -31,6 +31,8 @@ func (l *Lexer) handleBraceToken(pos token.Position) token.Token {
 	if l.isHexStringStart() {
 		return l.makeHexStringToken(pos)
 	}
+
+	// If we're not in a rule body, this is a regular brace
 	return l.makeSimpleToken(token.LBRACE, "{")
 }
 
