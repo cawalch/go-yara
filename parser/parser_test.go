@@ -1589,3 +1589,92 @@ rule no_tags {
 		t.Errorf("expected 0 tags, got %d", len(rule.Tags))
 	}
 }
+
+func TestParseRuleWithHexString(t *testing.T) {
+	input := `
+rule hex_string_rule {
+	strings:
+		$hex = { E2 34 A1 C8 }
+	condition:
+		$hex
+}
+`
+	l := lexer.New(input)
+	p := New(l)
+
+	program, err := p.ParseRules()
+	if err != nil {
+		t.Fatalf("parsing failed: %v", err)
+	}
+
+	rule := program.Rules[0]
+	if len(rule.Strings) != 1 {
+		t.Errorf("expected 1 string, got %d", len(rule.Strings))
+	}
+
+	str := rule.Strings[0]
+	if str.Identifier != "$hex" {
+		t.Errorf("expected string identifier '$hex', got '%s'", str.Identifier)
+	}
+}
+
+func TestParseRuleWithRegexPattern(t *testing.T) {
+	input := `
+rule regex_rule {
+	strings:
+		$regex = /malware[0-9]+/i
+	condition:
+		$regex
+}
+`
+	l := lexer.New(input)
+	p := New(l)
+
+	program, err := p.ParseRules()
+	if err != nil {
+		t.Fatalf("parsing failed: %v", err)
+	}
+
+	rule := program.Rules[0]
+	if len(rule.Strings) != 1 {
+		t.Errorf("expected 1 string, got %d", len(rule.Strings))
+	}
+
+	str := rule.Strings[0]
+	if str.Identifier != "$regex" {
+		t.Errorf("expected string identifier '$regex', got '%s'", str.Identifier)
+	}
+}
+
+func TestParseRuleWithMixedStringTypes(t *testing.T) {
+	input := `
+rule mixed_strings {
+	strings:
+		$text = "malware"
+		$hex = { E2 34 A1 }
+		$regex = /virus[0-9]+/
+	condition:
+		any of them
+}
+`
+	l := lexer.New(input)
+	p := New(l)
+
+	program, err := p.ParseRules()
+	if err != nil {
+		t.Fatalf("parsing failed: %v", err)
+	}
+
+	rule := program.Rules[0]
+	if len(rule.Strings) != 3 {
+		t.Errorf("expected 3 strings, got %d", len(rule.Strings))
+	}
+
+	// Check that we have all three types
+	expectedIds := []string{"$text", "$hex", "$regex"}
+	for i, str := range rule.Strings {
+		if str.Identifier != expectedIds[i] {
+			t.Errorf("expected string identifier '%s', got '%s'", expectedIds[i], str.Identifier)
+		}
+	}
+}

@@ -3,6 +3,8 @@
 package compiler
 
 import (
+	"fmt"
+
 	"github.com/cawalch/go-yara/ast"
 )
 
@@ -86,11 +88,9 @@ func ExtractAtoms(pattern ast.Pattern, modifiers []ast.StringModifier) []*Atom {
 	case *ast.TextString:
 		return ExtractFromTextString(p.Value, modifiers)
 	case *ast.HexString:
-		// TODO: Implement atom extraction for hex strings
-		return nil
+		return ExtractFromHexString(p.Value, modifiers)
 	case *ast.RegexPattern:
-		// TODO: Implement atom extraction for regex patterns
-		return nil
+		return ExtractFromRegexPattern(p.Value, modifiers)
 	default:
 		return nil
 	}
@@ -148,4 +148,245 @@ func ExtractFromTextString(s string, modifiers []ast.StringModifier) []*Atom {
 	}
 
 	return nil
+}
+
+// ExtractFromHexString extracts atoms from a hex string pattern.
+// Hex strings can contain wildcards (??), alternatives, and fixed bytes.
+func ExtractFromHexString(hexStr string, modifiers []ast.StringModifier) []*Atom {
+	// Parse hex string - remove spaces and braces if present
+	hexStr = cleanHexString(hexStr)
+
+	if len(hexStr) < 2 {
+		return nil
+	}
+
+	// Parse hex bytes and wildcards
+	hexBytes, err := parseHexBytes(hexStr)
+	if err != nil || len(hexBytes) == 0 {
+		return nil
+	}
+
+	// Extract fixed byte sequences as atoms
+	var atoms []*Atom
+
+	// Find sequences of fixed bytes (non-wildcard)
+	currentSequence := make([]byte, 0)
+	currentOffset := 0
+
+	for i, hb := range hexBytes {
+		if hb.IsWildcard {
+			// End current sequence if we have one
+			if len(currentSequence) >= MinAtomLength {
+				atom := &Atom{
+					Data:   make([]byte, len(currentSequence)),
+					Mask:   make([]byte, len(currentSequence)),
+					Offset: currentOffset,
+					Length: len(currentSequence),
+				}
+				copy(atom.Data, currentSequence)
+				for j := range atom.Mask {
+					atom.Mask[j] = 0xFF // Fully defined bytes
+				}
+				atom.Quality = calculateAtomQuality(atom)
+				atoms = append(atoms, atom)
+			}
+			currentSequence = nil
+			currentOffset = i + 1
+		} else {
+			currentSequence = append(currentSequence, hb.Value)
+		}
+	}
+
+	// Don't forget the last sequence
+	if len(currentSequence) >= MinAtomLength {
+		atom := &Atom{
+			Data:   make([]byte, len(currentSequence)),
+			Mask:   make([]byte, len(currentSequence)),
+			Offset: currentOffset,
+			Length: len(currentSequence),
+		}
+		copy(atom.Data, currentSequence)
+		for j := range atom.Mask {
+			atom.Mask[j] = 0xFF
+		}
+		atom.Quality = calculateAtomQuality(atom)
+		atoms = append(atoms, atom)
+	}
+
+	// If no atoms found, return nil
+	if len(atoms) == 0 {
+		return nil
+	}
+
+	return atoms
+}
+
+// ExtractFromRegexPattern extracts atoms from a regex pattern.
+// Extracts literal byte sequences from regex patterns for optimization.
+func ExtractFromRegexPattern(regexStr string, modifiers []ast.StringModifier) []*Atom {
+	// Remove regex delimiters and flags (e.g., "/pattern/i" -> "pattern")
+	regexStr = cleanRegexPattern(regexStr)
+
+	if len(regexStr) < MinAtomLength {
+		return nil
+	}
+
+	// Extract literal sequences from the regex pattern
+	literals := extractLiteralsFromRegex(regexStr)
+	if len(literals) == 0 {
+		return nil
+	}
+
+	// Convert literals to atoms
+	var atoms []*Atom
+	for _, literal := range literals {
+		if len(literal) >= MinAtomLength {
+			atom := &Atom{
+				Data:   []byte(literal),
+				Mask:   make([]byte, len(literal)),
+				Offset: 0,
+				Length: len(literal),
+			}
+			// Mark all bytes as fully defined
+			for j := range atom.Mask {
+				atom.Mask[j] = 0xFF
+			}
+			atom.Quality = calculateAtomQuality(atom)
+			atoms = append(atoms, atom)
+		}
+	}
+
+	// Return the best quality atom if we have any
+	if len(atoms) > 0 {
+		bestAtom := atoms[0]
+		for _, atom := range atoms[1:] {
+			if atom.Quality > bestAtom.Quality {
+				bestAtom = atom
+			}
+		}
+		return []*Atom{bestAtom}
+	}
+
+	return nil
+}
+
+// cleanRegexPattern removes regex delimiters and flags
+func cleanRegexPattern(regexStr string) string {
+	// Remove leading and trailing slashes
+	if len(regexStr) >= 2 && regexStr[0] == '/' {
+		// Find the closing slash (accounting for escaped slashes)
+		endIdx := len(regexStr) - 1
+		for endIdx > 0 && regexStr[endIdx] != '/' {
+			endIdx--
+		}
+		if endIdx > 0 {
+			regexStr = regexStr[1:endIdx]
+		}
+	}
+	return regexStr
+}
+
+// extractLiteralsFromRegex extracts literal byte sequences from a regex pattern
+func extractLiteralsFromRegex(pattern string) []string {
+	var literals []string
+	var current []rune
+
+	i := 0
+	for i < len(pattern) {
+		ch := rune(pattern[i])
+
+		// Handle escape sequences
+		if ch == '\\' && i+1 < len(pattern) {
+			next := rune(pattern[i+1])
+			// Add escaped character as literal
+			current = append(current, next)
+			i += 2
+			continue
+		}
+
+		// Handle regex metacharacters that break literal sequences
+		switch ch {
+		case '.', '*', '+', '?', '|', '(', ')', '[', ']', '{', '}', '^', '$':
+			// End current literal sequence
+			if len(current) > 0 {
+				literals = append(literals, string(current))
+				current = nil
+			}
+			i++
+
+		case ' ', '\t', '\n', '\r':
+			// Whitespace breaks literal sequences
+			if len(current) > 0 {
+				literals = append(literals, string(current))
+				current = nil
+			}
+			i++
+
+		default:
+			// Regular character - add to current literal
+			current = append(current, ch)
+			i++
+		}
+	}
+
+	// Don't forget the last sequence
+	if len(current) > 0 {
+		literals = append(literals, string(current))
+	}
+
+	return literals
+}
+
+// HexByte represents a byte in a hex string that can be fixed or wildcard
+type HexByte struct {
+	Value      byte
+	IsWildcard bool
+}
+
+// cleanHexString removes spaces, braces, and other formatting from hex strings
+func cleanHexString(hexStr string) string {
+	// Remove braces if present
+	if len(hexStr) > 2 && hexStr[0] == '{' && hexStr[len(hexStr)-1] == '}' {
+		hexStr = hexStr[1 : len(hexStr)-1]
+	}
+
+	// Remove spaces and other whitespace
+	var result []rune
+	for _, r := range hexStr {
+		if r != ' ' && r != '\t' && r != '\n' && r != '\r' {
+			result = append(result, r)
+		}
+	}
+
+	return string(result)
+}
+
+// parseHexBytes parses a cleaned hex string into bytes and wildcards
+func parseHexBytes(hexStr string) ([]HexByte, error) {
+	if len(hexStr)%2 != 0 {
+		return nil, fmt.Errorf("invalid hex string length")
+	}
+
+	var hexBytes []HexByte
+	for i := 0; i < len(hexStr); i += 2 {
+		pair := hexStr[i : i+2]
+
+		if pair == "??" {
+			hexBytes = append(hexBytes, HexByte{IsWildcard: true})
+		} else {
+			// Parse hex byte
+			var b byte
+			if _, err := fmt.Sscanf(pair, "%02x", &b); err != nil {
+				// Check for alternative syntax like "AA BB"
+				if len(hexBytes) > 0 && hexBytes[len(hexBytes)-1].IsWildcard {
+					// This might be an alternative, skip for now
+					continue
+				}
+				return nil, fmt.Errorf("invalid hex byte: %s", pair)
+			}
+			hexBytes = append(hexBytes, HexByte{Value: b, IsWildcard: false})
+		}
+	}
+
+	return hexBytes, nil
 }

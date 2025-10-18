@@ -4,6 +4,8 @@ package parser
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/cawalch/go-yara/ast"
 	"github.com/cawalch/go-yara/internal/lexer"
@@ -228,8 +230,8 @@ func (p *Parser) parseMetaDeclarations() []*ast.Meta {
 			value = p.current.Literal
 			p.nextToken()
 		} else if p.currentTokenIs(token.INTEGER_LIT) {
-			// Parse as int64 for now - full type handling later
-			value = int64(0) // TODO: proper number parsing
+			// Parse integer literal properly
+			value = p.parseIntegerLiteral()
 			p.nextToken()
 		} else if p.currentTokenIs(token.TRUE) {
 			value = true
@@ -265,16 +267,29 @@ func (p *Parser) parseStringDeclarations() []*ast.String {
 			break
 		}
 
-		// For now, just parse text strings - full pattern support later
-		if !p.currentTokenIs(token.STRING_LIT) {
-			p.errors = append(p.errors, fmt.Errorf("expected string literal, got %s at %v", p.current.Type, p.current.Pos))
+		// Parse string patterns - support text strings, hex strings, and regex patterns
+		var pattern ast.Pattern
+
+		if p.currentTokenIs(token.STRING_LIT) {
+			// Text string literal
+			patternValue := p.current.Literal
+			p.nextToken()
+			pattern = p.builder.TextString(pos, patternValue)
+		} else if p.currentTokenIs(token.HEX_STRING_LIT) {
+			// Hex string literal
+			patternValue := p.current.Literal
+			p.nextToken()
+			pattern = p.builder.HexString(pos, patternValue)
+		} else if p.currentTokenIs(token.REGEX_LIT) {
+			// Regex pattern literal
+			patternValue := p.current.Literal
+			p.nextToken()
+			pattern = p.builder.RegexPattern(pos, patternValue)
+		} else {
+			p.errors = append(p.errors, fmt.Errorf("expected string, hex, or regex literal, got %s at %v", p.current.Type, p.current.Pos))
 			break
 		}
 
-		patternValue := p.current.Literal
-		p.nextToken()
-
-		pattern := p.builder.TextString(pos, patternValue)
 		str := p.builder.String(pos, identifier, pattern, nil)
 		strings = append(strings, str)
 	}
@@ -436,19 +451,17 @@ func (p *Parser) parsePrimary() (ast.Expression, error) {
 	}
 
 	if p.currentTokenIs(token.INTEGER_LIT) {
-		// Parse integer literal
-		literal := p.current.Literal
+		// Parse integer literal properly
+		value := p.parseIntegerLiteral()
 		p.nextToken()
-		// TODO: proper integer parsing
-		return p.builder.Literal(pos, token.INTEGER_LIT, literal), nil
+		return p.builder.Literal(pos, token.INTEGER_LIT, value), nil
 	}
 
 	if p.currentTokenIs(token.HEX_INTEGER_LIT) {
-		// Parse hex integer literal
-		literal := p.current.Literal
+		// Parse hex integer literal properly
+		value := p.parseHexIntegerLiteral()
 		p.nextToken()
-		// TODO: proper hex integer parsing
-		return p.builder.Literal(pos, token.HEX_INTEGER_LIT, literal), nil
+		return p.builder.Literal(pos, token.HEX_INTEGER_LIT, value), nil
 	}
 
 	if p.currentTokenIs(token.SIZE_LIT) {
@@ -561,4 +574,36 @@ func (p *Parser) parsePrimary() (ast.Expression, error) {
 // isComparisonOp checks if a token is a comparison operator
 func (p *Parser) isComparisonOp(t token.TokenType) bool {
 	return t == token.EQ || t == token.NEQ || t == token.LT || t == token.LE || t == token.GT || t == token.GE
+}
+
+// parseIntegerLiteral parses an integer literal token and returns the int64 value
+func (p *Parser) parseIntegerLiteral() int64 {
+	literal := p.current.Literal
+
+	// Parse decimal integer
+	if value, err := strconv.ParseInt(literal, 10, 64); err == nil {
+		return value
+	}
+
+	// If parsing fails, return 0 and log error
+	p.errors = append(p.errors, fmt.Errorf("invalid integer literal: %s at %v", literal, p.current.Pos))
+	return 0
+}
+
+// parseHexIntegerLiteral parses a hex integer literal token and returns the int64 value
+func (p *Parser) parseHexIntegerLiteral() int64 {
+	literal := p.current.Literal
+
+	// Remove 0x prefix if present
+	literal = strings.TrimPrefix(literal, "0x")
+	literal = strings.TrimPrefix(literal, "0X")
+
+	// Parse hexadecimal integer
+	if value, err := strconv.ParseInt(literal, 16, 64); err == nil {
+		return value
+	}
+
+	// If parsing fails, return 0 and log error
+	p.errors = append(p.errors, fmt.Errorf("invalid hex integer literal: %s at %v", p.current.Literal, p.current.Pos))
+	return 0
 }

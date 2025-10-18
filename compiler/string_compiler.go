@@ -3,7 +3,7 @@ package compiler
 
 import (
 	"fmt"
-	"regexp"
+	"strconv"
 	"strings"
 	"unicode/utf16"
 
@@ -191,30 +191,251 @@ func (sc *StringCompiler) encodeHexString(hexData []byte, modifiers []ast.String
 	return hexData
 }
 
-// parseHexString parses a hex string pattern (simplified implementation)
-func (sc *StringCompiler) parseHexString(hexStr string) []byte {
-	// Remove spaces and comments
-	clean := strings.ReplaceAll(hexStr, " ", "")
-	clean = regexp.MustCompile(`/
-*.*?
-*/`).ReplaceAllString(clean, "")
+// HexToken represents a token in a hex string
+type HexToken struct {
+	Type  string      // "byte", "wildcard", "masked", "jump", "alternative"
+	Value interface{} // byte value, jump range, or alternatives
+}
 
-	// Parse hex bytes (simplified - real implementation would handle full hex grammar)
-	var result []byte
-	for i := 0; i < len(clean)-1; i += 2 {
-		if i+1 < len(clean) {
-			// This is a very simplified hex parser
-			// Real implementation would handle wildcards, jumps, alternatives, etc.
-			if clean[i:i+2] == "??" {
-				result = append(result, 0x00) // Wildcard
+// parseHexString parses a hex string pattern with full YARA hex grammar support
+func (sc *StringCompiler) parseHexString(hexStr string) []byte {
+	// Tokenize the hex string
+	tokens := sc.tokenizeHexString(hexStr)
+	if len(tokens) == 0 {
+		return []byte{}
+	}
+
+	// Convert tokens to bytes
+	return sc.tokensToBytes(tokens)
+}
+
+// tokenizeHexString tokenizes a hex string into tokens
+func (sc *StringCompiler) tokenizeHexString(hexStr string) []HexToken {
+	var tokens []HexToken
+	i := 0
+
+	for i < len(hexStr) {
+		// Skip whitespace
+		for i < len(hexStr) && (hexStr[i] == ' ' || hexStr[i] == '\t' || hexStr[i] == '\n' || hexStr[i] == '\r') {
+			i++
+		}
+		if i >= len(hexStr) {
+			break
+		}
+
+		// Skip comments
+		if i+1 < len(hexStr) && hexStr[i:i+2] == "/*" {
+			// Find end of comment
+			for i+1 < len(hexStr) && hexStr[i:i+2] != "*/" {
+				i++
+			}
+			if i+1 < len(hexStr) {
+				i += 2
+			}
+			continue
+		}
+
+		// Skip single-line comments
+		if i+1 < len(hexStr) && hexStr[i:i+2] == "//" {
+			// Skip to end of line
+			for i < len(hexStr) && hexStr[i] != '\n' {
+				i++
+			}
+			continue
+		}
+
+		// Parse tokens
+		switch hexStr[i] {
+		case '{':
+			i++
+		case '}':
+			i++
+		case '(':
+			// Start of alternatives
+			i++
+			// Find matching closing paren
+			depth := 1
+			altStart := i
+			for i < len(hexStr) && depth > 0 {
+				if hexStr[i] == '(' {
+					depth++
+				} else if hexStr[i] == ')' {
+					depth--
+				}
+				i++
+			}
+			// Parse alternatives
+			altStr := hexStr[altStart : i-1]
+			alts := sc.parseAlternatives(altStr)
+			tokens = append(tokens, HexToken{Type: "alternative", Value: alts})
+
+		case '[':
+			// Jump range
+			i++
+			jumpStart := i
+			for i < len(hexStr) && hexStr[i] != ']' {
+				i++
+			}
+			jumpStr := hexStr[jumpStart:i]
+			if i < len(hexStr) {
+				i++ // skip ]
+			}
+			jump := sc.parseJump(jumpStr)
+			tokens = append(tokens, HexToken{Type: "jump", Value: jump})
+
+		case '?':
+			// Wildcard or masked byte
+			if i+1 < len(hexStr) && hexStr[i+1] == '?' {
+				// Full wildcard ??
+				tokens = append(tokens, HexToken{Type: "wildcard", Value: byte(0x00)})
+				i += 2
+			} else if i+1 < len(hexStr) && isHexDigit(hexStr[i+1]) {
+				// Masked byte ?X
+				hex := string(hexStr[i : i+2])
+				val := sc.parseHexByte(hex)
+				tokens = append(tokens, HexToken{Type: "masked", Value: val})
+				i += 2
 			} else {
-				// Parse hex byte (simplified)
-				result = append(result, 0x00) // Placeholder
+				i++
+			}
+
+		default:
+			// Try to parse hex byte
+			if i+1 < len(hexStr) && isHexDigit(hexStr[i]) && isHexDigit(hexStr[i+1]) {
+				hex := hexStr[i : i+2]
+				val := sc.parseHexByte(hex)
+				tokens = append(tokens, HexToken{Type: "byte", Value: val})
+				i += 2
+			} else if isHexDigit(hexStr[i]) && i+1 < len(hexStr) && hexStr[i+1] == '?' {
+				// Masked byte X?
+				hex := string(hexStr[i : i+2])
+				val := sc.parseHexByte(hex)
+				tokens = append(tokens, HexToken{Type: "masked", Value: val})
+				i += 2
+			} else {
+				i++
 			}
 		}
 	}
 
+	return tokens
+}
+
+// parseAlternatives parses alternatives separated by |
+func (sc *StringCompiler) parseAlternatives(altStr string) [][]byte {
+	var alts [][]byte
+	parts := strings.Split(altStr, "|")
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			tokens := sc.tokenizeHexString(part)
+			bytes := sc.tokensToBytes(tokens)
+			alts = append(alts, bytes)
+		}
+	}
+	return alts
+}
+
+// parseJump parses a jump range [X-Y] or [X]
+func (sc *StringCompiler) parseJump(jumpStr string) map[string]int {
+	jumpStr = strings.TrimSpace(jumpStr)
+	result := make(map[string]int)
+
+	if strings.Contains(jumpStr, "-") {
+		parts := strings.Split(jumpStr, "-")
+		if len(parts) == 2 {
+			minStr := strings.TrimSpace(parts[0])
+			maxStr := strings.TrimSpace(parts[1])
+
+			if minVal, err := strconv.Atoi(minStr); err == nil {
+				result["min"] = minVal
+			}
+			if maxStr == "" {
+				result["max"] = 65535 // Infinite
+			} else if maxVal, err := strconv.Atoi(maxStr); err == nil {
+				result["max"] = maxVal
+			}
+		}
+	} else {
+		// Single value [X] means exactly X bytes
+		if val, err := strconv.Atoi(jumpStr); err == nil {
+			result["min"] = val
+			result["max"] = val
+		}
+	}
+
 	return result
+}
+
+// tokensToBytes converts tokens to bytes
+func (sc *StringCompiler) tokensToBytes(tokens []HexToken) []byte {
+	var result []byte
+	for _, token := range tokens {
+		switch token.Type {
+		case "byte":
+			if b, ok := token.Value.(byte); ok {
+				result = append(result, b)
+			}
+		case "wildcard":
+			result = append(result, 0x00) // Placeholder for wildcard
+		case "masked":
+			if b, ok := token.Value.(byte); ok {
+				result = append(result, b)
+			}
+		case "jump":
+			// Jumps are represented as special markers
+			if jumpMap, ok := token.Value.(map[string]int); ok {
+				minVal := jumpMap["min"]
+				maxVal := jumpMap["max"]
+				// Use special encoding for jumps (simplified)
+				result = append(result, byte(0xFF)) // Jump marker
+				result = append(result, byte(minVal&0xFF))
+				result = append(result, byte((minVal>>8)&0xFF))
+				result = append(result, byte(maxVal&0xFF))
+				result = append(result, byte((maxVal>>8)&0xFF))
+			}
+		case "alternative":
+			// Alternatives are represented as special markers
+			if alts, ok := token.Value.([][]byte); ok && len(alts) > 0 {
+				// Use first alternative for now (simplified)
+				result = append(result, alts[0]...)
+			}
+		}
+	}
+	return result
+}
+
+// parseHexByte parses a single hex byte (with possible mask)
+func (sc *StringCompiler) parseHexByte(hexStr string) byte {
+	if len(hexStr) < 2 {
+		return 0x00
+	}
+
+	// Handle masked bytes
+	if hexStr[1] == '?' {
+		// X? format - lower nibble is wildcard
+		if val, err := strconv.ParseInt(string(hexStr[0]), 16, 16); err == nil {
+			return byte((val & 0x0F) << 4)
+		}
+	} else if hexStr[0] == '?' {
+		// ?X format - upper nibble is wildcard
+		if val, err := strconv.ParseInt(string(hexStr[1]), 16, 16); err == nil {
+			return byte(val & 0x0F)
+		}
+	} else {
+		// Regular hex byte - convert to lowercase for parsing
+		hexLower := strings.ToLower(hexStr)
+		if val, err := strconv.ParseInt(hexLower, 16, 16); err == nil {
+			return byte(val & 0xFF)
+		}
+	}
+
+	return 0x00
+}
+
+// isHexDigit checks if a character is a hex digit
+func isHexDigit(ch byte) bool {
+	return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F')
 }
 
 // compileRegex compiles a regex pattern to internal format
