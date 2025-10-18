@@ -44,42 +44,67 @@ func calculateAtomQuality(atom *Atom) int {
 	seenBytes := make(map[byte]bool)
 	uniqueBytes := 0
 
+	// Calculate quality for each byte in the atom
 	for i := 0; i < atom.Length; i++ {
-		switch atom.Mask[i] {
-		case 0x00:
-			quality -= 10
-		case 0x0F, 0xF0:
-			quality += 4
-		case 0xFF:
-			b := atom.Data[i]
-			switch b {
-			case 0x00, 0x20, 0xCC, 0xFF:
-				quality += 12 // Common bytes
-			default:
-				if (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') {
-					quality += 18 // Alphabetic
-				} else {
-					quality += 20 // Other
-				}
-			}
-			if !seenBytes[b] {
-				seenBytes[b] = true
-				uniqueBytes++
-			}
+		byteQuality, isUnique := calculateByteQuality(atom.Data[i], atom.Mask[i])
+		quality += byteQuality
+
+		if isUnique && !seenBytes[atom.Data[i]] {
+			seenBytes[atom.Data[i]] = true
+			uniqueBytes++
 		}
 	}
 
+	// Apply unique byte bonus
 	quality += 2 * uniqueBytes
 
 	// Penalize atoms with all equal and common bytes
+	quality = applyCommonBytePenalty(atom, quality, uniqueBytes)
+
+	return quality
+}
+
+// calculateByteQuality calculates the quality contribution of a single byte
+func calculateByteQuality(b byte, mask byte) (int, bool) {
+	switch mask {
+	case 0x00:
+		return -10, false
+	case 0x0F, 0xF0:
+		return 4, false
+	case 0xFF:
+		return getFullyDefinedByteQuality(b), true
+	default:
+		return 0, false
+	}
+}
+
+// getFullyDefinedByteQuality returns the quality for a fully defined byte
+func getFullyDefinedByteQuality(b byte) int {
+	switch b {
+	case 0x00, 0x20, 0xCC, 0xFF:
+		return 12 // Common bytes
+	default:
+		if (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') {
+			return 18 // Alphabetic
+		}
+		return 20 // Other
+	}
+}
+
+// applyCommonBytePenalty applies penalty for atoms with all equal and common bytes
+func applyCommonBytePenalty(atom *Atom, quality int, uniqueBytes int) int {
 	if uniqueBytes == 1 {
 		b := atom.Data[0]
-		if b == 0x00 || b == 0x20 || b == 0x90 || b == 0xCC || b == 0xFF {
+		if isCommonByte(b) {
 			quality -= 10 * atom.Length
 		}
 	}
-
 	return quality
+}
+
+// isCommonByte checks if a byte is a common/low-entropy byte
+func isCommonByte(b byte) bool {
+	return b == 0x00 || b == 0x20 || b == 0x90 || b == 0xCC || b == 0xFF
 }
 
 // ExtractAtoms extracts atoms from a string pattern.

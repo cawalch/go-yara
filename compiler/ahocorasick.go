@@ -244,8 +244,28 @@ func (ac *ACAutomaton) BuildTransitionTable() error {
 		return fmt.Errorf("no states in automaton")
 	}
 
-	// Calculate required table size: each state needs 256 slots (one per byte value)
-	// Use safe multiplication to avoid overflow
+	// Calculate and validate table size
+	if err := ac.calculateTableSize(); err != nil {
+		return err
+	}
+
+	// Allocate transition and match tables
+	ac.Transitions = make([]ACTransition, ac.TableSize)
+	ac.MatchTable = make([]uint32, ac.TableSize)
+
+	// Assign state indices
+	stateSlots := ac.assignStateSlots()
+
+	// Build transition entries for each state
+	if err := ac.buildStateTransitions(stateSlots); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// calculateTableSize calculates and validates the required table size
+func (ac *ACAutomaton) calculateTableSize() error {
 	numStates := len(ac.States)
 	const bytesPerState = 256
 
@@ -264,72 +284,101 @@ func (ac *ACAutomaton) BuildTransitionTable() error {
 	}
 
 	ac.TableSize = requiredSize
-	ac.Transitions = make([]ACTransition, ac.TableSize)
-	ac.MatchTable = make([]uint32, ac.TableSize)
+	return nil
+}
 
-	// Assign state indices (use position in ac.States as the slot)
+// assignStateSlots assigns indices to all states
+func (ac *ACAutomaton) assignStateSlots() map[*ACState]int {
 	stateSlots := make(map[*ACState]int)
 	for i, state := range ac.States {
-		if i >= ac.TableSize {
-			return fmt.Errorf("too many states: %d states exceed table size %d", len(ac.States), ac.TableSize)
-		}
 		stateSlots[state] = i
 	}
+	return stateSlots
+}
 
-	// Build transition entries for each state
+// buildStateTransitions builds transition entries for all states
+func (ac *ACAutomaton) buildStateTransitions(stateSlots map[*ACState]int) error {
+	const bytesPerState = 256
+
 	for stateIdx, state := range ac.States {
 		// Validate state index is within bounds
 		if stateIdx < 0 || stateIdx >= ac.TableSize {
 			return fmt.Errorf("invalid state index %d, table size %d", stateIdx, ac.TableSize)
 		}
 
-		// Set failure link at base slot
-		var failureSlot int
-		if state.Failure != nil {
-			if fs, ok := stateSlots[state.Failure]; ok {
-				failureSlot = fs
-			} else {
-				// Fallback to root if failure state not found
-				failureSlot = 0
-			}
-		}
-		ac.Transitions[stateIdx] = ACMakeTransition(uint32(failureSlot), 0)
-
-		// Set match table entry
-		if len(state.Output) > 0 {
-			ac.MatchTable[stateIdx] = uint32(state.Output[0]) + 1
-		} else {
-			ac.MatchTable[stateIdx] = 0
+		// Set failure link and match table entry
+		if err := ac.setStateFailureAndMatch(stateIdx, state, stateSlots); err != nil {
+			return err
 		}
 
 		// Set up transitions for children
-		for input, child := range state.Children {
-			childSlot, ok := stateSlots[child]
-			if !ok {
-				return fmt.Errorf("child state not allocated")
-			}
-
-			// Validate child slot is within bounds
-			if childSlot < 0 || childSlot >= ac.TableSize {
-				return fmt.Errorf("invalid child slot %d for input %d, table size %d", childSlot, input, ac.TableSize)
-			}
-
-			// Calculate transition index: stateIdx * 256 + input
-			// Check for overflow before calculation
-			if stateIdx > (ac.TableSize-1)/bytesPerState {
-				return fmt.Errorf("state index %d would cause transition index overflow with table size %d", stateIdx, ac.TableSize)
-			}
-
-			transitionIndex := stateIdx*bytesPerState + int(input)
-			if transitionIndex < 0 || transitionIndex >= ac.TableSize {
-				return fmt.Errorf("transition index out of bounds: %d (state=%d, input=%d), table size %d",
-					transitionIndex, stateIdx, input, ac.TableSize)
-			}
-
-			ac.Transitions[transitionIndex] = ACMakeTransition(uint32(childSlot), uint32(input))
+		if err := ac.setStateChildren(stateIdx, state, stateSlots, bytesPerState); err != nil {
+			return err
 		}
 	}
 
+	return nil
+}
+
+// setStateFailureAndMatch sets the failure link and match table entry for a state
+func (ac *ACAutomaton) setStateFailureAndMatch(stateIdx int, state *ACState, stateSlots map[*ACState]int) error {
+	var failureSlot int
+	if state.Failure != nil {
+		if fs, ok := stateSlots[state.Failure]; ok {
+			failureSlot = fs
+		} else {
+			// Fallback to root if failure state not found
+			failureSlot = 0
+		}
+	}
+	ac.Transitions[stateIdx] = ACMakeTransition(uint32(failureSlot), 0)
+
+	// Set match table entry
+	if len(state.Output) > 0 {
+		ac.MatchTable[stateIdx] = uint32(state.Output[0]) + 1
+	} else {
+		ac.MatchTable[stateIdx] = 0
+	}
+
+	return nil
+}
+
+// setStateChildren sets up transitions for all children of a state
+func (ac *ACAutomaton) setStateChildren(stateIdx int, state *ACState, stateSlots map[*ACState]int, bytesPerState int) error {
+	for input, child := range state.Children {
+		childSlot, ok := stateSlots[child]
+		if !ok {
+			return fmt.Errorf("child state not allocated")
+		}
+
+		// Validate child slot is within bounds
+		if childSlot < 0 || childSlot >= ac.TableSize {
+			return fmt.Errorf("invalid child slot %d for input %d, table size %d", childSlot, input, ac.TableSize)
+		}
+
+		// Calculate and validate transition index
+		if err := ac.setTransition(stateIdx, int(input), childSlot, bytesPerState); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// setTransition sets a single transition in the table
+func (ac *ACAutomaton) setTransition(stateIdx, input, childSlot, bytesPerState int) error {
+	// Check for overflow before calculation
+	if stateIdx > (ac.TableSize-1)/bytesPerState {
+		return fmt.Errorf("state index %d would cause transition index overflow with table size %d", stateIdx, ac.TableSize)
+	}
+
+	transitionIndex := stateIdx*bytesPerState + input
+	if transitionIndex < 0 || transitionIndex >= ac.TableSize {
+		return fmt.Errorf("transition index out of bounds: %d (state=%d, input=%d), table size %d",
+			transitionIndex, stateIdx, input, ac.TableSize)
+	}
+
+	ac.Transitions[transitionIndex] = ACMakeTransition(uint32(childSlot), uint32(input))
 	return nil
 }
 

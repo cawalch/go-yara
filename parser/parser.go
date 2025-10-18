@@ -439,113 +439,31 @@ func (p *Parser) parseMultiplicative() (ast.Expression, error) {
 func (p *Parser) parsePrimary() (ast.Expression, error) {
 	pos := p.current.Pos
 
-	// Literals
-	if p.currentTokenIs(token.TRUE) {
-		p.nextToken()
-		return p.builder.Literal(pos, token.TRUE, true), nil
+	// Try to parse literals first
+	if expr, err := p.parseLiteral(pos); expr != nil || err != nil {
+		return expr, err
 	}
 
-	if p.currentTokenIs(token.FALSE) {
-		p.nextToken()
-		return p.builder.Literal(pos, token.FALSE, false), nil
-	}
-
-	if p.currentTokenIs(token.INTEGER_LIT) {
-		// Parse integer literal properly
-		value := p.parseIntegerLiteral()
-		p.nextToken()
-		return p.builder.Literal(pos, token.INTEGER_LIT, value), nil
-	}
-
-	if p.currentTokenIs(token.HEX_INTEGER_LIT) {
-		// Parse hex integer literal properly
-		value := p.parseHexIntegerLiteral()
-		p.nextToken()
-		return p.builder.Literal(pos, token.HEX_INTEGER_LIT, value), nil
-	}
-
-	if p.currentTokenIs(token.SIZE_LIT) {
-		// Parse size literal (e.g., 1KB, 2MB)
-		literal := p.current.Literal
-		p.nextToken()
-		return p.builder.Literal(pos, token.SIZE_LIT, literal), nil
-	}
-
-	if p.currentTokenIs(token.STRING_LIT) {
-		literal := p.current.Literal
-		p.nextToken()
-		return p.builder.Literal(pos, token.STRING_LIT, literal), nil
-	}
-
-	// String identifiers ($s1, $hex, etc.)
+	// Try to parse string identifiers
 	if p.currentTokenIs(token.STRING_IDENTIFIER) {
 		ident := p.current.Literal
 		p.nextToken()
 		return p.builder.Identifier(pos, ident), nil
 	}
 
-	// Quantifier expressions: all/any/none of them or string patterns
-	if p.currentTokenIs(token.ALL) || p.currentTokenIs(token.ANY) || p.currentTokenIs(token.NONE) {
-		quantifier := p.current.Literal
-		p.nextToken()
-
-		if !p.expectToken(token.OF) {
-			return nil, fmt.Errorf("expected 'of' after quantifier")
-		}
-
-		// Parse the target (them, string patterns, etc.)
-		var target ast.Expression
-		if p.currentTokenIs(token.THEM) {
-			target = p.builder.Identifier(pos, "them")
-			p.nextToken()
-		} else if p.currentTokenIs(token.STRING_IDENTIFIER) {
-			// Could be a pattern like $s* or just $s1
-			target = p.builder.Identifier(pos, p.current.Literal)
-			p.nextToken()
-		} else {
-			return nil, fmt.Errorf("expected 'them' or string pattern after 'of'")
-		}
-
-		// Create a binary operation representing the quantifier
-		return p.builder.BinaryOp(pos, p.builder.Identifier(pos, quantifier), token.OF, target), nil
+	// Try to parse quantifier expressions
+	if expr, err := p.parseQuantifier(pos); expr != nil || err != nil {
+		return expr, err
 	}
 
-	// Special keywords: filesize, entrypoint, defined
-	if p.currentTokenIs(token.FILESIZE) {
-		p.nextToken()
-		return p.builder.Identifier(pos, "filesize"), nil
+	// Try to parse special keywords
+	if expr, err := p.parseSpecialKeyword(pos); expr != nil || err != nil {
+		return expr, err
 	}
 
-	if p.currentTokenIs(token.ENTRYPOINT) {
-		p.nextToken()
-		return p.builder.Identifier(pos, "entrypoint"), nil
-	}
-
-	if p.currentTokenIs(token.DEFINED) {
-		p.nextToken()
-		expr, err := p.parsePrimary()
-		if err != nil {
-			return nil, err
-		}
-		return p.builder.UnaryOp(pos, token.DEFINED, expr), nil
-	}
-
-	if p.currentTokenIs(token.AT) {
-		p.nextToken()
-		expr, err := p.parsePrimary()
-		if err != nil {
-			return nil, err
-		}
-		return p.builder.UnaryOp(pos, token.AT, expr), nil
-	}
-
-	if p.currentTokenIs(token.IN) {
-		p.nextToken()
-		expr, err := p.parsePrimary()
-		if err != nil {
-			return nil, err
-		}
-		return p.builder.UnaryOp(pos, token.IN, expr), nil
+	// Try to parse unary operators
+	if expr, err := p.parseUnaryOperator(pos); expr != nil || err != nil {
+		return expr, err
 	}
 
 	// Regular identifiers
@@ -569,6 +487,110 @@ func (p *Parser) parsePrimary() (ast.Expression, error) {
 	}
 
 	return nil, fmt.Errorf("unexpected token %s at %v", p.current.Type, p.current.Pos)
+}
+
+// parseLiteral parses literal values (true, false, numbers, strings)
+func (p *Parser) parseLiteral(pos token.Position) (ast.Expression, error) {
+	if p.currentTokenIs(token.TRUE) {
+		p.nextToken()
+		return p.builder.Literal(pos, token.TRUE, true), nil
+	}
+
+	if p.currentTokenIs(token.FALSE) {
+		p.nextToken()
+		return p.builder.Literal(pos, token.FALSE, false), nil
+	}
+
+	if p.currentTokenIs(token.INTEGER_LIT) {
+		value := p.parseIntegerLiteral()
+		p.nextToken()
+		return p.builder.Literal(pos, token.INTEGER_LIT, value), nil
+	}
+
+	if p.currentTokenIs(token.HEX_INTEGER_LIT) {
+		value := p.parseHexIntegerLiteral()
+		p.nextToken()
+		return p.builder.Literal(pos, token.HEX_INTEGER_LIT, value), nil
+	}
+
+	if p.currentTokenIs(token.SIZE_LIT) {
+		literal := p.current.Literal
+		p.nextToken()
+		return p.builder.Literal(pos, token.SIZE_LIT, literal), nil
+	}
+
+	if p.currentTokenIs(token.STRING_LIT) {
+		literal := p.current.Literal
+		p.nextToken()
+		return p.builder.Literal(pos, token.STRING_LIT, literal), nil
+	}
+
+	return nil, nil
+}
+
+// parseQuantifier parses quantifier expressions (all/any/none of them)
+func (p *Parser) parseQuantifier(pos token.Position) (ast.Expression, error) {
+	if !p.currentTokenIs(token.ALL) && !p.currentTokenIs(token.ANY) && !p.currentTokenIs(token.NONE) {
+		return nil, nil
+	}
+
+	quantifier := p.current.Literal
+	p.nextToken()
+
+	if !p.expectToken(token.OF) {
+		return nil, fmt.Errorf("expected 'of' after quantifier")
+	}
+
+	// Parse the target (them, string patterns, etc.)
+	var target ast.Expression
+	if p.currentTokenIs(token.THEM) {
+		target = p.builder.Identifier(pos, "them")
+		p.nextToken()
+	} else if p.currentTokenIs(token.STRING_IDENTIFIER) {
+		target = p.builder.Identifier(pos, p.current.Literal)
+		p.nextToken()
+	} else {
+		return nil, fmt.Errorf("expected 'them' or string pattern after 'of'")
+	}
+
+	return p.builder.BinaryOp(pos, p.builder.Identifier(pos, quantifier), token.OF, target), nil
+}
+
+// parseSpecialKeyword parses special keywords (filesize, entrypoint)
+func (p *Parser) parseSpecialKeyword(pos token.Position) (ast.Expression, error) {
+	if p.currentTokenIs(token.FILESIZE) {
+		p.nextToken()
+		return p.builder.Identifier(pos, "filesize"), nil
+	}
+
+	if p.currentTokenIs(token.ENTRYPOINT) {
+		p.nextToken()
+		return p.builder.Identifier(pos, "entrypoint"), nil
+	}
+
+	return nil, nil
+}
+
+// parseUnaryOperator parses unary operators (defined, at, in)
+func (p *Parser) parseUnaryOperator(pos token.Position) (ast.Expression, error) {
+	var op token.TokenType
+
+	if p.currentTokenIs(token.DEFINED) {
+		op = token.DEFINED
+	} else if p.currentTokenIs(token.AT) {
+		op = token.AT
+	} else if p.currentTokenIs(token.IN) {
+		op = token.IN
+	} else {
+		return nil, nil
+	}
+
+	p.nextToken()
+	expr, err := p.parsePrimary()
+	if err != nil {
+		return nil, err
+	}
+	return p.builder.UnaryOp(pos, op, expr), nil
 }
 
 // isComparisonOp checks if a token is a comparison operator
