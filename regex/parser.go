@@ -68,9 +68,7 @@ func (p *Parser) parseConcat() (*Node, error) {
 		}
 		nodes = append(nodes, n)
 		// Continue while next token starts a primary
-		if p.cur.kind != tChar && p.cur.kind != tDot && p.cur.kind != tLParen && p.cur.kind != tCaret && p.cur.kind != tDollar && p.cur.kind != tLBracket &&
-			p.cur.kind != tWord && p.cur.kind != tNonWord && p.cur.kind != tSpace && p.cur.kind != tNonSpace && p.cur.kind != tDigit && p.cur.kind != tNonDigit &&
-			p.cur.kind != tWordBoundary && p.cur.kind != tNonWordBoundary {
+		if !p.isPrimaryStart() {
 			break
 		}
 	}
@@ -111,7 +109,7 @@ func (p *Parser) parsePrimary() (*Node, error) {
 		case tQMark:
 			// '?' quantifier (0 or 1)
 			p.next()
-			n := &Node{Kind: NodeRange, Children: []*Node{base}, Start: 0, End: 1, Greedy: true}
+		n := &Node{Kind: NodeRange, Children: []*Node{base}, Start: 0, End: 1, Greedy: true}
 			if p.cur.kind == tQMark {
 				n.Greedy = false
 				p.next()
@@ -122,7 +120,7 @@ func (p *Parser) parsePrimary() (*Node, error) {
 			if err2 != nil {
 				return nil, err2
 			}
-			n := &Node{Kind: NodeRange, Children: []*Node{base}, Start: min, End: max, Greedy: true}
+		n := &Node{Kind: NodeRange, Children: []*Node{base}, Start: min, End: max, Greedy: true}
 			if p.cur.kind == tQMark {
 				n.Greedy = false
 				p.next()
@@ -194,6 +192,19 @@ func (p *Parser) parseBase() (*Node, error) {
 
 func (p *Parser) next() { p.cur = p.lx.next() }
 
+// isPrimaryStart reports whether the current token kind can start a primary expression.
+// Implemented as a switch to be clear and inlinable; this replaces the long || chain.
+func (p *Parser) isPrimaryStart() bool {
+	switch p.cur.kind {
+	case tChar, tDot, tLParen, tCaret, tDollar, tLBracket,
+		tWord, tNonWord, tSpace, tNonSpace, tDigit, tNonDigit,
+		tWordBoundary, tNonWordBoundary:
+		return true
+	default:
+		return false
+	}
+}
+
 // parseBound parses {m}, {m,}, or {m,n}. After '}', it advances p.cur to the next meaningful token.
 func (p *Parser) parseBound() (uint16, uint16, error) {
 	l := p.lx // current index is just after '{'
@@ -206,7 +217,7 @@ func (p *Parser) parseBound() (uint16, uint16, error) {
 			val = val*10 + int(l.s[l.i]-'0')
 			if val > 65535 {
 				val = 65535
-			} // clamp
+			}
 			l.i++
 		}
 		return uint16(val), nil //nolint:gosec // val is clamped to <= 65535
@@ -239,7 +250,7 @@ func (p *Parser) parseBound() (uint16, uint16, error) {
 }
 
 // parseClass consumes a character class from the underlying lexer state.
-// Supports: negation ^, ranges a-z, escaped metachars (\\, \-, \]).
+// Supports: negation ^, ranges a-z, escaped metachars (\, \-, \]).
 func (p *Parser) parseClass() (*Node, error) {
 	// We have just seen '[' as current token; the lexer's index is already positioned
 	// right after '['. Work directly with the underlying input index.
@@ -288,11 +299,12 @@ func (p *Parser) parseClass() (*Node, error) {
 			continue
 		}
 		classSet(cls, c)
+		}
+		// Set negation and set current token properly to next token after ']'
+		cls.Negated = neg
+		p.cur = p.lx.next()
+		return &Node{Kind: NodeClass, Class: cls, Greedy: true}, nil
 	}
-	// Set negation and set current token properly to next token after ']'
-	cls.Negated = neg
-	p.cur = p.lx.next()
-	return &Node{Kind: NodeClass, Class: cls, Greedy: true}, nil
 }
 
 func readEscaped(l *lexer, strict bool) (byte, error) {
