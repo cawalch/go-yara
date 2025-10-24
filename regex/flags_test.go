@@ -24,4 +24,3 @@ func TestParserStrictFlag(t *testing.T) {
 		t.Fatal("expected strictEscape to be false with flag unset")
 	}
 }
-

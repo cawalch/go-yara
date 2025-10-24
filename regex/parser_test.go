@@ -108,7 +108,7 @@ func TestParseQuantifiersUngreedyPlus(t *testing.T) {
 		t.Fatalf("parse error: %v", err)
 	}
 	n := ast.Root
-	if n.Kind != NodePlus || !(!n.Greedy) {
+	if n.Kind != NodePlus || n.Greedy {
 		t.Fatalf("expected ungreedy plus")
 	}
 }

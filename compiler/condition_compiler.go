@@ -17,7 +17,7 @@ type ConditionCompiler struct {
 	labelCounter  int            // For generating unique labels
 }
 
- // NewConditionCompiler creates a new condition compiler
+// NewConditionCompiler creates a new condition compiler
 func NewConditionCompiler(emitter *Emitter, stringOffsets map[string]int) *ConditionCompiler {
 	return &ConditionCompiler{
 		emitter:       emitter,
@@ -204,7 +204,7 @@ func (cc *ConditionCompiler) compileBinaryOp(binOp *ast.BinaryOp) error {
 	return nil
 }
 
- // compileUnaryOp compiles a unary operation
+// compileUnaryOp compiles a unary operation
 func (cc *ConditionCompiler) compileUnaryOp(unaryOp *ast.UnaryOp) error {
 	// Special handling for position/count and other YARA-specific unary ops
 	switch unaryOp.Op {
@@ -269,7 +269,6 @@ func (cc *ConditionCompiler) GetVariableIndex(name string) (int, bool) {
 	index, exists := cc.variableMap[name]
 	return index, exists
 }
-
 
 // EmitJump emits a jump instruction with label management
 func (cc *ConditionCompiler) EmitJump(opcode Opcode, targetLabel string, line, pos int) error {

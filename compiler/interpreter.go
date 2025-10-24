@@ -720,7 +720,6 @@ func (i *Interpreter) SetMemoryString(addr int, s string) {
 	}
 }
 
-
 // pushComparisonResult pushes the result of a comparison to the stack
 func (i *Interpreter) pushComparisonResult(result bool) {
 	if result {

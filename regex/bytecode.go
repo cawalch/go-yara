@@ -37,6 +37,7 @@ func (e *Emitter) EmitU16(v uint16) *Emitter {
 }
 
 // EmitI16 appends a 16-bit signed value in little-endian order.
+//
 //nolint:gosec // G115: conversion from int16 to uint16 is intentional for encoding
 func (e *Emitter) EmitI16(v int16) *Emitter {
 	var tmp [2]byte

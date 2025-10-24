@@ -126,7 +126,7 @@ func (rc *RuleCompiler) compileStrings(rule *ast.Rule) error {
 	return nil
 }
 
- // compileSingleString compiles a single string and adds it to the automaton
+// compileSingleString compiles a single string and adds it to the automaton
 func (rc *RuleCompiler) compileSingleString(str *ast.String) error {
 	var patternData []byte
 	isRegex := false

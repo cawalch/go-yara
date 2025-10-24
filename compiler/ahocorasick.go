@@ -37,7 +37,7 @@ type ACAutomaton struct {
 	Strings     []ACStringInfo // Information about added strings
 }
 
- // ACStringInfo holds information about a string added to the automaton
+// ACStringInfo holds information about a string added to the automaton
 type ACStringInfo struct {
 	Identifier string
 	Length     int
@@ -149,71 +149,71 @@ func (state *ACState) addChild(newChild *ACState) {
 	state.FirstChild = newChild
 }
 
-  // AddString adds a string pattern to the automaton (backwards-compatible signature).
- func (ac *ACAutomaton) AddString(identifier string, data []byte, isHex, isRegex bool) error {
- 	if len(data) == 0 {
- 		return fmt.Errorf("empty pattern")
- 	}
- 
- 	// Store string information (defer data copy to reduce allocations)
- 	ac.Strings = append(ac.Strings, ACStringInfo{
- 		Identifier: identifier,
- 		Length:     len(data),
- 		IsHex:      isHex,
- 		IsRegex:    isRegex,
- 		Data:       data, // Store reference, copy only if needed
- 		Flags:      0,
- 	})
- 
- 	stringIndex := ac.StringCount
- 	ac.StringCount++
- 
- 	// Add the string to the trie
- 	current := ac.Root
- 	depth := 0
- 
- 	for _, b := range data {
- 		depth++
- 		next := current.findChild(b)
- 		if next != nil {
- 			current = next
- 		} else {
- 			// Create new state (Output is nil until needed)
- 			newState := &ACState{
- 				Depth:      depth,
- 				Input:      b,
- 				FirstChild: nil,
- 				Siblings:   nil,
- 				Failure:    nil,
- 				Output:     nil, // Lazy allocation
- 				TableSlot:  0,
- 			}
- 			current.addChild(newState)
- 			ac.States = append(ac.States, newState)
- 			current = newState
- 		}
- 	}
- 
- 	// Add string index to output at final state (allocate on first use)
- 	if current.Output == nil {
- 		current.Output = make([]int, 0, 1) // Pre-allocate with capacity 1
- 	}
- 	current.Output = append(current.Output, stringIndex)
- 
- 	return nil
- }
- 
- // AddStringWithFlags adds a string and records regex VM flags alongside metadata.
- func (ac *ACAutomaton) AddStringWithFlags(identifier string, data []byte, isHex, isRegex bool, flags regex.Flags) error {
- 	if err := ac.AddString(identifier, data, isHex, isRegex); err != nil {
- 		return err
- 	}
- 	idx := ac.StringCount - 1
- 	if idx >= 0 && idx < len(ac.Strings) {
- 		ac.Strings[idx].Flags = flags
- 	}
- 	return nil
- }
+// AddString adds a string pattern to the automaton (backwards-compatible signature).
+func (ac *ACAutomaton) AddString(identifier string, data []byte, isHex, isRegex bool) error {
+	if len(data) == 0 {
+		return fmt.Errorf("empty pattern")
+	}
+
+	// Store string information (defer data copy to reduce allocations)
+	ac.Strings = append(ac.Strings, ACStringInfo{
+		Identifier: identifier,
+		Length:     len(data),
+		IsHex:      isHex,
+		IsRegex:    isRegex,
+		Data:       data, // Store reference, copy only if needed
+		Flags:      0,
+	})
+
+	stringIndex := ac.StringCount
+	ac.StringCount++
+
+	// Add the string to the trie
+	current := ac.Root
+	depth := 0
+
+	for _, b := range data {
+		depth++
+		next := current.findChild(b)
+		if next != nil {
+			current = next
+		} else {
+			// Create new state (Output is nil until needed)
+			newState := &ACState{
+				Depth:      depth,
+				Input:      b,
+				FirstChild: nil,
+				Siblings:   nil,
+				Failure:    nil,
+				Output:     nil, // Lazy allocation
+				TableSlot:  0,
+			}
+			current.addChild(newState)
+			ac.States = append(ac.States, newState)
+			current = newState
+		}
+	}
+
+	// Add string index to output at final state (allocate on first use)
+	if current.Output == nil {
+		current.Output = make([]int, 0, 1) // Pre-allocate with capacity 1
+	}
+	current.Output = append(current.Output, stringIndex)
+
+	return nil
+}
+
+// AddStringWithFlags adds a string and records regex VM flags alongside metadata.
+func (ac *ACAutomaton) AddStringWithFlags(identifier string, data []byte, isHex, isRegex bool, flags regex.Flags) error {
+	if err := ac.AddString(identifier, data, isHex, isRegex); err != nil {
+		return err
+	}
+	idx := ac.StringCount - 1
+	if idx >= 0 && idx < len(ac.Strings) {
+		ac.Strings[idx].Flags = flags
+	}
+	return nil
+}
 
 // BuildFailureLinks builds the failure links for the automaton
 func (ac *ACAutomaton) BuildFailureLinks() error {

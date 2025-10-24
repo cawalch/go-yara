@@ -377,7 +377,7 @@ func InferTypeFromBinaryOp(left *TypeInfo, op token.TokenType, right *TypeInfo) 
 	}
 }
 
- // InferTypeFromUnaryOp infers the result type of a unary operation
+// InferTypeFromUnaryOp infers the result type of a unary operation
 func InferTypeFromUnaryOp(op token.TokenType, operand *TypeInfo) (*TypeInfo, error) {
 	switch op {
 	case token.NOT:

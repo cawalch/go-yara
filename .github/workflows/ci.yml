@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main, develop]
   pull_request:
-    branches: [ main, develop ]
+    branches: [main, develop]
 
 env:
   GO_VERSION: "1.25.1"
@@ -14,238 +14,244 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: ${{ env.GO_VERSION }}
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
 
-    - name: Cache Go modules
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cache/go-build
-          ~/go/pkg/mod
-        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-        restore-keys: |
-          ${{ runner.os }}-go-
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
 
-    - name: Download dependencies
-      run: go mod download
+      - name: Download dependencies
+        run: go mod download
 
-    - name: Run golangci-lint
-      uses: golangci/golangci-lint-action@v4
-      with:
-        version: latest
-        args: --timeout=5m --config=.golangci.yml
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: latest
+          install-mode: goinstall
+          args: --timeout=5m --config=.golangci.yml
 
-    - name: Check formatting
-      run: |
-        if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
-          echo "The following files are not formatted:"
-          gofmt -s -l .
-          exit 1
-        fi
+      - name: Check formatting
+        run: |
+          if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
+            echo "The following files are not formatted:"
+            gofmt -s -l .
+            exit 1
+          fi
 
-    - name: Check imports
-      run: |
-        go install golang.org/x/tools/cmd/goimports@latest
-        if [ "$(goimports -l . | wc -l)" -gt 0 ]; then
-          echo "The following files have import issues:"
-          goimports -l .
-          exit 1
-        fi
+      - name: Check imports
+        run: |
+          go install golang.org/x/tools/cmd/goimports@latest
+          if [ "$(goimports -l . | wc -l)" -gt 0 ]; then
+            echo "The following files have import issues:"
+            goimports -l .
+            exit 1
+          fi
 
+      - name: Enforce no panics in lexer hot paths
+        run: |
+          if git grep -n "panic(" -- ':!**/*_test.go' internal/lexer | grep -vE '^$'; then
+            echo "panic usage detected in internal/lexer (non-test). Prefer error tokens over panics.";
+            git grep -n "panic(" -- ':!**/*_test.go' internal/lexer || true;
+            exit 1;
+          fi
 
-    - name: Enforce no panics in lexer hot paths
-      run: |
-        if git grep -n "panic(" -- ':!**/*_test.go' internal/lexer | grep -vE '^$'; then
-          echo "panic usage detected in internal/lexer (non-test). Prefer error tokens over panics.";
-          git grep -n "panic(" -- ':!**/*_test.go' internal/lexer || true;
-          exit 1;
-        fi
-
-    - name: Verify go.mod is tidy
-      run: |
-        go mod tidy
-        if [ -n "$(git status --porcelain go.mod go.sum)" ]; then
-          echo "go.mod/go.sum not tidy. Run 'go mod tidy' locally.";
-          git --no-pager diff -- go.mod go.sum || true;
-          exit 1;
-        fi
+      - name: Verify go.mod is tidy
+        run: |
+          go mod tidy
+          if [ -n "$(git status --porcelain go.mod go.sum)" ]; then
+            echo "go.mod/go.sum not tidy. Run 'go mod tidy' locally.";
+            git --no-pager diff -- go.mod go.sum || true;
+            exit 1;
+          fi
 
   test:
     name: Test
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: ["1.25.1", "1.25.0"]
+        go-version: ["1.25.1"]
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: ${{ matrix.go-version }}
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+          check-latest: true
 
-    - name: Cache Go modules
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cache/go-build
-          ~/go/pkg/mod
-        key: ${{ runner.os }}-go-${{ matrix.go-version }}-${{ hashFiles('**/go.sum') }}
-        restore-keys: |
-          ${{ runner.os }}-go-${{ matrix.go-version }}-
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ matrix.go-version }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-${{ matrix.go-version }}-
 
-    - name: Download dependencies
-      run: go mod download
+      - name: Download dependencies
+        run: go mod download
 
-    - name: Run tests
-      run: go test -v -race -coverprofile=coverage.out ./...
+      - name: Run tests
+        run: |
+          pkgs=$(go list ./... | grep -v '/internal/comparison$')
+          go test -race -coverprofile=coverage.out $pkgs
 
-    - name: Check test coverage
-      run: |
-        go tool cover -func=coverage.out
-        COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
-        echo "Coverage: $COVERAGE%"
-        if (( $(echo "$COVERAGE < 80" | bc -l) )); then
-          echo "Coverage is below 80%"
-          exit 1
-        fi
+      - name: Check test coverage
+        run: |
+          go tool cover -func=coverage.out
+          COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+          echo "Coverage: $COVERAGE%"
+          if (( $(echo "$COVERAGE < 80" | bc -l) )); then
+            echo "Coverage is below 80%"
+            exit 1
+          fi
 
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v4
-      with:
-        file: ./coverage.out
-        flags: unittests
-        name: codecov-umbrella
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.out
+          flags: unittests
+          name: codecov-umbrella
 
   benchmark:
     name: Benchmark
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: ${{ env.GO_VERSION }}
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
 
-    - name: Cache Go modules
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cache/go-build
-          ~/go/pkg/mod
-        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-        restore-keys: |
-          ${{ runner.os }}-go-
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
 
-    - name: Download dependencies
-      run: go mod download
+      - name: Download dependencies
+        run: go mod download
 
-    - name: Run benchmarks
-      run: |
-        go test -bench=. -benchmem -run=^$ ./internal/lexer > benchmark_results.txt
-        cat benchmark_results.txt
+      - name: Run benchmarks
+        run: |
+          go test -bench=. -benchmem -run=^$ ./internal/lexer > benchmark_results.txt
+          cat benchmark_results.txt
 
-    - name: Enforce performance budget (>=5% regression fails)
-      if: github.event_name == 'pull_request'
-      run: |
-        # Install benchstat for comparison
-        go install golang.org/x/perf/cmd/benchstat@latest
+      - name: Enforce performance budget (>=5% regression fails)
+        if: github.event_name == 'pull_request'
+        run: |
+          # Install benchstat for comparison
+          go install golang.org/x/perf/cmd/benchstat@latest
 
-        # Produce baseline from main
-        git fetch origin main
-        git checkout --detach origin/main
-        go test -bench=. -benchmem -run=^$ ./internal/lexer > baseline_benchmark.txt
-        git checkout --detach ${{ github.sha }}
+          # Produce baseline from main
+          git fetch origin main
+          git checkout --detach origin/main
+          go test -bench=. -benchmem -run=^$ ./internal/lexer > baseline_benchmark.txt
+          git checkout --detach ${{ github.sha }}
 
-        echo "Benchmark comparison:"
-        benchstat baseline_benchmark.txt benchmark_results.txt | tee benchdiff.txt || true
+          echo "Benchmark comparison:"
+          benchstat baseline_benchmark.txt benchmark_results.txt | tee benchdiff.txt || true
 
-        echo "Checking for regressions beyond budget..."
-        FAIL=0
-        if grep -E "\+([5-9]\.[0-9]|[1-9][0-9]+\.[0-9])%.*ns/op" benchdiff.txt >/dev/null; then
-          echo "ns/op regression exceeds 5%"; FAIL=1; fi
-        if grep -E "\+([5-9]\.[0-9]|[1-9][0-9]+\.[0-9])%.*B/op" benchdiff.txt >/dev/null; then
-          echo "B/op regression exceeds 5%"; FAIL=1; fi
-        if grep -E "\+[1-9][0-9]*\.[0-9]%.*allocs/op" benchdiff.txt >/dev/null; then
-          echo "allocs/op increased"; FAIL=1; fi
-        if [ "$FAIL" -ne 0 ]; then
-          echo "❌ Performance budget failed (see benchdiff.txt)"; exit 1; fi
-        echo "✅ Performance within budget"
+          echo "Checking for regressions beyond budget..."
+          FAIL=0
+          if grep -E "\+([5-9]\.[0-9]|[1-9][0-9]+\.[0-9])%.*ns/op" benchdiff.txt >/dev/null; then
+            echo "ns/op regression exceeds 5%"; FAIL=1; fi
+          if grep -E "\+([5-9]\.[0-9]|[1-9][0-9]+\.[0-9])%.*B/op" benchdiff.txt >/dev/null; then
+            echo "B/op regression exceeds 5%"; FAIL=1; fi
+          if grep -E "\+[1-9][0-9]*\.[0-9]%.*allocs/op" benchdiff.txt >/dev/null; then
+            echo "allocs/op increased"; FAIL=1; fi
+          if [ "$FAIL" -ne 0 ]; then
+            echo "❌ Performance budget failed (see benchdiff.txt)"; exit 1; fi
+          echo "✅ Performance within budget"
 
-    - name: Upload benchmark results
-      uses: actions/upload-artifact@v4
-      with:
-        name: benchmark-results
-        path: |
-          benchmark_results.txt
-          baseline_benchmark.txt
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: |
+            benchmark_results.txt
+            baseline_benchmark.txt
 
   security:
     name: Security Scan
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: ${{ env.GO_VERSION }}
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
 
-    - name: Install gosec
-      run: go install github.com/securego/gosec/v2/cmd/gosec@latest
+      - name: Install gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@latest
 
-    - name: Run Gosec Security Scanner
-      run: |
-        $(go env GOPATH)/bin/gosec -fmt sarif -out gosec.sarif ./...
+      - name: Run Gosec Security Scanner
+        run: |
+          $(go env GOPATH)/bin/gosec -fmt sarif -out gosec.sarif -exclude-dir=internal/comparison ./...
 
-    - name: Upload SARIF file
-      uses: github/codeql-action/upload-sarif@v3
-      with:
-        sarif_file: gosec.sarif
-
+      - name: Upload SARIF file
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gosec.sarif
 
   memory:
     name: Memory Leak Check
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: ${{ env.GO_VERSION }}
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
 
-    - name: Cache Go modules
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cache/go-build
-          ~/go/pkg/mod
-        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-        restore-keys: |
-          ${{ runner.os }}-go-
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
 
-    - name: Download dependencies
-      run: go mod download
+      - name: Download dependencies
+        run: go mod download
 
-    - name: Run memory leak analysis (profiling)
-      run: make bench-memory-leaks
+      - name: Run memory leak analysis (profiling)
+        run: make bench-memory-leaks
 
-    - name: Upload memory profiles
-      uses: actions/upload-artifact@v4
-      with:
-        name: memory-profiles
-        path: profiles/
+      - name: Upload memory profiles
+        uses: actions/upload-artifact@v4
+        with:
+          name: memory-profiles
+          path: profiles/
 
   quality-gate:
     name: Quality Gate
@@ -253,22 +259,22 @@ jobs:
     needs: [lint, test, benchmark, security, memory]
     if: always()
     steps:
-    - name: Check job results
-      run: |
-        if [ "${{ needs.lint.result }}" != "success" ]; then
-          echo "Lint job failed"
-          exit 1
-        fi
-        if [ "${{ needs.test.result }}" != "success" ]; then
-          echo "Test job failed"
-          exit 1
-        fi
-        if [ "${{ needs.benchmark.result }}" != "success" ]; then
-          echo "Benchmark job failed"
-          exit 1
-        fi
-        if [ "${{ needs.security.result }}" != "success" ]; then
-          echo "Security job failed"
-          exit 1
-        fi
-        echo "All quality checks passed!"
+      - name: Check job results
+        run: |
+          if [ "${{ needs.lint.result }}" != "success" ]; then
+            echo "Lint job failed"
+            exit 1
+          fi
+          if [ "${{ needs.test.result }}" != "success" ]; then
+            echo "Test job failed"
+            exit 1
+          fi
+          if [ "${{ needs.benchmark.result }}" != "success" ]; then
+            echo "Benchmark job failed"
+            exit 1
+          fi
+          if [ "${{ needs.security.result }}" != "success" ]; then
+            echo "Security job failed"
+            exit 1
+          fi
+          echo "All quality checks passed!"

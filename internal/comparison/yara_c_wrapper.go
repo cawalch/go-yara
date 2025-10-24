@@ -1,3 +1,6 @@
+//go:build cgo && yara_clib
+// +build cgo,yara_clib
+
 // Package comparison provides CGO bindings to the C YARA library for performance comparison.
 package comparison
 
@@ -60,8 +63,8 @@ func NewYaraCompiler() (*YaraCompiler, error) {
 	return yc, nil
 }
 
-	// CompileString compiles YARA rules from a string and returns success/failure.
-	// This measures the full compilation pipeline including lexing and parsing.
+// CompileString compiles YARA rules from a string and returns success/failure.
+// This measures the full compilation pipeline including lexing and parsing.
 func (yc *YaraCompiler) CompileString(rulesString string) error {
 	if !yc.initialized {
 		return fmt.Errorf("YARA not initialized")
@@ -80,7 +83,6 @@ func (yc *YaraCompiler) CompileString(rulesString string) error {
 
 	return fmt.Errorf("compilation failed: %d", result)
 }
-
 
 // Close finalizes the YARA library.
 func (yc *YaraCompiler) Close() {

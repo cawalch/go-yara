@@ -65,11 +65,11 @@ func (tc *TypeChecker) checkIdentifier(identifier *ast.Identifier) *TypeInfo {
 
 	// Check for special identifiers
 	switch identifier.Name {
-	case "filesize":
+	case filesizeKeyword:
 		return &TypeInfo{DataType: TypeInteger, IntegerType: Uint64Type}
-	case "entrypoint":
+	case entrypointKeyword:
 		return &TypeInfo{DataType: TypeInteger, IntegerType: Uint64Type}
-	case "them":
+	case themKeyword:
 		return &TypeInfo{DataType: TypeBoolean}
 	default:
 		tc.addError(&SemanticError{
@@ -120,7 +120,7 @@ func (tc *TypeChecker) checkBinaryOp(binaryOp *ast.BinaryOp) *TypeInfo {
 	}
 }
 
- // checkUnaryOp checks the types of a unary operation
+// checkUnaryOp checks the types of a unary operation
 func (tc *TypeChecker) checkUnaryOp(unaryOp *ast.UnaryOp) *TypeInfo {
 	operandType := tc.checkExpression(unaryOp.Right)
 

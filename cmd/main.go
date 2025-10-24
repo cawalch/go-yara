@@ -337,13 +337,12 @@ func runExecuteMode(content string, dataFile string) {
 			})
 		}
 
-            // Initialize VM memory slots with string identifiers by index
-            if rule.Automaton != nil {
-                for idx, s := range rule.Automaton.Strings {
-                    interp.SetMemoryString(idx, s.Identifier)
-                }
-            }
-
+		// Initialize VM memory slots with string identifiers by index
+		if rule.Automaton != nil {
+			for idx, s := range rule.Automaton.Strings {
+				interp.SetMemoryString(idx, s.Identifier)
+			}
+		}
 
 		// Execute the bytecode
 		execErr := interp.Execute()

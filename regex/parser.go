@@ -11,16 +11,17 @@ type Parser struct {
 	cur          token
 	strictEscape bool // validate escape sequences strictly (ParserFlagEnableStrictEscapeSequences)
 }
- // ErrNotImplemented is returned for parser features not yet implemented.
+
+// ErrNotImplemented is returned for parser features not yet implemented.
 var ErrNotImplemented = errors.New("regex: parser not implemented yet")
 
- // NewParser constructs a Parser. Flags are accepted for future use.
+// NewParser constructs a Parser. Flags are accepted for future use.
 func NewParser(flags ParserFlags) *Parser {
- p := &Parser{}
- if flags&ParserFlagEnableStrictEscapeSequences != 0 {
- 	p.strictEscape = true
- }
- return p
+	p := &Parser{}
+	if flags&ParserFlagEnableStrictEscapeSequences != 0 {
+		p.strictEscape = true
+	}
+	return p
 }
 
 // Parse parses the provided pattern into an AST (minimal subset: alt, concat, primary).
@@ -68,9 +69,7 @@ func (p *Parser) parseConcat() (*Node, error) {
 		}
 		nodes = append(nodes, n)
 		// Continue while next token starts a primary
-		if p.cur.kind != tChar && p.cur.kind != tDot && p.cur.kind != tLParen && p.cur.kind != tCaret && p.cur.kind != tDollar && p.cur.kind != tLBracket &&
-			p.cur.kind != tWord && p.cur.kind != tNonWord && p.cur.kind != tSpace && p.cur.kind != tNonSpace && p.cur.kind != tDigit && p.cur.kind != tNonDigit &&
-			p.cur.kind != tWordBoundary && p.cur.kind != tNonWordBoundary {
+		if !isPrimaryStart(p.cur.kind) {
 			break
 		}
 	}
@@ -95,27 +94,18 @@ func (p *Parser) parsePrimary() (*Node, error) {
 		case tStar:
 			p.next()
 			n := &Node{Kind: NodeStar, Children: []*Node{base}, Greedy: true}
-			if p.cur.kind == tQMark {
-				n.Greedy = false
-				p.next()
-			}
+			p.maybeMakeUngreedy(n)
 			base = n
 		case tPlus:
 			p.next()
 			n := &Node{Kind: NodePlus, Children: []*Node{base}, Greedy: true}
-			if p.cur.kind == tQMark {
-				n.Greedy = false
-				p.next()
-			}
+			p.maybeMakeUngreedy(n)
 			base = n
 		case tQMark:
 			// '?' quantifier (0 or 1)
 			p.next()
 			n := &Node{Kind: NodeRange, Children: []*Node{base}, Start: 0, End: 1, Greedy: true}
-			if p.cur.kind == tQMark {
-				n.Greedy = false
-				p.next()
-			}
+			p.maybeMakeUngreedy(n)
 			base = n
 		case tLBrace:
 			min, max, err2 := p.parseBound()
@@ -123,10 +113,7 @@ func (p *Parser) parsePrimary() (*Node, error) {
 				return nil, err2
 			}
 			n := &Node{Kind: NodeRange, Children: []*Node{base}, Start: min, End: max, Greedy: true}
-			if p.cur.kind == tQMark {
-				n.Greedy = false
-				p.next()
-			}
+			p.maybeMakeUngreedy(n)
 			base = n
 		default:
 			return base, nil
@@ -141,15 +128,6 @@ func (p *Parser) parseBase() (*Node, error) {
 		ch := p.cur.ch
 		p.next()
 		return &Node{Kind: NodeLiteral, Value: ch, Greedy: true}, nil
-	case tDot:
-		p.next()
-		return &Node{Kind: NodeAny, Greedy: true}, nil
-	case tCaret:
-		p.next()
-		return &Node{Kind: NodeAnchorStart, Greedy: true}, nil
-	case tDollar:
-		p.next()
-		return &Node{Kind: NodeAnchorEnd, Greedy: true}, nil
 	case tLParen:
 		p.next()
 		n, err := p.parseAlternative()
@@ -163,36 +141,50 @@ func (p *Parser) parseBase() (*Node, error) {
 		return n, nil
 	case tLBracket:
 		return p.parseClass()
-	case tWord:
-		p.next()
-		return &Node{Kind: NodeWordChar, Greedy: true}, nil
-	case tNonWord:
-		p.next()
-		return &Node{Kind: NodeNonWordChar, Greedy: true}, nil
-	case tSpace:
-		p.next()
-		return &Node{Kind: NodeSpace, Greedy: true}, nil
-	case tNonSpace:
-		p.next()
-		return &Node{Kind: NodeNonSpace, Greedy: true}, nil
-	case tDigit:
-		p.next()
-		return &Node{Kind: NodeDigit, Greedy: true}, nil
-	case tNonDigit:
-		p.next()
-		return &Node{Kind: NodeNonDigit, Greedy: true}, nil
-	case tWordBoundary:
-		p.next()
-		return &Node{Kind: NodeWordBoundary, Greedy: true}, nil
-	case tNonWordBoundary:
-		p.next()
-		return &Node{Kind: NodeNonWordBoundary, Greedy: true}, nil
-	default:
-		return nil, nil
 	}
+
+	// Simple one-token constructs (dot, anchors, shorthands, boundaries)
+	if nk, ok := tokenToSimpleNode[p.cur.kind]; ok {
+		p.next()
+		return &Node{Kind: nk, Greedy: true}, nil
+	}
+
+	return nil, nil
 }
 
 func (p *Parser) next() { p.cur = p.lx.next() }
+
+// tokenToSimpleNode maps lexer tokens that directly translate to simple AST nodes.
+var tokenToSimpleNode = map[tokenKind]NodeKind{
+	tDot:             NodeAny,
+	tCaret:           NodeAnchorStart,
+	tDollar:          NodeAnchorEnd,
+	tWord:            NodeWordChar,
+	tNonWord:         NodeNonWordChar,
+	tSpace:           NodeSpace,
+	tNonSpace:        NodeNonSpace,
+	tDigit:           NodeDigit,
+	tNonDigit:        NodeNonDigit,
+	tWordBoundary:    NodeWordBoundary,
+	tNonWordBoundary: NodeNonWordBoundary,
+}
+
+// isPrimaryStart reports whether a token can start a primary expression.
+func isPrimaryStart(k tokenKind) bool {
+	if k == tChar || k == tLParen || k == tLBracket {
+		return true
+	}
+	_, ok := tokenToSimpleNode[k]
+	return ok
+}
+
+// maybeMakeUngreedy consumes an optional '?' after a quantifier to mark it ungreedy.
+func (p *Parser) maybeMakeUngreedy(n *Node) {
+	if p.cur.kind == tQMark {
+		n.Greedy = false
+		p.next()
+	}
+}
 
 // parseBound parses {m}, {m,}, or {m,n}. After '}', it advances p.cur to the next meaningful token.
 func (p *Parser) parseBound() (uint16, uint16, error) {
@@ -203,10 +195,7 @@ func (p *Parser) parseBound() (uint16, uint16, error) {
 		}
 		val := 0
 		for l.i < l.len && l.s[l.i] >= '0' && l.s[l.i] <= '9' {
-			val = val*10 + int(l.s[l.i]-'0')
-			if val > 65535 {
-				val = 65535
-			} // clamp
+			val = min(val*10+int(l.s[l.i]-'0'), 65535) // clamp
 			l.i++
 		}
 		return uint16(val), nil //nolint:gosec // val is clamped to <= 65535

@@ -5,27 +5,44 @@ import "testing"
 func mustCompile(t *testing.T, pat string) []byte {
 	p := NewParser(0)
 	ast, err := p.Parse(pat)
-	if err != nil { t.Fatalf("parse %q: %v", pat, err) }
+	if err != nil {
+		t.Fatalf("parse %q: %v", pat, err)
+	}
 	code, err := Compile(ast)
-	if err != nil { t.Fatalf("compile %q: %v", pat, err) }
+	if err != nil {
+		t.Fatalf("compile %q: %v", pat, err)
+	}
 	return code
 }
 
 func TestVM_LiteralAndAny(t *testing.T) {
 	code := mustCompile(t, "a.")
-	if !Exec(code, []byte("zaX"), FlagsScan) { t.Fatalf("expected match in 'zaX'") }
-	if Exec(code, []byte("za\n"), FlagsScan) { t.Fatalf("dot should not match newline by default") }
+	if !Exec(code, []byte("zaX"), FlagsScan) {
+		t.Fatalf("expected match in 'zaX'")
+	}
+	if Exec(code, []byte("za\n"), FlagsScan) {
+		t.Fatalf("dot should not match newline by default")
+	}
 }
 
 func TestVM_AltAndConcat(t *testing.T) {
 	code := mustCompile(t, "(ab|cd)e")
-	if !Exec(code, []byte("xxcdeyy"), FlagsScan) { t.Fatalf("expect match for cde") }
-	if !Exec(code, []byte("abe"), FlagsScan) { t.Fatalf("expect match for abe") }
-	if Exec(code, []byte("abx"), FlagsScan) { t.Fatalf("unexpected match") }
+	if !Exec(code, []byte("xxcdeyy"), FlagsScan) {
+		t.Fatalf("expect match for cde")
+	}
+	if !Exec(code, []byte("abe"), FlagsScan) {
+		t.Fatalf("expect match for abe")
+	}
+	if Exec(code, []byte("abx"), FlagsScan) {
+		t.Fatalf("unexpected match")
+	}
 }
 
 func TestVM_Quantifiers(t *testing.T) {
-	cases := []struct{ pat, s string; want bool }{
+	cases := []struct {
+		pat, s string
+		want   bool
+	}{
 		{"ab*c", "ac", true},
 		{"ab*c", "abc", true},
 		{"ab*c", "abbbc", true},
@@ -38,29 +55,45 @@ func TestVM_Quantifiers(t *testing.T) {
 	for _, c := range cases {
 		code := mustCompile(t, c.pat)
 		got := Exec(code, []byte(c.s), 0)
-		if got != c.want { t.Fatalf("%q on %q: got %v want %v", c.pat, c.s, got, c.want) }
+		if got != c.want {
+			t.Fatalf("%q on %q: got %v want %v", c.pat, c.s, got, c.want)
+		}
 	}
 }
 
 func TestVM_AnchorsAndClass(t *testing.T) {
 	code := mustCompile(t, "^[a-c]$")
-	if !Exec(code, []byte("b"), 0) { t.Fatalf("expect match for 'b'") }
-	if Exec(code, []byte("ab"), 0) { t.Fatalf("should not match multi-char when anchored") }
-	if Exec(code, []byte("db"), 0) { t.Fatalf("should not match when start anchor fails") }
+	if !Exec(code, []byte("b"), 0) {
+		t.Fatalf("expect match for 'b'")
+	}
+	if Exec(code, []byte("ab"), 0) {
+		t.Fatalf("should not match multi-char when anchored")
+	}
+	if Exec(code, []byte("db"), 0) {
+		t.Fatalf("should not match when start anchor fails")
+	}
 }
 
 func TestVM_WordBoundaries(t *testing.T) {
 	code := mustCompile(t, "\\bcat\\b")
-	if !Exec(code, []byte("a cat!"), FlagsScan) { t.Fatalf("expect match at word boundaries") }
-	if Exec(code, []byte("concatenate"), FlagsScan) { t.Fatalf("should not match inside word") }
+	if !Exec(code, []byte("a cat!"), FlagsScan) {
+		t.Fatalf("expect match at word boundaries")
+	}
+	if Exec(code, []byte("concatenate"), FlagsScan) {
+		t.Fatalf("should not match inside word")
+	}
 }
- 
+
 func TestVM_AnchoredVsScan(t *testing.T) {
 	code := mustCompile(t, "abc")
-	if Exec(code, []byte("zabc"), 0) { t.Fatalf("anchored mode should not scan") }
-	if !Exec(code, []byte("zabc"), FlagsScan) { t.Fatalf("scan mode should find match") }
+	if Exec(code, []byte("zabc"), 0) {
+		t.Fatalf("anchored mode should not scan")
+	}
+	if !Exec(code, []byte("zabc"), FlagsScan) {
+		t.Fatalf("scan mode should find match")
+	}
 }
- 
+
 func TestVM_ExecMatch_Positions(t *testing.T) {
 	code := mustCompile(t, "a+")
 	ok, start, end := ExecMatch(code, []byte("zaaaX"), FlagsScan)
@@ -68,7 +101,6 @@ func TestVM_ExecMatch_Positions(t *testing.T) {
 		t.Fatalf("want match at [1,4), got ok=%v start=%d end=%d", ok, start, end)
 	}
 }
-
 
 func TestVM_EmptyMatch_Anchored(t *testing.T) {
 	code := mustCompile(t, "a*")

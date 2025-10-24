@@ -8,41 +8,41 @@ import (
 // - If FlagsScan is set, it searches from every start position (scan semantics).
 // - Otherwise it attempts only from position 0 (anchored semantics).
 // Other flags like DOT_ALL and NO_CASE are honored by the VM.
- func Exec(code []byte, input []byte, flags Flags) bool {
- 	if len(code) == 0 {
- 		return false
- 	}
- 	if (flags & FlagsScan) != 0 {
- 		for start := 0; start <= len(input); start++ {
- 			if ok, _ := runAtMatch(code, input, flags, start); ok {
- 				return true
- 			}
- 		}
- 		return false
- 	}
- 	ok, _ := runAtMatch(code, input, flags, 0)
- 	return ok
- }
- 
- // ExecMatch behaves like Exec but also returns the [start,end) byte range of the
- // first match found. If no match is found it returns (false, -1, -1).
- func ExecMatch(code []byte, input []byte, flags Flags) (bool, int, int) {
- 	if len(code) == 0 {
- 		return false, -1, -1
- 	}
- 	if (flags & FlagsScan) != 0 {
- 		for start := 0; start <= len(input); start++ {
- 			if ok, end := runAtMatch(code, input, flags, start); ok {
- 				return true, start, end
- 			}
- 		}
- 		return false, -1, -1
- 	}
- 	if ok, end := runAtMatch(code, input, flags, 0); ok {
- 		return true, 0, end
- 	}
- 	return false, -1, -1
- }
+func Exec(code []byte, input []byte, flags Flags) bool {
+	if len(code) == 0 {
+		return false
+	}
+	if (flags & FlagsScan) != 0 {
+		for start := 0; start <= len(input); start++ {
+			if ok, _ := runAtMatch(code, input, flags, start); ok {
+				return true
+			}
+		}
+		return false
+	}
+	ok, _ := runAtMatch(code, input, flags, 0)
+	return ok
+}
+
+// ExecMatch behaves like Exec but also returns the [start,end) byte range of the
+// first match found. If no match is found it returns (false, -1, -1).
+func ExecMatch(code []byte, input []byte, flags Flags) (bool, int, int) {
+	if len(code) == 0 {
+		return false, -1, -1
+	}
+	if (flags & FlagsScan) != 0 {
+		for start := 0; start <= len(input); start++ {
+			if ok, end := runAtMatch(code, input, flags, start); ok {
+				return true, start, end
+			}
+		}
+		return false, -1, -1
+	}
+	if ok, end := runAtMatch(code, input, flags, 0); ok {
+		return true, 0, end
+	}
+	return false, -1, -1
+}
 
 type thread struct {
 	pc int
@@ -76,7 +76,9 @@ func runAtMatch(code []byte, s []byte, flags Flags, start int) (bool, int) { //n
 			}
 			switch code[pc] {
 			case OpLiteral:
-				if pc+1 >= len(code) { continue }
+				if pc+1 >= len(code) {
+					continue
+				}
 				want := code[pc+1]
 				ok := ch == want
 				if !ok && noCase {
@@ -84,35 +86,51 @@ func runAtMatch(code []byte, s []byte, flags Flags, start int) (bool, int) { //n
 				}
 				if ok {
 					if addThread(code, s, &next, pc+2, pos+advance, make(map[int]bool), wide) {
-						if pos+advance > bestEnd { bestEnd = pos+advance }
+						if pos+advance > bestEnd {
+							bestEnd = pos + advance
+						}
 					}
 				}
 			case OpNotLiteral:
-				if pc+1 >= len(code) { continue }
+				if pc+1 >= len(code) {
+					continue
+				}
 				want := code[pc+1]
 				ok := ch != want
-				if noCase { ok = toLowerASCII(ch) != toLowerASCII(want) }
+				if noCase {
+					ok = toLowerASCII(ch) != toLowerASCII(want)
+				}
 				if ok {
 					if addThread(code, s, &next, pc+2, pos+advance, make(map[int]bool), wide) {
-						if pos+advance > bestEnd { bestEnd = pos+advance }
+						if pos+advance > bestEnd {
+							bestEnd = pos + advance
+						}
 					}
 				}
 			case OpMaskedLiteral:
-				if pc+2 >= len(code) { continue }
+				if pc+2 >= len(code) {
+					continue
+				}
 				val := code[pc+1]
 				mask := code[pc+2]
 				if (ch & mask) == (val & mask) {
 					if addThread(code, s, &next, pc+3, pos+advance, make(map[int]bool), wide) {
-						if pos+advance > bestEnd { bestEnd = pos+advance }
+						if pos+advance > bestEnd {
+							bestEnd = pos + advance
+						}
 					}
 				}
 			case OpMaskedNotLiteral:
-				if pc+2 >= len(code) { continue }
+				if pc+2 >= len(code) {
+					continue
+				}
 				val := code[pc+1]
 				mask := code[pc+2]
 				if (ch & mask) != (val & mask) {
 					if addThread(code, s, &next, pc+3, pos+advance, make(map[int]bool), wide) {
-						if pos+advance > bestEnd { bestEnd = pos+advance }
+						if pos+advance > bestEnd {
+							bestEnd = pos + advance
+						}
 					}
 				}
 			case OpAny:
@@ -120,7 +138,9 @@ func runAtMatch(code []byte, s []byte, flags Flags, start int) (bool, int) { //n
 				// In WIDE, newline is '\n'+0x00
 				if (!wide && (ch != '\n' || dotAll)) || (wide && ((ch != '\n') || dotAll)) {
 					if addThread(code, s, &next, pc+1, pos+advance, make(map[int]bool), wide) {
-						if pos+advance > bestEnd { bestEnd = pos+advance }
+						if pos+advance > bestEnd {
+							bestEnd = pos + advance
+						}
 					}
 				}
 			case OpClass:
@@ -140,50 +160,70 @@ func runAtMatch(code []byte, s []byte, flags Flags, start int) (bool, int) { //n
 				if noCase {
 					lc := toLowerASCII(ch)
 					uc := toUpperASCII(ch)
-					if lc != ch { inSet = inSet || inBitmap(lc) }
-					if uc != ch && uc != lc { inSet = inSet || inBitmap(uc) }
+					if lc != ch {
+						inSet = inSet || inBitmap(lc)
+					}
+					if uc != ch && uc != lc {
+						inSet = inSet || inBitmap(uc)
+					}
 				}
 				ok := inSet
-				if neg { ok = !inSet }
+				if neg {
+					ok = !inSet
+				}
 				if ok {
 					if addThread(code, s, &next, negIdx+1, pos+advance, make(map[int]bool), wide) {
-						if pos+advance > bestEnd { bestEnd = pos+advance }
+						if pos+advance > bestEnd {
+							bestEnd = pos + advance
+						}
 					}
 				}
 			case OpWordChar:
 				if isWord(ch) {
 					if addThread(code, s, &next, pc+1, pos+advance, make(map[int]bool), wide) {
-						if pos+advance > bestEnd { bestEnd = pos+advance }
+						if pos+advance > bestEnd {
+							bestEnd = pos + advance
+						}
 					}
 				}
 			case OpNonWordChar:
 				if !isWord(ch) {
 					if addThread(code, s, &next, pc+1, pos+advance, make(map[int]bool), wide) {
-						if pos+advance > bestEnd { bestEnd = pos+advance }
+						if pos+advance > bestEnd {
+							bestEnd = pos + advance
+						}
 					}
 				}
 			case OpSpace:
 				if isSpace(ch) {
 					if addThread(code, s, &next, pc+1, pos+advance, make(map[int]bool), wide) {
-						if pos+advance > bestEnd { bestEnd = pos+advance }
+						if pos+advance > bestEnd {
+							bestEnd = pos + advance
+						}
 					}
 				}
 			case OpNonSpace:
 				if !isSpace(ch) {
 					if addThread(code, s, &next, pc+1, pos+advance, make(map[int]bool), wide) {
-						if pos+advance > bestEnd { bestEnd = pos+advance }
+						if pos+advance > bestEnd {
+							bestEnd = pos + advance
+						}
 					}
 				}
 			case OpDigit:
 				if isDigit(ch) {
 					if addThread(code, s, &next, pc+1, pos+advance, make(map[int]bool), wide) {
-						if pos+advance > bestEnd { bestEnd = pos+advance }
+						if pos+advance > bestEnd {
+							bestEnd = pos + advance
+						}
 					}
 				}
 			case OpNonDigit:
 				if !isDigit(ch) {
 					if addThread(code, s, &next, pc+1, pos+advance, make(map[int]bool), wide) {
-						if pos+advance > bestEnd { bestEnd = pos+advance }
+						if pos+advance > bestEnd {
+							bestEnd = pos + advance
+						}
 					}
 				}
 			default:
@@ -234,9 +274,9 @@ func runAtMatch(code []byte, s []byte, flags Flags, start int) (bool, int) { //n
 	return false, 0
 }
 
-	// addThread computes the epsilon/assertion closure from (pc,pos) and appends
-	// consuming states into list. Returns true if OpMatch is reachable in the
-	// closure at the given position.
+// addThread computes the epsilon/assertion closure from (pc,pos) and appends
+// consuming states into list. Returns true if OpMatch is reachable in the
+// closure at the given position.
 func addThread(code []byte, s []byte, list *[]thread, pc int, pos int, visited map[int]bool, wide bool) bool { //nolint:revive,cyclop // argument-limit and complexity are explicit for VM closure clarity
 	for {
 		if pc < 0 || pc >= len(code) {
@@ -282,26 +322,38 @@ func addThread(code []byte, s []byte, list *[]thread, pc int, pos int, visited m
 			pc += int(rel)
 			continue
 		case OpMatchAtStart:
-			if pos != 0 { return false }
+			if pos != 0 {
+				return false
+			}
 			pc++
 			continue
 		case OpMatchAtEnd:
-			if pos != len(s) { return false }
+			if pos != len(s) {
+				return false
+			}
 			pc++
 			continue
 		case OpWordBoundary:
 			if wide {
-				if !isWordBoundaryWide(s, pos) { return false }
+				if !isWordBoundaryWide(s, pos) {
+					return false
+				}
 			} else {
-				if !isWordBoundary(s, pos) { return false }
+				if !isWordBoundary(s, pos) {
+					return false
+				}
 			}
 			pc++
 			continue
 		case OpNonWordBoundary:
 			if wide {
-				if isWordBoundaryWide(s, pos) { return false }
+				if isWordBoundaryWide(s, pos) {
+					return false
+				}
 			} else {
-				if isWordBoundary(s, pos) { return false }
+				if isWordBoundary(s, pos) {
+					return false
+				}
 			}
 			pc++
 			continue
@@ -314,7 +366,6 @@ func addThread(code []byte, s []byte, list *[]thread, pc int, pos int, visited m
 		}
 	}
 }
-
 
 func toLowerASCII(b byte) byte {
 	if b >= 'A' && b <= 'Z' {
@@ -377,4 +428,3 @@ func isWordBoundaryWide(s []byte, pos int) bool {
 func isWidePair(s []byte, pos int) bool {
 	return pos+1 < len(s) && s[pos+1] == 0
 }
-

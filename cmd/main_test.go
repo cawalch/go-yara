@@ -128,7 +128,7 @@ func TestExecuteModeNoData(t *testing.T) {
 	t.Log("Execute mode without data file test passed")
 }
 
- // TestExecuteModeMultiplePatterns tests execute mode with multiple patterns
+// TestExecuteModeMultiplePatterns tests execute mode with multiple patterns
 func TestExecuteModeMultiplePatterns(t *testing.T) {
 	tmpDir := t.TempDir()
 

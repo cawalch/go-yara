@@ -1007,7 +1007,7 @@ func TestInterpreterStackUnderflow(t *testing.T) {
 	}
 }
 
-	// TestInterpreterTypeConversion tests type conversion operations
+// TestInterpreterTypeConversion tests type conversion operations
 func TestInterpreterTypeConversion(t *testing.T) {
 	bytecode := []byte{
 		byte(OP_PUSH_8), 1,
@@ -1077,8 +1077,8 @@ func TestInterpreterRegexFoundOps(t *testing.T) {
 
 	// FOUND($a) -> true
 	interp.push(Value{Type: ValueTypeString, StringVal: "$a"})
-	if err := interp.executeOpcode(OP_FOUND); err != nil {
-		t.Fatalf("executeOpcode(OP_FOUND) error = %v", err)
+	if execErr := interp.executeOpcode(OP_FOUND); execErr != nil {
+		t.Fatalf("executeOpcode(OP_FOUND) error = %v", execErr)
 	}
 	if len(interp.GetStack()) != 1 || interp.GetStack()[0].IntVal != 1 {
 		t.Fatalf("FOUND($a) expected 1, got %+v", interp.GetStack()[0])
@@ -1089,8 +1089,8 @@ func TestInterpreterRegexFoundOps(t *testing.T) {
 	hitOff := matches[0].Offset
 	interp.push(Value{Type: ValueTypeString, StringVal: "$a"})
 	interp.push(Value{Type: ValueTypeInt, IntVal: hitOff})
-	if err := interp.executeOpcode(OP_FOUND_AT); err != nil {
-		t.Fatalf("executeOpcode(OP_FOUND_AT) error = %v", err)
+	if execErr := interp.executeOpcode(OP_FOUND_AT); execErr != nil {
+		t.Fatalf("executeOpcode(OP_FOUND_AT) error = %v", execErr)
 	}
 	if len(interp.GetStack()) != 1 || interp.GetStack()[0].IntVal != 1 {
 		t.Fatalf("FOUND_AT($a, %d) expected 1, got %+v", hitOff, interp.GetStack()[0])
@@ -1101,8 +1101,8 @@ func TestInterpreterRegexFoundOps(t *testing.T) {
 	missOff := hitOff + 99
 	interp.push(Value{Type: ValueTypeString, StringVal: "$a"})
 	interp.push(Value{Type: ValueTypeInt, IntVal: missOff})
-	if err := interp.executeOpcode(OP_FOUND_AT); err != nil {
-		t.Fatalf("executeOpcode(OP_FOUND_AT) error = %v", err)
+	if execErr := interp.executeOpcode(OP_FOUND_AT); execErr != nil {
+		t.Fatalf("executeOpcode(OP_FOUND_AT) error = %v", execErr)
 	}
 	if len(interp.GetStack()) != 1 || interp.GetStack()[0].IntVal != 0 {
 		t.Fatalf("FOUND_AT($a, %d) expected 0, got %+v", missOff, interp.GetStack()[0])
@@ -1118,8 +1118,8 @@ func TestInterpreterRegexFoundOps(t *testing.T) {
 	interp.push(Value{Type: ValueTypeString, StringVal: "$a"})
 	interp.push(Value{Type: ValueTypeInt, IntVal: startIn})
 	interp.push(Value{Type: ValueTypeInt, IntVal: endIn})
-	if err := interp.executeOpcode(OP_FOUND_IN); err != nil {
-		t.Fatalf("executeOpcode(OP_FOUND_IN) error = %v", err)
+	if execErr := interp.executeOpcode(OP_FOUND_IN); execErr != nil {
+		t.Fatalf("executeOpcode(OP_FOUND_IN) error = %v", execErr)
 	}
 	if len(interp.GetStack()) != 1 || interp.GetStack()[0].IntVal != 1 {
 		t.Fatalf("FOUND_IN($a, %d, %d) expected 1, got %+v", startIn, endIn, interp.GetStack()[0])
@@ -1132,8 +1132,8 @@ func TestInterpreterRegexFoundOps(t *testing.T) {
 	interp.push(Value{Type: ValueTypeString, StringVal: "$a"})
 	interp.push(Value{Type: ValueTypeInt, IntVal: beforeStart})
 	interp.push(Value{Type: ValueTypeInt, IntVal: beforeEnd})
-	if err := interp.executeOpcode(OP_FOUND_IN); err != nil {
-		t.Fatalf("executeOpcode(OP_FOUND_IN) error = %v", err)
+	if execErr := interp.executeOpcode(OP_FOUND_IN); execErr != nil {
+		t.Fatalf("executeOpcode(OP_FOUND_IN) error = %v", execErr)
 	}
 	if len(interp.GetStack()) != 1 || interp.GetStack()[0].IntVal != 0 {
 		t.Fatalf("FOUND_IN($a, %d, %d) expected 0, got %+v", beforeStart, beforeEnd, interp.GetStack()[0])

@@ -4,7 +4,10 @@ import "testing"
 
 func TestOpcodeValues(t *testing.T) {
 	// Spot-check a subset to guard against accidental edits.
-	cases := []struct{ name string; got, want int }{
+	cases := []struct {
+		name      string
+		got, want int
+	}{
 		{"OpAny", int(OpAny), 0xA0},
 		{"OpLiteral", int(OpLiteral), 0xA2},
 		{"OpClass", int(OpClass), 0xA5},
@@ -18,4 +21,3 @@ func TestOpcodeValues(t *testing.T) {
 		}
 	}
 }
-

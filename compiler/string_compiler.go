@@ -32,7 +32,7 @@ func NewStringCompiler(_ *Emitter) *StringCompiler {
 	}
 }
 
- // CompileStrings compiles all strings in a rule to bytecode
+// CompileStrings compiles all strings in a rule to bytecode
 func (sc *StringCompiler) CompileStrings(rule *ast.Rule) error {
 	for idx, str := range rule.Strings {
 		// Assign a provisional offset so callers can inspect non-empty offsets map.
@@ -442,7 +442,7 @@ func isHexDigit(ch byte) bool {
 	return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F')
 }
 
-	// compileRegex compiles a regex pattern to internal VM bytecode
+// compileRegex compiles a regex pattern to internal VM bytecode
 func (sc *StringCompiler) compileRegex(pattern string, _ []ast.StringModifier) ([]byte, error) {
 	// Remove delimiters and any inline flags; runtime flags (i/s) are propagated separately
 	cleaned := cleanRegexPattern(pattern)
@@ -511,9 +511,9 @@ type StringInfo struct {
 	Modifiers  []ast.StringModifier
 }
 
- // GetStringInfo returns information about all compiled strings
- // Populate from patternData to ensure visibility even when stringOffsets
- // are assigned later by the RuleCompiler.
+// GetStringInfo returns information about all compiled strings
+// Populate from patternData to ensure visibility even when stringOffsets
+// are assigned later by the RuleCompiler.
 func (sc *StringCompiler) GetStringInfo() []StringInfo {
 	var info []StringInfo
 

@@ -6,7 +6,7 @@ package regex
 // NodeKind represents the kind of a regex AST node.
 type NodeKind int
 
- // NodeKind values enumerate the AST node kinds.
+// NodeKind values enumerate the AST node kinds.
 const (
 	NodeLiteral          NodeKind = 1
 	NodeMaskedLiteral    NodeKind = 2
@@ -32,12 +32,14 @@ const (
 	NodeNotLiteral       NodeKind = 22
 	NodeMaskedNotLiteral NodeKind = 23
 )
+
 // Class is a simple 256-bit bitmap (32 bytes) with negation support.
 // This mirrors libyara's approach, keeping things ASCII-centric initially.
 type Class struct {
 	Bitmap  [32]byte
 	Negated bool
 }
+
 // Node represents a parsed regex node. Many fields are optional depending on kind.
 // Greedy defaults to true and is flipped by ungreedy quantifiers.
 type Node struct {
@@ -50,10 +52,12 @@ type Node struct {
 	Class    *Class
 	Children []*Node
 }
- // NewNode creates a new Node with Greedy defaulting to true.
+
+// NewNode creates a new Node with Greedy defaulting to true.
 func NewNode(kind NodeKind) *Node {
 	return &Node{Kind: kind, Greedy: true}
 }
+
 // AST is the root of a parsed regex along with flags captured during parse.
 type AST struct {
 	Flags Flags

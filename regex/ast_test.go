@@ -8,4 +8,3 @@ func TestNewNodeDefaultsGreedy(t *testing.T) {
 		t.Fatal("expected new node to default to greedy=true")
 	}
 }
-

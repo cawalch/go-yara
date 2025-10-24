@@ -1,3 +1,6 @@
+//go:build cgo && yara_clib
+// +build cgo,yara_clib
+
 // Package comparison provides test data for performance comparison.
 package comparison
 

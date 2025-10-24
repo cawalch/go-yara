@@ -124,4 +124,3 @@ func (l *lexer) next() token {
 		return token{kind: tChar, ch: c}
 	}
 }
-

@@ -705,7 +705,7 @@ func (p *Parser) parseSpecialKeyword(pos token.Position) ast.Expression {
 	return nil
 }
 
- // parseUnaryOperator parses unary operators (defined, at/@, in, #)
+// parseUnaryOperator parses unary operators (defined, at/@, in, #)
 func (p *Parser) parseUnaryOperator(pos token.Position) (ast.Expression, error) {
 	var op token.TokenType
 

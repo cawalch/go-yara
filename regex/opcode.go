@@ -5,24 +5,24 @@ package regex
 
 // OpAny and related constants define the regex VM instruction set.
 const (
-	OpAny             = 0xA0
-	OpLiteral         = 0xA2
-	OpMaskedLiteral   = 0xA4
-	OpClass           = 0xA5
-	OpWordChar        = 0xA7
-	OpNonWordChar     = 0xA8
-	OpSpace           = 0xA9
-	OpNonSpace        = 0xAA
-	OpDigit           = 0xAB
-	OpNonDigit        = 0xAC
-	OpMatch           = 0xAD
-	OpNotLiteral      = 0xAE
+	OpAny              = 0xA0
+	OpLiteral          = 0xA2
+	OpMaskedLiteral    = 0xA4
+	OpClass            = 0xA5
+	OpWordChar         = 0xA7
+	OpNonWordChar      = 0xA8
+	OpSpace            = 0xA9
+	OpNonSpace         = 0xAA
+	OpDigit            = 0xAB
+	OpNonDigit         = 0xAC
+	OpMatch            = 0xAD
+	OpNotLiteral       = 0xAE
 	OpMaskedNotLiteral = 0xAF
 
-	OpMatchAtEnd   = 0xB0
-	OpMatchAtStart = 0xB1
-	OpWordBoundary = 0xB2
-	OpNonWordBoundary = 0xB3
+	OpMatchAtEnd        = 0xB0
+	OpMatchAtStart      = 0xB1
+	OpWordBoundary      = 0xB2
+	OpNonWordBoundary   = 0xB3
 	OpRepeatAnyGreedy   = 0xB4
 	OpRepeatAnyUngreedy = 0xB5
 
@@ -35,4 +35,3 @@ const (
 	OpRepeatStartUngreedy = 0xC5
 	OpRepeatEndUngreedy   = 0xC6
 )
-

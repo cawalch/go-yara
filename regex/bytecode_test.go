@@ -16,4 +16,3 @@ func TestEmitterSequence(t *testing.T) {
 		}
 	}
 }
-

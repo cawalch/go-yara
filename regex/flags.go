@@ -8,7 +8,7 @@ package regex
 // Flags defines runtime behavior and parser-stage defaults for the regex engine.
 type Flags uint32
 
- // Flags constants define runtime behavior and parser-stage defaults.
+// Flags constants define runtime behavior and parser-stage defaults.
 const (
 	FlagsFastRegexp Flags = 0x02
 	FlagsBackwards  Flags = 0x04
@@ -27,7 +27,7 @@ const (
 // match libyara, but we keep names aligned to improve traceability.
 // See: RE_PARSER_FLAG_ENABLE_STRICT_ESCAPE_SEQUENCES
 
- // ParserFlags control parser behavior; names mirror libyara for traceability.
+// ParserFlags control parser behavior; names mirror libyara for traceability.
 type ParserFlags uint32
 
 // ParserFlagEnableStrictEscapeSequences enables strict escape validation.
@@ -35,4 +35,3 @@ type ParserFlags uint32
 const (
 	ParserFlagEnableStrictEscapeSequences ParserFlags = 1 << 0
 )
-
