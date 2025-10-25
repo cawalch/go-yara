@@ -3,6 +3,8 @@ package compiler
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/cawalch/go-yara/ast"
@@ -20,6 +22,9 @@ type Compiler struct {
 
 	// Configuration
 	options CompilationOptions
+
+	// File resolution
+	baseDir string // Base directory for resolving relative includes
 
 	// Statistics
 	stats CompilationStats
@@ -127,6 +132,9 @@ func (c *Compiler) CompileFile(filename string) (*CompiledProgram, error) {
 		return nil, fmt.Errorf("reading file %s: %w", filename, err)
 	}
 
+	// Store the base directory for resolving includes
+	c.baseDir = filepath.Dir(filename)
+
 	return c.CompileSource(source)
 }
 
@@ -151,6 +159,20 @@ func (c *Compiler) compileParse(source string) (*ast.Program, error) {
 			Column:  0,
 		})
 		return nil, err
+	}
+
+	// Process includes - resolve and parse included files
+	if len(program.Includes) > 0 {
+		includeErr := c.processIncludes(program)
+		if includeErr != nil {
+			c.stats.Errors = append(c.stats.Errors, CompilationError{
+				Phase:   "parsing",
+				Message: includeErr.Error(),
+				Line:    0,
+				Column:  0,
+			})
+			return nil, includeErr
+		}
 	}
 
 	c.stats.ParserTime = time.Since(start)
@@ -269,6 +291,11 @@ func (c *Compiler) GetOptions() CompilationOptions {
 	return c.options
 }
 
+// SetBaseDir sets the base directory for resolving relative include paths
+func (c *Compiler) SetBaseDir(dir string) {
+	c.baseDir = dir
+}
+
 // Reset resets the compiler state
 func (c *Compiler) Reset() {
 	c.parser = nil
@@ -281,10 +308,82 @@ func (c *Compiler) Reset() {
 }
 
 // readFile reads a file (placeholder implementation)
+func (c *Compiler) processIncludes(program *ast.Program) error {
+	return c.processIncludesWithBaseDir(program, c.baseDir)
+}
+
+// processIncludesWithBaseDir processes includes with a specific base directory
+func (c *Compiler) processIncludesWithBaseDir(program *ast.Program, baseDir string) error {
+	// Process each include statement
+	for _, include := range program.Includes {
+		// Resolve the include path relative to the current baseDir
+		includePath := include.File
+		if !filepath.IsAbs(includePath) {
+			includePath = filepath.Join(baseDir, include.File)
+		}
+
+		// Read the included file content
+		includedContent, err := os.ReadFile(includePath)
+		if err != nil {
+			return fmt.Errorf("failed to read include file %s: %w", include.File, err)
+		}
+
+		// Parse the included content
+		includedLexer := lexer.New(string(includedContent))
+		includedParser := parser.New(includedLexer)
+		includedProgram, parseErr := includedParser.ParseRules()
+		if parseErr != nil {
+			return fmt.Errorf("failed to parse include file %s: %w", include.File, parseErr)
+		}
+
+		// Check for parser errors in included file
+		if len(includedParser.Errors()) > 0 {
+			return fmt.Errorf("parser errors in include file %s: %v", include.File, includedParser.Errors())
+		}
+
+		// Recursively process includes in the included file first
+		// Use the directory of the included file as the new baseDir
+		if len(includedProgram.Includes) > 0 {
+			includedFileDir := filepath.Dir(includePath)
+			processErr := c.processIncludesWithBaseDir(includedProgram, includedFileDir)
+			if processErr != nil {
+				return fmt.Errorf("failed to process includes in %s: %w", include.File, processErr)
+			}
+		}
+
+		// Add all rules from included file (including nested includes) to main program
+		program.Rules = append(program.Rules, includedProgram.Rules...)
+
+	}
+
+	return nil
+}
+
 func (c *Compiler) readFile(filename string) (string, error) {
-	// This would read the file content
-	// For now, return an error as this is a placeholder
-	return "", fmt.Errorf("file reading not implemented")
+	// Read file content
+	// Check if filename is absolute or relative
+	if filepath.IsAbs(filename) {
+		// Absolute path - read directly
+		content, err := os.ReadFile(filename)
+		if err != nil {
+			return "", fmt.Errorf("reading file %s: %w", filename, err)
+		}
+		return string(content), nil
+	} else {
+		// Relative path - resolve relative to base directory if available
+		var fullPath string
+		if c.baseDir != "" {
+			fullPath = filepath.Join(c.baseDir, filename)
+		} else {
+			fullPath = filename
+		}
+
+		content, err := os.ReadFile(fullPath)
+		if err != nil {
+			return "", fmt.Errorf("reading file %s: %w", fullPath, err)
+		}
+		return string(content), nil
+	}
 }
 
 // PrintStats prints compilation statistics
