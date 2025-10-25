@@ -122,7 +122,7 @@ func TestExecuteModeIntegration(t *testing.T) {
 				t.Errorf("runExecuteMode panicked: %v", r)
 			}
 		}()
-		runExecuteMode(ruleContent, "data.txt")
+		runExecuteMode(ruleContent, "data.txt", "test.yar")
 	})
 }
 
@@ -169,7 +169,7 @@ func TestExecuteModeMultiplePatterns(t *testing.T) {
 				t.Errorf("runExecuteMode panicked with multiple patterns: %v", r)
 			}
 		}()
-		runExecuteMode(ruleContent, "data.txt")
+		runExecuteMode(ruleContent, "data.txt", "multi.yar")
 	})
 }
 
@@ -208,7 +208,7 @@ func TestExecuteMode_RegexInlineFlagsI(t *testing.T) {
 	os.Chdir(tmpDir)
 
 	out := captureOutput(func() {
-		runExecuteMode(rule, "data.txt")
+		runExecuteMode(rule, "data.txt", "test.yar")
 	})
 
 	// Expect at least one match and the specific offset/length
@@ -243,7 +243,7 @@ func TestExecuteMode_RegexInlineFlagsS(t *testing.T) {
 	os.Chdir(tmpDir)
 
 	out := captureOutput(func() {
-		runExecuteMode(rule, "data.txt")
+		runExecuteMode(rule, "data.txt", "test.yar")
 	})
 
 	if !strings.Contains(out, "Pattern matches: 1") {
@@ -277,7 +277,7 @@ func TestExecuteMode_RegexEmptyMatch_Scan(t *testing.T) {
 	os.Chdir(tmpDir)
 
 	out := captureOutput(func() {
-		runExecuteMode(rule, "empty.txt")
+		runExecuteMode(rule, "empty.txt", "test.yar")
 	})
 
 	if !strings.Contains(out, "Pattern matches: 1") {
@@ -311,7 +311,7 @@ func TestExecuteMode_Count_Regex(t *testing.T) {
 	os.Chdir(tmpDir)
 
 	out := captureOutput(func() {
-		runExecuteMode(rule, "data.txt")
+		runExecuteMode(rule, "data.txt", "test.yar")
 	})
 
 	if !strings.Contains(out, "Result: MATCH") {
@@ -342,7 +342,7 @@ func TestExecuteMode_Offset_Regex(t *testing.T) {
 	os.Chdir(tmpDir)
 
 	out := captureOutput(func() {
-		runExecuteMode(rule, "data.txt")
+		runExecuteMode(rule, "data.txt", "test.yar")
 	})
 
 	if !strings.Contains(out, "Result: MATCH") {
@@ -373,7 +373,7 @@ func TestExecuteMode_Count_String(t *testing.T) {
 	os.Chdir(tmpDir)
 
 	out := captureOutput(func() {
-		runExecuteMode(rule, "data.txt")
+		runExecuteMode(rule, "data.txt", "test.yar")
 	})
 
 	if !strings.Contains(out, "Result: MATCH") {
@@ -404,7 +404,7 @@ func TestExecuteMode_Offset_String(t *testing.T) {
 	os.Chdir(tmpDir)
 
 	out := captureOutput(func() {
-		runExecuteMode(rule, "data.txt")
+		runExecuteMode(rule, "data.txt", "test.yar")
 	})
 
 	if !strings.Contains(out, "Result: MATCH") {
@@ -464,14 +464,11 @@ func TestRunCompileMode(t *testing.T) {
 }`
 
 	out := captureOutput(func() {
-		runCompileMode(content)
+		runCompileMode(content, "test.yar")
 	})
 
-	if !strings.Contains(out, "Parser: Successfully parsed 1 rules") {
-		t.Fatalf("expected successful parsing in compile mode, got output:\n%s", out)
-	}
-	if !strings.Contains(out, "Semantic analysis: Valid") {
-		t.Fatalf("expected valid semantic analysis, got output:\n%s", out)
+	if !strings.Contains(out, "Compilation: Successfully compiled 1 rules") {
+		t.Fatalf("expected successful compilation in compile mode, got output:\n%s", out)
 	}
 	if !strings.Contains(out, "Compilation: Successfully compiled 1 rules") {
 		t.Fatalf("expected successful compilation, got output:\n%s", out)

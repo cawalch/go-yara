@@ -128,6 +128,13 @@ func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 		return nil
 	}
 
+	// Check for rule identifiers - these should be handled by the interpreter
+	// Rule identifiers evaluate to boolean based on whether the rule matches
+	// For now, we'll emit a placeholder that the interpreter will handle
+	// TODO: Implement proper rule identifier resolution
+	// Rule identifiers should be handled by proper symbol resolution
+	// For now, we'll let undefined identifiers fall through to error case
+
 	// Check for special identifiers
 	switch ident.Name {
 	case "filesize":
@@ -144,7 +151,7 @@ func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 		// Quantifier keywords used in expressions like "any of them"
 		// These are handled as part of the OF operation, so just push a placeholder
 		cc.emitter.EmitOpcode(OP_PUSH_8, ident.Pos.Line, ident.Pos.Column)
-	// Data type functions
+		// Data type functions
 	case "uint8", "uint16", "uint32", "uint8be", "uint16be", "uint32be":
 		// For now, emit a placeholder - these need proper implementation
 		cc.emitter.EmitOpcode(OP_PUSH_8, ident.Pos.Line, ident.Pos.Column)
@@ -160,14 +167,30 @@ func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 
 // compileBinaryOp compiles a binary operation
 func (cc *ConditionCompiler) compileBinaryOp(binOp *ast.BinaryOp) error {
-	// Compile right operand first (for stack-based evaluation)
-	if err := cc.compileExpression(binOp.Right); err != nil {
-		return err
-	}
+	// For comparison operations, we need to compile left operand first to maintain correct order
+	// For other operations, we can keep the current order
+	isComparison := binOp.Op == token.EQ || binOp.Op == token.NEQ ||
+		binOp.Op == token.LT || binOp.Op == token.LE ||
+		binOp.Op == token.GT || binOp.Op == token.GE
 
-	// Compile left operand
-	if err := cc.compileExpression(binOp.Left); err != nil {
-		return err
+	if isComparison {
+		// Compile left operand first for comparisons
+		if err := cc.compileExpression(binOp.Left); err != nil {
+			return err
+		}
+		// Compile right operand
+		if err := cc.compileExpression(binOp.Right); err != nil {
+			return err
+		}
+	} else {
+		// Compile right operand first (for stack-based evaluation)
+		if err := cc.compileExpression(binOp.Right); err != nil {
+			return err
+		}
+		// Compile left operand
+		if err := cc.compileExpression(binOp.Left); err != nil {
+			return err
+		}
 	}
 
 	// Emit appropriate opcode based on operator

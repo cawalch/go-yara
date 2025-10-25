@@ -53,10 +53,7 @@ func (v *Validator) ValidateProgram(program *ast.Program) []error {
 
 // collectSymbols collects all symbols from a rule
 func (v *Validator) collectSymbols(rule *ast.Rule) {
-	// Enter rule scope
-	v.symbolTable.EnterScope(fmt.Sprintf("rule_%s", rule.Name))
-
-	// Define the rule itself
+	// Define the rule itself in the global scope (rules should be globally accessible)
 	if err := v.symbolTable.DefineRule(rule.Name, rule.Pos, rule); err != nil {
 		v.addError(&SemanticError{
 			Message:  err.Error(),
@@ -64,7 +61,7 @@ func (v *Validator) collectSymbols(rule *ast.Rule) {
 		})
 	}
 
-	// Define strings
+	// Define strings in the global scope as well
 	for _, str := range rule.Strings {
 		if err := v.symbolTable.DefineString(str.Identifier, str.Pos, str); err != nil {
 			v.addError(&SemanticError{
@@ -73,9 +70,6 @@ func (v *Validator) collectSymbols(rule *ast.Rule) {
 			})
 		}
 	}
-
-	// Exit rule scope
-	v.symbolTable.ExitScope()
 }
 
 // validateRule performs semantic validation on a single rule

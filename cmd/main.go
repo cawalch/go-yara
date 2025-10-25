@@ -4,13 +4,13 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/cawalch/go-yara/compiler"
 	"github.com/cawalch/go-yara/internal/lexer"
 	"github.com/cawalch/go-yara/parser"
 	"github.com/cawalch/go-yara/regex"
-	"github.com/cawalch/go-yara/semantic"
 	"github.com/cawalch/go-yara/token"
 )
 
@@ -88,9 +88,9 @@ func main() {
 	case modeParse:
 		runParserMode(string(content))
 	case modeCompile:
-		runCompileMode(string(content))
+		runCompileMode(string(content), filename)
 	case modeExecute:
-		runExecuteMode(string(content), dataFile)
+		runExecuteMode(string(content), dataFile, filename)
 	default:
 		fmt.Printf("Unknown mode: %s\n", mode)
 		os.Exit(1)
@@ -171,51 +171,13 @@ func runParserMode(content string) {
 	}
 }
 
-func runCompileMode(content string) {
-	// Create lexer
-	l := lexer.New(content)
-
-	// Create parser
-	p := parser.New(l)
-
-	// Parse rules
-	program, err := p.ParseRules()
-	if err != nil {
-		fmt.Printf("Parser error: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Check for parser errors
-	parserErrors := p.Errors()
-	if len(parserErrors) > 0 {
-		fmt.Printf("\nParser errors (%d):\n", len(parserErrors))
-		for _, err := range parserErrors {
-			fmt.Printf("  %s\n", err.Error())
-		}
-		os.Exit(1)
-	}
-
-	fmt.Printf("Parser: Successfully parsed %d rules\n", len(program.Rules))
-
-	// Create semantic analyzer
-	sa := semantic.NewValidator()
-
-	// Validate program
-	semanticErrors := sa.ValidateProgram(program)
-	if len(semanticErrors) > 0 {
-		fmt.Printf("\nSemantic analysis errors (%d):\n", len(semanticErrors))
-		for _, err := range semanticErrors {
-			fmt.Printf("  %s\n", err.Error())
-		}
-		os.Exit(1)
-	}
-
-	fmt.Printf("Semantic analysis: Valid\n")
-
+func runCompileMode(content string, filename string) {
 	// Create compiler
 	comp := compiler.NewCompiler()
+	// Set base directory for resolving includes
+	comp.SetBaseDir(filepath.Dir(filename))
 
-	// Compile program
+	// Compile program (this includes parsing, semantic analysis, and code generation)
 	compiledProgram, err := comp.CompileSource(content)
 	if err != nil {
 		fmt.Printf("Compilation error: %v\n", err)
@@ -239,7 +201,7 @@ func runCompileMode(content string) {
 	}
 }
 
-func runExecuteMode(content string, dataFile string) {
+func runExecuteMode(content string, dataFile string, filename string) {
 	// Validate data file is provided
 	if dataFile == "" {
 		fmt.Println("Error: --execute mode requires --data <data-file>")
@@ -273,6 +235,8 @@ func runExecuteMode(content string, dataFile string) {
 
 	// Compile the rules
 	comp := compiler.NewCompiler()
+	// Set base directory for resolving includes
+	comp.SetBaseDir(filepath.Dir(filename))
 	compiledProgram, err := comp.CompileSource(content)
 	if err != nil {
 		fmt.Printf("Compilation error: %v\n", err)
@@ -355,6 +319,8 @@ func runExecuteMode(content string, dataFile string) {
 
 		// Execute bytecode with match context
 		interp := compiler.NewInterpreter(rule.GetBytecode())
+		// Set file size in match context
+		interp.GetMatchContext().FileSize = int64(len(data))
 
 		// Populate match context with both AC and regex-derived matches
 		for _, e := range printEntries {
