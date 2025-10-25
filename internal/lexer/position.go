@@ -19,18 +19,9 @@ func (r *Reader) SetPosition(pos int) {
 		return
 	}
 
-	// Check if we can use cached position for efficiency
-	if pos == r.lastSetPos {
-		r.line = r.lastSetLine
-		r.column = r.lastSetColumn
-		r.updatePositionState(pos)
-		return
-	}
-
 	// Calculate line and column for the new position
 	r.calculateLineColumn(pos)
 	r.updatePositionState(pos)
-	r.cachePosition(pos)
 }
 
 // updatePositionState updates the position-related fields
@@ -46,23 +37,12 @@ func (r *Reader) updatePositionState(pos int) {
 
 // calculateLineColumn calculates line and column numbers for a given position
 func (r *Reader) calculateLineColumn(pos int) {
-	// Use cached position if we can scan forward from it
-	startPos := 0
-	startLine := 1
-	startColumn := 1
+	// Start from the beginning
+	r.line = 1
+	r.column = 1
 
-	// If we have a cached position that's before our target, start from there
-	if r.lastSetPos >= 0 && r.lastSetPos <= pos {
-		startPos = r.lastSetPos
-		startLine = r.lastSetLine
-		startColumn = r.lastSetColumn
-	}
-
-	r.line = startLine
-	r.column = startColumn
-
-	// Scan from start position to target position
-	for i := startPos; i < pos && i < len(r.input); i++ {
+	// Scan from beginning to target position
+	for i := 0; i < pos && i < len(r.input); i++ {
 		if r.input[i] == '\n' {
 			r.line++
 			r.column = 1
@@ -70,13 +50,6 @@ func (r *Reader) calculateLineColumn(pos int) {
 			r.column++
 		}
 	}
-}
-
-// cachePosition caches the current position for future SetPosition calls
-func (r *Reader) cachePosition(pos int) {
-	r.lastSetPos = pos
-	r.lastSetLine = r.line
-	r.lastSetColumn = r.column
 }
 
 // ReaderSnapshot represents a saved state of the reader

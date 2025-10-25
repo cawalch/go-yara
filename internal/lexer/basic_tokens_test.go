@@ -108,7 +108,15 @@ func TestWhitespace_Newlines_Position(t *testing.T) {
 	want := []token.Token{
 		{Type: token.RULE, Literal: "rule"},
 		{Type: token.IDENTIFIER, Literal: "r"},
-		{Type: token.HEX_STRING_LIT, Literal: "{\n  condition and (1 + 2)\n}"},
+		{Type: token.LBRACE, Literal: "{"},
+		{Type: token.CONDITION, Literal: "condition"},
+		{Type: token.AND, Literal: "and"},
+		{Type: token.LPAREN, Literal: "("},
+		{Type: token.INTEGER_LIT, Literal: "1"},
+		{Type: token.PLUS, Literal: "+"},
+		{Type: token.INTEGER_LIT, Literal: "2"},
+		{Type: token.RPAREN, Literal: ")"},
+		{Type: token.RBRACE, Literal: "}"},
 		{Type: token.EOF, Literal: ""},
 	}
 
@@ -130,6 +138,11 @@ func TestWhitespace_Newlines_Position(t *testing.T) {
 	// Check that the identifier 'r' is at line 1, column 6
 	if got[1].Pos.Line != 1 || got[1].Pos.Column != 6 {
 		t.Fatalf("identifier 'r' position: got line %d col %d, want line 1 col 6", got[1].Pos.Line, got[1].Pos.Column)
+	}
+
+	// Check that the condition token is at line 2, column 4
+	if got[3].Pos.Line != 2 || got[3].Pos.Column != 4 {
+		t.Fatalf("condition token position: got line %d col %d, want line 2 col 4", got[3].Pos.Line, got[3].Pos.Column)
 	}
 }
 

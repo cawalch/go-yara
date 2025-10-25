@@ -110,7 +110,7 @@ func TestSkipIdentifierInRange(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a minimal lexer instance for testing
 			lexer := &Lexer{
-				reader: NewReader(tt.input),
+				reader: NewReaderFast(tt.input),
 			}
 
 			result := lexer.skipIdentifierInRange(tt.input, tt.start, tt.end)
@@ -278,7 +278,7 @@ func TestHasTagsAfterColon(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a minimal lexer instance for testing
 			lexer := &Lexer{
-				reader: NewReader(tt.input),
+				reader: NewReaderFast(tt.input),
 			}
 
 			result := lexer.hasTagsAfterColon(tt.input, tt.colonPos, tt.currentPos)
@@ -340,7 +340,7 @@ func TestFindRecentColon(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a minimal lexer instance for testing
 			lexer := &Lexer{
-				reader: NewReader(tt.input),
+				reader: NewReaderFast(tt.input),
 			}
 
 			result := lexer.findRecentColon(tt.input, tt.currentPos)
@@ -409,7 +409,7 @@ func TestSkipWhitespaceInRange(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a minimal lexer instance for testing
 			lexer := &Lexer{
-				reader: NewReader(tt.input),
+				reader: NewReaderFast(tt.input),
 			}
 
 			result := lexer.skipWhitespaceInRange(tt.input, tt.start, tt.end)

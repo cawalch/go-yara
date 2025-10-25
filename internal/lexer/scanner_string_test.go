@@ -431,7 +431,7 @@ func TestLooksLikeRegex(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a minimal lexer instance for testing
 			lexer := &Lexer{
-				reader: NewReader(tt.input),
+				reader: NewReaderFast(tt.input),
 			}
 
 			result := lexer.looksLikeRegex()

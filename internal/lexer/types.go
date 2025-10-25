@@ -51,7 +51,7 @@ const (
 // Lexer tokenizes YARA rule source code into a stream of tokens.
 // It maintains position information and can recover from lexical errors.
 type Lexer struct {
-	reader       *Reader      // handles character reading and position tracking
+	reader       *ReaderFast  // handles character reading and position tracking with optimizations
 	errors       []Error      // collected errors during lexing
 	recoveryMode RecoveryMode // error recovery strategy
 }
@@ -60,7 +60,7 @@ type Lexer struct {
 // The lexer starts at the beginning of the input with basic error recovery mode.
 func New(input string) *Lexer {
 	return &Lexer{
-		reader:       NewReader(input),
+		reader:       NewReaderFast(input),
 		recoveryMode: RecoveryBasic,
 	}
 }
@@ -68,7 +68,7 @@ func New(input string) *Lexer {
 // NewWithRecovery creates a new lexer with the specified recovery mode
 func NewWithRecovery(input string, mode RecoveryMode) *Lexer {
 	return &Lexer{
-		reader:       NewReader(input),
+		reader:       NewReaderFast(input),
 		recoveryMode: mode,
 	}
 }

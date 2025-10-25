@@ -7,7 +7,7 @@ import (
 	"github.com/cawalch/go-yara/token"
 )
 
-func TestPhase3Integration_CompleteYARARule(t *testing.T) {
+func TestAdvancedFeatures_CompleteYARARule(t *testing.T) {
 	input := `rule Phase3TestRule {
 		meta:
 			author = "go-yara"
@@ -75,7 +75,7 @@ func TestPhase3Integration_CompleteYARARule(t *testing.T) {
 	}
 }
 
-func TestPhase3Integration_AllFeatureTypes(t *testing.T) {
+func TestAdvancedFeatures_AllFeatureTypes(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
@@ -146,7 +146,7 @@ func TestPhase3Integration_AllFeatureTypes(t *testing.T) {
 	}
 }
 
-func TestPhase3Integration_ErrorRecovery(t *testing.T) {
+func TestAdvancedFeatures_ErrorRecovery(t *testing.T) {
 	input := `rule ErrorTest {
 		strings:
 			$valid = "text" nocase wide
@@ -185,7 +185,7 @@ func TestPhase3Integration_ErrorRecovery(t *testing.T) {
 	}
 }
 
-func TestPhase3Integration_Performance(t *testing.T) {
+func TestAdvancedFeatures_Performance(t *testing.T) {
 	// Test performance with many Phase 3 features
 	input := `rule PerformanceTest {
 		strings:
@@ -222,7 +222,7 @@ func TestPhase3Integration_Performance(t *testing.T) {
 	}
 }
 
-func TestPhase3Integration_BackwardsCompatibility(t *testing.T) {
+func TestAdvancedFeatures_BackwardsCompatibility(t *testing.T) {
 	// Test that Phase 3 features don't break existing functionality
 	beforePhase3 := `rule BeforePhase3 {
 		meta:

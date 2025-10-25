@@ -1,34 +1,34 @@
 package lexer
 
 // String literal and regex pattern scanning functions.
-// This module handles the parsing of quoted string literals and regular expression patterns,
+// This module handles parsing of quoted string literals and regular expression patterns,
 // including complex disambiguation between regex patterns and comments.
 
-// readString reads a string literal and returns the content and whether it was properly closed
+// readString reads a string literal and returns content and whether it was properly closed
 func (l *Lexer) readString() (string, bool) {
 	// current l.ch() is '"'
-	start := l.position()
-	l.readChar() // skip opening quote
+	start := l.reader.Position()
+	l.reader.ReadChar() // skip opening quote
 
-	for l.ch() != '"' && l.ch() != 0 {
-		if l.ch() == '\\' {
-			l.readChar() // skip backslash
-			if l.ch() != 0 {
-				l.readChar() // skip escaped character
+	for l.reader.Current() != '"' && l.reader.Current() != 0 {
+		if l.reader.Current() == '\\' {
+			l.reader.ReadChar() // skip backslash
+			if l.reader.Current() != 0 {
+				l.reader.ReadChar() // skip escaped character
 			}
 		} else {
-			l.readChar()
+			l.reader.ReadChar()
 		}
 	}
 
-	if l.ch() == 0 {
+	if l.reader.Current() == 0 {
 		// Unterminated string - return the entire sequence including the opening quote
 		return l.reader.Slice(start), false
 	}
 
 	// Extract content between quotes (excluding the quotes themselves)
 	content := l.reader.Slice(start + 1) // +1 to skip opening quote
-	l.readChar()                         // skip closing quote
+	l.reader.ReadChar()                  // skip closing quote
 
 	// Process escape sequences in the content
 	return processEscapeSequences(content), true
@@ -36,27 +36,26 @@ func (l *Lexer) readString() (string, bool) {
 
 // readRegex reads a regular expression literal
 func (l *Lexer) readRegex() string {
-	// current l.ch() is '/'
-	start := l.position()
-	l.readChar() // skip opening '/'
+	start := l.reader.Position()
+	l.reader.ReadChar() // skip opening '/'
 
-	for l.ch() != '/' && l.ch() != 0 && l.ch() != '\n' {
-		if l.ch() == '\\' {
-			l.readChar() // skip backslash
-			if l.ch() != 0 && l.ch() != '\n' {
-				l.readChar() // skip escaped character
+	for l.reader.Current() != '/' && l.reader.Current() != 0 && l.reader.Current() != '\n' {
+		if l.reader.Current() == '\\' {
+			l.reader.ReadChar() // skip backslash
+			if l.reader.Current() != 0 && l.reader.Current() != '\n' {
+				l.reader.ReadChar() // skip escaped character
 			}
 		} else {
-			l.readChar()
+			l.reader.ReadChar()
 		}
 	}
 
-	if l.ch() == '/' {
-		l.readChar() // skip closing '/'
+	if l.reader.Current() == '/' {
+		l.reader.ReadChar() // skip closing '/'
 
 		// Read flags (i, s, m, etc.)
-		for l.ch() == 'i' || l.ch() == 's' || l.ch() == 'm' {
-			l.readChar()
+		for l.reader.Current() == 'i' || l.reader.Current() == 's' || l.reader.Current() == 'm' {
+			l.reader.ReadChar()
 		}
 	}
 
@@ -65,67 +64,7 @@ func (l *Lexer) readRegex() string {
 
 // isEmptyRegex checks if the current position starts an empty regex pattern
 func (l *Lexer) isEmptyRegex() bool {
-	// Save current position
-	savedPos := l.reader.Position()
-	defer l.reader.SetPosition(savedPos)
-
-	// We're at the first '/', advance to check the second
-	if l.ch() != '/' {
-		return false
-	}
-	l.readChar()
-
-	// Check if next character is also '/'
-	if l.ch() != '/' {
-		return false
-	}
-	l.readChar()
-
-	// Check for optional flags after //
-	for l.ch() == 'i' || l.ch() == 's' || l.ch() == 'm' {
-		l.readChar()
-	}
-
-	// For empty regex, we should only see end of input or expression delimiters
-	// NOT whitespace followed by text (which would be a comment)
-	ch := l.ch()
-	if ch == 0 || ch == ')' || ch == '}' || ch == ']' || ch == ',' || ch == ';' {
-		return true
-	}
-
-	// If followed by whitespace, check what comes after
-	if ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' {
-		// Look ahead to see what's after whitespace
-		for ch == ' ' || ch == '\t' {
-			l.readChar()
-			ch = l.ch()
-		}
-
-		// If we hit newline or end of input after whitespace, it's an empty regex
-		if ch == '\n' || ch == '\r' || ch == 0 {
-			return true
-		}
-
-		// Check if the next word is a YARA keyword (like "nocase", "wide", etc.)
-		// If so, this is likely an empty regex followed by modifiers
-		if isLetter(ch) {
-			wordStart := l.reader.Position()
-			for isLetter(l.ch()) || isDigit(l.ch()) || l.ch() == '_' {
-				l.readChar()
-			}
-			word := l.reader.Slice(wordStart)
-
-			// Check if it's a known YARA modifier keyword
-			if isYARAModifier(word) {
-				return true
-			}
-		}
-
-		// Otherwise, it's likely a comment
-		return false
-	}
-
-	return false
+	return isEmptyRegexImpl(l.reader.Position, l.reader.SetPosition, l.reader.Current, l.reader.ReadChar, l.reader.Slice)
 }
 
 // isYARAModifier checks if a word is a YARA string modifier keyword
@@ -140,8 +79,84 @@ func isYARAModifier(word string) bool {
 
 // looksLikeRegex determines if a '/' character starts a regex rather than division
 func (l *Lexer) looksLikeRegex() bool {
+	return looksLikeRegexImpl(l.reader.PeekChar)
+}
+
+// isEmptyRegexImpl is a shared implementation for checking empty regex patterns
+func isEmptyRegexImpl(
+	getPosition func() int,
+	setPosition func(int),
+	getCurrent func() byte,
+	readChar func(),
+	slice func(int) string,
+) bool {
+	// Save current position
+	savedPos := getPosition()
+	defer setPosition(savedPos)
+
+	// We're at the first '/', advance to check the second
+	if getCurrent() != '/' {
+		return false
+	}
+	readChar()
+
+	// Check if next character is also '/'
+	if getCurrent() != '/' {
+		return false
+	}
+	readChar()
+
+	// Check for optional flags after //
+	for getCurrent() == 'i' || getCurrent() == 's' || getCurrent() == 'm' {
+		readChar()
+	}
+
+	// For empty regex, we should only see end of input or expression delimiters
+	// NOT whitespace followed by text (which would be a comment)
+	ch := getCurrent()
+	if ch == 0 || ch == ')' || ch == '}' || ch == ']' || ch == ',' || ch == ';' {
+		return true
+	}
+
+	// If followed by whitespace, check what comes after
+	if ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' {
+		// Look ahead to see what's after whitespace
+		for ch == ' ' || ch == '\t' {
+			readChar()
+			ch = getCurrent()
+		}
+
+		// If we hit newline or end of input after whitespace, it's an empty regex
+		if ch == '\n' || ch == '\r' || ch == 0 {
+			return true
+		}
+
+		// Check if the next word is a YARA keyword (like "nocase", "wide", etc.)
+		// If so, this is likely an empty regex followed by modifiers
+		if isLetter(ch) {
+			wordStart := getPosition()
+			for isLetter(getCurrent()) || isDigit(getCurrent()) || getCurrent() == '_' {
+				readChar()
+			}
+			word := slice(wordStart)
+
+			// Check if it's a known YARA modifier keyword
+			if isYARAModifier(word) {
+				return true
+			}
+		}
+
+		// Otherwise, it's likely a comment
+		return false
+	}
+
+	return false
+}
+
+// looksLikeRegexImpl is a shared implementation for determining if '/' starts a regex
+func looksLikeRegexImpl(peekChar func() byte) bool {
 	// Check the character after the '/' to determine if it looks like a regex
-	next := l.peekChar()
+	next := peekChar()
 
 	// Definitely comments
 	if next == '/' || next == '*' {

@@ -2,7 +2,7 @@ package lexer
 
 // Character reading and manipulation helper functions
 
-// readChar advances the lexer to the next character
+// readChar advances to lexer to the next character
 func (l *Lexer) readChar() {
 	l.reader.ReadChar()
 }
@@ -24,34 +24,34 @@ func (l *Lexer) position() int {
 
 // readIllegalSequence reads a sequence of illegal characters
 func (l *Lexer) readIllegalSequence() string {
-	start := l.position()
+	start := l.reader.Position()
 
 	// Check for specific multi-character illegal sequences first
-	if l.ch() == '*' && l.peekChar() == '/' {
+	if l.reader.Current() == '*' && l.reader.PeekChar() == '/' {
 		// Stray closing block comment
-		l.readChar()
-		l.readChar()
+		l.reader.ReadChar()
+		l.reader.ReadChar()
 		return l.reader.Slice(start)
 	}
 
 	// Default behavior: basic illegal sequence reading
 	for {
-		next := l.peekChar()
+		next := l.reader.PeekChar()
 		switch {
 		case next == 0 || next == ' ' || next == '\t' || next == '\r' || next == '\n':
-			l.readChar() // include current illegal char
+			l.reader.ReadChar() // include current illegal char
 			return l.reader.Slice(start)
-		case l.ch() == '*' && next == '/':
+		case l.reader.Current() == '*' && next == '/':
 			// Coalesce stray closing block comment token "*/"
-			l.readChar()
-			l.readChar()
+			l.reader.ReadChar()
+			l.reader.ReadChar()
 			return l.reader.Slice(start)
 		case startsKnownToken(next) || isLetter(next) || isDigit(next):
-			l.readChar()
+			l.reader.ReadChar()
 			return l.reader.Slice(start)
 		default:
 			// Otherwise consume current and continue growing the illegal run
-			l.readChar()
+			l.reader.ReadChar()
 		}
 	}
 }

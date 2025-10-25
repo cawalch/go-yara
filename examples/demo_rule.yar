@@ -1,8 +1,8 @@
-rule Phase3Demo {
+rule DemoRule {
     meta:
-        author = "go-yara Phase 3"
-        description = "Demonstrates all Phase 3 features"
-        version = "3.0"
+        author = "go-yara"
+        description = "Demonstrates advanced YARA features"
+        version = "1.0"
         
     strings:
         $text1 = "malware" nocase wide

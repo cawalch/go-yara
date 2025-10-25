@@ -4,40 +4,43 @@ package lexer
 
 // readNumber reads a numeric literal
 func (l *Lexer) readNumber() string {
-	start := l.position()
-	for isDigit(l.ch()) {
-		l.readChar()
+	start := l.reader.Position()
+	for isDigit(l.reader.Current()) {
+		l.reader.ReadChar()
 	}
 	return l.reader.Slice(start)
 }
 
-// readFloatFraction reads the fractional part of a float literal (. followed by digits)
+// readFloatFraction reads fractional part of a float literal (. followed by digits)
 func (l *Lexer) readFloatFraction() string {
-	start := l.position()
-	l.readChar() // skip '.'
-	for isDigit(l.ch()) {
-		l.readChar()
+	start := l.reader.Position()
+	l.reader.ReadChar() // skip '.'
+
+	for isDigit(l.reader.Current()) {
+		l.reader.ReadChar()
 	}
+
 	return l.reader.Slice(start)
 }
 
 // readHexInteger reads a hexadecimal integer literal (0x prefix)
 func (l *Lexer) readHexInteger() string {
-	start := l.position()
-	l.readChar() // skip '0'
-	l.readChar() // skip 'x' or 'X'
+	start := l.reader.Position()
+	l.reader.ReadChar() // skip '0'
+	l.reader.ReadChar() // skip 'x' or 'X'
 
 	// Read hex digits
-	for isHexDigit(l.ch()) {
-		l.readChar()
+	for isHexDigit(l.reader.Current()) {
+		l.reader.ReadChar()
 	}
+
 	return l.reader.Slice(start)
 }
 
 // hasSizeSuffix checks if the current position has a size suffix (KB, MB)
 func (l *Lexer) hasSizeSuffix() bool {
-	ch1 := l.ch()
-	ch2 := l.peekChar()
+	ch1 := l.reader.Current()
+	ch2 := l.reader.PeekChar()
 
 	// Check for KB (case insensitive)
 	if (ch1 == 'K' || ch1 == 'k') && (ch2 == 'B' || ch2 == 'b') {
@@ -54,8 +57,8 @@ func (l *Lexer) hasSizeSuffix() bool {
 
 // readSizeSuffix reads a size suffix and combines it with the number literal
 func (l *Lexer) readSizeSuffix(numberLit string) string {
-	start := l.position() - len(numberLit) // Start from beginning of number
-	l.readChar()                           // skip first letter (K/M)
-	l.readChar()                           // skip 'B'
+	start := l.reader.Position() - len(numberLit) // Start from beginning of number
+	l.reader.ReadChar()                           // skip first letter (K/M)
+	l.reader.ReadChar()                           // skip 'B'
 	return l.reader.Slice(start)
 }

@@ -1,6 +1,6 @@
 .PHONY: bench bench-save bench-profiles bench-detailed bench-memory bench-cpu bench-trace \
         pprof-cpu pprof-mem pprof-alloc pprof-heap pprof-trace benchstat bench-compare \
-        bench-phase2 bench-regression bench-hotspots profile-analysis
+        bench-string-modifiers bench-regression bench-hotspots profile-analysis
 
 # Default package to benchmark/profile
 PKG=./internal/lexer
@@ -24,9 +24,9 @@ bench-cpu:
 	@echo "Running CPU-focused benchmarks..."
 	go test -bench . -benchtime=10s -cpu=1,2,4,8 -run ^$$ $(PKG)
 
-# Phase 2 specific benchmarks
-bench-phase2:
-	@echo "Running Phase 2 string modifier benchmarks..."
+# String modifier specific benchmarks
+bench-string-modifiers:
+	@echo "Running string modifier benchmarks..."
 	go test -bench "BenchmarkLexer_.*Modifier.*|BenchmarkLexer_Phase2.*" -benchmem -run ^$$ $(PKG)
 
 # Regression testing against saved benchmarks
@@ -174,7 +174,7 @@ help:
 	@echo "  bench-detailed     - Run detailed benchmarks with extended metrics"
 	@echo "  bench-memory       - Run memory-focused benchmarks"
 	@echo "  bench-cpu          - Run CPU-focused benchmarks"
-	@echo "  bench-phase2       - Run Phase 2 specific benchmarks"
+	@echo "  bench-string-modifiers - Run string modifier benchmarks"
 	@echo ""
 	@echo "Profiling:"
 	@echo "  bench-profiles     - Generate comprehensive profiles"

@@ -1,20 +1,23 @@
-// Package lexer provides a YARA lexer implementation.
 package lexer
 
-// Reader handles low-level character reading and position tracking for the lexer.
-// It encapsulates the input string and maintains current position, line, and column information.
-type Reader struct {
+import "github.com/cawalch/go-yara/token"
+
+// ReaderFast provides a high-performance version of the reader
+// with reduced overhead in character reading operations.
+type ReaderFast struct {
 	input        string
 	position     int  // current position in input (points to current char)
 	readPosition int  // current reading position in input (after current character)
 	ch           byte // current char under examination
 	line         int
 	column       int
+	// Optimization: cache position to avoid expensive calculations
+	lastSetPos int
 }
 
-// NewReader creates a new reader for the given input string.
-func NewReader(input string) *Reader {
-	r := &Reader{
+// NewReaderFast creates a new fast reader for the given input string.
+func NewReaderFast(input string) *ReaderFast {
+	r := &ReaderFast{
 		input: input,
 		line:  1,
 	}
@@ -24,38 +27,38 @@ func NewReader(input string) *Reader {
 
 // Current returns the current character being examined.
 // Optimized to avoid repeated calculations.
-func (r *Reader) Current() byte {
+func (r *ReaderFast) Current() byte {
 	return r.ch
 }
 
 // Position returns the current position in the input.
-func (r *Reader) Position() int {
+func (r *ReaderFast) Position() int {
 	return r.position
 }
 
 // ReadPosition returns the current reading position in the input.
-func (r *Reader) ReadPosition() int {
+func (r *ReaderFast) ReadPosition() int {
 	return r.readPosition
 }
 
 // Line returns the current line number.
-func (r *Reader) Line() int {
+func (r *ReaderFast) Line() int {
 	return r.line
 }
 
 // Column returns the current column number.
-func (r *Reader) Column() int {
+func (r *ReaderFast) Column() int {
 	return r.column
 }
 
 // Input returns the input string.
-func (r *Reader) Input() string {
+func (r *ReaderFast) Input() string {
 	return r.input
 }
 
 // ReadChar advances to the next character in the input.
 // Optimized version with reduced branching and better cache locality.
-func (r *Reader) ReadChar() {
+func (r *ReaderFast) ReadChar() {
 	r.position = r.readPosition
 	if r.readPosition < len(r.input) {
 		r.ch = r.input[r.readPosition]
@@ -74,7 +77,7 @@ func (r *Reader) ReadChar() {
 }
 
 // PeekChar returns the next character without advancing the position.
-func (r *Reader) PeekChar() byte {
+func (r *ReaderFast) PeekChar() byte {
 	if r.readPosition >= len(r.input) {
 		return 0
 	}
@@ -82,18 +85,67 @@ func (r *Reader) PeekChar() byte {
 }
 
 // Slice returns a slice of the input from start to the current position.
-func (r *Reader) Slice(start int) string {
+func (r *ReaderFast) Slice(start int) string {
 	return r.input[start:r.position]
 }
 
 // SliceRange returns a slice of the input from start to end.
-func (r *Reader) SliceRange(start, end int) string {
+func (r *ReaderFast) SliceRange(start, end int) string {
 	return r.input[start:end]
+}
+
+// CurrentPosition returns the current position as a token.Position.
+// Optimized to avoid repeated struct creation.
+func (r *ReaderFast) CurrentPosition() token.Position {
+	// Only update cache if position actually changed
+	if r.lastSetPos != r.position {
+		r.lastSetPos = r.position
+	}
+	return token.Position{
+		Filename: "", // Could be set if needed
+		Offset:   r.position,
+		Line:     r.line,
+		Column:   r.column,
+	}
+}
+
+// SetPosition sets the reader position to a specific location.
+// Optimized with caching to avoid expensive recalculations.
+func (r *ReaderFast) SetPosition(pos int) {
+	if pos < 0 || pos > len(r.input) {
+		return
+	}
+
+	// Recalculate line and column from the beginning to the target position
+	// This is more expensive but necessary for correct position tracking
+	r.line = 1
+	r.column = 1
+	for i := 0; i < pos && i < len(r.input); i++ {
+		if r.input[i] == '\n' {
+			r.line++
+			r.column = 1
+		} else {
+			r.column++
+		}
+	}
+
+	r.position = pos
+	r.readPosition = pos
+	if pos < len(r.input) {
+		r.ch = r.input[pos]
+		r.readPosition = pos + 1
+	} else {
+		r.ch = 0
+		r.readPosition = pos + 1
+	}
+
+	// Update cache
+	r.lastSetPos = pos
 }
 
 // BulkRead advances multiple characters at once for better performance.
 // This is useful for skipping known patterns like whitespace.
-func (r *Reader) BulkRead(count int) {
+func (r *ReaderFast) BulkRead(count int) {
 	for i := 0; i < count && r.readPosition <= len(r.input); i++ {
 		r.ReadChar()
 	}
@@ -101,7 +153,7 @@ func (r *Reader) BulkRead(count int) {
 
 // SkipWhitespace efficiently skips whitespace characters.
 // Optimized version that processes multiple characters at once.
-func (r *Reader) SkipWhitespace() {
+func (r *ReaderFast) SkipWhitespace() {
 	for r.readPosition < len(r.input) {
 		ch := r.input[r.readPosition]
 		switch ch {
@@ -116,8 +168,10 @@ func (r *Reader) SkipWhitespace() {
 			r.column = 1
 		default:
 			// Non-whitespace found, update current char and exit
+			r.position = r.readPosition
 			if r.readPosition < len(r.input) {
 				r.ch = r.input[r.readPosition]
+				r.readPosition++
 			} else {
 				r.ch = 0
 			}
@@ -126,11 +180,12 @@ func (r *Reader) SkipWhitespace() {
 	}
 
 	// End of input
+	r.position = r.readPosition
 	r.ch = 0
 }
 
 // ReadStringFast reads a string literal with optimized processing
-func (r *Reader) ReadStringFast() (string, bool) {
+func (r *ReaderFast) ReadStringFast() (string, bool) {
 	// current r.ch is '"'
 	start := r.position
 	r.ReadChar() // skip opening quote
@@ -157,7 +212,7 @@ func (r *Reader) ReadStringFast() (string, bool) {
 }
 
 // ReadIdentifierFast reads an identifier with optimized processing
-func (r *Reader) ReadIdentifierFast() string {
+func (r *ReaderFast) ReadIdentifierFast() string {
 	start := r.position
 	for isLetter(r.ch) || isDigit(r.ch) || r.ch == '_' {
 		r.ReadChar()

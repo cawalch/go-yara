@@ -1,4 +1,4 @@
-// Package main provides additional tests to improve code coverage.
+// Package main provides additional tests for comprehensive coverage.
 package main
 
 import (
@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// TestMainFunction tests the main function which currently has low coverage
+// TestMainFunction tests the main function for comprehensive coverage
 func TestMainFunction(t *testing.T) {
 	// Save original args
 	oldArgs := os.Args

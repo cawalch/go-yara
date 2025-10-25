@@ -4,21 +4,28 @@ import "github.com/cawalch/go-yara/token"
 
 // Keyword lookup and validation functions
 
+// Constants for frequently used keywords to avoid string literals
+const (
+	KeywordRule      = "rule"
+	KeywordStrings   = "strings"
+	KeywordCondition = "condition"
+)
+
 // keywords maps string identifiers to their corresponding token types
 var keywords = map[string]token.TokenType{
-	"or":        token.OR,
-	"of":        token.OF,
-	"and":       token.AND,
-	"not":       token.NOT,
-	"all":       token.ALL,
-	"any":       token.ANY,
-	"rule":      token.RULE,
-	"meta":      token.META,
-	"true":      token.TRUE,
-	"none":      token.NONE,
-	"false":     token.FALSE,
-	"strings":   token.STRINGS,
-	"condition": token.CONDITION,
+	"or":             token.OR,
+	"of":             token.OF,
+	"and":            token.AND,
+	"not":            token.NOT,
+	"all":            token.ALL,
+	"any":            token.ANY,
+	KeywordRule:      token.RULE,
+	"meta":           token.META,
+	"true":           token.TRUE,
+	"none":           token.NONE,
+	"false":          token.FALSE,
+	KeywordStrings:   token.STRINGS,
+	KeywordCondition: token.CONDITION,
 	// String modifiers (Phase 2)
 	"nocase":     token.NOCASE,
 	"wide":       token.WIDE,
@@ -79,13 +86,132 @@ func init() {
 	}
 }
 
-// lookupIdent determines the token type for an identifier
-// Returns the interned string for keywords to reduce allocations
+// lookupIdent provides a fast path for common keywords using switch statement
+// This avoids expensive map lookups for the most frequent keywords
 func lookupIdent(ident string) token.TokenType {
-	if tokenType, exists := keywords[ident]; exists {
-		return tokenType
+	// Fast path for common keywords using switch statement
+	// This avoids expensive map lookups for the most frequent keywords
+	switch ident {
+	case KeywordRule:
+		return token.RULE
+	case "meta":
+		return token.META
+	case KeywordStrings:
+		return token.STRINGS
+	case KeywordCondition:
+		return token.CONDITION
+	case "and":
+		return token.AND
+	case "or":
+		return token.OR
+	case "not":
+		return token.NOT
+	case "true":
+		return token.TRUE
+	case "false":
+		return token.FALSE
+	case "all":
+		return token.ALL
+	case "any":
+		return token.ANY
+	case "none":
+		return token.NONE
+	case "of":
+		return token.OF
+	// String modifiers
+	case "nocase":
+		return token.NOCASE
+	case "wide":
+		return token.WIDE
+	case "ascii":
+		return token.ASCII
+	case "fullword":
+		return token.FULLWORD
+	case "private":
+		return token.PRIVATE
+	case "xor":
+		return token.XOR
+	case "base64":
+		return token.BASE64
+	case "base64wide":
+		return token.BASE64WIDE
+	// Data type functions
+	case "int8":
+		return token.INT8
+	case "int16":
+		return token.INT16
+	case "int32":
+		return token.INT32
+	case "uint8":
+		return token.UINT8
+	case "uint16":
+		return token.UINT16
+	case "uint32":
+		return token.UINT32
+	case "int8be":
+		return token.INT8BE
+	case "int16be":
+		return token.INT16BE
+	case "int32be":
+		return token.INT32BE
+	case "uint8be":
+		return token.UINT8BE
+	case "uint16be":
+		return token.UINT16BE
+	case "uint32be":
+		return token.UINT32BE
+	// File operations
+	case "filesize":
+		return token.FILESIZE
+	case "entrypoint":
+		return token.ENTRYPOINT
+	// Control flow keywords
+	case "for":
+		return token.FOR
+	case "in":
+		return token.IN
+	case "at":
+		return token.AT
+	case "them":
+		return token.THEM
+	case "defined":
+		return token.DEFINED
+	// Rule modifiers
+	case "global":
+		return token.GLOBAL
+	// Import system
+	case "import":
+		return token.IMPORT
+	case "include":
+		return token.INCLUDE
+	// String operations
+	case "contains":
+		return token.CONTAINS
+	case "icontains":
+		return token.ICONTAINS
+	case "startswith":
+		return token.STARTSWITH
+	case "istartswith":
+		return token.ISTARTSWITH
+	case "endswith":
+		return token.ENDSWITH
+	case "iendswith":
+		return token.IENDSWITH
+	case "iequals":
+		return token.IEQUALS
+	case "matches":
+		return token.MATCHES
+	case "hash":
+		return token.HASH
+	case "length":
+		return token.LENGTH
+	default:
+		// Fallback to map for any remaining keywords
+		if tokenType, exists := keywords[ident]; exists {
+			return tokenType
+		}
+		return token.IDENTIFIER
 	}
-	return token.IDENTIFIER
 }
 
 // ValidateStringEscapes validates escape sequences in a string literal

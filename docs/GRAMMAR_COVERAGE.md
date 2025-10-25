@@ -506,7 +506,7 @@ func BenchmarkLexer_MixedRule(b *testing.B) {
 **All Phase 1, 2, 3, and most Phase 4 features are implemented** with 95% grammar coverage (96/101 features). The lexer is fully functional with comprehensive YARA language support.
 
 **Verified Working Features:**
-- ✅ **Complete rule body parsing** - 84 tokens from maldoc.yar, 146 tokens from phase3_demo.yar
+- ✅ **Complete rule body parsing** - 84 tokens from maldoc.yar, 146 tokens from demo_rule.yar
 - ✅ **All core features** - Boolean literals, regex, hex integers, size suffixes, quantifiers, arithmetic operators, bitwise operators, data type functions, file operations
 - ✅ **All string features** - String modifiers (nocase, wide, ascii, etc.) with all string types
 - ✅ **Advanced features** - String operations, position operators, rule modifiers
@@ -835,7 +835,7 @@ rule UsesModules {
 - ✅ **Phase 3 Complete**: Advanced grammar implementation (67% coverage)
 - ✅ **Phase 4 Complete**: Advanced features (99% total coverage)
 - ✅ **All Tests Passing**: Comprehensive test coverage with zero-allocation performance
-- ✅ **Real-world Verification**: maldoc.yar (84 tokens), phase3_demo.yar (146 tokens) parsing correctly
+- ✅ **Real-world Verification**: maldoc.yar (84 tokens), demo_rule.yar (146 tokens) parsing correctly
 
 ### Remaining Work (1% - 1/101 features)
 **Only 1 feature remains unimplemented:**

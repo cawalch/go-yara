@@ -82,7 +82,7 @@ The project includes a command-line tool for lexing YARA files.
 To use it, run the following command:
 
 ```bash
-go run ./cmd/main.go ./examples/phase3_demo.yar
+go run ./cmd/main.go ./examples/demo_rule.yar
 ```
 
 ## Contributing

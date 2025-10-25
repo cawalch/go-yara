@@ -238,11 +238,12 @@ jobs:
           echo "SARIF file size: $(wc -c < gosec.sarif) bytes"
           head -20 gosec.sarif
 
-      - name: Upload SARIF file
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: gosec.sarif
-          token: ${{ secrets.GITHUB_TOKEN }}
+      # - name: Upload SARIF file
+      #   uses: github/codeql-action/upload-sarif@v3
+      #   with:
+      #     sarif_file: gosec.sarif
+      #     token: ${{ secrets.GITHUB_TOKEN }}
+      # Note: SARIF upload commented out for now (repo is private)
 
   memory:
     name: Memory Leak Check

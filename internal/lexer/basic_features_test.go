@@ -7,7 +7,7 @@ import (
 	"github.com/cawalch/go-yara/token"
 )
 
-func TestPhase1Integration_CompleteYARARule(t *testing.T) {
+func TestBasicFeatures_CompleteYARARule(t *testing.T) {
 	helper := lexer.NewTestHelper(t)
 
 	// A comprehensive YARA rule that uses all Phase 1 features
@@ -82,7 +82,7 @@ func TestPhase1Integration_CompleteYARARule(t *testing.T) {
 	}
 }
 
-func TestPhase1Integration_ErrorRecovery(t *testing.T) {
+func TestBasicFeatures_ErrorRecovery(t *testing.T) {
 	_ = lexer.NewTestHelper(t)
 
 	// Test error recovery with Phase 1 features
@@ -136,7 +136,7 @@ func TestPhase1Integration_ErrorRecovery(t *testing.T) {
 	_ = errors // Suppress unused variable warning
 }
 
-func TestPhase1Integration_PerformanceStress(t *testing.T) {
+func TestBasicFeatures_PerformanceStress(t *testing.T) {
 	helper := lexer.NewTestHelper(t)
 
 	// Generate a large input with all Phase 1 features
@@ -144,13 +144,15 @@ func TestPhase1Integration_PerformanceStress(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		input += `rule StressTest` + string(rune('A'+i%26)) + ` {
 			meta:
-				size = ` + "1MB" + `
-				addr = ` + "0x1000" + `
+				size = 1MB
+				addr = 0x1000
 			strings:
 				$a = "test"
+				$b = { E2 34 A1 C8 }
 			condition:
 				all of them and filesize > 1KB and
-				(filesize / 1024) * 2 % 3 == 0
+				(filesize / 1024) * 2 % 3 == 0 and
+				0xFF > 0x100
 		}
 		`
 	}
@@ -181,7 +183,7 @@ func TestPhase1Integration_PerformanceStress(t *testing.T) {
 	}
 }
 
-func TestPhase1Integration_EdgeCases(t *testing.T) {
+func TestBasicFeatures_EdgeCases(t *testing.T) {
 	_ = lexer.NewTestHelper(t)
 
 	tests := []struct {
@@ -247,7 +249,7 @@ func TestPhase1Integration_EdgeCases(t *testing.T) {
 	}
 }
 
-func TestPhase1Integration_AllFeaturesCombined(t *testing.T) {
+func TestBasicFeatures_AllFeaturesCombined(t *testing.T) {
 	helper := lexer.NewTestHelper(t)
 
 	// Test all Phase 1 features in a single expression

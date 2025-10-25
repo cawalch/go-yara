@@ -38,32 +38,32 @@ func (l *Lexer) addError(pos token.Position, message string) {
 func (l *Lexer) skipWhitespace() {
 	for {
 		switch {
-		case l.ch() == ' ' || l.ch() == '\t' || l.ch() == '\r' || l.ch() == '\n':
-			l.readChar()
-		case l.ch() == '/' && l.peekChar() == '/':
+		case l.reader.Current() == ' ' || l.reader.Current() == '\t' || l.reader.Current() == '\r' || l.reader.Current() == '\n':
+			l.reader.ReadChar()
+		case l.reader.Current() == '/' && l.reader.PeekChar() == '/':
 			// Check if this might be an empty regex before treating as comment
 			if l.isEmptyRegex() {
 				// This is an empty regex, don't consume it here
 				return
 			}
 			// Skip line comment: // comment text
-			l.readChar() // skip first '/'
-			l.readChar() // skip second '/'
-			for l.ch() != '\n' && l.ch() != 0 {
-				l.readChar()
+			l.reader.ReadChar() // skip first '/'
+			l.reader.ReadChar() // skip second '/'
+			for l.reader.Current() != '\n' && l.reader.Current() != 0 {
+				l.reader.ReadChar()
 			}
-			// Don't skip the newline here - let the whitespace loop handle it
-		case l.ch() == '/' && l.peekChar() == '*':
+			// Don't skip newline here - let the whitespace loop handle it
+		case l.reader.Current() == '/' && l.reader.PeekChar() == '*':
 			// Skip block comment: /* comment text */
-			l.readChar() // skip '/'
-			l.readChar() // skip '*'
-			for l.ch() != 0 {
-				if l.ch() == '*' && l.peekChar() == '/' {
-					l.readChar() // skip '*'
-					l.readChar() // skip '/'
+			l.reader.ReadChar() // skip '/'
+			l.reader.ReadChar() // skip '*'
+			for l.reader.Current() != 0 {
+				if l.reader.Current() == '*' && l.reader.PeekChar() == '/' {
+					l.reader.ReadChar() // skip '*'
+					l.reader.ReadChar() // skip '/'
 					break
 				}
-				l.readChar()
+				l.reader.ReadChar()
 			}
 		default:
 			return
@@ -77,10 +77,11 @@ func (l *Lexer) skipWhitespace() {
 // keyword or identifier is found.
 func (l *Lexer) fastForward() {
 	// Skip whitespace first
-	for l.ch() != 0 {
-		ch := l.ch()
+	for l.reader.Current() != 0 {
+		ch := l.reader.Current()
+
 		if ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n' {
-			l.readChar()
+			l.reader.ReadChar()
 			continue
 		}
 		// Stop at first letter or end of input
@@ -88,6 +89,6 @@ func (l *Lexer) fastForward() {
 			return
 		}
 		// Skip non-whitespace, non-letter characters
-		l.readChar()
+		l.reader.ReadChar()
 	}
 }

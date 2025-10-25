@@ -1,11 +1,11 @@
-// Package compiler provides additional tests to improve code coverage.
+// Package compiler provides additional tests for comprehensive coverage.
 package compiler
 
 import (
 	"testing"
 )
 
-// TestComparison tests the Comparison function which currently has 0% coverage
+// TestComparison tests the Comparison function for comprehensive coverage
 func TestComparison(t *testing.T) {
 	// Test with undefined values
 	t.Run("undefined_values", func(t *testing.T) {
@@ -62,7 +62,7 @@ func TestComparison(t *testing.T) {
 	})
 }
 
-// TestOperation tests the Operation function which currently has 0% coverage
+// TestOperation tests the Operation function for comprehensive coverage
 func TestOperation(t *testing.T) {
 	// Test with undefined values
 	t.Run("undefined_values", func(t *testing.T) {

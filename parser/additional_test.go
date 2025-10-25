@@ -1,4 +1,4 @@
-// Package parser provides additional tests to improve code coverage.
+// Package parser provides additional tests for comprehensive coverage.
 package parser
 
 import (
@@ -7,8 +7,8 @@ import (
 	"github.com/cawalch/go-yara/internal/lexer"
 )
 
-// TestParserEdgeCases tests edge cases in the parser which currently have low coverage
-func TestParserEdgeCases(t *testing.T) {
+// TestParserEdgeCases tests edge cases in the parser for comprehensive coverage
+func TestParserEdgeCasesAdditional(t *testing.T) {
 	// Test parser with empty input
 	t.Run("empty_input", func(t *testing.T) {
 		l := lexer.New("")
@@ -138,9 +138,14 @@ rule test_rule_2 {
 		program, err := p.ParseRules()
 		if err != nil {
 			t.Errorf("ParseRules() with multiple rules failed: %v", err)
+			for _, parseErr := range p.Errors() {
+				t.Logf("Parser error: %v", parseErr)
+			}
+			return
 		}
 		if program == nil {
 			t.Error("ParseRules() with multiple rules returned nil program")
+			return
 		}
 		if len(program.Rules) != 2 {
 			t.Errorf("ParseRules() with multiple rules should return 2 rules, got %d", len(program.Rules))
@@ -207,8 +212,8 @@ rule test_rule {
 	})
 }
 
-// TestParserAdvancedFeatures tests advanced parser features to improve coverage
-func TestParserAdvancedFeatures(t *testing.T) {
+// TestParserAdvancedFeatures tests advanced parser features for comprehensive coverage
+func TestParserAdvancedFeaturesAdditional(t *testing.T) {
 	// Test parser with global variables
 	t.Run("global_variables", func(t *testing.T) {
 		l := lexer.New(`
@@ -322,9 +327,14 @@ global rule test_rule_global {
 		program, err := p.ParseRules()
 		if err != nil {
 			t.Errorf("ParseRules() with rule modifiers failed: %v", err)
+			for _, parseErr := range p.Errors() {
+				t.Logf("Parser error: %v", parseErr)
+			}
+			return
 		}
 		if program == nil {
 			t.Error("ParseRules() with rule modifiers returned nil program")
+			return
 		}
 		if len(program.Rules) != 2 {
 			t.Errorf("ParseRules() with rule modifiers should return 2 rules, got %d", len(program.Rules))
@@ -777,9 +787,14 @@ rule dependent_rule {
 		program, err := p.ParseRules()
 		if err != nil {
 			t.Errorf("ParseRules() with rule dependencies failed: %v", err)
+			for _, parseErr := range p.Errors() {
+				t.Logf("Parser error: %v", parseErr)
+			}
+			return
 		}
 		if program == nil {
 			t.Error("ParseRules() with rule dependencies returned nil program")
+			return
 		}
 		if len(program.Rules) != 2 {
 			t.Errorf("ParseRules() with rule dependencies should return 2 rules, got %d", len(program.Rules))
@@ -857,7 +872,7 @@ rule test_rule {
 }
 
 // TestParserErrorHandling tests error handling in the parser
-func TestParserErrorHandling(t *testing.T) {
+func TestParserErrorHandlingAdditional(t *testing.T) {
 	// Test parser with lexer errors
 	t.Run("lexer_errors", func(t *testing.T) {
 		l := lexer.New(`
@@ -894,8 +909,8 @@ rule test_rule {
 	})
 }
 
-// TestParserMethods tests parser methods which might have low coverage
-func TestParserMethods(t *testing.T) {
+// TestParserMethods tests parser methods for comprehensive coverage
+func TestParserMethodsAdditional(t *testing.T) {
 	// Test Errors method
 	t.Run("errors_method", func(t *testing.T) {
 		l := lexer.New(`

@@ -1,60 +1,51 @@
 package lexer
 
+import (
+	"strings"
+)
+
+// Section keywords that should be treated as constants
+const (
+	sectionKeywordCondition = "condition"
+	sectionKeywordMeta      = "meta"
+	sectionKeywordStrings   = "strings"
+)
+
 // Hexadecimal string scanning functions.
 // This module handles the complex logic for detecting and parsing hex string literals,
 // including disambiguation between hex strings and regular rule body braces.
 
 // readHexString reads a hexadecimal string literal
 func (l *Lexer) readHexString() string {
-	// current l.ch() is '{'
-	start := l.position()
-	l.readChar() // skip opening '{'
+	start := l.reader.Position()
+	l.reader.ReadChar() // skip opening '{'
 
 	braceCount := 1 // We've already seen the opening brace
-	for braceCount > 0 && l.ch() != 0 {
-		if l.ch() == '{' {
+	for braceCount > 0 && l.reader.Current() != 0 {
+		if l.reader.Current() == '{' {
 			braceCount++
-		} else if l.ch() == '}' {
+		} else if l.reader.Current() == '}' {
 			braceCount--
 		}
-		l.readChar()
+		l.reader.ReadChar()
 	}
 
 	return l.reader.Slice(start)
 }
 
 // isHexStringStart checks if the current position starts a hex string
-// Optimized fast-path with bounded lookahead and minimal scanning.
+// More sophisticated logic to distinguish between hex strings and rule body braces
 func (l *Lexer) isHexStringStart() bool {
 	savedPos := l.reader.Position()
 	defer l.reader.SetPosition(savedPos)
 
 	// Move past '{' and skip immediate whitespace
-	l.readChar()
-	l.skipWhitespace()
+	l.reader.ReadChar()
+	l.reader.SkipWhitespace()
 
-	// Empty hex: "{ }"
-	if l.ch() == '}' {
+	// Empty hex: "{ }" or just "{EOF}"
+	if l.reader.Current() == '}' || l.reader.Current() == 0 {
 		return true
-	}
-
-	// Bounded scan ahead for rule structure keywords followed by ':'
-	// Check this first to prioritize rule body detection over tags context
-	startScan := l.reader.Position()
-	for (l.reader.Position()-startScan) < 128 && l.ch() != 0 && l.ch() != '}' {
-		if isLetter(l.ch()) {
-			wordStart := l.position()
-			for isLetter(l.ch()) {
-				l.readChar()
-			}
-			word := l.reader.Slice(wordStart)
-			l.skipWhitespace()
-			if l.ch() == ':' && isRuleKeyword(word) {
-				return false // Regular rule body
-			}
-		} else {
-			l.readChar()
-		}
 	}
 
 	// Context hint: tags before brace (e.g., strings: $a = { ... })
@@ -65,24 +56,258 @@ func (l *Lexer) isHexStringStart() bool {
 		return true
 	}
 
-	// Fast path: First non-space character heuristics
-	// If it looks like hex content or hex operators, treat as hex string immediately.
-	switch ch := l.ch(); ch {
+	// IMPORTANT: If we're in a rule declaration context (after "rule" but before first section),
+	// be more careful about hex string detection
+	if l.isInRuleDeclarationContext() {
+		// Only treat as hex string if it looks like actual hex content
+		// and NOT if it contains rule structure keywords
+		if l.reader.Current() == '}' || l.reader.Current() == 0 {
+			return true // Empty hex string
+		}
+
+		// Look ahead to check for rule structure keywords like "condition:", "meta:", "strings:"
+		quickCheckPos := l.reader.Position()
+		lookaheadLimit := 50            // Only look ahead 50 characters
+		containsSectionKeyword := false // Only look for section declarations with colons
+
+		for i := 0; i < lookaheadLimit && l.reader.Current() != 0; i++ {
+			ch := l.reader.Current()
+			if ch == ':' {
+				// Check what's before the colon
+				contextStart := quickCheckPos
+				if contextStart < 0 {
+					contextStart = 0
+				}
+				contextEnd := l.reader.Position()
+				if contextEnd-contextStart > 20 {
+					contextStart = contextEnd - 20 // Limit context size
+				}
+				context := l.reader.Input()[contextStart:contextEnd]
+
+				// Check for section keywords before colon (condition:, meta:, strings:)
+				if l.containsSectionKeyword(context) {
+					containsSectionKeyword = true
+					break
+				}
+			}
+			if ch == '}' {
+				break
+			}
+			l.reader.ReadChar()
+		}
+
+		// Reset position
+		l.reader.SetPosition(quickCheckPos)
+
+		// If we found section keywords, this is not a hex string
+		if containsSectionKeyword {
+			return false
+		}
+
+		// In rule declaration context, if we don't see section keywords,
+		// be more careful - only treat as hex string if it looks like actual hex content
+		// and NOT if it starts with identifiers that look like rule body content
+		currentChar := l.reader.Current()
+
+		// Check if current position starts with an identifier that might be rule body content
+		if isLetter(currentChar) {
+			// Look ahead to see if this is a rule keyword like "condition", "meta", "strings"
+			identStart := l.reader.Position()
+			identEnd := identStart
+			for identEnd < len(l.reader.Input()) && isLetter(l.reader.Input()[identEnd]) {
+				identEnd++
+			}
+			if identEnd > identStart {
+				ident := l.reader.Input()[identStart:identEnd]
+				// If we see rule keywords (even without colons), this is likely rule body content
+				if ident == sectionKeywordCondition || ident == sectionKeywordMeta || ident == sectionKeywordStrings {
+					// This looks like rule body content, not a hex string
+					return false
+				}
+			}
+		}
+
+		// Only treat as hex string if it looks like actual hex content
+		if isHexDigit(currentChar) || currentChar == '?' || currentChar == '~' {
+			return true
+		}
+
+		// Otherwise, in rule declaration context, don't treat as hex string
+		// unless it's clearly hex content
+		return false
+	}
+
+	// Check if we're in a strings section
+	if l.isInStringsSection() {
+		// In strings section, braces are hex strings unless proven otherwise
+		return true
+	}
+
+	// Check for obvious hex string patterns
+	switch ch := l.reader.Current(); ch {
 	case '?', '~', '(', '[':
 		return true
 	default:
 		if isHexDigit(ch) {
-			// Disambiguate identifiers starting with [a-f] (e.g., "condition")
-			next := l.peekChar()
+			// Look ahead to see if this looks like hex content
+			// Hex strings typically have hex digits, spaces, and special chars
+			next := l.reader.PeekChar()
 			if isHexDigit(next) || next == ' ' || next == '\t' || next == '\n' || next == '\r' || next == '}' || next == '?' || next == '~' || next == '(' || next == '[' {
+				// Additional check: make sure we're not in a rule body
+				// Rule bodies typically start with keywords like "condition", "meta", "strings"
+				if l.looksLikeRuleBody() {
+					return false
+				}
+
+				// Additional context check: if we see numbers like "90 9 19" without hex-specific patterns,
+				// be more cautious - this might be regular arithmetic in a condition
+				if l.looksLikeArithmeticExpression() {
+					return false
+				}
+
 				return true
 			}
 			// Otherwise, could be an identifier; fall through to default
 		}
 	}
 
-	// Default to hex when no rule-structure detected
-	return true
+	// Check for simple case: just "{ }" should be hex string
+	// Look ahead to see if we quickly hit a closing brace
+	quickCheckPos := l.reader.Position()
+	for i := 0; i < 10 && l.reader.Current() != 0 && l.reader.Current() != '}'; i++ {
+		l.reader.ReadChar()
+	}
+	if l.reader.Current() == '}' {
+		// If we hit a closing brace quickly, treat as hex string
+		return true
+	}
+
+	// Reset position and default to NOT hex string for rule bodies
+	l.reader.SetPosition(quickCheckPos)
+	return false
+}
+
+// isInStringsSection checks if the current context appears to be in a strings section
+func (l *Lexer) isInStringsSection() bool {
+	input := l.reader.Input()
+	currentPos := l.reader.Position()
+
+	// Look backwards for "strings:" keyword
+	maxLookback := 500
+	startPos := currentPos - maxLookback
+	if startPos < 0 {
+		startPos = 0
+	}
+
+	// Extract the text before this position for analysis
+	contextText := input[startPos:currentPos]
+
+	// Look for "strings:" pattern
+	return l.containsStringsKeyword(contextText)
+}
+
+// containsStringsKeyword checks if the context contains "strings:" keyword
+func (l *Lexer) containsStringsKeyword(text string) bool {
+	// Look for "strings:" pattern
+	stringsKeyword := "strings"
+	for i := 0; i <= len(text)-len(stringsKeyword); i++ {
+		if text[i:i+len(stringsKeyword)] == stringsKeyword {
+			// Check word boundaries before
+			if i == 0 || !isLetter(text[i-1]) {
+				// Check for colon after (with optional whitespace)
+				after := i + len(stringsKeyword)
+				if after < len(text) {
+					// Skip whitespace after "strings"
+					for after < len(text) && (text[after] == ' ' || text[after] == '\t') {
+						after++
+					}
+					// Should have colon
+					if after < len(text) && text[after] == ':' {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
+}
+
+// looksLikeRuleBody checks if the current context appears to be a rule body
+func (l *Lexer) looksLikeRuleBody() bool {
+	input := l.reader.Input()
+	currentPos := l.reader.Position()
+
+	// Look backwards for rule structure keywords
+	maxLookback := 200
+	startPos := currentPos - maxLookback
+	if startPos < 0 {
+		startPos = 0
+	}
+
+	// Extract the text before this position for analysis
+	contextText := input[startPos:currentPos]
+
+	// Check for rule body keywords
+	return l.containsRuleKeyword(contextText)
+}
+
+// containsRuleKeyword checks if the context contains rule structure keywords
+func (l *Lexer) containsRuleKeyword(text string) bool {
+	// Look for "rule" followed by identifier pattern
+	if len(text) >= 4 {
+		// Check if text ends with "rule" or contains "rule" followed by identifier
+		for i := 0; i <= len(text)-4; i++ {
+			if text[i:i+4] == KeywordRule {
+				// Check word boundaries
+				before := i == 0 || !isLetter(text[i-1])
+				after := i+4 >= len(text) || !isLetter(text[i+4])
+
+				if before && after {
+					// Standalone "rule" keyword
+					return true
+				} else if before && i+4 < len(text) && (text[i+4] == ' ' || text[i+4] == '\t') {
+					// "rule" followed by whitespace - check if there's an identifier after
+					identStart := i + 5
+					for identStart < len(text) && (text[identStart] == ' ' || text[identStart] == '\t') {
+						identStart++
+					}
+					if identStart < len(text) && isLetter(text[identStart]) {
+						// "rule" followed by identifier - this is a rule declaration
+						return true
+					}
+				}
+			}
+		}
+	}
+
+	// Also check for other rule structure keywords, but be more specific
+	// Only treat as rule keywords if they have colons (section declarations)
+	keywords := []string{"condition:", "meta:", "strings:"}
+	for _, keyword := range keywords {
+		if len(text) >= len(keyword) {
+			// Check if keyword appears at the end
+			if text[len(text)-len(keyword):] == keyword {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// containsSectionKeyword checks if context contains section declaration keywords (with colons)
+func (l *Lexer) containsSectionKeyword(text string) bool {
+	// Look for section keywords with colons
+	keywords := []string{"condition:", "meta:", "strings:"}
+	for _, keyword := range keywords {
+		if len(text) >= len(keyword) {
+			// Check if keyword appears at the end
+			if text[len(text)-len(keyword):] == keyword {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // hasTagsBeforeBrace checks if there are tags before the current brace
@@ -157,4 +382,120 @@ func (l *Lexer) skipIdentifierInRange(input string, start, end int) int {
 // isRuleKeyword checks if a word is a YARA rule structure keyword
 func isRuleKeyword(word string) bool {
 	return word == "condition" || word == "meta" || word == "strings"
+}
+
+// looksLikeArithmeticExpression checks if current context appears to be an arithmetic expression
+func (l *Lexer) looksLikeArithmeticExpression() bool {
+	input := l.reader.Input()
+	currentPos := l.reader.Position()
+
+	// Look backwards for arithmetic patterns
+	maxLookback := 100
+	startPos := currentPos - maxLookback
+	if startPos < 0 {
+		startPos = 0
+	}
+
+	// Extract text before this position for analysis
+	contextText := input[startPos:currentPos]
+
+	// Check for arithmetic operators or patterns that suggest this is not a hex string
+	arithmeticPatterns := []string{"==", "!=", ">=", "<=", ">", "<", "+", "-", "*", "/", "and ", " or ", "not ", "condition:", "meta:", "strings:"}
+
+	for _, pattern := range arithmeticPatterns {
+		if len(contextText) >= len(pattern) {
+			// Check if pattern appears near the end of context
+			if len(contextText) >= len(pattern) && contextText[len(contextText)-len(pattern):] == pattern {
+				return true
+			}
+		}
+	}
+
+	// Check for numbers separated by spaces (like "90 9 19") which is more likely arithmetic than hex
+	// when not in a strings section
+	if !l.isInStringsSection() {
+		// Look for pattern of numbers with spaces
+		words := strings.Fields(contextText)
+		if len(words) >= 2 {
+			numberCount := 0
+			for _, word := range words {
+				// Check if word looks like a decimal number (not hex)
+				if l.looksLikeDecimalNumber(word) {
+					numberCount++
+				}
+			}
+			// If we have multiple decimal numbers, likely arithmetic
+			if numberCount >= 2 {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// looksLikeDecimalNumber checks if a string looks like a decimal number (not hex)
+func (l *Lexer) looksLikeDecimalNumber(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
+
+	// Check if all characters are digits (no hex letters A-F)
+	for _, ch := range s {
+		if ch < '0' || ch > '9' {
+			return false
+		}
+	}
+
+	return true
+}
+
+// isInRuleDeclarationContext checks if we're in a rule declaration (after "rule" but before first section)
+func (l *Lexer) isInRuleDeclarationContext() bool {
+	input := l.reader.Input()
+	currentPos := l.reader.Position()
+
+	// Look backwards for "rule" keyword
+	maxLookback := 200
+	startPos := currentPos - maxLookback
+	if startPos < 0 {
+		startPos = 0
+	}
+
+	// Extract text before this position for analysis
+	contextText := input[startPos:currentPos]
+
+	// Look for "rule" keyword
+	ruleFound := false
+	for i := 0; i <= len(contextText)-len(KeywordRule); i++ {
+		if contextText[i:i+len(KeywordRule)] == KeywordRule {
+			// Check word boundaries
+			if i == 0 || !isLetter(contextText[i-1]) {
+				after := i + len(KeywordRule)
+				if after >= len(contextText) || !isLetter(contextText[after]) {
+					ruleFound = true
+					break
+				}
+			}
+		}
+	}
+
+	if !ruleFound {
+		return false
+	}
+
+	// Now check if we've seen a section keyword (meta, strings, condition) after "rule"
+	sectionKeywords := []string{"meta", "strings", "condition"}
+	for _, keyword := range sectionKeywords {
+		if len(contextText) >= len(keyword) {
+			// Check if keyword appears after "rule"
+			keywordPos := strings.LastIndex(contextText, keyword)
+			if keywordPos > strings.LastIndex(contextText, KeywordRule) {
+				// Found section keyword after rule keyword
+				return false
+			}
+		}
+	}
+
+	return true
 }

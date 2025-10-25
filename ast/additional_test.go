@@ -1,4 +1,4 @@
-// Package ast provides additional tests to improve code coverage.
+// Package ast provides additional tests for comprehensive coverage.
 package ast
 
 import (
@@ -8,8 +8,8 @@ import (
 	"github.com/cawalch/go-yara/token"
 )
 
-// TestASTEdgeCases tests edge cases in AST which currently have low coverage
-func TestASTEdgeCases(t *testing.T) {
+// TestASTEdgeCases tests edge cases in AST for comprehensive coverage
+func TestASTEdgeCasesAdditional(t *testing.T) {
 	// Test Rule methods
 	t.Run("rule_methods", func(t *testing.T) {
 		rule := &Rule{
@@ -305,7 +305,7 @@ func TestASTEdgeCases(t *testing.T) {
 }
 
 // TestASTVisitor tests visitor pattern implementation
-func TestASTVisitor(t *testing.T) {
+func TestASTVisitorAdditional(t *testing.T) {
 	// Create a simple visitor that counts nodes
 	type countingVisitor struct {
 		*BaseVisitor
@@ -381,7 +381,7 @@ func TestASTVisitor(t *testing.T) {
 }
 
 // TestASTBuilder tests builder pattern implementation
-func TestASTBuilder(t *testing.T) {
+func TestASTBuilderAdditional(t *testing.T) {
 	// Test creating a rule with the builder
 	builder := NewBuilder()
 	pos := token.Position{Line: 1, Column: 1}
@@ -545,7 +545,7 @@ func TestASTBuilder(t *testing.T) {
 }
 
 // TestASTStringModifiers tests string modifier types
-func TestASTStringModifiers(t *testing.T) {
+func TestASTStringModifiersAdditional(t *testing.T) {
 	// Test all string modifier types
 	modifiers := []StringModifierType{
 		StringModifierNocase,
@@ -572,7 +572,7 @@ func TestASTStringModifiers(t *testing.T) {
 }
 
 // TestASTRuleModifiers tests rule modifier types
-func TestASTRuleModifiers(t *testing.T) {
+func TestASTRuleModifiersAdditional(t *testing.T) {
 	// Test all rule modifier types
 	modifiers := []Modifier{
 		ModifierPrivate,
