@@ -252,6 +252,16 @@ func (v *Validator) validateExpression(expr ast.Expression) (*TypeInfo, []error)
 		// Of expressions always return boolean
 		return &TypeInfo{DataType: TypeBoolean}, errors
 
+	case *ast.FunctionCall:
+		// Validate function arguments
+		for _, arg := range e.Args {
+			_, argErrs := v.validateExpression(arg)
+			errors = append(errors, argErrs...)
+		}
+
+		// Data type functions return integers
+		return &TypeInfo{DataType: TypeInteger, IntegerType: Uint64Type}, errors
+
 	case *ast.ForLoop:
 		// Validate the range expression
 		_, rangeErrs := v.validateExpression(e.Range)
@@ -406,5 +416,11 @@ func (v *Validator) VisitForLoop(forLoop *ast.ForLoop) interface{} {
 // VisitOfExpression implements the Visitor pattern for OfExpression nodes
 func (v *Validator) VisitOfExpression(ofExpression *ast.OfExpression) interface{} {
 	// OfExpression validation is handled in validateExpression
+	return nil
+}
+
+// VisitFunctionCall implements the Visitor pattern for FunctionCall nodes
+func (v *Validator) VisitFunctionCall(functionCall *ast.FunctionCall) interface{} {
+	// FunctionCall validation is handled in validateExpression
 	return nil
 }

@@ -1264,11 +1264,11 @@ func (p *Parser) parseFunctionCall(pos token.Position) (ast.Expression, error) {
 				return nil, fmt.Errorf("expected ')' after function argument")
 			}
 
-			// For now, create a binary operation to represent function call
-			// This is a temporary solution until we have proper FunctionCall AST nodes
-			return p.builder.BinaryOp(pos, p.builder.Identifier(pos, funcName), token.LPAREN, arg), nil
+			// Create a proper FunctionCall node
+			args := []ast.Expression{arg}
+			return p.builder.FunctionCall(pos, funcName, args), nil
 		} else {
-			// Simple function call without arguments
+			// Simple function call without arguments (like filesize, entrypoint)
 			return p.builder.Identifier(pos, funcName), nil
 		}
 	}

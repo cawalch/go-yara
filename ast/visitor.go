@@ -21,6 +21,7 @@ type Visitor interface {
 	VisitArrayIndex(*ArrayIndex) interface{}
 	VisitForLoop(*ForLoop) interface{}
 	VisitOfExpression(*OfExpression) interface{}
+	VisitFunctionCall(*FunctionCall) interface{}
 	// Add more as needed
 }
 
@@ -83,3 +84,6 @@ func (v *BaseVisitor) VisitForLoop(n *ForLoop) interface{} { return nil }
 
 // VisitOfExpression visits an OfExpression node
 func (v *BaseVisitor) VisitOfExpression(n *OfExpression) interface{} { return nil }
+
+// VisitFunctionCall visits a FunctionCall node
+func (v *BaseVisitor) VisitFunctionCall(n *FunctionCall) interface{} { return nil }

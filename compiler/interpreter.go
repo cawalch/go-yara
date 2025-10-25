@@ -29,6 +29,18 @@ const (
 	ValueTypeUndefined
 )
 
+// String constants for quantifiers
+const (
+	// QuantifierAny represents the "any" quantifier
+	QuantifierAny = "any"
+	// QuantifierAll represents the "all" quantifier
+	QuantifierAll = "all"
+	// QuantifierThem represents the "them" quantifier
+	QuantifierThem = "them"
+	// QuantifierNone represents the "none" quantifier
+	QuantifierNone = "none"
+)
+
 // Interpreter represents a bytecode interpreter for YARA rules
 type Interpreter struct {
 	bytecode     []byte
@@ -514,40 +526,40 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 		return i.executeStringComparison(func(a, b string) bool { return a >= b })
 
 	case OP_INT8:
-		return i.executeReadInt(1, false)
+		return i.executeDataTypeFunction(OP_INT8)
 
 	case OP_INT16:
-		return i.executeReadInt(2, false)
+		return i.executeDataTypeFunction(OP_INT16)
 
 	case OP_INT32:
-		return i.executeReadInt(4, false)
+		return i.executeDataTypeFunction(OP_INT32)
 
 	case OP_UINT8:
-		return i.executeReadInt(1, true)
+		return i.executeDataTypeFunction(OP_UINT8)
 
 	case OP_UINT16:
-		return i.executeReadInt(2, true)
+		return i.executeDataTypeFunction(OP_UINT16)
 
 	case OP_UINT32:
-		return i.executeReadInt(4, true)
+		return i.executeDataTypeFunction(OP_UINT32)
 
 	case OP_INT8BE:
-		return i.executeReadIntBE(1, false)
+		return i.executeDataTypeFunction(OP_INT8BE)
 
 	case OP_INT16BE:
-		return i.executeReadIntBE(2, false)
+		return i.executeDataTypeFunction(OP_INT16BE)
 
 	case OP_INT32BE:
-		return i.executeReadIntBE(4, false)
+		return i.executeDataTypeFunction(OP_INT32BE)
 
 	case OP_UINT8BE:
-		return i.executeReadIntBE(1, true)
+		return i.executeDataTypeFunction(OP_UINT8BE)
 
 	case OP_UINT16BE:
-		return i.executeReadIntBE(2, true)
+		return i.executeDataTypeFunction(OP_UINT16BE)
 
 	case OP_UINT32BE:
-		return i.executeReadIntBE(4, true)
+		return i.executeDataTypeFunction(OP_UINT32BE)
 
 	case OP_OFFSET:
 		// Get offset of Nth match for a pattern
@@ -695,6 +707,98 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 			} else {
 				i.push(Value{Type: ValueTypeInt, IntVal: 0})
 			}
+		}
+		return nil
+
+	case OP_OF:
+		// "of" expression: evaluates quantifier conditions like "any of them", "1 of ($a, $b)"
+		// Stack: [count, strings_set] -> [result]
+		if len(i.stack) >= 2 {
+			stringsExpr := i.pop()
+			countExpr := i.pop()
+
+			// Handle different quantifier types
+			var requiredCount int64
+			var actualCount int64
+
+			// Determine required count based on quantifier
+			if countExpr.Type == ValueTypeString {
+				switch countExpr.StringVal {
+				case QuantifierAny:
+					requiredCount = 1
+				case QuantifierAll:
+					// Count total strings in the set
+					if stringsExpr.Type == ValueTypeString && stringsExpr.StringVal == QuantifierThem {
+						// Count all defined strings
+						actualCount = 0
+						for pattern := range i.matchContext.Matches {
+							if matches := i.matchContext.Matches[pattern]; len(matches) > 0 {
+								actualCount++
+							}
+						}
+						i.push(Value{Type: ValueTypeInt, IntVal: 1})
+						return nil
+					}
+					requiredCount = 0 // Will be set below
+				case QuantifierNone:
+					requiredCount = 0
+				default:
+					// Should be a numeric count
+					requiredCount = countExpr.IntVal
+				}
+			} else {
+				requiredCount = countExpr.IntVal
+			}
+
+			// Count actual matches
+			if stringsExpr.Type == ValueTypeString && stringsExpr.StringVal == QuantifierThem {
+				// Count all strings that have matches
+				actualCount = 0
+				for pattern := range i.matchContext.Matches {
+					if matches := i.matchContext.Matches[pattern]; len(matches) > 0 {
+						actualCount++
+					}
+				}
+			} else {
+				// For specific string lists (not implemented yet)
+				actualCount = 0
+			}
+
+			// Evaluate the condition
+			var result int64
+			if countExpr.Type == ValueTypeString {
+				switch countExpr.StringVal {
+				case QuantifierAny:
+					result = 0
+					if actualCount >= 1 {
+						result = 1
+					}
+				case QuantifierAll:
+					// For "all", we need to check if all strings matched
+					// This is simplified - full implementation would need to track total string count
+					result = 0
+					if actualCount >= 1 {
+						result = 1
+					}
+				case QuantifierNone:
+					result = 1
+					if actualCount >= 1 {
+						result = 0
+					}
+				default:
+					result = 0
+				}
+			} else {
+				// Numeric count: check if actual count >= required count
+				result = 0
+				if actualCount >= requiredCount {
+					result = 1
+				}
+			}
+
+			i.push(Value{Type: ValueTypeInt, IntVal: result})
+		} else {
+			i.push(Value{Type: ValueTypeInt, IntVal: 0})
 		}
 		return nil
 
@@ -853,7 +957,11 @@ func (i *Interpreter) executeStringComparison(op func(string, string) bool) erro
 
 // readIntFromData reads an integer from data using the specified byte order
 func (i *Interpreter) readIntFromData(size int, unsigned bool, bigEndian bool) (int64, error) {
+	if len(i.stack) == 0 {
+		return 0, fmt.Errorf("stack underflow")
+	}
 	off := int(i.stack[len(i.stack)-1].IntVal)
+	fmt.Printf("DEBUG: readIntFromData size=%d, unsigned=%v, bigEndian=%v, offset=%d, data len=%d\n", size, unsigned, bigEndian, off, len(i.matchContext.Data))
 	if off < 0 || off+size > len(i.matchContext.Data) {
 		return 0, fmt.Errorf("out of bounds")
 	}
@@ -929,7 +1037,61 @@ func (i *Interpreter) executeReadInt(size int, unsigned bool) error {
 	return i.executeReadIntHelper(size, unsigned, false)
 }
 
-// executeReadIntBE reads a big-endian integer from data
-func (i *Interpreter) executeReadIntBE(size int, unsigned bool) error {
-	return i.executeReadIntHelper(size, unsigned, true)
+// executeDataTypeFunction executes data type function calls (uint8, uint16, etc.)
+func (i *Interpreter) executeDataTypeFunction(opcode Opcode) error {
+	// Data type functions read integers from file data at the offset on stack
+	// Stack: [offset] -> [value_at_offset]
+	if len(i.stack) < 1 {
+		return fmt.Errorf("stack underflow for data type function")
+	}
+
+	offset := i.pop()
+	if offset.Type == ValueTypeUndefined {
+		i.push(Value{Type: ValueTypeUndefined})
+		return nil
+	}
+
+	// Determine function parameters
+	var size int
+	var unsigned bool
+	var bigEndian bool
+
+	switch opcode {
+	case OP_INT8:
+		size, unsigned, bigEndian = 1, false, false
+	case OP_INT16:
+		size, unsigned, bigEndian = 2, false, false
+	case OP_INT32:
+		size, unsigned, bigEndian = 4, false, false
+	case OP_UINT8:
+		size, unsigned, bigEndian = 1, true, false
+	case OP_UINT16:
+		size, unsigned, bigEndian = 2, true, false
+	case OP_UINT32:
+		size, unsigned, bigEndian = 4, true, false
+	case OP_INT8BE:
+		size, unsigned, bigEndian = 1, false, true
+	case OP_INT16BE:
+		size, unsigned, bigEndian = 2, false, true
+	case OP_INT32BE:
+		size, unsigned, bigEndian = 4, false, true
+	case OP_UINT8BE:
+		size, unsigned, bigEndian = 1, true, true
+	case OP_UINT16BE:
+		size, unsigned, bigEndian = 2, true, true
+	case OP_UINT32BE:
+		size, unsigned, bigEndian = 4, true, true
+	default:
+		return fmt.Errorf("unsupported data type function opcode: %s", opcode)
+	}
+
+	// Read the integer value from data
+	val, err := i.readIntFromData(size, unsigned, bigEndian)
+	if err != nil {
+		i.push(Value{Type: ValueTypeUndefined})
+		return nil
+	}
+
+	i.push(Value{Type: ValueTypeInt, IntVal: val})
+	return nil
 }

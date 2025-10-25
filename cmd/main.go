@@ -319,8 +319,9 @@ func runExecuteMode(content string, dataFile string, filename string) {
 
 		// Execute bytecode with match context
 		interp := compiler.NewInterpreter(rule.GetBytecode())
-		// Set file size in match context
+		// Set file size and data in match context
 		interp.GetMatchContext().FileSize = int64(len(data))
+		interp.GetMatchContext().Data = data
 
 		// Populate match context with both AC and regex-derived matches
 		for _, e := range printEntries {
