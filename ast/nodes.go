@@ -294,3 +294,22 @@ func (o *OfExpression) expression() {}
 func (o *OfExpression) Accept(v Visitor) interface{} {
 	return v.VisitOfExpression(o)
 }
+
+// FunctionCall represents a function call expression
+type FunctionCall struct {
+	Pos      token.Position
+	Function string
+	Args     []Expression
+}
+
+func (f *FunctionCall) node() {}
+
+// Position returns position of FunctionCall node
+func (f *FunctionCall) Position() token.Position { return f.Pos }
+
+func (f *FunctionCall) expression() {}
+
+// Accept implements the Visitor pattern for FunctionCall
+func (f *FunctionCall) Accept(v Visitor) interface{} {
+	return v.VisitFunctionCall(f)
+}

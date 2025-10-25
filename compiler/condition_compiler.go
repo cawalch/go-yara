@@ -50,8 +50,12 @@ func (cc *ConditionCompiler) compileExpression(expr ast.Expression) error {
 		return cc.compileBinaryOp(e)
 	case *ast.UnaryOp:
 		return cc.compileUnaryOp(e)
+	case *ast.OfExpression:
+		return cc.compileOfExpression(e)
+	case *ast.FunctionCall:
+		return cc.compileFunctionCall(e)
 	default:
-		return fmt.Errorf("unsupported expression type")
+		return fmt.Errorf("unsupported expression type: %T", expr)
 	}
 }
 
@@ -151,13 +155,7 @@ func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 		// Quantifier keywords used in expressions like "any of them"
 		// These are handled as part of the OF operation, so just push a placeholder
 		cc.emitter.EmitOpcode(OP_PUSH_8, ident.Pos.Line, ident.Pos.Column)
-		// Data type functions
-	case "uint8", "uint16", "uint32", "uint8be", "uint16be", "uint32be":
-		// For now, emit a placeholder - these need proper implementation
-		cc.emitter.EmitOpcode(OP_PUSH_8, ident.Pos.Line, ident.Pos.Column)
-	case "int8", "int16", "int32", "int8be", "int16be", "int32be":
-		// For now, emit a placeholder - these need proper implementation
-		cc.emitter.EmitOpcode(OP_PUSH_8, ident.Pos.Line, ident.Pos.Column)
+
 	default:
 		return fmt.Errorf("undefined identifier: %s", ident.Name)
 	}
@@ -238,10 +236,6 @@ func (cc *ConditionCompiler) compileBinaryOp(binOp *ast.BinaryOp) error {
 		opcode = OP_MATCHES
 	case token.OF:
 		opcode = OP_OF
-	case token.LPAREN:
-		// Function call - for now, treat as no-op since we already handled the function identifier
-		// This is a temporary solution until we have proper function call AST nodes
-		return nil
 	default:
 		return fmt.Errorf("unsupported binary operator: %s", binOp.Op)
 	}
@@ -483,5 +477,72 @@ func (cc *ConditionCompiler) printExpressionRecursive(expr ast.Expression, depth
 	case *ast.UnaryOp:
 		fmt.Printf("%sUnaryOp(%s)\n", indent, e.Op)
 		cc.printExpressionRecursive(e.Right, depth+1)
+	case *ast.OfExpression:
+		fmt.Printf("%sOfExpression\n", indent)
+		cc.printExpressionRecursive(e.Count, depth+1)
+		cc.printExpressionRecursive(e.Strings, depth+1)
 	}
+}
+
+// compileOfExpression compiles an "of" expression (e.g., "any of them", "1 of ($a, $b)")
+func (cc *ConditionCompiler) compileOfExpression(ofExpr *ast.OfExpression) error {
+	// Compile count expression (e.g., "any", "1", "2")
+	if err := cc.compileExpression(ofExpr.Count); err != nil {
+		return fmt.Errorf("compiling count expression in of-expression: %w", err)
+	}
+
+	// Compile strings expression (e.g., "them", "($a, $b, $c)")
+	if err := cc.compileExpression(ofExpr.Strings); err != nil {
+		return fmt.Errorf("compiling strings expression in of-expression: %w", err)
+	}
+
+	// Emit OP_OF opcode
+	cc.emitter.EmitOpcode(OP_OF, ofExpr.Pos.Line, ofExpr.Pos.Column)
+	return nil
+}
+
+// compileFunctionCall compiles a function call expression (e.g., "uint32(0)", "int16be(10)")
+func (cc *ConditionCompiler) compileFunctionCall(call *ast.FunctionCall) error {
+	// Compile function arguments first (in reverse order for stack-based evaluation)
+	for i := len(call.Args) - 1; i >= 0; i-- {
+		if err := cc.compileExpression(call.Args[i]); err != nil {
+			return fmt.Errorf("compiling function argument %d: %w", i, err)
+		}
+	}
+
+	// Map function names to opcodes
+	var opcode Opcode
+	switch call.Function {
+	case "uint8":
+		opcode = OP_UINT8
+	case "uint16":
+		opcode = OP_UINT16
+	case "uint32":
+		opcode = OP_UINT32
+	case "uint8be":
+		opcode = OP_UINT8BE
+	case "uint16be":
+		opcode = OP_UINT16BE
+	case "uint32be":
+		opcode = OP_UINT32BE
+	case "int8":
+		opcode = OP_INT8
+	case "int16":
+		opcode = OP_INT16
+	case "int32":
+		opcode = OP_INT32
+	case "int8be":
+		opcode = OP_INT8BE
+	case "int16be":
+		opcode = OP_INT16BE
+	case "int32be":
+		opcode = OP_INT32BE
+	default:
+		return fmt.Errorf("unsupported function: %s", call.Function)
+	}
+
+	// Emit the function call opcode
+	fmt.Printf("DEBUG: Emitting opcode: %s for function %s\n", opcode, call.Function)
+	cc.emitter.EmitOpcode(opcode, call.Pos.Line, call.Pos.Column)
+	return nil
 }

@@ -187,3 +187,12 @@ func (b *Builder) OfExpression(pos token.Position, countExpr, stringsExpr Expres
 		Strings: stringsExpr,
 	}
 }
+
+// FunctionCall creates a new FunctionCall node
+func (b *Builder) FunctionCall(pos token.Position, function string, args []Expression) *FunctionCall {
+	return &FunctionCall{
+		Pos:      pos,
+		Function: function,
+		Args:     args,
+	}
+}

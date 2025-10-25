@@ -407,3 +407,8 @@ func (v *CountingVisitor) VisitOfExpression(n *OfExpression) any {
 	v.count++
 	return nil
 }
+
+func (v *CountingVisitor) VisitFunctionCall(n *FunctionCall) any {
+	v.count++
+	return nil
+}

@@ -59,6 +59,7 @@ func (v *TestVisitor) VisitStringLength(n *StringLength) any     { return nil }
 func (v *TestVisitor) VisitArrayIndex(n *ArrayIndex) any         { return nil }
 func (v *TestVisitor) VisitForLoop(n *ForLoop) any               { return nil }
 func (v *TestVisitor) VisitOfExpression(n *OfExpression) any     { return nil }
+func (v *TestVisitor) VisitFunctionCall(n *FunctionCall) any     { return nil }
 
 func TestBuilderUtilities(t *testing.T) {
 	builder := NewBuilder()
