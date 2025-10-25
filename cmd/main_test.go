@@ -110,6 +110,11 @@ func TestExecuteModeIntegration(t *testing.T) {
 		t.Fatalf("Failed to create data file: %v", err)
 	}
 
+	// Change to temp dir to use relative paths
+	origDir, _ := os.Getwd()
+	defer os.Chdir(origDir)
+	os.Chdir(tmpDir)
+
 	// Test that runExecuteMode doesn't panic
 	t.Run("execute_mode_with_matches", func(t *testing.T) {
 		defer func() {
@@ -117,7 +122,7 @@ func TestExecuteModeIntegration(t *testing.T) {
 				t.Errorf("runExecuteMode panicked: %v", r)
 			}
 		}()
-		runExecuteMode(ruleContent, dataFile)
+		runExecuteMode(ruleContent, "data.txt")
 	})
 }
 
@@ -152,6 +157,11 @@ func TestExecuteModeMultiplePatterns(t *testing.T) {
 		t.Fatalf("Failed to create data file: %v", err)
 	}
 
+	// Change to temp dir to use relative paths
+	origDir, _ := os.Getwd()
+	defer os.Chdir(origDir)
+	os.Chdir(tmpDir)
+
 	// Test that runExecuteMode handles multiple patterns
 	t.Run("multiple_patterns", func(t *testing.T) {
 		defer func() {
@@ -159,7 +169,7 @@ func TestExecuteModeMultiplePatterns(t *testing.T) {
 				t.Errorf("runExecuteMode panicked with multiple patterns: %v", r)
 			}
 		}()
-		runExecuteMode(ruleContent, dataFile)
+		runExecuteMode(ruleContent, "data.txt")
 	})
 }
 
@@ -192,8 +202,13 @@ func TestExecuteMode_RegexInlineFlagsI(t *testing.T) {
 		t.Fatalf("Failed to create data file: %v", err)
 	}
 
+	// Change to temp dir to use relative paths
+	origDir, _ := os.Getwd()
+	defer os.Chdir(origDir)
+	os.Chdir(tmpDir)
+
 	out := captureOutput(func() {
-		runExecuteMode(rule, dataFile)
+		runExecuteMode(rule, "data.txt")
 	})
 
 	// Expect at least one match and the specific offset/length
@@ -222,8 +237,13 @@ func TestExecuteMode_RegexInlineFlagsS(t *testing.T) {
 		t.Fatalf("Failed to create data file: %v", err)
 	}
 
+	// Change to temp dir to use relative paths
+	origDir, _ := os.Getwd()
+	defer os.Chdir(origDir)
+	os.Chdir(tmpDir)
+
 	out := captureOutput(func() {
-		runExecuteMode(rule, dataFile)
+		runExecuteMode(rule, "data.txt")
 	})
 
 	if !strings.Contains(out, "Pattern matches: 1") {
@@ -251,8 +271,13 @@ func TestExecuteMode_RegexEmptyMatch_Scan(t *testing.T) {
 		t.Fatalf("Failed to create data file: %v", err)
 	}
 
+	// Change to temp dir to use relative paths
+	origDir, _ := os.Getwd()
+	defer os.Chdir(origDir)
+	os.Chdir(tmpDir)
+
 	out := captureOutput(func() {
-		runExecuteMode(rule, dataFile)
+		runExecuteMode(rule, "empty.txt")
 	})
 
 	if !strings.Contains(out, "Pattern matches: 1") {
@@ -280,8 +305,13 @@ func TestExecuteMode_Count_Regex(t *testing.T) {
 		t.Fatalf("Failed to create data file: %v", err)
 	}
 
+	// Change to temp dir to use relative paths
+	origDir, _ := os.Getwd()
+	defer os.Chdir(origDir)
+	os.Chdir(tmpDir)
+
 	out := captureOutput(func() {
-		runExecuteMode(rule, dataFile)
+		runExecuteMode(rule, "data.txt")
 	})
 
 	if !strings.Contains(out, "Result: MATCH") {
@@ -306,8 +336,13 @@ func TestExecuteMode_Offset_Regex(t *testing.T) {
 		t.Fatalf("Failed to create data file: %v", err)
 	}
 
+	// Change to temp dir to use relative paths
+	origDir, _ := os.Getwd()
+	defer os.Chdir(origDir)
+	os.Chdir(tmpDir)
+
 	out := captureOutput(func() {
-		runExecuteMode(rule, dataFile)
+		runExecuteMode(rule, "data.txt")
 	})
 
 	if !strings.Contains(out, "Result: MATCH") {
@@ -332,8 +367,13 @@ func TestExecuteMode_Count_String(t *testing.T) {
 		t.Fatalf("Failed to create data file: %v", err)
 	}
 
+	// Change to temp dir to use relative paths
+	origDir, _ := os.Getwd()
+	defer os.Chdir(origDir)
+	os.Chdir(tmpDir)
+
 	out := captureOutput(func() {
-		runExecuteMode(rule, dataFile)
+		runExecuteMode(rule, "data.txt")
 	})
 
 	if !strings.Contains(out, "Result: MATCH") {
@@ -358,11 +398,82 @@ func TestExecuteMode_Offset_String(t *testing.T) {
 		t.Fatalf("Failed to create data file: %v", err)
 	}
 
+	// Change to temp dir to use relative paths
+	origDir, _ := os.Getwd()
+	defer os.Chdir(origDir)
+	os.Chdir(tmpDir)
+
 	out := captureOutput(func() {
-		runExecuteMode(rule, dataFile)
+		runExecuteMode(rule, "data.txt")
 	})
 
 	if !strings.Contains(out, "Result: MATCH") {
 		t.Fatalf("expected MATCH for @$a == 4 (string), got output:\n%s", out)
+	}
+}
+
+// TestRunLexerMode tests the lexer mode
+func TestRunLexerMode(t *testing.T) {
+	content := `rule test {
+	   strings:
+	       $a = "hello"
+	   condition:
+	       $a
+}`
+
+	out := captureOutput(func() {
+		runLexerMode(content)
+	})
+
+	if !strings.Contains(out, "Successfully lexed with no errors!") {
+		t.Fatalf("expected successful lexing, got output:\n%s", out)
+	}
+	if !strings.Contains(out, "IDENTIFIER") {
+		t.Fatalf("expected IDENTIFIER token, got output:\n%s", out)
+	}
+}
+
+// TestRunParserMode tests the parser mode
+func TestRunParserMode(t *testing.T) {
+	content := `rule test {
+	   strings:
+	       $a = "hello"
+	   condition:
+	       $a
+}`
+
+	out := captureOutput(func() {
+		runParserMode(content)
+	})
+
+	if !strings.Contains(out, "Successfully parsed!") {
+		t.Fatalf("expected successful parsing, got output:\n%s", out)
+	}
+	if !strings.Contains(out, "Program contains 1 rules") {
+		t.Fatalf("expected 1 rule, got output:\n%s", out)
+	}
+}
+
+// TestRunCompileMode tests the compile mode
+func TestRunCompileMode(t *testing.T) {
+	content := `rule test {
+	   strings:
+	       $a = "hello"
+	   condition:
+	       $a
+}`
+
+	out := captureOutput(func() {
+		runCompileMode(content)
+	})
+
+	if !strings.Contains(out, "Parser: Successfully parsed 1 rules") {
+		t.Fatalf("expected successful parsing in compile mode, got output:\n%s", out)
+	}
+	if !strings.Contains(out, "Semantic analysis: Valid") {
+		t.Fatalf("expected valid semantic analysis, got output:\n%s", out)
+	}
+	if !strings.Contains(out, "Compilation: Successfully compiled 1 rules") {
+		t.Fatalf("expected successful compilation, got output:\n%s", out)
 	}
 }

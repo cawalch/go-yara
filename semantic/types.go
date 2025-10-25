@@ -357,7 +357,10 @@ func InferTypeFromBinaryOp(left *TypeInfo, op token.TokenType, right *TypeInfo) 
 
 	case token.CONTAINS, token.ICONTAINS, token.STARTSWITH, token.ENDSWITH,
 		token.ISTARTSWITH, token.IENDSWITH, token.IEQUALS, token.MATCHES:
-		if !left.IsString() || !right.IsString() {
+		// In YARA, string operations work with:
+		// - Left: string identifier (boolean type when used in conditions)
+		// - Right: string literal or regex pattern
+		if (!left.IsString() && left.DataType != TypeBoolean) || !right.IsString() {
 			return nil, fmt.Errorf("string operations require string operands")
 		}
 		return &TypeInfo{DataType: TypeBoolean}, nil
@@ -365,6 +368,11 @@ func InferTypeFromBinaryOp(left *TypeInfo, op token.TokenType, right *TypeInfo) 
 	case token.OF:
 		// Quantifier expressions (all/any/none of them) return boolean
 		// Left operand is the quantifier (all/any/none), right is the target (them or pattern)
+		return &TypeInfo{DataType: TypeBoolean}, nil
+
+	case token.COLON:
+		// COLON is used in "for" quantifiers like "for any of them : ($)"
+		// The result should be boolean
 		return &TypeInfo{DataType: TypeBoolean}, nil
 
 	case token.LPAREN:

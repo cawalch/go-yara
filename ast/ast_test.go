@@ -41,17 +41,24 @@ func (v *TestVisitor) VisitRule(r *Rule) any {
 }
 
 // Implement other visitor methods...
-func (v *TestVisitor) VisitProgram(n *Program) any           { return nil }
-func (v *TestVisitor) VisitMeta(n *Meta) any                 { return nil }
-func (v *TestVisitor) VisitString(n *String) any             { return nil }
-func (v *TestVisitor) VisitCondition(n *Condition) any       { return nil }
-func (v *TestVisitor) VisitBinaryOp(n *BinaryOp) any         { return nil }
-func (v *TestVisitor) VisitUnaryOp(n *UnaryOp) any           { return nil }
-func (v *TestVisitor) VisitIdentifier(n *Identifier) any     { return nil }
-func (v *TestVisitor) VisitLiteral(n *Literal) any           { return nil }
-func (v *TestVisitor) VisitTextString(n *TextString) any     { return nil }
-func (v *TestVisitor) VisitHexString(n *HexString) any       { return nil }
-func (v *TestVisitor) VisitRegexPattern(n *RegexPattern) any { return nil }
+func (v *TestVisitor) VisitProgram(n *Program) any               { return nil }
+func (v *TestVisitor) VisitMeta(n *Meta) any                     { return nil }
+func (v *TestVisitor) VisitString(n *String) any                 { return nil }
+func (v *TestVisitor) VisitCondition(n *Condition) any           { return nil }
+func (v *TestVisitor) VisitBinaryOp(n *BinaryOp) any             { return nil }
+func (v *TestVisitor) VisitUnaryOp(n *UnaryOp) any               { return nil }
+func (v *TestVisitor) VisitIdentifier(n *Identifier) any         { return nil }
+func (v *TestVisitor) VisitLiteral(n *Literal) any               { return nil }
+func (v *TestVisitor) VisitTextString(n *TextString) any         { return nil }
+func (v *TestVisitor) VisitHexString(n *HexString) any           { return nil }
+func (v *TestVisitor) VisitRegexPattern(n *RegexPattern) any     { return nil }
+func (v *TestVisitor) VisitGlobalVariable(n *GlobalVariable) any { return nil }
+func (v *TestVisitor) VisitImport(n *Import) any                 { return nil }
+func (v *TestVisitor) VisitInclude(n *Include) any               { return nil }
+func (v *TestVisitor) VisitStringLength(n *StringLength) any     { return nil }
+func (v *TestVisitor) VisitArrayIndex(n *ArrayIndex) any         { return nil }
+func (v *TestVisitor) VisitForLoop(n *ForLoop) any               { return nil }
+func (v *TestVisitor) VisitOfExpression(n *OfExpression) any     { return nil }
 
 func TestBuilderUtilities(t *testing.T) {
 	builder := NewBuilder()
@@ -64,11 +71,20 @@ func TestBuilderUtilities(t *testing.T) {
 	if binOp.Op != token.PLUS {
 		t.Errorf("expected PLUS operator, got %v", binOp.Op)
 	}
-	if binOp.Left.(*Identifier).Name != "a" {
-		t.Errorf("expected left operand 'a', got %s", binOp.Left.(*Identifier).Name)
+	leftIdent, ok := binOp.Left.(*Identifier)
+	if !ok {
+		t.Fatalf("expected *Identifier for left operand, got %T", binOp.Left)
 	}
-	if binOp.Right.(*Identifier).Name != "b" {
-		t.Errorf("expected right operand 'b', got %s", binOp.Right.(*Identifier).Name)
+	if leftIdent.Name != "a" {
+		t.Errorf("expected left operand 'a', got %s", leftIdent.Name)
+	}
+
+	rightIdent, ok := binOp.Right.(*Identifier)
+	if !ok {
+		t.Fatalf("expected *Identifier for right operand, got %T", binOp.Right)
+	}
+	if rightIdent.Name != "b" {
+		t.Errorf("expected right operand 'b', got %s", rightIdent.Name)
 	}
 }
 
@@ -116,13 +132,133 @@ func TestStringNode(t *testing.T) {
 	if str.Identifier != "$a" {
 		t.Errorf("expected identifier '$a', got %s", str.Identifier)
 	}
-	if str.Pattern.(*TextString).Value != "test" {
-		t.Errorf("expected pattern 'test', got %s", str.Pattern.(*TextString).Value)
+	textStr, ok := str.Pattern.(*TextString)
+	if !ok {
+		t.Fatalf("expected *TextString for pattern, got %T", str.Pattern)
+	}
+	if textStr.Value != "test" {
+		t.Errorf("expected pattern 'test', got %s", textStr.Value)
 	}
 	if len(str.Modifiers) != 1 {
 		t.Errorf("expected 1 modifier, got %d", len(str.Modifiers))
 	}
 	if str.Modifiers[0].Type != StringModifierNocase {
 		t.Errorf("expected nocase modifier, got %v", str.Modifiers[0].Type)
+	}
+}
+
+func TestMetaNode(t *testing.T) {
+	builder := NewBuilder()
+
+	meta := builder.Meta(token.Position{Line: 1, Column: 1}, "author", "test")
+
+	if meta.Key != "author" {
+		t.Errorf("expected key 'author', got %s", meta.Key)
+	}
+	if meta.Value != "test" {
+		t.Errorf("expected value 'test', got %v", meta.Value)
+	}
+}
+
+func TestConditionNode(t *testing.T) {
+	builder := NewBuilder()
+
+	expr := builder.Literal(token.Position{Line: 1, Column: 1}, token.TRUE, true)
+	condition := builder.Condition(token.Position{Line: 1, Column: 1}, expr)
+
+	literal, ok := condition.Expression.(*Literal)
+	if !ok {
+		t.Fatalf("expected *Literal for expression, got %T", condition.Expression)
+	}
+	if literal.Value != true {
+		t.Errorf("expected expression value true, got %v", literal.Value)
+	}
+}
+
+func TestUnaryOpNode(t *testing.T) {
+	builder := NewBuilder()
+
+	right := builder.Literal(token.Position{Line: 1, Column: 5}, token.TRUE, true)
+	unaryOp := builder.UnaryOp(token.Position{Line: 1, Column: 1}, token.NOT, right)
+
+	if unaryOp.Op != token.NOT {
+		t.Errorf("expected NOT operator, got %v", unaryOp.Op)
+	}
+	rightLiteral, ok := unaryOp.Right.(*Literal)
+	if !ok {
+		t.Fatalf("expected *Literal for right operand, got %T", unaryOp.Right)
+	}
+	if rightLiteral.Value != true {
+		t.Errorf("expected right operand true, got %v", rightLiteral.Value)
+	}
+}
+
+func TestLiteralNode(t *testing.T) {
+	builder := NewBuilder()
+
+	literal := builder.Literal(token.Position{Line: 1, Column: 1}, token.INTEGER_LIT, int64(42))
+
+	if literal.Type != token.INTEGER_LIT {
+		t.Errorf("expected INTEGER_LIT type, got %v", literal.Type)
+	}
+	if literal.Value != int64(42) {
+		t.Errorf("expected value 42, got %v", literal.Value)
+	}
+}
+
+func TestHexStringNode(t *testing.T) {
+	builder := NewBuilder()
+
+	hexStr := builder.HexString(token.Position{Line: 1, Column: 1}, "AB CD")
+
+	if hexStr.Value != "AB CD" {
+		t.Errorf("expected value 'AB CD', got %s", hexStr.Value)
+	}
+}
+
+func TestRegexPatternNode(t *testing.T) {
+	builder := NewBuilder()
+
+	regex := builder.RegexPattern(token.Position{Line: 1, Column: 1}, "/test/")
+
+	if regex.Value != "/test/" {
+		t.Errorf("expected value '/test/', got %s", regex.Value)
+	}
+}
+
+func TestRuleWithMetaAndTags(t *testing.T) {
+	builder := NewBuilder()
+
+	meta := builder.Meta(token.Position{Line: 2, Column: 1}, "author", "test")
+	rule := builder.Rule(token.Position{Line: 1, Column: 1}, "test_rule")
+	rule.Meta = []*Meta{meta}
+	rule.Tags = []string{"tag1", "tag2"}
+
+	if rule.Name != "test_rule" {
+		t.Errorf("expected name 'test_rule', got %s", rule.Name)
+	}
+	if len(rule.Meta) != 1 {
+		t.Errorf("expected 1 meta, got %d", len(rule.Meta))
+	}
+	if len(rule.Tags) != 2 {
+		t.Errorf("expected 2 tags, got %d", len(rule.Tags))
+	}
+}
+
+func TestProgramWithMultipleRules(t *testing.T) {
+	builder := NewBuilder()
+
+	rule1 := builder.Rule(token.Position{Line: 1, Column: 1}, "rule1")
+	rule2 := builder.Rule(token.Position{Line: 5, Column: 1}, "rule2")
+	program := builder.Program([]*Rule{rule1, rule2})
+
+	if len(program.Rules) != 2 {
+		t.Errorf("expected 2 rules, got %d", len(program.Rules))
+	}
+	if program.Rules[0].Name != "rule1" {
+		t.Errorf("expected first rule 'rule1', got %s", program.Rules[0].Name)
+	}
+	if program.Rules[1].Name != "rule2" {
+		t.Errorf("expected second rule 'rule2', got %s", program.Rules[1].Name)
 	}
 }

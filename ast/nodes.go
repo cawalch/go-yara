@@ -4,8 +4,11 @@ import "github.com/cawalch/go-yara/token"
 
 // Program represents the root of the AST
 type Program struct {
-	Pos   token.Position
-	Rules []*Rule
+	Pos             token.Position
+	Rules           []*Rule
+	GlobalVariables []*GlobalVariable
+	Imports         []*Import
+	Includes        []*Include
 }
 
 func (p *Program) node() {}
@@ -164,4 +167,130 @@ func (l *Literal) expression() {}
 // Accept implements the Visitor pattern for Literal
 func (l *Literal) Accept(v Visitor) interface{} {
 	return v.VisitLiteral(l)
+}
+
+// GlobalVariable represents a global variable declaration
+type GlobalVariable struct {
+	Pos   token.Position
+	Name  string
+	Value Expression
+}
+
+func (g *GlobalVariable) node() {}
+
+// Position returns position of GlobalVariable node
+func (g *GlobalVariable) Position() token.Position { return g.Pos }
+
+// Accept implements the Visitor pattern for GlobalVariable
+func (g *GlobalVariable) Accept(v Visitor) interface{} {
+	return v.VisitGlobalVariable(g)
+}
+
+// Import represents an import statement
+type Import struct {
+	Pos    token.Position
+	Module string
+}
+
+func (i *Import) node() {}
+
+// Position returns position of Import node
+func (i *Import) Position() token.Position { return i.Pos }
+
+// Accept implements the Visitor pattern for Import
+func (i *Import) Accept(v Visitor) interface{} {
+	return v.VisitImport(i)
+}
+
+// Include represents an include statement
+type Include struct {
+	Pos  token.Position
+	File string
+}
+
+func (i *Include) node() {}
+
+// Position returns position of Include node
+func (i *Include) Position() token.Position { return i.Pos }
+
+// Accept implements the Visitor pattern for Include
+func (i *Include) Accept(v Visitor) interface{} {
+	return v.VisitInclude(i)
+}
+
+// StringLength represents a string length expression
+type StringLength struct {
+	Pos    token.Position
+	String Expression
+}
+
+func (s *StringLength) node() {}
+
+// Position returns position of StringLength node
+func (s *StringLength) Position() token.Position { return s.Pos }
+
+func (s *StringLength) expression() {}
+
+// Accept implements the Visitor pattern for StringLength
+func (s *StringLength) Accept(v Visitor) interface{} {
+	return v.VisitStringLength(s)
+}
+
+// ArrayIndex represents an array indexing expression
+type ArrayIndex struct {
+	Pos   token.Position
+	Array Expression
+	Index Expression
+}
+
+func (a *ArrayIndex) node() {}
+
+// Position returns position of ArrayIndex node
+func (a *ArrayIndex) Position() token.Position { return a.Pos }
+
+func (a *ArrayIndex) expression() {}
+
+// Accept implements the Visitor pattern for ArrayIndex
+func (a *ArrayIndex) Accept(v Visitor) interface{} {
+	return v.VisitArrayIndex(a)
+}
+
+// ForLoop represents a for loop expression
+type ForLoop struct {
+	Pos        token.Position
+	Quantifier string // "all", "any", "none"
+	Variable   string
+	Range      Expression
+	Condition  Expression
+}
+
+func (f *ForLoop) node() {}
+
+// Position returns position of ForLoop node
+func (f *ForLoop) Position() token.Position { return f.Pos }
+
+func (f *ForLoop) expression() {}
+
+// Accept implements the Visitor pattern for ForLoop
+func (f *ForLoop) Accept(v Visitor) interface{} {
+	return v.VisitForLoop(f)
+}
+
+// OfExpression represents an "of" expression
+type OfExpression struct {
+	Pos     token.Position
+	Count   Expression
+	Strings Expression // Can be "them" or a list of strings
+}
+
+func (o *OfExpression) node() {}
+
+// Position returns position of OfExpression node
+func (o *OfExpression) Position() token.Position { return o.Pos }
+
+func (o *OfExpression) expression() {}
+
+// Accept implements the Visitor pattern for OfExpression
+func (o *OfExpression) Accept(v Visitor) interface{} {
+	return v.VisitOfExpression(o)
 }

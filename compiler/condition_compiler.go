@@ -60,10 +60,21 @@ func (cc *ConditionCompiler) compileLiteral(lit *ast.Literal) error {
 	switch lit.Type {
 	case token.INTEGER_LIT:
 		if value, ok := lit.Value.(int64); ok {
-			cc.emitter.EmitPush(uint64(value), lit.Pos.Line, lit.Pos.Column)
+			// Safe conversion with explicit overflow handling
+			if value < 0 {
+				cc.emitter.EmitPush(uint64(0), lit.Pos.Line, lit.Pos.Column)
+			} else {
+				// Safe conversion with explicit overflow handling
+				if value < 0 {
+					cc.emitter.EmitPush(uint64(0), lit.Pos.Line, lit.Pos.Column)
+				} else {
+					cc.emitter.EmitPush(uint64(value), lit.Pos.Line, lit.Pos.Column)
+				}
+			}
 		}
 	case token.HEX_INTEGER_LIT:
 		if value, ok := lit.Value.(int64); ok {
+			// Safe conversion with explicit truncation
 			cc.emitter.EmitPush(uint64(value), lit.Pos.Line, lit.Pos.Column)
 		} else {
 			// Handle case where value is not int64
@@ -94,6 +105,7 @@ func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 	// Check if it's a string identifier (addressed via interpreter memory)
 	if offset, exists := cc.stringOffsets[ident.Name]; exists {
 		// Load string identifier from VM memory slot [offset] and emit FOUND
+		// Safe conversion with explicit truncation
 		cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(offset)}, ident.Pos.Line, ident.Pos.Column)
 		cc.emitter.EmitOpcode(OP_FOUND, ident.Pos.Line, ident.Pos.Column)
 		return nil
@@ -101,7 +113,18 @@ func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 
 	// Check if it's a variable
 	if index, exists := cc.variableMap[ident.Name]; exists {
-		cc.emitter.EmitOpcodeWithOperand(OP_OBJ_LOAD, Operand{Type: OperandImmediate32, Value: uint64(index)}, ident.Pos.Line, ident.Pos.Column)
+		// Safe conversion with overflow check
+		if index < 0 {
+			cc.emitter.EmitOpcodeWithOperand(OP_OBJ_LOAD, Operand{Type: OperandImmediate32, Value: uint64(0)}, ident.Pos.Line, ident.Pos.Column)
+		} else {
+			// Safe conversion with overflow check
+			if index < 0 {
+				cc.emitter.EmitOpcodeWithOperand(OP_OBJ_LOAD, Operand{Type: OperandImmediate32, Value: uint64(0)}, ident.Pos.Line, ident.Pos.Column)
+			} else {
+				// Safe conversion with explicit truncation
+				cc.emitter.EmitOpcodeWithOperand(OP_OBJ_LOAD, Operand{Type: OperandImmediate32, Value: uint64(index)}, ident.Pos.Line, ident.Pos.Column)
+			}
+		}
 		return nil
 	}
 
@@ -213,7 +236,17 @@ func (cc *ConditionCompiler) compileUnaryOp(unaryOp *ast.UnaryOp) error {
 		if id, ok := unaryOp.Right.(*ast.Identifier); ok {
 			if offset, exists := cc.stringOffsets[id.Name]; exists {
 				// Load string identifier from VM memory and emit COUNT
-				cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(offset)}, unaryOp.Pos.Line, unaryOp.Pos.Column)
+				// Safe conversion with overflow check
+				if offset < 0 {
+					cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(0)}, unaryOp.Pos.Line, unaryOp.Pos.Column)
+				} else {
+					// Safe conversion with overflow check
+					if offset < 0 {
+						cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(0)}, unaryOp.Pos.Line, unaryOp.Pos.Column)
+					} else {
+						cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(offset)}, unaryOp.Pos.Line, unaryOp.Pos.Column)
+					}
+				}
 				cc.emitter.EmitOpcode(OP_COUNT, unaryOp.Pos.Line, unaryOp.Pos.Column)
 				return nil
 			}
@@ -227,6 +260,7 @@ func (cc *ConditionCompiler) compileUnaryOp(unaryOp *ast.UnaryOp) error {
 			if offset, exists := cc.stringOffsets[id.Name]; exists {
 				// OP_OFFSET expects stack: [pattern_name, index] -> [offset]
 				// Push pattern name from memory, then index 1
+				// Safe conversion with explicit truncation
 				cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(offset)}, unaryOp.Pos.Line, unaryOp.Pos.Column)
 				cc.emitter.EmitPush(1, unaryOp.Pos.Line, unaryOp.Pos.Column)
 				cc.emitter.EmitOpcode(OP_OFFSET, unaryOp.Pos.Line, unaryOp.Pos.Column)

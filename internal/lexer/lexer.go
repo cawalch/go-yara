@@ -50,7 +50,7 @@ func (l *Lexer) NextToken() token.Token {
 			l.readChar()
 			return l.makeTwoCharToken(token.NEQ, "!=", pos)
 		}
-		return l.makeSimpleToken(token.ILLEGAL, "!", pos)
+		return l.makeSimpleToken(token.NOT, "!", pos)
 	case '<':
 		if l.peekChar() == '=' {
 			l.readChar()

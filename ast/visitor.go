@@ -14,6 +14,13 @@ type Visitor interface {
 	VisitTextString(*TextString) interface{}
 	VisitHexString(*HexString) interface{}
 	VisitRegexPattern(*RegexPattern) interface{}
+	VisitGlobalVariable(*GlobalVariable) interface{}
+	VisitImport(*Import) interface{}
+	VisitInclude(*Include) interface{}
+	VisitStringLength(*StringLength) interface{}
+	VisitArrayIndex(*ArrayIndex) interface{}
+	VisitForLoop(*ForLoop) interface{}
+	VisitOfExpression(*OfExpression) interface{}
 	// Add more as needed
 }
 
@@ -55,3 +62,24 @@ func (v *BaseVisitor) VisitHexString(n *HexString) interface{} { return nil }
 
 // VisitRegexPattern visits a RegexPattern node
 func (v *BaseVisitor) VisitRegexPattern(n *RegexPattern) interface{} { return nil }
+
+// VisitGlobalVariable visits a GlobalVariable node
+func (v *BaseVisitor) VisitGlobalVariable(n *GlobalVariable) interface{} { return nil }
+
+// VisitImport visits an Import node
+func (v *BaseVisitor) VisitImport(n *Import) interface{} { return nil }
+
+// VisitInclude visits an Include node
+func (v *BaseVisitor) VisitInclude(n *Include) interface{} { return nil }
+
+// VisitStringLength visits a StringLength node
+func (v *BaseVisitor) VisitStringLength(n *StringLength) interface{} { return nil }
+
+// VisitArrayIndex visits an ArrayIndex node
+func (v *BaseVisitor) VisitArrayIndex(n *ArrayIndex) interface{} { return nil }
+
+// VisitForLoop visits a ForLoop node
+func (v *BaseVisitor) VisitForLoop(n *ForLoop) interface{} { return nil }
+
+// VisitOfExpression visits an OfExpression node
+func (v *BaseVisitor) VisitOfExpression(n *OfExpression) interface{} { return nil }

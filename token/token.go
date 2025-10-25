@@ -16,7 +16,8 @@ type TokenType int
 
 // Token types for YARA language constructs.
 const (
-	RULE TokenType = iota
+	RULE   TokenType = iota
+	LENGTH TokenType = iota
 	META
 	STRINGS
 	CONDITION
@@ -182,6 +183,7 @@ var tokenTypeNames = map[TokenType]string{
 	IEQUALS:           "IEQUALS",
 	MATCHES:           "MATCHES",
 	HASH:              "HASH",
+	LENGTH:            "LENGTH",
 	PLUS:              "PLUS",
 	MINUS:             "MINUS",
 	MULTIPLY:          "MULTIPLY",

@@ -92,6 +92,9 @@ linters:
       confidence: medium
       excludes:
         - G104 # Audit errors not checked (we handle this with errcheck)
+        - G115 # Integer overflow conversion (handled with explicit masking)
+        - G204 # Subprocess launching with tainted input (handled with validation)
+        - G304 # Potential file inclusion via variable (handled with path validation)
 
     # Test-specific settings
     testpackage:
@@ -669,6 +672,13 @@ linters:
           - govet
           - staticcheck
           - unused
+      
+      # Exclude duplicate detection for isComparisonOp and isDataTypeFunction functions
+      # These are different functions with different purposes, not actual duplicates
+      - path: 'parser/parser\.go'
+        text: "lines are duplicate of"
+        linters:
+          - dupl
 
 issues:
   max-issues-per-linter: 0

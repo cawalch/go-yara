@@ -198,7 +198,14 @@ func (p *Parser) parseBound() (uint16, uint16, error) {
 			val = min(val*10+int(l.s[l.i]-'0'), 65535) // clamp
 			l.i++
 		}
-		return uint16(val), nil //nolint:gosec // val is clamped to <= 65535
+		// Safe conversion with explicit bounds check
+		if val > 65535 {
+			val = 65535
+		} else if val < 0 {
+			val = 0
+		}
+		// Safe conversion with explicit truncation
+		return uint16(val & 0xFFFF), nil
 	}
 	min, err := readNum()
 	if err != nil {

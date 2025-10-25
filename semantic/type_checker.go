@@ -71,6 +71,9 @@ func (tc *TypeChecker) checkIdentifier(identifier *ast.Identifier) *TypeInfo {
 		return &TypeInfo{DataType: TypeInteger, IntegerType: Uint64Type}
 	case themKeyword:
 		return &TypeInfo{DataType: TypeBoolean}
+	case "$":
+		// Special case for $ in quantifiers like "for any of them : ($)"
+		return &TypeInfo{DataType: TypeBoolean}
 	default:
 		tc.addError(&SemanticError{
 			Message:  fmt.Sprintf("undefined identifier: %s", identifier.Name),
@@ -110,6 +113,12 @@ func (tc *TypeChecker) checkBinaryOp(binaryOp *ast.BinaryOp) *TypeInfo {
 
 	case token.OF:
 		return tc.checkQuantifierOp(leftType, rightType, binaryOp.Position())
+
+	case token.COLON:
+		// COLON is used in "for" quantifiers like "for any of them : ($)"
+		// The left side is the quantifier expression, right side is the condition
+		// The result should be boolean
+		return &TypeInfo{DataType: TypeBoolean}
 
 	default:
 		tc.addError(&SemanticError{
@@ -249,9 +258,22 @@ func (tc *TypeChecker) checkLogicalOp(op token.TokenType, left, right *TypeInfo,
 
 // checkStringOp checks string operation types
 func (tc *TypeChecker) checkStringOp(op token.TokenType, left, right *TypeInfo, pos token.Position) *TypeInfo {
-	if !left.IsString() || !right.IsString() {
+	// In YARA, string operations like "contains" and "matches" work with:
+	// - Left: string identifier (boolean type when used in conditions)
+	// - Right: string literal or regex pattern
+	// So we need to be more flexible about the left operand type
+
+	if !left.IsString() && left.DataType != TypeBoolean {
 		tc.addError(&SemanticError{
-			Message:  fmt.Sprintf("string operation %s requires string operands", op),
+			Message:  fmt.Sprintf("string operation %s requires string or string identifier as left operand", op),
+			Position: pos,
+		})
+		return &TypeInfo{DataType: TypeUnknown}
+	}
+
+	if !right.IsString() {
+		tc.addError(&SemanticError{
+			Message:  fmt.Sprintf("string operation %s requires string as right operand", op),
 			Position: pos,
 		})
 		return &TypeInfo{DataType: TypeUnknown}

@@ -4,6 +4,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/cawalch/go-yara/compiler"
 	"github.com/cawalch/go-yara/internal/lexer"
@@ -62,6 +63,16 @@ func main() {
 		}
 	}
 
+	// Validate filename to prevent path traversal
+	if filename == "" {
+		fmt.Printf("Error: empty filename\n")
+		os.Exit(1)
+	}
+	// Basic path traversal protection
+	if strings.Contains(filename, "..") || strings.HasPrefix(filename, "/") {
+		fmt.Printf("Error: invalid filename: potential path traversal\n")
+		os.Exit(1)
+	}
 	content, err := os.ReadFile(filename)
 	if err != nil {
 		fmt.Printf("Error reading file %s: %v\n", filename, err)
@@ -124,6 +135,14 @@ func runParserMode(content string) {
 	program, err := p.ParseRules()
 	if err != nil {
 		fmt.Printf("Parser error: %v\n", err)
+		// Check for parser errors
+		parserErrors := p.Errors()
+		if len(parserErrors) > 0 {
+			fmt.Printf("\nParser errors (%d):\n", len(parserErrors))
+			for _, err := range parserErrors {
+				fmt.Printf("  %s\n", err.Error())
+			}
+		}
 		os.Exit(1)
 	}
 
@@ -224,10 +243,20 @@ func runExecuteMode(content string, dataFile string) {
 	// Validate data file is provided
 	if dataFile == "" {
 		fmt.Println("Error: --execute mode requires --data <data-file>")
-		return
+		os.Exit(1)
 	}
 
 	// Read data file
+	// Validate dataFile to prevent path traversal
+	if dataFile == "" {
+		fmt.Printf("Error: empty data file path\n")
+		os.Exit(1)
+	}
+	// Basic path traversal protection
+	if strings.Contains(dataFile, "..") || strings.HasPrefix(dataFile, "/") {
+		fmt.Printf("Error: invalid data file path: potential path traversal\n")
+		os.Exit(1)
+	}
 	data, err := os.ReadFile(dataFile)
 	if err != nil {
 		fmt.Printf("Error reading data file %s: %v\n", dataFile, err)

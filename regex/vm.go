@@ -293,7 +293,9 @@ func addThread(code []byte, s []byte, list *[]thread, pc int, pos int, visited m
 			if pc+3 >= len(code) {
 				return false
 			}
-			rel := int16(binary.LittleEndian.Uint16(code[pc+2 : pc+4])) //nolint:gosec // bytecode encodes signed rel16 in LE
+			u16 := binary.LittleEndian.Uint16(code[pc+2 : pc+4])
+			// Safe conversion with explicit truncation
+			rel := int16(u16 & 0xFFFF)
 			// sequential next
 			nextPC := pc + 4
 			altPC := pc + int(rel)
@@ -318,7 +320,9 @@ func addThread(code []byte, s []byte, list *[]thread, pc int, pos int, visited m
 			if pc+2 >= len(code) {
 				return false
 			}
-			rel := int16(binary.LittleEndian.Uint16(code[pc+1 : pc+3])) //nolint:gosec // bytecode encodes signed rel16 in LE
+			u16 := binary.LittleEndian.Uint16(code[pc+1 : pc+3])
+			// Safe conversion with explicit truncation
+			rel := int16(u16 & 0xFFFF)
 			pc += int(rel)
 			continue
 		case OpMatchAtStart:

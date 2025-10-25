@@ -279,6 +279,23 @@ func runGoYara(goCmd, rules, data string, timeout time.Duration) RunResult {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
+	// Validate command parts to prevent injection
+	if len(parts) == 0 || parts[0] == "" {
+		return RunResult{Err: fmt.Errorf("empty command")}
+	}
+	// Basic command injection protection - check for dangerous characters
+	for _, part := range parts {
+		if strings.ContainsAny(part, ";&|`$()<>\"'\\\n\r\t") {
+			return RunResult{Err: fmt.Errorf("potentially dangerous command characters detected")}
+		}
+	}
+	// Validate file paths to prevent traversal
+	if strings.Contains(rules, "..") || strings.HasPrefix(rules, "/") {
+		return RunResult{Err: fmt.Errorf("invalid rules path: potential path traversal")}
+	}
+	if strings.Contains(data, "..") || strings.HasPrefix(data, "/") {
+		return RunResult{Err: fmt.Errorf("invalid data path: potential path traversal")}
+	}
 	//nolint:gosec // controlled development harness; command/args come from local flags
 	cmd := exec.CommandContext(ctx, parts[0], args...)
 	var outBuf, errBuf bytes.Buffer
@@ -337,6 +354,14 @@ var reInclude = regexp.MustCompile(`(?m)^\s*include\s+\"[^\"]+\"`)
 var reImport = regexp.MustCompile(`(?m)^\s*import\s+\"[^\"]+\"`)
 
 func fileHasRegex(path string) (bool, error) {
+	// Validate path to prevent traversal
+	if path == "" {
+		return false, fmt.Errorf("empty path")
+	}
+	// Basic path traversal protection
+	if strings.Contains(path, "..") || strings.HasPrefix(path, "/") {
+		return false, fmt.Errorf("invalid path: potential path traversal")
+	}
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return false, err
@@ -345,6 +370,14 @@ func fileHasRegex(path string) (bool, error) {
 }
 
 func fileHasInclude(path string) (bool, error) {
+	// Validate path to prevent traversal
+	if path == "" {
+		return false, fmt.Errorf("empty path")
+	}
+	// Basic path traversal protection
+	if strings.Contains(path, "..") || strings.HasPrefix(path, "/") {
+		return false, fmt.Errorf("invalid path: potential path traversal")
+	}
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return false, err
@@ -353,6 +386,14 @@ func fileHasInclude(path string) (bool, error) {
 }
 
 func fileHasImport(path string) (bool, error) {
+	// Validate path to prevent traversal
+	if path == "" {
+		return false, fmt.Errorf("empty path")
+	}
+	// Basic path traversal protection
+	if strings.Contains(path, "..") || strings.HasPrefix(path, "/") {
+		return false, fmt.Errorf("invalid path: potential path traversal")
+	}
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return false, err

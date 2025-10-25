@@ -65,6 +65,7 @@ var keywords = map[string]token.TokenType{
 	"iequals":     token.IEQUALS,
 	"matches":     token.MATCHES,
 	"hash":        token.HASH,
+	"length":      token.LENGTH,
 }
 
 // Interned keyword strings to reduce allocations

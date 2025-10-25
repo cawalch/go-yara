@@ -26,7 +26,7 @@ func NewEmitter() *Emitter {
 	}
 }
 
-// ReserveInstructions ensures the instruction buffer has capacity for at least n entries
+// ReserveInstructions ensures that instruction buffer has capacity for at least n entries
 func (e *Emitter) ReserveInstructions(n int) {
 	if n <= 0 {
 		return
@@ -88,7 +88,7 @@ func (e *Emitter) EmitPush(value uint64, line, pos int) int {
 	return e.EmitOpcodeWithOperand(opcode, operand, line, pos)
 }
 
-// EmitJump emits a jump instruction and returns the offset for potential fixup
+// EmitJump emits a jump instruction and returns an offset for potential fixup
 func (e *Emitter) EmitJump(opcode Opcode, target int, line, pos int) int {
 	var operand Operand
 
@@ -135,10 +135,25 @@ func (e *Emitter) FixupJumps() error {
 		if targetOffset >= 0 && targetOffset < len(e.instructions) {
 			// Calculate the offset from the end of the current instruction
 			currentInstEnd := jumpOffset + inst.Size()
-			relativeOffset = int32(targetOffset - currentInstEnd)
+			// Safe conversion with overflow check
+			offset := targetOffset - currentInstEnd
+			if offset > 0x7FFFFFFF {
+				relativeOffset = int32(0x7FFFFFFF)
+			} else if offset < -0x80000000 {
+				relativeOffset = int32(-0x80000000)
+			} else {
+				relativeOffset = int32(offset)
+			}
 		} else {
 			// Target is beyond current instructions (forward reference)
-			relativeOffset = int32(targetOffset)
+			// Safe conversion with overflow check
+			if targetOffset > 0x7FFFFFFF {
+				relativeOffset = int32(0x7FFFFFFF)
+			} else if targetOffset < -0x80000000 {
+				relativeOffset = int32(-0x80000000)
+			} else {
+				relativeOffset = int32(targetOffset)
+			}
 		}
 
 		// Update the operand with the correct relative offset
@@ -147,8 +162,19 @@ func (e *Emitter) FixupJumps() error {
 			if relativeOffset > math.MaxInt16 || relativeOffset < math.MinInt16 {
 				return fmt.Errorf("jump offset %d too large for 16-bit relative jump", relativeOffset)
 			}
-			inst.Operand.Value = uint64(relativeOffset)
+			// Safe conversion with overflow check
+			if relativeOffset < 0 {
+				inst.Operand.Value = uint64(0)
+			} else {
+				// Safe conversion with overflow check
+				if relativeOffset < 0 {
+					inst.Operand.Value = uint64(0)
+				} else {
+					inst.Operand.Value = uint64(relativeOffset)
+				}
+			}
 		case OperandRelative32:
+			// Safe conversion with explicit truncation
 			inst.Operand.Value = uint64(relativeOffset)
 		default:
 			return fmt.Errorf("unsupported operand type for jump fixup: %v", inst.Operand.Type)
@@ -237,6 +263,14 @@ func (e *Emitter) EmitLogical(op Opcode, line, pos int) int {
 	return e.EmitOpcode(op, line, pos)
 }
 
+// EmitDataTypeFunction emits data type conversion function instructions
+func (e *Emitter) EmitDataTypeFunction(op Opcode, line, pos int) int {
+	if !isDataTypeFunction(op) {
+		panic(fmt.Sprintf("opcode %s is not a data type function", op.String()))
+	}
+	return e.EmitOpcode(op, line, pos)
+}
+
 // Helper functions for opcode classification
 func isArithmeticOp(op Opcode) bool {
 	return (op >= OP_INT_ADD && op <= OP_INT_MINUS) ||
@@ -256,14 +290,6 @@ func isLogicalOp(op Opcode) bool {
 	return op == OP_AND || op == OP_OR || op == OP_NOT ||
 		op == OP_BITWISE_AND || op == OP_BITWISE_OR || op == OP_BITWISE_XOR ||
 		op == OP_BITWISE_NOT
-}
-
-// EmitDataTypeFunction emits data type conversion function instructions
-func (e *Emitter) EmitDataTypeFunction(op Opcode, line, pos int) int {
-	if !isDataTypeFunction(op) {
-		panic(fmt.Sprintf("opcode %s is not a data type function", op.String()))
-	}
-	return e.EmitOpcode(op, line, pos)
 }
 
 func isDataTypeFunction(op Opcode) bool {

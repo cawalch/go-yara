@@ -13,8 +13,11 @@ func NewBuilder() *Builder {
 // Program creates a new Program node
 func (b *Builder) Program(rules []*Rule) *Program {
 	return &Program{
-		Pos:   token.Position{},
-		Rules: rules,
+		Pos:             token.Position{},
+		Rules:           rules,
+		GlobalVariables: []*GlobalVariable{},
+		Imports:         []*Import{},
+		Includes:        []*Include{},
 	}
 }
 
@@ -120,5 +123,67 @@ func (b *Builder) Condition(pos token.Position, expr Expression) *Condition {
 	return &Condition{
 		Pos:        pos,
 		Expression: expr,
+	}
+}
+
+// GlobalVariable creates a new GlobalVariable node
+func (b *Builder) GlobalVariable(pos token.Position, name string, value Expression) *GlobalVariable {
+	return &GlobalVariable{
+		Pos:   pos,
+		Name:  name,
+		Value: value,
+	}
+}
+
+// Import creates a new Import node
+func (b *Builder) Import(pos token.Position, module string) *Import {
+	return &Import{
+		Pos:    pos,
+		Module: module,
+	}
+}
+
+// Include creates a new Include node
+func (b *Builder) Include(pos token.Position, file string) *Include {
+	return &Include{
+		Pos:  pos,
+		File: file,
+	}
+}
+
+// StringLength creates a new StringLength node
+func (b *Builder) StringLength(pos token.Position, strExpr Expression) *StringLength {
+	return &StringLength{
+		Pos:    pos,
+		String: strExpr,
+	}
+}
+
+// ArrayIndex creates a new ArrayIndex node
+func (b *Builder) ArrayIndex(pos token.Position, arrayExpr, indexExpr Expression) *ArrayIndex {
+	return &ArrayIndex{
+		Pos:   pos,
+		Array: arrayExpr,
+		Index: indexExpr,
+	}
+}
+
+// ForLoop creates a new ForLoop node
+func (b *Builder) ForLoop(pos token.Position, quantifier, variable string, rangeExpr, conditionExpr Expression) *ForLoop {
+	return &ForLoop{
+		Pos:        pos,
+		Quantifier: quantifier,
+		Variable:   variable,
+		Range:      rangeExpr,
+		Condition:  conditionExpr,
+	}
+}
+
+// OfExpression creates a new OfExpression node
+func (b *Builder) OfExpression(pos token.Position, countExpr, stringsExpr Expression) *OfExpression {
+	return &OfExpression{
+		Pos:     pos,
+		Count:   countExpr,
+		Strings: stringsExpr,
 	}
 }

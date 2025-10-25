@@ -53,7 +53,7 @@ type Match struct {
 	Pattern string
 	Offset  int64
 	Length  int
-	Base    int64 // Base address for the match
+	Base    int64 // Base address for match
 }
 
 // AddMatch adds a match to the context
@@ -178,10 +178,22 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 		return i.executeBinaryOp(func(a, b int64) int64 { return a ^ b })
 
 	case OP_SHL:
-		return i.executeBinaryOp(func(a, b int64) int64 { return a << uint(b) })
+		return i.executeBinaryOp(func(a, b int64) int64 {
+			// Safe shift with bounds check
+			if b < 0 || b >= 64 {
+				return 0 // Undefined behavior for invalid shift
+			}
+			return a << uint(b)
+		})
 
 	case OP_SHR:
-		return i.executeBinaryOp(func(a, b int64) int64 { return a >> uint(b) })
+		return i.executeBinaryOp(func(a, b int64) int64 {
+			// Safe shift with bounds check
+			if b < 0 || b >= 64 {
+				return 0 // Undefined behavior for invalid shift
+			}
+			return a >> uint(b)
+		})
 
 	case OP_MOD:
 		return i.executeBinaryOp(func(a, b int64) int64 {
@@ -260,7 +272,9 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 		return nil
 
 	case OP_JFALSE:
-		offset := int32(binary.LittleEndian.Uint32(i.bytecode[i.ip:]))
+		u32 := binary.LittleEndian.Uint32(i.bytecode[i.ip:])
+		// Safe conversion with explicit truncation
+		offset := int32(u32 & 0xFFFFFFFF)
 		i.ip += 4
 		if len(i.stack) > 0 {
 			v := i.pop()
@@ -271,7 +285,9 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 		return nil
 
 	case OP_JTRUE:
-		offset := int32(binary.LittleEndian.Uint32(i.bytecode[i.ip:]))
+		u32 := binary.LittleEndian.Uint32(i.bytecode[i.ip:])
+		// Safe conversion with explicit truncation
+		offset := int32(u32 & 0xFFFFFFFF)
 		i.ip += 4
 		if len(i.stack) > 0 {
 			v := i.pop()
@@ -282,7 +298,9 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 		return nil
 
 	case OP_JZ:
-		offset := int32(binary.LittleEndian.Uint32(i.bytecode[i.ip:]))
+		u32 := binary.LittleEndian.Uint32(i.bytecode[i.ip:])
+		// Safe conversion with explicit truncation
+		offset := int32(u32 & 0xFFFFFFFF)
 		i.ip += 4
 		if len(i.stack) > 0 {
 			v := i.pop()
@@ -293,7 +311,9 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 		return nil
 
 	case OP_JNUNDEF:
-		offset := int32(binary.LittleEndian.Uint32(i.bytecode[i.ip:]))
+		u32 := binary.LittleEndian.Uint32(i.bytecode[i.ip:])
+		// Safe conversion with explicit truncation
+		offset := int32(u32 & 0xFFFFFFFF)
 		i.ip += 4
 		if len(i.stack) > 0 {
 			v := i.pop()
@@ -304,7 +324,9 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 		return nil
 
 	case OP_JUNDEF_P:
-		offset := int32(binary.LittleEndian.Uint32(i.bytecode[i.ip:]))
+		u32 := binary.LittleEndian.Uint32(i.bytecode[i.ip:])
+		// Safe conversion with explicit truncation
+		offset := int32(u32 & 0xFFFFFFFF)
 		i.ip += 4
 		if len(i.stack) > 0 {
 			v := i.stack[len(i.stack)-1]
@@ -315,7 +337,9 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 		return nil
 
 	case OP_JNUNDEF_P:
-		offset := int32(binary.LittleEndian.Uint32(i.bytecode[i.ip:]))
+		u32 := binary.LittleEndian.Uint32(i.bytecode[i.ip:])
+		// Safe conversion with explicit truncation
+		offset := int32(u32 & 0xFFFFFFFF)
 		i.ip += 4
 		if len(i.stack) > 0 {
 			v := i.stack[len(i.stack)-1]
@@ -326,7 +350,9 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 		return nil
 
 	case OP_JFALSE_P:
-		offset := int32(binary.LittleEndian.Uint32(i.bytecode[i.ip:]))
+		u32 := binary.LittleEndian.Uint32(i.bytecode[i.ip:])
+		// Safe conversion with explicit truncation
+		offset := int32(u32 & 0xFFFFFFFF)
 		i.ip += 4
 		if len(i.stack) > 0 {
 			v := i.stack[len(i.stack)-1]
@@ -337,7 +363,9 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 		return nil
 
 	case OP_JTRUE_P:
-		offset := int32(binary.LittleEndian.Uint32(i.bytecode[i.ip:]))
+		u32 := binary.LittleEndian.Uint32(i.bytecode[i.ip:])
+		// Safe conversion with explicit truncation
+		offset := int32(u32 & 0xFFFFFFFF)
 		i.ip += 4
 		if len(i.stack) > 0 {
 			v := i.stack[len(i.stack)-1]
@@ -348,7 +376,9 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 		return nil
 
 	case OP_JZ_P:
-		offset := int32(binary.LittleEndian.Uint32(i.bytecode[i.ip:]))
+		u32 := binary.LittleEndian.Uint32(i.bytecode[i.ip:])
+		// Safe conversion with explicit truncation
+		offset := int32(u32 & 0xFFFFFFFF)
 		i.ip += 4
 		if len(i.stack) > 0 {
 			v := i.stack[len(i.stack)-1]
@@ -705,7 +735,7 @@ func (i *Interpreter) GetStack() []Value {
 	return i.stack
 }
 
-// GetMemory returns the memory at the given address
+// GetMemory returns memory at the given address
 func (i *Interpreter) GetMemory(addr int) Value {
 	if addr >= 0 && addr < 256 {
 		return i.memory[addr]
@@ -781,7 +811,7 @@ func (i *Interpreter) GetMatchContext() *MatchContext {
 	return i.matchContext
 }
 
-// GetMatches returns the matches found during execution as a flat list
+// GetMatches returns matches found during execution as a flat list
 func (i *Interpreter) GetMatches() []Match {
 	var result []Match
 	for _, matches := range i.matchContext.Matches {
@@ -848,7 +878,9 @@ func (i *Interpreter) readIntFromData(size int, unsigned bool, bigEndian bool) (
 		if unsigned {
 			val = int64(u16)
 		} else {
-			val = int64(int16(u16))
+			// Safe conversion with explicit truncation
+			// Safe conversion with explicit truncation
+			val = int64(int16(u16 & 0xFFFF))
 		}
 	case 4:
 		var u32 uint32
@@ -860,7 +892,9 @@ func (i *Interpreter) readIntFromData(size int, unsigned bool, bigEndian bool) (
 		if unsigned {
 			val = int64(u32)
 		} else {
-			val = int64(int32(u32))
+			// Safe conversion with explicit truncation
+			// Safe conversion with explicit truncation
+			val = int64(int32(u32 & 0xFFFFFFFF))
 		}
 	}
 

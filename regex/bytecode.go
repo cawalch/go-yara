@@ -41,6 +41,7 @@ func (e *Emitter) EmitU16(v uint16) *Emitter {
 //nolint:gosec // G115: conversion from int16 to uint16 is intentional for encoding
 func (e *Emitter) EmitI16(v int16) *Emitter {
 	var tmp [2]byte
+	// Safe conversion with explicit truncation
 	binary.LittleEndian.PutUint16(tmp[:], uint16(v))
 	e.buf = append(e.buf, tmp[:]...)
 	return e

@@ -4409,3 +4409,121 @@ func TestCompilerFullPipeline(t *testing.T) {
 		})
 	}
 }
+
+// TestCompilerGetVersion tests GetVersion method
+func TestCompilerGetVersion(t *testing.T) {
+	compiler := NewCompiler()
+	version := compiler.GetVersion()
+	if version == "" {
+		t.Error("GetVersion() returned empty string")
+	}
+}
+
+// TestCompilerGetSupportedFeatures tests GetSupportedFeatures method
+func TestCompilerGetSupportedFeatures(t *testing.T) {
+	compiler := NewCompiler()
+	features := compiler.GetSupportedFeatures()
+	if len(features) == 0 {
+		t.Error("GetSupportedFeatures() returned empty slice")
+	}
+}
+
+// TestCompilerEstimateCompilationTime tests EstimateCompilationTime method
+func TestCompilerEstimateCompilationTime(t *testing.T) {
+	compiler := NewCompiler()
+	estimated := compiler.EstimateCompilationTime(1000)
+	if estimated <= 0 {
+		t.Error("EstimateCompilationTime() returned non-positive duration")
+	}
+}
+
+// TestCompilerGetMemoryRequirements tests GetMemoryRequirements method
+func TestCompilerGetMemoryRequirements(t *testing.T) {
+	compiler := NewCompiler()
+	requirements := compiler.GetMemoryRequirements(1000)
+	if requirements <= 0 {
+		t.Error("GetMemoryRequirements() returned non-positive value")
+	}
+}
+
+// TestCompilerBatchCompile tests BatchCompile method
+func TestCompilerBatchCompile(t *testing.T) {
+	compiler := NewCompiler()
+	sources := []string{
+		`rule test1 { condition: true }`,
+		`rule test2 { condition: true }`,
+	}
+
+	programs, err := compiler.BatchCompile(sources)
+	if err != nil {
+		t.Errorf("BatchCompile() error = %v", err)
+	}
+	if len(programs) != 2 {
+		t.Errorf("BatchCompile() returned %d programs, want 2", len(programs))
+	}
+}
+
+// TestCompilerCompileWithProgress tests CompileWithProgress method
+func TestCompilerCompileWithProgress(t *testing.T) {
+	compiler := NewCompiler()
+	source := `rule test { condition: true }`
+
+	var phases []string
+	var percents []float64
+
+	program, err := compiler.CompileWithProgress(source, func(phase string, percent float64) {
+		phases = append(phases, phase)
+		percents = append(percents, percent)
+	})
+
+	if err != nil {
+		t.Errorf("CompileWithProgress() error = %v", err)
+	}
+	if program == nil {
+		t.Error("CompileWithProgress() returned nil program")
+	}
+	if len(phases) == 0 {
+		t.Error("CompileWithProgress() did not call progress callback")
+	}
+}
+
+// TestCompilerGetPhaseDependencies tests GetPhaseDependencies method
+func TestCompilerGetPhaseDependencies(t *testing.T) {
+	compiler := NewCompiler()
+	deps := compiler.GetPhaseDependencies()
+	if len(deps) == 0 {
+		t.Error("GetPhaseDependencies() returned empty map")
+	}
+}
+
+// TestCompilerValidateCompilation tests ValidateCompilation method
+func TestCompilerValidateCompilation(t *testing.T) {
+	compiler := NewCompiler()
+	source := `rule test { condition: true }`
+
+	program, err := compiler.CompileSource(source)
+	if err != nil {
+		t.Errorf("CompileSource() error = %v", err)
+	}
+
+	err = compiler.ValidateCompilation(program)
+	if err != nil {
+		t.Errorf("ValidateCompilation() error = %v", err)
+	}
+}
+
+// TestCompilerGetCompilationReport tests GetCompilationReport method
+func TestCompilerGetCompilationReport(t *testing.T) {
+	compiler := NewCompiler()
+	source := `rule test { condition: true }`
+
+	_, err := compiler.CompileSource(source)
+	if err != nil {
+		t.Errorf("CompileSource() error = %v", err)
+	}
+
+	report := compiler.GetCompilationReport()
+	if report == "" {
+		t.Error("GetCompilationReport() returned empty string")
+	}
+}

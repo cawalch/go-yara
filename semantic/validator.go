@@ -171,6 +171,23 @@ func (v *Validator) validateExpression(expr ast.Expression) (*TypeInfo, []error)
 			return &TypeInfo{DataType: TypeInteger, IntegerType: Uint64Type}, nil
 		case "them":
 			return &TypeInfo{DataType: TypeBoolean}, nil
+		case "$":
+			// Special case for $ in quantifiers like "for any of them : ($)"
+			// Create a synthetic symbol for this special case to maintain consistency
+			if symbol, exists := v.symbolTable.LookupInCurrentScope("$"); exists {
+				return v.getTypeFromSymbol(symbol), nil
+			}
+			// Define a synthetic symbol for the quantifier context
+			if err := v.symbolTable.DefineVariable("$", e.Position(), SymbolVariable); err != nil {
+				return &TypeInfo{DataType: TypeUnknown}, []error{&SemanticError{
+					Message:  err.Error(),
+					Position: e.Position(),
+				}}
+			}
+			if symbol, exists := v.symbolTable.Lookup("$"); exists {
+				return v.getTypeFromSymbol(symbol), nil
+			}
+			return &TypeInfo{DataType: TypeBoolean}, nil
 		case "all", "any", "none":
 			// Quantifier keywords - these are used in "all of them" expressions
 			// They will be handled by the BinaryOp case with OF operator
@@ -228,6 +245,51 @@ func (v *Validator) validateExpression(expr ast.Expression) (*TypeInfo, []error)
 			}
 			return resultType, errors
 		}
+
+	case *ast.OfExpression:
+		// Validate the count expression
+		_, countErrs := v.validateExpression(e.Count)
+		errors = append(errors, countErrs...)
+
+		// Validate the strings expression
+		_, stringsErrs := v.validateExpression(e.Strings)
+		errors = append(errors, stringsErrs...)
+
+		// Of expressions always return boolean
+		return &TypeInfo{DataType: TypeBoolean}, errors
+
+	case *ast.ForLoop:
+		// Validate the range expression
+		_, rangeErrs := v.validateExpression(e.Range)
+		errors = append(errors, rangeErrs...)
+
+		// Validate the condition expression
+		_, conditionErrs := v.validateExpression(e.Condition)
+		errors = append(errors, conditionErrs...)
+
+		// For loops always return boolean
+		return &TypeInfo{DataType: TypeBoolean}, errors
+
+	case *ast.StringLength:
+		// Validate the string expression
+		_, stringErrs := v.validateExpression(e.String)
+		errors = append(errors, stringErrs...)
+
+		// String length returns integer
+		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}, errors
+
+	case *ast.ArrayIndex:
+		// Validate the array expression
+		arrayType, arrayErrs := v.validateExpression(e.Array)
+		errors = append(errors, arrayErrs...)
+
+		// Validate the index expression
+		_, indexErrs := v.validateExpression(e.Index)
+		errors = append(errors, indexErrs...)
+
+		// Array indexing returns the type of the array elements
+		// For now, assume it returns the same type as the array
+		return arrayType, errors
 
 	default:
 		// For other expression types, return unknown for now
@@ -326,5 +388,29 @@ func (v *Validator) VisitIdentifier(identifier *ast.Identifier) interface{} {
 // VisitLiteral implements the Visitor pattern for Literal nodes
 func (v *Validator) VisitLiteral(literal *ast.Literal) interface{} {
 	// Literal validation is handled in validateExpression
+	return nil
+}
+
+// VisitStringLength implements the Visitor pattern for StringLength nodes
+func (v *Validator) VisitStringLength(stringLength *ast.StringLength) interface{} {
+	// StringLength validation is handled in validateExpression
+	return nil
+}
+
+// VisitArrayIndex implements the Visitor pattern for ArrayIndex nodes
+func (v *Validator) VisitArrayIndex(arrayIndex *ast.ArrayIndex) interface{} {
+	// ArrayIndex validation is handled in validateExpression
+	return nil
+}
+
+// VisitForLoop implements the Visitor pattern for ForLoop nodes
+func (v *Validator) VisitForLoop(forLoop *ast.ForLoop) interface{} {
+	// ForLoop validation is handled in validateExpression
+	return nil
+}
+
+// VisitOfExpression implements the Visitor pattern for OfExpression nodes
+func (v *Validator) VisitOfExpression(ofExpression *ast.OfExpression) interface{} {
+	// OfExpression validation is handled in validateExpression
 	return nil
 }

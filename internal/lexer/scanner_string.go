@@ -54,8 +54,8 @@ func (l *Lexer) readRegex() string {
 	if l.ch() == '/' {
 		l.readChar() // skip closing '/'
 
-		// Read flags (i, s, etc.)
-		for l.ch() == 'i' || l.ch() == 's' {
+		// Read flags (i, s, m, etc.)
+		for l.ch() == 'i' || l.ch() == 's' || l.ch() == 'm' {
 			l.readChar()
 		}
 	}
@@ -82,7 +82,7 @@ func (l *Lexer) isEmptyRegex() bool {
 	l.readChar()
 
 	// Check for optional flags after //
-	for l.ch() == 'i' || l.ch() == 's' {
+	for l.ch() == 'i' || l.ch() == 's' || l.ch() == 'm' {
 		l.readChar()
 	}
 
