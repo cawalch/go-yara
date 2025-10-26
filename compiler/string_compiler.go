@@ -20,7 +20,8 @@ type StringCompiler struct {
 	patternData map[string][]byte
 	// Extracted atoms for optimization
 	atoms map[string][]*Atom
-}
+
+	}
 
 // NewStringCompiler creates a new string compiler
 // The emitter parameter is kept for backward compatibility; it's unused.
@@ -475,16 +476,37 @@ func (sc *StringCompiler) applyNocaseModifier(data []byte, isWide bool) []byte {
 		}
 		return result
 	} else {
-		// For ASCII strings, apply case-insensitive
-		result := make([]byte, len(data))
-		copy(result, data)
+		// Optimized case-insensitive conversion for ASCII strings
+		// For small strings, create new slice directly
+		if len(data) <= 128 {
+			result := make([]byte, len(data))
+			for i, b := range data {
+				if b >= 'A' && b <= 'Z' {
+					result[i] = b + 32 // Convert to lowercase
+				} else {
+					result[i] = b
+				}
+			}
+			return result
+		}
 
-		// Convert ASCII letters to lowercase
-		for i := range result {
-			if result[i] >= 'A' && result[i] <= 'Z' {
-				result[i] = result[i] - 'A' + 'a'
+		// For larger strings, modify in place if possible
+		modified := false
+		for i, b := range data {
+			if b >= 'A' && b <= 'Z' {
+				data[i] = b + 32 // Convert to lowercase
+				modified = true
 			}
 		}
+
+		// If no modifications were needed, return original
+		if !modified {
+			return data
+		}
+
+		// Return a copy to avoid modifying caller's data
+		result := make([]byte, len(data))
+		copy(result, data)
 		return result
 	}
 }

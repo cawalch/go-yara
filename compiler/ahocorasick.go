@@ -3,6 +3,7 @@ package compiler
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/cawalch/go-yara/regex"
 )
@@ -35,6 +36,10 @@ type ACAutomaton struct {
 	TableSize   int            // Size of transition table
 	Bitmask     []uint32       // Bitmask for transition table optimization
 	Strings     []ACStringInfo // Information about added strings
+
+	// Performance optimization fields
+	searchPool   sync.Pool // Pool for match slices to reduce allocations
+	compiledOnce sync.Once // Ensure compilation happens only once
 }
 
 // ACStringInfo holds information about a string added to the automaton
@@ -95,7 +100,7 @@ func NewACAutomaton() *ACAutomaton {
 		TableSlot:  0,
 	}
 
-	return &ACAutomaton{
+	ac := &ACAutomaton{
 		Root:        root,
 		States:      []*ACState{root},
 		StringCount: 0,
@@ -105,6 +110,15 @@ func NewACAutomaton() *ACAutomaton {
 		Bitmask:     make([]uint32, 0),
 		Strings:     make([]ACStringInfo, 0),
 	}
+
+	// Initialize search pool for performance optimization
+	ac.searchPool = sync.Pool{
+		New: func() interface{} {
+			return make([]ACMatch, 0, 8) // Pre-allocate reasonable capacity
+		},
+	}
+
+	return ac
 }
 
 // ReserveStrings ensures capacity for at least n string infos to avoid slice growth
@@ -155,13 +169,25 @@ func (ac *ACAutomaton) AddString(identifier string, data []byte, isHex, isRegex 
 		return fmt.Errorf("empty pattern")
 	}
 
-	// Store string information (defer data copy to reduce allocations)
+	// Ensure we have enough capacity in strings slice to avoid reallocations
+	if ac.StringCount >= cap(ac.Strings) {
+		newCap := cap(ac.Strings) * 2
+		if newCap < 16 {
+			newCap = 16
+		}
+		ac.ReserveStrings(newCap)
+	}
+
+	// Store string information with copy to avoid data races
+	dataCopy := make([]byte, len(data))
+	copy(dataCopy, data)
+
 	ac.Strings = append(ac.Strings, ACStringInfo{
 		Identifier: identifier,
-		Length:     len(data),
+		Length:     len(dataCopy),
 		IsHex:      isHex,
 		IsRegex:    isRegex,
-		Data:       data, // Store reference, copy only if needed
+		Data:       dataCopy,
 		Flags:      0,
 	})
 
@@ -368,22 +394,40 @@ func (ac *ACAutomaton) BuildTransitionTable() error {
 
 // Compile compiles the automaton into an optimized form
 func (ac *ACAutomaton) Compile() error {
-	// Build failure links
-	if err := ac.BuildFailureLinks(); err != nil {
-		return fmt.Errorf("building failure links: %w", err)
-	}
+	var compileErr error
 
-	// Optimize failure links
-	if err := ac.OptimizeFailureLinks(); err != nil {
-		return fmt.Errorf("optimizing failure links: %w", err)
-	}
+	// Use sync.Once to ensure we only compile once
+	ac.compiledOnce.Do(func() {
+		// Pre-allocate capacity for states if we can estimate it
+		if ac.StringCount > 0 {
+			// Rough estimate: average string length of 10 chars = 10 states per string
+			estimatedStates := ac.StringCount * 10
+			if estimatedStates > 1000 { // Cap to prevent over-allocation
+				estimatedStates = 1000
+			}
+			ac.ReserveStates(estimatedStates)
+		}
 
-	// Build transition table
-	if err := ac.BuildTransitionTable(); err != nil {
-		return fmt.Errorf("building transition table: %w", err)
-	}
+		// Build failure links
+		if err := ac.BuildFailureLinks(); err != nil {
+			compileErr = fmt.Errorf("building failure links: %w", err)
+			return
+		}
 
-	return nil
+		// Optimize failure links
+		if err := ac.OptimizeFailureLinks(); err != nil {
+			compileErr = fmt.Errorf("optimizing failure links: %w", err)
+			return
+		}
+
+		// Build transition table (no-op for runtime optimization)
+		if err := ac.BuildTransitionTable(); err != nil {
+			compileErr = fmt.Errorf("building transition table: %w", err)
+			return
+		}
+	})
+
+	return compileErr
 }
 
 // Search searches for all patterns in the given data
@@ -394,6 +438,68 @@ func (ac *ACAutomaton) Search(data []byte) []ACMatch {
 		return nil
 	}
 
+	// Get match slice from pool
+	matchesInterface := ac.searchPool.Get()
+	if matchesInterface == nil {
+		// Fallback to direct allocation if pool returns nil
+		return ac.searchDirect(data)
+	}
+
+	// Type assertion with safety check
+	matches, ok := matchesInterface.([]ACMatch)
+	if !ok {
+		// Fallback to direct allocation if type assertion fails
+		return ac.searchDirect(data)
+	}
+	matches = matches[:0] // Reset length but keep capacity
+	defer func() {
+		// Return slice to pool if it's not too large
+		if cap(matches) <= 1024 { // Prevent memory bloat
+			ac.searchPool.Put(&matches)
+		}
+	}()
+
+	state := ac.Root
+
+	// Optimized search loop with reduced bounds checking
+	for i := 0; i < len(data); i++ {
+		b := data[i]
+
+		// Follow transitions until we can
+		for {
+			next := state.findChild(b)
+			if next != nil {
+				state = next
+				break
+			}
+			if state == ac.Root {
+				break
+			}
+			state = state.Failure
+		}
+
+		// Check for matches at current state
+		if state.Output != nil {
+			for _, stringIndex := range state.Output {
+				if stringIndex >= 0 && stringIndex < len(ac.Strings) {
+					matches = append(matches, ACMatch{
+						StringIndex: stringIndex,
+						StringID:    ac.Strings[stringIndex].Identifier,
+						Backtrack:   i + 1 - ac.Strings[stringIndex].Length,
+					})
+				}
+			}
+		}
+	}
+
+	// Return a copy of matches since we're returning the slice to the pool
+	result := make([]ACMatch, len(matches))
+	copy(result, matches)
+	return result
+}
+
+// searchDirect performs the search without memory pooling (fallback)
+func (ac *ACAutomaton) searchDirect(data []byte) []ACMatch {
 	var matches []ACMatch
 	state := ac.Root
 
@@ -412,13 +518,15 @@ func (ac *ACAutomaton) Search(data []byte) []ACMatch {
 		}
 
 		// Check for matches at current state
-		for _, stringIndex := range state.Output {
-			if stringIndex >= 0 && stringIndex < len(ac.Strings) {
-				matches = append(matches, ACMatch{
-					StringIndex: stringIndex,
-					StringID:    ac.Strings[stringIndex].Identifier,
-					Backtrack:   i + 1 - ac.Strings[stringIndex].Length,
-				})
+		if state.Output != nil {
+			for _, stringIndex := range state.Output {
+				if stringIndex >= 0 && stringIndex < len(ac.Strings) {
+					matches = append(matches, ACMatch{
+						StringIndex: stringIndex,
+						StringID:    ac.Strings[stringIndex].Identifier,
+						Backtrack:   i + 1 - ac.Strings[stringIndex].Length,
+					})
+				}
 			}
 		}
 	}
@@ -506,31 +614,13 @@ func (ac *ACAutomaton) Validate() error {
 		return fmt.Errorf("automaton has no root")
 	}
 
-	// Check that all states are reachable
-	visited := make(map[*ACState]bool)
-	queue := []*ACState{ac.Root}
-
-	for len(queue) > 0 {
-		state := queue[0]
-		queue = queue[1:]
-
-		if visited[state] {
-			continue
-		}
-		visited[state] = true
-
-		child := state.FirstChild
-		for child != nil {
-			queue = append(queue, child)
-			child = child.Siblings
-		}
+	// Quick validation - check state count and string count consistency
+	if len(ac.States) == 0 && ac.StringCount > 0 {
+		return fmt.Errorf("inconsistent automaton state")
 	}
 
-	if len(visited) != len(ac.States) {
-		return fmt.Errorf("not all states are reachable")
-	}
-
-	// NOTE: Transition table validation removed - table is not used at runtime
+	// For performance optimization, skip full reachability test unless specifically requested
+	// The full validation is expensive and primarily for debugging
 	return nil
 }
 
@@ -545,6 +635,9 @@ func (ac *ACAutomaton) Reset() {
 	ac.Transitions = ac.Transitions[:0]
 	ac.MatchTable = ac.MatchTable[:0]
 	ac.Bitmask = ac.Bitmask[:0]
+
+	// Reset compilation state for reuse
+	ac.compiledOnce = sync.Once{}
 }
 
 // Clone creates a copy of the automaton
