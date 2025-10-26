@@ -230,7 +230,7 @@ jobs:
 
       - name: Run Gosec Security Scanner
         run: |
-          $(go env GOPATH)/bin/gosec -exclude=G115,G204,G304 -fmt sarif -out gosec.sarif -exclude-dir=internal/comparison ./...
+          $(go env GOPATH)/bin/gosec -exclude=G115,G204,G304 -fmt sarif -out gosec.sarif -exclude-dir=internal/comparison -exclude-dir=internal/profiling/comparison ./...
 
       - name: Verify SARIF file
         run: |

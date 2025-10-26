@@ -480,13 +480,22 @@ func (c *Comparator) setupProfiling() error {
 // cleanupProfiling cleans up profiling resources
 func (c *Comparator) cleanupProfiling() {
 	if c.profiler.cpuProfileFile != nil {
-		c.profiler.cpuProfileFile.Close()
+		if err := c.profiler.cpuProfileFile.Close(); err != nil {
+			// Log error but don't fail cleanup - this is a cleanup function
+			fmt.Fprintf(os.Stderr, "Warning: failed to close CPU profile file: %v\n", err)
+		}
 	}
 	if c.profiler.memProfileFile != nil {
-		c.profiler.memProfileFile.Close()
+		if err := c.profiler.memProfileFile.Close(); err != nil {
+			// Log error but don't fail cleanup - this is a cleanup function
+			fmt.Fprintf(os.Stderr, "Warning: failed to close memory profile file: %v\n", err)
+		}
 	}
 	if c.profiler.allocProfileFile != nil {
-		c.profiler.allocProfileFile.Close()
+		if err := c.profiler.allocProfileFile.Close(); err != nil {
+			// Log error but don't fail cleanup - this is a cleanup function
+			fmt.Fprintf(os.Stderr, "Warning: failed to close alloc profile file: %v\n", err)
+		}
 	}
 }
 

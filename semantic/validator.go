@@ -179,6 +179,8 @@ func (v *Validator) validateExpression(expr ast.Expression) (*TypeInfo, []error)
 			return &TypeInfo{DataType: TypeInteger, IntegerType: Uint64Type}, nil
 		case "entrypoint":
 			return &TypeInfo{DataType: TypeInteger, IntegerType: Uint64Type}, nil
+		case "flags":
+			return &TypeInfo{DataType: TypeInteger, IntegerType: Uint64Type}, nil
 		case "them":
 			return &TypeInfo{DataType: TypeBoolean}, nil
 		case "$":

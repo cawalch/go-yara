@@ -69,6 +69,8 @@ func (tc *TypeChecker) checkIdentifier(identifier *ast.Identifier) *TypeInfo {
 		return &TypeInfo{DataType: TypeInteger, IntegerType: Uint64Type}
 	case entrypointKeyword:
 		return &TypeInfo{DataType: TypeInteger, IntegerType: Uint64Type}
+	case flagsKeyword:
+		return &TypeInfo{DataType: TypeInteger, IntegerType: Uint64Type}
 	case themKeyword:
 		return &TypeInfo{DataType: TypeBoolean}
 	case "$":

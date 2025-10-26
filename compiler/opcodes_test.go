@@ -56,14 +56,24 @@ func TestInstructionCreation(t *testing.T) {
 			size:     1,
 		},
 		{
-			name:     "push 8-bit",
-			inst:     NewInstructionWithOperand(OP_PUSH_8, Operand{Type: OperandImmediate8, Value: 0x42}, 1, 1),
+			name: "push 8-bit",
+			inst: NewInstructionWithOperand(
+				OP_PUSH_8,
+				Operand{Type: OperandImmediate8, Value: 0x42},
+				1,
+				1,
+			),
 			expected: "PUSH_8 0x42",
 			size:     2,
 		},
 		{
-			name:     "push 32-bit",
-			inst:     NewInstructionWithOperand(OP_PUSH_32, Operand{Type: OperandImmediate32, Value: 0x12345678}, 1, 1),
+			name: "push 32-bit",
+			inst: NewInstructionWithOperand(
+				OP_PUSH_32,
+				Operand{Type: OperandImmediate32, Value: 0x12345678},
+				1,
+				1,
+			),
 			expected: "PUSH_32 0x12345678",
 			size:     5,
 		},

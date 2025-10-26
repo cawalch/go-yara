@@ -9,7 +9,11 @@ import (
 // Shared helper functions for opcode handlers
 
 // executePatternOperationWithIndex is a shared helper for operations that take pattern and index
-func executePatternOperationWithIndex(i *Interpreter, operationName string, operation func(string, int64, *Interpreter) Value) error {
+func executePatternOperationWithIndex(
+	i *Interpreter,
+	operationName string,
+	operation func(string, int64, *Interpreter) Value,
+) error {
 	if len(i.stack) < 2 {
 		return &InterpreterError{
 			Type:    ErrorStackUnderflow,
@@ -42,7 +46,11 @@ func executePatternOperationWithIndex(i *Interpreter, operationName string, oper
 }
 
 // executePatternOperation is a shared helper for operations that take only pattern and return boolean
-func executePatternOperation(i *Interpreter, operationName string, operation func(string, *Interpreter) bool) error {
+func executePatternOperation(
+	i *Interpreter,
+	operationName string,
+	operation func(string, *Interpreter) bool,
+) error {
 	if len(i.stack) == 0 {
 		return &InterpreterError{
 			Type:    ErrorStackUnderflow,
@@ -69,7 +77,11 @@ func executePatternOperation(i *Interpreter, operationName string, operation fun
 }
 
 // executePatternOperationWithValue is a shared helper for operations that take only pattern and return Value
-func executePatternOperationWithValue(i *Interpreter, operationName string, operation func(string, *Interpreter) Value) error {
+func executePatternOperationWithValue(
+	i *Interpreter,
+	operationName string,
+	operation func(string, *Interpreter) Value,
+) error {
 	if len(i.stack) == 0 {
 		return &InterpreterError{
 			Type:    ErrorStackUnderflow,
@@ -600,7 +612,9 @@ func (h *RuleHandler) Execute(i *Interpreter) error {
 						if result.Type == ValueTypeInt {
 							resultBool := result.IntVal != 0
 							i.ruleResults[referencedRule.GetName()] = resultBool
-							return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt64(resultBool)})
+							return i.push(
+								Value{Type: ValueTypeInt, IntVal: boolToInt64(resultBool)},
+							)
 						}
 					}
 				}

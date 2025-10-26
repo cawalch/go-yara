@@ -113,7 +113,7 @@ func NewACAutomaton() *ACAutomaton {
 
 	// Initialize search pool for performance optimization
 	ac.searchPool = sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			return make([]ACMatch, 0, 8) // Pre-allocate reasonable capacity
 		},
 	}
@@ -171,10 +171,7 @@ func (ac *ACAutomaton) AddString(identifier string, data []byte, isHex, isRegex 
 
 	// Ensure we have enough capacity in strings slice to avoid reallocations
 	if ac.StringCount >= cap(ac.Strings) {
-		newCap := cap(ac.Strings) * 2
-		if newCap < 16 {
-			newCap = 16
-		}
+		newCap := max(cap(ac.Strings)*2, 16)
 		ac.ReserveStrings(newCap)
 	}
 
@@ -230,7 +227,12 @@ func (ac *ACAutomaton) AddString(identifier string, data []byte, isHex, isRegex 
 }
 
 // AddStringWithFlags adds a string and records regex VM flags alongside metadata.
-func (ac *ACAutomaton) AddStringWithFlags(identifier string, data []byte, isHex, isRegex bool, flags regex.Flags) error {
+func (ac *ACAutomaton) AddStringWithFlags(
+	identifier string,
+	data []byte,
+	isHex, isRegex bool,
+	flags regex.Flags,
+) error {
 	if err := ac.AddString(identifier, data, isHex, isRegex); err != nil {
 		return err
 	}

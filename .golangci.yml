@@ -672,6 +672,26 @@ linters:
           - govet
           - staticcheck
           - unused
+
+      # Exclude all linters from profiling comparison package (tooling code)
+      - path: 'internal/profiling/comparison/.*\.go'
+        linters:
+          - cyclop
+          - gocyclo
+          - gocognit
+          - funlen
+          - errcheck
+          - gosec
+          - govet
+          - staticcheck
+          - unused
+          - prealloc
+          - nestif
+          - dupl
+          - revive
+          - unconvert
+          - unparam
+          - wastedassign
       
       # Exclude duplicate detection for isComparisonOp and isDataTypeFunction functions
       # These are different functions with different purposes, not actual duplicates

@@ -19,6 +19,16 @@ type ConditionCompiler struct {
 	externalVariables map[string]int // External variable name to index
 	ruleIndexMap      map[string]int // Rule name to index in compiled rules
 	labelCounter      int            // For generating unique labels
+	labels            map[string]int // Label name to bytecode offset
+	pendingJumps      []PendingJump  // Jumps that need label resolution
+}
+
+// PendingJump represents a jump instruction that needs label resolution
+type PendingJump struct {
+	Opcode       Opcode
+	Label        string
+	Position     int
+	Line, Column int
 }
 
 // NewConditionCompiler creates a new condition compiler
@@ -30,6 +40,8 @@ func NewConditionCompiler(emitter *Emitter, stringOffsets map[string]int) *Condi
 		externalVariables: make(map[string]int),
 		ruleIndexMap:      make(map[string]int),
 		labelCounter:      0,
+		labels:            make(map[string]int),
+		pendingJumps:      make([]PendingJump, 0),
 	}
 }
 
@@ -43,6 +55,49 @@ func (cc *ConditionCompiler) SetRuleIndexMap(ruleIndexMap map[string]int) {
 func (cc *ConditionCompiler) generateLabel() string {
 	cc.labelCounter++
 	return fmt.Sprintf("L%d", cc.labelCounter)
+}
+
+// defineLabel defines a label at the current bytecode position
+func (cc *ConditionCompiler) defineLabel(label string) {
+	cc.labels[label] = cc.emitter.GetLength()
+}
+
+// emitJumpWithLabel emits a jump instruction that will be resolved later
+func (cc *ConditionCompiler) emitJumpWithLabel(opcode Opcode, label string, line, column int) {
+	// Record the pending jump
+	pos := cc.emitter.GetLength()
+	cc.pendingJumps = append(cc.pendingJumps, PendingJump{
+		Opcode:   opcode,
+		Label:    label,
+		Position: pos,
+		Line:     line,
+		Column:   column,
+	})
+
+	// Emit placeholder operand (will be fixed up during resolution)
+	cc.emitter.EmitOpcodeWithOperand(opcode, Operand{Type: OperandImmediate32, Value: 0}, line, column)
+}
+
+// resolveJumps resolves all pending jumps with their target labels
+func (cc *ConditionCompiler) resolveJumps() error {
+	for _, jump := range cc.pendingJumps {
+		targetOffset, exists := cc.labels[jump.Label]
+		if !exists {
+			return fmt.Errorf("undefined label: %s", jump.Label)
+		}
+
+		// Calculate relative offset from jump instruction position
+		relativeOffset := targetOffset - jump.Position - 1 // +1 because jump is relative to next instruction
+
+		// Update the operand in the bytecode
+		if err := cc.emitter.UpdateOperand(jump.Position, Operand{Type: OperandImmediate32, Value: uint64(relativeOffset)}); err != nil {
+			return fmt.Errorf("failed to resolve jump to label %s: %w", jump.Label, err)
+		}
+	}
+
+	// Clear pending jumps after resolution
+	cc.pendingJumps = cc.pendingJumps[:0]
+	return nil
 }
 
 // compileExpressions compiles multiple expressions with consistent error handling
@@ -95,7 +150,16 @@ func (cc *ConditionCompiler) emitStringIdentifier(offset int, identifier string,
 
 // CompileCondition compiles a condition expression to bytecode
 func (cc *ConditionCompiler) CompileCondition(condition *ast.Condition) error {
-	return cc.compileExpression(condition.Expression)
+	if err := cc.compileExpression(condition.Expression); err != nil {
+		return err
+	}
+
+	// Resolve any pending jumps
+	if err := cc.resolveJumps(); err != nil {
+		return fmt.Errorf("failed to resolve jumps: %w", err)
+	}
+
+	return nil
 }
 
 // compileExpression compiles an expression to bytecode
@@ -151,6 +215,16 @@ func (cc *ConditionCompiler) compileLiteral(lit *ast.Literal) error {
 		if value, ok := lit.Value.(string); ok {
 			// Push string length or reference
 			cc.emitter.EmitPush(uint64(len(value)), lit.Pos.Line, lit.Pos.Column)
+		}
+	case token.SIZE_LIT:
+		if value, ok := lit.Value.(int64); ok {
+			// Size literals (KB, MB, GB) are already converted to bytes by the parser
+			// Safe conversion with explicit overflow handling
+			if value < 0 {
+				cc.emitter.EmitPush(uint64(0), lit.Pos.Line, lit.Pos.Column)
+			} else {
+				cc.emitter.EmitPush(uint64(value), lit.Pos.Line, lit.Pos.Column)
+			}
 		}
 	case token.TRUE:
 		cc.emitter.EmitPush(1, lit.Pos.Line, lit.Pos.Column)
@@ -216,9 +290,14 @@ func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 	case "them":
 		// "them" is used in quantifier expressions like "any of them"
 		// In YARA, "them" refers to all strings in the current rule
-		// For now, emit a placeholder - this needs proper implementation
-		cc.emitter.EmitOpcode(OP_PUSH_8, ident.Pos.Line, ident.Pos.Column)
-		cc.emitter.EmitOpcode(OP_PUSH_8, ident.Pos.Line, ident.Pos.Column) // Placeholder for string count
+		// Emit a reference to all strings in the current rule
+		cc.emitter.EmitOpcode(OP_PUSH_M, ident.Pos.Line, ident.Pos.Column)
+		cc.emitter.EmitPush(0, ident.Pos.Line, ident.Pos.Column) // Will be replaced with string count by interpreter
+	case "flags":
+		// YARA builtin variable that contains PE header flags
+		// This should be implemented as a module import in the future
+		// For now, emit a placeholder value of 0
+		cc.emitter.EmitPush(0, ident.Pos.Line, ident.Pos.Column)
 	case "any", "all", "none":
 		// Quantifier keywords used in expressions like "any of them"
 		// These are handled as part of the OF operation, so just push a placeholder
@@ -227,12 +306,8 @@ func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 	default:
 		// Check if this might be a module function (e.g., pe.section, cuckoo.sync)
 		if cc.isModuleFunction(ident.Name) {
-			// For now, emit a placeholder for module functions
-			// In a full implementation, we would:
-			// 1. Look up the module in a registry
-			// 2. Call the module function with appropriate arguments
-			// 3. Handle the return value
-			cc.emitter.EmitOpcode(OP_PUSH_U, ident.Pos.Line, ident.Pos.Column) // Placeholder for module function result
+			// Emit module function call bytecode
+			cc.emitModuleFunctionCall(ident.Name, ident.Pos.Line, ident.Pos.Column)
 			return nil
 		}
 
@@ -489,9 +564,7 @@ func (cc *ConditionCompiler) GetVariableIndex(name string) (int, bool) {
 
 // EmitJump emits a jump instruction with label management
 func (cc *ConditionCompiler) EmitJump(opcode Opcode, targetLabel string, line, pos int) error {
-	// For now, emit a placeholder jump
-	// In a full implementation, this would manage label resolution
-	cc.emitter.EmitOpcode(opcode, line, pos)
+	cc.emitJumpWithLabel(opcode, targetLabel, line, pos)
 	return nil
 }
 
@@ -515,46 +588,41 @@ func (cc *ConditionCompiler) CompileBooleanExpression(expr ast.Expression, short
 	return cc.compileExpression(expr)
 }
 
-// compileShortCircuitAnd compiles AND with short-circuit evaluation
-func (cc *ConditionCompiler) compileShortCircuitAnd(andOp *ast.BinaryOp) error {
+// compileShortCircuitBinary compiles binary operations with short-circuit evaluation
+func (cc *ConditionCompiler) compileShortCircuitBinary(binOp *ast.BinaryOp, jumpOpcode Opcode, resultOpcode Opcode) error {
 	// Compile left operand
-	if err := cc.compileExpression(andOp.Left); err != nil {
+	if err := cc.compileExpression(binOp.Left); err != nil {
 		return err
 	}
 
-	// Emit jump if false (short-circuit) - target will be fixed up later
-	cc.emitter.EmitJump(OP_JFALSE, 0, andOp.Pos.Line, andOp.Pos.Column)
+	// Generate labels for short-circuit
+	endLabel := cc.generateLabel()
+
+	// Emit jump for short-circuit to end label
+	cc.emitJumpWithLabel(jumpOpcode, endLabel, binOp.Pos.Line, binOp.Pos.Column)
 
 	// Compile right operand
-	if err := cc.compileExpression(andOp.Right); err != nil {
+	if err := cc.compileExpression(binOp.Right); err != nil {
 		return err
 	}
 
-	// Emit AND operation
-	cc.emitter.EmitOpcode(OP_AND, andOp.Pos.Line, andOp.Pos.Column)
+	// Define the end label
+	cc.defineLabel(endLabel)
+
+	// Emit result operation
+	cc.emitter.EmitOpcode(resultOpcode, binOp.Pos.Line, binOp.Pos.Column)
 
 	return nil
 }
 
+// compileShortCircuitAnd compiles AND with short-circuit evaluation
+func (cc *ConditionCompiler) compileShortCircuitAnd(andOp *ast.BinaryOp) error {
+	return cc.compileShortCircuitBinary(andOp, OP_JFALSE, OP_AND)
+}
+
 // compileShortCircuitOr compiles OR with short-circuit evaluation
 func (cc *ConditionCompiler) compileShortCircuitOr(orOp *ast.BinaryOp) error {
-	// Compile left operand
-	if err := cc.compileExpression(orOp.Left); err != nil {
-		return err
-	}
-
-	// Emit jump if true (short-circuit) - target will be fixed up later
-	cc.emitter.EmitJump(OP_JTRUE, 0, orOp.Pos.Line, orOp.Pos.Column)
-
-	// Compile right operand
-	if err := cc.compileExpression(orOp.Right); err != nil {
-		return err
-	}
-
-	// Emit OR operation
-	cc.emitter.EmitOpcode(OP_OR, orOp.Pos.Line, orOp.Pos.Column)
-
-	return nil
+	return cc.compileShortCircuitBinary(orOp, OP_JTRUE, OP_OR)
 }
 
 // GetVariableMap returns the variable map
@@ -657,14 +725,49 @@ func (cc *ConditionCompiler) printExpressionRecursive(expr ast.Expression, depth
 
 // compileOfExpression compiles an "of" expression (e.g., "any of them", "1 of ($a, $b)")
 func (cc *ConditionCompiler) compileOfExpression(ofExpr *ast.OfExpression) error {
-	// Compile count expression (e.g., "any", "1", "2")
-	if err := cc.compileExpression(ofExpr.Count); err != nil {
-		return fmt.Errorf("compiling count expression in of-expression: %w", err)
+	// Handle count expression (e.g., "any", "all", "none", "1", "2")
+	switch countExpr := ofExpr.Count.(type) {
+	case *ast.Identifier:
+		switch countExpr.Name {
+		case "any":
+			cc.emitter.EmitPush(1, countExpr.Pos.Line, countExpr.Pos.Column) // At least 1
+		case "all":
+			// Will be replaced with total string count by interpreter
+			cc.emitter.EmitOpcode(OP_PUSH_M, countExpr.Pos.Line, countExpr.Pos.Column)
+		case "none":
+			cc.emitter.EmitPush(0, countExpr.Pos.Line, countExpr.Pos.Column) // 0 matches
+		default:
+			// Regular identifier, compile normally
+			if err := cc.compileExpression(ofExpr.Count); err != nil {
+				return fmt.Errorf("compiling count expression in of-expression: %w", err)
+			}
+		}
+	default:
+		// Regular expression, compile normally
+		if err := cc.compileExpression(ofExpr.Count); err != nil {
+			return fmt.Errorf("compiling count expression in of-expression: %w", err)
+		}
 	}
 
-	// Compile strings expression (e.g., "them", "($a, $b)")
-	if err := cc.compileExpression(ofExpr.Strings); err != nil {
-		return fmt.Errorf("compiling strings expression in of-expression: %w", err)
+	// Handle strings expression (e.g., "them", "($a, $b)")
+	switch stringsExpr := ofExpr.Strings.(type) {
+	case *ast.Identifier:
+		if stringsExpr.Name == "them" {
+			// "them" refers to all strings in the current rule
+			// Emit a reference to all strings
+			cc.emitter.EmitOpcode(OP_PUSH_M, stringsExpr.Pos.Line, stringsExpr.Pos.Column)
+			cc.emitter.EmitPush(0, stringsExpr.Pos.Line, stringsExpr.Pos.Column) // Placeholder for string count
+		} else {
+			// Regular identifier, compile normally
+			if err := cc.compileExpression(ofExpr.Strings); err != nil {
+				return fmt.Errorf("compiling strings expression in of-expression: %w", err)
+			}
+		}
+	default:
+		// Regular expression, compile normally
+		if err := cc.compileExpression(ofExpr.Strings); err != nil {
+			return fmt.Errorf("compiling strings expression in of-expression: %w", err)
+		}
 	}
 
 	// Emit OP_OF opcode
@@ -746,7 +849,7 @@ func (cc *ConditionCompiler) isModuleFunction(name string) bool {
 
 			// Check if module is known
 			for _, module := range moduleFunctions {
-				if strings.HasPrefix(moduleName, module) {
+				if strings.HasPrefix(module, moduleName+".") {
 					return true
 				}
 			}
@@ -759,6 +862,34 @@ func (cc *ConditionCompiler) isModuleFunction(name string) bool {
 	}
 
 	return false
+}
+
+// emitModuleFunctionCall emits bytecode for a module function call
+func (cc *ConditionCompiler) emitModuleFunctionCall(name string, line, column int) {
+	// For now, emit a placeholder value that matches the expected return type
+	// In a full implementation, this would:
+	// 1. Look up the module in a registry
+	// 2. Call the module function with appropriate arguments
+	// 3. Handle the return value
+
+	// Common module function return types (approximated):
+	switch name {
+	case "pe.machine", "pe.sections", "pe.entry_point", "pe.characteristics",
+		"pe.subsystem", "pe.dll_name", "pe.exports", "pe.imports",
+		"pe.version", "pe.timestamp", "pe.linked_modules":
+		// PE module functions typically return integer or string values
+		cc.emitter.EmitPush(0, line, column) // Placeholder return value
+	case "cuckoo.sync", "cuckoo.file", "cuckoo.network", "cuckoo.registry",
+		"cuckoo.process", "cuckoo.api", "cuckoo.behavior", "cuckoo.strings":
+		// Cuckoo module functions typically return boolean or structured data
+		cc.emitter.EmitPush(0, line, column) // Placeholder return value
+	case "hash.md5", "hash.sha1", "hash.sha256", "hash.ssdeep":
+		// Hash functions return strings
+		cc.emitter.EmitPush(0, line, column) // Placeholder hash length
+	default:
+		// Unknown module function, emit undefined
+		cc.emitter.EmitOpcode(OP_PUSH_U, line, column)
+	}
 }
 
 // compileStringLength compiles a string length expression (!string)

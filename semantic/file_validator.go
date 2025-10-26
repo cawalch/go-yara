@@ -17,6 +17,7 @@ type FileValidator struct {
 const (
 	filesizeKeyword   = "filesize"
 	entrypointKeyword = "entrypoint"
+	flagsKeyword      = "flags"
 )
 
 // NewFileValidator creates a new file validator

@@ -251,8 +251,8 @@ func (v Value) String() string {
 }
 
 // GetStats returns execution statistics
-func (i *Interpreter) GetStats() map[string]interface{} {
-	return map[string]interface{}{
+func (i *Interpreter) GetStats() map[string]any {
+	return map[string]any{
 		"instructions_executed": i.ip,
 		"stack_depth":           len(i.stack),
 		"rules_executed":        len(i.ruleResults),
