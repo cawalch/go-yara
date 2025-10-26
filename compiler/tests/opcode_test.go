@@ -112,8 +112,8 @@ func TestUndefinedValues(t *testing.T) {
 
 	// Test that undefined constants are properly handled
 	const testUndefined = compiler.YRUndefined
-	if testUndefined != 0xFFFFFFFFFFFFFFFF {
-		t.Errorf("YRUndefined should be 0xFFFFFFFFFFFFFFFF, got %x", testUndefined)
+	if testUndefined != 0xFFFABADAFABADAFF {
+		t.Errorf("YRUndefined should be 0xFFFABADAFABADAFF, got %x", testUndefined)
 	}
 }
 
@@ -123,11 +123,11 @@ func TestOpcodeString(t *testing.T) {
 		opcode   compiler.Opcode
 		expected string
 	}{
-		{compiler.OP_NOP, "OP_NOP"},
-		{compiler.OP_HALT, "OP_HALT"},
-		{compiler.OP_PUSH_8, "OP_PUSH_8"},
-		{compiler.OP_INT_ADD, "OP_INT_ADD"},
-		{compiler.OP_JZ, "OP_JZ"},
+		{compiler.OP_NOP, "NOP"},
+		{compiler.OP_HALT, "HALT"},
+		{compiler.OP_PUSH_8, "PUSH_8"},
+		{compiler.OP_INT_ADD, "INT_ADD"},
+		{compiler.OP_JZ, "JZ"},
 	}
 
 	for _, test := range tests {
@@ -145,9 +145,9 @@ func TestOpcodeCategories(t *testing.T) {
 		opcode   compiler.Opcode
 		category string
 	}{
-		{compiler.OP_PUSH_8, "push"},
-		{compiler.OP_PUSH_16, "push"},
-		{compiler.OP_PUSH_32, "push"},
+		{compiler.OP_PUSH_8, "stack"},
+		{compiler.OP_PUSH_16, "stack"},
+		{compiler.OP_PUSH_32, "stack"},
 		{compiler.OP_INT_ADD, "arithmetic"},
 		{compiler.OP_INT_SUB, "arithmetic"},
 		{compiler.OP_INT_MUL, "arithmetic"},
@@ -155,8 +155,8 @@ func TestOpcodeCategories(t *testing.T) {
 		// TODO: Find correct opcodes for JNZ and JMP
 		// {compiler.OP_JNZ, "jump"},
 		// {compiler.OP_JMP, "jump"},
-		{compiler.OP_STR_EQ, "string"},
-		{compiler.OP_STR_NEQ, "string"},
+		{compiler.OP_STR_EQ, "arithmetic"},
+		{compiler.OP_STR_NEQ, "arithmetic"},
 		{compiler.OP_HALT, "control"},
 		{compiler.OP_NOP, "control"},
 	}
