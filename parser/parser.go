@@ -171,6 +171,84 @@ func (p *Parser) parseTagList() []string {
 	return tags
 }
 
+// parseMetaValue parses a meta value with comprehensive error handling
+// Supports: string literals, integers, boolean values (true/false)
+// Returns: parsed value or nil if error occurred
+func (p *Parser) parseMetaValue() interface{} {
+	pos := p.current.Pos
+
+	switch {
+	case p.currentTokenIs(token.STRING_LIT):
+		value := p.current.Literal
+		p.nextToken()
+		return value
+	case p.currentTokenIs(token.INTEGER_LIT):
+		value := p.parseIntegerLiteral()
+		if value == 0 && p.current.Literal != "0" {
+			p.addError(fmt.Errorf("invalid integer literal '%s' at %v", p.current.Literal, pos))
+		}
+		p.nextToken()
+		return value
+	case p.currentTokenIs(token.TRUE):
+		p.nextToken()
+		return true
+	case p.currentTokenIs(token.FALSE):
+		p.nextToken()
+		return false
+	default:
+		p.addError(fmt.Errorf("invalid meta value type '%s' at %v - expected string, integer, or boolean", p.current.Type, pos))
+		return nil
+	}
+}
+
+// parseMetaEntry parses a single meta entry (key = value)
+func (p *Parser) parseMetaEntry() (*ast.Meta, error) {
+	if !p.currentTokenIs(token.IDENTIFIER) {
+		return nil, fmt.Errorf("expected identifier for meta key at %v", p.current.Pos)
+	}
+
+	key := p.current.Literal
+	pos := p.current.Pos
+	p.nextToken()
+
+	if err := p.expectTokenWithMessage(token.ASSIGN, "expected '=' after meta key"); err != nil {
+		return nil, err
+	}
+
+	value := p.parseMetaValue()
+	if value == nil {
+		return nil, fmt.Errorf("failed to parse meta value for key '%s'", key)
+	}
+
+	return p.builder.Meta(pos, key, value), nil
+}
+
+// getStringModifierType converts a token type to its corresponding string modifier type
+// Precondition: tokenType should be a valid string modifier token
+func (p *Parser) getStringModifierType(tokenType token.TokenType) ast.StringModifierType {
+	switch tokenType {
+	case token.NOCASE:
+		return ast.StringModifierNocase
+	case token.WIDE:
+		return ast.StringModifierWide
+	case token.ASCII:
+		return ast.StringModifierASCII
+	case token.FULLWORD:
+		return ast.StringModifierFullword
+	case token.PRIVATE:
+		return ast.StringModifierPrivate
+	case token.XOR:
+		return ast.StringModifierXor
+	case token.BASE64:
+		return ast.StringModifierBase64
+	case token.BASE64WIDE:
+		return ast.StringModifierBase64Wide
+	default:
+		// This should not happen if isStringModifier is called first
+		return ast.StringModifierNocase // Fallback
+	}
+}
+
 // synchronize recovers from parsing errors by skipping to next rule, import, or global variable
 func (p *Parser) synchronize() {
 	p.nextToken()
@@ -291,7 +369,13 @@ func (p *Parser) parseImport() (*ast.Import, error) {
 	return p.builder.Import(pos, module), nil
 }
 
-// parseMetaDeclarations parses meta declarations
+// parseMetaDeclarations parses meta declarations in the format:
+// meta:
+//
+//	key = value
+//	another_key = "string value"
+//	numeric_key = 42
+//	bool_key = true
 func (p *Parser) parseMetaDeclarations() []*ast.Meta {
 	meta := make([]*ast.Meta, 0)
 
@@ -300,35 +384,11 @@ func (p *Parser) parseMetaDeclarations() []*ast.Meta {
 			break
 		}
 
-		key := p.current.Literal
-		pos := p.current.Pos
-		p.nextToken()
-
-		if !p.expectToken(token.ASSIGN) {
-			break
-		}
-
-		var value interface{}
-		switch {
-		case p.currentTokenIs(token.STRING_LIT):
-			value = p.current.Literal
-			p.nextToken()
-		case p.currentTokenIs(token.INTEGER_LIT):
-			// Parse integer literal properly
-			value = p.parseIntegerLiteral()
-			p.nextToken()
-		case p.currentTokenIs(token.TRUE):
-			value = true
-			p.nextToken()
-		case p.currentTokenIs(token.FALSE):
-			value = false
-			p.nextToken()
-		default:
-			p.errors = append(p.errors, fmt.Errorf("invalid meta value type at %v", p.current.Pos))
-		}
-
-		if value != nil {
-			meta = append(meta, p.builder.Meta(pos, key, value))
+		metaEntry, err := p.parseMetaEntry()
+		if err != nil {
+			p.addError(err)
+		} else if metaEntry != nil {
+			meta = append(meta, metaEntry)
 		}
 	}
 
@@ -1355,31 +1415,13 @@ func (p *Parser) parseFloatLiteral() float64 {
 	return 0
 }
 
-// parseStringModifiers parses string modifiers (nocase, wide, ascii, etc.)
+// parseStringModifiers parses string modifiers (nocase, wide, ascii, fullword, private, xor, base64, etc.)
+// Returns a slice of StringModifier structs representing the parsed modifiers
 func (p *Parser) parseStringModifiers() []ast.StringModifier {
 	modifiers := make([]ast.StringModifier, 0)
 
 	for p.isStringModifier(p.current.Type) {
-		var modifierType ast.StringModifierType
-		switch p.current.Type {
-		case token.NOCASE:
-			modifierType = ast.StringModifierNocase
-		case token.WIDE:
-			modifierType = ast.StringModifierWide
-		case token.ASCII:
-			modifierType = ast.StringModifierASCII
-		case token.FULLWORD:
-			modifierType = ast.StringModifierFullword
-		case token.PRIVATE:
-			modifierType = ast.StringModifierPrivate
-		case token.XOR:
-			modifierType = ast.StringModifierXor
-		case token.BASE64:
-			modifierType = ast.StringModifierBase64
-		case token.BASE64WIDE:
-			modifierType = ast.StringModifierBase64Wide
-		}
-
+		modifierType := p.getStringModifierType(p.current.Type)
 		modifiers = append(modifiers, ast.StringModifier{Type: modifierType})
 		p.nextToken()
 	}
