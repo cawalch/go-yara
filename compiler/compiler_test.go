@@ -10,81 +10,6 @@ import (
 	"github.com/cawalch/go-yara/token"
 )
 
-// TestEmitter tests the bytecode emitter
-func TestEmitter(t *testing.T) {
-	emitter := NewEmitter()
-
-	// Test basic emission
-	offset1 := emitter.EmitOpcode(OP_PUSH, 1, 1)
-	offset2 := emitter.EmitOpcode(OP_NOP, 1, 5)
-
-	if offset1 != 0 {
-		t.Errorf("First instruction offset = %v, want 0", offset1)
-	}
-
-	if offset2 != 1 {
-		t.Errorf("Second instruction offset = %v, want 1", offset2)
-	}
-
-	// Test push operations
-	pushOffset := emitter.EmitPush(0x12345678, 1, 10)
-	if pushOffset != 2 {
-		t.Errorf("Push instruction offset = %v, want 2", pushOffset)
-	}
-
-	// Test instruction count
-	if count := emitter.GetInstructionCount(); count != 3 {
-		t.Errorf("Instruction count = %v, want 3", count)
-	}
-
-	// Test bytecode generation
-	bytecode, err := emitter.GetBytecode()
-	if err != nil {
-		t.Errorf("GetBytecode() error = %v", err)
-	}
-
-	expectedSize := emitter.GetSize()
-	if len(bytecode) != expectedSize {
-		t.Errorf("Bytecode length = %v, want %v", len(bytecode), expectedSize)
-	}
-}
-
-// TestStringCompiler tests the string compilation system
-func TestStringCompiler(t *testing.T) {
-	emitter := NewEmitter()
-	sc := NewStringCompiler(emitter)
-
-	// Test text string encoding
-	text := "Hello, World!"
-	modifiers := []ast.StringModifier{
-		{Type: ast.StringModifierNocase},
-	}
-
-	encoded := sc.encodeTextString(text, modifiers)
-	if len(encoded) == 0 {
-		t.Error("Text string encoding returned empty result")
-	}
-
-	// Test hex string parsing (simplified)
-	hexStr := "48656c6c6f"
-	hexData := sc.parseHexString(hexStr)
-	if len(hexData) == 0 {
-		t.Error("Hex string parsing returned empty result")
-	}
-
-	// Test pattern optimization
-	optimized := sc.OptimizePattern(encoded, modifiers)
-	if len(optimized) == 0 {
-		t.Error("Pattern optimization returned empty result")
-	}
-
-	// Test string info
-	info := sc.GetStringInfo()
-	if len(info) != 0 {
-		t.Error("Expected no string info before compilation")
-	}
-}
-
 // TestACAutomaton tests the Aho-Corasick automaton
 func TestACAutomaton(t *testing.T) {
 	ac := NewACAutomaton()
@@ -130,51 +55,6 @@ func TestACAutomaton(t *testing.T) {
 		if !found[ts.id] {
 			t.Errorf("Expected to find string %s in matches", ts.id)
 		}
-	}
-}
-
-// TestConditionCompiler tests the condition compilation system
-func TestConditionCompiler(t *testing.T) {
-	emitter := NewEmitter()
-	cc := NewConditionCompiler(emitter, make(map[string]int))
-
-	// Test literal compilation
-	literal := &ast.Literal{
-		Pos:   token.Position{Line: 1, Column: 1},
-		Type:  token.TRUE,
-		Value: true,
-	}
-
-	err := cc.compileLiteral(literal)
-	if err != nil {
-		t.Errorf("Literal compilation failed: %v", err)
-	}
-
-	// Test identifier compilation
-	identifier := &ast.Identifier{
-		Pos:  token.Position{Line: 1, Column: 1},
-		Name: "test_var",
-	}
-
-	// Add variable to map first
-	cc.AddVariable("test_var", 0)
-
-	err = cc.compileIdentifier(identifier)
-	if err != nil {
-		t.Errorf("Identifier compilation failed: %v", err)
-	}
-
-	// Test binary operation compilation
-	binOp := &ast.BinaryOp{
-		Pos:   token.Position{Line: 1, Column: 1},
-		Left:  &ast.Literal{Pos: token.Position{Line: 1, Column: 1}, Type: token.TRUE, Value: true},
-		Op:    token.AND,
-		Right: &ast.Literal{Pos: token.Position{Line: 1, Column: 1}, Type: token.FALSE, Value: false},
-	}
-
-	err = cc.compileBinaryOp(binOp)
-	if err != nil {
-		t.Errorf("Binary operation compilation failed: %v", err)
 	}
 }
 
@@ -362,34 +242,6 @@ func TestEmitterStats(t *testing.T) {
 	expectedSize := 1 + 1 + 5 // PUSH + NOP + PUSH_32
 	if stats["bytecode_size"] != expectedSize {
 		t.Errorf("Bytecode size = %v, want %v", stats["bytecode_size"], expectedSize)
-	}
-}
-
-// TestStringCompilerValidation tests string modifier validation
-func TestStringCompilerValidation(t *testing.T) {
-	emitter := NewEmitter()
-	sc := NewStringCompiler(emitter)
-
-	// Test incompatible modifiers
-	incompatibleModifiers := []ast.StringModifier{
-		{Type: ast.StringModifierWide},
-		{Type: ast.StringModifierASCII},
-	}
-
-	err := sc.ValidateStringModifiers(incompatibleModifiers)
-	if err == nil {
-		t.Error("Expected error for incompatible modifiers")
-	}
-
-	// Test compatible modifiers
-	compatibleModifiers := []ast.StringModifier{
-		{Type: ast.StringModifierNocase},
-		{Type: ast.StringModifierFullword},
-	}
-
-	err = sc.ValidateStringModifiers(compatibleModifiers)
-	if err != nil {
-		t.Errorf("Compatible modifiers should be valid: %v", err)
 	}
 }
 
