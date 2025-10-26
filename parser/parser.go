@@ -249,6 +249,127 @@ func (p *Parser) getStringModifierType(tokenType token.TokenType) ast.StringModi
 	}
 }
 
+// parseStringIdentifier parses a string identifier and returns its components.
+// String identifiers can be:
+//   - Anonymous: "$" (standalone anonymous string)
+//   - Named: "$name" or "name" (named string with $ prefix)
+//   - Regular: "name" (regular identifier)
+//
+// Returns: (identifier, position, error) where error is non-nil if parsing fails
+func (p *Parser) parseStringIdentifier() (string, token.Position, error) {
+	if !p.currentTokenIs(token.STRING_IDENTIFIER) && !p.currentTokenIs(token.IDENTIFIER) {
+		return "", token.Position{}, fmt.Errorf("expected string identifier at %v, got %s", p.current.Pos, p.current.Type)
+	}
+
+	identifier := p.current.Literal
+	pos := p.current.Pos
+	p.nextToken()
+
+	return identifier, pos, nil
+}
+
+// parseStringPattern parses a string pattern and returns the appropriate AST node.
+// Supported pattern types:
+//   - Text strings: "hello world" (STRING_LIT)
+//   - Hex strings: { 48 65 6C 6C 6F } (HEX_STRING_LIT)
+//   - Regex patterns: /hello.*world/ (REGEX_LIT)
+//
+// Parameters:
+//   - pos: Position where the pattern starts (for error reporting)
+//
+// Returns: (ast.Pattern, error) where pattern is nil and error is non-nil if parsing fails
+func (p *Parser) parseStringPattern(pos token.Position) (ast.Pattern, error) {
+	switch {
+	case p.currentTokenIs(token.STRING_LIT):
+		// Text string literal
+		patternValue := p.current.Literal
+		p.nextToken()
+		return p.builder.TextString(pos, patternValue), nil
+	case p.currentTokenIs(token.HEX_STRING_LIT):
+		// Hex string literal
+		patternValue := p.current.Literal
+		p.nextToken()
+		return p.builder.HexString(pos, patternValue), nil
+	case p.currentTokenIs(token.REGEX_LIT):
+		// Regex pattern literal
+		patternValue := p.current.Literal
+		p.nextToken()
+		return p.builder.RegexPattern(pos, patternValue), nil
+	default:
+		return nil, fmt.Errorf("expected string, hex, or regex literal at %v, got %s", p.current.Pos, p.current.Type)
+	}
+}
+
+// parseStringDeclaration parses a complete string declaration in the format:
+// $identifier = "text" [modifiers]
+// $ = "text" [modifiers]  // anonymous string
+func (p *Parser) parseStringDeclaration() (*ast.String, error) {
+	// Parse string identifier
+	identifier, pos, err := p.parseStringIdentifier()
+	if err != nil {
+		return nil, err
+	}
+
+	// Expect assignment operator
+	if assignErr := p.expectTokenWithMessage(token.ASSIGN, "expected '=' after string identifier"); assignErr != nil {
+		return nil, assignErr
+	}
+
+	// Parse string pattern
+	pattern, patternErr := p.parseStringPattern(pos)
+	if patternErr != nil {
+		p.addError(patternErr)
+		return nil, patternErr
+	}
+
+	// Parse string modifiers
+	modifiers := p.parseStringModifiers()
+
+	// Create string node
+	str := p.builder.String(pos, identifier, pattern, modifiers)
+	return str, nil
+}
+
+// parseBinaryExpression parses binary expressions with left-associative binding.
+// This is a generic helper for parsing expressions that follow the pattern:
+// left op right [op right]*
+// Parameters:
+//   - leftOperand: initial left operand
+//   - parseRightOperand: function to parse right operands
+//   - operatorTypes: slice of operator token types to match
+//
+// Returns: parsed expression or error
+func (p *Parser) parseBinaryExpression(
+	left ast.Expression,
+	parseRightOperand func() (ast.Expression, error),
+	operatorTypes []token.TokenType,
+) (ast.Expression, error) {
+	for p.isAnyToken(operatorTypes) {
+		op := p.current.Type
+		pos := p.current.Pos
+		p.nextToken()
+
+		right, err := parseRightOperand()
+		if err != nil {
+			return nil, err
+		}
+
+		left = p.builder.BinaryOp(pos, left, op, right)
+	}
+
+	return left, nil
+}
+
+// isAnyToken checks if current token matches any of the provided token types
+func (p *Parser) isAnyToken(tokenTypes []token.TokenType) bool {
+	for _, tokenType := range tokenTypes {
+		if p.currentTokenIs(tokenType) {
+			return true
+		}
+	}
+	return false
+}
+
 // synchronize recovers from parsing errors by skipping to next rule, import, or global variable
 func (p *Parser) synchronize() {
 	p.nextToken()
@@ -395,67 +516,23 @@ func (p *Parser) parseMetaDeclarations() []*ast.Meta {
 	return meta
 }
 
-// parseStringDeclarations parses string declarations
+// parseStringDeclarations parses string declarations in the strings section
+// Supports: $identifier = "pattern" [modifiers], $ = "pattern" [modifiers]
+// Returns a slice of parsed string declarations
 func (p *Parser) parseStringDeclarations() []*ast.String {
 	strings := make([]*ast.String, 0)
 
 	for !p.currentTokenIs(token.CONDITION) && !p.currentTokenIs(token.RBRACE) {
-		// Handle both string identifiers and anonymous strings
 		if !p.currentTokenIs(token.STRING_IDENTIFIER) && !p.currentTokenIs(token.IDENTIFIER) {
 			break
 		}
 
-		var identifier string
-		pos := p.current.Pos
-
-		// Check if this is an anonymous string (just $)
-		switch {
-		case p.currentTokenIs(token.STRING_IDENTIFIER) && p.current.Literal == "$":
-			identifier = "$"
-			p.nextToken()
-		case p.currentTokenIs(token.STRING_IDENTIFIER):
-			identifier = p.current.Literal
-			p.nextToken()
-		case p.currentTokenIs(token.IDENTIFIER):
-			// This might be an anonymous string identifier
-			identifier = p.current.Literal
-			p.nextToken()
-		default:
-			return []*ast.String{}
+		str, err := p.parseStringDeclaration()
+		if err != nil {
+			p.addError(err)
+		} else if str != nil {
+			strings = append(strings, str)
 		}
-
-		if !p.expectToken(token.ASSIGN) {
-			break
-		}
-
-		// Parse string patterns - support text strings, hex strings, and regex patterns
-		var pattern ast.Pattern
-
-		switch {
-		case p.currentTokenIs(token.STRING_LIT):
-			// Text string literal
-			patternValue := p.current.Literal
-			p.nextToken()
-			pattern = p.builder.TextString(pos, patternValue)
-		case p.currentTokenIs(token.HEX_STRING_LIT):
-			// Hex string literal
-			patternValue := p.current.Literal
-			p.nextToken()
-			pattern = p.builder.HexString(pos, patternValue)
-		case p.currentTokenIs(token.REGEX_LIT):
-			// Regex pattern literal
-			patternValue := p.current.Literal
-			p.nextToken()
-			pattern = p.builder.RegexPattern(pos, patternValue)
-		default:
-			p.errors = append(p.errors, fmt.Errorf("expected string, hex, or regex literal, got %s at %v", p.current.Type, p.current.Pos))
-		}
-
-		// Parse string modifiers after the pattern
-		modifiers := p.parseStringModifiers()
-
-		str := p.builder.String(pos, identifier, pattern, modifiers)
-		strings = append(strings, str)
 	}
 
 	return strings
@@ -487,43 +564,19 @@ func (p *Parser) parseLogicalOr() (ast.Expression, error) {
 		return nil, err
 	}
 
-	for p.currentTokenIs(token.OR) {
-		op := p.current.Type
-		pos := p.current.Pos
-		p.nextToken()
-
-		right, orErr := p.parseLogicalAnd()
-		if orErr != nil {
-			return nil, orErr
-		}
-
-		left = p.builder.BinaryOp(pos, left, op, right)
-	}
-
-	return left, nil
+	return p.parseBinaryExpression(left, p.parseLogicalAnd, []token.TokenType{token.OR})
 }
 
-// parseLogicalAnd parses logical AND expressions
+// parseLogicalAnd parses logical AND expressions with left-associative binding.
+// Handles expressions like: expr1 and expr2 and expr3
+// Returns: ast.BinaryOp nodes with token.AND operator
 func (p *Parser) parseLogicalAnd() (ast.Expression, error) {
 	left, err := p.parseLogicalNot()
 	if err != nil {
 		return nil, err
 	}
 
-	for p.currentTokenIs(token.AND) {
-		op := p.current.Type
-		pos := p.current.Pos
-		p.nextToken()
-
-		right, andErr := p.parseLogicalNot()
-		if andErr != nil {
-			return nil, andErr
-		}
-
-		left = p.builder.BinaryOp(pos, left, op, right)
-	}
-
-	return left, nil
+	return p.parseBinaryExpression(left, p.parseLogicalNot, []token.TokenType{token.AND})
 }
 
 // parseLogicalNot parses logical NOT expressions
