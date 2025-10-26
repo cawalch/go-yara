@@ -132,6 +132,45 @@ func (p *Parser) addError(err error) {
 	}
 }
 
+// expectTokenWithMessage checks for expected token and advances if matched, returns error message
+func (p *Parser) expectTokenWithMessage(tokenType token.TokenType, message string) error {
+	if !p.expectToken(tokenType) {
+		return fmt.Errorf("%s", message)
+	}
+	return nil
+}
+
+// expectIdentifier expects and returns an identifier token
+func (p *Parser) expectIdentifier() (string, error) {
+	if !p.currentTokenIs(token.IDENTIFIER) {
+		return "", fmt.Errorf("expected identifier, got %s at %v", p.current.Type, p.current.Pos)
+	}
+
+	value := p.current.Literal
+	p.nextToken()
+	return value, nil
+}
+
+// consumeIdentifierSequence consumes consecutive identifiers and returns them
+func (p *Parser) consumeIdentifierSequence() []string {
+	identifiers := make([]string, 0)
+	for p.currentTokenIs(token.IDENTIFIER) {
+		identifiers = append(identifiers, p.current.Literal)
+		p.nextToken()
+	}
+	return identifiers
+}
+
+// parseTagList parses a colon-separated list of identifiers (tags)
+func (p *Parser) parseTagList() []string {
+	tags := make([]string, 0)
+	if p.currentTokenIs(token.COLON) {
+		p.nextToken()
+		tags = p.consumeIdentifierSequence()
+	}
+	return tags
+}
+
 // synchronize recovers from parsing errors by skipping to next rule, import, or global variable
 func (p *Parser) synchronize() {
 	p.nextToken()
@@ -144,7 +183,17 @@ func (p *Parser) synchronize() {
 	}
 }
 
-// parseRule parses a single YARA rule
+// parseRule parses a single YARA rule with the following structure:
+//
+//	rule <identifier>[: <tags>] {
+//	    meta:
+//	        <meta_statements>
+//	    strings:
+//	        <string_statements>
+//	    condition:
+//	        <expression>
+//	}
+//
 // Modifiers (private, global) come before the RULE keyword
 func (p *Parser) parseRule() (*ast.Rule, error) {
 	// Parse modifiers (private, global) - they come before RULE keyword
@@ -159,27 +208,18 @@ func (p *Parser) parseRule() (*ast.Rule, error) {
 	}
 
 	// Expect RULE keyword
-	if !p.expectToken(token.RULE) {
-		return nil, fmt.Errorf("expected 'rule' keyword")
+	if err := p.expectTokenWithMessage(token.RULE, "expected 'rule' keyword"); err != nil {
+		return nil, err
 	}
 
-	// Current token should be the rule name (IDENTIFIER)
-	if !p.currentTokenIs(token.IDENTIFIER) {
-		return nil, fmt.Errorf("expected rule name, got %s at %v", p.current.Type, p.current.Pos)
+	// Get rule name
+	ruleName, err := p.expectIdentifier()
+	if err != nil {
+		return nil, fmt.Errorf("expected rule name, %v", err)
 	}
-
-	ruleName := p.current.Literal
-	p.nextToken()
 
 	// Parse tags
-	tags := make([]string, 0)
-	if p.currentTokenIs(token.COLON) {
-		p.nextToken()
-		for p.currentTokenIs(token.IDENTIFIER) {
-			tags = append(tags, p.current.Literal)
-			p.nextToken()
-		}
-	}
+	tags := p.parseTagList()
 
 	if !p.expectToken(token.LBRACE) {
 		return nil, fmt.Errorf("expected '{' after rule declaration")
@@ -361,12 +401,26 @@ func (p *Parser) parseStringDeclarations() []*ast.String {
 	return strings
 }
 
-// parseExpression parses expressions with operator precedence
+// parseExpression parses expressions using the following operator precedence (highest to lowest):
+// 1. Primary expressions (literals, identifiers, function calls, parenthesized expressions)
+// 2. Unary operators (NOT, -, ~)
+// 3. Multiplicative operators (*, /, %)
+// 4. Additive operators (+, -)
+// 5. Bitwise shift operators (<<, >>)
+// 6. Bitwise AND (&)
+// 7. Bitwise XOR (^)
+// 8. Bitwise OR (|)
+// 9. Comparison operators (==, !=, <, <=, >, >=, contains, matches, startswith, endswith)
+// 10. Quantifiers (any, all, none)
+// 11. Logical AND (and)
+// 12. Logical OR (or) - lowest precedence
 func (p *Parser) parseExpression() (ast.Expression, error) {
 	return p.parseLogicalOr()
 }
 
-// parseLogicalOr parses logical OR expressions (lowest precedence)
+// parseLogicalOr parses logical OR expressions with left-associative binding.
+// Handles expressions like: expr1 or expr2 or expr3
+// Returns: ast.BinaryOp nodes with token.OR operator
 func (p *Parser) parseLogicalOr() (ast.Expression, error) {
 	left, err := p.parseLogicalAnd()
 	if err != nil {
