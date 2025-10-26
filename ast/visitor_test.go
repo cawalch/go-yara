@@ -22,7 +22,7 @@ func TestBaseVisitor(t *testing.T) {
 		t.Errorf("VisitRule() returned %v, want nil", result)
 	}
 
-	meta := &Meta{Pos: pos, Key: "test", Value: "value"}
+	meta := &Meta{Pos: pos, Key: "test", Value: MetaString("value")}
 	if result := visitor.VisitMeta(meta); result != nil {
 		t.Errorf("VisitMeta() returned %v, want nil", result)
 	}
@@ -93,7 +93,7 @@ func TestSimpleVisitorImplementation(t *testing.T) {
 				Pos:  pos,
 				Name: "test_rule",
 				Meta: []*Meta{
-					{Pos: pos, Key: "author", Value: "test"},
+					{Pos: pos, Key: "author", Value: MetaString("test")},
 				},
 				Strings: []*String{
 					{Pos: pos, Identifier: "$test"},

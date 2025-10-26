@@ -96,7 +96,7 @@ func (b *Builder) RegexPattern(pos token.Position, value string) *RegexPattern {
 }
 
 // Meta creates a new Meta node
-func (b *Builder) Meta(pos token.Position, key string, value any) *Meta {
+func (b *Builder) Meta(pos token.Position, key string, value MetaValue) *Meta {
 	return &Meta{
 		Pos:   pos,
 		Key:   key,

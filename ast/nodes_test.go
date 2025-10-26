@@ -25,7 +25,7 @@ func TestNodePositions(t *testing.T) {
 		},
 		{
 			name: "Meta",
-			node: builder.Meta(pos, "key", "value"),
+			node: builder.Meta(pos, "key", MetaString("value")),
 		},
 		{
 			name: "String",
@@ -103,7 +103,7 @@ func TestAcceptVisitor(t *testing.T) {
 		},
 		{
 			name:          "Meta",
-			node:          builder.Meta(pos, "key", "value"),
+			node:          builder.Meta(pos, "key", MetaString("value")),
 			expectedCount: 1,
 		},
 		{
@@ -285,13 +285,13 @@ func TestMetaCreation(t *testing.T) {
 	builder := NewBuilder()
 	pos := token.Position{Line: 4, Column: 2}
 
-	meta := builder.Meta(pos, "author", "test_user")
+	meta := builder.Meta(pos, "author", MetaString("test_user"))
 
 	if meta.Key != "author" {
 		t.Errorf("Meta.Key = %s, want author", meta.Key)
 	}
-	if meta.Value != "test_user" {
-		t.Errorf("Meta.Value = %s, want test_user", meta.Value)
+	if meta.AsString() != "test_user" {
+		t.Errorf("Meta.Value = %s, want test_user", meta.AsString())
 	}
 }
 

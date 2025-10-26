@@ -152,13 +152,13 @@ func TestStringNode(t *testing.T) {
 func TestMetaNode(t *testing.T) {
 	builder := NewBuilder()
 
-	meta := builder.Meta(token.Position{Line: 1, Column: 1}, "author", "test")
+	meta := builder.Meta(token.Position{Line: 1, Column: 1}, "author", MetaString("test"))
 
 	if meta.Key != "author" {
 		t.Errorf("expected key 'author', got %s", meta.Key)
 	}
-	if meta.Value != "test" {
-		t.Errorf("expected value 'test', got %v", meta.Value)
+	if meta.AsString() != "test" {
+		t.Errorf("expected value 'test', got %v", meta.AsString())
 	}
 }
 
@@ -231,7 +231,7 @@ func TestRegexPatternNode(t *testing.T) {
 func TestRuleWithMetaAndTags(t *testing.T) {
 	builder := NewBuilder()
 
-	meta := builder.Meta(token.Position{Line: 2, Column: 1}, "author", "test")
+	meta := builder.Meta(token.Position{Line: 2, Column: 1}, "author", MetaString("test"))
 	rule := builder.Rule(token.Position{Line: 1, Column: 1}, "test_rule")
 	rule.Meta = []*Meta{meta}
 	rule.Tags = []string{"tag1", "tag2"}

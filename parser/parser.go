@@ -174,27 +174,27 @@ func (p *Parser) parseTagList() []string {
 // parseMetaValue parses a meta value with comprehensive error handling
 // Supports: string literals, integers, boolean values (true/false)
 // Returns: parsed value or nil if error occurred
-func (p *Parser) parseMetaValue() interface{} {
+func (p *Parser) parseMetaValue() ast.MetaValue {
 	pos := p.current.Pos
 
 	switch {
 	case p.currentTokenIs(token.STRING_LIT):
 		value := p.current.Literal
 		p.nextToken()
-		return value
+		return ast.MetaString(value)
 	case p.currentTokenIs(token.INTEGER_LIT):
 		value := p.parseIntegerLiteral()
 		if value == 0 && p.current.Literal != "0" {
 			p.addError(fmt.Errorf("invalid integer literal '%s' at %v", p.current.Literal, pos))
 		}
 		p.nextToken()
-		return value
+		return ast.MetaInt(value)
 	case p.currentTokenIs(token.TRUE):
 		p.nextToken()
-		return true
+		return ast.MetaBool(true)
 	case p.currentTokenIs(token.FALSE):
 		p.nextToken()
-		return false
+		return ast.MetaBool(false)
 	default:
 		p.addError(fmt.Errorf("invalid meta value type '%s' at %v - expected string, integer, or boolean", p.current.Type, pos))
 		return nil

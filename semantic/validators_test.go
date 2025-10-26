@@ -358,7 +358,7 @@ func TestValidatorVisitorMethods(t *testing.T) {
 	meta := &ast.Meta{
 		Pos:   pos,
 		Key:   "test",
-		Value: "value",
+		Value: ast.MetaString("value"),
 	}
 	validator.VisitMeta(meta)
 
@@ -640,7 +640,7 @@ func TestValidatorValidateRule(t *testing.T) {
 			{
 				Pos:   pos,
 				Key:   "author",
-				Value: "test",
+				Value: ast.MetaString("test"),
 			},
 		},
 		Strings: []*ast.String{

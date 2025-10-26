@@ -1,6 +1,9 @@
 package ast
 
-import "github.com/cawalch/go-yara/token"
+import (
+	"fmt"
+	"github.com/cawalch/go-yara/token"
+)
 
 // Program represents the root of the AST
 type Program struct {
@@ -43,11 +46,70 @@ func (r *Rule) Accept(v Visitor) interface{} {
 	return v.VisitRule(r)
 }
 
+// MetaValue represents the value of a meta entry
+// This provides type safety compared to interface{}
+type MetaValue interface {
+	isMetaValue()
+}
+
+// MetaString represents a string meta value
+type MetaString string
+
+func (m MetaString) isMetaValue() {}
+
+// MetaInt represents an integer meta value
+type MetaInt int64
+
+func (m MetaInt) isMetaValue() {}
+
+// MetaBool represents a boolean meta value
+type MetaBool bool
+
+func (m MetaBool) isMetaValue() {}
+
 // Meta represents a metadata entry
 type Meta struct {
 	Pos   token.Position
 	Key   string
-	Value interface{} // string, int64, or bool
+	Value MetaValue
+}
+
+// String returns the string representation of the meta value
+func (m *Meta) String() string {
+	switch v := m.Value.(type) {
+	case MetaString:
+		return string(v)
+	case MetaInt:
+		return fmt.Sprintf("%d", int64(v))
+	case MetaBool:
+		return fmt.Sprintf("%t", bool(v))
+	default:
+		return fmt.Sprintf("%v", v)
+	}
+}
+
+// AsString returns the meta value as a string, or empty string if not a string
+func (m *Meta) AsString() string {
+	if str, ok := m.Value.(MetaString); ok {
+		return string(str)
+	}
+	return ""
+}
+
+// AsInt returns the meta value as an int64, or 0 if not an integer
+func (m *Meta) AsInt() int64 {
+	if i, ok := m.Value.(MetaInt); ok {
+		return int64(i)
+	}
+	return 0
+}
+
+// AsBool returns the meta value as a bool, or false if not a boolean
+func (m *Meta) AsBool() bool {
+	if b, ok := m.Value.(MetaBool); ok {
+		return bool(b)
+	}
+	return false
 }
 
 func (m *Meta) node() {}

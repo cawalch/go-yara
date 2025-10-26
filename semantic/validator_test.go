@@ -463,7 +463,7 @@ func TestValidatorVisitorMethodsExtended(t *testing.T) {
 	// Test VisitMeta
 	meta := &ast.Meta{
 		Key:   "author",
-		Value: "test",
+		Value: ast.MetaString("test"),
 	}
 	validator.VisitMeta(meta)
 
@@ -554,11 +554,11 @@ func TestValidatorMetaValidation(t *testing.T) {
 		Meta: []*ast.Meta{
 			{
 				Key:   "author",
-				Value: "test",
+				Value: ast.MetaString("test"),
 			},
 			{
 				Key:   "version",
-				Value: 1,
+				Value: ast.MetaInt(1),
 			},
 		},
 		Condition: &ast.Literal{
@@ -719,11 +719,11 @@ func TestValidatorValidateMeta(t *testing.T) {
 	meta := []*ast.Meta{
 		{
 			Key:   "author",
-			Value: "test",
+			Value: ast.MetaString("test"),
 		},
 		{
 			Key:   "version",
-			Value: 1,
+			Value: ast.MetaInt(1),
 		},
 	}
 

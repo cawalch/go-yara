@@ -16,7 +16,7 @@ func TestASTEdgeCasesAdditional(t *testing.T) {
 			Name: "test_rule",
 			Tags: []string{"tag1", "tag2"},
 			Meta: []*Meta{
-				{Key: "author", Value: "Test Author"},
+				{Key: "author", Value: MetaString("Test Author")},
 			},
 		}
 
@@ -71,7 +71,7 @@ func TestASTEdgeCasesAdditional(t *testing.T) {
 	t.Run("meta_methods", func(t *testing.T) {
 		meta := &Meta{
 			Key:   "author",
-			Value: "Test Author",
+			Value: MetaString("Test Author"),
 		}
 
 		// Test basic properties
@@ -79,8 +79,8 @@ func TestASTEdgeCasesAdditional(t *testing.T) {
 			t.Errorf("Meta key is %s, expected author", meta.Key)
 		}
 
-		if meta.Value != "Test Author" {
-			t.Errorf("Meta value is %s, expected Test Author", meta.Value)
+		if meta.AsString() != "Test Author" {
+			t.Errorf("Meta value is %s, expected Test Author", meta.AsString())
 		}
 
 		// Test Position method
@@ -339,7 +339,7 @@ func TestASTVisitorAdditional(t *testing.T) {
 	rule := &Rule{
 		Name: "test_rule",
 		Meta: []*Meta{
-			{Key: "author", Value: "Test Author"},
+			{Key: "author", Value: MetaString("Test Author")},
 		},
 		Strings: []*String{
 			{
@@ -483,7 +483,7 @@ func TestASTBuilderAdditional(t *testing.T) {
 	}
 
 	// Test creating a meta
-	meta := builder.Meta(pos, "author", "Test Author")
+	meta := builder.Meta(pos, "author", MetaString("Test Author"))
 
 	if meta == nil {
 		t.Error("Builder returned nil meta")
@@ -493,8 +493,8 @@ func TestASTBuilderAdditional(t *testing.T) {
 		t.Errorf("Meta key is %s, expected author", meta.Key)
 	}
 
-	if meta.Value != "Test Author" {
-		t.Errorf("Meta value is %s, expected Test Author", meta.Value)
+	if meta.AsString() != "Test Author" {
+		t.Errorf("Meta value is %s, expected Test Author", meta.AsString())
 	}
 
 	// Test creating a string

@@ -38,6 +38,41 @@ func (cc *ConditionCompiler) generateLabel() string {
 	return fmt.Sprintf("L%d", cc.labelCounter)
 }
 
+// compileExpressions compiles multiple expressions with consistent error handling
+// Reduces boilerplate error handling code in binary operations
+func (cc *ConditionCompiler) compileExpressions(exprs ...ast.Expression) error {
+	for _, expr := range exprs {
+		if err := cc.compileExpression(expr); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// findStringOffset finds a string offset, trying both with and without $ prefix
+// Reduces code duplication in unary operator compilation
+func (cc *ConditionCompiler) findStringOffset(name string) (int, bool) {
+	if offset, exists := cc.stringOffsets[name]; exists {
+		return offset, true
+	}
+	// Try with $ prefix
+	if offset, exists := cc.stringOffsets["$"+name]; exists {
+		return offset, true
+	}
+	return 0, false
+}
+
+// emitStringOffset loads a string identifier from VM memory with overflow protection
+// Reduces code duplication in string operator compilation
+func (cc *ConditionCompiler) emitStringOffset(offset int, line, column int) {
+	// Safe conversion with overflow check
+	if offset < 0 {
+		cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(0)}, line, column)
+	} else {
+		cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(offset)}, line, column)
+	}
+}
+
 // CompileCondition compiles a condition expression to bytecode
 func (cc *ConditionCompiler) CompileCondition(condition *ast.Condition) error {
 	return cc.compileExpression(condition.Expression)
@@ -202,20 +237,12 @@ func (cc *ConditionCompiler) compileBinaryOp(binOp *ast.BinaryOp) error {
 
 	if isComparison {
 		// Compile left operand first for comparisons
-		if err := cc.compileExpression(binOp.Left); err != nil {
-			return err
-		}
-		// Compile right operand
-		if err := cc.compileExpression(binOp.Right); err != nil {
+		if err := cc.compileExpressions(binOp.Left, binOp.Right); err != nil {
 			return err
 		}
 	} else {
 		// Compile right operand first (for stack-based evaluation)
-		if err := cc.compileExpression(binOp.Right); err != nil {
-			return err
-		}
-		// Compile left operand
-		if err := cc.compileExpression(binOp.Left); err != nil {
+		if err := cc.compileExpressions(binOp.Right, binOp.Left); err != nil {
 			return err
 		}
 	}
@@ -280,28 +307,8 @@ func (cc *ConditionCompiler) compileUnaryOp(unaryOp *ast.UnaryOp) error {
 	case token.HASH:
 		// '#' COUNT operator: expects a string identifier operand (e.g., #$a)
 		if id, ok := unaryOp.Right.(*ast.Identifier); ok {
-			// Try with both the identifier name and with $ prefix
-			stringName := id.Name
-			if offset, exists := cc.stringOffsets[stringName]; exists {
-				// Load string identifier from VM memory and emit COUNT
-				// Safe conversion with overflow check
-				if offset < 0 {
-					cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(0)}, unaryOp.Pos.Line, unaryOp.Pos.Column)
-				} else {
-					cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(offset)}, unaryOp.Pos.Line, unaryOp.Pos.Column)
-				}
-				cc.emitter.EmitOpcode(OP_COUNT, unaryOp.Pos.Line, unaryOp.Pos.Column)
-				return nil
-			}
-			// Try with $ prefix
-			if offset, exists := cc.stringOffsets["$"+stringName]; exists {
-				// Load string identifier from VM memory and emit COUNT
-				// Safe conversion with overflow check
-				if offset < 0 {
-					cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(0)}, unaryOp.Pos.Line, unaryOp.Pos.Column)
-				} else {
-					cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(offset)}, unaryOp.Pos.Line, unaryOp.Pos.Column)
-				}
+			if offset, exists := cc.findStringOffset(id.Name); exists {
+				cc.emitStringOffset(offset, unaryOp.Pos.Line, unaryOp.Pos.Column)
 				cc.emitter.EmitOpcode(OP_COUNT, unaryOp.Pos.Line, unaryOp.Pos.Column)
 				return nil
 			}
@@ -312,23 +319,9 @@ func (cc *ConditionCompiler) compileUnaryOp(unaryOp *ast.UnaryOp) error {
 		// '@' OFFSET operator: expects a string identifier operand (e.g., @$a)
 		// Semantics: offset of first match => index = 1
 		if id, ok := unaryOp.Right.(*ast.Identifier); ok {
-			// Try with both the identifier name and with $ prefix
-			stringName := id.Name
-			if offset, exists := cc.stringOffsets[stringName]; exists {
+			if offset, exists := cc.findStringOffset(id.Name); exists {
 				// OP_OFFSET expects stack: [pattern_name, index] -> [offset]
-				// Push pattern name from memory, then index 1
-				// Safe conversion with explicit truncation
-				cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(offset)}, unaryOp.Pos.Line, unaryOp.Pos.Column)
-				cc.emitter.EmitPush(1, unaryOp.Pos.Line, unaryOp.Pos.Column)
-				cc.emitter.EmitOpcode(OP_OFFSET, unaryOp.Pos.Line, unaryOp.Pos.Column)
-				return nil
-			}
-			// Try with $ prefix
-			if offset, exists := cc.stringOffsets["$"+stringName]; exists {
-				// OP_OFFSET expects stack: [pattern_name, index] -> [offset]
-				// Push pattern name from memory, then index 1
-				// Safe conversion with explicit truncation
-				cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(offset)}, unaryOp.Pos.Line, unaryOp.Pos.Column)
+				cc.emitStringOffset(offset, unaryOp.Pos.Line, unaryOp.Pos.Column)
 				cc.emitter.EmitPush(1, unaryOp.Pos.Line, unaryOp.Pos.Column)
 				cc.emitter.EmitOpcode(OP_OFFSET, unaryOp.Pos.Line, unaryOp.Pos.Column)
 				return nil
@@ -340,22 +333,9 @@ func (cc *ConditionCompiler) compileUnaryOp(unaryOp *ast.UnaryOp) error {
 		// Check if this is actually a '!' string length operator
 		// In YARA, '!' before a string identifier means string length
 		if id, ok := unaryOp.Right.(*ast.Identifier); ok {
-			// Try with both the identifier name and with $ prefix
-			stringName := id.Name
-			if offset, exists := cc.stringOffsets[stringName]; exists {
+			if offset, exists := cc.findStringOffset(id.Name); exists {
 				// OP_LENGTH expects stack: [pattern_name] -> [length]
-				// Push pattern name from memory
-				// Safe conversion with explicit truncation
-				cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(offset)}, unaryOp.Pos.Line, unaryOp.Pos.Column)
-				cc.emitter.EmitOpcode(OP_LENGTH, unaryOp.Pos.Line, unaryOp.Pos.Column)
-				return nil
-			}
-			// Try with $ prefix
-			if offset, exists := cc.stringOffsets["$"+stringName]; exists {
-				// OP_LENGTH expects stack: [pattern_name] -> [length]
-				// Push pattern name from memory
-				// Safe conversion with explicit truncation
-				cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(offset)}, unaryOp.Pos.Line, unaryOp.Pos.Column)
+				cc.emitStringOffset(offset, unaryOp.Pos.Line, unaryOp.Pos.Column)
 				cc.emitter.EmitOpcode(OP_LENGTH, unaryOp.Pos.Line, unaryOp.Pos.Column)
 				return nil
 			}
