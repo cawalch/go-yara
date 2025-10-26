@@ -2,6 +2,7 @@ package ast
 
 import (
 	"fmt"
+
 	"github.com/cawalch/go-yara/token"
 )
 

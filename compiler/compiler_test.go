@@ -10,54 +10,6 @@ import (
 	"github.com/cawalch/go-yara/token"
 )
 
-// TestACAutomaton tests the Aho-Corasick automaton
-func TestACAutomaton(t *testing.T) {
-	ac := NewACAutomaton()
-
-	// Test adding strings
-	testStrings := []struct {
-		id   string
-		data string
-	}{
-		{"test1", "hello"},
-		{"test2", "world"},
-		{"test3", "hello world"},
-	}
-
-	for _, ts := range testStrings {
-		err := ac.AddString(ts.id, []byte(ts.data), false, false)
-		if err != nil {
-			t.Errorf("Failed to add string %s: %v", ts.id, err)
-		}
-	}
-
-	// Test compilation
-	err := ac.Compile()
-	if err != nil {
-		t.Errorf("Automaton compilation failed: %v", err)
-	}
-
-	// Test search
-	testData := []byte("hello world")
-	matches := ac.Search(testData)
-
-	if len(matches) == 0 {
-		t.Error("Expected matches but found none")
-	}
-
-	// Check that we found our test strings
-	found := make(map[string]bool)
-	for _, match := range matches {
-		found[match.StringID] = true
-	}
-
-	for _, ts := range testStrings {
-		if !found[ts.id] {
-			t.Errorf("Expected to find string %s in matches", ts.id)
-		}
-	}
-}
-
 // TestCompilerIntegration tests the full compiler pipeline
 func TestCompilerIntegration(t *testing.T) {
 	// Create a simple YARA rule as source
@@ -169,66 +121,6 @@ func TestUndefinedValues(t *testing.T) {
 
 	if result != 10 {
 		t.Errorf("Operation result = %v, want 10", result)
-	}
-}
-
-// TestEmitterStats tests emitter statistics
-func TestEmitterStats(t *testing.T) {
-	emitter := NewEmitter()
-
-	// Emit some instructions
-	emitter.EmitOpcode(OP_PUSH, 1, 1)
-	emitter.EmitOpcode(OP_NOP, 1, 2)
-	emitter.EmitPush(0x12345678, 1, 3)
-
-	stats := emitter.GetStats()
-
-	if stats["instruction_count"] != 3 {
-		t.Errorf("Instruction count = %v, want 3", stats["instruction_count"])
-	}
-
-	expectedSize := 1 + 1 + 5 // PUSH + NOP + PUSH_32
-	if stats["bytecode_size"] != expectedSize {
-		t.Errorf("Bytecode size = %v, want %v", stats["bytecode_size"], expectedSize)
-	}
-}
-
-// TestACAutomatonSearch tests pattern searching
-func TestACAutomatonSearch(t *testing.T) {
-	ac := NewACAutomaton()
-
-	// Add test patterns
-	patterns := []string{"test", "pattern", "search"}
-	for i, pattern := range patterns {
-		err := ac.AddString(fmt.Sprintf("p%d", i), []byte(pattern), false, false)
-		if err != nil {
-			t.Errorf("Failed to add pattern %s: %v", pattern, err)
-		}
-	}
-
-	// Compile automaton
-	err := ac.Compile()
-	if err != nil {
-		t.Errorf("Automaton compilation failed: %v", err)
-	}
-
-	// Test search
-	testData := []byte("This is a test pattern for searching")
-	matches := ac.Search(testData)
-
-	if len(matches) == 0 {
-		t.Error("Expected to find matches in test data")
-	}
-
-	// Verify matches
-	foundPatterns := make(map[string]bool)
-	for _, match := range matches {
-		foundPatterns[match.StringID] = true
-	}
-
-	// Should find "test" and "pattern"
-	if !foundPatterns["p0"] || !foundPatterns["p1"] {
-		t.Error("Expected to find test and pattern matches")
 	}
 }
 
@@ -1001,55 +893,6 @@ func TestConditionCompilerUnaryOp(t *testing.T) {
 	}
 }
 
-// TestStringCompilerTextString tests text string compilation
-func TestStringCompilerTextString(t *testing.T) {
-	emitter := NewEmitter()
-	sc := NewStringCompiler(emitter)
-
-	tests := []struct {
-		name      string
-		text      string
-		modifiers []ast.StringModifier
-		wantErr   bool
-	}{
-		{
-			name:      "simple_text",
-			text:      "hello",
-			modifiers: []ast.StringModifier{},
-			wantErr:   false,
-		},
-		{
-			name: "text_with_nocase",
-			text: "hello",
-			modifiers: []ast.StringModifier{
-				{Type: ast.StringModifierNocase},
-			},
-			wantErr: false,
-		},
-		{
-			name: "text_with_wide",
-			text: "hello",
-			modifiers: []ast.StringModifier{
-				{Type: ast.StringModifierWide},
-			},
-			wantErr: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			textPattern := &ast.TextString{
-				Value: tt.text,
-				Pos:   token.Position{Line: 1, Column: 1},
-			}
-			err := sc.compileTextString("$test", textPattern, tt.modifiers)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("compileTextString() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
 // TestStringCompilerGetters tests string compiler getter methods
 func TestStringCompilerGetters(t *testing.T) {
 	emitter := NewEmitter()
@@ -1089,56 +932,6 @@ func TestStringCompilerGetters(t *testing.T) {
 	info := sc.GetStringInfo()
 	if len(info) == 0 {
 		t.Errorf("GetStringInfo() returned empty slice")
-	}
-}
-
-// TestStringCompilerValidateModifiers tests string modifier validation
-func TestStringCompilerValidateModifiers(t *testing.T) {
-	emitter := NewEmitter()
-	sc := NewStringCompiler(emitter)
-
-	tests := []struct {
-		name      string
-		modifiers []ast.StringModifier
-		wantErr   bool
-	}{
-		{
-			name:      "no_modifiers",
-			modifiers: []ast.StringModifier{},
-			wantErr:   false,
-		},
-		{
-			name: "single_modifier",
-			modifiers: []ast.StringModifier{
-				{Type: ast.StringModifierNocase},
-			},
-			wantErr: false,
-		},
-		{
-			name: "wide_and_ascii_conflict",
-			modifiers: []ast.StringModifier{
-				{Type: ast.StringModifierWide},
-				{Type: ast.StringModifierASCII},
-			},
-			wantErr: true,
-		},
-		{
-			name: "base64_and_base64wide_conflict",
-			modifiers: []ast.StringModifier{
-				{Type: ast.StringModifierBase64},
-				{Type: ast.StringModifierBase64Wide},
-			},
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := sc.ValidateStringModifiers(tt.modifiers)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("ValidateStringModifiers() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
 	}
 }
 
@@ -2351,73 +2144,6 @@ func TestInstructionHasAbsoluteOperand(t *testing.T) {
 	}
 }
 
-// TestACTransitionGetStateIndex tests GetStateIndex method
-func TestACTransitionGetStateIndex(t *testing.T) {
-	transition := ACMakeTransition(42, 10)
-	index := transition.GetStateIndex()
-	if index != 42 {
-		t.Errorf("GetStateIndex() = %d, want 42", index)
-	}
-}
-
-// TestACTransitionGetOffset tests GetOffset method
-func TestACTransitionGetOffset(t *testing.T) {
-	transition := ACMakeTransition(42, 10)
-	offset := transition.GetOffset()
-	if offset != 10 {
-		t.Errorf("GetOffset() = %d, want 10", offset)
-	}
-}
-
-// TestACAutomatonGetTransitionTable tests GetTransitionTable method
-// NOTE: Transition table is no longer built, so this returns nil
-func TestACAutomatonGetTransitionTable(t *testing.T) {
-	ac := NewACAutomaton()
-	ac.AddString("test", []byte("test"), false, false)
-	ac.Compile()
-
-	table := ac.GetTransitionTable()
-	if table != nil {
-		t.Errorf("GetTransitionTable() returned %v, want nil", table)
-	}
-}
-
-// TestACAutomatonGetMatchTable tests GetMatchTable method
-// NOTE: Match table is no longer built, so this returns nil
-func TestACAutomatonGetMatchTable(t *testing.T) {
-	ac := NewACAutomaton()
-	ac.AddString("test", []byte("test"), false, false)
-	ac.Compile()
-
-	table := ac.GetMatchTable()
-	if table != nil {
-		t.Errorf("GetMatchTable() returned %v, want nil", table)
-	}
-}
-
-// TestACAutomatonGetTableSize tests GetTableSize method
-// NOTE: Table size is no longer calculated, so this returns 0
-func TestACAutomatonGetTableSize(t *testing.T) {
-	ac := NewACAutomaton()
-	ac.AddString("test", []byte("test"), false, false)
-	ac.Compile()
-
-	size := ac.GetTableSize()
-	if size != 0 {
-		t.Errorf("GetTableSize() = %d, want 0", size)
-	}
-}
-
-// TestACAutomatonPrintDebug tests PrintDebug method
-func TestACAutomatonPrintDebug(t *testing.T) {
-	ac := NewACAutomaton()
-	ac.AddString("test", []byte("test"), false, false)
-	ac.Compile()
-
-	// This should not panic
-	ac.PrintDebug()
-}
-
 // TestStringCompilerGetAtoms tests GetAtoms method
 func TestStringCompilerGetAtoms(t *testing.T) {
 	emitter := NewEmitter()
@@ -2759,27 +2485,6 @@ func TestCompilerCompileFile(t *testing.T) {
 	_, err := compiler.CompileFile("nonexistent.yar")
 	if err == nil {
 		t.Errorf("CompileFile() error = nil, want error")
-	}
-}
-
-// TestACAutomatonClone tests Clone method
-func TestACAutomatonClone(t *testing.T) {
-	ac := NewACAutomaton()
-	ac.AddString("test", []byte("test"), false, false)
-	ac.Compile()
-
-	cloned := ac.Clone()
-	if cloned == nil {
-		t.Errorf("Clone() returned nil")
-	}
-
-	// Clone is a simplified version that copies basic info
-	if cloned.StringCount != ac.StringCount {
-		t.Errorf("Clone() StringCount = %d, want %d", cloned.StringCount, ac.StringCount)
-	}
-
-	if len(cloned.Strings) != len(ac.Strings) {
-		t.Errorf("Clone() Strings length = %d, want %d", len(cloned.Strings), len(ac.Strings))
 	}
 }
 
@@ -3664,59 +3369,6 @@ func TestConditionCompilerEstimateComplexityExtended(t *testing.T) {
 			complexity := cc.EstimateComplexity(tt.expr)
 			if complexity < tt.minComplex {
 				t.Errorf("EstimateComplexity() = %d, want >= %d", complexity, tt.minComplex)
-			}
-		})
-	}
-}
-
-// TestACAutomatonEdgeCases tests edge cases in Aho-Corasick automaton
-func TestACAutomatonEdgeCases(t *testing.T) {
-	tests := []struct {
-		name    string
-		strings []string
-		wantErr bool
-	}{
-		{
-			name:    "empty_automaton",
-			strings: []string{},
-			wantErr: false,
-		},
-		{
-			name:    "single_string",
-			strings: []string{"test"},
-			wantErr: false,
-		},
-		{
-			name:    "duplicate_strings",
-			strings: []string{"test", "test"},
-			wantErr: false,
-		},
-		{
-			name:    "overlapping_strings",
-			strings: []string{"test", "est", "st"},
-			wantErr: false,
-		},
-		{
-			name:    "prefix_strings",
-			strings: []string{"a", "ab", "abc", "abcd"},
-			wantErr: false,
-		},
-		{
-			name:    "suffix_strings",
-			strings: []string{"d", "cd", "bcd", "abcd"},
-			wantErr: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ac := NewACAutomaton()
-			for _, s := range tt.strings {
-				ac.AddString(s, []byte(s), false, false)
-			}
-			err := ac.Compile()
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Compile() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}

@@ -43,3 +43,24 @@ func TestEmitter(t *testing.T) {
 		t.Errorf("Bytecode length = %v, want %v", len(bytecode), expectedSize)
 	}
 }
+
+// TestEmitterStats tests emitter statistics
+func TestEmitterStats(t *testing.T) {
+	emitter := NewEmitter()
+
+	// Emit some instructions
+	emitter.EmitOpcode(OP_PUSH, 1, 1)
+	emitter.EmitOpcode(OP_NOP, 1, 2)
+	emitter.EmitPush(0x12345678, 1, 3)
+
+	stats := emitter.GetStats()
+
+	if stats["instruction_count"] != 3 {
+		t.Errorf("Instruction count = %v, want 3", stats["instruction_count"])
+	}
+
+	expectedSize := 1 + 1 + 5 // PUSH + NOP + PUSH_32
+	if stats["bytecode_size"] != expectedSize {
+		t.Errorf("Bytecode size = %v, want %v", stats["bytecode_size"], expectedSize)
+	}
+}
