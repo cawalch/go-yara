@@ -61,7 +61,7 @@ func (mv *ModuleValidator) isModuleFunction(name string) bool {
 		"int8be", "int16be", "int32be", "int64be",
 
 		// File operations
-		"filesize", "entrypoint",
+		filesizeKeyword, entrypointKeyword,
 	}
 
 	for _, funcName := range moduleFunctions {

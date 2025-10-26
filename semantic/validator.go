@@ -3,6 +3,7 @@ package semantic
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/cawalch/go-yara/ast"
 	"github.com/cawalch/go-yara/token"
@@ -152,6 +153,9 @@ func (v *Validator) validateCondition(condition ast.Expression) {
 func (v *Validator) validateExpression(expr ast.Expression) (*TypeInfo, []error) {
 	var errors []error
 
+	// Debug output to see what type of expression we're dealing with
+	fmt.Printf("DEBUG: validateExpression called with %T\n", expr)
+
 	switch e := expr.(type) {
 	case *ast.Literal:
 		return InferTypeFromLiteral(e.Type, e.Value), nil
@@ -198,6 +202,26 @@ func (v *Validator) validateExpression(expr ast.Expression) (*TypeInfo, []error)
 			symbol.Used = true
 			return v.getTypeFromSymbol(symbol), nil
 		} else {
+			// Check if this might be a string reference without the $ prefix
+			// This happens when using #, @, or ! operators in conditions
+			if stringSymbol, hasStringSymbol := v.symbolTable.Lookup("$" + e.Name); hasStringSymbol {
+				stringSymbol.Used = true
+				return v.getTypeFromSymbol(stringSymbol), nil
+			}
+
+			// Check if this might be a module function (e.g., pe.is_pe)
+			if strings.Contains(e.Name, ".") {
+				// This is likely a module function, return integer type
+				return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}, nil
+			}
+
+			// Check if this might be a rule reference from an included file
+			// Rules are globally accessible, so check the global scope
+			if globalSymbol, hasGlobalSymbol := v.symbolTable.LookupInGlobalScope(e.Name); hasGlobalSymbol {
+				globalSymbol.Used = true
+				return v.getTypeFromSymbol(globalSymbol), nil
+			}
+
 			errors = append(errors, &SemanticError{
 				Message:  fmt.Sprintf("undefined identifier: %s", e.Name),
 				Position: e.Position(),
@@ -206,6 +230,24 @@ func (v *Validator) validateExpression(expr ast.Expression) (*TypeInfo, []error)
 		}
 
 	case *ast.BinaryOp:
+		// Special handling for module access (dot notation)
+		if e.Op == token.DOT {
+			if leftIdent, ok := e.Left.(*ast.Identifier); ok {
+				if rightIdent, isRightIdent := e.Right.(*ast.Identifier); isRightIdent {
+					// Check if this is a module function (e.g., pe.is_pe)
+					if v.isModuleFunction(leftIdent.Name) {
+						// Module functions return integer or boolean depending on the function
+						// For now, we'll assume they return integer for most functions
+						// and boolean for is_* functions
+						if strings.HasPrefix(rightIdent.Name, "is_") {
+							return &TypeInfo{DataType: TypeBoolean}, errors
+						}
+						return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}, errors
+					}
+				}
+			}
+		}
+
 		leftType, leftErrs := v.validateExpression(e.Left)
 		rightType, rightErrs := v.validateExpression(e.Right)
 
@@ -225,6 +267,26 @@ func (v *Validator) validateExpression(expr ast.Expression) (*TypeInfo, []error)
 		}
 
 	case *ast.UnaryOp:
+		// Special handling for string operators before validating the operand
+		// This is needed because we need to check if the operand is a string identifier
+		if e.Op == token.NOT || e.Op == token.HASH || e.Op == token.AT {
+			if ident, ok := e.Right.(*ast.Identifier); ok {
+				// Check if this is a string reference (with or without $ prefix)
+				var stringName string
+				if strings.HasPrefix(ident.Name, "$") {
+					stringName = ident.Name
+				} else {
+					// Try with $ prefix for string references in conditions
+					stringName = "$" + ident.Name
+				}
+
+				if symbol, exists := v.symbolTable.Lookup(stringName); exists && symbol.Type == SymbolString {
+					// All string operators (#, @, !) return integer
+					return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}, errors
+				}
+			}
+		}
+
 		operandType, operandErrs := v.validateExpression(e.Right)
 		errors = append(errors, operandErrs...)
 
@@ -275,6 +337,27 @@ func (v *Validator) validateExpression(expr ast.Expression) (*TypeInfo, []error)
 		return &TypeInfo{DataType: TypeBoolean}, errors
 
 	case *ast.StringLength:
+		// StringLength is created by the parser for !string operator
+		// The string expression should be an identifier
+		fmt.Printf("DEBUG: StringLength node with string: %T\n", e.String)
+		if ident, ok := e.String.(*ast.Identifier); ok {
+			// Check if this is a string reference (with or without $ prefix)
+			var stringName string
+			if strings.HasPrefix(ident.Name, "$") {
+				stringName = ident.Name
+			} else {
+				// Try with $ prefix for string references in conditions
+				stringName = "$" + ident.Name
+			}
+
+			fmt.Printf("DEBUG: Looking up string symbol: %s\n", stringName)
+			if symbol, exists := v.symbolTable.Lookup(stringName); exists && symbol.Type == SymbolString {
+				// String length returns integer
+				fmt.Printf("DEBUG: Found string symbol, returning integer type\n")
+				return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}, errors
+			}
+		}
+
 		// Validate the string expression
 		_, stringErrs := v.validateExpression(e.String)
 		errors = append(errors, stringErrs...)
@@ -310,6 +393,7 @@ func (v *Validator) getTypeFromSymbol(symbol *Symbol) *TypeInfo {
 	case SymbolRule:
 		return &TypeInfo{DataType: TypeBoolean}
 	case SymbolString:
+		// String identifiers in conditions evaluate to boolean (whether the string is found)
 		return &TypeInfo{DataType: TypeBoolean}
 	case SymbolVariable:
 		// For now, assume variables are integers
@@ -423,4 +507,20 @@ func (v *Validator) VisitOfExpression(ofExpression *ast.OfExpression) interface{
 func (v *Validator) VisitFunctionCall(functionCall *ast.FunctionCall) interface{} {
 	// FunctionCall validation is handled in validateExpression
 	return nil
+}
+
+// isModuleFunction checks if an identifier is a known module
+func (v *Validator) isModuleFunction(moduleName string) bool {
+	// List of known YARA modules
+	knownModules := []string{
+		"pe", "elf", "macho", "dotnet", "cuckoo", "hash", "text",
+	}
+
+	for _, module := range knownModules {
+		if moduleName == module {
+			return true
+		}
+	}
+
+	return false
 }

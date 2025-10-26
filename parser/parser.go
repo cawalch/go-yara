@@ -410,6 +410,48 @@ func (p *Parser) parseLogicalAnd() (ast.Expression, error) {
 // parseLogicalNot parses logical NOT expressions
 func (p *Parser) parseLogicalNot() (ast.Expression, error) {
 	if p.currentTokenIs(token.NOT) {
+		// Check if this is a string length operation (!string)
+		// If the next token is an identifier, handle it directly
+		if p.peekTokenIs(token.STRING_IDENTIFIER) || p.peekTokenIs(token.IDENTIFIER) {
+			pos := p.current.Pos
+			p.nextToken() // consume '!'
+
+			// Parse the identifier
+			if !p.currentTokenIs(token.STRING_IDENTIFIER) && !p.currentTokenIs(token.IDENTIFIER) {
+				return nil, fmt.Errorf("expected identifier after '!' at %v", p.current.Pos)
+			}
+
+			ident := p.current.Literal
+			identPos := p.current.Pos
+			p.nextToken() // consume identifier
+
+			// For string operators, we need to ensure the identifier is treated as a string
+			// If it doesn't have a $ prefix, we'll add one for the AST node
+			if !strings.HasPrefix(ident, "$") {
+				ident = "$" + ident
+			}
+
+			// Create a StringLength expression and continue parsing the rest of the expression
+			stringLengthExpr := p.builder.StringLength(pos, p.builder.Identifier(identPos, ident))
+
+			// Check if there's a comparison operator after the string length expression
+			if p.isComparisonOp(p.current.Type) {
+				op := p.current.Type
+				opPos := p.current.Pos
+				p.nextToken()
+
+				right, cmpErr := p.parseBitwiseOr()
+				if cmpErr != nil {
+					return nil, cmpErr
+				}
+
+				return p.builder.BinaryOp(opPos, stringLengthExpr, op, right), nil
+			}
+
+			return stringLengthExpr, nil
+		}
+
+		// Otherwise, this is a logical NOT operation
 		op := p.current.Type
 		pos := p.current.Pos
 		p.nextToken()
@@ -641,6 +683,20 @@ func (p *Parser) parsePrimary() (ast.Expression, error) {
 		return expr, err
 	}
 
+	// Try to parse data type function calls (uint8, uint16, uint32, etc.)
+	if p.isDataTypeFunction(p.current.Type) {
+		functionName := p.current.Literal
+		funcPos := p.current.Pos
+		p.nextToken()
+
+		// Check for function call
+		if p.currentTokenIs(token.LPAREN) {
+			return p.parseFunctionCall(funcPos, functionName)
+		}
+
+		return nil, fmt.Errorf("expected '(' after data type function %s", functionName)
+	}
+
 	// Try to parse string identifiers
 	if p.currentTokenIs(token.STRING_IDENTIFIER) {
 		ident := p.current.Literal
@@ -686,11 +742,6 @@ func (p *Parser) parsePrimary() (ast.Expression, error) {
 
 	// Try to parse unary operators
 	if expr, err := p.parseUnaryOperator(pos); expr != nil || err != nil {
-		return expr, err
-	}
-
-	// Try to parse function calls
-	if expr, err := p.parseFunctionCall(pos); expr != nil || err != nil {
 		if err != nil {
 			return nil, err
 		}
@@ -718,7 +769,13 @@ func (p *Parser) parsePrimary() (ast.Expression, error) {
 	// Regular identifiers
 	if p.currentTokenIs(token.IDENTIFIER) {
 		ident := p.current.Literal
+		identPos := p.current.Pos
 		p.nextToken()
+
+		// Check for function call
+		if p.currentTokenIs(token.LPAREN) {
+			return p.parseFunctionCall(identPos, ident)
+		}
 
 		// Check for module access (dot notation)
 		if p.currentTokenIs(token.DOT) {
@@ -1098,9 +1155,33 @@ func (p *Parser) parseUnaryOperator(pos token.Position) (ast.Expression, error) 
 	}
 
 	p.nextToken()
-	expr, err := p.parsePrimary()
-	if err != nil {
-		return nil, err
+
+	// Special handling for string identifiers with #, @ operators
+	// These operators can be used with string identifiers with or without $ prefix
+	var expr ast.Expression
+	var err error
+
+	// Check if the next token is an identifier (string identifier or regular identifier)
+	if p.currentTokenIs(token.STRING_IDENTIFIER) || p.currentTokenIs(token.IDENTIFIER) {
+		ident := p.current.Literal
+		identPos := p.current.Pos
+		p.nextToken()
+
+		// For string operators (#, @), we need to ensure the identifier is treated as a string
+		// If it doesn't have a $ prefix, we'll add one for the AST node
+		if op == token.HASH || op == token.AT {
+			if !strings.HasPrefix(ident, "$") {
+				ident = "$" + ident
+			}
+		}
+
+		expr = p.builder.Identifier(identPos, ident)
+	} else {
+		// For other expressions, parse normally
+		expr, err = p.parsePrimary()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Check for array indexing after the primary expression
@@ -1156,6 +1237,17 @@ var comparisonOps = map[token.TokenType]bool{
 // isComparisonOp checks if a token is a comparison operator
 func (p *Parser) isComparisonOp(t token.TokenType) bool {
 	return comparisonOps[t]
+}
+
+// isDataTypeFunction checks if a token is a data type function (uint8, uint16, uint32, etc.)
+func (p *Parser) isDataTypeFunction(t token.TokenType) bool {
+	switch t {
+	case token.INT8, token.INT16, token.INT32, token.UINT8, token.UINT16, token.UINT32,
+		token.INT8BE, token.INT16BE, token.INT32BE, token.UINT8BE, token.UINT16BE, token.UINT32BE:
+		return true
+	default:
+		return false
+	}
 }
 
 // parseIntegerLiteral parses an integer literal token and returns the int64 value
@@ -1243,48 +1335,6 @@ func (p *Parser) isStringModifier(t token.TokenType) bool {
 		t == token.BASE64 || t == token.BASE64WIDE
 }
 
-// parseFunctionCall parses function calls like uint32be(0), filesize, etc.
-func (p *Parser) parseFunctionCall(pos token.Position) (ast.Expression, error) {
-	// Check if this is a data type function (uint32, int16be, etc.)
-	if p.isDataTypeFunction(p.current.Type) {
-		funcName := p.current.Literal
-		p.nextToken()
-
-		// Check if this function call has parentheses (arguments)
-		if p.currentTokenIs(token.LPAREN) {
-			p.nextToken() // consume '('
-
-			// Parse the argument expression
-			arg, err := p.parseExpression()
-			if err != nil {
-				return nil, err
-			}
-
-			if !p.expectToken(token.RPAREN) {
-				return nil, fmt.Errorf("expected ')' after function argument")
-			}
-
-			// Create a proper FunctionCall node
-			args := []ast.Expression{arg}
-			return p.builder.FunctionCall(pos, funcName, args), nil
-		} else {
-			// Simple function call without arguments (like filesize, entrypoint)
-			return p.builder.Identifier(pos, funcName), nil
-		}
-	}
-
-	return nil, nil
-}
-
-// isDataTypeFunction checks if a token is a data type function
-func (p *Parser) isDataTypeFunction(t token.TokenType) bool {
-	return t == token.UINT8 || t == token.UINT16 || t == token.UINT32 ||
-		t == token.UINT8BE || t == token.UINT16BE || t == token.UINT32BE ||
-		t == token.INT8 || t == token.INT16 || t == token.INT32 ||
-		t == token.INT8BE || t == token.INT16BE || t == token.INT32BE ||
-		t == token.FILESIZE || t == token.ENTRYPOINT
-}
-
 // peekTokenIs checks if peek token matches the given type
 func (p *Parser) peekTokenIs(t token.TokenType) bool {
 	return p.peek.Type == t
@@ -1332,4 +1382,64 @@ func (p *Parser) parseInclude() (*ast.Include, error) {
 	p.nextToken()
 
 	return p.builder.Include(pos, file), nil
+}
+
+// parseFunctionCall parses a function call expression
+func (p *Parser) parseFunctionCall(pos token.Position, functionName string) (ast.Expression, error) {
+	// Expect '('
+	if !p.expectToken(token.LPAREN) {
+		return nil, fmt.Errorf("expected '(' after function name")
+	}
+
+	// Parse arguments
+	var args []ast.Expression
+
+	// Check if this is an empty argument list
+	if !p.currentTokenIs(token.RPAREN) {
+		// Parse first argument
+		arg, err := p.parseExpression()
+		if err != nil {
+			return nil, err
+		}
+		args = append(args, arg)
+
+		// Parse additional arguments separated by commas
+		for p.currentTokenIs(token.COMMA) {
+			p.nextToken() // consume ','
+
+			nextArg, parseErr := p.parseExpression()
+			if parseErr != nil {
+				return nil, parseErr
+			}
+			args = append(args, nextArg)
+		}
+	}
+
+	// Expect ')'
+	if !p.expectToken(token.RPAREN) {
+		return nil, fmt.Errorf("expected ')' after function arguments")
+	}
+
+	// Create function call node
+	funcCall := p.builder.FunctionCall(pos, functionName, args)
+
+	// Check for array indexing after function call
+	if p.currentTokenIs(token.LBRACKET) {
+		p.nextToken() // consume '['
+
+		indexExpr, indexErr := p.parseExpression()
+		if indexErr != nil {
+			return nil, indexErr
+		}
+
+		if !p.expectToken(token.RBRACKET) {
+			return nil, fmt.Errorf("expected ']' after array index")
+		}
+
+		// Create array index expression
+		return p.builder.ArrayIndex(pos, funcCall, indexExpr), nil
+	}
+
+	// Return just the function call if no array indexing
+	return funcCall, nil
 }

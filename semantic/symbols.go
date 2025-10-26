@@ -169,6 +169,12 @@ func (st *SymbolTable) LookupInCurrentScope(name string) (*Symbol, bool) {
 	return symbol, exists
 }
 
+// LookupInGlobalScope searches for a symbol only in the global scope
+func (st *SymbolTable) LookupInGlobalScope(name string) (*Symbol, bool) {
+	symbol, exists := st.Root.Symbols[name]
+	return symbol, exists
+}
+
 // MarkUsed marks a symbol as used (referenced)
 func (st *SymbolTable) MarkUsed(name string) {
 	if symbol, exists := st.Lookup(name); exists {

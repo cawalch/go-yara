@@ -49,7 +49,9 @@ type Interpreter struct {
 	memory       [256]Value // Memory slots for variables
 	stopped      bool
 	result       error
-	matchContext *MatchContext // Pattern matching context
+	matchContext *MatchContext   // Pattern matching context
+	ruleResults  map[string]bool // Track execution results of all rules in the program
+	currentRule  string          // Name of the currently executing rule
 }
 
 // MatchContext holds pattern matching state
@@ -86,6 +88,7 @@ func NewInterpreter(bytecode []byte) *Interpreter {
 		matchContext: &MatchContext{
 			Matches: make(map[string][]Match),
 		},
+		ruleResults: make(map[string]bool),
 	}
 }
 
@@ -99,6 +102,17 @@ func (i *Interpreter) Execute() error {
 			return err
 		}
 	}
+
+	// Store the execution result for the current rule
+	if i.currentRule != "" && len(i.stack) > 0 {
+		result := i.stack[len(i.stack)-1]
+		if result.Type == ValueTypeInt {
+			i.ruleResults[i.currentRule] = result.IntVal != 0
+		} else {
+			i.ruleResults[i.currentRule] = false
+		}
+	}
+
 	return i.result
 }
 
@@ -132,6 +146,9 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 		return nil
 
 	case OP_PUSH_U:
+		// OP_PUSH_U is used for undefined identifiers
+		// In the original implementation, this was a placeholder for rule identifiers
+		// But based on the test and emitter usage, it's primarily for undefined values
 		i.push(Value{Type: ValueTypeUndefined})
 		return nil
 
@@ -693,6 +710,46 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 			}
 		}
 		return nil
+	case OP_INDEX_ARRAY:
+		// Array indexing operation for @string[i] and #string[i]
+		// Stack: [array_expr, index, op_type] -> [result]
+		// op_type: 0 = offset (@string[i]), 1 = length (#string[i])
+		if len(i.stack) >= 3 {
+			opType := i.pop()
+			index := i.pop()
+			arrayExpr := i.pop()
+
+			// Handle array expression based on its type
+			if arrayExpr.Type == ValueTypeString {
+				// This is a string identifier
+				matches, exists := i.matchContext.Matches[arrayExpr.StringVal]
+				if exists && index.Type == ValueTypeInt && index.IntVal > 0 && index.IntVal <= int64(len(matches)) {
+					match := matches[index.IntVal-1]
+
+					// Check operation type
+					switch {
+					case opType.Type == ValueTypeInt && opType.IntVal == 0:
+						// @string[i] - return offset
+						i.push(Value{Type: ValueTypeInt, IntVal: match.Offset})
+					case opType.Type == ValueTypeInt && opType.IntVal == 1:
+						// #string[i] - return length
+						i.push(Value{Type: ValueTypeInt, IntVal: int64(match.Length)})
+					default:
+						// Unknown operation type
+						i.push(Value{Type: ValueTypeUndefined})
+					}
+				} else {
+					i.push(Value{Type: ValueTypeUndefined})
+				}
+			} else {
+				// For other array types, we'll need to handle them differently
+				// This is a placeholder for future implementation
+				i.push(Value{Type: ValueTypeUndefined})
+			}
+		} else {
+			i.push(Value{Type: ValueTypeUndefined})
+		}
+		return nil
 
 	case OP_MATCHES:
 		// Check if pattern matches (similar to FOUND but for specific pattern)
@@ -938,6 +995,37 @@ func (i *Interpreter) AddMatch(m Match) {
 		return
 	}
 	i.matchContext.Matches[m.Pattern] = append(i.matchContext.Matches[m.Pattern], m)
+}
+
+// SetRuleResults sets the rule results map for cross-rule references
+func (i *Interpreter) SetRuleResults(results map[string]bool) {
+	i.ruleResults = results
+}
+
+// GetRuleResults returns the current rule results map
+func (i *Interpreter) GetRuleResults() map[string]bool {
+	return i.ruleResults
+}
+
+// SetCurrentRule sets the name of the currently executing rule
+func (i *Interpreter) SetCurrentRule(ruleName string) {
+	i.currentRule = ruleName
+}
+
+// GetCurrentRule returns the name of the currently executing rule
+func (i *Interpreter) GetCurrentRule() string {
+	return i.currentRule
+}
+
+// SetRuleResult sets the execution result for a specific rule
+func (i *Interpreter) SetRuleResult(ruleName string, matched bool) {
+	i.ruleResults[ruleName] = matched
+}
+
+// GetRuleResult gets the execution result for a specific rule
+func (i *Interpreter) GetRuleResult(ruleName string) (bool, bool) {
+	matched, exists := i.ruleResults[ruleName]
+	return matched, exists
 }
 
 // executeStringComparison executes a string comparison operation

@@ -107,6 +107,11 @@ func (c *Compiler) CompileSource(source string) (*CompiledProgram, error) {
 		return nil, fmt.Errorf("parsing failed: %w", err)
 	}
 
+	// Phase 2: Process imports
+	if len(program.Imports) > 0 {
+		c.processImports(program)
+	}
+
 	// Phase 3: Semantic Analysis
 	if semErr := c.compileSemantic(program); semErr != nil {
 		return nil, fmt.Errorf("semantic analysis failed: %w", semErr)
@@ -210,6 +215,10 @@ func (c *Compiler) compileSemantic(program *ast.Program) error {
 				Line:    0,
 				Column:  0,
 			})
+		}
+		// Print individual errors for debugging
+		for _, err := range errs {
+			fmt.Printf("Semantic error: %s\n", err.Error())
 		}
 		return fmt.Errorf("semantic analysis failed: %d errors", len(errs))
 	}
@@ -354,9 +363,32 @@ func (c *Compiler) processIncludesWithBaseDir(program *ast.Program, baseDir stri
 		// Add all rules from included file (including nested includes) to main program
 		program.Rules = append(program.Rules, includedProgram.Rules...)
 
+		// Also add any imports from the included file
+		program.Imports = append(program.Imports, includedProgram.Imports...)
+
 	}
 
 	return nil
+}
+
+// ProcessIncludes is a public wrapper for processIncludesWithBaseDir
+func (c *Compiler) ProcessIncludes(program *ast.Program) error {
+	return c.processIncludesWithBaseDir(program, c.baseDir)
+}
+
+// processImports processes import statements
+func (c *Compiler) processImports(program *ast.Program) {
+	// For now, just log the imports - full implementation would load modules
+	for _, importStmt := range program.Imports {
+		// In a full implementation, we would:
+		// 1. Resolve module path
+		// 2. Load module definition
+		// 3. Register module functions and variables
+		// 4. Make module available to the condition compiler
+
+		// For now, just acknowledge the import
+		fmt.Printf("Import module: %s\n", importStmt.Module)
+	}
 }
 
 func (c *Compiler) readFile(filename string) (string, error) {

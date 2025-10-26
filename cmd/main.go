@@ -156,8 +156,22 @@ func runParserMode(content string) {
 		os.Exit(1)
 	}
 
+	// Process includes to show the full program
+	comp := compiler.NewCompiler()
+	comp.SetBaseDir(filepath.Dir(os.Args[1]))
+
+	// Process includes to get the full program with all rules
+	if len(program.Includes) > 0 {
+		includeErr := comp.ProcessIncludes(program)
+		if includeErr != nil {
+			fmt.Printf("Error processing includes: %v\n", includeErr)
+			os.Exit(1)
+		}
+	}
+
 	fmt.Printf("Successfully parsed!\n")
 	fmt.Printf("Program contains %d rules\n", len(program.Rules))
+	fmt.Printf("Program contains %d includes\n", len(program.Includes))
 
 	// Print AST summary
 	for i, rule := range program.Rules {
@@ -168,6 +182,11 @@ func runParserMode(content string) {
 		if len(rule.Strings) > 0 {
 			fmt.Printf("    Strings: %d patterns\n", len(rule.Strings))
 		}
+	}
+
+	// Print include summary
+	for i, include := range program.Includes {
+		fmt.Printf("  Include %d: %s\n", i+1, include.File)
 	}
 }
 
@@ -181,6 +200,14 @@ func runCompileMode(content string, filename string) {
 	compiledProgram, err := comp.CompileSource(content)
 	if err != nil {
 		fmt.Printf("Compilation error: %v\n", err)
+		// Print detailed errors
+		compilationErrors := comp.GetErrors()
+		if len(compilationErrors) > 0 {
+			fmt.Printf("\nCompilation errors (%d):\n", len(compilationErrors))
+			for _, cerr := range compilationErrors {
+				fmt.Printf("  [%s] %s\n", cerr.Phase, cerr.Message)
+			}
+		}
 		os.Exit(1)
 	}
 
@@ -254,8 +281,9 @@ func runExecuteMode(content string, dataFile string, filename string) {
 
 	fmt.Printf("Compilation: Successfully compiled %d rules\n\n", len(compiledProgram.Rules))
 
-	// Execute each rule
+	// Execute each rule with shared rule results tracking
 	totalMatches := 0
+	ruleResults := make(map[string]bool) // Shared rule results across all interpreters
 	for _, rule := range compiledProgram.Rules {
 		fmt.Printf("Executing rule: %s\n", rule.GetName())
 
@@ -322,6 +350,10 @@ func runExecuteMode(content string, dataFile string, filename string) {
 		// Set file size and data in match context
 		interp.GetMatchContext().FileSize = int64(len(data))
 		interp.GetMatchContext().Data = data
+
+		// Set up rule tracking
+		interp.SetRuleResults(ruleResults)    // Share rule results across all interpreters
+		interp.SetCurrentRule(rule.GetName()) // Set current rule name
 
 		// Populate match context with both AC and regex-derived matches
 		for _, e := range printEntries {
