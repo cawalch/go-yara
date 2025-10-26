@@ -13,19 +13,21 @@ import (
 
 // ConditionCompiler handles compilation of conditions to bytecode
 type ConditionCompiler struct {
-	emitter       *Emitter
-	stringOffsets map[string]int // String identifier to bytecode offset
-	variableMap   map[string]int // Variable name to index
-	labelCounter  int            // For generating unique labels
+	emitter           *Emitter
+	stringOffsets     map[string]int // String identifier to bytecode offset
+	variableMap       map[string]int // Variable name to index
+	externalVariables map[string]int // External variable name to index
+	labelCounter      int            // For generating unique labels
 }
 
 // NewConditionCompiler creates a new condition compiler
 func NewConditionCompiler(emitter *Emitter, stringOffsets map[string]int) *ConditionCompiler {
 	return &ConditionCompiler{
-		emitter:       emitter,
-		stringOffsets: stringOffsets,
-		variableMap:   make(map[string]int),
-		labelCounter:  0,
+		emitter:           emitter,
+		stringOffsets:     stringOffsets,
+		variableMap:       make(map[string]int),
+		externalVariables: make(map[string]int),
+		labelCounter:      0,
 	}
 }
 
@@ -113,6 +115,14 @@ func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 		// Safe conversion with explicit truncation
 		cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(offset)}, ident.Pos.Line, ident.Pos.Column)
 		cc.emitter.EmitOpcode(OP_FOUND, ident.Pos.Line, ident.Pos.Column)
+		return nil
+	}
+
+	// Check if it's an external variable
+	if index, exists := cc.externalVariables[ident.Name]; exists {
+		// Emit external variable load opcode
+		// The interpreter will handle loading the actual value from runtime context
+		cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate32, Value: uint64(index)}, ident.Pos.Line, ident.Pos.Column)
 		return nil
 	}
 
@@ -507,6 +517,11 @@ func (cc *ConditionCompiler) GetVariableMap() map[string]int {
 	return cc.variableMap
 }
 
+// GetExternalVariables returns the external variables map
+func (cc *ConditionCompiler) GetExternalVariables() map[string]int {
+	return cc.externalVariables
+}
+
 // SetStringOffsets sets the string offsets map
 func (cc *ConditionCompiler) SetStringOffsets(offsets map[string]int) {
 	cc.stringOffsets = offsets
@@ -648,6 +663,8 @@ func (cc *ConditionCompiler) compileFunctionCall(call *ast.FunctionCall) error {
 		opcode = OP_INT16BE
 	case "int32be":
 		opcode = OP_INT32BE
+	case "concat":
+		opcode = OP_CONCAT
 	default:
 		return fmt.Errorf("unsupported function: %s", call.Function)
 	}
@@ -672,6 +689,7 @@ func (cc *ConditionCompiler) isRuleIdentifier(name string) bool {
 		"filesize", "entrypoint", "them", "any", "all", "none",
 		"uint8", "uint16", "uint32", "uint8be", "uint16be", "uint32be",
 		"int8", "int16", "int32", "int8be", "int16be", "int32be",
+		"length", "concat",
 	}
 	for _, ident := range specialIdentifiers {
 		if name == ident {

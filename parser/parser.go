@@ -64,6 +64,16 @@ func (p *Parser) ParseRules() (*ast.Program, error) {
 				}
 				program.GlobalVariables = append(program.GlobalVariables, globalVar)
 			}
+		case p.currentTokenIs(token.EXTERNAL):
+			// This is an external variable declaration
+			p.nextToken() // consume EXTERNAL token
+			externalVar, err := p.parseExternalVariable()
+			if err != nil {
+				p.errors = append(p.errors, err)
+				p.synchronize()
+				continue
+			}
+			program.ExternalVariables = append(program.ExternalVariables, externalVar)
 		case p.currentTokenIs(token.IMPORT):
 			importStmt, err := p.parseImport()
 			if err != nil {
@@ -1363,6 +1373,34 @@ func (p *Parser) parseGlobalVariable() (*ast.GlobalVariable, error) {
 	}
 
 	return p.builder.GlobalVariable(pos, name, value), nil
+}
+
+// parseExternalVariable parses an external variable declaration
+func (p *Parser) parseExternalVariable() (*ast.ExternalVariable, error) {
+	pos := p.current.Pos
+
+	// Parse variable name
+	if !p.currentTokenIs(token.IDENTIFIER) {
+		return nil, fmt.Errorf("expected variable name after 'external'")
+	}
+	name := p.current.Literal
+	p.nextToken()
+
+	// External variables in YARA are declared as simple identifiers
+	// The actual values are provided at runtime
+	// Optional: support for type hints in the future
+	var typeHint string
+	if p.currentTokenIs(token.COLON) {
+		p.nextToken() // consume ':'
+		if p.currentTokenIs(token.IDENTIFIER) {
+			typeHint = p.current.Literal
+			p.nextToken()
+		} else {
+			return nil, fmt.Errorf("expected type hint after ':'")
+		}
+	}
+
+	return p.builder.ExternalVariable(pos, name, name, typeHint), nil
 }
 
 // parseInclude parses an include statement

@@ -393,6 +393,11 @@ func (v *CountingVisitor) VisitStringLength(n *StringLength) any {
 	return nil
 }
 
+func (v *CountingVisitor) VisitExternalVariable(n *ExternalVariable) any {
+	v.count++
+	return nil
+}
+
 func (v *CountingVisitor) VisitArrayIndex(n *ArrayIndex) any {
 	v.count++
 	return nil

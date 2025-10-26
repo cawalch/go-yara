@@ -70,6 +70,7 @@ const (
 	DEFINED
 	// Rule modifiers
 	GLOBAL
+	EXTERNAL
 	// Import system
 	IMPORT
 	INCLUDE

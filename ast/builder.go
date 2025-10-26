@@ -13,11 +13,12 @@ func NewBuilder() *Builder {
 // Program creates a new Program node
 func (b *Builder) Program(rules []*Rule) *Program {
 	return &Program{
-		Pos:             token.Position{},
-		Rules:           rules,
-		GlobalVariables: []*GlobalVariable{},
-		Imports:         []*Import{},
-		Includes:        []*Include{},
+		Pos:               token.Position{},
+		Rules:             rules,
+		GlobalVariables:   []*GlobalVariable{},
+		ExternalVariables: []*ExternalVariable{},
+		Imports:           []*Import{},
+		Includes:          []*Include{},
 	}
 }
 
@@ -132,6 +133,16 @@ func (b *Builder) GlobalVariable(pos token.Position, name string, value Expressi
 		Pos:   pos,
 		Name:  name,
 		Value: value,
+	}
+}
+
+// ExternalVariable creates a new ExternalVariable node
+func (b *Builder) ExternalVariable(pos token.Position, name, identifier, typeHint string) *ExternalVariable {
+	return &ExternalVariable{
+		Pos:        pos,
+		Name:       name,
+		Identifier: identifier,
+		TypeHint:   typeHint,
 	}
 }
 

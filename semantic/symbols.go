@@ -19,6 +19,8 @@ const (
 	SymbolString
 	// SymbolVariable represents a variable symbol
 	SymbolVariable
+	// SymbolExternal represents an external variable symbol
+	SymbolExternal
 	// SymbolFunction represents a function symbol
 	SymbolFunction
 )

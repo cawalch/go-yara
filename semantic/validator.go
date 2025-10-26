@@ -39,12 +39,17 @@ func (v *Validator) ValidateProgram(program *ast.Program) []error {
 	v.errors = v.errors[:0] // Clear previous errors
 	v.symbolTable.Reset()
 
-	// First pass: collect all rule and string definitions
+	// First: collect external variables
+	for _, extVar := range program.ExternalVariables {
+		v.collectExternalVariable(extVar)
+	}
+
+	// Second pass: collect all rule and string definitions
 	for _, rule := range program.Rules {
 		v.collectSymbols(rule)
 	}
 
-	// Second pass: validate all rules
+	// Third pass: validate all rules
 	for _, rule := range program.Rules {
 		v.validateRule(rule)
 	}
@@ -70,6 +75,16 @@ func (v *Validator) collectSymbols(rule *ast.Rule) {
 				Position: str.Pos,
 			})
 		}
+	}
+}
+
+// collectExternalVariable collects an external variable symbol
+func (v *Validator) collectExternalVariable(extVar *ast.ExternalVariable) {
+	if err := v.symbolTable.DefineVariable(extVar.Name, extVar.Pos, SymbolExternal); err != nil {
+		v.addError(&SemanticError{
+			Message:  err.Error(),
+			Position: extVar.Pos,
+		})
 	}
 }
 
@@ -152,9 +167,6 @@ func (v *Validator) validateCondition(condition ast.Expression) {
 // validateExpression validates an expression and returns its type
 func (v *Validator) validateExpression(expr ast.Expression) (*TypeInfo, []error) {
 	var errors []error
-
-	// Debug output to see what type of expression we're dealing with
-	fmt.Printf("DEBUG: validateExpression called with %T\n", expr)
 
 	switch e := expr.(type) {
 	case *ast.Literal:
@@ -398,6 +410,10 @@ func (v *Validator) getTypeFromSymbol(symbol *Symbol) *TypeInfo {
 	case SymbolVariable:
 		// For now, assume variables are integers
 		// This will be refined as we add more type information
+		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
+	case SymbolExternal:
+		// External variables could be string, integer, or boolean
+		// For now, assume integer type (will be refined with type hints)
 		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
 	default:
 		return &TypeInfo{DataType: TypeUnknown}

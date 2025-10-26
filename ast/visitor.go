@@ -15,6 +15,7 @@ type Visitor interface {
 	VisitHexString(*HexString) interface{}
 	VisitRegexPattern(*RegexPattern) interface{}
 	VisitGlobalVariable(*GlobalVariable) interface{}
+	VisitExternalVariable(*ExternalVariable) interface{}
 	VisitImport(*Import) interface{}
 	VisitInclude(*Include) interface{}
 	VisitStringLength(*StringLength) interface{}
@@ -66,6 +67,9 @@ func (v *BaseVisitor) VisitRegexPattern(n *RegexPattern) interface{} { return ni
 
 // VisitGlobalVariable visits a GlobalVariable node
 func (v *BaseVisitor) VisitGlobalVariable(n *GlobalVariable) interface{} { return nil }
+
+// VisitExternalVariable visits an ExternalVariable node
+func (v *BaseVisitor) VisitExternalVariable(n *ExternalVariable) interface{} { return nil }
 
 // VisitImport visits an Import node
 func (v *BaseVisitor) VisitImport(n *Import) interface{} { return nil }

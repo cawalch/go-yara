@@ -58,7 +58,8 @@ var keywords = map[string]token.TokenType{
 	"them":    token.THEM,
 	"defined": token.DEFINED,
 	// Rule modifiers (Phase 4)
-	"global": token.GLOBAL,
+	"global":   token.GLOBAL,
+	"external": token.EXTERNAL,
 	// Import system (Phase 4)
 	"import":  token.IMPORT,
 	"include": token.INCLUDE,

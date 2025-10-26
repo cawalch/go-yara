@@ -41,25 +41,26 @@ func (v *TestVisitor) VisitRule(r *Rule) any {
 }
 
 // Implement other visitor methods...
-func (v *TestVisitor) VisitProgram(n *Program) any               { return nil }
-func (v *TestVisitor) VisitMeta(n *Meta) any                     { return nil }
-func (v *TestVisitor) VisitString(n *String) any                 { return nil }
-func (v *TestVisitor) VisitCondition(n *Condition) any           { return nil }
-func (v *TestVisitor) VisitBinaryOp(n *BinaryOp) any             { return nil }
-func (v *TestVisitor) VisitUnaryOp(n *UnaryOp) any               { return nil }
-func (v *TestVisitor) VisitIdentifier(n *Identifier) any         { return nil }
-func (v *TestVisitor) VisitLiteral(n *Literal) any               { return nil }
-func (v *TestVisitor) VisitTextString(n *TextString) any         { return nil }
-func (v *TestVisitor) VisitHexString(n *HexString) any           { return nil }
-func (v *TestVisitor) VisitRegexPattern(n *RegexPattern) any     { return nil }
-func (v *TestVisitor) VisitGlobalVariable(n *GlobalVariable) any { return nil }
-func (v *TestVisitor) VisitImport(n *Import) any                 { return nil }
-func (v *TestVisitor) VisitInclude(n *Include) any               { return nil }
-func (v *TestVisitor) VisitStringLength(n *StringLength) any     { return nil }
-func (v *TestVisitor) VisitArrayIndex(n *ArrayIndex) any         { return nil }
-func (v *TestVisitor) VisitForLoop(n *ForLoop) any               { return nil }
-func (v *TestVisitor) VisitOfExpression(n *OfExpression) any     { return nil }
-func (v *TestVisitor) VisitFunctionCall(n *FunctionCall) any     { return nil }
+func (v *TestVisitor) VisitProgram(n *Program) any                   { return nil }
+func (v *TestVisitor) VisitMeta(n *Meta) any                         { return nil }
+func (v *TestVisitor) VisitString(n *String) any                     { return nil }
+func (v *TestVisitor) VisitCondition(n *Condition) any               { return nil }
+func (v *TestVisitor) VisitBinaryOp(n *BinaryOp) any                 { return nil }
+func (v *TestVisitor) VisitExternalVariable(n *ExternalVariable) any { return nil }
+func (v *TestVisitor) VisitUnaryOp(n *UnaryOp) any                   { return nil }
+func (v *TestVisitor) VisitIdentifier(n *Identifier) any             { return nil }
+func (v *TestVisitor) VisitLiteral(n *Literal) any                   { return nil }
+func (v *TestVisitor) VisitTextString(n *TextString) any             { return nil }
+func (v *TestVisitor) VisitHexString(n *HexString) any               { return nil }
+func (v *TestVisitor) VisitRegexPattern(n *RegexPattern) any         { return nil }
+func (v *TestVisitor) VisitGlobalVariable(n *GlobalVariable) any     { return nil }
+func (v *TestVisitor) VisitImport(n *Import) any                     { return nil }
+func (v *TestVisitor) VisitInclude(n *Include) any                   { return nil }
+func (v *TestVisitor) VisitStringLength(n *StringLength) any         { return nil }
+func (v *TestVisitor) VisitArrayIndex(n *ArrayIndex) any             { return nil }
+func (v *TestVisitor) VisitForLoop(n *ForLoop) any                   { return nil }
+func (v *TestVisitor) VisitOfExpression(n *OfExpression) any         { return nil }
+func (v *TestVisitor) VisitFunctionCall(n *FunctionCall) any         { return nil }
 
 func TestBuilderUtilities(t *testing.T) {
 	builder := NewBuilder()

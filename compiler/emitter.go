@@ -275,7 +275,8 @@ func (e *Emitter) EmitDataTypeFunction(op Opcode, line, pos int) int {
 func isArithmeticOp(op Opcode) bool {
 	return (op >= OP_INT_ADD && op <= OP_INT_MINUS) ||
 		(op >= OP_DBL_ADD && op <= OP_DBL_MINUS) ||
-		op == OP_ADD_M || op == OP_INCR_M
+		op == OP_ADD_M || op == OP_INCR_M ||
+		op == OP_CONCAT
 }
 
 func isComparisonOp(op Opcode) bool {

@@ -163,6 +163,9 @@ const (
 	OP_UINT16BE = OP_READ_INT + 10
 	OP_UINT32BE = OP_READ_INT + 11
 
+	// String operations (253)
+	OP_CONCAT = 253
+
 	// Control flow (must be at end to avoid conflicts)
 	OP_HALT = 255
 	OP_NOP  = 254
@@ -501,6 +504,10 @@ func (op Opcode) String() string {
 				return "UINT16BE"
 			case 11:
 				return "UINT32BE"
+			case 12:
+				return "LENGTH"
+			case 13:
+				return "CONCAT"
 			}
 		}
 

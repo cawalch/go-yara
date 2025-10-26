@@ -221,6 +221,11 @@ func (rc *RuleCompiler) compileCondition(rule *ast.Rule) error {
 func (rc *RuleCompiler) CompileProgram(program *ast.Program) ([]*CompiledRule, error) {
 	var compiledRules []*CompiledRule
 
+	// First, register all external variables with the condition compiler
+	for _, extVar := range program.ExternalVariables {
+		rc.registerExternalVariable(extVar)
+	}
+
 	for _, rule := range program.Rules {
 		compiledRule, err := rc.CompileRule(rule)
 		if err != nil {
@@ -230,6 +235,13 @@ func (rc *RuleCompiler) CompileProgram(program *ast.Program) ([]*CompiledRule, e
 	}
 
 	return compiledRules, nil
+}
+
+// registerExternalVariable registers an external variable with the condition compiler
+func (rc *RuleCompiler) registerExternalVariable(extVar *ast.ExternalVariable) {
+	// Generate a unique index for this external variable
+	index := len(rc.conditionCompiler.externalVariables)
+	rc.conditionCompiler.externalVariables[extVar.Name] = index
 }
 
 // getCompilationStats returns statistics about the compilation process

@@ -1169,6 +1169,8 @@ func (i *Interpreter) executeDataTypeFunction(opcode Opcode) error {
 		size, unsigned, bigEndian = 2, true, true
 	case OP_UINT32BE:
 		size, unsigned, bigEndian = 4, true, true
+	case OP_CONCAT:
+		return i.executeConcatFunction()
 	default:
 		return fmt.Errorf("unsupported data type function opcode: %s", opcode)
 	}
@@ -1181,5 +1183,37 @@ func (i *Interpreter) executeDataTypeFunction(opcode Opcode) error {
 	}
 
 	i.push(Value{Type: ValueTypeInt, IntVal: val})
+	return nil
+}
+
+// executeLengthFunction executes the length() function
+
+// executeConcatFunction executes the concat() function
+func (i *Interpreter) executeConcatFunction() error {
+	// concat() takes two arguments and concatenates them
+	if len(i.stack) < 2 {
+		return fmt.Errorf("stack underflow for concat function")
+	}
+
+	// Pop two arguments
+	arg2 := i.pop()
+	arg1 := i.pop()
+
+	// Handle undefined values
+	if arg1.Type == ValueTypeUndefined || arg2.Type == ValueTypeUndefined {
+		i.push(Value{Type: ValueTypeUndefined})
+		return nil
+	}
+
+	// For now, only support string concatenation
+	var result string
+	if arg1.Type == ValueTypeString && arg2.Type == ValueTypeString {
+		result = arg1.StringVal + arg2.StringVal
+	} else {
+		// For non-string types, convert to string representation
+		result = fmt.Sprintf("%v%v", arg1, arg2)
+	}
+
+	i.push(Value{Type: ValueTypeString, StringVal: result})
 	return nil
 }

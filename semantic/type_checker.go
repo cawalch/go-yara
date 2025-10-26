@@ -303,6 +303,10 @@ func (tc *TypeChecker) getTypeFromSymbol(symbol *Symbol) *TypeInfo {
 		// For now, assume variables are integers
 		// This will be refined as we add more type information
 		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
+	case SymbolExternal:
+		// External variables could be string, integer, or boolean
+		// For now, assume integer type (will be refined with type hints)
+		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
 	default:
 		return &TypeInfo{DataType: TypeUnknown}
 	}

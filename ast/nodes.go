@@ -4,11 +4,12 @@ import "github.com/cawalch/go-yara/token"
 
 // Program represents the root of the AST
 type Program struct {
-	Pos             token.Position
-	Rules           []*Rule
-	GlobalVariables []*GlobalVariable
-	Imports         []*Import
-	Includes        []*Include
+	Pos               token.Position
+	Rules             []*Rule
+	GlobalVariables   []*GlobalVariable
+	ExternalVariables []*ExternalVariable
+	Imports           []*Import
+	Includes          []*Include
 }
 
 func (p *Program) node() {}
@@ -184,6 +185,24 @@ func (g *GlobalVariable) Position() token.Position { return g.Pos }
 // Accept implements the Visitor pattern for GlobalVariable
 func (g *GlobalVariable) Accept(v Visitor) interface{} {
 	return v.VisitGlobalVariable(g)
+}
+
+// ExternalVariable represents an external variable declaration
+type ExternalVariable struct {
+	Pos        token.Position
+	Name       string
+	Identifier string // For binding to runtime values
+	TypeHint   string // Optional type hint (integer, string, boolean)
+}
+
+func (e *ExternalVariable) node() {}
+
+// Position returns position of ExternalVariable node
+func (e *ExternalVariable) Position() token.Position { return e.Pos }
+
+// Accept implements the Visitor pattern for ExternalVariable
+func (e *ExternalVariable) Accept(v Visitor) interface{} {
+	return v.VisitExternalVariable(e)
 }
 
 // Import represents an import statement
