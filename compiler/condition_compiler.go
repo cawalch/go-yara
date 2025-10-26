@@ -17,6 +17,7 @@ type ConditionCompiler struct {
 	stringOffsets     map[string]int // String identifier to bytecode offset
 	variableMap       map[string]int // Variable name to index
 	externalVariables map[string]int // External variable name to index
+	ruleIndexMap      map[string]int // Rule name to index in compiled rules
 	labelCounter      int            // For generating unique labels
 }
 
@@ -27,8 +28,14 @@ func NewConditionCompiler(emitter *Emitter, stringOffsets map[string]int) *Condi
 		stringOffsets:     stringOffsets,
 		variableMap:       make(map[string]int),
 		externalVariables: make(map[string]int),
+		ruleIndexMap:      make(map[string]int),
 		labelCounter:      0,
 	}
+}
+
+// SetRuleIndexMap sets the rule index map for resolving rule identifiers
+func (cc *ConditionCompiler) SetRuleIndexMap(ruleIndexMap map[string]int) {
+	cc.ruleIndexMap = ruleIndexMap
 }
 
 // generateLabel returns a unique label identifier for internal jump targets.
@@ -175,17 +182,10 @@ func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 
 	// Check for rule identifiers - these should be handled by the interpreter
 	// Rule identifiers evaluate to boolean based on whether the rule matches
-	// For now, we'll emit a placeholder that the interpreter will handle
-	// TODO: Implement proper rule identifier resolution
-	// Rule identifiers should be handled by proper symbol resolution
-	// For now, we'll let undefined identifiers fall through to error case
-
-	// Check if this is a rule identifier (from included files)
-	// Rule identifiers are globally accessible
-	if cc.isRuleIdentifier(ident.Name) {
-		// Emit a placeholder for rule evaluation
-		// The interpreter will handle this by checking if the rule matches
-		cc.emitter.EmitOpcode(OP_PUSH_U, ident.Pos.Line, ident.Pos.Column) // Placeholder for rule result
+	// Check if this identifier is a rule name in our rule index map
+	if ruleIndex, exists := cc.ruleIndexMap[ident.Name]; exists {
+		// Emit rule reference using the proper opcode
+		cc.emitter.EmitOpcodeWithOperand(OP_PUSH_RULE, Operand{Type: OperandImmediate8, Value: uint64(ruleIndex)}, ident.Pos.Line, ident.Pos.Column)
 		return nil
 	}
 
@@ -650,60 +650,8 @@ func (cc *ConditionCompiler) compileFunctionCall(call *ast.FunctionCall) error {
 	}
 
 	// Emit the function call opcode
-	fmt.Printf("DEBUG: Emitting opcode: %s for function %s\n", opcode, call.Function)
 	cc.emitter.EmitOpcode(opcode, call.Pos.Line, call.Pos.Column)
 	return nil
-}
-
-// isRuleIdentifier checks if an identifier is a rule identifier
-func (cc *ConditionCompiler) isRuleIdentifier(name string) bool {
-	// For now, we'll assume any identifier that's not a string, variable, or module function
-	// and doesn't start with $ is a rule identifier
-	// This is a simplified check - in a full implementation, we'd check against a symbol table
-	if strings.HasPrefix(name, "$") {
-		return false // String identifiers start with $
-	}
-
-	// Check if it's a known special identifier
-	specialIdentifiers := []string{
-		"filesize", "entrypoint", "them", "any", "all", "none",
-		"uint8", "uint16", "uint32", "uint8be", "uint16be", "uint32be",
-		"int8", "int16", "int32", "int8be", "int16be", "int32be",
-		"length", "concat",
-	}
-	for _, ident := range specialIdentifiers {
-		if name == ident {
-			return false
-		}
-	}
-
-	// Check if it's a module function
-	if cc.isModuleFunction(name) {
-		return false
-	}
-
-	// For the test case, we need to be more restrictive
-	// Only consider it a rule identifier if it looks like a valid rule name
-	// Rule names typically follow identifier naming rules and are not generic words
-	// For now, we'll only consider identifiers that start with a lowercase letter and contain only letters, numbers, and underscores
-	if len(name) == 0 {
-		return false
-	}
-
-	// If it's a common English word, it's probably not a rule identifier
-	commonWords := []string{
-		"undefined", "test", "example", "sample", "demo", "temp", "tmp",
-		"foo", "bar", "baz", "qux", "quux", "corge", "grault", "garply",
-		"waldo", "fred", "plugh", "xyzzy", "thud",
-	}
-	for _, word := range commonWords {
-		if name == word {
-			return false
-		}
-	}
-
-	// If it's none of the above, assume it's a rule identifier
-	return true
 }
 
 // isModuleFunction checks if an identifier is a module function

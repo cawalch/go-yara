@@ -211,6 +211,12 @@ func (hr *HandlerRegistry) setupDefaultHandlers() {
 		OP_ENTRYPOINT, OP_FILESIZE,
 	)
 
+	// Rule operations
+	ruleHandler := &RuleHandler{}
+	hr.RegisterHandler(ruleHandler,
+		OP_PUSH_RULE, OP_INIT_RULE, OP_MATCH_RULE,
+	)
+
 	// Set fallback for unsupported opcodes
 	hr.SetFallback(&UnsupportedOpcodeHandler{})
 }
@@ -529,4 +535,103 @@ func (h *UnsupportedOpcodeHandler) Execute(i *Interpreter) error {
 		Opcode:  opcode,
 		Message: fmt.Sprintf("Unsupported opcode: %v", opcode),
 	}
+}
+
+// RuleHandler handles rule-related opcodes
+type RuleHandler struct{}
+
+// CanHandle returns true if this handler can process the given opcode
+func (h *RuleHandler) CanHandle(opcode Opcode) bool {
+	switch opcode {
+	case OP_PUSH_RULE, OP_INIT_RULE, OP_MATCH_RULE:
+		return true
+	default:
+		return false
+	}
+}
+
+// Category returns the handler category for debugging
+func (h *RuleHandler) Category() string {
+	return "rule"
+}
+
+// Execute handles the opcode execution for rule operations
+func (h *RuleHandler) Execute(i *Interpreter) error {
+	opcode := Opcode(i.bytecode[i.ip-1]) // Get the opcode that was just consumed
+
+	switch opcode {
+	case OP_PUSH_RULE:
+		// Read rule index from bytecode
+		if i.ip >= len(i.bytecode) {
+			return &InterpreterError{
+				Type:    ErrorUnimplemented,
+				Message: "OP_PUSH_RULE: missing rule index operand",
+			}
+		}
+		ruleIndex := int64(i.bytecode[i.ip])
+		i.ip++
+
+		// Get the rule name and check if we have a result
+		if ruleIndex >= 0 && int(ruleIndex) < len(i.compiledRules) {
+			ruleName := i.compiledRules[ruleIndex].Name
+			if result, exists := i.ruleResults[ruleName]; exists {
+				return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt64(result)})
+			}
+
+			// If no result exists, we need to execute the referenced rule
+			// This is a simple approach to handle rule dependencies
+			if int(ruleIndex) < len(i.compiledRules) {
+				referencedRule := i.compiledRules[ruleIndex]
+
+				// Create a new interpreter for the referenced rule
+				refInterpreter := NewInterpreter(referencedRule.GetBytecode())
+				refInterpreter.SetMatchContext(i.matchContext)
+				refInterpreter.SetRuleResults(i.ruleResults) // Share rule results
+				refInterpreter.SetCurrentRule(referencedRule.GetName())
+				refInterpreter.SetCompiledRules(i.compiledRules)
+
+				// Execute the referenced rule
+				execErr := refInterpreter.Execute()
+				if execErr == nil {
+					// Get the result from the referenced rule's execution
+					stack := refInterpreter.GetStack()
+					if len(stack) > 0 {
+						result := stack[len(stack)-1]
+						if result.Type == ValueTypeInt {
+							resultBool := result.IntVal != 0
+							i.ruleResults[referencedRule.GetName()] = resultBool
+							return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt64(resultBool)})
+						}
+					}
+				}
+			}
+		}
+
+		// If we couldn't resolve the rule, push false
+		return i.push(Value{Type: ValueTypeInt, IntVal: 0})
+
+	case OP_INIT_RULE:
+		// Initialize rule execution - for now this is a no-op
+		return nil
+
+	case OP_MATCH_RULE:
+		// Mark rule as matched - for now this is a no-op
+		// The actual rule matching is handled at a higher level
+		return nil
+
+	default:
+		return &InterpreterError{
+			Type:    ErrorUnsupportedOpcode,
+			Opcode:  opcode,
+			Message: fmt.Sprintf("Unsupported rule opcode: %v", opcode),
+		}
+	}
+}
+
+// boolToInt64 converts a boolean to int64 (true -> 1, false -> 0)
+func boolToInt64(b bool) int64 {
+	if b {
+		return 1
+	}
+	return 0
 }

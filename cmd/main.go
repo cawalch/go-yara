@@ -352,8 +352,9 @@ func runExecuteMode(content string, dataFile string, filename string) {
 		interp.GetMatchContext().Data = data
 
 		// Set up rule tracking
-		interp.SetRuleResults(ruleResults)    // Share rule results across all interpreters
-		interp.SetCurrentRule(rule.GetName()) // Set current rule name
+		interp.SetRuleResults(ruleResults)             // Share rule results across all interpreters
+		interp.SetCurrentRule(rule.GetName())          // Set current rule name
+		interp.SetCompiledRules(compiledProgram.Rules) // Set compiled rules for rule reference resolution
 
 		// Populate match context with both AC and regex-derived matches
 		for _, e := range printEntries {

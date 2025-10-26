@@ -203,8 +203,9 @@ func (p *Parser) parseMetaValue() ast.MetaValue {
 
 // parseMetaEntry parses a single meta entry (key = value)
 func (p *Parser) parseMetaEntry() (*ast.Meta, error) {
-	if !p.currentTokenIs(token.IDENTIFIER) {
-		return nil, fmt.Errorf("expected identifier for meta key at %v", p.current.Pos)
+	// Meta keys can be identifiers or keywords that can also serve as identifiers
+	if !p.currentTokenIs(token.IDENTIFIER) && !p.isIdentifierKeyword(p.current.Type) {
+		return nil, fmt.Errorf("expected identifier for meta key at %v, got %s", p.current.Pos, p.current.Type)
 	}
 
 	key := p.current.Literal
@@ -221,6 +222,26 @@ func (p *Parser) parseMetaEntry() (*ast.Meta, error) {
 	}
 
 	return p.builder.Meta(pos, key, value), nil
+}
+
+// isIdentifierKeyword checks if a token type represents a keyword that can also be used as an identifier
+// This is needed for contexts like meta keys where keywords like "hash" should be treated as identifiers
+func (p *Parser) isIdentifierKeyword(tokenType token.TokenType) bool {
+	// Keywords that can also be used as identifiers in certain contexts
+	identifierKeywords := []token.TokenType{
+		token.HASH,     // hash can be a meta key
+		token.LENGTH,   // length can be a meta key
+		token.CONTAINS, // contains can be a meta key
+		token.MATCHES,  // matches can be a meta key
+		// Add more as needed
+	}
+
+	for _, kw := range identifierKeywords {
+		if tokenType == kw {
+			return true
+		}
+	}
+	return false
 }
 
 // getStringModifierType converts a token type to its corresponding string modifier type
@@ -501,7 +522,7 @@ func (p *Parser) parseMetaDeclarations() []*ast.Meta {
 	meta := make([]*ast.Meta, 0)
 
 	for !p.currentTokenIs(token.STRINGS) && !p.currentTokenIs(token.CONDITION) && !p.currentTokenIs(token.RBRACE) {
-		if !p.currentTokenIs(token.IDENTIFIER) {
+		if !p.currentTokenIs(token.IDENTIFIER) && !p.isIdentifierKeyword(p.current.Type) {
 			break
 		}
 

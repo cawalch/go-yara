@@ -42,16 +42,17 @@ const (
 
 // Interpreter represents a bytecode interpreter for YARA rules
 type Interpreter struct {
-	bytecode     []byte
-	ip           int        // Instruction pointer
-	stack        []Value    // Execution stack
-	memory       [256]Value // Memory slots for variables
-	stopped      bool
-	result       error
-	matchContext *MatchContext    // Pattern matching context
-	ruleResults  map[string]bool  // Track execution results of all rules in the program
-	currentRule  string           // Name of the currently executing rule
-	handlers     *HandlerRegistry // Opcode handlers
+	bytecode      []byte
+	ip            int        // Instruction pointer
+	stack         []Value    // Execution stack
+	memory        [256]Value // Memory slots for variables
+	stopped       bool
+	result        error
+	matchContext  *MatchContext    // Pattern matching context
+	ruleResults   map[string]bool  // Track execution results of all rules in the program
+	currentRule   string           // Name of the currently executing rule
+	compiledRules []*CompiledRule  // All compiled rules in the program
+	handlers      *HandlerRegistry // Opcode handlers
 }
 
 // MatchContext holds pattern matching state
@@ -96,6 +97,11 @@ func NewInterpreter(bytecode []byte) *Interpreter {
 // SetMatchContext sets the pattern matching context
 func (i *Interpreter) SetMatchContext(ctx *MatchContext) {
 	i.matchContext = ctx
+}
+
+// SetCompiledRules sets the compiled rules for rule reference resolution
+func (i *Interpreter) SetCompiledRules(rules []*CompiledRule) {
+	i.compiledRules = rules
 }
 
 // GetMatchContext returns the current match context

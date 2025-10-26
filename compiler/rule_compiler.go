@@ -226,6 +226,15 @@ func (rc *RuleCompiler) CompileProgram(program *ast.Program) ([]*CompiledRule, e
 		rc.registerExternalVariable(extVar)
 	}
 
+	// Build rule index map for resolving rule references
+	ruleIndexMap := make(map[string]int)
+	for i, rule := range program.Rules {
+		ruleIndexMap[rule.Name] = i
+	}
+
+	// Set the rule index map in the condition compiler
+	rc.conditionCompiler.SetRuleIndexMap(ruleIndexMap)
+
 	for _, rule := range program.Rules {
 		compiledRule, err := rc.CompileRule(rule)
 		if err != nil {
