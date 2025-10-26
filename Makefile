@@ -1,6 +1,7 @@
 .PHONY: bench bench-save bench-profiles bench-detailed bench-memory bench-cpu bench-trace \
         pprof-cpu pprof-mem pprof-alloc pprof-heap pprof-trace benchstat bench-compare \
-        bench-string-modifiers bench-regression bench-hotspots profile-analysis
+        bench-string-modifiers bench-regression bench-hotspots profile-analysis \
+        compare-yara compare-yara-quick compare-yara-deep compare-yara-report
 
 # Default package to benchmark/profile
 PKG=./internal/lexer
@@ -197,4 +198,47 @@ help:
 	@echo "Comparison:"
 	@echo "  benchstat BASE=old.txt NEW=new.txt - Compare two benchmark files"
 	@echo "  bench-compare OLD=old.txt NEW=new.txt - Compare with automatic benchstat"
+	@echo ""
+	@echo "Go-YARA vs Reference YARA:"
+	@echo "  compare-yara       - Run comprehensive go-yara vs yara comparison"
+	@echo "  compare-yara-quick - Quick comparison with reduced test set"
+	@echo "  compare-yara-deep  - Deep comparison with comprehensive testing"
+	@echo "  compare-yara-report - Generate detailed comparison report"
+
+# Go-YARA vs Reference YARA comparison
+compare-yara:
+	@echo "Running comprehensive go-yara vs reference YARA comparison..."
+	@mkdir -p comparison-results
+	@go run ./cmd/compare -rules "internal/profiling/comparison/testdata,examples" -data "internal/profiling/comparison/testdata" -verbose -output comparison-results/results.json -report comparison-results/report.txt
+	@echo "Comparison complete. Results saved to comparison-results/"
+	@echo "View detailed report: cat comparison-results/report.txt"
+
+# Quick comparison for rapid testing
+compare-yara-quick:
+	@echo "Running quick go-yara vs reference YARA comparison..."
+	@mkdir -p comparison-results
+	@go run ./cmd/compare -rules "internal/profiling/comparison/testdata" -data "internal/profiling/comparison/testdata" -quick -output comparison-results/quick-results.json -report comparison-results/quick-report.txt
+	@echo "Quick comparison complete. Results saved to comparison-results/"
+
+# Deep comparison for comprehensive analysis
+compare-yara-deep:
+	@echo "Running deep go-yara vs reference YARA comparison..."
+	@mkdir -p comparison-results
+	@go run ./cmd/compare -rules "examples,testdata" -data "testdata" -deep -verbose -output comparison-results/deep-results.json -report comparison-results/deep-report.txt
+	@echo "Deep comparison complete. Results saved to comparison-results/"
+
+# Generate detailed comparison report with profiling
+compare-yara-report:
+	@echo "Generating detailed go-yara vs reference YARA comparison report with profiling..."
+	@mkdir -p comparison-results
+	@go run ./cmd/compare -rules "internal/profiling/comparison/testdata,examples" -data "internal/profiling/comparison/testdata" -verbose -profile-cpu -profile-mem -profile-allocs -output comparison-results/detailed-results.json -report comparison-results/detailed-report.txt
+	@echo "Detailed comparison complete. Results saved to comparison-results/"
+	@echo "Files generated:"
+	@echo "  - JSON data: comparison-results/detailed-results.json"
+	@echo "  - Human report: comparison-results/detailed-report.txt"
+	@echo ""
+	@echo "Key findings:"
+	@if [ -f comparison-results/detailed-report.txt ]; then \
+		grep -E "(Speedup|Reduction|Score|Accuracy)" comparison-results/detailed-report.txt | head -10; \
+	fi
 

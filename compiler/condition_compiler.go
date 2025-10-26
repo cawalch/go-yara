@@ -80,6 +80,19 @@ func (cc *ConditionCompiler) emitStringOffset(offset int, line, column int) {
 	}
 }
 
+// emitStringIdentifier pushes a string identifier as ValueTypeString for pattern operations
+// Used by AT and IN operators that need the string identifier, not the FOUND result
+func (cc *ConditionCompiler) emitStringIdentifier(offset int, identifier string, line, column int) {
+	// identifier parameter reserved for future use when string identifiers are needed
+	_ = identifier // nolint: revive
+	// For AT and IN operations, we need to set up a memory slot that contains
+	// the string identifier as a ValueTypeString, then push that memory slot reference
+
+	// Use OP_PUSH_M to push the memory slot that should contain the string identifier
+	// The interpreter should have already set this up via SetMemoryString during execution
+	cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(offset)}, line, column)
+}
+
 // CompileCondition compiles a condition expression to bytecode
 func (cc *ConditionCompiler) CompileCondition(condition *ast.Condition) error {
 	return cc.compileExpression(condition.Expression)
@@ -153,9 +166,14 @@ func (cc *ConditionCompiler) compileLiteral(lit *ast.Literal) error {
 func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 	// Check if it's a string identifier (addressed via interpreter memory)
 	if offset, exists := cc.stringOffsets[ident.Name]; exists {
-		// Load string identifier from VM memory slot [offset] and emit FOUND
+		// For string identifiers, we need to push the string identifier itself
+		// This allows operations like AT and IN to work with the string pattern
 		// Safe conversion with explicit truncation
 		cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(offset)}, ident.Pos.Line, ident.Pos.Column)
+
+		// Only emit FOUND if we're not in a context where we need the raw string identifier
+		// For now, we'll emit FOUND to maintain compatibility with existing behavior
+		// AT operations will need to be handled differently in a future iteration
 		cc.emitter.EmitOpcode(OP_FOUND, ident.Pos.Line, ident.Pos.Column)
 		return nil
 	}
@@ -227,6 +245,38 @@ func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 	return nil
 }
 
+// compileStringOffsetOperator handles AT and IN operators that require string identifiers
+func (cc *ConditionCompiler) compileStringOffsetOperator(binOp *ast.BinaryOp) error {
+	// Check if left operand is a string identifier
+	if id, ok := binOp.Left.(*ast.Identifier); ok {
+		if offset, exists := cc.findStringOffset(id.Name); exists {
+			// Push string identifier as ValueTypeString
+			cc.emitStringIdentifier(offset, id.Name, binOp.Pos.Line, binOp.Pos.Column)
+			// Compile right operand (offset or range expression)
+			if err := cc.compileExpression(binOp.Right); err != nil {
+				return err
+			}
+			// Emit appropriate opcode
+			var opcode Opcode
+			switch binOp.Op {
+			case token.AT:
+				opcode = OP_FOUND_AT
+			case token.IN:
+				opcode = OP_FOUND_IN
+			}
+			cc.emitter.EmitOpcode(opcode, binOp.Pos.Line, binOp.Pos.Column)
+			return nil
+		}
+		return fmt.Errorf("undefined string identifier: %s", id.Name)
+	}
+
+	operatorName := "AT"
+	if binOp.Op == token.IN {
+		operatorName = "IN"
+	}
+	return fmt.Errorf("%s operator requires string identifier as left operand", operatorName)
+}
+
 // compileBinaryOp compiles a binary operation
 func (cc *ConditionCompiler) compileBinaryOp(binOp *ast.BinaryOp) error {
 	// For comparison operations, we need to compile left operand first to maintain correct order
@@ -290,8 +340,23 @@ func (cc *ConditionCompiler) compileBinaryOp(binOp *ast.BinaryOp) error {
 		opcode = OP_CONTAINS
 	case token.MATCHES:
 		opcode = OP_MATCHES
+	case token.AT, token.IN:
+		// Handle AT and IN operators with string identifier logic
+		if err := cc.compileStringOffsetOperator(binOp); err != nil {
+			return err
+		}
 	case token.OF:
 		opcode = OP_OF
+	case token.DOT:
+		// DOT operator represents range expression: start..end
+		// For range expressions, we need to push both start and end values
+		// The OP_FOUND_IN expects: [end, start, string_identifier] on stack
+		// Since this is the right operand of IN, we compile left then right (end then start)
+		if err := cc.compileExpressions(binOp.Left, binOp.Right); err != nil {
+			return err
+		}
+		// No opcode needed - the range values are pushed for OP_FOUND_IN
+		return nil
 	default:
 		return fmt.Errorf("unsupported binary operator: %s", binOp.Op)
 	}

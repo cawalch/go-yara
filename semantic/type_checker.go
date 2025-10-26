@@ -114,6 +114,61 @@ func (tc *TypeChecker) checkBinaryOp(binaryOp *ast.BinaryOp) *TypeInfo {
 	case token.OF:
 		return tc.checkQuantifierOp(leftType, rightType, binaryOp.Position())
 
+	case token.AT:
+		// AT operator: $string at offset
+		// Left should be string identifier, right should be integer
+		if !tc.isStringIdentifier(leftType) {
+			tc.addError(&SemanticError{
+				Message:  "AT operator requires string identifier as left operand",
+				Position: binaryOp.Position(),
+			})
+		}
+		if rightType.DataType != TypeInteger {
+			tc.addError(&SemanticError{
+				Message:  "AT operator requires integer offset as right operand",
+				Position: binaryOp.Position(),
+			})
+		}
+		// The result should be boolean
+		return &TypeInfo{DataType: TypeBoolean}
+
+	case token.IN:
+		// IN operator: $string in (start..end)
+		// Left should be string identifier, right should be range
+		if !tc.isStringIdentifier(leftType) {
+			tc.addError(&SemanticError{
+				Message:  "IN operator requires string identifier as left operand",
+				Position: binaryOp.Position(),
+			})
+		}
+		// Right operand should be a range (integer type)
+		if rightType.DataType != TypeInteger {
+			tc.addError(&SemanticError{
+				Message:  "IN operator requires integer range as right operand",
+				Position: binaryOp.Position(),
+			})
+		}
+		// The result should be boolean
+		return &TypeInfo{DataType: TypeBoolean}
+
+	case token.DOT:
+		// DOT operator (..) represents range expression: start..end
+		// Both operands should be integers, result is integer (represents the range)
+		if leftType.DataType != TypeInteger {
+			tc.addError(&SemanticError{
+				Message:  "range expression requires integer start value",
+				Position: binaryOp.Position(),
+			})
+		}
+		if rightType.DataType != TypeInteger {
+			tc.addError(&SemanticError{
+				Message:  "range expression requires integer end value",
+				Position: binaryOp.Position(),
+			})
+		}
+		// Range expressions evaluate to integer type
+		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
+
 	case token.COLON:
 		// COLON is used in "for" quantifiers like "for any of them : ($)"
 		// The left side is the quantifier expression, right side is the condition
@@ -325,4 +380,12 @@ func (tc *TypeChecker) GetErrors() []error {
 // HasErrors returns true if there are type checking errors
 func (tc *TypeChecker) HasErrors() bool {
 	return len(tc.errors) > 0
+}
+
+// isStringIdentifier checks if a type represents a string identifier (like $a, $b, etc.)
+func (tc *TypeChecker) isStringIdentifier(typeInfo *TypeInfo) bool {
+	// String identifiers have boolean type in YARA (they represent whether the pattern matches)
+	// For now, we assume any boolean type from a string identifier is valid
+	// In a more complete implementation, we'd track the symbol type more precisely
+	return typeInfo.DataType == TypeBoolean
 }

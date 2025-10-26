@@ -1,0 +1,70 @@
+This is sample test data for YARA rule testing.
+
+hello world
+This file contains various patterns that should trigger YARA rules.
+
+Hello World in different case variations.
+HELLO WORLD
+hello WORLD
+
+Some hex patterns represented as text:
+Hello
+World
+test pattern
+
+Wide string examples:
+wide string
+TEST
+
+Case insensitive patterns:
+CASE INSENSITIVE
+case insensitive
+Case Insensitive
+MiXeD CaSe
+
+Regex patterns:
+test123
+test456
+hello amazing world
+hello wonderful world
+
+Complex patterns:
+malware detected in system
+PE header signature: MZ...
+Suspicious activity found
+https://example.com/payload
+https://malicious.site.net/bad
+Exploit attempt detected
+
+Multiple strings for testing:
+string1, string2, string3, string4, string5
+string6, string7, string8, string9, string10
+
+Performance test triggers:
+trigger activated
+payload1234
+payloadabcd
+payloaddeadbeef
+
+Nested condition patterns:
+condition1 and condition2
+condition3 and condition4
+condition1 and condition3
+condition2 and condition4
+
+String count tests:
+alpha beta gamma
+alpha beta gamma delta
+alpha alpha beta gamma
+gamma gamma delta
+
+Offset-based patterns:
+HEADER
+... lots of content in between ...
+content appears here after offset 100
+more content
+content again
+content once more
+FOOTER
+
+End of test data.

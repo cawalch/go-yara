@@ -370,6 +370,42 @@ func InferTypeFromBinaryOp(left *TypeInfo, op token.TokenType, right *TypeInfo) 
 		// Left operand is the quantifier (all/any/none), right is the target (them or pattern)
 		return &TypeInfo{DataType: TypeBoolean}, nil
 
+	case token.AT:
+		// AT operator: $string at offset
+		// Left should be string identifier, right should be integer offset
+		if left.DataType != TypeBoolean {
+			return nil, fmt.Errorf("AT operator requires string identifier as left operand")
+		}
+		if right.DataType != TypeInteger {
+			return nil, fmt.Errorf("AT operator requires integer offset as right operand")
+		}
+		// The result should be boolean
+		return &TypeInfo{DataType: TypeBoolean}, nil
+
+	case token.IN:
+		// IN operator: $string in (start..end)
+		// Left should be string identifier, right should be range
+		if left.DataType != TypeBoolean {
+			return nil, fmt.Errorf("IN operator requires string identifier as left operand")
+		}
+		if right.DataType != TypeInteger {
+			return nil, fmt.Errorf("IN operator requires integer range as right operand")
+		}
+		// The result should be boolean
+		return &TypeInfo{DataType: TypeBoolean}, nil
+
+	case token.DOT:
+		// DOT operator (..) represents range expression: start..end
+		// Both operands should be integers, result is integer (represents the range)
+		if left.DataType != TypeInteger {
+			return nil, fmt.Errorf("range expression requires integer start value")
+		}
+		if right.DataType != TypeInteger {
+			return nil, fmt.Errorf("range expression requires integer end value")
+		}
+		// Range expressions evaluate to integer type
+		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}, nil
+
 	case token.COLON:
 		// COLON is used in "for" quantifiers like "for any of them : ($)"
 		// The result should be boolean

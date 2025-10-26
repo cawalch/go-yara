@@ -1496,8 +1496,32 @@ func (p *Parser) parseStringModifiers() []ast.StringModifier {
 
 	for p.isStringModifier(p.current.Type) {
 		modifierType := p.getStringModifierType(p.current.Type)
-		modifiers = append(modifiers, ast.StringModifier{Type: modifierType})
-		p.nextToken()
+
+		if modifierType == ast.StringModifierXor {
+			// XOR modifier requires a value
+			p.nextToken() // consume XOR token
+
+			// Parse the XOR value (integer literal)
+			if !p.currentTokenIs(token.INTEGER_LIT) && !p.currentTokenIs(token.HEX_INTEGER_LIT) {
+				p.addError(fmt.Errorf("expected integer value after 'xor' modifier"))
+				// Add a default XOR modifier to continue parsing
+				modifiers = append(modifiers, ast.StringModifier{Type: modifierType, Value: 0})
+				continue
+			}
+
+			xorValue, err := strconv.ParseInt(p.current.Literal, 0, 64)
+			if err != nil {
+				p.addError(fmt.Errorf("invalid integer value for xor modifier: %s", p.current.Literal))
+				xorValue = 0
+			}
+
+			modifiers = append(modifiers, ast.StringModifier{Type: modifierType, Value: xorValue})
+			p.nextToken() // consume the XOR value
+		} else {
+			// Other modifiers don't need values
+			modifiers = append(modifiers, ast.StringModifier{Type: modifierType})
+			p.nextToken()
+		}
 	}
 
 	return modifiers

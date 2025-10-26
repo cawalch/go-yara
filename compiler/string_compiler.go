@@ -20,8 +20,7 @@ type StringCompiler struct {
 	patternData map[string][]byte
 	// Extracted atoms for optimization
 	atoms map[string][]*Atom
-
-	}
+}
 
 // NewStringCompiler creates a new string compiler
 // The emitter parameter is kept for backward compatibility; it's unused.
@@ -163,6 +162,17 @@ func (sc *StringCompiler) encodeTextString(text string, modifiers []ast.StringMo
 		// For nocase, we need to create case-insensitive matching data
 		// This is a simplified approach - real implementation would be more complex
 		result = sc.applyNocaseModifier(result, isWide)
+	}
+
+	// Apply XOR modifier if present
+	for _, mod := range modifiers {
+		if mod.Type == ast.StringModifierXor {
+			if xorValue, ok := mod.Value.(int64); ok {
+				for i := range result {
+					result[i] ^= byte(xorValue)
+				}
+			}
+		}
 	}
 
 	return result
