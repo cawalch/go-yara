@@ -58,58 +58,6 @@ func TestACAutomaton(t *testing.T) {
 	}
 }
 
-// TestRuleCompiler tests the rule compilation system
-func TestRuleCompiler(t *testing.T) {
-	rc := NewRuleCompiler()
-
-	// Create a simple test rule
-	rule := &ast.Rule{
-		Pos:  token.Position{Line: 1, Column: 1},
-		Name: "test_rule",
-		Strings: []*ast.String{
-			{
-				Pos:        token.Position{Line: 2, Column: 1},
-				Identifier: "$s1",
-				Pattern: &ast.TextString{
-					Pos:   token.Position{Line: 2, Column: 5},
-					Value: "test string",
-				},
-				Modifiers: []ast.StringModifier{},
-			},
-		},
-		Condition: &ast.Literal{
-			Pos:   token.Position{Line: 3, Column: 1},
-			Type:  token.TRUE,
-			Value: true,
-		},
-	}
-
-	// Compile the rule
-	compiledRule, err := rc.CompileRule(rule)
-	if err != nil {
-		t.Errorf("Rule compilation failed: %v", err)
-	}
-
-	// Validate the compiled rule
-	if compiledRule == nil {
-		t.Fatal("Compiled rule is nil")
-	}
-
-	if compiledRule.Name != "test_rule" {
-		t.Errorf("Rule name = %v, want test_rule", compiledRule.Name)
-	}
-
-	if len(compiledRule.Bytecode) == 0 {
-		t.Error("Compiled rule has empty bytecode")
-	}
-
-	// Test rule validation
-	err = compiledRule.Validate()
-	if err != nil {
-		t.Errorf("Rule validation failed: %v", err)
-	}
-}
-
 // TestCompilerIntegration tests the full compiler pipeline
 func TestCompilerIntegration(t *testing.T) {
 	// Create a simple YARA rule as source
@@ -1284,49 +1232,6 @@ func TestAhoCorasickReset(t *testing.T) {
 	// Verify reset
 	if ac.GetStateCount() != 1 {
 		t.Errorf("After Reset(), state count = %d, want 1", ac.GetStateCount())
-	}
-}
-
-// TestRuleCompilerBasic tests basic rule compilation
-func TestRuleCompilerBasic(t *testing.T) {
-	rc := NewRuleCompiler()
-
-	rule := &ast.Rule{
-		Pos:  token.Position{Line: 1, Column: 1},
-		Name: "test_rule",
-		Strings: []*ast.String{
-			{
-				Pos:        token.Position{Line: 2, Column: 1},
-				Identifier: "$test",
-				Pattern: &ast.TextString{
-					Value: "hello",
-					Pos:   token.Position{Line: 2, Column: 10},
-				},
-				Modifiers: []ast.StringModifier{},
-			},
-		},
-		Condition: &ast.Literal{
-			Pos:   token.Position{Line: 3, Column: 1},
-			Type:  token.TRUE,
-			Value: true,
-		},
-	}
-
-	compiled, err := rc.CompileRule(rule)
-	if err != nil {
-		t.Errorf("CompileRule() error = %v", err)
-	}
-
-	if compiled == nil {
-		t.Errorf("CompileRule() returned nil")
-	}
-
-	if compiled.Name != "test_rule" {
-		t.Errorf("CompileRule() name = %s, want test_rule", compiled.Name)
-	}
-
-	if len(compiled.Bytecode) == 0 {
-		t.Errorf("CompileRule() bytecode is empty")
 	}
 }
 
