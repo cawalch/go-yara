@@ -102,7 +102,11 @@ rule test_rule_2 {
 }`
 
 	compiler := testutils.CreateTestCompiler()
-	program := testutils.CompileTestRule(t, source)
+	program, err := compiler.CompileSource(source)
+	if err != nil {
+		t.Logf("Compilation errors: %v", compiler.GetErrors())
+		t.Fatalf("Failed to compile test rule: %v", err)
+	}
 
 	// Check stats
 	stats := compiler.GetStats()

@@ -746,8 +746,13 @@ func (inst *Instruction) IsTypeFunction() bool {
 
 // IsStringOperation returns true if this instruction operates on strings
 func (inst *Instruction) IsStringOperation() bool {
-	return (inst.Opcode >= OP_CONTAINS && inst.Opcode <= OP_IEQUALS) ||
-		(inst.Opcode >= OP_FOUND && inst.Opcode <= OP_OF_FOUND_AT)
+	// String operations (71-85) - same as GetCategory logic
+	if inst.Opcode >= OP_CONTAINS && inst.Opcode <= OP_OF_FOUND_AT {
+		return true
+	}
+	// STR comparison operations are considered arithmetic by GetCategory,
+	// but they are logically string operations for IsStringOperation
+	return (inst.Opcode >= OP_STR_BEGIN && inst.Opcode <= OP_STR_END)
 }
 
 // HasImmediateOperand returns true if this instruction has an immediate operand

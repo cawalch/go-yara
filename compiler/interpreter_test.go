@@ -300,7 +300,7 @@ func TestInterpreterMemory(t *testing.T) {
 			if err != nil {
 				t.Errorf("Execute() error = %v", err)
 			}
-			mem := interp.GetMemory(tt.memAddr)
+			mem := interp.GetMemoryAt(tt.memAddr)
 			if mem.IntVal != tt.expected {
 				t.Errorf("memory[%d] = %d, want %d", tt.memAddr, mem.IntVal, tt.expected)
 			}
@@ -528,12 +528,14 @@ func TestInterpreterReadInt(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			interp := NewInterpreter([]byte{byte(OP_HALT)})
 			interp.matchContext.Data = tt.data
-			interp.push(Value{Type: ValueTypeInt, IntVal: tt.offset})
 
-			err := interp.executeReadInt(tt.size, tt.unsigned)
+			result, err := interp.executeReadInt(tt.offset, tt.size, tt.unsigned)
 			if err != nil {
 				t.Errorf("executeReadInt() error = %v", err)
 			}
+
+			// Push the result onto the stack to match the test expectations
+			interp.push(Value{Type: ValueTypeInt, IntVal: result})
 			if len(interp.GetStack()) != 1 {
 				t.Errorf("stack length = %d, want 1", len(interp.GetStack()))
 			}
