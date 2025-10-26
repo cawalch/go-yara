@@ -47,60 +47,47 @@ func (p *Parser) ParseRules() (*ast.Program, error) {
 			if p.peekTokenIs(token.RULE) || p.peekTokenIs(token.PRIVATE) {
 				// This is a global rule modifier
 				rule, err := p.parseRule()
-				if err != nil {
-					p.errors = append(p.errors, err)
-					p.synchronize()
-					continue
+				p.addError(err)
+				if err == nil {
+					program.Rules = append(program.Rules, rule)
 				}
-				program.Rules = append(program.Rules, rule)
 			} else {
 				// This is a global variable declaration
 				p.nextToken() // consume GLOBAL token
 				globalVar, err := p.parseGlobalVariable()
-				if err != nil {
-					p.errors = append(p.errors, err)
-					p.synchronize()
-					continue
+				p.addError(err)
+				if err == nil {
+					program.GlobalVariables = append(program.GlobalVariables, globalVar)
 				}
-				program.GlobalVariables = append(program.GlobalVariables, globalVar)
 			}
 		case p.currentTokenIs(token.EXTERNAL):
 			// This is an external variable declaration
 			p.nextToken() // consume EXTERNAL token
 			externalVar, err := p.parseExternalVariable()
-			if err != nil {
-				p.errors = append(p.errors, err)
-				p.synchronize()
-				continue
+			p.addError(err)
+			if err == nil {
+				program.ExternalVariables = append(program.ExternalVariables, externalVar)
 			}
-			program.ExternalVariables = append(program.ExternalVariables, externalVar)
 		case p.currentTokenIs(token.IMPORT):
 			importStmt, err := p.parseImport()
-			if err != nil {
-				p.errors = append(p.errors, err)
-				p.synchronize()
-				continue
+			p.addError(err)
+			if err == nil {
+				program.Imports = append(program.Imports, importStmt)
 			}
-			program.Imports = append(program.Imports, importStmt)
 		case p.currentTokenIs(token.INCLUDE):
 			includeStmt, err := p.parseInclude()
-			if err != nil {
-				p.errors = append(p.errors, err)
-				p.synchronize()
-				continue
+			p.addError(err)
+			if err == nil {
+				program.Includes = append(program.Includes, includeStmt)
 			}
-			program.Includes = append(program.Includes, includeStmt)
 		case p.currentTokenIs(token.PRIVATE) || p.currentTokenIs(token.RULE):
 			rule, err := p.parseRule()
-			if err != nil {
-				p.errors = append(p.errors, err)
-				p.synchronize()
-				continue
+			p.addError(err)
+			if err == nil {
+				program.Rules = append(program.Rules, rule)
 			}
-			program.Rules = append(program.Rules, rule)
 		default:
-			p.errors = append(p.errors, fmt.Errorf("unexpected token %s at %v", p.current.Type, p.current.Pos))
-			p.synchronize()
+			p.addError(fmt.Errorf("unexpected token %s at %v", p.current.Type, p.current.Pos))
 		}
 	}
 
@@ -135,6 +122,14 @@ func (p *Parser) expectToken(t token.TokenType) bool {
 	}
 	p.errors = append(p.errors, fmt.Errorf("expected %s, got %s at %v", t, p.current.Type, p.current.Pos))
 	return false
+}
+
+// addError records an error and synchronizes the parser state
+func (p *Parser) addError(err error) {
+	if err != nil {
+		p.errors = append(p.errors, err)
+		p.synchronize()
+	}
 }
 
 // synchronize recovers from parsing errors by skipping to next rule, import, or global variable
