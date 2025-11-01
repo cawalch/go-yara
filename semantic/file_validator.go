@@ -1,4 +1,3 @@
-// Package semantic implements semantic analysis and validation for YARA rules.
 package semantic
 
 import (
@@ -69,21 +68,21 @@ func (fv *FileValidator) validateFileOperation(opName string, pos token.Position
 	case entrypointKeyword:
 		fv.validateEntrypointUsage(pos)
 	default:
-		fv.addError(&SemanticError{
-			Message:  fmt.Sprintf("unknown file operation: %s", opName),
+		fv.addError(&Error{
+			Message:  "unknown file operation: " + opName,
 			Position: pos,
 		})
 	}
 }
 
 // validateFilesizeUsage validates the usage of the filesize keyword
-func (fv *FileValidator) validateFilesizeUsage(pos token.Position) {
+func (fv *FileValidator) validateFilesizeUsage(_ token.Position) {
 	// filesize is always available in any rule context
 	// No special validation needed beyond type checking
 }
 
 // validateEntrypointUsage validates the usage of the entrypoint keyword
-func (fv *FileValidator) validateEntrypointUsage(pos token.Position) {
+func (fv *FileValidator) validateEntrypointUsage(_ token.Position) {
 	// entrypoint is always available in any rule context
 	// No special validation needed beyond type checking
 }
@@ -99,8 +98,8 @@ func (fv *FileValidator) ValidateFilesizeOperation(operation string, pos token.P
 		return errors
 
 	default:
-		errors = append(errors, &SemanticError{
-			Message:  fmt.Sprintf("invalid filesize operation: %s", operation),
+		errors = append(errors, &Error{
+			Message:  "invalid filesize operation: " + operation,
 			Position: pos,
 		})
 		return errors
@@ -118,38 +117,46 @@ func (fv *FileValidator) ValidateEntrypointOperation(operation string, pos token
 		return errors
 
 	default:
-		errors = append(errors, &SemanticError{
-			Message:  fmt.Sprintf("invalid entrypoint operation: %s", operation),
+		errors = append(errors, &Error{
+			Message:  "invalid entrypoint operation: " + operation,
 			Position: pos,
 		})
 		return errors
 	}
 }
 
+// FileSizeComparisonArgs contains arguments for filesize comparison validation
+type FileSizeComparisonArgs struct {
+	Op           token.TokenType
+	FilesizeExpr ast.Expression
+	OtherExpr    ast.Expression
+	Pos          token.Position
+}
+
 // ValidateFileSizeComparison validates filesize comparison operations
-func (fv *FileValidator) ValidateFileSizeComparison(operator token.TokenType, filesizeExpr, otherExpr ast.Expression, pos token.Position) (*TypeInfo, []error) {
+func (fv *FileValidator) ValidateFileSizeComparison(args *FileSizeComparisonArgs) (*TypeInfo, []error) {
 	var errors []error
 
 	// Validate that the left side is filesize
-	filesizeType := fv.getFilesizeType(filesizeExpr)
+	filesizeType := fv.getFilesizeType(args.FilesizeExpr)
 	if filesizeType == nil {
-		errors = append(errors, &SemanticError{
+		errors = append(errors, &Error{
 			Message:  "left operand must be filesize",
-			Position: pos,
+			Position: args.Pos,
 		})
 		return &TypeInfo{DataType: TypeUnknown}, errors
 	}
 
 	// Validate that the right side is a compatible type
-	otherType, otherErrors := fv.validateComparisonOperand(otherExpr)
+	otherType, otherErrors := fv.validateComparisonOperand(args.OtherExpr)
 	errors = append(errors, otherErrors...)
 
 	if otherType != nil {
 		// Check type compatibility
 		if !filesizeType.CanCompare(otherType) {
-			errors = append(errors, &SemanticError{
+			errors = append(errors, &Error{
 				Message:  fmt.Sprintf("cannot compare filesize (%s) with %s", filesizeType.String(), otherType.String()),
-				Position: pos,
+				Position: args.Pos,
 			})
 			return &TypeInfo{DataType: TypeUnknown}, errors
 		}
@@ -165,7 +172,7 @@ func (fv *FileValidator) ValidateEntrypointOffset(entrypointExpr, offsetExpr ast
 	// Validate that the left side is entrypoint
 	entrypointType := fv.getEntrypointType(entrypointExpr)
 	if entrypointType == nil {
-		errors = append(errors, &SemanticError{
+		errors = append(errors, &Error{
 			Message:  "left operand must be entrypoint",
 			Position: pos,
 		})
@@ -177,7 +184,7 @@ func (fv *FileValidator) ValidateEntrypointOffset(entrypointExpr, offsetExpr ast
 	errors = append(errors, offsetErrors...)
 
 	if offsetType != nil && !offsetType.IsInteger() {
-		errors = append(errors, &SemanticError{
+		errors = append(errors, &Error{
 			Message:  "entrypoint offset must be an integer",
 			Position: pos,
 		})

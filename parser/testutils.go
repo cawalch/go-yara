@@ -1,7 +1,7 @@
-// Package parser provides test utilities for parser testing.
 package parser
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/cawalch/go-yara/ast"
@@ -64,7 +64,7 @@ func ParseRuleStringWithErrors(t *testing.T, source string) (*ast.Rule, error) {
 	}
 
 	if len(program.Rules) == 0 {
-		return nil, nil
+		return nil, errors.New("no rules found in source")
 	}
 
 	return program.Rules[0], nil
@@ -83,7 +83,7 @@ rule ` + name + ` {
 }
 
 // CreateTestRuleWithCondition creates a test rule with a custom condition
-func CreateTestRuleWithCondition(name string, strings string, condition string) string {
+func CreateTestRuleWithCondition(name, strings, condition string) string {
 	return `
 rule ` + name + ` {
 	strings:
@@ -93,16 +93,24 @@ rule ` + name + ` {
 }`
 }
 
+// TestRuleConfig holds configuration for creating test rules
+type TestRuleConfig struct {
+	Name      string
+	Meta      string
+	Strings   string
+	Condition string
+}
+
 // CreateTestRuleWithMeta creates a test rule with meta section
-func CreateTestRuleWithMeta(name, meta string, strings string, condition string) string {
+func CreateTestRuleWithMeta(config TestRuleConfig) string {
 	return `
-rule ` + name + ` {
+rule ` + config.Name + ` {
 	meta:
-		` + meta + `
+		` + config.Meta + `
 	strings:
-		` + strings + `
+		` + config.Strings + `
 	condition:
-		` + condition + `
+		` + config.Condition + `
 }`
 }
 

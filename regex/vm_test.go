@@ -3,6 +3,7 @@ package regex
 import "testing"
 
 func mustCompile(t *testing.T, pat string) []byte {
+	t.Helper()
 	p := NewParser(0)
 	ast, err := p.Parse(pat)
 	if err != nil {

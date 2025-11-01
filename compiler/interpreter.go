@@ -1,9 +1,9 @@
-// Package compiler provides bytecode interpretation and execution for YARA rules.
 package compiler
 
 import (
 	"fmt"
 	"math"
+	"strconv"
 )
 
 // Value represents a YARA value that can be int, double, or string
@@ -24,6 +24,8 @@ const (
 	ValueTypeDouble
 	// ValueTypeString represents a string value
 	ValueTypeString
+	// ValueTypeRuleRef represents a rule reference
+	ValueTypeRuleRef
 	// ValueTypeUndefined represents an undefined value
 	ValueTypeUndefined
 )
@@ -104,6 +106,32 @@ func (i *Interpreter) SetCompiledRules(rules []*CompiledRule) {
 	i.compiledRules = rules
 }
 
+// isBinaryFile checks if the current data represents a binary file format
+// This is a simple heuristic to determine if we should use entrypoint=0 or -1
+func (i *Interpreter) isBinaryFile() bool {
+	if i.matchContext == nil || len(i.matchContext.Data) == 0 {
+		return false
+	}
+
+	// Simple heuristic: if the data contains null bytes or non-printable characters,
+	// it's likely a binary file
+	data := i.matchContext.Data
+	nullCount := 0
+	nonPrintableCount := 0
+
+	for _, b := range data {
+		if b == 0 {
+			nullCount++
+		}
+		if b < 32 && b != 9 && b != 10 && b != 13 { // Not tab, newline, or carriage return
+			nonPrintableCount++
+		}
+	}
+
+	// If we have significant null bytes or non-printable characters, consider it binary
+	return nullCount > 0 || float64(nonPrintableCount)/float64(len(data)) > 0.1
+}
+
 // GetMatchContext returns the current match context
 func (i *Interpreter) GetMatchContext() *MatchContext {
 	return i.matchContext
@@ -160,8 +188,8 @@ func (i *Interpreter) Reset() {
 	i.stack = i.stack[:0]
 	// Don't clear memory slots that contain string identifiers
 	// Only clear undefined values
-	for idx, val := range i.memory {
-		if val.Type != ValueTypeString {
+	for idx := range i.memory {
+		if i.memory[idx].Type != ValueTypeString {
 			i.memory[idx] = Value{Type: ValueTypeUndefined}
 		}
 	}
@@ -222,14 +250,17 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 		return h.executeWithOpcode(i, opcode)
 	}
 
-	return handler.Execute(i)
+	if err := handler.Execute(i); err != nil {
+		return fmt.Errorf("opcode handler execution: %w", err)
+	}
+	return nil
 }
 
 // String returns a string representation of the value
 func (v Value) String() string {
 	switch v.Type {
 	case ValueTypeInt:
-		return fmt.Sprintf("%d", v.IntVal)
+		return strconv.FormatInt(v.IntVal, 10)
 	case ValueTypeDouble:
 		if math.IsNaN(v.DoubleVal) {
 			return "nan"

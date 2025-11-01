@@ -1,4 +1,3 @@
-// Package semantic implements semantic analysis and validation for YARA rules.
 package semantic
 
 import (
@@ -56,7 +55,13 @@ func TestFileValidatorValidateFileSizeComparison(t *testing.T) {
 	filesizeExpr := &ast.Identifier{Name: "filesize", Pos: pos}
 	otherExpr := &ast.Literal{Type: token.INTEGER_LIT, Value: int64(1024), Pos: pos}
 
-	typeInfo, errors := fv.ValidateFileSizeComparison(token.GT, filesizeExpr, otherExpr, pos)
+	args := FileSizeComparisonArgs{
+		Op:           token.GT,
+		FilesizeExpr: filesizeExpr,
+		OtherExpr:    otherExpr,
+		Pos:          pos,
+	}
+	typeInfo, errors := fv.ValidateFileSizeComparison(&args)
 	if len(errors) > 0 {
 		t.Errorf("ValidateFileSizeComparison() unexpected errors: %v", errors)
 	}
@@ -66,7 +71,13 @@ func TestFileValidatorValidateFileSizeComparison(t *testing.T) {
 
 	// Test invalid left operand
 	invalidExpr := &ast.Literal{Type: token.STRING_LIT, Value: "invalid", Pos: pos}
-	_, errors = fv.ValidateFileSizeComparison(token.GT, invalidExpr, otherExpr, pos)
+	invalidArgs := FileSizeComparisonArgs{
+		Op:           token.GT,
+		FilesizeExpr: invalidExpr,
+		OtherExpr:    otherExpr,
+		Pos:          pos,
+	}
+	_, errors = fv.ValidateFileSizeComparison(&invalidArgs)
 	if len(errors) == 0 {
 		t.Error("ValidateFileSizeComparison() expected errors for invalid left operand")
 	}

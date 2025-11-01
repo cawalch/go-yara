@@ -230,14 +230,14 @@ func TestLiteralCreation(t *testing.T) {
 	tests := []struct {
 		name     string
 		tokType  token.TokenType
-		value    interface{}
-		checkVal func(interface{}) bool
+		value    any
+		checkVal func(any) bool
 	}{
 		{
 			name:    "Integer",
 			tokType: token.INTEGER_LIT,
 			value:   42,
-			checkVal: func(v interface{}) bool {
+			checkVal: func(v any) bool {
 				return v.(int) == 42
 			},
 		},
@@ -245,7 +245,7 @@ func TestLiteralCreation(t *testing.T) {
 			name:    "Boolean True",
 			tokType: token.TRUE,
 			value:   true,
-			checkVal: func(v interface{}) bool {
+			checkVal: func(v any) bool {
 				return v.(bool) == true
 			},
 		},
@@ -253,7 +253,7 @@ func TestLiteralCreation(t *testing.T) {
 			name:    "Boolean False",
 			tokType: token.FALSE,
 			value:   false,
-			checkVal: func(v interface{}) bool {
+			checkVal: func(v any) bool {
 				return v.(bool) == false
 			},
 		},
@@ -261,7 +261,7 @@ func TestLiteralCreation(t *testing.T) {
 			name:    "String",
 			tokType: token.STRING_LIT,
 			value:   "test",
-			checkVal: func(v interface{}) bool {
+			checkVal: func(v any) bool {
 				return v.(string) == "test"
 			},
 		},
@@ -313,107 +313,107 @@ type CountingVisitor struct {
 	count int
 }
 
-func (v *CountingVisitor) VisitProgram(n *Program) any {
+func (v *CountingVisitor) VisitProgram(_ *Program) any {
 	v.count++
 	return nil
 }
 
-func (v *CountingVisitor) VisitRule(n *Rule) any {
+func (v *CountingVisitor) VisitRule(_ *Rule) any {
 	v.count++
 	return nil
 }
 
-func (v *CountingVisitor) VisitMeta(n *Meta) any {
+func (v *CountingVisitor) VisitMeta(_ *Meta) any {
 	v.count++
 	return nil
 }
 
-func (v *CountingVisitor) VisitString(n *String) any {
+func (v *CountingVisitor) VisitString(_ *String) any {
 	v.count++
 	return nil
 }
 
-func (v *CountingVisitor) VisitCondition(n *Condition) any {
+func (v *CountingVisitor) VisitCondition(_ *Condition) any {
 	v.count++
 	return nil
 }
 
-func (v *CountingVisitor) VisitBinaryOp(n *BinaryOp) any {
+func (v *CountingVisitor) VisitBinaryOp(_ *BinaryOp) any {
 	v.count++
 	return nil
 }
 
-func (v *CountingVisitor) VisitUnaryOp(n *UnaryOp) any {
+func (v *CountingVisitor) VisitUnaryOp(_ *UnaryOp) any {
 	v.count++
 	return nil
 }
 
-func (v *CountingVisitor) VisitIdentifier(n *Identifier) any {
+func (v *CountingVisitor) VisitIdentifier(_ *Identifier) any {
 	v.count++
 	return nil
 }
 
-func (v *CountingVisitor) VisitLiteral(n *Literal) any {
+func (v *CountingVisitor) VisitLiteral(_ *Literal) any {
 	v.count++
 	return nil
 }
 
-func (v *CountingVisitor) VisitTextString(n *TextString) any {
+func (v *CountingVisitor) VisitTextString(_ *TextString) any {
 	v.count++
 	return nil
 }
 
-func (v *CountingVisitor) VisitHexString(n *HexString) any {
+func (v *CountingVisitor) VisitHexString(_ *HexString) any {
 	v.count++
 	return nil
 }
 
-func (v *CountingVisitor) VisitRegexPattern(n *RegexPattern) any {
+func (v *CountingVisitor) VisitRegexPattern(_ *RegexPattern) any {
 	v.count++
 	return nil
 }
 
-func (v *CountingVisitor) VisitGlobalVariable(n *GlobalVariable) any {
+func (v *CountingVisitor) VisitGlobalVariable(_ *GlobalVariable) any {
 	v.count++
 	return nil
 }
 
-func (v *CountingVisitor) VisitImport(n *Import) any {
+func (v *CountingVisitor) VisitImport(_ *Import) any {
 	v.count++
 	return nil
 }
 
-func (v *CountingVisitor) VisitInclude(n *Include) any {
+func (v *CountingVisitor) VisitInclude(_ *Include) any {
 	v.count++
 	return nil
 }
 
-func (v *CountingVisitor) VisitStringLength(n *StringLength) any {
+func (v *CountingVisitor) VisitStringLength(_ *StringLength) any {
 	v.count++
 	return nil
 }
 
-func (v *CountingVisitor) VisitExternalVariable(n *ExternalVariable) any {
+func (v *CountingVisitor) VisitExternalVariable(_ *ExternalVariable) any {
 	v.count++
 	return nil
 }
 
-func (v *CountingVisitor) VisitArrayIndex(n *ArrayIndex) any {
+func (v *CountingVisitor) VisitArrayIndex(_ *ArrayIndex) any {
 	v.count++
 	return nil
 }
 
-func (v *CountingVisitor) VisitForLoop(n *ForLoop) any {
+func (v *CountingVisitor) VisitForLoop(_ *ForLoop) any {
 	v.count++
 	return nil
 }
 
-func (v *CountingVisitor) VisitOfExpression(n *OfExpression) any {
+func (v *CountingVisitor) VisitOfExpression(_ *OfExpression) any {
 	v.count++
 	return nil
 }
 
-func (v *CountingVisitor) VisitFunctionCall(n *FunctionCall) any {
+func (v *CountingVisitor) VisitFunctionCall(_ *FunctionCall) any {
 	v.count++
 	return nil
 }

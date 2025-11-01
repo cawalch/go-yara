@@ -63,7 +63,7 @@ func (b *Builder) Identifier(pos token.Position, name string) *Identifier {
 }
 
 // Literal creates a new Literal node
-func (b *Builder) Literal(pos token.Position, typ token.TokenType, value interface{}) *Literal {
+func (b *Builder) Literal(pos token.Position, typ token.TokenType, value any) *Literal {
 	return &Literal{
 		Pos:   pos,
 		Type:  typ,

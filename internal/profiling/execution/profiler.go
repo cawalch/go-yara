@@ -2,12 +2,14 @@
 package execution
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -90,21 +92,21 @@ type EnvironmentInfo struct {
 // ExecutionResult represents profiling results for a specific test case
 // nolint:revive // Type name is descriptive and widely used
 type ExecutionResult struct {
-	Name          string                 `json:"name"`
-	RuleFile      string                 `json:"rule_file"`
-	DataFile      string                 `json:"data_file"`
-	DataSize      int64                  `json:"data_size"`
-	RuleCount     int                    `json:"rule_count"`
-	StringCount   int                    `json:"string_count"`
-	CompileTime   time.Duration          `json:"compile_time"`
-	ExecutionTime time.Duration          `json:"execution_time"`
-	TotalTime     time.Duration          `json:"total_time"`
-	MemoryUsage   int64                  `json:"memory_usage"`
-	Allocations   int64                  `json:"allocations"`
-	Matches       int                    `json:"matches"`
-	Success       bool                   `json:"success"`
-	Error         string                 `json:"error,omitempty"`
-	ProfileData   map[string]interface{} `json:"profile_data,omitempty"`
+	Name          string         `json:"name"`
+	RuleFile      string         `json:"rule_file"`
+	DataFile      string         `json:"data_file"`
+	DataSize      int64          `json:"data_size"`
+	RuleCount     int            `json:"rule_count"`
+	StringCount   int            `json:"string_count"`
+	CompileTime   time.Duration  `json:"compile_time"`
+	ExecutionTime time.Duration  `json:"execution_time"`
+	TotalTime     time.Duration  `json:"total_time"`
+	MemoryUsage   int64          `json:"memory_usage"`
+	Allocations   int64          `json:"allocations"`
+	Matches       int            `json:"matches"`
+	Success       bool           `json:"success"`
+	Error         string         `json:"error,omitempty"`
+	ProfileData   map[string]any `json:"profile_data,omitempty"`
 
 	// Performance counters
 	Instructions  int64 `json:"instructions"`
@@ -304,7 +306,7 @@ func (p *Profiler) RunProfiling() error {
 	}
 
 	if len(p.testCases) == 0 {
-		return fmt.Errorf("no test cases discovered")
+		return errors.New("no test cases discovered")
 	}
 
 	fmt.Printf("Running execution profiling on %d test cases...\n", len(p.testCases))
@@ -363,7 +365,7 @@ func (p *Profiler) runTestCase(testCase TestCase) *ExecutionResult {
 		RuleFile:    testCase.RuleFile,
 		DataFile:    testCase.DataFile,
 		DataSize:    testCase.DataSize,
-		ProfileData: make(map[string]interface{}),
+		ProfileData: make(map[string]any),
 	}
 
 	start := time.Now()
@@ -760,7 +762,7 @@ func (p *Profiler) writeTextSummary(filename string) error {
 
 	// Helper function to ignore write errors for non-critical sections
 	// nolint: errcheck
-	write := func(format string, args ...interface{}) {
+	write := func(format string, args ...any) {
 		fmt.Fprintf(file, format, args...)
 	}
 
@@ -853,5 +855,5 @@ func formatBytes(b int64) string {
 
 // formatNumber formats a number with commas
 func formatNumber(n int64) string {
-	return fmt.Sprintf("%d", n)
+	return strconv.FormatInt(n, 10)
 }

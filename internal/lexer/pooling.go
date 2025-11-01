@@ -11,7 +11,7 @@ import (
 
 // Pool for byte slices used in escape sequence processing
 var byteSlicePool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		// Pre-allocate with reasonable capacity for most strings
 		slice := make([]byte, 0, 256)
 		return &slice
@@ -20,7 +20,7 @@ var byteSlicePool = sync.Pool{
 
 // Pool for strings.Builder used in string processing
 var stringBuilderPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return &strings.Builder{}
 	},
 }

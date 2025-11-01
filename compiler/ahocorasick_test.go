@@ -1,4 +1,3 @@
-// Package compiler provides tests for the Aho-Corasick automaton.
 package compiler
 
 import (
@@ -225,7 +224,7 @@ func TestACAutomatonGetTableSize(t *testing.T) {
 }
 
 // TestACAutomatonPrintDebug tests PrintDebug method
-func TestACAutomatonPrintDebug(t *testing.T) {
+func TestACAutomatonPrintDebug(_ *testing.T) {
 	ac := NewACAutomaton()
 	ac.AddString("test", []byte("test"), false, false)
 	ac.Compile()

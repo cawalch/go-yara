@@ -196,7 +196,33 @@ func (l *Targeted) handleStringIdentifierTokenTargeted(pos token.Position) token
 
 // isEmptyRegexTargeted checks if the current position starts an empty regex pattern
 func (l *Targeted) isEmptyRegexTargeted() bool {
-	return isEmptyRegexImpl(l.reader.Position, l.reader.SetPosition, l.reader.Current, l.reader.ReadChar, l.reader.Slice)
+	return isEmptyRegexImpl(l)
+}
+
+// GetPosition implements regexReader interface for Targeted
+// GetPosition returns the current position in the input
+func (l *Targeted) GetPosition() int {
+	return l.reader.Position()
+}
+
+// SetPosition sets the current position in the input
+func (l *Targeted) SetPosition(pos int) {
+	l.reader.SetPosition(pos)
+}
+
+// GetCurrent returns the current character
+func (l *Targeted) GetCurrent() byte {
+	return l.reader.Current()
+}
+
+// ReadChar advances to the next character
+func (l *Targeted) ReadChar() {
+	l.reader.ReadChar()
+}
+
+// Slice returns a substring from the given start position
+func (l *Targeted) Slice(start int) string {
+	return l.reader.Slice(start)
 }
 
 // looksLikeRegexTargeted determines if a '/' character starts a regex rather than division
@@ -281,10 +307,7 @@ func (l *Targeted) hasTagsBeforeBraceTargeted() bool {
 // findRecentColonTargeted looks for a colon within a reasonable distance backwards
 func (l *Targeted) findRecentColonTargeted(input string, currentPos int) int {
 	maxLookback := 100
-	startPos := currentPos - maxLookback
-	if startPos < 0 {
-		startPos = 0
-	}
+	startPos := max(currentPos-maxLookback, 0)
 
 	for pos := currentPos - 1; pos >= startPos; pos-- {
 		if input[pos] == ':' {

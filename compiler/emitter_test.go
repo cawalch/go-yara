@@ -1,4 +1,3 @@
-// Package compiler provides tests for bytecode emission
 package compiler
 
 import (

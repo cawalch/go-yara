@@ -80,7 +80,7 @@ func TestReader_LineAndColumn(t *testing.T) {
 	}
 
 	// Read "hello" (5 chars)
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		r.ReadChar()
 	}
 
@@ -98,7 +98,7 @@ func TestReader_LineAndColumn(t *testing.T) {
 	}
 
 	// Read "world" (5 chars)
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		r.ReadChar()
 	}
 

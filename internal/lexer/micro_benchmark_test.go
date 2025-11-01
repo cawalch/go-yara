@@ -13,12 +13,11 @@ import (
 func BenchmarkMicro_ReadChar(b *testing.B) {
 	input := "rule test { condition: true }"
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		// Reset lexer position
 		l := lexer.New(input)
 		// Read characters - this is 14.42% of CPU time
-		for j := 0; j < len(input); j++ {
+		for range len(input) {
 			l.NextToken()
 		}
 		_ = l // Use the variable to avoid unused variable warning
@@ -27,8 +26,7 @@ func BenchmarkMicro_ReadChar(b *testing.B) {
 
 // BenchmarkMicro_KeywordLookup benchmarks keyword lookup operations
 func BenchmarkMicro_KeywordLookup(b *testing.B) {
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		// This is using mapaccess2_faststr (5.70% of CPU time)
 		// Create a simple lexer to access the internal lookup function
 		l := lexer.New("rule")
@@ -41,8 +39,7 @@ func BenchmarkMicro_KeywordLookup(b *testing.B) {
 func BenchmarkMicro_SkipWhitespace(b *testing.B) {
 	input := "    rule test { condition: true }"
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		// Reset lexer position
 		l := lexer.New(input)
 		// Skip whitespace - this is 9.41% of CPU time
@@ -60,8 +57,7 @@ func BenchmarkMicro_SkipWhitespace(b *testing.B) {
 func BenchmarkMicro_IdentifierToken(b *testing.B) {
 	input := "my_variable_name another_variable"
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		// Reset lexer position
 		l := lexer.New(input)
 		// Create identifier tokens - this is 23.36% of CPU time
@@ -79,8 +75,7 @@ func BenchmarkMicro_IdentifierToken(b *testing.B) {
 func BenchmarkMicro_NumericToken(b *testing.B) {
 	input := "12345 0xFF 1KB 2MB"
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		// Reset lexer position
 		l := lexer.New(input)
 		// Create numeric tokens - this is 4.05% of CPU time
@@ -98,8 +93,7 @@ func BenchmarkMicro_NumericToken(b *testing.B) {
 func BenchmarkMicro_StringToken(b *testing.B) {
 	input := `"test string" "another string with escapes \"quoted\""`
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		// Reset lexer position
 		l := lexer.New(input)
 		// Create string tokens - this is 5.54% of CPU time
@@ -117,8 +111,7 @@ func BenchmarkMicro_StringToken(b *testing.B) {
 func BenchmarkMicro_HexStringToken(b *testing.B) {
 	input := `{ E2 34 A1 C8 } { ?? A? ?B } { F4 23 [4-6] 62 B4 }`
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		// Reset lexer position
 		l := lexer.New(input)
 		// Create hex string tokens - this is 4.49% of CPU time
@@ -136,8 +129,7 @@ func BenchmarkMicro_HexStringToken(b *testing.B) {
 func BenchmarkMicro_Current(b *testing.B) {
 	input := "rule test { condition: true }"
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		// Reset lexer position
 		l := lexer.New(input)
 		// Character reading operations - this is 8.34% of CPU time

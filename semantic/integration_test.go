@@ -489,15 +489,15 @@ func TestIntegerTypeGetIntegerRange(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			min, max := tt.intType.GetIntegerRange()
-			if min == 0 && max == 0 {
+			minVal, maxVal := tt.intType.GetIntegerRange()
+			if minVal == 0 && maxVal == 0 {
 				t.Errorf("GetIntegerRange() returned (0, 0) for %s", tt.name)
 			}
-			if tt.intType.Signed && min >= 0 {
-				t.Errorf("GetIntegerRange() min = %d for signed type, want negative", min)
+			if tt.intType.Signed && minVal >= 0 {
+				t.Errorf("GetIntegerRange() min = %d for signed type, want negative", minVal)
 			}
-			if !tt.intType.Signed && min != 0 {
-				t.Errorf("GetIntegerRange() min = %d for unsigned type, want 0", min)
+			if !tt.intType.Signed && minVal != 0 {
+				t.Errorf("GetIntegerRange() min = %d for unsigned type, want 0", minVal)
 			}
 		})
 	}
@@ -508,7 +508,7 @@ func TestInferTypeFromLiteralAllTypes(t *testing.T) {
 	tests := []struct {
 		name      string
 		tokenType token.TokenType
-		value     interface{}
+		value     any
 		wantType  DataType
 	}{
 		{"true", token.TRUE, true, TypeBoolean},

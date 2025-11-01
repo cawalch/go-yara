@@ -1,6 +1,7 @@
 package lexer_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/cawalch/go-yara/internal/lexer"
@@ -141,8 +142,9 @@ func TestBasicFeatures_PerformanceStress(t *testing.T) {
 
 	// Generate a large input with all Phase 1 features
 	input := ""
-	for i := 0; i < 100; i++ {
-		input += `rule StressTest` + string(rune('A'+i%26)) + ` {
+	var inputSb144 strings.Builder
+	for i := range 100 {
+		inputSb144.WriteString(`rule StressTest` + string(rune('A'+i%26)) + ` {
 			meta:
 				size = 1MB
 				addr = 0x1000
@@ -154,8 +156,9 @@ func TestBasicFeatures_PerformanceStress(t *testing.T) {
 				(filesize / 1024) * 2 % 3 == 0 and
 				0xFF > 0x100
 		}
-		`
+		`)
 	}
+	input += inputSb144.String()
 
 	// This should parse without issues and maintain performance
 	tokens := helper.CollectTokens(input)

@@ -1,7 +1,7 @@
-// Package compiler provides bytecode generation and compilation for YARA rules.
 package compiler
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 
@@ -78,12 +78,12 @@ func ACMakeTransition(stateIndex, offset uint32) ACTransition {
 		((offset & ACOffsetMask) << ACStateIndexBits))
 }
 
-// ACGetStateIndex extracts the state index from a transition
+// GetStateIndex extracts the state index from a transition
 func (t ACTransition) GetStateIndex() uint32 {
 	return uint32(t) & ACStateIndexMask
 }
 
-// ACGetOffset extracts the offset from a transition
+// GetOffset extracts the offset from a transition
 func (t ACTransition) GetOffset() uint32 {
 	return (uint32(t) >> ACStateIndexBits) & ACOffsetMask
 }
@@ -163,10 +163,29 @@ func (state *ACState) addChild(newChild *ACState) {
 	state.FirstChild = newChild
 }
 
+// StringConfig holds configuration for adding a string to the automaton
+type StringConfig struct {
+	Identifier string
+	Data       []byte
+	IsHex      bool
+	IsRegex    bool
+}
+
 // AddString adds a string pattern to the automaton (backwards-compatible signature).
 func (ac *ACAutomaton) AddString(identifier string, data []byte, isHex, isRegex bool) error {
-	if len(data) == 0 {
-		return fmt.Errorf("empty pattern")
+	config := StringConfig{
+		Identifier: identifier,
+		Data:       data,
+		IsHex:      isHex,
+		IsRegex:    isRegex,
+	}
+	return ac.AddStringWithConfig(config)
+}
+
+// AddStringWithConfig adds a string pattern to the automaton using configuration.
+func (ac *ACAutomaton) AddStringWithConfig(config StringConfig) error {
+	if len(config.Data) == 0 {
+		return errors.New("empty pattern")
 	}
 
 	// Ensure we have enough capacity in strings slice to avoid reallocations
@@ -176,14 +195,14 @@ func (ac *ACAutomaton) AddString(identifier string, data []byte, isHex, isRegex 
 	}
 
 	// Store string information with copy to avoid data races
-	dataCopy := make([]byte, len(data))
-	copy(dataCopy, data)
+	dataCopy := make([]byte, len(config.Data))
+	copy(dataCopy, config.Data)
 
 	ac.Strings = append(ac.Strings, ACStringInfo{
-		Identifier: identifier,
+		Identifier: config.Identifier,
 		Length:     len(dataCopy),
-		IsHex:      isHex,
-		IsRegex:    isRegex,
+		IsHex:      config.IsHex,
+		IsRegex:    config.IsRegex,
 		Data:       dataCopy,
 		Flags:      0,
 	})
@@ -195,7 +214,7 @@ func (ac *ACAutomaton) AddString(identifier string, data []byte, isHex, isRegex 
 	current := ac.Root
 	depth := 0
 
-	for _, b := range data {
+	for _, b := range config.Data {
 		depth++
 		next := current.findChild(b)
 		if next != nil {
@@ -226,6 +245,12 @@ func (ac *ACAutomaton) AddString(identifier string, data []byte, isHex, isRegex 
 	return nil
 }
 
+// StringConfigWithFlags holds configuration for adding a string with regex flags
+type StringConfigWithFlags struct {
+	StringConfig
+	Flags regex.Flags
+}
+
 // AddStringWithFlags adds a string and records regex VM flags alongside metadata.
 func (ac *ACAutomaton) AddStringWithFlags(
 	identifier string,
@@ -233,12 +258,26 @@ func (ac *ACAutomaton) AddStringWithFlags(
 	isHex, isRegex bool,
 	flags regex.Flags,
 ) error {
-	if err := ac.AddString(identifier, data, isHex, isRegex); err != nil {
+	config := StringConfigWithFlags{
+		StringConfig: StringConfig{
+			Identifier: identifier,
+			Data:       data,
+			IsHex:      isHex,
+			IsRegex:    isRegex,
+		},
+		Flags: flags,
+	}
+	return ac.AddStringWithFlagsAndConfig(config)
+}
+
+// AddStringWithFlagsAndConfig adds a string with flags using configuration.
+func (ac *ACAutomaton) AddStringWithFlagsAndConfig(config StringConfigWithFlags) error {
+	if err := ac.AddStringWithConfig(config.StringConfig); err != nil {
 		return err
 	}
 	idx := ac.StringCount - 1
 	if idx >= 0 && idx < len(ac.Strings) {
-		ac.Strings[idx].Flags = flags
+		ac.Strings[idx].Flags = config.Flags
 	}
 	return nil
 }
@@ -361,7 +400,7 @@ func (ac *ACAutomaton) transitionsSubset(s1, s2 *ACState) bool {
 // The method is kept for backward compatibility.
 func (ac *ACAutomaton) BuildTransitionTable() error {
 	if len(ac.States) == 0 {
-		return fmt.Errorf("no states in automaton")
+		return errors.New("no states in automaton")
 	}
 	// No-op: transition table is not used at runtime
 	return nil
@@ -403,10 +442,9 @@ func (ac *ACAutomaton) Compile() error {
 		// Pre-allocate capacity for states if we can estimate it
 		if ac.StringCount > 0 {
 			// Rough estimate: average string length of 10 chars = 10 states per string
-			estimatedStates := ac.StringCount * 10
-			if estimatedStates > 1000 { // Cap to prevent over-allocation
-				estimatedStates = 1000
-			}
+			estimatedStates := min(ac.StringCount*10,
+				// Cap to prevent over-allocation
+				1000)
 			ac.ReserveStates(estimatedStates)
 		}
 
@@ -464,7 +502,7 @@ func (ac *ACAutomaton) Search(data []byte) []ACMatch {
 	state := ac.Root
 
 	// Optimized search loop with reduced bounds checking
-	for i := 0; i < len(data); i++ {
+	for i := range data {
 		b := data[i]
 
 		// Follow transitions until we can
@@ -613,12 +651,12 @@ func (ac *ACAutomaton) EstimateMemoryUsage() int {
 // Validate checks if the automaton is correctly constructed
 func (ac *ACAutomaton) Validate() error {
 	if ac.Root == nil {
-		return fmt.Errorf("automaton has no root")
+		return errors.New("automaton has no root")
 	}
 
 	// Quick validation - check state count and string count consistency
 	if len(ac.States) == 0 && ac.StringCount > 0 {
-		return fmt.Errorf("inconsistent automaton state")
+		return errors.New("inconsistent automaton state")
 	}
 
 	// For performance optimization, skip full reachability test unless specifically requested

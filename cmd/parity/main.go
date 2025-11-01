@@ -32,6 +32,26 @@ type Case struct {
 }
 
 func main() {
+	config := parseFlags()
+	cases := buildTestCases(config)
+	results := executeTests(config, cases)
+	generateReport(config, results)
+}
+
+type config struct {
+	yaraBin      string
+	goYaraCmd    string
+	data         string
+	timeout      time.Duration
+	outPath      string
+	skipRegex    bool
+	skipIncludes bool
+	skipModules  bool
+	regexSuite   bool
+	rulesCSV     string
+}
+
+func parseFlags() *config {
 	yaraBin := flag.String("yara-bin", "./yara/yara", "Path to official yara binary")
 	goYaraCmd := flag.String("go-yara-cmd", "go run ./cmd/main.go", "Command to run go-yara CLI")
 	rulesCSV := flag.String("rules", strings.Join(defaultRules(), ","), "Comma-separated list of rule file paths")
@@ -44,103 +64,146 @@ func main() {
 	regexSuite := flag.Bool("regex-suite", false, "Run curated regex-only parity suite (uses testdata/regex)")
 	flag.Parse()
 
-	// Build cases
+	return &config{
+		yaraBin:      *yaraBin,
+		goYaraCmd:    *goYaraCmd,
+		data:         *data,
+		timeout:      *timeout,
+		outPath:      *outPath,
+		skipRegex:    *skipRegex,
+		skipIncludes: *skipIncludes,
+		skipModules:  *skipModules,
+		regexSuite:   *regexSuite,
+		rulesCSV:     *rulesCSV,
+	}
+}
+
+func buildTestCases(config *config) []Case {
+	if config.regexSuite {
+		return buildRegexSuiteCases()
+	}
+
 	var cases []Case
-	if *regexSuite {
-		cases = buildRegexSuiteCases()
-	} else {
-		skipped := struct{ regex, includes, modules int }{}
-		for _, r := range splitCSV(*rulesCSV) {
-			// Apply skip filters
-			if *skipRegex {
-				if has, err := fileHasRegex(r); err == nil {
-					if has {
-						skipped.regex++
-						continue
-					}
-				} else {
-					fmt.Fprintf(os.Stderr, "warn: cannot read %s for regex check: %v\n", r, err)
-				}
-			}
-			if *skipIncludes {
-				if has, err := fileHasInclude(r); err == nil {
-					if has {
-						skipped.includes++
-						continue
-					}
-				} else {
-					fmt.Fprintf(os.Stderr, "warn: cannot read %s for include check: %v\n", r, err)
-				}
-			}
-			if *skipModules {
-				if has, err := fileHasImport(r); err == nil {
-					if has {
-						skipped.modules++
-						continue
-					}
-				} else {
-					fmt.Fprintf(os.Stderr, "warn: cannot read %s for import check: %v\n", r, err)
-				}
-			}
-			cases = append(cases, Case{RulePath: r, DataPath: *data})
+	rules := splitCSV(config.rulesCSV)
+
+	for _, rulePath := range rules {
+		if shouldSkipRule(config, rulePath) {
+			continue
+		}
+		cases = append(cases, Case{RulePath: rulePath, DataPath: config.data})
+	}
+
+	return cases
+}
+
+func shouldSkipRule(config *config, rulePath string) bool {
+	if config.skipRegex {
+		if has, err := fileHasRegex(rulePath); err == nil && has {
+			return true
+		} else if err != nil {
+			fmt.Fprintf(os.Stderr, "warn: cannot read %s for regex check: %v\n", rulePath, err)
 		}
 	}
 
-	// Execute matrix
-	var rows []string
-	header := "| Rule file | YARA matches | go-yara matches | Status |\n|---|---|---|---|"
-	rows = append(rows, header)
-
-	parityOK := 0
-	mismatches := 0
-	errorsCount := 0
-
-	for _, c := range cases {
-		off := runOfficial(*yaraBin, c.RulePath, c.DataPath, *timeout)
-		gores := runGoYara(*goYaraCmd, c.RulePath, c.DataPath, *timeout)
-
-		status := classify(off, gores)
-		switch status {
-		case "parity_ok":
-			parityOK++
-		case "mismatch":
-			mismatches++
-		default:
-			if strings.HasPrefix(status, "error") {
-				errorsCount++
-			}
+	if config.skipIncludes {
+		if has, err := fileHasInclude(rulePath); err == nil && has {
+			return true
+		} else if err != nil {
+			fmt.Fprintf(os.Stderr, "warn: cannot read %s for include check: %v\n", rulePath, err)
 		}
-
-		rows = append(rows, fmt.Sprintf("| %s | %s | %s | %s |",
-			c.RulePath,
-			strings.Join(off.MatchedRules, ", "),
-			strings.Join(gores.MatchedRules, ", "),
-			status,
-		))
 	}
 
-	// Compose report
+	if config.skipModules {
+		if has, err := fileHasImport(rulePath); err == nil && has {
+			return true
+		} else if err != nil {
+			fmt.Fprintf(os.Stderr, "warn: cannot read %s for import check: %v\n", rulePath, err)
+		}
+	}
+
+	return false
+}
+
+type testResults struct {
+	rows        []string
+	parityOK    int
+	mismatches  int
+	errorsCount int
+}
+
+func executeTests(config *config, cases []Case) *testResults {
+	results := &testResults{
+		rows: []string{"| Rule file | YARA matches | go-yara matches | Status |\n|---|---|---|---|"},
+	}
+
+	for _, testCase := range cases {
+		row := executeTestCase(config, testCase)
+		results.addRow(row)
+	}
+
+	return results
+}
+
+func executeTestCase(config *config, testCase Case) string {
+	officialResult := runOfficial(config.yaraBin, testCase.RulePath, testCase.DataPath, config.timeout)
+	goYaraResult := runGoYara(config.goYaraCmd, testCase.RulePath, testCase.DataPath, config.timeout)
+
+	status := classify(officialResult, goYaraResult)
+
+	return fmt.Sprintf("| %s | %s | %s | %s |",
+		testCase.RulePath,
+		strings.Join(officialResult.MatchedRules, ", "),
+		strings.Join(goYaraResult.MatchedRules, ", "),
+		status,
+	)
+}
+
+func (tr *testResults) addRow(row string) {
+	tr.rows = append(tr.rows, row)
+
+	// Parse status from the row to update counters
+	fields := strings.Split(strings.Trim(row, "|"), "|")
+	if len(fields) < 5 {
+		return
+	}
+
+	status := strings.TrimSpace(fields[4])
+	switch status {
+	case "parity_ok":
+		tr.parityOK++
+	case "mismatch":
+		tr.mismatches++
+	default:
+		if strings.HasPrefix(status, "error") {
+			tr.errorsCount++
+		}
+	}
+}
+
+func generateReport(config *config, results *testResults) {
 	var b strings.Builder
 	b.WriteString("# Parity Report: official YARA vs go-yara\n\n")
 	b.WriteString(fmt.Sprintf("Date: %s\n\n", time.Now().Format("2006-01-02 15:04:05 MST")))
 	b.WriteString("## Summary\n")
-	b.WriteString(fmt.Sprintf("- Parity OK: %d\n- Mismatches: %d\n- Errors: %d\n\n", parityOK, mismatches, errorsCount))
+	b.WriteString(fmt.Sprintf("- Parity OK: %d\n- Mismatches: %d\n- Errors: %d\n\n",
+		results.parityOK, results.mismatches, results.errorsCount))
 	b.WriteString("## Matrix\n")
-	for _, r := range rows {
-		b.WriteString(r)
+
+	for _, row := range results.rows {
+		b.WriteString(row)
 		b.WriteString("\n")
 	}
 
 	// Write file
-	if err := os.MkdirAll(filepath.Dir(*outPath), 0o750); err != nil { // reduced perms for gosec
+	if err := os.MkdirAll(filepath.Dir(config.outPath), 0o750); err != nil { // reduced perms for gosec
 		fmt.Fprintf(os.Stderr, "failed to create report dir: %v\n", err)
 		os.Exit(1)
 	}
-	if err := os.WriteFile(*outPath, []byte(b.String()), 0o600); err != nil { // reduced perms for gosec
+	if err := os.WriteFile(config.outPath, []byte(b.String()), 0o600); err != nil { // reduced perms for gosec
 		fmt.Fprintf(os.Stderr, "failed to write report: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("Report written to %s\n", *outPath)
+	fmt.Printf("Report written to %s\n", config.outPath)
 }
 
 func defaultRules() []string {
@@ -238,7 +301,8 @@ func runOfficial(yaraBin, rules, data string, timeout time.Duration) RunResult {
 		rr.Err = errors.New("timeout")
 		return rr
 	}
-	if ee, ok := err.(*exec.ExitError); ok {
+	ee := &exec.ExitError{}
+	if errors.As(err, &ee) {
 		rr.ExitCode = ee.ExitCode()
 	}
 
@@ -281,20 +345,20 @@ func runGoYara(goCmd, rules, data string, timeout time.Duration) RunResult {
 
 	// Validate command parts to prevent injection
 	if len(parts) == 0 || parts[0] == "" {
-		return RunResult{Err: fmt.Errorf("empty command")}
+		return RunResult{Err: errors.New("empty command")}
 	}
 	// Basic command injection protection - check for dangerous characters
 	for _, part := range parts {
 		if strings.ContainsAny(part, ";&|`$()<>\"'\\\n\r\t") {
-			return RunResult{Err: fmt.Errorf("potentially dangerous command characters detected")}
+			return RunResult{Err: errors.New("potentially dangerous command characters detected")}
 		}
 	}
 	// Validate file paths to prevent traversal
 	if strings.Contains(rules, "..") || strings.HasPrefix(rules, "/") {
-		return RunResult{Err: fmt.Errorf("invalid rules path: potential path traversal")}
+		return RunResult{Err: errors.New("invalid rules path: potential path traversal")}
 	}
 	if strings.Contains(data, "..") || strings.HasPrefix(data, "/") {
-		return RunResult{Err: fmt.Errorf("invalid data path: potential path traversal")}
+		return RunResult{Err: errors.New("invalid data path: potential path traversal")}
 	}
 	//nolint:gosec // controlled development harness; command/args come from local flags
 	cmd := exec.CommandContext(ctx, parts[0], args...)
@@ -308,7 +372,8 @@ func runGoYara(goCmd, rules, data string, timeout time.Duration) RunResult {
 		rr.Err = errors.New("timeout")
 		return rr
 	}
-	if ee, ok := err.(*exec.ExitError); ok {
+	ee := &exec.ExitError{}
+	if errors.As(err, &ee) {
 		rr.ExitCode = ee.ExitCode()
 	}
 
@@ -356,11 +421,11 @@ var reImport = regexp.MustCompile(`(?m)^\s*import\s+\"[^\"]+\"`)
 func fileHasRegex(path string) (bool, error) {
 	// Validate path to prevent traversal
 	if path == "" {
-		return false, fmt.Errorf("empty path")
+		return false, errors.New("empty path")
 	}
 	// Basic path traversal protection
 	if strings.Contains(path, "..") || strings.HasPrefix(path, "/") {
-		return false, fmt.Errorf("invalid path: potential path traversal")
+		return false, errors.New("invalid path: potential path traversal")
 	}
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -372,11 +437,11 @@ func fileHasRegex(path string) (bool, error) {
 func fileHasInclude(path string) (bool, error) {
 	// Validate path to prevent traversal
 	if path == "" {
-		return false, fmt.Errorf("empty path")
+		return false, errors.New("empty path")
 	}
 	// Basic path traversal protection
 	if strings.Contains(path, "..") || strings.HasPrefix(path, "/") {
-		return false, fmt.Errorf("invalid path: potential path traversal")
+		return false, errors.New("invalid path: potential path traversal")
 	}
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -388,11 +453,11 @@ func fileHasInclude(path string) (bool, error) {
 func fileHasImport(path string) (bool, error) {
 	// Validate path to prevent traversal
 	if path == "" {
-		return false, fmt.Errorf("empty path")
+		return false, errors.New("empty path")
 	}
 	// Basic path traversal protection
 	if strings.Contains(path, "..") || strings.HasPrefix(path, "/") {
-		return false, fmt.Errorf("invalid path: potential path traversal")
+		return false, errors.New("invalid path: potential path traversal")
 	}
 	b, err := os.ReadFile(path)
 	if err != nil {

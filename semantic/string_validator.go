@@ -1,7 +1,7 @@
-// Package semantic implements semantic analysis and validation for YARA rules.
 package semantic
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -77,13 +77,13 @@ func (sv *StringValidator) validateStringReference(ref string, pos token.Positio
 		if symbol.Type == SymbolString {
 			symbol.Used = true
 		} else {
-			sv.addError(&SemanticError{
+			sv.addError(&Error{
 				Message:  fmt.Sprintf("identifier %q is not a string", ref),
 				Position: pos,
 			})
 		}
 	} else {
-		sv.addError(&SemanticError{
+		sv.addError(&Error{
 			Message:  fmt.Sprintf("undefined string %q", ref),
 			Position: pos,
 		})
@@ -92,45 +92,41 @@ func (sv *StringValidator) validateStringReference(ref string, pos token.Positio
 
 // validateWildcardReference validates wildcard string references
 func (sv *StringValidator) validateWildcardReference(ref string, pos token.Position) {
-	// Extract the base pattern (e.g., "a" from "$a*", "s" from "$s?")
-	base := strings.TrimPrefix(ref, "$")
-
-	// For now, we'll validate that at least one string matches the pattern
-	// In a full implementation, this would check against all defined strings
-	found := false
-
 	// Check if this is a "them" reference
-	if ref == "$*" || ref == "$" {
-		// "them" refers to all strings in the current rule
-		// This is always valid if we're in a rule context
-		found = true
-	} else {
-		// For specific patterns like $a*, check if any strings match
-		// This is a simplified implementation
-		scope := sv.symbolTable.Current
-		for scope != nil {
-			for _, symbol := range scope.Symbols {
-				if symbol.Type == SymbolString {
-					if sv.matchesPattern(symbol.Name, base) {
-						symbol.Used = true
-						found = true
-						break
-					}
-				}
-			}
-			if found {
-				break
-			}
-			scope = scope.Parent
-		}
+	if sv.isThemReference(ref) {
+		return // "them" refers to all strings in the current rule, always valid
 	}
 
-	if !found {
-		sv.addError(&SemanticError{
+	// For specific patterns like $a*, check if any strings match
+	if !sv.findMatchingString(ref, pos) {
+		sv.addError(&Error{
 			Message:  fmt.Sprintf("no strings match pattern %q", ref),
 			Position: pos,
 		})
 	}
+}
+
+// isThemReference checks if the reference is a "them" reference
+func (sv *StringValidator) isThemReference(ref string) bool {
+	return ref == "$*" || ref == "$"
+}
+
+// findMatchingString searches for strings matching the given pattern
+func (sv *StringValidator) findMatchingString(ref string, _ token.Position) bool {
+	base := strings.TrimPrefix(ref, "$")
+	scope := sv.symbolTable.Current
+
+	for scope != nil {
+		for _, symbol := range scope.Symbols {
+			if symbol.Type == SymbolString && sv.matchesPattern(symbol.Name, base) {
+				symbol.Used = true
+				return true
+			}
+		}
+		scope = scope.Parent
+	}
+
+	return false
 }
 
 // validateQuantifierExpression validates quantifier expressions like "all of them"
@@ -147,14 +143,14 @@ func (sv *StringValidator) validateQuantifierExpression(expr *ast.BinaryOp, pos 
 		_ = l.Name
 	case *ast.Literal:
 		if l.Type != token.INTEGER_LIT {
-			err = fmt.Errorf("invalid quantifier type")
+			err = errors.New("invalid quantifier type")
 		}
 	default:
-		err = fmt.Errorf("invalid quantifier expression")
+		err = errors.New("invalid quantifier expression")
 	}
 
 	if err != nil {
-		sv.addError(&SemanticError{
+		sv.addError(&Error{
 			Message:  err.Error(),
 			Position: pos,
 		})
@@ -172,14 +168,14 @@ func (sv *StringValidator) validateQuantifierExpression(expr *ast.BinaryOp, pos 
 			// "all of ($a*)" - validate the string pattern
 			sv.validateStringReference(r.Name, r.Position())
 		default:
-			sv.addError(&SemanticError{
-				Message:  fmt.Sprintf("invalid quantifier target: %s", r.Name),
+			sv.addError(&Error{
+				Message:  "invalid quantifier target: " + r.Name,
 				Position: r.Position(),
 			})
 		}
 
 	default:
-		sv.addError(&SemanticError{
+		sv.addError(&Error{
 			Message:  fmt.Sprintf("quantifier requires '%s' or string pattern", themKeyword),
 			Position: pos,
 		})
@@ -206,7 +202,7 @@ func (sv *StringValidator) validateThemReference(pos token.Position) {
 	}
 
 	if !hasStrings {
-		sv.addError(&SemanticError{
+		sv.addError(&Error{
 			Message:  fmt.Sprintf("'%s' refers to no strings in this rule", themKeyword),
 			Position: pos,
 		})
@@ -224,8 +220,8 @@ func (sv *StringValidator) matchesPattern(name, pattern string) bool {
 	// In a full implementation, this would use proper regex or glob matching
 
 	// Handle "*" wildcard (matches anything after)
-	if strings.HasSuffix(pattern, "*") {
-		prefix := strings.TrimSuffix(pattern, "*")
+	if before, ok := strings.CutSuffix(pattern, "*"); ok {
+		prefix := before
 		return strings.HasPrefix(name, prefix)
 	}
 

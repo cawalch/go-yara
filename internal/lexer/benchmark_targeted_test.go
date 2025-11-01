@@ -21,7 +21,7 @@ func BenchmarkTargeted_Basic(b *testing.B) {
 
 	done := make(chan bool)
 	go func() {
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			l := lexer.NewTargeted(input)
 			for {
 				tok := l.NextToken()
@@ -53,7 +53,7 @@ func BenchmarkTargeted_Keywords(b *testing.B) {
 
 	done := make(chan bool)
 	go func() {
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			l := lexer.NewTargeted(input)
 			for {
 				tok := l.NextToken()
@@ -85,7 +85,7 @@ func BenchmarkTargeted_StringLiterals(b *testing.B) {
 
 	done := make(chan bool)
 	go func() {
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			l := lexer.NewTargeted(input)
 			for {
 				tok := l.NextToken()
@@ -117,7 +117,7 @@ func BenchmarkTargeted_HexStrings(b *testing.B) {
 
 	done := make(chan bool)
 	go func() {
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			l := lexer.NewTargeted(input)
 			for {
 				tok := l.NextToken()
@@ -164,7 +164,7 @@ func BenchmarkTargeted_ComplexRule(b *testing.B) {
 
 	done := make(chan bool)
 	go func() {
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			l := lexer.NewTargeted(input)
 			for {
 				tok := l.NextToken()
@@ -197,7 +197,7 @@ func BenchmarkComparison_TargetedVsOriginal(b *testing.B) {
 
 		done := make(chan bool)
 		go func() {
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				l := lexer.New(input)
 				for {
 					tok := l.NextToken()
@@ -228,7 +228,7 @@ func BenchmarkComparison_TargetedVsOriginal(b *testing.B) {
 
 		done := make(chan bool)
 		go func() {
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				l := lexer.NewTargeted(input)
 				for {
 					tok := l.NextToken()

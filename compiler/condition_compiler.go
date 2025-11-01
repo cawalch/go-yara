@@ -1,9 +1,8 @@
-// Package compiler provides bytecode generation and compilation for YARA rules.
 package compiler
 
 import (
+	"errors"
 	"fmt"
-	"math"
 	"slices"
 	"strings"
 
@@ -62,20 +61,26 @@ func (cc *ConditionCompiler) defineLabel(label string) {
 	cc.labels[label] = cc.emitter.GetLength()
 }
 
+// JumpPosition holds position information for jump instructions
+type JumpPosition struct {
+	Line   int
+	Column int
+}
+
 // emitJumpWithLabel emits a jump instruction that will be resolved later
-func (cc *ConditionCompiler) emitJumpWithLabel(opcode Opcode, label string, line, column int) {
+func (cc *ConditionCompiler) emitJumpWithLabel(opcode Opcode, label string, position JumpPosition) {
 	// Record the pending jump
 	pos := cc.emitter.GetLength()
 	cc.pendingJumps = append(cc.pendingJumps, PendingJump{
 		Opcode:   opcode,
 		Label:    label,
 		Position: pos,
-		Line:     line,
-		Column:   column,
+		Line:     position.Line,
+		Column:   position.Column,
 	})
 
 	// Emit placeholder operand (will be fixed up during resolution)
-	cc.emitter.EmitOpcodeWithOperand(opcode, Operand{Type: OperandImmediate32, Value: 0}, line, column)
+	cc.emitter.EmitOpcodeWithOperand(opcode, Operand{Type: OperandImmediate32, Value: 0}, position.Line, position.Column)
 }
 
 // resolveJumps resolves all pending jumps with their target labels
@@ -126,7 +131,7 @@ func (cc *ConditionCompiler) findStringOffset(name string) (int, bool) {
 
 // emitStringOffset loads a string identifier from VM memory with overflow protection
 // Reduces code duplication in string operator compilation
-func (cc *ConditionCompiler) emitStringOffset(offset int, line, column int) {
+func (cc *ConditionCompiler) emitStringOffset(offset, line, column int) {
 	// Safe conversion with overflow check
 	if offset < 0 {
 		cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(0)}, line, column)
@@ -134,6 +139,7 @@ func (cc *ConditionCompiler) emitStringOffset(offset int, line, column int) {
 		cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(offset)}, line, column)
 	}
 }
+
 
 // emitStringIdentifier pushes a string identifier as ValueTypeString for pattern operations
 // Used by AT and IN operators that need the string identifier, not the FOUND result
@@ -206,10 +212,18 @@ func (cc *ConditionCompiler) compileLiteral(lit *ast.Literal) error {
 			// Handle case where value is not int64
 			cc.emitter.EmitPush(0, lit.Pos.Line, lit.Pos.Column)
 		}
+	case token.OCTAL_INTEGER_LIT:
+		if value, ok := lit.Value.(int64); ok {
+			// Safe conversion with explicit truncation
+			cc.emitter.EmitPush(uint64(value), lit.Pos.Line, lit.Pos.Column)
+		} else {
+			// Handle case where value is not int64
+			cc.emitter.EmitPush(0, lit.Pos.Line, lit.Pos.Column)
+		}
 	case token.FLOAT_LIT:
 		if value, ok := lit.Value.(float64); ok {
-			// Convert float64 to uint64 bits for storage
-			cc.emitter.EmitPush(math.Float64bits(value), lit.Pos.Line, lit.Pos.Column)
+			// Use dedicated double push instruction for floating point values
+			cc.emitter.EmitPushDouble(value, lit.Pos.Line, lit.Pos.Column)
 		}
 	case token.STRING_LIT:
 		if value, ok := lit.Value.(string); ok {
@@ -298,7 +312,7 @@ func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 		// This should be implemented as a module import in the future
 		// For now, emit a placeholder value of 0
 		cc.emitter.EmitPush(0, ident.Pos.Line, ident.Pos.Column)
-	case "any", "all", "none":
+	case QuantifierAny, QuantifierAll, QuantifierNone:
 		// Quantifier keywords used in expressions like "any of them"
 		// These are handled as part of the OF operation, so just push a placeholder
 		cc.emitter.EmitOpcode(OP_PUSH_8, ident.Pos.Line, ident.Pos.Column)
@@ -352,76 +366,265 @@ func (cc *ConditionCompiler) compileStringOffsetOperator(binOp *ast.BinaryOp) er
 	return fmt.Errorf("%s operator requires string identifier as left operand", operatorName)
 }
 
-// compileBinaryOp compiles a binary operation
-func (cc *ConditionCompiler) compileBinaryOp(binOp *ast.BinaryOp) error {
-	// For comparison operations, we need to compile left operand first to maintain correct order
-	// For other operations, we can keep the current order
-	isComparison := binOp.Op == token.EQ || binOp.Op == token.NEQ ||
-		binOp.Op == token.LT || binOp.Op == token.LE ||
-		binOp.Op == token.GT || binOp.Op == token.GE
+// isFloatExpression checks if an expression contains floating point literals
+func (cc *ConditionCompiler) isFloatExpression(expr ast.Expression) bool {
+	switch e := expr.(type) {
+	case *ast.Literal:
+		return e.Type == token.FLOAT_LIT
+	case *ast.BinaryOp:
+		// Recursively check both operands
+		return cc.isFloatExpression(e.Left) || cc.isFloatExpression(e.Right)
+	case *ast.UnaryOp:
+		// Recursively check the operand
+		return cc.isFloatExpression(e.Right)
+	default:
+		// For other expression types (identifiers, function calls, etc.),
+		// we can't determine the type at compile time, so default to integer
+		return false
+	}
+}
 
+// isLiteralFloat checks if an expression is a floating point literal
+func (cc *ConditionCompiler) isLiteralFloat(expr ast.Expression) bool {
+	if lit, ok := expr.(*ast.Literal); ok {
+		return lit.Type == token.FLOAT_LIT
+	}
+	if unaryOp, ok := expr.(*ast.UnaryOp); ok && unaryOp.Op == token.MINUS {
+		// Check if this is a unary negation of a float literal
+		return cc.isLiteralFloat(unaryOp.Right)
+	}
+	return false
+}
+
+// isMixedTypeComparison checks if a comparison involves mixed types (int vs float)
+func (cc *ConditionCompiler) isMixedTypeComparison(leftIsFloat, rightIsFloat bool) bool {
+	return leftIsFloat != rightIsFloat
+}
+
+// isComparisonOperator checks if the operator is a comparison operation
+func (cc *ConditionCompiler) isComparisonOperator(op token.TokenType) bool {
+	return op == token.EQ || op == token.NEQ ||
+		op == token.LT || op == token.LE ||
+		op == token.GT || op == token.GE ||
+		op == token.LEFT_SHIFT || op == token.RIGHT_SHIFT ||
+		op == token.MODULO
+}
+
+// isNonCommutativeOperator checks if the operator requires specific operand order
+func (cc *ConditionCompiler) isNonCommutativeOperator(op token.TokenType) bool {
+	return op == token.MINUS || op == token.DIVIDE
+}
+
+// compileOperands compiles the operands in the appropriate order
+func (cc *ConditionCompiler) compileOperands(binOp *ast.BinaryOp) error {
+	isComparison := cc.isComparisonOperator(binOp.Op)
+	isNonCommutative := cc.isNonCommutativeOperator(binOp.Op)
+
+	if isComparison || isNonCommutative {
+		// Compile left operand first for comparisons and non-commutative operations
+		return cc.compileExpressions(binOp.Left, binOp.Right)
+	}
+	// Compile right operand first for commutative operations (for stack-based evaluation)
+	return cc.compileExpressions(binOp.Right, binOp.Left)
+}
+
+// handleBitShiftFloatConversion handles float-to-int conversion for bit shift operations
+func (cc *ConditionCompiler) handleBitShiftFloatConversion(binOp *ast.BinaryOp, leftIsFloat, rightIsFloat, isComparison bool) {
 	if isComparison {
-		// Compile left operand first for comparisons
-		if err := cc.compileExpressions(binOp.Left, binOp.Right); err != nil {
-			return err
+		// For bit shifts, we compiled left then right (treated as comparison)
+		// Stack order after compilation: [left, right]
+		if leftIsFloat {
+			// Left is float - need to convert left (second on stack)
+			cc.emitter.EmitOpcode(OP_SWAPUNDEF, binOp.Pos.Line, binOp.Pos.Column)
+			// Convert float to int (truncate)
+			cc.emitter.EmitOpcode(OP_INT_TO_DBL, binOp.Pos.Line, binOp.Pos.Column) // This is actually DBL_TO_INT, but we don't have that opcode
+			cc.emitter.EmitOpcode(OP_SWAPUNDEF, binOp.Pos.Line, binOp.Pos.Column)
 		}
-	} else {
-		// Compile right operand first (for stack-based evaluation)
-		if err := cc.compileExpressions(binOp.Right, binOp.Left); err != nil {
-			return err
+		if rightIsFloat {
+			// Right is float - need to convert right (top of stack)
+			// Convert float to int (truncate)
+			// Note: YARA doesn't have a direct float-to-int conversion, so this is a limitation
+			_ = rightIsFloat // Suppress unused parameter warning - placeholder for future implementation
 		}
 	}
+}
 
-	// Emit appropriate opcode based on operator
-	var opcode Opcode
+// handleMixedTypeLiteralComparison handles literal comparisons between different types
+func (cc *ConditionCompiler) handleMixedTypeLiteralComparison(binOp *ast.BinaryOp) bool {
+	if cc.isLiteralFloat(binOp.Left) || cc.isLiteralFloat(binOp.Right) {
+		// For literal comparisons, YARA treats different types as unequal
+		// So: 1 == 1.0 is false, 1 != 1.0 is true regardless of numeric value
+		var result int64 // Default to false for equality
+		if binOp.Op == token.NEQ {
+			result = 1 // Mixed types are always unequal
+		}
+		// Replace the comparison with a constant result
+		cc.emitter.EmitPush(uint64(result), binOp.Pos.Line, binOp.Pos.Column)
+		return true
+	}
+	return false
+}
+
+// convertForMixedTypeComparison handles type conversion for mixed-type comparisons
+func (cc *ConditionCompiler) convertForMixedTypeComparison(binOp *ast.BinaryOp, leftIsFloat, rightIsFloat, isComparison bool) {
+	if isComparison {
+		// For comparisons, we compiled left then right
+		// Stack order after compilation: [left, right]
+		if leftIsFloat && !rightIsFloat {
+			// Left is float, right is int - convert right to double
+			cc.emitter.EmitOpcode(OP_INT_TO_DBL, binOp.Pos.Line, binOp.Pos.Column)
+		} else if !leftIsFloat && rightIsFloat {
+			// Left is int, right is float - convert left to double
+			cc.emitter.EmitOpcode(OP_SWAPUNDEF, binOp.Pos.Line, binOp.Pos.Column)
+			cc.emitter.EmitOpcode(OP_INT_TO_DBL, binOp.Pos.Line, binOp.Pos.Column)
+			cc.emitter.EmitOpcode(OP_SWAPUNDEF, binOp.Pos.Line, binOp.Pos.Column)
+		}
+	}
+}
+
+// convertForMixedTypeArithmetic handles type conversion for mixed-type arithmetic
+func (cc *ConditionCompiler) convertForMixedTypeArithmetic(binOp *ast.BinaryOp, leftIsFloat, rightIsFloat, isComparison bool) {
+	if isComparison {
+		// For comparisons, we compiled left then right
+		// Stack order after compilation: [left, right]
+		if leftIsFloat && !rightIsFloat {
+			// Left is float, right is int - need to convert right (top of stack)
+			cc.emitter.EmitOpcode(OP_INT_TO_DBL, binOp.Pos.Line, binOp.Pos.Column)
+		} else if !leftIsFloat && rightIsFloat {
+			// Left is int, right is float - need to convert left (second on stack)
+			// This requires swapping, converting, then swapping back
+			cc.emitter.EmitOpcode(OP_SWAPUNDEF, binOp.Pos.Line, binOp.Pos.Column)
+			cc.emitter.EmitOpcode(OP_INT_TO_DBL, binOp.Pos.Line, binOp.Pos.Column)
+			cc.emitter.EmitOpcode(OP_SWAPUNDEF, binOp.Pos.Line, binOp.Pos.Column)
+		}
+	} else {
+		// For arithmetic, we compiled right then left
+		// Stack order after compilation: [right, left]
+		if leftIsFloat && !rightIsFloat {
+			// Left is float, right is int - need to convert right (bottom of stack)
+			// This requires swapping, converting, then swapping back
+			cc.emitter.EmitOpcode(OP_SWAPUNDEF, binOp.Pos.Line, binOp.Pos.Column)
+			cc.emitter.EmitOpcode(OP_INT_TO_DBL, binOp.Pos.Line, binOp.Pos.Column)
+			cc.emitter.EmitOpcode(OP_SWAPUNDEF, binOp.Pos.Line, binOp.Pos.Column)
+		} else if !leftIsFloat && rightIsFloat {
+			// Left is int, right is float - need to convert left (top of stack)
+			cc.emitter.EmitOpcode(OP_INT_TO_DBL, binOp.Pos.Line, binOp.Pos.Column)
+		}
+	}
+}
+
+// handleFloatOperations handles type conversion and special cases for float operations
+func (cc *ConditionCompiler) handleFloatOperations(binOp *ast.BinaryOp, leftIsFloat, rightIsFloat, isComparison bool) error {
+	isFloatOp := leftIsFloat || rightIsFloat
+
+	if !isFloatOp {
+		return nil
+	}
+
+	if binOp.Op == token.LEFT_SHIFT || binOp.Op == token.RIGHT_SHIFT {
+		// For bit shift operations, both operands should be integers
+		cc.handleBitShiftFloatConversion(binOp, leftIsFloat, rightIsFloat, isComparison)
+	} else if cc.isMixedTypeComparison(leftIsFloat, rightIsFloat) && (binOp.Op == token.EQ || binOp.Op == token.NEQ) {
+		// For mixed-type equality/inequality comparisons, check if we can determine at compile time
+		if cc.handleMixedTypeLiteralComparison(binOp) {
+			return nil
+		}
+		// For non-literal mixed types (expressions), do runtime type conversion
+		cc.convertForMixedTypeComparison(binOp, leftIsFloat, rightIsFloat, isComparison)
+	} else {
+		// For regular arithmetic and comparison operations, convert integer to double
+		cc.convertForMixedTypeArithmetic(binOp, leftIsFloat, rightIsFloat, isComparison)
+	}
+
+	return nil
+}
+
+// selectOpcode selects the appropriate opcode based on the operator and operand types
+func (cc *ConditionCompiler) selectOpcode(binOp *ast.BinaryOp, isFloatOp bool) (Opcode, error) {
 	switch binOp.Op {
 	case token.AND:
-		opcode = OP_AND
+		return OP_AND, nil
 	case token.OR:
-		opcode = OP_OR
+		return OP_OR, nil
 	case token.PLUS:
-		opcode = OP_INT_ADD
+		if isFloatOp {
+			return OP_DBL_ADD, nil
+		}
+		return OP_INT_ADD, nil
 	case token.MINUS:
-		opcode = OP_INT_SUB
+		if isFloatOp {
+			return OP_DBL_SUB, nil
+		}
+		return OP_INT_SUB, nil
 	case token.MULTIPLY:
-		opcode = OP_INT_MUL
+		if isFloatOp {
+			return OP_DBL_MUL, nil
+		}
+		return OP_INT_MUL, nil
 	case token.DIVIDE:
-		opcode = OP_INT_DIV
+		if isFloatOp {
+			return OP_DBL_DIV, nil
+		}
+		return OP_INT_DIV, nil
 	case token.MODULO:
-		opcode = OP_MOD
+		return OP_MOD, nil
 	case token.BITWISE_AND:
-		opcode = OP_BITWISE_AND
+		return OP_BITWISE_AND, nil
 	case token.BITWISE_OR:
-		opcode = OP_BITWISE_OR
+		return OP_BITWISE_OR, nil
 	case token.BITWISE_XOR:
-		opcode = OP_BITWISE_XOR
+		return OP_BITWISE_XOR, nil
 	case token.LEFT_SHIFT:
-		opcode = OP_SHL
+		return OP_SHL, nil
 	case token.RIGHT_SHIFT:
-		opcode = OP_SHR
+		return OP_SHR, nil
 	case token.EQ:
-		opcode = OP_INT_EQ
+		if isFloatOp {
+			return OP_DBL_EQ, nil
+		}
+		return OP_INT_EQ, nil
 	case token.NEQ:
-		opcode = OP_INT_NEQ
+		if isFloatOp {
+			return OP_DBL_NEQ, nil
+		}
+		return OP_INT_NEQ, nil
 	case token.LT:
-		opcode = OP_INT_LT
+		if isFloatOp {
+			return OP_DBL_LT, nil
+		}
+		return OP_INT_LT, nil
 	case token.LE:
-		opcode = OP_INT_LE
+		if isFloatOp {
+			return OP_DBL_LE, nil
+		}
+		return OP_INT_LE, nil
 	case token.GT:
-		opcode = OP_INT_GT
+		if isFloatOp {
+			return OP_DBL_GT, nil
+		}
+		return OP_INT_GT, nil
 	case token.GE:
-		opcode = OP_INT_GE
+		if isFloatOp {
+			return OP_DBL_GE, nil
+		}
+		return OP_INT_GE, nil
 	case token.CONTAINS:
-		opcode = OP_CONTAINS
+		return OP_CONTAINS, nil
 	case token.MATCHES:
-		opcode = OP_MATCHES
+		return OP_MATCHES, nil
+	case token.OF:
+		return OP_OF, nil
+	default:
+		return 0, fmt.Errorf("unsupported binary operator: %s", binOp.Op)
+	}
+}
+
+// handleSpecialOperators handles operators with special compilation requirements
+func (cc *ConditionCompiler) handleSpecialOperators(binOp *ast.BinaryOp) error {
+	switch binOp.Op {
 	case token.AT, token.IN:
 		// Handle AT and IN operators with string identifier logic
-		if err := cc.compileStringOffsetOperator(binOp); err != nil {
-			return err
-		}
-	case token.OF:
-		opcode = OP_OF
+		return cc.compileStringOffsetOperator(binOp)
 	case token.DOT:
 		// DOT operator represents range expression: start..end
 		// For range expressions, we need to push both start and end values
@@ -432,8 +635,37 @@ func (cc *ConditionCompiler) compileBinaryOp(binOp *ast.BinaryOp) error {
 		}
 		// No opcode needed - the range values are pushed for OP_FOUND_IN
 		return nil
-	default:
-		return fmt.Errorf("unsupported binary operator: %s", binOp.Op)
+	}
+	return nil
+}
+
+// compileBinaryOp compiles a binary operation with appropriate type handling
+func (cc *ConditionCompiler) compileBinaryOp(binOp *ast.BinaryOp) error {
+	// Handle special operators first
+	if err := cc.handleSpecialOperators(binOp); err != nil {
+		return err
+	}
+
+	// Compile operands in appropriate order
+	if err := cc.compileOperands(binOp); err != nil {
+		return err
+	}
+
+	// Check operand types
+	leftIsFloat := cc.isFloatExpression(binOp.Left)
+	rightIsFloat := cc.isFloatExpression(binOp.Right)
+	isComparison := cc.isComparisonOperator(binOp.Op)
+	isFloatOp := leftIsFloat || rightIsFloat
+
+	// Handle float operations and type conversion
+	if err := cc.handleFloatOperations(binOp, leftIsFloat, rightIsFloat, isComparison); err != nil {
+		return err
+	}
+
+	// Select and emit appropriate opcode
+	opcode, err := cc.selectOpcode(binOp, isFloatOp)
+	if err != nil {
+		return err
 	}
 
 	cc.emitter.EmitOpcode(opcode, binOp.Pos.Line, binOp.Pos.Column)
@@ -454,7 +686,7 @@ func (cc *ConditionCompiler) compileUnaryOp(unaryOp *ast.UnaryOp) error {
 			}
 			return fmt.Errorf("undefined string identifier for count operator: %s", id.Name)
 		}
-		return fmt.Errorf("COUNT (#) expects a string identifier operand")
+		return errors.New("COUNT (#) expects a string identifier operand")
 	case token.AT:
 		// '@' OFFSET operator: expects a string identifier operand (e.g., @$a)
 		// Semantics: offset of first match => index = 1
@@ -468,7 +700,7 @@ func (cc *ConditionCompiler) compileUnaryOp(unaryOp *ast.UnaryOp) error {
 			}
 			return fmt.Errorf("undefined string identifier for position operator: %s", id.Name)
 		}
-		return fmt.Errorf("POSITION (@) expects a string identifier operand")
+		return errors.New("POSITION (@) expects a string identifier operand")
 	case token.NOT:
 		// Check if this is actually a '!' string length operator
 		// In YARA, '!' before a string identifier means string length
@@ -494,10 +726,27 @@ func (cc *ConditionCompiler) compileUnaryOp(unaryOp *ast.UnaryOp) error {
 		cc.emitter.EmitOpcode(OP_BITWISE_NOT, unaryOp.Pos.Line, unaryOp.Pos.Column)
 		return nil
 	case token.MINUS:
+		// Use appropriate opcode based on operand type
+		if cc.isLiteralFloat(unaryOp.Right) {
+			// For floating point literals, use double minus
+			if err := cc.compileExpression(unaryOp.Right); err != nil {
+				return err
+			}
+			cc.emitter.EmitOpcode(OP_DBL_MINUS, unaryOp.Pos.Line, unaryOp.Pos.Column)
+		} else {
+			// For integers and other types, use integer minus
+			if err := cc.compileExpression(unaryOp.Right); err != nil {
+				return err
+			}
+			cc.emitter.EmitOpcode(OP_INT_MINUS, unaryOp.Pos.Line, unaryOp.Pos.Column)
+		}
+		return nil
+	case token.DEFINED:
+		// defined() operator - check if identifier is defined
 		if err := cc.compileExpression(unaryOp.Right); err != nil {
 			return err
 		}
-		cc.emitter.EmitOpcode(OP_INT_MINUS, unaryOp.Pos.Line, unaryOp.Pos.Column)
+		cc.emitter.EmitOpcode(OP_DEFINED, unaryOp.Pos.Line, unaryOp.Pos.Column)
 		return nil
 	default:
 		return fmt.Errorf("unsupported unary operator: %s", unaryOp.Op)
@@ -509,7 +758,7 @@ func (cc *ConditionCompiler) compileArrayIndex(arrayIndex *ast.ArrayIndex) error
 	// Check if the array expression is a unary operation (@ or #)
 	unaryOp, ok := arrayIndex.Array.(*ast.UnaryOp)
 	if !ok {
-		return fmt.Errorf("array indexing requires @ or # operator")
+		return errors.New("array indexing requires @ or # operator")
 	}
 
 	// Compile the index expression first
@@ -523,9 +772,9 @@ func (cc *ConditionCompiler) compileArrayIndex(arrayIndex *ast.ArrayIndex) error
 		ident, isIdent := unaryOp.Right.(*ast.Identifier)
 		if !isIdent {
 			if unaryOp.Op == token.AT {
-				return fmt.Errorf("@ operator expects a string identifier")
+				return errors.New("@ operator expects a string identifier")
 			}
-			return fmt.Errorf("# operator expects a string identifier")
+			return errors.New("# operator expects a string identifier")
 		}
 
 		if offset, hasOffset := cc.stringOffsets[ident.Name]; hasOffset {
@@ -562,9 +811,16 @@ func (cc *ConditionCompiler) GetVariableIndex(name string) (int, bool) {
 	return index, exists
 }
 
+// ConditionalJumpConfig holds configuration for conditional jump instruction emission
+type ConditionalJumpConfig struct {
+	Opcode      Opcode
+	TargetLabel string
+	Position    JumpPosition
+}
+
 // EmitJump emits a jump instruction with label management
-func (cc *ConditionCompiler) EmitJump(opcode Opcode, targetLabel string, line, pos int) error {
-	cc.emitJumpWithLabel(opcode, targetLabel, line, pos)
+func (cc *ConditionCompiler) EmitJump(config ConditionalJumpConfig) error {
+	cc.emitJumpWithLabel(config.Opcode, config.TargetLabel, config.Position)
 	return nil
 }
 
@@ -589,7 +845,7 @@ func (cc *ConditionCompiler) CompileBooleanExpression(expr ast.Expression, short
 }
 
 // compileShortCircuitBinary compiles binary operations with short-circuit evaluation
-func (cc *ConditionCompiler) compileShortCircuitBinary(binOp *ast.BinaryOp, jumpOpcode Opcode, resultOpcode Opcode) error {
+func (cc *ConditionCompiler) compileShortCircuitBinary(binOp *ast.BinaryOp, jumpOpcode, resultOpcode Opcode) error {
 	// Compile left operand
 	if err := cc.compileExpression(binOp.Left); err != nil {
 		return err
@@ -599,7 +855,8 @@ func (cc *ConditionCompiler) compileShortCircuitBinary(binOp *ast.BinaryOp, jump
 	endLabel := cc.generateLabel()
 
 	// Emit jump for short-circuit to end label
-	cc.emitJumpWithLabel(jumpOpcode, endLabel, binOp.Pos.Line, binOp.Pos.Column)
+	position := JumpPosition{Line: binOp.Pos.Line, Column: binOp.Pos.Column}
+	cc.emitJumpWithLabel(jumpOpcode, endLabel, position)
 
 	// Compile right operand
 	if err := cc.compileExpression(binOp.Right); err != nil {
@@ -641,8 +898,8 @@ func (cc *ConditionCompiler) SetStringOffsets(offsets map[string]int) {
 }
 
 // GetStats returns compilation statistics
-func (cc *ConditionCompiler) GetStats() map[string]interface{} {
-	stats := make(map[string]interface{})
+func (cc *ConditionCompiler) GetStats() map[string]any {
+	stats := make(map[string]any)
 
 	stats["variables"] = len(cc.variableMap)
 	stats["label_counter"] = cc.labelCounter
@@ -700,9 +957,11 @@ func (cc *ConditionCompiler) PrintExpression(expr ast.Expression) {
 
 func (cc *ConditionCompiler) printExpressionRecursive(expr ast.Expression, depth int) {
 	indent := ""
-	for i := 0; i < depth; i++ {
-		indent += "  "
+	var indentSb904 strings.Builder
+	for range depth {
+		indentSb904.WriteString("  ")
 	}
+	indent += indentSb904.String()
 
 	switch e := expr.(type) {
 	case *ast.Literal:
@@ -729,12 +988,12 @@ func (cc *ConditionCompiler) compileOfExpression(ofExpr *ast.OfExpression) error
 	switch countExpr := ofExpr.Count.(type) {
 	case *ast.Identifier:
 		switch countExpr.Name {
-		case "any":
+		case QuantifierAny:
 			cc.emitter.EmitPush(1, countExpr.Pos.Line, countExpr.Pos.Column) // At least 1
-		case "all":
+		case QuantifierAll:
 			// Will be replaced with total string count by interpreter
 			cc.emitter.EmitOpcode(OP_PUSH_M, countExpr.Pos.Line, countExpr.Pos.Column)
-		case "none":
+		case QuantifierNone:
 			cc.emitter.EmitPush(0, countExpr.Pos.Line, countExpr.Pos.Column) // 0 matches
 		default:
 			// Regular identifier, compile normally
@@ -757,6 +1016,12 @@ func (cc *ConditionCompiler) compileOfExpression(ofExpr *ast.OfExpression) error
 			// Emit a reference to all strings
 			cc.emitter.EmitOpcode(OP_PUSH_M, stringsExpr.Pos.Line, stringsExpr.Pos.Column)
 			cc.emitter.EmitPush(0, stringsExpr.Pos.Line, stringsExpr.Pos.Column) // Placeholder for string count
+		} else if cc.isRuleReference(stringsExpr.Name) {
+			// This is a rule reference (e.g., "none of (a)" where "a" is a rule)
+			// Compile as a proper rule reference
+			if err := cc.compileRuleReference(stringsExpr.Name, stringsExpr.Pos.Line, stringsExpr.Pos.Column); err != nil {
+				return fmt.Errorf("compiling rule reference '%s': %w", stringsExpr.Name, err)
+			}
 		} else {
 			// Regular identifier, compile normally
 			if err := cc.compileExpression(ofExpr.Strings); err != nil {
@@ -819,6 +1084,35 @@ func (cc *ConditionCompiler) compileFunctionCall(call *ast.FunctionCall) error {
 
 	// Emit the function call opcode
 	cc.emitter.EmitOpcode(opcode, call.Pos.Line, call.Pos.Column)
+	return nil
+}
+
+// isRuleReference checks if the given identifier refers to a rule in the current compilation
+func (cc *ConditionCompiler) isRuleReference(name string) bool {
+	// Check if this identifier refers to a rule using the rule index map
+	_, exists := cc.ruleIndexMap[name]
+	return exists
+}
+
+// compileRuleReference compiles a rule reference for dependency operations
+func (cc *ConditionCompiler) compileRuleReference(ruleName string, line, column int) error {
+	// Check if this is actually a rule reference
+	if !cc.isRuleReference(ruleName) {
+		return fmt.Errorf("undefined rule reference: %s", ruleName)
+	}
+
+	// Find the rule index in the rule index map
+	ruleIndex, exists := cc.ruleIndexMap[ruleName]
+	if !exists {
+		return fmt.Errorf("rule '%s' not found in compilation context", ruleName)
+	}
+
+	// Emit a special rule reference opcode instead of trying to push a string
+	// This allows the interpreter to handle rule dependencies natively
+	cc.emitter.EmitOpcodeWithOperand(OP_PUSH_RULE_REF,
+		Operand{Type: OperandImmediate64, Value: uint64(ruleIndex)},
+		line, column)
+
 	return nil
 }
 

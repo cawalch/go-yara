@@ -44,11 +44,8 @@ jobs:
         run: go mod download
 
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v8
-        with:
-          version: latest
-          install-mode: goinstall
-          args: --timeout=5m --config=.golangci.yml
+        run: |
+          ./lint.sh
 
       - name: Check formatting
         run: |

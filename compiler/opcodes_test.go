@@ -1,4 +1,3 @@
-// Package compiler provides tests for opcodes and instructions
 package compiler
 
 import (

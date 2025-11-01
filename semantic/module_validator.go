@@ -1,8 +1,7 @@
-// Package semantic implements semantic analysis and validation for YARA rules.
 package semantic
 
 import (
-	"fmt"
+	"slices"
 
 	"github.com/cawalch/go-yara/ast"
 	"github.com/cawalch/go-yara/token"
@@ -64,13 +63,7 @@ func (mv *ModuleValidator) isModuleFunction(name string) bool {
 		filesizeKeyword, entrypointKeyword,
 	}
 
-	for _, funcName := range moduleFunctions {
-		if name == funcName {
-			return true
-		}
-	}
-
-	return false
+	return slices.Contains(moduleFunctions, name)
 }
 
 // validateModuleFunction validates a module function call
@@ -87,13 +80,13 @@ func (mv *ModuleValidator) validateModuleFunction(funcName string, pos token.Pos
 }
 
 // validateFilesize validates the filesize function
-func (mv *ModuleValidator) validateFilesize(pos token.Position) {
+func (mv *ModuleValidator) validateFilesize(_ token.Position) {
 	// filesize is always available and returns uint64
 	// No special validation needed beyond type checking
 }
 
 // validateEntrypoint validates the entrypoint function
-func (mv *ModuleValidator) validateEntrypoint(pos token.Position) {
+func (mv *ModuleValidator) validateEntrypoint(_ token.Position) {
 	// entrypoint is always available and returns uint64
 	// No special validation needed beyond type checking
 }
@@ -103,8 +96,8 @@ func (mv *ModuleValidator) validateDataTypeFunction(funcName string, pos token.P
 	// Check if the function exists and is valid
 	expectedType, err := GetIntegerTypeFromFunction(funcName)
 	if err != nil {
-		mv.addError(&SemanticError{
-			Message:  fmt.Sprintf("unknown data type function: %s", funcName),
+		mv.addError(&Error{
+			Message:  "unknown data type function: " + funcName,
 			Position: pos,
 		})
 		return
@@ -120,7 +113,11 @@ func (mv *ModuleValidator) validateDataTypeFunction(funcName string, pos token.P
 }
 
 // ValidateFunctionCall validates a function call expression
-func (mv *ModuleValidator) ValidateFunctionCall(funcName string, args []ast.Expression, pos token.Position) (*TypeInfo, []error) {
+func (mv *ModuleValidator) ValidateFunctionCall(
+	funcName string,
+	args []ast.Expression,
+	pos token.Position,
+) (*TypeInfo, []error) {
 	switch funcName {
 	case filesizeKeyword:
 		return mv.validateFilesizeCall(args, pos)
@@ -133,12 +130,15 @@ func (mv *ModuleValidator) ValidateFunctionCall(funcName string, args []ast.Expr
 }
 
 // validateFilesizeCall validates a filesize function call
-func (mv *ModuleValidator) validateFilesizeCall(args []ast.Expression, pos token.Position) (*TypeInfo, []error) {
+func (mv *ModuleValidator) validateFilesizeCall(
+	args []ast.Expression,
+	pos token.Position,
+) (*TypeInfo, []error) {
 	var errors []error
 
 	// filesize takes no arguments
 	if len(args) != 0 {
-		errors = append(errors, &SemanticError{
+		errors = append(errors, &Error{
 			Message:  "filesize function takes no arguments",
 			Position: pos,
 		})
@@ -149,12 +149,15 @@ func (mv *ModuleValidator) validateFilesizeCall(args []ast.Expression, pos token
 }
 
 // validateEntrypointCall validates an entrypoint function call
-func (mv *ModuleValidator) validateEntrypointCall(args []ast.Expression, pos token.Position) (*TypeInfo, []error) {
+func (mv *ModuleValidator) validateEntrypointCall(
+	args []ast.Expression,
+	pos token.Position,
+) (*TypeInfo, []error) {
 	var errors []error
 
 	// entrypoint takes no arguments
 	if len(args) != 0 {
-		errors = append(errors, &SemanticError{
+		errors = append(errors, &Error{
 			Message:  "entrypoint function takes no arguments",
 			Position: pos,
 		})
@@ -165,13 +168,17 @@ func (mv *ModuleValidator) validateEntrypointCall(args []ast.Expression, pos tok
 }
 
 // validateDataTypeFunctionCall validates a data type function call
-func (mv *ModuleValidator) validateDataTypeFunctionCall(funcName string, args []ast.Expression, pos token.Position) (*TypeInfo, []error) {
+func (mv *ModuleValidator) validateDataTypeFunctionCall(
+	funcName string,
+	args []ast.Expression,
+	pos token.Position,
+) (*TypeInfo, []error) {
 	var errors []error
 
 	// Most data type functions take exactly one argument (offset)
 	if len(args) != 1 {
-		errors = append(errors, &SemanticError{
-			Message:  fmt.Sprintf("%s function requires exactly one argument", funcName),
+		errors = append(errors, &Error{
+			Message:  funcName + " function requires exactly one argument",
 			Position: pos,
 		})
 		return &TypeInfo{DataType: TypeUnknown}, errors
@@ -182,8 +189,8 @@ func (mv *ModuleValidator) validateDataTypeFunctionCall(funcName string, args []
 	errors = append(errors, argErrors...)
 
 	if argType != nil && !argType.IsInteger() {
-		errors = append(errors, &SemanticError{
-			Message:  fmt.Sprintf("%s function requires integer argument", funcName),
+		errors = append(errors, &Error{
+			Message:  funcName + " function requires integer argument",
 			Position: pos,
 		})
 		return &TypeInfo{DataType: TypeUnknown}, errors
@@ -192,7 +199,7 @@ func (mv *ModuleValidator) validateDataTypeFunctionCall(funcName string, args []
 	// Get the return type for this function
 	returnType, err := GetIntegerTypeFromFunction(funcName)
 	if err != nil {
-		errors = append(errors, &SemanticError{
+		errors = append(errors, &Error{
 			Message:  err.Error(),
 			Position: pos,
 		})

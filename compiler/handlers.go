@@ -1,9 +1,10 @@
-// Package compiler provides opcode handlers for the YARA interpreter.
 package compiler
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
+	"math"
 )
 
 // Shared helper functions for opcode handlers
@@ -17,7 +18,7 @@ func executePatternOperationWithIndex(
 	if len(i.stack) < 2 {
 		return &InterpreterError{
 			Type:    ErrorStackUnderflow,
-			Message: fmt.Sprintf("stack underflow: need pattern and index for %s", operationName),
+			Message: "stack underflow: need pattern and index for " + operationName,
 		}
 	}
 
@@ -29,14 +30,14 @@ func executePatternOperationWithIndex(
 	if pattern.Type != ValueTypeString {
 		return &InterpreterError{
 			Type:    ErrorTypeMismatch,
-			Message: fmt.Sprintf("%s requires string pattern operand", operationName),
+			Message: operationName + " requires string pattern operand",
 		}
 	}
 
 	if index.Type != ValueTypeInt {
 		return &InterpreterError{
 			Type:    ErrorTypeMismatch,
-			Message: fmt.Sprintf("%s requires integer index operand", operationName),
+			Message: operationName + " requires integer index operand",
 		}
 	}
 
@@ -46,6 +47,7 @@ func executePatternOperationWithIndex(
 }
 
 // executePatternOperation is a shared helper for operations that take only pattern and return boolean
+// nolint: unused
 func executePatternOperation(
 	i *Interpreter,
 	operationName string,
@@ -54,7 +56,7 @@ func executePatternOperation(
 	if len(i.stack) == 0 {
 		return &InterpreterError{
 			Type:    ErrorStackUnderflow,
-			Message: fmt.Sprintf("stack underflow: need pattern for %s", operationName),
+			Message: "stack underflow: need pattern for " + operationName,
 		}
 	}
 
@@ -64,10 +66,9 @@ func executePatternOperation(
 	if pattern.Type != ValueTypeString {
 		return &InterpreterError{
 			Type:    ErrorTypeMismatch,
-			Message: fmt.Sprintf("%s requires string pattern operand", operationName),
+			Message: operationName + " requires string pattern operand",
 		}
 	}
-
 	result := int64(0)
 	if operation(pattern.StringVal, i) {
 		result = 1
@@ -85,7 +86,7 @@ func executePatternOperationWithValue(
 	if len(i.stack) == 0 {
 		return &InterpreterError{
 			Type:    ErrorStackUnderflow,
-			Message: fmt.Sprintf("stack underflow: need pattern for %s", operationName),
+			Message: "stack underflow: need pattern for " + operationName,
 		}
 	}
 
@@ -95,7 +96,7 @@ func executePatternOperationWithValue(
 	if pattern.Type != ValueTypeString {
 		return &InterpreterError{
 			Type:    ErrorTypeMismatch,
-			Message: fmt.Sprintf("%s requires string pattern operand", operationName),
+			Message: operationName + " requires string pattern operand",
 		}
 	}
 
@@ -156,7 +157,7 @@ func (hr *HandlerRegistry) setupDefaultHandlers() {
 	// Stack operations
 	stackHandler := &StackHandler{}
 	hr.RegisterHandler(stackHandler,
-		OP_PUSH_8, OP_PUSH_16, OP_PUSH_32, OP_PUSH_U, OP_POP,
+		OP_PUSH_8, OP_PUSH_16, OP_PUSH_32, OP_PUSH_U, OP_PUSH_DBL, OP_PUSH_RULE_REF, OP_POP,
 	)
 
 	// Arithmetic operations
@@ -169,7 +170,7 @@ func (hr *HandlerRegistry) setupDefaultHandlers() {
 	// Logical operations
 	logicalHandler := &LogicalHandler{}
 	hr.RegisterHandler(logicalHandler,
-		OP_AND, OP_OR, OP_NOT,
+		OP_AND, OP_OR, OP_NOT, OP_DEFINED,
 	)
 
 	// Bitwise operations
@@ -196,13 +197,17 @@ func (hr *HandlerRegistry) setupDefaultHandlers() {
 	// Memory operations
 	memoryHandler := &MemoryHandler{}
 	hr.RegisterHandler(memoryHandler,
-		OP_PUSH_M, OP_POP_M, OP_CLEAR_M, OP_INCR_M,
+		OP_PUSH_M, OP_POP_M, OP_CLEAR_M, OP_INCR_M, OP_SWAPUNDEF,
 	)
 
 	// Type conversion operations
 	conversionHandler := &ConversionHandler{}
 	hr.RegisterHandler(conversionHandler,
-		OP_INT_TO_DBL, OP_STR_TO_BOOL, OP_INT8, OP_INT16, OP_INT32,
+		OP_INT_TO_DBL, OP_STR_TO_BOOL,
+		OP_INT8, OP_INT16, OP_INT32,
+		OP_UINT8, OP_UINT16, OP_UINT32,
+		OP_INT8BE, OP_INT16BE, OP_INT32BE,
+		OP_UINT8BE, OP_UINT16BE, OP_UINT32BE,
 	)
 
 	// String operations
@@ -239,7 +244,7 @@ type StackHandler struct{}
 // CanHandle returns true if this handler can process the given opcode
 func (h *StackHandler) CanHandle(opcode Opcode) bool {
 	switch opcode {
-	case OP_PUSH_8, OP_PUSH_16, OP_PUSH_32, OP_PUSH_U, OP_POP:
+	case OP_PUSH_8, OP_PUSH_16, OP_PUSH_32, OP_PUSH_U, OP_PUSH_DBL, OP_PUSH_RULE_REF, OP_POP:
 		return true
 	default:
 		return false
@@ -274,6 +279,32 @@ func (h *StackHandler) Execute(i *Interpreter) error {
 	case OP_PUSH_U:
 		// Push undefined value
 		return i.push(Value{Type: ValueTypeUndefined})
+
+	case OP_PUSH_DBL:
+		// Push double value - read 8 bytes from bytecode
+		if i.ip+8 > len(i.bytecode) {
+			return &InterpreterError{
+				Type:    ErrorUnimplemented,
+				Message: "OP_PUSH_DBL: insufficient bytecode for double value",
+			}
+		}
+		bits := binary.LittleEndian.Uint64(i.bytecode[i.ip : i.ip+8])
+		val := math.Float64frombits(bits)
+		i.ip += 8
+		return i.push(Value{Type: ValueTypeDouble, DoubleVal: val})
+
+	case OP_PUSH_RULE_REF:
+		// Push rule reference - read 8 bytes for rule index
+		if i.ip+8 > len(i.bytecode) {
+			return &InterpreterError{
+				Type:    ErrorUnimplemented,
+				Message: "OP_PUSH_RULE_REF: insufficient bytecode for rule index",
+			}
+		}
+		ruleIndex := binary.LittleEndian.Uint64(i.bytecode[i.ip : i.ip+8])
+		i.ip += 8
+		// Store as rule reference type for later processing
+		return i.push(Value{Type: ValueTypeRuleRef, IntVal: int64(ruleIndex)})
 
 	case OP_POP:
 		if len(i.stack) > 0 {
@@ -318,17 +349,45 @@ func (h *ArithmeticHandler) Execute(i *Interpreter) error {
 	opcode := Opcode(i.bytecode[i.ip-1])
 
 	switch opcode {
+	case OP_INT_ADD, OP_INT_SUB, OP_INT_MUL:
+		return h.executeIntegerBinaryOp(i, opcode)
+
+	case OP_INT_DIV, OP_MOD:
+		return h.executeIntegerBinaryOpWithCheck(i, opcode)
+
+	case OP_DBL_ADD, OP_DBL_SUB, OP_DBL_MUL:
+		return h.executeDoubleBinaryOp(i, opcode)
+
+	case OP_DBL_DIV:
+		return h.executeDoubleDivisionOp(i)
+
+	case OP_INT_MINUS, OP_DBL_MINUS:
+		return h.executeUnaryOp(i, opcode)
+
+	default:
+		return h.unsupportedOpcode(opcode)
+	}
+}
+
+// executeIntegerBinaryOp handles simple integer binary operations
+func (h *ArithmeticHandler) executeIntegerBinaryOp(i *Interpreter, opcode Opcode) error {
+	switch opcode {
 	case OP_INT_ADD:
-		return i.executeBinaryOp(func(a, b int64) int64 { return a + b })
-
+		return i.executeBinaryOpLegacy(func(a, b int64) int64 { return a + b })
 	case OP_INT_SUB:
-		return i.executeBinaryOp(func(a, b int64) int64 { return a - b })
-
+		return i.executeBinaryOpLegacy(func(a, b int64) int64 { return a - b })
 	case OP_INT_MUL:
-		return i.executeBinaryOp(func(a, b int64) int64 { return a * b })
+		return i.executeBinaryOpLegacy(func(a, b int64) int64 { return a * b })
+	default:
+		return h.unsupportedOpcode(opcode)
+	}
+}
 
+// executeIntegerBinaryOpWithCheck handles integer operations that need division checks
+func (h *ArithmeticHandler) executeIntegerBinaryOpWithCheck(i *Interpreter, opcode Opcode) error {
+	switch opcode {
 	case OP_INT_DIV:
-		return i.executeBinaryOpWithCheck(func(a, b int64) (int64, error) {
+		return i.executeBinaryOpWithCheckLegacy(func(a, b int64) (int64, error) {
 			if b == 0 {
 				return 0, &InterpreterError{
 					Type:    ErrorDivisionByZero,
@@ -337,9 +396,8 @@ func (h *ArithmeticHandler) Execute(i *Interpreter) error {
 			}
 			return a / b, nil
 		})
-
 	case OP_MOD:
-		return i.executeBinaryOpWithCheck(func(a, b int64) (int64, error) {
+		return i.executeBinaryOpWithCheckLegacy(func(a, b int64) (int64, error) {
 			if b == 0 {
 				return 0, &InterpreterError{
 					Type:    ErrorDivisionByZero,
@@ -348,35 +406,47 @@ func (h *ArithmeticHandler) Execute(i *Interpreter) error {
 			}
 			return a % b, nil
 		})
+	default:
+		return h.unsupportedOpcode(opcode)
+	}
+}
 
+// executeDoubleBinaryOp handles double precision binary operations
+func (h *ArithmeticHandler) executeDoubleBinaryOp(i *Interpreter, opcode Opcode) error {
+	switch opcode {
 	case OP_DBL_ADD:
 		return i.executeDoubleOp(func(a, b float64) float64 { return a + b })
-
 	case OP_DBL_SUB:
 		return i.executeDoubleOp(func(a, b float64) float64 { return a - b })
-
 	case OP_DBL_MUL:
 		return i.executeDoubleOp(func(a, b float64) float64 { return a * b })
+	default:
+		return h.unsupportedOpcode(opcode)
+	}
+}
 
-	case OP_DBL_DIV:
-		return i.executeDoubleOpWithCheck(func(a, b float64) (float64, error) {
-			if b == 0.0 {
-				return 0, &InterpreterError{
-					Type:    ErrorDivisionByZero,
-					Message: "floating point division by zero",
-				}
+// executeDoubleDivisionOp handles double precision division with zero check
+func (h *ArithmeticHandler) executeDoubleDivisionOp(i *Interpreter) error {
+	return i.executeDoubleOpWithCheck(func(a, b float64) (float64, error) {
+		if b == 0.0 {
+			return 0, &InterpreterError{
+				Type:    ErrorDivisionByZero,
+				Message: "floating point division by zero",
 			}
-			return a / b, nil
-		})
+		}
+		return a / b, nil
+	})
+}
 
+// executeUnaryOp handles unary operations
+func (h *ArithmeticHandler) executeUnaryOp(i *Interpreter, opcode Opcode) error {
+	switch opcode {
 	case OP_INT_MINUS:
 		// Unary integer negation
-		return i.executeUnaryOp(func(a int64) int64 { return -a })
-
+		return i.executeUnaryOpLegacy(func(a int64) int64 { return -a })
 	case OP_DBL_MINUS:
 		// Unary double negation
 		return i.executeUnaryDoubleOp(func(a float64) float64 { return -a })
-
 	default:
 		return h.unsupportedOpcode(opcode)
 	}
@@ -395,7 +465,7 @@ type LogicalHandler struct{}
 
 // CanHandle returns true if this handler can process the given opcode
 func (h *LogicalHandler) CanHandle(opcode Opcode) bool {
-	return opcode == OP_AND || opcode == OP_OR || opcode == OP_NOT
+	return opcode == OP_AND || opcode == OP_OR || opcode == OP_NOT || opcode == OP_DEFINED
 }
 
 // Category returns the handler category for debugging
@@ -408,39 +478,86 @@ func (h *LogicalHandler) Execute(i *Interpreter) error {
 	opcode := Opcode(i.bytecode[i.ip-1])
 
 	switch opcode {
+	case OP_AND, OP_OR:
+		return h.executeBinaryLogicalOp(i, opcode)
+
+	case OP_NOT:
+		return h.executeUnaryNotOp(i)
+
+	case OP_DEFINED:
+		return h.executeDefinedOp(i)
+
+	default:
+		return h.unsupportedOpcode(opcode)
+	}
+}
+
+// executeBinaryLogicalOp handles binary logical operations (AND, OR)
+func (h *LogicalHandler) executeBinaryLogicalOp(i *Interpreter, opcode Opcode) error {
+	switch opcode {
 	case OP_AND:
-		return i.executeBinaryOp(func(a, b int64) int64 {
+		return i.executeBinaryOpLegacy(func(a, b int64) int64 {
 			if a != 0 && b != 0 {
 				return 1
 			}
 			return 0
 		})
-
 	case OP_OR:
-		return i.executeBinaryOp(func(a, b int64) int64 {
+		return i.executeBinaryOpLegacy(func(a, b int64) int64 {
 			if a != 0 || b != 0 {
 				return 1
 			}
 			return 0
 		})
-
-	case OP_NOT:
-		if len(i.stack) > 0 {
-			v := i.stack[len(i.stack)-1]
-			switch {
-			case v.Type == ValueTypeUndefined:
-				i.stack[len(i.stack)-1] = Value{Type: ValueTypeInt, IntVal: 0}
-			case v.IntVal == 0:
-				i.stack[len(i.stack)-1] = Value{Type: ValueTypeInt, IntVal: 1}
-			default:
-				i.stack[len(i.stack)-1] = Value{Type: ValueTypeInt, IntVal: 0}
-			}
-		}
-		return nil
-
 	default:
 		return h.unsupportedOpcode(opcode)
 	}
+}
+
+// executeUnaryNotOp handles the NOT operation
+func (h *LogicalHandler) executeUnaryNotOp(i *Interpreter) error {
+	if len(i.stack) == 0 {
+		return nil
+	}
+
+	v := i.stack[len(i.stack)-1]
+	var result int64
+	switch v.Type {
+	case ValueTypeUndefined:
+		result = 0
+	case ValueTypeInt:
+		if v.IntVal == 0 {
+			result = 1
+		} else {
+			result = 0
+		}
+	default:
+		result = 0
+	}
+	i.stack[len(i.stack)-1] = Value{Type: ValueTypeInt, IntVal: result}
+	return nil
+}
+
+// executeDefinedOp handles the defined() operation
+func (h *LogicalHandler) executeDefinedOp(i *Interpreter) error {
+	if len(i.stack) == 0 {
+		return nil
+	}
+
+	v := i.stack[len(i.stack)-1]
+	// For now, treat all non-undefined values as "defined"
+	// In a full implementation, this would check if identifiers are properly defined
+	var result int64
+	switch v.Type {
+	case ValueTypeUndefined:
+		result = 0
+	case ValueTypeInt, ValueTypeDouble, ValueTypeString:
+		result = 1 // Literals and basic types are considered "defined"
+	default:
+		result = 0 // Unknown types are undefined
+	}
+	i.stack[len(i.stack)-1] = Value{Type: ValueTypeInt, IntVal: result}
+	return nil
 }
 
 func (h *LogicalHandler) unsupportedOpcode(opcode Opcode) error {
@@ -517,7 +634,7 @@ func (h *ControlFlowHandler) unsupportedOpcode(opcode Opcode) error {
 type UnsupportedOpcodeHandler struct{}
 
 // CanHandle returns true if this handler can process the given opcode
-func (h *UnsupportedOpcodeHandler) CanHandle(opcode Opcode) bool {
+func (h *UnsupportedOpcodeHandler) CanHandle(_ Opcode) bool {
 	return true // Can handle any opcode as fallback
 }
 
@@ -573,56 +690,7 @@ func (h *RuleHandler) Execute(i *Interpreter) error {
 
 	switch opcode {
 	case OP_PUSH_RULE:
-		// Read rule index from bytecode
-		if i.ip >= len(i.bytecode) {
-			return &InterpreterError{
-				Type:    ErrorUnimplemented,
-				Message: "OP_PUSH_RULE: missing rule index operand",
-			}
-		}
-		ruleIndex := int64(i.bytecode[i.ip])
-		i.ip++
-
-		// Get the rule name and check if we have a result
-		if ruleIndex >= 0 && int(ruleIndex) < len(i.compiledRules) {
-			ruleName := i.compiledRules[ruleIndex].Name
-			if result, exists := i.ruleResults[ruleName]; exists {
-				return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt64(result)})
-			}
-
-			// If no result exists, we need to execute the referenced rule
-			// This is a simple approach to handle rule dependencies
-			if int(ruleIndex) < len(i.compiledRules) {
-				referencedRule := i.compiledRules[ruleIndex]
-
-				// Create a new interpreter for the referenced rule
-				refInterpreter := NewInterpreter(referencedRule.GetBytecode())
-				refInterpreter.SetMatchContext(i.matchContext)
-				refInterpreter.SetRuleResults(i.ruleResults) // Share rule results
-				refInterpreter.SetCurrentRule(referencedRule.GetName())
-				refInterpreter.SetCompiledRules(i.compiledRules)
-
-				// Execute the referenced rule
-				execErr := refInterpreter.Execute()
-				if execErr == nil {
-					// Get the result from the referenced rule's execution
-					stack := refInterpreter.GetStack()
-					if len(stack) > 0 {
-						result := stack[len(stack)-1]
-						if result.Type == ValueTypeInt {
-							resultBool := result.IntVal != 0
-							i.ruleResults[referencedRule.GetName()] = resultBool
-							return i.push(
-								Value{Type: ValueTypeInt, IntVal: boolToInt64(resultBool)},
-							)
-						}
-					}
-				}
-			}
-		}
-
-		// If we couldn't resolve the rule, push false
-		return i.push(Value{Type: ValueTypeInt, IntVal: 0})
+		return h.executePushRule(i)
 
 	case OP_INIT_RULE:
 		// Initialize rule execution - for now this is a no-op
@@ -640,6 +708,84 @@ func (h *RuleHandler) Execute(i *Interpreter) error {
 			Message: fmt.Sprintf("Unsupported rule opcode: %v", opcode),
 		}
 	}
+}
+
+// executePushRule handles the OP_PUSH_RULE opcode
+func (h *RuleHandler) executePushRule(i *Interpreter) error {
+	// Read rule index from bytecode
+	if i.ip >= len(i.bytecode) {
+		return &InterpreterError{
+			Type:    ErrorUnimplemented,
+			Message: "OP_PUSH_RULE: missing rule index operand",
+		}
+	}
+	ruleIndex := int64(i.bytecode[i.ip])
+	i.ip++
+
+	// Check if we already have a result for this rule
+	if result, exists := h.getExistingRuleResult(i, ruleIndex); exists {
+		return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt64(result)})
+	}
+
+	// Try to execute the referenced rule if we don't have a result
+	return h.executeReferencedRule(i, ruleIndex)
+}
+
+// getExistingRuleResult checks if we already have a result for the given rule
+func (h *RuleHandler) getExistingRuleResult(i *Interpreter, ruleIndex int64) (result, exists bool) {
+	if ruleIndex >= 0 && int(ruleIndex) < len(i.compiledRules) {
+		ruleName := i.compiledRules[ruleIndex].Name
+		if ruleResult, found := i.ruleResults[ruleName]; found {
+			return ruleResult, true
+		}
+	}
+	return false, false
+}
+
+// executeReferencedRule executes a referenced rule and returns its result
+func (h *RuleHandler) executeReferencedRule(i *Interpreter, ruleIndex int64) error {
+	if int(ruleIndex) >= len(i.compiledRules) {
+		return i.push(Value{Type: ValueTypeInt, IntVal: 0})
+	}
+
+	referencedRule := i.compiledRules[ruleIndex]
+	result, err := h.executeRuleWithContext(i, referencedRule)
+	if err != nil {
+		return i.push(Value{Type: ValueTypeInt, IntVal: 0})
+	}
+
+	i.ruleResults[referencedRule.GetName()] = result
+	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt64(result)})
+}
+
+// executeRuleWithContext creates a new interpreter context and executes the rule
+func (h *RuleHandler) executeRuleWithContext(i *Interpreter, referencedRule *CompiledRule) (bool, error) {
+	refInterpreter := NewInterpreter(referencedRule.GetBytecode())
+	refInterpreter.SetMatchContext(i.matchContext)
+	refInterpreter.SetRuleResults(i.ruleResults) // Share rule results
+	refInterpreter.SetCurrentRule(referencedRule.GetName())
+	refInterpreter.SetCompiledRules(i.compiledRules)
+
+	if err := refInterpreter.Execute(); err != nil {
+		return false, err
+	}
+
+	return h.extractRuleResult(refInterpreter)
+}
+
+// extractRuleResult extracts the boolean result from the interpreter's stack
+func (h *RuleHandler) extractRuleResult(refInterpreter *Interpreter) (bool, error) {
+	stack := refInterpreter.GetStack()
+	if len(stack) == 0 {
+		return false, errors.New("empty stack after rule execution")
+	}
+
+	result := stack[len(stack)-1]
+	if result.Type != ValueTypeInt {
+		return false, fmt.Errorf("unexpected result type: %v", result.Type)
+	}
+
+	return result.IntVal != 0, nil
 }
 
 // boolToInt64 converts a boolean to int64 (true -> 1, false -> 0)

@@ -1,4 +1,3 @@
-// Package lexer provides a YARA lexer implementation.
 package lexer
 
 // Reader handles low-level character reading and position tracking for the lexer.

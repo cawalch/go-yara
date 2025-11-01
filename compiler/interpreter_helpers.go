@@ -1,4 +1,3 @@
-// Package compiler provides helper methods for the YARA interpreter.
 package compiler
 
 import (
@@ -83,44 +82,193 @@ func (i *Interpreter) popTwo() (a, b Value, err error) {
 	return a, b, nil
 }
 
-// executeBinaryOp executes a binary integer operation
-func (i *Interpreter) executeBinaryOp(operation func(int64, int64) int64) error {
-	a, b, err := i.popTwo()
-	if err != nil {
-		return err
-	}
-
-	if a.Type != ValueTypeInt || b.Type != ValueTypeInt {
-		return &InterpreterError{
-			Type:    ErrorTypeMismatch,
-			Message: "binary integer operation requires integer operands",
-		}
-	}
-
-	result := operation(a.IntVal, b.IntVal)
-	return i.push(Value{Type: ValueTypeInt, IntVal: result})
+// numericOperationConfig holds configuration for executing numeric operations
+type numericOperationConfig struct {
+	IntOp       func(int64, int64) int64
+	FloatOp     func(float64, float64) float64
+	FloatOp64   func(float64, float64) int64 // For comparison operations
+	ResultType  ValueType
+	IsComparison bool
+	ErrorMsg    string
 }
 
-// executeBinaryOpWithCheck executes a binary integer operation with error checking
-func (i *Interpreter) executeBinaryOpWithCheck(operation func(int64, int64) (int64, error)) error {
+// executeNumericOperation executes numeric operations with automatic type promotion
+func (i *Interpreter) executeNumericOperation(config numericOperationConfig) error {
 	a, b, err := i.popTwo()
 	if err != nil {
 		return err
 	}
 
-	if a.Type != ValueTypeInt || b.Type != ValueTypeInt {
+	// Handle mixed-type operations with automatic type promotion
+	switch a.Type {
+	case ValueTypeInt:
+		switch b.Type {
+		case ValueTypeInt:
+			// int op int = resultType
+			result := config.IntOp(a.IntVal, b.IntVal)
+			return i.push(Value{Type: config.ResultType, IntVal: result})
+
+		case ValueTypeDouble:
+			// int op double = resultType (promote int to double)
+			if config.IsComparison {
+				result := config.FloatOp64(float64(a.IntVal), b.DoubleVal)
+				return i.push(Value{Type: config.ResultType, IntVal: result})
+			}
+			result := config.FloatOp(float64(a.IntVal), b.DoubleVal)
+			return i.push(Value{Type: config.ResultType, DoubleVal: result})
+
+		default:
+			return &InterpreterError{
+				Type:    ErrorTypeMismatch,
+				Message: config.ErrorMsg,
+			}
+		}
+
+	case ValueTypeDouble:
+		switch b.Type {
+		case ValueTypeInt:
+			// double op int = resultType (promote int to double)
+			if config.IsComparison {
+				result := config.FloatOp64(a.DoubleVal, float64(b.IntVal))
+				return i.push(Value{Type: config.ResultType, IntVal: result})
+			}
+			result := config.FloatOp(a.DoubleVal, float64(b.IntVal))
+			return i.push(Value{Type: config.ResultType, DoubleVal: result})
+
+		case ValueTypeDouble:
+			// double op double = resultType
+			if config.IsComparison {
+				result := config.FloatOp64(a.DoubleVal, b.DoubleVal)
+				return i.push(Value{Type: config.ResultType, IntVal: result})
+			}
+			result := config.FloatOp(a.DoubleVal, b.DoubleVal)
+			return i.push(Value{Type: config.ResultType, DoubleVal: result})
+
+		default:
+			return &InterpreterError{
+				Type:    ErrorTypeMismatch,
+				Message: config.ErrorMsg,
+			}
+		}
+
+	default:
 		return &InterpreterError{
 			Type:    ErrorTypeMismatch,
-			Message: "binary integer operation requires integer operands",
+			Message: config.ErrorMsg,
 		}
 	}
+}
 
-	result, err := operation(a.IntVal, b.IntVal)
+// executeBinaryOp executes a binary operation with automatic type promotion for mixed int/float operations
+func (i *Interpreter) executeBinaryOp(intOp func(int64, int64) int64, floatOp func(float64, float64) float64) error {
+	config := numericOperationConfig{
+		IntOp:      intOp,
+		FloatOp:    floatOp,
+		ResultType: ValueTypeInt,
+		ErrorMsg:   "binary operation requires numeric operands",
+	}
+	return i.executeNumericOperation(config)
+}
+
+// executeBinaryOpLegacy executes a binary integer operation (backwards compatibility)
+func (i *Interpreter) executeBinaryOpLegacy(operation func(int64, int64) int64) error {
+	return i.executeBinaryOp(operation, func(a, b float64) float64 {
+		// This shouldn't be called in legacy mode, but provide fallback
+		return float64(operation(int64(a), int64(b)))
+	})
+}
+
+// executeBinaryOpWithCheckLegacy executes a binary integer operation with error checking (backwards compatibility)
+func (i *Interpreter) executeBinaryOpWithCheckLegacy(operation func(int64, int64) (int64, error)) error {
+	return i.executeBinaryOpWithCheck(operation, func(a, b float64) (float64, error) {
+		// This shouldn't be called in legacy mode, but provide fallback
+		result, err := operation(int64(a), int64(b))
+		return float64(result), err
+	})
+}
+
+// executeBinaryOpWithCheck executes a binary operation with error checking and automatic type promotion
+func (i *Interpreter) executeBinaryOpWithCheck(intOp func(int64, int64) (int64, error), floatOp func(float64, float64) (float64, error)) error {
+	a, b, err := i.popTwo()
 	if err != nil {
 		return err
 	}
 
-	return i.push(Value{Type: ValueTypeInt, IntVal: result})
+	return i.executeTypedBinaryOp(a, b, binaryOps{intOp: intOp, floatOp: floatOp})
+}
+
+// binaryOps represents binary operation functions for different types
+type binaryOps struct {
+	intOp  func(int64, int64) (int64, error)
+	floatOp func(float64, float64) (float64, error)
+}
+
+// executeTypedBinaryOp executes a binary operation based on operand types
+func (i *Interpreter) executeTypedBinaryOp(a, b Value, ops binaryOps) error {
+	switch a.Type {
+	case ValueTypeInt:
+		return i.executeIntBinaryOp(a, b, ops)
+
+	case ValueTypeDouble:
+		return i.executeDoubleBinaryOp(a, b, ops)
+
+	default:
+		return i.createTypeMismatchError("binary operation requires numeric operands")
+	}
+}
+
+// executeIntBinaryOp handles operations where the first operand is an integer
+func (i *Interpreter) executeIntBinaryOp(a, b Value, ops binaryOps) error {
+	switch b.Type {
+	case ValueTypeInt:
+		result, err := ops.intOp(a.IntVal, b.IntVal)
+		if err != nil {
+			return err
+		}
+		return i.push(Value{Type: ValueTypeInt, IntVal: result})
+
+	case ValueTypeDouble:
+		// int + double = double (promote int to double)
+		result, err := ops.floatOp(float64(a.IntVal), b.DoubleVal)
+		if err != nil {
+			return err
+		}
+		return i.push(Value{Type: ValueTypeDouble, DoubleVal: result})
+
+	default:
+		return i.createTypeMismatchError("binary operation requires numeric operands")
+	}
+}
+
+// executeDoubleBinaryOp handles operations where the first operand is a double
+func (i *Interpreter) executeDoubleBinaryOp(a, b Value, ops binaryOps) error {
+	switch b.Type {
+	case ValueTypeInt:
+		// double + int = double (promote int to double)
+		result, err := ops.floatOp(a.DoubleVal, float64(b.IntVal))
+		if err != nil {
+			return err
+		}
+		return i.push(Value{Type: ValueTypeDouble, DoubleVal: result})
+
+	case ValueTypeDouble:
+		result, err := ops.floatOp(a.DoubleVal, b.DoubleVal)
+		if err != nil {
+			return err
+		}
+		return i.push(Value{Type: ValueTypeDouble, DoubleVal: result})
+
+	default:
+		return i.createTypeMismatchError("binary operation requires numeric operands")
+	}
+}
+
+// createTypeMismatchError creates a type mismatch error
+func (i *Interpreter) createTypeMismatchError(message string) error {
+	return &InterpreterError{
+		Type:    ErrorTypeMismatch,
+		Message: message,
+	}
 }
 
 // executeDoubleOp executes a binary double operation
@@ -163,22 +311,24 @@ func (i *Interpreter) executeDoubleOpWithCheck(operation func(float64, float64) 
 	return i.push(Value{Type: ValueTypeDouble, DoubleVal: result})
 }
 
-// executeComparisonOp executes a comparison operation on integers
-func (i *Interpreter) executeComparisonOp(operation func(int64, int64) int64) error {
-	a, b, err := i.popTwo()
-	if err != nil {
-		return err
+// executeComparisonOp executes a comparison operation with automatic type promotion for mixed int/float operations
+func (i *Interpreter) executeComparisonOp(intOp func(int64, int64) int64, floatOp func(float64, float64) int64) error {
+	config := numericOperationConfig{
+		IntOp:       intOp,
+		FloatOp64:   floatOp,
+		ResultType:  ValueTypeInt,
+		IsComparison: true,
+		ErrorMsg:    "comparison operation requires numeric operands",
 	}
+	return i.executeNumericOperation(config)
+}
 
-	if a.Type != ValueTypeInt || b.Type != ValueTypeInt {
-		return &InterpreterError{
-			Type:    ErrorTypeMismatch,
-			Message: "integer comparison operation requires integer operands",
-		}
-	}
-
-	result := operation(a.IntVal, b.IntVal)
-	return i.push(Value{Type: ValueTypeInt, IntVal: result})
+// executeComparisonOpLegacy executes a comparison operation on integers (backwards compatibility)
+func (i *Interpreter) executeComparisonOpLegacy(operation func(int64, int64) int64) error {
+	return i.executeComparisonOp(operation, func(a, b float64) int64 {
+		// This shouldn't be called in legacy mode, but provide fallback
+		return operation(int64(a), int64(b))
+	})
 }
 
 // executeDoubleComparisonOp executes a comparison operation on doubles
@@ -262,9 +412,8 @@ func (i *Interpreter) executeConditionalJump(shouldJump func(int64) bool) error 
 	return nil
 }
 
-// executeUnaryOp executes a unary integer operation using functional patterns
-// nolint:dupl // Different type handling from executeUnaryDoubleOp
-func (i *Interpreter) executeUnaryOp(operation func(int64) int64) error {
+// executeUnaryOp executes a unary numeric operation with automatic type handling
+func (i *Interpreter) executeUnaryOp(intOp func(int64) int64, floatOp func(float64) float64) error {
 	if len(i.stack) == 0 {
 		return &InterpreterError{
 			Type:    ErrorStackUnderflow,
@@ -276,17 +425,31 @@ func (i *Interpreter) executeUnaryOp(operation func(int64) int64) error {
 	operand := i.stack[len(i.stack)-1]
 	i.stack = i.stack[:len(i.stack)-1]
 
-	// Type validation for integer operations
-	if operand.Type != ValueTypeInt {
+	// Handle different types with automatic type promotion
+	switch operand.Type {
+	case ValueTypeInt:
+		// Apply integer operation and push result
+		result := intOp(operand.IntVal)
+		return i.push(Value{Type: ValueTypeInt, IntVal: result})
+
+	case ValueTypeDouble:
+		// Apply double operation and push result
+		result := floatOp(operand.DoubleVal)
+		return i.push(Value{Type: ValueTypeDouble, DoubleVal: result})
+
+	default:
 		return &InterpreterError{
 			Type:    ErrorTypeMismatch,
-			Message: "unary integer operation requires integer operand",
+			Message: "unary operation requires numeric operand",
 		}
 	}
+}
 
-	// Apply operation and push result
-	result := operation(operand.IntVal)
-	return i.push(Value{Type: ValueTypeInt, IntVal: result})
+// executeUnaryOpLegacy executes a unary integer operation (backwards compatibility)
+func (i *Interpreter) executeUnaryOpLegacy(operation func(int64) int64) error {
+	return i.executeUnaryOp(operation, func(a float64) float64 {
+		return float64(operation(int64(a)))
+	})
 }
 
 // executeUnaryDoubleOp executes a unary double operation using functional patterns

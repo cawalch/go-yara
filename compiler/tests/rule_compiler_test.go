@@ -1,4 +1,3 @@
-// Package compiler provides rule compilation tests for the YARA compiler.
 package tests
 
 import (

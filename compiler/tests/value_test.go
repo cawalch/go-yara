@@ -1,4 +1,3 @@
-// Package compiler provides value handling tests for the YARA compiler.
 package tests
 
 // TODO: Implement value tests once Value API is understood

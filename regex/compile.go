@@ -4,6 +4,7 @@ package regex
 // This is an initial subset matching our currently supported AST nodes.
 
 import (
+	"errors"
 	"fmt"
 )
 
@@ -20,7 +21,7 @@ func NewCompiler() *Compiler { return &Compiler{e: NewEmitter()} }
 func Compile(ast *AST) ([]byte, error) {
 	c := NewCompiler()
 	if ast == nil || ast.Root == nil {
-		return nil, fmt.Errorf("regex: empty AST")
+		return nil, errors.New("regex: empty AST")
 	}
 	if err := c.emitNode(ast.Root); err != nil {
 		return nil, err
@@ -63,7 +64,7 @@ func (c *Compiler) patchI16(at int, v int16) {
 	c.e.buf[at+1] = byte(u >> 8)
 }
 
-func (c *Compiler) emitNode(n *Node) error {
+func (c *Compiler) emitNode(n *Node) error { //nolint:maintidx // high complexity is intentional for performance-critical regex compilation
 	switch n.Kind {
 	case NodeLiteral:
 		c.e.Emit(OpLiteral).EmitU8(n.Value)
@@ -83,7 +84,7 @@ func (c *Compiler) emitNode(n *Node) error {
 	case NodeClass:
 		c.e.Emit(OpClass)
 		// 32-byte bitmap then 1 byte negated
-		for i := 0; i < 32; i++ {
+		for i := range 32 {
 			c.e.EmitU8(n.Class.Bitmap[i])
 		}
 		if n.Class.Negated {
@@ -148,7 +149,7 @@ func (c *Compiler) emitNode(n *Node) error {
 			return err
 		}
 		c.patchI16(offIdx, relI16)
-		if err = c.emitNode(n.Children[1]); err != nil {
+		if err = c.emitNode(n.Children[1]); err != nil { //nolint:gocritic // legitimate reassignment, not sloppy
 			return err
 		}
 		end := c.cur()
@@ -211,7 +212,7 @@ func (c *Compiler) emitNode(n *Node) error {
 		// - Else emit (max-min) optional copies via chained splits.
 		child := n.Children[0]
 		// Emit required minimum copies
-		for i := 0; i < int(n.Start); i++ {
+		for range n.Start {
 			if err := c.emitNode(child); err != nil {
 				return err
 			}
@@ -226,7 +227,7 @@ func (c *Compiler) emitNode(n *Node) error {
 		}
 		// Bounded optional tail
 		opt := int(n.End - n.Start)
-		for i := 0; i < opt; i++ {
+		for range opt {
 			splitPos := c.cur()
 			var offIdx int
 			if n.Greedy {

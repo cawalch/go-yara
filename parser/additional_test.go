@@ -1,4 +1,3 @@
-// Package parser provides additional tests for comprehensive coverage.
 package parser
 
 import (

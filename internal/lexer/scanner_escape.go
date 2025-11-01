@@ -6,7 +6,7 @@ import "strings"
 
 // processEscapeSequences processes escape sequences in a string literal
 func processEscapeSequences(s string) string {
-	if len(s) == 0 {
+	if s == "" {
 		return s
 	}
 
@@ -82,7 +82,7 @@ func processEscapeSequencesOriginal(s string) string {
 func processEscapeSequencesOptimized(s string) string {
 	// Quick check: if no escapes, return as-is (potentially interned)
 	hasEscape := false
-	for i := 0; i < len(s); i++ {
+	for i := range len(s) {
 		if s[i] == '\\' {
 			hasEscape = true
 			break

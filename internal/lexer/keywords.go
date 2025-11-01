@@ -243,8 +243,8 @@ func ValidateStringEscapes(literal string, startPos token.Position) []Error {
 }
 
 // validateEscapeSequence validates a single escape sequence and returns errors, new index, and new column
-func validateEscapeSequence(literal string, i int, pos token.Position) ([]Error, int, int) {
-	var errors []Error
+func validateEscapeSequence(literal string, i int, pos token.Position) (errors []Error, newIndex, newColumn int) {
+	errors = nil // Initialize the named return variable
 
 	if i+1 >= len(literal) {
 		// Trailing backslash
@@ -274,8 +274,8 @@ func validateEscapeSequence(literal string, i int, pos token.Position) ([]Error,
 }
 
 // validateHexEscape validates a hex escape sequence \xNN
-func validateHexEscape(literal string, i int, pos token.Position) ([]Error, int, int) {
-	var errors []Error
+func validateHexEscape(literal string, i int, pos token.Position) (errors []Error, newIndex, newColumn int) {
+	errors = nil // Initialize the named return variable
 
 	if i+3 >= len(literal) {
 		// Not enough characters for complete hex sequence

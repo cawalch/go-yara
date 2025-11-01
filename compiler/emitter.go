@@ -1,4 +1,3 @@
-// Package compiler provides bytecode generation and compilation for YARA rules.
 package compiler
 
 import (
@@ -88,13 +87,51 @@ func (e *Emitter) EmitPush(value uint64, line, pos int) int {
 	return e.EmitOpcodeWithOperand(opcode, operand, line, pos)
 }
 
+// EmitPushDouble emits a push instruction for floating point values
+func (e *Emitter) EmitPushDouble(value float64, line, pos int) int {
+	// Convert float64 to uint64 bits for storage
+	bits := math.Float64bits(value)
+	operand := Operand{Type: OperandImmediate64, Value: bits}
+	return e.EmitOpcodeWithOperand(OP_PUSH_DBL, operand, line, pos)
+}
+
+// EmitPushString emits a push instruction for string values
+func (e *Emitter) EmitPushString(value string, line, pos int) int {
+	// For string values, we'll need to store them in a separate string table
+	// For now, let's use a simple approach by encoding the string in the immediate value
+	// This is a simplified implementation - a full solution would need a proper string pool
+	hash := e.hashString(value)
+	operand := Operand{Type: OperandImmediate64, Value: hash}
+	return e.EmitOpcodeWithOperand(OP_PUSH_DBL, operand, line, pos)
+}
+
+// hashString creates a simple hash for string identification
+func (e *Emitter) hashString(s string) uint64 {
+	// Simple hash function for string identification
+	// In a full implementation, this would be replaced with proper string pool management
+	hash := uint64(5381)
+	for _, c := range s {
+		hash = ((hash << 5) + hash) + uint64(c)
+	}
+	// Use high bit to distinguish from numeric values
+	return hash | 0x8000000000000000
+}
+
+// JumpConfig holds configuration for jump instruction emission
+type JumpConfig struct {
+	Opcode Opcode
+	Target int
+	Line   int
+	Pos    int
+}
+
 // EmitJump emits a jump instruction and returns an offset for potential fixup
-func (e *Emitter) EmitJump(opcode Opcode, target int, line, pos int) int {
+func (e *Emitter) EmitJump(config JumpConfig) int {
 	var operand Operand
 
 	// For now, emit a placeholder offset (0)
 	// This will be fixed up later when the target is known
-	switch opcode {
+	switch config.Opcode {
 	case OP_JZ, OP_JZ_P, OP_JTRUE, OP_JTRUE_P, OP_JFALSE, OP_JFALSE_P:
 		operand = Operand{Type: OperandRelative32, Value: 0}
 	case OP_ITER_NEXT:
@@ -103,17 +140,17 @@ func (e *Emitter) EmitJump(opcode Opcode, target int, line, pos int) int {
 		operand = Operand{Type: OperandRelative32, Value: 0}
 	}
 
-	offset := e.EmitOpcodeWithOperand(opcode, operand, line, pos)
+	offset := e.EmitOpcodeWithOperand(config.Opcode, operand, config.Line, config.Pos)
 
 	// Mark this instruction for fixup
-	e.fixups[offset] = target
+	e.fixups[offset] = config.Target
 
 	return offset
 }
 
 // EmitLabel emits a label (no-op) at the current position
 // This is used as a target for jumps
-func (e *Emitter) EmitLabel(label int, line, pos int) int {
+func (e *Emitter) EmitLabel(_, line, pos int) int {
 	return e.EmitOpcode(OP_NOP, line, pos)
 }
 

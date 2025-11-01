@@ -35,32 +35,32 @@ type TestVisitor struct {
 	visited bool
 }
 
-func (v *TestVisitor) VisitRule(r *Rule) any {
+func (v *TestVisitor) VisitRule(_ *Rule) any {
 	v.visited = true
 	return nil
 }
 
 // Implement other visitor methods...
-func (v *TestVisitor) VisitProgram(n *Program) any                   { return nil }
-func (v *TestVisitor) VisitMeta(n *Meta) any                         { return nil }
-func (v *TestVisitor) VisitString(n *String) any                     { return nil }
-func (v *TestVisitor) VisitCondition(n *Condition) any               { return nil }
-func (v *TestVisitor) VisitBinaryOp(n *BinaryOp) any                 { return nil }
-func (v *TestVisitor) VisitExternalVariable(n *ExternalVariable) any { return nil }
-func (v *TestVisitor) VisitUnaryOp(n *UnaryOp) any                   { return nil }
-func (v *TestVisitor) VisitIdentifier(n *Identifier) any             { return nil }
-func (v *TestVisitor) VisitLiteral(n *Literal) any                   { return nil }
-func (v *TestVisitor) VisitTextString(n *TextString) any             { return nil }
-func (v *TestVisitor) VisitHexString(n *HexString) any               { return nil }
-func (v *TestVisitor) VisitRegexPattern(n *RegexPattern) any         { return nil }
-func (v *TestVisitor) VisitGlobalVariable(n *GlobalVariable) any     { return nil }
-func (v *TestVisitor) VisitImport(n *Import) any                     { return nil }
-func (v *TestVisitor) VisitInclude(n *Include) any                   { return nil }
-func (v *TestVisitor) VisitStringLength(n *StringLength) any         { return nil }
-func (v *TestVisitor) VisitArrayIndex(n *ArrayIndex) any             { return nil }
-func (v *TestVisitor) VisitForLoop(n *ForLoop) any                   { return nil }
-func (v *TestVisitor) VisitOfExpression(n *OfExpression) any         { return nil }
-func (v *TestVisitor) VisitFunctionCall(n *FunctionCall) any         { return nil }
+func (v *TestVisitor) VisitProgram(_ *Program) any                   { return nil }
+func (v *TestVisitor) VisitMeta(_ *Meta) any                         { return nil }
+func (v *TestVisitor) VisitString(_ *String) any                     { return nil }
+func (v *TestVisitor) VisitCondition(_ *Condition) any               { return nil }
+func (v *TestVisitor) VisitBinaryOp(_ *BinaryOp) any                 { return nil }
+func (v *TestVisitor) VisitExternalVariable(_ *ExternalVariable) any { return nil }
+func (v *TestVisitor) VisitUnaryOp(_ *UnaryOp) any                   { return nil }
+func (v *TestVisitor) VisitIdentifier(_ *Identifier) any             { return nil }
+func (v *TestVisitor) VisitLiteral(_ *Literal) any                   { return nil }
+func (v *TestVisitor) VisitTextString(_ *TextString) any             { return nil }
+func (v *TestVisitor) VisitHexString(_ *HexString) any               { return nil }
+func (v *TestVisitor) VisitRegexPattern(_ *RegexPattern) any         { return nil }
+func (v *TestVisitor) VisitGlobalVariable(_ *GlobalVariable) any     { return nil }
+func (v *TestVisitor) VisitImport(_ *Import) any                     { return nil }
+func (v *TestVisitor) VisitInclude(_ *Include) any                   { return nil }
+func (v *TestVisitor) VisitStringLength(_ *StringLength) any         { return nil }
+func (v *TestVisitor) VisitArrayIndex(_ *ArrayIndex) any             { return nil }
+func (v *TestVisitor) VisitForLoop(_ *ForLoop) any                   { return nil }
+func (v *TestVisitor) VisitOfExpression(_ *OfExpression) any         { return nil }
+func (v *TestVisitor) VisitFunctionCall(_ *FunctionCall) any         { return nil }
 
 func TestBuilderUtilities(t *testing.T) {
 	builder := NewBuilder()
@@ -90,7 +90,7 @@ func TestBuilderUtilities(t *testing.T) {
 	}
 }
 
-func TestNodeInterfaces(t *testing.T) {
+func TestNodeInterfaces(_ *testing.T) {
 	builder := NewBuilder()
 
 	// Test that nodes implement Node interface
@@ -105,7 +105,7 @@ func TestNodeInterfaces(t *testing.T) {
 	var _ Expression = binOp
 }
 
-func TestPatternNodes(t *testing.T) {
+func TestPatternNodes(_ *testing.T) {
 	builder := NewBuilder()
 
 	textStr := builder.TextString(token.Position{Line: 1, Column: 1}, "hello")

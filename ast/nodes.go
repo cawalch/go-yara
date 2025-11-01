@@ -2,6 +2,7 @@ package ast
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/cawalch/go-yara/token"
 )
@@ -22,7 +23,7 @@ func (p *Program) node() {}
 func (p *Program) Position() token.Position { return p.Pos }
 
 // Accept implements the Visitor pattern for Program
-func (p *Program) Accept(v Visitor) interface{} {
+func (p *Program) Accept(v Visitor) any {
 	return v.VisitProgram(p)
 }
 
@@ -43,7 +44,7 @@ func (r *Rule) node() {}
 func (r *Rule) Position() token.Position { return r.Pos }
 
 // Accept implements the Visitor pattern for Rule
-func (r *Rule) Accept(v Visitor) interface{} {
+func (r *Rule) Accept(v Visitor) any {
 	return v.VisitRule(r)
 }
 
@@ -81,9 +82,9 @@ func (m *Meta) String() string {
 	case MetaString:
 		return string(v)
 	case MetaInt:
-		return fmt.Sprintf("%d", int64(v))
+		return strconv.FormatInt(int64(v), 10)
 	case MetaBool:
-		return fmt.Sprintf("%t", bool(v))
+		return strconv.FormatBool(bool(v))
 	default:
 		return fmt.Sprintf("%v", v)
 	}
@@ -119,7 +120,7 @@ func (m *Meta) node() {}
 func (m *Meta) Position() token.Position { return m.Pos }
 
 // Accept implements the Visitor pattern for Meta
-func (m *Meta) Accept(v Visitor) interface{} {
+func (m *Meta) Accept(v Visitor) any {
 	return v.VisitMeta(m)
 }
 
@@ -137,7 +138,7 @@ func (s *String) node() {}
 func (s *String) Position() token.Position { return s.Pos }
 
 // Accept implements the Visitor pattern for String
-func (s *String) Accept(v Visitor) interface{} {
+func (s *String) Accept(v Visitor) any {
 	return v.VisitString(s)
 }
 
@@ -153,7 +154,7 @@ func (c *Condition) node() {}
 func (c *Condition) Position() token.Position { return c.Pos }
 
 // Accept implements the Visitor pattern for Condition
-func (c *Condition) Accept(v Visitor) interface{} {
+func (c *Condition) Accept(v Visitor) any {
 	return v.VisitCondition(c)
 }
 
@@ -173,7 +174,7 @@ func (b *BinaryOp) Position() token.Position { return b.Pos }
 func (b *BinaryOp) expression() {}
 
 // Accept implements the Visitor pattern for BinaryOp
-func (b *BinaryOp) Accept(v Visitor) interface{} {
+func (b *BinaryOp) Accept(v Visitor) any {
 	return v.VisitBinaryOp(b)
 }
 
@@ -192,7 +193,7 @@ func (u *UnaryOp) Position() token.Position { return u.Pos }
 func (u *UnaryOp) expression() {}
 
 // Accept implements the Visitor pattern for UnaryOp
-func (u *UnaryOp) Accept(v Visitor) interface{} {
+func (u *UnaryOp) Accept(v Visitor) any {
 	return v.VisitUnaryOp(u)
 }
 
@@ -210,7 +211,7 @@ func (i *Identifier) Position() token.Position { return i.Pos }
 func (i *Identifier) expression() {}
 
 // Accept implements the Visitor pattern for Identifier
-func (i *Identifier) Accept(v Visitor) interface{} {
+func (i *Identifier) Accept(v Visitor) any {
 	return v.VisitIdentifier(i)
 }
 
@@ -218,7 +219,7 @@ func (i *Identifier) Accept(v Visitor) interface{} {
 type Literal struct {
 	Pos   token.Position
 	Type  token.TokenType
-	Value interface{}
+	Value any
 }
 
 func (l *Literal) node() {}
@@ -229,7 +230,7 @@ func (l *Literal) Position() token.Position { return l.Pos }
 func (l *Literal) expression() {}
 
 // Accept implements the Visitor pattern for Literal
-func (l *Literal) Accept(v Visitor) interface{} {
+func (l *Literal) Accept(v Visitor) any {
 	return v.VisitLiteral(l)
 }
 
@@ -246,7 +247,7 @@ func (g *GlobalVariable) node() {}
 func (g *GlobalVariable) Position() token.Position { return g.Pos }
 
 // Accept implements the Visitor pattern for GlobalVariable
-func (g *GlobalVariable) Accept(v Visitor) interface{} {
+func (g *GlobalVariable) Accept(v Visitor) any {
 	return v.VisitGlobalVariable(g)
 }
 
@@ -264,7 +265,7 @@ func (e *ExternalVariable) node() {}
 func (e *ExternalVariable) Position() token.Position { return e.Pos }
 
 // Accept implements the Visitor pattern for ExternalVariable
-func (e *ExternalVariable) Accept(v Visitor) interface{} {
+func (e *ExternalVariable) Accept(v Visitor) any {
 	return v.VisitExternalVariable(e)
 }
 
@@ -280,7 +281,7 @@ func (i *Import) node() {}
 func (i *Import) Position() token.Position { return i.Pos }
 
 // Accept implements the Visitor pattern for Import
-func (i *Import) Accept(v Visitor) interface{} {
+func (i *Import) Accept(v Visitor) any {
 	return v.VisitImport(i)
 }
 
@@ -296,7 +297,7 @@ func (i *Include) node() {}
 func (i *Include) Position() token.Position { return i.Pos }
 
 // Accept implements the Visitor pattern for Include
-func (i *Include) Accept(v Visitor) interface{} {
+func (i *Include) Accept(v Visitor) any {
 	return v.VisitInclude(i)
 }
 
@@ -314,7 +315,7 @@ func (s *StringLength) Position() token.Position { return s.Pos }
 func (s *StringLength) expression() {}
 
 // Accept implements the Visitor pattern for StringLength
-func (s *StringLength) Accept(v Visitor) interface{} {
+func (s *StringLength) Accept(v Visitor) any {
 	return v.VisitStringLength(s)
 }
 
@@ -333,7 +334,7 @@ func (a *ArrayIndex) Position() token.Position { return a.Pos }
 func (a *ArrayIndex) expression() {}
 
 // Accept implements the Visitor pattern for ArrayIndex
-func (a *ArrayIndex) Accept(v Visitor) interface{} {
+func (a *ArrayIndex) Accept(v Visitor) any {
 	return v.VisitArrayIndex(a)
 }
 
@@ -354,7 +355,7 @@ func (f *ForLoop) Position() token.Position { return f.Pos }
 func (f *ForLoop) expression() {}
 
 // Accept implements the Visitor pattern for ForLoop
-func (f *ForLoop) Accept(v Visitor) interface{} {
+func (f *ForLoop) Accept(v Visitor) any {
 	return v.VisitForLoop(f)
 }
 
@@ -373,7 +374,7 @@ func (o *OfExpression) Position() token.Position { return o.Pos }
 func (o *OfExpression) expression() {}
 
 // Accept implements the Visitor pattern for OfExpression
-func (o *OfExpression) Accept(v Visitor) interface{} {
+func (o *OfExpression) Accept(v Visitor) any {
 	return v.VisitOfExpression(o)
 }
 
@@ -392,6 +393,6 @@ func (f *FunctionCall) Position() token.Position { return f.Pos }
 func (f *FunctionCall) expression() {}
 
 // Accept implements the Visitor pattern for FunctionCall
-func (f *FunctionCall) Accept(v Visitor) interface{} {
+func (f *FunctionCall) Accept(v Visitor) any {
 	return v.VisitFunctionCall(f)
 }

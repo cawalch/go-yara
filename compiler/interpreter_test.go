@@ -25,8 +25,7 @@ func TestInterpreterBasicStack(t *testing.T) {
 			name: "push_16_and_halt",
 			bytecode: func() []byte {
 				b := []byte{byte(OP_PUSH_16)}
-				b = append(b, 0x00, 0x01) // 256 in little-endian
-				b = append(b, byte(OP_HALT))
+				b = append(b, 0x00, 0x01, byte(OP_HALT)) // 256 in little-endian + halt
 				return b
 			}(),
 			expected: 256,
@@ -35,8 +34,7 @@ func TestInterpreterBasicStack(t *testing.T) {
 			name: "push_32_and_halt",
 			bytecode: func() []byte {
 				b := []byte{byte(OP_PUSH_32)}
-				b = append(b, 0x00, 0x00, 0x01, 0x00) // 65536 in little-endian
-				b = append(b, byte(OP_HALT))
+				b = append(b, 0x00, 0x00, 0x01, 0x00, byte(OP_HALT)) // 65536 in little-endian + halt
 				return b
 			}(),
 			expected: 65536,
@@ -270,8 +268,7 @@ func TestInterpreterMemory(t *testing.T) {
 			name: "clear_memory",
 			bytecode: func() []byte {
 				b := []byte{byte(OP_CLEAR_M)}
-				b = append(b, 0, 0, 0, 0, 0, 0, 0, 0) // addr 0
-				b = append(b, byte(OP_HALT))
+				b = append(b, 0, 0, 0, 0, 0, 0, 0, 0, byte(OP_HALT)) // addr 0 + halt
 				return b
 			}(),
 			memAddr:  0,
@@ -281,11 +278,7 @@ func TestInterpreterMemory(t *testing.T) {
 			name: "push_and_pop_memory",
 			bytecode: func() []byte {
 				b := []byte{byte(OP_PUSH_8), 42}
-				b = append(b, byte(OP_POP_M))
-				b = append(b, 0, 0, 0, 0, 0, 0, 0, 0) // addr 0
-				b = append(b, byte(OP_PUSH_M))
-				b = append(b, 0, 0, 0, 0, 0, 0, 0, 0) // addr 0
-				b = append(b, byte(OP_HALT))
+				b = append(b, byte(OP_POP_M), 0, 0, 0, 0, 0, 0, 0, 0, byte(OP_PUSH_M), 0, 0, 0, 0, 0, 0, 0, 0, byte(OP_HALT)) // addr 0 + halt
 				return b
 			}(),
 			memAddr:  0,
@@ -319,11 +312,7 @@ func TestInterpreterJumps(t *testing.T) {
 			name: "jfalse_taken",
 			bytecode: func() []byte {
 				b := []byte{byte(OP_PUSH_8), 0}
-				b = append(b, byte(OP_JFALSE))
-				b = append(b, 2, 0, 0, 0) // jump +2 bytes
-				b = append(b, byte(OP_PUSH_8), 10)
-				b = append(b, byte(OP_PUSH_8), 20)
-				b = append(b, byte(OP_HALT))
+				b = append(b, byte(OP_JFALSE), 2, 0, 0, 0, byte(OP_PUSH_8), 10, byte(OP_PUSH_8), 20, byte(OP_HALT))
 				return b
 			}(),
 			expected: 20,
@@ -332,11 +321,7 @@ func TestInterpreterJumps(t *testing.T) {
 			name: "jtrue_taken",
 			bytecode: func() []byte {
 				b := []byte{byte(OP_PUSH_8), 1}
-				b = append(b, byte(OP_JTRUE))
-				b = append(b, 2, 0, 0, 0) // jump +2 bytes
-				b = append(b, byte(OP_PUSH_8), 10)
-				b = append(b, byte(OP_PUSH_8), 20)
-				b = append(b, byte(OP_HALT))
+				b = append(b, byte(OP_JTRUE), 2, 0, 0, 0, byte(OP_PUSH_8), 10, byte(OP_PUSH_8), 20, byte(OP_HALT))
 				return b
 			}(),
 			expected: 20,
@@ -458,12 +443,10 @@ func TestInterpreterFilesize(t *testing.T) {
 func TestInterpreterIncrementMemory(t *testing.T) {
 	bytecode := func() []byte {
 		b := []byte{byte(OP_INCR_M)}
-		b = append(b, 0, 0, 0, 0, 0, 0, 0, 0) // addr 0
-		b = append(b, byte(OP_INCR_M))
-		b = append(b, 0, 0, 0, 0, 0, 0, 0, 0) // addr 0
-		b = append(b, byte(OP_PUSH_M))
-		b = append(b, 0, 0, 0, 0, 0, 0, 0, 0) // addr 0
-		b = append(b, byte(OP_HALT))
+		b = append(b, 0, 0, 0, 0, 0, 0, 0, 0, // addr 0
+			byte(OP_INCR_M), 0, 0, 0, 0, 0, 0, 0, 0, // addr 0
+			byte(OP_PUSH_M), 0, 0, 0, 0, 0, 0, 0, 0, // addr 0
+			byte(OP_HALT))
 		return b
 	}()
 
@@ -972,7 +955,6 @@ func TestInterpreterMatches(t *testing.T) {
 
 // TestInterpreterComplexArithmetic tests complex arithmetic expressions
 func TestInterpreterComplexArithmetic(t *testing.T) {
-	// Test: (10 + 20) * 2 = 60
 	bytecode := []byte{
 		byte(OP_PUSH_8), 10,
 		byte(OP_PUSH_8), 20,
@@ -1112,10 +1094,7 @@ func TestInterpreterRegexFoundOps(t *testing.T) {
 	interp.stack = interp.stack[:0]
 
 	// FOUND_IN($a, start, end) covering a known hit -> true
-	startIn := hitOff - 1
-	if startIn < 0 {
-		startIn = 0
-	}
+	startIn := max(hitOff-1, 0)
 	endIn := hitOff + 10
 	interp.push(Value{Type: ValueTypeString, StringVal: "$a"})
 	interp.push(Value{Type: ValueTypeInt, IntVal: startIn})

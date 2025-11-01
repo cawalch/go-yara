@@ -156,20 +156,20 @@ func CreateTestToken(tokenType token.TokenType, literal string, pos token.Positi
 }
 
 // AssertNoCompilationErrors checks that compilation succeeded without errors
-func AssertNoCompilationErrors(t *testing.T, compiler *compiler.Compiler) {
+func AssertNoCompilationErrors(t *testing.T, comp *compiler.Compiler) {
 	t.Helper()
 
-	errors := compiler.GetErrors()
+	errors := comp.GetErrors()
 	if len(errors) > 0 {
 		t.Errorf("Expected no compilation errors, got %d: %v", len(errors), errors)
 	}
 }
 
 // AssertCompilationErrorCount checks that compilation produced expected number of errors
-func AssertCompilationErrorCount(t *testing.T, compiler *compiler.Compiler, expected int) {
+func AssertCompilationErrorCount(t *testing.T, comp *compiler.Compiler, expected int) {
 	t.Helper()
 
-	errors := compiler.GetErrors()
+	errors := comp.GetErrors()
 	actual := len(errors)
 	if actual != expected {
 		t.Errorf("Expected %d compilation errors, got %d", expected, actual)

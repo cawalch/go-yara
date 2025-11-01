@@ -1,4 +1,3 @@
-// Package main provides additional tests for comprehensive coverage.
 package main
 
 import (

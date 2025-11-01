@@ -421,11 +421,7 @@ func generateSampleRules(config *execution.ProfilingConfig) error {
 		($text1 and $text2) or $hex1 or ($regex1 within 100)
 }`
 
-	if writeErr := os.WriteFile(filepath.Join(config.RulesDir, "complex_rule.yar"), []byte(complexRule), 0600); writeErr != nil {
-		return writeErr
-	}
-
-	return nil
+	return os.WriteFile(filepath.Join(config.RulesDir, "complex_rule.yar"), []byte(complexRule), 0600)
 }
 
 // analyzeProfileFile analyzes a single profiling result file

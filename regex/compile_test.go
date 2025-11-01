@@ -74,7 +74,7 @@ func TestCompileAlt(t *testing.T) {
 	hasSplit := false
 	hasA := false
 	hasB := false
-	for i := 0; i < len(code); i++ {
+	for i := range code {
 		switch code[i] {
 		case OpSplitA:
 			hasSplit = true

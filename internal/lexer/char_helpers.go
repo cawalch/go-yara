@@ -63,6 +63,11 @@ func isHexDigit(ch byte) bool {
 	return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F')
 }
 
+// isOctalDigit returns true if the character is an octal digit
+func isOctalDigit(ch byte) bool {
+	return ch >= '0' && ch <= '7'
+}
+
 // isLetter returns true if the character is a letter or underscore
 func isLetter(ch byte) bool {
 	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch == '_'

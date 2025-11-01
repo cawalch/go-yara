@@ -3,6 +3,7 @@ package comparison
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -43,16 +44,16 @@ type ComparisonConfig struct {
 // ComparisonResults holds all comparison results
 // nolint:revive // Type name is descriptive and widely used
 type ComparisonResults struct {
-	StartTime            time.Time              `json:"start_time"`
-	EndTime              time.Time              `json:"end_time"`
-	Duration             time.Duration          `json:"duration"`
-	Environment          *EnvironmentInfo       `json:"environment"`
-	GoYaraResults        *GoYaraResults         `json:"go_yara_results"`
-	ReferenceYaraResults *ReferenceYaraResults  `json:"reference_yara_results"`
-	PerformanceGaps      *PerformanceGaps       `json:"performance_gaps"`
-	CorrectnessResults   *CorrectnessResults    `json:"correctness_results"`
-	ProfileData          map[string]interface{} `json:"profile_data"`
-	TestCases            []*TestCaseResult      `json:"test_cases"`
+	StartTime            time.Time             `json:"start_time"`
+	EndTime              time.Time             `json:"end_time"`
+	Duration             time.Duration         `json:"duration"`
+	Environment          *EnvironmentInfo      `json:"environment"`
+	GoYaraResults        *GoYaraResults        `json:"go_yara_results"`
+	ReferenceYaraResults *ReferenceYaraResults `json:"reference_yara_results"`
+	PerformanceGaps      *PerformanceGaps      `json:"performance_gaps"`
+	CorrectnessResults   *CorrectnessResults   `json:"correctness_results"`
+	ProfileData          map[string]any        `json:"profile_data"`
+	TestCases            []*TestCaseResult     `json:"test_cases"`
 }
 
 // EnvironmentInfo captures environment details
@@ -246,7 +247,7 @@ func NewComparator(config *ComparisonConfig) (*Comparator, error) {
 	comparator.results.ReferenceYaraResults = &ReferenceYaraResults{}
 	comparator.results.PerformanceGaps = &PerformanceGaps{}
 	comparator.results.CorrectnessResults = &CorrectnessResults{}
-	comparator.results.ProfileData = make(map[string]interface{})
+	comparator.results.ProfileData = make(map[string]any)
 	comparator.results.TestCases = []*TestCaseResult{}
 
 	return comparator, nil
@@ -293,7 +294,7 @@ func (c *Comparator) RunComparison() error {
 	}
 
 	if len(testCases) == 0 {
-		return fmt.Errorf("no test cases found")
+		return errors.New("no test cases found")
 	}
 
 	if c.config.Verbose {
@@ -509,7 +510,7 @@ func findYaraBinary() (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("YARA binary not found in PATH")
+	return "", errors.New("YARA binary not found in PATH")
 }
 
 // SaveResults saves comparison results to file

@@ -102,9 +102,15 @@ func TestFileValidatorFileSizeComparison(t *testing.T) {
 		Pos:   pos,
 	}
 
-	_, errors := validator.ValidateFileSizeComparison(token.GT, filesizeExpr, otherExpr, pos)
-	if len(errors) > 0 {
-		t.Errorf("ValidateFileSizeComparison() unexpected errors: %v", errors)
+	args := FileSizeComparisonArgs{
+		Op:           token.GT,
+		FilesizeExpr: filesizeExpr,
+		OtherExpr:    otherExpr,
+		Pos:          pos,
+	}
+	_, errs := validator.ValidateFileSizeComparison(&args)
+	if len(errs) > 0 {
+		t.Errorf("ValidateFileSizeComparison() unexpected errors: %v", errs)
 	}
 }
 
@@ -330,7 +336,7 @@ func TestStringValidatorErrors(t *testing.T) {
 }
 
 // TestValidatorVisitorMethods tests visitor methods
-func TestValidatorVisitorMethods(t *testing.T) {
+func TestValidatorVisitorMethods(_ *testing.T) {
 	validator := NewValidator()
 
 	pos := token.Position{Line: 1, Column: 1}

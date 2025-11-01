@@ -36,6 +36,8 @@ func NextTokenImpl(creator TokenCreator) token.Token {
 		return creator.makeSimpleToken(token.MULTIPLY, "*", pos)
 	case '%':
 		return creator.makeSimpleToken(token.MODULO, "%", pos)
+	case '\\':
+		return creator.makeSimpleToken(token.INT_DIVIDE, "\\", pos)
 	case ':':
 		return creator.makeSimpleToken(token.COLON, ":", pos)
 	case ',':

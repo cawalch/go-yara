@@ -65,7 +65,7 @@ func (l *Lexer) makeIdentifierToken(pos token.Position) token.Token {
 	return l.makeToken(tokenType, lit, pos)
 }
 
-// makeNumericToken creates a numeric literal token (integer, hex, float, or size)
+// makeNumericToken creates a numeric literal token (integer, hex, octal, float, or size)
 func (l *Lexer) makeNumericToken(pos token.Position) token.Token {
 	// Check for hexadecimal integer (0x prefix)
 	if l.ch() == '0' && (l.peekChar() == 'x' || l.peekChar() == 'X') {
@@ -76,6 +76,17 @@ func (l *Lexer) makeNumericToken(pos token.Position) token.Token {
 			return l.makeToken(token.SIZE_LIT, sizeLit, pos)
 		}
 		return l.makeToken(token.HEX_INTEGER_LIT, lit, pos)
+	}
+
+	// Check for octal integer (0o prefix)
+	if l.ch() == '0' && (l.peekChar() == 'o' || l.peekChar() == 'O') {
+		lit := l.readOctalInteger()
+		// Check for size suffix after octal integer
+		if l.hasSizeSuffix() {
+			sizeLit := l.readSizeSuffix(lit)
+			return l.makeToken(token.SIZE_LIT, sizeLit, pos)
+		}
+		return l.makeToken(token.OCTAL_INTEGER_LIT, lit, pos)
 	}
 
 	// Read regular number

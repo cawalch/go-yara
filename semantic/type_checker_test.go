@@ -263,7 +263,7 @@ func TestInferTypeFromLiteral(t *testing.T) {
 	tests := []struct {
 		name         string
 		tokenType    token.TokenType
-		value        interface{}
+		value        any
 		expectedType DataType
 	}{
 		{

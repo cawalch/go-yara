@@ -1,4 +1,3 @@
-// Package compiler provides opcode-related tests for the YARA compiler.
 package tests
 
 import (
@@ -88,14 +87,9 @@ func TestOpcodeClassification(t *testing.T) {
 				t.Errorf("IsStrOp(%v) = %v, want %v", test.opcode, got, test.isStrOp)
 			}
 
-			// TODO: Add these methods to the compiler package
-			// if got := compiler.IsJumpOp(test.opcode); got != test.isJump {
-			//     t.Errorf("IsJumpOp(%v) = %v, want %v", test.opcode, got, test.isJump)
-			// }
-
-			// if got := compiler.IsTypeFunction(test.opcode); got != test.isTypeFn {
-			//     t.Errorf("IsTypeFunction(%v) = %v, want %v", test.opcode, got, test.isTypeFn)
-			// }
+			// TODO: Add these methods to the compiler package when implemented
+			// - IsJumpOp
+			// - IsTypeFunction
 		})
 	}
 }

@@ -50,7 +50,7 @@ func (c *Comparator) runComparisons(testCases []*TestCaseResult) {
 
 	// Collect results
 	var errors []error
-	for i := 0; i < len(testCases); i++ {
+	for range testCases {
 		select {
 		case err := <-errChan:
 			errors = append(errors, err)

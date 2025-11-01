@@ -30,7 +30,7 @@ const (
 	OF
 	TRUE
 	FALSE
-	// String modifiers
+	// NOCASE string modifier
 	NOCASE
 	WIDE
 	ASCII
@@ -39,14 +39,14 @@ const (
 	XOR
 	BASE64
 	BASE64WIDE
-	// Bitwise operators
+	// BITWISE_AND bitwise AND operator
 	BITWISE_AND
 	BITWISE_OR
 	BITWISE_XOR
 	BITWISE_NOT
 	LEFT_SHIFT
 	RIGHT_SHIFT
-	// Data type functions
+	// INT8 data type function
 	INT8
 	INT16
 	INT32
@@ -59,22 +59,22 @@ const (
 	UINT8BE
 	UINT16BE
 	UINT32BE
-	// File operations
+	// FILESIZE file operation
 	FILESIZE
 	ENTRYPOINT
-	// Control flow keywords
+	// FOR control flow keyword
 	FOR
 	IN
 	AT
 	THEM
 	DEFINED
-	// Rule modifiers
+	// GLOBAL rule modifier
 	GLOBAL
 	EXTERNAL
-	// Import system
+	// IMPORT import system
 	IMPORT
 	INCLUDE
-	// String operations
+	// CONTAINS string operation
 	CONTAINS
 	ICONTAINS
 	STARTSWITH
@@ -89,6 +89,7 @@ const (
 	MULTIPLY
 	DIVIDE
 	MODULO
+	INT_DIVIDE
 	ASSIGN
 	EQ
 	NEQ
@@ -103,6 +104,7 @@ const (
 	STRING_IDENTIFIER
 	INTEGER_LIT
 	HEX_INTEGER_LIT
+	OCTAL_INTEGER_LIT
 	FLOAT_LIT
 	SIZE_LIT
 	STRING_LIT
@@ -190,6 +192,7 @@ var tokenTypeNames = map[TokenType]string{
 	MULTIPLY:          "MULTIPLY",
 	DIVIDE:            "DIVIDE",
 	MODULO:            "MODULO",
+	INT_DIVIDE:        "INT_DIVIDE",
 	ASSIGN:            "ASSIGN",
 	EQ:                "EQ",
 	NEQ:               "NEQ",
@@ -204,6 +207,7 @@ var tokenTypeNames = map[TokenType]string{
 	STRING_IDENTIFIER: "STRING_IDENTIFIER",
 	INTEGER_LIT:       "INTEGER_LIT",
 	HEX_INTEGER_LIT:   "HEX_INTEGER_LIT",
+	OCTAL_INTEGER_LIT: "OCTAL_INTEGER_LIT",
 	FLOAT_LIT:         "FLOAT_LIT",
 	SIZE_LIT:          "SIZE_LIT",
 	STRING_LIT:        "STRING_LIT",

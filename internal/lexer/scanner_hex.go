@@ -74,10 +74,7 @@ func (l *Lexer) isHexStringStart() bool {
 			ch := l.reader.Current()
 			if ch == ':' {
 				// Check what's before the colon
-				contextStart := quickCheckPos
-				if contextStart < 0 {
-					contextStart = 0
-				}
+				contextStart := max(quickCheckPos, 0)
 				contextEnd := l.reader.Position()
 				if contextEnd-contextStart > 20 {
 					contextStart = contextEnd - 20 // Limit context size
@@ -194,10 +191,7 @@ func (l *Lexer) isInStringsSection() bool {
 
 	// Look backwards for "strings:" keyword
 	maxLookback := 500
-	startPos := currentPos - maxLookback
-	if startPos < 0 {
-		startPos = 0
-	}
+	startPos := max(currentPos-maxLookback, 0)
 
 	// Extract the text before this position for analysis
 	contextText := input[startPos:currentPos]
@@ -239,10 +233,7 @@ func (l *Lexer) looksLikeRuleBody() bool {
 
 	// Look backwards for rule structure keywords
 	maxLookback := 200
-	startPos := currentPos - maxLookback
-	if startPos < 0 {
-		startPos = 0
-	}
+	startPos := max(currentPos-maxLookback, 0)
 
 	// Extract the text before this position for analysis
 	contextText := input[startPos:currentPos]
@@ -326,10 +317,7 @@ func (l *Lexer) hasTagsBeforeBrace() bool {
 // findRecentColon looks for a colon within a reasonable distance backwards
 func (l *Lexer) findRecentColon(input string, currentPos int) int {
 	maxLookback := 100
-	startPos := currentPos - maxLookback
-	if startPos < 0 {
-		startPos = 0
-	}
+	startPos := max(currentPos-maxLookback, 0)
 
 	for pos := currentPos - 1; pos >= startPos; pos-- {
 		if input[pos] == ':' {
@@ -391,10 +379,7 @@ func (l *Lexer) looksLikeArithmeticExpression() bool {
 
 	// Look backwards for arithmetic patterns
 	maxLookback := 100
-	startPos := currentPos - maxLookback
-	if startPos < 0 {
-		startPos = 0
-	}
+	startPos := max(currentPos-maxLookback, 0)
 
 	// Extract text before this position for analysis
 	contextText := input[startPos:currentPos]
@@ -436,7 +421,7 @@ func (l *Lexer) looksLikeArithmeticExpression() bool {
 
 // looksLikeDecimalNumber checks if a string looks like a decimal number (not hex)
 func (l *Lexer) looksLikeDecimalNumber(s string) bool {
-	if len(s) == 0 {
+	if s == "" {
 		return false
 	}
 
@@ -457,10 +442,7 @@ func (l *Lexer) isInRuleDeclarationContext() bool {
 
 	// Look backwards for "rule" keyword
 	maxLookback := 200
-	startPos := currentPos - maxLookback
-	if startPos < 0 {
-		startPos = 0
-	}
+	startPos := max(currentPos-maxLookback, 0)
 
 	// Extract text before this position for analysis
 	contextText := input[startPos:currentPos]

@@ -1,7 +1,7 @@
-// Package compiler provides comprehensive tests for the YARA compiler.
 package compiler
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -210,8 +210,7 @@ func TestCompilerOptions(t *testing.T) {
 func BenchmarkEmitter(b *testing.B) {
 	emitter := NewEmitter()
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		emitter.Reset()
 		emitter.EmitOpcode(OP_PUSH, 1, 1)
 		emitter.EmitOpcode(OP_NOP, 1, 2)
@@ -234,8 +233,7 @@ func BenchmarkACAutomaton(b *testing.B) {
 
 	testData := []byte("This is a test pattern for searching and benchmarking performance")
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		ac.Search(testData)
 	}
 }
@@ -250,8 +248,7 @@ func BenchmarkStringCompiler(b *testing.B) {
 		{Type: ast.StringModifierNocase},
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		sc.encodeTextString(text, modifiers)
 	}
 }
@@ -372,7 +369,7 @@ func TestPatternComplexityEstimation(t *testing.T) {
 			name:       "simple_ascii",
 			pattern:    []byte{0x01, 0x02, 0x03, 0x04},
 			modifiers:  []ast.StringModifier{},
-			minQuality: 80, // 20+20+20+20+8 = 88
+			minQuality: 80,
 		},
 		{
 			name:       "common_bytes",
@@ -523,7 +520,7 @@ func TestEmitterJumpFixup(t *testing.T) {
 
 	// Emit some instructions
 	emitter.EmitOpcode(OP_PUSH_8, 1, 1)
-	jumpOffset := emitter.EmitJump(OP_JZ, 10, 1, 1)
+	jumpOffset := emitter.EmitJump(JumpConfig{Opcode: OP_JZ, Target: 10, Line: 1, Pos: 1})
 	emitter.EmitOpcode(OP_NOP, 1, 1)
 	emitter.EmitLabel(10, 1, 1)
 
@@ -1604,7 +1601,7 @@ func TestEmitterEmitNop(t *testing.T) {
 }
 
 // TestEmitterPrintInstructions tests instruction printing
-func TestEmitterPrintInstructions(t *testing.T) {
+func TestEmitterPrintInstructions(_ *testing.T) {
 	emitter := NewEmitter()
 
 	// Emit some instructions
@@ -1751,7 +1748,7 @@ func TestConditionCompilerValidateExpression(t *testing.T) {
 }
 
 // TestConditionCompilerPrintExpression tests expression printing
-func TestConditionCompilerPrintExpression(t *testing.T) {
+func TestConditionCompilerPrintExpression(_ *testing.T) {
 	emitter := NewEmitter()
 	cc := NewConditionCompiler(emitter, make(map[string]int))
 
@@ -1770,9 +1767,9 @@ func TestCompilerGetErrors(t *testing.T) {
 	compiler := NewCompiler()
 
 	// Initially should have no errors
-	errors := compiler.GetErrors()
-	if len(errors) > 0 {
-		t.Errorf("GetErrors() returned %d errors, want 0", len(errors))
+	compilerErrors := compiler.GetErrors()
+	if len(compilerErrors) > 0 {
+		t.Errorf("GetErrors() returned %d errors, want 0", len(compilerErrors))
 	}
 }
 
@@ -2224,7 +2221,7 @@ func TestConditionCompilerEmitJump(t *testing.T) {
 	emitter := NewEmitter()
 	cc := NewConditionCompiler(emitter, make(map[string]int))
 
-	err := cc.EmitJump(OP_JZ, "L1", 1, 1)
+	err := cc.EmitJump(ConditionalJumpConfig{Opcode: OP_JZ, TargetLabel: "L1", Position: JumpPosition{Line: 1, Column: 1}})
 	if err != nil {
 		t.Errorf("EmitJump() error = %v", err)
 	}
@@ -2954,7 +2951,7 @@ func TestInstructionIsJump(t *testing.T) {
 }
 
 // TestConditionCompilerPrintExpressionRecursive tests printExpressionRecursive method
-func TestConditionCompilerPrintExpressionRecursive(t *testing.T) {
+func TestConditionCompilerPrintExpressionRecursive(_ *testing.T) {
 	emitter := NewEmitter()
 	cc := NewConditionCompiler(emitter, make(map[string]int))
 
@@ -3604,9 +3601,9 @@ func TestEmitterInstructions(t *testing.T) {
 		{
 			name: "emit_jump",
 			testFn: func(e *Emitter) error {
-				offset := e.EmitJump(OP_JZ, 1, 1, 1)
+				offset := e.EmitJump(JumpConfig{Opcode: OP_JZ, Target: 1, Line: 1, Pos: 1})
 				if offset < 0 {
-					return fmt.Errorf("EmitJump returned negative offset")
+					return errors.New("EmitJump returned negative offset")
 				}
 				return nil
 			},

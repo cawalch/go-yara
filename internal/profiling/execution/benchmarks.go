@@ -32,7 +32,7 @@ type BenchmarkResult struct {
 	RulesPerSecond float64
 	Success        bool
 	Error          string
-	ProfileData    map[string]interface{}
+	ProfileData    map[string]any
 }
 
 // BenchmarkOptions provides options for running benchmarks
@@ -159,12 +159,9 @@ func (bs *BenchmarkSuite) runCPUProfileBenchmarks(b *testing.B) {
 		})
 
 		// Run top 5 largest test cases with profiling
-		maxCases := 5
-		if len(bs.testCases) < maxCases {
-			maxCases = len(bs.testCases)
-		}
+		maxCases := min(len(bs.testCases), 5)
 
-		for i := 0; i < maxCases; i++ {
+		for i := range maxCases {
 			testCase := bs.testCases[i]
 			b.Run(testCase.Name, func(b *testing.B) {
 				bs.benchmarkWithCPUProfile(b, testCase)
@@ -188,7 +185,7 @@ func (bs *BenchmarkSuite) benchmarkRuleCompilation(b *testing.B, ruleFile string
 
 	var compiledRules []*compiler.CompiledRule
 
-	for i := 0; i < b.N; i++ {
+	for i := range b.N {
 		runtime.GC() // Force GC before each iteration for cleaner measurement
 
 		start := time.Now()
@@ -249,7 +246,7 @@ func (bs *BenchmarkSuite) benchmarkRuleExecution(b *testing.B, testCase TestCase
 	var totalMatches int
 	var executionTime time.Duration
 
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		runtime.GC()
 
 		start := time.Now()
@@ -312,7 +309,7 @@ func (bs *BenchmarkSuite) benchmarkAhoCorasick(b *testing.B) {
 				b.SetBytes(int64(len(testData)))
 
 				var matches []compiler.ACMatch
-				for i := 0; i < b.N; i++ {
+				for range b.N {
 					matches = ac.Search(testData)
 				}
 
@@ -356,7 +353,7 @@ func (bs *BenchmarkSuite) benchmarkRegexMatching(b *testing.B) {
 			b.SetBytes(int64(len(testData)))
 
 			var matches int
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				matches = bs.matchRegex(regex, testData)
 			}
 
@@ -388,7 +385,7 @@ func (bs *BenchmarkSuite) benchmarkStringMatching(b *testing.B) {
 
 			// Insert pattern at random positions
 			patternBytes := []byte(tc.pattern)
-			for i := 0; i < 10; i++ {
+			for i := range 10 {
 				pos := (i * tc.dataSize / 10) % (tc.dataSize - len(patternBytes))
 				copy(data[pos:], patternBytes)
 			}
@@ -398,7 +395,7 @@ func (bs *BenchmarkSuite) benchmarkStringMatching(b *testing.B) {
 			b.SetBytes(int64(len(data)))
 
 			var matches int
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				matches = bs.countStringOccurrences(data, patternBytes)
 			}
 
@@ -427,7 +424,7 @@ func (bs *BenchmarkSuite) benchmarkInterpreterMemory(b *testing.B) {
 			b.ResetTimer()
 			b.ReportAllocs()
 
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				runtime.GC()
 
 				// Create interpreter with specific configuration
@@ -449,13 +446,13 @@ func (bs *BenchmarkSuite) benchmarkAutomatonMemory(b *testing.B) {
 			b.ResetTimer()
 			b.ReportAllocs()
 
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				runtime.GC()
 
 				// Create automaton with many strings
 				ac := compiler.NewACAutomaton()
 
-				for j := 0; j < count; j++ {
+				for j := range count {
 					pattern := fmt.Sprintf("pattern_%d", j)
 					data := []byte(pattern)
 					if err := ac.AddString(pattern, data, false, false); err != nil {
@@ -493,7 +490,7 @@ func (bs *BenchmarkSuite) benchmarkRuleMemory(b *testing.B) {
 			b.ResetTimer()
 			b.ReportAllocs()
 
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				runtime.GC()
 
 				// Compile rule
@@ -522,7 +519,7 @@ func (bs *BenchmarkSuite) benchmarkWithCPUProfile(b *testing.B, testCase TestCas
 
 // Helper methods (these would integrate with actual compiler/interpreter)
 
-func (bs *BenchmarkSuite) compileRules(ruleContent []byte) ([]*compiler.CompiledRule, error) {
+func (bs *BenchmarkSuite) compileRules(_ []byte) ([]*compiler.CompiledRule, error) {
 	// Placeholder implementation
 	return []*compiler.CompiledRule{}, nil
 }
@@ -535,17 +532,17 @@ func (bs *BenchmarkSuite) compileRulesFromFile(filename string) ([]*compiler.Com
 	return bs.compileRules(content)
 }
 
-func (bs *BenchmarkSuite) executeRules(rules []*compiler.CompiledRule, data []byte) ([]compiler.Match, error) {
+func (bs *BenchmarkSuite) executeRules(_ []*compiler.CompiledRule, _ []byte) ([]compiler.Match, error) {
 	// Placeholder implementation
 	return []compiler.Match{}, nil
 }
 
-func (bs *BenchmarkSuite) compileRegex(pattern string, flags int) interface{} {
+func (bs *BenchmarkSuite) compileRegex(_ string, _ int) any {
 	// Placeholder implementation
 	return nil
 }
 
-func (bs *BenchmarkSuite) matchRegex(regex interface{}, data []byte) int {
+func (bs *BenchmarkSuite) matchRegex(_ any, _ []byte) int {
 	// Placeholder implementation
 	return 0
 }
@@ -576,11 +573,11 @@ func (bs *BenchmarkSuite) createInterpreter(stackSize, memorySlots int) *compile
 	return compiler.NewInterpreter(nil)
 }
 
-func (bs *BenchmarkSuite) simulateExecution(interpreter *compiler.Interpreter, ruleCount int) {
+func (bs *BenchmarkSuite) simulateExecution(_ *compiler.Interpreter, _ int) {
 	// Placeholder implementation
 }
 
-func (bs *BenchmarkSuite) discoverTestCases(opts *BenchmarkOptions) error {
+func (bs *BenchmarkSuite) discoverTestCases(_ *BenchmarkOptions) error {
 	// Implementation similar to profiler.DiscoverTestCases
 	return nil
 }

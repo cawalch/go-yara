@@ -1,7 +1,7 @@
-// Package compiler provides bytecode generation and compilation for YARA rules.
 package compiler
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 
@@ -79,15 +79,47 @@ func (rc *RuleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 	return compiledRule, nil
 }
 
-// compileStrings compiles all strings in the rule
-func (rc *RuleCompiler) compileStrings(rule *ast.Rule) error {
-	// First pass: validate and prepare strings
+// validateRuleStrings validates all strings in a rule
+func (rc *RuleCompiler) validateRuleStrings(rule *ast.Rule) error {
 	for _, str := range rule.Strings {
 		if err := rc.stringCompiler.ValidateStringModifiers(str.Modifiers); err != nil {
 			return fmt.Errorf("validating string %s: %w", str.Identifier, err)
 		}
 	}
+	return nil
+}
 
+// calculateTextStringLength calculates the length of a text string with modifiers
+func (rc *RuleCompiler) calculateTextStringLength(text string, modifiers []ast.StringModifier) int {
+	l := len(text)
+	// Wide strings double the byte length
+	for _, m := range modifiers {
+		if m.Type == ast.StringModifierWide {
+			l *= 2
+			break
+		}
+	}
+	return l
+}
+
+// estimatePatternStates estimates the number of states needed for a pattern
+func (rc *RuleCompiler) estimatePatternLength(str *ast.String) int {
+	switch p := str.Pattern.(type) {
+	case *ast.TextString:
+		return rc.calculateTextStringLength(p.Value, str.Modifiers)
+	case *ast.HexString:
+		// Approximate: two hex digits per byte; ignore comments/whitespace
+		return len(p.Value) / 2
+	case *ast.RegexPattern:
+		// Fallback to pattern length
+		return len(p.Value)
+	default:
+		return 0
+	}
+}
+
+// reserveCompilationResources reserves buffers and automaton capacity
+func (rc *RuleCompiler) reserveCompilationResources(rule *ast.Rule) {
 	// Pre-size buffers to reduce allocations
 	rc.emitter.ReserveInstructions(2*len(rule.Strings) + 32)
 	rc.automaton.ReserveStrings(len(rule.Strings))
@@ -95,26 +127,20 @@ func (rc *RuleCompiler) compileStrings(rule *ast.Rule) error {
 	// Rough upper-bound estimate of states: 1 (root) + sum of pattern byte lengths
 	expectedStates := 1
 	for _, str := range rule.Strings {
-		switch p := str.Pattern.(type) {
-		case *ast.TextString:
-			l := len(p.Value)
-			// Wide strings double the byte length
-			for _, m := range str.Modifiers {
-				if m.Type == ast.StringModifierWide {
-					l *= 2
-					break
-				}
-			}
-			expectedStates += l
-		case *ast.HexString:
-			// Approximate: two hex digits per byte; ignore comments/whitespace
-			expectedStates += len(p.Value) / 2
-		case *ast.RegexPattern:
-			// Fallback to pattern length
-			expectedStates += len(p.Value)
-		}
+		expectedStates += rc.estimatePatternLength(str)
 	}
 	rc.automaton.ReserveStates(expectedStates)
+}
+
+// compileRuleStrings compiles all strings in a rule and builds the automaton
+func (rc *RuleCompiler) compileStrings(rule *ast.Rule) error {
+	// First pass: validate and prepare strings
+	if err := rc.validateRuleStrings(rule); err != nil {
+		return err
+	}
+
+	// Reserve resources for compilation
+	rc.reserveCompilationResources(rule)
 
 	// Second pass: compile strings and build automaton
 	for _, str := range rule.Strings {
@@ -128,76 +154,123 @@ func (rc *RuleCompiler) compileStrings(rule *ast.Rule) error {
 
 // compileSingleString compiles a single string and adds it to the automaton
 func (rc *RuleCompiler) compileSingleString(str *ast.String) error {
-	var patternData []byte
-	isRegex := false
-	var rflags regex.Flags
+	result, err := rc.compileStringPattern(str)
+	if err != nil {
+		return err
+	}
 
-	// Extract pattern data based on pattern type
+	rc.recordStringOffset(str.Identifier)
+	return rc.addStringToAutomaton(str.Identifier, result)
+}
+
+type stringCompilationResult struct {
+	patternData []byte
+	isRegex     bool
+	flags       regex.Flags
+}
+
+func (rc *RuleCompiler) compileStringPattern(str *ast.String) (*stringCompilationResult, error) {
 	switch p := str.Pattern.(type) {
 	case *ast.TextString:
-		encoded := rc.stringCompiler.encodeTextString(p.Value, str.Modifiers)
-		patternData = rc.stringCompiler.OptimizePattern(encoded, str.Modifiers)
+		return rc.compileTextString(p.Value, str.Modifiers), nil
 	case *ast.HexString:
-		hexData := rc.stringCompiler.parseHexString(p.Value)
-		encoded := rc.stringCompiler.encodeHexString(hexData, str.Modifiers)
-		patternData = rc.stringCompiler.OptimizePattern(encoded, str.Modifiers)
+		return rc.compileHexString(p.Value, str.Modifiers), nil
 	case *ast.RegexPattern:
-		code, err := rc.stringCompiler.compileRegex(p.Value, str.Modifiers)
-		if err != nil {
-			return fmt.Errorf("compile regex pattern: %w", err)
-		}
-		patternData = code // VM bytecode
-		isRegex = true
-
-		// Derive VM flags from string modifiers
-		for _, m := range str.Modifiers {
-			switch m.Type {
-			case ast.StringModifierWide:
-				rflags |= regex.FlagsWide
-			case ast.StringModifierNocase:
-				rflags |= regex.FlagsNoCase
-			}
-		}
-
-		// Derive inline regex flags from literal suffix (e.g., /.../is)
-		// We scan from the end to the closing '/' and interpret trailing flag letters.
-		if len(p.Value) >= 2 && p.Value[0] == '/' {
-			endIdx := len(p.Value) - 1
-			for endIdx > 0 && p.Value[endIdx] != '/' {
-				endIdx--
-			}
-			if endIdx > 0 && endIdx < len(p.Value)-1 {
-				for i := endIdx + 1; i < len(p.Value); i++ {
-					switch p.Value[i] {
-					case 'i', 'I':
-						rflags |= regex.FlagsNoCase
-					case 's', 'S':
-						rflags |= regex.FlagsDotAll
-					}
-				}
-			}
-		}
+		return rc.compileRegexPattern(p, str.Modifiers)
 	default:
-		return fmt.Errorf("unsupported pattern type")
+		return nil, errors.New("unsupported pattern type")
+	}
+}
+
+func (rc *RuleCompiler) compileTextString(value string, modifiers []ast.StringModifier) *stringCompilationResult {
+	encoded := rc.stringCompiler.encodeTextString(value, modifiers)
+	patternData := rc.stringCompiler.OptimizePattern(encoded, modifiers)
+	return &stringCompilationResult{
+		patternData: patternData,
+		isRegex:     false,
+	}
+}
+
+func (rc *RuleCompiler) compileHexString(value string, modifiers []ast.StringModifier) *stringCompilationResult {
+	hexData := rc.stringCompiler.parseHexString(value)
+	encoded := rc.stringCompiler.encodeHexString(hexData, modifiers)
+	patternData := rc.stringCompiler.OptimizePattern(encoded, modifiers)
+	return &stringCompilationResult{
+		patternData: patternData,
+		isRegex:     false,
+	}
+}
+
+func (rc *RuleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers []ast.StringModifier) (*stringCompilationResult, error) {
+	code, err := rc.stringCompiler.compileRegex(pattern.Value, modifiers)
+	if err != nil {
+		return nil, fmt.Errorf("compile regex pattern: %w", err)
 	}
 
-	// Record string offset for condition compiler
-	// Use the automaton string count as the offset
+	flags := rc.deriveRegexFlags(pattern.Value, modifiers)
+
+	return &stringCompilationResult{
+		patternData: code, // VM bytecode
+		isRegex:     true,
+		flags:       flags,
+	}, nil
+}
+
+func (rc *RuleCompiler) deriveRegexFlags(patternValue string, modifiers []ast.StringModifier) regex.Flags {
+	var flags regex.Flags
+
+	// Flags from string modifiers
+	for _, m := range modifiers {
+		switch m.Type {
+		case ast.StringModifierWide:
+			flags |= regex.FlagsWide
+		case ast.StringModifierNocase:
+			flags |= regex.FlagsNoCase
+		}
+	}
+
+	// Derive inline regex flags from literal suffix (e.g., /.../is)
+	flags |= rc.parseInlineRegexFlags(patternValue)
+
+	return flags
+}
+
+func (rc *RuleCompiler) parseInlineRegexFlags(patternValue string) regex.Flags {
+	var flags regex.Flags
+
+	if len(patternValue) < 2 || patternValue[0] != '/' {
+		return flags
+	}
+
+	endIdx := len(patternValue) - 1
+	for endIdx > 0 && patternValue[endIdx] != '/' {
+		endIdx--
+	}
+
+	if endIdx > 0 && endIdx < len(patternValue)-1 {
+		for i := endIdx + 1; i < len(patternValue); i++ {
+			switch patternValue[i] {
+			case 'i', 'I':
+				flags |= regex.FlagsNoCase
+			case 's', 'S':
+				flags |= regex.FlagsDotAll
+			}
+		}
+	}
+
+	return flags
+}
+
+func (rc *RuleCompiler) recordStringOffset(identifier string) {
 	offset := rc.automaton.StringCount
-	rc.stringCompiler.stringOffsets[str.Identifier] = offset
+	rc.stringCompiler.stringOffsets[identifier] = offset
+}
 
-	// Add to automaton (regex strings are marked and will be executed via VM)
-	if isRegex {
-		if err := rc.automaton.AddStringWithFlags(str.Identifier, patternData, false, isRegex, rflags); err != nil {
-			return fmt.Errorf("adding regex string to automaton: %w", err)
-		}
-	} else {
-		if err := rc.automaton.AddString(str.Identifier, patternData, false, isRegex); err != nil {
-			return fmt.Errorf("adding string to automaton: %w", err)
-		}
+func (rc *RuleCompiler) addStringToAutomaton(identifier string, result *stringCompilationResult) error {
+	if result.isRegex {
+		return rc.automaton.AddStringWithFlags(identifier, result.patternData, false, result.isRegex, result.flags)
 	}
-
-	return nil
+	return rc.automaton.AddString(identifier, result.patternData, false, result.isRegex)
 }
 
 // compileCondition compiles the rule condition
@@ -254,8 +327,8 @@ func (rc *RuleCompiler) registerExternalVariable(extVar *ast.ExternalVariable) {
 }
 
 // getCompilationStats returns statistics about the compilation process
-func (rc *RuleCompiler) getCompilationStats() map[string]interface{} {
-	stats := make(map[string]interface{})
+func (rc *RuleCompiler) getCompilationStats() map[string]any {
+	stats := make(map[string]any)
 
 	stats["instruction_count"] = rc.emitter.GetInstructionCount()
 	stats["bytecode_size"] = rc.emitter.GetSize()
@@ -278,14 +351,14 @@ func (rc *RuleCompiler) getCompilationStats() map[string]interface{} {
 
 // CompiledRule represents a compiled YARA rule
 type CompiledRule struct {
-	Name         string                 // Rule name
-	Index        int                    // Rule index in program
-	Bytecode     []byte                 // Compiled bytecode
-	StringCount  int                    // Number of strings
-	Automaton    *ACAutomaton           // Aho-Corasick automaton for pattern matching
-	Stats        map[string]interface{} // Compilation statistics (lazy computed)
-	statsOnce    sync.Once              // Ensure stats computed only once
-	ruleCompiler *RuleCompiler          // Reference for lazy stats computation
+	Name         string         // Rule name
+	Index        int            // Rule index in program
+	Bytecode     []byte         // Compiled bytecode
+	StringCount  int            // Number of strings
+	Automaton    *ACAutomaton   // Aho-Corasick automaton for pattern matching
+	Stats        map[string]any // Compilation statistics (lazy computed)
+	statsOnce    sync.Once      // Ensure stats computed only once
+	ruleCompiler *RuleCompiler  // Reference for lazy stats computation
 }
 
 // GetName returns the rule name
@@ -304,12 +377,12 @@ func (cr *CompiledRule) GetStringCount() int {
 }
 
 // GetStats returns compilation statistics (computed lazily on first access)
-func (cr *CompiledRule) GetStats() map[string]interface{} {
+func (cr *CompiledRule) GetStats() map[string]any {
 	cr.statsOnce.Do(func() {
 		if cr.ruleCompiler != nil {
 			cr.Stats = cr.ruleCompiler.getCompilationStats()
 		} else {
-			cr.Stats = make(map[string]interface{})
+			cr.Stats = make(map[string]any)
 		}
 	})
 	return cr.Stats
@@ -323,11 +396,11 @@ func (cr *CompiledRule) GetAutomaton() *ACAutomaton {
 // Validate validates the compiled rule
 func (cr *CompiledRule) Validate() error {
 	if len(cr.Bytecode) == 0 {
-		return fmt.Errorf("empty bytecode")
+		return errors.New("empty bytecode")
 	}
 
 	if cr.StringCount > 0 && cr.Automaton == nil {
-		return fmt.Errorf("strings present but no automaton")
+		return errors.New("strings present but no automaton")
 	}
 
 	if cr.Automaton != nil {
@@ -378,14 +451,14 @@ func (cr *CompiledRule) PrintDebug() {
 // CompiledProgram represents a complete compiled YARA program
 type CompiledProgram struct {
 	Rules []*CompiledRule
-	Stats map[string]interface{}
+	Stats map[string]any
 }
 
 // NewCompiledProgram creates a new compiled program
 func NewCompiledProgram(rules []*CompiledRule) *CompiledProgram {
 	return &CompiledProgram{
 		Rules: rules,
-		Stats: make(map[string]interface{}),
+		Stats: make(map[string]any),
 	}
 }
 

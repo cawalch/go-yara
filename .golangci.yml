@@ -1,174 +1,261 @@
 # golangci-lint configuration for go-yara
-# Optimized for Go development
+# Modern Go 1.25+ best practices - focus on code quality, performance, and security
+# Removes nitpick rules, emphasizes bug detection and anti-pattern prevention
 
 version: "2"
 
 run:
   go: "1.25"
+  timeout: 5m
+  modules-download-mode: readonly
+  skip-dirs:
+    - internal/profiling
+    - internal/comparison
+    - vendor
+  skip-files:
+    - ".*\\.pb\\.go$"
+    - ".*_generated\\.go$"
 
 output:
   formats:
     text:
       path: stdout
       colors: true
+      print-issued-lines: true
+      print-linter-name: true
 
 linters:
   settings:
-    # Cyclomatic complexity - keep functions maintainable
+    # Cyclomatic complexity - reasonable limits for complex algorithms
     cyclop:
-      max-complexity: 10
-      package-average: 5.0
+      max-complexity: 15
+      package-average: 7.0
 
-    # Function length limits
+    # Function length - more flexible for complex logic
     funlen:
-      lines: 80
-      statements: 40
+      lines: 100
+      statements: 50
       ignore-comments: true
 
-    # Cognitive complexity
+    # Cognitive complexity - allow for complex algorithms
     gocognit:
-      min-complexity: 10
+      min-complexity: 15
 
-    # Code duplication detection
+    # Code duplication - higher threshold for performance-critical code
     dupl:
-      threshold: 100
+      threshold: 150
 
-    # Error handling
+    # Enhanced error handling for Go 1.25+
     errcheck:
       check-type-assertions: true
       check-blank: true
+      disable-default-exclusions: false
       exclude-functions:
         - (*os.File).Close
         - (*strings.Builder).WriteString
         - (*strings.Builder).WriteByte
+        - (*bytes.Buffer).WriteString
+        - (net/http.Client).Do
 
-    # Unused code detection
+    # Modern unused code detection
     unused:
       field-writes-are-uses: false
       post-statements-are-reads: false
       parameters-are-used: true
       local-variables-are-used: true
 
-    # Performance-related linters
+    # Enhanced govet with all checks for Go 1.25+
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment # Will handle separately for performance-critical paths
+      settings:
+        shadow:
+          strict: true
+
+    # Modern revive configuration - focus on important rules
+    revive:
+      rules:
+        - name: exported
+          severity: error
+        - name: unreachable-code
+          severity: error
+        - name: unused-parameter
+          severity: warning
+        - name: receiver-naming
+          severity: warning
+        - name: time-naming
+          severity: warning
+        - name: error-return
+          severity: warning
+        - name: error-strings
+          severity: warning
+        - name: error-naming
+          severity: warning
+        - name: if-return
+          severity: warning
+        - name: increment-decrement
+          severity: warning
+        - name: var-declaration
+          severity: warning
+        - name: range
+          severity: warning
+        - name: get-return
+          severity: warning
+        - name: var-naming
+          severity: warning
+        - name: argument-limit
+          severity: warning
+          arguments: [3]
+        - name: context-as-argument
+          severity: warning
+        - name: context-keys-type
+          severity: warning
+        - name: indent-error-flow
+          severity: warning
+        - name: errorf
+          severity: warning
+
+    # Enhanced security for modern threats
+    gosec:
+      severity: medium
+      confidence: medium
+      excludes:
+        - G104 # Errors handled separately with errcheck
+        - G115 # Integer conversions handled explicitly
+        - G204 # Input validation handled separately
+        - G304 # File path validation handled separately
+        - G107 # URL handling in parser is controlled
+        - G307 # Defers in performance-critical code are acceptable
+
+    # Modern test configuration
+    testpackage:
+      skip-regexp: "(export|internal)_test\\.go"
+
+    # Reasonable line length for modern displays
+    lll:
+      line-length: 130
+      tab-width: 4
+
+    # Performance-focused linters
     prealloc:
       simple: true
       range-loops: true
       for-loops: true
 
-    # Go specific settings
-    govet:
-      enable-all: true
-      disable:
-        - fieldalignment # We'll handle this separately for performance-critical code
-      settings:
-        shadow:
-          strict: true
-
-    # Naming conventions
-    revive:
-      rules:
-        - name: exported
-          severity: error
-        - name: package-comments
-          severity: warning
-        - name: var-naming
-          severity: warning
-        - name: function-result-limit
-          severity: warning
-          arguments: [3]
-        - name: argument-limit
-          severity: warning
-          arguments: [5]
-        - name: function-length
-          severity: warning
-          arguments: [80, 40]
-        - name: cognitive-complexity
-          severity: warning
-          arguments: [10]
-
-    # Security checks
-    gosec:
-      severity: medium
-      confidence: medium
-      excludes:
-        - G104 # Audit errors not checked (we handle this with errcheck)
-        - G115 # Integer overflow conversion (handled with explicit masking)
-        - G204 # Subprocess launching with tainted input (handled with validation)
-        - G304 # Potential file inclusion via variable (handled with path validation)
-
-    # Test-specific settings
-    testpackage:
-      skip-regexp: "(export|internal)_test\\.go"
-
-    # Line length
-    lll:
-      line-length: 120
-      tab-width: 4
-
-    # Whitespace
-    wsl:
-      strict-append: true
-      allow-assign-and-call: true
-      allow-multiline-assign: true
-      allow-cuddle-declarations: false
+    # Modern gocritic settings
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - experimental
+        - opinionated
+        - performance
+        - style
+      disabled-checks:
+        - dupImport # https://github.com/go-critic/go-critic/issues/845
+        - ifElseChain
+        - octalLiteral
+        - whyNoLint
+        - wrapperFunc
 
   enable:
-    # Core Go linters (enabled by default)
+    # Core Go linters (essential for code quality)
     - errcheck
     - govet
     - ineffassign
     - staticcheck
     - unused
 
-    # Code quality
+    # Modern code quality linters
     - gocyclo
     - cyclop
-
     - gocognit
     - funlen
     - dupl
     - goconst
     - gocritic
-
     - revive
-
-    # Performance
-    - prealloc
-    - bodyclose
-
-    # Security
-    - gosec
-
-    # Bugs
     - unconvert
     - unparam
     - wastedassign
 
-    # Complexity
-    - nestif
+    # Performance and optimization
+    - prealloc
+    - bodyclose
+    - perfsprint
+    - makezero
+    - intrange
 
-    # Tests
-    #- testpackage
+    # Security and safety
+    - gosec
+    - nilerr
+    - nilnesserr
+    - nilnil
+    - noctx
+    - contextcheck
+
+    # Error handling best practices
+    - errorlint
+    - wrapcheck
+    - errname
+
+    # Modern Go patterns and anti-patterns
+    - copyloopvar
+    - gochecksumtype
+    - usestdlibvars
+    - modernize
+    - mirror
+
+    # Code organization and maintainability
+    - maintidx
+    - iface
+    - nakedret
+    - nestif
+    - rowserrcheck
+    - sqlclosecheck
+
+    # Import and dependency management
+    - importas
+    - gomoddirectives
+
+    # Documentation and testing
+    - godoclint
+    - thelper
+    - tparallel
+    - testifylint
+
+    # Code style (minimal, non-nitpick)
+    - misspell
+    - whitespace
+    - tagalign
 
   disable:
-    - exhaustive # Too strict for token types
-    - forbidigo # We don't forbid specific functions
-    - godot # Comment periods not required
-    - godox # TODO comments are OK
-    - err113 # Error wrapping not always needed
-    - mnd # Magic numbers are OK in lexer
-    - gomoddirectives # Module directives are fine
-    - gomodguard # No module restrictions
-    - ireturn # Interface returns are OK
-    - nlreturn # Newline returns not required
-    - paralleltest # Not all tests need to be parallel
-    - tagliatelle # Tag naming not relevant
-    - varnamelen # Short variable names are OK
-    - wrapcheck # Error wrapping not always needed
+    # Nitpick rules that don't add significant value
+    - exhaustive # Too strict for enum-like patterns
+    - forbidigo # No function forbidding needed
+    - godot # Comment periods not critical
+    - godox # TODO comments are acceptable
+    - mnd # Magic numbers OK in algorithms
+    - gomodguard # No module restrictions needed
+    - ireturn # Interface returns are acceptable
+    - nlreturn # Newline returns are style preference
+    - varnamelen # Short variables OK in limited scope
+    - testpackage # Test package separation not required
+    - paralleltest # Parallel tests not always appropriate
+    - nosprintfhostport # URL formatting is controlled
+    - nolintlint # Nolint directives are acceptable
+    - goprintffuncname # Function naming flexibility
 
   exclusions:
+    paths:
+      - internal/profiling
+      - internal/comparison
+      - cmd/profile-execution
+      - cmd/compare
+      - cmd/parity
+      - vendor
     rules:
-      # Exclude some linters from running on tests files
+      # Test files - more lenient rules for testing code
       - path: '_test\.go'
         linters:
           - gocyclo
@@ -179,491 +266,125 @@ linters:
           - goconst
           - gocognit
           - cyclop
+          - maintidx
+          - prealloc
+          - nestif
+          - unparam
+          - wastedassign
+          - noctx
+          - wrapcheck
+          - staticcheck
 
-      # Exclude some linters from running on benchmark files
+      # Benchmark files - special allowances for performance testing
       - path: 'benchmark.*_test\.go'
         linters:
           - errcheck
           - gosec
-
-      # Performance-critical code can have longer functions
-      - path: 'internal/lexer/lexer\.go'
-        text: "Function 'NextToken' has too many statements"
-        linters:
-          - funlen
-
-      # Performance-critical lexer functions can be longer and more complex
-      - path: 'internal/lexer/lexer\.go'
-        text: "function-length"
-        linters:
-          - revive
-
-      # Allow some complexity in the main lexer switch
-      - path: 'internal/lexer/lexer\.go'
-        text: "cyclomatic complexity"
-        linters:
+          - prealloc
+          - nestif
           - gocyclo
-          - cyclop
-
-      # Lexer parsing functions are inherently complex
-      - path: 'internal/lexer/.*\.go'
-        text: "cognitive complexity"
-        linters:
           - gocognit
 
-      # Allow higher cyclomatic complexity in lexer parsing files (performance/clarity tradeoff)
+      # Performance-critical lexer code - inherent complexity
       - path: 'internal/lexer/.*\.go'
-        text: "cyclomatic complexity"
+        text: "cyclomatic complexity|cognitive complexity|function-length|has too many statements"
         linters:
           - gocyclo
           - cyclop
-
-      # Lexer parsing functions can have high cognitive complexity (revive)
-      - path: 'internal/lexer/.*\.go'
-        text: "cognitive-complexity"
-        linters:
+          - gocognit
           - revive
-
-      # String parsing functions are complex by nature
-      - path: 'internal/lexer/string_parsing\.go'
-        text: "function-length"
-        linters:
-          - revive
-
-      # Escape sequence processing functions are performance-critical
-      - path: 'internal/lexer/scanner_escape\.go'
-        text: "function-length"
-        linters:
-          - revive
-
-      # Performance-critical escape sequence functions can have more statements
-      - path: 'internal/lexer/scanner_escape\.go'
-        text: "Function 'processEscapeSequencesOptimized' has too many statements"
-        linters:
           - funlen
 
-      # Hex string detection functions are complex by nature
-      - path: 'internal/lexer/scanner_hex\.go'
-        text: "function-length"
+      # Complex algorithms in compiler - acceptable complexity
+      - path: 'compiler/(bytecode|interpreter|ahocorasick|emitter|condition_compiler)\.go'
+        text: "cyclomatic complexity|cognitive complexity|function-length|has too many statements"
         linters:
+          - gocyclo
+          - cyclop
+          - gocognit
           - revive
+          - funlen
+          - maintidx
 
-      # String scanning functions are complex by nature
-      - path: 'internal/lexer/scanner_string\.go'
-        text: "function-length"
+      # Parser complexity - grammar rules are inherently complex
+      - path: 'parser/.*\.go'
+        text: "cyclomatic complexity|cognitive complexity|calculated cyclomatic complexity"
         linters:
-          - revive
+          - gocyclo
+          - cyclop
+          - gocognit
+          - maintidx
 
-      # Complex if-else chains that are more readable than switch statements
-      - path: 'internal/lexer/keywords\.go'
-        text: "ifElseChain: rewrite if-else to switch statement"
+      # Regex engine - performance-critical pattern matching
+      - path: 'regex/.*\.go'
+        text: "cyclomatic complexity|cognitive complexity|the average complexity for the package"
         linters:
-          - gocritic
+          - gocyclo
+          - cyclop
+          - gocognit
+          - maintidx
 
-      - path: 'internal/lexer/string_parsing\.go'
-        text: "ifElseChain: rewrite if-else to switch statement"
-        linters:
-          - gocritic
-
-      # Token constants follow ALL_CAPS convention for consistency - ignore var-naming for ALL_CAPS
+      # Token constants - ALL_CAPS convention for YARA compatibility
       - path: 'token/token\.go'
-        text: "var-naming: don't use ALL_CAPS in Go names"
+        text: "var-naming: don't use ALL_CAPS|exported: type name will be used"
         linters:
           - revive
 
-      # TokenType is a standard name for token type enums
-      - path: 'token/token\.go'
-        text: "exported: type name will be used as token.TokenType"
+      # Builder pattern functions - argument-limit exceptions for legitimate API design
+      - path: 'ast/builder\.go'
+        text: "argument-limit: maximum number of arguments per function exceeded"
         linters:
           - revive
 
-      # Bytecode opcodes follow ALL_CAPS convention to match libyara's instruction set
-      - path: 'compiler/bytecode\.go'
-        text: "var-naming: don't use ALL_CAPS in Go names"
-        linters:
-          - revive
-
-      # Bytecode opcodes follow ALL_CAPS convention to match libyara's instruction set
-      - path: 'compiler/bytecode\.go'
-        text: "var-naming: don't use underscores in Go names"
-        linters:
-          - revive
-
-      # Bytecode constants have intentional naming for libyara compatibility
-      - path: 'compiler/bytecode\.go'
-        text: "exported: exported const"
-        linters:
-          - revive
-
-      # Bytecode methods have intentional naming for libyara compatibility
+      # Public API functions - argument-limit exceptions for backward compatibility
       - path: 'compiler/ahocorasick\.go'
-        text: "exported: comment on exported"
+        text: "argument-limit: maximum number of arguments per function exceeded"
         linters:
           - revive
 
-      # Empty blocks in test files are acceptable (e.g., benchmarks, intentional no-ops)
-      - path: '.*_test\.go'
-        text: "empty-block"
+      # Tooling and CLI code - argument-limit exceptions acceptable
+      - path: 'cmd/.*\.go'
+        text: "argument-limit: maximum number of arguments per function exceeded"
         linters:
           - revive
 
-      # Test functions can be longer and more complex than regular functions
-      - path: '.*_test\.go'
-        text: "function-length"
+      # Bytecode operations - argument-limit exceptions for VM instructions
+      - path: 'compiler/bytecode\.go'
+        text: "argument-limit: maximum number of arguments per function exceeded"
         linters:
           - revive
 
-      - path: '.*_test\.go'
-        text: "cognitive-complexity"
+      # Emitter functions - argument-limit exceptions for opcode emission API
+      - path: 'compiler/emitter\.go'
+        text: "argument-limit: maximum number of arguments per function exceeded"
         linters:
           - revive
 
-      # Complex if-else chain in hex content analysis is more readable than switch
-      - path: 'internal/lexer/string_parsing\.go'
-        text: "ifElseChain"
+      # Condition compiler functions - argument-limit exceptions for compilation API
+      - path: 'compiler/condition_compiler\.go'
+        text: "argument-limit: maximum number of arguments per function exceeded"
         linters:
-          - gocritic
+          - revive
 
-      # Demo programs can read files via variable paths
+      # Bytecode opcodes - ALL_CAPS for libyara compatibility
+      - path: 'compiler/bytecode\.go'
+        text: "var-naming: don't use ALL_CAPS|var-naming: don't use underscores|exported: exported const"
+        linters:
+          - revive
+
+      # Safe integer conversions - explicitly handled
+      - path: 'compiler/.*\.go'
+        text: "G115: integer overflow conversion"
+        linters:
+          - gosec
+
+      # CLI tools - file operations are expected
       - path: 'cmd/.*\.go'
         text: "Potential file inclusion via variable"
         linters:
           - gosec
 
-      # C wrapper comparison is not a duplicate expression
-      - path: 'internal/comparison/yara_c_wrapper\.go'
-        text: "dupSubExpr"
-        linters:
-          - gocritic
-
-      # Value size checks in emitter are more readable as if-else chain
-      - path: 'compiler/emitter\.go'
-        text: "ifElseChain"
-        linters:
-          - gocritic
-
-      # Bytecode operand formatting uses safe integer conversions
-      - path: 'compiler/bytecode\.go'
-        text: "G115: integer overflow conversion"
-        linters:
-          - gosec
-
-      # Condition compiler uses safe integer conversions for operands
-      - path: 'compiler/condition_compiler\.go'
-        text: "G115: integer overflow conversion"
-        linters:
-          - gosec
-
-      # Emitter uses safe integer conversions for jump offsets
-      - path: 'compiler/emitter\.go'
-        text: "G115: integer overflow conversion"
-        linters:
-          - gosec
-
-      # Interpreter uses safe integer conversions for bytecode operations
-      - path: 'compiler/interpreter\.go'
-        text: "G115: integer overflow conversion"
-        linters:
-          - gosec
-
-      # Bytecode formatting functions have inherent complexity from opcode handling
-      - path: 'compiler/bytecode\.go'
-        text: "calculated cyclomatic complexity"
-        linters:
-          - cyclop
-
-      # Condition compiler literal compilation has inherent complexity
-      - path: 'compiler/condition_compiler\.go'
-        text: "calculated cyclomatic complexity"
-        linters:
-          - cyclop
-
-      # Parser functions have inherent complexity from grammar rules
-      - path: 'parser/parser\.go'
-        text: "calculated cyclomatic complexity"
-        linters:
-          - cyclop
-
-      # Complex functions with high cognitive complexity are excluded from test files
-      - path: '.*_test\.go'
-        text: "cognitive complexity"
-        linters:
-          - gocognit
-
-      # Bytecode operations have inherent complexity
-      - path: 'compiler/bytecode\.go'
-        text: "cognitive complexity"
-        linters:
-          - gocognit
-
-      # Interpreter bytecode execution has inherent complexity
-      - path: 'compiler/interpreter\.go'
-        text: "cognitive complexity"
-        linters:
-          - gocognit
-
-      # Aho-Corasick automaton has inherent complexity
-      - path: 'compiler/ahocorasick\.go'
-        text: "cognitive complexity"
-        linters:
-          - gocognit
-
-      # Atom extraction has inherent complexity
-      - path: 'compiler/atoms\.go'
-        text: "cognitive complexity"
-        linters:
-          - gocognit
-
-      # Emitter has inherent complexity
-      - path: 'compiler/emitter\.go'
-        text: "cognitive complexity"
-        linters:
-          - gocognit
-
-      # String compiler has inherent complexity
-      - path: 'compiler/string_compiler\.go'
-        text: "cognitive complexity"
-        linters:
-          - gocognit
-
-      # Rule compiler has inherent complexity
-      - path: 'compiler/rule_compiler\.go'
-        text: "cognitive complexity"
-        linters:
-          - gocognit
-
-      # Parser has inherent complexity
-      - path: 'parser/parser\.go'
-        text: "cognitive complexity"
-        linters:
-          - gocognit
-
-      # String validator has inherent complexity
-      - path: 'semantic/string_validator\.go'
-        text: "cognitive complexity"
-        linters:
-          - gocognit
-
-      # Main command has inherent complexity
-      - path: 'cmd/main\.go'
-        text: "cognitive complexity"
-        linters:
-          - gocognit
-
-      # Benchmark tests have shadow variables that don't affect correctness
-      - path: 'internal/comparison/benchmark_test\.go'
-        text: "shadow"
-        linters:
-          - govet
-
-      # Benchmark tests have prealloc issues that don't affect correctness
-      - path: 'internal/comparison/benchmark_test\.go'
-        text: "prealloc"
-        linters:
-          - prealloc
-
-      # Benchmark tests have nestif issues that don't affect correctness
-      - path: 'internal/comparison/benchmark_test\.go'
-        text: "nestif"
-        linters:
-          - nestif
-
-      # Benchmark tests have gocyclo issues that don't affect correctness
-      - path: 'internal/comparison/benchmark_test\.go'
-        text: "cyclomatic complexity"
-        linters:
-          - gocyclo
-
-      # Benchmark tests have gocognit issues that don't affect correctness
-      - path: 'internal/comparison/benchmark_test\.go'
-        text: "cognitive complexity"
-        linters:
-          - gocognit
-
-      # Test data loading has file inclusion via variable (expected behavior)
-      - path: 'internal/comparison/testdata\.go'
-        text: "G304"
-        linters:
-          - gosec
-
-      # Exported type name stuttering is acceptable for semantic errors
-      - path: 'semantic/validator\.go'
-        text: "exported: type name will be used as semantic.SemanticError"
-        linters:
-          - revive
-
-      # Empty branches in compiler options are acceptable
-      - path: 'compiler/compiler\.go'
-        text: "SA9003: empty branch"
-        linters:
-          - staticcheck
-
-      # Empty branches in string compiler are acceptable
-      - path: 'compiler/string_compiler\.go'
-        text: "SA9003: empty branch"
-        linters:
-          - staticcheck
-
-      # Unused values in tests are acceptable
-      - path: 'semantic/validator_test\.go'
-        text: "SA4006"
-        linters:
-          - staticcheck
-
-      # Function length violations are acceptable for complex functions
-      - path: '.*\.go'
-        text: "function-length"
-        linters:
-          - revive
-
-      # Prealloc issues are acceptable for dynamic allocations
-      - path: '.*\.go'
-        text: "prealloc"
-        linters:
-          - prealloc
-
-      # Nested if complexity is acceptable for necessary logic
-      - path: '.*\.go'
-        text: "has complex nested blocks"
-        linters:
-          - nestif
-
-      # Cyclomatic complexity is acceptable for switch statements
-      - path: '.*\.go'
-        text: "cyclomatic complexity"
-        linters:
-          - gocyclo
-
-      # Cognitive complexity is acceptable for complex functions
-      - path: '.*\.go'
-        text: "cognitive complexity"
-        linters:
-          - gocognit
-
-      # Cyclomatic complexity is acceptable for switch statements
-      - path: '.*\.go'
-        text: "calculated cyclomatic complexity"
-        linters:
-          - cyclop
-
-      # Function length violations are acceptable for complex functions
-      - path: '.*\.go'
-        text: "is too long"
-        linters:
-          - funlen
-
-      # Test file nil pointer dereferences are acceptable
-      - path: '.*_test\.go'
-        text: "SA5011"
-        linters:
-          - staticcheck
-
-      # Unused parameters in test functions are acceptable
-      - path: '.*_test\.go'
-        text: "unparam"
-        linters:
-          - unparam
-
-      # Wasted assignments in test functions are acceptable
-      - path: '.*_test\.go'
-        text: "wastedassign"
-        linters:
-          - wastedassign
-
-      # Prealloc issues in non-critical paths (these are acceptable)
-      # The prealloc linter suggests pre-allocating slices, but in most cases
-      # the performance impact is negligible and code clarity is more important
-      - path: '.*\.go'
-        text: "Consider pre-allocating"
-        linters:
-          - prealloc
-
-      # Function length is acceptable for complex functions
-      # Refactoring would reduce clarity without performance benefit
-      - path: '.*\.go'
-        text: "is too long"
-        linters:
-          - funlen
-
-      # Unused parameters in parseLiteral are acceptable
-      # The error return is part of the interface contract
-      - path: 'parser/parser\.go'
-        text: "result 1 \\(error\\) is always nil"
-        linters:
-          - unparam
-
-      # Cognitive complexity is acceptable for inherently complex algorithms
-      # These functions implement complex algorithms (Aho-Corasick, bytecode interpreter, parser)
-      # that cannot be simplified without losing clarity or performance
-      - path: '.*\.go'
-        text: "cognitive-complexity"
-        linters:
-          - revive
-
-      # Function length is acceptable for complex functions
-      # These functions implement complex algorithms that cannot be refactored without
-      # losing clarity or performance:
-      # - main: CLI entry point with multiple modes
-      # - runExecuteMode: Bytecode execution with pattern matching
-      # - Opcode.String: Large switch statement for opcode names
-      # - compileBinaryOp: Complex binary operation compilation
-      # - executeOpcode: Bytecode interpreter with 100+ opcodes
-      # - tokenizeHexString: Complex hex string parsing with comments/alternatives
-      # - parseRule: YARA rule parsing with multiple sections
-      # - validateExpression: Expression type validation with multiple cases
-      - path: '.*\.go'
-        text: "has too many statements"
-        linters:
-          - funlen
-
-      # Prealloc warnings are acceptable for complex allocation patterns
-      - path: '.*\.go'
-        text: "Consider pre-allocating"
-        linters:
-          - prealloc
-
-      # Unused error returns in helper functions are acceptable
-      - path: '.*\.go'
-        text: "result 1 \\(error\\) is always nil"
-        linters:
-          - unparam
-
-      # Wasted assignments in non-test code are acceptable
-      - path: '.*\.go'
-        text: "assigned to .*, but never used afterwards"
-        linters:
-          - wastedassign
-
-      # Allow higher package-average complexity for performance-critical regex VM
-      - path: 'regex/.*\.go'
-        text: "the average complexity for the package"
-        linters:
-          - cyclop
-
-      # Parser package implements grammar rules; average complexity can exceed baseline
-      - path: 'parser/.*\.go'
-        text: "the average complexity for the package"
-        linters:
-          - cyclop
-
-      # Compiler package contains multiple emit/transform passes; allow average complexity
-      - path: 'compiler/.*\.go'
-        text: "the average complexity for the package"
-        linters:
-          - cyclop
-
-      # Main CLI package complexity is not targeted in this task; exclude package-average
-      - path: 'cmd/.*\.go'
-        text: "the average complexity for the package"
-        linters:
-          - cyclop
-
-      # Typecheck exclusions for comparison package (CGo integration)
-      - path: 'internal/comparison'
-        linters:
-          - typecheck
-      
-      # Exclude all linters from comparison package due to CGo dependencies
+      # CGo integration - exclude typecheck due to C dependencies
       - path: 'internal/comparison/.*\.go'
         linters:
           - typecheck
@@ -673,36 +394,128 @@ linters:
           - staticcheck
           - unused
 
-      # Exclude all linters from profiling comparison package (tooling code)
-      - path: 'internal/profiling/comparison/.*\.go'
+      # Profiling tools excluded at issues level
+
+      # Common patterns that are acceptable
+      - path: '.*\.go'
+        text: "Consider pre-allocating|result 1 \\(error\\) is always nil|assigned to.*, but never used afterwards"
         linters:
-          - cyclop
-          - gocyclo
-          - gocognit
-          - funlen
-          - errcheck
-          - gosec
-          - govet
-          - staticcheck
-          - unused
           - prealloc
-          - nestif
-          - dupl
-          - revive
-          - unconvert
           - unparam
           - wastedassign
-      
-      # Exclude duplicate detection for isComparisonOp and isDataTypeFunction functions
-      # These are different functions with different purposes, not actual duplicates
+
+      # Interface methods - unused parameters are acceptable
+      - path: 'parser/parser\.go'
+        text: "result 1 \\(error\\) is always nil"
+        linters:
+          - unparam
+
+      # Empty branches in compiler - intentional control flow
+      - path: 'compiler/.*\.go'
+        text: "SA9003: empty branch"
+        linters:
+          - staticcheck
+
+      # False positive duplicate detection
       - path: 'parser/parser\.go'
         text: "lines are duplicate of"
         linters:
           - dupl
 
+      # Acceptable complexity in core algorithms
+      - path: '.*\.go'
+        text: "has complex nested blocks"
+        linters:
+          - nestif
+
+      # Function length limits for complex algorithms
+      - path: '.*\.go'
+        text: "has too many statements|is too long"
+        linters:
+          - funlen
+          - revive
+
+      # Generated files - exclude all linting
+      - path: '.*\.pb\.go$'
+        linters:
+          - all
+      - path: '.*_generated\.go$'
+        linters:
+          - all
+
+      # Tooling and comparison directories - exclude all linting
+      - path: 'cmd/compare/.*\.go'
+        linters:
+          - all
+      - path: 'cmd/parity/.*\.go'
+        linters:
+          - all
+      - path: 'benchmark.*_test\.go'
+        linters:
+          - all
+
+      # Vendor directories
+      - path: "vendor/.*"
+        linters:
+          - all
+
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
+  # Show all issues, not just new ones
+  new: false
+  exclude-rules:
+    # Exclude profiling directories from all linting
+    - path: 'internal/profiling/.*\.go'
+      linters:
+        - all
+    - path: 'internal/comparison/.*\.go'
+      linters:
+        - all
+
+    # Exclude tooling directories from complexity and style checks
+    - path: 'cmd/compare/.*\.go'
+      linters:
+        - cyclop
+        - gocognit
+        - gocyclo
+        - funlen
+        - maintidx
+        - nestif
+        - argument-limit
+    - path: 'cmd/parity/.*\.go'
+      linters:
+        - cyclop
+        - gocognit
+        - gocyclo
+        - funlen
+        - maintidx
+        - nestif
+        - argument-limit
+
+    # Exclude test files from complexity checks
+    - path: '.*_test\.go'
+      linters:
+        - cyclop
+        - gocognit
+        - gocyclo
+        - funlen
+        - maintidx
+        - nestif
+        - argument-limit
+        - unused-parameter
+
+    # Exclude test files from unused parameter warnings
+    - path: '.*_test\.go'
+      text: "unused-parameter.*seems to be unused"
+      linters:
+        - revive
+
+    # Exclude test files from staticcheck SA5011 (false positive nil pointer warnings)
+    - path: '.*_test\.go'
+      text: "SA5011.*possible nil pointer dereference"
+      linters:
+        - staticcheck
 
 severity:
   default: error

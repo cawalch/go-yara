@@ -3,7 +3,9 @@
 package parser
 
 import (
+	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -11,6 +13,12 @@ import (
 	"github.com/cawalch/go-yara/internal/lexer"
 	"github.com/cawalch/go-yara/token"
 )
+
+// ErrNotQuantifier is a sentinel error indicating that a token sequence is not a quantifier
+var ErrNotQuantifier = errors.New("not a quantifier")
+
+// ErrNotLiteral is a sentinel error indicating that a token is not a literal
+var ErrNotLiteral = errors.New("not a literal")
 
 // Parser represents a YARA rule parser
 type Parser struct {
@@ -32,6 +40,16 @@ func New(l *lexer.Lexer) *Parser {
 	p.nextToken()
 	p.nextToken()
 	return p
+}
+
+// isUnaryOperator checks if the given token type represents a unary operator
+func (p *Parser) isUnaryOperator(tokenType token.TokenType) bool {
+	switch tokenType {
+	case token.DEFINED, token.AT, token.IN, token.HASH:
+		return true
+	default:
+		return false
+	}
 }
 
 // ParseRules parses a complete YARA rules file
@@ -120,7 +138,10 @@ func (p *Parser) expectToken(t token.TokenType) bool {
 		p.nextToken()
 		return true
 	}
-	p.errors = append(p.errors, fmt.Errorf("expected %s, got %s at %v", t, p.current.Type, p.current.Pos))
+	p.errors = append(
+		p.errors,
+		fmt.Errorf("expected %s, got %s at %v", t, p.current.Type, p.current.Pos),
+	)
 	return false
 }
 
@@ -196,7 +217,13 @@ func (p *Parser) parseMetaValue() ast.MetaValue {
 		p.nextToken()
 		return ast.MetaBool(false)
 	default:
-		p.addError(fmt.Errorf("invalid meta value type '%s' at %v - expected string, integer, or boolean", p.current.Type, pos))
+		p.addError(
+			fmt.Errorf(
+				"invalid meta value type '%s' at %v - expected string, integer, or boolean",
+				p.current.Type,
+				pos,
+			),
+		)
 		return nil
 	}
 }
@@ -205,7 +232,11 @@ func (p *Parser) parseMetaValue() ast.MetaValue {
 func (p *Parser) parseMetaEntry() (*ast.Meta, error) {
 	// Meta keys can be identifiers or keywords that can also serve as identifiers
 	if !p.currentTokenIs(token.IDENTIFIER) && !p.isIdentifierKeyword(p.current.Type) {
-		return nil, fmt.Errorf("expected identifier for meta key at %v, got %s", p.current.Pos, p.current.Type)
+		return nil, fmt.Errorf(
+			"expected identifier for meta key at %v, got %s",
+			p.current.Pos,
+			p.current.Type,
+		)
 	}
 
 	key := p.current.Literal
@@ -236,12 +267,7 @@ func (p *Parser) isIdentifierKeyword(tokenType token.TokenType) bool {
 		// Add more as needed
 	}
 
-	for _, kw := range identifierKeywords {
-		if tokenType == kw {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(identifierKeywords, tokenType)
 }
 
 // getStringModifierType converts a token type to its corresponding string modifier type
@@ -279,7 +305,11 @@ func (p *Parser) getStringModifierType(tokenType token.TokenType) ast.StringModi
 // Returns: (identifier, position, error) where error is non-nil if parsing fails
 func (p *Parser) parseStringIdentifier() (string, token.Position, error) {
 	if !p.currentTokenIs(token.STRING_IDENTIFIER) && !p.currentTokenIs(token.IDENTIFIER) {
-		return "", token.Position{}, fmt.Errorf("expected string identifier at %v, got %s", p.current.Pos, p.current.Type)
+		return "", token.Position{}, fmt.Errorf(
+			"expected string identifier at %v, got %s",
+			p.current.Pos,
+			p.current.Type,
+		)
 	}
 
 	identifier := p.current.Literal
@@ -317,7 +347,11 @@ func (p *Parser) parseStringPattern(pos token.Position) (ast.Pattern, error) {
 		p.nextToken()
 		return p.builder.RegexPattern(pos, patternValue), nil
 	default:
-		return nil, fmt.Errorf("expected string, hex, or regex literal at %v, got %s", p.current.Pos, p.current.Type)
+		return nil, fmt.Errorf(
+			"expected string, hex, or regex literal at %v, got %s",
+			p.current.Pos,
+			p.current.Type,
+		)
 	}
 }
 
@@ -383,12 +417,7 @@ func (p *Parser) parseBinaryExpression(
 
 // isAnyToken checks if current token matches any of the provided token types
 func (p *Parser) isAnyToken(tokenTypes []token.TokenType) bool {
-	for _, tokenType := range tokenTypes {
-		if p.currentTokenIs(tokenType) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(tokenTypes, p.currentTokenIs)
 }
 
 // synchronize recovers from parsing errors by skipping to next rule, import, or global variable
@@ -396,7 +425,9 @@ func (p *Parser) synchronize() {
 	p.nextToken()
 
 	for !p.currentTokenIs(token.EOF) {
-		if p.currentTokenIs(token.RULE) || p.currentTokenIs(token.IMPORT) || p.currentTokenIs(token.GLOBAL) || p.currentTokenIs(token.INCLUDE) {
+		if p.currentTokenIs(token.RULE) || p.currentTokenIs(token.IMPORT) ||
+			p.currentTokenIs(token.GLOBAL) ||
+			p.currentTokenIs(token.INCLUDE) {
 			return
 		}
 		p.nextToken()
@@ -435,14 +466,14 @@ func (p *Parser) parseRule() (*ast.Rule, error) {
 	// Get rule name
 	ruleName, err := p.expectIdentifier()
 	if err != nil {
-		return nil, fmt.Errorf("expected rule name, %v", err)
+		return nil, fmt.Errorf("expected rule name, %w", err)
 	}
 
 	// Parse tags
 	tags := p.parseTagList()
 
 	if !p.expectToken(token.LBRACE) {
-		return nil, fmt.Errorf("expected '{' after rule declaration")
+		return nil, errors.New("expected '{' after rule declaration")
 	}
 
 	// Parse meta section
@@ -450,27 +481,27 @@ func (p *Parser) parseRule() (*ast.Rule, error) {
 	if p.currentTokenIs(token.META) {
 		p.nextToken()
 		if !p.expectToken(token.COLON) {
-			return nil, fmt.Errorf("expected ':' after meta")
+			return nil, errors.New("expected ':' after meta")
 		}
 		meta = p.parseMetaDeclarations()
 	}
 
 	// Parse strings section
-	strings := make([]*ast.String, 0)
+	ruleStrings := make([]*ast.String, 0)
 	if p.currentTokenIs(token.STRINGS) {
 		p.nextToken()
 		if !p.expectToken(token.COLON) {
-			return nil, fmt.Errorf("expected ':' after strings")
+			return nil, errors.New("expected ':' after strings")
 		}
-		strings = p.parseStringDeclarations()
+		ruleStrings = p.parseStringDeclarations()
 	}
 
 	// Parse condition section
 	if !p.expectToken(token.CONDITION) {
-		return nil, fmt.Errorf("expected condition section")
+		return nil, errors.New("expected condition section")
 	}
 	if !p.expectToken(token.COLON) {
-		return nil, fmt.Errorf("expected ':' after condition")
+		return nil, errors.New("expected ':' after condition")
 	}
 
 	condition, err := p.parseExpression()
@@ -479,14 +510,14 @@ func (p *Parser) parseRule() (*ast.Rule, error) {
 	}
 
 	if !p.expectToken(token.RBRACE) {
-		return nil, fmt.Errorf("expected '}' at end of rule")
+		return nil, errors.New("expected '}' at end of rule")
 	}
 
 	rule := p.builder.Rule(p.current.Pos, ruleName)
 	rule.Modifiers = modifiers
 	rule.Tags = tags
 	rule.Meta = meta
-	rule.Strings = strings
+	rule.Strings = ruleStrings
 	rule.Condition = condition
 
 	return rule, nil
@@ -498,12 +529,12 @@ func (p *Parser) parseImport() (*ast.Import, error) {
 
 	// Expect IMPORT keyword
 	if !p.expectToken(token.IMPORT) {
-		return nil, fmt.Errorf("expected 'import' keyword")
+		return nil, errors.New("expected 'import' keyword")
 	}
 
 	// Expect string literal for module name
 	if !p.currentTokenIs(token.STRING_LIT) {
-		return nil, fmt.Errorf("expected string literal after 'import'")
+		return nil, errors.New("expected string literal after 'import'")
 	}
 	module := p.current.Literal
 	p.nextToken()
@@ -541,7 +572,7 @@ func (p *Parser) parseMetaDeclarations() []*ast.Meta {
 // Supports: $identifier = "pattern" [modifiers], $ = "pattern" [modifiers]
 // Returns a slice of parsed string declarations
 func (p *Parser) parseStringDeclarations() []*ast.String {
-	strings := make([]*ast.String, 0)
+	parsedStrings := make([]*ast.String, 0)
 
 	for !p.currentTokenIs(token.CONDITION) && !p.currentTokenIs(token.RBRACE) {
 		if !p.currentTokenIs(token.STRING_IDENTIFIER) && !p.currentTokenIs(token.IDENTIFIER) {
@@ -552,11 +583,11 @@ func (p *Parser) parseStringDeclarations() []*ast.String {
 		if err != nil {
 			p.addError(err)
 		} else if str != nil {
-			strings = append(strings, str)
+			parsedStrings = append(parsedStrings, str)
 		}
 	}
 
-	return strings
+	return parsedStrings
 }
 
 // parseExpression parses expressions using the following operator precedence (highest to lowest):
@@ -664,6 +695,10 @@ func (p *Parser) parseLogicalNot() (ast.Expression, error) {
 func (p *Parser) parseQuantifierExpression() (ast.Expression, error) {
 	// Try to parse quantifier expressions first
 	if expr, err := p.parseQuantifier(p.current.Pos); expr != nil || err != nil {
+		if errors.Is(err, ErrNotQuantifier) {
+			// Not a quantifier, continue with other parsing methods
+			return p.parseComparison()
+		}
 		return expr, err
 	}
 
@@ -741,7 +776,7 @@ func (p *Parser) parseMultiplicative() (ast.Expression, error) {
 		return nil, err
 	}
 
-	for p.currentTokenIs(token.MULTIPLY) || p.currentTokenIs(token.DIVIDE) || p.currentTokenIs(token.MODULO) {
+	for p.currentTokenIs(token.MULTIPLY) || p.currentTokenIs(token.DIVIDE) || p.currentTokenIs(token.MODULO) || p.currentTokenIs(token.INT_DIVIDE) {
 		op := p.current.Type
 		pos := p.current.Pos
 		p.nextToken()
@@ -871,26 +906,7 @@ func (p *Parser) parseBitwiseOr() (ast.Expression, error) {
 func (p *Parser) parsePrimary() (ast.Expression, error) {
 	pos := p.current.Pos
 
-	// Try to parse literals first
-	if expr, err := p.parseLiteral(pos); expr != nil || err != nil {
-		return expr, err
-	}
-
-	// Try to parse data type function calls (uint8, uint16, uint32, etc.)
-	if p.isDataTypeFunction(p.current.Type) {
-		functionName := p.current.Literal
-		funcPos := p.current.Pos
-		p.nextToken()
-
-		// Check for function call
-		if p.currentTokenIs(token.LPAREN) {
-			return p.parseFunctionCall(funcPos, functionName)
-		}
-
-		return nil, fmt.Errorf("expected '(' after data type function %s", functionName)
-	}
-
-	// Try to parse string identifiers
+	// Try to parse string identifiers first (highest priority for string tokens)
 	if p.currentTokenIs(token.STRING_IDENTIFIER) {
 		ident := p.current.Literal
 		p.nextToken()
@@ -923,8 +939,27 @@ func (p *Parser) parsePrimary() (ast.Expression, error) {
 		return p.builder.Identifier(pos, ident), nil
 	}
 
+	// Try to parse literals
+	if expr, err := p.parseLiteral(pos); expr != nil || (err != nil && !errors.Is(err, ErrNotLiteral)) {
+		return expr, err
+	}
+
+	// Try to parse data type function calls (uint8, uint16, uint32, etc.)
+	if p.isDataTypeFunction(p.current.Type) {
+		functionName := p.current.Literal
+		funcPos := p.current.Pos
+		p.nextToken()
+
+		// Check for function call
+		if p.currentTokenIs(token.LPAREN) {
+			return p.parseFunctionCall(funcPos, functionName)
+		}
+
+		return nil, fmt.Errorf("expected '(' after data type function %s", functionName)
+	}
+
 	// Try to parse quantifier expressions
-	if expr, err := p.parseQuantifier(pos); expr != nil || err != nil {
+	if expr, err := p.parseQuantifier(pos); expr != nil || (err != nil && !errors.Is(err, ErrNotQuantifier)) {
 		return expr, err
 	}
 
@@ -933,8 +968,22 @@ func (p *Parser) parsePrimary() (ast.Expression, error) {
 		return expr, nil
 	}
 
+	// Parenthesized expressions
+	if p.currentTokenIs(token.LPAREN) {
+		p.nextToken()
+		expr, err := p.parseExpression()
+		if err != nil {
+			return nil, err
+		}
+		if !p.expectToken(token.RPAREN) {
+			return nil, errors.New("expected ')' after expression")
+		}
+		return expr, nil
+	}
+
 	// Try to parse unary operators
-	if expr, err := p.parseUnaryOperator(pos); expr != nil || err != nil {
+	if p.isUnaryOperator(p.current.Type) {
+		expr, err := p.parseUnaryOperator(pos)
 		if err != nil {
 			return nil, err
 		}
@@ -949,7 +998,7 @@ func (p *Parser) parsePrimary() (ast.Expression, error) {
 			}
 
 			if !p.expectToken(token.RBRACKET) {
-				return nil, fmt.Errorf("expected ']' after array index")
+				return nil, errors.New("expected ']' after array index")
 			}
 
 			// Create array index expression
@@ -975,7 +1024,7 @@ func (p *Parser) parsePrimary() (ast.Expression, error) {
 			p.nextToken() // consume '.'
 
 			if !p.currentTokenIs(token.IDENTIFIER) {
-				return nil, fmt.Errorf("expected identifier after '.' for module access")
+				return nil, errors.New("expected identifier after '.' for module access")
 			}
 
 			memberIdent := p.current.Literal
@@ -983,23 +1032,15 @@ func (p *Parser) parsePrimary() (ast.Expression, error) {
 
 			// Create a binary operation to represent module access
 			// This is a temporary solution until we have proper ModuleAccess AST nodes
-			return p.builder.BinaryOp(pos, p.builder.Identifier(pos, ident), token.DOT, p.builder.Identifier(pos, memberIdent)), nil
+			return p.builder.BinaryOp(
+				pos,
+				p.builder.Identifier(pos, ident),
+				token.DOT,
+				p.builder.Identifier(pos, memberIdent),
+			), nil
 		}
 
 		return p.builder.Identifier(pos, ident), nil
-	}
-
-	// Parenthesized expressions
-	if p.currentTokenIs(token.LPAREN) {
-		p.nextToken()
-		expr, err := p.parseExpression()
-		if err != nil {
-			return nil, err
-		}
-		if !p.expectToken(token.RPAREN) {
-			return nil, fmt.Errorf("expected ')' after expression")
-		}
-		return expr, nil
 	}
 
 	return nil, fmt.Errorf("unexpected token %s at %v", p.current.Type, p.current.Pos)
@@ -1029,6 +1070,12 @@ func (p *Parser) parseLiteral(pos token.Position) (ast.Expression, error) {
 		return p.builder.Literal(pos, token.HEX_INTEGER_LIT, value), nil
 	}
 
+	if p.currentTokenIs(token.OCTAL_INTEGER_LIT) {
+		value := p.parseOctalIntegerLiteral()
+		p.nextToken()
+		return p.builder.Literal(pos, token.OCTAL_INTEGER_LIT, value), nil
+	}
+
 	if p.currentTokenIs(token.FLOAT_LIT) {
 		value := p.parseFloatLiteral()
 		p.nextToken()
@@ -1053,165 +1100,144 @@ func (p *Parser) parseLiteral(pos token.Position) (ast.Expression, error) {
 		return p.builder.Literal(pos, token.REGEX_LIT, literal), nil
 	}
 
-	return nil, nil
+	// Not a literal token, return ErrNotLiteral to let other parsing methods handle it
+	return nil, ErrNotLiteral
 }
 
-// parseQuantifier parses quantifier expressions (all/any/none of them, for any of them)
-func (p *Parser) parseQuantifier(pos token.Position) (ast.Expression, error) {
-	// Handle "for" quantifier syntax
-	if p.currentTokenIs(token.FOR) {
-		p.nextToken() // consume 'for'
 
-		// Parse the quantifier after 'for'
-		if !p.currentTokenIs(token.ALL) && !p.currentTokenIs(token.ANY) && !p.currentTokenIs(token.NONE) {
-			return nil, fmt.Errorf("expected quantifier (all/any/none) after 'for'")
-		}
-
-		quantifier := p.current.Literal
-		p.nextToken()
-
-		// Check if this is a for loop with variable (for all i in (0..9) : ...)
-		// In this case, we don't expect 'of' after the quantifier
-		if p.currentTokenIs(token.IDENTIFIER) {
-			variableName := p.current.Literal
-			p.nextToken()
-
-			if !p.expectToken(token.IN) {
-				return nil, fmt.Errorf("expected 'in' after variable name in for loop")
-			}
-
-			// Parse the range expression - handle it specially for for loops
-			var rangeExpr ast.Expression
-			var rangeErr error
-
-			// Check if this is a parenthesized range expression like (0..9)
-			if p.currentTokenIs(token.LPAREN) {
-				p.nextToken() // consume '('
-
-				// Parse the left operand of the range
-				left, leftErr := p.parsePrimary()
-				if leftErr != nil {
-					return nil, leftErr
-				}
-
-				// Check for range expression (..)
-				if p.currentTokenIs(token.DOT) && p.peekTokenIs(token.DOT) {
-					dotPos := p.current.Pos
-					p.nextToken() // consume first DOT
-					p.nextToken() // consume second DOT
-
-					// Parse the right operand of the range
-					right, rightErr := p.parsePrimary()
-					if rightErr != nil {
-						return nil, rightErr
-					}
-
-					// Create a binary operation to represent the range
-					rangeExpr = p.builder.BinaryOp(dotPos, left, token.DOT, right)
-				} else {
-					// Not a range expression, parse the rest as a regular expression
-					// Put back the left operand and continue parsing
-					// For now, just use the left operand as the range expression
-					rangeExpr = left
-				}
-
-				if !p.expectToken(token.RPAREN) {
-					return nil, fmt.Errorf("expected ')' after range expression")
-				}
-			} else {
-				// Parse regular expression
-				rangeExpr, rangeErr = p.parsePrimary()
-				if rangeErr != nil {
-					return nil, rangeErr
-				}
-			}
-
-			// Check for colon syntax in "for" quantifiers
-			if p.currentTokenIs(token.COLON) {
-				p.nextToken() // consume ':'
-
-				// Parse the expression after colon
-				expr, parseErr := p.parseExpression()
-				if parseErr != nil {
-					return nil, parseErr
-				}
-
-				// Create a ForLoop node for "for" quantifiers with colon
-				return p.builder.ForLoop(pos, quantifier, variableName, rangeExpr, expr), nil
-			}
-
-			return nil, fmt.Errorf("expected ':' after for loop range")
-		}
-
-		// For standard "for" quantifiers without variables, we expect 'of'
-		if !p.expectToken(token.OF) {
-			return nil, fmt.Errorf("expected 'of' after quantifier")
-		}
-
-		// Parse the target (them, string patterns, etc.)
-		var target ast.Expression
-		var err error
-		switch {
-		case p.currentTokenIs(token.THEM):
-			target = p.builder.Identifier(pos, "them")
-			p.nextToken()
-		case p.currentTokenIs(token.STRING_IDENTIFIER):
-			target = p.builder.Identifier(pos, p.current.Literal)
-			p.nextToken()
-		case p.currentTokenIs(token.LPAREN):
-			// Handle parenthesized expressions like ($)
-			p.nextToken()
-
-			// Special case for ($) which means "any string"
-			switch {
-			case p.currentTokenIs(token.STRING_IDENTIFIER) && p.current.Literal == "$":
-				// Validate that this is a proper string identifier format
-				if !strings.HasPrefix(p.current.Literal, "$") {
-					return nil, fmt.Errorf("invalid string identifier format: %s at %v", p.current.Literal, p.current.Pos)
-				}
-				target = p.builder.Identifier(pos, "$")
-				p.nextToken()
-			case p.currentTokenIs(token.STRING_IDENTIFIER):
-				return nil, fmt.Errorf("unexpected string identifier %s in quantifier expression at %v", p.current.Literal, p.current.Pos)
-			default:
-				// Parse regular expression
-				target, err = p.parseExpression()
-				if err != nil {
-					return nil, err
-				}
-			}
-
-			if !p.expectToken(token.RPAREN) {
-				return nil, fmt.Errorf("expected ')' after expression")
-			}
-		default:
-			return nil, fmt.Errorf("expected 'them', string pattern, or '(' after 'of'")
-		}
-
-		// Check for colon syntax in "for" quantifiers
-		if p.currentTokenIs(token.COLON) {
-			p.nextToken() // consume ':'
-
-			// Parse the expression after colon
-			expr, parseErr := p.parseExpression()
-			if parseErr != nil {
-				return nil, parseErr
-			}
-
-			// Create a ForLoop node for "for" quantifiers with colon
-			return p.builder.ForLoop(pos, quantifier, "", target, expr), nil
-		}
-
-		return p.builder.OfExpression(pos, p.builder.Identifier(pos, quantifier), target), nil
+// parseForQuantifier parses "for" quantifier expressions with optional variables and ranges
+func (p *Parser) parseForQuantifier(pos token.Position) (ast.Expression, error) {
+	// Parse the quantifier after 'for'
+	if !p.currentTokenIs(token.ALL) && !p.currentTokenIs(token.ANY) &&
+		!p.currentTokenIs(token.NONE) {
+		return nil, errors.New("expected quantifier (all/any/none) after 'for'")
 	}
 
-	// Handle standard quantifier syntax (all/any/none of them) and numeric quantifiers
+	quantifier := p.current.Literal
+	p.nextToken()
+
+	// Check if this is a for loop with variable (for all i in (0..9) : ...)
+	// In this case, we don't expect 'of' after the quantifier
+	if p.currentTokenIs(token.IDENTIFIER) {
+		return p.parseForLoopWithVariable(pos, quantifier)
+	}
+
+	// For standard "for" quantifiers without variables, we expect 'of'
+	if !p.expectToken(token.OF) {
+		return nil, errors.New("expected 'of' after quantifier")
+	}
+
+	// Parse the target (them, string patterns, etc.)
+	target, err := p.parseQuantifierTarget(pos)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check for colon syntax in "for" quantifiers
+	if p.currentTokenIs(token.COLON) {
+		p.nextToken() // consume ':'
+
+		// Parse the expression after colon
+		expr, parseErr := p.parseExpression()
+		if parseErr != nil {
+			return nil, parseErr
+		}
+
+		// Create a ForLoop node for "for" quantifiers with colon
+		return p.builder.ForLoop(pos, quantifier, "", target, expr), nil
+	}
+
+	return p.builder.OfExpression(pos, p.builder.Identifier(pos, quantifier), target), nil
+}
+
+// parseForLoopWithVariable parses for loops with variables like "for all i in (0..9) : ..."
+func (p *Parser) parseForLoopWithVariable(pos token.Position, quantifier string) (ast.Expression, error) {
+	variableName := p.current.Literal
+	p.nextToken()
+
+	if !p.expectToken(token.IN) {
+		return nil, errors.New("expected 'in' after variable name in for loop")
+	}
+
+	// Parse the range expression
+	rangeExpr, err := p.parseRangeExpression()
+	if err != nil {
+		return nil, err
+	}
+
+	// Check for colon syntax in "for" quantifiers
+	if p.currentTokenIs(token.COLON) {
+		p.nextToken() // consume ':'
+
+		// Parse the expression after colon
+		expr, parseErr := p.parseExpression()
+		if parseErr != nil {
+			return nil, parseErr
+		}
+
+		// Create a ForLoop node for "for" quantifiers with colon
+		return p.builder.ForLoop(pos, quantifier, variableName, rangeExpr, expr), nil
+	}
+
+	return nil, errors.New("expected ':' after for loop range")
+}
+
+// parseRangeExpression parses range expressions, handling both parenthesized ranges and regular expressions
+func (p *Parser) parseRangeExpression() (ast.Expression, error) {
+	var rangeExpr ast.Expression
+	var err error
+
+	// Check if this is a parenthesized range expression like (0..9)
+	if p.currentTokenIs(token.LPAREN) {
+		p.nextToken() // consume '('
+
+		// Parse the left operand of the range
+		left, leftErr := p.parsePrimary()
+		if leftErr != nil {
+			return nil, leftErr
+		}
+
+		// Check for range expression (..)
+		if p.currentTokenIs(token.DOT) && p.peekTokenIs(token.DOT) {
+			dotPos := p.current.Pos
+			p.nextToken() // consume first DOT
+			p.nextToken() // consume second DOT
+
+			// Parse the right operand of the range
+			right, rightErr := p.parsePrimary()
+			if rightErr != nil {
+				return nil, rightErr
+			}
+
+			// Create a binary operation to represent the range
+			rangeExpr = p.builder.BinaryOp(dotPos, left, token.DOT, right)
+		} else {
+			// Not a range expression, parse the rest as a regular expression
+			rangeExpr = left
+		}
+
+		if !p.expectToken(token.RPAREN) {
+			return nil, errors.New("expected ')' after range expression")
+		}
+	} else {
+		// Parse regular expression
+		rangeExpr, err = p.parsePrimary()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return rangeExpr, nil
+}
+
+// parseStandardQuantifier parses standard quantifiers (all/any/none of them) and numeric quantifiers
+func (p *Parser) parseStandardQuantifier(pos token.Position) (ast.Expression, error) {
 	var quantifierExpr ast.Expression
 
 	// Check for numeric quantifier first (e.g., "1 of", "2 of")
 	// Only treat as quantifier if the next token is OF
 	switch {
-	case (p.currentTokenIs(token.INTEGER_LIT) || p.currentTokenIs(token.HEX_INTEGER_LIT)) && p.peekTokenIs(token.OF):
+	case (p.currentTokenIs(token.INTEGER_LIT) || p.currentTokenIs(token.HEX_INTEGER_LIT) || p.currentTokenIs(token.OCTAL_INTEGER_LIT)) && p.peekTokenIs(token.OF):
 		var err error
 		quantifierExpr, err = p.parsePrimary()
 		if err != nil {
@@ -1219,100 +1245,135 @@ func (p *Parser) parseQuantifier(pos token.Position) (ast.Expression, error) {
 		}
 
 		if !p.expectToken(token.OF) {
-			return nil, fmt.Errorf("expected 'of' after count")
+			return nil, errors.New("expected 'of' after count")
 		}
 	case p.currentTokenIs(token.ALL) || p.currentTokenIs(token.ANY) || p.currentTokenIs(token.NONE):
 		quantifier := p.current.Literal
 		p.nextToken()
 
 		if !p.expectToken(token.OF) {
-			return nil, fmt.Errorf("expected 'of' after quantifier")
+			return nil, errors.New("expected 'of' after quantifier")
 		}
 
 		quantifierExpr = p.builder.Identifier(pos, quantifier)
 	default:
-		return nil, nil
+		return nil, fmt.Errorf("invalid quantifier token %s at %v", p.current.Type, p.current.Pos)
 	}
 
 	// Parse the target (them, string patterns, etc.)
-	var target ast.Expression
-	switch {
-	case p.currentTokenIs(token.THEM):
-		target = p.builder.Identifier(pos, "them")
-		p.nextToken()
-	case p.currentTokenIs(token.STRING_IDENTIFIER):
-		target = p.builder.Identifier(pos, p.current.Literal)
-		p.nextToken()
-	case p.currentTokenIs(token.LPAREN):
-		// Handle parenthesized expressions like ($*) or comma-separated lists
-		p.nextToken()
-
-		// Check if this is a comma-separated list of string identifiers
-		var expressions []ast.Expression
-		expressions = append(expressions, nil) // placeholder for first expression
-
-		// Parse the first expression
-		switch {
-		case p.currentTokenIs(token.STRING_IDENTIFIER) && p.current.Literal == "$":
-			// Validate that this is a proper string identifier format
-			if !strings.HasPrefix(p.current.Literal, "$") {
-				return nil, fmt.Errorf("invalid string identifier format: %s at %v", p.current.Literal, p.current.Pos)
-			}
-			expressions[0] = p.builder.Identifier(pos, "$")
-			p.nextToken()
-		case p.currentTokenIs(token.STRING_IDENTIFIER):
-			expressions[0] = p.builder.Identifier(pos, p.current.Literal)
-			p.nextToken()
-		default:
-			// Parse regular expression
-			expr, parseErr := p.parseExpression()
-			if parseErr != nil {
-				return nil, parseErr
-			}
-			expressions[0] = expr
-		}
-
-		// Check for comma-separated list
-		for p.currentTokenIs(token.COMMA) {
-			p.nextToken() // consume ','
-
-			// Parse next expression
-			var nextExpr ast.Expression
-			switch {
-			case p.currentTokenIs(token.STRING_IDENTIFIER):
-				nextExpr = p.builder.Identifier(pos, p.current.Literal)
-				p.nextToken()
-			default:
-				var err error
-				nextExpr, err = p.parseExpression()
-				if err != nil {
-					return nil, err
-				}
-			}
-			expressions = append(expressions, nextExpr)
-		}
-
-		if !p.expectToken(token.RPAREN) {
-			return nil, fmt.Errorf("expected ')' after expression")
-		}
-
-		// If we have multiple expressions, create a comma expression
-		if len(expressions) > 1 {
-			// Create a temporary representation for comma-separated list
-			// This is a workaround until we have proper list AST nodes
-			target = expressions[0]
-			for i := 1; i < len(expressions); i++ {
-				target = p.builder.BinaryOp(pos, target, token.COMMA, expressions[i])
-			}
-		} else {
-			target = expressions[0]
-		}
-	default:
-		return nil, fmt.Errorf("expected 'them', string pattern, or '(' after 'of'")
+	target, err := p.parseQuantifierTarget(pos)
+	if err != nil {
+		return nil, err
 	}
 
 	// Create an OfExpression node
 	return p.builder.OfExpression(pos, quantifierExpr, target), nil
+}
+
+// parseQuantifierTarget parses the target part of quantifier expressions (them, string patterns, etc.)
+func (p *Parser) parseQuantifierTarget(pos token.Position) (ast.Expression, error) {
+	switch {
+	case p.currentTokenIs(token.THEM):
+		target := p.builder.Identifier(pos, "them")
+		p.nextToken()
+		return target, nil
+	case p.currentTokenIs(token.STRING_IDENTIFIER):
+		target := p.builder.Identifier(pos, p.current.Literal)
+		p.nextToken()
+		return target, nil
+	case p.currentTokenIs(token.LPAREN):
+		return p.parseParenthesizedTarget(pos)
+	default:
+		return nil, errors.New("expected 'them', string pattern, or '(' after 'of'")
+	}
+}
+
+// parseParenthesizedTarget parses parenthesized expressions in quantifier targets
+func (p *Parser) parseParenthesizedTarget(pos token.Position) (ast.Expression, error) {
+	p.nextToken() // consume '('
+
+	// Check if this is a comma-separated list of string identifiers
+	var expressions []ast.Expression
+	expressions = append(expressions, nil) // placeholder for first expression
+
+	// Parse the first expression
+	switch {
+	case p.currentTokenIs(token.STRING_IDENTIFIER) && p.current.Literal == "$":
+		expressions[0] = p.builder.Identifier(pos, "$")
+		p.nextToken()
+	case p.currentTokenIs(token.STRING_IDENTIFIER):
+		expressions[0] = p.builder.Identifier(pos, p.current.Literal)
+		p.nextToken()
+	default:
+		// Parse regular expression
+		expr, parseErr := p.parseExpression()
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		expressions[0] = expr
+	}
+
+	// Check for comma-separated list
+	for p.currentTokenIs(token.COMMA) {
+		p.nextToken() // consume ','
+
+		// Parse next expression
+		var nextExpr ast.Expression
+		switch {
+		case p.currentTokenIs(token.STRING_IDENTIFIER):
+			nextExpr = p.builder.Identifier(pos, p.current.Literal)
+			p.nextToken()
+		default:
+			var err error
+			nextExpr, err = p.parseExpression()
+			if err != nil {
+				return nil, err
+			}
+		}
+		expressions = append(expressions, nextExpr)
+	}
+
+	if !p.expectToken(token.RPAREN) {
+		return nil, errors.New("expected ')' after expression")
+	}
+
+	// If we have multiple expressions, create a comma expression
+	if len(expressions) > 1 {
+		// Create a temporary representation for comma-separated list
+		// This is a workaround until we have proper list AST nodes
+		target := expressions[0]
+		for i := 1; i < len(expressions); i++ {
+			target = p.builder.BinaryOp(pos, target, token.COMMA, expressions[i])
+		}
+		return target, nil
+	}
+
+	return expressions[0], nil
+}
+
+// parseQuantifier parses quantifier expressions (all/any/none of them, for any of them)
+func (p *Parser) parseQuantifier(pos token.Position) (ast.Expression, error) {
+	// Handle "for" quantifier syntax
+	if p.currentTokenIs(token.FOR) {
+		p.nextToken() // consume 'for'
+		return p.parseForQuantifier(pos)
+	}
+
+	// Check if this could be a standard quantifier (all/any/none) or numeric quantifier
+	isQuantifierToken := p.currentTokenIs(token.ALL) ||
+		p.currentTokenIs(token.ANY) ||
+		p.currentTokenIs(token.NONE) ||
+		(p.currentTokenIs(token.INTEGER_LIT) && p.peekTokenIs(token.OF)) ||
+		(p.currentTokenIs(token.HEX_INTEGER_LIT) && p.peekTokenIs(token.OF)) ||
+		(p.currentTokenIs(token.OCTAL_INTEGER_LIT) && p.peekTokenIs(token.OF))
+
+	if !isQuantifierToken {
+		// Not a quantifier, return nil to allow other parsing methods to try
+		return nil, ErrNotQuantifier
+	}
+
+	// Handle standard quantifier syntax (all/any/none of them) and numeric quantifiers
+	return p.parseStandardQuantifier(pos)
 }
 
 // parseSpecialKeyword parses special keywords (filesize, entrypoint)
@@ -1344,7 +1405,7 @@ func (p *Parser) parseUnaryOperator(pos token.Position) (ast.Expression, error) 
 	case p.currentTokenIs(token.HASH): // '#' count operator
 		op = token.HASH
 	default:
-		return nil, nil
+		return nil, fmt.Errorf("expected unary operator at %v", p.current.Pos)
 	}
 
 	p.nextToken()
@@ -1388,7 +1449,7 @@ func (p *Parser) parseUnaryOperator(pos token.Position) (ast.Expression, error) 
 		}
 
 		if !p.expectToken(token.RBRACKET) {
-			return nil, fmt.Errorf("expected ']' after array index")
+			return nil, errors.New("expected ']' after array index")
 		}
 
 		// Create array index expression
@@ -1453,7 +1514,10 @@ func (p *Parser) parseIntegerLiteral() int64 {
 	}
 
 	// If parsing fails, return 0 and log error
-	p.errors = append(p.errors, fmt.Errorf("invalid integer literal: %s at %v", literal, p.current.Pos))
+	p.errors = append(
+		p.errors,
+		fmt.Errorf("invalid integer literal: %s at %v", literal, p.current.Pos),
+	)
 	return 0
 }
 
@@ -1471,7 +1535,31 @@ func (p *Parser) parseHexIntegerLiteral() int64 {
 	}
 
 	// If parsing fails, return 0 and log error
-	p.errors = append(p.errors, fmt.Errorf("invalid hex integer literal: %s at %v", p.current.Literal, p.current.Pos))
+	p.errors = append(
+		p.errors,
+		fmt.Errorf("invalid hex integer literal: %s at %v", p.current.Literal, p.current.Pos),
+	)
+	return 0
+}
+
+// parseOctalIntegerLiteral parses an octal integer literal token and returns the int64 value
+func (p *Parser) parseOctalIntegerLiteral() int64 {
+	literal := p.current.Literal
+
+	// Remove 0o prefix if present
+	literal = strings.TrimPrefix(literal, "0o")
+	literal = strings.TrimPrefix(literal, "0O")
+
+	// Parse octal integer
+	if value, err := strconv.ParseInt(literal, 8, 64); err == nil {
+		return value
+	}
+
+	// If parsing fails, return 0 and log error
+	p.errors = append(
+		p.errors,
+		fmt.Errorf("invalid octal integer literal: %s at %v", p.current.Literal, p.current.Pos),
+	)
 	return 0
 }
 
@@ -1485,7 +1573,10 @@ func (p *Parser) parseFloatLiteral() float64 {
 	}
 
 	// If parsing fails, return 0 and log error
-	p.errors = append(p.errors, fmt.Errorf("invalid float literal: %s at %v", literal, p.current.Pos))
+	p.errors = append(
+		p.errors,
+		fmt.Errorf("invalid float literal: %s at %v", literal, p.current.Pos),
+	)
 	return 0
 }
 
@@ -1503,7 +1594,7 @@ func (p *Parser) parseStringModifiers() []ast.StringModifier {
 
 			// Parse the XOR value (integer literal)
 			if !p.currentTokenIs(token.INTEGER_LIT) && !p.currentTokenIs(token.HEX_INTEGER_LIT) {
-				p.addError(fmt.Errorf("expected integer value after 'xor' modifier"))
+				p.addError(errors.New("expected integer value after 'xor' modifier"))
 				// Add a default XOR modifier to continue parsing
 				modifiers = append(modifiers, ast.StringModifier{Type: modifierType, Value: 0})
 				continue
@@ -1511,7 +1602,9 @@ func (p *Parser) parseStringModifiers() []ast.StringModifier {
 
 			xorValue, err := strconv.ParseInt(p.current.Literal, 0, 64)
 			if err != nil {
-				p.addError(fmt.Errorf("invalid integer value for xor modifier: %s", p.current.Literal))
+				p.addError(
+					fmt.Errorf("invalid integer value for xor modifier: %s", p.current.Literal),
+				)
 				xorValue = 0
 			}
 
@@ -1545,20 +1638,20 @@ func (p *Parser) parseGlobalVariable() (*ast.GlobalVariable, error) {
 
 	// Parse variable name (GLOBAL token was already consumed in the main loop)
 	if !p.currentTokenIs(token.IDENTIFIER) {
-		return nil, fmt.Errorf("expected variable name after 'global'")
+		return nil, errors.New("expected variable name after 'global'")
 	}
 	name := p.current.Literal
 	p.nextToken()
 
 	// Expect assignment operator
 	if !p.expectToken(token.ASSIGN) {
-		return nil, fmt.Errorf("expected '=' after variable name")
+		return nil, errors.New("expected '=' after variable name")
 	}
 
 	// Parse variable value
 	value, err := p.parseExpression()
 	if err != nil {
-		return nil, fmt.Errorf("expected expression after '='")
+		return nil, errors.New("expected expression after '='")
 	}
 
 	return p.builder.GlobalVariable(pos, name, value), nil
@@ -1570,7 +1663,7 @@ func (p *Parser) parseExternalVariable() (*ast.ExternalVariable, error) {
 
 	// Parse variable name
 	if !p.currentTokenIs(token.IDENTIFIER) {
-		return nil, fmt.Errorf("expected variable name after 'external'")
+		return nil, errors.New("expected variable name after 'external'")
 	}
 	name := p.current.Literal
 	p.nextToken()
@@ -1585,7 +1678,7 @@ func (p *Parser) parseExternalVariable() (*ast.ExternalVariable, error) {
 			typeHint = p.current.Literal
 			p.nextToken()
 		} else {
-			return nil, fmt.Errorf("expected type hint after ':'")
+			return nil, errors.New("expected type hint after ':'")
 		}
 	}
 
@@ -1598,12 +1691,12 @@ func (p *Parser) parseInclude() (*ast.Include, error) {
 
 	// Expect INCLUDE keyword
 	if !p.expectToken(token.INCLUDE) {
-		return nil, fmt.Errorf("expected 'include' keyword")
+		return nil, errors.New("expected 'include' keyword")
 	}
 
 	// Expect string literal for file name
 	if !p.currentTokenIs(token.STRING_LIT) {
-		return nil, fmt.Errorf("expected string literal after 'include'")
+		return nil, errors.New("expected string literal after 'include'")
 	}
 	file := p.current.Literal
 	p.nextToken()
@@ -1612,10 +1705,13 @@ func (p *Parser) parseInclude() (*ast.Include, error) {
 }
 
 // parseFunctionCall parses a function call expression
-func (p *Parser) parseFunctionCall(pos token.Position, functionName string) (ast.Expression, error) {
+func (p *Parser) parseFunctionCall(
+	pos token.Position,
+	functionName string,
+) (ast.Expression, error) {
 	// Expect '('
 	if !p.expectToken(token.LPAREN) {
-		return nil, fmt.Errorf("expected '(' after function name")
+		return nil, errors.New("expected '(' after function name")
 	}
 
 	// Parse arguments
@@ -1644,7 +1740,7 @@ func (p *Parser) parseFunctionCall(pos token.Position, functionName string) (ast
 
 	// Expect ')'
 	if !p.expectToken(token.RPAREN) {
-		return nil, fmt.Errorf("expected ')' after function arguments")
+		return nil, errors.New("expected ')' after function arguments")
 	}
 
 	// Create function call node
@@ -1660,7 +1756,7 @@ func (p *Parser) parseFunctionCall(pos token.Position, functionName string) (ast
 		}
 
 		if !p.expectToken(token.RBRACKET) {
-			return nil, fmt.Errorf("expected ']' after array index")
+			return nil, errors.New("expected ']' after array index")
 		}
 
 		// Create array index expression

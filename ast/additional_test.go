@@ -1,4 +1,3 @@
-// Package ast provides additional tests for comprehensive coverage.
 package ast
 
 import (

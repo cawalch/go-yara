@@ -1,7 +1,7 @@
-// Package compiler provides bytecode generation and compilation for YARA rules.
 package compiler
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -68,7 +68,7 @@ func (sc *StringCompiler) compileString(str *ast.String) error {
 			return err
 		}
 	default:
-		return fmt.Errorf("unknown pattern type")
+		return errors.New("unknown pattern type")
 	}
 
 	// Extract atoms for optimization
@@ -123,57 +123,62 @@ func (sc *StringCompiler) compileRegexPattern(identifier string, pattern *ast.Re
 	return nil
 }
 
-// encodeTextString encodes a text string with modifiers applied
-func (sc *StringCompiler) encodeTextString(text string, modifiers []ast.StringModifier) []byte {
-	var result []byte
-
-	// Check for wide modifier
-	isWide := false
+// hasModifier checks if a specific modifier type exists in the modifier list
+func (sc *StringCompiler) hasModifier(modifiers []ast.StringModifier, modType ast.StringModifierType) bool {
 	for _, mod := range modifiers {
-		if mod.Type == ast.StringModifierWide {
-			isWide = true
-			break
+		if mod.Type == modType {
+			return true
 		}
 	}
+	return false
+}
 
+// encodeTextBytes converts text to bytes with appropriate encoding
+func (sc *StringCompiler) encodeTextBytes(text string, isWide bool) []byte {
 	if isWide {
 		// Convert to UTF-16LE
 		utf16Data := utf16.Encode([]rune(text))
-		result = make([]byte, len(utf16Data)*2)
+		result := make([]byte, len(utf16Data)*2)
 		for i, v := range utf16Data {
 			result[i*2] = byte(v)
 			result[i*2+1] = byte(v >> 8)
 		}
-	} else {
-		// ASCII/UTF-8 encoding
-		result = []byte(text)
+		return result
 	}
+	// ASCII/UTF-8 encoding
+	return []byte(text)
+}
 
-	// Apply case-insensitive modifier
-	isNocase := false
-	for _, mod := range modifiers {
-		if mod.Type == ast.StringModifierNocase {
-			isNocase = true
-			break
-		}
-	}
-
-	if isNocase {
-		// For nocase, we need to create case-insensitive matching data
-		// This is a simplified approach - real implementation would be more complex
-		result = sc.applyNocaseModifier(result, isWide)
-	}
-
-	// Apply XOR modifier if present
+// applyXorModifier applies XOR transformation to data
+func (sc *StringCompiler) applyXorModifier(data []byte, modifiers []ast.StringModifier) []byte {
 	for _, mod := range modifiers {
 		if mod.Type == ast.StringModifierXor {
 			if xorValue, ok := mod.Value.(int64); ok {
-				for i := range result {
-					result[i] ^= byte(xorValue)
+				for i := range data {
+					data[i] ^= byte(xorValue)
 				}
 			}
 		}
 	}
+	return data
+}
+
+// encodeTextString encodes a text string with modifiers applied
+func (sc *StringCompiler) encodeTextString(text string, modifiers []ast.StringModifier) []byte {
+	// Check for modifiers
+	isWide := sc.hasModifier(modifiers, ast.StringModifierWide)
+	isNocase := sc.hasModifier(modifiers, ast.StringModifierNocase)
+
+	// Encode text with appropriate encoding
+	result := sc.encodeTextBytes(text, isWide)
+
+	// Apply case-insensitive modifier if needed
+	if isNocase {
+		result = sc.applyNocaseModifier(result, isWide)
+	}
+
+	// Apply XOR modifier if present
+	result = sc.applyXorModifier(result, modifiers)
 
 	return result
 }
@@ -204,8 +209,8 @@ func (sc *StringCompiler) encodeHexString(hexData []byte, modifiers []ast.String
 
 // HexToken represents a token in a hex string
 type HexToken struct {
-	Type  string      // "byte", "wildcard", "masked", "jump", "alternative"
-	Value interface{} // byte value, jump range, or alternatives
+	Type  string // "byte", "wildcard", "masked", "jump", "alternative"
+	Value any    // byte value, jump range, or alternatives
 }
 
 // parseHexString parses a hex string pattern with full YARA hex grammar support
@@ -226,120 +231,186 @@ func (sc *StringCompiler) tokenizeHexString(hexStr string) []HexToken {
 	i := 0
 
 	for i < len(hexStr) {
-		// Skip whitespace
-		for i < len(hexStr) && (hexStr[i] == ' ' || hexStr[i] == '\t' || hexStr[i] == '\n' || hexStr[i] == '\r') {
-			i++
-		}
+		i = sc.skipWhitespaceAndComments(hexStr, i)
 		if i >= len(hexStr) {
 			break
 		}
 
-		// Skip comments
-		if i+1 < len(hexStr) && hexStr[i:i+2] == "/*" {
-			// Find end of comment
-			for i+1 < len(hexStr) && hexStr[i:i+2] != "*/" {
-				i++
-			}
-			if i+1 < len(hexStr) {
-				i += 2
-			}
-			continue
+		token, advance := sc.parseHexToken(hexStr, i)
+		if token.Type != "" {
+			tokens = append(tokens, token)
 		}
-
-		// Skip single-line comments
-		if i+1 < len(hexStr) && hexStr[i:i+2] == "//" {
-			// Skip to end of line
-			for i < len(hexStr) && hexStr[i] != '\n' {
-				i++
-			}
-			continue
-		}
-
-		// Parse tokens
-		switch hexStr[i] {
-		case '{':
-			i++
-		case '}':
-			i++
-		case '(':
-			// Start of alternatives
-			i++
-			// Find matching closing paren
-			depth := 1
-			altStart := i
-			for i < len(hexStr) && depth > 0 {
-				switch hexStr[i] {
-				case '(':
-					depth++
-				case ')':
-					depth--
-				}
-				i++
-			}
-			// Parse alternatives
-			altStr := hexStr[altStart : i-1]
-			alts := sc.parseAlternatives(altStr)
-			tokens = append(tokens, HexToken{Type: "alternative", Value: alts})
-
-		case '[':
-			// Jump range
-			i++
-			jumpStart := i
-			for i < len(hexStr) && hexStr[i] != ']' {
-				i++
-			}
-			jumpStr := hexStr[jumpStart:i]
-			if i < len(hexStr) {
-				i++ // skip ]
-			}
-			jump := sc.parseJump(jumpStr)
-			tokens = append(tokens, HexToken{Type: "jump", Value: jump})
-
-		case '?':
-			// Wildcard or masked byte
-			switch {
-			case i+1 < len(hexStr) && hexStr[i+1] == '?':
-				// Full wildcard ??
-				tokens = append(tokens, HexToken{Type: "wildcard", Value: byte(0x00)})
-				i += 2
-			case i+1 < len(hexStr) && isHexDigit(hexStr[i+1]):
-				// Masked byte ?X
-				hex := hexStr[i : i+2]
-				val := sc.parseHexByte(hex)
-				tokens = append(tokens, HexToken{Type: "masked", Value: val})
-				i += 2
-			default:
-				i++
-			}
-
-		default:
-			// Try to parse hex byte
-			switch {
-			case i+1 < len(hexStr) && isHexDigit(hexStr[i]) && isHexDigit(hexStr[i+1]):
-				hex := hexStr[i : i+2]
-				val := sc.parseHexByte(hex)
-				tokens = append(tokens, HexToken{Type: "byte", Value: val})
-				i += 2
-			case isHexDigit(hexStr[i]) && i+1 < len(hexStr) && hexStr[i+1] == '?':
-				// Masked byte X?
-				hex := hexStr[i : i+2]
-				val := sc.parseHexByte(hex)
-				tokens = append(tokens, HexToken{Type: "masked", Value: val})
-				i += 2
-			default:
-				i++
-			}
-		}
+		i += advance
 	}
 
 	return tokens
 }
 
+// skipWhitespaceAndComments skips whitespace and comments, returns new position
+func (sc *StringCompiler) skipWhitespaceAndComments(hexStr string, pos int) int {
+	i := pos
+
+	// Skip whitespace
+	for i < len(hexStr) && sc.isWhitespace(hexStr[i]) {
+		i++
+	}
+	if i >= len(hexStr) {
+		return i
+	}
+
+	// Skip multi-line comments
+	if i+1 < len(hexStr) && hexStr[i:i+2] == "/*" {
+		return sc.skipMultiLineComment(hexStr, i)
+	}
+
+	// Skip single-line comments
+	if i+1 < len(hexStr) && hexStr[i:i+2] == "//" {
+		return sc.skipSingleLineComment(hexStr, i)
+	}
+
+	return i
+}
+
+// isWhitespace checks if character is whitespace
+func (sc *StringCompiler) isWhitespace(ch byte) bool {
+	return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r'
+}
+
+// skipMultiLineComment skips over a /* */ comment
+func (sc *StringCompiler) skipMultiLineComment(hexStr string, pos int) int {
+	i := pos + 2 // skip /*
+	for i+1 < len(hexStr) && hexStr[i:i+2] != "*/" {
+		i++
+	}
+	if i+1 < len(hexStr) {
+		return i + 2 // skip */
+	}
+	return i
+}
+
+// skipSingleLineComment skips over a // comment
+func (sc *StringCompiler) skipSingleLineComment(hexStr string, pos int) int {
+	i := pos + 2 // skip //
+	for i < len(hexStr) && hexStr[i] != '\n' {
+		i++
+	}
+	return i
+}
+
+// parseHexToken parses a single hex token at the given position
+func (sc *StringCompiler) parseHexToken(hexStr string, pos int) (token HexToken, nextPos int) {
+	if pos >= len(hexStr) {
+		return HexToken{}, 0
+	}
+
+	switch hexStr[pos] {
+	case '{', '}':
+		return HexToken{}, 1
+
+	case '(':
+		return sc.parseAlternativesToken(hexStr, pos)
+
+	case '[':
+		return sc.parseJumpToken(hexStr, pos)
+
+	case '?':
+		return sc.parseWildcardToken(hexStr, pos)
+
+	default:
+		return sc.parseHexByteToken(hexStr, pos)
+	}
+}
+
+// parseAlternativesToken parses an alternatives token (...)
+func (sc *StringCompiler) parseAlternativesToken(hexStr string, pos int) (token HexToken, nextPos int) {
+	i := pos + 1 // skip '('
+	depth := 1
+	altStart := i
+
+	for i < len(hexStr) && depth > 0 {
+		switch hexStr[i] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+		}
+		i++
+	}
+
+	altStr := hexStr[altStart : i-1]
+	alts := sc.parseAlternatives(altStr)
+	return HexToken{Type: "alternative", Value: alts}, i - pos
+}
+
+// parseJumpToken parses a jump token [...]
+func (sc *StringCompiler) parseJumpToken(hexStr string, pos int) (token HexToken, nextPos int) {
+	i := pos + 1 // skip '['
+	jumpStart := i
+
+	for i < len(hexStr) && hexStr[i] != ']' {
+		i++
+	}
+
+	jumpStr := hexStr[jumpStart:i]
+	if i < len(hexStr) {
+		i++ // skip ]
+	}
+
+	jump := sc.parseJump(jumpStr)
+	return HexToken{Type: "jump", Value: jump}, i - pos
+}
+
+// parseWildcardToken parses wildcard tokens (??, ?X, X?)
+func (sc *StringCompiler) parseWildcardToken(hexStr string, pos int) (token HexToken, nextPos int) {
+	if pos+1 >= len(hexStr) {
+		return HexToken{}, 1
+	}
+
+	switch {
+	case hexStr[pos+1] == '?':
+		// Full wildcard ??
+		return HexToken{Type: "wildcard", Value: byte(0x00)}, 2
+
+	case isHexDigit(hexStr[pos+1]):
+		// Masked byte ?X
+		hex := hexStr[pos : pos+2]
+		val := sc.parseHexByte(hex)
+		return HexToken{Type: "masked", Value: val}, 2
+
+	default:
+		return HexToken{}, 1
+	}
+}
+
+// parseHexByteToken parses regular hex byte tokens
+func (sc *StringCompiler) parseHexByteToken(hexStr string, pos int) (token HexToken, nextPos int) {
+	if pos+1 >= len(hexStr) {
+		return HexToken{}, 1
+	}
+
+	switch {
+	case isHexDigit(hexStr[pos]) && isHexDigit(hexStr[pos+1]):
+		// Regular hex byte
+		hex := hexStr[pos : pos+2]
+		val := sc.parseHexByte(hex)
+		return HexToken{Type: "byte", Value: val}, 2
+
+	case isHexDigit(hexStr[pos]) && hexStr[pos+1] == '?':
+		// Masked byte X?
+		hex := hexStr[pos : pos+2]
+		val := sc.parseHexByte(hex)
+		return HexToken{Type: "masked", Value: val}, 2
+
+	default:
+		return HexToken{}, 1
+	}
+}
+
 // parseAlternatives parses alternatives separated by |
 func (sc *StringCompiler) parseAlternatives(altStr string) [][]byte {
 	alts := make([][]byte, 0, strings.Count(altStr, "|")+1)
-	parts := strings.Split(altStr, "|")
-	for _, part := range parts {
+	parts := strings.SplitSeq(altStr, "|")
+	for part := range parts {
 		part = strings.TrimSpace(part)
 		if part != "" {
 			tokens := sc.tokenizeHexString(part)
@@ -381,39 +452,62 @@ func (sc *StringCompiler) parseJump(jumpStr string) map[string]int {
 	return result
 }
 
-// tokensToBytes converts tokens to bytes
+// processByteToken processes a byte token and appends to result
+func (sc *StringCompiler) processByteToken(result *[]byte, token HexToken) {
+	if b, ok := token.Value.(byte); ok {
+		*result = append(*result, b)
+	}
+}
+
+// processWildcardToken processes a wildcard token and appends to result
+func (sc *StringCompiler) processWildcardToken(result *[]byte, _ HexToken) {
+	*result = append(*result, 0x00) // Placeholder for wildcard
+}
+
+// processMaskedToken processes a masked token and appends to result
+func (sc *StringCompiler) processMaskedToken(result *[]byte, token HexToken) {
+	if b, ok := token.Value.(byte); ok {
+		*result = append(*result, b)
+	}
+}
+
+// processJumpToken processes a jump token and appends to result
+func (sc *StringCompiler) processJumpToken(result *[]byte, token HexToken) {
+	if jumpMap, ok := token.Value.(map[string]int); ok {
+		minVal := jumpMap["min"]
+		maxVal := jumpMap["max"]
+		// Use special encoding for jumps (simplified)
+		*result = append(*result, byte(0xFF), // Jump marker
+			byte(minVal&0xFF),
+			byte((minVal>>8)&0xFF),
+			byte(maxVal&0xFF),
+			byte((maxVal>>8)&0xFF))
+	}
+}
+
+// processAlternativeToken processes an alternative token and appends to result
+func (sc *StringCompiler) processAlternativeToken(result *[]byte, token HexToken) {
+	if alts, ok := token.Value.([][]byte); ok && len(alts) > 0 {
+		// Use first alternative for now (simplified)
+		*result = append(*result, alts[0]...)
+	}
+}
+
+// tokensToBytes converts a slice of HexTokens to bytes
 func (sc *StringCompiler) tokensToBytes(tokens []HexToken) []byte {
 	result := make([]byte, 0, len(tokens)*2)
 	for _, token := range tokens {
 		switch token.Type {
 		case "byte":
-			if b, ok := token.Value.(byte); ok {
-				result = append(result, b)
-			}
+			sc.processByteToken(&result, token)
 		case "wildcard":
-			result = append(result, 0x00) // Placeholder for wildcard
+			sc.processWildcardToken(&result, token)
 		case "masked":
-			if b, ok := token.Value.(byte); ok {
-				result = append(result, b)
-			}
+			sc.processMaskedToken(&result, token)
 		case "jump":
-			// Jumps are represented as special markers
-			if jumpMap, ok := token.Value.(map[string]int); ok {
-				minVal := jumpMap["min"]
-				maxVal := jumpMap["max"]
-				// Use special encoding for jumps (simplified)
-				result = append(result, byte(0xFF)) // Jump marker
-				result = append(result, byte(minVal&0xFF))
-				result = append(result, byte((minVal>>8)&0xFF))
-				result = append(result, byte(maxVal&0xFF))
-				result = append(result, byte((maxVal>>8)&0xFF))
-			}
+			sc.processJumpToken(&result, token)
 		case "alternative":
-			// Alternatives are represented as special markers
-			if alts, ok := token.Value.([][]byte); ok && len(alts) > 0 {
-				// Use first alternative for now (simplified)
-				result = append(result, alts[0]...)
-			}
+			sc.processAlternativeToken(&result, token)
 		}
 	}
 	return result
@@ -461,64 +555,81 @@ func (sc *StringCompiler) compileRegex(pattern string, _ []ast.StringModifier) (
 	p := regex.NewParser(0)
 	astRe, err := p.Parse(cleaned)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parsing regex pattern: %w", err)
 	}
 	code, err := regex.Compile(astRe)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("compiling regex: %w", err)
 	}
 	return code, nil
 }
 
-// applyNocaseModifier applies case-insensitive matching
+// applyNocaseToWide converts wide UTF-16 strings to lowercase
+func (sc *StringCompiler) applyNocaseToWide(data []byte) []byte {
+	result := make([]byte, len(data))
+	copy(result, data)
+
+	// Convert ASCII letters to lowercase for case-insensitive matching
+	for i := 0; i < len(result)-1; i += 2 {
+		// Check if this is an ASCII letter in UTF-16LE
+		if result[i] >= 'A' && result[i] <= 'Z' {
+			result[i] = result[i] - 'A' + 'a'
+		}
+	}
+	return result
+}
+
+// convertToLowercase converts a single byte to lowercase if it's uppercase
+func (sc *StringCompiler) convertToLowercase(b byte) byte {
+	if b >= 'A' && b <= 'Z' {
+		return b + 32 // Convert to lowercase
+	}
+	return b
+}
+
+// applyNocaseToSmallString handles case conversion for small strings
+func (sc *StringCompiler) applyNocaseToSmallString(data []byte) []byte {
+	result := make([]byte, len(data))
+	for i, b := range data {
+		result[i] = sc.convertToLowercase(b)
+	}
+	return result
+}
+
+// applyNocaseToLargeString handles case conversion for large strings
+func (sc *StringCompiler) applyNocaseToLargeString(data []byte) []byte {
+	// For larger strings, modify in place if possible
+	modified := false
+	for i, b := range data {
+		if b >= 'A' && b <= 'Z' {
+			data[i] = b + 32 // Convert to lowercase
+			modified = true
+		}
+	}
+
+	// If no modifications were needed, return original
+	if !modified {
+		return data
+	}
+
+	// Return a copy to avoid modifying caller's data
+	result := make([]byte, len(data))
+	copy(result, data)
+	return result
+}
+
+// applyNocaseModifier applies case-insensitive transformation to string data
 func (sc *StringCompiler) applyNocaseModifier(data []byte, isWide bool) []byte {
 	if isWide {
-		// For wide strings, apply case-insensitive to UTF-16 data
-		result := make([]byte, len(data))
-		copy(result, data)
-
-		// Convert ASCII letters to lowercase for case-insensitive matching
-		for i := 0; i < len(result)-1; i += 2 {
-			// Check if this is an ASCII letter in UTF-16LE
-			if result[i] >= 'A' && result[i] <= 'Z' {
-				result[i] = result[i] - 'A' + 'a'
-			}
-		}
-		return result
-	} else {
-		// Optimized case-insensitive conversion for ASCII strings
-		// For small strings, create new slice directly
-		if len(data) <= 128 {
-			result := make([]byte, len(data))
-			for i, b := range data {
-				if b >= 'A' && b <= 'Z' {
-					result[i] = b + 32 // Convert to lowercase
-				} else {
-					result[i] = b
-				}
-			}
-			return result
-		}
-
-		// For larger strings, modify in place if possible
-		modified := false
-		for i, b := range data {
-			if b >= 'A' && b <= 'Z' {
-				data[i] = b + 32 // Convert to lowercase
-				modified = true
-			}
-		}
-
-		// If no modifications were needed, return original
-		if !modified {
-			return data
-		}
-
-		// Return a copy to avoid modifying caller's data
-		result := make([]byte, len(data))
-		copy(result, data)
-		return result
+		return sc.applyNocaseToWide(data)
 	}
+
+	// Optimized case-insensitive conversion for ASCII strings
+	if len(data) <= 128 {
+		return sc.applyNocaseToSmallString(data)
+	}
+
+	return sc.applyNocaseToLargeString(data)
 }
 
 // GetStringOffsets returns the bytecode offsets for all compiled strings
@@ -588,11 +699,11 @@ func (sc *StringCompiler) ValidateStringModifiers(modifiers []ast.StringModifier
 
 	// Check for incompatible modifiers
 	if hasWide && hasASCII {
-		return fmt.Errorf("cannot use both 'wide' and 'ascii' modifiers")
+		return errors.New("cannot use both 'wide' and 'ascii' modifiers")
 	}
 
 	if hasBase64 && hasBase64Wide {
-		return fmt.Errorf("cannot use both 'base64' and 'base64wide' modifiers")
+		return errors.New("cannot use both 'base64' and 'base64wide' modifiers")
 	}
 
 	return nil
@@ -670,46 +781,65 @@ func (sc *StringCompiler) optimizeASCIIPattern(pattern []byte) []byte {
 
 // Debug printing functions
 
-// EstimatePatternComplexity estimates the complexity/quality of a pattern
-// based on libyara's heuristic algorithm
-func (sc *StringCompiler) EstimatePatternComplexity(pattern []byte, modifiers []ast.StringModifier) int {
-	if len(pattern) == 0 {
-		return 0
-	}
-
-	quality := 0
-	seenBytes := make(map[byte]bool)
-	uniqueBytes := 0
-
-	for i := 0; i < len(pattern); i++ {
-		b := pattern[i]
-		switch b {
-		case 0x00, 0x20, 0xCC, 0xFF:
-			quality += 12 // Common bytes
-		default:
-			if (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') {
-				quality += 18 // Alphabetic
-			} else {
-				quality += 20 // Other
-			}
+// calculateByteQuality calculates the quality score for a single byte
+func (sc *StringCompiler) calculateByteQuality(b byte) int {
+	switch b {
+	case 0x00, 0x20, 0xCC, 0xFF:
+		return 12 // Common bytes
+	default:
+		if (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') {
+			return 18 // Alphabetic
 		}
+		return 20 // Other
+	}
+}
+
+// isCommonByte checks if a byte is considered common
+func (sc *StringCompiler) isCommonByte(b byte) bool {
+	return b == 0x00 || b == 0x20 || b == 0x90 || b == 0xCC || b == 0xFF
+}
+
+// calculateBaseQuality calculates base quality from pattern bytes
+func (sc *StringCompiler) calculateBaseQuality(pattern []byte) (quality, uniqueBytes int) {
+	quality = 0
+	seenBytes := make(map[byte]bool)
+	uniqueBytes = 0
+
+	for i := range pattern {
+		b := pattern[i]
+		quality += sc.calculateByteQuality(b)
+
 		if !seenBytes[b] {
 			seenBytes[b] = true
 			uniqueBytes++
 		}
 	}
 
-	quality += 2 * uniqueBytes
+	return quality, uniqueBytes
+}
 
+// applyPenaltyForCommonPatterns applies penalty for simple, common patterns
+func (sc *StringCompiler) applyPenaltyForCommonPatterns(pattern []byte, uniqueBytes, quality int) int {
 	// Penalize patterns with all equal and common bytes
 	if uniqueBytes == 1 {
 		b := pattern[0]
-		if b == 0x00 || b == 0x20 || b == 0x90 || b == 0xCC || b == 0xFF {
+		if sc.isCommonByte(b) {
 			quality -= 10 * len(pattern)
 		}
 	}
-
 	return quality
+}
+
+// EstimatePatternComplexity estimates the complexity/quality of a pattern for matching
+func (sc *StringCompiler) EstimatePatternComplexity(pattern []byte, _ []ast.StringModifier) int {
+	if len(pattern) == 0 {
+		return 0
+	}
+
+	quality, uniqueBytes := sc.calculateBaseQuality(pattern)
+	quality += 2 * uniqueBytes
+
+	return sc.applyPenaltyForCommonPatterns(pattern, uniqueBytes, quality)
 }
 
 // PrintStringInfo prints information about all compiled strings

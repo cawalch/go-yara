@@ -1,4 +1,3 @@
-// Package lexer provides testing utilities for lexer tests.
 package lexer
 
 import (
@@ -15,6 +14,7 @@ type TestHelper struct {
 
 // NewTestHelper creates a new test helper instance.
 func NewTestHelper(t *testing.T) *TestHelper {
+	t.Helper()
 	return &TestHelper{t: t}
 }
 
@@ -128,7 +128,7 @@ func (h *TestHelper) AssertErrorContains(l *Lexer, expectedMessage string) {
 
 // CreateTokenSequence is a helper to create token sequences more concisely.
 // Supports both (type, literal) pairs and (type, literal, line, column) position tuples.
-func CreateTokenSequence(pairs ...interface{}) []token.Token {
+func CreateTokenSequence(pairs ...any) []token.Token {
 	if len(pairs) == 0 {
 		// Empty sequence, just return EOF
 		return []token.Token{{Type: token.EOF, Literal: ""}}
@@ -144,7 +144,7 @@ func CreateTokenSequence(pairs ...interface{}) []token.Token {
 }
 
 // createTokensFromPairs processes the pairs and creates tokens.
-func createTokensFromPairs(pairs []interface{}) []token.Token {
+func createTokensFromPairs(pairs []any) []token.Token {
 	tokens := make([]token.Token, 0, len(pairs)/2) // Pre-allocate for pairs
 
 	for i := 0; i < len(pairs); i += 2 {
@@ -156,7 +156,7 @@ func createTokensFromPairs(pairs []interface{}) []token.Token {
 }
 
 // createTokenFromPair creates a single token from pairs starting at index i.
-func createTokenFromPair(pairs []interface{}, i *int) token.Token {
+func createTokenFromPair(pairs []any, i *int) token.Token {
 	tokenType, ok := pairs[*i].(token.TokenType)
 	if !ok {
 		panic(fmt.Sprintf("expected token.TokenType at index %d, got %T", *i, pairs[*i]))
@@ -201,7 +201,7 @@ func containsString(s, substr string) bool {
 
 // findSubstring finds the index of substr in s, returns -1 if not found.
 func findSubstring(s, substr string) int {
-	if len(substr) == 0 {
+	if substr == "" {
 		return 0
 	}
 	if len(substr) > len(s) {

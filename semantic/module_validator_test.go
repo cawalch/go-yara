@@ -1,6 +1,7 @@
 package semantic
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/cawalch/go-yara/ast"
@@ -32,9 +33,9 @@ func TestValidateModuleFunctions(t *testing.T) {
 	pos := token.Position{Line: 1, Column: 1}
 	ident := &ast.Identifier{Pos: pos, Name: "filesize"}
 
-	errors := validator.ValidateModuleFunctions(ident)
-	if len(errors) != 0 {
-		t.Errorf("expected no errors, got %d", len(errors))
+	errs := validator.ValidateModuleFunctions(ident)
+	if len(errs) != 0 {
+		t.Errorf("expected no errors, got %d", len(errs))
 	}
 
 	// Test with a binary operation containing module functions
@@ -42,17 +43,17 @@ func TestValidateModuleFunctions(t *testing.T) {
 	right := &ast.Identifier{Pos: pos, Name: "entrypoint"}
 	binOp := &ast.BinaryOp{Pos: pos, Left: left, Op: token.PLUS, Right: right}
 
-	errors = validator.ValidateModuleFunctions(binOp)
-	if len(errors) != 0 {
-		t.Errorf("expected no errors for binary op, got %d", len(errors))
+	errs = validator.ValidateModuleFunctions(binOp)
+	if len(errs) != 0 {
+		t.Errorf("expected no errors for binary op, got %d", len(errs))
 	}
 
 	// Test with a unary operation containing a module function
 	unary := &ast.UnaryOp{Pos: pos, Op: token.NOT, Right: ident}
 
-	errors = validator.ValidateModuleFunctions(unary)
-	if len(errors) != 0 {
-		t.Errorf("expected no errors for unary op, got %d", len(errors))
+	errs = validator.ValidateModuleFunctions(unary)
+	if len(errs) != 0 {
+		t.Errorf("expected no errors for unary op, got %d", len(errs))
 	}
 }
 
@@ -103,9 +104,9 @@ func TestValidateFilesizeCall(t *testing.T) {
 	pos := token.Position{Line: 1, Column: 1}
 
 	// Test with no arguments (valid)
-	typeInfo, errors := validator.validateFilesizeCall([]ast.Expression{}, pos)
-	if len(errors) != 0 {
-		t.Errorf("expected no errors for filesize with no args, got %d", len(errors))
+	typeInfo, errs := validator.validateFilesizeCall([]ast.Expression{}, pos)
+	if len(errs) != 0 {
+		t.Errorf("expected no errors for filesize with no args, got %d", len(errs))
 	}
 	if typeInfo.DataType != TypeInteger || typeInfo.IntegerType != Uint64Type {
 		t.Errorf("expected uint64 return type, got %v/%v", typeInfo.DataType, typeInfo.IntegerType)
@@ -113,8 +114,8 @@ func TestValidateFilesizeCall(t *testing.T) {
 
 	// Test with arguments (invalid)
 	arg := &ast.Identifier{Pos: pos, Name: "test"}
-	typeInfo, errors = validator.validateFilesizeCall([]ast.Expression{arg}, pos)
-	if len(errors) == 0 {
+	typeInfo, errs = validator.validateFilesizeCall([]ast.Expression{arg}, pos)
+	if len(errs) == 0 {
 		t.Error("expected errors for filesize with args, got none")
 	}
 	if typeInfo.DataType != TypeUnknown {
@@ -128,9 +129,9 @@ func TestValidateEntrypointCall(t *testing.T) {
 	pos := token.Position{Line: 1, Column: 1}
 
 	// Test with no arguments (valid)
-	typeInfo, errors := validator.validateEntrypointCall([]ast.Expression{}, pos)
-	if len(errors) != 0 {
-		t.Errorf("expected no errors for entrypoint with no args, got %d", len(errors))
+	typeInfo, errs := validator.validateEntrypointCall([]ast.Expression{}, pos)
+	if len(errs) != 0 {
+		t.Errorf("expected no errors for entrypoint with no args, got %d", len(errs))
 	}
 	if typeInfo.DataType != TypeInteger || typeInfo.IntegerType != Uint64Type {
 		t.Errorf("expected uint64 return type, got %v/%v", typeInfo.DataType, typeInfo.IntegerType)
@@ -138,8 +139,8 @@ func TestValidateEntrypointCall(t *testing.T) {
 
 	// Test with arguments (invalid)
 	arg := &ast.Identifier{Pos: pos, Name: "test"}
-	typeInfo, errors = validator.validateEntrypointCall([]ast.Expression{arg}, pos)
-	if len(errors) == 0 {
+	typeInfo, errs = validator.validateEntrypointCall([]ast.Expression{arg}, pos)
+	if len(errs) == 0 {
 		t.Error("expected errors for entrypoint with args, got none")
 	}
 	if typeInfo.DataType != TypeUnknown {
@@ -154,17 +155,17 @@ func TestValidateDataTypeFunctionCall(t *testing.T) {
 
 	// Test with valid function and argument
 	arg := &ast.Literal{Pos: pos, Type: token.INTEGER_LIT, Value: int64(10)}
-	typeInfo, errors := validator.validateDataTypeFunctionCall("uint32", []ast.Expression{arg}, pos)
-	if len(errors) != 0 {
-		t.Errorf("expected no errors for uint32 with int arg, got %d", len(errors))
+	typeInfo, errs := validator.validateDataTypeFunctionCall("uint32", []ast.Expression{arg}, pos)
+	if len(errs) != 0 {
+		t.Errorf("expected no errors for uint32 with int arg, got %d", len(errs))
 	}
 	if typeInfo.DataType != TypeInteger {
 		t.Errorf("expected integer return type, got %v", typeInfo.DataType)
 	}
 
 	// Test with no arguments (invalid)
-	typeInfo, errors = validator.validateDataTypeFunctionCall("uint32", []ast.Expression{}, pos)
-	if len(errors) == 0 {
+	typeInfo, errs = validator.validateDataTypeFunctionCall("uint32", []ast.Expression{}, pos)
+	if len(errs) == 0 {
 		t.Error("expected errors for uint32 with no args, got none")
 	}
 	if typeInfo.DataType != TypeUnknown {
@@ -173,8 +174,8 @@ func TestValidateDataTypeFunctionCall(t *testing.T) {
 
 	// Test with too many arguments (invalid)
 	args := []ast.Expression{arg, arg}
-	typeInfo, errors = validator.validateDataTypeFunctionCall("uint32", args, pos)
-	if len(errors) == 0 {
+	typeInfo, errs = validator.validateDataTypeFunctionCall("uint32", args, pos)
+	if len(errs) == 0 {
 		t.Error("expected errors for uint32 with too many args, got none")
 	}
 	if typeInfo.DataType != TypeUnknown {
@@ -182,8 +183,8 @@ func TestValidateDataTypeFunctionCall(t *testing.T) {
 	}
 
 	// Test with invalid function name
-	typeInfo, errors = validator.validateDataTypeFunctionCall("invalid_func", []ast.Expression{arg}, pos)
-	if len(errors) == 0 {
+	typeInfo, errs = validator.validateDataTypeFunctionCall("invalid_func", []ast.Expression{arg}, pos)
+	if len(errs) == 0 {
 		t.Error("expected errors for invalid function name, got none")
 	}
 	if typeInfo.DataType != TypeUnknown {
@@ -197,18 +198,18 @@ func TestValidateFunctionCall(t *testing.T) {
 	pos := token.Position{Line: 1, Column: 1}
 
 	// Test filesize
-	typeInfo, errors := validator.ValidateFunctionCall("filesize", []ast.Expression{}, pos)
-	if len(errors) != 0 {
-		t.Errorf("expected no errors for filesize, got %d", len(errors))
+	typeInfo, errs := validator.ValidateFunctionCall("filesize", []ast.Expression{}, pos)
+	if len(errs) != 0 {
+		t.Errorf("expected no errors for filesize, got %d", len(errs))
 	}
 	if typeInfo.DataType != TypeInteger || typeInfo.IntegerType != Uint64Type {
 		t.Errorf("expected uint64 return type for filesize, got %v/%v", typeInfo.DataType, typeInfo.IntegerType)
 	}
 
 	// Test entrypoint
-	typeInfo, errors = validator.ValidateFunctionCall("entrypoint", []ast.Expression{}, pos)
-	if len(errors) != 0 {
-		t.Errorf("expected no errors for entrypoint, got %d", len(errors))
+	typeInfo, errs = validator.ValidateFunctionCall("entrypoint", []ast.Expression{}, pos)
+	if len(errs) != 0 {
+		t.Errorf("expected no errors for entrypoint, got %d", len(errs))
 	}
 	if typeInfo.DataType != TypeInteger || typeInfo.IntegerType != Uint64Type {
 		t.Errorf("expected uint64 return type for entrypoint, got %v/%v", typeInfo.DataType, typeInfo.IntegerType)
@@ -216,9 +217,9 @@ func TestValidateFunctionCall(t *testing.T) {
 
 	// Test data type function
 	arg := &ast.Literal{Pos: pos, Type: token.INTEGER_LIT, Value: int64(10)}
-	typeInfo, errors = validator.ValidateFunctionCall("uint32", []ast.Expression{arg}, pos)
-	if len(errors) != 0 {
-		t.Errorf("expected no errors for uint32, got %d", len(errors))
+	typeInfo, errs = validator.ValidateFunctionCall("uint32", []ast.Expression{arg}, pos)
+	if len(errs) != 0 {
+		t.Errorf("expected no errors for uint32, got %d", len(errs))
 	}
 	if typeInfo.DataType != TypeInteger {
 		t.Errorf("expected integer return type for uint32, got %v", typeInfo.DataType)
@@ -240,19 +241,19 @@ func TestModuleValidatorErrorManagement(t *testing.T) {
 
 	// Add an error
 	pos := token.Position{Line: 1, Column: 1}
-	err := &SemanticError{Message: "test error", Position: pos}
+	err := &Error{Message: "test error", Position: pos}
 	validator.addError(err)
 
 	if !validator.HasErrors() {
 		t.Error("expected to have errors after adding one")
 	}
 
-	errors := validator.GetErrors()
-	if len(errors) != 1 {
-		t.Errorf("expected 1 error after adding, got %d", len(errors))
+	errs := validator.GetErrors()
+	if len(errs) != 1 {
+		t.Errorf("expected 1 error after adding, got %d", len(errs))
 	}
 
-	if errors[0] != err {
+	if !errors.Is(errs[0], err) {
 		t.Error("retrieved error doesn't match added error")
 	}
 }

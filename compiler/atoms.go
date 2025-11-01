@@ -1,7 +1,7 @@
-// Package compiler provides bytecode generation and compilation for YARA rules.
 package compiler
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/cawalch/go-yara/ast"
@@ -44,7 +44,7 @@ func calculateAtomQuality(atom *Atom) int {
 	uniqueBytes := 0
 
 	// Calculate quality for each byte in the atom
-	for i := 0; i < atom.Length; i++ {
+	for i := range atom.Length {
 		byteQuality, isUnique := calculateByteQuality(atom.Data[i], atom.Mask[i])
 		quality += byteQuality
 
@@ -64,7 +64,7 @@ func calculateAtomQuality(atom *Atom) int {
 }
 
 // calculateByteQuality calculates the quality contribution of a single byte
-func calculateByteQuality(b byte, mask byte) (int, bool) {
+func calculateByteQuality(b, mask byte) (int, bool) {
 	switch mask {
 	case 0x00:
 		return -10, false
@@ -91,7 +91,7 @@ func getFullyDefinedByteQuality(b byte) int {
 }
 
 // applyCommonBytePenalty applies penalty for atoms with all equal and common bytes
-func applyCommonBytePenalty(atom *Atom, quality int, uniqueBytes int) int {
+func applyCommonBytePenalty(atom *Atom, quality, uniqueBytes int) int {
 	if uniqueBytes == 1 {
 		b := atom.Data[0]
 		if isCommonByte(b) {
@@ -121,7 +121,7 @@ func ExtractAtoms(pattern ast.Pattern, modifiers []ast.StringModifier) []*Atom {
 }
 
 // ExtractFromTextString extracts atoms from a literal text string.
-func ExtractFromTextString(s string, modifiers []ast.StringModifier) []*Atom {
+func ExtractFromTextString(s string, _ []ast.StringModifier) []*Atom {
 	// For now, we'll extract a single, best-quality atom from the string,
 	// similar to how yr_atoms_extract_from_string works for simple strings.
 
@@ -176,7 +176,7 @@ func ExtractFromTextString(s string, modifiers []ast.StringModifier) []*Atom {
 
 // ExtractFromHexString extracts atoms from a hex string pattern.
 // Hex strings can contain wildcards (??), alternatives, and fixed bytes.
-func ExtractFromHexString(hexStr string, modifiers []ast.StringModifier) []*Atom {
+func ExtractFromHexString(hexStr string, _ []ast.StringModifier) []*Atom {
 	// Parse hex string - remove spaces and braces if present
 	hexStr = cleanHexString(hexStr)
 
@@ -190,30 +190,18 @@ func ExtractFromHexString(hexStr string, modifiers []ast.StringModifier) []*Atom
 		return nil
 	}
 
-	// Extract fixed byte sequences as atoms
-	var atoms []*Atom
+	return extractAtomsFromHexBytes(hexBytes)
+}
 
-	// Find sequences of fixed bytes (non-wildcard)
+// extractAtomsFromHexBytes extracts atoms from parsed hex bytes
+func extractAtomsFromHexBytes(hexBytes []HexByte) []*Atom {
+	var atoms []*Atom
 	currentSequence := make([]byte, 0)
 	currentOffset := 0
 
 	for i, hb := range hexBytes {
 		if hb.IsWildcard {
-			// End current sequence if we have one
-			if len(currentSequence) >= MinAtomLength {
-				atom := &Atom{
-					Data:   make([]byte, len(currentSequence)),
-					Mask:   make([]byte, len(currentSequence)),
-					Offset: currentOffset,
-					Length: len(currentSequence),
-				}
-				copy(atom.Data, currentSequence)
-				for j := range atom.Mask {
-					atom.Mask[j] = 0xFF // Fully defined bytes
-				}
-				atom.Quality = calculateAtomQuality(atom)
-				atoms = append(atoms, atom)
-			}
+			atoms = finalizeCurrentSequence(atoms, currentSequence, currentOffset)
 			currentSequence = nil
 			currentOffset = i + 1
 		} else {
@@ -222,32 +210,42 @@ func ExtractFromHexString(hexStr string, modifiers []ast.StringModifier) []*Atom
 	}
 
 	// Don't forget the last sequence
-	if len(currentSequence) >= MinAtomLength {
-		atom := &Atom{
-			Data:   make([]byte, len(currentSequence)),
-			Mask:   make([]byte, len(currentSequence)),
-			Offset: currentOffset,
-			Length: len(currentSequence),
-		}
-		copy(atom.Data, currentSequence)
-		for j := range atom.Mask {
-			atom.Mask[j] = 0xFF
-		}
-		atom.Quality = calculateAtomQuality(atom)
-		atoms = append(atoms, atom)
-	}
+	atoms = finalizeCurrentSequence(atoms, currentSequence, currentOffset)
 
-	// If no atoms found, return nil
 	if len(atoms) == 0 {
 		return nil
 	}
-
 	return atoms
+}
+
+// finalizeCurrentSequence creates an atom from the current byte sequence if long enough
+func finalizeCurrentSequence(atoms []*Atom, sequence []byte, offset int) []*Atom {
+	if len(sequence) >= MinAtomLength {
+		atom := createAtom(sequence, offset)
+		atoms = append(atoms, atom)
+	}
+	return atoms
+}
+
+// createAtom creates a new atom from a byte sequence
+func createAtom(sequence []byte, offset int) *Atom {
+	atom := &Atom{
+		Data:   make([]byte, len(sequence)),
+		Mask:   make([]byte, len(sequence)),
+		Offset: offset,
+		Length: len(sequence),
+	}
+	copy(atom.Data, sequence)
+	for i := range atom.Mask {
+		atom.Mask[i] = 0xFF // Fully defined bytes
+	}
+	atom.Quality = calculateAtomQuality(atom)
+	return atom
 }
 
 // ExtractFromRegexPattern extracts atoms from a regex pattern.
 // Extracts literal byte sequences from regex patterns for optimization.
-func ExtractFromRegexPattern(regexStr string, modifiers []ast.StringModifier) []*Atom {
+func ExtractFromRegexPattern(regexStr string, _ []ast.StringModifier) []*Atom {
 	// Remove regex delimiters and flags (e.g., "/pattern/i" -> "pattern")
 	regexStr = cleanRegexPattern(regexStr)
 
@@ -388,7 +386,7 @@ func cleanHexString(hexStr string) string {
 // parseHexBytes parses a cleaned hex string into bytes and wildcards
 func parseHexBytes(hexStr string) ([]HexByte, error) {
 	if len(hexStr)%2 != 0 {
-		return nil, fmt.Errorf("invalid hex string length")
+		return nil, errors.New("invalid hex string length")
 	}
 
 	var hexBytes []HexByte

@@ -37,6 +37,20 @@ func (l *Lexer) readHexInteger() string {
 	return l.reader.Slice(start)
 }
 
+// readOctalInteger reads an octal integer literal (0o prefix)
+func (l *Lexer) readOctalInteger() string {
+	start := l.reader.Position()
+	l.reader.ReadChar() // skip '0'
+	l.reader.ReadChar() // skip 'o' or 'O'
+
+	// Read octal digits (0-7)
+	for isOctalDigit(l.reader.Current()) {
+		l.reader.ReadChar()
+	}
+
+	return l.reader.Slice(start)
+}
+
 // hasSizeSuffix checks if the current position has a size suffix (KB, MB)
 func (l *Lexer) hasSizeSuffix() bool {
 	ch1 := l.reader.Current()

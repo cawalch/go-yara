@@ -1,4 +1,3 @@
-// Package compiler provides additional tests for comprehensive coverage.
 package compiler
 
 import (

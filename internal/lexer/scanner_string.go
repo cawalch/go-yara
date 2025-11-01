@@ -64,7 +64,33 @@ func (l *Lexer) readRegex() string {
 
 // isEmptyRegex checks if the current position starts an empty regex pattern
 func (l *Lexer) isEmptyRegex() bool {
-	return isEmptyRegexImpl(l.reader.Position, l.reader.SetPosition, l.reader.Current, l.reader.ReadChar, l.reader.Slice)
+	return isEmptyRegexImpl(l)
+}
+
+// GetPosition implements regexReader interface for Lexer
+// GetPosition returns the current position in the input
+func (l *Lexer) GetPosition() int {
+	return l.reader.Position()
+}
+
+// SetPosition sets the current position in the input
+func (l *Lexer) SetPosition(pos int) {
+	l.reader.SetPosition(pos)
+}
+
+// GetCurrent returns the current character
+func (l *Lexer) GetCurrent() byte {
+	return l.reader.Current()
+}
+
+// ReadChar advances to the next character
+func (l *Lexer) ReadChar() {
+	l.reader.ReadChar()
+}
+
+// Slice returns a substring from the given start position
+func (l *Lexer) Slice(start int) string {
+	return l.reader.Slice(start)
 }
 
 // isYARAModifier checks if a word is a YARA string modifier keyword
@@ -82,38 +108,41 @@ func (l *Lexer) looksLikeRegex() bool {
 	return looksLikeRegexImpl(l.reader.PeekChar)
 }
 
+// regexReader provides the interface needed for regex pattern checking
+type regexReader interface {
+	GetPosition() int
+	SetPosition(int)
+	GetCurrent() byte
+	ReadChar()
+	Slice(int) string
+}
+
 // isEmptyRegexImpl is a shared implementation for checking empty regex patterns
-func isEmptyRegexImpl(
-	getPosition func() int,
-	setPosition func(int),
-	getCurrent func() byte,
-	readChar func(),
-	slice func(int) string,
-) bool {
+func isEmptyRegexImpl(r regexReader) bool {
 	// Save current position
-	savedPos := getPosition()
-	defer setPosition(savedPos)
+	savedPos := r.GetPosition()
+	defer r.SetPosition(savedPos)
 
 	// We're at the first '/', advance to check the second
-	if getCurrent() != '/' {
+	if r.GetCurrent() != '/' {
 		return false
 	}
-	readChar()
+	r.ReadChar()
 
 	// Check if next character is also '/'
-	if getCurrent() != '/' {
+	if r.GetCurrent() != '/' {
 		return false
 	}
-	readChar()
+	r.ReadChar()
 
 	// Check for optional flags after //
-	for getCurrent() == 'i' || getCurrent() == 's' || getCurrent() == 'm' {
-		readChar()
+	for r.GetCurrent() == 'i' || r.GetCurrent() == 's' || r.GetCurrent() == 'm' {
+		r.ReadChar()
 	}
 
 	// For empty regex, we should only see end of input or expression delimiters
 	// NOT whitespace followed by text (which would be a comment)
-	ch := getCurrent()
+	ch := r.GetCurrent()
 	if ch == 0 || ch == ')' || ch == '}' || ch == ']' || ch == ',' || ch == ';' {
 		return true
 	}
@@ -122,8 +151,8 @@ func isEmptyRegexImpl(
 	if ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' {
 		// Look ahead to see what's after whitespace
 		for ch == ' ' || ch == '\t' {
-			readChar()
-			ch = getCurrent()
+			r.ReadChar()
+			ch = r.GetCurrent()
 		}
 
 		// If we hit newline or end of input after whitespace, it's an empty regex
@@ -134,11 +163,11 @@ func isEmptyRegexImpl(
 		// Check if the next word is a YARA keyword (like "nocase", "wide", etc.)
 		// If so, this is likely an empty regex followed by modifiers
 		if isLetter(ch) {
-			wordStart := getPosition()
-			for isLetter(getCurrent()) || isDigit(getCurrent()) || getCurrent() == '_' {
-				readChar()
+			wordStart := r.GetPosition()
+			for isLetter(r.GetCurrent()) || isDigit(r.GetCurrent()) || r.GetCurrent() == '_' {
+				r.ReadChar()
 			}
-			word := slice(wordStart)
+			word := r.Slice(wordStart)
 
 			// Check if it's a known YARA modifier keyword
 			if isYARAModifier(word) {

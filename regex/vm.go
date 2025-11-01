@@ -8,7 +8,7 @@ import (
 // - If FlagsScan is set, it searches from every start position (scan semantics).
 // - Otherwise it attempts only from position 0 (anchored semantics).
 // Other flags like DOT_ALL and NO_CASE are honored by the VM.
-func Exec(code []byte, input []byte, flags Flags) bool {
+func Exec(code, input []byte, flags Flags) bool {
 	if len(code) == 0 {
 		return false
 	}
@@ -26,19 +26,19 @@ func Exec(code []byte, input []byte, flags Flags) bool {
 
 // ExecMatch behaves like Exec but also returns the [start,end) byte range of the
 // first match found. If no match is found it returns (false, -1, -1).
-func ExecMatch(code []byte, input []byte, flags Flags) (bool, int, int) {
+func ExecMatch(code, input []byte, flags Flags) (matched bool, start, end int) {
 	if len(code) == 0 {
 		return false, -1, -1
 	}
 	if (flags & FlagsScan) != 0 {
-		for start := 0; start <= len(input); start++ {
-			if ok, end := runAtMatch(code, input, flags, start); ok {
+		for start = 0; start <= len(input); start++ { //nolint:intrange // keeping traditional for loop for compatibility
+			if matched, end = runAtMatch(code, input, flags, start); matched {
 				return true, start, end
 			}
 		}
 		return false, -1, -1
 	}
-	if ok, end := runAtMatch(code, input, flags, 0); ok {
+	if matched, end = runAtMatch(code, input, flags, 0); matched {
 		return true, 0, end
 	}
 	return false, -1, -1
@@ -48,7 +48,7 @@ type thread struct {
 	pc int
 }
 
-func runAtMatch(code []byte, s []byte, flags Flags, start int) (bool, int) { //nolint:cyclop // complex but performance-critical; splitting would hurt hot path
+func runAtMatch(code, s []byte, flags Flags, start int) (matched bool, length int) { //nolint:cyclop,revive,maintidx,nakedret // complex but performance-critical; splitting would hurt hot path, arg count intentional
 	dotAll := (flags & FlagsDotAll) != 0
 	noCase := (flags & FlagsNoCase) != 0
 	wide := (flags & FlagsWide) != 0
@@ -246,9 +246,11 @@ func runAtMatch(code []byte, s []byte, flags Flags, start int) (bool, int) { //n
 			// If all threads have died we can stop early; return the best match found.
 			if len(cur) == 0 {
 				if bestEnd >= 0 {
-					return true, bestEnd
+					matched, length = true, bestEnd
+					return //nolint:nakedret
 				}
-				return false, 0
+				matched, length = false, 0
+				return //nolint:nakedret
 			}
 		}
 	} else {
@@ -260,24 +262,28 @@ func runAtMatch(code []byte, s []byte, flags Flags, start int) (bool, int) { //n
 			// If all threads have died we can stop early; return the best match found.
 			if len(cur) == 0 {
 				if bestEnd >= 0 {
-					return true, bestEnd
+					matched, length = true, bestEnd
+					return //nolint:nakedret
 				}
-				return false, 0
+				matched, length = false, 0
+				return //nolint:nakedret
 			}
 		}
 	}
 
 	// End of input: return the longest match (if any) for this start.
 	if bestEnd >= 0 {
-		return true, bestEnd
+		matched, length = true, bestEnd
+		return //nolint:nakedret
 	}
-	return false, 0
+	matched, length = false, 0
+	return //nolint:nakedret
 }
 
 // addThread computes the epsilon/assertion closure from (pc,pos) and appends
 // consuming states into list. Returns true if OpMatch is reachable in the
 // closure at the given position.
-func addThread(code []byte, s []byte, list *[]thread, pc int, pos int, visited map[int]bool, wide bool) bool { //nolint:revive,cyclop // argument-limit and complexity are explicit for VM closure clarity
+func addThread(code, s []byte, list *[]thread, pc, pos int, visited map[int]bool, wide bool) bool { //nolint:revive,cyclop // argument-limit and complexity are explicit for VM closure clarity
 	for {
 		if pc < 0 || pc >= len(code) {
 			return false

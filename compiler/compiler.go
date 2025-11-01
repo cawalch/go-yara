@@ -1,10 +1,11 @@
-// Package compiler provides the main compilation orchestration for YARA rules.
 package compiler
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/cawalch/go-yara/ast"
@@ -163,7 +164,7 @@ func (c *Compiler) compileParse(source string) (*ast.Program, error) {
 			Line:    0,
 			Column:  0,
 		})
-		return nil, err
+		return nil, fmt.Errorf("parsing rules: %w", err)
 	}
 
 	// Process includes - resolve and parse included files
@@ -192,7 +193,7 @@ func (c *Compiler) compileParse(source string) (*ast.Program, error) {
 				Column:  0,
 			})
 		}
-		return nil, fmt.Errorf("parser errors found")
+		return nil, errors.New("parser errors found")
 	}
 
 	return program, nil
@@ -365,7 +366,6 @@ func (c *Compiler) processIncludesWithBaseDir(program *ast.Program, baseDir stri
 
 		// Also add any imports from the included file
 		program.Imports = append(program.Imports, includedProgram.Imports...)
-
 	}
 
 	return nil
@@ -401,21 +401,20 @@ func (c *Compiler) readFile(filename string) (string, error) {
 			return "", fmt.Errorf("reading file %s: %w", filename, err)
 		}
 		return string(content), nil
-	} else {
-		// Relative path - resolve relative to base directory if available
-		var fullPath string
-		if c.baseDir != "" {
-			fullPath = filepath.Join(c.baseDir, filename)
-		} else {
-			fullPath = filename
-		}
-
-		content, err := os.ReadFile(fullPath)
-		if err != nil {
-			return "", fmt.Errorf("reading file %s: %w", fullPath, err)
-		}
-		return string(content), nil
 	}
+	// Relative path - resolve relative to base directory if available
+	var fullPath string
+	if c.baseDir != "" {
+		fullPath = filepath.Join(c.baseDir, filename)
+	} else {
+		fullPath = filename
+	}
+
+	content, err := os.ReadFile(fullPath)
+	if err != nil {
+		return "", fmt.Errorf("reading file %s: %w", fullPath, err)
+	}
+	return string(content), nil
 }
 
 // PrintStats prints compilation statistics
@@ -455,7 +454,7 @@ func (c *Compiler) PrintStats() {
 func (c *Compiler) ValidateOptions() error {
 	// Validate target version
 	if c.options.TargetVersion == "" {
-		return fmt.Errorf("target version cannot be empty")
+		return errors.New("target version cannot be empty")
 	}
 
 	return nil
@@ -579,7 +578,7 @@ func (c *Compiler) GetPhaseDependencies() map[string][]string {
 // ValidateCompilation validates that the compilation completed successfully
 func (c *Compiler) ValidateCompilation(program *CompiledProgram) error {
 	if program == nil {
-		return fmt.Errorf("compiled program is nil")
+		return errors.New("compiled program is nil")
 	}
 
 	if err := program.Validate(); err != nil {
@@ -623,17 +622,21 @@ func (c *Compiler) GetCompilationReport() string {
 	// Errors and warnings
 	if len(c.stats.Errors) > 0 {
 		report += fmt.Sprintf("Errors (%d):\n", len(c.stats.Errors))
+		var reportSb626 strings.Builder
 		for _, err := range c.stats.Errors {
-			report += fmt.Sprintf("  [%s] %s at %d:%d\n", err.Phase, err.Message, err.Line, err.Column)
+			reportSb626.WriteString(fmt.Sprintf("  [%s] %s at %d:%d\n", err.Phase, err.Message, err.Line, err.Column))
 		}
+		report += reportSb626.String()
 		report += "\n"
 	}
 
 	if len(c.stats.Warnings) > 0 {
 		report += fmt.Sprintf("Warnings (%d):\n", len(c.stats.Warnings))
+		var reportSb634 strings.Builder
 		for _, warn := range c.stats.Warnings {
-			report += fmt.Sprintf("  [%s] %s at %d:%d\n", warn.Phase, warn.Message, warn.Line, warn.Column)
+			reportSb634.WriteString(fmt.Sprintf("  [%s] %s at %d:%d\n", warn.Phase, warn.Message, warn.Line, warn.Column))
 		}
+		report += reportSb634.String()
 		report += "\n"
 	}
 

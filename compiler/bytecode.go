@@ -1,6 +1,4 @@
-// Package compiler provides bytecode generation and compilation for YARA rules.
-//
-// This package implements bytecode format based on libyara's instruction set,
+// Package compiler implements bytecode format based on libyara's instruction set,
 // providing a stack-based virtual machine architecture for efficient pattern matching.
 package compiler
 
@@ -14,7 +12,7 @@ type Opcode uint8
 
 // All bytecode opcodes based on libyara's instruction set
 const (
-	// Basic operations (0-15)
+	// OP_ERROR represents an error condition
 	OP_ERROR Opcode = iota
 	OP_AND
 	OP_OR
@@ -32,7 +30,7 @@ const (
 	OP_POP
 	OP_CALL
 
-	// Object operations (16-25)
+	// OP_OBJ_LOAD loads an object property (16-25)
 	OP_OBJ_LOAD
 	OP_OBJ_VALUE
 	OP_OBJ_FIELD
@@ -44,7 +42,7 @@ const (
 	OP_FOUND_IN
 	OP_OFFSET
 
-	// Rule operations (26-40)
+	// OP_OF begins rule operations (26-40)
 	OP_OF
 	OP_PUSH_RULE
 	OP_INIT_RULE
@@ -61,14 +59,14 @@ const (
 	OP_UNUSED
 	OP_MATCHES
 
-	// Dictionary operations (41-45)
+	// OP_IMPORT begins dictionary operations (41-45)
 	OP_IMPORT
 	OP_LOOKUP_DICT
 	OP_JUNDEF // Not used
 	OP_JUNDEF_P
 	OP_JNUNDEF
 
-	// Jump operations (46-65)
+	// OP_JNUNDEF_P begins jump operations (46-65)
 	OP_JNUNDEF_P // Not used
 	OP_JFALSE
 	OP_JFALSE_P
@@ -87,13 +85,15 @@ const (
 	OP_JZ
 	OP_JZ_P
 
-	// Push operations (66-70)
+	// OP_PUSH_8 begins push operations (66-71)
 	OP_PUSH_8
 	OP_PUSH_16
 	OP_PUSH_32
 	OP_PUSH_U
+	OP_PUSH_DBL
+	OP_PUSH_RULE_REF
 
-	// String operations (71-85)
+	// OP_CONTAINS begins string operations (73-86)
 	OP_CONTAINS
 	OP_STARTSWITH
 	OP_ENDSWITH
@@ -108,7 +108,7 @@ const (
 	OP_ITER_START_TEXT_STRING_SET
 	OP_OF_FOUND_AT
 
-	// Integer operations (100-110)
+	// OP_INT_BEGIN begins integer operations (100-110)
 	OP_INT_BEGIN = 100
 	OP_INT_EQ    = OP_INT_BEGIN + 0
 	OP_INT_NEQ   = OP_INT_BEGIN + 1
@@ -123,7 +123,7 @@ const (
 	OP_INT_MINUS = OP_INT_BEGIN + 10
 	OP_INT_END   = OP_INT_MINUS
 
-	// Double operations (120-130)
+	// OP_DBL_BEGIN begins double operations (120-130)
 	OP_DBL_BEGIN = 120
 	OP_DBL_EQ    = OP_DBL_BEGIN + 0
 	OP_DBL_NEQ   = OP_DBL_BEGIN + 1
@@ -138,7 +138,7 @@ const (
 	OP_DBL_MINUS = OP_DBL_BEGIN + 10
 	OP_DBL_END   = OP_DBL_MINUS
 
-	// String operations (140-146)
+	// OP_STR_BEGIN begins string operations (140-146)
 	OP_STR_BEGIN = 140
 	OP_STR_EQ    = OP_STR_BEGIN + 0
 	OP_STR_NEQ   = OP_STR_BEGIN + 1
@@ -148,7 +148,7 @@ const (
 	OP_STR_GE    = OP_STR_BEGIN + 5
 	OP_STR_END   = OP_STR_GE
 
-	// Data type functions (240-251)
+	// OP_READ_INT begins data type functions (240-251)
 	OP_READ_INT = 240
 	OP_INT8     = OP_READ_INT + 0
 	OP_INT16    = OP_READ_INT + 1
@@ -163,10 +163,10 @@ const (
 	OP_UINT16BE = OP_READ_INT + 10
 	OP_UINT32BE = OP_READ_INT + 11
 
-	// String operations (253)
+	// OP_CONCAT represents string operations (253)
 	OP_CONCAT = 253
 
-	// Control flow (must be at end to avoid conflicts)
+	// OP_HALT represents control flow (must be at end to avoid conflicts)
 	OP_HALT = 255
 	OP_NOP  = 254
 )
@@ -216,8 +216,8 @@ func (op Opcode) GetCategory() string {
 	// Iterator operations (within jump range)
 	case op >= OP_ITER_NEXT && op <= OP_ITER_END:
 		return OpCategoryIterator
-	// Push operations (66-70)
-	case op >= OP_PUSH_8 && op <= OP_PUSH_U:
+	// Push operations (66-72)
+	case op >= OP_PUSH_8 && op <= OP_PUSH_RULE_REF:
 		return OpCategoryStack
 	// String operations (71-85)
 	case op >= OP_CONTAINS && op <= OP_OF_FOUND_AT:
@@ -235,284 +235,159 @@ func (op Opcode) GetCategory() string {
 	}
 }
 
-// String returns string representation of an opcode
+// opcodeNames maps basic opcodes to their string names
+var opcodeNames = map[Opcode]string{
+	OP_ERROR:                      "ERROR",
+	OP_HALT:                       "HALT",
+	OP_NOP:                        "NOP",
+	OP_AND:                        "AND",
+	OP_OR:                         "OR",
+	OP_NOT:                        "NOT",
+	OP_BITWISE_NOT:                "BITWISE_NOT",
+	OP_BITWISE_AND:                "BITWISE_AND",
+	OP_BITWISE_OR:                 "BITWISE_OR",
+	OP_BITWISE_XOR:                "BITWISE_XOR",
+	OP_SHL:                        "SHL",
+	OP_SHR:                        "SHR",
+	OP_MOD:                        "MOD",
+	OP_INT_TO_DBL:                 "INT_TO_DBL",
+	OP_STR_TO_BOOL:                "STR_TO_BOOL",
+	OP_PUSH:                       "PUSH",
+	OP_POP:                        "POP",
+	OP_CALL:                       "CALL",
+	OP_OBJ_LOAD:                   "OBJ_LOAD",
+	OP_OBJ_VALUE:                  "OBJ_VALUE",
+	OP_OBJ_FIELD:                  "OBJ_FIELD",
+	OP_INDEX_ARRAY:                "INDEX_ARRAY",
+	OP_COUNT:                      "COUNT",
+	OP_LENGTH:                     "LENGTH",
+	OP_FOUND:                      "FOUND",
+	OP_FOUND_AT:                   "FOUND_AT",
+	OP_FOUND_IN:                   "FOUND_IN",
+	OP_OFFSET:                     "OFFSET",
+	OP_OF:                         "OF",
+	OP_PUSH_RULE:                  "PUSH_RULE",
+	OP_INIT_RULE:                  "INIT_RULE",
+	OP_MATCH_RULE:                 "MATCH_RULE",
+	OP_INCR_M:                     "INCR_M",
+	OP_CLEAR_M:                    "CLEAR_M",
+	OP_ADD_M:                      "ADD_M",
+	OP_POP_M:                      "POP_M",
+	OP_PUSH_M:                     "PUSH_M",
+	OP_SET_M:                      "SET_M",
+	OP_SWAPUNDEF:                  "SWAPUNDEF",
+	OP_FILESIZE:                   "FILESIZE",
+	OP_ENTRYPOINT:                 "ENTRYPOINT",
+	OP_UNUSED:                     "UNUSED",
+	OP_MATCHES:                    "MATCHES",
+	OP_IMPORT:                     "IMPORT",
+	OP_LOOKUP_DICT:                "LOOKUP_DICT",
+	OP_JUNDEF:                     "JUNDEF",
+	OP_JUNDEF_P:                   "JUNDEF_P",
+	OP_JNUNDEF:                    "JNUNDEF",
+	OP_JNUNDEF_P:                  "JNUNDEF_P",
+	OP_JFALSE:                     "JFALSE",
+	OP_JFALSE_P:                   "JFALSE_P",
+	OP_JTRUE:                      "JTRUE",
+	OP_JTRUE_P:                    "JTRUE_P",
+	OP_JL_P:                       "JL_P",
+	OP_JLE_P:                      "JLE_P",
+	OP_ITER_NEXT:                  "ITER_NEXT",
+	OP_ITER_START_ARRAY:           "ITER_START_ARRAY",
+	OP_ITER_START_DICT:            "ITER_START_DICT",
+	OP_ITER_START_INT_RANGE:       "ITER_START_INT_RANGE",
+	OP_ITER_START_INT_ENUM:        "ITER_START_INT_ENUM",
+	OP_ITER_START_STRING_SET:      "ITER_START_STRING_SET",
+	OP_ITER_CONDITION:             "ITER_CONDITION",
+	OP_ITER_END:                   "ITER_END",
+	OP_JZ:                         "JZ",
+	OP_JZ_P:                       "JZ_P",
+	OP_PUSH_8:                     "PUSH_8",
+	OP_PUSH_16:                    "PUSH_16",
+	OP_PUSH_32:                    "PUSH_32",
+	OP_PUSH_U:                     "PUSH_U",
+	OP_PUSH_DBL:                   "PUSH_DBL",
+	OP_PUSH_RULE_REF:              "PUSH_RULE_REF",
+	OP_CONTAINS:                   "CONTAINS",
+	OP_STARTSWITH:                 "STARTSWITH",
+	OP_ENDSWITH:                   "ENDSWITH",
+	OP_ICONTAINS:                  "ICONTAINS",
+	OP_ISTARTSWITH:                "ISTARTSWITH",
+	OP_IENDSWITH:                  "IENDSWITH",
+	OP_IEQUALS:                    "IEQUALS",
+	OP_OF_PERCENT:                 "OF_PERCENT",
+	OP_OF_FOUND_IN:                "OF_FOUND_IN",
+	OP_COUNT_IN:                   "COUNT_IN",
+	OP_DEFINED:                    "DEFINED",
+	OP_ITER_START_TEXT_STRING_SET: "ITER_START_TEXT_STRING_SET",
+	OP_OF_FOUND_AT:                "OF_FOUND_AT",
+}
+
+// intOpNames maps integer operations to their string names
+var intOpNames = []string{
+	"INT_EQ", "INT_NEQ", "INT_LT", "INT_GT", "INT_LE", "INT_GE",
+	"INT_ADD", "INT_SUB", "INT_MUL", "INT_DIV", "INT_MINUS",
+}
+
+// dblOpNames maps double operations to their string names
+var dblOpNames = []string{
+	"DBL_EQ", "DBL_NEQ", "DBL_LT", "DBL_GT", "DBL_LE", "DBL_GE",
+	"DBL_ADD", "DBL_SUB", "DBL_MUL", "DBL_DIV", "DBL_MINUS",
+}
+
+// strOpNames maps string operations to their string names
+var strOpNames = []string{
+	"STR_EQ", "STR_NEQ", "STR_LT", "STR_GT", "STR_LE", "STR_GE",
+}
+
+// dataTypeNames maps data type operations to their string names
+var dataTypeNames = []string{
+	"INT8", "INT16", "INT32", "UINT8", "UINT16", "UINT32",
+	"INT8BE", "INT16BE", "INT32BE", "UINT8BE", "UINT16BE", "UINT32BE",
+	"LENGTH", "CONCAT",
+}
+
+// String returns the string representation of the opcode
 func (op Opcode) String() string {
-	switch op {
-	case OP_ERROR:
-		return "ERROR"
-	case OP_HALT:
-		return "HALT"
-	case OP_NOP:
-		return "NOP"
-	case OP_AND:
-		return "AND"
-	case OP_OR:
-		return "OR"
-	case OP_NOT:
-		return "NOT"
-	case OP_BITWISE_NOT:
-		return "BITWISE_NOT"
-	case OP_BITWISE_AND:
-		return "BITWISE_AND"
-	case OP_BITWISE_OR:
-		return "BITWISE_OR"
-	case OP_BITWISE_XOR:
-		return "BITWISE_XOR"
-	case OP_SHL:
-		return "SHL"
-	case OP_SHR:
-		return "SHR"
-	case OP_MOD:
-		return "MOD"
-	case OP_INT_TO_DBL:
-		return "INT_TO_DBL"
-	case OP_STR_TO_BOOL:
-		return "STR_TO_BOOL"
-	case OP_PUSH:
-		return "PUSH"
-	case OP_POP:
-		return "POP"
-	case OP_CALL:
-		return "CALL"
-	case OP_OBJ_LOAD:
-		return "OBJ_LOAD"
-	case OP_OBJ_VALUE:
-		return "OBJ_VALUE"
-	case OP_OBJ_FIELD:
-		return "OBJ_FIELD"
-	case OP_INDEX_ARRAY:
-		return "INDEX_ARRAY"
-	case OP_COUNT:
-		return "COUNT"
-	case OP_LENGTH:
-		return "LENGTH"
-	case OP_FOUND:
-		return "FOUND"
-	case OP_FOUND_AT:
-		return "FOUND_AT"
-	case OP_FOUND_IN:
-		return "FOUND_IN"
-	case OP_OFFSET:
-		return "OFFSET"
-	case OP_OF:
-		return "OF"
-	case OP_PUSH_RULE:
-		return "PUSH_RULE"
-	case OP_INIT_RULE:
-		return "INIT_RULE"
-	case OP_MATCH_RULE:
-		return "MATCH_RULE"
-	case OP_INCR_M:
-		return "INCR_M"
-	case OP_CLEAR_M:
-		return "CLEAR_M"
-	case OP_ADD_M:
-		return "ADD_M"
-	case OP_POP_M:
-		return "POP_M"
-	case OP_PUSH_M:
-		return "PUSH_M"
-	case OP_SET_M:
-		return "SET_M"
-	case OP_SWAPUNDEF:
-		return "SWAPUNDEF"
-	case OP_FILESIZE:
-		return "FILESIZE"
-	case OP_ENTRYPOINT:
-		return "ENTRYPOINT"
-	case OP_UNUSED:
-		return "UNUSED"
-	case OP_MATCHES:
-		return "MATCHES"
-	case OP_IMPORT:
-		return "IMPORT"
-	case OP_LOOKUP_DICT:
-		return "LOOKUP_DICT"
-	case OP_JUNDEF:
-		return "JUNDEF"
-	case OP_JUNDEF_P:
-		return "JUNDEF_P"
-	case OP_JNUNDEF:
-		return "JNUNDEF"
-	case OP_JNUNDEF_P:
-		return "JNUNDEF_P"
-	case OP_JFALSE:
-		return "JFALSE"
-	case OP_JFALSE_P:
-		return "JFALSE_P"
-	case OP_JTRUE:
-		return "JTRUE"
-	case OP_JTRUE_P:
-		return "JTRUE_P"
-	case OP_JL_P:
-		return "JL_P"
-	case OP_JLE_P:
-		return "JLE_P"
-	case OP_ITER_NEXT:
-		return "ITER_NEXT"
-	case OP_ITER_START_ARRAY:
-		return "ITER_START_ARRAY"
-	case OP_ITER_START_DICT:
-		return "ITER_START_DICT"
-	case OP_ITER_START_INT_RANGE:
-		return "ITER_START_INT_RANGE"
-	case OP_ITER_START_INT_ENUM:
-		return "ITER_START_INT_ENUM"
-	case OP_ITER_START_STRING_SET:
-		return "ITER_START_STRING_SET"
-	case OP_ITER_CONDITION:
-		return "ITER_CONDITION"
-	case OP_ITER_END:
-		return "ITER_END"
-	case OP_JZ:
-		return "JZ"
-	case OP_JZ_P:
-		return "JZ_P"
-	case OP_PUSH_8:
-		return "PUSH_8"
-	case OP_PUSH_16:
-		return "PUSH_16"
-	case OP_PUSH_32:
-		return "PUSH_32"
-	case OP_PUSH_U:
-		return "PUSH_U"
-	case OP_CONTAINS:
-		return "CONTAINS"
-	case OP_STARTSWITH:
-		return "STARTSWITH"
-	case OP_ENDSWITH:
-		return "ENDSWITH"
-	case OP_ICONTAINS:
-		return "ICONTAINS"
-	case OP_ISTARTSWITH:
-		return "ISTARTSWITH"
-	case OP_IENDSWITH:
-		return "IENDSWITH"
-	case OP_IEQUALS:
-		return "IEQUALS"
-	case OP_OF_PERCENT:
-		return "OF_PERCENT"
-	case OP_OF_FOUND_IN:
-		return "OF_FOUND_IN"
-	case OP_COUNT_IN:
-		return "COUNT_IN"
-	case OP_DEFINED:
-		return "DEFINED"
-	case OP_ITER_START_TEXT_STRING_SET:
-		return "ITER_START_TEXT_STRING_SET"
-	case OP_OF_FOUND_AT:
-		return "OF_FOUND_AT"
-	default:
-		// Integer operations
-		if op >= OP_INT_BEGIN && op <= OP_INT_END {
-			switch op - OP_INT_BEGIN {
-			case 0:
-				return "INT_EQ"
-			case 1:
-				return "INT_NEQ"
-			case 2:
-				return "INT_LT"
-			case 3:
-				return "INT_GT"
-			case 4:
-				return "INT_LE"
-			case 5:
-				return "INT_GE"
-			case 6:
-				return "INT_ADD"
-			case 7:
-				return "INT_SUB"
-			case 8:
-				return "INT_MUL"
-			case 9:
-				return "INT_DIV"
-			case 10:
-				return "INT_MINUS"
-			}
-		}
-
-		// Double operations
-		if op >= OP_DBL_BEGIN && op <= OP_DBL_END {
-			switch op - OP_DBL_BEGIN {
-			case 0:
-				return "DBL_EQ"
-			case 1:
-				return "DBL_NEQ"
-			case 2:
-				return "DBL_LT"
-			case 3:
-				return "DBL_GT"
-			case 4:
-				return "DBL_LE"
-			case 5:
-				return "DBL_GE"
-			case 6:
-				return "DBL_ADD"
-			case 7:
-				return "DBL_SUB"
-			case 8:
-				return "DBL_MUL"
-			case 9:
-				return "DBL_DIV"
-			case 10:
-				return "DBL_MINUS"
-			}
-		}
-
-		// String operations
-		if op >= OP_STR_BEGIN && op <= OP_STR_END {
-			switch op - OP_STR_BEGIN {
-			case 0:
-				return "STR_EQ"
-			case 1:
-				return "STR_NEQ"
-			case 2:
-				return "STR_LT"
-			case 3:
-				return "STR_GT"
-			case 4:
-				return "STR_LE"
-			case 5:
-				return "STR_GE"
-			}
-		}
-
-		// Data type functions
-		if op >= OP_READ_INT {
-			switch op - OP_READ_INT {
-			case 0:
-				return "INT8"
-			case 1:
-				return "INT16"
-			case 2:
-				return "INT32"
-			case 3:
-				return "UINT8"
-			case 4:
-				return "UINT16"
-			case 5:
-				return "UINT32"
-			case 6:
-				return "INT8BE"
-			case 7:
-				return "INT16BE"
-			case 8:
-				return "INT32BE"
-			case 9:
-				return "UINT8BE"
-			case 10:
-				return "UINT16BE"
-			case 11:
-				return "UINT32BE"
-			case 12:
-				return "LENGTH"
-			case 13:
-				return "CONCAT"
-			}
-		}
-
-		return fmt.Sprintf("OPCODE_%d", int(op))
+	// Check basic opcodes first
+	if name, exists := opcodeNames[op]; exists {
+		return name
 	}
+
+	// Handle integer operations
+	if op >= OP_INT_BEGIN && op <= OP_INT_END {
+		offset := int(op - OP_INT_BEGIN)
+		if offset < len(intOpNames) {
+			return intOpNames[offset]
+		}
+	}
+
+	// Handle double operations
+	if op >= OP_DBL_BEGIN && op <= OP_DBL_END {
+		offset := int(op - OP_DBL_BEGIN)
+		if offset < len(dblOpNames) {
+			return dblOpNames[offset]
+		}
+	}
+
+	// Handle string operations
+	if op >= OP_STR_BEGIN && op <= OP_STR_END {
+		offset := int(op - OP_STR_BEGIN)
+		if offset < len(strOpNames) {
+			return strOpNames[offset]
+		}
+	}
+
+	// Handle data type functions
+	if op >= OP_READ_INT {
+		offset := int(op - OP_READ_INT)
+		if offset < len(dataTypeNames) {
+			return dataTypeNames[offset]
+		}
+	}
+
+	// Fallback for unknown opcodes
+	return fmt.Sprintf("OPCODE_%d", int(op))
 }
 
 // OperandType represents type of an operand
@@ -722,7 +597,7 @@ func (inst *Instruction) Size() int {
 	case OperandNone:
 		// No operand
 	case OperandImmediate8, OperandRelative8:
-		size += 1
+		size++
 	case OperandImmediate16, OperandRelative16:
 		size += 2
 	case OperandImmediate32, OperandRelative32, OperandAbsolute32:

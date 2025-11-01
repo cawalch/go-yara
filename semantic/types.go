@@ -2,6 +2,7 @@
 package semantic
 
 import (
+	"errors"
 	"fmt"
 	"math"
 
@@ -50,19 +51,19 @@ type StringType struct {
 
 // Common integer types based on YARA data type functions
 var (
-	// Unsigned integer types
+	// Uint8Type represents unsigned 8-bit integer type
 	Uint8Type  = &IntegerType{Size: 1, Signed: false, BigEndian: false}
 	Uint16Type = &IntegerType{Size: 2, Signed: false, BigEndian: false}
 	Uint32Type = &IntegerType{Size: 4, Signed: false, BigEndian: false}
 	Uint64Type = &IntegerType{Size: 8, Signed: false, BigEndian: false}
 
-	// Signed integer types
+	// Int8Type represents signed 8-bit integer type
 	Int8Type  = &IntegerType{Size: 1, Signed: true, BigEndian: false}
 	Int16Type = &IntegerType{Size: 2, Signed: true, BigEndian: false}
 	Int32Type = &IntegerType{Size: 4, Signed: true, BigEndian: false}
 	Int64Type = &IntegerType{Size: 8, Signed: true, BigEndian: false}
 
-	// Big-endian variants
+	// Uint8BEType represents unsigned 8-bit big-endian integer type
 	Uint8BEType  = &IntegerType{Size: 1, Signed: false, BigEndian: true}
 	Uint16BEType = &IntegerType{Size: 2, Signed: false, BigEndian: true}
 	Uint32BEType = &IntegerType{Size: 4, Signed: false, BigEndian: true}
@@ -233,7 +234,7 @@ func (ti *TypeInfo) CanCastTo(target *TypeInfo) bool {
 }
 
 // GetIntegerRange returns the valid range for an integer type
-func (it *IntegerType) GetIntegerRange() (int64, int64) {
+func (it *IntegerType) GetIntegerRange() (minVal, maxVal int64) {
 	if it.Signed {
 		switch it.Size {
 		case 1:
@@ -262,7 +263,7 @@ func (it *IntegerType) GetIntegerRange() (int64, int64) {
 }
 
 // InferTypeFromLiteral infers type information from a literal token
-func InferTypeFromLiteral(tokenType token.TokenType, value interface{}) *TypeInfo {
+func InferTypeFromLiteral(tokenType token.TokenType, _ any) *TypeInfo {
 	switch tokenType {
 	case token.TRUE, token.FALSE:
 		return &TypeInfo{DataType: TypeBoolean}
@@ -275,6 +276,11 @@ func InferTypeFromLiteral(tokenType token.TokenType, value interface{}) *TypeInf
 		return &TypeInfo{
 			DataType:    TypeInteger,
 			IntegerType: Uint64Type, // Default to uint64 for hex literals
+		}
+	case token.OCTAL_INTEGER_LIT:
+		return &TypeInfo{
+			DataType:    TypeInteger,
+			IntegerType: Int64Type, // Default to int64 for octal literals
 		}
 	case token.FLOAT_LIT:
 		return &TypeInfo{DataType: TypeFloat}
@@ -321,94 +327,33 @@ func InferTypeFromLiteral(tokenType token.TokenType, value interface{}) *TypeInf
 // InferTypeFromBinaryOp infers the result type of a binary operation
 func InferTypeFromBinaryOp(left *TypeInfo, op token.TokenType, right *TypeInfo) (*TypeInfo, error) {
 	switch op {
-	case token.PLUS, token.MINUS, token.MULTIPLY, token.DIVIDE, token.MODULO:
-		if !left.CanPerformArithmetic(right) {
-			return nil, fmt.Errorf("cannot perform arithmetic operation %s between %s and %s",
-				op, left.String(), right.String())
-		}
-		// Result is float if either operand is float, otherwise integer
-		if left.DataType == TypeFloat || right.DataType == TypeFloat {
-			return &TypeInfo{DataType: TypeFloat}, nil
-		}
-		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}, nil
+	case token.PLUS, token.MINUS, token.MULTIPLY, token.DIVIDE, token.MODULO, token.INT_DIVIDE:
+		return inferArithmeticType(left, op, right)
 
 	case token.BITWISE_AND, token.BITWISE_OR, token.BITWISE_XOR,
 		token.LEFT_SHIFT, token.RIGHT_SHIFT, token.BITWISE_NOT:
-		if !left.CanPerformBitwise(right) {
-			return nil, fmt.Errorf("cannot perform bitwise operation %s between %s and %s",
-				op, left.String(), right.String())
-		}
-		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}, nil
+		return inferBitwiseType(left, op, right)
 
 	case token.EQ, token.NEQ, token.LT, token.LE, token.GT, token.GE:
-		if !left.CanCompare(right) {
-			return nil, fmt.Errorf("cannot compare %s and %s", left.String(), right.String())
-		}
-		return &TypeInfo{DataType: TypeBoolean}, nil
+		return inferComparisonType(left, right)
 
 	case token.AND, token.OR:
-		// In YARA, logical operators can work with any type (integers, strings, etc.)
-		// They are treated as truthy/falsy values
-		// Both operands must be comparable types, but don't have to be boolean
-		if left.DataType == TypeUnknown || right.DataType == TypeUnknown {
-			return nil, fmt.Errorf("logical operators require known operand types")
-		}
-		return &TypeInfo{DataType: TypeBoolean}, nil
+		return inferLogicalType(left, right)
 
 	case token.CONTAINS, token.ICONTAINS, token.STARTSWITH, token.ENDSWITH,
 		token.ISTARTSWITH, token.IENDSWITH, token.IEQUALS, token.MATCHES:
-		// In YARA, string operations work with:
-		// - Left: string identifier (boolean type when used in conditions)
-		// - Right: string literal or regex pattern
-		if (!left.IsString() && left.DataType != TypeBoolean) || !right.IsString() {
-			return nil, fmt.Errorf("string operations require string operands")
-		}
-		return &TypeInfo{DataType: TypeBoolean}, nil
-
-	case token.OF:
-		// Quantifier expressions (all/any/none of them) return boolean
-		// Left operand is the quantifier (all/any/none), right is the target (them or pattern)
-		return &TypeInfo{DataType: TypeBoolean}, nil
+		return inferStringOperationType(left, right)
 
 	case token.AT:
-		// AT operator: $string at offset
-		// Left should be string identifier, right should be integer offset
-		if left.DataType != TypeBoolean {
-			return nil, fmt.Errorf("AT operator requires string identifier as left operand")
-		}
-		if right.DataType != TypeInteger {
-			return nil, fmt.Errorf("AT operator requires integer offset as right operand")
-		}
-		// The result should be boolean
-		return &TypeInfo{DataType: TypeBoolean}, nil
+		return inferAtOperatorType(left, right)
 
 	case token.IN:
-		// IN operator: $string in (start..end)
-		// Left should be string identifier, right should be range
-		if left.DataType != TypeBoolean {
-			return nil, fmt.Errorf("IN operator requires string identifier as left operand")
-		}
-		if right.DataType != TypeInteger {
-			return nil, fmt.Errorf("IN operator requires integer range as right operand")
-		}
-		// The result should be boolean
-		return &TypeInfo{DataType: TypeBoolean}, nil
+		return inferInOperatorType(left, right)
 
 	case token.DOT:
-		// DOT operator (..) represents range expression: start..end
-		// Both operands should be integers, result is integer (represents the range)
-		if left.DataType != TypeInteger {
-			return nil, fmt.Errorf("range expression requires integer start value")
-		}
-		if right.DataType != TypeInteger {
-			return nil, fmt.Errorf("range expression requires integer end value")
-		}
-		// Range expressions evaluate to integer type
-		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}, nil
+		return inferDotOperatorType(left, right)
 
-	case token.COLON:
-		// COLON is used in "for" quantifiers like "for any of them : ($)"
-		// The result should be boolean
+	case token.OF, token.COLON:
 		return &TypeInfo{DataType: TypeBoolean}, nil
 
 	case token.LPAREN:
@@ -421,24 +366,115 @@ func InferTypeFromBinaryOp(left *TypeInfo, op token.TokenType, right *TypeInfo) 
 	}
 }
 
+// inferArithmeticType infers the result type of arithmetic operations
+func inferArithmeticType(left *TypeInfo, op token.TokenType, right *TypeInfo) (*TypeInfo, error) {
+	if !left.CanPerformArithmetic(right) {
+		return nil, fmt.Errorf("cannot perform arithmetic operation %s between %s and %s",
+			op, left.String(), right.String())
+	}
+	// Result is float if either operand is float, otherwise integer
+	if left.DataType == TypeFloat || right.DataType == TypeFloat {
+		return &TypeInfo{DataType: TypeFloat}, nil
+	}
+	return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}, nil
+}
+
+// inferBitwiseType infers the result type of bitwise operations
+func inferBitwiseType(left *TypeInfo, op token.TokenType, right *TypeInfo) (*TypeInfo, error) {
+	if !left.CanPerformBitwise(right) {
+		return nil, fmt.Errorf("cannot perform bitwise operation %s between %s and %s",
+			op, left.String(), right.String())
+	}
+	return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}, nil
+}
+
+// inferComparisonType infers the result type of comparison operations
+func inferComparisonType(left, right *TypeInfo) (*TypeInfo, error) {
+	if !left.CanCompare(right) {
+		return nil, fmt.Errorf("cannot compare %s and %s", left.String(), right.String())
+	}
+	return &TypeInfo{DataType: TypeBoolean}, nil
+}
+
+// inferLogicalType infers the result type of logical operations
+func inferLogicalType(left, right *TypeInfo) (*TypeInfo, error) {
+	// In YARA, logical operators can work with any type (integers, strings, etc.)
+	// They are treated as truthy/falsy values
+	// Both operands must be comparable types, but don't have to be boolean
+	if left.DataType == TypeUnknown || right.DataType == TypeUnknown {
+		return nil, errors.New("logical operators require known operand types")
+	}
+	return &TypeInfo{DataType: TypeBoolean}, nil
+}
+
+// inferStringOperationType infers the result type of string operations
+func inferStringOperationType(left, right *TypeInfo) (*TypeInfo, error) {
+	// In YARA, string operations work with:
+	// - Left: string identifier (boolean type when used in conditions)
+	// - Right: string literal or regex pattern
+	if (!left.IsString() && left.DataType != TypeBoolean) || !right.IsString() {
+		return nil, errors.New("string operations require string operands")
+	}
+	return &TypeInfo{DataType: TypeBoolean}, nil
+}
+
+// inferAtOperatorType infers the result type of AT operator
+func inferAtOperatorType(left, right *TypeInfo) (*TypeInfo, error) {
+	// AT operator: $string at offset
+	// Left should be string identifier, right should be integer offset
+	if left.DataType != TypeBoolean {
+		return nil, errors.New("AT operator requires string identifier as left operand")
+	}
+	if right.DataType != TypeInteger {
+		return nil, errors.New("AT operator requires integer offset as right operand")
+	}
+	return &TypeInfo{DataType: TypeBoolean}, nil
+}
+
+// inferInOperatorType infers the result type of IN operator
+func inferInOperatorType(left, right *TypeInfo) (*TypeInfo, error) {
+	// IN operator: $string in (start..end)
+	// Left should be string identifier, right should be range
+	if left.DataType != TypeBoolean {
+		return nil, errors.New("IN operator requires string identifier as left operand")
+	}
+	if right.DataType != TypeInteger {
+		return nil, errors.New("IN operator requires integer range as right operand")
+	}
+	return &TypeInfo{DataType: TypeBoolean}, nil
+}
+
+// inferDotOperatorType infers the result type of DOT operator
+func inferDotOperatorType(left, right *TypeInfo) (*TypeInfo, error) {
+	// DOT operator (..) represents range expression: start..end
+	// Both operands should be integers, result is integer (represents the range)
+	if left.DataType != TypeInteger {
+		return nil, errors.New("range expression requires integer start value")
+	}
+	if right.DataType != TypeInteger {
+		return nil, errors.New("range expression requires integer end value")
+	}
+	return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}, nil
+}
+
 // InferTypeFromUnaryOp infers the result type of a unary operation
 func InferTypeFromUnaryOp(op token.TokenType, operand *TypeInfo) (*TypeInfo, error) {
 	switch op {
 	case token.NOT:
 		if operand.DataType != TypeBoolean {
-			return nil, fmt.Errorf("logical not requires boolean operand")
+			return nil, errors.New("logical not requires boolean operand")
 		}
 		return &TypeInfo{DataType: TypeBoolean}, nil
 
 	case token.BITWISE_NOT:
 		if !operand.IsInteger() {
-			return nil, fmt.Errorf("bitwise not requires integer operand")
+			return nil, errors.New("bitwise not requires integer operand")
 		}
 		return &TypeInfo{DataType: TypeInteger, IntegerType: operand.IntegerType}, nil
 
 	case token.MINUS:
 		if !operand.IsNumeric() {
-			return nil, fmt.Errorf("unary minus requires numeric operand")
+			return nil, errors.New("unary minus requires numeric operand")
 		}
 		return operand, nil
 

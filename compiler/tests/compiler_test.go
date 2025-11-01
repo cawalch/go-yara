@@ -1,4 +1,3 @@
-// Package compiler provides integration tests for the YARA compiler.
 package tests
 
 import (

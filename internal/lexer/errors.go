@@ -1,5 +1,3 @@
-// Package lexer provides YARA language lexical analysis.
-// It tokenizes YARA rule source code into a stream of tokens for parsing.
 package lexer
 
 import (

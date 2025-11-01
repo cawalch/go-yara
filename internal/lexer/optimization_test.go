@@ -83,7 +83,7 @@ func BenchmarkOptimizationComparison(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
 
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			l := lexer.New(input)
 			for l.NextToken().Type != token.EOF {
 				// Consume tokens
@@ -97,7 +97,7 @@ func BenchmarkOptimizationComparison(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
 
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			l := lexer.New(input)
 			for l.NextToken().Type != token.EOF {
 				// Consume tokens

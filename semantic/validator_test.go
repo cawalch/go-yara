@@ -1,4 +1,3 @@
-// Package semantic implements semantic analysis and validation for YARA rules.
 package semantic
 
 import (
@@ -423,8 +422,7 @@ rule benchmark_rule {
 
 	validator := NewValidator()
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		validator.ValidateProgram(program)
 	}
 }

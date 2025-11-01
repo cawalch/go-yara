@@ -1,4 +1,3 @@
-// Package compiler provides tests for string compilation
 package compiler
 
 import (

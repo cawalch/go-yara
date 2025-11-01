@@ -33,7 +33,7 @@ func (p *Parser) Parse(pattern string) (*AST, error) {
 		return nil, err
 	}
 	if p.cur.kind != tEOF {
-		return nil, fmt.Errorf("unexpected input after parse")
+		return nil, errors.New("unexpected input after parse")
 	}
 	return &AST{Flags: 0, Root: root}, nil
 }
@@ -108,11 +108,11 @@ func (p *Parser) parsePrimary() (*Node, error) {
 			p.maybeMakeUngreedy(n)
 			base = n
 		case tLBrace:
-			min, max, err2 := p.parseBound()
+			minVal, maxVal, err2 := p.parseBound()
 			if err2 != nil {
 				return nil, err2
 			}
-			n := &Node{Kind: NodeRange, Children: []*Node{base}, Start: min, End: max, Greedy: true}
+			n := &Node{Kind: NodeRange, Children: []*Node{base}, Start: minVal, End: maxVal, Greedy: true}
 			p.maybeMakeUngreedy(n)
 			base = n
 		default:
@@ -135,7 +135,7 @@ func (p *Parser) parseBase() (*Node, error) {
 			return nil, err
 		}
 		if p.cur.kind != tRParen {
-			return nil, fmt.Errorf("missing ')' in group")
+			return nil, errors.New("missing ')' in group")
 		}
 		p.next()
 		return n, nil
@@ -149,7 +149,9 @@ func (p *Parser) parseBase() (*Node, error) {
 		return &Node{Kind: nk, Greedy: true}, nil
 	}
 
-	return nil, nil
+	// Returning nil, nil is intentional here - it indicates that this token
+	// is not a base expression, and the caller should handle it appropriately.
+	return nil, nil //nolint:nilnil // intentional: nil,nil indicates "not a base expression" not an error
 }
 
 func (p *Parser) next() { p.cur = p.lx.next() }
@@ -187,15 +189,19 @@ func (p *Parser) maybeMakeUngreedy(n *Node) {
 }
 
 // parseBound parses {m}, {m,}, or {m,n}. After '}', it advances p.cur to the next meaningful token.
-func (p *Parser) parseBound() (uint16, uint16, error) {
+func (p *Parser) parseBound() (minVal, maxVal uint16, err error) {
 	l := p.lx // current index is just after '{'
 	readNum := func() (uint16, error) {
 		if l.i >= l.len || l.s[l.i] < '0' || l.s[l.i] > '9' {
-			return 0, fmt.Errorf("expected number in bound")
+			return 0, errors.New("expected number in bound")
 		}
 		val := 0
 		for l.i < l.len && l.s[l.i] >= '0' && l.s[l.i] <= '9' {
-			val = min(val*10+int(l.s[l.i]-'0'), 65535) // clamp
+			newVal := val*10 + int(l.s[l.i]-'0')
+			if newVal > 65535 { //nolint:modernize // avoiding min() to prevent shadowing issues
+				newVal = 65535
+			}
+			val = newVal // clamp
 			l.i++
 		}
 		// Safe conversion with explicit bounds check
@@ -207,31 +213,30 @@ func (p *Parser) parseBound() (uint16, uint16, error) {
 		// Safe conversion with explicit truncation
 		return uint16(val & 0xFFFF), nil
 	}
-	min, err := readNum()
+	minVal, err = readNum()
 	if err != nil {
 		return 0, 0, err
 	}
-	var max uint16
 	if l.i < l.len && l.s[l.i] == ',' {
 		l.i++
 		if l.i < l.len && l.s[l.i] == '}' {
-			max = 65535 // unbounded
+			maxVal = 65535 // unbounded
 		} else {
-			m, err2 := readNum()
-			if err2 != nil {
-				return 0, 0, err2
+			maxVal, err = readNum()
+			if err != nil {
+				return 0, 0, err
 			}
-			max = m
 		}
 	} else {
-		max = min
+		maxVal = minVal
 	}
 	if l.i >= l.len || l.s[l.i] != '}' {
-		return 0, 0, fmt.Errorf("missing '}' in bound")
+		err = errors.New("missing '}' in bound")
+		return minVal, maxVal, err
 	}
 	l.i++
 	p.cur = p.lx.next() // advance to token after '}'
-	return min, max, nil
+	return minVal, maxVal, err
 }
 
 // parseClass consumes a character class from the underlying lexer state.
@@ -255,7 +260,7 @@ func (p *Parser) parseClass() (*Node, error) {
 	}
 	for {
 		if l.i >= l.len {
-			return nil, fmt.Errorf("unterminated character class")
+			return nil, errors.New("unterminated character class")
 		}
 		if l.s[l.i] == ']' {
 			l.i++
@@ -293,7 +298,7 @@ func (p *Parser) parseClass() (*Node, error) {
 
 func readEscaped(l *lexer, strict bool) (byte, error) {
 	if l.i >= l.len {
-		return 0, fmt.Errorf("unexpected end in escape")
+		return 0, errors.New("unexpected end in escape")
 	}
 	c := l.s[l.i]
 	l.i++

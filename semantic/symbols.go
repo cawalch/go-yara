@@ -1,5 +1,3 @@
-// Package semantic implements semantic analysis and validation for YARA rules.
-// It provides symbol table management, type checking, and semantic validation.
 package semantic
 
 import (
@@ -30,7 +28,7 @@ type Symbol struct {
 	Name     string
 	Type     SymbolType
 	Position token.Position
-	Node     interface{} // Reference to AST node
+	Node     any // Reference to AST node
 	Scope    *Scope
 	IsGlobal bool
 	Used     bool // Track if symbol is referenced

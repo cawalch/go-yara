@@ -202,7 +202,7 @@ func TestAdvancedFeatures_Performance(t *testing.T) {
 	}`
 
 	// Run multiple iterations to test performance consistency
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		l := lexer.New(input)
 		tokens := collectTokens(l)
 

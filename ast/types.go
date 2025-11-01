@@ -15,7 +15,7 @@ const (
 // StringModifier represents string modifiers (nocase, wide, etc.)
 type StringModifier struct {
 	Type  StringModifierType
-	Value interface{} // for xor ranges, base64 alphabets, etc.
+	Value any // for xor ranges, base64 alphabets, etc.
 }
 
 // StringModifierType defines the type of string modifier
@@ -60,7 +60,7 @@ func (t *TextString) Position() token.Position { return t.Pos }
 func (t *TextString) pattern() {}
 
 // Accept implements the Visitor pattern for TextString
-func (t *TextString) Accept(v Visitor) interface{} {
+func (t *TextString) Accept(v Visitor) any {
 	return v.VisitTextString(t)
 }
 
@@ -78,7 +78,7 @@ func (h *HexString) Position() token.Position { return h.Pos }
 func (h *HexString) pattern() {}
 
 // Accept implements the Visitor pattern for HexString
-func (h *HexString) Accept(v Visitor) interface{} {
+func (h *HexString) Accept(v Visitor) any {
 	return v.VisitHexString(h)
 }
 
@@ -96,6 +96,6 @@ func (r *RegexPattern) Position() token.Position { return r.Pos }
 func (r *RegexPattern) pattern() {}
 
 // Accept implements the Visitor pattern for RegexPattern
-func (r *RegexPattern) Accept(v Visitor) interface{} {
+func (r *RegexPattern) Accept(v Visitor) any {
 	return v.VisitRegexPattern(r)
 }

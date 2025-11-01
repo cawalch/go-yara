@@ -93,7 +93,12 @@ rule test {
 				hasErr := len(errors) > 0
 
 				if hasErr != tt.wantErr {
-					t.Errorf("ValidateStringReferences() error = %v, wantErr %v, errors: %v", hasErr, tt.wantErr, errors)
+					t.Errorf(
+						"ValidateStringReferences() error = %v, wantErr %v, errors: %v",
+						hasErr,
+						tt.wantErr,
+						errors,
+					)
 				}
 			}
 		})
@@ -199,7 +204,11 @@ func TestModuleValidatorDataTypeFunctions(t *testing.T) {
 			}
 
 			if typeInfo.DataType != TypeInteger {
-				t.Errorf("ValidateFunctionCall(%s) returned type %v, want TypeInteger", funcName, typeInfo.DataType)
+				t.Errorf(
+					"ValidateFunctionCall(%s) returned type %v, want TypeInteger",
+					funcName,
+					typeInfo.DataType,
+				)
 			}
 		})
 	}
@@ -255,7 +264,12 @@ func TestModuleValidatorInvalidFunctions(t *testing.T) {
 			hasErr := len(errors) > 0
 
 			if hasErr != tt.wantErr {
-				t.Errorf("ValidateFunctionCall() error = %v, wantErr %v, errors: %v", hasErr, tt.wantErr, errors)
+				t.Errorf(
+					"ValidateFunctionCall() error = %v, wantErr %v, errors: %v",
+					hasErr,
+					tt.wantErr,
+					errors,
+				)
 			}
 		})
 	}
@@ -316,7 +330,12 @@ rule test {
 				hasErr := len(errors) > 0
 
 				if hasErr != tt.wantErr {
-					t.Errorf("ValidateFileOperations() error = %v, wantErr %v, errors: %v", hasErr, tt.wantErr, errors)
+					t.Errorf(
+						"ValidateFileOperations() error = %v, wantErr %v, errors: %v",
+						hasErr,
+						tt.wantErr,
+						errors,
+					)
 				}
 			}
 		})
@@ -381,7 +400,11 @@ rule bitwise {
 			errors := validator.ValidateProgram(program)
 
 			if len(errors) < tt.minErrCount {
-				t.Errorf("ValidateProgram() got %d errors, want at least %d", len(errors), tt.minErrCount)
+				t.Errorf(
+					"ValidateProgram() got %d errors, want at least %d",
+					len(errors),
+					tt.minErrCount,
+				)
 			}
 		})
 	}

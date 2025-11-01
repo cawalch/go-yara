@@ -1,4 +1,3 @@
-// Package compiler provides tests for rule compilation
 package compiler
 
 import (
