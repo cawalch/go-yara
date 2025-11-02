@@ -19,7 +19,7 @@ const (
 	FlagsDotAll     Flags = 0x80
 
 	// FlagsGreedy - Parser-stage defaults/overrides captured as flags during parse.
-	FlagsGreedy   Flags = 0x400
+	FlagsGreedy Flags = 0x400
 	// FlagsUngreedy - Parser-stage defaults/overrides captured as flags during parse.
 	FlagsUngreedy Flags = 0x800
 )

@@ -1,7 +1,9 @@
 .PHONY: bench bench-save bench-profiles bench-detailed bench-memory bench-cpu bench-trace \
         pprof-cpu pprof-mem pprof-alloc pprof-heap pprof-trace benchstat bench-compare \
         bench-string-modifiers bench-regression bench-hotspots profile-analysis \
-        compare-yara compare-yara-quick compare-yara-deep compare-yara-report
+        compare-yara compare-yara-quick compare-yara-deep compare-yara-report \
+        performance-suite performance-monitor performance-baseline performance-compare \
+        performance-dashboard performance-cleanup perf-automaton perf-e2e perf-scaling
 
 # Default package to benchmark/profile
 PKG=./internal/lexer
@@ -166,6 +168,96 @@ bench-check-regression:
 	rm $$TEMP_BENCH; \
 	if [ $$FAIL -ne 0 ]; then echo "❌ Performance budget failed"; exit 1; else echo "✅ Performance within budget"; fi
 
+# === Enhanced Performance Monitoring ===
+
+# Run comprehensive performance suite
+performance-suite:
+	@echo "=== Running Comprehensive Performance Suite ==="
+	@./scripts/performance_monitor.sh run
+
+# Performance monitoring with comparison
+performance-monitor:
+	@echo "=== Performance Monitoring with Regression Detection ==="
+	@./scripts/performance_monitor.sh run
+	@echo ""
+	@echo "=== Checking for Regressions ==="
+	@./scripts/performance_monitor.sh compare
+
+# Update performance baseline
+performance-baseline:
+	@echo "=== Updating Performance Baseline ==="
+	@./scripts/performance_monitor.sh run
+	@./scripts/performance_monitor.sh baseline
+	@echo ""
+	@echo "✅ Performance baseline updated successfully"
+
+# Compare with existing baseline
+performance-compare:
+	@echo "=== Performance Comparison ==="
+	@./scripts/performance_monitor.sh compare
+
+# Generate performance dashboard
+performance-dashboard:
+	@echo "=== Generating Performance Dashboard ==="
+	@./scripts/performance_monitor.sh dashboard
+
+# Clean up old performance data
+performance-cleanup:
+	@echo "=== Cleaning Performance Data ==="
+	@./scripts/performance_monitor.sh cleanup 30
+
+# === Component-Specific Benchmarks ===
+
+# ACAutomaton performance benchmarks (CRITICAL COMPONENT)
+perf-automaton:
+	@echo "=== ACAutomaton Performance Benchmarks ==="
+	@mkdir -p performance-results
+	@echo "Testing ACAutomaton core performance..."
+	@go test -bench=BenchmarkMicro.* -benchmem -benchtime=5s -count=3 -run=^$ ./compiler > performance-results/automaton_$(date +%Y%m%d_%H%M%S).txt
+	@echo "Running memory profiling..."
+	@go test -bench=BenchmarkMicro_StringMatching_PerformanceRegression -memprofile=performance-results/automaton_mem_$(date +%Y%m%d_%H%M%S).out -run=^$ ./compiler
+	@echo "ACAutomaton benchmarks completed!"
+	@echo "Results saved to performance-results/"
+
+# End-to-end performance benchmarks
+perf-e2e:
+	@echo "=== End-to-End Performance Benchmarks ==="
+	@mkdir -p performance-results
+	@echo "Testing end-to-end performance..."
+	@go run simple_benchmark.go -iterations 1000 -verbose > performance-results/e2e_$(date +%Y%m%d_%H%M%S).txt
+	@echo "E2E benchmarks completed!"
+	@echo "Results saved to performance-results/"
+
+# Scaling analysis benchmarks
+perf-scaling:
+	@echo "=== Scaling Performance Analysis ==="
+	@mkdir -p performance-results
+	@echo "Testing scaling performance..."
+	@go run scaling_analysis.go > performance-results/scaling_$(date +%Y%m%d_%H%M%S).txt
+	@echo "Scaling analysis completed!"
+	@echo "Results saved to performance-results/"
+
+# Quick performance check (CI-friendly)
+perf-quick:
+	@echo "=== Quick Performance Check ==="
+	@echo "ACAutomaton performance:"
+	@go test -bench=BenchmarkMicro_StringMatching_PerformanceRegression -benchmem -run=^$$ ./compiler
+	@echo ""
+	@echo "E2E performance:"
+	@cd cmd/performance && go run simple_benchmark.go -iterations 100
+
+# Performance regression check (stricter than CI)
+perf-regression:
+	@echo "=== Performance Regression Check ==="
+	@echo "Checking for performance regressions against stored baseline..."
+	@if [ ! -f performance-data/baselines/latest_baseline.txt ]; then \
+		echo "No baseline found. Running performance-suite first..."; \
+		$(MAKE) performance-suite; \
+	fi
+	@./scripts/performance_monitor.sh compare
+	@echo ""
+	@echo "✅ No performance regressions detected"
+
 # Help target
 help:
 	@echo "Available performance analysis targets:"
@@ -176,6 +268,21 @@ help:
 	@echo "  bench-memory       - Run memory-focused benchmarks"
 	@echo "  bench-cpu          - Run CPU-focused benchmarks"
 	@echo "  bench-string-modifiers - Run string modifier benchmarks"
+	@echo ""
+	@echo "Enhanced Performance Monitoring:"
+	@echo "  performance-suite     - Run comprehensive performance suite"
+	@echo "  performance-monitor    - Run suite with regression detection"
+	@echo "  performance-baseline   - Update performance baseline"
+	@echo "  performance-compare   - Compare with baseline"
+	@echo "  performance-dashboard  - Generate HTML dashboard"
+	@echo "  performance-cleanup   - Clean old data (30 days)"
+	@echo ""
+	@echo "Component-Specific Benchmarks:"
+	@echo "  perf-automaton       - ACAutomaton performance (CRITICAL)"
+	@echo "  perf-e2e            - End-to-end performance"
+	@echo "  perf-scaling        - Scaling analysis"
+	@echo "  perf-quick          - Quick performance check"
+	@echo "  perf-regression     - Strict regression check"
 	@echo ""
 	@echo "Profiling:"
 	@echo "  bench-profiles     - Generate comprehensive profiles"

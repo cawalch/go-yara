@@ -27,7 +27,9 @@ var stringBuilderPool = sync.Pool{
 
 // String interning for common short literals and keywords
 // Limited size to prevent unbounded memory growth
+// Thread-safe implementation using RWMutex for optimal read performance
 type stringInterner struct {
+	mu        sync.RWMutex
 	cache     map[string]string
 	maxSize   int
 	maxLength int
@@ -40,6 +42,7 @@ var globalInterner = &stringInterner{
 }
 
 // internString returns an interned version of the string if beneficial
+// Thread-safe implementation optimized for read-heavy workloads
 func (si *stringInterner) internString(s string) string {
 	if !isStringInterningEnabled() {
 		return s
@@ -50,7 +53,19 @@ func (si *stringInterner) internString(s string) string {
 		return s
 	}
 
-	// Check if already interned
+	// Fast path: try read lock first for the common case of existing strings
+	si.mu.RLock()
+	if interned, exists := si.cache[s]; exists {
+		si.mu.RUnlock()
+		return interned
+	}
+	si.mu.RUnlock()
+
+	// Slow path: need to potentially write, acquire write lock
+	si.mu.Lock()
+	defer si.mu.Unlock()
+
+	// Double-check under write lock - another goroutine might have added it
 	if interned, exists := si.cache[s]; exists {
 		return interned
 	}

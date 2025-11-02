@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/cawalch/go-yara/compiler"
+	"github.com/cawalch/go-yara/regex"
 )
 
 // runComparisons executes all test cases for both implementations
@@ -283,6 +284,44 @@ func (c *Comparator) setupAutomatonMatches(interpreter *compiler.Interpreter, au
 			Base:    0,
 		})
 	}
+
+	// Handle regex patterns separately since they're not added to the Aho-Corasick automaton
+	c.setupRegexMatches(interpreter, automaton, data)
+}
+
+// setupRegexMatches handles regex pattern matching separately from the automaton
+func (c *Comparator) setupRegexMatches(interpreter *compiler.Interpreter, automaton *compiler.ACAutomaton, data []byte) {
+	for _, strInfo := range automaton.Strings {
+		if strInfo.IsRegex {
+			// For regex patterns, we need to execute the regex bytecode directly
+			matches := c.executeRegexPattern(strInfo, data)
+			if c.config.Verbose {
+				fmt.Printf("DEBUG: Regex %s found %d matches\n", strInfo.Identifier, len(matches))
+			}
+			for _, match := range matches {
+				interpreter.GetMatchContext().AddMatch(match)
+			}
+		}
+	}
+}
+
+// executeRegexPattern executes a regex pattern against data and returns matches
+func (c *Comparator) executeRegexPattern(strInfo compiler.ACStringInfo, data []byte) []compiler.Match {
+	var matches []compiler.Match
+
+	// Execute the regex bytecode using the regex package
+	// We need to use scan semantics to find all occurrences
+	matched, start, end := regex.ExecMatch(strInfo.Data, data, regex.FlagsScan)
+	if matched {
+		matches = append(matches, compiler.Match{
+			Pattern: strInfo.Identifier,
+			Offset:  int64(start),
+			Length:  end - start,
+			Base:    0,
+		})
+	}
+
+	return matches
 }
 
 // setupMemorySlots initializes VM memory slots with string identifiers
