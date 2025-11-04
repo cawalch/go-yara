@@ -352,7 +352,6 @@ func (tc *TypeChecker) checkUnaryOp(unaryOp *ast.UnaryOp) *TypeInfo {
 	}
 }
 
-
 // checkQuantifierOp checks quantifier operation types
 func (tc *TypeChecker) checkQuantifierOp(_, _ *TypeInfo, _ token.Position) *TypeInfo {
 	// Left side should be a quantifier (all, any, none) or number

@@ -14,9 +14,9 @@ rule DemoRule {
         // String matching
         any of them and
         
-        // File size operations
-        filesize > 1MB and
-        filesize < 100KB and
+        // File size operations (realistic range)
+        filesize > 1KB and
+        filesize < 1MB and
         
         // Data type functions with bitwise operations
         uint32(0) == 0x5A4D and
@@ -31,7 +31,7 @@ rule DemoRule {
         
         // Bitwise NOT and XOR
         ~uint16(2) == 0xFFFF and
-        (flags ^ 0xAA) == 0x55 and
+        (uint16(4) ^ 0xAA) == 0xA4 and
         
         // Complex combined expressions
         ((uint32(entrypoint) & 0xFF00) >> 8) | 0x01 != 0

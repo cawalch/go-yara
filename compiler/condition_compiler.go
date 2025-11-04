@@ -3,7 +3,9 @@ package compiler
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/cawalch/go-yara/ast"
@@ -20,6 +22,42 @@ type ConditionCompiler struct {
 	labelCounter      int            // For generating unique labels
 	labels            map[string]int // Label name to bytecode offset
 	pendingJumps      []PendingJump  // Jumps that need label resolution
+}
+
+// parseSizeLiteral parses a size literal string like "100KB" or "1MB" into bytes
+func parseSizeLiteral(literal string) (int64, error) {
+	// Regular expression to match size literals
+	re := regexp.MustCompile(`^(0x[0-9a-fA-F]+|\d+)(KB|MB|GB|TB)$`)
+	matches := re.FindStringSubmatch(strings.TrimSpace(literal))
+	if matches == nil {
+		return 0, fmt.Errorf("invalid size literal format: %s", literal)
+	}
+
+	// Parse the numeric part
+	var num int64
+	var err error
+	if strings.HasPrefix(matches[1], "0x") {
+		num, err = strconv.ParseInt(matches[1], 0, 64)
+	} else {
+		num, err = strconv.ParseInt(matches[1], 10, 64)
+	}
+	if err != nil {
+		return 0, fmt.Errorf("invalid number in size literal: %s", matches[1])
+	}
+
+	// Apply the multiplier
+	switch strings.ToUpper(matches[2]) {
+	case "KB":
+		return num * 1024, nil
+	case "MB":
+		return num * 1024 * 1024, nil
+	case "GB":
+		return num * 1024 * 1024 * 1024, nil
+	case "TB":
+		return num * 1024 * 1024 * 1024 * 1024, nil
+	default:
+		return 0, fmt.Errorf("unsupported size unit: %s", matches[2])
+	}
 }
 
 // PendingJump represents a jump instruction that needs label resolution
@@ -140,7 +178,6 @@ func (cc *ConditionCompiler) emitStringOffset(offset, line, column int) {
 	}
 }
 
-
 // emitStringIdentifier pushes a string identifier as ValueTypeString for pattern operations
 // Used by AT and IN operators that need the string identifier, not the FOUND result
 func (cc *ConditionCompiler) emitStringIdentifier(offset int, identifier string, line, column int) {
@@ -239,6 +276,17 @@ func (cc *ConditionCompiler) compileLiteral(lit *ast.Literal) error {
 			} else {
 				cc.emitter.EmitPush(uint64(value), lit.Pos.Line, lit.Pos.Column)
 			}
+		} else {
+			// Fallback: try to parse the literal as a string
+			if litStr, isStr := lit.Value.(string); isStr {
+				if parsed, err := parseSizeLiteral(litStr); err == nil {
+					cc.emitter.EmitPush(uint64(parsed), lit.Pos.Line, lit.Pos.Column)
+				} else {
+					return fmt.Errorf("failed to parse size literal %s: %w", litStr, err)
+				}
+			} else {
+				return fmt.Errorf("SIZE_LIT token has invalid value: %v (type: %T)", lit.Value, lit.Value)
+			}
 		}
 	case token.TRUE:
 		cc.emitter.EmitPush(1, lit.Pos.Line, lit.Pos.Column)
@@ -304,9 +352,8 @@ func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 	case "them":
 		// "them" is used in quantifier expressions like "any of them"
 		// In YARA, "them" refers to all strings in the current rule
-		// Emit a reference to all strings in the current rule
-		cc.emitter.EmitOpcode(OP_PUSH_M, ident.Pos.Line, ident.Pos.Column)
-		cc.emitter.EmitPush(0, ident.Pos.Line, ident.Pos.Column) // Will be replaced with string count by interpreter
+		// Use a special value to indicate this represents all strings
+		cc.emitter.EmitPush(0xFFFFFFFE, ident.Pos.Line, ident.Pos.Column) // Special marker for "all strings"
 	case "flags":
 		// YARA builtin variable that contains PE header flags
 		// This should be implemented as a module import in the future
@@ -1013,9 +1060,8 @@ func (cc *ConditionCompiler) compileOfExpression(ofExpr *ast.OfExpression) error
 	case *ast.Identifier:
 		if stringsExpr.Name == "them" {
 			// "them" refers to all strings in the current rule
-			// Emit a reference to all strings
-			cc.emitter.EmitOpcode(OP_PUSH_M, stringsExpr.Pos.Line, stringsExpr.Pos.Column)
-			cc.emitter.EmitPush(0, stringsExpr.Pos.Line, stringsExpr.Pos.Column) // Placeholder for string count
+			// Use a special value to indicate this represents all strings
+			cc.emitter.EmitPush(0xFFFFFFFE, stringsExpr.Pos.Line, stringsExpr.Pos.Column) // Special marker for "all strings"
 		} else if cc.isRuleReference(stringsExpr.Name) {
 			// This is a rule reference (e.g., "none of (a)" where "a" is a rule)
 			// Compile as a proper rule reference

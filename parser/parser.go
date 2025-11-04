@@ -1104,7 +1104,6 @@ func (p *Parser) parseLiteral(pos token.Position) (ast.Expression, error) {
 	return nil, ErrNotLiteral
 }
 
-
 // parseForQuantifier parses "for" quantifier expressions with optional variables and ranges
 func (p *Parser) parseForQuantifier(pos token.Position) (ast.Expression, error) {
 	// Parse the quantifier after 'for'
