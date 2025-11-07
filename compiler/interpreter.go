@@ -222,7 +222,42 @@ func (i *Interpreter) Execute() error {
 }
 
 // executeOpcode executes a single opcode using direct dispatch
-//
+// validateBytecodeBounds checks if there are enough bytes remaining to read the specified amount
+func (i *Interpreter) validateBytecodeBounds(opcode Opcode, bytesNeeded int) error {
+	if i.ip+bytesNeeded > len(i.bytecode) {
+		return &InterpreterError{
+			Type:    ErrorInvalidBytecode,
+			Opcode:  opcode,
+			Message: "unexpected end of bytecode",
+		}
+	}
+	return nil
+}
+
+// validateStackUnderflow checks if the stack has at least one value
+func (i *Interpreter) validateStackUnderflow(opcode Opcode) error {
+	if len(i.stack) == 0 {
+		return &InterpreterError{
+			Type:    ErrorStackUnderflow,
+			Opcode:  opcode,
+			Message: "stack underflow",
+		}
+	}
+	return nil
+}
+
+// validateStackUnderflowN checks if the stack has at least n values
+func (i *Interpreter) validateStackUnderflowN(opcode Opcode, n int) error {
+	if len(i.stack) < n {
+		return &InterpreterError{
+			Type:    ErrorStackUnderflow,
+			Opcode:  opcode,
+			Message: "stack underflow",
+		}
+	}
+	return nil
+}
+
 //nolint:maintidx
 func (i *Interpreter) executeOpcode(opcode Opcode) error {
 	switch opcode {
@@ -231,24 +266,24 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 		return nil
 	// Stack operations
 	case OP_PUSH_8:
-		if i.ip >= len(i.bytecode) {
-			return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: opcode, Message: "unexpected end of bytecode"}
+		if err := i.validateBytecodeBounds(opcode, 1); err != nil {
+			return err
 		}
 		val := int64(i.bytecode[i.ip])
 		i.ip++
 		return i.push(Value{Type: ValueTypeInt, IntVal: val})
 
 	case OP_PUSH_16:
-		if i.ip+1 >= len(i.bytecode) {
-			return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: opcode, Message: "unexpected end of bytecode"}
+		if err := i.validateBytecodeBounds(opcode, 2); err != nil {
+			return err
 		}
 		val := int64(i.bytecode[i.ip]) | int64(i.bytecode[i.ip+1])<<8
 		i.ip += 2
 		return i.push(Value{Type: ValueTypeInt, IntVal: val})
 
 	case OP_PUSH_32:
-		if i.ip+3 >= len(i.bytecode) {
-			return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: opcode, Message: "unexpected end of bytecode"}
+		if err := i.validateBytecodeBounds(opcode, 4); err != nil {
+			return err
 		}
 		val := int64(i.bytecode[i.ip]) | int64(i.bytecode[i.ip+1])<<8 |
 			int64(i.bytecode[i.ip+2])<<16 | int64(i.bytecode[i.ip+3])<<24
@@ -266,8 +301,8 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 		return i.push(Value{Type: ValueTypeInt, IntVal: val})
 
 	case OP_PUSH_DBL:
-		if i.ip+7 >= len(i.bytecode) {
-			return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: opcode, Message: "unexpected end of bytecode"}
+		if err := i.validateBytecodeBounds(opcode, 8); err != nil {
+			return err
 		}
 		bits := uint64(i.bytecode[i.ip]) | uint64(i.bytecode[i.ip+1])<<8 |
 			uint64(i.bytecode[i.ip+2])<<16 | uint64(i.bytecode[i.ip+3])<<24 |
@@ -278,8 +313,8 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 		return i.push(Value{Type: ValueTypeDouble, DoubleVal: val})
 
 	case OP_PUSH_RULE_REF:
-		if i.ip >= len(i.bytecode) {
-			return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: opcode, Message: "unexpected end of bytecode"}
+		if err := i.validateBytecodeBounds(opcode, 1); err != nil {
+			return err
 		}
 		ruleIdx := int(i.bytecode[i.ip])
 		i.ip++
@@ -290,8 +325,8 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 		return i.push(Value{Type: ValueTypeRuleRef, StringVal: ruleName})
 
 	case OP_POP:
-		if len(i.stack) == 0 {
-			return &InterpreterError{Type: ErrorStackUnderflow, Opcode: opcode, Message: "stack underflow"}
+		if err := i.validateStackUnderflow(opcode); err != nil {
+			return err
 		}
 		i.stack = i.stack[:len(i.stack)-1]
 		return nil
@@ -307,8 +342,8 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 		return i.executeBinaryOp(func(a, b int64) int64 { return a ^ b }, nil)
 
 	case OP_BITWISE_NOT:
-		if len(i.stack) == 0 {
-			return &InterpreterError{Type: ErrorStackUnderflow, Opcode: opcode, Message: "stack underflow"}
+		if err := i.validateStackUnderflow(opcode); err != nil {
+			return err
 		}
 		v := i.stack[len(i.stack)-1]
 		switch v.Type {
@@ -364,8 +399,8 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 		}, nil)
 
 	case OP_NOT:
-		if len(i.stack) == 0 {
-			return &InterpreterError{Type: ErrorStackUnderflow, Opcode: opcode, Message: "stack underflow"}
+		if err := i.validateStackUnderflow(opcode); err != nil {
+			return err
 		}
 		v := i.stack[len(i.stack)-1]
 		result := i.isTruthy(v)
@@ -373,8 +408,8 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 		return nil
 
 	case OP_DEFINED:
-		if len(i.stack) == 0 {
-			return &InterpreterError{Type: ErrorStackUnderflow, Opcode: opcode, Message: "stack underflow"}
+		if err := i.validateStackUnderflow(opcode); err != nil {
+			return err
 		}
 		v := i.stack[len(i.stack)-1]
 		defined := v.Type != ValueTypeUndefined
@@ -390,8 +425,8 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 		return nil
 
 	case OP_JZ:
-		if len(i.stack) == 0 {
-			return &InterpreterError{Type: ErrorStackUnderflow, Opcode: opcode, Message: "stack underflow"}
+		if err := i.validateStackUnderflow(opcode); err != nil {
+			return err
 		}
 		v := i.stack[len(i.stack)-1]
 		i.stack = i.stack[:len(i.stack)-1]
@@ -406,8 +441,8 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 		return nil
 
 	case OP_JTRUE:
-		if len(i.stack) == 0 {
-			return &InterpreterError{Type: ErrorStackUnderflow, Opcode: opcode, Message: "stack underflow"}
+		if err := i.validateStackUnderflow(opcode); err != nil {
+			return err
 		}
 		v := i.stack[len(i.stack)-1]
 		i.stack = i.stack[:len(i.stack)-1]
@@ -422,8 +457,8 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 		return nil
 
 	case OP_JFALSE:
-		if len(i.stack) == 0 {
-			return &InterpreterError{Type: ErrorStackUnderflow, Opcode: opcode, Message: "stack underflow"}
+		if err := i.validateStackUnderflow(opcode); err != nil {
+			return err
 		}
 		v := i.stack[len(i.stack)-1]
 		i.stack = i.stack[:len(i.stack)-1]
@@ -439,8 +474,8 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 
 	// Memory operations
 	case OP_PUSH_M:
-		if i.ip >= len(i.bytecode) {
-			return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: opcode, Message: "unexpected end of bytecode"}
+		if err := i.validateBytecodeBounds(opcode, 1); err != nil {
+			return err
 		}
 		slot := int(i.bytecode[i.ip])
 		i.ip++
@@ -450,11 +485,11 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 		return i.push(i.memory[slot])
 
 	case OP_POP_M:
-		if i.ip >= len(i.bytecode) {
-			return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: opcode, Message: "unexpected end of bytecode"}
+		if err := i.validateBytecodeBounds(opcode, 1); err != nil {
+			return err
 		}
-		if len(i.stack) == 0 {
-			return &InterpreterError{Type: ErrorStackUnderflow, Opcode: opcode, Message: "stack underflow"}
+		if err := i.validateStackUnderflow(opcode); err != nil {
+			return err
 		}
 		slot := int(i.bytecode[i.ip])
 		i.ip++
@@ -466,8 +501,8 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 		return nil
 
 	case OP_CLEAR_M:
-		if i.ip >= len(i.bytecode) {
-			return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: opcode, Message: "unexpected end of bytecode"}
+		if err := i.validateBytecodeBounds(opcode, 1); err != nil {
+			return err
 		}
 		slot := int(i.bytecode[i.ip])
 		i.ip++
@@ -478,8 +513,8 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 		return nil
 
 	case OP_INCR_M:
-		if i.ip >= len(i.bytecode) {
-			return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: opcode, Message: "unexpected end of bytecode"}
+		if err := i.validateBytecodeBounds(opcode, 1); err != nil {
+			return err
 		}
 		slot := int(i.bytecode[i.ip])
 		i.ip++
@@ -498,8 +533,8 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 		return nil
 
 	case OP_SWAPUNDEF:
-		if len(i.stack) < 2 {
-			return &InterpreterError{Type: ErrorStackUnderflow, Opcode: opcode, Message: "stack underflow"}
+		if err := i.validateStackUnderflowN(opcode, 2); err != nil {
+			return err
 		}
 		top := i.stack[len(i.stack)-1]
 		second := i.stack[len(i.stack)-2]
@@ -511,8 +546,8 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 
 	// Type conversion operations
 	case OP_INT_TO_DBL:
-		if len(i.stack) == 0 {
-			return &InterpreterError{Type: ErrorStackUnderflow, Opcode: opcode, Message: "stack underflow"}
+		if err := i.validateStackUnderflow(opcode); err != nil {
+			return err
 		}
 		v := i.stack[len(i.stack)-1]
 		if v.Type == ValueTypeInt {
@@ -523,8 +558,8 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 		return nil
 
 	case OP_STR_TO_BOOL:
-		if len(i.stack) == 0 {
-			return &InterpreterError{Type: ErrorStackUnderflow, Opcode: opcode, Message: "stack underflow"}
+		if err := i.validateStackUnderflow(opcode); err != nil {
+			return err
 		}
 		v := i.stack[len(i.stack)-1]
 		if v.Type == ValueTypeString {
@@ -614,8 +649,8 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 
 	// Rule operations
 	case OP_PUSH_RULE:
-		if i.ip >= len(i.bytecode) {
-			return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: opcode, Message: "unexpected end of bytecode"}
+		if err := i.validateBytecodeBounds(opcode, 1); err != nil {
+			return err
 		}
 		ruleIdx := int(i.bytecode[i.ip])
 		i.ip++
@@ -626,8 +661,8 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 		return i.push(Value{Type: ValueTypeString, StringVal: ruleName})
 
 	case OP_INIT_RULE:
-		if i.ip >= len(i.bytecode) {
-			return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: opcode, Message: "unexpected end of bytecode"}
+		if err := i.validateBytecodeBounds(opcode, 1); err != nil {
+			return err
 		}
 		ruleIdx := int(i.bytecode[i.ip])
 		i.ip++
@@ -638,8 +673,8 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 		return i.push(Value{Type: ValueTypeInt, IntVal: 1})
 
 	case OP_MATCH_RULE:
-		if len(i.stack) == 0 {
-			return &InterpreterError{Type: ErrorStackUnderflow, Opcode: opcode, Message: "stack underflow"}
+		if err := i.validateStackUnderflow(opcode); err != nil {
+			return err
 		}
 		condition := i.stack[len(i.stack)-1]
 		i.stack = i.stack[:len(i.stack)-1]
@@ -812,8 +847,8 @@ func (i *Interpreter) isTruthy(v Value) bool {
 
 // executeTypedComparison executes comparison operations for both integer and double types
 func (i *Interpreter) executeTypedComparison(opcode Opcode) error {
-	if len(i.stack) < 2 {
-		return &InterpreterError{Type: ErrorStackUnderflow, Message: "stack underflow"}
+	if err := i.validateStackUnderflowN(opcode, 2); err != nil {
+		return err
 	}
 
 	b := i.stack[len(i.stack)-1]
@@ -871,8 +906,8 @@ func (i *Interpreter) executeTypedComparison(opcode Opcode) error {
 
 // executeReadIntOp executes integer reading operations (little-endian)
 func (i *Interpreter) executeReadIntOp(size int, signed bool) error {
-	if len(i.stack) == 0 {
-		return &InterpreterError{Type: ErrorStackUnderflow, Message: "stack underflow"}
+	if err := i.validateStackUnderflow(OP_INT8); err != nil {
+		return err
 	}
 
 	offsetVal := i.stack[len(i.stack)-1]
@@ -892,8 +927,8 @@ func (i *Interpreter) executeReadIntOp(size int, signed bool) error {
 
 // executeReadIntOpBE executes integer reading operations (big-endian)
 func (i *Interpreter) executeReadIntOpBE(size int, signed bool) error {
-	if len(i.stack) == 0 {
-		return &InterpreterError{Type: ErrorStackUnderflow, Message: "stack underflow"}
+	if err := i.validateStackUnderflow(OP_INT8BE); err != nil {
+		return err
 	}
 
 	offsetVal := i.stack[len(i.stack)-1]
@@ -968,8 +1003,8 @@ func (i *Interpreter) executeReadIntOpBE(size int, signed bool) error {
 
 // executeLengthOperation executes OP_LENGTH
 func (i *Interpreter) executeLengthOperation() error {
-	if len(i.stack) < 2 {
-		return &InterpreterError{Type: ErrorStackUnderflow, Message: "stack underflow"}
+	if err := i.validateStackUnderflowN(OP_LENGTH, 2); err != nil {
+		return err
 	}
 
 	index := i.stack[len(i.stack)-1]
@@ -999,8 +1034,8 @@ func (i *Interpreter) executeLengthOperation() error {
 
 // executeCountOperation executes OP_COUNT
 func (i *Interpreter) executeCountOperation() error {
-	if len(i.stack) == 0 {
-		return &InterpreterError{Type: ErrorStackUnderflow, Message: "stack underflow"}
+	if err := i.validateStackUnderflow(OP_COUNT); err != nil {
+		return err
 	}
 
 	pattern := i.stack[len(i.stack)-1]
@@ -1024,8 +1059,8 @@ func (i *Interpreter) executeCountOperation() error {
 
 // executeFoundOperation executes OP_FOUND
 func (i *Interpreter) executeFoundOperation() error {
-	if len(i.stack) == 0 {
-		return &InterpreterError{Type: ErrorStackUnderflow, Message: "stack underflow"}
+	if err := i.validateStackUnderflow(OP_FOUND); err != nil {
+		return err
 	}
 
 	pattern := i.stack[len(i.stack)-1]
@@ -1046,8 +1081,8 @@ func (i *Interpreter) executeFoundOperation() error {
 
 // executeFoundAtOperation executes OP_FOUND_AT
 func (i *Interpreter) executeFoundAtOperation() error {
-	if len(i.stack) < 2 {
-		return &InterpreterError{Type: ErrorStackUnderflow, Message: "stack underflow"}
+	if err := i.validateStackUnderflowN(OP_FOUND_AT, 2); err != nil {
+		return err
 	}
 
 	offset := i.stack[len(i.stack)-1]
@@ -1083,8 +1118,8 @@ func (i *Interpreter) executeFoundAtOperation() error {
 
 // executeFoundInOperation executes OP_FOUND_IN
 func (i *Interpreter) executeFoundInOperation() error {
-	if len(i.stack) < 3 {
-		return &InterpreterError{Type: ErrorStackUnderflow, Message: "stack underflow"}
+	if err := i.validateStackUnderflowN(OP_FOUND_IN, 3); err != nil {
+		return err
 	}
 
 	endOffset := i.stack[len(i.stack)-1]
@@ -1121,8 +1156,8 @@ func (i *Interpreter) executeFoundInOperation() error {
 
 // executeOffsetOperation executes OP_OFFSET
 func (i *Interpreter) executeOffsetOperation() error {
-	if len(i.stack) < 2 {
-		return &InterpreterError{Type: ErrorStackUnderflow, Message: "stack underflow"}
+	if err := i.validateStackUnderflowN(OP_OFFSET, 2); err != nil {
+		return err
 	}
 
 	index := i.stack[len(i.stack)-1]
@@ -1152,8 +1187,8 @@ func (i *Interpreter) executeOffsetOperation() error {
 
 // executeOfOperation executes OP_OF
 func (i *Interpreter) executeOfOperation() error {
-	if len(i.stack) < 2 {
-		return &InterpreterError{Type: ErrorStackUnderflow, Message: "stack underflow in OP_OF"}
+	if err := i.validateStackUnderflowN(OP_OF, 2); err != nil {
+		return err
 	}
 
 	// Pop strings identifier and count
@@ -1205,8 +1240,8 @@ func (i *Interpreter) executeOfOperation() error {
 
 // executeMatchesOperation executes OP_MATCHES
 func (i *Interpreter) executeMatchesOperation() error {
-	if len(i.stack) == 0 {
-		return &InterpreterError{Type: ErrorStackUnderflow, Message: "stack underflow"}
+	if err := i.validateStackUnderflow(OP_MATCHES); err != nil {
+		return err
 	}
 
 	pattern := i.stack[len(i.stack)-1]
@@ -1250,8 +1285,8 @@ func (i *Interpreter) executeArithmeticOperation(opcode Opcode) error {
 			return a % b, nil
 		}, nil)
 	case OP_INT_MINUS:
-		if len(i.stack) == 0 {
-			return &InterpreterError{Type: ErrorStackUnderflow, Opcode: opcode, Message: "stack underflow"}
+		if err := i.validateStackUnderflow(opcode); err != nil {
+			return err
 		}
 		v := i.stack[len(i.stack)-1]
 		switch v.Type {
@@ -1272,8 +1307,8 @@ func (i *Interpreter) executeArithmeticOperation(opcode Opcode) error {
 	case OP_DBL_DIV:
 		return i.executeDoubleOp(func(a, b float64) float64 { return a / b })
 	case OP_DBL_MINUS:
-		if len(i.stack) == 0 {
-			return &InterpreterError{Type: ErrorStackUnderflow, Opcode: opcode, Message: "stack underflow"}
+		if err := i.validateStackUnderflow(opcode); err != nil {
+			return err
 		}
 		v := i.stack[len(i.stack)-1]
 		switch v.Type {

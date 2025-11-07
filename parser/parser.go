@@ -753,20 +753,7 @@ func (p *Parser) parseAdditive() (ast.Expression, error) {
 		return nil, err
 	}
 
-	for p.currentTokenIs(token.PLUS) || p.currentTokenIs(token.MINUS) {
-		op := p.current.Type
-		pos := p.current.Pos
-		p.nextToken()
-
-		right, addErr := p.parseMultiplicative()
-		if addErr != nil {
-			return nil, addErr
-		}
-
-		left = p.builder.BinaryOp(pos, left, op, right)
-	}
-
-	return left, nil
+	return p.parseBinaryExpression(left, p.parseMultiplicative, []token.TokenType{token.PLUS, token.MINUS})
 }
 
 // parseMultiplicative parses multiplication, division, and modulo
@@ -776,20 +763,7 @@ func (p *Parser) parseMultiplicative() (ast.Expression, error) {
 		return nil, err
 	}
 
-	for p.currentTokenIs(token.MULTIPLY) || p.currentTokenIs(token.DIVIDE) || p.currentTokenIs(token.MODULO) || p.currentTokenIs(token.INT_DIVIDE) {
-		op := p.current.Type
-		pos := p.current.Pos
-		p.nextToken()
-
-		right, mulErr := p.parseUnary()
-		if mulErr != nil {
-			return nil, mulErr
-		}
-
-		left = p.builder.BinaryOp(pos, left, op, right)
-	}
-
-	return left, nil
+	return p.parseBinaryExpression(left, p.parseUnary, []token.TokenType{token.MULTIPLY, token.DIVIDE, token.MODULO, token.INT_DIVIDE})
 }
 
 // parseUnary parses unary expressions (unary minus, bitwise NOT)
@@ -817,20 +791,7 @@ func (p *Parser) parseBitwiseShift() (ast.Expression, error) {
 		return nil, err
 	}
 
-	for p.currentTokenIs(token.LEFT_SHIFT) || p.currentTokenIs(token.RIGHT_SHIFT) {
-		op := p.current.Type
-		pos := p.current.Pos
-		p.nextToken()
-
-		right, shiftErr := p.parseAdditive()
-		if shiftErr != nil {
-			return nil, shiftErr
-		}
-
-		left = p.builder.BinaryOp(pos, left, op, right)
-	}
-
-	return left, nil
+	return p.parseBinaryExpression(left, p.parseAdditive, []token.TokenType{token.LEFT_SHIFT, token.RIGHT_SHIFT})
 }
 
 // parseBitwiseAnd parses bitwise AND operations
@@ -840,20 +801,7 @@ func (p *Parser) parseBitwiseAnd() (ast.Expression, error) {
 		return nil, err
 	}
 
-	for p.currentTokenIs(token.BITWISE_AND) {
-		op := p.current.Type
-		pos := p.current.Pos
-		p.nextToken()
-
-		right, andErr := p.parseBitwiseShift()
-		if andErr != nil {
-			return nil, andErr
-		}
-
-		left = p.builder.BinaryOp(pos, left, op, right)
-	}
-
-	return left, nil
+	return p.parseBinaryExpression(left, p.parseBitwiseShift, []token.TokenType{token.BITWISE_AND})
 }
 
 // parseBitwiseXor parses bitwise XOR operations
@@ -863,20 +811,7 @@ func (p *Parser) parseBitwiseXor() (ast.Expression, error) {
 		return nil, err
 	}
 
-	for p.currentTokenIs(token.BITWISE_XOR) {
-		op := p.current.Type
-		pos := p.current.Pos
-		p.nextToken()
-
-		right, xorErr := p.parseBitwiseAnd()
-		if xorErr != nil {
-			return nil, xorErr
-		}
-
-		left = p.builder.BinaryOp(pos, left, op, right)
-	}
-
-	return left, nil
+	return p.parseBinaryExpression(left, p.parseBitwiseAnd, []token.TokenType{token.BITWISE_XOR})
 }
 
 // parseBitwiseOr parses bitwise OR operations
@@ -886,20 +821,7 @@ func (p *Parser) parseBitwiseOr() (ast.Expression, error) {
 		return nil, err
 	}
 
-	for p.currentTokenIs(token.BITWISE_OR) {
-		op := p.current.Type
-		pos := p.current.Pos
-		p.nextToken()
-
-		right, orErr := p.parseBitwiseXor()
-		if orErr != nil {
-			return nil, orErr
-		}
-
-		left = p.builder.BinaryOp(pos, left, op, right)
-	}
-
-	return left, nil
+	return p.parseBinaryExpression(left, p.parseBitwiseXor, []token.TokenType{token.BITWISE_OR})
 }
 
 // parsePrimary parses primary expressions
@@ -1503,63 +1425,43 @@ func (p *Parser) isDataTypeFunction(t token.TokenType) bool {
 	}
 }
 
-// parseIntegerLiteral parses an integer literal token and returns the int64 value
-func (p *Parser) parseIntegerLiteral() int64 {
+// parseIntLiteralWithBase parses an integer literal with specified base and prefixes
+func (p *Parser) parseIntLiteralWithBase(base int, prefixes []string, literalType string) int64 {
 	literal := p.current.Literal
 
-	// Parse decimal integer
-	if value, err := strconv.ParseInt(literal, 10, 64); err == nil {
+	// Remove specified prefixes
+	for _, prefix := range prefixes {
+		literal = strings.TrimPrefix(literal, prefix)
+		literal = strings.TrimPrefix(literal, strings.ToUpper(prefix))
+	}
+
+	// Parse integer with specified base
+	if value, err := strconv.ParseInt(literal, base, 64); err == nil {
 		return value
 	}
 
 	// If parsing fails, return 0 and log error
-	p.errors = append(
-		p.errors,
-		fmt.Errorf("invalid integer literal: %s at %v", literal, p.current.Pos),
-	)
+	if literalType == "" {
+		p.errors = append(p.errors, fmt.Errorf("invalid integer literal: %s at %v", p.current.Literal, p.current.Pos))
+	} else {
+		p.errors = append(p.errors, fmt.Errorf("invalid %s integer literal: %s at %v", literalType, p.current.Literal, p.current.Pos))
+	}
 	return 0
+}
+
+// parseIntegerLiteral parses a decimal integer literal token and returns the int64 value
+func (p *Parser) parseIntegerLiteral() int64 {
+	return p.parseIntLiteralWithBase(10, nil, "")
 }
 
 // parseHexIntegerLiteral parses a hex integer literal token and returns the int64 value
 func (p *Parser) parseHexIntegerLiteral() int64 {
-	literal := p.current.Literal
-
-	// Remove 0x prefix if present
-	literal = strings.TrimPrefix(literal, "0x")
-	literal = strings.TrimPrefix(literal, "0X")
-
-	// Parse hexadecimal integer
-	if value, err := strconv.ParseInt(literal, 16, 64); err == nil {
-		return value
-	}
-
-	// If parsing fails, return 0 and log error
-	p.errors = append(
-		p.errors,
-		fmt.Errorf("invalid hex integer literal: %s at %v", p.current.Literal, p.current.Pos),
-	)
-	return 0
+	return p.parseIntLiteralWithBase(16, []string{"0x"}, "hex")
 }
 
 // parseOctalIntegerLiteral parses an octal integer literal token and returns the int64 value
 func (p *Parser) parseOctalIntegerLiteral() int64 {
-	literal := p.current.Literal
-
-	// Remove 0o prefix if present
-	literal = strings.TrimPrefix(literal, "0o")
-	literal = strings.TrimPrefix(literal, "0O")
-
-	// Parse octal integer
-	if value, err := strconv.ParseInt(literal, 8, 64); err == nil {
-		return value
-	}
-
-	// If parsing fails, return 0 and log error
-	p.errors = append(
-		p.errors,
-		fmt.Errorf("invalid octal integer literal: %s at %v", p.current.Literal, p.current.Pos),
-	)
-	return 0
+	return p.parseIntLiteralWithBase(8, []string{"0o"}, "octal")
 }
 
 // parseFloatLiteral parses a float literal token and returns the float64 value
