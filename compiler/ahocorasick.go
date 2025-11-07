@@ -72,6 +72,7 @@ func (ac *ACAutomaton) AddString(identifier string, data []byte, isHex, isRegex 
 		Data:       data,
 		IsHex:      isHex,
 		IsRegex:    isRegex,
+		Flags:      0, // Default flags
 	}
 	return ac.addStringToAutomaton(config)
 }
@@ -89,12 +90,17 @@ func (ac *ACAutomaton) addStringToAutomaton(config StringConfig) error {
 		IsHex:      config.IsHex,
 		IsRegex:    config.IsRegex,
 		Data:       make([]byte, len(config.Data)),
+		Flags:      config.Flags,
 	}
 	copy(stringInfo.Data, config.Data)
 
 	// Add string to collection
 	ac.strings = append(ac.strings, stringInfo)
 	ac.StringCount = len(ac.strings)
+
+	// Update backward compatibility field
+	ac.Strings = make([]ACStringInfo, len(ac.strings))
+	copy(ac.Strings, ac.strings)
 	stringIndex := int32(len(ac.strings) - 1)
 
 	// Build trie for pattern matching
@@ -274,9 +280,16 @@ func (ac *ACAutomaton) AddStringWithFlags(
 	identifier string,
 	data []byte,
 	isHex, isRegex bool,
-	_ regex.Flags,
+	flags regex.Flags,
 ) error {
-	return ac.AddString(identifier, data, isHex, isRegex)
+	config := StringConfig{
+		Identifier: identifier,
+		Data:       data,
+		IsHex:      isHex,
+		IsRegex:    isRegex,
+		Flags:      flags,
+	}
+	return ac.addStringToAutomaton(config)
 }
 
 // AddStringWithConfig adds a string using configuration
@@ -440,6 +453,7 @@ type StringConfig struct {
 	Data       []byte
 	IsHex      bool
 	IsRegex    bool
+	Flags      regex.Flags
 }
 
 // StringConfigWithFlags extends StringConfig with regex flags
