@@ -7,7 +7,7 @@ import (
 
 // writeFileWithErrCheck writes data to a file and exits on error
 func writeFileWithErrCheck(filename string, data []byte) {
-	if err := writeFileWithErrCheck(filename, data); err != nil {
+	if err := os.WriteFile(filename, data, 0600); err != nil {
 		fmt.Fprintf(os.Stderr, "Error writing file %s: %v\n", filename, err)
 		os.Exit(1)
 	}
