@@ -234,7 +234,6 @@ func (cc *ConditionCompiler) compileLiteral(lit *ast.Literal) error {
 	switch lit.Type {
 	case token.INTEGER_LIT:
 		if value, ok := lit.Value.(int64); ok {
-			// Safe conversion with explicit overflow handling
 			if value < 0 {
 				cc.emitter.EmitPush(uint64(0), lit.Pos.Line, lit.Pos.Column)
 			} else {
@@ -246,7 +245,6 @@ func (cc *ConditionCompiler) compileLiteral(lit *ast.Literal) error {
 			// Safe conversion with explicit truncation
 			cc.emitter.EmitPush(uint64(value), lit.Pos.Line, lit.Pos.Column)
 		} else {
-			// Handle case where value is not int64
 			cc.emitter.EmitPush(0, lit.Pos.Line, lit.Pos.Column)
 		}
 	case token.OCTAL_INTEGER_LIT:
@@ -254,7 +252,6 @@ func (cc *ConditionCompiler) compileLiteral(lit *ast.Literal) error {
 			// Safe conversion with explicit truncation
 			cc.emitter.EmitPush(uint64(value), lit.Pos.Line, lit.Pos.Column)
 		} else {
-			// Handle case where value is not int64
 			cc.emitter.EmitPush(0, lit.Pos.Line, lit.Pos.Column)
 		}
 	case token.FLOAT_LIT:
@@ -270,7 +267,6 @@ func (cc *ConditionCompiler) compileLiteral(lit *ast.Literal) error {
 	case token.SIZE_LIT:
 		if value, ok := lit.Value.(int64); ok {
 			// Size literals (KB, MB, GB) are already converted to bytes by the parser
-			// Safe conversion with explicit overflow handling
 			if value < 0 {
 				cc.emitter.EmitPush(uint64(0), lit.Pos.Line, lit.Pos.Column)
 			} else {
@@ -587,83 +583,43 @@ func (cc *ConditionCompiler) handleFloatOperations(binOp *ast.BinaryOp, leftIsFl
 }
 
 // selectOpcode selects the appropriate opcode based on the operator and operand types
+type opcodeMapping struct {
+	intOp, dblOp Opcode
+}
+
 func (cc *ConditionCompiler) selectOpcode(binOp *ast.BinaryOp, isFloatOp bool) (Opcode, error) {
-	switch binOp.Op {
-	case token.AND:
-		return OP_AND, nil
-	case token.OR:
-		return OP_OR, nil
-	case token.PLUS:
-		if isFloatOp {
-			return OP_DBL_ADD, nil
-		}
-		return OP_INT_ADD, nil
-	case token.MINUS:
-		if isFloatOp {
-			return OP_DBL_SUB, nil
-		}
-		return OP_INT_SUB, nil
-	case token.MULTIPLY:
-		if isFloatOp {
-			return OP_DBL_MUL, nil
-		}
-		return OP_INT_MUL, nil
-	case token.DIVIDE:
-		if isFloatOp {
-			return OP_DBL_DIV, nil
-		}
-		return OP_INT_DIV, nil
-	case token.MODULO:
-		return OP_MOD, nil
-	case token.BITWISE_AND:
-		return OP_BITWISE_AND, nil
-	case token.BITWISE_OR:
-		return OP_BITWISE_OR, nil
-	case token.BITWISE_XOR:
-		return OP_BITWISE_XOR, nil
-	case token.LEFT_SHIFT:
-		return OP_SHL, nil
-	case token.RIGHT_SHIFT:
-		return OP_SHR, nil
-	case token.EQ:
-		if isFloatOp {
-			return OP_DBL_EQ, nil
-		}
-		return OP_INT_EQ, nil
-	case token.NEQ:
-		if isFloatOp {
-			return OP_DBL_NEQ, nil
-		}
-		return OP_INT_NEQ, nil
-	case token.LT:
-		if isFloatOp {
-			return OP_DBL_LT, nil
-		}
-		return OP_INT_LT, nil
-	case token.LE:
-		if isFloatOp {
-			return OP_DBL_LE, nil
-		}
-		return OP_INT_LE, nil
-	case token.GT:
-		if isFloatOp {
-			return OP_DBL_GT, nil
-		}
-		return OP_INT_GT, nil
-	case token.GE:
-		if isFloatOp {
-			return OP_DBL_GE, nil
-		}
-		return OP_INT_GE, nil
-	case token.CONTAINS:
-		return OP_CONTAINS, nil
-	case token.MATCHES:
-		return OP_MATCHES, nil
-	case token.OF:
-		return OP_OF, nil
-	default:
-		return 0, fmt.Errorf("unsupported binary operator: %s", binOp.Op)
+	opcodeMap := map[token.TokenType]opcodeMapping{
+		token.AND:         {OP_AND, OP_AND},
+		token.OR:          {OP_OR, OP_OR},
+		token.PLUS:        {OP_INT_ADD, OP_DBL_ADD},
+		token.MINUS:       {OP_INT_SUB, OP_DBL_SUB},
+		token.MULTIPLY:    {OP_INT_MUL, OP_DBL_MUL},
+		token.DIVIDE:      {OP_INT_DIV, OP_DBL_DIV},
+		token.MODULO:      {OP_MOD, OP_MOD},
+		token.BITWISE_AND: {OP_BITWISE_AND, OP_BITWISE_AND},
+		token.BITWISE_OR:  {OP_BITWISE_OR, OP_BITWISE_OR},
+		token.BITWISE_XOR: {OP_BITWISE_XOR, OP_BITWISE_XOR},
+		token.LEFT_SHIFT:  {OP_SHL, OP_SHL},
+		token.RIGHT_SHIFT: {OP_SHR, OP_SHR},
+		token.EQ:          {OP_INT_EQ, OP_DBL_EQ},
+		token.NEQ:         {OP_INT_NEQ, OP_DBL_NEQ},
+		token.LT:          {OP_INT_LT, OP_DBL_LT},
+		token.LE:          {OP_INT_LE, OP_DBL_LE},
+		token.GT:          {OP_INT_GT, OP_DBL_GT},
+		token.GE:          {OP_INT_GE, OP_DBL_GE},
+		token.CONTAINS:    {OP_CONTAINS, OP_CONTAINS},
+		token.MATCHES:     {OP_MATCHES, OP_MATCHES},
+		token.OF:          {OP_OF, OP_OF},
 	}
+
+	if mapping, exists := opcodeMap[binOp.Op]; exists {
+		if isFloatOp {
+			return mapping.dblOp, nil
+		}
+		return mapping.intOp, nil
+	}
+
+	return 0, fmt.Errorf("unsupported binary operator: %s", binOp.Op)
 }
 
 // handleSpecialOperators handles operators with special compilation requirements
@@ -993,40 +949,6 @@ func (cc *ConditionCompiler) EstimateComplexity(expr ast.Expression) int {
 	}
 
 	return complexity
-}
-
-// Debug printing functions
-
-// PrintExpression prints a human-readable representation of an expression
-func (cc *ConditionCompiler) PrintExpression(expr ast.Expression) {
-	cc.printExpressionRecursive(expr, 0)
-}
-
-func (cc *ConditionCompiler) printExpressionRecursive(expr ast.Expression, depth int) {
-	indent := ""
-	var indentSb904 strings.Builder
-	for range depth {
-		indentSb904.WriteString("  ")
-	}
-	indent += indentSb904.String()
-
-	switch e := expr.(type) {
-	case *ast.Literal:
-		fmt.Printf("%sLiteral(%s: %v)\n", indent, e.Type, e.Value)
-	case *ast.Identifier:
-		fmt.Printf("%sIdentifier(%s)\n", indent, e.Name)
-	case *ast.BinaryOp:
-		fmt.Printf("%sBinaryOp(%s)\n", indent, e.Op)
-		cc.printExpressionRecursive(e.Left, depth+1)
-		cc.printExpressionRecursive(e.Right, depth+1)
-	case *ast.UnaryOp:
-		fmt.Printf("%sUnaryOp(%s)\n", indent, e.Op)
-		cc.printExpressionRecursive(e.Right, depth+1)
-	case *ast.OfExpression:
-		fmt.Printf("%sOfExpression\n", indent)
-		cc.printExpressionRecursive(e.Count, depth+1)
-		cc.printExpressionRecursive(e.Strings, depth+1)
-	}
 }
 
 // compileOfExpression compiles an "of" expression (e.g., "any of them", "1 of ($a, $b)")

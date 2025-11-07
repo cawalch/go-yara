@@ -1747,21 +1747,6 @@ func TestConditionCompilerValidateExpression(t *testing.T) {
 	}
 }
 
-// TestConditionCompilerPrintExpression tests expression printing
-func TestConditionCompilerPrintExpression(_ *testing.T) {
-	emitter := NewEmitter()
-	cc := NewConditionCompiler(emitter, make(map[string]int))
-
-	expr := &ast.Literal{
-		Pos:   token.Position{Line: 1, Column: 1},
-		Type:  token.TRUE,
-		Value: true,
-	}
-
-	// This should not panic
-	cc.PrintExpression(expr)
-}
-
 // TestCompilerGetErrors tests getting errors
 func TestCompilerGetErrors(t *testing.T) {
 	compiler := NewCompiler()
@@ -2948,61 +2933,6 @@ func TestInstructionIsJump(t *testing.T) {
 			}
 		})
 	}
-}
-
-// TestConditionCompilerPrintExpressionRecursive tests printExpressionRecursive method
-func TestConditionCompilerPrintExpressionRecursive(_ *testing.T) {
-	emitter := NewEmitter()
-	cc := NewConditionCompiler(emitter, make(map[string]int))
-
-	// Test with a literal expression
-	expr := &ast.Literal{
-		Pos:   token.Position{Line: 1, Column: 1},
-		Type:  token.TRUE,
-		Value: true,
-	}
-
-	// This function prints to stdout, so we just verify it doesn't panic
-	cc.printExpressionRecursive(expr, 0)
-
-	// Test with a binary operation
-	binOp := &ast.BinaryOp{
-		Pos: token.Position{Line: 1, Column: 1},
-		Op:  token.AND,
-		Left: &ast.Literal{
-			Pos:   token.Position{Line: 1, Column: 1},
-			Type:  token.TRUE,
-			Value: true,
-		},
-		Right: &ast.Literal{
-			Pos:   token.Position{Line: 1, Column: 1},
-			Type:  token.FALSE,
-			Value: false,
-		},
-	}
-
-	cc.printExpressionRecursive(binOp, 0)
-
-	// Test with a unary operation
-	unaryOp := &ast.UnaryOp{
-		Pos: token.Position{Line: 1, Column: 1},
-		Op:  token.NOT,
-		Right: &ast.Literal{
-			Pos:   token.Position{Line: 1, Column: 1},
-			Type:  token.TRUE,
-			Value: true,
-		},
-	}
-
-	cc.printExpressionRecursive(unaryOp, 0)
-
-	// Test with an identifier
-	ident := &ast.Identifier{
-		Pos:  token.Position{Line: 1, Column: 1},
-		Name: "test_var",
-	}
-
-	cc.printExpressionRecursive(ident, 0)
 }
 
 // TestConditionCompilerCompileBinaryOp tests compileBinaryOp method
