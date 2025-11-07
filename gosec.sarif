@@ -1,7 +1,684 @@
 {
 	"runs": [
 		{
-			"results": [],
+			"results": [
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "testdata/performance/generate_test_data.go"
+								},
+								"region": {
+									"endColumn": 2,
+									"endLine": 10,
+									"snippet": {
+										"text": "os.MkdirAll(dir, 0755)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 2,
+									"startLine": 10
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Expect directory permissions to be 0750 or less"
+					},
+					"ruleId": "G301"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "testdata/performance/generate_test_data.go"
+								},
+								"region": {
+									"endColumn": 2,
+									"endLine": 411,
+									"snippet": {
+										"text": "os.WriteFile(filename, data, 0644)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 2,
+									"startLine": 411
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Expect WriteFile permissions to be 0600 or less"
+					},
+					"ruleId": "G306"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "testdata/performance/generate_test_data.go"
+								},
+								"region": {
+									"endColumn": 2,
+									"endLine": 378,
+									"snippet": {
+										"text": "os.WriteFile(filename, []byte(content), 0644)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 2,
+									"startLine": 378
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Expect WriteFile permissions to be 0600 or less"
+					},
+					"ruleId": "G306"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "testdata/performance/generate_test_data.go"
+								},
+								"region": {
+									"endColumn": 2,
+									"endLine": 365,
+									"snippet": {
+										"text": "os.WriteFile(filename, []byte(content), 0644)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 2,
+									"startLine": 365
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Expect WriteFile permissions to be 0600 or less"
+					},
+					"ruleId": "G306"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "testdata/performance/generate_test_data.go"
+								},
+								"region": {
+									"endColumn": 2,
+									"endLine": 355,
+									"snippet": {
+										"text": "os.WriteFile(filename, data, 0644)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 2,
+									"startLine": 355
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Expect WriteFile permissions to be 0600 or less"
+					},
+					"ruleId": "G306"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "testdata/performance/generate_test_data.go"
+								},
+								"region": {
+									"endColumn": 2,
+									"endLine": 325,
+									"snippet": {
+										"text": "os.WriteFile(filename, data, 0644)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 2,
+									"startLine": 325
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Expect WriteFile permissions to be 0600 or less"
+					},
+					"ruleId": "G306"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "testdata/performance/generate_test_data.go"
+								},
+								"region": {
+									"endColumn": 2,
+									"endLine": 287,
+									"snippet": {
+										"text": "os.WriteFile(filename, data, 0644)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 2,
+									"startLine": 287
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Expect WriteFile permissions to be 0600 or less"
+					},
+					"ruleId": "G306"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "testdata/performance/generate_test_data.go"
+								},
+								"region": {
+									"endColumn": 2,
+									"endLine": 250,
+									"snippet": {
+										"text": "os.WriteFile(filename, data, 0644)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 2,
+									"startLine": 250
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Expect WriteFile permissions to be 0600 or less"
+					},
+					"ruleId": "G306"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "testdata/performance/generate_test_data.go"
+								},
+								"region": {
+									"endColumn": 2,
+									"endLine": 215,
+									"snippet": {
+										"text": "os.WriteFile(filename, data, 0644)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 2,
+									"startLine": 215
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Expect WriteFile permissions to be 0600 or less"
+					},
+					"ruleId": "G306"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "testdata/performance/generate_test_data.go"
+								},
+								"region": {
+									"endColumn": 2,
+									"endLine": 181,
+									"snippet": {
+										"text": "os.WriteFile(filename, data, 0644)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 2,
+									"startLine": 181
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Expect WriteFile permissions to be 0600 or less"
+					},
+					"ruleId": "G306"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "testdata/performance/generate_test_data.go"
+								},
+								"region": {
+									"endColumn": 2,
+									"endLine": 150,
+									"snippet": {
+										"text": "os.WriteFile(filename, []byte(content), 0644)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 2,
+									"startLine": 150
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Expect WriteFile permissions to be 0600 or less"
+					},
+					"ruleId": "G306"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "testdata/performance/generate_test_data.go"
+								},
+								"region": {
+									"endColumn": 2,
+									"endLine": 131,
+									"snippet": {
+										"text": "os.WriteFile(filename, data, 0644)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 2,
+									"startLine": 131
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Expect WriteFile permissions to be 0600 or less"
+					},
+					"ruleId": "G306"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "testdata/performance/generate_test_data.go"
+								},
+								"region": {
+									"endColumn": 2,
+									"endLine": 95,
+									"snippet": {
+										"text": "os.WriteFile(filename, data, 0644)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 2,
+									"startLine": 95
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Expect WriteFile permissions to be 0600 or less"
+					},
+					"ruleId": "G306"
+				},
+				{
+					"level": "warning",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "testdata/performance/generate_test_data.go"
+								},
+								"region": {
+									"endColumn": 2,
+									"endLine": 411,
+									"snippet": {
+										"text": "os.WriteFile(filename, data, 0644)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 2,
+									"startLine": 411
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Errors unhandled"
+					},
+					"ruleId": "G104"
+				},
+				{
+					"level": "warning",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "testdata/performance/generate_test_data.go"
+								},
+								"region": {
+									"endColumn": 2,
+									"endLine": 378,
+									"snippet": {
+										"text": "os.WriteFile(filename, []byte(content), 0644)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 2,
+									"startLine": 378
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Errors unhandled"
+					},
+					"ruleId": "G104"
+				},
+				{
+					"level": "warning",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "testdata/performance/generate_test_data.go"
+								},
+								"region": {
+									"endColumn": 2,
+									"endLine": 365,
+									"snippet": {
+										"text": "os.WriteFile(filename, []byte(content), 0644)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 2,
+									"startLine": 365
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Errors unhandled"
+					},
+					"ruleId": "G104"
+				},
+				{
+					"level": "warning",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "testdata/performance/generate_test_data.go"
+								},
+								"region": {
+									"endColumn": 2,
+									"endLine": 355,
+									"snippet": {
+										"text": "os.WriteFile(filename, data, 0644)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 2,
+									"startLine": 355
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Errors unhandled"
+					},
+					"ruleId": "G104"
+				},
+				{
+					"level": "warning",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "testdata/performance/generate_test_data.go"
+								},
+								"region": {
+									"endColumn": 2,
+									"endLine": 325,
+									"snippet": {
+										"text": "os.WriteFile(filename, data, 0644)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 2,
+									"startLine": 325
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Errors unhandled"
+					},
+					"ruleId": "G104"
+				},
+				{
+					"level": "warning",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "testdata/performance/generate_test_data.go"
+								},
+								"region": {
+									"endColumn": 2,
+									"endLine": 287,
+									"snippet": {
+										"text": "os.WriteFile(filename, data, 0644)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 2,
+									"startLine": 287
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Errors unhandled"
+					},
+					"ruleId": "G104"
+				},
+				{
+					"level": "warning",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "testdata/performance/generate_test_data.go"
+								},
+								"region": {
+									"endColumn": 2,
+									"endLine": 250,
+									"snippet": {
+										"text": "os.WriteFile(filename, data, 0644)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 2,
+									"startLine": 250
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Errors unhandled"
+					},
+					"ruleId": "G104"
+				},
+				{
+					"level": "warning",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "testdata/performance/generate_test_data.go"
+								},
+								"region": {
+									"endColumn": 2,
+									"endLine": 215,
+									"snippet": {
+										"text": "os.WriteFile(filename, data, 0644)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 2,
+									"startLine": 215
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Errors unhandled"
+					},
+					"ruleId": "G104"
+				},
+				{
+					"level": "warning",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "testdata/performance/generate_test_data.go"
+								},
+								"region": {
+									"endColumn": 2,
+									"endLine": 181,
+									"snippet": {
+										"text": "os.WriteFile(filename, data, 0644)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 2,
+									"startLine": 181
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Errors unhandled"
+					},
+					"ruleId": "G104"
+				},
+				{
+					"level": "warning",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "testdata/performance/generate_test_data.go"
+								},
+								"region": {
+									"endColumn": 2,
+									"endLine": 150,
+									"snippet": {
+										"text": "os.WriteFile(filename, []byte(content), 0644)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 2,
+									"startLine": 150
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Errors unhandled"
+					},
+					"ruleId": "G104"
+				},
+				{
+					"level": "warning",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "testdata/performance/generate_test_data.go"
+								},
+								"region": {
+									"endColumn": 2,
+									"endLine": 131,
+									"snippet": {
+										"text": "os.WriteFile(filename, data, 0644)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 2,
+									"startLine": 131
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Errors unhandled"
+					},
+					"ruleId": "G104"
+				},
+				{
+					"level": "warning",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "testdata/performance/generate_test_data.go"
+								},
+								"region": {
+									"endColumn": 2,
+									"endLine": 95,
+									"snippet": {
+										"text": "os.WriteFile(filename, data, 0644)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 2,
+									"startLine": 95
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Errors unhandled"
+					},
+					"ruleId": "G104"
+				},
+				{
+					"level": "warning",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "testdata/performance/generate_test_data.go"
+								},
+								"region": {
+									"endColumn": 2,
+									"endLine": 10,
+									"snippet": {
+										"text": "os.MkdirAll(dir, 0755)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 2,
+									"startLine": 10
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Errors unhandled"
+					},
+					"ruleId": "G104"
+				}
+			],
 			"taxonomies": [
 				{
 					"downloadUri": "https://cwe.mitre.org/data/xml/cwec_v4.4.xml.zip",
@@ -16,6 +693,30 @@
 					"shortDescription": {
 						"text": "The MITRE Common Weakness Enumeration"
 					},
+					"taxa": [
+						{
+							"fullDescription": {
+								"text": "During installation, installed file permissions are set to allow anyone to modify those files."
+							},
+							"guid": "fca8970d-b44c-3162-a385-cc09266d12a4",
+							"helpUri": "https://cwe.mitre.org/data/definitions/276.html",
+							"id": "276",
+							"shortDescription": {
+								"text": "Incorrect Default Permissions"
+							}
+						},
+						{
+							"fullDescription": {
+								"text": "The software does not properly anticipate or handle exceptional conditions that rarely occur during normal operation of the software."
+							},
+							"guid": "7df38d1d-038e-3ced-8601-8d9265b90a25",
+							"helpUri": "https://cwe.mitre.org/data/definitions/703.html",
+							"id": "703",
+							"shortDescription": {
+								"text": "Improper Check or Handling of Exceptional Conditions"
+							}
+						}
+					],
 					"version": "4.4"
 				}
 			],
@@ -24,6 +725,122 @@
 					"guid": "8b518d5f-906d-39f9-894b-d327b1a421c5",
 					"informationUri": "https://github.com/securego/gosec/",
 					"name": "gosec",
+					"rules": [
+						{
+							"defaultConfiguration": {
+								"level": "warning"
+							},
+							"fullDescription": {
+								"text": "Errors unhandled"
+							},
+							"help": {
+								"text": "Errors unhandled\nSeverity: LOW\nConfidence: HIGH\n"
+							},
+							"id": "G104",
+							"name": "Improper Check or Handling of Exceptional Conditions",
+							"properties": {
+								"precision": "high",
+								"tags": [
+									"security",
+									"LOW"
+								]
+							},
+							"relationships": [
+								{
+									"kinds": [
+										"superset"
+									],
+									"target": {
+										"guid": "7df38d1d-038e-3ced-8601-8d9265b90a25",
+										"id": "703",
+										"toolComponent": {
+											"guid": "f2856fc0-85b7-373f-83e7-6f8582243547",
+											"name": "CWE"
+										}
+									}
+								}
+							],
+							"shortDescription": {
+								"text": "Errors unhandled"
+							}
+						},
+						{
+							"defaultConfiguration": {
+								"level": "error"
+							},
+							"fullDescription": {
+								"text": "Expect WriteFile permissions to be 0600 or less"
+							},
+							"help": {
+								"text": "Expect WriteFile permissions to be 0600 or less\nSeverity: MEDIUM\nConfidence: HIGH\n"
+							},
+							"id": "G306",
+							"name": "Incorrect Default Permissions",
+							"properties": {
+								"precision": "high",
+								"tags": [
+									"security",
+									"MEDIUM"
+								]
+							},
+							"relationships": [
+								{
+									"kinds": [
+										"superset"
+									],
+									"target": {
+										"guid": "fca8970d-b44c-3162-a385-cc09266d12a4",
+										"id": "276",
+										"toolComponent": {
+											"guid": "f2856fc0-85b7-373f-83e7-6f8582243547",
+											"name": "CWE"
+										}
+									}
+								}
+							],
+							"shortDescription": {
+								"text": "Expect WriteFile permissions to be 0600 or less"
+							}
+						},
+						{
+							"defaultConfiguration": {
+								"level": "error"
+							},
+							"fullDescription": {
+								"text": "Expect directory permissions to be 0750 or less"
+							},
+							"help": {
+								"text": "Expect directory permissions to be 0750 or less\nSeverity: MEDIUM\nConfidence: HIGH\n"
+							},
+							"id": "G301",
+							"name": "Incorrect Default Permissions",
+							"properties": {
+								"precision": "high",
+								"tags": [
+									"security",
+									"MEDIUM"
+								]
+							},
+							"relationships": [
+								{
+									"kinds": [
+										"superset"
+									],
+									"target": {
+										"guid": "fca8970d-b44c-3162-a385-cc09266d12a4",
+										"id": "276",
+										"toolComponent": {
+											"guid": "f2856fc0-85b7-373f-83e7-6f8582243547",
+											"name": "CWE"
+										}
+									}
+								}
+							],
+							"shortDescription": {
+								"text": "Expect directory permissions to be 0750 or less"
+							}
+						}
+					],
 					"semanticVersion": "dev",
 					"supportedTaxonomies": [
 						{

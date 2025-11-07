@@ -2,11 +2,13 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/cawalch/go-yara/ast"
 	"github.com/cawalch/go-yara/compiler"
@@ -46,9 +48,13 @@ func main() {
 }
 
 type commandArgs struct {
-	filename string
-	mode     string
-	dataFile string
+	filename         string
+	mode             string
+	dataFile         string
+	enableStreaming  bool
+	chunkSize        int
+	maxConcurrency   int
+	earlyTermination bool
 }
 
 func parseArgs() *commandArgs {
@@ -58,8 +64,12 @@ func parseArgs() *commandArgs {
 	}
 
 	args := &commandArgs{
-		filename: os.Args[1],
-		mode:     modeCompile, // default mode
+		filename:         os.Args[1],
+		mode:             modeCompile, // default mode
+		enableStreaming:  false,       // disabled by default
+		chunkSize:        1024 * 1024, // 1MB default
+		maxConcurrency:   4,           // default concurrency
+		earlyTermination: false,       // disabled by default
 	}
 
 	if err := parseModeFlags(args); err != nil {
@@ -82,6 +92,12 @@ func printUsage() {
 	fmt.Println("  --compile : Full compilation (default)")
 	fmt.Println("  --execute : Execute rules against data (requires --data)")
 	fmt.Println("  --data    : Data file to match against (for --execute mode)")
+	fmt.Println("")
+	fmt.Println("Streaming options (for --execute mode):")
+	fmt.Println("  --streaming        : Enable streaming processing for large files")
+	fmt.Println("  --chunk-size <n>   : Set chunk size in bytes (default: 1MB)")
+	fmt.Println("  --max-concurrency <n> : Set maximum concurrent goroutines (default: 4)")
+	fmt.Println("  --early-termination : Enable early termination when matches found")
 	os.Exit(1)
 }
 
@@ -103,6 +119,30 @@ func parseModeFlags(args *commandArgs) error {
 			} else {
 				return errors.New("--data requires a filename")
 			}
+		case "--streaming":
+			args.enableStreaming = true
+		case "--chunk-size":
+			if i+1 < len(os.Args) {
+				_, err := fmt.Sscanf(os.Args[i+1], "%d", &args.chunkSize)
+				if err != nil || args.chunkSize <= 0 {
+					return errors.New("--chunk-size requires a positive integer")
+				}
+				i++ // Skip next argument
+			} else {
+				return errors.New("--chunk-size requires a size value")
+			}
+		case "--max-concurrency":
+			if i+1 < len(os.Args) {
+				_, err := fmt.Sscanf(os.Args[i+1], "%d", &args.maxConcurrency)
+				if err != nil || args.maxConcurrency <= 0 {
+					return errors.New("--max-concurrency requires a positive integer")
+				}
+				i++ // Skip next argument
+			} else {
+				return errors.New("--max-concurrency requires a value")
+			}
+		case "--early-termination":
+			args.earlyTermination = true
 		}
 	}
 	return nil
@@ -140,7 +180,7 @@ func runMode(mode string, content []byte, args *commandArgs) {
 	case modeCompile:
 		runCompileMode(string(content), args.filename)
 	case modeExecute:
-		runExecuteMode(string(content), args.dataFile, args.filename)
+		runExecuteMode(string(content), args.dataFile, args.filename, args)
 	default:
 		fmt.Printf("Unknown mode: %s\n", mode)
 		os.Exit(1)
@@ -303,7 +343,7 @@ func runCompileMode(content, filename string) {
 	}
 }
 
-func runExecuteMode(content, dataFile, filename string) {
+func runExecuteMode(content, dataFile, filename string, args *commandArgs) {
 	data := validateAndReadDataFile(dataFile)
 	if data == nil {
 		return
@@ -316,7 +356,7 @@ func runExecuteMode(content, dataFile, filename string) {
 		return
 	}
 
-	executeRules(compiledProgram, data)
+	executeRules(compiledProgram, data, args)
 }
 
 func validateAndReadDataFile(dataFile string) []byte {
@@ -373,7 +413,13 @@ func compileRules(content, filename string) *compiler.CompiledProgram {
 	return compiledProgram
 }
 
-func executeRules(compiledProgram *compiler.CompiledProgram, data []byte) {
+func executeRules(compiledProgram *compiler.CompiledProgram, data []byte, args *commandArgs) {
+	if args.enableStreaming {
+		executeRulesStreaming(compiledProgram, data, args)
+		return
+	}
+
+	// Traditional execution
 	totalMatches := 0
 	ruleResults := make(map[string]bool)
 
@@ -514,6 +560,52 @@ func executeSingleRule(interp *compiler.Interpreter, _ *compiler.CompiledRule) {
 				fmt.Printf("  Result: NO MATCH\n")
 			}
 		}
+	}
+}
+
+// executeRulesStreaming executes rules using streaming approach
+func executeRulesStreaming(compiledProgram *compiler.CompiledProgram, data []byte, args *commandArgs) {
+	fmt.Printf("Streaming execution enabled (chunk size: %d bytes, concurrency: %d)\n", args.chunkSize, args.maxConcurrency)
+
+	// Configure streaming
+	compiledProgram.EnableStreaming(true)
+	compiledProgram.SetStreamingChunkSize(args.chunkSize)
+	compiledProgram.SetStreamingConcurrency(args.maxConcurrency)
+	compiledProgram.EnableStreamingEarlyTermination(args.earlyTermination)
+
+	// Create context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Process with streaming
+	start := time.Now()
+	matches, err := compiledProgram.ProcessBytesStreaming(ctx, data)
+	if err != nil {
+		fmt.Printf("Error during streaming execution: %v\n", err)
+		return
+	}
+	elapsed := time.Since(start)
+
+	// Print results
+	fmt.Printf("\nStreaming Results:\n")
+	fmt.Printf("  Processing time: %v\n", elapsed)
+	fmt.Printf("  Total matches: %d\n", len(matches))
+
+	if len(matches) > 0 {
+		fmt.Printf("  Matches found:\n")
+		for _, match := range matches {
+			fmt.Printf("    Rule: %s, Pattern: %s, Offset: %d, Length: %d\n",
+				match.Rule, match.Pattern, match.Offset, match.Length)
+		}
+	}
+
+	// Show final progress
+	processed, total, percent, _ := compiledProgram.GetStreamingProgress()
+	fmt.Printf("  Progress: %d/%d bytes (%.1f%%)\n", processed, total, percent)
+
+	if elapsed > 0 {
+		throughput := float64(len(data)) / elapsed.Seconds() / 1024 / 1024
+		fmt.Printf("  Throughput: %.2f MB/s\n", throughput)
 	}
 }
 

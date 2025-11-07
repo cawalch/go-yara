@@ -122,7 +122,12 @@ func TestExecuteModeIntegration(t *testing.T) {
 				t.Errorf("runExecuteMode panicked: %v", r)
 			}
 		}()
-		runExecuteMode(ruleContent, "data.txt", "test.yar")
+		args := &commandArgs{
+			filename: "test.yar",
+			mode:     modeExecute,
+			dataFile: "data.txt",
+		}
+		runExecuteMode(ruleContent, "data.txt", "test.yar", args)
 	})
 }
 
@@ -169,7 +174,12 @@ func TestExecuteModeMultiplePatterns(t *testing.T) {
 				t.Errorf("runExecuteMode panicked with multiple patterns: %v", r)
 			}
 		}()
-		runExecuteMode(ruleContent, "data.txt", "multi.yar")
+		args := &commandArgs{
+			filename: "multi.yar",
+			mode:     modeExecute,
+			dataFile: "data.txt",
+		}
+		runExecuteMode(ruleContent, "data.txt", "multi.yar", args)
 	})
 }
 
@@ -208,7 +218,12 @@ func patternMatchingSupported(t *testing.T) bool {
 	os.Chdir(tmpDir)
 
 	out := captureOutput(func() {
-		runExecuteMode(rule, "data.txt", "test.yar")
+		args := &commandArgs{
+			filename: "test.yar",
+			mode:     modeExecute,
+			dataFile: "data.txt",
+		}
+		runExecuteMode(rule, "data.txt", "test.yar", args)
 	})
 
 	// Check if pattern matching works (no "string pattern operand required" error)
@@ -243,7 +258,12 @@ func TestExecuteMode_RegexInlineFlagsI(t *testing.T) {
 	os.Chdir(tmpDir)
 
 	out := captureOutput(func() {
-		runExecuteMode(rule, "data.txt", "test.yar")
+		args := &commandArgs{
+			filename: "test.yar",
+			mode:     modeExecute,
+			dataFile: "data.txt",
+		}
+		runExecuteMode(rule, "data.txt", "test.yar", args)
 	})
 
 	// Expect at least one match and the specific offset/length
@@ -283,7 +303,12 @@ func TestExecuteMode_RegexInlineFlagsS(t *testing.T) {
 	os.Chdir(tmpDir)
 
 	out := captureOutput(func() {
-		runExecuteMode(rule, "data.txt", "test.yar")
+		args := &commandArgs{
+			filename: "test.yar",
+			mode:     modeExecute,
+			dataFile: "data.txt",
+		}
+		runExecuteMode(rule, "data.txt", "test.yar", args)
 	})
 
 	if !strings.Contains(out, "Pattern matches: 1") {
@@ -322,7 +347,12 @@ func TestExecuteMode_RegexEmptyMatch_Scan(t *testing.T) {
 	os.Chdir(tmpDir)
 
 	out := captureOutput(func() {
-		runExecuteMode(rule, "empty.txt", "test.yar")
+		args := &commandArgs{
+			filename: "test.yar",
+			mode:     modeExecute,
+			dataFile: "empty.txt",
+		}
+		runExecuteMode(rule, "empty.txt", "test.yar", args)
 	})
 
 	if !strings.Contains(out, "Pattern matches: 1") {
@@ -361,7 +391,12 @@ func TestExecuteMode_Count_Regex(t *testing.T) {
 	os.Chdir(tmpDir)
 
 	out := captureOutput(func() {
-		runExecuteMode(rule, "data.txt", "test.yar")
+		args := &commandArgs{
+			filename: "test.yar",
+			mode:     modeExecute,
+			dataFile: "data.txt",
+		}
+		runExecuteMode(rule, "data.txt", "test.yar", args)
 	})
 
 	if !strings.Contains(out, "Result: MATCH") {
@@ -397,7 +432,12 @@ func TestExecuteMode_Offset_Regex(t *testing.T) {
 	os.Chdir(tmpDir)
 
 	out := captureOutput(func() {
-		runExecuteMode(rule, "data.txt", "test.yar")
+		args := &commandArgs{
+			filename: "test.yar",
+			mode:     modeExecute,
+			dataFile: "data.txt",
+		}
+		runExecuteMode(rule, "data.txt", "test.yar", args)
 	})
 
 	if !strings.Contains(out, "Result: MATCH") {
@@ -433,7 +473,12 @@ func TestExecuteMode_Count_String(t *testing.T) {
 	os.Chdir(tmpDir)
 
 	out := captureOutput(func() {
-		runExecuteMode(rule, "data.txt", "test.yar")
+		args := &commandArgs{
+			filename: "test.yar",
+			mode:     modeExecute,
+			dataFile: "data.txt",
+		}
+		runExecuteMode(rule, "data.txt", "test.yar", args)
 	})
 
 	if !strings.Contains(out, "Result: MATCH") {
@@ -469,7 +514,12 @@ func TestExecuteMode_Offset_String(t *testing.T) {
 	os.Chdir(tmpDir)
 
 	out := captureOutput(func() {
-		runExecuteMode(rule, "data.txt", "test.yar")
+		args := &commandArgs{
+			filename: "test.yar",
+			mode:     modeExecute,
+			dataFile: "data.txt",
+		}
+		runExecuteMode(rule, "data.txt", "test.yar", args)
 	})
 
 	if !strings.Contains(out, "Result: MATCH") {

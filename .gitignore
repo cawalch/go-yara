@@ -32,3 +32,8 @@ docs/PROFILING.md
 ehthumbs.db
 Thumbs.db
 yara
+
+# Large generated test files
+testdata/performance/large_*.exe
+testdata/performance/large_*.txt
+testdata/performance/large_*.bin

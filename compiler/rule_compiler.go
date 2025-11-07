@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
@@ -463,13 +464,18 @@ func (cr *CompiledRule) PrintDebug() {
 type CompiledProgram struct {
 	Rules []*CompiledRule
 	Stats map[string]any
+
+	// Streaming support
+	streamingProcessor *StreamingProcessor
+	enableStreaming    bool
 }
 
 // NewCompiledProgram creates a new compiled program
 func NewCompiledProgram(rules []*CompiledRule) *CompiledProgram {
 	return &CompiledProgram{
-		Rules: rules,
-		Stats: make(map[string]any),
+		Rules:           rules,
+		Stats:           make(map[string]any),
+		enableStreaming: false, // Disabled by default for backward compatibility
 	}
 }
 
@@ -602,4 +608,74 @@ func (ep *ExecutionPlan) GetTotalSize() int {
 	}
 	lastRegion := ep.MemoryLayout[len(ep.MemoryLayout)-1]
 	return lastRegion.Offset + lastRegion.Size
+}
+
+// Streaming methods for CompiledProgram
+
+// EnableStreaming enables or disables streaming processing for large files
+func (cp *CompiledProgram) EnableStreaming(enable bool) {
+	cp.enableStreaming = enable
+	if enable && cp.streamingProcessor == nil {
+		cp.streamingProcessor = NewStreamingProcessor(cp)
+	}
+}
+
+// IsStreamingEnabled returns true if streaming is enabled
+func (cp *CompiledProgram) IsStreamingEnabled() bool {
+	return cp.enableStreaming
+}
+
+// SetStreamingChunkSize sets the chunk size for streaming processing
+func (cp *CompiledProgram) SetStreamingChunkSize(chunkSize int) {
+	if cp.streamingProcessor != nil {
+		cp.streamingProcessor.SetChunkSize(chunkSize)
+	}
+}
+
+// SetStreamingConcurrency sets the maximum concurrency for streaming processing
+func (cp *CompiledProgram) SetStreamingConcurrency(maxConcurrency int) {
+	if cp.streamingProcessor != nil {
+		cp.streamingProcessor.SetMaxConcurrency(maxConcurrency)
+	}
+}
+
+// EnableStreamingEarlyTermination enables or disables early termination in streaming
+func (cp *CompiledProgram) EnableStreamingEarlyTermination(enable bool) {
+	if cp.streamingProcessor != nil {
+		cp.streamingProcessor.EnableEarlyTermination(enable)
+	}
+}
+
+// ProcessFileStreaming processes a file using streaming approach
+func (cp *CompiledProgram) ProcessFileStreaming(ctx context.Context, filename string) ([]StreamingMatch, error) {
+	if !cp.enableStreaming {
+		return nil, fmt.Errorf("streaming is not enabled")
+	}
+
+	if cp.streamingProcessor == nil {
+		cp.streamingProcessor = NewStreamingProcessor(cp)
+	}
+
+	return cp.streamingProcessor.ProcessFile(ctx, filename)
+}
+
+// ProcessBytesStreaming processes byte data using streaming approach
+func (cp *CompiledProgram) ProcessBytesStreaming(ctx context.Context, data []byte) ([]StreamingMatch, error) {
+	if !cp.enableStreaming {
+		return nil, fmt.Errorf("streaming is not enabled")
+	}
+
+	if cp.streamingProcessor == nil {
+		cp.streamingProcessor = NewStreamingProcessor(cp)
+	}
+
+	return cp.streamingProcessor.ProcessBytes(ctx, data)
+}
+
+// GetStreamingProgress returns progress information for streaming operations
+func (cp *CompiledProgram) GetStreamingProgress() (processed, total int64, percent float64, matches int) {
+	if cp.streamingProcessor != nil {
+		return cp.streamingProcessor.GetProgress()
+	}
+	return 0, 0, 0, 0
 }
