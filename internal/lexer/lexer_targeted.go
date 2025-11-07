@@ -309,8 +309,13 @@ func (l *Targeted) findRecentColonTargeted(input string, currentPos int) int {
 	maxLookback := 100
 	startPos := max(currentPos-maxLookback, 0)
 
+	// Ensure we don't go beyond input bounds
+	if currentPos > len(input) {
+		currentPos = len(input)
+	}
+
 	for pos := currentPos - 1; pos >= startPos; pos-- {
-		if input[pos] == ':' {
+		if pos >= 0 && pos < len(input) && input[pos] == ':' {
 			return pos
 		}
 	}
