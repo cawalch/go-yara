@@ -176,7 +176,10 @@ func (i *Interpreter) Execute() error {
 	// Reset interpreter state for clean execution
 	i.Reset()
 
-	// Debug: Print opcodes being executed
+	return i.executeMainLoop()
+}
+
+func (i *Interpreter) executeMainLoop() error {
 	debugEnabled := false // Disabled for production
 
 	for !i.stopped && i.ip < len(i.bytecode) {
@@ -184,7 +187,7 @@ func (i *Interpreter) Execute() error {
 		i.ip++
 
 		if debugEnabled {
-			fmt.Printf("DEBUG: Executing opcode %d (%s) at ip %d\n", opcode, opcode.String(), i.ip-1)
+			i.debugExecution(opcode)
 		}
 
 		if err := i.executeOpcode(opcode); err != nil {
@@ -193,15 +196,29 @@ func (i *Interpreter) Execute() error {
 		}
 
 		if debugEnabled {
-			fmt.Printf("DEBUG: Stack after %s: len=%d\n", opcode.String(), len(i.stack))
-			if len(i.stack) > 0 {
-				top := i.stack[len(i.stack)-1]
-				fmt.Printf("DEBUG: Top of stack: Type=%d, IntVal=%d\n", top.Type, top.IntVal)
-			}
+			i.debugStackState(opcode)
 		}
 	}
 
-	// Store the execution result for the current rule
+	i.storeExecutionResult()
+	i.cleanupStack()
+
+	return i.result
+}
+
+func (i *Interpreter) debugExecution(opcode Opcode) {
+	fmt.Printf("DEBUG: Executing opcode %d (%s) at ip %d\n", opcode, opcode.String(), i.ip-1)
+}
+
+func (i *Interpreter) debugStackState(opcode Opcode) {
+	fmt.Printf("DEBUG: Stack after %s: len=%d\n", opcode.String(), len(i.stack))
+	if len(i.stack) > 0 {
+		top := i.stack[len(i.stack)-1]
+		fmt.Printf("DEBUG: Top of stack: Type=%d, IntVal=%d\n", top.Type, top.IntVal)
+	}
+}
+
+func (i *Interpreter) storeExecutionResult() {
 	if i.currentRule != "" && len(i.stack) > 0 {
 		result := i.stack[len(i.stack)-1]
 		if result.Type == ValueTypeInt {
@@ -210,15 +227,15 @@ func (i *Interpreter) Execute() error {
 			i.ruleResults[i.currentRule] = false
 		}
 	}
+}
 
+func (i *Interpreter) cleanupStack() {
 	// Only clean up stack if execution was successful and there are excess values
 	// Leave the final result value on stack for compatibility with tests
 	if i.result == nil && len(i.stack) > 1 {
 		// Keep only the top value (result), remove excess
 		i.stack = i.stack[len(i.stack)-1:]
 	}
-
-	return i.result
 }
 
 // executeOpcode executes a single opcode using direct dispatch
@@ -783,8 +800,29 @@ func (i *Interpreter) executeStringComparison(comparison func(string, string) bo
 
 // executeReadInt reads an integer from the match context data (for testing)
 func (i *Interpreter) executeReadInt(offset int64, size int, unsigned bool) (int64, error) {
-	if i.matchContext == nil {
+	if err := i.validateReadIntAccess(offset); err != nil {
+		return 0, err
+	}
+
+	data := i.matchContext.Data
+	switch size {
+	case 1:
+		return i.readInt8(data, offset, unsigned)
+	case 2:
+		return i.readInt16(data, offset, unsigned)
+	case 4:
+		return i.readInt32(data, offset, unsigned)
+	default:
 		return 0, &InterpreterError{
+			Type:    ErrorInvalidMemoryAccess,
+			Message: fmt.Sprintf("unsupported integer size: %d", size),
+		}
+	}
+}
+
+func (i *Interpreter) validateReadIntAccess(offset int64) error {
+	if i.matchContext == nil {
+		return &InterpreterError{
 			Type:    ErrorInvalidMemoryAccess,
 			Message: "no match context available for reading data",
 		}
@@ -792,47 +830,43 @@ func (i *Interpreter) executeReadInt(offset int64, size int, unsigned bool) (int
 
 	data := i.matchContext.Data
 	if offset < 0 || int(offset) >= len(data) {
-		return 0, &InterpreterError{
+		return &InterpreterError{
 			Type:    ErrorInvalidMemoryAccess,
 			Message: fmt.Sprintf("offset %d is out of bounds", offset),
 		}
 	}
+	return nil
+}
 
-	switch size {
-	case 1:
-		val := data[offset]
-		if unsigned {
-			return int64(val), nil
-		}
-		return int64(int8(val)), nil
+func (i *Interpreter) readInt8(data []byte, offset int64, unsigned bool) (int64, error) {
+	val := data[offset]
+	if unsigned {
+		return int64(val), nil
+	}
+	return int64(int8(val)), nil
+}
 
-	case 2:
-		if offset+1 >= int64(len(data)) {
-			return 0, &InterpreterError{
-				Type:    ErrorInvalidMemoryAccess,
-				Message: "16-bit read extends beyond data bounds",
-			}
-		}
-		val := uint16(data[offset]) | uint16(data[offset+1])<<8
-		return safeUint16ToInt64(val, unsigned), nil
-
-	case 4:
-		if offset+3 >= int64(len(data)) {
-			return 0, &InterpreterError{
-				Type:    ErrorInvalidMemoryAccess,
-				Message: "32-bit read extends beyond data bounds",
-			}
-		}
-		val := uint32(data[offset]) | uint32(data[offset+1])<<8 |
-			uint32(data[offset+2])<<16 | uint32(data[offset+3])<<24
-		return safeUint32ToInt64(val, unsigned), nil
-
-	default:
+func (i *Interpreter) readInt16(data []byte, offset int64, unsigned bool) (int64, error) {
+	if offset+1 >= int64(len(data)) {
 		return 0, &InterpreterError{
 			Type:    ErrorInvalidMemoryAccess,
-			Message: fmt.Sprintf("unsupported integer size: %d", size),
+			Message: "16-bit read extends beyond data bounds",
 		}
 	}
+	val := uint16(data[offset]) | uint16(data[offset+1])<<8
+	return safeUint16ToInt64(val, unsigned), nil
+}
+
+func (i *Interpreter) readInt32(data []byte, offset int64, unsigned bool) (int64, error) {
+	if offset+3 >= int64(len(data)) {
+		return 0, &InterpreterError{
+			Type:    ErrorInvalidMemoryAccess,
+			Message: "32-bit read extends beyond data bounds",
+		}
+	}
+	val := uint32(data[offset]) | uint32(data[offset+1])<<8 |
+		uint32(data[offset+2])<<16 | uint32(data[offset+3])<<24
+	return safeUint32ToInt64(val, unsigned), nil
 }
 
 // Helper functions for safe integer conversions
@@ -904,53 +938,69 @@ func (i *Interpreter) executeTypedComparison(opcode Opcode) error {
 	a := i.stack[len(i.stack)-2]
 	i.stack = i.stack[:len(i.stack)-2]
 
-	var result bool
-
-	// Determine comparison type and perform comparison
-	switch a.Type {
-	case ValueTypeInt:
-		if b.Type != ValueTypeInt {
-			return &InterpreterError{Type: ErrorTypeMismatch, Message: "integer operands required"}
-		}
-		switch opcode {
-		case OP_INT_EQ, OP_DBL_EQ:
-			result = a.IntVal == b.IntVal
-		case OP_INT_NEQ, OP_DBL_NEQ:
-			result = a.IntVal != b.IntVal
-		case OP_INT_LT, OP_DBL_LT:
-			result = a.IntVal < b.IntVal
-		case OP_INT_LE, OP_DBL_LE:
-			result = a.IntVal <= b.IntVal
-		case OP_INT_GT, OP_DBL_GT:
-			result = a.IntVal > b.IntVal
-		case OP_INT_GE, OP_DBL_GE:
-			result = a.IntVal >= b.IntVal
-		}
-
-	case ValueTypeDouble:
-		if b.Type != ValueTypeDouble {
-			return &InterpreterError{Type: ErrorTypeMismatch, Message: "double operands required"}
-		}
-		switch opcode {
-		case OP_INT_EQ, OP_DBL_EQ:
-			result = a.DoubleVal == b.DoubleVal
-		case OP_INT_NEQ, OP_DBL_NEQ:
-			result = a.DoubleVal != b.DoubleVal
-		case OP_INT_LT, OP_DBL_LT:
-			result = a.DoubleVal < b.DoubleVal
-		case OP_INT_LE, OP_DBL_LE:
-			result = a.DoubleVal <= b.DoubleVal
-		case OP_INT_GT, OP_DBL_GT:
-			result = a.DoubleVal > b.DoubleVal
-		case OP_INT_GE, OP_DBL_GE:
-			result = a.DoubleVal >= b.DoubleVal
-		}
-
-	default:
-		return &InterpreterError{Type: ErrorTypeMismatch, Message: "numeric operands required"}
+	result, err := i.compareValues(a, b, opcode)
+	if err != nil {
+		return err
 	}
 
 	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(result)})
+}
+
+func (i *Interpreter) compareValues(a, b Value, opcode Opcode) (bool, error) {
+	switch a.Type {
+	case ValueTypeInt:
+		return i.compareIntegers(a, b, opcode)
+	case ValueTypeDouble:
+		return i.compareDoubles(a, b, opcode)
+	default:
+		return false, &InterpreterError{Type: ErrorTypeMismatch, Message: "numeric operands required"}
+	}
+}
+
+func (i *Interpreter) compareIntegers(a, b Value, opcode Opcode) (bool, error) {
+	if b.Type != ValueTypeInt {
+		return false, &InterpreterError{Type: ErrorTypeMismatch, Message: "integer operands required"}
+	}
+
+	switch opcode {
+	case OP_INT_EQ, OP_DBL_EQ:
+		return a.IntVal == b.IntVal, nil
+	case OP_INT_NEQ, OP_DBL_NEQ:
+		return a.IntVal != b.IntVal, nil
+	case OP_INT_LT, OP_DBL_LT:
+		return a.IntVal < b.IntVal, nil
+	case OP_INT_LE, OP_DBL_LE:
+		return a.IntVal <= b.IntVal, nil
+	case OP_INT_GT, OP_DBL_GT:
+		return a.IntVal > b.IntVal, nil
+	case OP_INT_GE, OP_DBL_GE:
+		return a.IntVal >= b.IntVal, nil
+	default:
+		return false, &InterpreterError{Type: ErrorUnsupportedOpcode, Message: "invalid comparison opcode"}
+	}
+}
+
+func (i *Interpreter) compareDoubles(a, b Value, opcode Opcode) (bool, error) {
+	if b.Type != ValueTypeDouble {
+		return false, &InterpreterError{Type: ErrorTypeMismatch, Message: "double operands required"}
+	}
+
+	switch opcode {
+	case OP_INT_EQ, OP_DBL_EQ:
+		return a.DoubleVal == b.DoubleVal, nil
+	case OP_INT_NEQ, OP_DBL_NEQ:
+		return a.DoubleVal != b.DoubleVal, nil
+	case OP_INT_LT, OP_DBL_LT:
+		return a.DoubleVal < b.DoubleVal, nil
+	case OP_INT_LE, OP_DBL_LE:
+		return a.DoubleVal <= b.DoubleVal, nil
+	case OP_INT_GT, OP_DBL_GT:
+		return a.DoubleVal > b.DoubleVal, nil
+	case OP_INT_GE, OP_DBL_GE:
+		return a.DoubleVal >= b.DoubleVal, nil
+	default:
+		return false, &InterpreterError{Type: ErrorUnsupportedOpcode, Message: "invalid comparison opcode"}
+	}
 }
 
 // executeReadIntOp executes integer reading operations (little-endian)
@@ -991,50 +1041,61 @@ func (i *Interpreter) executeReadIntOpBE(size int, signed bool) error {
 
 	data := i.matchContext.Data
 	offset := offsetVal.IntVal
-	if offset < 0 || int(offset) >= len(data) {
-		return &InterpreterError{
-			Type:    ErrorInvalidMemoryAccess,
-			Message: fmt.Sprintf("offset %d is out of bounds", offset),
-		}
+
+	if err := i.validateReadIntAccess(offset); err != nil {
+		return err
 	}
 
-	var val int64
+	val, err := i.readIntBE(data, offset, size, signed)
+	if err != nil {
+		return err
+	}
+
+	i.stack[len(i.stack)-1] = Value{Type: ValueTypeInt, IntVal: val}
+	return nil
+}
+
+func (i *Interpreter) readIntBE(data []byte, offset int64, size int, signed bool) (int64, error) {
 	switch size {
 	case 1:
 		b := data[offset]
-		val = safeByteToInt64(b, signed)
+		return safeByteToInt64(b, signed), nil
+
 	case 2:
-		if offset+1 >= int64(len(data)) {
-			return &InterpreterError{
-				Type:    ErrorInvalidMemoryAccess,
-				Message: "16-bit read extends beyond data bounds",
-			}
+		if err := i.validateBounds(offset, 1, "16-bit read"); err != nil {
+			return 0, err
 		}
 		b1 := data[offset]
 		b2 := data[offset+1]
 		combined := uint16(b1)<<8 | uint16(b2)
-		val = safeUint16ToInt64(combined, !signed) // Note: !signed because our function takes unsigned parameter
+		return safeUint16ToInt64(combined, !signed), nil
+
 	case 4:
-		if offset+3 >= int64(len(data)) {
-			return &InterpreterError{
-				Type:    ErrorInvalidMemoryAccess,
-				Message: "32-bit read extends beyond data bounds",
-			}
+		if err := i.validateBounds(offset, 3, "32-bit read"); err != nil {
+			return 0, err
 		}
 		b1 := data[offset]
 		b2 := data[offset+1]
 		b3 := data[offset+2]
 		b4 := data[offset+3]
 		combined := uint32(b1)<<24 | uint32(b2)<<16 | uint32(b3)<<8 | uint32(b4)
-		val = safeUint32ToInt64(combined, !signed) // Note: !signed because our function takes unsigned parameter
+		return safeUint32ToInt64(combined, !signed), nil
+
 	default:
-		return &InterpreterError{
+		return 0, &InterpreterError{
 			Type:    ErrorInvalidMemoryAccess,
 			Message: fmt.Sprintf("unsupported integer size: %d", size),
 		}
 	}
+}
 
-	i.stack[len(i.stack)-1] = Value{Type: ValueTypeInt, IntVal: val}
+func (i *Interpreter) validateBounds(offset int64, extraBytes int, operation string) error {
+	if offset+int64(extraBytes) >= int64(len(i.matchContext.Data)) {
+		return &InterpreterError{
+			Type:    ErrorInvalidMemoryAccess,
+			Message: operation + " extends beyond data bounds",
+		}
+	}
 	return nil
 }
 
@@ -1235,25 +1296,33 @@ func (i *Interpreter) executeOfOperation() error {
 
 	// Handle "them" case (special marker 0xFFFFFFFE)
 	if stringsID.Type == ValueTypeInt && stringsID.IntVal == 0xFFFFFFFE {
-		// "any of them" - check if any strings matched
-		if i.matchContext == nil {
-			return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(false)})
-		}
-
-		// Count total matching strings
-		totalMatches := 0
-		for _, matches := range i.matchContext.Matches {
-			if len(matches) > 0 {
-				totalMatches++
-			}
-		}
-
-		// For "any of them", we need at least 1 match
-		result := totalMatches >= 1
-		return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(result)})
+		return i.handleOfThem()
 	}
 
-	// Handle specific string pattern case
+	return i.handleOfSpecificString(stringsID, count)
+}
+
+func (i *Interpreter) handleOfThem() error {
+	if i.matchContext == nil {
+		return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(false)})
+	}
+
+	totalMatches := i.countMatchingStrings()
+	result := totalMatches >= 1
+	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(result)})
+}
+
+func (i *Interpreter) countMatchingStrings() int {
+	totalMatches := 0
+	for _, matches := range i.matchContext.Matches {
+		if len(matches) > 0 {
+			totalMatches++
+		}
+	}
+	return totalMatches
+}
+
+func (i *Interpreter) handleOfSpecificString(stringsID, count Value) error {
 	if stringsID.Type != ValueTypeString {
 		return &InterpreterError{Type: ErrorTypeMismatch, Message: "string pattern operand required"}
 	}
@@ -1262,17 +1331,23 @@ func (i *Interpreter) executeOfOperation() error {
 		return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(false)})
 	}
 
-	matches, exists := i.matchContext.Matches[stringsID.StringVal]
-	found := exists && len(matches) > 0
-
-	// Apply count logic (for "any", count should be 1; for "all", logic is different)
-	result := found
-	if count.Type == ValueTypeInt && count.IntVal == 1 {
-		// "any" - already handled above
-		result = found
-	}
+	found := i.hasStringMatches(stringsID.StringVal)
+	result := i.applyCountLogic(found, count)
 
 	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(result)})
+}
+
+func (i *Interpreter) hasStringMatches(pattern string) bool {
+	matches, exists := i.matchContext.Matches[pattern]
+	return exists && len(matches) > 0
+}
+
+func (i *Interpreter) applyCountLogic(found bool, count Value) bool {
+	if count.Type == ValueTypeInt && count.IntVal == 1 {
+		// "any" - already handled above
+		return found
+	}
+	return found
 }
 
 // executeMatchesOperation executes OP_MATCHES
@@ -1299,14 +1374,32 @@ func (i *Interpreter) executeMatchesOperation() error {
 
 // executeArithmeticOperation handles all arithmetic operations (integer and double)
 func (i *Interpreter) executeArithmeticOperation(opcode Opcode) error {
+	if i.isIntegerArithmetic(opcode) {
+		return i.executeIntegerArithmetic(opcode)
+	}
+	if i.isDoubleArithmetic(opcode) {
+		return i.executeDoubleArithmetic(opcode)
+	}
+	return &InterpreterError{
+		Type:    ErrorUnsupportedOpcode,
+		Opcode:  opcode,
+		Message: fmt.Sprintf("unsupported arithmetic opcode: %v", opcode),
+	}
+}
+
+func (i *Interpreter) isIntegerArithmetic(opcode Opcode) bool {
+	return opcode >= OP_INT_BEGIN && opcode <= OP_INT_END
+}
+
+func (i *Interpreter) isDoubleArithmetic(opcode Opcode) bool {
+	return opcode >= OP_DBL_BEGIN && opcode <= OP_DBL_END
+}
+
+func (i *Interpreter) executeIntegerArithmetic(opcode Opcode) error {
 	switch opcode {
-	// Integer arithmetic
-	case OP_INT_ADD:
-		return i.executeBinaryOp(func(a, b int64) int64 { return a + b }, nil)
-	case OP_INT_SUB:
-		return i.executeBinaryOp(func(a, b int64) int64 { return a - b }, nil)
-	case OP_INT_MUL:
-		return i.executeBinaryOp(func(a, b int64) int64 { return a * b }, nil)
+	case OP_INT_ADD, OP_INT_SUB, OP_INT_MUL:
+		op := i.getIntegerOp(opcode)
+		return i.executeBinaryOp(op, nil)
 	case OP_INT_DIV:
 		return i.executeBinaryOpWithCheck(func(a, b int64) (int64, error) {
 			if b == 0 {
@@ -1322,76 +1415,123 @@ func (i *Interpreter) executeArithmeticOperation(opcode Opcode) error {
 			return a % b, nil
 		}, nil)
 	case OP_INT_MINUS:
-		if err := i.validateStackUnderflow(opcode); err != nil {
-			return err
-		}
-		v := i.stack[len(i.stack)-1]
-		switch v.Type {
-		case ValueTypeInt:
-			i.stack[len(i.stack)-1] = Value{Type: ValueTypeInt, IntVal: -v.IntVal}
-		default:
-			return &InterpreterError{Type: ErrorTypeMismatch, Opcode: opcode, Message: "integer operand required"}
-		}
-		return nil
-
-	// Double arithmetic
-	case OP_DBL_ADD:
-		return i.executeDoubleOp(func(a, b float64) float64 { return a + b })
-	case OP_DBL_SUB:
-		return i.executeDoubleOp(func(a, b float64) float64 { return a - b })
-	case OP_DBL_MUL:
-		return i.executeDoubleOp(func(a, b float64) float64 { return a * b })
-	case OP_DBL_DIV:
-		return i.executeDoubleOp(func(a, b float64) float64 { return a / b })
-	case OP_DBL_MINUS:
-		if err := i.validateStackUnderflow(opcode); err != nil {
-			return err
-		}
-		v := i.stack[len(i.stack)-1]
-		switch v.Type {
-		case ValueTypeDouble:
-			i.stack[len(i.stack)-1] = Value{Type: ValueTypeDouble, DoubleVal: -v.DoubleVal}
-		default:
-			return &InterpreterError{Type: ErrorTypeMismatch, Opcode: opcode, Message: "double operand required"}
-		}
-		return nil
-
+		return i.executeIntegerNegation(opcode)
 	default:
 		return &InterpreterError{
 			Type:    ErrorUnsupportedOpcode,
 			Opcode:  opcode,
-			Message: fmt.Sprintf("unsupported arithmetic opcode: %v", opcode),
+			Message: fmt.Sprintf("unsupported integer arithmetic opcode: %v", opcode),
 		}
 	}
 }
 
-// executeComparisonOperation handles all comparison operations (integer, double, string)
-func (i *Interpreter) executeComparisonOperation(opcode Opcode) error {
-	switch {
-	case opcode >= OP_INT_BEGIN && opcode <= OP_INT_END, opcode >= OP_DBL_BEGIN && opcode <= OP_DBL_END:
-		return i.executeTypedComparison(opcode)
-	case opcode >= OP_STR_BEGIN && opcode <= OP_STR_END:
-		var comparison func(string, string) bool
-		switch opcode {
-		case OP_STR_EQ:
-			comparison = func(a, b string) bool { return a == b }
-		case OP_STR_NEQ:
-			comparison = func(a, b string) bool { return a != b }
-		case OP_STR_LT:
-			comparison = func(a, b string) bool { return a < b }
-		case OP_STR_LE:
-			comparison = func(a, b string) bool { return a <= b }
-		case OP_STR_GT:
-			comparison = func(a, b string) bool { return a > b }
-		case OP_STR_GE:
-			comparison = func(a, b string) bool { return a >= b }
-		}
-		return i.executeStringComparison(comparison)
+func (i *Interpreter) getIntegerOp(opcode Opcode) func(int64, int64) int64 {
+	switch opcode {
+	case OP_INT_ADD:
+		return func(a, b int64) int64 { return a + b }
+	case OP_INT_SUB:
+		return func(a, b int64) int64 { return a - b }
+	case OP_INT_MUL:
+		return func(a, b int64) int64 { return a * b }
+	default:
+		return func(a, b int64) int64 { return a } // fallback
+	}
+}
+
+func (i *Interpreter) executeIntegerNegation(opcode Opcode) error {
+	if err := i.validateStackUnderflow(opcode); err != nil {
+		return err
+	}
+	v := i.stack[len(i.stack)-1]
+	if v.Type != ValueTypeInt {
+		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: opcode, Message: "integer operand required"}
+	}
+	i.stack[len(i.stack)-1] = Value{Type: ValueTypeInt, IntVal: -v.IntVal}
+	return nil
+}
+
+func (i *Interpreter) executeDoubleArithmetic(opcode Opcode) error {
+	switch opcode {
+	case OP_DBL_ADD, OP_DBL_SUB, OP_DBL_MUL, OP_DBL_DIV:
+		op := i.getDoubleOp(opcode)
+		return i.executeDoubleOp(op)
+	case OP_DBL_MINUS:
+		return i.executeDoubleNegation(opcode)
 	default:
 		return &InterpreterError{
 			Type:    ErrorUnsupportedOpcode,
 			Opcode:  opcode,
-			Message: fmt.Sprintf("unsupported comparison opcode: %v", opcode),
+			Message: fmt.Sprintf("unsupported double arithmetic opcode: %v", opcode),
 		}
+	}
+}
+
+func (i *Interpreter) getDoubleOp(opcode Opcode) func(float64, float64) float64 {
+	switch opcode {
+	case OP_DBL_ADD:
+		return func(a, b float64) float64 { return a + b }
+	case OP_DBL_SUB:
+		return func(a, b float64) float64 { return a - b }
+	case OP_DBL_MUL:
+		return func(a, b float64) float64 { return a * b }
+	case OP_DBL_DIV:
+		return func(a, b float64) float64 { return a / b }
+	default:
+		return func(a, b float64) float64 { return a } // fallback
+	}
+}
+
+func (i *Interpreter) executeDoubleNegation(opcode Opcode) error {
+	if err := i.validateStackUnderflow(opcode); err != nil {
+		return err
+	}
+	v := i.stack[len(i.stack)-1]
+	if v.Type != ValueTypeDouble {
+		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: opcode, Message: "double operand required"}
+	}
+	i.stack[len(i.stack)-1] = Value{Type: ValueTypeDouble, DoubleVal: -v.DoubleVal}
+	return nil
+}
+
+// executeComparisonOperation handles all comparison operations (integer, double, string)
+func (i *Interpreter) executeComparisonOperation(opcode Opcode) error {
+	if i.isNumericComparison(opcode) {
+		return i.executeTypedComparison(opcode)
+	}
+	if i.isStringComparison(opcode) {
+		comparison := i.getStringComparisonFunc(opcode)
+		return i.executeStringComparison(comparison)
+	}
+	return &InterpreterError{
+		Type:    ErrorUnsupportedOpcode,
+		Opcode:  opcode,
+		Message: fmt.Sprintf("unsupported comparison opcode: %v", opcode),
+	}
+}
+
+func (i *Interpreter) isNumericComparison(opcode Opcode) bool {
+	return (opcode >= OP_INT_BEGIN && opcode <= OP_INT_END) || (opcode >= OP_DBL_BEGIN && opcode <= OP_DBL_END)
+}
+
+func (i *Interpreter) isStringComparison(opcode Opcode) bool {
+	return opcode >= OP_STR_BEGIN && opcode <= OP_STR_END
+}
+
+func (i *Interpreter) getStringComparisonFunc(opcode Opcode) func(string, string) bool {
+	switch opcode {
+	case OP_STR_EQ:
+		return func(a, b string) bool { return a == b }
+	case OP_STR_NEQ:
+		return func(a, b string) bool { return a != b }
+	case OP_STR_LT:
+		return func(a, b string) bool { return a < b }
+	case OP_STR_LE:
+		return func(a, b string) bool { return a <= b }
+	case OP_STR_GT:
+		return func(a, b string) bool { return a > b }
+	case OP_STR_GE:
+		return func(a, b string) bool { return a >= b }
+	default:
+		return func(a, b string) bool { return false } // fallback
 	}
 }

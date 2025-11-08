@@ -57,55 +57,8 @@ func (p *Parser) ParseRules() (*ast.Program, error) {
 	program := p.builder.Program(make([]*ast.Rule, 0))
 
 	for !p.currentTokenIs(token.EOF) {
-		// Check for global variables, imports, includes, rule modifiers (private, global) or rule keyword
-		switch {
-		case p.currentTokenIs(token.GLOBAL):
-			// Check if this is a global variable declaration or a global rule modifier
-			// Look ahead to see if we can find RULE after any modifiers
-			if p.peekTokenIs(token.RULE) || p.peekTokenIs(token.PRIVATE) {
-				// This is a global rule modifier
-				rule, err := p.parseRule()
-				p.addError(err)
-				if err == nil {
-					program.Rules = append(program.Rules, rule)
-				}
-			} else {
-				// This is a global variable declaration
-				p.nextToken() // consume GLOBAL token
-				globalVar, err := p.parseGlobalVariable()
-				p.addError(err)
-				if err == nil {
-					program.GlobalVariables = append(program.GlobalVariables, globalVar)
-				}
-			}
-		case p.currentTokenIs(token.EXTERNAL):
-			// This is an external variable declaration
-			p.nextToken() // consume EXTERNAL token
-			externalVar, err := p.parseExternalVariable()
+		if err := p.parseProgramElement(program); err != nil {
 			p.addError(err)
-			if err == nil {
-				program.ExternalVariables = append(program.ExternalVariables, externalVar)
-			}
-		case p.currentTokenIs(token.IMPORT):
-			importStmt, err := p.parseImport()
-			p.addError(err)
-			if err == nil {
-				program.Imports = append(program.Imports, importStmt)
-			}
-		case p.currentTokenIs(token.INCLUDE):
-			includeStmt, err := p.parseInclude()
-			p.addError(err)
-			if err == nil {
-				program.Includes = append(program.Includes, includeStmt)
-			}
-		case p.currentTokenIs(token.PRIVATE) || p.currentTokenIs(token.RULE):
-			rule, err := p.parseRule()
-			p.addError(err)
-			if err == nil {
-				program.Rules = append(program.Rules, rule)
-			}
-		default:
-			p.addError(fmt.Errorf("unexpected token %s at %v", p.current.Type, p.current.Pos))
 		}
 	}
 
@@ -114,6 +67,76 @@ func (p *Parser) ParseRules() (*ast.Program, error) {
 	}
 
 	return program, nil
+}
+
+func (p *Parser) parseProgramElement(program *ast.Program) error {
+	switch {
+	case p.currentTokenIs(token.GLOBAL):
+		return p.parseGlobalDeclaration(program)
+	case p.currentTokenIs(token.EXTERNAL):
+		return p.parseExternalDeclaration(program)
+	case p.currentTokenIs(token.IMPORT):
+		return p.parseImportDeclaration(program)
+	case p.currentTokenIs(token.INCLUDE):
+		return p.parseIncludeDeclaration(program)
+	case p.currentTokenIs(token.PRIVATE) || p.currentTokenIs(token.RULE):
+		return p.parseRuleDeclaration(program)
+	default:
+		return fmt.Errorf("unexpected token %s at %v", p.current.Type, p.current.Pos)
+	}
+}
+
+func (p *Parser) parseGlobalDeclaration(program *ast.Program) error {
+	// Check if this is a global variable declaration or a global rule modifier
+	if p.peekTokenIs(token.RULE) || p.peekTokenIs(token.PRIVATE) {
+		// This is a global rule modifier
+		rule, err := p.parseRule()
+		if err == nil {
+			program.Rules = append(program.Rules, rule)
+		}
+		return err
+	} else {
+		// This is a global variable declaration
+		p.nextToken() // consume GLOBAL token
+		globalVar, err := p.parseGlobalVariable()
+		if err == nil {
+			program.GlobalVariables = append(program.GlobalVariables, globalVar)
+		}
+		return err
+	}
+}
+
+func (p *Parser) parseExternalDeclaration(program *ast.Program) error {
+	p.nextToken() // consume EXTERNAL token
+	externalVar, err := p.parseExternalVariable()
+	if err == nil {
+		program.ExternalVariables = append(program.ExternalVariables, externalVar)
+	}
+	return err
+}
+
+func (p *Parser) parseImportDeclaration(program *ast.Program) error {
+	importStmt, err := p.parseImport()
+	if err == nil {
+		program.Imports = append(program.Imports, importStmt)
+	}
+	return err
+}
+
+func (p *Parser) parseIncludeDeclaration(program *ast.Program) error {
+	includeStmt, err := p.parseInclude()
+	if err == nil {
+		program.Includes = append(program.Includes, includeStmt)
+	}
+	return err
+}
+
+func (p *Parser) parseRuleDeclaration(program *ast.Program) error {
+	rule, err := p.parseRule()
+	if err == nil {
+		program.Rules = append(program.Rules, rule)
+	}
+	return err
 }
 
 // Errors returns any parsing errors encountered

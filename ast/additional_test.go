@@ -305,37 +305,50 @@ func TestASTEdgeCasesAdditional(t *testing.T) {
 
 // TestASTVisitor tests visitor pattern implementation
 func TestASTVisitorAdditional(t *testing.T) {
-	// Create a simple visitor that counts nodes
-	type countingVisitor struct {
-		*BaseVisitor
-		ruleCount       int
-		stringCount     int
-		identifierCount int
-		literalCount    int
-		metaCount       int
-	}
+	visitor := createTestCountingVisitor()
+	rule := createTestRule()
 
+	visitRuleComponents(visitor, rule)
+	assertVisitorCounts(t, visitor, 0, 0, 0, 0, 0)
+}
+
+// createTestCountingVisitor creates a visitor that counts different node types
+func createTestCountingVisitor() *struct {
+	Visitor
+	*countingVisitor
+} {
 	visitor := &countingVisitor{
 		BaseVisitor: &BaseVisitor{},
 	}
 
-	// Create a test visitor that implements the Visitor interface
-	testVisitor := &struct {
+	return &struct {
 		Visitor
 		*countingVisitor
 	}{
 		Visitor:         visitor,
 		countingVisitor: visitor,
 	}
+}
 
-	// Create a simple AST
+// countingVisitor counts different types of AST nodes
+type countingVisitor struct {
+	*BaseVisitor
+	ruleCount       int
+	stringCount     int
+	identifierCount int
+	literalCount    int
+	metaCount       int
+}
+
+// createTestRule creates a simple test rule for testing
+func createTestRule() *Rule {
 	expr := &BinaryOp{
 		Left:  &Identifier{Name: "$test"},
 		Op:    token.AND,
 		Right: &Literal{Value: true, Type: token.TRUE},
 	}
 
-	rule := &Rule{
+	return &Rule{
 		Name: "test_rule",
 		Meta: []*Meta{
 			{Key: "author", Value: MetaString("Test Author")},
@@ -346,46 +359,62 @@ func TestASTVisitorAdditional(t *testing.T) {
 				Pattern:    &TextString{Value: "test_value"},
 			},
 		},
-		Condition: expr, // Use the expression directly, not a Condition
+		Condition: expr,
 	}
+}
 
-	// Visit AST nodes
-	rule.Accept(testVisitor)
+// visitRuleComponents visits all components of a rule
+func visitRuleComponents(visitor *struct {
+	Visitor
+	*countingVisitor
+}, rule *Rule) {
+	rule.Accept(visitor)
 	for _, meta := range rule.Meta {
-		meta.Accept(testVisitor)
+		meta.Accept(visitor)
 	}
 	for _, str := range rule.Strings {
-		str.Accept(testVisitor)
-		str.Pattern.Accept(testVisitor)
+		str.Accept(visitor)
+		str.Pattern.Accept(visitor)
 	}
-	// Since we're using the expression directly as the condition, we can't call Accept on it
-	// as if it were a Condition node. Instead, we should visit the expression directly.
+}
 
-	// Check counts
-	if visitor.ruleCount != 0 {
-		t.Errorf("Expected 0 rule, got %d", visitor.ruleCount)
+// assertVisitorCounts asserts that the visitor has counted the expected number of nodes
+func assertVisitorCounts(t *testing.T, visitor *struct {
+	Visitor
+	*countingVisitor
+}, expectedRule, expectedString, expectedIdentifier, expectedLiteral, expectedMeta int) {
+	if visitor.ruleCount != expectedRule {
+		t.Errorf("Expected %d rule, got %d", expectedRule, visitor.ruleCount)
 	}
-	if visitor.stringCount != 0 {
-		t.Errorf("Expected 0 string, got %d", visitor.stringCount)
+	if visitor.stringCount != expectedString {
+		t.Errorf("Expected %d string, got %d", expectedString, visitor.stringCount)
 	}
-	if visitor.identifierCount != 0 {
-		t.Errorf("Expected 0 identifier, got %d", visitor.identifierCount)
+	if visitor.identifierCount != expectedIdentifier {
+		t.Errorf("Expected %d identifier, got %d", expectedIdentifier, visitor.identifierCount)
 	}
-	if visitor.literalCount != 0 {
-		t.Errorf("Expected 0 literal, got %d", visitor.literalCount)
+	if visitor.literalCount != expectedLiteral {
+		t.Errorf("Expected %d literal, got %d", expectedLiteral, visitor.literalCount)
 	}
-	if visitor.metaCount != 0 {
-		t.Errorf("Expected 0 meta, got %d", visitor.metaCount)
+	if visitor.metaCount != expectedMeta {
+		t.Errorf("Expected %d meta, got %d", expectedMeta, visitor.metaCount)
 	}
 }
 
 // TestASTBuilder tests builder pattern implementation
 func TestASTBuilderAdditional(t *testing.T) {
-	// Test creating a rule with the builder
+	t.Run("RuleCreation", testASTBuilderRuleCreation)
+	t.Run("BinaryOperation", testASTBuilderBinaryOperation)
+	t.Run("UnaryOperation", testASTBuilderUnaryOperation)
+	t.Run("Literals", testASTBuilderLiterals)
+	t.Run("StringPatterns", testASTBuilderStringPatterns)
+	t.Run("MetaAndStrings", testASTBuilderMetaAndStrings)
+	t.Run("ConditionAndProgram", testASTBuilderConditionAndProgram)
+}
+
+func testASTBuilderRuleCreation(t *testing.T) {
 	builder := NewBuilder()
 	pos := token.Position{Line: 1, Column: 1}
 
-	// Create a rule
 	rule := builder.Rule(pos, "test_rule")
 
 	if rule == nil {
@@ -396,8 +425,12 @@ func TestASTBuilderAdditional(t *testing.T) {
 	if rule.Name != "test_rule" {
 		t.Errorf("Rule name is %s, expected test_rule", rule.Name)
 	}
+}
 
-	// Test creating a binary operation
+func testASTBuilderBinaryOperation(t *testing.T) {
+	builder := NewBuilder()
+	pos := token.Position{Line: 1, Column: 1}
+
 	left := builder.Identifier(pos, "left")
 	right := builder.Identifier(pos, "right")
 	binOp := builder.BinaryOp(pos, left, token.PLUS, right)
@@ -418,8 +451,12 @@ func TestASTBuilderAdditional(t *testing.T) {
 	if binOp.Right != right {
 		t.Error("Binary operation right is not the expected node")
 	}
+}
 
-	// Test creating a unary operation
+func testASTBuilderUnaryOperation(t *testing.T) {
+	builder := NewBuilder()
+	pos := token.Position{Line: 1, Column: 1}
+
 	operand := builder.Identifier(pos, "operand")
 	unaryOp := builder.UnaryOp(pos, token.NOT, operand)
 
@@ -435,8 +472,12 @@ func TestASTBuilderAdditional(t *testing.T) {
 	if unaryOp.Right != operand {
 		t.Error("Unary operation operand is not the expected node")
 	}
+}
 
-	// Test creating a literal
+func testASTBuilderLiterals(t *testing.T) {
+	builder := NewBuilder()
+	pos := token.Position{Line: 1, Column: 1}
+
 	literal := builder.Literal(pos, token.INTEGER_LIT, 42)
 
 	if literal == nil {
@@ -451,104 +492,105 @@ func TestASTBuilderAdditional(t *testing.T) {
 	if literal.Type != token.INTEGER_LIT {
 		t.Errorf("Literal type is %v, expected INTEGER_LIT", literal.Type)
 	}
+}
 
-	// Test creating a text string
+func testASTBuilderStringPatterns(t *testing.T) {
+	builder := NewBuilder()
+	pos := token.Position{Line: 1, Column: 1}
+
+	// Test text string
 	textStr := builder.TextString(pos, "test_value")
-
 	if textStr == nil {
 		t.Error("Builder returned nil text string")
 		return
 	}
-
 	if textStr.Value != "test_value" {
 		t.Errorf("Text string value is %s, expected test_value", textStr.Value)
 	}
 
-	// Test creating a hex string
+	// Test hex string
 	hexStr := builder.HexString(pos, "48 65 6C 6C 6F")
-
 	if hexStr == nil {
 		t.Error("Builder returned nil hex string")
 		return
 	}
-
 	if hexStr.Value != "48 65 6C 6C 6F" {
 		t.Errorf("Hex string value is %s, expected 48 65 6C 6C 6F", hexStr.Value)
 	}
 
-	// Test creating a regex pattern
+	// Test regex pattern
 	regex := builder.RegexPattern(pos, "/test/")
-
 	if regex == nil {
 		t.Error("Builder returned nil regex pattern")
 		return
 	}
-
 	if regex.Value != "/test/" {
 		t.Errorf("Regex pattern value is %s, expected /test/", regex.Value)
 	}
+}
 
-	// Test creating a meta
+func testASTBuilderMetaAndStrings(t *testing.T) {
+	builder := NewBuilder()
+	pos := token.Position{Line: 1, Column: 1}
+
+	// Test meta
 	meta := builder.Meta(pos, "author", MetaString("Test Author"))
-
 	if meta == nil {
 		t.Error("Builder returned nil meta")
 		return
 	}
-
 	if meta.Key != "author" {
 		t.Errorf("Meta key is %s, expected author", meta.Key)
 	}
-
 	if meta.AsString() != "Test Author" {
 		t.Errorf("Meta value is %s, expected Test Author", meta.AsString())
 	}
 
-	// Test creating a string
+	// Test string
 	str := builder.String(
 		pos,
 		"$test",
 		builder.TextString(pos, "test_value"),
 		[]StringModifier{{Type: StringModifierNocase}},
 	)
-
 	if str == nil {
 		t.Error("Builder returned nil string")
 		return
 	}
-
 	if str.Identifier != "$test" {
 		t.Errorf("String identifier is %s, expected $test", str.Identifier)
 	}
-
 	if len(str.Modifiers) != 1 {
 		t.Errorf("String has %d modifiers, expected 1", len(str.Modifiers))
 	}
+}
 
-	// Test creating a condition
+func testASTBuilderConditionAndProgram(t *testing.T) {
+	builder := NewBuilder()
+	pos := token.Position{Line: 1, Column: 1}
+
+	// Create a test rule first
+	rule := builder.Rule(pos, "test_rule")
+
+	// Test condition
 	condition := builder.Condition(pos, builder.Identifier(pos, "condition"))
-
 	if condition == nil {
 		t.Error("Builder returned nil condition")
 		return
 	}
-
 	if condition.Expression == nil {
 		t.Error("Condition expression is nil")
 	}
 
-	// Test creating a program
+	// Test program
 	program := builder.Program([]*Rule{rule})
-
 	if program == nil {
 		t.Error("Builder returned nil program")
 		return
 	}
-
 	if len(program.Rules) != 1 {
 		t.Errorf("Program has %d rules, expected 1", len(program.Rules))
 	}
-
 	if program.Rules[0] != rule {
 		t.Error("Program rule is not the expected rule")
 	}
