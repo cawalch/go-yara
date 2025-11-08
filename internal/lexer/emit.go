@@ -67,26 +67,9 @@ func (l *Lexer) makeIdentifierToken(pos token.Position) token.Token {
 
 // makeNumericToken creates a numeric literal token (integer, hex, octal, float, or size)
 func (l *Lexer) makeNumericToken(pos token.Position) token.Token {
-	// Check for hexadecimal integer (0x prefix)
-	if l.ch() == '0' && (l.peekChar() == 'x' || l.peekChar() == 'X') {
-		lit := l.readHexInteger()
-		// Check for size suffix after hex integer
-		if l.hasSizeSuffix() {
-			sizeLit := l.readSizeSuffix(lit)
-			return l.makeToken(token.SIZE_LIT, sizeLit, pos)
-		}
-		return l.makeToken(token.HEX_INTEGER_LIT, lit, pos)
-	}
-
-	// Check for octal integer (0o prefix)
-	if l.ch() == '0' && (l.peekChar() == 'o' || l.peekChar() == 'O') {
-		lit := l.readOctalInteger()
-		// Check for size suffix after octal integer
-		if l.hasSizeSuffix() {
-			sizeLit := l.readSizeSuffix(lit)
-			return l.makeToken(token.SIZE_LIT, sizeLit, pos)
-		}
-		return l.makeToken(token.OCTAL_INTEGER_LIT, lit, pos)
+	// Check for prefixed numbers (hex, octal)
+	if token, ok := l.tryPrefixedNumber(pos); ok {
+		return token
 	}
 
 	// Read regular number
@@ -98,12 +81,44 @@ func (l *Lexer) makeNumericToken(pos token.Position) token.Token {
 		return l.makeToken(token.FLOAT_LIT, lit, pos)
 	}
 
-	// Check for size suffix after decimal integer
+	return l.finalizeNumberToken(lit, pos)
+}
+
+// tryPrefixedNumber attempts to parse hex or octal numbers with prefixes
+func (l *Lexer) tryPrefixedNumber(pos token.Position) (token.Token, bool) {
+	if l.ch() != '0' {
+		return token.Token{}, false
+	}
+
+	switch l.peekChar() {
+	case 'x', 'X':
+		lit := l.readHexInteger()
+		return l.makeNumberTokenWithSize(lit, token.HEX_INTEGER_LIT, pos), true
+
+	case 'o', 'O':
+		lit := l.readOctalInteger()
+		return l.makeNumberTokenWithSize(lit, token.OCTAL_INTEGER_LIT, pos), true
+
+	default:
+		return token.Token{}, false
+	}
+}
+
+// makeNumberTokenWithSize creates a numeric token and checks for size suffix
+func (l *Lexer) makeNumberTokenWithSize(lit string, baseType token.TokenType, pos token.Position) token.Token {
 	if l.hasSizeSuffix() {
 		sizeLit := l.readSizeSuffix(lit)
 		return l.makeToken(token.SIZE_LIT, sizeLit, pos)
 	}
+	return l.makeToken(baseType, lit, pos)
+}
 
+// finalizeNumberToken finalizes a regular number token (integer or size)
+func (l *Lexer) finalizeNumberToken(lit string, pos token.Position) token.Token {
+	if l.hasSizeSuffix() {
+		sizeLit := l.readSizeSuffix(lit)
+		return l.makeToken(token.SIZE_LIT, sizeLit, pos)
+	}
 	return l.makeToken(token.INTEGER_LIT, lit, pos)
 }
 
