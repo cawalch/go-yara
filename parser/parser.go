@@ -824,41 +824,100 @@ func (p *Parser) parseBitwiseOr() (ast.Expression, error) {
 	return p.parseBinaryExpression(left, p.parseBitwiseXor, []token.TokenType{token.BITWISE_OR})
 }
 
+// parseStringIdentifierExpression parses string identifier expressions with optional offset/length
+func (p *Parser) parseStringIdentifierExpression(pos token.Position) (ast.Expression, error) {
+	ident := p.current.Literal
+	p.nextToken()
+
+	// Check for string offset operators (at, in)
+	if p.currentTokenIs(token.AT) || p.currentTokenIs(token.IN) {
+		op := p.current.Type
+		opPos := p.current.Pos
+		p.nextToken()
+
+		// Parse the offset expression
+		offsetExpr, err := p.parseExpression()
+		if err != nil {
+			return nil, err
+		}
+
+		// Create binary operation for string offset
+		return p.builder.BinaryOp(opPos, p.builder.Identifier(pos, ident), op, offsetExpr), nil
+	}
+
+	// Check for string length operator
+	if p.currentTokenIs(token.LENGTH) {
+		lengthPos := p.current.Pos
+		p.nextToken()
+
+		// Create string length expression
+		return p.builder.StringLength(lengthPos, p.builder.Identifier(pos, ident)), nil
+	}
+
+	return p.builder.Identifier(pos, ident), nil
+}
+
+// parseDataTypeFunction parses data type function calls (uint8, uint16, uint32, etc.)
+func (p *Parser) parseDataTypeFunction(pos token.Position) (ast.Expression, error) {
+	functionName := p.current.Literal
+	funcPos := p.current.Pos
+	p.nextToken()
+
+	// Check for function call
+	if p.currentTokenIs(token.LPAREN) {
+		return p.parseFunctionCall(funcPos, functionName)
+	}
+
+	return nil, fmt.Errorf("expected '(' after data type function %s", functionName)
+}
+
+// parseParenthesizedExpression parses parenthesized expressions
+func (p *Parser) parseParenthesizedExpression() (ast.Expression, error) {
+	p.nextToken()
+	expr, err := p.parseExpression()
+	if err != nil {
+		return nil, err
+	}
+	if !p.expectToken(token.RPAREN) {
+		return nil, errors.New("expected ')' after expression")
+	}
+	return expr, nil
+}
+
+// parseUnaryWithArrayIndex parses unary operator expressions with optional array indexing
+func (p *Parser) parseUnaryWithArrayIndex(pos token.Position) (ast.Expression, error) {
+	expr, err := p.parseUnaryOperator(pos)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check for array indexing after function call
+	if p.currentTokenIs(token.LBRACKET) {
+		p.nextToken() // consume '['
+
+		indexExpr, indexErr := p.parseExpression()
+		if indexErr != nil {
+			return nil, indexErr
+		}
+
+		if !p.expectToken(token.RBRACKET) {
+			return nil, errors.New("expected ']' after array index")
+		}
+
+		// Create array index expression
+		return p.builder.ArrayIndex(pos, expr, indexExpr), nil
+	}
+
+	return expr, nil
+}
+
 // parsePrimary parses primary expressions
 func (p *Parser) parsePrimary() (ast.Expression, error) {
 	pos := p.current.Pos
 
 	// Try to parse string identifiers first (highest priority for string tokens)
 	if p.currentTokenIs(token.STRING_IDENTIFIER) {
-		ident := p.current.Literal
-		p.nextToken()
-
-		// Check for string offset operators (at, in)
-		if p.currentTokenIs(token.AT) || p.currentTokenIs(token.IN) {
-			op := p.current.Type
-			opPos := p.current.Pos
-			p.nextToken()
-
-			// Parse the offset expression
-			offsetExpr, err := p.parseExpression()
-			if err != nil {
-				return nil, err
-			}
-
-			// Create binary operation for string offset
-			return p.builder.BinaryOp(opPos, p.builder.Identifier(pos, ident), op, offsetExpr), nil
-		}
-
-		// Check for string length operator
-		if p.currentTokenIs(token.LENGTH) {
-			lengthPos := p.current.Pos
-			p.nextToken()
-
-			// Create string length expression
-			return p.builder.StringLength(lengthPos, p.builder.Identifier(pos, ident)), nil
-		}
-
-		return p.builder.Identifier(pos, ident), nil
+		return p.parseStringIdentifierExpression(pos)
 	}
 
 	// Try to parse literals
@@ -868,16 +927,7 @@ func (p *Parser) parsePrimary() (ast.Expression, error) {
 
 	// Try to parse data type function calls (uint8, uint16, uint32, etc.)
 	if p.isDataTypeFunction(p.current.Type) {
-		functionName := p.current.Literal
-		funcPos := p.current.Pos
-		p.nextToken()
-
-		// Check for function call
-		if p.currentTokenIs(token.LPAREN) {
-			return p.parseFunctionCall(funcPos, functionName)
-		}
-
-		return nil, fmt.Errorf("expected '(' after data type function %s", functionName)
+		return p.parseDataTypeFunction(pos)
 	}
 
 	// Try to parse quantifier expressions
@@ -892,68 +942,28 @@ func (p *Parser) parsePrimary() (ast.Expression, error) {
 
 	// Parenthesized expressions
 	if p.currentTokenIs(token.LPAREN) {
-		p.nextToken()
-		expr, err := p.parseExpression()
-		if err != nil {
-			return nil, err
-		}
-		if !p.expectToken(token.RPAREN) {
-			return nil, errors.New("expected ')' after expression")
-		}
-		return expr, nil
+		return p.parseParenthesizedExpression()
 	}
 
 	// Try to parse unary operators
 	if p.isUnaryOperator(p.current.Type) {
-		expr, err := p.parseUnaryOperator(pos)
-		if err != nil {
-			return nil, err
-		}
-
-		// Check for array indexing after function call
-		if p.currentTokenIs(token.LBRACKET) {
-			p.nextToken() // consume '['
-
-			indexExpr, indexErr := p.parseExpression()
-			if indexErr != nil {
-				return nil, indexErr
-			}
-
-			if !p.expectToken(token.RBRACKET) {
-				return nil, errors.New("expected ']' after array index")
-			}
-
-			// Create array index expression
-			return p.builder.ArrayIndex(pos, expr, indexExpr), nil
-		}
-
-		return expr, nil
+		return p.parseUnaryWithArrayIndex(pos)
 	}
 
 	// Regular identifiers
 	if p.currentTokenIs(token.IDENTIFIER) {
 		ident := p.current.Literal
-		identPos := p.current.Pos
 		p.nextToken()
 
-		// Check for function call
-		if p.currentTokenIs(token.LPAREN) {
-			return p.parseFunctionCall(identPos, ident)
-		}
-
-		// Check for module access (dot notation)
+		// Handle member access for enums
 		if p.currentTokenIs(token.DOT) {
 			p.nextToken() // consume '.'
-
-			if !p.currentTokenIs(token.IDENTIFIER) {
-				return nil, errors.New("expected identifier after '.' for module access")
-			}
-
 			memberIdent := p.current.Literal
+			if !p.currentTokenIs(token.IDENTIFIER) {
+				return nil, errors.New("expected identifier after '.' for enum member access")
+			}
 			p.nextToken()
 
-			// Create a binary operation to represent module access
-			// This is a temporary solution until we have proper ModuleAccess AST nodes
 			return p.builder.BinaryOp(
 				pos,
 				p.builder.Identifier(pos, ident),

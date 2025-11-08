@@ -108,7 +108,7 @@ func TestSymbolTableLookupInCurrentScope(t *testing.T) {
 
 	// Define a string in outer scope
 	str := &ast.String{Identifier: "$s1", Pos: pos}
-	st.DefineString("$s1", pos, str)
+	_ = st.DefineString("$s1", pos, str)
 
 	// Enter inner scope
 	st.EnterScope("inner")
@@ -121,7 +121,7 @@ func TestSymbolTableLookupInCurrentScope(t *testing.T) {
 
 	// Define a string in inner scope
 	str2 := &ast.String{Identifier: "$s2", Pos: pos}
-	st.DefineString("$s2", pos, str2)
+	_ = st.DefineString("$s2", pos, str2)
 
 	// LookupInCurrentScope should find inner scope symbol
 	symbol, exists := st.LookupInCurrentScope("$s2")
@@ -140,7 +140,7 @@ func TestSymbolTableMarkUsed(t *testing.T) {
 
 	// Define a string
 	str := &ast.String{Identifier: "$s1", Pos: pos}
-	st.DefineString("$s1", pos, str)
+	_ = st.DefineString("$s1", pos, str)
 
 	// Initially should not be marked as used
 	symbol, _ := st.Lookup("$s1")
@@ -171,10 +171,10 @@ func TestSymbolTableGetUnusedSymbols(t *testing.T) {
 	st.DefineString("$s1", pos, str1)
 
 	str2 := &ast.String{Identifier: "$s2", Pos: pos}
-	st.DefineString("$s2", pos, str2)
+	_ = st.DefineString("$s2", pos, str2)
 
 	str3 := &ast.String{Identifier: "$s3", Pos: pos}
-	st.DefineString("$s3", pos, str3)
+	_ = st.DefineString("$s3", pos, str3)
 
 	// Mark some as used
 	st.MarkUsed("$s1")
@@ -224,7 +224,7 @@ func TestSymbolTableReset(t *testing.T) {
 
 	// Define a string and add error
 	str := &ast.String{Identifier: "$s1", Pos: pos}
-	st.DefineString("$s1", pos, str)
+	_ = st.DefineString("$s1", pos, str)
 	st.AddError(errors.New("test error"))
 
 	// Reset
@@ -250,7 +250,7 @@ func TestSymbolTypes(t *testing.T) {
 
 	// Test SymbolRule
 	rule := &ast.Rule{Name: "test_rule", Pos: pos}
-	st.DefineRule("test_rule", pos, rule)
+	_ = st.DefineRule("test_rule", pos, rule)
 	symbol, _ := st.Lookup("test_rule")
 	if symbol.Type != SymbolRule {
 		t.Errorf("Symbol type = %v, want %v", symbol.Type, SymbolRule)
@@ -261,7 +261,7 @@ func TestSymbolTypes(t *testing.T) {
 
 	// Test SymbolString
 	str := &ast.String{Identifier: "$s1", Pos: pos}
-	st.DefineString("$s1", pos, str)
+	_ = st.DefineString("$s1", pos, str)
 	symbol, _ = st.Lookup("$s1")
 	if symbol.Type != SymbolString {
 		t.Errorf("Symbol type = %v, want %v", symbol.Type, SymbolString)
@@ -271,7 +271,7 @@ func TestSymbolTypes(t *testing.T) {
 	}
 
 	// Test SymbolVariable
-	st.DefineVariable("var1", pos, SymbolVariable)
+	_ = st.DefineVariable("var1", pos, SymbolVariable)
 	symbol, _ = st.Lookup("var1")
 	if symbol.Type != SymbolVariable {
 		t.Errorf("Symbol type = %v, want %v", symbol.Type, SymbolVariable)
@@ -284,7 +284,7 @@ func TestSymbolPosition(t *testing.T) {
 	pos := token.Position{Line: 10, Column: 5}
 
 	str := &ast.String{Identifier: "$s1", Pos: pos}
-	st.DefineString("$s1", pos, str)
+	_ = st.DefineString("$s1", pos, str)
 
 	symbol, _ := st.Lookup("$s1")
 	if symbol.Position.Line != 10 || symbol.Position.Column != 5 {
@@ -298,7 +298,7 @@ func TestSymbolIsGlobal(t *testing.T) {
 
 	// Define in global scope
 	rule1 := &ast.Rule{Name: "global_rule", Pos: pos}
-	st.DefineRule("global_rule", pos, rule1)
+	_ = st.DefineRule("global_rule", pos, rule1)
 
 	symbol, _ := st.Lookup("global_rule")
 	if !symbol.IsGlobal {
@@ -308,7 +308,7 @@ func TestSymbolIsGlobal(t *testing.T) {
 	// Define in nested scope
 	st.EnterScope("test")
 	rule2 := &ast.Rule{Name: "local_rule", Pos: pos}
-	st.DefineRule("local_rule", pos, rule2)
+	_ = st.DefineRule("local_rule", pos, rule2)
 
 	symbol, _ = st.Lookup("local_rule")
 	if symbol.IsGlobal {

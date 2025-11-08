@@ -156,6 +156,37 @@ func (ac *ACAutomaton) Compile() error {
 	return compileErr
 }
 
+// processTransitionFailureLink processes failure link for a single transition
+func (ac *ACAutomaton) processTransitionFailureLink(current, nextState int32, byteVal byte, queue *[]int32) {
+	*queue = append(*queue, nextState)
+
+	// Find failure link for this transition
+	failure := ac.states[current].failure
+
+	// Follow failure links to find a state that has this transition
+	for failure != -1 && ac.states[failure].transitions[byteVal] == -1 {
+		failure = ac.states[failure].failure
+	}
+
+	if failure != -1 {
+		ac.states[nextState].failure = ac.states[failure].transitions[byteVal]
+
+		// Merge output from failure state
+		failState := ac.states[ac.states[nextState].failure]
+		if failState.outputStart != failState.outputEnd {
+			// Append failure state's output to current state's output
+			_ = ac.outputs[ac.states[nextState].outputStart:ac.states[nextState].outputEnd]
+			failOutput := ac.outputs[failState.outputStart:failState.outputEnd]
+
+			// This is simplified - real implementation would handle this more efficiently
+			ac.outputs = append(ac.outputs, failOutput...)
+			ac.states[nextState].outputEnd = int32(len(ac.outputs))
+		}
+	} else {
+		ac.states[nextState].failure = 0 // Fail to root
+	}
+}
+
 // buildFailureLinks builds failure links for the optimized automaton
 func (ac *ACAutomaton) buildFailureLinks() error {
 	if len(ac.states) == 0 {
@@ -184,33 +215,7 @@ func (ac *ACAutomaton) buildFailureLinks() error {
 				continue // No transition
 			}
 
-			queue = append(queue, nextState)
-
-			// Find failure link for this transition
-			failure := ac.states[current].failure
-
-			// Follow failure links to find a state that has this transition
-			for failure != -1 && ac.states[failure].transitions[byteVal] == -1 {
-				failure = ac.states[failure].failure
-			}
-
-			if failure != -1 {
-				ac.states[nextState].failure = ac.states[failure].transitions[byteVal]
-
-				// Merge output from failure state
-				failState := ac.states[ac.states[nextState].failure]
-				if failState.outputStart != failState.outputEnd {
-					// Append failure state's output to current state's output
-					_ = ac.outputs[ac.states[nextState].outputStart:ac.states[nextState].outputEnd]
-					failOutput := ac.outputs[failState.outputStart:failState.outputEnd]
-
-					// This is simplified - real implementation would handle this more efficiently
-					ac.outputs = append(ac.outputs, failOutput...)
-					ac.states[nextState].outputEnd = int32(len(ac.outputs))
-				}
-			} else {
-				ac.states[nextState].failure = 0 // Fail to root
-			}
+			ac.processTransitionFailureLink(current, nextState, byte(byteVal), &queue)
 		}
 	}
 

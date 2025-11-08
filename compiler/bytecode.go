@@ -374,6 +374,42 @@ var dataTypeNames = []string{
 	"LENGTH", "CONCAT",
 }
 
+// getIntOpName returns the name for integer operation opcodes
+func (op Opcode) getIntOpName() string {
+	offset := int(op - OP_INT_BEGIN)
+	if offset < len(intOpNames) {
+		return intOpNames[offset]
+	}
+	return ""
+}
+
+// getDblOpName returns the name for double operation opcodes
+func (op Opcode) getDblOpName() string {
+	offset := int(op - OP_DBL_BEGIN)
+	if offset < len(dblOpNames) {
+		return dblOpNames[offset]
+	}
+	return ""
+}
+
+// getStrOpName returns the name for string operation opcodes
+func (op Opcode) getStrOpName() string {
+	offset := int(op - OP_STR_BEGIN)
+	if offset < len(strOpNames) {
+		return strOpNames[offset]
+	}
+	return ""
+}
+
+// getDataTypeName returns the name for data type function opcodes
+func (op Opcode) getDataTypeName() string {
+	offset := int(op - OP_READ_INT)
+	if offset < len(dataTypeNames) {
+		return dataTypeNames[offset]
+	}
+	return ""
+}
+
 // String returns the string representation of the opcode
 func (op Opcode) String() string {
 	// Check basic opcodes first
@@ -383,33 +419,29 @@ func (op Opcode) String() string {
 
 	// Handle integer operations
 	if op >= OP_INT_BEGIN && op <= OP_INT_END {
-		offset := int(op - OP_INT_BEGIN)
-		if offset < len(intOpNames) {
-			return intOpNames[offset]
+		if name := op.getIntOpName(); name != "" {
+			return name
 		}
 	}
 
 	// Handle double operations
 	if op >= OP_DBL_BEGIN && op <= OP_DBL_END {
-		offset := int(op - OP_DBL_BEGIN)
-		if offset < len(dblOpNames) {
-			return dblOpNames[offset]
+		if name := op.getDblOpName(); name != "" {
+			return name
 		}
 	}
 
 	// Handle string operations
 	if op >= OP_STR_BEGIN && op <= OP_STR_END {
-		offset := int(op - OP_STR_BEGIN)
-		if offset < len(strOpNames) {
-			return strOpNames[offset]
+		if name := op.getStrOpName(); name != "" {
+			return name
 		}
 	}
 
 	// Handle data type functions
 	if op >= OP_READ_INT {
-		offset := int(op - OP_READ_INT)
-		if offset < len(dataTypeNames) {
-			return dataTypeNames[offset]
+		if name := op.getDataTypeName(); name != "" {
+			return name
 		}
 	}
 

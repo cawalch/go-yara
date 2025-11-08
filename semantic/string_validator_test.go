@@ -81,7 +81,7 @@ rule test {
 			// Define strings from the first rule
 			if len(program.Rules) > 0 {
 				for _, str := range program.Rules[0].Strings {
-					st.DefineString(str.Identifier, str.Pos, str)
+					_ = st.DefineString(str.Identifier, str.Pos, str)
 				}
 			}
 
@@ -113,10 +113,10 @@ func TestStringValidatorQuantifierExpression(t *testing.T) {
 
 	// Define some strings
 	str1 := &ast.String{Identifier: "$s1", Pos: pos}
-	st.DefineString("$s1", pos, str1)
+	_ = st.DefineString("$s1", pos, str1)
 
 	str2 := &ast.String{Identifier: "$s2", Pos: pos}
-	st.DefineString("$s2", pos, str2)
+	_ = st.DefineString("$s2", pos, str2)
 
 	validator := NewStringValidator(st)
 
@@ -149,7 +149,7 @@ func TestStringValidatorWildcardValidation(t *testing.T) {
 	// Define strings with pattern
 	for _, id := range []string{"$abc1", "$abc2", "$xyz1"} {
 		str := &ast.String{Identifier: id, Pos: pos}
-		st.DefineString(id, pos, str)
+		_ = st.DefineString(id, pos, str)
 	}
 
 	validator := NewStringValidator(st)
