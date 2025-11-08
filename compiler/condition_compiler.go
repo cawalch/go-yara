@@ -247,7 +247,12 @@ func (cc *ConditionCompiler) compileSizeLiteral(lit *ast.Literal) error {
 // compileIdentifier compiles an identifier reference
 func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 	if offset, exists := cc.stringOffsets[ident.Name]; exists {
-		cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(int64(offset))}, ident.Pos.Line, ident.Pos.Column)
+		// Safe conversion: offset is expected to be non-negative
+		if offset >= 0 {
+			cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(offset)}, ident.Pos.Line, ident.Pos.Column)
+		} else {
+			cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: 0}, ident.Pos.Line, ident.Pos.Column)
+		}
 		cc.emitter.EmitOpcode(OP_FOUND, ident.Pos.Line, ident.Pos.Column)
 		return nil
 	}

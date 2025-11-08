@@ -357,10 +357,30 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 		return nil
 
 	case OP_SHL:
-		return i.executeBinaryOp(func(a, b int64) int64 { return a << uint64(int64(b)) }, nil) // #nosec G115
+		return i.executeBinaryOp(func(a, b int64) int64 {
+			// Safe conversion: ensure shift amount is non-negative and bounded
+			if b < 0 {
+				return a << 0
+			}
+			if b > 63 {
+				b = 63 // cap at 63 to avoid undefined behavior
+			}
+			// #nosec G115 - b is bounded to 0-63 range above
+			return a << uint64(b)
+		}, nil)
 
 	case OP_SHR:
-		return i.executeBinaryOp(func(a, b int64) int64 { return a >> uint64(int64(b)) }, nil)
+		return i.executeBinaryOp(func(a, b int64) int64 {
+			// Safe conversion: ensure shift amount is non-negative and bounded
+			if b < 0 {
+				return a >> 0
+			}
+			if b > 63 {
+				b = 63 // cap at 63 to avoid undefined behavior
+			}
+			// #nosec G115 - b is bounded to 0-63 range above
+			return a >> uint64(b)
+		}, nil)
 
 	// Arithmetic operations
 	case OP_INT_ADD, OP_INT_SUB, OP_INT_MUL, OP_INT_DIV, OP_MOD, OP_INT_MINUS,

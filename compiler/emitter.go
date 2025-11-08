@@ -157,73 +157,78 @@ func (e *Emitter) EmitLabel(_, line, pos int) int {
 // FixupJumps resolves all jump targets that were previously emitted
 func (e *Emitter) FixupJumps() error {
 	for jumpOffset, targetOffset := range e.fixups {
-		if jumpOffset >= len(e.instructions) {
-			return fmt.Errorf("jump offset %d out of bounds", jumpOffset)
+		if err := e.validateJumpInstruction(jumpOffset); err != nil {
+			return err
 		}
 
 		inst := &e.instructions[jumpOffset]
-		if !inst.IsJump() {
-			return fmt.Errorf("instruction at offset %d is not a jump", jumpOffset)
-		}
+		relativeOffset := e.calculateRelativeOffset(jumpOffset, targetOffset, inst)
 
-		// Calculate relative offset from jump instruction to target
-		var relativeOffset int32
-
-		if targetOffset >= 0 && targetOffset < len(e.instructions) {
-			// Calculate the offset from the end of the current instruction
-			currentInstEnd := jumpOffset + inst.Size()
-			// Safe conversion with overflow check
-			offset := targetOffset - currentInstEnd
-			if offset > 0x7FFFFFFF {
-				relativeOffset = int32(0x7FFFFFFF)
-			} else if offset < -0x80000000 {
-				relativeOffset = int32(-0x80000000)
-			} else {
-				relativeOffset = int32(offset)
-			}
-		} else {
-			// Target is beyond current instructions (forward reference)
-			// Safe conversion with overflow check
-			if targetOffset > 0x7FFFFFFF {
-				relativeOffset = int32(0x7FFFFFFF)
-			} else if targetOffset < -0x80000000 {
-				relativeOffset = int32(-0x80000000)
-			} else {
-				relativeOffset = int32(targetOffset)
-			}
-		}
-
-		// Update the operand with the correct relative offset
-		switch inst.Operand.Type {
-		case OperandRelative16:
-			if relativeOffset > math.MaxInt16 || relativeOffset < math.MinInt16 {
-				return fmt.Errorf(
-					"jump offset %d too large for 16-bit relative jump",
-					relativeOffset,
-				)
-			}
-			// Safe conversion with overflow check
-			if relativeOffset < 0 {
-				inst.Operand.Value = uint64(0)
-			} else {
-				// Safe conversion with overflow check
-				if relativeOffset < 0 {
-					inst.Operand.Value = uint64(0)
-				} else {
-					inst.Operand.Value = uint64(relativeOffset)
-				}
-			}
-		case OperandRelative32:
-			// Safe conversion with explicit truncation
-			inst.Operand.Value = uint64(int32(relativeOffset)) // #nosec G115
-		default:
-			return fmt.Errorf("unsupported operand type for jump fixup: %v", inst.Operand.Type)
+		if err := e.updateJumpOperand(inst, relativeOffset); err != nil {
+			return err
 		}
 	}
 
-	// Clear fixups after resolving
 	e.fixups = make(map[int]int)
 	return nil
+}
+
+// validateJumpInstruction validates that a jump instruction exists at the given offset
+func (e *Emitter) validateJumpInstruction(jumpOffset int) error {
+	if jumpOffset >= len(e.instructions) {
+		return fmt.Errorf("jump offset %d out of bounds", jumpOffset)
+	}
+
+	inst := &e.instructions[jumpOffset]
+	if !inst.IsJump() {
+		return fmt.Errorf("instruction at offset %d is not a jump", jumpOffset)
+	}
+	return nil
+}
+
+// calculateRelativeOffset calculates the relative offset for a jump instruction
+func (e *Emitter) calculateRelativeOffset(jumpOffset, targetOffset int, inst *Instruction) int32 {
+	if targetOffset >= 0 && targetOffset < len(e.instructions) {
+		currentInstEnd := jumpOffset + inst.Size()
+		offset := targetOffset - currentInstEnd
+		return e.clampToInt32(offset)
+	}
+	return e.clampToInt32(targetOffset)
+}
+
+// clampToInt32 clamps an integer to 32-bit signed range
+func (e *Emitter) clampToInt32(value int) int32 {
+	if value > 0x7FFFFFFF {
+		return 0x7FFFFFFF
+	}
+	if value < -0x80000000 {
+		return -0x80000000
+	}
+	return int32(value)
+}
+
+// updateJumpOperand updates the operand of a jump instruction with the relative offset
+func (e *Emitter) updateJumpOperand(inst *Instruction, relativeOffset int32) error {
+	switch inst.Operand.Type {
+	case OperandRelative16:
+		if relativeOffset > math.MaxInt16 || relativeOffset < math.MinInt16 {
+			return fmt.Errorf("jump offset %d too large for 16-bit relative jump", relativeOffset)
+		}
+		inst.Operand.Value = e.convertToUint64(relativeOffset)
+	case OperandRelative32:
+		inst.Operand.Value = e.convertToUint64(relativeOffset)
+	default:
+		return fmt.Errorf("unsupported operand type for jump fixup: %v", inst.Operand.Type)
+	}
+	return nil
+}
+
+// convertToUint64 safely converts int32 to uint64
+func (e *Emitter) convertToUint64(value int32) uint64 {
+	if value < 0 {
+		return 0
+	}
+	return uint64(value)
 }
 
 // GetInstructions returns all emitted instructions
