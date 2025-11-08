@@ -813,7 +813,6 @@ func IsUndefined(x uint64) bool {
 	return x == YRUndefined
 }
 
-
 // Operation performs an operation on two operands (handling undefined values)
 func Operation(operator func(uint64, uint64) uint64, op1, op2 uint64) uint64 {
 	if IsUndefined(op1) || IsUndefined(op2) {
