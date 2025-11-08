@@ -116,6 +116,7 @@ func (sp *StreamingProcessor) ProcessFile(ctx context.Context, filename string) 
 		if closeErr := file.Close(); closeErr != nil {
 			// Log the close error, but don't override the main function's error
 			// In production, you might want to use proper logging
+			_ = closeErr // Suppress the error until proper logging is implemented
 		}
 	}()
 

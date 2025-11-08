@@ -101,48 +101,81 @@ func printUsage() {
 	os.Exit(1)
 }
 
+// parseModeFlag parses mode flags and returns whether the flag was handled
+func parseModeFlag(arg string, args *commandArgs) bool {
+	switch arg {
+	case "--lex":
+		args.mode = modeLex
+		return true
+	case "--parse":
+		args.mode = modeParse
+		return true
+	case "--compile":
+		args.mode = modeCompile
+		return true
+	case "--execute":
+		args.mode = modeExecute
+		return true
+	case "--streaming":
+		args.enableStreaming = true
+		return true
+	case "--early-termination":
+		args.earlyTermination = true
+		return true
+	default:
+		return false
+	}
+}
+
+// parseValueFlag parses flags that take a value argument
+func parseValueFlag(arg string, args *commandArgs, i *int) error {
+	switch arg {
+	case "--data":
+		return parseStringFlag(arg, &args.dataFile, i, "filename")
+	case "--chunk-size":
+		return parseIntFlag(arg, &args.chunkSize, i, "size value")
+	case "--max-concurrency":
+		return parseIntFlag(arg, &args.maxConcurrency, i, "value")
+	default:
+		return nil
+	}
+}
+
+// parseStringFlag parses a flag that takes a string value
+func parseStringFlag(flag string, target *string, i *int, desc string) error {
+	if *i+1 >= len(os.Args) {
+		return fmt.Errorf("--%s requires a %s", flag, desc)
+	}
+	*target = os.Args[*i+1]
+	*i++ // Skip next argument
+	return nil
+}
+
+// parseIntFlag parses a flag that takes a positive integer value
+func parseIntFlag(flag string, target *int, i *int, desc string) error {
+	if *i+1 >= len(os.Args) {
+		return fmt.Errorf("--%s requires a %s", flag, desc)
+	}
+	n, err := fmt.Sscanf(os.Args[*i+1], "%d", target)
+	if err != nil || n != 1 || *target <= 0 {
+		return fmt.Errorf("--%s requires a positive integer", flag)
+	}
+	*i++ // Skip next argument
+	return nil
+}
+
 func parseModeFlags(args *commandArgs) error {
 	for i := 2; i < len(os.Args); i++ {
-		switch os.Args[i] {
-		case "--lex":
-			args.mode = modeLex
-		case "--parse":
-			args.mode = modeParse
-		case "--compile":
-			args.mode = modeCompile
-		case "--execute":
-			args.mode = modeExecute
-		case "--data":
-			if i+1 < len(os.Args) {
-				args.dataFile = os.Args[i+1]
-				i++ // Skip next argument
-			} else {
-				return errors.New("--data requires a filename")
-			}
-		case "--streaming":
-			args.enableStreaming = true
-		case "--chunk-size":
-			if i+1 < len(os.Args) {
-				_, err := fmt.Sscanf(os.Args[i+1], "%d", &args.chunkSize)
-				if err != nil || args.chunkSize <= 0 {
-					return errors.New("--chunk-size requires a positive integer")
-				}
-				i++ // Skip next argument
-			} else {
-				return errors.New("--chunk-size requires a size value")
-			}
-		case "--max-concurrency":
-			if i+1 < len(os.Args) {
-				_, err := fmt.Sscanf(os.Args[i+1], "%d", &args.maxConcurrency)
-				if err != nil || args.maxConcurrency <= 0 {
-					return errors.New("--max-concurrency requires a positive integer")
-				}
-				i++ // Skip next argument
-			} else {
-				return errors.New("--max-concurrency requires a value")
-			}
-		case "--early-termination":
-			args.earlyTermination = true
+		arg := os.Args[i]
+
+		// Try to parse as mode flag first
+		if parseModeFlag(arg, args) {
+			continue
+		}
+
+		// Try to parse as value flag
+		if err := parseValueFlag(arg, args, &i); err != nil {
+			return err
 		}
 	}
 	return nil

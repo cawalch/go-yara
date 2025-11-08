@@ -1091,6 +1091,7 @@ func TestRuleCompilerMultipleStrings(t *testing.T) {
 
 	if compiled == nil {
 		t.Errorf("CompileRule() returned nil")
+		return
 	}
 
 	if compiled.StringCount != 2 {
@@ -1120,6 +1121,7 @@ func TestRuleCompilerNoStrings(t *testing.T) {
 
 	if compiled == nil {
 		t.Errorf("CompileRule() returned nil")
+		return
 	}
 
 	if compiled.StringCount != 0 {
@@ -1159,6 +1161,7 @@ func TestCompiledRuleMemory(t *testing.T) {
 
 	if compiled == nil {
 		t.Errorf("CompileRule() returned nil")
+		return
 	}
 
 	// Verify memory usage is reasonable

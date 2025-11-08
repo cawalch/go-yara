@@ -112,7 +112,12 @@ func TestExecuteModeIntegration(t *testing.T) {
 
 	// Change to temp dir to use relative paths
 	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
+	defer func() {
+		if err := os.Chdir(origDir); err != nil {
+			// Log the error but don't fail the test
+			t.Logf("Warning: failed to change back to original directory: %v", err)
+		}
+	}()
 	if err := os.Chdir(tmpDir); err != nil {
 		t.Fatalf("Failed to change directory to %s: %v", tmpDir, err)
 	}
@@ -166,7 +171,12 @@ func TestExecuteModeMultiplePatterns(t *testing.T) {
 
 	// Change to temp dir to use relative paths
 	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
+	defer func() {
+		if err := os.Chdir(origDir); err != nil {
+			// Log the error but don't fail the test
+			t.Logf("Warning: failed to change back to original directory: %v", err)
+		}
+	}()
 	if err := os.Chdir(tmpDir); err != nil {
 		t.Fatalf("Failed to change directory to %s: %v", tmpDir, err)
 	}
@@ -218,7 +228,12 @@ func patternMatchingSupported(t *testing.T) bool {
 
 	// Change to temp dir to use relative paths
 	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
+	defer func() {
+		if err := os.Chdir(origDir); err != nil {
+			// Log the error but don't fail the test
+			t.Logf("Warning: failed to change back to original directory: %v", err)
+		}
+	}()
 	if err := os.Chdir(tmpDir); err != nil {
 		t.Fatalf("Failed to change directory to %s: %v", tmpDir, err)
 	}
@@ -260,7 +275,12 @@ func TestExecuteMode_RegexInlineFlagsI(t *testing.T) {
 
 	// Change to temp dir to use relative paths
 	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
+	defer func() {
+		if err := os.Chdir(origDir); err != nil {
+			// Log the error but don't fail the test
+			t.Logf("Warning: failed to change back to original directory: %v", err)
+		}
+	}()
 	if err := os.Chdir(tmpDir); err != nil {
 		t.Fatalf("Failed to change directory to %s: %v", tmpDir, err)
 	}
@@ -307,7 +327,12 @@ func TestExecuteMode_RegexInlineFlagsS(t *testing.T) {
 
 	// Change to temp dir to use relative paths
 	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
+	defer func() {
+		if err := os.Chdir(origDir); err != nil {
+			// Log the error but don't fail the test
+			t.Logf("Warning: failed to change back to original directory: %v", err)
+		}
+	}()
 	if err := os.Chdir(tmpDir); err != nil {
 		t.Fatalf("Failed to change directory to %s: %v", tmpDir, err)
 	}
@@ -353,7 +378,12 @@ func TestExecuteMode_RegexEmptyMatch_Scan(t *testing.T) {
 
 	// Change to temp dir to use relative paths
 	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
+	defer func() {
+		if err := os.Chdir(origDir); err != nil {
+			// Log the error but don't fail the test
+			t.Logf("Warning: failed to change back to original directory: %v", err)
+		}
+	}()
 	if err := os.Chdir(tmpDir); err != nil {
 		t.Fatalf("Failed to change directory to %s: %v", tmpDir, err)
 	}
@@ -399,7 +429,12 @@ func TestExecuteMode_Count_Regex(t *testing.T) {
 
 	// Change to temp dir to use relative paths
 	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
+	defer func() {
+		if err := os.Chdir(origDir); err != nil {
+			// Log the error but don't fail the test
+			t.Logf("Warning: failed to change back to original directory: %v", err)
+		}
+	}()
 	if err := os.Chdir(tmpDir); err != nil {
 		t.Fatalf("Failed to change directory to %s: %v", tmpDir, err)
 	}
@@ -442,7 +477,12 @@ func TestExecuteMode_Offset_Regex(t *testing.T) {
 
 	// Change to temp dir to use relative paths
 	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
+	defer func() {
+		if err := os.Chdir(origDir); err != nil {
+			// Log the error but don't fail the test
+			t.Logf("Warning: failed to change back to original directory: %v", err)
+		}
+	}()
 	if err := os.Chdir(tmpDir); err != nil {
 		t.Fatalf("Failed to change directory to %s: %v", tmpDir, err)
 	}
@@ -485,7 +525,12 @@ func TestExecuteMode_Count_String(t *testing.T) {
 
 	// Change to temp dir to use relative paths
 	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
+	defer func() {
+		if err := os.Chdir(origDir); err != nil {
+			// Log the error but don't fail the test
+			t.Logf("Warning: failed to change back to original directory: %v", err)
+		}
+	}()
 	if err := os.Chdir(tmpDir); err != nil {
 		t.Fatalf("Failed to change directory to %s: %v", tmpDir, err)
 	}
@@ -528,7 +573,12 @@ func TestExecuteMode_Offset_String(t *testing.T) {
 
 	// Change to temp dir to use relative paths
 	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
+	defer func() {
+		if err := os.Chdir(origDir); err != nil {
+			// Log the error but don't fail the test
+			t.Logf("Warning: failed to change back to original directory: %v", err)
+		}
+	}()
 	if err := os.Chdir(tmpDir); err != nil {
 		t.Fatalf("Failed to change directory to %s: %v", tmpDir, err)
 	}

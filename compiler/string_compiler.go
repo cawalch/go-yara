@@ -202,6 +202,7 @@ func (sc *StringCompiler) encodeHexString(hexData []byte, modifiers []ast.String
 			// TODO: Implement base64 decoding
 			// This is a placeholder for future base64 modifier implementation
 			// For now, we continue without applying the modifier
+			_ = mod.Type // Suppress unused until base64 implementation is added
 		}
 	}
 
@@ -639,6 +640,7 @@ func (sc *StringCompiler) GetStringOffsets() map[string]int {
 	if sc.emitter == nil {
 		// Emitter is not set, which is expected in some usage patterns
 		// This function will return the string offsets regardless of emitter state
+		_ = sc.emitter // Suppress nil check warning
 	}
 	return sc.stringOffsets
 }

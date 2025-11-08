@@ -390,6 +390,7 @@ func TestASTBuilderAdditional(t *testing.T) {
 
 	if rule == nil {
 		t.Error("Builder returned nil rule")
+		return
 	}
 
 	if rule.Name != "test_rule" {
@@ -403,6 +404,7 @@ func TestASTBuilderAdditional(t *testing.T) {
 
 	if binOp == nil {
 		t.Error("Builder returned nil binary operation")
+		return
 	}
 
 	if binOp.Left != left {
@@ -423,6 +425,7 @@ func TestASTBuilderAdditional(t *testing.T) {
 
 	if unaryOp == nil {
 		t.Error("Builder returned nil unary operation")
+		return
 	}
 
 	if unaryOp.Op != token.NOT {
@@ -438,6 +441,7 @@ func TestASTBuilderAdditional(t *testing.T) {
 
 	if literal == nil {
 		t.Error("Builder returned nil literal")
+		return
 	}
 
 	if literal.Value != 42 {
@@ -453,6 +457,7 @@ func TestASTBuilderAdditional(t *testing.T) {
 
 	if textStr == nil {
 		t.Error("Builder returned nil text string")
+		return
 	}
 
 	if textStr.Value != "test_value" {
@@ -464,6 +469,7 @@ func TestASTBuilderAdditional(t *testing.T) {
 
 	if hexStr == nil {
 		t.Error("Builder returned nil hex string")
+		return
 	}
 
 	if hexStr.Value != "48 65 6C 6C 6F" {
@@ -475,6 +481,7 @@ func TestASTBuilderAdditional(t *testing.T) {
 
 	if regex == nil {
 		t.Error("Builder returned nil regex pattern")
+		return
 	}
 
 	if regex.Value != "/test/" {
@@ -486,6 +493,7 @@ func TestASTBuilderAdditional(t *testing.T) {
 
 	if meta == nil {
 		t.Error("Builder returned nil meta")
+		return
 	}
 
 	if meta.Key != "author" {
@@ -506,6 +514,7 @@ func TestASTBuilderAdditional(t *testing.T) {
 
 	if str == nil {
 		t.Error("Builder returned nil string")
+		return
 	}
 
 	if str.Identifier != "$test" {
@@ -521,6 +530,7 @@ func TestASTBuilderAdditional(t *testing.T) {
 
 	if condition == nil {
 		t.Error("Builder returned nil condition")
+		return
 	}
 
 	if condition.Expression == nil {
@@ -532,6 +542,7 @@ func TestASTBuilderAdditional(t *testing.T) {
 
 	if program == nil {
 		t.Error("Builder returned nil program")
+		return
 	}
 
 	if len(program.Rules) != 1 {

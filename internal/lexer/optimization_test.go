@@ -38,15 +38,15 @@ func TestOptimizationFunctionalEquivalence(t *testing.T) {
 	for _, input := range testCases {
 		t.Run(input, func(t *testing.T) {
 			// Test without optimization
-			os.Setenv("YARA_OPT_POOLING", "")
-			os.Setenv("YARA_OPT_INTERNING", "")
+			_ = os.Setenv("YARA_OPT_POOLING", "")
+			_ = os.Setenv("YARA_OPT_INTERNING", "")
 
 			l1 := lexer.New(input)
 			tokens1 := collectAllTokens(l1)
 
 			// Test with optimization
-			os.Setenv("YARA_OPT_POOLING", "1")
-			os.Setenv("YARA_OPT_INTERNING", "1")
+			_ = os.Setenv("YARA_OPT_POOLING", "1")
+			_ = os.Setenv("YARA_OPT_INTERNING", "1")
 
 			l2 := lexer.New(input)
 			tokens2 := collectAllTokens(l2)
@@ -69,8 +69,8 @@ func TestOptimizationFunctionalEquivalence(t *testing.T) {
 	}
 
 	// Clean up environment
-	os.Unsetenv("YARA_OPT_POOLING")
-	os.Unsetenv("YARA_OPT_INTERNING")
+	_ = os.Unsetenv("YARA_OPT_POOLING")
+	_ = os.Unsetenv("YARA_OPT_INTERNING")
 }
 
 // BenchmarkOptimizationComparison provides a direct comparison
@@ -78,8 +78,8 @@ func BenchmarkOptimizationComparison(b *testing.B) {
 	input := `"malware" nocase wide "virus" ascii fullword { E2 34 A1 } private /pattern/i base64 `
 
 	b.Run("WithoutOptimization", func(b *testing.B) {
-		os.Setenv("YARA_OPT_POOLING", "")
-		os.Setenv("YARA_OPT_INTERNING", "")
+		_ = os.Setenv("YARA_OPT_POOLING", "")
+		_ = os.Setenv("YARA_OPT_INTERNING", "")
 		b.ReportAllocs()
 		b.ResetTimer()
 
@@ -92,8 +92,8 @@ func BenchmarkOptimizationComparison(b *testing.B) {
 	})
 
 	b.Run("WithOptimization", func(b *testing.B) {
-		os.Setenv("YARA_OPT_POOLING", "1")
-		os.Setenv("YARA_OPT_INTERNING", "1")
+		_ = os.Setenv("YARA_OPT_POOLING", "1")
+		_ = os.Setenv("YARA_OPT_INTERNING", "1")
 		b.ReportAllocs()
 		b.ResetTimer()
 
@@ -106,8 +106,8 @@ func BenchmarkOptimizationComparison(b *testing.B) {
 	})
 
 	// Clean up
-	os.Unsetenv("YARA_OPT_POOLING")
-	os.Unsetenv("YARA_OPT_INTERNING")
+	_ = os.Unsetenv("YARA_OPT_POOLING")
+	_ = os.Unsetenv("YARA_OPT_INTERNING")
 }
 
 // collectAllTokens is a helper function to collect all tokens from a lexer

@@ -105,6 +105,7 @@ func TestACAutomatonClone(t *testing.T) {
 	cloned := ac.Clone()
 	if cloned == nil {
 		t.Errorf("Clone() returned nil")
+		return
 	}
 
 	// Clone is a simplified version that copies basic info
