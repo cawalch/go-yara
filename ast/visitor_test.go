@@ -13,93 +13,55 @@ func testVisitorMethodNilResult(t *testing.T, visitor *BaseVisitor, node interfa
 	}
 }
 
-// TestBaseVisitor tests all BaseVisitor methods return nil using table-driven approach
+// nodeFactories provides factory functions for creating test nodes
+var nodeFactories = map[string]func(pos token.Position) interface{ Accept(v Visitor) any }{
+	"VisitProgram": func(pos token.Position) interface{ Accept(v Visitor) any } {
+		return &Program{Pos: pos}
+	},
+	"VisitRule": func(pos token.Position) interface{ Accept(v Visitor) any } {
+		return &Rule{Pos: pos, Name: "test"}
+	},
+	"VisitMeta": func(pos token.Position) interface{ Accept(v Visitor) any } {
+		return &Meta{Pos: pos, Key: "test", Value: MetaString("value")}
+	},
+	"VisitString": func(pos token.Position) interface{ Accept(v Visitor) any } {
+		return &String{Pos: pos, Identifier: "$test"}
+	},
+	"VisitCondition": func(pos token.Position) interface{ Accept(v Visitor) any } {
+		return &Condition{Pos: pos}
+	},
+	"VisitBinaryOp": func(pos token.Position) interface{ Accept(v Visitor) any } {
+		return &BinaryOp{Pos: pos}
+	},
+	"VisitUnaryOp": func(pos token.Position) interface{ Accept(v Visitor) any } {
+		return &UnaryOp{Pos: pos}
+	},
+	"VisitIdentifier": func(pos token.Position) interface{ Accept(v Visitor) any } {
+		return &Identifier{Pos: pos, Name: "test"}
+	},
+	"VisitLiteral": func(pos token.Position) interface{ Accept(v Visitor) any } {
+		return &Literal{Pos: pos}
+	},
+	"VisitTextString": func(pos token.Position) interface{ Accept(v Visitor) any } {
+		return &TextString{Pos: pos}
+	},
+	"VisitHexString": func(pos token.Position) interface{ Accept(v Visitor) any } {
+		return &HexString{Pos: pos}
+	},
+	"VisitRegexPattern": func(pos token.Position) interface{ Accept(v Visitor) any } {
+		return &RegexPattern{Pos: pos}
+	},
+}
+
+// TestBaseVisitor tests all BaseVisitor methods return nil
 func TestBaseVisitor(t *testing.T) {
 	visitor := &BaseVisitor{}
 	pos := token.Position{Line: 1, Column: 1}
 
-	tests := []struct {
-		name      string
-		buildNode func(pos token.Position) interface{ Accept(v Visitor) any }
-	}{
-		{
-			name: "VisitProgram",
-			buildNode: func(pos token.Position) interface{ Accept(v Visitor) any } {
-				return &Program{Pos: pos}
-			},
-		},
-		{
-			name: "VisitRule",
-			buildNode: func(pos token.Position) interface{ Accept(v Visitor) any } {
-				return &Rule{Pos: pos, Name: "test"}
-			},
-		},
-		{
-			name: "VisitMeta",
-			buildNode: func(pos token.Position) interface{ Accept(v Visitor) any } {
-				return &Meta{Pos: pos, Key: "test", Value: MetaString("value")}
-			},
-		},
-		{
-			name: "VisitString",
-			buildNode: func(pos token.Position) interface{ Accept(v Visitor) any } {
-				return &String{Pos: pos, Identifier: "$test"}
-			},
-		},
-		{
-			name: "VisitCondition",
-			buildNode: func(pos token.Position) interface{ Accept(v Visitor) any } {
-				return &Condition{Pos: pos}
-			},
-		},
-		{
-			name: "VisitBinaryOp",
-			buildNode: func(pos token.Position) interface{ Accept(v Visitor) any } {
-				return &BinaryOp{Pos: pos}
-			},
-		},
-		{
-			name: "VisitUnaryOp",
-			buildNode: func(pos token.Position) interface{ Accept(v Visitor) any } {
-				return &UnaryOp{Pos: pos}
-			},
-		},
-		{
-			name: "VisitIdentifier",
-			buildNode: func(pos token.Position) interface{ Accept(v Visitor) any } {
-				return &Identifier{Pos: pos, Name: "test"}
-			},
-		},
-		{
-			name: "VisitLiteral",
-			buildNode: func(pos token.Position) interface{ Accept(v Visitor) any } {
-				return &Literal{Pos: pos}
-			},
-		},
-		{
-			name: "VisitTextString",
-			buildNode: func(pos token.Position) interface{ Accept(v Visitor) any } {
-				return &TextString{Pos: pos}
-			},
-		},
-		{
-			name: "VisitHexString",
-			buildNode: func(pos token.Position) interface{ Accept(v Visitor) any } {
-				return &HexString{Pos: pos}
-			},
-		},
-		{
-			name: "VisitRegexPattern",
-			buildNode: func(pos token.Position) interface{ Accept(v Visitor) any } {
-				return &RegexPattern{Pos: pos}
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			node := tt.buildNode(pos)
-			testVisitorMethodNilResult(t, visitor, node, tt.name)
+	for methodName, factory := range nodeFactories {
+		t.Run(methodName, func(t *testing.T) {
+			node := factory(pos)
+			testVisitorMethodNilResult(t, visitor, node, methodName)
 		})
 	}
 }

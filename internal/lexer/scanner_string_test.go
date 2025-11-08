@@ -4,440 +4,254 @@ import (
 	"testing"
 )
 
-// Test looksLikeRegex function
-func TestLooksLikeRegex(t *testing.T) {
+// Helper function to create lexer and test looksLikeRegex
+func testLooksLikeRegexCase(t *testing.T, input string, expected bool) {
+	lexer := &Lexer{
+		reader: NewReaderFast(input),
+	}
+
+	result := lexer.looksLikeRegex()
+	if result != expected {
+		t.Errorf("looksLikeRegex() for input %q = %v, want %v", input, result, expected)
+	}
+}
+
+// TestLooksLikeRegex_EndOfInput tests end of input and whitespace cases
+func TestLooksLikeRegex_EndOfInput(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
 		expected bool
 	}{
-		// Definitely comments - should return false
-		{
-			name:     "next character is slash",
-			input:    "/test",
-			expected: true, // Function only looks at first char, '/' is not checked here
-		},
-		{
-			name:     "next character is asterisk",
-			input:    "*test",
-			expected: true, // Function only looks at first char, '*' is not checked here
-		},
-
-		// End of input or whitespace - should return false
-		{
-			name:     "end of input",
-			input:    "",
-			expected: false,
-		},
-		{
-			name:     "next character is space",
-			input:    " test",
-			expected: true, // Function only looks at first char, ' ' is not checked here
-		},
-		{
-			name:     "next character is tab",
-			input:    "\ttest",
-			expected: true, // Function only looks at first char, '\t' is not checked here
-		},
-		{
-			name:     "next character is newline",
-			input:    "\ntest",
-			expected: true, // Function only looks at first char, '\n' is not checked here
-		},
-		{
-			name:     "next character is carriage return",
-			input:    "\rtest",
-			expected: true, // Function only looks at first char, '\r' is not checked here
-		},
-
-		// Common regex starting characters - should return true
-		{
-			name:     "lowercase letter",
-			input:    "atest",
-			expected: true,
-		},
-		{
-			name:     "uppercase letter",
-			input:    "Atest",
-			expected: true,
-		},
-		{
-			name:     "digit",
-			input:    "5test",
-			expected: true,
-		},
-		{
-			name:     "underscore",
-			input:    "_test",
-			expected: true,
-		},
-		{
-			name:     "backslash",
-			input:    "\\test",
-			expected: true,
-		},
-		{
-			name:     "left bracket",
-			input:    "[test",
-			expected: true,
-		},
-		{
-			name:     "left parenthesis",
-			input:    "(test",
-			expected: true,
-		},
-		{
-			name:     "dot",
-			input:    ".test",
-			expected: true,
-		},
-		{
-			name:     "caret",
-			input:    "^test",
-			expected: true,
-		},
-		{
-			name:     "dollar sign",
-			input:    "$test",
-			expected: true,
-		},
-
-		// Additional regex-like patterns with special characters
-		{
-			name:     "regex with quantifier",
-			input:    "a+test",
-			expected: false, // Function may not handle complex patterns
-		},
-		{
-			name:     "regex with character class",
-			input:    "[a-z]test",
-			expected: true, // First char '[' is in regex starters
-		},
-		{
-			name:     "regex with escaped dot",
-			input:    "\\.test",
-			expected: true, // First char '\\' is in regex starters
-		},
-		{
-			name:     "regex with word boundary",
-			input:    "\\btest",
-			expected: true, // First char '\\' is in regex starters
-		},
-		{
-			name:     "regex with digit shorthand",
-			input:    "\\dtest",
-			expected: true, // First char '\\' is in regex starters
-		},
-		{
-			name:     "regex with whitespace shorthand",
-			input:    "\\stest",
-			expected: true, // First char '\\' is in regex starters
-		},
-		{
-			name:     "regex with word character shorthand",
-			input:    "\\wtest",
-			expected: true, // First char '\\' is in regex starters
-		},
-		{
-			name:     "regex with alternation",
-			input:    "a|btest",
-			expected: true, // First char 'a' is a letter
-		},
-		{
-			name:     "regex with group",
-			input:    "(ab)test",
-			expected: true, // First char '(' is in regex starters
-		},
-		{
-			name:     "regex with non-capturing group",
-			input:    "(?:ab)test",
-			expected: true, // First char '(' is in regex starters
-		},
-		{
-			name:     "regex with lookahead",
-			input:    "(?=ab)test",
-			expected: true, // First char '(' is in regex starters
-		},
-		{
-			name:     "regex with negative lookahead",
-			input:    "(?!ab)test",
-			expected: true, // First char '(' is in regex starters
-		},
-		{
-			name:     "regex with lookbehind",
-			input:    "(?<=ab)test",
-			expected: true, // First char '(' is in regex starters
-		},
-		{
-			name:     "regex with negative lookbehind",
-			input:    "(?<!ab)test",
-			expected: true, // First char '(' is in regex starters
-		},
-		{
-			name:     "regex with atomic group",
-			input:    "(?>ab)test",
-			expected: true, // First char '(' is in regex starters
-		},
-		{
-			name:     "regex with possessive quantifier",
-			input:    "a++test",
-			expected: false, // Next char '+' is not a regex starter
-		},
-		{
-			name:     "regex with reluctant quantifier",
-			input:    "a+?test",
-			expected: false, // Next char '+' is not a regex starter
-		},
-		{
-			name:     "regex with case insensitive flag",
-			input:    "(?i)test",
-			expected: true, // First char '(' is in regex starters
-		},
-		{
-			name:     "regex with multiline flag",
-			input:    "(?m)test",
-			expected: true, // First char '(' is in regex starters
-		},
-		{
-			name:     "regex with dotall flag",
-			input:    "(?s)test",
-			expected: true, // First char '(' is in regex starters
-		},
-		{
-			name:     "regex with unicode flag",
-			input:    "(?U)test",
-			expected: true, // First char '(' is in regex starters
-		},
-		{
-			name:     "regex with verbose flag",
-			input:    "(?x)test",
-			expected: true, // First char '(' is in regex starters
-		},
-		{
-			name:     "regex with named group",
-			input:    "(?<name>ab)test",
-			expected: true, // First char '(' is in regex starters
-		},
-		{
-			name:     "regex with backreference",
-			input:    "\\1test",
-			expected: true,
-		},
-		{
-			name:     "regex with octal escape",
-			input:    "\\123test",
-			expected: true,
-		},
-		{
-			name:     "regex with hex escape",
-			input:    "\\x41test",
-			expected: true,
-		},
-		{
-			name:     "regex with unicode escape",
-			input:    "\\u0041test",
-			expected: true,
-		},
-		{
-			name:     "regex with control character",
-			input:    "\\cAtest",
-			expected: true,
-		},
-		{
-			name:     "regex with character class negation",
-			input:    "[^a-z]test",
-			expected: true,
-		},
-		{
-			name:     "regex with character class range",
-			input:    "[a-zA-Z0-9]test",
-			expected: true,
-		},
-		{
-			name:     "regex with predefined character class",
-			input:    "\\w\\d\\s",
-			expected: true,
-		},
-		{
-			name:     "regex with negated predefined class",
-			input:    "\\W\\D\\S",
-			expected: true,
-		},
-		{
-			name:     "regex with anchor",
-			input:    "^$test",
-			expected: true,
-		},
-		{
-			name:     "regex with word boundary",
-			input:    "\\b\\Btest",
-			expected: true,
-		},
-		{
-			name:     "regex with string start anchor",
-			input:    "\\Atest",
-			expected: true,
-		},
-		{
-			name:     "regex with string end anchor",
-			input:    "\\ztest",
-			expected: true,
-		},
-		{
-			name:     "regex with previous match end",
-			input:    "\\Gtest",
-			expected: true,
-		},
-		{
-			name:     "regex with line start anchor",
-			input:    "^test",
-			expected: true,
-		},
-		{
-			name:     "regex with line end anchor",
-			input:    "$test",
-			expected: true,
-		},
-		{
-			name:     "regex with conditional",
-			input:    "(?(condition)yes|no)test",
-			expected: true, // First char '(' is in regex starters
-		},
-		{
-			name:     "regex with recursive pattern",
-			input:    "(?R)test",
-			expected: true, // First char '(' is in regex starters
-		},
-		{
-			name:     "regex with subroutine call",
-			input:    "(?1)test",
-			expected: true, // First char '(' is in regex starters
-		},
-		{
-			name:     "regex with quantifier",
-			input:    "a{1,3}test",
-			expected: false, // Next char '{' is not a regex starter
-		},
-		{
-			name:     "regex with non-greedy quantifier",
-			input:    "a{1,3}?test",
-			expected: false, // Next char '{' is not a regex starter
-		},
-		{
-			name:     "regex with possessive quantifier",
-			input:    "a{1,3}+test",
-			expected: false, // Next char '{' is not a regex starter
-		},
-		{
-			name:     "regex with comments",
-			input:    "(?#comment)test",
-			expected: true, // First char '(' is in regex starters
-		},
-
-		// Edge cases that should return false (division operator)
-		{
-			name:     "division operator - next char is operator",
-			input:    "+test",
-			expected: true, // Function only looks at first char, '+' is not checked here
-		},
-		{
-			name:     "division operator - next char is punctuation",
-			input:    ";test",
-			expected: true, // Function only looks at first char, ';' is not checked here
-		},
-		{
-			name:     "division operator - next char is closing brace",
-			input:    "}test",
-			expected: true, // Function only looks at first char, '}' is not checked here
-		},
-		{
-			name:     "division operator - next char is comma",
-			input:    ",test",
-			expected: true, // Function only looks at first char, ',' is not checked here
-		},
-		{
-			name:     "division operator - next char is equals",
-			input:    "=test",
-			expected: true, // Function only looks at first char, '=' is not checked here
-		},
-		{
-			name:     "division operator - next char is greater than",
-			input:    ">test",
-			expected: true, // Function only looks at first char, '>' is not checked here
-		},
-		{
-			name:     "division operator - next char is less than",
-			input:    "<test",
-			expected: true, // Function only looks at first char, '<' is not checked here
-		},
-		{
-			name:     "division operator - next char is exclamation",
-			input:    "!test",
-			expected: true, // Function only looks at first char, '!' is not checked here
-		},
-		{
-			name:     "division operator - next char is question mark",
-			input:    "?test",
-			expected: true, // Function only looks at first char, '?' is not checked here
-		},
-		{
-			name:     "division operator - next char is colon",
-			input:    ":test",
-			expected: true, // Function only looks at first char, ':' is not checked here
-		},
-		{
-			name:     "division operator - next char is pipe",
-			input:    "|test",
-			expected: true, // Function only looks at first char, '|' is not checked here
-		},
-		{
-			name:     "division operator - next char is ampersand",
-			input:    "&test",
-			expected: true, // Function only looks at first char, '&' is not checked here
-		},
-		{
-			name:     "division operator - next char is percent",
-			input:    "%test",
-			expected: true, // Function only looks at first char, '%' is not checked here
-		},
-		{
-			name:     "division operator - next char is caret",
-			input:    "^test",
-			expected: true, // Function only looks at first char, '^' is in regex starters
-		},
-		{
-			name:     "division operator - next char is tilde",
-			input:    "~test",
-			expected: true, // Function only looks at first char, '~' is not checked here
-		},
-		{
-			name:     "division operator - next char is backtick",
-			input:    "`test",
-			expected: true, // Function only looks at first char, '`' is not checked here
-		},
-		{
-			name:     "division operator - next char is quote",
-			input:    "\"test",
-			expected: true, // Function only looks at first char, '"' is not checked here
-		},
-		{
-			name:     "division operator - next char is apostrophe",
-			input:    "'test",
-			expected: true, // Function only looks at first char, ''' is not checked here
-		},
+		{"end of input", "", false},
+		{"space", " test", true},
+		{"tab", "\ttest", true},
+		{"newline", "\ntest", true},
+		{"carriage return", "\rtest", true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create a minimal lexer instance for testing
-			lexer := &Lexer{
-				reader: NewReaderFast(tt.input),
-			}
+			testLooksLikeRegexCase(t, tt.input, tt.expected)
+		})
+	}
+}
 
-			result := lexer.looksLikeRegex()
-			if result != tt.expected {
-				t.Errorf("looksLikeRegex() for input %q = %v, want %v", tt.input, result, tt.expected)
-			}
+// TestLooksLikeRegex_CommonRegexStarters tests common regex starting characters
+func TestLooksLikeRegex_CommonRegexStarters(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected bool
+	}{
+		{"lowercase letter", "atest", true},
+		{"uppercase letter", "Atest", true},
+		{"digit", "5test", true},
+		{"underscore", "_test", true},
+		{"backslash", "\\test", true},
+		{"left bracket", "[test", true},
+		{"left parenthesis", "(test", true},
+		{"dot", ".test", true},
+		{"caret", "^test", true},
+		{"dollar sign", "$test", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testLooksLikeRegexCase(t, tt.input, tt.expected)
+		})
+	}
+}
+
+// TestLooksLikeRegex_SpecialPatterns tests regex-like patterns with special characters
+func TestLooksLikeRegex_SpecialPatterns(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected bool
+	}{
+		{"regex with quantifier", "a+test", false},
+		{"regex with character class", "[a-z]test", true},
+		{"regex with escaped dot", "\\.test", true},
+		{"regex with word boundary", "\\btest", true},
+		{"regex with digit shorthand", "\\dtest", true},
+		{"regex with whitespace shorthand", "\\stest", true},
+		{"regex with word character shorthand", "\\wtest", true},
+		{"regex with alternation", "a|btest", true},
+		{"regex with group", "(ab)test", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testLooksLikeRegexCase(t, tt.input, tt.expected)
+		})
+	}
+}
+
+// TestLooksLikeRegex_EdgeCases tests edge cases and special characters
+func TestLooksLikeRegex_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected bool
+	}{
+		{"next character is slash", "/test", true},
+		{"next character is asterisk", "*test", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testLooksLikeRegexCase(t, tt.input, tt.expected)
+		})
+	}
+}
+
+// TestLooksLikeRegex_AdvancedPatterns tests advanced regex patterns and groups
+func TestLooksLikeRegex_AdvancedPatterns(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected bool
+	}{
+		{"regex with non-capturing group", "(?:ab)test", true},
+		{"regex with lookahead", "(?=ab)test", true},
+		{"regex with negative lookahead", "(?!ab)test", true},
+		{"regex with lookbehind", "(?<=ab)test", true},
+		{"regex with negative lookbehind", "(?<!ab)test", true},
+		{"regex with atomic group", "(?>ab)test", true},
+		{"regex with case insensitive flag", "(?i)test", true},
+		{"regex with multiline flag", "(?m)test", true},
+		{"regex with dotall flag", "(?s)test", true},
+		{"regex with unicode flag", "(?U)test", true},
+		{"regex with verbose flag", "(?x)test", true},
+		{"regex with named group", "(?<name>ab)test", true},
+		{"regex with conditional", "(?(condition)yes|no)test", true},
+		{"regex with recursive pattern", "(?R)test", true},
+		{"regex with subroutine call", "(?1)test", true},
+		{"regex with comments", "(?#comment)test", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testLooksLikeRegexCase(t, tt.input, tt.expected)
+		})
+	}
+}
+
+// TestLooksLikeRegex_EscapeSequences tests regex escape sequences
+func TestLooksLikeRegex_EscapeSequences(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected bool
+	}{
+		{"regex with backreference", "\\1test", true},
+		{"regex with octal escape", "\\123test", true},
+		{"regex with hex escape", "\\x41test", true},
+		{"regex with unicode escape", "\\u0041test", true},
+		{"regex with control character", "\\cAtest", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testLooksLikeRegexCase(t, tt.input, tt.expected)
+		})
+	}
+}
+
+// TestLooksLikeRegex_CharacterClasses tests regex character classes
+func TestLooksLikeRegex_CharacterClasses(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected bool
+	}{
+		{"regex with character class negation", "[^a-z]test", true},
+		{"regex with character class range", "[a-zA-Z0-9]test", true},
+		{"regex with predefined character class", "\\w\\d\\s", true},
+		{"regex with negated predefined class", "\\W\\D\\S", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testLooksLikeRegexCase(t, tt.input, tt.expected)
+		})
+	}
+}
+
+// TestLooksLikeRegex_Anchors tests regex anchor patterns
+func TestLooksLikeRegex_Anchors(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected bool
+	}{
+		{"regex with anchor", "^$test", true},
+		{"regex with word boundary", "\\b\\Btest", true},
+		{"regex with string start anchor", "\\Atest", true},
+		{"regex with string end anchor", "\\ztest", true},
+		{"regex with previous match end", "\\Gtest", true},
+		{"regex with line start anchor", "^test", true},
+		{"regex with line end anchor", "$test", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testLooksLikeRegexCase(t, tt.input, tt.expected)
+		})
+	}
+}
+
+// TestLooksLikeRegex_NegativeCases tests cases that should not be detected as regex
+func TestLooksLikeRegex_NegativeCases(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected bool
+	}{
+		{"regex with possessive quantifier", "a++test", false},
+		{"regex with reluctant quantifier", "a+?test", false},
+		{"regex with quantifier", "a{1,3}test", false},
+		{"regex with non-greedy quantifier", "a{1,3}?test", false},
+		{"regex with possessive quantifier braces", "a{1,3}+test", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testLooksLikeRegexCase(t, tt.input, tt.expected)
+		})
+	}
+}
+
+// TestLooksLikeRegex_DivisionOperatorEdgeCases tests division operator edge cases
+func TestLooksLikeRegex_DivisionOperatorEdgeCases(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected bool
+	}{
+		{"division operator - next char is operator", "+test", true},
+		{"division operator - next char is punctuation", ";test", true},
+		{"division operator - next char is closing brace", "}test", true},
+		{"division operator - next char is comma", ",test", true},
+		{"division operator - next char is equals", "=test", true},
+		{"division operator - next char is greater than", ">test", true},
+		{"division operator - next char is less than", "<test", true},
+		{"division operator - next char is exclamation", "!test", true},
+		{"division operator - next char is question mark", "?test", true},
+		{"division operator - next char is colon", ":test", true},
+		{"division operator - next char is pipe", "|test", true},
+		{"division operator - next char is ampersand", "&test", true},
+		{"division operator - next char is percent", "%test", true},
+		{"division operator - next char is tilde", "~test", true},
+		{"division operator - next char is backtick", "`test", true},
+		{"division operator - next char is quote", "\"test", true},
+		{"division operator - next char is apostrophe", "'test", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testLooksLikeRegexCase(t, tt.input, tt.expected)
 		})
 	}
 }

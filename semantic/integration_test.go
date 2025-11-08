@@ -40,11 +40,11 @@ rule test_rule {
 }
 
 // TestTypeCheckerBinaryOpTypes tests type checking for all binary operators
-func TestTypeCheckerBinaryOpTypes(t *testing.T) {
+// Helper function to setup test environment for type checking
+func setupTypeCheckerTest(t *testing.T) (*SymbolTable, *TypeChecker, token.Position) {
 	st := NewSymbolTable()
 	st.EnterScope("test")
 	checker := NewTypeChecker(st)
-
 	pos := token.Position{Line: 1, Column: 1}
 
 	// Define a string for testing
@@ -53,135 +53,101 @@ func TestTypeCheckerBinaryOpTypes(t *testing.T) {
 		t.Fatalf("Failed to define string: %v", err)
 	}
 
+	return st, checker, pos
+}
+
+// Helper function to test binary operation type checking
+func testBinaryOpType(t *testing.T, checker *TypeChecker, expr *ast.BinaryOp) {
+	_, errs := checker.CheckExpressionTypes(expr)
+	if len(errs) > 0 {
+		t.Errorf("CheckExpressionTypes() unexpected errors: %v", errs)
+	}
+}
+
+// TestTypeCheckerBinaryOpTypes_Arithmetic tests arithmetic operators
+func TestTypeCheckerBinaryOpTypes_Arithmetic(t *testing.T) {
+	_, checker, pos := setupTypeCheckerTest(t)
+
 	tests := []struct {
 		name string
-		expr *ast.BinaryOp
+		op   token.TokenType
+		left int64
+		right int64
 	}{
-		{
-			name: "subtraction",
-			expr: &ast.BinaryOp{
-				Pos:   pos,
-				Left:  &ast.Literal{Type: token.INTEGER_LIT, Value: int64(5), Pos: pos},
-				Op:    token.MINUS,
-				Right: &ast.Literal{Type: token.INTEGER_LIT, Value: int64(2), Pos: pos},
-			},
-		},
-		{
-			name: "multiplication",
-			expr: &ast.BinaryOp{
-				Pos:   pos,
-				Left:  &ast.Literal{Type: token.INTEGER_LIT, Value: int64(3), Pos: pos},
-				Op:    token.MULTIPLY,
-				Right: &ast.Literal{Type: token.INTEGER_LIT, Value: int64(4), Pos: pos},
-			},
-		},
-		{
-			name: "division",
-			expr: &ast.BinaryOp{
-				Pos:   pos,
-				Left:  &ast.Literal{Type: token.INTEGER_LIT, Value: int64(10), Pos: pos},
-				Op:    token.DIVIDE,
-				Right: &ast.Literal{Type: token.INTEGER_LIT, Value: int64(2), Pos: pos},
-			},
-		},
-		{
-			name: "modulo",
-			expr: &ast.BinaryOp{
-				Pos:   pos,
-				Left:  &ast.Literal{Type: token.INTEGER_LIT, Value: int64(10), Pos: pos},
-				Op:    token.MODULO,
-				Right: &ast.Literal{Type: token.INTEGER_LIT, Value: int64(3), Pos: pos},
-			},
-		},
-		{
-			name: "bitwise_and",
-			expr: &ast.BinaryOp{
-				Pos:   pos,
-				Left:  &ast.Literal{Type: token.INTEGER_LIT, Value: int64(15), Pos: pos},
-				Op:    token.BITWISE_AND,
-				Right: &ast.Literal{Type: token.INTEGER_LIT, Value: int64(7), Pos: pos},
-			},
-		},
-		{
-			name: "bitwise_or",
-			expr: &ast.BinaryOp{
-				Pos:   pos,
-				Left:  &ast.Literal{Type: token.INTEGER_LIT, Value: int64(8), Pos: pos},
-				Op:    token.BITWISE_OR,
-				Right: &ast.Literal{Type: token.INTEGER_LIT, Value: int64(4), Pos: pos},
-			},
-		},
-		{
-			name: "bitwise_xor",
-			expr: &ast.BinaryOp{
-				Pos:   pos,
-				Left:  &ast.Literal{Type: token.INTEGER_LIT, Value: int64(12), Pos: pos},
-				Op:    token.BITWISE_XOR,
-				Right: &ast.Literal{Type: token.INTEGER_LIT, Value: int64(10), Pos: pos},
-			},
-		},
-		{
-			name: "left_shift",
-			expr: &ast.BinaryOp{
-				Pos:   pos,
-				Left:  &ast.Literal{Type: token.INTEGER_LIT, Value: int64(1), Pos: pos},
-				Op:    token.LEFT_SHIFT,
-				Right: &ast.Literal{Type: token.INTEGER_LIT, Value: int64(4), Pos: pos},
-			},
-		},
-		{
-			name: "right_shift",
-			expr: &ast.BinaryOp{
-				Pos:   pos,
-				Left:  &ast.Literal{Type: token.INTEGER_LIT, Value: int64(16), Pos: pos},
-				Op:    token.RIGHT_SHIFT,
-				Right: &ast.Literal{Type: token.INTEGER_LIT, Value: int64(2), Pos: pos},
-			},
-		},
-		{
-			name: "less_than",
-			expr: &ast.BinaryOp{
-				Pos:   pos,
-				Left:  &ast.Literal{Type: token.INTEGER_LIT, Value: int64(1), Pos: pos},
-				Op:    token.LT,
-				Right: &ast.Literal{Type: token.INTEGER_LIT, Value: int64(2), Pos: pos},
-			},
-		},
-		{
-			name: "less_equal",
-			expr: &ast.BinaryOp{
-				Pos:   pos,
-				Left:  &ast.Literal{Type: token.INTEGER_LIT, Value: int64(1), Pos: pos},
-				Op:    token.LE,
-				Right: &ast.Literal{Type: token.INTEGER_LIT, Value: int64(1), Pos: pos},
-			},
-		},
-		{
-			name: "greater_equal",
-			expr: &ast.BinaryOp{
-				Pos:   pos,
-				Left:  &ast.Literal{Type: token.INTEGER_LIT, Value: int64(2), Pos: pos},
-				Op:    token.GE,
-				Right: &ast.Literal{Type: token.INTEGER_LIT, Value: int64(1), Pos: pos},
-			},
-		},
-		{
-			name: "not_equal",
-			expr: &ast.BinaryOp{
-				Pos:   pos,
-				Left:  &ast.Literal{Type: token.INTEGER_LIT, Value: int64(1), Pos: pos},
-				Op:    token.NEQ,
-				Right: &ast.Literal{Type: token.INTEGER_LIT, Value: int64(2), Pos: pos},
-			},
-		},
+		{"subtraction", token.MINUS, 5, 2},
+		{"multiplication", token.MULTIPLY, 3, 4},
+		{"division", token.DIVIDE, 10, 2},
+		{"modulo", token.MODULO, 10, 3},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, errs := checker.CheckExpressionTypes(tt.expr)
-			if len(errs) > 0 {
-				t.Errorf("CheckExpressionTypes() unexpected errors: %v", errs)
+			expr := &ast.BinaryOp{
+				Pos:   pos,
+				Left:  &ast.Literal{Type: token.INTEGER_LIT, Value: tt.left, Pos: pos},
+				Op:    tt.op,
+				Right: &ast.Literal{Type: token.INTEGER_LIT, Value: tt.right, Pos: pos},
 			}
+			testBinaryOpType(t, checker, expr)
+		})
+	}
+}
+
+// TestTypeCheckerBinaryOpTypes_Bitwise tests bitwise operators
+func TestTypeCheckerBinaryOpTypes_Bitwise(t *testing.T) {
+	_, checker, pos := setupTypeCheckerTest(t)
+
+	tests := []struct {
+		name string
+		op   token.TokenType
+		left int64
+		right int64
+	}{
+		{"bitwise_and", token.BITWISE_AND, 15, 7},
+		{"bitwise_or", token.BITWISE_OR, 8, 4},
+		{"bitwise_xor", token.BITWISE_XOR, 12, 10},
+		{"left_shift", token.LEFT_SHIFT, 1, 4},
+		{"right_shift", token.RIGHT_SHIFT, 16, 2},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			expr := &ast.BinaryOp{
+				Pos:   pos,
+				Left:  &ast.Literal{Type: token.INTEGER_LIT, Value: tt.left, Pos: pos},
+				Op:    tt.op,
+				Right: &ast.Literal{Type: token.INTEGER_LIT, Value: tt.right, Pos: pos},
+			}
+			testBinaryOpType(t, checker, expr)
+		})
+	}
+}
+
+// TestTypeCheckerBinaryOpTypes_Comparison tests comparison operators
+func TestTypeCheckerBinaryOpTypes_Comparison(t *testing.T) {
+	_, checker, pos := setupTypeCheckerTest(t)
+
+	tests := []struct {
+		name string
+		op   token.TokenType
+		left int64
+		right int64
+	}{
+		{"less_than", token.LT, 1, 2},
+		{"less_equal", token.LE, 1, 1},
+		{"greater_equal", token.GE, 2, 1},
+		{"not_equal", token.NEQ, 1, 2},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			expr := &ast.BinaryOp{
+				Pos:   pos,
+				Left:  &ast.Literal{Type: token.INTEGER_LIT, Value: tt.left, Pos: pos},
+				Op:    tt.op,
+				Right: &ast.Literal{Type: token.INTEGER_LIT, Value: tt.right, Pos: pos},
+			}
+			testBinaryOpType(t, checker, expr)
 		})
 	}
 }
