@@ -12,28 +12,25 @@ import (
 	"github.com/cawalch/go-yara/token"
 )
 
-// ConditionCompiler handles compilation of conditions to bytecode
 type ConditionCompiler struct {
 	emitter           *Emitter
-	stringOffsets     map[string]int // String identifier to bytecode offset
-	variableMap       map[string]int // Variable name to index
-	externalVariables map[string]int // External variable name to index
-	ruleIndexMap      map[string]int // Rule name to index in compiled rules
-	labelCounter      int            // For generating unique labels
-	labels            map[string]int // Label name to bytecode offset
-	pendingJumps      []PendingJump  // Jumps that need label resolution
+	stringOffsets     map[string]int
+	variableMap       map[string]int
+	externalVariables map[string]int
+	ruleIndexMap      map[string]int
+	labelCounter      int
+	labels            map[string]int
+	pendingJumps      []PendingJump
 }
 
 // parseSizeLiteral parses a size literal string like "100KB" or "1MB" into bytes
 func parseSizeLiteral(literal string) (int64, error) {
-	// Regular expression to match size literals
 	re := regexp.MustCompile(`^(0x[0-9a-fA-F]+|\d+)(KB|MB|GB|TB)$`)
 	matches := re.FindStringSubmatch(strings.TrimSpace(literal))
 	if matches == nil {
 		return 0, fmt.Errorf("invalid size literal format: %s", literal)
 	}
 
-	// Parse the numeric part
 	var num int64
 	var err error
 	if strings.HasPrefix(matches[1], "0x") {
@@ -45,22 +42,19 @@ func parseSizeLiteral(literal string) (int64, error) {
 		return 0, fmt.Errorf("invalid number in size literal: %s", matches[1])
 	}
 
-	// Apply the multiplier
-	switch strings.ToUpper(matches[2]) {
-	case "KB":
-		return num * 1024, nil
-	case "MB":
-		return num * 1024 * 1024, nil
-	case "GB":
-		return num * 1024 * 1024 * 1024, nil
-	case "TB":
-		return num * 1024 * 1024 * 1024 * 1024, nil
-	default:
-		return 0, fmt.Errorf("unsupported size unit: %s", matches[2])
+	sizeMultipliers := map[string]int64{
+		"KB": 1024,
+		"MB": 1024 * 1024,
+		"GB": 1024 * 1024 * 1024,
+		"TB": 1024 * 1024 * 1024 * 1024,
 	}
+
+	if multiplier, exists := sizeMultipliers[strings.ToUpper(matches[2])]; exists {
+		return num * multiplier, nil
+	}
+	return 0, fmt.Errorf("unsupported size unit: %s", matches[2])
 }
 
-// PendingJump represents a jump instruction that needs label resolution
 type PendingJump struct {
 	Opcode       Opcode
 	Label        string
@@ -68,7 +62,6 @@ type PendingJump struct {
 	Line, Column int
 }
 
-// NewConditionCompiler creates a new condition compiler
 func NewConditionCompiler(emitter *Emitter, stringOffsets map[string]int) *ConditionCompiler {
 	return &ConditionCompiler{
 		emitter:           emitter,
@@ -76,38 +69,30 @@ func NewConditionCompiler(emitter *Emitter, stringOffsets map[string]int) *Condi
 		variableMap:       make(map[string]int),
 		externalVariables: make(map[string]int),
 		ruleIndexMap:      make(map[string]int),
-		labelCounter:      0,
 		labels:            make(map[string]int),
 		pendingJumps:      make([]PendingJump, 0),
 	}
 }
 
-// SetRuleIndexMap sets the rule index map for resolving rule identifiers
 func (cc *ConditionCompiler) SetRuleIndexMap(ruleIndexMap map[string]int) {
 	cc.ruleIndexMap = ruleIndexMap
 }
 
-// generateLabel returns a unique label identifier for internal jump targets.
-// Kept unexported; used by tests to verify uniqueness/format.
 func (cc *ConditionCompiler) generateLabel() string {
 	cc.labelCounter++
 	return fmt.Sprintf("L%d", cc.labelCounter)
 }
 
-// defineLabel defines a label at the current bytecode position
 func (cc *ConditionCompiler) defineLabel(label string) {
 	cc.labels[label] = cc.emitter.GetLength()
 }
 
-// JumpPosition holds position information for jump instructions
 type JumpPosition struct {
 	Line   int
 	Column int
 }
 
-// emitJumpWithLabel emits a jump instruction that will be resolved later
 func (cc *ConditionCompiler) emitJumpWithLabel(opcode Opcode, label string, position JumpPosition) {
-	// Record the pending jump
 	pos := cc.emitter.GetLength()
 	cc.pendingJumps = append(cc.pendingJumps, PendingJump{
 		Opcode:   opcode,
@@ -116,35 +101,24 @@ func (cc *ConditionCompiler) emitJumpWithLabel(opcode Opcode, label string, posi
 		Line:     position.Line,
 		Column:   position.Column,
 	})
-
-	// Emit placeholder operand (will be fixed up during resolution)
 	cc.emitter.EmitOpcodeWithOperand(opcode, Operand{Type: OperandImmediate32, Value: 0}, position.Line, position.Column)
 }
 
-// resolveJumps resolves all pending jumps with their target labels
 func (cc *ConditionCompiler) resolveJumps() error {
 	for _, jump := range cc.pendingJumps {
 		targetOffset, exists := cc.labels[jump.Label]
 		if !exists {
 			return fmt.Errorf("undefined label: %s", jump.Label)
 		}
-
-		// Calculate relative offset from jump instruction position
-		relativeOffset := targetOffset - jump.Position - 1 // +1 because jump is relative to next instruction
-
-		// Update the operand in the bytecode
+		relativeOffset := targetOffset - jump.Position - 1
 		if err := cc.emitter.UpdateOperand(jump.Position, Operand{Type: OperandImmediate32, Value: uint64(relativeOffset)}); err != nil {
 			return fmt.Errorf("failed to resolve jump to label %s: %w", jump.Label, err)
 		}
 	}
-
-	// Clear pending jumps after resolution
 	cc.pendingJumps = cc.pendingJumps[:0]
 	return nil
 }
 
-// compileExpressions compiles multiple expressions with consistent error handling
-// Reduces boilerplate error handling code in binary operations
 func (cc *ConditionCompiler) compileExpressions(exprs ...ast.Expression) error {
 	for _, expr := range exprs {
 		if err := cc.compileExpression(expr); err != nil {
@@ -154,23 +128,17 @@ func (cc *ConditionCompiler) compileExpressions(exprs ...ast.Expression) error {
 	return nil
 }
 
-// findStringOffset finds a string offset, trying both with and without $ prefix
-// Reduces code duplication in unary operator compilation
 func (cc *ConditionCompiler) findStringOffset(name string) (int, bool) {
 	if offset, exists := cc.stringOffsets[name]; exists {
 		return offset, true
 	}
-	// Try with $ prefix
 	if offset, exists := cc.stringOffsets["$"+name]; exists {
 		return offset, true
 	}
 	return 0, false
 }
 
-// emitStringOffset loads a string identifier from VM memory with overflow protection
-// Reduces code duplication in string operator compilation
 func (cc *ConditionCompiler) emitStringOffset(offset, line, column int) {
-	// Safe conversion with overflow check
 	if offset < 0 {
 		cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(0)}, line, column)
 	} else {
@@ -178,16 +146,8 @@ func (cc *ConditionCompiler) emitStringOffset(offset, line, column int) {
 	}
 }
 
-// emitStringIdentifier pushes a string identifier as ValueTypeString for pattern operations
-// Used by AT and IN operators that need the string identifier, not the FOUND result
 func (cc *ConditionCompiler) emitStringIdentifier(offset int, identifier string, line, column int) {
-	// identifier parameter reserved for future use when string identifiers are needed
-	_ = identifier // nolint: revive
-	// For AT and IN operations, we need to set up a memory slot that contains
-	// the string identifier as a ValueTypeString, then push that memory slot reference
-
-	// Use OP_PUSH_M to push the memory slot that should contain the string identifier
-	// The interpreter should have already set this up via SetMemoryString during execution
+	_ = identifier
 	cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(offset)}, line, column)
 }
 
@@ -229,61 +189,24 @@ func (cc *ConditionCompiler) compileExpression(expr ast.Expression) error {
 	}
 }
 
-// compileLiteral compiles a literal value
 func (cc *ConditionCompiler) compileLiteral(lit *ast.Literal) error {
 	switch lit.Type {
-	case token.INTEGER_LIT:
+	case token.INTEGER_LIT, token.HEX_INTEGER_LIT, token.OCTAL_INTEGER_LIT:
 		if value, ok := lit.Value.(int64); ok {
-			if value < 0 {
-				cc.emitter.EmitPush(uint64(0), lit.Pos.Line, lit.Pos.Column)
-			} else {
-				cc.emitter.EmitPush(uint64(value), lit.Pos.Line, lit.Pos.Column)
-			}
-		}
-	case token.HEX_INTEGER_LIT:
-		if value, ok := lit.Value.(int64); ok {
-			// Safe conversion with explicit truncation
-			cc.emitter.EmitPush(uint64(value), lit.Pos.Line, lit.Pos.Column)
-		} else {
-			cc.emitter.EmitPush(0, lit.Pos.Line, lit.Pos.Column)
-		}
-	case token.OCTAL_INTEGER_LIT:
-		if value, ok := lit.Value.(int64); ok {
-			// Safe conversion with explicit truncation
-			cc.emitter.EmitPush(uint64(value), lit.Pos.Line, lit.Pos.Column)
+			cc.emitter.EmitPush(uint64(max(0, value)), lit.Pos.Line, lit.Pos.Column)
 		} else {
 			cc.emitter.EmitPush(0, lit.Pos.Line, lit.Pos.Column)
 		}
 	case token.FLOAT_LIT:
 		if value, ok := lit.Value.(float64); ok {
-			// Use dedicated double push instruction for floating point values
 			cc.emitter.EmitPushDouble(value, lit.Pos.Line, lit.Pos.Column)
 		}
 	case token.STRING_LIT:
 		if value, ok := lit.Value.(string); ok {
-			// Push string length or reference
 			cc.emitter.EmitPush(uint64(len(value)), lit.Pos.Line, lit.Pos.Column)
 		}
 	case token.SIZE_LIT:
-		if value, ok := lit.Value.(int64); ok {
-			// Size literals (KB, MB, GB) are already converted to bytes by the parser
-			if value < 0 {
-				cc.emitter.EmitPush(uint64(0), lit.Pos.Line, lit.Pos.Column)
-			} else {
-				cc.emitter.EmitPush(uint64(value), lit.Pos.Line, lit.Pos.Column)
-			}
-		} else {
-			// Fallback: try to parse the literal as a string
-			if litStr, isStr := lit.Value.(string); isStr {
-				if parsed, err := parseSizeLiteral(litStr); err == nil {
-					cc.emitter.EmitPush(uint64(parsed), lit.Pos.Line, lit.Pos.Column)
-				} else {
-					return fmt.Errorf("failed to parse size literal %s: %w", litStr, err)
-				}
-			} else {
-				return fmt.Errorf("SIZE_LIT token has invalid value: %v (type: %T)", lit.Value, lit.Value)
-			}
-		}
+		return cc.compileSizeLiteral(lit)
 	case token.TRUE:
 		cc.emitter.EmitPush(1, lit.Pos.Line, lit.Pos.Column)
 	case token.FALSE:
@@ -292,6 +215,22 @@ func (cc *ConditionCompiler) compileLiteral(lit *ast.Literal) error {
 		return fmt.Errorf("unsupported literal type: %s", lit.Type)
 	}
 	return nil
+}
+
+func (cc *ConditionCompiler) compileSizeLiteral(lit *ast.Literal) error {
+	if value, ok := lit.Value.(int64); ok {
+		cc.emitter.EmitPush(uint64(max(0, value)), lit.Pos.Line, lit.Pos.Column)
+		return nil
+	}
+	if litStr, isStr := lit.Value.(string); isStr {
+		if parsed, err := parseSizeLiteral(litStr); err == nil {
+			cc.emitter.EmitPush(uint64(parsed), lit.Pos.Line, lit.Pos.Column)
+			return nil
+		} else {
+			return fmt.Errorf("failed to parse size literal %s: %w", litStr, err)
+		}
+	}
+	return fmt.Errorf("SIZE_LIT token has invalid value: %v (type: %T)", lit.Value, lit.Value)
 }
 
 // compileIdentifier compiles an identifier reference
@@ -339,28 +278,22 @@ func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 		return nil
 	}
 
-	// Check for special identifiers
-	switch ident.Name {
-	case "filesize":
-		cc.emitter.EmitOpcode(OP_FILESIZE, ident.Pos.Line, ident.Pos.Column)
-	case "entrypoint":
-		cc.emitter.EmitOpcode(OP_ENTRYPOINT, ident.Pos.Line, ident.Pos.Column)
-	case "them":
-		// "them" is used in quantifier expressions like "any of them"
-		// In YARA, "them" refers to all strings in the current rule
-		// Use a special value to indicate this represents all strings
-		cc.emitter.EmitPush(0xFFFFFFFE, ident.Pos.Line, ident.Pos.Column) // Special marker for "all strings"
-	case "flags":
-		// YARA builtin variable that contains PE header flags
-		// This should be implemented as a module import in the future
-		// For now, emit a placeholder value of 0
-		cc.emitter.EmitPush(0, ident.Pos.Line, ident.Pos.Column)
-	case QuantifierAny, QuantifierAll, QuantifierNone:
-		// Quantifier keywords used in expressions like "any of them"
-		// These are handled as part of the OF operation, so just push a placeholder
-		cc.emitter.EmitOpcode(OP_PUSH_8, ident.Pos.Line, ident.Pos.Column)
+	specialIdentifiers := map[string]func(){
+		"filesize":     func() { cc.emitter.EmitOpcode(OP_FILESIZE, ident.Pos.Line, ident.Pos.Column) },
+		"entrypoint":   func() { cc.emitter.EmitOpcode(OP_ENTRYPOINT, ident.Pos.Line, ident.Pos.Column) },
+		"them":         func() { cc.emitter.EmitPush(0xFFFFFFFE, ident.Pos.Line, ident.Pos.Column) },
+		"flags":        func() { cc.emitter.EmitPush(0, ident.Pos.Line, ident.Pos.Column) },
+		QuantifierAny:  func() { cc.emitter.EmitOpcode(OP_PUSH_8, ident.Pos.Line, ident.Pos.Column) },
+		QuantifierAll:  func() { cc.emitter.EmitOpcode(OP_PUSH_8, ident.Pos.Line, ident.Pos.Column) },
+		QuantifierNone: func() { cc.emitter.EmitOpcode(OP_PUSH_8, ident.Pos.Line, ident.Pos.Column) },
+	}
 
-	default:
+	if handler, exists := specialIdentifiers[ident.Name]; exists {
+		handler()
+		return nil
+	}
+
+	{
 		// Check if this might be a module function (e.g., pe.section, cuckoo.sync)
 		if cc.isModuleFunction(ident.Name) {
 			// Emit module function call bytecode
@@ -374,86 +307,67 @@ func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 		return fmt.Errorf("undefined identifier: %s", ident.Name)
 	}
 
-	return nil
 }
 
-// compileStringOffsetOperator handles AT and IN operators that require string identifiers
 func (cc *ConditionCompiler) compileStringOffsetOperator(binOp *ast.BinaryOp) error {
-	// Check if left operand is a string identifier
 	if id, ok := binOp.Left.(*ast.Identifier); ok {
 		if offset, exists := cc.findStringOffset(id.Name); exists {
-			// Push string identifier as ValueTypeString
 			cc.emitStringIdentifier(offset, id.Name, binOp.Pos.Line, binOp.Pos.Column)
-			// Compile right operand (offset or range expression)
 			if err := cc.compileExpression(binOp.Right); err != nil {
 				return err
 			}
-			// Emit appropriate opcode
-			var opcode Opcode
-			switch binOp.Op {
-			case token.AT:
-				opcode = OP_FOUND_AT
-			case token.IN:
-				opcode = OP_FOUND_IN
-			}
+			opcode := map[token.TokenType]Opcode{
+				token.AT: OP_FOUND_AT,
+				token.IN: OP_FOUND_IN,
+			}[binOp.Op]
 			cc.emitter.EmitOpcode(opcode, binOp.Pos.Line, binOp.Pos.Column)
 			return nil
 		}
 		return fmt.Errorf("undefined string identifier: %s", id.Name)
 	}
 
-	operatorName := "AT"
-	if binOp.Op == token.IN {
-		operatorName = "IN"
-	}
+	operatorName := map[token.TokenType]string{
+		token.AT: "AT",
+		token.IN: "IN",
+	}[binOp.Op]
 	return fmt.Errorf("%s operator requires string identifier as left operand", operatorName)
 }
 
-// isFloatExpression checks if an expression contains floating point literals
 func (cc *ConditionCompiler) isFloatExpression(expr ast.Expression) bool {
 	switch e := expr.(type) {
 	case *ast.Literal:
 		return e.Type == token.FLOAT_LIT
 	case *ast.BinaryOp:
-		// Recursively check both operands
 		return cc.isFloatExpression(e.Left) || cc.isFloatExpression(e.Right)
 	case *ast.UnaryOp:
-		// Recursively check the operand
 		return cc.isFloatExpression(e.Right)
 	default:
-		// For other expression types (identifiers, function calls, etc.),
-		// we can't determine the type at compile time, so default to integer
 		return false
 	}
 }
 
-// isLiteralFloat checks if an expression is a floating point literal
 func (cc *ConditionCompiler) isLiteralFloat(expr ast.Expression) bool {
 	if lit, ok := expr.(*ast.Literal); ok {
 		return lit.Type == token.FLOAT_LIT
 	}
 	if unaryOp, ok := expr.(*ast.UnaryOp); ok && unaryOp.Op == token.MINUS {
-		// Check if this is a unary negation of a float literal
 		return cc.isLiteralFloat(unaryOp.Right)
 	}
 	return false
 }
 
-// isMixedTypeComparison checks if a comparison involves mixed types (int vs float)
 func (cc *ConditionCompiler) isMixedTypeComparison(leftIsFloat, rightIsFloat bool) bool {
 	return leftIsFloat != rightIsFloat
 }
 
-// isComparisonOperator checks if the operator is a comparison operation
 func (cc *ConditionCompiler) isComparisonOperator(op token.TokenType) bool {
-	return op == token.EQ || op == token.NEQ ||
-		op == token.LT || op == token.LE ||
-		op == token.GT || op == token.GE ||
-		op == token.LEFT_SHIFT || op == token.RIGHT_SHIFT ||
-		op == token.MODULO
+	comparisonOps := []token.TokenType{
+		token.EQ, token.NEQ, token.LT, token.LE, token.GT, token.GE,
+		token.LEFT_SHIFT, token.RIGHT_SHIFT, token.MODULO,
+	}
+	return slices.Contains(comparisonOps, op)
 }
 
-// isNonCommutativeOperator checks if the operator requires specific operand order
 func (cc *ConditionCompiler) isNonCommutativeOperator(op token.TokenType) bool {
 	return op == token.MINUS || op == token.DIVIDE
 }
@@ -1008,49 +922,34 @@ func (cc *ConditionCompiler) compileOfExpression(ofExpr *ast.OfExpression) error
 	return nil
 }
 
-// compileFunctionCall compiles a function call expression (e.g., "uint32(0)", "int16be(10)")
 func (cc *ConditionCompiler) compileFunctionCall(call *ast.FunctionCall) error {
-	// Compile function arguments first (in reverse order for stack-based evaluation)
 	for i := len(call.Args) - 1; i >= 0; i-- {
 		if err := cc.compileExpression(call.Args[i]); err != nil {
 			return fmt.Errorf("compiling function argument %d: %w", i, err)
 		}
 	}
 
-	// Map function names to opcodes
-	var opcode Opcode
-	switch call.Function {
-	case "uint8":
-		opcode = OP_UINT8
-	case "uint16":
-		opcode = OP_UINT16
-	case "uint32":
-		opcode = OP_UINT32
-	case "uint8be":
-		opcode = OP_UINT8BE
-	case "uint16be":
-		opcode = OP_UINT16BE
-	case "uint32be":
-		opcode = OP_UINT32BE
-	case "int8":
-		opcode = OP_INT8
-	case "int16":
-		opcode = OP_INT16
-	case "int32":
-		opcode = OP_INT32
-	case "int8be":
-		opcode = OP_INT8BE
-	case "int16be":
-		opcode = OP_INT16BE
-	case "int32be":
-		opcode = OP_INT32BE
-	case "concat":
-		opcode = OP_CONCAT
-	default:
+	functionOpcodes := map[string]Opcode{
+		"uint8":    OP_UINT8,
+		"uint16":   OP_UINT16,
+		"uint32":   OP_UINT32,
+		"uint8be":  OP_UINT8BE,
+		"uint16be": OP_UINT16BE,
+		"uint32be": OP_UINT32BE,
+		"int8":     OP_INT8,
+		"int16":    OP_INT16,
+		"int32":    OP_INT32,
+		"int8be":   OP_INT8BE,
+		"int16be":  OP_INT16BE,
+		"int32be":  OP_INT32BE,
+		"concat":   OP_CONCAT,
+	}
+
+	opcode, exists := functionOpcodes[call.Function]
+	if !exists {
 		return fmt.Errorf("unsupported function: %s", call.Function)
 	}
 
-	// Emit the function call opcode
 	cc.emitter.EmitOpcode(opcode, call.Pos.Line, call.Pos.Column)
 	return nil
 }
