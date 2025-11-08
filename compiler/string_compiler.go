@@ -199,8 +199,9 @@ func (sc *StringCompiler) encodeHexString(hexData []byte, modifiers []ast.String
 	// Apply base64 modifiers if present
 	for _, mod := range modifiers {
 		if mod.Type == ast.StringModifierBase64 || mod.Type == ast.StringModifierBase64Wide {
-			// Base64 decoding would happen here
-			// This is simplified - real implementation would decode base64
+			// TODO: Implement base64 decoding
+			// This is a placeholder for future base64 modifier implementation
+			// For now, we continue without applying the modifier
 		}
 	}
 
@@ -636,7 +637,8 @@ func (sc *StringCompiler) applyNocaseModifier(data []byte, isWide bool) []byte {
 func (sc *StringCompiler) GetStringOffsets() map[string]int {
 	// Reference emitter to satisfy linters and maintain backward compatibility
 	if sc.emitter == nil {
-		// no-op
+		// Emitter is not set, which is expected in some usage patterns
+		// This function will return the string offsets regardless of emitter state
 	}
 	return sc.stringOffsets
 }
@@ -658,7 +660,7 @@ type StringInfo struct {
 // Populate from patternData to ensure visibility even when stringOffsets
 // are assigned later by the RuleCompiler.
 func (sc *StringCompiler) GetStringInfo() []StringInfo {
-	var info []StringInfo
+	info := make([]StringInfo, 0, len(sc.patternData))
 
 	for identifier, pattern := range sc.patternData {
 		offset, ok := sc.stringOffsets[identifier]

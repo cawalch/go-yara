@@ -113,7 +113,9 @@ func TestExecuteModeIntegration(t *testing.T) {
 	// Change to temp dir to use relative paths
 	origDir, _ := os.Getwd()
 	defer os.Chdir(origDir)
-	os.Chdir(tmpDir)
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Failed to change directory to %s: %v", tmpDir, err)
+	}
 
 	// Test that runExecuteMode doesn't panic
 	t.Run("execute_mode_with_matches", func(t *testing.T) {
@@ -165,7 +167,9 @@ func TestExecuteModeMultiplePatterns(t *testing.T) {
 	// Change to temp dir to use relative paths
 	origDir, _ := os.Getwd()
 	defer os.Chdir(origDir)
-	os.Chdir(tmpDir)
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Failed to change directory to %s: %v", tmpDir, err)
+	}
 
 	// Test that runExecuteMode handles multiple patterns
 	t.Run("multiple_patterns", func(t *testing.T) {
@@ -215,7 +219,9 @@ func patternMatchingSupported(t *testing.T) bool {
 	// Change to temp dir to use relative paths
 	origDir, _ := os.Getwd()
 	defer os.Chdir(origDir)
-	os.Chdir(tmpDir)
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Failed to change directory to %s: %v", tmpDir, err)
+	}
 
 	out := captureOutput(func() {
 		args := &commandArgs{
@@ -255,7 +261,9 @@ func TestExecuteMode_RegexInlineFlagsI(t *testing.T) {
 	// Change to temp dir to use relative paths
 	origDir, _ := os.Getwd()
 	defer os.Chdir(origDir)
-	os.Chdir(tmpDir)
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Failed to change directory to %s: %v", tmpDir, err)
+	}
 
 	out := captureOutput(func() {
 		args := &commandArgs{
@@ -300,7 +308,9 @@ func TestExecuteMode_RegexInlineFlagsS(t *testing.T) {
 	// Change to temp dir to use relative paths
 	origDir, _ := os.Getwd()
 	defer os.Chdir(origDir)
-	os.Chdir(tmpDir)
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Failed to change directory to %s: %v", tmpDir, err)
+	}
 
 	out := captureOutput(func() {
 		args := &commandArgs{
@@ -344,7 +354,9 @@ func TestExecuteMode_RegexEmptyMatch_Scan(t *testing.T) {
 	// Change to temp dir to use relative paths
 	origDir, _ := os.Getwd()
 	defer os.Chdir(origDir)
-	os.Chdir(tmpDir)
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Failed to change directory to %s: %v", tmpDir, err)
+	}
 
 	out := captureOutput(func() {
 		args := &commandArgs{
@@ -388,7 +400,9 @@ func TestExecuteMode_Count_Regex(t *testing.T) {
 	// Change to temp dir to use relative paths
 	origDir, _ := os.Getwd()
 	defer os.Chdir(origDir)
-	os.Chdir(tmpDir)
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Failed to change directory to %s: %v", tmpDir, err)
+	}
 
 	out := captureOutput(func() {
 		args := &commandArgs{
@@ -429,7 +443,9 @@ func TestExecuteMode_Offset_Regex(t *testing.T) {
 	// Change to temp dir to use relative paths
 	origDir, _ := os.Getwd()
 	defer os.Chdir(origDir)
-	os.Chdir(tmpDir)
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Failed to change directory to %s: %v", tmpDir, err)
+	}
 
 	out := captureOutput(func() {
 		args := &commandArgs{
@@ -470,7 +486,9 @@ func TestExecuteMode_Count_String(t *testing.T) {
 	// Change to temp dir to use relative paths
 	origDir, _ := os.Getwd()
 	defer os.Chdir(origDir)
-	os.Chdir(tmpDir)
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Failed to change directory to %s: %v", tmpDir, err)
+	}
 
 	out := captureOutput(func() {
 		args := &commandArgs{
@@ -511,7 +529,9 @@ func TestExecuteMode_Offset_String(t *testing.T) {
 	// Change to temp dir to use relative paths
 	origDir, _ := os.Getwd()
 	defer os.Chdir(origDir)
-	os.Chdir(tmpDir)
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Failed to change directory to %s: %v", tmpDir, err)
+	}
 
 	out := captureOutput(func() {
 		args := &commandArgs{

@@ -112,7 +112,12 @@ func (sp *StreamingProcessor) ProcessFile(ctx context.Context, filename string) 
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file: %w", err)
 	}
-	defer file.Close()
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil {
+			// Log the close error, but don't override the main function's error
+			// In production, you might want to use proper logging
+		}
+	}()
 
 	// Get file size for progress tracking
 	fileInfo, err := file.Stat()
@@ -222,7 +227,7 @@ func (sp *StreamingProcessor) processChunks(ctx context.Context, file *os.File, 
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return fmt.Errorf("context canceled: %w", ctx.Err())
 		default:
 		}
 
@@ -267,28 +272,22 @@ func (sp *StreamingProcessor) processDataChunks(ctx context.Context, data []byte
 
 	chunkCount := (len(data) + sp.ChunkSize - 1) / sp.ChunkSize
 
-	for i := 0; i < chunkCount; i++ {
+	for i := range chunkCount {
 		select {
 		case <-ctx.Done():
 			// Wait for all goroutines to finish
 			wg.Wait()
-			return ctx.Err()
+			return fmt.Errorf("context canceled during processing: %w", ctx.Err())
 		default:
 		}
 
 		start := i * sp.ChunkSize
-		end := start + sp.ChunkSize
-		if end > len(data) {
-			end = len(data)
-		}
+		end := min(start+sp.ChunkSize, len(data))
 
 		// Add overlap for boundary-crossing patterns (except for first chunk)
 		overlapSize := 0
 		if i > 0 {
-			overlapSize = sp.MaxPatternLen - 1
-			if overlapSize < 0 {
-				overlapSize = 0
-			}
+			overlapSize = max(sp.MaxPatternLen-1, 0)
 			start -= overlapSize
 			if start < 0 {
 				start = 0

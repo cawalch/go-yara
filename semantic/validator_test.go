@@ -377,7 +377,7 @@ func TestModuleValidator(t *testing.T) {
 
 	// Test invalid function
 	invalidFuncName := "unknown_function"
-	typeInfo, errors = validator.ValidateFunctionCall(invalidFuncName, args, pos)
+	_, errors = validator.ValidateFunctionCall(invalidFuncName, args, pos)
 
 	if len(errors) == 0 {
 		t.Errorf("ValidateFunctionCall() expected errors for unknown function")

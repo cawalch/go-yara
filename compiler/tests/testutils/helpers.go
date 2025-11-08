@@ -75,7 +75,7 @@ func CompileTestRuleWithError(t *testing.T, source string) (*compiler.CompiledPr
 	compErrors := c.GetErrors()
 
 	// Convert compilation errors to standard errors
-	var errors []error
+	errors := make([]error, 0, 1+len(compErrors))
 	if err != nil {
 		errors = append(errors, err)
 	}

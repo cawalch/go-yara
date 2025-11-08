@@ -1,12 +1,19 @@
 # golangci-lint configuration for go-yara
-# Modern Go 1.25+ best practices - focus on code quality, performance, and security
+# Optimized for Go 1.25+ security-focused production codebase
+# Prioritizes security, correctness, and performance while avoiding noise
 
 version: "2"
 
 run:
   go: "1.25"
-  timeout: 5m
+  timeout: 10m
   modules-download-mode: readonly
+  skip-dirs:
+    - vendor
+    - testdata
+  skip-files:
+    - ".*\\.pb\\.go$"
+    - ".*_generated\\.go$"
 
 output:
   formats:
@@ -15,87 +22,193 @@ output:
       colors: true
       print-issued-lines: true
       print-linter-name: true
+      uniq-by-line: true
+
+linters-settings:
+  errcheck:
+    # Check for unchecked errors in os operations and external packages
+    check-type-assertions: true
+    check-blank: true
+
+  staticcheck:
+    # Enable all staticcheck checks for security and correctness
+    go: "1.25"
+
+  gosec:
+    # Focus on security-relevant rules
+    excludes:
+      - G204  # Subprocess launching (expected in this codebase)
+      - G107  # URL injection (expected for YARA rules)
+      - G304  # File inclusion via variable (expected for YARA rule files)
+      - G115  # Integer overflow conversion (expected for pattern matching and compiler logic)
+
+  cyclop:
+    # Allow higher complexity for security-critical parsing functions
+    max-complexity: 30
+    package-average: 25.0
+
+  funlen:
+    # Allow longer functions for complex parsing logic
+    lines: 150
+    statements: 80
+
+  gocyclo:
+    # Higher threshold for complex compiler functions
+    min-complexity: 30
+
+  govet:
+    enable-all: true
+    disable:
+      - fieldalignment # Performance optimization, not security-critical
+
+  prealloc:
+    # Focus on obvious performance wins
+    simple: true
+    range-loops: true
+    for-loops: false
 
 linters:
   enable:
-    # Core Go linters (essential for code quality)
+    # Core Go linters (essential for correctness)
     - govet
     - ineffassign
     - unused
 
-    # Essential code quality (non-nitpick)
-    - misspell
-    - unconvert
-
-  disable:
-    # Disable the noisy linters
+    # Security and error handling (critical for production)
+    - gosec
     - errcheck
     - staticcheck
-    - gosec
 
-    # Disable complexity and nitpick linters for now
-    - gocyclo
-    - cyclop
-    - gocognit
-    - funlen
-    - dupl
-    - gocritic
-    - revive
-    - unparam
-    - wastedassign
-    - perfsprint
-    - makezero
-    - intrange
-    - nilerr
-    - nilnesserr
-    - nilnil
-    - noctx
+    # Code quality and consistency
+    - misspell
+    - unconvert
+    - bodyclose
     - contextcheck
     - errorlint
-    - wrapcheck
-    - errname
-    - copyloopvar
-    - gochecksumtype
-    - usestdlibvars
-    - modernize
-    - mirror
-    - maintidx
-    - iface
-    - nakedret
-    - nestif
-    - rowserrcheck
-    - sqlclosecheck
-    - importas
-    - gomoddirectives
-    - godoclint
-    - thelper
-    - tparallel
-    - testifylint
-    - tagalign
-    - exhaustive
-    - forbidigo
-    - godot
-    - godox
-    - mnd
-    - gomodguard
-    - ireturn
-    - nlreturn
-    - varnamelen
-    - testpackage
-    - paralleltest
-    - nosprintfhostport
-    - nolintlint
-    - goprintffuncname
-    - goconst
+
+    # Performance and modern Go practices
     - prealloc
-    - bodyclose
-    - whitespace
+    - copyloopvar
+    - perfsprint
+    - modernize
+
+    # Error wrapping and nil safety
+    - wrapcheck
+    - nilerr
+    - makezero
+
+    # Moderate complexity checks (balanced for parsing code)
+    - cyclop
+    - funlen
+    - gocyclo
+
+  disable:
+    # Disabled due to high noise/low value ratio
+    - gocritic      # Many stylistic rules, some false positives
+    - revive        # Stylistic, many configuration options
+    - unparam       # Often incorrect about unused parameters
+    - wastedassign  # False positives in complex code
+    - dupl          # Common pattern in parsing code
+    - gocognit      # Similar to cyclop, less configurable
+    - nakedret      # Stylistic choice
+    - nestif        # Expected in parsing logic
+    - varnamelen    # Too opinionated
+    - goconst       # False positives for magic numbers
+    - mnd           # Magic numbers are common in parsing
+    - gochecksumtype # Rarely relevant
+    - nilnesserr    # Too strict for this codebase
+    - nilnil        # Sometimes nil,nil is appropriate
+    - noctx         # Not always applicable
+    - errname       # Too opinionated
+    - rowserrcheck  # Database-specific
+    - sqlclosecheck # Database-specific
+    - godoclint     # Documentation quality
+    - thelper       # Test helper strictness
+    - tparallel     # Test parallelism
+    - testifylint   # Test framework rules
+    - tagalign      # Code formatting
+    - exhaustive    # Sometimes missing cases are intentional
+    - forbidigo     # Too restrictive
+    - godot         # Comment formatting
+    - godox         # TODO comments
+    - gomodguard    # Module restrictions
+    - ireturn       # Interface returns
+    - nlreturn     # Newline before return
+    - testpackage  # Test package naming
+    - paralleltest # Test parallelism
+    - nosprintfhostport # Network-specific
+    - nolintlint   # Nolint directive checking
+    - goprintffuncname # Printf function naming
+    - whitespace   # Formatting
+    - usestdlibvars # Minor optimizations
+    - mirror       # Unnecessary
+    - maintidx     # Maintenance index
+    - iface        # Interface usage
+    - importas     # Import aliasing
+    - gomoddirectives # Go module directives
+    - gomodguard   # Module restrictions
 
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
-  # Show all issues, not just new ones
   new: false
+
+  # Exclude known false positives and test-specific patterns
+  exclude-rules:
+    # Allow unchecked errors in test files for cleanup
+    - path: _test\.go
+      linters:
+        - errcheck
+        - wrapcheck
+        - bodyclose
+      text: "Error return value.*is not checked"
+
+    # Allow nil returns in walkers and visitors
+    - path: .*/(parser|ast|compiler)/.*
+      linters:
+        - nilerr
+      text: "error is not nil.*but it returns nil"
+
+    # Allow higher complexity in core parsing and compilation functions
+    - path: .*/(compiler|parser|lexer)/.*
+      linters:
+        - cyclop
+        - funlen
+        - gocyclo
+
+    # Allow higher complexity in command-line tools and profiling
+    - path: .*/(cmd|internal/profiling)/.*
+      linters:
+        - cyclop
+        - funlen
+        - gocyclo
+
+    # Allow specific security exceptions for YARA-specific functionality
+    - path: .*/(cmd|compiler)/.*
+      linters:
+        - gosec
+      text: "G204|G107"
+
+    # Exclude complexity checks in test files (they can be complex)
+    - path: .*_test\.go
+      linters:
+        - funlen
+        - cyclop
+        - gocyclo
+        - errcheck
+        - wrapcheck
+        - staticcheck
+
+    # Exclude various linting issues in command-line tools
+    - path: .*/cmd/.*
+      linters:
+        - funlen
+        - cyclop
+        - gocyclo
+        - errcheck
+        - wrapcheck
+        - staticcheck
 
 severity:
   default: error
+  case-sensitive: false

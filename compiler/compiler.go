@@ -228,7 +228,8 @@ func (c *Compiler) compileSemantic(program *ast.Program) error {
 
 	// Collect warnings if enabled
 	if c.options.EnableWarnings {
-		// Add any semantic warnings here
+		// TODO: Add semantic warnings collection when implemented
+		// For now, this is a placeholder for future warning handling
 	}
 
 	return nil
@@ -511,7 +512,7 @@ func (c *Compiler) GetMemoryRequirements(sourceSize int) int {
 
 // BatchCompile compiles multiple sources efficiently
 func (c *Compiler) BatchCompile(sources []string) ([]*CompiledProgram, error) {
-	var programs []*CompiledProgram
+	programs := make([]*CompiledProgram, 0, len(sources))
 
 	for i, source := range sources {
 		program, err := c.CompileSource(source)
