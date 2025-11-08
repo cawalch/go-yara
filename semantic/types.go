@@ -127,32 +127,43 @@ func (it *IntegerType) String() string {
 func (ti *TypeInfo) String() string {
 	switch ti.DataType {
 	case TypeInteger:
-		if ti.IntegerType != nil {
-			return ti.IntegerType.String()
-		}
-		return "integer"
+		return ti.formatIntegerType()
 	case TypeFloat:
 		return "float"
 	case TypeString:
-		if ti.StringType != nil {
-			if ti.StringType.IsRegex {
-				return "regexp"
-			}
-			if ti.StringType.IsWide {
-				return "wide_string"
-			}
-			if ti.StringType.IsHex {
-				return "hex_string"
-			}
-			return "string"
-		}
-		return "string"
+		return ti.formatStringType()
 	case TypeBoolean:
 		return "boolean"
 	case TypeRegexp:
 		return "regexp"
 	default:
 		return "unknown"
+	}
+}
+
+// formatIntegerType formats integer type with its specific representation
+func (ti *TypeInfo) formatIntegerType() string {
+	if ti.IntegerType != nil {
+		return ti.IntegerType.String()
+	}
+	return "integer"
+}
+
+// formatStringType formats string type with its modifiers
+func (ti *TypeInfo) formatStringType() string {
+	if ti.StringType == nil {
+		return "string"
+	}
+
+	switch {
+	case ti.StringType.IsRegex:
+		return "regexp"
+	case ti.StringType.IsWide:
+		return "wide_string"
+	case ti.StringType.IsHex:
+		return "hex_string"
+	default:
+		return "string"
 	}
 }
 

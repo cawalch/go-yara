@@ -22,7 +22,7 @@ type TokenCreator interface {
 }
 
 // NextTokenImpl is a shared implementation for NextToken logic
-func NextTokenImpl(creator TokenCreator) token.Token {
+func NextTokenImpl(creator TokenCreator) token.Token { //nolint:gocyclo // high complexity is inherent to comprehensive tokenization
 	creator.skipWhitespace()
 
 	pos := creator.getCurrentPosition()
