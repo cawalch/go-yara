@@ -215,7 +215,7 @@ func BenchmarkEmitter(b *testing.B) {
 		emitter.EmitOpcode(OP_PUSH, 1, 1)
 		emitter.EmitOpcode(OP_NOP, 1, 2)
 		emitter.EmitPush(0x12345678, 1, 3)
-		emitter.GetBytecode()
+		_, _ = emitter.GetBytecode() // Ignore error in benchmark hot path
 	}
 }
 
@@ -226,10 +226,14 @@ func BenchmarkACAutomaton(b *testing.B) {
 	// Add test patterns
 	patterns := []string{"test", "pattern", "search", "benchmark", "performance"}
 	for i, pattern := range patterns {
-		ac.AddString(fmt.Sprintf("p%d", i), []byte(pattern), false, false)
+		if err := ac.AddString(fmt.Sprintf("p%d", i), []byte(pattern), false, false); err != nil {
+			b.Fatalf("Failed to add pattern %s: %v", pattern, err)
+		}
 	}
 
-	ac.Compile()
+	if err := ac.Compile(); err != nil {
+		b.Fatalf("Failed to compile automaton: %v", err)
+	}
 
 	testData := []byte("This is a test pattern for searching and benchmarking performance")
 
@@ -906,12 +910,14 @@ func TestStringCompilerGetters(t *testing.T) {
 		Pattern:    textPattern,
 		Modifiers:  []ast.StringModifier{},
 	}
-	sc.CompileStrings(&ast.Rule{
+	if err := sc.CompileStrings(&ast.Rule{
 		Pos:       token.Position{Line: 1, Column: 1},
 		Name:      "test_rule",
 		Strings:   []*ast.String{str},
 		Condition: nil,
-	})
+	}); err != nil {
+		t.Fatalf("Failed to compile strings: %v", err)
+	}
 
 	// Test GetStringOffsets
 	offsets := sc.GetStringOffsets()
@@ -971,8 +977,12 @@ func TestAhoCorasickCompile(t *testing.T) {
 	ac := NewACAutomaton()
 
 	// Add some strings
-	ac.AddString("hello", []byte("hello"), false, false)
-	ac.AddString("world", []byte("world"), false, false)
+	if err := ac.AddString("hello", []byte("hello"), false, false); err != nil {
+		t.Fatalf("Failed to add hello string: %v", err)
+	}
+	if err := ac.AddString("world", []byte("world"), false, false); err != nil {
+		t.Fatalf("Failed to add world string: %v", err)
+	}
 
 	// Compile the automaton
 	err := ac.Compile()
@@ -991,10 +1001,14 @@ func TestAhoCorasickValidate(t *testing.T) {
 	ac := NewACAutomaton()
 
 	// Add some strings
-	ac.AddString("test", []byte("test"), false, false)
+	if err := ac.AddString("test", []byte("test"), false, false); err != nil {
+		t.Fatalf("Failed to add test string: %v", err)
+	}
 
 	// Compile the automaton
-	ac.Compile()
+	if err := ac.Compile(); err != nil {
+		t.Fatalf("Failed to compile automaton: %v", err)
+	}
 
 	// Validate
 	err := ac.Validate()
@@ -1008,8 +1022,12 @@ func TestAhoCorasickReset(t *testing.T) {
 	ac := NewACAutomaton()
 
 	// Add some strings
-	ac.AddString("test", []byte("test"), false, false)
-	ac.Compile()
+	if err := ac.AddString("test", []byte("test"), false, false); err != nil {
+		t.Fatalf("Failed to add test string: %v", err)
+	}
+	if err := ac.Compile(); err != nil {
+		t.Fatalf("Failed to compile automaton: %v", err)
+	}
 
 	initialCount := ac.GetStateCount()
 	if initialCount == 0 {
@@ -1707,7 +1725,9 @@ func TestConditionCompilerGetStats(t *testing.T) {
 			Value: true,
 		},
 	}
-	cc.CompileCondition(condition)
+	if err := cc.CompileCondition(condition); err != nil {
+		t.Fatalf("Failed to compile condition: %v", err)
+	}
 
 	// Get stats
 	stats := cc.GetStats()
@@ -1815,7 +1835,9 @@ func TestCompilerReset(t *testing.T) {
 
 	// Compile something
 	source := `rule test { condition: true }`
-	compiler.CompileSource(source)
+	if _, err := compiler.CompileSource(source); err != nil {
+		t.Fatalf("Failed to compile source: %v", err)
+	}
 
 	// Reset
 	compiler.Reset()
@@ -2323,7 +2345,9 @@ func TestCompiledProgramOptimize(t *testing.T) {
 	compiledProgram := NewCompiledProgram(compiled)
 
 	// This should not panic
-	compiledProgram.Optimize()
+	if err := compiledProgram.Optimize(); err != nil {
+		t.Errorf("Optimize() error = %v", err)
+	}
 }
 
 // TestCompiledProgramGetExecutionPlan tests GetExecutionPlan method

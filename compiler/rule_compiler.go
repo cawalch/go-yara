@@ -293,7 +293,7 @@ func (rc *RuleCompiler) compileCondition(rule *ast.Rule) error {
 
 // CompileProgram compiles a complete YARA program (multiple rules)
 func (rc *RuleCompiler) CompileProgram(program *ast.Program) ([]*CompiledRule, error) {
-	var compiledRules []*CompiledRule
+	compiledRules := make([]*CompiledRule, 0, len(program.Rules))
 
 	// First, register all external variables with the condition compiler
 	for _, extVar := range program.ExternalVariables {
@@ -649,7 +649,7 @@ func (cp *CompiledProgram) EnableStreamingEarlyTermination(enable bool) {
 // ProcessFileStreaming processes a file using streaming approach
 func (cp *CompiledProgram) ProcessFileStreaming(ctx context.Context, filename string) ([]StreamingMatch, error) {
 	if !cp.enableStreaming {
-		return nil, fmt.Errorf("streaming is not enabled")
+		return nil, errors.New("streaming is not enabled")
 	}
 
 	if cp.streamingProcessor == nil {
@@ -662,7 +662,7 @@ func (cp *CompiledProgram) ProcessFileStreaming(ctx context.Context, filename st
 // ProcessBytesStreaming processes byte data using streaming approach
 func (cp *CompiledProgram) ProcessBytesStreaming(ctx context.Context, data []byte) ([]StreamingMatch, error) {
 	if !cp.enableStreaming {
-		return nil, fmt.Errorf("streaming is not enabled")
+		return nil, errors.New("streaming is not enabled")
 	}
 
 	if cp.streamingProcessor == nil {

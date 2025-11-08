@@ -86,7 +86,6 @@ func (cc *ConditionCompiler) defineLabel(label string) {
 	cc.labels[label] = cc.emitter.GetLength()
 }
 
-
 func (cc *ConditionCompiler) emitJumpWithLabel(opcode Opcode, label string, line, column int) {
 	pos := cc.emitter.GetLength()
 	cc.pendingJumps = append(cc.pendingJumps, PendingJump{
@@ -252,12 +251,12 @@ func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 	}
 
 	specialIdentifiers := map[string]func(){
-		"filesize":    func() { cc.emitter.EmitOpcode(OP_FILESIZE, ident.Pos.Line, ident.Pos.Column) },
-		"entrypoint":  func() { cc.emitter.EmitOpcode(OP_ENTRYPOINT, ident.Pos.Line, ident.Pos.Column) },
-		"them":        func() { cc.emitter.EmitPush(0xFFFFFFFE, ident.Pos.Line, ident.Pos.Column) },
-		"flags":       func() { cc.emitter.EmitPush(0, ident.Pos.Line, ident.Pos.Column) },
-		QuantifierAny: func() { cc.emitter.EmitOpcode(OP_PUSH_8, ident.Pos.Line, ident.Pos.Column) },
-		QuantifierAll: func() { cc.emitter.EmitOpcode(OP_PUSH_8, ident.Pos.Line, ident.Pos.Column) },
+		"filesize":     func() { cc.emitter.EmitOpcode(OP_FILESIZE, ident.Pos.Line, ident.Pos.Column) },
+		"entrypoint":   func() { cc.emitter.EmitOpcode(OP_ENTRYPOINT, ident.Pos.Line, ident.Pos.Column) },
+		"them":         func() { cc.emitter.EmitPush(0xFFFFFFFE, ident.Pos.Line, ident.Pos.Column) },
+		"flags":        func() { cc.emitter.EmitPush(0, ident.Pos.Line, ident.Pos.Column) },
+		QuantifierAny:  func() { cc.emitter.EmitOpcode(OP_PUSH_8, ident.Pos.Line, ident.Pos.Column) },
+		QuantifierAll:  func() { cc.emitter.EmitOpcode(OP_PUSH_8, ident.Pos.Line, ident.Pos.Column) },
 		QuantifierNone: func() { cc.emitter.EmitOpcode(OP_PUSH_8, ident.Pos.Line, ident.Pos.Column) },
 	}
 
@@ -649,7 +648,6 @@ func (cc *ConditionCompiler) GetVariableIndex(name string) (int, bool) {
 	return index, exists
 }
 
-
 func (cc *ConditionCompiler) CompileBooleanExpression(expr ast.Expression, shortCircuit bool) error {
 	if !shortCircuit {
 		return cc.compileExpression(expr)
@@ -752,7 +750,6 @@ func (cc *ConditionCompiler) compileShortCircuitAnd(andOp *ast.BinaryOp) error {
 func (cc *ConditionCompiler) compileShortCircuitOr(orOp *ast.BinaryOp) error {
 	return cc.compileShortCircuitBinary(orOp, OP_JTRUE, OP_OR)
 }
-
 
 func (cc *ConditionCompiler) compileOfExpression(ofExpr *ast.OfExpression) error {
 	if err := cc.compileCountExpression(ofExpr.Count); err != nil {

@@ -84,8 +84,8 @@ func TestConditionCompilerUncoveredFunctions(t *testing.T) {
 		andOp := builder.BinaryOp(pos, expr, token.AND, expr)
 		orOp := builder.BinaryOp(pos, expr, token.OR, expr)
 
-		cc.compileShortCircuitAnd(andOp)
-		cc.compileShortCircuitOr(orOp)
+		_ = cc.compileShortCircuitAnd(andOp)
+		_ = cc.compileShortCircuitOr(orOp)
 		t.Log("Boolean expression functions executed without error")
 	})
 

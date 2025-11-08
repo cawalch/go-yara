@@ -95,8 +95,12 @@ func TestACAutomatonSearch(t *testing.T) {
 // TestACAutomatonClone tests Clone method
 func TestACAutomatonClone(t *testing.T) {
 	ac := NewACAutomaton()
-	ac.AddString("test", []byte("test"), false, false)
-	ac.Compile()
+	if err := ac.AddString("test", []byte("test"), false, false); err != nil {
+		t.Fatalf("Failed to add string: %v", err)
+	}
+	if err := ac.Compile(); err != nil {
+		t.Fatalf("Failed to compile: %v", err)
+	}
 
 	cloned := ac.Clone()
 	if cloned == nil {
@@ -156,7 +160,9 @@ func TestACAutomatonEdgeCases(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ac := NewACAutomaton()
 			for _, s := range tt.strings {
-				ac.AddString(s, []byte(s), false, false)
+				if err := ac.AddString(s, []byte(s), false, false); err != nil {
+					t.Fatalf("Failed to add string %s: %v", s, err)
+				}
 			}
 			err := ac.Compile()
 			if (err != nil) != tt.wantErr {
@@ -188,8 +194,12 @@ func TestACTransitionGetOffset(t *testing.T) {
 // NOTE: Transition table is no longer built, so this returns nil
 func TestACAutomatonGetTransitionTable(t *testing.T) {
 	ac := NewACAutomaton()
-	ac.AddString("test", []byte("test"), false, false)
-	ac.Compile()
+	if err := ac.AddString("test", []byte("test"), false, false); err != nil {
+		t.Fatalf("Failed to add string: %v", err)
+	}
+	if err := ac.Compile(); err != nil {
+		t.Fatalf("Failed to compile: %v", err)
+	}
 
 	table := ac.GetTransitionTable()
 	if table != nil {
@@ -201,8 +211,12 @@ func TestACAutomatonGetTransitionTable(t *testing.T) {
 // NOTE: Match table is no longer built, so this returns nil
 func TestACAutomatonGetMatchTable(t *testing.T) {
 	ac := NewACAutomaton()
-	ac.AddString("test", []byte("test"), false, false)
-	ac.Compile()
+	if err := ac.AddString("test", []byte("test"), false, false); err != nil {
+		t.Fatalf("Failed to add string: %v", err)
+	}
+	if err := ac.Compile(); err != nil {
+		t.Fatalf("Failed to compile: %v", err)
+	}
 
 	table := ac.GetMatchTable()
 	if table != nil {
@@ -214,8 +228,12 @@ func TestACAutomatonGetMatchTable(t *testing.T) {
 // NOTE: Table size is no longer calculated, so this returns 0
 func TestACAutomatonGetTableSize(t *testing.T) {
 	ac := NewACAutomaton()
-	ac.AddString("test", []byte("test"), false, false)
-	ac.Compile()
+	if err := ac.AddString("test", []byte("test"), false, false); err != nil {
+		t.Fatalf("Failed to add string: %v", err)
+	}
+	if err := ac.Compile(); err != nil {
+		t.Fatalf("Failed to compile: %v", err)
+	}
 
 	size := ac.GetTableSize()
 	if size != 0 {
@@ -226,8 +244,14 @@ func TestACAutomatonGetTableSize(t *testing.T) {
 // TestACAutomatonPrintDebug tests PrintDebug method
 func TestACAutomatonPrintDebug(_ *testing.T) {
 	ac := NewACAutomaton()
-	ac.AddString("test", []byte("test"), false, false)
-	ac.Compile()
+	if err := ac.AddString("test", []byte("test"), false, false); err != nil {
+		// Since this is a debug function that just shouldn't panic, we can log the error
+		return
+	}
+	if err := ac.Compile(); err != nil {
+		// Since this is a debug function that just shouldn't panic, we can log the error
+		return
+	}
 
 	// This should not panic
 	ac.PrintDebug()

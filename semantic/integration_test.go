@@ -49,7 +49,9 @@ func TestTypeCheckerBinaryOpTypes(t *testing.T) {
 
 	// Define a string for testing
 	str := &ast.String{Identifier: "$s1", Pos: pos}
-	st.DefineString("$s1", pos, str)
+	if err := st.DefineString("$s1", pos, str); err != nil {
+		t.Fatalf("Failed to define string: %v", err)
+	}
 
 	tests := []struct {
 		name string
