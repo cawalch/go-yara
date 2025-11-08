@@ -69,9 +69,9 @@ func TestTypeCheckerBinaryOpTypes_Arithmetic(t *testing.T) {
 	_, checker, pos := setupTypeCheckerTest(t)
 
 	tests := []struct {
-		name string
-		op   token.TokenType
-		left int64
+		name  string
+		op    token.TokenType
+		left  int64
 		right int64
 	}{
 		{"subtraction", token.MINUS, 5, 2},
@@ -98,9 +98,9 @@ func TestTypeCheckerBinaryOpTypes_Bitwise(t *testing.T) {
 	_, checker, pos := setupTypeCheckerTest(t)
 
 	tests := []struct {
-		name string
-		op   token.TokenType
-		left int64
+		name  string
+		op    token.TokenType
+		left  int64
 		right int64
 	}{
 		{"bitwise_and", token.BITWISE_AND, 15, 7},
@@ -128,9 +128,9 @@ func TestTypeCheckerBinaryOpTypes_Comparison(t *testing.T) {
 	_, checker, pos := setupTypeCheckerTest(t)
 
 	tests := []struct {
-		name string
-		op   token.TokenType
-		left int64
+		name  string
+		op    token.TokenType
+		left  int64
 		right int64
 	}{
 		{"less_than", token.LT, 1, 2},

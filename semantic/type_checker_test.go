@@ -114,46 +114,59 @@ func TestCheckIdentifier(t *testing.T) {
 
 	pos := token.Position{Line: 1, Column: 1}
 
-	// Define a string
+	// Define a string for testing
 	str := &ast.String{Identifier: "$s1", Pos: pos}
 	_ = st.DefineString("$s1", pos, str)
 
 	checker := NewTypeChecker(st)
 
-	// Test valid identifier
-	ident := &ast.Identifier{Name: "$s1", Pos: pos}
-	typeInfo, errs := checker.CheckExpressionTypes(ident)
-
-	if len(errs) > 0 {
-		t.Errorf("CheckExpressionTypes() unexpected errors: %v", errs)
+	tests := []struct {
+		name     string
+		ident    *ast.Identifier
+		wantType DataType
+		wantErr  bool
+	}{
+		{
+			name:     "string_identifier",
+			ident:    &ast.Identifier{Name: "$s1", Pos: pos},
+			wantType: TypeBoolean,
+			wantErr:  false,
+		},
+		{
+			name:     "filesize_keyword",
+			ident:    &ast.Identifier{Name: "filesize", Pos: pos},
+			wantType: TypeInteger,
+			wantErr:  false,
+		},
+		{
+			name:     "entrypoint_keyword",
+			ident:    &ast.Identifier{Name: "entrypoint", Pos: pos},
+			wantType: TypeInteger,
+			wantErr:  false,
+		},
+		{
+			name:     "undefined_identifier",
+			ident:    &ast.Identifier{Name: "$undefined", Pos: pos},
+			wantType: TypeUnknown,
+			wantErr:  true,
+		},
 	}
 
-	if typeInfo.DataType != TypeBoolean {
-		t.Errorf("CheckExpressionTypes() got type %v, want %v", typeInfo.DataType, TypeBoolean)
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			typeInfo, errs := checker.CheckExpressionTypes(tt.ident)
 
-	// Test filesize keyword
-	filesizeIdent := &ast.Identifier{Name: "filesize", Pos: pos}
-	typeInfo, errs = checker.CheckExpressionTypes(filesizeIdent)
+			hasErrors := len(errs) > 0
+			if hasErrors != tt.wantErr {
+				t.Errorf("CheckExpressionTypes() error status = %v, wantErr %v\nerrors: %v",
+					hasErrors, tt.wantErr, errs)
+			}
 
-	if len(errs) > 0 {
-		t.Errorf("CheckExpressionTypes() unexpected errors for filesize: %v", errs)
-	}
-
-	if typeInfo.DataType != TypeInteger {
-		t.Errorf("CheckExpressionTypes() filesize type got %v, want %v", typeInfo.DataType, TypeInteger)
-	}
-
-	// Test entrypoint keyword
-	entrypointIdent := &ast.Identifier{Name: "entrypoint", Pos: pos}
-	typeInfo, errs = checker.CheckExpressionTypes(entrypointIdent)
-
-	if len(errs) > 0 {
-		t.Errorf("CheckExpressionTypes() unexpected errors for entrypoint: %v", errs)
-	}
-
-	if typeInfo.DataType != TypeInteger {
-		t.Errorf("CheckExpressionTypes() entrypoint type got %v, want %v", typeInfo.DataType, TypeInteger)
+			if !tt.wantErr && typeInfo.DataType != tt.wantType {
+				t.Errorf("CheckExpressionTypes() got type %v, want %v",
+					typeInfo.DataType, tt.wantType)
+			}
+		})
 	}
 }
 

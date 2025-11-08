@@ -102,17 +102,17 @@ func TestPunctuationAndComparisons(t *testing.T) {
 
 // positionTestCase represents a test case for position tracking validation
 type positionTestCase struct {
-	name     string
-	input    string
-	expected []token.Token
+	name      string
+	input     string
+	expected  []token.Token
 	positions []positionCheck // positions to validate for specific tokens
 }
 
 // positionCheck defines the expected position for a token at a given index
 type positionCheck struct {
-	tokenIndex int
-	line       int
-	column     int
+	tokenIndex  int
+	line        int
+	column      int
 	description string
 }
 

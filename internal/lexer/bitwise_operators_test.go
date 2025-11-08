@@ -319,12 +319,12 @@ func assertBitwiseOperators(t *testing.T, helper *lexer.TestHelper, input string
 func extractBitwiseOperators(tokens []token.Token) []string {
 	operators := make([]string, 0, 8) // Pre-allocate reasonable capacity
 	bitwiseTypes := map[token.TokenType]bool{
-		token.BITWISE_AND:   true,
-		token.BITWISE_OR:    true,
-		token.BITWISE_XOR:   true,
-		token.BITWISE_NOT:   true,
-		token.LEFT_SHIFT:    true,
-		token.RIGHT_SHIFT:   true,
+		token.BITWISE_AND: true,
+		token.BITWISE_OR:  true,
+		token.BITWISE_XOR: true,
+		token.BITWISE_NOT: true,
+		token.LEFT_SHIFT:  true,
+		token.RIGHT_SHIFT: true,
 	}
 
 	for _, tok := range tokens {

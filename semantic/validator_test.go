@@ -249,82 +249,215 @@ rule test_rule {
 // TestSymbolTable tests the symbol table functionality
 func TestSymbolTable(t *testing.T) {
 	st := NewSymbolTable()
-
-	// Test scope management
 	st.EnterScope("test_rule")
 
-	// Test rule definition
 	pos := token.Position{Line: 1, Column: 1}
+
+	// Define a rule and string for testing
 	rule := &ast.Rule{Name: "test_rule", Pos: pos}
-	err := st.DefineRule("test_rule", pos, rule)
-	if err != nil {
-		t.Errorf("DefineRule() error = %v", err)
+	str := &ast.String{Identifier: "$s1", Pos: pos}
+
+	// Test rule definition
+	if err := st.DefineRule("test_rule", pos, rule); err != nil {
+		t.Fatalf("DefineRule() error = %v", err)
 	}
 
 	// Test string definition
-	str := &ast.String{Identifier: "$s1", Pos: pos}
-	err = st.DefineString("$s1", pos, str)
-	if err != nil {
-		t.Errorf("DefineString() error = %v", err)
+	if err := st.DefineString("$s1", pos, str); err != nil {
+		t.Fatalf("DefineString() error = %v", err)
 	}
 
-	// Test lookup
+	// Test lookup functionality
 	symbol, exists := st.Lookup("$s1")
 	if !exists {
-		t.Errorf("Lookup() string not found")
+		t.Fatalf("Lookup() string not found")
 	}
 	if symbol.Type != SymbolString {
-		t.Errorf("Lookup() wrong symbol type")
+		t.Errorf("Lookup() wrong symbol type, got %v, want %v", symbol.Type, SymbolString)
 	}
 
-	// Test mark used
+	// Test symbol usage tracking
 	st.MarkUsed("$s1")
 	if !symbol.Used {
 		t.Errorf("MarkUsed() did not mark symbol as used")
 	}
 
-	// Test exit scope
+	// Test scope isolation - symbol should not be found after exiting scope
 	st.ExitScope()
 	_, exists = st.Lookup("$s1")
 	if exists {
 		t.Errorf("Lookup() should not find string after exiting scope")
 	}
+
+	// Test symbol table operations with table-driven approach
+	operationTests := []struct {
+		name      string
+		setupFunc func(*SymbolTable)
+		testFunc  func(*SymbolTable) bool
+		expected  bool
+	}{
+		{
+			name: "scope_stack_management",
+			setupFunc: func(st *SymbolTable) {
+				st.EnterScope("inner")
+			},
+			testFunc: func(st *SymbolTable) bool {
+				// Test that we can define symbols in inner scope
+				pos := token.Position{Line: 1, Column: 1}
+				str := &ast.String{Identifier: "$inner", Pos: pos}
+				return st.DefineString("$inner", pos, str) == nil
+			},
+			expected: true,
+		},
+		{
+			name:      "undefined_lookup",
+			setupFunc: func(st *SymbolTable) {},
+			testFunc: func(st *SymbolTable) bool {
+				_, exists := st.Lookup("$undefined")
+				return !exists
+			},
+			expected: true,
+		},
+	}
+
+	for _, tt := range operationTests {
+		t.Run(tt.name, func(t *testing.T) {
+			testST := NewSymbolTable()
+			testST.EnterScope("test")
+
+			tt.setupFunc(testST)
+			result := tt.testFunc(testST)
+
+			if result != tt.expected {
+				t.Errorf("Test operation %s: got %v, want %v", tt.name, result, tt.expected)
+			}
+		})
+	}
 }
 
 // TestTypeSystem tests the type system functionality
 func TestTypeSystem(t *testing.T) {
-	// Test integer type creation
-	int32Type := Int32Type
-	if int32Type.Size != 4 || int32Type.Signed != true {
-		t.Errorf("Int32Type has wrong properties")
+	// Test integer type properties
+	intTypeTests := []struct {
+		name       string
+		intType    *IntegerType
+		wantSize   int
+		wantSigned bool
+		wantStr    string
+	}{
+		{
+			name:       "Int32Type_properties",
+			intType:    Int32Type,
+			wantSize:   4,
+			wantSigned: true,
+			wantStr:    "int32",
+		},
+		{
+			name:       "Uint64Type_properties",
+			intType:    Uint64Type,
+			wantSize:   8,
+			wantSigned: false,
+			wantStr:    "uint64",
+		},
 	}
 
-	// Test type string representation
-	if int32Type.String() != "int32" {
-		t.Errorf("Int32Type.String() = %s, want int32", int32Type.String())
+	for _, tt := range intTypeTests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.intType.Size != tt.wantSize {
+				t.Errorf("Size: got %d, want %d", tt.intType.Size, tt.wantSize)
+			}
+			if tt.intType.Signed != tt.wantSigned {
+				t.Errorf("Signed: got %v, want %v", tt.intType.Signed, tt.wantSigned)
+			}
+			if tt.intType.String() != tt.wantStr {
+				t.Errorf("String(): got %s, want %s", tt.intType.String(), tt.wantStr)
+			}
+		})
 	}
 
 	// Test type inference from literals
-	boolType := InferTypeFromLiteral(token.TRUE, true)
-	if boolType.DataType != TypeBoolean {
-		t.Errorf("InferTypeFromLiteral() boolean type inference failed")
+	literalTests := []struct {
+		name         string
+		tokenType    token.TokenType
+		value        any
+		expectedType DataType
+	}{
+		{
+			name:         "boolean_literal",
+			tokenType:    token.TRUE,
+			value:        true,
+			expectedType: TypeBoolean,
+		},
+		{
+			name:         "integer_literal",
+			tokenType:    token.INTEGER_LIT,
+			value:        42,
+			expectedType: TypeInteger,
+		},
+		{
+			name:         "hex_integer_literal",
+			tokenType:    token.HEX_INTEGER_LIT,
+			value:        0xFF,
+			expectedType: TypeInteger,
+		},
+		{
+			name:         "string_literal",
+			tokenType:    token.STRING_LIT,
+			value:        "test",
+			expectedType: TypeString,
+		},
 	}
 
-	intType := InferTypeFromLiteral(token.INTEGER_LIT, 42)
-	if intType.DataType != TypeInteger {
-		t.Errorf("InferTypeFromLiteral() integer type inference failed")
+	for _, tt := range literalTests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := InferTypeFromLiteral(tt.tokenType, tt.value)
+			if result.DataType != tt.expectedType {
+				t.Errorf("InferTypeFromLiteral() got type %v, want %v",
+					result.DataType, tt.expectedType)
+			}
+		})
 	}
 
-	// Test type compatibility
-	left := &TypeInfo{DataType: TypeInteger, IntegerType: Int32Type}
-	right := &TypeInfo{DataType: TypeInteger, IntegerType: Uint64Type}
-
-	if !left.CanCompare(right) {
-		t.Errorf("CanCompare() should allow integer comparison")
+	// Test type compatibility and operations
+	compatibilityTests := []struct {
+		name          string
+		left          *TypeInfo
+		right         *TypeInfo
+		canCompare    bool
+		canArithmetic bool
+	}{
+		{
+			name:          "int32_vs_uint64",
+			left:          &TypeInfo{DataType: TypeInteger, IntegerType: Int32Type},
+			right:         &TypeInfo{DataType: TypeInteger, IntegerType: Uint64Type},
+			canCompare:    true,
+			canArithmetic: true,
+		},
+		{
+			name:          "int_vs_bool",
+			left:          &TypeInfo{DataType: TypeInteger, IntegerType: Int32Type},
+			right:         &TypeInfo{DataType: TypeBoolean},
+			canCompare:    false,
+			canArithmetic: false,
+		},
+		{
+			name:          "string_vs_string",
+			left:          &TypeInfo{DataType: TypeString},
+			right:         &TypeInfo{DataType: TypeString},
+			canCompare:    true,
+			canArithmetic: false,
+		},
 	}
 
-	if !left.CanPerformArithmetic(right) {
-		t.Errorf("CanPerformArithmetic() should allow integer arithmetic")
+	for _, tt := range compatibilityTests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.left.CanCompare(tt.right); got != tt.canCompare {
+				t.Errorf("CanCompare(): got %v, want %v", got, tt.canCompare)
+			}
+			if got := tt.left.CanPerformArithmetic(tt.right); got != tt.canArithmetic {
+				t.Errorf("CanPerformArithmetic(): got %v, want %v", got, tt.canArithmetic)
+			}
+		})
 	}
 }
 

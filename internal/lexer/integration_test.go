@@ -106,9 +106,9 @@ func TestNextToken_RegexLiterals_EdgeCases(t *testing.T) {
 
 // headerComparisonTestCase represents a test case for YARA rule headers with comparisons
 type headerComparisonTestCase struct {
-	name     string
-	input    string
-	expected []token.Token
+	name      string
+	input     string
+	expected  []token.Token
 	positions []positionCheck
 }
 

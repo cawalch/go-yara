@@ -1357,73 +1357,86 @@ func TestConditionCompilerCompileBinaryOpDetailed(t *testing.T) {
 	emitter := NewEmitter()
 	cc := NewConditionCompiler(emitter, make(map[string]int))
 
-	arithmeticTests := []struct {
+	// Consolidate all binary operation tests into a single structure
+	binaryOpTests := []struct {
+		category string
 		name     string
 		op       token.TokenType
-		left     int64
-		right    int64
+		leftVal  any
+		rightVal any
 		wantErr  bool
 	}{
-		{"subtraction", token.MINUS, 5, 2, false},
-		{"multiplication", token.MULTIPLY, 3, 4, false},
-		{"division", token.DIVIDE, 10, 2, false},
+		// Arithmetic operations
+		{"Arithmetic", "subtraction", token.MINUS, int64(5), int64(2), false},
+		{"Arithmetic", "multiplication", token.MULTIPLY, int64(3), int64(4), false},
+		{"Arithmetic", "division", token.DIVIDE, int64(10), int64(2), false},
+
+		// Logical operations
+		{"Logical", "logical_or", token.OR, true, false, false},
+
+		// Comparison operations
+		{"Comparison", "equality", token.EQ, int64(5), int64(5), false},
 	}
 
-	logicalTests := []struct {
-		name     string
-		op       token.TokenType
-		left     bool
-		right    bool
-		wantErr  bool
+	// Helper function to create appropriate literal expressions
+	createLiteral := func(val any) ast.Expression {
+		switch v := val.(type) {
+		case int64:
+			return createIntLiteral(v)
+		case bool:
+			return createBoolLiteral(v)
+		default:
+			t.Fatalf("Unsupported literal type: %T", val)
+			return nil
+		}
+	}
+
+	for _, tt := range binaryOpTests {
+		t.Run(tt.category+"_"+tt.name, func(t *testing.T) {
+			// Create binary operation with appropriate literal types
+			leftExpr := createLiteral(tt.leftVal)
+			rightExpr := createLiteral(tt.rightVal)
+			binOp := createBinaryOp(tt.op, leftExpr, rightExpr)
+
+			err := cc.compileExpression(binOp)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("compileExpression() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+
+	// Test edge cases and boundary conditions
+	edgeCaseTests := []struct {
+		name        string
+		op          token.TokenType
+		leftVal     any
+		rightVal    any
+		expectErr   bool
+		description string
 	}{
-		{"logical_or", token.OR, true, false, false},
+		{
+			name:        "division_with_zero_literal",
+			op:          token.DIVIDE,
+			leftVal:     int64(10),
+			rightVal:    int64(0),
+			expectErr:   false, // May not be caught at compile time
+			description: "Division by zero may be caught at runtime",
+		},
 	}
 
-	comparisonTests := []struct {
-		name     string
-		op       token.TokenType
-		left     int64
-		right    int64
-		wantErr  bool
-	}{
-		{"equality", token.EQ, 5, 5, false},
+	for _, tt := range edgeCaseTests {
+		t.Run("EdgeCase_"+tt.name, func(t *testing.T) {
+			leftExpr := createLiteral(tt.leftVal)
+			rightExpr := createLiteral(tt.rightVal)
+			binOp := createBinaryOp(tt.op, leftExpr, rightExpr)
+
+			err := cc.compileExpression(binOp)
+			if (err != nil) != tt.expectErr {
+				t.Errorf("compileExpression() error = %v, expectErr %v (%s)",
+					err, tt.expectErr, tt.description)
+			}
+		})
 	}
-
-	t.Run("ArithmeticOperations", func(t *testing.T) {
-		for _, tt := range arithmeticTests {
-			t.Run(tt.name, func(t *testing.T) {
-				binOp := createBinaryOp(tt.op, createIntLiteral(tt.left), createIntLiteral(tt.right))
-				err := cc.compileExpression(binOp)
-				if (err != nil) != tt.wantErr {
-					t.Errorf("compileExpression() error = %v, wantErr %v", err, tt.wantErr)
-				}
-			})
-		}
-	})
-
-	t.Run("LogicalOperations", func(t *testing.T) {
-		for _, tt := range logicalTests {
-			t.Run(tt.name, func(t *testing.T) {
-				binOp := createBinaryOp(tt.op, createBoolLiteral(tt.left), createBoolLiteral(tt.right))
-				err := cc.compileExpression(binOp)
-				if (err != nil) != tt.wantErr {
-					t.Errorf("compileExpression() error = %v, wantErr %v", err, tt.wantErr)
-				}
-			})
-		}
-	})
-
-	t.Run("ComparisonOperations", func(t *testing.T) {
-		for _, tt := range comparisonTests {
-			t.Run(tt.name, func(t *testing.T) {
-				binOp := createBinaryOp(tt.op, createIntLiteral(tt.left), createIntLiteral(tt.right))
-				err := cc.compileExpression(binOp)
-				if (err != nil) != tt.wantErr {
-					t.Errorf("compileExpression() error = %v, wantErr %v", err, tt.wantErr)
-				}
-			})
-		}
-	})
 }
 
 // TestCompilerProgram tests full program compilation
