@@ -228,9 +228,22 @@ func TestBitwiseOperators_ConflictResolution(t *testing.T) {
 	}
 }
 
+// bitwiseTestCase represents a test case for bitwise operator validation
+type bitwiseTestCase struct {
+	name        string
+	description string
+	input       string
+	expectedOps []string
+}
+
 func TestBitwiseOperators_InYARARule(t *testing.T) {
 	helper := lexer.NewTestHelper(t)
-	input := `rule BitwiseTest {
+
+	tests := []bitwiseTestCase{
+		{
+			name:        "basic bitwise operations",
+			description: "Tests basic bitwise operators in a YARA rule condition",
+			input: `rule BitwiseTest {
 		meta:
 			mask = 0xFF00
 		strings:
@@ -241,29 +254,84 @@ func TestBitwiseOperators_InYARARule(t *testing.T) {
 			(filesize >> 10) < 1024 and
 			~uint16(2) == 0xFFFF and
 			(flags | 0x01) != 0
-	}`
+	}`,
+			expectedOps: []string{"&", ">>", "~", "|"},
+		},
+		{
+			name:        "comprehensive bitwise operations",
+			description: "Tests all bitwise operators in complex expressions",
+			input: `rule ComprehensiveBitwiseTest {
+		strings:
+			$a = "test"
+		condition:
+			$a and
+			(value & 0xFF) > 0 and
+			(flags | 0x01) != 0 and
+			(data ^ mask) == result and
+			(~offset) < 0 and
+			(size << 2) > limit and
+			(filesize >> 8) < max_size
+	}`,
+			expectedOps: []string{"&", "|", "^", "~", "<<", ">>"},
+		},
+		{
+			name:        "bitwise with parentheses",
+			description: "Tests bitwise operators in parenthesized expressions",
+			input: `rule ParenthesesBitwiseTest {
+		strings:
+			$a = "test"
+		condition:
+			$a and
+			((value & 0xFF00) >> 8) == byte_val and
+			(~(flags | 0x01)) & 0xFE == 0
+	}`,
+			expectedOps: []string{"&", ">>", "~", "|", "&"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertBitwiseOperators(t, helper, tt.input, tt.expectedOps)
+		})
+	}
+}
+
+// assertBitwiseOperators validates that the input contains the expected bitwise operators
+func assertBitwiseOperators(t *testing.T, helper *lexer.TestHelper, input string, expectedOps []string) {
+	t.Helper()
 
 	tokens := helper.CollectTokens(input)
-	bitwiseCount := 0
-	bitwiseOps := []string{}
+	actualOps := extractBitwiseOperators(tokens)
+
+	if len(actualOps) != len(expectedOps) {
+		t.Errorf("Expected %d bitwise operators, got %d. Expected: %v, Actual: %v",
+			len(expectedOps), len(actualOps), expectedOps, actualOps)
+	}
+
+	for i, expected := range expectedOps {
+		if i >= len(actualOps) || actualOps[i] != expected {
+			t.Errorf("Expected bitwise op[%d] to be %q, got %q", i, expected, getOperatorAt(actualOps, i))
+		}
+	}
+}
+
+// extractBitwiseOperators extracts bitwise operators from a token slice
+func extractBitwiseOperators(tokens []token.Token) []string {
+	operators := make([]string, 0, 8) // Pre-allocate reasonable capacity
+	bitwiseTypes := map[token.TokenType]bool{
+		token.BITWISE_AND:   true,
+		token.BITWISE_OR:    true,
+		token.BITWISE_XOR:   true,
+		token.BITWISE_NOT:   true,
+		token.LEFT_SHIFT:    true,
+		token.RIGHT_SHIFT:   true,
+	}
 
 	for _, tok := range tokens {
-		if tok.Type == token.BITWISE_AND || tok.Type == token.BITWISE_OR ||
-			tok.Type == token.BITWISE_XOR || tok.Type == token.BITWISE_NOT ||
-			tok.Type == token.LEFT_SHIFT || tok.Type == token.RIGHT_SHIFT {
-			bitwiseCount++
-			bitwiseOps = append(bitwiseOps, tok.Literal)
+		if bitwiseTypes[tok.Type] {
+			operators = append(operators, tok.Literal)
 		}
 	}
 
-	expectedOps := []string{"&", ">>", "~", "|"}
-	if bitwiseCount != len(expectedOps) {
-		t.Errorf("Expected %d bitwise operators, got %d", len(expectedOps), bitwiseCount)
-	}
-
-	for i, expectedOp := range expectedOps {
-		if i < len(bitwiseOps) && bitwiseOps[i] != expectedOp {
-			t.Errorf("Expected bitwise operator %q at position %d, got %q", expectedOp, i, bitwiseOps[i])
-		}
-	}
+	return operators
 }

@@ -36,25 +36,76 @@ func (h *TestHelper) CollectTokens(input string) []token.Token {
 func (h *TestHelper) AssertTokenSequence(input string, expected []token.Token) {
 	got := h.CollectTokens(input)
 
+	if err := validateTokenSequence(got, expected); err != nil {
+		h.t.Fatalf("Token sequence validation failed: %v", err)
+	}
+}
+
+// tokenValidationError represents a token validation error
+type tokenValidationError struct {
+	message string
+	details string
+}
+
+func (e *tokenValidationError) Error() string {
+	if e.details != "" {
+		return fmt.Sprintf("%s: %s", e.message, e.details)
+	}
+	return e.message
+}
+
+// validateTokenSequence validates a token sequence against expected tokens
+func validateTokenSequence(got, expected []token.Token) error {
 	if len(got) != len(expected) {
-		h.t.Fatalf("token count mismatch: got %d want %d\nGot: %v\nExpected: %v",
-			len(got), len(expected), got, expected)
+		return &tokenValidationError{
+			message: "token count mismatch",
+			details: fmt.Sprintf("got %d want %d\nGot: %v\nExpected: %v",
+				len(got), len(expected), got, expected),
+		}
 	}
 
 	for i := range expected {
-		if got[i].Type != expected[i].Type || got[i].Literal != expected[i].Literal {
-			h.t.Fatalf("token[%d]: got {%v %q} want {%v %q}",
-				i, got[i].Type, got[i].Literal, expected[i].Type, expected[i].Literal)
+		if err := validateToken(got[i], expected[i], i); err != nil {
+			return err
 		}
-		// Only check position if expected token has non-zero position AND it's not the position test case
-		if (expected[i].Pos.Line != 0 || expected[i].Pos.Column != 0) &&
-			(expected[i].Type != token.RULE || expected[i].Literal != "rule" || len(got) <= 4) {
-			if got[i].Pos.Line != expected[i].Pos.Line || got[i].Pos.Column != expected[i].Pos.Column {
-				h.t.Fatalf("token[%d] position: got {%d:%d} want {%d:%d}",
-					i, got[i].Pos.Line, got[i].Pos.Column, expected[i].Pos.Line, expected[i].Pos.Column)
+	}
+
+	return nil
+}
+
+// validateToken validates a single token against expected token
+func validateToken(got, expected token.Token, index int) error {
+	// Check token type and literal
+	if got.Type != expected.Type || got.Literal != expected.Literal {
+		return &tokenValidationError{
+			message: "token mismatch",
+			details: fmt.Sprintf("token[%d]: got {%v %q} want {%v %q}",
+				index, got.Type, got.Literal, expected.Type, expected.Literal),
+		}
+	}
+
+	// Check position if specified
+	if shouldCheckPosition(expected) {
+		if got.Pos.Line != expected.Pos.Line || got.Pos.Column != expected.Pos.Column {
+			return &tokenValidationError{
+				message: "position mismatch",
+				details: fmt.Sprintf("token[%d] position: got {%d:%d} want {%d:%d}",
+					index, got.Pos.Line, got.Pos.Column, expected.Pos.Line, expected.Pos.Column),
 			}
 		}
 	}
+
+	return nil
+}
+
+// shouldCheckPosition determines if position validation should be performed
+func shouldCheckPosition(expected token.Token) bool {
+	// Don't check position if expected has zero position
+	if expected.Pos.Line == 0 && expected.Pos.Column == 0 {
+		return false
+	}
+
+	return true
 }
 
 // AssertTokenTypes verifies that the input produces tokens of the expected types.

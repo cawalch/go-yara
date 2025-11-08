@@ -223,41 +223,98 @@ func TestArithmeticOperators_ComplexExpressions(t *testing.T) {
 	}
 }
 
+// arithmeticTestCase represents a test case for arithmetic operator validation
+type arithmeticTestCase struct {
+	name        string
+	description string
+	input       string
+	expectedOps []string
+}
+
 func TestArithmeticOperators_InYARARule(t *testing.T) {
 	helper := lexer.NewTestHelper(t)
-	input := `rule TestRule {
-		meta:
-			size_calc = 1024 * 1024
-		strings:
-			$a = "test"
-		condition:
+
+	tests := []arithmeticTestCase{
+		{
+			name:        "basic rule with arithmetic",
+			description: "Tests basic arithmetic operators in a complete YARA rule",
+			input: `rule TestRule {
+	meta:
+		size_calc = 1024 * 1024
+	strings:
+		$a = "test"
+	condition:
 			$a and filesize > 100KB and
 			(filesize / 1024) < 1MB and
 			filesize % 2 == 0
-	}`
-
-	tokens := helper.CollectTokens(input)
-	arithmeticCount := 0
-	arithmeticOps := []string{}
-
-	for _, tok := range tokens {
-		if tok.Type == token.PLUS || tok.Type == token.MINUS || tok.Type == token.MULTIPLY ||
-			tok.Type == token.DIVIDE || tok.Type == token.MODULO {
-			arithmeticCount++
-			arithmeticOps = append(arithmeticOps, tok.Literal)
-		}
+	}`,
+			expectedOps: []string{"*", "/", "%"},
+		},
+		{
+			name:        "complex arithmetic expressions",
+			description: "Tests complex arithmetic with parentheses and mixed operations",
+			input: `rule ComplexRule {
+	strings:
+		$a = "test"
+	condition:
+			$a and (1 + 2) * (3 - 4) / 5 % 6 == 0
+	}`,
+			expectedOps: []string{"+", "*", "-", "/", "%"},
+		},
 	}
 
-	expectedOps := []string{"*", "/", "%"}
-	if arithmeticCount != len(expectedOps) {
-		t.Errorf("Expected %d arithmetic operators, got %d", len(expectedOps), arithmeticCount)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertArithmeticOperators(t, helper, tt.input, tt.expectedOps)
+		})
+	}
+}
+
+// assertArithmeticOperators validates that the input contains the expected arithmetic operators
+func assertArithmeticOperators(t *testing.T, helper *lexer.TestHelper, input string, expectedOps []string) {
+	t.Helper()
+
+	tokens := helper.CollectTokens(input)
+	actualOps := extractArithmeticOperators(tokens)
+
+	if len(actualOps) != len(expectedOps) {
+		t.Errorf("Expected %d arithmetic operators, got %d. Expected: %v, Actual: %v",
+			len(expectedOps), len(actualOps), expectedOps, actualOps)
 	}
 
 	for i, expected := range expectedOps {
-		if i >= len(arithmeticOps) || arithmeticOps[i] != expected {
-			t.Errorf("Expected arithmetic op[%d] to be %q, got %q", i, expected, arithmeticOps[i])
+		if i >= len(actualOps) || actualOps[i] != expected {
+			t.Errorf("Expected arithmetic op[%d] to be %q, got %q", i, expected, getOperatorAt(actualOps, i))
 		}
 	}
+}
+
+// extractArithmeticOperators extracts arithmetic operators from a token slice
+func extractArithmeticOperators(tokens []token.Token) []string {
+	operators := make([]string, 0, 8) // Pre-allocate reasonable capacity
+	arithmeticTypes := map[token.TokenType]bool{
+		token.PLUS:     true,
+		token.MINUS:    true,
+		token.MULTIPLY: true,
+		token.DIVIDE:   true,
+		token.MODULO:   true,
+	}
+
+	for _, tok := range tokens {
+		if arithmeticTypes[tok.Type] {
+			operators = append(operators, tok.Literal)
+		}
+	}
+
+	return operators
+}
+
+// getOperatorAt safely returns an operator at the given index
+func getOperatorAt(operators []string, index int) string {
+	if index < len(operators) {
+		return operators[index]
+	}
+	return "<missing>"
 }
 
 func TestArithmeticOperators_VsDivisionVsRegex(t *testing.T) {

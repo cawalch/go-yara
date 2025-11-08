@@ -100,49 +100,113 @@ func TestPunctuationAndComparisons(t *testing.T) {
 	))
 }
 
+// positionTestCase represents a test case for position tracking validation
+type positionTestCase struct {
+	name     string
+	input    string
+	expected []token.Token
+	positions []positionCheck // positions to validate for specific tokens
+}
+
+// positionCheck defines the expected position for a token at a given index
+type positionCheck struct {
+	tokenIndex int
+	line       int
+	column     int
+	description string
+}
+
 func TestWhitespace_Newlines_Position(t *testing.T) {
-	input := "rule r {\n  condition and (1 + 2)\n}\n"
+	tests := []positionTestCase{
+		{
+			name:  "basic rule with newlines",
+			input: "rule r {\n  condition and (1 + 2)\n}\n",
+			expected: []token.Token{
+				{Type: token.RULE, Literal: "rule"},
+				{Type: token.IDENTIFIER, Literal: "r"},
+				{Type: token.LBRACE, Literal: "{"},
+				{Type: token.CONDITION, Literal: "condition"},
+				{Type: token.AND, Literal: "and"},
+				{Type: token.LPAREN, Literal: "("},
+				{Type: token.INTEGER_LIT, Literal: "1"},
+				{Type: token.PLUS, Literal: "+"},
+				{Type: token.INTEGER_LIT, Literal: "2"},
+				{Type: token.RPAREN, Literal: ")"},
+				{Type: token.RBRACE, Literal: "}"},
+				{Type: token.EOF, Literal: ""},
+			},
+			positions: []positionCheck{
+				{tokenIndex: 0, line: 1, column: 1, description: "rule token"},
+				{tokenIndex: 1, line: 1, column: 6, description: "identifier 'r'"},
+				{tokenIndex: 3, line: 2, column: 4, description: "condition token"},
+			},
+		},
+		{
+			name:  "multiple line rule",
+			input: "rule test_rule {\n strings:\n  $a = \"test\"\n condition:\n  $a\n}",
+			expected: []token.Token{
+				{Type: token.RULE, Literal: "rule"},
+				{Type: token.IDENTIFIER, Literal: "test_rule"},
+				{Type: token.LBRACE, Literal: "{"},
+				{Type: token.STRINGS, Literal: "strings"},
+				{Type: token.COLON, Literal: ":"},
+				{Type: token.STRING_IDENTIFIER, Literal: "$a"},
+				{Type: token.ASSIGN, Literal: "="},
+				{Type: token.STRING_LIT, Literal: "test"},
+				{Type: token.CONDITION, Literal: "condition"},
+				{Type: token.COLON, Literal: ":"},
+				{Type: token.STRING_IDENTIFIER, Literal: "$a"},
+				{Type: token.RBRACE, Literal: "}"},
+				{Type: token.EOF, Literal: ""},
+			},
+			positions: []positionCheck{
+				{tokenIndex: 0, line: 1, column: 1, description: "rule token"},
+				{tokenIndex: 3, line: 2, column: 3, description: "strings token"},
+				{tokenIndex: 8, line: 4, column: 3, description: "condition token"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertTokenSequenceAndPositions(t, tt.input, tt.expected, tt.positions)
+		})
+	}
+}
+
+// assertTokenSequenceAndPositions validates both token sequence and their positions
+func assertTokenSequenceAndPositions(t *testing.T, input string, expectedTokens []token.Token, positions []positionCheck) {
+	t.Helper()
+
 	l := lexer.New(input)
-
 	got := collectTokens(l)
-	want := []token.Token{
-		{Type: token.RULE, Literal: "rule"},
-		{Type: token.IDENTIFIER, Literal: "r"},
-		{Type: token.LBRACE, Literal: "{"},
-		{Type: token.CONDITION, Literal: "condition"},
-		{Type: token.AND, Literal: "and"},
-		{Type: token.LPAREN, Literal: "("},
-		{Type: token.INTEGER_LIT, Literal: "1"},
-		{Type: token.PLUS, Literal: "+"},
-		{Type: token.INTEGER_LIT, Literal: "2"},
-		{Type: token.RPAREN, Literal: ")"},
-		{Type: token.RBRACE, Literal: "}"},
-		{Type: token.EOF, Literal: ""},
+
+	// Validate token sequence
+	if len(got) != len(expectedTokens) {
+		t.Fatalf("token count mismatch: got %d want %d\nGot: %v\nWant: %v",
+			len(got), len(expectedTokens), got, expectedTokens)
 	}
 
-	if len(got) != len(want) {
-		t.Fatalf("token count mismatch: got %d want %d\nGot: %v\nWant: %v", len(got), len(want), got, want)
-	}
-
-	for i := range want {
-		if got[i].Type != want[i].Type || got[i].Literal != want[i].Literal {
-			t.Fatalf("tok[%d]: got {%v %q} want {%v %q}", i, got[i].Type, got[i].Literal, want[i].Type, want[i].Literal)
+	for i := range expectedTokens {
+		if got[i].Type != expectedTokens[i].Type || got[i].Literal != expectedTokens[i].Literal {
+			t.Fatalf("tok[%d]: got {%v %q} want {%v %q}",
+				i, got[i].Type, got[i].Literal, expectedTokens[i].Type, expectedTokens[i].Literal)
 		}
 	}
 
-	// Check that the first token (rule) is at line 1, column 1
-	if got[0].Pos.Line != 1 || got[0].Pos.Column != 1 {
-		t.Fatalf("rule token position: got line %d col %d, want line 1 col 1", got[0].Pos.Line, got[0].Pos.Column)
-	}
+	// Validate positions for specified tokens
+	for _, posCheck := range positions {
+		if posCheck.tokenIndex >= len(got) {
+			t.Fatalf("position check index %d out of range for %d tokens",
+				posCheck.tokenIndex, len(got))
+		}
 
-	// Check that the identifier 'r' is at line 1, column 6
-	if got[1].Pos.Line != 1 || got[1].Pos.Column != 6 {
-		t.Fatalf("identifier 'r' position: got line %d col %d, want line 1 col 6", got[1].Pos.Line, got[1].Pos.Column)
-	}
-
-	// Check that the condition token is at line 2, column 4
-	if got[3].Pos.Line != 2 || got[3].Pos.Column != 4 {
-		t.Fatalf("condition token position: got line %d col %d, want line 2 col 4", got[3].Pos.Line, got[3].Pos.Column)
+		token := got[posCheck.tokenIndex]
+		if token.Pos.Line != posCheck.line || token.Pos.Column != posCheck.column {
+			t.Fatalf("%s position: got line %d col %d, want line %d col %d",
+				posCheck.description, token.Pos.Line, token.Pos.Column,
+				posCheck.line, posCheck.column)
+		}
 	}
 }
 
