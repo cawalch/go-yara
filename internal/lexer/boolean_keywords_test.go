@@ -1,6 +1,7 @@
 package lexer_test
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/cawalch/go-yara/internal/lexer"
@@ -140,8 +141,57 @@ func TestLogicalNot_Keyword(t *testing.T) {
 	}
 }
 
+// countTokensByType is a helper function that counts tokens by type(s)
+func countTokensByType(tokens []token.Token, tokenTypes ...token.TokenType) int {
+	count := 0
+	for _, tok := range tokens {
+		if slices.Contains(tokenTypes, tok.Type) {
+			count++
+		}
+	}
+	return count
+}
+
+// findTokenByTypeAndLiteral is a helper function that finds a token by type and literal value
+func findTokenByTypeAndLiteral(tokens []token.Token, tokenType token.TokenType, literal string) bool {
+	for _, tok := range tokens {
+		if tok.Type == tokenType && tok.Literal == literal {
+			return true
+		}
+	}
+	return false
+}
+
+// validateBooleanTokens is a helper function that validates boolean and logical tokens in YARA rule
+func validateBooleanTokens(t *testing.T, tokens []token.Token) {
+	// Count boolean literals
+	booleanCount := countTokensByType(tokens, token.TRUE, token.FALSE)
+	expectedBooleans := 5 // true, false, true, false, false
+
+	if booleanCount != expectedBooleans {
+		t.Fatalf("expected %d boolean literals, got %d\nActual tokens: %v", expectedBooleans, booleanCount, tokens)
+	}
+
+	// Verify specific boolean tokens exist
+	tokenValidationTests := []struct {
+		tokenType token.TokenType
+		literal   string
+		name      string
+	}{
+		{token.TRUE, "true", "TRUE"},
+		{token.FALSE, "false", "FALSE"},
+		{token.NOT, "not", "NOT"},
+	}
+
+	for _, test := range tokenValidationTests {
+		if !findTokenByTypeAndLiteral(tokens, test.tokenType, test.literal) {
+			t.Fatalf("expected to find %s token", test.name)
+		}
+	}
+}
+
+// TestNextToken_BooleanLiterals_InYARARule tests boolean literals in a realistic YARA rule context
 func TestNextToken_BooleanLiterals_InYARARule(t *testing.T) {
-	// Test boolean literals in a realistic YARA rule context
 	input := `rule TestRule {
 		meta:
 			enabled = true
@@ -153,45 +203,7 @@ func TestNextToken_BooleanLiterals_InYARARule(t *testing.T) {
 	}`
 
 	l := lexer.New(input)
-	got := collectTokens(l)
+	tokens := collectTokens(l)
 
-	// Count boolean literals
-	booleanCount := 0
-	for _, tok := range got {
-		if tok.Type == token.TRUE || tok.Type == token.FALSE {
-			booleanCount++
-		}
-	}
-
-	// Should have 4 boolean literals: true, false, true, false, false
-	expectedBooleans := 5
-	if booleanCount != expectedBooleans {
-		t.Fatalf("expected %d boolean literals, got %d\nActual tokens: %v", expectedBooleans, booleanCount, got)
-	}
-
-	// Verify specific boolean tokens exist
-	foundTrue := false
-	foundFalse := false
-	foundNot := false
-	for _, tok := range got {
-		if tok.Type == token.TRUE && tok.Literal == "true" {
-			foundTrue = true
-		}
-		if tok.Type == token.FALSE && tok.Literal == "false" {
-			foundFalse = true
-		}
-		if tok.Type == token.NOT && tok.Literal == "not" {
-			foundNot = true
-		}
-	}
-
-	if !foundTrue {
-		t.Fatal("expected to find TRUE token")
-	}
-	if !foundFalse {
-		t.Fatal("expected to find FALSE token")
-	}
-	if !foundNot {
-		t.Fatal("expected to find NOT token")
-	}
+	validateBooleanTokens(t, tokens)
 }

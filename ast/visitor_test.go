@@ -6,70 +6,101 @@ import (
 	"github.com/cawalch/go-yara/token"
 )
 
+// testVisitorMethodNilResult is a helper function that tests a visitor method returns nil
+func testVisitorMethodNilResult(t *testing.T, visitor *BaseVisitor, node interface{ Accept(v Visitor) any }, methodName string) {
+	if result := node.Accept(visitor); result != nil {
+		t.Errorf("%s.Accept() returned %v, want nil", methodName, result)
+	}
+}
+
+// TestBaseVisitor tests all BaseVisitor methods return nil using table-driven approach
 func TestBaseVisitor(t *testing.T) {
 	visitor := &BaseVisitor{}
-
-	// Test all visitor methods return nil
 	pos := token.Position{Line: 1, Column: 1}
 
-	program := &Program{Pos: pos}
-	if result := visitor.VisitProgram(program); result != nil {
-		t.Errorf("VisitProgram() returned %v, want nil", result)
+	tests := []struct {
+		name      string
+		buildNode func(pos token.Position) interface{ Accept(v Visitor) any }
+	}{
+		{
+			name: "VisitProgram",
+			buildNode: func(pos token.Position) interface{ Accept(v Visitor) any } {
+				return &Program{Pos: pos}
+			},
+		},
+		{
+			name: "VisitRule",
+			buildNode: func(pos token.Position) interface{ Accept(v Visitor) any } {
+				return &Rule{Pos: pos, Name: "test"}
+			},
+		},
+		{
+			name: "VisitMeta",
+			buildNode: func(pos token.Position) interface{ Accept(v Visitor) any } {
+				return &Meta{Pos: pos, Key: "test", Value: MetaString("value")}
+			},
+		},
+		{
+			name: "VisitString",
+			buildNode: func(pos token.Position) interface{ Accept(v Visitor) any } {
+				return &String{Pos: pos, Identifier: "$test"}
+			},
+		},
+		{
+			name: "VisitCondition",
+			buildNode: func(pos token.Position) interface{ Accept(v Visitor) any } {
+				return &Condition{Pos: pos}
+			},
+		},
+		{
+			name: "VisitBinaryOp",
+			buildNode: func(pos token.Position) interface{ Accept(v Visitor) any } {
+				return &BinaryOp{Pos: pos}
+			},
+		},
+		{
+			name: "VisitUnaryOp",
+			buildNode: func(pos token.Position) interface{ Accept(v Visitor) any } {
+				return &UnaryOp{Pos: pos}
+			},
+		},
+		{
+			name: "VisitIdentifier",
+			buildNode: func(pos token.Position) interface{ Accept(v Visitor) any } {
+				return &Identifier{Pos: pos, Name: "test"}
+			},
+		},
+		{
+			name: "VisitLiteral",
+			buildNode: func(pos token.Position) interface{ Accept(v Visitor) any } {
+				return &Literal{Pos: pos}
+			},
+		},
+		{
+			name: "VisitTextString",
+			buildNode: func(pos token.Position) interface{ Accept(v Visitor) any } {
+				return &TextString{Pos: pos}
+			},
+		},
+		{
+			name: "VisitHexString",
+			buildNode: func(pos token.Position) interface{ Accept(v Visitor) any } {
+				return &HexString{Pos: pos}
+			},
+		},
+		{
+			name: "VisitRegexPattern",
+			buildNode: func(pos token.Position) interface{ Accept(v Visitor) any } {
+				return &RegexPattern{Pos: pos}
+			},
+		},
 	}
 
-	rule := &Rule{Pos: pos, Name: "test"}
-	if result := visitor.VisitRule(rule); result != nil {
-		t.Errorf("VisitRule() returned %v, want nil", result)
-	}
-
-	meta := &Meta{Pos: pos, Key: "test", Value: MetaString("value")}
-	if result := visitor.VisitMeta(meta); result != nil {
-		t.Errorf("VisitMeta() returned %v, want nil", result)
-	}
-
-	str := &String{Pos: pos, Identifier: "$test"}
-	if result := visitor.VisitString(str); result != nil {
-		t.Errorf("VisitString() returned %v, want nil", result)
-	}
-
-	condition := &Condition{Pos: pos}
-	if result := visitor.VisitCondition(condition); result != nil {
-		t.Errorf("VisitCondition() returned %v, want nil", result)
-	}
-
-	binOp := &BinaryOp{Pos: pos}
-	if result := visitor.VisitBinaryOp(binOp); result != nil {
-		t.Errorf("VisitBinaryOp() returned %v, want nil", result)
-	}
-
-	unaryOp := &UnaryOp{Pos: pos}
-	if result := visitor.VisitUnaryOp(unaryOp); result != nil {
-		t.Errorf("VisitUnaryOp() returned %v, want nil", result)
-	}
-
-	ident := &Identifier{Pos: pos, Name: "test"}
-	if result := visitor.VisitIdentifier(ident); result != nil {
-		t.Errorf("VisitIdentifier() returned %v, want nil", result)
-	}
-
-	literal := &Literal{Pos: pos}
-	if result := visitor.VisitLiteral(literal); result != nil {
-		t.Errorf("VisitLiteral() returned %v, want nil", result)
-	}
-
-	textStr := &TextString{Pos: pos}
-	if result := visitor.VisitTextString(textStr); result != nil {
-		t.Errorf("VisitTextString() returned %v, want nil", result)
-	}
-
-	hexStr := &HexString{Pos: pos}
-	if result := visitor.VisitHexString(hexStr); result != nil {
-		t.Errorf("VisitHexString() returned %v, want nil", result)
-	}
-
-	regex := &RegexPattern{Pos: pos}
-	if result := visitor.VisitRegexPattern(regex); result != nil {
-		t.Errorf("VisitRegexPattern() returned %v, want nil", result)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			node := tt.buildNode(pos)
+			testVisitorMethodNilResult(t, visitor, node, tt.name)
+		})
 	}
 }
 

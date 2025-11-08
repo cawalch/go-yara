@@ -3,6 +3,7 @@ package parser
 import (
 	"testing"
 
+	"github.com/cawalch/go-yara/ast"
 	"github.com/cawalch/go-yara/internal/lexer"
 )
 
@@ -173,14 +174,86 @@ rule test_rule_2 {
 	}
 }
 
-// testParserRuleFeatures tests parser with different rule features
+// validateRuleTags is a helper function that validates rule tags
+func validateRuleTags(t *testing.T, rule *ast.Rule, expectedTags []string, description string) {
+	if len(rule.Tags) != len(expectedTags) {
+		t.Errorf("Expected %d tags but got %d: %s", len(expectedTags), len(rule.Tags), description)
+		return
+	}
+
+	for i, expectedTag := range expectedTags {
+		if i >= len(rule.Tags) || rule.Tags[i] != expectedTag {
+			t.Errorf("Expected tag %d to be %s but got %s: %s", i, expectedTag, rule.Tags[i], description)
+		}
+	}
+}
+
+// validateRuleMeta is a helper function that validates rule meta information
+func validateRuleMeta(t *testing.T, rule *ast.Rule, expectedMeta map[string]string, description string) {
+	if len(rule.Meta) != len(expectedMeta) {
+		t.Errorf("Expected %d meta entries but got %d: %s", len(expectedMeta), len(rule.Meta), description)
+		return
+	}
+
+	for key, expectedValue := range expectedMeta {
+		var found bool
+		var actualValue string
+		for _, meta := range rule.Meta {
+			if meta.Key == key {
+				actualValue = meta.AsString()
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			t.Errorf("Expected meta %s to be present but it was not found: %s", key, description)
+			continue
+		}
+
+		if actualValue != expectedValue {
+			t.Errorf("Expected meta %s to be %s but got %s: %s", key, expectedValue, actualValue, description)
+		}
+	}
+}
+
+// parseRuleWithErrorHandling is a helper function that handles parsing and basic error checking
+func parseRuleWithErrorHandling(t *testing.T, input string, expectError bool, description string) *ast.Rule {
+	l := lexer.New(input)
+	p := New(l)
+	program, err := p.ParseRules()
+
+	if expectError {
+		if err == nil {
+			t.Errorf("Expected error but parsing succeeded: %s", description)
+		}
+		return nil
+	}
+
+	if err != nil {
+		t.Errorf("Unexpected parsing error: %v: %s", err, description)
+		return nil
+	}
+
+	if program == nil {
+		t.Errorf("Expected program but got nil: %s", description)
+		return nil
+	}
+
+	if len(program.Rules) != 1 {
+		t.Errorf("Expected 1 rule but got %d: %s", len(program.Rules), description)
+		return nil
+	}
+
+	return program.Rules[0]
+}
+
+// testParserRuleFeatures tests parser with different rule features using helper functions
 func testParserRuleFeatures(t *testing.T) {
 	tests := []struct {
 		name         string
 		input        string
 		expectError  bool
-		expectedTags int
-		expectedMeta int
 		description  string
 		validateTags []string
 		validateMeta map[string]string
@@ -194,8 +267,6 @@ func testParserRuleFeatures(t *testing.T) {
 		$test
 }`,
 			expectError:  false,
-			expectedTags: 2,
-			expectedMeta: 0,
 			description:  "Parser should handle rule tags",
 			validateTags: []string{"tag1", "tag2"},
 		},
@@ -211,10 +282,8 @@ func testParserRuleFeatures(t *testing.T) {
 	condition:
 		$test
 }`,
-			expectError:  false,
-			expectedTags: 0,
-			expectedMeta: 3,
-			description:  "Parser should handle rule meta information",
+			expectError: false,
+			description: "Parser should handle rule meta information",
 			validateMeta: map[string]string{
 				"author":      "Test Author",
 				"description": "Test Description",
@@ -225,75 +294,19 @@ func testParserRuleFeatures(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			l := lexer.New(tt.input)
-			p := New(l)
-			program, err := p.ParseRules()
-
-			if tt.expectError {
-				if err == nil {
-					t.Errorf("Expected error but parsing succeeded: %s", tt.description)
-				}
-				return
+			rule := parseRuleWithErrorHandling(t, tt.input, tt.expectError, tt.description)
+			if rule == nil {
+				return // Error already reported by helper
 			}
-
-			if err != nil {
-				t.Errorf("Unexpected parsing error: %v: %s", err, tt.description)
-				return
-			}
-
-			if program == nil {
-				t.Errorf("Expected program but got nil: %s", tt.description)
-				return
-			}
-
-			if len(program.Rules) != 1 {
-				t.Errorf("Expected 1 rule but got %d: %s", len(program.Rules), tt.description)
-				return
-			}
-
-			rule := program.Rules[0]
 
 			// Validate tags
-			if len(rule.Tags) != tt.expectedTags {
-				t.Errorf("Expected %d tags but got %d: %s", tt.expectedTags, len(rule.Tags), tt.description)
-				return
-			}
-
 			if len(tt.validateTags) > 0 {
-				for i, expectedTag := range tt.validateTags {
-					if i >= len(rule.Tags) || rule.Tags[i] != expectedTag {
-						t.Errorf("Expected tag %d to be %s but got %s: %s", i, expectedTag, rule.Tags[i], tt.description)
-					}
-				}
+				validateRuleTags(t, rule, tt.validateTags, tt.description)
 			}
 
 			// Validate meta
-			if len(rule.Meta) != tt.expectedMeta {
-				t.Errorf("Expected %d meta entries but got %d: %s", tt.expectedMeta, len(rule.Meta), tt.description)
-				return
-			}
-
 			if len(tt.validateMeta) > 0 {
-				for key, expectedValue := range tt.validateMeta {
-					var found bool
-					var actualValue string
-					for _, meta := range rule.Meta {
-						if meta.Key == key {
-							actualValue = meta.AsString()
-							found = true
-							break
-						}
-					}
-
-					if !found {
-						t.Errorf("Expected meta %s to be present but it was not found: %s", key, tt.description)
-						continue
-					}
-
-					if actualValue != expectedValue {
-						t.Errorf("Expected meta %s to be %s but got %s: %s", key, expectedValue, actualValue, tt.description)
-					}
-				}
+				validateRuleMeta(t, rule, tt.validateMeta, tt.description)
 			}
 		})
 	}

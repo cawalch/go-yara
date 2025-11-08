@@ -231,67 +231,85 @@ func TestAdvancedBuilderMethods_Imports(t *testing.T) {
 	})
 }
 
-// TestAdvancedBuilderMethods_Expressions tests expression builder methods
+// TestAdvancedBuilderMethods_Expressions tests expression builder methods using focused helper functions
 func TestAdvancedBuilderMethods_Expressions(t *testing.T) {
+	t.Run("StringLength builder", testStringLengthBuilder)
+	t.Run("ArrayIndex builder", testArrayIndexBuilder)
+	t.Run("ForLoop builder", testForLoopBuilder)
+	t.Run("OfExpression builder", testOfExpressionBuilder)
+	t.Run("FunctionCall builder", testFunctionCallBuilder)
+}
+
+func testStringLengthBuilder(t *testing.T) {
 	builder := NewBuilder()
 	pos := token.Position{Line: 3, Column: 7}
 
-	t.Run("StringLength builder", func(t *testing.T) {
-		stringExpr := builder.Identifier(pos, "$s1")
-		strLen := builder.StringLength(pos, stringExpr)
+	stringExpr := builder.Identifier(pos, "$s1")
+	strLen := builder.StringLength(pos, stringExpr)
 
-		if strLen.String != stringExpr {
-			t.Error("StringLength.String does not match")
-		}
-	})
+	if strLen.String != stringExpr {
+		t.Error("StringLength.String does not match")
+	}
+}
 
-	t.Run("ArrayIndex builder", func(t *testing.T) {
-		array := builder.Identifier(pos, "my_array")
-		index := builder.Literal(pos, token.INTEGER_LIT, 5)
-		arrayIdx := builder.ArrayIndex(pos, array, index)
+func testArrayIndexBuilder(t *testing.T) {
+	builder := NewBuilder()
+	pos := token.Position{Line: 3, Column: 7}
 
-		if arrayIdx.Array != array || arrayIdx.Index != index {
-			t.Error("ArrayIndex fields do not match expected values")
-		}
-	})
+	array := builder.Identifier(pos, "my_array")
+	index := builder.Literal(pos, token.INTEGER_LIT, 5)
+	arrayIdx := builder.ArrayIndex(pos, array, index)
 
-	t.Run("ForLoop builder", func(t *testing.T) {
-		quantifier := "any"
-		variable := "i"
-		rangeExpr := builder.Identifier(pos, "1..10")
-		condition := builder.Identifier(pos, "valid")
-		forLoop := builder.ForLoop(pos, quantifier, variable, rangeExpr, condition)
+	if arrayIdx.Array != array || arrayIdx.Index != index {
+		t.Error("ArrayIndex fields do not match expected values")
+	}
+}
 
-		if forLoop.Quantifier != quantifier || forLoop.Variable != variable ||
-			forLoop.Range != rangeExpr || forLoop.Condition != condition {
-			t.Error("ForLoop fields do not match expected values")
-		}
-	})
+func testForLoopBuilder(t *testing.T) {
+	builder := NewBuilder()
+	pos := token.Position{Line: 3, Column: 7}
 
-	t.Run("OfExpression builder", func(t *testing.T) {
-		count := builder.Literal(pos, token.INTEGER_LIT, 3)
-		strings := builder.Identifier(pos, "them")
-		ofExpr := builder.OfExpression(pos, count, strings)
+	quantifier := "any"
+	variable := "i"
+	rangeExpr := builder.Identifier(pos, "1..10")
+	condition := builder.Identifier(pos, "valid")
+	forLoop := builder.ForLoop(pos, quantifier, variable, rangeExpr, condition)
 
-		if ofExpr.Count != count || ofExpr.Strings != strings {
-			t.Error("OfExpression fields do not match expected values")
-		}
-	})
+	if forLoop.Quantifier != quantifier || forLoop.Variable != variable ||
+		forLoop.Range != rangeExpr || forLoop.Condition != condition {
+		t.Error("ForLoop fields do not match expected values")
+	}
+}
 
-	t.Run("FunctionCall builder", func(t *testing.T) {
-		args := []Expression{
-			builder.Literal(pos, token.STRING_LIT, "test"),
-			builder.Literal(pos, token.INTEGER_LIT, 123),
-		}
-		fnCall := builder.FunctionCall(pos, "pe.section", args)
+func testOfExpressionBuilder(t *testing.T) {
+	builder := NewBuilder()
+	pos := token.Position{Line: 3, Column: 7}
 
-		if fnCall.Function != "pe.section" || len(fnCall.Args) != len(args) {
-			t.Error("FunctionCall basic fields do not match")
-		}
-		if len(args) > 0 && (len(fnCall.Args) == 0 || fnCall.Args[0] != args[0]) {
-			t.Error("FunctionCall arguments do not match")
-		}
-	})
+	count := builder.Literal(pos, token.INTEGER_LIT, 3)
+	strings := builder.Identifier(pos, "them")
+	ofExpr := builder.OfExpression(pos, count, strings)
+
+	if ofExpr.Count != count || ofExpr.Strings != strings {
+		t.Error("OfExpression fields do not match expected values")
+	}
+}
+
+func testFunctionCallBuilder(t *testing.T) {
+	builder := NewBuilder()
+	pos := token.Position{Line: 3, Column: 7}
+
+	args := []Expression{
+		builder.Literal(pos, token.STRING_LIT, "test"),
+		builder.Literal(pos, token.INTEGER_LIT, 123),
+	}
+	fnCall := builder.FunctionCall(pos, "pe.section", args)
+
+	if fnCall.Function != "pe.section" || len(fnCall.Args) != len(args) {
+		t.Error("FunctionCall basic fields do not match")
+	}
+	if len(args) > 0 && (len(fnCall.Args) == 0 || fnCall.Args[0] != args[0]) {
+		t.Error("FunctionCall arguments do not match")
+	}
 }
 
 // TestExpressionInterface tests that expression nodes implement the expression marker
