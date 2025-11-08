@@ -86,21 +86,17 @@ func (cc *ConditionCompiler) defineLabel(label string) {
 	cc.labels[label] = cc.emitter.GetLength()
 }
 
-type JumpPosition struct {
-	Line   int
-	Column int
-}
 
-func (cc *ConditionCompiler) emitJumpWithLabel(opcode Opcode, label string, position JumpPosition) {
+func (cc *ConditionCompiler) emitJumpWithLabel(opcode Opcode, label string, line, column int) {
 	pos := cc.emitter.GetLength()
 	cc.pendingJumps = append(cc.pendingJumps, PendingJump{
 		Opcode:   opcode,
 		Label:    label,
 		Position: pos,
-		Line:     position.Line,
-		Column:   position.Column,
+		Line:     line,
+		Column:   column,
 	})
-	cc.emitter.EmitOpcodeWithOperand(opcode, Operand{Type: OperandImmediate32, Value: 0}, position.Line, position.Column)
+	cc.emitter.EmitOpcodeWithOperand(opcode, Operand{Type: OperandImmediate32, Value: 0}, line, column)
 }
 
 func (cc *ConditionCompiler) resolveJumps() error {
@@ -261,9 +257,9 @@ func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 		"them":        func() { cc.emitter.EmitPush(0xFFFFFFFE, ident.Pos.Line, ident.Pos.Column) },
 		"flags":       func() { cc.emitter.EmitPush(0, ident.Pos.Line, ident.Pos.Column) },
 		QuantifierAny: func() { cc.emitter.EmitOpcode(OP_PUSH_8, ident.Pos.Line, ident.Pos.Column) },
+		QuantifierAll: func() { cc.emitter.EmitOpcode(OP_PUSH_8, ident.Pos.Line, ident.Pos.Column) },
+		QuantifierNone: func() { cc.emitter.EmitOpcode(OP_PUSH_8, ident.Pos.Line, ident.Pos.Column) },
 	}
-	specialIdentifiers[QuantifierAll] = specialIdentifiers[QuantifierAny]
-	specialIdentifiers[QuantifierNone] = specialIdentifiers[QuantifierAny]
 
 	if handler, exists := specialIdentifiers[ident.Name]; exists {
 		handler()
@@ -376,21 +372,7 @@ func (cc *ConditionCompiler) handleMixedTypeLiteralComparison(binOp *ast.BinaryO
 	return false
 }
 
-func (cc *ConditionCompiler) convertForMixedTypeComparison(binOp *ast.BinaryOp, leftIsFloat, rightIsFloat, isComparison bool) {
-	if !isComparison {
-		return
-	}
-
-	if leftIsFloat && !rightIsFloat {
-		cc.emitter.EmitOpcode(OP_INT_TO_DBL, binOp.Pos.Line, binOp.Pos.Column)
-	} else if !leftIsFloat && rightIsFloat {
-		cc.emitter.EmitOpcode(OP_SWAPUNDEF, binOp.Pos.Line, binOp.Pos.Column)
-		cc.emitter.EmitOpcode(OP_INT_TO_DBL, binOp.Pos.Line, binOp.Pos.Column)
-		cc.emitter.EmitOpcode(OP_SWAPUNDEF, binOp.Pos.Line, binOp.Pos.Column)
-	}
-}
-
-func (cc *ConditionCompiler) convertForMixedTypeArithmetic(binOp *ast.BinaryOp, leftIsFloat, rightIsFloat, isComparison bool) {
+func (cc *ConditionCompiler) convertForMixedType(binOp *ast.BinaryOp, leftIsFloat, rightIsFloat, isComparison bool) {
 	if isComparison {
 		if leftIsFloat && !rightIsFloat {
 			cc.emitter.EmitOpcode(OP_INT_TO_DBL, binOp.Pos.Line, binOp.Pos.Column)
@@ -410,6 +392,21 @@ func (cc *ConditionCompiler) convertForMixedTypeArithmetic(binOp *ast.BinaryOp, 
 	}
 }
 
+func (cc *ConditionCompiler) convertForMixedTypeComparison(binOp *ast.BinaryOp, leftIsFloat, rightIsFloat, isComparison bool) {
+	if !isComparison {
+		return
+	}
+	cc.convertForMixedType(binOp, leftIsFloat, rightIsFloat, isComparison)
+}
+
+func (cc *ConditionCompiler) convertForMixedTypeArithmetic(binOp *ast.BinaryOp, leftIsFloat, rightIsFloat, isComparison bool) {
+	if isComparison {
+		cc.convertForMixedType(binOp, leftIsFloat, rightIsFloat, isComparison)
+	} else {
+		cc.convertForMixedType(binOp, leftIsFloat, rightIsFloat, isComparison)
+	}
+}
+
 func (cc *ConditionCompiler) handleFloatOperations(binOp *ast.BinaryOp, leftIsFloat, rightIsFloat, isComparison bool) error {
 	isFloatOp := leftIsFloat || rightIsFloat
 	if !isFloatOp {
@@ -423,9 +420,9 @@ func (cc *ConditionCompiler) handleFloatOperations(binOp *ast.BinaryOp, leftIsFl
 		if cc.handleMixedTypeLiteralComparison(binOp) {
 			return nil
 		}
-		cc.convertForMixedTypeComparison(binOp, leftIsFloat, rightIsFloat, isComparison)
+		cc.convertForMixedType(binOp, leftIsFloat, rightIsFloat, isComparison)
 	default:
-		cc.convertForMixedTypeArithmetic(binOp, leftIsFloat, rightIsFloat, isComparison)
+		cc.convertForMixedType(binOp, leftIsFloat, rightIsFloat, isComparison)
 	}
 
 	return nil
@@ -643,27 +640,15 @@ func (cc *ConditionCompiler) compileArrayIndex(arrayIndex *ast.ArrayIndex) error
 	return nil
 }
 
-// AddVariable adds a variable to the variable map
 func (cc *ConditionCompiler) AddVariable(name string, index int) {
 	cc.variableMap[name] = index
 }
 
-// GetVariableIndex returns the index of a variable
 func (cc *ConditionCompiler) GetVariableIndex(name string) (int, bool) {
 	index, exists := cc.variableMap[name]
 	return index, exists
 }
 
-type ConditionalJumpConfig struct {
-	Opcode      Opcode
-	TargetLabel string
-	Position    JumpPosition
-}
-
-func (cc *ConditionCompiler) EmitJump(config ConditionalJumpConfig) error {
-	cc.emitJumpWithLabel(config.Opcode, config.TargetLabel, config.Position)
-	return nil
-}
 
 func (cc *ConditionCompiler) CompileBooleanExpression(expr ast.Expression, shortCircuit bool) error {
 	if !shortCircuit {
@@ -688,8 +673,7 @@ func (cc *ConditionCompiler) compileShortCircuitBinary(binOp *ast.BinaryOp, jump
 	}
 
 	endLabel := cc.generateLabel()
-	position := JumpPosition{Line: binOp.Pos.Line, Column: binOp.Pos.Column}
-	cc.emitJumpWithLabel(jumpOpcode, endLabel, position)
+	cc.emitJumpWithLabel(jumpOpcode, endLabel, binOp.Pos.Line, binOp.Pos.Column)
 
 	if err := cc.compileExpression(binOp.Right); err != nil {
 		return err
@@ -698,14 +682,6 @@ func (cc *ConditionCompiler) compileShortCircuitBinary(binOp *ast.BinaryOp, jump
 	cc.defineLabel(endLabel)
 	cc.emitter.EmitOpcode(resultOpcode, binOp.Pos.Line, binOp.Pos.Column)
 	return nil
-}
-
-func (cc *ConditionCompiler) compileShortCircuitAnd(andOp *ast.BinaryOp) error {
-	return cc.compileShortCircuitBinary(andOp, OP_JFALSE, OP_AND)
-}
-
-func (cc *ConditionCompiler) compileShortCircuitOr(orOp *ast.BinaryOp) error {
-	return cc.compileShortCircuitBinary(orOp, OP_JTRUE, OP_OR)
 }
 
 func (cc *ConditionCompiler) GetVariableMap() map[string]int {
@@ -731,7 +707,6 @@ func (cc *ConditionCompiler) ValidateExpression(expr ast.Expression) error {
 	savedEmitter := cc.emitter
 	cc.emitter = NewEmitter()
 	defer func() { cc.emitter = savedEmitter }()
-
 	return cc.compileExpression(expr)
 }
 
@@ -753,6 +728,31 @@ func (cc *ConditionCompiler) EstimateComplexity(expr ast.Expression) int {
 		return 0
 	}
 }
+
+type JumpPosition struct {
+	Line   int
+	Column int
+}
+
+type ConditionalJumpConfig struct {
+	Opcode      Opcode
+	TargetLabel string
+	Position    JumpPosition
+}
+
+func (cc *ConditionCompiler) EmitJump(config ConditionalJumpConfig) error {
+	cc.emitJumpWithLabel(config.Opcode, config.TargetLabel, config.Position.Line, config.Position.Column)
+	return nil
+}
+
+func (cc *ConditionCompiler) compileShortCircuitAnd(andOp *ast.BinaryOp) error {
+	return cc.compileShortCircuitBinary(andOp, OP_JFALSE, OP_AND)
+}
+
+func (cc *ConditionCompiler) compileShortCircuitOr(orOp *ast.BinaryOp) error {
+	return cc.compileShortCircuitBinary(orOp, OP_JTRUE, OP_OR)
+}
+
 
 func (cc *ConditionCompiler) compileOfExpression(ofExpr *ast.OfExpression) error {
 	if err := cc.compileCountExpression(ofExpr.Count); err != nil {
@@ -848,26 +848,20 @@ func (cc *ConditionCompiler) isModuleFunction(name string) bool {
 		return false
 	}
 
-	moduleFunctions := []string{
-		"pe.machine", "pe.sections", "pe.entry_point", "pe.characteristics",
-		"pe.subsystem", "pe.dll_name", "pe.exports", "pe.imports",
-		"pe.version", "pe.timestamp", "pe.linked_modules",
-		"cuckoo.sync", "cuckoo.file", "cuckoo.network", "cuckoo.registry",
-		"cuckoo.process", "cuckoo.api", "cuckoo.behavior", "cuckoo.strings",
-		"hash.md5", "hash.sha1", "hash.sha256", "hash.ssdeep",
-		"elf", "macho", "dotnet", "text",
-	}
-
+	modulePrefixes := []string{"pe.", "cuckoo.", "hash.", "elf.", "macho.", "dotnet.", "text."}
 	moduleName := parts[0]
-	functionName := parts[1]
 
-	for _, module := range moduleFunctions {
-		if strings.HasPrefix(module, moduleName+".") {
+	for _, prefix := range modulePrefixes {
+		if strings.HasPrefix(name, prefix) {
 			return true
 		}
 	}
 
-	return slices.Contains(moduleFunctions, functionName)
+	moduleFunctions := map[string]bool{
+		"elf": true, "macho": true, "dotnet": true, "text": true,
+	}
+
+	return moduleFunctions[moduleName]
 }
 
 func (cc *ConditionCompiler) emitModuleFunctionCall(name string, line, column int) {
