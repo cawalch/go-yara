@@ -1,6 +1,7 @@
 package regex
 
 import (
+	"slices"
 	"testing"
 )
 
@@ -61,40 +62,83 @@ func TestCompileClassAndAnchors(t *testing.T) {
 }
 
 func TestCompileAlt(t *testing.T) {
-	p := NewParser(0)
-	ast, err := p.Parse("a|b")
-	if err != nil {
-		t.Fatalf("parse: %v", err)
+	// Test cases for alternation compilation
+	tests := []struct {
+		name        string
+		pattern     string
+		expectSplit bool
+		expectLits  []byte
+		shouldMatch bool
+	}{
+		{
+			name:        "simple alternation a|b",
+			pattern:     "a|b",
+			expectSplit: true,
+			expectLits:  []byte{'a', 'b'},
+			shouldMatch: true,
+		},
+		{
+			name:        "complex alternation a|b|c",
+			pattern:     "a|b|c",
+			expectSplit: true,
+			expectLits:  []byte{'a', 'b', 'c'},
+			shouldMatch: true,
+		},
 	}
-	code, err := Compile(ast)
-	if err != nil {
-		t.Fatalf("compile: %v", err)
-	}
-	// Should contain a split and both literals
-	hasSplit := false
-	hasA := false
-	hasB := false
-	for i := range code {
-		switch code[i] {
-		case OpSplitA:
-			hasSplit = true
-		case OpLiteral:
-			if i+1 < len(code) {
-				if code[i+1] == 'a' {
-					hasA = true
-				}
-				if code[i+1] == 'b' {
-					hasB = true
-				}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := NewParser(0)
+			ast, err := p.Parse(tt.pattern)
+			if err != nil {
+				t.Fatalf("parse: %v", err)
 			}
+			code, err := Compile(ast)
+			if err != nil {
+				t.Fatalf("compile: %v", err)
+			}
+
+			// Validate compilation structure
+			validateAlternationCode(t, code, tt.expectSplit, tt.expectLits)
+		})
+	}
+}
+
+// Helper function to validate alternation compilation
+func validateAlternationCode(t *testing.T, code []byte, expectSplit bool, expectedLits []byte) {
+	t.Helper()
+
+	// Check for OpMatch at end
+	if code[len(code)-1] != OpMatch {
+		t.Error("missing OpMatch at end of code")
+	}
+
+	// Validate split instruction
+	if expectSplit && !hasOpcode(code, OpSplitA) {
+		t.Error("expected split instruction but none found")
+	}
+
+	// Validate expected literals
+	for _, expectedLit := range expectedLits {
+		if !hasLiteral(code, expectedLit) {
+			t.Errorf("expected literal '%c' not found", expectedLit)
 		}
 	}
-	if !hasSplit || !hasA || !hasB {
-		t.Fatalf("expected split and both literals; split=%v a=%v b=%v", hasSplit, hasA, hasB)
+}
+
+// Helper to check if opcode exists in code
+func hasOpcode(code []byte, opcode byte) bool {
+	return slices.Contains(code, opcode)
+}
+
+// Helper to check if literal exists in code
+func hasLiteral(code []byte, literal byte) bool {
+	for i := 0; i+1 < len(code); i++ {
+		if code[i] == OpLiteral && code[i+1] == literal {
+			return true
+		}
 	}
-	if code[len(code)-1] != OpMatch {
-		t.Fatalf("missing OpMatch")
-	}
+	return false
 }
 
 func TestCompileConcat(t *testing.T) {

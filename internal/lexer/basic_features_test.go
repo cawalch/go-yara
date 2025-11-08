@@ -1,6 +1,7 @@
 package lexer_test
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -39,48 +40,57 @@ func TestBasicFeatures_CompleteYARARule(t *testing.T) {
 
 	tokens := helper.CollectTokens(input)
 
-	// Count different types of Phase 1 features
-	var (
-		hexIntegerCount     = 0
-		sizeLiteralCount    = 0
-		quantifierCount     = 0
-		arithmeticOpCount   = 0
-		booleanLiteralCount = 0
-	)
+	// Define expected token counts using table-driven approach
+	expectedCounts := []struct {
+		tokenTypes    []token.TokenType
+		expectedCount int
+		description   string
+	}{
+		{
+			tokenTypes:    []token.TokenType{token.HEX_INTEGER_LIT},
+			expectedCount: 3, // 0x401000, 0xFF, 0x401000
+			description:   "hex integers",
+		},
+		{
+			tokenTypes:    []token.TokenType{token.SIZE_LIT},
+			expectedCount: 5, // 10MB, 1KB, 100KB, 50MB, 1MB
+			description:   "size literals",
+		},
+		{
+			tokenTypes:    []token.TokenType{token.ALL, token.ANY, token.NONE, token.OF},
+			expectedCount: 6, // all, of, any, of, none, of
+			description:   "quantifier tokens",
+		},
+		{
+			tokenTypes:    []token.TokenType{token.MULTIPLY, token.DIVIDE, token.MODULO},
+			expectedCount: 3, // /, *, %
+			description:   "arithmetic operators",
+		},
+		{
+			tokenTypes:    []token.TokenType{token.TRUE, token.FALSE},
+			expectedCount: 3, // false, true, false
+			description:   "boolean literals",
+		},
+	}
 
-	for _, tok := range tokens {
-		switch tok.Type {
-		case token.HEX_INTEGER_LIT:
-			hexIntegerCount++
-		case token.SIZE_LIT:
-			sizeLiteralCount++
-		case token.ALL, token.ANY, token.NONE, token.OF:
-			quantifierCount++
-		case token.MULTIPLY, token.DIVIDE, token.MODULO:
-			arithmeticOpCount++
-		case token.TRUE, token.FALSE:
-			booleanLiteralCount++
+	// Count and verify each expected token type
+	for _, expected := range expectedCounts {
+		actualCount := countTokenTypes(tokens, expected.tokenTypes)
+		if actualCount != expected.expectedCount {
+			t.Errorf("Expected %d %s, got %d", expected.expectedCount, expected.description, actualCount)
 		}
 	}
+}
 
-	// Verify we found all expected Phase 1 features
-
-	// Verify we found all expected Phase 1 features
-	if hexIntegerCount != 3 { // 0x401000, 0xFF, 0x401000
-		t.Errorf("Expected 3 hex integers, got %d", hexIntegerCount)
+// Helper function to count tokens of specific types
+func countTokenTypes(tokens []token.Token, tokenTypes []token.TokenType) int {
+	count := 0
+	for _, tok := range tokens {
+		if slices.Contains(tokenTypes, tok.Type) {
+			count++
+		}
 	}
-	if sizeLiteralCount != 5 { // 10MB, 1KB, 100KB, 50MB, 1MB
-		t.Errorf("Expected 5 size literals, got %d", sizeLiteralCount)
-	}
-	if quantifierCount != 6 { // all, of, any, of, none, of
-		t.Errorf("Expected 6 quantifier tokens, got %d", quantifierCount)
-	}
-	if arithmeticOpCount != 3 { // /, *, %
-		t.Errorf("Expected 3 arithmetic operators, got %d", arithmeticOpCount)
-	}
-	if booleanLiteralCount != 3 { // false, true, false
-		t.Errorf("Expected 3 boolean literals, got %d", booleanLiteralCount)
-	}
+	return count
 }
 
 func TestBasicFeatures_ErrorRecovery(t *testing.T) {
@@ -99,8 +109,45 @@ func TestBasicFeatures_ErrorRecovery(t *testing.T) {
 	}`
 
 	l := lexer.New(input)
-	tokens := []token.Token{}
+	tokens := collectAllTokensFromLexer(l)
 
+	// Define token type groups to verify
+	tokenVerification := []struct {
+		name       string
+		tokenTypes []token.TokenType
+		validator  func(count int) bool
+		errorMsg   string
+	}{
+		{
+			name:       "illegal tokens",
+			tokenTypes: []token.TokenType{token.ILLEGAL},
+			validator:  func(count int) bool { return count > 0 },
+			errorMsg:   "Expected some ILLEGAL tokens for error recovery test",
+		},
+		{
+			name:       "valid Phase 1 tokens",
+			tokenTypes: []token.TokenType{token.SIZE_LIT, token.ALL, token.OF, token.PLUS, token.MULTIPLY},
+			validator:  func(count int) bool { return count > 0 },
+			errorMsg:   "Expected some valid Phase 1 tokens despite errors",
+		},
+	}
+
+	// Verify each token group
+	for _, verification := range tokenVerification {
+		count := countTokenTypes(tokens, verification.tokenTypes)
+		if !verification.validator(count) {
+			t.Error(verification.errorMsg)
+		}
+	}
+
+	// Check that lexer collected errors (optional - depends on implementation)
+	errors := l.Errors()
+	_ = errors // Suppress unused variable warning
+}
+
+// Helper function to collect all tokens from lexer
+func collectAllTokensFromLexer(l *lexer.Lexer) []token.Token {
+	var tokens []token.Token
 	for {
 		tok := l.NextToken()
 		tokens = append(tokens, tok)
@@ -108,33 +155,7 @@ func TestBasicFeatures_ErrorRecovery(t *testing.T) {
 			break
 		}
 	}
-
-	// Should have some ILLEGAL tokens but still parse valid parts
-	var (
-		illegalCount     = 0
-		validPhase1Count = 0
-	)
-
-	for _, tok := range tokens {
-		if tok.Type == token.ILLEGAL {
-			illegalCount++
-		}
-		if tok.Type == token.SIZE_LIT || tok.Type == token.ALL || tok.Type == token.OF ||
-			tok.Type == token.PLUS || tok.Type == token.MULTIPLY {
-			validPhase1Count++
-		}
-	}
-
-	if illegalCount == 0 {
-		t.Error("Expected some ILLEGAL tokens for error recovery test")
-	}
-	if validPhase1Count == 0 {
-		t.Error("Expected some valid Phase 1 tokens despite errors")
-	}
-
-	// Check that lexer collected errors (optional - depends on implementation)
-	errors := l.Errors()
-	_ = errors // Suppress unused variable warning
+	return tokens
 }
 
 func TestBasicFeatures_PerformanceStress(t *testing.T) {

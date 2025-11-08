@@ -205,54 +205,71 @@ func TestGetTypeFromSymbol(t *testing.T) {
 }
 
 func TestTypeInfoMethods(t *testing.T) {
-	// Test IsNumeric
+	t.Run("TypeIdentification", testTypeIdentificationMethods)
+	t.Run("TypeCapabilities", testTypeCapabilityMethods)
+	t.Run("TypeCasting", testTypeCastingMethods)
+	t.Run("IntegerTypeMethods", testIntegerTypeMethods)
+}
+
+func testTypeIdentificationMethods(t *testing.T) {
 	intType := &TypeInfo{DataType: TypeInteger, IntegerType: Int32Type}
-	if !intType.IsNumeric() {
-		t.Error("IsNumeric() should return true for integer type")
-	}
-
 	boolType := &TypeInfo{DataType: TypeBoolean}
-	if boolType.IsNumeric() {
-		t.Error("IsNumeric() should return false for boolean type")
-	}
-
-	// Test IsString
 	strType := &TypeInfo{DataType: TypeString}
-	if !strType.IsString() {
-		t.Error("IsString() should return true for string type")
+
+	identificationTests := []struct {
+		name     string
+		testFunc func(*TypeInfo) bool
+		typeInfo *TypeInfo
+		expected bool
+	}{
+		{"IsNumeric_integer", (*TypeInfo).IsNumeric, intType, true},
+		{"IsNumeric_boolean", (*TypeInfo).IsNumeric, boolType, false},
+		{"IsString_string", (*TypeInfo).IsString, strType, true},
+		{"IsString_integer", (*TypeInfo).IsString, intType, false},
+		{"IsInteger_integer", (*TypeInfo).IsInteger, intType, true},
+		{"IsBoolean_boolean", (*TypeInfo).IsBoolean, boolType, true},
 	}
 
-	if intType.IsString() {
-		t.Error("IsString() should return false for integer type")
+	for _, test := range identificationTests {
+		t.Run(test.name, func(t *testing.T) {
+			if result := test.testFunc(test.typeInfo); result != test.expected {
+				t.Errorf("Expected %v, got %v", test.expected, result)
+			}
+		})
+	}
+}
+
+func testTypeCapabilityMethods(t *testing.T) {
+	intType := &TypeInfo{DataType: TypeInteger, IntegerType: Int32Type}
+
+	capabilityTests := []struct {
+		name     string
+		testFunc func(*TypeInfo, *TypeInfo) bool
+		expected bool
+	}{
+		{"CanPerformArithmetic", (*TypeInfo).CanPerformArithmetic, true},
+		{"CanPerformBitwise", (*TypeInfo).CanPerformBitwise, true},
 	}
 
-	// Test IsInteger
-	if !intType.IsInteger() {
-		t.Error("IsInteger() should return true for integer type")
+	for _, test := range capabilityTests {
+		t.Run(test.name, func(t *testing.T) {
+			if result := test.testFunc(intType, intType); result != test.expected {
+				t.Errorf("Expected %v, got %v", test.expected, result)
+			}
+		})
 	}
+}
 
-	// Test IsBoolean
-	if !boolType.IsBoolean() {
-		t.Error("IsBoolean() should return true for boolean type")
-	}
-
-	// Test CanPerformArithmetic
-	if !intType.CanPerformArithmetic(intType) {
-		t.Error("CanPerformArithmetic() should return true for integer types")
-	}
-
-	// Test CanPerformBitwise
-	if !intType.CanPerformBitwise(intType) {
-		t.Error("CanPerformBitwise() should return true for integer types")
-	}
-
-	// Test CanCastTo
+func testTypeCastingMethods(t *testing.T) {
+	intType := &TypeInfo{DataType: TypeInteger, IntegerType: Int32Type}
 	uint32Type := &TypeInfo{DataType: TypeInteger, IntegerType: Uint32Type}
+
 	if !intType.CanCastTo(uint32Type) {
 		t.Error("CanCastTo() should allow integer to integer cast")
 	}
+}
 
-	// Test GetIntegerRange on IntegerType
+func testIntegerTypeMethods(t *testing.T) {
 	minVal, maxVal := Int32Type.GetIntegerRange()
 	if minVal == 0 && maxVal == 0 {
 		t.Error("GetIntegerRange() should return non-zero range for Int32Type")
@@ -309,11 +326,13 @@ func TestInferTypeFromLiteral(t *testing.T) {
 }
 
 func TestInferTypeFromBinaryOp(t *testing.T) {
+	// Define common type instances
 	intType := &TypeInfo{DataType: TypeInteger, IntegerType: Int32Type}
 	boolType := &TypeInfo{DataType: TypeBoolean}
 	strType := &TypeInfo{DataType: TypeString}
 
-	tests := []struct {
+	// Test cases organized by operator category
+	binaryOpTests := map[string][]struct {
 		name         string
 		left         *TypeInfo
 		op           token.TokenType
@@ -321,65 +340,80 @@ func TestInferTypeFromBinaryOp(t *testing.T) {
 		expectedType DataType
 		wantErr      bool
 	}{
-		{
-			name:         "addition",
-			left:         intType,
-			op:           token.PLUS,
-			right:        intType,
-			expectedType: TypeInteger,
-			wantErr:      false,
+		"Arithmetic": {
+			{
+				name:         "addition",
+				left:         intType,
+				op:           token.PLUS,
+				right:        intType,
+				expectedType: TypeInteger,
+				wantErr:      false,
+			},
 		},
-		{
-			name:         "comparison",
-			left:         intType,
-			op:           token.GT,
-			right:        intType,
-			expectedType: TypeBoolean,
-			wantErr:      false,
+		"Comparison": {
+			{
+				name:         "greater than",
+				left:         intType,
+				op:           token.GT,
+				right:        intType,
+				expectedType: TypeBoolean,
+				wantErr:      false,
+			},
 		},
-		{
-			name:         "logical and",
-			left:         boolType,
-			op:           token.AND,
-			right:        boolType,
-			expectedType: TypeBoolean,
-			wantErr:      false,
+		"Logical": {
+			{
+				name:         "logical and",
+				left:         boolType,
+				op:           token.AND,
+				right:        boolType,
+				expectedType: TypeBoolean,
+				wantErr:      false,
+			},
 		},
-		{
-			name:         "string contains",
-			left:         strType,
-			op:           token.CONTAINS,
-			right:        strType,
-			expectedType: TypeBoolean,
-			wantErr:      false,
+		"String": {
+			{
+				name:         "string contains",
+				left:         strType,
+				op:           token.CONTAINS,
+				right:        strType,
+				expectedType: TypeBoolean,
+				wantErr:      false,
+			},
+			{
+				name:         "string matches",
+				left:         strType,
+				op:           token.MATCHES,
+				right:        strType,
+				expectedType: TypeBoolean,
+				wantErr:      false,
+			},
 		},
-		{
-			name:         "string matches",
-			left:         strType,
-			op:           token.MATCHES,
-			right:        strType,
-			expectedType: TypeBoolean,
-			wantErr:      false,
-		},
-		{
-			name:         "bitwise or",
-			left:         intType,
-			op:           token.BITWISE_OR,
-			right:        intType,
-			expectedType: TypeInteger,
-			wantErr:      false,
+		"Bitwise": {
+			{
+				name:         "bitwise or",
+				left:         intType,
+				op:           token.BITWISE_OR,
+				right:        intType,
+				expectedType: TypeInteger,
+				wantErr:      false,
+			},
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			typeInfo, err := InferTypeFromBinaryOp(tt.left, tt.op, tt.right)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("InferTypeFromBinaryOp() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if err == nil && typeInfo.DataType != tt.expectedType {
-				t.Errorf("InferTypeFromBinaryOp() got %v, want %v", typeInfo.DataType, tt.expectedType)
+	// Run tests by category
+	for category, tests := range binaryOpTests {
+		t.Run(category, func(t *testing.T) {
+			for _, test := range tests {
+				t.Run(test.name, func(t *testing.T) {
+					typeInfo, err := InferTypeFromBinaryOp(test.left, test.op, test.right)
+					if (err != nil) != test.wantErr {
+						t.Errorf("InferTypeFromBinaryOp() error = %v, wantErr %v", err, test.wantErr)
+						return
+					}
+					if err == nil && typeInfo.DataType != test.expectedType {
+						t.Errorf("InferTypeFromBinaryOp() got %v, want %v", typeInfo.DataType, test.expectedType)
+					}
+				})
 			}
 		})
 	}
