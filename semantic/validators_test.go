@@ -283,10 +283,10 @@ func TestStringValidatorWildcardReferences(t *testing.T) {
 
 	// Define some strings with common prefix
 	str1 := &ast.String{Identifier: "$abc1", Pos: pos}
-	st.DefineString("$abc1", pos, str1)
+	_ = st.DefineString("$abc1", pos, str1)
 
 	str2 := &ast.String{Identifier: "$abc2", Pos: pos}
-	st.DefineString("$abc2", pos, str2)
+	_ = st.DefineString("$abc2", pos, str2)
 
 	validator := NewStringValidator(st)
 
@@ -307,7 +307,7 @@ func TestStringValidatorThemReference(t *testing.T) {
 
 	// Define some strings
 	str1 := &ast.String{Identifier: "$s1", Pos: pos}
-	st.DefineString("$s1", pos, str1)
+	_ = st.DefineString("$s1", pos, str1)
 
 	validator := NewStringValidator(st)
 
@@ -558,12 +558,12 @@ func TestValidatorGetTypeFromSymbol(t *testing.T) {
 
 	// Define different symbol types
 	rule := &ast.Rule{Name: "test_rule", Pos: pos}
-	st.DefineRule("test_rule", pos, rule)
+	_ = st.DefineRule("test_rule", pos, rule)
 
 	str := &ast.String{Identifier: "$s1", Pos: pos}
-	st.DefineString("$s1", pos, str)
+	_ = st.DefineString("$s1", pos, str)
 
-	st.DefineVariable("var1", pos, SymbolVariable)
+	_ = st.DefineVariable("var1", pos, SymbolVariable)
 
 	validator := NewValidator()
 	validator.symbolTable = st

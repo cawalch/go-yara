@@ -296,8 +296,8 @@ func TestStringValidator(t *testing.T) {
 	str1 := &ast.String{Identifier: "$s1", Pos: pos}
 	str2 := &ast.String{Identifier: "$s2", Pos: pos}
 
-	st.DefineString("$s1", pos, str1)
-	st.DefineString("$s2", pos, str2)
+	_ = st.DefineString("$s1", pos, str1)
+	_ = st.DefineString("$s2", pos, str2)
 
 	validator := NewStringValidator(st)
 
@@ -326,7 +326,7 @@ func TestTypeChecker(t *testing.T) {
 	// Define a string for testing
 	pos := token.Position{Line: 1, Column: 1}
 	str := &ast.String{Identifier: "$s1", Pos: pos}
-	st.DefineString("$s1", pos, str)
+	_ = st.DefineString("$s1", pos, str)
 
 	checker := NewTypeChecker(st)
 
@@ -645,7 +645,7 @@ func TestValidatorValidateExpression(t *testing.T) {
 
 	// Define a string
 	str := &ast.String{Identifier: "$s1", Pos: pos}
-	st.DefineString("$s1", pos, str)
+	_ = st.DefineString("$s1", pos, str)
 
 	tests := []struct {
 		name         string

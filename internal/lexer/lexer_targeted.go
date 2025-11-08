@@ -230,22 +230,14 @@ func (l *Targeted) looksLikeRegexTargeted() bool {
 	return looksLikeRegexImpl(l.reader.PeekChar)
 }
 
-// isHexStringStartTargeted checks if the current position starts a hex string
-func (l *Targeted) isHexStringStartTargeted() bool {
-	savedPos := l.reader.Position()
-	defer l.reader.SetPosition(savedPos)
-
-	// Move past '{' and skip immediate whitespace
-	l.reader.ReadChar()
+// isEmptyHexString checks if this is an empty hex string "{ }"
+func (l *Targeted) isEmptyHexString() bool {
 	l.reader.SkipWhitespace()
+	return l.reader.Current() == '}'
+}
 
-	// Empty hex: "{ }"
-	if l.reader.Current() == '}' {
-		return true
-	}
-
-	// Bounded scan ahead for rule structure keywords followed by ':'
-	// Check this first to prioritize rule body detection over tags context
+// scanForRuleKeywords scans ahead for rule structure keywords followed by ':'
+func (l *Targeted) scanForRuleKeywords() bool {
 	startScan := l.reader.Position()
 	for (l.reader.Position()-startScan) < 128 && l.reader.Current() != 0 && l.reader.Current() != '}' {
 		if isLetter(l.reader.Current()) {
@@ -256,23 +248,17 @@ func (l *Targeted) isHexStringStartTargeted() bool {
 			word := l.reader.Slice(wordStart)
 			l.reader.SkipWhitespace()
 			if l.reader.Current() == ':' && isRuleKeyword(word) {
-				return false // Regular rule body
+				return true // Found rule keyword
 			}
 		} else {
 			l.reader.ReadChar()
 		}
 	}
+	return false
+}
 
-	// Context hint: tags before brace (e.g., strings: $a = { ... })
-	hasTagsContext := l.hasTagsBeforeBraceTargeted()
-
-	if hasTagsContext {
-		// In a strings/tags context, braces typically denote a hex string
-		return true
-	}
-
-	// Fast path: First non-space character heuristics
-	// If it looks like hex content or hex operators, treat as hex string immediately.
+// isHexStringFastPath checks fast heuristics for hex string content
+func (l *Targeted) isHexStringFastPath() bool {
 	switch ch := l.reader.Current(); ch {
 	case '?', '~', '(', '[':
 		return true
@@ -285,6 +271,39 @@ func (l *Targeted) isHexStringStartTargeted() bool {
 			}
 			// Otherwise, could be an identifier; fall through to default
 		}
+	}
+	return false
+}
+
+// isHexStringStartTargeted checks if the current position starts a hex string
+func (l *Targeted) isHexStringStartTargeted() bool {
+	savedPos := l.reader.Position()
+	defer l.reader.SetPosition(savedPos)
+
+	// Move past '{' and skip immediate whitespace
+	l.reader.ReadChar()
+
+	// Empty hex: "{ }"
+	if l.isEmptyHexString() {
+		return true
+	}
+
+	// Bounded scan ahead for rule structure keywords followed by ':'
+	// Check this first to prioritize rule body detection over tags context
+	if l.scanForRuleKeywords() {
+		return false // Regular rule body
+	}
+
+	// Context hint: tags before brace (e.g., strings: $a = { ... })
+	if l.hasTagsBeforeBraceTargeted() {
+		// In a strings/tags context, braces typically denote a hex string
+		return true
+	}
+
+	// Fast path: First non-space character heuristics
+	// If it looks like hex content or hex operators, treat as hex string immediately.
+	if l.isHexStringFastPath() {
+		return true
 	}
 
 	// Default to hex when no rule-structure detected
@@ -362,6 +381,51 @@ func (l *Targeted) skipIdentifierInRangeTargeted(input string, start, end int) i
 	return pos
 }
 
+// isSizeSuffixFirstChar checks if character is the first character of a size suffix
+func isSizeSuffixFirstChar(ch byte) bool {
+	return ch == 'K' || ch == 'k' || ch == 'M' || ch == 'm'
+}
+
+// isSizeSuffixSecondChar checks if character is the second character of a size suffix
+func isSizeSuffixSecondChar(ch byte) bool {
+	return ch == 'B' || ch == 'b'
+}
+
+// readSizeSuffixTargeted reads and consumes a size suffix if present
+func (l *Targeted) readSizeSuffixTargeted() {
+	if isSizeSuffixFirstChar(l.reader.Current()) {
+		if isSizeSuffixSecondChar(l.reader.PeekChar()) {
+			l.reader.ReadChar() // skip first letter
+			l.reader.ReadChar() // skip 'B'
+		}
+	}
+}
+
+// parseHexIntegerTargeted parses a hexadecimal integer
+func (l *Targeted) parseHexIntegerTargeted() {
+	l.reader.ReadChar() // skip '0'
+	l.reader.ReadChar() // skip 'x'
+
+	for isHexDigit(l.reader.Current()) {
+		l.reader.ReadChar()
+	}
+}
+
+// parseDecimalIntegerTargeted parses digits for decimal integer
+func (l *Targeted) parseDecimalIntegerTargeted() {
+	for isDigit(l.reader.Current()) {
+		l.reader.ReadChar()
+	}
+}
+
+// parseFloatTargeted parses a float number
+func (l *Targeted) parseFloatTargeted() {
+	l.reader.ReadChar() // skip '.'
+	for isDigit(l.reader.Current()) {
+		l.reader.ReadChar()
+	}
+}
+
 // makeNumericTokenTargeted creates a numeric token with optimized parsing
 func (l *Targeted) makeNumericTokenTargeted(pos token.Position) token.Token {
 	start := l.reader.Position()
@@ -371,48 +435,23 @@ func (l *Targeted) makeNumericTokenTargeted(pos token.Position) token.Token {
 		next := l.reader.PeekChar()
 		if next == 'x' || next == 'X' {
 			// Hexadecimal integer
-			l.reader.ReadChar() // skip '0'
-			l.reader.ReadChar() // skip 'x'
-
-			for isHexDigit(l.reader.Current()) {
-				l.reader.ReadChar()
-			}
-
-			// Check for size suffix
-			if l.reader.Current() == 'K' || l.reader.Current() == 'k' ||
-				l.reader.Current() == 'M' || l.reader.Current() == 'm' {
-				if l.reader.PeekChar() == 'B' || l.reader.PeekChar() == 'b' {
-					l.reader.ReadChar() // skip first letter
-					l.reader.ReadChar() // skip 'B'
-				}
-			}
-
+			l.parseHexIntegerTargeted()
+			l.readSizeSuffixTargeted()
 			return l.makeTokenTargeted(token.INTEGER_LIT, l.reader.Slice(start), pos)
 		}
 	}
 
 	// Decimal integer or float
-	for isDigit(l.reader.Current()) {
-		l.reader.ReadChar()
-	}
+	l.parseDecimalIntegerTargeted()
 
 	// Check for float
 	if l.reader.Current() == '.' && isDigit(l.reader.PeekChar()) {
-		l.reader.ReadChar() // skip '.'
-		for isDigit(l.reader.Current()) {
-			l.reader.ReadChar()
-		}
+		l.parseFloatTargeted()
 		return l.makeTokenTargeted(token.FLOAT_LIT, l.reader.Slice(start), pos)
 	}
 
 	// Check for size suffix
-	if l.reader.Current() == 'K' || l.reader.Current() == 'k' ||
-		l.reader.Current() == 'M' || l.reader.Current() == 'm' {
-		if l.reader.PeekChar() == 'B' || l.reader.PeekChar() == 'b' {
-			l.reader.ReadChar() // skip first letter
-			l.reader.ReadChar() // skip 'B'
-		}
-	}
+	l.readSizeSuffixTargeted()
 
 	return l.makeTokenTargeted(token.INTEGER_LIT, l.reader.Slice(start), pos)
 }

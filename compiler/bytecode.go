@@ -238,28 +238,29 @@ func isTypeFuncOpcode(op Opcode) bool {
 
 // GetCategory returns category of an opcode
 func (op Opcode) GetCategory() string {
-	switch {
-	case isControlOpcode(op):
-		return OpCategoryControl
-	case isLogicalOpcode(op):
-		return OpCategoryLogical
-	case isArithmeticOpcode(op):
-		return OpCategoryArithmetic
-	case isStackOpcode(op):
-		return OpCategoryStack
-	case isObjectOpcode(op):
-		return OpCategoryObject
-	case isJumpOpcode(op):
-		return OpCategoryJump
-	case isIteratorOpcode(op):
-		return OpCategoryIterator
-	case isStringOpcode(op):
-		return OpCategoryString
-	case isTypeFuncOpcode(op):
-		return OpCategoryTypeFunc
-	default:
-		return "unknown"
+	// Check categories in order of most common to least common for performance
+	categoryChecks := []struct {
+		check    func(Opcode) bool
+		category string
+	}{
+		{isArithmeticOpcode, OpCategoryArithmetic},
+		{isLogicalOpcode, OpCategoryLogical},
+		{isStackOpcode, OpCategoryStack},
+		{isStringOpcode, OpCategoryString},
+		{isJumpOpcode, OpCategoryJump},
+		{isObjectOpcode, OpCategoryObject},
+		{isIteratorOpcode, OpCategoryIterator},
+		{isControlOpcode, OpCategoryControl},
+		{isTypeFuncOpcode, OpCategoryTypeFunc},
 	}
+
+	for _, check := range categoryChecks {
+		if check.check(op) {
+			return check.category
+		}
+	}
+
+	return "unknown"
 }
 
 // opcodeNames maps basic opcodes to their string names
@@ -510,64 +511,101 @@ func NewInstructionWithOperand(opcode Opcode, operand Operand, line, pos int) *I
 }
 
 // String returns a string representation of instruction
+// formatImmediateOperand formats immediate operands
+func (inst *Instruction) formatImmediateOperand(bits int) string {
+	value := inst.Operand.Value
+	maxValue := uint64(1<<bits) - 1
+
+	switch bits {
+	case 8:
+		if value > maxValue {
+			return fmt.Sprintf(" 0x%02X (truncated)", uint8(value&maxValue))
+		}
+		return fmt.Sprintf(" 0x%02X", uint8(value&maxValue))
+	case 16:
+		if value > maxValue {
+			return fmt.Sprintf(" 0x%04X (truncated)", uint16(value&maxValue))
+		}
+		return fmt.Sprintf(" 0x%04X", uint16(value&maxValue))
+	case 32:
+		if value > maxValue {
+			return fmt.Sprintf(" 0x%08X (truncated)", uint32(value&maxValue))
+		}
+		return fmt.Sprintf(" 0x%08X", uint32(value&maxValue))
+	case 64:
+		return fmt.Sprintf(" 0x%016X", value)
+	default:
+		return fmt.Sprintf(" (invalid bit width %d)", bits)
+	}
+}
+
+// formatRelativeOperand formats relative jump operands
+func (inst *Instruction) formatRelativeOperand(bits int) string {
+	value := inst.Operand.Value
+	maxValue := uint64(1<<(bits-1)) - 1
+
+	switch bits {
+	case 8:
+		if value > maxValue {
+			return fmt.Sprintf(" %+d (truncated)", int8(value&0xFF))
+		}
+		return fmt.Sprintf(" %+d", int8(value&0xFF))
+	case 16:
+		if value > maxValue {
+			return fmt.Sprintf(" %+d (truncated)", int16(value&0xFFFF))
+		}
+		return fmt.Sprintf(" %+d", int16(value&0xFFFF))
+	case 32:
+		if value > maxValue {
+			return fmt.Sprintf(" %+d (truncated)", int32(value&0xFFFFFFFF))
+		}
+		return fmt.Sprintf(" %+d", int32(value&0xFFFFFFFF))
+	default:
+		return fmt.Sprintf(" (invalid bit width %d)", bits)
+	}
+}
+
+// formatAbsoluteOperand formats absolute address operands
+func (inst *Instruction) formatAbsoluteOperand(bits int) string {
+	value := inst.Operand.Value
+	maxValue := uint64(1<<bits) - 1
+
+	switch bits {
+	case 32:
+		if value > maxValue {
+			return fmt.Sprintf(" @0x%08X (truncated)", uint32(value&maxValue))
+		}
+		return fmt.Sprintf(" @0x%08X", uint32(value&maxValue))
+	case 64:
+		return fmt.Sprintf(" @0x%016X", value)
+	default:
+		return fmt.Sprintf(" (invalid bit width %d)", bits)
+	}
+}
+
 // formatOperand formats operand for display
 func (inst *Instruction) formatOperand() string {
 	switch inst.Operand.Type {
 	case OperandNone:
 		return ""
 	case OperandImmediate8:
-		if inst.Operand.Value > 0xFF {
-			// Safe conversion with explicit truncation
-			return fmt.Sprintf(" 0x%02X (truncated)", uint8(inst.Operand.Value&0xFF))
-		}
-		// Safe conversion with explicit truncation
-		return fmt.Sprintf(" 0x%02X", uint8(inst.Operand.Value&0xFF))
+		return inst.formatImmediateOperand(8)
 	case OperandImmediate16:
-		if inst.Operand.Value > 0xFFFF {
-			// Safe conversion with explicit truncation
-			return fmt.Sprintf(" 0x%04X (truncated)", uint16(inst.Operand.Value&0xFFFF))
-		}
-		// Safe conversion with explicit truncation
-		return fmt.Sprintf(" 0x%04X", uint16(inst.Operand.Value&0xFFFF))
+		return inst.formatImmediateOperand(16)
 	case OperandImmediate32:
-		if inst.Operand.Value > 0xFFFFFFFF {
-			// Safe conversion with explicit truncation
-			return fmt.Sprintf(" 0x%08X (truncated)", uint32(inst.Operand.Value&0xFFFFFFFF))
-		}
-		// Safe conversion with explicit truncation
-		return fmt.Sprintf(" 0x%08X", uint32(inst.Operand.Value&0xFFFFFFFF))
+		return inst.formatImmediateOperand(32)
 	case OperandImmediate64:
-		return fmt.Sprintf(" 0x%016X", inst.Operand.Value)
+		return inst.formatImmediateOperand(64)
 	case OperandRelative8:
-		if inst.Operand.Value > 0x7F {
-			// Safe conversion with explicit truncation
-			return fmt.Sprintf(" %+d (truncated)", int8(inst.Operand.Value&0xFF))
-		}
-		// Safe conversion with explicit truncation
-		return fmt.Sprintf(" %+d", int8(inst.Operand.Value&0xFF))
+		return inst.formatRelativeOperand(8)
 	case OperandRelative16:
-		if inst.Operand.Value > 0x7FFF {
-			// Safe conversion with explicit truncation
-			return fmt.Sprintf(" %+d (truncated)", int16(inst.Operand.Value&0xFFFF))
-		}
-		// Safe conversion with explicit truncation
-		return fmt.Sprintf(" %+d", int16(inst.Operand.Value&0xFFFF))
+		return inst.formatRelativeOperand(16)
 	case OperandRelative32:
-		if inst.Operand.Value > 0x7FFFFFFF {
-			// Safe conversion with explicit truncation
-			return fmt.Sprintf(" %+d (truncated)", int32(inst.Operand.Value&0xFFFFFFFF))
-		}
-		// Safe conversion with explicit truncation
-		return fmt.Sprintf(" %+d", int32(inst.Operand.Value&0xFFFFFFFF))
+		return inst.formatRelativeOperand(32)
 	case OperandAbsolute32:
-		if inst.Operand.Value > 0xFFFFFFFF {
-			// Safe conversion with explicit truncation
-			return fmt.Sprintf(" @0x%08X (truncated)", uint32(inst.Operand.Value&0xFFFFFFFF))
-		}
-		// Safe conversion with explicit truncation
-		return fmt.Sprintf(" @0x%08X", uint32(inst.Operand.Value&0xFFFFFFFF))
+		return inst.formatAbsoluteOperand(32)
 	case OperandAbsolute64:
-		return fmt.Sprintf(" @0x%016X", inst.Operand.Value)
+		return inst.formatAbsoluteOperand(64)
 	default:
 		return fmt.Sprintf(" (invalid operand type %d)", inst.Operand.Type)
 	}
@@ -577,61 +615,86 @@ func (inst *Instruction) String() string {
 	return inst.Opcode.String() + inst.formatOperand()
 }
 
+// appendImmediateOperand appends immediate operand bytes to buffer
+func (inst *Instruction) appendImmediateOperand(buf []byte, bits int) []byte {
+	maxValue := uint64(1<<bits) - 1
+
+	if inst.Operand.Value > maxValue {
+		inst.Operand.Value &= maxValue
+	}
+
+	switch bits {
+	case 8:
+		buf = append(buf, byte(inst.Operand.Value&maxValue))
+	case 16:
+		buf = binary.LittleEndian.AppendUint16(buf, uint16(inst.Operand.Value&maxValue))
+	case 32:
+		buf = binary.LittleEndian.AppendUint32(buf, uint32(inst.Operand.Value&maxValue))
+	case 64:
+		buf = binary.LittleEndian.AppendUint64(buf, inst.Operand.Value)
+	}
+	return buf
+}
+
+// appendRelativeOperand appends relative operand bytes to buffer
+func (inst *Instruction) appendRelativeOperand(buf []byte, bits int) []byte {
+	maxValue := uint64(1<<(bits-1)) - 1
+
+	if inst.Operand.Value > maxValue {
+		inst.Operand.Value = maxValue
+	}
+
+	switch bits {
+	case 8:
+		buf = append(buf, byte(inst.Operand.Value&0xFF))
+	case 16:
+		buf = binary.LittleEndian.AppendUint16(buf, uint16(inst.Operand.Value))
+	case 32:
+		buf = binary.LittleEndian.AppendUint32(buf, uint32(inst.Operand.Value&0xFFFFFFFF))
+	}
+	return buf
+}
+
+// appendAbsoluteOperand appends absolute operand bytes to buffer
+func (inst *Instruction) appendAbsoluteOperand(buf []byte, bits int) []byte {
+	maxValue := uint64(1<<bits) - 1
+
+	if inst.Operand.Value > maxValue {
+		inst.Operand.Value &= maxValue
+	}
+
+	switch bits {
+	case 32:
+		buf = binary.LittleEndian.AppendUint32(buf, uint32(inst.Operand.Value&maxValue))
+	case 64:
+		buf = binary.LittleEndian.AppendUint64(buf, inst.Operand.Value)
+	}
+	return buf
+}
+
 // appendOperand appends operand bytes to buffer
 func (inst *Instruction) appendOperand(buf []byte) []byte {
 	switch inst.Operand.Type {
 	case OperandNone:
 		// No operand
 	case OperandImmediate8:
-		if inst.Operand.Value > 0xFF {
-			// Handle overflow safely
-			inst.Operand.Value &= 0xFF
-		}
-		buf = append(buf, byte(inst.Operand.Value&0xFF))
+		buf = inst.appendImmediateOperand(buf, 8)
 	case OperandImmediate16:
-		if inst.Operand.Value > 0xFFFF {
-			// Handle overflow safely
-			inst.Operand.Value &= 0xFFFF
-		}
-		// Safe conversion with explicit truncation
-		buf = binary.LittleEndian.AppendUint16(buf, uint16(inst.Operand.Value&0xFFFF))
+		buf = inst.appendImmediateOperand(buf, 16)
 	case OperandImmediate32:
-		if inst.Operand.Value > 0xFFFFFFFF {
-			// Handle overflow safely
-			inst.Operand.Value &= 0xFFFFFFFF
-		}
-		// Safe conversion with explicit truncation
-		buf = binary.LittleEndian.AppendUint32(buf, uint32(inst.Operand.Value&0xFFFFFFFF))
+		buf = inst.appendImmediateOperand(buf, 32)
 	case OperandImmediate64:
-		buf = binary.LittleEndian.AppendUint64(buf, inst.Operand.Value)
+		buf = inst.appendImmediateOperand(buf, 64)
 	case OperandRelative8:
-		if inst.Operand.Value > 0x7F {
-			// Handle overflow safely for signed values
-			inst.Operand.Value = 0x7F
-		}
-		buf = append(buf, byte(inst.Operand.Value&0xFF))
+		buf = inst.appendRelativeOperand(buf, 8)
 	case OperandRelative16:
-		if inst.Operand.Value > 0x7FFF {
-			// Handle overflow safely for signed values
-			inst.Operand.Value = 0x7FFF
-		}
-		buf = binary.LittleEndian.AppendUint16(buf, uint16(inst.Operand.Value))
+		buf = inst.appendRelativeOperand(buf, 16)
 	case OperandRelative32:
-		if inst.Operand.Value > 0x7FFFFFFF {
-			// Handle overflow safely for signed values
-			inst.Operand.Value = 0x7FFFFFFF
-		}
-		// Safe conversion with explicit truncation
-		buf = binary.LittleEndian.AppendUint32(buf, uint32(inst.Operand.Value&0xFFFFFFFF))
+		buf = inst.appendRelativeOperand(buf, 32)
 	case OperandAbsolute32:
-		if inst.Operand.Value > 0xFFFFFFFF {
-			// Handle overflow safely
-			inst.Operand.Value &= 0xFFFFFFFF
-		}
-		// Safe conversion with explicit truncation
-		buf = binary.LittleEndian.AppendUint32(buf, uint32(inst.Operand.Value&0xFFFFFFFF))
+		buf = inst.appendAbsoluteOperand(buf, 32)
 	case OperandAbsolute64:
-		buf = binary.LittleEndian.AppendUint64(buf, inst.Operand.Value)
+		buf = inst.appendAbsoluteOperand(buf, 64)
 	}
 	return buf
 }

@@ -116,7 +116,7 @@ func TestCheckIdentifier(t *testing.T) {
 
 	// Define a string
 	str := &ast.String{Identifier: "$s1", Pos: pos}
-	st.DefineString("$s1", pos, str)
+	_ = st.DefineString("$s1", pos, str)
 
 	checker := NewTypeChecker(st)
 
@@ -165,10 +165,10 @@ func TestGetTypeFromSymbol(t *testing.T) {
 
 	// Define different symbol types
 	str := &ast.String{Identifier: "$s1", Pos: pos}
-	st.DefineString("$s1", pos, str)
+	_ = st.DefineString("$s1", pos, str)
 
 	rule := &ast.Rule{Name: "test_rule", Pos: pos}
-	st.DefineRule("test_rule", pos, rule)
+	_ = st.DefineRule("test_rule", pos, rule)
 
 	checker := NewTypeChecker(st)
 
@@ -523,8 +523,8 @@ func TestCheckStringOp(t *testing.T) {
 	// Define strings
 	str1 := &ast.String{Identifier: "$s1", Pos: pos}
 	str2 := &ast.String{Identifier: "$s2", Pos: pos}
-	st.DefineString("$s1", pos, str1)
-	st.DefineString("$s2", pos, str2)
+	_ = st.DefineString("$s1", pos, str1)
+	_ = st.DefineString("$s2", pos, str2)
 
 	// Test contains
 	containsOp := &ast.BinaryOp{

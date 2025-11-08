@@ -22,6 +22,42 @@ func (l *Lexer) position() int {
 	return l.reader.Position()
 }
 
+// isWhitespace returns true if the character is whitespace
+func isWhitespace(ch byte) bool {
+	return ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n'
+}
+
+// isTokenDelimiter returns true if the character marks the end of an illegal sequence
+func (l *Lexer) isTokenDelimiter(ch byte) bool {
+	return startsKnownToken(ch) || isLetter(ch) || isDigit(ch)
+}
+
+// shouldTerminateIllegalSequence checks if the illegal sequence should terminate
+func (l *Lexer) shouldTerminateIllegalSequence() bool {
+	next := l.reader.PeekChar()
+
+	if next == 0 || isWhitespace(next) {
+		return true
+	}
+
+	if l.reader.Current() == '*' && next == '/' {
+		return true
+	}
+
+	if l.isTokenDelimiter(next) {
+		return true
+	}
+
+	return false
+}
+
+// handleStrayClosingComment handles stray closing block comment
+func (l *Lexer) handleStrayClosingComment(start int) string {
+	l.reader.ReadChar()
+	l.reader.ReadChar()
+	return l.reader.Slice(start)
+}
+
 // readIllegalSequence reads a sequence of illegal characters
 func (l *Lexer) readIllegalSequence() string {
 	start := l.reader.Position()
@@ -29,30 +65,23 @@ func (l *Lexer) readIllegalSequence() string {
 	// Check for specific multi-character illegal sequences first
 	if l.reader.Current() == '*' && l.reader.PeekChar() == '/' {
 		// Stray closing block comment
-		l.reader.ReadChar()
-		l.reader.ReadChar()
-		return l.reader.Slice(start)
+		return l.handleStrayClosingComment(start)
 	}
 
 	// Default behavior: basic illegal sequence reading
 	for {
-		next := l.reader.PeekChar()
-		switch {
-		case next == 0 || next == ' ' || next == '\t' || next == '\r' || next == '\n':
+		if l.shouldTerminateIllegalSequence() {
 			l.reader.ReadChar() // include current illegal char
 			return l.reader.Slice(start)
-		case l.reader.Current() == '*' && next == '/':
-			// Coalesce stray closing block comment token "*/"
-			l.reader.ReadChar()
-			l.reader.ReadChar()
-			return l.reader.Slice(start)
-		case startsKnownToken(next) || isLetter(next) || isDigit(next):
-			l.reader.ReadChar()
-			return l.reader.Slice(start)
-		default:
-			// Otherwise consume current and continue growing the illegal run
-			l.reader.ReadChar()
 		}
+
+		if l.reader.Current() == '*' && l.reader.PeekChar() == '/' {
+			// Coalesce stray closing block comment token "*/"
+			return l.handleStrayClosingComment(start)
+		}
+
+		// Otherwise consume current and continue growing the illegal run
+		l.reader.ReadChar()
 	}
 }
 

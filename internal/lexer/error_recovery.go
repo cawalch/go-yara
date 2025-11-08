@@ -34,38 +34,62 @@ func (l *Lexer) addError(pos token.Position, message string) {
 	})
 }
 
+// isWhitespaceChar returns true if the character is whitespace
+func (l *Lexer) isWhitespaceChar() bool {
+	ch := l.reader.Current()
+	return ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n'
+}
+
+// skipLineComment skips line comments (// comment)
+func (l *Lexer) skipLineComment() bool {
+	if l.reader.Current() == '/' && l.reader.PeekChar() == '/' {
+		// Check if this might be an empty regex before treating as comment
+		if l.isEmptyRegex() {
+			// This is an empty regex, don't consume it here
+			return false
+		}
+		// Skip line comment: // comment text
+		l.reader.ReadChar() // skip first '/'
+		l.reader.ReadChar() // skip second '/'
+		for l.reader.Current() != '\n' && l.reader.Current() != 0 {
+			l.reader.ReadChar()
+		}
+		return true
+	}
+	return false
+}
+
+// skipBlockComment skips block comments (/* comment */)
+func (l *Lexer) skipBlockComment() bool {
+	if l.reader.Current() == '/' && l.reader.PeekChar() == '*' {
+		// Skip block comment: /* comment text */
+		l.reader.ReadChar() // skip '/'
+		l.reader.ReadChar() // skip '*'
+		for l.reader.Current() != 0 {
+			if l.reader.Current() == '*' && l.reader.PeekChar() == '/' {
+				l.reader.ReadChar() // skip '*'
+				l.reader.ReadChar() // skip '/'
+				break
+			}
+			l.reader.ReadChar()
+		}
+		return true
+	}
+	return false
+}
+
 // skipWhitespace skips whitespace characters and comments
 func (l *Lexer) skipWhitespace() {
 	for {
-		switch {
-		case l.reader.Current() == ' ' || l.reader.Current() == '\t' || l.reader.Current() == '\r' || l.reader.Current() == '\n':
+		if l.isWhitespaceChar() {
 			l.reader.ReadChar()
-		case l.reader.Current() == '/' && l.reader.PeekChar() == '/':
-			// Check if this might be an empty regex before treating as comment
-			if l.isEmptyRegex() {
-				// This is an empty regex, don't consume it here
-				return
-			}
-			// Skip line comment: // comment text
-			l.reader.ReadChar() // skip first '/'
-			l.reader.ReadChar() // skip second '/'
-			for l.reader.Current() != '\n' && l.reader.Current() != 0 {
-				l.reader.ReadChar()
-			}
-			// Don't skip newline here - let the whitespace loop handle it
-		case l.reader.Current() == '/' && l.reader.PeekChar() == '*':
-			// Skip block comment: /* comment text */
-			l.reader.ReadChar() // skip '/'
-			l.reader.ReadChar() // skip '*'
-			for l.reader.Current() != 0 {
-				if l.reader.Current() == '*' && l.reader.PeekChar() == '/' {
-					l.reader.ReadChar() // skip '*'
-					l.reader.ReadChar() // skip '/'
-					break
-				}
-				l.reader.ReadChar()
-			}
-		default:
+		} else if l.skipLineComment() {
+			// Continue loop to handle post-comment whitespace
+			continue
+		} else if l.skipBlockComment() {
+			// Continue loop to handle post-comment whitespace
+			continue
+		} else {
 			return
 		}
 	}
