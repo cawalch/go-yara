@@ -174,7 +174,7 @@ func testLiteralMethods(t *testing.T) {
 	tests := []struct {
 		name      string
 		literal   *Literal
-		wantValue interface{}
+		wantValue any
 		wantType  token.TokenType
 	}{
 		{
