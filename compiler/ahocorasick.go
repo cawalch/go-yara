@@ -222,6 +222,43 @@ func (ac *ACAutomaton) buildFailureLinks() error {
 	return nil
 }
 
+// findNextState finds the next state by following transitions and failure links
+func (ac *ACAutomaton) findNextState(currentState int32, b byte) int32 {
+	for {
+		nextState := ac.states[currentState].transitions[b]
+		if nextState != -1 {
+			return nextState
+		}
+
+		if currentState == 0 {
+			return 0 // At root, no transition found
+		}
+
+		currentState = ac.states[currentState].failure
+	}
+}
+
+// processMatches processes all matches for the current state and position
+func (ac *ACAutomaton) processMatches(currentState int32, position int) {
+	outputStart := ac.states[currentState].outputStart
+	outputEnd := ac.states[currentState].outputEnd
+
+	if outputStart != outputEnd {
+		// Process all matches
+		for idx := outputStart; idx < outputEnd; idx++ {
+			stringIndex := ac.outputs[idx]
+			if stringIndex >= 0 && int(stringIndex) < len(ac.strings) {
+				stringInfo := ac.strings[stringIndex]
+				ac.matchBuffer = append(ac.matchBuffer, ACMatch{
+					StringIndex: int(stringIndex),
+					StringID:    stringInfo.Identifier,
+					Backtrack:   position + 1 - stringInfo.Length,
+				})
+			}
+		}
+	}
+}
+
 // Search performs optimized pattern matching
 func (ac *ACAutomaton) Search(data []byte) []ACMatch {
 	if !ac.compiled {
@@ -239,39 +276,8 @@ func (ac *ACAutomaton) Search(data []byte) []ACMatch {
 
 	// Optimized search loop
 	for i, b := range data {
-		// Follow transitions, using failure links when needed
-		for {
-			nextState := ac.states[currentState].transitions[b]
-			if nextState != -1 {
-				currentState = nextState
-				break
-			}
-
-			if currentState == 0 {
-				break // At root, no transition found
-			}
-
-			currentState = ac.states[currentState].failure
-		}
-
-		// Check for outputs at current state
-		outputStart := ac.states[currentState].outputStart
-		outputEnd := ac.states[currentState].outputEnd
-
-		if outputStart != outputEnd {
-			// Process all matches
-			for idx := outputStart; idx < outputEnd; idx++ {
-				stringIndex := ac.outputs[idx]
-				if stringIndex >= 0 && int(stringIndex) < len(ac.strings) {
-					stringInfo := ac.strings[stringIndex]
-					ac.matchBuffer = append(ac.matchBuffer, ACMatch{
-						StringIndex: int(stringIndex),
-						StringID:    stringInfo.Identifier,
-						Backtrack:   i + 1 - stringInfo.Length,
-					})
-				}
-			}
-		}
+		currentState = ac.findNextState(currentState, b)
+		ac.processMatches(currentState, i)
 	}
 
 	// Return a copy of matches (to avoid caller modifying internal buffer)

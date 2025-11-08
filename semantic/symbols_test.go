@@ -168,7 +168,7 @@ func TestSymbolTableGetUnusedSymbols(t *testing.T) {
 
 	// Define multiple strings
 	str1 := &ast.String{Identifier: "$s1", Pos: pos}
-	st.DefineString("$s1", pos, str1)
+	_ = st.DefineString("$s1", pos, str1)
 
 	str2 := &ast.String{Identifier: "$s2", Pos: pos}
 	_ = st.DefineString("$s2", pos, str2)
