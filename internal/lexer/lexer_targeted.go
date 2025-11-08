@@ -264,15 +264,21 @@ func (l *Targeted) isHexStringFastPath() bool {
 		return true
 	default:
 		if isHexDigit(ch) {
-			// Disambiguate identifiers starting with [a-f] (e.g., "condition")
-			next := l.reader.PeekChar()
-			if isHexDigit(next) || next == ' ' || next == '\t' || next == '\n' || next == '\r' || next == '}' || next == '?' || next == '~' || next == '(' || next == '[' {
-				return true
-			}
-			// Otherwise, could be an identifier; fall through to default
+			return l.isValidHexNextChar()
 		}
 	}
 	return false
+}
+
+// isValidHexNextChar checks if the next character is valid for hex strings
+func (l *Targeted) isValidHexNextChar() bool {
+	next := l.reader.PeekChar()
+	return isHexDigit(next) || l.isHexDelimiter(next)
+}
+
+// isHexDelimiter checks if a character is a hex string delimiter
+func (l *Targeted) isHexDelimiter(ch byte) bool {
+	return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' || ch == '}' || ch == '?' || ch == '~' || ch == '(' || ch == '['
 }
 
 // isHexStringStartTargeted checks if the current position starts a hex string
@@ -461,7 +467,19 @@ func (l *Targeted) makeRegexTokenTargeted(pos token.Position) token.Token {
 	start := l.reader.Position()
 	l.reader.ReadChar() // skip opening '/'
 
-	for l.reader.Current() != '/' && l.reader.Current() != 0 && l.reader.Current() != '\n' {
+	l.readRegexBody()
+
+	if l.reader.Current() == '/' {
+		l.reader.ReadChar() // skip closing '/'
+		l.readRegexFlags()
+	}
+
+	return l.makeTokenTargeted(token.REGEX_LIT, l.reader.Slice(start), pos)
+}
+
+// readRegexBody reads the regex body until closing delimiter
+func (l *Targeted) readRegexBody() {
+	for !l.isRegexEndDelimiter() {
 		if l.reader.Current() == '\\' {
 			l.reader.ReadChar() // skip backslash
 			if l.reader.Current() != 0 && l.reader.Current() != '\n' {
@@ -471,17 +489,23 @@ func (l *Targeted) makeRegexTokenTargeted(pos token.Position) token.Token {
 			l.reader.ReadChar()
 		}
 	}
+}
 
-	if l.reader.Current() == '/' {
-		l.reader.ReadChar() // skip closing '/'
+// isRegexEndDelimiter checks if current position is at regex end delimiter
+func (l *Targeted) isRegexEndDelimiter() bool {
+	return l.reader.Current() == '/' || l.reader.Current() == 0 || l.reader.Current() == '\n'
+}
 
-		// Read flags (i, s, m, etc.)
-		for l.reader.Current() == 'i' || l.reader.Current() == 's' || l.reader.Current() == 'm' {
-			l.reader.ReadChar()
-		}
+// readRegexFlags reads regex flags (i, s, m, etc.)
+func (l *Targeted) readRegexFlags() {
+	for l.isRegexFlag(l.reader.Current()) {
+		l.reader.ReadChar()
 	}
+}
 
-	return l.makeTokenTargeted(token.REGEX_LIT, l.reader.Slice(start), pos)
+// isRegexFlag checks if a character is a valid regex flag
+func (l *Targeted) isRegexFlag(ch byte) bool {
+	return ch == 'i' || ch == 's' || ch == 'm'
 }
 
 // makeHexStringTokenTargeted creates a hex string token with optimized parsing
@@ -506,34 +530,56 @@ func (l *Targeted) makeHexStringTokenTargeted(pos token.Position) token.Token {
 func (l *Targeted) makeIllegalTokenTargeted(pos token.Position) token.Token {
 	start := l.reader.Position()
 
-	// Check for specific multi-character illegal sequences first
-	if l.reader.Current() == '*' && l.reader.PeekChar() == '/' {
-		// Stray closing block comment
-		l.reader.ReadChar()
-		l.reader.ReadChar()
+	if l.isStrayBlockComment() {
+		l.consumeStrayBlockComment()
 		return l.makeTokenTargeted(token.ILLEGAL, l.reader.Slice(start), pos)
 	}
 
-	// Default behavior: basic illegal sequence reading
+	return l.consumeIllegalSequence(pos)
+}
+
+// isStrayBlockComment checks for stray closing block comment
+func (l *Targeted) isStrayBlockComment() bool {
+	return l.reader.Current() == '*' && l.reader.PeekChar() == '/'
+}
+
+// consumeStrayBlockComment consumes stray closing block comment
+func (l *Targeted) consumeStrayBlockComment() {
+	l.reader.ReadChar()
+	l.reader.ReadChar()
+}
+
+// consumeIllegalSequence consumes illegal characters until a boundary
+func (l *Targeted) consumeIllegalSequence(pos token.Position) token.Token {
+	start := l.reader.Position()
 	for {
 		next := l.reader.PeekChar()
-		switch {
-		case next == 0 || next == ' ' || next == '\t' || next == '\r' || next == '\n':
+		if l.shouldEndIllegalToken(next) {
 			l.reader.ReadChar() // include current illegal char
 			return l.makeTokenTargeted(token.ILLEGAL, l.reader.Slice(start), pos)
-		case l.reader.Current() == '*' && next == '/':
-			// Coalesce stray closing block comment token "*/"
-			l.reader.ReadChar()
-			l.reader.ReadChar()
-			return l.makeTokenTargeted(token.ILLEGAL, l.reader.Slice(start), pos)
-		case startsKnownToken(next) || isLetter(next) || isDigit(next):
-			l.reader.ReadChar()
-			return l.makeTokenTargeted(token.ILLEGAL, l.reader.Slice(start), pos)
-		default:
-			// Otherwise consume current and continue growing the illegal run
-			l.reader.ReadChar()
 		}
+		if l.isStrayBlockComment() {
+			l.reader.ReadChar()
+			l.reader.ReadChar()
+			return l.makeTokenTargeted(token.ILLEGAL, l.reader.Slice(start), pos)
+		}
+		if l.isTokenBoundary(next) {
+			l.reader.ReadChar()
+			return l.makeTokenTargeted(token.ILLEGAL, l.reader.Slice(start), pos)
+		}
+		// Continue growing the illegal run
+		l.reader.ReadChar()
 	}
+}
+
+// shouldEndIllegalToken checks if we should end the illegal token
+func (l *Targeted) shouldEndIllegalToken(next byte) bool {
+	return next == 0 || next == ' ' || next == '\t' || next == '\r' || next == '\n'
+}
+
+// isTokenBoundary checks if the next character starts a known token
+func (l *Targeted) isTokenBoundary(next byte) bool {
+	return startsKnownToken(next) || isLetter(next) || isDigit(next)
 }
 
 // fastForwardTargeted advances past the current line for error recovery

@@ -978,6 +978,69 @@ func (p *Parser) parsePrimary() (ast.Expression, error) {
 	return nil, fmt.Errorf("unexpected token %s at %v", p.current.Type, p.current.Pos)
 }
 
+// parsePrimaryExcludingUnary parses primary expressions but excludes unary operators
+// This is used to avoid infinite recursion when parsing unary operator operands
+func (p *Parser) parsePrimaryExcludingUnary() (ast.Expression, error) {
+	pos := p.current.Pos
+
+	// Try to parse string identifiers first (highest priority for string tokens)
+	if p.currentTokenIs(token.STRING_IDENTIFIER) {
+		return p.parseStringIdentifierExpression(pos)
+	}
+
+	// Try to parse literals
+	if expr, err := p.parseLiteral(pos); expr != nil || (err != nil && !errors.Is(err, ErrNotLiteral)) {
+		return expr, err
+	}
+
+	// Try to parse data type function calls (uint8, uint16, uint32, etc.)
+	if p.isDataTypeFunction(p.current.Type) {
+		return p.parseDataTypeFunction(pos)
+	}
+
+	// Try to parse quantifier expressions
+	if expr, err := p.parseQuantifier(pos); expr != nil || (err != nil && !errors.Is(err, ErrNotQuantifier)) {
+		return expr, err
+	}
+
+	// Try to parse special keywords
+	if expr := p.parseSpecialKeyword(pos); expr != nil {
+		return expr, nil
+	}
+
+	// Parenthesized expressions
+	if p.currentTokenIs(token.LPAREN) {
+		return p.parseParenthesizedExpression()
+	}
+
+	// Regular identifiers
+	if p.currentTokenIs(token.IDENTIFIER) {
+		ident := p.current.Literal
+		p.nextToken()
+
+		// Handle member access for enums
+		if p.currentTokenIs(token.DOT) {
+			p.nextToken() // consume '.'
+			memberIdent := p.current.Literal
+			if !p.currentTokenIs(token.IDENTIFIER) {
+				return nil, errors.New("expected identifier after '.' for enum member access")
+			}
+			p.nextToken()
+
+			return p.builder.BinaryOp(
+				pos,
+				p.builder.Identifier(pos, ident),
+				token.DOT,
+				p.builder.Identifier(pos, memberIdent),
+			), nil
+		}
+
+		return p.builder.Identifier(pos, ident), nil
+	}
+
+	return nil, fmt.Errorf("unexpected token %s at %v", p.current.Type, p.current.Pos)
+}
+
 // parseLiteral parses literal values (true, false, numbers, strings)
 func (p *Parser) parseLiteral(pos token.Position) (ast.Expression, error) {
 	if p.currentTokenIs(token.TRUE) {
@@ -1362,8 +1425,9 @@ func (p *Parser) parseUnaryOperator(pos token.Position) (ast.Expression, error) 
 
 		expr = p.builder.Identifier(identPos, ident)
 	} else {
-		// For other expressions, parse normally
-		expr, err = p.parsePrimary()
+		// For other expressions, parse normally but avoid recursion
+		// Call parsePrimaryExcludingUnary to avoid infinite recursion
+		expr, err = p.parsePrimaryExcludingUnary()
 		if err != nil {
 			return nil, err
 		}

@@ -35,43 +35,8 @@ func processEscapeSequencesOriginal(s string) string {
 			byteSlicePool.Put(resultPtr)
 		}
 	}()
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\\' && i+1 < len(s) {
-			switch s[i+1] {
-			case 'n':
-				result = append(result, '\n')
-				i++ // skip the next character
-			case 't':
-				result = append(result, '\t')
-				i++
-			case 'r':
-				result = append(result, '\r')
-				i++
-			case '\\':
-				result = append(result, '\\')
-				i++
-			case '"':
-				result = append(result, '"')
-				i++
-			case 'x':
-				// Hex escape sequence \xNN
-				if i+3 < len(s) && isHexDigit(s[i+2]) && isHexDigit(s[i+3]) {
-					high := hexDigitValue(s[i+2])
-					low := hexDigitValue(s[i+3])
-					result = append(result, byte(high*16+low))
-					i += 3 // skip x and two hex digits
-				} else {
-					// Invalid hex sequence, keep as-is
-					result = append(result, s[i])
-				}
-			default:
-				// Unknown escape sequence, keep as-is
-				result = append(result, s[i])
-			}
-		} else {
-			result = append(result, s[i])
-		}
-	}
+
+	processEscapeSequencesWithBuffer(s, result)
 
 	// Intern the result if it's short enough
 	resultStr := string(result)
@@ -81,15 +46,7 @@ func processEscapeSequencesOriginal(s string) string {
 // processEscapeSequencesOptimized uses string builder pooling for better performance
 func processEscapeSequencesOptimized(s string) string {
 	// Quick check: if no escapes, return as-is (potentially interned)
-	hasEscape := false
-	for i := range len(s) {
-		if s[i] == '\\' {
-			hasEscape = true
-			break
-		}
-	}
-
-	if !hasEscape {
+	if !hasEscapeSequence(s) {
 		return globalInterner.internString(s)
 	}
 
@@ -111,43 +68,7 @@ func processEscapeSequencesOptimized(s string) string {
 		}
 	}()
 
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\\' && i+1 < len(s) {
-			switch s[i+1] {
-			case 'n':
-				builder.WriteByte('\n')
-				i++ // skip the next character
-			case 't':
-				builder.WriteByte('\t')
-				i++
-			case 'r':
-				builder.WriteByte('\r')
-				i++
-			case '\\':
-				builder.WriteByte('\\')
-				i++
-			case '"':
-				builder.WriteByte('"')
-				i++
-			case 'x':
-				// Hex escape sequence \xNN
-				if i+3 < len(s) && isHexDigit(s[i+2]) && isHexDigit(s[i+3]) {
-					high := hexDigitValue(s[i+2])
-					low := hexDigitValue(s[i+3])
-					builder.WriteByte(byte(high*16 + low))
-					i += 3 // skip x and two hex digits
-				} else {
-					// Invalid hex sequence, keep as-is
-					builder.WriteByte(s[i])
-				}
-			default:
-				// Unknown escape sequence, keep as-is
-				builder.WriteByte(s[i])
-			}
-		} else {
-			builder.WriteByte(s[i])
-		}
-	}
+	processEscapeSequencesWithBuilder(s, builder)
 
 	// Intern the result if it's short enough
 	resultStr := builder.String()
@@ -166,4 +87,92 @@ func hexDigitValue(ch byte) int {
 	default:
 		return 0
 	}
+}
+
+// hasEscapeSequence checks if a string contains escape sequences
+func hasEscapeSequence(s string) bool {
+	for i := range len(s) {
+		if s[i] == '\\' {
+			return true
+		}
+	}
+	return false
+}
+
+// processEscapeSequencesWithBuffer processes escape sequences using a byte buffer
+func processEscapeSequencesWithBuffer(s string, result []byte) []byte {
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\\' && i+1 < len(s) {
+			i = processEscapeChar(s, i, func(ch byte) {
+				result = append(result, ch)
+			})
+		} else {
+			result = append(result, s[i])
+		}
+	}
+	return result
+}
+
+// processEscapeSequencesWithBuilder processes escape sequences using a string builder
+func processEscapeSequencesWithBuilder(s string, builder *strings.Builder) {
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\\' && i+1 < len(s) {
+			i = processEscapeChar(s, i, func(ch byte) {
+				builder.WriteByte(ch)
+			})
+		} else {
+			builder.WriteByte(s[i])
+		}
+	}
+}
+
+// processEscapeChar processes a single escape character and returns the new index
+func processEscapeChar(s string, i int, writeFunc func(byte)) int {
+	esc := s[i+1]
+	if esc == 'x' {
+		return processHexEscape(s, i, writeFunc)
+	}
+	if isSimpleEscape(esc) {
+		writeFunc(getSimpleEscapeValue(esc))
+		return i + 1
+	}
+	// Unknown escape sequence, keep as-is
+	writeFunc(s[i])
+	return i
+}
+
+// isSimpleEscape checks if a character is a simple escape sequence
+func isSimpleEscape(ch byte) bool {
+	return ch == 'n' || ch == 't' || ch == 'r' || ch == '\\' || ch == '"'
+}
+
+// getSimpleEscapeValue returns the value for simple escape sequences
+func getSimpleEscapeValue(ch byte) byte {
+	switch ch {
+	case 'n':
+		return '\n'
+	case 't':
+		return '\t'
+	case 'r':
+		return '\r'
+	case '\\':
+		return '\\'
+	case '"':
+		return '"'
+	default:
+		return ch
+	}
+}
+
+// processHexEscape processes hex escape sequences like \xNN
+func processHexEscape(s string, i int, writeFunc func(byte)) int {
+	if i+3 < len(s) && isHexDigit(s[i+2]) && isHexDigit(s[i+3]) {
+		high := hexDigitValue(s[i+2])
+		low := hexDigitValue(s[i+3])
+		writeFunc(byte(high*16 + low))
+		return i + 3
+	}
+	// Invalid hex sequence, keep as-is
+	writeFunc(s[i])
+	return i
 }

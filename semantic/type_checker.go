@@ -93,46 +93,145 @@ func (tc *TypeChecker) checkBinaryOp(binaryOp *ast.BinaryOp) *TypeInfo {
 		return &TypeInfo{DataType: TypeUnknown}
 	}
 
-	switch binaryOp.Op {
-	case token.PLUS, token.MINUS, token.MULTIPLY, token.DIVIDE, token.MODULO, token.INT_DIVIDE:
-		return tc.checkArithmeticOp(binaryOp, leftType, rightType)
-
-	case token.BITWISE_AND, token.BITWISE_OR, token.BITWISE_XOR,
-		token.LEFT_SHIFT, token.RIGHT_SHIFT:
-		return tc.checkBitwiseOp(binaryOp, leftType, rightType)
-
-	case token.EQ, token.NEQ, token.LT, token.LE, token.GT, token.GE:
-		return tc.checkComparisonOp(binaryOp, leftType, rightType)
-
-	case token.AND, token.OR:
-		return tc.checkLogicalOp(binaryOp, leftType, rightType)
-
-	case token.CONTAINS, token.ICONTAINS, token.STARTSWITH, token.ENDSWITH,
-		token.ISTARTSWITH, token.IENDSWITH, token.IEQUALS, token.MATCHES:
-		return tc.checkStringOp(binaryOp, leftType, rightType)
-
-	case token.OF:
-		return tc.checkQuantifierOp(leftType, rightType, binaryOp.Position())
-
-	case token.AT:
-		return tc.checkAtOperator(leftType, rightType, binaryOp.Position())
-
-	case token.IN:
-		return tc.checkInOperator(leftType, rightType, binaryOp.Position())
-
-	case token.DOT:
-		return tc.checkDotOperator(leftType, rightType, binaryOp.Position())
-
-	case token.COLON:
-		return tc.checkColonOperator()
-
-	default:
+	handler := tc.getBinaryOpHandler(binaryOp.Op)
+	if handler == nil {
 		tc.addError(&Error{
 			Message:  fmt.Sprintf("unknown binary operator: %s", binaryOp.Op),
 			Position: binaryOp.Position(),
 		})
 		return &TypeInfo{DataType: TypeUnknown}
 	}
+
+	return handler.Handle(binaryOp, leftType, rightType)
+}
+
+// getBinaryOpHandler returns the appropriate handler for a binary operator
+func (tc *TypeChecker) getBinaryOpHandler(op token.TokenType) BinaryOpHandler {
+	switch op {
+	case token.PLUS, token.MINUS, token.MULTIPLY, token.DIVIDE, token.MODULO, token.INT_DIVIDE:
+		return &ArithmeticOpHandler{BaseOpHandler: BaseOpHandler{tc: tc}}
+	case token.BITWISE_AND, token.BITWISE_OR, token.BITWISE_XOR, token.LEFT_SHIFT, token.RIGHT_SHIFT:
+		return &BitwiseOpHandler{BaseOpHandler: BaseOpHandler{tc: tc}}
+	case token.EQ, token.NEQ, token.LT, token.LE, token.GT, token.GE:
+		return &ComparisonOpHandler{BaseOpHandler: BaseOpHandler{tc: tc}}
+	case token.AND, token.OR:
+		return &LogicalOpHandler{BaseOpHandler: BaseOpHandler{tc: tc}}
+	case token.CONTAINS, token.ICONTAINS, token.STARTSWITH, token.ENDSWITH,
+		token.ISTARTSWITH, token.IENDSWITH, token.IEQUALS, token.MATCHES:
+		return &StringOpHandler{BaseOpHandler: BaseOpHandler{tc: tc}}
+	case token.OF:
+		return &QuantifierOpHandler{BaseOpHandler: BaseOpHandler{tc: tc}}
+	case token.AT:
+		return &AtOpHandler{BaseOpHandler: BaseOpHandler{tc: tc}}
+	case token.IN:
+		return &InOpHandler{BaseOpHandler: BaseOpHandler{tc: tc}}
+	case token.DOT:
+		return &DotOpHandler{BaseOpHandler: BaseOpHandler{tc: tc}}
+	case token.COLON:
+		return &ColonOpHandler{BaseOpHandler: BaseOpHandler{tc: tc}}
+	default:
+		return nil
+	}
+}
+
+// BinaryOpHandler defines the interface for handling binary operations
+type BinaryOpHandler interface {
+	Handle(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo
+}
+
+// BaseOpHandler provides common functionality for operation handlers
+type BaseOpHandler struct {
+	tc *TypeChecker
+}
+
+// ArithmeticOpHandler handles arithmetic operations
+type ArithmeticOpHandler struct {
+	BaseOpHandler
+}
+
+func (h *ArithmeticOpHandler) Handle(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
+	return h.tc.checkArithmeticOp(binaryOp, leftType, rightType)
+}
+
+// BitwiseOpHandler handles bitwise operations
+type BitwiseOpHandler struct {
+	BaseOpHandler
+}
+
+func (h *BitwiseOpHandler) Handle(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
+	return h.tc.checkBitwiseOp(binaryOp, leftType, rightType)
+}
+
+// ComparisonOpHandler handles comparison operations
+type ComparisonOpHandler struct {
+	BaseOpHandler
+}
+
+func (h *ComparisonOpHandler) Handle(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
+	return h.tc.checkComparisonOp(binaryOp, leftType, rightType)
+}
+
+// LogicalOpHandler handles logical operations
+type LogicalOpHandler struct {
+	BaseOpHandler
+}
+
+func (h *LogicalOpHandler) Handle(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
+	return h.tc.checkLogicalOp(binaryOp, leftType, rightType)
+}
+
+// StringOpHandler handles string operations
+type StringOpHandler struct {
+	BaseOpHandler
+}
+
+func (h *StringOpHandler) Handle(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
+	return h.tc.checkStringOp(binaryOp, leftType, rightType)
+}
+
+// QuantifierOpHandler handles quantifier operations
+type QuantifierOpHandler struct {
+	BaseOpHandler
+}
+
+func (h *QuantifierOpHandler) Handle(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
+	return h.tc.checkQuantifierOp(leftType, rightType, binaryOp.Position())
+}
+
+// AtOpHandler handles the 'at' operator
+type AtOpHandler struct {
+	BaseOpHandler
+}
+
+func (h *AtOpHandler) Handle(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
+	return h.tc.checkAtOperator(leftType, rightType, binaryOp.Position())
+}
+
+// InOpHandler handles the 'in' operator
+type InOpHandler struct {
+	BaseOpHandler
+}
+
+func (h *InOpHandler) Handle(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
+	return h.tc.checkInOperator(leftType, rightType, binaryOp.Position())
+}
+
+// DotOpHandler handles the '.' operator
+type DotOpHandler struct {
+	BaseOpHandler
+}
+
+func (h *DotOpHandler) Handle(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
+	return h.tc.checkDotOperator(leftType, rightType, binaryOp.Position())
+}
+
+// ColonOpHandler handles the ':' operator
+type ColonOpHandler struct {
+	BaseOpHandler
+}
+
+func (h *ColonOpHandler) Handle(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
+	return h.tc.checkColonOperator()
 }
 
 // checkArithmeticOp handles arithmetic operations (+, -, *, /, %, //)

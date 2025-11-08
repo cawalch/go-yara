@@ -35,7 +35,7 @@ func (l *Lexer) readHexString() string {
 
 // isHexStringStart checks if the current position starts a hex string
 // More sophisticated logic to distinguish between hex strings and rule body braces
-func (l *Lexer) isHexStringStart() bool {
+func (l *Lexer) isHexStringStart() bool { //nolint:gocyclo // high complexity is necessary for accurate hex string detection
 	savedPos := l.reader.Position()
 	defer l.reader.SetPosition(savedPos)
 
@@ -202,28 +202,39 @@ func (l *Lexer) isInStringsSection() bool {
 
 // containsStringsKeyword checks if the context contains "strings:" keyword
 func (l *Lexer) containsStringsKeyword(text string) bool {
-	// Look for "strings:" pattern
-	stringsKeyword := "strings"
-	for i := 0; i <= len(text)-len(stringsKeyword); i++ {
-		if text[i:i+len(stringsKeyword)] == stringsKeyword {
-			// Check word boundaries before
-			if i == 0 || !isLetter(text[i-1]) {
-				// Check for colon after (with optional whitespace)
-				after := i + len(stringsKeyword)
-				if after < len(text) {
-					// Skip whitespace after "strings"
-					for after < len(text) && (text[after] == ' ' || text[after] == '\t') {
-						after++
-					}
-					// Should have colon
-					if after < len(text) && text[after] == ':' {
-						return true
-					}
-				}
+	return l.findKeywordWithColon(text, "strings")
+}
+
+// findKeywordWithColon looks for a keyword followed by optional whitespace and a colon
+func (l *Lexer) findKeywordWithColon(text, keyword string) bool {
+	for i := 0; i <= len(text)-len(keyword); i++ {
+		if text[i:i+len(keyword)] == keyword {
+			if l.isWordBoundary(text, i) && l.hasColonAfter(text, i+len(keyword)) {
+				return true
 			}
 		}
 	}
 	return false
+}
+
+// isWordBoundary checks if position is at a word boundary
+func (l *Lexer) isWordBoundary(text string, pos int) bool {
+	return pos == 0 || !isLetter(text[pos-1])
+}
+
+// hasColonAfter checks if there's a colon after optional whitespace
+func (l *Lexer) hasColonAfter(text string, pos int) bool {
+	if pos >= len(text) {
+		return false
+	}
+
+	// Skip whitespace
+	after := pos
+	for after < len(text) && (text[after] == ' ' || text[after] == '\t') {
+		after++
+	}
+
+	return after < len(text) && text[after] == ':'
 }
 
 // looksLikeRuleBody checks if the current context appears to be a rule body
@@ -244,46 +255,69 @@ func (l *Lexer) looksLikeRuleBody() bool {
 
 // containsRuleKeyword checks if the context contains rule structure keywords
 func (l *Lexer) containsRuleKeyword(text string) bool {
-	// Look for "rule" followed by identifier pattern
-	if len(text) >= 4 {
-		// Check if text ends with "rule" or contains "rule" followed by identifier
-		for i := 0; i <= len(text)-4; i++ {
-			if text[i:i+4] == KeywordRule {
-				// Check word boundaries
-				before := i == 0 || !isLetter(text[i-1])
-				after := i+4 >= len(text) || !isLetter(text[i+4])
+	return l.containsRuleKeywordPattern(text) || l.containsSectionKeywords(text)
+}
 
-				if before && after {
-					// Standalone "rule" keyword
-					return true
-				} else if before && i+4 < len(text) && (text[i+4] == ' ' || text[i+4] == '\t') {
-					// "rule" followed by whitespace - check if there's an identifier after
-					identStart := i + 5
-					for identStart < len(text) && (text[identStart] == ' ' || text[identStart] == '\t') {
-						identStart++
-					}
-					if identStart < len(text) && isLetter(text[identStart]) {
-						// "rule" followed by identifier - this is a rule declaration
-						return true
-					}
-				}
-			}
-		}
+// containsRuleKeywordPattern checks for "rule" keyword patterns
+func (l *Lexer) containsRuleKeywordPattern(text string) bool {
+	if len(text) < 4 {
+		return false
 	}
 
-	// Also check for other rule structure keywords, but be more specific
-	// Only treat as rule keywords if they have colons (section declarations)
-	keywords := []string{"condition:", "meta:", "strings:"}
-	for _, keyword := range keywords {
-		if len(text) >= len(keyword) {
-			// Check if keyword appears at the end
-			if text[len(text)-len(keyword):] == keyword {
+	for i := 0; i <= len(text)-4; i++ {
+		if text[i:i+4] == KeywordRule {
+			if l.isValidRuleKeyword(text, i) {
 				return true
 			}
 		}
 	}
+	return false
+}
+
+// isValidRuleKeyword checks if "rule" at position i is valid
+func (l *Lexer) isValidRuleKeyword(text string, i int) bool {
+	before := i == 0 || !isLetter(text[i-1])
+	if !before {
+		return false
+	}
+
+	after := i + 4
+	if after >= len(text) || !isLetter(text[after]) {
+		// Standalone "rule" keyword
+		return true
+	}
+
+	if text[after] == ' ' || text[after] == '\t' {
+		// "rule" followed by whitespace - check for identifier
+		return l.hasIdentifierAfter(text, after)
+	}
 
 	return false
+}
+
+// hasIdentifierAfter checks if there's an identifier after whitespace
+func (l *Lexer) hasIdentifierAfter(text string, pos int) bool {
+	identStart := pos + 1
+	for identStart < len(text) && (text[identStart] == ' ' || text[identStart] == '\t') {
+		identStart++
+	}
+	return identStart < len(text) && isLetter(text[identStart])
+}
+
+// containsSectionKeywords checks for section declaration keywords
+func (l *Lexer) containsSectionKeywords(text string) bool {
+	keywords := []string{"condition:", "meta:", "strings:"}
+	for _, keyword := range keywords {
+		if l.endsWithKeyword(text, keyword) {
+			return true
+		}
+	}
+	return false
+}
+
+// endsWithKeyword checks if text ends with the given keyword
+func (l *Lexer) endsWithKeyword(text, keyword string) bool {
+	return len(text) >= len(keyword) && text[len(text)-len(keyword):] == keyword
 }
 
 // containsSectionKeyword checks if context contains section declaration keywords (with colons)
@@ -437,47 +471,61 @@ func (l *Lexer) looksLikeDecimalNumber(s string) bool {
 
 // isInRuleDeclarationContext checks if we're in a rule declaration (after "rule" but before first section)
 func (l *Lexer) isInRuleDeclarationContext() bool {
-	input := l.reader.Input()
-	currentPos := l.reader.Position()
+	contextText := l.getLookbackContext()
 
-	// Look backwards for "rule" keyword
-	maxLookback := 200
-	startPos := max(currentPos-maxLookback, 0)
-
-	// Extract text before this position for analysis
-	contextText := input[startPos:currentPos]
-
-	// Look for "rule" keyword
-	ruleFound := false
-	for i := 0; i <= len(contextText)-len(KeywordRule); i++ {
-		if contextText[i:i+len(KeywordRule)] == KeywordRule {
-			// Check word boundaries
-			if i == 0 || !isLetter(contextText[i-1]) {
-				after := i + len(KeywordRule)
-				if after >= len(contextText) || !isLetter(contextText[after]) {
-					ruleFound = true
-					break
-				}
-			}
-		}
-	}
-
-	if !ruleFound {
+	if !l.hasRuleKeyword(contextText) {
 		return false
 	}
 
-	// Now check if we've seen a section keyword (meta, strings, condition) after "rule"
-	sectionKeywords := []string{"meta", "strings", "condition"}
-	for _, keyword := range sectionKeywords {
-		if len(contextText) >= len(keyword) {
-			// Check if keyword appears after "rule"
-			keywordPos := strings.LastIndex(contextText, keyword)
-			if keywordPos > strings.LastIndex(contextText, KeywordRule) {
-				// Found section keyword after rule keyword
-				return false
+	return !l.hasSectionKeywordAfterRule(contextText)
+}
+
+// getLookbackContext gets text context for analysis
+func (l *Lexer) getLookbackContext() string {
+	input := l.reader.Input()
+	currentPos := l.reader.Position()
+	maxLookback := 200
+	startPos := max(currentPos-maxLookback, 0)
+	return input[startPos:currentPos]
+}
+
+// hasRuleKeyword checks if context has "rule" keyword with word boundaries
+func (l *Lexer) hasRuleKeyword(contextText string) bool {
+	for i := 0; i <= len(contextText)-len(KeywordRule); i++ {
+		if contextText[i:i+len(KeywordRule)] == KeywordRule {
+			if l.isRuleKeywordBounded(contextText, i) {
+				return true
 			}
 		}
 	}
+	return false
+}
 
-	return true
+// isRuleKeywordBounded checks if "rule" at position i has proper word boundaries
+func (l *Lexer) isRuleKeywordBounded(contextText string, i int) bool {
+	before := i == 0 || !isLetter(contextText[i-1])
+	after := i + len(KeywordRule)
+	return before || (after >= len(contextText) || !isLetter(contextText[after]))
+}
+
+// hasSectionKeywordAfterRule checks if section keywords appear after rule
+func (l *Lexer) hasSectionKeywordAfterRule(contextText string) bool {
+	sectionKeywords := []string{"meta", "strings", "condition"}
+	rulePos := strings.LastIndex(contextText, KeywordRule)
+
+	for _, keyword := range sectionKeywords {
+		if l.keywordAppearsAfter(contextText, keyword, rulePos) {
+			return true
+		}
+	}
+	return false
+}
+
+// keywordAppearsAfter checks if keyword appears after given position
+func (l *Lexer) keywordAppearsAfter(contextText, keyword string, afterPos int) bool {
+	if len(contextText) < len(keyword) {
+		return false
+	}
+	keywordPos := strings.LastIndex(contextText, keyword)
+	return keywordPos > afterPos
 }
