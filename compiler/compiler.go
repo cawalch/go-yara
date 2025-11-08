@@ -335,7 +335,7 @@ func (c *Compiler) processIncludesWithBaseDir(program *ast.Program, baseDir stri
 		}
 
 		// Read the included file content
-		includedContent, err := os.ReadFile(includePath)
+		includedContent, err := os.ReadFile(includePath) // #nosec G304 - include file processing is intentional
 		if err != nil {
 			return fmt.Errorf("failed to read include file %s: %w", include.File, err)
 		}
@@ -398,7 +398,7 @@ func (c *Compiler) readFile(filename string) (string, error) {
 	// Check if filename is absolute or relative
 	if filepath.IsAbs(filename) {
 		// Absolute path - read directly
-		content, err := os.ReadFile(filename)
+		content, err := os.ReadFile(filename) // #nosec G304 - file reading is intentional
 		if err != nil {
 			return "", fmt.Errorf("reading file %s: %w", filename, err)
 		}
@@ -412,7 +412,7 @@ func (c *Compiler) readFile(filename string) (string, error) {
 		fullPath = filename
 	}
 
-	content, err := os.ReadFile(fullPath)
+	content, err := os.ReadFile(fullPath) // #nosec G304 - file reading is intentional
 	if err != nil {
 		return "", fmt.Errorf("reading file %s: %w", fullPath, err)
 	}

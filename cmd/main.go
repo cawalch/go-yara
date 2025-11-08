@@ -193,7 +193,7 @@ func validateFilename(filename string) error {
 }
 
 func readFileContent(filename string) []byte {
-	content, err := os.ReadFile(filename)
+	content, err := os.ReadFile(filename) // #nosec G304 - intentional file reading
 	if err != nil {
 		fmt.Printf("Error reading file %s: %v\n", filename, err)
 		os.Exit(1)
@@ -405,7 +405,7 @@ func validateAndReadDataFile(dataFile string) []byte {
 		os.Exit(1)
 	}
 
-	data, err := os.ReadFile(dataFile)
+	data, err := os.ReadFile(dataFile) // #nosec G304 - intentional file reading
 	if err != nil {
 		fmt.Printf("Error reading data file %s: %v\n", dataFile, err)
 		return nil

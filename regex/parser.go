@@ -211,7 +211,7 @@ func (p *Parser) parseBound() (minVal, maxVal uint16, err error) {
 			val = 0
 		}
 		// Safe conversion with explicit truncation
-		return uint16(val & 0xFFFF), nil
+		return uint16(val & 0xFFFF), nil // #nosec G115 - safe conversion with explicit masking
 	}
 	minVal, err = readNum()
 	if err != nil {

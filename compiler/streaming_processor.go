@@ -108,7 +108,7 @@ func NewStreamingProcessor(program *CompiledProgram) *StreamingProcessor {
 
 // ProcessFile processes a large file using streaming/chunked approach
 func (sp *StreamingProcessor) ProcessFile(ctx context.Context, filename string) ([]StreamingMatch, error) {
-	file, err := os.Open(filename)
+	file, err := os.Open(filename) // #nosec G304 - filename is trusted in this context
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file: %w", err)
 	}

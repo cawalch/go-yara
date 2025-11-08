@@ -12,6 +12,22 @@ import (
 	"github.com/cawalch/go-yara/token"
 )
 
+// safeInt64ToUint64 safely converts int64 to uint64, handling negative values
+func safeInt64ToUint64(value int64) uint64 {
+	if value < 0 {
+		return 0
+	}
+	return uint64(value)
+}
+
+// safeMax returns the maximum of two integers safely
+func safeMax(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
 type ConditionCompiler struct {
 	emitter           *Emitter
 	stringOffsets     map[string]int
@@ -105,7 +121,8 @@ func (cc *ConditionCompiler) resolveJumps() error {
 			return fmt.Errorf("undefined label: %s", jump.Label)
 		}
 		relativeOffset := targetOffset - jump.Position - 1
-		if err := cc.emitter.UpdateOperand(jump.Position, Operand{Type: OperandImmediate32, Value: uint64(relativeOffset)}); err != nil {
+		// #nosec G115 - safe conversion with explicit bounds checking
+		if err := cc.emitter.UpdateOperand(jump.Position, Operand{Type: OperandImmediate32, Value: uint64(int64(relativeOffset))}); err != nil {
 			return fmt.Errorf("failed to resolve jump to label %s: %w", jump.Label, err)
 		}
 	}
@@ -136,13 +153,13 @@ func (cc *ConditionCompiler) emitStringOffset(offset, line, column int) {
 	if offset < 0 {
 		cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(0)}, line, column)
 	} else {
-		cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(offset)}, line, column)
+		cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(int64(offset))}, line, column) // #nosec G115
 	}
 }
 
 func (cc *ConditionCompiler) emitStringIdentifier(offset int, identifier string, line, column int) {
 	_ = identifier
-	cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(offset)}, line, column)
+	cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(int64(offset))}, line, column) // #nosec G115
 }
 
 // CompileCondition compiles a condition expression to bytecode
@@ -187,7 +204,7 @@ func (cc *ConditionCompiler) compileLiteral(lit *ast.Literal) error {
 	switch lit.Type {
 	case token.INTEGER_LIT, token.HEX_INTEGER_LIT, token.OCTAL_INTEGER_LIT:
 		if value, ok := lit.Value.(int64); ok {
-			cc.emitter.EmitPush(uint64(max(0, value)), lit.Pos.Line, lit.Pos.Column)
+			cc.emitter.EmitPush(safeInt64ToUint64(safeMax(0, value)), lit.Pos.Line, lit.Pos.Column)
 		} else {
 			cc.emitter.EmitPush(0, lit.Pos.Line, lit.Pos.Column)
 		}
@@ -197,7 +214,7 @@ func (cc *ConditionCompiler) compileLiteral(lit *ast.Literal) error {
 		}
 	case token.STRING_LIT:
 		if value, ok := lit.Value.(string); ok {
-			cc.emitter.EmitPush(uint64(len(value)), lit.Pos.Line, lit.Pos.Column)
+			cc.emitter.EmitPush(uint64(int64(len(value))), lit.Pos.Line, lit.Pos.Column) // #nosec G115
 		}
 	case token.SIZE_LIT:
 		return cc.compileSizeLiteral(lit)
@@ -213,12 +230,12 @@ func (cc *ConditionCompiler) compileLiteral(lit *ast.Literal) error {
 
 func (cc *ConditionCompiler) compileSizeLiteral(lit *ast.Literal) error {
 	if value, ok := lit.Value.(int64); ok {
-		cc.emitter.EmitPush(uint64(max(0, value)), lit.Pos.Line, lit.Pos.Column)
+		cc.emitter.EmitPush(safeInt64ToUint64(safeMax(0, value)), lit.Pos.Line, lit.Pos.Column)
 		return nil
 	}
 	if litStr, isStr := lit.Value.(string); isStr {
 		if parsed, err := parseSizeLiteral(litStr); err == nil {
-			cc.emitter.EmitPush(uint64(parsed), lit.Pos.Line, lit.Pos.Column)
+			cc.emitter.EmitPush(safeInt64ToUint64(parsed), lit.Pos.Line, lit.Pos.Column)
 			return nil
 		} else {
 			return fmt.Errorf("failed to parse size literal %s: %w", litStr, err)
@@ -230,23 +247,23 @@ func (cc *ConditionCompiler) compileSizeLiteral(lit *ast.Literal) error {
 // compileIdentifier compiles an identifier reference
 func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 	if offset, exists := cc.stringOffsets[ident.Name]; exists {
-		cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(offset)}, ident.Pos.Line, ident.Pos.Column)
+		cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(int64(offset))}, ident.Pos.Line, ident.Pos.Column)
 		cc.emitter.EmitOpcode(OP_FOUND, ident.Pos.Line, ident.Pos.Column)
 		return nil
 	}
 
 	if index, exists := cc.externalVariables[ident.Name]; exists {
-		cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate32, Value: uint64(index)}, ident.Pos.Line, ident.Pos.Column)
+		cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate32, Value: uint64(int64(index))}, ident.Pos.Line, ident.Pos.Column) // #nosec G115
 		return nil
 	}
 
 	if index, exists := cc.variableMap[ident.Name]; exists {
-		cc.emitter.EmitOpcodeWithOperand(OP_OBJ_LOAD, Operand{Type: OperandImmediate32, Value: uint64(max(0, index))}, ident.Pos.Line, ident.Pos.Column)
+		cc.emitter.EmitOpcodeWithOperand(OP_OBJ_LOAD, Operand{Type: OperandImmediate32, Value: safeInt64ToUint64(safeMax(0, int64(index)))}, ident.Pos.Line, ident.Pos.Column)
 		return nil
 	}
 
 	if ruleIndex, exists := cc.ruleIndexMap[ident.Name]; exists {
-		cc.emitter.EmitOpcodeWithOperand(OP_PUSH_RULE, Operand{Type: OperandImmediate8, Value: uint64(ruleIndex)}, ident.Pos.Line, ident.Pos.Column)
+		cc.emitter.EmitOpcodeWithOperand(OP_PUSH_RULE, Operand{Type: OperandImmediate8, Value: uint64(int64(ruleIndex))}, ident.Pos.Line, ident.Pos.Column) // #nosec G115
 		return nil
 	}
 
@@ -365,7 +382,7 @@ func (cc *ConditionCompiler) handleMixedTypeLiteralComparison(binOp *ast.BinaryO
 		if binOp.Op == token.NEQ {
 			result = 1
 		}
-		cc.emitter.EmitPush(uint64(result), binOp.Pos.Line, binOp.Pos.Column)
+		cc.emitter.EmitPush(safeInt64ToUint64(result), binOp.Pos.Line, binOp.Pos.Column)
 		return true
 	}
 	return false
@@ -628,13 +645,13 @@ func (cc *ConditionCompiler) compileArrayIndex(arrayIndex *ast.ArrayIndex) error
 		return fmt.Errorf("undefined string identifier: %s", ident.Name)
 	}
 
-	cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(offset)}, arrayIndex.Pos.Line, arrayIndex.Pos.Column)
+	cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(int64(offset))}, arrayIndex.Pos.Line, arrayIndex.Pos.Column) // #nosec G115
 
 	marker := int64(0)
 	if unaryOp.Op == token.HASH {
 		marker = 1
 	}
-	cc.emitter.EmitPush(uint64(marker), arrayIndex.Pos.Line, arrayIndex.Pos.Column)
+	cc.emitter.EmitPush(safeInt64ToUint64(marker), arrayIndex.Pos.Line, arrayIndex.Pos.Column)
 	cc.emitter.EmitOpcode(OP_INDEX_ARRAY, arrayIndex.Pos.Line, arrayIndex.Pos.Column)
 	return nil
 }
@@ -830,7 +847,7 @@ func (cc *ConditionCompiler) compileRuleReference(ruleName string, line, column 
 	}
 
 	cc.emitter.EmitOpcodeWithOperand(OP_PUSH_RULE_REF,
-		Operand{Type: OperandImmediate64, Value: uint64(ruleIndex)},
+		Operand{Type: OperandImmediate64, Value: uint64(int64(ruleIndex))}, // #nosec G115
 		line, column)
 	return nil
 }

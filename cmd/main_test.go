@@ -99,14 +99,14 @@ func TestExecuteModeIntegration(t *testing.T) {
     condition:
         $a
 }`
-	if err := os.WriteFile(ruleFile, []byte(ruleContent), 0644); err != nil {
+	if err := os.WriteFile(ruleFile, []byte(ruleContent), 0600); err != nil {
 		t.Fatalf("Failed to create rule file: %v", err)
 	}
 
 	// Create test data file
 	dataFile := filepath.Join(tmpDir, "data.txt")
 	dataContent := "This is hello world"
-	if err := os.WriteFile(dataFile, []byte(dataContent), 0644); err != nil {
+	if err := os.WriteFile(dataFile, []byte(dataContent), 0600); err != nil {
 		t.Fatalf("Failed to create data file: %v", err)
 	}
 
@@ -158,14 +158,14 @@ func TestExecuteModeMultiplePatterns(t *testing.T) {
     condition:
         $a or $b
 }`
-	if err := os.WriteFile(ruleFile, []byte(ruleContent), 0644); err != nil {
+	if err := os.WriteFile(ruleFile, []byte(ruleContent), 0600); err != nil {
 		t.Fatalf("Failed to create rule file: %v", err)
 	}
 
 	// Create test data with multiple matches
 	dataFile := filepath.Join(tmpDir, "data.txt")
 	dataContent := "foo bar baz foo bar"
-	if err := os.WriteFile(dataFile, []byte(dataContent), 0644); err != nil {
+	if err := os.WriteFile(dataFile, []byte(dataContent), 0600); err != nil {
 		t.Fatalf("Failed to create data file: %v", err)
 	}
 
@@ -222,7 +222,7 @@ func patternMatchingSupported(t *testing.T) bool {
 }`
 
 	dataFile := filepath.Join(tmpDir, "data.txt")
-	if err := os.WriteFile(dataFile, []byte("this is a test"), 0644); err != nil {
+	if err := os.WriteFile(dataFile, []byte("this is a test"), 0600); err != nil {
 		return false
 	}
 
@@ -269,7 +269,7 @@ func TestExecuteMode_RegexInlineFlagsI(t *testing.T) {
 
 	dataFile := filepath.Join(tmpDir, "data.txt")
 	// 'AbC' at offset 2 should match /abc/i
-	if err := os.WriteFile(dataFile, []byte("xxAbCy"), 0644); err != nil {
+	if err := os.WriteFile(dataFile, []byte("xxAbCy"), 0600); err != nil {
 		t.Fatalf("Failed to create data file: %v", err)
 	}
 
@@ -321,7 +321,7 @@ func TestExecuteMode_RegexInlineFlagsS(t *testing.T) {
 
 	dataFile := filepath.Join(tmpDir, "data.txt")
 	// "a\nb" should match /a.b/s starting at offset 0, length 3
-	if err := os.WriteFile(dataFile, []byte("a\nb"), 0644); err != nil {
+	if err := os.WriteFile(dataFile, []byte("a\nb"), 0600); err != nil {
 		t.Fatalf("Failed to create data file: %v", err)
 	}
 
@@ -372,7 +372,7 @@ func TestExecuteMode_RegexEmptyMatch_Scan(t *testing.T) {
 
 	dataFile := filepath.Join(tmpDir, "empty.txt")
 	// Empty input should produce exactly one empty match at offset 0 for /a*/
-	if err := os.WriteFile(dataFile, []byte(""), 0644); err != nil {
+	if err := os.WriteFile(dataFile, []byte(""), 0600); err != nil {
 		t.Fatalf("Failed to create data file: %v", err)
 	}
 
@@ -423,7 +423,7 @@ func TestExecuteMode_Count_Regex(t *testing.T) {
 
 	dataFile := filepath.Join(tmpDir, "data.txt")
 	// "ab" appears twice → count should be 2
-	if err := os.WriteFile(dataFile, []byte("xxabyyabzz"), 0644); err != nil {
+	if err := os.WriteFile(dataFile, []byte("xxabyyabzz"), 0600); err != nil {
 		t.Fatalf("Failed to create data file: %v", err)
 	}
 
@@ -471,7 +471,7 @@ func TestExecuteMode_Offset_Regex(t *testing.T) {
 
 	dataFile := filepath.Join(tmpDir, "data.txt")
 	// "ab" first occurs at offset 2 in "zzab"
-	if err := os.WriteFile(dataFile, []byte("zzab"), 0644); err != nil {
+	if err := os.WriteFile(dataFile, []byte("zzab"), 0600); err != nil {
 		t.Fatalf("Failed to create data file: %v", err)
 	}
 
@@ -519,7 +519,7 @@ func TestExecuteMode_Count_String(t *testing.T) {
 
 	dataFile := filepath.Join(tmpDir, "data.txt")
 	// "foo" appears twice → count should be 2
-	if err := os.WriteFile(dataFile, []byte("foo bar baz foo"), 0644); err != nil {
+	if err := os.WriteFile(dataFile, []byte("foo bar baz foo"), 0600); err != nil {
 		t.Fatalf("Failed to create data file: %v", err)
 	}
 
@@ -567,7 +567,7 @@ func TestExecuteMode_Offset_String(t *testing.T) {
 
 	dataFile := filepath.Join(tmpDir, "data.txt")
 	// "bar" first occurs at offset 4 in "foo bar"
-	if err := os.WriteFile(dataFile, []byte("foo bar"), 0644); err != nil {
+	if err := os.WriteFile(dataFile, []byte("foo bar"), 0600); err != nil {
 		t.Fatalf("Failed to create data file: %v", err)
 	}
 

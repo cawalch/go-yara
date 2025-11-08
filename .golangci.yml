@@ -37,10 +37,9 @@ linters-settings:
   gosec:
     # Focus on security-relevant rules
     excludes:
-      - G204  # Subprocess launching (expected in this codebase)
-      - G107  # URL injection (expected for YARA rules)
-      - G304  # File inclusion via variable (expected for YARA rule files)
-      - G115  # Integer overflow conversion (expected for pattern matching and compiler logic)
+      - G204 # Subprocess launching (expected in this codebase)
+      - G107 # URL injection (expected for YARA rules)
+      - G304 # File inclusion via variable (expected for YARA rule files)
 
   cyclop:
     # Allow higher complexity for security-critical parsing functions
@@ -104,49 +103,48 @@ linters:
 
   disable:
     # Disabled due to high noise/low value ratio
-    - gocritic      # Many stylistic rules, some false positives
-    - revive        # Stylistic, many configuration options
-    - unparam       # Often incorrect about unused parameters
-    - wastedassign  # False positives in complex code
-    - dupl          # Common pattern in parsing code
-    - gocognit      # Similar to cyclop, less configurable
-    - nakedret      # Stylistic choice
-    - nestif        # Expected in parsing logic
-    - varnamelen    # Too opinionated
-    - goconst       # False positives for magic numbers
-    - mnd           # Magic numbers are common in parsing
+    - gocritic # Many stylistic rules, some false positives
+    - revive # Stylistic, many configuration options
+    - unparam # Often incorrect about unused parameters
+    - wastedassign # False positives in complex code
+    - dupl # Common pattern in parsing code
+    - gocognit # Similar to cyclop, less configurable
+    - nakedret # Stylistic choice
+    - varnamelen # Too opinionated
+    - goconst # False positives for magic numbers
+    - mnd # Magic numbers are common in parsing
     - gochecksumtype # Rarely relevant
-    - nilnesserr    # Too strict for this codebase
-    - nilnil        # Sometimes nil,nil is appropriate
-    - noctx         # Not always applicable
-    - errname       # Too opinionated
-    - rowserrcheck  # Database-specific
+    - nilnesserr # Too strict for this codebase
+    - nilnil # Sometimes nil,nil is appropriate
+    - noctx # Not always applicable
+    - errname # Too opinionated
+    - rowserrcheck # Database-specific
     - sqlclosecheck # Database-specific
-    - godoclint     # Documentation quality
-    - thelper       # Test helper strictness
-    - tparallel     # Test parallelism
-    - testifylint   # Test framework rules
-    - tagalign      # Code formatting
-    - exhaustive    # Sometimes missing cases are intentional
-    - forbidigo     # Too restrictive
-    - godot         # Comment formatting
-    - godox         # TODO comments
-    - gomodguard    # Module restrictions
-    - ireturn       # Interface returns
-    - nlreturn     # Newline before return
-    - testpackage  # Test package naming
+    - godoclint # Documentation quality
+    - thelper # Test helper strictness
+    - tparallel # Test parallelism
+    - testifylint # Test framework rules
+    - tagalign # Code formatting
+    - exhaustive # Sometimes missing cases are intentional
+    - forbidigo # Too restrictive
+    - godot # Comment formatting
+    - godox # TODO comments
+    - gomodguard # Module restrictions
+    - ireturn # Interface returns
+    - nlreturn # Newline before return
+    - testpackage # Test package naming
     - paralleltest # Test parallelism
     - nosprintfhostport # Network-specific
-    - nolintlint   # Nolint directive checking
+    - nolintlint # Nolint directive checking
     - goprintffuncname # Printf function naming
-    - whitespace   # Formatting
+    - whitespace # Formatting
     - usestdlibvars # Minor optimizations
-    - mirror       # Unnecessary
-    - maintidx     # Maintenance index
-    - iface        # Interface usage
-    - importas     # Import aliasing
+    - mirror # Unnecessary
+    - maintidx # Maintenance index
+    - iface # Interface usage
+    - importas # Import aliasing
     - gomoddirectives # Go module directives
-    - gomodguard   # Module restrictions
+    - gomodguard # Module restrictions
 
 issues:
   max-issues-per-linter: 0
@@ -208,6 +206,10 @@ issues:
         - errcheck
         - wrapcheck
         - staticcheck
+formatters:
+  settings:
+    golines:
+      max-len: 120
 
 severity:
   default: error

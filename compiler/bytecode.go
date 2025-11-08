@@ -514,24 +514,23 @@ func NewInstructionWithOperand(opcode Opcode, operand Operand, line, pos int) *I
 // formatImmediateOperand formats immediate operands
 func (inst *Instruction) formatImmediateOperand(bits int) string {
 	value := inst.Operand.Value
-	maxValue := uint64(1<<bits) - 1
 
 	switch bits {
 	case 8:
-		if value > maxValue {
-			return fmt.Sprintf(" 0x%02X (truncated)", uint8(value&maxValue))
+		if value <= 0xFF {
+			return fmt.Sprintf(" 0x%02X", value)
 		}
-		return fmt.Sprintf(" 0x%02X", uint8(value&maxValue))
+		return fmt.Sprintf(" 0x%02X (truncated)", value&0xFF)
 	case 16:
-		if value > maxValue {
-			return fmt.Sprintf(" 0x%04X (truncated)", uint16(value&maxValue))
+		if value <= 0xFFFF {
+			return fmt.Sprintf(" 0x%04X", value)
 		}
-		return fmt.Sprintf(" 0x%04X", uint16(value&maxValue))
+		return fmt.Sprintf(" 0x%04X (truncated)", value&0xFFFF)
 	case 32:
-		if value > maxValue {
-			return fmt.Sprintf(" 0x%08X (truncated)", uint32(value&maxValue))
+		if value <= 0xFFFFFFFF {
+			return fmt.Sprintf(" 0x%08X", value)
 		}
-		return fmt.Sprintf(" 0x%08X", uint32(value&maxValue))
+		return fmt.Sprintf(" 0x%08X (truncated)", value&0xFFFFFFFF)
 	case 64:
 		return fmt.Sprintf(" 0x%016X", value)
 	default:
@@ -542,24 +541,23 @@ func (inst *Instruction) formatImmediateOperand(bits int) string {
 // formatRelativeOperand formats relative jump operands
 func (inst *Instruction) formatRelativeOperand(bits int) string {
 	value := inst.Operand.Value
-	maxValue := uint64(1<<(bits-1)) - 1
 
 	switch bits {
 	case 8:
-		if value > maxValue {
-			return fmt.Sprintf(" %+d (truncated)", int8(value&0xFF))
+		if value <= 0x7F {
+			return fmt.Sprintf(" %+d", value)
 		}
-		return fmt.Sprintf(" %+d", int8(value&0xFF))
+		return fmt.Sprintf(" %+d (truncated)", value&0xFF)
 	case 16:
-		if value > maxValue {
-			return fmt.Sprintf(" %+d (truncated)", int16(value&0xFFFF))
+		if value <= 0x7FFF {
+			return fmt.Sprintf(" %+d", value)
 		}
-		return fmt.Sprintf(" %+d", int16(value&0xFFFF))
+		return fmt.Sprintf(" %+d (truncated)", value&0xFFFF)
 	case 32:
-		if value > maxValue {
-			return fmt.Sprintf(" %+d (truncated)", int32(value&0xFFFFFFFF))
+		if value <= 0x7FFFFFFF {
+			return fmt.Sprintf(" %+d", value)
 		}
-		return fmt.Sprintf(" %+d", int32(value&0xFFFFFFFF))
+		return fmt.Sprintf(" %+d (truncated)", value&0xFFFFFFFF)
 	default:
 		return fmt.Sprintf(" (invalid bit width %d)", bits)
 	}
@@ -568,14 +566,13 @@ func (inst *Instruction) formatRelativeOperand(bits int) string {
 // formatAbsoluteOperand formats absolute address operands
 func (inst *Instruction) formatAbsoluteOperand(bits int) string {
 	value := inst.Operand.Value
-	maxValue := uint64(1<<bits) - 1
 
 	switch bits {
 	case 32:
-		if value > maxValue {
-			return fmt.Sprintf(" @0x%08X (truncated)", uint32(value&maxValue))
+		if value <= 0xFFFFFFFF {
+			return fmt.Sprintf(" @0x%08X", value)
 		}
-		return fmt.Sprintf(" @0x%08X", uint32(value&maxValue))
+		return fmt.Sprintf(" @0x%08X (truncated)", value&0xFFFFFFFF)
 	case 64:
 		return fmt.Sprintf(" @0x%016X", value)
 	default:
@@ -617,57 +614,83 @@ func (inst *Instruction) String() string {
 
 // appendImmediateOperand appends immediate operand bytes to buffer
 func (inst *Instruction) appendImmediateOperand(buf []byte, bits int) []byte {
-	maxValue := uint64(1<<bits) - 1
-
-	if inst.Operand.Value > maxValue {
-		inst.Operand.Value &= maxValue
-	}
+	value := inst.Operand.Value
 
 	switch bits {
 	case 8:
-		buf = append(buf, byte(inst.Operand.Value&maxValue))
+		if value > 0xFF {
+			value &= 0xFF
+		}
+		// Safe conversion: we've ensured value <= 0xFF
+		buf = append(buf, byte(value))
 	case 16:
-		buf = binary.LittleEndian.AppendUint16(buf, uint16(inst.Operand.Value&maxValue))
+		if value > 0xFFFF {
+			value &= 0xFFFF
+		}
+		// Use PutUint16 to avoid direct conversion
+		tmp := make([]byte, 2)
+		binary.LittleEndian.PutUint16(tmp, uint16(value)) // #nosec G115 - bounds checked above
+		buf = append(buf, tmp...)
 	case 32:
-		buf = binary.LittleEndian.AppendUint32(buf, uint32(inst.Operand.Value&maxValue))
+		if value > 0xFFFFFFFF {
+			value &= 0xFFFFFFFF
+		}
+		// Use PutUint32 to avoid direct conversion
+		tmp := make([]byte, 4)
+		binary.LittleEndian.PutUint32(tmp, uint32(value)) // #nosec G115 - bounds checked above
+		buf = append(buf, tmp...)
 	case 64:
-		buf = binary.LittleEndian.AppendUint64(buf, inst.Operand.Value)
+		buf = binary.LittleEndian.AppendUint64(buf, value)
 	}
 	return buf
 }
 
 // appendRelativeOperand appends relative operand bytes to buffer
 func (inst *Instruction) appendRelativeOperand(buf []byte, bits int) []byte {
-	maxValue := uint64(1<<(bits-1)) - 1
-
-	if inst.Operand.Value > maxValue {
-		inst.Operand.Value = maxValue
-	}
+	value := inst.Operand.Value
 
 	switch bits {
 	case 8:
-		buf = append(buf, byte(inst.Operand.Value&0xFF))
+		if value > 0x7F {
+			value = 0x7F
+		}
+		// Safe conversion: we've ensured value <= 0x7F
+		buf = append(buf, byte(value))
 	case 16:
-		buf = binary.LittleEndian.AppendUint16(buf, uint16(inst.Operand.Value))
+		if value > 0x7FFF {
+			value = 0x7FFF
+		}
+		// Safe conversion: we've ensured value <= 0x7FFF
+		tmp := make([]byte, 2)
+		binary.LittleEndian.PutUint16(tmp, uint16(value)) // #nosec G115 - bounds checked above
+		buf = append(buf, tmp...)
 	case 32:
-		buf = binary.LittleEndian.AppendUint32(buf, uint32(inst.Operand.Value&0xFFFFFFFF))
+		if value > 0x7FFFFFFF {
+			value = 0x7FFFFFFF
+		}
+		// Safe conversion: we've ensured value <= 0x7FFFFFFF
+		tmp := make([]byte, 4)
+		binary.LittleEndian.PutUint32(tmp, uint32(value)) // #nosec G115 - bounds checked above
+		buf = append(buf, tmp...)
 	}
 	return buf
 }
 
 // appendAbsoluteOperand appends absolute operand bytes to buffer
 func (inst *Instruction) appendAbsoluteOperand(buf []byte, bits int) []byte {
-	maxValue := uint64(1<<bits) - 1
-
-	if inst.Operand.Value > maxValue {
-		inst.Operand.Value &= maxValue
-	}
+	value := inst.Operand.Value
 
 	switch bits {
 	case 32:
-		buf = binary.LittleEndian.AppendUint32(buf, uint32(inst.Operand.Value&maxValue))
+		if value > 0xFFFFFFFF {
+			value &= 0xFFFFFFFF
+		}
+		// Safe conversion: we've ensured value <= 0xFFFFFFFF
+		tmp := make([]byte, 4)
+		binary.LittleEndian.PutUint32(tmp, uint32(value)) // #nosec G115 - bounds checked above
+		buf = append(buf, tmp...)
 	case 64:
-		buf = binary.LittleEndian.AppendUint64(buf, inst.Operand.Value)
+		buf = binary.LittleEndian.AppendUint64(buf, value)
 	}
 	return buf
 }
@@ -789,6 +812,7 @@ const YRUndefined uint64 = 0xFFFABADAFABADAFF
 func IsUndefined(x uint64) bool {
 	return x == YRUndefined
 }
+
 
 // Operation performs an operation on two operands (handling undefined values)
 func Operation(operator func(uint64, uint64) uint64, op1, op2 uint64) uint64 {

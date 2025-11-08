@@ -58,8 +58,8 @@ func (c *Compiler) emitSplit(op byte, rel int16) int {
 func (c *Compiler) patchI16(at int, v int16) {
 	// at points to the first byte of the 16-bit argument
 	// Safe conversion with explicit truncation
-	// Safe conversion with explicit truncation
-	u := uint16(v) // reinterpret signed int16 bits for encoding
+	// This conversion is intentional - we're reinterpreting signed int16 bits as uint16 for encoding
+	u := uint16(v) // #nosec G115 - intentional reinterpretation of signed bits as unsigned for encoding
 	c.e.buf[at+0] = byte(u)
 	c.e.buf[at+1] = byte(u >> 8)
 }

@@ -101,7 +101,7 @@ func (ac *ACAutomaton) addStringToAutomaton(config StringConfig) error {
 	// Update backward compatibility field
 	ac.Strings = make([]ACStringInfo, len(ac.strings))
 	copy(ac.Strings, ac.strings)
-	stringIndex := int32(len(ac.strings) - 1)
+	stringIndex := int32(len(ac.strings) - 1) // #nosec G115
 
 	// Build trie for pattern matching
 	currentState := int32(0) // Start at root
@@ -121,7 +121,7 @@ func (ac *ACAutomaton) addStringToAutomaton(config StringConfig) error {
 				newState.transitions[i] = -1
 			}
 			ac.states = append(ac.states, newState)
-			nextState = int32(len(ac.states) - 1)
+			nextState = int32(len(ac.states) - 1) // #nosec G115
 			ac.states[currentState].transitions[b] = nextState
 		}
 		currentState = nextState
@@ -129,7 +129,7 @@ func (ac *ACAutomaton) addStringToAutomaton(config StringConfig) error {
 
 	// Add output for final state
 	ac.outputs = append(ac.outputs, stringIndex)
-	ac.states[currentState].outputEnd = int32(len(ac.outputs))
+	ac.states[currentState].outputEnd = int32(len(ac.outputs)) // #nosec G115
 
 	return nil
 }
@@ -180,7 +180,7 @@ func (ac *ACAutomaton) processTransitionFailureLink(current, nextState int32, by
 
 			// This is simplified - real implementation would handle this more efficiently
 			ac.outputs = append(ac.outputs, failOutput...)
-			ac.states[nextState].outputEnd = int32(len(ac.outputs))
+			ac.states[nextState].outputEnd = int32(len(ac.outputs)) // #nosec G115
 		}
 	} else {
 		ac.states[nextState].failure = 0 // Fail to root
@@ -445,7 +445,7 @@ type ACTransition uint32
 
 // ACMakeTransition creates a transition with state index and offset
 func ACMakeTransition(stateIndex, offset int) ACTransition {
-	return ACTransition((stateIndex << 16) | offset)
+	return ACTransition((stateIndex << 16) | offset) // #nosec G115 - bit manipulation is intentional
 }
 
 // GetStateIndex returns the state index from a transition

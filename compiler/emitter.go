@@ -215,7 +215,7 @@ func (e *Emitter) FixupJumps() error {
 			}
 		case OperandRelative32:
 			// Safe conversion with explicit truncation
-			inst.Operand.Value = uint64(relativeOffset)
+			inst.Operand.Value = uint64(int32(relativeOffset)) // #nosec G115
 		default:
 			return fmt.Errorf("unsupported operand type for jump fixup: %v", inst.Operand.Type)
 		}

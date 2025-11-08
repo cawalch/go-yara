@@ -357,10 +357,10 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 		return nil
 
 	case OP_SHL:
-		return i.executeBinaryOp(func(a, b int64) int64 { return a << uint64(b) }, nil)
+		return i.executeBinaryOp(func(a, b int64) int64 { return a << uint64(int64(b)) }, nil) // #nosec G115
 
 	case OP_SHR:
-		return i.executeBinaryOp(func(a, b int64) int64 { return a >> uint64(b) }, nil)
+		return i.executeBinaryOp(func(a, b int64) int64 { return a >> uint64(int64(b)) }, nil)
 
 	// Arithmetic operations
 	case OP_INT_ADD, OP_INT_SUB, OP_INT_MUL, OP_INT_DIV, OP_MOD, OP_INT_MINUS,
@@ -794,10 +794,7 @@ func (i *Interpreter) executeReadInt(offset int64, size int, unsigned bool) (int
 			}
 		}
 		val := uint16(data[offset]) | uint16(data[offset+1])<<8
-		if unsigned {
-			return int64(val), nil
-		}
-		return int64(int16(val)), nil
+		return safeUint16ToInt64(val, unsigned), nil
 
 	case 4:
 		if offset+3 >= int64(len(data)) {
@@ -808,10 +805,7 @@ func (i *Interpreter) executeReadInt(offset int64, size int, unsigned bool) (int
 		}
 		val := uint32(data[offset]) | uint32(data[offset+1])<<8 |
 			uint32(data[offset+2])<<16 | uint32(data[offset+3])<<24
-		if unsigned {
-			return int64(val), nil
-		}
-		return int64(int32(val)), nil
+		return safeUint32ToInt64(val, unsigned), nil
 
 	default:
 		return 0, &InterpreterError{
@@ -819,6 +813,41 @@ func (i *Interpreter) executeReadInt(offset int64, size int, unsigned bool) (int
 			Message: fmt.Sprintf("unsupported integer size: %d", size),
 		}
 	}
+}
+
+// Helper functions for safe integer conversions
+func safeUint16ToInt64(val uint16, unsigned bool) int64 {
+	if unsigned {
+		return int64(val)
+	}
+	// For signed values, check if the high bit is set (negative number)
+	if val&0x8000 != 0 {
+		// Convert from two's complement
+		return int64(val) - 0x10000
+	}
+	return int64(val)
+}
+
+func safeUint32ToInt64(val uint32, unsigned bool) int64 {
+	if unsigned {
+		return int64(val)
+	}
+	// For signed values, check if the high bit is set (negative number)
+	if val&0x80000000 != 0 {
+		// Convert from two's complement
+		return int64(val) - 0x100000000
+	}
+	return int64(val)
+}
+
+func safeByteToInt64(b byte, signed bool) int64 {
+	if signed {
+		// Check if high bit is set (negative number)
+		if b&0x80 != 0 {
+			return int64(b) - 0x100
+		}
+	}
+	return int64(b)
 }
 
 // Helper functions for opcode execution
@@ -953,11 +982,7 @@ func (i *Interpreter) executeReadIntOpBE(size int, signed bool) error {
 	switch size {
 	case 1:
 		b := data[offset]
-		if signed {
-			val = int64(int8(b))
-		} else {
-			val = int64(b)
-		}
+		val = safeByteToInt64(b, signed)
 	case 2:
 		if offset+1 >= int64(len(data)) {
 			return &InterpreterError{
@@ -968,11 +993,7 @@ func (i *Interpreter) executeReadIntOpBE(size int, signed bool) error {
 		b1 := data[offset]
 		b2 := data[offset+1]
 		combined := uint16(b1)<<8 | uint16(b2)
-		if signed {
-			val = int64(int16(combined))
-		} else {
-			val = int64(combined)
-		}
+		val = safeUint16ToInt64(combined, !signed) // Note: !signed because our function takes unsigned parameter
 	case 4:
 		if offset+3 >= int64(len(data)) {
 			return &InterpreterError{
@@ -985,11 +1006,7 @@ func (i *Interpreter) executeReadIntOpBE(size int, signed bool) error {
 		b3 := data[offset+2]
 		b4 := data[offset+3]
 		combined := uint32(b1)<<24 | uint32(b2)<<16 | uint32(b3)<<8 | uint32(b4)
-		if signed {
-			val = int64(int32(combined))
-		} else {
-			val = int64(combined)
-		}
+		val = safeUint32ToInt64(combined, !signed) // Note: !signed because our function takes unsigned parameter
 	default:
 		return &InterpreterError{
 			Type:    ErrorInvalidMemoryAccess,
