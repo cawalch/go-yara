@@ -1322,116 +1322,108 @@ func TestStringCompilerOptimizeASCIIPattern(t *testing.T) {
 	}
 }
 
-// TestConditionCompilerCompileBinaryOp tests binary operation compilation in detail
+// Helper functions to reduce repetitive AST construction
+func createIntLiteral(value int64) *ast.Literal {
+	return &ast.Literal{
+		Pos:   token.Position{Line: 1, Column: 1},
+		Type:  token.INTEGER_LIT,
+		Value: value,
+	}
+}
+
+func createBoolLiteral(value bool) *ast.Literal {
+	tokenType := token.FALSE
+	if value {
+		tokenType = token.TRUE
+	}
+	return &ast.Literal{
+		Pos:   token.Position{Line: 1, Column: 1},
+		Type:  tokenType,
+		Value: value,
+	}
+}
+
+func createBinaryOp(op token.TokenType, left, right ast.Expression) *ast.BinaryOp {
+	return &ast.BinaryOp{
+		Pos:   token.Position{Line: 1, Column: 1},
+		Left:  left,
+		Op:    op,
+		Right: right,
+	}
+}
+
+// TestConditionCompilerCompileBinaryOpDetailed tests binary operation compilation in detail
 func TestConditionCompilerCompileBinaryOpDetailed(t *testing.T) {
 	emitter := NewEmitter()
 	cc := NewConditionCompiler(emitter, make(map[string]int))
 
-	tests := []struct {
-		name    string
-		binOp   *ast.BinaryOp
-		wantErr bool
+	arithmeticTests := []struct {
+		name     string
+		op       token.TokenType
+		left     int64
+		right    int64
+		wantErr  bool
 	}{
-		{
-			name: "subtraction",
-			binOp: &ast.BinaryOp{
-				Pos: token.Position{Line: 1, Column: 1},
-				Left: &ast.Literal{
-					Pos:   token.Position{Line: 1, Column: 1},
-					Type:  token.INTEGER_LIT,
-					Value: int64(5),
-				},
-				Op: token.MINUS,
-				Right: &ast.Literal{
-					Pos:   token.Position{Line: 1, Column: 1},
-					Type:  token.INTEGER_LIT,
-					Value: int64(2),
-				},
-			},
-			wantErr: false,
-		},
-		{
-			name: "multiplication",
-			binOp: &ast.BinaryOp{
-				Pos: token.Position{Line: 1, Column: 1},
-				Left: &ast.Literal{
-					Pos:   token.Position{Line: 1, Column: 1},
-					Type:  token.INTEGER_LIT,
-					Value: int64(3),
-				},
-				Op: token.MULTIPLY,
-				Right: &ast.Literal{
-					Pos:   token.Position{Line: 1, Column: 1},
-					Type:  token.INTEGER_LIT,
-					Value: int64(4),
-				},
-			},
-			wantErr: false,
-		},
-		{
-			name: "division",
-			binOp: &ast.BinaryOp{
-				Pos: token.Position{Line: 1, Column: 1},
-				Left: &ast.Literal{
-					Pos:   token.Position{Line: 1, Column: 1},
-					Type:  token.INTEGER_LIT,
-					Value: int64(10),
-				},
-				Op: token.DIVIDE,
-				Right: &ast.Literal{
-					Pos:   token.Position{Line: 1, Column: 1},
-					Type:  token.INTEGER_LIT,
-					Value: int64(2),
-				},
-			},
-			wantErr: false,
-		},
-		{
-			name: "logical_or",
-			binOp: &ast.BinaryOp{
-				Pos: token.Position{Line: 1, Column: 1},
-				Left: &ast.Literal{
-					Pos:   token.Position{Line: 1, Column: 1},
-					Type:  token.TRUE,
-					Value: true,
-				},
-				Op: token.OR,
-				Right: &ast.Literal{
-					Pos:   token.Position{Line: 1, Column: 1},
-					Type:  token.FALSE,
-					Value: false,
-				},
-			},
-			wantErr: false,
-		},
-		{
-			name: "equality",
-			binOp: &ast.BinaryOp{
-				Pos: token.Position{Line: 1, Column: 1},
-				Left: &ast.Literal{
-					Pos:   token.Position{Line: 1, Column: 1},
-					Type:  token.INTEGER_LIT,
-					Value: int64(5),
-				},
-				Op: token.EQ,
-				Right: &ast.Literal{
-					Pos:   token.Position{Line: 1, Column: 1},
-					Type:  token.INTEGER_LIT,
-					Value: int64(5),
-				},
-			},
-			wantErr: false,
-		},
+		{"subtraction", token.MINUS, 5, 2, false},
+		{"multiplication", token.MULTIPLY, 3, 4, false},
+		{"division", token.DIVIDE, 10, 2, false},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := cc.compileExpression(tt.binOp)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("compileExpression() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
+	logicalTests := []struct {
+		name     string
+		op       token.TokenType
+		left     bool
+		right    bool
+		wantErr  bool
+	}{
+		{"logical_or", token.OR, true, false, false},
 	}
+
+	comparisonTests := []struct {
+		name     string
+		op       token.TokenType
+		left     int64
+		right    int64
+		wantErr  bool
+	}{
+		{"equality", token.EQ, 5, 5, false},
+	}
+
+	t.Run("ArithmeticOperations", func(t *testing.T) {
+		for _, tt := range arithmeticTests {
+			t.Run(tt.name, func(t *testing.T) {
+				binOp := createBinaryOp(tt.op, createIntLiteral(tt.left), createIntLiteral(tt.right))
+				err := cc.compileExpression(binOp)
+				if (err != nil) != tt.wantErr {
+					t.Errorf("compileExpression() error = %v, wantErr %v", err, tt.wantErr)
+				}
+			})
+		}
+	})
+
+	t.Run("LogicalOperations", func(t *testing.T) {
+		for _, tt := range logicalTests {
+			t.Run(tt.name, func(t *testing.T) {
+				binOp := createBinaryOp(tt.op, createBoolLiteral(tt.left), createBoolLiteral(tt.right))
+				err := cc.compileExpression(binOp)
+				if (err != nil) != tt.wantErr {
+					t.Errorf("compileExpression() error = %v, wantErr %v", err, tt.wantErr)
+				}
+			})
+		}
+	})
+
+	t.Run("ComparisonOperations", func(t *testing.T) {
+		for _, tt := range comparisonTests {
+			t.Run(tt.name, func(t *testing.T) {
+				binOp := createBinaryOp(tt.op, createIntLiteral(tt.left), createIntLiteral(tt.right))
+				err := cc.compileExpression(binOp)
+				if (err != nil) != tt.wantErr {
+					t.Errorf("compileExpression() error = %v, wantErr %v", err, tt.wantErr)
+				}
+			})
+		}
+	})
 }
 
 // TestCompilerProgram tests full program compilation

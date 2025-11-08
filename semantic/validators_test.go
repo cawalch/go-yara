@@ -154,109 +154,69 @@ func TestFileValidatorErrors(t *testing.T) {
 	}
 }
 
+// Helper function to create integer literal expression
+func createIntLiteralExpr(value int64) *ast.Literal {
+	return &ast.Literal{
+		Type:  token.INTEGER_LIT,
+		Value: value,
+		Pos:   token.Position{Line: 1, Column: 1},
+	}
+}
+
 // TestModuleValidatorFunctionCalls tests module function call validation
 func TestModuleValidatorFunctionCalls(t *testing.T) {
 	st := NewSymbolTable()
 	validator := NewModuleValidator(st)
-
 	pos := token.Position{Line: 1, Column: 1}
 
-	tests := []struct {
-		name     string
-		funcName string
-		args     []ast.Expression
-		wantErr  bool
-	}{
-		{
-			name:     "filesize_no_args",
-			funcName: "filesize",
-			args:     []ast.Expression{},
-			wantErr:  false,
-		},
-		{
-			name:     "uint8_with_arg",
-			funcName: "uint8",
-			args: []ast.Expression{
-				&ast.Literal{
-					Type:  token.INTEGER_LIT,
-					Value: int64(0x1000),
-					Pos:   pos,
-				},
-			},
-			wantErr: false,
-		},
-		{
-			name:     "uint16_with_arg",
-			funcName: "uint16",
-			args: []ast.Expression{
-				&ast.Literal{
-					Type:  token.INTEGER_LIT,
-					Value: int64(0x1000),
-					Pos:   pos,
-				},
-			},
-			wantErr: false,
-		},
-		{
-			name:     "uint32_with_arg",
-			funcName: "uint32",
-			args: []ast.Expression{
-				&ast.Literal{
-					Type:  token.INTEGER_LIT,
-					Value: int64(0x1000),
-					Pos:   pos,
-				},
-			},
-			wantErr: false,
-		},
-		{
-			name:     "int8_with_arg",
-			funcName: "int8",
-			args: []ast.Expression{
-				&ast.Literal{
-					Type:  token.INTEGER_LIT,
-					Value: int64(0x1000),
-					Pos:   pos,
-				},
-			},
-			wantErr: false,
-		},
-		{
-			name:     "int16_with_arg",
-			funcName: "int16",
-			args: []ast.Expression{
-				&ast.Literal{
-					Type:  token.INTEGER_LIT,
-					Value: int64(0x1000),
-					Pos:   pos,
-				},
-			},
-			wantErr: false,
-		},
-		{
-			name:     "int32_with_arg",
-			funcName: "int32",
-			args: []ast.Expression{
-				&ast.Literal{
-					Type:  token.INTEGER_LIT,
-					Value: int64(0x1000),
-					Pos:   pos,
-				},
-			},
-			wantErr: false,
-		},
-	}
+	// Test no-argument functions
+	t.Run("NoArgumentFunctions", func(t *testing.T) {
+		noArgTests := []struct {
+			name     string
+			funcName string
+			wantErr  bool
+		}{
+			{"filesize", "filesize", false},
+		}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, errors := validator.ValidateFunctionCall(tt.funcName, tt.args, pos)
-			hasErr := len(errors) > 0
+		for _, tt := range noArgTests {
+			t.Run(tt.name, func(t *testing.T) {
+				_, errors := validator.ValidateFunctionCall(tt.funcName, []ast.Expression{}, pos)
+				hasErr := len(errors) > 0
+				if hasErr != tt.wantErr {
+					t.Errorf("ValidateFunctionCall() error = %v, wantErr %v, errors: %v", hasErr, tt.wantErr, errors)
+				}
+			})
+		}
+	})
 
-			if hasErr != tt.wantErr {
-				t.Errorf("ValidateFunctionCall() error = %v, wantErr %v, errors: %v", hasErr, tt.wantErr, errors)
-			}
-		})
-	}
+	// Test integer conversion functions
+	t.Run("IntegerConversionFunctions", func(t *testing.T) {
+		conversionTests := []struct {
+			name     string
+			funcName string
+		}{
+			{"uint8", "uint8"},
+			{"uint16", "uint16"},
+			{"uint32", "uint32"},
+			{"int8", "int8"},
+			{"int16", "int16"},
+			{"int32", "int32"},
+		}
+
+		// Common test argument
+		testArg := createIntLiteralExpr(0x1000)
+
+		for _, tt := range conversionTests {
+			t.Run(tt.name, func(t *testing.T) {
+				_, errors := validator.ValidateFunctionCall(tt.funcName, []ast.Expression{testArg}, pos)
+				hasErr := len(errors) > 0
+				if hasErr {
+					t.Errorf("ValidateFunctionCall() unexpected error for %s: %v", tt.funcName, errors)
+				}
+			})
+		}
+	})
 }
 
 // TestModuleValidatorErrors tests error management
@@ -335,21 +295,22 @@ func TestStringValidatorErrors(t *testing.T) {
 	}
 }
 
-// TestValidatorVisitorMethods tests visitor methods
-func TestValidatorVisitorMethods(_ *testing.T) {
-	validator := NewValidator()
+// Helper functions to reduce repetitive AST construction for smoke tests
+func createTestPos() token.Position {
+	return token.Position{Line: 1, Column: 1}
+}
 
-	pos := token.Position{Line: 1, Column: 1}
-
-	// Test VisitProgram
-	program := &ast.Program{
+func createTestProgram() *ast.Program {
+	pos := createTestPos()
+	return &ast.Program{
 		Pos:   pos,
 		Rules: []*ast.Rule{},
 	}
-	validator.VisitProgram(program)
+}
 
-	// Test VisitRule
-	rule := &ast.Rule{
+func createTestRule() *ast.Rule {
+	pos := createTestPos()
+	return &ast.Rule{
 		Pos:  pos,
 		Name: "test",
 		Condition: &ast.Literal{
@@ -358,40 +319,11 @@ func TestValidatorVisitorMethods(_ *testing.T) {
 			Pos:   pos,
 		},
 	}
-	validator.VisitRule(rule)
+}
 
-	// Test VisitMeta
-	meta := &ast.Meta{
-		Pos:   pos,
-		Key:   "test",
-		Value: ast.MetaString("value"),
-	}
-	validator.VisitMeta(meta)
-
-	// Test VisitString
-	str := &ast.String{
-		Pos:        pos,
-		Identifier: "$test",
-		Pattern: &ast.TextString{
-			Pos:   pos,
-			Value: "test",
-		},
-	}
-	validator.VisitString(str)
-
-	// Test VisitCondition
-	condition := &ast.Condition{
-		Pos: pos,
-		Expression: &ast.Literal{
-			Type:  token.TRUE,
-			Value: true,
-			Pos:   pos,
-		},
-	}
-	validator.VisitCondition(condition)
-
-	// Test VisitBinaryOp
-	binOp := &ast.BinaryOp{
+func createTestBinaryOp() *ast.BinaryOp {
+	pos := createTestPos()
+	return &ast.BinaryOp{
 		Pos: pos,
 		Left: &ast.Literal{
 			Type:  token.INTEGER_LIT,
@@ -405,10 +337,11 @@ func TestValidatorVisitorMethods(_ *testing.T) {
 			Pos:   pos,
 		},
 	}
-	validator.VisitBinaryOp(binOp)
+}
 
-	// Test VisitUnaryOp
-	unaryOp := &ast.UnaryOp{
+func createTestUnaryOp() *ast.UnaryOp {
+	pos := createTestPos()
+	return &ast.UnaryOp{
 		Pos: pos,
 		Op:  token.NOT,
 		Right: &ast.Literal{
@@ -417,22 +350,78 @@ func TestValidatorVisitorMethods(_ *testing.T) {
 			Pos:   pos,
 		},
 	}
-	validator.VisitUnaryOp(unaryOp)
+}
 
-	// Test VisitIdentifier
-	ident := &ast.Identifier{
-		Pos:  pos,
-		Name: "test",
-	}
-	validator.VisitIdentifier(ident)
+// TestValidatorVisitorMethods tests that visitor methods don't panic when called
+func TestValidatorVisitorMethods(t *testing.T) {
+	validator := NewValidator()
 
-	// Test VisitLiteral
-	literal := &ast.Literal{
-		Pos:   pos,
-		Type:  token.INTEGER_LIT,
-		Value: int64(42),
-	}
-	validator.VisitLiteral(literal)
+	t.Run("StructureNodes", func(t *testing.T) {
+		// Test VisitProgram
+		validator.VisitProgram(createTestProgram())
+
+		// Test VisitRule
+		validator.VisitRule(createTestRule())
+	})
+
+	t.Run("RuleComponents", func(t *testing.T) {
+		pos := createTestPos()
+
+		// Test VisitMeta
+		meta := &ast.Meta{
+			Pos:   pos,
+			Key:   "test",
+			Value: ast.MetaString("value"),
+		}
+		validator.VisitMeta(meta)
+
+		// Test VisitString
+		str := &ast.String{
+			Pos:        pos,
+			Identifier: "$test",
+			Pattern: &ast.TextString{
+				Pos:   pos,
+				Value: "test",
+			},
+		}
+		validator.VisitString(str)
+
+		// Test VisitCondition
+		condition := &ast.Condition{
+			Pos: pos,
+			Expression: &ast.Literal{
+				Type:  token.TRUE,
+				Value: true,
+				Pos:   pos,
+			},
+		}
+		validator.VisitCondition(condition)
+	})
+
+	t.Run("Expressions", func(t *testing.T) {
+		// Test VisitBinaryOp
+		validator.VisitBinaryOp(createTestBinaryOp())
+
+		// Test VisitUnaryOp
+		validator.VisitUnaryOp(createTestUnaryOp())
+
+		pos := createTestPos()
+
+		// Test VisitIdentifier
+		ident := &ast.Identifier{
+			Pos:  pos,
+			Name: "test",
+		}
+		validator.VisitIdentifier(ident)
+
+		// Test VisitLiteral
+		literal := &ast.Literal{
+			Pos:   pos,
+			Type:  token.INTEGER_LIT,
+			Value: int64(42),
+		}
+		validator.VisitLiteral(literal)
+	})
 }
 
 // TestValidatorGetSymbolTable tests GetSymbolTable method

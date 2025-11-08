@@ -7,107 +7,74 @@ import (
 
 // Test TokenType String method
 func TestTokenTypeString(t *testing.T) {
-	tests := []struct {
+	// Define test cases with logical grouping
+	testGroups := map[string][]struct {
 		tokenType TokenType
 		expected  string
 	}{
-		{RULE, "RULE"},
-		{META, "META"},
-		{STRINGS, "STRINGS"},
-		{CONDITION, "CONDITION"},
-		{AND, "AND"},
-		{OR, "OR"},
-		{NOT, "NOT"},
-		{ALL, "ALL"},
-		{ANY, "ANY"},
-		{NONE, "NONE"},
-		{OF, "OF"},
-		{TRUE, "TRUE"},
-		{FALSE, "FALSE"},
-		{NOCASE, "NOCASE"},
-		{WIDE, "WIDE"},
-		{ASCII, "ASCII"},
-		{FULLWORD, "FULLWORD"},
-		{PRIVATE, "PRIVATE"},
-		{XOR, "XOR"},
-		{BASE64, "BASE64"},
-		{BASE64WIDE, "BASE64WIDE"},
-		{BITWISE_AND, "BITWISE_AND"},
-		{BITWISE_OR, "BITWISE_OR"},
-		{BITWISE_XOR, "BITWISE_XOR"},
-		{BITWISE_NOT, "BITWISE_NOT"},
-		{LEFT_SHIFT, "LEFT_SHIFT"},
-		{RIGHT_SHIFT, "RIGHT_SHIFT"},
-		{INT8, "INT8"},
-		{INT16, "INT16"},
-		{INT32, "INT32"},
-		{UINT8, "UINT8"},
-		{UINT16, "UINT16"},
-		{UINT32, "UINT32"},
-		{INT8BE, "INT8BE"},
-		{INT16BE, "INT16BE"},
-		{INT32BE, "INT32BE"},
-		{UINT8BE, "UINT8BE"},
-		{UINT16BE, "UINT16BE"},
-		{UINT32BE, "UINT32BE"},
-		{FILESIZE, "FILESIZE"},
-		{ENTRYPOINT, "ENTRYPOINT"},
-		{FOR, "FOR"},
-		{IN, "IN"},
-		{AT, "AT"},
-		{THEM, "THEM"},
-		{DEFINED, "DEFINED"},
-		{GLOBAL, "GLOBAL"},
-		{IMPORT, "IMPORT"},
-		{INCLUDE, "INCLUDE"},
-		{CONTAINS, "CONTAINS"},
-		{ICONTAINS, "ICONTAINS"},
-		{STARTSWITH, "STARTSWITH"},
-		{ISTARTSWITH, "ISTARTSWITH"},
-		{ENDSWITH, "ENDSWITH"},
-		{IENDSWITH, "IENDSWITH"},
-		{IEQUALS, "IEQUALS"},
-		{MATCHES, "MATCHES"},
-		{HASH, "HASH"},
-		{PLUS, "PLUS"},
-		{MINUS, "MINUS"},
-		{MULTIPLY, "MULTIPLY"},
-		{DIVIDE, "DIVIDE"},
-		{MODULO, "MODULO"},
-		{ASSIGN, "ASSIGN"},
-		{EQ, "EQ"},
-		{NEQ, "NEQ"},
-		{LT, "LT"},
-		{LE, "LE"},
-		{GT, "GT"},
-		{GE, "GE"},
-		{COLON, "COLON"},
-		{COMMA, "COMMA"},
-		{DOT, "DOT"},
-		{IDENTIFIER, "IDENTIFIER"},
-		{STRING_IDENTIFIER, "STRING_IDENTIFIER"},
-		{INTEGER_LIT, "INTEGER_LIT"},
-		{HEX_INTEGER_LIT, "HEX_INTEGER_LIT"},
-		{SIZE_LIT, "SIZE_LIT"},
-		{STRING_LIT, "STRING_LIT"},
-		{HEX_STRING_LIT, "HEX_STRING_LIT"},
-		{REGEX_LIT, "REGEX_LIT"},
-		{LBRACE, "LBRACE"},
-		{RBRACE, "RBRACE"},
-		{LPAREN, "LPAREN"},
-		{RPAREN, "RPAREN"},
-		{LBRACKET, "LBRACKET"},
-		{RBRACKET, "RBRACKET"},
-		{ILLEGAL, "ILLEGAL"},
-		{EOF, "EOF"},
-		{TokenType(999), "UNKNOWN(999)"}, // Test unknown token type
+		"RuleStructure": {
+			{RULE, "RULE"}, {META, "META"}, {STRINGS, "STRINGS"}, {CONDITION, "CONDITION"},
+		},
+		"LogicalOperators": {
+			{AND, "AND"}, {OR, "OR"}, {NOT, "NOT"}, {ALL, "ALL"}, {ANY, "ANY"}, {NONE, "NONE"}, {OF, "OF"},
+		},
+		"BooleanLiterals": {
+			{TRUE, "TRUE"}, {FALSE, "FALSE"},
+		},
+		"StringModifiers": {
+			{NOCASE, "NOCASE"}, {WIDE, "WIDE"}, {ASCII, "ASCII"}, {FULLWORD, "FULLWORD"},
+			{PRIVATE, "PRIVATE"}, {XOR, "XOR"}, {BASE64, "BASE64"}, {BASE64WIDE, "BASE64WIDE"},
+		},
+		"BitwiseOperators": {
+			{BITWISE_AND, "BITWISE_AND"}, {BITWISE_OR, "BITWISE_OR"}, {BITWISE_XOR, "BITWISE_XOR"},
+			{BITWISE_NOT, "BITWISE_NOT"}, {LEFT_SHIFT, "LEFT_SHIFT"}, {RIGHT_SHIFT, "RIGHT_SHIFT"},
+		},
+		"IntegerTypes": {
+			{INT8, "INT8"}, {INT16, "INT16"}, {INT32, "INT32"}, {UINT8, "UINT8"}, {UINT16, "UINT16"}, {UINT32, "UINT32"},
+			{INT8BE, "INT8BE"}, {INT16BE, "INT16BE"}, {INT32BE, "INT32BE"}, {UINT8BE, "UINT8BE"}, {UINT16BE, "UINT16BE"}, {UINT32BE, "UINT32BE"},
+		},
+		"SpecialVariables": {
+			{FILESIZE, "FILESIZE"}, {ENTRYPOINT, "ENTRYPOINT"}, {FOR, "FOR"}, {IN, "IN"}, {AT, "AT"},
+			{THEM, "THEM"}, {DEFINED, "DEFINED"}, {GLOBAL, "GLOBAL"}, {IMPORT, "IMPORT"}, {INCLUDE, "INCLUDE"},
+		},
+		"StringOperations": {
+			{CONTAINS, "CONTAINS"}, {ICONTAINS, "ICONTAINS"}, {STARTSWITH, "STARTSWITH"}, {ISTARTSWITH, "ISTARTSWITH"},
+			{ENDSWITH, "ENDSWITH"}, {IENDSWITH, "IENDSWITH"}, {IEQUALS, "IEQUALS"}, {MATCHES, "MATCHES"}, {HASH, "HASH"},
+		},
+		"ArithmeticOperators": {
+			{PLUS, "PLUS"}, {MINUS, "MINUS"}, {MULTIPLY, "MULTIPLY"}, {DIVIDE, "DIVIDE"}, {MODULO, "MODULO"},
+		},
+		"ComparisonOperators": {
+			{ASSIGN, "ASSIGN"}, {EQ, "EQ"}, {NEQ, "NEQ"}, {LT, "LT"}, {LE, "LE"}, {GT, "GT"}, {GE, "GE"},
+		},
+		"Punctuation": {
+			{COLON, "COLON"}, {COMMA, "COMMA"}, {DOT, "DOT"},
+		},
+		"IdentifiersAndLiterals": {
+			{IDENTIFIER, "IDENTIFIER"}, {STRING_IDENTIFIER, "STRING_IDENTIFIER"}, {INTEGER_LIT, "INTEGER_LIT"},
+			{HEX_INTEGER_LIT, "HEX_INTEGER_LIT"}, {SIZE_LIT, "SIZE_LIT"}, {STRING_LIT, "STRING_LIT"},
+			{HEX_STRING_LIT, "HEX_STRING_LIT"}, {REGEX_LIT, "REGEX_LIT"},
+		},
+		"BracketsAndBraces": {
+			{LBRACE, "LBRACE"}, {RBRACE, "RBRACE"}, {LPAREN, "LPAREN"}, {RPAREN, "RPAREN"}, {LBRACKET, "LBRACKET"}, {RBRACKET, "RBRACKET"},
+		},
+		"SpecialTokens": {
+			{ILLEGAL, "ILLEGAL"}, {EOF, "EOF"},
+		},
+		"UnknownToken": {
+			{TokenType(999), "UNKNOWN(999)"}, // Test unknown token type
+		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.expected, func(t *testing.T) {
-			result := tt.tokenType.String()
-			if result != tt.expected {
-				t.Errorf("TokenType(%d).String() = %v, want %v", int(tt.tokenType), result, tt.expected)
+	for groupName, tests := range testGroups {
+		t.Run(groupName, func(t *testing.T) {
+			for _, tt := range tests {
+				t.Run(tt.expected, func(t *testing.T) {
+					result := tt.tokenType.String()
+					if result != tt.expected {
+						t.Errorf("TokenType(%d).String() = %v, want %v", int(tt.tokenType), result, tt.expected)
+					}
+				})
 			}
 		})
 	}
