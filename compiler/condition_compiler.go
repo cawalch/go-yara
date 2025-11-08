@@ -201,31 +201,71 @@ func (cc *ConditionCompiler) compileExpression(expr ast.Expression) error {
 }
 
 func (cc *ConditionCompiler) compileLiteral(lit *ast.Literal) error {
-	switch lit.Type {
-	case token.INTEGER_LIT, token.HEX_INTEGER_LIT, token.OCTAL_INTEGER_LIT:
-		if value, ok := lit.Value.(int64); ok {
-			cc.emitter.EmitPush(safeInt64ToUint64(safeMax(0, value)), lit.Pos.Line, lit.Pos.Column)
-		} else {
-			cc.emitter.EmitPush(0, lit.Pos.Line, lit.Pos.Column)
-		}
-	case token.FLOAT_LIT:
-		if value, ok := lit.Value.(float64); ok {
-			cc.emitter.EmitPushDouble(value, lit.Pos.Line, lit.Pos.Column)
-		}
-	case token.STRING_LIT:
-		if value, ok := lit.Value.(string); ok {
-			cc.emitter.EmitPush(uint64(int64(len(value))), lit.Pos.Line, lit.Pos.Column) // #nosec G115
-		}
-	case token.SIZE_LIT:
+	if lit.Type == token.SIZE_LIT {
 		return cc.compileSizeLiteral(lit)
-	case token.TRUE:
-		cc.emitter.EmitPush(1, lit.Pos.Line, lit.Pos.Column)
-	case token.FALSE:
-		cc.emitter.EmitPush(0, lit.Pos.Line, lit.Pos.Column)
-	default:
+	}
+
+	if !cc.compileSimpleLiteral(lit) {
 		return fmt.Errorf("unsupported literal type: %s", lit.Type)
 	}
+
 	return nil
+}
+
+// compileSimpleLiteral compiles simple literal types (integer, float, string, boolean)
+func (cc *ConditionCompiler) compileSimpleLiteral(lit *ast.Literal) bool {
+	switch lit.Type {
+	case token.INTEGER_LIT, token.HEX_INTEGER_LIT, token.OCTAL_INTEGER_LIT:
+		cc.compileIntegerLiteral(lit)
+		return true
+
+	case token.FLOAT_LIT:
+		cc.compileFloatLiteral(lit)
+		return true
+
+	case token.STRING_LIT:
+		cc.compileStringLiteral(lit)
+		return true
+
+	case token.TRUE, token.FALSE:
+		cc.compileBooleanLiteral(lit)
+		return true
+
+	default:
+		return false
+	}
+}
+
+// compileIntegerLiteral compiles integer literals
+func (cc *ConditionCompiler) compileIntegerLiteral(lit *ast.Literal) {
+	if value, ok := lit.Value.(int64); ok {
+		cc.emitter.EmitPush(safeInt64ToUint64(safeMax(0, value)), lit.Pos.Line, lit.Pos.Column)
+	} else {
+		cc.emitter.EmitPush(0, lit.Pos.Line, lit.Pos.Column)
+	}
+}
+
+// compileFloatLiteral compiles float literals
+func (cc *ConditionCompiler) compileFloatLiteral(lit *ast.Literal) {
+	if value, ok := lit.Value.(float64); ok {
+		cc.emitter.EmitPushDouble(value, lit.Pos.Line, lit.Pos.Column)
+	}
+}
+
+// compileStringLiteral compiles string literals
+func (cc *ConditionCompiler) compileStringLiteral(lit *ast.Literal) {
+	if value, ok := lit.Value.(string); ok {
+		cc.emitter.EmitPush(uint64(int64(len(value))), lit.Pos.Line, lit.Pos.Column) // #nosec G115
+	}
+}
+
+// compileBooleanLiteral compiles boolean literals
+func (cc *ConditionCompiler) compileBooleanLiteral(lit *ast.Literal) {
+	if lit.Type == token.TRUE {
+		cc.emitter.EmitPush(1, lit.Pos.Line, lit.Pos.Column)
+	} else {
+		cc.emitter.EmitPush(0, lit.Pos.Line, lit.Pos.Column)
+	}
 }
 
 func (cc *ConditionCompiler) compileSizeLiteral(lit *ast.Literal) error {

@@ -346,60 +346,81 @@ func (sp *StreamingProcessor) processChunk(chunk []byte, chunkIndex int, offset 
 func (cp *ChunkProcessor) processChunk(chunk []byte, offset int64) []StreamingMatch {
 	var matches []StreamingMatch
 
-	// Process each rule's automaton individually
 	for _, rule := range cp.rules {
 		if rule.Automaton == nil {
 			continue
 		}
 
-		// Use automaton to find patterns in chunk
-		acMatches := rule.Automaton.Search(chunk)
+		ruleMatches := cp.processRule(chunk, offset, rule)
+		matches = append(matches, ruleMatches...)
 
-		for _, match := range acMatches {
-			// The backtrack value is already the correct position in the chunk
-			position := match.Backtrack
-
-			// Get actual length from automaton strings
-			length := 9 // Default fallback length for "malicious"
-			if match.StringIndex >= 0 && match.StringIndex < len(rule.Automaton.Strings) {
-				actualLength := rule.Automaton.Strings[match.StringIndex].Length
-				if actualLength > 0 {
-					length = actualLength
-				}
-			} else {
-				// Fallback: use pattern name to determine length
-				if match.StringID == "$pattern" {
-					length = 9 // length of "malicious"
-				}
-			}
-
-			// Ensure position is within bounds
-			if position < 0 || position >= len(chunk) || position+length > len(chunk) {
-				continue
-			}
-
-			// Convert automaton matches to rule matches
-			ruleMatch := StreamingMatch{
-				Rule:    rule.Name,
-				Pattern: match.StringID,
-				Offset:  offset + int64(position),
-				Length:  length,
-				Data:    chunk[position : position+length],
-			}
-
-			matches = append(matches, ruleMatch)
-
-			// Add to match buffer
-			cp.matchBuffer.addMatch(ruleMatch)
-
-			// Check if we should stop due to match limit
-			if cp.matchBuffer.reachedLimit() {
-				return matches
-			}
+		// Check if we should stop due to match limit
+		if cp.matchBuffer.reachedLimit() {
+			break
 		}
 	}
 
 	return matches
+}
+
+// processRule processes a single rule's automaton against the chunk
+func (cp *ChunkProcessor) processRule(chunk []byte, offset int64, rule *CompiledRule) []StreamingMatch {
+	var matches []StreamingMatch
+	acMatches := rule.Automaton.Search(chunk)
+
+	for _, match := range acMatches {
+		ruleMatch, ok := cp.createRuleMatch(chunk, offset, rule, match)
+		if !ok {
+			continue
+		}
+
+		matches = append(matches, ruleMatch)
+		cp.matchBuffer.addMatch(ruleMatch)
+	}
+
+	return matches
+}
+
+// createRuleMatch creates a StreamingMatch from an automaton match
+func (cp *ChunkProcessor) createRuleMatch(chunk []byte, offset int64, rule *CompiledRule, match ACMatch) (StreamingMatch, bool) {
+	position := match.Backtrack
+	length := cp.getMatchLength(rule, match)
+
+	// Ensure position is within bounds
+	if !cp.isValidPosition(position, length, len(chunk)) {
+		return StreamingMatch{}, false
+	}
+
+	return StreamingMatch{
+		Rule:    rule.Name,
+		Pattern: match.StringID,
+		Offset:  offset + int64(position),
+		Length:  length,
+		Data:    chunk[position : position+length],
+	}, true
+}
+
+// getMatchLength determines the length of a match
+func (cp *ChunkProcessor) getMatchLength(rule *CompiledRule, match ACMatch) int {
+	// Get actual length from automaton strings
+	if match.StringIndex >= 0 && match.StringIndex < len(rule.Automaton.Strings) {
+		actualLength := rule.Automaton.Strings[match.StringIndex].Length
+		if actualLength > 0 {
+			return actualLength
+		}
+	}
+
+	// Fallback: use pattern name to determine length
+	if match.StringID == "$pattern" {
+		return 9 // length of "malicious"
+	}
+
+	return 9 // Default fallback length
+}
+
+// isValidPosition checks if the position and length are within bounds
+func (cp *ChunkProcessor) isValidPosition(position, length, chunkSize int) bool {
+	return position >= 0 && position < chunkSize && position+length <= chunkSize
 }
 
 // updateProgress updates processing progress

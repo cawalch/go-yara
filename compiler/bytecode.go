@@ -418,36 +418,29 @@ func (op Opcode) String() string {
 		return name
 	}
 
-	// Handle integer operations
-	if op >= OP_INT_BEGIN && op <= OP_INT_END {
-		if name := op.getIntOpName(); name != "" {
-			return name
-		}
-	}
-
-	// Handle double operations
-	if op >= OP_DBL_BEGIN && op <= OP_DBL_END {
-		if name := op.getDblOpName(); name != "" {
-			return name
-		}
-	}
-
-	// Handle string operations
-	if op >= OP_STR_BEGIN && op <= OP_STR_END {
-		if name := op.getStrOpName(); name != "" {
-			return name
-		}
-	}
-
-	// Handle data type functions
-	if op >= OP_READ_INT {
-		if name := op.getDataTypeName(); name != "" {
-			return name
-		}
+	// Handle specialized opcode ranges
+	if name := op.getRangeName(); name != "" {
+		return name
 	}
 
 	// Fallback for unknown opcodes
 	return fmt.Sprintf("OPCODE_%d", int(op))
+}
+
+// getRangeName returns the name for opcodes in specific ranges
+func (op Opcode) getRangeName() string {
+	switch {
+	case op >= OP_INT_BEGIN && op <= OP_INT_END:
+		return op.getIntOpName()
+	case op >= OP_DBL_BEGIN && op <= OP_DBL_END:
+		return op.getDblOpName()
+	case op >= OP_STR_BEGIN && op <= OP_STR_END:
+		return op.getStrOpName()
+	case op >= OP_READ_INT:
+		return op.getDataTypeName()
+	default:
+		return ""
+	}
 }
 
 // OperandType represents type of an operand
@@ -582,29 +575,50 @@ func (inst *Instruction) formatAbsoluteOperand(bits int) string {
 
 // formatOperand formats operand for display
 func (inst *Instruction) formatOperand() string {
-	switch inst.Operand.Type {
-	case OperandNone:
+	if inst.Operand.Type == OperandNone {
 		return ""
-	case OperandImmediate8:
-		return inst.formatImmediateOperand(8)
-	case OperandImmediate16:
-		return inst.formatImmediateOperand(16)
-	case OperandImmediate32:
-		return inst.formatImmediateOperand(32)
-	case OperandImmediate64:
-		return inst.formatImmediateOperand(64)
-	case OperandRelative8:
-		return inst.formatRelativeOperand(8)
-	case OperandRelative16:
-		return inst.formatRelativeOperand(16)
-	case OperandRelative32:
-		return inst.formatRelativeOperand(32)
-	case OperandAbsolute32:
-		return inst.formatAbsoluteOperand(32)
-	case OperandAbsolute64:
-		return inst.formatAbsoluteOperand(64)
+	}
+
+	if result, ok := inst.formatTypedOperand(); ok {
+		return result
+	}
+
+	return fmt.Sprintf(" (invalid operand type %d)", inst.Operand.Type)
+}
+
+// formatTypedOperand formats the operand based on its type
+func (inst *Instruction) formatTypedOperand() (string, bool) {
+	switch inst.Operand.Type {
+	case OperandImmediate8, OperandImmediate16, OperandImmediate32, OperandImmediate64:
+		bits := inst.getOperandBits()
+		return inst.formatImmediateOperand(bits), true
+
+	case OperandRelative8, OperandRelative16, OperandRelative32:
+		bits := inst.getOperandBits()
+		return inst.formatRelativeOperand(bits), true
+
+	case OperandAbsolute32, OperandAbsolute64:
+		bits := inst.getOperandBits()
+		return inst.formatAbsoluteOperand(bits), true
+
 	default:
-		return fmt.Sprintf(" (invalid operand type %d)", inst.Operand.Type)
+		return "", false
+	}
+}
+
+// getOperandBits returns the bit size for the current operand
+func (inst *Instruction) getOperandBits() int {
+	switch inst.Operand.Type {
+	case OperandImmediate8, OperandRelative8:
+		return 8
+	case OperandImmediate16, OperandRelative16:
+		return 16
+	case OperandImmediate32, OperandRelative32, OperandAbsolute32:
+		return 32
+	case OperandImmediate64, OperandAbsolute64:
+		return 64
+	default:
+		return 0
 	}
 }
 
@@ -697,29 +711,31 @@ func (inst *Instruction) appendAbsoluteOperand(buf []byte, bits int) []byte {
 
 // appendOperand appends operand bytes to buffer
 func (inst *Instruction) appendOperand(buf []byte) []byte {
-	switch inst.Operand.Type {
-	case OperandNone:
-		// No operand
-	case OperandImmediate8:
-		buf = inst.appendImmediateOperand(buf, 8)
-	case OperandImmediate16:
-		buf = inst.appendImmediateOperand(buf, 16)
-	case OperandImmediate32:
-		buf = inst.appendImmediateOperand(buf, 32)
-	case OperandImmediate64:
-		buf = inst.appendImmediateOperand(buf, 64)
-	case OperandRelative8:
-		buf = inst.appendRelativeOperand(buf, 8)
-	case OperandRelative16:
-		buf = inst.appendRelativeOperand(buf, 16)
-	case OperandRelative32:
-		buf = inst.appendRelativeOperand(buf, 32)
-	case OperandAbsolute32:
-		buf = inst.appendAbsoluteOperand(buf, 32)
-	case OperandAbsolute64:
-		buf = inst.appendAbsoluteOperand(buf, 64)
+	if inst.Operand.Type == OperandNone {
+		return buf
 	}
-	return buf
+
+	return inst.appendTypedOperand(buf)
+}
+
+// appendTypedOperand appends the operand to the buffer based on its type
+func (inst *Instruction) appendTypedOperand(buf []byte) []byte {
+	switch inst.Operand.Type {
+	case OperandImmediate8, OperandImmediate16, OperandImmediate32, OperandImmediate64:
+		bits := inst.getOperandBits()
+		return inst.appendImmediateOperand(buf, bits)
+
+	case OperandRelative8, OperandRelative16, OperandRelative32:
+		bits := inst.getOperandBits()
+		return inst.appendRelativeOperand(buf, bits)
+
+	case OperandAbsolute32, OperandAbsolute64:
+		bits := inst.getOperandBits()
+		return inst.appendAbsoluteOperand(buf, bits)
+
+	default:
+		return buf
+	}
 }
 
 // Bytes returns binary representation of instruction
