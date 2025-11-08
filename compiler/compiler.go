@@ -230,6 +230,7 @@ func (c *Compiler) compileSemantic(program *ast.Program) error {
 	if c.options.EnableWarnings {
 		// TODO: Add semantic warnings collection when implemented
 		// For now, this is a placeholder for future warning handling
+		_ = c.options.EnableWarnings // Suppress unused warning until implemented
 	}
 
 	return nil

@@ -184,51 +184,78 @@ const (
 	OpCategoryTypeFunc   = "type_func"
 )
 
+// isControlOpcode checks if opcode is a control operation
+func isControlOpcode(op Opcode) bool {
+	return op == OP_ERROR || op == OP_HALT || op == OP_NOP
+}
+
+// isLogicalOpcode checks if opcode is a logical operation
+func isLogicalOpcode(op Opcode) bool {
+	return (op >= OP_AND && op <= OP_BITWISE_XOR) ||
+		op == OP_INT_TO_DBL || op == OP_STR_TO_BOOL
+}
+
+// isArithmeticOpcode checks if opcode is an arithmetic operation
+func isArithmeticOpcode(op Opcode) bool {
+	return (op >= OP_SHL && op <= OP_MOD) ||
+		(op >= OP_INT_BEGIN && op <= OP_INT_END) ||
+		(op >= OP_DBL_BEGIN && op <= OP_DBL_END) ||
+		(op >= OP_STR_BEGIN && op <= OP_STR_END)
+}
+
+// isStackOpcode checks if opcode is a stack operation
+func isStackOpcode(op Opcode) bool {
+	return (op >= OP_PUSH && op <= OP_CALL) ||
+		(op >= OP_PUSH_8 && op <= OP_PUSH_RULE_REF)
+}
+
+// isObjectOpcode checks if opcode is an object operation
+func isObjectOpcode(op Opcode) bool {
+	return (op >= OP_OBJ_LOAD && op <= OP_OFFSET) ||
+		(op >= OP_OF && op <= OP_MATCHES) ||
+		(op >= OP_IMPORT && op <= OP_JNUNDEF)
+}
+
+// isJumpOpcode checks if opcode is a jump operation
+func isJumpOpcode(op Opcode) bool {
+	return op >= OP_JNUNDEF_P && op <= OP_JZ_P
+}
+
+// isIteratorOpcode checks if opcode is an iterator operation
+func isIteratorOpcode(op Opcode) bool {
+	return op >= OP_ITER_NEXT && op <= OP_ITER_END
+}
+
+// isStringOpcode checks if opcode is a string operation
+func isStringOpcode(op Opcode) bool {
+	return op >= OP_CONTAINS && op <= OP_OF_FOUND_AT
+}
+
+// isTypeFuncOpcode checks if opcode is a type function
+func isTypeFuncOpcode(op Opcode) bool {
+	return op >= OP_READ_INT
+}
+
 // GetCategory returns category of an opcode
 func (op Opcode) GetCategory() string {
 	switch {
-	case op == OP_ERROR || op == OP_HALT || op == OP_NOP:
+	case isControlOpcode(op):
 		return OpCategoryControl
-	// Logical operations (AND, OR, NOT, BITWISE_*)
-	case op >= OP_AND && op <= OP_BITWISE_XOR:
+	case isLogicalOpcode(op):
 		return OpCategoryLogical
-	// Shift and modulo operations (arithmetic)
-	case op >= OP_SHL && op <= OP_MOD:
+	case isArithmeticOpcode(op):
 		return OpCategoryArithmetic
-	// Type conversion operations
-	case op == OP_INT_TO_DBL || op == OP_STR_TO_BOOL:
-		return OpCategoryLogical
-	// Stack operations
-	case op >= OP_PUSH && op <= OP_CALL:
+	case isStackOpcode(op):
 		return OpCategoryStack
-	// Object operations (16-25)
-	case op >= OP_OBJ_LOAD && op <= OP_OFFSET:
+	case isObjectOpcode(op):
 		return OpCategoryObject
-	// Rule operations (26-40) - includes FILESIZE, ENTRYPOINT, etc.
-	case op >= OP_OF && op <= OP_MATCHES:
-		return OpCategoryObject
-	// Dictionary operations (41-45)
-	case op >= OP_IMPORT && op <= OP_JNUNDEF:
-		return OpCategoryObject
-	// Jump operations (46-65) - JNUNDEF_P through JZ_P
-	case op >= OP_JNUNDEF_P && op <= OP_JZ_P:
+	case isJumpOpcode(op):
 		return OpCategoryJump
-	// Iterator operations (within jump range)
-	case op >= OP_ITER_NEXT && op <= OP_ITER_END:
+	case isIteratorOpcode(op):
 		return OpCategoryIterator
-	// Push operations (66-72)
-	case op >= OP_PUSH_8 && op <= OP_PUSH_RULE_REF:
-		return OpCategoryStack
-	// String operations (71-85)
-	case op >= OP_CONTAINS && op <= OP_OF_FOUND_AT:
+	case isStringOpcode(op):
 		return OpCategoryString
-	// Integer/Double/String arithmetic operations
-	case (op >= OP_INT_BEGIN && op <= OP_INT_END) ||
-		(op >= OP_DBL_BEGIN && op <= OP_DBL_END) ||
-		(op >= OP_STR_BEGIN && op <= OP_STR_END):
-		return OpCategoryArithmetic
-	// Data type functions
-	case op >= OP_READ_INT:
+	case isTypeFuncOpcode(op):
 		return OpCategoryTypeFunc
 	default:
 		return "unknown"

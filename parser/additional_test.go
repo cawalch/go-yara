@@ -149,7 +149,6 @@ rule test_rule_2 {
 		if program == nil {
 			t.Error("ParseRules() with multiple rules returned nil program")
 			return
-			return
 		}
 		if len(program.Rules) != 2 {
 			t.Errorf("ParseRules() with multiple rules should return 2 rules, got %d", len(program.Rules))
@@ -173,7 +172,6 @@ rule test_rule : tag1 tag2 {
 		}
 		if program == nil {
 			t.Error("ParseRules() with rule tags returned nil program")
-			return
 			return
 		}
 		if len(program.Rules) != 1 {
@@ -245,7 +243,6 @@ rule test_rule {
 		if program == nil {
 			t.Error("ParseRules() with global variables returned nil program")
 			return
-			return
 		}
 		if len(program.Rules) != 1 {
 			t.Errorf("ParseRules() with global variables should return 1 rule, got %d", len(program.Rules))
@@ -277,7 +274,6 @@ rule test_rule {
 		if program == nil {
 			t.Error("ParseRules() with imports returned nil program")
 			return
-			return
 		}
 		if len(program.Rules) != 1 {
 			t.Errorf("ParseRules() with imports should return 1 rule, got %d", len(program.Rules))
@@ -308,7 +304,6 @@ rule test_rule {
 		}
 		if program == nil {
 			t.Error("ParseRules() with includes returned nil program")
-			return
 			return
 		}
 		if len(program.Rules) != 1 {
@@ -344,7 +339,6 @@ global rule test_rule_global {
 		}
 		if program == nil {
 			t.Error("ParseRules() with rule modifiers returned nil program")
-			return
 			return
 		}
 		if len(program.Rules) != 2 {
@@ -552,7 +546,6 @@ rule test_rule {
 		if program == nil {
 			t.Error("ParseRules() with string offset returned nil program")
 			return
-			return
 		}
 		if len(program.Rules) != 1 {
 			t.Errorf("ParseRules() with string offset should return 1 rule, got %d", len(program.Rules))
@@ -580,7 +573,6 @@ rule test_rule {
 		}
 		if program == nil {
 			t.Error("ParseRules() with string length returned nil program")
-			return
 			return
 		}
 		if len(program.Rules) != 1 {
@@ -634,7 +626,6 @@ rule test_rule {
 		if program == nil {
 			t.Error("ParseRules() with arrays returned nil program")
 			return
-			return
 		}
 		if len(program.Rules) != 1 {
 			t.Errorf("ParseRules() with arrays should return 1 rule, got %d", len(program.Rules))
@@ -665,7 +656,6 @@ rule test_rule {
 		if program == nil {
 			t.Error("ParseRules() with of operator returned nil program")
 			return
-			return
 		}
 		if len(program.Rules) != 1 {
 			t.Errorf("ParseRules() with of operator should return 1 rule, got %d", len(program.Rules))
@@ -693,7 +683,6 @@ rule test_rule {
 		}
 		if program == nil {
 			t.Error("ParseRules() with for loop returned nil program")
-			return
 			return
 		}
 		if len(program.Rules) != 1 {
@@ -725,7 +714,6 @@ rule test_rule {
 		}
 		if program == nil {
 			t.Error("ParseRules() with regex patterns returned nil program")
-			return
 			return
 		}
 		if len(program.Rules) != 1 {
@@ -821,7 +809,6 @@ rule dependent_rule {
 		}
 		if program == nil {
 			t.Error("ParseRules() with rule dependencies returned nil program")
-			return
 			return
 		}
 		if len(program.Rules) != 2 {
@@ -953,7 +940,7 @@ rule test_rule {
 `)
 		p := New(l)
 		// Parse to potentially generate errors
-		p.ParseRules()
+		_, _ = p.ParseRules()
 		errors := p.Errors()
 		// Should not panic even if no errors
 		if errors == nil {
