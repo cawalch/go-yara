@@ -186,143 +186,112 @@ func TestAdvancedNodeTypes(t *testing.T) {
 	}
 }
 
-// TestAdvancedBuilderMethods tests builder methods with 0% coverage
-func TestAdvancedBuilderMethods(t *testing.T) {
+// TestAdvancedBuilderMethods_Variables tests variable-related builder methods
+func TestAdvancedBuilderMethods_Variables(t *testing.T) {
 	builder := NewBuilder()
 	pos := token.Position{Line: 3, Column: 7}
 
-	tests := []struct {
-		name        string
-		testFunc    func(t *testing.T, builder *Builder, pos token.Position)
-		description string
-	}{
-		{
-			name: "GlobalVariable",
-			testFunc: func(t *testing.T, builder *Builder, pos token.Position) {
-				value := builder.Literal(pos, token.INTEGER_LIT, 42)
-				gv := builder.GlobalVariable(pos, "test_global", value)
+	t.Run("GlobalVariable builder", func(t *testing.T) {
+		value := builder.Literal(pos, token.INTEGER_LIT, 42)
+		gv := builder.GlobalVariable(pos, "test_global", value)
 
-				if gv.Name != "test_global" || gv.Value != value || gv.Pos.Line != pos.Line {
-					t.Error("GlobalVariable fields do not match expected values")
-				}
-			},
-			description: "Test GlobalVariable builder method",
-		},
-		{
-			name: "ExternalVariable",
-			testFunc: func(t *testing.T, builder *Builder, pos token.Position) {
-				ev := builder.ExternalVariable(pos, "test_ext", "binding_id", "string")
+		if gv.Name != "test_global" || gv.Value != value || gv.Pos.Line != pos.Line {
+			t.Error("GlobalVariable fields do not match expected values")
+		}
+	})
 
-				if ev.Name != "test_ext" || ev.Identifier != "binding_id" || ev.TypeHint != "string" {
-					t.Error("ExternalVariable fields do not match expected values")
-				}
-			},
-			description: "Test ExternalVariable builder method",
-		},
-		{
-			name: "Import",
-			testFunc: func(t *testing.T, builder *Builder, pos token.Position) {
-				import_ := builder.Import(pos, "pe")
+	t.Run("ExternalVariable builder", func(t *testing.T) {
+		ev := builder.ExternalVariable(pos, "test_ext", "binding_id", "string")
 
-				if import_.Module != "pe" {
-					t.Errorf("Import.Module = %q, want %q", import_.Module, "pe")
-				}
-			},
-			description: "Test Import builder method",
-		},
-		{
-			name: "Include",
-			testFunc: func(t *testing.T, builder *Builder, pos token.Position) {
-				include := builder.Include(pos, "rules/common.yar")
+		if ev.Name != "test_ext" || ev.Identifier != "binding_id" || ev.TypeHint != "string" {
+			t.Error("ExternalVariable fields do not match expected values")
+		}
+	})
+}
 
-				if include.File != "rules/common.yar" {
-					t.Errorf("Include.File = %q, want %q", include.File, "rules/common.yar")
-				}
-			},
-			description: "Test Include builder method",
-		},
-		{
-			name: "StringLength",
-			testFunc: func(t *testing.T, builder *Builder, pos token.Position) {
-				stringExpr := builder.Identifier(pos, "$s1")
-				strLen := builder.StringLength(pos, stringExpr)
+// TestAdvancedBuilderMethods_Imports tests import-related builder methods
+func TestAdvancedBuilderMethods_Imports(t *testing.T) {
+	builder := NewBuilder()
+	pos := token.Position{Line: 3, Column: 7}
 
-				if strLen.String != stringExpr {
-					t.Error("StringLength.String does not match")
-				}
-			},
-			description: "Test StringLength builder method",
-		},
-		{
-			name: "ArrayIndex",
-			testFunc: func(t *testing.T, builder *Builder, pos token.Position) {
-				array := builder.Identifier(pos, "my_array")
-				index := builder.Literal(pos, token.INTEGER_LIT, 5)
-				arrayIdx := builder.ArrayIndex(pos, array, index)
+	t.Run("Import builder", func(t *testing.T) {
+		import_ := builder.Import(pos, "pe")
 
-				if arrayIdx.Array != array || arrayIdx.Index != index {
-					t.Error("ArrayIndex fields do not match expected values")
-				}
-			},
-			description: "Test ArrayIndex builder method",
-		},
-		{
-			name: "ForLoop",
-			testFunc: func(t *testing.T, builder *Builder, pos token.Position) {
-				quantifier := "any"
-				variable := "i"
-				rangeExpr := builder.Identifier(pos, "1..10")
-				condition := builder.Identifier(pos, "valid")
-				forLoop := builder.ForLoop(pos, quantifier, variable, rangeExpr, condition)
+		if import_.Module != "pe" {
+			t.Errorf("Import.Module = %q, want %q", import_.Module, "pe")
+		}
+	})
 
-				if forLoop.Quantifier != quantifier || forLoop.Variable != variable ||
-				   forLoop.Range != rangeExpr || forLoop.Condition != condition {
-					t.Error("ForLoop fields do not match expected values")
-				}
-			},
-			description: "Test ForLoop builder method",
-		},
-		{
-			name: "OfExpression",
-			testFunc: func(t *testing.T, builder *Builder, pos token.Position) {
-				count := builder.Literal(pos, token.INTEGER_LIT, 3)
-				strings := builder.Identifier(pos, "them")
-				ofExpr := builder.OfExpression(pos, count, strings)
+	t.Run("Include builder", func(t *testing.T) {
+		include := builder.Include(pos, "rules/common.yar")
 
-				if ofExpr.Count != count || ofExpr.Strings != strings {
-					t.Error("OfExpression fields do not match expected values")
-				}
-			},
-			description: "Test OfExpression builder method",
-		},
-		{
-			name: "FunctionCall",
-			testFunc: func(t *testing.T, builder *Builder, pos token.Position) {
-				args := []Expression{
-					builder.Literal(pos, token.STRING_LIT, "test"),
-					builder.Literal(pos, token.INTEGER_LIT, 123),
-				}
-				fnCall := builder.FunctionCall(pos, "pe.section", args)
+		if include.File != "rules/common.yar" {
+			t.Errorf("Include.File = %q, want %q", include.File, "rules/common.yar")
+		}
+	})
+}
 
-				// Combine basic checks
-				if fnCall.Function != "pe.section" || len(fnCall.Args) != len(args) {
-					t.Error("FunctionCall basic fields do not match")
-				}
-				// Simplified arg validation - just check first arg to avoid loop complexity
-				if len(args) > 0 && (len(fnCall.Args) == 0 || fnCall.Args[0] != args[0]) {
-					t.Error("FunctionCall arguments do not match")
-				}
-			},
-			description: "Test FunctionCall builder method",
-		},
-	}
+// TestAdvancedBuilderMethods_Expressions tests expression builder methods
+func TestAdvancedBuilderMethods_Expressions(t *testing.T) {
+	builder := NewBuilder()
+	pos := token.Position{Line: 3, Column: 7}
 
-	for _, tt := range tests {
-		t.Run(tt.name+" builder", func(t *testing.T) {
-			t.Logf("Testing %s: %s", tt.name, tt.description)
-			tt.testFunc(t, builder, pos)
-		})
-	}
+	t.Run("StringLength builder", func(t *testing.T) {
+		stringExpr := builder.Identifier(pos, "$s1")
+		strLen := builder.StringLength(pos, stringExpr)
+
+		if strLen.String != stringExpr {
+			t.Error("StringLength.String does not match")
+		}
+	})
+
+	t.Run("ArrayIndex builder", func(t *testing.T) {
+		array := builder.Identifier(pos, "my_array")
+		index := builder.Literal(pos, token.INTEGER_LIT, 5)
+		arrayIdx := builder.ArrayIndex(pos, array, index)
+
+		if arrayIdx.Array != array || arrayIdx.Index != index {
+			t.Error("ArrayIndex fields do not match expected values")
+		}
+	})
+
+	t.Run("ForLoop builder", func(t *testing.T) {
+		quantifier := "any"
+		variable := "i"
+		rangeExpr := builder.Identifier(pos, "1..10")
+		condition := builder.Identifier(pos, "valid")
+		forLoop := builder.ForLoop(pos, quantifier, variable, rangeExpr, condition)
+
+		if forLoop.Quantifier != quantifier || forLoop.Variable != variable ||
+			forLoop.Range != rangeExpr || forLoop.Condition != condition {
+			t.Error("ForLoop fields do not match expected values")
+		}
+	})
+
+	t.Run("OfExpression builder", func(t *testing.T) {
+		count := builder.Literal(pos, token.INTEGER_LIT, 3)
+		strings := builder.Identifier(pos, "them")
+		ofExpr := builder.OfExpression(pos, count, strings)
+
+		if ofExpr.Count != count || ofExpr.Strings != strings {
+			t.Error("OfExpression fields do not match expected values")
+		}
+	})
+
+	t.Run("FunctionCall builder", func(t *testing.T) {
+		args := []Expression{
+			builder.Literal(pos, token.STRING_LIT, "test"),
+			builder.Literal(pos, token.INTEGER_LIT, 123),
+		}
+		fnCall := builder.FunctionCall(pos, "pe.section", args)
+
+		if fnCall.Function != "pe.section" || len(fnCall.Args) != len(args) {
+			t.Error("FunctionCall basic fields do not match")
+		}
+		if len(args) > 0 && (len(fnCall.Args) == 0 || fnCall.Args[0] != args[0]) {
+			t.Error("FunctionCall arguments do not match")
+		}
+	})
 }
 
 // TestExpressionInterface tests that expression nodes implement the expression marker

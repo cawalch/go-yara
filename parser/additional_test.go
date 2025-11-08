@@ -176,14 +176,14 @@ rule test_rule_2 {
 // testParserRuleFeatures tests parser with different rule features
 func testParserRuleFeatures(t *testing.T) {
 	tests := []struct {
-		name           string
-		input          string
-		expectError    bool
-		expectedTags   int
-		expectedMeta   int
-		description    string
-		validateTags   []string
-		validateMeta   map[string]string
+		name         string
+		input        string
+		expectError  bool
+		expectedTags int
+		expectedMeta int
+		description  string
+		validateTags []string
+		validateMeta map[string]string
 	}{
 		{
 			name: "rule_with_tags",
@@ -211,7 +211,7 @@ func testParserRuleFeatures(t *testing.T) {
 	condition:
 		$test
 }`,
-			expectError: false,
+			expectError:  false,
 			expectedTags: 0,
 			expectedMeta: 3,
 			description:  "Parser should handle rule meta information",
@@ -336,8 +336,8 @@ func parseAndValidate(t *testing.T, input string, testName string, expectedRules
 // testParserGlobalAndImportFeatures tests global variables, imports, and includes
 func testParserGlobalAndImportFeatures(t *testing.T) {
 	tests := []struct {
-		name string
-		input string
+		name          string
+		input         string
 		expectedRules int
 	}{
 		{
@@ -389,11 +389,12 @@ rule test_rule {
 		})
 	}
 }
+
 // testParserRuleModifiers tests rule and string modifiers
 func testParserRuleModifiers(t *testing.T) {
 	tests := []struct {
-		name string
-		input string
+		name          string
+		input         string
 		expectedRules int
 	}{
 		{
@@ -439,8 +440,8 @@ rule test_rule {
 // testParserArithmeticOperations tests arithmetic, bitwise, and shift operations
 func testParserArithmeticOperations(t *testing.T) {
 	tests := []struct {
-		name string
-		input string
+		name          string
+		input         string
 		expectedRules int
 	}{
 		{
@@ -488,8 +489,8 @@ rule test_rule {
 // testParserLogicAndComparisons tests boolean logic and comparison operators
 func testParserLogicAndComparisons(t *testing.T) {
 	tests := []struct {
-		name string
-		input string
+		name          string
+		input         string
 		expectedRules int
 	}{
 		{
@@ -526,8 +527,8 @@ rule test_rule {
 // testParserStringOperations tests string count, offset, and length operations
 func testParserStringOperations(t *testing.T) {
 	tests := []struct {
-		name string
-		input string
+		name          string
+		input         string
 		expectedRules int
 	}{
 		{
@@ -577,8 +578,8 @@ rule test_rule {
 // testParserAdvancedFeatures tests functions, arrays, of operator, and for loops
 func testParserAdvancedFeatures(t *testing.T) {
 	tests := []struct {
-		name string
-		input string
+		name          string
+		input         string
 		expectedRules int
 	}{
 		{
@@ -641,8 +642,8 @@ rule test_rule {
 // testParserPatternsAndStrings tests regex patterns, hex strings, and anonymous strings
 func testParserPatternsAndStrings(t *testing.T) {
 	tests := []struct {
-		name string
-		input string
+		name          string
+		input         string
 		expectedRules int
 	}{
 		{
@@ -691,8 +692,8 @@ rule test_rule {
 // testParserRuleElements tests rule dependencies, time expressions, filesize, and entrypoint
 func testParserRuleElements(t *testing.T) {
 	tests := []struct {
-		name string
-		input string
+		name          string
+		input         string
 		expectedRules int
 	}{
 		{

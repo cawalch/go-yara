@@ -1012,8 +1012,89 @@ func TestInterpreterTypeConversion(t *testing.T) {
 	}
 }
 
-// Regex-backed FOUND/FOUND_AT/FOUND_IN parity tests (compiler-level)
-func TestInterpreterRegexFoundOps(t *testing.T) {
+// TestInterpreterRegexFoundOps_FOUND tests FOUND operation
+func TestInterpreterRegexFoundOps_FOUND(t *testing.T) {
+	interp := setupRegexInterpreter(t)
+
+	// FOUND($a) -> true
+	_ = interp.push(Value{Type: ValueTypeString, StringVal: "$a"})
+	if execErr := interp.executeOpcode(OP_FOUND); execErr != nil {
+		t.Fatalf("executeOpcode(OP_FOUND) error = %v", execErr)
+	}
+	if len(interp.GetStack()) != 1 || interp.GetStack()[0].IntVal != 1 {
+		t.Fatalf("FOUND($a) expected 1, got %+v", interp.GetStack()[0])
+	}
+}
+
+// TestInterpreterRegexFoundOps_FOUND_AT tests FOUND_AT operation
+func TestInterpreterRegexFoundOps_FOUND_AT(t *testing.T) {
+	interp := setupRegexInterpreter(t)
+	matches := interp.matchContext.Matches["$a"]
+	hitOff := matches[0].Offset
+	missOff := hitOff + 99
+
+	tests := []struct {
+		name     string
+		offset   int64
+		expected int64
+	}{
+		{"FOUND_AT hit", hitOff, 1},
+		{"FOUND_AT miss", missOff, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Clear stack before each test
+			interp.stack = interp.stack[:0]
+
+			_ = interp.push(Value{Type: ValueTypeString, StringVal: "$a"})
+			_ = interp.push(Value{Type: ValueTypeInt, IntVal: tt.offset})
+			if execErr := interp.executeOpcode(OP_FOUND_AT); execErr != nil {
+				t.Fatalf("executeOpcode(OP_FOUND_AT) error = %v", execErr)
+			}
+			if len(interp.GetStack()) != 1 || interp.GetStack()[0].IntVal != tt.expected {
+				t.Fatalf("FOUND_AT($a, %d) expected %d, got %+v", tt.offset, tt.expected, interp.GetStack()[0])
+			}
+		})
+	}
+}
+
+// TestInterpreterRegexFoundOps_FOUND_IN tests FOUND_IN operation
+func TestInterpreterRegexFoundOps_FOUND_IN(t *testing.T) {
+	interp := setupRegexInterpreter(t)
+	matches := interp.matchContext.Matches["$a"]
+	hitOff := matches[0].Offset
+
+	tests := []struct {
+		name     string
+		start    int64
+		end      int64
+		expected int64
+	}{
+		{"FOUND_IN covering hit", max(hitOff-1, 0), hitOff + 10, 1},
+		{"FOUND_IN before hit", 0, hitOff - 1, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Clear stack before each test
+			interp.stack = interp.stack[:0]
+
+			_ = interp.push(Value{Type: ValueTypeString, StringVal: "$a"})
+			_ = interp.push(Value{Type: ValueTypeInt, IntVal: tt.start})
+			_ = interp.push(Value{Type: ValueTypeInt, IntVal: tt.end})
+			if execErr := interp.executeOpcode(OP_FOUND_IN); execErr != nil {
+				t.Fatalf("executeOpcode(OP_FOUND_IN) error = %v", execErr)
+			}
+			if len(interp.GetStack()) != 1 || interp.GetStack()[0].IntVal != tt.expected {
+				t.Fatalf("FOUND_IN($a, %d, %d) expected %d, got %+v", tt.start, tt.end, tt.expected, interp.GetStack()[0])
+			}
+		})
+	}
+}
+
+// setupRegexInterpreter creates an interpreter with regex matches for testing
+func setupRegexInterpreter(t *testing.T) *Interpreter {
 	// Compile a simple regex via the internal compiler path
 	sc := NewStringCompiler(NewEmitter())
 	code, err := sc.compileRegex(`/ab+/`, nil)
@@ -1059,64 +1140,5 @@ func TestInterpreterRegexFoundOps(t *testing.T) {
 		"$a": matches,
 	}
 
-	// FOUND($a) -> true
-	_ = interp.push(Value{Type: ValueTypeString, StringVal: "$a"})
-	if execErr := interp.executeOpcode(OP_FOUND); execErr != nil {
-		t.Fatalf("executeOpcode(OP_FOUND) error = %v", execErr)
-	}
-	if len(interp.GetStack()) != 1 || interp.GetStack()[0].IntVal != 1 {
-		t.Fatalf("FOUND($a) expected 1, got %+v", interp.GetStack()[0])
-	}
-	interp.stack = interp.stack[:0]
-
-	// FOUND_AT($a, off) where off is an actual match start -> true
-	hitOff := matches[0].Offset
-	_ = interp.push(Value{Type: ValueTypeString, StringVal: "$a"})
-	_ = interp.push(Value{Type: ValueTypeInt, IntVal: hitOff})
-	if execErr := interp.executeOpcode(OP_FOUND_AT); execErr != nil {
-		t.Fatalf("executeOpcode(OP_FOUND_AT) error = %v", execErr)
-	}
-	if len(interp.GetStack()) != 1 || interp.GetStack()[0].IntVal != 1 {
-		t.Fatalf("FOUND_AT($a, %d) expected 1, got %+v", hitOff, interp.GetStack()[0])
-	}
-	interp.stack = interp.stack[:0]
-
-	// FOUND_AT($a, miss) -> false
-	missOff := hitOff + 99
-	_ = interp.push(Value{Type: ValueTypeString, StringVal: "$a"})
-	_ = interp.push(Value{Type: ValueTypeInt, IntVal: missOff})
-	if execErr := interp.executeOpcode(OP_FOUND_AT); execErr != nil {
-		t.Fatalf("executeOpcode(OP_FOUND_AT) error = %v", execErr)
-	}
-	if len(interp.GetStack()) != 1 || interp.GetStack()[0].IntVal != 0 {
-		t.Fatalf("FOUND_AT($a, %d) expected 0, got %+v", missOff, interp.GetStack()[0])
-	}
-	interp.stack = interp.stack[:0]
-
-	// FOUND_IN($a, start, end) covering a known hit -> true
-	startIn := max(hitOff-1, 0)
-	endIn := hitOff + 10
-	_ = interp.push(Value{Type: ValueTypeString, StringVal: "$a"})
-	_ = interp.push(Value{Type: ValueTypeInt, IntVal: startIn})
-	_ = interp.push(Value{Type: ValueTypeInt, IntVal: endIn})
-	if execErr := interp.executeOpcode(OP_FOUND_IN); execErr != nil {
-		t.Fatalf("executeOpcode(OP_FOUND_IN) error = %v", execErr)
-	}
-	if len(interp.GetStack()) != 1 || interp.GetStack()[0].IntVal != 1 {
-		t.Fatalf("FOUND_IN($a, %d, %d) expected 1, got %+v", startIn, endIn, interp.GetStack()[0])
-	}
-	interp.stack = interp.stack[:0]
-
-	// FOUND_IN($a, start, end) entirely before the first match -> false
-	beforeStart := int64(0)
-	beforeEnd := hitOff - 1
-	_ = interp.push(Value{Type: ValueTypeString, StringVal: "$a"})
-	_ = interp.push(Value{Type: ValueTypeInt, IntVal: beforeStart})
-	_ = interp.push(Value{Type: ValueTypeInt, IntVal: beforeEnd})
-	if execErr := interp.executeOpcode(OP_FOUND_IN); execErr != nil {
-		t.Fatalf("executeOpcode(OP_FOUND_IN) error = %v", execErr)
-	}
-	if len(interp.GetStack()) != 1 || interp.GetStack()[0].IntVal != 0 {
-		t.Fatalf("FOUND_IN($a, %d, %d) expected 0, got %+v", beforeStart, beforeEnd, interp.GetStack()[0])
-	}
+	return interp
 }

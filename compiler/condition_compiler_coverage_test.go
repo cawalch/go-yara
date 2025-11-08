@@ -7,29 +7,22 @@ import (
 	"github.com/cawalch/go-yara/token"
 )
 
-// TestConditionCompilerUncoveredFunctions tests functions with 0% coverage
-func TestConditionCompilerUncoveredFunctions(t *testing.T) {
-	emitter := NewEmitter()
-	stringOffsets := map[string]int{"$test": 0}
-	cc := NewConditionCompiler(emitter, stringOffsets)
-	pos := token.Position{Line: 1, Column: 1}
-	builder := ast.NewBuilder()
+// TestConditionCompiler_ParseSizeLiteral tests the parseSizeLiteral function
+func TestConditionCompiler_ParseSizeLiteral(t *testing.T) {
+	tests := []struct {
+		literal  string
+		expected int64
+		wantErr  bool
+	}{
+		{"10KB", 10 * 1024, false},
+		{"5MB", 5 * 1024 * 1024, false},
+		{"0x10KB", 0x10 * 1024, false},
+		{"invalid", 0, true},
+		{"", 0, true},
+	}
 
-	t.Run("parseSizeLiteral function", func(t *testing.T) {
-		// Test the parseSizeLiteral function directly
-		tests := []struct {
-			literal  string
-			expected int64
-			wantErr  bool
-		}{
-			{"10KB", 10 * 1024, false},
-			{"5MB", 5 * 1024 * 1024, false},
-			{"0x10KB", 0x10 * 1024, false},
-			{"invalid", 0, true},
-			{"", 0, true},
-		}
-
-		for _, tt := range tests {
+	for _, tt := range tests {
+		t.Run(tt.literal, func(t *testing.T) {
 			got, err := parseSizeLiteral(tt.literal)
 			if tt.wantErr && err == nil {
 				t.Errorf("parseSizeLiteral(%q) expected error", tt.literal)
@@ -37,31 +30,43 @@ func TestConditionCompilerUncoveredFunctions(t *testing.T) {
 			if !tt.wantErr && (err != nil || got != tt.expected) {
 				t.Errorf("parseSizeLiteral(%q) = %d, %v, want %d, nil", tt.literal, got, err, tt.expected)
 			}
-		}
-	})
+		})
+	}
+}
 
-	t.Run("SetRuleIndexMap method", func(t *testing.T) {
-		ruleIndexMap := map[string]int{"rule1": 0}
-		cc.SetRuleIndexMap(ruleIndexMap)
-		// If we reach here without panic, the test passes
-		t.Log("SetRuleIndexMap executed without error")
-	})
+// TestConditionCompiler_StringOffsetFunctions tests string offset related functions
+func TestConditionCompiler_StringOffsetFunctions(t *testing.T) {
+	emitter := NewEmitter()
+	stringOffsets := map[string]int{"$test": 0}
+	cc := NewConditionCompiler(emitter, stringOffsets)
 
-	t.Run("findStringOffset and emit functions", func(t *testing.T) {
-		// Test findStringOffset
+	t.Run("findStringOffset", func(t *testing.T) {
 		offset, found := cc.findStringOffset("$test")
 		if !found || offset != 0 {
 			t.Errorf("findStringOffset failed: got %d, %v", offset, found)
 		}
+	})
 
-		// Test emitStringOffset and emitStringIdentifier
+	t.Run("emit functions", func(t *testing.T) {
 		cc.emitStringOffset(0, 1, 1)
 		cc.emitStringIdentifier(0, "$test", 1, 1)
 		t.Log("String offset functions executed without error")
 	})
+}
 
-	t.Run("GetVariableMap and GetExternalVariables", func(t *testing.T) {
-		// Add a variable first
+// TestConditionCompiler_VariableManagement tests variable-related functions
+func TestConditionCompiler_VariableManagement(t *testing.T) {
+	emitter := NewEmitter()
+	stringOffsets := map[string]int{"$test": 0}
+	cc := NewConditionCompiler(emitter, stringOffsets)
+
+	t.Run("SetRuleIndexMap", func(t *testing.T) {
+		ruleIndexMap := map[string]int{"rule1": 0}
+		cc.SetRuleIndexMap(ruleIndexMap)
+		t.Log("SetRuleIndexMap executed without error")
+	})
+
+	t.Run("Variable maps", func(t *testing.T) {
 		cc.AddVariable("test_var", 0)
 
 		varMap := cc.GetVariableMap()
@@ -75,12 +80,29 @@ func TestConditionCompilerUncoveredFunctions(t *testing.T) {
 		}
 	})
 
-	t.Run("Boolean expression functions", func(t *testing.T) {
+	t.Run("SetStringOffsets", func(t *testing.T) {
+		newOffsets := map[string]int{"$new": 1}
+		cc.SetStringOffsets(newOffsets)
+		t.Log("SetStringOffsets executed without error")
+	})
+}
+
+// TestConditionCompiler_BooleanExpressions tests boolean expression compilation
+func TestConditionCompiler_BooleanExpressions(t *testing.T) {
+	emitter := NewEmitter()
+	stringOffsets := map[string]int{"$test": 0}
+	cc := NewConditionCompiler(emitter, stringOffsets)
+	pos := token.Position{Line: 1, Column: 1}
+	builder := ast.NewBuilder()
+
+	t.Run("CompileBooleanExpression", func(t *testing.T) {
 		expr := builder.Literal(pos, token.TRUE, true)
 		err := cc.CompileBooleanExpression(expr, false)
 		t.Logf("CompileBooleanExpression result: %v", err)
+	})
 
-		// Test short circuit functions with binary ops
+	t.Run("Short circuit functions", func(t *testing.T) {
+		expr := builder.Literal(pos, token.TRUE, true)
 		andOp := builder.BinaryOp(pos, expr, token.AND, expr)
 		orOp := builder.BinaryOp(pos, expr, token.OR, expr)
 
@@ -88,9 +110,17 @@ func TestConditionCompilerUncoveredFunctions(t *testing.T) {
 		_ = cc.compileShortCircuitOr(orOp)
 		t.Log("Boolean expression functions executed without error")
 	})
+}
 
-	t.Run("Special operator compilation", func(t *testing.T) {
-		// Test string offset operator (@)
+// TestConditionCompiler_SpecialOperators tests special operator compilation
+func TestConditionCompiler_SpecialOperators(t *testing.T) {
+	emitter := NewEmitter()
+	stringOffsets := map[string]int{"$test": 0}
+	cc := NewConditionCompiler(emitter, stringOffsets)
+	pos := token.Position{Line: 1, Column: 1}
+	builder := ast.NewBuilder()
+
+	t.Run("String offset operator", func(t *testing.T) {
 		atExpr := builder.BinaryOp(
 			pos,
 			builder.Identifier(pos, "$test"),
@@ -99,52 +129,64 @@ func TestConditionCompilerUncoveredFunctions(t *testing.T) {
 		)
 		err := cc.compileStringOffsetOperator(atExpr)
 		t.Logf("compileStringOffsetOperator result: %v", err)
+	})
 
-		// Test hash operator (#)
+	t.Run("Hash operator", func(t *testing.T) {
 		hashExpr := builder.UnaryOp(
 			pos,
 			token.HASH,
 			builder.Identifier(pos, "$test"),
 		)
-		err = cc.compileHashOperator(hashExpr)
+		err := cc.compileHashOperator(hashExpr)
 		t.Logf("compileHashOperator result: %v", err)
+	})
 
-		// Test at operator
+	t.Run("At operator", func(t *testing.T) {
 		atUnaryExpr := builder.UnaryOp(
 			pos,
 			token.AT,
 			builder.Identifier(pos, "$test"),
 		)
-		err = cc.compileAtOperator(atUnaryExpr)
+		err := cc.compileAtOperator(atUnaryExpr)
 		t.Logf("compileAtOperator result: %v", err)
+	})
 
-		// Test defined operator
+	t.Run("Defined operator", func(t *testing.T) {
 		definedExpr := builder.UnaryOp(
 			pos,
 			token.DEFINED,
 			builder.Identifier(pos, "test_var"),
 		)
-		err = cc.compileDefinedOperator(definedExpr)
+		err := cc.compileDefinedOperator(definedExpr)
 		t.Logf("compileDefinedOperator result: %v", err)
+	})
 
-		// Test array index
+	t.Run("Array index", func(t *testing.T) {
 		arrayExpr := builder.ArrayIndex(
 			pos,
 			builder.Identifier(pos, "array_var"),
 			builder.Literal(pos, token.INTEGER_LIT, 0),
 		)
-		err = cc.compileArrayIndex(arrayExpr)
+		err := cc.compileArrayIndex(arrayExpr)
 		t.Logf("compileArrayIndex result: %v", err)
 	})
 
-	t.Run("Size literal compilation", func(t *testing.T) {
+	t.Run("Size literal", func(t *testing.T) {
 		sizeExpr := builder.Literal(pos, token.STRING_LIT, "10KB")
 		err := cc.compileSizeLiteral(sizeExpr)
 		t.Logf("compileSizeLiteral result: %v", err)
 	})
+}
 
-	t.Run("Advanced expression compilation", func(t *testing.T) {
-		// Test "of" expression
+// TestConditionCompiler_AdvancedExpressions tests advanced expression compilation
+func TestConditionCompiler_AdvancedExpressions(t *testing.T) {
+	emitter := NewEmitter()
+	stringOffsets := map[string]int{"$test": 0}
+	cc := NewConditionCompiler(emitter, stringOffsets)
+	pos := token.Position{Line: 1, Column: 1}
+	builder := ast.NewBuilder()
+
+	t.Run("Of expression", func(t *testing.T) {
 		ofExpr := builder.OfExpression(
 			pos,
 			builder.Literal(pos, token.INTEGER_LIT, 1),
@@ -152,17 +194,25 @@ func TestConditionCompilerUncoveredFunctions(t *testing.T) {
 		)
 		err := cc.compileOfExpression(ofExpr)
 		t.Logf("compileOfExpression result: %v", err)
+	})
 
-		// Test count expression
-		err = cc.compileCountExpression(ofExpr)
+	t.Run("Count expression", func(t *testing.T) {
+		ofExpr := builder.OfExpression(
+			pos,
+			builder.Literal(pos, token.INTEGER_LIT, 1),
+			builder.Identifier(pos, "them"),
+		)
+		err := cc.compileCountExpression(ofExpr)
 		t.Logf("compileCountExpression result: %v", err)
+	})
 
-		// Test strings expression
+	t.Run("Strings expression", func(t *testing.T) {
 		stringsExpr := builder.Identifier(pos, "them")
-		err = cc.compileStringsExpression(stringsExpr)
+		err := cc.compileStringsExpression(stringsExpr)
 		t.Logf("compileStringsExpression result: %v", err)
+	})
 
-		// Test function call
+	t.Run("Function call", func(t *testing.T) {
 		fnCall := builder.FunctionCall(
 			pos,
 			"pe.section",
@@ -170,43 +220,62 @@ func TestConditionCompilerUncoveredFunctions(t *testing.T) {
 				builder.Literal(pos, token.STRING_LIT, ".text"),
 			},
 		)
-		err = cc.compileFunctionCall(fnCall)
+		err := cc.compileFunctionCall(fnCall)
 		t.Logf("compileFunctionCall result: %v", err)
+	})
 
-		// Test string length
+	t.Run("String length", func(t *testing.T) {
 		strLenExpr := builder.StringLength(
 			pos,
 			builder.Identifier(pos, "$test"),
 		)
-		err = cc.compileStringLength(strLenExpr)
+		err := cc.compileStringLength(strLenExpr)
 		t.Logf("compileStringLength result: %v", err)
 	})
+}
 
-	t.Run("Rule reference functions", func(t *testing.T) {
+// TestConditionCompiler_RuleReferences tests rule reference functions
+func TestConditionCompiler_RuleReferences(t *testing.T) {
+	emitter := NewEmitter()
+	stringOffsets := map[string]int{"$test": 0}
+	cc := NewConditionCompiler(emitter, stringOffsets)
+
+	t.Run("isRuleReference", func(t *testing.T) {
+		ruleName := "test_rule"
+		isRef := cc.isRuleReference(ruleName)
+		t.Logf("isRuleReference result: %v", isRef)
+	})
+
+	t.Run("compileRuleReference", func(t *testing.T) {
 		ruleName := "test_rule"
 		line := 1
 		column := 1
-
-		// Test rule reference detection (function expects string)
-		isRef := cc.isRuleReference(ruleName)
-		t.Logf("isRuleReference result: %v", isRef)
-
-		// Test rule reference compilation
 		err := cc.compileRuleReference(ruleName, line, column)
 		t.Logf("compileRuleReference result: %v", err)
+	})
 
-		// Test module function call
+	t.Run("emitModuleFunctionCall", func(t *testing.T) {
 		moduleName := "pe"
+		line := 1
+		column := 1
 		cc.emitModuleFunctionCall(moduleName, line, column)
 		t.Log("emitModuleFunctionCall executed without error")
 	})
+}
 
-	t.Run("Type detection functions", func(t *testing.T) {
-		intLit := builder.Literal(pos, token.INTEGER_LIT, 42)
-		floatLit := builder.Literal(pos, token.FLOAT_LIT, 3.14)
-		ident := builder.Identifier(pos, "var")
+// TestConditionCompiler_TypeDetection tests type detection functions
+func TestConditionCompiler_TypeDetection(t *testing.T) {
+	emitter := NewEmitter()
+	stringOffsets := map[string]int{"$test": 0}
+	cc := NewConditionCompiler(emitter, stringOffsets)
+	pos := token.Position{Line: 1, Column: 1}
+	builder := ast.NewBuilder()
 
-		// Test float detection
+	intLit := builder.Literal(pos, token.INTEGER_LIT, 42)
+	floatLit := builder.Literal(pos, token.FLOAT_LIT, 3.14)
+	ident := builder.Identifier(pos, "var")
+
+	t.Run("isFloatExpression", func(t *testing.T) {
 		if !cc.isFloatExpression(floatLit) {
 			t.Error("isFloatExpression should return true for float literal")
 		}
@@ -216,8 +285,9 @@ func TestConditionCompilerUncoveredFunctions(t *testing.T) {
 		if cc.isFloatExpression(ident) {
 			t.Error("isFloatExpression should return false for identifier")
 		}
+	})
 
-		// Test literal float detection
+	t.Run("isLiteralFloat", func(t *testing.T) {
 		if !cc.isLiteralFloat(floatLit) {
 			t.Error("isLiteralFloat should return true for float literal")
 		}
@@ -225,9 +295,17 @@ func TestConditionCompilerUncoveredFunctions(t *testing.T) {
 			t.Error("isLiteralFloat should return false for int literal")
 		}
 	})
+}
 
-	t.Run("Mixed type comparison function", func(t *testing.T) {
-		// Test the boolean parameter version
+// TestConditionCompiler_MixedTypeOperations tests mixed type comparison and operations
+func TestConditionCompiler_MixedTypeOperations(t *testing.T) {
+	emitter := NewEmitter()
+	stringOffsets := map[string]int{"$test": 0}
+	cc := NewConditionCompiler(emitter, stringOffsets)
+	pos := token.Position{Line: 1, Column: 1}
+	builder := ast.NewBuilder()
+
+	t.Run("isMixedTypeComparison", func(t *testing.T) {
 		tests := []struct {
 			leftIsFloat  bool
 			rightIsFloat bool
@@ -248,8 +326,7 @@ func TestConditionCompilerUncoveredFunctions(t *testing.T) {
 		}
 	})
 
-	t.Run("Mixed type operation handlers", func(t *testing.T) {
-		// Create binary operations for testing
+	t.Run("Mixed type handlers", func(t *testing.T) {
 		bitShiftOp := builder.BinaryOp(
 			pos,
 			builder.Literal(pos, token.INTEGER_LIT, 42),
@@ -271,7 +348,6 @@ func TestConditionCompilerUncoveredFunctions(t *testing.T) {
 			builder.Literal(pos, token.FLOAT_LIT, 3.14),
 		)
 
-		// Test handlers (they modify the binaryOp in place)
 		cc.handleBitShiftFloatConversion(bitShiftOp, false, true, false)
 		result := cc.handleMixedTypeLiteralComparison(comparisonOp)
 		t.Logf("handleMixedTypeLiteralComparison result: %v", result)
@@ -281,16 +357,26 @@ func TestConditionCompilerUncoveredFunctions(t *testing.T) {
 
 		t.Log("Mixed type operation handlers executed without error")
 	})
+}
 
-	t.Run("Compilation optimization and validation", func(t *testing.T) {
-		expr := builder.Literal(pos, token.INTEGER_LIT, 42)
+// TestConditionCompiler_OptimizationAndValidation tests optimization and validation functions
+func TestConditionCompiler_OptimizationAndValidation(t *testing.T) {
+	emitter := NewEmitter()
+	stringOffsets := map[string]int{"$test": 0}
+	cc := NewConditionCompiler(emitter, stringOffsets)
+	pos := token.Position{Line: 1, Column: 1}
+	builder := ast.NewBuilder()
 
-		// Test validation
+	expr := builder.Literal(pos, token.INTEGER_LIT, 42)
+
+	t.Run("ValidateExpression", func(t *testing.T) {
 		err := cc.ValidateExpression(expr)
 		if err != nil {
 			t.Errorf("ValidateExpression failed: %v", err)
 		}
+	})
 
+	t.Run("Optimization functions", func(t *testing.T) {
 		// Test optimization
 		optimized := cc.OptimizeExpression(expr)
 		if optimized == nil {
@@ -304,7 +390,7 @@ func TestConditionCompilerUncoveredFunctions(t *testing.T) {
 		}
 	})
 
-	t.Run("EmitJump and jump handling", func(t *testing.T) {
+	t.Run("EmitJump", func(t *testing.T) {
 		// Test EmitJump with proper parameters
 		config := ConditionalJumpConfig{
 			Opcode:      OP_JZ,
@@ -313,12 +399,6 @@ func TestConditionCompilerUncoveredFunctions(t *testing.T) {
 		}
 		err := cc.EmitJump(config)
 		t.Logf("EmitJump result: %v", err)
-	})
-
-	t.Run("SetStringOffsets", func(t *testing.T) {
-		newOffsets := map[string]int{"$new": 1}
-		cc.SetStringOffsets(newOffsets)
-		t.Log("SetStringOffsets executed without error")
 	})
 }
 
