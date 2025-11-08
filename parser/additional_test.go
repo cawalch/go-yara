@@ -14,15 +14,45 @@ func TestParserEdgeCasesAdditional(t *testing.T) {
 	t.Run("RuleFeatures", testParserRuleFeatures)
 }
 
+// parserTestCase represents a test case for parser functionality
+type parserTestCase struct {
+	name        string
+	input       string
+	expectError bool
+	expectRules int
+	description string
+}
+
+// assertParserResult validates parser results against expectations
+func assertParserResult(t *testing.T, p *Parser, program *ast.Program, err error, tc parserTestCase) {
+	if tc.expectError {
+		if err == nil {
+			t.Errorf("Expected error but parsing succeeded: %s", tc.description)
+		}
+		return
+	}
+
+	if err != nil {
+		t.Errorf("Unexpected parsing error: %v: %s", err, tc.description)
+		for _, parseErr := range p.Errors() {
+			t.Logf("Parser error: %v", parseErr)
+		}
+		return
+	}
+
+	if program == nil {
+		t.Errorf("Expected program but got nil: %s", tc.description)
+		return
+	}
+
+	if len(program.Rules) != tc.expectRules {
+		t.Errorf("Expected %d rules but got %d: %s", tc.expectRules, len(program.Rules), tc.description)
+	}
+}
+
 // testParserInputValidation tests parser with various input scenarios
 func testParserInputValidation(t *testing.T) {
-	tests := []struct {
-		name        string
-		input       string
-		expectError bool
-		expectRules int
-		description string
-	}{
+	tests := []parserTestCase{
 		{
 			name:        "empty_input",
 			input:       "",
@@ -58,40 +88,14 @@ func testParserInputValidation(t *testing.T) {
 			l := lexer.New(tt.input)
 			p := New(l)
 			program, err := p.ParseRules()
-
-			if tt.expectError {
-				if err == nil {
-					t.Errorf("Expected error but parsing succeeded: %s", tt.description)
-				}
-				return
-			}
-
-			if err != nil {
-				t.Errorf("Unexpected parsing error: %v: %s", err, tt.description)
-				return
-			}
-
-			if program == nil {
-				t.Errorf("Expected program but got nil: %s", tt.description)
-				return
-			}
-
-			if len(program.Rules) != tt.expectRules {
-				t.Errorf("Expected %d rules but got %d: %s", tt.expectRules, len(program.Rules), tt.description)
-			}
+			assertParserResult(t, p, program, err, tt)
 		})
 	}
 }
 
 // testParserRuleStructure tests parser with different rule structures
 func testParserRuleStructure(t *testing.T) {
-	tests := []struct {
-		name        string
-		input       string
-		expectError bool
-		expectRules int
-		description string
-	}{
+	tests := []parserTestCase{
 		{
 			name: "rule_no_strings",
 			input: `rule test_rule {
@@ -138,34 +142,10 @@ rule test_rule_2 {
 			l := lexer.New(tt.input)
 			p := New(l)
 			program, err := p.ParseRules()
-
-			if tt.expectError {
-				if err == nil {
-					t.Errorf("Expected error but parsing succeeded: %s", tt.description)
-				}
-				return
-			}
-
-			if err != nil {
-				t.Errorf("Unexpected parsing error: %v: %s", err, tt.description)
-				for _, parseErr := range p.Errors() {
-					t.Logf("Parser error: %v", parseErr)
-				}
-				return
-			}
-
-			if program == nil {
-				t.Errorf("Expected program but got nil: %s", tt.description)
-				return
-			}
-
-			if len(program.Rules) != tt.expectRules {
-				t.Errorf("Expected %d rules but got %d: %s", tt.expectRules, len(program.Rules), tt.description)
-				return
-			}
+			assertParserResult(t, p, program, err, tt)
 
 			// Additional validation for specific test cases
-			if tt.name == "rule_no_strings" && len(program.Rules) > 0 {
+			if tt.name == "rule_no_strings" && program != nil && len(program.Rules) > 0 {
 				if len(program.Rules[0].Strings) != 0 {
 					t.Errorf("Expected 0 strings but got %d: %s", len(program.Rules[0].Strings), tt.description)
 				}
@@ -702,13 +682,16 @@ rule test_rule {
 	}
 }
 
+// simpleParserTestCase represents a simple parser test case with just input and expected rules count
+type simpleParserTestCase struct {
+	name          string
+	input         string
+	expectedRules int
+}
+
 // testParserRuleElements tests rule dependencies, time expressions, filesize, and entrypoint
 func testParserRuleElements(t *testing.T) {
-	tests := []struct {
-		name          string
-		input         string
-		expectedRules int
-	}{
+	tests := []simpleParserTestCase{
 		{
 			name: "rule_dependencies",
 			input: `

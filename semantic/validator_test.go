@@ -9,16 +9,56 @@ import (
 	"github.com/cawalch/go-yara/token"
 )
 
+// validatorTestCase represents a single validator test case
+type validatorTestCase struct {
+	name        string
+	input       string
+	wantErr     bool
+	minErrCount int // Minimum errors expected (allows for cascading errors)
+}
+
+// parseAndValidateProgram parses input and validates it, returning validation errors
+func parseAndValidateProgram(t *testing.T, input string) ([]error, error) {
+	lex := lexer.New(input)
+	p := parser.New(lex)
+	program, err := p.ParseRules()
+	if err != nil {
+		return nil, err
+	}
+
+	validator := NewValidator()
+	return validator.ValidateProgram(program), nil
+}
+
+// assertValidationResults validates program validation results against expectations
+func assertValidationResults(t *testing.T, errors []error, wantErr bool, minErrCount int) {
+	if wantErr && len(errors) == 0 {
+		t.Errorf("ValidateProgram() expected errors, got none")
+		return
+	}
+
+	if !wantErr && len(errors) > 0 {
+		t.Errorf("ValidateProgram() unexpected errors: %v", errors)
+		return
+	}
+
+	if minErrCount > 0 && len(errors) < minErrCount {
+		t.Errorf("ValidateProgram() expected at least %d errors, got %d: %v", minErrCount, len(errors), errors)
+	}
+}
+
 // TestValidator tests the semantic validator functionality
 func TestValidator(t *testing.T) {
-	tests := []struct {
-		name        string
-		input       string
-		wantErr     bool
-		minErrCount int // Minimum errors expected (allows for cascading errors)
-	}{
+	t.Run("ValidRules", testValidatorValidRules)
+	t.Run("InvalidRules", testValidatorInvalidRules)
+	t.Run("Quantifiers", testValidatorQuantifiers)
+}
+
+// testValidatorValidRules tests validation of correct YARA rules
+func testValidatorValidRules(t *testing.T) {
+	tests := []validatorTestCase{
 		{
-			name: "valid rule with strings and condition",
+			name: "complete_rule_with_meta_strings_condition",
 			input: `
 rule test_rule {
     meta:
@@ -29,11 +69,86 @@ rule test_rule {
     condition:
         $s1 and $s2
 }`,
-			wantErr:     false,
-			minErrCount: 0,
+			wantErr: false,
 		},
 		{
-			name: "undefined string reference",
+			name: "simple_condition_only",
+			input: `
+rule test_rule {
+    strings:
+        $s1 = "malware"
+    condition:
+        $s1
+}`,
+			wantErr: false,
+		},
+		{
+			name: "integer_comparison",
+			input: `
+rule test_rule {
+    condition:
+        1 > 0
+}`,
+			wantErr: false,
+		},
+		{
+			name: "filesize_keyword",
+			input: `
+rule test_rule {
+    condition:
+        filesize > 1024
+}`,
+			wantErr: false,
+		},
+		{
+			name: "entrypoint_keyword",
+			input: `
+rule test_rule {
+    condition:
+        entrypoint == 0x400000
+}`,
+			wantErr: false,
+		},
+		{
+			name: "string_contains",
+			input: `
+rule test_rule {
+    strings:
+        $s1 = "malware"
+    condition:
+        $s1 contains "mal"
+}`,
+			wantErr: false,
+		},
+		{
+			name: "string_matches",
+			input: `
+rule test_rule {
+    strings:
+        $s1 = "malware"
+    condition:
+        $s1 matches /mal/
+}`,
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			errors, err := parseAndValidateProgram(t, tt.input)
+			if err != nil {
+				t.Fatalf("ParseRules() error = %v", err)
+			}
+			assertValidationResults(t, errors, tt.wantErr, tt.minErrCount)
+		})
+	}
+}
+
+// testValidatorInvalidRules tests validation of incorrect YARA rules
+func testValidatorInvalidRules(t *testing.T) {
+	tests := []validatorTestCase{
+		{
+			name: "undefined_string_reference",
 			input: `
 rule test_rule {
     strings:
@@ -45,7 +160,7 @@ rule test_rule {
 			minErrCount: 1, // At least undefined $s2 error
 		},
 		{
-			name: "type mismatch in comparison",
+			name: "type_mismatch_in_comparison",
 			input: `
 rule test_rule {
     strings:
@@ -56,87 +171,36 @@ rule test_rule {
 			wantErr:     true,
 			minErrCount: 1, // At least type mismatch error
 		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			errors, err := parseAndValidateProgram(t, tt.input)
+			if err != nil {
+				t.Fatalf("ParseRules() error = %v", err)
+			}
+			assertValidationResults(t, errors, tt.wantErr, tt.minErrCount)
+		})
+	}
+}
+
+// testValidatorQuantifiers tests validation of quantifier expressions
+func testValidatorQuantifiers(t *testing.T) {
+	tests := []validatorTestCase{
 		{
-			name: "valid simple condition",
+			name: "for_any_of_them",
 			input: `
 rule test_rule {
     strings:
-        $s1 = "malware"
+        $s1 = "test"
+        $s2 = "malware"
     condition:
-        $s1
+        for any of them : ($)
 }`,
-			wantErr:     false,
-			minErrCount: 0,
+			wantErr: false,
 		},
 		{
-			name: "valid integer comparison",
-			input: `
-rule test_rule {
-    condition:
-        1 > 0
-}`,
-			wantErr:     false,
-			minErrCount: 0,
-		},
-		{
-			name: "valid filesize keyword",
-			input: `
-rule test_rule {
-    condition:
-        filesize > 1024
-}`,
-			wantErr:     false,
-			minErrCount: 0,
-		},
-		{
-			name: "valid entrypoint keyword",
-			input: `
-rule test_rule {
-		  condition:
-		      entrypoint == 0x400000
-}`,
-			wantErr:     false,
-			minErrCount: 0,
-		},
-		{
-			name: "valid string contains",
-			input: `
-rule test_rule {
-		  strings:
-		      $s1 = "malware"
-		  condition:
-		      $s1 contains "mal"
-}`,
-			wantErr:     false,
-			minErrCount: 0,
-		},
-		{
-			name: "valid string matches",
-			input: `
-rule test_rule {
-		  strings:
-		      $s1 = "malware"
-		  condition:
-		      $s1 matches /mal/
-}`,
-			wantErr:     false,
-			minErrCount: 0,
-		},
-		{
-			name: "valid quantifier for",
-			input: `
-rule test_rule {
-		  strings:
-		      $s1 = "test"
-		      $s2 = "malware"
-		  condition:
-		      for any of them : ($)
-}`,
-			wantErr:     false,
-			minErrCount: 0,
-		},
-		{
-			name: "valid quantifier all of them",
+			name: "all_of_them",
 			input: `
 rule test_rule {
     strings:
@@ -144,11 +208,10 @@ rule test_rule {
     condition:
         all of them
 }`,
-			wantErr:     false,
-			minErrCount: 0,
+			wantErr: false,
 		},
 		{
-			name: "valid quantifier any of them",
+			name: "any_of_them",
 			input: `
 rule test_rule {
     strings:
@@ -157,11 +220,10 @@ rule test_rule {
     condition:
         any of them
 }`,
-			wantErr:     false,
-			minErrCount: 0,
+			wantErr: false,
 		},
 		{
-			name: "valid quantifier none of them",
+			name: "none_of_them",
 			input: `
 rule test_rule {
     strings:
@@ -169,37 +231,17 @@ rule test_rule {
     condition:
         none of them
 }`,
-			wantErr:     false,
-			minErrCount: 0,
+			wantErr: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Parse the input
-			lex := lexer.New(tt.input)
-			p := parser.New(lex)
-			program, err := p.ParseRules()
-
+			errors, err := parseAndValidateProgram(t, tt.input)
 			if err != nil {
 				t.Fatalf("ParseRules() error = %v", err)
 			}
-
-			// Validate semantically
-			validator := NewValidator()
-			errors := validator.ValidateProgram(program)
-
-			if tt.wantErr && len(errors) == 0 {
-				t.Errorf("ValidateProgram() expected errors, got none")
-			}
-
-			if !tt.wantErr && len(errors) > 0 {
-				t.Errorf("ValidateProgram() unexpected errors: %v", errors)
-			}
-
-			if tt.minErrCount > 0 && len(errors) < tt.minErrCount {
-				t.Errorf("ValidateProgram() expected at least %d errors, got %d: %v", tt.minErrCount, len(errors), errors)
-			}
+			assertValidationResults(t, errors, tt.wantErr, tt.minErrCount)
 		})
 	}
 }

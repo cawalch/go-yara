@@ -1,7 +1,6 @@
 package lexer_test
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/cawalch/go-yara/internal/lexer"
@@ -39,13 +38,31 @@ func TestIllegalRunAndSynchronization(t *testing.T) {
 	}
 }
 
+// errorRecoveryTestCase represents a test case for error recovery
+type errorRecoveryTestCase struct {
+	name     string
+	input    string
+	expected []token.Token
+}
+
+// assertTokenSequence asserts that the collected tokens match the expected sequence
+func assertTokenSequence(t *testing.T, input string, expected []token.Token) {
+	l := lexer.New(input)
+	got := collectTokens(l)
+
+	if len(got) != len(expected) {
+		t.Fatalf("token count mismatch: got %d want %d\nGot: %v\nExpected: %v", len(got), len(expected), got, expected)
+	}
+
+	for i := range expected {
+		if got[i].Type != expected[i].Type || got[i].Literal != expected[i].Literal {
+			t.Fatalf("tok[%d]: got {%v %q} want {%v %q}", i, got[i].Type, got[i].Literal, expected[i].Type, expected[i].Literal)
+		}
+	}
+}
+
 func TestErrorRecoveryAfterIllegalTokens(t *testing.T) {
-	// Test that lexer continues properly after encountering ILLEGAL tokens
-	tests := []struct {
-		name     string
-		input    string
-		expected []token.Token
-	}{
+	tests := []errorRecoveryTestCase{
 		{
 			name:  "single illegal character",
 			input: "rule ? condition",
@@ -103,42 +120,8 @@ func TestErrorRecoveryAfterIllegalTokens(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		l := lexer.New(tt.input)
-		got := collectTokens(l)
-
-		// Debug output
-		fmt.Printf("Input: %q\n", tt.input)
-		fmt.Printf("Got tokens:\n")
-		for i, tok := range got {
-			fmt.Printf("  [%d] %v\n", i, tok)
-		}
-		fmt.Printf("Expected tokens:\n")
-		for i, tok := range tt.expected {
-			fmt.Printf("  [%d] %v\n", i, tok)
-		}
-
-		if len(got) != len(tt.expected) {
-			t.Fatalf("token count mismatch: got %d want %d\nGot: %v\nExpected: %v", len(got), len(tt.expected), got, tt.expected)
-		}
-
-		for i := range tt.expected {
-			if got[i].Type != tt.expected[i].Type || got[i].Literal != tt.expected[i].Literal {
-				t.Fatalf("tok[%d]: got {%v %q} want {%v %q}", i, got[i].Type, got[i].Literal, tt.expected[i].Type, tt.expected[i].Literal)
-			}
-		}
 		t.Run(tt.name, func(t *testing.T) {
-			l2 := lexer.New(tt.input)
-			got2 := collectTokens(l2)
-
-			if len(got2) != len(tt.expected) {
-				t.Fatalf("token count mismatch: got %d want %d\nGot: %v\nExpected: %v", len(got2), len(tt.expected), got2, tt.expected)
-			}
-
-			for i := range tt.expected {
-				if got2[i].Type != tt.expected[i].Type || got2[i].Literal != tt.expected[i].Literal {
-					t.Fatalf("tok[%d]: got {%v %q} want {%v %q}", i, got2[i].Type, got2[i].Literal, tt.expected[i].Type, tt.expected[i].Literal)
-				}
-			}
+			assertTokenSequence(t, tt.input, tt.expected)
 		})
 	}
 }
