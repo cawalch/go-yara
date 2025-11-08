@@ -9,298 +9,389 @@ import (
 
 // TestASTEdgeCases tests edge cases in AST for comprehensive coverage
 func TestASTEdgeCasesAdditional(t *testing.T) {
-	// Test Rule methods
-	t.Run("rule_methods", func(t *testing.T) {
-		rule := &Rule{
-			Name: "test_rule",
-			Tags: []string{"tag1", "tag2"},
-			Meta: []*Meta{
-				{Key: "author", Value: MetaString("Test Author")},
+	t.Run("Rule", testRuleMethods)
+	t.Run("String", testStringMethods)
+	t.Run("Meta", testMetaMethods)
+	t.Run("Identifier", testIdentifierMethods)
+	t.Run("Literal", testLiteralMethods)
+	t.Run("BinaryOp", testBinaryOpMethods)
+	t.Run("UnaryOp", testUnaryOpMethods)
+	t.Run("TextString", testTextStringMethods)
+	t.Run("HexString", testHexStringMethods)
+	t.Run("RegexPattern", testRegexPatternMethods)
+	t.Run("Condition", testConditionMethods)
+	t.Run("Program", testProgramMethods)
+}
+
+// testRuleMethods tests Rule node methods and properties
+func testRuleMethods(t *testing.T) {
+	rule := &Rule{
+		Name: "test_rule",
+		Tags: []string{"tag1", "tag2"},
+		Meta: []*Meta{
+			{Key: "author", Value: MetaString("Test Author")},
+		},
+	}
+
+	tests := []struct {
+		name string
+		test func(t *testing.T, rule *Rule)
+	}{
+		{
+			name: "basic_properties",
+			test: func(t *testing.T, rule *Rule) {
+				if rule.Name != "test_rule" {
+					t.Errorf("Rule name is %s, expected test_rule", rule.Name)
+				}
+				if len(rule.Tags) != 2 {
+					t.Errorf("Rule has %d tags, expected 2", len(rule.Tags))
+				}
+				if len(rule.Meta) != 1 {
+					t.Errorf("Rule has %d meta entries, expected 1", len(rule.Meta))
+				}
 			},
-		}
-
-		// Test basic properties
-		if rule.Name != "test_rule" {
-			t.Errorf("Rule name is %s, expected test_rule", rule.Name)
-		}
-
-		if len(rule.Tags) != 2 {
-			t.Errorf("Rule has %d tags, expected 2", len(rule.Tags))
-		}
-
-		if len(rule.Meta) != 1 {
-			t.Errorf("Rule has %d meta entries, expected 1", len(rule.Meta))
-		}
-
-		// Test Position method
-		pos := rule.Position()
-		if pos.Line != 0 {
-			t.Errorf("Rule position line is %d, expected 0", pos.Line)
-		}
-	})
-
-	// Test String methods
-	t.Run("string_methods", func(t *testing.T) {
-		str := &String{
-			Identifier: "$test",
-			Pattern:    &TextString{Value: "test_value"},
-			Modifiers: []StringModifier{
-				{Type: StringModifierNocase},
-				{Type: StringModifierWide},
+		},
+		{
+			name: "position_method",
+			test: func(t *testing.T, rule *Rule) {
+				pos := rule.Position()
+				if pos.Line != 0 {
+					t.Errorf("Rule position line is %d, expected 0", pos.Line)
+				}
 			},
-		}
+		},
+	}
 
-		// Test basic properties
-		if str.Identifier != "$test" {
-			t.Errorf("String identifier is %s, expected $test", str.Identifier)
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.test(t, rule)
+		})
+	}
+}
 
-		if len(str.Modifiers) != 2 {
-			t.Errorf("String has %d modifiers, expected 2", len(str.Modifiers))
-		}
+// testStringMethods tests String node methods and properties
+func testStringMethods(t *testing.T) {
+	str := &String{
+		Identifier: "$test",
+		Pattern:    &TextString{Value: "test_value"},
+		Modifiers: []StringModifier{
+			{Type: StringModifierNocase},
+			{Type: StringModifierWide},
+		},
+	}
 
-		// Test Position method
-		pos := str.Position()
-		if pos.Line != 0 {
-			t.Errorf("String position line is %d, expected 0", pos.Line)
-		}
-	})
+	tests := []struct {
+		name string
+		test func(t *testing.T, str *String)
+	}{
+		{
+			name: "basic_properties",
+			test: func(t *testing.T, str *String) {
+				if str.Identifier != "$test" {
+					t.Errorf("String identifier is %s, expected $test", str.Identifier)
+				}
+				if len(str.Modifiers) != 2 {
+					t.Errorf("String has %d modifiers, expected 2", len(str.Modifiers))
+				}
+			},
+		},
+		{
+			name: "position_method",
+			test: func(t *testing.T, str *String) {
+				pos := str.Position()
+				if pos.Line != 0 {
+					t.Errorf("String position line is %d, expected 0", pos.Line)
+				}
+			},
+		},
+	}
 
-	// Test Meta methods
-	t.Run("meta_methods", func(t *testing.T) {
-		meta := &Meta{
-			Key:   "author",
-			Value: MetaString("Test Author"),
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.test(t, str)
+		})
+	}
+}
 
-		// Test basic properties
-		if meta.Key != "author" {
-			t.Errorf("Meta key is %s, expected author", meta.Key)
-		}
+// testMetaMethods tests Meta node methods and properties
+func testMetaMethods(t *testing.T) {
+	meta := &Meta{
+		Key:   "author",
+		Value: MetaString("Test Author"),
+	}
 
-		if meta.AsString() != "Test Author" {
-			t.Errorf("Meta value is %s, expected Test Author", meta.AsString())
-		}
+	tests := []struct {
+		name string
+		test func(t *testing.T, meta *Meta)
+	}{
+		{
+			name: "basic_properties",
+			test: func(t *testing.T, meta *Meta) {
+				if meta.Key != "author" {
+					t.Errorf("Meta key is %s, expected author", meta.Key)
+				}
+				if meta.AsString() != "Test Author" {
+					t.Errorf("Meta value is %s, expected Test Author", meta.AsString())
+				}
+			},
+		},
+		{
+			name: "position_method",
+			test: func(t *testing.T, meta *Meta) {
+				pos := meta.Position()
+				if pos.Line != 0 {
+					t.Errorf("Meta position line is %d, expected 0", pos.Line)
+				}
+			},
+		},
+	}
 
-		// Test Position method
-		pos := meta.Position()
-		if pos.Line != 0 {
-			t.Errorf("Meta position line is %d, expected 0", pos.Line)
-		}
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.test(t, meta)
+		})
+	}
+}
 
-	// Test Identifier methods
-	t.Run("identifier_methods", func(t *testing.T) {
-		ident := &Identifier{
-			Name: "test_identifier",
-		}
+// testIdentifierMethods tests Identifier node methods and properties
+func testIdentifierMethods(t *testing.T) {
+	ident := &Identifier{
+		Name: "test_identifier",
+	}
 
-		// Test basic properties
-		if ident.Name != "test_identifier" {
-			t.Errorf("Identifier name is %s, expected test_identifier", ident.Name)
-		}
+	if ident.Name != "test_identifier" {
+		t.Errorf("Identifier name is %s, expected test_identifier", ident.Name)
+	}
 
-		// Test Position method
-		pos := ident.Position()
-		if pos.Line != 0 {
-			t.Errorf("Identifier position line is %d, expected 0", pos.Line)
-		}
-	})
+	pos := ident.Position()
+	if pos.Line != 0 {
+		t.Errorf("Identifier position line is %d, expected 0", pos.Line)
+	}
+}
 
-	// Test Literal methods
-	t.Run("literal_methods", func(t *testing.T) {
-		// Test integer literal
-		intLit := &Literal{
-			Value: 42,
-			Type:  token.INTEGER_LIT,
-		}
+// testLiteralMethods tests Literal node methods and properties using table-driven approach
+func testLiteralMethods(t *testing.T) {
+	tests := []struct {
+		name      string
+		literal   *Literal
+		wantValue interface{}
+		wantType  token.TokenType
+	}{
+		{
+			name: "integer_literal",
+			literal: &Literal{
+				Value: 42,
+				Type:  token.INTEGER_LIT,
+			},
+			wantValue: 42,
+			wantType:  token.INTEGER_LIT,
+		},
+		{
+			name: "string_literal",
+			literal: &Literal{
+				Value: "test_string",
+				Type:  token.STRING_LIT,
+			},
+			wantValue: "test_string",
+			wantType:  token.STRING_LIT,
+		},
+		{
+			name: "boolean_literal",
+			literal: &Literal{
+				Value: true,
+				Type:  token.TRUE,
+			},
+			wantValue: true,
+			wantType:  token.TRUE,
+		},
+	}
 
-		if intLit.Value != 42 {
-			t.Errorf("Literal value is %v, expected 42", intLit.Value)
-		}
-		if intLit.Type != token.INTEGER_LIT {
-			t.Errorf("Literal type is %v, expected INTEGER_LIT", intLit.Type)
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.literal.Value != tt.wantValue {
+				t.Errorf("Literal value is %v, expected %v", tt.literal.Value, tt.wantValue)
+			}
+			if tt.literal.Type != tt.wantType {
+				t.Errorf("Literal type is %v, expected %v", tt.literal.Type, tt.wantType)
+			}
+		})
+	}
+}
 
-		// Test string literal
-		strLit := &Literal{
-			Value: "test_string",
-			Type:  token.STRING_LIT,
-		}
+// testBinaryOpMethods tests BinaryOp node methods and properties
+func testBinaryOpMethods(t *testing.T) {
+	left := &Identifier{Name: "left"}
+	right := &Identifier{Name: "right"}
+	binOp := &BinaryOp{
+		Left:  left,
+		Op:    token.PLUS,
+		Right: right,
+	}
 
-		if strLit.Value != "test_string" {
-			t.Errorf("Literal value is %v, expected test_string", strLit.Value)
-		}
-		if strLit.Type != token.STRING_LIT {
-			t.Errorf("Literal type is %v, expected STRING_LIT", strLit.Type)
-		}
+	tests := []struct {
+		name string
+		test func(t *testing.T, binOp *BinaryOp)
+	}{
+		{
+			name: "basic_properties",
+			test: func(t *testing.T, binOp *BinaryOp) {
+				if binOp.Left != left {
+					t.Error("BinaryOp Left is not the expected node")
+				}
+				if binOp.Op != token.PLUS {
+					t.Errorf("BinaryOp Op is %v, expected PLUS", binOp.Op)
+				}
+				if binOp.Right != right {
+					t.Error("BinaryOp Right is not the expected node")
+				}
+			},
+		},
+		{
+			name: "position_method",
+			test: func(t *testing.T, binOp *BinaryOp) {
+				pos := binOp.Position()
+				if pos.Line != 0 {
+					t.Errorf("BinaryOp position line is %d, expected 0", pos.Line)
+				}
+			},
+		},
+	}
 
-		// Test boolean literal
-		boolLit := &Literal{
-			Value: true,
-			Type:  token.TRUE,
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.test(t, binOp)
+		})
+	}
+}
 
-		if boolLit.Value != true {
-			t.Errorf("Literal value is %v, expected true", boolLit.Value)
-		}
-		if boolLit.Type != token.TRUE {
-			t.Errorf("Literal type is %v, expected TRUE", boolLit.Type)
-		}
-	})
+// testUnaryOpMethods tests UnaryOp node methods and properties
+func testUnaryOpMethods(t *testing.T) {
+	operand := &Identifier{Name: "operand"}
+	unaryOp := &UnaryOp{
+		Op:    token.NOT,
+		Right: operand,
+	}
 
-	// Test BinaryOp methods
-	t.Run("binary_op_methods", func(t *testing.T) {
-		left := &Identifier{Name: "left"}
-		right := &Identifier{Name: "right"}
-		binOp := &BinaryOp{
-			Left:  left,
-			Op:    token.PLUS,
-			Right: right,
-		}
+	tests := []struct {
+		name string
+		test func(t *testing.T, unaryOp *UnaryOp)
+	}{
+		{
+			name: "basic_properties",
+			test: func(t *testing.T, unaryOp *UnaryOp) {
+				if unaryOp.Op != token.NOT {
+					t.Errorf("UnaryOp Op is %v, expected NOT", unaryOp.Op)
+				}
+				if unaryOp.Right != operand {
+					t.Error("UnaryOp Right is not the expected node")
+				}
+			},
+		},
+		{
+			name: "position_method",
+			test: func(t *testing.T, unaryOp *UnaryOp) {
+				pos := unaryOp.Position()
+				if pos.Line != 0 {
+					t.Errorf("UnaryOp position line is %d, expected 0", pos.Line)
+				}
+			},
+		},
+	}
 
-		// Test basic properties
-		if binOp.Left != left {
-			t.Error("BinaryOp Left is not the expected node")
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.test(t, unaryOp)
+		})
+	}
+}
 
-		if binOp.Op != token.PLUS {
-			t.Errorf("BinaryOp Op is %v, expected PLUS", binOp.Op)
-		}
+// testTextStringMethods tests TextString node methods and properties
+func testTextStringMethods(t *testing.T) {
+	textStr := &TextString{
+		Value: "test_value",
+	}
 
-		if binOp.Right != right {
-			t.Error("BinaryOp Right is not the expected node")
-		}
+	if textStr.Value != "test_value" {
+		t.Errorf("TextString value is %s, expected test_value", textStr.Value)
+	}
 
-		// Test Position method
-		pos := binOp.Position()
-		if pos.Line != 0 {
-			t.Errorf("BinaryOp position line is %d, expected 0", pos.Line)
-		}
-	})
+	pos := textStr.Position()
+	if pos.Line != 0 {
+		t.Errorf("TextString position line is %d, expected 0", pos.Line)
+	}
+}
 
-	// Test UnaryOp methods
-	t.Run("unary_op_methods", func(t *testing.T) {
-		operand := &Identifier{Name: "operand"}
-		unaryOp := &UnaryOp{
-			Op:    token.NOT,
-			Right: operand,
-		}
+// testHexStringMethods tests HexString node methods and properties
+func testHexStringMethods(t *testing.T) {
+	hexStr := &HexString{
+		Value: "48 65 6C 6C 6F",
+	}
 
-		// Test basic properties
-		if unaryOp.Op != token.NOT {
-			t.Errorf("UnaryOp Op is %v, expected NOT", unaryOp.Op)
-		}
+	if hexStr.Value != "48 65 6C 6C 6F" {
+		t.Errorf("HexString value is %s, expected 48 65 6C 6C 6F", hexStr.Value)
+	}
 
-		if unaryOp.Right != operand {
-			t.Error("UnaryOp Right is not the expected node")
-		}
+	pos := hexStr.Position()
+	if pos.Line != 0 {
+		t.Errorf("HexString position line is %d, expected 0", pos.Line)
+	}
+}
 
-		// Test Position method
-		pos := unaryOp.Position()
-		if pos.Line != 0 {
-			t.Errorf("UnaryOp position line is %d, expected 0", pos.Line)
-		}
-	})
+// testRegexPatternMethods tests RegexPattern node methods and properties
+func testRegexPatternMethods(t *testing.T) {
+	regex := &RegexPattern{
+		Value: "/test/",
+	}
 
-	// Test TextString methods
-	t.Run("text_string_methods", func(t *testing.T) {
-		textStr := &TextString{
-			Value: "test_value",
-		}
+	if regex.Value != "/test/" {
+		t.Errorf("RegexPattern value is %s, expected /test/", regex.Value)
+	}
 
-		// Test basic properties
-		if textStr.Value != "test_value" {
-			t.Errorf("TextString value is %s, expected test_value", textStr.Value)
-		}
+	pos := regex.Position()
+	if pos.Line != 0 {
+		t.Errorf("RegexPattern position line is %d, expected 0", pos.Line)
+	}
+}
 
-		// Test Position method
-		pos := textStr.Position()
-		if pos.Line != 0 {
-			t.Errorf("TextString position line is %d, expected 0", pos.Line)
-		}
-	})
+// testConditionMethods tests Condition node methods and properties
+func testConditionMethods(t *testing.T) {
+	expr := &Identifier{Name: "condition"}
+	condition := &Condition{
+		Expression: expr,
+	}
 
-	// Test HexString methods
-	t.Run("hex_string_methods", func(t *testing.T) {
-		hexStr := &HexString{
-			Value: "48 65 6C 6C 6F",
-		}
+	if condition.Expression != expr {
+		t.Error("Condition Expression is not the expected node")
+	}
 
-		// Test basic properties
-		if hexStr.Value != "48 65 6C 6C 6F" {
-			t.Errorf("HexString value is %s, expected 48 65 6C 6C 6F", hexStr.Value)
-		}
+	pos := condition.Position()
+	if pos.Line != 0 {
+		t.Errorf("Condition position line is %d, expected 0", pos.Line)
+	}
+}
 
-		// Test Position method
-		pos := hexStr.Position()
-		if pos.Line != 0 {
-			t.Errorf("HexString position line is %d, expected 0", pos.Line)
-		}
-	})
+// testProgramMethods tests Program node methods and properties
+func testProgramMethods(t *testing.T) {
+	rules := []*Rule{
+		{Name: "rule1"},
+		{Name: "rule2"},
+	}
+	program := &Program{
+		Rules: rules,
+	}
 
-	// Test RegexPattern methods
-	t.Run("regex_pattern_methods", func(t *testing.T) {
-		regex := &RegexPattern{
-			Value: "/test/",
-		}
+	if len(program.Rules) != 2 {
+		t.Errorf("Program has %d rules, expected 2", len(program.Rules))
+	}
 
-		// Test basic properties
-		if regex.Value != "/test/" {
-			t.Errorf("RegexPattern value is %s, expected /test/", regex.Value)
-		}
+	if program.Rules[0].Name != "rule1" {
+		t.Errorf("First rule name is %s, expected rule1", program.Rules[0].Name)
+	}
 
-		// Test Position method
-		pos := regex.Position()
-		if pos.Line != 0 {
-			t.Errorf("RegexPattern position line is %d, expected 0", pos.Line)
-		}
-	})
-
-	// Test Condition methods
-	t.Run("condition_methods", func(t *testing.T) {
-		expr := &Identifier{Name: "condition"}
-		condition := &Condition{
-			Expression: expr,
-		}
-
-		// Test basic properties
-		if condition.Expression != expr {
-			t.Error("Condition Expression is not the expected node")
-		}
-
-		// Test Position method
-		pos := condition.Position()
-		if pos.Line != 0 {
-			t.Errorf("Condition position line is %d, expected 0", pos.Line)
-		}
-	})
-
-	// Test Program methods
-	t.Run("program_methods", func(t *testing.T) {
-		rules := []*Rule{
-			{Name: "rule1"},
-			{Name: "rule2"},
-		}
-		program := &Program{
-			Rules: rules,
-		}
-
-		// Test basic properties
-		if len(program.Rules) != 2 {
-			t.Errorf("Program has %d rules, expected 2", len(program.Rules))
-		}
-
-		if program.Rules[0].Name != "rule1" {
-			t.Errorf("First rule name is %s, expected rule1", program.Rules[0].Name)
-		}
-
-		// Test Position method
-		pos := program.Position()
-		if pos.Line != 0 {
-			t.Errorf("Program position line is %d, expected 0", pos.Line)
-		}
-	})
+	pos := program.Position()
+	if pos.Line != 0 {
+		t.Errorf("Program position line is %d, expected 0", pos.Line)
+	}
 }
 
 // TestASTVisitor tests visitor pattern implementation

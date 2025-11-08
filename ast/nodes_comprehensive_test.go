@@ -191,126 +191,167 @@ func TestAdvancedBuilderMethods(t *testing.T) {
 	builder := NewBuilder()
 	pos := token.Position{Line: 3, Column: 7}
 
-	t.Run("GlobalVariable builder", func(t *testing.T) {
-		value := builder.Literal(pos, token.INTEGER_LIT, 42)
-		gv := builder.GlobalVariable(pos, "test_global", value)
+	tests := []struct {
+		name        string
+		testFunc    func(t *testing.T, builder *Builder, pos token.Position)
+		description string
+	}{
+		{
+			name: "GlobalVariable",
+			testFunc: func(t *testing.T, builder *Builder, pos token.Position) {
+				value := builder.Literal(pos, token.INTEGER_LIT, 42)
+				gv := builder.GlobalVariable(pos, "test_global", value)
 
-		if gv.Name != "test_global" {
-			t.Errorf("GlobalVariable.Name = %q, want %q", gv.Name, "test_global")
-		}
-		if gv.Value != value {
-			t.Error("GlobalVariable.Value does not match")
-		}
-		if gv.Pos.Line != pos.Line {
-			t.Errorf("GlobalVariable.Pos.Line = %d, want %d", gv.Pos.Line, pos.Line)
-		}
-	})
+				if gv.Name != "test_global" {
+					t.Errorf("GlobalVariable.Name = %q, want %q", gv.Name, "test_global")
+				}
+				if gv.Value != value {
+					t.Error("GlobalVariable.Value does not match")
+				}
+				if gv.Pos.Line != pos.Line {
+					t.Errorf("GlobalVariable.Pos.Line = %d, want %d", gv.Pos.Line, pos.Line)
+				}
+			},
+			description: "Test GlobalVariable builder method",
+		},
+		{
+			name: "ExternalVariable",
+			testFunc: func(t *testing.T, builder *Builder, pos token.Position) {
+				ev := builder.ExternalVariable(pos, "test_ext", "binding_id", "string")
 
-	t.Run("ExternalVariable builder", func(t *testing.T) {
-		ev := builder.ExternalVariable(pos, "test_ext", "binding_id", "string")
+				if ev.Name != "test_ext" {
+					t.Errorf("ExternalVariable.Name = %q, want %q", ev.Name, "test_ext")
+				}
+				if ev.Identifier != "binding_id" {
+					t.Errorf("ExternalVariable.Identifier = %q, want %q", ev.Identifier, "binding_id")
+				}
+				if ev.TypeHint != "string" {
+					t.Errorf("ExternalVariable.TypeHint = %q, want %q", ev.TypeHint, "string")
+				}
+			},
+			description: "Test ExternalVariable builder method",
+		},
+		{
+			name: "Import",
+			testFunc: func(t *testing.T, builder *Builder, pos token.Position) {
+				import_ := builder.Import(pos, "pe")
 
-		if ev.Name != "test_ext" {
-			t.Errorf("ExternalVariable.Name = %q, want %q", ev.Name, "test_ext")
-		}
-		if ev.Identifier != "binding_id" {
-			t.Errorf("ExternalVariable.Identifier = %q, want %q", ev.Identifier, "binding_id")
-		}
-		if ev.TypeHint != "string" {
-			t.Errorf("ExternalVariable.TypeHint = %q, want %q", ev.TypeHint, "string")
-		}
-	})
+				if import_.Module != "pe" {
+					t.Errorf("Import.Module = %q, want %q", import_.Module, "pe")
+				}
+			},
+			description: "Test Import builder method",
+		},
+		{
+			name: "Include",
+			testFunc: func(t *testing.T, builder *Builder, pos token.Position) {
+				include := builder.Include(pos, "rules/common.yar")
 
-	t.Run("Import builder", func(t *testing.T) {
-		import_ := builder.Import(pos, "pe")
+				if include.File != "rules/common.yar" {
+					t.Errorf("Include.File = %q, want %q", include.File, "rules/common.yar")
+				}
+			},
+			description: "Test Include builder method",
+		},
+		{
+			name: "StringLength",
+			testFunc: func(t *testing.T, builder *Builder, pos token.Position) {
+				stringExpr := builder.Identifier(pos, "$s1")
+				strLen := builder.StringLength(pos, stringExpr)
 
-		if import_.Module != "pe" {
-			t.Errorf("Import.Module = %q, want %q", import_.Module, "pe")
-		}
-	})
+				if strLen.String != stringExpr {
+					t.Error("StringLength.String does not match")
+				}
+			},
+			description: "Test StringLength builder method",
+		},
+		{
+			name: "ArrayIndex",
+			testFunc: func(t *testing.T, builder *Builder, pos token.Position) {
+				array := builder.Identifier(pos, "my_array")
+				index := builder.Literal(pos, token.INTEGER_LIT, 5)
+				arrayIdx := builder.ArrayIndex(pos, array, index)
 
-	t.Run("Include builder", func(t *testing.T) {
-		include := builder.Include(pos, "rules/common.yar")
+				if arrayIdx.Array != array {
+					t.Error("ArrayIndex.Array does not match")
+				}
+				if arrayIdx.Index != index {
+					t.Error("ArrayIndex.Index does not match")
+				}
+			},
+			description: "Test ArrayIndex builder method",
+		},
+		{
+			name: "ForLoop",
+			testFunc: func(t *testing.T, builder *Builder, pos token.Position) {
+				quantifier := "any"
+				variable := "i"
+				rangeExpr := builder.Identifier(pos, "1..10")
+				condition := builder.Identifier(pos, "valid")
+				forLoop := builder.ForLoop(pos, quantifier, variable, rangeExpr, condition)
 
-		if include.File != "rules/common.yar" {
-			t.Errorf("Include.File = %q, want %q", include.File, "rules/common.yar")
-		}
-	})
+				if forLoop.Quantifier != quantifier {
+					t.Errorf("ForLoop.Quantifier = %q, want %q", forLoop.Quantifier, quantifier)
+				}
+				if forLoop.Variable != variable {
+					t.Errorf("ForLoop.Variable = %q, want %q", forLoop.Variable, variable)
+				}
+				if forLoop.Range != rangeExpr {
+					t.Error("ForLoop.Range does not match")
+				}
+				if forLoop.Condition != condition {
+					t.Error("ForLoop.Condition does not match")
+				}
+			},
+			description: "Test ForLoop builder method",
+		},
+		{
+			name: "OfExpression",
+			testFunc: func(t *testing.T, builder *Builder, pos token.Position) {
+				count := builder.Literal(pos, token.INTEGER_LIT, 3)
+				strings := builder.Identifier(pos, "them")
+				ofExpr := builder.OfExpression(pos, count, strings)
 
-	t.Run("StringLength builder", func(t *testing.T) {
-		stringExpr := builder.Identifier(pos, "$s1")
-		strLen := builder.StringLength(pos, stringExpr)
+				if ofExpr.Count != count {
+					t.Error("OfExpression.Count does not match")
+				}
+				if ofExpr.Strings != strings {
+					t.Error("OfExpression.Strings does not match")
+				}
+			},
+			description: "Test OfExpression builder method",
+		},
+		{
+			name: "FunctionCall",
+			testFunc: func(t *testing.T, builder *Builder, pos token.Position) {
+				args := []Expression{
+					builder.Literal(pos, token.STRING_LIT, "test"),
+					builder.Literal(pos, token.INTEGER_LIT, 123),
+				}
+				fnCall := builder.FunctionCall(pos, "pe.section", args)
 
-		if strLen.String != stringExpr {
-			t.Error("StringLength.String does not match")
-		}
-	})
+				if fnCall.Function != "pe.section" {
+					t.Errorf("FunctionCall.Function = %q, want %q", fnCall.Function, "pe.section")
+				}
+				if len(fnCall.Args) != len(args) {
+					t.Errorf("FunctionCall.Args length = %d, want %d", len(fnCall.Args), len(args))
+				}
+				for i, arg := range args {
+					if fnCall.Args[i] != arg {
+						t.Errorf("FunctionCall.Args[%d] does not match", i)
+					}
+				}
+			},
+			description: "Test FunctionCall builder method",
+		},
+	}
 
-	t.Run("ArrayIndex builder", func(t *testing.T) {
-		array := builder.Identifier(pos, "my_array")
-		index := builder.Literal(pos, token.INTEGER_LIT, 5)
-		arrayIdx := builder.ArrayIndex(pos, array, index)
-
-		if arrayIdx.Array != array {
-			t.Error("ArrayIndex.Array does not match")
-		}
-		if arrayIdx.Index != index {
-			t.Error("ArrayIndex.Index does not match")
-		}
-	})
-
-	t.Run("ForLoop builder", func(t *testing.T) {
-		quantifier := "any"
-		variable := "i"
-		rangeExpr := builder.Identifier(pos, "1..10")
-		condition := builder.Identifier(pos, "valid")
-		forLoop := builder.ForLoop(pos, quantifier, variable, rangeExpr, condition)
-
-		if forLoop.Quantifier != quantifier {
-			t.Errorf("ForLoop.Quantifier = %q, want %q", forLoop.Quantifier, quantifier)
-		}
-		if forLoop.Variable != variable {
-			t.Errorf("ForLoop.Variable = %q, want %q", forLoop.Variable, variable)
-		}
-		if forLoop.Range != rangeExpr {
-			t.Error("ForLoop.Range does not match")
-		}
-		if forLoop.Condition != condition {
-			t.Error("ForLoop.Condition does not match")
-		}
-	})
-
-	t.Run("OfExpression builder", func(t *testing.T) {
-		count := builder.Literal(pos, token.INTEGER_LIT, 3)
-		strings := builder.Identifier(pos, "them")
-		ofExpr := builder.OfExpression(pos, count, strings)
-
-		if ofExpr.Count != count {
-			t.Error("OfExpression.Count does not match")
-		}
-		if ofExpr.Strings != strings {
-			t.Error("OfExpression.Strings does not match")
-		}
-	})
-
-	t.Run("FunctionCall builder", func(t *testing.T) {
-		args := []Expression{
-			builder.Literal(pos, token.STRING_LIT, "test"),
-			builder.Literal(pos, token.INTEGER_LIT, 123),
-		}
-		fnCall := builder.FunctionCall(pos, "pe.section", args)
-
-		if fnCall.Function != "pe.section" {
-			t.Errorf("FunctionCall.Function = %q, want %q", fnCall.Function, "pe.section")
-		}
-		if len(fnCall.Args) != len(args) {
-			t.Errorf("FunctionCall.Args length = %d, want %d", len(fnCall.Args), len(args))
-		}
-		for i, arg := range args {
-			if fnCall.Args[i] != arg {
-				t.Errorf("FunctionCall.Args[%d] does not match", i)
-			}
-		}
-	})
+	for _, tt := range tests {
+		t.Run(tt.name+" builder", func(t *testing.T) {
+			t.Logf("Testing %s: %s", tt.name, tt.description)
+			tt.testFunc(t, builder, pos)
+		})
+	}
 }
 
 // TestExpressionInterface tests that expression nodes implement the expression marker

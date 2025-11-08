@@ -8,122 +8,112 @@ import (
 
 // TestParserEdgeCases tests edge cases in the parser for comprehensive coverage
 func TestParserEdgeCasesAdditional(t *testing.T) {
-	// Test parser with empty input
-	t.Run("empty_input", func(t *testing.T) {
-		l := lexer.New("")
-		p := New(l)
-		program, err := p.ParseRules()
-		if err != nil {
-			t.Errorf("ParseRules() with empty input failed: %v", err)
-		}
-		if program == nil {
-			t.Error("ParseRules() with empty input returned nil program")
-			return
-		}
-		if len(program.Rules) != 0 {
-			t.Errorf("ParseRules() with empty input should return 0 rules, got %d", len(program.Rules))
-		}
-	})
+	t.Run("InputValidation", testParserInputValidation)
+	t.Run("RuleStructure", testParserRuleStructure)
+	t.Run("RuleFeatures", testParserRuleFeatures)
+}
 
-	// Test parser with only whitespace
-	t.Run("whitespace_only", func(t *testing.T) {
-		l := lexer.New("   \n\t  \r\n  ")
-		p := New(l)
-		program, err := p.ParseRules()
-		if err != nil {
-			t.Errorf("ParseRules() with whitespace only failed: %v", err)
-		}
-		if program == nil {
-			t.Error("ParseRules() with whitespace only returned nil program")
-			return
-		}
-		if len(program.Rules) != 0 {
-			t.Errorf("ParseRules() with whitespace only should return 0 rules, got %d", len(program.Rules))
-		}
-	})
+// testParserInputValidation tests parser with various input scenarios
+func testParserInputValidation(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		expectError bool
+		expectRules int
+		description string
+	}{
+		{
+			name:        "empty_input",
+			input:       "",
+			expectError: false,
+			expectRules: 0,
+			description: "Parser should handle empty input gracefully",
+		},
+		{
+			name:        "whitespace_only",
+			input:       "   \n\t  \r\n  ",
+			expectError: false,
+			expectRules: 0,
+			description: "Parser should handle whitespace-only input",
+		},
+		{
+			name:        "comments_only",
+			input:       `// This is a comment\n/* This is a block comment */\n// Another comment`,
+			expectError: false,
+			expectRules: 0,
+			description: "Parser should handle comments-only input",
+		},
+		{
+			name:        "invalid_rule_syntax",
+			input:       `rule test_rule {\n\tstrings:\n\t\t$test = "test"\n\tcondition:\n\t\t$test\n\t// Missing closing brace`,
+			expectError: true,
+			expectRules: 0,
+			description: "Parser should reject invalid rule syntax",
+		},
+	}
 
-	// Test parser with comments only
-	t.Run("comments_only", func(t *testing.T) {
-		l := lexer.New(`
-// This is a comment
-/* This is a block comment */
-// Another comment
-`)
-		p := New(l)
-		program, err := p.ParseRules()
-		if err != nil {
-			t.Errorf("ParseRules() with comments only failed: %v", err)
-		}
-		if program == nil {
-			t.Error("ParseRules() with comments only returned nil program")
-			return
-		}
-		if len(program.Rules) != 0 {
-			t.Errorf("ParseRules() with comments only should return 0 rules, got %d", len(program.Rules))
-		}
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			l := lexer.New(tt.input)
+			p := New(l)
+			program, err := p.ParseRules()
 
-	// Test parser with invalid rule syntax
-	t.Run("invalid_rule_syntax", func(t *testing.T) {
-		l := lexer.New(`
-rule test_rule {
-	strings:
-		$test = "test"
-	condition:
-		$test
-	// Missing closing brace
-`)
-		p := New(l)
-		_, err := p.ParseRules()
-		if err == nil {
-			t.Error("ParseRules() with invalid syntax should have failed")
-		}
-	})
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Expected error but parsing succeeded: %s", tt.description)
+				}
+				return
+			}
 
-	// Test parser with rule but no strings section
-	t.Run("rule_no_strings", func(t *testing.T) {
-		l := lexer.New(`
-rule test_rule {
+			if err != nil {
+				t.Errorf("Unexpected parsing error: %v: %s", err, tt.description)
+				return
+			}
+
+			if program == nil {
+				t.Errorf("Expected program but got nil: %s", tt.description)
+				return
+			}
+
+			if len(program.Rules) != tt.expectRules {
+				t.Errorf("Expected %d rules but got %d: %s", tt.expectRules, len(program.Rules), tt.description)
+			}
+		})
+	}
+}
+
+// testParserRuleStructure tests parser with different rule structures
+func testParserRuleStructure(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		expectError bool
+		expectRules int
+		description string
+	}{
+		{
+			name: "rule_no_strings",
+			input: `rule test_rule {
 	condition:
 		true
-}
-`)
-		p := New(l)
-		program, err := p.ParseRules()
-		if err != nil {
-			t.Errorf("ParseRules() with rule without strings failed: %v", err)
-		}
-		if program == nil {
-			t.Error("ParseRules() with rule without strings returned nil program")
-			return
-		}
-		if len(program.Rules) != 1 {
-			t.Errorf("ParseRules() with rule without strings should return 1 rule, got %d", len(program.Rules))
-		}
-		if len(program.Rules[0].Strings) != 0 {
-			t.Errorf("ParseRules() with rule without strings should return 0 strings, got %d", len(program.Rules[0].Strings))
-		}
-	})
-
-	// Test parser with rule but no condition section
-	t.Run("rule_no_condition", func(t *testing.T) {
-		l := lexer.New(`
-rule test_rule {
+}`,
+			expectError: false,
+			expectRules: 1,
+			description: "Parser should handle rules without strings section",
+		},
+		{
+			name: "rule_no_condition",
+			input: `rule test_rule {
 	strings:
 		$test = "test"
-}
-`)
-		p := New(l)
-		_, err := p.ParseRules()
-		if err == nil {
-			t.Error("ParseRules() with rule without condition should have failed")
-		}
-	})
-
-	// Test parser with multiple rules
-	t.Run("multiple_rules", func(t *testing.T) {
-		l := lexer.New(`
-rule test_rule_1 {
+}`,
+			expectError: true,
+			expectRules: 0,
+			description: "Parser should reject rules without condition section",
+		},
+		{
+			name: "multiple_rules",
+			input: `rule test_rule_1 {
 	strings:
 		$test1 = "test1"
 	condition:
@@ -135,60 +125,83 @@ rule test_rule_2 {
 		$test2 = "test2"
 	condition:
 		$test2
-}
-`)
-		p := New(l)
-		program, err := p.ParseRules()
-		if err != nil {
-			t.Errorf("ParseRules() with multiple rules failed: %v", err)
-			for _, parseErr := range p.Errors() {
-				t.Logf("Parser error: %v", parseErr)
-			}
-			return
-		}
-		if program == nil {
-			t.Error("ParseRules() with multiple rules returned nil program")
-			return
-		}
-		if len(program.Rules) != 2 {
-			t.Errorf("ParseRules() with multiple rules should return 2 rules, got %d", len(program.Rules))
-		}
-	})
+}`,
+			expectError: false,
+			expectRules: 2,
+			description: "Parser should handle multiple rules",
+		},
+	}
 
-	// Test parser with rule tags
-	t.Run("rule_with_tags", func(t *testing.T) {
-		l := lexer.New(`
-rule test_rule : tag1 tag2 {
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			l := lexer.New(tt.input)
+			p := New(l)
+			program, err := p.ParseRules()
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Expected error but parsing succeeded: %s", tt.description)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("Unexpected parsing error: %v: %s", err, tt.description)
+				for _, parseErr := range p.Errors() {
+					t.Logf("Parser error: %v", parseErr)
+				}
+				return
+			}
+
+			if program == nil {
+				t.Errorf("Expected program but got nil: %s", tt.description)
+				return
+			}
+
+			if len(program.Rules) != tt.expectRules {
+				t.Errorf("Expected %d rules but got %d: %s", tt.expectRules, len(program.Rules), tt.description)
+				return
+			}
+
+			// Additional validation for specific test cases
+			if tt.name == "rule_no_strings" && len(program.Rules) > 0 {
+				if len(program.Rules[0].Strings) != 0 {
+					t.Errorf("Expected 0 strings but got %d: %s", len(program.Rules[0].Strings), tt.description)
+				}
+			}
+		})
+	}
+}
+
+// testParserRuleFeatures tests parser with different rule features
+func testParserRuleFeatures(t *testing.T) {
+	tests := []struct {
+		name           string
+		input          string
+		expectError    bool
+		expectedTags   int
+		expectedMeta   int
+		description    string
+		validateTags   []string
+		validateMeta   map[string]string
+	}{
+		{
+			name: "rule_with_tags",
+			input: `rule test_rule : tag1 tag2 {
 	strings:
 		$test = "test"
 	condition:
 		$test
-}
-`)
-		p := New(l)
-		program, err := p.ParseRules()
-		if err != nil {
-			t.Errorf("ParseRules() with rule tags failed: %v", err)
-		}
-		if program == nil {
-			t.Error("ParseRules() with rule tags returned nil program")
-			return
-		}
-		if len(program.Rules) != 1 {
-			t.Errorf("ParseRules() with rule tags should return 1 rule, got %d", len(program.Rules))
-		}
-		if len(program.Rules[0].Tags) != 2 {
-			t.Errorf("ParseRules() with rule tags should return 2 tags, got %d", len(program.Rules[0].Tags))
-		}
-		if program.Rules[0].Tags[0] != "tag1" || program.Rules[0].Tags[1] != "tag2" {
-			t.Errorf("ParseRules() with rule tags returned unexpected tags: %v", program.Rules[0].Tags)
-		}
-	})
-
-	// Test parser with rule meta
-	t.Run("rule_with_meta", func(t *testing.T) {
-		l := lexer.New(`
-rule test_rule {
+}`,
+			expectError:  false,
+			expectedTags: 2,
+			expectedMeta: 0,
+			description:  "Parser should handle rule tags",
+			validateTags: []string{"tag1", "tag2"},
+		},
+		{
+			name: "rule_with_meta",
+			input: `rule test_rule {
 	meta:
 		author = "Test Author"
 		description = "Test Description"
@@ -197,24 +210,93 @@ rule test_rule {
 		$test = "test"
 	condition:
 		$test
-}
-`)
-		p := New(l)
-		program, err := p.ParseRules()
-		if err != nil {
-			t.Errorf("ParseRules() with rule meta failed: %v", err)
-		}
-		if program == nil {
-			t.Error("ParseRules() with rule meta returned nil program")
-			return
-		}
-		if len(program.Rules) != 1 {
-			t.Errorf("ParseRules() with rule meta should return 1 rule, got %d", len(program.Rules))
-		}
-		if len(program.Rules[0].Meta) != 3 {
-			t.Errorf("ParseRules() with rule meta should return 3 meta entries, got %d", len(program.Rules[0].Meta))
-		}
-	})
+}`,
+			expectError: false,
+			expectedTags: 0,
+			expectedMeta: 3,
+			description:  "Parser should handle rule meta information",
+			validateMeta: map[string]string{
+				"author":      "Test Author",
+				"description": "Test Description",
+				"date":        "2023-01-01",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			l := lexer.New(tt.input)
+			p := New(l)
+			program, err := p.ParseRules()
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Expected error but parsing succeeded: %s", tt.description)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("Unexpected parsing error: %v: %s", err, tt.description)
+				return
+			}
+
+			if program == nil {
+				t.Errorf("Expected program but got nil: %s", tt.description)
+				return
+			}
+
+			if len(program.Rules) != 1 {
+				t.Errorf("Expected 1 rule but got %d: %s", len(program.Rules), tt.description)
+				return
+			}
+
+			rule := program.Rules[0]
+
+			// Validate tags
+			if len(rule.Tags) != tt.expectedTags {
+				t.Errorf("Expected %d tags but got %d: %s", tt.expectedTags, len(rule.Tags), tt.description)
+				return
+			}
+
+			if len(tt.validateTags) > 0 {
+				for i, expectedTag := range tt.validateTags {
+					if i >= len(rule.Tags) || rule.Tags[i] != expectedTag {
+						t.Errorf("Expected tag %d to be %s but got %s: %s", i, expectedTag, rule.Tags[i], tt.description)
+					}
+				}
+			}
+
+			// Validate meta
+			if len(rule.Meta) != tt.expectedMeta {
+				t.Errorf("Expected %d meta entries but got %d: %s", tt.expectedMeta, len(rule.Meta), tt.description)
+				return
+			}
+
+			if len(tt.validateMeta) > 0 {
+				for key, expectedValue := range tt.validateMeta {
+					var found bool
+					var actualValue string
+					for _, meta := range rule.Meta {
+						if meta.Key == key {
+							actualValue = meta.AsString()
+							found = true
+							break
+						}
+					}
+
+					if !found {
+						t.Errorf("Expected meta %s to be present but it was not found: %s", key, tt.description)
+						continue
+					}
+
+					if actualValue != expectedValue {
+						t.Errorf("Expected meta %s to be %s but got %s: %s", key, expectedValue, actualValue, tt.description)
+					}
+				}
+			}
+		})
+	}
 }
 
 // TestParserAdvancedFeatures tests advanced parser features for comprehensive coverage
