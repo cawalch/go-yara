@@ -3,7 +3,8 @@
         bench-string-modifiers bench-regression bench-hotspots profile-analysis \
         compare-yara compare-yara-quick compare-yara-deep compare-yara-report \
         performance-suite performance-monitor performance-baseline performance-compare \
-        performance-dashboard performance-cleanup perf-automaton perf-e2e perf-scaling
+        performance-dashboard performance-cleanup perf-automaton perf-e2e perf-scaling \
+        bench-greentea perf-greentea-compare bench-greentea-memory bench-greentea-cpu
 
 # Default package to benchmark/profile
 PKG=./internal/lexer
@@ -117,6 +118,65 @@ bench-memory-leaks:
 	go test -bench BenchmarkLexer_ManyIdentifiers -run ^$$ -memprofile profiles/leak_check.out $(PKG)
 	@echo "Memory allocation analysis:"
 	@go tool pprof -alloc_space -top profiles/leak_check.out
+
+# === GreenTea GC Benchmarks (Go 1.25 Optimization) ===
+
+# GreenTea GC basic benchmarks
+bench-greentea:
+	@echo "=== GreenTea GC Benchmarks ==="
+	@mkdir -p profiles/greentea
+	@echo "Running benchmarks with GreenTea GC (small-object optimization)..."
+	GOEXPERIMENT=greenteagc go test -bench . -benchmem -benchtime=5s -count=3 -run ^$$ $(PKG) > profiles/greentea/bench_greentea_$(date +%Y%m%d_%H%M%S).txt
+	@echo "GreenTea GC benchmarks completed!"
+	@echo "Results saved to profiles/greentea/"
+
+# GreenTea GC memory-focused benchmarks
+bench-greentea-memory:
+	@echo "=== GreenTea GC Memory Analysis ==="
+	@mkdir -p profiles/greentea
+	@echo "Running memory benchmarks with GreenTea GC..."
+	GOEXPERIMENT=greenteagc go test -bench . -benchmem -memprofilerate=1 -run ^$$ $(PKG) \
+		-memprofile profiles/greentea/greentea_mem_$(date +%Y%m%d_%H%M%S).out
+	@echo "GreenTea GC memory profile generated: profiles/greentea/greentea_mem_*.out"
+	@echo "Compare with standard GC using: make pprof-alloc and make pprof-alloc-greentea"
+
+# GreenTea GC CPU-focused benchmarks
+bench-greentea-cpu:
+	@echo "=== GreenTea GC CPU Analysis ==="
+	@mkdir -p profiles/greentea
+	@echo "Running CPU benchmarks with GreenTea GC..."
+	GOEXPERIMENT=greenteagc go test -bench . -benchtime=10s -cpuprofile profiles/greentea/greentea_cpu_$(date +%Y%m%d_%H%M%S).out -run ^$$ $(PKG)
+	@echo "GreenTea GC CPU profile generated: profiles/greentea/greentea_cpu_*.out"
+	@echo "Compare with standard GC using: make pprof-cpu and make pprof-cpu-greentea"
+
+# Compare GreenTea GC vs standard GC
+perf-greentea-compare:
+	@echo "=== GreenTea GC vs Standard GC Comparison ==="
+	@mkdir -p comparison-results
+	@echo "Running benchmarks with standard GC..."
+	go test -bench . -benchmem -count=3 -run ^$$ $(PKG) > comparison-results/standard_gc_$(date +%Y%m%d_%H%M%S).txt
+	@echo "Running benchmarks with GreenTea GC..."
+	GOEXPERIMENT=greenteagc go test -bench . -benchmem -count=3 -run ^$$ $(PKG) > comparison-results/greentea_gc_$(date +%Y%m%d_%H%M%S).txt
+	@echo "Generating comparison..."
+	@STANDARD=$$(ls -t comparison-results/standard_gc_*.txt | head -1); \
+	GREEN=$$(ls -t comparison-results/greentea_gc_*.txt | head -1); \
+	benchstat $$STANDARD $$GREEN > comparison-results/greentea_comparison_$(date +%Y%m%d_%H%M%S).txt
+	@echo "✅ GreenTea GC comparison completed!"
+	@echo "Results saved to comparison-results/greentea_comparison_*.txt"
+	@echo "View comparison: cat comparison-results/greentea_comparison_*.txt"
+
+# GreenTea GC profile viewers
+pprof-cpu-greentea:
+	@echo "Launching GreenTea GC CPU profile viewer..."
+	@greentea_profile=$$(ls -t profiles/greentea/greentea_cpu_*.out | head -1); \
+	if [ -z "$$greentea_profile" ]; then echo "No GreenTea CPU profile found. Run 'make bench-greentea-cpu' first."; exit 1; fi; \
+	go tool pprof -http=:0 $$greentea_profile
+
+pprof-alloc-greentea:
+	@echo "Launching GreenTea GC allocation profile viewer..."
+	@greentea_profile=$$(ls -t profiles/greentea/greentea_mem_*.out | head -1); \
+	if [ -z "$$greentea_profile" ]; then echo "No GreenTea memory profile found. Run 'make bench-greentea-memory' first."; exit 1; fi; \
+	go tool pprof -alloc_space -http=:0 $$greentea_profile
 
 # Comprehensive profile analysis
 profile-analysis:
@@ -296,6 +356,14 @@ help:
 	@echo "  pprof-alloc        - Launch allocation profile viewer"
 	@echo "  pprof-heap         - Launch heap profile viewer"
 	@echo "  pprof-trace        - Launch trace viewer"
+	@echo ""
+	@echo "Go 1.25 GreenTea GC Optimizations:"
+	@echo "  bench-greentea     - Run benchmarks with GreenTea GC"
+	@echo "  bench-greentea-memory - GreenTea GC memory profiling"
+	@echo "  bench-greentea-cpu - GreenTea GC CPU profiling"
+	@echo "  perf-greentea-compare - Compare GreenTea GC vs standard GC"
+	@echo "  pprof-cpu-greentea - View GreenTea GC CPU profiles"
+	@echo "  pprof-alloc-greentea - View GreenTea GC allocation profiles"
 	@echo ""
 	@echo "Regression Testing:"
 	@echo "  bench-save-baseline    - Save current benchmark as baseline"

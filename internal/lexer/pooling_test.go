@@ -3,7 +3,8 @@ package lexer
 import (
 	"sync"
 	"testing"
-	"time"
+
+	"testing/synctest"
 )
 
 // TestStringInterner_BasicFunctionality tests the basic string interning functionality
@@ -37,123 +38,127 @@ func TestStringInterner_BasicFunctionality(t *testing.T) {
 
 // TestStringInterner_Concurrency tests thread safety under concurrent access
 func TestStringInterner_Concurrency(t *testing.T) {
-	si := &stringInterner{
-		cache:     make(map[string]string, 64),
-		maxSize:   64,
-		maxLength: 16,
-	}
+	synctest.Test(t, func(t *testing.T) {
+		si := &stringInterner{
+			cache:     make(map[string]string, 64),
+			maxSize:   64,
+			maxLength: 16,
+		}
 
-	const (
-		numGoroutines = 100
-		numIterations = 1000
-	)
+		const (
+			numGoroutines = 100
+			numIterations = 1000
+		)
 
-	var wg sync.WaitGroup
-	wg.Add(numGoroutines)
+		var wg sync.WaitGroup
+		wg.Add(numGoroutines)
 
-	// Use different strings to test cache growth and collision handling
-	testStrings := []string{"hello", "world", "test", "golang", "yara", "lex", "parse"}
+		// Use different strings to test cache growth and collision handling
+		testStrings := []string{"hello", "world", "test", "golang", "yara", "lex", "parse"}
 
-	for i := range numGoroutines {
-		go func(id int) {
-			defer wg.Done()
-			for j := range numIterations {
-				// Rotate through test strings to create cache hits and misses
-				str := testStrings[j%len(testStrings)]
-				result := si.internString(str)
-				if result != str {
-					t.Errorf("Goroutine %d, iteration %d: expected %s, got %s", id, j, str, result)
+		for i := range numGoroutines {
+			go func(id int) {
+				defer wg.Done()
+				for j := range numIterations {
+					// Rotate through test strings to create cache hits and misses
+					str := testStrings[j%len(testStrings)]
+					result := si.internString(str)
+					if result != str {
+						t.Errorf("Goroutine %d, iteration %d: expected %s, got %s", id, j, str, result)
+					}
 				}
-			}
-		}(i)
-	}
+			}(i)
+		}
 
-	// Wait for all goroutines to complete
-	done := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(done)
-	}()
+		// Wait for all goroutines to complete with synctest
+		done := make(chan struct{})
+		go func() {
+			wg.Wait()
+			close(done)
+		}()
 
-	select {
-	case <-done:
-		// All goroutines completed successfully
-	case <-time.After(30 * time.Second):
-		t.Fatal("Test timed out - possible deadlock or excessive contention")
-	}
+		// Use synctest.Wait() for deterministic completion
+		synctest.Wait()
 
-	// Verify cache integrity
-	si.mu.RLock()
-	cacheSize := len(si.cache)
-	si.mu.RUnlock()
+		// Verify cache integrity
+		si.mu.RLock()
+		cacheSize := len(si.cache)
+		si.mu.RUnlock()
 
-	if cacheSize > si.maxSize {
-		t.Errorf("Cache size %d exceeds maximum %d", cacheSize, si.maxSize)
-	}
+		if cacheSize > si.maxSize {
+			t.Errorf("Cache size %d exceeds maximum %d", cacheSize, si.maxSize)
+		}
+	})
 }
 
 // TestStringInterner_ConcurrentReadWrite tests concurrent reads and writes
 func TestStringInterner_ConcurrentReadWrite(t *testing.T) {
-	si := &stringInterner{
-		cache:     make(map[string]string, 32),
-		maxSize:   32,
-		maxLength: 16,
-	}
+	synctest.Test(t, func(t *testing.T) {
+		si := &stringInterner{
+			cache:     make(map[string]string, 32),
+			maxSize:   32,
+			maxLength: 16,
+		}
 
-	const (
-		numReaders = 50
-		numWriters = 10
-		numOps     = 1000
-	)
+		const (
+			numReaders = 50
+			numWriters = 10
+			numOps     = 1000
+		)
 
-	var wg sync.WaitGroup
-	wg.Add(numReaders + numWriters)
+		var wg sync.WaitGroup
+		wg.Add(numReaders + numWriters)
 
-	// Start reader goroutines
-	for i := range numReaders {
-		go func(id int) {
-			defer wg.Done()
-			for range numOps {
-				// Try to read strings that might be added by writers
-				testStr := "test"
-				result := si.internString(testStr)
-				if result != testStr {
-					t.Errorf("Reader %d: expected %s, got %s", id, testStr, result)
-				}
-			}
-		}(i)
-	}
-
-	// Start writer goroutines
-	for i := range numWriters {
-		go func(id int) {
-			defer wg.Done()
-			for j := range numOps {
-				// Add unique strings to test cache growth
-				str := string(rune('a'+(id%26))) + string(rune('a'+(j%26)))
-				if len(str) <= si.maxLength {
-					result := si.internString(str)
-					if result != str {
-						t.Errorf("Writer %d: expected %s, got %s", id, str, result)
+		// Start reader goroutines
+		for i := range numReaders {
+			go func(id int) {
+				defer wg.Done()
+				for range numOps {
+					// Try to read strings that might be added by writers
+					testStr := "test"
+					result := si.internString(testStr)
+					if result != testStr {
+						t.Errorf("Reader %d: expected %s, got %s", id, testStr, result)
 					}
 				}
-			}
-		}(i)
-	}
+			}(i)
+		}
 
-	// Wait with timeout
-	done := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(done)
-	}()
+		// Start writer goroutines
+		for i := range numWriters {
+			go func(id int) {
+				defer wg.Done()
+				for j := range numOps {
+					// Add unique strings to test cache growth
+					str := string(rune('a'+(id%26))) + string(rune('a'+(j%26)))
+					if len(str) <= si.maxLength {
+						result := si.internString(str)
+						if result != str {
+							t.Errorf("Writer %d: expected %s, got %s", id, str, result)
+						}
+					}
+				}
+			}(i)
+		}
 
-	select {
-	case <-done:
-		// Success
-	case <-time.After(30 * time.Second):
-		t.Fatal("Concurrent read/write test timed out")
-	}
+		// Wait for all goroutines to complete with synctest
+		done := make(chan struct{})
+		go func() {
+			wg.Wait()
+			close(done)
+		}()
+
+		// Use synctest.Wait() for deterministic completion
+		synctest.Wait()
+
+		// Verify completion
+		select {
+		case <-done:
+			// Success
+		default:
+			t.Fatal("Concurrent read/write test did not complete")
+		}
+	})
 }
 
 // TestStringInterner_MaxSizeLimit tests that the cache respects size limits
