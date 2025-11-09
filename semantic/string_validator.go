@@ -1,7 +1,6 @@
 package semantic
 
 import (
-	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -131,53 +130,64 @@ func (sv *StringValidator) findMatchingString(ref string, _ token.Position) bool
 
 // validateQuantifierExpression validates quantifier expressions like "all of them"
 func (sv *StringValidator) validateQuantifierExpression(expr *ast.BinaryOp, pos token.Position) {
-	left := expr.Left
-	right := expr.Right
+	if !sv.validateQuantifierLeft(expr.Left, pos) {
+		return
+	}
 
-	// Left side should be a quantifier (all, any, none) or number
-	var err error
+	sv.validateQuantifierRight(expr.Right, pos)
+}
 
+// validateQuantifierLeft validates the left side of a quantifier expression
+func (sv *StringValidator) validateQuantifierLeft(left ast.Expression, pos token.Position) bool {
 	switch l := left.(type) {
 	case *ast.Identifier:
 		// Quantifier is valid (all, any, none, or number)
 		_ = l.Name
+		return true
 	case *ast.Literal:
 		if l.Type != token.INTEGER_LIT {
-			err = errors.New("invalid quantifier type")
+			sv.addError(&Error{
+				Message:  "invalid quantifier type",
+				Position: pos,
+			})
+			return false
 		}
+		return true
 	default:
-		err = errors.New("invalid quantifier expression")
-	}
-
-	if err != nil {
 		sv.addError(&Error{
-			Message:  err.Error(),
+			Message:  "invalid quantifier expression",
 			Position: pos,
 		})
-		return
+		return false
 	}
+}
 
-	// Right side should be "them" or a string pattern
+// validateQuantifierRight validates the right side of a quantifier expression
+func (sv *StringValidator) validateQuantifierRight(right ast.Expression, pos token.Position) {
 	switch r := right.(type) {
 	case *ast.Identifier:
-		switch {
-		case r.Name == themKeyword:
-			// "all of them" - validate that we have strings in current rule
-			sv.validateThemReference(r.Position())
-		case sv.isStringReference(r.Name):
-			// "all of ($a*)" - validate the string pattern
-			sv.validateStringReference(r.Name, r.Position())
-		default:
-			sv.addError(&Error{
-				Message:  "invalid quantifier target: " + r.Name,
-				Position: r.Position(),
-			})
-		}
-
+		sv.validateIdentifierQuantifierTarget(r)
 	default:
 		sv.addError(&Error{
 			Message:  fmt.Sprintf("quantifier requires '%s' or string pattern", themKeyword),
 			Position: pos,
+		})
+	}
+}
+
+// validateIdentifierQuantifierTarget validates identifier targets in quantifier expressions
+func (sv *StringValidator) validateIdentifierQuantifierTarget(ident *ast.Identifier) {
+	switch {
+	case ident.Name == themKeyword:
+		// "all of them" - validate that we have strings in current rule
+		sv.validateThemReference(ident.Position())
+	case sv.isStringReference(ident.Name):
+		// "all of ($a*)" - validate the string pattern
+		sv.validateStringReference(ident.Name, ident.Position())
+	default:
+		sv.addError(&Error{
+			Message:  "invalid quantifier target: " + ident.Name,
+			Position: ident.Position(),
 		})
 	}
 }

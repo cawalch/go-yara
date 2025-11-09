@@ -231,10 +231,10 @@ func TestAdvancedBuilderMethods_Imports(t *testing.T) {
 	pos := token.Position{Line: 3, Column: 7}
 
 	t.Run("Import builder", func(t *testing.T) {
-		import_ := builder.Import(pos, "pe")
+		importVal := builder.Import(pos, "pe")
 
-		if import_.Module != "pe" {
-			t.Errorf("Import.Module = %q, want %q", import_.Module, "pe")
+		if importVal.Module != "pe" {
+			t.Errorf("Import.Module = %q, want %q", importVal.Module, "pe")
 		}
 	})
 
@@ -457,14 +457,14 @@ func testProgramVisitor(t *testing.T) {
 }
 
 // createComprehensiveProgram is a helper that creates a program with all advanced node types
-func createComprehensiveProgram(t *testing.T) *Program {
+func createComprehensiveProgram(_ *testing.T) *Program {
 	builder := NewBuilder()
 	pos := token.Position{Line: 1, Column: 1}
 
 	// Create program components
 	globalVar := builder.GlobalVariable(pos, "GLOBAL_FLAG", builder.Literal(pos, token.TRUE, true))
 	extVar := builder.ExternalVariable(pos, "filename", "", "string")
-	import_ := builder.Import(pos, "pe")
+	importVal := builder.Import(pos, "pe")
 	include := builder.Include(pos, "common.yar")
 
 	// Create comprehensive rule
@@ -474,7 +474,7 @@ func createComprehensiveProgram(t *testing.T) *Program {
 	program := builder.Program([]*Rule{rule})
 	program.GlobalVariables = []*GlobalVariable{globalVar}
 	program.ExternalVariables = []*ExternalVariable{extVar}
-	program.Imports = []*Import{import_}
+	program.Imports = []*Import{importVal}
 	program.Includes = []*Include{include}
 
 	return program
@@ -529,107 +529,107 @@ type ComprehensiveTestVisitor struct {
 	visitedNodes []string
 }
 
-func (v *ComprehensiveTestVisitor) VisitProgram(p *Program) any {
+func (v *ComprehensiveTestVisitor) VisitProgram(_ *Program) any {
 	v.visitedNodes = append(v.visitedNodes, "Program")
 	return "visited_program"
 }
 
-func (v *ComprehensiveTestVisitor) VisitRule(r *Rule) any {
+func (v *ComprehensiveTestVisitor) VisitRule(_ *Rule) any {
 	v.visitedNodes = append(v.visitedNodes, "Rule")
 	return "visited_rule"
 }
 
-func (v *ComprehensiveTestVisitor) VisitMeta(m *Meta) any {
+func (v *ComprehensiveTestVisitor) VisitMeta(_ *Meta) any {
 	v.visitedNodes = append(v.visitedNodes, "Meta")
 	return "visited_meta"
 }
 
-func (v *ComprehensiveTestVisitor) VisitString(s *String) any {
+func (v *ComprehensiveTestVisitor) VisitString(_ *String) any {
 	v.visitedNodes = append(v.visitedNodes, "String")
 	return "visited_string"
 }
 
-func (v *ComprehensiveTestVisitor) VisitCondition(c *Condition) any {
+func (v *ComprehensiveTestVisitor) VisitCondition(_ *Condition) any {
 	v.visitedNodes = append(v.visitedNodes, "Condition")
 	return "visited_condition"
 }
 
-func (v *ComprehensiveTestVisitor) VisitBinaryOp(b *BinaryOp) any {
+func (v *ComprehensiveTestVisitor) VisitBinaryOp(_ *BinaryOp) any {
 	v.visitedNodes = append(v.visitedNodes, "BinaryOp")
 	return "visited_binary_op"
 }
 
-func (v *ComprehensiveTestVisitor) VisitUnaryOp(u *UnaryOp) any {
+func (v *ComprehensiveTestVisitor) VisitUnaryOp(_ *UnaryOp) any {
 	v.visitedNodes = append(v.visitedNodes, "UnaryOp")
 	return "visited_unary_op"
 }
 
-func (v *ComprehensiveTestVisitor) VisitIdentifier(i *Identifier) any {
+func (v *ComprehensiveTestVisitor) VisitIdentifier(_ *Identifier) any {
 	v.visitedNodes = append(v.visitedNodes, "Identifier")
 	return "visited_identifier"
 }
 
-func (v *ComprehensiveTestVisitor) VisitLiteral(l *Literal) any {
+func (v *ComprehensiveTestVisitor) VisitLiteral(_ *Literal) any {
 	v.visitedNodes = append(v.visitedNodes, "Literal")
 	return "visited_literal"
 }
 
-func (v *ComprehensiveTestVisitor) VisitTextString(t *TextString) any {
+func (v *ComprehensiveTestVisitor) VisitTextString(_ *TextString) any {
 	v.visitedNodes = append(v.visitedNodes, "TextString")
 	return "visited_text_string"
 }
 
-func (v *ComprehensiveTestVisitor) VisitHexString(h *HexString) any {
+func (v *ComprehensiveTestVisitor) VisitHexString(_ *HexString) any {
 	v.visitedNodes = append(v.visitedNodes, "HexString")
 	return "visited_hex_string"
 }
 
-func (v *ComprehensiveTestVisitor) VisitRegexPattern(r *RegexPattern) any {
+func (v *ComprehensiveTestVisitor) VisitRegexPattern(_ *RegexPattern) any {
 	v.visitedNodes = append(v.visitedNodes, "RegexPattern")
 	return "visited_regex_pattern"
 }
 
-func (v *ComprehensiveTestVisitor) VisitGlobalVariable(g *GlobalVariable) any {
+func (v *ComprehensiveTestVisitor) VisitGlobalVariable(_ *GlobalVariable) any {
 	v.visitedNodes = append(v.visitedNodes, "GlobalVariable")
 	return "visited_global_variable"
 }
 
-func (v *ComprehensiveTestVisitor) VisitExternalVariable(e *ExternalVariable) any {
+func (v *ComprehensiveTestVisitor) VisitExternalVariable(_ *ExternalVariable) any {
 	v.visitedNodes = append(v.visitedNodes, "ExternalVariable")
 	return "visited_external_variable"
 }
 
-func (v *ComprehensiveTestVisitor) VisitImport(i *Import) any {
+func (v *ComprehensiveTestVisitor) VisitImport(_ *Import) any {
 	v.visitedNodes = append(v.visitedNodes, "Import")
 	return "visited_import"
 }
 
-func (v *ComprehensiveTestVisitor) VisitInclude(i *Include) any {
+func (v *ComprehensiveTestVisitor) VisitInclude(_ *Include) any {
 	v.visitedNodes = append(v.visitedNodes, "Include")
 	return "visited_include"
 }
 
-func (v *ComprehensiveTestVisitor) VisitStringLength(s *StringLength) any {
+func (v *ComprehensiveTestVisitor) VisitStringLength(_ *StringLength) any {
 	v.visitedNodes = append(v.visitedNodes, "StringLength")
 	return "visited_string_length"
 }
 
-func (v *ComprehensiveTestVisitor) VisitArrayIndex(a *ArrayIndex) any {
+func (v *ComprehensiveTestVisitor) VisitArrayIndex(_ *ArrayIndex) any {
 	v.visitedNodes = append(v.visitedNodes, "ArrayIndex")
 	return "visited_array_index"
 }
 
-func (v *ComprehensiveTestVisitor) VisitForLoop(f *ForLoop) any {
+func (v *ComprehensiveTestVisitor) VisitForLoop(_ *ForLoop) any {
 	v.visitedNodes = append(v.visitedNodes, "ForLoop")
 	return "visited_for_loop"
 }
 
-func (v *ComprehensiveTestVisitor) VisitOfExpression(o *OfExpression) any {
+func (v *ComprehensiveTestVisitor) VisitOfExpression(_ *OfExpression) any {
 	v.visitedNodes = append(v.visitedNodes, "OfExpression")
 	return "visited_of_expression"
 }
 
-func (v *ComprehensiveTestVisitor) VisitFunctionCall(f *FunctionCall) any {
+func (v *ComprehensiveTestVisitor) VisitFunctionCall(_ *FunctionCall) any {
 	v.visitedNodes = append(v.visitedNodes, "FunctionCall")
 	return "visited_function_call"
 }

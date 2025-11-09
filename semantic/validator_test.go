@@ -1,6 +1,7 @@
 package semantic
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/cawalch/go-yara/ast"
@@ -18,12 +19,12 @@ type validatorTestCase struct {
 }
 
 // parseAndValidateProgram parses input and validates it, returning validation errors
-func parseAndValidateProgram(t *testing.T, input string) ([]error, error) {
+func parseAndValidateProgram(_ *testing.T, input string) ([]error, error) {
 	lex := lexer.New(input)
 	p := parser.New(lex)
 	program, err := p.ParseRules()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parse rules failed: %w", err)
 	}
 
 	validator := NewValidator()
@@ -91,7 +92,7 @@ func testValidatorBasicRuleStructures(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			errors, err := parseAndValidateProgram(t, tt.rule)
 			if err != nil {
 				t.Fatalf("ParseRules() error = %v", err)
@@ -131,7 +132,7 @@ func testValidatorKeywordValidations(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			errors, err := parseAndValidateProgram(t, tt.rule)
 			if err != nil {
 				t.Fatalf("ParseRules() error = %v", err)
@@ -168,7 +169,7 @@ func testValidatorStringOperations(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			errors, err := parseAndValidateProgram(t, tt.rule)
 			if err != nil {
 				t.Fatalf("ParseRules() error = %v", err)
@@ -208,7 +209,7 @@ rule test_rule {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			errors, err := parseAndValidateProgram(t, tt.input)
 			if err != nil {
 				t.Fatalf("ParseRules() error = %v", err)
@@ -270,7 +271,7 @@ rule test_rule {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			errors, err := parseAndValidateProgram(t, tt.input)
 			if err != nil {
 				t.Fatalf("ParseRules() error = %v", err)
@@ -281,7 +282,8 @@ rule test_rule {
 }
 
 // TestSymbolTable tests the symbol table functionality
-func TestSymbolTable(t *testing.T) {
+// TestSymbolTableBasicOperations tests core symbol table functionality
+func TestSymbolTableBasicOperations(t *testing.T) {
 	st := NewSymbolTable()
 	st.EnterScope("test_rule")
 
@@ -322,8 +324,10 @@ func TestSymbolTable(t *testing.T) {
 	if exists {
 		t.Errorf("Lookup() should not find string after exiting scope")
 	}
+}
 
-	// Test symbol table operations with table-driven approach
+// TestSymbolTableAdvancedOperations tests complex symbol table scenarios
+func TestSymbolTableAdvancedOperations(t *testing.T) {
 	operationTests := []struct {
 		name      string
 		setupFunc func(*SymbolTable)
@@ -345,7 +349,7 @@ func TestSymbolTable(t *testing.T) {
 		},
 		{
 			name:      "undefined_lookup",
-			setupFunc: func(st *SymbolTable) {},
+			setupFunc: func(_ *SymbolTable) {},
 			testFunc: func(st *SymbolTable) bool {
 				_, exists := st.Lookup("$undefined")
 				return !exists
@@ -355,7 +359,7 @@ func TestSymbolTable(t *testing.T) {
 	}
 
 	for _, tt := range operationTests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			testST := NewSymbolTable()
 			testST.EnterScope("test")
 
@@ -402,7 +406,7 @@ func testIntegerTypeProperties(t *testing.T) {
 	}
 
 	for _, tt := range intTypeTests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			if tt.intType.Size != tt.wantSize {
 				t.Errorf("Size: got %d, want %d", tt.intType.Size, tt.wantSize)
 			}
@@ -454,7 +458,7 @@ func testTypeInferenceFromLiterals(t *testing.T) {
 	}
 
 	for _, tt := range literalTests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			result := InferTypeFromLiteral(tt.tokenType, tt.value)
 			if result.DataType != tt.expectedType {
 				t.Errorf("InferTypeFromLiteral() got type %v, want %v",
@@ -500,7 +504,7 @@ func testTypeCompatibility(t *testing.T) {
 	}
 
 	for _, tt := range compatibilityTests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			if got := tt.left.CanCompare(tt.right); got != tt.canCompare {
 				t.Errorf("CanCompare(): got %v, want %v", got, tt.canCompare)
 			}
@@ -652,98 +656,142 @@ rule benchmark_rule {
 	}
 }
 
-// TestValidatorVisitorMethodsExtended tests additional visitor methods
-func TestValidatorVisitorMethodsExtended(t *testing.T) {
-	validator := NewValidator()
-
-	// Test VisitProgram
-	program := &ast.Program{
-		Rules: []*ast.Rule{
-			{
-				Name: "test_rule",
-				Condition: &ast.Literal{
-					Type:  token.TRUE,
-					Value: true,
-				},
+// TestValidatorStructureVisitors tests core structure visitor methods
+func TestValidatorStructureVisitors(t *testing.T) {
+	tests := []struct {
+		name      string
+		visitFunc func(*Validator, ast.Node)
+		setupFunc func() ast.Node
+	}{
+		{
+			name: "VisitProgram",
+			setupFunc: func() ast.Node {
+				return createValidatorTestProgram()
+			},
+			visitFunc: func(v *Validator, node ast.Node) {
+				result := v.VisitProgram(node.(*ast.Program))
+				if result == nil {
+					t.Error("VisitProgram should return errors slice")
+				}
+			},
+		},
+		{
+			name: "VisitRule",
+			setupFunc: func() ast.Node {
+				return createValidatorTestRule()
+			},
+			visitFunc: func(v *Validator, node ast.Node) {
+				v.VisitRule(node.(*ast.Rule))
+			},
+		},
+		{
+			name: "VisitCondition",
+			setupFunc: func() ast.Node {
+				return createValidatorTestCondition()
+			},
+			visitFunc: func(v *Validator, node ast.Node) {
+				v.VisitCondition(node.(*ast.Condition))
 			},
 		},
 	}
-	result := validator.VisitProgram(program)
-	if result == nil {
-		t.Error("VisitProgram should return errors slice")
-	}
 
-	// Test VisitRule
-	rule := &ast.Rule{
-		Name: "test_rule",
-		Condition: &ast.Literal{
-			Type:  token.TRUE,
-			Value: true,
+	for _, tt := range tests {
+		t.Run(tt.name, func(_ *testing.T) {
+			v := NewValidator()
+			node := tt.setupFunc()
+			tt.visitFunc(v, node)
+		})
+	}
+}
+
+// TestValidatorElementVisitors tests element visitor methods (strings, meta)
+func TestValidatorElementVisitors(t *testing.T) {
+	tests := []struct {
+		name      string
+		setupFunc func() ast.Node
+		visitFunc func(*Validator, ast.Node)
+	}{
+		{
+			name: "VisitString",
+			setupFunc: func() ast.Node {
+				return createValidatorTestString()
+			},
+			visitFunc: func(v *Validator, node ast.Node) {
+				v.VisitString(node.(*ast.String))
+			},
+		},
+		{
+			name: "VisitMeta",
+			setupFunc: func() ast.Node {
+				return createValidatorTestMeta()
+			},
+			visitFunc: func(v *Validator, node ast.Node) {
+				v.VisitMeta(node.(*ast.Meta))
+			},
 		},
 	}
-	validator.VisitRule(rule)
 
-	// Test VisitMeta
-	meta := &ast.Meta{
-		Key:   "author",
-		Value: ast.MetaString("test"),
+	for _, tt := range tests {
+		t.Run(tt.name, func(_ *testing.T) {
+			v := NewValidator()
+			node := tt.setupFunc()
+			tt.visitFunc(v, node)
+		})
 	}
-	validator.VisitMeta(meta)
+}
 
-	// Test VisitString
-	str := &ast.String{
-		Identifier: "$test",
-		Pattern: &ast.TextString{
-			Value: "test",
+// TestValidatorExpressionVisitors tests expression visitor methods
+func TestValidatorExpressionVisitors(t *testing.T) {
+	tests := []struct {
+		name      string
+		setupFunc func() ast.Node
+		visitFunc func(*Validator, ast.Node)
+	}{
+		{
+			name: "VisitBinaryOp",
+			setupFunc: func() ast.Node {
+				return createValidatorTestBinaryOp()
+			},
+			visitFunc: func(v *Validator, node ast.Node) {
+				v.VisitBinaryOp(node.(*ast.BinaryOp))
+			},
+		},
+		{
+			name: "VisitUnaryOp",
+			setupFunc: func() ast.Node {
+				return createValidatorTestUnaryOp()
+			},
+			visitFunc: func(v *Validator, node ast.Node) {
+				v.VisitUnaryOp(node.(*ast.UnaryOp))
+			},
+		},
+		{
+			name: "VisitIdentifier",
+			setupFunc: func() ast.Node {
+				return createValidatorTestIdentifier()
+			},
+			visitFunc: func(v *Validator, node ast.Node) {
+				v.VisitIdentifier(node.(*ast.Identifier))
+			},
+		},
+		{
+			name: "VisitLiteral",
+			setupFunc: func() ast.Node {
+				return createValidatorTestLiteral()
+			},
+			visitFunc: func(v *Validator, node ast.Node) {
+				v.VisitLiteral(node.(*ast.Literal))
+			},
 		},
 	}
-	validator.VisitString(str)
 
-	// Test VisitCondition
-	condition := &ast.Condition{
-		Expression: &ast.Literal{
-			Type:  token.TRUE,
-			Value: true,
-		},
+	for _, tt := range tests {
+		t.Run(tt.name, func(_ *testing.T) {
+			v := NewValidator()
+			node := tt.setupFunc()
+			tt.visitFunc(v, node)
+		})
 	}
-	validator.VisitCondition(condition)
-
-	// Test VisitBinaryOp
-	binOp := &ast.BinaryOp{
-		Op: token.AND,
-		Left: &ast.Literal{
-			Type:  token.TRUE,
-			Value: true,
-		},
-		Right: &ast.Literal{
-			Type:  token.FALSE,
-			Value: false,
-		},
-	}
-	validator.VisitBinaryOp(binOp)
-
-	// Test VisitUnaryOp
-	unaryOp := &ast.UnaryOp{
-		Op: token.NOT,
-		Right: &ast.Literal{
-			Type:  token.TRUE,
-			Value: true,
-		},
-	}
-	validator.VisitUnaryOp(unaryOp)
-
-	// Test VisitIdentifier
-	ident := &ast.Identifier{
-		Name: "test",
-	}
-	validator.VisitIdentifier(ident)
-
-	// Test VisitLiteral
-	literal := &ast.Literal{
-		Type:  token.TRUE,
-		Value: true,
-	}
-	validator.VisitLiteral(literal)
 }
 
 // TestValidatorErrorHandling tests error handling
@@ -923,7 +971,7 @@ func TestValidatorValidateExpression(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			typeInfo, errors := validator.validateExpression(tt.expr)
 			if (len(errors) > 0) != tt.wantErr {
 				t.Errorf("validateExpression() error = %v, wantErr %v", len(errors) > 0, tt.wantErr)
@@ -982,5 +1030,90 @@ func TestValidatorValidateStrings(t *testing.T) {
 	// Should not have errors for valid strings
 	if validator.HasErrors() {
 		t.Errorf("validateStrings() unexpected errors: %v", validator.GetErrors())
+	}
+}
+
+// Helper functions for creating test AST nodes for validator tests
+
+// createValidatorTestProgram creates a basic test program for validator testing
+func createValidatorTestProgram() *ast.Program {
+	return &ast.Program{
+		Rules: []*ast.Rule{
+			createValidatorTestRule(),
+		},
+	}
+}
+
+// createValidatorTestRule creates a basic test rule for validator testing
+func createValidatorTestRule() *ast.Rule {
+	return &ast.Rule{
+		Name:      "test_rule",
+		Condition: createValidatorTestLiteral(),
+	}
+}
+
+// createValidatorTestMeta creates a test meta entry for validator testing
+func createValidatorTestMeta() *ast.Meta {
+	return &ast.Meta{
+		Key:   "author",
+		Value: ast.MetaString("test"),
+	}
+}
+
+// createValidatorTestString creates a test string for validator testing
+func createValidatorTestString() *ast.String {
+	return &ast.String{
+		Identifier: "$test",
+		Pattern: &ast.TextString{
+			Value: "test",
+		},
+	}
+}
+
+// createValidatorTestCondition creates a test condition for validator testing
+func createValidatorTestCondition() *ast.Condition {
+	return &ast.Condition{
+		Expression: createValidatorTestLiteral(),
+	}
+}
+
+// createValidatorTestBinaryOp creates a test binary operation for validator testing
+func createValidatorTestBinaryOp() *ast.BinaryOp {
+	return &ast.BinaryOp{
+		Op: token.AND,
+		Left: &ast.Literal{
+			Type:  token.TRUE,
+			Value: true,
+		},
+		Right: &ast.Literal{
+			Type:  token.FALSE,
+			Value: false,
+		},
+	}
+}
+
+// createValidatorTestUnaryOp creates a test unary operation for validator testing
+func createValidatorTestUnaryOp() *ast.UnaryOp {
+	return &ast.UnaryOp{
+		Op: token.NOT,
+		Right: &ast.Literal{
+			Type:  token.TRUE,
+			Value: true,
+		},
+	}
+}
+
+// createValidatorTestIdentifier creates a test identifier for validator testing
+func createValidatorTestIdentifier() *ast.Identifier {
+	return &ast.Identifier{
+		Name: "test",
+	}
+}
+
+// createValidatorTestLiteral creates a test literal for validator testing
+func createValidatorTestLiteral() *ast.Literal {
+	return &ast.Literal{
+		Type:  token.TRUE,
+		Value: true,
 	}
 }

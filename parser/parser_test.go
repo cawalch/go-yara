@@ -3,6 +3,7 @@ package parser
 import (
 	"testing"
 
+	"github.com/cawalch/go-yara/ast"
 	"github.com/cawalch/go-yara/internal/lexer"
 )
 
@@ -25,13 +26,10 @@ func TestParserCreation(t *testing.T) {
 	}
 }
 
-func TestParseSimpleRule(t *testing.T) {
-	input := `
-rule simple_rule {
-	condition:
-		true
-}
-`
+// parseTestRule is a helper function that handles common parsing logic
+func parseTestRule(t *testing.T, input string) *ast.Program {
+	t.Helper()
+
 	l := lexer.New(input)
 	p := New(l)
 
@@ -45,18 +43,62 @@ rule simple_rule {
 		t.Fatal("program is nil")
 	}
 
-	if len(program.Rules) != 1 {
-		t.Errorf("expected 1 rule, got %d", len(program.Rules))
-	}
+	return program
+}
 
-	rule := program.Rules[0]
-	if rule.Name != "simple_rule" {
-		t.Errorf("expected rule name 'simple_rule', got '%s'", rule.Name)
+// assertRuleCount validates the number of rules in a program
+func assertRuleCount(t *testing.T, program *ast.Program, expected int) {
+	t.Helper()
+	if len(program.Rules) != expected {
+		t.Errorf("expected %d rule(s), got %d", expected, len(program.Rules))
 	}
+}
 
+// assertRuleName validates the name of the first rule
+func assertRuleName(t *testing.T, rule *ast.Rule, expectedName string) {
+	t.Helper()
+	if rule.Name != expectedName {
+		t.Errorf("expected rule name '%s', got '%s'", expectedName, rule.Name)
+	}
+}
+
+// assertConditionExists validates that a rule has a condition
+func assertConditionExists(t *testing.T, rule *ast.Rule) {
+	t.Helper()
 	if rule.Condition == nil {
 		t.Error("condition is nil")
 	}
+}
+
+// assertMetaCount validates the number of meta entries
+func assertMetaCount(t *testing.T, rule *ast.Rule, expected int) {
+	t.Helper()
+	if len(rule.Meta) != expected {
+		t.Errorf("expected %d meta entries, got %d", expected, len(rule.Meta))
+	}
+}
+
+// assertStringCount validates the number of strings
+func assertStringCount(t *testing.T, rule *ast.Rule, expected int) {
+	t.Helper()
+	if len(rule.Strings) != expected {
+		t.Errorf("expected %d string(s), got %d", expected, len(rule.Strings))
+	}
+}
+
+func TestParseSimpleRule(t *testing.T) {
+	input := `
+rule simple_rule {
+	condition:
+		true
+}
+`
+	program := parseTestRule(t, input)
+	assertRuleCount(t, program, 1)
+
+	rule := program.Rules[0]
+	assertRuleName(t, rule, "simple_rule")
+	assertConditionExists(t, rule)
 }
 
 func TestParseRuleWithMeta(t *testing.T) {
@@ -69,18 +111,13 @@ rule rule_with_meta {
 		true
 }
 `
-	l := lexer.New(input)
-	p := New(l)
-
-	program, err := p.ParseRules()
-	if err != nil {
-		t.Fatalf("parsing failed: %v", err)
-	}
+	program := parseTestRule(t, input)
+	assertRuleCount(t, program, 1)
 
 	rule := program.Rules[0]
-	if len(rule.Meta) != 2 {
-		t.Errorf("expected 2 meta entries, got %d", len(rule.Meta))
-	}
+	assertRuleName(t, rule, "rule_with_meta")
+	assertMetaCount(t, rule, 2)
+	assertConditionExists(t, rule)
 }
 
 func TestParseRuleWithString(t *testing.T) {
@@ -92,18 +129,13 @@ rule rule_with_string {
 		$s1
 }
 `
-	l := lexer.New(input)
-	p := New(l)
-
-	program, err := p.ParseRules()
-	if err != nil {
-		t.Fatalf("parsing failed: %v", err)
-	}
+	program := parseTestRule(t, input)
+	assertRuleCount(t, program, 1)
 
 	rule := program.Rules[0]
-	if len(rule.Strings) != 1 {
-		t.Errorf("expected 1 string, got %d", len(rule.Strings))
-	}
+	assertRuleName(t, rule, "rule_with_string")
+	assertStringCount(t, rule, 1)
+	assertConditionExists(t, rule)
 
 	str := rule.Strings[0]
 	if str.Identifier != "$s1" {
@@ -111,8 +143,16 @@ rule rule_with_string {
 	}
 }
 
-func TestParseMultipleRules(t *testing.T) {
-	input := `
+// TestParseRuleStructure consolidates multiple rule structure tests into a single table-driven test
+func TestParseRuleStructure(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		validate func(*testing.T, *ast.Program)
+	}{
+		{
+			name: "multiple_rules",
+			input: `
 rule rule1 {
 	condition:
 		true
@@ -122,77 +162,98 @@ rule rule2 {
 	condition:
 		false
 }
-`
-	l := lexer.New(input)
-	p := New(l)
-
-	program, err := p.ParseRules()
-	if err != nil {
-		t.Fatalf("parsing failed: %v", err)
-	}
-
-	if len(program.Rules) != 2 {
-		t.Errorf("expected 2 rules, got %d", len(program.Rules))
-	}
-
-	if program.Rules[0].Name != "rule1" {
-		t.Errorf("expected first rule name 'rule1', got '%s'", program.Rules[0].Name)
-	}
-
-	if program.Rules[1].Name != "rule2" {
-		t.Errorf("expected second rule name 'rule2', got '%s'", program.Rules[1].Name)
-	}
-}
-
-func TestParseRuleWithModifiers(t *testing.T) {
-	input := `
+`,
+			validate: func(t *testing.T, program *ast.Program) {
+				assertRuleCount(t, program, 2)
+				assertRuleName(t, program.Rules[0], "rule1")
+				assertRuleName(t, program.Rules[1], "rule2")
+				assertConditionExists(t, program.Rules[0])
+				assertConditionExists(t, program.Rules[1])
+			},
+		},
+		{
+			name: "rule_with_modifiers",
+			input: `
 private global rule modified_rule {
 	condition:
 		true
 }
-`
-	l := lexer.New(input)
-	p := New(l)
-
-	program, err := p.ParseRules()
-	if err != nil {
-		t.Logf("Parsing errors: %v", p.Errors())
-		t.Fatalf("parsing failed: %v", err)
-	}
-
-	rule := program.Rules[0]
-	if len(rule.Modifiers) != 2 {
-		t.Errorf("expected 2 modifiers, got %d", len(rule.Modifiers))
-	}
-}
-
-func TestParseRuleWithTags(t *testing.T) {
-	input := `
+`,
+			validate: func(t *testing.T, program *ast.Program) {
+				assertRuleCount(t, program, 1)
+				rule := program.Rules[0]
+				assertRuleName(t, rule, "modified_rule")
+				if len(rule.Modifiers) != 2 {
+					t.Errorf("expected 2 modifiers, got %d", len(rule.Modifiers))
+				}
+				assertConditionExists(t, rule)
+			},
+		},
+		{
+			name: "rule_with_tags",
+			input: `
 rule tagged_rule : tag1 tag2 tag3 {
 	condition:
 		true
 }
-`
-	l := lexer.New(input)
-	p := New(l)
-
-	program, err := p.ParseRules()
-	if err != nil {
-		t.Fatalf("parsing failed: %v", err)
+`,
+			validate: func(t *testing.T, program *ast.Program) {
+				assertRuleCount(t, program, 1)
+				rule := program.Rules[0]
+				assertRuleName(t, rule, "tagged_rule")
+				if len(rule.Tags) != 3 {
+					t.Errorf("expected 3 tags, got %d", len(rule.Tags))
+				}
+				expectedTags := []string{"tag1", "tag2", "tag3"}
+				for i, tag := range rule.Tags {
+					if tag != expectedTags[i] {
+						t.Errorf("expected tag '%s', got '%s'", expectedTags[i], tag)
+					}
+				}
+				assertConditionExists(t, rule)
+			},
+		},
+		{
+			name: "rule_with_all_components",
+			input: `
+private global rule complete_rule : tag1 tag2 {
+	meta:
+		description = "complete test rule"
+		author = "refactor example"
+	strings:
+		$s1 = "test pattern"
+		$s2 = { 01 02 03 04 }
+	condition:
+		$s1 and $s2
+}
+`,
+			validate: func(t *testing.T, program *ast.Program) {
+				assertRuleCount(t, program, 1)
+				rule := program.Rules[0]
+				assertRuleName(t, rule, "complete_rule")
+				assertMetaCount(t, rule, 2)
+				assertStringCount(t, rule, 2)
+				if len(rule.Modifiers) != 2 {
+					t.Errorf("expected 2 modifiers, got %d", len(rule.Modifiers))
+				}
+				if len(rule.Tags) != 2 {
+					t.Errorf("expected 2 tags, got %d", len(rule.Tags))
+				}
+				assertConditionExists(t, rule)
+			},
+		},
 	}
 
-	rule := program.Rules[0]
-	if len(rule.Tags) != 3 {
-		t.Errorf("expected 3 tags, got %d", len(rule.Tags))
-	}
-
-	expectedTags := []string{"tag1", "tag2", "tag3"}
-	for i, tag := range rule.Tags {
-		if tag != expectedTags[i] {
-			t.Errorf("expected tag '%s', got '%s'", expectedTags[i], tag)
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			program := parseTestRule(t, tt.input)
+			tt.validate(t, program)
+		})
 	}
 }
+
+// Note: TestParseRuleWithModifiers and TestParseRuleWithTags have been consolidated
+// into TestParseRuleStructure above for better maintainability and reduced complexity.
 
 func TestParseComplexExpression(t *testing.T) {
 	input := `

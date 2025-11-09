@@ -191,109 +191,166 @@ func (p *Parser) maybeMakeUngreedy(n *Node) {
 // parseBound parses {m}, {m,}, or {m,n}. After '}', it advances p.cur to the next meaningful token.
 func (p *Parser) parseBound() (minVal, maxVal uint16, err error) {
 	l := p.lx // current index is just after '{'
-	readNum := func() (uint16, error) {
-		if l.i >= l.len || l.s[l.i] < '0' || l.s[l.i] > '9' {
-			return 0, errors.New("expected number in bound")
-		}
-		val := 0
-		for l.i < l.len && l.s[l.i] >= '0' && l.s[l.i] <= '9' {
-			newVal := val*10 + int(l.s[l.i]-'0')
-			if newVal > 65535 { //nolint:modernize // avoiding min() to prevent shadowing issues
-				newVal = 65535
-			}
-			val = newVal // clamp
-			l.i++
-		}
-		// Safe conversion with explicit bounds check
-		if val > 65535 {
-			val = 65535
-		} else if val < 0 {
-			val = 0
-		}
-		// Safe conversion with explicit truncation
-		return uint16(val & 0xFFFF), nil // #nosec G115 - safe conversion with explicit masking
-	}
-	minVal, err = readNum()
+
+	minVal, err = p.readBoundNumber(l)
 	if err != nil {
 		return 0, 0, err
 	}
-	if l.i < l.len && l.s[l.i] == ',' {
-		l.i++
-		if l.i < l.len && l.s[l.i] == '}' {
-			maxVal = 65535 // unbounded
-		} else {
-			maxVal, err = readNum()
-			if err != nil {
-				return 0, 0, err
-			}
+
+	maxVal, err = p.parseMaxBound(l, minVal)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	if err := p.finalizeBound(l); err != nil {
+		return 0, 0, err
+	}
+
+	return minVal, maxVal, nil
+}
+
+// readBoundNumber reads a numeric value from the bound specification
+func (p *Parser) readBoundNumber(l *lexer) (uint16, error) {
+	if l.i >= l.len || l.s[l.i] < '0' || l.s[l.i] > '9' {
+		return 0, errors.New("expected number in bound")
+	}
+
+	val := 0
+	for l.i < l.len && l.s[l.i] >= '0' && l.s[l.i] <= '9' {
+		newVal := val*10 + int(l.s[l.i]-'0')
+		if newVal > 65535 { //nolint:modernize // avoiding min() to prevent shadowing issues
+			newVal = 65535
 		}
-	} else {
-		maxVal = minVal
+		val = newVal // clamp
+		l.i++
 	}
+
+	return p.clampToUint16(val), nil
+}
+
+// parseMaxBound parses the maximum value part of a bound specification
+func (p *Parser) parseMaxBound(l *lexer, minVal uint16) (uint16, error) {
+	if l.i >= l.len || l.s[l.i] != ',' {
+		return minVal, nil
+	}
+
+	l.i++ // skip comma
+
+	if l.i < l.len && l.s[l.i] == '}' {
+		return 65535, nil // unbounded
+	}
+
+	return p.readBoundNumber(l)
+}
+
+// finalizeBound validates and finalizes bound parsing
+func (p *Parser) finalizeBound(l *lexer) error {
 	if l.i >= l.len || l.s[l.i] != '}' {
-		err = errors.New("missing '}' in bound")
-		return minVal, maxVal, err
+		return errors.New("missing '}' in bound")
 	}
+
 	l.i++
 	p.cur = p.lx.next() // advance to token after '}'
-	return minVal, maxVal, err
+	return nil
+}
+
+// clampToUint16 safely converts an int to uint16 with bounds checking
+func (p *Parser) clampToUint16(val int) uint16 {
+	if val > 65535 {
+		val = 65535
+	} else if val < 0 {
+		val = 0
+	}
+	// Safe conversion with explicit truncation
+	return uint16(val & 0xFFFF) // #nosec G115 - safe conversion with explicit masking
 }
 
 // parseClass consumes a character class from the underlying lexer state.
 // Supports: negation ^, ranges a-z, escaped metachars (\\, \-, \]).
 func (p *Parser) parseClass() (*Node, error) {
-	// We have just seen '[' as current token; the lexer's index is already positioned
-	// right after '['. Work directly with the underlying input index.
 	l := p.lx
 	cls := &Class{}
-	neg := false
-	// Negation if first char is '^'
-	if l.i < l.len && l.s[l.i] == '^' {
-		neg = true
-		l.i++
+	neg := p.parseClassNegation(l)
+	p.parseInitialLiteral(l, cls)
+
+	if err := p.parseClassContent(l, cls); err != nil {
+		return nil, err
 	}
-	// If first char is ']' or '-' treat as literal
+
+	cls.Negated = neg
+	p.cur = p.lx.next()
+	return &Node{Kind: NodeClass, Class: cls, Greedy: true}, nil
+}
+
+// parseClassNegation handles negation ^ at the start of a character class
+func (p *Parser) parseClassNegation(l *lexer) bool {
+	if l.i < l.len && l.s[l.i] == '^' {
+		l.i++
+		return true
+	}
+	return false
+}
+
+// parseInitialLiteral handles literal ']' or '-' at the start of a character class
+func (p *Parser) parseInitialLiteral(l *lexer, cls *Class) {
 	if l.i < l.len && (l.s[l.i] == ']' || l.s[l.i] == '-') {
 		c := l.s[l.i]
 		l.i++
 		classSet(cls, c)
 	}
+}
+
+// parseClassContent parses the main content of a character class
+func (p *Parser) parseClassContent(l *lexer, cls *Class) error {
 	for {
 		if l.i >= l.len {
-			return nil, errors.New("unterminated character class")
+			return errors.New("unterminated character class")
 		}
+
 		if l.s[l.i] == ']' {
 			l.i++
 			break
 		}
-		// read first char (with simple escapes)
+
 		c, err := readEscaped(l, p.strictEscape)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		// range?
-		if l.i+1 < l.len && l.s[l.i] == '-' && l.s[l.i+1] != ']' {
-			// consume '-'
-			l.i++
-			end, err2 := readEscaped(l, p.strictEscape)
-			if err2 != nil {
-				return nil, err2
-			}
-			start, finish := c, end
-			if start > finish {
-				start, finish = finish, start
-			}
-			for v := start; v <= finish; v++ {
-				classSet(cls, v)
+
+		if p.isRangePattern(l) {
+			if err := p.parseRange(l, cls, c); err != nil {
+				return err
 			}
 			continue
 		}
+
 		classSet(cls, c)
 	}
-	// Set negation and set current token properly to next token after ']'
-	cls.Negated = neg
-	p.cur = p.lx.next()
-	return &Node{Kind: NodeClass, Class: cls, Greedy: true}, nil
+	return nil
+}
+
+// isRangePattern checks if current position represents a range pattern
+func (p *Parser) isRangePattern(l *lexer) bool {
+	return l.i+1 < l.len && l.s[l.i] == '-' && l.s[l.i+1] != ']'
+}
+
+// parseRange handles character range patterns like a-z
+func (p *Parser) parseRange(l *lexer, cls *Class, start byte) error {
+	l.i++ // consume '-'
+
+	end, err := readEscaped(l, p.strictEscape)
+	if err != nil {
+		return err
+	}
+
+	if start > end {
+		start, end = end, start
+	}
+
+	for v := start; v <= end; v++ {
+		classSet(cls, v)
+	}
+	return nil
 }
 
 func readEscaped(l *lexer, strict bool) (byte, error) {
@@ -305,30 +362,50 @@ func readEscaped(l *lexer, strict bool) (byte, error) {
 	if c != '\\' {
 		return c, nil
 	}
+	return readEscapeSequence(l, strict)
+}
+
+// readEscapeSequence handles escape sequences after a backslash
+func readEscapeSequence(l *lexer, strict bool) (byte, error) {
 	if l.i >= l.len { // trailing backslash
 		return '\\', nil
 	}
 	e := l.s[l.i]
 	l.i++
+
+	if mapped, isStandard := getStandardEscape(e); isStandard {
+		return mapped, nil
+	}
+
+	return handleUnknownEscape(e, strict)
+}
+
+// getStandardEscape returns the character for standard escape sequences
+func getStandardEscape(e byte) (byte, bool) {
 	switch e {
 	case 'n':
-		return '\n', nil
+		return '\n', true
 	case 't':
-		return '\t', nil
+		return '\t', true
 	case 'r':
-		return '\r', nil
+		return '\r', true
 	case 'f':
-		return '\f', nil
+		return '\f', true
 	case 'a':
-		return '\a', nil
+		return '\a', true
 	case 'b':
-		return '\b', nil
+		return '\b', true
 	default:
-		if strict {
-			return 0, fmt.Errorf("unknown escape \\%c", e)
-		}
-		return e, nil
+		return e, false
 	}
+}
+
+// handleUnknownEscape handles unknown escape characters
+func handleUnknownEscape(e byte, strict bool) (byte, error) {
+	if strict {
+		return 0, fmt.Errorf("unknown escape \\%c", e)
+	}
+	return e, nil
 }
 
 func classSet(c *Class, b byte) {

@@ -1352,61 +1352,32 @@ func createBinaryOp(op token.TokenType, left, right ast.Expression) *ast.BinaryO
 	}
 }
 
+// createTestBinaryOp creates a binary operation from literal values
+func createTestBinaryOp(op token.TokenType, leftVal, rightVal any) *ast.BinaryOp {
+	leftExpr := createLiteralFromValue(leftVal)
+	rightExpr := createLiteralFromValue(rightVal)
+	return createBinaryOp(op, leftExpr, rightExpr)
+}
+
+// createLiteralFromValue creates a literal expression from a value
+func createLiteralFromValue(val any) ast.Expression {
+	switch v := val.(type) {
+	case int64:
+		return createIntLiteral(v)
+	case bool:
+		return createBoolLiteral(v)
+	default:
+		// For testing purposes, panic on unsupported types
+		panic(fmt.Sprintf("unsupported literal type: %T", val))
+	}
+}
+
 // TestConditionCompilerCompileBinaryOpDetailed tests binary operation compilation in detail
 func TestConditionCompilerCompileBinaryOpDetailed(t *testing.T) {
 	emitter := NewEmitter()
 	cc := NewConditionCompiler(emitter, make(map[string]int))
 
-	// Consolidate all binary operation tests into a single structure
-	binaryOpTests := []struct {
-		category string
-		name     string
-		op       token.TokenType
-		leftVal  any
-		rightVal any
-		wantErr  bool
-	}{
-		// Arithmetic operations
-		{"Arithmetic", "subtraction", token.MINUS, int64(5), int64(2), false},
-		{"Arithmetic", "multiplication", token.MULTIPLY, int64(3), int64(4), false},
-		{"Arithmetic", "division", token.DIVIDE, int64(10), int64(2), false},
-
-		// Logical operations
-		{"Logical", "logical_or", token.OR, true, false, false},
-
-		// Comparison operations
-		{"Comparison", "equality", token.EQ, int64(5), int64(5), false},
-	}
-
-	// Helper function to create appropriate literal expressions
-	createLiteral := func(val any) ast.Expression {
-		switch v := val.(type) {
-		case int64:
-			return createIntLiteral(v)
-		case bool:
-			return createBoolLiteral(v)
-		default:
-			t.Fatalf("Unsupported literal type: %T", val)
-			return nil
-		}
-	}
-
-	for _, tt := range binaryOpTests {
-		t.Run(tt.category+"_"+tt.name, func(t *testing.T) {
-			// Create binary operation with appropriate literal types
-			leftExpr := createLiteral(tt.leftVal)
-			rightExpr := createLiteral(tt.rightVal)
-			binOp := createBinaryOp(tt.op, leftExpr, rightExpr)
-
-			err := cc.compileExpression(binOp)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("compileExpression() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-
-	// Test edge cases and boundary conditions
-	edgeCaseTests := []struct {
+	tests := []struct {
 		name        string
 		op          token.TokenType
 		leftVal     any
@@ -1414,26 +1385,66 @@ func TestConditionCompilerCompileBinaryOpDetailed(t *testing.T) {
 		expectErr   bool
 		description string
 	}{
+		// Arithmetic operations
 		{
-			name:        "division_with_zero_literal",
+			name:      "arithmetic_subtraction",
+			op:        token.MINUS,
+			leftVal:   int64(5),
+			rightVal:  int64(2),
+			expectErr: false,
+		},
+		{
+			name:      "arithmetic_multiplication",
+			op:        token.MULTIPLY,
+			leftVal:   int64(3),
+			rightVal:  int64(4),
+			expectErr: false,
+		},
+		{
+			name:      "arithmetic_division",
+			op:        token.DIVIDE,
+			leftVal:   int64(10),
+			rightVal:  int64(2),
+			expectErr: false,
+		},
+		{
+			name:        "arithmetic_division_by_zero",
 			op:          token.DIVIDE,
 			leftVal:     int64(10),
 			rightVal:    int64(0),
 			expectErr:   false, // May not be caught at compile time
 			description: "Division by zero may be caught at runtime",
 		},
+
+		// Logical operations
+		{
+			name:      "logical_or",
+			op:        token.OR,
+			leftVal:   true,
+			rightVal:  false,
+			expectErr: false,
+		},
+
+		// Comparison operations
+		{
+			name:      "comparison_equality",
+			op:        token.EQ,
+			leftVal:   int64(5),
+			rightVal:  int64(5),
+			expectErr: false,
+		},
 	}
 
-	for _, tt := range edgeCaseTests {
-		t.Run("EdgeCase_"+tt.name, func(t *testing.T) {
-			leftExpr := createLiteral(tt.leftVal)
-			rightExpr := createLiteral(tt.rightVal)
-			binOp := createBinaryOp(tt.op, leftExpr, rightExpr)
-
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			binOp := createTestBinaryOp(tt.op, tt.leftVal, tt.rightVal)
 			err := cc.compileExpression(binOp)
+
 			if (err != nil) != tt.expectErr {
-				t.Errorf("compileExpression() error = %v, expectErr %v (%s)",
-					err, tt.expectErr, tt.description)
+				t.Errorf("compileExpression() error = %v, expectErr %v", err, tt.expectErr)
+				if tt.description != "" {
+					t.Logf("Description: %s", tt.description)
+				}
 			}
 		})
 	}
@@ -1944,7 +1955,7 @@ func setupTestCompiledProgram(t *testing.T) *CompiledProgram {
 }
 
 // createTestRuleForCompiledProgram creates a simple test rule with one string
-func createTestRuleForCompiledProgram(t *testing.T, name, identifier, value string, lineNum int) *ast.Rule {
+func createTestRuleForCompiledProgram(_ *testing.T, name, identifier, value string, lineNum int) *ast.Rule {
 	return &ast.Rule{
 		Pos:  token.Position{Line: lineNum, Column: 1},
 		Name: name,
@@ -2191,7 +2202,7 @@ func TestStringCompilerMethods(t *testing.T) {
 		},
 		{
 			name: "PrintStringInfo",
-			testFunc: func(t *testing.T, sc *StringCompiler) {
+			testFunc: func(_ *testing.T, sc *StringCompiler) {
 				// This should not panic
 				sc.PrintStringInfo()
 			},
@@ -2627,268 +2638,189 @@ func TestEmitterEmitHalt(t *testing.T) {
 
 // TestOpcodeStringCoverage tests String method for various opcodes
 func TestOpcodeStringCoverage(t *testing.T) {
-	tests := []struct {
-		opcode   Opcode
-		expected string
+	// Group opcodes by category for better organization
+	opcodeGroups := map[string][]struct {
+		opcode Opcode
+		name   string
 	}{
-		{OP_ERROR, "ERROR"},
-		{OP_AND, "AND"},
-		{OP_OR, "OR"},
-		{OP_NOT, "NOT"},
-		{OP_BITWISE_NOT, "BITWISE_NOT"},
-		{OP_BITWISE_AND, "BITWISE_AND"},
-		{OP_BITWISE_OR, "BITWISE_OR"},
-		{OP_BITWISE_XOR, "BITWISE_XOR"},
-		{OP_SHL, "SHL"},
-		{OP_SHR, "SHR"},
-		{OP_MOD, "MOD"},
-		{OP_INT_TO_DBL, "INT_TO_DBL"},
-		{OP_STR_TO_BOOL, "STR_TO_BOOL"},
-		{OP_PUSH, "PUSH"},
-		{OP_POP, "POP"},
-		{OP_CALL, "CALL"},
-		{OP_OBJ_LOAD, "OBJ_LOAD"},
-		{OP_OBJ_VALUE, "OBJ_VALUE"},
-		{OP_OBJ_FIELD, "OBJ_FIELD"},
-		{OP_INDEX_ARRAY, "INDEX_ARRAY"},
-		{OP_CONTAINS, "CONTAINS"},
-		{OP_ICONTAINS, "ICONTAINS"},
-		{OP_STARTSWITH, "STARTSWITH"},
-		{OP_ISTARTSWITH, "ISTARTSWITH"},
-		{OP_ENDSWITH, "ENDSWITH"},
-		{OP_IENDSWITH, "IENDSWITH"},
-		{OP_IEQUALS, "IEQUALS"},
-		{OP_MATCHES, "MATCHES"},
-		{OP_FOUND, "FOUND"},
-		{OP_OF_FOUND_AT, "OF_FOUND_AT"},
-		{OP_INT_EQ, "INT_EQ"},
-		{OP_INT_NEQ, "INT_NEQ"},
-		{OP_INT_LT, "INT_LT"},
-		{OP_INT_GT, "INT_GT"},
-		{OP_INT_LE, "INT_LE"},
-		{OP_INT_GE, "INT_GE"},
-		{OP_INT_ADD, "INT_ADD"},
-		{OP_INT_SUB, "INT_SUB"},
-		{OP_INT_MUL, "INT_MUL"},
-		{OP_INT_DIV, "INT_DIV"},
-		{OP_INT_MINUS, "INT_MINUS"},
-		{OP_JZ, "JZ"},
-		{OP_JTRUE, "JTRUE"},
-		{OP_JFALSE, "JFALSE"},
-		{OP_PUSH_8, "PUSH_8"},
-		{OP_PUSH_16, "PUSH_16"},
-		{OP_PUSH_32, "PUSH_32"},
-		{OP_INIT_RULE, "INIT_RULE"},
+		"Logical": {
+			{OP_AND, "AND"},
+			{OP_OR, "OR"},
+			{OP_NOT, "NOT"},
+		},
+		"Bitwise": {
+			{OP_BITWISE_NOT, "BITWISE_NOT"},
+			{OP_BITWISE_AND, "BITWISE_AND"},
+			{OP_BITWISE_OR, "BITWISE_OR"},
+			{OP_BITWISE_XOR, "BITWISE_XOR"},
+			{OP_SHL, "SHL"},
+			{OP_SHR, "SHR"},
+		},
+		"Arithmetic": {
+			{OP_MOD, "MOD"},
+			{OP_INT_TO_DBL, "INT_TO_DBL"},
+			{OP_INT_EQ, "INT_EQ"},
+			{OP_INT_NEQ, "INT_NEQ"},
+			{OP_INT_LT, "INT_LT"},
+			{OP_INT_GT, "INT_GT"},
+			{OP_INT_LE, "INT_LE"},
+			{OP_INT_GE, "INT_GE"},
+			{OP_INT_ADD, "INT_ADD"},
+			{OP_INT_SUB, "INT_SUB"},
+			{OP_INT_MUL, "INT_MUL"},
+			{OP_INT_DIV, "INT_DIV"},
+			{OP_INT_MINUS, "INT_MINUS"},
+		},
+		"Stack": {
+			{OP_PUSH, "PUSH"},
+			{OP_POP, "POP"},
+			{OP_PUSH_8, "PUSH_8"},
+			{OP_PUSH_16, "PUSH_16"},
+			{OP_PUSH_32, "PUSH_32"},
+		},
+		"Object": {
+			{OP_CALL, "CALL"},
+			{OP_OBJ_LOAD, "OBJ_LOAD"},
+			{OP_OBJ_VALUE, "OBJ_VALUE"},
+			{OP_OBJ_FIELD, "OBJ_FIELD"},
+			{OP_INDEX_ARRAY, "INDEX_ARRAY"},
+		},
+		"String": {
+			{OP_STR_TO_BOOL, "STR_TO_BOOL"},
+			{OP_CONTAINS, "CONTAINS"},
+			{OP_ICONTAINS, "ICONTAINS"},
+			{OP_STARTSWITH, "STARTSWITH"},
+			{OP_ISTARTSWITH, "ISTARTSWITH"},
+			{OP_ENDSWITH, "ENDSWITH"},
+			{OP_IENDSWITH, "IENDSWITH"},
+			{OP_IEQUALS, "IEQUALS"},
+			{OP_MATCHES, "MATCHES"},
+		},
+		"FlowControl": {
+			{OP_JZ, "JZ"},
+			{OP_JTRUE, "JTRUE"},
+			{OP_JFALSE, "JFALSE"},
+			{OP_INIT_RULE, "INIT_RULE"},
+		},
+		"System": {
+			{OP_ERROR, "ERROR"},
+			{OP_FOUND, "FOUND"},
+			{OP_OF_FOUND_AT, "OF_FOUND_AT"},
+		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.expected, func(t *testing.T) {
-			result := tt.opcode.String()
-			if result != tt.expected {
-				t.Errorf("Opcode.String() = %s, want %s", result, tt.expected)
+	for category, opcodes := range opcodeGroups {
+		t.Run(category, func(t *testing.T) {
+			for _, tc := range opcodes {
+				t.Run(tc.name, func(t *testing.T) {
+					assertOpcodeString(t, tc.opcode, tc.name)
+				})
 			}
 		})
 	}
 }
 
-// TestOpcodeStringCoverageExtended tests String method for additional opcodes
+// TestOpcodeStringCoverageExtended tests String method for extended opcodes
 func TestOpcodeStringCoverageExtended(t *testing.T) {
-	t.Run("StringOperations", testStringOpcodes)
-	t.Run("FlowControl", testFlowControlOpcodes)
-	t.Run("ComparisonOpcodes", testComparisonOpcodes)
-	t.Run("IterationOpcodes", testIterationOpcodes)
-	t.Run("MemoryOperations", testMemoryOperationOpcodes)
-	t.Run("DoublePrecision", testDoublePrecisionOpcodes)
-	t.Run("StringComparison", testStringComparisonOpcodes)
-	t.Run("IntegerOperations", testIntegerOperationOpcodes)
-}
-
-// testStringOpcodes tests opcodes related to string operations
-func testStringOpcodes(t *testing.T) {
-	tests := []struct {
-		opcode   Opcode
-		expected string
+	extendedOpcodeGroups := map[string][]struct {
+		opcode Opcode
+		name   string
 	}{
-		{OP_COUNT, "COUNT"},
-		{OP_LENGTH, "LENGTH"},
-		{OP_FOUND_AT, "FOUND_AT"},
-		{OP_FOUND_IN, "FOUND_IN"},
-		{OP_OFFSET, "OFFSET"},
-		{OP_OF, "OF"},
-		{OP_OF_PERCENT, "OF_PERCENT"},
-		{OP_OF_FOUND_IN, "OF_FOUND_IN"},
-		{OP_COUNT_IN, "COUNT_IN"},
-		{OP_ITER_START_TEXT_STRING_SET, "ITER_START_TEXT_STRING_SET"},
+		"StringOperations": {
+			{OP_COUNT, "COUNT"},
+			{OP_LENGTH, "LENGTH"},
+			{OP_FOUND_AT, "FOUND_AT"},
+			{OP_FOUND_IN, "FOUND_IN"},
+			{OP_OFFSET, "OFFSET"},
+			{OP_OF, "OF"},
+			{OP_OF_PERCENT, "OF_PERCENT"},
+			{OP_OF_FOUND_IN, "OF_FOUND_IN"},
+			{OP_COUNT_IN, "COUNT_IN"},
+			{OP_ITER_START_TEXT_STRING_SET, "ITER_START_TEXT_STRING_SET"},
+		},
+		"FlowControl": {
+			{OP_JNUNDEF, "JNUNDEF"},
+			{OP_JUNDEF_P, "JUNDEF_P"},
+			{OP_JNUNDEF_P, "JNUNDEF_P"},
+			{OP_JFALSE_P, "JFALSE_P"},
+			{OP_JTRUE_P, "JTRUE_P"},
+			{OP_JL_P, "JL_P"},
+			{OP_JLE_P, "JLE_P"},
+			{OP_JZ_P, "JZ_P"},
+		},
+		"Comparison": {
+			{OP_DEFINED, "DEFINED"},
+			{OP_DBL_EQ, "DBL_EQ"},
+			{OP_DBL_NEQ, "DBL_NEQ"},
+			{OP_DBL_LT, "DBL_LT"},
+			{OP_DBL_GT, "DBL_GT"},
+			{OP_DBL_LE, "DBL_LE"},
+			{OP_DBL_GE, "DBL_GE"},
+		},
+		"Iteration": {
+			{OP_ITER_NEXT, "ITER_NEXT"},
+			{OP_ITER_START_ARRAY, "ITER_START_ARRAY"},
+			{OP_ITER_START_DICT, "ITER_START_DICT"},
+			{OP_ITER_START_INT_RANGE, "ITER_START_INT_RANGE"},
+			{OP_ITER_START_INT_ENUM, "ITER_START_INT_ENUM"},
+			{OP_ITER_START_STRING_SET, "ITER_START_STRING_SET"},
+			{OP_ITER_CONDITION, "ITER_CONDITION"},
+			{OP_ITER_END, "ITER_END"},
+		},
+		"Memory": {
+			{OP_PUSH_RULE, "PUSH_RULE"},
+			{OP_MATCH_RULE, "MATCH_RULE"},
+			{OP_INCR_M, "INCR_M"},
+			{OP_CLEAR_M, "CLEAR_M"},
+			{OP_ADD_M, "ADD_M"},
+			{OP_POP_M, "POP_M"},
+			{OP_PUSH_M, "PUSH_M"},
+			{OP_SET_M, "SET_M"},
+			{OP_SWAPUNDEF, "SWAPUNDEF"},
+			{OP_PUSH_U, "PUSH_U"},
+		},
+		"DoublePrecision": {
+			{OP_DBL_ADD, "DBL_ADD"},
+			{OP_DBL_SUB, "DBL_SUB"},
+			{OP_DBL_MUL, "DBL_MUL"},
+			{OP_DBL_DIV, "DBL_DIV"},
+			{OP_DBL_MINUS, "DBL_MINUS"},
+		},
+		"StringComparison": {
+			{OP_STR_EQ, "STR_EQ"},
+			{OP_STR_NEQ, "STR_NEQ"},
+			{OP_STR_LT, "STR_LT"},
+			{OP_STR_GT, "STR_GT"},
+			{OP_STR_LE, "STR_LE"},
+			{OP_STR_GE, "STR_GE"},
+		},
+		"IntegerOperations": {
+			{OP_INT8, "INT8"},
+			{OP_INT16, "INT16"},
+			{OP_INT32, "INT32"},
+			{OP_UINT8, "UINT8"},
+			{OP_UINT16, "UINT16"},
+			{OP_UINT32, "UINT32"},
+			{OP_INT8BE, "INT8BE"},
+			{OP_INT16BE, "INT16BE"},
+			{OP_INT32BE, "INT32BE"},
+			{OP_UINT8BE, "UINT8BE"},
+			{OP_UINT16BE, "UINT16BE"},
+			{OP_UINT32BE, "UINT32BE"},
+			{OP_FILESIZE, "FILESIZE"},
+			{OP_ENTRYPOINT, "ENTRYPOINT"},
+			{OP_IMPORT, "IMPORT"},
+			{OP_LOOKUP_DICT, "LOOKUP_DICT"},
+		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.expected, func(t *testing.T) {
-			assertOpcodeString(t, tt.opcode, tt.expected)
-		})
-	}
-}
-
-// testFlowControlOpcodes tests jump and control flow opcodes
-func testFlowControlOpcodes(t *testing.T) {
-	tests := []struct {
-		opcode   Opcode
-		expected string
-	}{
-		{OP_JNUNDEF, "JNUNDEF"},
-		{OP_JUNDEF_P, "JUNDEF_P"},
-		{OP_JNUNDEF_P, "JNUNDEF_P"},
-		{OP_JFALSE_P, "JFALSE_P"},
-		{OP_JTRUE_P, "JTRUE_P"},
-		{OP_JL_P, "JL_P"},
-		{OP_JLE_P, "JLE_P"},
-		{OP_JZ_P, "JZ_P"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.expected, func(t *testing.T) {
-			assertOpcodeString(t, tt.opcode, tt.expected)
-		})
-	}
-}
-
-// testComparisonOpcodes tests comparison-related opcodes
-func testComparisonOpcodes(t *testing.T) {
-	tests := []struct {
-		opcode   Opcode
-		expected string
-	}{
-		{OP_DEFINED, "DEFINED"},
-		{OP_DBL_EQ, "DBL_EQ"},
-		{OP_DBL_NEQ, "DBL_NEQ"},
-		{OP_DBL_LT, "DBL_LT"},
-		{OP_DBL_GT, "DBL_GT"},
-		{OP_DBL_LE, "DBL_LE"},
-		{OP_DBL_GE, "DBL_GE"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.expected, func(t *testing.T) {
-			assertOpcodeString(t, tt.opcode, tt.expected)
-		})
-	}
-}
-
-// testIterationOpcodes tests iteration-related opcodes
-func testIterationOpcodes(t *testing.T) {
-	tests := []struct {
-		opcode   Opcode
-		expected string
-	}{
-		{OP_ITER_NEXT, "ITER_NEXT"},
-		{OP_ITER_START_ARRAY, "ITER_START_ARRAY"},
-		{OP_ITER_START_DICT, "ITER_START_DICT"},
-		{OP_ITER_START_INT_RANGE, "ITER_START_INT_RANGE"},
-		{OP_ITER_START_INT_ENUM, "ITER_START_INT_ENUM"},
-		{OP_ITER_START_STRING_SET, "ITER_START_STRING_SET"},
-		{OP_ITER_CONDITION, "ITER_CONDITION"},
-		{OP_ITER_END, "ITER_END"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.expected, func(t *testing.T) {
-			assertOpcodeString(t, tt.opcode, tt.expected)
-		})
-	}
-}
-
-// testMemoryOperationOpcodes tests memory and stack operations
-func testMemoryOperationOpcodes(t *testing.T) {
-	tests := []struct {
-		opcode   Opcode
-		expected string
-	}{
-		{OP_PUSH_RULE, "PUSH_RULE"},
-		{OP_MATCH_RULE, "MATCH_RULE"},
-		{OP_INCR_M, "INCR_M"},
-		{OP_CLEAR_M, "CLEAR_M"},
-		{OP_ADD_M, "ADD_M"},
-		{OP_POP_M, "POP_M"},
-		{OP_PUSH_M, "PUSH_M"},
-		{OP_SET_M, "SET_M"},
-		{OP_SWAPUNDEF, "SWAPUNDEF"},
-		{OP_PUSH_U, "PUSH_U"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.expected, func(t *testing.T) {
-			assertOpcodeString(t, tt.opcode, tt.expected)
-		})
-	}
-}
-
-// testDoublePrecisionOpcodes tests double precision arithmetic opcodes
-func testDoublePrecisionOpcodes(t *testing.T) {
-	tests := []struct {
-		opcode   Opcode
-		expected string
-	}{
-		{OP_DBL_ADD, "DBL_ADD"},
-		{OP_DBL_SUB, "DBL_SUB"},
-		{OP_DBL_MUL, "DBL_MUL"},
-		{OP_DBL_DIV, "DBL_DIV"},
-		{OP_DBL_MINUS, "DBL_MINUS"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.expected, func(t *testing.T) {
-			assertOpcodeString(t, tt.opcode, tt.expected)
-		})
-	}
-}
-
-// testStringComparisonOpcodes tests string comparison opcodes
-func testStringComparisonOpcodes(t *testing.T) {
-	tests := []struct {
-		opcode   Opcode
-		expected string
-	}{
-		{OP_STR_EQ, "STR_EQ"},
-		{OP_STR_NEQ, "STR_NEQ"},
-		{OP_STR_LT, "STR_LT"},
-		{OP_STR_GT, "STR_GT"},
-		{OP_STR_LE, "STR_LE"},
-		{OP_STR_GE, "STR_GE"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.expected, func(t *testing.T) {
-			assertOpcodeString(t, tt.opcode, tt.expected)
-		})
-	}
-}
-
-// testIntegerOperationOpcodes tests integer operation opcodes
-func testIntegerOperationOpcodes(t *testing.T) {
-	tests := []struct {
-		opcode   Opcode
-		expected string
-	}{
-		{OP_INT8, "INT8"},
-		{OP_INT16, "INT16"},
-		{OP_INT32, "INT32"},
-		{OP_UINT8, "UINT8"},
-		{OP_UINT16, "UINT16"},
-		{OP_UINT32, "UINT32"},
-		{OP_INT8BE, "INT8BE"},
-		{OP_INT16BE, "INT16BE"},
-		{OP_INT32BE, "INT32BE"},
-		{OP_UINT8BE, "UINT8BE"},
-		{OP_UINT16BE, "UINT16BE"},
-		{OP_UINT32BE, "UINT32BE"},
-		{OP_FILESIZE, "FILESIZE"},
-		{OP_ENTRYPOINT, "ENTRYPOINT"},
-		{OP_IMPORT, "IMPORT"},
-		{OP_LOOKUP_DICT, "LOOKUP_DICT"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.expected, func(t *testing.T) {
-			assertOpcodeString(t, tt.opcode, tt.expected)
+	for category, opcodes := range extendedOpcodeGroups {
+		t.Run(category, func(t *testing.T) {
+			for _, tc := range opcodes {
+				t.Run(tc.name, func(t *testing.T) {
+					assertOpcodeString(t, tc.opcode, tc.name)
+				})
+			}
 		})
 	}
 }
@@ -3389,67 +3321,42 @@ func TestStringCompilerCompileString(t *testing.T) {
 	}
 }
 
-// TestConditionCompilerEstimateComplexityExtended tests EstimateComplexity method with various expressions
+// Helper functions for complexity testing
+func createTestIdentifierForComplexity(name string) *ast.Identifier {
+	return &ast.Identifier{
+		Pos:  token.Position{Line: 1, Column: 1},
+		Name: name,
+	}
+}
+
+func createTestUnaryOpForComplexity(op token.TokenType, right ast.Expression) *ast.UnaryOp {
+	return &ast.UnaryOp{
+		Pos:   token.Position{Line: 1, Column: 1},
+		Op:    op,
+		Right: right,
+	}
+}
+
+// TestConditionCompilerEstimateComplexityExtended tests complexity estimation for various expressions
 func TestConditionCompilerEstimateComplexityExtended(t *testing.T) {
 	emitter := NewEmitter()
 	cc := NewConditionCompiler(emitter, make(map[string]int))
 
-	tests := []struct {
+	testCases := []struct {
 		name       string
 		expr       ast.Expression
 		minComplex int
 	}{
-		{
-			name: "literal",
-			expr: &ast.Literal{
-				Pos:   token.Position{Line: 1, Column: 1},
-				Type:  token.TRUE,
-				Value: true,
-			},
-			minComplex: 1,
-		},
-		{
-			name: "identifier",
-			expr: &ast.Identifier{
-				Pos:  token.Position{Line: 1, Column: 1},
-				Name: "test_var",
-			},
-			minComplex: 2,
-		},
-		{
-			name: "binary_op",
-			expr: &ast.BinaryOp{
-				Pos: token.Position{Line: 1, Column: 1},
-				Op:  token.AND,
-				Left: &ast.Literal{
-					Pos:   token.Position{Line: 1, Column: 1},
-					Type:  token.TRUE,
-					Value: true,
-				},
-				Right: &ast.Literal{
-					Pos:   token.Position{Line: 1, Column: 1},
-					Type:  token.FALSE,
-					Value: false,
-				},
-			},
-			minComplex: 3,
-		},
-		{
-			name: "unary_op",
-			expr: &ast.UnaryOp{
-				Pos: token.Position{Line: 1, Column: 1},
-				Op:  token.NOT,
-				Right: &ast.Literal{
-					Pos:   token.Position{Line: 1, Column: 1},
-					Type:  token.TRUE,
-					Value: true,
-				},
-			},
-			minComplex: 2,
-		},
+		{"literal_true", createTestLiteral(), 1},
+		{"identifier_simple", createTestIdentifierForComplexity("test_var"), 2},
+		{"not_true", createTestUnaryOpForComplexity(token.NOT, createTestLiteral()), 2},
+		{"not_identifier", createTestUnaryOpForComplexity(token.NOT, createTestIdentifierForComplexity("var")), 3},
+		{"and_literals", createTestBinaryOp(token.AND, true, false), 3},
+		{"or_literals", createTestBinaryOp(token.OR, true, false), 3},
+		{"arithmetic_add", createTestBinaryOp(token.PLUS, int64(1), int64(2)), 3},
 	}
 
-	for _, tt := range tests {
+	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
 			complexity := cc.EstimateComplexity(tt.expr)
 			if complexity < tt.minComplex {

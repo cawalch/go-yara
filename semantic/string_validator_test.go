@@ -58,22 +58,6 @@ func (th *testHelper) assertValidation(wantErr bool) {
 	}
 }
 
-// createBasicSymbolTable creates a simple symbol table for testing
-func createBasicSymbolTable() *SymbolTable {
-	st := NewSymbolTable()
-	st.EnterScope("test")
-	pos := token.Position{Line: 1, Column: 1}
-
-	// Define some common test strings
-	str1 := &ast.String{Identifier: "$s1", Pos: pos}
-	_ = st.DefineString("$s1", pos, str1)
-
-	str2 := &ast.String{Identifier: "$s2", Pos: pos}
-	_ = st.DefineString("$s2", pos, str2)
-
-	return st
-}
-
 // TestStringValidatorFullIntegration tests string validator with parsed programs
 func TestStringValidatorFullIntegration(t *testing.T) {
 	t.Run("ValidReferences", testValidStringReferences)

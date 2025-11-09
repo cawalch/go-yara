@@ -8,6 +8,27 @@ import (
 	"github.com/cawalch/go-yara/internal/lexer"
 )
 
+// assertRuleParsesWithCondition is a helper function that parses a rule and asserts it has a condition
+func assertRuleParsesWithCondition(t *testing.T, input string) {
+	t.Helper()
+	l := lexer.New(input)
+	p := New(l)
+
+	program, err := p.ParseRules()
+	if err != nil {
+		t.Fatalf("parsing failed: %v", err)
+	}
+
+	if len(program.Rules) != 1 {
+		t.Errorf("expected 1 rule, got %d", len(program.Rules))
+	}
+
+	rule := program.Rules[0]
+	if rule.Condition == nil {
+		t.Error("condition is nil")
+	}
+}
+
 // TestParseBitwiseOperators tests bitwise operator parsing
 func TestParseBitwiseOperators(t *testing.T) {
 	tests := []struct {
@@ -67,22 +88,7 @@ func TestParseBitwiseOperators(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			l := lexer.New(tt.input)
-			p := New(l)
-
-			program, err := p.ParseRules()
-			if err != nil {
-				t.Fatalf("parsing failed: %v", err)
-			}
-
-			if len(program.Rules) != 1 {
-				t.Errorf("expected 1 rule, got %d", len(program.Rules))
-			}
-
-			rule := program.Rules[0]
-			if rule.Condition == nil {
-				t.Error("condition is nil")
-			}
+			assertRuleParsesWithCondition(t, tt.input)
 		})
 	}
 }
@@ -127,18 +133,24 @@ func TestParseUnaryOperators(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			l := lexer.New(tt.input)
-			p := New(l)
-
-			program, err := p.ParseRules()
-			if err != nil {
-				t.Fatalf("parsing failed: %v", err)
-			}
-
-			if len(program.Rules) != 1 {
-				t.Errorf("expected 1 rule, got %d", len(program.Rules))
-			}
+			assertRuleParses(t, tt.input)
 		})
+	}
+}
+
+// assertRuleParses is a helper function that parses a rule and asserts basic structure
+func assertRuleParses(t *testing.T, input string) {
+	t.Helper()
+	l := lexer.New(input)
+	p := New(l)
+
+	program, err := p.ParseRules()
+	if err != nil {
+		t.Fatalf("parsing failed: %v", err)
+	}
+
+	if len(program.Rules) != 1 {
+		t.Errorf("expected 1 rule, got %d", len(program.Rules))
 	}
 }
 
@@ -944,20 +956,5 @@ func TestParseShiftOperators(t *testing.T) {
 				t.Errorf("expected 1 rule, got %d", len(program.Rules))
 			}
 		})
-	}
-}
-
-// assertRuleParses is a helper function that tests if a YARA rule parses successfully
-func assertRuleParses(t *testing.T, input string) {
-	l := lexer.New(input)
-	p := New(l)
-
-	program, err := p.ParseRules()
-	if err != nil {
-		t.Fatalf("parsing failed: %v", err)
-	}
-
-	if len(program.Rules) != 1 {
-		t.Errorf("expected 1 rule, got %d", len(program.Rules))
 	}
 }

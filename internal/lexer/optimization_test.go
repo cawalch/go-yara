@@ -86,7 +86,7 @@ func BenchmarkOptimizationComparison(b *testing.B) {
 		for range b.N {
 			l := lexer.New(input)
 			for l.NextToken().Type != token.EOF {
-				// Consume tokens
+				// Token already consumed by NextToken()
 			}
 		}
 	})
@@ -100,7 +100,7 @@ func BenchmarkOptimizationComparison(b *testing.B) {
 		for range b.N {
 			l := lexer.New(input)
 			for l.NextToken().Type != token.EOF {
-				// Consume tokens
+				// Token already consumed by NextToken()
 			}
 		}
 	})

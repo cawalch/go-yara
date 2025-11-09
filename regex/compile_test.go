@@ -11,21 +11,30 @@ func TestCompileLiteralAndAny(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
+
 	code, err := Compile(ast)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
+
+	validateLiteralAndAnyCode(t, code)
+}
+
+func validateLiteralAndAnyCode(t *testing.T, code []byte) {
 	if len(code) < 3 {
-		t.Fatalf("short code")
+		t.Fatalf("short code: got %d bytes: %v", len(code), code)
 	}
 	if code[0] != OpLiteral || code[1] != 'a' {
-		t.Fatalf("want literal 'a' at start")
+		t.Fatalf("want literal 'a' at start, got: %v", code[:2])
 	}
-	if code[2] != OpAny && code[3] != OpAny {
-		t.Fatalf("want OpAny after 'a'")
+	if len(code) > 3 && code[2] != OpAny && code[3] != OpAny {
+		t.Fatalf("want OpAny after 'a', got: %v", code[2:4])
+	}
+	if len(code) == 3 && code[2] != OpAny {
+		t.Fatalf("want OpAny after 'a', got: %v (OpAny=%d)", code[2], OpAny)
 	}
 	if code[len(code)-1] != OpMatch {
-		t.Fatalf("missing OpMatch at end")
+		t.Fatalf("missing OpMatch at end, got: %v", code[len(code)-1])
 	}
 }
 

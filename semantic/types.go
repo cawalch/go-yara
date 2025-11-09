@@ -275,106 +275,126 @@ func (it *IntegerType) GetIntegerRange() (minVal, maxVal int64) {
 
 // InferTypeFromLiteral infers type information from a literal token
 func InferTypeFromLiteral(tokenType token.TokenType, _ any) *TypeInfo {
-	switch tokenType {
-	case token.TRUE, token.FALSE:
+	switch {
+	case isBooleanLiteral(tokenType):
 		return &TypeInfo{DataType: TypeBoolean}
-	case token.INTEGER_LIT:
-		return &TypeInfo{
-			DataType:    TypeInteger,
-			IntegerType: Int64Type, // Default to int64 for literals
-		}
-	case token.HEX_INTEGER_LIT:
-		return &TypeInfo{
-			DataType:    TypeInteger,
-			IntegerType: Uint64Type, // Default to uint64 for hex literals
-		}
-	case token.OCTAL_INTEGER_LIT:
-		return &TypeInfo{
-			DataType:    TypeInteger,
-			IntegerType: Int64Type, // Default to int64 for octal literals
-		}
-	case token.FLOAT_LIT:
+	case isIntegerLiteral(tokenType):
+		return inferIntegerType(tokenType)
+	case isStringLiteral(tokenType):
+		return inferStringType(tokenType)
+	case tokenType == token.FLOAT_LIT:
 		return &TypeInfo{DataType: TypeFloat}
-	case token.SIZE_LIT:
-		return &TypeInfo{
-			DataType:    TypeInteger,
-			IntegerType: Uint64Type, // Size literals are unsigned
-		}
-	case token.STRING_LIT:
-		return &TypeInfo{
-			DataType: TypeString,
-			StringType: &StringType{
-				IsWide:  false,
-				IsASCII: true,
-				IsHex:   false,
-				IsRegex: false,
-			},
-		}
-	case token.HEX_STRING_LIT:
-		return &TypeInfo{
-			DataType: TypeString,
-			StringType: &StringType{
-				IsWide:  false,
-				IsASCII: false,
-				IsHex:   true,
-				IsRegex: false,
-			},
-		}
-	case token.REGEX_LIT:
-		return &TypeInfo{
-			DataType: TypeRegexp,
-			StringType: &StringType{
-				IsWide:  false,
-				IsASCII: false,
-				IsHex:   false,
-				IsRegex: true,
-			},
-		}
 	default:
 		return &TypeInfo{DataType: TypeUnknown}
 	}
 }
 
+// isBooleanLiteral checks if token is a boolean literal
+func isBooleanLiteral(tokenType token.TokenType) bool {
+	return tokenType == token.TRUE || tokenType == token.FALSE
+}
+
+// isIntegerLiteral checks if token is an integer literal
+func isIntegerLiteral(tokenType token.TokenType) bool {
+	return tokenType == token.INTEGER_LIT ||
+		tokenType == token.HEX_INTEGER_LIT ||
+		tokenType == token.OCTAL_INTEGER_LIT ||
+		tokenType == token.SIZE_LIT
+}
+
+// isStringLiteral checks if token is a string literal
+func isStringLiteral(tokenType token.TokenType) bool {
+	return tokenType == token.STRING_LIT ||
+		tokenType == token.HEX_STRING_LIT ||
+		tokenType == token.REGEX_LIT
+}
+
+// inferIntegerType infers type for integer literals
+func inferIntegerType(tokenType token.TokenType) *TypeInfo {
+	switch tokenType {
+	case token.INTEGER_LIT, token.OCTAL_INTEGER_LIT:
+		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
+	case token.HEX_INTEGER_LIT, token.SIZE_LIT:
+		return &TypeInfo{DataType: TypeInteger, IntegerType: Uint64Type}
+	default:
+		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
+	}
+}
+
+// inferStringType infers type for string literals
+func inferStringType(tokenType token.TokenType) *TypeInfo {
+	stringType := &StringType{
+		IsWide:  false,
+		IsASCII: false,
+		IsHex:   false,
+		IsRegex: false,
+	}
+
+	switch tokenType {
+	case token.STRING_LIT:
+		stringType.IsASCII = true
+	case token.HEX_STRING_LIT:
+		stringType.IsHex = true
+	case token.REGEX_LIT:
+		stringType.IsRegex = true
+	}
+
+	dataType := TypeString
+	if tokenType == token.REGEX_LIT {
+		dataType = TypeRegexp
+	}
+
+	return &TypeInfo{
+		DataType:   dataType,
+		StringType: stringType,
+	}
+}
+
 // InferTypeFromBinaryOp infers the result type of a binary operation
 func InferTypeFromBinaryOp(left *TypeInfo, op token.TokenType, right *TypeInfo) (*TypeInfo, error) {
-	switch op {
-	case token.PLUS, token.MINUS, token.MULTIPLY, token.DIVIDE, token.MODULO, token.INT_DIVIDE:
-		return inferArithmeticType(left, op, right)
-
-	case token.BITWISE_AND, token.BITWISE_OR, token.BITWISE_XOR,
-		token.LEFT_SHIFT, token.RIGHT_SHIFT, token.BITWISE_NOT:
-		return inferBitwiseType(left, op, right)
-
-	case token.EQ, token.NEQ, token.LT, token.LE, token.GT, token.GE:
-		return inferComparisonType(left, right)
-
-	case token.AND, token.OR:
-		return inferLogicalType(left, right)
-
-	case token.CONTAINS, token.ICONTAINS, token.STARTSWITH, token.ENDSWITH,
-		token.ISTARTSWITH, token.IENDSWITH, token.IEQUALS, token.MATCHES:
-		return inferStringOperationType(left, right)
-
-	case token.AT:
-		return inferAtOperatorType(left, right)
-
-	case token.IN:
-		return inferInOperatorType(left, right)
-
-	case token.DOT:
-		return inferDotOperatorType(left, right)
-
-	case token.OF, token.COLON:
-		return &TypeInfo{DataType: TypeBoolean}, nil
-
-	case token.LPAREN:
-		// Function call - return the function's return type
-		// For now, assume data type functions return integers
-		return &TypeInfo{DataType: TypeInteger, IntegerType: Uint64Type}, nil
-
-	default:
-		return nil, fmt.Errorf("unknown binary operator: %s", op)
+	if handler, exists := binaryOpHandlers[op]; exists {
+		return handler(left, right)
 	}
+	return nil, fmt.Errorf("unknown binary operator: %s", op)
+}
+
+// binaryOpHandlers maps binary operators to their type inference handlers
+var binaryOpHandlers = map[token.TokenType]func(*TypeInfo, *TypeInfo) (*TypeInfo, error){
+	token.PLUS:        func(l, r *TypeInfo) (*TypeInfo, error) { return inferArithmeticType(l, token.PLUS, r) },
+	token.MINUS:       func(l, r *TypeInfo) (*TypeInfo, error) { return inferArithmeticType(l, token.MINUS, r) },
+	token.MULTIPLY:    func(l, r *TypeInfo) (*TypeInfo, error) { return inferArithmeticType(l, token.MULTIPLY, r) },
+	token.DIVIDE:      func(l, r *TypeInfo) (*TypeInfo, error) { return inferArithmeticType(l, token.DIVIDE, r) },
+	token.MODULO:      func(l, r *TypeInfo) (*TypeInfo, error) { return inferArithmeticType(l, token.MODULO, r) },
+	token.INT_DIVIDE:  func(l, r *TypeInfo) (*TypeInfo, error) { return inferArithmeticType(l, token.INT_DIVIDE, r) },
+	token.BITWISE_AND: func(l, r *TypeInfo) (*TypeInfo, error) { return inferBitwiseType(l, token.BITWISE_AND, r) },
+	token.BITWISE_OR:  func(l, r *TypeInfo) (*TypeInfo, error) { return inferBitwiseType(l, token.BITWISE_OR, r) },
+	token.BITWISE_XOR: func(l, r *TypeInfo) (*TypeInfo, error) { return inferBitwiseType(l, token.BITWISE_XOR, r) },
+	token.LEFT_SHIFT:  func(l, r *TypeInfo) (*TypeInfo, error) { return inferBitwiseType(l, token.LEFT_SHIFT, r) },
+	token.RIGHT_SHIFT: func(l, r *TypeInfo) (*TypeInfo, error) { return inferBitwiseType(l, token.RIGHT_SHIFT, r) },
+	token.EQ:          func(l, r *TypeInfo) (*TypeInfo, error) { return inferComparisonType(l, r) },
+	token.NEQ:         func(l, r *TypeInfo) (*TypeInfo, error) { return inferComparisonType(l, r) },
+	token.LT:          func(l, r *TypeInfo) (*TypeInfo, error) { return inferComparisonType(l, r) },
+	token.LE:          func(l, r *TypeInfo) (*TypeInfo, error) { return inferComparisonType(l, r) },
+	token.GT:          func(l, r *TypeInfo) (*TypeInfo, error) { return inferComparisonType(l, r) },
+	token.GE:          func(l, r *TypeInfo) (*TypeInfo, error) { return inferComparisonType(l, r) },
+	token.AND:         func(l, r *TypeInfo) (*TypeInfo, error) { return inferLogicalType(l, r) },
+	token.OR:          func(l, r *TypeInfo) (*TypeInfo, error) { return inferLogicalType(l, r) },
+	token.CONTAINS:    func(l, r *TypeInfo) (*TypeInfo, error) { return inferStringOperationType(l, r) },
+	token.ICONTAINS:   func(l, r *TypeInfo) (*TypeInfo, error) { return inferStringOperationType(l, r) },
+	token.STARTSWITH:  func(l, r *TypeInfo) (*TypeInfo, error) { return inferStringOperationType(l, r) },
+	token.ENDSWITH:    func(l, r *TypeInfo) (*TypeInfo, error) { return inferStringOperationType(l, r) },
+	token.ISTARTSWITH: func(l, r *TypeInfo) (*TypeInfo, error) { return inferStringOperationType(l, r) },
+	token.IENDSWITH:   func(l, r *TypeInfo) (*TypeInfo, error) { return inferStringOperationType(l, r) },
+	token.IEQUALS:     func(l, r *TypeInfo) (*TypeInfo, error) { return inferStringOperationType(l, r) },
+	token.MATCHES:     func(l, r *TypeInfo) (*TypeInfo, error) { return inferStringOperationType(l, r) },
+	token.AT:          inferAtOperatorType,
+	token.IN:          inferInOperatorType,
+	token.DOT:         inferDotOperatorType,
+	token.OF:          func(_, _ *TypeInfo) (*TypeInfo, error) { return &TypeInfo{DataType: TypeBoolean}, nil },
+	token.COLON:       func(_, _ *TypeInfo) (*TypeInfo, error) { return &TypeInfo{DataType: TypeBoolean}, nil },
+	token.LPAREN: func(_, _ *TypeInfo) (*TypeInfo, error) {
+		return &TypeInfo{DataType: TypeInteger, IntegerType: Uint64Type}, nil
+	},
 }
 
 // inferArithmeticType infers the result type of arithmetic operations
@@ -470,37 +490,46 @@ func inferDotOperatorType(left, right *TypeInfo) (*TypeInfo, error) {
 
 // InferTypeFromUnaryOp infers the result type of a unary operation
 func InferTypeFromUnaryOp(op token.TokenType, operand *TypeInfo) (*TypeInfo, error) {
-	switch op {
-	case token.NOT:
-		if operand.DataType != TypeBoolean {
-			return nil, errors.New("logical not requires boolean operand")
-		}
-		return &TypeInfo{DataType: TypeBoolean}, nil
-
-	case token.BITWISE_NOT:
-		if !operand.IsInteger() {
-			return nil, errors.New("bitwise not requires integer operand")
-		}
-		return &TypeInfo{DataType: TypeInteger, IntegerType: operand.IntegerType}, nil
-
-	case token.MINUS:
-		if !operand.IsNumeric() {
-			return nil, errors.New("unary minus requires numeric operand")
-		}
-		return operand, nil
-
-	case token.DEFINED:
-		return &TypeInfo{DataType: TypeBoolean}, nil
-
-	case token.HASH:
-		// '#' count operator yields integer count of matches
-		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}, nil
-
-	case token.AT:
-		// '@' position operator yields integer offset of first match
-		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}, nil
-
-	default:
-		return nil, fmt.Errorf("unknown unary operator: %s", op)
+	if handler, exists := unaryOpHandlers[op]; exists {
+		return handler(operand)
 	}
+	return nil, fmt.Errorf("unknown unary operator: %s", op)
+}
+
+// unaryOpHandlers maps unary operators to their type inference handlers
+var unaryOpHandlers = map[token.TokenType]func(*TypeInfo) (*TypeInfo, error){
+	token.NOT:         handleLogicalNotOp,
+	token.BITWISE_NOT: handleBitwiseNotOp,
+	token.MINUS:       handleUnaryMinusOp,
+	token.DEFINED:     func(*TypeInfo) (*TypeInfo, error) { return &TypeInfo{DataType: TypeBoolean}, nil },
+	token.HASH: func(*TypeInfo) (*TypeInfo, error) {
+		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}, nil
+	},
+	token.AT: func(*TypeInfo) (*TypeInfo, error) {
+		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}, nil
+	},
+}
+
+// handleLogicalNotOp handles logical NOT operator
+func handleLogicalNotOp(operand *TypeInfo) (*TypeInfo, error) {
+	if operand.DataType != TypeBoolean {
+		return nil, errors.New("logical not requires boolean operand")
+	}
+	return &TypeInfo{DataType: TypeBoolean}, nil
+}
+
+// handleBitwiseNotOp handles bitwise NOT operator
+func handleBitwiseNotOp(operand *TypeInfo) (*TypeInfo, error) {
+	if !operand.IsInteger() {
+		return nil, errors.New("bitwise not requires integer operand")
+	}
+	return &TypeInfo{DataType: TypeInteger, IntegerType: operand.IntegerType}, nil
+}
+
+// handleUnaryMinusOp handles unary minus operator
+func handleUnaryMinusOp(operand *TypeInfo) (*TypeInfo, error) {
+	if !operand.IsNumeric() {
+		return nil, errors.New("unary minus requires numeric operand")
+	}
+	return operand, nil
 }

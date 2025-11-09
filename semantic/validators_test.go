@@ -356,7 +356,7 @@ func createTestUnaryOp() *ast.UnaryOp {
 func TestValidatorVisitorMethods(t *testing.T) {
 	validator := NewValidator()
 
-	t.Run("StructureNodes", func(t *testing.T) {
+	t.Run("StructureNodes", func(_ *testing.T) {
 		// Test VisitProgram
 		validator.VisitProgram(createTestProgram())
 
@@ -364,7 +364,7 @@ func TestValidatorVisitorMethods(t *testing.T) {
 		validator.VisitRule(createTestRule())
 	})
 
-	t.Run("RuleComponents", func(t *testing.T) {
+	t.Run("RuleComponents", func(_ *testing.T) {
 		pos := createTestPos()
 
 		// Test VisitMeta
@@ -398,7 +398,7 @@ func TestValidatorVisitorMethods(t *testing.T) {
 		validator.VisitCondition(condition)
 	})
 
-	t.Run("Expressions", func(t *testing.T) {
+	t.Run("Expressions", func(_ *testing.T) {
 		// Test VisitBinaryOp
 		validator.VisitBinaryOp(createTestBinaryOp())
 

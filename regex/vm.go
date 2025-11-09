@@ -48,6 +48,137 @@ type thread struct {
 	pc int
 }
 
+// handleLiteralOp handles OpLiteral and OpNotLiteral opcodes
+func handleLiteralOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance int, noCase bool, negated bool, wide bool, bestEnd *int) bool {
+	if pc+1 >= len(code) {
+		return false
+	}
+	want := code[pc+1]
+	var ok bool
+	if negated {
+		ok = ch != want
+		if noCase {
+			ok = toLowerASCII(ch) != toLowerASCII(want)
+		}
+	} else {
+		ok = ch == want
+		if !ok && noCase {
+			ok = equalNoCase(ch, want)
+		}
+	}
+
+	if ok {
+		if addThread(code, s, next, pc+2, pos+advance, make(map[int]bool), wide) {
+			if pos+advance > *bestEnd {
+				*bestEnd = pos + advance
+			}
+			return true
+		}
+	}
+	return false
+}
+
+// handleMaskedLiteralOp handles OpMaskedLiteral and OpMaskedNotLiteral opcodes
+func handleMaskedLiteralOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance int, negated bool, wide bool, bestEnd *int) bool {
+	if pc+2 >= len(code) {
+		return false
+	}
+	val := code[pc+1]
+	mask := code[pc+2]
+	matches := (ch & mask) == (val & mask)
+
+	if negated {
+		matches = !matches
+	}
+
+	if matches {
+		if addThread(code, s, next, pc+3, pos+advance, make(map[int]bool), wide) {
+			if pos+advance > *bestEnd {
+				*bestEnd = pos + advance
+			}
+			return true
+		}
+	}
+	return false
+}
+
+// handleAnyOp handles OpAny opcode
+func handleAnyOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance int, dotAll, wide bool, bestEnd *int) bool {
+	// Dot doesn't match newline unless DOT_ALL
+	// In WIDE, newline is '\n'+0x00
+	if (!wide && (ch != '\n' || dotAll)) || (wide && ((ch != '\n') || dotAll)) {
+		if addThread(code, s, next, pc+1, pos+advance, make(map[int]bool), wide) {
+			if pos+advance > *bestEnd {
+				*bestEnd = pos + advance
+			}
+			return true
+		}
+	}
+	return false
+}
+
+// checkBitmapMembership checks if a byte is in the bitmap, with optional case-insensitive matching
+func checkBitmapMembership(code []byte, bmStart int, ch byte, noCase bool) bool {
+	inBitmap := func(b byte) bool {
+		idx := int(b) / 8
+		bit := byte(1 << (int(b) % 8))
+		return bmStart+idx < len(code) && (code[bmStart+idx]&bit) != 0
+	}
+
+	inSet := inBitmap(ch)
+	if noCase {
+		lc := toLowerASCII(ch)
+		uc := toUpperASCII(ch)
+		if lc != ch {
+			inSet = inSet || inBitmap(lc)
+		}
+		if uc != ch && uc != lc {
+			inSet = inSet || inBitmap(uc)
+		}
+	}
+	return inSet
+}
+
+// handleClassOp handles OpClass opcode
+func handleClassOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance int, noCase bool, wide bool, bestEnd *int) bool {
+	// Layout: [op][32-byte bitmap][1-byte neg]
+	bmStart := pc + 1
+	negIdx := bmStart + 32
+	if negIdx >= len(code) {
+		return false
+	}
+
+	neg := code[negIdx] != 0
+	inSet := checkBitmapMembership(code, bmStart, ch, noCase)
+
+	if neg {
+		inSet = !inSet
+	}
+
+	if inSet {
+		if addThread(code, s, next, negIdx+1, pos+advance, make(map[int]bool), wide) {
+			if pos+advance > *bestEnd {
+				*bestEnd = pos + advance
+			}
+			return true
+		}
+	}
+	return false
+}
+
+// handleCharClassOp handles character class opcodes (OpDigit, OpSpace, etc.)
+func handleCharClassOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance int, charClassFunc func(byte) bool, wide bool, bestEnd *int) bool {
+	if charClassFunc(ch) {
+		if addThread(code, s, next, pc+1, pos+advance, make(map[int]bool), wide) {
+			if pos+advance > *bestEnd {
+				*bestEnd = pos + advance
+			}
+			return true
+		}
+	}
+	return false
+}
+
 func runAtMatch(code, s []byte, flags Flags, start int) (matched bool, length int) { //nolint:cyclop,revive,maintidx,nakedret // complex but performance-critical; splitting would hurt hot path, arg count intentional
 	dotAll := (flags & FlagsDotAll) != 0
 	noCase := (flags & FlagsNoCase) != 0
@@ -74,158 +205,32 @@ func runAtMatch(code, s []byte, flags Flags, start int) (matched bool, length in
 			if pc < 0 || pc >= len(code) {
 				continue
 			}
+			// Use helper functions to handle each opcode type
 			switch code[pc] {
 			case OpLiteral:
-				if pc+1 >= len(code) {
-					continue
-				}
-				want := code[pc+1]
-				ok := ch == want
-				if !ok && noCase {
-					ok = equalNoCase(ch, want)
-				}
-				if ok {
-					if addThread(code, s, &next, pc+2, pos+advance, make(map[int]bool), wide) {
-						if pos+advance > bestEnd {
-							bestEnd = pos + advance
-						}
-					}
-				}
+				handleLiteralOp(code, s, &next, pc, ch, pos, advance, noCase, false, wide, &bestEnd)
 			case OpNotLiteral:
-				if pc+1 >= len(code) {
-					continue
-				}
-				want := code[pc+1]
-				ok := ch != want
-				if noCase {
-					ok = toLowerASCII(ch) != toLowerASCII(want)
-				}
-				if ok {
-					if addThread(code, s, &next, pc+2, pos+advance, make(map[int]bool), wide) {
-						if pos+advance > bestEnd {
-							bestEnd = pos + advance
-						}
-					}
-				}
+				handleLiteralOp(code, s, &next, pc, ch, pos, advance, noCase, true, wide, &bestEnd)
 			case OpMaskedLiteral:
-				if pc+2 >= len(code) {
-					continue
-				}
-				val := code[pc+1]
-				mask := code[pc+2]
-				if (ch & mask) == (val & mask) {
-					if addThread(code, s, &next, pc+3, pos+advance, make(map[int]bool), wide) {
-						if pos+advance > bestEnd {
-							bestEnd = pos + advance
-						}
-					}
-				}
+				handleMaskedLiteralOp(code, s, &next, pc, ch, pos, advance, false, wide, &bestEnd)
 			case OpMaskedNotLiteral:
-				if pc+2 >= len(code) {
-					continue
-				}
-				val := code[pc+1]
-				mask := code[pc+2]
-				if (ch & mask) != (val & mask) {
-					if addThread(code, s, &next, pc+3, pos+advance, make(map[int]bool), wide) {
-						if pos+advance > bestEnd {
-							bestEnd = pos + advance
-						}
-					}
-				}
+				handleMaskedLiteralOp(code, s, &next, pc, ch, pos, advance, true, wide, &bestEnd)
 			case OpAny:
-				// Dot doesn't match newline unless DOT_ALL
-				// In WIDE, newline is '\n'+0x00
-				if (!wide && (ch != '\n' || dotAll)) || (wide && ((ch != '\n') || dotAll)) {
-					if addThread(code, s, &next, pc+1, pos+advance, make(map[int]bool), wide) {
-						if pos+advance > bestEnd {
-							bestEnd = pos + advance
-						}
-					}
-				}
+				handleAnyOp(code, s, &next, pc, ch, pos, advance, dotAll, wide, &bestEnd)
 			case OpClass:
-				// Layout: [op][32-byte bitmap][1-byte neg]
-				bmStart := pc + 1
-				negIdx := bmStart + 32
-				if negIdx >= len(code) {
-					continue
-				}
-				neg := code[negIdx] != 0
-				inBitmap := func(b byte) bool {
-					idx := int(b) / 8
-					bit := byte(1 << (int(b) % 8))
-					return bmStart+idx < len(code) && (code[bmStart+idx]&bit) != 0
-				}
-				inSet := inBitmap(ch)
-				if noCase {
-					lc := toLowerASCII(ch)
-					uc := toUpperASCII(ch)
-					if lc != ch {
-						inSet = inSet || inBitmap(lc)
-					}
-					if uc != ch && uc != lc {
-						inSet = inSet || inBitmap(uc)
-					}
-				}
-				ok := inSet
-				if neg {
-					ok = !inSet
-				}
-				if ok {
-					if addThread(code, s, &next, negIdx+1, pos+advance, make(map[int]bool), wide) {
-						if pos+advance > bestEnd {
-							bestEnd = pos + advance
-						}
-					}
-				}
+				handleClassOp(code, s, &next, pc, ch, pos, advance, noCase, wide, &bestEnd)
 			case OpWordChar:
-				if isWord(ch) {
-					if addThread(code, s, &next, pc+1, pos+advance, make(map[int]bool), wide) {
-						if pos+advance > bestEnd {
-							bestEnd = pos + advance
-						}
-					}
-				}
+				handleCharClassOp(code, s, &next, pc, ch, pos, advance, isWord, wide, &bestEnd)
 			case OpNonWordChar:
-				if !isWord(ch) {
-					if addThread(code, s, &next, pc+1, pos+advance, make(map[int]bool), wide) {
-						if pos+advance > bestEnd {
-							bestEnd = pos + advance
-						}
-					}
-				}
+				handleCharClassOp(code, s, &next, pc, ch, pos, advance, func(b byte) bool { return !isWord(b) }, wide, &bestEnd)
 			case OpSpace:
-				if isSpace(ch) {
-					if addThread(code, s, &next, pc+1, pos+advance, make(map[int]bool), wide) {
-						if pos+advance > bestEnd {
-							bestEnd = pos + advance
-						}
-					}
-				}
+				handleCharClassOp(code, s, &next, pc, ch, pos, advance, isSpace, wide, &bestEnd)
 			case OpNonSpace:
-				if !isSpace(ch) {
-					if addThread(code, s, &next, pc+1, pos+advance, make(map[int]bool), wide) {
-						if pos+advance > bestEnd {
-							bestEnd = pos + advance
-						}
-					}
-				}
+				handleCharClassOp(code, s, &next, pc, ch, pos, advance, func(b byte) bool { return !isSpace(b) }, wide, &bestEnd)
 			case OpDigit:
-				if isDigit(ch) {
-					if addThread(code, s, &next, pc+1, pos+advance, make(map[int]bool), wide) {
-						if pos+advance > bestEnd {
-							bestEnd = pos + advance
-						}
-					}
-				}
+				handleCharClassOp(code, s, &next, pc, ch, pos, advance, isDigit, wide, &bestEnd)
 			case OpNonDigit:
-				if !isDigit(ch) {
-					if addThread(code, s, &next, pc+1, pos+advance, make(map[int]bool), wide) {
-						if pos+advance > bestEnd {
-							bestEnd = pos + advance
-						}
-					}
-				}
+				handleCharClassOp(code, s, &next, pc, ch, pos, advance, func(b byte) bool { return !isDigit(b) }, wide, &bestEnd)
 			default:
 				// Unknown or assertion/non-consuming op remains handled in addThread; skip here
 			}

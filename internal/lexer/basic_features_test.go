@@ -245,15 +245,7 @@ func TestBasicFeatures_EdgeCases(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			l := lexer.New(tt.input)
-			tokens := []token.Token{}
-
-			for {
-				tok := l.NextToken()
-				tokens = append(tokens, tok)
-				if tok.Type == token.EOF {
-					break
-				}
-			}
+			tokens := collectTokens(l)
 
 			hasIllegal := false
 			for _, tok := range tokens {

@@ -107,28 +107,83 @@ func (tc *TypeChecker) checkBinaryOp(binaryOp *ast.BinaryOp) *TypeInfo {
 
 // getBinaryOpHandler returns the appropriate handler for a binary operator
 func (tc *TypeChecker) getBinaryOpHandler(op token.TokenType) BinaryOpHandler {
+	base := BaseOpHandler{tc: tc}
+
+	if handler := tc.getArithmeticHandler(op, base); handler != nil {
+		return handler
+	}
+
+	if handler := tc.getComparisonHandler(op, base); handler != nil {
+		return handler
+	}
+
+	if handler := tc.getStringHandler(op, base); handler != nil {
+		return handler
+	}
+
+	if handler := tc.getSpecialHandler(op, base); handler != nil {
+		return handler
+	}
+
+	return nil
+}
+
+// getArithmeticHandler returns handler for arithmetic and bitwise operations
+func (tc *TypeChecker) getArithmeticHandler(op token.TokenType, base BaseOpHandler) BinaryOpHandler {
 	switch op {
 	case token.PLUS, token.MINUS, token.MULTIPLY, token.DIVIDE, token.MODULO, token.INT_DIVIDE:
-		return &ArithmeticOpHandler{BaseOpHandler: BaseOpHandler{tc: tc}}
+		return &ArithmeticOpHandler{BaseOpHandler: base}
 	case token.BITWISE_AND, token.BITWISE_OR, token.BITWISE_XOR, token.LEFT_SHIFT, token.RIGHT_SHIFT:
-		return &BitwiseOpHandler{BaseOpHandler: BaseOpHandler{tc: tc}}
-	case token.EQ, token.NEQ, token.LT, token.LE, token.GT, token.GE:
-		return &ComparisonOpHandler{BaseOpHandler: BaseOpHandler{tc: tc}}
+		return &BitwiseOpHandler{BaseOpHandler: base}
 	case token.AND, token.OR:
-		return &LogicalOpHandler{BaseOpHandler: BaseOpHandler{tc: tc}}
-	case token.CONTAINS, token.ICONTAINS, token.STARTSWITH, token.ENDSWITH,
-		token.ISTARTSWITH, token.IENDSWITH, token.IEQUALS, token.MATCHES:
-		return &StringOpHandler{BaseOpHandler: BaseOpHandler{tc: tc}}
+		return &LogicalOpHandler{BaseOpHandler: base}
+	default:
+		return nil
+	}
+}
+
+// getComparisonHandler returns handler for comparison operations
+func (tc *TypeChecker) getComparisonHandler(op token.TokenType, base BaseOpHandler) BinaryOpHandler {
+	switch op {
+	case token.EQ, token.NEQ, token.LT, token.LE, token.GT, token.GE:
+		return &ComparisonOpHandler{BaseOpHandler: base}
+	default:
+		return nil
+	}
+}
+
+// getStringHandler returns handler for string operations
+func (tc *TypeChecker) getStringHandler(op token.TokenType, base BaseOpHandler) BinaryOpHandler {
+	stringOps := map[token.TokenType]bool{
+		token.CONTAINS:    true,
+		token.ICONTAINS:   true,
+		token.STARTSWITH:  true,
+		token.ENDSWITH:    true,
+		token.ISTARTSWITH: true,
+		token.IENDSWITH:   true,
+		token.IEQUALS:     true,
+		token.MATCHES:     true,
+	}
+
+	if stringOps[op] {
+		return &StringOpHandler{BaseOpHandler: base}
+	}
+	return nil
+}
+
+// getSpecialHandler returns handler for special operations
+func (tc *TypeChecker) getSpecialHandler(op token.TokenType, base BaseOpHandler) BinaryOpHandler {
+	switch op {
 	case token.OF:
-		return &QuantifierOpHandler{BaseOpHandler: BaseOpHandler{tc: tc}}
+		return &QuantifierOpHandler{BaseOpHandler: base}
 	case token.AT:
-		return &AtOpHandler{BaseOpHandler: BaseOpHandler{tc: tc}}
+		return &AtOpHandler{BaseOpHandler: base}
 	case token.IN:
-		return &InOpHandler{BaseOpHandler: BaseOpHandler{tc: tc}}
+		return &InOpHandler{BaseOpHandler: base}
 	case token.DOT:
-		return &DotOpHandler{BaseOpHandler: BaseOpHandler{tc: tc}}
+		return &DotOpHandler{BaseOpHandler: base}
 	case token.COLON:
-		return &ColonOpHandler{BaseOpHandler: BaseOpHandler{tc: tc}}
+		return &ColonOpHandler{BaseOpHandler: base}
 	default:
 		return nil
 	}
@@ -149,6 +204,7 @@ type ArithmeticOpHandler struct {
 	BaseOpHandler
 }
 
+// Handle processes arithmetic operations and returns the resulting type information.
 func (h *ArithmeticOpHandler) Handle(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
 	return h.tc.checkArithmeticOp(binaryOp, leftType, rightType)
 }
@@ -158,6 +214,7 @@ type BitwiseOpHandler struct {
 	BaseOpHandler
 }
 
+// Handle processes bitwise operations and returns the resulting type information.
 func (h *BitwiseOpHandler) Handle(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
 	return h.tc.checkBitwiseOp(binaryOp, leftType, rightType)
 }
@@ -167,6 +224,7 @@ type ComparisonOpHandler struct {
 	BaseOpHandler
 }
 
+// Handle processes comparison operations and returns the resulting type information.
 func (h *ComparisonOpHandler) Handle(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
 	return h.tc.checkComparisonOp(binaryOp, leftType, rightType)
 }
@@ -176,6 +234,7 @@ type LogicalOpHandler struct {
 	BaseOpHandler
 }
 
+// Handle processes logical operations and returns the resulting type information.
 func (h *LogicalOpHandler) Handle(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
 	return h.tc.checkLogicalOp(binaryOp, leftType, rightType)
 }
@@ -185,6 +244,7 @@ type StringOpHandler struct {
 	BaseOpHandler
 }
 
+// Handle processes string operations and returns the resulting type information.
 func (h *StringOpHandler) Handle(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
 	return h.tc.checkStringOp(binaryOp, leftType, rightType)
 }
@@ -194,6 +254,7 @@ type QuantifierOpHandler struct {
 	BaseOpHandler
 }
 
+// Handle processes quantifier operations and returns the resulting type information.
 func (h *QuantifierOpHandler) Handle(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
 	return h.tc.checkQuantifierOp(leftType, rightType, binaryOp.Position())
 }
@@ -203,6 +264,7 @@ type AtOpHandler struct {
 	BaseOpHandler
 }
 
+// Handle processes 'at' operations and returns the resulting type information.
 func (h *AtOpHandler) Handle(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
 	return h.tc.checkAtOperator(leftType, rightType, binaryOp.Position())
 }
@@ -212,6 +274,7 @@ type InOpHandler struct {
 	BaseOpHandler
 }
 
+// Handle processes 'in' operations and returns the resulting type information.
 func (h *InOpHandler) Handle(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
 	return h.tc.checkInOperator(leftType, rightType, binaryOp.Position())
 }
@@ -221,6 +284,7 @@ type DotOpHandler struct {
 	BaseOpHandler
 }
 
+// Handle processes '.' operations and returns the resulting type information.
 func (h *DotOpHandler) Handle(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
 	return h.tc.checkDotOperator(leftType, rightType, binaryOp.Position())
 }
@@ -230,6 +294,7 @@ type ColonOpHandler struct {
 	BaseOpHandler
 }
 
+// Handle processes ':' operations and returns the resulting type information.
 func (h *ColonOpHandler) Handle(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
 	return h.tc.checkColonOperator()
 }
@@ -401,54 +466,83 @@ func (tc *TypeChecker) checkUnaryOp(unaryOp *ast.UnaryOp) *TypeInfo {
 
 	switch unaryOp.Op {
 	case token.NOT:
-		if operandType.DataType != TypeBoolean {
-			tc.addError(&Error{
-				Message:  "logical NOT requires boolean operand",
-				Position: unaryOp.Position(),
-			})
-			return &TypeInfo{DataType: TypeUnknown}
-		}
-		return &TypeInfo{DataType: TypeBoolean}
-
+		return tc.checkLogicalNotOp(unaryOp, operandType)
 	case token.BITWISE_NOT:
-		if !operandType.IsInteger() {
-			tc.addError(&Error{
-				Message:  "bitwise NOT requires integer operand",
-				Position: unaryOp.Position(),
-			})
-			return &TypeInfo{DataType: TypeUnknown}
-		}
-		return &TypeInfo{DataType: TypeInteger, IntegerType: operandType.IntegerType}
-
+		return tc.checkBitwiseNotOp(unaryOp, operandType)
 	case token.MINUS:
-		if !operandType.IsNumeric() {
-			tc.addError(&Error{
-				Message:  "unary minus requires numeric operand",
-				Position: unaryOp.Position(),
-			})
-			return &TypeInfo{DataType: TypeUnknown}
-		}
-		return operandType
-
+		return tc.checkUnaryMinusOp(unaryOp, operandType)
 	case token.DEFINED:
-		// DEFINED can work on any type
-		return &TypeInfo{DataType: TypeBoolean}
-
+		return tc.checkDefinedOp()
 	case token.HASH:
-		// '#' count returns integer; operand should be a string identifier but we allow validation to proceed
-		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
-
+		return tc.checkHashOp()
 	case token.AT:
-		// '@' position returns integer offset
-		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
-
+		return tc.checkAtOp()
 	default:
+		return tc.checkUnknownUnaryOp(unaryOp)
+	}
+}
+
+// checkLogicalNotOp handles logical NOT operator
+func (tc *TypeChecker) checkLogicalNotOp(unaryOp *ast.UnaryOp, operandType *TypeInfo) *TypeInfo {
+	if operandType.DataType != TypeBoolean {
 		tc.addError(&Error{
-			Message:  fmt.Sprintf("unknown unary operator: %s", unaryOp.Op),
+			Message:  "logical NOT requires boolean operand",
 			Position: unaryOp.Position(),
 		})
 		return &TypeInfo{DataType: TypeUnknown}
 	}
+	return &TypeInfo{DataType: TypeBoolean}
+}
+
+// checkBitwiseNotOp handles bitwise NOT operator
+func (tc *TypeChecker) checkBitwiseNotOp(unaryOp *ast.UnaryOp, operandType *TypeInfo) *TypeInfo {
+	if !operandType.IsInteger() {
+		tc.addError(&Error{
+			Message:  "bitwise NOT requires integer operand",
+			Position: unaryOp.Position(),
+		})
+		return &TypeInfo{DataType: TypeUnknown}
+	}
+	return &TypeInfo{DataType: TypeInteger, IntegerType: operandType.IntegerType}
+}
+
+// checkUnaryMinusOp handles unary minus operator
+func (tc *TypeChecker) checkUnaryMinusOp(unaryOp *ast.UnaryOp, operandType *TypeInfo) *TypeInfo {
+	if !operandType.IsNumeric() {
+		tc.addError(&Error{
+			Message:  "unary minus requires numeric operand",
+			Position: unaryOp.Position(),
+		})
+		return &TypeInfo{DataType: TypeUnknown}
+	}
+	return operandType
+}
+
+// checkDefinedOp handles DEFINED operator
+func (tc *TypeChecker) checkDefinedOp() *TypeInfo {
+	// DEFINED can work on any type
+	return &TypeInfo{DataType: TypeBoolean}
+}
+
+// checkHashOp handles HASH (#) operator
+func (tc *TypeChecker) checkHashOp() *TypeInfo {
+	// '#' count returns integer; operand should be a string identifier but we allow validation to proceed
+	return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
+}
+
+// checkAtOp handles AT (@) operator
+func (tc *TypeChecker) checkAtOp() *TypeInfo {
+	// '@' position returns integer offset
+	return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
+}
+
+// checkUnknownUnaryOp handles unknown unary operators
+func (tc *TypeChecker) checkUnknownUnaryOp(unaryOp *ast.UnaryOp) *TypeInfo {
+	tc.addError(&Error{
+		Message:  fmt.Sprintf("unknown unary operator: %s", unaryOp.Op),
+		Position: unaryOp.Position(),
+	})
+	return &TypeInfo{DataType: TypeUnknown}
 }
 
 // checkQuantifierOp checks quantifier operation types

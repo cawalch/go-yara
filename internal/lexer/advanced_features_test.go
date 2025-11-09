@@ -7,6 +7,58 @@ import (
 	"github.com/cawalch/go-yara/token"
 )
 
+// tokenCounter helps count specific token types
+type tokenCounter struct {
+	bitwiseCount  int
+	dataTypeCount int
+	fileOpCount   int
+}
+
+// countTokens counts specific token types in the given token slice
+func countTokens(tokens []token.Token) tokenCounter {
+	var counter tokenCounter
+
+	for _, tok := range tokens {
+		switch tok.Type {
+		// Bitwise operators
+		case token.BITWISE_AND, token.BITWISE_OR, token.BITWISE_XOR,
+			token.BITWISE_NOT, token.LEFT_SHIFT, token.RIGHT_SHIFT:
+			counter.bitwiseCount++
+		// Data type functions
+		case token.INT8, token.INT16, token.INT32, token.UINT8, token.UINT16, token.UINT32,
+			token.INT8BE, token.INT16BE, token.INT32BE, token.UINT8BE, token.UINT16BE, token.UINT32BE:
+			counter.dataTypeCount++
+		// File operations
+		case token.FILESIZE, token.ENTRYPOINT:
+			counter.fileOpCount++
+		}
+	}
+
+	return counter
+}
+
+// verifyNoIllegalTokens checks that no illegal tokens are present
+func verifyNoIllegalTokens(t *testing.T, tokens []token.Token) {
+	for _, tok := range tokens {
+		if tok.Type == token.ILLEGAL {
+			t.Errorf("unexpected ILLEGAL token: %v", tok)
+		}
+	}
+}
+
+// verifyFeatureCounts validates that we have the expected number of features
+func verifyFeatureCounts(t *testing.T, counter tokenCounter) {
+	if counter.bitwiseCount < 5 {
+		t.Errorf("Expected at least 5 bitwise operators, got %d", counter.bitwiseCount)
+	}
+	if counter.dataTypeCount < 4 {
+		t.Errorf("Expected at least 4 data type functions, got %d", counter.dataTypeCount)
+	}
+	if counter.fileOpCount < 3 {
+		t.Errorf("Expected at least 3 file operations, got %d", counter.fileOpCount)
+	}
+}
+
 func TestAdvancedFeatures_CompleteYARARule(t *testing.T) {
 	input := `rule Phase3TestRule {
 		meta:
@@ -36,43 +88,13 @@ func TestAdvancedFeatures_CompleteYARARule(t *testing.T) {
 	tokens := collectTokens(l)
 
 	// Verify no illegal tokens
-	for _, tok := range tokens {
-		if tok.Type == token.ILLEGAL {
-			t.Errorf("unexpected ILLEGAL token: %v", tok)
-		}
-	}
+	verifyNoIllegalTokens(t, tokens)
 
 	// Count Phase 3 features
-	bitwiseCount := 0
-	dataTypeCount := 0
-	fileOpCount := 0
-
-	for _, tok := range tokens {
-		switch tok.Type {
-		// Bitwise operators
-		case token.BITWISE_AND, token.BITWISE_OR, token.BITWISE_XOR,
-			token.BITWISE_NOT, token.LEFT_SHIFT, token.RIGHT_SHIFT:
-			bitwiseCount++
-		// Data type functions
-		case token.INT8, token.INT16, token.INT32, token.UINT8, token.UINT16, token.UINT32,
-			token.INT8BE, token.INT16BE, token.INT32BE, token.UINT8BE, token.UINT16BE, token.UINT32BE:
-			dataTypeCount++
-		// File operations
-		case token.FILESIZE, token.ENTRYPOINT:
-			fileOpCount++
-		}
-	}
+	counter := countTokens(tokens)
 
 	// Verify we have the expected Phase 3 features
-	if bitwiseCount < 5 {
-		t.Errorf("Expected at least 5 bitwise operators, got %d", bitwiseCount)
-	}
-	if dataTypeCount < 4 {
-		t.Errorf("Expected at least 4 data type functions, got %d", dataTypeCount)
-	}
-	if fileOpCount < 3 {
-		t.Errorf("Expected at least 3 file operations, got %d", fileOpCount)
-	}
+	verifyFeatureCounts(t, counter)
 }
 
 func TestAdvancedFeatures_AllFeatureTypes(t *testing.T) {

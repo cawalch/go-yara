@@ -253,75 +253,155 @@ func TestTestHelper_AssertSingleToken_EdgeCases(t *testing.T) {
 }
 
 func TestTestHelper_AssertSingleToken_TokenTypeCoverage(t *testing.T) {
-	// Test various token types to ensure comprehensive coverage
-	tests := []struct {
-		input           string
-		expectedType    token.TokenType
-		expectedLiteral string
+	t.Run("Keywords", testKeywordTokens)
+	t.Run("Literals", testLiteralTokens)
+	t.Run("Operators", testOperatorTokens)
+	t.Run("Delimiters", testDelimiterTokens)
+	t.Run("Identifiers", testIdentifierTokens)
+	t.Run("SpecialTokens", testSpecialTokens)
+}
+
+func testKeywordTokens(t *testing.T) {
+	h := NewTestHelper(t)
+	keywords := []struct {
+		input     string
+		tokenType token.TokenType
 	}{
-		{"rule", token.RULE, "rule"},
-		{"meta", token.META, "meta"},
-		{"strings", token.STRINGS, "strings"},
-		{"condition", token.CONDITION, "condition"},
-		{"private", token.PRIVATE, "private"},
-		{"global", token.GLOBAL, "global"},
-		{"true", token.TRUE, "true"},
-		{"false", token.FALSE, "false"},
-		{"and", token.AND, "and"},
-		{"or", token.OR, "or"},
-		{"not", token.NOT, "not"},
-		{"of", token.OF, "of"},
-		{"them", token.THEM, "them"},
-		{"for", token.FOR, "for"},
-		{"all", token.ALL, "all"},
-		{"any", token.ANY, "any"},
-		{"none", token.NONE, "none"},
-		{"in", token.IN, "in"},
-		{"contains", token.CONTAINS, "contains"},
-		{"matches", token.MATCHES, "matches"},
-		{"import", token.IMPORT, "import"},
-		{"include", token.INCLUDE, "include"},
-		{"defined", token.DEFINED, "defined"},
-		{"123", token.INTEGER_LIT, "123"},
-		{"$a", token.STRING_IDENTIFIER, "$a"},
-		{"test_var", token.IDENTIFIER, "test_var"},
-		{"_underscore", token.IDENTIFIER, "_underscore"},
-		{"hello123", token.IDENTIFIER, "hello123"},
-		{"+", token.PLUS, "+"},
-		{"-", token.MINUS, "-"},
-		{"*", token.MULTIPLY, "*"},
-		{"=", token.ASSIGN, "="},
-		{"==", token.EQ, "=="},
-		{"!=", token.NEQ, "!="},
-		{">", token.GT, ">"},
-		{"<", token.LT, "<"},
-		{">=", token.GE, ">="},
-		{"<=", token.LE, "<="},
-		{"(", token.LPAREN, "("},
-		{")", token.RPAREN, ")"},
-		{"(", token.LPAREN, "("},
-		{"}", token.RBRACE, "}"},
-		{"[", token.LBRACKET, "["},
-		{"]", token.RBRACKET, "]"},
-		{"|", token.BITWISE_OR, "|"},
-		{"&", token.BITWISE_AND, "&"},
-		{"^", token.BITWISE_XOR, "^"},
-		{"~", token.BITWISE_NOT, "~"},
-		{"<<", token.LEFT_SHIFT, "<<"},
-		{">>", token.RIGHT_SHIFT, ">>"},
-		{",", token.COMMA, ","},
-		{".", token.DOT, "."},
-		{"at", token.AT, "at"},
-		{"filesize", token.FILESIZE, "filesize"},
-		{"entrypoint", token.ENTRYPOINT, "entrypoint"},
-		{"all", token.ALL, "all"},
-		{"any", token.ANY, "any"},
+		{"rule", token.RULE},
+		{"meta", token.META},
+		{"strings", token.STRINGS},
+		{"condition", token.CONDITION},
+		{"private", token.PRIVATE},
+		{"global", token.GLOBAL},
+		{"true", token.TRUE},
+		{"false", token.FALSE},
+		{"and", token.AND},
+		{"or", token.OR},
+		{"not", token.NOT},
+		{"of", token.OF},
+		{"them", token.THEM},
+		{"for", token.FOR},
+		{"all", token.ALL},
+		{"any", token.ANY},
+		{"none", token.NONE},
+		{"in", token.IN},
+		{"contains", token.CONTAINS},
+		{"matches", token.MATCHES},
+		{"import", token.IMPORT},
+		{"include", token.INCLUDE},
+		{"defined", token.DEFINED},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.expectedType.String()+"_"+tt.expectedLiteral, func(t *testing.T) {
-			h := NewTestHelper(t)
-			h.AssertSingleToken(tt.input, tt.expectedType, tt.expectedLiteral)
+	for _, tt := range keywords {
+		t.Run(tt.input, func(_ *testing.T) {
+			h.AssertSingleToken(tt.input, tt.tokenType, tt.input)
+		})
+	}
+}
+
+func testLiteralTokens(t *testing.T) {
+	h := NewTestHelper(t)
+	literals := []struct {
+		input           string
+		tokenType       token.TokenType
+		expectedLiteral string
+	}{
+		{"123", token.INTEGER_LIT, "123"},
+	}
+
+	for _, tt := range literals {
+		t.Run(tt.input, func(_ *testing.T) {
+			h.AssertSingleToken(tt.input, tt.tokenType, tt.expectedLiteral)
+		})
+	}
+}
+
+func testOperatorTokens(t *testing.T) {
+	h := NewTestHelper(t)
+	operators := []struct {
+		input     string
+		tokenType token.TokenType
+	}{
+		{"+", token.PLUS},
+		{"-", token.MINUS},
+		{"*", token.MULTIPLY},
+		{"=", token.ASSIGN},
+		{"==", token.EQ},
+		{"!=", token.NEQ},
+		{">", token.GT},
+		{"<", token.LT},
+		{">=", token.GE},
+		{"<=", token.LE},
+		{"|", token.BITWISE_OR},
+		{"&", token.BITWISE_AND},
+		{"^", token.BITWISE_XOR},
+		{"~", token.BITWISE_NOT},
+		{"<<", token.LEFT_SHIFT},
+		{">>", token.RIGHT_SHIFT},
+		{",", token.COMMA},
+		{".", token.DOT},
+	}
+
+	for _, tt := range operators {
+		t.Run(tt.input, func(_ *testing.T) {
+			h.AssertSingleToken(tt.input, tt.tokenType, tt.input)
+		})
+	}
+}
+
+func testDelimiterTokens(t *testing.T) {
+	h := NewTestHelper(t)
+	delimiters := []struct {
+		input     string
+		tokenType token.TokenType
+	}{
+		{"(", token.LPAREN},
+		{")", token.RPAREN},
+		{"}", token.RBRACE},
+		{"[", token.LBRACKET},
+		{"]", token.RBRACKET},
+	}
+
+	for _, tt := range delimiters {
+		t.Run(tt.input, func(_ *testing.T) {
+			h.AssertSingleToken(tt.input, tt.tokenType, tt.input)
+		})
+	}
+}
+
+func testIdentifierTokens(t *testing.T) {
+	h := NewTestHelper(t)
+	identifiers := []struct {
+		input     string
+		tokenType token.TokenType
+	}{
+		{"$a", token.STRING_IDENTIFIER},
+		{"test_var", token.IDENTIFIER},
+		{"_underscore", token.IDENTIFIER},
+		{"hello123", token.IDENTIFIER},
+	}
+
+	for _, tt := range identifiers {
+		t.Run(tt.input, func(_ *testing.T) {
+			h.AssertSingleToken(tt.input, tt.tokenType, tt.input)
+		})
+	}
+}
+
+func testSpecialTokens(t *testing.T) {
+	h := NewTestHelper(t)
+	special := []struct {
+		input     string
+		tokenType token.TokenType
+	}{
+		{"at", token.AT},
+		{"filesize", token.FILESIZE},
+		{"entrypoint", token.ENTRYPOINT},
+	}
+
+	for _, tt := range special {
+		t.Run(tt.input, func(_ *testing.T) {
+			h.AssertSingleToken(tt.input, tt.tokenType, tt.input)
 		})
 	}
 }

@@ -286,7 +286,7 @@ func (sp *StreamingProcessor) processDataChunks(ctx context.Context, data []byte
 		end := min(start+sp.ChunkSize, len(data))
 
 		// Add overlap for boundary-crossing patterns (except for first chunk)
-		overlapSize := 0
+		var overlapSize int
 		if i > 0 {
 			overlapSize = max(sp.MaxPatternLen-1, 0)
 			start -= overlapSize

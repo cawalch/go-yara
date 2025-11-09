@@ -236,85 +236,112 @@ func TestOpcodeCategories(t *testing.T) {
 
 // TestInstructionProperties tests instruction property methods
 func TestInstructionProperties(t *testing.T) {
-	// Test jump instruction
-	jumpInst := compiler.NewInstruction(compiler.OP_JZ, 10, 20)
-	if !jumpInst.IsJump() {
-		t.Error("JZ instruction should be identified as jump")
-	}
-	if jumpInst.IsTypeFunction() {
-		t.Error("JZ instruction should not be identified as type function")
-	}
-	if jumpInst.IsStringOperation() {
-		t.Error("JZ instruction should not be identified as string operation")
+	tests := []struct {
+		name             string
+		opcode           compiler.Opcode
+		expectedJump     bool
+		expectedTypeFunc bool
+		expectedStrOp    bool
+	}{
+		{
+			name:             "jump instruction JZ",
+			opcode:           compiler.OP_JZ,
+			expectedJump:     true,
+			expectedTypeFunc: false,
+			expectedStrOp:    false,
+		},
+		{
+			name:             "type function INT8",
+			opcode:           compiler.OP_INT8,
+			expectedJump:     false,
+			expectedTypeFunc: true,
+			expectedStrOp:    false,
+		},
+		{
+			name:             "string operation STR_EQ",
+			opcode:           compiler.OP_STR_EQ,
+			expectedJump:     false,
+			expectedTypeFunc: false,
+			expectedStrOp:    true,
+		},
 	}
 
-	// Test type function instruction
-	typeInst := compiler.NewInstruction(compiler.OP_INT8, 15, 25)
-	if typeInst.IsJump() {
-		t.Error("INT8 instruction should not be identified as jump")
-	}
-	if !typeInst.IsTypeFunction() {
-		t.Error("INT8 instruction should be identified as type function")
-	}
-	if typeInst.IsStringOperation() {
-		t.Error("INT8 instruction should not be identified as string operation")
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			inst := compiler.NewInstruction(tt.opcode, 0, 0) // positions don't matter for these tests
 
-	// Test string operation instruction
-	strInst := compiler.NewInstruction(compiler.OP_STR_EQ, 20, 30)
-	if strInst.IsJump() {
-		t.Error("STR_EQ instruction should not be identified as jump")
-	}
-	if strInst.IsTypeFunction() {
-		t.Error("STR_EQ instruction should not be identified as type function")
-	}
-	if !strInst.IsStringOperation() {
-		t.Error("STR_EQ instruction should be identified as string operation")
+			if got := inst.IsJump(); got != tt.expectedJump {
+				t.Errorf("IsJump() = %v, want %v", got, tt.expectedJump)
+			}
+			if got := inst.IsTypeFunction(); got != tt.expectedTypeFunc {
+				t.Errorf("IsTypeFunction() = %v, want %v", got, tt.expectedTypeFunc)
+			}
+			if got := inst.IsStringOperation(); got != tt.expectedStrOp {
+				t.Errorf("IsStringOperation() = %v, want %v", got, tt.expectedStrOp)
+			}
+		})
 	}
 }
 
 // TestInstructionOperandTests tests instruction operand properties
 func TestInstructionOperandTests(t *testing.T) {
-	// Test instruction with immediate operand
-	immediateInst := compiler.NewInstructionWithOperand(compiler.OP_PUSH_8,
-		compiler.Operand{Type: compiler.OperandImmediate8, Value: uint64(42)}, 5, 10)
+	tests := []struct {
+		name              string
+		opcode            compiler.Opcode
+		operand           compiler.Operand
+		expectedImmediate bool
+		expectedRelative  bool
+		expectedAbsolute  bool
+	}{
+		{
+			name:   "immediate operand PUSH_8",
+			opcode: compiler.OP_PUSH_8,
+			operand: compiler.Operand{
+				Type:  compiler.OperandImmediate8,
+				Value: uint64(42),
+			},
+			expectedImmediate: true,
+			expectedRelative:  false,
+			expectedAbsolute:  false,
+		},
+		{
+			name:   "relative operand JZ",
+			opcode: compiler.OP_JZ,
+			operand: compiler.Operand{
+				Type:  compiler.OperandRelative8,
+				Value: uint64(100),
+			},
+			expectedImmediate: false,
+			expectedRelative:  true,
+			expectedAbsolute:  false,
+		},
+		{
+			name:   "absolute operand PUSH_U",
+			opcode: compiler.OP_PUSH_U,
+			operand: compiler.Operand{
+				Type:  compiler.OperandAbsolute32,
+				Value: uint64(0x1000),
+			},
+			expectedImmediate: false,
+			expectedRelative:  false,
+			expectedAbsolute:  true,
+		},
+	}
 
-	if !immediateInst.HasImmediateOperand() {
-		t.Error("Instruction should have immediate operand")
-	}
-	if immediateInst.HasRelativeOperand() {
-		t.Error("Instruction should not have relative operand")
-	}
-	if immediateInst.HasAbsoluteOperand() {
-		t.Error("Instruction should not have absolute operand")
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			inst := compiler.NewInstructionWithOperand(tt.opcode, tt.operand, 0, 0) // positions don't matter
 
-	// Test instruction with relative operand
-	relativeInst := compiler.NewInstructionWithOperand(compiler.OP_JZ,
-		compiler.Operand{Type: compiler.OperandRelative8, Value: uint64(100)}, 15, 20)
-
-	if relativeInst.HasImmediateOperand() {
-		t.Error("Instruction should not have immediate operand")
-	}
-	if !relativeInst.HasRelativeOperand() {
-		t.Error("Instruction should have relative operand")
-	}
-	if relativeInst.HasAbsoluteOperand() {
-		t.Error("Instruction should not have absolute operand")
-	}
-
-	// Test instruction with absolute operand
-	absoluteInst := compiler.NewInstructionWithOperand(compiler.OP_PUSH_U,
-		compiler.Operand{Type: compiler.OperandAbsolute32, Value: uint64(0x1000)}, 25, 30)
-
-	if absoluteInst.HasImmediateOperand() {
-		t.Error("Instruction should not have immediate operand")
-	}
-	if absoluteInst.HasRelativeOperand() {
-		t.Error("Instruction should not have relative operand")
-	}
-	if !absoluteInst.HasAbsoluteOperand() {
-		t.Error("Instruction should have absolute operand")
+			if got := inst.HasImmediateOperand(); got != tt.expectedImmediate {
+				t.Errorf("HasImmediateOperand() = %v, want %v", got, tt.expectedImmediate)
+			}
+			if got := inst.HasRelativeOperand(); got != tt.expectedRelative {
+				t.Errorf("HasRelativeOperand() = %v, want %v", got, tt.expectedRelative)
+			}
+			if got := inst.HasAbsoluteOperand(); got != tt.expectedAbsolute {
+				t.Errorf("HasAbsoluteOperand() = %v, want %v", got, tt.expectedAbsolute)
+			}
+		})
 	}
 }
 

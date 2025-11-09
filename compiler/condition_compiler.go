@@ -923,7 +923,7 @@ func (cc *ConditionCompiler) isModuleFunction(name string) bool {
 	return moduleFunctions[moduleName]
 }
 
-func (cc *ConditionCompiler) emitModuleFunctionCall(name string, line, column int) {
+func (cc *ConditionCompiler) emitModuleFunctionCall(_ string, line, column int) {
 	cc.emitter.EmitPush(0, line, column)
 }
 

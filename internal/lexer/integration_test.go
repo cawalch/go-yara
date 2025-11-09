@@ -267,16 +267,36 @@ func operatorLiteral(op token.TokenType) string {
 	}
 }
 
+// TestComplexYARARule tests tokenization of a complete YARA rule with all major features
 func TestComplexYARARule(t *testing.T) {
-	tests := []struct {
+	// Test data extracted for better maintainability
+	testCase := struct {
 		name             string
 		input            string
 		expectedTokens   []token.TokenType
 		expectedLiterals map[int]string // index -> expected literal
 	}{
-		{
-			name: "complete_yara_rule",
-			input: `rule ComplexRule : tag1 tag2 {
+		name:           "complete_yara_rule",
+		input:          getComplexYARARuleInput(),
+		expectedTokens: getComplexYARARuleExpectedTokens(),
+		expectedLiterals: map[int]string{
+			1:  "ComplexRule",
+			3:  "tag1",
+			4:  "tag2",
+			6:  "meta",
+			17: "strings",
+			28: "condition",
+		},
+	}
+
+	t.Run(testCase.name, func(t *testing.T) {
+		assertTokenization(t, testCase.input, testCase.expectedTokens, testCase.expectedLiterals)
+	})
+}
+
+// getComplexYARARuleInput returns the test rule input
+func getComplexYARARuleInput() string {
+	return `rule ComplexRule : tag1 tag2 {
  		meta:
  			author = "test"
  			version = 1
@@ -287,87 +307,80 @@ func TestComplexYARARule(t *testing.T) {
  			$c = /pattern/i
  		condition:
  			($a and $b) or $c and not false
- 	}`,
-			expectedTokens: []token.TokenType{
-				token.RULE,
-				token.IDENTIFIER,
-				token.COLON,
-				token.IDENTIFIER,
-				token.IDENTIFIER,
-				token.LBRACE,
-				token.META,
-				token.COLON,
-				token.IDENTIFIER,
-				token.ASSIGN,
-				token.STRING_LIT,
-				token.IDENTIFIER,
-				token.ASSIGN,
-				token.INTEGER_LIT,
-				token.IDENTIFIER,
-				token.ASSIGN,
-				token.TRUE,
-				token.STRINGS,
-				token.COLON,
-				token.STRING_IDENTIFIER,
-				token.ASSIGN,
-				token.STRING_LIT,
-				token.STRING_IDENTIFIER,
-				token.ASSIGN,
-				token.HEX_STRING_LIT,
-				token.STRING_IDENTIFIER,
-				token.ASSIGN,
-				token.REGEX_LIT,
-				token.CONDITION,
-				token.COLON,
-				token.LPAREN,
-				token.STRING_IDENTIFIER,
-				token.AND,
-				token.STRING_IDENTIFIER,
-				token.RPAREN,
-				token.OR,
-				token.STRING_IDENTIFIER,
-				token.AND,
-				token.NOT,
-				token.FALSE,
-				token.RBRACE,
-				token.EOF,
-			},
-			expectedLiterals: map[int]string{
-				1:  "ComplexRule",
-				3:  "tag1",
-				4:  "tag2",
-				6:  "meta",
-				17: "strings",
-				28: "condition",
-			},
-		},
+ 	}`
+}
+
+// getComplexYARARuleExpectedTokens returns the expected token sequence for the complex rule
+func getComplexYARARuleExpectedTokens() []token.TokenType {
+	return []token.TokenType{
+		token.RULE,
+		token.IDENTIFIER,
+		token.COLON,
+		token.IDENTIFIER,
+		token.IDENTIFIER,
+		token.LBRACE,
+		token.META,
+		token.COLON,
+		token.IDENTIFIER,
+		token.ASSIGN,
+		token.STRING_LIT,
+		token.IDENTIFIER,
+		token.ASSIGN,
+		token.INTEGER_LIT,
+		token.IDENTIFIER,
+		token.ASSIGN,
+		token.TRUE,
+		token.STRINGS,
+		token.COLON,
+		token.STRING_IDENTIFIER,
+		token.ASSIGN,
+		token.STRING_LIT,
+		token.STRING_IDENTIFIER,
+		token.ASSIGN,
+		token.HEX_STRING_LIT,
+		token.STRING_IDENTIFIER,
+		token.ASSIGN,
+		token.REGEX_LIT,
+		token.CONDITION,
+		token.COLON,
+		token.LPAREN,
+		token.STRING_IDENTIFIER,
+		token.AND,
+		token.STRING_IDENTIFIER,
+		token.RPAREN,
+		token.OR,
+		token.STRING_IDENTIFIER,
+		token.AND,
+		token.NOT,
+		token.FALSE,
+		token.RBRACE,
+		token.EOF,
+	}
+}
+
+// assertTokenization is a helper function that validates tokenization results
+func assertTokenization(t *testing.T, input string, expectedTokens []token.TokenType, expectedLiterals map[int]string) {
+	l := lexer.New(input)
+	tokens := collectTokens(l)
+
+	if len(tokens) != len(expectedTokens) {
+		t.Fatalf("expected %d tokens, got %d\nActual tokens: %v",
+			len(expectedTokens), len(tokens), tokens)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			l := lexer.New(tt.input)
-			tokens := collectTokens(l)
+	// Verify token types
+	for i, expectedType := range expectedTokens {
+		if tokens[i].Type != expectedType {
+			t.Fatalf("token[%d]: expected type %v, got %v",
+				i, expectedType, tokens[i].Type)
+		}
+	}
 
-			if len(tokens) != len(tt.expectedTokens) {
-				t.Fatalf("expected %d tokens, got %d\nActual tokens: %v",
-					len(tt.expectedTokens), len(tokens), tokens)
-			}
-
-			// Verify token types
-			for i, expectedType := range tt.expectedTokens {
-				if tokens[i].Type != expectedType {
-					t.Fatalf("token[%d]: expected type %v, got %v",
-						i, expectedType, tokens[i].Type)
-				}
-			}
-
-			// Verify specific literals
-			for index, expectedLiteral := range tt.expectedLiterals {
-				if tokens[index].Literal != expectedLiteral {
-					t.Fatalf("token[%d]: expected literal %q, got %q",
-						index, expectedLiteral, tokens[index].Literal)
-				}
-			}
-		})
+	// Verify specific literals
+	for index, expectedLiteral := range expectedLiterals {
+		if tokens[index].Literal != expectedLiteral {
+			t.Fatalf("token[%d]: expected literal %q, got %q",
+				index, expectedLiteral, tokens[index].Literal)
+		}
 	}
 }

@@ -6,6 +6,24 @@ import (
 	"github.com/cawalch/go-yara/regex"
 )
 
+// assertInterpreterResult is a helper function that executes bytecode and asserts the expected result
+func assertInterpreterResult(t *testing.T, bytecode []byte, expected int64) {
+	t.Helper()
+	interp := NewInterpreter(bytecode)
+	err := interp.Execute()
+	if err != nil {
+		t.Errorf("Execute() error = %v", err)
+		return
+	}
+	if len(interp.GetStack()) != 1 {
+		t.Errorf("stack length = %d, want 1", len(interp.GetStack()))
+		return
+	}
+	if interp.GetStack()[0].IntVal != expected {
+		t.Errorf("stack[0] = %d, want %d", interp.GetStack()[0].IntVal, expected)
+	}
+}
+
 // TestInterpreterBasicStack tests basic stack operations
 func TestInterpreterBasicStack(t *testing.T) {
 	tests := []struct {
@@ -62,64 +80,26 @@ func TestInterpreterBasicStack(t *testing.T) {
 func TestInterpreterArithmetic(t *testing.T) {
 	tests := []struct {
 		name     string
-		bytecode []byte
+		opcode   Opcode
+		left     int64
+		right    int64
 		expected int64
 	}{
-		{
-			name: "add_two_numbers",
-			bytecode: []byte{
-				byte(OP_PUSH_8), 10,
-				byte(OP_PUSH_8), 20,
-				byte(OP_INT_ADD),
-				byte(OP_HALT),
-			},
-			expected: 30,
-		},
-		{
-			name: "subtract_two_numbers",
-			bytecode: []byte{
-				byte(OP_PUSH_8), 50,
-				byte(OP_PUSH_8), 20,
-				byte(OP_INT_SUB),
-				byte(OP_HALT),
-			},
-			expected: 30,
-		},
-		{
-			name: "multiply_two_numbers",
-			bytecode: []byte{
-				byte(OP_PUSH_8), 5,
-				byte(OP_PUSH_8), 6,
-				byte(OP_INT_MUL),
-				byte(OP_HALT),
-			},
-			expected: 30,
-		},
-		{
-			name: "divide_two_numbers",
-			bytecode: []byte{
-				byte(OP_PUSH_8), 60,
-				byte(OP_PUSH_8), 2,
-				byte(OP_INT_DIV),
-				byte(OP_HALT),
-			},
-			expected: 30,
-		},
+		{"add_two_numbers", OP_INT_ADD, 10, 20, 30},
+		{"subtract_two_numbers", OP_INT_SUB, 50, 20, 30},
+		{"multiply_two_numbers", OP_INT_MUL, 5, 6, 30},
+		{"divide_two_numbers", OP_INT_DIV, 60, 2, 30},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			interp := NewInterpreter(tt.bytecode)
-			err := interp.Execute()
-			if err != nil {
-				t.Errorf("Execute() error = %v", err)
+			bytecode := []byte{
+				byte(OP_PUSH_8), byte(tt.left),
+				byte(OP_PUSH_8), byte(tt.right),
+				byte(tt.opcode),
+				byte(OP_HALT),
 			}
-			if len(interp.GetStack()) != 1 {
-				t.Errorf("stack length = %d, want 1", len(interp.GetStack()))
-			}
-			if interp.GetStack()[0].IntVal != tt.expected {
-				t.Errorf("stack[0] = %d, want %d", interp.GetStack()[0].IntVal, tt.expected)
-			}
+			assertInterpreterResult(t, bytecode, tt.expected)
 		})
 	}
 }
@@ -128,64 +108,26 @@ func TestInterpreterArithmetic(t *testing.T) {
 func TestInterpreterComparison(t *testing.T) {
 	tests := []struct {
 		name     string
-		bytecode []byte
+		opcode   Opcode
+		left     int64
+		right    int64
 		expected int64
 	}{
-		{
-			name: "equal_true",
-			bytecode: []byte{
-				byte(OP_PUSH_8), 10,
-				byte(OP_PUSH_8), 10,
-				byte(OP_INT_EQ),
-				byte(OP_HALT),
-			},
-			expected: 1,
-		},
-		{
-			name: "equal_false",
-			bytecode: []byte{
-				byte(OP_PUSH_8), 10,
-				byte(OP_PUSH_8), 20,
-				byte(OP_INT_EQ),
-				byte(OP_HALT),
-			},
-			expected: 0,
-		},
-		{
-			name: "less_than_true",
-			bytecode: []byte{
-				byte(OP_PUSH_8), 10,
-				byte(OP_PUSH_8), 20,
-				byte(OP_INT_LT),
-				byte(OP_HALT),
-			},
-			expected: 1,
-		},
-		{
-			name: "greater_than_true",
-			bytecode: []byte{
-				byte(OP_PUSH_8), 20,
-				byte(OP_PUSH_8), 10,
-				byte(OP_INT_GT),
-				byte(OP_HALT),
-			},
-			expected: 1,
-		},
+		{"equal_true", OP_INT_EQ, 10, 10, 1},
+		{"equal_false", OP_INT_EQ, 10, 20, 0},
+		{"less_than_true", OP_INT_LT, 10, 20, 1},
+		{"greater_than_true", OP_INT_GT, 20, 10, 1},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			interp := NewInterpreter(tt.bytecode)
-			err := interp.Execute()
-			if err != nil {
-				t.Errorf("Execute() error = %v", err)
+			bytecode := []byte{
+				byte(OP_PUSH_8), byte(tt.left),
+				byte(OP_PUSH_8), byte(tt.right),
+				byte(tt.opcode),
+				byte(OP_HALT),
 			}
-			if len(interp.GetStack()) != 1 {
-				t.Errorf("stack length = %d, want 1", len(interp.GetStack()))
-			}
-			if interp.GetStack()[0].IntVal != tt.expected {
-				t.Errorf("stack[0] = %d, want %d", interp.GetStack()[0].IntVal, tt.expected)
-			}
+			assertInterpreterResult(t, bytecode, tt.expected)
 		})
 	}
 }
@@ -194,64 +136,26 @@ func TestInterpreterComparison(t *testing.T) {
 func TestInterpreterLogical(t *testing.T) {
 	tests := []struct {
 		name     string
-		bytecode []byte
+		opcode   Opcode
+		left     int64
+		right    int64
 		expected int64
 	}{
-		{
-			name: "and_true",
-			bytecode: []byte{
-				byte(OP_PUSH_8), 1,
-				byte(OP_PUSH_8), 1,
-				byte(OP_AND),
-				byte(OP_HALT),
-			},
-			expected: 1,
-		},
-		{
-			name: "and_false",
-			bytecode: []byte{
-				byte(OP_PUSH_8), 1,
-				byte(OP_PUSH_8), 0,
-				byte(OP_AND),
-				byte(OP_HALT),
-			},
-			expected: 0,
-		},
-		{
-			name: "or_true",
-			bytecode: []byte{
-				byte(OP_PUSH_8), 1,
-				byte(OP_PUSH_8), 0,
-				byte(OP_OR),
-				byte(OP_HALT),
-			},
-			expected: 1,
-		},
-		{
-			name: "or_false",
-			bytecode: []byte{
-				byte(OP_PUSH_8), 0,
-				byte(OP_PUSH_8), 0,
-				byte(OP_OR),
-				byte(OP_HALT),
-			},
-			expected: 0,
-		},
+		{"and_true", OP_AND, 1, 1, 1},
+		{"and_false", OP_AND, 1, 0, 0},
+		{"or_true", OP_OR, 1, 0, 1},
+		{"or_false", OP_OR, 0, 0, 0},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			interp := NewInterpreter(tt.bytecode)
-			err := interp.Execute()
-			if err != nil {
-				t.Errorf("Execute() error = %v", err)
+			bytecode := []byte{
+				byte(OP_PUSH_8), byte(tt.left),
+				byte(OP_PUSH_8), byte(tt.right),
+				byte(tt.opcode),
+				byte(OP_HALT),
 			}
-			if len(interp.GetStack()) != 1 {
-				t.Errorf("stack length = %d, want 1", len(interp.GetStack()))
-			}
-			if interp.GetStack()[0].IntVal != tt.expected {
-				t.Errorf("stack[0] = %d, want %d", interp.GetStack()[0].IntVal, tt.expected)
-			}
+			assertInterpreterResult(t, bytecode, tt.expected)
 		})
 	}
 }
