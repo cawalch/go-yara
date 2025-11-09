@@ -26,6 +26,11 @@ type Validator struct {
 	errors      []error
 }
 
+// Ensure Validator implements the focused visitor interfaces it needs
+var _ ast.RuleVisitor = (*Validator)(nil)
+var _ ast.ExpressionVisitor = (*Validator)(nil)
+var _ ast.ControlFlowVisitor = (*Validator)(nil)
+
 // NewValidator creates a new semantic validator
 func NewValidator() *Validator {
 	return &Validator{
@@ -590,30 +595,30 @@ func (v *Validator) GetSymbolTable() *SymbolTable {
 	return v.symbolTable
 }
 
-// VisitProgram implements the Visitor pattern for Program nodes
+// ============================================================================
+// Visitor Pattern Implementation - Focused Interface Methods
+// ============================================================================
+
+// RuleVisitor implementations
 func (v *Validator) VisitProgram(program *ast.Program) any {
 	return v.ValidateProgram(program)
 }
 
-// VisitRule implements the Visitor pattern for Rule nodes
 func (v *Validator) VisitRule(rule *ast.Rule) any {
 	v.validateRule(rule)
 	return nil
 }
 
-// VisitMeta implements the Visitor pattern for Meta nodes
 func (v *Validator) VisitMeta(_ *ast.Meta) any {
 	// Meta validation is handled in validateMeta
 	return nil
 }
 
-// VisitString implements the Visitor pattern for String nodes
 func (v *Validator) VisitString(_ *ast.String) any {
 	// String validation is handled in validateStrings
 	return nil
 }
 
-// VisitCondition implements the Visitor pattern for Condition nodes
 func (v *Validator) VisitCondition(condition *ast.Condition) any {
 	if condition.Expression != nil {
 		v.validateCondition(condition.Expression)
@@ -621,57 +626,50 @@ func (v *Validator) VisitCondition(condition *ast.Condition) any {
 	return nil
 }
 
-// VisitBinaryOp implements the Visitor pattern for BinaryOp nodes
+// ExpressionVisitor implementations
 func (v *Validator) VisitBinaryOp(_ *ast.BinaryOp) any {
 	// Binary operation validation is handled in validateExpression
 	return nil
 }
 
-// VisitUnaryOp implements the Visitor pattern for UnaryOp nodes
 func (v *Validator) VisitUnaryOp(_ *ast.UnaryOp) any {
 	// Unary operation validation is handled in validateExpression
 	return nil
 }
 
-// VisitIdentifier implements the Visitor pattern for Identifier nodes
 func (v *Validator) VisitIdentifier(_ *ast.Identifier) any {
 	// Identifier validation is handled in validateExpression
 	return nil
 }
 
-// VisitLiteral implements the Visitor pattern for Literal nodes
 func (v *Validator) VisitLiteral(_ *ast.Literal) any {
 	// Literal validation is handled in validateExpression
 	return nil
 }
 
-// VisitStringLength implements the Visitor pattern for StringLength nodes
-func (v *Validator) VisitStringLength(_ *ast.StringLength) any {
-	// StringLength validation is handled in validateExpression
+func (v *Validator) VisitFunctionCall(_ *ast.FunctionCall) any {
+	// FunctionCall validation is handled in validateExpression
 	return nil
 }
 
-// VisitArrayIndex implements the Visitor pattern for ArrayIndex nodes
-func (v *Validator) VisitArrayIndex(_ *ast.ArrayIndex) any {
-	// ArrayIndex validation is handled in validateExpression
-	return nil
-}
-
-// VisitForLoop implements the Visitor pattern for ForLoop nodes
+// ControlFlowVisitor implementations
 func (v *Validator) VisitForLoop(_ *ast.ForLoop) any {
 	// ForLoop validation is handled in validateExpression
 	return nil
 }
 
-// VisitOfExpression implements the Visitor pattern for OfExpression nodes
 func (v *Validator) VisitOfExpression(_ *ast.OfExpression) any {
 	// OfExpression validation is handled in validateExpression
 	return nil
 }
 
-// VisitFunctionCall implements the Visitor pattern for FunctionCall nodes
-func (v *Validator) VisitFunctionCall(_ *ast.FunctionCall) any {
-	// FunctionCall validation is handled in validateExpression
+func (v *Validator) VisitStringLength(_ *ast.StringLength) any {
+	// StringLength validation is handled in validateExpression
+	return nil
+}
+
+func (v *Validator) VisitArrayIndex(_ *ast.ArrayIndex) any {
+	// ArrayIndex validation is handled in validateExpression
 	return nil
 }
 
