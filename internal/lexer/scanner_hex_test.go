@@ -9,7 +9,7 @@ type identifierTestCase struct {
 	name     string
 	input    string
 	start    int
-		end      int
+	end      int
 	expected int
 }
 

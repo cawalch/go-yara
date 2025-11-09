@@ -29,9 +29,17 @@ func assertTokenSequenceForStringOps(t *testing.T, input string, expected []toke
 }
 
 func TestStringOperations(t *testing.T) {
+	t.Run("StringContainsOperations", testStringContainsOperations)
+	t.Run("StringPrefixSuffixOperations", testStringPrefixSuffixOperations)
+	t.Run("StringEqualityOperations", testStringEqualityOperations)
+	t.Run("StringMatchingOperations", testStringMatchingOperations)
+}
+
+// testStringContainsOperations tests contains and icontains operations
+func testStringContainsOperations(t *testing.T) {
 	tests := []tokenTestCase{
 		{
-			name:  "pe sections name contains",
+			name:  "pe_sections_name_contains",
 			input: "pe.sections[0].name contains \".text\"",
 			expected: []token.Token{
 				{Type: token.IDENTIFIER, Literal: "pe"},
@@ -48,7 +56,7 @@ func TestStringOperations(t *testing.T) {
 			},
 		},
 		{
-			name:  "filename contains malware",
+			name:  "filename_contains",
 			input: "filename contains \"malware\"",
 			expected: []token.Token{
 				{Type: token.IDENTIFIER, Literal: "filename"},
@@ -58,7 +66,7 @@ func TestStringOperations(t *testing.T) {
 			},
 		},
 		{
-			name:  "pe version info icontains",
+			name:  "pe_version_info_icontains",
 			input: "pe.version_info[\"CompanyName\"] icontains \"microsoft\"",
 			expected: []token.Token{
 				{Type: token.IDENTIFIER, Literal: "pe"},
@@ -72,8 +80,16 @@ func TestStringOperations(t *testing.T) {
 				{Type: token.EOF, Literal: ""},
 			},
 		},
+	}
+
+	runTokenTests(t, tests)
+}
+
+// testStringPrefixSuffixOperations tests startswith/endswith operations
+func testStringPrefixSuffixOperations(t *testing.T) {
+	tests := []tokenTestCase{
 		{
-			name:  "filename startswith",
+			name:  "filename_startswith",
 			input: "filename startswith \"MZ\"",
 			expected: []token.Token{
 				{Type: token.IDENTIFIER, Literal: "filename"},
@@ -83,7 +99,7 @@ func TestStringOperations(t *testing.T) {
 			},
 		},
 		{
-			name:  "filename istartswith",
+			name:  "filename_istartswith",
 			input: "filename istartswith \"mz\"",
 			expected: []token.Token{
 				{Type: token.IDENTIFIER, Literal: "filename"},
@@ -93,7 +109,7 @@ func TestStringOperations(t *testing.T) {
 			},
 		},
 		{
-			name:  "filename endswith",
+			name:  "filename_endswith",
 			input: "filename endswith \".exe\"",
 			expected: []token.Token{
 				{Type: token.IDENTIFIER, Literal: "filename"},
@@ -103,7 +119,7 @@ func TestStringOperations(t *testing.T) {
 			},
 		},
 		{
-			name:  "filename iendswith",
+			name:  "filename_iendswith",
 			input: "filename iendswith \".EXE\"",
 			expected: []token.Token{
 				{Type: token.IDENTIFIER, Literal: "filename"},
@@ -112,8 +128,16 @@ func TestStringOperations(t *testing.T) {
 				{Type: token.EOF, Literal: ""},
 			},
 		},
+	}
+
+	runTokenTests(t, tests)
+}
+
+// testStringEqualityOperations tests iequals operations
+func testStringEqualityOperations(t *testing.T) {
+	tests := []tokenTestCase{
 		{
-			name:  "pe version info iequals",
+			name:  "pe_version_info_iequals",
 			input: "pe.version_info[\"CompanyName\"] iequals \"Microsoft Corporation\"",
 			expected: []token.Token{
 				{Type: token.IDENTIFIER, Literal: "pe"},
@@ -127,8 +151,16 @@ func TestStringOperations(t *testing.T) {
 				{Type: token.EOF, Literal: ""},
 			},
 		},
+	}
+
+	runTokenTests(t, tests)
+}
+
+// testStringMatchingOperations tests matches operations
+func testStringMatchingOperations(t *testing.T) {
+	tests := []tokenTestCase{
 		{
-			name:  "hash md5 matches regex",
+			name:  "hash_md5_matches_regex",
 			input: "hash.md5(0, filesize) matches /^[a-f0-9]{32}$/",
 			expected: []token.Token{
 				{Type: token.HASH, Literal: "hash"},
@@ -146,6 +178,11 @@ func TestStringOperations(t *testing.T) {
 		},
 	}
 
+	runTokenTests(t, tests)
+}
+
+// runTokenTests is a helper to run multiple token test cases
+func runTokenTests(t *testing.T, tests []tokenTestCase) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assertTokenSequenceForStringOps(t, tt.input, tt.expected)

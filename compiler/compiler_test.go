@@ -2022,10 +2022,10 @@ func testCompiledProgramGetRuleByName(t *testing.T) {
 // TestInstructionProperties tests various instruction property methods
 func TestInstructionProperties(t *testing.T) {
 	tests := []struct {
-		name        string
-		setupInstr  func() *Instruction
-		method      func(*Instruction) bool
-		wantResult  bool
+		name       string
+		setupInstr func() *Instruction
+		method     func(*Instruction) bool
+		wantResult bool
 	}{
 		{
 			name: "int8_is_type_function",
@@ -2075,10 +2075,10 @@ func TestInstructionProperties(t *testing.T) {
 // TestInstructionOperandProperties tests instruction operand-related property methods
 func TestInstructionOperandProperties(t *testing.T) {
 	tests := []struct {
-		name        string
-		setupInstr  func() *Instruction
-		method      func(*Instruction) bool
-		wantResult  bool
+		name       string
+		setupInstr func() *Instruction
+		method     func(*Instruction) bool
+		wantResult bool
 	}{
 		{
 			name: "immediate8_has_immediate",

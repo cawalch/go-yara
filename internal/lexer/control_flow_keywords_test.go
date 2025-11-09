@@ -119,7 +119,6 @@ func testLogicalOperationPatterns(t *testing.T) {
 	}
 }
 
-
 // assertControlFlowTokenSequence validates that the lexer produces the expected token sequence
 func assertControlFlowTokenSequence(t *testing.T, input string, expected []token.Token) {
 	l := lexer.New(input)
