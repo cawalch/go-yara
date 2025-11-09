@@ -268,8 +268,15 @@ func operatorLiteral(op token.TokenType) string {
 }
 
 func TestComplexYARARule(t *testing.T) {
-	// Test a more complex YARA rule structure
-	input := `rule ComplexRule : tag1 tag2 {
+	tests := []struct {
+		name             string
+		input            string
+		expectedTokens   []token.TokenType
+		expectedLiterals map[int]string // index -> expected literal
+	}{
+		{
+			name: "complete_yara_rule",
+			input: `rule ComplexRule : tag1 tag2 {
  		meta:
  			author = "test"
  			version = 1
@@ -280,84 +287,87 @@ func TestComplexYARARule(t *testing.T) {
  			$c = /pattern/i
  		condition:
  			($a and $b) or $c and not false
- 	}`
-
-	l := lexer.New(input)
-	tokens := collectTokens(l)
-
-	// Verify we have the expected structure - rule body should be properly parsed
-	expectedTokenTypes := []token.TokenType{
-		token.RULE,
-		token.IDENTIFIER, // ComplexRule
-		token.COLON,
-		token.IDENTIFIER, // tag1
-		token.IDENTIFIER, // tag2
-		token.LBRACE,
-		token.META,
-		token.COLON,
-		token.IDENTIFIER, // author
-		token.ASSIGN,
-		token.STRING_LIT, // "test"
-		token.IDENTIFIER, // version
-		token.ASSIGN,
-		token.INTEGER_LIT, // 1
-		token.IDENTIFIER,  // enabled
-		token.ASSIGN,
-		token.TRUE, // true
-		token.STRINGS,
-		token.COLON,
-		token.STRING_IDENTIFIER, // $a
-		token.ASSIGN,
-		token.STRING_LIT,        // "malware"
-		token.STRING_IDENTIFIER, // $b
-		token.ASSIGN,
-		token.HEX_STRING_LIT,    // { E2 34 A1 C8 }
-		token.STRING_IDENTIFIER, // $c
-		token.ASSIGN,
-		token.REGEX_LIT, // /pattern/i
-		token.CONDITION,
-		token.COLON,
-		token.LPAREN,
-		token.STRING_IDENTIFIER, // $a
-		token.AND,
-		token.STRING_IDENTIFIER, // $b
-		token.RPAREN,
-		token.OR,
-		token.STRING_IDENTIFIER, // $c
-		token.AND,
-		token.NOT,
-		token.FALSE,
-		token.RBRACE,
-		token.EOF,
+ 	}`,
+			expectedTokens: []token.TokenType{
+				token.RULE,
+				token.IDENTIFIER,
+				token.COLON,
+				token.IDENTIFIER,
+				token.IDENTIFIER,
+				token.LBRACE,
+				token.META,
+				token.COLON,
+				token.IDENTIFIER,
+				token.ASSIGN,
+				token.STRING_LIT,
+				token.IDENTIFIER,
+				token.ASSIGN,
+				token.INTEGER_LIT,
+				token.IDENTIFIER,
+				token.ASSIGN,
+				token.TRUE,
+				token.STRINGS,
+				token.COLON,
+				token.STRING_IDENTIFIER,
+				token.ASSIGN,
+				token.STRING_LIT,
+				token.STRING_IDENTIFIER,
+				token.ASSIGN,
+				token.HEX_STRING_LIT,
+				token.STRING_IDENTIFIER,
+				token.ASSIGN,
+				token.REGEX_LIT,
+				token.CONDITION,
+				token.COLON,
+				token.LPAREN,
+				token.STRING_IDENTIFIER,
+				token.AND,
+				token.STRING_IDENTIFIER,
+				token.RPAREN,
+				token.OR,
+				token.STRING_IDENTIFIER,
+				token.AND,
+				token.NOT,
+				token.FALSE,
+				token.RBRACE,
+				token.EOF,
+			},
+			expectedLiterals: map[int]string{
+				1:  "ComplexRule",
+				3:  "tag1",
+				4:  "tag2",
+				6:  "meta",
+				17: "strings",
+				28: "condition",
+			},
+		},
 	}
 
-	if len(tokens) != len(expectedTokenTypes) {
-		t.Fatalf("expected %d tokens, got %d\nActual tokens: %v", len(expectedTokenTypes), len(tokens), tokens)
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			l := lexer.New(tt.input)
+			tokens := collectTokens(l)
 
-	for i, expectedType := range expectedTokenTypes {
-		if tokens[i].Type != expectedType {
-			t.Fatalf("token[%d]: expected type %v, got %v", i, expectedType, tokens[i].Type)
-		}
-	}
+			if len(tokens) != len(tt.expectedTokens) {
+				t.Fatalf("expected %d tokens, got %d\nActual tokens: %v",
+					len(tt.expectedTokens), len(tokens), tokens)
+			}
 
-	// Verify specific token literals
-	if tokens[1].Literal != "ComplexRule" {
-		t.Fatalf("expected rule name 'ComplexRule', got %q", tokens[1].Literal)
-	}
-	if tokens[3].Literal != "tag1" {
-		t.Fatalf("expected tag 'tag1', got %q", tokens[3].Literal)
-	}
-	if tokens[4].Literal != "tag2" {
-		t.Fatalf("expected tag 'tag2', got %q", tokens[4].Literal)
-	}
-	if tokens[6].Literal != "meta" {
-		t.Fatalf("expected meta section, got %q", tokens[6].Literal)
-	}
-	if tokens[17].Literal != "strings" {
-		t.Fatalf("expected strings section, got %q", tokens[17].Literal)
-	}
-	if tokens[28].Literal != "condition" {
-		t.Fatalf("expected condition section, got %q", tokens[28].Literal)
+			// Verify token types
+			for i, expectedType := range tt.expectedTokens {
+				if tokens[i].Type != expectedType {
+					t.Fatalf("token[%d]: expected type %v, got %v",
+						i, expectedType, tokens[i].Type)
+				}
+			}
+
+			// Verify specific literals
+			for index, expectedLiteral := range tt.expectedLiterals {
+				if tokens[index].Literal != expectedLiteral {
+					t.Fatalf("token[%d]: expected literal %q, got %q",
+						index, expectedLiteral, tokens[index].Literal)
+				}
+			}
+		})
 	}
 }
