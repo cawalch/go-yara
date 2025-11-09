@@ -2019,162 +2019,134 @@ func testCompiledProgramGetRuleByName(t *testing.T) {
 	})
 }
 
-// TestInstructionIsTypeFunction tests IsTypeFunction method
-func TestInstructionIsTypeFunction(t *testing.T) {
+// TestInstructionProperties tests various instruction property methods
+func TestInstructionProperties(t *testing.T) {
 	tests := []struct {
-		name    string
-		opcode  Opcode
-		wantRes bool
+		name        string
+		setupInstr  func() *Instruction
+		method      func(*Instruction) bool
+		wantResult  bool
 	}{
 		{
-			name:    "int8_is_type_function",
-			opcode:  OP_INT8,
-			wantRes: true,
+			name: "int8_is_type_function",
+			setupInstr: func() *Instruction {
+				return NewInstruction(OP_INT8, 1, 1)
+			},
+			method:     (*Instruction).IsTypeFunction,
+			wantResult: true,
 		},
 		{
-			name:    "push_is_not_type_function",
-			opcode:  OP_PUSH_8,
-			wantRes: false,
+			name: "push_is_not_type_function",
+			setupInstr: func() *Instruction {
+				return NewInstruction(OP_PUSH_8, 1, 1)
+			},
+			method:     (*Instruction).IsTypeFunction,
+			wantResult: false,
+		},
+		{
+			name: "contains_is_string_op",
+			setupInstr: func() *Instruction {
+				return NewInstruction(OP_CONTAINS, 1, 1)
+			},
+			method:     (*Instruction).IsStringOperation,
+			wantResult: true,
+		},
+		{
+			name: "nop_is_not_string_op",
+			setupInstr: func() *Instruction {
+				return NewInstruction(OP_NOP, 1, 1)
+			},
+			method:     (*Instruction).IsStringOperation,
+			wantResult: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			instr := NewInstruction(tt.opcode, 1, 1)
-			result := instr.IsTypeFunction()
-			if result != tt.wantRes {
-				t.Errorf("IsTypeFunction() = %v, want %v", result, tt.wantRes)
+			instr := tt.setupInstr()
+			result := tt.method(instr)
+			if result != tt.wantResult {
+				t.Errorf("Instruction property test failed: got %v, want %v", result, tt.wantResult)
 			}
 		})
 	}
 }
 
-// TestInstructionIsStringOperation tests IsStringOperation method
-func TestInstructionIsStringOperation(t *testing.T) {
+// TestInstructionOperandProperties tests instruction operand-related property methods
+func TestInstructionOperandProperties(t *testing.T) {
 	tests := []struct {
-		name    string
-		opcode  Opcode
-		wantRes bool
+		name        string
+		setupInstr  func() *Instruction
+		method      func(*Instruction) bool
+		wantResult  bool
 	}{
 		{
-			name:    "contains_is_string_op",
-			opcode:  OP_CONTAINS,
-			wantRes: true,
+			name: "immediate8_has_immediate",
+			setupInstr: func() *Instruction {
+				return NewInstructionWithOperand(OP_PUSH_8, Operand{Type: OperandImmediate8, Value: 42}, 1, 1)
+			},
+			method:     (*Instruction).HasImmediateOperand,
+			wantResult: true,
 		},
 		{
-			name:    "nop_is_not_string_op",
-			opcode:  OP_NOP,
-			wantRes: false,
+			name: "none_no_immediate",
+			setupInstr: func() *Instruction {
+				return NewInstructionWithOperand(OP_PUSH_8, Operand{Type: OperandNone}, 1, 1)
+			},
+			method:     (*Instruction).HasImmediateOperand,
+			wantResult: false,
+		},
+		{
+			name: "relative8_has_relative",
+			setupInstr: func() *Instruction {
+				return NewInstructionWithOperand(OP_JZ, Operand{Type: OperandRelative8, Value: 10}, 1, 1)
+			},
+			method:     (*Instruction).HasRelativeOperand,
+			wantResult: true,
+		},
+		{
+			name: "none_no_relative",
+			setupInstr: func() *Instruction {
+				return NewInstructionWithOperand(OP_JZ, Operand{Type: OperandNone}, 1, 1)
+			},
+			method:     (*Instruction).HasRelativeOperand,
+			wantResult: false,
+		},
+		{
+			name: "absolute32_has_absolute",
+			setupInstr: func() *Instruction {
+				return NewInstructionWithOperand(OP_PUSH_8, Operand{Type: OperandAbsolute32, Value: 1000}, 1, 1)
+			},
+			method:     (*Instruction).HasAbsoluteOperand,
+			wantResult: true,
+		},
+		{
+			name: "none_no_absolute",
+			setupInstr: func() *Instruction {
+				return NewInstructionWithOperand(OP_PUSH_8, Operand{Type: OperandNone}, 1, 1)
+			},
+			method:     (*Instruction).HasAbsoluteOperand,
+			wantResult: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			instr := NewInstruction(tt.opcode, 1, 1)
-			result := instr.IsStringOperation()
-			if result != tt.wantRes {
-				t.Errorf("IsStringOperation() = %v, want %v", result, tt.wantRes)
+			instr := tt.setupInstr()
+			result := tt.method(instr)
+			if result != tt.wantResult {
+				t.Errorf("Instruction operand property test failed: got %v, want %v", result, tt.wantResult)
 			}
 		})
 	}
 }
 
-// TestInstructionHasImmediateOperand tests HasImmediateOperand method
-func TestInstructionHasImmediateOperand(t *testing.T) {
-	tests := []struct {
-		name    string
-		operand Operand
-		wantRes bool
-	}{
-		{
-			name:    "immediate8_has_immediate",
-			operand: Operand{Type: OperandImmediate8, Value: 42},
-			wantRes: true,
-		},
-		{
-			name:    "none_no_immediate",
-			operand: Operand{Type: OperandNone},
-			wantRes: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			instr := NewInstructionWithOperand(OP_PUSH_8, tt.operand, 1, 1)
-			result := instr.HasImmediateOperand()
-			if result != tt.wantRes {
-				t.Errorf("HasImmediateOperand() = %v, want %v", result, tt.wantRes)
-			}
-		})
-	}
-}
-
-// TestInstructionHasRelativeOperand tests HasRelativeOperand method
-func TestInstructionHasRelativeOperand(t *testing.T) {
-	tests := []struct {
-		name    string
-		operand Operand
-		wantRes bool
-	}{
-		{
-			name:    "relative8_has_relative",
-			operand: Operand{Type: OperandRelative8, Value: 10},
-			wantRes: true,
-		},
-		{
-			name:    "none_no_relative",
-			operand: Operand{Type: OperandNone},
-			wantRes: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			instr := NewInstructionWithOperand(OP_JZ, tt.operand, 1, 1)
-			result := instr.HasRelativeOperand()
-			if result != tt.wantRes {
-				t.Errorf("HasRelativeOperand() = %v, want %v", result, tt.wantRes)
-			}
-		})
-	}
-}
-
-// TestInstructionHasAbsoluteOperand tests HasAbsoluteOperand method
-func TestInstructionHasAbsoluteOperand(t *testing.T) {
-	tests := []struct {
-		name    string
-		operand Operand
-		wantRes bool
-	}{
-		{
-			name:    "absolute32_has_absolute",
-			operand: Operand{Type: OperandAbsolute32, Value: 1000},
-			wantRes: true,
-		},
-		{
-			name:    "none_no_absolute",
-			operand: Operand{Type: OperandNone},
-			wantRes: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			instr := NewInstructionWithOperand(OP_PUSH_8, tt.operand, 1, 1)
-			result := instr.HasAbsoluteOperand()
-			if result != tt.wantRes {
-				t.Errorf("HasAbsoluteOperand() = %v, want %v", result, tt.wantRes)
-			}
-		})
-	}
-}
-
-// TestStringCompilerGetAtoms tests GetAtoms method
-func TestStringCompilerGetAtoms(t *testing.T) {
+// createTestStringCompiler creates a string compiler with a test string compiled
+func createTestStringCompiler(t *testing.T) *StringCompiler {
 	emitter := NewEmitter()
 	sc := NewStringCompiler(emitter)
 
-	// Compile a string
+	// Compile a test string
 	str := &ast.String{
 		Pos:        token.Position{Line: 1, Column: 1},
 		Identifier: "$test",
@@ -2187,105 +2159,124 @@ func TestStringCompilerGetAtoms(t *testing.T) {
 
 	err := sc.compileString(str)
 	if err != nil {
-		t.Errorf("compileString() error = %v", err)
+		t.Fatalf("compileString() error = %v", err)
 	}
 
-	// Get atoms
-	atoms := sc.GetAtoms("$test")
-	if atoms == nil {
-		t.Errorf("GetAtoms() returned nil")
-	}
+	return sc
 }
 
-// TestStringCompilerPrintStringInfo tests PrintStringInfo method
-func TestStringCompilerPrintStringInfo(t *testing.T) {
-	emitter := NewEmitter()
-	sc := NewStringCompiler(emitter)
-
-	// Compile a string
-	str := &ast.String{
-		Pos:        token.Position{Line: 1, Column: 1},
-		Identifier: "$test",
-		Pattern: &ast.TextString{
-			Value: "test",
-			Pos:   token.Position{Line: 1, Column: 10},
+// TestStringCompilerMethods tests various string compiler methods
+func TestStringCompilerMethods(t *testing.T) {
+	tests := []struct {
+		name     string
+		testFunc func(*testing.T, *StringCompiler)
+	}{
+		{
+			name: "GetAtoms",
+			testFunc: func(t *testing.T, sc *StringCompiler) {
+				atoms := sc.GetAtoms("$test")
+				if atoms == nil {
+					t.Errorf("GetAtoms() returned nil")
+				}
+			},
 		},
-		Modifiers: []ast.StringModifier{},
+		{
+			name: "GetStringInfo",
+			testFunc: func(t *testing.T, sc *StringCompiler) {
+				infos := sc.GetStringInfo()
+				if len(infos) == 0 {
+					t.Errorf("GetStringInfo() returned empty list")
+				}
+			},
+		},
+		{
+			name: "PrintStringInfo",
+			testFunc: func(t *testing.T, sc *StringCompiler) {
+				// This should not panic
+				sc.PrintStringInfo()
+			},
+		},
 	}
 
-	err := sc.compileString(str)
-	if err != nil {
-		t.Errorf("compileString() error = %v", err)
-	}
-
-	// Get string info
-	infos := sc.GetStringInfo()
-	if len(infos) == 0 {
-		t.Errorf("GetStringInfo() returned empty list")
-	}
-
-	// This should not panic
-	sc.PrintStringInfo()
-}
-
-// TestConditionCompilerGenerateLabel tests generateLabel method
-func TestConditionCompilerGenerateLabel(t *testing.T) {
-	emitter := NewEmitter()
-	cc := NewConditionCompiler(emitter, make(map[string]int))
-
-	label1 := cc.generateLabel()
-	label2 := cc.generateLabel()
-
-	if label1 == "" {
-		t.Errorf("generateLabel() returned empty string")
-	}
-	if label1 == label2 {
-		t.Errorf("generateLabel() returned duplicate labels: %s and %s", label1, label2)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sc := createTestStringCompiler(t)
+			tt.testFunc(t, sc)
+		})
 	}
 }
 
-// TestConditionCompilerEmitJump tests EmitJump method
-func TestConditionCompilerEmitJump(t *testing.T) {
+// createTestConditionCompiler creates a condition compiler for testing
+func createTestConditionCompiler() *ConditionCompiler {
 	emitter := NewEmitter()
-	cc := NewConditionCompiler(emitter, make(map[string]int))
-
-	err := cc.EmitJump(ConditionalJumpConfig{Opcode: OP_JZ, TargetLabel: "L1", Position: JumpPosition{Line: 1, Column: 1}})
-	if err != nil {
-		t.Errorf("EmitJump() error = %v", err)
-	}
+	return NewConditionCompiler(emitter, make(map[string]int))
 }
 
-// TestConditionCompilerOptimizeExpression tests OptimizeExpression method
-func TestConditionCompilerOptimizeExpression(t *testing.T) {
-	emitter := NewEmitter()
-	cc := NewConditionCompiler(emitter, make(map[string]int))
-
-	expr := &ast.Literal{
+// createTestLiteral creates a test literal expression
+func createTestLiteral() *ast.Literal {
+	return &ast.Literal{
 		Pos:   token.Position{Line: 1, Column: 1},
 		Type:  token.TRUE,
 		Value: true,
 	}
-
-	optimized := cc.OptimizeExpression(expr)
-	if optimized == nil {
-		t.Errorf("OptimizeExpression() returned nil")
-	}
 }
 
-// TestConditionCompilerEstimateComplexity tests EstimateComplexity method
-func TestConditionCompilerEstimateComplexity(t *testing.T) {
-	emitter := NewEmitter()
-	cc := NewConditionCompiler(emitter, make(map[string]int))
+// TestConditionCompilerMethods tests various condition compiler methods
+func TestConditionCompilerMethods(t *testing.T) {
+	tests := []struct {
+		name     string
+		testFunc func(*testing.T, *ConditionCompiler)
+	}{
+		{
+			name: "GenerateLabel",
+			testFunc: func(t *testing.T, cc *ConditionCompiler) {
+				label1 := cc.generateLabel()
+				label2 := cc.generateLabel()
 
-	expr := &ast.Literal{
-		Pos:   token.Position{Line: 1, Column: 1},
-		Type:  token.TRUE,
-		Value: true,
+				if label1 == "" {
+					t.Errorf("generateLabel() returned empty string")
+				}
+				if label1 == label2 {
+					t.Errorf("generateLabel() returned duplicate labels: %s and %s", label1, label2)
+				}
+			},
+		},
+		{
+			name: "EmitJump",
+			testFunc: func(t *testing.T, cc *ConditionCompiler) {
+				err := cc.EmitJump(ConditionalJumpConfig{Opcode: OP_JZ, TargetLabel: "L1", Position: JumpPosition{Line: 1, Column: 1}})
+				if err != nil {
+					t.Errorf("EmitJump() error = %v", err)
+				}
+			},
+		},
+		{
+			name: "OptimizeExpression",
+			testFunc: func(t *testing.T, cc *ConditionCompiler) {
+				expr := createTestLiteral()
+				optimized := cc.OptimizeExpression(expr)
+				if optimized == nil {
+					t.Errorf("OptimizeExpression() returned nil")
+				}
+			},
+		},
+		{
+			name: "EstimateComplexity",
+			testFunc: func(t *testing.T, cc *ConditionCompiler) {
+				expr := createTestLiteral()
+				complexity := cc.EstimateComplexity(expr)
+				if complexity < 0 {
+					t.Errorf("EstimateComplexity() returned negative value %d", complexity)
+				}
+			},
+		},
 	}
 
-	complexity := cc.EstimateComplexity(expr)
-	if complexity < 0 {
-		t.Errorf("EstimateComplexity() returned negative value %d", complexity)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cc := createTestConditionCompiler()
+			tt.testFunc(t, cc)
+		})
 	}
 }
 
