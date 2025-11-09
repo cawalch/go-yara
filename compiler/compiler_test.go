@@ -1917,93 +1917,106 @@ func TestCompiledRuleGetters(t *testing.T) {
 
 // TestCompiledProgramGetters tests CompiledProgram getter methods
 func TestCompiledProgramGetters(t *testing.T) {
+	_ = setupTestCompiledProgram(t)
+
+	t.Run("RuleCount", testCompiledProgramRuleCount)
+	t.Run("BytecodeSize", testCompiledProgramBytecodeSize)
+	t.Run("MemoryUsage", testCompiledProgramMemoryUsage)
+	t.Run("GetRuleByName", testCompiledProgramGetRuleByName)
+}
+
+// setupTestCompiledProgram creates a test compiled program with multiple rules
+func setupTestCompiledProgram(t *testing.T) *CompiledProgram {
 	rc := NewRuleCompiler()
 
-	rule1 := &ast.Rule{
-		Pos:  token.Position{Line: 1, Column: 1},
-		Name: "rule1",
-		Strings: []*ast.String{
-			{
-				Pos:        token.Position{Line: 2, Column: 1},
-				Identifier: "$test",
-				Pattern: &ast.TextString{
-					Value: "test",
-					Pos:   token.Position{Line: 2, Column: 10},
-				},
-				Modifiers: []ast.StringModifier{},
-			},
-		},
-		Condition: &ast.Literal{
-			Pos:   token.Position{Line: 3, Column: 1},
-			Type:  token.TRUE,
-			Value: true,
-		},
+	rules := []*ast.Rule{
+		createTestRuleForCompiledProgram(t, "rule1", "$test", "test", 1),
+		createTestRuleForCompiledProgram(t, "rule2", "$pattern", "pattern", 5),
 	}
 
-	rule2 := &ast.Rule{
-		Pos:  token.Position{Line: 5, Column: 1},
-		Name: "rule2",
-		Strings: []*ast.String{
-			{
-				Pos:        token.Position{Line: 6, Column: 1},
-				Identifier: "$pattern",
-				Pattern: &ast.TextString{
-					Value: "pattern",
-					Pos:   token.Position{Line: 6, Column: 10},
-				},
-				Modifiers: []ast.StringModifier{},
-			},
-		},
-		Condition: &ast.Literal{
-			Pos:   token.Position{Line: 7, Column: 1},
-			Type:  token.TRUE,
-			Value: true,
-		},
-	}
-
-	program := &ast.Program{
-		Rules: []*ast.Rule{rule1, rule2},
-	}
-
+	program := &ast.Program{Rules: rules}
 	compiled, err := rc.CompileProgram(program)
 	if err != nil {
-		t.Errorf("CompileProgram() error = %v", err)
+		t.Fatalf("CompileProgram() error = %v", err)
 	}
 
-	// Create a CompiledProgram
-	compiledProgram := NewCompiledProgram(compiled)
+	return NewCompiledProgram(compiled)
+}
 
-	// Test GetRuleCount
-	if compiledProgram.GetRuleCount() != 2 {
-		t.Errorf("GetRuleCount() = %d, want 2", compiledProgram.GetRuleCount())
+// createTestRuleForCompiledProgram creates a simple test rule with one string
+func createTestRuleForCompiledProgram(t *testing.T, name, identifier, value string, lineNum int) *ast.Rule {
+	return &ast.Rule{
+		Pos:  token.Position{Line: lineNum, Column: 1},
+		Name: name,
+		Strings: []*ast.String{
+			{
+				Pos:        token.Position{Line: lineNum + 1, Column: 1},
+				Identifier: identifier,
+				Pattern: &ast.TextString{
+					Value: value,
+					Pos:   token.Position{Line: lineNum + 1, Column: 10},
+				},
+				Modifiers: []ast.StringModifier{},
+			},
+		},
+		Condition: &ast.Literal{
+			Pos:   token.Position{Line: lineNum + 2, Column: 1},
+			Type:  token.TRUE,
+			Value: true,
+		},
 	}
+}
 
-	// Test GetTotalBytecodeSize
+// testCompiledProgramRuleCount tests GetRuleCount method
+func testCompiledProgramRuleCount(t *testing.T) {
+	compiledProgram := setupTestCompiledProgram(t)
+
+	ruleCount := compiledProgram.GetRuleCount()
+	if ruleCount != 2 {
+		t.Errorf("GetRuleCount() = %d, want 2", ruleCount)
+	}
+}
+
+// testCompiledProgramBytecodeSize tests GetTotalBytecodeSize method
+func testCompiledProgramBytecodeSize(t *testing.T) {
+	compiledProgram := setupTestCompiledProgram(t)
+
 	totalSize := compiledProgram.GetTotalBytecodeSize()
 	if totalSize <= 0 {
 		t.Errorf("GetTotalBytecodeSize() = %d, want > 0", totalSize)
 	}
+}
 
-	// Test GetTotalMemoryUsage
+// testCompiledProgramMemoryUsage tests GetTotalMemoryUsage method
+func testCompiledProgramMemoryUsage(t *testing.T) {
+	compiledProgram := setupTestCompiledProgram(t)
+
 	memUsage := compiledProgram.GetTotalMemoryUsage()
 	if memUsage <= 0 {
 		t.Errorf("GetTotalMemoryUsage() = %d, want > 0", memUsage)
 	}
+}
 
-	// Test GetRuleByName
-	rule, exists := compiledProgram.GetRuleByName("rule1")
-	if !exists {
-		t.Errorf("GetRuleByName() exists = false for rule1, want true")
-	}
-	if rule.GetName() != "rule1" {
-		t.Errorf("GetRuleByName() returned rule with name %s, want rule1", rule.GetName())
-	}
+// testCompiledProgramGetRuleByName tests GetRuleByName method
+func testCompiledProgramGetRuleByName(t *testing.T) {
+	compiledProgram := setupTestCompiledProgram(t)
 
-	// Test GetRuleByName with non-existent rule
-	_, exists = compiledProgram.GetRuleByName("nonexistent")
-	if exists {
-		t.Errorf("GetRuleByName() exists = true for non-existent rule, want false")
-	}
+	t.Run("existing_rule", func(t *testing.T) {
+		rule, exists := compiledProgram.GetRuleByName("rule1")
+		if !exists {
+			t.Errorf("GetRuleByName() exists = false for rule1, want true")
+		}
+		if rule.GetName() != "rule1" {
+			t.Errorf("GetRuleByName() returned rule with name %s, want rule1", rule.GetName())
+		}
+	})
+
+	t.Run("nonexistent_rule", func(t *testing.T) {
+		_, exists := compiledProgram.GetRuleByName("nonexistent")
+		if exists {
+			t.Errorf("GetRuleByName() exists = true for non-existent rule, want false")
+		}
+	})
 }
 
 // TestInstructionIsTypeFunction tests IsTypeFunction method
@@ -2689,6 +2702,18 @@ func TestOpcodeStringCoverage(t *testing.T) {
 
 // TestOpcodeStringCoverageExtended tests String method for additional opcodes
 func TestOpcodeStringCoverageExtended(t *testing.T) {
+	t.Run("StringOperations", testStringOpcodes)
+	t.Run("FlowControl", testFlowControlOpcodes)
+	t.Run("ComparisonOpcodes", testComparisonOpcodes)
+	t.Run("IterationOpcodes", testIterationOpcodes)
+	t.Run("MemoryOperations", testMemoryOperationOpcodes)
+	t.Run("DoublePrecision", testDoublePrecisionOpcodes)
+	t.Run("StringComparison", testStringComparisonOpcodes)
+	t.Run("IntegerOperations", testIntegerOperationOpcodes)
+}
+
+// testStringOpcodes tests opcodes related to string operations
+func testStringOpcodes(t *testing.T) {
 	tests := []struct {
 		opcode   Opcode
 		expected string
@@ -2699,6 +2724,93 @@ func TestOpcodeStringCoverageExtended(t *testing.T) {
 		{OP_FOUND_IN, "FOUND_IN"},
 		{OP_OFFSET, "OFFSET"},
 		{OP_OF, "OF"},
+		{OP_OF_PERCENT, "OF_PERCENT"},
+		{OP_OF_FOUND_IN, "OF_FOUND_IN"},
+		{OP_COUNT_IN, "COUNT_IN"},
+		{OP_ITER_START_TEXT_STRING_SET, "ITER_START_TEXT_STRING_SET"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.expected, func(t *testing.T) {
+			assertOpcodeString(t, tt.opcode, tt.expected)
+		})
+	}
+}
+
+// testFlowControlOpcodes tests jump and control flow opcodes
+func testFlowControlOpcodes(t *testing.T) {
+	tests := []struct {
+		opcode   Opcode
+		expected string
+	}{
+		{OP_JNUNDEF, "JNUNDEF"},
+		{OP_JUNDEF_P, "JUNDEF_P"},
+		{OP_JNUNDEF_P, "JNUNDEF_P"},
+		{OP_JFALSE_P, "JFALSE_P"},
+		{OP_JTRUE_P, "JTRUE_P"},
+		{OP_JL_P, "JL_P"},
+		{OP_JLE_P, "JLE_P"},
+		{OP_JZ_P, "JZ_P"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.expected, func(t *testing.T) {
+			assertOpcodeString(t, tt.opcode, tt.expected)
+		})
+	}
+}
+
+// testComparisonOpcodes tests comparison-related opcodes
+func testComparisonOpcodes(t *testing.T) {
+	tests := []struct {
+		opcode   Opcode
+		expected string
+	}{
+		{OP_DEFINED, "DEFINED"},
+		{OP_DBL_EQ, "DBL_EQ"},
+		{OP_DBL_NEQ, "DBL_NEQ"},
+		{OP_DBL_LT, "DBL_LT"},
+		{OP_DBL_GT, "DBL_GT"},
+		{OP_DBL_LE, "DBL_LE"},
+		{OP_DBL_GE, "DBL_GE"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.expected, func(t *testing.T) {
+			assertOpcodeString(t, tt.opcode, tt.expected)
+		})
+	}
+}
+
+// testIterationOpcodes tests iteration-related opcodes
+func testIterationOpcodes(t *testing.T) {
+	tests := []struct {
+		opcode   Opcode
+		expected string
+	}{
+		{OP_ITER_NEXT, "ITER_NEXT"},
+		{OP_ITER_START_ARRAY, "ITER_START_ARRAY"},
+		{OP_ITER_START_DICT, "ITER_START_DICT"},
+		{OP_ITER_START_INT_RANGE, "ITER_START_INT_RANGE"},
+		{OP_ITER_START_INT_ENUM, "ITER_START_INT_ENUM"},
+		{OP_ITER_START_STRING_SET, "ITER_START_STRING_SET"},
+		{OP_ITER_CONDITION, "ITER_CONDITION"},
+		{OP_ITER_END, "ITER_END"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.expected, func(t *testing.T) {
+			assertOpcodeString(t, tt.opcode, tt.expected)
+		})
+	}
+}
+
+// testMemoryOperationOpcodes tests memory and stack operations
+func testMemoryOperationOpcodes(t *testing.T) {
+	tests := []struct {
+		opcode   Opcode
+		expected string
+	}{
 		{OP_PUSH_RULE, "PUSH_RULE"},
 		{OP_MATCH_RULE, "MATCH_RULE"},
 		{OP_INCR_M, "INCR_M"},
@@ -2708,49 +2820,63 @@ func TestOpcodeStringCoverageExtended(t *testing.T) {
 		{OP_PUSH_M, "PUSH_M"},
 		{OP_SET_M, "SET_M"},
 		{OP_SWAPUNDEF, "SWAPUNDEF"},
-		{OP_FILESIZE, "FILESIZE"},
-		{OP_ENTRYPOINT, "ENTRYPOINT"},
-		{OP_IMPORT, "IMPORT"},
-		{OP_LOOKUP_DICT, "LOOKUP_DICT"},
-		{OP_JNUNDEF, "JNUNDEF"},
-		{OP_JUNDEF_P, "JUNDEF_P"},
-		{OP_JNUNDEF_P, "JNUNDEF_P"},
-		{OP_JFALSE_P, "JFALSE_P"},
-		{OP_JTRUE_P, "JTRUE_P"},
-		{OP_JL_P, "JL_P"},
-		{OP_JLE_P, "JLE_P"},
-		{OP_ITER_NEXT, "ITER_NEXT"},
-		{OP_ITER_START_ARRAY, "ITER_START_ARRAY"},
-		{OP_ITER_START_DICT, "ITER_START_DICT"},
-		{OP_ITER_START_INT_RANGE, "ITER_START_INT_RANGE"},
-		{OP_ITER_START_INT_ENUM, "ITER_START_INT_ENUM"},
-		{OP_ITER_START_STRING_SET, "ITER_START_STRING_SET"},
-		{OP_ITER_CONDITION, "ITER_CONDITION"},
-		{OP_ITER_END, "ITER_END"},
-		{OP_JZ_P, "JZ_P"},
 		{OP_PUSH_U, "PUSH_U"},
-		{OP_OF_PERCENT, "OF_PERCENT"},
-		{OP_OF_FOUND_IN, "OF_FOUND_IN"},
-		{OP_COUNT_IN, "COUNT_IN"},
-		{OP_DEFINED, "DEFINED"},
-		{OP_ITER_START_TEXT_STRING_SET, "ITER_START_TEXT_STRING_SET"},
-		{OP_DBL_EQ, "DBL_EQ"},
-		{OP_DBL_NEQ, "DBL_NEQ"},
-		{OP_DBL_LT, "DBL_LT"},
-		{OP_DBL_GT, "DBL_GT"},
-		{OP_DBL_LE, "DBL_LE"},
-		{OP_DBL_GE, "DBL_GE"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.expected, func(t *testing.T) {
+			assertOpcodeString(t, tt.opcode, tt.expected)
+		})
+	}
+}
+
+// testDoublePrecisionOpcodes tests double precision arithmetic opcodes
+func testDoublePrecisionOpcodes(t *testing.T) {
+	tests := []struct {
+		opcode   Opcode
+		expected string
+	}{
 		{OP_DBL_ADD, "DBL_ADD"},
 		{OP_DBL_SUB, "DBL_SUB"},
 		{OP_DBL_MUL, "DBL_MUL"},
 		{OP_DBL_DIV, "DBL_DIV"},
 		{OP_DBL_MINUS, "DBL_MINUS"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.expected, func(t *testing.T) {
+			assertOpcodeString(t, tt.opcode, tt.expected)
+		})
+	}
+}
+
+// testStringComparisonOpcodes tests string comparison opcodes
+func testStringComparisonOpcodes(t *testing.T) {
+	tests := []struct {
+		opcode   Opcode
+		expected string
+	}{
 		{OP_STR_EQ, "STR_EQ"},
 		{OP_STR_NEQ, "STR_NEQ"},
 		{OP_STR_LT, "STR_LT"},
 		{OP_STR_GT, "STR_GT"},
 		{OP_STR_LE, "STR_LE"},
 		{OP_STR_GE, "STR_GE"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.expected, func(t *testing.T) {
+			assertOpcodeString(t, tt.opcode, tt.expected)
+		})
+	}
+}
+
+// testIntegerOperationOpcodes tests integer operation opcodes
+func testIntegerOperationOpcodes(t *testing.T) {
+	tests := []struct {
+		opcode   Opcode
+		expected string
+	}{
 		{OP_INT8, "INT8"},
 		{OP_INT16, "INT16"},
 		{OP_INT32, "INT32"},
@@ -2763,15 +2889,24 @@ func TestOpcodeStringCoverageExtended(t *testing.T) {
 		{OP_UINT8BE, "UINT8BE"},
 		{OP_UINT16BE, "UINT16BE"},
 		{OP_UINT32BE, "UINT32BE"},
+		{OP_FILESIZE, "FILESIZE"},
+		{OP_ENTRYPOINT, "ENTRYPOINT"},
+		{OP_IMPORT, "IMPORT"},
+		{OP_LOOKUP_DICT, "LOOKUP_DICT"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.expected, func(t *testing.T) {
-			result := tt.opcode.String()
-			if result != tt.expected {
-				t.Errorf("Opcode.String() = %s, want %s", result, tt.expected)
-			}
+			assertOpcodeString(t, tt.opcode, tt.expected)
 		})
+	}
+}
+
+// assertOpcodeString is a helper function to test opcode string representation
+func assertOpcodeString(t *testing.T, opcode Opcode, expected string) {
+	result := opcode.String()
+	if result != expected {
+		t.Errorf("Opcode.String() = %s, want %s", result, expected)
 	}
 }
 

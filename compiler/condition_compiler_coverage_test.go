@@ -405,96 +405,202 @@ func TestConditionCompiler_OptimizationAndValidation(t *testing.T) {
 // TestConditionCompilerEdgeCasesAndErrors tests edge cases and error conditions
 func TestConditionCompilerEdgeCasesAndErrors(t *testing.T) {
 	emitter := NewEmitter()
+	_ = NewConditionCompiler(emitter, map[string]int{})
+
+	t.Run("NilAndEmptyInputs", testConditionCompilerNilInputs)
+	t.Run("UndefinedReferences", testConditionCompilerUndefinedReferences)
+	t.Run("InvalidSizeLiterals", testConditionCompilerInvalidSizeLiterals)
+	t.Run("ComplexExpressions", testConditionCompilerComplexExpressions)
+	t.Run("FunctionCallVariations", testConditionCompilerFunctionCallVariations)
+}
+
+// testConditionCompilerNilInputs tests edge cases with nil and empty inputs
+func testConditionCompilerNilInputs(t *testing.T) {
+	emitter := NewEmitter()
+	cc := NewConditionCompiler(emitter, map[string]int{})
+
+	tests := []struct {
+		name string
+		test func(*testing.T, *ConditionCompiler)
+	}{
+		{
+			name: "nil_string_offsets_map",
+			test: func(t *testing.T, cc *ConditionCompiler) {
+				nilCC := NewConditionCompiler(emitter, nil)
+				offset, found := nilCC.findStringOffset("$test")
+				if found {
+					t.Error("findStringOffset should return false for nil map")
+				}
+				t.Logf("findStringOffset with nil map result: offset=%d, found=%v", offset, found)
+			},
+		},
+		{
+			name: "nil_expression_validation",
+			test: func(t *testing.T, cc *ConditionCompiler) {
+				err := cc.ValidateExpression(nil)
+				t.Logf("ValidateExpression with nil result: %v", err)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.test(t, cc)
+		})
+	}
+}
+
+// testConditionCompilerUndefinedReferences tests behavior with undefined references
+func testConditionCompilerUndefinedReferences(t *testing.T) {
+	emitter := NewEmitter()
 	cc := NewConditionCompiler(emitter, map[string]int{})
 	pos := token.Position{Line: 1, Column: 1}
 	builder := ast.NewBuilder()
 
-	t.Run("nil and empty inputs", func(t *testing.T) {
-		// Test with nil string offsets
-		nilCC := NewConditionCompiler(emitter, nil)
-		offset, found := nilCC.findStringOffset("$test")
-		if found {
-			t.Error("findStringOffset should return false for nil map")
-		}
-		// The function returns 0 when not found in nil map, which is acceptable
-		t.Logf("findStringOffset with nil map result: offset=%d, found=%v", offset, found)
+	tests := []struct {
+		name string
+		test func(*testing.T, *ConditionCompiler, *ast.Builder, token.Position)
+	}{
+		{
+			name: "undefined_string",
+			test: func(t *testing.T, cc *ConditionCompiler, builder *ast.Builder, pos token.Position) {
+				_, found := cc.findStringOffset("$undefined")
+				if found {
+					t.Error("findStringOffset should return false for undefined string")
+				}
+			},
+		},
+		{
+			name: "undefined_variable",
+			test: func(t *testing.T, cc *ConditionCompiler, builder *ast.Builder, pos token.Position) {
+				undefinedExpr := builder.Identifier(pos, "undefined_var")
+				err := cc.compileExpression(undefinedExpr)
+				t.Logf("Compilation with undefined variable result: %v", err)
+			},
+		},
+	}
 
-		// Test validation with nil expression
-		err := cc.ValidateExpression(nil)
-		t.Logf("ValidateExpression with nil result: %v", err)
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.test(t, cc, builder, pos)
+		})
+	}
+}
 
-	t.Run("undefined strings and variables", func(t *testing.T) {
-		// Test with undefined string
-		_, found := cc.findStringOffset("$undefined")
-		if found {
-			t.Error("findStringOffset should return false for undefined string")
-		}
+// testConditionCompilerInvalidSizeLiterals tests invalid size literal parsing
+func testConditionCompilerInvalidSizeLiterals(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{name: "invalid_string", input: "invalid"},
+		{name: "invalid_unit", input: "10XB"},
+		{name: "float_with_unit", input: "10.5KB"},
+		{name: "negative_value", input: "-10KB"},
+		{name: "empty_string", input: ""},
+	}
 
-		// Test compilation with undefined variable
-		undefinedExpr := builder.Identifier(pos, "undefined_var")
-		err := cc.compileExpression(undefinedExpr)
-		t.Logf("Compilation with undefined variable result: %v", err)
-	})
-
-	t.Run("invalid size literals", func(t *testing.T) {
-		invalidSizes := []string{
-			"invalid",
-			"10XB",   // Invalid unit
-			"10.5KB", // Float with unit
-			"-10KB",  // Negative
-			"",       // Empty
-		}
-
-		for _, size := range invalidSizes {
-			_, err := parseSizeLiteral(size)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := parseSizeLiteral(tt.input)
 			if err == nil {
-				t.Errorf("parseSizeLiteral(%q) should have failed", size)
+				t.Errorf("parseSizeLiteral(%q) should have failed", tt.input)
 			}
-		}
-	})
+		})
+	}
+}
 
-	t.Run("complex expressions", func(t *testing.T) {
-		// Test deeply nested expressions
-		complexExpr := builder.BinaryOp(
-			pos,
-			builder.FunctionCall(
+// testConditionCompilerComplexExpressions tests compilation of complex nested expressions
+func testConditionCompilerComplexExpressions(t *testing.T) {
+	emitter := NewEmitter()
+	cc := NewConditionCompiler(emitter, map[string]int{})
+	pos := token.Position{Line: 1, Column: 1}
+	builder := ast.NewBuilder()
+
+	tests := []struct {
+		name string
+		expr ast.Expression
+	}{
+		{
+			name: "nested_function_call",
+			expr: builder.BinaryOp(
 				pos,
-				"module.function",
-				[]ast.Expression{
-					builder.StringLength(pos, builder.Identifier(pos, "$test")),
-				},
+				builder.FunctionCall(
+					pos,
+					"module.function",
+					[]ast.Expression{
+						builder.StringLength(pos, builder.Identifier(pos, "$test")),
+					},
+				),
+				token.EQ,
+				builder.Literal(pos, token.INTEGER_LIT, 42),
 			),
-			token.EQ,
-			builder.Literal(pos, token.INTEGER_LIT, 42),
-		)
+		},
+		{
+			name: "chained_binary_ops",
+			expr: builder.BinaryOp(
+				pos,
+				builder.BinaryOp(
+					pos,
+					builder.Identifier(pos, "a"),
+					token.PLUS,
+					builder.Identifier(pos, "b"),
+				),
+				token.MULTIPLY,
+				builder.Identifier(pos, "c"),
+			),
+		},
+	}
 
-		err := cc.compileExpression(complexExpr)
-		t.Logf("Complex expression compilation result: %v", err)
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := cc.compileExpression(tt.expr)
+			t.Logf("Complex expression compilation result for %s: %v", tt.name, err)
+		})
+	}
+}
 
-	t.Run("function calls with various arguments", func(t *testing.T) {
-		// Test function call with no arguments
-		noArgsFn := builder.FunctionCall(
-			pos,
-			"test.function",
-			[]ast.Expression{},
-		)
-		err := cc.compileFunctionCall(noArgsFn)
-		t.Logf("Function call with no args result: %v", err)
+// testConditionCompilerFunctionCallVariations tests function calls with different argument patterns
+func testConditionCompilerFunctionCallVariations(t *testing.T) {
+	emitter := NewEmitter()
+	cc := NewConditionCompiler(emitter, map[string]int{})
+	pos := token.Position{Line: 1, Column: 1}
+	builder := ast.NewBuilder()
 
-		// Test function call with many arguments
-		manyArgsFn := builder.FunctionCall(
-			pos,
-			"test.function",
-			[]ast.Expression{
+	tests := []struct {
+		name     string
+		function string
+		args     []ast.Expression
+	}{
+		{
+			name:     "no_arguments",
+			function: "test.function",
+			args:     []ast.Expression{},
+		},
+		{
+			name:     "single_argument",
+			function: "test.function",
+			args: []ast.Expression{
+				builder.Literal(pos, token.STRING_LIT, "arg1"),
+			},
+		},
+		{
+			name:     "multiple_types",
+			function: "test.function",
+			args: []ast.Expression{
 				builder.Literal(pos, token.STRING_LIT, "arg1"),
 				builder.Literal(pos, token.INTEGER_LIT, 42),
 				builder.Literal(pos, token.FLOAT_LIT, 3.14),
 				builder.Identifier(pos, "var"),
 			},
-		)
-		err = cc.compileFunctionCall(manyArgsFn)
-		t.Logf("Function call with many args result: %v", err)
-	})
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fn := builder.FunctionCall(pos, tt.function, tt.args)
+			err := cc.compileFunctionCall(fn)
+			t.Logf("Function call compilation result for %s: %v", tt.name, err)
+		})
+	}
 }

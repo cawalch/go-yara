@@ -81,10 +81,15 @@ func TestNodePositions(t *testing.T) {
 
 // TestAcceptVisitor tests that all nodes accept visitors
 func TestAcceptVisitor(t *testing.T) {
+	t.Run("StructuralNodes", testStructuralNodeAcceptance)
+	t.Run("ExpressionNodes", testExpressionNodeAcceptance)
+	t.Run("PatternNodes", testPatternNodeAcceptance)
+}
+
+// testStructuralNodeAcceptance tests Accept method for structural AST nodes
+func testStructuralNodeAcceptance(t *testing.T) {
 	builder := NewBuilder()
 	pos := token.Position{Line: 1, Column: 1}
-
-	visitor := &CountingVisitor{}
 
 	tests := []struct {
 		name          string
@@ -116,6 +121,25 @@ func TestAcceptVisitor(t *testing.T) {
 			node:          builder.Condition(pos, builder.Identifier(pos, "test")),
 			expectedCount: 1,
 		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertNodeAcceptance(t, tt.node, tt.expectedCount)
+		})
+	}
+}
+
+// testExpressionNodeAcceptance tests Accept method for expression nodes
+func testExpressionNodeAcceptance(t *testing.T) {
+	builder := NewBuilder()
+	pos := token.Position{Line: 1, Column: 1}
+
+	tests := []struct {
+		name          string
+		node          Node
+		expectedCount int
+	}{
 		{
 			name:          "BinaryOp",
 			node:          builder.BinaryOp(pos, builder.Identifier(pos, "a"), token.PLUS, builder.Identifier(pos, "b")),
@@ -136,6 +160,25 @@ func TestAcceptVisitor(t *testing.T) {
 			node:          builder.Literal(pos, token.INTEGER_LIT, 42),
 			expectedCount: 1,
 		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertNodeAcceptance(t, tt.node, tt.expectedCount)
+		})
+	}
+}
+
+// testPatternNodeAcceptance tests Accept method for pattern nodes
+func testPatternNodeAcceptance(t *testing.T) {
+	builder := NewBuilder()
+	pos := token.Position{Line: 1, Column: 1}
+
+	tests := []struct {
+		name          string
+		node          Node
+		expectedCount int
+	}{
 		{
 			name:          "TextString",
 			node:          builder.TextString(pos, "hello"),
@@ -155,12 +198,18 @@ func TestAcceptVisitor(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			visitor.count = 0
-			tt.node.Accept(visitor)
-			if visitor.count != tt.expectedCount {
-				t.Errorf("%s.Accept() called visitor %d times, want %d", tt.name, visitor.count, tt.expectedCount)
-			}
+			assertNodeAcceptance(t, tt.node, tt.expectedCount)
 		})
+	}
+}
+
+// assertNodeAcceptance is a helper function to test node Accept method
+func assertNodeAcceptance(t *testing.T, node Node, expectedCount int) {
+	visitor := &CountingVisitor{}
+	visitor.count = 0
+	node.Accept(visitor)
+	if visitor.count != expectedCount {
+		t.Errorf("%T.Accept() called visitor %d times, want %d", node, visitor.count, expectedCount)
 	}
 }
 

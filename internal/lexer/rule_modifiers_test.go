@@ -1,7 +1,6 @@
 package lexer_test
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/cawalch/go-yara/internal/lexer"
@@ -9,11 +8,19 @@ import (
 )
 
 func TestRuleModifiers(t *testing.T) {
+	t.Run("RuleWithModifiers", testRuleWithModifiers)
+	t.Run("ModifierStandalone", testStandaloneModifiers)
+}
+
+// testRuleWithModifiers tests various combinations of rule modifiers
+func testRuleWithModifiers(t *testing.T) {
 	tests := []struct {
+		name     string
 		input    string
 		expected []token.Token
 	}{
 		{
+			name:  "global_rule",
 			input: "global rule GlobalRule { condition: true }",
 			expected: []token.Token{
 				{Type: token.GLOBAL, Literal: "global"},
@@ -28,6 +35,7 @@ func TestRuleModifiers(t *testing.T) {
 			},
 		},
 		{
+			name:  "global_private_rule",
 			input: "global private rule GlobalPrivateRule { condition: false }",
 			expected: []token.Token{
 				{Type: token.GLOBAL, Literal: "global"},
@@ -43,6 +51,7 @@ func TestRuleModifiers(t *testing.T) {
 			},
 		},
 		{
+			name:  "private_rule",
 			input: "private rule PrivateRule { condition: true }",
 			expected: []token.Token{
 				{Type: token.PRIVATE, Literal: "private"},
@@ -57,6 +66,7 @@ func TestRuleModifiers(t *testing.T) {
 			},
 		},
 		{
+			name:  "normal_rule",
 			input: "rule NormalRule { condition: true }",
 			expected: []token.Token{
 				{Type: token.RULE, Literal: "rule"},
@@ -69,7 +79,24 @@ func TestRuleModifiers(t *testing.T) {
 				{Type: token.EOF, Literal: ""},
 			},
 		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertRuleModifierTokenSequence(t, tt.input, tt.expected)
+		})
+	}
+}
+
+// testStandaloneModifiers tests standalone modifier keywords
+func testStandaloneModifiers(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected []token.Token
+	}{
 		{
+			name:  "standalone_global",
 			input: "global",
 			expected: []token.Token{
 				{Type: token.GLOBAL, Literal: "global"},
@@ -77,26 +104,51 @@ func TestRuleModifiers(t *testing.T) {
 			},
 		},
 		{
+			name:  "uppercase_global_as_identifier",
 			input: "GLOBAL",
 			expected: []token.Token{
 				{Type: token.IDENTIFIER, Literal: "GLOBAL"},
 				{Type: token.EOF, Literal: ""},
 			},
 		},
+		{
+			name:  "standalone_private",
+			input: "private",
+			expected: []token.Token{
+				{Type: token.PRIVATE, Literal: "private"},
+				{Type: token.EOF, Literal: ""},
+			},
+		},
+		{
+			name:  "uppercase_private_as_identifier",
+			input: "PRIVATE",
+			expected: []token.Token{
+				{Type: token.IDENTIFIER, Literal: "PRIVATE"},
+				{Type: token.EOF, Literal: ""},
+			},
+		},
 	}
 
-	for i, tt := range tests {
-		t.Run(fmt.Sprintf("test_%d", i), func(t *testing.T) {
-			l := lexer.New(tt.input)
-			for i, expectedToken := range tt.expected {
-				tok := l.NextToken()
-				if tok.Type != expectedToken.Type {
-					t.Fatalf("tests[%d] - token type wrong. expected=%q, got=%q", i, expectedToken.Type, tok.Type)
-				}
-				if tok.Literal != expectedToken.Literal {
-					t.Fatalf("tests[%d] - literal wrong. expected=%q, got=%q", i, expectedToken.Literal, tok.Literal)
-				}
-			}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertRuleModifierTokenSequence(t, tt.input, tt.expected)
 		})
+	}
+}
+
+// assertRuleModifierTokenSequence validates that the lexer produces the expected token sequence
+func assertRuleModifierTokenSequence(t *testing.T, input string, expected []token.Token) {
+	l := lexer.New(input)
+
+	for i, expectedToken := range expected {
+		tok := l.NextToken()
+		if tok.Type != expectedToken.Type {
+			t.Errorf("token %d - type wrong. expected=%q, got=%q", i, expectedToken.Type, tok.Type)
+			return
+		}
+		if tok.Literal != expectedToken.Literal {
+			t.Errorf("token %d - literal wrong. expected=%q, got=%q", i, expectedToken.Literal, tok.Literal)
+			return
+		}
 	}
 }

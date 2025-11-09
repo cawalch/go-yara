@@ -1,7 +1,6 @@
 package lexer_test
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/cawalch/go-yara/internal/lexer"
@@ -9,11 +8,19 @@ import (
 )
 
 func TestControlFlowKeywords(t *testing.T) {
+	t.Run("ForLoopPatterns", testForLoopPatterns)
+	t.Run("LogicalOperations", testLogicalOperationPatterns)
+}
+
+// testForLoopPatterns tests various for-loop control flow patterns
+func testForLoopPatterns(t *testing.T) {
 	tests := []struct {
+		name     string
 		input    string
 		expected []token.Token
 	}{
 		{
+			name:  "for_all_of_them",
 			input: "for all of them : ( $ at pe.entry_point )",
 			expected: []token.Token{
 				{Type: token.FOR, Literal: "for"},
@@ -32,6 +39,7 @@ func TestControlFlowKeywords(t *testing.T) {
 			},
 		},
 		{
+			name:  "for_all_i_in_range",
 			input: "for all i in (1..#s) : ( uint32(@s[i]) == 0x5A4D )",
 			expected: []token.Token{
 				{Type: token.FOR, Literal: "for"},
@@ -61,7 +69,24 @@ func TestControlFlowKeywords(t *testing.T) {
 				{Type: token.EOF, Literal: ""},
 			},
 		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertControlFlowTokenSequence(t, tt.input, tt.expected)
+		})
+	}
+}
+
+// testLogicalOperationPatterns tests logical flow control operations
+func testLogicalOperationPatterns(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected []token.Token
+	}{
 		{
+			name:  "defined_and_them",
 			input: "defined pe.entry_point and them",
 			expected: []token.Token{
 				{Type: token.DEFINED, Literal: "defined"},
@@ -73,20 +98,41 @@ func TestControlFlowKeywords(t *testing.T) {
 				{Type: token.EOF, Literal: ""},
 			},
 		},
+		{
+			name:  "not_defined_or",
+			input: "not defined external_var or them",
+			expected: []token.Token{
+				{Type: token.NOT, Literal: "not"},
+				{Type: token.DEFINED, Literal: "defined"},
+				{Type: token.IDENTIFIER, Literal: "external_var"},
+				{Type: token.OR, Literal: "or"},
+				{Type: token.THEM, Literal: "them"},
+				{Type: token.EOF, Literal: ""},
+			},
+		},
 	}
 
-	for i, tt := range tests {
-		t.Run(fmt.Sprintf("test_%d", i), func(t *testing.T) {
-			l := lexer.New(tt.input)
-			for i, expectedToken := range tt.expected {
-				tok := l.NextToken()
-				if tok.Type != expectedToken.Type {
-					t.Fatalf("tests[%d] - token type wrong. expected=%q, got=%q", i, expectedToken.Type, tok.Type)
-				}
-				if tok.Literal != expectedToken.Literal {
-					t.Fatalf("tests[%d] - literal wrong. expected=%q, got=%q", i, expectedToken.Literal, tok.Literal)
-				}
-			}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertControlFlowTokenSequence(t, tt.input, tt.expected)
 		})
+	}
+}
+
+
+// assertControlFlowTokenSequence validates that the lexer produces the expected token sequence
+func assertControlFlowTokenSequence(t *testing.T, input string, expected []token.Token) {
+	l := lexer.New(input)
+
+	for i, expectedToken := range expected {
+		tok := l.NextToken()
+		if tok.Type != expectedToken.Type {
+			t.Errorf("token %d - type wrong. expected=%q, got=%q", i, expectedToken.Type, tok.Type)
+			return
+		}
+		if tok.Literal != expectedToken.Literal {
+			t.Errorf("token %d - literal wrong. expected=%q, got=%q", i, expectedToken.Literal, tok.Literal)
+			return
+		}
 	}
 }
