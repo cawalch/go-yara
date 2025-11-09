@@ -146,7 +146,7 @@ func TestHasTagsAfterColon(t *testing.T) {
 	// Edge case tests
 	edgeCaseTests := []colonTestCase{
 		{"tags with whitespace", "strings: $a\n\t$b = { }", 7, 11, false},
-		{"invalid colon position", "strings $a = { }", -1, 8, true},  // Only test that expects true
+		{"invalid colon position", "strings $a = { }", -1, 8, true}, // Only test that expects true
 		{"current position before colon", "strings: $a = { }", 10, 7, false},
 	}
 

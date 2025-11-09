@@ -36,10 +36,10 @@ func TestHexDigitValue(t *testing.T) {
 	digitTests := generateRangeTests("digit", '0', '9', func(b byte) int { return int(b - '0') })
 
 	// Generate valid lowercase hex tests (a-f)
-	lowerHexTests := generateRangeTests("lowercase", 'a', 'f', func(b byte) int { return 10 + int(b - 'a') })
+	lowerHexTests := generateRangeTests("lowercase", 'a', 'f', func(b byte) int { return 10 + int(b-'a') })
 
 	// Generate valid uppercase hex tests (A-F)
-	upperHexTests := generateRangeTests("uppercase", 'A', 'F', func(b byte) int { return 10 + int(b - 'A') })
+	upperHexTests := generateRangeTests("uppercase", 'A', 'F', func(b byte) int { return 10 + int(b-'A') })
 
 	// Specific boundary and special invalid cases
 	invalidTests := []struct {
