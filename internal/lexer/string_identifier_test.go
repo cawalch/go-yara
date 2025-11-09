@@ -123,78 +123,86 @@ func TestStringIdentifier_WithOperators(t *testing.T) {
 }
 
 func TestStringIdentifier_EdgeCases(t *testing.T) {
+	t.Run("MultipleIdentifiers", testMultipleStringIdentifiers)
+	t.Run("IdentifierWithPunctuation", testStringIdentifierWithPunctuation)
+	t.Run("IdentifierInParentheses", testStringIdentifierInParentheses)
+}
+
+// testMultipleStringIdentifiers tests multiple dollar-prefixed identifiers in sequence
+func testMultipleStringIdentifiers(t *testing.T) {
 	helper := lexer.NewTestHelper(t)
+	input := "$a $b $c"
 
-	// Test edge cases
-	tests := []struct {
-		name     string
-		input    string
-		expected []struct {
-			tokenType token.TokenType
-			literal   string
+	expected := []tokenExpectation{
+		{tokenType: token.STRING_IDENTIFIER, literal: "$a"},
+		{tokenType: token.STRING_IDENTIFIER, literal: "$b"},
+		{tokenType: token.STRING_IDENTIFIER, literal: "$c"},
+	}
+
+	assertIdentifierTokenSequence(t, helper, input, expected)
+}
+
+// testStringIdentifierWithPunctuation tests string identifiers followed by punctuation
+func testStringIdentifierWithPunctuation(t *testing.T) {
+	helper := lexer.NewTestHelper(t)
+	input := "$test,"
+
+	expected := []tokenExpectation{
+		{tokenType: token.STRING_IDENTIFIER, literal: "$test"},
+		{tokenType: token.COMMA, literal: ","},
+	}
+
+	assertIdentifierTokenSequence(t, helper, input, expected)
+}
+
+// testStringIdentifierInParentheses tests string identifiers within parentheses
+func testStringIdentifierInParentheses(t *testing.T) {
+	helper := lexer.NewTestHelper(t)
+	input := "($var)"
+
+	expected := []tokenExpectation{
+		{tokenType: token.LPAREN, literal: "("},
+		{tokenType: token.STRING_IDENTIFIER, literal: "$var"},
+		{tokenType: token.RPAREN, literal: ")"},
+	}
+
+	assertIdentifierTokenSequence(t, helper, input, expected)
+}
+
+// tokenExpectation defines an expected token for testing
+type tokenExpectation struct {
+	tokenType token.TokenType
+	literal   string
+}
+
+// assertIdentifierTokenSequence validates that the input produces the expected token sequence for identifiers
+func assertIdentifierTokenSequence(t *testing.T, helper *lexer.TestHelper, input string, expected []tokenExpectation) {
+	t.Helper()
+
+	tokens := helper.CollectTokens(input)
+	filteredTokens := filterEOF(tokens)
+
+	if len(filteredTokens) != len(expected) {
+		t.Fatalf("Expected %d tokens, got %d", len(expected), len(filteredTokens))
+	}
+
+	for i, exp := range expected {
+		if filteredTokens[i].Type != exp.tokenType {
+			t.Errorf("Token %d: expected type %v, got %v", i, exp.tokenType, filteredTokens[i].Type)
 		}
-	}{
-		{
-			name:  "multiple_dollars",
-			input: "$a $b $c",
-			expected: []struct {
-				tokenType token.TokenType
-				literal   string
-			}{
-				{token.STRING_IDENTIFIER, "$a"},
-				{token.STRING_IDENTIFIER, "$b"},
-				{token.STRING_IDENTIFIER, "$c"},
-			},
-		},
-		{
-			name:  "dollar_with_punctuation",
-			input: "$test,",
-			expected: []struct {
-				tokenType token.TokenType
-				literal   string
-			}{
-				{token.STRING_IDENTIFIER, "$test"},
-				{token.COMMA, ","},
-			},
-		},
-		{
-			name:  "dollar_in_parentheses",
-			input: "($var)",
-			expected: []struct {
-				tokenType token.TokenType
-				literal   string
-			}{
-				{token.LPAREN, "("},
-				{token.STRING_IDENTIFIER, "$var"},
-				{token.RPAREN, ")"},
-			},
-		},
+		if filteredTokens[i].Literal != exp.literal {
+			t.Errorf("Token %d: expected literal %q, got %q", i, exp.literal, filteredTokens[i].Literal)
+		}
 	}
+}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tokens := helper.CollectTokens(tt.input)
-
-			// Filter out EOF tokens for easier comparison
-			var filteredTokens []token.Token
-			for _, tok := range tokens {
-				if tok.Type != token.EOF {
-					filteredTokens = append(filteredTokens, tok)
-				}
-			}
-
-			if len(filteredTokens) != len(tt.expected) {
-				t.Fatalf("Expected %d tokens, got %d", len(tt.expected), len(filteredTokens))
-			}
-
-			for i, expected := range tt.expected {
-				if filteredTokens[i].Type != expected.tokenType {
-					t.Errorf("Token %d: expected type %v, got %v", i, expected.tokenType, filteredTokens[i].Type)
-				}
-				if filteredTokens[i].Literal != expected.literal {
-					t.Errorf("Token %d: expected literal %q, got %q", i, expected.literal, filteredTokens[i].Literal)
-				}
-			}
-		})
+// filterEOF removes EOF tokens from the token slice
+func filterEOF(tokens []token.Token) []token.Token {
+	var filtered []token.Token
+	for _, tok := range tokens {
+		if tok.Type != token.EOF {
+			filtered = append(filtered, tok)
+		}
 	}
+	return filtered
 }

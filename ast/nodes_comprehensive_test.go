@@ -114,75 +114,91 @@ func TestAdvancedNodeTypes(t *testing.T) {
 	builder := NewBuilder()
 	pos := token.Position{Line: 5, Column: 10}
 
-	tests := []struct {
+	// Group test cases by logical categories
+	nodeTests := map[string][]struct {
 		name string
 		node Node
 	}{
-		{
-			name: "GlobalVariable",
-			node: builder.GlobalVariable(pos, "global_var", builder.Literal(pos, token.INTEGER_LIT, 42)),
+		"Variables": {
+			{
+				name: "GlobalVariable",
+				node: builder.GlobalVariable(pos, "global_var", builder.Literal(pos, token.INTEGER_LIT, 42)),
+			},
+			{
+				name: "ExternalVariable",
+				node: builder.ExternalVariable(pos, "ext_var", "ext_identifier", "integer"),
+			},
 		},
-		{
-			name: "ExternalVariable",
-			node: builder.ExternalVariable(pos, "ext_var", "ext_identifier", "integer"),
+		"ModuleDeclarations": {
+			{
+				name: "Import",
+				node: builder.Import(pos, "pe"),
+			},
+			{
+				name: "Include",
+				node: builder.Include(pos, "rules.yar"),
+			},
 		},
-		{
-			name: "Import",
-			node: builder.Import(pos, "pe"),
-		},
-		{
-			name: "Include",
-			node: builder.Include(pos, "rules.yar"),
-		},
-		{
-			name: "StringLength",
-			node: builder.StringLength(pos, builder.Identifier(pos, "$s1")),
-		},
-		{
-			name: "ArrayIndex",
-			node: builder.ArrayIndex(pos, builder.Identifier(pos, "array"), builder.Literal(pos, token.INTEGER_LIT, 0)),
-		},
-		{
-			name: "ForLoop",
-			node: builder.ForLoop(pos, "all", "i", builder.Identifier(pos, "range"), builder.Identifier(pos, "condition")),
-		},
-		{
-			name: "OfExpression",
-			node: builder.OfExpression(pos, builder.Literal(pos, token.INTEGER_LIT, 2), builder.Identifier(pos, "them")),
-		},
-		{
-			name: "FunctionCall",
-			node: builder.FunctionCall(pos, "module.function", []Expression{
-				builder.Literal(pos, token.STRING_LIT, "arg1"),
-				builder.Literal(pos, token.INTEGER_LIT, 42),
-			}),
+		"Expressions": {
+			{
+				name: "StringLength",
+				node: builder.StringLength(pos, builder.Identifier(pos, "$s1")),
+			},
+			{
+				name: "ArrayIndex",
+				node: builder.ArrayIndex(pos, builder.Identifier(pos, "array"), builder.Literal(pos, token.INTEGER_LIT, 0)),
+			},
+			{
+				name: "ForLoop",
+				node: builder.ForLoop(pos, "all", "i", builder.Identifier(pos, "range"), builder.Identifier(pos, "condition")),
+			},
+			{
+				name: "OfExpression",
+				node: builder.OfExpression(pos, builder.Literal(pos, token.INTEGER_LIT, 2), builder.Identifier(pos, "them")),
+			},
+			{
+				name: "FunctionCall",
+				node: builder.FunctionCall(pos, "module.function", []Expression{
+					builder.Literal(pos, token.STRING_LIT, "arg1"),
+					builder.Literal(pos, token.INTEGER_LIT, 42),
+				}),
+			},
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Test Position method
-			nodePos := tt.node.Position()
-			if nodePos.Line != pos.Line || nodePos.Column != pos.Column {
-				t.Errorf("%s.Position() = %v, want %v", tt.name, nodePos, pos)
-			}
-
-			// Test Accept method - should not panic
-			visitor := &ComprehensiveTestVisitor{}
-			result := tt.node.Accept(visitor)
-			if result == nil {
-				t.Errorf("%s.Accept() returned nil", tt.name)
-			}
-
-			// Test node marker - should not panic
-			switch n := tt.node.(type) {
-			case *GlobalVariable, *ExternalVariable, *Import, *Include:
-				// These are just node markers
-			case Expression:
-				// These should also implement expression marker
-				n.expression()
+	for category, tests := range nodeTests {
+		t.Run(category, func(t *testing.T) {
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					validateAdvancedNode(t, tt.name, tt.node, pos)
+				})
 			}
 		})
+	}
+}
+
+// validateAdvancedNode is a helper that performs common validation for advanced node types
+func validateAdvancedNode(t *testing.T, name string, node Node, expectedPos token.Position) {
+	// Test Position method
+	nodePos := node.Position()
+	if nodePos.Line != expectedPos.Line || nodePos.Column != expectedPos.Column {
+		t.Errorf("%s.Position() = %v, want %v", name, nodePos, expectedPos)
+	}
+
+	// Test Accept method - should not panic
+	visitor := &ComprehensiveTestVisitor{}
+	result := node.Accept(visitor)
+	if result == nil {
+		t.Errorf("%s.Accept() returned nil", name)
+	}
+
+	// Test node marker - should not panic
+	switch n := node.(type) {
+	case *GlobalVariable, *ExternalVariable, *Import, *Include:
+		// These are just node markers
+	case Expression:
+		// These should also implement expression marker
+		n.expression()
 	}
 }
 
@@ -399,15 +415,73 @@ func TestAdvancedNodesWithEdgeCases(t *testing.T) {
 
 // TestProgramWithAdvancedNodes tests creating complete programs with all node types
 func TestProgramWithAdvancedNodes(t *testing.T) {
+	t.Run("ProgramStructure", testProgramStructure)
+	t.Run("ProgramVisitor", testProgramVisitor)
+}
+
+// testProgramStructure tests the basic structure of a program with advanced nodes
+func testProgramStructure(t *testing.T) {
+	program := createComprehensiveProgram(t)
+
+	programStructureTests := []struct {
+		name     string
+		actual   int
+		expected int
+	}{
+		{"rules", len(program.Rules), 1},
+		{"global_variables", len(program.GlobalVariables), 1},
+		{"external_variables", len(program.ExternalVariables), 1},
+		{"imports", len(program.Imports), 1},
+		{"includes", len(program.Includes), 1},
+	}
+
+	for _, tt := range programStructureTests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.actual != tt.expected {
+				t.Errorf("Expected %d %s, got %d", tt.expected, tt.name, tt.actual)
+			}
+		})
+	}
+}
+
+// testProgramVisitor tests that the program visitor pattern works correctly
+func testProgramVisitor(t *testing.T) {
+	program := createComprehensiveProgram(t)
+
+	visitor := &ComprehensiveTestVisitor{}
+	result := program.Accept(visitor)
+
+	if result == nil {
+		t.Error("Program.Accept() returned nil")
+	}
+}
+
+// createComprehensiveProgram is a helper that creates a program with all advanced node types
+func createComprehensiveProgram(t *testing.T) *Program {
 	builder := NewBuilder()
 	pos := token.Position{Line: 1, Column: 1}
 
-	// Create a comprehensive program with all node types
+	// Create program components
 	globalVar := builder.GlobalVariable(pos, "GLOBAL_FLAG", builder.Literal(pos, token.TRUE, true))
 	extVar := builder.ExternalVariable(pos, "filename", "", "string")
 	import_ := builder.Import(pos, "pe")
 	include := builder.Include(pos, "common.yar")
 
+	// Create comprehensive rule
+	rule := createComprehensiveRule(builder, pos)
+
+	// Build program
+	program := builder.Program([]*Rule{rule})
+	program.GlobalVariables = []*GlobalVariable{globalVar}
+	program.ExternalVariables = []*ExternalVariable{extVar}
+	program.Imports = []*Import{import_}
+	program.Includes = []*Include{include}
+
+	return program
+}
+
+// createComprehensiveRule creates a rule with all advanced features
+func createComprehensiveRule(builder *Builder, pos token.Position) *Rule {
 	rule := builder.Rule(pos, "ComprehensiveTest")
 	rule.Modifiers = []Modifier{ModifierPrivate}
 	rule.Tags = []string{"test", "comprehensive"}
@@ -422,7 +496,7 @@ func TestProgramWithAdvancedNodes(t *testing.T) {
 	rule.Strings = []*String{testString}
 
 	// Complex condition with all advanced expression types
-	conditionExpr := builder.OfExpression(
+	rule.Condition = builder.OfExpression(
 		pos,
 		builder.Literal(pos, token.INTEGER_LIT, 1),
 		builder.ForLoop(
@@ -437,9 +511,7 @@ func TestProgramWithAdvancedNodes(t *testing.T) {
 					builder.FunctionCall(
 						pos,
 						"pe.sections",
-						[]Expression{
-							builder.Identifier(pos, "filename"),
-						},
+						[]Expression{builder.Identifier(pos, "filename")},
 					),
 					builder.Identifier(pos, "i"),
 				),
@@ -448,37 +520,8 @@ func TestProgramWithAdvancedNodes(t *testing.T) {
 			),
 		),
 	)
-	rule.Condition = conditionExpr
 
-	program := builder.Program([]*Rule{rule})
-	program.GlobalVariables = []*GlobalVariable{globalVar}
-	program.ExternalVariables = []*ExternalVariable{extVar}
-	program.Imports = []*Import{import_}
-	program.Includes = []*Include{include}
-
-	// Test the program structure
-	if len(program.Rules) != 1 {
-		t.Errorf("Expected 1 rule, got %d", len(program.Rules))
-	}
-	if len(program.GlobalVariables) != 1 {
-		t.Errorf("Expected 1 global variable, got %d", len(program.GlobalVariables))
-	}
-	if len(program.ExternalVariables) != 1 {
-		t.Errorf("Expected 1 external variable, got %d", len(program.ExternalVariables))
-	}
-	if len(program.Imports) != 1 {
-		t.Errorf("Expected 1 import, got %d", len(program.Imports))
-	}
-	if len(program.Includes) != 1 {
-		t.Errorf("Expected 1 include, got %d", len(program.Includes))
-	}
-
-	// Test program visitor
-	visitor := &ComprehensiveTestVisitor{}
-	result := program.Accept(visitor)
-	if result == nil {
-		t.Error("Program.Accept() returned nil")
-	}
+	return rule
 }
 
 // ComprehensiveTestVisitor is a visitor that implements all visitor methods for testing

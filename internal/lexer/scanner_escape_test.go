@@ -7,42 +7,33 @@ import (
 
 // Test hexDigitValue function
 func TestHexDigitValue(t *testing.T) {
-	// Helper function to generate test cases for a range of characters
-	generateRangeTests := func(namePrefix string, start, end byte, expectedFunc func(byte) int) []struct {
-		name     string
-		input    byte
-		expected int
-	} {
-		var tests []struct {
-			name     string
-			input    byte
-			expected int
-		}
-		for i := start; i <= end; i++ {
-			tests = append(tests, struct {
-				name     string
-				input    byte
-				expected int
-			}{
-				name:     fmt.Sprintf("%s %c", namePrefix, i),
-				input:    i,
-				expected: expectedFunc(i),
-			})
-		}
-		return tests
-	}
+	t.Run("ValidDigits", testValidDigits)
+	t.Run("ValidLowercaseHex", testValidLowercaseHex)
+	t.Run("ValidUppercaseHex", testValidUppercaseHex)
+	t.Run("InvalidCharacters", testInvalidCharacters)
+}
 
-	// Generate valid digit tests (0-9)
-	digitTests := generateRangeTests("digit", '0', '9', func(b byte) int { return int(b - '0') })
+// testValidDigits tests hexadecimal digit values 0-9
+func testValidDigits(t *testing.T) {
+	tests := generateHexRangeTests("digit", '0', '9', func(b byte) int { return int(b - '0') })
+	runHexDigitTests(t, tests)
+}
 
-	// Generate valid lowercase hex tests (a-f)
-	lowerHexTests := generateRangeTests("lowercase", 'a', 'f', func(b byte) int { return 10 + int(b-'a') })
+// testValidLowercaseHex tests lowercase hexadecimal digits a-f
+func testValidLowercaseHex(t *testing.T) {
+	tests := generateHexRangeTests("lowercase", 'a', 'f', func(b byte) int { return 10 + int(b-'a') })
+	runHexDigitTests(t, tests)
+}
 
-	// Generate valid uppercase hex tests (A-F)
-	upperHexTests := generateRangeTests("uppercase", 'A', 'F', func(b byte) int { return 10 + int(b-'A') })
+// testValidUppercaseHex tests uppercase hexadecimal digits A-F
+func testValidUppercaseHex(t *testing.T) {
+	tests := generateHexRangeTests("uppercase", 'A', 'F', func(b byte) int { return 10 + int(b-'A') })
+	runHexDigitTests(t, tests)
+}
 
-	// Specific boundary and special invalid cases
-	invalidTests := []struct {
+// testInvalidCharacters tests characters that are not valid hexadecimal digits
+func testInvalidCharacters(t *testing.T) {
+	tests := []struct {
 		name     string
 		input    byte
 		expected int
@@ -78,10 +69,41 @@ func TestHexDigitValue(t *testing.T) {
 		{"null", 0, 0},
 	}
 
-	// Combine all test cases
-	allTests := append(append(digitTests, lowerHexTests...), append(upperHexTests, invalidTests...)...)
+	runHexDigitTests(t, tests)
+}
 
-	for _, tt := range allTests {
+// generateHexRangeTests creates test cases for a range of characters
+func generateHexRangeTests(namePrefix string, start, end byte, expectedFunc func(byte) int) []struct {
+	name     string
+	input    byte
+	expected int
+} {
+	var tests []struct {
+		name     string
+		input    byte
+		expected int
+	}
+	for i := start; i <= end; i++ {
+		tests = append(tests, struct {
+			name     string
+			input    byte
+			expected int
+		}{
+			name:     fmt.Sprintf("%s %c", namePrefix, i),
+			input:    i,
+			expected: expectedFunc(i),
+		})
+	}
+	return tests
+}
+
+// runHexDigitTests executes hex digit value test cases
+func runHexDigitTests(t *testing.T, tests []struct {
+	name     string
+	input    byte
+	expected int
+}) {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := hexDigitValue(tt.input)
 			if result != tt.expected {
