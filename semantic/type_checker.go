@@ -102,26 +102,24 @@ func (tc *TypeChecker) checkBinaryOp(binaryOp *ast.BinaryOp) *TypeInfo {
 		return &TypeInfo{DataType: TypeUnknown}
 	}
 
-	return handler.Handle(binaryOp, leftType, rightType)
+	return handler(binaryOp, leftType, rightType)
 }
 
 // getBinaryOpHandler returns the appropriate handler for a binary operator
 func (tc *TypeChecker) getBinaryOpHandler(op token.TokenType) BinaryOpHandler {
-	base := BaseOpHandler{tc: tc}
-
-	if handler := tc.getArithmeticHandler(op, base); handler != nil {
+	if handler := tc.getArithmeticHandler(op); handler != nil {
 		return handler
 	}
 
-	if handler := tc.getComparisonHandler(op, base); handler != nil {
+	if handler := tc.getComparisonHandler(op); handler != nil {
 		return handler
 	}
 
-	if handler := tc.getStringHandler(op, base); handler != nil {
+	if handler := tc.getStringHandler(op); handler != nil {
 		return handler
 	}
 
-	if handler := tc.getSpecialHandler(op, base); handler != nil {
+	if handler := tc.getSpecialHandler(op); handler != nil {
 		return handler
 	}
 
@@ -129,31 +127,31 @@ func (tc *TypeChecker) getBinaryOpHandler(op token.TokenType) BinaryOpHandler {
 }
 
 // getArithmeticHandler returns handler for arithmetic and bitwise operations
-func (tc *TypeChecker) getArithmeticHandler(op token.TokenType, base BaseOpHandler) BinaryOpHandler {
+func (tc *TypeChecker) getArithmeticHandler(op token.TokenType) BinaryOpHandler {
 	switch op {
 	case token.PLUS, token.MINUS, token.MULTIPLY, token.DIVIDE, token.MODULO, token.INT_DIVIDE:
-		return &ArithmeticOpHandler{BaseOpHandler: base}
+		return tc.createArithmeticHandler()
 	case token.BITWISE_AND, token.BITWISE_OR, token.BITWISE_XOR, token.LEFT_SHIFT, token.RIGHT_SHIFT:
-		return &BitwiseOpHandler{BaseOpHandler: base}
+		return tc.createBitwiseHandler()
 	case token.AND, token.OR:
-		return &LogicalOpHandler{BaseOpHandler: base}
+		return tc.createLogicalHandler()
 	default:
 		return nil
 	}
 }
 
 // getComparisonHandler returns handler for comparison operations
-func (tc *TypeChecker) getComparisonHandler(op token.TokenType, base BaseOpHandler) BinaryOpHandler {
+func (tc *TypeChecker) getComparisonHandler(op token.TokenType) BinaryOpHandler {
 	switch op {
 	case token.EQ, token.NEQ, token.LT, token.LE, token.GT, token.GE:
-		return &ComparisonOpHandler{BaseOpHandler: base}
+		return tc.createComparisonHandler()
 	default:
 		return nil
 	}
 }
 
 // getStringHandler returns handler for string operations
-func (tc *TypeChecker) getStringHandler(op token.TokenType, base BaseOpHandler) BinaryOpHandler {
+func (tc *TypeChecker) getStringHandler(op token.TokenType) BinaryOpHandler {
 	stringOps := map[token.TokenType]bool{
 		token.CONTAINS:    true,
 		token.ICONTAINS:   true,
@@ -166,137 +164,101 @@ func (tc *TypeChecker) getStringHandler(op token.TokenType, base BaseOpHandler) 
 	}
 
 	if stringOps[op] {
-		return &StringOpHandler{BaseOpHandler: base}
+		return tc.createStringHandler()
 	}
 	return nil
 }
 
 // getSpecialHandler returns handler for special operations
-func (tc *TypeChecker) getSpecialHandler(op token.TokenType, base BaseOpHandler) BinaryOpHandler {
+func (tc *TypeChecker) getSpecialHandler(op token.TokenType) BinaryOpHandler {
 	switch op {
 	case token.OF:
-		return &QuantifierOpHandler{BaseOpHandler: base}
+		return tc.createQuantifierHandler()
 	case token.AT:
-		return &AtOpHandler{BaseOpHandler: base}
+		return tc.createAtHandler()
 	case token.IN:
-		return &InOpHandler{BaseOpHandler: base}
+		return tc.createInHandler()
 	case token.DOT:
-		return &DotOpHandler{BaseOpHandler: base}
+		return tc.createDotHandler()
 	case token.COLON:
-		return &ColonOpHandler{BaseOpHandler: base}
+		return tc.createColonHandler()
 	default:
 		return nil
 	}
 }
 
-// BinaryOpHandler defines the interface for handling binary operations
-type BinaryOpHandler interface {
-	Handle(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo
+// BinaryOpHandler defines a function type for handling binary operations
+// This replaces the interface with a function type, eliminating the anti-pattern
+type BinaryOpHandler func(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo
+
+// createArithmeticHandler creates a function handler for arithmetic operations
+func (tc *TypeChecker) createArithmeticHandler() BinaryOpHandler {
+	return func(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
+		return tc.checkArithmeticOp(binaryOp, leftType, rightType)
+	}
 }
 
-// BaseOpHandler provides common functionality for operation handlers
-type BaseOpHandler struct {
-	tc *TypeChecker
+// createBitwiseHandler creates a function handler for bitwise operations
+func (tc *TypeChecker) createBitwiseHandler() BinaryOpHandler {
+	return func(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
+		return tc.checkBitwiseOp(binaryOp, leftType, rightType)
+	}
 }
 
-// ArithmeticOpHandler handles arithmetic operations
-type ArithmeticOpHandler struct {
-	BaseOpHandler
+// createComparisonHandler creates a function handler for comparison operations
+func (tc *TypeChecker) createComparisonHandler() BinaryOpHandler {
+	return func(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
+		return tc.checkComparisonOp(binaryOp, leftType, rightType)
+	}
 }
 
-// Handle processes arithmetic operations and returns the resulting type information.
-func (h *ArithmeticOpHandler) Handle(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
-	return h.tc.checkArithmeticOp(binaryOp, leftType, rightType)
+// createLogicalHandler creates a function handler for logical operations
+func (tc *TypeChecker) createLogicalHandler() BinaryOpHandler {
+	return func(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
+		return tc.checkLogicalOp(binaryOp, leftType, rightType)
+	}
 }
 
-// BitwiseOpHandler handles bitwise operations
-type BitwiseOpHandler struct {
-	BaseOpHandler
+// createStringHandler creates a function handler for string operations
+func (tc *TypeChecker) createStringHandler() BinaryOpHandler {
+	return func(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
+		return tc.checkStringOp(binaryOp, leftType, rightType)
+	}
 }
 
-// Handle processes bitwise operations and returns the resulting type information.
-func (h *BitwiseOpHandler) Handle(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
-	return h.tc.checkBitwiseOp(binaryOp, leftType, rightType)
+// createQuantifierHandler creates a function handler for quantifier operations
+func (tc *TypeChecker) createQuantifierHandler() BinaryOpHandler {
+	return func(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
+		return tc.checkQuantifierOp(leftType, rightType, binaryOp.Position())
+	}
 }
 
-// ComparisonOpHandler handles comparison operations
-type ComparisonOpHandler struct {
-	BaseOpHandler
+// createAtHandler creates a function handler for 'at' operations
+func (tc *TypeChecker) createAtHandler() BinaryOpHandler {
+	return func(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
+		return tc.checkAtOperator(leftType, rightType, binaryOp.Position())
+	}
 }
 
-// Handle processes comparison operations and returns the resulting type information.
-func (h *ComparisonOpHandler) Handle(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
-	return h.tc.checkComparisonOp(binaryOp, leftType, rightType)
+// createInHandler creates a function handler for 'in' operations
+func (tc *TypeChecker) createInHandler() BinaryOpHandler {
+	return func(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
+		return tc.checkInOperator(leftType, rightType, binaryOp.Position())
+	}
 }
 
-// LogicalOpHandler handles logical operations
-type LogicalOpHandler struct {
-	BaseOpHandler
+// createDotHandler creates a function handler for '.' operations
+func (tc *TypeChecker) createDotHandler() BinaryOpHandler {
+	return func(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
+		return tc.checkDotOperator(leftType, rightType, binaryOp.Position())
+	}
 }
 
-// Handle processes logical operations and returns the resulting type information.
-func (h *LogicalOpHandler) Handle(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
-	return h.tc.checkLogicalOp(binaryOp, leftType, rightType)
-}
-
-// StringOpHandler handles string operations
-type StringOpHandler struct {
-	BaseOpHandler
-}
-
-// Handle processes string operations and returns the resulting type information.
-func (h *StringOpHandler) Handle(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
-	return h.tc.checkStringOp(binaryOp, leftType, rightType)
-}
-
-// QuantifierOpHandler handles quantifier operations
-type QuantifierOpHandler struct {
-	BaseOpHandler
-}
-
-// Handle processes quantifier operations and returns the resulting type information.
-func (h *QuantifierOpHandler) Handle(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
-	return h.tc.checkQuantifierOp(leftType, rightType, binaryOp.Position())
-}
-
-// AtOpHandler handles the 'at' operator
-type AtOpHandler struct {
-	BaseOpHandler
-}
-
-// Handle processes 'at' operations and returns the resulting type information.
-func (h *AtOpHandler) Handle(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
-	return h.tc.checkAtOperator(leftType, rightType, binaryOp.Position())
-}
-
-// InOpHandler handles the 'in' operator
-type InOpHandler struct {
-	BaseOpHandler
-}
-
-// Handle processes 'in' operations and returns the resulting type information.
-func (h *InOpHandler) Handle(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
-	return h.tc.checkInOperator(leftType, rightType, binaryOp.Position())
-}
-
-// DotOpHandler handles the '.' operator
-type DotOpHandler struct {
-	BaseOpHandler
-}
-
-// Handle processes '.' operations and returns the resulting type information.
-func (h *DotOpHandler) Handle(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
-	return h.tc.checkDotOperator(leftType, rightType, binaryOp.Position())
-}
-
-// ColonOpHandler handles the ':' operator
-type ColonOpHandler struct {
-	BaseOpHandler
-}
-
-// Handle processes ':' operations and returns the resulting type information.
-func (h *ColonOpHandler) Handle(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
-	return h.tc.checkColonOperator()
+// createColonHandler creates a function handler for ':' operations
+func (tc *TypeChecker) createColonHandler() BinaryOpHandler {
+	return func(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
+		return tc.checkColonOperator()
+	}
 }
 
 // checkArithmeticOp handles arithmetic operations (+, -, *, /, %, //)
