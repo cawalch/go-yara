@@ -529,6 +529,9 @@ type ComprehensiveTestVisitor struct {
 	visitedNodes []string
 }
 
+// Ensure ComprehensiveTestVisitor implements the full Visitor interface
+var _ Visitor = (*ComprehensiveTestVisitor)(nil)
+
 func (v *ComprehensiveTestVisitor) VisitProgram(_ *Program) any {
 	v.visitedNodes = append(v.visitedNodes, "Program")
 	return "visited_program"

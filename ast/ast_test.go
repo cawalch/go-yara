@@ -35,6 +35,9 @@ type TestVisitor struct {
 	visited bool
 }
 
+// Ensure TestVisitor implements the full Visitor interface
+var _ Visitor = (*TestVisitor)(nil)
+
 func (v *TestVisitor) VisitRule(_ *Rule) any {
 	v.visited = true
 	return nil

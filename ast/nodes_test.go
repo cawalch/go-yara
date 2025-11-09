@@ -362,6 +362,9 @@ type CountingVisitor struct {
 	count int
 }
 
+// Ensure CountingVisitor implements the full Visitor interface
+var _ Visitor = (*CountingVisitor)(nil)
+
 func (v *CountingVisitor) VisitProgram(_ *Program) any {
 	v.count++
 	return nil
