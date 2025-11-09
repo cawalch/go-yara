@@ -1,19 +1,37 @@
 package lexer_test
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/cawalch/go-yara/internal/lexer"
 	"github.com/cawalch/go-yara/token"
 )
 
+// tokenTestCase represents a single tokenization test case
+type tokenTestCase struct {
+	name     string
+	input    string
+	expected []token.Token
+}
+
+// assertTokenSequenceForStringOps validates that the lexer produces the expected token sequence for string operations
+func assertTokenSequenceForStringOps(t *testing.T, input string, expected []token.Token) {
+	l := lexer.New(input)
+	for i, expectedToken := range expected {
+		tok := l.NextToken()
+		if tok.Type != expectedToken.Type {
+			t.Fatalf("token[%d] type wrong. expected=%q, got=%q", i, expectedToken.Type, tok.Type)
+		}
+		if tok.Literal != expectedToken.Literal {
+			t.Fatalf("token[%d] literal wrong. expected=%q, got=%q", i, expectedToken.Literal, tok.Literal)
+		}
+	}
+}
+
 func TestStringOperations(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected []token.Token
-	}{
+	tests := []tokenTestCase{
 		{
+			name:  "pe sections name contains",
 			input: "pe.sections[0].name contains \".text\"",
 			expected: []token.Token{
 				{Type: token.IDENTIFIER, Literal: "pe"},
@@ -30,6 +48,7 @@ func TestStringOperations(t *testing.T) {
 			},
 		},
 		{
+			name:  "filename contains malware",
 			input: "filename contains \"malware\"",
 			expected: []token.Token{
 				{Type: token.IDENTIFIER, Literal: "filename"},
@@ -39,6 +58,7 @@ func TestStringOperations(t *testing.T) {
 			},
 		},
 		{
+			name:  "pe version info icontains",
 			input: "pe.version_info[\"CompanyName\"] icontains \"microsoft\"",
 			expected: []token.Token{
 				{Type: token.IDENTIFIER, Literal: "pe"},
@@ -53,6 +73,7 @@ func TestStringOperations(t *testing.T) {
 			},
 		},
 		{
+			name:  "filename startswith",
 			input: "filename startswith \"MZ\"",
 			expected: []token.Token{
 				{Type: token.IDENTIFIER, Literal: "filename"},
@@ -62,6 +83,7 @@ func TestStringOperations(t *testing.T) {
 			},
 		},
 		{
+			name:  "filename istartswith",
 			input: "filename istartswith \"mz\"",
 			expected: []token.Token{
 				{Type: token.IDENTIFIER, Literal: "filename"},
@@ -71,6 +93,7 @@ func TestStringOperations(t *testing.T) {
 			},
 		},
 		{
+			name:  "filename endswith",
 			input: "filename endswith \".exe\"",
 			expected: []token.Token{
 				{Type: token.IDENTIFIER, Literal: "filename"},
@@ -80,6 +103,7 @@ func TestStringOperations(t *testing.T) {
 			},
 		},
 		{
+			name:  "filename iendswith",
 			input: "filename iendswith \".EXE\"",
 			expected: []token.Token{
 				{Type: token.IDENTIFIER, Literal: "filename"},
@@ -89,6 +113,7 @@ func TestStringOperations(t *testing.T) {
 			},
 		},
 		{
+			name:  "pe version info iequals",
 			input: "pe.version_info[\"CompanyName\"] iequals \"Microsoft Corporation\"",
 			expected: []token.Token{
 				{Type: token.IDENTIFIER, Literal: "pe"},
@@ -103,6 +128,7 @@ func TestStringOperations(t *testing.T) {
 			},
 		},
 		{
+			name:  "hash md5 matches regex",
 			input: "hash.md5(0, filesize) matches /^[a-f0-9]{32}$/",
 			expected: []token.Token{
 				{Type: token.HASH, Literal: "hash"},
@@ -120,18 +146,9 @@ func TestStringOperations(t *testing.T) {
 		},
 	}
 
-	for i, tt := range tests {
-		t.Run(fmt.Sprintf("test_%d", i), func(t *testing.T) {
-			l := lexer.New(tt.input)
-			for i, expectedToken := range tt.expected {
-				tok := l.NextToken()
-				if tok.Type != expectedToken.Type {
-					t.Fatalf("tests[%d] - token type wrong. expected=%q, got=%q", i, expectedToken.Type, tok.Type)
-				}
-				if tok.Literal != expectedToken.Literal {
-					t.Fatalf("tests[%d] - literal wrong. expected=%q, got=%q", i, expectedToken.Literal, tok.Literal)
-				}
-			}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertTokenSequenceForStringOps(t, tt.input, tt.expected)
 		})
 	}
 }

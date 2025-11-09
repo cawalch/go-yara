@@ -337,7 +337,13 @@ func TestSymbolTable(t *testing.T) {
 
 // TestTypeSystem tests the type system functionality
 func TestTypeSystem(t *testing.T) {
-	// Test integer type properties
+	t.Run("IntegerTypeProperties", testIntegerTypeProperties)
+	t.Run("TypeInferenceFromLiterals", testTypeInferenceFromLiterals)
+	t.Run("TypeCompatibility", testTypeCompatibility)
+}
+
+// testIntegerTypeProperties tests integer type property functionality
+func testIntegerTypeProperties(t *testing.T) {
 	intTypeTests := []struct {
 		name       string
 		intType    *IntegerType
@@ -374,14 +380,19 @@ func TestTypeSystem(t *testing.T) {
 			}
 		})
 	}
+}
 
-	// Test type inference from literals
-	literalTests := []struct {
-		name         string
-		tokenType    token.TokenType
-		value        any
-		expectedType DataType
-	}{
+// typeInferenceTestCase represents a test case for type inference
+type typeInferenceTestCase struct {
+	name         string
+	tokenType    token.TokenType
+	value        any
+	expectedType DataType
+}
+
+// testTypeInferenceFromLiterals tests type inference from literals
+func testTypeInferenceFromLiterals(t *testing.T) {
+	literalTests := []typeInferenceTestCase{
 		{
 			name:         "boolean_literal",
 			tokenType:    token.TRUE,
@@ -417,15 +428,20 @@ func TestTypeSystem(t *testing.T) {
 			}
 		})
 	}
+}
 
-	// Test type compatibility and operations
-	compatibilityTests := []struct {
-		name          string
-		left          *TypeInfo
-		right         *TypeInfo
-		canCompare    bool
-		canArithmetic bool
-	}{
+// typeCompatibilityTestCase represents a test case for type compatibility
+type typeCompatibilityTestCase struct {
+	name          string
+	left          *TypeInfo
+	right         *TypeInfo
+	canCompare    bool
+	canArithmetic bool
+}
+
+// testTypeCompatibility tests type compatibility and operations
+func testTypeCompatibility(t *testing.T) {
+	compatibilityTests := []typeCompatibilityTestCase{
 		{
 			name:          "int32_vs_uint64",
 			left:          &TypeInfo{DataType: TypeInteger, IntegerType: Int32Type},

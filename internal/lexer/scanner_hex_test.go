@@ -4,15 +4,38 @@ import (
 	"testing"
 )
 
-// Test skipIdentifierInRange function
-func TestSkipIdentifierInRange(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		start    int
+// identifierTestCase represents a test case for identifier operations
+type identifierTestCase struct {
+	name     string
+	input    string
+	start    int
 		end      int
-		expected int
-	}{
+	expected int
+}
+
+// createTestLexer creates a minimal lexer instance for testing
+func createTestLexer(input string) *Lexer {
+	return &Lexer{
+		reader: NewReaderFast(input),
+	}
+}
+
+// runIdentifierTests runs multiple identifier test cases with the given function
+func runIdentifierTests(t *testing.T, tests []identifierTestCase, testFunc func(*Lexer, string, int, int) int) {
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lexer := createTestLexer(tt.input)
+			result := testFunc(lexer, tt.input, tt.start, tt.end)
+			if result != tt.expected {
+				t.Errorf("test failed for input %q, start=%d, end=%d: got %d, want %d",
+					tt.input, tt.start, tt.end, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestSkipIdentifierInRange(t *testing.T) {
+	tests := []identifierTestCase{
 		{
 			name:     "simple identifier",
 			input:    "hello world",
@@ -106,31 +129,37 @@ func TestSkipIdentifierInRange(t *testing.T) {
 		},
 	}
 
+	runIdentifierTests(t, tests, func(l *Lexer, input string, start, end int) int {
+		return l.skipIdentifierInRange(input, start, end)
+	})
+}
+
+// colonTestCase represents a test case for colon-related operations
+type colonTestCase struct {
+	name       string
+	input      string
+	colonPos   int
+	currentPos int
+	expected   bool
+}
+
+// runColonTests runs multiple colon test cases with the given function
+func runColonTests(t *testing.T, tests []colonTestCase, testFunc func(*Lexer, string, int, int) bool) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create a minimal lexer instance for testing
-			lexer := &Lexer{
-				reader: NewReaderFast(tt.input),
-			}
-
-			result := lexer.skipIdentifierInRange(tt.input, tt.start, tt.end)
+			lexer := createTestLexer(tt.input)
+			result := testFunc(lexer, tt.input, tt.colonPos, tt.currentPos)
 			if result != tt.expected {
-				t.Errorf("skipIdentifierInRange(%q, %d, %d) = %d, want %d",
-					tt.input, tt.start, tt.end, result, tt.expected)
+				t.Errorf("test failed for input %q, colonPos=%d, currentPos=%d: got %v, want %v",
+					tt.input, tt.colonPos, tt.currentPos, result, tt.expected)
 			}
 		})
 	}
 }
 
-// Test hasTagsAfterColon function
 func TestHasTagsAfterColon(t *testing.T) {
-	tests := []struct {
-		name       string
-		input      string
-		colonPos   int
-		currentPos int
-		expected   bool
-	}{
+	// Basic functionality tests
+	basicTests := []colonTestCase{
 		{
 			name:       "simple tag after colon",
 			input:      "strings: $a = { }",
@@ -166,6 +195,10 @@ func TestHasTagsAfterColon(t *testing.T) {
 			currentPos: 9, // position of '='
 			expected:   false,
 		},
+	}
+
+	// Edge case tests
+	edgeCaseTests := []colonTestCase{
 		{
 			name:       "tags with whitespace",
 			input:      "strings: $a\n\t$b = { }",
@@ -187,7 +220,10 @@ func TestHasTagsAfterColon(t *testing.T) {
 			currentPos: 7,  // position of ':'
 			expected:   false,
 		},
-		// Additional test cases for malformed tags and empty inputs
+	}
+
+	// Malformed tag tests
+	malformedTagTests := []colonTestCase{
 		{
 			name:       "empty input",
 			input:      "",
@@ -274,30 +310,50 @@ func TestHasTagsAfterColon(t *testing.T) {
 		},
 	}
 
+	// Run test groups
+	t.Run("Basic", func(t *testing.T) {
+		runColonTests(t, basicTests, func(l *Lexer, input string, colonPos, currentPos int) bool {
+			return l.hasTagsAfterColon(input, colonPos, currentPos)
+		})
+	})
+
+	t.Run("EdgeCases", func(t *testing.T) {
+		runColonTests(t, edgeCaseTests, func(l *Lexer, input string, colonPos, currentPos int) bool {
+			return l.hasTagsAfterColon(input, colonPos, currentPos)
+		})
+	})
+
+	t.Run("MalformedTags", func(t *testing.T) {
+		runColonTests(t, malformedTagTests, func(l *Lexer, input string, colonPos, currentPos int) bool {
+			return l.hasTagsAfterColon(input, colonPos, currentPos)
+		})
+	})
+}
+
+// positionTestCase represents a test case for position-based operations
+type positionTestCase struct {
+	name       string
+	input      string
+	currentPos int
+	expected   int
+}
+
+// runPositionTests runs multiple position test cases with the given function
+func runPositionTests(t *testing.T, tests []positionTestCase, testFunc func(*Lexer, string, int) int) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create a minimal lexer instance for testing
-			lexer := &Lexer{
-				reader: NewReaderFast(tt.input),
-			}
-
-			result := lexer.hasTagsAfterColon(tt.input, tt.colonPos, tt.currentPos)
+			lexer := createTestLexer(tt.input)
+			result := testFunc(lexer, tt.input, tt.currentPos)
 			if result != tt.expected {
-				t.Errorf("hasTagsAfterColon(%q, %d, %d) = %v, want %v",
-					tt.input, tt.colonPos, tt.currentPos, result, tt.expected)
+				t.Errorf("test failed for input %q, currentPos=%d: got %d, want %d",
+					tt.input, tt.currentPos, result, tt.expected)
 			}
 		})
 	}
 }
 
-// Test findRecentColon function
 func TestFindRecentColon(t *testing.T) {
-	tests := []struct {
-		name       string
-		input      string
-		currentPos int
-		expected   int
-	}{
+	tests := []positionTestCase{
 		{
 			name:       "colon found nearby",
 			input:      "strings: $a = { }",
@@ -336,31 +392,13 @@ func TestFindRecentColon(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Create a minimal lexer instance for testing
-			lexer := &Lexer{
-				reader: NewReaderFast(tt.input),
-			}
-
-			result := lexer.findRecentColon(tt.input, tt.currentPos)
-			if result != tt.expected {
-				t.Errorf("findRecentColon(%q, %d) = %d, want %d",
-					tt.input, tt.currentPos, result, tt.expected)
-			}
-		})
-	}
+	runPositionTests(t, tests, func(l *Lexer, input string, currentPos int) int {
+		return l.findRecentColon(input, currentPos)
+	})
 }
 
-// Test skipWhitespaceInRange function
 func TestSkipWhitespaceInRange(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		start    int
-		end      int
-		expected int
-	}{
+	tests := []identifierTestCase{
 		{
 			name:     "skip spaces",
 			input:    "   hello",
@@ -405,18 +443,7 @@ func TestSkipWhitespaceInRange(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Create a minimal lexer instance for testing
-			lexer := &Lexer{
-				reader: NewReaderFast(tt.input),
-			}
-
-			result := lexer.skipWhitespaceInRange(tt.input, tt.start, tt.end)
-			if result != tt.expected {
-				t.Errorf("skipWhitespaceInRange(%q, %d, %d) = %d, want %d",
-					tt.input, tt.start, tt.end, result, tt.expected)
-			}
-		})
-	}
+	runIdentifierTests(t, tests, func(l *Lexer, input string, start, end int) int {
+		return l.skipWhitespaceInRange(input, start, end)
+	})
 }
