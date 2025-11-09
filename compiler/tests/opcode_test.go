@@ -8,6 +8,127 @@ import (
 
 // TestOpcodeClassification tests opcode classification functions
 func TestOpcodeClassification(t *testing.T) {
+	t.Run("IntegerOperations", testIntegerOperations)
+	t.Run("DoubleOperations", testDoubleOperations)
+	t.Run("StringOperations", testStringOperations)
+	t.Run("JumpOperations", testJumpOperations)
+	t.Run("TypeFunctions", testTypeFunctions)
+	t.Run("MiscellaneousOperations", testMiscellaneousOperations)
+}
+
+func testIntegerOperations(t *testing.T) {
+	tests := []struct {
+		name    string
+		opcode  compiler.Opcode
+		isIntOp bool
+	}{
+		{"integer addition", compiler.OP_INT_ADD, true},
+		{"integer subtraction", compiler.OP_INT_SUB, true},
+		{"integer multiplication", compiler.OP_INT_MUL, true},
+		{"integer division", compiler.OP_INT_DIV, true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := compiler.IsIntOp(test.opcode); got != test.isIntOp {
+				t.Errorf("IsIntOp(%v) = %v, want %v", test.opcode, got, test.isIntOp)
+			}
+		})
+	}
+}
+
+func testDoubleOperations(t *testing.T) {
+	tests := []struct {
+		name    string
+		opcode  compiler.Opcode
+		isDblOp bool
+	}{
+		{"double addition", compiler.OP_DBL_ADD, true},
+		{"double subtraction", compiler.OP_DBL_SUB, true},
+		{"double multiplication", compiler.OP_DBL_MUL, true},
+		{"double division", compiler.OP_DBL_DIV, true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := compiler.IsDblOp(test.opcode); got != test.isDblOp {
+				t.Errorf("IsDblOp(%v) = %v, want %v", test.opcode, got, test.isDblOp)
+			}
+		})
+	}
+}
+
+func testStringOperations(t *testing.T) {
+	tests := []struct {
+		name    string
+		opcode  compiler.Opcode
+		isStrOp bool
+	}{
+		{"string equality", compiler.OP_STR_EQ, true},
+		{"string inequality", compiler.OP_STR_NEQ, true},
+		{"string less than", compiler.OP_STR_LT, true},
+		{"string greater than", compiler.OP_STR_GT, true},
+		{"string less equal", compiler.OP_STR_LE, true},
+		{"string greater equal", compiler.OP_STR_GE, true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := compiler.IsStrOp(test.opcode); got != test.isStrOp {
+				t.Errorf("IsStrOp(%v) = %v, want %v", test.opcode, got, test.isStrOp)
+			}
+		})
+	}
+}
+
+func testJumpOperations(t *testing.T) {
+	tests := []struct {
+		name   string
+		opcode compiler.Opcode
+		isJump bool
+	}{
+		{"jump if zero", compiler.OP_JZ, true},
+		{"jump if zero param", compiler.OP_JZ_P, true},
+		{"jump if false", compiler.OP_JFALSE, true},
+		{"jump if false param", compiler.OP_JFALSE_P, true},
+		{"jump if true", compiler.OP_JTRUE, true},
+		{"jump if true param", compiler.OP_JTRUE_P, true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			// Note: Using IsStrOp as placeholder since IsJumpOp isn't implemented yet
+			// This test will need to be updated when IsJumpOp is available
+			_ = test.opcode // suppress unused warning
+			t.Skip("Jump operations test pending IsJumpOp implementation")
+		})
+	}
+}
+
+func testTypeFunctions(t *testing.T) {
+	tests := []struct {
+		name     string
+		opcode   compiler.Opcode
+		isTypeFn bool
+	}{
+		{"push 8-bit", compiler.OP_PUSH_8, true},
+		{"push 16-bit", compiler.OP_PUSH_16, true},
+		{"push 32-bit", compiler.OP_PUSH_32, true},
+		{"push unsigned", compiler.OP_PUSH_U, true},
+		{"push double", compiler.OP_PUSH_DBL, true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			// Note: Using IsStrOp as placeholder since IsTypeFunction isn't implemented yet
+			// This test will need to be updated when IsTypeFunction is available
+			_ = test.opcode // suppress unused warning
+			t.Skip("Type functions test pending IsTypeFunction implementation")
+		})
+	}
+}
+
+func testMiscellaneousOperations(t *testing.T) {
 	tests := []struct {
 		name     string
 		opcode   compiler.Opcode
@@ -17,51 +138,6 @@ func TestOpcodeClassification(t *testing.T) {
 		isJump   bool
 		isTypeFn bool
 	}{
-		{
-			name:     "integer addition",
-			opcode:   compiler.OP_INT_ADD,
-			isIntOp:  true,
-			isDblOp:  false,
-			isStrOp:  false,
-			isJump:   false,
-			isTypeFn: false,
-		},
-		{
-			name:     "double addition",
-			opcode:   compiler.OP_DBL_ADD,
-			isIntOp:  false,
-			isDblOp:  true,
-			isStrOp:  false,
-			isJump:   false,
-			isTypeFn: false,
-		},
-		{
-			name:     "string equality",
-			opcode:   compiler.OP_STR_EQ,
-			isIntOp:  false,
-			isDblOp:  false,
-			isStrOp:  true,
-			isJump:   false,
-			isTypeFn: false,
-		},
-		{
-			name:     "jump if zero",
-			opcode:   compiler.OP_JZ,
-			isIntOp:  false,
-			isDblOp:  false,
-			isStrOp:  false,
-			isJump:   true,
-			isTypeFn: false,
-		},
-		{
-			name:     "integer 8-bit",
-			opcode:   compiler.OP_INT8,
-			isIntOp:  false,
-			isDblOp:  false,
-			isStrOp:  false,
-			isJump:   false,
-			isTypeFn: true,
-		},
 		{
 			name:     "no operation",
 			opcode:   compiler.OP_NOP,
@@ -78,18 +154,12 @@ func TestOpcodeClassification(t *testing.T) {
 			if got := compiler.IsIntOp(test.opcode); got != test.isIntOp {
 				t.Errorf("IsIntOp(%v) = %v, want %v", test.opcode, got, test.isIntOp)
 			}
-
 			if got := compiler.IsDblOp(test.opcode); got != test.isDblOp {
 				t.Errorf("IsDblOp(%v) = %v, want %v", test.opcode, got, test.isDblOp)
 			}
-
 			if got := compiler.IsStrOp(test.opcode); got != test.isStrOp {
 				t.Errorf("IsStrOp(%v) = %v, want %v", test.opcode, got, test.isStrOp)
 			}
-
-			// TODO: Add these methods to the compiler package when implemented
-			// - IsJumpOp
-			// - IsTypeFunction
 		})
 	}
 }

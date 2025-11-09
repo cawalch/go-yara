@@ -104,109 +104,166 @@ func TestNextToken_RegexLiterals_EdgeCases(t *testing.T) {
 	}
 }
 
-// headerComparisonTestCase represents a test case for YARA rule headers with comparisons
-type headerComparisonTestCase struct {
-	name      string
-	input     string
-	expected  []token.Token
-	positions []positionCheck
+func TestYARALike_Header_Condition_WithComparisons(t *testing.T) {
+	t.Run("BasicRuleWithTag", testBasicRuleWithTagAndComparisons)
+	t.Run("MultipleTagsWithComparisons", testMultipleTagsWithComparisonOperators)
+	t.Run("AllComparisonOperators", testRuleWithAllComparisonOperators)
 }
 
-func TestYARALike_Header_Condition_WithComparisons(t *testing.T) {
-	tests := []headerComparisonTestCase{
-		{
-			name:  "basic rule with tag and comparisons",
-			input: "rule r: tag1 {\n  condition: 1 >= 2 and 3 != 4\n}",
-			expected: []token.Token{
-				{Type: token.RULE, Literal: "rule"},
-				{Type: token.IDENTIFIER, Literal: "r"},
-				{Type: token.COLON, Literal: ":"},
-				{Type: token.IDENTIFIER, Literal: "tag1"},
-				{Type: token.LBRACE, Literal: "{"},
-				{Type: token.CONDITION, Literal: "condition"},
-				{Type: token.COLON, Literal: ":"},
-				{Type: token.INTEGER_LIT, Literal: "1"},
-				{Type: token.GE, Literal: ">="},
-				{Type: token.INTEGER_LIT, Literal: "2"},
-				{Type: token.AND, Literal: "and"},
-				{Type: token.INTEGER_LIT, Literal: "3"},
-				{Type: token.NEQ, Literal: "!="},
-				{Type: token.INTEGER_LIT, Literal: "4"},
-				{Type: token.RBRACE, Literal: "}"},
-				{Type: token.EOF, Literal: ""},
-			},
-			positions: []positionCheck{
-				{tokenIndex: 0, line: 1, column: 1, description: "rule token"},
-				{tokenIndex: 1, line: 1, column: 6, description: "identifier 'r'"},
-				{tokenIndex: 2, line: 1, column: 7, description: "colon after rule name"},
-			},
-		},
-		{
-			name:  "multiple tags with comparison operators",
-			input: "rule test_rule: tag1 tag2 {\n  condition: filesize <= 1MB and entrypoint >= 0x400000\n}",
-			expected: []token.Token{
-				{Type: token.RULE, Literal: "rule"},
-				{Type: token.IDENTIFIER, Literal: "test_rule"},
-				{Type: token.COLON, Literal: ":"},
-				{Type: token.IDENTIFIER, Literal: "tag1"},
-				{Type: token.IDENTIFIER, Literal: "tag2"},
-				{Type: token.LBRACE, Literal: "{"},
-				{Type: token.CONDITION, Literal: "condition"},
-				{Type: token.COLON, Literal: ":"},
-				{Type: token.FILESIZE, Literal: "filesize"},
-				{Type: token.LE, Literal: "<="},
-				{Type: token.SIZE_LIT, Literal: "1MB"},
-				{Type: token.AND, Literal: "and"},
-				{Type: token.ENTRYPOINT, Literal: "entrypoint"},
-				{Type: token.GE, Literal: ">="},
-				{Type: token.HEX_INTEGER_LIT, Literal: "0x400000"},
-				{Type: token.RBRACE, Literal: "}"},
-				{Type: token.EOF, Literal: ""},
-			},
-			positions: []positionCheck{
-				{tokenIndex: 0, line: 1, column: 1, description: "rule token"},
-				{tokenIndex: 1, line: 1, column: 6, description: "rule identifier"},
-				{tokenIndex: 2, line: 1, column: 15, description: "colon after rule identifier"},
-			},
-		},
-		{
-			name:  "rule with all comparison operators",
-			input: "rule comp_test {\n  condition: a == b and c != d and e < f and g > h\n}",
-			expected: []token.Token{
-				{Type: token.RULE, Literal: "rule"},
-				{Type: token.IDENTIFIER, Literal: "comp_test"},
-				{Type: token.LBRACE, Literal: "{"},
-				{Type: token.CONDITION, Literal: "condition"},
-				{Type: token.COLON, Literal: ":"},
-				{Type: token.IDENTIFIER, Literal: "a"},
-				{Type: token.EQ, Literal: "=="},
-				{Type: token.IDENTIFIER, Literal: "b"},
-				{Type: token.AND, Literal: "and"},
-				{Type: token.IDENTIFIER, Literal: "c"},
-				{Type: token.NEQ, Literal: "!="},
-				{Type: token.IDENTIFIER, Literal: "d"},
-				{Type: token.AND, Literal: "and"},
-				{Type: token.IDENTIFIER, Literal: "e"},
-				{Type: token.LT, Literal: "<"},
-				{Type: token.IDENTIFIER, Literal: "f"},
-				{Type: token.AND, Literal: "and"},
-				{Type: token.IDENTIFIER, Literal: "g"},
-				{Type: token.GT, Literal: ">"},
-				{Type: token.IDENTIFIER, Literal: "h"},
-				{Type: token.RBRACE, Literal: "}"},
-				{Type: token.EOF, Literal: ""},
-			},
-			positions: []positionCheck{
-				{tokenIndex: 0, line: 1, column: 1, description: "rule token"},
-				{tokenIndex: 1, line: 1, column: 6, description: "rule identifier"},
-			},
-		},
+// testBasicRuleWithTagAndComparisons tests basic rule structure with tag and comparison operators
+func testBasicRuleWithTagAndComparisons(t *testing.T) {
+	input := "rule r: tag1 {\n  condition: 1 >= 2 and 3 != 4\n}"
+	expected := createBasicRuleTokens("r", []string{"tag1"},
+		comparisonTokens("1", token.GE, "2"),
+		comparisonTokens("3", token.NEQ, "4"))
+	positions := basicRulePositions()
+
+	assertTokenSequenceAndPositions(t, input, expected, positions)
+}
+
+// testMultipleTagsWithComparisonOperators tests rule with multiple tags and size/entrypoint comparisons
+func testMultipleTagsWithComparisonOperators(t *testing.T) {
+	input := "rule test_rule: tag1 tag2 {\n  condition: filesize <= 1MB and entrypoint >= 0x400000\n}"
+	expected := createBasicRuleTokens("test_rule", []string{"tag1", "tag2"},
+		comparisonTokens("filesize", token.LE, "1MB"),
+		comparisonTokens("entrypoint", token.GE, "0x400000"))
+	positions := []positionCheck{
+		{tokenIndex: 0, line: 1, column: 1, description: "rule token"},
+		{tokenIndex: 1, line: 1, column: 6, description: "rule identifier"},
+		{tokenIndex: 2, line: 1, column: 15, description: "colon after rule identifier"},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assertTokenSequenceAndPositions(t, tt.input, tt.expected, tt.positions)
-		})
+	assertTokenSequenceAndPositions(t, input, expected, positions)
+}
+
+// testRuleWithAllComparisonOperators tests rule using all comparison operators
+func testRuleWithAllComparisonOperators(t *testing.T) {
+	input := "rule comp_test {\n  condition: a == b and c != d and e < f and g > h\n}"
+	expected := createRuleWithoutTags("comp_test",
+		comparisonTokens("a", token.EQ, "b"),
+		comparisonTokens("c", token.NEQ, "d"),
+		comparisonTokens("e", token.LT, "f"),
+		comparisonTokens("g", token.GT, "h"))
+	positions := []positionCheck{
+		{tokenIndex: 0, line: 1, column: 1, description: "rule token"},
+		{tokenIndex: 1, line: 1, column: 6, description: "rule identifier"},
+	}
+
+	assertTokenSequenceAndPositions(t, input, expected, positions)
+}
+
+// Helper functions to reduce token creation duplication
+
+// comparisonTokens creates a three-token sequence for binary comparisons
+func comparisonTokens(left string, op token.TokenType, right string) []token.Token {
+	return []token.Token{
+		{Type: identifierOrKeyword(left), Literal: left},
+		{Type: op, Literal: operatorLiteral(op)},
+		{Type: identifierOrKeyword(right), Literal: right},
+	}
+}
+
+// createBasicRuleTokens creates tokens for rules with tags and conditions
+func createBasicRuleTokens(ruleName string, tags []string, conditions ...[]token.Token) []token.Token {
+	tokens := []token.Token{
+		{Type: token.RULE, Literal: "rule"},
+		{Type: token.IDENTIFIER, Literal: ruleName},
+		{Type: token.COLON, Literal: ":"},
+	}
+
+	// Add tags
+	for _, tag := range tags {
+		tokens = append(tokens, token.Token{Type: token.IDENTIFIER, Literal: tag})
+	}
+
+	// Add rule structure
+	tokens = append(tokens, token.Token{Type: token.LBRACE, Literal: "{"})
+	tokens = append(tokens, token.Token{Type: token.CONDITION, Literal: "condition"})
+	tokens = append(tokens, token.Token{Type: token.COLON, Literal: ":"})
+
+	// Add conditions with operators
+	for i, condition := range conditions {
+		if i > 0 {
+			tokens = append(tokens, token.Token{Type: token.AND, Literal: "and"})
+		}
+		tokens = append(tokens, condition...)
+	}
+
+	tokens = append(tokens, token.Token{Type: token.RBRACE, Literal: "}"})
+	tokens = append(tokens, token.Token{Type: token.EOF, Literal: ""})
+
+	return tokens
+}
+
+// createRuleWithoutTags creates tokens for rules without tags (no colon after rule name)
+func createRuleWithoutTags(ruleName string, conditions ...[]token.Token) []token.Token {
+	tokens := []token.Token{
+		{Type: token.RULE, Literal: "rule"},
+		{Type: token.IDENTIFIER, Literal: ruleName},
+		{Type: token.LBRACE, Literal: "{"},
+	}
+
+	tokens = append(tokens, token.Token{Type: token.CONDITION, Literal: "condition"})
+	tokens = append(tokens, token.Token{Type: token.COLON, Literal: ":"})
+
+	// Add conditions with operators
+	for i, condition := range conditions {
+		if i > 0 {
+			tokens = append(tokens, token.Token{Type: token.AND, Literal: "and"})
+		}
+		tokens = append(tokens, condition...)
+	}
+
+	tokens = append(tokens, token.Token{Type: token.RBRACE, Literal: "}"})
+	tokens = append(tokens, token.Token{Type: token.EOF, Literal: ""})
+
+	return tokens
+}
+
+// basicRulePositions returns common position checks for basic rules
+func basicRulePositions() []positionCheck {
+	return []positionCheck{
+		{tokenIndex: 0, line: 1, column: 1, description: "rule token"},
+		{tokenIndex: 1, line: 1, column: 6, description: "rule identifier"},
+		{tokenIndex: 2, line: 1, column: 7, description: "colon after rule name"},
+	}
+}
+
+// identifierOrKeyword returns the appropriate token type for identifiers and keywords
+func identifierOrKeyword(lit string) token.TokenType {
+	switch lit {
+	case "filesize":
+		return token.FILESIZE
+	case "entrypoint":
+		return token.ENTRYPOINT
+	case "1", "2", "3", "4", "5", "6", "7", "8", "9", "0":
+		return token.INTEGER_LIT
+	case "1MB":
+		return token.SIZE_LIT
+	case "0x400000":
+		return token.HEX_INTEGER_LIT
+	default:
+		return token.IDENTIFIER
+	}
+}
+
+// operatorLiteral returns the literal representation of comparison operators
+func operatorLiteral(op token.TokenType) string {
+	switch op {
+	case token.EQ:
+		return "=="
+	case token.NEQ:
+		return "!="
+	case token.LT:
+		return "<"
+	case token.LE:
+		return "<="
+	case token.GT:
+		return ">"
+	case token.GE:
+		return ">="
+	default:
+		return ""
 	}
 }
 

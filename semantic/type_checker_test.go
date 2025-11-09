@@ -339,94 +339,159 @@ func TestInferTypeFromLiteral(t *testing.T) {
 }
 
 func TestInferTypeFromBinaryOp(t *testing.T) {
-	// Define common type instances
-	intType := &TypeInfo{DataType: TypeInteger, IntegerType: Int32Type}
-	boolType := &TypeInfo{DataType: TypeBoolean}
-	strType := &TypeInfo{DataType: TypeString}
+	t.Run("ArithmeticOperations", testBinaryOpArithmeticOperations)
+	t.Run("ComparisonOperations", testBinaryOpComparisonOperations)
+	t.Run("LogicalOperations", testBinaryOpLogicalOperations)
+	t.Run("StringOperations", testBinaryOpStringOperations)
+	t.Run("BitwiseOperations", testBinaryOpBitwiseOperations)
+}
 
-	// Test cases organized by operator category
-	binaryOpTests := map[string][]struct {
+// testBinaryOpArithmeticOperations tests arithmetic binary operations
+func testBinaryOpArithmeticOperations(t *testing.T) {
+	intType := &TypeInfo{DataType: TypeInteger, IntegerType: Int32Type}
+
+	tests := []struct {
 		name         string
-		left         *TypeInfo
 		op           token.TokenType
-		right        *TypeInfo
 		expectedType DataType
-		wantErr      bool
 	}{
-		"Arithmetic": {
-			{
-				name:         "addition",
-				left:         intType,
-				op:           token.PLUS,
-				right:        intType,
-				expectedType: TypeInteger,
-				wantErr:      false,
-			},
-		},
-		"Comparison": {
-			{
-				name:         "greater than",
-				left:         intType,
-				op:           token.GT,
-				right:        intType,
-				expectedType: TypeBoolean,
-				wantErr:      false,
-			},
-		},
-		"Logical": {
-			{
-				name:         "logical and",
-				left:         boolType,
-				op:           token.AND,
-				right:        boolType,
-				expectedType: TypeBoolean,
-				wantErr:      false,
-			},
-		},
-		"String": {
-			{
-				name:         "string contains",
-				left:         strType,
-				op:           token.CONTAINS,
-				right:        strType,
-				expectedType: TypeBoolean,
-				wantErr:      false,
-			},
-			{
-				name:         "string matches",
-				left:         strType,
-				op:           token.MATCHES,
-				right:        strType,
-				expectedType: TypeBoolean,
-				wantErr:      false,
-			},
-		},
-		"Bitwise": {
-			{
-				name:         "bitwise or",
-				left:         intType,
-				op:           token.BITWISE_OR,
-				right:        intType,
-				expectedType: TypeInteger,
-				wantErr:      false,
-			},
-		},
+		{"addition", token.PLUS, TypeInteger},
+		{"subtraction", token.MINUS, TypeInteger},
+		{"multiplication", token.MULTIPLY, TypeInteger},
+		{"division", token.DIVIDE, TypeInteger},
+		{"modulo", token.MODULO, TypeInteger},
 	}
 
-	// Run tests by category
-	for category, tests := range binaryOpTests {
-		t.Run(category, func(t *testing.T) {
-			for _, test := range tests {
-				t.Run(test.name, func(t *testing.T) {
-					typeInfo, err := InferTypeFromBinaryOp(test.left, test.op, test.right)
-					if (err != nil) != test.wantErr {
-						t.Errorf("InferTypeFromBinaryOp() error = %v, wantErr %v", err, test.wantErr)
-						return
-					}
-					if err == nil && typeInfo.DataType != test.expectedType {
-						t.Errorf("InferTypeFromBinaryOp() got %v, want %v", typeInfo.DataType, test.expectedType)
-					}
-				})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			typeInfo, err := InferTypeFromBinaryOp(intType, tt.op, intType)
+			if err != nil {
+				t.Errorf("InferTypeFromBinaryOp() error = %v, wantErr false", err)
+				return
+			}
+			if typeInfo.DataType != tt.expectedType {
+				t.Errorf("InferTypeFromBinaryOp() got %v, want %v", typeInfo.DataType, tt.expectedType)
+			}
+		})
+	}
+}
+
+// testBinaryOpComparisonOperations tests comparison binary operations
+func testBinaryOpComparisonOperations(t *testing.T) {
+	intType := &TypeInfo{DataType: TypeInteger, IntegerType: Int32Type}
+
+	tests := []struct {
+		name         string
+		op           token.TokenType
+		expectedType DataType
+	}{
+		{"equal", token.EQ, TypeBoolean},
+		{"not_equal", token.NEQ, TypeBoolean},
+		{"less_than", token.LT, TypeBoolean},
+		{"less_equal", token.LE, TypeBoolean},
+		{"greater_than", token.GT, TypeBoolean},
+		{"greater_equal", token.GE, TypeBoolean},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			typeInfo, err := InferTypeFromBinaryOp(intType, tt.op, intType)
+			if err != nil {
+				t.Errorf("InferTypeFromBinaryOp() error = %v, wantErr false", err)
+				return
+			}
+			if typeInfo.DataType != tt.expectedType {
+				t.Errorf("InferTypeFromBinaryOp() got %v, want %v", typeInfo.DataType, tt.expectedType)
+			}
+		})
+	}
+}
+
+// testBinaryOpLogicalOperations tests logical binary operations
+func testBinaryOpLogicalOperations(t *testing.T) {
+	boolType := &TypeInfo{DataType: TypeBoolean}
+
+	tests := []struct {
+		name         string
+		op           token.TokenType
+		expectedType DataType
+	}{
+		{"logical_and", token.AND, TypeBoolean},
+		{"logical_or", token.OR, TypeBoolean},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			typeInfo, err := InferTypeFromBinaryOp(boolType, tt.op, boolType)
+			if err != nil {
+				t.Errorf("InferTypeFromBinaryOp() error = %v, wantErr false", err)
+				return
+			}
+			if typeInfo.DataType != tt.expectedType {
+				t.Errorf("InferTypeFromBinaryOp() got %v, want %v", typeInfo.DataType, tt.expectedType)
+			}
+		})
+	}
+}
+
+// testBinaryOpStringOperations tests string binary operations
+func testBinaryOpStringOperations(t *testing.T) {
+	strType := &TypeInfo{DataType: TypeString}
+
+	tests := []struct {
+		name         string
+		op           token.TokenType
+		expectedType DataType
+	}{
+		{"string_contains", token.CONTAINS, TypeBoolean},
+		{"string_matches", token.MATCHES, TypeBoolean},
+		{"string_startswith", token.STARTSWITH, TypeBoolean},
+		{"string_endswith", token.ENDSWITH, TypeBoolean},
+		{"string_icontains", token.ICONTAINS, TypeBoolean},
+		{"string_istartswith", token.ISTARTSWITH, TypeBoolean},
+		{"string_iendswith", token.IENDSWITH, TypeBoolean},
+		{"string_iequals", token.IEQUALS, TypeBoolean},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			typeInfo, err := InferTypeFromBinaryOp(strType, tt.op, strType)
+			if err != nil {
+				t.Errorf("InferTypeFromBinaryOp() error = %v, wantErr false", err)
+				return
+			}
+			if typeInfo.DataType != tt.expectedType {
+				t.Errorf("InferTypeFromBinaryOp() got %v, want %v", typeInfo.DataType, tt.expectedType)
+			}
+		})
+	}
+}
+
+// testBinaryOpBitwiseOperations tests bitwise binary operations
+func testBinaryOpBitwiseOperations(t *testing.T) {
+	intType := &TypeInfo{DataType: TypeInteger, IntegerType: Int32Type}
+
+	tests := []struct {
+		name         string
+		op           token.TokenType
+		expectedType DataType
+	}{
+		{"bitwise_and", token.BITWISE_AND, TypeInteger},
+		{"bitwise_or", token.BITWISE_OR, TypeInteger},
+		{"bitwise_xor", token.BITWISE_XOR, TypeInteger},
+		{"left_shift", token.LEFT_SHIFT, TypeInteger},
+		{"right_shift", token.RIGHT_SHIFT, TypeInteger},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			typeInfo, err := InferTypeFromBinaryOp(intType, tt.op, intType)
+			if err != nil {
+				t.Errorf("InferTypeFromBinaryOp() error = %v, wantErr false", err)
+				return
+			}
+			if typeInfo.DataType != tt.expectedType {
+				t.Errorf("InferTypeFromBinaryOp() got %v, want %v", typeInfo.DataType, tt.expectedType)
 			}
 		})
 	}

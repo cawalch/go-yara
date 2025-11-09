@@ -9,15 +9,84 @@ import (
 	"github.com/cawalch/go-yara/token"
 )
 
+// testHelper provides common setup functionality for string validator tests
+type testHelper struct {
+	t         *testing.T
+	program   *ast.Program
+	symbol    *SymbolTable
+	validator *StringValidator
+}
+
+// newTestHelper creates a new test helper with parsed program and symbol table
+func newTestHelper(t *testing.T, input string) *testHelper {
+	lex := lexer.New(input)
+	p := parser.New(lex)
+
+	program, err := p.ParseRules()
+	if err != nil {
+		t.Fatalf("ParseRules() error = %v", err)
+	}
+
+	st := NewSymbolTable()
+	if len(program.Rules) > 0 {
+		st.EnterScope(program.Rules[0].Name)
+		// Define strings from the first rule
+		for _, str := range program.Rules[0].Strings {
+			_ = st.DefineString(str.Identifier, str.Pos, str)
+		}
+	}
+
+	return &testHelper{
+		t:         t,
+		program:   program,
+		symbol:    st,
+		validator: NewStringValidator(st),
+	}
+}
+
+// assertValidation asserts validation results
+func (th *testHelper) assertValidation(wantErr bool) {
+	if len(th.program.Rules) == 0 || th.program.Rules[0].Condition == nil {
+		th.t.Fatal("No rules or condition to validate")
+	}
+
+	errors := th.validator.ValidateStringReferences(th.program.Rules[0].Condition)
+	hasErr := len(errors) > 0
+
+	if hasErr != wantErr {
+		th.t.Errorf("ValidateStringReferences() error = %v, wantErr %v, errors: %v", hasErr, wantErr, errors)
+	}
+}
+
+// createBasicSymbolTable creates a simple symbol table for testing
+func createBasicSymbolTable() *SymbolTable {
+	st := NewSymbolTable()
+	st.EnterScope("test")
+	pos := token.Position{Line: 1, Column: 1}
+
+	// Define some common test strings
+	str1 := &ast.String{Identifier: "$s1", Pos: pos}
+	_ = st.DefineString("$s1", pos, str1)
+
+	str2 := &ast.String{Identifier: "$s2", Pos: pos}
+	_ = st.DefineString("$s2", pos, str2)
+
+	return st
+}
+
 // TestStringValidatorFullIntegration tests string validator with parsed programs
 func TestStringValidatorFullIntegration(t *testing.T) {
+	t.Run("ValidReferences", testValidStringReferences)
+	t.Run("InvalidReferences", testInvalidStringReferences)
+}
+
+func testValidStringReferences(t *testing.T) {
 	tests := []struct {
-		name    string
-		input   string
-		wantErr bool
+		name  string
+		input string
 	}{
 		{
-			name: "valid_string_reference",
+			name: "simple_string_reference",
 			input: `
 rule test {
 	strings:
@@ -25,10 +94,9 @@ rule test {
 	condition:
 		$s1
 }`,
-			wantErr: false,
 		},
 		{
-			name: "valid_wildcard_all_of_them",
+			name: "wildcard_all_of_them",
 			input: `
 rule test {
 	strings:
@@ -37,10 +105,9 @@ rule test {
 	condition:
 		all of them
 }`,
-			wantErr: false,
 		},
 		{
-			name: "valid_wildcard_any_of_them",
+			name: "wildcard_any_of_them",
 			input: `
 rule test {
 	strings:
@@ -49,8 +116,22 @@ rule test {
 	condition:
 		any of them
 }`,
-			wantErr: false,
 		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helper := newTestHelper(t, tt.input)
+			helper.assertValidation(false)
+		})
+	}
+}
+
+func testInvalidStringReferences(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
 		{
 			name: "undefined_string",
 			input: `
@@ -60,47 +141,13 @@ rule test {
 	condition:
 		$s2
 }`,
-			wantErr: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			lex := lexer.New(tt.input)
-			p := parser.New(lex)
-			program, err := p.ParseRules()
-
-			if err != nil {
-				t.Fatalf("ParseRules() error = %v", err)
-			}
-
-			// Create symbol table and populate it
-			st := NewSymbolTable()
-			st.EnterScope("test")
-
-			// Define strings from the first rule
-			if len(program.Rules) > 0 {
-				for _, str := range program.Rules[0].Strings {
-					_ = st.DefineString(str.Identifier, str.Pos, str)
-				}
-			}
-
-			validator := NewStringValidator(st)
-
-			// Validate the condition
-			if len(program.Rules) > 0 && program.Rules[0].Condition != nil {
-				errors := validator.ValidateStringReferences(program.Rules[0].Condition)
-				hasErr := len(errors) > 0
-
-				if hasErr != tt.wantErr {
-					t.Errorf(
-						"ValidateStringReferences() error = %v, wantErr %v, errors: %v",
-						hasErr,
-						tt.wantErr,
-						errors,
-					)
-				}
-			}
+			helper := newTestHelper(t, tt.input)
+			helper.assertValidation(true)
 		})
 	}
 }
@@ -180,6 +227,13 @@ func TestModuleValidatorDataTypeFunctions(t *testing.T) {
 	validator := NewModuleValidator(st)
 
 	pos := token.Position{Line: 1, Column: 1}
+	args := []ast.Expression{
+		&ast.Literal{
+			Type:  token.INTEGER_LIT,
+			Value: int64(0x1000),
+			Pos:   pos,
+		},
+	}
 
 	dataTypeFunctions := []string{
 		"uint8", "uint16", "uint32",
@@ -190,14 +244,6 @@ func TestModuleValidatorDataTypeFunctions(t *testing.T) {
 
 	for _, funcName := range dataTypeFunctions {
 		t.Run(funcName, func(t *testing.T) {
-			args := []ast.Expression{
-				&ast.Literal{
-					Type:  token.INTEGER_LIT,
-					Value: int64(0x1000),
-					Pos:   pos,
-				},
-			}
-
 			typeInfo, errors := validator.ValidateFunctionCall(funcName, args, pos)
 			if len(errors) > 0 {
 				t.Errorf("ValidateFunctionCall(%s) unexpected errors: %v", funcName, errors)
@@ -313,14 +359,7 @@ rule test {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			lex := lexer.New(tt.input)
-			p := parser.New(lex)
-			program, err := p.ParseRules()
-
-			if err != nil {
-				t.Fatalf("ParseRules() error = %v", err)
-			}
-
+			program := parseProgramOrFail(t, tt.input)
 			st := NewSymbolTable()
 			validator := NewFileValidator(st)
 
@@ -330,12 +369,7 @@ rule test {
 				hasErr := len(errors) > 0
 
 				if hasErr != tt.wantErr {
-					t.Errorf(
-						"ValidateFileOperations() error = %v, wantErr %v, errors: %v",
-						hasErr,
-						tt.wantErr,
-						errors,
-					)
+					t.Errorf("ValidateFileOperations() error = %v, wantErr %v, errors: %v", hasErr, tt.wantErr, errors)
 				}
 			}
 		})
@@ -388,24 +422,32 @@ rule bitwise {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			lex := lexer.New(tt.input)
-			p := parser.New(lex)
-			program, err := p.ParseRules()
-
-			if err != nil {
-				t.Fatalf("ParseRules() error = %v", err)
-			}
-
-			validator := NewValidator()
-			errors := validator.ValidateProgram(program)
-
-			if len(errors) < tt.minErrCount {
-				t.Errorf(
-					"ValidateProgram() got %d errors, want at least %d",
-					len(errors),
-					tt.minErrCount,
-				)
-			}
+			assertProgramValidation(t, tt.input, tt.minErrCount)
 		})
 	}
+}
+
+// assertProgramValidation parses and validates a program with minimum error count
+func assertProgramValidation(t *testing.T, input string, minErrCount int) {
+	program := parseProgramOrFail(t, input)
+
+	validator := NewValidator()
+	errors := validator.ValidateProgram(program)
+
+	if len(errors) < minErrCount {
+		t.Errorf("ValidateProgram() got %d errors, want at least %d", len(errors), minErrCount)
+	}
+}
+
+// parseProgramOrFail parses a program or fails the test
+func parseProgramOrFail(t *testing.T, input string) *ast.Program {
+	lex := lexer.New(input)
+	p := parser.New(lex)
+
+	program, err := p.ParseRules()
+	if err != nil {
+		t.Fatalf("ParseRules() error = %v", err)
+	}
+
+	return program
 }

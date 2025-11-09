@@ -56,11 +56,20 @@ func TestValidator(t *testing.T) {
 
 // testValidatorValidRules tests validation of correct YARA rules
 func testValidatorValidRules(t *testing.T) {
-	tests := []validatorTestCase{
+	t.Run("BasicRuleStructures", testValidatorBasicRuleStructures)
+	t.Run("KeywordValidations", testValidatorKeywordValidations)
+	t.Run("StringOperations", testValidatorStringOperations)
+}
+
+// testValidatorBasicRuleStructures tests validation of basic YARA rule structures
+func testValidatorBasicRuleStructures(t *testing.T) {
+	tests := []struct {
+		name string
+		rule string
+	}{
 		{
 			name: "complete_rule_with_meta_strings_condition",
-			input: `
-rule test_rule {
+			rule: `rule test_rule {
     meta:
         author = "test"
     strings:
@@ -69,77 +78,102 @@ rule test_rule {
     condition:
         $s1 and $s2
 }`,
-			wantErr: false,
 		},
 		{
 			name: "simple_condition_only",
-			input: `
-rule test_rule {
+			rule: `rule test_rule {
     strings:
         $s1 = "malware"
     condition:
         $s1
 }`,
-			wantErr: false,
-		},
-		{
-			name: "integer_comparison",
-			input: `
-rule test_rule {
-    condition:
-        1 > 0
-}`,
-			wantErr: false,
-		},
-		{
-			name: "filesize_keyword",
-			input: `
-rule test_rule {
-    condition:
-        filesize > 1024
-}`,
-			wantErr: false,
-		},
-		{
-			name: "entrypoint_keyword",
-			input: `
-rule test_rule {
-    condition:
-        entrypoint == 0x400000
-}`,
-			wantErr: false,
-		},
-		{
-			name: "string_contains",
-			input: `
-rule test_rule {
-    strings:
-        $s1 = "malware"
-    condition:
-        $s1 contains "mal"
-}`,
-			wantErr: false,
-		},
-		{
-			name: "string_matches",
-			input: `
-rule test_rule {
-    strings:
-        $s1 = "malware"
-    condition:
-        $s1 matches /mal/
-}`,
-			wantErr: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			errors, err := parseAndValidateProgram(t, tt.input)
+			errors, err := parseAndValidateProgram(t, tt.rule)
 			if err != nil {
 				t.Fatalf("ParseRules() error = %v", err)
 			}
-			assertValidationResults(t, errors, tt.wantErr, tt.minErrCount)
+			assertValidationResults(t, errors, false, 0)
+		})
+	}
+}
+
+// testValidatorKeywordValidations tests validation of YARA keywords in conditions
+func testValidatorKeywordValidations(t *testing.T) {
+	tests := []struct {
+		name string
+		rule string
+	}{
+		{
+			name: "integer_comparison",
+			rule: `rule test_rule {
+    condition:
+        1 > 0
+}`,
+		},
+		{
+			name: "filesize_keyword",
+			rule: `rule test_rule {
+    condition:
+        filesize > 1024
+}`,
+		},
+		{
+			name: "entrypoint_keyword",
+			rule: `rule test_rule {
+    condition:
+        entrypoint == 0x400000
+}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			errors, err := parseAndValidateProgram(t, tt.rule)
+			if err != nil {
+				t.Fatalf("ParseRules() error = %v", err)
+			}
+			assertValidationResults(t, errors, false, 0)
+		})
+	}
+}
+
+// testValidatorStringOperations tests validation of string operations in conditions
+func testValidatorStringOperations(t *testing.T) {
+	tests := []struct {
+		name string
+		rule string
+	}{
+		{
+			name: "string_contains",
+			rule: `rule test_rule {
+    strings:
+        $s1 = "malware"
+    condition:
+        $s1 contains "mal"
+}`,
+		},
+		{
+			name: "string_matches",
+			rule: `rule test_rule {
+    strings:
+        $s1 = "malware"
+    condition:
+        $s1 matches /mal/
+}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			errors, err := parseAndValidateProgram(t, tt.rule)
+			if err != nil {
+				t.Fatalf("ParseRules() error = %v", err)
+			}
+			assertValidationResults(t, errors, false, 0)
 		})
 	}
 }

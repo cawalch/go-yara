@@ -2,6 +2,7 @@ package parser
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/cawalch/go-yara/internal/lexer"
@@ -143,88 +144,52 @@ func TestParseUnaryOperators(t *testing.T) {
 
 // TestParseFunctionCalls tests data type function parsing
 func TestParseFunctionCalls(t *testing.T) {
-	tests := []struct {
-		name  string
-		input string
-	}{
-		{
-			name: "int8_function",
-			input: `rule int8_fn {
+	t.Run("IntegerFunctions", testIntegerFunctions)
+	t.Run("UnsignedFunctions", testUnsignedFunctions)
+	t.Run("BigEndianFunctions", testBigEndianFunctions)
+}
+
+func testIntegerFunctions(t *testing.T) {
+	integerFuncs := []string{"int8", "int16", "int32"}
+
+	for _, funcName := range integerFuncs {
+		t.Run(funcName+"_function", func(t *testing.T) {
+			input := fmt.Sprintf(`rule %s_fn {
 				condition:
-					int8(0x1000) == 1
-			}`,
-		},
-		{
-			name: "int16_function",
-			input: `rule int16_fn {
-				condition:
-					int16(0x1000) == 1
-			}`,
-		},
-		{
-			name: "int32_function",
-			input: `rule int32_fn {
-				condition:
-					int32(0x1000) == 1
-			}`,
-		},
-		{
-			name: "uint8_function",
-			input: `rule uint8_fn {
-				condition:
-					uint8(0x1000) == 1
-			}`,
-		},
-		{
-			name: "uint16_function",
-			input: `rule uint16_fn {
-				condition:
-					uint16(0x1000) == 1
-			}`,
-		},
-		{
-			name: "uint32_function",
-			input: `rule uint32_fn {
-				condition:
-					uint32(0x1000) == 1
-			}`,
-		},
-		{
-			name: "uint8be_function",
-			input: `rule uint8be_fn {
-				condition:
-					uint8be(0x1000) == 1
-			}`,
-		},
-		{
-			name: "uint16be_function",
-			input: `rule uint16be_fn {
-				condition:
-					uint16be(0x1000) == 1
-			}`,
-		},
-		{
-			name: "uint32be_function",
-			input: `rule uint32be_fn {
-				condition:
-					uint32be(0x1000) == 1
-			}`,
-		},
+					%s(0x1000) == 1
+			}`, funcName, funcName)
+
+			assertRuleParses(t, input)
+		})
 	}
+}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			l := lexer.New(tt.input)
-			p := New(l)
+func testUnsignedFunctions(t *testing.T) {
+	unsignedFuncs := []string{"uint8", "uint16", "uint32"}
 
-			program, err := p.ParseRules()
-			if err != nil {
-				t.Fatalf("parsing failed: %v", err)
-			}
+	for _, funcName := range unsignedFuncs {
+		t.Run(funcName+"_function", func(t *testing.T) {
+			input := fmt.Sprintf(`rule %s_fn {
+				condition:
+					%s(0x1000) == 1
+			}`, funcName, funcName)
 
-			if len(program.Rules) != 1 {
-				t.Errorf("expected 1 rule, got %d", len(program.Rules))
-			}
+			assertRuleParses(t, input)
+		})
+	}
+}
+
+func testBigEndianFunctions(t *testing.T) {
+	bigEndianFuncs := []string{"uint8be", "uint16be", "uint32be"}
+
+	for _, funcName := range bigEndianFuncs {
+		t.Run(funcName+"_function", func(t *testing.T) {
+			input := fmt.Sprintf(`rule %s_fn {
+				condition:
+					%s(0x1000) == 1
+			}`, funcName, funcName)
+
+			assertRuleParses(t, input)
 		})
 	}
 }
@@ -283,85 +248,68 @@ func TestParseQuantifierVariations(t *testing.T) {
 
 // TestParseStringModifiers tests string modifier parsing
 func TestParseStringModifiers(t *testing.T) {
+	t.Run("SingleModifiers", testSingleStringModifiers)
+	t.Run("MultipleModifiers", testMultipleStringModifiers)
+}
+
+func testSingleStringModifiers(t *testing.T) {
+	modifiers := []string{"nocase", "wide", "ascii", "fullword"}
+
+	for _, modifier := range modifiers {
+		t.Run(modifier+"_modifier", func(t *testing.T) {
+			input := fmt.Sprintf(`rule %s_mod {
+				strings:
+					$s1 = "test" %s
+				condition:
+					$s1
+			}`, modifier, modifier)
+
+			assertRuleWithSingleStringParses(t, input)
+		})
+	}
+}
+
+func testMultipleStringModifiers(t *testing.T) {
 	tests := []struct {
-		name  string
-		input string
+		name      string
+		modifiers []string
 	}{
-		{
-			name: "nocase_modifier",
-			input: `rule nocase_mod {
-				strings:
-					$s1 = "test" nocase
-				condition:
-					$s1
-			}`,
-		},
-		{
-			name: "wide_modifier",
-			input: `rule wide_mod {
-				strings:
-					$s1 = "test" wide
-				condition:
-					$s1
-			}`,
-		},
-		{
-			name: "ascii_modifier",
-			input: `rule ascii_mod {
-				strings:
-					$s1 = "test" ascii
-				condition:
-					$s1
-			}`,
-		},
-		{
-			name: "fullword_modifier",
-			input: `rule fullword_mod {
-				strings:
-					$s1 = "test" fullword
-				condition:
-					$s1
-			}`,
-		},
-		{
-			name: "multiple_modifiers",
-			input: `rule multi_mods {
-				strings:
-					$s1 = "test" nocase wide
-				condition:
-					$s1
-			}`,
-		},
-		{
-			name: "three_modifiers",
-			input: `rule three_mods {
-				strings:
-					$s1 = "test" nocase wide fullword
-				condition:
-					$s1
-			}`,
-		},
+		{"two_modifiers", []string{"nocase", "wide"}},
+		{"three_modifiers", []string{"nocase", "wide", "fullword"}},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			l := lexer.New(tt.input)
-			p := New(l)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			modifierStr := " " + strings.Join(test.modifiers, " ")
+			input := fmt.Sprintf(`rule %s {
+				strings:
+					$s1 = "test"%s
+				condition:
+					$s1
+			}`, test.name, modifierStr)
 
-			program, err := p.ParseRules()
-			if err != nil {
-				t.Fatalf("parsing failed: %v", err)
-			}
-
-			if len(program.Rules) != 1 {
-				t.Errorf("expected 1 rule, got %d", len(program.Rules))
-			}
-
-			rule := program.Rules[0]
-			if len(rule.Strings) != 1 {
-				t.Errorf("expected 1 string, got %d", len(rule.Strings))
-			}
+			assertRuleWithSingleStringParses(t, input)
 		})
+	}
+}
+
+// assertRuleWithSingleStringParses tests if a YARA rule with one string parses successfully
+func assertRuleWithSingleStringParses(t *testing.T, input string) {
+	l := lexer.New(input)
+	p := New(l)
+
+	program, err := p.ParseRules()
+	if err != nil {
+		t.Fatalf("parsing failed: %v", err)
+	}
+
+	if len(program.Rules) != 1 {
+		t.Errorf("expected 1 rule, got %d", len(program.Rules))
+	}
+
+	rule := program.Rules[0]
+	if len(rule.Strings) != 1 {
+		t.Errorf("expected 1 string, got %d", len(rule.Strings))
 	}
 }
 
@@ -996,5 +944,20 @@ func TestParseShiftOperators(t *testing.T) {
 				t.Errorf("expected 1 rule, got %d", len(program.Rules))
 			}
 		})
+	}
+}
+
+// assertRuleParses is a helper function that tests if a YARA rule parses successfully
+func assertRuleParses(t *testing.T, input string) {
+	l := lexer.New(input)
+	p := New(l)
+
+	program, err := p.ParseRules()
+	if err != nil {
+		t.Fatalf("parsing failed: %v", err)
+	}
+
+	if len(program.Rules) != 1 {
+		t.Errorf("expected 1 rule, got %d", len(program.Rules))
 	}
 }

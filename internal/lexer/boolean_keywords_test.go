@@ -9,6 +9,12 @@ import (
 )
 
 func TestNextToken_BooleanLiterals(t *testing.T) {
+	t.Run("BasicLiterals", testBasicBooleanLiterals)
+	t.Run("BooleanExpressions", testBooleanExpressions)
+	t.Run("ComplexExpressions", testComplexBooleanExpressions)
+}
+
+func testBasicBooleanLiterals(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
@@ -30,6 +36,21 @@ func TestNextToken_BooleanLiterals(t *testing.T) {
 				{Type: token.EOF, Literal: ""},
 			},
 		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertBooleanTokenSequence(t, tt.input, tt.expected)
+		})
+	}
+}
+
+func testBooleanExpressions(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected []token.Token
+	}{
 		{
 			name:  "true and false",
 			input: "true and false",
@@ -52,6 +73,21 @@ func TestNextToken_BooleanLiterals(t *testing.T) {
 				{Type: token.EOF, Literal: ""},
 			},
 		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertBooleanTokenSequence(t, tt.input, tt.expected)
+		})
+	}
+}
+
+func testComplexBooleanExpressions(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected []token.Token
+	}{
 		{
 			name:  "boolean with parentheses",
 			input: "(true or false) and true",
@@ -70,19 +106,24 @@ func TestNextToken_BooleanLiterals(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			l := lexer.New(tt.input)
-			got := collectTokens(l)
-
-			if len(got) != len(tt.expected) {
-				t.Fatalf("token count mismatch: got %d want %d\n%v", len(got), len(tt.expected), got)
-			}
-
-			for i := range tt.expected {
-				if got[i].Type != tt.expected[i].Type || got[i].Literal != tt.expected[i].Literal {
-					t.Fatalf("tok[%d]: got {%v %q} want {%v %q}", i, got[i].Type, got[i].Literal, tt.expected[i].Type, tt.expected[i].Literal)
-				}
-			}
+			assertBooleanTokenSequence(t, tt.input, tt.expected)
 		})
+	}
+}
+
+// assertBooleanTokenSequence is a helper function to test boolean token sequences
+func assertBooleanTokenSequence(t *testing.T, input string, expected []token.Token) {
+	l := lexer.New(input)
+	got := collectTokens(l)
+
+	if len(got) != len(expected) {
+		t.Fatalf("token count mismatch: got %d want %d\n%v", len(got), len(expected), got)
+	}
+
+	for i := range expected {
+		if got[i].Type != expected[i].Type || got[i].Literal != expected[i].Literal {
+			t.Fatalf("tok[%d]: got {%v %q} want {%v %q}", i, got[i].Type, got[i].Literal, expected[i].Type, expected[i].Literal)
+		}
 	}
 }
 
@@ -120,9 +161,8 @@ func TestNextToken_BooleanLiterals_CaseSensitive(t *testing.T) {
 }
 
 func TestLogicalNot_Keyword(t *testing.T) {
-	l := lexer.New("not true or not false")
-	got := collectTokens(l)
-	want := []token.Token{
+	input := "not true or not false"
+	expected := []token.Token{
 		{Type: token.NOT, Literal: "not"},
 		{Type: token.TRUE, Literal: "true"},
 		{Type: token.OR, Literal: "or"},
@@ -131,14 +171,7 @@ func TestLogicalNot_Keyword(t *testing.T) {
 		{Type: token.EOF, Literal: ""},
 	}
 
-	if len(got) != len(want) {
-		t.Fatalf("token count mismatch: got %d want %d\n%v", len(got), len(want), got)
-	}
-	for i := range want {
-		if got[i].Type != want[i].Type || got[i].Literal != want[i].Literal {
-			t.Fatalf("tok[%d]: got {%v %q} want {%v %q}", i, got[i].Type, got[i].Literal, want[i].Type, want[i].Literal)
-		}
-	}
+	assertBooleanTokenSequence(t, input, expected)
 }
 
 // countTokensByType is a helper function that counts tokens by type(s)
