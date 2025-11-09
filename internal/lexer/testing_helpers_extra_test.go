@@ -171,121 +171,39 @@ func Test_containsString(t *testing.T) {
 // Additional test functions for improved AssertPosition coverage
 
 func TestTestHelper_AssertPosition_EdgeCases(t *testing.T) {
-	// Test out-of-bounds positions and multi-line scenarios
+	// Helper to create a test token with the given position
+	createTestToken := func(line, column int) token.Token {
+		return token.Token{
+			Type:    token.RULE,
+			Literal: "rule",
+			Pos:     token.Position{Filename: "test", Offset: 0, Line: line, Column: column},
+		}
+	}
+
+	// Test cases using a more concise structure
 	tests := []struct {
 		name           string
-		token          token.Token
+		line           int
+		column         int
 		expectedLine   int
 		expectedColumn int
-		shouldFail     bool
 	}{
-		{
-			name: "negative line number",
-			token: token.Token{
-				Type:    token.RULE,
-				Literal: "rule",
-				Pos:     token.Position{Filename: "test", Offset: 0, Line: -1, Column: 5},
-			},
-			expectedLine:   -1,
-			expectedColumn: 5,
-			shouldFail:     false,
-		},
-		{
-			name: "negative column number",
-			token: token.Token{
-				Type:    token.RULE,
-				Literal: "rule",
-				Pos:     token.Position{Filename: "test", Offset: 0, Line: 1, Column: -5},
-			},
-			expectedLine:   1,
-			expectedColumn: -5,
-			shouldFail:     false,
-		},
-		{
-			name: "zero line number",
-			token: token.Token{
-				Type:    token.RULE,
-				Literal: "rule",
-				Pos:     token.Position{Filename: "test", Offset: 0, Line: 0, Column: 5},
-			},
-			expectedLine:   0,
-			expectedColumn: 5,
-			shouldFail:     false,
-		},
-		{
-			name: "zero column number",
-			token: token.Token{
-				Type:    token.RULE,
-				Literal: "rule",
-				Pos:     token.Position{Filename: "test", Offset: 0, Line: 1, Column: 0},
-			},
-			expectedLine:   1,
-			expectedColumn: 0,
-			shouldFail:     false,
-		},
-		{
-			name: "very large line number",
-			token: token.Token{
-				Type:    token.RULE,
-				Literal: "rule",
-				Pos:     token.Position{Filename: "test", Offset: 0, Line: 1000000, Column: 5},
-			},
-			expectedLine:   1000000,
-			expectedColumn: 5,
-			shouldFail:     false,
-		},
-		{
-			name: "very large column number",
-			token: token.Token{
-				Type:    token.RULE,
-				Literal: "rule",
-				Pos:     token.Position{Filename: "test", Offset: 0, Line: 1, Column: 1000000},
-			},
-			expectedLine:   1,
-			expectedColumn: 1000000,
-			shouldFail:     false,
-		},
-		{
-			name: "multi-line scenario - line 1",
-			token: token.Token{
-				Type:    token.RULE,
-				Literal: "rule",
-				Pos:     token.Position{Filename: "test", Offset: 0, Line: 1, Column: 1},
-			},
-			expectedLine:   1,
-			expectedColumn: 1,
-			shouldFail:     false,
-		},
-		{
-			name: "multi-line scenario - line 100",
-			token: token.Token{
-				Type:    token.RULE,
-				Literal: "rule",
-				Pos:     token.Position{Filename: "test", Offset: 0, Line: 100, Column: 15},
-			},
-			expectedLine:   100,
-			expectedColumn: 15,
-			shouldFail:     false,
-		},
-		{
-			name: "multi-line scenario - line 1000",
-			token: token.Token{
-				Type:    token.RULE,
-				Literal: "rule",
-				Pos:     token.Position{Filename: "test", Offset: 0, Line: 1000, Column: 8},
-			},
-			expectedLine:   1000,
-			expectedColumn: 8,
-			shouldFail:     false,
-		},
+		{"negative line number", -1, 5, -1, 5},
+		{"negative column number", 1, -5, 1, -5},
+		{"zero line number", 0, 5, 0, 5},
+		{"zero column number", 1, 0, 1, 0},
+		{"very large line number", 1000000, 5, 1000000, 5},
+		{"very large column number", 1, 1000000, 1, 1000000},
+		{"multi-line scenario - line 1", 1, 1, 1, 1},
+		{"multi-line scenario - line 100", 100, 15, 100, 15},
+		{"multi-line scenario - line 1000", 1000, 8, 1000, 8},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			h := NewTestHelper(t)
-
-			// Test that the function handles the position correctly
-			h.AssertPosition(tt.token, tt.expectedLine, tt.expectedColumn)
+			testToken := createTestToken(tt.line, tt.column)
+			h.AssertPosition(testToken, tt.expectedLine, tt.expectedColumn)
 		})
 	}
 }

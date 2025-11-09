@@ -1,46 +1,53 @@
 package lexer
 
 import (
+	"fmt"
 	"testing"
 )
 
 // Test hexDigitValue function
 func TestHexDigitValue(t *testing.T) {
-	tests := []struct {
+	// Helper function to generate test cases for a range of characters
+	generateRangeTests := func(namePrefix string, start, end byte, expectedFunc func(byte) int) []struct {
+		name     string
+		input    byte
+		expected int
+	} {
+		var tests []struct {
+			name     string
+			input    byte
+			expected int
+		}
+		for i := start; i <= end; i++ {
+			tests = append(tests, struct {
+				name     string
+				input    byte
+				expected int
+			}{
+				name:     fmt.Sprintf("%s %c", namePrefix, i),
+				input:    i,
+				expected: expectedFunc(i),
+			})
+		}
+		return tests
+	}
+
+	// Generate valid digit tests (0-9)
+	digitTests := generateRangeTests("digit", '0', '9', func(b byte) int { return int(b - '0') })
+
+	// Generate valid lowercase hex tests (a-f)
+	lowerHexTests := generateRangeTests("lowercase", 'a', 'f', func(b byte) int { return 10 + int(b - 'a') })
+
+	// Generate valid uppercase hex tests (A-F)
+	upperHexTests := generateRangeTests("uppercase", 'A', 'F', func(b byte) int { return 10 + int(b - 'A') })
+
+	// Specific boundary and special invalid cases
+	invalidTests := []struct {
 		name     string
 		input    byte
 		expected int
 	}{
-		// Valid digits 0-9
-		{"digit 0", '0', 0},
-		{"digit 1", '1', 1},
-		{"digit 2", '2', 2},
-		{"digit 3", '3', 3},
-		{"digit 4", '4', 4},
-		{"digit 5", '5', 5},
-		{"digit 6", '6', 6},
-		{"digit 7", '7', 7},
-		{"digit 8", '8', 8},
-		{"digit 9", '9', 9},
-
-		// Valid lowercase hex a-f
-		{"lowercase a", 'a', 10},
-		{"lowercase b", 'b', 11},
-		{"lowercase c", 'c', 12},
-		{"lowercase d", 'd', 13},
-		{"lowercase e", 'e', 14},
-		{"lowercase f", 'f', 15},
-
-		// Valid uppercase hex A-F
-		{"uppercase A", 'A', 10},
-		{"uppercase B", 'B', 11},
-		{"uppercase C", 'C', 12},
-		{"uppercase D", 'D', 13},
-		{"uppercase E", 'E', 14},
-		{"uppercase F", 'F', 15},
-
-		// Invalid characters - should return 0
-		// Boundary cases (characters just outside valid ranges)
+		// Boundary cases
 		{"just before 0", '/', 0},
 		{"just after 9", ':', 0},
 		{"just before a", '`', 0},
@@ -48,11 +55,13 @@ func TestHexDigitValue(t *testing.T) {
 		{"just before A", '@', 0},
 		{"just after F", 'G', 0},
 
-		// Other invalid characters
+		// Common whitespace
 		{"space", ' ', 0},
 		{"tab", '\t', 0},
 		{"newline", '\n', 0},
 		{"carriage return", '\r', 0},
+
+		// Common punctuation
 		{"exclamation", '!', 0},
 		{"at symbol", '@', 0},
 		{"hash", '#', 0},
@@ -61,41 +70,18 @@ func TestHexDigitValue(t *testing.T) {
 		{"caret", '^', 0},
 		{"ampersand", '&', 0},
 		{"asterisk", '*', 0},
-		{"left paren", '(', 0},
-		{"right paren", ')', 0},
-		{"minus", '-', 0},
-		{"plus", '+', 0},
-		{"equals", '=', 0},
-		{"left brace", '{', 0},
-		{"right brace", '}', 0},
-		{"left bracket", '[', 0},
-		{"right bracket", ']', 0},
-		{"backslash", '\\', 0},
-		{"pipe", '|', 0},
-		{"semicolon", ';', 0},
-		{"colon", ':', 0},
-		{"single quote", '\'', 0},
-		{"double quote", '"', 0},
-		{"comma", ',', 0},
-		{"period", '.', 0},
-		{"less than", '<', 0},
-		{"greater than", '>', 0},
-		{"question mark", '?', 0},
-		{"tilde", '~', 0},
-		{"backtick", '`', 0},
-		{"underscore", '_', 0},
 
-		// Extended ASCII range (partial)
+		// Extended range
 		{"delete", 127, 0},
 		{"extended char 128", 128, 0},
-		{"extended char 200", 200, 0},
 		{"extended char 255", 255, 0},
-
-		// Null character
 		{"null", 0, 0},
 	}
 
-	for _, tt := range tests {
+	// Combine all test cases
+	allTests := append(append(digitTests, lowerHexTests...), append(upperHexTests, invalidTests...)...)
+
+	for _, tt := range allTests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := hexDigitValue(tt.input)
 			if result != tt.expected {

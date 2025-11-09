@@ -35,102 +35,53 @@ func runIdentifierTests(t *testing.T, tests []identifierTestCase, testFunc func(
 }
 
 func TestSkipIdentifierInRange(t *testing.T) {
-	tests := []identifierTestCase{
-		{
-			name:     "simple identifier",
-			input:    "hello world",
-			start:    0,
-			end:      11,
-			expected: 5, // "hello" is 5 characters
-		},
-		{
-			name:     "identifier with underscore",
-			input:    "test_var next",
-			start:    0,
-			end:      12,
-			expected: 8, // "test_var" is 8 characters
-		},
-		{
-			name:     "identifier with numbers",
-			input:    "var123 other",
-			start:    0,
-			end:      12,
-			expected: 6, // "var123" is 6 characters
-		},
-		{
-			name:     "mixed alphanumeric with underscore",
-			input:    "my_var_123 end",
-			start:    0,
-			end:      14,
-			expected: 10, // "my_var_123" is 10 characters
-		},
-		{
-			name:     "start in middle of string",
-			input:    "hello world test",
-			start:    6, // start at 'w'
-			end:      16,
-			expected: 11, // "world" is 5 characters, 6 + 5 = 11
-		},
-		{
-			name:     "empty string",
-			input:    "",
-			start:    0,
-			end:      0,
-			expected: 0,
-		},
-		{
-			name:     "no identifier at start",
-			input:    " 123hello",
-			start:    0,
-			end:      9,
-			expected: 0, // starts with space, not letter/digit/underscore
-		},
-		{
-			name:     "identifier at end of range",
-			input:    "test",
-			start:    0,
-			end:      4,
-			expected: 4, // entire string is identifier
-		},
-		{
-			name:     "start beyond end",
-			input:    "hello",
-			start:    10,
-			end:      5,
-			expected: 10, // start > end, should return start
-		},
-		{
-			name:     "single character identifier",
-			input:    "a bc",
-			start:    0,
-			end:      4,
-			expected: 1, // "a" is 1 character
-		},
-		{
-			name:     "identifier followed by special char",
-			input:    "test,end",
-			start:    0,
-			end:      8,
-			expected: 4, // "test" is 4 characters, stops at comma
-		},
-		{
-			name:     "underscore at start of identifier",
-			input:    "_test",
-			start:    0,
-			end:      5,
-			expected: 5, // "_test" is 5 characters, all valid identifier chars
-		},
-		{
-			name:     "multiple consecutive identifiers",
-			input:    "test more data",
-			start:    0,
-			end:      14,
-			expected: 4, // only skips first identifier "test"
-		},
+	// Helper to create test cases
+	createTest := func(name, input string, start, end, expected int) identifierTestCase {
+		return identifierTestCase{name, input, start, end, expected}
 	}
 
-	runIdentifierTests(t, tests, func(l *Lexer, input string, start, end int) int {
-		return l.skipIdentifierInRange(input, start, end)
+	// Basic identifier tests
+	basicTests := []identifierTestCase{
+		createTest("simple identifier", "hello world", 0, 11, 5),
+		createTest("identifier with underscore", "test_var next", 0, 12, 8),
+		createTest("identifier with numbers", "var123 other", 0, 12, 6),
+		createTest("mixed alphanumeric with underscore", "my_var_123 end", 0, 14, 10),
+		createTest("underscore at start", "_test", 0, 5, 5),
+		createTest("single character identifier", "a bc", 0, 4, 1),
+	}
+
+	// Edge case tests
+	edgeTests := []identifierTestCase{
+		createTest("start in middle", "hello world test", 6, 16, 11),
+		createTest("empty string", "", 0, 0, 0),
+		createTest("start beyond end", "hello", 10, 5, 10),
+		createTest("identifier at end", "test", 0, 4, 4),
+	}
+
+	// Boundary and special case tests
+	specialTests := []identifierTestCase{
+		createTest("no identifier at start", " 123hello", 0, 9, 0),
+		createTest("identifier followed by special char", "test,end", 0, 8, 4),
+		createTest("multiple consecutive identifiers", "test more data", 0, 14, 4),
+	}
+
+	// Run test groups
+	t.Run("Basic", func(t *testing.T) {
+		runIdentifierTests(t, basicTests, func(l *Lexer, input string, start, end int) int {
+			return l.skipIdentifierInRange(input, start, end)
+		})
+	})
+
+	t.Run("EdgeCases", func(t *testing.T) {
+		runIdentifierTests(t, edgeTests, func(l *Lexer, input string, start, end int) int {
+			return l.skipIdentifierInRange(input, start, end)
+		})
+	})
+
+	t.Run("SpecialCases", func(t *testing.T) {
+		runIdentifierTests(t, specialTests, func(l *Lexer, input string, start, end int) int {
+			return l.skipIdentifierInRange(input, start, end)
+		})
 	})
 }
 
@@ -158,176 +109,81 @@ func runColonTests(t *testing.T, tests []colonTestCase, testFunc func(*Lexer, st
 }
 
 func TestHasTagsAfterColon(t *testing.T) {
-	// Basic functionality tests
-	basicTests := []colonTestCase{
-		{
-			name:       "simple tag after colon",
-			input:      "strings: $a = { }",
-			colonPos:   7,     // position of ':'
-			currentPos: 10,    // position of '$'
-			expected:   false, // function looks for rule keywords, not $ identifiers
-		},
-		{
-			name:       "multiple tags after colon",
-			input:      "strings: $a $b $c = { }",
-			colonPos:   7,     // position of ':'
-			currentPos: 11,    // position of first '$'
-			expected:   false, // function looks for rule keywords, not $ identifiers
-		},
-		{
-			name:       "no tags after colon",
-			input:      "condition: $a > 5",
-			colonPos:   9,     // position of ':'
-			currentPos: 11,    // position of '$'
-			expected:   false, // function looks for rule keywords, not $ identifiers
-		},
-		{
-			name:       "colon with no content after",
-			input:      "strings:",
-			colonPos:   7, // position of ':'
-			currentPos: 8, // position after ':'
-			expected:   false,
-		},
-		{
-			name:       "whitespace after colon but no tags",
-			input:      "strings: = { }",
-			colonPos:   7, // position of ':'
-			currentPos: 9, // position of '='
-			expected:   false,
-		},
+	// Helper to create test cases that expect false
+	createFalseTests := func(tests []struct {
+		name       string
+		input      string
+		colonPos   int
+		currentPos int
+	}) []colonTestCase {
+		var result []colonTestCase
+		for _, test := range tests {
+			result = append(result, colonTestCase{
+				name:       test.name,
+				input:      test.input,
+				colonPos:   test.colonPos,
+				currentPos: test.currentPos,
+				expected:   false,
+			})
+		}
+		return result
 	}
+
+	// Basic functionality tests (all expect false)
+	basicTests := createFalseTests([]struct {
+		name       string
+		input      string
+		colonPos   int
+		currentPos int
+	}{
+		{"simple tag after colon", "strings: $a = { }", 7, 10},
+		{"multiple tags after colon", "strings: $a $b $c = { }", 7, 11},
+		{"no tags after colon", "condition: $a > 5", 9, 11},
+		{"colon with no content after", "strings:", 7, 8},
+		{"whitespace after colon but no tags", "strings: = { }", 7, 9},
+	})
 
 	// Edge case tests
 	edgeCaseTests := []colonTestCase{
-		{
-			name:       "tags with whitespace",
-			input:      "strings: $a\n\t$b = { }",
-			colonPos:   7,     // position of ':'
-			currentPos: 11,    // position of '$' (first tag)
-			expected:   false, // function looks for rule keywords, not $ identifiers
-		},
-		{
-			name:       "invalid colon position",
-			input:      "strings $a = { }",
-			colonPos:   -1, // invalid position
-			currentPos: 8,
-			expected:   true, // function doesn't validate colonPos, finds "strings" as identifier
-		},
-		{
-			name:       "current position before colon",
-			input:      "strings: $a = { }",
-			colonPos:   10, // position after '$'
-			currentPos: 7,  // position of ':'
-			expected:   false,
-		},
+		{"tags with whitespace", "strings: $a\n\t$b = { }", 7, 11, false},
+		{"invalid colon position", "strings $a = { }", -1, 8, true},  // Only test that expects true
+		{"current position before colon", "strings: $a = { }", 10, 7, false},
 	}
 
-	// Malformed tag tests
-	malformedTagTests := []colonTestCase{
-		{
-			name:       "empty input",
-			input:      "",
-			colonPos:   0,
-			currentPos: 0,
-			expected:   false,
-		},
-		{
-			name:       "malformed tag - starts with number",
-			input:      "strings: 123$a = { }",
-			colonPos:   7,     // position of ':'
-			currentPos: 15,    // position of '$'
-			expected:   false, // 123$a is not a valid identifier
-		},
-		{
-			name:       "malformed tag - special characters",
-			input:      "strings: $a-b = { }",
-			colonPos:   7,     // position of ':'
-			currentPos: 11,    // position of '$'
-			expected:   false, // $a-b is not a valid identifier
-		},
-		{
-			name:       "malformed tag - empty tag name",
-			input:      "strings: $= { }",
-			colonPos:   7,     // position of ':'
-			currentPos: 9,     // position of '$'
-			expected:   false, // $ is not a valid identifier
-		},
-		{
-			name:       "tag with underscore prefix",
-			input:      "strings: $_test = { }",
-			colonPos:   7,     // position of ':'
-			currentPos: 12,    // position of '$'
-			expected:   false, // function looks for rule keywords, not $ identifiers
-		},
-		{
-			name:       "tag with numbers in name",
-			input:      "strings: $a123 = { }",
-			colonPos:   7,     // position of ':'
-			currentPos: 11,    // position of '$'
-			expected:   false, // function looks for rule keywords, not $ identifiers
-		},
-		{
-			name:       "multiple malformed tags",
-			input:      "strings: $a $ 123$b $= { }",
-			colonPos:   7,     // position of ':'
-			currentPos: 11,    // position of first '$'
-			expected:   false, // contains malformed tags
-		},
-		{
-			name:       "tags with mixed valid and invalid",
-			input:      "strings: $a $b $ $c = { }",
-			colonPos:   7,     // position of ':'
-			currentPos: 11,    // position of first '$'
-			expected:   false, // contains empty tag
-		},
-		{
-			name:       "very long tag name",
-			input:      "strings: $very_long_tag_name_123 = { }",
-			colonPos:   7,     // position of ':'
-			currentPos: 11,    // position of '$'
-			expected:   false, // function looks for rule keywords, not $ identifiers
-		},
-		{
-			name:       "tag at end of input",
-			input:      "strings: $a",
-			colonPos:   7,     // position of ':'
-			currentPos: 10,    // position of '$'
-			expected:   false, // function looks for rule keywords, not $ identifiers
-		},
-		{
-			name:       "colon at end of input",
-			input:      "strings:",
-			colonPos:   7,     // position of ':'
-			currentPos: 8,     // position after ':'
-			expected:   false, // no tags after colon
-		},
-		{
-			name:       "only whitespace after colon",
-			input:      "strings:   \t\n  ",
-			colonPos:   7,     // position of ':'
-			currentPos: 14,    // position at end
-			expected:   false, // only whitespace, no tags
-		},
+	// Malformed tag tests (all expect false)
+	malformedTagTests := createFalseTests([]struct {
+		name       string
+		input      string
+		colonPos   int
+		currentPos int
+	}{
+		{"empty input", "", 0, 0},
+		{"malformed tag - starts with number", "strings: 123$a = { }", 7, 15},
+		{"malformed tag - special characters", "strings: $a-b = { }", 7, 11},
+		{"malformed tag - empty tag name", "strings: $= { }", 7, 9},
+		{"tag with underscore prefix", "strings: $_test = { }", 7, 12},
+		{"tag with numbers in name", "strings: $a123 = { }", 7, 11},
+		{"multiple malformed tags", "strings: $a $ 123$b $= { }", 7, 11},
+		{"tags with mixed valid and invalid", "strings: $a $b $ $c = { }", 7, 11},
+		{"very long tag name", "strings: $very_long_tag_name_123 = { }", 7, 11},
+		{"tag at end of input", "strings: $a", 7, 10},
+		{"colon at end of input", "strings:", 7, 8},
+		{"only whitespace after colon", "strings:   \t\n  ", 7, 14},
+	})
+
+	// Test runner function
+	runTestGroup := func(t *testing.T, groupName string, tests []colonTestCase) {
+		t.Run(groupName, func(t *testing.T) {
+			runColonTests(t, tests, func(l *Lexer, input string, colonPos, currentPos int) bool {
+				return l.hasTagsAfterColon(input, colonPos, currentPos)
+			})
+		})
 	}
 
 	// Run test groups
-	t.Run("Basic", func(t *testing.T) {
-		runColonTests(t, basicTests, func(l *Lexer, input string, colonPos, currentPos int) bool {
-			return l.hasTagsAfterColon(input, colonPos, currentPos)
-		})
-	})
-
-	t.Run("EdgeCases", func(t *testing.T) {
-		runColonTests(t, edgeCaseTests, func(l *Lexer, input string, colonPos, currentPos int) bool {
-			return l.hasTagsAfterColon(input, colonPos, currentPos)
-		})
-	})
-
-	t.Run("MalformedTags", func(t *testing.T) {
-		runColonTests(t, malformedTagTests, func(l *Lexer, input string, colonPos, currentPos int) bool {
-			return l.hasTagsAfterColon(input, colonPos, currentPos)
-		})
-	})
+	runTestGroup(t, "Basic", basicTests)
+	runTestGroup(t, "EdgeCases", edgeCaseTests)
+	runTestGroup(t, "MalformedTags", malformedTagTests)
 }
 
 // positionTestCase represents a test case for position-based operations

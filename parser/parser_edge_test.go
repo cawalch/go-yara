@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/cawalch/go-yara/internal/lexer"
@@ -557,99 +558,27 @@ func TestParseUnaryMinusOperator(t *testing.T) {
 
 // TestParseFunctionCallsExtended tests function call parsing with arguments
 func TestParseFunctionCallsExtended(t *testing.T) {
-	tests := []struct {
-		name  string
-		input string
-	}{
-		{
-			name: "int8_with_arg",
-			input: `rule int8_arg {
+	// Helper to create a rule with the given function call
+	createFunctionRule := func(funcName, ruleName string) string {
+		return fmt.Sprintf(`rule %s {
 				condition:
-					int8(0x1000) == 1
-			}`,
-		},
-		{
-			name: "int16_with_arg",
-			input: `rule int16_arg {
-				condition:
-					int16(0x1000) == 1
-			}`,
-		},
-		{
-			name: "int32_with_arg",
-			input: `rule int32_arg {
-				condition:
-					int32(0x1000) == 1
-			}`,
-		},
-		{
-			name: "uint8_with_arg",
-			input: `rule uint8_arg {
-				condition:
-					uint8(0x1000) == 1
-			}`,
-		},
-		{
-			name: "uint16_with_arg",
-			input: `rule uint16_arg {
-				condition:
-					uint16(0x1000) == 1
-			}`,
-		},
-		{
-			name: "uint32_with_arg",
-			input: `rule uint32_arg {
-				condition:
-					uint32(0x1000) == 1
-			}`,
-		},
-		{
-			name: "int8be_with_arg",
-			input: `rule int8be_arg {
-				condition:
-					int8be(0x1000) == 1
-			}`,
-		},
-		{
-			name: "int16be_with_arg",
-			input: `rule int16be_arg {
-				condition:
-					int16be(0x1000) == 1
-			}`,
-		},
-		{
-			name: "int32be_with_arg",
-			input: `rule int32be_arg {
-				condition:
-					int32be(0x1000) == 1
-			}`,
-		},
-		{
-			name: "uint8be_with_arg",
-			input: `rule uint8be_arg {
-				condition:
-					uint8be(0x1000) == 1
-			}`,
-		},
-		{
-			name: "uint16be_with_arg",
-			input: `rule uint16be_arg {
-				condition:
-					uint16be(0x1000) == 1
-			}`,
-		},
-		{
-			name: "uint32be_with_arg",
-			input: `rule uint32be_arg {
-				condition:
-					uint32be(0x1000) == 1
-			}`,
-		},
+					%s(0x1000) == 1
+			}`, ruleName, funcName)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			l := lexer.New(tt.input)
+	// Test function names using a concise array
+	functionNames := []string{
+		"int8", "int16", "int32",
+		"uint8", "uint16", "uint32",
+		"int8be", "int16be", "int32be",
+		"uint8be", "uint16be", "uint32be",
+	}
+
+	for _, funcName := range functionNames {
+		t.Run(funcName+"_with_arg", func(t *testing.T) {
+			ruleInput := createFunctionRule(funcName, funcName+"_arg")
+
+			l := lexer.New(ruleInput)
 			p := New(l)
 
 			program, err := p.ParseRules()
