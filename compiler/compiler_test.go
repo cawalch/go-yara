@@ -293,6 +293,13 @@ rule test_rule {
 	program, err := compiler.CompileSource(source)
 	if err != nil {
 		t.Errorf("Compilation failed: %v", err)
+		// If compilation failed, we can't continue testing program statistics
+		return
+	}
+
+	// Program should not be nil if compilation succeeded
+	if program == nil {
+		t.Fatal("Program is nil after successful compilation")
 	}
 
 	stats := compiler.GetStats()

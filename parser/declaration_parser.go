@@ -363,14 +363,9 @@ func (p *DeclarationParser) ParseExternalVariable() (*ast.ExternalVariable, erro
 	return p.builder.ExternalVariable(pos, name, name, typeHint), nil
 }
 
-// ParseImport parses an import statement
+// ParseImport parses an import statement (IMPORT token already consumed)
 func (p *DeclarationParser) ParseImport() (*ast.Import, error) {
 	pos := p.current.Pos
-
-	// Expect IMPORT keyword
-	if !p.expectToken(token.IMPORT) {
-		return nil, errors.New("expected 'import' keyword")
-	}
 
 	// Expect string literal for module name
 	if !p.currentTokenIs(token.STRING_LIT) {
@@ -382,14 +377,9 @@ func (p *DeclarationParser) ParseImport() (*ast.Import, error) {
 	return p.builder.Import(pos, module), nil
 }
 
-// ParseInclude parses an include statement
+// ParseInclude parses an include statement (INCLUDE token already consumed)
 func (p *DeclarationParser) ParseInclude() (*ast.Include, error) {
 	pos := p.current.Pos
-
-	// Expect INCLUDE keyword
-	if !p.expectToken(token.INCLUDE) {
-		return nil, errors.New("expected 'include' keyword")
-	}
 
 	// Expect string literal for file name
 	if !p.currentTokenIs(token.STRING_LIT) {
@@ -425,7 +415,6 @@ func (p *DeclarationParser) parseExpression() (ast.Expression, error) {
 func (p *DeclarationParser) currentTokenIs(t token.TokenType) bool {
 	return p.current.Type == t
 }
-
 
 func (p *DeclarationParser) expectToken(t token.TokenType) bool {
 	if p.currentTokenIs(t) {
@@ -513,4 +502,3 @@ func (p *DeclarationParser) parseIntLiteralWithBase(base int, prefixes []string,
 	}
 	return 0
 }
-

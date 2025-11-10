@@ -181,7 +181,6 @@ func (p *RuleParser) currentTokenIs(t token.TokenType) bool {
 	return p.current.Type == t
 }
 
-
 func (p *RuleParser) expectToken(t token.TokenType) bool {
 	if p.currentTokenIs(t) {
 		p.nextToken()
