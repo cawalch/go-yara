@@ -219,3 +219,32 @@ func (r *ReaderFast) ReadIdentifierFast() string {
 	}
 	return r.input[start:r.position]
 }
+
+// ReaderSnapshotFast represents a saved state of the fast reader
+type ReaderSnapshotFast struct {
+	position     int
+	readPosition int
+	ch           byte
+	line         int
+	column       int
+}
+
+// SavePosition saves the current reader state
+func (r *ReaderFast) SavePosition() ReaderSnapshotFast {
+	return ReaderSnapshotFast{
+		position:     r.position,
+		readPosition: r.readPosition,
+		ch:           r.ch,
+		line:         r.line,
+		column:       r.column,
+	}
+}
+
+// RestorePosition restores the reader to a previously saved state
+func (r *ReaderFast) RestorePosition(snapshot ReaderSnapshotFast) {
+	r.position = snapshot.position
+	r.readPosition = snapshot.readPosition
+	r.ch = snapshot.ch
+	r.line = snapshot.line
+	r.column = snapshot.column
+}
