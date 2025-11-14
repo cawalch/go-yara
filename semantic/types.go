@@ -284,6 +284,10 @@ func InferTypeFromLiteral(tokenType token.TokenType, _ any) *TypeInfo {
 		return inferStringType(tokenType)
 	case tokenType == token.FLOAT_LIT:
 		return &TypeInfo{DataType: TypeFloat}
+	case tokenType == token.FILESIZE, tokenType == token.ENTRYPOINT:
+		return &TypeInfo{DataType: TypeInteger, IntegerType: Uint64Type}
+	case tokenType == token.DEFINED:
+		return &TypeInfo{DataType: TypeBoolean}
 	default:
 		return &TypeInfo{DataType: TypeUnknown}
 	}
@@ -395,6 +399,9 @@ var binaryOpHandlers = map[token.TokenType]func(*TypeInfo, *TypeInfo) (*TypeInfo
 	token.LPAREN: func(_, _ *TypeInfo) (*TypeInfo, error) {
 		return &TypeInfo{DataType: TypeInteger, IntegerType: Uint64Type}, nil
 	},
+	// COMMA is used for comma-separated lists in quantifier expressions
+	// The result type is the same as the left operand type
+	token.COMMA: func(l, r *TypeInfo) (*TypeInfo, error) { return l, nil },
 }
 
 // inferArithmeticType infers the result type of arithmetic operations

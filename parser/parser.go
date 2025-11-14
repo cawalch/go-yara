@@ -39,7 +39,7 @@ func New(l *lexer.Lexer) *Parser {
 	}
 
 	// Initialize specialized parsers
-	p.exprParser = NewExpressionParser(l, p.builder)
+	p.exprParser = NewExpressionParser(NewLexerAdapter(l), p.builder)
 	p.quantParser = NewQuantifierParser(l, p.builder, p.exprParser)
 	p.declParser = NewDeclarationParser(l, p.builder)
 	p.ruleParser = NewRuleParser(l, p.builder, p.exprParser, p.declParser)
@@ -54,8 +54,10 @@ func New(l *lexer.Lexer) *Parser {
 	p.exprParser.SetQuantifierParser(p.quantParser)
 
 	// Initialize current and peek tokens
-	p.nextToken()
-	p.nextToken()
+	p.current = token.Token{Type: token.EOF} // Initialize to EOF
+	p.peek = token.Token{Type: token.EOF}    // Initialize to EOF
+	p.nextToken()                            // This sets current=EOF, peek=first token
+	p.nextToken()                            // This sets current=first token, peek=second token
 	return p
 }
 
@@ -135,6 +137,7 @@ func (p *Parser) parseExternalDeclaration(program *ast.Program) error {
 }
 
 func (p *Parser) parseImportDeclaration(program *ast.Program) error {
+	p.nextToken() // consume IMPORT token
 	p.updateParserTokens()
 	importStmt, err := p.declParser.ParseImport()
 	if err == nil {
@@ -144,6 +147,7 @@ func (p *Parser) parseImportDeclaration(program *ast.Program) error {
 }
 
 func (p *Parser) parseIncludeDeclaration(program *ast.Program) error {
+	p.nextToken() // consume INCLUDE token
 	p.updateParserTokens()
 	includeStmt, err := p.declParser.ParseInclude()
 	if err == nil {
