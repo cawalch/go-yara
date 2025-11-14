@@ -86,27 +86,26 @@ func (l *Lexer) isEmptyRegex() bool {
 }
 
 // GetPosition implements regexReader interface for Lexer
-// GetPosition returns the current position in the input
 func (l *Lexer) GetPosition() int {
 	return l.reader.Position()
 }
 
-// SetPosition sets the current position in the input
+// SetPosition implements regexReader interface for Lexer
 func (l *Lexer) SetPosition(pos int) {
 	l.reader.SetPosition(pos)
 }
 
-// GetCurrent returns the current character
+// GetCurrent implements regexReader interface for Lexer
 func (l *Lexer) GetCurrent() byte {
 	return l.reader.Current()
 }
 
-// ReadChar advances to the next character
+// ReadChar implements regexReader interface for Lexer
 func (l *Lexer) ReadChar() {
 	l.reader.ReadChar()
 }
 
-// Slice returns a substring from the given start position
+// Slice implements regexReader interface for Lexer
 func (l *Lexer) Slice(start int) string {
 	return l.reader.Slice(start)
 }

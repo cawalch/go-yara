@@ -417,9 +417,6 @@ func (l *Lexer) skipIdentifierInRange(input string, start, end int) int {
 }
 
 // isRuleKeyword checks if a word is a YARA rule structure keyword
-func isRuleKeyword(word string) bool {
-	return word == "condition" || word == "meta" || word == "strings"
-}
 
 // looksLikeArithmeticExpression checks if current context appears to be an arithmetic expression
 func (l *Lexer) looksLikeArithmeticExpression() bool {

@@ -8,7 +8,7 @@ import (
 
 func TestReader_CurrentPosition(t *testing.T) {
 	input := "hello world"
-	r := NewReader(input)
+	r := NewReaderFast(input)
 
 	pos := r.CurrentPosition()
 	expected := token.Position{Filename: "", Offset: 0, Line: 1, Column: 1}
@@ -20,7 +20,7 @@ func TestReader_CurrentPosition(t *testing.T) {
 
 func TestReader_SetPosition(t *testing.T) {
 	input := "hello\nworld\ntest"
-	r := NewReader(input)
+	r := NewReaderFast(input)
 
 	// Test setting position to beginning of second line
 	r.SetPosition(6) // Position of 'w' in "world"
@@ -39,7 +39,7 @@ func TestReader_SetPosition(t *testing.T) {
 
 func TestReader_SavePosition(t *testing.T) {
 	input := "test input"
-	r := NewReader(input)
+	r := NewReaderFast(input)
 
 	// Read a few characters
 	r.ReadChar()
@@ -72,7 +72,7 @@ func TestReader_SavePosition(t *testing.T) {
 
 func TestReader_LineAndColumn(t *testing.T) {
 	input := "hello\nworld\ntest"
-	r := NewReader(input)
+	r := NewReaderFast(input)
 
 	// Initially at line 1, column 1
 	if r.Line() != 1 || r.Column() != 1 {
@@ -110,7 +110,7 @@ func TestReader_LineAndColumn(t *testing.T) {
 
 func TestReader_ReadPosition(t *testing.T) {
 	input := "test"
-	r := NewReader(input)
+	r := NewReaderFast(input)
 
 	// Initially readPosition should be 1 (after 't')
 	if r.ReadPosition() != 1 {
@@ -126,7 +126,7 @@ func TestReader_ReadPosition(t *testing.T) {
 
 func TestReader_SliceRange(t *testing.T) {
 	input := "hello world"
-	r := NewReader(input)
+	r := NewReaderFast(input)
 
 	// Test slicing from position 0 to 5
 	slice := r.SliceRange(0, 5)
@@ -147,7 +147,7 @@ func TestReader_SliceRange(t *testing.T) {
 
 func TestReader_PeekChar(t *testing.T) {
 	input := "hello"
-	r := NewReader(input)
+	r := NewReaderFast(input)
 
 	// Peek should return 'e' without advancing position
 	peeked := r.PeekChar()
