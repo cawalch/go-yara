@@ -274,7 +274,7 @@ func (it *IntegerType) GetIntegerRange() (minVal, maxVal int64) {
 }
 
 // InferTypeFromLiteral infers type information from a literal token
-func InferTypeFromLiteral(tokenType token.TokenType, _ any) *TypeInfo {
+func InferTypeFromLiteral(tokenType token.Type, _ any) *TypeInfo {
 	switch {
 	case isBooleanLiteral(tokenType):
 		return &TypeInfo{DataType: TypeBoolean}
@@ -294,12 +294,12 @@ func InferTypeFromLiteral(tokenType token.TokenType, _ any) *TypeInfo {
 }
 
 // isBooleanLiteral checks if token is a boolean literal
-func isBooleanLiteral(tokenType token.TokenType) bool {
+func isBooleanLiteral(tokenType token.Type) bool {
 	return tokenType == token.TRUE || tokenType == token.FALSE
 }
 
 // isIntegerLiteral checks if token is an integer literal
-func isIntegerLiteral(tokenType token.TokenType) bool {
+func isIntegerLiteral(tokenType token.Type) bool {
 	return tokenType == token.IntegerLit ||
 		tokenType == token.HexIntegerLit ||
 		tokenType == token.OctalIntegerLit ||
@@ -307,14 +307,14 @@ func isIntegerLiteral(tokenType token.TokenType) bool {
 }
 
 // isStringLiteral checks if token is a string literal
-func isStringLiteral(tokenType token.TokenType) bool {
+func isStringLiteral(tokenType token.Type) bool {
 	return tokenType == token.StringLit ||
 		tokenType == token.HexStringLit ||
 		tokenType == token.RegexLit
 }
 
 // inferIntegerType infers type for integer literals
-func inferIntegerType(tokenType token.TokenType) *TypeInfo {
+func inferIntegerType(tokenType token.Type) *TypeInfo {
 	switch tokenType {
 	case token.IntegerLit, token.OctalIntegerLit:
 		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
@@ -326,7 +326,7 @@ func inferIntegerType(tokenType token.TokenType) *TypeInfo {
 }
 
 // inferStringType infers type for string literals
-func inferStringType(tokenType token.TokenType) *TypeInfo {
+func inferStringType(tokenType token.Type) *TypeInfo {
 	stringType := &StringType{
 		IsWide:  false,
 		IsASCII: false,
@@ -355,7 +355,7 @@ func inferStringType(tokenType token.TokenType) *TypeInfo {
 }
 
 // InferTypeFromBinaryOp infers the result type of a binary operation
-func InferTypeFromBinaryOp(left *TypeInfo, op token.TokenType, right *TypeInfo) (*TypeInfo, error) {
+func InferTypeFromBinaryOp(left *TypeInfo, op token.Type, right *TypeInfo) (*TypeInfo, error) {
 	if handler, exists := binaryOpHandlers[op]; exists {
 		return handler(left, right)
 	}
@@ -363,7 +363,7 @@ func InferTypeFromBinaryOp(left *TypeInfo, op token.TokenType, right *TypeInfo) 
 }
 
 // binaryOpHandlers maps binary operators to their type inference handlers
-var binaryOpHandlers = map[token.TokenType]func(*TypeInfo, *TypeInfo) (*TypeInfo, error){
+var binaryOpHandlers = map[token.Type]func(*TypeInfo, *TypeInfo) (*TypeInfo, error){
 	token.PLUS:        func(l, r *TypeInfo) (*TypeInfo, error) { return inferArithmeticType(l, token.PLUS, r) },
 	token.MINUS:       func(l, r *TypeInfo) (*TypeInfo, error) { return inferArithmeticType(l, token.MINUS, r) },
 	token.MULTIPLY:    func(l, r *TypeInfo) (*TypeInfo, error) { return inferArithmeticType(l, token.MULTIPLY, r) },
@@ -405,7 +405,7 @@ var binaryOpHandlers = map[token.TokenType]func(*TypeInfo, *TypeInfo) (*TypeInfo
 }
 
 // inferArithmeticType infers the result type of arithmetic operations
-func inferArithmeticType(left *TypeInfo, op token.TokenType, right *TypeInfo) (*TypeInfo, error) {
+func inferArithmeticType(left *TypeInfo, op token.Type, right *TypeInfo) (*TypeInfo, error) {
 	if !left.CanPerformArithmetic(right) {
 		return nil, fmt.Errorf("cannot perform arithmetic operation %s between %s and %s",
 			op, left.String(), right.String())
@@ -418,7 +418,7 @@ func inferArithmeticType(left *TypeInfo, op token.TokenType, right *TypeInfo) (*
 }
 
 // inferBitwiseType infers the result type of bitwise operations
-func inferBitwiseType(left *TypeInfo, op token.TokenType, right *TypeInfo) (*TypeInfo, error) {
+func inferBitwiseType(left *TypeInfo, op token.Type, right *TypeInfo) (*TypeInfo, error) {
 	if !left.CanPerformBitwise(right) {
 		return nil, fmt.Errorf("cannot perform bitwise operation %s between %s and %s",
 			op, left.String(), right.String())
@@ -496,7 +496,7 @@ func inferDotOperatorType(left, right *TypeInfo) (*TypeInfo, error) {
 }
 
 // InferTypeFromUnaryOp infers the result type of a unary operation
-func InferTypeFromUnaryOp(op token.TokenType, operand *TypeInfo) (*TypeInfo, error) {
+func InferTypeFromUnaryOp(op token.Type, operand *TypeInfo) (*TypeInfo, error) {
 	if handler, exists := unaryOpHandlers[op]; exists {
 		return handler(operand)
 	}
@@ -504,7 +504,7 @@ func InferTypeFromUnaryOp(op token.TokenType, operand *TypeInfo) (*TypeInfo, err
 }
 
 // unaryOpHandlers maps unary operators to their type inference handlers
-var unaryOpHandlers = map[token.TokenType]func(*TypeInfo) (*TypeInfo, error){
+var unaryOpHandlers = map[token.Type]func(*TypeInfo) (*TypeInfo, error){
 	token.NOT:        handleLogicalNotOp,
 	token.BitwiseNot: handleBitwiseNotOp,
 	token.MINUS:      handleUnaryMinusOp,

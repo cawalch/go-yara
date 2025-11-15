@@ -12,7 +12,7 @@ const (
 )
 
 // keywords maps string identifiers to their corresponding token types
-var keywords = map[string]token.TokenType{
+var keywords = map[string]token.Type{
 	"or":             token.OR,
 	"of":             token.OF,
 	"and":            token.AND,
@@ -88,7 +88,7 @@ func init() {
 }
 
 // lookupIdent provides optimized keyword lookup using map with fallback
-func lookupIdent(ident string) token.TokenType {
+func lookupIdent(ident string) token.Type {
 	// Direct map lookup for all keywords
 	if tokenType, exists := keywords[ident]; exists {
 		return tokenType

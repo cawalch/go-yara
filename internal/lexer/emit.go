@@ -5,21 +5,21 @@ import "github.com/cawalch/go-yara/token"
 // Token emission and creation functions
 
 // makeSimpleToken creates a token for single-character operators and advances the lexer
-func (l *Lexer) makeSimpleToken(tokenType token.TokenType, literal string, pos token.Position) token.Token {
+func (l *Lexer) makeSimpleToken(tokenType token.Type, literal string, pos token.Position) token.Token {
 	tok := token.Token{Type: tokenType, Literal: literal, Pos: pos}
 	l.readChar()
 	return tok
 }
 
 // makeTwoCharToken creates a token for two-character operators and advances the lexer
-func (l *Lexer) makeTwoCharToken(tokenType token.TokenType, literal string, pos token.Position) token.Token {
+func (l *Lexer) makeTwoCharToken(tokenType token.Type, literal string, pos token.Position) token.Token {
 	tok := token.Token{Type: tokenType, Literal: literal, Pos: pos}
 	l.readChar() // advance past second character
 	return tok
 }
 
 // makeToken creates a token with the given type, literal, and position
-func (l *Lexer) makeToken(tokenType token.TokenType, literal string, pos token.Position) token.Token {
+func (l *Lexer) makeToken(tokenType token.Type, literal string, pos token.Position) token.Token {
 	return token.Token{Type: tokenType, Literal: literal, Pos: pos}
 }
 
@@ -105,7 +105,7 @@ func (l *Lexer) tryPrefixedNumber(pos token.Position) (token.Token, bool) {
 }
 
 // makeNumberTokenWithSize creates a numeric token and checks for size suffix
-func (l *Lexer) makeNumberTokenWithSize(lit string, baseType token.TokenType, pos token.Position) token.Token {
+func (l *Lexer) makeNumberTokenWithSize(lit string, baseType token.Type, pos token.Position) token.Token {
 	if l.hasSizeSuffix() {
 		sizeLit := l.readSizeSuffix(lit)
 		return l.makeToken(token.SizeLit, sizeLit, pos)

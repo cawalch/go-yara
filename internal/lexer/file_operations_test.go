@@ -13,7 +13,7 @@ func TestFileOperations_Basic(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
-		expected token.TokenType
+		expected token.Type
 	}{
 		{"filesize", "filesize", token.FILESIZE},
 		{"entrypoint", "entrypoint", token.ENTRYPOINT},
@@ -33,7 +33,7 @@ func TestFileOperations_CaseSensitive(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
-		expected token.TokenType
+		expected token.Type
 	}{
 		{"filesize_lowercase", "filesize", token.FILESIZE},
 		{"FILESIZE_uppercase", "FILESIZE", token.IDENTIFIER}, // Should be identifier, not keyword

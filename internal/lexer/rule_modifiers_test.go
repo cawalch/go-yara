@@ -23,33 +23,33 @@ func testRuleWithModifiers(t *testing.T) {
 // testGlobalRule tests a rule with only the global modifier
 func testGlobalRule(t *testing.T) {
 	input := "global rule GlobalRule { condition: true }"
-	expected := createRuleTokenSequence([]token.TokenType{token.GLOBAL}, "GlobalRule", true)
+	expected := createRuleTokenSequence([]token.Type{token.GLOBAL}, "GlobalRule", true)
 	assertRuleModifierTokenSequence(t, input, expected)
 }
 
 // testGlobalPrivateRule tests a rule with both global and private modifiers
 func testGlobalPrivateRule(t *testing.T) {
 	input := "global private rule GlobalPrivateRule { condition: false }"
-	expected := createRuleTokenSequence([]token.TokenType{token.GLOBAL, token.PRIVATE}, "GlobalPrivateRule", false)
+	expected := createRuleTokenSequence([]token.Type{token.GLOBAL, token.PRIVATE}, "GlobalPrivateRule", false)
 	assertRuleModifierTokenSequence(t, input, expected)
 }
 
 // testPrivateRule tests a rule with only the private modifier
 func testPrivateRule(t *testing.T) {
 	input := "private rule PrivateRule { condition: true }"
-	expected := createRuleTokenSequence([]token.TokenType{token.PRIVATE}, "PrivateRule", true)
+	expected := createRuleTokenSequence([]token.Type{token.PRIVATE}, "PrivateRule", true)
 	assertRuleModifierTokenSequence(t, input, expected)
 }
 
 // testNormalRule tests a rule without any modifiers
 func testNormalRule(t *testing.T) {
 	input := "rule NormalRule { condition: true }"
-	expected := createRuleTokenSequence([]token.TokenType{}, "NormalRule", true)
+	expected := createRuleTokenSequence([]token.Type{}, "NormalRule", true)
 	assertRuleModifierTokenSequence(t, input, expected)
 }
 
 // createRuleTokenSequence builds the expected token sequence for a rule with modifiers
-func createRuleTokenSequence(modifiers []token.TokenType, ruleName string, condition bool) []token.Token {
+func createRuleTokenSequence(modifiers []token.Type, ruleName string, condition bool) []token.Token {
 	// Pre-allocate tokens with estimated capacity (modifiers + rule components + EOF)
 	capacity := len(modifiers) + 7 // 7 = rule, identifier, lbrace, condition, colon, value, rbrace
 	tokens := make([]token.Token, 0, capacity)

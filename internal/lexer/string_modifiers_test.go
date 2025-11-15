@@ -31,7 +31,7 @@ func TestStringModifiers_CompleteYARARule(t *testing.T) {
 	tokens := collectTokens(l)
 
 	// Count string modifier tokens
-	modifierCounts := map[token.TokenType]int{}
+	modifierCounts := map[token.Type]int{}
 	for _, tok := range tokens {
 		switch tok.Type {
 		case token.NOCASE, token.WIDE, token.ASCII, token.FULLWORD, token.PRIVATE, token.XOR, token.BASE64, token.BASE64WIDE:
@@ -40,7 +40,7 @@ func TestStringModifiers_CompleteYARARule(t *testing.T) {
 	}
 
 	// Verify we have the expected modifiers
-	expectedModifiers := map[token.TokenType]int{
+	expectedModifiers := map[token.Type]int{
 		token.NOCASE:     2, // $text1 and $hex2
 		token.WIDE:       2, // $text1 and $regex2
 		token.ASCII:      2, // $text2 and $regex1
@@ -72,32 +72,32 @@ func TestStringModifiers_AllStringTypes(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
-		expected []token.TokenType
+		expected []token.Type
 	}{
 		{
 			"text string with all modifiers",
 			`"text" nocase wide ascii fullword private xor base64 base64wide`,
-			[]token.TokenType{token.StringLit, token.NOCASE, token.WIDE, token.ASCII, token.FULLWORD, token.PRIVATE, token.XOR, token.BASE64, token.BASE64WIDE, token.EOF},
+			[]token.Type{token.StringLit, token.NOCASE, token.WIDE, token.ASCII, token.FULLWORD, token.PRIVATE, token.XOR, token.BASE64, token.BASE64WIDE, token.EOF},
 		},
 		{
 			"hex string with modifiers",
 			`{ E2 34 ?? A1 } nocase private`,
-			[]token.TokenType{token.HexStringLit, token.NOCASE, token.PRIVATE, token.EOF},
+			[]token.Type{token.HexStringLit, token.NOCASE, token.PRIVATE, token.EOF},
 		},
 		{
 			"regex with modifiers",
 			`/pattern/i ascii fullword`,
-			[]token.TokenType{token.RegexLit, token.ASCII, token.FULLWORD, token.EOF},
+			[]token.Type{token.RegexLit, token.ASCII, token.FULLWORD, token.EOF},
 		},
 		{
 			"empty hex string with modifiers",
 			`{ } wide`,
-			[]token.TokenType{token.HexStringLit, token.WIDE, token.EOF},
+			[]token.Type{token.HexStringLit, token.WIDE, token.EOF},
 		},
 		{
 			"empty regex with modifiers",
 			`//i nocase`,
-			[]token.TokenType{token.RegexLit, token.NOCASE, token.EOF},
+			[]token.Type{token.RegexLit, token.NOCASE, token.EOF},
 		},
 	}
 

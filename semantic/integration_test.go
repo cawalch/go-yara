@@ -70,7 +70,7 @@ func TestTypeCheckerBinaryOpTypes_Arithmetic(t *testing.T) {
 
 	tests := []struct {
 		name  string
-		op    token.TokenType
+		op    token.Type
 		left  int64
 		right int64
 	}{
@@ -99,7 +99,7 @@ func TestTypeCheckerBinaryOpTypes_Bitwise(t *testing.T) {
 
 	tests := []struct {
 		name  string
-		op    token.TokenType
+		op    token.Type
 		left  int64
 		right int64
 	}{
@@ -129,7 +129,7 @@ func TestTypeCheckerBinaryOpTypes_Comparison(t *testing.T) {
 
 	tests := []struct {
 		name  string
-		op    token.TokenType
+		op    token.Type
 		left  int64
 		right int64
 	}{
@@ -217,7 +217,7 @@ func TestInferTypeFromBinaryOpAllOperators(t *testing.T) {
 	tests := []struct {
 		name     string
 		left     *TypeInfo
-		op       token.TokenType
+		op       token.Type
 		right    *TypeInfo
 		wantType DataType
 		wantErr  bool
@@ -268,7 +268,7 @@ func TestInferTypeFromUnaryOpAllOperators(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		op       token.TokenType
+		op       token.Type
 		operand  *TypeInfo
 		wantType DataType
 		wantErr  bool
@@ -475,7 +475,7 @@ func TestIntegerTypeGetIntegerRange(t *testing.T) {
 func TestInferTypeFromLiteralAllTypes(t *testing.T) {
 	tests := []struct {
 		name      string
-		tokenType token.TokenType
+		tokenType token.Type
 		value     any
 		wantType  DataType
 	}{

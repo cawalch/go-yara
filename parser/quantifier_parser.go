@@ -371,15 +371,15 @@ func (p *QuantifierParser) isNumericQuantifierToken() bool {
 }
 
 // Helper methods
-func (p *QuantifierParser) currentTokenIs(t token.TokenType) bool {
+func (p *QuantifierParser) currentTokenIs(t token.Type) bool {
 	return p.current.Type == t
 }
 
-func (p *QuantifierParser) peekTokenIs(t token.TokenType) bool {
+func (p *QuantifierParser) peekTokenIs(t token.Type) bool {
 	return p.peek.Type == t
 }
 
-func (p *QuantifierParser) expectToken(t token.TokenType) bool {
+func (p *QuantifierParser) expectToken(t token.Type) bool {
 	if p.currentTokenIs(t) {
 		p.nextToken()
 		return true

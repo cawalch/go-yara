@@ -132,7 +132,7 @@ func TestNextToken_BooleanLiterals_CaseSensitive(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
-		expected token.TokenType
+		expected token.Type
 	}{
 		{"uppercase TRUE", "TRUE", token.IDENTIFIER},
 		{"uppercase FALSE", "FALSE", token.IDENTIFIER},
@@ -175,7 +175,7 @@ func TestLogicalNot_Keyword(t *testing.T) {
 }
 
 // countTokensByType is a helper function that counts tokens by type(s)
-func countTokensByType(tokens []token.Token, tokenTypes ...token.TokenType) int {
+func countTokensByType(tokens []token.Token, tokenTypes ...token.Type) int {
 	count := 0
 	for _, tok := range tokens {
 		if slices.Contains(tokenTypes, tok.Type) {
@@ -186,7 +186,7 @@ func countTokensByType(tokens []token.Token, tokenTypes ...token.TokenType) int 
 }
 
 // findTokenByTypeAndLiteral is a helper function that finds a token by type and literal value
-func findTokenByTypeAndLiteral(tokens []token.Token, tokenType token.TokenType, literal string) bool {
+func findTokenByTypeAndLiteral(tokens []token.Token, tokenType token.Type, literal string) bool {
 	for _, tok := range tokens {
 		if tok.Type == tokenType && tok.Literal == literal {
 			return true
@@ -207,7 +207,7 @@ func validateBooleanTokens(t *testing.T, tokens []token.Token) {
 
 	// Verify specific boolean tokens exist
 	tokenValidationTests := []struct {
-		tokenType token.TokenType
+		tokenType token.Type
 		literal   string
 		name      string
 	}{

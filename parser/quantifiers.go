@@ -17,7 +17,7 @@ const (
 // QuantifierStrategy defines the interface for parsing quantifier expressions
 type QuantifierStrategy interface {
 	// CanHandle determines if this strategy can handle the current token combination
-	CanHandle(currentToken, peekToken token.TokenType) bool
+	CanHandle(currentToken, peekToken token.Type) bool
 
 	// Parse attempts to parse the quantifier using this strategy
 	Parse(parser *QuantifierParser, context ParseContext) ParseResult
@@ -38,7 +38,7 @@ func NewForLoopQuantifierStrategy() *ForLoopQuantifierStrategy {
 }
 
 // CanHandle checks if the strategy can handle the given "for" loop quantifier token
-func (flqs *ForLoopQuantifierStrategy) CanHandle(currentToken, _ token.TokenType) bool {
+func (flqs *ForLoopQuantifierStrategy) CanHandle(currentToken, _ token.Type) bool {
 	return currentToken == token.FOR
 }
 
@@ -227,7 +227,7 @@ func NewStandardQuantifierStrategy() *StandardQuantifierStrategy {
 }
 
 // CanHandle checks if the strategy can handle the given standard quantifier token
-func (sqs *StandardQuantifierStrategy) CanHandle(currentToken, _ token.TokenType) bool {
+func (sqs *StandardQuantifierStrategy) CanHandle(currentToken, _ token.Type) bool {
 	return sqs.classifier.IsQuantifierToken(currentToken)
 }
 
@@ -286,7 +286,7 @@ func NewNumericQuantifierStrategy() *NumericQuantifierStrategy {
 }
 
 // CanHandle checks if the strategy can handle the given numeric quantifier token combination
-func (nqs *NumericQuantifierStrategy) CanHandle(currentToken, peekToken token.TokenType) bool {
+func (nqs *NumericQuantifierStrategy) CanHandle(currentToken, peekToken token.Type) bool {
 	// Numeric quantifiers are typically integers followed by "of"
 	return currentToken == token.IntegerLit && peekToken == token.OF
 }
@@ -353,7 +353,7 @@ func (qsr *QuantifierStrategyRegistry) RegisterStrategy(strategy QuantifierStrat
 }
 
 // FindStrategy finds the best strategy for parsing a quantifier
-func (qsr *QuantifierStrategyRegistry) FindStrategy(currentToken, peekToken token.TokenType) QuantifierStrategy {
+func (qsr *QuantifierStrategyRegistry) FindStrategy(currentToken, peekToken token.Type) QuantifierStrategy {
 	for _, strategy := range qsr.strategies {
 		if strategy.CanHandle(currentToken, peekToken) {
 			return strategy

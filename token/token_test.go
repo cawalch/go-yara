@@ -5,11 +5,11 @@ import (
 	"testing"
 )
 
-// Test TokenType String method
-func TestTokenTypeString(t *testing.T) {
+// Test Type String method
+func TestTypeString(t *testing.T) {
 	// Define test cases with logical grouping
 	testGroups := map[string][]struct {
-		tokenType TokenType
+		tokenType Type
 		expected  string
 	}{
 		"RuleStructure": {
@@ -62,7 +62,7 @@ func TestTokenTypeString(t *testing.T) {
 			{ILLEGAL, "ILLEGAL"}, {EOF, "EOF"},
 		},
 		"UnknownToken": {
-			{TokenType(999), "UNKNOWN(999)"}, // Test unknown token type
+			{Type(999), "UNKNOWN(999)"}, // Test unknown token type
 		},
 	}
 
@@ -72,7 +72,7 @@ func TestTokenTypeString(t *testing.T) {
 				t.Run(tt.expected, func(t *testing.T) {
 					result := tt.tokenType.String()
 					if result != tt.expected {
-						t.Errorf("TokenType(%d).String() = %v, want %v", int(tt.tokenType), result, tt.expected)
+						t.Errorf("Type(%d).String() = %v, want %v", int(tt.tokenType), result, tt.expected)
 					}
 				})
 			}
@@ -164,8 +164,8 @@ func ExamplePosition() {
 	// Output: Position: rule.yar:3:8 (offset 50)
 }
 
-// ExampleTokenType_String demonstrates the String method on TokenType.
-func ExampleTokenType_String() {
+// ExampleType_String demonstrates the String method on Type.
+func ExampleType_String() {
 	fmt.Println(RULE.String())
 	fmt.Println(IDENTIFIER.String())
 	fmt.Println(EOF.String())

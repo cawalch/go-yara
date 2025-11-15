@@ -155,15 +155,15 @@ func (cc *ConditionCompiler) findStringOffset(name string) (int, bool) {
 
 func (cc *ConditionCompiler) emitStringOffset(offset, line, column int) {
 	if offset < 0 {
-		cc.emitter.EmitOpcodeWithOperand(OpPush_M, Operand{Type: OperandImmediate64, Value: uint64(0)}, line, column)
+		cc.emitter.EmitOpcodeWithOperand(OpPushM, Operand{Type: OperandImmediate64, Value: uint64(0)}, line, column)
 	} else {
-		cc.emitter.EmitOpcodeWithOperand(OpPush_M, Operand{Type: OperandImmediate64, Value: uint64(int64(offset))}, line, column) // #nosec G115
+		cc.emitter.EmitOpcodeWithOperand(OpPushM, Operand{Type: OperandImmediate64, Value: uint64(int64(offset))}, line, column) // #nosec G115
 	}
 }
 
 func (cc *ConditionCompiler) emitStringIdentifier(offset int, identifier string, line, column int) {
 	_ = identifier
-	cc.emitter.EmitOpcodeWithOperand(OpPush_M, Operand{Type: OperandImmediate64, Value: uint64(int64(offset))}, line, column) // #nosec G115
+	cc.emitter.EmitOpcodeWithOperand(OpPushM, Operand{Type: OperandImmediate64, Value: uint64(int64(offset))}, line, column) // #nosec G115
 }
 
 // CompileCondition compiles a condition expression to bytecode
@@ -305,37 +305,37 @@ func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 	if offset, exists := cc.stringOffsets[ident.Name]; exists {
 		// Safe conversion: offset is expected to be non-negative
 		if offset >= 0 {
-			cc.emitter.EmitOpcodeWithOperand(OpPush_M, Operand{Type: OperandImmediate64, Value: uint64(offset)}, ident.Pos.Line, ident.Pos.Column)
+			cc.emitter.EmitOpcodeWithOperand(OpPushM, Operand{Type: OperandImmediate64, Value: uint64(offset)}, ident.Pos.Line, ident.Pos.Column)
 		} else {
-			cc.emitter.EmitOpcodeWithOperand(OpPush_M, Operand{Type: OperandImmediate64, Value: 0}, ident.Pos.Line, ident.Pos.Column)
+			cc.emitter.EmitOpcodeWithOperand(OpPushM, Operand{Type: OperandImmediate64, Value: 0}, ident.Pos.Line, ident.Pos.Column)
 		}
-		cc.emitter.EmitOpcode(OP_FOUND, ident.Pos.Line, ident.Pos.Column)
+		cc.emitter.EmitOpcode(OpFound, ident.Pos.Line, ident.Pos.Column)
 		return nil
 	}
 
 	if index, exists := cc.externalVariables[ident.Name]; exists {
-		cc.emitter.EmitOpcodeWithOperand(OpPush_M, Operand{Type: OperandImmediate32, Value: uint64(int64(index))}, ident.Pos.Line, ident.Pos.Column) // #nosec G115
+		cc.emitter.EmitOpcodeWithOperand(OpPushM, Operand{Type: OperandImmediate32, Value: uint64(int64(index))}, ident.Pos.Line, ident.Pos.Column) // #nosec G115
 		return nil
 	}
 
 	if index, exists := cc.variableMap[ident.Name]; exists {
-		cc.emitter.EmitOpcodeWithOperand(OP_OBJ_LOAD, Operand{Type: OperandImmediate32, Value: safeInt64ToUint64(safeMax(0, int64(index)))}, ident.Pos.Line, ident.Pos.Column)
+		cc.emitter.EmitOpcodeWithOperand(OpObjLoad, Operand{Type: OperandImmediate32, Value: safeInt64ToUint64(safeMax(0, int64(index)))}, ident.Pos.Line, ident.Pos.Column)
 		return nil
 	}
 
 	if ruleIndex, exists := cc.ruleIndexMap[ident.Name]; exists {
-		cc.emitter.EmitOpcodeWithOperand(OpPush_RULE, Operand{Type: OperandImmediate8, Value: uint64(int64(ruleIndex))}, ident.Pos.Line, ident.Pos.Column) // #nosec G115
+		cc.emitter.EmitOpcodeWithOperand(OpPushRule, Operand{Type: OperandImmediate8, Value: uint64(int64(ruleIndex))}, ident.Pos.Line, ident.Pos.Column) // #nosec G115
 		return nil
 	}
 
 	specialIdentifiers := map[string]func(){
-		"filesize":     func() { cc.emitter.EmitOpcode(OP_FILESIZE, ident.Pos.Line, ident.Pos.Column) },
-		"entrypoint":   func() { cc.emitter.EmitOpcode(OP_ENTRYPOINT, ident.Pos.Line, ident.Pos.Column) },
+		"filesize":     func() { cc.emitter.EmitOpcode(OpFilesize, ident.Pos.Line, ident.Pos.Column) },
+		"entrypoint":   func() { cc.emitter.EmitOpcode(OpEntrypoint, ident.Pos.Line, ident.Pos.Column) },
 		"them":         func() { cc.emitter.EmitPush(0xFFFFFFFE, ident.Pos.Line, ident.Pos.Column) },
 		"flags":        func() { cc.emitter.EmitPush(0, ident.Pos.Line, ident.Pos.Column) },
-		QuantifierAny:  func() { cc.emitter.EmitOpcode(OpPush_8, ident.Pos.Line, ident.Pos.Column) },
-		QuantifierAll:  func() { cc.emitter.EmitOpcode(OpPush_8, ident.Pos.Line, ident.Pos.Column) },
-		QuantifierNone: func() { cc.emitter.EmitOpcode(OpPush_8, ident.Pos.Line, ident.Pos.Column) },
+		QuantifierAny:  func() { cc.emitter.EmitOpcode(OpPush8, ident.Pos.Line, ident.Pos.Column) },
+		QuantifierAll:  func() { cc.emitter.EmitOpcode(OpPush8, ident.Pos.Line, ident.Pos.Column) },
+		QuantifierNone: func() { cc.emitter.EmitOpcode(OpPush8, ident.Pos.Line, ident.Pos.Column) },
 	}
 
 	if handler, exists := specialIdentifiers[ident.Name]; exists {
@@ -348,7 +348,7 @@ func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 		return nil
 	}
 
-	cc.emitter.EmitOpcode(OpPush_U, ident.Pos.Line, ident.Pos.Column)
+	cc.emitter.EmitOpcode(OpPushU, ident.Pos.Line, ident.Pos.Column)
 	return fmt.Errorf("undefined identifier: %s", ident.Name)
 
 }
@@ -356,7 +356,7 @@ func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 func (cc *ConditionCompiler) compileStringOffsetOperator(binOp *ast.BinaryOp) error {
 	id, ok := binOp.Left.(*ast.Identifier)
 	if !ok {
-		return fmt.Errorf("%s operator requires string identifier as left operand", map[token.TokenType]string{
+		return fmt.Errorf("%s operator requires string identifier as left operand", map[token.Type]string{
 			token.AT: "AT", token.IN: "IN",
 		}[binOp.Op])
 	}
@@ -371,7 +371,7 @@ func (cc *ConditionCompiler) compileStringOffsetOperator(binOp *ast.BinaryOp) er
 		return err
 	}
 
-	opcodes := map[token.TokenType]Opcode{token.AT: OP_FOUND_AT, token.IN: OP_FOUND_IN}
+	opcodes := map[token.Type]Opcode{token.AT: OpFoundAt, token.IN: OpFoundIn}
 	cc.emitter.EmitOpcode(opcodes[binOp.Op], binOp.Pos.Line, binOp.Pos.Column)
 	return nil
 }
@@ -403,14 +403,14 @@ func (cc *ConditionCompiler) isMixedTypeComparison(leftIsFloat, rightIsFloat boo
 	return leftIsFloat != rightIsFloat
 }
 
-func (cc *ConditionCompiler) isComparisonOperator(op token.TokenType) bool {
-	return slices.Contains([]token.TokenType{
+func (cc *ConditionCompiler) isComparisonOperator(op token.Type) bool {
+	return slices.Contains([]token.Type{
 		token.EQ, token.NEQ, token.LT, token.LE, token.GT, token.GE,
 		token.LeftShift, token.RightShift, token.MODULO,
 	}, op)
 }
 
-func (cc *ConditionCompiler) isNonCommutativeOperator(op token.TokenType) bool {
+func (cc *ConditionCompiler) isNonCommutativeOperator(op token.Type) bool {
 	return op == token.MINUS || op == token.DIVIDE
 }
 
@@ -427,9 +427,9 @@ func (cc *ConditionCompiler) compileOperands(binOp *ast.BinaryOp) error {
 func (cc *ConditionCompiler) handleBitShiftFloatConversion(binOp *ast.BinaryOp, leftIsFloat, rightIsFloat, isComparison bool) {
 	if isComparison {
 		if leftIsFloat {
-			cc.emitter.EmitOpcode(OP_SWAPUNDEF, binOp.Pos.Line, binOp.Pos.Column)
+			cc.emitter.EmitOpcode(OpSwapundef, binOp.Pos.Line, binOp.Pos.Column)
 			cc.emitter.EmitOpcode(OpIntToDbl, binOp.Pos.Line, binOp.Pos.Column)
-			cc.emitter.EmitOpcode(OP_SWAPUNDEF, binOp.Pos.Line, binOp.Pos.Column)
+			cc.emitter.EmitOpcode(OpSwapundef, binOp.Pos.Line, binOp.Pos.Column)
 		}
 		if rightIsFloat {
 			_ = rightIsFloat
@@ -454,15 +454,15 @@ func (cc *ConditionCompiler) convertForMixedType(binOp *ast.BinaryOp, leftIsFloa
 		if leftIsFloat && !rightIsFloat {
 			cc.emitter.EmitOpcode(OpIntToDbl, binOp.Pos.Line, binOp.Pos.Column)
 		} else if !leftIsFloat && rightIsFloat {
-			cc.emitter.EmitOpcode(OP_SWAPUNDEF, binOp.Pos.Line, binOp.Pos.Column)
+			cc.emitter.EmitOpcode(OpSwapundef, binOp.Pos.Line, binOp.Pos.Column)
 			cc.emitter.EmitOpcode(OpIntToDbl, binOp.Pos.Line, binOp.Pos.Column)
-			cc.emitter.EmitOpcode(OP_SWAPUNDEF, binOp.Pos.Line, binOp.Pos.Column)
+			cc.emitter.EmitOpcode(OpSwapundef, binOp.Pos.Line, binOp.Pos.Column)
 		}
 	} else {
 		if leftIsFloat && !rightIsFloat {
-			cc.emitter.EmitOpcode(OP_SWAPUNDEF, binOp.Pos.Line, binOp.Pos.Column)
+			cc.emitter.EmitOpcode(OpSwapundef, binOp.Pos.Line, binOp.Pos.Column)
 			cc.emitter.EmitOpcode(OpIntToDbl, binOp.Pos.Line, binOp.Pos.Column)
-			cc.emitter.EmitOpcode(OP_SWAPUNDEF, binOp.Pos.Line, binOp.Pos.Column)
+			cc.emitter.EmitOpcode(OpSwapundef, binOp.Pos.Line, binOp.Pos.Column)
 		} else if !leftIsFloat && rightIsFloat {
 			cc.emitter.EmitOpcode(OpIntToDbl, binOp.Pos.Line, binOp.Pos.Column)
 		}
@@ -506,27 +506,27 @@ type opcodeMapping struct {
 }
 
 func (cc *ConditionCompiler) selectOpcode(binOp *ast.BinaryOp, isFloatOp bool) (Opcode, error) {
-	opcodeMap := map[token.TokenType]opcodeMapping{
+	opcodeMap := map[token.Type]opcodeMapping{
 		token.AND:        {OpAnd, OpAnd},
 		token.OR:         {OpOr, OpOr},
-		token.PLUS:       {OP_INT_ADD, OP_DBL_ADD},
-		token.MINUS:      {OP_INT_SUB, OP_DBL_SUB},
-		token.MULTIPLY:   {OP_INT_MUL, OP_DBL_MUL},
-		token.DIVIDE:     {OP_INT_DIV, OP_DBL_DIV},
+		token.PLUS:       {OpIntAdd, OpDblAdd},
+		token.MINUS:      {OpIntSub, OpDblSub},
+		token.MULTIPLY:   {OpIntMul, OpDblMul},
+		token.DIVIDE:     {OpIntDiv, OpDblDiv},
 		token.MODULO:     {OpMod, OpMod},
 		token.BitwiseAnd: {OpBitwiseAnd, OpBitwiseAnd},
 		token.BitwiseOr:  {OpBitwiseOr, OpBitwiseOr},
 		token.BitwiseXor: {OpBitwiseXor, OpBitwiseXor},
 		token.LeftShift:  {OpShl, OpShl},
 		token.RightShift: {OpShr, OpShr},
-		token.EQ:         {OP_INT_EQ, OP_DBL_EQ},
-		token.NEQ:        {OP_INT_NEQ, OP_DBL_NEQ},
-		token.LT:         {OP_INT_LT, OP_DBL_LT},
-		token.LE:         {OP_INT_LE, OP_DBL_LE},
-		token.GT:         {OP_INT_GT, OP_DBL_GT},
-		token.GE:         {OP_INT_GE, OP_DBL_GE},
-		token.CONTAINS:   {OP_CONTAINS, OP_CONTAINS},
-		token.MATCHES:    {OP_MATCHES, OP_MATCHES},
+		token.EQ:         {OpIntEq, OpDblEq},
+		token.NEQ:        {OpIntNeq, OpDblNeq},
+		token.LT:         {OpIntLt, OpDblLt},
+		token.LE:         {OpIntLe, OpDblLe},
+		token.GT:         {OpIntGt, OpDblGt},
+		token.GE:         {OpIntGe, OpDblGe},
+		token.CONTAINS:   {OpContains, OpContains},
+		token.MATCHES:    {OpMatches, OpMatches},
 		token.OF:         {OpOf, OpOf},
 	}
 
@@ -610,7 +610,7 @@ func (cc *ConditionCompiler) compileHashOperator(unaryOp *ast.UnaryOp) error {
 
 	// Use the same approach as compileIdentifier for count operation
 	cc.emitStringOffset(offset, unaryOp.Pos.Line, unaryOp.Pos.Column)
-	cc.emitter.EmitOpcode(OP_COUNT, unaryOp.Pos.Line, unaryOp.Pos.Column)
+	cc.emitter.EmitOpcode(OpCount, unaryOp.Pos.Line, unaryOp.Pos.Column)
 	return nil
 }
 
@@ -636,7 +636,7 @@ func (cc *ConditionCompiler) compileNotOperator(unaryOp *ast.UnaryOp) error {
 	if id, ok := unaryOp.Right.(*ast.Identifier); ok {
 		if offset, exists := cc.findStringOffset(id.Name); exists {
 			cc.emitStringOffset(offset, unaryOp.Pos.Line, unaryOp.Pos.Column)
-			cc.emitter.EmitOpcode(OP_LENGTH, unaryOp.Pos.Line, unaryOp.Pos.Column)
+			cc.emitter.EmitOpcode(OpLength, unaryOp.Pos.Line, unaryOp.Pos.Column)
 			return nil
 		}
 		return fmt.Errorf("undefined string identifier for length operator: %s", id.Name)
@@ -663,9 +663,9 @@ func (cc *ConditionCompiler) compileMinusOperator(unaryOp *ast.UnaryOp) error {
 	}
 
 	if cc.isLiteralFloat(unaryOp.Right) {
-		cc.emitter.EmitOpcode(OP_DBL_MINUS, unaryOp.Pos.Line, unaryOp.Pos.Column)
+		cc.emitter.EmitOpcode(OpDblMinus, unaryOp.Pos.Line, unaryOp.Pos.Column)
 	} else {
-		cc.emitter.EmitOpcode(OP_INT_MINUS, unaryOp.Pos.Line, unaryOp.Pos.Column)
+		cc.emitter.EmitOpcode(OpIntMinus, unaryOp.Pos.Line, unaryOp.Pos.Column)
 	}
 	return nil
 }
@@ -674,7 +674,7 @@ func (cc *ConditionCompiler) compileDefinedOperator(unaryOp *ast.UnaryOp) error 
 	if err := cc.compileExpression(unaryOp.Right); err != nil {
 		return err
 	}
-	cc.emitter.EmitOpcode(OP_DEFINED, unaryOp.Pos.Line, unaryOp.Pos.Column)
+	cc.emitter.EmitOpcode(OpDefined, unaryOp.Pos.Line, unaryOp.Pos.Column)
 	return nil
 }
 
@@ -694,7 +694,7 @@ func (cc *ConditionCompiler) compileArrayIndex(arrayIndex *ast.ArrayIndex) error
 
 	ident, isIdent := unaryOp.Right.(*ast.Identifier)
 	if !isIdent {
-		return fmt.Errorf("%s operator expects a string identifier", map[token.TokenType]string{
+		return fmt.Errorf("%s operator expects a string identifier", map[token.Type]string{
 			token.AT: "@", token.HASH: "#",
 		}[unaryOp.Op])
 	}
@@ -704,14 +704,14 @@ func (cc *ConditionCompiler) compileArrayIndex(arrayIndex *ast.ArrayIndex) error
 		return fmt.Errorf("undefined string identifier: %s", ident.Name)
 	}
 
-	cc.emitter.EmitOpcodeWithOperand(OpPush_M, Operand{Type: OperandImmediate64, Value: uint64(int64(offset))}, arrayIndex.Pos.Line, arrayIndex.Pos.Column) // #nosec G115
+	cc.emitter.EmitOpcodeWithOperand(OpPushM, Operand{Type: OperandImmediate64, Value: uint64(int64(offset))}, arrayIndex.Pos.Line, arrayIndex.Pos.Column) // #nosec G115
 
 	marker := int64(0)
 	if unaryOp.Op == token.HASH {
 		marker = 1
 	}
 	cc.emitter.EmitPush(safeInt64ToUint64(marker), arrayIndex.Pos.Line, arrayIndex.Pos.Column)
-	cc.emitter.EmitOpcode(OP_INDEX_ARRAY, arrayIndex.Pos.Line, arrayIndex.Pos.Column)
+	cc.emitter.EmitOpcode(OpIndexArray, arrayIndex.Pos.Line, arrayIndex.Pos.Column)
 	return nil
 }
 
@@ -735,9 +735,9 @@ func (cc *ConditionCompiler) CompileBooleanExpression(expr ast.Expression, short
 	if binOp, ok := expr.(*ast.BinaryOp); ok {
 		switch binOp.Op {
 		case token.AND:
-			return cc.compileShortCircuitBinary(binOp, OP_JFALSE, OpAnd)
+			return cc.compileShortCircuitBinary(binOp, OpJfalse, OpAnd)
 		case token.OR:
-			return cc.compileShortCircuitBinary(binOp, OP_JTRUE, OpOr)
+			return cc.compileShortCircuitBinary(binOp, OpJtrue, OpOr)
 		}
 	}
 
@@ -833,11 +833,11 @@ func (cc *ConditionCompiler) EmitJump(config ConditionalJumpConfig) error {
 }
 
 func (cc *ConditionCompiler) compileShortCircuitAnd(andOp *ast.BinaryOp) error {
-	return cc.compileShortCircuitBinary(andOp, OP_JFALSE, OpAnd)
+	return cc.compileShortCircuitBinary(andOp, OpJfalse, OpAnd)
 }
 
 func (cc *ConditionCompiler) compileShortCircuitOr(orOp *ast.BinaryOp) error {
-	return cc.compileShortCircuitBinary(orOp, OP_JTRUE, OpOr)
+	return cc.compileShortCircuitBinary(orOp, OpJtrue, OpOr)
 }
 
 func (cc *ConditionCompiler) compileOfExpression(ofExpr *ast.OfExpression) error {
@@ -860,7 +860,7 @@ func (cc *ConditionCompiler) compileCountExpression(countExpr ast.Expression) er
 			cc.emitter.EmitPush(1, ident.Pos.Line, ident.Pos.Column)
 			return nil
 		case QuantifierAll:
-			cc.emitter.EmitOpcode(OpPush_M, ident.Pos.Line, ident.Pos.Column)
+			cc.emitter.EmitOpcode(OpPushM, ident.Pos.Line, ident.Pos.Column)
 			return nil
 		case QuantifierNone:
 			cc.emitter.EmitPush(0, ident.Pos.Line, ident.Pos.Column)
@@ -891,11 +891,11 @@ func (cc *ConditionCompiler) compileFunctionCall(call *ast.FunctionCall) error {
 	}
 
 	functionOpcodes := map[string]Opcode{
-		"uint8": OP_UINT8, "uint16": OP_UINT16, "uint32": OP_UINT32,
-		"uint8be": OP_UINT8BE, "uint16be": OP_UINT16BE, "uint32be": OP_UINT32BE,
-		"int8": OP_INT8, "int16": OP_INT16, "int32": OP_INT32,
-		"int8be": OP_INT8BE, "int16be": OP_INT16BE, "int32be": OP_INT32BE,
-		"concat": OP_CONCAT,
+		"uint8": OpUint8, "uint16": OpUint16, "uint32": OpUint32,
+		"uint8be": OpUint8be, "uint16be": OpUint16be, "uint32be": OpUint32be,
+		"int8": OpInt8, "int16": OpInt16, "int32": OpInt32,
+		"int8be": OpInt8be, "int16be": OpInt16be, "int32be": OpInt32be,
+		"concat": OpConcat,
 	}
 
 	opcode, exists := functionOpcodes[call.Function]
@@ -918,7 +918,7 @@ func (cc *ConditionCompiler) compileRuleReference(ruleName string, line, column 
 		return fmt.Errorf("undefined rule reference: %s", ruleName)
 	}
 
-	cc.emitter.EmitOpcodeWithOperand(OpPush_RULE_REF,
+	cc.emitter.EmitOpcodeWithOperand(OpPushRuleRef,
 		Operand{Type: OperandImmediate64, Value: uint64(int64(ruleIndex))}, // #nosec G115
 		line, column)
 	return nil
@@ -958,6 +958,6 @@ func (cc *ConditionCompiler) compileStringLength(strLen *ast.StringLength) error
 	if err := cc.compileExpression(strLen.String); err != nil {
 		return err
 	}
-	cc.emitter.EmitOpcode(OP_LENGTH, strLen.Pos.Line, strLen.Pos.Column)
+	cc.emitter.EmitOpcode(OpLength, strLen.Pos.Line, strLen.Pos.Column)
 	return nil
 }

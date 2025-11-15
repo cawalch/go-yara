@@ -423,7 +423,7 @@ func testIntegerTypeProperties(t *testing.T) {
 // typeInferenceTestCase represents a test case for type inference
 type typeInferenceTestCase struct {
 	name         string
-	tokenType    token.TokenType
+	tokenType    token.Type
 	value        any
 	expectedType DataType
 }

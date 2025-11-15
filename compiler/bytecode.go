@@ -30,145 +30,145 @@ const (
 	OpPop
 	OpCall
 
-	// OP_OBJ_LOAD loads an object property (16-25)
-	OP_OBJ_LOAD
-	OP_OBJ_VALUE
-	OP_OBJ_FIELD
-	OP_INDEX_ARRAY
-	OP_COUNT
-	OP_LENGTH
-	OP_FOUND
-	OP_FOUND_AT
-	OP_FOUND_IN
+	// OpObjLoad loads an object property (16-25)
+	OpObjLoad
+	OpObjValue
+	OpObjField
+	OpIndexArray
+	OpCount
+	OpLength
+	OpFound
+	OpFoundAt
+	OpFoundIn
 	OpOffset
 
 	// OpOf begins rule operations (26-40)
 	OpOf
-	OpPush_RULE
-	OP_INIT_RULE
-	OP_MATCH_RULE
-	OP_INCR_M
-	OP_CLEAR_M
-	OP_ADD_M
-	OpPop_M
-	OpPush_M
-	OP_SET_M
-	OP_SWAPUNDEF
-	OP_FILESIZE
-	OP_ENTRYPOINT
-	OP_UNUSED
-	OP_MATCHES
+	OpPushRule
+	OpInitRule
+	OpMatchRule
+	OpIncrM
+	OpClearM
+	OpAddM
+	OpPopM
+	OpPushM
+	OpSetM
+	OpSwapundef
+	OpFilesize
+	OpEntrypoint
+	OpUnused
+	OpMatches
 
-	// OP_IMPORT begins dictionary operations (41-45)
-	OP_IMPORT
-	OP_LOOKUP_DICT
-	OP_JUNDEF // Not used
-	OP_JUNDEF_P
-	OP_JNUNDEF
+	// OpImport begins dictionary operations (41-45)
+	OpImport
+	OpLookupDict
+	OpJundef // Not used
+	OpJundefP
+	OpJnundef
 
-	// OP_JNUNDEF_P begins jump operations (46-65)
-	OP_JNUNDEF_P // Not used
-	OP_JFALSE
-	OP_JFALSE_P
-	OP_JTRUE
-	OP_JTRUE_P
-	OP_JL_P
-	OP_JLE_P
-	OP_ITER_NEXT
-	OP_ITER_START_ARRAY
-	OP_ITER_START_DICT
-	OP_ITER_START_INT_RANGE
-	OP_ITER_START_INT_ENUM
-	OP_ITER_START_STRING_SET
-	OP_ITER_CONDITION
-	OP_ITER_END
+	// OpJnundefP begins jump operations (46-65)
+	OpJnundefP // Not used
+	OpJfalse
+	OpJfalseP
+	OpJtrue
+	OpJtrueP
+	OpJlP
+	OpJleP
+	OpIterNext
+	OpIterStartArray
+	OpIterStartDict
+	OpIterStartIntRange
+	OpIterStartIntEnum
+	OpIterStartStringSet
+	OpIterCondition
+	OpIterEnd
 	OpJz
 	OpJzP
 
-	// OpPush_8 begins push operations (66-71)
-	OpPush_8
-	OpPush_16
-	OpPush_32
-	OpPush_U
-	OpPush_DBL
-	OpPush_RULE_REF
+	// OpPush8 begins push operations (66-71)
+	OpPush8
+	OpPush16
+	OpPush32
+	OpPushU
+	OpPushDbl
+	OpPushRuleRef
 
-	// OP_CONTAINS begins string operations (73-86)
-	OP_CONTAINS
-	OP_STARTSWITH
-	OP_ENDSWITH
-	OP_ICONTAINS
-	OP_ISTARTSWITH
-	OP_IENDSWITH
-	OP_IEQUALS
+	// OpContains begins string operations (73-86)
+	OpContains
+	OpStartswith
+	OpEndswith
+	OpIcontains
+	OpIstartswith
+	OpIendswith
+	OpIequals
 	OpOfPercent
 	OpOfFoundIn
-	OP_COUNT_IN
-	OP_DEFINED
-	OP_ITER_START_TEXT_STRING_SET
+	OpCountIn
+	OpDefined
+	OpIterStartTextStringSet
 	OpOfFoundAt
 
-	// OP_INT_BEGIN begins integer operations (100-110)
-	OP_INT_BEGIN = 100
-	OP_INT_EQ    = OP_INT_BEGIN + 0
-	OP_INT_NEQ   = OP_INT_BEGIN + 1
-	OP_INT_LT    = OP_INT_BEGIN + 2
-	OP_INT_GT    = OP_INT_BEGIN + 3
-	OP_INT_LE    = OP_INT_BEGIN + 4
-	OP_INT_GE    = OP_INT_BEGIN + 5
-	OP_INT_ADD   = OP_INT_BEGIN + 6
-	OP_INT_SUB   = OP_INT_BEGIN + 7
-	OP_INT_MUL   = OP_INT_BEGIN + 8
-	OP_INT_DIV   = OP_INT_BEGIN + 9
-	OP_INT_MINUS = OP_INT_BEGIN + 10
-	OP_INT_END   = OP_INT_MINUS
+	// OpIntBegin begins integer operations (100-110)
+	OpIntBegin = 100
+	OpIntEq    = OpIntBegin + 0
+	OpIntNeq   = OpIntBegin + 1
+	OpIntLt    = OpIntBegin + 2
+	OpIntGt    = OpIntBegin + 3
+	OpIntLe    = OpIntBegin + 4
+	OpIntGe    = OpIntBegin + 5
+	OpIntAdd   = OpIntBegin + 6
+	OpIntSub   = OpIntBegin + 7
+	OpIntMul   = OpIntBegin + 8
+	OpIntDiv   = OpIntBegin + 9
+	OpIntMinus = OpIntBegin + 10
+	OpIntEnd   = OpIntMinus
 
-	// OP_DBL_BEGIN begins double operations (120-130)
-	OP_DBL_BEGIN = 120
-	OP_DBL_EQ    = OP_DBL_BEGIN + 0
-	OP_DBL_NEQ   = OP_DBL_BEGIN + 1
-	OP_DBL_LT    = OP_DBL_BEGIN + 2
-	OP_DBL_GT    = OP_DBL_BEGIN + 3
-	OP_DBL_LE    = OP_DBL_BEGIN + 4
-	OP_DBL_GE    = OP_DBL_BEGIN + 5
-	OP_DBL_ADD   = OP_DBL_BEGIN + 6
-	OP_DBL_SUB   = OP_DBL_BEGIN + 7
-	OP_DBL_MUL   = OP_DBL_BEGIN + 8
-	OP_DBL_DIV   = OP_DBL_BEGIN + 9
-	OP_DBL_MINUS = OP_DBL_BEGIN + 10
-	OP_DBL_END   = OP_DBL_MINUS
+	// OpDblBegin begins double operations (120-130)
+	OpDblBegin = 120
+	OpDblEq    = OpDblBegin + 0
+	OpDblNeq   = OpDblBegin + 1
+	OpDblLt    = OpDblBegin + 2
+	OpDblGt    = OpDblBegin + 3
+	OpDblLe    = OpDblBegin + 4
+	OpDblGe    = OpDblBegin + 5
+	OpDblAdd   = OpDblBegin + 6
+	OpDblSub   = OpDblBegin + 7
+	OpDblMul   = OpDblBegin + 8
+	OpDblDiv   = OpDblBegin + 9
+	OpDblMinus = OpDblBegin + 10
+	OpDblEnd   = OpDblMinus
 
-	// OP_STR_BEGIN begins string operations (140-146)
-	OP_STR_BEGIN = 140
-	OP_STR_EQ    = OP_STR_BEGIN + 0
-	OP_STR_NEQ   = OP_STR_BEGIN + 1
-	OP_STR_LT    = OP_STR_BEGIN + 2
-	OP_STR_GT    = OP_STR_BEGIN + 3
-	OP_STR_LE    = OP_STR_BEGIN + 4
-	OP_STR_GE    = OP_STR_BEGIN + 5
-	OP_STR_END   = OP_STR_GE
+	// OpStrBegin begins string operations (140-146)
+	OpStrBegin = 140
+	OpStrEq    = OpStrBegin + 0
+	OpStrNeq   = OpStrBegin + 1
+	OpStrLt    = OpStrBegin + 2
+	OpStrGt    = OpStrBegin + 3
+	OpStrLe    = OpStrBegin + 4
+	OpStrGe    = OpStrBegin + 5
+	OpStrEnd   = OpStrGe
 
-	// OP_READ_INT begins data type functions (240-251)
-	OP_READ_INT = 240
-	OP_INT8     = OP_READ_INT + 0
-	OP_INT16    = OP_READ_INT + 1
-	OP_INT32    = OP_READ_INT + 2
-	OP_UINT8    = OP_READ_INT + 3
-	OP_UINT16   = OP_READ_INT + 4
-	OP_UINT32   = OP_READ_INT + 5
-	OP_INT8BE   = OP_READ_INT + 6
-	OP_INT16BE  = OP_READ_INT + 7
-	OP_INT32BE  = OP_READ_INT + 8
-	OP_UINT8BE  = OP_READ_INT + 9
-	OP_UINT16BE = OP_READ_INT + 10
-	OP_UINT32BE = OP_READ_INT + 11
+	// OpReadInt begins data type functions (240-251)
+	OpReadInt  = 240
+	OpInt8     = OpReadInt + 0
+	OpInt16    = OpReadInt + 1
+	OpInt32    = OpReadInt + 2
+	OpUint8    = OpReadInt + 3
+	OpUint16   = OpReadInt + 4
+	OpUint32   = OpReadInt + 5
+	OpInt8be   = OpReadInt + 6
+	OpInt16be  = OpReadInt + 7
+	OpInt32be  = OpReadInt + 8
+	OpUint8be  = OpReadInt + 9
+	OpUint16be = OpReadInt + 10
+	OpUint32be = OpReadInt + 11
 
-	// OP_CONCAT represents string operations (253)
-	OP_CONCAT = 253
+	// OpConcat represents string operations (253)
+	OpConcat = 253
 
-	// OP_HALT represents control flow (must be at end to avoid conflicts)
-	OP_HALT = 255
-	OP_NOP  = 254
+	// OpHalt represents control flow (must be at end to avoid conflicts)
+	OpHalt = 255
+	OpNop  = 254
 )
 
 // Opcode categories for classification
@@ -186,7 +186,7 @@ const (
 
 // isControlOpcode checks if opcode is a control operation
 func isControlOpcode(op Opcode) bool {
-	return op == OpError || op == OP_HALT || op == OP_NOP
+	return op == OpError || op == OpHalt || op == OpNop
 }
 
 // isLogicalOpcode checks if opcode is a logical operation
@@ -198,42 +198,42 @@ func isLogicalOpcode(op Opcode) bool {
 // isArithmeticOpcode checks if opcode is an arithmetic operation
 func isArithmeticOpcode(op Opcode) bool {
 	return (op >= OpShl && op <= OpMod) ||
-		(op >= OP_INT_BEGIN && op <= OP_INT_END) ||
-		(op >= OP_DBL_BEGIN && op <= OP_DBL_END) ||
-		(op >= OP_STR_BEGIN && op <= OP_STR_END)
+		(op >= OpIntBegin && op <= OpIntEnd) ||
+		(op >= OpDblBegin && op <= OpDblEnd) ||
+		(op >= OpStrBegin && op <= OpStrEnd)
 }
 
 // isStackOpcode checks if opcode is a stack operation
 func isStackOpcode(op Opcode) bool {
 	return (op >= OpPush && op <= OpCall) ||
-		(op >= OpPush_8 && op <= OpPush_RULE_REF)
+		(op >= OpPush8 && op <= OpPushRuleRef)
 }
 
 // isObjectOpcode checks if opcode is an object operation
 func isObjectOpcode(op Opcode) bool {
-	return (op >= OP_OBJ_LOAD && op <= OpOffset) ||
-		(op >= OpOf && op <= OP_MATCHES) ||
-		(op >= OP_IMPORT && op <= OP_JNUNDEF)
+	return (op >= OpObjLoad && op <= OpOffset) ||
+		(op >= OpOf && op <= OpMatches) ||
+		(op >= OpImport && op <= OpJnundef)
 }
 
 // isJumpOpcode checks if opcode is a jump operation
 func isJumpOpcode(op Opcode) bool {
-	return op >= OP_JNUNDEF_P && op <= OpJzP
+	return op >= OpJnundefP && op <= OpJzP
 }
 
 // isIteratorOpcode checks if opcode is an iterator operation
 func isIteratorOpcode(op Opcode) bool {
-	return op >= OP_ITER_NEXT && op <= OP_ITER_END
+	return op >= OpIterNext && op <= OpIterEnd
 }
 
 // isStringOpcode checks if opcode is a string operation
 func isStringOpcode(op Opcode) bool {
-	return op >= OP_CONTAINS && op <= OpOfFoundAt
+	return op >= OpContains && op <= OpOfFoundAt
 }
 
 // isTypeFuncOpcode checks if opcode is a type function
 func isTypeFuncOpcode(op Opcode) bool {
-	return op >= OP_READ_INT
+	return op >= OpReadInt
 }
 
 // GetCategory returns category of an opcode
@@ -265,90 +265,90 @@ func (op Opcode) GetCategory() string {
 
 // opcodeNames maps basic opcodes to their string names
 var opcodeNames = map[Opcode]string{
-	OpError:                       "ERROR",
-	OP_HALT:                       "HALT",
-	OP_NOP:                        "NOP",
-	OpAnd:                         "AND",
-	OpOr:                          "OR",
-	OpNot:                         "NOT",
-	OpBitwiseNot:                  "BITWISE_NOT",
-	OpBitwiseAnd:                  "BITWISE_AND",
-	OpBitwiseOr:                   "BITWISE_OR",
-	OpBitwiseXor:                  "BITWISE_XOR",
-	OpShl:                         "SHL",
-	OpShr:                         "SHR",
-	OpMod:                         "MOD",
-	OpIntToDbl:                    "INT_TO_DBL",
-	OpStrToBool:                   "STR_TO_BOOL",
-	OpPush:                        "PUSH",
-	OpPop:                         "POP",
-	OpCall:                        "CALL",
-	OP_OBJ_LOAD:                   "OBJ_LOAD",
-	OP_OBJ_VALUE:                  "OBJ_VALUE",
-	OP_OBJ_FIELD:                  "OBJ_FIELD",
-	OP_INDEX_ARRAY:                "INDEX_ARRAY",
-	OP_COUNT:                      "COUNT",
-	OP_LENGTH:                     "LENGTH",
-	OP_FOUND:                      "FOUND",
-	OP_FOUND_AT:                   "FOUND_AT",
-	OP_FOUND_IN:                   "FOUND_IN",
-	OpOffset:                      "OFFSET",
-	OpOf:                          "OF",
-	OpPush_RULE:                   "PUSH_RULE",
-	OP_INIT_RULE:                  "INIT_RULE",
-	OP_MATCH_RULE:                 "MATCH_RULE",
-	OP_INCR_M:                     "INCR_M",
-	OP_CLEAR_M:                    "CLEAR_M",
-	OP_ADD_M:                      "ADD_M",
-	OpPop_M:                       "POP_M",
-	OpPush_M:                      "PUSH_M",
-	OP_SET_M:                      "SET_M",
-	OP_SWAPUNDEF:                  "SWAPUNDEF",
-	OP_FILESIZE:                   "FILESIZE",
-	OP_ENTRYPOINT:                 "ENTRYPOINT",
-	OP_UNUSED:                     "UNUSED",
-	OP_MATCHES:                    "MATCHES",
-	OP_IMPORT:                     "IMPORT",
-	OP_LOOKUP_DICT:                "LOOKUP_DICT",
-	OP_JUNDEF:                     "JUNDEF",
-	OP_JUNDEF_P:                   "JUNDEF_P",
-	OP_JNUNDEF:                    "JNUNDEF",
-	OP_JNUNDEF_P:                  "JNUNDEF_P",
-	OP_JFALSE:                     "JFALSE",
-	OP_JFALSE_P:                   "JFALSE_P",
-	OP_JTRUE:                      "JTRUE",
-	OP_JTRUE_P:                    "JTRUE_P",
-	OP_JL_P:                       "JL_P",
-	OP_JLE_P:                      "JLE_P",
-	OP_ITER_NEXT:                  "ITER_NEXT",
-	OP_ITER_START_ARRAY:           "ITER_START_ARRAY",
-	OP_ITER_START_DICT:            "ITER_START_DICT",
-	OP_ITER_START_INT_RANGE:       "ITER_START_INT_RANGE",
-	OP_ITER_START_INT_ENUM:        "ITER_START_INT_ENUM",
-	OP_ITER_START_STRING_SET:      "ITER_START_STRING_SET",
-	OP_ITER_CONDITION:             "ITER_CONDITION",
-	OP_ITER_END:                   "ITER_END",
-	OpJz:                          "JZ",
-	OpJzP:                         "JZ_P",
-	OpPush_8:                      "PUSH_8",
-	OpPush_16:                     "PUSH_16",
-	OpPush_32:                     "PUSH_32",
-	OpPush_U:                      "PUSH_U",
-	OpPush_DBL:                    "PUSH_DBL",
-	OpPush_RULE_REF:               "PUSH_RULE_REF",
-	OP_CONTAINS:                   "CONTAINS",
-	OP_STARTSWITH:                 "STARTSWITH",
-	OP_ENDSWITH:                   "ENDSWITH",
-	OP_ICONTAINS:                  "ICONTAINS",
-	OP_ISTARTSWITH:                "ISTARTSWITH",
-	OP_IENDSWITH:                  "IENDSWITH",
-	OP_IEQUALS:                    "IEQUALS",
-	OpOfPercent:                   "OF_PERCENT",
-	OpOfFoundIn:                   "OF_FOUND_IN",
-	OP_COUNT_IN:                   "COUNT_IN",
-	OP_DEFINED:                    "DEFINED",
-	OP_ITER_START_TEXT_STRING_SET: "ITER_START_TEXT_STRING_SET",
-	OpOfFoundAt:                   "OF_FOUND_AT",
+	OpError:                  "ERROR",
+	OpHalt:                   "HALT",
+	OpNop:                    "NOP",
+	OpAnd:                    "AND",
+	OpOr:                     "OR",
+	OpNot:                    "NOT",
+	OpBitwiseNot:             "BITWISE_NOT",
+	OpBitwiseAnd:             "BITWISE_AND",
+	OpBitwiseOr:              "BITWISE_OR",
+	OpBitwiseXor:             "BITWISE_XOR",
+	OpShl:                    "SHL",
+	OpShr:                    "SHR",
+	OpMod:                    "MOD",
+	OpIntToDbl:               "INT_TO_DBL",
+	OpStrToBool:              "STR_TO_BOOL",
+	OpPush:                   "PUSH",
+	OpPop:                    "POP",
+	OpCall:                   "CALL",
+	OpObjLoad:                "OBJ_LOAD",
+	OpObjValue:               "OBJ_VALUE",
+	OpObjField:               "OBJ_FIELD",
+	OpIndexArray:             "INDEX_ARRAY",
+	OpCount:                  "COUNT",
+	OpLength:                 "LENGTH",
+	OpFound:                  "FOUND",
+	OpFoundAt:                "FOUND_AT",
+	OpFoundIn:                "FOUND_IN",
+	OpOffset:                 "OFFSET",
+	OpOf:                     "OF",
+	OpPushRule:               "PUSH_RULE",
+	OpInitRule:               "INIT_RULE",
+	OpMatchRule:              "MATCH_RULE",
+	OpIncrM:                  "INCR_M",
+	OpClearM:                 "CLEAR_M",
+	OpAddM:                   "ADD_M",
+	OpPopM:                   "POP_M",
+	OpPushM:                  "PUSH_M",
+	OpSetM:                   "SET_M",
+	OpSwapundef:              "SWAPUNDEF",
+	OpFilesize:               "FILESIZE",
+	OpEntrypoint:             "ENTRYPOINT",
+	OpUnused:                 "UNUSED",
+	OpMatches:                "MATCHES",
+	OpImport:                 "IMPORT",
+	OpLookupDict:             "LOOKUP_DICT",
+	OpJundef:                 "JUNDEF",
+	OpJundefP:                "JUNDEF_P",
+	OpJnundef:                "JNUNDEF",
+	OpJnundefP:               "JNUNDEF_P",
+	OpJfalse:                 "JFALSE",
+	OpJfalseP:                "JFALSE_P",
+	OpJtrue:                  "JTRUE",
+	OpJtrueP:                 "JTRUE_P",
+	OpJlP:                    "JL_P",
+	OpJleP:                   "JLE_P",
+	OpIterNext:               "ITER_NEXT",
+	OpIterStartArray:         "ITER_START_ARRAY",
+	OpIterStartDict:          "ITER_START_DICT",
+	OpIterStartIntRange:      "ITER_START_INT_RANGE",
+	OpIterStartIntEnum:       "ITER_START_INT_ENUM",
+	OpIterStartStringSet:     "ITER_START_STRING_SET",
+	OpIterCondition:          "ITER_CONDITION",
+	OpIterEnd:                "ITER_END",
+	OpJz:                     "JZ",
+	OpJzP:                    "JZ_P",
+	OpPush8:                  "PUSH_8",
+	OpPush16:                 "PUSH_16",
+	OpPush32:                 "PUSH_32",
+	OpPushU:                  "PUSH_U",
+	OpPushDbl:                "PUSH_DBL",
+	OpPushRuleRef:            "PUSH_RULE_REF",
+	OpContains:               "CONTAINS",
+	OpStartswith:             "STARTSWITH",
+	OpEndswith:               "ENDSWITH",
+	OpIcontains:              "ICONTAINS",
+	OpIstartswith:            "ISTARTSWITH",
+	OpIendswith:              "IENDSWITH",
+	OpIequals:                "IEQUALS",
+	OpOfPercent:              "OF_PERCENT",
+	OpOfFoundIn:              "OF_FOUND_IN",
+	OpCountIn:                "COUNT_IN",
+	OpDefined:                "DEFINED",
+	OpIterStartTextStringSet: "ITER_START_TEXT_STRING_SET",
+	OpOfFoundAt:              "OF_FOUND_AT",
 }
 
 // intOpNames maps integer operations to their string names
@@ -377,7 +377,7 @@ var dataTypeNames = []string{
 
 // getIntOpName returns the name for integer operation opcodes
 func (op Opcode) getIntOpName() string {
-	offset := int(op - OP_INT_BEGIN)
+	offset := int(op - OpIntBegin)
 	if offset < len(intOpNames) {
 		return intOpNames[offset]
 	}
@@ -386,7 +386,7 @@ func (op Opcode) getIntOpName() string {
 
 // getDblOpName returns the name for double operation opcodes
 func (op Opcode) getDblOpName() string {
-	offset := int(op - OP_DBL_BEGIN)
+	offset := int(op - OpDblBegin)
 	if offset < len(dblOpNames) {
 		return dblOpNames[offset]
 	}
@@ -395,7 +395,7 @@ func (op Opcode) getDblOpName() string {
 
 // getStrOpName returns the name for string operation opcodes
 func (op Opcode) getStrOpName() string {
-	offset := int(op - OP_STR_BEGIN)
+	offset := int(op - OpStrBegin)
 	if offset < len(strOpNames) {
 		return strOpNames[offset]
 	}
@@ -404,7 +404,7 @@ func (op Opcode) getStrOpName() string {
 
 // getDataTypeName returns the name for data type function opcodes
 func (op Opcode) getDataTypeName() string {
-	offset := int(op - OP_READ_INT)
+	offset := int(op - OpReadInt)
 	if offset < len(dataTypeNames) {
 		return dataTypeNames[offset]
 	}
@@ -430,13 +430,13 @@ func (op Opcode) String() string {
 // getRangeName returns the name for opcodes in specific ranges
 func (op Opcode) getRangeName() string {
 	switch {
-	case op >= OP_INT_BEGIN && op <= OP_INT_END:
+	case op >= OpIntBegin && op <= OpIntEnd:
 		return op.getIntOpName()
-	case op >= OP_DBL_BEGIN && op <= OP_DBL_END:
+	case op >= OpDblBegin && op <= OpDblEnd:
 		return op.getDblOpName()
-	case op >= OP_STR_BEGIN && op <= OP_STR_END:
+	case op >= OpStrBegin && op <= OpStrEnd:
 		return op.getStrOpName()
-	case op >= OP_READ_INT:
+	case op >= OpReadInt:
 		return op.getDataTypeName()
 	default:
 		return ""
@@ -771,24 +771,24 @@ func (inst *Instruction) Size() int {
 
 // IsJump returns true if this instruction is a jump
 func (inst *Instruction) IsJump() bool {
-	return (inst.Opcode >= OP_JUNDEF && inst.Opcode <= OpJzP) ||
-		inst.Opcode == OP_ITER_NEXT
+	return (inst.Opcode >= OpJundef && inst.Opcode <= OpJzP) ||
+		inst.Opcode == OpIterNext
 }
 
 // IsTypeFunction returns true if this instruction is a data type function
 func (inst *Instruction) IsTypeFunction() bool {
-	return inst.Opcode >= OP_READ_INT
+	return inst.Opcode >= OpReadInt
 }
 
 // IsStringOperation returns true if this instruction operates on strings
 func (inst *Instruction) IsStringOperation() bool {
 	// String operations (71-85) - same as GetCategory logic
-	if inst.Opcode >= OP_CONTAINS && inst.Opcode <= OpOfFoundAt {
+	if inst.Opcode >= OpContains && inst.Opcode <= OpOfFoundAt {
 		return true
 	}
 	// STR comparison operations are considered arithmetic by GetCategory,
 	// but they are logically string operations for IsStringOperation
-	return (inst.Opcode >= OP_STR_BEGIN && inst.Opcode <= OP_STR_END)
+	return (inst.Opcode >= OpStrBegin && inst.Opcode <= OpStrEnd)
 }
 
 // HasImmediateOperand returns true if this instruction has an immediate operand
@@ -813,13 +813,13 @@ func (inst *Instruction) HasAbsoluteOperand() bool {
 }
 
 // IsIntOp returns true if opcode is an integer operation.
-func IsIntOp(op Opcode) bool { return op >= OP_INT_BEGIN && op <= OP_INT_END }
+func IsIntOp(op Opcode) bool { return op >= OpIntBegin && op <= OpIntEnd }
 
 // IsDblOp returns true if opcode is a double operation.
-func IsDblOp(op Opcode) bool { return op >= OP_DBL_BEGIN && op <= OP_DBL_END }
+func IsDblOp(op Opcode) bool { return op >= OpDblBegin && op <= OpDblEnd }
 
 // IsStrOp returns true if opcode is a string operation.
-func IsStrOp(op Opcode) bool { return op >= OP_STR_BEGIN && op <= OP_STR_END }
+func IsStrOp(op Opcode) bool { return op >= OpStrBegin && op <= OpStrEnd }
 
 // YRUndefined constant for undefined values
 const YRUndefined uint64 = 0xFFFABADAFABADAFF

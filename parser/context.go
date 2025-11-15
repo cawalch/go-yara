@@ -58,32 +58,32 @@ func (pr ParseResult) IsError() bool {
 // TokenClassifier provides methods to classify tokens consistently across strategies
 type TokenClassifier interface {
 	// Expression classification
-	IsComparisonOp(token.TokenType) bool
-	IsUnaryOperator(token.TokenType) bool
-	IsLogicalOperator(token.TokenType) bool
-	IsArithmeticOperator(token.TokenType) bool
-	IsBitwiseOperator(token.TokenType) bool
+	IsComparisonOp(token.Type) bool
+	IsUnaryOperator(token.Type) bool
+	IsLogicalOperator(token.Type) bool
+	IsArithmeticOperator(token.Type) bool
+	IsBitwiseOperator(token.Type) bool
 
 	// Primary expression classification
-	IsLiteral(token.TokenType) bool
-	IsIdentifier(token.TokenType) bool
-	IsDataTypeFunction(token.TokenType) bool
-	IsStringModifier(token.TokenType) bool
+	IsLiteral(token.Type) bool
+	IsIdentifier(token.Type) bool
+	IsDataTypeFunction(token.Type) bool
+	IsStringModifier(token.Type) bool
 
 	// Quantifier classification
-	IsQuantifierKeyword(token.TokenType) bool
-	IsQuantifierToken(token.TokenType) bool
+	IsQuantifierKeyword(token.Type) bool
+	IsQuantifierToken(token.Type) bool
 
 	// Declaration classification
-	IsPatternLiteral(token.TokenType) bool
-	IsModifier(token.TokenType) bool
+	IsPatternLiteral(token.Type) bool
+	IsModifier(token.Type) bool
 }
 
 // DefaultTokenClassifier provides default implementations for token classification
 type DefaultTokenClassifier struct{}
 
 // IsComparisonOp returns true if the token is a comparison operator
-func (tc DefaultTokenClassifier) IsComparisonOp(tok token.TokenType) bool {
+func (tc DefaultTokenClassifier) IsComparisonOp(tok token.Type) bool {
 	switch tok {
 	case token.EQ, token.NEQ, token.LT, token.LE, token.GT, token.GE,
 		token.CONTAINS, token.ICONTAINS, token.STARTSWITH, token.ISTARTSWITH,
@@ -95,7 +95,7 @@ func (tc DefaultTokenClassifier) IsComparisonOp(tok token.TokenType) bool {
 }
 
 // IsUnaryOperator returns true if the token is a unary operator
-func (tc DefaultTokenClassifier) IsUnaryOperator(tok token.TokenType) bool {
+func (tc DefaultTokenClassifier) IsUnaryOperator(tok token.Type) bool {
 	switch tok {
 	case token.NOT, token.BitwiseNot, token.MINUS, token.DEFINED,
 		token.HASH, token.AT:
@@ -106,12 +106,12 @@ func (tc DefaultTokenClassifier) IsUnaryOperator(tok token.TokenType) bool {
 }
 
 // IsLogicalOperator returns true if the token is a logical operator
-func (tc DefaultTokenClassifier) IsLogicalOperator(tok token.TokenType) bool {
+func (tc DefaultTokenClassifier) IsLogicalOperator(tok token.Type) bool {
 	return tok == token.AND || tok == token.OR
 }
 
 // IsArithmeticOperator returns true if the token is an arithmetic operator
-func (tc DefaultTokenClassifier) IsArithmeticOperator(tok token.TokenType) bool {
+func (tc DefaultTokenClassifier) IsArithmeticOperator(tok token.Type) bool {
 	switch tok {
 	case token.PLUS, token.MINUS, token.MULTIPLY, token.DIVIDE, token.MODULO:
 		return true
@@ -121,7 +121,7 @@ func (tc DefaultTokenClassifier) IsArithmeticOperator(tok token.TokenType) bool 
 }
 
 // IsBitwiseOperator returns true if the token is a bitwise operator
-func (tc DefaultTokenClassifier) IsBitwiseOperator(tok token.TokenType) bool {
+func (tc DefaultTokenClassifier) IsBitwiseOperator(tok token.Type) bool {
 	switch tok {
 	case token.BitwiseAnd, token.BitwiseOr, token.BitwiseXor,
 		token.LeftShift, token.RightShift:
@@ -132,7 +132,7 @@ func (tc DefaultTokenClassifier) IsBitwiseOperator(tok token.TokenType) bool {
 }
 
 // IsLiteral returns true if the token represents a literal value
-func (tc DefaultTokenClassifier) IsLiteral(tok token.TokenType) bool {
+func (tc DefaultTokenClassifier) IsLiteral(tok token.Type) bool {
 	switch tok {
 	case token.IntegerLit, token.HexIntegerLit, token.OctalIntegerLit,
 		token.FloatLit, token.StringLit, token.TRUE, token.FALSE, token.SizeLit,
@@ -144,12 +144,12 @@ func (tc DefaultTokenClassifier) IsLiteral(tok token.TokenType) bool {
 }
 
 // IsIdentifier returns true if the token is an identifier
-func (tc DefaultTokenClassifier) IsIdentifier(tok token.TokenType) bool {
+func (tc DefaultTokenClassifier) IsIdentifier(tok token.Type) bool {
 	return tok == token.IDENTIFIER
 }
 
 // IsDataTypeFunction returns true if the token represents a data type conversion function
-func (tc DefaultTokenClassifier) IsDataTypeFunction(tok token.TokenType) bool {
+func (tc DefaultTokenClassifier) IsDataTypeFunction(tok token.Type) bool {
 	switch tok {
 	case token.UINT8, token.UINT16, token.UINT32, token.INT8, token.INT16, token.INT32,
 		token.UINT8BE, token.UINT16BE, token.UINT32BE, token.INT8BE, token.INT16BE, token.INT32BE:
@@ -163,7 +163,7 @@ func (tc DefaultTokenClassifier) IsDataTypeFunction(tok token.TokenType) bool {
 }
 
 // IsStringModifier returns true if the token is a string modifier
-func (tc DefaultTokenClassifier) IsStringModifier(tok token.TokenType) bool {
+func (tc DefaultTokenClassifier) IsStringModifier(tok token.Type) bool {
 	switch tok {
 	case token.NOCASE, token.WIDE, token.ASCII, token.FULLWORD, token.PRIVATE,
 		token.XOR, token.BASE64, token.BASE64WIDE:
@@ -174,12 +174,12 @@ func (tc DefaultTokenClassifier) IsStringModifier(tok token.TokenType) bool {
 }
 
 // IsQuantifierKeyword returns true if the token is a quantifier keyword
-func (tc DefaultTokenClassifier) IsQuantifierKeyword(tok token.TokenType) bool {
+func (tc DefaultTokenClassifier) IsQuantifierKeyword(tok token.Type) bool {
 	return tok == token.FOR
 }
 
 // IsQuantifierToken returns true if the token can start a quantifier expression
-func (tc DefaultTokenClassifier) IsQuantifierToken(tok token.TokenType) bool {
+func (tc DefaultTokenClassifier) IsQuantifierToken(tok token.Type) bool {
 	switch tok {
 	case token.ANY, token.ALL, token.NONE:
 		return true
@@ -189,7 +189,7 @@ func (tc DefaultTokenClassifier) IsQuantifierToken(tok token.TokenType) bool {
 }
 
 // IsPatternLiteral returns true if the token is a pattern literal type
-func (tc DefaultTokenClassifier) IsPatternLiteral(tok token.TokenType) bool {
+func (tc DefaultTokenClassifier) IsPatternLiteral(tok token.Type) bool {
 	switch tok {
 	case token.StringLit, token.HexStringLit, token.RegexLit:
 		return true
@@ -199,6 +199,6 @@ func (tc DefaultTokenClassifier) IsPatternLiteral(tok token.TokenType) bool {
 }
 
 // IsModifier returns true if the token is a modifier
-func (tc DefaultTokenClassifier) IsModifier(tok token.TokenType) bool {
+func (tc DefaultTokenClassifier) IsModifier(tok token.Type) bool {
 	return tc.IsStringModifier(tok)
 }

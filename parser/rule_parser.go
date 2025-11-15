@@ -169,7 +169,7 @@ func (p *RuleParser) expectIdentifier() (string, error) {
 }
 
 // expectTokenWithMessage checks for expected token and advances if matched, returns error message
-func (p *RuleParser) expectTokenWithMessage(tokenType token.TokenType, message string) error {
+func (p *RuleParser) expectTokenWithMessage(tokenType token.Type, message string) error {
 	if !p.expectToken(tokenType) {
 		return fmt.Errorf("%s", message)
 	}
@@ -177,11 +177,11 @@ func (p *RuleParser) expectTokenWithMessage(tokenType token.TokenType, message s
 }
 
 // Helper methods
-func (p *RuleParser) currentTokenIs(t token.TokenType) bool {
+func (p *RuleParser) currentTokenIs(t token.Type) bool {
 	return p.current.Type == t
 }
 
-func (p *RuleParser) expectToken(t token.TokenType) bool {
+func (p *RuleParser) expectToken(t token.Type) bool {
 	if p.currentTokenIs(t) {
 		p.nextToken()
 		return true

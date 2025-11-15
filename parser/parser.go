@@ -169,11 +169,11 @@ func (p *Parser) nextToken() {
 	p.updateParserTokens()
 }
 
-func (p *Parser) currentTokenIs(t token.TokenType) bool {
+func (p *Parser) currentTokenIs(t token.Type) bool {
 	return p.current.Type == t
 }
 
-func (p *Parser) peekTokenIs(t token.TokenType) bool {
+func (p *Parser) peekTokenIs(t token.Type) bool {
 	return p.peek.Type == t
 }
 

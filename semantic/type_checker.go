@@ -106,7 +106,7 @@ func (tc *TypeChecker) checkBinaryOp(binaryOp *ast.BinaryOp) *TypeInfo {
 }
 
 // getBinaryOpHandler returns the appropriate handler for a binary operator
-func (tc *TypeChecker) getBinaryOpHandler(op token.TokenType) BinaryOpHandler {
+func (tc *TypeChecker) getBinaryOpHandler(op token.Type) BinaryOpHandler {
 	if handler := tc.getArithmeticHandler(op); handler != nil {
 		return handler
 	}
@@ -127,7 +127,7 @@ func (tc *TypeChecker) getBinaryOpHandler(op token.TokenType) BinaryOpHandler {
 }
 
 // getArithmeticHandler returns handler for arithmetic and bitwise operations
-func (tc *TypeChecker) getArithmeticHandler(op token.TokenType) BinaryOpHandler {
+func (tc *TypeChecker) getArithmeticHandler(op token.Type) BinaryOpHandler {
 	switch op {
 	case token.PLUS, token.MINUS, token.MULTIPLY, token.DIVIDE, token.MODULO, token.IntDivide:
 		return tc.createArithmeticHandler()
@@ -141,7 +141,7 @@ func (tc *TypeChecker) getArithmeticHandler(op token.TokenType) BinaryOpHandler 
 }
 
 // getComparisonHandler returns handler for comparison operations
-func (tc *TypeChecker) getComparisonHandler(op token.TokenType) BinaryOpHandler {
+func (tc *TypeChecker) getComparisonHandler(op token.Type) BinaryOpHandler {
 	switch op {
 	case token.EQ, token.NEQ, token.LT, token.LE, token.GT, token.GE:
 		return tc.createComparisonHandler()
@@ -151,8 +151,8 @@ func (tc *TypeChecker) getComparisonHandler(op token.TokenType) BinaryOpHandler 
 }
 
 // getStringHandler returns handler for string operations
-func (tc *TypeChecker) getStringHandler(op token.TokenType) BinaryOpHandler {
-	stringOps := map[token.TokenType]bool{
+func (tc *TypeChecker) getStringHandler(op token.Type) BinaryOpHandler {
+	stringOps := map[token.Type]bool{
 		token.CONTAINS:    true,
 		token.ICONTAINS:   true,
 		token.STARTSWITH:  true,
@@ -170,7 +170,7 @@ func (tc *TypeChecker) getStringHandler(op token.TokenType) BinaryOpHandler {
 }
 
 // getSpecialHandler returns handler for special operations
-func (tc *TypeChecker) getSpecialHandler(op token.TokenType) BinaryOpHandler {
+func (tc *TypeChecker) getSpecialHandler(op token.Type) BinaryOpHandler {
 	switch op {
 	case token.OF:
 		return tc.createQuantifierHandler()

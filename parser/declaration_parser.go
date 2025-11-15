@@ -412,11 +412,11 @@ func (p *DeclarationParser) parseExpression() (ast.Expression, error) {
 }
 
 // Helper methods
-func (p *DeclarationParser) currentTokenIs(t token.TokenType) bool {
+func (p *DeclarationParser) currentTokenIs(t token.Type) bool {
 	return p.current.Type == t
 }
 
-func (p *DeclarationParser) expectToken(t token.TokenType) bool {
+func (p *DeclarationParser) expectToken(t token.Type) bool {
 	if p.currentTokenIs(t) {
 		p.nextToken()
 		return true
@@ -428,16 +428,16 @@ func (p *DeclarationParser) expectToken(t token.TokenType) bool {
 	return false
 }
 
-func (p *DeclarationParser) expectTokenWithMessage(tokenType token.TokenType, message string) error {
+func (p *DeclarationParser) expectTokenWithMessage(tokenType token.Type, message string) error {
 	if !p.expectToken(tokenType) {
 		return fmt.Errorf("%s", message)
 	}
 	return nil
 }
 
-func (p *DeclarationParser) isIdentifierKeyword(tokenType token.TokenType) bool {
+func (p *DeclarationParser) isIdentifierKeyword(tokenType token.Type) bool {
 	// Keywords that can also be used as identifiers in certain contexts
-	identifierKeywords := []token.TokenType{
+	identifierKeywords := []token.Type{
 		token.HASH,     // hash can be a meta key
 		token.LENGTH,   // length can be a meta key
 		token.CONTAINS, // contains can be a meta key
@@ -448,7 +448,7 @@ func (p *DeclarationParser) isIdentifierKeyword(tokenType token.TokenType) bool 
 	return slices.Contains(identifierKeywords, tokenType)
 }
 
-func (p *DeclarationParser) getStringModifierType(tokenType token.TokenType) ast.StringModifierType {
+func (p *DeclarationParser) getStringModifierType(tokenType token.Type) ast.StringModifierType {
 	switch tokenType {
 	case token.NOCASE:
 		return ast.StringModifierNocase
@@ -472,7 +472,7 @@ func (p *DeclarationParser) getStringModifierType(tokenType token.TokenType) ast
 	}
 }
 
-func (p *DeclarationParser) isStringModifier(t token.TokenType) bool {
+func (p *DeclarationParser) isStringModifier(t token.Type) bool {
 	return t == token.NOCASE || t == token.WIDE || t == token.ASCII ||
 		t == token.FULLWORD || t == token.PRIVATE || t == token.XOR ||
 		t == token.BASE64 || t == token.BASE64WIDE

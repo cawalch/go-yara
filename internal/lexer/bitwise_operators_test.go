@@ -13,7 +13,7 @@ func TestBitwiseOperators_Basic(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
-		expected token.TokenType
+		expected token.Type
 	}{
 		{"bitwise_and", "&", token.BitwiseAnd},
 		{"bitwise_or", "|", token.BitwiseOr},
@@ -318,7 +318,7 @@ func assertBitwiseOperators(t *testing.T, helper *lexer.TestHelper, input string
 // extractBitwiseOperators extracts bitwise operators from a token slice
 func extractBitwiseOperators(tokens []token.Token) []string {
 	operators := make([]string, 0, 8) // Pre-allocate reasonable capacity
-	bitwiseTypes := map[token.TokenType]bool{
+	bitwiseTypes := map[token.Type]bool{
 		token.BitwiseAnd: true,
 		token.BitwiseOr:  true,
 		token.BitwiseXor: true,

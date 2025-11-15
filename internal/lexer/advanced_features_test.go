@@ -101,12 +101,12 @@ func TestAdvancedFeatures_AllFeatureTypes(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
-		expected []token.TokenType
+		expected []token.Type
 	}{
 		{
 			"bitwise operators sequence",
 			"value & 0xFF | 0x01 ^ 0xAA ~ data << 2 >> 1",
-			[]token.TokenType{
+			[]token.Type{
 				token.IDENTIFIER, token.BitwiseAnd, token.HexIntegerLit,
 				token.BitwiseOr, token.HexIntegerLit,
 				token.BitwiseXor, token.HexIntegerLit,
@@ -119,7 +119,7 @@ func TestAdvancedFeatures_AllFeatureTypes(t *testing.T) {
 		{
 			"data type functions sequence",
 			"uint32(0) int16be(4) uint8(offset) int32(addr)",
-			[]token.TokenType{
+			[]token.Type{
 				token.UINT32, token.LPAREN, token.IntegerLit, token.RPAREN,
 				token.INT16BE, token.LPAREN, token.IntegerLit, token.RPAREN,
 				token.UINT8, token.LPAREN, token.IDENTIFIER, token.RPAREN,
@@ -130,7 +130,7 @@ func TestAdvancedFeatures_AllFeatureTypes(t *testing.T) {
 		{
 			"file operations with expressions",
 			"filesize > 1MB and uint32(entrypoint) == 0x5A4D",
-			[]token.TokenType{
+			[]token.Type{
 				token.FILESIZE, token.GT, token.SizeLit,
 				token.AND,
 				token.UINT32, token.LPAREN, token.ENTRYPOINT, token.RPAREN,
@@ -141,7 +141,7 @@ func TestAdvancedFeatures_AllFeatureTypes(t *testing.T) {
 		{
 			"combined Phase 3 features",
 			"(uint32(entrypoint) & 0xFF00) >> 8 == filesize",
-			[]token.TokenType{
+			[]token.Type{
 				token.LPAREN,
 				token.UINT32, token.LPAREN, token.ENTRYPOINT, token.RPAREN,
 				token.BitwiseAnd, token.HexIntegerLit,

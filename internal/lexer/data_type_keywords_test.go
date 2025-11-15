@@ -13,7 +13,7 @@ func TestDataTypeKeywords_Basic(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
-		expected token.TokenType
+		expected token.Type
 	}{
 		// Little-endian data types
 		{"int8", "int8", token.INT8},
@@ -45,7 +45,7 @@ func TestDataTypeKeywords_CaseSensitive(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
-		expected token.TokenType
+		expected token.Type
 	}{
 		{"uint32_lowercase", "uint32", token.UINT32},
 		{"UINT32_uppercase", "UINT32", token.IDENTIFIER}, // Should be identifier, not keyword
@@ -183,7 +183,7 @@ func TestDataTypeKeywords_InExpressions(t *testing.T) {
 func TestDataTypeKeywords_AllTypesInSequence(t *testing.T) {
 	input := "int8 int16 int32 uint8 uint16 uint32 int8be int16be int32be uint8be uint16be uint32be"
 
-	expected := []token.TokenType{
+	expected := []token.Type{
 		token.INT8,
 		token.INT16,
 		token.INT32,
