@@ -228,12 +228,112 @@ func (c *Compiler) compileSemantic(program *ast.Program) error {
 
 	// Collect warnings if enabled
 	if c.options.EnableWarnings {
-		// TODO: Add semantic warnings collection when implemented
-		// For now, this is a placeholder for future warning handling
-		_ = c.options.EnableWarnings // Suppress unused warning until implemented
+		c.collectSemanticWarnings(program)
 	}
 
 	return nil
+}
+
+// collectSemanticWarnings collects semantic warnings from the compiled program
+func (c *Compiler) collectSemanticWarnings(program *ast.Program) {
+	for _, rule := range program.Rules {
+		c.collectRuleWarnings(rule)
+	}
+}
+
+// collectRuleWarnings collects warnings for a specific rule
+func (c *Compiler) collectRuleWarnings(rule *ast.Rule) {
+	// Check for unused strings
+	c.checkUnusedStrings(rule)
+
+	// Check for empty rules
+	c.checkEmptyRule(rule)
+
+	// Check for potentially problematic patterns
+	c.checkProblematicPatterns(rule)
+}
+
+// checkUnusedStrings warns about strings that are defined but never used
+func (c *Compiler) checkUnusedStrings(rule *ast.Rule) {
+	if len(rule.Strings) == 0 {
+		return // No strings to check
+	}
+
+	// Track which strings are referenced in the condition
+	referenced := make(map[string]bool)
+	c.collectReferencedStrings(rule.Condition, referenced)
+
+	// Check for unused strings
+	for _, str := range rule.Strings {
+		if !referenced[str.Identifier] {
+			c.AddWarning("semantic",
+				fmt.Sprintf("String '%s' is defined but never used in condition", str.Identifier),
+				rule.Pos.Line,
+				rule.Pos.Column)
+		}
+	}
+}
+
+// collectReferencedStrings recursively collects string references from an expression
+func (c *Compiler) collectReferencedStrings(expr ast.Expression, referenced map[string]bool) {
+	if expr == nil {
+		return
+	}
+
+	switch e := expr.(type) {
+	case *ast.Identifier:
+		// This could be a string reference
+		if len(e.Name) > 0 && e.Name[0] == '$' {
+			referenced[e.Name] = true
+		}
+	case *ast.OfExpression:
+		// Check strings in "of" expressions
+		if e.Strings != nil {
+			c.collectReferencedStrings(e.Strings, referenced)
+		}
+	case *ast.BinaryOp:
+		c.collectReferencedStrings(e.Left, referenced)
+		c.collectReferencedStrings(e.Right, referenced)
+	case *ast.UnaryOp:
+		c.collectReferencedStrings(e.Right, referenced)
+	case *ast.FunctionCall:
+		// Check arguments for string references
+		for _, arg := range e.Args {
+			c.collectReferencedStrings(arg, referenced)
+		}
+	}
+}
+
+// checkEmptyRule warns about rules with empty conditions
+func (c *Compiler) checkEmptyRule(rule *ast.Rule) {
+	// This is a basic check - could be expanded
+	if rule.Condition == nil {
+		c.AddWarning("semantic",
+			fmt.Sprintf("Rule '%s' has no condition", rule.Name),
+			rule.Pos.Line,
+			rule.Pos.Column)
+	}
+}
+
+// checkProblematicPatterns warns about potentially problematic patterns
+func (c *Compiler) checkProblematicPatterns(rule *ast.Rule) {
+	// Check for rules with only trivial conditions
+	if c.isTrivialCondition(rule.Condition) {
+		c.AddWarning("semantic",
+			fmt.Sprintf("Rule '%s' has a trivial condition that may always be true", rule.Name),
+			rule.Pos.Line,
+			rule.Pos.Column)
+	}
+}
+
+// isTrivialCondition checks if a condition is overly simple (e.g., just "true")
+func (c *Compiler) isTrivialCondition(expr ast.Expression) bool {
+	if lit, ok := expr.(*ast.Literal); ok {
+		if boolVal, ok := lit.Value.(bool); ok && boolVal {
+			return true
+		}
+	}
+	return false
 }
 
 // compileCodeGen performs code generation
@@ -281,6 +381,17 @@ func (c *Compiler) GetErrors() []CompilationError {
 // GetWarnings returns all compilation warnings
 func (c *Compiler) GetWarnings() []CompilationWarning {
 	return c.stats.Warnings
+}
+
+// AddWarning adds a compilation warning
+func (c *Compiler) AddWarning(phase, message string, line, column int) {
+	warning := CompilationWarning{
+		Phase:   phase,
+		Message: message,
+		Line:    line,
+		Column:  column,
+	}
+	c.stats.Warnings = append(c.stats.Warnings, warning)
 }
 
 // HasErrors returns true if there were compilation errors

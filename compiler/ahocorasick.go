@@ -483,6 +483,20 @@ func (ac *ACAutomaton) GetStringCount() int {
 	return len(ac.strings)
 }
 
+// GetStrings returns all string information from the automaton
+func (ac *ACAutomaton) GetStrings() []ACStringInfo {
+	return ac.strings
+}
+
+// GetPatternData returns a map of string identifiers to their pattern data
+func (ac *ACAutomaton) GetPatternData() map[string][]byte {
+	result := make(map[string][]byte)
+	for _, strInfo := range ac.strings {
+		result[strInfo.Identifier] = strInfo.Data
+	}
+	return result
+}
+
 // EstimateMemoryUsage estimates memory usage
 func (ac *ACAutomaton) EstimateMemoryUsage() int {
 	stateMemory := len(ac.states) * (256*4 + 8) // transitions + failure + output indices

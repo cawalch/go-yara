@@ -71,6 +71,7 @@ func (rc *RuleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 		Index:        rc.ruleIndex,
 		Bytecode:     bytecode,
 		StringCount:  len(rule.Strings),
+		Strings:      rc.automaton.GetPatternData(),
 		Automaton:    rc.automaton,
 		Stats:        nil, // Lazy: computed on demand
 		ruleCompiler: rc,  // Store reference for lazy computation
@@ -352,14 +353,15 @@ func (rc *RuleCompiler) getCompilationStats() map[string]any {
 
 // CompiledRule represents a compiled YARA rule
 type CompiledRule struct {
-	Name         string         // Rule name
-	Index        int            // Rule index in program
-	Bytecode     []byte         // Compiled bytecode
-	StringCount  int            // Number of strings
-	Automaton    *ACAutomaton   // Aho-Corasick automaton for pattern matching
-	Stats        map[string]any // Compilation statistics (lazy computed)
-	statsOnce    sync.Once      // Ensure stats computed only once
-	ruleCompiler *RuleCompiler  // Reference for lazy stats computation
+	Name         string            // Rule name
+	Index        int               // Rule index in program
+	Bytecode     []byte            // Compiled bytecode
+	StringCount  int               // Number of strings
+	Strings      map[string][]byte // String identifier to pattern data mapping
+	Automaton    *ACAutomaton      // Aho-Corasick automaton for pattern matching
+	Stats        map[string]any    // Compilation statistics (lazy computed)
+	statsOnce    sync.Once         // Ensure stats computed only once
+	ruleCompiler *RuleCompiler     // Reference for lazy stats computation
 }
 
 // GetName returns the rule name
@@ -372,7 +374,12 @@ func (cr *CompiledRule) GetBytecode() []byte {
 	return cr.Bytecode
 }
 
-// GetStringCount returns the number of strings in the rule
+// GetStrings returns the string pattern data
+func (cr *CompiledRule) GetStrings() map[string][]byte {
+	return cr.Strings
+}
+
+// GetStringCount returns the number of strings in this rule
 func (cr *CompiledRule) GetStringCount() int {
 	return cr.StringCount
 }
@@ -482,6 +489,15 @@ func NewCompiledProgram(rules []*CompiledRule) *CompiledProgram {
 // GetRuleCount returns the number of compiled rules
 func (cp *CompiledProgram) GetRuleCount() int {
 	return len(cp.Rules)
+}
+
+// GetStringCount returns the total number of strings across all rules
+func (cp *CompiledProgram) GetStringCount() int {
+	total := 0
+	for _, rule := range cp.Rules {
+		total += rule.GetStringCount()
+	}
+	return total
 }
 
 // GetTotalBytecodeSize returns the total size of all bytecode

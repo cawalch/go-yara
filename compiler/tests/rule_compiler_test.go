@@ -29,10 +29,10 @@ func TestRuleCompilerIntegration(t *testing.T) {
 		t.Error("Compiled rule should have a name")
 	}
 
-	// TODO: Add string access methods to CompiledRule
-	// if len(compiledRule.Strings) == 0 {
-	//     t.Error("Compiled rule should have compiled strings")
-	// }
+	// Test string access methods
+	if len(compiledRule.GetStrings()) == 0 {
+		t.Error("Compiled rule should have compiled strings")
+	}
 
 	if compiledRule.Bytecode == nil {
 		t.Error("Compiled rule should have bytecode")
@@ -58,11 +58,11 @@ rule multi_string_test {
 	c := testutils.CreateTestCompiler()
 	program := testutils.CompileTestRule(t, source)
 
-	// TODO: Add string access methods to CompiledProgram
+	// Test string access methods to CompiledProgram
 	// Verify we have the expected number of compiled strings
-	// if program.GetStringCount() != 5 {
-	//     t.Errorf("Expected 5 compiled strings, got %d", program.GetStringCount())
-	// }
+	if program.GetStringCount() != 5 {
+		t.Errorf("Expected 5 compiled strings, got %d", program.GetStringCount())
+	}
 
 	// For now, just verify compilation succeeded
 	testutils.AssertProgramValid(t, program)
