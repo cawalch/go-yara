@@ -49,7 +49,7 @@ func TestNodePositions(t *testing.T) {
 		},
 		{
 			name: "Literal",
-			node: builder.Literal(pos, token.INTEGER_LIT, 42),
+			node: builder.Literal(pos, token.IntegerLit, 42),
 		},
 		{
 			name: "TextString",
@@ -157,7 +157,7 @@ func testExpressionNodeAcceptance(t *testing.T) {
 		},
 		{
 			name:          "Literal",
-			node:          builder.Literal(pos, token.INTEGER_LIT, 42),
+			node:          builder.Literal(pos, token.IntegerLit, 42),
 			expectedCount: 1,
 		},
 	}
@@ -222,7 +222,7 @@ func TestExpressionMarker(t *testing.T) {
 		builder.BinaryOp(pos, builder.Identifier(pos, "a"), token.PLUS, builder.Identifier(pos, "b")),
 		builder.UnaryOp(pos, token.NOT, builder.Identifier(pos, "x")),
 		builder.Identifier(pos, "test"),
-		builder.Literal(pos, token.INTEGER_LIT, 42),
+		builder.Literal(pos, token.IntegerLit, 42),
 	}
 
 	for i, expr := range expressions {
@@ -284,7 +284,7 @@ func TestLiteralCreation(t *testing.T) {
 	}{
 		{
 			name:    "Integer",
-			tokType: token.INTEGER_LIT,
+			tokType: token.IntegerLit,
 			value:   42,
 			checkVal: func(v any) bool {
 				return v.(int) == 42
@@ -308,7 +308,7 @@ func TestLiteralCreation(t *testing.T) {
 		},
 		{
 			name:    "String",
-			tokType: token.STRING_LIT,
+			tokType: token.StringLit,
 			value:   "test",
 			checkVal: func(v any) bool {
 				return v.(string) == "test"

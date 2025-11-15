@@ -77,27 +77,27 @@ func TestStringModifiers_AllStringTypes(t *testing.T) {
 		{
 			"text string with all modifiers",
 			`"text" nocase wide ascii fullword private xor base64 base64wide`,
-			[]token.TokenType{token.STRING_LIT, token.NOCASE, token.WIDE, token.ASCII, token.FULLWORD, token.PRIVATE, token.XOR, token.BASE64, token.BASE64WIDE, token.EOF},
+			[]token.TokenType{token.StringLit, token.NOCASE, token.WIDE, token.ASCII, token.FULLWORD, token.PRIVATE, token.XOR, token.BASE64, token.BASE64WIDE, token.EOF},
 		},
 		{
 			"hex string with modifiers",
 			`{ E2 34 ?? A1 } nocase private`,
-			[]token.TokenType{token.HEX_STRING_LIT, token.NOCASE, token.PRIVATE, token.EOF},
+			[]token.TokenType{token.HexStringLit, token.NOCASE, token.PRIVATE, token.EOF},
 		},
 		{
 			"regex with modifiers",
 			`/pattern/i ascii fullword`,
-			[]token.TokenType{token.REGEX_LIT, token.ASCII, token.FULLWORD, token.EOF},
+			[]token.TokenType{token.RegexLit, token.ASCII, token.FULLWORD, token.EOF},
 		},
 		{
 			"empty hex string with modifiers",
 			`{ } wide`,
-			[]token.TokenType{token.HEX_STRING_LIT, token.WIDE, token.EOF},
+			[]token.TokenType{token.HexStringLit, token.WIDE, token.EOF},
 		},
 		{
 			"empty regex with modifiers",
 			`//i nocase`,
-			[]token.TokenType{token.REGEX_LIT, token.NOCASE, token.EOF},
+			[]token.TokenType{token.RegexLit, token.NOCASE, token.EOF},
 		},
 	}
 

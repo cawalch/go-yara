@@ -201,10 +201,10 @@ func TestUnaryOpNode(t *testing.T) {
 func TestLiteralNode(t *testing.T) {
 	builder := NewBuilder()
 
-	literal := builder.Literal(token.Position{Line: 1, Column: 1}, token.INTEGER_LIT, int64(42))
+	literal := builder.Literal(token.Position{Line: 1, Column: 1}, token.IntegerLit, int64(42))
 
-	if literal.Type != token.INTEGER_LIT {
-		t.Errorf("expected INTEGER_LIT type, got %v", literal.Type)
+	if literal.Type != token.IntegerLit {
+		t.Errorf("expected IntegerLit type, got %v", literal.Type)
 	}
 	if literal.Value != int64(42) {
 		t.Errorf("expected value 42, got %v", literal.Value)

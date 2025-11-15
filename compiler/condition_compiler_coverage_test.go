@@ -125,7 +125,7 @@ func TestConditionCompiler_SpecialOperators(t *testing.T) {
 			pos,
 			builder.Identifier(pos, "$test"),
 			token.AT,
-			builder.Literal(pos, token.INTEGER_LIT, 0),
+			builder.Literal(pos, token.IntegerLit, 0),
 		)
 		err := cc.compileStringOffsetOperator(atExpr)
 		t.Logf("compileStringOffsetOperator result: %v", err)
@@ -165,14 +165,14 @@ func TestConditionCompiler_SpecialOperators(t *testing.T) {
 		arrayExpr := builder.ArrayIndex(
 			pos,
 			builder.Identifier(pos, "array_var"),
-			builder.Literal(pos, token.INTEGER_LIT, 0),
+			builder.Literal(pos, token.IntegerLit, 0),
 		)
 		err := cc.compileArrayIndex(arrayExpr)
 		t.Logf("compileArrayIndex result: %v", err)
 	})
 
 	t.Run("Size literal", func(t *testing.T) {
-		sizeExpr := builder.Literal(pos, token.STRING_LIT, "10KB")
+		sizeExpr := builder.Literal(pos, token.StringLit, "10KB")
 		err := cc.compileSizeLiteral(sizeExpr)
 		t.Logf("compileSizeLiteral result: %v", err)
 	})
@@ -189,7 +189,7 @@ func TestConditionCompiler_AdvancedExpressions(t *testing.T) {
 	t.Run("Of expression", func(t *testing.T) {
 		ofExpr := builder.OfExpression(
 			pos,
-			builder.Literal(pos, token.INTEGER_LIT, 1),
+			builder.Literal(pos, token.IntegerLit, 1),
 			builder.Identifier(pos, "them"),
 		)
 		err := cc.compileOfExpression(ofExpr)
@@ -199,7 +199,7 @@ func TestConditionCompiler_AdvancedExpressions(t *testing.T) {
 	t.Run("Count expression", func(t *testing.T) {
 		ofExpr := builder.OfExpression(
 			pos,
-			builder.Literal(pos, token.INTEGER_LIT, 1),
+			builder.Literal(pos, token.IntegerLit, 1),
 			builder.Identifier(pos, "them"),
 		)
 		err := cc.compileCountExpression(ofExpr)
@@ -217,7 +217,7 @@ func TestConditionCompiler_AdvancedExpressions(t *testing.T) {
 			pos,
 			"pe.section",
 			[]ast.Expression{
-				builder.Literal(pos, token.STRING_LIT, ".text"),
+				builder.Literal(pos, token.StringLit, ".text"),
 			},
 		)
 		err := cc.compileFunctionCall(fnCall)
@@ -271,8 +271,8 @@ func TestConditionCompiler_TypeDetection(t *testing.T) {
 	pos := token.Position{Line: 1, Column: 1}
 	builder := ast.NewBuilder()
 
-	intLit := builder.Literal(pos, token.INTEGER_LIT, 42)
-	floatLit := builder.Literal(pos, token.FLOAT_LIT, 3.14)
+	intLit := builder.Literal(pos, token.IntegerLit, 42)
+	floatLit := builder.Literal(pos, token.FloatLit, 3.14)
 	ident := builder.Identifier(pos, "var")
 
 	t.Run("isFloatExpression", func(t *testing.T) {
@@ -329,23 +329,23 @@ func TestConditionCompiler_MixedTypeOperations(t *testing.T) {
 	t.Run("Mixed type handlers", func(t *testing.T) {
 		bitShiftOp := builder.BinaryOp(
 			pos,
-			builder.Literal(pos, token.INTEGER_LIT, 42),
-			token.LEFT_SHIFT,
-			builder.Literal(pos, token.FLOAT_LIT, 3.14),
+			builder.Literal(pos, token.IntegerLit, 42),
+			token.LeftShift,
+			builder.Literal(pos, token.FloatLit, 3.14),
 		)
 
 		comparisonOp := builder.BinaryOp(
 			pos,
-			builder.Literal(pos, token.INTEGER_LIT, 42),
+			builder.Literal(pos, token.IntegerLit, 42),
 			token.EQ,
-			builder.Literal(pos, token.FLOAT_LIT, 3.14),
+			builder.Literal(pos, token.FloatLit, 3.14),
 		)
 
 		arithmeticOp := builder.BinaryOp(
 			pos,
-			builder.Literal(pos, token.INTEGER_LIT, 42),
+			builder.Literal(pos, token.IntegerLit, 42),
 			token.PLUS,
-			builder.Literal(pos, token.FLOAT_LIT, 3.14),
+			builder.Literal(pos, token.FloatLit, 3.14),
 		)
 
 		cc.handleBitShiftFloatConversion(bitShiftOp, false, true, false)
@@ -367,7 +367,7 @@ func TestConditionCompiler_OptimizationAndValidation(t *testing.T) {
 	pos := token.Position{Line: 1, Column: 1}
 	builder := ast.NewBuilder()
 
-	expr := builder.Literal(pos, token.INTEGER_LIT, 42)
+	expr := builder.Literal(pos, token.IntegerLit, 42)
 
 	t.Run("ValidateExpression", func(t *testing.T) {
 		err := cc.ValidateExpression(expr)
@@ -393,7 +393,7 @@ func TestConditionCompiler_OptimizationAndValidation(t *testing.T) {
 	t.Run("EmitJump", func(t *testing.T) {
 		// Test EmitJump with proper parameters
 		config := ConditionalJumpConfig{
-			Opcode:      OP_JZ,
+			Opcode:      OpJz,
 			TargetLabel: "test_label",
 			Position:    JumpPosition{Line: 1, Column: 1},
 		}
@@ -529,7 +529,7 @@ func testConditionCompilerComplexExpressions(t *testing.T) {
 					},
 				),
 				token.EQ,
-				builder.Literal(pos, token.INTEGER_LIT, 42),
+				builder.Literal(pos, token.IntegerLit, 42),
 			),
 		},
 		{
@@ -577,16 +577,16 @@ func testConditionCompilerFunctionCallVariations(t *testing.T) {
 			name:     "single_argument",
 			function: "test.function",
 			args: []ast.Expression{
-				builder.Literal(pos, token.STRING_LIT, "arg1"),
+				builder.Literal(pos, token.StringLit, "arg1"),
 			},
 		},
 		{
 			name:     "multiple_types",
 			function: "test.function",
 			args: []ast.Expression{
-				builder.Literal(pos, token.STRING_LIT, "arg1"),
-				builder.Literal(pos, token.INTEGER_LIT, 42),
-				builder.Literal(pos, token.FLOAT_LIT, 3.14),
+				builder.Literal(pos, token.StringLit, "arg1"),
+				builder.Literal(pos, token.IntegerLit, 42),
+				builder.Literal(pos, token.FloatLit, 3.14),
 				builder.Identifier(pos, "var"),
 			},
 		},

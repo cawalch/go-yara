@@ -221,25 +221,25 @@ func TestTestHelper_AssertSingleToken_EdgeCases(t *testing.T) {
 		{
 			name:            "input with special characters",
 			input:           "{",
-			expectedType:    token.HEX_STRING_LIT,
+			expectedType:    token.HexStringLit,
 			expectedLiteral: "{",
 		},
 		{
 			name:            "input with quotes",
 			input:           "\"hello\"",
-			expectedType:    token.STRING_LIT,
+			expectedType:    token.StringLit,
 			expectedLiteral: "hello",
 		},
 		{
 			name:            "input with regex pattern",
 			input:           "/test/",
-			expectedType:    token.REGEX_LIT,
+			expectedType:    token.RegexLit,
 			expectedLiteral: "/test/",
 		},
 		{
 			name:            "input with hex string",
 			input:           "{$a = \"test\"}",
-			expectedType:    token.HEX_STRING_LIT,
+			expectedType:    token.HexStringLit,
 			expectedLiteral: "{$a = \"test\"}",
 		},
 	}
@@ -306,7 +306,7 @@ func testLiteralTokens(t *testing.T) {
 		tokenType       token.TokenType
 		expectedLiteral string
 	}{
-		{"123", token.INTEGER_LIT, "123"},
+		{"123", token.IntegerLit, "123"},
 	}
 
 	for _, tt := range literals {
@@ -332,12 +332,12 @@ func testOperatorTokens(t *testing.T) {
 		{"<", token.LT},
 		{">=", token.GE},
 		{"<=", token.LE},
-		{"|", token.BITWISE_OR},
-		{"&", token.BITWISE_AND},
-		{"^", token.BITWISE_XOR},
-		{"~", token.BITWISE_NOT},
-		{"<<", token.LEFT_SHIFT},
-		{">>", token.RIGHT_SHIFT},
+		{"|", token.BitwiseOr},
+		{"&", token.BitwiseAnd},
+		{"^", token.BitwiseXor},
+		{"~", token.BitwiseNot},
+		{"<<", token.LeftShift},
+		{">>", token.RightShift},
 		{",", token.COMMA},
 		{".", token.DOT},
 	}
@@ -375,7 +375,7 @@ func testIdentifierTokens(t *testing.T) {
 		input     string
 		tokenType token.TokenType
 	}{
-		{"$a", token.STRING_IDENTIFIER},
+		{"$a", token.StringIdentifier},
 		{"test_var", token.IDENTIFIER},
 		{"_underscore", token.IDENTIFIER},
 		{"hello123", token.IDENTIFIER},

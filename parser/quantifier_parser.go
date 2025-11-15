@@ -222,9 +222,9 @@ func (p *QuantifierParser) parseQuantifierExpressionPart(pos token.Position) (as
 
 // isNumericQuantifier checks if current token is a numeric quantifier
 func (p *QuantifierParser) isNumericQuantifier() bool {
-	isNumber := p.currentTokenIs(token.INTEGER_LIT) ||
-		p.currentTokenIs(token.HEX_INTEGER_LIT) ||
-		p.currentTokenIs(token.OCTAL_INTEGER_LIT)
+	isNumber := p.currentTokenIs(token.IntegerLit) ||
+		p.currentTokenIs(token.HexIntegerLit) ||
+		p.currentTokenIs(token.OctalIntegerLit)
 	return isNumber && p.peekTokenIs(token.OF)
 }
 
@@ -268,7 +268,7 @@ func (p *QuantifierParser) parseQuantifierTarget(pos token.Position) (ast.Expres
 		target := p.builder.Identifier(pos, "them")
 		p.nextToken()
 		return target, nil
-	case p.currentTokenIs(token.STRING_IDENTIFIER):
+	case p.currentTokenIs(token.StringIdentifier):
 		target := p.builder.Identifier(pos, p.current.Literal)
 		p.nextToken()
 		return target, nil
@@ -305,10 +305,10 @@ func (p *QuantifierParser) parseParenthesizedTarget(pos token.Position) (ast.Exp
 // parseFirstParenthesizedExpression parses the first expression in parentheses
 func (p *QuantifierParser) parseFirstParenthesizedExpression(pos token.Position) (ast.Expression, error) {
 	switch {
-	case p.currentTokenIs(token.STRING_IDENTIFIER) && p.current.Literal == "$":
+	case p.currentTokenIs(token.StringIdentifier) && p.current.Literal == "$":
 		p.nextToken()
 		return p.builder.Identifier(pos, "$"), nil
-	case p.currentTokenIs(token.STRING_IDENTIFIER):
+	case p.currentTokenIs(token.StringIdentifier):
 		expr := p.builder.Identifier(pos, p.current.Literal)
 		p.nextToken()
 		return expr, nil
@@ -335,7 +335,7 @@ func (p *QuantifierParser) parseCommaSeparatedExpressions(pos token.Position, fi
 
 // parseNextParenthesizedExpression parses subsequent expressions in a comma-separated list
 func (p *QuantifierParser) parseNextParenthesizedExpression(pos token.Position) (ast.Expression, error) {
-	if p.currentTokenIs(token.STRING_IDENTIFIER) {
+	if p.currentTokenIs(token.StringIdentifier) {
 		expr := p.builder.Identifier(pos, p.current.Literal)
 		p.nextToken()
 		return expr, nil
@@ -364,9 +364,9 @@ func (p *QuantifierParser) isQuantifierToken() bool {
 
 // isNumericQuantifierToken checks if current token is a numeric quantifier
 func (p *QuantifierParser) isNumericQuantifierToken() bool {
-	isNumber := p.currentTokenIs(token.INTEGER_LIT) ||
-		p.currentTokenIs(token.HEX_INTEGER_LIT) ||
-		p.currentTokenIs(token.OCTAL_INTEGER_LIT)
+	isNumber := p.currentTokenIs(token.IntegerLit) ||
+		p.currentTokenIs(token.HexIntegerLit) ||
+		p.currentTokenIs(token.OctalIntegerLit)
 	return isNumber && p.peekTokenIs(token.OF)
 }
 

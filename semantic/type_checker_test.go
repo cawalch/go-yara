@@ -23,9 +23,9 @@ func TestCheckBinaryOp(t *testing.T) {
 	}{
 		{
 			name:    "integer addition",
-			left:    &ast.Literal{Type: token.INTEGER_LIT, Value: 1, Pos: pos},
+			left:    &ast.Literal{Type: token.IntegerLit, Value: 1, Pos: pos},
 			op:      token.PLUS,
-			right:   &ast.Literal{Type: token.INTEGER_LIT, Value: 2, Pos: pos},
+			right:   &ast.Literal{Type: token.IntegerLit, Value: 2, Pos: pos},
 			wantErr: false,
 		},
 		{
@@ -37,9 +37,9 @@ func TestCheckBinaryOp(t *testing.T) {
 		},
 		{
 			name:    "integer comparison",
-			left:    &ast.Literal{Type: token.INTEGER_LIT, Value: 5, Pos: pos},
+			left:    &ast.Literal{Type: token.IntegerLit, Value: 5, Pos: pos},
 			op:      token.GT,
-			right:   &ast.Literal{Type: token.INTEGER_LIT, Value: 3, Pos: pos},
+			right:   &ast.Literal{Type: token.IntegerLit, Value: 3, Pos: pos},
 			wantErr: false,
 		},
 	}
@@ -84,8 +84,8 @@ func TestCheckUnaryOp(t *testing.T) {
 		},
 		{
 			name:    "bitwise not",
-			op:      token.BITWISE_NOT,
-			operand: &ast.Literal{Type: token.INTEGER_LIT, Value: 42, Pos: pos},
+			op:      token.BitwiseNot,
+			operand: &ast.Literal{Type: token.IntegerLit, Value: 42, Pos: pos},
 			wantErr: false,
 		},
 	}
@@ -310,19 +310,19 @@ func TestInferTypeFromLiteral(t *testing.T) {
 		},
 		{
 			name:         "integer",
-			tokenType:    token.INTEGER_LIT,
+			tokenType:    token.IntegerLit,
 			value:        42,
 			expectedType: TypeInteger,
 		},
 		{
 			name:         "hex integer",
-			tokenType:    token.HEX_INTEGER_LIT,
+			tokenType:    token.HexIntegerLit,
 			value:        0xFF,
 			expectedType: TypeInteger,
 		},
 		{
 			name:         "string",
-			tokenType:    token.STRING_LIT,
+			tokenType:    token.StringLit,
 			value:        "test",
 			expectedType: TypeString,
 		},
@@ -476,11 +476,11 @@ func testBinaryOpBitwiseOperations(t *testing.T) {
 		op           token.TokenType
 		expectedType DataType
 	}{
-		{"bitwise_and", token.BITWISE_AND, TypeInteger},
-		{"bitwise_or", token.BITWISE_OR, TypeInteger},
-		{"bitwise_xor", token.BITWISE_XOR, TypeInteger},
-		{"left_shift", token.LEFT_SHIFT, TypeInteger},
-		{"right_shift", token.RIGHT_SHIFT, TypeInteger},
+		{"bitwise_and", token.BitwiseAnd, TypeInteger},
+		{"bitwise_or", token.BitwiseOr, TypeInteger},
+		{"bitwise_xor", token.BitwiseXor, TypeInteger},
+		{"left_shift", token.LeftShift, TypeInteger},
+		{"right_shift", token.RightShift, TypeInteger},
 	}
 
 	for _, tt := range tests {
@@ -517,7 +517,7 @@ func TestInferTypeFromUnaryOp(t *testing.T) {
 		},
 		{
 			name:         "bitwise not",
-			op:           token.BITWISE_NOT,
+			op:           token.BitwiseNot,
 			operand:      intType,
 			expectedType: TypeInteger,
 			wantErr:      false,
@@ -641,8 +641,8 @@ func TestCheckStringOp(t *testing.T) {
 	// Test contains
 	containsOp := &ast.BinaryOp{
 		Op:    token.CONTAINS,
-		Left:  &ast.Literal{Type: token.STRING_LIT, Value: "malware", Pos: pos},
-		Right: &ast.Literal{Type: token.STRING_LIT, Value: "mal", Pos: pos},
+		Left:  &ast.Literal{Type: token.StringLit, Value: "malware", Pos: pos},
+		Right: &ast.Literal{Type: token.StringLit, Value: "mal", Pos: pos},
 	}
 
 	typeInfo, errs := checker.CheckExpressionTypes(containsOp)
@@ -656,8 +656,8 @@ func TestCheckStringOp(t *testing.T) {
 	// Test matches
 	matchesOp := &ast.BinaryOp{
 		Op:    token.MATCHES,
-		Left:  &ast.Literal{Type: token.STRING_LIT, Value: "malware", Pos: pos},
-		Right: &ast.Literal{Type: token.STRING_LIT, Value: "mal", Pos: pos},
+		Left:  &ast.Literal{Type: token.StringLit, Value: "malware", Pos: pos},
+		Right: &ast.Literal{Type: token.StringLit, Value: "mal", Pos: pos},
 	}
 
 	typeInfo, errs = checker.CheckExpressionTypes(matchesOp)
@@ -679,8 +679,8 @@ func TestTypeCheckerErrors(t *testing.T) {
 	// Test with invalid expression
 	invalidExpr := &ast.BinaryOp{
 		Op:    token.PLUS,
-		Left:  &ast.Literal{Type: token.STRING_LIT, Value: "str", Pos: pos},
-		Right: &ast.Literal{Type: token.INTEGER_LIT, Value: int64(1), Pos: pos},
+		Left:  &ast.Literal{Type: token.StringLit, Value: "str", Pos: pos},
+		Right: &ast.Literal{Type: token.IntegerLit, Value: int64(1), Pos: pos},
 	}
 
 	_, errs := checker.CheckExpressionTypes(invalidExpr)

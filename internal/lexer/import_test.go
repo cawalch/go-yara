@@ -17,7 +17,7 @@ func TestImportInclude(t *testing.T) {
 			input: "import \"pe\"",
 			expected: []token.Token{
 				{Type: token.IMPORT, Literal: "import"},
-				{Type: token.STRING_LIT, Literal: "pe"},
+				{Type: token.StringLit, Literal: "pe"},
 				{Type: token.EOF, Literal: ""},
 			},
 		},
@@ -25,7 +25,7 @@ func TestImportInclude(t *testing.T) {
 			input: "import \"math\"",
 			expected: []token.Token{
 				{Type: token.IMPORT, Literal: "import"},
-				{Type: token.STRING_LIT, Literal: "math"},
+				{Type: token.StringLit, Literal: "math"},
 				{Type: token.EOF, Literal: ""},
 			},
 		},
@@ -33,7 +33,7 @@ func TestImportInclude(t *testing.T) {
 			input: "include \"common.yar\"",
 			expected: []token.Token{
 				{Type: token.INCLUDE, Literal: "include"},
-				{Type: token.STRING_LIT, Literal: "common.yar"},
+				{Type: token.StringLit, Literal: "common.yar"},
 				{Type: token.EOF, Literal: ""},
 			},
 		},
@@ -41,11 +41,11 @@ func TestImportInclude(t *testing.T) {
 			input: "import \"pe\"\nimport \"math\"\ninclude \"utils.yar\"",
 			expected: []token.Token{
 				{Type: token.IMPORT, Literal: "import"},
-				{Type: token.STRING_LIT, Literal: "pe"},
+				{Type: token.StringLit, Literal: "pe"},
 				{Type: token.IMPORT, Literal: "import"},
-				{Type: token.STRING_LIT, Literal: "math"},
+				{Type: token.StringLit, Literal: "math"},
 				{Type: token.INCLUDE, Literal: "include"},
-				{Type: token.STRING_LIT, Literal: "utils.yar"},
+				{Type: token.StringLit, Literal: "utils.yar"},
 				{Type: token.EOF, Literal: ""},
 			},
 		},
@@ -53,7 +53,7 @@ func TestImportInclude(t *testing.T) {
 			input: "IMPORT \"pe\"", // Test case sensitivity
 			expected: []token.Token{
 				{Type: token.IDENTIFIER, Literal: "IMPORT"},
-				{Type: token.STRING_LIT, Literal: "pe"},
+				{Type: token.StringLit, Literal: "pe"},
 				{Type: token.EOF, Literal: ""},
 			},
 		},

@@ -18,7 +18,7 @@ func TestNextToken_YARAMetaSection(t *testing.T) {
 		{Type: token.COLON, Literal: ":"},
 		{Type: token.IDENTIFIER, Literal: "author"},
 		{Type: token.ASSIGN, Literal: "="},
-		{Type: token.STRING_LIT, Literal: "test"},
+		{Type: token.StringLit, Literal: "test"},
 		{Type: token.EOF, Literal: ""},
 	}
 
@@ -38,13 +38,13 @@ func TestNextToken_YARAConditionSection(t *testing.T) {
 	helper.AssertTokenSequence("condition: 1 == 1 and 2 != 3", lexer.CreateTokenSequence(
 		token.CONDITION, "condition",
 		token.COLON, ":",
-		token.INTEGER_LIT, "1",
+		token.IntegerLit, "1",
 		token.EQ, "==",
-		token.INTEGER_LIT, "1",
+		token.IntegerLit, "1",
 		token.AND, "and",
-		token.INTEGER_LIT, "2",
+		token.IntegerLit, "2",
 		token.NEQ, "!=",
-		token.INTEGER_LIT, "3",
+		token.IntegerLit, "3",
 	))
 }
 
@@ -58,7 +58,7 @@ func TestNextToken_RegexLiterals_EdgeCases(t *testing.T) {
 			name:  "empty regex",
 			input: "//",
 			expected: []token.Token{
-				{Type: token.REGEX_LIT, Literal: "//"},
+				{Type: token.RegexLit, Literal: "//"},
 				{Type: token.EOF, Literal: ""},
 			},
 		},
@@ -66,7 +66,7 @@ func TestNextToken_RegexLiterals_EdgeCases(t *testing.T) {
 			name:  "empty regex with flags",
 			input: "//i",
 			expected: []token.Token{
-				{Type: token.REGEX_LIT, Literal: "//i"},
+				{Type: token.RegexLit, Literal: "//i"},
 				{Type: token.EOF, Literal: ""},
 			},
 		},
@@ -237,11 +237,11 @@ func identifierOrKeyword(lit string) token.TokenType {
 	case "entrypoint":
 		return token.ENTRYPOINT
 	case "1", "2", "3", "4", "5", "6", "7", "8", "9", "0":
-		return token.INTEGER_LIT
+		return token.IntegerLit
 	case "1MB":
-		return token.SIZE_LIT
+		return token.SizeLit
 	case "0x400000":
-		return token.HEX_INTEGER_LIT
+		return token.HexIntegerLit
 	default:
 		return token.IDENTIFIER
 	}
@@ -323,33 +323,33 @@ func getComplexYARARuleExpectedTokens() []token.TokenType {
 		token.COLON,
 		token.IDENTIFIER,
 		token.ASSIGN,
-		token.STRING_LIT,
+		token.StringLit,
 		token.IDENTIFIER,
 		token.ASSIGN,
-		token.INTEGER_LIT,
+		token.IntegerLit,
 		token.IDENTIFIER,
 		token.ASSIGN,
 		token.TRUE,
 		token.STRINGS,
 		token.COLON,
-		token.STRING_IDENTIFIER,
+		token.StringIdentifier,
 		token.ASSIGN,
-		token.STRING_LIT,
-		token.STRING_IDENTIFIER,
+		token.StringLit,
+		token.StringIdentifier,
 		token.ASSIGN,
-		token.HEX_STRING_LIT,
-		token.STRING_IDENTIFIER,
+		token.HexStringLit,
+		token.StringIdentifier,
 		token.ASSIGN,
-		token.REGEX_LIT,
+		token.RegexLit,
 		token.CONDITION,
 		token.COLON,
 		token.LPAREN,
-		token.STRING_IDENTIFIER,
+		token.StringIdentifier,
 		token.AND,
-		token.STRING_IDENTIFIER,
+		token.StringIdentifier,
 		token.RPAREN,
 		token.OR,
-		token.STRING_IDENTIFIER,
+		token.StringIdentifier,
 		token.AND,
 		token.NOT,
 		token.FALSE,

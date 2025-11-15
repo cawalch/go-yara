@@ -53,7 +53,7 @@ func TestFileValidatorValidateFileSizeComparison(t *testing.T) {
 
 	// Test valid comparison
 	filesizeExpr := &ast.Identifier{Name: "filesize", Pos: pos}
-	otherExpr := &ast.Literal{Type: token.INTEGER_LIT, Value: int64(1024), Pos: pos}
+	otherExpr := &ast.Literal{Type: token.IntegerLit, Value: int64(1024), Pos: pos}
 
 	args := FileSizeComparisonArgs{
 		Op:           token.GT,
@@ -70,7 +70,7 @@ func TestFileValidatorValidateFileSizeComparison(t *testing.T) {
 	}
 
 	// Test invalid left operand
-	invalidExpr := &ast.Literal{Type: token.STRING_LIT, Value: "invalid", Pos: pos}
+	invalidExpr := &ast.Literal{Type: token.StringLit, Value: "invalid", Pos: pos}
 	invalidArgs := FileSizeComparisonArgs{
 		Op:           token.GT,
 		FilesizeExpr: invalidExpr,
@@ -91,7 +91,7 @@ func TestFileValidatorValidateEntrypointOffset(t *testing.T) {
 
 	// Test valid offset
 	entrypointExpr := &ast.Identifier{Name: "entrypoint", Pos: pos}
-	offsetExpr := &ast.Literal{Type: token.INTEGER_LIT, Value: int64(0x1000), Pos: pos}
+	offsetExpr := &ast.Literal{Type: token.IntegerLit, Value: int64(0x1000), Pos: pos}
 
 	typeInfo, errors := fv.ValidateEntrypointOffset(entrypointExpr, offsetExpr, pos)
 	if len(errors) > 0 {
@@ -102,7 +102,7 @@ func TestFileValidatorValidateEntrypointOffset(t *testing.T) {
 	}
 
 	// Test invalid offset type
-	invalidOffset := &ast.Literal{Type: token.STRING_LIT, Value: "invalid", Pos: pos}
+	invalidOffset := &ast.Literal{Type: token.StringLit, Value: "invalid", Pos: pos}
 	_, errors = fv.ValidateEntrypointOffset(entrypointExpr, invalidOffset, pos)
 	if len(errors) == 0 {
 		t.Error("ValidateEntrypointOffset() expected errors for invalid offset type")
@@ -133,7 +133,7 @@ func TestFileValidatorValidateFileOperations(t *testing.T) {
 	binOp := &ast.BinaryOp{
 		Op:    token.GT,
 		Left:  &ast.Identifier{Name: "filesize", Pos: pos},
-		Right: &ast.Literal{Type: token.INTEGER_LIT, Value: int64(1024), Pos: pos},
+		Right: &ast.Literal{Type: token.IntegerLit, Value: int64(1024), Pos: pos},
 	}
 	errors = fv.ValidateFileOperations(binOp)
 	if len(errors) > 0 {

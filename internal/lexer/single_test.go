@@ -16,7 +16,7 @@ func TestSingleControlFlow(t *testing.T) {
 		{Type: token.THEM, Literal: "them"},
 		{Type: token.COLON, Literal: ":"},
 		{Type: token.LPAREN, Literal: "("},
-		{Type: token.STRING_IDENTIFIER, Literal: "$"},
+		{Type: token.StringIdentifier, Literal: "$"},
 		{Type: token.AT, Literal: "at"},
 		{Type: token.IDENTIFIER, Literal: "pe"},
 		{Type: token.DOT, Literal: "."},

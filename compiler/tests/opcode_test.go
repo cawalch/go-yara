@@ -87,8 +87,8 @@ func testJumpOperations(t *testing.T) {
 		opcode compiler.Opcode
 		isJump bool
 	}{
-		{"jump if zero", compiler.OP_JZ, true},
-		{"jump if zero param", compiler.OP_JZ_P, true},
+		{"jump if zero", compiler.OpJz, true},
+		{"jump if zero param", compiler.OpJzP, true},
 		{"jump if false", compiler.OP_JFALSE, true},
 		{"jump if false param", compiler.OP_JFALSE_P, true},
 		{"jump if true", compiler.OP_JTRUE, true},
@@ -111,11 +111,11 @@ func testTypeFunctions(t *testing.T) {
 		opcode   compiler.Opcode
 		isTypeFn bool
 	}{
-		{"push 8-bit", compiler.OP_PUSH_8, true},
-		{"push 16-bit", compiler.OP_PUSH_16, true},
-		{"push 32-bit", compiler.OP_PUSH_32, true},
-		{"push unsigned", compiler.OP_PUSH_U, true},
-		{"push double", compiler.OP_PUSH_DBL, true},
+		{"push 8-bit", compiler.OpPush_8, true},
+		{"push 16-bit", compiler.OpPush_16, true},
+		{"push 32-bit", compiler.OpPush_32, true},
+		{"push unsigned", compiler.OpPush_U, true},
+		{"push double", compiler.OpPush_DBL, true},
 	}
 
 	for _, test := range tests {
@@ -189,9 +189,9 @@ func TestOpcodeString(t *testing.T) {
 	}{
 		{compiler.OP_NOP, "NOP"},
 		{compiler.OP_HALT, "HALT"},
-		{compiler.OP_PUSH_8, "PUSH_8"},
+		{compiler.OpPush_8, "PUSH_8"},
 		{compiler.OP_INT_ADD, "INT_ADD"},
-		{compiler.OP_JZ, "JZ"},
+		{compiler.OpJz, "JZ"},
 	}
 
 	for _, test := range tests {
@@ -209,13 +209,13 @@ func TestOpcodeCategories(t *testing.T) {
 		opcode   compiler.Opcode
 		category string
 	}{
-		{compiler.OP_PUSH_8, "stack"},
-		{compiler.OP_PUSH_16, "stack"},
-		{compiler.OP_PUSH_32, "stack"},
+		{compiler.OpPush_8, "stack"},
+		{compiler.OpPush_16, "stack"},
+		{compiler.OpPush_32, "stack"},
 		{compiler.OP_INT_ADD, "arithmetic"},
 		{compiler.OP_INT_SUB, "arithmetic"},
 		{compiler.OP_INT_MUL, "arithmetic"},
-		{compiler.OP_JZ, "jump"},
+		{compiler.OpJz, "jump"},
 		// TODO: Find correct opcodes for JNZ and JMP
 		// {compiler.OP_JNZ, "jump"},
 		// {compiler.OP_JMP, "jump"},
@@ -245,7 +245,7 @@ func TestInstructionProperties(t *testing.T) {
 	}{
 		{
 			name:             "jump instruction JZ",
-			opcode:           compiler.OP_JZ,
+			opcode:           compiler.OpJz,
 			expectedJump:     true,
 			expectedTypeFunc: false,
 			expectedStrOp:    false,
@@ -295,7 +295,7 @@ func TestInstructionOperandTests(t *testing.T) {
 	}{
 		{
 			name:   "immediate operand PUSH_8",
-			opcode: compiler.OP_PUSH_8,
+			opcode: compiler.OpPush_8,
 			operand: compiler.Operand{
 				Type:  compiler.OperandImmediate8,
 				Value: uint64(42),
@@ -306,7 +306,7 @@ func TestInstructionOperandTests(t *testing.T) {
 		},
 		{
 			name:   "relative operand JZ",
-			opcode: compiler.OP_JZ,
+			opcode: compiler.OpJz,
 			operand: compiler.Operand{
 				Type:  compiler.OperandRelative8,
 				Value: uint64(100),
@@ -317,7 +317,7 @@ func TestInstructionOperandTests(t *testing.T) {
 		},
 		{
 			name:   "absolute operand PUSH_U",
-			opcode: compiler.OP_PUSH_U,
+			opcode: compiler.OpPush_U,
 			operand: compiler.Operand{
 				Type:  compiler.OperandAbsolute32,
 				Value: uint64(0x1000),

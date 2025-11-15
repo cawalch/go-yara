@@ -122,7 +122,7 @@ func TestAdvancedNodeTypes(t *testing.T) {
 		"Variables": {
 			{
 				name: "GlobalVariable",
-				node: builder.GlobalVariable(pos, "global_var", builder.Literal(pos, token.INTEGER_LIT, 42)),
+				node: builder.GlobalVariable(pos, "global_var", builder.Literal(pos, token.IntegerLit, 42)),
 			},
 			{
 				name: "ExternalVariable",
@@ -146,7 +146,7 @@ func TestAdvancedNodeTypes(t *testing.T) {
 			},
 			{
 				name: "ArrayIndex",
-				node: builder.ArrayIndex(pos, builder.Identifier(pos, "array"), builder.Literal(pos, token.INTEGER_LIT, 0)),
+				node: builder.ArrayIndex(pos, builder.Identifier(pos, "array"), builder.Literal(pos, token.IntegerLit, 0)),
 			},
 			{
 				name: "ForLoop",
@@ -154,13 +154,13 @@ func TestAdvancedNodeTypes(t *testing.T) {
 			},
 			{
 				name: "OfExpression",
-				node: builder.OfExpression(pos, builder.Literal(pos, token.INTEGER_LIT, 2), builder.Identifier(pos, "them")),
+				node: builder.OfExpression(pos, builder.Literal(pos, token.IntegerLit, 2), builder.Identifier(pos, "them")),
 			},
 			{
 				name: "FunctionCall",
 				node: builder.FunctionCall(pos, "module.function", []Expression{
-					builder.Literal(pos, token.STRING_LIT, "arg1"),
-					builder.Literal(pos, token.INTEGER_LIT, 42),
+					builder.Literal(pos, token.StringLit, "arg1"),
+					builder.Literal(pos, token.IntegerLit, 42),
 				}),
 			},
 		},
@@ -208,7 +208,7 @@ func TestAdvancedBuilderMethods_Variables(t *testing.T) {
 	pos := token.Position{Line: 3, Column: 7}
 
 	t.Run("GlobalVariable builder", func(t *testing.T) {
-		value := builder.Literal(pos, token.INTEGER_LIT, 42)
+		value := builder.Literal(pos, token.IntegerLit, 42)
 		gv := builder.GlobalVariable(pos, "test_global", value)
 
 		if gv.Name != "test_global" || gv.Value != value || gv.Pos.Line != pos.Line {
@@ -273,7 +273,7 @@ func testArrayIndexBuilder(t *testing.T) {
 	pos := token.Position{Line: 3, Column: 7}
 
 	array := builder.Identifier(pos, "my_array")
-	index := builder.Literal(pos, token.INTEGER_LIT, 5)
+	index := builder.Literal(pos, token.IntegerLit, 5)
 	arrayIdx := builder.ArrayIndex(pos, array, index)
 
 	if arrayIdx.Array != array || arrayIdx.Index != index {
@@ -301,7 +301,7 @@ func testOfExpressionBuilder(t *testing.T) {
 	builder := NewBuilder()
 	pos := token.Position{Line: 3, Column: 7}
 
-	count := builder.Literal(pos, token.INTEGER_LIT, 3)
+	count := builder.Literal(pos, token.IntegerLit, 3)
 	strings := builder.Identifier(pos, "them")
 	ofExpr := builder.OfExpression(pos, count, strings)
 
@@ -315,8 +315,8 @@ func testFunctionCallBuilder(t *testing.T) {
 	pos := token.Position{Line: 3, Column: 7}
 
 	args := []Expression{
-		builder.Literal(pos, token.STRING_LIT, "test"),
-		builder.Literal(pos, token.INTEGER_LIT, 123),
+		builder.Literal(pos, token.StringLit, "test"),
+		builder.Literal(pos, token.IntegerLit, 123),
 	}
 	fnCall := builder.FunctionCall(pos, "pe.section", args)
 
@@ -335,9 +335,9 @@ func TestExpressionInterface(t *testing.T) {
 
 	expressions := []Expression{
 		builder.StringLength(pos, builder.Identifier(pos, "$s1")),
-		builder.ArrayIndex(pos, builder.Identifier(pos, "arr"), builder.Literal(pos, token.INTEGER_LIT, 0)),
+		builder.ArrayIndex(pos, builder.Identifier(pos, "arr"), builder.Literal(pos, token.IntegerLit, 0)),
 		builder.ForLoop(pos, "all", "i", builder.Identifier(pos, "range"), builder.Identifier(pos, "cond")),
-		builder.OfExpression(pos, builder.Literal(pos, token.INTEGER_LIT, 2), builder.Identifier(pos, "them")),
+		builder.OfExpression(pos, builder.Literal(pos, token.IntegerLit, 2), builder.Identifier(pos, "them")),
 		builder.FunctionCall(pos, "test.func", []Expression{}),
 	}
 
@@ -498,7 +498,7 @@ func createComprehensiveRule(builder *Builder, pos token.Position) *Rule {
 	// Complex condition with all advanced expression types
 	rule.Condition = builder.OfExpression(
 		pos,
-		builder.Literal(pos, token.INTEGER_LIT, 1),
+		builder.Literal(pos, token.IntegerLit, 1),
 		builder.ForLoop(
 			pos,
 			"any",
@@ -516,7 +516,7 @@ func createComprehensiveRule(builder *Builder, pos token.Position) *Rule {
 					builder.Identifier(pos, "i"),
 				),
 				token.EQ,
-				builder.Literal(pos, token.STRING_LIT, ".text"),
+				builder.Literal(pos, token.StringLit, ".text"),
 			),
 		),
 	)

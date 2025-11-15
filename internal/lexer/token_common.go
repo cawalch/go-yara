@@ -54,7 +54,7 @@ var simpleTokenMapping = map[byte]token.TokenType{
 	'-':  token.MINUS,
 	'*':  token.MULTIPLY,
 	'%':  token.MODULO,
-	'\\': token.INT_DIVIDE,
+	'\\': token.IntDivide,
 	':':  token.COLON,
 	',':  token.COMMA,
 	'.':  token.DOT,
@@ -64,10 +64,10 @@ var simpleTokenMapping = map[byte]token.TokenType{
 	']':  token.RBRACKET,
 	'#':  token.HASH,
 	'}':  token.RBRACE,
-	'&':  token.BITWISE_AND,
-	'|':  token.BITWISE_OR,
-	'^':  token.BITWISE_XOR,
-	'~':  token.BITWISE_NOT,
+	'&':  token.BitwiseAnd,
+	'|':  token.BitwiseOr,
+	'^':  token.BitwiseXor,
+	'~':  token.BitwiseNot,
 	'@':  token.AT,
 }
 
@@ -121,7 +121,7 @@ func tryLessThanToken[T TokenMethods](lexer T, pos token.Position) (token.Token,
 		return lexer.makeTwoCharToken(token.LE, "<=", pos), true
 	case '<':
 		lexer.readChar()
-		return lexer.makeTwoCharToken(token.LEFT_SHIFT, "<<", pos), true
+		return lexer.makeTwoCharToken(token.LeftShift, "<<", pos), true
 	default:
 		return lexer.makeSimpleToken(token.LT, "<", pos), true
 	}
@@ -135,7 +135,7 @@ func tryGreaterThanToken[T TokenMethods](lexer T, pos token.Position) (token.Tok
 		return lexer.makeTwoCharToken(token.GE, ">=", pos), true
 	case '>':
 		lexer.readChar()
-		return lexer.makeTwoCharToken(token.RIGHT_SHIFT, ">>", pos), true
+		return lexer.makeTwoCharToken(token.RightShift, ">>", pos), true
 	default:
 		return lexer.makeSimpleToken(token.GT, ">", pos), true
 	}

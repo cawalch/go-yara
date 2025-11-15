@@ -26,8 +26,8 @@ func TestTokenTypeString(t *testing.T) {
 			{PRIVATE, "PRIVATE"}, {XOR, "XOR"}, {BASE64, "BASE64"}, {BASE64WIDE, "BASE64WIDE"},
 		},
 		"BitwiseOperators": {
-			{BITWISE_AND, "BITWISE_AND"}, {BITWISE_OR, "BITWISE_OR"}, {BITWISE_XOR, "BITWISE_XOR"},
-			{BITWISE_NOT, "BITWISE_NOT"}, {LEFT_SHIFT, "LEFT_SHIFT"}, {RIGHT_SHIFT, "RIGHT_SHIFT"},
+			{BitwiseAnd, "BITWISE_AND"}, {BitwiseOr, "BITWISE_OR"}, {BitwiseXor, "BITWISE_XOR"},
+			{BitwiseNot, "BITWISE_NOT"}, {LeftShift, "LEFT_SHIFT"}, {RightShift, "RIGHT_SHIFT"},
 		},
 		"IntegerTypes": {
 			{INT8, "INT8"}, {INT16, "INT16"}, {INT32, "INT32"}, {UINT8, "UINT8"}, {UINT16, "UINT16"}, {UINT32, "UINT32"},
@@ -51,9 +51,9 @@ func TestTokenTypeString(t *testing.T) {
 			{COLON, "COLON"}, {COMMA, "COMMA"}, {DOT, "DOT"},
 		},
 		"IdentifiersAndLiterals": {
-			{IDENTIFIER, "IDENTIFIER"}, {STRING_IDENTIFIER, "STRING_IDENTIFIER"}, {INTEGER_LIT, "INTEGER_LIT"},
-			{HEX_INTEGER_LIT, "HEX_INTEGER_LIT"}, {SIZE_LIT, "SIZE_LIT"}, {STRING_LIT, "STRING_LIT"},
-			{HEX_STRING_LIT, "HEX_STRING_LIT"}, {REGEX_LIT, "REGEX_LIT"},
+			{IDENTIFIER, "IDENTIFIER"}, {StringIdentifier, "StringIdentifier"}, {IntegerLit, "IntegerLit"},
+			{HexIntegerLit, "HexIntegerLit"}, {SizeLit, "SizeLit"}, {StringLit, "StringLit"},
+			{HexStringLit, "HexStringLit"}, {RegexLit, "RegexLit"},
 		},
 		"BracketsAndBraces": {
 			{LBRACE, "LBRACE"}, {RBRACE, "RBRACE"}, {LPAREN, "LPAREN"}, {RPAREN, "RPAREN"}, {LBRACKET, "LBRACKET"}, {RBRACKET, "RBRACKET"},
@@ -107,29 +107,29 @@ func TestTokenString(t *testing.T) {
 		{
 			name: "string literal token",
 			token: Token{
-				Type:    STRING_LIT,
+				Type:    StringLit,
 				Literal: "hello world",
 				Pos:     Position{Line: 2, Column: 10},
 			},
-			expected: "{STRING_LIT \"hello world\" @ 2:10}",
+			expected: "{StringLit \"hello world\" @ 2:10}",
 		},
 		{
 			name: "number token",
 			token: Token{
-				Type:    INTEGER_LIT,
+				Type:    IntegerLit,
 				Literal: "42",
 				Pos:     Position{Line: 3, Column: 15},
 			},
-			expected: "{INTEGER_LIT \"42\" @ 3:15}",
+			expected: "{IntegerLit \"42\" @ 3:15}",
 		},
 		{
 			name: "token with quotes in literal",
 			token: Token{
-				Type:    STRING_LIT,
+				Type:    StringLit,
 				Literal: "hello \"world\"",
 				Pos:     Position{Line: 4, Column: 8},
 			},
-			expected: "{STRING_LIT \"hello \\\"world\\\"\" @ 4:8}",
+			expected: "{StringLit \"hello \\\"world\\\"\" @ 4:8}",
 		},
 		{
 			name: "empty literal token",

@@ -37,10 +37,12 @@ func NewForLoopQuantifierStrategy() *ForLoopQuantifierStrategy {
 	return &ForLoopQuantifierStrategy{}
 }
 
-func (flqs *ForLoopQuantifierStrategy) CanHandle(currentToken, peekToken token.TokenType) bool {
+// CanHandle checks if the strategy can handle the given "for" loop quantifier token
+func (flqs *ForLoopQuantifierStrategy) CanHandle(currentToken, _ token.TokenType) bool {
 	return currentToken == token.FOR
 }
 
+// Parse parses a for-loop quantifier expression
 func (flqs *ForLoopQuantifierStrategy) Parse(parser *QuantifierParser, context ParseContext) ParseResult {
 	parser.nextToken() // consume 'for'
 
@@ -206,7 +208,10 @@ func (flqs *ForLoopQuantifierStrategy) parseRange(parser *QuantifierParser, cont
 	return flqs.parseForInEnumeration(parser, context, variable)
 }
 
-func (flqs *ForLoopQuantifierStrategy) Name() string  { return "ForLoopQuantifierStrategy" }
+// Name returns the name of the strategy
+func (flqs *ForLoopQuantifierStrategy) Name() string { return "ForLoopQuantifierStrategy" }
+
+// Priority returns the priority of the strategy
 func (flqs *ForLoopQuantifierStrategy) Priority() int { return 1 }
 
 // StandardQuantifierStrategy handles standard quantifiers (any, all, none)
@@ -221,10 +226,12 @@ func NewStandardQuantifierStrategy() *StandardQuantifierStrategy {
 	}
 }
 
-func (sqs *StandardQuantifierStrategy) CanHandle(currentToken, peekToken token.TokenType) bool {
+// CanHandle checks if the strategy can handle the given standard quantifier token
+func (sqs *StandardQuantifierStrategy) CanHandle(currentToken, _ token.TokenType) bool {
 	return sqs.classifier.IsQuantifierToken(currentToken)
 }
 
+// Parse parses a standard quantifier expression
 func (sqs *StandardQuantifierStrategy) Parse(parser *QuantifierParser, context ParseContext) ParseResult {
 	var quantifier string
 	var consumed int
@@ -264,7 +271,10 @@ func (sqs *StandardQuantifierStrategy) Parse(parser *QuantifierParser, context P
 	}, consumed)
 }
 
-func (sqs *StandardQuantifierStrategy) Name() string  { return "StandardQuantifierStrategy" }
+// Name returns the name of the strategy
+func (sqs *StandardQuantifierStrategy) Name() string { return "StandardQuantifierStrategy" }
+
+// Priority returns the priority of the strategy
 func (sqs *StandardQuantifierStrategy) Priority() int { return 2 }
 
 // NumericQuantifierStrategy handles numeric quantifiers (specific counts)
@@ -275,11 +285,13 @@ func NewNumericQuantifierStrategy() *NumericQuantifierStrategy {
 	return &NumericQuantifierStrategy{}
 }
 
+// CanHandle checks if the strategy can handle the given numeric quantifier token combination
 func (nqs *NumericQuantifierStrategy) CanHandle(currentToken, peekToken token.TokenType) bool {
 	// Numeric quantifiers are typically integers followed by "of"
-	return currentToken == token.INTEGER_LIT && peekToken == token.OF
+	return currentToken == token.IntegerLit && peekToken == token.OF
 }
 
+// Parse parses a numeric quantifier expression into an AST node
 func (nqs *NumericQuantifierStrategy) Parse(parser *QuantifierParser, context ParseContext) ParseResult {
 	// Parse the numeric count
 	countValue := parser.current.Literal
@@ -299,7 +311,7 @@ func (nqs *NumericQuantifierStrategy) Parse(parser *QuantifierParser, context Pa
 
 	return NewParseResult(&ast.OfExpression{
 		Count: &ast.Literal{
-			Type:  token.INTEGER_LIT,
+			Type:  token.IntegerLit,
 			Value: countValue,
 			Pos:   context.Position,
 		},
@@ -308,7 +320,10 @@ func (nqs *NumericQuantifierStrategy) Parse(parser *QuantifierParser, context Pa
 	}, 2) // consumed number and 'of'
 }
 
-func (nqs *NumericQuantifierStrategy) Name() string  { return "NumericQuantifierStrategy" }
+// Name returns the name of the strategy
+func (nqs *NumericQuantifierStrategy) Name() string { return "NumericQuantifierStrategy" }
+
+// Priority returns the priority of the strategy
 func (nqs *NumericQuantifierStrategy) Priority() int { return 3 }
 
 // QuantifierStrategyRegistry manages quantifier strategies

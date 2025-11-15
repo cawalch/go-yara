@@ -39,20 +39,20 @@ func TestFormatToken(t *testing.T) {
 		{
 			name: "string literal token",
 			token: token.Token{
-				Type:    token.STRING_LIT,
+				Type:    token.StringLit,
 				Literal: "hello world",
 				Pos:     token.Position{Line: 2, Column: 10},
 			},
-			expected: "{STRING_LIT \"hello world\" @ 2:10}",
+			expected: "{StringLit \"hello world\" @ 2:10}",
 		},
 		{
 			name: "number token",
 			token: token.Token{
-				Type:    token.INTEGER_LIT,
+				Type:    token.IntegerLit,
 				Literal: "42",
 				Pos:     token.Position{Line: 3, Column: 15},
 			},
-			expected: "{INTEGER_LIT \"42\" @ 3:15}",
+			expected: "{IntegerLit \"42\" @ 3:15}",
 		},
 	}
 

@@ -37,7 +37,7 @@ package ast
 //
 // ============================================================================
 
-// Core node visitors - handle rule structure
+// RuleVisitor handles core node visitors for rule structure
 type RuleVisitor interface {
 	VisitProgram(*Program) any
 	VisitRule(*Rule) any
@@ -46,7 +46,7 @@ type RuleVisitor interface {
 	VisitCondition(*Condition) any
 }
 
-// Expression visitors - handle expressions and operations
+// ExpressionVisitor handles expressions and operations
 type ExpressionVisitor interface {
 	VisitBinaryOp(*BinaryOp) any
 	VisitUnaryOp(*UnaryOp) any
@@ -55,7 +55,7 @@ type ExpressionVisitor interface {
 	VisitFunctionCall(*FunctionCall) any
 }
 
-// Pattern visitors - handle string and pattern matching
+// PatternVisitor handles string and pattern matching
 type PatternVisitor interface {
 	VisitTextString(*TextString) any
 	VisitHexString(*HexString) any
@@ -63,20 +63,20 @@ type PatternVisitor interface {
 	VisitStringLength(*StringLength) any
 }
 
-// Variable visitors - handle variable references
+// VariableVisitor handles variable references
 type VariableVisitor interface {
 	VisitGlobalVariable(*GlobalVariable) any
 	VisitExternalVariable(*ExternalVariable) any
 }
 
-// Control flow visitors - handle loops and control structures
+// ControlFlowVisitor handles loops and control structures
 type ControlFlowVisitor interface {
 	VisitForLoop(*ForLoop) any
 	VisitOfExpression(*OfExpression) any
 	VisitArrayIndex(*ArrayIndex) any
 }
 
-// Module system visitors - handle imports and includes
+// ModuleVisitor handles imports and includes
 type ModuleVisitor interface {
 	VisitImport(*Import) any
 	VisitInclude(*Include) any
@@ -97,36 +97,78 @@ type Visitor interface {
 type BaseVisitor struct{}
 
 // RuleVisitor implementations
-func (v *BaseVisitor) VisitProgram(_ *Program) any     { return nil }
-func (v *BaseVisitor) VisitRule(_ *Rule) any           { return nil }
-func (v *BaseVisitor) VisitMeta(_ *Meta) any           { return nil }
-func (v *BaseVisitor) VisitString(_ *String) any       { return nil }
+
+// VisitProgram visits a program node
+func (v *BaseVisitor) VisitProgram(_ *Program) any { return nil }
+
+// VisitRule visits a rule node
+func (v *BaseVisitor) VisitRule(_ *Rule) any { return nil }
+
+// VisitMeta visits a meta node
+func (v *BaseVisitor) VisitMeta(_ *Meta) any { return nil }
+
+// VisitString visits a string node
+func (v *BaseVisitor) VisitString(_ *String) any { return nil }
+
+// VisitCondition visits a condition node
 func (v *BaseVisitor) VisitCondition(_ *Condition) any { return nil }
 
 // ExpressionVisitor implementations
-func (v *BaseVisitor) VisitBinaryOp(_ *BinaryOp) any         { return nil }
-func (v *BaseVisitor) VisitUnaryOp(_ *UnaryOp) any           { return nil }
-func (v *BaseVisitor) VisitIdentifier(_ *Identifier) any     { return nil }
-func (v *BaseVisitor) VisitLiteral(_ *Literal) any           { return nil }
+
+// VisitBinaryOp visits a binary operation node
+func (v *BaseVisitor) VisitBinaryOp(_ *BinaryOp) any { return nil }
+
+// VisitUnaryOp visits a unary operation node
+func (v *BaseVisitor) VisitUnaryOp(_ *UnaryOp) any { return nil }
+
+// VisitIdentifier visits an identifier node
+func (v *BaseVisitor) VisitIdentifier(_ *Identifier) any { return nil }
+
+// VisitLiteral visits a literal node
+func (v *BaseVisitor) VisitLiteral(_ *Literal) any { return nil }
+
+// VisitFunctionCall visits a function call node
 func (v *BaseVisitor) VisitFunctionCall(_ *FunctionCall) any { return nil }
 
 // PatternVisitor implementations
-func (v *BaseVisitor) VisitTextString(_ *TextString) any     { return nil }
-func (v *BaseVisitor) VisitHexString(_ *HexString) any       { return nil }
+
+// VisitTextString visits a text string node
+func (v *BaseVisitor) VisitTextString(_ *TextString) any { return nil }
+
+// VisitHexString visits a hex string node
+func (v *BaseVisitor) VisitHexString(_ *HexString) any { return nil }
+
+// VisitRegexPattern visits a regex pattern node
 func (v *BaseVisitor) VisitRegexPattern(_ *RegexPattern) any { return nil }
+
+// VisitStringLength visits a string length node
 func (v *BaseVisitor) VisitStringLength(_ *StringLength) any { return nil }
 
 // VariableVisitor implementations
-func (v *BaseVisitor) VisitGlobalVariable(_ *GlobalVariable) any     { return nil }
+
+// VisitGlobalVariable visits a global variable node
+func (v *BaseVisitor) VisitGlobalVariable(_ *GlobalVariable) any { return nil }
+
+// VisitExternalVariable visits an external variable node
 func (v *BaseVisitor) VisitExternalVariable(_ *ExternalVariable) any { return nil }
 
 // ControlFlowVisitor implementations
-func (v *BaseVisitor) VisitForLoop(_ *ForLoop) any           { return nil }
+
+// VisitForLoop visits a for loop node
+func (v *BaseVisitor) VisitForLoop(_ *ForLoop) any { return nil }
+
+// VisitOfExpression visits an of expression node
 func (v *BaseVisitor) VisitOfExpression(_ *OfExpression) any { return nil }
-func (v *BaseVisitor) VisitArrayIndex(_ *ArrayIndex) any     { return nil }
+
+// VisitArrayIndex visits an array index node
+func (v *BaseVisitor) VisitArrayIndex(_ *ArrayIndex) any { return nil }
 
 // ModuleVisitor implementations
-func (v *BaseVisitor) VisitImport(_ *Import) any   { return nil }
+
+// VisitImport visits an import node
+func (v *BaseVisitor) VisitImport(_ *Import) any { return nil }
+
+// VisitInclude visits an include node
 func (v *BaseVisitor) VisitInclude(_ *Include) any { return nil }
 
 // Focused base visitors for common use cases
@@ -134,17 +176,35 @@ func (v *BaseVisitor) VisitInclude(_ *Include) any { return nil }
 // RuleBaseVisitor provides implementations only for rule structure
 type RuleBaseVisitor struct{}
 
-func (v *RuleBaseVisitor) VisitProgram(_ *Program) any     { return nil }
-func (v *RuleBaseVisitor) VisitRule(_ *Rule) any           { return nil }
-func (v *RuleBaseVisitor) VisitMeta(_ *Meta) any           { return nil }
-func (v *RuleBaseVisitor) VisitString(_ *String) any       { return nil }
+// VisitProgram visits a program node
+func (v *RuleBaseVisitor) VisitProgram(_ *Program) any { return nil }
+
+// VisitRule visits a rule node
+func (v *RuleBaseVisitor) VisitRule(_ *Rule) any { return nil }
+
+// VisitMeta visits a meta node
+func (v *RuleBaseVisitor) VisitMeta(_ *Meta) any { return nil }
+
+// VisitString visits a string node
+func (v *RuleBaseVisitor) VisitString(_ *String) any { return nil }
+
+// VisitCondition visits a condition node
 func (v *RuleBaseVisitor) VisitCondition(_ *Condition) any { return nil }
 
 // ExpressionBaseVisitor provides implementations only for expressions
 type ExpressionBaseVisitor struct{}
 
-func (v *ExpressionBaseVisitor) VisitBinaryOp(_ *BinaryOp) any         { return nil }
-func (v *ExpressionBaseVisitor) VisitUnaryOp(_ *UnaryOp) any           { return nil }
-func (v *ExpressionBaseVisitor) VisitIdentifier(_ *Identifier) any     { return nil }
-func (v *ExpressionBaseVisitor) VisitLiteral(_ *Literal) any           { return nil }
+// VisitBinaryOp visits a binary operation node
+func (v *ExpressionBaseVisitor) VisitBinaryOp(_ *BinaryOp) any { return nil }
+
+// VisitUnaryOp visits a unary operation node
+func (v *ExpressionBaseVisitor) VisitUnaryOp(_ *UnaryOp) any { return nil }
+
+// VisitIdentifier visits an identifier node
+func (v *ExpressionBaseVisitor) VisitIdentifier(_ *Identifier) any { return nil }
+
+// VisitLiteral visits a literal node
+func (v *ExpressionBaseVisitor) VisitLiteral(_ *Literal) any { return nil }
+
+// VisitFunctionCall visits a function call node
 func (v *ExpressionBaseVisitor) VisitFunctionCall(_ *FunctionCall) any { return nil }

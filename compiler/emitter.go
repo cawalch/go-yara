@@ -71,16 +71,16 @@ func (e *Emitter) EmitPush(value uint64, line, pos int) int {
 
 	// Choose the most efficient push instruction based on value size
 	if value <= math.MaxUint8 {
-		opcode = OP_PUSH_8
+		opcode = OpPush_8
 		operand = Operand{Type: OperandImmediate8, Value: value}
 	} else if value <= math.MaxUint16 {
-		opcode = OP_PUSH_16
+		opcode = OpPush_16
 		operand = Operand{Type: OperandImmediate16, Value: value}
 	} else if value <= math.MaxUint32 {
-		opcode = OP_PUSH_32
+		opcode = OpPush_32
 		operand = Operand{Type: OperandImmediate32, Value: value}
 	} else {
-		opcode = OP_PUSH_U
+		opcode = OpPush_U
 		operand = Operand{Type: OperandImmediate64, Value: value}
 	}
 
@@ -92,7 +92,7 @@ func (e *Emitter) EmitPushDouble(value float64, line, pos int) int {
 	// Convert float64 to uint64 bits for storage
 	bits := math.Float64bits(value)
 	operand := Operand{Type: OperandImmediate64, Value: bits}
-	return e.EmitOpcodeWithOperand(OP_PUSH_DBL, operand, line, pos)
+	return e.EmitOpcodeWithOperand(OpPush_DBL, operand, line, pos)
 }
 
 // EmitPushString emits a push instruction for string values
@@ -102,7 +102,7 @@ func (e *Emitter) EmitPushString(value string, line, pos int) int {
 	// This is a simplified implementation - a full solution would need a proper string pool
 	hash := e.hashString(value)
 	operand := Operand{Type: OperandImmediate64, Value: hash}
-	return e.EmitOpcodeWithOperand(OP_PUSH_DBL, operand, line, pos)
+	return e.EmitOpcodeWithOperand(OpPush_DBL, operand, line, pos)
 }
 
 // hashString creates a simple hash for string identification
@@ -132,7 +132,7 @@ func (e *Emitter) EmitJump(config JumpConfig) int {
 	// For now, emit a placeholder offset (0)
 	// This will be fixed up later when the target is known
 	switch config.Opcode {
-	case OP_JZ, OP_JZ_P, OP_JTRUE, OP_JTRUE_P, OP_JFALSE, OP_JFALSE_P:
+	case OpJz, OpJzP, OP_JTRUE, OP_JTRUE_P, OP_JFALSE, OP_JFALSE_P:
 		operand = Operand{Type: OperandRelative32, Value: 0}
 	case OP_ITER_NEXT:
 		operand = Operand{Type: OperandRelative16, Value: 0}
@@ -333,9 +333,9 @@ func isComparisonOp(op Opcode) bool {
 }
 
 func isLogicalOp(op Opcode) bool {
-	return op == OP_AND || op == OP_OR || op == OP_NOT ||
-		op == OP_BITWISE_AND || op == OP_BITWISE_OR || op == OP_BITWISE_XOR ||
-		op == OP_BITWISE_NOT
+	return op == OpAnd || op == OpOr || op == OpNot ||
+		op == OpBitwiseAnd || op == OpBitwiseOr || op == OpBitwiseXor ||
+		op == OpBitwiseNot
 }
 
 func isDataTypeFunction(op Opcode) bool {
@@ -352,7 +352,7 @@ func (e *Emitter) EmitStringOperation(op Opcode, line, pos int) int {
 
 func isStringOperation(op Opcode) bool {
 	return (op >= OP_CONTAINS && op <= OP_IEQUALS) ||
-		(op >= OP_FOUND && op <= OP_OF_FOUND_AT) ||
+		(op >= OP_FOUND && op <= OpOfFoundAt) ||
 		op == OP_MATCHES
 }
 

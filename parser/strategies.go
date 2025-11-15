@@ -218,11 +218,13 @@ func NewArithmeticStrategy() *ArithmeticStrategy {
 	}
 }
 
-func (as *ArithmeticStrategy) CanHandle(operator token.TokenType, leftExpr, rightExpr ast.Expression) bool {
+// CanHandle checks if the strategy can handle the given arithmetic operator
+func (as *ArithmeticStrategy) CanHandle(operator token.TokenType, _ ast.Expression, _ ast.Expression) bool {
 	return as.classifier.IsArithmeticOperator(operator)
 }
 
-func (as *ArithmeticStrategy) Parse(parser *ExpressionParser, left ast.Expression, operator token.TokenType, right ast.Expression, context ParseContext) ParseResult {
+// Parse parses an arithmetic expression using the given left and right operands
+func (as *ArithmeticStrategy) Parse(_ *ExpressionParser, left ast.Expression, operator token.TokenType, right ast.Expression, context ParseContext) ParseResult {
 	return NewParseResult(&ast.BinaryOp{
 		Op:    operator,
 		Left:  left,
@@ -231,9 +233,14 @@ func (as *ArithmeticStrategy) Parse(parser *ExpressionParser, left ast.Expressio
 	}, 1)
 }
 
-func (as *ArithmeticStrategy) Name() string                 { return "ArithmeticStrategy" }
+// Name returns the name of the strategy
+func (as *ArithmeticStrategy) Name() string { return "ArithmeticStrategy" }
+
+// Associativity returns the associativity of arithmetic operations
 func (as *ArithmeticStrategy) Associativity() Associativity { return LeftAssociative }
-func (as *ArithmeticStrategy) Precedence() int              { return 5 }
+
+// Precedence returns the precedence level of arithmetic operations
+func (as *ArithmeticStrategy) Precedence() int { return 5 }
 
 // LogicalStrategy handles logical operations (and, or)
 type LogicalStrategy struct {
@@ -247,11 +254,13 @@ func NewLogicalStrategy() *LogicalStrategy {
 	}
 }
 
-func (ls *LogicalStrategy) CanHandle(operator token.TokenType, leftExpr, rightExpr ast.Expression) bool {
+// CanHandle checks if the strategy can handle the given logical operator
+func (ls *LogicalStrategy) CanHandle(operator token.TokenType, _ ast.Expression, _ ast.Expression) bool {
 	return ls.classifier.IsLogicalOperator(operator)
 }
 
-func (ls *LogicalStrategy) Parse(parser *ExpressionParser, left ast.Expression, operator token.TokenType, right ast.Expression, context ParseContext) ParseResult {
+// Parse parses a logical expression using the given left and right operands
+func (ls *LogicalStrategy) Parse(_ *ExpressionParser, left ast.Expression, operator token.TokenType, right ast.Expression, context ParseContext) ParseResult {
 	return NewParseResult(&ast.BinaryOp{
 		Op:    operator,
 		Left:  left,
@@ -260,9 +269,14 @@ func (ls *LogicalStrategy) Parse(parser *ExpressionParser, left ast.Expression, 
 	}, 1)
 }
 
-func (ls *LogicalStrategy) Name() string                 { return "LogicalStrategy" }
+// Name returns the name of the strategy
+func (ls *LogicalStrategy) Name() string { return "LogicalStrategy" }
+
+// Associativity returns the associativity of logical operations
 func (ls *LogicalStrategy) Associativity() Associativity { return LeftAssociative }
-func (ls *LogicalStrategy) Precedence() int              { return 1 }
+
+// Precedence returns the precedence level of logical operations
+func (ls *LogicalStrategy) Precedence() int { return 1 }
 
 // ComparisonStrategy handles comparison operations (==, !=, <, <=, >, >=, contains, etc.)
 type ComparisonStrategy struct {
@@ -276,11 +290,13 @@ func NewComparisonStrategy() *ComparisonStrategy {
 	}
 }
 
-func (cs *ComparisonStrategy) CanHandle(operator token.TokenType, leftExpr, rightExpr ast.Expression) bool {
+// CanHandle checks if the strategy can handle the given comparison operator
+func (cs *ComparisonStrategy) CanHandle(operator token.TokenType, _ ast.Expression, _ ast.Expression) bool {
 	return cs.classifier.IsComparisonOp(operator)
 }
 
-func (cs *ComparisonStrategy) Parse(parser *ExpressionParser, left ast.Expression, operator token.TokenType, right ast.Expression, context ParseContext) ParseResult {
+// Parse parses a comparison expression using the given left and right operands
+func (cs *ComparisonStrategy) Parse(_ *ExpressionParser, left ast.Expression, operator token.TokenType, right ast.Expression, context ParseContext) ParseResult {
 	return NewParseResult(&ast.BinaryOp{
 		Op:    operator,
 		Left:  left,
@@ -289,9 +305,14 @@ func (cs *ComparisonStrategy) Parse(parser *ExpressionParser, left ast.Expressio
 	}, 1)
 }
 
-func (cs *ComparisonStrategy) Name() string                 { return "ComparisonStrategy" }
+// Name returns the name of the strategy
+func (cs *ComparisonStrategy) Name() string { return "ComparisonStrategy" }
+
+// Associativity returns the associativity of comparison operations
 func (cs *ComparisonStrategy) Associativity() Associativity { return LeftAssociative }
-func (cs *ComparisonStrategy) Precedence() int              { return 3 }
+
+// Precedence returns the precedence level of comparison operations
+func (cs *ComparisonStrategy) Precedence() int { return 3 }
 
 // BitwiseStrategy handles bitwise operations (&, |, ^, <<, >>)
 type BitwiseStrategy struct {
@@ -305,11 +326,13 @@ func NewBitwiseStrategy() *BitwiseStrategy {
 	}
 }
 
-func (bs *BitwiseStrategy) CanHandle(operator token.TokenType, leftExpr, rightExpr ast.Expression) bool {
+// CanHandle checks if the strategy can handle the given bitwise operator
+func (bs *BitwiseStrategy) CanHandle(operator token.TokenType, _ ast.Expression, _ ast.Expression) bool {
 	return bs.classifier.IsBitwiseOperator(operator)
 }
 
-func (bs *BitwiseStrategy) Parse(parser *ExpressionParser, left ast.Expression, operator token.TokenType, right ast.Expression, context ParseContext) ParseResult {
+// Parse parses a bitwise expression using the given left and right operands
+func (bs *BitwiseStrategy) Parse(_ *ExpressionParser, left ast.Expression, operator token.TokenType, right ast.Expression, context ParseContext) ParseResult {
 	return NewParseResult(&ast.BinaryOp{
 		Op:    operator,
 		Left:  left,
@@ -318,9 +341,14 @@ func (bs *BitwiseStrategy) Parse(parser *ExpressionParser, left ast.Expression, 
 	}, 1)
 }
 
-func (bs *BitwiseStrategy) Name() string                 { return "BitwiseStrategy" }
+// Name returns the name of the strategy
+func (bs *BitwiseStrategy) Name() string { return "BitwiseStrategy" }
+
+// Associativity returns the associativity of bitwise operations
 func (bs *BitwiseStrategy) Associativity() Associativity { return LeftAssociative }
-func (bs *BitwiseStrategy) Precedence() int              { return 4 }
+
+// Precedence returns the precedence level of bitwise operations
+func (bs *BitwiseStrategy) Precedence() int { return 4 }
 
 // OfStrategy handles "of" operations for quantifiers
 type OfStrategy struct{}
@@ -330,11 +358,13 @@ func NewOfStrategy() *OfStrategy {
 	return &OfStrategy{}
 }
 
-func (os *OfStrategy) CanHandle(operator token.TokenType, leftExpr, rightExpr ast.Expression) bool {
+// CanHandle checks if the strategy can handle the given "of" operator
+func (os *OfStrategy) CanHandle(operator token.TokenType, _ ast.Expression, _ ast.Expression) bool {
 	return operator == token.OF
 }
 
-func (os *OfStrategy) Parse(parser *ExpressionParser, left ast.Expression, operator token.TokenType, right ast.Expression, context ParseContext) ParseResult {
+// Parse parses an "of" expression into an AST node
+func (os *OfStrategy) Parse(parser *ExpressionParser, left ast.Expression, _ token.TokenType, _ ast.Expression, context ParseContext) ParseResult {
 	// Parse the quantifier target directly
 	var target ast.Expression
 	var err error
@@ -347,7 +377,7 @@ func (os *OfStrategy) Parse(parser *ExpressionParser, left ast.Expression, opera
 			Pos:  parser.current.Pos,
 		}
 		parser.nextToken()
-	case token.STRING_IDENTIFIER:
+	case token.StringIdentifier:
 		target = &ast.Identifier{
 			Name: parser.current.Literal,
 			Pos:  parser.current.Pos,
@@ -394,9 +424,9 @@ func (os *OfStrategy) parseParenthesizedTarget(parser *ExpressionParser, pos tok
 }
 
 // parseFirstParenthesizedExpression parses the first expression in a parenthesized list
-func (os *OfStrategy) parseFirstParenthesizedExpression(parser *ExpressionParser, pos token.Position) (ast.Expression, error) {
+func (os *OfStrategy) parseFirstParenthesizedExpression(parser *ExpressionParser, _ token.Position) (ast.Expression, error) {
 	switch parser.current.Type {
-	case token.STRING_IDENTIFIER:
+	case token.StringIdentifier:
 		expr := &ast.Identifier{
 			Name: parser.current.Literal,
 			Pos:  parser.current.Pos,
@@ -426,8 +456,8 @@ func (os *OfStrategy) parseCommaSeparatedExpressions(parser *ExpressionParser, p
 }
 
 // parseNextParenthesizedExpression parses the next expression in a comma-separated list
-func (os *OfStrategy) parseNextParenthesizedExpression(parser *ExpressionParser, pos token.Position) (ast.Expression, error) {
-	if parser.currentTokenIs(token.STRING_IDENTIFIER) {
+func (os *OfStrategy) parseNextParenthesizedExpression(parser *ExpressionParser, _ token.Position) (ast.Expression, error) {
+	if parser.currentTokenIs(token.StringIdentifier) {
 		expr := &ast.Identifier{
 			Name: parser.current.Literal,
 			Pos:  parser.current.Pos,
@@ -458,6 +488,11 @@ func (os *OfStrategy) createCommaExpression(pos token.Position, expressions []as
 	return target
 }
 
-func (os *OfStrategy) Name() string                 { return "OfStrategy" }
+// Name returns the name of the strategy
+func (os *OfStrategy) Name() string { return "OfStrategy" }
+
+// Associativity returns the associativity of "of" operations
 func (os *OfStrategy) Associativity() Associativity { return LeftAssociative }
-func (os *OfStrategy) Precedence() int              { return 2 }
+
+// Precedence returns the precedence level of "of" operations
+func (os *OfStrategy) Precedence() int { return 2 }

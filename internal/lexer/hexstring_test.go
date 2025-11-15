@@ -21,7 +21,7 @@ func TestHexString_InYARARule(t *testing.T) {
 	tokens := helper.CollectTokens(input)
 	hexStringCount := 0
 	for _, tok := range tokens {
-		if tok.Type == token.HEX_STRING_LIT {
+		if tok.Type == token.HexStringLit {
 			hexStringCount++
 		}
 	}
@@ -64,7 +64,7 @@ func TestHexString_Variants(t *testing.T) {
 
 	for _, tt := range cases {
 		t.Run(tt.name, func(_ *testing.T) {
-			helper.AssertSingleToken(tt.input, token.HEX_STRING_LIT, tt.expected)
+			helper.AssertSingleToken(tt.input, token.HexStringLit, tt.expected)
 		})
 	}
 }
@@ -81,8 +81,8 @@ func TestHexString_VsRegularBraces(t *testing.T) {
 		if tok.Type == token.RBRACE && tok.Literal == "}" {
 			rbraceFound = true
 		}
-		if tok.Type == token.HEX_STRING_LIT {
-			t.Fatalf("unexpected HEX_STRING_LIT token: %+v", tok)
+		if tok.Type == token.HexStringLit {
+			t.Fatalf("unexpected HexStringLit token: %+v", tok)
 		}
 	}
 	if !lbraceFound || !rbraceFound {

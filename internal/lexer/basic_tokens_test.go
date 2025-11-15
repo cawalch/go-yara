@@ -20,7 +20,7 @@ func TestNextToken_Basic(t *testing.T) {
 		{Type: token.MINUS, Literal: "-"},
 		{Type: token.LPAREN, Literal: "("},
 		{Type: token.RPAREN, Literal: ")"},
-		{Type: token.HEX_STRING_LIT, Literal: "{ }"}, // { } is now treated as empty hex string
+		{Type: token.HexStringLit, Literal: "{ }"}, // { } is now treated as empty hex string
 		{Type: token.EOF, Literal: ""},
 	}
 
@@ -41,8 +41,8 @@ func TestNextToken_IdentifiersNumbersStrings(t *testing.T) {
 	got := collectTokens(l)
 	want := []token.Token{
 		{Type: token.IDENTIFIER, Literal: "foo"},
-		{Type: token.INTEGER_LIT, Literal: "123"},
-		{Type: token.STRING_LIT, Literal: "bar"},
+		{Type: token.IntegerLit, Literal: "123"},
+		{Type: token.StringLit, Literal: "bar"},
 		{Type: token.IDENTIFIER, Literal: "AND"}, // uppercase keyword remains identifier in current lexer
 		{Type: token.EOF, Literal: ""},
 	}
@@ -128,9 +128,9 @@ func TestWhitespace_Newlines_Position(t *testing.T) {
 				{Type: token.CONDITION, Literal: "condition"},
 				{Type: token.AND, Literal: "and"},
 				{Type: token.LPAREN, Literal: "("},
-				{Type: token.INTEGER_LIT, Literal: "1"},
+				{Type: token.IntegerLit, Literal: "1"},
 				{Type: token.PLUS, Literal: "+"},
-				{Type: token.INTEGER_LIT, Literal: "2"},
+				{Type: token.IntegerLit, Literal: "2"},
 				{Type: token.RPAREN, Literal: ")"},
 				{Type: token.RBRACE, Literal: "}"},
 				{Type: token.EOF, Literal: ""},
@@ -150,12 +150,12 @@ func TestWhitespace_Newlines_Position(t *testing.T) {
 				{Type: token.LBRACE, Literal: "{"},
 				{Type: token.STRINGS, Literal: "strings"},
 				{Type: token.COLON, Literal: ":"},
-				{Type: token.STRING_IDENTIFIER, Literal: "$a"},
+				{Type: token.StringIdentifier, Literal: "$a"},
 				{Type: token.ASSIGN, Literal: "="},
-				{Type: token.STRING_LIT, Literal: "test"},
+				{Type: token.StringLit, Literal: "test"},
 				{Type: token.CONDITION, Literal: "condition"},
 				{Type: token.COLON, Literal: ":"},
-				{Type: token.STRING_IDENTIFIER, Literal: "$a"},
+				{Type: token.StringIdentifier, Literal: "$a"},
 				{Type: token.RBRACE, Literal: "}"},
 				{Type: token.EOF, Literal: ""},
 			},

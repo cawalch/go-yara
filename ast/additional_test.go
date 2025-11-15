@@ -181,19 +181,19 @@ func testLiteralMethods(t *testing.T) {
 			name: "integer_literal",
 			literal: &Literal{
 				Value: 42,
-				Type:  token.INTEGER_LIT,
+				Type:  token.IntegerLit,
 			},
 			wantValue: 42,
-			wantType:  token.INTEGER_LIT,
+			wantType:  token.IntegerLit,
 		},
 		{
 			name: "string_literal",
 			literal: &Literal{
 				Value: "test_string",
-				Type:  token.STRING_LIT,
+				Type:  token.StringLit,
 			},
 			wantValue: "test_string",
-			wantType:  token.STRING_LIT,
+			wantType:  token.StringLit,
 		},
 		{
 			name: "boolean_literal",
@@ -569,7 +569,7 @@ func testASTBuilderLiterals(t *testing.T) {
 	builder := NewBuilder()
 	pos := token.Position{Line: 1, Column: 1}
 
-	literal := builder.Literal(pos, token.INTEGER_LIT, 42)
+	literal := builder.Literal(pos, token.IntegerLit, 42)
 
 	if literal == nil {
 		t.Error("Builder returned nil literal")
@@ -580,8 +580,8 @@ func testASTBuilderLiterals(t *testing.T) {
 		t.Errorf("Literal value is %v, expected 42", literal.Value)
 	}
 
-	if literal.Type != token.INTEGER_LIT {
-		t.Errorf("Literal type is %v, expected INTEGER_LIT", literal.Type)
+	if literal.Type != token.IntegerLit {
+		t.Errorf("Literal type is %v, expected IntegerLit", literal.Type)
 	}
 }
 

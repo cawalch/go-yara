@@ -496,9 +496,9 @@ func (sp *StreamingProcessor) SetChunkSize(size int) {
 }
 
 // SetMaxConcurrency sets maximum concurrent goroutines
-func (sp *StreamingProcessor) SetMaxConcurrency(max int) {
-	if max > 0 {
-		sp.MaxConcurrency = max
+func (sp *StreamingProcessor) SetMaxConcurrency(maxConcurrency int) {
+	if maxConcurrency > 0 {
+		sp.MaxConcurrency = maxConcurrency
 	}
 }
 

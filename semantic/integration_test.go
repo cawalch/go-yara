@@ -84,9 +84,9 @@ func TestTypeCheckerBinaryOpTypes_Arithmetic(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			expr := &ast.BinaryOp{
 				Pos:   pos,
-				Left:  &ast.Literal{Type: token.INTEGER_LIT, Value: tt.left, Pos: pos},
+				Left:  &ast.Literal{Type: token.IntegerLit, Value: tt.left, Pos: pos},
 				Op:    tt.op,
-				Right: &ast.Literal{Type: token.INTEGER_LIT, Value: tt.right, Pos: pos},
+				Right: &ast.Literal{Type: token.IntegerLit, Value: tt.right, Pos: pos},
 			}
 			testBinaryOpType(t, checker, expr)
 		})
@@ -103,20 +103,20 @@ func TestTypeCheckerBinaryOpTypes_Bitwise(t *testing.T) {
 		left  int64
 		right int64
 	}{
-		{"bitwise_and", token.BITWISE_AND, 15, 7},
-		{"bitwise_or", token.BITWISE_OR, 8, 4},
-		{"bitwise_xor", token.BITWISE_XOR, 12, 10},
-		{"left_shift", token.LEFT_SHIFT, 1, 4},
-		{"right_shift", token.RIGHT_SHIFT, 16, 2},
+		{"bitwise_and", token.BitwiseAnd, 15, 7},
+		{"bitwise_or", token.BitwiseOr, 8, 4},
+		{"bitwise_xor", token.BitwiseXor, 12, 10},
+		{"left_shift", token.LeftShift, 1, 4},
+		{"right_shift", token.RightShift, 16, 2},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			expr := &ast.BinaryOp{
 				Pos:   pos,
-				Left:  &ast.Literal{Type: token.INTEGER_LIT, Value: tt.left, Pos: pos},
+				Left:  &ast.Literal{Type: token.IntegerLit, Value: tt.left, Pos: pos},
 				Op:    tt.op,
-				Right: &ast.Literal{Type: token.INTEGER_LIT, Value: tt.right, Pos: pos},
+				Right: &ast.Literal{Type: token.IntegerLit, Value: tt.right, Pos: pos},
 			}
 			testBinaryOpType(t, checker, expr)
 		})
@@ -143,9 +143,9 @@ func TestTypeCheckerBinaryOpTypes_Comparison(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			expr := &ast.BinaryOp{
 				Pos:   pos,
-				Left:  &ast.Literal{Type: token.INTEGER_LIT, Value: tt.left, Pos: pos},
+				Left:  &ast.Literal{Type: token.IntegerLit, Value: tt.left, Pos: pos},
 				Op:    tt.op,
-				Right: &ast.Literal{Type: token.INTEGER_LIT, Value: tt.right, Pos: pos},
+				Right: &ast.Literal{Type: token.IntegerLit, Value: tt.right, Pos: pos},
 			}
 			testBinaryOpType(t, checker, expr)
 		})
@@ -176,8 +176,8 @@ func TestTypeCheckerUnaryOpTypes(t *testing.T) {
 			name: "bitwise_not_integer",
 			expr: &ast.UnaryOp{
 				Pos:   pos,
-				Op:    token.BITWISE_NOT,
-				Right: &ast.Literal{Type: token.INTEGER_LIT, Value: int64(42), Pos: pos},
+				Op:    token.BitwiseNot,
+				Right: &ast.Literal{Type: token.IntegerLit, Value: int64(42), Pos: pos},
 			},
 		},
 		{
@@ -185,7 +185,7 @@ func TestTypeCheckerUnaryOpTypes(t *testing.T) {
 			expr: &ast.UnaryOp{
 				Pos:   pos,
 				Op:    token.MINUS,
-				Right: &ast.Literal{Type: token.INTEGER_LIT, Value: int64(42), Pos: pos},
+				Right: &ast.Literal{Type: token.IntegerLit, Value: int64(42), Pos: pos},
 			},
 		},
 		{
@@ -227,11 +227,11 @@ func TestInferTypeFromBinaryOpAllOperators(t *testing.T) {
 		{"multiply", intType, token.MULTIPLY, intType, TypeInteger, false},
 		{"divide", intType, token.DIVIDE, intType, TypeInteger, false},
 		{"modulo", intType, token.MODULO, intType, TypeInteger, false},
-		{"bitwise_and", intType, token.BITWISE_AND, intType, TypeInteger, false},
-		{"bitwise_or", intType, token.BITWISE_OR, intType, TypeInteger, false},
-		{"bitwise_xor", intType, token.BITWISE_XOR, intType, TypeInteger, false},
-		{"left_shift", intType, token.LEFT_SHIFT, intType, TypeInteger, false},
-		{"right_shift", intType, token.RIGHT_SHIFT, intType, TypeInteger, false},
+		{"bitwise_and", intType, token.BitwiseAnd, intType, TypeInteger, false},
+		{"bitwise_or", intType, token.BitwiseOr, intType, TypeInteger, false},
+		{"bitwise_xor", intType, token.BitwiseXor, intType, TypeInteger, false},
+		{"left_shift", intType, token.LeftShift, intType, TypeInteger, false},
+		{"right_shift", intType, token.RightShift, intType, TypeInteger, false},
 		{"eq", intType, token.EQ, intType, TypeBoolean, false},
 		{"neq", intType, token.NEQ, intType, TypeBoolean, false},
 		{"lt", intType, token.LT, intType, TypeBoolean, false},
@@ -274,7 +274,7 @@ func TestInferTypeFromUnaryOpAllOperators(t *testing.T) {
 		wantErr  bool
 	}{
 		{"not", token.NOT, boolType, TypeBoolean, false},
-		{"bitwise_not", token.BITWISE_NOT, intType, TypeInteger, false},
+		{"bitwise_not", token.BitwiseNot, intType, TypeInteger, false},
 		{"minus", token.MINUS, intType, TypeInteger, false},
 		{"defined", token.DEFINED, intType, TypeBoolean, false},
 		{"hash", token.HASH, intType, TypeInteger, false},
@@ -481,13 +481,13 @@ func TestInferTypeFromLiteralAllTypes(t *testing.T) {
 	}{
 		{"true", token.TRUE, true, TypeBoolean},
 		{"false", token.FALSE, false, TypeBoolean},
-		{"integer", token.INTEGER_LIT, int64(42), TypeInteger},
-		{"hex_integer", token.HEX_INTEGER_LIT, int64(0xFF), TypeInteger},
-		{"float", token.FLOAT_LIT, 3.14, TypeFloat},
-		{"size", token.SIZE_LIT, int64(1024), TypeInteger},
-		{"string", token.STRING_LIT, "test", TypeString},
-		{"hex_string", token.HEX_STRING_LIT, "ABCD", TypeString},
-		{"regex", token.REGEX_LIT, "test.*", TypeRegexp},
+		{"integer", token.IntegerLit, int64(42), TypeInteger},
+		{"hex_integer", token.HexIntegerLit, int64(0xFF), TypeInteger},
+		{"float", token.FloatLit, 3.14, TypeFloat},
+		{"size", token.SizeLit, int64(1024), TypeInteger},
+		{"string", token.StringLit, "test", TypeString},
+		{"hex_string", token.HexStringLit, "ABCD", TypeString},
+		{"regex", token.RegexLit, "test.*", TypeRegexp},
 	}
 
 	for _, tt := range tests {

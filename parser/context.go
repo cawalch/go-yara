@@ -97,7 +97,7 @@ func (tc DefaultTokenClassifier) IsComparisonOp(tok token.TokenType) bool {
 // IsUnaryOperator returns true if the token is a unary operator
 func (tc DefaultTokenClassifier) IsUnaryOperator(tok token.TokenType) bool {
 	switch tok {
-	case token.NOT, token.BITWISE_NOT, token.MINUS, token.DEFINED,
+	case token.NOT, token.BitwiseNot, token.MINUS, token.DEFINED,
 		token.HASH, token.AT:
 		return true
 	default:
@@ -123,8 +123,8 @@ func (tc DefaultTokenClassifier) IsArithmeticOperator(tok token.TokenType) bool 
 // IsBitwiseOperator returns true if the token is a bitwise operator
 func (tc DefaultTokenClassifier) IsBitwiseOperator(tok token.TokenType) bool {
 	switch tok {
-	case token.BITWISE_AND, token.BITWISE_OR, token.BITWISE_XOR,
-		token.LEFT_SHIFT, token.RIGHT_SHIFT:
+	case token.BitwiseAnd, token.BitwiseOr, token.BitwiseXor,
+		token.LeftShift, token.RightShift:
 		return true
 	default:
 		return false
@@ -134,9 +134,9 @@ func (tc DefaultTokenClassifier) IsBitwiseOperator(tok token.TokenType) bool {
 // IsLiteral returns true if the token represents a literal value
 func (tc DefaultTokenClassifier) IsLiteral(tok token.TokenType) bool {
 	switch tok {
-	case token.INTEGER_LIT, token.HEX_INTEGER_LIT, token.OCTAL_INTEGER_LIT,
-		token.FLOAT_LIT, token.STRING_LIT, token.TRUE, token.FALSE, token.SIZE_LIT,
-		token.REGEX_LIT:
+	case token.IntegerLit, token.HexIntegerLit, token.OctalIntegerLit,
+		token.FloatLit, token.StringLit, token.TRUE, token.FALSE, token.SizeLit,
+		token.RegexLit:
 		return true
 	default:
 		return false
@@ -191,7 +191,7 @@ func (tc DefaultTokenClassifier) IsQuantifierToken(tok token.TokenType) bool {
 // IsPatternLiteral returns true if the token is a pattern literal type
 func (tc DefaultTokenClassifier) IsPatternLiteral(tok token.TokenType) bool {
 	switch tok {
-	case token.STRING_LIT, token.HEX_STRING_LIT, token.REGEX_LIT:
+	case token.StringLit, token.HexStringLit, token.RegexLit:
 		return true
 	default:
 		return false

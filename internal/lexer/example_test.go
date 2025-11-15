@@ -27,22 +27,22 @@ func TestExampleUsingHelpers(t *testing.T) {
 		token.COLON, ":", 1, 5,
 		token.IDENTIFIER, "author", 1, 7,
 		token.ASSIGN, "=", 1, 14,
-		token.STRING_LIT, "test", 1, 16,
+		token.StringLit, "test", 1, 16,
 	))
 
 	// Test YARA condition section - eliminates the duplication found by linter
 	helper.AssertTokenSequence("condition: 1 == 1", lexer.CreateTokenSequence(
 		token.CONDITION, "condition", 1, 1,
 		token.COLON, ":", 1, 10,
-		token.INTEGER_LIT, "1", 1, 12,
+		token.IntegerLit, "1", 1, 12,
 		token.EQ, "==", 1, 14,
-		token.INTEGER_LIT, "1", 1, 17,
+		token.IntegerLit, "1", 1, 17,
 	))
 
 	// Test single token - useful for simple cases
 	helper.AssertSingleToken("rule", token.RULE, "rule")
-	helper.AssertSingleToken("123", token.INTEGER_LIT, "123")
-	helper.AssertSingleToken("\"hello\"", token.STRING_LIT, "hello")
+	helper.AssertSingleToken("123", token.IntegerLit, "123")
+	helper.AssertSingleToken("\"hello\"", token.StringLit, "hello")
 
 	// Test just token types when literals don't matter
 	helper.AssertTokenTypes("rule test { condition: true }", []token.TokenType{

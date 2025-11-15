@@ -21,8 +21,8 @@ func countTokens(tokens []token.Token) tokenCounter {
 	for _, tok := range tokens {
 		switch tok.Type {
 		// Bitwise operators
-		case token.BITWISE_AND, token.BITWISE_OR, token.BITWISE_XOR,
-			token.BITWISE_NOT, token.LEFT_SHIFT, token.RIGHT_SHIFT:
+		case token.BitwiseAnd, token.BitwiseOr, token.BitwiseXor,
+			token.BitwiseNot, token.LeftShift, token.RightShift:
 			counter.bitwiseCount++
 		// Data type functions
 		case token.INT8, token.INT16, token.INT32, token.UINT8, token.UINT16, token.UINT32,
@@ -107,12 +107,12 @@ func TestAdvancedFeatures_AllFeatureTypes(t *testing.T) {
 			"bitwise operators sequence",
 			"value & 0xFF | 0x01 ^ 0xAA ~ data << 2 >> 1",
 			[]token.TokenType{
-				token.IDENTIFIER, token.BITWISE_AND, token.HEX_INTEGER_LIT,
-				token.BITWISE_OR, token.HEX_INTEGER_LIT,
-				token.BITWISE_XOR, token.HEX_INTEGER_LIT,
-				token.BITWISE_NOT, token.IDENTIFIER,
-				token.LEFT_SHIFT, token.INTEGER_LIT,
-				token.RIGHT_SHIFT, token.INTEGER_LIT,
+				token.IDENTIFIER, token.BitwiseAnd, token.HexIntegerLit,
+				token.BitwiseOr, token.HexIntegerLit,
+				token.BitwiseXor, token.HexIntegerLit,
+				token.BitwiseNot, token.IDENTIFIER,
+				token.LeftShift, token.IntegerLit,
+				token.RightShift, token.IntegerLit,
 				token.EOF,
 			},
 		},
@@ -120,8 +120,8 @@ func TestAdvancedFeatures_AllFeatureTypes(t *testing.T) {
 			"data type functions sequence",
 			"uint32(0) int16be(4) uint8(offset) int32(addr)",
 			[]token.TokenType{
-				token.UINT32, token.LPAREN, token.INTEGER_LIT, token.RPAREN,
-				token.INT16BE, token.LPAREN, token.INTEGER_LIT, token.RPAREN,
+				token.UINT32, token.LPAREN, token.IntegerLit, token.RPAREN,
+				token.INT16BE, token.LPAREN, token.IntegerLit, token.RPAREN,
 				token.UINT8, token.LPAREN, token.IDENTIFIER, token.RPAREN,
 				token.INT32, token.LPAREN, token.IDENTIFIER, token.RPAREN,
 				token.EOF,
@@ -131,10 +131,10 @@ func TestAdvancedFeatures_AllFeatureTypes(t *testing.T) {
 			"file operations with expressions",
 			"filesize > 1MB and uint32(entrypoint) == 0x5A4D",
 			[]token.TokenType{
-				token.FILESIZE, token.GT, token.SIZE_LIT,
+				token.FILESIZE, token.GT, token.SizeLit,
 				token.AND,
 				token.UINT32, token.LPAREN, token.ENTRYPOINT, token.RPAREN,
-				token.EQ, token.HEX_INTEGER_LIT,
+				token.EQ, token.HexIntegerLit,
 				token.EOF,
 			},
 		},
@@ -144,9 +144,9 @@ func TestAdvancedFeatures_AllFeatureTypes(t *testing.T) {
 			[]token.TokenType{
 				token.LPAREN,
 				token.UINT32, token.LPAREN, token.ENTRYPOINT, token.RPAREN,
-				token.BITWISE_AND, token.HEX_INTEGER_LIT,
+				token.BitwiseAnd, token.HexIntegerLit,
 				token.RPAREN,
-				token.RIGHT_SHIFT, token.INTEGER_LIT,
+				token.RightShift, token.IntegerLit,
 				token.EQ, token.FILESIZE,
 				token.EOF,
 			},
@@ -189,7 +189,7 @@ func TestAdvancedFeatures_ErrorRecovery(t *testing.T) {
 	for _, tok := range tokens {
 		switch tok.Type {
 		case token.FILESIZE, token.ENTRYPOINT, token.UINT32, token.UINT16,
-			token.BITWISE_AND, token.RIGHT_SHIFT:
+			token.BitwiseAnd, token.RightShift:
 			validPhase3Count++
 		case token.ILLEGAL:
 			illegalCount++
@@ -291,7 +291,7 @@ func TestAdvancedFeatures_BackwardsCompatibility(t *testing.T) {
 	hasPhase3Features := false
 	for _, tok := range tokens {
 		switch tok.Type {
-		case token.FILESIZE, token.UINT32, token.BITWISE_AND:
+		case token.FILESIZE, token.UINT32, token.BitwiseAnd:
 			hasPhase3Features = true
 			goto found
 		}

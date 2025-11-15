@@ -28,7 +28,7 @@ func TestHexInteger_Basic(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(_ *testing.T) {
-			helper.AssertSingleToken(tt.input, token.HEX_INTEGER_LIT, tt.expected)
+			helper.AssertSingleToken(tt.input, token.HexIntegerLit, tt.expected)
 		})
 	}
 }
@@ -46,7 +46,7 @@ func TestHexInteger_EdgeCases(t *testing.T) {
 			name:  "just 0x",
 			input: "0x",
 			expected: []token.Token{
-				{Type: token.HEX_INTEGER_LIT, Literal: "0x"},
+				{Type: token.HexIntegerLit, Literal: "0x"},
 				{Type: token.EOF, Literal: ""},
 			},
 		},
@@ -54,7 +54,7 @@ func TestHexInteger_EdgeCases(t *testing.T) {
 			name:  "0x followed by non-hex",
 			input: "0xG",
 			expected: []token.Token{
-				{Type: token.HEX_INTEGER_LIT, Literal: "0x"},
+				{Type: token.HexIntegerLit, Literal: "0x"},
 				{Type: token.IDENTIFIER, Literal: "G"},
 				{Type: token.EOF, Literal: ""},
 			},
@@ -63,7 +63,7 @@ func TestHexInteger_EdgeCases(t *testing.T) {
 			name:  "0x followed by space",
 			input: "0x ",
 			expected: []token.Token{
-				{Type: token.HEX_INTEGER_LIT, Literal: "0x"},
+				{Type: token.HexIntegerLit, Literal: "0x"},
 				{Type: token.EOF, Literal: ""},
 			},
 		},
@@ -80,13 +80,13 @@ func TestHexInteger_VsDecimalInteger(t *testing.T) {
 	helper := lexer.NewTestHelper(t)
 
 	// Test that regular decimal integers still work
-	helper.AssertSingleToken("123", token.INTEGER_LIT, "123")
-	helper.AssertSingleToken("0", token.INTEGER_LIT, "0")
-	helper.AssertSingleToken("999", token.INTEGER_LIT, "999")
+	helper.AssertSingleToken("123", token.IntegerLit, "123")
+	helper.AssertSingleToken("0", token.IntegerLit, "0")
+	helper.AssertSingleToken("999", token.IntegerLit, "999")
 
 	// Test that hex integers are properly distinguished
-	helper.AssertSingleToken("0x123", token.HEX_INTEGER_LIT, "0x123")
-	helper.AssertSingleToken("0X123", token.HEX_INTEGER_LIT, "0X123")
+	helper.AssertSingleToken("0x123", token.HexIntegerLit, "0x123")
+	helper.AssertSingleToken("0X123", token.HexIntegerLit, "0X123")
 }
 
 func TestHexInteger_InYARARule(t *testing.T) {
@@ -106,7 +106,7 @@ func TestHexInteger_InYARARule(t *testing.T) {
 	hexIntegers := []string{}
 
 	for _, tok := range tokens {
-		if tok.Type == token.HEX_INTEGER_LIT {
+		if tok.Type == token.HexIntegerLit {
 			hexIntegerCount++
 			hexIntegers = append(hexIntegers, tok.Literal)
 		}
@@ -129,9 +129,9 @@ func TestHexInteger_WithOperators(t *testing.T) {
 
 	// Test hex integers with various operators
 	helper.AssertTokenSequence("0x1000 == 0x1000", lexer.CreateTokenSequence(
-		token.HEX_INTEGER_LIT, "0x1000",
+		token.HexIntegerLit, "0x1000",
 		token.EQ, "==",
-		token.HEX_INTEGER_LIT, "0x1000",
+		token.HexIntegerLit, "0x1000",
 	))
 
 	helper.AssertTokenSequence("pe.entry_point + 0x100", lexer.CreateTokenSequence(
@@ -139,12 +139,12 @@ func TestHexInteger_WithOperators(t *testing.T) {
 		token.DOT, ".",
 		token.IDENTIFIER, "entry_point",
 		token.PLUS, "+",
-		token.HEX_INTEGER_LIT, "0x100",
+		token.HexIntegerLit, "0x100",
 	))
 
 	helper.AssertTokenSequence("filesize > 0xFF", lexer.CreateTokenSequence(
 		token.FILESIZE, "filesize",
 		token.GT, ">",
-		token.HEX_INTEGER_LIT, "0xFF",
+		token.HexIntegerLit, "0xFF",
 	))
 }

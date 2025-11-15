@@ -60,5 +60,5 @@ func (l *Lexer) handleDefaultToken(pos token.Position) token.Token {
 // handleStringIdentifierToken handles string identifiers starting with '$'
 func (l *Lexer) handleStringIdentifierToken(pos token.Position) token.Token {
 	lit := l.readStringIdentifier()
-	return l.makeToken(token.STRING_IDENTIFIER, lit, pos)
+	return l.makeToken(token.StringIdentifier, lit, pos)
 }

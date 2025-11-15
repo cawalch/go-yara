@@ -41,9 +41,9 @@ func TestArithmeticOperators_InExpressions(t *testing.T) {
 			name:  "addition",
 			input: "1 + 2",
 			expected: []token.Token{
-				{Type: token.INTEGER_LIT, Literal: "1"},
+				{Type: token.IntegerLit, Literal: "1"},
 				{Type: token.PLUS, Literal: "+"},
-				{Type: token.INTEGER_LIT, Literal: "2"},
+				{Type: token.IntegerLit, Literal: "2"},
 				{Type: token.EOF, Literal: ""},
 			},
 		},
@@ -51,9 +51,9 @@ func TestArithmeticOperators_InExpressions(t *testing.T) {
 			name:  "subtraction",
 			input: "5 - 3",
 			expected: []token.Token{
-				{Type: token.INTEGER_LIT, Literal: "5"},
+				{Type: token.IntegerLit, Literal: "5"},
 				{Type: token.MINUS, Literal: "-"},
-				{Type: token.INTEGER_LIT, Literal: "3"},
+				{Type: token.IntegerLit, Literal: "3"},
 				{Type: token.EOF, Literal: ""},
 			},
 		},
@@ -61,9 +61,9 @@ func TestArithmeticOperators_InExpressions(t *testing.T) {
 			name:  "multiplication",
 			input: "4 * 6",
 			expected: []token.Token{
-				{Type: token.INTEGER_LIT, Literal: "4"},
+				{Type: token.IntegerLit, Literal: "4"},
 				{Type: token.MULTIPLY, Literal: "*"},
-				{Type: token.INTEGER_LIT, Literal: "6"},
+				{Type: token.IntegerLit, Literal: "6"},
 				{Type: token.EOF, Literal: ""},
 			},
 		},
@@ -71,9 +71,9 @@ func TestArithmeticOperators_InExpressions(t *testing.T) {
 			name:  "division",
 			input: "8 / 2",
 			expected: []token.Token{
-				{Type: token.INTEGER_LIT, Literal: "8"},
+				{Type: token.IntegerLit, Literal: "8"},
 				{Type: token.DIVIDE, Literal: "/"},
-				{Type: token.INTEGER_LIT, Literal: "2"},
+				{Type: token.IntegerLit, Literal: "2"},
 				{Type: token.EOF, Literal: ""},
 			},
 		},
@@ -81,9 +81,9 @@ func TestArithmeticOperators_InExpressions(t *testing.T) {
 			name:  "modulo",
 			input: "10 % 3",
 			expected: []token.Token{
-				{Type: token.INTEGER_LIT, Literal: "10"},
+				{Type: token.IntegerLit, Literal: "10"},
 				{Type: token.MODULO, Literal: "%"},
-				{Type: token.INTEGER_LIT, Literal: "3"},
+				{Type: token.IntegerLit, Literal: "3"},
 				{Type: token.EOF, Literal: ""},
 			},
 		},
@@ -108,9 +108,9 @@ func TestArithmeticOperators_WithHexIntegers(t *testing.T) {
 			name:  "hex multiplication",
 			input: "0x100 * 0xFF",
 			expected: []token.Token{
-				{Type: token.HEX_INTEGER_LIT, Literal: "0x100"},
+				{Type: token.HexIntegerLit, Literal: "0x100"},
 				{Type: token.MULTIPLY, Literal: "*"},
-				{Type: token.HEX_INTEGER_LIT, Literal: "0xFF"},
+				{Type: token.HexIntegerLit, Literal: "0xFF"},
 				{Type: token.EOF, Literal: ""},
 			},
 		},
@@ -118,9 +118,9 @@ func TestArithmeticOperators_WithHexIntegers(t *testing.T) {
 			name:  "hex division",
 			input: "0x1000 / 0x10",
 			expected: []token.Token{
-				{Type: token.HEX_INTEGER_LIT, Literal: "0x1000"},
+				{Type: token.HexIntegerLit, Literal: "0x1000"},
 				{Type: token.DIVIDE, Literal: "/"},
-				{Type: token.HEX_INTEGER_LIT, Literal: "0x10"},
+				{Type: token.HexIntegerLit, Literal: "0x10"},
 				{Type: token.EOF, Literal: ""},
 			},
 		},
@@ -147,7 +147,7 @@ func TestArithmeticOperators_WithSizeLiterals(t *testing.T) {
 			expected: []token.Token{
 				{Type: token.FILESIZE, Literal: "filesize"},
 				{Type: token.MULTIPLY, Literal: "*"},
-				{Type: token.SIZE_LIT, Literal: "2KB"},
+				{Type: token.SizeLit, Literal: "2KB"},
 				{Type: token.EOF, Literal: ""},
 			},
 		},
@@ -155,9 +155,9 @@ func TestArithmeticOperators_WithSizeLiterals(t *testing.T) {
 			name:  "size division",
 			input: "1MB / 1024",
 			expected: []token.Token{
-				{Type: token.SIZE_LIT, Literal: "1MB"},
+				{Type: token.SizeLit, Literal: "1MB"},
 				{Type: token.DIVIDE, Literal: "/"},
-				{Type: token.INTEGER_LIT, Literal: "1024"},
+				{Type: token.IntegerLit, Literal: "1024"},
 				{Type: token.EOF, Literal: ""},
 			},
 		},
@@ -182,17 +182,17 @@ func TestArithmeticOperators_ComplexExpressions(t *testing.T) {
 			name:  "mixed arithmetic",
 			input: "1 + 2 * 3 - 4 / 2 % 3",
 			expected: []token.Token{
-				{Type: token.INTEGER_LIT, Literal: "1"},
+				{Type: token.IntegerLit, Literal: "1"},
 				{Type: token.PLUS, Literal: "+"},
-				{Type: token.INTEGER_LIT, Literal: "2"},
+				{Type: token.IntegerLit, Literal: "2"},
 				{Type: token.MULTIPLY, Literal: "*"},
-				{Type: token.INTEGER_LIT, Literal: "3"},
+				{Type: token.IntegerLit, Literal: "3"},
 				{Type: token.MINUS, Literal: "-"},
-				{Type: token.INTEGER_LIT, Literal: "4"},
+				{Type: token.IntegerLit, Literal: "4"},
 				{Type: token.DIVIDE, Literal: "/"},
-				{Type: token.INTEGER_LIT, Literal: "2"},
+				{Type: token.IntegerLit, Literal: "2"},
 				{Type: token.MODULO, Literal: "%"},
-				{Type: token.INTEGER_LIT, Literal: "3"},
+				{Type: token.IntegerLit, Literal: "3"},
 				{Type: token.EOF, Literal: ""},
 			},
 		},
@@ -201,15 +201,15 @@ func TestArithmeticOperators_ComplexExpressions(t *testing.T) {
 			input: "(1 + 2) * (3 - 4)",
 			expected: []token.Token{
 				{Type: token.LPAREN, Literal: "("},
-				{Type: token.INTEGER_LIT, Literal: "1"},
+				{Type: token.IntegerLit, Literal: "1"},
 				{Type: token.PLUS, Literal: "+"},
-				{Type: token.INTEGER_LIT, Literal: "2"},
+				{Type: token.IntegerLit, Literal: "2"},
 				{Type: token.RPAREN, Literal: ")"},
 				{Type: token.MULTIPLY, Literal: "*"},
 				{Type: token.LPAREN, Literal: "("},
-				{Type: token.INTEGER_LIT, Literal: "3"},
+				{Type: token.IntegerLit, Literal: "3"},
 				{Type: token.MINUS, Literal: "-"},
-				{Type: token.INTEGER_LIT, Literal: "4"},
+				{Type: token.IntegerLit, Literal: "4"},
 				{Type: token.RPAREN, Literal: ")"},
 				{Type: token.EOF, Literal: ""},
 			},
@@ -322,18 +322,18 @@ func TestArithmeticOperators_VsDivisionVsRegex(t *testing.T) {
 
 	// Test that division operator is properly distinguished from regex
 	helper.AssertTokenSequence("8 / 2", lexer.CreateTokenSequence(
-		token.INTEGER_LIT, "8",
+		token.IntegerLit, "8",
 		token.DIVIDE, "/",
-		token.INTEGER_LIT, "2",
+		token.IntegerLit, "2",
 	))
 
 	// Test that regex is still properly recognized
-	helper.AssertSingleToken("/pattern/", token.REGEX_LIT, "/pattern/")
+	helper.AssertSingleToken("/pattern/", token.RegexLit, "/pattern/")
 
 	// Test that line comments are still properly handled (should be skipped)
 	helper.AssertTokenSequence("8 // comment\n/ 2", lexer.CreateTokenSequence(
-		token.INTEGER_LIT, "8",
+		token.IntegerLit, "8",
 		token.DIVIDE, "/",
-		token.INTEGER_LIT, "2",
+		token.IntegerLit, "2",
 	))
 }

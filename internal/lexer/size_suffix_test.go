@@ -31,7 +31,7 @@ func TestSizeSuffix_Basic(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(_ *testing.T) {
-			helper.AssertSingleToken(tt.input, token.SIZE_LIT, tt.expected)
+			helper.AssertSingleToken(tt.input, token.SizeLit, tt.expected)
 		})
 	}
 }
@@ -53,7 +53,7 @@ func TestSizeSuffix_WithHexIntegers(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(_ *testing.T) {
-			helper.AssertSingleToken(tt.input, token.SIZE_LIT, tt.expected)
+			helper.AssertSingleToken(tt.input, token.SizeLit, tt.expected)
 		})
 	}
 }
@@ -71,7 +71,7 @@ func TestSizeSuffix_EdgeCases(t *testing.T) {
 			name:  "number followed by K only",
 			input: "100K",
 			expected: []token.Token{
-				{Type: token.INTEGER_LIT, Literal: "100"},
+				{Type: token.IntegerLit, Literal: "100"},
 				{Type: token.IDENTIFIER, Literal: "K"},
 				{Type: token.EOF, Literal: ""},
 			},
@@ -80,7 +80,7 @@ func TestSizeSuffix_EdgeCases(t *testing.T) {
 			name:  "number followed by B only",
 			input: "100B",
 			expected: []token.Token{
-				{Type: token.INTEGER_LIT, Literal: "100"},
+				{Type: token.IntegerLit, Literal: "100"},
 				{Type: token.IDENTIFIER, Literal: "B"},
 				{Type: token.EOF, Literal: ""},
 			},
@@ -89,7 +89,7 @@ func TestSizeSuffix_EdgeCases(t *testing.T) {
 			name:  "number followed by space then KB",
 			input: "100 KB",
 			expected: []token.Token{
-				{Type: token.INTEGER_LIT, Literal: "100"},
+				{Type: token.IntegerLit, Literal: "100"},
 				{Type: token.IDENTIFIER, Literal: "KB"},
 				{Type: token.EOF, Literal: ""},
 			},
@@ -98,7 +98,7 @@ func TestSizeSuffix_EdgeCases(t *testing.T) {
 			name:  "hex number followed by space then KB",
 			input: "0x100 KB",
 			expected: []token.Token{
-				{Type: token.HEX_INTEGER_LIT, Literal: "0x100"},
+				{Type: token.HexIntegerLit, Literal: "0x100"},
 				{Type: token.IDENTIFIER, Literal: "KB"},
 				{Type: token.EOF, Literal: ""},
 			},
@@ -116,12 +116,12 @@ func TestSizeSuffix_VsRegularNumbers(t *testing.T) {
 	helper := lexer.NewTestHelper(t)
 
 	// Test that regular numbers still work
-	helper.AssertSingleToken("123", token.INTEGER_LIT, "123")
-	helper.AssertSingleToken("0x123", token.HEX_INTEGER_LIT, "0x123")
+	helper.AssertSingleToken("123", token.IntegerLit, "123")
+	helper.AssertSingleToken("0x123", token.HexIntegerLit, "0x123")
 
 	// Test that size literals are properly distinguished
-	helper.AssertSingleToken("123KB", token.SIZE_LIT, "123KB")
-	helper.AssertSingleToken("0x123MB", token.SIZE_LIT, "0x123MB")
+	helper.AssertSingleToken("123KB", token.SizeLit, "123KB")
+	helper.AssertSingleToken("0x123MB", token.SizeLit, "0x123MB")
 }
 
 func TestSizeSuffix_InYARARule(t *testing.T) {
@@ -141,7 +141,7 @@ func TestSizeSuffix_InYARARule(t *testing.T) {
 	sizeLiterals := []string{}
 
 	for _, tok := range tokens {
-		if tok.Type == token.SIZE_LIT {
+		if tok.Type == token.SizeLit {
 			sizeLiteralCount++
 			sizeLiterals = append(sizeLiterals, tok.Literal)
 		}
@@ -166,18 +166,18 @@ func TestSizeSuffix_WithOperators(t *testing.T) {
 	helper.AssertTokenSequence("filesize < 1MB", lexer.CreateTokenSequence(
 		token.FILESIZE, "filesize",
 		token.LT, "<",
-		token.SIZE_LIT, "1MB",
+		token.SizeLit, "1MB",
 	))
 
 	helper.AssertTokenSequence("size == 100KB", lexer.CreateTokenSequence(
 		token.IDENTIFIER, "size",
 		token.EQ, "==",
-		token.SIZE_LIT, "100KB",
+		token.SizeLit, "100KB",
 	))
 
 	helper.AssertTokenSequence("filesize > 0x100KB", lexer.CreateTokenSequence(
 		token.FILESIZE, "filesize",
 		token.GT, ">",
-		token.SIZE_LIT, "0x100KB",
+		token.SizeLit, "0x100KB",
 	))
 }

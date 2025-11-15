@@ -39,13 +39,13 @@ const (
 	XOR
 	BASE64
 	BASE64WIDE
-	// BITWISE_AND bitwise AND operator
-	BITWISE_AND
-	BITWISE_OR
-	BITWISE_XOR
-	BITWISE_NOT
-	LEFT_SHIFT
-	RIGHT_SHIFT
+	// BitwiseAnd bitwise AND operator
+	BitwiseAnd
+	BitwiseOr
+	BitwiseXor
+	BitwiseNot
+	LeftShift
+	RightShift
 	// INT8 data type function
 	INT8
 	INT16
@@ -89,7 +89,7 @@ const (
 	MULTIPLY
 	DIVIDE
 	MODULO
-	INT_DIVIDE
+	IntDivide
 	ASSIGN
 	EQ
 	NEQ
@@ -101,15 +101,15 @@ const (
 	COMMA
 	DOT
 	IDENTIFIER
-	STRING_IDENTIFIER
-	INTEGER_LIT
-	HEX_INTEGER_LIT
-	OCTAL_INTEGER_LIT
-	FLOAT_LIT
-	SIZE_LIT
-	STRING_LIT
-	HEX_STRING_LIT
-	REGEX_LIT
+	StringIdentifier
+	IntegerLit
+	HexIntegerLit
+	OctalIntegerLit
+	FloatLit
+	SizeLit
+	StringLit
+	HexStringLit
+	RegexLit
 	LBRACE
 	RBRACE
 	LPAREN
@@ -128,99 +128,99 @@ type Token struct {
 }
 
 var tokenTypeNames = map[TokenType]string{
-	RULE:              "RULE",
-	META:              "META",
-	STRINGS:           "STRINGS",
-	CONDITION:         "CONDITION",
-	AND:               "AND",
-	OR:                "OR",
-	NOT:               "NOT",
-	ALL:               "ALL",
-	ANY:               "ANY",
-	NONE:              "NONE",
-	OF:                "OF",
-	TRUE:              "TRUE",
-	FALSE:             "FALSE",
-	NOCASE:            "NOCASE",
-	WIDE:              "WIDE",
-	ASCII:             "ASCII",
-	FULLWORD:          "FULLWORD",
-	PRIVATE:           "PRIVATE",
-	XOR:               "XOR",
-	BASE64:            "BASE64",
-	BASE64WIDE:        "BASE64WIDE",
-	BITWISE_AND:       "BITWISE_AND",
-	BITWISE_OR:        "BITWISE_OR",
-	BITWISE_XOR:       "BITWISE_XOR",
-	BITWISE_NOT:       "BITWISE_NOT",
-	LEFT_SHIFT:        "LEFT_SHIFT",
-	RIGHT_SHIFT:       "RIGHT_SHIFT",
-	INT8:              "INT8",
-	INT16:             "INT16",
-	INT32:             "INT32",
-	UINT8:             "UINT8",
-	UINT16:            "UINT16",
-	UINT32:            "UINT32",
-	INT8BE:            "INT8BE",
-	INT16BE:           "INT16BE",
-	INT32BE:           "INT32BE",
-	UINT8BE:           "UINT8BE",
-	UINT16BE:          "UINT16BE",
-	UINT32BE:          "UINT32BE",
-	FILESIZE:          "FILESIZE",
-	ENTRYPOINT:        "ENTRYPOINT",
-	FOR:               "FOR",
-	IN:                "IN",
-	AT:                "AT",
-	THEM:              "THEM",
-	DEFINED:           "DEFINED",
-	GLOBAL:            "GLOBAL",
-	IMPORT:            "IMPORT",
-	INCLUDE:           "INCLUDE",
-	CONTAINS:          "CONTAINS",
-	ICONTAINS:         "ICONTAINS",
-	STARTSWITH:        "STARTSWITH",
-	ISTARTSWITH:       "ISTARTSWITH",
-	ENDSWITH:          "ENDSWITH",
-	IENDSWITH:         "IENDSWITH",
-	IEQUALS:           "IEQUALS",
-	MATCHES:           "MATCHES",
-	HASH:              "HASH",
-	LENGTH:            "LENGTH",
-	PLUS:              "PLUS",
-	MINUS:             "MINUS",
-	MULTIPLY:          "MULTIPLY",
-	DIVIDE:            "DIVIDE",
-	MODULO:            "MODULO",
-	INT_DIVIDE:        "INT_DIVIDE",
-	ASSIGN:            "ASSIGN",
-	EQ:                "EQ",
-	NEQ:               "NEQ",
-	LT:                "LT",
-	LE:                "LE",
-	GT:                "GT",
-	GE:                "GE",
-	COLON:             "COLON",
-	COMMA:             "COMMA",
-	DOT:               "DOT",
-	IDENTIFIER:        "IDENTIFIER",
-	STRING_IDENTIFIER: "STRING_IDENTIFIER",
-	INTEGER_LIT:       "INTEGER_LIT",
-	HEX_INTEGER_LIT:   "HEX_INTEGER_LIT",
-	OCTAL_INTEGER_LIT: "OCTAL_INTEGER_LIT",
-	FLOAT_LIT:         "FLOAT_LIT",
-	SIZE_LIT:          "SIZE_LIT",
-	STRING_LIT:        "STRING_LIT",
-	HEX_STRING_LIT:    "HEX_STRING_LIT",
-	REGEX_LIT:         "REGEX_LIT",
-	LBRACE:            "LBRACE",
-	RBRACE:            "RBRACE",
-	LPAREN:            "LPAREN",
-	RPAREN:            "RPAREN",
-	LBRACKET:          "LBRACKET",
-	RBRACKET:          "RBRACKET",
-	ILLEGAL:           "ILLEGAL",
-	EOF:               "EOF",
+	RULE:             "RULE",
+	META:             "META",
+	STRINGS:          "STRINGS",
+	CONDITION:        "CONDITION",
+	AND:              "AND",
+	OR:               "OR",
+	NOT:              "NOT",
+	ALL:              "ALL",
+	ANY:              "ANY",
+	NONE:             "NONE",
+	OF:               "OF",
+	TRUE:             "TRUE",
+	FALSE:            "FALSE",
+	NOCASE:           "NOCASE",
+	WIDE:             "WIDE",
+	ASCII:            "ASCII",
+	FULLWORD:         "FULLWORD",
+	PRIVATE:          "PRIVATE",
+	XOR:              "XOR",
+	BASE64:           "BASE64",
+	BASE64WIDE:       "BASE64WIDE",
+	BitwiseAnd:       "BITWISE_AND",
+	BitwiseOr:        "BITWISE_OR",
+	BitwiseXor:       "BITWISE_XOR",
+	BitwiseNot:       "BITWISE_NOT",
+	LeftShift:        "LEFT_SHIFT",
+	RightShift:       "RIGHT_SHIFT",
+	INT8:             "INT8",
+	INT16:            "INT16",
+	INT32:            "INT32",
+	UINT8:            "UINT8",
+	UINT16:           "UINT16",
+	UINT32:           "UINT32",
+	INT8BE:           "INT8BE",
+	INT16BE:          "INT16BE",
+	INT32BE:          "INT32BE",
+	UINT8BE:          "UINT8BE",
+	UINT16BE:         "UINT16BE",
+	UINT32BE:         "UINT32BE",
+	FILESIZE:         "FILESIZE",
+	ENTRYPOINT:       "ENTRYPOINT",
+	FOR:              "FOR",
+	IN:               "IN",
+	AT:               "AT",
+	THEM:             "THEM",
+	DEFINED:          "DEFINED",
+	GLOBAL:           "GLOBAL",
+	IMPORT:           "IMPORT",
+	INCLUDE:          "INCLUDE",
+	CONTAINS:         "CONTAINS",
+	ICONTAINS:        "ICONTAINS",
+	STARTSWITH:       "STARTSWITH",
+	ISTARTSWITH:      "ISTARTSWITH",
+	ENDSWITH:         "ENDSWITH",
+	IENDSWITH:        "IENDSWITH",
+	IEQUALS:          "IEQUALS",
+	MATCHES:          "MATCHES",
+	HASH:             "HASH",
+	LENGTH:           "LENGTH",
+	PLUS:             "PLUS",
+	MINUS:            "MINUS",
+	MULTIPLY:         "MULTIPLY",
+	DIVIDE:           "DIVIDE",
+	MODULO:           "MODULO",
+	IntDivide:        "IntDivide",
+	ASSIGN:           "ASSIGN",
+	EQ:               "EQ",
+	NEQ:              "NEQ",
+	LT:               "LT",
+	LE:               "LE",
+	GT:               "GT",
+	GE:               "GE",
+	COLON:            "COLON",
+	COMMA:            "COMMA",
+	DOT:              "DOT",
+	IDENTIFIER:       "IDENTIFIER",
+	StringIdentifier: "StringIdentifier",
+	IntegerLit:       "IntegerLit",
+	HexIntegerLit:    "HexIntegerLit",
+	OctalIntegerLit:  "OctalIntegerLit",
+	FloatLit:         "FloatLit",
+	SizeLit:          "SizeLit",
+	StringLit:        "StringLit",
+	HexStringLit:     "HexStringLit",
+	RegexLit:         "RegexLit",
+	LBRACE:           "LBRACE",
+	RBRACE:           "RBRACE",
+	LPAREN:           "LPAREN",
+	RPAREN:           "RPAREN",
+	LBRACKET:         "LBRACKET",
+	RBRACKET:         "RBRACKET",
+	ILLEGAL:          "ILLEGAL",
+	EOF:              "EOF",
 }
 
 // String returns a string representation of the token type.

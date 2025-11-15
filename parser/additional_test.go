@@ -1,3 +1,4 @@
+// Package parser provides additional parsing tests for YARA rules
 package parser
 
 import (

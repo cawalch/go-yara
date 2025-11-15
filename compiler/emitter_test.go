@@ -9,7 +9,7 @@ func TestEmitter(t *testing.T) {
 	emitter := NewEmitter()
 
 	// Test basic emission
-	offset1 := emitter.EmitOpcode(OP_PUSH, 1, 1)
+	offset1 := emitter.EmitOpcode(OpPush, 1, 1)
 	offset2 := emitter.EmitOpcode(OP_NOP, 1, 5)
 
 	if offset1 != 0 {
@@ -48,7 +48,7 @@ func TestEmitterStats(t *testing.T) {
 	emitter := NewEmitter()
 
 	// Emit some instructions
-	emitter.EmitOpcode(OP_PUSH, 1, 1)
+	emitter.EmitOpcode(OpPush, 1, 1)
 	emitter.EmitOpcode(OP_NOP, 1, 2)
 	emitter.EmitPush(0x12345678, 1, 3)
 

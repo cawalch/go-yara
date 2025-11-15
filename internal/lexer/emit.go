@@ -43,19 +43,19 @@ func (l *Lexer) makeStringToken(pos token.Position) token.Token {
 		l.addError(err.Position, err.Message)
 	}
 
-	return l.makeToken(token.STRING_LIT, lit, pos)
+	return l.makeToken(token.StringLit, lit, pos)
 }
 
 // makeRegexToken creates a regex literal token
 func (l *Lexer) makeRegexToken(pos token.Position) token.Token {
 	lit := l.readRegex()
-	return l.makeToken(token.REGEX_LIT, lit, pos)
+	return l.makeToken(token.RegexLit, lit, pos)
 }
 
 // makeHexStringToken creates a hex string literal token
 func (l *Lexer) makeHexStringToken(pos token.Position) token.Token {
 	lit := l.readHexString()
-	return l.makeToken(token.HEX_STRING_LIT, lit, pos)
+	return l.makeToken(token.HexStringLit, lit, pos)
 }
 
 // makeIdentifierToken creates an identifier or keyword token
@@ -78,7 +78,7 @@ func (l *Lexer) makeNumericToken(pos token.Position) token.Token {
 	// Check for float literal (digit+ "." digit+)
 	if l.ch() == '.' && isDigit(l.peekChar()) {
 		lit += l.readFloatFraction()
-		return l.makeToken(token.FLOAT_LIT, lit, pos)
+		return l.makeToken(token.FloatLit, lit, pos)
 	}
 
 	return l.finalizeNumberToken(lit, pos)
@@ -93,11 +93,11 @@ func (l *Lexer) tryPrefixedNumber(pos token.Position) (token.Token, bool) {
 	switch l.peekChar() {
 	case 'x', 'X':
 		lit := l.readHexInteger()
-		return l.makeNumberTokenWithSize(lit, token.HEX_INTEGER_LIT, pos), true
+		return l.makeNumberTokenWithSize(lit, token.HexIntegerLit, pos), true
 
 	case 'o', 'O':
 		lit := l.readOctalInteger()
-		return l.makeNumberTokenWithSize(lit, token.OCTAL_INTEGER_LIT, pos), true
+		return l.makeNumberTokenWithSize(lit, token.OctalIntegerLit, pos), true
 
 	default:
 		return token.Token{}, false
@@ -108,7 +108,7 @@ func (l *Lexer) tryPrefixedNumber(pos token.Position) (token.Token, bool) {
 func (l *Lexer) makeNumberTokenWithSize(lit string, baseType token.TokenType, pos token.Position) token.Token {
 	if l.hasSizeSuffix() {
 		sizeLit := l.readSizeSuffix(lit)
-		return l.makeToken(token.SIZE_LIT, sizeLit, pos)
+		return l.makeToken(token.SizeLit, sizeLit, pos)
 	}
 	return l.makeToken(baseType, lit, pos)
 }
@@ -117,9 +117,9 @@ func (l *Lexer) makeNumberTokenWithSize(lit string, baseType token.TokenType, po
 func (l *Lexer) finalizeNumberToken(lit string, pos token.Position) token.Token {
 	if l.hasSizeSuffix() {
 		sizeLit := l.readSizeSuffix(lit)
-		return l.makeToken(token.SIZE_LIT, sizeLit, pos)
+		return l.makeToken(token.SizeLit, sizeLit, pos)
 	}
-	return l.makeToken(token.INTEGER_LIT, lit, pos)
+	return l.makeToken(token.IntegerLit, lit, pos)
 }
 
 // makeIllegalToken creates an illegal token for unrecognized characters

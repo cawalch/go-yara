@@ -213,7 +213,7 @@ func TestModuleValidatorDataTypeFunctions(t *testing.T) {
 	pos := token.Position{Line: 1, Column: 1}
 	args := []ast.Expression{
 		&ast.Literal{
-			Type:  token.INTEGER_LIT,
+			Type:  token.IntegerLit,
 			Value: int64(0x1000),
 			Pos:   pos,
 		},
@@ -267,7 +267,7 @@ func TestModuleValidatorInvalidFunctions(t *testing.T) {
 			name:     "filesize_with_args",
 			funcName: "filesize",
 			args: []ast.Expression{
-				&ast.Literal{Type: token.INTEGER_LIT, Value: int64(1), Pos: pos},
+				&ast.Literal{Type: token.IntegerLit, Value: int64(1), Pos: pos},
 			},
 			wantErr: true,
 		},
@@ -281,8 +281,8 @@ func TestModuleValidatorInvalidFunctions(t *testing.T) {
 			name:     "uint8_too_many_args",
 			funcName: "uint8",
 			args: []ast.Expression{
-				&ast.Literal{Type: token.INTEGER_LIT, Value: int64(1), Pos: pos},
-				&ast.Literal{Type: token.INTEGER_LIT, Value: int64(2), Pos: pos},
+				&ast.Literal{Type: token.IntegerLit, Value: int64(1), Pos: pos},
+				&ast.Literal{Type: token.IntegerLit, Value: int64(2), Pos: pos},
 			},
 			wantErr: true,
 		},

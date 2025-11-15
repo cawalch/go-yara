@@ -45,8 +45,8 @@ func TestStringEscapeSequences(t *testing.T) {
 			l := lexer.New(tt.input)
 			tok := l.NextToken()
 
-			if tok.Type != token.STRING_LIT {
-				t.Fatalf("expected STRING_LIT token, got %v", tok.Type)
+			if tok.Type != token.StringLit {
+				t.Fatalf("expected StringLit token, got %v", tok.Type)
 			}
 
 			if tok.Literal != tt.expected {

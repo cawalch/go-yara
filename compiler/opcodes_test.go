@@ -11,19 +11,19 @@ func TestBytecodeOpcodes(t *testing.T) {
 		expected string
 		category string
 	}{
-		{OP_ERROR, "ERROR", OpCategoryControl},
+		{OpError, "ERROR", OpCategoryControl},
 		{OP_HALT, "HALT", OpCategoryControl},
 		{OP_NOP, "NOP", OpCategoryControl},
-		{OP_AND, "AND", OpCategoryLogical},
-		{OP_OR, "OR", OpCategoryLogical},
-		{OP_NOT, "NOT", OpCategoryLogical},
-		{OP_PUSH, "PUSH", OpCategoryStack},
-		{OP_POP, "POP", OpCategoryStack},
+		{OpAnd, "AND", OpCategoryLogical},
+		{OpOr, "OR", OpCategoryLogical},
+		{OpNot, "NOT", OpCategoryLogical},
+		{OpPush, "PUSH", OpCategoryStack},
+		{OpPop, "POP", OpCategoryStack},
 		{OP_INT_ADD, "INT_ADD", OpCategoryArithmetic},
 		{OP_INT_EQ, "INT_EQ", OpCategoryArithmetic},
 		{OP_FILESIZE, "FILESIZE", OpCategoryObject},
 		{OP_CONTAINS, "CONTAINS", OpCategoryString},
-		{OP_JZ, "JZ", OpCategoryJump},
+		{OpJz, "JZ", OpCategoryJump},
 		{OP_INT8, "INT8", OpCategoryTypeFunc},
 	}
 
@@ -57,7 +57,7 @@ func TestInstructionCreation(t *testing.T) {
 		{
 			name: "push 8-bit",
 			inst: NewInstructionWithOperand(
-				OP_PUSH_8,
+				OpPush_8,
 				Operand{Type: OperandImmediate8, Value: 0x42},
 				1,
 				1,
@@ -68,7 +68,7 @@ func TestInstructionCreation(t *testing.T) {
 		{
 			name: "push 32-bit",
 			inst: NewInstructionWithOperand(
-				OP_PUSH_32,
+				OpPush_32,
 				Operand{Type: OperandImmediate32, Value: 0x12345678},
 				1,
 				1,

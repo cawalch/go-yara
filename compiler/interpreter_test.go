@@ -34,7 +34,7 @@ func TestInterpreterBasicStack(t *testing.T) {
 		{
 			name: "push_8_and_halt",
 			bytecode: []byte{
-				byte(OP_PUSH_8), 42,
+				byte(OpPush_8), 42,
 				byte(OP_HALT),
 			},
 			expected: 42,
@@ -42,7 +42,7 @@ func TestInterpreterBasicStack(t *testing.T) {
 		{
 			name: "push_16_and_halt",
 			bytecode: func() []byte {
-				b := []byte{byte(OP_PUSH_16)}
+				b := []byte{byte(OpPush_16)}
 				b = append(b, 0x00, 0x01, byte(OP_HALT)) // 256 in little-endian + halt
 				return b
 			}(),
@@ -51,7 +51,7 @@ func TestInterpreterBasicStack(t *testing.T) {
 		{
 			name: "push_32_and_halt",
 			bytecode: func() []byte {
-				b := []byte{byte(OP_PUSH_32)}
+				b := []byte{byte(OpPush_32)}
 				b = append(b, 0x00, 0x00, 0x01, 0x00, byte(OP_HALT)) // 65536 in little-endian + halt
 				return b
 			}(),
@@ -94,8 +94,8 @@ func TestInterpreterArithmetic(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			bytecode := []byte{
-				byte(OP_PUSH_8), byte(tt.left),
-				byte(OP_PUSH_8), byte(tt.right),
+				byte(OpPush_8), byte(tt.left),
+				byte(OpPush_8), byte(tt.right),
 				byte(tt.opcode),
 				byte(OP_HALT),
 			}
@@ -122,8 +122,8 @@ func TestInterpreterComparison(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			bytecode := []byte{
-				byte(OP_PUSH_8), byte(tt.left),
-				byte(OP_PUSH_8), byte(tt.right),
+				byte(OpPush_8), byte(tt.left),
+				byte(OpPush_8), byte(tt.right),
 				byte(tt.opcode),
 				byte(OP_HALT),
 			}
@@ -141,17 +141,17 @@ func TestInterpreterLogical(t *testing.T) {
 		right    int64
 		expected int64
 	}{
-		{"and_true", OP_AND, 1, 1, 1},
-		{"and_false", OP_AND, 1, 0, 0},
-		{"or_true", OP_OR, 1, 0, 1},
-		{"or_false", OP_OR, 0, 0, 0},
+		{"and_true", OpAnd, 1, 1, 1},
+		{"and_false", OpAnd, 1, 0, 0},
+		{"or_true", OpOr, 1, 0, 1},
+		{"or_false", OpOr, 0, 0, 0},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			bytecode := []byte{
-				byte(OP_PUSH_8), byte(tt.left),
-				byte(OP_PUSH_8), byte(tt.right),
+				byte(OpPush_8), byte(tt.left),
+				byte(OpPush_8), byte(tt.right),
 				byte(tt.opcode),
 				byte(OP_HALT),
 			}
@@ -181,8 +181,8 @@ func TestInterpreterMemory(t *testing.T) {
 		{
 			name: "push_and_pop_memory",
 			bytecode: func() []byte {
-				b := []byte{byte(OP_PUSH_8), 42}
-				b = append(b, byte(OP_POP_M), 0, 0, 0, 0, 0, 0, 0, 0, byte(OP_PUSH_M), 0, 0, 0, 0, 0, 0, 0, 0, byte(OP_HALT)) // addr 0 + halt
+				b := []byte{byte(OpPush_8), 42}
+				b = append(b, byte(OpPop_M), 0, 0, 0, 0, 0, 0, 0, 0, byte(OpPush_M), 0, 0, 0, 0, 0, 0, 0, 0, byte(OP_HALT)) // addr 0 + halt
 				return b
 			}(),
 			memAddr:  0,
@@ -215,8 +215,8 @@ func TestInterpreterJumps(t *testing.T) {
 		{
 			name: "jfalse_taken",
 			bytecode: func() []byte {
-				b := []byte{byte(OP_PUSH_8), 0}
-				b = append(b, byte(OP_JFALSE), 2, 0, 0, 0, byte(OP_PUSH_8), 10, byte(OP_PUSH_8), 20, byte(OP_HALT))
+				b := []byte{byte(OpPush_8), 0}
+				b = append(b, byte(OP_JFALSE), 2, 0, 0, 0, byte(OpPush_8), 10, byte(OpPush_8), 20, byte(OP_HALT))
 				return b
 			}(),
 			expected: 20,
@@ -224,8 +224,8 @@ func TestInterpreterJumps(t *testing.T) {
 		{
 			name: "jtrue_taken",
 			bytecode: func() []byte {
-				b := []byte{byte(OP_PUSH_8), 1}
-				b = append(b, byte(OP_JTRUE), 2, 0, 0, 0, byte(OP_PUSH_8), 10, byte(OP_PUSH_8), 20, byte(OP_HALT))
+				b := []byte{byte(OpPush_8), 1}
+				b = append(b, byte(OP_JTRUE), 2, 0, 0, 0, byte(OpPush_8), 10, byte(OpPush_8), 20, byte(OP_HALT))
 				return b
 			}(),
 			expected: 20,
@@ -256,9 +256,9 @@ func TestInterpreterBitwise(t *testing.T) {
 		{
 			name: "bitwise_and",
 			bytecode: []byte{
-				byte(OP_PUSH_8), 0xFF,
-				byte(OP_PUSH_8), 0x0F,
-				byte(OP_BITWISE_AND),
+				byte(OpPush_8), 0xFF,
+				byte(OpPush_8), 0x0F,
+				byte(OpBitwiseAnd),
 				byte(OP_HALT),
 			},
 			expected: 0x0F,
@@ -266,9 +266,9 @@ func TestInterpreterBitwise(t *testing.T) {
 		{
 			name: "bitwise_or",
 			bytecode: []byte{
-				byte(OP_PUSH_8), 0xF0,
-				byte(OP_PUSH_8), 0x0F,
-				byte(OP_BITWISE_OR),
+				byte(OpPush_8), 0xF0,
+				byte(OpPush_8), 0x0F,
+				byte(OpBitwiseOr),
 				byte(OP_HALT),
 			},
 			expected: 0xFF,
@@ -276,9 +276,9 @@ func TestInterpreterBitwise(t *testing.T) {
 		{
 			name: "bitwise_xor",
 			bytecode: []byte{
-				byte(OP_PUSH_8), 0xFF,
-				byte(OP_PUSH_8), 0xFF,
-				byte(OP_BITWISE_XOR),
+				byte(OpPush_8), 0xFF,
+				byte(OpPush_8), 0xFF,
+				byte(OpBitwiseXor),
 				byte(OP_HALT),
 			},
 			expected: 0,
@@ -305,7 +305,7 @@ func TestInterpreterBitwise(t *testing.T) {
 // TestInterpreterUndefined tests undefined value handling
 func TestInterpreterUndefined(t *testing.T) {
 	bytecode := []byte{
-		byte(OP_PUSH_U),
+		byte(OpPush_U),
 		byte(OP_HALT),
 	}
 
@@ -349,7 +349,7 @@ func TestInterpreterIncrementMemory(t *testing.T) {
 		b := []byte{byte(OP_INCR_M)}
 		b = append(b, 0, 0, 0, 0, 0, 0, 0, 0, // addr 0
 			byte(OP_INCR_M), 0, 0, 0, 0, 0, 0, 0, 0, // addr 0
-			byte(OP_PUSH_M), 0, 0, 0, 0, 0, 0, 0, 0, // addr 0
+			byte(OpPush_M), 0, 0, 0, 0, 0, 0, 0, 0, // addr 0
 			byte(OP_HALT))
 		return b
 	}()
@@ -443,7 +443,7 @@ func TestInterpreterNegation(t *testing.T) {
 		{
 			name: "int_negation",
 			bytecode: []byte{
-				byte(OP_PUSH_8), 42,
+				byte(OpPush_8), 42,
 				byte(OP_INT_MINUS),
 				byte(OP_HALT),
 			},
@@ -468,7 +468,7 @@ func TestInterpreterNegation(t *testing.T) {
 	}
 }
 
-// TestInterpreterOffsetOperation tests OP_OFFSET operation
+// TestInterpreterOffsetOperation tests OpOffset operation
 func TestInterpreterOffsetOperation(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -519,9 +519,9 @@ func TestInterpreterOffsetOperation(t *testing.T) {
 			_ = interp.push(Value{Type: ValueTypeString, StringVal: tt.pattern})
 			_ = interp.push(Value{Type: ValueTypeInt, IntVal: tt.index})
 
-			err := interp.executeOpcode(OP_OFFSET)
+			err := interp.executeOpcode(OpOffset)
 			if err != nil {
-				t.Errorf("executeOpcode(OP_OFFSET) error = %v", err)
+				t.Errorf("executeOpcode(OpOffset) error = %v", err)
 			}
 			if len(interp.GetStack()) != 1 {
 				t.Errorf("stack length = %d, want 1", len(interp.GetStack()))
@@ -860,10 +860,10 @@ func TestInterpreterMatches(t *testing.T) {
 // TestInterpreterComplexArithmetic tests complex arithmetic expressions
 func TestInterpreterComplexArithmetic(t *testing.T) {
 	bytecode := []byte{
-		byte(OP_PUSH_8), 10,
-		byte(OP_PUSH_8), 20,
+		byte(OpPush_8), 10,
+		byte(OpPush_8), 20,
 		byte(OP_INT_ADD),
-		byte(OP_PUSH_8), 2,
+		byte(OpPush_8), 2,
 		byte(OP_INT_MUL),
 		byte(OP_HALT),
 	}
@@ -898,8 +898,8 @@ func TestInterpreterStackUnderflow(t *testing.T) {
 // TestInterpreterTypeConversion tests type conversion operations
 func TestInterpreterTypeConversion(t *testing.T) {
 	bytecode := []byte{
-		byte(OP_PUSH_8), 1,
-		byte(OP_INT_TO_DBL),
+		byte(OpPush_8), 1,
+		byte(OpIntToDbl),
 		byte(OP_HALT),
 	}
 

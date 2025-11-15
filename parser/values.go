@@ -376,14 +376,29 @@ func (op *Operand) GetImmediateValue() (uint64, bool) {
 	case uint64:
 		return v, true
 	case int:
+		if v < 0 {
+			return 0, false
+		}
 		return uint64(v), true
 	case int8:
+		if v < 0 {
+			return 0, false
+		}
 		return uint64(v), true
 	case int16:
+		if v < 0 {
+			return 0, false
+		}
 		return uint64(v), true
 	case int32:
+		if v < 0 {
+			return 0, false
+		}
 		return uint64(v), true
 	case int64:
+		if v < 0 {
+			return 0, false
+		}
 		return uint64(v), true
 	default:
 		return 0, false

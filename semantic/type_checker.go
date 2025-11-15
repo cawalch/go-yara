@@ -129,9 +129,9 @@ func (tc *TypeChecker) getBinaryOpHandler(op token.TokenType) BinaryOpHandler {
 // getArithmeticHandler returns handler for arithmetic and bitwise operations
 func (tc *TypeChecker) getArithmeticHandler(op token.TokenType) BinaryOpHandler {
 	switch op {
-	case token.PLUS, token.MINUS, token.MULTIPLY, token.DIVIDE, token.MODULO, token.INT_DIVIDE:
+	case token.PLUS, token.MINUS, token.MULTIPLY, token.DIVIDE, token.MODULO, token.IntDivide:
 		return tc.createArithmeticHandler()
-	case token.BITWISE_AND, token.BITWISE_OR, token.BITWISE_XOR, token.LEFT_SHIFT, token.RIGHT_SHIFT:
+	case token.BitwiseAnd, token.BitwiseOr, token.BitwiseXor, token.LeftShift, token.RightShift:
 		return tc.createBitwiseHandler()
 	case token.AND, token.OR:
 		return tc.createLogicalHandler()
@@ -256,7 +256,7 @@ func (tc *TypeChecker) createDotHandler() BinaryOpHandler {
 
 // createColonHandler creates a function handler for ':' operations
 func (tc *TypeChecker) createColonHandler() BinaryOpHandler {
-	return func(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
+	return func(_ *ast.BinaryOp, _, _ *TypeInfo) *TypeInfo {
 		return tc.checkColonOperator()
 	}
 }
@@ -289,7 +289,7 @@ func (tc *TypeChecker) checkBitwiseOp(binaryOp *ast.BinaryOp, leftType, rightTyp
 	}
 
 	// For shift operations, right operand should be integer
-	if binaryOp.Op == token.LEFT_SHIFT || binaryOp.Op == token.RIGHT_SHIFT {
+	if binaryOp.Op == token.LeftShift || binaryOp.Op == token.RightShift {
 		if !rightType.IsInteger() {
 			tc.addError(&Error{
 				Message:  "shift amount must be integer, got " + rightType.String(),
@@ -429,7 +429,7 @@ func (tc *TypeChecker) checkUnaryOp(unaryOp *ast.UnaryOp) *TypeInfo {
 	switch unaryOp.Op {
 	case token.NOT:
 		return tc.checkLogicalNotOp(unaryOp, operandType)
-	case token.BITWISE_NOT:
+	case token.BitwiseNot:
 		return tc.checkBitwiseNotOp(unaryOp, operandType)
 	case token.MINUS:
 		return tc.checkUnaryMinusOp(unaryOp, operandType)

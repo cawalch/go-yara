@@ -14,15 +14,15 @@ func TestRegexLiterals_BasicAndFlags(t *testing.T) {
 		input string
 		seq   []token.Token
 	}{
-		{"simple", "/pattern/", lexer.CreateTokenSequence(token.REGEX_LIT, "/pattern/")},
-		{"flag i", "/pattern/i", lexer.CreateTokenSequence(token.REGEX_LIT, "/pattern/i")},
-		{"flag s", "/pattern/s", lexer.CreateTokenSequence(token.REGEX_LIT, "/pattern/s")},
-		{"flags is", "/pattern/is", lexer.CreateTokenSequence(token.REGEX_LIT, "/pattern/is")},
-		{"flags si", "/pattern/si", lexer.CreateTokenSequence(token.REGEX_LIT, "/pattern/si")},
-		{"complex", "/md5: [0-9a-fA-F]{32}/", lexer.CreateTokenSequence(token.REGEX_LIT, "/md5: [0-9a-fA-F]{32}/")},
-		{"escaped slash", "/path\\/to\\/file/", lexer.CreateTokenSequence(token.REGEX_LIT, "/path\\/to\\/file/")},
-		{"alternation", "/state: (on|off)/i", lexer.CreateTokenSequence(token.REGEX_LIT, "/state: (on|off)/i")},
-		{"two regexes", "/foo/ /bar/i", lexer.CreateTokenSequence(token.REGEX_LIT, "/foo/", token.REGEX_LIT, "/bar/i")},
+		{"simple", "/pattern/", lexer.CreateTokenSequence(token.RegexLit, "/pattern/")},
+		{"flag i", "/pattern/i", lexer.CreateTokenSequence(token.RegexLit, "/pattern/i")},
+		{"flag s", "/pattern/s", lexer.CreateTokenSequence(token.RegexLit, "/pattern/s")},
+		{"flags is", "/pattern/is", lexer.CreateTokenSequence(token.RegexLit, "/pattern/is")},
+		{"flags si", "/pattern/si", lexer.CreateTokenSequence(token.RegexLit, "/pattern/si")},
+		{"complex", "/md5: [0-9a-fA-F]{32}/", lexer.CreateTokenSequence(token.RegexLit, "/md5: [0-9a-fA-F]{32}/")},
+		{"escaped slash", "/path\\/to\\/file/", lexer.CreateTokenSequence(token.RegexLit, "/path\\/to\\/file/")},
+		{"alternation", "/state: (on|off)/i", lexer.CreateTokenSequence(token.RegexLit, "/state: (on|off)/i")},
+		{"two regexes", "/foo/ /bar/i", lexer.CreateTokenSequence(token.RegexLit, "/foo/", token.RegexLit, "/bar/i")},
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(_ *testing.T) {
@@ -37,12 +37,12 @@ func TestRegexLiterals_EdgeCases(t *testing.T) {
 		input    string
 		expected token.Token
 	}{
-		{"empty regex", "//", token.Token{Type: token.REGEX_LIT, Literal: "//"}},
-		{"regex only flags", "//is", token.Token{Type: token.REGEX_LIT, Literal: "//is"}},
-		{"unterminated", "/pattern", token.Token{Type: token.REGEX_LIT, Literal: "/pattern"}},
-		{"escaped backslash", "/pattern\\/", token.Token{Type: token.REGEX_LIT, Literal: "/pattern\\/"}},
-		{"char class", "/[a-zA-Z0-9]/", token.Token{Type: token.REGEX_LIT, Literal: "/[a-zA-Z0-9]/"}},
-		{"quantifiers", "/fo+o*/", token.Token{Type: token.REGEX_LIT, Literal: "/fo+o*/"}},
+		{"empty regex", "//", token.Token{Type: token.RegexLit, Literal: "//"}},
+		{"regex only flags", "//is", token.Token{Type: token.RegexLit, Literal: "//is"}},
+		{"unterminated", "/pattern", token.Token{Type: token.RegexLit, Literal: "/pattern"}},
+		{"escaped backslash", "/pattern\\/", token.Token{Type: token.RegexLit, Literal: "/pattern\\/"}},
+		{"char class", "/[a-zA-Z0-9]/", token.Token{Type: token.RegexLit, Literal: "/[a-zA-Z0-9]/"}},
+		{"quantifiers", "/fo+o*/", token.Token{Type: token.RegexLit, Literal: "/fo+o*/"}},
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
@@ -63,8 +63,8 @@ func TestRegexLiterals_VsComments_AndInYARARule(t *testing.T) {
 		input string
 		seq   []token.Token
 	}{
-		{"regex then line comment", "/pattern/ // comment", lexer.CreateTokenSequence(token.REGEX_LIT, "/pattern/")},
-		{"regex then block comment", "/pattern/ /* comment */", lexer.CreateTokenSequence(token.REGEX_LIT, "/pattern/")},
+		{"regex then line comment", "/pattern/ // comment", lexer.CreateTokenSequence(token.RegexLit, "/pattern/")},
+		{"regex then block comment", "/pattern/ /* comment */", lexer.CreateTokenSequence(token.RegexLit, "/pattern/")},
 		{"line comment not regex", "// not a regex", lexer.CreateTokenSequence()},
 		{"block comment not regex", "/* not a regex */", lexer.CreateTokenSequence()},
 	}
@@ -86,7 +86,7 @@ func TestRegexLiterals_VsComments_AndInYARARule(t *testing.T) {
 	tokens := helper.CollectTokens(input)
 	regexCount := 0
 	for _, tok := range tokens {
-		if tok.Type == token.REGEX_LIT {
+		if tok.Type == token.RegexLit {
 			regexCount++
 		}
 	}

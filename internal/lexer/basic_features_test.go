@@ -47,12 +47,12 @@ func TestBasicFeatures_CompleteYARARule(t *testing.T) {
 		description   string
 	}{
 		{
-			tokenTypes:    []token.TokenType{token.HEX_INTEGER_LIT},
+			tokenTypes:    []token.TokenType{token.HexIntegerLit},
 			expectedCount: 3, // 0x401000, 0xFF, 0x401000
 			description:   "hex integers",
 		},
 		{
-			tokenTypes:    []token.TokenType{token.SIZE_LIT},
+			tokenTypes:    []token.TokenType{token.SizeLit},
 			expectedCount: 5, // 10MB, 1KB, 100KB, 50MB, 1MB
 			description:   "size literals",
 		},
@@ -126,7 +126,7 @@ func TestBasicFeatures_ErrorRecovery(t *testing.T) {
 		},
 		{
 			name:       "valid Phase 1 tokens",
-			tokenTypes: []token.TokenType{token.SIZE_LIT, token.ALL, token.OF, token.PLUS, token.MULTIPLY},
+			tokenTypes: []token.TokenType{token.SizeLit, token.ALL, token.OF, token.PLUS, token.MULTIPLY},
 			validator:  func(count int) bool { return count > 0 },
 			errorMsg:   "Expected some valid Phase 1 tokens despite errors",
 		},
@@ -196,7 +196,7 @@ func TestBasicFeatures_PerformanceStress(t *testing.T) {
 	}
 
 	expectedTypes := []token.TokenType{
-		token.HEX_INTEGER_LIT, token.SIZE_LIT, token.ALL, token.OF,
+		token.HexIntegerLit, token.SizeLit, token.ALL, token.OF,
 		token.MULTIPLY, token.DIVIDE, token.MODULO,
 	}
 
@@ -276,24 +276,24 @@ func TestBasicFeatures_AllFeaturesCombined(t *testing.T) {
 		{Type: token.OF, Literal: "of"},
 		{Type: token.THEM, Literal: "them"},
 		{Type: token.AND, Literal: "and"},
-		{Type: token.SIZE_LIT, Literal: "0x1000KB"},
+		{Type: token.SizeLit, Literal: "0x1000KB"},
 		{Type: token.PLUS, Literal: "+"},
-		{Type: token.SIZE_LIT, Literal: "100MB"},
+		{Type: token.SizeLit, Literal: "100MB"},
 		{Type: token.MULTIPLY, Literal: "*"},
-		{Type: token.INTEGER_LIT, Literal: "2"},
+		{Type: token.IntegerLit, Literal: "2"},
 		{Type: token.DIVIDE, Literal: "/"},
-		{Type: token.INTEGER_LIT, Literal: "1024"},
+		{Type: token.IntegerLit, Literal: "1024"},
 		{Type: token.MODULO, Literal: "%"},
-		{Type: token.INTEGER_LIT, Literal: "3"},
+		{Type: token.IntegerLit, Literal: "3"},
 		{Type: token.EQ, Literal: "=="},
-		{Type: token.HEX_INTEGER_LIT, Literal: "0xFF"},
+		{Type: token.HexIntegerLit, Literal: "0xFF"},
 		{Type: token.AND, Literal: "and"},
 		{Type: token.ANY, Literal: "any"},
 		{Type: token.OF, Literal: "of"},
 		{Type: token.LPAREN, Literal: "("},
-		{Type: token.STRING_IDENTIFIER, Literal: "$a"},
+		{Type: token.StringIdentifier, Literal: "$a"},
 		{Type: token.COMMA, Literal: ","},
-		{Type: token.STRING_IDENTIFIER, Literal: "$b"},
+		{Type: token.StringIdentifier, Literal: "$b"},
 		{Type: token.RPAREN, Literal: ")"},
 		{Type: token.AND, Literal: "and"},
 		{Type: token.NOT, Literal: "not"},

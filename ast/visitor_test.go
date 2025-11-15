@@ -116,7 +116,7 @@ func TestExpressionVisitorImplementation(t *testing.T) {
 	// Create a simple expression tree
 	literal := &Literal{
 		Pos:   pos,
-		Type:  token.INTEGER_LIT,
+		Type:  token.IntegerLit,
 		Value: int64(42),
 	}
 

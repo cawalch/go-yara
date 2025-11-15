@@ -27,7 +27,7 @@ func TestStringIdentifier_Basic(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(_ *testing.T) {
-			helper.AssertSingleToken(tt.input, token.STRING_IDENTIFIER, tt.expected)
+			helper.AssertSingleToken(tt.input, token.StringIdentifier, tt.expected)
 		})
 	}
 }
@@ -41,9 +41,9 @@ func TestStringIdentifier_Invalid(t *testing.T) {
 		input    string
 		expected token.TokenType
 	}{
-		{"just_dollar", "$", token.STRING_IDENTIFIER},      // Should still be STRING_IDENTIFIER but just "$"
-		{"dollar_space", "$ ", token.STRING_IDENTIFIER},    // Should be STRING_IDENTIFIER "$" followed by whitespace
-		{"dollar_operator", "$+", token.STRING_IDENTIFIER}, // Should be STRING_IDENTIFIER "$" followed by PLUS
+		{"just_dollar", "$", token.StringIdentifier},      // Should still be StringIdentifier but just "$"
+		{"dollar_space", "$ ", token.StringIdentifier},    // Should be StringIdentifier "$" followed by whitespace
+		{"dollar_operator", "$+", token.StringIdentifier}, // Should be StringIdentifier "$" followed by PLUS
 	}
 
 	for _, tt := range tests {
@@ -80,7 +80,7 @@ func TestStringIdentifier_InYARARule(t *testing.T) {
 	stringIdentifiers := []string{}
 
 	for _, tok := range tokens {
-		if tok.Type == token.STRING_IDENTIFIER {
+		if tok.Type == token.StringIdentifier {
 			stringIdentifierCount++
 			stringIdentifiers = append(stringIdentifiers, tok.Literal)
 		}
@@ -104,21 +104,21 @@ func TestStringIdentifier_WithOperators(t *testing.T) {
 
 	// Test string identifiers with various operators
 	helper.AssertTokenSequence("$a == $b", lexer.CreateTokenSequence(
-		token.STRING_IDENTIFIER, "$a",
+		token.StringIdentifier, "$a",
 		token.EQ, "==",
-		token.STRING_IDENTIFIER, "$b",
+		token.StringIdentifier, "$b",
 	))
 
 	helper.AssertTokenSequence("$test and $other", lexer.CreateTokenSequence(
-		token.STRING_IDENTIFIER, "$test",
+		token.StringIdentifier, "$test",
 		token.AND, "and",
-		token.STRING_IDENTIFIER, "$other",
+		token.StringIdentifier, "$other",
 	))
 
 	helper.AssertTokenSequence("$a = \"value\"", lexer.CreateTokenSequence(
-		token.STRING_IDENTIFIER, "$a",
+		token.StringIdentifier, "$a",
 		token.ASSIGN, "=",
-		token.STRING_LIT, "value",
+		token.StringLit, "value",
 	))
 }
 
@@ -134,9 +134,9 @@ func testMultipleStringIdentifiers(t *testing.T) {
 	input := "$a $b $c"
 
 	expected := []tokenExpectation{
-		{tokenType: token.STRING_IDENTIFIER, literal: "$a"},
-		{tokenType: token.STRING_IDENTIFIER, literal: "$b"},
-		{tokenType: token.STRING_IDENTIFIER, literal: "$c"},
+		{tokenType: token.StringIdentifier, literal: "$a"},
+		{tokenType: token.StringIdentifier, literal: "$b"},
+		{tokenType: token.StringIdentifier, literal: "$c"},
 	}
 
 	assertIdentifierTokenSequence(t, helper, input, expected)
@@ -148,7 +148,7 @@ func testStringIdentifierWithPunctuation(t *testing.T) {
 	input := "$test,"
 
 	expected := []tokenExpectation{
-		{tokenType: token.STRING_IDENTIFIER, literal: "$test"},
+		{tokenType: token.StringIdentifier, literal: "$test"},
 		{tokenType: token.COMMA, literal: ","},
 	}
 
@@ -162,7 +162,7 @@ func testStringIdentifierInParentheses(t *testing.T) {
 
 	expected := []tokenExpectation{
 		{tokenType: token.LPAREN, literal: "("},
-		{tokenType: token.STRING_IDENTIFIER, literal: "$var"},
+		{tokenType: token.StringIdentifier, literal: "$var"},
 		{tokenType: token.RPAREN, literal: ")"},
 	}
 

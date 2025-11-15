@@ -12,23 +12,23 @@ type Opcode uint8
 
 // All bytecode opcodes based on libyara's instruction set
 const (
-	// OP_ERROR represents an error condition
-	OP_ERROR Opcode = iota
-	OP_AND
-	OP_OR
-	OP_NOT
-	OP_BITWISE_NOT
-	OP_BITWISE_AND
-	OP_BITWISE_OR
-	OP_BITWISE_XOR
-	OP_SHL
-	OP_SHR
-	OP_MOD
-	OP_INT_TO_DBL
-	OP_STR_TO_BOOL
-	OP_PUSH
-	OP_POP
-	OP_CALL
+	// OpError represents an error condition
+	OpError Opcode = iota
+	OpAnd
+	OpOr
+	OpNot
+	OpBitwiseNot
+	OpBitwiseAnd
+	OpBitwiseOr
+	OpBitwiseXor
+	OpShl
+	OpShr
+	OpMod
+	OpIntToDbl
+	OpStrToBool
+	OpPush
+	OpPop
+	OpCall
 
 	// OP_OBJ_LOAD loads an object property (16-25)
 	OP_OBJ_LOAD
@@ -40,18 +40,18 @@ const (
 	OP_FOUND
 	OP_FOUND_AT
 	OP_FOUND_IN
-	OP_OFFSET
+	OpOffset
 
-	// OP_OF begins rule operations (26-40)
-	OP_OF
-	OP_PUSH_RULE
+	// OpOf begins rule operations (26-40)
+	OpOf
+	OpPush_RULE
 	OP_INIT_RULE
 	OP_MATCH_RULE
 	OP_INCR_M
 	OP_CLEAR_M
 	OP_ADD_M
-	OP_POP_M
-	OP_PUSH_M
+	OpPop_M
+	OpPush_M
 	OP_SET_M
 	OP_SWAPUNDEF
 	OP_FILESIZE
@@ -82,16 +82,16 @@ const (
 	OP_ITER_START_STRING_SET
 	OP_ITER_CONDITION
 	OP_ITER_END
-	OP_JZ
-	OP_JZ_P
+	OpJz
+	OpJzP
 
-	// OP_PUSH_8 begins push operations (66-71)
-	OP_PUSH_8
-	OP_PUSH_16
-	OP_PUSH_32
-	OP_PUSH_U
-	OP_PUSH_DBL
-	OP_PUSH_RULE_REF
+	// OpPush_8 begins push operations (66-71)
+	OpPush_8
+	OpPush_16
+	OpPush_32
+	OpPush_U
+	OpPush_DBL
+	OpPush_RULE_REF
 
 	// OP_CONTAINS begins string operations (73-86)
 	OP_CONTAINS
@@ -101,12 +101,12 @@ const (
 	OP_ISTARTSWITH
 	OP_IENDSWITH
 	OP_IEQUALS
-	OP_OF_PERCENT
-	OP_OF_FOUND_IN
+	OpOfPercent
+	OpOfFoundIn
 	OP_COUNT_IN
 	OP_DEFINED
 	OP_ITER_START_TEXT_STRING_SET
-	OP_OF_FOUND_AT
+	OpOfFoundAt
 
 	// OP_INT_BEGIN begins integer operations (100-110)
 	OP_INT_BEGIN = 100
@@ -186,18 +186,18 @@ const (
 
 // isControlOpcode checks if opcode is a control operation
 func isControlOpcode(op Opcode) bool {
-	return op == OP_ERROR || op == OP_HALT || op == OP_NOP
+	return op == OpError || op == OP_HALT || op == OP_NOP
 }
 
 // isLogicalOpcode checks if opcode is a logical operation
 func isLogicalOpcode(op Opcode) bool {
-	return (op >= OP_AND && op <= OP_BITWISE_XOR) ||
-		op == OP_INT_TO_DBL || op == OP_STR_TO_BOOL
+	return (op >= OpAnd && op <= OpBitwiseXor) ||
+		op == OpIntToDbl || op == OpStrToBool
 }
 
 // isArithmeticOpcode checks if opcode is an arithmetic operation
 func isArithmeticOpcode(op Opcode) bool {
-	return (op >= OP_SHL && op <= OP_MOD) ||
+	return (op >= OpShl && op <= OpMod) ||
 		(op >= OP_INT_BEGIN && op <= OP_INT_END) ||
 		(op >= OP_DBL_BEGIN && op <= OP_DBL_END) ||
 		(op >= OP_STR_BEGIN && op <= OP_STR_END)
@@ -205,20 +205,20 @@ func isArithmeticOpcode(op Opcode) bool {
 
 // isStackOpcode checks if opcode is a stack operation
 func isStackOpcode(op Opcode) bool {
-	return (op >= OP_PUSH && op <= OP_CALL) ||
-		(op >= OP_PUSH_8 && op <= OP_PUSH_RULE_REF)
+	return (op >= OpPush && op <= OpCall) ||
+		(op >= OpPush_8 && op <= OpPush_RULE_REF)
 }
 
 // isObjectOpcode checks if opcode is an object operation
 func isObjectOpcode(op Opcode) bool {
-	return (op >= OP_OBJ_LOAD && op <= OP_OFFSET) ||
-		(op >= OP_OF && op <= OP_MATCHES) ||
+	return (op >= OP_OBJ_LOAD && op <= OpOffset) ||
+		(op >= OpOf && op <= OP_MATCHES) ||
 		(op >= OP_IMPORT && op <= OP_JNUNDEF)
 }
 
 // isJumpOpcode checks if opcode is a jump operation
 func isJumpOpcode(op Opcode) bool {
-	return op >= OP_JNUNDEF_P && op <= OP_JZ_P
+	return op >= OP_JNUNDEF_P && op <= OpJzP
 }
 
 // isIteratorOpcode checks if opcode is an iterator operation
@@ -228,7 +228,7 @@ func isIteratorOpcode(op Opcode) bool {
 
 // isStringOpcode checks if opcode is a string operation
 func isStringOpcode(op Opcode) bool {
-	return op >= OP_CONTAINS && op <= OP_OF_FOUND_AT
+	return op >= OP_CONTAINS && op <= OpOfFoundAt
 }
 
 // isTypeFuncOpcode checks if opcode is a type function
@@ -265,24 +265,24 @@ func (op Opcode) GetCategory() string {
 
 // opcodeNames maps basic opcodes to their string names
 var opcodeNames = map[Opcode]string{
-	OP_ERROR:                      "ERROR",
+	OpError:                       "ERROR",
 	OP_HALT:                       "HALT",
 	OP_NOP:                        "NOP",
-	OP_AND:                        "AND",
-	OP_OR:                         "OR",
-	OP_NOT:                        "NOT",
-	OP_BITWISE_NOT:                "BITWISE_NOT",
-	OP_BITWISE_AND:                "BITWISE_AND",
-	OP_BITWISE_OR:                 "BITWISE_OR",
-	OP_BITWISE_XOR:                "BITWISE_XOR",
-	OP_SHL:                        "SHL",
-	OP_SHR:                        "SHR",
-	OP_MOD:                        "MOD",
-	OP_INT_TO_DBL:                 "INT_TO_DBL",
-	OP_STR_TO_BOOL:                "STR_TO_BOOL",
-	OP_PUSH:                       "PUSH",
-	OP_POP:                        "POP",
-	OP_CALL:                       "CALL",
+	OpAnd:                         "AND",
+	OpOr:                          "OR",
+	OpNot:                         "NOT",
+	OpBitwiseNot:                  "BITWISE_NOT",
+	OpBitwiseAnd:                  "BITWISE_AND",
+	OpBitwiseOr:                   "BITWISE_OR",
+	OpBitwiseXor:                  "BITWISE_XOR",
+	OpShl:                         "SHL",
+	OpShr:                         "SHR",
+	OpMod:                         "MOD",
+	OpIntToDbl:                    "INT_TO_DBL",
+	OpStrToBool:                   "STR_TO_BOOL",
+	OpPush:                        "PUSH",
+	OpPop:                         "POP",
+	OpCall:                        "CALL",
 	OP_OBJ_LOAD:                   "OBJ_LOAD",
 	OP_OBJ_VALUE:                  "OBJ_VALUE",
 	OP_OBJ_FIELD:                  "OBJ_FIELD",
@@ -292,16 +292,16 @@ var opcodeNames = map[Opcode]string{
 	OP_FOUND:                      "FOUND",
 	OP_FOUND_AT:                   "FOUND_AT",
 	OP_FOUND_IN:                   "FOUND_IN",
-	OP_OFFSET:                     "OFFSET",
-	OP_OF:                         "OF",
-	OP_PUSH_RULE:                  "PUSH_RULE",
+	OpOffset:                      "OFFSET",
+	OpOf:                          "OF",
+	OpPush_RULE:                   "PUSH_RULE",
 	OP_INIT_RULE:                  "INIT_RULE",
 	OP_MATCH_RULE:                 "MATCH_RULE",
 	OP_INCR_M:                     "INCR_M",
 	OP_CLEAR_M:                    "CLEAR_M",
 	OP_ADD_M:                      "ADD_M",
-	OP_POP_M:                      "POP_M",
-	OP_PUSH_M:                     "PUSH_M",
+	OpPop_M:                       "POP_M",
+	OpPush_M:                      "PUSH_M",
 	OP_SET_M:                      "SET_M",
 	OP_SWAPUNDEF:                  "SWAPUNDEF",
 	OP_FILESIZE:                   "FILESIZE",
@@ -328,14 +328,14 @@ var opcodeNames = map[Opcode]string{
 	OP_ITER_START_STRING_SET:      "ITER_START_STRING_SET",
 	OP_ITER_CONDITION:             "ITER_CONDITION",
 	OP_ITER_END:                   "ITER_END",
-	OP_JZ:                         "JZ",
-	OP_JZ_P:                       "JZ_P",
-	OP_PUSH_8:                     "PUSH_8",
-	OP_PUSH_16:                    "PUSH_16",
-	OP_PUSH_32:                    "PUSH_32",
-	OP_PUSH_U:                     "PUSH_U",
-	OP_PUSH_DBL:                   "PUSH_DBL",
-	OP_PUSH_RULE_REF:              "PUSH_RULE_REF",
+	OpJz:                          "JZ",
+	OpJzP:                         "JZ_P",
+	OpPush_8:                      "PUSH_8",
+	OpPush_16:                     "PUSH_16",
+	OpPush_32:                     "PUSH_32",
+	OpPush_U:                      "PUSH_U",
+	OpPush_DBL:                    "PUSH_DBL",
+	OpPush_RULE_REF:               "PUSH_RULE_REF",
 	OP_CONTAINS:                   "CONTAINS",
 	OP_STARTSWITH:                 "STARTSWITH",
 	OP_ENDSWITH:                   "ENDSWITH",
@@ -343,12 +343,12 @@ var opcodeNames = map[Opcode]string{
 	OP_ISTARTSWITH:                "ISTARTSWITH",
 	OP_IENDSWITH:                  "IENDSWITH",
 	OP_IEQUALS:                    "IEQUALS",
-	OP_OF_PERCENT:                 "OF_PERCENT",
-	OP_OF_FOUND_IN:                "OF_FOUND_IN",
+	OpOfPercent:                   "OF_PERCENT",
+	OpOfFoundIn:                   "OF_FOUND_IN",
 	OP_COUNT_IN:                   "COUNT_IN",
 	OP_DEFINED:                    "DEFINED",
 	OP_ITER_START_TEXT_STRING_SET: "ITER_START_TEXT_STRING_SET",
-	OP_OF_FOUND_AT:                "OF_FOUND_AT",
+	OpOfFoundAt:                   "OF_FOUND_AT",
 }
 
 // intOpNames maps integer operations to their string names
@@ -771,7 +771,7 @@ func (inst *Instruction) Size() int {
 
 // IsJump returns true if this instruction is a jump
 func (inst *Instruction) IsJump() bool {
-	return (inst.Opcode >= OP_JUNDEF && inst.Opcode <= OP_JZ_P) ||
+	return (inst.Opcode >= OP_JUNDEF && inst.Opcode <= OpJzP) ||
 		inst.Opcode == OP_ITER_NEXT
 }
 
@@ -783,7 +783,7 @@ func (inst *Instruction) IsTypeFunction() bool {
 // IsStringOperation returns true if this instruction operates on strings
 func (inst *Instruction) IsStringOperation() bool {
 	// String operations (71-85) - same as GetCategory logic
-	if inst.Opcode >= OP_CONTAINS && inst.Opcode <= OP_OF_FOUND_AT {
+	if inst.Opcode >= OP_CONTAINS && inst.Opcode <= OpOfFoundAt {
 		return true
 	}
 	// STR comparison operations are considered arithmetic by GetCategory,

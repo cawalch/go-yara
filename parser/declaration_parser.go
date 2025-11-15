@@ -116,11 +116,11 @@ func (p *DeclarationParser) parseMetaValue() ast.MetaValue {
 	pos := p.current.Pos
 
 	switch {
-	case p.currentTokenIs(token.STRING_LIT):
+	case p.currentTokenIs(token.StringLit):
 		value := p.current.Literal
 		p.nextToken()
 		return ast.MetaString(value)
-	case p.currentTokenIs(token.INTEGER_LIT):
+	case p.currentTokenIs(token.IntegerLit):
 		value := p.parseIntegerLiteral()
 		if value == 0 && p.current.Literal != "0" {
 			p.addError(fmt.Errorf("invalid integer literal '%s' at %v", p.current.Literal, pos))
@@ -164,7 +164,7 @@ func (p *DeclarationParser) parseStringDeclarations() []*ast.String {
 	parsedStrings := make([]*ast.String, 0)
 
 	for !p.currentTokenIs(token.CONDITION) && !p.currentTokenIs(token.RBRACE) {
-		if !p.currentTokenIs(token.STRING_IDENTIFIER) && !p.currentTokenIs(token.IDENTIFIER) {
+		if !p.currentTokenIs(token.StringIdentifier) && !p.currentTokenIs(token.IDENTIFIER) {
 			break
 		}
 
@@ -209,7 +209,7 @@ func (p *DeclarationParser) parseStringDeclaration() (*ast.String, error) {
 
 // parseStringIdentifier parses a string identifier and returns its components
 func (p *DeclarationParser) parseStringIdentifier() (string, token.Position, error) {
-	if !p.currentTokenIs(token.STRING_IDENTIFIER) && !p.currentTokenIs(token.IDENTIFIER) {
+	if !p.currentTokenIs(token.StringIdentifier) && !p.currentTokenIs(token.IDENTIFIER) {
 		return "", token.Position{}, fmt.Errorf(
 			"expected string identifier at %v, got %s",
 			p.current.Pos,
@@ -227,17 +227,17 @@ func (p *DeclarationParser) parseStringIdentifier() (string, token.Position, err
 // parseStringPattern parses a string pattern and returns the appropriate AST node
 func (p *DeclarationParser) parseStringPattern(pos token.Position) (ast.Pattern, error) {
 	switch {
-	case p.currentTokenIs(token.STRING_LIT):
+	case p.currentTokenIs(token.StringLit):
 		// Text string literal
 		patternValue := p.current.Literal
 		p.nextToken()
 		return p.builder.TextString(pos, patternValue), nil
-	case p.currentTokenIs(token.HEX_STRING_LIT):
+	case p.currentTokenIs(token.HexStringLit):
 		// Hex string literal
 		patternValue := p.current.Literal
 		p.nextToken()
 		return p.builder.HexString(pos, patternValue), nil
-	case p.currentTokenIs(token.REGEX_LIT):
+	case p.currentTokenIs(token.RegexLit):
 		// Regex pattern literal
 		patternValue := p.current.Literal
 		p.nextToken()
@@ -263,7 +263,7 @@ func (p *DeclarationParser) parseStringModifiers() []ast.StringModifier {
 			p.nextToken() // consume XOR token
 
 			// Parse the XOR value (integer literal)
-			if !p.currentTokenIs(token.INTEGER_LIT) && !p.currentTokenIs(token.HEX_INTEGER_LIT) {
+			if !p.currentTokenIs(token.IntegerLit) && !p.currentTokenIs(token.HexIntegerLit) {
 				p.addError(errors.New("expected integer value after 'xor' modifier"))
 				// Add a default XOR modifier to continue parsing
 				modifiers = append(modifiers, ast.StringModifier{Type: modifierType, Value: 0})
@@ -368,7 +368,7 @@ func (p *DeclarationParser) ParseImport() (*ast.Import, error) {
 	pos := p.current.Pos
 
 	// Expect string literal for module name
-	if !p.currentTokenIs(token.STRING_LIT) {
+	if !p.currentTokenIs(token.StringLit) {
 		return nil, errors.New("expected string literal after 'import'")
 	}
 	module := p.current.Literal
@@ -382,7 +382,7 @@ func (p *DeclarationParser) ParseInclude() (*ast.Include, error) {
 	pos := p.current.Pos
 
 	// Expect string literal for file name
-	if !p.currentTokenIs(token.STRING_LIT) {
+	if !p.currentTokenIs(token.StringLit) {
 		return nil, errors.New("expected string literal after 'include'")
 	}
 	file := p.current.Literal
@@ -396,17 +396,17 @@ func (p *DeclarationParser) ParseInclude() (*ast.Include, error) {
 func (p *DeclarationParser) parseExpression() (ast.Expression, error) {
 	// Simplified implementation for now - in the full refactoring, this would
 	// delegate to the ExpressionParser instance
-	if p.currentTokenIs(token.INTEGER_LIT) {
+	if p.currentTokenIs(token.IntegerLit) {
 		value := p.parseIntegerLiteral()
 		pos := p.current.Pos
 		p.nextToken()
-		return p.builder.Literal(pos, token.INTEGER_LIT, value), nil
+		return p.builder.Literal(pos, token.IntegerLit, value), nil
 	}
-	if p.currentTokenIs(token.STRING_LIT) {
+	if p.currentTokenIs(token.StringLit) {
 		literal := p.current.Literal
 		pos := p.current.Pos
 		p.nextToken()
-		return p.builder.Literal(pos, token.STRING_LIT, literal), nil
+		return p.builder.Literal(pos, token.StringLit, literal), nil
 	}
 	return nil, fmt.Errorf("unsupported expression type: %s", p.current.Type)
 }

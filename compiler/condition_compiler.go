@@ -28,6 +28,7 @@ func safeMax(a, b int64) int64 {
 	return b
 }
 
+// ConditionCompiler compiles YARA condition expressions to bytecode
 type ConditionCompiler struct {
 	emitter           *Emitter
 	stringOffsets     map[string]int
@@ -70,6 +71,7 @@ func parseSizeLiteral(literal string) (int64, error) {
 	return 0, fmt.Errorf("unsupported size unit: %s", matches[2])
 }
 
+// PendingJump represents a pending jump operation in bytecode generation
 type PendingJump struct {
 	Opcode       Opcode
 	Label        string
@@ -77,6 +79,7 @@ type PendingJump struct {
 	Line, Column int
 }
 
+// NewConditionCompiler creates a new condition compiler
 func NewConditionCompiler(emitter *Emitter, stringOffsets map[string]int) *ConditionCompiler {
 	return &ConditionCompiler{
 		emitter:           emitter,
@@ -89,6 +92,7 @@ func NewConditionCompiler(emitter *Emitter, stringOffsets map[string]int) *Condi
 	}
 }
 
+// SetRuleIndexMap sets the rule index map for the compiler
 func (cc *ConditionCompiler) SetRuleIndexMap(ruleIndexMap map[string]int) {
 	cc.ruleIndexMap = ruleIndexMap
 }
@@ -151,15 +155,15 @@ func (cc *ConditionCompiler) findStringOffset(name string) (int, bool) {
 
 func (cc *ConditionCompiler) emitStringOffset(offset, line, column int) {
 	if offset < 0 {
-		cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(0)}, line, column)
+		cc.emitter.EmitOpcodeWithOperand(OpPush_M, Operand{Type: OperandImmediate64, Value: uint64(0)}, line, column)
 	} else {
-		cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(int64(offset))}, line, column) // #nosec G115
+		cc.emitter.EmitOpcodeWithOperand(OpPush_M, Operand{Type: OperandImmediate64, Value: uint64(int64(offset))}, line, column) // #nosec G115
 	}
 }
 
 func (cc *ConditionCompiler) emitStringIdentifier(offset int, identifier string, line, column int) {
 	_ = identifier
-	cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(int64(offset))}, line, column) // #nosec G115
+	cc.emitter.EmitOpcodeWithOperand(OpPush_M, Operand{Type: OperandImmediate64, Value: uint64(int64(offset))}, line, column) // #nosec G115
 }
 
 // CompileCondition compiles a condition expression to bytecode
@@ -201,7 +205,7 @@ func (cc *ConditionCompiler) compileExpression(expr ast.Expression) error {
 }
 
 func (cc *ConditionCompiler) compileLiteral(lit *ast.Literal) error {
-	if lit.Type == token.SIZE_LIT {
+	if lit.Type == token.SizeLit {
 		return cc.compileSizeLiteral(lit)
 	}
 
@@ -215,15 +219,15 @@ func (cc *ConditionCompiler) compileLiteral(lit *ast.Literal) error {
 // compileSimpleLiteral compiles simple literal types (integer, float, string, boolean)
 func (cc *ConditionCompiler) compileSimpleLiteral(lit *ast.Literal) bool {
 	switch lit.Type {
-	case token.INTEGER_LIT, token.HEX_INTEGER_LIT, token.OCTAL_INTEGER_LIT:
+	case token.IntegerLit, token.HexIntegerLit, token.OctalIntegerLit:
 		cc.compileIntegerLiteral(lit)
 		return true
 
-	case token.FLOAT_LIT:
+	case token.FloatLit:
 		cc.compileFloatLiteral(lit)
 		return true
 
-	case token.STRING_LIT:
+	case token.StringLit:
 		cc.compileStringLiteral(lit)
 		return true
 
@@ -286,14 +290,14 @@ func (cc *ConditionCompiler) compileSizeLiteral(lit *ast.Literal) error {
 		return nil
 	}
 	if litStr, isStr := lit.Value.(string); isStr {
-		if parsed, err := parseSizeLiteral(litStr); err == nil {
+		parsed, err := parseSizeLiteral(litStr)
+		if err == nil {
 			cc.emitter.EmitPush(safeInt64ToUint64(parsed), lit.Pos.Line, lit.Pos.Column)
 			return nil
-		} else {
-			return fmt.Errorf("failed to parse size literal %s: %w", litStr, err)
 		}
+		return fmt.Errorf("failed to parse size literal %s: %w", litStr, err)
 	}
-	return fmt.Errorf("SIZE_LIT token has invalid value: %v (type: %T)", lit.Value, lit.Value)
+	return fmt.Errorf("SizeLit token has invalid value: %v (type: %T)", lit.Value, lit.Value)
 }
 
 // compileIdentifier compiles an identifier reference
@@ -301,16 +305,16 @@ func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 	if offset, exists := cc.stringOffsets[ident.Name]; exists {
 		// Safe conversion: offset is expected to be non-negative
 		if offset >= 0 {
-			cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(offset)}, ident.Pos.Line, ident.Pos.Column)
+			cc.emitter.EmitOpcodeWithOperand(OpPush_M, Operand{Type: OperandImmediate64, Value: uint64(offset)}, ident.Pos.Line, ident.Pos.Column)
 		} else {
-			cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: 0}, ident.Pos.Line, ident.Pos.Column)
+			cc.emitter.EmitOpcodeWithOperand(OpPush_M, Operand{Type: OperandImmediate64, Value: 0}, ident.Pos.Line, ident.Pos.Column)
 		}
 		cc.emitter.EmitOpcode(OP_FOUND, ident.Pos.Line, ident.Pos.Column)
 		return nil
 	}
 
 	if index, exists := cc.externalVariables[ident.Name]; exists {
-		cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate32, Value: uint64(int64(index))}, ident.Pos.Line, ident.Pos.Column) // #nosec G115
+		cc.emitter.EmitOpcodeWithOperand(OpPush_M, Operand{Type: OperandImmediate32, Value: uint64(int64(index))}, ident.Pos.Line, ident.Pos.Column) // #nosec G115
 		return nil
 	}
 
@@ -320,7 +324,7 @@ func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 	}
 
 	if ruleIndex, exists := cc.ruleIndexMap[ident.Name]; exists {
-		cc.emitter.EmitOpcodeWithOperand(OP_PUSH_RULE, Operand{Type: OperandImmediate8, Value: uint64(int64(ruleIndex))}, ident.Pos.Line, ident.Pos.Column) // #nosec G115
+		cc.emitter.EmitOpcodeWithOperand(OpPush_RULE, Operand{Type: OperandImmediate8, Value: uint64(int64(ruleIndex))}, ident.Pos.Line, ident.Pos.Column) // #nosec G115
 		return nil
 	}
 
@@ -329,9 +333,9 @@ func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 		"entrypoint":   func() { cc.emitter.EmitOpcode(OP_ENTRYPOINT, ident.Pos.Line, ident.Pos.Column) },
 		"them":         func() { cc.emitter.EmitPush(0xFFFFFFFE, ident.Pos.Line, ident.Pos.Column) },
 		"flags":        func() { cc.emitter.EmitPush(0, ident.Pos.Line, ident.Pos.Column) },
-		QuantifierAny:  func() { cc.emitter.EmitOpcode(OP_PUSH_8, ident.Pos.Line, ident.Pos.Column) },
-		QuantifierAll:  func() { cc.emitter.EmitOpcode(OP_PUSH_8, ident.Pos.Line, ident.Pos.Column) },
-		QuantifierNone: func() { cc.emitter.EmitOpcode(OP_PUSH_8, ident.Pos.Line, ident.Pos.Column) },
+		QuantifierAny:  func() { cc.emitter.EmitOpcode(OpPush_8, ident.Pos.Line, ident.Pos.Column) },
+		QuantifierAll:  func() { cc.emitter.EmitOpcode(OpPush_8, ident.Pos.Line, ident.Pos.Column) },
+		QuantifierNone: func() { cc.emitter.EmitOpcode(OpPush_8, ident.Pos.Line, ident.Pos.Column) },
 	}
 
 	if handler, exists := specialIdentifiers[ident.Name]; exists {
@@ -344,7 +348,7 @@ func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 		return nil
 	}
 
-	cc.emitter.EmitOpcode(OP_PUSH_U, ident.Pos.Line, ident.Pos.Column)
+	cc.emitter.EmitOpcode(OpPush_U, ident.Pos.Line, ident.Pos.Column)
 	return fmt.Errorf("undefined identifier: %s", ident.Name)
 
 }
@@ -375,7 +379,7 @@ func (cc *ConditionCompiler) compileStringOffsetOperator(binOp *ast.BinaryOp) er
 func (cc *ConditionCompiler) isFloatExpression(expr ast.Expression) bool {
 	switch e := expr.(type) {
 	case *ast.Literal:
-		return e.Type == token.FLOAT_LIT
+		return e.Type == token.FloatLit
 	case *ast.BinaryOp:
 		return cc.isFloatExpression(e.Left) || cc.isFloatExpression(e.Right)
 	case *ast.UnaryOp:
@@ -387,7 +391,7 @@ func (cc *ConditionCompiler) isFloatExpression(expr ast.Expression) bool {
 
 func (cc *ConditionCompiler) isLiteralFloat(expr ast.Expression) bool {
 	if lit, ok := expr.(*ast.Literal); ok {
-		return lit.Type == token.FLOAT_LIT
+		return lit.Type == token.FloatLit
 	}
 	if unaryOp, ok := expr.(*ast.UnaryOp); ok && unaryOp.Op == token.MINUS {
 		return cc.isLiteralFloat(unaryOp.Right)
@@ -402,7 +406,7 @@ func (cc *ConditionCompiler) isMixedTypeComparison(leftIsFloat, rightIsFloat boo
 func (cc *ConditionCompiler) isComparisonOperator(op token.TokenType) bool {
 	return slices.Contains([]token.TokenType{
 		token.EQ, token.NEQ, token.LT, token.LE, token.GT, token.GE,
-		token.LEFT_SHIFT, token.RIGHT_SHIFT, token.MODULO,
+		token.LeftShift, token.RightShift, token.MODULO,
 	}, op)
 }
 
@@ -424,7 +428,7 @@ func (cc *ConditionCompiler) handleBitShiftFloatConversion(binOp *ast.BinaryOp, 
 	if isComparison {
 		if leftIsFloat {
 			cc.emitter.EmitOpcode(OP_SWAPUNDEF, binOp.Pos.Line, binOp.Pos.Column)
-			cc.emitter.EmitOpcode(OP_INT_TO_DBL, binOp.Pos.Line, binOp.Pos.Column)
+			cc.emitter.EmitOpcode(OpIntToDbl, binOp.Pos.Line, binOp.Pos.Column)
 			cc.emitter.EmitOpcode(OP_SWAPUNDEF, binOp.Pos.Line, binOp.Pos.Column)
 		}
 		if rightIsFloat {
@@ -448,19 +452,19 @@ func (cc *ConditionCompiler) handleMixedTypeLiteralComparison(binOp *ast.BinaryO
 func (cc *ConditionCompiler) convertForMixedType(binOp *ast.BinaryOp, leftIsFloat, rightIsFloat, isComparison bool) {
 	if isComparison {
 		if leftIsFloat && !rightIsFloat {
-			cc.emitter.EmitOpcode(OP_INT_TO_DBL, binOp.Pos.Line, binOp.Pos.Column)
+			cc.emitter.EmitOpcode(OpIntToDbl, binOp.Pos.Line, binOp.Pos.Column)
 		} else if !leftIsFloat && rightIsFloat {
 			cc.emitter.EmitOpcode(OP_SWAPUNDEF, binOp.Pos.Line, binOp.Pos.Column)
-			cc.emitter.EmitOpcode(OP_INT_TO_DBL, binOp.Pos.Line, binOp.Pos.Column)
+			cc.emitter.EmitOpcode(OpIntToDbl, binOp.Pos.Line, binOp.Pos.Column)
 			cc.emitter.EmitOpcode(OP_SWAPUNDEF, binOp.Pos.Line, binOp.Pos.Column)
 		}
 	} else {
 		if leftIsFloat && !rightIsFloat {
 			cc.emitter.EmitOpcode(OP_SWAPUNDEF, binOp.Pos.Line, binOp.Pos.Column)
-			cc.emitter.EmitOpcode(OP_INT_TO_DBL, binOp.Pos.Line, binOp.Pos.Column)
+			cc.emitter.EmitOpcode(OpIntToDbl, binOp.Pos.Line, binOp.Pos.Column)
 			cc.emitter.EmitOpcode(OP_SWAPUNDEF, binOp.Pos.Line, binOp.Pos.Column)
 		} else if !leftIsFloat && rightIsFloat {
-			cc.emitter.EmitOpcode(OP_INT_TO_DBL, binOp.Pos.Line, binOp.Pos.Column)
+			cc.emitter.EmitOpcode(OpIntToDbl, binOp.Pos.Line, binOp.Pos.Column)
 		}
 	}
 }
@@ -473,11 +477,7 @@ func (cc *ConditionCompiler) convertForMixedTypeComparison(binOp *ast.BinaryOp, 
 }
 
 func (cc *ConditionCompiler) convertForMixedTypeArithmetic(binOp *ast.BinaryOp, leftIsFloat, rightIsFloat, isComparison bool) {
-	if isComparison {
-		cc.convertForMixedType(binOp, leftIsFloat, rightIsFloat, isComparison)
-	} else {
-		cc.convertForMixedType(binOp, leftIsFloat, rightIsFloat, isComparison)
-	}
+	cc.convertForMixedType(binOp, leftIsFloat, rightIsFloat, isComparison)
 }
 
 func (cc *ConditionCompiler) handleFloatOperations(binOp *ast.BinaryOp, leftIsFloat, rightIsFloat, isComparison bool) error {
@@ -487,7 +487,7 @@ func (cc *ConditionCompiler) handleFloatOperations(binOp *ast.BinaryOp, leftIsFl
 	}
 
 	switch {
-	case binOp.Op == token.LEFT_SHIFT || binOp.Op == token.RIGHT_SHIFT:
+	case binOp.Op == token.LeftShift || binOp.Op == token.RightShift:
 		cc.handleBitShiftFloatConversion(binOp, leftIsFloat, rightIsFloat, isComparison)
 	case cc.isMixedTypeComparison(leftIsFloat, rightIsFloat) && (binOp.Op == token.EQ || binOp.Op == token.NEQ):
 		if cc.handleMixedTypeLiteralComparison(binOp) {
@@ -507,27 +507,27 @@ type opcodeMapping struct {
 
 func (cc *ConditionCompiler) selectOpcode(binOp *ast.BinaryOp, isFloatOp bool) (Opcode, error) {
 	opcodeMap := map[token.TokenType]opcodeMapping{
-		token.AND:         {OP_AND, OP_AND},
-		token.OR:          {OP_OR, OP_OR},
-		token.PLUS:        {OP_INT_ADD, OP_DBL_ADD},
-		token.MINUS:       {OP_INT_SUB, OP_DBL_SUB},
-		token.MULTIPLY:    {OP_INT_MUL, OP_DBL_MUL},
-		token.DIVIDE:      {OP_INT_DIV, OP_DBL_DIV},
-		token.MODULO:      {OP_MOD, OP_MOD},
-		token.BITWISE_AND: {OP_BITWISE_AND, OP_BITWISE_AND},
-		token.BITWISE_OR:  {OP_BITWISE_OR, OP_BITWISE_OR},
-		token.BITWISE_XOR: {OP_BITWISE_XOR, OP_BITWISE_XOR},
-		token.LEFT_SHIFT:  {OP_SHL, OP_SHL},
-		token.RIGHT_SHIFT: {OP_SHR, OP_SHR},
-		token.EQ:          {OP_INT_EQ, OP_DBL_EQ},
-		token.NEQ:         {OP_INT_NEQ, OP_DBL_NEQ},
-		token.LT:          {OP_INT_LT, OP_DBL_LT},
-		token.LE:          {OP_INT_LE, OP_DBL_LE},
-		token.GT:          {OP_INT_GT, OP_DBL_GT},
-		token.GE:          {OP_INT_GE, OP_DBL_GE},
-		token.CONTAINS:    {OP_CONTAINS, OP_CONTAINS},
-		token.MATCHES:     {OP_MATCHES, OP_MATCHES},
-		token.OF:          {OP_OF, OP_OF},
+		token.AND:        {OpAnd, OpAnd},
+		token.OR:         {OpOr, OpOr},
+		token.PLUS:       {OP_INT_ADD, OP_DBL_ADD},
+		token.MINUS:      {OP_INT_SUB, OP_DBL_SUB},
+		token.MULTIPLY:   {OP_INT_MUL, OP_DBL_MUL},
+		token.DIVIDE:     {OP_INT_DIV, OP_DBL_DIV},
+		token.MODULO:     {OpMod, OpMod},
+		token.BitwiseAnd: {OpBitwiseAnd, OpBitwiseAnd},
+		token.BitwiseOr:  {OpBitwiseOr, OpBitwiseOr},
+		token.BitwiseXor: {OpBitwiseXor, OpBitwiseXor},
+		token.LeftShift:  {OpShl, OpShl},
+		token.RightShift: {OpShr, OpShr},
+		token.EQ:         {OP_INT_EQ, OP_DBL_EQ},
+		token.NEQ:        {OP_INT_NEQ, OP_DBL_NEQ},
+		token.LT:         {OP_INT_LT, OP_DBL_LT},
+		token.LE:         {OP_INT_LE, OP_DBL_LE},
+		token.GT:         {OP_INT_GT, OP_DBL_GT},
+		token.GE:         {OP_INT_GE, OP_DBL_GE},
+		token.CONTAINS:   {OP_CONTAINS, OP_CONTAINS},
+		token.MATCHES:    {OP_MATCHES, OP_MATCHES},
+		token.OF:         {OpOf, OpOf},
 	}
 
 	mapping, exists := opcodeMap[binOp.Op]
@@ -586,7 +586,7 @@ func (cc *ConditionCompiler) compileUnaryOp(unaryOp *ast.UnaryOp) error {
 		return cc.compileAtOperator(unaryOp)
 	case token.NOT:
 		return cc.compileNotOperator(unaryOp)
-	case token.BITWISE_NOT:
+	case token.BitwiseNot:
 		return cc.compileBitwiseNotOperator(unaryOp)
 	case token.MINUS:
 		return cc.compileMinusOperator(unaryOp)
@@ -628,7 +628,7 @@ func (cc *ConditionCompiler) compileAtOperator(unaryOp *ast.UnaryOp) error {
 	// Use the same approach as compileIdentifier for offset operation
 	cc.emitStringOffset(offset, unaryOp.Pos.Line, unaryOp.Pos.Column)
 	cc.emitter.EmitPush(1, unaryOp.Pos.Line, unaryOp.Pos.Column) // Default to first match (1-based)
-	cc.emitter.EmitOpcode(OP_OFFSET, unaryOp.Pos.Line, unaryOp.Pos.Column)
+	cc.emitter.EmitOpcode(OpOffset, unaryOp.Pos.Line, unaryOp.Pos.Column)
 	return nil
 }
 
@@ -645,7 +645,7 @@ func (cc *ConditionCompiler) compileNotOperator(unaryOp *ast.UnaryOp) error {
 	if err := cc.compileExpression(unaryOp.Right); err != nil {
 		return err
 	}
-	cc.emitter.EmitOpcode(OP_NOT, unaryOp.Pos.Line, unaryOp.Pos.Column)
+	cc.emitter.EmitOpcode(OpNot, unaryOp.Pos.Line, unaryOp.Pos.Column)
 	return nil
 }
 
@@ -653,7 +653,7 @@ func (cc *ConditionCompiler) compileBitwiseNotOperator(unaryOp *ast.UnaryOp) err
 	if err := cc.compileExpression(unaryOp.Right); err != nil {
 		return err
 	}
-	cc.emitter.EmitOpcode(OP_BITWISE_NOT, unaryOp.Pos.Line, unaryOp.Pos.Column)
+	cc.emitter.EmitOpcode(OpBitwiseNot, unaryOp.Pos.Line, unaryOp.Pos.Column)
 	return nil
 }
 
@@ -704,7 +704,7 @@ func (cc *ConditionCompiler) compileArrayIndex(arrayIndex *ast.ArrayIndex) error
 		return fmt.Errorf("undefined string identifier: %s", ident.Name)
 	}
 
-	cc.emitter.EmitOpcodeWithOperand(OP_PUSH_M, Operand{Type: OperandImmediate64, Value: uint64(int64(offset))}, arrayIndex.Pos.Line, arrayIndex.Pos.Column) // #nosec G115
+	cc.emitter.EmitOpcodeWithOperand(OpPush_M, Operand{Type: OperandImmediate64, Value: uint64(int64(offset))}, arrayIndex.Pos.Line, arrayIndex.Pos.Column) // #nosec G115
 
 	marker := int64(0)
 	if unaryOp.Op == token.HASH {
@@ -715,15 +715,18 @@ func (cc *ConditionCompiler) compileArrayIndex(arrayIndex *ast.ArrayIndex) error
 	return nil
 }
 
+// AddVariable adds a variable to the compiler's variable map
 func (cc *ConditionCompiler) AddVariable(name string, index int) {
 	cc.variableMap[name] = index
 }
 
+// GetVariableIndex retrieves the index of a variable
 func (cc *ConditionCompiler) GetVariableIndex(name string) (int, bool) {
 	index, exists := cc.variableMap[name]
 	return index, exists
 }
 
+// CompileBooleanExpression compiles a boolean expression to bytecode
 func (cc *ConditionCompiler) CompileBooleanExpression(expr ast.Expression, shortCircuit bool) error {
 	if !shortCircuit {
 		return cc.compileExpression(expr)
@@ -732,9 +735,9 @@ func (cc *ConditionCompiler) CompileBooleanExpression(expr ast.Expression, short
 	if binOp, ok := expr.(*ast.BinaryOp); ok {
 		switch binOp.Op {
 		case token.AND:
-			return cc.compileShortCircuitBinary(binOp, OP_JFALSE, OP_AND)
+			return cc.compileShortCircuitBinary(binOp, OP_JFALSE, OpAnd)
 		case token.OR:
-			return cc.compileShortCircuitBinary(binOp, OP_JTRUE, OP_OR)
+			return cc.compileShortCircuitBinary(binOp, OP_JTRUE, OpOr)
 		}
 	}
 
@@ -758,18 +761,22 @@ func (cc *ConditionCompiler) compileShortCircuitBinary(binOp *ast.BinaryOp, jump
 	return nil
 }
 
+// GetVariableMap returns the compiler's variable map
 func (cc *ConditionCompiler) GetVariableMap() map[string]int {
 	return cc.variableMap
 }
 
+// GetExternalVariables returns the compiler's external variables map
 func (cc *ConditionCompiler) GetExternalVariables() map[string]int {
 	return cc.externalVariables
 }
 
+// SetStringOffsets sets the string offsets for the compiler
 func (cc *ConditionCompiler) SetStringOffsets(offsets map[string]int) {
 	cc.stringOffsets = offsets
 }
 
+// GetStats returns compilation statistics
 func (cc *ConditionCompiler) GetStats() map[string]any {
 	return map[string]any{
 		"variables":     len(cc.variableMap),
@@ -777,6 +784,7 @@ func (cc *ConditionCompiler) GetStats() map[string]any {
 	}
 }
 
+// ValidateExpression validates an expression
 func (cc *ConditionCompiler) ValidateExpression(expr ast.Expression) error {
 	savedEmitter := cc.emitter
 	cc.emitter = NewEmitter()
@@ -784,10 +792,12 @@ func (cc *ConditionCompiler) ValidateExpression(expr ast.Expression) error {
 	return cc.compileExpression(expr)
 }
 
+// OptimizeExpression optimizes an expression
 func (cc *ConditionCompiler) OptimizeExpression(expr ast.Expression) ast.Expression {
 	return expr
 }
 
+// EstimateComplexity estimates the complexity of an expression
 func (cc *ConditionCompiler) EstimateComplexity(expr ast.Expression) int {
 	switch e := expr.(type) {
 	case *ast.Literal:
@@ -803,28 +813,31 @@ func (cc *ConditionCompiler) EstimateComplexity(expr ast.Expression) int {
 	}
 }
 
+// JumpPosition represents a position for a jump operation
 type JumpPosition struct {
 	Line   int
 	Column int
 }
 
+// ConditionalJumpConfig represents configuration for conditional jumps
 type ConditionalJumpConfig struct {
 	Opcode      Opcode
 	TargetLabel string
 	Position    JumpPosition
 }
 
+// EmitJump emits a jump operation
 func (cc *ConditionCompiler) EmitJump(config ConditionalJumpConfig) error {
 	cc.emitJumpWithLabel(config.Opcode, config.TargetLabel, config.Position.Line, config.Position.Column)
 	return nil
 }
 
 func (cc *ConditionCompiler) compileShortCircuitAnd(andOp *ast.BinaryOp) error {
-	return cc.compileShortCircuitBinary(andOp, OP_JFALSE, OP_AND)
+	return cc.compileShortCircuitBinary(andOp, OP_JFALSE, OpAnd)
 }
 
 func (cc *ConditionCompiler) compileShortCircuitOr(orOp *ast.BinaryOp) error {
-	return cc.compileShortCircuitBinary(orOp, OP_JTRUE, OP_OR)
+	return cc.compileShortCircuitBinary(orOp, OP_JTRUE, OpOr)
 }
 
 func (cc *ConditionCompiler) compileOfExpression(ofExpr *ast.OfExpression) error {
@@ -836,7 +849,7 @@ func (cc *ConditionCompiler) compileOfExpression(ofExpr *ast.OfExpression) error
 		return fmt.Errorf("compiling strings expression in of-expression: %w", err)
 	}
 
-	cc.emitter.EmitOpcode(OP_OF, ofExpr.Pos.Line, ofExpr.Pos.Column)
+	cc.emitter.EmitOpcode(OpOf, ofExpr.Pos.Line, ofExpr.Pos.Column)
 	return nil
 }
 
@@ -847,7 +860,7 @@ func (cc *ConditionCompiler) compileCountExpression(countExpr ast.Expression) er
 			cc.emitter.EmitPush(1, ident.Pos.Line, ident.Pos.Column)
 			return nil
 		case QuantifierAll:
-			cc.emitter.EmitOpcode(OP_PUSH_M, ident.Pos.Line, ident.Pos.Column)
+			cc.emitter.EmitOpcode(OpPush_M, ident.Pos.Line, ident.Pos.Column)
 			return nil
 		case QuantifierNone:
 			cc.emitter.EmitPush(0, ident.Pos.Line, ident.Pos.Column)
@@ -905,7 +918,7 @@ func (cc *ConditionCompiler) compileRuleReference(ruleName string, line, column 
 		return fmt.Errorf("undefined rule reference: %s", ruleName)
 	}
 
-	cc.emitter.EmitOpcodeWithOperand(OP_PUSH_RULE_REF,
+	cc.emitter.EmitOpcodeWithOperand(OpPush_RULE_REF,
 		Operand{Type: OperandImmediate64, Value: uint64(int64(ruleIndex))}, // #nosec G115
 		line, column)
 	return nil

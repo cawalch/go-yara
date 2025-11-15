@@ -145,7 +145,7 @@ func (sv *StringValidator) validateQuantifierLeft(left ast.Expression, pos token
 		_ = l.Name
 		return true
 	case *ast.Literal:
-		if l.Type != token.INTEGER_LIT {
+		if l.Type != token.IntegerLit {
 			sv.addError(&Error{
 				Message:  "invalid quantifier type",
 				Position: pos,

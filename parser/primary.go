@@ -19,13 +19,15 @@ func NewLiteralStrategy() *LiteralStrategy {
 	}
 }
 
-func (ls *LiteralStrategy) CanHandle(currentToken, peekToken token.TokenType) bool {
+// CanHandle checks if the strategy can handle the given literal token
+func (ls *LiteralStrategy) CanHandle(currentToken, _ token.TokenType) bool {
 	return ls.classifier.IsLiteral(currentToken)
 }
 
+// Parse parses a literal token into an AST node
 func (ls *LiteralStrategy) Parse(parser *ExpressionParser, context ParseContext) ParseResult {
 	switch context.CurrentToken.Type {
-	case token.INTEGER_LIT, token.HEX_INTEGER_LIT, token.OCTAL_INTEGER_LIT:
+	case token.IntegerLit, token.HexIntegerLit, token.OctalIntegerLit:
 		value := parser.current.Literal
 		parser.nextToken()
 		return NewParseResult(&ast.Literal{
@@ -34,7 +36,7 @@ func (ls *LiteralStrategy) Parse(parser *ExpressionParser, context ParseContext)
 			Pos:   context.Position,
 		}, 1)
 
-	case token.FLOAT_LIT:
+	case token.FloatLit:
 		value := parser.current.Literal
 		parser.nextToken()
 		return NewParseResult(&ast.Literal{
@@ -43,7 +45,7 @@ func (ls *LiteralStrategy) Parse(parser *ExpressionParser, context ParseContext)
 			Pos:   context.Position,
 		}, 1)
 
-	case token.STRING_LIT:
+	case token.StringLit:
 		value := parser.current.Literal
 		parser.nextToken()
 		return NewParseResult(&ast.Literal{
@@ -61,7 +63,7 @@ func (ls *LiteralStrategy) Parse(parser *ExpressionParser, context ParseContext)
 			Pos:   context.Position,
 		}, 1)
 
-	case token.REGEX_LIT:
+	case token.RegexLit:
 		value := parser.current.Literal
 		parser.nextToken()
 		return NewParseResult(&ast.Literal{
@@ -70,7 +72,7 @@ func (ls *LiteralStrategy) Parse(parser *ExpressionParser, context ParseContext)
 			Pos:   context.Position,
 		}, 1)
 
-	case token.SIZE_LIT:
+	case token.SizeLit:
 		value := parser.current.Literal
 		parser.nextToken()
 		return NewParseResult(&ast.Literal{
@@ -84,7 +86,10 @@ func (ls *LiteralStrategy) Parse(parser *ExpressionParser, context ParseContext)
 	}
 }
 
-func (ls *LiteralStrategy) Name() string  { return "LiteralStrategy" }
+// Name returns the name of the strategy
+func (ls *LiteralStrategy) Name() string { return "LiteralStrategy" }
+
+// Priority returns the priority of the strategy
 func (ls *LiteralStrategy) Priority() int { return 1 }
 
 // IdentifierStrategy handles identifiers (variables, strings, functions, etc.)
@@ -99,10 +104,12 @@ func NewIdentifierStrategy() *IdentifierStrategy {
 	}
 }
 
-func (is *IdentifierStrategy) CanHandle(currentToken, peekToken token.TokenType) bool {
+// CanHandle checks if the strategy can handle the given identifier token
+func (is *IdentifierStrategy) CanHandle(currentToken, _ token.TokenType) bool {
 	return is.classifier.IsIdentifier(currentToken)
 }
 
+// Parse parses an identifier token into an AST node
 func (is *IdentifierStrategy) Parse(parser *ExpressionParser, context ParseContext) ParseResult {
 	name := parser.current.Literal
 	parser.nextToken()
@@ -153,7 +160,10 @@ func (is *IdentifierStrategy) parseMemberAccess(parser *ExpressionParser, contex
 	return NewParseResult(left, 1)
 }
 
-func (is *IdentifierStrategy) Name() string  { return "IdentifierStrategy" }
+// Name returns the name of the strategy
+func (is *IdentifierStrategy) Name() string { return "IdentifierStrategy" }
+
+// Priority returns the priority of the strategy
 func (is *IdentifierStrategy) Priority() int { return 2 }
 
 // ParenthesizedExpressionStrategy handles expressions in parentheses
@@ -164,11 +174,13 @@ func NewParenthesizedExpressionStrategy() *ParenthesizedExpressionStrategy {
 	return &ParenthesizedExpressionStrategy{}
 }
 
-func (pes *ParenthesizedExpressionStrategy) CanHandle(currentToken, peekToken token.TokenType) bool {
+// CanHandle checks if the strategy can handle the given parenthesized expression token
+func (pes *ParenthesizedExpressionStrategy) CanHandle(currentToken, _ token.TokenType) bool {
 	return currentToken == token.LPAREN
 }
 
-func (pes *ParenthesizedExpressionStrategy) Parse(parser *ExpressionParser, context ParseContext) ParseResult {
+// Parse parses a parenthesized expression token into an AST node
+func (pes *ParenthesizedExpressionStrategy) Parse(parser *ExpressionParser, _ ParseContext) ParseResult {
 	parser.nextToken() // consume '('
 
 	// Parse the expression inside parentheses
@@ -186,7 +198,10 @@ func (pes *ParenthesizedExpressionStrategy) Parse(parser *ExpressionParser, cont
 	return NewParseResult(expr, 2) // consumed '(' and ')'
 }
 
-func (pes *ParenthesizedExpressionStrategy) Name() string  { return "ParenthesizedExpressionStrategy" }
+// Name returns the name of the strategy
+func (pes *ParenthesizedExpressionStrategy) Name() string { return "ParenthesizedExpressionStrategy" }
+
+// Priority returns the priority of the strategy
 func (pes *ParenthesizedExpressionStrategy) Priority() int { return 0 }
 
 // UnaryOperatorStrategy handles unary operators (not, -, ~, etc.)
@@ -201,10 +216,12 @@ func NewUnaryOperatorStrategy() *UnaryOperatorStrategy {
 	}
 }
 
-func (uos *UnaryOperatorStrategy) CanHandle(currentToken, peekToken token.TokenType) bool {
+// CanHandle checks if the strategy can handle the given unary operator token
+func (uos *UnaryOperatorStrategy) CanHandle(currentToken, _ token.TokenType) bool {
 	return uos.classifier.IsUnaryOperator(currentToken)
 }
 
+// Parse parses a unary operator into an AST expression
 func (uos *UnaryOperatorStrategy) Parse(parser *ExpressionParser, context ParseContext) ParseResult {
 	operator := parser.current
 	operatorType := operator.Type
@@ -223,7 +240,10 @@ func (uos *UnaryOperatorStrategy) Parse(parser *ExpressionParser, context ParseC
 	}, 1)
 }
 
-func (uos *UnaryOperatorStrategy) Name() string  { return "UnaryOperatorStrategy" }
+// Name returns the name of the strategy
+func (uos *UnaryOperatorStrategy) Name() string { return "UnaryOperatorStrategy" }
+
+// Priority returns the priority of the strategy
 func (uos *UnaryOperatorStrategy) Priority() int { return 3 }
 
 // DataTypeFunctionStrategy handles data type conversion functions (uint8, int16, etc.)
@@ -234,7 +254,8 @@ func NewDataTypeFunctionStrategy() *DataTypeFunctionStrategy {
 	return &DataTypeFunctionStrategy{}
 }
 
-func (dtfs *DataTypeFunctionStrategy) CanHandle(currentToken, peekToken token.TokenType) bool {
+// CanHandle checks if the strategy can handle the given data type function token
+func (dtfs *DataTypeFunctionStrategy) CanHandle(currentToken, _ token.TokenType) bool {
 	// Check if current token is a data type function name
 	switch currentToken {
 	case token.UINT8, token.UINT16, token.UINT32, token.INT8, token.INT16, token.INT32,
@@ -249,6 +270,7 @@ func (dtfs *DataTypeFunctionStrategy) CanHandle(currentToken, peekToken token.To
 	}
 }
 
+// Parse parses a data type function call into an AST node
 func (dtfs *DataTypeFunctionStrategy) Parse(parser *ExpressionParser, context ParseContext) ParseResult {
 	// Extract function name
 	functionName := ""
@@ -305,7 +327,10 @@ func (dtfs *DataTypeFunctionStrategy) Parse(parser *ExpressionParser, context Pa
 	}, 2) // consumed function name and parentheses
 }
 
-func (dtfs *DataTypeFunctionStrategy) Name() string  { return "DataTypeFunctionStrategy" }
+// Name returns the name of the strategy
+func (dtfs *DataTypeFunctionStrategy) Name() string { return "DataTypeFunctionStrategy" }
+
+// Priority returns the priority of the strategy
 func (dtfs *DataTypeFunctionStrategy) Priority() int { return 4 }
 
 // YaraBuiltInStrategy handles YARA built-in functions and special literals
@@ -316,12 +341,13 @@ func NewYaraBuiltInStrategy() *YaraBuiltInStrategy {
 	return &YaraBuiltInStrategy{}
 }
 
-func (ybs *YaraBuiltInStrategy) CanHandle(currentToken, peekToken token.TokenType) bool {
+// CanHandle checks if the strategy can handle the given YARA built-in token
+func (ybs *YaraBuiltInStrategy) CanHandle(currentToken, _ token.TokenType) bool {
 	// Handle YARA-specific built-ins and special literals
 	switch currentToken {
-	case token.ENTRYPOINT, token.DEFINED, token.SIZE_LIT, token.FILESIZE:
+	case token.ENTRYPOINT, token.DEFINED, token.SizeLit, token.FILESIZE:
 		return true
-	case token.STRING_IDENTIFIER:
+	case token.StringIdentifier:
 		// Handle string references like $a
 		return true
 	default:
@@ -329,6 +355,7 @@ func (ybs *YaraBuiltInStrategy) CanHandle(currentToken, peekToken token.TokenTyp
 	}
 }
 
+// Parse parses a YARA built-in function or literal into an AST node
 func (ybs *YaraBuiltInStrategy) Parse(parser *ExpressionParser, context ParseContext) ParseResult {
 	switch context.CurrentToken.Type {
 	case token.ENTRYPOINT:
@@ -349,7 +376,7 @@ func (ybs *YaraBuiltInStrategy) Parse(parser *ExpressionParser, context ParseCon
 			Pos:   context.Position,
 		}, 1)
 
-	case token.SIZE_LIT:
+	case token.SizeLit:
 		value := parser.current.Literal
 		parser.nextToken()
 		return NewParseResult(&ast.Literal{
@@ -367,7 +394,7 @@ func (ybs *YaraBuiltInStrategy) Parse(parser *ExpressionParser, context ParseCon
 			Pos:   context.Position,
 		}, 1)
 
-	case token.STRING_IDENTIFIER:
+	case token.StringIdentifier:
 		value := parser.current.Literal
 		parser.nextToken()
 		return NewParseResult(&ast.Identifier{
@@ -380,7 +407,10 @@ func (ybs *YaraBuiltInStrategy) Parse(parser *ExpressionParser, context ParseCon
 	}
 }
 
-func (ybs *YaraBuiltInStrategy) Name() string  { return "YaraBuiltInStrategy" }
+// Name returns the name of the strategy
+func (ybs *YaraBuiltInStrategy) Name() string { return "YaraBuiltInStrategy" }
+
+// Priority returns the priority of the strategy
 func (ybs *YaraBuiltInStrategy) Priority() int { return 6 }
 
 // ArrayIndexStrategy handles array indexing expressions (e.g., identifier[index])
@@ -391,17 +421,22 @@ func NewArrayIndexStrategy() *ArrayIndexStrategy {
 	return &ArrayIndexStrategy{}
 }
 
-func (ais *ArrayIndexStrategy) CanHandle(currentToken, peekToken token.TokenType) bool {
+// CanHandle checks if the strategy can handle the given array indexing tokens
+func (ais *ArrayIndexStrategy) CanHandle(_, _ token.TokenType) bool {
 	// This strategy handles cases after we've parsed an identifier
 	// and encounter a '[' - so it's handled at a different level
 	return false // This is handled in ExpressionParser.parsePostfix()
 }
 
-func (ais *ArrayIndexStrategy) Parse(parser *ExpressionParser, context ParseContext) ParseResult {
+// Parse parses an array indexing expression (not directly used)
+func (ais *ArrayIndexStrategy) Parse(_ *ExpressionParser, _ ParseContext) ParseResult {
 	return NewParseError(fmt.Errorf("ArrayIndexStrategy should be handled via parsePostfix"))
 }
 
-func (ais *ArrayIndexStrategy) Name() string  { return "ArrayIndexStrategy" }
+// Name returns the name of the strategy
+func (ais *ArrayIndexStrategy) Name() string { return "ArrayIndexStrategy" }
+
+// Priority returns the priority of the strategy
 func (ais *ArrayIndexStrategy) Priority() int { return 5 }
 
 // QuantifierTokenStrategy handles quantifier keywords (any, all, none, for)
@@ -416,12 +451,14 @@ func NewQuantifierTokenStrategy() *QuantifierTokenStrategy {
 	}
 }
 
-func (qs *QuantifierTokenStrategy) CanHandle(currentToken, peekToken token.TokenType) bool {
+// CanHandle checks if the strategy can handle the given quantifier token
+func (qs *QuantifierTokenStrategy) CanHandle(currentToken, _ token.TokenType) bool {
 	return qs.classifier.IsQuantifierToken(currentToken) ||
 		currentToken == token.FOR ||
 		currentToken == token.THEM
 }
 
+// Parse parses a quantifier token into an AST node
 func (qs *QuantifierTokenStrategy) Parse(parser *ExpressionParser, context ParseContext) ParseResult {
 	switch context.CurrentToken.Type {
 	case token.ANY, token.ALL, token.NONE:
@@ -453,7 +490,10 @@ func (qs *QuantifierTokenStrategy) Parse(parser *ExpressionParser, context Parse
 	}
 }
 
-func (qs *QuantifierTokenStrategy) Name() string  { return "QuantifierTokenStrategy" }
+// Name returns the name of the strategy
+func (qs *QuantifierTokenStrategy) Name() string { return "QuantifierTokenStrategy" }
+
+// Priority returns the priority of the strategy
 func (qs *QuantifierTokenStrategy) Priority() int { return 7 }
 
 // QuantifierExpressionStrategy handles full quantifier expressions like "2 of them", "any of ($test1, $test2)"
@@ -468,9 +508,10 @@ func NewQuantifierExpressionStrategy() *QuantifierExpressionStrategy {
 	}
 }
 
+// CanHandle checks if the strategy can handle the given quantifier expression token combination
 func (qes *QuantifierExpressionStrategy) CanHandle(currentToken, peekToken token.TokenType) bool {
 	// Handle numeric quantifiers: "2 of them" (current=INTEGER, peek=OF)
-	if (currentToken == token.INTEGER_LIT || currentToken == token.HEX_INTEGER_LIT || currentToken == token.OCTAL_INTEGER_LIT) && peekToken == token.OF {
+	if (currentToken == token.IntegerLit || currentToken == token.HexIntegerLit || currentToken == token.OctalIntegerLit) && peekToken == token.OF {
 		return true
 	}
 	// Handle keyword quantifiers: "any of them", "all of them" (current=ANY/ALL/NONE, peek=OF)
@@ -484,6 +525,7 @@ func (qes *QuantifierExpressionStrategy) CanHandle(currentToken, peekToken token
 	return false
 }
 
+// Parse parses a quantifier expression into an AST node
 func (qes *QuantifierExpressionStrategy) Parse(parser *ExpressionParser, context ParseContext) ParseResult {
 	// Use the quantifier parser if available
 	if parser.quantifierParser != nil {
@@ -512,7 +554,10 @@ func (qes *QuantifierExpressionStrategy) Parse(parser *ExpressionParser, context
 	return NewParseResult(ident, 1)
 }
 
-func (qes *QuantifierExpressionStrategy) Name() string  { return "QuantifierExpressionStrategy" }
+// Name returns the name of the strategy
+func (qes *QuantifierExpressionStrategy) Name() string { return "QuantifierExpressionStrategy" }
+
+// Priority returns the priority of the strategy
 func (qes *QuantifierExpressionStrategy) Priority() int { return 10 } // Very high priority
 
 // RegisterDefaultPrimaryStrategies registers the default primary expression strategies

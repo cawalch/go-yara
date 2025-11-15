@@ -439,19 +439,19 @@ func testTypeInferenceFromLiterals(t *testing.T) {
 		},
 		{
 			name:         "integer_literal",
-			tokenType:    token.INTEGER_LIT,
+			tokenType:    token.IntegerLit,
 			value:        42,
 			expectedType: TypeInteger,
 		},
 		{
 			name:         "hex_integer_literal",
-			tokenType:    token.HEX_INTEGER_LIT,
+			tokenType:    token.HexIntegerLit,
 			value:        0xFF,
 			expectedType: TypeInteger,
 		},
 		{
 			name:         "string_literal",
-			tokenType:    token.STRING_LIT,
+			tokenType:    token.StringLit,
 			value:        "test",
 			expectedType: TypeString,
 		},
@@ -897,7 +897,7 @@ func TestValidatorConditionValidation(t *testing.T) {
 
 	// Test invalid condition (non-boolean)
 	invalidCondition := &ast.Literal{
-		Type:  token.STRING_LIT,
+		Type:  token.StringLit,
 		Value: "invalid",
 	}
 
@@ -938,7 +938,7 @@ func TestValidatorValidateExpression(t *testing.T) {
 		{
 			name: "literal_integer",
 			expr: &ast.Literal{
-				Type:  token.INTEGER_LIT,
+				Type:  token.IntegerLit,
 				Value: int64(42),
 			},
 			expectedType: TypeInteger,

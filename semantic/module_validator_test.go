@@ -154,7 +154,7 @@ func TestValidateDataTypeFunctionCall(t *testing.T) {
 	pos := token.Position{Line: 1, Column: 1}
 
 	// Test with valid function and argument
-	arg := &ast.Literal{Pos: pos, Type: token.INTEGER_LIT, Value: int64(10)}
+	arg := &ast.Literal{Pos: pos, Type: token.IntegerLit, Value: int64(10)}
 	typeInfo, errs := validator.validateDataTypeFunctionCall("uint32", []ast.Expression{arg}, pos)
 	if len(errs) != 0 {
 		t.Errorf("expected no errors for uint32 with int arg, got %d", len(errs))
@@ -216,7 +216,7 @@ func TestValidateFunctionCall(t *testing.T) {
 	}
 
 	// Test data type function
-	arg := &ast.Literal{Pos: pos, Type: token.INTEGER_LIT, Value: int64(10)}
+	arg := &ast.Literal{Pos: pos, Type: token.IntegerLit, Value: int64(10)}
 	typeInfo, errs = validator.ValidateFunctionCall("uint32", []ast.Expression{arg}, pos)
 	if len(errs) != 0 {
 		t.Errorf("expected no errors for uint32, got %d", len(errs))

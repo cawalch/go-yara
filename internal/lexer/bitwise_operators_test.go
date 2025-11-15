@@ -15,12 +15,12 @@ func TestBitwiseOperators_Basic(t *testing.T) {
 		input    string
 		expected token.TokenType
 	}{
-		{"bitwise_and", "&", token.BITWISE_AND},
-		{"bitwise_or", "|", token.BITWISE_OR},
-		{"bitwise_xor", "^", token.BITWISE_XOR},
-		{"bitwise_not", "~", token.BITWISE_NOT},
-		{"left_shift", "<<", token.LEFT_SHIFT},
-		{"right_shift", ">>", token.RIGHT_SHIFT},
+		{"bitwise_and", "&", token.BitwiseAnd},
+		{"bitwise_or", "|", token.BitwiseOr},
+		{"bitwise_xor", "^", token.BitwiseXor},
+		{"bitwise_not", "~", token.BitwiseNot},
+		{"left_shift", "<<", token.LeftShift},
+		{"right_shift", ">>", token.RightShift},
 	}
 
 	for _, tt := range tests {
@@ -43,8 +43,8 @@ func TestBitwiseOperators_InExpressions(t *testing.T) {
 			input: "value & 0xFF",
 			expected: []token.Token{
 				{Type: token.IDENTIFIER, Literal: "value"},
-				{Type: token.BITWISE_AND, Literal: "&"},
-				{Type: token.HEX_INTEGER_LIT, Literal: "0xFF"},
+				{Type: token.BitwiseAnd, Literal: "&"},
+				{Type: token.HexIntegerLit, Literal: "0xFF"},
 				{Type: token.EOF, Literal: ""},
 			},
 		},
@@ -53,8 +53,8 @@ func TestBitwiseOperators_InExpressions(t *testing.T) {
 			input: "flags | 0x01",
 			expected: []token.Token{
 				{Type: token.IDENTIFIER, Literal: "flags"},
-				{Type: token.BITWISE_OR, Literal: "|"},
-				{Type: token.HEX_INTEGER_LIT, Literal: "0x01"},
+				{Type: token.BitwiseOr, Literal: "|"},
+				{Type: token.HexIntegerLit, Literal: "0x01"},
 				{Type: token.EOF, Literal: ""},
 			},
 		},
@@ -63,8 +63,8 @@ func TestBitwiseOperators_InExpressions(t *testing.T) {
 			input: "data ^ 0xAA",
 			expected: []token.Token{
 				{Type: token.IDENTIFIER, Literal: "data"},
-				{Type: token.BITWISE_XOR, Literal: "^"},
-				{Type: token.HEX_INTEGER_LIT, Literal: "0xAA"},
+				{Type: token.BitwiseXor, Literal: "^"},
+				{Type: token.HexIntegerLit, Literal: "0xAA"},
 				{Type: token.EOF, Literal: ""},
 			},
 		},
@@ -72,7 +72,7 @@ func TestBitwiseOperators_InExpressions(t *testing.T) {
 			name:  "bitwise not expression",
 			input: "~value",
 			expected: []token.Token{
-				{Type: token.BITWISE_NOT, Literal: "~"},
+				{Type: token.BitwiseNot, Literal: "~"},
 				{Type: token.IDENTIFIER, Literal: "value"},
 				{Type: token.EOF, Literal: ""},
 			},
@@ -82,8 +82,8 @@ func TestBitwiseOperators_InExpressions(t *testing.T) {
 			input: "size << 2",
 			expected: []token.Token{
 				{Type: token.IDENTIFIER, Literal: "size"},
-				{Type: token.LEFT_SHIFT, Literal: "<<"},
-				{Type: token.INTEGER_LIT, Literal: "2"},
+				{Type: token.LeftShift, Literal: "<<"},
+				{Type: token.IntegerLit, Literal: "2"},
 				{Type: token.EOF, Literal: ""},
 			},
 		},
@@ -92,8 +92,8 @@ func TestBitwiseOperators_InExpressions(t *testing.T) {
 			input: "filesize >> 10",
 			expected: []token.Token{
 				{Type: token.FILESIZE, Literal: "filesize"},
-				{Type: token.RIGHT_SHIFT, Literal: ">>"},
-				{Type: token.INTEGER_LIT, Literal: "10"},
+				{Type: token.RightShift, Literal: ">>"},
+				{Type: token.IntegerLit, Literal: "10"},
 				{Type: token.EOF, Literal: ""},
 			},
 		},
@@ -120,11 +120,11 @@ func TestBitwiseOperators_ComplexExpressions(t *testing.T) {
 			expected: []token.Token{
 				{Type: token.LPAREN, Literal: "("},
 				{Type: token.IDENTIFIER, Literal: "value"},
-				{Type: token.BITWISE_AND, Literal: "&"},
-				{Type: token.HEX_INTEGER_LIT, Literal: "0xFF00"},
+				{Type: token.BitwiseAnd, Literal: "&"},
+				{Type: token.HexIntegerLit, Literal: "0xFF00"},
 				{Type: token.RPAREN, Literal: ")"},
-				{Type: token.RIGHT_SHIFT, Literal: ">>"},
-				{Type: token.INTEGER_LIT, Literal: "8"},
+				{Type: token.RightShift, Literal: ">>"},
+				{Type: token.IntegerLit, Literal: "8"},
 				{Type: token.EOF, Literal: ""},
 			},
 		},
@@ -132,10 +132,10 @@ func TestBitwiseOperators_ComplexExpressions(t *testing.T) {
 			name:  "bitwise with arithmetic",
 			input: "~value + 1",
 			expected: []token.Token{
-				{Type: token.BITWISE_NOT, Literal: "~"},
+				{Type: token.BitwiseNot, Literal: "~"},
 				{Type: token.IDENTIFIER, Literal: "value"},
 				{Type: token.PLUS, Literal: "+"},
-				{Type: token.INTEGER_LIT, Literal: "1"},
+				{Type: token.IntegerLit, Literal: "1"},
 				{Type: token.EOF, Literal: ""},
 			},
 		},
@@ -145,11 +145,11 @@ func TestBitwiseOperators_ComplexExpressions(t *testing.T) {
 			expected: []token.Token{
 				{Type: token.LPAREN, Literal: "("},
 				{Type: token.IDENTIFIER, Literal: "size"},
-				{Type: token.LEFT_SHIFT, Literal: "<<"},
-				{Type: token.INTEGER_LIT, Literal: "1"},
+				{Type: token.LeftShift, Literal: "<<"},
+				{Type: token.IntegerLit, Literal: "1"},
 				{Type: token.RPAREN, Literal: ")"},
 				{Type: token.GT, Literal: ">"},
-				{Type: token.INTEGER_LIT, Literal: "1024"},
+				{Type: token.IntegerLit, Literal: "1024"},
 				{Type: token.EOF, Literal: ""},
 			},
 		},
@@ -178,7 +178,7 @@ func TestBitwiseOperators_ConflictResolution(t *testing.T) {
 				{Type: token.IDENTIFIER, Literal: "a"},
 				{Type: token.LT, Literal: "<"},
 				{Type: token.IDENTIFIER, Literal: "b"},
-				{Type: token.LEFT_SHIFT, Literal: "<<"},
+				{Type: token.LeftShift, Literal: "<<"},
 				{Type: token.IDENTIFIER, Literal: "c"},
 				{Type: token.EOF, Literal: ""},
 			},
@@ -190,7 +190,7 @@ func TestBitwiseOperators_ConflictResolution(t *testing.T) {
 				{Type: token.IDENTIFIER, Literal: "a"},
 				{Type: token.GT, Literal: ">"},
 				{Type: token.IDENTIFIER, Literal: "b"},
-				{Type: token.RIGHT_SHIFT, Literal: ">>"},
+				{Type: token.RightShift, Literal: ">>"},
 				{Type: token.IDENTIFIER, Literal: "c"},
 				{Type: token.EOF, Literal: ""},
 			},
@@ -202,7 +202,7 @@ func TestBitwiseOperators_ConflictResolution(t *testing.T) {
 				{Type: token.IDENTIFIER, Literal: "a"},
 				{Type: token.LE, Literal: "<="},
 				{Type: token.IDENTIFIER, Literal: "b"},
-				{Type: token.LEFT_SHIFT, Literal: "<<"},
+				{Type: token.LeftShift, Literal: "<<"},
 				{Type: token.IDENTIFIER, Literal: "c"},
 				{Type: token.EOF, Literal: ""},
 			},
@@ -214,7 +214,7 @@ func TestBitwiseOperators_ConflictResolution(t *testing.T) {
 				{Type: token.IDENTIFIER, Literal: "a"},
 				{Type: token.GE, Literal: ">="},
 				{Type: token.IDENTIFIER, Literal: "b"},
-				{Type: token.RIGHT_SHIFT, Literal: ">>"},
+				{Type: token.RightShift, Literal: ">>"},
 				{Type: token.IDENTIFIER, Literal: "c"},
 				{Type: token.EOF, Literal: ""},
 			},
@@ -319,12 +319,12 @@ func assertBitwiseOperators(t *testing.T, helper *lexer.TestHelper, input string
 func extractBitwiseOperators(tokens []token.Token) []string {
 	operators := make([]string, 0, 8) // Pre-allocate reasonable capacity
 	bitwiseTypes := map[token.TokenType]bool{
-		token.BITWISE_AND: true,
-		token.BITWISE_OR:  true,
-		token.BITWISE_XOR: true,
-		token.BITWISE_NOT: true,
-		token.LEFT_SHIFT:  true,
-		token.RIGHT_SHIFT: true,
+		token.BitwiseAnd: true,
+		token.BitwiseOr:  true,
+		token.BitwiseXor: true,
+		token.BitwiseNot: true,
+		token.LeftShift:  true,
+		token.RightShift: true,
 	}
 
 	for _, tok := range tokens {

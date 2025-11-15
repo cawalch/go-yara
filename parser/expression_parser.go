@@ -205,16 +205,25 @@ func (p *ExpressionParser) parsePrimary() (ast.Expression, error) {
 
 // parsePostfix handles postfix operations (array indexing, function calls)
 func (p *ExpressionParser) parsePostfix(base ast.Expression) (ast.Expression, error) {
+	var err error
 	for {
 		if p.currentTokenIs(token.LBRACKET) {
 			// Array indexing
-			return p.parseArrayIndex(base)
-		} else if p.currentTokenIs(token.LPAREN) {
-			// Function call
-			return p.parseFunctionCall(base)
-		} else {
-			break
+			base, err = p.parseArrayIndex(base)
+			if err != nil {
+				return nil, err
+			}
+			continue // Continue for more postfix operations
 		}
+		if p.currentTokenIs(token.LPAREN) {
+			// Function call
+			base, err = p.parseFunctionCall(base)
+			if err != nil {
+				return nil, err
+			}
+			continue // Continue for more postfix operations
+		}
+		break
 	}
 	return base, nil
 }
@@ -424,7 +433,7 @@ func (p *ExpressionParser) EmitOpcodeWithOperand(opcode interface{}, operand int
 }
 
 // ConvertToOpcode converts an AST node to compiler opcodes (delegates to original)
-func (p *ExpressionParser) ConvertToOpcode(expr ast.Expression) error {
+func (p *ExpressionParser) ConvertToOpcode(_ ast.Expression) error {
 	// TODO: Implement opcode conversion using strategy pattern
 	// This would need to be connected to the actual compiler
 	return nil
@@ -479,8 +488,8 @@ func (p *ExpressionParser) parseCompatibilityExpression() (ast.Expression, error
 
 	// Handle basic primary expressions based on token type
 	switch p.current.Type {
-	case token.INTEGER_LIT, token.HEX_INTEGER_LIT, token.OCTAL_INTEGER_LIT,
-		token.FLOAT_LIT, token.STRING_LIT, token.TRUE, token.FALSE:
+	case token.IntegerLit, token.HexIntegerLit, token.OctalIntegerLit,
+		token.FloatLit, token.StringLit, token.TRUE, token.FALSE:
 		// Handle literals
 		lit := &ast.Literal{
 			Type:  p.current.Type,
@@ -499,7 +508,7 @@ func (p *ExpressionParser) parseCompatibilityExpression() (ast.Expression, error
 		p.nextToken()
 		return ident, nil
 
-	case token.SIZE_LIT, token.ENTRYPOINT, token.DEFINED:
+	case token.SizeLit, token.ENTRYPOINT, token.DEFINED:
 		// Handle YARA built-in literals
 		lit := &ast.Literal{
 			Type:  p.current.Type,
@@ -509,7 +518,7 @@ func (p *ExpressionParser) parseCompatibilityExpression() (ast.Expression, error
 		p.nextToken()
 		return lit, nil
 
-	case token.STRING_IDENTIFIER:
+	case token.StringIdentifier:
 		// Handle string identifiers (e.g., $a, $foo)
 		ident := &ast.Identifier{
 			Name: p.current.Literal,

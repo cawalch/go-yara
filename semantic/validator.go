@@ -600,25 +600,31 @@ func (v *Validator) GetSymbolTable() *SymbolTable {
 // ============================================================================
 
 // RuleVisitor implementations
+
+// VisitProgram visits and validates a program node
 func (v *Validator) VisitProgram(program *ast.Program) any {
 	return v.ValidateProgram(program)
 }
 
+// VisitRule visits and validates a rule node
 func (v *Validator) VisitRule(rule *ast.Rule) any {
 	v.validateRule(rule)
 	return nil
 }
 
+// VisitMeta visits and validates a meta node
 func (v *Validator) VisitMeta(_ *ast.Meta) any {
 	// Meta validation is handled in validateMeta
 	return nil
 }
 
+// VisitString visits and validates a string node
 func (v *Validator) VisitString(_ *ast.String) any {
 	// String validation is handled in validateStrings
 	return nil
 }
 
+// VisitCondition visits and validates a condition node
 func (v *Validator) VisitCondition(condition *ast.Condition) any {
 	if condition.Expression != nil {
 		v.validateCondition(condition.Expression)
@@ -627,47 +633,58 @@ func (v *Validator) VisitCondition(condition *ast.Condition) any {
 }
 
 // ExpressionVisitor implementations
+
+// VisitBinaryOp visits and validates a binary operation node
 func (v *Validator) VisitBinaryOp(_ *ast.BinaryOp) any {
 	// Binary operation validation is handled in validateExpression
 	return nil
 }
 
+// VisitUnaryOp visits and validates a unary operation node
 func (v *Validator) VisitUnaryOp(_ *ast.UnaryOp) any {
 	// Unary operation validation is handled in validateExpression
 	return nil
 }
 
+// VisitIdentifier visits and validates an identifier node
 func (v *Validator) VisitIdentifier(_ *ast.Identifier) any {
 	// Identifier validation is handled in validateExpression
 	return nil
 }
 
+// VisitLiteral visits and validates a literal node
 func (v *Validator) VisitLiteral(_ *ast.Literal) any {
 	// Literal validation is handled in validateExpression
 	return nil
 }
 
+// VisitFunctionCall visits and validates a function call node
 func (v *Validator) VisitFunctionCall(_ *ast.FunctionCall) any {
 	// FunctionCall validation is handled in validateExpression
 	return nil
 }
 
 // ControlFlowVisitor implementations
+
+// VisitForLoop visits and validates a for loop node
 func (v *Validator) VisitForLoop(_ *ast.ForLoop) any {
 	// ForLoop validation is handled in validateExpression
 	return nil
 }
 
+// VisitOfExpression visits and validates an of expression node
 func (v *Validator) VisitOfExpression(_ *ast.OfExpression) any {
 	// OfExpression validation is handled in validateExpression
 	return nil
 }
 
+// VisitStringLength visits and validates a string length node
 func (v *Validator) VisitStringLength(_ *ast.StringLength) any {
 	// StringLength validation is handled in validateExpression
 	return nil
 }
 
+// VisitArrayIndex visits and validates an array index node
 func (v *Validator) VisitArrayIndex(_ *ast.ArrayIndex) any {
 	// ArrayIndex validation is handled in validateExpression
 	return nil

@@ -97,7 +97,7 @@ func TestFileValidatorFileSizeComparison(t *testing.T) {
 	}
 
 	otherExpr := &ast.Literal{
-		Type:  token.INTEGER_LIT,
+		Type:  token.IntegerLit,
 		Value: int64(1024),
 		Pos:   pos,
 	}
@@ -127,7 +127,7 @@ func TestFileValidatorEntrypointOffset(t *testing.T) {
 	}
 
 	offsetExpr := &ast.Literal{
-		Type:  token.INTEGER_LIT,
+		Type:  token.IntegerLit,
 		Value: int64(0),
 		Pos:   pos,
 	}
@@ -157,7 +157,7 @@ func TestFileValidatorErrors(t *testing.T) {
 // Helper function to create integer literal expression
 func createIntLiteralExpr(value int64) *ast.Literal {
 	return &ast.Literal{
-		Type:  token.INTEGER_LIT,
+		Type:  token.IntegerLit,
 		Value: value,
 		Pos:   token.Position{Line: 1, Column: 1},
 	}
@@ -326,13 +326,13 @@ func createTestBinaryOp() *ast.BinaryOp {
 	return &ast.BinaryOp{
 		Pos: pos,
 		Left: &ast.Literal{
-			Type:  token.INTEGER_LIT,
+			Type:  token.IntegerLit,
 			Value: int64(1),
 			Pos:   pos,
 		},
 		Op: token.PLUS,
 		Right: &ast.Literal{
-			Type:  token.INTEGER_LIT,
+			Type:  token.IntegerLit,
 			Value: int64(2),
 			Pos:   pos,
 		},
@@ -417,7 +417,7 @@ func TestValidatorVisitorMethods(t *testing.T) {
 		// Test VisitLiteral
 		literal := &ast.Literal{
 			Pos:   pos,
-			Type:  token.INTEGER_LIT,
+			Type:  token.IntegerLit,
 			Value: int64(42),
 		}
 		validator.VisitLiteral(literal)

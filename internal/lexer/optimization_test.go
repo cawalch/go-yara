@@ -15,8 +15,8 @@ func TestOptimizationFlags(t *testing.T) {
 	l := lexer.New(input)
 	tok := l.NextToken()
 
-	if tok.Type != token.STRING_LIT {
-		t.Errorf("Expected STRING_LIT, got %v", tok.Type)
+	if tok.Type != token.StringLit {
+		t.Errorf("Expected StringLit, got %v", tok.Type)
 	}
 
 	// The actual optimization behavior is tested via benchmarks
@@ -85,8 +85,9 @@ func BenchmarkOptimizationComparison(b *testing.B) {
 
 		for range b.N {
 			l := lexer.New(input)
-			for l.NextToken().Type != token.EOF {
+			for tok := l.NextToken(); tok.Type != token.EOF; tok = l.NextToken() {
 				// Token already consumed by NextToken()
+				_ = tok // Consume the token to avoid empty block
 			}
 		}
 	})
@@ -99,8 +100,9 @@ func BenchmarkOptimizationComparison(b *testing.B) {
 
 		for range b.N {
 			l := lexer.New(input)
-			for l.NextToken().Type != token.EOF {
+			for tok := l.NextToken(); tok.Type != token.EOF; tok = l.NextToken() {
 				// Token already consumed by NextToken()
+				_ = tok // Consume the token to avoid empty block
 			}
 		}
 	})

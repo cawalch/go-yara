@@ -280,8 +280,8 @@ type opcodeHandler func(Opcode) error
 
 // getOpcodeHandler returns the appropriate handler for the given opcode
 func (i *Interpreter) getOpcodeHandler(opcode Opcode) opcodeHandler {
-	// Error handling - OP_ERROR is used as padding in some test cases, treat as no-op
-	if opcode == OP_ERROR {
+	// Error handling - OpError is used as padding in some test cases, treat as no-op
+	if opcode == OpError {
 		return func(Opcode) error { return nil }
 	}
 
@@ -330,7 +330,7 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 // isStackOpcode checks if the opcode is a stack operation
 func (i *Interpreter) isStackOpcode(opcode Opcode) bool {
 	switch opcode {
-	case OP_PUSH_8, OP_PUSH_16, OP_PUSH_32, OP_PUSH_U, OP_PUSH_DBL, OP_PUSH_RULE_REF, OP_POP:
+	case OpPush_8, OpPush_16, OpPush_32, OpPush_U, OpPush_DBL, OpPush_RULE_REF, OpPop:
 		return true
 	default:
 		return false
@@ -340,28 +340,28 @@ func (i *Interpreter) isStackOpcode(opcode Opcode) bool {
 // executeStackOpcode handles stack operations
 func (i *Interpreter) executeStackOpcode(opcode Opcode) error {
 	switch opcode {
-	case OP_PUSH_8:
+	case OpPush_8:
 		return i.executePush8()
-	case OP_PUSH_16:
+	case OpPush_16:
 		return i.executePush16()
-	case OP_PUSH_32:
+	case OpPush_32:
 		return i.executePush32()
-	case OP_PUSH_U:
+	case OpPush_U:
 		return i.executePushU()
-	case OP_PUSH_DBL:
+	case OpPush_DBL:
 		return i.executePushDouble()
-	case OP_PUSH_RULE_REF:
+	case OpPush_RULE_REF:
 		return i.executePushRuleRef()
-	case OP_POP:
+	case OpPop:
 		return i.executePop()
 	default:
 		return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: opcode, Message: "invalid stack opcode"}
 	}
 }
 
-// executePush8 handles OP_PUSH_8 opcode
+// executePush8 handles OpPush_8 opcode
 func (i *Interpreter) executePush8() error {
-	if err := i.validateBytecodeBounds(OP_PUSH_8, 1); err != nil {
+	if err := i.validateBytecodeBounds(OpPush_8, 1); err != nil {
 		return err
 	}
 	val := int64(i.bytecode[i.ip])
@@ -369,9 +369,9 @@ func (i *Interpreter) executePush8() error {
 	return i.push(Value{Type: ValueTypeInt, IntVal: val})
 }
 
-// executePush16 handles OP_PUSH_16 opcode
+// executePush16 handles OpPush_16 opcode
 func (i *Interpreter) executePush16() error {
-	if err := i.validateBytecodeBounds(OP_PUSH_16, 2); err != nil {
+	if err := i.validateBytecodeBounds(OpPush_16, 2); err != nil {
 		return err
 	}
 	val := int64(i.bytecode[i.ip]) | int64(i.bytecode[i.ip+1])<<8
@@ -379,9 +379,9 @@ func (i *Interpreter) executePush16() error {
 	return i.push(Value{Type: ValueTypeInt, IntVal: val})
 }
 
-// executePush32 handles OP_PUSH_32 opcode
+// executePush32 handles OpPush_32 opcode
 func (i *Interpreter) executePush32() error {
-	if err := i.validateBytecodeBounds(OP_PUSH_32, 4); err != nil {
+	if err := i.validateBytecodeBounds(OpPush_32, 4); err != nil {
 		return err
 	}
 	val := int64(i.bytecode[i.ip]) | int64(i.bytecode[i.ip+1])<<8 |
@@ -390,7 +390,7 @@ func (i *Interpreter) executePush32() error {
 	return i.push(Value{Type: ValueTypeInt, IntVal: val})
 }
 
-// executePushU handles OP_PUSH_U opcode
+// executePushU handles OpPush_U opcode
 func (i *Interpreter) executePushU() error {
 	if i.ip+3 >= len(i.bytecode) {
 		return i.push(Value{Type: ValueTypeUndefined})
@@ -401,9 +401,9 @@ func (i *Interpreter) executePushU() error {
 	return i.push(Value{Type: ValueTypeInt, IntVal: val})
 }
 
-// executePushDouble handles OP_PUSH_DBL opcode
+// executePushDouble handles OpPush_DBL opcode
 func (i *Interpreter) executePushDouble() error {
-	if err := i.validateBytecodeBounds(OP_PUSH_DBL, 8); err != nil {
+	if err := i.validateBytecodeBounds(OpPush_DBL, 8); err != nil {
 		return err
 	}
 	bits := uint64(i.bytecode[i.ip]) | uint64(i.bytecode[i.ip+1])<<8 |
@@ -415,23 +415,23 @@ func (i *Interpreter) executePushDouble() error {
 	return i.push(Value{Type: ValueTypeDouble, DoubleVal: val})
 }
 
-// executePushRuleRef handles OP_PUSH_RULE_REF opcode
+// executePushRuleRef handles OpPush_RULE_REF opcode
 func (i *Interpreter) executePushRuleRef() error {
-	if err := i.validateBytecodeBounds(OP_PUSH_RULE_REF, 1); err != nil {
+	if err := i.validateBytecodeBounds(OpPush_RULE_REF, 1); err != nil {
 		return err
 	}
 	ruleIdx := int(i.bytecode[i.ip])
 	i.ip++
 	if ruleIdx >= len(i.compiledRules) {
-		return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: OP_PUSH_RULE_REF, Message: fmt.Sprintf("rule index %d out of range", ruleIdx)}
+		return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: OpPush_RULE_REF, Message: fmt.Sprintf("rule index %d out of range", ruleIdx)}
 	}
 	ruleName := i.compiledRules[ruleIdx].Name
 	return i.push(Value{Type: ValueTypeRuleRef, StringVal: ruleName})
 }
 
-// executePop handles OP_POP opcode
+// executePop handles OpPop opcode
 func (i *Interpreter) executePop() error {
-	if err := i.validateStackUnderflow(OP_POP); err != nil {
+	if err := i.validateStackUnderflow(OpPop); err != nil {
 		return err
 	}
 	i.stack = i.stack[:len(i.stack)-1]
@@ -441,7 +441,7 @@ func (i *Interpreter) executePop() error {
 // isBitwiseOpcode checks if the opcode is a bitwise operation
 func (i *Interpreter) isBitwiseOpcode(opcode Opcode) bool {
 	switch opcode {
-	case OP_BITWISE_AND, OP_BITWISE_OR, OP_BITWISE_XOR, OP_BITWISE_NOT, OP_SHL, OP_SHR:
+	case OpBitwiseAnd, OpBitwiseOr, OpBitwiseXor, OpBitwiseNot, OpShl, OpShr:
 		return true
 	default:
 		return false
@@ -451,41 +451,41 @@ func (i *Interpreter) isBitwiseOpcode(opcode Opcode) bool {
 // executeBitwiseOpcode handles bitwise operations
 func (i *Interpreter) executeBitwiseOpcode(opcode Opcode) error {
 	switch opcode {
-	case OP_BITWISE_AND:
+	case OpBitwiseAnd:
 		return i.executeBitwiseAnd()
-	case OP_BITWISE_OR:
+	case OpBitwiseOr:
 		return i.executeBitwiseOr()
-	case OP_BITWISE_XOR:
+	case OpBitwiseXor:
 		return i.executeBitwiseXor()
-	case OP_BITWISE_NOT:
+	case OpBitwiseNot:
 		return i.executeBitwiseNot()
-	case OP_SHL:
+	case OpShl:
 		return i.executeShiftLeft()
-	case OP_SHR:
+	case OpShr:
 		return i.executeShiftRight()
 	default:
 		return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: opcode, Message: "invalid bitwise opcode"}
 	}
 }
 
-// executeBitwiseAnd handles OP_BITWISE_AND opcode
+// executeBitwiseAnd handles OpBitwiseAnd opcode
 func (i *Interpreter) executeBitwiseAnd() error {
 	return i.executeBinaryOp(func(a, b int64) int64 { return a & b }, nil)
 }
 
-// executeBitwiseOr handles OP_BITWISE_OR opcode
+// executeBitwiseOr handles OpBitwiseOr opcode
 func (i *Interpreter) executeBitwiseOr() error {
 	return i.executeBinaryOp(func(a, b int64) int64 { return a | b }, nil)
 }
 
-// executeBitwiseXor handles OP_BITWISE_XOR opcode
+// executeBitwiseXor handles OpBitwiseXor opcode
 func (i *Interpreter) executeBitwiseXor() error {
 	return i.executeBinaryOp(func(a, b int64) int64 { return a ^ b }, nil)
 }
 
-// executeBitwiseNot handles OP_BITWISE_NOT opcode
+// executeBitwiseNot handles OpBitwiseNot opcode
 func (i *Interpreter) executeBitwiseNot() error {
-	if err := i.validateStackUnderflow(OP_BITWISE_NOT); err != nil {
+	if err := i.validateStackUnderflow(OpBitwiseNot); err != nil {
 		return err
 	}
 
@@ -501,7 +501,7 @@ func (i *Interpreter) executeBitwiseNot() error {
 	return nil
 }
 
-// executeShiftLeft handles OP_SHL opcode
+// executeShiftLeft handles OpShl opcode
 func (i *Interpreter) executeShiftLeft() error {
 	return i.executeBinaryOp(func(a, b int64) int64 {
 		if b < 0 {
@@ -514,7 +514,7 @@ func (i *Interpreter) executeShiftLeft() error {
 	}, nil)
 }
 
-// executeShiftRight handles OP_SHR opcode
+// executeShiftRight handles OpShr opcode
 func (i *Interpreter) executeShiftRight() error {
 	return i.executeBinaryOp(func(a, b int64) int64 {
 		if b < 0 {
@@ -542,7 +542,7 @@ func (i *Interpreter) isComparisonOpcode(opcode Opcode) bool {
 // isLogicalOpcode checks if the opcode is a logical operation
 func (i *Interpreter) isLogicalOpcode(opcode Opcode) bool {
 	switch opcode {
-	case OP_AND, OP_OR, OP_NOT, OP_DEFINED:
+	case OpAnd, OpOr, OpNot, OP_DEFINED:
 		return true
 	default:
 		return false
@@ -552,11 +552,11 @@ func (i *Interpreter) isLogicalOpcode(opcode Opcode) bool {
 // executeLogicalOpcode handles logical operations
 func (i *Interpreter) executeLogicalOpcode(opcode Opcode) error {
 	switch opcode {
-	case OP_AND:
+	case OpAnd:
 		return i.executeAndOperation()
-	case OP_OR:
+	case OpOr:
 		return i.executeOrOperation()
-	case OP_NOT:
+	case OpNot:
 		return i.executeNotOperation()
 	case OP_DEFINED:
 		return i.executeDefinedOperation()
@@ -589,7 +589,7 @@ func (i *Interpreter) executeOrOperation() error {
 
 // executeNotOperation handles NOT logical operation
 func (i *Interpreter) executeNotOperation() error {
-	if err := i.validateStackUnderflow(OP_NOT); err != nil {
+	if err := i.validateStackUnderflow(OpNot); err != nil {
 		return err
 	}
 	v := i.stack[len(i.stack)-1]
@@ -612,7 +612,7 @@ func (i *Interpreter) executeDefinedOperation() error {
 // isControlFlowOpcode checks if the opcode is a control flow operation
 func (i *Interpreter) isControlFlowOpcode(opcode Opcode) bool {
 	switch opcode {
-	case OP_NOP, OP_HALT, OP_JZ, OP_JTRUE, OP_JFALSE:
+	case OP_NOP, OP_HALT, OpJz, OP_JTRUE, OP_JFALSE:
 		return true
 	default:
 		return false
@@ -629,7 +629,7 @@ func (i *Interpreter) executeControlFlowOpcode(opcode Opcode) error {
 		i.stopped = true
 		return nil
 
-	case OP_JZ, OP_JTRUE, OP_JFALSE:
+	case OpJz, OP_JTRUE, OP_JFALSE:
 		return i.executeJumpOpcode(opcode)
 
 	default:
@@ -647,7 +647,7 @@ func (i *Interpreter) executeJumpOpcode(opcode Opcode) error {
 
 	shouldJump := false
 	switch opcode {
-	case OP_JZ:
+	case OpJz:
 		shouldJump = !i.isTruthy(v)
 	case OP_JTRUE:
 		shouldJump = i.isTruthy(v)
@@ -669,7 +669,7 @@ func (i *Interpreter) executeJumpOpcode(opcode Opcode) error {
 // isMemoryOpcode checks if the opcode is a memory operation
 func (i *Interpreter) isMemoryOpcode(opcode Opcode) bool {
 	switch opcode {
-	case OP_PUSH_M, OP_POP_M, OP_CLEAR_M, OP_INCR_M, OP_SWAPUNDEF:
+	case OpPush_M, OpPop_M, OP_CLEAR_M, OP_INCR_M, OP_SWAPUNDEF:
 		return true
 	default:
 		return false
@@ -679,9 +679,9 @@ func (i *Interpreter) isMemoryOpcode(opcode Opcode) bool {
 // executeMemoryOpcode handles memory operations
 func (i *Interpreter) executeMemoryOpcode(opcode Opcode) error {
 	switch opcode {
-	case OP_PUSH_M:
+	case OpPush_M:
 		return i.executePushMemory()
-	case OP_POP_M:
+	case OpPop_M:
 		return i.executePopMemory()
 	case OP_CLEAR_M:
 		return i.executeClearMemory()
@@ -709,7 +709,7 @@ func (i *Interpreter) readAndValidateMemorySlot(opcode Opcode) (int, error) {
 
 // executePushMemory handles PUSH_M operation
 func (i *Interpreter) executePushMemory() error {
-	slot, err := i.readAndValidateMemorySlot(OP_PUSH_M)
+	slot, err := i.readAndValidateMemorySlot(OpPush_M)
 	if err != nil {
 		return err
 	}
@@ -718,10 +718,10 @@ func (i *Interpreter) executePushMemory() error {
 
 // executePopMemory handles POP_M operation
 func (i *Interpreter) executePopMemory() error {
-	if err := i.validateStackUnderflow(OP_POP_M); err != nil {
+	if err := i.validateStackUnderflow(OpPop_M); err != nil {
 		return err
 	}
-	slot, err := i.readAndValidateMemorySlot(OP_POP_M)
+	slot, err := i.readAndValidateMemorySlot(OpPop_M)
 	if err != nil {
 		return err
 	}
@@ -836,8 +836,8 @@ func (i *Interpreter) executeIntegerReadOpcode(opcode Opcode) error {
 // isStringOperation checks if the opcode is a string operation
 func (i *Interpreter) isStringOperation(opcode Opcode) bool {
 	switch opcode {
-	case OP_LENGTH, OP_COUNT, OP_FOUND, OP_FOUND_AT, OP_FOUND_IN, OP_OFFSET, OP_OF, OP_MATCHES,
-		OP_INT_TO_DBL, OP_STR_TO_BOOL:
+	case OP_LENGTH, OP_COUNT, OP_FOUND, OP_FOUND_AT, OP_FOUND_IN, OpOffset, OpOf, OP_MATCHES,
+		OpIntToDbl, OpStrToBool:
 		return true
 	default:
 		return false
@@ -847,16 +847,16 @@ func (i *Interpreter) isStringOperation(opcode Opcode) bool {
 // executeStringOperation handles string operations
 func (i *Interpreter) executeStringOperation(opcode Opcode) error {
 	handlers := map[Opcode]func() error{
-		OP_LENGTH:      i.executeLengthOperation,
-		OP_COUNT:       i.executeCountOperation,
-		OP_FOUND:       i.executeFoundOperation,
-		OP_FOUND_AT:    i.executeFoundAtOperation,
-		OP_FOUND_IN:    i.executeFoundInOperation,
-		OP_OFFSET:      i.executeOffsetOperation,
-		OP_OF:          i.executeOfOperation,
-		OP_MATCHES:     i.executeMatchesOperation,
-		OP_INT_TO_DBL:  i.executeIntToDouble,
-		OP_STR_TO_BOOL: i.executeStringToBool,
+		OP_LENGTH:   i.executeLengthOperation,
+		OP_COUNT:    i.executeCountOperation,
+		OP_FOUND:    i.executeFoundOperation,
+		OP_FOUND_AT: i.executeFoundAtOperation,
+		OP_FOUND_IN: i.executeFoundInOperation,
+		OpOffset:    i.executeOffsetOperation,
+		OpOf:        i.executeOfOperation,
+		OP_MATCHES:  i.executeMatchesOperation,
+		OpIntToDbl:  i.executeIntToDouble,
+		OpStrToBool: i.executeStringToBool,
 	}
 
 	if handler, exists := handlers[opcode]; exists {
@@ -866,9 +866,9 @@ func (i *Interpreter) executeStringOperation(opcode Opcode) error {
 	return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: opcode, Message: "invalid string operation"}
 }
 
-// executeIntToDouble handles OP_INT_TO_DBL opcode
+// executeIntToDouble handles OpIntToDbl opcode
 func (i *Interpreter) executeIntToDouble() error {
-	if err := i.validateStackUnderflow(OP_INT_TO_DBL); err != nil {
+	if err := i.validateStackUnderflow(OpIntToDbl); err != nil {
 		return err
 	}
 
@@ -878,12 +878,12 @@ func (i *Interpreter) executeIntToDouble() error {
 		return nil
 	}
 
-	return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OP_INT_TO_DBL, Message: "integer operand required"}
+	return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpIntToDbl, Message: "integer operand required"}
 }
 
-// executeStringToBool handles OP_STR_TO_BOOL opcode
+// executeStringToBool handles OpStrToBool opcode
 func (i *Interpreter) executeStringToBool() error {
-	if err := i.validateStackUnderflow(OP_STR_TO_BOOL); err != nil {
+	if err := i.validateStackUnderflow(OpStrToBool); err != nil {
 		return err
 	}
 
@@ -894,13 +894,13 @@ func (i *Interpreter) executeStringToBool() error {
 		return nil
 	}
 
-	return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OP_STR_TO_BOOL, Message: "string operand required"}
+	return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpStrToBool, Message: "string operand required"}
 }
 
 // isRuleOperation checks if the opcode is a rule operation
 func (i *Interpreter) isRuleOperation(opcode Opcode) bool {
 	switch opcode {
-	case OP_PUSH_RULE, OP_INIT_RULE, OP_MATCH_RULE:
+	case OpPush_RULE, OP_INIT_RULE, OP_MATCH_RULE:
 		return true
 	default:
 		return false
@@ -910,7 +910,7 @@ func (i *Interpreter) isRuleOperation(opcode Opcode) bool {
 // executeRuleOperation handles rule operations
 func (i *Interpreter) executeRuleOperation(opcode Opcode) error {
 	switch opcode {
-	case OP_PUSH_RULE:
+	case OpPush_RULE:
 		return i.executePushRuleOperation()
 	case OP_INIT_RULE:
 		return i.executeInitRuleOperation()
@@ -921,15 +921,15 @@ func (i *Interpreter) executeRuleOperation(opcode Opcode) error {
 	}
 }
 
-// executePushRuleOperation handles OP_PUSH_RULE opcode
+// executePushRuleOperation handles OpPush_RULE opcode
 func (i *Interpreter) executePushRuleOperation() error {
-	if err := i.validateBytecodeBounds(OP_PUSH_RULE, 1); err != nil {
+	if err := i.validateBytecodeBounds(OpPush_RULE, 1); err != nil {
 		return err
 	}
 	ruleIdx := int(i.bytecode[i.ip])
 	i.ip++
 	if ruleIdx >= len(i.compiledRules) {
-		return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: OP_PUSH_RULE, Message: fmt.Sprintf("rule index %d out of range", ruleIdx)}
+		return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: OpPush_RULE, Message: fmt.Sprintf("rule index %d out of range", ruleIdx)}
 	}
 	ruleName := i.compiledRules[ruleIdx].Name
 	return i.push(Value{Type: ValueTypeString, StringVal: ruleName})
@@ -1484,9 +1484,9 @@ func (i *Interpreter) executeFoundInOperation() error {
 	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(false)})
 }
 
-// executeOffsetOperation executes OP_OFFSET
+// executeOffsetOperation executes OpOffset
 func (i *Interpreter) executeOffsetOperation() error {
-	if err := i.validateStackUnderflowN(OP_OFFSET, 2); err != nil {
+	if err := i.validateStackUnderflowN(OpOffset, 2); err != nil {
 		return err
 	}
 
@@ -1515,9 +1515,9 @@ func (i *Interpreter) executeOffsetOperation() error {
 	return i.push(Value{Type: ValueTypeInt, IntVal: match.Offset})
 }
 
-// executeOfOperation executes OP_OF
+// executeOfOperation executes OpOf
 func (i *Interpreter) executeOfOperation() error {
-	if err := i.validateStackUnderflowN(OP_OF, 2); err != nil {
+	if err := i.validateStackUnderflowN(OpOf, 2); err != nil {
 		return err
 	}
 
@@ -1621,7 +1621,7 @@ func (i *Interpreter) executeArithmeticOperation(opcode Opcode) error {
 
 func (i *Interpreter) isIntegerArithmetic(opcode Opcode) bool {
 	switch opcode {
-	case OP_INT_ADD, OP_INT_SUB, OP_INT_MUL, OP_INT_DIV, OP_MOD, OP_INT_MINUS:
+	case OP_INT_ADD, OP_INT_SUB, OP_INT_MUL, OP_INT_DIV, OpMod, OP_INT_MINUS:
 		return true
 	default:
 		return false
@@ -1649,7 +1649,7 @@ func (i *Interpreter) executeIntegerArithmetic(opcode Opcode) error {
 			}
 			return a / b, nil
 		}, nil)
-	case OP_MOD:
+	case OpMod:
 		return i.executeBinaryOpWithCheck(func(a, b int64) (int64, error) {
 			if b == 0 {
 				return 0, &InterpreterError{Type: ErrorDivisionByZero, Opcode: opcode, Message: "modulo by zero"}
