@@ -433,10 +433,28 @@ func (p *ExpressionParser) EmitOpcodeWithOperand(opcode interface{}, operand int
 }
 
 // ConvertToOpcode converts an AST node to compiler opcodes (delegates to original)
-func (p *ExpressionParser) ConvertToOpcode(_ ast.Expression) error {
-	// TODO: Implement opcode conversion using strategy pattern
-	// This would need to be connected to the actual compiler
-	return nil
+func (p *ExpressionParser) ConvertToOpcode(expr ast.Expression) error {
+	// Strategy pattern: check if emitter supports expression compilation
+	if p.emitter == nil {
+		return fmt.Errorf("no emitter available for opcode conversion")
+	}
+
+	// Try to find a compiler that can handle expression compilation
+	if compiler, ok := p.emitter.(interface {
+		CompileExpression(ast.Expression) error
+	}); ok {
+		return compiler.CompileExpression(expr)
+	}
+
+	// If that doesn't work, try the condition compiler approach
+	if compiler, ok := p.emitter.(interface {
+		compileExpression(ast.Expression) error
+	}); ok {
+		return compiler.compileExpression(expr)
+	}
+
+	// If no suitable compiler interface is found, return error
+	return fmt.Errorf("emitter does not support expression compilation")
 }
 
 // ValidateExpression performs validation on an expression
