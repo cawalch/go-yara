@@ -216,9 +216,9 @@ func TestOpcodeCategories(t *testing.T) {
 		{compiler.OpIntSub, "arithmetic"},
 		{compiler.OpIntMul, "arithmetic"},
 		{compiler.OpJz, "jump"},
-		// TODO: Find correct opcodes for JNZ and JMP
-		// {compiler.OP_JNZ, "jump"},
-		// {compiler.OP_JMP, "jump"},
+		// Note: JNZ and JMP opcodes don't exist in this bytecode implementation
+		// JNZ equivalent would be OpJtrue (jump if true/not-zero)
+		// JMP (unconditional) isn't supported - all jumps are conditional
 		{compiler.OpStrEq, "arithmetic"},
 		{compiler.OpStrNeq, "arithmetic"},
 		{compiler.OpHalt, "control"},

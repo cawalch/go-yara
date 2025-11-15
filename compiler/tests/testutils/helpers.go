@@ -13,16 +13,22 @@ import (
 // TestCompilerOptions provides configuration for test compilers
 type TestCompilerOptions struct {
 	EnableOptimizations bool
+	EnableWarnings      bool
+	EnableDebugInfo     bool
 	StrictMode          bool
 	MaxErrors           int
+	TargetVersion       string
 }
 
 // DefaultTestCompilerOptions returns sensible defaults for testing
 func DefaultTestCompilerOptions() TestCompilerOptions {
 	return TestCompilerOptions{
 		EnableOptimizations: true,
+		EnableWarnings:      true,
+		EnableDebugInfo:     false,
 		StrictMode:          false,
 		MaxErrors:           10,
+		TargetVersion:       "1.0",
 	}
 }
 
@@ -33,8 +39,15 @@ func CreateTestCompiler(opts ...func(*TestCompilerOptions)) *compiler.Compiler {
 		opt(&options)
 	}
 
-	// TODO: Update once Compiler supports options
-	c := compiler.NewCompiler()
+	// Convert test options to compiler options
+	compilerOpts := compiler.CompilationOptions{
+		EnableOptimizations: options.EnableOptimizations,
+		EnableDebugInfo:     options.EnableDebugInfo,
+		EnableWarnings:      options.EnableWarnings,
+		TargetVersion:       options.TargetVersion,
+	}
+
+	c := compiler.NewCompilerWithOptions(compilerOpts)
 	return c
 }
 
@@ -42,6 +55,27 @@ func CreateTestCompiler(opts ...func(*TestCompilerOptions)) *compiler.Compiler {
 func WithOptimizations(enabled bool) func(*TestCompilerOptions) {
 	return func(opts *TestCompilerOptions) {
 		opts.EnableOptimizations = enabled
+	}
+}
+
+// WithWarnings enables or disables warnings for test compiler
+func WithWarnings(enabled bool) func(*TestCompilerOptions) {
+	return func(opts *TestCompilerOptions) {
+		opts.EnableWarnings = enabled
+	}
+}
+
+// WithDebugInfo enables or disables debug info for test compiler
+func WithDebugInfo(enabled bool) func(*TestCompilerOptions) {
+	return func(opts *TestCompilerOptions) {
+		opts.EnableDebugInfo = enabled
+	}
+}
+
+// WithTargetVersion sets target version for test compiler
+func WithTargetVersion(version string) func(*TestCompilerOptions) {
+	return func(opts *TestCompilerOptions) {
+		opts.TargetVersion = version
 	}
 }
 
