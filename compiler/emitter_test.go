@@ -10,7 +10,7 @@ func TestEmitter(t *testing.T) {
 
 	// Test basic emission
 	offset1 := emitter.EmitOpcode(OpPush, 1, 1)
-	offset2 := emitter.EmitOpcode(OP_NOP, 1, 5)
+	offset2 := emitter.EmitOpcode(OpNop, 1, 5)
 
 	if offset1 != 0 {
 		t.Errorf("First instruction offset = %v, want 0", offset1)
@@ -49,7 +49,7 @@ func TestEmitterStats(t *testing.T) {
 
 	// Emit some instructions
 	emitter.EmitOpcode(OpPush, 1, 1)
-	emitter.EmitOpcode(OP_NOP, 1, 2)
+	emitter.EmitOpcode(OpNop, 1, 2)
 	emitter.EmitPush(0x12345678, 1, 3)
 
 	stats := emitter.GetStats()

@@ -39,7 +39,7 @@ func TestStringIdentifier_Invalid(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
-		expected token.TokenType
+		expected token.Type
 	}{
 		{"just_dollar", "$", token.StringIdentifier},      // Should still be StringIdentifier but just "$"
 		{"dollar_space", "$ ", token.StringIdentifier},    // Should be StringIdentifier "$" followed by whitespace
@@ -171,7 +171,7 @@ func testStringIdentifierInParentheses(t *testing.T) {
 
 // tokenExpectation defines an expected token for testing
 type tokenExpectation struct {
-	tokenType token.TokenType
+	tokenType token.Type
 	literal   string
 }
 

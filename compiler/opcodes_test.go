@@ -12,19 +12,19 @@ func TestBytecodeOpcodes(t *testing.T) {
 		category string
 	}{
 		{OpError, "ERROR", OpCategoryControl},
-		{OP_HALT, "HALT", OpCategoryControl},
-		{OP_NOP, "NOP", OpCategoryControl},
+		{OpHalt, "HALT", OpCategoryControl},
+		{OpNop, "NOP", OpCategoryControl},
 		{OpAnd, "AND", OpCategoryLogical},
 		{OpOr, "OR", OpCategoryLogical},
 		{OpNot, "NOT", OpCategoryLogical},
 		{OpPush, "PUSH", OpCategoryStack},
 		{OpPop, "POP", OpCategoryStack},
-		{OP_INT_ADD, "INT_ADD", OpCategoryArithmetic},
-		{OP_INT_EQ, "INT_EQ", OpCategoryArithmetic},
-		{OP_FILESIZE, "FILESIZE", OpCategoryObject},
-		{OP_CONTAINS, "CONTAINS", OpCategoryString},
+		{OpIntAdd, "INT_ADD", OpCategoryArithmetic},
+		{OpIntEq, "INT_EQ", OpCategoryArithmetic},
+		{OpFilesize, "FILESIZE", OpCategoryObject},
+		{OpContains, "CONTAINS", OpCategoryString},
 		{OpJz, "JZ", OpCategoryJump},
-		{OP_INT8, "INT8", OpCategoryTypeFunc},
+		{OpInt8, "INT8", OpCategoryTypeFunc},
 	}
 
 	for _, test := range tests {
@@ -50,14 +50,14 @@ func TestInstructionCreation(t *testing.T) {
 	}{
 		{
 			name:     "simple opcode",
-			inst:     NewInstruction(OP_NOP, 1, 1),
+			inst:     NewInstruction(OpNop, 1, 1),
 			expected: "NOP",
 			size:     1,
 		},
 		{
 			name: "push 8-bit",
 			inst: NewInstructionWithOperand(
-				OpPush_8,
+				OpPush8,
 				Operand{Type: OperandImmediate8, Value: 0x42},
 				1,
 				1,
@@ -68,7 +68,7 @@ func TestInstructionCreation(t *testing.T) {
 		{
 			name: "push 32-bit",
 			inst: NewInstructionWithOperand(
-				OpPush_32,
+				OpPush32,
 				Operand{Type: OperandImmediate32, Value: 0x12345678},
 				1,
 				1,

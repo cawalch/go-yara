@@ -303,12 +303,12 @@ func (p *ExpressionParser) nextToken() {
 }
 
 // currentTokenIs checks if the current token is of the given type
-func (p *ExpressionParser) currentTokenIs(tok token.TokenType) bool {
+func (p *ExpressionParser) currentTokenIs(tok token.Type) bool {
 	return p.current.Type == tok
 }
 
 // isBinaryOperator determines if a token is a binary operator
-func (p *ExpressionParser) isBinaryOperator(tok token.TokenType) bool {
+func (p *ExpressionParser) isBinaryOperator(tok token.Type) bool {
 	classifier := p.strategyRegistry.GetClassifier()
 	return classifier.IsLogicalOperator(tok) ||
 		classifier.IsComparisonOp(tok) ||

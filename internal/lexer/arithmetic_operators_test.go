@@ -13,7 +13,7 @@ func TestArithmeticOperators_Basic(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
-		expected token.TokenType
+		expected token.Type
 	}{
 		{"multiply", "*", token.MULTIPLY},
 		{"divide", "/", token.DIVIDE},
@@ -292,7 +292,7 @@ func assertArithmeticOperators(t *testing.T, helper *lexer.TestHelper, input str
 // extractArithmeticOperators extracts arithmetic operators from a token slice
 func extractArithmeticOperators(tokens []token.Token) []string {
 	operators := make([]string, 0, 8) // Pre-allocate reasonable capacity
-	arithmeticTypes := map[token.TokenType]bool{
+	arithmeticTypes := map[token.Type]bool{
 		token.PLUS:     true,
 		token.MINUS:    true,
 		token.MULTIPLY: true,

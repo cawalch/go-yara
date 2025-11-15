@@ -20,7 +20,7 @@ func NewLiteralStrategy() *LiteralStrategy {
 }
 
 // CanHandle checks if the strategy can handle the given literal token
-func (ls *LiteralStrategy) CanHandle(currentToken, _ token.TokenType) bool {
+func (ls *LiteralStrategy) CanHandle(currentToken, _ token.Type) bool {
 	return ls.classifier.IsLiteral(currentToken)
 }
 
@@ -105,7 +105,7 @@ func NewIdentifierStrategy() *IdentifierStrategy {
 }
 
 // CanHandle checks if the strategy can handle the given identifier token
-func (is *IdentifierStrategy) CanHandle(currentToken, _ token.TokenType) bool {
+func (is *IdentifierStrategy) CanHandle(currentToken, _ token.Type) bool {
 	return is.classifier.IsIdentifier(currentToken)
 }
 
@@ -175,7 +175,7 @@ func NewParenthesizedExpressionStrategy() *ParenthesizedExpressionStrategy {
 }
 
 // CanHandle checks if the strategy can handle the given parenthesized expression token
-func (pes *ParenthesizedExpressionStrategy) CanHandle(currentToken, _ token.TokenType) bool {
+func (pes *ParenthesizedExpressionStrategy) CanHandle(currentToken, _ token.Type) bool {
 	return currentToken == token.LPAREN
 }
 
@@ -217,7 +217,7 @@ func NewUnaryOperatorStrategy() *UnaryOperatorStrategy {
 }
 
 // CanHandle checks if the strategy can handle the given unary operator token
-func (uos *UnaryOperatorStrategy) CanHandle(currentToken, _ token.TokenType) bool {
+func (uos *UnaryOperatorStrategy) CanHandle(currentToken, _ token.Type) bool {
 	return uos.classifier.IsUnaryOperator(currentToken)
 }
 
@@ -255,7 +255,7 @@ func NewDataTypeFunctionStrategy() *DataTypeFunctionStrategy {
 }
 
 // CanHandle checks if the strategy can handle the given data type function token
-func (dtfs *DataTypeFunctionStrategy) CanHandle(currentToken, _ token.TokenType) bool {
+func (dtfs *DataTypeFunctionStrategy) CanHandle(currentToken, _ token.Type) bool {
 	// Check if current token is a data type function name
 	switch currentToken {
 	case token.UINT8, token.UINT16, token.UINT32, token.INT8, token.INT16, token.INT32,
@@ -342,7 +342,7 @@ func NewYaraBuiltInStrategy() *YaraBuiltInStrategy {
 }
 
 // CanHandle checks if the strategy can handle the given YARA built-in token
-func (ybs *YaraBuiltInStrategy) CanHandle(currentToken, _ token.TokenType) bool {
+func (ybs *YaraBuiltInStrategy) CanHandle(currentToken, _ token.Type) bool {
 	// Handle YARA-specific built-ins and special literals
 	switch currentToken {
 	case token.ENTRYPOINT, token.DEFINED, token.SizeLit, token.FILESIZE:
@@ -422,7 +422,7 @@ func NewArrayIndexStrategy() *ArrayIndexStrategy {
 }
 
 // CanHandle checks if the strategy can handle the given array indexing tokens
-func (ais *ArrayIndexStrategy) CanHandle(_, _ token.TokenType) bool {
+func (ais *ArrayIndexStrategy) CanHandle(_, _ token.Type) bool {
 	// This strategy handles cases after we've parsed an identifier
 	// and encounter a '[' - so it's handled at a different level
 	return false // This is handled in ExpressionParser.parsePostfix()
@@ -452,7 +452,7 @@ func NewQuantifierTokenStrategy() *QuantifierTokenStrategy {
 }
 
 // CanHandle checks if the strategy can handle the given quantifier token
-func (qs *QuantifierTokenStrategy) CanHandle(currentToken, _ token.TokenType) bool {
+func (qs *QuantifierTokenStrategy) CanHandle(currentToken, _ token.Type) bool {
 	return qs.classifier.IsQuantifierToken(currentToken) ||
 		currentToken == token.FOR ||
 		currentToken == token.THEM
@@ -509,7 +509,7 @@ func NewQuantifierExpressionStrategy() *QuantifierExpressionStrategy {
 }
 
 // CanHandle checks if the strategy can handle the given quantifier expression token combination
-func (qes *QuantifierExpressionStrategy) CanHandle(currentToken, peekToken token.TokenType) bool {
+func (qes *QuantifierExpressionStrategy) CanHandle(currentToken, peekToken token.Type) bool {
 	// Handle numeric quantifiers: "2 of them" (current=INTEGER, peek=OF)
 	if (currentToken == token.IntegerLit || currentToken == token.HexIntegerLit || currentToken == token.OctalIntegerLit) && peekToken == token.OF {
 		return true

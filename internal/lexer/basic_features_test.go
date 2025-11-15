@@ -42,32 +42,32 @@ func TestBasicFeatures_CompleteYARARule(t *testing.T) {
 
 	// Define expected token counts using table-driven approach
 	expectedCounts := []struct {
-		tokenTypes    []token.TokenType
+		tokenTypes    []token.Type
 		expectedCount int
 		description   string
 	}{
 		{
-			tokenTypes:    []token.TokenType{token.HexIntegerLit},
+			tokenTypes:    []token.Type{token.HexIntegerLit},
 			expectedCount: 3, // 0x401000, 0xFF, 0x401000
 			description:   "hex integers",
 		},
 		{
-			tokenTypes:    []token.TokenType{token.SizeLit},
+			tokenTypes:    []token.Type{token.SizeLit},
 			expectedCount: 5, // 10MB, 1KB, 100KB, 50MB, 1MB
 			description:   "size literals",
 		},
 		{
-			tokenTypes:    []token.TokenType{token.ALL, token.ANY, token.NONE, token.OF},
+			tokenTypes:    []token.Type{token.ALL, token.ANY, token.NONE, token.OF},
 			expectedCount: 6, // all, of, any, of, none, of
 			description:   "quantifier tokens",
 		},
 		{
-			tokenTypes:    []token.TokenType{token.MULTIPLY, token.DIVIDE, token.MODULO},
+			tokenTypes:    []token.Type{token.MULTIPLY, token.DIVIDE, token.MODULO},
 			expectedCount: 3, // /, *, %
 			description:   "arithmetic operators",
 		},
 		{
-			tokenTypes:    []token.TokenType{token.TRUE, token.FALSE},
+			tokenTypes:    []token.Type{token.TRUE, token.FALSE},
 			expectedCount: 3, // false, true, false
 			description:   "boolean literals",
 		},
@@ -83,7 +83,7 @@ func TestBasicFeatures_CompleteYARARule(t *testing.T) {
 }
 
 // Helper function to count tokens of specific types
-func countTokenTypes(tokens []token.Token, tokenTypes []token.TokenType) int {
+func countTokenTypes(tokens []token.Token, tokenTypes []token.Type) int {
 	count := 0
 	for _, tok := range tokens {
 		if slices.Contains(tokenTypes, tok.Type) {
@@ -114,19 +114,19 @@ func TestBasicFeatures_ErrorRecovery(t *testing.T) {
 	// Define token type groups to verify
 	tokenVerification := []struct {
 		name       string
-		tokenTypes []token.TokenType
+		tokenTypes []token.Type
 		validator  func(count int) bool
 		errorMsg   string
 	}{
 		{
 			name:       "illegal tokens",
-			tokenTypes: []token.TokenType{token.ILLEGAL},
+			tokenTypes: []token.Type{token.ILLEGAL},
 			validator:  func(count int) bool { return count > 0 },
 			errorMsg:   "Expected some ILLEGAL tokens for error recovery test",
 		},
 		{
 			name:       "valid Phase 1 tokens",
-			tokenTypes: []token.TokenType{token.SizeLit, token.ALL, token.OF, token.PLUS, token.MULTIPLY},
+			tokenTypes: []token.Type{token.SizeLit, token.ALL, token.OF, token.PLUS, token.MULTIPLY},
 			validator:  func(count int) bool { return count > 0 },
 			errorMsg:   "Expected some valid Phase 1 tokens despite errors",
 		},
@@ -190,12 +190,12 @@ func TestBasicFeatures_PerformanceStress(t *testing.T) {
 	}
 
 	// Verify all token types are present
-	tokenTypes := make(map[token.TokenType]bool)
+	tokenTypes := make(map[token.Type]bool)
 	for _, tok := range tokens {
 		tokenTypes[tok.Type] = true
 	}
 
-	expectedTypes := []token.TokenType{
+	expectedTypes := []token.Type{
 		token.HexIntegerLit, token.SizeLit, token.ALL, token.OF,
 		token.MULTIPLY, token.DIVIDE, token.MODULO,
 	}

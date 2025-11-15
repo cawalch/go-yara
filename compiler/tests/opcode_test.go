@@ -22,10 +22,10 @@ func testIntegerOperations(t *testing.T) {
 		opcode  compiler.Opcode
 		isIntOp bool
 	}{
-		{"integer addition", compiler.OP_INT_ADD, true},
-		{"integer subtraction", compiler.OP_INT_SUB, true},
-		{"integer multiplication", compiler.OP_INT_MUL, true},
-		{"integer division", compiler.OP_INT_DIV, true},
+		{"integer addition", compiler.OpIntAdd, true},
+		{"integer subtraction", compiler.OpIntSub, true},
+		{"integer multiplication", compiler.OpIntMul, true},
+		{"integer division", compiler.OpIntDiv, true},
 	}
 
 	for _, test := range tests {
@@ -43,10 +43,10 @@ func testDoubleOperations(t *testing.T) {
 		opcode  compiler.Opcode
 		isDblOp bool
 	}{
-		{"double addition", compiler.OP_DBL_ADD, true},
-		{"double subtraction", compiler.OP_DBL_SUB, true},
-		{"double multiplication", compiler.OP_DBL_MUL, true},
-		{"double division", compiler.OP_DBL_DIV, true},
+		{"double addition", compiler.OpDblAdd, true},
+		{"double subtraction", compiler.OpDblSub, true},
+		{"double multiplication", compiler.OpDblMul, true},
+		{"double division", compiler.OpDblDiv, true},
 	}
 
 	for _, test := range tests {
@@ -64,12 +64,12 @@ func testStringOperations(t *testing.T) {
 		opcode  compiler.Opcode
 		isStrOp bool
 	}{
-		{"string equality", compiler.OP_STR_EQ, true},
-		{"string inequality", compiler.OP_STR_NEQ, true},
-		{"string less than", compiler.OP_STR_LT, true},
-		{"string greater than", compiler.OP_STR_GT, true},
-		{"string less equal", compiler.OP_STR_LE, true},
-		{"string greater equal", compiler.OP_STR_GE, true},
+		{"string equality", compiler.OpStrEq, true},
+		{"string inequality", compiler.OpStrNeq, true},
+		{"string less than", compiler.OpStrLt, true},
+		{"string greater than", compiler.OpStrGt, true},
+		{"string less equal", compiler.OpStrLe, true},
+		{"string greater equal", compiler.OpStrGe, true},
 	}
 
 	for _, test := range tests {
@@ -89,10 +89,10 @@ func testJumpOperations(t *testing.T) {
 	}{
 		{"jump if zero", compiler.OpJz, true},
 		{"jump if zero param", compiler.OpJzP, true},
-		{"jump if false", compiler.OP_JFALSE, true},
-		{"jump if false param", compiler.OP_JFALSE_P, true},
-		{"jump if true", compiler.OP_JTRUE, true},
-		{"jump if true param", compiler.OP_JTRUE_P, true},
+		{"jump if false", compiler.OpJfalse, true},
+		{"jump if false param", compiler.OpJfalseP, true},
+		{"jump if true", compiler.OpJtrue, true},
+		{"jump if true param", compiler.OpJtrueP, true},
 	}
 
 	for _, test := range tests {
@@ -111,11 +111,11 @@ func testTypeFunctions(t *testing.T) {
 		opcode   compiler.Opcode
 		isTypeFn bool
 	}{
-		{"push 8-bit", compiler.OpPush_8, true},
-		{"push 16-bit", compiler.OpPush_16, true},
-		{"push 32-bit", compiler.OpPush_32, true},
-		{"push unsigned", compiler.OpPush_U, true},
-		{"push double", compiler.OpPush_DBL, true},
+		{"push 8-bit", compiler.OpPush8, true},
+		{"push 16-bit", compiler.OpPush16, true},
+		{"push 32-bit", compiler.OpPush32, true},
+		{"push unsigned", compiler.OpPushU, true},
+		{"push double", compiler.OpPushDbl, true},
 	}
 
 	for _, test := range tests {
@@ -140,7 +140,7 @@ func testMiscellaneousOperations(t *testing.T) {
 	}{
 		{
 			name:     "no operation",
-			opcode:   compiler.OP_NOP,
+			opcode:   compiler.OpNop,
 			isIntOp:  false,
 			isDblOp:  false,
 			isStrOp:  false,
@@ -187,10 +187,10 @@ func TestOpcodeString(t *testing.T) {
 		opcode   compiler.Opcode
 		expected string
 	}{
-		{compiler.OP_NOP, "NOP"},
-		{compiler.OP_HALT, "HALT"},
-		{compiler.OpPush_8, "PUSH_8"},
-		{compiler.OP_INT_ADD, "INT_ADD"},
+		{compiler.OpNop, "NOP"},
+		{compiler.OpHalt, "HALT"},
+		{compiler.OpPush8, "PUSH_8"},
+		{compiler.OpIntAdd, "INT_ADD"},
 		{compiler.OpJz, "JZ"},
 	}
 
@@ -209,20 +209,20 @@ func TestOpcodeCategories(t *testing.T) {
 		opcode   compiler.Opcode
 		category string
 	}{
-		{compiler.OpPush_8, "stack"},
-		{compiler.OpPush_16, "stack"},
-		{compiler.OpPush_32, "stack"},
-		{compiler.OP_INT_ADD, "arithmetic"},
-		{compiler.OP_INT_SUB, "arithmetic"},
-		{compiler.OP_INT_MUL, "arithmetic"},
+		{compiler.OpPush8, "stack"},
+		{compiler.OpPush16, "stack"},
+		{compiler.OpPush32, "stack"},
+		{compiler.OpIntAdd, "arithmetic"},
+		{compiler.OpIntSub, "arithmetic"},
+		{compiler.OpIntMul, "arithmetic"},
 		{compiler.OpJz, "jump"},
 		// TODO: Find correct opcodes for JNZ and JMP
 		// {compiler.OP_JNZ, "jump"},
 		// {compiler.OP_JMP, "jump"},
-		{compiler.OP_STR_EQ, "arithmetic"},
-		{compiler.OP_STR_NEQ, "arithmetic"},
-		{compiler.OP_HALT, "control"},
-		{compiler.OP_NOP, "control"},
+		{compiler.OpStrEq, "arithmetic"},
+		{compiler.OpStrNeq, "arithmetic"},
+		{compiler.OpHalt, "control"},
+		{compiler.OpNop, "control"},
 	}
 
 	for _, test := range tests {
@@ -252,14 +252,14 @@ func TestInstructionProperties(t *testing.T) {
 		},
 		{
 			name:             "type function INT8",
-			opcode:           compiler.OP_INT8,
+			opcode:           compiler.OpInt8,
 			expectedJump:     false,
 			expectedTypeFunc: true,
 			expectedStrOp:    false,
 		},
 		{
 			name:             "string operation STR_EQ",
-			opcode:           compiler.OP_STR_EQ,
+			opcode:           compiler.OpStrEq,
 			expectedJump:     false,
 			expectedTypeFunc: false,
 			expectedStrOp:    true,
@@ -295,7 +295,7 @@ func TestInstructionOperandTests(t *testing.T) {
 	}{
 		{
 			name:   "immediate operand PUSH_8",
-			opcode: compiler.OpPush_8,
+			opcode: compiler.OpPush8,
 			operand: compiler.Operand{
 				Type:  compiler.OperandImmediate8,
 				Value: uint64(42),
@@ -317,7 +317,7 @@ func TestInstructionOperandTests(t *testing.T) {
 		},
 		{
 			name:   "absolute operand PUSH_U",
-			opcode: compiler.OpPush_U,
+			opcode: compiler.OpPushU,
 			operand: compiler.Operand{
 				Type:  compiler.OperandAbsolute32,
 				Value: uint64(0x1000),

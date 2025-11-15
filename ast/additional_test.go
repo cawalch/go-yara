@@ -175,7 +175,7 @@ func testLiteralMethods(t *testing.T) {
 		name      string
 		literal   *Literal
 		wantValue any
-		wantType  token.TokenType
+		wantType  token.Type
 	}{
 		{
 			name: "integer_literal",

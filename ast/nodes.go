@@ -162,7 +162,7 @@ func (c *Condition) Accept(v Visitor) any {
 type BinaryOp struct {
 	Pos   token.Position
 	Left  Expression
-	Op    token.TokenType
+	Op    token.Type
 	Right Expression
 }
 
@@ -181,7 +181,7 @@ func (b *BinaryOp) Accept(v Visitor) any {
 // UnaryOp represents a unary operation
 type UnaryOp struct {
 	Pos   token.Position
-	Op    token.TokenType
+	Op    token.Type
 	Right Expression
 }
 
@@ -218,7 +218,7 @@ func (i *Identifier) Accept(v Visitor) any {
 // Literal represents a literal value
 type Literal struct {
 	Pos   token.Position
-	Type  token.TokenType
+	Type  token.Type
 	Value any
 }
 

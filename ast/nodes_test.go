@@ -278,7 +278,7 @@ func TestLiteralCreation(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		tokType  token.TokenType
+		tokType  token.Type
 		value    any
 		checkVal func(any) bool
 	}{

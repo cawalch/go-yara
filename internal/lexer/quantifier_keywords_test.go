@@ -13,7 +13,7 @@ func TestQuantifierKeywords_Basic(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
-		expected token.TokenType
+		expected token.Type
 	}{
 		{"all keyword", "all", token.ALL},
 		{"any keyword", "any", token.ANY},
@@ -35,7 +35,7 @@ func TestQuantifierKeywords_CaseSensitive(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
-		expected token.TokenType
+		expected token.Type
 	}{
 		{"uppercase ALL", "ALL", token.IDENTIFIER},
 		{"uppercase ANY", "ANY", token.IDENTIFIER},

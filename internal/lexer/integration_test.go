@@ -155,7 +155,7 @@ func testRuleWithAllComparisonOperators(t *testing.T) {
 // Helper functions to reduce token creation duplication
 
 // comparisonTokens creates a three-token sequence for binary comparisons
-func comparisonTokens(left string, op token.TokenType, right string) []token.Token {
+func comparisonTokens(left string, op token.Type, right string) []token.Token {
 	return []token.Token{
 		{Type: identifierOrKeyword(left), Literal: left},
 		{Type: op, Literal: operatorLiteral(op)},
@@ -230,7 +230,7 @@ func basicRulePositions() []positionCheck {
 }
 
 // identifierOrKeyword returns the appropriate token type for identifiers and keywords
-func identifierOrKeyword(lit string) token.TokenType {
+func identifierOrKeyword(lit string) token.Type {
 	switch lit {
 	case "filesize":
 		return token.FILESIZE
@@ -248,7 +248,7 @@ func identifierOrKeyword(lit string) token.TokenType {
 }
 
 // operatorLiteral returns the literal representation of comparison operators
-func operatorLiteral(op token.TokenType) string {
+func operatorLiteral(op token.Type) string {
 	switch op {
 	case token.EQ:
 		return "=="
@@ -273,7 +273,7 @@ func TestComplexYARARule(t *testing.T) {
 	testCase := struct {
 		name             string
 		input            string
-		expectedTokens   []token.TokenType
+		expectedTokens   []token.Type
 		expectedLiterals map[int]string // index -> expected literal
 	}{
 		name:           "complete_yara_rule",
@@ -311,8 +311,8 @@ func getComplexYARARuleInput() string {
 }
 
 // getComplexYARARuleExpectedTokens returns the expected token sequence for the complex rule
-func getComplexYARARuleExpectedTokens() []token.TokenType {
-	return []token.TokenType{
+func getComplexYARARuleExpectedTokens() []token.Type {
+	return []token.Type{
 		token.RULE,
 		token.IDENTIFIER,
 		token.COLON,
@@ -359,7 +359,7 @@ func getComplexYARARuleExpectedTokens() []token.TokenType {
 }
 
 // assertTokenization is a helper function that validates tokenization results
-func assertTokenization(t *testing.T, input string, expectedTokens []token.TokenType, expectedLiterals map[int]string) {
+func assertTokenization(t *testing.T, input string, expectedTokens []token.Type, expectedLiterals map[int]string) {
 	l := lexer.New(input)
 	tokens := collectTokens(l)
 

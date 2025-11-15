@@ -147,7 +147,7 @@ func CreateTestAST() *ast.Program {
 }
 
 // CreateTestToken creates a token for testing
-func CreateTestToken(tokenType token.TokenType, literal string, pos token.Position) token.Token {
+func CreateTestToken(tokenType token.Type, literal string, pos token.Position) token.Token {
 	return token.Token{
 		Type:    tokenType,
 		Literal: literal,

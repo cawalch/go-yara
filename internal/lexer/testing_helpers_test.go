@@ -109,7 +109,7 @@ func shouldCheckPosition(expected token.Token) bool {
 }
 
 // AssertTokenTypes verifies that the input produces tokens of the expected types.
-func (h *TestHelper) AssertTokenTypes(input string, expectedTypes []token.TokenType) {
+func (h *TestHelper) AssertTokenTypes(input string, expectedTypes []token.Type) {
 	got := h.CollectTokens(input)
 
 	if len(got) != len(expectedTypes) {
@@ -124,7 +124,7 @@ func (h *TestHelper) AssertTokenTypes(input string, expectedTypes []token.TokenT
 }
 
 // AssertSingleToken verifies that the input produces exactly one token of the expected type and literal.
-func (h *TestHelper) AssertSingleToken(input string, expectedType token.TokenType, expectedLiteral string) {
+func (h *TestHelper) AssertSingleToken(input string, expectedType token.Type, expectedLiteral string) {
 	tokens := h.CollectTokens(input)
 
 	// Should have exactly 2 tokens: the expected token + EOF
@@ -208,9 +208,9 @@ func createTokensFromPairs(pairs []any) []token.Token {
 
 // createTokenFromPair creates a single token from pairs starting at index i.
 func createTokenFromPair(pairs []any, i *int) token.Token {
-	tokenType, ok := pairs[*i].(token.TokenType)
+	tokenType, ok := pairs[*i].(token.Type)
 	if !ok {
-		panic(fmt.Sprintf("expected token.TokenType at index %d, got %T", *i, pairs[*i]))
+		panic(fmt.Sprintf("expected token.Type at index %d, got %T", *i, pairs[*i]))
 	}
 
 	literal, ok := pairs[*i+1].(string)

@@ -69,7 +69,7 @@ func TestNextToken_AssignVsEquals(t *testing.T) {
 	// Test that single '=' is ASSIGN and double '==' is EQ
 	tests := []struct {
 		input    string
-		expected token.TokenType
+		expected token.Type
 		literal  string
 	}{
 		{"=", token.ASSIGN, "="},

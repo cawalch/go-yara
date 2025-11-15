@@ -34,7 +34,7 @@ func (b *Builder) Rule(pos token.Position, name string) *Rule {
 func (b *Builder) BinaryOp(
 	pos token.Position,
 	left Expression,
-	op token.TokenType,
+	op token.Type,
 	right Expression,
 ) *BinaryOp {
 	return &BinaryOp{
@@ -46,7 +46,7 @@ func (b *Builder) BinaryOp(
 }
 
 // UnaryOp creates a new UnaryOp node
-func (b *Builder) UnaryOp(pos token.Position, op token.TokenType, right Expression) *UnaryOp {
+func (b *Builder) UnaryOp(pos token.Position, op token.Type, right Expression) *UnaryOp {
 	return &UnaryOp{
 		Pos:   pos,
 		Op:    op,
@@ -63,7 +63,7 @@ func (b *Builder) Identifier(pos token.Position, name string) *Identifier {
 }
 
 // Literal creates a new Literal node
-func (b *Builder) Literal(pos token.Position, typ token.TokenType, value any) *Literal {
+func (b *Builder) Literal(pos token.Position, typ token.Type, value any) *Literal {
 	return &Literal{
 		Pos:   pos,
 		Type:  typ,

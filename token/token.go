@@ -11,13 +11,13 @@ type Position struct {
 	Column   int    // Column is the 1-based column number.
 }
 
-// TokenType represents the type of a lexical token.
-type TokenType int
+// Type represents the type of a lexical token.
+type Type int
 
 // Token types for YARA language constructs.
 const (
-	RULE   TokenType = iota
-	LENGTH TokenType = iota
+	RULE   Type = iota
+	LENGTH Type = iota
 	META
 	STRINGS
 	CONDITION
@@ -122,12 +122,12 @@ const (
 
 // Token represents a lexical token with its type, literal value, and position.
 type Token struct {
-	Type    TokenType // Type is the type of the token.
-	Literal string    // Literal is the literal value of the token.
-	Pos     Position  // Pos is the position of the token in the source.
+	Type    Type     // Type is the type of the token.
+	Literal string   // Literal is the literal value of the token.
+	Pos     Position // Pos is the position of the token in the source.
 }
 
-var tokenTypeNames = map[TokenType]string{
+var tokenTypeNames = map[Type]string{
 	RULE:             "RULE",
 	META:             "META",
 	STRINGS:          "STRINGS",
@@ -224,7 +224,7 @@ var tokenTypeNames = map[TokenType]string{
 }
 
 // String returns a string representation of the token type.
-func (tt TokenType) String() string {
+func (tt Type) String() string {
 	if name, ok := tokenTypeNames[tt]; ok {
 		return name
 	}

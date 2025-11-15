@@ -45,7 +45,7 @@ func TestExampleUsingHelpers(t *testing.T) {
 	helper.AssertSingleToken("\"hello\"", token.StringLit, "hello")
 
 	// Test just token types when literals don't matter
-	helper.AssertTokenTypes("rule test { condition: true }", []token.TokenType{
+	helper.AssertTokenTypes("rule test { condition: true }", []token.Type{
 		token.RULE,
 		token.IDENTIFIER,
 		token.LBRACE,

@@ -64,12 +64,12 @@ func TestOpcodeClassification(t *testing.T) {
 		isJump   bool
 		isTypeFn bool
 	}{
-		{OP_INT_ADD, true, false, false, false, false},
-		{OP_DBL_ADD, false, true, false, false, false},
-		{OP_STR_EQ, false, false, true, false, false},
+		{OpIntAdd, true, false, false, false, false},
+		{OpDblAdd, false, true, false, false, false},
+		{OpStrEq, false, false, true, false, false},
 		{OpJz, false, false, false, true, false},
-		{OP_INT8, false, false, false, false, true},
-		{OP_NOP, false, false, false, false, false},
+		{OpInt8, false, false, false, false, true},
+		{OpNop, false, false, false, false, false},
 	}
 
 	for _, test := range tests {
@@ -213,7 +213,7 @@ func BenchmarkEmitter(b *testing.B) {
 	for b.Loop() {
 		emitter.Reset()
 		emitter.EmitOpcode(OpPush, 1, 1)
-		emitter.EmitOpcode(OP_NOP, 1, 2)
+		emitter.EmitOpcode(OpNop, 1, 2)
 		emitter.EmitPush(0x12345678, 1, 3)
 		_, _ = emitter.GetBytecode() // Ignore error in benchmark hot path
 	}
@@ -530,9 +530,9 @@ func TestEmitterJumpFixup(t *testing.T) {
 	emitter := NewEmitter()
 
 	// Emit some instructions
-	emitter.EmitOpcode(OpPush_8, 1, 1)
+	emitter.EmitOpcode(OpPush8, 1, 1)
 	jumpOffset := emitter.EmitJump(JumpConfig{Opcode: OpJz, Target: 10, Line: 1, Pos: 1})
-	emitter.EmitOpcode(OP_NOP, 1, 1)
+	emitter.EmitOpcode(OpNop, 1, 1)
 	emitter.EmitLabel(10, 1, 1)
 
 	// Fixup jumps
@@ -558,7 +558,7 @@ func TestEmitterArithmetic(t *testing.T) {
 	}{
 		{
 			name:    "valid_arithmetic",
-			opcode:  OP_INT_ADD,
+			opcode:  OpIntAdd,
 			wantErr: false,
 		},
 		{
@@ -589,7 +589,7 @@ func TestEmitterComparison(t *testing.T) {
 	}{
 		{
 			name:    "valid_comparison",
-			opcode:  OP_INT_EQ,
+			opcode:  OpIntEq,
 			wantErr: false,
 		},
 		{
@@ -625,7 +625,7 @@ func TestEmitterLogical(t *testing.T) {
 		},
 		{
 			name:    "invalid_logical",
-			opcode:  OP_INT_ADD,
+			opcode:  OpIntAdd,
 			wantErr: false, // Returns -1 but doesn't error
 		},
 	}
@@ -681,8 +681,8 @@ func TestEmitterGetBytecode(t *testing.T) {
 	emitter := NewEmitter()
 
 	// Emit some instructions
-	emitter.EmitOpcode(OpPush_8, 1, 1)
-	emitter.EmitOpcode(OP_NOP, 1, 1)
+	emitter.EmitOpcode(OpPush8, 1, 1)
+	emitter.EmitOpcode(OpNop, 1, 1)
 	emitter.EmitHalt(1, 1)
 
 	bytecode, err := emitter.GetBytecode()
@@ -1350,7 +1350,7 @@ func createBoolLiteral(value bool) *ast.Literal {
 	}
 }
 
-func createBinaryOp(op token.TokenType, left, right ast.Expression) *ast.BinaryOp {
+func createBinaryOp(op token.Type, left, right ast.Expression) *ast.BinaryOp {
 	return &ast.BinaryOp{
 		Pos:   token.Position{Line: 1, Column: 1},
 		Left:  left,
@@ -1360,7 +1360,7 @@ func createBinaryOp(op token.TokenType, left, right ast.Expression) *ast.BinaryO
 }
 
 // createTestBinaryOp creates a binary operation from literal values
-func createTestBinaryOp(op token.TokenType, leftVal, rightVal any) *ast.BinaryOp {
+func createTestBinaryOp(op token.Type, leftVal, rightVal any) *ast.BinaryOp {
 	leftExpr := createLiteralFromValue(leftVal)
 	rightExpr := createLiteralFromValue(rightVal)
 	return createBinaryOp(op, leftExpr, rightExpr)
@@ -1386,7 +1386,7 @@ func TestConditionCompilerCompileBinaryOpDetailed(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		op          token.TokenType
+		op          token.Type
 		leftVal     any
 		rightVal    any
 		expectErr   bool
@@ -1597,8 +1597,8 @@ func TestEmitterGetInstructions(t *testing.T) {
 	emitter := NewEmitter()
 
 	// Emit some instructions
-	emitter.EmitOpcode(OpPush_8, 1, 1)
-	emitter.EmitOpcode(OP_NOP, 1, 1)
+	emitter.EmitOpcode(OpPush8, 1, 1)
+	emitter.EmitOpcode(OpNop, 1, 1)
 	emitter.EmitHalt(1, 1)
 
 	// Get instructions
@@ -1613,7 +1613,7 @@ func TestEmitterGetLineNumber(t *testing.T) {
 	emitter := NewEmitter()
 
 	// Emit an instruction with line number
-	emitter.EmitOpcode(OpPush_8, 42, 1)
+	emitter.EmitOpcode(OpPush8, 42, 1)
 
 	// Get line number
 	lineNum, exists := emitter.GetLineNumber(0)
@@ -1649,8 +1649,8 @@ func TestEmitterPrintInstructions(_ *testing.T) {
 	emitter := NewEmitter()
 
 	// Emit some instructions
-	emitter.EmitOpcode(OpPush_8, 1, 1)
-	emitter.EmitOpcode(OP_NOP, 1, 1)
+	emitter.EmitOpcode(OpPush8, 1, 1)
+	emitter.EmitOpcode(OpNop, 1, 1)
 	emitter.EmitHalt(1, 1)
 
 	// This should not panic
@@ -1662,7 +1662,7 @@ func TestEmitterPrintBytecode(t *testing.T) {
 	emitter := NewEmitter()
 
 	// Emit some instructions
-	emitter.EmitOpcode(OpPush_8, 1, 1)
+	emitter.EmitOpcode(OpPush8, 1, 1)
 	emitter.EmitHalt(1, 1)
 
 	// This should not panic
@@ -2048,7 +2048,7 @@ func TestInstructionProperties(t *testing.T) {
 		{
 			name: "int8_is_type_function",
 			setupInstr: func() *Instruction {
-				return NewInstruction(OP_INT8, 1, 1)
+				return NewInstruction(OpInt8, 1, 1)
 			},
 			method:     (*Instruction).IsTypeFunction,
 			wantResult: true,
@@ -2056,7 +2056,7 @@ func TestInstructionProperties(t *testing.T) {
 		{
 			name: "push_is_not_type_function",
 			setupInstr: func() *Instruction {
-				return NewInstruction(OpPush_8, 1, 1)
+				return NewInstruction(OpPush8, 1, 1)
 			},
 			method:     (*Instruction).IsTypeFunction,
 			wantResult: false,
@@ -2064,7 +2064,7 @@ func TestInstructionProperties(t *testing.T) {
 		{
 			name: "contains_is_string_op",
 			setupInstr: func() *Instruction {
-				return NewInstruction(OP_CONTAINS, 1, 1)
+				return NewInstruction(OpContains, 1, 1)
 			},
 			method:     (*Instruction).IsStringOperation,
 			wantResult: true,
@@ -2072,7 +2072,7 @@ func TestInstructionProperties(t *testing.T) {
 		{
 			name: "nop_is_not_string_op",
 			setupInstr: func() *Instruction {
-				return NewInstruction(OP_NOP, 1, 1)
+				return NewInstruction(OpNop, 1, 1)
 			},
 			method:     (*Instruction).IsStringOperation,
 			wantResult: false,
@@ -2101,7 +2101,7 @@ func TestInstructionOperandProperties(t *testing.T) {
 		{
 			name: "immediate8_has_immediate",
 			setupInstr: func() *Instruction {
-				return NewInstructionWithOperand(OpPush_8, Operand{Type: OperandImmediate8, Value: 42}, 1, 1)
+				return NewInstructionWithOperand(OpPush8, Operand{Type: OperandImmediate8, Value: 42}, 1, 1)
 			},
 			method:     (*Instruction).HasImmediateOperand,
 			wantResult: true,
@@ -2109,7 +2109,7 @@ func TestInstructionOperandProperties(t *testing.T) {
 		{
 			name: "none_no_immediate",
 			setupInstr: func() *Instruction {
-				return NewInstructionWithOperand(OpPush_8, Operand{Type: OperandNone}, 1, 1)
+				return NewInstructionWithOperand(OpPush8, Operand{Type: OperandNone}, 1, 1)
 			},
 			method:     (*Instruction).HasImmediateOperand,
 			wantResult: false,
@@ -2133,7 +2133,7 @@ func TestInstructionOperandProperties(t *testing.T) {
 		{
 			name: "absolute32_has_absolute",
 			setupInstr: func() *Instruction {
-				return NewInstructionWithOperand(OpPush_8, Operand{Type: OperandAbsolute32, Value: 1000}, 1, 1)
+				return NewInstructionWithOperand(OpPush8, Operand{Type: OperandAbsolute32, Value: 1000}, 1, 1)
 			},
 			method:     (*Instruction).HasAbsoluteOperand,
 			wantResult: true,
@@ -2141,7 +2141,7 @@ func TestInstructionOperandProperties(t *testing.T) {
 		{
 			name: "none_no_absolute",
 			setupInstr: func() *Instruction {
-				return NewInstructionWithOperand(OpPush_8, Operand{Type: OperandNone}, 1, 1)
+				return NewInstructionWithOperand(OpPush8, Operand{Type: OperandNone}, 1, 1)
 			},
 			method:     (*Instruction).HasAbsoluteOperand,
 			wantResult: false,
@@ -2605,7 +2605,7 @@ func TestEmitterEmitDataTypeFunction(t *testing.T) {
 	emitter := NewEmitter()
 
 	// Test with a valid data type function opcode
-	offset := emitter.EmitDataTypeFunction(OP_READ_INT, 1, 1)
+	offset := emitter.EmitDataTypeFunction(OpReadInt, 1, 1)
 	if offset < 0 {
 		t.Errorf("EmitDataTypeFunction() returned negative offset %d", offset)
 	}
@@ -2616,7 +2616,7 @@ func TestEmitterEmitStringOperation(t *testing.T) {
 	emitter := NewEmitter()
 
 	// Test with a valid string operation opcode
-	offset := emitter.EmitStringOperation(OP_CONTAINS, 1, 1)
+	offset := emitter.EmitStringOperation(OpContains, 1, 1)
 	if offset < 0 {
 		t.Errorf("EmitStringOperation() returned negative offset %d", offset)
 	}
@@ -2638,8 +2638,8 @@ func TestEmitterEmitHalt(t *testing.T) {
 	}
 
 	lastInstr := instructions[len(instructions)-1]
-	if lastInstr.Opcode != OP_HALT {
-		t.Errorf("EmitHalt() emitted opcode %s, want OP_HALT", lastInstr.Opcode.String())
+	if lastInstr.Opcode != OpHalt {
+		t.Errorf("EmitHalt() emitted opcode %s, want OpHalt", lastInstr.Opcode.String())
 	}
 }
 
@@ -2666,52 +2666,52 @@ func TestOpcodeStringCoverage(t *testing.T) {
 		"Arithmetic": {
 			{OpMod, "MOD"},
 			{OpIntToDbl, "INT_TO_DBL"},
-			{OP_INT_EQ, "INT_EQ"},
-			{OP_INT_NEQ, "INT_NEQ"},
-			{OP_INT_LT, "INT_LT"},
-			{OP_INT_GT, "INT_GT"},
-			{OP_INT_LE, "INT_LE"},
-			{OP_INT_GE, "INT_GE"},
-			{OP_INT_ADD, "INT_ADD"},
-			{OP_INT_SUB, "INT_SUB"},
-			{OP_INT_MUL, "INT_MUL"},
-			{OP_INT_DIV, "INT_DIV"},
-			{OP_INT_MINUS, "INT_MINUS"},
+			{OpIntEq, "INT_EQ"},
+			{OpIntNeq, "INT_NEQ"},
+			{OpIntLt, "INT_LT"},
+			{OpIntGt, "INT_GT"},
+			{OpIntLe, "INT_LE"},
+			{OpIntGe, "INT_GE"},
+			{OpIntAdd, "INT_ADD"},
+			{OpIntSub, "INT_SUB"},
+			{OpIntMul, "INT_MUL"},
+			{OpIntDiv, "INT_DIV"},
+			{OpIntMinus, "INT_MINUS"},
 		},
 		"Stack": {
 			{OpPush, "PUSH"},
 			{OpPop, "POP"},
-			{OpPush_8, "PUSH_8"},
-			{OpPush_16, "PUSH_16"},
-			{OpPush_32, "PUSH_32"},
+			{OpPush8, "PUSH_8"},
+			{OpPush16, "PUSH_16"},
+			{OpPush32, "PUSH_32"},
 		},
 		"Object": {
 			{OpCall, "CALL"},
-			{OP_OBJ_LOAD, "OBJ_LOAD"},
-			{OP_OBJ_VALUE, "OBJ_VALUE"},
-			{OP_OBJ_FIELD, "OBJ_FIELD"},
-			{OP_INDEX_ARRAY, "INDEX_ARRAY"},
+			{OpObjLoad, "OBJ_LOAD"},
+			{OpObjValue, "OBJ_VALUE"},
+			{OpObjField, "OBJ_FIELD"},
+			{OpIndexArray, "INDEX_ARRAY"},
 		},
 		"String": {
 			{OpStrToBool, "STR_TO_BOOL"},
-			{OP_CONTAINS, "CONTAINS"},
-			{OP_ICONTAINS, "ICONTAINS"},
-			{OP_STARTSWITH, "STARTSWITH"},
-			{OP_ISTARTSWITH, "ISTARTSWITH"},
-			{OP_ENDSWITH, "ENDSWITH"},
-			{OP_IENDSWITH, "IENDSWITH"},
-			{OP_IEQUALS, "IEQUALS"},
-			{OP_MATCHES, "MATCHES"},
+			{OpContains, "CONTAINS"},
+			{OpIcontains, "ICONTAINS"},
+			{OpStartswith, "STARTSWITH"},
+			{OpIstartswith, "ISTARTSWITH"},
+			{OpEndswith, "ENDSWITH"},
+			{OpIendswith, "IENDSWITH"},
+			{OpIequals, "IEQUALS"},
+			{OpMatches, "MATCHES"},
 		},
 		"FlowControl": {
 			{OpJz, "JZ"},
-			{OP_JTRUE, "JTRUE"},
-			{OP_JFALSE, "JFALSE"},
-			{OP_INIT_RULE, "INIT_RULE"},
+			{OpJtrue, "JTRUE"},
+			{OpJfalse, "JFALSE"},
+			{OpInitRule, "INIT_RULE"},
 		},
 		"System": {
 			{OpError, "ERROR"},
-			{OP_FOUND, "FOUND"},
+			{OpFound, "FOUND"},
 			{OpOfFoundAt, "OF_FOUND_AT"},
 		},
 	}
@@ -2734,90 +2734,89 @@ func TestOpcodeStringCoverageExtended(t *testing.T) {
 		name   string
 	}{
 		"StringOperations": {
-			{OP_COUNT, "COUNT"},
-			{OP_LENGTH, "LENGTH"},
-			{OP_FOUND_AT, "FOUND_AT"},
-			{OP_FOUND_IN, "FOUND_IN"},
+			{OpCount, "COUNT"},
+			{OpLength, "LENGTH"},
+			{OpFoundAt, "FOUND_AT"},
+			{OpFoundIn, "FOUND_IN"},
 			{OpOffset, "OFFSET"},
 			{OpOf, "OF"},
 			{OpOfPercent, "OF_PERCENT"},
 			{OpOfFoundIn, "OF_FOUND_IN"},
-			{OP_COUNT_IN, "COUNT_IN"},
-			{OP_ITER_START_TEXT_STRING_SET, "ITER_START_TEXT_STRING_SET"},
+			{OpCountIn, "COUNT_IN"},
+			{OpIterStartTextStringSet, "ITER_START_TEXT_STRING_SET"},
 		},
 		"FlowControl": {
-			{OP_JNUNDEF, "JNUNDEF"},
-			{OP_JUNDEF_P, "JUNDEF_P"},
-			{OP_JNUNDEF_P, "JNUNDEF_P"},
-			{OP_JFALSE_P, "JFALSE_P"},
-			{OP_JTRUE_P, "JTRUE_P"},
-			{OP_JL_P, "JL_P"},
-			{OP_JLE_P, "JLE_P"},
+			{OpJnundef, "JNUNDEF"},
+			{OpJnundefP, "JNUNDEF_P"},
+			{OpJfalseP, "JFALSE_P"},
+			{OpJtrueP, "JTRUE_P"},
+			{OpJlP, "JL_P"},
+			{OpJleP, "JLE_P"},
 			{OpJzP, "JZ_P"},
 		},
 		"Comparison": {
-			{OP_DEFINED, "DEFINED"},
-			{OP_DBL_EQ, "DBL_EQ"},
-			{OP_DBL_NEQ, "DBL_NEQ"},
-			{OP_DBL_LT, "DBL_LT"},
-			{OP_DBL_GT, "DBL_GT"},
-			{OP_DBL_LE, "DBL_LE"},
-			{OP_DBL_GE, "DBL_GE"},
+			{OpDefined, "DEFINED"},
+			{OpDblEq, "DBL_EQ"},
+			{OpDblNeq, "DBL_NEQ"},
+			{OpDblLt, "DBL_LT"},
+			{OpDblGt, "DBL_GT"},
+			{OpDblLe, "DBL_LE"},
+			{OpDblGe, "DBL_GE"},
 		},
 		"Iteration": {
-			{OP_ITER_NEXT, "ITER_NEXT"},
-			{OP_ITER_START_ARRAY, "ITER_START_ARRAY"},
-			{OP_ITER_START_DICT, "ITER_START_DICT"},
-			{OP_ITER_START_INT_RANGE, "ITER_START_INT_RANGE"},
-			{OP_ITER_START_INT_ENUM, "ITER_START_INT_ENUM"},
-			{OP_ITER_START_STRING_SET, "ITER_START_STRING_SET"},
-			{OP_ITER_CONDITION, "ITER_CONDITION"},
-			{OP_ITER_END, "ITER_END"},
+			{OpIterNext, "ITER_NEXT"},
+			{OpIterStartArray, "ITER_START_ARRAY"},
+			{OpIterStartDict, "ITER_START_DICT"},
+			{OpIterStartIntRange, "ITER_START_INT_RANGE"},
+			{OpIterStartIntEnum, "ITER_START_INT_ENUM"},
+			{OpIterStartStringSet, "ITER_START_STRING_SET"},
+			{OpIterCondition, "ITER_CONDITION"},
+			{OpIterEnd, "ITER_END"},
 		},
 		"Memory": {
-			{OpPush_RULE, "PUSH_RULE"},
-			{OP_MATCH_RULE, "MATCH_RULE"},
-			{OP_INCR_M, "INCR_M"},
-			{OP_CLEAR_M, "CLEAR_M"},
-			{OP_ADD_M, "ADD_M"},
-			{OpPop_M, "POP_M"},
-			{OpPush_M, "PUSH_M"},
-			{OP_SET_M, "SET_M"},
-			{OP_SWAPUNDEF, "SWAPUNDEF"},
-			{OpPush_U, "PUSH_U"},
+			{OpPushRule, "PUSH_RULE"},
+			{OpMatchRule, "MATCH_RULE"},
+			{OpIncrM, "INCR_M"},
+			{OpClearM, "CLEAR_M"},
+			{OpAddM, "ADD_M"},
+			{OpPopM, "POP_M"},
+			{OpPushM, "PUSH_M"},
+			{OpSetM, "SET_M"},
+			{OpSwapundef, "SWAPUNDEF"},
+			{OpPushU, "PUSH_U"},
 		},
 		"DoublePrecision": {
-			{OP_DBL_ADD, "DBL_ADD"},
-			{OP_DBL_SUB, "DBL_SUB"},
-			{OP_DBL_MUL, "DBL_MUL"},
-			{OP_DBL_DIV, "DBL_DIV"},
-			{OP_DBL_MINUS, "DBL_MINUS"},
+			{OpDblAdd, "DBL_ADD"},
+			{OpDblSub, "DBL_SUB"},
+			{OpDblMul, "DBL_MUL"},
+			{OpDblDiv, "DBL_DIV"},
+			{OpDblMinus, "DBL_MINUS"},
 		},
 		"StringComparison": {
-			{OP_STR_EQ, "STR_EQ"},
-			{OP_STR_NEQ, "STR_NEQ"},
-			{OP_STR_LT, "STR_LT"},
-			{OP_STR_GT, "STR_GT"},
-			{OP_STR_LE, "STR_LE"},
-			{OP_STR_GE, "STR_GE"},
+			{OpStrEq, "STR_EQ"},
+			{OpStrNeq, "STR_NEQ"},
+			{OpStrLt, "STR_LT"},
+			{OpStrGt, "STR_GT"},
+			{OpStrLe, "STR_LE"},
+			{OpStrGe, "STR_GE"},
 		},
 		"IntegerOperations": {
-			{OP_INT8, "INT8"},
-			{OP_INT16, "INT16"},
-			{OP_INT32, "INT32"},
-			{OP_UINT8, "UINT8"},
-			{OP_UINT16, "UINT16"},
-			{OP_UINT32, "UINT32"},
-			{OP_INT8BE, "INT8BE"},
-			{OP_INT16BE, "INT16BE"},
-			{OP_INT32BE, "INT32BE"},
-			{OP_UINT8BE, "UINT8BE"},
-			{OP_UINT16BE, "UINT16BE"},
-			{OP_UINT32BE, "UINT32BE"},
-			{OP_FILESIZE, "FILESIZE"},
-			{OP_ENTRYPOINT, "ENTRYPOINT"},
-			{OP_IMPORT, "IMPORT"},
-			{OP_LOOKUP_DICT, "LOOKUP_DICT"},
+			{OpInt8, "INT8"},
+			{OpInt16, "INT16"},
+			{OpInt32, "INT32"},
+			{OpUint8, "UINT8"},
+			{OpUint16, "UINT16"},
+			{OpUint32, "UINT32"},
+			{OpInt8be, "INT8BE"},
+			{OpInt16be, "INT16BE"},
+			{OpInt32be, "INT32BE"},
+			{OpUint8be, "UINT8BE"},
+			{OpUint16be, "UINT16BE"},
+			{OpUint32be, "UINT32BE"},
+			{OpFilesize, "FILESIZE"},
+			{OpEntrypoint, "ENTRYPOINT"},
+			{OpImport, "IMPORT"},
+			{OpLookupDict, "LOOKUP_DICT"},
 		},
 	}
 
@@ -2849,22 +2848,22 @@ func TestInstructionString(t *testing.T) {
 	}{
 		{
 			name:     "no_operand",
-			instr:    NewInstruction(OP_NOP, 1, 1),
+			instr:    NewInstruction(OpNop, 1, 1),
 			contains: "NOP",
 		},
 		{
 			name:     "immediate8",
-			instr:    NewInstructionWithOperand(OpPush_8, Operand{Type: OperandImmediate8, Value: 42}, 1, 1),
+			instr:    NewInstructionWithOperand(OpPush8, Operand{Type: OperandImmediate8, Value: 42}, 1, 1),
 			contains: "0x2A",
 		},
 		{
 			name:     "immediate16",
-			instr:    NewInstructionWithOperand(OpPush_16, Operand{Type: OperandImmediate16, Value: 1000}, 1, 1),
+			instr:    NewInstructionWithOperand(OpPush16, Operand{Type: OperandImmediate16, Value: 1000}, 1, 1),
 			contains: "0x03E8",
 		},
 		{
 			name:     "immediate32",
-			instr:    NewInstructionWithOperand(OpPush_32, Operand{Type: OperandImmediate32, Value: 100000}, 1, 1),
+			instr:    NewInstructionWithOperand(OpPush32, Operand{Type: OperandImmediate32, Value: 100000}, 1, 1),
 			contains: "0x000186A0",
 		},
 		{
@@ -2874,7 +2873,7 @@ func TestInstructionString(t *testing.T) {
 		},
 		{
 			name:     "absolute32",
-			instr:    NewInstructionWithOperand(OpPush_32, Operand{Type: OperandAbsolute32, Value: 1000}, 1, 1),
+			instr:    NewInstructionWithOperand(OpPush32, Operand{Type: OperandAbsolute32, Value: 1000}, 1, 1),
 			contains: "@0x000003E8",
 		},
 	}
@@ -2899,33 +2898,33 @@ func TestInstructionBytes(t *testing.T) {
 	}{
 		{
 			name:      "no_operand",
-			instr:     NewInstruction(OP_NOP, 1, 1),
+			instr:     NewInstruction(OpNop, 1, 1),
 			minLen:    1,
-			firstByte: byte(OP_NOP),
+			firstByte: byte(OpNop),
 		},
 		{
 			name:      "immediate8",
-			instr:     NewInstructionWithOperand(OpPush_8, Operand{Type: OperandImmediate8, Value: 42}, 1, 1),
+			instr:     NewInstructionWithOperand(OpPush8, Operand{Type: OperandImmediate8, Value: 42}, 1, 1),
 			minLen:    2,
-			firstByte: byte(OpPush_8),
+			firstByte: byte(OpPush8),
 		},
 		{
 			name:      "immediate16",
-			instr:     NewInstructionWithOperand(OpPush_16, Operand{Type: OperandImmediate16, Value: 1000}, 1, 1),
+			instr:     NewInstructionWithOperand(OpPush16, Operand{Type: OperandImmediate16, Value: 1000}, 1, 1),
 			minLen:    3,
-			firstByte: byte(OpPush_16),
+			firstByte: byte(OpPush16),
 		},
 		{
 			name:      "immediate32",
-			instr:     NewInstructionWithOperand(OpPush_32, Operand{Type: OperandImmediate32, Value: 100000}, 1, 1),
+			instr:     NewInstructionWithOperand(OpPush32, Operand{Type: OperandImmediate32, Value: 100000}, 1, 1),
 			minLen:    5,
-			firstByte: byte(OpPush_32),
+			firstByte: byte(OpPush32),
 		},
 		{
 			name:      "immediate64",
-			instr:     NewInstructionWithOperand(OpPush_U, Operand{Type: OperandImmediate64, Value: 1000000}, 1, 1),
+			instr:     NewInstructionWithOperand(OpPushU, Operand{Type: OperandImmediate64, Value: 1000000}, 1, 1),
 			minLen:    9,
-			firstByte: byte(OpPush_U),
+			firstByte: byte(OpPushU),
 		},
 	}
 
@@ -2951,27 +2950,27 @@ func TestInstructionSize(t *testing.T) {
 	}{
 		{
 			name:     "no_operand",
-			instr:    NewInstruction(OP_NOP, 1, 1),
+			instr:    NewInstruction(OpNop, 1, 1),
 			expected: 1,
 		},
 		{
 			name:     "immediate8",
-			instr:    NewInstructionWithOperand(OpPush_8, Operand{Type: OperandImmediate8, Value: 42}, 1, 1),
+			instr:    NewInstructionWithOperand(OpPush8, Operand{Type: OperandImmediate8, Value: 42}, 1, 1),
 			expected: 2,
 		},
 		{
 			name:     "immediate16",
-			instr:    NewInstructionWithOperand(OpPush_16, Operand{Type: OperandImmediate16, Value: 1000}, 1, 1),
+			instr:    NewInstructionWithOperand(OpPush16, Operand{Type: OperandImmediate16, Value: 1000}, 1, 1),
 			expected: 3,
 		},
 		{
 			name:     "immediate32",
-			instr:    NewInstructionWithOperand(OpPush_32, Operand{Type: OperandImmediate32, Value: 100000}, 1, 1),
+			instr:    NewInstructionWithOperand(OpPush32, Operand{Type: OperandImmediate32, Value: 100000}, 1, 1),
 			expected: 5,
 		},
 		{
 			name:     "immediate64",
-			instr:    NewInstructionWithOperand(OpPush_U, Operand{Type: OperandImmediate64, Value: 1000000}, 1, 1),
+			instr:    NewInstructionWithOperand(OpPushU, Operand{Type: OperandImmediate64, Value: 1000000}, 1, 1),
 			expected: 9,
 		},
 		{
@@ -2986,12 +2985,12 @@ func TestInstructionSize(t *testing.T) {
 		},
 		{
 			name:     "absolute32",
-			instr:    NewInstructionWithOperand(OpPush_32, Operand{Type: OperandAbsolute32, Value: 1000}, 1, 1),
+			instr:    NewInstructionWithOperand(OpPush32, Operand{Type: OperandAbsolute32, Value: 1000}, 1, 1),
 			expected: 5,
 		},
 		{
 			name:     "absolute64",
-			instr:    NewInstructionWithOperand(OpPush_U, Operand{Type: OperandAbsolute64, Value: 1000000}, 1, 1),
+			instr:    NewInstructionWithOperand(OpPushU, Operand{Type: OperandAbsolute64, Value: 1000000}, 1, 1),
 			expected: 9,
 		},
 	}
@@ -3014,10 +3013,10 @@ func TestInstructionIsJump(t *testing.T) {
 		expected bool
 	}{
 		{name: "JZ", opcode: OpJz, expected: true},
-		{name: "JTRUE", opcode: OP_JTRUE, expected: true},
-		{name: "JFALSE", opcode: OP_JFALSE, expected: true},
-		{name: "ITER_NEXT", opcode: OP_ITER_NEXT, expected: true},
-		{name: "NOP", opcode: OP_NOP, expected: false},
+		{name: "JTRUE", opcode: OpJtrue, expected: true},
+		{name: "JFALSE", opcode: OpJfalse, expected: true},
+		{name: "ITER_NEXT", opcode: OpIterNext, expected: true},
+		{name: "NOP", opcode: OpNop, expected: false},
 		{name: "PUSH", opcode: OpPush, expected: false},
 	}
 
@@ -3036,7 +3035,7 @@ func TestInstructionIsJump(t *testing.T) {
 func TestConditionCompilerCompileBinaryOp(t *testing.T) {
 	tests := []struct {
 		name string
-		op   token.TokenType
+		op   token.Type
 	}{
 		{name: "AND", op: token.AND},
 		{name: "OR", op: token.OR},
@@ -3092,7 +3091,7 @@ func TestConditionCompilerCompileBinaryOp(t *testing.T) {
 func TestConditionCompilerCompileUnaryOp(t *testing.T) {
 	tests := []struct {
 		name string
-		op   token.TokenType
+		op   token.Type
 	}{
 		{name: "NOT", op: token.NOT},
 		{name: "BITWISE_NOT", op: token.BitwiseNot},
@@ -3215,8 +3214,8 @@ func TestRuleCompilerCompileCondition(t *testing.T) {
 	}
 
 	lastInstr := instructions[len(instructions)-1]
-	if lastInstr.Opcode != OP_HALT {
-		t.Errorf("compileCondition() last instruction = %s, want OP_HALT", lastInstr.Opcode.String())
+	if lastInstr.Opcode != OpHalt {
+		t.Errorf("compileCondition() last instruction = %s, want OpHalt", lastInstr.Opcode.String())
 	}
 }
 
@@ -3336,7 +3335,7 @@ func createTestIdentifierForComplexity(name string) *ast.Identifier {
 	}
 }
 
-func createTestUnaryOpForComplexity(op token.TokenType, right ast.Expression) *ast.UnaryOp {
+func createTestUnaryOpForComplexity(op token.Type, right ast.Expression) *ast.UnaryOp {
 	return &ast.UnaryOp{
 		Pos:   token.Position{Line: 1, Column: 1},
 		Op:    op,
@@ -3382,12 +3381,12 @@ func TestInterpreterStackOperations(t *testing.T) {
 	}{
 		{
 			name:     "halt_only",
-			bytecode: []byte{byte(OP_HALT)},
+			bytecode: []byte{byte(OpHalt)},
 			wantErr:  false,
 		},
 		{
 			name:     "nop_halt",
-			bytecode: []byte{byte(OP_NOP), byte(OP_HALT)},
+			bytecode: []byte{byte(OpNop), byte(OpHalt)},
 			wantErr:  false,
 		},
 	}
@@ -3579,7 +3578,7 @@ func TestEmitterInstructions(t *testing.T) {
 		{
 			name: "emit_opcode",
 			testFn: func(e *Emitter) error {
-				e.EmitOpcode(OP_HALT, 1, 1)
+				e.EmitOpcode(OpHalt, 1, 1)
 				return nil
 			},
 			wantErr: false,

@@ -127,7 +127,7 @@ func (fv *FileValidator) ValidateEntrypointOperation(operation string, pos token
 
 // FileSizeComparisonArgs contains arguments for filesize comparison validation
 type FileSizeComparisonArgs struct {
-	Op           token.TokenType
+	Op           token.Type
 	FilesizeExpr ast.Expression
 	OtherExpr    ast.Expression
 	Pos          token.Position

@@ -71,16 +71,16 @@ func (e *Emitter) EmitPush(value uint64, line, pos int) int {
 
 	// Choose the most efficient push instruction based on value size
 	if value <= math.MaxUint8 {
-		opcode = OpPush_8
+		opcode = OpPush8
 		operand = Operand{Type: OperandImmediate8, Value: value}
 	} else if value <= math.MaxUint16 {
-		opcode = OpPush_16
+		opcode = OpPush16
 		operand = Operand{Type: OperandImmediate16, Value: value}
 	} else if value <= math.MaxUint32 {
-		opcode = OpPush_32
+		opcode = OpPush32
 		operand = Operand{Type: OperandImmediate32, Value: value}
 	} else {
-		opcode = OpPush_U
+		opcode = OpPushU
 		operand = Operand{Type: OperandImmediate64, Value: value}
 	}
 
@@ -92,7 +92,7 @@ func (e *Emitter) EmitPushDouble(value float64, line, pos int) int {
 	// Convert float64 to uint64 bits for storage
 	bits := math.Float64bits(value)
 	operand := Operand{Type: OperandImmediate64, Value: bits}
-	return e.EmitOpcodeWithOperand(OpPush_DBL, operand, line, pos)
+	return e.EmitOpcodeWithOperand(OpPushDbl, operand, line, pos)
 }
 
 // EmitPushString emits a push instruction for string values
@@ -102,7 +102,7 @@ func (e *Emitter) EmitPushString(value string, line, pos int) int {
 	// This is a simplified implementation - a full solution would need a proper string pool
 	hash := e.hashString(value)
 	operand := Operand{Type: OperandImmediate64, Value: hash}
-	return e.EmitOpcodeWithOperand(OpPush_DBL, operand, line, pos)
+	return e.EmitOpcodeWithOperand(OpPushDbl, operand, line, pos)
 }
 
 // hashString creates a simple hash for string identification
@@ -132,9 +132,9 @@ func (e *Emitter) EmitJump(config JumpConfig) int {
 	// For now, emit a placeholder offset (0)
 	// This will be fixed up later when the target is known
 	switch config.Opcode {
-	case OpJz, OpJzP, OP_JTRUE, OP_JTRUE_P, OP_JFALSE, OP_JFALSE_P:
+	case OpJz, OpJzP, OpJtrue, OpJtrueP, OpJfalse, OpJfalseP:
 		operand = Operand{Type: OperandRelative32, Value: 0}
-	case OP_ITER_NEXT:
+	case OpIterNext:
 		operand = Operand{Type: OperandRelative16, Value: 0}
 	default:
 		operand = Operand{Type: OperandRelative32, Value: 0}
@@ -151,7 +151,7 @@ func (e *Emitter) EmitJump(config JumpConfig) int {
 // EmitLabel emits a label (no-op) at the current position
 // This is used as a target for jumps
 func (e *Emitter) EmitLabel(_, line, pos int) int {
-	return e.EmitOpcode(OP_NOP, line, pos)
+	return e.EmitOpcode(OpNop, line, pos)
 }
 
 // FixupJumps resolves all jump targets that were previously emitted
@@ -318,18 +318,18 @@ func (e *Emitter) EmitDataTypeFunction(op Opcode, line, pos int) int {
 
 // Helper functions for opcode classification
 func isArithmeticOp(op Opcode) bool {
-	return (op >= OP_INT_ADD && op <= OP_INT_MINUS) ||
-		(op >= OP_DBL_ADD && op <= OP_DBL_MINUS) ||
-		op == OP_ADD_M || op == OP_INCR_M ||
-		op == OP_CONCAT
+	return (op >= OpIntAdd && op <= OpIntMinus) ||
+		(op >= OpDblAdd && op <= OpDblMinus) ||
+		op == OpAddM || op == OpIncrM ||
+		op == OpConcat
 }
 
 func isComparisonOp(op Opcode) bool {
-	return (op >= OP_INT_EQ && op <= OP_INT_GE) ||
-		(op >= OP_DBL_EQ && op <= OP_DBL_GE) ||
-		(op >= OP_STR_EQ && op <= OP_STR_GE) ||
-		op == OP_CONTAINS || op == OP_MATCHES ||
-		op == OP_STARTSWITH || op == OP_ENDSWITH
+	return (op >= OpIntEq && op <= OpIntGe) ||
+		(op >= OpDblEq && op <= OpDblGe) ||
+		(op >= OpStrEq && op <= OpStrGe) ||
+		op == OpContains || op == OpMatches ||
+		op == OpStartswith || op == OpEndswith
 }
 
 func isLogicalOp(op Opcode) bool {
@@ -339,7 +339,7 @@ func isLogicalOp(op Opcode) bool {
 }
 
 func isDataTypeFunction(op Opcode) bool {
-	return op >= OP_READ_INT && op <= OP_UINT32BE
+	return op >= OpReadInt && op <= OpUint32be
 }
 
 // EmitStringOperation emits string operation instructions
@@ -351,19 +351,19 @@ func (e *Emitter) EmitStringOperation(op Opcode, line, pos int) int {
 }
 
 func isStringOperation(op Opcode) bool {
-	return (op >= OP_CONTAINS && op <= OP_IEQUALS) ||
-		(op >= OP_FOUND && op <= OpOfFoundAt) ||
-		op == OP_MATCHES
+	return (op >= OpContains && op <= OpIequals) ||
+		(op >= OpFound && op <= OpOfFoundAt) ||
+		op == OpMatches
 }
 
 // EmitHalt emits a halt instruction to terminate execution
 func (e *Emitter) EmitHalt(line, pos int) int {
-	return e.EmitOpcode(OP_HALT, line, pos)
+	return e.EmitOpcode(OpHalt, line, pos)
 }
 
 // EmitNop emits a no-operation instruction
 func (e *Emitter) EmitNop(line, pos int) int {
-	return e.EmitOpcode(OP_NOP, line, pos)
+	return e.EmitOpcode(OpNop, line, pos)
 }
 
 // Debug printing functions

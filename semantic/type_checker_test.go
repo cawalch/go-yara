@@ -17,7 +17,7 @@ func TestCheckBinaryOp(t *testing.T) {
 	tests := []struct {
 		name    string
 		left    ast.Expression
-		op      token.TokenType
+		op      token.Type
 		right   ast.Expression
 		wantErr bool
 	}{
@@ -72,7 +72,7 @@ func TestCheckUnaryOp(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		op      token.TokenType
+		op      token.Type
 		operand ast.Expression
 		wantErr bool
 	}{
@@ -292,7 +292,7 @@ func testIntegerTypeMethods(t *testing.T) {
 func TestInferTypeFromLiteral(t *testing.T) {
 	tests := []struct {
 		name         string
-		tokenType    token.TokenType
+		tokenType    token.Type
 		value        any
 		expectedType DataType
 	}{
@@ -352,7 +352,7 @@ func testBinaryOpArithmeticOperations(t *testing.T) {
 
 	tests := []struct {
 		name         string
-		op           token.TokenType
+		op           token.Type
 		expectedType DataType
 	}{
 		{"addition", token.PLUS, TypeInteger},
@@ -382,7 +382,7 @@ func testBinaryOpComparisonOperations(t *testing.T) {
 
 	tests := []struct {
 		name         string
-		op           token.TokenType
+		op           token.Type
 		expectedType DataType
 	}{
 		{"equal", token.EQ, TypeBoolean},
@@ -413,7 +413,7 @@ func testBinaryOpLogicalOperations(t *testing.T) {
 
 	tests := []struct {
 		name         string
-		op           token.TokenType
+		op           token.Type
 		expectedType DataType
 	}{
 		{"logical_and", token.AND, TypeBoolean},
@@ -440,7 +440,7 @@ func testBinaryOpStringOperations(t *testing.T) {
 
 	tests := []struct {
 		name         string
-		op           token.TokenType
+		op           token.Type
 		expectedType DataType
 	}{
 		{"string_contains", token.CONTAINS, TypeBoolean},
@@ -473,7 +473,7 @@ func testBinaryOpBitwiseOperations(t *testing.T) {
 
 	tests := []struct {
 		name         string
-		op           token.TokenType
+		op           token.Type
 		expectedType DataType
 	}{
 		{"bitwise_and", token.BitwiseAnd, TypeInteger},
@@ -503,7 +503,7 @@ func TestInferTypeFromUnaryOp(t *testing.T) {
 
 	tests := []struct {
 		name         string
-		op           token.TokenType
+		op           token.Type
 		operand      *TypeInfo
 		expectedType DataType
 		wantErr      bool

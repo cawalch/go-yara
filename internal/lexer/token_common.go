@@ -7,9 +7,9 @@ import (
 // TokenMethods defines the common token creation operations
 // This replaces the TokenCreator interface with concrete methods
 type TokenMethods interface {
-	makeSimpleToken(tokenType token.TokenType, literal string, pos token.Position) token.Token
-	makeTwoCharToken(tokenType token.TokenType, literal string, pos token.Position) token.Token
-	makeToken(tokenType token.TokenType, literal string, pos token.Position) token.Token
+	makeSimpleToken(tokenType token.Type, literal string, pos token.Position) token.Token
+	makeTwoCharToken(tokenType token.Type, literal string, pos token.Position) token.Token
+	makeToken(tokenType token.Type, literal string, pos token.Position) token.Token
 	handleStringToken(pos token.Position) token.Token
 	handleSlashToken(pos token.Position) token.Token
 	handleStringIdentifierToken(pos token.Position) token.Token
@@ -49,7 +49,7 @@ func NextTokenImpl[T TokenMethods](lexer T) token.Token {
 }
 
 // simpleTokenMapping maps characters to their token types
-var simpleTokenMapping = map[byte]token.TokenType{
+var simpleTokenMapping = map[byte]token.Type{
 	'+':  token.PLUS,
 	'-':  token.MINUS,
 	'*':  token.MULTIPLY,

@@ -10,7 +10,7 @@ import (
 // PrimaryExpressionStrategy defines the interface for parsing primary expressions
 type PrimaryExpressionStrategy interface {
 	// CanHandle determines if this strategy can handle the current token
-	CanHandle(currentToken token.TokenType, peekToken token.TokenType) bool
+	CanHandle(currentToken token.Type, peekToken token.Type) bool
 
 	// Parse attempts to parse the expression using this strategy
 	Parse(parser *ExpressionParser, context ParseContext) ParseResult
@@ -25,10 +25,10 @@ type PrimaryExpressionStrategy interface {
 // BinaryExpressionStrategy defines the interface for parsing binary expressions
 type BinaryExpressionStrategy interface {
 	// CanHandle determines if this strategy can handle the given operator
-	CanHandle(operator token.TokenType, leftExpr, rightExpr ast.Expression) bool
+	CanHandle(operator token.Type, leftExpr, rightExpr ast.Expression) bool
 
 	// Parse attempts to parse the binary expression using this strategy
-	Parse(parser *ExpressionParser, left ast.Expression, operator token.TokenType, right ast.Expression, context ParseContext) ParseResult
+	Parse(parser *ExpressionParser, left ast.Expression, operator token.Type, right ast.Expression, context ParseContext) ParseResult
 
 	// Name returns the name of this strategy for debugging
 	Name() string
@@ -43,10 +43,10 @@ type BinaryExpressionStrategy interface {
 // UnaryExpressionStrategy defines the interface for parsing unary expressions
 type UnaryExpressionStrategy interface {
 	// CanHandle determines if this strategy can handle the given unary operator
-	CanHandle(operator token.TokenType, operand ast.Expression) bool
+	CanHandle(operator token.Type, operand ast.Expression) bool
 
 	// Parse attempts to parse the unary expression using this strategy
-	Parse(parser *ExpressionParser, operator token.TokenType, operand ast.Expression, context ParseContext) ParseResult
+	Parse(parser *ExpressionParser, operator token.Type, operand ast.Expression, context ParseContext) ParseResult
 
 	// Name returns the name of this strategy for debugging
 	Name() string
@@ -112,7 +112,7 @@ func (sr *StrategyRegistry) SetClassifier(classifier TokenClassifier) {
 }
 
 // FindPrimaryStrategy finds the best strategy for parsing a primary expression
-func (sr *StrategyRegistry) FindPrimaryStrategy(currentToken, peekToken token.TokenType) PrimaryExpressionStrategy {
+func (sr *StrategyRegistry) FindPrimaryStrategy(currentToken, peekToken token.Type) PrimaryExpressionStrategy {
 	for _, strategy := range sr.primaryStrategies {
 		if strategy.CanHandle(currentToken, peekToken) {
 			return strategy
@@ -122,7 +122,7 @@ func (sr *StrategyRegistry) FindPrimaryStrategy(currentToken, peekToken token.To
 }
 
 // FindBinaryStrategy finds the best strategy for parsing a binary expression
-func (sr *StrategyRegistry) FindBinaryStrategy(operator token.TokenType, leftExpr, rightExpr ast.Expression) BinaryExpressionStrategy {
+func (sr *StrategyRegistry) FindBinaryStrategy(operator token.Type, leftExpr, rightExpr ast.Expression) BinaryExpressionStrategy {
 	for _, strategy := range sr.binaryStrategies {
 		if strategy.CanHandle(operator, leftExpr, rightExpr) {
 			return strategy
@@ -132,7 +132,7 @@ func (sr *StrategyRegistry) FindBinaryStrategy(operator token.TokenType, leftExp
 }
 
 // FindUnaryStrategy finds the best strategy for parsing a unary expression
-func (sr *StrategyRegistry) FindUnaryStrategy(operator token.TokenType, operand ast.Expression) UnaryExpressionStrategy {
+func (sr *StrategyRegistry) FindUnaryStrategy(operator token.Type, operand ast.Expression) UnaryExpressionStrategy {
 	for _, strategy := range sr.unaryStrategies {
 		if strategy.CanHandle(operator, operand) {
 			return strategy
@@ -219,12 +219,12 @@ func NewArithmeticStrategy() *ArithmeticStrategy {
 }
 
 // CanHandle checks if the strategy can handle the given arithmetic operator
-func (as *ArithmeticStrategy) CanHandle(operator token.TokenType, _ ast.Expression, _ ast.Expression) bool {
+func (as *ArithmeticStrategy) CanHandle(operator token.Type, _ ast.Expression, _ ast.Expression) bool {
 	return as.classifier.IsArithmeticOperator(operator)
 }
 
 // Parse parses an arithmetic expression using the given left and right operands
-func (as *ArithmeticStrategy) Parse(_ *ExpressionParser, left ast.Expression, operator token.TokenType, right ast.Expression, context ParseContext) ParseResult {
+func (as *ArithmeticStrategy) Parse(_ *ExpressionParser, left ast.Expression, operator token.Type, right ast.Expression, context ParseContext) ParseResult {
 	return NewParseResult(&ast.BinaryOp{
 		Op:    operator,
 		Left:  left,
@@ -255,12 +255,12 @@ func NewLogicalStrategy() *LogicalStrategy {
 }
 
 // CanHandle checks if the strategy can handle the given logical operator
-func (ls *LogicalStrategy) CanHandle(operator token.TokenType, _ ast.Expression, _ ast.Expression) bool {
+func (ls *LogicalStrategy) CanHandle(operator token.Type, _ ast.Expression, _ ast.Expression) bool {
 	return ls.classifier.IsLogicalOperator(operator)
 }
 
 // Parse parses a logical expression using the given left and right operands
-func (ls *LogicalStrategy) Parse(_ *ExpressionParser, left ast.Expression, operator token.TokenType, right ast.Expression, context ParseContext) ParseResult {
+func (ls *LogicalStrategy) Parse(_ *ExpressionParser, left ast.Expression, operator token.Type, right ast.Expression, context ParseContext) ParseResult {
 	return NewParseResult(&ast.BinaryOp{
 		Op:    operator,
 		Left:  left,
@@ -291,12 +291,12 @@ func NewComparisonStrategy() *ComparisonStrategy {
 }
 
 // CanHandle checks if the strategy can handle the given comparison operator
-func (cs *ComparisonStrategy) CanHandle(operator token.TokenType, _ ast.Expression, _ ast.Expression) bool {
+func (cs *ComparisonStrategy) CanHandle(operator token.Type, _ ast.Expression, _ ast.Expression) bool {
 	return cs.classifier.IsComparisonOp(operator)
 }
 
 // Parse parses a comparison expression using the given left and right operands
-func (cs *ComparisonStrategy) Parse(_ *ExpressionParser, left ast.Expression, operator token.TokenType, right ast.Expression, context ParseContext) ParseResult {
+func (cs *ComparisonStrategy) Parse(_ *ExpressionParser, left ast.Expression, operator token.Type, right ast.Expression, context ParseContext) ParseResult {
 	return NewParseResult(&ast.BinaryOp{
 		Op:    operator,
 		Left:  left,
@@ -327,12 +327,12 @@ func NewBitwiseStrategy() *BitwiseStrategy {
 }
 
 // CanHandle checks if the strategy can handle the given bitwise operator
-func (bs *BitwiseStrategy) CanHandle(operator token.TokenType, _ ast.Expression, _ ast.Expression) bool {
+func (bs *BitwiseStrategy) CanHandle(operator token.Type, _ ast.Expression, _ ast.Expression) bool {
 	return bs.classifier.IsBitwiseOperator(operator)
 }
 
 // Parse parses a bitwise expression using the given left and right operands
-func (bs *BitwiseStrategy) Parse(_ *ExpressionParser, left ast.Expression, operator token.TokenType, right ast.Expression, context ParseContext) ParseResult {
+func (bs *BitwiseStrategy) Parse(_ *ExpressionParser, left ast.Expression, operator token.Type, right ast.Expression, context ParseContext) ParseResult {
 	return NewParseResult(&ast.BinaryOp{
 		Op:    operator,
 		Left:  left,
@@ -359,12 +359,12 @@ func NewOfStrategy() *OfStrategy {
 }
 
 // CanHandle checks if the strategy can handle the given "of" operator
-func (os *OfStrategy) CanHandle(operator token.TokenType, _ ast.Expression, _ ast.Expression) bool {
+func (os *OfStrategy) CanHandle(operator token.Type, _ ast.Expression, _ ast.Expression) bool {
 	return operator == token.OF
 }
 
 // Parse parses an "of" expression into an AST node
-func (os *OfStrategy) Parse(parser *ExpressionParser, left ast.Expression, _ token.TokenType, _ ast.Expression, context ParseContext) ParseResult {
+func (os *OfStrategy) Parse(parser *ExpressionParser, left ast.Expression, _ token.Type, _ ast.Expression, context ParseContext) ParseResult {
 	// Parse the quantifier target directly
 	var target ast.Expression
 	var err error

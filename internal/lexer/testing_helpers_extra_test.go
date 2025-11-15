@@ -215,7 +215,7 @@ func TestTestHelper_AssertSingleToken_EdgeCases(t *testing.T) {
 	tests := []struct {
 		name            string
 		input           string
-		expectedType    token.TokenType
+		expectedType    token.Type
 		expectedLiteral string
 	}{
 		{
@@ -265,7 +265,7 @@ func testKeywordTokens(t *testing.T) {
 	h := NewTestHelper(t)
 	keywords := []struct {
 		input     string
-		tokenType token.TokenType
+		tokenType token.Type
 	}{
 		{"rule", token.RULE},
 		{"meta", token.META},
@@ -303,7 +303,7 @@ func testLiteralTokens(t *testing.T) {
 	h := NewTestHelper(t)
 	literals := []struct {
 		input           string
-		tokenType       token.TokenType
+		tokenType       token.Type
 		expectedLiteral string
 	}{
 		{"123", token.IntegerLit, "123"},
@@ -320,7 +320,7 @@ func testOperatorTokens(t *testing.T) {
 	h := NewTestHelper(t)
 	operators := []struct {
 		input     string
-		tokenType token.TokenType
+		tokenType token.Type
 	}{
 		{"+", token.PLUS},
 		{"-", token.MINUS},
@@ -353,7 +353,7 @@ func testDelimiterTokens(t *testing.T) {
 	h := NewTestHelper(t)
 	delimiters := []struct {
 		input     string
-		tokenType token.TokenType
+		tokenType token.Type
 	}{
 		{"(", token.LPAREN},
 		{")", token.RPAREN},
@@ -373,7 +373,7 @@ func testIdentifierTokens(t *testing.T) {
 	h := NewTestHelper(t)
 	identifiers := []struct {
 		input     string
-		tokenType token.TokenType
+		tokenType token.Type
 	}{
 		{"$a", token.StringIdentifier},
 		{"test_var", token.IDENTIFIER},
@@ -392,7 +392,7 @@ func testSpecialTokens(t *testing.T) {
 	h := NewTestHelper(t)
 	special := []struct {
 		input     string
-		tokenType token.TokenType
+		tokenType token.Type
 	}{
 		{"at", token.AT},
 		{"filesize", token.FILESIZE},
