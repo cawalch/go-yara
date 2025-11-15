@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"strconv"
@@ -163,6 +164,55 @@ func (sc *StringCompiler) applyXorModifier(data []byte, modifiers []ast.StringMo
 	return data
 }
 
+// applyBase64Modifier applies base64 decoding to data
+func (sc *StringCompiler) applyBase64Modifier(data []byte, modifier ast.StringModifier) ([]byte, error) {
+	// Convert data to string for base64 decoding
+	dataStr := string(data)
+
+	// Determine the base64 alphabet
+	var alphabet *string
+	if alphabetStr, ok := modifier.Value.(string); ok && alphabetStr != "" {
+		alphabet = &alphabetStr
+	}
+
+	// Create base64 decoder with custom alphabet if provided
+	var decoder *base64.Encoding
+	if alphabet != nil {
+		// Custom alphabet provided
+		if len(*alphabet) != 64 {
+			return nil, fmt.Errorf("invalid base64 alphabet length: expected 64, got %d", len(*alphabet))
+		}
+		decoder = base64.NewEncoding(*alphabet)
+	} else {
+		// Use standard base64 alphabet
+		decoder = base64.StdEncoding
+	}
+
+	// Decode the base64 data
+	decoded, err := decoder.DecodeString(dataStr)
+	if err != nil {
+		return nil, fmt.Errorf("base64 decoding failed: %w", err)
+	}
+
+	// For base64wide, convert to UTF-16LE
+	if modifier.Type == ast.StringModifierBase64Wide {
+		decoded = sc.encodeToWideBytes(string(decoded))
+	}
+
+	return decoded, nil
+}
+
+// encodeToWideBytes converts a string to UTF-16LE encoded bytes
+func (sc *StringCompiler) encodeToWideBytes(text string) []byte {
+	utf16Data := utf16.Encode([]rune(text))
+	result := make([]byte, len(utf16Data)*2)
+	for i, v := range utf16Data {
+		result[i*2] = byte(v)
+		result[i*2+1] = byte(v >> 8)
+	}
+	return result
+}
+
 // encodeTextString encodes a text string with modifiers applied
 func (sc *StringCompiler) encodeTextString(text string, modifiers []ast.StringModifier) []byte {
 	// Check for modifiers
@@ -199,10 +249,13 @@ func (sc *StringCompiler) encodeHexString(hexData []byte, modifiers []ast.String
 	// Apply base64 modifiers if present
 	for _, mod := range modifiers {
 		if mod.Type == ast.StringModifierBase64 || mod.Type == ast.StringModifierBase64Wide {
-			// TODO: Implement base64 decoding
-			// This is a placeholder for future base64 modifier implementation
-			// For now, we continue without applying the modifier
-			_ = mod.Type // Suppress unused until base64 implementation is added
+			var err error
+			hexData, err = sc.applyBase64Modifier(hexData, mod)
+			if err != nil {
+				// If base64 decoding fails, return original data
+				// This matches YARA's behavior where invalid base64 is ignored
+				continue
+			}
 		}
 	}
 
