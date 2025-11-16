@@ -162,6 +162,10 @@ const (
 	OpUint8be  = OpReadInt + 9
 	OpUint16be = OpReadInt + 10
 	OpUint32be = OpReadInt + 11
+	OpInt64    = OpReadInt + 12
+	OpUint64   = OpReadInt + 13
+	OpInt64be  = OpReadInt + 14
+	OpUint64be = OpReadInt + 15
 
 	// OpConcat represents string operations (253)
 	OpConcat = 253

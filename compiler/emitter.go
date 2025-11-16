@@ -339,7 +339,7 @@ func isLogicalOp(op Opcode) bool {
 }
 
 func isDataTypeFunction(op Opcode) bool {
-	return op >= OpReadInt && op <= OpUint32be
+	return op >= OpReadInt && op <= OpUint64be
 }
 
 // EmitStringOperation emits string operation instructions

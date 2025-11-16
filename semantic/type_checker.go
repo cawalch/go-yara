@@ -568,7 +568,6 @@ func (tc *TypeChecker) isStringIdentifier(typeInfo *TypeInfo) bool {
 	return typeInfo.DataType == TypeBoolean
 }
 
-
 // checkFunctionCall checks the type of function call expressions
 func (tc *TypeChecker) checkFunctionCall(funcCall *ast.FunctionCall) *TypeInfo {
 	// Check argument types
@@ -584,10 +583,17 @@ func (tc *TypeChecker) checkFunctionCall(funcCall *ast.FunctionCall) *TypeInfo {
 		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
 	case "string":
 		return &TypeInfo{DataType: TypeString}
-	case "uint8", "uint16", "uint32":
-		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
-	case "int8", "int16", "int32":
-		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
+	// Data type conversion functions - use the type system to get proper return types
+	case "uint8", "uint16", "uint32", "uint64",
+		"int8", "int16", "int32", "int64",
+		"uint8be", "uint16be", "uint32be", "uint64be",
+		"int8be", "int16be", "int32be", "int64be":
+		returnType, err := GetIntegerTypeFromFunction(funcCall.Function)
+		if err != nil {
+			// This should not happen if the function name is valid
+			return &TypeInfo{DataType: TypeUnknown}
+		}
+		return &TypeInfo{DataType: TypeInteger, IntegerType: returnType}
 	default:
 		// Unknown function - return unknown type
 		return &TypeInfo{DataType: TypeUnknown}

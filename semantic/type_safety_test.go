@@ -630,7 +630,6 @@ func containsAny(errors []error, substring string) bool {
 	return false
 }
 
-
 // containsSubstring checks if a string contains a substring
 func containsSubstring(s, substr string) bool {
 	for i := 0; i <= len(s)-len(substr); i++ {

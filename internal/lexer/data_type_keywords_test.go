@@ -29,6 +29,11 @@ func TestDataTypeKeywords_Basic(t *testing.T) {
 		{"uint8be", "uint8be", token.UINT8BE},
 		{"uint16be", "uint16be", token.UINT16BE},
 		{"uint32be", "uint32be", token.UINT32BE},
+		// 64-bit data types
+		{"int64", "int64", token.INT64},
+		{"uint64", "uint64", token.UINT64},
+		{"int64be", "int64be", token.INT64BE},
+		{"uint64be", "uint64be", token.UINT64BE},
 	}
 
 	for _, tt := range tests {
@@ -52,6 +57,10 @@ func TestDataTypeKeywords_CaseSensitive(t *testing.T) {
 		{"Uint32_mixed", "Uint32", token.IDENTIFIER},     // Should be identifier, not keyword
 		{"int16be_lowercase", "int16be", token.INT16BE},
 		{"INT16BE_uppercase", "INT16BE", token.IDENTIFIER}, // Should be identifier, not keyword
+		{"int64_lowercase", "int64", token.INT64},
+		{"uint64_lowercase", "uint64", token.UINT64},
+		{"int64be_lowercase", "int64be", token.INT64BE},
+		{"uint64be_lowercase", "uint64be", token.UINT64BE},
 	}
 
 	for _, tt := range tests {
@@ -181,21 +190,25 @@ func TestDataTypeKeywords_InExpressions(t *testing.T) {
 }
 
 func TestDataTypeKeywords_AllTypesInSequence(t *testing.T) {
-	input := "int8 int16 int32 uint8 uint16 uint32 int8be int16be int32be uint8be uint16be uint32be"
+	input := "int8 int16 int32 int64 uint8 uint16 uint32 uint64 int8be int16be int32be int64be uint8be uint16be uint32be uint64be"
 
 	expected := []token.Type{
 		token.INT8,
 		token.INT16,
 		token.INT32,
+		token.INT64,
 		token.UINT8,
 		token.UINT16,
 		token.UINT32,
+		token.UINT64,
 		token.INT8BE,
 		token.INT16BE,
 		token.INT32BE,
+		token.INT64BE,
 		token.UINT8BE,
 		token.UINT16BE,
 		token.UINT32BE,
+		token.UINT64BE,
 		token.EOF,
 	}
 

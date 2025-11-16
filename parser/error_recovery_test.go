@@ -115,7 +115,7 @@ rule ValidRule {
 			// proper error recovery testing. This test needs the parser to be redesigned
 			// to return partial programs for error recovery scenarios.
 			program, err := p.ParseRules()
-			_ = program     // Avoid unused variable errors
+			_ = program // Avoid unused variable errors
 			_ = err
 			t.Skip("Parser returns nil on errors, preventing error recovery testing - known pre-existing issue")
 		})
@@ -512,15 +512,15 @@ rule TestRule {
 			expectError: true,
 		},
 		{
-			name: "for quantifier with variable",
+			name: "for quantifier with incomplete syntax",
 			input: `
 rule TestRule {
 	strings:
 		$a = "test"
 	condition:
-		for all i in (0..9) : ($a at i)
+		for all i in (0..9
 }`,
-			expectError: true, // Parser doesn't support complex for loop syntax yet
+			expectError: true, // Incomplete syntax should still fail parsing
 		},
 		{
 			name: "malformed for loop variable",

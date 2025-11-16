@@ -258,8 +258,8 @@ func NewDataTypeFunctionStrategy() *DataTypeFunctionStrategy {
 func (dtfs *DataTypeFunctionStrategy) CanHandle(currentToken, _ token.Type) bool {
 	// Check if current token is a data type function name
 	switch currentToken {
-	case token.UINT8, token.UINT16, token.UINT32, token.INT8, token.INT16, token.INT32,
-		token.UINT8BE, token.UINT16BE, token.UINT32BE, token.INT8BE, token.INT16BE, token.INT32BE:
+	case token.UINT8, token.UINT16, token.UINT32, token.UINT64, token.INT8, token.INT16, token.INT32, token.INT64,
+		token.UINT8BE, token.UINT16BE, token.UINT32BE, token.UINT64BE, token.INT8BE, token.INT16BE, token.INT32BE, token.INT64BE:
 		return true
 	case token.IDENTIFIER:
 		// For IDENTIFIER tokens, we would need to check the literal value
@@ -286,9 +286,16 @@ func (dtfs *DataTypeFunctionStrategy) Parse(parser *ExpressionParser, context Pa
 		default:
 			return NewParseError(fmt.Errorf("unsupported data type function: %s", functionName))
 		}
-	case token.UINT8, token.UINT16, token.UINT32, token.INT8, token.INT16, token.INT32,
-		token.UINT8BE, token.UINT16BE, token.UINT32BE, token.INT8BE, token.INT16BE, token.INT32BE:
-		functionName = context.CurrentToken.Type.String()
+	case token.UINT8, token.UINT16, token.UINT32, token.UINT64, token.INT8, token.INT16, token.INT32, token.INT64,
+		token.UINT8BE, token.UINT16BE, token.UINT32BE, token.UINT64BE, token.INT8BE, token.INT16BE, token.INT32BE, token.INT64BE:
+		// Map uppercase token names to lowercase function names
+		tokenNameMap := map[token.Type]string{
+			token.UINT8: "uint8", token.UINT16: "uint16", token.UINT32: "uint32", token.UINT64: "uint64",
+			token.INT8: "int8", token.INT16: "int16", token.INT32: "int32", token.INT64: "int64",
+			token.UINT8BE: "uint8be", token.UINT16BE: "uint16be", token.UINT32BE: "uint32be", token.UINT64BE: "uint64be",
+			token.INT8BE: "int8be", token.INT16BE: "int16be", token.INT32BE: "int32be", token.INT64BE: "int64be",
+		}
+		functionName = tokenNameMap[context.CurrentToken.Type]
 	default:
 		return NewParseError(fmt.Errorf("invalid data type function: %s", context.CurrentToken.Type))
 	}
@@ -412,7 +419,6 @@ func (ybs *YaraBuiltInStrategy) Name() string { return "YaraBuiltInStrategy" }
 
 // Priority returns the priority of the strategy
 func (ybs *YaraBuiltInStrategy) Priority() int { return 6 }
-
 
 // QuantifierTokenStrategy handles quantifier keywords (any, all, none, for)
 type QuantifierTokenStrategy struct {

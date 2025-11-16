@@ -541,19 +541,23 @@ func (cc *ConditionCompiler) selectOpcode(binOp *ast.BinaryOp, isFloatOp bool) (
 	return mapping.intOp, nil
 }
 
-func (cc *ConditionCompiler) handleSpecialOperators(binOp *ast.BinaryOp) error {
+func (cc *ConditionCompiler) handleSpecialOperators(binOp *ast.BinaryOp) (bool, error) {
 	switch binOp.Op {
 	case token.AT, token.IN:
-		return cc.compileStringOffsetOperator(binOp)
+		return true, cc.compileStringOffsetOperator(binOp)
 	case token.DOT:
-		return cc.compileExpressions(binOp.Left, binOp.Right)
+		return true, cc.compileExpressions(binOp.Left, binOp.Right)
 	}
-	return nil
+	return false, nil
 }
 
 func (cc *ConditionCompiler) compileBinaryOp(binOp *ast.BinaryOp) error {
-	if err := cc.handleSpecialOperators(binOp); err != nil {
+	handled, err := cc.handleSpecialOperators(binOp)
+	if err != nil {
 		return err
+	}
+	if handled {
+		return nil
 	}
 
 	if err := cc.compileOperands(binOp); err != nil {
@@ -909,10 +913,10 @@ func (cc *ConditionCompiler) compileFunctionCall(call *ast.FunctionCall) error {
 	}
 
 	functionOpcodes := map[string]Opcode{
-		"uint8": OpUint8, "uint16": OpUint16, "uint32": OpUint32,
-		"uint8be": OpUint8be, "uint16be": OpUint16be, "uint32be": OpUint32be,
-		"int8": OpInt8, "int16": OpInt16, "int32": OpInt32,
-		"int8be": OpInt8be, "int16be": OpInt16be, "int32be": OpInt32be,
+		"uint8": OpUint8, "uint16": OpUint16, "uint32": OpUint32, "uint64": OpUint64,
+		"uint8be": OpUint8be, "uint16be": OpUint16be, "uint32be": OpUint32be, "uint64be": OpUint64be,
+		"int8": OpInt8, "int16": OpInt16, "int32": OpInt32, "int64": OpInt64,
+		"int8be": OpInt8be, "int16be": OpInt16be, "int32be": OpInt32be, "int64be": OpInt64be,
 		"concat": OpConcat,
 	}
 
@@ -971,4 +975,3 @@ func (cc *ConditionCompiler) isModuleFunction(name string) bool {
 func (cc *ConditionCompiler) emitModuleFunctionCall(_ string, line, column int) {
 	cc.emitter.EmitPush(0, line, column)
 }
-

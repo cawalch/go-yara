@@ -472,18 +472,36 @@ func (v *Validator) validateFunctionCallExpression(funcCall *ast.FunctionCall) (
 		maxArgs int
 		retType *IntegerType
 	}{
-		"UINT8":   {1, 1, Uint8Type},
-		"UINT16":  {1, 1, Uint16Type},
-		"UINT32":  {1, 1, Uint32Type},
-		"UINT8BE": {1, 1, Uint8Type},
+		"UINT8":    {1, 1, Uint8Type},
+		"UINT16":   {1, 1, Uint16Type},
+		"UINT32":   {1, 1, Uint32Type},
+		"UINT8BE":  {1, 1, Uint8Type},
 		"UINT16BE": {1, 1, Uint16Type},
 		"UINT32BE": {1, 1, Uint32Type},
-		"INT8":    {1, 1, Int8Type},
-		"INT16":   {1, 1, Int16Type},
-		"INT32":   {1, 1, Int32Type},
-		"INT8BE":  {1, 1, Int8Type},
-		"INT16BE": {1, 1, Int16Type},
-		"INT32BE": {1, 1, Int32Type},
+		"INT8":     {1, 1, Int8Type},
+		"INT16":    {1, 1, Int16Type},
+		"INT32":    {1, 1, Int32Type},
+		"INT8BE":   {1, 1, Int8Type},
+		"INT16BE":  {1, 1, Int16Type},
+		"INT32BE":  {1, 1, Int32Type},
+		"INT64BE":  {1, 1, Int64BEType},
+		// Lowercase function names (from parser mapping)
+		"uint8":    {1, 1, Uint8Type},
+		"uint16":   {1, 1, Uint16Type},
+		"uint32":   {1, 1, Uint32Type},
+		"uint64":   {1, 1, Uint64Type},
+		"uint8be":  {1, 1, Uint8BEType},
+		"uint16be": {1, 1, Uint16BEType},
+		"uint32be": {1, 1, Uint32BEType},
+		"uint64be": {1, 1, Uint64BEType},
+		"int8":     {1, 1, Int8Type},
+		"int16":    {1, 1, Int16Type},
+		"int32":    {1, 1, Int32Type},
+		"int64":    {1, 1, Int64Type},
+		"int8be":   {1, 1, Int8BEType},
+		"int16be":  {1, 1, Int16BEType},
+		"int32be":  {1, 1, Int32BEType},
+		"int64be":  {1, 1, Int64BEType},
 	}
 
 	// Reject keywords that should not be function calls
@@ -539,7 +557,6 @@ func (v *Validator) validateForLoopExpression(forLoop *ast.ForLoop) (*TypeInfo, 
 	// For loops always return boolean
 	return &TypeInfo{DataType: TypeBoolean}, errors
 }
-
 
 // getTypeFromSymbol returns the type information for a symbol
 func (v *Validator) getTypeFromSymbol(symbol *Symbol) *TypeInfo {
@@ -676,7 +693,6 @@ func (v *Validator) VisitStringLength(_ *ast.StringLength) any {
 	// StringLength validation is handled in validateExpression
 	return nil
 }
-
 
 // isModuleFunction checks if an identifier is a known module
 func (v *Validator) isModuleFunction(moduleName string) bool {

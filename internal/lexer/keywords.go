@@ -48,6 +48,11 @@ var keywords = map[string]token.Type{
 	"uint8be":  token.UINT8BE,
 	"uint16be": token.UINT16BE,
 	"uint32be": token.UINT32BE,
+	// Additional 64-bit data types
+	"int64":    token.INT64,
+	"uint64":   token.UINT64,
+	"int64be":  token.INT64BE,
+	"uint64be": token.UINT64BE,
 	// File operations (Phase 3)
 	"filesize":   token.FILESIZE,
 	"entrypoint": token.ENTRYPOINT,

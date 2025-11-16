@@ -63,11 +63,11 @@ func TestMemoryManager_StackUnderflow(t *testing.T) {
 	}
 
 	// Now empty the stack successfully for the Peek test
-	_, err = mm.PopN(2)  // Remove the 1 and 2 that were pushed
+	_, err = mm.PopN(2) // Remove the 1 and 2 that were pushed
 	if err != nil {
 		t.Errorf("PopN() with sufficient values should not return error, got: %v", err)
 	}
-	_, err = mm.Pop()     // Remove the 42 that was left from earlier test
+	_, err = mm.Pop() // Remove the 42 that was left from earlier test
 	if err != nil {
 		t.Errorf("Pop() should not return error, got: %v", err)
 	}

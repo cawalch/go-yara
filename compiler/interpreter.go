@@ -831,8 +831,8 @@ func (i *Interpreter) executeFileOperation(opcode Opcode) error {
 // isIntegerReadOpcode checks if the opcode is an integer read operation
 func (i *Interpreter) isIntegerReadOpcode(opcode Opcode) bool {
 	switch opcode {
-	case OpInt8, OpInt16, OpInt32, OpUint8, OpUint16, OpUint32,
-		OpInt8be, OpUint8be, OpInt16be, OpUint16be, OpInt32be, OpUint32be:
+	case OpInt8, OpInt16, OpInt32, OpInt64, OpUint8, OpUint16, OpUint32, OpUint64,
+		OpInt8be, OpUint8be, OpInt16be, OpUint16be, OpInt32be, OpUint32be, OpInt64be, OpUint64be:
 		return true
 	default:
 		return false
@@ -843,17 +843,17 @@ func (i *Interpreter) isIntegerReadOpcode(opcode Opcode) bool {
 func (i *Interpreter) executeIntegerReadOpcode(opcode Opcode) error {
 	// Handle little-endian integer reads
 	switch opcode {
-	case OpInt8, OpInt16, OpInt32:
+	case OpInt8, OpInt16, OpInt32, OpInt64:
 		return i.executeReadIntOp(int(opcode-OpInt8)+1, true)
-	case OpUint8, OpUint16, OpUint32:
+	case OpUint8, OpUint16, OpUint32, OpUint64:
 		return i.executeReadIntOp(int(opcode-OpUint8)+1, false)
 	}
 
 	// Handle big-endian integer reads
 	switch opcode {
-	case OpInt8be, OpInt16be, OpInt32be:
+	case OpInt8be, OpInt16be, OpInt32be, OpInt64be:
 		return i.executeReadIntOpBE(int(opcode-OpInt8be)+1, true)
-	case OpUint8be, OpUint16be, OpUint32be:
+	case OpUint8be, OpUint16be, OpUint32be, OpUint64be:
 		return i.executeReadIntOpBE(int(opcode-OpUint8be)+1, false)
 	}
 
@@ -1076,6 +1076,8 @@ func (i *Interpreter) executeReadInt(offset int64, size int, unsigned bool) (int
 		return i.readInt16(data, offset, unsigned)
 	case 4:
 		return i.readInt32(data, offset, unsigned)
+	case 8:
+		return i.readInt64(data, offset, unsigned)
 	default:
 		return 0, &InterpreterError{
 			Type:    ErrorInvalidMemoryAccess,
@@ -1133,6 +1135,20 @@ func (i *Interpreter) readInt32(data []byte, offset int64, unsigned bool) (int64
 	return safeUint32ToInt64(val, unsigned), nil
 }
 
+func (i *Interpreter) readInt64(data []byte, offset int64, unsigned bool) (int64, error) {
+	if offset+7 >= int64(len(data)) {
+		return 0, &InterpreterError{
+			Type:    ErrorInvalidMemoryAccess,
+			Message: "64-bit read extends beyond data bounds",
+		}
+	}
+	val := uint64(data[offset]) | uint64(data[offset+1])<<8 |
+		uint64(data[offset+2])<<16 | uint64(data[offset+3])<<24 |
+		uint64(data[offset+4])<<32 | uint64(data[offset+5])<<40 |
+		uint64(data[offset+6])<<48 | uint64(data[offset+7])<<56
+	return safeUint64ToInt64(val, unsigned), nil
+}
+
 // Helper functions for safe integer conversions
 func safeUint16ToInt64(val uint16, unsigned bool) int64 {
 	if unsigned {
@@ -1154,6 +1170,18 @@ func safeUint32ToInt64(val uint32, unsigned bool) int64 {
 	if val&0x80000000 != 0 {
 		// Convert from two's complement
 		return int64(val) - 0x100000000
+	}
+	return int64(val)
+}
+
+func safeUint64ToInt64(val uint64, unsigned bool) int64 {
+	if unsigned {
+		return int64(val)
+	}
+	// For signed values, check if the high bit is set (negative number)
+	if val&0x8000000000000000 != 0 {
+		// Convert from two's complement using bitwise complement
+		return int64(^val + 1)
 	}
 	return int64(val)
 }
@@ -1344,6 +1372,22 @@ func (i *Interpreter) readIntBE(data []byte, offset int64, size int, signed bool
 		b4 := data[offset+3]
 		combined := uint32(b1)<<24 | uint32(b2)<<16 | uint32(b3)<<8 | uint32(b4)
 		return safeUint32ToInt64(combined, !signed), nil
+
+	case 8:
+		if err := i.validateBounds(offset, 7, "64-bit read"); err != nil {
+			return 0, err
+		}
+		b1 := data[offset]
+		b2 := data[offset+1]
+		b3 := data[offset+2]
+		b4 := data[offset+3]
+		b5 := data[offset+4]
+		b6 := data[offset+5]
+		b7 := data[offset+6]
+		b8 := data[offset+7]
+		combined := uint64(b1)<<56 | uint64(b2)<<48 | uint64(b3)<<40 | uint64(b4)<<32 |
+			uint64(b5)<<24 | uint64(b6)<<16 | uint64(b7)<<8 | uint64(b8)
+		return safeUint64ToInt64(combined, !signed), nil
 
 	default:
 		return 0, &InterpreterError{

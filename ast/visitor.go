@@ -144,7 +144,6 @@ func (v *BaseVisitor) VisitRegexPattern(_ *RegexPattern) any { return nil }
 // VisitStringLength visits a string length node (TODO: Remove in Sprint 2)
 func (v *BaseVisitor) VisitStringLength(_ *StringLength) any { return nil }
 
-
 // VariableVisitor implementations
 
 // VisitGlobalVariable visits a global variable node
@@ -163,7 +162,6 @@ func (v *BaseVisitor) VisitOfExpression(_ *OfExpression) any { return nil }
 
 // VisitArrayIndex visits an array index node (TODO: Remove in Sprint 2)
 func (v *BaseVisitor) VisitArrayIndex(_ *ArrayIndex) any { return nil }
-
 
 // ModuleVisitor implementations
 

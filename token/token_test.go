@@ -32,6 +32,7 @@ func TestTypeString(t *testing.T) {
 		"IntegerTypes": {
 			{INT8, "INT8"}, {INT16, "INT16"}, {INT32, "INT32"}, {UINT8, "UINT8"}, {UINT16, "UINT16"}, {UINT32, "UINT32"},
 			{INT8BE, "INT8BE"}, {INT16BE, "INT16BE"}, {INT32BE, "INT32BE"}, {UINT8BE, "UINT8BE"}, {UINT16BE, "UINT16BE"}, {UINT32BE, "UINT32BE"},
+			{INT64, "int64"}, {UINT64, "uint64"}, {INT64BE, "int64be"}, {UINT64BE, "uint64be"},
 		},
 		"SpecialVariables": {
 			{FILESIZE, "FILESIZE"}, {ENTRYPOINT, "ENTRYPOINT"}, {FOR, "FOR"}, {IN, "IN"}, {AT, "AT"},
@@ -40,6 +41,7 @@ func TestTypeString(t *testing.T) {
 		"StringOperations": {
 			{CONTAINS, "CONTAINS"}, {ICONTAINS, "ICONTAINS"}, {STARTSWITH, "STARTSWITH"}, {ISTARTSWITH, "ISTARTSWITH"},
 			{ENDSWITH, "ENDSWITH"}, {IENDSWITH, "IENDSWITH"}, {IEQUALS, "IEQUALS"}, {MATCHES, "MATCHES"}, {HASH, "HASH"},
+			{StringCount, "#"}, {StringLength, "!"},
 		},
 		"ArithmeticOperators": {
 			{PLUS, "PLUS"}, {MINUS, "MINUS"}, {MULTIPLY, "MULTIPLY"}, {DIVIDE, "DIVIDE"}, {MODULO, "MODULO"},

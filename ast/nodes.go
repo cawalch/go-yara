@@ -301,8 +301,6 @@ func (i *Include) Accept(v Visitor) any {
 	return v.VisitInclude(i)
 }
 
-
-
 // StringLength represents a string length expression (temporarily kept for compilation)
 // TODO: Remove StringLength in Sprint 2 - strlen() doesn't exist in YARA
 type StringLength struct {
@@ -341,7 +339,6 @@ func (a *ArrayIndex) expression() {}
 func (a *ArrayIndex) Accept(v Visitor) any {
 	return v.VisitArrayIndex(a)
 }
-
 
 // ForLoop represents a for loop expression
 type ForLoop struct {

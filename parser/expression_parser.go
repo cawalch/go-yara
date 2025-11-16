@@ -225,7 +225,6 @@ func (p *ExpressionParser) parsePostfix(base ast.Expression) (ast.Expression, er
 	return base, nil
 }
 
-
 // parseFunctionCall parses function call expression
 func (p *ExpressionParser) parseFunctionCall(base ast.Expression) (ast.Expression, error) {
 	// Extract function name from identifier

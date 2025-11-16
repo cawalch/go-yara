@@ -87,7 +87,8 @@ func (tc DefaultTokenClassifier) IsComparisonOp(tok token.Type) bool {
 	switch tok {
 	case token.EQ, token.NEQ, token.LT, token.LE, token.GT, token.GE,
 		token.CONTAINS, token.ICONTAINS, token.STARTSWITH, token.ISTARTSWITH,
-		token.ENDSWITH, token.IENDSWITH, token.IEQUALS, token.MATCHES:
+		token.ENDSWITH, token.IENDSWITH, token.IEQUALS, token.MATCHES,
+		token.AT:
 		return true
 	default:
 		return false
@@ -151,8 +152,8 @@ func (tc DefaultTokenClassifier) IsIdentifier(tok token.Type) bool {
 // IsDataTypeFunction returns true if the token represents a data type conversion function
 func (tc DefaultTokenClassifier) IsDataTypeFunction(tok token.Type) bool {
 	switch tok {
-	case token.UINT8, token.UINT16, token.UINT32, token.INT8, token.INT16, token.INT32,
-		token.UINT8BE, token.UINT16BE, token.UINT32BE, token.INT8BE, token.INT16BE, token.INT32BE:
+	case token.UINT8, token.UINT16, token.UINT32, token.UINT64, token.INT8, token.INT16, token.INT32, token.INT64,
+		token.UINT8BE, token.UINT16BE, token.UINT32BE, token.UINT64BE, token.INT8BE, token.INT16BE, token.INT32BE, token.INT64BE:
 		return true
 	case token.IDENTIFIER:
 		// Would need to check against known function names like "concat"

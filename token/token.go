@@ -59,9 +59,18 @@ const (
 	UINT8BE
 	UINT16BE
 	UINT32BE
+	// Additional data types (missing from current implementation)
+	INT64
+	UINT64
+	INT64BE
+	UINT64BE
 	// FILESIZE file operation
 	FILESIZE
 	ENTRYPOINT
+	// STRING_COUNT string count operator (#)
+	StringCount
+	// STRING_LENGTH string match length operator (!)
+	StringLength
 	// FOR control flow keyword
 	FOR
 	IN
@@ -167,8 +176,14 @@ var tokenTypeNames = map[Type]string{
 	UINT8BE:          "UINT8BE",
 	UINT16BE:         "UINT16BE",
 	UINT32BE:         "UINT32BE",
+	INT64:            "int64",
+	UINT64:           "uint64",
+	INT64BE:          "int64be",
+	UINT64BE:         "uint64be",
 	FILESIZE:         "FILESIZE",
 	ENTRYPOINT:       "ENTRYPOINT",
+	StringCount:      "#",
+	StringLength:     "!",
 	FOR:              "FOR",
 	IN:               "IN",
 	AT:               "AT",
