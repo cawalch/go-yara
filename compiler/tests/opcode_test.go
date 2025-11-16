@@ -97,10 +97,10 @@ func testJumpOperations(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			// Note: Using IsStrOp as placeholder since IsJumpOp isn't implemented yet
-			// This test will need to be updated when IsJumpOp is available
-			_ = test.opcode // suppress unused warning
-			t.Skip("Jump operations test pending IsJumpOp implementation")
+			inst := &compiler.Instruction{Opcode: test.opcode}
+			if got := inst.IsJump(); got != test.isJump {
+				t.Errorf("IsJump() = %v, want %v", got, test.isJump)
+			}
 		})
 	}
 }
@@ -111,19 +111,20 @@ func testTypeFunctions(t *testing.T) {
 		opcode   compiler.Opcode
 		isTypeFn bool
 	}{
-		{"push 8-bit", compiler.OpPush8, true},
-		{"push 16-bit", compiler.OpPush16, true},
-		{"push 32-bit", compiler.OpPush32, true},
-		{"push unsigned", compiler.OpPushU, true},
-		{"push double", compiler.OpPushDbl, true},
+		{"read int8", compiler.OpInt8, true},
+		{"read int16", compiler.OpInt16, true},
+		{"read int32", compiler.OpInt32, true},
+		{"read uint8", compiler.OpUint8, true},
+		{"read uint16", compiler.OpUint16, true},
+		{"read uint32", compiler.OpUint32, true},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			// Note: Using IsStrOp as placeholder since IsTypeFunction isn't implemented yet
-			// This test will need to be updated when IsTypeFunction is available
-			_ = test.opcode // suppress unused warning
-			t.Skip("Type functions test pending IsTypeFunction implementation")
+			inst := &compiler.Instruction{Opcode: test.opcode}
+			if got := inst.IsTypeFunction(); got != test.isTypeFn {
+				t.Errorf("IsTypeFunction() = %v, want %v", got, test.isTypeFn)
+			}
 		})
 	}
 }

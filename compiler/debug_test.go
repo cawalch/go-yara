@@ -63,12 +63,23 @@ func TestInterpreterDebugMode(t *testing.T) {
 				t.Errorf("IsDebugModeEnabled() = %v, want %v", interpreter.IsDebugModeEnabled(), tt.enableDebug)
 			}
 
-			// Check if debug output was produced
-			hasDebugOutput := len(output) > 0
-			if hasDebugOutput != tt.expectOutput {
-				t.Errorf("Debug output = %v, want %v", hasDebugOutput, tt.expectOutput)
+			// Check if debug output was produced and matches expected content
+			if tt.expectOutput {
+				expectedOutput := `DEBUG: Executing opcode 63 (PUSH_8) at ip 0
+DEBUG: Stack after PUSH_8: len=1
+DEBUG: Top of stack: Type=Int, Value=42
+DEBUG: Executing opcode 14 (POP) at ip 2
+DEBUG: Stack operation - current depth: 1
+DEBUG: Stack after POP: len=0
+DEBUG: Executing opcode 255 (HALT) at ip 3
+DEBUG: Stack after HALT: len=0
+`
+				if output != expectedOutput {
+					t.Errorf("Debug output mismatch. Got:\n%s\nWant:\n%s", output, expectedOutput)
+				}
+			} else {
 				if len(output) > 0 {
-					t.Logf("Debug output: %s", output)
+					t.Errorf("Expected no debug output, but got:\n%s", output)
 				}
 			}
 		})

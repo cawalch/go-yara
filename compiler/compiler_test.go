@@ -3,6 +3,7 @@ package compiler
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 
@@ -2516,11 +2517,40 @@ func TestExecutionPlanGetTotalSize(t *testing.T) {
 func TestCompilerCompileFile(t *testing.T) {
 	compiler := NewCompiler()
 
-	// CompileFile calls readFile which is not implemented
-	// This test verifies that the error is handled correctly
+	// Test with nonexistent file - should return error
 	_, err := compiler.CompileFile("nonexistent.yar")
 	if err == nil {
-		t.Errorf("CompileFile() error = nil, want error")
+		t.Errorf("CompileFile() error = nil, want error for nonexistent file")
+	}
+
+	// Test with a valid YARA rule - create a temporary test file
+	tempFile := t.TempDir() + "/test_rule.yar"
+	yaraContent := `
+rule test_rule {
+	strings:
+		$test = "hello world"
+	condition:
+		$test
+}
+`
+
+	err = os.WriteFile(tempFile, []byte(yaraContent), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	// Test compilation of the file
+	program, err := compiler.CompileFile(tempFile)
+	if err != nil {
+		t.Errorf("CompileFile() error = %v, want no error for valid YARA file", err)
+	}
+
+	if program == nil {
+		t.Error("CompileFile() returned nil program, want valid program")
+	}
+
+	if program != nil && len(program.Rules) != 1 {
+		t.Errorf("CompileFile() returned %d rules, want 1", len(program.Rules))
 	}
 }
 
