@@ -459,14 +459,15 @@ func inferStringOperationType(left, right *TypeInfo) (*TypeInfo, error) {
 // inferAtOperatorType infers the result type of AT operator
 func inferAtOperatorType(left, right *TypeInfo) (*TypeInfo, error) {
 	// AT operator: $string at offset
-	// Left should be string identifier, right should be integer offset
+	// Left should be string identifier (boolean), right should be integer offset
 	if left.DataType != TypeBoolean {
 		return nil, errors.New("AT operator requires string identifier as left operand")
 	}
 	if right.DataType != TypeInteger {
 		return nil, errors.New("AT operator requires integer offset as right operand")
 	}
-	return &TypeInfo{DataType: TypeBoolean}, nil
+	// The result is integer (the offset where the string appears)
+	return &TypeInfo{DataType: TypeInteger}, nil
 }
 
 // inferInOperatorType infers the result type of IN operator
@@ -513,6 +514,9 @@ var unaryOpHandlers = map[token.Type]func(*TypeInfo) (*TypeInfo, error){
 		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}, nil
 	},
 	token.AT: func(*TypeInfo) (*TypeInfo, error) {
+		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}, nil
+	},
+	token.StringLength: func(*TypeInfo) (*TypeInfo, error) {
 		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}, nil
 	},
 }

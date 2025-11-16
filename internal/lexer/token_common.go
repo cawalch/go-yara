@@ -20,6 +20,7 @@ type TokenMethods interface {
 	getCurrentChar() byte
 	getPeekChar() byte
 	readChar()
+	isStringLengthContext() bool
 }
 
 // NextTokenImpl is a shared implementation for NextToken logic
@@ -104,12 +105,19 @@ func tryEqualsToken[T TokenMethods](lexer T, pos token.Position) (token.Token, b
 	return lexer.makeSimpleToken(token.ASSIGN, "=", pos), true
 }
 
-// tryNotEqualsToken handles ! and != tokens
+// tryNotEqualsToken handles ! and != tokens with contextual analysis
 func tryNotEqualsToken[T TokenMethods](lexer T, pos token.Position) (token.Token, bool) {
 	if lexer.getPeekChar() == '=' {
 		lexer.readChar()
 		return lexer.makeTwoCharToken(token.NEQ, "!=", pos), true
 	}
+
+	// Contextual analysis: if ! is followed by a string identifier ($), treat as StringLength
+	// Need to skip whitespace to check what comes after
+	if lexer.isStringLengthContext() {
+		return lexer.makeSimpleToken(token.StringLength, "!", pos), true
+	}
+
 	return lexer.makeSimpleToken(token.NOT, "!", pos), true
 }
 

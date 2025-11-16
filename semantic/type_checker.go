@@ -47,6 +47,8 @@ func (tc *TypeChecker) checkExpression(expr ast.Expression) *TypeInfo {
 		return tc.checkFunctionCall(e)
 	case *ast.StringLength:
 		return tc.checkStringLength(e)
+	case *ast.ArrayIndex:
+		return tc.checkArrayIndex(e)
 
 	case *ast.OfExpression:
 		return tc.checkOfExpression(e)
@@ -373,8 +375,8 @@ func (tc *TypeChecker) checkAtOperator(leftType, rightType *TypeInfo, pos token.
 			Position: pos,
 		})
 	}
-	// The result should be boolean
-	return &TypeInfo{DataType: TypeBoolean}
+	// The result should be integer (the offset)
+	return &TypeInfo{DataType: TypeInteger}
 }
 
 // checkInOperator handles IN operator type checking
@@ -627,4 +629,53 @@ func (tc *TypeChecker) checkOfExpression(ofExpr *ast.OfExpression) *TypeInfo {
 
 	// "of" expressions always return boolean (true/false)
 	return &TypeInfo{DataType: TypeBoolean}
+}
+
+// checkArrayIndex checks the type of array indexing expressions
+func (tc *TypeChecker) checkArrayIndex(arrayIndex *ast.ArrayIndex) *TypeInfo {
+	// The array should be a unary operation (@, !, or #)
+	unaryOp, ok := arrayIndex.Array.(*ast.UnaryOp)
+	if !ok {
+		tc.addError(&Error{
+			Message:  "array indexing requires @, !, or # operator",
+			Position: arrayIndex.Position(),
+		})
+		return &TypeInfo{DataType: TypeUnknown}
+	}
+
+	// Check that we have a supported operator
+	if unaryOp.Op != token.AT && unaryOp.Op != token.StringLength && unaryOp.Op != token.HASH {
+		tc.addError(&Error{
+			Message:  fmt.Sprintf("unsupported operator for array indexing: %s", unaryOp.Op),
+			Position: arrayIndex.Position(),
+		})
+		return &TypeInfo{DataType: TypeUnknown}
+	}
+
+	// Check the array operand (string identifier)
+	arrayType := tc.checkExpression(unaryOp.Right)
+	if arrayType.DataType != TypeBoolean {
+		tc.addError(&Error{
+			Message: fmt.Sprintf("%s operator requires string identifier", map[token.Type]string{
+				token.AT:           "@",
+				token.StringLength: "!",
+				token.HASH:         "#",
+			}[unaryOp.Op]),
+			Position: unaryOp.Position(),
+		})
+		return &TypeInfo{DataType: TypeUnknown}
+	}
+
+	// Check the index expression
+	indexType := tc.checkExpression(arrayIndex.Index)
+	if indexType.DataType != TypeInteger {
+		tc.addError(&Error{
+			Message:  "array index must be integer",
+			Position: arrayIndex.Index.Position(),
+		})
+		return &TypeInfo{DataType: TypeUnknown}
+	}
+
+	// All array indexing operations return integer
+	return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
 }

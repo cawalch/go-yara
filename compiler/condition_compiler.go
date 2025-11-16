@@ -588,6 +588,8 @@ func (cc *ConditionCompiler) compileUnaryOp(unaryOp *ast.UnaryOp) error {
 		return cc.compileHashOperator(unaryOp)
 	case token.AT:
 		return cc.compileAtOperator(unaryOp)
+	case token.StringLength:
+		return cc.compileStringLengthOperator(unaryOp)
 	case token.NOT:
 		return cc.compileNotOperator(unaryOp)
 	case token.BitwiseNot:
@@ -633,6 +635,24 @@ func (cc *ConditionCompiler) compileAtOperator(unaryOp *ast.UnaryOp) error {
 	cc.emitStringOffset(offset, unaryOp.Pos.Line, unaryOp.Pos.Column)
 	cc.emitter.EmitPush(1, unaryOp.Pos.Line, unaryOp.Pos.Column) // Default to first match (1-based)
 	cc.emitter.EmitOpcode(OpOffset, unaryOp.Pos.Line, unaryOp.Pos.Column)
+	return nil
+}
+
+func (cc *ConditionCompiler) compileStringLengthOperator(unaryOp *ast.UnaryOp) error {
+	id, ok := unaryOp.Right.(*ast.Identifier)
+	if !ok {
+		return errors.New("STRING LENGTH (!) expects a string identifier operand")
+	}
+
+	offset, exists := cc.findStringOffset(id.Name)
+	if !exists {
+		return fmt.Errorf("undefined string identifier for string length operator: %s", id.Name)
+	}
+
+	// Use the same approach as compileIdentifier for length operation
+	cc.emitStringOffset(offset, unaryOp.Pos.Line, unaryOp.Pos.Column)
+	cc.emitter.EmitPush(1, unaryOp.Pos.Line, unaryOp.Pos.Column) // Default to first match (1-based)
+	cc.emitter.EmitOpcode(OpLength, unaryOp.Pos.Line, unaryOp.Pos.Column)
 	return nil
 }
 
@@ -692,10 +712,52 @@ func (cc *ConditionCompiler) compileStringLength(strLen *ast.StringLength) error
 	return nil
 }
 
-// TODO: Re-implement in Sprint 2 for proper YARA @ and # syntax
-// Temporary placeholder to make compilation work during cleanup
-func (cc *ConditionCompiler) compileArrayIndex(_ *ast.ArrayIndex) error {
-	return fmt.Errorf("array indexing temporarily disabled during cleanup")
+// compileArrayIndex compiles array indexing expressions for @ and # operators
+func (cc *ConditionCompiler) compileArrayIndex(arrayIndex *ast.ArrayIndex) error {
+	unaryOp, ok := arrayIndex.Array.(*ast.UnaryOp)
+	if !ok {
+		return fmt.Errorf("array indexing requires @ or # operator, got %T", arrayIndex.Array)
+	}
+
+	if unaryOp.Op != token.AT && unaryOp.Op != token.StringLength && unaryOp.Op != token.HASH {
+		return fmt.Errorf("unsupported operator for array indexing: %s", unaryOp.Op)
+	}
+
+	ident, isIdent := unaryOp.Right.(*ast.Identifier)
+	if !isIdent {
+		return fmt.Errorf("%s operator expects a string identifier", map[token.Type]string{
+			token.AT:           "@",
+			token.StringLength: "!",
+			token.HASH:         "#",
+		}[unaryOp.Op])
+	}
+
+	offset, hasOffset := cc.stringOffsets[ident.Name]
+	if !hasOffset {
+		return fmt.Errorf("undefined string identifier: %s", ident.Name)
+	}
+
+	// Emit string identifier
+	cc.emitStringIdentifier(offset, ident.Name, arrayIndex.Pos.Line, arrayIndex.Pos.Column)
+
+	// Compile and emit index
+	if err := cc.compileExpression(arrayIndex.Index); err != nil {
+		return err
+	}
+
+	// Emit appropriate opcode based on operator
+	switch unaryOp.Op {
+	case token.AT:
+		cc.emitter.EmitOpcode(OpFoundAt, arrayIndex.Pos.Line, arrayIndex.Pos.Column)
+	case token.StringLength:
+		cc.emitter.EmitOpcode(OpLength, arrayIndex.Pos.Line, arrayIndex.Pos.Column)
+	case token.HASH:
+		cc.emitter.EmitOpcode(OpCount, arrayIndex.Pos.Line, arrayIndex.Pos.Column)
+	default:
+		return fmt.Errorf("unsupported operator for array indexing: %s", unaryOp.Op)
+	}
+
+	return nil
 }
 
 /*

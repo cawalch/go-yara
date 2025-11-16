@@ -541,12 +541,129 @@ func (qes *QuantifierExpressionStrategy) Name() string { return "QuantifierExpre
 // Priority returns the priority of the strategy
 func (qes *QuantifierExpressionStrategy) Priority() int { return 10 } // Very high priority
 
+// StringOperationStrategy handles YARA string operations (!, @, #)
+type StringOperationStrategy struct{}
+
+// NewStringOperationStrategy creates a new string operation strategy
+func NewStringOperationStrategy() *StringOperationStrategy {
+	return &StringOperationStrategy{}
+}
+
+// CanHandle checks if the strategy can handle the given string operation token
+func (sos *StringOperationStrategy) CanHandle(currentToken, _ token.Type) bool {
+	return currentToken == token.StringLength || currentToken == token.AT || currentToken == token.HASH
+}
+
+// Parse parses a string operation into an AST node
+func (sos *StringOperationStrategy) Parse(parser *ExpressionParser, context ParseContext) ParseResult {
+	operator := parser.current
+	operatorType := operator.Type
+	operatorPos := context.Position
+	parser.nextToken()
+
+	// Parse the operand (should be a string identifier token)
+	if !parser.currentTokenIs(token.StringIdentifier) && !parser.currentTokenIs(token.IDENTIFIER) {
+		return NewParseError(fmt.Errorf("string operations require a string identifier, got token: %v", parser.current.Type))
+	}
+
+	stringIdent := &ast.Identifier{
+		Name: parser.current.Literal,
+		Pos:  parser.current.Pos,
+	}
+	parser.nextToken() // consume the string identifier
+
+	// Handle different string operation types
+	switch operatorType {
+	case token.StringLength:
+		// Parse optional index [i] for array-style access like !a[i]
+		if parser.currentTokenIs(token.LBRACKET) {
+			parser.nextToken() // consume '['
+			index, err := parser.parsePrimary()
+			if err != nil {
+				return NewParseError(fmt.Errorf("error parsing string length index: %w", err))
+			}
+			if !parser.currentTokenIs(token.RBRACKET) {
+				return NewParseError(fmt.Errorf("expected ']' after string length index"))
+			}
+			parser.nextToken() // consume ']'
+
+			// Create an array index operation for !a[i]
+			return NewParseResult(&ast.ArrayIndex{
+				Array: &ast.UnaryOp{
+					Op:    token.StringLength,
+					Right: stringIdent,
+					Pos:   operatorPos,
+				},
+				Index: index,
+				Pos:   operatorPos,
+			}, 1)
+		}
+
+		// Create a unary operation for !a (first occurrence)
+		return NewParseResult(&ast.UnaryOp{
+			Op:    token.StringLength,
+			Right: stringIdent,
+			Pos:   operatorPos,
+		}, 1)
+
+	case token.AT:
+		// Parse optional index [i] for array-style access like @$a[i]
+		if parser.currentTokenIs(token.LBRACKET) {
+			parser.nextToken() // consume '['
+			index, err := parser.parsePrimary()
+			if err != nil {
+				return NewParseError(fmt.Errorf("error parsing string offset index: %w", err))
+			}
+			if !parser.currentTokenIs(token.RBRACKET) {
+				return NewParseError(fmt.Errorf("expected ']' after string offset index"))
+			}
+			parser.nextToken() // consume ']'
+
+			// Create an array index operation for @$a[i]
+			return NewParseResult(&ast.ArrayIndex{
+				Array: &ast.UnaryOp{
+					Op:    token.AT,
+					Right: stringIdent,
+					Pos:   operatorPos,
+				},
+				Index: index,
+				Pos:   operatorPos,
+			}, 1)
+		}
+
+		// Create a unary operation for @$a (first occurrence)
+		return NewParseResult(&ast.UnaryOp{
+			Op:    token.AT,
+			Right: stringIdent,
+			Pos:   operatorPos,
+		}, 1)
+
+	case token.HASH:
+		// String count doesn't take an index
+		return NewParseResult(&ast.UnaryOp{
+			Op:    token.HASH,
+			Right: stringIdent,
+			Pos:   operatorPos,
+		}, 1)
+
+	default:
+		return NewParseError(fmt.Errorf("unsupported string operation: %v", operatorType))
+	}
+}
+
+// Name returns the name of the strategy
+func (sos *StringOperationStrategy) Name() string { return "StringOperationStrategy" }
+
+// Priority returns the priority of the strategy
+func (sos *StringOperationStrategy) Priority() int { return 2 } // Higher than unary operators
+
 // RegisterDefaultPrimaryStrategies registers the default primary expression strategies
 func RegisterDefaultPrimaryStrategies(registry *StrategyRegistry) {
 	registry.RegisterPrimaryStrategy(NewQuantifierExpressionStrategy()) // High priority for quantifiers
 	registry.RegisterPrimaryStrategy(NewParenthesizedExpressionStrategy())
 	registry.RegisterPrimaryStrategy(NewLiteralStrategy())
 	registry.RegisterPrimaryStrategy(NewIdentifierStrategy())
+	registry.RegisterPrimaryStrategy(NewStringOperationStrategy()) // Handle string operations before generic unary
 	registry.RegisterPrimaryStrategy(NewUnaryOperatorStrategy())
 	registry.RegisterPrimaryStrategy(NewDataTypeFunctionStrategy())
 	registry.RegisterPrimaryStrategy(NewYaraBuiltInStrategy())

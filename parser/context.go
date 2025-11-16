@@ -99,7 +99,7 @@ func (tc DefaultTokenClassifier) IsComparisonOp(tok token.Type) bool {
 func (tc DefaultTokenClassifier) IsUnaryOperator(tok token.Type) bool {
 	switch tok {
 	case token.NOT, token.BitwiseNot, token.MINUS, token.DEFINED,
-		token.HASH, token.AT:
+		token.HASH, token.AT, token.StringLength:
 		return true
 	default:
 		return false
