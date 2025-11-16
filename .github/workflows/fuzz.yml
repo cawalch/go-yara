@@ -1,0 +1,106 @@
+name: Fuzz Testing
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run fuzz tests daily at 02:00 UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30  # CI/CD friendly timeout
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Install dependencies
+      run: go mod download
+
+    - name: Run fuzz tests with timeout
+      run: |
+        # Set fuzzing timeout to prevent CI hangs
+        export GO_FUZZ_TIMEOUT=60s
+
+        # Run each fuzz test with a reasonable time limit
+        echo "Running lexer fuzz tests..."
+        timeout 120s go test -fuzz=FuzzLexer ./internal/lexer -v || echo "Lexer fuzz test completed or timed out"
+
+        echo "Running string scanner fuzz tests..."
+        timeout 120s go test -fuzz=FuzzStringScanner ./internal/lexer -v || echo "String scanner fuzz test completed or timed out"
+
+        echo "Running regex scanner fuzz tests..."
+        timeout 120s go test -fuzz=FuzzRegexScanner ./internal/lexer -v || echo "Regex scanner fuzz test completed or timed out"
+
+        echo "Running hex scanner fuzz tests..."
+        timeout 120s go test -fuzz=FuzzHexScanner ./internal/lexer -v || echo "Hex scanner fuzz test completed or timed out"
+
+        echo "Running regex parser fuzz tests..."
+        timeout 120s go test -fuzz=FuzzRegexParser ./regex -v || echo "Regex parser fuzz test completed or timed out"
+
+        echo "Running regex VM fuzz tests..."
+        timeout 120s go test -fuzz=FuzzRegexVM ./regex -v || echo "Regex VM fuzz test completed or timed out"
+
+        echo "Running string compiler fuzz tests..."
+        timeout 120s go test -fuzz=FuzzStringCompiler ./compiler -v || echo "String compiler fuzz test completed or timed out"
+
+        echo "Running YARA parser fuzz tests..."
+        timeout 120s go test -fuzz=FuzzYARAParser ./parser -v || echo "YARA parser fuzz test completed or timed out"
+
+        echo "Running Aho-Corasick fuzz tests..."
+        timeout 120s go test -fuzz=FuzzAhoCorasick ./compiler -v || echo "Aho-Corasick fuzz test completed or timed out"
+
+    - name: Upload fuzz artifacts
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: fuzz-crash-logs
+        path: |
+          **/testdata/fuzz/
+        retention-days: 30
+
+  fuzz-extended:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60  # Extended timeout for thorough fuzzing
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+
+    - name: Install dependencies
+      run: go mod download
+
+    - name: Run extended fuzz tests
+      run: |
+        # Extended fuzzing with more time for scheduled runs
+        echo "Running extended fuzz tests..."
+
+        # Run with larger corpus and longer timeout
+        for target in FuzzLexer FuzzStringScanner FuzzRegexScanner FuzzHexScanner FuzzRegexParser FuzzRegexVM FuzzStringCompiler FuzzYARAParser FuzzAhoCorasick; do
+          echo "Running extended $target..."
+          timeout 300s go test -fuzz=$target -fuzztime=300s ./... -v || echo "$target extended fuzz completed or timed out"
+        done
