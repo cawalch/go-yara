@@ -217,10 +217,6 @@ func (c *Compiler) compileSemantic(program *ast.Program) error {
 				Column:  0,
 			})
 		}
-		// Print individual errors for debugging
-		for _, err := range errs {
-			fmt.Printf("Semantic error: %s\n", err.Error())
-		}
 		return fmt.Errorf("semantic analysis failed: %d errors", len(errs))
 	}
 
