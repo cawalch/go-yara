@@ -502,7 +502,6 @@ func (v *Validator) validateStringLengthExpression(strLen *ast.StringLength) (*T
 
 	// StringLength is created by the parser for !string operator
 	// The string expression should be an identifier
-	fmt.Printf("DEBUG: StringLength node with string: %T\n", strLen.String)
 	if ident, ok := strLen.String.(*ast.Identifier); ok {
 		if resultType, found := v.checkStringLengthIdentifier(ident, errors); found {
 			return resultType, errors
@@ -528,10 +527,8 @@ func (v *Validator) checkStringLengthIdentifier(ident *ast.Identifier, _ []error
 		stringName = "$" + ident.Name
 	}
 
-	fmt.Printf("DEBUG: Looking up string symbol: %s\n", stringName)
 	if symbol, exists := v.symbolTable.Lookup(stringName); exists && symbol.Type == SymbolString {
 		// String length returns integer
-		fmt.Printf("DEBUG: Found string symbol, returning integer type\n")
 		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}, true
 	}
 	return nil, false

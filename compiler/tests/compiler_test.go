@@ -1,8 +1,10 @@
 package tests
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/cawalch/go-yara/compiler"
 	"github.com/cawalch/go-yara/compiler/tests/testutils"
 )
 
@@ -116,7 +118,238 @@ rule test_rule_2 {
 	testutils.AssertRuleCount(t, program, 2)
 }
 
-// TODO: Implement these tests once the required methods are available
 // TestCompilationReport tests detailed compilation reporting
+func TestCompilationReport(t *testing.T) {
+	source := `
+		rule TestRule1 {
+			strings:
+				$text1 = "test string"
+			condition:
+				$text1
+		}
+
+		rule TestRule2 {
+			condition:
+				true
+		}
+	`
+
+	testCompiler := compiler.NewCompiler()
+	_, err := testCompiler.CompileSource(source)
+	if err != nil {
+		t.Fatalf("Failed to compile source: %v", err)
+	}
+
+	// Test compilation report generation
+	report := testCompiler.GetCompilationReport()
+	if report == "" {
+		t.Error("Expected non-empty compilation report")
+	}
+
+	// Verify report contains expected sections
+	expectedSections := []string{
+		"Go-YARA Compilation Report",
+		"Version:",
+		"Target:",
+		"Options:",
+		"Timing:",
+		"Results:",
+		"Rules Compiled:",
+	}
+
+	for _, section := range expectedSections {
+		if !strings.Contains(report, section) {
+			t.Errorf("Expected compilation report to contain '%s', but it doesn't", section)
+		}
+	}
+
+	// Test report contains timing information
+	if !strings.Contains(report, "Total:") {
+		t.Error("Expected compilation report to contain total timing information")
+	}
+
+	// Test report contains rule compilation count
+	if !strings.Contains(report, "2") {
+		t.Error("Expected compilation report to indicate 2 rules were compiled")
+	}
+
+	// Test report with warnings enabled
+	compilerWithWarnings := compiler.NewCompilerWithOptions(compiler.CompilationOptions{
+		EnableWarnings: true,
+	})
+
+	sourceWithUnused := `
+		rule TestRule {
+			strings:
+				$unused = "test"
+			condition:
+				true
+		}
+	`
+
+	_, err = compilerWithWarnings.CompileSource(sourceWithUnused)
+	if err != nil {
+		t.Fatalf("Failed to compile source with warnings: %v", err)
+	}
+
+	reportWithWarnings := compilerWithWarnings.GetCompilationReport()
+	if !strings.Contains(reportWithWarnings, "Warnings") {
+		t.Error("Expected report to contain warnings section when warnings are enabled")
+	}
+}
+
 // TestCompiledRuleMemoryUsage tests memory usage of compiled rules
-// TestCompiledRuleMemory tests memory operations on compiled rules
+func TestCompiledRuleMemoryUsage(t *testing.T) {
+	// Test with a simple rule
+	source := `
+		rule SimpleRule {
+			strings:
+				$text = "hello world"
+				$hex = { 48 65 6c 6c 6f }
+			condition:
+				$text and $hex
+		}
+	`
+
+	program := testutils.CompileTestRule(t, source)
+	rule := program.Rules[0]
+
+	// Test memory usage estimation
+	memoryUsage := rule.GetMemoryUsage()
+	if memoryUsage <= 0 {
+		t.Errorf("Expected positive memory usage, got %d", memoryUsage)
+	}
+
+	// Test memory usage increases with more complex rules
+	complexSource := `
+		rule ComplexRule {
+			strings:
+				$text1 = "pattern1"
+				$text2 = "pattern2"
+				$text3 = "pattern3"
+				$text4 = "pattern4"
+				$text5 = "pattern5"
+				$hex1 = { 01 02 03 04 }
+				$hex2 = { 05 06 07 08 }
+				$regex1 = /test.*pattern/
+				$regex2 = /another.*regex/
+			condition:
+				$text1 and $text2 and $text3 and $text4 and $text5 and
+				$hex1 and $hex2 and $regex1 and $regex2
+		}
+	`
+
+	complexProgram := testutils.CompileTestRule(t, complexSource)
+	complexRule := complexProgram.Rules[0]
+
+	complexMemoryUsage := complexRule.GetMemoryUsage()
+	if complexMemoryUsage <= memoryUsage {
+		t.Errorf("Expected complex rule to use more memory than simple rule, got %d <= %d",
+			complexMemoryUsage, memoryUsage)
+	}
+
+	// Test rule with no strings
+	noStringSource := `
+		rule EmptyRule {
+			condition:
+				true
+		}
+	`
+
+	noStringProgram := testutils.CompileTestRule(t, noStringSource)
+	noStringRule := noStringProgram.Rules[0]
+
+	noStringMemoryUsage := noStringRule.GetMemoryUsage()
+	if noStringMemoryUsage <= 0 {
+		t.Errorf("Expected positive memory usage even for rule with no strings, got %d", noStringMemoryUsage)
+	}
+
+	// Test that empty rule uses less memory than rule with strings
+	if noStringMemoryUsage >= memoryUsage {
+		t.Errorf("Expected empty rule to use less memory than rule with strings, got %d >= %d",
+			noStringMemoryUsage, memoryUsage)
+	}
+}
+
+// TestCompiledProgramMemoryUsage tests memory operations on compiled rules
+func TestCompiledProgramMemoryUsage(t *testing.T) {
+	// Test with multiple rules
+	source := `
+		rule Rule1 {
+			strings:
+				$a = "test1"
+			condition:
+				$a
+		}
+
+		rule Rule2 {
+			strings:
+				$b = "test2"
+				$c = "test3"
+			condition:
+				$b and $c
+		}
+
+		rule Rule3 {
+			condition:
+				true
+		}
+	`
+
+	program := testutils.CompileTestRule(t, source)
+
+	// Test total memory usage
+	totalMemoryUsage := program.GetTotalMemoryUsage()
+	if totalMemoryUsage <= 0 {
+		t.Errorf("Expected positive total memory usage, got %d", totalMemoryUsage)
+	}
+
+	// Verify memory usage is sum of individual rules
+	expectedTotal := 0
+	for _, rule := range program.Rules {
+		expectedTotal += rule.GetMemoryUsage()
+	}
+
+	if totalMemoryUsage != expectedTotal {
+		t.Errorf("Expected total memory usage %d, got %d", expectedTotal, totalMemoryUsage)
+	}
+
+	// Test with more rules to verify scaling
+	multiRuleSource := `
+		rule Rule1 { condition: true }
+		rule Rule2 { condition: true }
+		rule Rule3 { condition: true }
+		rule Rule4 { condition: true }
+		rule Rule5 { condition: true }
+		rule Rule6 { condition: true }
+		rule Rule7 { condition: true }
+		rule Rule8 { condition: true }
+		rule Rule9 { condition: true }
+		rule Rule10 { condition: true }
+	`
+
+	multiRuleProgram := testutils.CompileTestRule(t, multiRuleSource)
+	multiRuleMemoryUsage := multiRuleProgram.GetTotalMemoryUsage()
+
+	if multiRuleMemoryUsage <= totalMemoryUsage {
+		t.Errorf("Expected program with 10 rules to use more memory than program with 3 rules, got %d <= %d",
+			multiRuleMemoryUsage, totalMemoryUsage)
+	}
+
+	// Test that memory usage scales with number of rules
+	ruleCount := len(multiRuleProgram.Rules)
+	if ruleCount != 10 {
+		t.Errorf("Expected 10 rules in multi-rule program, got %d", ruleCount)
+	}
+
+	// Verify memory usage increases with each additional rule
+	if len(program.Rules) >= 2 {
+		singleRuleMemoryUsage := program.Rules[0].GetMemoryUsage()
+		averagePerRule := float64(multiRuleMemoryUsage) / float64(ruleCount)
+
+		if float64(singleRuleMemoryUsage) > averagePerRule*2 {
+			t.Errorf("Memory usage should scale reasonably. Single rule: %d, Average: %f",
+				singleRuleMemoryUsage, averagePerRule)
+		}
+	}
+}
