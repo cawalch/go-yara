@@ -197,6 +197,10 @@ func (cc *ConditionCompiler) compileExpression(expr ast.Expression) error {
 		return cc.compileFunctionCall(e)
 	case *ast.StringLength:
 		return cc.compileStringLength(e)
+	case *ast.StringOffset:
+		return cc.compileStringOffset(e)
+	case *ast.StringCount:
+		return cc.compileStringCount(e)
 	case *ast.ArrayIndex:
 		return cc.compileArrayIndex(e)
 	default:
@@ -709,14 +713,79 @@ func (cc *ConditionCompiler) compileDefinedOperator(unaryOp *ast.UnaryOp) error 
 	return nil
 }
 
-// compileStringLength compiles string length expression for deprecated StringLength AST node
-// Note: This handles the legacy StringLength node, but the !string operator is correctly
-// implemented via compileStringLengthOperator and should be used instead
+// compileStringLength compiles string length expressions (!a or !a[i])
 func (cc *ConditionCompiler) compileStringLength(strLen *ast.StringLength) error {
-	if err := cc.compileExpression(strLen.String); err != nil {
-		return err
+	id, ok := strLen.String.(*ast.Identifier)
+	if !ok {
+		return errors.New("STRING LENGTH (!) expects a string identifier operand")
 	}
+
+	offset, exists := cc.findStringOffset(id.Name)
+	if !exists {
+		return fmt.Errorf("undefined string identifier for string length operator: %s", id.Name)
+	}
+
+	// Use the same approach as compileStringLengthOperator
+	cc.emitStringOffset(offset, strLen.Pos.Line, strLen.Pos.Column)
+
+	// If there's an index, compile it and push it
+	if strLen.Index != nil {
+		if err := cc.compileExpression(strLen.Index); err != nil {
+			return err
+		}
+	} else {
+		// Default to first match (1-based)
+		cc.emitter.EmitPush(1, strLen.Pos.Line, strLen.Pos.Column)
+	}
+
 	cc.emitter.EmitOpcode(OpLength, strLen.Pos.Line, strLen.Pos.Column)
+	return nil
+}
+
+// compileStringOffset compiles string offset expressions (@a or @a[i])
+func (cc *ConditionCompiler) compileStringOffset(strOffset *ast.StringOffset) error {
+	id, ok := strOffset.String.(*ast.Identifier)
+	if !ok {
+		return errors.New("STRING OFFSET (@) expects a string identifier operand")
+	}
+
+	offset, exists := cc.findStringOffset(id.Name)
+	if !exists {
+		return fmt.Errorf("undefined string identifier for string offset operator: %s", id.Name)
+	}
+
+	// Use the same approach as existing string offset compilation
+	cc.emitStringOffset(offset, strOffset.Pos.Line, strOffset.Pos.Column)
+
+	// If there's an index, compile it and push it
+	if strOffset.Index != nil {
+		if err := cc.compileExpression(strOffset.Index); err != nil {
+			return err
+		}
+	} else {
+		// Default to first match (1-based)
+		cc.emitter.EmitPush(1, strOffset.Pos.Line, strOffset.Pos.Column)
+	}
+
+	cc.emitter.EmitOpcode(OpOffset, strOffset.Pos.Line, strOffset.Pos.Column)
+	return nil
+}
+
+// compileStringCount compiles string count expressions (#a)
+func (cc *ConditionCompiler) compileStringCount(strCount *ast.StringCount) error {
+	id, ok := strCount.String.(*ast.Identifier)
+	if !ok {
+		return errors.New("STRING COUNT (#) expects a string identifier operand")
+	}
+
+	offset, exists := cc.findStringOffset(id.Name)
+	if !exists {
+		return fmt.Errorf("undefined string identifier for string count operator: %s", id.Name)
+	}
+
+	// Use the same approach as existing string count compilation
+	cc.emitStringOffset(offset, strCount.Pos.Line, strCount.Pos.Column)
+	cc.emitter.EmitOpcode(OpCount, strCount.Pos.Line, strCount.Pos.Column)
 	return nil
 }
 

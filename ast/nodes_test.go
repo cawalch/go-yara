@@ -445,6 +445,16 @@ func (v *CountingVisitor) VisitStringLength(_ *StringLength) any {
 	return nil
 }
 
+func (v *CountingVisitor) VisitStringOffset(_ *StringOffset) any {
+	v.count++
+	return nil
+}
+
+func (v *CountingVisitor) VisitStringCount(_ *StringCount) any {
+	v.count++
+	return nil
+}
+
 func (v *CountingVisitor) VisitExternalVariable(_ *ExternalVariable) any {
 	v.count++
 	return nil

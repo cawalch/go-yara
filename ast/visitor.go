@@ -61,6 +61,8 @@ type PatternVisitor interface {
 	VisitHexString(*HexString) any
 	VisitRegexPattern(*RegexPattern) any
 	VisitStringLength(*StringLength) any
+	VisitStringOffset(*StringOffset) any
+	VisitStringCount(*StringCount) any
 }
 
 // VariableVisitor handles variable references
@@ -143,6 +145,12 @@ func (v *BaseVisitor) VisitRegexPattern(_ *RegexPattern) any { return nil }
 
 // VisitStringLength visits a string length node for YARA ! operator
 func (v *BaseVisitor) VisitStringLength(_ *StringLength) any { return nil }
+
+// VisitStringOffset visits a string offset node for YARA @ operator
+func (v *BaseVisitor) VisitStringOffset(_ *StringOffset) any { return nil }
+
+// VisitStringCount visits a string count node for YARA # operator
+func (v *BaseVisitor) VisitStringCount(_ *StringCount) any { return nil }
 
 // VariableVisitor implementations
 

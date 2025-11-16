@@ -306,6 +306,7 @@ func (i *Include) Accept(v Visitor) any {
 type StringLength struct {
 	Pos    token.Position
 	String Expression
+	Index  Expression // optional index for !$a[i], nil for !$a
 }
 
 func (s *StringLength) node() {}
@@ -318,6 +319,45 @@ func (s *StringLength) expression() {}
 // Accept implements the Visitor pattern for StringLength
 func (s *StringLength) Accept(v Visitor) any {
 	return v.VisitStringLength(s)
+}
+
+// StringOffset represents a YARA string offset expression using the @ operator
+// This implements the correct YARA syntax: @a or @a[i] for string offset
+type StringOffset struct {
+	Pos    token.Position
+	String Expression
+	Index  Expression // optional index for @a[i], nil for @a
+}
+
+func (s *StringOffset) node() {}
+
+// Position returns position of StringOffset node
+func (s *StringOffset) Position() token.Position { return s.Pos }
+
+func (s *StringOffset) expression() {}
+
+// Accept implements the Visitor pattern for StringOffset
+func (s *StringOffset) Accept(v Visitor) any {
+	return v.VisitStringOffset(s)
+}
+
+// StringCount represents a YARA string count expression using the # operator
+// This implements the correct YARA syntax: #a for string count
+type StringCount struct {
+	Pos    token.Position
+	String Expression
+}
+
+func (s *StringCount) node() {}
+
+// Position returns position of StringCount node
+func (s *StringCount) Position() token.Position { return s.Pos }
+
+func (s *StringCount) expression() {}
+
+// Accept implements the Visitor pattern for StringCount
+func (s *StringCount) Accept(v Visitor) any {
+	return v.VisitStringCount(s)
 }
 
 // ArrayIndex represents an array indexing expression (temporarily kept for compilation)

@@ -60,6 +60,8 @@ func (v *TestVisitor) VisitGlobalVariable(_ *GlobalVariable) any     { return ni
 func (v *TestVisitor) VisitImport(_ *Import) any                     { return nil }
 func (v *TestVisitor) VisitInclude(_ *Include) any                   { return nil }
 func (v *TestVisitor) VisitStringLength(_ *StringLength) any         { return nil }
+func (v *TestVisitor) VisitStringOffset(_ *StringOffset) any         { return nil }
+func (v *TestVisitor) VisitStringCount(_ *StringCount) any           { return nil }
 func (v *TestVisitor) VisitArrayIndex(_ *ArrayIndex) any             { return nil }
 func (v *TestVisitor) VisitForLoop(_ *ForLoop) any                   { return nil }
 func (v *TestVisitor) VisitOfExpression(_ *OfExpression) any         { return nil }
