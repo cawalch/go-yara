@@ -43,6 +43,18 @@ func (tc *TypeChecker) checkExpression(expr ast.Expression) *TypeInfo {
 	case *ast.UnaryOp:
 		return tc.checkUnaryOp(e)
 
+	case *ast.StringLength:
+		return tc.checkStringLength(e)
+
+	case *ast.ArrayIndex:
+		return tc.checkArrayIndex(e)
+
+	case *ast.FunctionCall:
+		return tc.checkFunctionCall(e)
+
+	case *ast.OfExpression:
+		return tc.checkOfExpression(e)
+
 	default:
 		// For unimplemented expression types, return unknown
 		return &TypeInfo{DataType: TypeUnknown}
@@ -558,4 +570,77 @@ func (tc *TypeChecker) isStringIdentifier(typeInfo *TypeInfo) bool {
 	// For now, we assume any boolean type from a string identifier is valid
 	// In a more complete implementation, we'd track the symbol type more precisely
 	return typeInfo.DataType == TypeBoolean
+}
+
+// checkStringLength checks the type of string length expressions
+func (tc *TypeChecker) checkStringLength(strLen *ast.StringLength) *TypeInfo {
+	// Check the string expression type
+	stringType := tc.checkExpression(strLen.String)
+
+	// String length should be applicable to string expressions
+	if stringType.DataType == TypeUnknown {
+		return &TypeInfo{DataType: TypeUnknown}
+	}
+
+	// String length always returns an integer
+	return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
+}
+
+// checkArrayIndex checks the type of array indexing expressions
+func (tc *TypeChecker) checkArrayIndex(arrayIndex *ast.ArrayIndex) *TypeInfo {
+	// Check the array expression type
+	_ = tc.checkExpression(arrayIndex.Array) // Check array expression but ignore type for now
+
+	// Check the index expression type
+	indexType := tc.checkExpression(arrayIndex.Index)
+
+	// Index should be an integer
+	if indexType.DataType != TypeInteger && indexType.DataType != TypeUnknown {
+		tc.addError(fmt.Errorf("array index must be an integer"))
+		return &TypeInfo{DataType: TypeUnknown}
+	}
+
+	// For now, we don't have typed arrays in YARA, so return unknown
+	// In a full implementation, this would return the element type of the array
+	return &TypeInfo{DataType: TypeUnknown}
+}
+
+// checkFunctionCall checks the type of function call expressions
+func (tc *TypeChecker) checkFunctionCall(funcCall *ast.FunctionCall) *TypeInfo {
+	// Check argument types
+	for _, arg := range funcCall.Args {
+		tc.checkExpression(arg)
+	}
+
+	// YARA has several built-in functions with known return types
+	switch funcCall.Function {
+	case "filesize":
+		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
+	case "entrypoint", "offset", "read":
+		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
+	case "string":
+		return &TypeInfo{DataType: TypeString}
+	case "uint8", "uint16", "uint32":
+		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
+	case "int8", "int16", "int32":
+		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
+	default:
+		// Unknown function - return unknown type
+		return &TypeInfo{DataType: TypeUnknown}
+	}
+}
+
+// checkOfExpression checks the type of "of" expressions
+func (tc *TypeChecker) checkOfExpression(ofExpr *ast.OfExpression) *TypeInfo {
+	// Check the count expression
+	countType := tc.checkExpression(ofExpr.Count)
+	if countType.DataType != TypeInteger && countType.DataType != TypeUnknown {
+		tc.addError(fmt.Errorf("count in 'of' expression must be an integer"))
+	}
+
+	// Check the strings expression
+	_ = tc.checkExpression(ofExpr.Strings) // Check strings expression but ignore type for now
+
+	// "of" expressions always return boolean (true/false)
+	return &TypeInfo{DataType: TypeBoolean}
 }

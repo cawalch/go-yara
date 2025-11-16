@@ -644,6 +644,19 @@ func (sc *StringCompiler) convertToLowercase(b byte) byte {
 
 // applyNocaseToSmallString handles case conversion for small strings
 func (sc *StringCompiler) applyNocaseToSmallString(data []byte) []byte {
+	// First, check if any conversion is needed to avoid allocation.
+	needsConversion := false
+	for _, b := range data {
+		if b >= 'A' && b <= 'Z' {
+			needsConversion = true
+			break
+		}
+	}
+
+	if !needsConversion {
+		return data
+	}
+
 	result := make([]byte, len(data))
 	for i, b := range data {
 		result[i] = sc.convertToLowercase(b)
