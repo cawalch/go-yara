@@ -205,8 +205,15 @@ func (cc *ConditionCompiler) compileExpression(expr ast.Expression) error {
 }
 
 func (cc *ConditionCompiler) compileLiteral(lit *ast.Literal) error {
-	if lit.Type == token.SizeLit {
+	switch lit.Type {
+	case token.SizeLit:
 		return cc.compileSizeLiteral(lit)
+	case token.FILESIZE:
+		cc.emitter.EmitOpcode(OpFilesize, lit.Pos.Line, lit.Pos.Column)
+		return nil
+	case token.ENTRYPOINT:
+		cc.emitter.EmitOpcode(OpEntrypoint, lit.Pos.Line, lit.Pos.Column)
+		return nil
 	}
 
 	if !cc.compileSimpleLiteral(lit) {
