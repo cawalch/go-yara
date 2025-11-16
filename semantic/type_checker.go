@@ -654,7 +654,24 @@ func (tc *TypeChecker) checkArrayIndex(arrayIndex *ast.ArrayIndex) *TypeInfo {
 
 	// Check the array operand (string identifier)
 	arrayType := tc.checkExpression(unaryOp.Right)
-	if arrayType.DataType != TypeBoolean {
+
+	// Special handling for string operators: @a[i], !a[i], #a[i]
+	// For string operators, we accept identifiers even if they don't exist in symbol table
+	// This mirrors the behavior of non-indexed string operators which are lenient
+	if ident, ok := unaryOp.Right.(*ast.Identifier); ok && (unaryOp.Op == token.AT || unaryOp.Op == token.StringLength || unaryOp.Op == token.HASH) {
+		// Check if this identifier could be a string reference
+		if symbol, exists := tc.symbolTable.Lookup("$" + ident.Name); exists {
+			symbol.Used = true
+			arrayType = &TypeInfo{DataType: TypeBoolean}
+		} else {
+			// For string operators, assume valid syntax and continue
+			// This matches the lenient behavior of non-indexed string operators
+			arrayType = &TypeInfo{DataType: TypeBoolean}
+		}
+	}
+
+	// For non-string operators, still validate strictly
+	if arrayType.DataType != TypeBoolean && (unaryOp.Op != token.AT && unaryOp.Op != token.StringLength && unaryOp.Op != token.HASH) {
 		tc.addError(&Error{
 			Message: fmt.Sprintf("%s operator requires string identifier", map[token.Type]string{
 				token.AT:           "@",
