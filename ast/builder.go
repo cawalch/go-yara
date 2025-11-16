@@ -162,8 +162,8 @@ func (b *Builder) Include(pos token.Position, file string) *Include {
 	}
 }
 
-// StringLength creates a new StringLength node
-// TODO: Remove in Sprint 2 - strlen() doesn't exist in YARA
+// StringLength creates a new StringLength node for the YARA ! operator
+// This implements the correct YARA syntax for string length operations
 func (b *Builder) StringLength(pos token.Position, strExpr Expression) *StringLength {
 	return &StringLength{
 		Pos:    pos,

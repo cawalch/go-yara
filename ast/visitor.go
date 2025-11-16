@@ -141,7 +141,7 @@ func (v *BaseVisitor) VisitHexString(_ *HexString) any { return nil }
 // VisitRegexPattern visits a regex pattern node
 func (v *BaseVisitor) VisitRegexPattern(_ *RegexPattern) any { return nil }
 
-// VisitStringLength visits a string length node (TODO: Remove in Sprint 2)
+// VisitStringLength visits a string length node for YARA ! operator
 func (v *BaseVisitor) VisitStringLength(_ *StringLength) any { return nil }
 
 // VariableVisitor implementations
