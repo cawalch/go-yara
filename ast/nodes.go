@@ -301,8 +301,8 @@ func (i *Include) Accept(v Visitor) any {
 	return v.VisitInclude(i)
 }
 
-// StringLength represents a string length expression (temporarily kept for compilation)
-// TODO: Remove StringLength in Sprint 2 - strlen() doesn't exist in YARA
+// StringLength represents a YARA string length expression using the ! operator
+// This implements the correct YARA syntax: !$a or !$a[i] for string length
 type StringLength struct {
 	Pos    token.Position
 	String Expression

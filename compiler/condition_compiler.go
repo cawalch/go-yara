@@ -702,8 +702,9 @@ func (cc *ConditionCompiler) compileDefinedOperator(unaryOp *ast.UnaryOp) error 
 	return nil
 }
 
-// TODO: Re-implement in Sprint 2 - strlen() doesn't exist in YARA
-// compileStringLength compiles string length expression
+// compileStringLength compiles string length expression for deprecated StringLength AST node
+// Note: This handles the legacy StringLength node, but the !string operator is correctly
+// implemented via compileStringLengthOperator and should be used instead
 func (cc *ConditionCompiler) compileStringLength(strLen *ast.StringLength) error {
 	if err := cc.compileExpression(strLen.String); err != nil {
 		return err
