@@ -131,7 +131,6 @@ jobs:
           flags: unittests
           name: codecov-umbrella
 
-  
   # Security Scan
   security:
     name: Security Scan
@@ -174,5 +173,3 @@ jobs:
           fi
 
           echo "✅ All quality checks passed!"
-
-  

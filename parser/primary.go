@@ -413,31 +413,6 @@ func (ybs *YaraBuiltInStrategy) Name() string { return "YaraBuiltInStrategy" }
 // Priority returns the priority of the strategy
 func (ybs *YaraBuiltInStrategy) Priority() int { return 6 }
 
-// ArrayIndexStrategy handles array indexing expressions (e.g., identifier[index])
-type ArrayIndexStrategy struct{}
-
-// NewArrayIndexStrategy creates a new array index strategy
-func NewArrayIndexStrategy() *ArrayIndexStrategy {
-	return &ArrayIndexStrategy{}
-}
-
-// CanHandle checks if the strategy can handle the given array indexing tokens
-func (ais *ArrayIndexStrategy) CanHandle(_, _ token.Type) bool {
-	// This strategy handles cases after we've parsed an identifier
-	// and encounter a '[' - so it's handled at a different level
-	return false // This is handled in ExpressionParser.parsePostfix()
-}
-
-// Parse parses an array indexing expression (not directly used)
-func (ais *ArrayIndexStrategy) Parse(_ *ExpressionParser, _ ParseContext) ParseResult {
-	return NewParseError(fmt.Errorf("ArrayIndexStrategy should be handled via parsePostfix"))
-}
-
-// Name returns the name of the strategy
-func (ais *ArrayIndexStrategy) Name() string { return "ArrayIndexStrategy" }
-
-// Priority returns the priority of the strategy
-func (ais *ArrayIndexStrategy) Priority() int { return 5 }
 
 // QuantifierTokenStrategy handles quantifier keywords (any, all, none, for)
 type QuantifierTokenStrategy struct {
@@ -569,6 +544,5 @@ func RegisterDefaultPrimaryStrategies(registry *StrategyRegistry) {
 	registry.RegisterPrimaryStrategy(NewUnaryOperatorStrategy())
 	registry.RegisterPrimaryStrategy(NewDataTypeFunctionStrategy())
 	registry.RegisterPrimaryStrategy(NewYaraBuiltInStrategy())
-	registry.RegisterPrimaryStrategy(NewArrayIndexStrategy())
 	registry.RegisterPrimaryStrategy(NewQuantifierTokenStrategy())
 }

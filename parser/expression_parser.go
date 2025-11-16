@@ -203,18 +203,10 @@ func (p *ExpressionParser) parsePrimary() (ast.Expression, error) {
 	return expr, nil
 }
 
-// parsePostfix handles postfix operations (array indexing, function calls)
+// parsePostfix handles postfix operations (function calls)
 func (p *ExpressionParser) parsePostfix(base ast.Expression) (ast.Expression, error) {
 	var err error
 	for {
-		if p.currentTokenIs(token.LBRACKET) {
-			// Array indexing
-			base, err = p.parseArrayIndex(base)
-			if err != nil {
-				return nil, err
-			}
-			continue // Continue for more postfix operations
-		}
 		if p.currentTokenIs(token.LPAREN) {
 			// Function call
 			base, err = p.parseFunctionCall(base)
@@ -223,32 +215,16 @@ func (p *ExpressionParser) parsePostfix(base ast.Expression) (ast.Expression, er
 			}
 			continue // Continue for more postfix operations
 		}
+		if p.currentTokenIs(token.LBRACKET) {
+			// Array indexing syntax $a[i] is not valid in YARA
+			// Real YARA uses @a[i] for offsets and #a[i] for counts
+			return nil, fmt.Errorf("invalid syntax: array indexing $a[i] is not supported in YARA. Use @a[i] for string offset or #a[i] for string count")
+		}
 		break
 	}
 	return base, nil
 }
 
-// parseArrayIndex parses array indexing expression
-func (p *ExpressionParser) parseArrayIndex(base ast.Expression) (ast.Expression, error) {
-	p.nextToken() // consume '['
-
-	index, err := p.parsePrimary()
-	if err != nil {
-		return nil, fmt.Errorf("error parsing array index: %w", err)
-	}
-
-	if !p.currentTokenIs(token.RBRACKET) {
-		return nil, fmt.Errorf("expected ']' at %v", p.current.Pos)
-	}
-
-	p.nextToken() // consume ']'
-
-	return &ast.ArrayIndex{
-		Array: base,
-		Index: index,
-		Pos:   base.Position(),
-	}, nil
-}
 
 // parseFunctionCall parses function call expression
 func (p *ExpressionParser) parseFunctionCall(base ast.Expression) (ast.Expression, error) {

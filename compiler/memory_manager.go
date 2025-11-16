@@ -53,7 +53,7 @@ func (m *MemoryManager) PopN(n int) ([]Value, error) {
 	}
 	values := make([]Value, n)
 	for i := 0; i < n; i++ {
-		values[n-1-i] = m.stack[len(m.stack)-1-i]
+		values[i] = m.stack[len(m.stack)-1-i]
 	}
 	m.stack = m.stack[:len(m.stack)-n]
 	return values, nil
@@ -210,7 +210,10 @@ func (m *MemoryManager) MemoryStringGet(slot int) string {
 	if slot < 0 || slot >= len(m.memory) {
 		return ""
 	}
-	return m.memory[slot].String()
+	if m.memory[slot].Type == ValueTypeString {
+		return m.memory[slot].StringVal
+	}
+	return ""
 }
 
 // Reset clears both stack and memory
