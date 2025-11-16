@@ -617,6 +617,16 @@ func (v *ComprehensiveTestVisitor) VisitStringLength(_ *StringLength) any {
 	return "visited_string_length"
 }
 
+func (v *ComprehensiveTestVisitor) VisitStringOffset(_ *StringOffset) any {
+	v.visitedNodes = append(v.visitedNodes, "StringOffset")
+	return "visited_string_offset"
+}
+
+func (v *ComprehensiveTestVisitor) VisitStringCount(_ *StringCount) any {
+	v.visitedNodes = append(v.visitedNodes, "StringCount")
+	return "visited_string_count"
+}
+
 func (v *ComprehensiveTestVisitor) VisitArrayIndex(_ *ArrayIndex) any {
 	v.visitedNodes = append(v.visitedNodes, "ArrayIndex")
 	return "visited_array_index"

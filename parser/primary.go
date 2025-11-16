@@ -587,27 +587,23 @@ func (sos *StringOperationStrategy) Parse(parser *ExpressionParser, context Pars
 			}
 			parser.nextToken() // consume ']'
 
-			// Create an array index operation for !a[i]
-			return NewParseResult(&ast.ArrayIndex{
-				Array: &ast.UnaryOp{
-					Op:    token.StringLength,
-					Right: stringIdent,
-					Pos:   operatorPos,
-				},
-				Index: index,
-				Pos:   operatorPos,
+			// Create a string length operation for !a[i]
+			return NewParseResult(&ast.StringLength{
+				String: stringIdent,
+				Index:  index,
+				Pos:    operatorPos,
 			}, 1)
 		}
 
-		// Create a unary operation for !a (first occurrence)
-		return NewParseResult(&ast.UnaryOp{
-			Op:    token.StringLength,
-			Right: stringIdent,
-			Pos:   operatorPos,
+		// Create a string length operation for !a (first occurrence)
+		return NewParseResult(&ast.StringLength{
+			String: stringIdent,
+			Index:  nil,
+			Pos:    operatorPos,
 		}, 1)
 
 	case token.AT:
-		// Parse optional index [i] for array-style access like @$a[i]
+		// Parse optional index [i] for array-style access like @a[i]
 		if parser.currentTokenIs(token.LBRACKET) {
 			parser.nextToken() // consume '['
 			index, err := parser.parsePrimary()
@@ -619,31 +615,26 @@ func (sos *StringOperationStrategy) Parse(parser *ExpressionParser, context Pars
 			}
 			parser.nextToken() // consume ']'
 
-			// Create an array index operation for @$a[i]
-			return NewParseResult(&ast.ArrayIndex{
-				Array: &ast.UnaryOp{
-					Op:    token.AT,
-					Right: stringIdent,
-					Pos:   operatorPos,
-				},
-				Index: index,
-				Pos:   operatorPos,
+			// Create a string offset operation for @a[i]
+			return NewParseResult(&ast.StringOffset{
+				String: stringIdent,
+				Index:  index,
+				Pos:    operatorPos,
 			}, 1)
 		}
 
-		// Create a unary operation for @$a (first occurrence)
-		return NewParseResult(&ast.UnaryOp{
-			Op:    token.AT,
-			Right: stringIdent,
-			Pos:   operatorPos,
+		// Create a string offset operation for @a (first occurrence)
+		return NewParseResult(&ast.StringOffset{
+			String: stringIdent,
+			Index:  nil,
+			Pos:    operatorPos,
 		}, 1)
 
 	case token.HASH:
 		// String count doesn't take an index
-		return NewParseResult(&ast.UnaryOp{
-			Op:    token.HASH,
-			Right: stringIdent,
-			Pos:   operatorPos,
+		return NewParseResult(&ast.StringCount{
+			String: stringIdent,
+			Pos:    operatorPos,
 		}, 1)
 
 	default:

@@ -206,7 +206,9 @@ func (v *Validator) isOperationExpression(expr ast.Expression) bool {
 // isSpecialExpression checks if expression is a special type (function call, for loop, etc.)
 func (v *Validator) isSpecialExpression(expr ast.Expression) bool {
 	switch expr.(type) {
-	case *ast.OfExpression, *ast.FunctionCall, *ast.ForLoop:
+	case *ast.OfExpression, *ast.FunctionCall, *ast.ForLoop, *ast.ArrayIndex:
+		return true
+	case *ast.StringLength, *ast.StringOffset, *ast.StringCount:
 		return true
 	default:
 		return false
@@ -246,6 +248,14 @@ func (v *Validator) validateSpecialExpression(expr ast.Expression) (*TypeInfo, [
 		return v.validateFunctionCallExpression(e)
 	case *ast.ForLoop:
 		return v.validateForLoopExpression(e)
+	case *ast.ArrayIndex:
+		return v.validateArrayIndexExpression(e)
+	case *ast.StringLength:
+		return v.validateStringLengthExpression(e)
+	case *ast.StringOffset:
+		return v.validateStringOffsetExpression(e)
+	case *ast.StringCount:
+		return v.validateStringCountExpression(e)
 	default:
 		return v.validateUnknownExpression()
 	}
@@ -558,6 +568,64 @@ func (v *Validator) validateForLoopExpression(forLoop *ast.ForLoop) (*TypeInfo, 
 	return &TypeInfo{DataType: TypeBoolean}, errors
 }
 
+// validateArrayIndexExpression validates array indexing expressions
+func (v *Validator) validateArrayIndexExpression(arrayIndex *ast.ArrayIndex) (*TypeInfo, []error) {
+	var errors []error
+
+	// The array should be a unary operation (@, !, or #)
+	unaryOp, ok := arrayIndex.Array.(*ast.UnaryOp)
+	if !ok {
+		errors = append(errors, &Error{
+			Message:  "array indexing requires @, !, or # operator",
+			Position: arrayIndex.Position(),
+		})
+		return &TypeInfo{DataType: TypeUnknown}, errors
+	}
+
+	// Check that we have a supported operator
+	if unaryOp.Op != token.AT && unaryOp.Op != token.StringLength && unaryOp.Op != token.HASH {
+		errors = append(errors, &Error{
+			Message:  fmt.Sprintf("unsupported operator for array indexing: %s", unaryOp.Op),
+			Position: arrayIndex.Position(),
+		})
+		return &TypeInfo{DataType: TypeUnknown}, errors
+	}
+
+	// Handle string operators (@a[i], !a[i], #a[i])
+	// These should return integer types
+	if ident, ok := unaryOp.Right.(*ast.Identifier); ok {
+		// Check if this identifier could be a string reference
+		var stringName string
+		if strings.HasPrefix(ident.Name, "$") {
+			stringName = ident.Name
+		} else {
+			// Try with $ prefix for string references in conditions
+			stringName = "$" + ident.Name
+		}
+
+		if symbol, exists := v.symbolTable.Lookup(stringName); exists && symbol.Type == SymbolString {
+			symbol.Used = true
+		}
+		// For string operators, we accept the syntax even if string doesn't exist yet
+		// This matches the lenient behavior of non-indexed string operators
+	}
+
+	// Validate the index expression
+	indexType, indexErrs := v.validateExpression(arrayIndex.Index)
+	errors = append(errors, indexErrs...)
+
+	if indexType != nil && indexType.DataType != TypeInteger {
+		errors = append(errors, &Error{
+			Message:  "array index must be integer",
+			Position: arrayIndex.Index.Position(),
+		})
+		return &TypeInfo{DataType: TypeUnknown}, errors
+	}
+
+	// All array indexing operations return integer
+	return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}, errors
+}
+
 // getTypeFromSymbol returns the type information for a symbol
 func (v *Validator) getTypeFromSymbol(symbol *Symbol) *TypeInfo {
 	switch symbol.Type {
@@ -688,9 +756,114 @@ func (v *Validator) VisitArrayIndex(_ *ast.ArrayIndex) any {
 	return nil
 }
 
-// VisitStringLength visits and validates a string length node (TODO: Remove in Sprint 2)
+// VisitStringLength visits and validates a string length node
 func (v *Validator) VisitStringLength(_ *ast.StringLength) any {
 	// StringLength validation is handled in validateExpression
+	return nil
+}
+
+// VisitStringOffset visits and validates a string offset node
+func (v *Validator) VisitStringOffset(_ *ast.StringOffset) any {
+	// StringOffset validation is handled in validateExpression
+	return nil
+}
+
+// VisitStringCount visits and validates a string count node
+func (v *Validator) VisitStringCount(_ *ast.StringCount) any {
+	// StringCount validation is handled in validateExpression
+	return nil
+}
+
+// validateStringLengthExpression validates string length expressions (!a or !a[i])
+func (v *Validator) validateStringLengthExpression(stringLength *ast.StringLength) (*TypeInfo, []error) {
+	var errors []error
+
+	// Validate the string identifier
+	if err := v.validateStringIdentifier(stringLength.String); err != nil {
+		errors = append(errors, err)
+	}
+
+	// If there's an index, validate it
+	if stringLength.Index != nil {
+		indexType, indexErrs := v.validateExpression(stringLength.Index)
+		errors = append(errors, indexErrs...)
+
+		if indexType != nil && indexType.DataType != TypeInteger {
+			errors = append(errors, &Error{
+				Message:  "string length index must be integer",
+				Position: stringLength.Index.Position(),
+			})
+		}
+	}
+
+	// String length expressions return integers
+	return &TypeInfo{DataType: TypeInteger, IntegerType: Uint64Type}, errors
+}
+
+// validateStringOffsetExpression validates string offset expressions (@a or @a[i])
+func (v *Validator) validateStringOffsetExpression(stringOffset *ast.StringOffset) (*TypeInfo, []error) {
+	var errors []error
+
+	// Validate the string identifier
+	if err := v.validateStringIdentifier(stringOffset.String); err != nil {
+		errors = append(errors, err)
+	}
+
+	// If there's an index, validate it
+	if stringOffset.Index != nil {
+		indexType, indexErrs := v.validateExpression(stringOffset.Index)
+		errors = append(errors, indexErrs...)
+
+		if indexType != nil && indexType.DataType != TypeInteger {
+			errors = append(errors, &Error{
+				Message:  "string offset index must be integer",
+				Position: stringOffset.Index.Position(),
+			})
+		}
+	}
+
+	// String offset expressions return integers
+	return &TypeInfo{DataType: TypeInteger, IntegerType: Uint64Type}, errors
+}
+
+// validateStringCountExpression validates string count expressions (#a)
+func (v *Validator) validateStringCountExpression(stringCount *ast.StringCount) (*TypeInfo, []error) {
+	var errors []error
+
+	// Validate the string identifier
+	if err := v.validateStringIdentifier(stringCount.String); err != nil {
+		errors = append(errors, err)
+	}
+
+	// String count expressions return integers
+	return &TypeInfo{DataType: TypeInteger, IntegerType: Uint64Type}, errors
+}
+
+// validateStringIdentifier validates that an expression can be a string identifier
+func (v *Validator) validateStringIdentifier(expr ast.Expression) error {
+	ident, ok := expr.(*ast.Identifier)
+	if !ok {
+		return &Error{
+			Message:  "string operations require string identifier",
+			Position: expr.Position(),
+		}
+	}
+
+	// Check if this identifier could be a string reference
+	var stringName string
+	if strings.HasPrefix(ident.Name, "$") {
+		stringName = ident.Name
+	} else {
+		// Try with $ prefix for string references in conditions
+		stringName = "$" + ident.Name
+	}
+
+	if symbol, exists := v.symbolTable.Lookup(stringName); exists && symbol.Type == SymbolString {
+		symbol.Used = true
+	}
+
+	// We accept the syntax even if string doesn't exist yet
+	// This matches the lenient behavior of YARA validation
 	return nil
 }
 
