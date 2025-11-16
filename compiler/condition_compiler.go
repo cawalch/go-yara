@@ -191,12 +191,12 @@ func (cc *ConditionCompiler) compileExpression(expr ast.Expression) error {
 		return cc.compileBinaryOp(e)
 	case *ast.UnaryOp:
 		return cc.compileUnaryOp(e)
-	case *ast.StringLength:
-		return cc.compileStringLength(e)
 	case *ast.OfExpression:
 		return cc.compileOfExpression(e)
 	case *ast.FunctionCall:
 		return cc.compileFunctionCall(e)
+	case *ast.StringLength:
+		return cc.compileStringLength(e)
 	case *ast.ArrayIndex:
 		return cc.compileArrayIndex(e)
 	default:
@@ -678,7 +678,24 @@ func (cc *ConditionCompiler) compileDefinedOperator(unaryOp *ast.UnaryOp) error 
 	return nil
 }
 
-func (cc *ConditionCompiler) compileArrayIndex(arrayIndex *ast.ArrayIndex) error {
+// TODO: Re-implement in Sprint 2 - strlen() doesn't exist in YARA
+// compileStringLength compiles string length expression
+func (cc *ConditionCompiler) compileStringLength(strLen *ast.StringLength) error {
+	if err := cc.compileExpression(strLen.String); err != nil {
+		return err
+	}
+	cc.emitter.EmitOpcode(OpLength, strLen.Pos.Line, strLen.Pos.Column)
+	return nil
+}
+
+// TODO: Re-implement in Sprint 2 for proper YARA @ and # syntax
+// Temporary placeholder to make compilation work during cleanup
+func (cc *ConditionCompiler) compileArrayIndex(_ *ast.ArrayIndex) error {
+	return fmt.Errorf("array indexing temporarily disabled during cleanup")
+}
+
+/*
+// func (cc *ConditionCompiler) compileArrayIndex(arrayIndex *ast.ArrayIndex) error {
 	unaryOp, ok := arrayIndex.Array.(*ast.UnaryOp)
 	if !ok {
 		return errors.New("array indexing requires @ or # operator")
@@ -714,6 +731,7 @@ func (cc *ConditionCompiler) compileArrayIndex(arrayIndex *ast.ArrayIndex) error
 	cc.emitter.EmitOpcode(OpIndexArray, arrayIndex.Pos.Line, arrayIndex.Pos.Column)
 	return nil
 }
+*/
 
 // AddVariable adds a variable to the compiler's variable map
 func (cc *ConditionCompiler) AddVariable(name string, index int) {
@@ -954,10 +972,3 @@ func (cc *ConditionCompiler) emitModuleFunctionCall(_ string, line, column int) 
 	cc.emitter.EmitPush(0, line, column)
 }
 
-func (cc *ConditionCompiler) compileStringLength(strLen *ast.StringLength) error {
-	if err := cc.compileExpression(strLen.String); err != nil {
-		return err
-	}
-	cc.emitter.EmitOpcode(OpLength, strLen.Pos.Line, strLen.Pos.Column)
-	return nil
-}

@@ -301,7 +301,10 @@ func (i *Include) Accept(v Visitor) any {
 	return v.VisitInclude(i)
 }
 
-// StringLength represents a string length expression
+
+
+// StringLength represents a string length expression (temporarily kept for compilation)
+// TODO: Remove StringLength in Sprint 2 - strlen() doesn't exist in YARA
 type StringLength struct {
 	Pos    token.Position
 	String Expression
@@ -319,7 +322,8 @@ func (s *StringLength) Accept(v Visitor) any {
 	return v.VisitStringLength(s)
 }
 
-// ArrayIndex represents an array indexing expression
+// ArrayIndex represents an array indexing expression (temporarily kept for compilation)
+// TODO: Remove ArrayIndex in Sprint 2 after implementing proper YARA @ and # syntax
 type ArrayIndex struct {
 	Pos   token.Position
 	Array Expression
@@ -337,6 +341,7 @@ func (a *ArrayIndex) expression() {}
 func (a *ArrayIndex) Accept(v Visitor) any {
 	return v.VisitArrayIndex(a)
 }
+
 
 // ForLoop represents a for loop expression
 type ForLoop struct {

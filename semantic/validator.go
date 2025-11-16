@@ -206,7 +206,7 @@ func (v *Validator) isOperationExpression(expr ast.Expression) bool {
 // isSpecialExpression checks if expression is a special type (function call, for loop, etc.)
 func (v *Validator) isSpecialExpression(expr ast.Expression) bool {
 	switch expr.(type) {
-	case *ast.OfExpression, *ast.FunctionCall, *ast.ForLoop, *ast.StringLength, *ast.ArrayIndex:
+	case *ast.OfExpression, *ast.FunctionCall, *ast.ForLoop:
 		return true
 	default:
 		return false
@@ -246,10 +246,6 @@ func (v *Validator) validateSpecialExpression(expr ast.Expression) (*TypeInfo, [
 		return v.validateFunctionCallExpression(e)
 	case *ast.ForLoop:
 		return v.validateForLoopExpression(e)
-	case *ast.StringLength:
-		return v.validateStringLengthExpression(e)
-	case *ast.ArrayIndex:
-		return v.validateArrayIndexExpression(e)
 	default:
 		return v.validateUnknownExpression()
 	}
@@ -470,14 +466,62 @@ func (v *Validator) validateOfExpression(ofExpr *ast.OfExpression) (*TypeInfo, [
 func (v *Validator) validateFunctionCallExpression(funcCall *ast.FunctionCall) (*TypeInfo, []error) {
 	var errors []error
 
+	// Check if this is a valid YARA function call
+	validFunctions := map[string]struct {
+		minArgs int
+		maxArgs int
+		retType *IntegerType
+	}{
+		"UINT8":   {1, 1, Uint8Type},
+		"UINT16":  {1, 1, Uint16Type},
+		"UINT32":  {1, 1, Uint32Type},
+		"UINT8BE": {1, 1, Uint8Type},
+		"UINT16BE": {1, 1, Uint16Type},
+		"UINT32BE": {1, 1, Uint32Type},
+		"INT8":    {1, 1, Int8Type},
+		"INT16":   {1, 1, Int16Type},
+		"INT32":   {1, 1, Int32Type},
+		"INT8BE":  {1, 1, Int8Type},
+		"INT16BE": {1, 1, Int16Type},
+		"INT32BE": {1, 1, Int32Type},
+	}
+
+	// Reject keywords that should not be function calls
+	if funcCall.Function == "FILESIZE" || funcCall.Function == "ENTRYPOINT" {
+		errors = append(errors, &Error{
+			Message:  fmt.Sprintf("'%s' is a keyword, not a function - use without parentheses", funcCall.Function),
+			Position: funcCall.Pos,
+		})
+		return &TypeInfo{DataType: TypeUnknown}, errors
+	}
+
+	// Check if function is valid
+	funcInfo, isValid := validFunctions[funcCall.Function]
+	if !isValid {
+		errors = append(errors, &Error{
+			Message:  fmt.Sprintf("unknown function: %s", funcCall.Function),
+			Position: funcCall.Pos,
+		})
+		return &TypeInfo{DataType: TypeUnknown}, errors
+	}
+
+	// Validate argument count
+	argCount := len(funcCall.Args)
+	if argCount < funcInfo.minArgs || argCount > funcInfo.maxArgs {
+		errors = append(errors, &Error{
+			Message:  fmt.Sprintf("function '%s' expects %d to %d arguments, got %d", funcCall.Function, funcInfo.minArgs, funcInfo.maxArgs, argCount),
+			Position: funcCall.Pos,
+		})
+	}
+
 	// Validate function arguments
 	for _, arg := range funcCall.Args {
 		_, argErrs := v.validateExpression(arg)
 		errors = append(errors, argErrs...)
 	}
 
-	// Data type functions return integers
-	return &TypeInfo{DataType: TypeInteger, IntegerType: Uint64Type}, errors
+	// Return appropriate type based on function
+	return &TypeInfo{DataType: TypeInteger, IntegerType: funcInfo.retType}, errors
 }
 
 // validateForLoopExpression validates for loop expressions
@@ -496,60 +540,6 @@ func (v *Validator) validateForLoopExpression(forLoop *ast.ForLoop) (*TypeInfo, 
 	return &TypeInfo{DataType: TypeBoolean}, errors
 }
 
-// validateStringLengthExpression validates string length expressions
-func (v *Validator) validateStringLengthExpression(strLen *ast.StringLength) (*TypeInfo, []error) {
-	var errors []error
-
-	// StringLength is created by the parser for !string operator
-	// The string expression should be an identifier
-	if ident, ok := strLen.String.(*ast.Identifier); ok {
-		if resultType, found := v.checkStringLengthIdentifier(ident, errors); found {
-			return resultType, errors
-		}
-	}
-
-	// Validate the string expression
-	_, stringErrs := v.validateExpression(strLen.String)
-	errors = append(errors, stringErrs...)
-
-	// String length returns integer
-	return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}, errors
-}
-
-// checkStringLengthIdentifier checks if a string length identifier is valid
-func (v *Validator) checkStringLengthIdentifier(ident *ast.Identifier, _ []error) (*TypeInfo, bool) {
-	// Check if this is a string reference (with or without $ prefix)
-	var stringName string
-	if strings.HasPrefix(ident.Name, "$") {
-		stringName = ident.Name
-	} else {
-		// Try with $ prefix for string references in conditions
-		stringName = "$" + ident.Name
-	}
-
-	if symbol, exists := v.symbolTable.Lookup(stringName); exists && symbol.Type == SymbolString {
-		// String length returns integer
-		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}, true
-	}
-	return nil, false
-}
-
-// validateArrayIndexExpression validates array index expressions
-func (v *Validator) validateArrayIndexExpression(arrayIndex *ast.ArrayIndex) (*TypeInfo, []error) {
-	var errors []error
-
-	// Validate the array expression
-	arrayType, arrayErrs := v.validateExpression(arrayIndex.Array)
-	errors = append(errors, arrayErrs...)
-
-	// Validate the index expression
-	_, indexErrs := v.validateExpression(arrayIndex.Index)
-	errors = append(errors, indexErrs...)
-
-	// Array indexing returns the type of the array elements
-	// For now, assume it returns the same type as the array
-	return arrayType, errors
-}
 
 // getTypeFromSymbol returns the type information for a symbol
 func (v *Validator) getTypeFromSymbol(symbol *Symbol) *TypeInfo {
@@ -675,17 +665,18 @@ func (v *Validator) VisitOfExpression(_ *ast.OfExpression) any {
 	return nil
 }
 
-// VisitStringLength visits and validates a string length node
+// VisitArrayIndex visits and validates an array index node (TODO: Remove in Sprint 2)
+func (v *Validator) VisitArrayIndex(_ *ast.ArrayIndex) any {
+	// ArrayIndex validation is handled in validateExpression
+	return nil
+}
+
+// VisitStringLength visits and validates a string length node (TODO: Remove in Sprint 2)
 func (v *Validator) VisitStringLength(_ *ast.StringLength) any {
 	// StringLength validation is handled in validateExpression
 	return nil
 }
 
-// VisitArrayIndex visits and validates an array index node
-func (v *Validator) VisitArrayIndex(_ *ast.ArrayIndex) any {
-	// ArrayIndex validation is handled in validateExpression
-	return nil
-}
 
 // isModuleFunction checks if an identifier is a known module
 func (v *Validator) isModuleFunction(moduleName string) bool {

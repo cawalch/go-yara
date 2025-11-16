@@ -43,14 +43,10 @@ func (tc *TypeChecker) checkExpression(expr ast.Expression) *TypeInfo {
 	case *ast.UnaryOp:
 		return tc.checkUnaryOp(e)
 
-	case *ast.StringLength:
-		return tc.checkStringLength(e)
-
-	case *ast.ArrayIndex:
-		return tc.checkArrayIndex(e)
-
 	case *ast.FunctionCall:
 		return tc.checkFunctionCall(e)
+	case *ast.StringLength:
+		return tc.checkStringLength(e)
 
 	case *ast.OfExpression:
 		return tc.checkOfExpression(e)
@@ -572,38 +568,6 @@ func (tc *TypeChecker) isStringIdentifier(typeInfo *TypeInfo) bool {
 	return typeInfo.DataType == TypeBoolean
 }
 
-// checkStringLength checks the type of string length expressions
-func (tc *TypeChecker) checkStringLength(strLen *ast.StringLength) *TypeInfo {
-	// Check the string expression type
-	stringType := tc.checkExpression(strLen.String)
-
-	// String length should be applicable to string expressions
-	if stringType.DataType == TypeUnknown {
-		return &TypeInfo{DataType: TypeUnknown}
-	}
-
-	// String length always returns an integer
-	return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
-}
-
-// checkArrayIndex checks the type of array indexing expressions
-func (tc *TypeChecker) checkArrayIndex(arrayIndex *ast.ArrayIndex) *TypeInfo {
-	// Check the array expression type
-	_ = tc.checkExpression(arrayIndex.Array) // Check array expression but ignore type for now
-
-	// Check the index expression type
-	indexType := tc.checkExpression(arrayIndex.Index)
-
-	// Index should be an integer
-	if indexType.DataType != TypeInteger && indexType.DataType != TypeUnknown {
-		tc.addError(fmt.Errorf("array index must be an integer"))
-		return &TypeInfo{DataType: TypeUnknown}
-	}
-
-	// For now, we don't have typed arrays in YARA, so return unknown
-	// In a full implementation, this would return the element type of the array
-	return &TypeInfo{DataType: TypeUnknown}
-}
 
 // checkFunctionCall checks the type of function call expressions
 func (tc *TypeChecker) checkFunctionCall(funcCall *ast.FunctionCall) *TypeInfo {
@@ -628,6 +592,20 @@ func (tc *TypeChecker) checkFunctionCall(funcCall *ast.FunctionCall) *TypeInfo {
 		// Unknown function - return unknown type
 		return &TypeInfo{DataType: TypeUnknown}
 	}
+}
+
+// checkStringLength checks the type of string length expressions
+func (tc *TypeChecker) checkStringLength(strLen *ast.StringLength) *TypeInfo {
+	// Check the string expression type
+	stringType := tc.checkExpression(strLen.String)
+
+	// String length should be applicable to string expressions
+	if stringType.DataType == TypeUnknown {
+		return &TypeInfo{DataType: TypeUnknown}
+	}
+
+	// String length always returns an integer
+	return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
 }
 
 // checkOfExpression checks the type of "of" expressions

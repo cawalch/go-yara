@@ -435,11 +435,18 @@ func (c *Compiler) processIncludes(program *ast.Program) error {
 func (c *Compiler) processIncludesWithBaseDir(program *ast.Program, baseDir string) error {
 	// Process each include statement
 	for _, include := range program.Includes {
-		// Resolve the include path relative to the current baseDir
-		includePath := include.File
-		if !filepath.IsAbs(includePath) {
-			includePath = filepath.Join(baseDir, include.File)
+		// Security check: reject absolute paths to prevent directory traversal
+		if filepath.IsAbs(include.File) {
+			return fmt.Errorf("failed to read include file %s: absolute paths not allowed", include.File)
 		}
+
+		// Security check: reject path traversal attempts
+		if strings.Contains(include.File, "..") {
+			return fmt.Errorf("failed to read include file %s: path traversal not allowed", include.File)
+		}
+
+		// Resolve the include path relative to the current baseDir
+		includePath := filepath.Join(baseDir, include.File)
 
 		// Read the included file content
 		includedContent, err := os.ReadFile(includePath) // #nosec G304 - include file processing is intentional
