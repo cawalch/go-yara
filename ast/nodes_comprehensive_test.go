@@ -145,10 +145,6 @@ func TestAdvancedNodeTypes(t *testing.T) {
 				node: builder.StringLength(pos, builder.Identifier(pos, "$s1")),
 			},
 			{
-				name: "ArrayIndex",
-				node: builder.ArrayIndex(pos, builder.Identifier(pos, "array"), builder.Literal(pos, token.IntegerLit, 0)),
-			},
-			{
 				name: "ForLoop",
 				node: builder.ForLoop(pos, "all", "i", builder.Identifier(pos, "range"), builder.Identifier(pos, "condition")),
 			},
@@ -250,7 +246,6 @@ func TestAdvancedBuilderMethods_Imports(t *testing.T) {
 // TestAdvancedBuilderMethods_Expressions tests expression builder methods using focused helper functions
 func TestAdvancedBuilderMethods_Expressions(t *testing.T) {
 	t.Run("StringLength builder", testStringLengthBuilder)
-	t.Run("ArrayIndex builder", testArrayIndexBuilder)
 	t.Run("ForLoop builder", testForLoopBuilder)
 	t.Run("OfExpression builder", testOfExpressionBuilder)
 	t.Run("FunctionCall builder", testFunctionCallBuilder)
@@ -265,19 +260,6 @@ func testStringLengthBuilder(t *testing.T) {
 
 	if strLen.String != stringExpr {
 		t.Error("StringLength.String does not match")
-	}
-}
-
-func testArrayIndexBuilder(t *testing.T) {
-	builder := NewBuilder()
-	pos := token.Position{Line: 3, Column: 7}
-
-	array := builder.Identifier(pos, "my_array")
-	index := builder.Literal(pos, token.IntegerLit, 5)
-	arrayIdx := builder.ArrayIndex(pos, array, index)
-
-	if arrayIdx.Array != array || arrayIdx.Index != index {
-		t.Error("ArrayIndex fields do not match expected values")
 	}
 }
 
@@ -335,7 +317,6 @@ func TestExpressionInterface(t *testing.T) {
 
 	expressions := []Expression{
 		builder.StringLength(pos, builder.Identifier(pos, "$s1")),
-		builder.ArrayIndex(pos, builder.Identifier(pos, "arr"), builder.Literal(pos, token.IntegerLit, 0)),
 		builder.ForLoop(pos, "all", "i", builder.Identifier(pos, "range"), builder.Identifier(pos, "cond")),
 		builder.OfExpression(pos, builder.Literal(pos, token.IntegerLit, 2), builder.Identifier(pos, "them")),
 		builder.FunctionCall(pos, "test.func", []Expression{}),
@@ -391,16 +372,19 @@ func TestAdvancedNodesWithEdgeCases(t *testing.T) {
 
 	t.Run("Complex nested expressions", func(t *testing.T) {
 		// Test deeply nested expressions
-		nested := builder.ArrayIndex(
+		nested := builder.FunctionCall(
 			pos,
-			builder.Identifier(pos, "complex_array"),
-			builder.FunctionCall(
-				pos,
-				"get_index",
-				[]Expression{
-					builder.StringLength(pos, builder.Identifier(pos, "$pattern")),
-				},
-			),
+			"complex_operation",
+			[]Expression{
+				builder.StringLength(pos, builder.Identifier(pos, "$pattern")),
+				builder.FunctionCall(
+					pos,
+					"get_index",
+					[]Expression{
+						builder.StringLength(pos, builder.Identifier(pos, "$pattern")),
+					},
+				),
+			},
 		)
 
 		// Should not panic
@@ -504,19 +488,13 @@ func createComprehensiveRule(builder *Builder, pos token.Position) *Rule {
 			"any",
 			"i",
 			builder.StringLength(pos, builder.Identifier(pos, "$test")),
-			builder.BinaryOp(
+			builder.FunctionCall(
 				pos,
-				builder.ArrayIndex(
-					pos,
-					builder.FunctionCall(
-						pos,
-						"pe.sections",
-						[]Expression{builder.Identifier(pos, "filename")},
-					),
+				"string_offset",
+				[]Expression{
+					builder.Identifier(pos, "$test"),
 					builder.Identifier(pos, "i"),
-				),
-				token.EQ,
-				builder.Literal(pos, token.StringLit, ".text"),
+				},
 			),
 		),
 	)
@@ -625,11 +603,6 @@ func (v *ComprehensiveTestVisitor) VisitStringOffset(_ *StringOffset) any {
 func (v *ComprehensiveTestVisitor) VisitStringCount(_ *StringCount) any {
 	v.visitedNodes = append(v.visitedNodes, "StringCount")
 	return "visited_string_count"
-}
-
-func (v *ComprehensiveTestVisitor) VisitArrayIndex(_ *ArrayIndex) any {
-	v.visitedNodes = append(v.visitedNodes, "ArrayIndex")
-	return "visited_array_index"
 }
 
 func (v *ComprehensiveTestVisitor) VisitForLoop(_ *ForLoop) any {

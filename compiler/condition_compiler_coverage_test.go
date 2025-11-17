@@ -161,16 +161,6 @@ func TestConditionCompiler_SpecialOperators(t *testing.T) {
 		t.Logf("compileDefinedOperator result: %v", err)
 	})
 
-	t.Run("Array index", func(t *testing.T) {
-		arrayExpr := builder.ArrayIndex(
-			pos,
-			builder.Identifier(pos, "array_var"),
-			builder.Literal(pos, token.IntegerLit, 0),
-		)
-		err := cc.compileArrayIndex(arrayExpr)
-		t.Logf("compileArrayIndex result: %v", err)
-	})
-
 	t.Run("Size literal", func(t *testing.T) {
 		sizeExpr := builder.Literal(pos, token.StringLit, "10KB")
 		err := cc.compileSizeLiteral(sizeExpr)

@@ -75,7 +75,6 @@ type VariableVisitor interface {
 type ControlFlowVisitor interface {
 	VisitForLoop(*ForLoop) any
 	VisitOfExpression(*OfExpression) any
-	VisitArrayIndex(*ArrayIndex) any
 }
 
 // ModuleVisitor handles imports and includes
@@ -167,9 +166,6 @@ func (v *BaseVisitor) VisitForLoop(_ *ForLoop) any { return nil }
 
 // VisitOfExpression visits an of expression node
 func (v *BaseVisitor) VisitOfExpression(_ *OfExpression) any { return nil }
-
-// VisitArrayIndex visits an array index node (TODO: Remove in Sprint 2)
-func (v *BaseVisitor) VisitArrayIndex(_ *ArrayIndex) any { return nil }
 
 // ModuleVisitor implementations
 
