@@ -240,6 +240,10 @@ func (cc *ConditionCompiler) compileSimpleLiteral(lit *ast.Literal) bool {
 		cc.compileStringLiteral(lit)
 		return true
 
+	case token.RegexLit:
+		cc.compileRegexLiteral(lit)
+		return true
+
 	case token.TRUE, token.FALSE:
 		cc.compileBooleanLiteral(lit)
 		return true
@@ -280,6 +284,15 @@ func (cc *ConditionCompiler) compileFloatLiteral(lit *ast.Literal) {
 // compileStringLiteral compiles string literals
 func (cc *ConditionCompiler) compileStringLiteral(lit *ast.Literal) {
 	if value, ok := lit.Value.(string); ok {
+		cc.emitter.EmitPush(uint64(int64(len(value))), lit.Pos.Line, lit.Pos.Column) // #nosec G115
+	}
+}
+
+// compileRegexLiteral compiles regex literals
+func (cc *ConditionCompiler) compileRegexLiteral(lit *ast.Literal) {
+	if value, ok := lit.Value.(string); ok {
+		// For regex literals, we'll push the regex pattern as a string
+		// The actual regex matching will be handled by the MATCHES operator
 		cc.emitter.EmitPush(uint64(int64(len(value))), lit.Pos.Line, lit.Pos.Column) // #nosec G115
 	}
 }
@@ -382,6 +395,27 @@ func (cc *ConditionCompiler) compileStringOffsetOperator(binOp *ast.BinaryOp) er
 
 	opcodes := map[token.Type]Opcode{token.AT: OpFoundAt, token.IN: OpFoundIn}
 	cc.emitter.EmitOpcode(opcodes[binOp.Op], binOp.Pos.Line, binOp.Pos.Column)
+	return nil
+}
+
+// compileCommaOperator compiles COMMA operators used in 'of' expressions
+// The COMMA creates a string list/set that can be iterated over by the 'of' operator
+func (cc *ConditionCompiler) compileCommaOperator(binOp *ast.BinaryOp) error {
+	// Compile the left side of the comma
+	if err := cc.compileExpression(binOp.Left); err != nil {
+		return fmt.Errorf("compiling left operand of comma: %w", err)
+	}
+
+	// Compile the right side of the comma
+	if err := cc.compileExpression(binOp.Right); err != nil {
+		return fmt.Errorf("compiling right operand of comma: %w", err)
+	}
+
+	// Emit the comma operation to create a string list
+	// For now, we'll treat it as a push operation since the 'of' operator
+	// will handle the list creation from the stack
+	cc.emitter.EmitOpcode(OpNop, binOp.Pos.Line, binOp.Pos.Column)
+
 	return nil
 }
 
@@ -516,27 +550,33 @@ type opcodeMapping struct {
 
 func (cc *ConditionCompiler) selectOpcode(binOp *ast.BinaryOp, isFloatOp bool) (Opcode, error) {
 	opcodeMap := map[token.Type]opcodeMapping{
-		token.AND:        {OpAnd, OpAnd},
-		token.OR:         {OpOr, OpOr},
-		token.PLUS:       {OpIntAdd, OpDblAdd},
-		token.MINUS:      {OpIntSub, OpDblSub},
-		token.MULTIPLY:   {OpIntMul, OpDblMul},
-		token.DIVIDE:     {OpIntDiv, OpDblDiv},
-		token.MODULO:     {OpMod, OpMod},
-		token.BitwiseAnd: {OpBitwiseAnd, OpBitwiseAnd},
-		token.BitwiseOr:  {OpBitwiseOr, OpBitwiseOr},
-		token.BitwiseXor: {OpBitwiseXor, OpBitwiseXor},
-		token.LeftShift:  {OpShl, OpShl},
-		token.RightShift: {OpShr, OpShr},
-		token.EQ:         {OpIntEq, OpDblEq},
-		token.NEQ:        {OpIntNeq, OpDblNeq},
-		token.LT:         {OpIntLt, OpDblLt},
-		token.LE:         {OpIntLe, OpDblLe},
-		token.GT:         {OpIntGt, OpDblGt},
-		token.GE:         {OpIntGe, OpDblGe},
-		token.CONTAINS:   {OpContains, OpContains},
-		token.MATCHES:    {OpMatches, OpMatches},
-		token.OF:         {OpOf, OpOf},
+		token.AND:         {OpAnd, OpAnd},
+		token.OR:          {OpOr, OpOr},
+		token.PLUS:        {OpIntAdd, OpDblAdd},
+		token.MINUS:       {OpIntSub, OpDblSub},
+		token.MULTIPLY:    {OpIntMul, OpDblMul},
+		token.DIVIDE:      {OpIntDiv, OpDblDiv},
+		token.MODULO:      {OpMod, OpMod},
+		token.BitwiseAnd:  {OpBitwiseAnd, OpBitwiseAnd},
+		token.BitwiseOr:   {OpBitwiseOr, OpBitwiseOr},
+		token.BitwiseXor:  {OpBitwiseXor, OpBitwiseXor},
+		token.LeftShift:   {OpShl, OpShl},
+		token.RightShift:  {OpShr, OpShr},
+		token.EQ:          {OpIntEq, OpDblEq},
+		token.NEQ:         {OpIntNeq, OpDblNeq},
+		token.LT:          {OpIntLt, OpDblLt},
+		token.LE:          {OpIntLe, OpDblLe},
+		token.GT:          {OpIntGt, OpDblGt},
+		token.GE:          {OpIntGe, OpDblGe},
+		token.CONTAINS:    {OpContains, OpContains},
+		token.MATCHES:     {OpMatches, OpMatches},
+		token.STARTSWITH:  {OpStartswith, OpStartswith},
+		token.ENDSWITH:    {OpEndswith, OpEndswith},
+		token.ICONTAINS:   {OpIcontains, OpIcontains},
+		token.ISTARTSWITH: {OpIstartswith, OpIstartswith},
+		token.IENDSWITH:   {OpIendswith, OpIendswith},
+		token.IEQUALS:     {OpIequals, OpIequals},
+		token.OF:          {OpOf, OpOf},
 	}
 
 	mapping, exists := opcodeMap[binOp.Op]
@@ -556,6 +596,9 @@ func (cc *ConditionCompiler) handleSpecialOperators(binOp *ast.BinaryOp) (bool, 
 		return true, cc.compileStringOffsetOperator(binOp)
 	case token.DOT:
 		return true, cc.compileExpressions(binOp.Left, binOp.Right)
+	case token.COMMA:
+		// COMMA creates a string list for 'of' expressions
+		return true, cc.compileCommaOperator(binOp)
 	}
 	return false, nil
 }
@@ -1002,11 +1045,21 @@ func (cc *ConditionCompiler) compileFunctionCall(call *ast.FunctionCall) error {
 	}
 
 	functionOpcodes := map[string]Opcode{
+		// Data type conversion functions
 		"uint8": OpUint8, "uint16": OpUint16, "uint32": OpUint32, "uint64": OpUint64,
 		"uint8be": OpUint8be, "uint16be": OpUint16be, "uint32be": OpUint32be, "uint64be": OpUint64be,
 		"int8": OpInt8, "int16": OpInt16, "int32": OpInt32, "int64": OpInt64,
 		"int8be": OpInt8be, "int16be": OpInt16be, "int32be": OpInt32be, "int64be": OpInt64be,
-		"concat": OpConcat,
+
+		// String functions
+		"concat":  OpConcat,
+		"defined": OpDefined,
+
+		// Hash functions (using opcodes as placeholders)
+		"md5": OpPush, "sha1": OpPush, "sha256": OpPush,
+
+		// Text functions (using opcodes as placeholders)
+		"tostring": OpPush, "int": OpPush,
 	}
 
 	opcode, exists := functionOpcodes[call.Function]
