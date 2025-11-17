@@ -171,16 +171,6 @@ func (b *Builder) StringLength(pos token.Position, strExpr Expression) *StringLe
 	}
 }
 
-// ArrayIndex creates a new ArrayIndex node
-// TODO: Remove in Sprint 2 - replace with proper @a[i] and #a[i] syntax
-func (b *Builder) ArrayIndex(pos token.Position, arrayExpr, indexExpr Expression) *ArrayIndex {
-	return &ArrayIndex{
-		Pos:   pos,
-		Array: arrayExpr,
-		Index: indexExpr,
-	}
-}
-
 // ForLoop creates a new ForLoop node
 func (b *Builder) ForLoop(pos token.Position, quantifier, variable string, rangeExpr, conditionExpr Expression) *ForLoop {
 	return &ForLoop{

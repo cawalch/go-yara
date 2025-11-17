@@ -342,10 +342,11 @@ func (s *StringOffset) Accept(v Visitor) any {
 }
 
 // StringCount represents a YARA string count expression using the # operator
-// This implements the correct YARA syntax: #a for string count
+// This implements the correct YARA syntax: #a for string count, #a[i] for instance count
 type StringCount struct {
 	Pos    token.Position
 	String Expression
+	Index  Expression // optional index for #a[i], nil for #a
 }
 
 func (s *StringCount) node() {}
@@ -358,26 +359,6 @@ func (s *StringCount) expression() {}
 // Accept implements the Visitor pattern for StringCount
 func (s *StringCount) Accept(v Visitor) any {
 	return v.VisitStringCount(s)
-}
-
-// ArrayIndex represents an array indexing expression (temporarily kept for compilation)
-// TODO: Remove ArrayIndex in Sprint 2 after implementing proper YARA @ and # syntax
-type ArrayIndex struct {
-	Pos   token.Position
-	Array Expression
-	Index Expression
-}
-
-func (a *ArrayIndex) node() {}
-
-// Position returns position of ArrayIndex node
-func (a *ArrayIndex) Position() token.Position { return a.Pos }
-
-func (a *ArrayIndex) expression() {}
-
-// Accept implements the Visitor pattern for ArrayIndex
-func (a *ArrayIndex) Accept(v Visitor) any {
-	return v.VisitArrayIndex(a)
 }
 
 // ForLoop represents a for loop expression

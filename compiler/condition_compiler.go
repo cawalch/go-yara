@@ -201,8 +201,6 @@ func (cc *ConditionCompiler) compileExpression(expr ast.Expression) error {
 		return cc.compileStringOffset(e)
 	case *ast.StringCount:
 		return cc.compileStringCount(e)
-	case *ast.ArrayIndex:
-		return cc.compileArrayIndex(e)
 	default:
 		return fmt.Errorf("unsupported expression type: %T", expr)
 	}
@@ -786,54 +784,6 @@ func (cc *ConditionCompiler) compileStringCount(strCount *ast.StringCount) error
 	// Use the same approach as existing string count compilation
 	cc.emitStringOffset(offset, strCount.Pos.Line, strCount.Pos.Column)
 	cc.emitter.EmitOpcode(OpCount, strCount.Pos.Line, strCount.Pos.Column)
-	return nil
-}
-
-// compileArrayIndex compiles array indexing expressions for @ and # operators
-func (cc *ConditionCompiler) compileArrayIndex(arrayIndex *ast.ArrayIndex) error {
-	unaryOp, ok := arrayIndex.Array.(*ast.UnaryOp)
-	if !ok {
-		return fmt.Errorf("array indexing requires @ or # operator, got %T", arrayIndex.Array)
-	}
-
-	if unaryOp.Op != token.AT && unaryOp.Op != token.StringLength && unaryOp.Op != token.HASH {
-		return fmt.Errorf("unsupported operator for array indexing: %s", unaryOp.Op)
-	}
-
-	ident, isIdent := unaryOp.Right.(*ast.Identifier)
-	if !isIdent {
-		return fmt.Errorf("%s operator expects a string identifier", map[token.Type]string{
-			token.AT:           "@",
-			token.StringLength: "!",
-			token.HASH:         "#",
-		}[unaryOp.Op])
-	}
-
-	offset, hasOffset := cc.stringOffsets[ident.Name]
-	if !hasOffset {
-		return fmt.Errorf("undefined string identifier: %s", ident.Name)
-	}
-
-	// Emit string identifier
-	cc.emitStringIdentifier(offset, ident.Name, arrayIndex.Pos.Line, arrayIndex.Pos.Column)
-
-	// Compile and emit index
-	if err := cc.compileExpression(arrayIndex.Index); err != nil {
-		return err
-	}
-
-	// Emit appropriate opcode based on operator
-	switch unaryOp.Op {
-	case token.AT:
-		cc.emitter.EmitOpcode(OpFoundAt, arrayIndex.Pos.Line, arrayIndex.Pos.Column)
-	case token.StringLength:
-		cc.emitter.EmitOpcode(OpLength, arrayIndex.Pos.Line, arrayIndex.Pos.Column)
-	case token.HASH:
-		cc.emitter.EmitOpcode(OpCount, arrayIndex.Pos.Line, arrayIndex.Pos.Column)
-	default:
-		return fmt.Errorf("unsupported operator for array indexing: %s", unaryOp.Op)
-	}
-
 	return nil
 }
 

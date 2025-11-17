@@ -460,11 +460,6 @@ func (v *CountingVisitor) VisitExternalVariable(_ *ExternalVariable) any {
 	return nil
 }
 
-func (v *CountingVisitor) VisitArrayIndex(_ *ArrayIndex) any {
-	v.count++
-	return nil
-}
-
 func (v *CountingVisitor) VisitForLoop(_ *ForLoop) any {
 	v.count++
 	return nil

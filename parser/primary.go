@@ -631,9 +631,30 @@ func (sos *StringOperationStrategy) Parse(parser *ExpressionParser, context Pars
 		}, 1)
 
 	case token.HASH:
-		// String count doesn't take an index
+		// Parse optional index [i] for array-style access like #a[i]
+		if parser.currentTokenIs(token.LBRACKET) {
+			parser.nextToken() // consume '['
+			index, err := parser.parsePrimary()
+			if err != nil {
+				return NewParseError(fmt.Errorf("error parsing string count index: %w", err))
+			}
+			if !parser.currentTokenIs(token.RBRACKET) {
+				return NewParseError(fmt.Errorf("expected ']' after string count index"))
+			}
+			parser.nextToken() // consume ']'
+
+			// Create a string count operation for #a[i]
+			return NewParseResult(&ast.StringCount{
+				String: stringIdent,
+				Index:  index,
+				Pos:    operatorPos,
+			}, 1)
+		}
+
+		// Create a string count operation for #a (total count)
 		return NewParseResult(&ast.StringCount{
 			String: stringIdent,
+			Index:  nil,
 			Pos:    operatorPos,
 		}, 1)
 
