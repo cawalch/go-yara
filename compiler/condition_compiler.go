@@ -193,6 +193,8 @@ func (cc *ConditionCompiler) compileExpression(expr ast.Expression) error {
 		return cc.compileUnaryOp(e)
 	case *ast.OfExpression:
 		return cc.compileOfExpression(e)
+	case *ast.ForLoop:
+		return cc.compileForLoop(e)
 	case *ast.FunctionCall:
 		return cc.compileFunctionCall(e)
 	case *ast.StringLength:
@@ -992,6 +994,20 @@ func (cc *ConditionCompiler) compileShortCircuitAnd(andOp *ast.BinaryOp) error {
 
 func (cc *ConditionCompiler) compileShortCircuitOr(orOp *ast.BinaryOp) error {
 	return cc.compileShortCircuitBinary(orOp, OpJtrue, OpOr)
+}
+
+func (cc *ConditionCompiler) compileForLoop(forLoop *ast.ForLoop) error {
+	// For now, treat ForLoop as an OfExpression - this handles simple cases like "for 2 of them"
+	// In the future, this could be extended to handle full for loop semantics
+
+	// Create a temporary OfExpression for compatibility
+	ofExpr := &ast.OfExpression{
+		Pos:     forLoop.Pos,
+		Count:   &ast.Identifier{Pos: forLoop.Pos, Name: forLoop.Quantifier},
+		Strings: &ast.Identifier{Pos: forLoop.Pos, Name: "them"},
+	}
+
+	return cc.compileOfExpression(ofExpr)
 }
 
 func (cc *ConditionCompiler) compileOfExpression(ofExpr *ast.OfExpression) error {
