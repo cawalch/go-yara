@@ -68,23 +68,40 @@ func (p *QuantifierParser) ParseQuantifier(pos token.Position) (ast.Expression, 
 
 // parseForQuantifier parses "for" quantifier expressions with optional variables and ranges
 func (p *QuantifierParser) parseForQuantifier(pos token.Position) (ast.Expression, error) {
-	// Parse the quantifier after 'for'
-	if !p.currentTokenIs(token.ALL) && !p.currentTokenIs(token.ANY) &&
-		!p.currentTokenIs(token.NONE) {
-		return nil, errors.New("expected quantifier (all/any/none) after 'for'")
+	var quantifierExpr ast.Expression
+	var quantifierStr string
+
+	// Parse the quantifier after 'for' - could be keyword (all/any/none) or numeric
+	if p.currentTokenIs(token.ALL) || p.currentTokenIs(token.ANY) ||
+		p.currentTokenIs(token.NONE) {
+		// Keyword quantifier
+		quantifierStr = p.current.Literal
+		quantifierExpr = p.builder.Identifier(pos, quantifierStr)
+		p.nextToken()
+	} else if p.isNumericLiteral() {
+		// Numeric quantifier like "for 2 of them"
+		numericExpr, err := p.parseNumericQuantifier()
+		if err != nil {
+			return nil, fmt.Errorf("error parsing numeric quantifier: %w", err)
+		}
+		quantifierExpr = numericExpr
+		quantifierStr = "numeric" // placeholder
+	} else {
+		return nil, errors.New("expected quantifier (all/any/none) or number after 'for'")
 	}
 
-	quantifier := p.current.Literal
-	p.nextToken()
+	// For numeric quantifiers, we already consumed the 'of' in parseNumericQuantifier()
+	// For keyword quantifiers, check if this is a for-loop with variable or standard 'of' syntax
+	if quantifierStr != "numeric" {
+		// Check if this is a for loop with variable (e.g., "for any i in (1..3) : ...")
+		if p.currentTokenIs(token.IDENTIFIER) {
+			return p.parseForLoopWithVariable(pos, quantifierStr)
+		}
 
-	// Check if this is a for loop with variable (for all i in (0..9) : ...)
-	if p.currentTokenIs(token.IDENTIFIER) {
-		return p.parseForLoopWithVariable(pos, quantifier)
-	}
-
-	// For standard "for" quantifiers without variables, we expect 'of'
-	if !p.expectToken(token.OF) {
-		return nil, errors.New("expected 'of' after quantifier")
+		// For standard "for" quantifiers without variables, we expect 'of'
+		if !p.expectToken(token.OF) {
+			return nil, errors.New("expected 'of' after quantifier")
+		}
 	}
 
 	// Parse the target (them, string patterns, etc.)
@@ -104,10 +121,10 @@ func (p *QuantifierParser) parseForQuantifier(pos token.Position) (ast.Expressio
 		}
 
 		// Create a ForLoop node for "for" quantifiers with colon
-		return p.builder.ForLoop(pos, quantifier, "", target, expr), nil
+		return p.builder.ForLoop(pos, quantifierStr, "", target, expr), nil
 	}
 
-	return p.builder.OfExpression(pos, p.builder.Identifier(pos, quantifier), target), nil
+	return p.builder.OfExpression(pos, quantifierExpr, target), nil
 }
 
 // parseForLoopWithVariable parses for loops with variables like "for all i in (0..9) : ..."
@@ -226,6 +243,13 @@ func (p *QuantifierParser) isNumericQuantifier() bool {
 		p.currentTokenIs(token.HexIntegerLit) ||
 		p.currentTokenIs(token.OctalIntegerLit)
 	return isNumber && p.peekTokenIs(token.OF)
+}
+
+// isNumericLiteral checks if current token is a numeric literal
+func (p *QuantifierParser) isNumericLiteral() bool {
+	return p.currentTokenIs(token.IntegerLit) ||
+		p.currentTokenIs(token.HexIntegerLit) ||
+		p.currentTokenIs(token.OctalIntegerLit)
 }
 
 // isKeywordQuantifier checks if current token is a keyword quantifier
