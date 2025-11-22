@@ -302,84 +302,143 @@ func TestInterpreterBitwise(t *testing.T) {
 	}
 }
 
-// TestInterpreterUndefined tests undefined value handling
-func TestInterpreterUndefined(t *testing.T) {
-	bytecode := []byte{
-		byte(OpPushU),
-		byte(OpHalt),
+// TestInterpreterMiscOps tests miscellaneous operations
+func TestInterpreterMiscOps(t *testing.T) {
+	tests := []struct {
+		name     string
+		bytecode []byte
+		setup    func(*Interpreter)
+		validate func(*testing.T, *Interpreter)
+	}{
+		{
+			name:     "undefined",
+			bytecode: []byte{byte(OpPushU), byte(OpHalt)},
+			validate: func(t *testing.T, i *Interpreter) {
+				if len(i.stack) != 1 {
+					t.Errorf("stack length = %d, want 1", len(i.stack))
+				} else if i.stack[0].Type != ValueTypeUndefined {
+					t.Errorf("stack[0].Type = %v, want ValueTypeUndefined", i.stack[0].Type)
+				}
+			},
+		},
+		{
+			name:     "filesize",
+			bytecode: []byte{byte(OpFilesize), byte(OpHalt)},
+			setup: func(i *Interpreter) {
+				i.matchContext.FileSize = 1024
+			},
+			validate: func(t *testing.T, i *Interpreter) {
+				if len(i.stack) != 1 {
+					t.Errorf("stack length = %d, want 1", len(i.stack))
+				} else if i.stack[0].IntVal != 1024 {
+					t.Errorf("stack[0] = %d, want 1024", i.stack[0].IntVal)
+				}
+			},
+		},
+		{
+			name: "increment_memory",
+			bytecode: func() []byte {
+				b := []byte{byte(OpIncrM)}
+				b = append(b, 0, 0, 0, 0, 0, 0, 0, 0, // addr 0
+					byte(OpIncrM), 0, 0, 0, 0, 0, 0, 0, 0, // addr 0
+					byte(OpPushM), 0, 0, 0, 0, 0, 0, 0, 0, // addr 0
+					byte(OpHalt))
+				return b
+			}(),
+			validate: func(t *testing.T, i *Interpreter) {
+				if len(i.stack) != 1 {
+					t.Errorf("stack length = %d, want 1", len(i.stack))
+				} else if i.stack[0].IntVal != 2 {
+					t.Errorf("stack[0] = %d, want 2", i.stack[0].IntVal)
+				}
+			},
+		},
+		{
+			name: "complex_arithmetic",
+			bytecode: []byte{
+				byte(OpPush8), 10,
+				byte(OpPush8), 20,
+				byte(OpIntAdd),
+				byte(OpPush8), 2,
+				byte(OpIntMul),
+				byte(OpHalt),
+			},
+			validate: func(t *testing.T, i *Interpreter) {
+				if len(i.stack) != 1 {
+					t.Errorf("stack length = %d, want 1", len(i.stack))
+				} else if i.stack[0].IntVal != 60 {
+					t.Errorf("result = %d, want 60", i.stack[0].IntVal)
+				}
+			},
+		},
+		{
+			name: "type_conversion",
+			bytecode: []byte{
+				byte(OpPush8), 1,
+				byte(OpIntToDbl),
+				byte(OpHalt),
+			},
+			validate: func(t *testing.T, i *Interpreter) {
+				if len(i.stack) != 1 {
+					t.Errorf("stack length = %d, want 1", len(i.stack))
+				} else if i.stack[0].Type != ValueTypeDouble {
+					t.Errorf("stack[0].Type = %v, want ValueTypeDouble", i.stack[0].Type)
+				}
+			},
+		},
 	}
 
-	interp := NewInterpreter(bytecode)
-	err := interp.Execute()
-	if err != nil {
-		t.Errorf("Execute() error = %v", err)
-	}
-	if len(interp.GetStack()) != 1 {
-		t.Errorf("stack length = %d, want 1", len(interp.GetStack()))
-	}
-	if interp.GetStack()[0].Type != ValueTypeUndefined {
-		t.Errorf("stack[0].Type = %v, want ValueTypeUndefined", interp.GetStack()[0].Type)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			interp := NewInterpreter(tt.bytecode)
+			if tt.setup != nil {
+				tt.setup(interp)
+			}
+			err := interp.Execute()
+			if err != nil {
+				t.Errorf("Execute() error = %v", err)
+			}
+			if tt.validate != nil {
+				tt.validate(t, interp)
+			}
+		})
 	}
 }
 
-// TestInterpreterFilesize tests filesize operation
-func TestInterpreterFilesize(t *testing.T) {
-	bytecode := []byte{
-		byte(OpFilesize),
-		byte(OpHalt),
+// TestInterpreterStringOps tests string comparison operations via opcodes
+func TestInterpreterStringOps(t *testing.T) {
+	tests := []struct {
+		name     string
+		opcode   Opcode
+		left     string
+		right    string
+		expected int64
+	}{
+		{"eq_true", OpStrEq, "foo", "foo", 1},
+		{"eq_false", OpStrEq, "foo", "bar", 0},
+		{"neq_true", OpStrNeq, "foo", "bar", 1},
+		{"neq_false", OpStrNeq, "foo", "foo", 0},
+		{"lt_true", OpStrLt, "bar", "foo", 1},
+		{"gt_true", OpStrGt, "foo", "bar", 1},
 	}
 
-	interp := NewInterpreter(bytecode)
-	interp.matchContext.FileSize = 1024
-	err := interp.Execute()
-	if err != nil {
-		t.Errorf("Execute() error = %v", err)
-	}
-	if len(interp.GetStack()) != 1 {
-		t.Errorf("stack length = %d, want 1", len(interp.GetStack()))
-	}
-	if interp.GetStack()[0].IntVal != 1024 {
-		t.Errorf("stack[0] = %d, want 1024", interp.GetStack()[0].IntVal)
-	}
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			interp := NewInterpreter([]byte{byte(OpHalt)})
+			_ = interp.push(Value{Type: ValueTypeString, StringVal: tt.left})
+			_ = interp.push(Value{Type: ValueTypeString, StringVal: tt.right})
 
-// TestInterpreterIncrementMemory tests increment memory operation
-func TestInterpreterIncrementMemory(t *testing.T) {
-	bytecode := func() []byte {
-		b := []byte{byte(OpIncrM)}
-		b = append(b, 0, 0, 0, 0, 0, 0, 0, 0, // addr 0
-			byte(OpIncrM), 0, 0, 0, 0, 0, 0, 0, 0, // addr 0
-			byte(OpPushM), 0, 0, 0, 0, 0, 0, 0, 0, // addr 0
-			byte(OpHalt))
-		return b
-	}()
-
-	interp := NewInterpreter(bytecode)
-	err := interp.Execute()
-	if err != nil {
-		t.Errorf("Execute() error = %v", err)
-	}
-	if len(interp.GetStack()) != 1 {
-		t.Errorf("stack length = %d, want 1", len(interp.GetStack()))
-	}
-	if interp.GetStack()[0].IntVal != 2 {
-		t.Errorf("stack[0] = %d, want 2", interp.GetStack()[0].IntVal)
-	}
-}
-
-// TestInterpreterStringComparison tests string comparison operations
-func TestInterpreterStringComparison(t *testing.T) {
-	interp := NewInterpreter([]byte{byte(OpHalt)})
-
-	// Test string equality
-	_ = interp.push(Value{Type: ValueTypeString, StringVal: "hello"})
-	_ = interp.push(Value{Type: ValueTypeString, StringVal: "hello"})
-	err := interp.executeStringComparison(func(a, b string) bool { return a == b })
-	if err != nil {
-		t.Errorf("executeStringComparison() error = %v", err)
-	}
-	if len(interp.GetStack()) != 1 || interp.GetStack()[0].IntVal != 1 {
-		t.Errorf("string equality comparison failed")
+			err := interp.executeOpcode(tt.opcode)
+			if err != nil {
+				t.Errorf("executeOpcode() error = %v", err)
+			}
+			if len(interp.GetStack()) != 1 {
+				t.Errorf("stack length = %d, want 1", len(interp.GetStack()))
+			}
+			if interp.GetStack()[0].IntVal != tt.expected {
+				t.Errorf("result = %d, want %d", interp.GetStack()[0].IntVal, tt.expected)
+			}
+		})
 	}
 }
 
@@ -857,30 +916,6 @@ func TestInterpreterMatches(t *testing.T) {
 	}
 }
 
-// TestInterpreterComplexArithmetic tests complex arithmetic expressions
-func TestInterpreterComplexArithmetic(t *testing.T) {
-	bytecode := []byte{
-		byte(OpPush8), 10,
-		byte(OpPush8), 20,
-		byte(OpIntAdd),
-		byte(OpPush8), 2,
-		byte(OpIntMul),
-		byte(OpHalt),
-	}
-
-	interp := NewInterpreter(bytecode)
-	err := interp.Execute()
-	if err != nil {
-		t.Errorf("Execute() error = %v", err)
-	}
-	if len(interp.GetStack()) != 1 {
-		t.Errorf("stack length = %d, want 1", len(interp.GetStack()))
-	}
-	if interp.GetStack()[0].IntVal != 60 {
-		t.Errorf("result = %d, want 60", interp.GetStack()[0].IntVal)
-	}
-}
-
 // TestInterpreterStackUnderflow tests stack underflow handling
 func TestInterpreterStackUnderflow(t *testing.T) {
 	bytecode := []byte{
@@ -892,27 +927,6 @@ func TestInterpreterStackUnderflow(t *testing.T) {
 	err := interp.Execute()
 	if err == nil {
 		t.Errorf("Execute() should return error on stack underflow")
-	}
-}
-
-// TestInterpreterTypeConversion tests type conversion operations
-func TestInterpreterTypeConversion(t *testing.T) {
-	bytecode := []byte{
-		byte(OpPush8), 1,
-		byte(OpIntToDbl),
-		byte(OpHalt),
-	}
-
-	interp := NewInterpreter(bytecode)
-	err := interp.Execute()
-	if err != nil {
-		t.Errorf("Execute() error = %v", err)
-	}
-	if len(interp.GetStack()) != 1 {
-		t.Errorf("stack length = %d, want 1", len(interp.GetStack()))
-	}
-	if interp.GetStack()[0].Type != ValueTypeDouble {
-		t.Errorf("stack[0].Type = %v, want ValueTypeDouble", interp.GetStack()[0].Type)
 	}
 }
 

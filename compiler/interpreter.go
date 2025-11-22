@@ -302,65 +302,68 @@ func (i *Interpreter) validateStackUnderflowN(opcode Opcode, n int) error {
 	return nil
 }
 
-// opcodeHandler defines a function type for handling specific opcode categories
-type opcodeHandler func(Opcode) error
-
-// getOpcodeHandler returns the appropriate handler for the given opcode
-func (i *Interpreter) getOpcodeHandler(opcode Opcode) opcodeHandler {
-	// Error handling - OpError is used as padding in some test cases, treat as no-op
-	if opcode == OpError {
-		return func(Opcode) error { return nil }
-	}
-
-	// Define opcode category checks and their corresponding handlers
-	type opcodeCategory struct {
-		check   func(Opcode) bool
-		handler opcodeHandler
-	}
-
-	categories := []opcodeCategory{
-		{i.isStackOpcode, i.executeStackOpcode},
-		{i.isBitwiseOpcode, i.executeBitwiseOpcode},
-		{i.isArithmeticOpcode, i.executeArithmeticOperation},
-		{i.isComparisonOpcode, i.executeComparisonOperation},
-		{i.isLogicalOpcode, i.executeLogicalOpcode},
-		{i.isControlFlowOpcode, i.executeControlFlowOpcode},
-		{i.isMemoryOpcode, i.executeMemoryOpcode},
-		{i.isFileOperation, i.executeFileOperation},
-		{i.isIntegerReadOpcode, i.executeIntegerReadOpcode},
-		{i.isStringOperation, i.executeStringOperation},
-		{i.isRuleOperation, i.executeRuleOperation},
-	}
-
-	for _, category := range categories {
-		if category.check(opcode) {
-			return category.handler
-		}
-	}
-
-	return nil
-}
-
+// executeOpcode executes a single opcode using direct dispatch
 func (i *Interpreter) executeOpcode(opcode Opcode) error {
-	handler := i.getOpcodeHandler(opcode)
-	if handler != nil {
-		return handler(opcode)
-	}
-
-	return &InterpreterError{
-		Type:    ErrorUnsupportedOpcode,
-		Opcode:  opcode,
-		Message: fmt.Sprintf("unsupported opcode: %v", opcode),
-	}
-}
-
-// isStackOpcode checks if the opcode is a stack operation
-func (i *Interpreter) isStackOpcode(opcode Opcode) bool {
 	switch opcode {
+	case OpError:
+		return nil
+
+	// Stack operations
 	case OpPush8, OpPush16, OpPush32, OpPushU, OpPushDbl, OpPushRuleRef, OpPop:
-		return true
+		return i.executeStackOpcode(opcode)
+
+	// Bitwise operations
+	case OpBitwiseAnd, OpBitwiseOr, OpBitwiseXor, OpBitwiseNot, OpShl, OpShr:
+		return i.executeBitwiseOpcode(opcode)
+
+	// Arithmetic operations
+	case OpIntAdd, OpIntSub, OpIntMul, OpIntDiv, OpMod, OpIntMinus,
+		OpDblAdd, OpDblSub, OpDblMul, OpDblDiv, OpDblMinus:
+		return i.executeArithmeticOperation(opcode)
+
+	// Comparison operations
+	case OpIntEq, OpIntNeq, OpIntLt, OpIntLe, OpIntGt, OpIntGe,
+		OpDblEq, OpDblNeq, OpDblLt, OpDblLe, OpDblGt, OpDblGe,
+		OpStrEq, OpStrNeq, OpStrLt, OpStrLe, OpStrGt, OpStrGe:
+		return i.executeComparisonOperation(opcode)
+
+	// Logical operations
+	case OpAnd, OpOr, OpNot, OpDefined:
+		return i.executeLogicalOpcode(opcode)
+
+	// Control flow operations
+	case OpNop, OpHalt, OpJz, OpJtrue, OpJfalse:
+		return i.executeControlFlowOpcode(opcode)
+
+	// Memory operations
+	case OpPushM, OpPopM, OpClearM, OpIncrM, OpSwapundef:
+		return i.executeMemoryOpcode(opcode)
+
+	// File operations
+	case OpEntrypoint, OpFilesize:
+		return i.executeFileOperation(opcode)
+
+	// Integer read operations
+	case OpInt8, OpInt16, OpInt32, OpInt64, OpUint8, OpUint16, OpUint32, OpUint64,
+		OpInt8be, OpUint8be, OpInt16be, OpUint16be, OpInt32be, OpUint32be:
+		// OpInt64be (254) and OpUint64be (255) are masked by OpNop and OpHalt respectively
+		return i.executeIntegerReadOpcode(opcode)
+
+	// String operations
+	case OpLength, OpCount, OpFound, OpFoundAt, OpFoundIn, OpOffset, OpOf, OpMatches,
+		OpIntToDbl, OpStrToBool:
+		return i.executeStringOperation(opcode)
+
+	// Rule operations
+	case OpPushRule, OpInitRule, OpMatchRule:
+		return i.executeRuleOperation(opcode)
+
 	default:
-		return false
+		return &InterpreterError{
+			Type:    ErrorUnsupportedOpcode,
+			Opcode:  opcode,
+			Message: fmt.Sprintf("unsupported opcode: %v", opcode),
+		}
 	}
 }
 
@@ -465,16 +468,6 @@ func (i *Interpreter) executePop() error {
 	return nil
 }
 
-// isBitwiseOpcode checks if the opcode is a bitwise operation
-func (i *Interpreter) isBitwiseOpcode(opcode Opcode) bool {
-	switch opcode {
-	case OpBitwiseAnd, OpBitwiseOr, OpBitwiseXor, OpBitwiseNot, OpShl, OpShr:
-		return true
-	default:
-		return false
-	}
-}
-
 // executeBitwiseOpcode handles bitwise operations
 func (i *Interpreter) executeBitwiseOpcode(opcode Opcode) error {
 	switch opcode {
@@ -554,27 +547,7 @@ func (i *Interpreter) executeShiftRight() error {
 	}, nil)
 }
 
-// isArithmeticOpcode checks if the opcode is an arithmetic operation
-func (i *Interpreter) isArithmeticOpcode(opcode Opcode) bool {
-	return i.isIntegerArithmetic(opcode) || i.isDoubleArithmetic(opcode)
-}
-
-// isComparisonOpcode checks if the opcode is a comparison operation
-func (i *Interpreter) isComparisonOpcode(opcode Opcode) bool {
-	return i.isNumericComparison(opcode) || i.isStringComparison(opcode)
-}
-
 // Helper methods for opcode classification
-
-// isLogicalOpcode checks if the opcode is a logical operation
-func (i *Interpreter) isLogicalOpcode(opcode Opcode) bool {
-	switch opcode {
-	case OpAnd, OpOr, OpNot, OpDefined:
-		return true
-	default:
-		return false
-	}
-}
 
 // executeLogicalOpcode handles logical operations
 func (i *Interpreter) executeLogicalOpcode(opcode Opcode) error {
@@ -636,16 +609,6 @@ func (i *Interpreter) executeDefinedOperation() error {
 	return nil
 }
 
-// isControlFlowOpcode checks if the opcode is a control flow operation
-func (i *Interpreter) isControlFlowOpcode(opcode Opcode) bool {
-	switch opcode {
-	case OpNop, OpHalt, OpJz, OpJtrue, OpJfalse:
-		return true
-	default:
-		return false
-	}
-}
-
 // executeControlFlowOpcode handles control flow operations
 func (i *Interpreter) executeControlFlowOpcode(opcode Opcode) error {
 	switch opcode {
@@ -691,16 +654,6 @@ func (i *Interpreter) executeJumpOpcode(opcode Opcode) error {
 		i.ip++
 	}
 	return nil
-}
-
-// isMemoryOpcode checks if the opcode is a memory operation
-func (i *Interpreter) isMemoryOpcode(opcode Opcode) bool {
-	switch opcode {
-	case OpPushM, OpPopM, OpClearM, OpIncrM, OpSwapundef:
-		return true
-	default:
-		return false
-	}
 }
 
 // executeMemoryOpcode handles memory operations
@@ -798,16 +751,6 @@ func (i *Interpreter) executeSwapUndefined() error {
 	return nil
 }
 
-// isFileOperation checks if the opcode is a file operation
-func (i *Interpreter) isFileOperation(opcode Opcode) bool {
-	switch opcode {
-	case OpEntrypoint, OpFilesize:
-		return true
-	default:
-		return false
-	}
-}
-
 // executeFileOperation handles file operations
 func (i *Interpreter) executeFileOperation(opcode Opcode) error {
 	switch opcode {
@@ -825,17 +768,6 @@ func (i *Interpreter) executeFileOperation(opcode Opcode) error {
 
 	default:
 		return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: opcode, Message: "invalid file operation"}
-	}
-}
-
-// isIntegerReadOpcode checks if the opcode is an integer read operation
-func (i *Interpreter) isIntegerReadOpcode(opcode Opcode) bool {
-	switch opcode {
-	case OpInt8, OpInt16, OpInt32, OpInt64, OpUint8, OpUint16, OpUint32, OpUint64,
-		OpInt8be, OpUint8be, OpInt16be, OpUint16be, OpInt32be, OpUint32be, OpInt64be, OpUint64be:
-		return true
-	default:
-		return false
 	}
 }
 
@@ -858,17 +790,6 @@ func (i *Interpreter) executeIntegerReadOpcode(opcode Opcode) error {
 	}
 
 	return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: opcode, Message: "invalid integer read opcode"}
-}
-
-// isStringOperation checks if the opcode is a string operation
-func (i *Interpreter) isStringOperation(opcode Opcode) bool {
-	switch opcode {
-	case OpLength, OpCount, OpFound, OpFoundAt, OpFoundIn, OpOffset, OpOf, OpMatches,
-		OpIntToDbl, OpStrToBool:
-		return true
-	default:
-		return false
-	}
 }
 
 // executeStringOperation handles string operations
@@ -922,16 +843,6 @@ func (i *Interpreter) executeStringToBool() error {
 	}
 
 	return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpStrToBool, Message: "string operand required"}
-}
-
-// isRuleOperation checks if the opcode is a rule operation
-func (i *Interpreter) isRuleOperation(opcode Opcode) bool {
-	switch opcode {
-	case OpPushRule, OpInitRule, OpMatchRule:
-		return true
-	default:
-		return false
-	}
 }
 
 // executeRuleOperation handles rule operations
