@@ -191,6 +191,26 @@ func (b *Builder) OfExpression(pos token.Position, countExpr, stringsExpr Expres
 	}
 }
 
+// StringOffset creates a new StringOffset node for the YARA @ operator
+// This implements the correct YARA syntax for string offset operations
+func (b *Builder) StringOffset(pos token.Position, strExpr, indexExpr Expression) *StringOffset {
+	return &StringOffset{
+		Pos:    pos,
+		String: strExpr,
+		Index:  indexExpr, // nil for @a, non-nil for @a[i]
+	}
+}
+
+// StringCount creates a new StringCount node for the YARA # operator
+// This implements the correct YARA syntax for string count operations
+func (b *Builder) StringCount(pos token.Position, strExpr, indexExpr Expression) *StringCount {
+	return &StringCount{
+		Pos:    pos,
+		String: strExpr,
+		Index:  indexExpr, // nil for #a, non-nil for #a[i]
+	}
+}
+
 // FunctionCall creates a new FunctionCall node
 func (b *Builder) FunctionCall(pos token.Position, function string, args []Expression) *FunctionCall {
 	return &FunctionCall{

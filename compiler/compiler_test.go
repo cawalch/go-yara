@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -1361,22 +1362,28 @@ func createBinaryOp(op token.Type, left, right ast.Expression) *ast.BinaryOp {
 }
 
 // createTestBinaryOp creates a binary operation from literal values
-func createTestBinaryOp(op token.Type, leftVal, rightVal any) *ast.BinaryOp {
-	leftExpr := createLiteralFromValue(leftVal)
-	rightExpr := createLiteralFromValue(rightVal)
-	return createBinaryOp(op, leftExpr, rightExpr)
+func createTestBinaryOp(op token.Type, leftVal, rightVal any) (*ast.BinaryOp, error) {
+	leftExpr, err := createLiteralFromValue(leftVal)
+	if err != nil {
+		return nil, err
+	}
+	rightExpr, err := createLiteralFromValue(rightVal)
+	if err != nil {
+		return nil, err
+	}
+	return createBinaryOp(op, leftExpr, rightExpr), nil
 }
 
 // createLiteralFromValue creates a literal expression from a value
-func createLiteralFromValue(val any) ast.Expression {
+func createLiteralFromValue(val any) (ast.Expression, error) {
 	switch v := val.(type) {
 	case int64:
-		return createIntLiteral(v)
+		return createIntLiteral(v), nil
 	case bool:
-		return createBoolLiteral(v)
+		return createBoolLiteral(v), nil
 	default:
-		// For testing purposes, panic on unsupported types
-		panic(fmt.Sprintf("unsupported literal type: %T", val))
+		// Return error for unsupported types
+		return nil, fmt.Errorf("unsupported literal type: %T", val)
 	}
 }
 
@@ -1445,8 +1452,11 @@ func TestConditionCompilerCompileBinaryOpDetailed(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			binOp := createTestBinaryOp(tt.op, tt.leftVal, tt.rightVal)
-			err := cc.compileExpression(binOp)
+			binOp, err := createTestBinaryOp(tt.op, tt.leftVal, tt.rightVal)
+			if err != nil {
+				t.Fatalf("Failed to create test binary op: %v", err)
+			}
+			err = cc.compileExpression(binOp)
 
 			if (err != nil) != tt.expectErr {
 				t.Errorf("compileExpression() error = %v, expectErr %v", err, tt.expectErr)
@@ -2635,9 +2645,18 @@ func TestEmitterEmitDataTypeFunction(t *testing.T) {
 	emitter := NewEmitter()
 
 	// Test with a valid data type function opcode
-	offset := emitter.EmitDataTypeFunction(OpReadInt, 1, 1)
+	offset, err := emitter.EmitDataTypeFunction(OpReadInt, 1, 1)
+	if err != nil {
+		t.Errorf("EmitDataTypeFunction() unexpected error: %v", err)
+	}
 	if offset < 0 {
 		t.Errorf("EmitDataTypeFunction() returned negative offset %d", offset)
+	}
+
+	// Test with invalid opcode
+	_, err = emitter.EmitDataTypeFunction(OpIntAdd, 1, 1)
+	if err == nil {
+		t.Error("EmitDataTypeFunction() expected error for invalid opcode")
 	}
 }
 
@@ -2646,9 +2665,18 @@ func TestEmitterEmitStringOperation(t *testing.T) {
 	emitter := NewEmitter()
 
 	// Test with a valid string operation opcode
-	offset := emitter.EmitStringOperation(OpContains, 1, 1)
+	offset, err := emitter.EmitStringOperation(OpContains, 1, 1)
+	if err != nil {
+		t.Errorf("EmitStringOperation() unexpected error: %v", err)
+	}
 	if offset < 0 {
 		t.Errorf("EmitStringOperation() returned negative offset %d", offset)
+	}
+
+	// Test with invalid opcode
+	_, err = emitter.EmitStringOperation(OpIntAdd, 1, 1)
+	if err == nil {
+		t.Error("EmitStringOperation() expected error for invalid opcode")
 	}
 }
 
@@ -3261,13 +3289,13 @@ func TestCompilerCompileParse(t *testing.T) {
 			$test
 	}`
 
-	program, err := c.compileParse(source)
+	program, err := c.compileParseWithContext(context.Background(), source)
 	if err != nil {
-		t.Errorf("compileParse() error = %v", err)
+		t.Errorf("compileParseWithContext() error = %v", err)
 	}
 
 	if program == nil {
-		t.Errorf("compileParse() returned nil program")
+		t.Errorf("compileParseWithContext() returned nil program")
 	}
 }
 
@@ -3298,9 +3326,9 @@ func TestCompilerCompileSemantic(t *testing.T) {
 		},
 	}
 
-	err := c.compileSemantic(program)
+	err := c.compileSemanticWithContext(context.Background(), program)
 	if err != nil {
-		t.Logf("compileSemantic() error = %v (this may be expected)", err)
+		t.Logf("compileSemanticWithContext() error = %v (this may be expected)", err)
 	}
 }
 
@@ -3387,9 +3415,18 @@ func TestConditionCompilerEstimateComplexityExtended(t *testing.T) {
 		{"identifier_simple", createTestIdentifierForComplexity("test_var"), 2},
 		{"not_true", createTestUnaryOpForComplexity(token.NOT, createTestLiteral()), 2},
 		{"not_identifier", createTestUnaryOpForComplexity(token.NOT, createTestIdentifierForComplexity("var")), 3},
-		{"and_literals", createTestBinaryOp(token.AND, true, false), 3},
-		{"or_literals", createTestBinaryOp(token.OR, true, false), 3},
-		{"arithmetic_add", createTestBinaryOp(token.PLUS, int64(1), int64(2)), 3},
+		{"and_literals", func() *ast.BinaryOp {
+			op, _ := createTestBinaryOp(token.AND, true, false)
+			return op
+		}(), 3},
+		{"or_literals", func() *ast.BinaryOp {
+			op, _ := createTestBinaryOp(token.OR, true, false)
+			return op
+		}(), 3},
+		{"arithmetic_add", func() *ast.BinaryOp {
+			op, _ := createTestBinaryOp(token.PLUS, int64(1), int64(2))
+			return op
+		}(), 3},
 	}
 
 	for _, tt := range testCases {

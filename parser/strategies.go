@@ -75,9 +75,9 @@ type StrategyRegistry struct {
 // NewStrategyRegistry creates a new strategy registry with default strategies
 func NewStrategyRegistry() *StrategyRegistry {
 	registry := &StrategyRegistry{
-		primaryStrategies: make([]PrimaryExpressionStrategy, 0),
-		binaryStrategies:  make([]BinaryExpressionStrategy, 0),
-		unaryStrategies:   make([]UnaryExpressionStrategy, 0),
+		primaryStrategies: make([]PrimaryExpressionStrategy, 0, 8), // Pre-allocate for common strategies
+		binaryStrategies:  make([]BinaryExpressionStrategy, 0, 6),  // Pre-allocate for common strategies
+		unaryStrategies:   make([]UnaryExpressionStrategy, 0, 4),   // Pre-allocate for common strategies
 		classifier:        DefaultTokenClassifier{},
 	}
 

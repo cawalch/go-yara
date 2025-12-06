@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -37,6 +38,9 @@ type CompilationOptions struct {
 	EnableDebugInfo     bool
 	EnableWarnings      bool
 	TargetVersion       string
+	MaxInputSize        int64 // Maximum input file size in bytes (0 = no limit)
+	MaxIncludeSize      int64 // Maximum include file size in bytes (0 = no limit)
+	MaxRecursionDepth   int   // Maximum nesting depth for rules (0 = no limit)
 }
 
 // CompilationStats tracks compilation metrics
@@ -79,6 +83,9 @@ func NewCompiler() *Compiler {
 			EnableDebugInfo:     false,
 			EnableWarnings:      true,
 			TargetVersion:       "1.0",
+			MaxInputSize:        100 * 1024 * 1024, // 100MB default
+			MaxIncludeSize:      10 * 1024 * 1024,  // 10MB default
+			MaxRecursionDepth:   1000,              // 1000 levels default
 		},
 		stats: CompilationStats{
 			Errors:   make([]CompilationError, 0),
@@ -94,32 +101,73 @@ func NewCompilerWithOptions(options CompilationOptions) *Compiler {
 	return compiler
 }
 
-// CompileSource compiles YARA source code to bytecode
+// CompileSource compiles YARA source code to bytecode.
+// Deprecated: Use CompileSourceWithContext for better cancellation and timeout support.
 func (c *Compiler) CompileSource(source string) (*CompiledProgram, error) {
+	return c.CompileSourceWithContext(context.Background(), source)
+}
+
+// CompileSourceWithContext compiles YARA source code to bytecode with context support
+func (c *Compiler) CompileSourceWithContext(ctx context.Context, source string) (*CompiledProgram, error) {
+	// Check for cancellation early
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	c.stats = CompilationStats{
 		StartTime: time.Now(),
 		Errors:    make([]CompilationError, 0),
 		Warnings:  make([]CompilationWarning, 0),
 	}
 
+	// Validate input size to prevent DoS attacks
+	if c.options.MaxInputSize > 0 && int64(len(source)) > c.options.MaxInputSize {
+		return nil, fmt.Errorf("input size %d bytes exceeds maximum allowed %d bytes", len(source), c.options.MaxInputSize)
+	}
+
 	// Phase 1: Parsing (parser creates its own lexer, no need for separate lexical analysis)
-	program, err := c.compileParse(source)
+	program, err := c.compileParseWithContext(ctx, source)
 	if err != nil {
 		return nil, fmt.Errorf("parsing failed: %w", err)
 	}
 
+	// Check for cancellation before proceeding to next phase
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	// Phase 2: Process imports
 	if len(program.Imports) > 0 {
-		c.processImports(program)
+		if err := c.processImportsWithContext(ctx, program); err != nil {
+			return nil, fmt.Errorf("processing imports failed: %w", err)
+		}
+	}
+
+	// Check for cancellation before proceeding to next phase
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
 	}
 
 	// Phase 3: Semantic Analysis
-	if semErr := c.compileSemantic(program); semErr != nil {
+	if semErr := c.compileSemanticWithContext(ctx, program); semErr != nil {
 		return nil, fmt.Errorf("semantic analysis failed: %w", semErr)
 	}
 
+	// Check for cancellation before proceeding to next phase
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	// Phase 4: Code Generation
-	compiledProgram, codeGenErr := c.compileCodeGen(program)
+	compiledProgram, codeGenErr := c.compileCodeGenWithContext(ctx, program)
 	if codeGenErr != nil {
 		return nil, fmt.Errorf("code generation failed: %w", codeGenErr)
 	}
@@ -130,8 +178,21 @@ func (c *Compiler) CompileSource(source string) (*CompiledProgram, error) {
 	return compiledProgram, nil
 }
 
-// CompileFile compiles a YARA file to bytecode
+// CompileFile compiles a YARA file to bytecode.
+// Deprecated: Use CompileFileWithContext for better cancellation and timeout support.
 func (c *Compiler) CompileFile(filename string) (*CompiledProgram, error) {
+	return c.CompileFileWithContext(context.Background(), filename)
+}
+
+// CompileFileWithContext compiles a YARA file to bytecode with context support
+func (c *Compiler) CompileFileWithContext(ctx context.Context, filename string) (*CompiledProgram, error) {
+	// Check for cancellation early
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	// Read file content
 	source, err := c.readFile(filename)
 	if err != nil {
@@ -141,22 +202,31 @@ func (c *Compiler) CompileFile(filename string) (*CompiledProgram, error) {
 	// Store the base directory for resolving includes
 	c.baseDir = filepath.Dir(filename)
 
-	return c.CompileSource(source)
+	return c.CompileSourceWithContext(ctx, source)
 }
 
-// compileParse performs parsing
-func (c *Compiler) compileParse(source string) (*ast.Program, error) {
+// compileParseWithContext performs parsing with context support
+func (c *Compiler) compileParseWithContext(ctx context.Context, source string) (*ast.Program, error) {
 	start := time.Now()
+
+	// Check for cancellation before creating parser
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
 
 	// Create a fresh lexer for the parser
 	// (the previous lexer was consumed during tokenization)
 	freshLexer := lexer.New(source)
 
-	// Create parser with fresh lexer
-	c.parser = parser.New(freshLexer)
+	// Create parser with fresh lexer and recursion depth limit
+	c.parser = parser.NewWithOptions(freshLexer, parser.Options{
+		MaxRecursionDepth: c.options.MaxRecursionDepth,
+	})
 
-	// Parse
-	program, err := c.parser.ParseRules()
+	// Parse with context support
+	program, err := c.parser.ParseRulesWithContext(ctx)
 	if err != nil {
 		c.stats.Errors = append(c.stats.Errors, CompilationError{
 			Phase:   "parsing",
@@ -169,7 +239,7 @@ func (c *Compiler) compileParse(source string) (*ast.Program, error) {
 
 	// Process includes - resolve and parse included files
 	if len(program.Includes) > 0 {
-		includeErr := c.processIncludes(program)
+		includeErr := c.processIncludesWithContext(ctx, program)
 		if includeErr != nil {
 			c.stats.Errors = append(c.stats.Errors, CompilationError{
 				Phase:   "parsing",
@@ -199,9 +269,16 @@ func (c *Compiler) compileParse(source string) (*ast.Program, error) {
 	return program, nil
 }
 
-// compileSemantic performs semantic analysis
-func (c *Compiler) compileSemantic(program *ast.Program) error {
+// compileSemanticWithContext performs semantic analysis with context support
+func (c *Compiler) compileSemanticWithContext(ctx context.Context, program *ast.Program) error {
 	start := time.Now()
+
+	// Check for cancellation before semantic analysis
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
 
 	// Create semantic analyzer
 	c.analyzer = semantic.NewValidator()
@@ -222,8 +299,13 @@ func (c *Compiler) compileSemantic(program *ast.Program) error {
 
 	c.stats.SemanticTime = time.Since(start)
 
-	// Collect warnings if enabled
+	// Collect warnings if enabled (check for cancellation before expensive operations)
 	if c.options.EnableWarnings {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		c.collectSemanticWarnings(program)
 	}
 
@@ -332,9 +414,16 @@ func (c *Compiler) isTrivialCondition(expr ast.Expression) bool {
 	return false
 }
 
-// compileCodeGen performs code generation
-func (c *Compiler) compileCodeGen(program *ast.Program) (*CompiledProgram, error) {
+// compileCodeGenWithContext performs code generation with context support
+func (c *Compiler) compileCodeGenWithContext(ctx context.Context, program *ast.Program) (*CompiledProgram, error) {
 	start := time.Now()
+
+	// Check for cancellation before code generation
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
 
 	// Create code generator
 	c.generator = NewRuleCompiler()
@@ -356,7 +445,13 @@ func (c *Compiler) compileCodeGen(program *ast.Program) (*CompiledProgram, error
 	// Wrap in CompiledProgram
 	compiledProgram := NewCompiledProgram(compiledRules)
 
-	// Update statistics
+	// Update statistics (check for cancellation before expensive operations)
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	c.stats.RulesCompiled = compiledProgram.GetRuleCount()
 	c.stats.TotalInstructions = compiledProgram.GetTotalBytecodeSize()
 	c.stats.TotalBytecodeSize = compiledProgram.GetTotalBytecodeSize()
@@ -426,27 +521,58 @@ func (c *Compiler) Reset() {
 	}
 }
 
-// readFile reads a file (placeholder implementation)
-func (c *Compiler) processIncludes(program *ast.Program) error {
-	return c.processIncludesWithBaseDir(program, c.baseDir)
+// processIncludesWithContext processes include statements in the YARA rules with context support
+func (c *Compiler) processIncludesWithContext(ctx context.Context, program *ast.Program) error {
+	// Check for cancellation before processing includes
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
+	return c.processIncludesWithBaseDirContext(ctx, program, c.baseDir)
 }
 
 // processIncludesWithBaseDir processes includes with a specific base directory
 func (c *Compiler) processIncludesWithBaseDir(program *ast.Program, baseDir string) error {
+	return c.processIncludesWithBaseDirContext(context.Background(), program, baseDir)
+}
+
+// processIncludesWithBaseDirContext processes includes with a specific base directory and context support
+func (c *Compiler) processIncludesWithBaseDirContext(ctx context.Context, program *ast.Program, baseDir string) error {
 	// Process each include statement
 	for _, include := range program.Includes {
-		// Security check: reject absolute paths to prevent directory traversal
-		if filepath.IsAbs(include.File) {
-			return fmt.Errorf("failed to read include file %s: absolute paths not allowed", include.File)
+		// Check for cancellation before processing each include
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
 		}
 
-		// Security check: reject path traversal attempts
-		if strings.Contains(include.File, "..") {
-			return fmt.Errorf("failed to read include file %s: path traversal not allowed", include.File)
-		}
-
-		// Resolve the include path relative to the current baseDir
+		// Resolve the include path relative to base directory
 		includePath := filepath.Join(baseDir, include.File)
+
+		// Clean the path to resolve any .. components
+		cleanIncludePath := filepath.Clean(includePath)
+
+		// Get the absolute base directory
+		absBaseDir, err := filepath.Abs(baseDir)
+		if err != nil {
+			return fmt.Errorf("failed to resolve base directory: %w", err)
+		}
+		absBaseDir = filepath.Clean(absBaseDir)
+
+		// Get the absolute include path
+		absIncludePath, err := filepath.Abs(cleanIncludePath)
+		if err != nil {
+			return fmt.Errorf("failed to resolve include path: %w", err)
+		}
+		absIncludePath = filepath.Clean(absIncludePath)
+
+		// Check if the include path is within the base directory (prevents directory traversal)
+		if !strings.HasPrefix(absIncludePath, absBaseDir+string(filepath.Separator)) && absIncludePath != absBaseDir {
+			return fmt.Errorf("failed to read include file %s: path traversal detected", include.File)
+		}
 
 		// Read the included file content
 		includedContent, err := os.ReadFile(includePath) // #nosec G304 - include file processing is intentional
@@ -454,10 +580,16 @@ func (c *Compiler) processIncludesWithBaseDir(program *ast.Program, baseDir stri
 			return fmt.Errorf("failed to read include file %s: %w", include.File, err)
 		}
 
+		// Check file size limit if set
+		if c.options.MaxIncludeSize > 0 && int64(len(includedContent)) > c.options.MaxIncludeSize {
+			return fmt.Errorf("include file %s size %d bytes exceeds maximum allowed %d bytes",
+				include.File, len(includedContent), c.options.MaxIncludeSize)
+		}
+
 		// Parse the included content
 		includedLexer := lexer.New(string(includedContent))
 		includedParser := parser.New(includedLexer)
-		includedProgram, parseErr := includedParser.ParseRules()
+		includedProgram, parseErr := includedParser.ParseRulesWithContext(ctx)
 		if parseErr != nil {
 			return fmt.Errorf("failed to parse include file %s: %w", include.File, parseErr)
 		}
@@ -470,8 +602,11 @@ func (c *Compiler) processIncludesWithBaseDir(program *ast.Program, baseDir stri
 		// Recursively process includes in the included file first
 		// Use the directory of the included file as the new baseDir
 		if len(includedProgram.Includes) > 0 {
-			includedFileDir := filepath.Dir(includePath)
-			processErr := c.processIncludesWithBaseDir(includedProgram, includedFileDir)
+			// Resolve the actual path for the included file to get its directory
+			// We use filepath.Join and filepath.Clean to get the canonical path
+			includedFilePath := filepath.Join(baseDir, include.File)
+			includedFileDir := filepath.Dir(filepath.Clean(includedFilePath))
+			processErr := c.processIncludesWithBaseDirContext(ctx, includedProgram, includedFileDir)
 			if processErr != nil {
 				return fmt.Errorf("failed to process includes in %s: %w", include.File, processErr)
 			}
@@ -492,10 +627,17 @@ func (c *Compiler) ProcessIncludes(program *ast.Program) error {
 	return c.processIncludesWithBaseDir(program, c.baseDir)
 }
 
-// processImports processes import statements
-func (c *Compiler) processImports(program *ast.Program) {
+// processImportsWithContext processes import statements with context support
+func (c *Compiler) processImportsWithContext(ctx context.Context, program *ast.Program) error {
 	// For now, just log the imports - full implementation would load modules
 	for _, importStmt := range program.Imports {
+		// Check for cancellation before processing each import
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		// In a full implementation, we would:
 		// 1. Resolve module path
 		// 2. Load module definition
@@ -505,6 +647,7 @@ func (c *Compiler) processImports(program *ast.Program) {
 		// For now, just acknowledge the import
 		fmt.Printf("Import module: %s\n", importStmt.Module)
 	}
+	return nil
 }
 
 func (c *Compiler) readFile(filename string) (string, error) {
@@ -602,7 +745,8 @@ func (c *Compiler) GetSupportedFeatures() []string {
 // EstimateCompilationTime estimates compilation time for given source size
 func (c *Compiler) EstimateCompilationTime(sourceSize int) time.Duration {
 	// Rough estimate based on typical compilation speeds
-	// This is a placeholder - real implementation would use historical data
+	// TODO: Real implementation would use historical data and profiling
+	// Currently uses a simple linear approximation based on typical YARA rule complexity
 
 	baseTime := 10 * time.Millisecond    // Base overhead
 	perByteTime := 100 * time.Nanosecond // Time per source byte
@@ -615,7 +759,8 @@ func (c *Compiler) EstimateCompilationTime(sourceSize int) time.Duration {
 // GetMemoryRequirements estimates memory requirements for compilation
 func (c *Compiler) GetMemoryRequirements(sourceSize int) int {
 	// Rough estimate of memory usage during compilation
-	// This is a placeholder - real implementation would be more accurate
+	// TODO: Real implementation would analyze rule complexity, string patterns, and AST size
+	// Currently provides a conservative estimate suitable for most YARA rule sets
 
 	baseMemory := 1024 * 1024 // 1MB base
 	perByteMemory := 4        // 4 bytes per source byte
@@ -651,7 +796,7 @@ func (c *Compiler) CompileWithProgress(source string, progressCallback func(phas
 	if progressCallback != nil {
 		progressCallback("parsing", 30)
 	}
-	program, err := c.compileParse(source)
+	program, err := c.compileParseWithContext(context.Background(), source)
 	if err != nil {
 		return nil, err
 	}
@@ -660,7 +805,7 @@ func (c *Compiler) CompileWithProgress(source string, progressCallback func(phas
 	if progressCallback != nil {
 		progressCallback("semantic", 60)
 	}
-	if semErr := c.compileSemantic(program); semErr != nil {
+	if semErr := c.compileSemanticWithContext(context.Background(), program); semErr != nil {
 		return nil, semErr
 	}
 
@@ -668,7 +813,7 @@ func (c *Compiler) CompileWithProgress(source string, progressCallback func(phas
 	if progressCallback != nil {
 		progressCallback("codegen", 90)
 	}
-	compiledProgram, codeGenErr := c.compileCodeGen(program)
+	compiledProgram, codeGenErr := c.compileCodeGenWithContext(context.Background(), program)
 	if codeGenErr != nil {
 		return nil, codeGenErr
 	}

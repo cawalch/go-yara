@@ -3,6 +3,7 @@ package compiler
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 
 	"github.com/cawalch/go-yara/regex"
@@ -99,8 +100,7 @@ func (ac *ACAutomaton) addStringToAutomaton(config StringConfig) error {
 	ac.StringCount = len(ac.strings)
 
 	// Update backward compatibility field
-	ac.Strings = make([]ACStringInfo, len(ac.strings))
-	copy(ac.Strings, ac.strings)
+	ac.Strings = slices.Clone(ac.strings)
 	stringIndex := int32(len(ac.strings) - 1) // #nosec G115
 
 	// Build trie for pattern matching
@@ -269,7 +269,7 @@ func (ac *ACAutomaton) Search(data []byte) []ACMatch {
 		return nil
 	}
 
-	// Reset match buffer
+	// Reset match buffer efficiently
 	ac.matchBuffer = ac.matchBuffer[:0]
 
 	currentState := int32(0) // Start at root
@@ -281,9 +281,7 @@ func (ac *ACAutomaton) Search(data []byte) []ACMatch {
 	}
 
 	// Return a copy of matches (to avoid caller modifying internal buffer)
-	result := make([]ACMatch, len(ac.matchBuffer))
-	copy(result, ac.matchBuffer)
-	return result
+	return slices.Clone(ac.matchBuffer)
 }
 
 // AddStringWithFlags adds a string and records regex VM flags alongside metadata
@@ -319,25 +317,15 @@ func (ac *ACAutomaton) AddStringWithFlagsAndConfig(config StringConfigWithFlags)
 
 // ReserveStrings ensures capacity for at least n string infos to avoid slice growth
 func (ac *ACAutomaton) ReserveStrings(n int) {
-	if n <= 0 {
-		return
-	}
-	if cap(ac.strings) < n {
-		newSlice := make([]ACStringInfo, len(ac.strings), n)
-		copy(newSlice, ac.strings)
-		ac.strings = newSlice
+	if n > 0 && cap(ac.strings) < n {
+		ac.strings = slices.Grow(ac.strings, n-len(ac.strings))
 	}
 }
 
 // ReserveStates ensures capacity for at least n states to avoid slice growth
 func (ac *ACAutomaton) ReserveStates(n int) {
-	if n <= 0 {
-		return
-	}
-	if cap(ac.states) < n {
-		newSlice := make([]ACState, len(ac.states), n)
-		copy(newSlice, ac.states)
-		ac.states = newSlice
+	if n > 0 && cap(ac.states) < n {
+		ac.states = slices.Grow(ac.states, n-len(ac.states))
 	}
 }
 
@@ -400,25 +388,13 @@ func (ac *ACAutomaton) Validate() error {
 // Clone creates a copy of the automaton
 func (ac *ACAutomaton) Clone() *ACAutomaton {
 	newAC := &ACAutomaton{
-		states:      make([]ACState, len(ac.states)),
-		outputs:     make([]int32, len(ac.outputs)),
-		strings:     make([]ACStringInfo, len(ac.strings)),
+		states:      slices.Clone(ac.states),
+		outputs:     slices.Clone(ac.outputs),
+		strings:     slices.Clone(ac.strings),
 		matchBuffer: make([]ACMatch, 0, cap(ac.matchBuffer)),
 		StringCount: ac.StringCount,
-		Strings:     make([]ACStringInfo, len(ac.Strings)),
+		Strings:     slices.Clone(ac.Strings),
 	}
-
-	// Copy states
-	copy(newAC.states, ac.states)
-
-	// Copy outputs
-	copy(newAC.outputs, ac.outputs)
-
-	// Copy strings
-	copy(newAC.strings, ac.strings)
-
-	// Copy backward compatibility strings
-	copy(newAC.Strings, ac.Strings)
 
 	return newAC
 }
@@ -490,7 +466,8 @@ func (ac *ACAutomaton) GetStrings() []ACStringInfo {
 
 // GetPatternData returns a map of string identifiers to their pattern data
 func (ac *ACAutomaton) GetPatternData() map[string][]byte {
-	result := make(map[string][]byte)
+	// Pre-allocate map with known capacity for better performance
+	result := make(map[string][]byte, len(ac.strings))
 	for _, strInfo := range ac.strings {
 		result[strInfo.Identifier] = strInfo.Data
 	}

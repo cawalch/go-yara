@@ -309,11 +309,11 @@ func (e *Emitter) EmitLogical(op Opcode, line, pos int) int {
 }
 
 // EmitDataTypeFunction emits data type conversion function instructions
-func (e *Emitter) EmitDataTypeFunction(op Opcode, line, pos int) int {
+func (e *Emitter) EmitDataTypeFunction(op Opcode, line, pos int) (int, error) {
 	if !isDataTypeFunction(op) {
-		panic(fmt.Sprintf("opcode %s is not a data type function", op.String()))
+		return -1, fmt.Errorf("opcode %s is not a data type function", op.String())
 	}
-	return e.EmitOpcode(op, line, pos)
+	return e.EmitOpcode(op, line, pos), nil
 }
 
 // Helper functions for opcode classification
@@ -343,11 +343,11 @@ func isDataTypeFunction(op Opcode) bool {
 }
 
 // EmitStringOperation emits string operation instructions
-func (e *Emitter) EmitStringOperation(op Opcode, line, pos int) int {
+func (e *Emitter) EmitStringOperation(op Opcode, line, pos int) (int, error) {
 	if !isStringOperation(op) {
-		panic(fmt.Sprintf("opcode %s is not a string operation", op.String()))
+		return -1, fmt.Errorf("opcode %s is not a string operation", op.String())
 	}
-	return e.EmitOpcode(op, line, pos)
+	return e.EmitOpcode(op, line, pos), nil
 }
 
 func isStringOperation(op Opcode) bool {

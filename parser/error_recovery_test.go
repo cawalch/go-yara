@@ -110,14 +110,43 @@ rule ValidRule {
 			l := internal.New(tt.input)
 			p := New(l)
 
-			// TODO: This is a pre-existing parser error recovery issue not related to Sprint 1 changes
-			// The current parser design returns nil when any errors occur, which prevents
-			// proper error recovery testing. This test needs the parser to be redesigned
-			// to return partial programs for error recovery scenarios.
+			// Enable error recovery mode for this test
+			p.SetErrorRecovery(true)
+
 			program, err := p.ParseRules()
-			_ = program // Avoid unused variable errors
-			_ = err
-			t.Skip("Parser returns nil on errors, preventing error recovery testing - known pre-existing issue")
+
+			// We should get a partial program with errors
+			if err == nil {
+				t.Errorf("Expected parsing errors, but got none")
+				return
+			}
+
+			partialErr, ok := err.(*PartialParseError)
+			if !ok {
+				t.Errorf("Expected PartialParseError, got %T", err)
+				return
+			}
+
+			// Verify we got some errors
+			if len(partialErr.Errors) == 0 {
+				t.Errorf("Expected at least one error, got none")
+			}
+
+			// Verify we got a partial program
+			if program == nil {
+				t.Errorf("Expected partial program, got nil")
+				return
+			}
+
+			// Verify expected number of rules (should parse valid rules despite errors)
+			if len(program.Rules) < tt.expectedRules {
+				t.Errorf("Expected at least %d rules, got %d", tt.expectedRules, len(program.Rules))
+			}
+
+			// Verify expected number of errors
+			if len(partialErr.Errors) < tt.expectedErrors {
+				t.Errorf("Expected at least %d errors, got %d", tt.expectedErrors, len(partialErr.Errors))
+			}
 		})
 	}
 }
