@@ -16,6 +16,7 @@ import (
 	"github.com/cawalch/go-yara/parser"
 	"github.com/cawalch/go-yara/regex"
 	"github.com/cawalch/go-yara/token"
+	"github.com/cawalch/go-yara/utils/fs"
 )
 
 const (
@@ -193,7 +194,7 @@ func validateFilename(filename string) error {
 }
 
 func readFileContent(filename string) []byte {
-	content, err := os.ReadFile(filename) // #nosec G304 - intentional file reading
+	content, err := fs.ReadFile("", filename) // #nosec G304 - file reading is intentional
 	if err != nil {
 		fmt.Printf("Error reading file %s: %v\n", filename, err)
 		os.Exit(1)
@@ -399,13 +400,8 @@ func validateAndReadDataFile(dataFile string) []byte {
 		os.Exit(1)
 	}
 
-	// Validate dataFile to prevent path traversal
-	if strings.Contains(dataFile, "..") || strings.HasPrefix(dataFile, "/") {
-		fmt.Printf("Error: invalid data file path: potential path traversal\n")
-		os.Exit(1)
-	}
-
-	data, err := os.ReadFile(dataFile) // #nosec G304 - intentional file reading
+	// Use centralized file reading utility with validation
+	data, err := fs.ReadFile("", dataFile) // #nosec G304 - file reading is intentional
 	if err != nil {
 		fmt.Printf("Error reading data file %s: %v\n", dataFile, err)
 		return nil
