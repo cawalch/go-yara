@@ -70,16 +70,17 @@ func (e *Emitter) EmitPush(value uint64, line, pos int) int {
 	var operand Operand
 
 	// Choose the most efficient push instruction based on value size
-	if value <= math.MaxUint8 {
+	switch {
+	case value <= math.MaxUint8:
 		opcode = OpPush8
 		operand = Operand{Type: OperandImmediate8, Value: value}
-	} else if value <= math.MaxUint16 {
+	case value <= math.MaxUint16:
 		opcode = OpPush16
 		operand = Operand{Type: OperandImmediate16, Value: value}
-	} else if value <= math.MaxUint32 {
+	case value <= math.MaxUint32:
 		opcode = OpPush32
 		operand = Operand{Type: OperandImmediate32, Value: value}
-	} else {
+	default:
 		opcode = OpPushU
 		operand = Operand{Type: OperandImmediate64, Value: value}
 	}

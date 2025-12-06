@@ -124,20 +124,17 @@ func (tc *TypeChecker) checkBinaryOp(binaryOp *ast.BinaryOp) *TypeInfo {
 
 // getBinaryOpHandler returns the appropriate handler for a binary operator
 func (tc *TypeChecker) getBinaryOpHandler(op token.Type) BinaryOpHandler {
-	if handler := tc.getArithmeticHandler(op); handler != nil {
-		return handler
+	handlers := []func(token.Type) BinaryOpHandler{
+		tc.getArithmeticHandler,
+		tc.getComparisonHandler,
+		tc.getStringHandler,
+		tc.getSpecialHandler,
 	}
 
-	if handler := tc.getComparisonHandler(op); handler != nil {
-		return handler
-	}
-
-	if handler := tc.getStringHandler(op); handler != nil {
-		return handler
-	}
-
-	if handler := tc.getSpecialHandler(op); handler != nil {
-		return handler
+	for _, getHandler := range handlers {
+		if handler := getHandler(op); handler != nil {
+			return handler
+		}
 	}
 
 	return nil

@@ -2,6 +2,7 @@
 package testutils
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -146,7 +147,7 @@ func CompileTestRule(t *testing.T, source string) *compiler.CompiledProgram {
 	t.Helper()
 
 	c := CreateTestCompiler()
-	program, err := c.CompileSource(source)
+	program, err := c.CompileSourceWithContext(context.Background(), source)
 	if err != nil {
 		t.Logf("Compilation errors: %v", c.GetErrors())
 		t.Fatalf("Failed to compile test rule: %v", err)
@@ -160,7 +161,7 @@ func CompileTestRuleWithError(t *testing.T, source string) (*compiler.CompiledPr
 	t.Helper()
 
 	c := CreateTestCompiler()
-	program, err := c.CompileSource(source)
+	program, err := c.CompileSourceWithContext(context.Background(), source)
 	compErrors := c.GetErrors()
 
 	// Convert compilation errors to standard errors

@@ -81,15 +81,16 @@ func (l *Lexer) skipBlockComment() bool {
 // skipWhitespace skips whitespace characters and comments
 func (l *Lexer) skipWhitespace() {
 	for {
-		if l.isWhitespaceChar() {
+		switch {
+		case l.isWhitespaceChar():
 			l.reader.ReadChar()
-		} else if l.skipLineComment() {
+		case l.skipLineComment():
 			// Continue loop to handle post-comment whitespace
 			continue
-		} else if l.skipBlockComment() {
+		case l.skipBlockComment():
 			// Continue loop to handle post-comment whitespace
 			continue
-		} else {
+		default:
 			return
 		}
 	}

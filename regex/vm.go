@@ -248,14 +248,8 @@ func runAtMatch(code, s []byte, flags Flags, start int) (matched bool, length in
 			step(pos, ch, 2)
 			cur, next = next, cur
 
-			// If all threads have died we can stop early; return the best match found.
-			if len(cur) == 0 {
-				if bestEnd >= 0 {
-					matched, length = true, bestEnd
-					return //nolint:nakedret
-				}
-				matched, length = false, 0
-				return //nolint:nakedret
+			if checkAndReturnIfExhausted(cur, &matched, &length, bestEnd) {
+				return
 			}
 		}
 	} else {
@@ -264,14 +258,8 @@ func runAtMatch(code, s []byte, flags Flags, start int) (matched bool, length in
 			step(pos, ch, 1)
 			cur, next = next, cur
 
-			// If all threads have died we can stop early; return the best match found.
-			if len(cur) == 0 {
-				if bestEnd >= 0 {
-					matched, length = true, bestEnd
-					return //nolint:nakedret
-				}
-				matched, length = false, 0
-				return //nolint:nakedret
+			if checkAndReturnIfExhausted(cur, &matched, &length, bestEnd) {
+				return
 			}
 		}
 	}
@@ -310,22 +298,7 @@ func addThread(code, s []byte, list *[]thread, pc, pos int, visited map[int]bool
 			// sequential next
 			nextPC := pc + 4
 			altPC := pc + int(rel)
-			if op == OpSplitA {
-				if addThread(code, s, list, nextPC, pos, visited, wide) {
-					return true
-				}
-				if addThread(code, s, list, altPC, pos, visited, wide) {
-					return true
-				}
-			} else {
-				if addThread(code, s, list, altPC, pos, visited, wide) {
-					return true
-				}
-				if addThread(code, s, list, nextPC, pos, visited, wide) {
-					return true
-				}
-			}
-			return false
+			return addSplitThreads(code, s, list, nextPC, altPC, pos, visited, wide, op)
 		case OpJump:
 			// Layout: [op][u16 rel]
 			if pc+2 >= len(code) {
@@ -442,4 +415,33 @@ func isWordBoundaryWide(s []byte, pos int) bool {
 // Validates that at position pos we have a valid WIDE ASCII pair (hi byte zero).
 func isWidePair(s []byte, pos int) bool {
 	return pos+1 < len(s) && s[pos+1] == 0
+}
+
+// checkAndReturnIfExhausted checks if all threads have died and returns early if so
+func checkAndReturnIfExhausted(cur []thread, matched *bool, length *int, bestEnd int) bool {
+	if len(cur) == 0 {
+		if bestEnd >= 0 {
+			*matched, *length = true, bestEnd
+		} else {
+			*matched, *length = false, 0
+		}
+		return true
+	}
+	return false
+}
+
+// addSplitThreads adds threads for split operations based on the operation type
+func addSplitThreads(code, s []byte, list *[]thread, nextPC, altPC, pos int, visited map[int]bool, wide bool, op uint8) bool {
+	if op == OpSplitA {
+		if addThread(code, s, list, nextPC, pos, visited, wide) {
+			return true
+		}
+		return addThread(code, s, list, altPC, pos, visited, wide)
+	}
+
+	// OpSplitN - add alternative thread first, then next
+	if addThread(code, s, list, altPC, pos, visited, wide) {
+		return true
+	}
+	return addThread(code, s, list, nextPC, pos, visited, wide)
 }

@@ -77,10 +77,8 @@ DEBUG: Stack after HALT: len=0
 				if output != expectedOutput {
 					t.Errorf("Debug output mismatch. Got:\n%s\nWant:\n%s", output, expectedOutput)
 				}
-			} else {
-				if len(output) > 0 {
-					t.Errorf("Expected no debug output, but got:\n%s", output)
-				}
+			} else if len(output) > 0 {
+				t.Errorf("Expected no debug output, but got:\n%s", output)
 			}
 		})
 	}

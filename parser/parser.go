@@ -102,6 +102,7 @@ func NewWithOptions(l *lexer.Lexer, options Options) *Parser {
 }
 
 // ParseRules parses a complete YARA rules file with error recovery (if enabled).
+//
 // Deprecated: Use ParseRulesWithContext for better cancellation and timeout support.
 func (p *Parser) ParseRules() (*ast.Program, error) {
 	return p.ParseRulesWithContext(context.Background())

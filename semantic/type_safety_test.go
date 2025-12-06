@@ -1,6 +1,7 @@
 package semantic
 
 import (
+	"context"
 	"testing"
 
 	internal "github.com/cawalch/go-yara/internal/lexer"
@@ -92,10 +93,8 @@ func TestTypeChecker_StringOperations(t *testing.T) {
 				if tt.errorMsg != "" && !containsAny(errors, tt.errorMsg) {
 					t.Errorf("Expected error containing %q, got: %v", tt.errorMsg, errors)
 				}
-			} else {
-				if len(errors) > 0 {
-					t.Errorf("Unexpected validation errors: %v", errors)
-				}
+			} else if len(errors) > 0 {
+				t.Errorf("Unexpected validation errors: %v", errors)
 			}
 		})
 	}
@@ -190,10 +189,8 @@ func TestTypeChecker_BinaryOperations(t *testing.T) {
 				if tt.errorMsg != "" && !containsAny(errors, tt.errorMsg) {
 					t.Errorf("Expected error containing %q, got: %v", tt.errorMsg, errors)
 				}
-			} else {
-				if len(errors) > 0 {
-					t.Errorf("Unexpected validation errors: %v", errors)
-				}
+			} else if len(errors) > 0 {
+				t.Errorf("Unexpected validation errors: %v", errors)
 			}
 		})
 	}
@@ -271,10 +268,8 @@ func TestValidator_FunctionCalls(t *testing.T) {
 				if tt.errorMsg != "" && !containsAny(errors, tt.errorMsg) {
 					t.Errorf("Expected error containing %q, got: %v", tt.errorMsg, errors)
 				}
-			} else {
-				if len(errors) > 0 {
-					t.Errorf("Unexpected validation errors: %v", errors)
-				}
+			} else if len(errors) > 0 {
+				t.Errorf("Unexpected validation errors: %v", errors)
 			}
 		})
 	}
@@ -353,10 +348,8 @@ func TestValidator_ForLoops(t *testing.T) {
 				if tt.errorMsg != "" && !containsAny(errors, tt.errorMsg) {
 					t.Errorf("Expected error containing %q, got: %v", tt.errorMsg, errors)
 				}
-			} else {
-				if len(errors) > 0 {
-					t.Errorf("Unexpected validation errors: %v", errors)
-				}
+			} else if len(errors) > 0 {
+				t.Errorf("Unexpected validation errors: %v", errors)
 			}
 		})
 	}
@@ -421,30 +414,12 @@ func TestValidator_ArrayIndices(t *testing.T) {
 			// For ArrayIndex tests, we expect parsing to fail because $a[i] syntax is invalid
 			l := internal.New(tt.rule)
 			p := parser.New(l)
-			_, err := p.ParseRules()
+			_, err := p.ParseRulesWithContext(context.Background())
 
 			if tt.expectError {
-				if err == nil {
-					t.Errorf("Expected parsing error but got none")
-					return
-				}
-				// Check the actual parser errors
-				parserErrors := p.Errors()
-				foundExpectedError := false
-				for _, perr := range parserErrors {
-					if tt.errorMsg != "" && containsSubstring(perr.Error(), tt.errorMsg) {
-						foundExpectedError = true
-						break
-					}
-				}
-				if !foundExpectedError && tt.errorMsg != "" {
-					t.Errorf("Expected error containing %q, got parser errors: %v, main error: %v", tt.errorMsg, parserErrors, err.Error())
-				}
+				validateExpectedError(t, tt, err, p.Errors())
 			} else {
-				if err != nil {
-					t.Errorf("Expected no parsing errors, got: %v", err)
-					return
-				}
+				validateSuccessfulParsing(t, tt, err)
 				// If parsing succeeds, then validate the rule
 				errors := validateRule(t, tt.rule)
 				if len(errors) > 0 {
@@ -517,10 +492,8 @@ func TestValidator_StringLength(t *testing.T) {
 				if tt.errorMsg != "" && !containsAny(errors, tt.errorMsg) {
 					t.Errorf("Expected error containing %q, got: %v", tt.errorMsg, errors)
 				}
-			} else {
-				if len(errors) > 0 {
-					t.Errorf("Unexpected validation errors: %v", errors)
-				}
+			} else if len(errors) > 0 {
+				t.Errorf("Unexpected validation errors: %v", errors)
 			}
 		})
 	}
@@ -589,10 +562,8 @@ func TestValidator_TypeConversions(t *testing.T) {
 				if tt.errorMsg != "" && !containsAny(errors, tt.errorMsg) {
 					t.Errorf("Expected error containing %q, got: %v", tt.errorMsg, errors)
 				}
-			} else {
-				if len(errors) > 0 {
-					t.Errorf("Unexpected validation errors: %v", errors)
-				}
+			} else if len(errors) > 0 {
+				t.Errorf("Unexpected validation errors: %v", errors)
 			}
 		})
 	}
@@ -603,7 +574,7 @@ func validateRule(t *testing.T, ruleText string) []error {
 	l := internal.New(ruleText)
 	p := parser.New(l)
 
-	program, err := p.ParseRules()
+	program, err := p.ParseRulesWithContext(context.Background())
 	if err != nil {
 		t.Fatalf("Failed to parse rule: %v", err)
 	}
@@ -638,4 +609,41 @@ func containsSubstring(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+// validateExpectedError validates that expected parsing errors occur
+func validateExpectedError(t *testing.T, tt struct {
+	name        string
+	rule        string
+	expectError bool
+	errorMsg    string
+}, err error, parserErrors []error) {
+	if err == nil {
+		t.Errorf("Expected parsing error but got none")
+		return
+	}
+
+	foundExpectedError := false
+	for _, perr := range parserErrors {
+		if tt.errorMsg != "" && containsSubstring(perr.Error(), tt.errorMsg) {
+			foundExpectedError = true
+			break
+		}
+	}
+
+	if !foundExpectedError && tt.errorMsg != "" {
+		t.Errorf("Expected error containing %q, got parser errors: %v, main error: %v", tt.errorMsg, parserErrors, err.Error())
+	}
+}
+
+// validateSuccessfulParsing validates that parsing succeeds without errors
+func validateSuccessfulParsing(t *testing.T, _ struct {
+	name        string
+	rule        string
+	expectError bool
+	errorMsg    string
+}, err error) {
+	if err != nil {
+		t.Errorf("Expected no parsing errors, got: %v", err)
+	}
 }

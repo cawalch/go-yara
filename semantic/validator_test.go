@@ -1,6 +1,7 @@
 package semantic
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -22,7 +23,7 @@ type validatorTestCase struct {
 func parseAndValidateProgram(_ *testing.T, input string) ([]error, error) {
 	lex := lexer.New(input)
 	p := parser.New(lex)
-	program, err := p.ParseRules()
+	program, err := p.ParseRulesWithContext(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("parse rules failed: %w", err)
 	}
@@ -643,7 +644,7 @@ rule benchmark_rule {
 
 	lex := lexer.New(input)
 	p := parser.New(lex)
-	program, err := p.ParseRules()
+	program, err := p.ParseRulesWithContext(context.Background())
 
 	if err != nil || program == nil {
 		b.Fatalf("ParseRules() failed: %v", err)

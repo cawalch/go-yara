@@ -342,8 +342,8 @@ func TestConditionCompiler_MixedTypeOperations(t *testing.T) {
 		result := cc.handleMixedTypeLiteralComparison(comparisonOp)
 		t.Logf("handleMixedTypeLiteralComparison result: %v", result)
 
-		cc.convertForMixedTypeComparison(comparisonOp, false, true, true)
-		cc.convertForMixedTypeArithmetic(arithmeticOp, false, true, false)
+		cc.convertForMixedTypeComparison(comparisonOp, false, true)
+		cc.convertForMixedTypeArithmetic(arithmeticOp, false, true)
 
 		t.Log("Mixed type operation handlers executed without error")
 	})

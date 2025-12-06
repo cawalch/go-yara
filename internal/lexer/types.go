@@ -66,7 +66,8 @@ func New(input string) *Lexer {
 }
 
 // NewWithRecovery creates a new lexer with the specified recovery mode
-// DEPRECATED: This function is only used in fuzz testing and may be removed in future versions
+//
+// Deprecated: This function is only used in fuzz testing and may be removed in future versions
 func NewWithRecovery(input string, mode RecoveryMode) *Lexer {
 	return &Lexer{
 		reader:       NewReaderFast(input),

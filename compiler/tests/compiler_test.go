@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -23,7 +24,7 @@ rule test_rule {
 	compiler := testutils.CreateTestCompiler()
 
 	// Compile the source
-	program, err := compiler.CompileSource(source)
+	program, err := compiler.CompileSourceWithContext(context.Background(), source)
 	if err != nil {
 		t.Logf("Compilation errors: %v", compiler.GetErrors())
 		t.Fatalf("Source compilation failed: %v", err)
@@ -103,7 +104,7 @@ rule test_rule_2 {
 }`
 
 	compiler := testutils.CreateTestCompiler()
-	program, err := compiler.CompileSource(source)
+	program, err := compiler.CompileSourceWithContext(context.Background(), source)
 	if err != nil {
 		t.Logf("Compilation errors: %v", compiler.GetErrors())
 		t.Fatalf("Failed to compile test rule: %v", err)
@@ -135,7 +136,7 @@ func TestCompilationReport(t *testing.T) {
 	`
 
 	testCompiler := compiler.NewCompiler()
-	_, err := testCompiler.CompileSource(source)
+	_, err := testCompiler.CompileSourceWithContext(context.Background(), source)
 	if err != nil {
 		t.Fatalf("Failed to compile source: %v", err)
 	}
@@ -187,7 +188,7 @@ func TestCompilationReport(t *testing.T) {
 		}
 	`
 
-	_, err = compilerWithWarnings.CompileSource(sourceWithUnused)
+	_, err = compilerWithWarnings.CompileSourceWithContext(context.Background(), sourceWithUnused)
 	if err != nil {
 		t.Fatalf("Failed to compile source with warnings: %v", err)
 	}

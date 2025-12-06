@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"context"
 	"testing"
 
 	"github.com/cawalch/go-yara/compiler/tests/testutils"
@@ -56,7 +57,7 @@ func TestTestCompilerOptionsWithWarnings(t *testing.T) {
 
 	// Test with warnings enabled (should produce warnings)
 	compilerWithWarnings := testutils.CreateTestCompiler(testutils.WithWarnings(true))
-	program, err := compilerWithWarnings.CompileSource(source)
+	program, err := compilerWithWarnings.CompileSourceWithContext(context.Background(), source)
 	if err != nil {
 		t.Fatalf("Compilation failed: %v", err)
 	}
@@ -68,7 +69,7 @@ func TestTestCompilerOptionsWithWarnings(t *testing.T) {
 
 	// Test with warnings disabled (should produce no warnings)
 	compilerWithoutWarnings := testutils.CreateTestCompiler(testutils.WithWarnings(false))
-	program2, err := compilerWithoutWarnings.CompileSource(source)
+	program2, err := compilerWithoutWarnings.CompileSourceWithContext(context.Background(), source)
 	if err != nil {
 		t.Fatalf("Compilation failed: %v", err)
 	}
@@ -100,14 +101,14 @@ func TestTestCompilerOptionsWithOptimizations(t *testing.T) {
 
 	// Test with optimizations enabled
 	optimizedCompiler := testutils.CreateTestCompiler(testutils.WithOptimizations(true))
-	program1, err := optimizedCompiler.CompileSource(source)
+	program1, err := optimizedCompiler.CompileSourceWithContext(context.Background(), source)
 	if err != nil {
 		t.Fatalf("Compilation failed with optimizations: %v", err)
 	}
 
 	// Test with optimizations disabled
 	unoptimizedCompiler := testutils.CreateTestCompiler(testutils.WithOptimizations(false))
-	program2, err := unoptimizedCompiler.CompileSource(source)
+	program2, err := unoptimizedCompiler.CompileSourceWithContext(context.Background(), source)
 	if err != nil {
 		t.Fatalf("Compilation failed without optimizations: %v", err)
 	}

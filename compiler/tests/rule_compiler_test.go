@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -215,7 +216,7 @@ func TestRuleCompilerSingleStringCompilation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			compiler := testutils.CreateTestCompiler()
 
-			program, err := compiler.CompileSource(tt.source)
+			program, err := compiler.CompileSourceWithContext(context.Background(), tt.source)
 
 			if tt.shouldError {
 				if err == nil {
@@ -472,7 +473,7 @@ func TestRuleCompilerComplexConditions(t *testing.T) {
 			// Create a fresh compiler for each test to avoid interference
 			compiler := testutils.CreateTestCompiler()
 
-			program, err := compiler.CompileSource(tt.source)
+			program, err := compiler.CompileSourceWithContext(context.Background(), tt.source)
 
 			if tt.shouldError {
 				if err == nil {
@@ -677,7 +678,7 @@ func TestRuleCompilerModifiers(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			compiler := testutils.CreateTestCompiler()
 
-			program, err := compiler.CompileSource(tt.source)
+			program, err := compiler.CompileSourceWithContext(context.Background(), tt.source)
 
 			if tt.shouldError {
 				if err == nil {
@@ -828,7 +829,7 @@ func TestRuleCompilerMetaInfo(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			compiler := testutils.CreateTestCompiler()
 
-			program, err := compiler.CompileSource(tt.source)
+			program, err := compiler.CompileSourceWithContext(context.Background(), tt.source)
 
 			if tt.shouldError {
 				if err == nil {
@@ -1032,14 +1033,15 @@ func TestRuleCompilerErrorHandling(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			compiler := testutils.CreateTestCompiler()
 
-			program, err := compiler.CompileSource(tt.source)
+			program, err := compiler.CompileSourceWithContext(context.Background(), tt.source)
 
 			// All tests in this function should result in errors
-			if err == nil {
+			switch {
+			case err == nil:
 				t.Errorf("Expected compilation error for %s: %s", tt.name, tt.description)
-			} else if tt.checkError != nil {
+			case tt.checkError != nil:
 				tt.checkError(t, err)
-			} else {
+			default:
 				t.Logf("Expected error occurred: %v", err)
 			}
 

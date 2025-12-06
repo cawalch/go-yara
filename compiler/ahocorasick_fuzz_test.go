@@ -94,22 +94,23 @@ func FuzzAhoCorasick(f *testing.F) {
 
 		// Test with prefix/suffix variations
 		for _, pattern := range patternStrings {
-			if len(pattern) > 0 && len(pattern) < 50 {
-				// Test pattern with prefix
-				withPrefix := "prefix" + pattern
-				matches := ac.Search([]byte(withPrefix))
-				_ = matches
-
-				// Test pattern with suffix
-				withSuffix := pattern + "suffix"
-				matches = ac.Search([]byte(withSuffix))
-				_ = matches
-
-				// Test pattern in middle
-				inMiddle := "start" + pattern + "end"
-				matches = ac.Search([]byte(inMiddle))
-				_ = matches
+			if len(pattern) == 0 || len(pattern) >= 50 {
+				continue
 			}
+			// Test pattern with prefix
+			withPrefix := "prefix" + pattern
+			matches := ac.Search([]byte(withPrefix))
+			_ = matches
+
+			// Test pattern with suffix
+			withSuffix := pattern + "suffix"
+			matches = ac.Search([]byte(withSuffix))
+			_ = matches
+
+			// Test pattern in middle
+			inMiddle := "start" + pattern + "end"
+			matches = ac.Search([]byte(inMiddle))
+			_ = matches
 		}
 	})
 }
@@ -171,7 +172,9 @@ func FuzzAhoCorasickBinary(f *testing.F) {
 			matches = ac.Search(withPrefix)
 			_ = matches
 
-			withSuffix := append(testBytes, []byte("suffix")...)
+			withSuffix := make([]byte, len(testBytes)+6)
+			copy(withSuffix, testBytes)
+			copy(withSuffix[len(testBytes):], []byte("suffix"))
 			matches = ac.Search(withSuffix)
 			_ = matches
 		}

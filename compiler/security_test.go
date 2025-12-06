@@ -70,22 +70,7 @@ func TestProcessIncludes_Security(t *testing.T) {
 
 			err := comp.ProcessIncludes(tt.program)
 
-			if tt.expectError {
-				if err == nil {
-					t.Errorf("ProcessIncludes() expected error but got none")
-					return
-				}
-				if tt.errorContains != "" && err.Error()[:len(tt.errorContains)] != tt.errorContains {
-					// Check if error starts with expected substring (for path-related errors)
-					if !contains(err.Error(), tt.errorContains) {
-						t.Errorf("ProcessIncludes() error = %q, want contains %q", err.Error(), tt.errorContains)
-					}
-				}
-			} else {
-				if err != nil {
-					t.Errorf("ProcessIncludes() unexpected error: %v", err)
-				}
-			}
+			validateTestResult(t, tt, err)
 		})
 	}
 }
@@ -256,10 +241,8 @@ func TestValidateCompilation(t *testing.T) {
 				if tt.errorMsg != "" && !contains(err.Error(), tt.errorMsg) {
 					t.Errorf("ValidateCompilation() error = %q, want contains %q", err.Error(), tt.errorMsg)
 				}
-			} else {
-				if err != nil {
-					t.Errorf("ValidateCompilation() unexpected error: %v", err)
-				}
+			} else if err != nil {
+				t.Errorf("ValidateCompilation() unexpected error: %v", err)
 			}
 		})
 	}
@@ -386,4 +369,42 @@ func findSubstring(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+// validateTestResult validates test results based on expected error conditions
+func validateTestResult(t *testing.T, tt struct {
+	name          string
+	baseDir       string
+	program       *ast.Program
+	expectError   bool
+	errorContains string
+}, err error) {
+	if tt.expectError {
+		validateExpectedErrorWithDetails(t, struct{ errorContains string }{errorContains: tt.errorContains}, err)
+	} else {
+		validateNoUnexpectedError(t, err)
+	}
+}
+
+// validateExpectedErrorWithDetails validates that expected errors occur with correct details
+func validateExpectedErrorWithDetails(t *testing.T, tt struct {
+	errorContains string
+}, err error) {
+	if err == nil {
+		t.Errorf("ProcessIncludes() expected error but got none")
+		return
+	}
+	if tt.errorContains != "" && err.Error()[:len(tt.errorContains)] != tt.errorContains {
+		// Check if error starts with expected substring (for path-related errors)
+		if !contains(err.Error(), tt.errorContains) {
+			t.Errorf("ProcessIncludes() error = %q, want contains %q", err.Error(), tt.errorContains)
+		}
+	}
+}
+
+// validateNoUnexpectedError validates that no unexpected errors occur
+func validateNoUnexpectedError(t *testing.T, err error) {
+	if err != nil {
+		t.Errorf("ProcessIncludes() unexpected error: %v", err)
+	}
 }

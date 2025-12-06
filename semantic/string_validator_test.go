@@ -1,6 +1,7 @@
 package semantic
 
 import (
+	"context"
 	"testing"
 
 	"github.com/cawalch/go-yara/ast"
@@ -22,9 +23,9 @@ func newTestHelper(t *testing.T, input string) *testHelper {
 	lex := lexer.New(input)
 	p := parser.New(lex)
 
-	program, err := p.ParseRules()
+	program, err := p.ParseRulesWithContext(context.Background())
 	if err != nil {
-		t.Fatalf("ParseRules() error = %v", err)
+		t.Fatalf("ParseRulesWithContext() error = %v", err)
 	}
 
 	st := NewSymbolTable()
@@ -428,9 +429,9 @@ func parseProgramOrFail(t *testing.T, input string) *ast.Program {
 	lex := lexer.New(input)
 	p := parser.New(lex)
 
-	program, err := p.ParseRules()
+	program, err := p.ParseRulesWithContext(context.Background())
 	if err != nil {
-		t.Fatalf("ParseRules() error = %v", err)
+		t.Fatalf("ParseRulesWithContext() error = %v", err)
 	}
 
 	return program

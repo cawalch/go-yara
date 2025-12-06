@@ -3,6 +3,7 @@ package parser
 import (
 	"testing"
 
+	"github.com/cawalch/go-yara/ast"
 	internal "github.com/cawalch/go-yara/internal/lexer"
 )
 
@@ -692,23 +693,7 @@ rule BadRule {
 			program, err := p.ParseRules()
 
 			// Current parser implementation: returns nil program and error when parsing fails
-			if tt.expectProgram {
-				if program == nil {
-					// When parser fails, we expect both nil program and error
-					if err == nil {
-						t.Errorf("ParseRules() returned nil program but no error")
-					}
-					if len(p.Errors()) == 0 {
-						t.Errorf("ParseRules() returned error but no errors collected")
-					}
-				}
-				// If program is not nil (unexpected), check it's valid
-			} else {
-				// When we don't expect program, nil is acceptable
-				if program != nil {
-					t.Logf("ParseRules() unexpectedly returned program when expecting failure")
-				}
-			}
+			validateProgramExpectation(t, tt.expectProgram, program, err, p)
 
 			// Check that we have the expected minimum errors
 			errorCount := len(p.Errors())
@@ -716,5 +701,36 @@ rule BadRule {
 				t.Errorf("ParseRules() error count = %d, want >= %d", errorCount, tt.minErrors)
 			}
 		})
+	}
+}
+
+// validateProgramExpectation validates parser results based on program expectations
+func validateProgramExpectation(t *testing.T, expectProgram bool, program *ast.Program, err error, p *Parser) {
+	if expectProgram {
+		validateExpectedProgramBehavior(t, program, err, p)
+	} else {
+		validateUnexpectedProgramBehavior(t, program)
+	}
+}
+
+// validateExpectedProgramBehavior validates behavior when program is expected
+func validateExpectedProgramBehavior(t *testing.T, program *ast.Program, err error, p *Parser) {
+	if program == nil {
+		// When parser fails, we expect both nil program and error
+		if err == nil {
+			t.Errorf("ParseRules() returned nil program but no error")
+		}
+		if len(p.Errors()) == 0 {
+			t.Errorf("ParseRules() returned error but no errors collected")
+		}
+	}
+	// If program is not nil (unexpected), check it's valid
+}
+
+// validateUnexpectedProgramBehavior validates behavior when program is not expected
+func validateUnexpectedProgramBehavior(t *testing.T, program *ast.Program) {
+	// When we don't expect program, nil is acceptable
+	if program != nil {
+		t.Logf("ParseRules() unexpectedly returned program when expecting failure")
 	}
 }
