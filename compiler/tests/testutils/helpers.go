@@ -10,6 +10,61 @@ import (
 	"github.com/cawalch/go-yara/token"
 )
 
+// ===== Basic Assertion Helpers (from compiler/testutils/testutils.go) =====
+
+// AssertNoError is a helper to assert no error occurred
+func AssertNoError(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+}
+
+// AssertError is a helper to assert an error occurred
+func AssertError(t *testing.T, err error, expectedMsg string) {
+	t.Helper()
+	if err == nil {
+		t.Fatal("Expected error but got none")
+	}
+	if expectedMsg != "" && err.Error() != expectedMsg {
+		t.Fatalf("Expected error message %q, got %q", expectedMsg, err.Error())
+	}
+}
+
+// AssertEqual is a helper to assert two values are equal
+func AssertEqual[T comparable](t *testing.T, got, want T) {
+	t.Helper()
+	if got != want {
+		t.Fatalf("Expected %v, got %v", want, got)
+	}
+}
+
+// AssertNotEqual is a helper to assert two values are not equal
+func AssertNotEqual[T comparable](t *testing.T, got, want T) {
+	t.Helper()
+	if got == want {
+		t.Fatalf("Expected values to be different, but both are %v", got)
+	}
+}
+
+// AssertTrue is a helper to assert a condition is true
+func AssertTrue(t *testing.T, condition bool, msg string) {
+	t.Helper()
+	if !condition {
+		t.Fatalf("Expected true, got false. %s", msg)
+	}
+}
+
+// AssertFalse is a helper to assert a condition is false
+func AssertFalse(t *testing.T, condition bool, msg string) {
+	t.Helper()
+	if condition {
+		t.Fatalf("Expected false, got true. %s", msg)
+	}
+}
+
+// ===== Compiler-Specific Test Helpers =====
+
 // TestCompilerOptions provides configuration for test compilers
 type TestCompilerOptions struct {
 	EnableOptimizations bool
@@ -39,15 +94,15 @@ func CreateTestCompiler(opts ...func(*TestCompilerOptions)) *compiler.Compiler {
 		opt(&options)
 	}
 
-	// Convert test options to compiler options
-	compilerOpts := compiler.CompilationOptions{
-		EnableOptimizations: options.EnableOptimizations,
-		EnableDebugInfo:     options.EnableDebugInfo,
-		EnableWarnings:      options.EnableWarnings,
-		TargetVersion:       options.TargetVersion,
+	// Create compiler with simplified options
+	var compilerOpts []compiler.Option
+	if options.EnableOptimizations {
+		compilerOpts = append(compilerOpts, compiler.WithOptimizations(true))
 	}
+	// Always set warnings explicitly
+	compilerOpts = append(compilerOpts, compiler.WithWarnings(options.EnableWarnings))
 
-	c := compiler.NewCompilerWithOptions(compilerOpts)
+	c := compiler.NewCompiler(compilerOpts...)
 	return c
 }
 

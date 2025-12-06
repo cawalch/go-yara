@@ -1,3 +1,30 @@
+// Package compiler provides YARA rule compilation functionality.
+//
+// The compiler transforms YARA source code into executable bytecode through
+// four main phases:
+//  1. Lexical analysis (tokenization)
+//  2. Parsing (AST generation)
+//  3. Semantic analysis (validation)
+//  4. Code generation (bytecode emission)
+//
+// Basic usage:
+//
+//	c := compiler.NewCompiler()
+//	program, err := c.CompileSource("rule test { condition: true }")
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//
+// The Compiler is not safe for concurrent use. Create a separate instance
+// for each goroutine if compiling concurrently.
+//
+// Context Support:
+//
+// All compilation operations support context.Context for cancellation and timeout:
+//
+//	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+//	defer cancel()
+//	program, err := c.CompileSourceWithContext(ctx, source)
 package compiler
 
 import (
@@ -13,34 +40,48 @@ import (
 	"github.com/cawalch/go-yara/internal/lexer"
 	"github.com/cawalch/go-yara/parser"
 	"github.com/cawalch/go-yara/semantic"
+	"github.com/cawalch/go-yara/utils/fs"
 )
 
-// Compiler represents the main YARA compiler
+// Compiler represents the main YARA compiler.
+//
+// The compiler manages the entire compilation pipeline from source code to bytecode.
+// It maintains state for configuration, error tracking, and statistics.
+//
+// Thread Safety:
+//   - The Compiler is NOT safe for concurrent use
+//   - Each goroutine should use its own Compiler instance
+//   - CompiledProgram instances are safe for concurrent reading
 type Compiler struct {
 	// Compilation phases
-	parser    *parser.Parser
-	analyzer  *semantic.Validator
-	generator *RuleCompiler
+	parser    *parser.Parser      // YARA source parser
+	analyzer  *semantic.Validator // Semantic analysis and validation
+	generator *RuleCompiler       // Bytecode generation
 
 	// Configuration
-	options CompilationOptions
+	options CompilationOptions // Compilation settings and limits
 
 	// File resolution
 	baseDir string // Base directory for resolving relative includes
 
 	// Statistics
-	stats CompilationStats
+	stats CompilationStats // Timing and resource usage metrics
 }
 
-// CompilationOptions configures the compilation process
+// CompilationOptions configures the compilation process.
+//
+// These options control compiler behavior, optimization levels, and security limits.
+// Use NewCompilerWithOptions() to create a compiler with custom options.
 type CompilationOptions struct {
-	EnableOptimizations bool
-	EnableDebugInfo     bool
-	EnableWarnings      bool
-	TargetVersion       string
-	MaxInputSize        int64 // Maximum input file size in bytes (0 = no limit)
-	MaxIncludeSize      int64 // Maximum include file size in bytes (0 = no limit)
-	MaxRecursionDepth   int   // Maximum nesting depth for rules (0 = no limit)
+	EnableOptimizations bool   // Enable bytecode optimizations (default: true)
+	EnableDebugInfo     bool   // Include debug information in bytecode (default: false)
+	EnableWarnings      bool   // Collect and report compilation warnings (default: true)
+	TargetVersion       string // Target YARA version compatibility (default: "latest")
+
+	// Security limits to prevent resource exhaustion attacks
+	MaxInputSize      int64 // Maximum input file size in bytes (0 = no limit, default: 10MB)
+	MaxIncludeSize    int64 // Maximum include file size in bytes (0 = no limit, default: 1MB)
+	MaxRecursionDepth int   // Maximum nesting depth for rules (0 = no limit, default: 100)
 }
 
 // CompilationStats tracks compilation metrics
@@ -75,18 +116,43 @@ type CompilationWarning struct {
 	Column  int
 }
 
-// NewCompiler creates a new YARA compiler with default options
-func NewCompiler() *Compiler {
+// Option represents a functional option for configuring a Compiler
+type Option func(*CompilationOptions)
+
+// NewCompiler creates a new YARA compiler with default options.
+//
+// The default compiler enables optimizations and warnings with reasonable security limits.
+//
+// Example:
+//
+//	c := compiler.NewCompiler()
+//	program, err := c.CompileSource("rule test { condition: true }")
+//
+// With options:
+//
+//	c := compiler.NewCompiler(
+//		compiler.WithOptimizations(false),
+//		compiler.WithDebugInfo(true),
+//		compiler.WithMaxInputSize(50*1024*1024), // 50MB
+//	)
+func NewCompiler(opts ...Option) *Compiler {
+	options := CompilationOptions{
+		EnableOptimizations: true,
+		EnableDebugInfo:     false,
+		EnableWarnings:      true,
+		TargetVersion:       "1.0",
+		MaxInputSize:        100 * 1024 * 1024, // 100MB default
+		MaxIncludeSize:      10 * 1024 * 1024,  // 10MB default
+		MaxRecursionDepth:   1000,              // 1000 levels default
+	}
+
+	// Apply functional options
+	for _, opt := range opts {
+		opt(&options)
+	}
+
 	return &Compiler{
-		options: CompilationOptions{
-			EnableOptimizations: true,
-			EnableDebugInfo:     false,
-			EnableWarnings:      true,
-			TargetVersion:       "1.0",
-			MaxInputSize:        100 * 1024 * 1024, // 100MB default
-			MaxIncludeSize:      10 * 1024 * 1024,  // 10MB default
-			MaxRecursionDepth:   1000,              // 1000 levels default
-		},
+		options: options,
 		stats: CompilationStats{
 			Errors:   make([]CompilationError, 0),
 			Warnings: make([]CompilationWarning, 0),
@@ -94,11 +160,47 @@ func NewCompiler() *Compiler {
 	}
 }
 
-// NewCompilerWithOptions creates a new YARA compiler with custom options
+// NewCompilerWithOptions creates a new YARA compiler with custom options.
+//
+// Deprecated: Use NewCompiler with functional options instead.
+//
+// Old way:
+//
+//	c := compiler.NewCompilerWithOptions(compiler.CompilationOptions{...})
+//
+// New way:
+//
+//	c := compiler.NewCompiler(
+//		compiler.WithOptimizations(false),
+//		compiler.WithDebugInfo(true),
+//	)
 func NewCompilerWithOptions(options CompilationOptions) *Compiler {
-	compiler := NewCompiler()
-	compiler.options = options
-	return compiler
+	return NewCompiler(func(opts *CompilationOptions) {
+		*opts = options
+	})
+}
+
+// ===== Functional Options =====
+
+// WithOptimizations enables or disables optimizations
+func WithOptimizations(enabled bool) Option {
+	return func(opts *CompilationOptions) {
+		opts.EnableOptimizations = enabled
+	}
+}
+
+// WithWarnings enables or disables warning collection
+func WithWarnings(enabled bool) Option {
+	return func(opts *CompilationOptions) {
+		opts.EnableWarnings = enabled
+	}
+}
+
+// WithMaxInputSize sets the maximum input file size limit (0 = no limit)
+func WithMaxInputSize(size int64) Option {
+	return func(opts *CompilationOptions) {
+		opts.MaxInputSize = size
+	}
 }
 
 // CompileSource compiles YARA source code to bytecode.
@@ -651,29 +753,8 @@ func (c *Compiler) processImportsWithContext(ctx context.Context, program *ast.P
 }
 
 func (c *Compiler) readFile(filename string) (string, error) {
-	// Read file content
-	// Check if filename is absolute or relative
-	if filepath.IsAbs(filename) {
-		// Absolute path - read directly
-		content, err := os.ReadFile(filename) // #nosec G304 - file reading is intentional
-		if err != nil {
-			return "", fmt.Errorf("reading file %s: %w", filename, err)
-		}
-		return string(content), nil
-	}
-	// Relative path - resolve relative to base directory if available
-	var fullPath string
-	if c.baseDir != "" {
-		fullPath = filepath.Join(c.baseDir, filename)
-	} else {
-		fullPath = filename
-	}
-
-	content, err := os.ReadFile(fullPath) // #nosec G304 - file reading is intentional
-	if err != nil {
-		return "", fmt.Errorf("reading file %s: %w", fullPath, err)
-	}
-	return string(content), nil
+	// Use centralized file reading utility
+	return fs.ReadFileString(c.baseDir, filename)
 }
 
 // PrintStats prints compilation statistics

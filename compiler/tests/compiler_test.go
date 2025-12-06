@@ -174,9 +174,9 @@ func TestCompilationReport(t *testing.T) {
 	}
 
 	// Test report with warnings enabled
-	compilerWithWarnings := compiler.NewCompilerWithOptions(compiler.CompilationOptions{
-		EnableWarnings: true,
-	})
+	compilerWithWarnings := compiler.NewCompiler(
+		compiler.WithWarnings(true),
+	)
 
 	sourceWithUnused := `
 		rule TestRule {
