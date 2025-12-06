@@ -11,7 +11,11 @@ type Emitter struct {
 }
 
 // NewEmitter returns a new bytecode emitter with an empty buffer.
-func NewEmitter() *Emitter { return &Emitter{} }
+func NewEmitter() *Emitter {
+	return &Emitter{
+		buf: make([]byte, 0, 1024), // Pre-allocate reasonable capacity
+	}
+}
 
 // Bytes returns the accumulated bytecode buffer.
 func (e *Emitter) Bytes() []byte { return e.buf }

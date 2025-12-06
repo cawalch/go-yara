@@ -208,9 +208,17 @@ func createTokensFromPairs(pairs []any) []token.Token {
 
 // createTokenFromPair creates a single token from pairs starting at index i.
 func createTokenFromPair(pairs []any, i *int) token.Token {
+	if *i >= len(pairs) {
+		panic(fmt.Sprintf("index %d out of bounds for pairs of length %d", *i, len(pairs)))
+	}
+
 	tokenType, ok := pairs[*i].(token.Type)
 	if !ok {
 		panic(fmt.Sprintf("expected token.Type at index %d, got %T", *i, pairs[*i]))
+	}
+
+	if *i+1 >= len(pairs) {
+		panic(fmt.Sprintf("index %d out of bounds for pairs of length %d", *i+1, len(pairs)))
 	}
 
 	literal, ok := pairs[*i+1].(string)

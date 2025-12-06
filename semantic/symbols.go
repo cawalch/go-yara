@@ -55,15 +55,15 @@ func NewSymbolTable() *SymbolTable {
 	root := &Scope{
 		Name:     "global",
 		Parent:   nil,
-		Symbols:  make(map[string]*Symbol),
-		Children: make([]*Scope, 0),
+		Symbols:  make(map[string]*Symbol, 64), // Pre-allocate for typical symbol count
+		Children: make([]*Scope, 0, 8),         // Pre-allocate for child scopes
 		Level:    0,
 	}
 
 	return &SymbolTable{
 		Root:    root,
 		Current: root,
-		Errors:  make([]error, 0),
+		Errors:  make([]error, 0, 8), // Pre-allocate for potential errors
 	}
 }
 

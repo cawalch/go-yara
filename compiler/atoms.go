@@ -259,7 +259,7 @@ func ExtractFromRegexPattern(regexStr string, _ []ast.StringModifier) []*Atom {
 		return nil
 	}
 
-	// Convert literals to atoms
+	// Convert literals to atoms using slices package
 	var atoms []*Atom
 	for _, literal := range literals {
 		if len(literal) >= MinAtomLength {
@@ -280,6 +280,7 @@ func ExtractFromRegexPattern(regexStr string, _ []ast.StringModifier) []*Atom {
 
 	// Return the best quality atom if we have any
 	if len(atoms) > 0 {
+		// Find the atom with maximum quality using manual loop
 		bestAtom := atoms[0]
 		for _, atom := range atoms[1:] {
 			if atom.Quality > bestAtom.Quality {

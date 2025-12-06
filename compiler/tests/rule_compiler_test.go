@@ -23,6 +23,7 @@ func TestRuleCompilerIntegration(t *testing.T) {
 
 	if compiledRule == nil {
 		t.Fatal("Compiled rule is nil")
+		return
 	}
 
 	// Validate compiled rule properties
@@ -489,6 +490,7 @@ func TestRuleCompilerComplexConditions(t *testing.T) {
 			// Verify program structure for successful compilations
 			if program == nil {
 				t.Fatalf("Program should not be nil after successful compilation")
+				return
 			}
 
 			if len(program.Rules) == 0 {

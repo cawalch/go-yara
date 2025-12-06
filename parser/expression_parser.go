@@ -18,6 +18,7 @@ type ExpressionParser struct {
 	depth             int
 	depthStack        []int
 	lexer             TokenProvider
+	maxRecursionDepth int // Maximum allowed recursion depth (0 = no limit)
 	compatibilityMode bool
 	// External token management for synchronization with parent parser
 	externalNextToken func()
@@ -99,6 +100,12 @@ func newExpressionParserInternal(lexer TokenProvider, emitter interface{}) *Expr
 
 // ParseExpression parses an expression using the strategy-based approach or compatibility mode
 func (p *ExpressionParser) ParseExpression() (ast.Expression, error) {
+	// Increment depth and check recursion limits
+	if err := p.incrementDepth(); err != nil {
+		return nil, err
+	}
+	defer p.decrementDepth()
+
 	if p.compatibilityMode {
 		// In compatibility mode, provide basic expression parsing
 		return p.parseCompatibilityExpression()
@@ -354,6 +361,32 @@ func (p *ExpressionParser) GetStrategyRegistry() *StrategyRegistry {
 // GetDepth returns the current parsing depth
 func (p *ExpressionParser) GetDepth() int {
 	return p.depth
+}
+
+// SetMaxRecursionDepth sets the maximum allowed recursion depth
+func (p *ExpressionParser) SetMaxRecursionDepth(maxDepth int) {
+	p.maxRecursionDepth = maxDepth
+}
+
+// checkRecursionDepth checks if the current recursion depth exceeds the limit
+func (p *ExpressionParser) checkRecursionDepth() error {
+	if p.maxRecursionDepth > 0 && p.depth > p.maxRecursionDepth {
+		return fmt.Errorf("recursion depth %d exceeds maximum allowed %d", p.depth, p.maxRecursionDepth)
+	}
+	return nil
+}
+
+// incrementDepth increments the parsing depth and checks for overflow
+func (p *ExpressionParser) incrementDepth() error {
+	p.depth++
+	return p.checkRecursionDepth()
+}
+
+// decrementDepth decrements the parsing depth
+func (p *ExpressionParser) decrementDepth() {
+	if p.depth > 0 {
+		p.depth--
+	}
 }
 
 // EnableStrategyMode enables the strategy-based parsing mode

@@ -100,6 +100,75 @@ func (p *RuleParser) ParseRule() (*ast.Rule, error) {
 	return p.buildRule(modifiers, ruleName, tags, meta, strings, condition), nil
 }
 
+// ParseRulePartial parses a rule with error recovery, returning partial results
+func (p *RuleParser) ParseRulePartial() (*ast.Rule, []error) {
+	var errors []error
+
+	modifiers, err := p.parseRuleModifiers()
+	if err != nil {
+		errors = append(errors, fmt.Errorf("rule modifiers error: %w", err))
+		// Try to continue with empty modifiers
+		modifiers = []ast.Modifier{}
+	}
+
+	// Try to parse rule name
+	if p.currentTokenIs(token.RULE) {
+		p.nextToken() // consume RULE token
+	}
+
+	ruleName := "invalid_rule"
+	if p.currentTokenIs(token.IDENTIFIER) {
+		ruleName = p.current.Literal
+		p.nextToken() // consume identifier
+	} else {
+		errors = append(errors, fmt.Errorf("expected rule name at %v", p.current.Pos))
+		// Try to synchronize
+		p.synchronizeToSection()
+	}
+
+	tags := p.declParser.ParseTagList()
+
+	if !p.expectToken(token.LBRACE) {
+		errors = append(errors, fmt.Errorf("expected '{' after rule declaration at %v", p.current.Pos))
+		// Try to find next opening brace
+		for !p.currentTokenIs(token.EOF) && !p.currentTokenIs(token.LBRACE) {
+			if p.currentTokenIs(token.RULE) || p.currentTokenIs(token.IMPORT) ||
+				p.currentTokenIs(token.GLOBAL) || p.currentTokenIs(token.INCLUDE) {
+				// Give up on this rule and let upper level handle synchronization
+				return p.buildRule(modifiers, ruleName, tags, nil, nil, p.createMinimalCondition()), errors
+			}
+			p.nextToken()
+		}
+		if p.currentTokenIs(token.LBRACE) {
+			p.nextToken() // consume LBRACE
+		}
+	}
+
+	// Parse rule body with error recovery
+	meta, strings, condition, sectionErrors := p.parseRuleBodyPartial()
+	errors = append(errors, sectionErrors...)
+
+	// Try to consume closing brace
+	if !p.expectToken(token.RBRACE) {
+		errors = append(errors, fmt.Errorf("expected '}' at end of rule at %v", p.current.Pos))
+		// Try to find the closing brace or next rule
+		for !p.currentTokenIs(token.EOF) {
+			if p.currentTokenIs(token.RBRACE) {
+				p.nextToken() // consume RBRACE
+				break
+			}
+			if p.currentTokenIs(token.RULE) || p.currentTokenIs(token.IMPORT) ||
+				p.currentTokenIs(token.GLOBAL) || p.currentTokenIs(token.INCLUDE) {
+				// Next rule starting, let upper level handle synchronization
+				break
+			}
+			p.nextToken()
+		}
+	}
+
+	return p.buildRule(modifiers, ruleName, tags, meta, strings, condition), errors
+}
+
 // parseRuleModifiers parses rule modifiers (private, global)
 func (p *RuleParser) parseRuleModifiers() ([]ast.Modifier, error) {
 	modifiers := make([]ast.Modifier, 0)
@@ -132,6 +201,62 @@ func (p *RuleParser) parseRuleBody() ([]*ast.Meta, []*ast.String, ast.Expression
 	}
 
 	return meta, strings, condition, nil
+}
+
+// parseRuleBodyPartial parses rule sections with error recovery
+func (p *RuleParser) parseRuleBodyPartial() ([]*ast.Meta, []*ast.String, ast.Expression, []error) {
+	var errors []error
+	var meta []*ast.Meta
+	var strings []*ast.String
+	var condition ast.Expression
+
+	// Try to parse meta section
+	sectionMeta, err := p.declParser.ParseMetaSection()
+	if err != nil {
+		errors = append(errors, fmt.Errorf("meta section error: %w", err))
+		// Try to synchronize to next section
+		p.synchronizeToSection()
+	} else {
+		meta = sectionMeta
+	}
+
+	// Try to parse strings section
+	sectionStrings, err := p.declParser.ParseStringsSection()
+	if err != nil {
+		errors = append(errors, fmt.Errorf("strings section error: %w", err))
+		// Try to synchronize to next section
+		p.synchronizeToSection()
+	} else {
+		strings = sectionStrings
+	}
+
+	// Try to parse condition section (required)
+	sectionCondition, err := p.parseConditionSection()
+	if err != nil {
+		errors = append(errors, fmt.Errorf("condition section error: %w", err))
+		// Try to create a minimal condition for recovery
+		condition = p.createMinimalCondition()
+	} else {
+		condition = sectionCondition
+	}
+
+	return meta, strings, condition, errors
+}
+
+// synchronizeToSection synchronizes to the next rule section
+func (p *RuleParser) synchronizeToSection() {
+	for !p.currentTokenIs(token.EOF) && !p.currentTokenIs(token.RBRACE) {
+		if p.currentTokenIs(token.META) || p.currentTokenIs(token.STRINGS) || p.currentTokenIs(token.CONDITION) {
+			return
+		}
+		p.nextToken()
+	}
+}
+
+// createMinimalCondition creates a minimal fallback condition for error recovery
+func (p *RuleParser) createMinimalCondition() ast.Expression {
+	// Create a simple "false" literal as fallback condition
+	return p.builder.Literal(p.current.Pos, token.FALSE, false)
 }
 
 // parseConditionSection parses the required condition section

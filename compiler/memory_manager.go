@@ -13,7 +13,8 @@ type MemoryManager struct {
 // NewMemoryManager creates a new memory manager
 func NewMemoryManager() *MemoryManager {
 	return &MemoryManager{
-		stack: make([]Value, 0, 256),
+		stack:  make([]Value, 0, 256), // Pre-allocate stack capacity
+		memory: [256]Value{},          // Zero-initialize memory slots
 	}
 }
 

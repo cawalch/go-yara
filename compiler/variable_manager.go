@@ -15,10 +15,10 @@ type VariableManager struct {
 // NewVariableManager creates a new variable manager
 func NewVariableManager() *VariableManager {
 	return &VariableManager{
-		variables:         make(map[string]int),
-		externalVariables: make(map[string]int),
-		ruleIndexMap:      make(map[string]int),
-		nextVariableID:    0,
+		variables:         make(map[string]int, 32), // Pre-allocate for typical rule count
+		externalVariables: make(map[string]int, 16), // Pre-allocate for external variables
+		ruleIndexMap:      make(map[string]int, 32), // Pre-allocate for rules
+		nextVariableID:    0,                        // Start ID counter at 0
 	}
 }
 

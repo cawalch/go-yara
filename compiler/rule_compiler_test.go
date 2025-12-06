@@ -41,6 +41,7 @@ func createTestRule(name, identifier, value string) *ast.Rule {
 func assertCompiledRule(t *testing.T, compiledRule *CompiledRule, expectedName string) {
 	if compiledRule == nil {
 		t.Fatal("Compiled rule is nil")
+		return
 	}
 
 	if compiledRule.Name != expectedName {

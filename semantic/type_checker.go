@@ -51,6 +51,15 @@ func (tc *TypeChecker) checkExpression(expr ast.Expression) *TypeInfo {
 	case *ast.OfExpression:
 		return tc.checkOfExpression(e)
 
+	case *ast.StringOffset:
+		return tc.checkStringOffset(e)
+
+	case *ast.StringCount:
+		return tc.checkStringCount(e)
+
+	case *ast.ForLoop:
+		return tc.checkForLoop(e)
+
 	default:
 		// For unimplemented expression types, return unknown
 		return &TypeInfo{DataType: TypeUnknown}
@@ -626,5 +635,67 @@ func (tc *TypeChecker) checkOfExpression(ofExpr *ast.OfExpression) *TypeInfo {
 	_ = tc.checkExpression(ofExpr.Strings) // Check strings expression but ignore type for now
 
 	// "of" expressions always return boolean (true/false)
+	return &TypeInfo{DataType: TypeBoolean}
+}
+
+// checkStringOffset checks the type of string offset expressions (@ operator)
+func (tc *TypeChecker) checkStringOffset(strOffset *ast.StringOffset) *TypeInfo {
+	// Check the string expression type
+	stringType := tc.checkExpression(strOffset.String)
+
+	// String offset should be applicable to string expressions
+	if stringType.DataType == TypeUnknown {
+		return &TypeInfo{DataType: TypeUnknown}
+	}
+
+	// If there's an index expression, check it
+	if strOffset.Index != nil {
+		indexType := tc.checkExpression(strOffset.Index)
+		if indexType.DataType != TypeInteger && indexType.DataType != TypeUnknown {
+			tc.addError(fmt.Errorf("string offset index must be an integer"))
+		}
+	}
+
+	// String offset always returns an integer (offset position)
+	return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
+}
+
+// checkStringCount checks the type of string count expressions (# operator)
+func (tc *TypeChecker) checkStringCount(strCount *ast.StringCount) *TypeInfo {
+	// Check the string expression type
+	stringType := tc.checkExpression(strCount.String)
+
+	// String count should be applicable to string expressions
+	if stringType.DataType == TypeUnknown {
+		return &TypeInfo{DataType: TypeUnknown}
+	}
+
+	// If there's an index expression, check it
+	if strCount.Index != nil {
+		indexType := tc.checkExpression(strCount.Index)
+		if indexType.DataType != TypeInteger && indexType.DataType != TypeUnknown {
+			tc.addError(fmt.Errorf("string count index must be an integer"))
+		}
+	}
+
+	// String count always returns an integer (number of matches)
+	return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
+}
+
+// checkForLoop checks the type of for loop expressions
+func (tc *TypeChecker) checkForLoop(forLoop *ast.ForLoop) *TypeInfo {
+	// Check the range expression type
+	rangeType := tc.checkExpression(forLoop.Range)
+	if rangeType.DataType != TypeInteger && rangeType.DataType != TypeUnknown {
+		tc.addError(fmt.Errorf("for loop range must be an integer"))
+	}
+
+	// Check the condition expression type
+	conditionType := tc.checkExpression(forLoop.Condition)
+	if conditionType.DataType != TypeBoolean && conditionType.DataType != TypeUnknown {
+		tc.addError(fmt.Errorf("for loop condition must be boolean"))
+	}
+
+	// For loop expressions always return boolean (true/false)
 	return &TypeInfo{DataType: TypeBoolean}
 }

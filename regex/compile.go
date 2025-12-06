@@ -16,7 +16,12 @@ type Compiler struct {
 }
 
 // NewCompiler constructs a Compiler with a fresh emitter.
-func NewCompiler() *Compiler { return &Compiler{e: NewEmitter()} }
+func NewCompiler() *Compiler {
+	return &Compiler{
+		e:           NewEmitter(),
+		nextSplitID: 0, // Initialize split ID counter
+	}
+}
 
 // Compile compiles the AST to bytecode and appends an OpMatch at the end.
 func Compile(ast *AST) ([]byte, error) {
