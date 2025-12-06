@@ -444,25 +444,28 @@ func (l *Lexer) looksLikeArithmeticExpression() bool {
 
 	// Check for numbers separated by spaces (like "90 9 19") which is more likely arithmetic than hex
 	// when not in a strings section
-	if !l.isInStringsSection() {
-		// Look for pattern of numbers with spaces
-		words := strings.Fields(contextText)
-		if len(words) >= 2 {
-			numberCount := 0
-			for _, word := range words {
-				// Check if word looks like a decimal number (not hex)
-				if l.looksLikeDecimalNumber(word) {
-					numberCount++
-				}
-			}
-			// If we have multiple decimal numbers, likely arithmetic
-			if numberCount >= 2 {
-				return true
-			}
+	if l.isInStringsSection() {
+		return false
+	}
+
+	return l.hasMultipleDecimalNumbers(contextText)
+}
+
+// hasMultipleDecimalNumbers checks if context contains multiple decimal numbers
+func (l *Lexer) hasMultipleDecimalNumbers(contextText string) bool {
+	words := strings.Fields(contextText)
+	if len(words) < 2 {
+		return false
+	}
+
+	numberCount := 0
+	for _, word := range words {
+		if l.looksLikeDecimalNumber(word) {
+			numberCount++
 		}
 	}
 
-	return false
+	return numberCount >= 2
 }
 
 // looksLikeDecimalNumber checks if a string looks like a decimal number (not hex)

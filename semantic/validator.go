@@ -387,21 +387,32 @@ func (v *Validator) validateBinaryOpExpression(binOp *ast.BinaryOp) (*TypeInfo, 
 
 // handleModuleAccess handles module access expressions (e.g., pe.is_pe)
 func (v *Validator) handleModuleAccess(binOp *ast.BinaryOp, _ []error) (*TypeInfo, bool) {
-	if leftIdent, ok := binOp.Left.(*ast.Identifier); ok {
-		if rightIdent, isRightIdent := binOp.Right.(*ast.Identifier); isRightIdent {
-			// Check if this is a module function (e.g., pe.is_pe)
-			if v.isModuleFunction(leftIdent.Name) {
-				// Module functions return integer or boolean depending on the function
-				// For now, we'll assume they return integer for most functions
-				// and boolean for is_* functions
-				if strings.HasPrefix(rightIdent.Name, "is_") {
-					return &TypeInfo{DataType: TypeBoolean}, true
-				}
-				return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}, true
-			}
-		}
+	leftIdent, ok := binOp.Left.(*ast.Identifier)
+	if !ok {
+		return nil, false
 	}
-	return nil, false
+
+	rightIdent, isRightIdent := binOp.Right.(*ast.Identifier)
+	if !isRightIdent {
+		return nil, false
+	}
+
+	return v.handleModuleFunctionCall(leftIdent.Name, rightIdent.Name)
+}
+
+// handleModuleFunctionCall handles module function calls and determines return type
+func (v *Validator) handleModuleFunctionCall(moduleName, functionName string) (*TypeInfo, bool) {
+	if !v.isModuleFunction(moduleName) {
+		return nil, false
+	}
+
+	// Module functions return integer or boolean depending on the function
+	// For now, we'll assume they return integer for most functions
+	// and boolean for is_* functions
+	if strings.HasPrefix(functionName, "is_") {
+		return &TypeInfo{DataType: TypeBoolean}, true
+	}
+	return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}, true
 }
 
 // validateUnaryOpExpression validates unary operation expressions

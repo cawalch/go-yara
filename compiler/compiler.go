@@ -132,7 +132,7 @@ type Option func(*CompilationOptions)
 //
 //	c := compiler.NewCompiler(
 //		compiler.WithOptimizations(false),
-//		compiler.WithDebugInfo(true),
+//		compiler.WithWarnings(true),
 //		compiler.WithMaxInputSize(50*1024*1024), // 50MB
 //	)
 func NewCompiler(opts ...Option) *Compiler {
@@ -172,7 +172,7 @@ func NewCompiler(opts ...Option) *Compiler {
 //
 //	c := compiler.NewCompiler(
 //		compiler.WithOptimizations(false),
-//		compiler.WithDebugInfo(true),
+//		compiler.WithWarnings(true),
 //	)
 func NewCompilerWithOptions(options CompilationOptions) *Compiler {
 	return NewCompiler(func(opts *CompilationOptions) {
@@ -204,6 +204,7 @@ func WithMaxInputSize(size int64) Option {
 }
 
 // CompileSource compiles YARA source code to bytecode.
+//
 // Deprecated: Use CompileSourceWithContext for better cancellation and timeout support.
 func (c *Compiler) CompileSource(source string) (*CompiledProgram, error) {
 	return c.CompileSourceWithContext(context.Background(), source)
@@ -281,6 +282,7 @@ func (c *Compiler) CompileSourceWithContext(ctx context.Context, source string) 
 }
 
 // CompileFile compiles a YARA file to bytecode.
+//
 // Deprecated: Use CompileFileWithContext for better cancellation and timeout support.
 func (c *Compiler) CompileFile(filename string) (*CompiledProgram, error) {
 	return c.CompileFileWithContext(context.Background(), filename)

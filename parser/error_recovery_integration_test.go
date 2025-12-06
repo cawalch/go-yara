@@ -56,11 +56,9 @@ rule ValidRule {
 
 		if program == nil {
 			t.Errorf("Expected partial program, got nil")
-		} else {
+		} else if len(program.Rules) == 0 {
 			// Should have parsed the valid rule despite the error in the first rule
-			if len(program.Rules) == 0 {
-				t.Errorf("Expected at least one rule to be parsed, got none")
-			}
+			t.Errorf("Expected at least one rule to be parsed, got none")
 		}
 
 		if len(partialErr.Errors) == 0 {

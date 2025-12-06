@@ -262,7 +262,7 @@ func parseContent(content string) *ast.Program {
 	l := lexer.New(content)
 	p := parser.New(l)
 
-	program, err := p.ParseRules()
+	program, err := p.ParseRulesWithContext(context.Background())
 	if err != nil {
 		printParserErrors(p, err)
 		os.Exit(1)
@@ -346,7 +346,7 @@ func runCompileMode(content, filename string) {
 	comp.SetBaseDir(filepath.Dir(filename))
 
 	// Compile program (this includes parsing, semantic analysis, and code generation)
-	compiledProgram, err := comp.CompileSource(content)
+	compiledProgram, err := comp.CompileSourceWithContext(context.Background(), content)
 	if err != nil {
 		fmt.Printf("Compilation error: %v\n", err)
 		// Print detailed errors
@@ -423,7 +423,7 @@ func printDataSummary(dataFile string, data []byte) {
 func compileRules(content, filename string) *compiler.CompiledProgram {
 	comp := compiler.NewCompiler()
 	comp.SetBaseDir(filepath.Dir(filename))
-	compiledProgram, err := comp.CompileSource(content)
+	compiledProgram, err := comp.CompileSourceWithContext(context.Background(), content)
 	if err != nil {
 		fmt.Printf("Compilation error: %v\n", err)
 		return nil

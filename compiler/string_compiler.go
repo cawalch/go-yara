@@ -557,29 +557,41 @@ func (sc *StringCompiler) parseJump(jumpStr string) map[string]int {
 	result := make(map[string]int)
 
 	if strings.Contains(jumpStr, "-") {
-		parts := strings.Split(jumpStr, "-")
-		if len(parts) == 2 {
-			minStr := strings.TrimSpace(parts[0])
-			maxStr := strings.TrimSpace(parts[1])
-
-			if minVal, err := strconv.Atoi(minStr); err == nil {
-				result["min"] = minVal
-			}
-			if maxStr == "" {
-				result["max"] = 65535 // Infinite
-			} else if maxVal, err := strconv.Atoi(maxStr); err == nil {
-				result["max"] = maxVal
-			}
-		}
+		sc.parseRangeJump(jumpStr, result)
 	} else {
-		// Single value [X] means exactly X bytes
-		if val, err := strconv.Atoi(jumpStr); err == nil {
-			result["min"] = val
-			result["max"] = val
-		}
+		sc.parseSingleJump(jumpStr, result)
 	}
 
 	return result
+}
+
+// parseRangeJump parses a range jump like "10-20" or "10-"
+func (sc *StringCompiler) parseRangeJump(jumpStr string, result map[string]int) {
+	parts := strings.Split(jumpStr, "-")
+	if len(parts) != 2 {
+		return
+	}
+
+	minStr := strings.TrimSpace(parts[0])
+	maxStr := strings.TrimSpace(parts[1])
+
+	if minVal, err := strconv.Atoi(minStr); err == nil {
+		result["min"] = minVal
+	}
+
+	if maxStr == "" {
+		result["max"] = 65535 // Infinite
+	} else if maxVal, err := strconv.Atoi(maxStr); err == nil {
+		result["max"] = maxVal
+	}
+}
+
+// parseSingleJump parses a single value jump like "10"
+func (sc *StringCompiler) parseSingleJump(jumpStr string, result map[string]int) {
+	if val, err := strconv.Atoi(jumpStr); err == nil {
+		result["min"] = val
+		result["max"] = val
+	}
 }
 
 // processByteToken processes a byte token and appends to result
@@ -710,7 +722,8 @@ func (sc *StringCompiler) applyNocaseToWide(data []byte) []byte {
 }
 
 // applyNocaseToSmallString handles case conversion for small strings
-// DEPRECATED: Use applyNocaseToLargeString for all cases for better maintainability
+//
+// Deprecated: Use applyNocaseToLargeString for all cases for better maintainability
 func (sc *StringCompiler) applyNocaseToSmallString(data []byte) []byte {
 	return sc.applyNocaseToLargeString(data)
 }

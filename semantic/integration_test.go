@@ -1,6 +1,7 @@
 package semantic
 
 import (
+	"context"
 	"testing"
 
 	"github.com/cawalch/go-yara/ast"
@@ -25,7 +26,7 @@ rule test_rule {
 
 	lex := lexer.New(input)
 	p := parser.New(lex)
-	program, err := p.ParseRules()
+	program, err := p.ParseRulesWithContext(context.Background())
 
 	if err != nil {
 		t.Fatalf("ParseRules() error = %v", err)
@@ -307,7 +308,7 @@ rule error_rule {
 
 	lex := lexer.New(input)
 	p := parser.New(lex)
-	program, err := p.ParseRules()
+	program, err := p.ParseRulesWithContext(context.Background())
 
 	if err != nil {
 		t.Fatalf("ParseRules() error = %v", err)

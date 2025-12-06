@@ -11,6 +11,22 @@ linters:
     - ineffassign
     - errcheck
     - revive
+    - nestif
+    - gocritic
+  settings:
+    revive:
+      rules:
+        - name: early-return
+          disabled: false
+        - name: if-return
+          disabled: false
+
+    gocritic:
+      enabled-checks:
+        - nestingReduce
+      settings:
+        nestingReduce:
+          bodyWidth: 5
 
 linters-settings:
   gofmt:

@@ -496,33 +496,32 @@ func (cc *ConditionCompiler) handleMixedTypeLiteralComparison(binOp *ast.BinaryO
 
 func (cc *ConditionCompiler) convertForMixedType(binOp *ast.BinaryOp, leftIsFloat, rightIsFloat, isComparison bool) {
 	if isComparison {
-		if leftIsFloat && !rightIsFloat {
-			cc.emitter.EmitOpcode(OpIntToDbl, binOp.Pos.Line, binOp.Pos.Column)
-		} else if !leftIsFloat && rightIsFloat {
-			cc.emitter.EmitOpcode(OpSwapundef, binOp.Pos.Line, binOp.Pos.Column)
-			cc.emitter.EmitOpcode(OpIntToDbl, binOp.Pos.Line, binOp.Pos.Column)
-			cc.emitter.EmitOpcode(OpSwapundef, binOp.Pos.Line, binOp.Pos.Column)
-		}
+		cc.convertForMixedTypeComparison(binOp, leftIsFloat, rightIsFloat)
 	} else {
-		if leftIsFloat && !rightIsFloat {
-			cc.emitter.EmitOpcode(OpSwapundef, binOp.Pos.Line, binOp.Pos.Column)
-			cc.emitter.EmitOpcode(OpIntToDbl, binOp.Pos.Line, binOp.Pos.Column)
-			cc.emitter.EmitOpcode(OpSwapundef, binOp.Pos.Line, binOp.Pos.Column)
-		} else if !leftIsFloat && rightIsFloat {
-			cc.emitter.EmitOpcode(OpIntToDbl, binOp.Pos.Line, binOp.Pos.Column)
-		}
+		cc.convertForMixedTypeArithmetic(binOp, leftIsFloat, rightIsFloat)
 	}
 }
 
-func (cc *ConditionCompiler) convertForMixedTypeComparison(binOp *ast.BinaryOp, leftIsFloat, rightIsFloat, isComparison bool) {
-	if !isComparison {
-		return
+func (cc *ConditionCompiler) convertForMixedTypeComparison(binOp *ast.BinaryOp, leftIsFloat, rightIsFloat bool) {
+	if leftIsFloat && !rightIsFloat {
+		cc.emitter.EmitOpcode(OpIntToDbl, binOp.Pos.Line, binOp.Pos.Column)
+	} else if !leftIsFloat && rightIsFloat {
+		cc.emitIntToDoubleWithSwap(binOp)
 	}
-	cc.convertForMixedType(binOp, leftIsFloat, rightIsFloat, isComparison)
 }
 
-func (cc *ConditionCompiler) convertForMixedTypeArithmetic(binOp *ast.BinaryOp, leftIsFloat, rightIsFloat, isComparison bool) {
-	cc.convertForMixedType(binOp, leftIsFloat, rightIsFloat, isComparison)
+func (cc *ConditionCompiler) convertForMixedTypeArithmetic(binOp *ast.BinaryOp, leftIsFloat, rightIsFloat bool) {
+	if leftIsFloat && !rightIsFloat {
+		cc.emitIntToDoubleWithSwap(binOp)
+	} else if !leftIsFloat && rightIsFloat {
+		cc.emitter.EmitOpcode(OpIntToDbl, binOp.Pos.Line, binOp.Pos.Column)
+	}
+}
+
+func (cc *ConditionCompiler) emitIntToDoubleWithSwap(binOp *ast.BinaryOp) {
+	cc.emitter.EmitOpcode(OpSwapundef, binOp.Pos.Line, binOp.Pos.Column)
+	cc.emitter.EmitOpcode(OpIntToDbl, binOp.Pos.Line, binOp.Pos.Column)
+	cc.emitter.EmitOpcode(OpSwapundef, binOp.Pos.Line, binOp.Pos.Column)
 }
 
 func (cc *ConditionCompiler) handleFloatOperations(binOp *ast.BinaryOp, leftIsFloat, rightIsFloat, isComparison bool) error {

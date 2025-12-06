@@ -352,12 +352,11 @@ func (p *DeclarationParser) ParseExternalVariable() (*ast.ExternalVariable, erro
 	var typeHint string
 	if p.currentTokenIs(token.COLON) {
 		p.nextToken() // consume ':'
-		if p.currentTokenIs(token.IDENTIFIER) {
-			typeHint = p.current.Literal
-			p.nextToken()
-		} else {
+		if !p.currentTokenIs(token.IDENTIFIER) {
 			return nil, errors.New("expected type hint after ':'")
 		}
+		typeHint = p.current.Literal
+		p.nextToken()
 	}
 
 	return p.builder.ExternalVariable(pos, name, name, typeHint), nil

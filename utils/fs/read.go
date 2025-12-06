@@ -13,11 +13,12 @@ import (
 func ReadFile(baseDir, filename string) ([]byte, error) {
 	// Determine the full path
 	var fullPath string
-	if filepath.IsAbs(filename) {
+	switch {
+	case filepath.IsAbs(filename):
 		fullPath = filename
-	} else if baseDir != "" {
+	case baseDir != "":
 		fullPath = filepath.Join(baseDir, filename)
-	} else {
+	default:
 		fullPath = filename
 	}
 

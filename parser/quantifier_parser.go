@@ -72,13 +72,14 @@ func (p *QuantifierParser) parseForQuantifier(pos token.Position) (ast.Expressio
 	var quantifierStr string
 
 	// Parse the quantifier after 'for' - could be keyword (all/any/none) or numeric
-	if p.currentTokenIs(token.ALL) || p.currentTokenIs(token.ANY) ||
-		p.currentTokenIs(token.NONE) {
+	switch {
+	case p.currentTokenIs(token.ALL) || p.currentTokenIs(token.ANY) ||
+		p.currentTokenIs(token.NONE):
 		// Keyword quantifier
 		quantifierStr = p.current.Literal
 		quantifierExpr = p.builder.Identifier(pos, quantifierStr)
 		p.nextToken()
-	} else if p.isNumericLiteral() {
+	case p.isNumericLiteral():
 		// Numeric quantifier like "for 2 of them"
 		numericExpr, err := p.parseNumericQuantifier()
 		if err != nil {
@@ -86,7 +87,7 @@ func (p *QuantifierParser) parseForQuantifier(pos token.Position) (ast.Expressio
 		}
 		quantifierExpr = numericExpr
 		quantifierStr = "numeric" // placeholder
-	} else {
+	default:
 		return nil, errors.New("expected quantifier (all/any/none) or number after 'for'")
 	}
 
@@ -161,50 +162,53 @@ func (p *QuantifierParser) parseForLoopWithVariable(pos token.Position, quantifi
 
 // parseRangeExpression parses range expressions, handling both parenthesized ranges and regular expressions
 func (p *QuantifierParser) parseRangeExpression() (ast.Expression, error) {
-	var rangeExpr ast.Expression
-	var err error
-
-	// Check if this is a parenthesized range expression like (0..9)
 	if p.currentTokenIs(token.LPAREN) {
-		p.nextToken() // consume '('
+		return p.parseParenthesizedRangeExpression()
+	}
+	return p.exprParser.parsePrimaryExcludingUnary()
+}
 
-		// Parse the left operand of the range
-		left, leftErr := p.exprParser.parsePrimaryExcludingUnary()
-		if leftErr != nil {
-			return nil, leftErr
-		}
+// parseParenthesizedRangeExpression parses a parenthesized range expression like (0..9)
+func (p *QuantifierParser) parseParenthesizedRangeExpression() (ast.Expression, error) {
+	p.nextToken() // consume '('
 
-		// Check for range expression (..)
-		if p.currentTokenIs(token.DOT) && p.peekTokenIs(token.DOT) {
-			dotPos := p.current.Pos
-			p.nextToken() // consume first DOT
-			p.nextToken() // consume second DOT
+	left, err := p.exprParser.parsePrimaryExcludingUnary()
+	if err != nil {
+		return nil, err
+	}
 
-			// Parse the right operand of the range
-			right, rightErr := p.exprParser.parsePrimaryExcludingUnary()
-			if rightErr != nil {
-				return nil, rightErr
-			}
+	rangeExpr, err := p.parseRangeSuffix(left)
+	if err != nil {
+		return nil, err
+	}
 
-			// Create a binary operation to represent the range
-			rangeExpr = p.builder.BinaryOp(dotPos, left, token.DOT, right)
-		} else {
-			// Not a range expression, parse the rest as a regular expression
-			rangeExpr = left
-		}
-
-		if !p.expectToken(token.RPAREN) {
-			return nil, errors.New("expected ')' after range expression")
-		}
-	} else {
-		// Parse regular expression
-		rangeExpr, err = p.exprParser.parsePrimaryExcludingUnary()
-		if err != nil {
-			return nil, err
-		}
+	if !p.expectToken(token.RPAREN) {
+		return nil, errors.New("expected ')' after range expression")
 	}
 
 	return rangeExpr, nil
+}
+
+// parseRangeSuffix parses the optional range suffix (..right) or returns the left expression as-is
+func (p *QuantifierParser) parseRangeSuffix(left ast.Expression) (ast.Expression, error) {
+	if p.currentTokenIs(token.DOT) && p.peekTokenIs(token.DOT) {
+		return p.parseFullRange(left)
+	}
+	return left, nil
+}
+
+// parseFullRange parses a complete range expression with left .. right
+func (p *QuantifierParser) parseFullRange(left ast.Expression) (ast.Expression, error) {
+	dotPos := p.current.Pos
+	p.nextToken() // consume first DOT
+	p.nextToken() // consume second DOT
+
+	right, err := p.exprParser.parsePrimaryExcludingUnary()
+	if err != nil {
+		return nil, err
+	}
+
+	return p.builder.BinaryOp(dotPos, left, token.DOT, right), nil
 }
 
 // parseStandardQuantifier parses standard quantifiers (all/any/none of them) and numeric quantifiers

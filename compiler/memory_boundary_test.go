@@ -339,10 +339,8 @@ func TestJumpManager_LabelValidation(t *testing.T) {
 				if tc.errorMsg != "" && err.Error() != tc.errorMsg {
 					t.Errorf("ValidateLabelName() error = %q, want %q", err.Error(), tc.errorMsg)
 				}
-			} else {
-				if err != nil {
-					t.Errorf("ValidateLabelName() unexpected error: %v", err)
-				}
+			} else if err != nil {
+				t.Errorf("ValidateLabelName() unexpected error: %v", err)
 			}
 		})
 	}
@@ -375,10 +373,8 @@ func TestJumpManager_LabelValidation(t *testing.T) {
 				if tc.errorMsg != "" && !containsMemory(err.Error(), tc.errorMsg) {
 					t.Errorf("ValidateJumpTarget() error = %q, want contains %q", err.Error(), tc.errorMsg)
 				}
-			} else {
-				if err != nil {
-					t.Errorf("ValidateJumpTarget() unexpected error: %v", err)
-				}
+			} else if err != nil {
+				t.Errorf("ValidateJumpTarget() unexpected error: %v", err)
 			}
 		})
 	}
