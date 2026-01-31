@@ -100,8 +100,8 @@ func (l *Lexer) hasSectionKeywordsAhead() bool {
 
 	for i := 0; i < lookaheadLimit && l.reader.Current() != 0; i++ {
 		ch := l.reader.Current()
-			if ch == ':' {
-				if l.hasSectionKeywordBeforeColon(snapshot.position) {
+		if ch == ':' {
+			if l.hasSectionKeywordBeforeColon(snapshot.position) {
 				return true
 			}
 		}
@@ -151,7 +151,8 @@ func (l *Lexer) readIdentifierAtPosition() string {
 
 // isRuleSectionKeyword checks if identifier is a rule section keyword
 func (l *Lexer) isRuleSectionKeyword(ident string) bool {
-	return ident == sectionKeywordCondition || ident == sectionKeywordMeta || ident == sectionKeywordStrings
+	return ident == sectionKeywordCondition || ident == sectionKeywordMeta ||
+		ident == sectionKeywordStrings
 }
 
 // startsWithHexContent checks if current position starts with hex-specific content
@@ -431,12 +432,30 @@ func (l *Lexer) looksLikeArithmeticExpression() bool {
 	contextText := input[startPos:currentPos]
 
 	// Check for arithmetic operators or patterns that suggest this is not a hex string
-	arithmeticPatterns := []string{"==", "!=", ">=", "<=", ">", "<", "+", "-", "*", "/", "and ", " or ", "not ", "condition:", "meta:", "strings:"}
+	arithmeticPatterns := []string{
+		"==",
+		"!=",
+		">=",
+		"<=",
+		">",
+		"<",
+		"+",
+		"-",
+		"*",
+		"/",
+		"and ",
+		" or ",
+		"not ",
+		"condition:",
+		"meta:",
+		"strings:",
+	}
 
 	for _, pattern := range arithmeticPatterns {
 		if len(contextText) >= len(pattern) {
 			// Check if pattern appears near the end of context
-			if len(contextText) >= len(pattern) && contextText[len(contextText)-len(pattern):] == pattern {
+			if len(contextText) >= len(pattern) &&
+				contextText[len(contextText)-len(pattern):] == pattern {
 				return true
 			}
 		}
