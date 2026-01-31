@@ -234,19 +234,16 @@ func (p *ExpressionParser) parsePostfix(base ast.Expression) (ast.Expression, er
 
 // parseFunctionCall parses function call expression
 func (p *ExpressionParser) parseFunctionCall(base ast.Expression) (ast.Expression, error) {
-	// Extract function name from identifier
-	ident, ok := base.(*ast.Identifier)
+	functionName, ok := extractFunctionName(base)
 	if !ok {
 		return nil, fmt.Errorf("cannot call non-identifier at %v", base.Position())
 	}
-
-	functionName := ident.Name
 	p.nextToken() // consume '('
 
 	// Parse arguments
 	var args []ast.Expression
 	for !p.currentTokenIs(token.RPAREN) {
-		arg, err := p.parsePrimary()
+		arg, err := p.ParseExpression()
 		if err != nil {
 			return nil, fmt.Errorf("error parsing function argument: %w", err)
 		}
@@ -265,8 +262,34 @@ func (p *ExpressionParser) parseFunctionCall(base ast.Expression) (ast.Expressio
 	return &ast.FunctionCall{
 		Function: functionName,
 		Args:     args,
-		Pos:      ident.Position(),
+		Pos:      base.Position(),
 	}, nil
+}
+
+// extractFunctionName flattens identifiers and dotted member access into a function name.
+func extractFunctionName(expr ast.Expression) (string, bool) {
+	switch node := expr.(type) {
+	case *ast.Identifier:
+		return node.Name, true
+	case *ast.BinaryOp:
+		if node.Op != token.DOT {
+			return "", false
+		}
+		left, ok := extractFunctionName(node.Left)
+		if !ok {
+			return "", false
+		}
+		rightIdent, ok := node.Right.(*ast.Identifier)
+		if !ok {
+			return "", false
+		}
+		if left == "" {
+			return rightIdent.Name, true
+		}
+		return left + "." + rightIdent.Name, true
+	default:
+		return "", false
+	}
 }
 
 // nextToken advances to the next token and updates parser state
@@ -307,12 +330,12 @@ func (p *ExpressionParser) SetTokens(current, peek token.Token) {
 
 // InitializeTokens sets up the initial tokens from the lexer
 func (p *ExpressionParser) InitializeTokens() {
-	if p.lexer != nil {
-		p.current = p.lexer.NextToken()
-		p.peek = p.lexer.NextToken()
-	} else if p.useExternalTokens && p.externalNextToken != nil {
+	if p.useExternalTokens && p.externalNextToken != nil {
 		// If using external tokens, just call nextToken to get initial state
 		p.nextToken()
+	} else if p.lexer != nil {
+		p.current = p.lexer.NextToken()
+		p.peek = p.lexer.NextToken()
 	}
 }
 

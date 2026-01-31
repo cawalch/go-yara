@@ -11,14 +11,16 @@ func (l *Lexer) handleStringToken(pos token.Position) token.Token {
 
 // handleSlashToken handles tokens starting with '/' (comments, regex, division)
 func (l *Lexer) handleSlashToken(pos token.Position) token.Token {
-	// Check if it's an empty regex first (handles // and //flags)
-	if l.peekChar() == '/' && l.isEmptyRegex() {
-		return l.makeRegexToken(pos)
-	}
+	if l.isRegexAllowed() {
+		// Check if it's an empty regex first (handles // and //flags)
+		if l.peekChar() == '/' && l.isEmptyRegex() {
+			return l.makeRegexToken(pos)
+		}
 
-	// Check if it looks like a regex (not a comment)
-	if l.looksLikeRegex() {
-		return l.makeRegexToken(pos)
+		// In strings section or after MATCHES, treat slash as regex literal.
+		if l.section == sectionStrings || l.looksLikeRegex() {
+			return l.makeRegexToken(pos)
+		}
 	}
 
 	// If we get here, it's a division operator

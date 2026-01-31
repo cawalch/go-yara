@@ -1,8 +1,6 @@
 package lexer
 
-import (
-	"strings"
-)
+import "strings"
 
 // Section keywords that should be treated as constants
 const (
@@ -11,9 +9,394 @@ const (
 	sectionKeywordStrings   = "strings"
 )
 
-// Hexadecimal string scanning functions.
-// This module handles the complex logic for detecting and parsing hex string literals,
-// including disambiguation between hex strings and regular rule body braces.
+// ========================================
+// Identifier Scanning Functions
+// ========================================
+
+// readIdentifier reads an identifier (letters, digits, underscores)
+func (l *Lexer) readIdentifier() string {
+	return l.reader.ReadIdentifierFast()
+}
+
+// readStringIdentifier reads a string identifier starting with '$'
+func (l *Lexer) readStringIdentifier() string {
+	// current l.ch() is '$'
+	start := l.reader.Position()
+	l.reader.ReadChar() // skip '$'
+
+	// Read the identifier part (letters, digits, underscores, wildcards, #, @)
+	for isLetter(l.reader.Current()) || isDigit(l.reader.Current()) || l.reader.Current() == '_' || l.reader.Current() == '*' || l.reader.Current() == '#' || l.reader.Current() == '@' {
+		l.reader.ReadChar()
+	}
+
+	return l.reader.Slice(start)
+}
+
+// ========================================
+// Numeric Scanning Functions
+// ========================================
+
+// readNumber reads a numeric literal
+func (l *Lexer) readNumber() string {
+	start := l.reader.Position()
+	for isDigit(l.reader.Current()) {
+		l.reader.ReadChar()
+	}
+	return l.reader.Slice(start)
+}
+
+// readFloatFraction reads fractional part of a float literal (. followed by digits)
+func (l *Lexer) readFloatFraction() string {
+	start := l.reader.Position()
+	l.reader.ReadChar() // skip '.'
+
+	for isDigit(l.reader.Current()) {
+		l.reader.ReadChar()
+	}
+
+	return l.reader.Slice(start)
+}
+
+// readHexInteger reads a hexadecimal integer literal (0x prefix)
+func (l *Lexer) readHexInteger() string {
+	start := l.reader.Position()
+	l.reader.ReadChar() // skip '0'
+	l.reader.ReadChar() // skip 'x' or 'X'
+
+	// Read hex digits
+	for isHexDigit(l.reader.Current()) {
+		l.reader.ReadChar()
+	}
+
+	return l.reader.Slice(start)
+}
+
+// readOctalInteger reads an octal integer literal (0o prefix)
+func (l *Lexer) readOctalInteger() string {
+	start := l.reader.Position()
+	l.reader.ReadChar() // skip '0'
+	l.reader.ReadChar() // skip 'o' or 'O'
+
+	// Read octal digits (0-7)
+	for isOctalDigit(l.reader.Current()) {
+		l.reader.ReadChar()
+	}
+
+	return l.reader.Slice(start)
+}
+
+// hasSizeSuffix checks if the current position has a size suffix (KB, MB)
+func (l *Lexer) hasSizeSuffix() bool {
+	ch1 := l.reader.Current()
+	ch2 := l.reader.PeekChar()
+
+	// Check for KB (case insensitive)
+	if (ch1 == 'K' || ch1 == 'k') && (ch2 == 'B' || ch2 == 'b') {
+		return true
+	}
+
+	// Check for MB (case insensitive)
+	if (ch1 == 'M' || ch1 == 'm') && (ch2 == 'B' || ch2 == 'b') {
+		return true
+	}
+
+	return false
+}
+
+// readSizeSuffix reads a size suffix and combines it with the number literal
+func (l *Lexer) readSizeSuffix(numberLit string) string {
+	start := l.reader.Position() - len(numberLit) // Start from beginning of number
+	l.reader.ReadChar()                           // skip first letter (K/M)
+	l.reader.ReadChar()                           // skip 'B'
+	return l.reader.Slice(start)
+}
+
+// ========================================
+// String and Regex Scanning Functions
+// ========================================
+
+// readString reads a string literal and returns content and whether it was properly closed
+func (l *Lexer) readString() (string, bool) {
+	// current l.ch() is '"'
+	start := l.reader.Position()
+	l.reader.ReadChar() // skip opening quote
+
+	for l.reader.Current() != '"' && l.reader.Current() != 0 {
+		if l.reader.Current() == '\\' {
+			l.reader.ReadChar() // skip backslash
+			if l.reader.Current() != 0 {
+				l.reader.ReadChar() // skip escaped character
+			}
+		} else {
+			l.reader.ReadChar()
+		}
+	}
+
+	if l.reader.Current() == 0 {
+		// Unterminated string - return the entire sequence including the opening quote
+		return l.reader.Slice(start), false
+	}
+
+	// Extract content between quotes (excluding the quotes themselves)
+	content := l.reader.Slice(start + 1) // +1 to skip opening quote
+	l.reader.ReadChar()                  // skip closing quote
+
+	// Process escape sequences in the content
+	return processEscapeSequences(content), true
+}
+
+// readRegex reads a regular expression literal
+func (l *Lexer) readRegex() string {
+	start := l.reader.Position()
+	l.reader.ReadChar() // skip opening '/'
+
+	l.readRegexBody()
+
+	if l.reader.Current() == '/' {
+		l.reader.ReadChar() // skip closing '/'
+		l.readRegexFlags()
+	}
+
+	return l.reader.Slice(start)
+}
+
+// readRegexBody reads the regex body content
+func (l *Lexer) readRegexBody() {
+	for !l.isAtRegexEnd() {
+		if l.reader.Current() == '\\' {
+			l.reader.ReadChar() // skip backslash
+			if l.reader.Current() != 0 && l.reader.Current() != '\n' {
+				l.reader.ReadChar() // skip escaped character
+			}
+		} else {
+			l.reader.ReadChar()
+		}
+	}
+}
+
+// isAtRegexEnd checks if we've reached the end of regex body
+func (l *Lexer) isAtRegexEnd() bool {
+	return l.reader.Current() == '/' || l.reader.Current() == 0 || l.reader.Current() == '\n'
+}
+
+// readRegexFlags reads regex flags (i, s, m, etc.)
+func (l *Lexer) readRegexFlags() {
+	for l.isRegexFlag(l.reader.Current()) {
+		l.reader.ReadChar()
+	}
+}
+
+// isRegexFlag checks if character is a valid regex flag
+func (l *Lexer) isRegexFlag(ch byte) bool {
+	return ch == 'i' || ch == 's' || ch == 'm'
+}
+
+// isEmptyRegex checks if the current position starts an empty regex pattern
+func (l *Lexer) isEmptyRegex() bool {
+	return isEmptyRegexImpl(l)
+}
+
+// GetPosition implements regexReader interface for Lexer
+func (l *Lexer) GetPosition() int {
+	return l.reader.Position()
+}
+
+// SetPosition implements regexReader interface for Lexer
+func (l *Lexer) SetPosition(pos int) {
+	l.reader.SetPosition(pos)
+}
+
+// GetCurrent implements regexReader interface for Lexer
+func (l *Lexer) GetCurrent() byte {
+	return l.reader.Current()
+}
+
+// ReadChar implements regexReader interface for Lexer
+func (l *Lexer) ReadChar() {
+	l.reader.ReadChar()
+}
+
+// Slice implements regexReader interface for Lexer
+func (l *Lexer) Slice(start int) string {
+	return l.reader.Slice(start)
+}
+
+// isYARAModifier checks if a word is a YARA string modifier keyword
+func isYARAModifier(word string) bool {
+	switch word {
+	case "nocase", "wide", "ascii", "fullword", "private", "xor", "base64", "base64wide":
+		return true
+	default:
+		return false
+	}
+}
+
+// looksLikeRegex determines if a '/' character starts a regex rather than division
+func (l *Lexer) looksLikeRegex() bool {
+	return looksLikeRegexImpl(l.reader.PeekChar)
+}
+
+// regexReader provides the interface needed for regex pattern checking
+type regexReader interface {
+	GetPosition() int
+	SetPosition(int)
+	GetCurrent() byte
+	ReadChar()
+	Slice(int) string
+}
+
+// isEmptyRegexImpl is a shared implementation for checking empty regex patterns
+func isEmptyRegexImpl(r regexReader) bool {
+	savedPos := r.GetPosition()
+	defer r.SetPosition(savedPos)
+
+	if !hasDoubleSlash(r) {
+		return false
+	}
+
+	skipRegexFlags(r)
+
+	return isEmptyRegexEnd(r)
+}
+
+// hasDoubleSlash checks if reader has "//" pattern
+func hasDoubleSlash(r regexReader) bool {
+	if r.GetCurrent() != '/' {
+		return false
+	}
+	r.ReadChar()
+	return r.GetCurrent() == '/'
+}
+
+// skipRegexFlags skips regex flags (i, s, m)
+func skipRegexFlags(r regexReader) {
+	r.ReadChar() // skip second '/'
+	for isRegexFlag(r) {
+		r.ReadChar()
+	}
+}
+
+// isRegexFlag checks if current char is a regex flag
+func isRegexFlag(r regexReader) bool {
+	ch := r.GetCurrent()
+	return ch == 'i' || ch == 's' || ch == 'm'
+}
+
+// isEmptyRegexEnd checks if we're at valid end of empty regex
+func isEmptyRegexEnd(r regexReader) bool {
+	ch := r.GetCurrent()
+	if isRegexEndDelimiter(ch) {
+		return true
+	}
+
+	if isAnyWhitespace(ch) {
+		return handleWhitespaceAfterRegex(r)
+	}
+
+	return false
+}
+
+// isRegexEndDelimiter checks if char is a regex end delimiter
+func isRegexEndDelimiter(ch byte) bool {
+	return ch == 0 || ch == ')' || ch == '}' || ch == ']' || ch == ',' || ch == ';'
+}
+
+// isAnyWhitespace checks if char is whitespace
+func isAnyWhitespace(ch byte) bool {
+	return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r'
+}
+
+// handleWhitespaceAfterRegex handles whitespace after empty regex
+func handleWhitespaceAfterRegex(r regexReader) bool {
+	skipHorizontalWhitespace(r)
+	ch := r.GetCurrent()
+
+	if isLineEndOrEOF(ch) {
+		return true
+	}
+
+	if isLetter(ch) {
+		return checkYARAModifier(r)
+	}
+
+	return false
+}
+
+// skipHorizontalWhitespace skips spaces and tabs
+func skipHorizontalWhitespace(r regexReader) {
+	for r.GetCurrent() == ' ' || r.GetCurrent() == '\t' {
+		r.ReadChar()
+	}
+}
+
+// isLineEndOrEOF checks if char is line end or EOF
+func isLineEndOrEOF(ch byte) bool {
+	return ch == '\n' || ch == '\r' || ch == 0
+}
+
+// checkYARAModifier checks if current word is a YARA modifier
+func checkYARAModifier(r regexReader) bool {
+	wordStart := r.GetPosition()
+	for isWordChar(r) {
+		r.ReadChar()
+	}
+	word := r.Slice(wordStart)
+	return isYARAModifier(word)
+}
+
+// isWordChar checks if char can be part of a word
+func isWordChar(r regexReader) bool {
+	ch := r.GetCurrent()
+	return isLetter(ch) || isDigit(ch) || ch == '_'
+}
+
+// looksLikeRegexImpl is a shared implementation for determining if '/' starts a regex
+func looksLikeRegexImpl(peekChar func() byte) bool {
+	next := peekChar()
+
+	if isCommentStart(next) {
+		return false
+	}
+
+	if isEndOrWhitespace(next) {
+		return false
+	}
+
+	return isRegexStartChar(next)
+}
+
+// isCommentStart checks if character starts a comment
+func isCommentStart(ch byte) bool {
+	return ch == '/' || ch == '*'
+}
+
+// isEndOrWhitespace checks if character is end of input or whitespace
+func isEndOrWhitespace(ch byte) bool {
+	return ch == 0 || isAnyWhitespace(ch)
+}
+
+// isRegexStartChar checks if character commonly starts regex patterns
+func isRegexStartChar(ch byte) bool {
+	if isBasicRegexChar(ch) {
+		return true
+	}
+	return isSpecialRegexChar(ch)
+}
+
+// isBasicRegexChar checks for basic regex characters
+func isBasicRegexChar(ch byte) bool {
+	return isLetter(ch) || isDigit(ch) || ch == '_' || ch == '\\'
+}
+
+// isSpecialRegexChar checks for special regex characters
+func isSpecialRegexChar(ch byte) bool {
+	return ch == '[' || ch == '(' || ch == '.' || ch == '^' || ch == '$' ||
+		ch == '|' || ch == '?'
+}
+
+// ========================================
+// Hexadecimal String Scanning Functions
+// ========================================
 
 // readHexString reads a hexadecimal string literal
 func (l *Lexer) readHexString() string {
@@ -34,10 +417,10 @@ func (l *Lexer) readHexString() string {
 }
 
 // isHexStringStart checks if the current position starts a hex string
-// More sophisticated logic to distinguish between hex strings and rule body braces
+// More sophisticated logic to distinguish between hex strings and regular rule body braces
 func (l *Lexer) isHexStringStart() bool {
-	snapshot := l.reader.SavePosition()
-	defer l.reader.RestorePosition(snapshot)
+	savedPos := l.reader.Position()
+	defer l.reader.SetPosition(savedPos)
 
 	l.reader.ReadChar()
 	l.reader.SkipWhitespace()
@@ -93,15 +476,15 @@ func (l *Lexer) handleRuleDeclarationContext() bool {
 
 // hasSectionKeywordsAhead checks for section keywords ahead in the current context
 func (l *Lexer) hasSectionKeywordsAhead() bool {
-	snapshot := l.reader.SavePosition()
+	quickCheckPos := l.reader.Position()
 	lookaheadLimit := 50
 
-	defer l.reader.RestorePosition(snapshot)
+	defer l.reader.SetPosition(quickCheckPos)
 
 	for i := 0; i < lookaheadLimit && l.reader.Current() != 0; i++ {
 		ch := l.reader.Current()
-			if ch == ':' {
-				if l.hasSectionKeywordBeforeColon(snapshot.position) {
+		if ch == ':' {
+			if l.hasSectionKeywordBeforeColon(quickCheckPos) {
 				return true
 			}
 		}
@@ -189,8 +572,8 @@ func (l *Lexer) isValidHexNextChar(next byte) bool {
 
 // isQuickClosingBrace checks if we quickly hit a closing brace (simple "{ }" case)
 func (l *Lexer) isQuickClosingBrace() bool {
-	snapshot := l.reader.SavePosition()
-	defer l.reader.RestorePosition(snapshot)
+	quickCheckPos := l.reader.Position()
+	defer l.reader.SetPosition(quickCheckPos)
 
 	for i := 0; i < 10 && l.reader.Current() != 0 && l.reader.Current() != '}'; i++ {
 		l.reader.ReadChar()
@@ -416,8 +799,6 @@ func (l *Lexer) skipIdentifierInRange(input string, start, end int) int {
 	return pos
 }
 
-// isRuleKeyword checks if a word is a YARA rule structure keyword
-
 // looksLikeArithmeticExpression checks if current context appears to be an arithmetic expression
 func (l *Lexer) looksLikeArithmeticExpression() bool {
 	input := l.reader.Input()
@@ -520,7 +901,7 @@ func (l *Lexer) hasRuleKeyword(contextText string) bool {
 func (l *Lexer) isRuleKeywordBounded(contextText string, i int) bool {
 	before := i == 0 || !isLetter(contextText[i-1])
 	after := i + len(KeywordRule)
-	return before && (after >= len(contextText) || !isLetter(contextText[after]))
+	return before || (after >= len(contextText) || !isLetter(contextText[after]))
 }
 
 // hasSectionKeywordAfterRule checks if section keywords appear after rule

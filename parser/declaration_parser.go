@@ -164,7 +164,7 @@ func (p *DeclarationParser) parseStringDeclarations() []*ast.String {
 	parsedStrings := make([]*ast.String, 0)
 
 	for !p.currentTokenIs(token.CONDITION) && !p.currentTokenIs(token.RBRACE) {
-		if !p.currentTokenIs(token.StringIdentifier) && !p.currentTokenIs(token.IDENTIFIER) {
+		if !p.currentTokenIs(token.StringIdentifier) {
 			break
 		}
 
@@ -209,9 +209,9 @@ func (p *DeclarationParser) parseStringDeclaration() (*ast.String, error) {
 
 // parseStringIdentifier parses a string identifier and returns its components
 func (p *DeclarationParser) parseStringIdentifier() (string, token.Position, error) {
-	if !p.currentTokenIs(token.StringIdentifier) && !p.currentTokenIs(token.IDENTIFIER) {
+	if !p.currentTokenIs(token.StringIdentifier) {
 		return "", token.Position{}, fmt.Errorf(
-			"expected string identifier at %v, got %s",
+			"expected string identifier (e.g. $a) at %v, got %s",
 			p.current.Pos,
 			p.current.Type,
 		)

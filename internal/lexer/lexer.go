@@ -6,7 +6,10 @@ import (
 
 // NextToken returns the next token from the input
 func (l *Lexer) NextToken() token.Token {
-	return NextTokenImpl(l)
+	tok := NextTokenImpl(l)
+	l.updateSectionState(tok)
+	l.lastTokenType = tok.Type
+	return tok
 }
 
 // Implement TokenCreator interface methods
@@ -35,7 +38,43 @@ func (l *Lexer) isStringLengthContext() bool {
 		l.reader.ReadChar()
 	}
 
-	// Check if next non-whitespace character starts an identifier
+	// String length applies only to $-prefixed string identifiers.
 	peekChar := l.reader.PeekChar()
-	return peekChar == '$' || (peekChar >= 'a' && peekChar <= 'z') || (peekChar >= 'A' && peekChar <= 'Z') || peekChar == '_'
+	return peekChar == '$'
+}
+
+// isRegexAllowed returns true when regex literals are valid in the current context.
+func (l *Lexer) isRegexAllowed() bool {
+	if l.section == sectionStrings {
+		return true
+	}
+	// Allow standalone regex lexing before any section is known (compatibility/tests).
+	if l.section == sectionNone {
+		return true
+	}
+	return l.lastTokenType == token.MATCHES
+}
+
+// updateSectionState updates section tracking based on recently emitted tokens.
+func (l *Lexer) updateSectionState(tok token.Token) {
+	switch tok.Type {
+	case token.META:
+		l.pendingSection = sectionMeta
+	case token.STRINGS:
+		l.pendingSection = sectionStrings
+	case token.CONDITION:
+		l.pendingSection = sectionCondition
+	case token.COLON:
+		if l.pendingSection != sectionNone {
+			l.section = l.pendingSection
+			l.pendingSection = sectionNone
+		}
+	case token.RBRACE:
+		l.section = sectionNone
+		l.pendingSection = sectionNone
+	default:
+		if l.pendingSection != sectionNone && tok.Type != token.ILLEGAL {
+			l.pendingSection = sectionNone
+		}
+	}
 }

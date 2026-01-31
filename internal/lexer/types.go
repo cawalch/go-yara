@@ -28,6 +28,8 @@
 // and provides comprehensive error recovery for malformed input.
 package lexer
 
+import "github.com/cawalch/go-yara/token"
+
 // Pre-allocated single character strings to eliminate allocations
 // in ILLEGAL token creation and other single-character literals
 var singleCharLiterals [256]string
@@ -51,9 +53,12 @@ const (
 // Lexer tokenizes YARA rule source code into a stream of tokens.
 // It maintains position information and can recover from lexical errors.
 type Lexer struct {
-	reader       *ReaderFast  // handles character reading and position tracking with optimizations
-	errors       []Error      // collected errors during lexing
-	recoveryMode RecoveryMode // error recovery strategy
+	reader         *ReaderFast  // handles character reading and position tracking with optimizations
+	errors         []Error      // collected errors during lexing
+	recoveryMode   RecoveryMode // error recovery strategy
+	lastTokenType  token.Type   // last emitted token type for contextual decisions
+	section        sectionMode  // current YARA rule section (meta/strings/condition)
+	pendingSection sectionMode  // section keyword seen but colon not yet consumed
 }
 
 // New creates a new lexer for the given input string.
@@ -74,3 +79,13 @@ func NewWithRecovery(input string, mode RecoveryMode) *Lexer {
 		recoveryMode: mode,
 	}
 }
+
+// sectionMode tracks which rule section the lexer is currently in.
+type sectionMode uint8
+
+const (
+	sectionNone sectionMode = iota
+	sectionMeta
+	sectionStrings
+	sectionCondition
+)

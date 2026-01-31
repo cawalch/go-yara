@@ -11,6 +11,10 @@ func (l *Lexer) readString() (string, bool) {
 	l.reader.ReadChar() // skip opening quote
 
 	for l.reader.Current() != '"' && l.reader.Current() != 0 {
+		if l.reader.Current() == '\n' || l.reader.Current() == '\r' {
+			// Unterminated string before line end; stop to allow recovery.
+			return l.reader.Slice(start), false
+		}
 		if l.reader.Current() == '\\' {
 			l.reader.ReadChar() // skip backslash
 			if l.reader.Current() != 0 {
@@ -26,12 +30,11 @@ func (l *Lexer) readString() (string, bool) {
 		return l.reader.Slice(start), false
 	}
 
-	// Extract content between quotes (excluding the quotes themselves)
+	// Extract raw content between quotes (excluding the quotes themselves)
 	content := l.reader.Slice(start + 1) // +1 to skip opening quote
 	l.reader.ReadChar()                  // skip closing quote
 
-	// Process escape sequences in the content
-	return processEscapeSequences(content), true
+	return content, true
 }
 
 // readRegex reads a regular expression literal
