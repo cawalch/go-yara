@@ -30,7 +30,11 @@ func (ppe *PartialParseError) Error() string {
 	if len(ppe.Errors) == 1 {
 		return fmt.Sprintf("parsing completed with 1 error: %v", ppe.Errors[0])
 	}
-	return fmt.Sprintf("parsing completed with %d errors, first error: %v", len(ppe.Errors), ppe.Errors[0])
+	return fmt.Sprintf(
+		"parsing completed with %d errors, first error: %v",
+		len(ppe.Errors),
+		ppe.Errors[0],
+	)
 }
 
 // Unwrap returns the underlying errors
@@ -57,7 +61,10 @@ type Parser struct {
 
 // New creates a new parser instance with specialized sub-parsers
 func New(l *lexer.Lexer) *Parser {
-	return NewWithOptions(l, Options{MaxRecursionDepth: 0}) // 0 means no limit for backward compatibility
+	return NewWithOptions(
+		l,
+		Options{MaxRecursionDepth: 0},
+	) // 0 means no limit for backward compatibility
 }
 
 // Options configures parser behavior
@@ -120,7 +127,7 @@ func (p *Parser) ParseRulesWithContext(ctx context.Context) (*ast.Program, error
 		default:
 		}
 
-		if err := p.parseProgramElementWithContext(ctx, program); err != nil {
+		if err := p.parseProgramElement(ctx, program); err != nil {
 			p.addError(err)
 		}
 	}
@@ -158,7 +165,7 @@ func (p *Parser) ParseRulesStrict() (*ast.Program, error) {
 	program := p.builder.Program(make([]*ast.Rule, 0))
 
 	for !p.currentTokenIs(token.EOF) {
-		if err := p.parseProgramElement(program); err != nil {
+		if err := p.parseProgramElement(context.Background(), program); err != nil {
 			p.addError(err)
 		}
 	}
@@ -170,19 +177,23 @@ func (p *Parser) ParseRulesStrict() (*ast.Program, error) {
 	return program, nil
 }
 
-func (p *Parser) parseProgramElement(program *ast.Program) error {
+func (p *Parser) parseProgramElement(ctx context.Context, program *ast.Program) error {
+	if err := checkContext(ctx); err != nil {
+		return err
+	}
+
 	// Update current tokens for all specialized parsers
 	p.updateParserTokens()
 
 	switch {
 	case p.currentTokenIs(token.GLOBAL):
-		return p.parseGlobalDeclaration(program)
+		return p.parseGlobalDeclaration(ctx, program)
 	case p.currentTokenIs(token.EXTERNAL):
-		return p.parseExternalDeclaration(program)
+		return p.parseExternalDeclaration(ctx, program)
 	case p.currentTokenIs(token.IMPORT):
-		return p.parseImportDeclaration(program)
+		return p.parseImportDeclaration(ctx, program)
 	case p.currentTokenIs(token.INCLUDE):
-		return p.parseIncludeDeclaration(program)
+		return p.parseIncludeDeclaration(ctx, program)
 	case p.currentTokenIs(token.PRIVATE) || p.currentTokenIs(token.RULE):
 		// Delegate to rule parser with or without error recovery
 		p.updateParserTokens()
@@ -206,56 +217,11 @@ func (p *Parser) parseProgramElement(program *ast.Program) error {
 	}
 }
 
-// parseProgramElementWithContext parses a program element with context support
-func (p *Parser) parseProgramElementWithContext(ctx context.Context, program *ast.Program) error {
-	// Check for cancellation before parsing element
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
-	}
-
-	// Update current tokens for all specialized parsers
-	p.updateParserTokens()
-
-	switch {
-	case p.currentTokenIs(token.GLOBAL):
-		return p.parseGlobalDeclarationWithContext(ctx, program)
-	case p.currentTokenIs(token.EXTERNAL):
-		return p.parseExternalDeclarationWithContext(ctx, program)
-	case p.currentTokenIs(token.IMPORT):
-		return p.parseImportDeclarationWithContext(ctx, program)
-	case p.currentTokenIs(token.INCLUDE):
-		return p.parseIncludeDeclarationWithContext(ctx, program)
-	case p.currentTokenIs(token.PRIVATE) || p.currentTokenIs(token.RULE):
-		// Delegate to rule parser with or without error recovery
-		p.updateParserTokens()
-		if p.errorRecovery {
-			rule, ruleErrors := p.ruleParser.ParseRulePartial()
-			// Always add the rule (even if partial) to the program
-			program.Rules = append(program.Rules, rule)
-			// Add all rule errors to the parser's error list
-			for _, ruleErr := range ruleErrors {
-				p.addError(ruleErr)
-			}
-			return nil // Don't return error since we want to continue parsing
-		}
-		rule, err := p.ruleParser.ParseRule()
-		if err == nil {
-			program.Rules = append(program.Rules, rule)
-		}
+func (p *Parser) parseGlobalDeclaration(ctx context.Context, program *ast.Program) error {
+	if err := checkContext(ctx); err != nil {
 		return err
-	default:
-		return fmt.Errorf("unexpected token %s at %v", p.current.Type, p.current.Pos)
 	}
-}
 
-func (p *Parser) parseGlobalDeclaration(program *ast.Program) error {
-	return p.parseGlobalDeclarationWithContext(context.Background(), program)
-}
-
-// parseGlobalDeclarationWithContext parses a global declaration with context support
-func (p *Parser) parseGlobalDeclarationWithContext(_ context.Context, program *ast.Program) error {
 	p.updateParserTokens()
 
 	// Check if this is a global variable declaration or a global rule modifier
@@ -277,25 +243,9 @@ func (p *Parser) parseGlobalDeclarationWithContext(_ context.Context, program *a
 	return err
 }
 
-func (p *Parser) parseExternalDeclaration(program *ast.Program) error {
-	return p.parseExternalDeclarationWithContext(context.Background(), program)
-}
-
-func (p *Parser) parseImportDeclaration(program *ast.Program) error {
-	return p.parseImportDeclarationWithContext(context.Background(), program)
-}
-
-func (p *Parser) parseIncludeDeclaration(program *ast.Program) error {
-	return p.parseIncludeDeclarationWithContext(context.Background(), program)
-}
-
-// parseIncludeDeclarationWithContext parses an include declaration with context support
-func (p *Parser) parseIncludeDeclarationWithContext(ctx context.Context, program *ast.Program) error {
-	// Check for cancellation
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
+func (p *Parser) parseIncludeDeclaration(ctx context.Context, program *ast.Program) error {
+	if err := checkContext(ctx); err != nil {
+		return err
 	}
 
 	p.nextToken() // consume INCLUDE token
@@ -307,13 +257,9 @@ func (p *Parser) parseIncludeDeclarationWithContext(ctx context.Context, program
 	return err
 }
 
-// parseExternalDeclarationWithContext parses an external declaration with context support
-func (p *Parser) parseExternalDeclarationWithContext(ctx context.Context, program *ast.Program) error {
-	// Check for cancellation
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
+func (p *Parser) parseExternalDeclaration(ctx context.Context, program *ast.Program) error {
+	if err := checkContext(ctx); err != nil {
+		return err
 	}
 
 	p.nextToken() // consume EXTERNAL token
@@ -325,13 +271,9 @@ func (p *Parser) parseExternalDeclarationWithContext(ctx context.Context, progra
 	return err
 }
 
-// parseImportDeclarationWithContext parses an import declaration with context support
-func (p *Parser) parseImportDeclarationWithContext(ctx context.Context, program *ast.Program) error {
-	// Check for cancellation
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
+func (p *Parser) parseImportDeclaration(ctx context.Context, program *ast.Program) error {
+	if err := checkContext(ctx); err != nil {
+		return err
 	}
 
 	p.nextToken() // consume IMPORT token
@@ -341,6 +283,15 @@ func (p *Parser) parseImportDeclarationWithContext(ctx context.Context, program 
 		program.Imports = append(program.Imports, importStmt)
 	}
 	return err
+}
+
+func checkContext(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+		return nil
+	}
 }
 
 // Errors returns any parsing errors encountered
