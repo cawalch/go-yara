@@ -1,8 +1,8 @@
 package compiler
 
 import (
-	"crypto/md5"
-	"crypto/sha1"
+	"crypto/md5"  // #nosec G501 -- required for YARA hash compatibility
+	"crypto/sha1" // #nosec G505 -- required for YARA hash compatibility
 	"crypto/sha256"
 	"fmt"
 	"math"
@@ -627,7 +627,7 @@ func (i *Interpreter) executeBuiltinMD5(args []Value) error {
 	if err != nil {
 		return &InterpreterError{Type: ErrorRuntime, Opcode: OpCall, Message: err.Error()}
 	}
-	sum := md5.Sum(data)
+	sum := md5.Sum(data) // #nosec G401 -- YARA defines md5() for compatibility
 	return i.push(Value{Type: ValueTypeString, StringVal: fmt.Sprintf("%x", sum)})
 }
 
@@ -636,7 +636,7 @@ func (i *Interpreter) executeBuiltinSHA1(args []Value) error {
 	if err != nil {
 		return &InterpreterError{Type: ErrorRuntime, Opcode: OpCall, Message: err.Error()}
 	}
-	sum := sha1.Sum(data)
+	sum := sha1.Sum(data) // #nosec G401 -- YARA defines sha1() for compatibility
 	return i.push(Value{Type: ValueTypeString, StringVal: fmt.Sprintf("%x", sum)})
 }
 
