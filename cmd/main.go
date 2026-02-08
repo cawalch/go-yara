@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -14,7 +15,6 @@ import (
 	"github.com/cawalch/go-yara/compiler"
 	"github.com/cawalch/go-yara/internal/lexer"
 	"github.com/cawalch/go-yara/parser"
-	"github.com/cawalch/go-yara/regex"
 	"github.com/cawalch/go-yara/token"
 	"github.com/cawalch/go-yara/utils/fs"
 )
@@ -455,10 +455,10 @@ func executeRules(compiledProgram *compiler.CompiledProgram, data []byte, args *
 	for _, rule := range compiledProgram.Rules {
 		fmt.Printf("Executing rule: %s\n", rule.GetName())
 
-		printEntries := findPatternMatches(rule, data)
+		matchContext, printEntries := findPatternMatches(rule, data)
 		totalMatches += printPatternMatches(printEntries)
 
-		interpreter := setupInterpreter(rule, data, ruleResults, compiledProgram.Rules, printEntries)
+		interpreter := setupInterpreter(rule, data, ruleResults, compiledProgram.Rules, matchContext)
 		executeSingleRule(interpreter, rule)
 
 		fmt.Println()
@@ -467,64 +467,35 @@ func executeRules(compiledProgram *compiler.CompiledProgram, data []byte, args *
 	fmt.Printf("Total matches found: %d\n", totalMatches)
 }
 
-func findPatternMatches(rule *compiler.CompiledRule, data []byte) []printEntry {
-	var printEntries []printEntry
-
-	if rule.Automaton == nil {
-		return printEntries
-	}
-
-	// AC matches (for text/hex patterns)
-	acRaw := rule.Automaton.Search(data)
-	for _, match := range acRaw {
-		if match.StringIndex >= 0 && match.StringIndex < len(rule.Automaton.Strings) {
-			si := rule.Automaton.Strings[match.StringIndex]
-			printEntries = append(printEntries, printEntry{
-				id:     si.Identifier,
-				offset: match.Backtrack,
-				length: si.Length,
-			})
-		}
-	}
-
-	// Regex matches
-	printEntries = append(printEntries, findRegexMatches(rule.Automaton.Strings, data)...)
-
-	return printEntries
+func findPatternMatches(rule *compiler.CompiledRule, data []byte) (*compiler.MatchContext, []printEntry) {
+	ctx := compiler.BuildMatchContext(rule, data)
+	return ctx, matchContextEntries(ctx)
 }
 
-func findRegexMatches(matchStrings []compiler.ACStringInfo, data []byte) []printEntry {
-	var printEntries []printEntry
-
-	for _, s := range matchStrings {
-		if !s.IsRegex {
-			continue
-		}
-
-		flags := s.Flags | regex.FlagsScan
-		searchStart := 0
-		for searchStart <= len(data) {
-			ok, start, end := regex.ExecMatch(s.Data, data[searchStart:], flags)
-			if !ok {
-				break
-			}
-			absStart := searchStart + start
-			absEnd := searchStart + end
-			printEntries = append(printEntries, printEntry{
-				id:     s.Identifier,
-				offset: absStart,
-				length: absEnd - absStart,
+func matchContextEntries(ctx *compiler.MatchContext) []printEntry {
+	if ctx == nil {
+		return nil
+	}
+	entries := make([]printEntry, 0)
+	for id, matches := range ctx.Matches {
+		for _, m := range matches {
+			entries = append(entries, printEntry{
+				id:     id,
+				offset: int(m.Offset),
+				length: m.Length,
 			})
-			// Advance by one to allow overlapping matches
-			if absStart+1 > searchStart {
-				searchStart = absStart + 1
-			} else {
-				searchStart++
-			}
 		}
 	}
-
-	return printEntries
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].offset != entries[j].offset {
+			return entries[i].offset < entries[j].offset
+		}
+		if entries[i].id != entries[j].id {
+			return entries[i].id < entries[j].id
+		}
+		return entries[i].length < entries[j].length
+	})
+	return entries
 }
 
 func printPatternMatches(printEntries []printEntry) int {
@@ -538,27 +509,21 @@ func printPatternMatches(printEntries []printEntry) int {
 }
 
 func setupInterpreter(rule *compiler.CompiledRule, data []byte, ruleResults map[string]bool,
-	compiledRules []*compiler.CompiledRule, printEntries []printEntry) *compiler.Interpreter {
+	compiledRules []*compiler.CompiledRule, matchContext *compiler.MatchContext) *compiler.Interpreter {
 	interp := compiler.NewInterpreter(rule.GetBytecode())
 
 	// Set file size and data in match context
-	interp.GetMatchContext().FileSize = int64(len(data))
-	interp.GetMatchContext().Data = data
+	if matchContext != nil {
+		interp.SetMatchContext(matchContext)
+	} else {
+		interp.GetMatchContext().FileSize = int64(len(data))
+		interp.GetMatchContext().Data = data
+	}
 
 	// Set up rule tracking
 	interp.SetRuleResults(ruleResults)
 	interp.SetCurrentRule(rule.GetName())
 	interp.SetCompiledRules(compiledRules)
-
-	// Populate match context with matches
-	for _, e := range printEntries {
-		interp.GetMatchContext().AddMatch(compiler.Match{
-			Pattern: e.id,
-			Offset:  int64(e.offset),
-			Length:  e.length,
-			Base:    0,
-		})
-	}
 
 	// Initialize VM memory slots
 	if rule.Automaton != nil {

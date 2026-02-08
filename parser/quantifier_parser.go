@@ -3,6 +3,7 @@ package parser
 import (
 	"errors"
 	"fmt"
+	"strconv"
 
 	"github.com/cawalch/go-yara/ast"
 	internal "github.com/cawalch/go-yara/internal/lexer"
@@ -70,6 +71,7 @@ func (p *QuantifierParser) ParseQuantifier(pos token.Position) (ast.Expression, 
 func (p *QuantifierParser) parseForQuantifier(pos token.Position) (ast.Expression, error) {
 	var quantifierExpr ast.Expression
 	var quantifierStr string
+	numericQuantifier := false
 
 	// Parse the quantifier after 'for' - could be keyword (all/any/none) or numeric
 	switch {
@@ -81,19 +83,23 @@ func (p *QuantifierParser) parseForQuantifier(pos token.Position) (ast.Expressio
 		p.nextToken()
 	case p.isNumericLiteral():
 		// Numeric quantifier like "for 2 of them"
+		numericQuantifier = true
+		quantifierStr = p.current.Literal
+		if parsed, err := strconv.ParseInt(quantifierStr, 0, 64); err == nil {
+			quantifierStr = strconv.FormatInt(parsed, 10)
+		}
 		numericExpr, err := p.parseNumericQuantifier()
 		if err != nil {
 			return nil, fmt.Errorf("error parsing numeric quantifier: %w", err)
 		}
 		quantifierExpr = numericExpr
-		quantifierStr = "numeric" // placeholder
 	default:
 		return nil, errors.New("expected quantifier (all/any/none) or number after 'for'")
 	}
 
 	// For numeric quantifiers, we already consumed the 'of' in parseNumericQuantifier()
 	// For keyword quantifiers, check if this is a for-loop with variable or standard 'of' syntax
-	if quantifierStr != "numeric" {
+	if !numericQuantifier {
 		// Check if this is a for loop with variable (e.g., "for any i in (1..3) : ...")
 		if p.currentTokenIs(token.IDENTIFIER) {
 			return p.parseForLoopWithVariable(pos, quantifierStr)

@@ -487,40 +487,48 @@ func (v *Validator) validateFunctionCallExpression(funcCall *ast.FunctionCall) (
 
 	// Check if this is a valid YARA function call
 	validFunctions := map[string]struct {
-		minArgs int
-		maxArgs int
-		retType *IntegerType
+		minArgs  int
+		maxArgs  int
+		dataType DataType
+		retType  *IntegerType
 	}{
-		"UINT8":    {1, 1, Uint8Type},
-		"UINT16":   {1, 1, Uint16Type},
-		"UINT32":   {1, 1, Uint32Type},
-		"UINT8BE":  {1, 1, Uint8Type},
-		"UINT16BE": {1, 1, Uint16Type},
-		"UINT32BE": {1, 1, Uint32Type},
-		"INT8":     {1, 1, Int8Type},
-		"INT16":    {1, 1, Int16Type},
-		"INT32":    {1, 1, Int32Type},
-		"INT8BE":   {1, 1, Int8Type},
-		"INT16BE":  {1, 1, Int16Type},
-		"INT32BE":  {1, 1, Int32Type},
-		"INT64BE":  {1, 1, Int64BEType},
+		"UINT8":    {1, 1, TypeInteger, Uint8Type},
+		"UINT16":   {1, 1, TypeInteger, Uint16Type},
+		"UINT32":   {1, 1, TypeInteger, Uint32Type},
+		"UINT8BE":  {1, 1, TypeInteger, Uint8Type},
+		"UINT16BE": {1, 1, TypeInteger, Uint16Type},
+		"UINT32BE": {1, 1, TypeInteger, Uint32Type},
+		"INT8":     {1, 1, TypeInteger, Int8Type},
+		"INT16":    {1, 1, TypeInteger, Int16Type},
+		"INT32":    {1, 1, TypeInteger, Int32Type},
+		"INT8BE":   {1, 1, TypeInteger, Int8Type},
+		"INT16BE":  {1, 1, TypeInteger, Int16Type},
+		"INT32BE":  {1, 1, TypeInteger, Int32Type},
+		"INT64BE":  {1, 1, TypeInteger, Int64BEType},
 		// Lowercase function names (from parser mapping)
-		"uint8":    {1, 1, Uint8Type},
-		"uint16":   {1, 1, Uint16Type},
-		"uint32":   {1, 1, Uint32Type},
-		"uint64":   {1, 1, Uint64Type},
-		"uint8be":  {1, 1, Uint8BEType},
-		"uint16be": {1, 1, Uint16BEType},
-		"uint32be": {1, 1, Uint32BEType},
-		"uint64be": {1, 1, Uint64BEType},
-		"int8":     {1, 1, Int8Type},
-		"int16":    {1, 1, Int16Type},
-		"int32":    {1, 1, Int32Type},
-		"int64":    {1, 1, Int64Type},
-		"int8be":   {1, 1, Int8BEType},
-		"int16be":  {1, 1, Int16BEType},
-		"int32be":  {1, 1, Int32BEType},
-		"int64be":  {1, 1, Int64BEType},
+		"uint8":    {1, 1, TypeInteger, Uint8Type},
+		"uint16":   {1, 1, TypeInteger, Uint16Type},
+		"uint32":   {1, 1, TypeInteger, Uint32Type},
+		"uint64":   {1, 1, TypeInteger, Uint64Type},
+		"uint8be":  {1, 1, TypeInteger, Uint8BEType},
+		"uint16be": {1, 1, TypeInteger, Uint16BEType},
+		"uint32be": {1, 1, TypeInteger, Uint32BEType},
+		"uint64be": {1, 1, TypeInteger, Uint64BEType},
+		"int8":     {1, 1, TypeInteger, Int8Type},
+		"int16":    {1, 1, TypeInteger, Int16Type},
+		"int32":    {1, 1, TypeInteger, Int32Type},
+		"int64":    {1, 1, TypeInteger, Int64Type},
+		"int8be":   {1, 1, TypeInteger, Int8BEType},
+		"int16be":  {1, 1, TypeInteger, Int16BEType},
+		"int32be":  {1, 1, TypeInteger, Int32BEType},
+		"int64be":  {1, 1, TypeInteger, Int64BEType},
+		// Text/hash functions
+		"concat": {2, 255, TypeString, nil},
+		"tostring": {1, 1, TypeString, nil},
+		"int":    {1, 1, TypeInteger, Int64Type},
+		"md5":    {1, 2, TypeString, nil},
+		"sha1":   {1, 2, TypeString, nil},
+		"sha256": {1, 2, TypeString, nil},
 	}
 
 	// Reject keywords that should not be function calls
@@ -558,12 +566,23 @@ func (v *Validator) validateFunctionCallExpression(funcCall *ast.FunctionCall) (
 	}
 
 	// Return appropriate type based on function
-	return &TypeInfo{DataType: TypeInteger, IntegerType: funcInfo.retType}, errors
+	return &TypeInfo{DataType: funcInfo.dataType, IntegerType: funcInfo.retType}, errors
 }
 
 // validateForLoopExpression validates for loop expressions
 func (v *Validator) validateForLoopExpression(forLoop *ast.ForLoop) (*TypeInfo, []error) {
 	var errors []error
+
+	// Create a scope for the loop variable so it is visible in the condition.
+	v.symbolTable.EnterScope("for_loop")
+	if forLoop.Variable != "" {
+		if err := v.symbolTable.DefineVariable(forLoop.Variable, forLoop.Pos, SymbolVariable); err != nil {
+			errors = append(errors, &Error{
+				Message:  err.Error(),
+				Position: forLoop.Pos,
+			})
+		}
+	}
 
 	// Validate the range expression
 	_, rangeErrs := v.validateExpression(forLoop.Range)
@@ -572,6 +591,8 @@ func (v *Validator) validateForLoopExpression(forLoop *ast.ForLoop) (*TypeInfo, 
 	// Validate the condition expression
 	_, conditionErrs := v.validateExpression(forLoop.Condition)
 	errors = append(errors, conditionErrs...)
+
+	v.symbolTable.ExitScope()
 
 	// For loops always return boolean
 	return &TypeInfo{DataType: TypeBoolean}, errors

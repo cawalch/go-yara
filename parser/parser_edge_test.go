@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cawalch/go-yara/ast"
 	"github.com/cawalch/go-yara/internal/lexer"
 )
 
@@ -262,6 +263,156 @@ func TestParseQuantifierVariations(t *testing.T) {
 func TestParseStringModifiers(t *testing.T) {
 	t.Run("SingleModifiers", testSingleStringModifiers)
 	t.Run("MultipleModifiers", testMultipleStringModifiers)
+}
+
+func TestParseInvalidStringModifierCombos(t *testing.T) {
+	tests := []struct {
+		name       string
+		input      string
+		wantSubstr string
+	}{
+		{
+			name: "base64_with_wide",
+			input: `
+rule bad1 {
+	strings:
+		$s = "test" base64 wide
+	condition:
+		$s
+}`,
+			wantSubstr: "base64 modifiers are incompatible with 'wide' or 'ascii'",
+		},
+		{
+			name: "base64_with_xor",
+			input: `
+rule bad2 {
+	strings:
+		$s = "test" base64 xor(1)
+	condition:
+		$s
+}`,
+			wantSubstr: "base64 modifiers are incompatible with 'xor', 'nocase', or 'fullword'",
+		},
+		{
+			name: "xor_range_out_of_bounds",
+			input: `
+rule bad3 {
+	strings:
+		$s = "test" xor(1-300)
+	condition:
+		$s
+}`,
+			wantSubstr: "xor range must be within 0..255",
+		},
+		{
+			name: "xor_range_inverted",
+			input: `
+rule bad4 {
+	strings:
+		$s = "test" xor(5-3)
+	condition:
+		$s
+}`,
+			wantSubstr: "xor range max must be >= min",
+		},
+		{
+			name: "base64_duplicate_alphabet",
+			input: `
+rule bad5 {
+	strings:
+		$s = "test" base64("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+	condition:
+		$s
+}`,
+			wantSubstr: "invalid base64 alphabet: duplicate characters",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			l := lexer.New(tt.input)
+			p := New(l)
+			_, err := p.ParseRules()
+			if err == nil {
+				t.Fatalf("expected parse error for %s", tt.name)
+			}
+			if tt.wantSubstr == "" {
+				return
+			}
+			found := false
+			for _, parseErr := range p.Errors() {
+				if strings.Contains(parseErr.Error(), tt.wantSubstr) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Fatalf("expected error containing %q, got %v", tt.wantSubstr, p.Errors())
+			}
+		})
+	}
+}
+
+func TestParseExtendedStringModifiers(t *testing.T) {
+	input := `rule mod_ext {
+		strings:
+			$xor1 = "test" xor
+			$xor2 = "test" xor(1-3)
+			$xor3 = "test" xor(0x42)
+			$xor4 = "test" xor()
+			$b64 = "test" base64("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/")
+			$b64w = "test" base64wide("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/")
+		condition:
+			all of them
+	}`
+
+	l := lexer.New(input)
+	p := New(l)
+	program, err := p.ParseRules()
+	if err != nil {
+		t.Fatalf("parsing failed: %v", err)
+	}
+	if len(program.Rules) != 1 {
+		t.Fatalf("expected 1 rule, got %d", len(program.Rules))
+	}
+	rule := program.Rules[0]
+	if len(rule.Strings) != 6 {
+		t.Fatalf("expected 6 strings, got %d", len(rule.Strings))
+	}
+
+	byID := make(map[string]*ast.String, len(rule.Strings))
+	for _, s := range rule.Strings {
+		byID[s.Identifier] = s
+	}
+
+	checkXorRange := func(id string, min, max int64) {
+		s := byID[id]
+		if s == nil || len(s.Modifiers) != 1 || s.Modifiers[0].Type != ast.StringModifierXor {
+			t.Fatalf("expected xor modifier for %s", id)
+		}
+		r, ok := s.Modifiers[0].Value.(ast.XorRange)
+		if !ok {
+			t.Fatalf("expected xor range for %s", id)
+		}
+		if r.Min != min || r.Max != max {
+			t.Fatalf("xor range for %s = %d-%d, want %d-%d", id, r.Min, r.Max, min, max)
+		}
+	}
+
+	checkXorRange("$xor1", 0, 255)
+	checkXorRange("$xor2", 1, 3)
+	checkXorRange("$xor3", 0x42, 0x42)
+	checkXorRange("$xor4", 0, 255)
+
+	for _, id := range []string{"$b64", "$b64w"} {
+		s := byID[id]
+		if s == nil || len(s.Modifiers) != 1 {
+			t.Fatalf("expected base64 modifier for %s", id)
+		}
+		if s.Modifiers[0].Value != "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/" {
+			t.Fatalf("unexpected base64 alphabet for %s", id)
+		}
+	}
 }
 
 func testSingleStringModifiers(t *testing.T) {
