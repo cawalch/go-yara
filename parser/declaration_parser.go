@@ -258,36 +258,234 @@ func (p *DeclarationParser) parseStringModifiers() []ast.StringModifier {
 	for p.isStringModifier(p.current.Type) {
 		modifierType := p.getStringModifierType(p.current.Type)
 
-		if modifierType == ast.StringModifierXor {
-			// XOR modifier requires a value
-			p.nextToken() // consume XOR token
-
-			// Parse the XOR value (integer literal)
-			if !p.currentTokenIs(token.IntegerLit) && !p.currentTokenIs(token.HexIntegerLit) {
-				p.addError(errors.New("expected integer value after 'xor' modifier"))
-				// Add a default XOR modifier to continue parsing
-				modifiers = append(modifiers, ast.StringModifier{Type: modifierType, Value: 0})
-				continue
-			}
-
-			xorValue, err := strconv.ParseInt(p.current.Literal, 0, 64)
-			if err != nil {
-				p.addError(
-					fmt.Errorf("invalid integer value for xor modifier: %s", p.current.Literal),
-				)
-				xorValue = 0
-			}
-
-			modifiers = append(modifiers, ast.StringModifier{Type: modifierType, Value: xorValue})
-			p.nextToken() // consume the XOR value
-		} else {
-			// Other modifiers don't need values
+		switch modifierType {
+		case ast.StringModifierXor:
+			modifiers = append(modifiers, p.parseXorModifier())
+		case ast.StringModifierBase64, ast.StringModifierBase64Wide:
+			modifiers = append(modifiers, p.parseBase64Modifier(modifierType))
+		default:
 			modifiers = append(modifiers, ast.StringModifier{Type: modifierType})
 			p.nextToken()
 		}
 	}
 
+	p.validateStringModifiers(modifiers)
 	return modifiers
+}
+
+func (p *DeclarationParser) parseXorModifier() ast.StringModifier {
+	modifier := ast.StringModifier{Type: ast.StringModifierXor, Value: ast.XorRange{Min: 0, Max: 255}}
+	p.nextToken() // consume XOR token
+
+	if p.currentTokenIs(token.LPAREN) {
+		modifier.Value = p.parseXorModifierRange()
+		return modifier
+	}
+
+	if p.isIntegerLiteralToken(p.current.Type) {
+		modifier.Value = p.parseXorModifierSingleValue()
+	}
+
+	return modifier
+}
+
+func (p *DeclarationParser) parseXorModifierRange() ast.XorRange {
+	defaultRange := ast.XorRange{Min: 0, Max: 255}
+	p.nextToken() // consume '('
+	if p.currentTokenIs(token.RPAREN) {
+		p.nextToken() // consume ')'
+		return defaultRange
+	}
+
+	minVal, hasMin := p.parseOptionalIntLiteral()
+	if !hasMin {
+		p.addError(errors.New("expected integer value in xor() modifier"))
+		p.skipToToken(token.RPAREN)
+		if p.currentTokenIs(token.RPAREN) {
+			p.nextToken()
+		}
+		return defaultRange
+	}
+
+	maxVal := minVal
+	if p.currentTokenIs(token.MINUS) {
+		p.nextToken() // consume '-'
+		if val, ok := p.parseOptionalIntLiteral(); ok {
+			maxVal = val
+		} else {
+			maxVal = 255
+		}
+	}
+
+	if !p.expectToken(token.RPAREN) {
+		p.addError(errors.New("expected ')' after xor() modifier"))
+	}
+
+	return ast.XorRange{Min: minVal, Max: maxVal}
+}
+
+func (p *DeclarationParser) parseXorModifierSingleValue() ast.XorRange {
+	xorValue, err := strconv.ParseInt(p.current.Literal, 0, 64)
+	if err != nil {
+		p.addError(fmt.Errorf("invalid integer value for xor modifier: %s", p.current.Literal))
+		xorValue = 0
+	}
+	p.nextToken() // consume XOR value
+	return ast.XorRange{Min: xorValue, Max: xorValue}
+}
+
+func (p *DeclarationParser) isIntegerLiteralToken(tokenType token.Type) bool {
+	return tokenType == token.IntegerLit || tokenType == token.HexIntegerLit || tokenType == token.OctalIntegerLit
+}
+
+func (p *DeclarationParser) parseBase64Modifier(modifierType ast.StringModifierType) ast.StringModifier {
+	modifier := ast.StringModifier{Type: modifierType}
+	p.nextToken() // consume modifier token
+
+	if !p.currentTokenIs(token.LPAREN) {
+		return modifier
+	}
+
+	p.nextToken() // consume '('
+	if !p.currentTokenIs(token.StringLit) {
+		p.addError(errors.New("expected string literal in base64() modifier"))
+		p.skipToToken(token.RPAREN)
+		if p.currentTokenIs(token.RPAREN) {
+			p.nextToken()
+		}
+		return modifier
+	}
+
+	alphabet := p.current.Literal
+	p.nextToken() // consume string literal
+	if !p.expectToken(token.RPAREN) {
+		p.addError(errors.New("expected ')' after base64() modifier"))
+	}
+	modifier.Value = alphabet
+	return modifier
+}
+
+func (p *DeclarationParser) validateStringModifiers(modifiers []ast.StringModifier) {
+	hasWide := false
+	hasASCII := false
+	hasBase64 := false
+	hasBase64Wide := false
+	hasXor := false
+	hasNocase := false
+	hasFullword := false
+
+	for _, mod := range modifiers {
+		switch mod.Type {
+		case ast.StringModifierWide:
+			hasWide = true
+		case ast.StringModifierASCII:
+			hasASCII = true
+		case ast.StringModifierBase64:
+			hasBase64 = true
+			if err := validateBase64Alphabet(mod.Value); err != nil {
+				p.addError(err)
+			}
+		case ast.StringModifierBase64Wide:
+			hasBase64Wide = true
+			if err := validateBase64Alphabet(mod.Value); err != nil {
+				p.addError(err)
+			}
+		case ast.StringModifierXor:
+			hasXor = true
+			if err := validateXorModifierValue(mod.Value); err != nil {
+				p.addError(err)
+			}
+		case ast.StringModifierNocase:
+			hasNocase = true
+		case ast.StringModifierFullword:
+			hasFullword = true
+		}
+	}
+
+	if hasWide && hasASCII {
+		p.addError(errors.New("cannot use both 'wide' and 'ascii' modifiers"))
+	}
+	if hasBase64 && hasBase64Wide {
+		p.addError(errors.New("cannot use both 'base64' and 'base64wide' modifiers"))
+	}
+	if (hasBase64 || hasBase64Wide) && (hasXor || hasNocase || hasFullword) {
+		p.addError(errors.New("base64 modifiers are incompatible with 'xor', 'nocase', or 'fullword'"))
+	}
+	if (hasBase64 || hasBase64Wide) && (hasWide || hasASCII) {
+		p.addError(errors.New("base64 modifiers are incompatible with 'wide' or 'ascii'"))
+	}
+}
+
+func validateBase64Alphabet(value any) error {
+	alphabet, ok := value.(string)
+	if !ok || alphabet == "" {
+		return nil
+	}
+	if len(alphabet) != 64 {
+		return fmt.Errorf("invalid base64 alphabet length: expected 64, got %d", len(alphabet))
+	}
+	seen := make(map[byte]struct{}, 64)
+	for i := 0; i < len(alphabet); i++ {
+		ch := alphabet[i]
+		if ch == '=' {
+			return errors.New("invalid base64 alphabet: '=' is not allowed")
+		}
+		if _, exists := seen[ch]; exists {
+			return errors.New("invalid base64 alphabet: duplicate characters")
+		}
+		seen[ch] = struct{}{}
+	}
+	return nil
+}
+
+func validateXorModifierValue(value any) error {
+	if value == nil {
+		return nil
+	}
+	switch v := value.(type) {
+	case ast.XorRange:
+		return validateXorRange(v.Min, v.Max)
+	case *ast.XorRange:
+		if v == nil {
+			return nil
+		}
+		return validateXorRange(v.Min, v.Max)
+	case int64:
+		return validateXorRange(v, v)
+	case int:
+		return validateXorRange(int64(v), int64(v))
+	default:
+		return nil
+	}
+}
+
+func validateXorRange(min, max int64) error {
+	if min < 0 || max < 0 || min > 255 || max > 255 {
+		return errors.New("xor range must be within 0..255")
+	}
+	if max < min {
+		return errors.New("xor range max must be >= min")
+	}
+	return nil
+}
+
+func (p *DeclarationParser) parseOptionalIntLiteral() (int64, bool) {
+	if !p.currentTokenIs(token.IntegerLit) && !p.currentTokenIs(token.HexIntegerLit) && !p.currentTokenIs(token.OctalIntegerLit) {
+		return 0, false
+	}
+	val, err := strconv.ParseInt(p.current.Literal, 0, 64)
+	if err != nil {
+		p.addError(fmt.Errorf("invalid integer value: %s", p.current.Literal))
+		val = 0
+	}
+	p.nextToken()
+	return val, true
+}
+
+func (p *DeclarationParser) skipToToken(target token.Type) {
+	for p.current.Type != token.EOF && p.current.Type != target {
+		p.nextToken()
+	}
 }
 
 // ParseTagList parses a colon-separated list of identifiers (tags)

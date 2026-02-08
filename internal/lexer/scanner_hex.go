@@ -212,25 +212,29 @@ func (l *Lexer) isInStringsSection() bool {
 	// Extract the text before this position for analysis
 	contextText := input[startPos:currentPos]
 
-	// Look for "strings:" pattern
-	return l.containsStringsKeyword(contextText)
+	stringsIdx := l.lastKeywordWithColon(contextText, "strings")
+	if stringsIdx < 0 {
+		return false
+	}
+
+	// If there's a later "condition:" section, we're no longer in strings.
+	if l.lastKeywordWithColon(contextText, "condition") > stringsIdx {
+		return false
+	}
+
+	return true
 }
 
-// containsStringsKeyword checks if the context contains "strings:" keyword
-func (l *Lexer) containsStringsKeyword(text string) bool {
-	return l.findKeywordWithColon(text, "strings")
-}
-
-// findKeywordWithColon looks for a keyword followed by optional whitespace and a colon
-func (l *Lexer) findKeywordWithColon(text, keyword string) bool {
-	for i := 0; i <= len(text)-len(keyword); i++ {
+// lastKeywordWithColon returns the last index of a keyword followed by optional whitespace and a colon, or -1 if not found.
+func (l *Lexer) lastKeywordWithColon(text, keyword string) int {
+	for i := len(text) - len(keyword); i >= 0; i-- {
 		if text[i:i+len(keyword)] == keyword {
 			if l.isWordBoundary(text, i) && l.hasColonAfter(text, i+len(keyword)) {
-				return true
+				return i
 			}
 		}
 	}
-	return false
+	return -1
 }
 
 // isWordBoundary checks if position is at a word boundary

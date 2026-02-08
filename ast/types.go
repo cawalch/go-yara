@@ -18,6 +18,13 @@ type StringModifier struct {
 	Value any // for xor ranges, base64 alphabets, etc.
 }
 
+// XorRange represents an XOR modifier range.
+// Min and Max are inclusive byte values.
+type XorRange struct {
+	Min int64
+	Max int64
+}
+
 // StringModifierType defines the type of string modifier
 type StringModifierType int
 

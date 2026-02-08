@@ -13,15 +13,20 @@ type Emitter struct {
 	// Compilation state
 	currentOffset int
 	lineNumbers   map[int]int // Maps bytecode offset to source line
+	// String literal pool for OpPushStr
+	stringLiterals     []string
+	stringLiteralIndex map[string]int
 }
 
 // NewEmitter creates a new bytecode emitter
 func NewEmitter() *Emitter {
 	return &Emitter{
-		instructions:  make([]Instruction, 0),
-		fixups:        make(map[int]int),
-		currentOffset: 0,
-		lineNumbers:   make(map[int]int),
+		instructions:       make([]Instruction, 0),
+		fixups:             make(map[int]int),
+		currentOffset:      0,
+		lineNumbers:        make(map[int]int),
+		stringLiterals:     make([]string, 0, 16),
+		stringLiteralIndex: make(map[string]int),
 	}
 }
 
@@ -98,24 +103,26 @@ func (e *Emitter) EmitPushDouble(value float64, line, pos int) int {
 
 // EmitPushString emits a push instruction for string values
 func (e *Emitter) EmitPushString(value string, line, pos int) int {
-	// For string values, we'll need to store them in a separate string table
-	// For now, let's use a simple approach by encoding the string in the immediate value
-	// This is a simplified implementation - a full solution would need a proper string pool
-	hash := e.hashString(value)
-	operand := Operand{Type: OperandImmediate64, Value: hash}
-	return e.EmitOpcodeWithOperand(OpPushDbl, operand, line, pos)
+	index := e.internStringLiteral(value)
+	operand := Operand{Type: OperandImmediate32, Value: uint64(index)}
+	return e.EmitOpcodeWithOperand(OpPushStr, operand, line, pos)
 }
 
-// hashString creates a simple hash for string identification
-func (e *Emitter) hashString(s string) uint64 {
-	// Simple hash function for string identification
-	// In a full implementation, this would be replaced with proper string pool management
-	hash := uint64(5381)
-	for _, c := range s {
-		hash = ((hash << 5) + hash) + uint64(c)
+func (e *Emitter) internStringLiteral(value string) int {
+	if idx, ok := e.stringLiteralIndex[value]; ok {
+		return idx
 	}
-	// Use high bit to distinguish from numeric values
-	return hash | 0x8000000000000000
+	idx := len(e.stringLiterals)
+	e.stringLiterals = append(e.stringLiterals, value)
+	e.stringLiteralIndex[value] = idx
+	return idx
+}
+
+// GetStringLiterals returns a copy of the current string literal pool.
+func (e *Emitter) GetStringLiterals() []string {
+	out := make([]string, len(e.stringLiterals))
+	copy(out, e.stringLiterals)
+	return out
 }
 
 // JumpConfig holds configuration for jump instruction emission
@@ -276,6 +283,8 @@ func (e *Emitter) Reset() {
 	e.fixups = make(map[int]int)
 	e.currentOffset = 0
 	e.lineNumbers = make(map[int]int)
+	e.stringLiterals = e.stringLiterals[:0]
+	e.stringLiteralIndex = make(map[string]int)
 }
 
 // EmitArithmetic emits arithmetic operation instructions

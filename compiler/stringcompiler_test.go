@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"bytes"
+	"encoding/base64"
 	"testing"
 
 	"github.com/cawalch/go-yara/ast"
@@ -95,6 +96,60 @@ func TestStringCompilerValidateModifiers(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "base64_with_wide",
+			modifiers: []ast.StringModifier{
+				{Type: ast.StringModifierBase64},
+				{Type: ast.StringModifierWide},
+			},
+			wantErr: true,
+		},
+		{
+			name: "base64wide_with_ascii",
+			modifiers: []ast.StringModifier{
+				{Type: ast.StringModifierBase64Wide},
+				{Type: ast.StringModifierASCII},
+			},
+			wantErr: true,
+		},
+		{
+			name: "base64_with_nocase",
+			modifiers: []ast.StringModifier{
+				{Type: ast.StringModifierBase64},
+				{Type: ast.StringModifierNocase},
+			},
+			wantErr: true,
+		},
+		{
+			name: "base64_with_fullword",
+			modifiers: []ast.StringModifier{
+				{Type: ast.StringModifierBase64},
+				{Type: ast.StringModifierFullword},
+			},
+			wantErr: true,
+		},
+		{
+			name: "base64_with_xor",
+			modifiers: []ast.StringModifier{
+				{Type: ast.StringModifierBase64},
+				{Type: ast.StringModifierXor, Value: ast.XorRange{Min: 1, Max: 1}},
+			},
+			wantErr: true,
+		},
+		{
+			name: "xor_out_of_range",
+			modifiers: []ast.StringModifier{
+				{Type: ast.StringModifierXor, Value: ast.XorRange{Min: 0, Max: 300}},
+			},
+			wantErr: true,
+		},
+		{
+			name: "base64_duplicate_alphabet",
+			modifiers: []ast.StringModifier{
+				{Type: ast.StringModifierBase64, Value: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"},
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -118,21 +173,21 @@ func TestStringCompilerBase64Modifier(t *testing.T) {
 		wantError bool
 	}{
 		{
-			name:     "standard_base64_decoding",
-			input:    []byte("SGVsbG8gV29ybGQ="),
+			name:     "standard_base64_encoding",
+			input:    []byte("Hello World"),
 			modifier: ast.StringModifier{Type: ast.StringModifierBase64},
-			want:     []byte("Hello World"),
+			want:     []byte("SGVsbG8gV29ybGQ="),
 		},
 		{
-			name:     "base64wide_decoding",
-			input:    []byte("SGVsbG8gV29ybGQ="),
+			name:     "base64wide_encoding",
+			input:    []byte("Hello World"),
 			modifier: ast.StringModifier{Type: ast.StringModifierBase64Wide},
-			want:     []byte{0x48, 0x00, 0x65, 0x00, 0x6C, 0x00, 0x6C, 0x00, 0x6F, 0x00, 0x20, 0x00, 0x57, 0x00, 0x6F, 0x00, 0x72, 0x00, 0x6C, 0x00, 0x64, 0x00},
+			want:     []byte(base64.StdEncoding.EncodeToString(sc.encodeToWideBytes("Hello World"))),
 		},
 		{
-			name:      "invalid_base64_should_not_panic",
-			input:     []byte("Invalid!Base64@@"),
-			modifier:  ast.StringModifier{Type: ast.StringModifierBase64},
+			name:      "invalid_base64_alphabet",
+			input:     []byte("Hello"),
+			modifier:  ast.StringModifier{Type: ast.StringModifierBase64, Value: "short"},
 			wantError: true,
 		},
 		{
@@ -163,6 +218,60 @@ func TestStringCompilerBase64Modifier(t *testing.T) {
 				t.Errorf("applyBase64Modifier() = %v, want %v", result, tt.want)
 			}
 		})
+	}
+}
+
+func TestBase64AlignmentVariants(t *testing.T) {
+	sc := NewStringCompiler(nil)
+	input := []byte("This program cannot")
+	variants, err := sc.base64AlignedPatterns(input, "", false)
+	if err != nil {
+		t.Fatalf("base64AlignedPatterns: %v", err)
+	}
+
+	want := []string{
+		"VGhpcyBwcm9ncmFtIGNhbm5vd",
+		"RoaXMgcHJvZ3JhbSBjYW5ub3",
+		"UaGlzIHByb2dyYW0gY2Fubm90",
+	}
+	if len(variants) != len(want) {
+		t.Fatalf("variants=%d, want %d", len(variants), len(want))
+	}
+
+	got := make([]string, 0, len(variants))
+	for _, v := range variants {
+		got = append(got, string(v))
+	}
+
+	for i, expected := range want {
+		if got[i] != expected {
+			t.Fatalf("variant[%d]=%q, want %q", i, got[i], expected)
+		}
+	}
+}
+
+func TestBase64WideAlignmentVariants(t *testing.T) {
+	sc := NewStringCompiler(nil)
+	input := []byte("This program cannot")
+	variants, err := sc.base64AlignedPatterns(input, "", true)
+	if err != nil {
+		t.Fatalf("base64AlignedPatterns: %v", err)
+	}
+
+	want := []string{
+		"VGhpcyBwcm9ncmFtIGNhbm5vd",
+		"RoaXMgcHJvZ3JhbSBjYW5ub3",
+		"UaGlzIHByb2dyYW0gY2Fubm90",
+	}
+	if len(variants) != len(want) {
+		t.Fatalf("variants=%d, want %d", len(variants), len(want))
+	}
+
+	for i, expected := range want {
+		expectedWide := sc.encodeToWideBytes(expected)
+		if !bytes.Equal(variants[i], expectedWide) {
+			t.Fatalf("variant[%d]=%v, want %v", i, variants[i], expectedWide)
+		}
 	}
 }
 

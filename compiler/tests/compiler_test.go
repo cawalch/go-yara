@@ -316,6 +316,14 @@ func TestCompiledProgramMemoryUsage(t *testing.T) {
 	}
 
 	// Test with more rules to verify scaling
+	baselineSource := `
+		rule BaseRule1 { condition: true }
+		rule BaseRule2 { condition: true }
+		rule BaseRule3 { condition: true }
+	`
+	baselineProgram := testutils.CompileTestRule(t, baselineSource)
+	baselineMemoryUsage := baselineProgram.GetTotalMemoryUsage()
+
 	multiRuleSource := `
 		rule Rule1 { condition: true }
 		rule Rule2 { condition: true }
@@ -332,9 +340,9 @@ func TestCompiledProgramMemoryUsage(t *testing.T) {
 	multiRuleProgram := testutils.CompileTestRule(t, multiRuleSource)
 	multiRuleMemoryUsage := multiRuleProgram.GetTotalMemoryUsage()
 
-	if multiRuleMemoryUsage <= totalMemoryUsage {
+	if multiRuleMemoryUsage <= baselineMemoryUsage {
 		t.Errorf("Expected program with 10 rules to use more memory than program with 3 rules, got %d <= %d",
-			multiRuleMemoryUsage, totalMemoryUsage)
+			multiRuleMemoryUsage, baselineMemoryUsage)
 	}
 
 	// Test that memory usage scales with number of rules
@@ -344,8 +352,8 @@ func TestCompiledProgramMemoryUsage(t *testing.T) {
 	}
 
 	// Verify memory usage increases with each additional rule
-	if len(program.Rules) >= 2 {
-		singleRuleMemoryUsage := program.Rules[0].GetMemoryUsage()
+	if len(baselineProgram.Rules) >= 2 {
+		singleRuleMemoryUsage := baselineProgram.Rules[0].GetMemoryUsage()
 		averagePerRule := float64(multiRuleMemoryUsage) / float64(ruleCount)
 
 		if float64(singleRuleMemoryUsage) > averagePerRule*2 {

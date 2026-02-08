@@ -8,9 +8,9 @@ This project provides a lexer for the YARA rule language. It tokenizes YARA rule
 
 ## Features
 
-*   **YARA Language Support**: Tokenizes the complete YARA language, including all keywords, operators, and literals.
-*   **Error Recovery**: Includes mechanisms for recovering from syntax errors.
-*   **Performance**: Optimized for performance, using techniques such as memory pooling and string interning.
+- **YARA Language Support**: Tokenizes the complete YARA language, including all keywords, operators, and literals.
+- **Error Recovery**: Includes mechanisms for recovering from syntax errors.
+- **Performance**: Optimized for performance, using techniques such as memory pooling and string interning.
 
 ## Installation
 

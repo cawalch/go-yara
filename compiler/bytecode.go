@@ -175,6 +175,10 @@ const (
 	OpNop  = 254
 )
 
+// OpPushStr pushes a string literal by index into the rule string literal pool.
+// Chosen to avoid shifting existing opcode values.
+const OpPushStr Opcode = 90
+
 // Opcode categories for classification
 const (
 	OpCategoryControl    = "control"
@@ -210,7 +214,8 @@ func isArithmeticOpcode(op Opcode) bool {
 // isStackOpcode checks if opcode is a stack operation
 func isStackOpcode(op Opcode) bool {
 	return (op >= OpPush && op <= OpCall) ||
-		(op >= OpPush8 && op <= OpPushRuleRef)
+		(op >= OpPush8 && op <= OpPushRuleRef) ||
+		op == OpPushStr
 }
 
 // isObjectOpcode checks if opcode is an object operation
@@ -301,6 +306,7 @@ var opcodeNames = map[Opcode]string{
 	OpPushRule:               "PUSH_RULE",
 	OpInitRule:               "INIT_RULE",
 	OpMatchRule:              "MATCH_RULE",
+	OpPushStr:                "PUSH_STR",
 	OpIncrM:                  "INCR_M",
 	OpClearM:                 "CLEAR_M",
 	OpAddM:                   "ADD_M",

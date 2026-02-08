@@ -102,6 +102,13 @@ func NewStringCompiler(_ *Emitter) *StringCompiler {
 	}
 }
 
+// Reset clears per-rule compiler state so offsets and patterns don't leak between rules.
+func (sc *StringCompiler) Reset() {
+	sc.stringOffsets = make(map[string]int)
+	sc.patternData = make(map[string][]byte)
+	sc.atoms = make(map[string][]*Atom)
+}
+
 // CompileStrings compiles all strings in a rule to bytecode
 func (sc *StringCompiler) CompileStrings(rule *ast.Rule) error {
 	for idx, str := range rule.Strings {
@@ -227,54 +234,36 @@ func (sc *StringCompiler) encodeTextBytes(text string, isWide bool) []byte {
 
 // applyXorModifier applies XOR transformation to data
 func (sc *StringCompiler) applyXorModifier(data []byte, modifiers []ast.StringModifier) []byte {
-	for _, mod := range modifiers {
-		if mod.Type == ast.StringModifierXor {
-			if xorValue, ok := mod.Value.(int64); ok {
-				for i := range data {
-					data[i] ^= byte(xorValue)
-				}
-			}
-		}
+	key, ok := sc.singleXorKey(modifiers)
+	if !ok {
+		return data
+	}
+	for i := range data {
+		data[i] ^= key
 	}
 	return data
 }
 
 // applyBase64Modifier applies base64 decoding to data
 func (sc *StringCompiler) applyBase64Modifier(data []byte, modifier ast.StringModifier) ([]byte, error) {
-	// Convert data to string for base64 decoding
-	dataStr := string(data)
-
-	// Determine the base64 alphabet
-	var alphabet *string
-	if alphabetStr, ok := modifier.Value.(string); ok && alphabetStr != "" {
-		alphabet = &alphabetStr
-	}
-
-	// Create base64 decoder with custom alphabet if provided
-	var decoder *base64.Encoding
-	if alphabet != nil {
-		// Custom alphabet provided
-		if len(*alphabet) != 64 {
-			return nil, fmt.Errorf("invalid base64 alphabet length: expected 64, got %d", len(*alphabet))
-		}
-		decoder = base64.NewEncoding(*alphabet)
-	} else {
-		// Use standard base64 alphabet
-		decoder = base64.StdEncoding
-	}
-
-	// Decode the base64 data
-	decoded, err := decoder.DecodeString(dataStr)
+	alphabet, err := sc.base64Alphabet(modifier)
 	if err != nil {
-		return nil, fmt.Errorf("base64 decoding failed: %w", err)
+		return nil, err
 	}
 
-	// For base64wide, convert to UTF-16LE
 	if modifier.Type == ast.StringModifierBase64Wide {
-		decoded = sc.encodeToWideBytes(string(decoded))
+		data = sc.encodeToWideBytes(string(data))
 	}
 
-	return decoded, nil
+	encoded, err := sc.encodeBase64Variants(data, alphabet)
+	if err != nil {
+		return nil, err
+	}
+	if len(encoded) == 0 {
+		return []byte{}, nil
+	}
+	// Return the first variant for compatibility with legacy callers.
+	return encoded[0], nil
 }
 
 // encodeToWideBytes converts a string to UTF-16LE encoded bytes
@@ -308,18 +297,37 @@ func (sc *StringCompiler) encodeTextString(text string, modifiers []ast.StringMo
 	return result
 }
 
+// EncodeTextPatterns encodes text into one or more patterns based on modifiers.
+func (sc *StringCompiler) EncodeTextPatterns(text string, modifiers []ast.StringModifier) ([][]byte, error) {
+	isWide := sc.hasModifier(modifiers, ast.StringModifierWide)
+	isNocase := sc.hasModifier(modifiers, ast.StringModifierNocase)
+
+	base := sc.encodeTextBytes(text, isWide)
+	if isNocase {
+		base = sc.applyNocaseModifier(base, isWide)
+	}
+
+	patterns := [][]byte{base}
+
+	if keys, hasXor := sc.xorKeys(modifiers); hasXor {
+		patterns = sc.applyXorKeys(patterns, keys)
+	}
+
+	if mod, ok := sc.base64Modifier(modifiers); ok {
+		alphabet, err := sc.base64Alphabet(mod)
+		if err != nil {
+			return nil, err
+		}
+		patterns = sc.applyBase64Alignment(patterns, alphabet, mod.Type == ast.StringModifierBase64Wide)
+	}
+
+	return sc.uniquePatterns(patterns), nil
+}
+
 // encodeHexString encodes a hex string with modifiers applied
 func (sc *StringCompiler) encodeHexString(hexData []byte, modifiers []ast.StringModifier) []byte {
 	// Apply XOR modifier if present
-	for _, mod := range modifiers {
-		if mod.Type == ast.StringModifierXor {
-			if xorValue, ok := mod.Value.(int64); ok {
-				for i := range hexData {
-					hexData[i] ^= byte(xorValue)
-				}
-			}
-		}
-	}
+	hexData = sc.applyXorModifier(hexData, modifiers)
 
 	// Apply base64 modifiers if present
 	for _, mod := range modifiers {
@@ -327,14 +335,223 @@ func (sc *StringCompiler) encodeHexString(hexData []byte, modifiers []ast.String
 			var err error
 			hexData, err = sc.applyBase64Modifier(hexData, mod)
 			if err != nil {
-				// If base64 decoding fails, return original data
-				// This matches YARA's behavior where invalid base64 is ignored
+				// If base64 encoding fails, return original data
 				continue
 			}
 		}
 	}
 
 	return hexData
+}
+
+type xorRange struct {
+	min int
+	max int
+}
+
+func (sc *StringCompiler) xorKeys(modifiers []ast.StringModifier) ([]byte, bool) {
+	for _, mod := range modifiers {
+		if mod.Type != ast.StringModifierXor {
+			continue
+		}
+		ranges := sc.normalizeXorModifier(mod.Value)
+		if len(ranges) == 0 {
+			return nil, false
+		}
+		keys := make([]byte, 0, 256)
+		seen := make(map[byte]struct{})
+		for _, r := range ranges {
+			for k := r.min; k <= r.max; k++ {
+				b := byte(k)
+				if _, ok := seen[b]; ok {
+					continue
+				}
+				seen[b] = struct{}{}
+				keys = append(keys, b)
+			}
+		}
+		return keys, true
+	}
+	return nil, false
+}
+
+func (sc *StringCompiler) singleXorKey(modifiers []ast.StringModifier) (byte, bool) {
+	keys, ok := sc.xorKeys(modifiers)
+	if !ok || len(keys) != 1 {
+		return 0, false
+	}
+	return keys[0], true
+}
+
+func (sc *StringCompiler) normalizeXorModifier(value any) []xorRange {
+	if value == nil {
+		return []xorRange{{min: 0, max: 255}}
+	}
+	switch v := value.(type) {
+	case ast.XorRange:
+		return []xorRange{sc.normalizeXorRange(int(v.Min), int(v.Max))}
+	case *ast.XorRange:
+		if v == nil {
+			return []xorRange{{min: 0, max: 255}}
+		}
+		return []xorRange{sc.normalizeXorRange(int(v.Min), int(v.Max))}
+	case int64:
+		return []xorRange{sc.normalizeXorRange(int(v), int(v))}
+	case int:
+		return []xorRange{sc.normalizeXorRange(v, v)}
+	default:
+		return []xorRange{{min: 0, max: 255}}
+	}
+}
+
+func (sc *StringCompiler) normalizeXorRange(min, max int) xorRange {
+	if min < 0 {
+		min = 0
+	}
+	if max < 0 {
+		max = 0
+	}
+	if min > 255 {
+		min = 255
+	}
+	if max > 255 {
+		max = 255
+	}
+	if max < min {
+		min, max = max, min
+	}
+	return xorRange{min: min, max: max}
+}
+
+func (sc *StringCompiler) applyXorKeys(patterns [][]byte, keys []byte) [][]byte {
+	if len(keys) == 0 {
+		return patterns
+	}
+	out := make([][]byte, 0, len(patterns)*len(keys))
+	for _, p := range patterns {
+		for _, key := range keys {
+			dup := make([]byte, len(p))
+			copy(dup, p)
+			for i := range dup {
+				dup[i] ^= key
+			}
+			out = append(out, dup)
+		}
+	}
+	return out
+}
+
+func (sc *StringCompiler) base64Modifier(modifiers []ast.StringModifier) (ast.StringModifier, bool) {
+	for _, mod := range modifiers {
+		if mod.Type == ast.StringModifierBase64 || mod.Type == ast.StringModifierBase64Wide {
+			return mod, true
+		}
+	}
+	return ast.StringModifier{}, false
+}
+
+func (sc *StringCompiler) base64Alphabet(mod ast.StringModifier) (string, error) {
+	if alphabet, ok := mod.Value.(string); ok && alphabet != "" {
+		if len(alphabet) != 64 {
+			return "", fmt.Errorf("invalid base64 alphabet length: expected 64, got %d", len(alphabet))
+		}
+		return alphabet, nil
+	}
+	return "", nil
+}
+
+func (sc *StringCompiler) applyBase64Alignment(patterns [][]byte, alphabet string, wide bool) [][]byte {
+	out := make([][]byte, 0, len(patterns)*3)
+	for _, p := range patterns {
+		variants, err := sc.base64AlignedPatterns(p, alphabet, wide)
+		if err != nil {
+			continue
+		}
+		out = append(out, variants...)
+	}
+	return out
+}
+
+func (sc *StringCompiler) base64AlignedPatterns(data []byte, alphabet string, wide bool) ([][]byte, error) {
+	enc := base64.StdEncoding
+	if alphabet != "" {
+		enc = base64.NewEncoding(alphabet)
+	}
+
+	var patterns [][]byte
+	for i := 0; i <= 2; i++ {
+		if i == 1 && len(data) == 1 {
+			continue
+		}
+		pad := 0
+		if (i+len(data))%3 != 0 {
+			pad = 3 - ((i + len(data)) % 3)
+		}
+
+		tmp := make([]byte, i+len(data))
+		for j := 0; j < i; j++ {
+			tmp[j] = 'A'
+		}
+		copy(tmp[i:], data)
+
+		encoded := enc.EncodeToString(tmp)
+		leading := 0
+		if i > 0 {
+			leading = i + 1
+		}
+		trailing := 0
+		if pad > 0 {
+			trailing = pad + 1
+		}
+		if leading+trailing > len(encoded) {
+			continue
+		}
+		trimmed := encoded[leading : len(encoded)-trailing]
+		if wide {
+			patterns = append(patterns, sc.encodeToWideBytes(trimmed))
+		} else {
+			patterns = append(patterns, []byte(trimmed))
+		}
+	}
+
+	return patterns, nil
+}
+
+func (sc *StringCompiler) encodeBase64Variants(data []byte, alphabet string) ([][]byte, error) {
+	enc := base64.StdEncoding
+	if alphabet != "" {
+		enc = base64.NewEncoding(alphabet)
+	}
+	padded := enc.EncodeToString(data)
+	noPad := enc.WithPadding(base64.NoPadding).EncodeToString(data)
+
+	variants := []string{padded}
+	if noPad != padded {
+		variants = append(variants, noPad)
+	}
+
+	out := make([][]byte, 0, len(variants))
+	for _, v := range variants {
+		out = append(out, []byte(v))
+	}
+	return out, nil
+}
+
+func (sc *StringCompiler) uniquePatterns(patterns [][]byte) [][]byte {
+	if len(patterns) <= 1 {
+		return patterns
+	}
+	seen := make(map[string]struct{}, len(patterns))
+	out := make([][]byte, 0, len(patterns))
+	for _, p := range patterns {
+		key := string(p)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, p)
+	}
+	return out
 }
 
 // HexToken represents a token in a hex string
@@ -810,6 +1027,9 @@ func (sc *StringCompiler) ValidateStringModifiers(modifiers []ast.StringModifier
 	hasASCII := false
 	hasBase64 := false
 	hasBase64Wide := false
+	hasXor := false
+	hasNocase := false
+	hasFullword := false
 
 	for _, mod := range modifiers {
 		switch mod.Type {
@@ -819,8 +1039,23 @@ func (sc *StringCompiler) ValidateStringModifiers(modifiers []ast.StringModifier
 			hasASCII = true
 		case ast.StringModifierBase64:
 			hasBase64 = true
+			if err := validateBase64Alphabet(mod.Value); err != nil {
+				return err
+			}
 		case ast.StringModifierBase64Wide:
 			hasBase64Wide = true
+			if err := validateBase64Alphabet(mod.Value); err != nil {
+				return err
+			}
+		case ast.StringModifierXor:
+			hasXor = true
+			if err := validateXorModifier(mod.Value); err != nil {
+				return err
+			}
+		case ast.StringModifierNocase:
+			hasNocase = true
+		case ast.StringModifierFullword:
+			hasFullword = true
 		}
 	}
 
@@ -833,6 +1068,67 @@ func (sc *StringCompiler) ValidateStringModifiers(modifiers []ast.StringModifier
 		return errors.New("cannot use both 'base64' and 'base64wide' modifiers")
 	}
 
+	if (hasBase64 || hasBase64Wide) && (hasXor || hasNocase || hasFullword) {
+		return errors.New("base64 modifiers are incompatible with 'xor', 'nocase', or 'fullword'")
+	}
+
+	if (hasBase64 || hasBase64Wide) && (hasWide || hasASCII) {
+		return errors.New("base64 modifiers are incompatible with 'wide' or 'ascii'")
+	}
+
+	return nil
+}
+
+func validateBase64Alphabet(value any) error {
+	alphabet, ok := value.(string)
+	if !ok || alphabet == "" {
+		return nil
+	}
+	if len(alphabet) != 64 {
+		return fmt.Errorf("invalid base64 alphabet length: expected 64, got %d", len(alphabet))
+	}
+	seen := make(map[byte]struct{}, 64)
+	for i := 0; i < len(alphabet); i++ {
+		ch := alphabet[i]
+		if ch == '=' {
+			return errors.New("invalid base64 alphabet: '=' is not allowed")
+		}
+		if _, exists := seen[ch]; exists {
+			return errors.New("invalid base64 alphabet: duplicate characters")
+		}
+		seen[ch] = struct{}{}
+	}
+	return nil
+}
+
+func validateXorModifier(value any) error {
+	if value == nil {
+		return nil
+	}
+	switch v := value.(type) {
+	case ast.XorRange:
+		return validateXorRange(v.Min, v.Max)
+	case *ast.XorRange:
+		if v == nil {
+			return nil
+		}
+		return validateXorRange(v.Min, v.Max)
+	case int64:
+		return validateXorRange(v, v)
+	case int:
+		return validateXorRange(int64(v), int64(v))
+	default:
+		return nil
+	}
+}
+
+func validateXorRange(min, max int64) error {
+	if min < 0 || max < 0 || min > 255 || max > 255 {
+		return errors.New("xor range must be within 0..255")
+	}
+	if max < min {
+		return errors.New("xor range max must be >= min")
+	}
 	return nil
 }
 
