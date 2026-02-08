@@ -13,7 +13,7 @@ rule pe_malware_detection {
 
     condition:
         $mz_header at 0 and
-        $pe_header at 60 and
+        $pe_header at 128 and
         ($suspicious_import or $malware_string or $packed_section)
 }
 
@@ -130,7 +130,7 @@ rule apt_surveillance {
         $surveillance_keyword = /keylog|screenshot|webcam|microphone/i
         $data_exfil = /exfiltrate|steal|leak/i
         $persistence = /autorun|startup|registry|runonce/i
-        $c2_communication = /http://.*\/api|https:\/\/.*\/c2/
+        $c2_communication = /http:\/\/.*\/api|https:\/\/.*\/c2/
         $stealth = /rootkit|hidden|invisible/i
 
     condition:

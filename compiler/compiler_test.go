@@ -2742,6 +2742,7 @@ func TestOpcodeStringCoverage(t *testing.T) {
 			{OpPush8, "PUSH_8"},
 			{OpPush16, "PUSH_16"},
 			{OpPush32, "PUSH_32"},
+			{OpPushStr, "PUSH_STR"},
 		},
 		"Object": {
 			{OpCall, "CALL"},

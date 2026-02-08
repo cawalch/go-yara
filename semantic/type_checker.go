@@ -196,6 +196,8 @@ func (tc *TypeChecker) getSpecialHandler(op token.Type) BinaryOpHandler {
 		return tc.createDotHandler()
 	case token.COLON:
 		return tc.createColonHandler()
+	case token.COMMA:
+		return tc.createCommaHandler()
 	default:
 		return nil
 	}
@@ -272,6 +274,15 @@ func (tc *TypeChecker) createDotHandler() BinaryOpHandler {
 func (tc *TypeChecker) createColonHandler() BinaryOpHandler {
 	return func(_ *ast.BinaryOp, _, _ *TypeInfo) *TypeInfo {
 		return tc.checkColonOperator()
+	}
+}
+
+// createCommaHandler creates a function handler for comma-separated string sets.
+func (tc *TypeChecker) createCommaHandler() BinaryOpHandler {
+	return func(_ *ast.BinaryOp, _, _ *TypeInfo) *TypeInfo {
+		// Comma is only used to build string sets (e.g., ($a, $b)).
+		// Its value is not directly used in conditions, so treat as unknown.
+		return &TypeInfo{DataType: TypeUnknown}
 	}
 }
 
@@ -589,6 +600,10 @@ func (tc *TypeChecker) checkFunctionCall(funcCall *ast.FunctionCall) *TypeInfo {
 		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
 	case "string":
 		return &TypeInfo{DataType: TypeString}
+	case "concat", "tostring", "md5", "sha1", "sha256":
+		return &TypeInfo{DataType: TypeString}
+	case "int":
+		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
 	// Data type conversion functions - use the type system to get proper return types
 	case "uint8", "uint16", "uint32", "uint64",
 		"int8", "int16", "int32", "int64",
@@ -681,10 +696,20 @@ func (tc *TypeChecker) checkStringCount(strCount *ast.StringCount) *TypeInfo {
 
 // checkForLoop checks the type of for loop expressions
 func (tc *TypeChecker) checkForLoop(forLoop *ast.ForLoop) *TypeInfo {
+	// Create a scope for the loop variable so it is visible in the condition.
+	tc.symbolTable.EnterScope("for_loop")
+	if forLoop.Variable != "" {
+		if err := tc.symbolTable.DefineVariable(forLoop.Variable, forLoop.Pos, SymbolVariable); err != nil {
+			tc.addError(err)
+		}
+	}
+
 	// Check the range expression type
 	rangeType := tc.checkExpression(forLoop.Range)
-	if rangeType.DataType != TypeInteger && rangeType.DataType != TypeUnknown {
-		tc.addError(fmt.Errorf("for loop range must be an integer"))
+	if forLoop.Variable != "" {
+		if rangeType.DataType != TypeInteger && rangeType.DataType != TypeUnknown {
+			tc.addError(fmt.Errorf("for loop range must be an integer"))
+		}
 	}
 
 	// Check the condition expression type
@@ -692,6 +717,8 @@ func (tc *TypeChecker) checkForLoop(forLoop *ast.ForLoop) *TypeInfo {
 	if conditionType.DataType != TypeBoolean && conditionType.DataType != TypeUnknown {
 		tc.addError(fmt.Errorf("for loop condition must be boolean"))
 	}
+
+	tc.symbolTable.ExitScope()
 
 	// For loop expressions always return boolean (true/false)
 	return &TypeInfo{DataType: TypeBoolean}

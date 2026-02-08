@@ -189,6 +189,25 @@ func (pes *ParenthesizedExpressionStrategy) Parse(parser *ExpressionParser, _ Pa
 		return NewParseError(fmt.Errorf("error in parenthesized expression: %w", err))
 	}
 
+	// Support range expressions like (0..10)
+	if parser.currentTokenIs(token.DOT) && parser.peek.Type == token.DOT {
+		dotPos := parser.current.Pos
+		parser.nextToken() // consume first '.'
+		parser.nextToken() // consume second '.'
+
+		right, err := parser.parsePrimaryExcludingUnary()
+		if err != nil {
+			return NewParseError(fmt.Errorf("error parsing range expression: %w", err))
+		}
+
+		expr = &ast.BinaryOp{
+			Left:  expr,
+			Op:    token.DOT,
+			Right: right,
+			Pos:   dotPos,
+		}
+	}
+
 	// Expect closing parenthesis
 	if !parser.currentTokenIs(token.RPAREN) {
 		return NewParseError(fmt.Errorf("expected ')' at %v", parser.current.Pos))

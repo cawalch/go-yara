@@ -874,24 +874,20 @@ func TestInterpreterFoundIn(t *testing.T) {
 func TestInterpreterMatches(t *testing.T) {
 	tests := []struct {
 		name     string
-		pattern  string
-		matches  map[string][]Match
+		value    string
+		regex    string
 		expected int64
 	}{
 		{
-			name:    "matches_found",
-			pattern: "test",
-			matches: map[string][]Match{
-				"test": {{Pattern: "test", Offset: 0, Length: 4}},
-			},
+			name:     "matches_found",
+			value:    "test",
+			regex:    `/te.t/`,
 			expected: 1,
 		},
 		{
-			name:    "matches_not_found",
-			pattern: "notfound",
-			matches: map[string][]Match{
-				"test": {{Pattern: "test", Offset: 0, Length: 4}},
-			},
+			name:     "matches_not_found",
+			value:    "notfound",
+			regex:    `/te.t/`,
 			expected: 0,
 		},
 	}
@@ -899,8 +895,8 @@ func TestInterpreterMatches(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			interp := NewInterpreter([]byte{byte(OpHalt)})
-			interp.matchContext.Matches = tt.matches
-			_ = interp.push(Value{Type: ValueTypeString, StringVal: tt.pattern})
+			_ = interp.push(Value{Type: ValueTypeString, StringVal: tt.value})
+			_ = interp.push(Value{Type: ValueTypeString, StringVal: tt.regex})
 
 			err := interp.executeOpcode(OpMatches)
 			if err != nil {

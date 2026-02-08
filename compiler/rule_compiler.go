@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/cawalch/go-yara/ast"
@@ -18,6 +19,12 @@ type RuleCompiler struct {
 	automaton         *ACAutomaton
 	currentRule       *ast.Rule
 	ruleIndex         int
+	allPatterns       map[string][]byte
+	textPatterns      map[string][]byte
+	regexPatterns     map[string]RegexPattern
+	hexPatterns       map[string]*HexPattern
+	stringKinds       map[string]StringKind
+	stringModifiers   map[string][]ast.StringModifier
 }
 
 // NewRuleCompiler creates a new rule compiler
@@ -31,6 +38,12 @@ func NewRuleCompiler() *RuleCompiler {
 		conditionCompiler: NewConditionCompiler(emitter, make(map[string]int)),
 		automaton:         automaton,
 		ruleIndex:         0,
+		allPatterns:       make(map[string][]byte),
+		textPatterns:      make(map[string][]byte),
+		regexPatterns:     make(map[string]RegexPattern),
+		hexPatterns:       make(map[string]*HexPattern),
+		stringKinds:       make(map[string]StringKind),
+		stringModifiers:   make(map[string][]ast.StringModifier),
 	}
 }
 
@@ -40,15 +53,23 @@ func (rc *RuleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 
 	// Reset components for new rule
 	rc.emitter.Reset()
-	rc.automaton.Reset()
+	rc.automaton = NewACAutomaton()
+	rc.conditionCompiler.ResetForRule()
+	rc.stringCompiler.Reset()
+	rc.allPatterns = make(map[string][]byte)
+	rc.textPatterns = make(map[string][]byte)
+	rc.regexPatterns = make(map[string]RegexPattern)
+	rc.hexPatterns = make(map[string]*HexPattern)
+	rc.stringKinds = make(map[string]StringKind)
+	rc.stringModifiers = make(map[string][]ast.StringModifier)
 
 	// Compile strings first
 	if err := rc.compileStrings(rule); err != nil {
 		return nil, fmt.Errorf("compiling strings: %w", err)
 	}
 
-	// Compile the automaton if we have strings
-	if len(rule.Strings) > 0 {
+	// Compile the automaton if we have text strings
+	if len(rc.textPatterns) > 0 {
 		if err := rc.automaton.Compile(); err != nil {
 			return nil, fmt.Errorf("compiling automaton: %w", err)
 		}
@@ -67,14 +88,21 @@ func (rc *RuleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 
 	// Create compiled rule
 	compiledRule := &CompiledRule{
-		Name:         rule.Name,
-		Index:        rc.ruleIndex,
-		Bytecode:     bytecode,
-		StringCount:  len(rule.Strings),
-		Strings:      rc.automaton.GetPatternData(),
-		Automaton:    rc.automaton,
-		Stats:        nil, // Lazy: computed on demand
-		ruleCompiler: rc,  // Store reference for lazy computation
+		Name:            rule.Name,
+		Index:           rc.ruleIndex,
+		Bytecode:        bytecode,
+		StringCount:     len(rule.Strings),
+		Strings:         rc.copyAllPatterns(),
+		Automaton:       rc.automaton,
+		StringSets:      rc.conditionCompiler.GetStringSets(),
+		StringLiterals:  rc.emitter.GetStringLiterals(),
+		StringKinds:     rc.copyStringKinds(),
+		StringModifiers: rc.copyStringModifiers(),
+		TextPatterns:    rc.copyTextPatterns(),
+		RegexPatterns:   rc.copyRegexPatterns(),
+		HexPatterns:     rc.copyHexPatterns(),
+		Stats:           nil, // Lazy: computed on demand
+		ruleCompiler:    rc,  // Store reference for lazy computation
 	}
 
 	rc.ruleIndex++
@@ -156,27 +184,61 @@ func (rc *RuleCompiler) compileStrings(rule *ast.Rule) error {
 
 // compileSingleString compiles a single string and adds it to the automaton
 func (rc *RuleCompiler) compileSingleString(str *ast.String) error {
+	rc.ensurePatternMaps()
 	result, err := rc.compileStringPattern(str)
 	if err != nil {
 		return err
 	}
 
 	rc.recordStringOffset(str.Identifier)
-	return rc.addStringToAutomaton(str.Identifier, result)
+	rc.recordPatternData(str.Identifier, result.patternData)
+	switch result.kind {
+	case StringKindText:
+		if len(result.patternData) == 0 && len(result.altPatterns) == 0 {
+			return fmt.Errorf("empty text pattern for %s", str.Identifier)
+		}
+		if err := rc.addStringToAutomaton(str.Identifier, result); err != nil {
+			return err
+		}
+		for _, alt := range result.altPatterns {
+			altResult := &stringCompilationResult{
+				patternData: alt,
+				kind:        StringKindText,
+			}
+			if err := rc.addStringToAutomaton(str.Identifier, altResult); err != nil {
+				return err
+			}
+		}
+		rc.textPatterns[str.Identifier] = result.patternData
+	case StringKindRegex:
+		rc.regexPatterns[str.Identifier] = RegexPattern{
+			Code:  result.patternData,
+			Flags: result.flags,
+		}
+	case StringKindHex:
+		rc.hexPatterns[str.Identifier] = result.hexPattern
+	default:
+		return fmt.Errorf("unsupported string kind for %s", str.Identifier)
+	}
+	rc.recordStringModifiers(str.Identifier, str.Modifiers)
+	rc.stringKinds[str.Identifier] = result.kind
+	return nil
 }
 
 type stringCompilationResult struct {
 	patternData []byte
-	isRegex     bool
+	kind        StringKind
 	flags       regex.Flags
+	hexPattern  *HexPattern
+	altPatterns [][]byte
 }
 
 func (rc *RuleCompiler) compileStringPattern(str *ast.String) (*stringCompilationResult, error) {
 	switch p := str.Pattern.(type) {
 	case *ast.TextString:
-		return rc.compileTextString(p.Value, str.Modifiers), nil
+		return rc.compileTextString(p.Value, str.Modifiers)
 	case *ast.HexString:
-		return rc.compileHexString(p.Value, str.Modifiers), nil
+		return rc.compileHexString(p.Value, str.Modifiers)
 	case *ast.RegexPattern:
 		return rc.compileRegexPattern(p, str.Modifiers)
 	default:
@@ -184,26 +246,53 @@ func (rc *RuleCompiler) compileStringPattern(str *ast.String) (*stringCompilatio
 	}
 }
 
-func (rc *RuleCompiler) compileTextString(value string, modifiers []ast.StringModifier) *stringCompilationResult {
-	encoded := rc.stringCompiler.encodeTextString(value, modifiers)
-	patternData := rc.stringCompiler.OptimizePattern(encoded, modifiers)
+func (rc *RuleCompiler) compileTextString(value string, modifiers []ast.StringModifier) (*stringCompilationResult, error) {
+	patterns, err := rc.stringCompiler.EncodeTextPatterns(value, modifiers)
+	if err != nil {
+		return nil, err
+	}
+	if len(patterns) == 0 {
+		return nil, fmt.Errorf("empty text pattern")
+	}
+
+	optimized := make([][]byte, 0, len(patterns))
+	for _, p := range patterns {
+		optimized = append(optimized, rc.stringCompiler.OptimizePattern(p, modifiers))
+	}
+	patternData := optimized[0]
 	return &stringCompilationResult{
 		patternData: patternData,
-		isRegex:     false,
-	}
+		kind:        StringKindText,
+		altPatterns: optimized[1:],
+	}, nil
 }
 
-func (rc *RuleCompiler) compileHexString(value string, modifiers []ast.StringModifier) *stringCompilationResult {
-	hexData := rc.stringCompiler.parseHexString(value)
-	encoded := rc.stringCompiler.encodeHexString(hexData, modifiers)
-	patternData := rc.stringCompiler.OptimizePattern(encoded, modifiers)
-	return &stringCompilationResult{
-		patternData: patternData,
-		isRegex:     false,
+func (rc *RuleCompiler) compileHexString(value string, modifiers []ast.StringModifier) (*stringCompilationResult, error) {
+	if rc.stringCompiler.hasModifier(modifiers, ast.StringModifierBase64) ||
+		rc.stringCompiler.hasModifier(modifiers, ast.StringModifierBase64Wide) {
+		return nil, fmt.Errorf("base64 modifiers are only supported for text strings")
 	}
+	hexPattern, err := rc.stringCompiler.parseHexPattern(value)
+	if err != nil {
+		return nil, err
+	}
+	if keys, ok := rc.stringCompiler.xorKeys(modifiers); ok {
+		hexPattern.XorKeys = keys
+	}
+	legacy := rc.stringCompiler.parseHexString(value)
+	legacy = rc.stringCompiler.encodeHexString(legacy, modifiers)
+	return &stringCompilationResult{
+		patternData: legacy,
+		kind:        StringKindHex,
+		hexPattern:  hexPattern,
+	}, nil
 }
 
 func (rc *RuleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers []ast.StringModifier) (*stringCompilationResult, error) {
+	if rc.stringCompiler.hasModifier(modifiers, ast.StringModifierBase64) ||
+		rc.stringCompiler.hasModifier(modifiers, ast.StringModifierBase64Wide) {
+		return nil, fmt.Errorf("base64 modifiers are only supported for text strings")
+	}
 	code, err := rc.stringCompiler.compileRegex(pattern.Value, modifiers)
 	if err != nil {
 		return nil, fmt.Errorf("compile regex pattern: %w", err)
@@ -213,7 +302,7 @@ func (rc *RuleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers
 
 	return &stringCompilationResult{
 		patternData: code, // VM bytecode
-		isRegex:     true,
+		kind:        StringKindRegex,
 		flags:       flags,
 	}, nil
 }
@@ -268,11 +357,56 @@ func (rc *RuleCompiler) recordStringOffset(identifier string) {
 	rc.stringCompiler.stringOffsets[identifier] = offset
 }
 
-func (rc *RuleCompiler) addStringToAutomaton(identifier string, result *stringCompilationResult) error {
-	if result.isRegex {
-		return rc.automaton.AddStringWithFlags(identifier, result.patternData, false, result.isRegex, result.flags)
+func (rc *RuleCompiler) recordStringModifiers(identifier string, modifiers []ast.StringModifier) {
+	if rc.stringModifiers == nil {
+		rc.stringModifiers = make(map[string][]ast.StringModifier)
 	}
-	return rc.automaton.AddString(identifier, result.patternData, false, result.isRegex)
+	if len(modifiers) == 0 {
+		return
+	}
+	cp := make([]ast.StringModifier, len(modifiers))
+	copy(cp, modifiers)
+	rc.stringModifiers[identifier] = cp
+}
+
+func (rc *RuleCompiler) recordPatternData(identifier string, data []byte) {
+	if rc.allPatterns == nil {
+		rc.allPatterns = make(map[string][]byte)
+	}
+	if data == nil {
+		return
+	}
+	cp := make([]byte, len(data))
+	copy(cp, data)
+	rc.allPatterns[identifier] = cp
+}
+
+func (rc *RuleCompiler) ensurePatternMaps() {
+	if rc.allPatterns == nil {
+		rc.allPatterns = make(map[string][]byte)
+	}
+	if rc.textPatterns == nil {
+		rc.textPatterns = make(map[string][]byte)
+	}
+	if rc.regexPatterns == nil {
+		rc.regexPatterns = make(map[string]RegexPattern)
+	}
+	if rc.hexPatterns == nil {
+		rc.hexPatterns = make(map[string]*HexPattern)
+	}
+	if rc.stringKinds == nil {
+		rc.stringKinds = make(map[string]StringKind)
+	}
+	if rc.stringModifiers == nil {
+		rc.stringModifiers = make(map[string][]ast.StringModifier)
+	}
+}
+
+func (rc *RuleCompiler) addStringToAutomaton(identifier string, result *stringCompilationResult) error {
+	if result.kind == StringKindRegex {
+		return rc.automaton.AddStringWithFlags(identifier, result.patternData, false, true, result.flags)
+	}
+	return rc.automaton.AddString(identifier, result.patternData, false, false)
 }
 
 // compileCondition compiles the rule condition
@@ -351,17 +485,86 @@ func (rc *RuleCompiler) getCompilationStats() map[string]any {
 	return stats
 }
 
+func (rc *RuleCompiler) copyTextPatterns() map[string][]byte {
+	out := make(map[string][]byte, len(rc.textPatterns))
+	for k, v := range rc.textPatterns {
+		cp := make([]byte, len(v))
+		copy(cp, v)
+		out[k] = cp
+	}
+	return out
+}
+
+func (rc *RuleCompiler) copyAllPatterns() map[string][]byte {
+	out := make(map[string][]byte, len(rc.allPatterns))
+	for k, v := range rc.allPatterns {
+		cp := make([]byte, len(v))
+		copy(cp, v)
+		out[k] = cp
+	}
+	return out
+}
+
+func (rc *RuleCompiler) copyRegexPatterns() map[string]RegexPattern {
+	out := make(map[string]RegexPattern, len(rc.regexPatterns))
+	for k, v := range rc.regexPatterns {
+		cp := make([]byte, len(v.Code))
+		copy(cp, v.Code)
+		out[k] = RegexPattern{Code: cp, Flags: v.Flags}
+	}
+	return out
+}
+
+func (rc *RuleCompiler) copyHexPatterns() map[string]*HexPattern {
+	out := make(map[string]*HexPattern, len(rc.hexPatterns))
+	for k, v := range rc.hexPatterns {
+		if v == nil {
+			continue
+		}
+		out[k] = v.Clone()
+	}
+	return out
+}
+
+func (rc *RuleCompiler) copyStringKinds() map[string]StringKind {
+	out := make(map[string]StringKind, len(rc.stringKinds))
+	for k, v := range rc.stringKinds {
+		out[k] = v
+	}
+	return out
+}
+
+func (rc *RuleCompiler) copyStringModifiers() map[string][]ast.StringModifier {
+	out := make(map[string][]ast.StringModifier, len(rc.stringModifiers))
+	for k, mods := range rc.stringModifiers {
+		if len(mods) == 0 {
+			continue
+		}
+		cp := make([]ast.StringModifier, len(mods))
+		copy(cp, mods)
+		out[k] = cp
+	}
+	return out
+}
+
 // CompiledRule represents a compiled YARA rule
 type CompiledRule struct {
-	Name         string            // Rule name
-	Index        int               // Rule index in program
-	Bytecode     []byte            // Compiled bytecode
-	StringCount  int               // Number of strings
-	Strings      map[string][]byte // String identifier to pattern data mapping
-	Automaton    *ACAutomaton      // Aho-Corasick automaton for pattern matching
-	Stats        map[string]any    // Compilation statistics (lazy computed)
-	statsOnce    sync.Once         // Ensure stats computed only once
-	ruleCompiler *RuleCompiler     // Reference for lazy stats computation
+	Name            string            // Rule name
+	Index           int               // Rule index in program
+	Bytecode        []byte            // Compiled bytecode
+	StringCount     int               // Number of strings
+	Strings         map[string][]byte // String identifier to pattern data mapping
+	Automaton       *ACAutomaton      // Aho-Corasick automaton for pattern matching
+	StringSets      [][]string        // String sets for "of" expressions
+	StringLiterals  []string          // String literal pool for OpPushStr
+	StringKinds     map[string]StringKind
+	StringModifiers map[string][]ast.StringModifier
+	TextPatterns    map[string][]byte
+	RegexPatterns   map[string]RegexPattern
+	HexPatterns     map[string]*HexPattern
+	Stats           map[string]any // Compilation statistics (lazy computed)
+	statsOnce       sync.Once      // Ensure stats computed only once
+	ruleCompiler    *RuleCompiler  // Reference for lazy stats computation
 }
 
 // GetName returns the rule name
@@ -382,6 +585,32 @@ func (cr *CompiledRule) GetStrings() map[string][]byte {
 // GetStringCount returns the number of strings in this rule
 func (cr *CompiledRule) GetStringCount() int {
 	return cr.StringCount
+}
+
+// StringIdentifiers returns all string identifiers defined in the rule.
+func (cr *CompiledRule) StringIdentifiers() []string {
+	seen := make(map[string]struct{})
+	for id := range cr.StringKinds {
+		seen[id] = struct{}{}
+	}
+	for id := range cr.TextPatterns {
+		seen[id] = struct{}{}
+	}
+	for id := range cr.RegexPatterns {
+		seen[id] = struct{}{}
+	}
+	for id := range cr.HexPatterns {
+		seen[id] = struct{}{}
+	}
+	for id := range cr.Strings {
+		seen[id] = struct{}{}
+	}
+	ids := make([]string, 0, len(seen))
+	for id := range seen {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 // GetStats returns compilation statistics (computed lazily on first access)
@@ -418,7 +647,7 @@ func (cr *CompiledRule) Validate() error {
 		return errors.New("empty bytecode")
 	}
 
-	if cr.StringCount > 0 && cr.Automaton == nil {
+	if len(cr.TextPatterns) > 0 && cr.Automaton == nil {
 		return errors.New("strings present but no automaton")
 	}
 

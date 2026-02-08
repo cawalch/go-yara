@@ -88,7 +88,7 @@ func (tc DefaultTokenClassifier) IsComparisonOp(tok token.Type) bool {
 	case token.EQ, token.NEQ, token.LT, token.LE, token.GT, token.GE,
 		token.CONTAINS, token.ICONTAINS, token.STARTSWITH, token.ISTARTSWITH,
 		token.ENDSWITH, token.IENDSWITH, token.IEQUALS, token.MATCHES,
-		token.AT:
+		token.AT, token.IN:
 		return true
 	default:
 		return false

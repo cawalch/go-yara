@@ -1,9 +1,15 @@
 package compiler
 
 import (
+	"crypto/md5"
+	"crypto/sha1"
+	"crypto/sha256"
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
+
+	"github.com/cawalch/go-yara/regex"
 )
 
 // Value represents a YARA value that can be int, double, or string
@@ -44,17 +50,26 @@ const (
 
 // Interpreter represents a bytecode interpreter for YARA rules
 type Interpreter struct {
-	bytecode      []byte
-	ip            int        // Instruction pointer
-	stack         []Value    // Execution stack
-	memory        [256]Value // Memory slots for variables
-	stopped       bool
-	result        error
-	matchContext  *MatchContext   // Pattern matching context
-	ruleResults   map[string]bool // Track execution results of all rules in the program
-	currentRule   string          // Name of the currently executing rule
-	compiledRules []*CompiledRule // All compiled rules in the program
-	debugMode     bool            // Debug mode flag for instruction tracing
+	bytecode       []byte
+	ip             int        // Instruction pointer
+	stack          []Value    // Execution stack
+	memory         [256]Value // Memory slots for variables
+	stopped        bool
+	result         error
+	matchContext   *MatchContext   // Pattern matching context
+	ruleResults    map[string]bool // Track execution results of all rules in the program
+	currentRule    string          // Name of the currently executing rule
+	compiledRules  []*CompiledRule // All compiled rules in the program
+	stringLiterals []string        // String literal pool for OpPushStr
+	stringSets     [][]string      // String sets for OpOf
+	allStrings     []string        // All string identifiers for current rule
+	regexCache     map[string]compiledRegex
+	debugMode      bool // Debug mode flag for instruction tracing
+}
+
+type compiledRegex struct {
+	code  []byte
+	flags regex.Flags
 }
 
 // MatchContext holds pattern matching state
@@ -92,6 +107,7 @@ func NewInterpreter(bytecode []byte) *Interpreter {
 			Matches: make(map[string][]Match),
 		},
 		ruleResults: make(map[string]bool),
+		regexCache:  make(map[string]compiledRegex),
 	}
 }
 
@@ -103,6 +119,9 @@ func (i *Interpreter) SetMatchContext(ctx *MatchContext) {
 // SetCompiledRules sets the compiled rules for rule reference resolution
 func (i *Interpreter) SetCompiledRules(rules []*CompiledRule) {
 	i.compiledRules = rules
+	if i.currentRule != "" {
+		i.SetCurrentRule(i.currentRule)
+	}
 }
 
 // GetMatchContext returns the current match context
@@ -113,11 +132,32 @@ func (i *Interpreter) GetMatchContext() *MatchContext {
 // SetCurrentRule sets the name of the currently executing rule
 func (i *Interpreter) SetCurrentRule(ruleName string) {
 	i.currentRule = ruleName
+	if len(i.compiledRules) == 0 {
+		return
+	}
+	for _, rule := range i.compiledRules {
+		if rule.Name == ruleName {
+			i.stringLiterals = rule.StringLiterals
+			i.stringSets = rule.StringSets
+			i.allStrings = rule.StringIdentifiers()
+			return
+		}
+	}
 }
 
 // SetRuleResults sets the shared rule results map
 func (i *Interpreter) SetRuleResults(ruleResults map[string]bool) {
 	i.ruleResults = ruleResults
+}
+
+// SetStringLiterals sets the string literal pool for OpPushStr.
+func (i *Interpreter) SetStringLiterals(literals []string) {
+	i.stringLiterals = literals
+}
+
+// SetStringSets sets the string sets used by OpOf.
+func (i *Interpreter) SetStringSets(sets [][]string) {
+	i.stringSets = sets
 }
 
 // SetMemoryString sets a string identifier in memory at the specified index
@@ -309,7 +349,7 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 		return nil
 
 	// Stack operations
-	case OpPush8, OpPush16, OpPush32, OpPushU, OpPushDbl, OpPushRuleRef, OpPop:
+	case OpPush8, OpPush16, OpPush32, OpPushU, OpPushDbl, OpPushRuleRef, OpPushStr, OpPop, OpCall:
 		return i.executeStackOpcode(opcode)
 
 	// Bitwise operations
@@ -351,6 +391,7 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 
 	// String operations
 	case OpLength, OpCount, OpFound, OpFoundAt, OpFoundIn, OpOffset, OpOf, OpMatches,
+		OpContains, OpStartswith, OpEndswith, OpIcontains, OpIstartswith, OpIendswith, OpIequals,
 		OpIntToDbl, OpStrToBool:
 		return i.executeStringOperation(opcode)
 
@@ -382,8 +423,12 @@ func (i *Interpreter) executeStackOpcode(opcode Opcode) error {
 		return i.executePushDouble()
 	case OpPushRuleRef:
 		return i.executePushRuleRef()
+	case OpPushStr:
+		return i.executePushString()
 	case OpPop:
 		return i.executePop()
+	case OpCall:
+		return i.executeCall()
 	default:
 		return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: opcode, Message: "invalid stack opcode"}
 	}
@@ -459,6 +504,22 @@ func (i *Interpreter) executePushRuleRef() error {
 	return i.push(Value{Type: ValueTypeRuleRef, StringVal: ruleName})
 }
 
+// executePushString handles OpPushStr opcode
+func (i *Interpreter) executePushString() error {
+	if err := i.validateBytecodeBounds(OpPushStr, 4); err != nil {
+		return err
+	}
+	idx := int(uint32(i.bytecode[i.ip]) |
+		uint32(i.bytecode[i.ip+1])<<8 |
+		uint32(i.bytecode[i.ip+2])<<16 |
+		uint32(i.bytecode[i.ip+3])<<24)
+	i.ip += 4
+	if idx < 0 || idx >= len(i.stringLiterals) {
+		return i.push(Value{Type: ValueTypeUndefined})
+	}
+	return i.push(Value{Type: ValueTypeString, StringVal: i.stringLiterals[idx]})
+}
+
 // executePop handles OpPop opcode
 func (i *Interpreter) executePop() error {
 	if err := i.validateStackUnderflow(OpPop); err != nil {
@@ -466,6 +527,169 @@ func (i *Interpreter) executePop() error {
 	}
 	i.stack = i.stack[:len(i.stack)-1]
 	return nil
+}
+
+// executeCall handles OpCall opcode for built-in functions.
+func (i *Interpreter) executeCall() error {
+	if err := i.validateBytecodeBounds(OpCall, 4); err != nil {
+		return err
+	}
+	encoded := uint32(i.bytecode[i.ip]) |
+		uint32(i.bytecode[i.ip+1])<<8 |
+		uint32(i.bytecode[i.ip+2])<<16 |
+		uint32(i.bytecode[i.ip+3])<<24
+	i.ip += 4
+
+	fn, argc := decodeBuiltinCall(encoded)
+	if argc <= 0 {
+		return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: OpCall, Message: "invalid argument count"}
+	}
+	if err := i.validateStackUnderflowN(OpCall, argc); err != nil {
+		return err
+	}
+
+	args := make([]Value, argc)
+	for idx := argc - 1; idx >= 0; idx-- {
+		args[idx] = i.stack[len(i.stack)-1]
+		i.stack = i.stack[:len(i.stack)-1]
+	}
+
+	switch fn {
+	case builtinConcat:
+		return i.executeBuiltinConcat(args)
+	case builtinToString:
+		return i.executeBuiltinToString(args)
+	case builtinInt:
+		return i.executeBuiltinInt(args)
+	case builtinMD5:
+		return i.executeBuiltinMD5(args)
+	case builtinSHA1:
+		return i.executeBuiltinSHA1(args)
+	case builtinSHA256:
+		return i.executeBuiltinSHA256(args)
+	default:
+		return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: OpCall, Message: "unknown builtin"}
+	}
+}
+
+func (i *Interpreter) executeBuiltinConcat(args []Value) error {
+	if len(args) < 2 {
+		return &InterpreterError{Type: ErrorRuntime, Opcode: OpCall, Message: "concat requires at least 2 arguments"}
+	}
+	var sb strings.Builder
+	for _, arg := range args {
+		str, err := valueToString(arg)
+		if err != nil {
+			return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpCall, Message: err.Error()}
+		}
+		sb.WriteString(str)
+	}
+	return i.push(Value{Type: ValueTypeString, StringVal: sb.String()})
+}
+
+func (i *Interpreter) executeBuiltinToString(args []Value) error {
+	if len(args) != 1 {
+		return &InterpreterError{Type: ErrorRuntime, Opcode: OpCall, Message: "tostring requires exactly 1 argument"}
+	}
+	str, err := valueToString(args[0])
+	if err != nil {
+		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpCall, Message: err.Error()}
+	}
+	return i.push(Value{Type: ValueTypeString, StringVal: str})
+}
+
+func (i *Interpreter) executeBuiltinInt(args []Value) error {
+	if len(args) != 1 {
+		return &InterpreterError{Type: ErrorRuntime, Opcode: OpCall, Message: "int requires exactly 1 argument"}
+	}
+	switch v := args[0]; v.Type {
+	case ValueTypeInt:
+		return i.push(v)
+	case ValueTypeDouble:
+		return i.push(Value{Type: ValueTypeInt, IntVal: int64(v.DoubleVal)})
+	case ValueTypeString:
+		if v.StringVal == "" {
+			return i.push(Value{Type: ValueTypeInt, IntVal: 0})
+		}
+		if parsed, err := strconv.ParseInt(strings.TrimSpace(v.StringVal), 0, 64); err == nil {
+			return i.push(Value{Type: ValueTypeInt, IntVal: parsed})
+		}
+		return i.push(Value{Type: ValueTypeInt, IntVal: 0})
+	case ValueTypeUndefined:
+		return i.push(Value{Type: ValueTypeInt, IntVal: 0})
+	default:
+		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpCall, Message: "unsupported int() argument type"}
+	}
+}
+
+func (i *Interpreter) executeBuiltinMD5(args []Value) error {
+	data, err := i.extractHashInput(args)
+	if err != nil {
+		return &InterpreterError{Type: ErrorRuntime, Opcode: OpCall, Message: err.Error()}
+	}
+	sum := md5.Sum(data)
+	return i.push(Value{Type: ValueTypeString, StringVal: fmt.Sprintf("%x", sum)})
+}
+
+func (i *Interpreter) executeBuiltinSHA1(args []Value) error {
+	data, err := i.extractHashInput(args)
+	if err != nil {
+		return &InterpreterError{Type: ErrorRuntime, Opcode: OpCall, Message: err.Error()}
+	}
+	sum := sha1.Sum(data)
+	return i.push(Value{Type: ValueTypeString, StringVal: fmt.Sprintf("%x", sum)})
+}
+
+func (i *Interpreter) executeBuiltinSHA256(args []Value) error {
+	data, err := i.extractHashInput(args)
+	if err != nil {
+		return &InterpreterError{Type: ErrorRuntime, Opcode: OpCall, Message: err.Error()}
+	}
+	sum := sha256.Sum256(data)
+	return i.push(Value{Type: ValueTypeString, StringVal: fmt.Sprintf("%x", sum)})
+}
+
+func (i *Interpreter) extractHashInput(args []Value) ([]byte, error) {
+	switch len(args) {
+	case 1:
+		if args[0].Type != ValueTypeString {
+			return nil, fmt.Errorf("hash functions expect string or (offset,size)")
+		}
+		return []byte(args[0].StringVal), nil
+	case 2:
+		if args[0].Type != ValueTypeInt || args[1].Type != ValueTypeInt {
+			return nil, fmt.Errorf("hash functions expect integer offset and size")
+		}
+		if args[0].IntVal < 0 || args[1].IntVal < 0 {
+			return nil, fmt.Errorf("hash range must be non-negative")
+		}
+		if i.matchContext == nil || i.matchContext.Data == nil {
+			return nil, fmt.Errorf("hash functions require data context")
+		}
+		start := int(args[0].IntVal)
+		size := int(args[1].IntVal)
+		if start > len(i.matchContext.Data) || start+size > len(i.matchContext.Data) {
+			return nil, fmt.Errorf("hash range out of bounds")
+		}
+		return i.matchContext.Data[start : start+size], nil
+	default:
+		return nil, fmt.Errorf("hash functions expect 1 or 2 arguments")
+	}
+}
+
+func valueToString(v Value) (string, error) {
+	switch v.Type {
+	case ValueTypeString:
+		return v.StringVal, nil
+	case ValueTypeInt:
+		return strconv.FormatInt(v.IntVal, 10), nil
+	case ValueTypeDouble:
+		return strconv.FormatFloat(v.DoubleVal, 'g', -1, 64), nil
+	case ValueTypeUndefined:
+		return "", nil
+	default:
+		return "", fmt.Errorf("unsupported string conversion")
+	}
 }
 
 // executeBitwiseOpcode handles bitwise operations
@@ -795,16 +1019,23 @@ func (i *Interpreter) executeIntegerReadOpcode(opcode Opcode) error {
 // executeStringOperation handles string operations
 func (i *Interpreter) executeStringOperation(opcode Opcode) error {
 	handlers := map[Opcode]func() error{
-		OpLength:    i.executeLengthOperation,
-		OpCount:     i.executeCountOperation,
-		OpFound:     i.executeFoundOperation,
-		OpFoundAt:   i.executeFoundAtOperation,
-		OpFoundIn:   i.executeFoundInOperation,
-		OpOffset:    i.executeOffsetOperation,
-		OpOf:        i.executeOfOperation,
-		OpMatches:   i.executeMatchesOperation,
-		OpIntToDbl:  i.executeIntToDouble,
-		OpStrToBool: i.executeStringToBool,
+		OpLength:      i.executeLengthOperation,
+		OpCount:       i.executeCountOperation,
+		OpFound:       i.executeFoundOperation,
+		OpFoundAt:     i.executeFoundAtOperation,
+		OpFoundIn:     i.executeFoundInOperation,
+		OpOffset:      i.executeOffsetOperation,
+		OpOf:          i.executeOfOperation,
+		OpMatches:     i.executeMatchesOperation,
+		OpContains:    i.executeContainsOperation,
+		OpStartswith:  i.executeStartswithOperation,
+		OpEndswith:    i.executeEndswithOperation,
+		OpIcontains:   i.executeIcontainsOperation,
+		OpIstartswith: i.executeIstartswithOperation,
+		OpIendswith:   i.executeIendswithOperation,
+		OpIequals:     i.executeIequalsOperation,
+		OpIntToDbl:    i.executeIntToDouble,
+		OpStrToBool:   i.executeStringToBool,
 	}
 
 	if handler, exists := handlers[opcode]; exists {
@@ -1513,82 +1744,184 @@ func (i *Interpreter) executeOfOperation() error {
 	count := i.stack[len(i.stack)-2]
 	i.stack = i.stack[:len(i.stack)-2]
 
-	// Handle "them" case (special marker 0xFFFFFFFE)
-	if stringsID.Type == ValueTypeInt && stringsID.IntVal == 0xFFFFFFFE {
-		return i.handleOfThem()
+	set, err := i.resolveStringSet(stringsID)
+	if err != nil {
+		return err
 	}
-
-	return i.handleOfSpecificString(stringsID, count)
-}
-
-func (i *Interpreter) handleOfThem() error {
-	if i.matchContext == nil {
-		return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(false)})
-	}
-
-	totalMatches := i.countMatchingStrings()
-	result := totalMatches >= 1
+	result := i.applyCountLogic(set, count)
 	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(result)})
 }
 
-func (i *Interpreter) countMatchingStrings() int {
-	totalMatches := 0
-	for _, matches := range i.matchContext.Matches {
-		if len(matches) > 0 {
-			totalMatches++
+func (i *Interpreter) resolveStringSet(stringsID Value) ([]string, error) {
+	switch stringsID.Type {
+	case ValueTypeInt:
+		// Special marker for "them"
+		if stringsID.IntVal == 0xFFFFFFFE {
+			return i.allStringIdentifiers(), nil
+		}
+		if stringsID.IntVal < 0 || int(stringsID.IntVal) >= len(i.stringSets) {
+			return nil, &InterpreterError{Type: ErrorRuntime, Opcode: OpOf, Message: "string set index out of range"}
+		}
+		return i.stringSets[stringsID.IntVal], nil
+	case ValueTypeString:
+		return []string{stringsID.StringVal}, nil
+	case ValueTypeUndefined:
+		return nil, nil
+	default:
+		return nil, &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpOf, Message: "string set operand required"}
+	}
+}
+
+func (i *Interpreter) allStringIdentifiers() []string {
+	if len(i.allStrings) > 0 {
+		return i.allStrings
+	}
+	if i.matchContext == nil {
+		return nil
+	}
+	ids := make([]string, 0, len(i.matchContext.Matches))
+	for id := range i.matchContext.Matches {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+func (i *Interpreter) applyCountLogic(ids []string, count Value) bool {
+	if i.matchContext == nil {
+		return false
+	}
+	total := len(ids)
+	matched := 0
+	for _, id := range ids {
+		if matches, ok := i.matchContext.Matches[id]; ok && len(matches) > 0 {
+			matched++
 		}
 	}
-	return totalMatches
-}
-
-func (i *Interpreter) handleOfSpecificString(stringsID, count Value) error {
-	if stringsID.Type != ValueTypeString {
-		return &InterpreterError{Type: ErrorTypeMismatch, Message: "string pattern operand required"}
+	if count.Type != ValueTypeInt {
+		return false
 	}
-
-	if i.matchContext == nil {
-		return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(false)})
+	switch count.IntVal {
+	case 0:
+		return matched == 0
+	case 0xFFFFFFFF:
+		return total > 0 && matched == total
+	default:
+		if count.IntVal < 0 {
+			return false
+		}
+		return matched >= int(count.IntVal)
 	}
-
-	found := i.hasStringMatches(stringsID.StringVal)
-	result := i.applyCountLogic(found, count)
-
-	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(result)})
-}
-
-func (i *Interpreter) hasStringMatches(pattern string) bool {
-	matches, exists := i.matchContext.Matches[pattern]
-	return exists && len(matches) > 0
-}
-
-func (i *Interpreter) applyCountLogic(found bool, count Value) bool {
-	if count.Type == ValueTypeInt && count.IntVal == 1 {
-		// "any" - already handled above
-		return found
-	}
-	return found
 }
 
 // executeMatchesOperation executes OpMatches
 func (i *Interpreter) executeMatchesOperation() error {
-	if err := i.validateStackUnderflow(OpMatches); err != nil {
+	if err := i.validateStackUnderflowN(OpMatches, 2); err != nil {
 		return err
 	}
 
-	pattern := i.stack[len(i.stack)-1]
-	i.stack = i.stack[:len(i.stack)-1] // Pop the pattern
+	regexVal := i.stack[len(i.stack)-1]
+	value := i.stack[len(i.stack)-2]
+	i.stack = i.stack[:len(i.stack)-2]
 
-	if pattern.Type != ValueTypeString {
-		return &InterpreterError{Type: ErrorTypeMismatch, Message: "string pattern operand required"}
+	if regexVal.Type != ValueTypeString || value.Type != ValueTypeString {
+		return &InterpreterError{Type: ErrorTypeMismatch, Message: "string operands required"}
 	}
 
-	if i.matchContext == nil {
-		return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(false)})
+	compiled, flags, err := i.compileRegexLiteral(regexVal.StringVal)
+	if err != nil {
+		return &InterpreterError{Type: ErrorRuntime, Opcode: OpMatches, Message: err.Error()}
 	}
 
-	matches, exists := i.matchContext.Matches[pattern.StringVal]
-	found := exists && len(matches) > 0
-	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(found)})
+	matched := regex.Exec(compiled, []byte(value.StringVal), flags|regex.FlagsScan)
+	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(matched)})
+}
+
+func (i *Interpreter) compileRegexLiteral(literal string) ([]byte, regex.Flags, error) {
+	if cached, ok := i.regexCache[literal]; ok {
+		return cached.code, cached.flags, nil
+	}
+	cleaned := cleanRegexPattern(literal)
+	flags := parseInlineRegexFlags(literal)
+	parser := regex.NewParser(0)
+	astRe, err := parser.Parse(cleaned)
+	if err != nil {
+		return nil, flags, fmt.Errorf("parse regex: %w", err)
+	}
+	code, err := regex.Compile(astRe)
+	if err != nil {
+		return nil, flags, fmt.Errorf("compile regex: %w", err)
+	}
+	i.regexCache[literal] = compiledRegex{code: code, flags: flags}
+	return code, flags, nil
+}
+
+func parseInlineRegexFlags(pattern string) regex.Flags {
+	var flags regex.Flags
+	if len(pattern) < 2 || pattern[0] != '/' {
+		return flags
+	}
+	endIdx := len(pattern) - 1
+	for endIdx > 0 && pattern[endIdx] != '/' {
+		endIdx--
+	}
+	if endIdx > 0 && endIdx < len(pattern)-1 {
+		for i := endIdx + 1; i < len(pattern); i++ {
+			switch pattern[i] {
+			case 'i', 'I':
+				flags |= regex.FlagsNoCase
+			case 's', 'S':
+				flags |= regex.FlagsDotAll
+			}
+		}
+	}
+	return flags
+}
+
+func (i *Interpreter) executeContainsOperation() error {
+	return i.executeStringBinaryOp(OpContains, strings.Contains)
+}
+
+func (i *Interpreter) executeStartswithOperation() error {
+	return i.executeStringBinaryOp(OpStartswith, strings.HasPrefix)
+}
+
+func (i *Interpreter) executeEndswithOperation() error {
+	return i.executeStringBinaryOp(OpEndswith, strings.HasSuffix)
+}
+
+func (i *Interpreter) executeIcontainsOperation() error {
+	return i.executeStringBinaryOp(OpIcontains, func(a, b string) bool {
+		return strings.Contains(strings.ToLower(a), strings.ToLower(b))
+	})
+}
+
+func (i *Interpreter) executeIstartswithOperation() error {
+	return i.executeStringBinaryOp(OpIstartswith, func(a, b string) bool {
+		return strings.HasPrefix(strings.ToLower(a), strings.ToLower(b))
+	})
+}
+
+func (i *Interpreter) executeIendswithOperation() error {
+	return i.executeStringBinaryOp(OpIendswith, func(a, b string) bool {
+		return strings.HasSuffix(strings.ToLower(a), strings.ToLower(b))
+	})
+}
+
+func (i *Interpreter) executeIequalsOperation() error {
+	return i.executeStringBinaryOp(OpIequals, strings.EqualFold)
+}
+
+func (i *Interpreter) executeStringBinaryOp(op Opcode, fn func(string, string) bool) error {
+	if err := i.validateStackUnderflowN(op, 2); err != nil {
+		return err
+	}
+	right := i.stack[len(i.stack)-1]
+	left := i.stack[len(i.stack)-2]
+	i.stack = i.stack[:len(i.stack)-2]
+	if left.Type != ValueTypeString || right.Type != ValueTypeString {
+		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: op, Message: "string operands required"}
+	}
+	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(fn(left.StringVal, right.StringVal))})
 }
 
 // executeArithmeticOperation handles all arithmetic operations (integer and double)
