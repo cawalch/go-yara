@@ -1,17 +1,24 @@
 package compiler
 
 import (
+	"sync" // NEW
+
 	"github.com/cawalch/go-yara/ast"
 	"github.com/cawalch/go-yara/regex"
 )
 
+var matchContextPool = sync.Pool{
+	New: func() any {
+		return &MatchContext{
+			Matches: make(map[string][]Match),
+		}
+	},
+}
+
 // BuildMatchContext scans data for all patterns in the rule and returns a populated match context.
 func BuildMatchContext(rule *CompiledRule, data []byte) *MatchContext {
-	ctx := &MatchContext{
-		Data:     data,
-		Matches:  make(map[string][]Match),
-		FileSize: int64(len(data)),
-	}
+	ctx := matchContextPool.Get().(*MatchContext)
+	ctx.Reset(data)
 
 	if rule == nil {
 		return ctx
@@ -63,6 +70,21 @@ func BuildMatchContext(rule *CompiledRule, data []byte) *MatchContext {
 	}
 
 	return ctx
+}
+
+// Reset clears the match context for reuse
+func (ctx *MatchContext) Reset(data []byte) {
+	ctx.Data = data
+	clear(ctx.Matches)
+	ctx.FileSize = int64(len(data))
+	ctx.EntryPoint = 0
+}
+
+// Release returns the match context to the pool
+func (ctx *MatchContext) Release() {
+	// Clear data reference effectively to allow GC
+	ctx.Data = nil
+	matchContextPool.Put(ctx)
 }
 
 func addRegexMatches(ctx *MatchContext, id string, regexInfo RegexPattern, data []byte, modifiers []ast.StringModifier, flags regex.Flags, isWide bool) {
