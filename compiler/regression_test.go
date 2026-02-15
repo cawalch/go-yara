@@ -77,7 +77,11 @@ func TestRegressionRules(t *testing.T) {
 
 func evaluateRule(rule *CompiledRule, program *CompiledProgram, data []byte) (bool, error) {
 	ctx := BuildMatchContext(rule, data)
+	defer ctx.Release() // Cleanup
+
 	interp := NewInterpreter(rule.Bytecode)
+	defer interp.Release() // Cleanup
+
 	interp.SetCompiledRules(program.Rules)
 	interp.SetCurrentRule(rule.Name)
 	interp.SetMatchContext(ctx)

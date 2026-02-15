@@ -9,6 +9,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"sync" // NEW
 
 	"github.com/cawalch/go-yara/regex"
 )
@@ -98,19 +99,60 @@ func (mc *MatchContext) AddMatch(m Match) {
 	mc.Matches[m.Pattern] = append(mc.Matches[m.Pattern], m)
 }
 
+// interpreterPool allows reusing interpreter instances to reduce allocation overhead
+var interpreterPool = sync.Pool{
+	New: func() any {
+		return &Interpreter{
+			stack:       make([]Value, 0, 256),
+			ruleResults: make(map[string]bool),
+			regexCache:  make(map[string]compiledRegex),
+			// memory is array, automatically zero-initialized
+		}
+	},
+}
+
 // NewInterpreter creates a new bytecode interpreter
 func NewInterpreter(bytecode []byte) *Interpreter {
-	return &Interpreter{
-		bytecode: bytecode,
-		ip:       0,
-		stack:    make([]Value, 0, 256),
-		stopped:  false,
-		matchContext: &MatchContext{
-			Matches: make(map[string][]Match),
-		},
-		ruleResults: make(map[string]bool),
-		regexCache:  make(map[string]compiledRegex),
+	i := interpreterPool.Get().(*Interpreter)
+	i.bytecode = bytecode
+	i.ip = 0
+	i.stopped = false
+	i.result = nil
+	i.currentRule = ""
+
+	// Create default match context from pool if needed (mimics original behavior)
+	// If the caller overwrites this with SetMatchContext, this one will be GC'd (leaked from pool)
+	// which is acceptable.
+	if i.matchContext == nil {
+		i.matchContext = matchContextPool.Get().(*MatchContext)
 	}
+	// Note: matchContextPool.Get() returns struct with Matches map initialized.
+	i.matchContext.Reset(nil)
+
+	return i
+}
+
+// Release returns the interpreter to the pool for reuse
+func (i *Interpreter) Release() {
+	i.bytecode = nil
+	i.compiledRules = nil
+	i.stringLiterals = nil
+	i.stringSets = nil
+	i.allStrings = nil
+	i.anonymousStrings = nil
+	i.matchContext = nil // Don't return to pool as we don't know ownership (caller vs internal)
+
+	// Clear memory (hard reset)
+	for idx := range i.memory {
+		i.memory[idx] = Value{} // Reset to zero value
+	}
+
+	// Clear regex cache?
+	// Prefer to keep it for reuse efficiency, assuming keys are consistent across runs.
+	// If strict clean state is required, uncomment:
+	// clear(i.regexCache)
+
+	interpreterPool.Put(i)
 }
 
 // SetMatchContext sets the pattern matching context
@@ -211,8 +253,13 @@ func (i *Interpreter) Reset() {
 		}
 	}
 	i.stopped = false
+	i.stopped = false
 	i.result = nil
-	i.ruleResults = make(map[string]bool)
+	if i.ruleResults == nil {
+		i.ruleResults = make(map[string]bool)
+	} else {
+		clear(i.ruleResults)
+	}
 	i.currentRule = ""
 }
 
