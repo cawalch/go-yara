@@ -19,7 +19,7 @@ type Value struct {
 	Type      ValueType
 	IntVal    int64
 	DoubleVal float64
-	StringVal string
+	StringRef int64 // Index into stringArena (>=0) or static pool (<0)
 }
 
 // ValueType represents the type of a YARA value
@@ -52,22 +52,24 @@ const (
 
 // Interpreter represents a bytecode interpreter for YARA rules
 type Interpreter struct {
-	bytecode         []byte
-	ip               int        // Instruction pointer
-	stack            []Value    // Execution stack
-	memory           [256]Value // Memory slots for variables
-	stopped          bool
-	result           error
-	matchContext     *MatchContext   // Pattern matching context
-	ruleResults      map[string]bool // Track execution results of all rules in the program
-	currentRule      string          // Name of the currently executing rule
-	compiledRules    []*CompiledRule // All compiled rules in the program
-	stringLiterals   []string        // String literal pool for OpPushStr
-	stringSets       [][]string      // String sets for OpOf
-	allStrings       []string        // All string identifiers for current rule
-	anonymousStrings []string        // Anonymous string identifiers for current rule
-	regexCache       map[string]compiledRegex
-	debugMode        bool // Debug mode flag for instruction tracing
+	bytecode            []byte
+	ip                  int        // Instruction pointer
+	stack               []Value    // Execution stack
+	memory              [256]Value // Memory slots for variables
+	stopped             bool
+	result              error
+	matchContext        *MatchContext   // Pattern matching context
+	ruleResults         map[string]bool // Track execution results of all rules in the program
+	currentRule         string          // Name of the currently executing rule
+	compiledRules       []*CompiledRule // All compiled rules in the program
+	stringLiterals      []string        // String literal pool for OpPushStr
+	stringSets          [][]string      // String sets for OpOf
+	allStrings          []string        // All string identifiers for current rule
+	anonymousStrings    []string        // Anonymous string identifiers for current rule
+	stringArena         []string        // Arena for dynamic strings (new in PR 3)
+	regexCache          map[string]compiledRegex
+	PreserveRuleResults bool // If true, Reset() will not clear ruleResults
+	debugMode           bool // Debug mode flag for instruction tracing
 }
 
 type compiledRegex struct {
@@ -152,7 +154,39 @@ func (i *Interpreter) Release() {
 	// If strict clean state is required, uncomment:
 	// clear(i.regexCache)
 
+	// Clear string arena
+	i.stringArena = i.stringArena[:0]
+
 	interpreterPool.Put(i)
+}
+
+// pushString appends a string to the arena and pushes a Value pointing to it
+func (i *Interpreter) pushString(s string) error {
+	idx := len(i.stringArena)
+	i.stringArena = append(i.stringArena, s)
+	return i.push(Value{Type: ValueTypeString, StringRef: int64(idx)})
+}
+
+// getString resolves a Value to a string
+func (i *Interpreter) getString(v Value) string {
+	if v.Type != ValueTypeString {
+		return ""
+	}
+	// Postive index = Arena
+	if v.StringRef >= 0 {
+		if int(v.StringRef) < len(i.stringArena) {
+			return i.stringArena[v.StringRef]
+		}
+		return ""
+	}
+	// Negative index = Static string literal
+	// -1 = stringLiterals[0]
+	// -2 = stringLiterals[1]
+	idx := -v.StringRef - 1
+	if int(idx) < len(i.stringLiterals) {
+		return i.stringLiterals[idx]
+	}
+	return ""
 }
 
 // SetMatchContext sets the pattern matching context
@@ -187,8 +221,19 @@ func (i *Interpreter) SetCurrentRule(ruleName string) {
 		i.stringSets = rule.StringSets
 		i.allStrings = rule.StringIdentifiers()
 		i.anonymousStrings = rule.AnonymousStrings
+		i.bytecode = rule.Bytecode // Ensure bytecode is updated for the rule
 		return
 	}
+}
+
+// GetString resolves a Value to a string (exported version of getString)
+func (i *Interpreter) GetString(v Value) string {
+	return i.getString(v)
+}
+
+// PushString appends a string to the arena and pushes a Value pointing to it (exported)
+func (i *Interpreter) PushString(s string) error {
+	return i.pushString(s)
 }
 
 // SetRuleResults sets the shared rule results map
@@ -209,9 +254,11 @@ func (i *Interpreter) SetStringSets(sets [][]string) {
 // SetMemoryString sets a string identifier in memory at the specified index
 func (i *Interpreter) SetMemoryString(index int, identifier string) {
 	if index >= 0 && index < len(i.memory) {
+		idx := len(i.stringArena)
+		i.stringArena = append(i.stringArena, identifier)
 		i.memory[index] = Value{
 			Type:      ValueTypeString,
-			StringVal: identifier,
+			StringRef: int64(idx),
 		}
 	}
 }
@@ -257,10 +304,9 @@ func (i *Interpreter) Reset() {
 	i.result = nil
 	if i.ruleResults == nil {
 		i.ruleResults = make(map[string]bool)
-	} else {
+	} else if !i.PreserveRuleResults {
 		clear(i.ruleResults)
 	}
-	i.currentRule = ""
 }
 
 // Execute runs the bytecode
@@ -318,7 +364,7 @@ func (i *Interpreter) debugStackState(opcode Opcode) {
 		case ValueTypeDouble:
 			fmt.Printf("DEBUG: Top of stack: Type=Double, Value=%f\n", top.DoubleVal)
 		case ValueTypeString:
-			fmt.Printf("DEBUG: Top of stack: Type=String, Length=%d\n", len(top.StringVal))
+			fmt.Printf("DEBUG: Top of stack: Type=String, Length=%d\n", len(i.getString(top)))
 		default:
 			fmt.Printf("DEBUG: Top of stack: Type=%d, IntVal=%d\n", top.Type, top.IntVal)
 		}
@@ -552,7 +598,7 @@ func (i *Interpreter) executePushRuleRef() error {
 		return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: OpPushRuleRef, Message: fmt.Sprintf("rule index %d out of range", ruleIdx)}
 	}
 	ruleName := i.compiledRules[ruleIdx].Name
-	return i.push(Value{Type: ValueTypeRuleRef, StringVal: ruleName})
+	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(i.ruleResults[ruleName])})
 }
 
 // executePushString handles OpPushStr opcode
@@ -568,7 +614,9 @@ func (i *Interpreter) executePushString() error {
 	if idx < 0 || idx >= len(i.stringLiterals) {
 		return i.push(Value{Type: ValueTypeUndefined})
 	}
-	return i.push(Value{Type: ValueTypeString, StringVal: i.stringLiterals[idx]})
+	// Push reference to static string literal (negative index)
+	// -1 -> index 0, -2 -> index 1, etc.
+	return i.push(Value{Type: ValueTypeString, StringRef: int64(-1 - idx)})
 }
 
 // executePop handles OpPop opcode
@@ -629,24 +677,24 @@ func (i *Interpreter) executeBuiltinConcat(args []Value) error {
 	}
 	var sb strings.Builder
 	for _, arg := range args {
-		str, err := valueToString(arg)
+		str, err := i.valueToString(arg)
 		if err != nil {
 			return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpCall, Message: err.Error()}
 		}
 		sb.WriteString(str)
 	}
-	return i.push(Value{Type: ValueTypeString, StringVal: sb.String()})
+	return i.pushString(sb.String())
 }
 
 func (i *Interpreter) executeBuiltinToString(args []Value) error {
 	if len(args) != 1 {
 		return &InterpreterError{Type: ErrorRuntime, Opcode: OpCall, Message: "tostring requires exactly 1 argument"}
 	}
-	str, err := valueToString(args[0])
+	str, err := i.valueToString(args[0])
 	if err != nil {
 		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpCall, Message: err.Error()}
 	}
-	return i.push(Value{Type: ValueTypeString, StringVal: str})
+	return i.pushString(str)
 }
 
 func (i *Interpreter) executeBuiltinInt(args []Value) error {
@@ -659,10 +707,11 @@ func (i *Interpreter) executeBuiltinInt(args []Value) error {
 	case ValueTypeDouble:
 		return i.push(Value{Type: ValueTypeInt, IntVal: int64(v.DoubleVal)})
 	case ValueTypeString:
-		if v.StringVal == "" {
+		s := i.getString(v)
+		if s == "" {
 			return i.push(Value{Type: ValueTypeInt, IntVal: 0})
 		}
-		if parsed, err := strconv.ParseInt(strings.TrimSpace(v.StringVal), 0, 64); err == nil {
+		if parsed, err := strconv.ParseInt(strings.TrimSpace(s), 0, 64); err == nil {
 			return i.push(Value{Type: ValueTypeInt, IntVal: parsed})
 		}
 		return i.push(Value{Type: ValueTypeInt, IntVal: 0})
@@ -679,7 +728,7 @@ func (i *Interpreter) executeBuiltinMD5(args []Value) error {
 		return &InterpreterError{Type: ErrorRuntime, Opcode: OpCall, Message: err.Error()}
 	}
 	sum := md5.Sum(data) // #nosec G401 -- YARA defines md5() for compatibility
-	return i.push(Value{Type: ValueTypeString, StringVal: hex.EncodeToString(sum[:])})
+	return i.pushString(hex.EncodeToString(sum[:]))
 }
 
 func (i *Interpreter) executeBuiltinSHA1(args []Value) error {
@@ -688,7 +737,7 @@ func (i *Interpreter) executeBuiltinSHA1(args []Value) error {
 		return &InterpreterError{Type: ErrorRuntime, Opcode: OpCall, Message: err.Error()}
 	}
 	sum := sha1.Sum(data) // #nosec G401 -- YARA defines sha1() for compatibility
-	return i.push(Value{Type: ValueTypeString, StringVal: hex.EncodeToString(sum[:])})
+	return i.pushString(hex.EncodeToString(sum[:]))
 }
 
 func (i *Interpreter) executeBuiltinSHA256(args []Value) error {
@@ -697,7 +746,7 @@ func (i *Interpreter) executeBuiltinSHA256(args []Value) error {
 		return &InterpreterError{Type: ErrorRuntime, Opcode: OpCall, Message: err.Error()}
 	}
 	sum := sha256.Sum256(data)
-	return i.push(Value{Type: ValueTypeString, StringVal: hex.EncodeToString(sum[:])})
+	return i.pushString(hex.EncodeToString(sum[:]))
 }
 
 func (i *Interpreter) extractHashInput(args []Value) ([]byte, error) {
@@ -706,7 +755,7 @@ func (i *Interpreter) extractHashInput(args []Value) ([]byte, error) {
 		if args[0].Type != ValueTypeString {
 			return nil, fmt.Errorf("hash functions expect string or (offset,size)")
 		}
-		return []byte(args[0].StringVal), nil
+		return []byte(i.getString(args[0])), nil
 	case 2:
 		if args[0].Type != ValueTypeInt || args[1].Type != ValueTypeInt {
 			return nil, fmt.Errorf("hash functions expect integer offset and size")
@@ -728,10 +777,10 @@ func (i *Interpreter) extractHashInput(args []Value) ([]byte, error) {
 	}
 }
 
-func valueToString(v Value) (string, error) {
+func (i *Interpreter) valueToString(v Value) (string, error) {
 	switch v.Type {
 	case ValueTypeString:
-		return v.StringVal, nil
+		return i.getString(v), nil
 	case ValueTypeInt:
 		return strconv.FormatInt(v.IntVal, 10), nil
 	case ValueTypeDouble:
@@ -1133,7 +1182,7 @@ func (i *Interpreter) executeStringToBool() error {
 
 	v := i.stack[len(i.stack)-1]
 	if v.Type == ValueTypeString {
-		result := v.StringVal != ""
+		result := i.getString(v) != ""
 		i.stack[len(i.stack)-1] = Value{Type: ValueTypeInt, IntVal: boolToInt(result)}
 		return nil
 	}
@@ -1166,7 +1215,7 @@ func (i *Interpreter) executePushRuleOperation() error {
 		return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: OpPushRule, Message: fmt.Sprintf("rule index %d out of range", ruleIdx)}
 	}
 	ruleName := i.compiledRules[ruleIdx].Name
-	return i.push(Value{Type: ValueTypeString, StringVal: ruleName})
+	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(i.ruleResults[ruleName])})
 }
 
 // executeInitRuleOperation handles OpInitRule opcode
@@ -1213,7 +1262,9 @@ func (v Value) String() string {
 		}
 		return fmt.Sprintf("%f", v.DoubleVal)
 	case ValueTypeString:
-		return fmt.Sprintf("%q", v.StringVal)
+		// Cannot resolve string value without interpreter context easily here
+		// Need refactor if Value.String() is critical for debugging without context
+		return "string"
 	case ValueTypeUndefined:
 		return "undefined"
 	default:
@@ -1262,7 +1313,7 @@ func (i *Interpreter) executeStringComparison(comparison func(string, string) bo
 	}
 
 	result := int64(0)
-	if comparison(a.StringVal, b.StringVal) {
+	if comparison(i.getString(a), i.getString(b)) {
 		result = 1
 	}
 
@@ -1421,7 +1472,7 @@ func (i *Interpreter) isTruthy(v Value) bool {
 	case ValueTypeDouble:
 		return v.DoubleVal != 0
 	case ValueTypeString:
-		return v.StringVal != ""
+		return i.getString(v) != ""
 	default:
 		return false
 	}
@@ -1636,7 +1687,7 @@ func (i *Interpreter) executeLengthOperation() error {
 		return i.push(Value{Type: ValueTypeInt, IntVal: 0})
 	}
 
-	matches, exists := i.matchContext.Matches[pattern.StringVal]
+	matches, exists := i.matchContext.Matches[i.getString(pattern)]
 	if !exists || index.IntVal < 1 || int(index.IntVal-1) >= len(matches) {
 		return i.push(Value{Type: ValueTypeInt, IntVal: 0})
 	}
@@ -1662,7 +1713,7 @@ func (i *Interpreter) executeCountOperation() error {
 		return i.push(Value{Type: ValueTypeInt, IntVal: 0})
 	}
 
-	matches, exists := i.matchContext.Matches[pattern.StringVal]
+	matches, exists := i.matchContext.Matches[i.getString(pattern)]
 	if !exists {
 		return i.push(Value{Type: ValueTypeInt, IntVal: 0})
 	}
@@ -1687,7 +1738,7 @@ func (i *Interpreter) executeFoundOperation() error {
 		return i.push(Value{Type: ValueTypeInt, IntVal: 0})
 	}
 
-	matches, exists := i.matchContext.Matches[pattern.StringVal]
+	matches, exists := i.matchContext.Matches[i.getString(pattern)]
 	found := exists && len(matches) > 0
 	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(found)})
 }
@@ -1714,7 +1765,7 @@ func (i *Interpreter) executeFoundAtOperation() error {
 		return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(false)})
 	}
 
-	matches, exists := i.matchContext.Matches[pattern.StringVal]
+	matches, exists := i.matchContext.Matches[i.getString(pattern)]
 	if !exists {
 		return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(false)})
 	}
@@ -1752,7 +1803,7 @@ func (i *Interpreter) executeFoundInOperation() error {
 		return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(false)})
 	}
 
-	matches, exists := i.matchContext.Matches[pattern.StringVal]
+	matches, exists := i.matchContext.Matches[i.getString(pattern)]
 	if !exists {
 		return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(false)})
 	}
@@ -1789,7 +1840,7 @@ func (i *Interpreter) executeOffsetOperation() error {
 		return i.push(Value{Type: ValueTypeInt, IntVal: -1})
 	}
 
-	matches, exists := i.matchContext.Matches[pattern.StringVal]
+	matches, exists := i.matchContext.Matches[i.getString(pattern)]
 	if !exists || index.IntVal < 1 || int(index.IntVal-1) >= len(matches) {
 		return i.push(Value{Type: ValueTypeUndefined})
 	}
@@ -1832,7 +1883,7 @@ func (i *Interpreter) resolveStringSet(stringsID Value) ([]string, error) {
 		}
 		return i.stringSets[stringsID.IntVal], nil
 	case ValueTypeString:
-		return []string{stringsID.StringVal}, nil
+		return []string{i.getString(stringsID)}, nil
 	case ValueTypeUndefined:
 		return nil, nil
 	default:
@@ -1904,12 +1955,12 @@ func (i *Interpreter) executeMatchesOperation() error {
 		return &InterpreterError{Type: ErrorTypeMismatch, Message: "string operands required"}
 	}
 
-	compiled, flags, err := i.compileRegexLiteral(regexVal.StringVal)
+	compiled, flags, err := i.compileRegexLiteral(i.getString(regexVal))
 	if err != nil {
 		return &InterpreterError{Type: ErrorRuntime, Opcode: OpMatches, Message: err.Error()}
 	}
 
-	matched := regex.Exec(compiled, []byte(value.StringVal), flags|regex.FlagsScan)
+	matched := regex.Exec(compiled, []byte(i.getString(value)), flags|regex.FlagsScan)
 	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(matched)})
 }
 
@@ -1998,7 +2049,7 @@ func (i *Interpreter) executeStringBinaryOp(op Opcode, fn func(string, string) b
 	if left.Type != ValueTypeString || right.Type != ValueTypeString {
 		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: op, Message: "string operands required"}
 	}
-	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(fn(left.StringVal, right.StringVal))})
+	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(fn(i.getString(left), i.getString(right)))})
 }
 
 // executeArithmeticOperation handles all arithmetic operations (integer and double)
