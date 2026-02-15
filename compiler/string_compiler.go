@@ -297,20 +297,50 @@ func (sc *StringCompiler) encodeTextString(text string, modifiers []ast.StringMo
 	return result
 }
 
+// TextPattern holds encoded text pattern data with associated matching flags.
+type TextPattern struct {
+	Data  []byte
+	Flags regex.Flags
+}
+
 // EncodeTextPatterns encodes text into one or more patterns based on modifiers.
-func (sc *StringCompiler) EncodeTextPatterns(text string, modifiers []ast.StringModifier) ([][]byte, error) {
-	isWide := sc.hasModifier(modifiers, ast.StringModifierWide)
+func (sc *StringCompiler) EncodeTextPatterns(text string, modifiers []ast.StringModifier) ([]TextPattern, error) {
+	hasWide := sc.hasModifier(modifiers, ast.StringModifierWide)
+	hasASCII := sc.hasModifier(modifiers, ast.StringModifierASCII)
 	isNocase := sc.hasModifier(modifiers, ast.StringModifierNocase)
 
-	base := sc.encodeTextBytes(text, isWide)
-	if isNocase {
-		base = sc.applyNocaseModifier(base, isWide)
+	basePatterns := make([]TextPattern, 0, 2)
+
+	switch {
+	case hasWide && hasASCII:
+		ascii := sc.encodeTextBytes(text, false)
+		wide := sc.encodeTextBytes(text, true)
+		if isNocase {
+			ascii = sc.applyNocaseModifier(ascii, false)
+			wide = sc.applyNocaseModifier(wide, true)
+		}
+		basePatterns = append(basePatterns,
+			TextPattern{Data: ascii, Flags: 0},
+			TextPattern{Data: wide, Flags: regex.FlagsWide},
+		)
+	case hasWide:
+		wide := sc.encodeTextBytes(text, true)
+		if isNocase {
+			wide = sc.applyNocaseModifier(wide, true)
+		}
+		basePatterns = append(basePatterns, TextPattern{Data: wide, Flags: regex.FlagsWide})
+	default:
+		ascii := sc.encodeTextBytes(text, false)
+		if isNocase {
+			ascii = sc.applyNocaseModifier(ascii, false)
+		}
+		basePatterns = append(basePatterns, TextPattern{Data: ascii, Flags: 0})
 	}
 
-	patterns := [][]byte{base}
+	patterns := basePatterns
 
 	if keys, hasXor := sc.xorKeys(modifiers); hasXor {
-		patterns = sc.applyXorKeys(patterns, keys)
+		patterns = sc.applyXorKeysWithFlags(patterns, keys)
 	}
 
 	if mod, ok := sc.base64Modifier(modifiers); ok {
@@ -318,10 +348,10 @@ func (sc *StringCompiler) EncodeTextPatterns(text string, modifiers []ast.String
 		if err != nil {
 			return nil, err
 		}
-		patterns = sc.applyBase64Alignment(patterns, alphabet, mod.Type == ast.StringModifierBase64Wide)
+		patterns = sc.applyBase64AlignmentWithFlags(patterns, alphabet, mod.Type == ast.StringModifierBase64Wide)
 	}
 
-	return sc.uniquePatterns(patterns), nil
+	return sc.uniqueTextPatterns(patterns), nil
 }
 
 // encodeHexString encodes a hex string with modifiers applied
@@ -423,19 +453,19 @@ func (sc *StringCompiler) normalizeXorRange(min, max int) xorRange {
 	return xorRange{min: min, max: max}
 }
 
-func (sc *StringCompiler) applyXorKeys(patterns [][]byte, keys []byte) [][]byte {
+func (sc *StringCompiler) applyXorKeysWithFlags(patterns []TextPattern, keys []byte) []TextPattern {
 	if len(keys) == 0 {
 		return patterns
 	}
-	out := make([][]byte, 0, len(patterns)*len(keys))
+	out := make([]TextPattern, 0, len(patterns)*len(keys))
 	for _, p := range patterns {
 		for _, key := range keys {
-			dup := make([]byte, len(p))
-			copy(dup, p)
+			dup := make([]byte, len(p.Data))
+			copy(dup, p.Data)
 			for i := range dup {
 				dup[i] ^= key
 			}
-			out = append(out, dup)
+			out = append(out, TextPattern{Data: dup, Flags: p.Flags})
 		}
 	}
 	return out
@@ -460,14 +490,22 @@ func (sc *StringCompiler) base64Alphabet(mod ast.StringModifier) (string, error)
 	return "", nil
 }
 
-func (sc *StringCompiler) applyBase64Alignment(patterns [][]byte, alphabet string, wide bool) [][]byte {
-	out := make([][]byte, 0, len(patterns)*3)
+func (sc *StringCompiler) applyBase64AlignmentWithFlags(patterns []TextPattern, alphabet string, wide bool) []TextPattern {
+	out := make([]TextPattern, 0, len(patterns)*3)
 	for _, p := range patterns {
-		variants, err := sc.base64AlignedPatterns(p, alphabet, wide)
+		variants, err := sc.base64AlignedPatterns(p.Data, alphabet, wide)
 		if err != nil {
 			continue
 		}
-		out = append(out, variants...)
+		flags := p.Flags
+		if wide {
+			flags |= regex.FlagsWide
+		} else {
+			flags &^= regex.FlagsWide
+		}
+		for _, v := range variants {
+			out = append(out, TextPattern{Data: v, Flags: flags})
+		}
 	}
 	return out
 }
@@ -537,14 +575,14 @@ func (sc *StringCompiler) encodeBase64Variants(data []byte, alphabet string) ([]
 	return out, nil
 }
 
-func (sc *StringCompiler) uniquePatterns(patterns [][]byte) [][]byte {
+func (sc *StringCompiler) uniqueTextPatterns(patterns []TextPattern) []TextPattern {
 	if len(patterns) <= 1 {
 		return patterns
 	}
 	seen := make(map[string]struct{}, len(patterns))
-	out := make([][]byte, 0, len(patterns))
+	out := make([]TextPattern, 0, len(patterns))
 	for _, p := range patterns {
-		key := string(p)
+		key := string(p.Data) + "|" + strconv.FormatUint(uint64(p.Flags), 10)
 		if _, ok := seen[key]; ok {
 			continue
 		}
@@ -1060,10 +1098,6 @@ func (sc *StringCompiler) ValidateStringModifiers(modifiers []ast.StringModifier
 	}
 
 	// Check for incompatible modifiers
-	if hasWide && hasASCII {
-		return errors.New("cannot use both 'wide' and 'ascii' modifiers")
-	}
-
 	if hasBase64 && hasBase64Wide {
 		return errors.New("cannot use both 'base64' and 'base64wide' modifiers")
 	}

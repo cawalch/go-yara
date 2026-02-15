@@ -142,6 +142,88 @@ rule Base64Mods {
 	}
 }
 
+func TestAsciiWideTextModifier(t *testing.T) {
+	source := `
+rule AsciiWideText {
+	strings:
+		$a = "test" ascii wide
+	condition:
+		$a
+}`
+
+	compiler := NewCompiler()
+	program, err := compiler.CompileSource(source)
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+
+	ascii := []byte("test")
+	wide := []byte{'t', 0x00, 'e', 0x00, 's', 0x00, 't', 0x00}
+
+	cases := []struct {
+		name string
+		data []byte
+		want bool
+	}{
+		{name: "ascii_match", data: ascii, want: true},
+		{name: "wide_match", data: wide, want: true},
+		{name: "no_match", data: []byte("toast"), want: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ok, err := evaluateRule(program.Rules[0], program, tc.data)
+			if err != nil {
+				t.Fatalf("evaluate: %v", err)
+			}
+			if ok != tc.want {
+				t.Fatalf("matched=%v, want %v", ok, tc.want)
+			}
+		})
+	}
+}
+
+func TestAsciiWideRegexModifier(t *testing.T) {
+	source := `
+rule AsciiWideRegex {
+	strings:
+		$a = /te.st/ ascii wide
+	condition:
+		$a
+}`
+
+	compiler := NewCompiler()
+	program, err := compiler.CompileSource(source)
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+
+	ascii := []byte("teXst")
+	wide := []byte{'t', 0x00, 'e', 0x00, 'X', 0x00, 's', 0x00, 't', 0x00}
+
+	cases := []struct {
+		name string
+		data []byte
+		want bool
+	}{
+		{name: "ascii_match", data: ascii, want: true},
+		{name: "wide_match", data: wide, want: true},
+		{name: "no_match", data: []byte("toast"), want: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ok, err := evaluateRule(program.Rules[0], program, tc.data)
+			if err != nil {
+				t.Fatalf("evaluate: %v", err)
+			}
+			if ok != tc.want {
+				t.Fatalf("matched=%v, want %v", ok, tc.want)
+			}
+		})
+	}
+}
+
 func TestHexXorModifier(t *testing.T) {
 	source := `
 rule HexXor {

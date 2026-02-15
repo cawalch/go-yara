@@ -186,3 +186,29 @@ func TestStringAccessWithModifiers(t *testing.T) {
 		}
 	}
 }
+
+func TestCompiledRulePrivateString(t *testing.T) {
+	source := `
+		rule PrivateStringRule {
+			strings:
+				$public = "hello"
+				$secret = "password" private
+			condition:
+				$public or $secret
+		}
+	`
+
+	compiler := NewCompiler()
+	compiledProgram, err := compiler.CompileSource(source)
+	if err != nil {
+		t.Fatalf("Failed to compile program: %v", err)
+	}
+	rule := compiledProgram.Rules[0]
+
+	if rule.IsPrivateString("$public") {
+		t.Errorf("Expected $public to be non-private")
+	}
+	if !rule.IsPrivateString("$secret") {
+		t.Errorf("Expected $secret to be private")
+	}
+}

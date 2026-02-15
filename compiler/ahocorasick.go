@@ -128,6 +128,7 @@ func (ac *ACAutomaton) addStringToAutomaton(config StringConfig) error {
 	}
 
 	// Add output for final state
+	ac.states[currentState].outputStart = int32(len(ac.outputs)) // #nosec G115
 	ac.outputs = append(ac.outputs, stringIndex)
 	ac.states[currentState].outputEnd = int32(len(ac.outputs)) // #nosec G115
 
@@ -175,10 +176,12 @@ func (ac *ACAutomaton) processTransitionFailureLink(current, nextState int32, by
 		failState := ac.states[ac.states[nextState].failure]
 		if failState.outputStart != failState.outputEnd {
 			// Append failure state's output to current state's output
-			_ = ac.outputs[ac.states[nextState].outputStart:ac.states[nextState].outputEnd]
 			failOutput := ac.outputs[failState.outputStart:failState.outputEnd]
 
-			// This is simplified - real implementation would handle this more efficiently
+			// If current state has no output yet, initialize outputStart
+			if ac.states[nextState].outputStart == ac.states[nextState].outputEnd {
+				ac.states[nextState].outputStart = int32(len(ac.outputs)) // #nosec G115
+			}
 			ac.outputs = append(ac.outputs, failOutput...)
 			ac.states[nextState].outputEnd = int32(len(ac.outputs)) // #nosec G115
 		}

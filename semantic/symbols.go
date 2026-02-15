@@ -111,6 +111,9 @@ func (st *SymbolTable) DefineRule(name string, pos token.Position, rule *ast.Rul
 
 // DefineString adds a string symbol to the current scope
 func (st *SymbolTable) DefineString(name string, pos token.Position, str *ast.String) error {
+	if name == "$" {
+		return nil
+	}
 	if existing, exists := st.Current.Symbols[name]; exists {
 		return fmt.Errorf("string %q already defined at %v (previously at %v)",
 			name, pos, existing.Position)

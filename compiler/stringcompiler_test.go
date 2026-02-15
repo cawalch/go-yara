@@ -86,7 +86,7 @@ func TestStringCompilerValidateModifiers(t *testing.T) {
 				{Type: ast.StringModifierWide},
 				{Type: ast.StringModifierASCII},
 			},
-			wantErr: true,
+			wantErr: false,
 		},
 		{
 			name: "base64_and_base64wide_conflict",

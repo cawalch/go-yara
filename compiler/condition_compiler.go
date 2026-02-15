@@ -41,6 +41,7 @@ type ConditionCompiler struct {
 	pendingJumps      []PendingJump
 	stringSets        [][]string
 	stringSetIndex    map[string]int
+	anonymousStrings  []string
 }
 
 func parseSizeLiteral(literal string) (int64, error) {
@@ -354,7 +355,7 @@ func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 	specialIdentifiers := map[string]func(){
 		"filesize":     func() { cc.emitter.EmitOpcode(OpFilesize, ident.Pos.Line, ident.Pos.Column) },
 		"entrypoint":   func() { cc.emitter.EmitOpcode(OpEntrypoint, ident.Pos.Line, ident.Pos.Column) },
-		"them":         func() { cc.emitter.EmitPush(0xFFFFFFFE, ident.Pos.Line, ident.Pos.Column) },
+		"them":         func() { cc.emitter.EmitPush(stringSetAll, ident.Pos.Line, ident.Pos.Column) },
 		"flags":        func() { cc.emitter.EmitPush(0, ident.Pos.Line, ident.Pos.Column) },
 		QuantifierAny:  func() { cc.emitter.EmitOpcode(OpPush8, ident.Pos.Line, ident.Pos.Column) },
 		QuantifierAll:  func() { cc.emitter.EmitOpcode(OpPush8, ident.Pos.Line, ident.Pos.Column) },
@@ -366,6 +367,10 @@ func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 		return nil
 	}
 
+	if ident.Name == "$" {
+		return cc.compileAnonymousIdentifier(ident.Pos.Line, ident.Pos.Column)
+	}
+
 	if cc.isModuleFunction(ident.Name) {
 		cc.emitModuleFunctionCall(ident.Name, ident.Pos.Line, ident.Pos.Column)
 		return nil
@@ -374,6 +379,13 @@ func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 	cc.emitter.EmitOpcode(OpPushU, ident.Pos.Line, ident.Pos.Column)
 	return fmt.Errorf("undefined identifier: %s", ident.Name)
 
+}
+
+func (cc *ConditionCompiler) compileAnonymousIdentifier(line, column int) error {
+	cc.emitter.EmitPush(1, line, column)
+	cc.emitter.EmitPush(stringSetAnonymous, line, column)
+	cc.emitter.EmitOpcode(OpOf, line, column)
+	return nil
 }
 
 func (cc *ConditionCompiler) compileStringOffsetOperator(binOp *ast.BinaryOp) error {
@@ -991,6 +1003,16 @@ func (cc *ConditionCompiler) SetStringOffsets(offsets map[string]int) {
 	cc.stringOffsets = offsets
 }
 
+// SetAnonymousStrings sets the anonymous string identifiers for the current rule.
+func (cc *ConditionCompiler) SetAnonymousStrings(ids []string) {
+	cc.anonymousStrings = nil
+	if len(ids) == 0 {
+		return
+	}
+	cc.anonymousStrings = make([]string, len(ids))
+	copy(cc.anonymousStrings, ids)
+}
+
 // GetStringSets returns the compiled string sets for this condition.
 func (cc *ConditionCompiler) GetStringSets() [][]string {
 	sets := make([][]string, len(cc.stringSets))
@@ -1105,8 +1127,11 @@ func (cc *ConditionCompiler) compileForLoop(forLoop *ast.ForLoop) error {
 func (cc *ConditionCompiler) compileForLoopOverStrings(forLoop *ast.ForLoop) error {
 	var ids []string
 	if expr, ok := forLoop.Range.(*ast.Identifier); ok {
-		if expr.Name == "them" || expr.Name == "$" {
+		if expr.Name == "them" {
 			ids = cc.allStringIdentifiers()
+		}
+		if expr.Name == "$" {
+			ids = cc.anonymousStringIdentifiers()
 		}
 	}
 	if ids == nil {
@@ -1358,8 +1383,11 @@ func (cc *ConditionCompiler) compileCountExpression(countExpr ast.Expression) er
 func (cc *ConditionCompiler) compileStringsExpression(stringsExpr ast.Expression) error {
 	if ident, ok := stringsExpr.(*ast.Identifier); ok {
 		switch {
-		case ident.Name == "them" || ident.Name == "$":
-			cc.emitter.EmitPush(0xFFFFFFFE, ident.Pos.Line, ident.Pos.Column)
+		case ident.Name == "them":
+			cc.emitter.EmitPush(stringSetAll, ident.Pos.Line, ident.Pos.Column)
+			return nil
+		case ident.Name == "$":
+			cc.emitter.EmitPush(stringSetAnonymous, ident.Pos.Line, ident.Pos.Column)
 			return nil
 		case cc.isRuleReference(ident.Name):
 			return cc.compileRuleReference(ident.Name, ident.Pos.Line, ident.Pos.Column)
@@ -1402,7 +1430,7 @@ func (cc *ConditionCompiler) isStringSetIdentifier(name string) bool {
 
 func (cc *ConditionCompiler) expandStringSetIdentifier(name string) ([]string, error) {
 	if name == "$" {
-		return cc.allStringIdentifiers(), nil
+		return cc.anonymousStringIdentifiers(), nil
 	}
 	if strings.HasSuffix(name, "*") {
 		prefix := strings.TrimSuffix(name, "*")
@@ -1433,6 +1461,16 @@ func (cc *ConditionCompiler) allStringIdentifiers() []string {
 	for ident := range cc.stringOffsets {
 		ids = append(ids, ident)
 	}
+	sort.Strings(ids)
+	return ids
+}
+
+func (cc *ConditionCompiler) anonymousStringIdentifiers() []string {
+	if len(cc.anonymousStrings) == 0 {
+		return nil
+	}
+	ids := make([]string, len(cc.anonymousStrings))
+	copy(ids, cc.anonymousStrings)
 	sort.Strings(ids)
 	return ids
 }

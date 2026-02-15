@@ -1,6 +1,7 @@
 package semantic
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/cawalch/go-yara/ast"
@@ -640,7 +641,7 @@ func (tc *TypeChecker) checkOfExpression(ofExpr *ast.OfExpression) *TypeInfo {
 	// Check the count expression
 	countType := tc.checkExpression(ofExpr.Count)
 	if countType.DataType != TypeInteger && countType.DataType != TypeUnknown {
-		tc.addError(fmt.Errorf("count in 'of' expression must be an integer"))
+		tc.addError(errors.New("count in 'of' expression must be an integer"))
 	}
 
 	// Check the strings expression
@@ -664,7 +665,7 @@ func (tc *TypeChecker) checkStringOffset(strOffset *ast.StringOffset) *TypeInfo 
 	if strOffset.Index != nil {
 		indexType := tc.checkExpression(strOffset.Index)
 		if indexType.DataType != TypeInteger && indexType.DataType != TypeUnknown {
-			tc.addError(fmt.Errorf("string offset index must be an integer"))
+			tc.addError(errors.New("string offset index must be an integer"))
 		}
 	}
 
@@ -686,7 +687,7 @@ func (tc *TypeChecker) checkStringCount(strCount *ast.StringCount) *TypeInfo {
 	if strCount.Index != nil {
 		indexType := tc.checkExpression(strCount.Index)
 		if indexType.DataType != TypeInteger && indexType.DataType != TypeUnknown {
-			tc.addError(fmt.Errorf("string count index must be an integer"))
+			tc.addError(errors.New("string count index must be an integer"))
 		}
 	}
 
@@ -708,14 +709,14 @@ func (tc *TypeChecker) checkForLoop(forLoop *ast.ForLoop) *TypeInfo {
 	rangeType := tc.checkExpression(forLoop.Range)
 	if forLoop.Variable != "" {
 		if rangeType.DataType != TypeInteger && rangeType.DataType != TypeUnknown {
-			tc.addError(fmt.Errorf("for loop range must be an integer"))
+			tc.addError(errors.New("for loop range must be an integer"))
 		}
 	}
 
 	// Check the condition expression type
 	conditionType := tc.checkExpression(forLoop.Condition)
 	if conditionType.DataType != TypeBoolean && conditionType.DataType != TypeUnknown {
-		tc.addError(fmt.Errorf("for loop condition must be boolean"))
+		tc.addError(errors.New("for loop condition must be boolean"))
 	}
 
 	tc.symbolTable.ExitScope()

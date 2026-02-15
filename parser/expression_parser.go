@@ -14,7 +14,7 @@ type ExpressionParser struct {
 	quantifierParser  *QuantifierParser
 	current           token.Token
 	peek              token.Token
-	emitter           interface{} // Changed to interface to avoid compiler dependency
+	emitter           any // Changed to any to avoid compiler dependency
 	depth             int
 	depthStack        []int
 	lexer             TokenProvider
@@ -51,7 +51,7 @@ func (la *LexerAdapter) NextToken() token.Token {
 }
 
 // NewExpressionParser maintains compatibility with the existing parser system
-func NewExpressionParser(first interface{}, second interface{}) *ExpressionParser {
+func NewExpressionParser(first any, second any) *ExpressionParser {
 	// Type checking to determine which constructor to use
 	switch v := first.(type) {
 	case TokenProvider:
@@ -79,7 +79,7 @@ func NewExpressionParser(first interface{}, second interface{}) *ExpressionParse
 }
 
 // newExpressionParserInternal creates a new expression parser (internal implementation)
-func newExpressionParserInternal(lexer TokenProvider, emitter interface{}) *ExpressionParser {
+func newExpressionParserInternal(lexer TokenProvider, emitter any) *ExpressionParser {
 	exprParser := &ExpressionParser{
 		strategyRegistry: NewStrategyRegistry(),
 		quantifierParser: nil, // Will be initialized later when needed
@@ -442,21 +442,21 @@ func (p *ExpressionParser) GetQuantifierParser() *QuantifierParser {
 }
 
 // EmitOpcode emits an opcode with position information (interface-based)
-func (p *ExpressionParser) EmitOpcode(opcode interface{}, line, column int) {
+func (p *ExpressionParser) EmitOpcode(opcode any, line, column int) {
 	pos := NewPosition("", line, column, 0)
 	// Interface-based emission for flexibility
-	if emitter, ok := p.emitter.(interface{ EmitOpcode(interface{}, int, int) }); ok {
+	if emitter, ok := p.emitter.(interface{ EmitOpcode(any, int, int) }); ok {
 		emitter.EmitOpcode(opcode, line, column)
 	}
 	_ = pos
 }
 
 // EmitOpcodeWithOperand emits an opcode with operand (interface-based)
-func (p *ExpressionParser) EmitOpcodeWithOperand(opcode interface{}, operand interface{}, line, column int) {
+func (p *ExpressionParser) EmitOpcodeWithOperand(opcode any, operand any, line, column int) {
 	pos := NewPosition("", line, column, 0)
 	// Interface-based emission for flexibility
 	if emitter, ok := p.emitter.(interface {
-		EmitOpcodeWithOperand(interface{}, interface{}, int, int)
+		EmitOpcodeWithOperand(any, any, int, int)
 	}); ok {
 		emitter.EmitOpcodeWithOperand(opcode, operand, line, column)
 	}
@@ -498,8 +498,8 @@ func (p *ExpressionParser) ValidateExpression(expr ast.Expression) error {
 }
 
 // GetParseStatistics returns statistics about the parsing process
-func (p *ExpressionParser) GetParseStatistics() map[string]interface{} {
-	return map[string]interface{}{
+func (p *ExpressionParser) GetParseStatistics() map[string]any {
+	return map[string]any{
 		"strategy_count":    len(p.strategyRegistry.GetPrimaryStrategies()),
 		"binary_strategies": len(p.strategyRegistry.GetBinaryStrategies()),
 		"unary_strategies":  len(p.strategyRegistry.GetUnaryStrategies()),
