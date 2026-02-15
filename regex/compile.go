@@ -272,7 +272,12 @@ func (c *Compiler) emitRangeNode(n *Node) error {
 	return nil
 }
 
+const MaxBytecodeSize = 2 * 1024 * 1024 // 2MB
+
 func (c *Compiler) emitNode(n *Node) error { //nolint:maintidx // high complexity is intentional for performance-critical regex compilation
+	if c.cur() > MaxBytecodeSize {
+		return fmt.Errorf("regex too large")
+	}
 	switch n.Kind {
 	case NodeClass:
 		c.emitClassNode(n)

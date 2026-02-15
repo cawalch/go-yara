@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"fmt"
+	"os"
 	"testing"
 )
 
@@ -255,5 +256,12 @@ func TestACAutomatonPrintDebug(_ *testing.T) {
 	}
 
 	// This should not panic
+	// Capture stdout to avoid cluttering test output
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
 	ac.PrintDebug()
+	_ = w.Close()
+	os.Stdout = oldStdout
+	_ = r.Close()
 }

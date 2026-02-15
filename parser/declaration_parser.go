@@ -402,9 +402,6 @@ func (p *DeclarationParser) validateStringModifiers(modifiers []ast.StringModifi
 		}
 	}
 
-	if hasWide && hasASCII {
-		p.addError(errors.New("cannot use both 'wide' and 'ascii' modifiers"))
-	}
 	if hasBase64 && hasBase64Wide {
 		p.addError(errors.New("cannot use both 'base64' and 'base64wide' modifiers"))
 	}

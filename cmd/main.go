@@ -469,15 +469,18 @@ func executeRules(compiledProgram *compiler.CompiledProgram, data []byte, args *
 
 func findPatternMatches(rule *compiler.CompiledRule, data []byte) (*compiler.MatchContext, []printEntry) {
 	ctx := compiler.BuildMatchContext(rule, data)
-	return ctx, matchContextEntries(ctx)
+	return ctx, matchContextEntries(rule, ctx)
 }
 
-func matchContextEntries(ctx *compiler.MatchContext) []printEntry {
+func matchContextEntries(rule *compiler.CompiledRule, ctx *compiler.MatchContext) []printEntry {
 	if ctx == nil {
 		return nil
 	}
 	entries := make([]printEntry, 0)
 	for id, matches := range ctx.Matches {
+		if rule != nil && rule.IsPrivateString(id) {
+			continue
+		}
 		for _, m := range matches {
 			entries = append(entries, printEntry{
 				id:     id,

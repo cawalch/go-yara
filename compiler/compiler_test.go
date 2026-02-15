@@ -163,7 +163,14 @@ func TestCompiledRuleMemoryUsage(t *testing.T) {
 	}
 
 	// Test debug printing (should not panic)
+	// Capture stdout to avoid cluttering test output
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
 	compiledRule.PrintDebug()
+	_ = w.Close()
+	os.Stdout = oldStdout
+	_ = r.Close()
 }
 
 // TestCompilerOptions tests compiler options
@@ -1600,7 +1607,14 @@ func TestCompiledRulePrintDebug(t *testing.T) {
 	}
 
 	// This should not panic
+	// Capture stdout to avoid cluttering test output
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
 	compiled.PrintDebug()
+	_ = w.Close()
+	os.Stdout = oldStdout
+	_ = r.Close()
 }
 
 // TestEmitterGetInstructions tests getting instructions
@@ -1665,7 +1679,14 @@ func TestEmitterPrintInstructions(_ *testing.T) {
 	emitter.EmitHalt(1, 1)
 
 	// This should not panic
+	// Capture stdout to avoid cluttering test output
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
 	emitter.PrintInstructions()
+	_ = w.Close()
+	os.Stdout = oldStdout
+	_ = r.Close()
 }
 
 // TestEmitterPrintBytecode tests bytecode printing
@@ -1677,7 +1698,14 @@ func TestEmitterPrintBytecode(t *testing.T) {
 	emitter.EmitHalt(1, 1)
 
 	// This should not panic
+	// Capture stdout to avoid cluttering test output
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
 	err := emitter.PrintBytecode()
+	_ = w.Close()
+	os.Stdout = oldStdout
+	_ = r.Close()
 	if err != nil {
 		t.Errorf("PrintBytecode() error = %v", err)
 	}
@@ -2222,7 +2250,14 @@ func TestStringCompilerMethods(t *testing.T) {
 			name: "PrintStringInfo",
 			testFunc: func(_ *testing.T, sc *StringCompiler) {
 				// This should not panic
+				// Capture stdout to avoid cluttering test output
+				oldStdout := os.Stdout
+				r, w, _ := os.Pipe()
+				os.Stdout = w
 				sc.PrintStringInfo()
+				_ = w.Close()
+				os.Stdout = oldStdout
+				_ = r.Close()
 			},
 		},
 	}
@@ -2346,7 +2381,14 @@ func TestCompiledProgramPrintDebug(t *testing.T) {
 	compiledProgram := NewCompiledProgram(compiled)
 
 	// This should not panic
+	// Capture stdout to avoid cluttering test output
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
 	compiledProgram.PrintDebug()
+	_ = w.Close()
+	os.Stdout = oldStdout
+	_ = r.Close()
 }
 
 // TestCompiledProgramOptimize tests Optimize method

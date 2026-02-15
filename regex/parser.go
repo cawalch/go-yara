@@ -347,8 +347,8 @@ func (p *Parser) parseRange(l *lexer, cls *Class, start byte) error {
 		start, end = end, start
 	}
 
-	for v := start; v <= end; v++ {
-		classSet(cls, v)
+	for i := int(start); i <= int(end); i++ {
+		classSet(cls, byte(i))
 	}
 	return nil
 }

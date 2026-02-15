@@ -291,8 +291,6 @@ func (e *Emitter) Reset() {
 // Returns -1 and does not emit if opcode is not arithmetic
 func (e *Emitter) EmitArithmetic(op Opcode, line, pos int) int {
 	if !isArithmeticOp(op) {
-		// Log error but don't panic - caller should handle invalid opcodes
-		fmt.Printf("warning: opcode %s is not an arithmetic operation\n", op.String())
 		return -1
 	}
 	return e.EmitOpcode(op, line, pos)
@@ -302,7 +300,6 @@ func (e *Emitter) EmitArithmetic(op Opcode, line, pos int) int {
 // Returns -1 and does not emit if opcode is not a comparison
 func (e *Emitter) EmitComparison(op Opcode, line, pos int) int {
 	if !isComparisonOp(op) {
-		fmt.Printf("warning: opcode %s is not a comparison operation\n", op.String())
 		return -1
 	}
 	return e.EmitOpcode(op, line, pos)
@@ -312,7 +309,6 @@ func (e *Emitter) EmitComparison(op Opcode, line, pos int) int {
 // Returns -1 and does not emit if opcode is not logical
 func (e *Emitter) EmitLogical(op Opcode, line, pos int) int {
 	if !isLogicalOp(op) {
-		fmt.Printf("warning: opcode %s is not a logical operation\n", op.String())
 		return -1
 	}
 	return e.EmitOpcode(op, line, pos)

@@ -47,15 +47,15 @@ func TestStringCompilerValidation(t *testing.T) {
 	emitter := NewEmitter()
 	sc := NewStringCompiler(emitter)
 
-	// Test incompatible modifiers
-	incompatibleModifiers := []ast.StringModifier{
+	// Test wide+ascii combination (should be allowed and match both encodings)
+	dualModifiers := []ast.StringModifier{
 		{Type: ast.StringModifierWide},
 		{Type: ast.StringModifierASCII},
 	}
 
-	err := sc.ValidateStringModifiers(incompatibleModifiers)
-	if err == nil {
-		t.Error("Expected error for incompatible modifiers")
+	err := sc.ValidateStringModifiers(dualModifiers)
+	if err != nil {
+		t.Errorf("wide+ascii should be valid: %v", err)
 	}
 
 	// Test compatible modifiers

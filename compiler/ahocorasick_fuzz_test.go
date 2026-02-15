@@ -2,12 +2,13 @@ package compiler
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 	"testing"
 )
 
-// FuzzAhoCorasick tests the Aho-Corasick automaton with various pattern sets
-func FuzzAhoCorasick(f *testing.F) {
+// FuzzAhoCorasickPatterns tests the Aho-Corasick automaton with various pattern sets
+func FuzzAhoCorasickPatterns(f *testing.F) {
 	// Seed corpus with pattern sets
 	f.Add([]byte("hello\x00world\x00test"))
 	f.Add([]byte("a\x00b\x00c"))
@@ -22,7 +23,9 @@ func FuzzAhoCorasick(f *testing.F) {
 	f.Add([]byte("case\x00CASE\x00Case")) // Case variations
 	f.Add([]byte("pattern with spaces\x00another pattern"))
 	f.Add([]byte("special!@#$%^&*()_+{}|:<>?`~"))
-	f.Add([]byte("binary\x00\x01\x02\x03\x04"))                                // Binary data patterns
+	f.Add(
+		[]byte("binary\x00\x01\x02\x03\x04"),
+	) // Binary data patterns
 	f.Add([]byte(strings.Repeat("a", 100) + "\x00" + strings.Repeat("b", 50))) // Long patterns
 
 	f.Fuzz(func(t *testing.T, data []byte) {
@@ -47,17 +50,20 @@ func FuzzAhoCorasick(f *testing.F) {
 			return
 		}
 
-		// Convert to strings
+		// Convert to strings and add to automaton
+		ac := NewACAutomaton()
 		patternStrings := make([]string, len(validPatterns))
 		for i, pattern := range validPatterns {
 			patternStrings[i] = string(pattern)
+			if err := ac.AddString(fmt.Sprintf("s%d", i), pattern, false, false); err != nil {
+				return
+			}
 		}
 
-		// Test Aho-Corasick construction
-		ac := NewACAutomaton()
-		// Note: The real API doesn't support direct pattern addition in constructor
-		// We'll fuzz the Search method instead
-		_ = ac
+		// Compile automaton
+		if err := ac.Compile(); err != nil {
+			return // Some inputs might be invalid for AC if we had stricter limits
+		}
 
 		// Test pattern matching with various texts
 		testTexts := []string{
@@ -78,7 +84,7 @@ func FuzzAhoCorasick(f *testing.F) {
 
 			// Test long text matching
 			if len(text) < 50 {
-				longText := strings.Repeat(text, 10)
+				longText := strings.Repeat(text, 100)
 				matches = ac.Search([]byte(longText))
 				_ = matches
 			}
@@ -86,10 +92,14 @@ func FuzzAhoCorasick(f *testing.F) {
 
 		// Test with single pattern sets
 		for i := range validPatterns {
-			singlePattern := []string{patternStrings[i]}
 			ac2 := NewACAutomaton()
-			_ = ac2
-			_ = singlePattern
+			if err := ac2.AddString("p", validPatterns[i], false, false); err != nil {
+				continue
+			}
+			if err := ac2.Compile(); err != nil {
+				continue
+			}
+			_ = ac2.Search(validPatterns[i])
 		}
 
 		// Test with prefix/suffix variations
@@ -154,7 +164,15 @@ func FuzzAhoCorasickBinary(f *testing.F) {
 
 		// Test with binary patterns
 		ac := NewACAutomaton()
-		_ = ac
+		for i, p := range patterns {
+			if err := ac.AddString(fmt.Sprintf("b%d", i), p, false, false); err != nil {
+				return
+			}
+		}
+
+		if err := ac.Compile(); err != nil {
+			return
+		}
 
 		// Test matching with the original data and variations
 		testData := [][]byte{
@@ -182,8 +200,13 @@ func FuzzAhoCorasickBinary(f *testing.F) {
 		// Test with individual patterns
 		for _, pattern := range patterns {
 			ac2 := NewACAutomaton()
-			matches := ac2.Search([]byte(pattern))
-			_ = matches
+			if err := ac2.AddString("p", pattern, false, false); err != nil {
+				continue
+			}
+			if err := ac2.Compile(); err != nil {
+				continue
+			}
+			_ = ac2.Search(pattern)
 		}
 	})
 }

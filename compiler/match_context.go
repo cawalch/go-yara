@@ -19,7 +19,8 @@ func BuildMatchContext(rule *CompiledRule, data []byte) *MatchContext {
 
 	if len(data) == 0 {
 		for id, regexInfo := range rule.RegexPatterns {
-			addRegexMatches(ctx, id, regexInfo, data, rule.StringModifiers[id])
+			modifiers := rule.StringModifiers[id]
+			addRegexMatchesWithModifiers(ctx, id, regexInfo, data, modifiers)
 		}
 		return ctx
 	}
@@ -30,28 +31,32 @@ func BuildMatchContext(rule *CompiledRule, data []byte) *MatchContext {
 				continue
 			}
 			length := 0
+			isWide := false
 			if match.StringIndex >= 0 && match.StringIndex < len(rule.Automaton.Strings) {
-				length = rule.Automaton.Strings[match.StringIndex].Length
+				info := rule.Automaton.Strings[match.StringIndex]
+				length = info.Length
+				isWide = (info.Flags & regex.FlagsWide) != 0
 			}
 			m := Match{
 				Pattern: match.StringID,
 				Offset:  int64(match.Backtrack),
 				Length:  length,
 			}
-			if matchPassesModifiers(data, m, rule.StringModifiers[match.StringID]) {
+			if matchPassesModifiers(data, m, rule.StringModifiers[match.StringID], isWide) {
 				ctx.AddMatch(m)
 			}
 		}
 	}
 
 	for id, regexInfo := range rule.RegexPatterns {
-		addRegexMatches(ctx, id, regexInfo, data, rule.StringModifiers[id])
+		modifiers := rule.StringModifiers[id]
+		addRegexMatchesWithModifiers(ctx, id, regexInfo, data, modifiers)
 	}
 
 	for id, pattern := range rule.HexPatterns {
 		for _, m := range FindHexMatches(pattern, data) {
 			m.Pattern = id
-			if matchPassesModifiers(data, m, rule.StringModifiers[id]) {
+			if matchPassesModifiers(data, m, rule.StringModifiers[id], false) {
 				ctx.AddMatch(m)
 			}
 		}
@@ -60,11 +65,11 @@ func BuildMatchContext(rule *CompiledRule, data []byte) *MatchContext {
 	return ctx
 }
 
-func addRegexMatches(ctx *MatchContext, id string, regexInfo RegexPattern, data []byte, modifiers []ast.StringModifier) {
+func addRegexMatches(ctx *MatchContext, id string, regexInfo RegexPattern, data []byte, modifiers []ast.StringModifier, flags regex.Flags, isWide bool) {
 	if len(regexInfo.Code) == 0 {
 		return
 	}
-	flags := regexInfo.Flags | regex.FlagsScan
+	flags |= regex.FlagsScan
 	pos := 0
 	for pos <= len(data) {
 		matched, start, end := regex.ExecMatch(regexInfo.Code, data[pos:], flags)
@@ -81,21 +86,36 @@ func addRegexMatches(ctx *MatchContext, id string, regexInfo RegexPattern, data 
 			Offset:  int64(absStart),
 			Length:  absEnd - absStart,
 		}
-		if matchPassesModifiers(data, m, modifiers) {
+		if matchPassesModifiers(data, m, modifiers, isWide) {
 			ctx.AddMatch(m)
 		}
 		pos = absStart + 1
 	}
 }
 
-func matchPassesModifiers(data []byte, m Match, modifiers []ast.StringModifier) bool {
+func addRegexMatchesWithModifiers(ctx *MatchContext, id string, regexInfo RegexPattern, data []byte, modifiers []ast.StringModifier) {
+	hasWide := hasModifier(modifiers, ast.StringModifierWide)
+	hasASCII := hasModifier(modifiers, ast.StringModifierASCII)
+	baseFlags := regexInfo.Flags
+
+	switch {
+	case hasWide && hasASCII:
+		addRegexMatches(ctx, id, regexInfo, data, modifiers, baseFlags|regex.FlagsWide, true)
+		addRegexMatches(ctx, id, regexInfo, data, modifiers, baseFlags&^regex.FlagsWide, false)
+	case hasWide:
+		addRegexMatches(ctx, id, regexInfo, data, modifiers, baseFlags|regex.FlagsWide, true)
+	default:
+		addRegexMatches(ctx, id, regexInfo, data, modifiers, baseFlags&^regex.FlagsWide, false)
+	}
+}
+
+func matchPassesModifiers(data []byte, m Match, modifiers []ast.StringModifier, isWide bool) bool {
 	if len(modifiers) == 0 {
 		return true
 	}
 	if !hasModifier(modifiers, ast.StringModifierFullword) {
 		return true
 	}
-	isWide := hasModifier(modifiers, ast.StringModifierWide) || hasModifier(modifiers, ast.StringModifierBase64Wide)
 	return isFullwordMatch(data, int(m.Offset), m.Length, isWide)
 }
 

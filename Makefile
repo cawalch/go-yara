@@ -4,10 +4,19 @@
         compare-yara compare-yara-quick compare-yara-deep compare-yara-report \
         performance-suite performance-monitor performance-baseline performance-compare \
         performance-dashboard performance-cleanup perf-automaton perf-e2e perf-scaling \
-        bench-greentea perf-greentea-compare bench-greentea-memory bench-greentea-cpu
+        bench-greentea perf-greentea-compare bench-greentea-memory bench-greentea-cpu \
+        fuzz
 
 # Default package to benchmark/profile
 PKG=./internal/lexer
+
+# Fuzzing duration per target
+FUZZTIME=30s
+
+# Run all fuzz targets sequentially
+fuzz:
+	@./scripts/fuzz_all.sh $(FUZZTIME)
+
 
 # Basic benchmarking
 bench:

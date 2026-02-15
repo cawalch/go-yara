@@ -4,6 +4,7 @@ import (
 	"crypto/md5"  // #nosec G501 -- required for YARA hash compatibility
 	"crypto/sha1" // #nosec G505 -- required for YARA hash compatibility
 	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"math"
 	"strconv"
@@ -50,21 +51,22 @@ const (
 
 // Interpreter represents a bytecode interpreter for YARA rules
 type Interpreter struct {
-	bytecode       []byte
-	ip             int        // Instruction pointer
-	stack          []Value    // Execution stack
-	memory         [256]Value // Memory slots for variables
-	stopped        bool
-	result         error
-	matchContext   *MatchContext   // Pattern matching context
-	ruleResults    map[string]bool // Track execution results of all rules in the program
-	currentRule    string          // Name of the currently executing rule
-	compiledRules  []*CompiledRule // All compiled rules in the program
-	stringLiterals []string        // String literal pool for OpPushStr
-	stringSets     [][]string      // String sets for OpOf
-	allStrings     []string        // All string identifiers for current rule
-	regexCache     map[string]compiledRegex
-	debugMode      bool // Debug mode flag for instruction tracing
+	bytecode         []byte
+	ip               int        // Instruction pointer
+	stack            []Value    // Execution stack
+	memory           [256]Value // Memory slots for variables
+	stopped          bool
+	result           error
+	matchContext     *MatchContext   // Pattern matching context
+	ruleResults      map[string]bool // Track execution results of all rules in the program
+	currentRule      string          // Name of the currently executing rule
+	compiledRules    []*CompiledRule // All compiled rules in the program
+	stringLiterals   []string        // String literal pool for OpPushStr
+	stringSets       [][]string      // String sets for OpOf
+	allStrings       []string        // All string identifiers for current rule
+	anonymousStrings []string        // Anonymous string identifiers for current rule
+	regexCache       map[string]compiledRegex
+	debugMode        bool // Debug mode flag for instruction tracing
 }
 
 type compiledRegex struct {
@@ -136,12 +138,14 @@ func (i *Interpreter) SetCurrentRule(ruleName string) {
 		return
 	}
 	for _, rule := range i.compiledRules {
-		if rule.Name == ruleName {
-			i.stringLiterals = rule.StringLiterals
-			i.stringSets = rule.StringSets
-			i.allStrings = rule.StringIdentifiers()
-			return
+		if rule.Name != ruleName {
+			continue
 		}
+		i.stringLiterals = rule.StringLiterals
+		i.stringSets = rule.StringSets
+		i.allStrings = rule.StringIdentifiers()
+		i.anonymousStrings = rule.AnonymousStrings
+		return
 	}
 }
 
@@ -628,7 +632,7 @@ func (i *Interpreter) executeBuiltinMD5(args []Value) error {
 		return &InterpreterError{Type: ErrorRuntime, Opcode: OpCall, Message: err.Error()}
 	}
 	sum := md5.Sum(data) // #nosec G401 -- YARA defines md5() for compatibility
-	return i.push(Value{Type: ValueTypeString, StringVal: fmt.Sprintf("%x", sum)})
+	return i.push(Value{Type: ValueTypeString, StringVal: hex.EncodeToString(sum[:])})
 }
 
 func (i *Interpreter) executeBuiltinSHA1(args []Value) error {
@@ -637,7 +641,7 @@ func (i *Interpreter) executeBuiltinSHA1(args []Value) error {
 		return &InterpreterError{Type: ErrorRuntime, Opcode: OpCall, Message: err.Error()}
 	}
 	sum := sha1.Sum(data) // #nosec G401 -- YARA defines sha1() for compatibility
-	return i.push(Value{Type: ValueTypeString, StringVal: fmt.Sprintf("%x", sum)})
+	return i.push(Value{Type: ValueTypeString, StringVal: hex.EncodeToString(sum[:])})
 }
 
 func (i *Interpreter) executeBuiltinSHA256(args []Value) error {
@@ -646,7 +650,7 @@ func (i *Interpreter) executeBuiltinSHA256(args []Value) error {
 		return &InterpreterError{Type: ErrorRuntime, Opcode: OpCall, Message: err.Error()}
 	}
 	sum := sha256.Sum256(data)
-	return i.push(Value{Type: ValueTypeString, StringVal: fmt.Sprintf("%x", sum)})
+	return i.push(Value{Type: ValueTypeString, StringVal: hex.EncodeToString(sum[:])})
 }
 
 func (i *Interpreter) extractHashInput(args []Value) ([]byte, error) {
@@ -1016,33 +1020,47 @@ func (i *Interpreter) executeIntegerReadOpcode(opcode Opcode) error {
 	return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: opcode, Message: "invalid integer read opcode"}
 }
 
-// executeStringOperation handles string operations
+// executeStringOperation handles string operations using direct dispatch
+// to avoid per-call map allocation on this hot path.
 func (i *Interpreter) executeStringOperation(opcode Opcode) error {
-	handlers := map[Opcode]func() error{
-		OpLength:      i.executeLengthOperation,
-		OpCount:       i.executeCountOperation,
-		OpFound:       i.executeFoundOperation,
-		OpFoundAt:     i.executeFoundAtOperation,
-		OpFoundIn:     i.executeFoundInOperation,
-		OpOffset:      i.executeOffsetOperation,
-		OpOf:          i.executeOfOperation,
-		OpMatches:     i.executeMatchesOperation,
-		OpContains:    i.executeContainsOperation,
-		OpStartswith:  i.executeStartswithOperation,
-		OpEndswith:    i.executeEndswithOperation,
-		OpIcontains:   i.executeIcontainsOperation,
-		OpIstartswith: i.executeIstartswithOperation,
-		OpIendswith:   i.executeIendswithOperation,
-		OpIequals:     i.executeIequalsOperation,
-		OpIntToDbl:    i.executeIntToDouble,
-		OpStrToBool:   i.executeStringToBool,
+	switch opcode {
+	case OpLength:
+		return i.executeLengthOperation()
+	case OpCount:
+		return i.executeCountOperation()
+	case OpFound:
+		return i.executeFoundOperation()
+	case OpFoundAt:
+		return i.executeFoundAtOperation()
+	case OpFoundIn:
+		return i.executeFoundInOperation()
+	case OpOffset:
+		return i.executeOffsetOperation()
+	case OpOf:
+		return i.executeOfOperation()
+	case OpMatches:
+		return i.executeMatchesOperation()
+	case OpContains:
+		return i.executeContainsOperation()
+	case OpStartswith:
+		return i.executeStartswithOperation()
+	case OpEndswith:
+		return i.executeEndswithOperation()
+	case OpIcontains:
+		return i.executeIcontainsOperation()
+	case OpIstartswith:
+		return i.executeIstartswithOperation()
+	case OpIendswith:
+		return i.executeIendswithOperation()
+	case OpIequals:
+		return i.executeIequalsOperation()
+	case OpIntToDbl:
+		return i.executeIntToDouble()
+	case OpStrToBool:
+		return i.executeStringToBool()
+	default:
+		return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: opcode, Message: "invalid string operation"}
 	}
-
-	if handler, exists := handlers[opcode]; exists {
-		return handler()
-	}
-
-	return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: opcode, Message: "invalid string operation"}
 }
 
 // executeIntToDouble handles OpIntToDbl opcode
@@ -1756,8 +1774,11 @@ func (i *Interpreter) resolveStringSet(stringsID Value) ([]string, error) {
 	switch stringsID.Type {
 	case ValueTypeInt:
 		// Special marker for "them"
-		if stringsID.IntVal == 0xFFFFFFFE {
+		if stringsID.IntVal == stringSetAll {
 			return i.allStringIdentifiers(), nil
+		}
+		if stringsID.IntVal == stringSetAnonymous {
+			return i.anonymousStringIdentifiers(), nil
 		}
 		if stringsID.IntVal < 0 || int(stringsID.IntVal) >= len(i.stringSets) {
 			return nil, &InterpreterError{Type: ErrorRuntime, Opcode: OpOf, Message: "string set index out of range"}
@@ -1786,6 +1807,15 @@ func (i *Interpreter) allStringIdentifiers() []string {
 	return ids
 }
 
+func (i *Interpreter) anonymousStringIdentifiers() []string {
+	if len(i.anonymousStrings) == 0 {
+		return nil
+	}
+	ids := make([]string, len(i.anonymousStrings))
+	copy(ids, i.anonymousStrings)
+	return ids
+}
+
 func (i *Interpreter) applyCountLogic(ids []string, count Value) bool {
 	if i.matchContext == nil {
 		return false
@@ -1803,7 +1833,7 @@ func (i *Interpreter) applyCountLogic(ids []string, count Value) bool {
 	switch count.IntVal {
 	case 0:
 		return matched == 0
-	case 0xFFFFFFFF:
+	case countAll:
 		return total > 0 && matched == total
 	default:
 		if count.IntVal < 0 {
