@@ -18,10 +18,16 @@ var matchContextPool = sync.Pool{
 // BuildMatchContext scans data for all patterns in the rule and returns a populated match context.
 func BuildMatchContext(rule *CompiledRule, data []byte) *MatchContext {
 	ctx := matchContextPool.Get().(*MatchContext)
+	PopulateMatchContext(ctx, rule, data)
+	return ctx
+}
+
+// PopulateMatchContext populates an existing match context (reused) with matches from data
+func PopulateMatchContext(ctx *MatchContext, rule *CompiledRule, data []byte) {
 	ctx.Reset(data)
 
 	if rule == nil {
-		return ctx
+		return
 	}
 
 	if len(data) == 0 {
@@ -29,7 +35,7 @@ func BuildMatchContext(rule *CompiledRule, data []byte) *MatchContext {
 			modifiers := rule.StringModifiers[id]
 			addRegexMatchesWithModifiers(ctx, id, regexInfo, data, modifiers)
 		}
-		return ctx
+		return
 	}
 
 	if rule.Automaton != nil {
@@ -68,8 +74,6 @@ func BuildMatchContext(rule *CompiledRule, data []byte) *MatchContext {
 			}
 		}
 	}
-
-	return ctx
 }
 
 // Reset clears the match context for reuse

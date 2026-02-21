@@ -425,8 +425,8 @@ func TestInterpreterStringOps(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			interp := NewInterpreter([]byte{byte(OpHalt)})
-			_ = interp.push(Value{Type: ValueTypeString, StringVal: tt.left})
-			_ = interp.push(Value{Type: ValueTypeString, StringVal: tt.right})
+			_ = interp.PushString(tt.left)
+			_ = interp.PushString(tt.right)
 
 			err := interp.executeOpcode(tt.opcode)
 			if err != nil {
@@ -575,7 +575,7 @@ func TestInterpreterOffsetOperation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			interp := NewInterpreter([]byte{byte(OpHalt)})
 			interp.matchContext.Matches = tt.matches
-			_ = interp.push(Value{Type: ValueTypeString, StringVal: tt.pattern})
+			_ = interp.PushString(tt.pattern)
 			_ = interp.push(Value{Type: ValueTypeInt, IntVal: tt.index})
 
 			err := interp.executeOpcode(OpOffset)
@@ -630,7 +630,7 @@ func TestInterpreterLengthOperation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			interp := NewInterpreter([]byte{byte(OpHalt)})
 			interp.matchContext.Matches = tt.matches
-			_ = interp.push(Value{Type: ValueTypeString, StringVal: tt.pattern})
+			_ = interp.PushString(tt.pattern)
 			_ = interp.push(Value{Type: ValueTypeInt, IntVal: tt.index})
 
 			err := interp.executeOpcode(OpLength)
@@ -683,7 +683,7 @@ func TestInterpreterFound(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			interp := NewInterpreter([]byte{byte(OpHalt)})
 			interp.matchContext.Matches = tt.matches
-			_ = interp.push(Value{Type: ValueTypeString, StringVal: tt.pattern})
+			_ = interp.PushString(tt.pattern)
 
 			err := interp.executeOpcode(OpFound)
 			if err != nil {
@@ -739,7 +739,7 @@ func TestInterpreterCount(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			interp := NewInterpreter([]byte{byte(OpHalt)})
 			interp.matchContext.Matches = tt.matches
-			_ = interp.push(Value{Type: ValueTypeString, StringVal: tt.pattern})
+			_ = interp.PushString(tt.pattern)
 
 			err := interp.executeOpcode(OpCount)
 			if err != nil {
@@ -794,7 +794,7 @@ func TestInterpreterFoundAt(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			interp := NewInterpreter([]byte{byte(OpHalt)})
 			interp.matchContext.Matches = tt.matches
-			_ = interp.push(Value{Type: ValueTypeString, StringVal: tt.pattern})
+			_ = interp.PushString(tt.pattern)
 			_ = interp.push(Value{Type: ValueTypeInt, IntVal: tt.offset})
 
 			err := interp.executeOpcode(OpFoundAt)
@@ -852,7 +852,7 @@ func TestInterpreterFoundIn(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			interp := NewInterpreter([]byte{byte(OpHalt)})
 			interp.matchContext.Matches = tt.matches
-			_ = interp.push(Value{Type: ValueTypeString, StringVal: tt.pattern})
+			_ = interp.PushString(tt.pattern)
 			_ = interp.push(Value{Type: ValueTypeInt, IntVal: tt.startOff})
 			_ = interp.push(Value{Type: ValueTypeInt, IntVal: tt.endOff})
 
@@ -895,8 +895,8 @@ func TestInterpreterMatches(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			interp := NewInterpreter([]byte{byte(OpHalt)})
-			_ = interp.push(Value{Type: ValueTypeString, StringVal: tt.value})
-			_ = interp.push(Value{Type: ValueTypeString, StringVal: tt.regex})
+			_ = interp.PushString(tt.value)
+			_ = interp.PushString(tt.regex)
 
 			err := interp.executeOpcode(OpMatches)
 			if err != nil {
@@ -931,7 +931,7 @@ func TestInterpreterRegexFoundOps_FOUND(t *testing.T) {
 	interp := setupRegexInterpreter(t)
 
 	// FOUND($a) -> true
-	_ = interp.push(Value{Type: ValueTypeString, StringVal: "$a"})
+	_ = interp.PushString("$a")
 	if execErr := interp.executeOpcode(OpFound); execErr != nil {
 		t.Fatalf("executeOpcode(OpFound) error = %v", execErr)
 	}
@@ -961,7 +961,7 @@ func TestInterpreterRegexFoundOps_FOUND_AT(t *testing.T) {
 			// Clear stack before each test
 			interp.stack = interp.stack[:0]
 
-			_ = interp.push(Value{Type: ValueTypeString, StringVal: "$a"})
+			_ = interp.PushString("$a")
 			_ = interp.push(Value{Type: ValueTypeInt, IntVal: tt.offset})
 			if execErr := interp.executeOpcode(OpFoundAt); execErr != nil {
 				t.Fatalf("executeOpcode(OpFoundAt) error = %v", execErr)
@@ -994,7 +994,7 @@ func TestInterpreterRegexFoundOps_FOUND_IN(t *testing.T) {
 			// Clear stack before each test
 			interp.stack = interp.stack[:0]
 
-			_ = interp.push(Value{Type: ValueTypeString, StringVal: "$a"})
+			_ = interp.PushString("$a")
 			_ = interp.push(Value{Type: ValueTypeInt, IntVal: tt.start})
 			_ = interp.push(Value{Type: ValueTypeInt, IntVal: tt.end})
 			if execErr := interp.executeOpcode(OpFoundIn); execErr != nil {

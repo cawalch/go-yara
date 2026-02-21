@@ -3,6 +3,7 @@ package compiler
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -11,7 +12,12 @@ import (
 	"time"
 )
 
-// StreamingProcessor handles large file processing with chunked I/O
+// StreamingProcessor handles large file processing with chunked I/O.
+//
+// IMPORTANT: StreamingProcessor only evaluates string pattern matches (via AC automaton).
+// It does NOT evaluate rule conditions (bytecode). A StreamingMatch means the pattern
+// was found in the data, NOT that the rule's condition was satisfied.
+// For full rule evaluation including conditions, use Scanner.Scan() or Scanner.ScanFile().
 type StreamingProcessor struct {
 	// Configuration
 	ChunkSize        int  // Size of each chunk (default: 1MB)
@@ -138,25 +144,42 @@ func (sp *StreamingProcessor) ProcessFile(ctx context.Context, filename string) 
 	// Create chunk processor
 	sp.chunkProcessor = sp.createChunkProcessor(matchBuffer)
 
+	workerCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	// Process file in chunks
 	results := make(chan ProcessingResult, sp.MaxConcurrency)
-	err = sp.processChunks(ctx, file, results)
-	if err != nil {
-		return nil, err
-	}
+	errCh := make(chan error, 1)
+
+	go func() {
+		errCh <- sp.processChunks(workerCtx, file, results)
+	}()
 
 	// Collect results
 	var allMatches []StreamingMatch
 	for result := range results {
 		if result.Error != nil {
+			cancel()
 			return nil, result.Error
 		}
 		allMatches = append(allMatches, result.Matches...)
 
 		if sp.EarlyTermination && len(result.Matches) > 0 {
 			fmt.Printf("Early termination after finding matches in chunk %d\n", result.ChunkIndex)
+			cancel()
 			break
 		}
+	}
+
+	// Drain any remaining items to unblock the producer
+	go func() {
+		for range results {
+		}
+	}()
+
+	processErr := <-errCh
+	if processErr != nil && !errors.Is(processErr, context.Canceled) {
+		return nil, processErr
 	}
 
 	return allMatches, nil
@@ -176,24 +199,41 @@ func (sp *StreamingProcessor) ProcessBytes(ctx context.Context, data []byte) ([]
 	// Create chunk processor
 	sp.chunkProcessor = sp.createChunkProcessor(matchBuffer)
 
+	workerCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	// Process data in chunks
 	results := make(chan ProcessingResult, sp.MaxConcurrency)
-	err := sp.processDataChunks(ctx, data, results)
-	if err != nil {
-		return nil, err
-	}
+	errCh := make(chan error, 1)
+
+	go func() {
+		errCh <- sp.processDataChunks(workerCtx, data, results)
+	}()
 
 	// Collect results
 	var allMatches []StreamingMatch
 	for result := range results {
 		if result.Error != nil {
+			cancel()
 			return nil, result.Error
 		}
 		allMatches = append(allMatches, result.Matches...)
 
 		if sp.EarlyTermination && len(result.Matches) > 0 {
+			cancel()
 			break
 		}
+	}
+
+	// Drain any remaining items to unblock the producer
+	go func() {
+		for range results {
+		}
+	}()
+
+	processErr := <-errCh
+	if processErr != nil && !errors.Is(processErr, context.Canceled) {
+		return nil, processErr
 	}
 
 	return allMatches, nil
@@ -214,16 +254,16 @@ func (sp *StreamingProcessor) extractRules() []*CompiledRule {
 	return sp.compiledProgram.Rules
 }
 
-// processChunks processes file data in chunks
+// processChunks processes file data in chunks with overlap for boundary-crossing patterns.
+// Chunks are processed sequentially to avoid data races on the shared AC automaton state.
 func (sp *StreamingProcessor) processChunks(ctx context.Context, file *os.File, results chan<- ProcessingResult) error {
 	defer close(results)
 
-	// Create buffered reader
 	reader := bufio.NewReaderSize(file, sp.BufferSize)
 
 	chunkIndex := 0
-	var wg sync.WaitGroup
-	semaphore := make(chan struct{}, sp.MaxConcurrency)
+	var overlapBuffer []byte
+	var currentStreamOffset int64
 
 	for {
 		select {
@@ -232,9 +272,22 @@ func (sp *StreamingProcessor) processChunks(ctx context.Context, file *os.File, 
 		default:
 		}
 
-		// Read chunk
-		chunk := make([]byte, sp.ChunkSize)
-		n, err := io.ReadFull(reader, chunk)
+		// Calculate overlap size (except for first chunk).
+		// Clamp to actual available overlap data from previous chunk.
+		overlapSize := 0
+		if chunkIndex > 0 {
+			overlapSize = min(max(sp.MaxPatternLen-1, 0), len(overlapBuffer))
+		}
+
+		// Allocate chunk buffer: overlap + new data
+		bufSize := overlapSize + sp.ChunkSize
+		chunk := make([]byte, bufSize)
+
+		// Copy overlap from previous chunk
+		copy(chunk, overlapBuffer)
+
+		// Read new data after the overlap region
+		n, err := io.ReadFull(reader, chunk[overlapSize:])
 		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
 			return fmt.Errorf("failed to read chunk: %w", err)
 		}
@@ -243,41 +296,42 @@ func (sp *StreamingProcessor) processChunks(ctx context.Context, file *os.File, 
 			break // End of file
 		}
 
-		// Process chunk
-		chunkData := chunk[:n]
-		wg.Add(1)
-		semaphore <- struct{}{} // Acquire semaphore
+		// Total valid bytes in chunk
+		validBytes := overlapSize + n
+		chunkData := chunk[:validBytes]
 
-		go func(chunkData []byte, chunkIndex int, offset int64) {
-			defer wg.Done()
-			defer func() { <-semaphore }() // Release semaphore
+		// Save overlap for next iteration
+		nextOverlapSize := max(sp.MaxPatternLen-1, 0)
+		if len(chunkData) >= nextOverlapSize {
+			overlapBuffer = make([]byte, nextOverlapSize)
+			copy(overlapBuffer, chunkData[len(chunkData)-nextOverlapSize:])
+		} else {
+			overlapBuffer = make([]byte, len(chunkData))
+			copy(overlapBuffer, chunkData)
+		}
 
-			result := sp.processChunk(chunkData, chunkIndex, offset)
-			results <- result
+		// Process chunk sequentially (AC automaton has shared mutable state)
+		chunkOffset := currentStreamOffset - int64(overlapSize)
+		result := sp.processChunk(chunkData, chunkIndex, chunkOffset)
+		results <- result
 
-			// Update progress
-			sp.updateProgress(int64(len(chunkData)))
-		}(chunkData, chunkIndex, int64(chunkIndex*sp.ChunkSize))
-
+		sp.updateProgress(int64(n))
+		currentStreamOffset += int64(n)
 		chunkIndex++
 	}
 
-	wg.Wait()
 	return nil
 }
 
-// processDataChunks processes byte data in chunks
+// processDataChunks processes byte data in chunks with overlap.
+// Sequential to avoid data races on shared AC automaton state.
 func (sp *StreamingProcessor) processDataChunks(ctx context.Context, data []byte, results chan<- ProcessingResult) error {
-	var wg sync.WaitGroup
-	semaphore := make(chan struct{}, sp.MaxConcurrency)
-
 	chunkCount := (len(data) + sp.ChunkSize - 1) / sp.ChunkSize
 
 	for i := range chunkCount {
 		select {
 		case <-ctx.Done():
-			// Wait for all goroutines to finish
-			wg.Wait()
+			close(results)
 			return fmt.Errorf("context canceled during processing: %w", ctx.Err())
 		default:
 		}
@@ -286,41 +340,21 @@ func (sp *StreamingProcessor) processDataChunks(ctx context.Context, data []byte
 		end := min(start+sp.ChunkSize, len(data))
 
 		// Add overlap for boundary-crossing patterns (except for first chunk)
-		var overlapSize int
 		if i > 0 {
-			overlapSize = max(sp.MaxPatternLen-1, 0)
+			overlapSize := min(max(sp.MaxPatternLen-1, 0), start)
 			start -= overlapSize
-			if start < 0 {
-				start = 0
-			}
 		}
 
 		chunkData := data[start:end]
-
-		wg.Add(1)
-		semaphore <- struct{}{} // Acquire semaphore
-
-		// Calculate actual offset for this chunk (without overlap)
 		actualOffset := int64(start)
 
-		go func(chunkData []byte, chunkIndex int, offset int64) {
-			defer wg.Done()
-			defer func() { <-semaphore }() // Release semaphore
+		result := sp.processChunk(chunkData, i, actualOffset)
+		results <- result
 
-			result := sp.processChunk(chunkData, chunkIndex, offset)
-
-			// Only send result if context is still active
-			select {
-			case <-ctx.Done():
-				return
-			case results <- result:
-				// Update progress based on actual chunk size processed
-				sp.updateProgress(int64(end - (chunkIndex * sp.ChunkSize)))
-			}
-		}(chunkData, i, actualOffset)
+		// Update progress based on new unique bytes processed
+		sp.updateProgress(int64(end - i*sp.ChunkSize))
 	}
 
-	wg.Wait()
 	close(results)
 	return nil
 }

@@ -968,7 +968,7 @@ func (c *Compiler) GetCompilationReport() string {
 		report += fmt.Sprintf("Errors (%d):\n", len(c.stats.Errors))
 		var reportSb626 strings.Builder
 		for _, err := range c.stats.Errors {
-			reportSb626.WriteString(fmt.Sprintf("  [%s] %s at %d:%d\n", err.Phase, err.Message, err.Line, err.Column))
+			fmt.Fprintf(&reportSb626, "  [%s] %s at %d:%d\n", err.Phase, err.Message, err.Line, err.Column)
 		}
 		report += reportSb626.String()
 		report += "\n"
@@ -978,7 +978,7 @@ func (c *Compiler) GetCompilationReport() string {
 		report += fmt.Sprintf("Warnings (%d):\n", len(c.stats.Warnings))
 		var reportSb634 strings.Builder
 		for _, warn := range c.stats.Warnings {
-			reportSb634.WriteString(fmt.Sprintf("  [%s] %s at %d:%d\n", warn.Phase, warn.Message, warn.Line, warn.Column))
+			fmt.Fprintf(&reportSb634, "  [%s] %s at %d:%d\n", warn.Phase, warn.Message, warn.Line, warn.Column)
 		}
 		report += reportSb634.String()
 		report += "\n"

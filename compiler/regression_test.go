@@ -99,7 +99,7 @@ func evaluateRule(rule *CompiledRule, program *CompiledProgram, data []byte) (bo
 	case ValueTypeDouble:
 		return top.DoubleVal != 0, nil
 	case ValueTypeString:
-		return top.StringVal != "", nil
+		return interp.GetString(top) != "", nil
 	default:
 		return false, nil
 	}
