@@ -217,10 +217,9 @@ func (p *Parser) readBoundNumber(l *lexer) (uint16, error) {
 
 	val := 0
 	for l.i < l.len && l.s[l.i] >= '0' && l.s[l.i] <= '9' {
-		newVal := val*10 + int(l.s[l.i]-'0')
-		if newVal > 65535 { //nolint:modernize // avoiding min() to prevent shadowing issues
-			newVal = 65535
-		}
+		newVal := min(val*10+int(l.s[l.i]-'0'),
+			//nolint:modernize // avoiding min() to prevent shadowing issues
+			65535)
 		val = newVal // clamp
 		l.i++
 	}

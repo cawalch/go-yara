@@ -2,6 +2,8 @@ package compiler
 
 import (
 	"fmt"
+	"maps"
+	"strings"
 )
 
 // JumpManager handles label generation and pending jump management for the condition compiler
@@ -59,9 +61,7 @@ func (jm *JumpManager) HasLabel(name string) bool {
 // GetAllLabels returns a copy of all labels
 func (jm *JumpManager) GetAllLabels() map[string]int {
 	result := make(map[string]int)
-	for name, position := range jm.labels {
-		result[name] = position
-	}
+	maps.Copy(result, jm.labels)
 	return result
 }
 
@@ -83,9 +83,7 @@ func (jm *JumpManager) GetLabelNames() []string {
 
 // SetLabels sets multiple labels at once
 func (jm *JumpManager) SetLabels(labels map[string]int) {
-	for name, position := range labels {
-		jm.labels[name] = position
-	}
+	maps.Copy(jm.labels, labels)
 }
 
 // ResetLabels clears all labels
@@ -236,11 +234,12 @@ func (jm *JumpManager) DumpLabels() string {
 		return "No labels defined"
 	}
 
-	result := fmt.Sprintf("Labels (%d total):\n", len(jm.labels))
+	var result strings.Builder
+	result.WriteString(fmt.Sprintf("Labels (%d total):\n", len(jm.labels)))
 	for name, position := range jm.labels {
-		result += fmt.Sprintf("  %s -> Position %d\n", name, position)
+		result.WriteString(fmt.Sprintf("  %s -> Position %d\n", name, position))
 	}
-	return result
+	return result.String()
 }
 
 // DumpPendingJumps returns a string representation of all pending jumps
@@ -249,12 +248,13 @@ func (jm *JumpManager) DumpPendingJumps() string {
 		return "No pending jumps"
 	}
 
-	result := fmt.Sprintf("Pending Jumps (%d total):\n", len(jm.pendingJumps))
+	var result strings.Builder
+	result.WriteString(fmt.Sprintf("Pending Jumps (%d total):\n", len(jm.pendingJumps)))
 	for i, jump := range jm.pendingJumps {
-		result += fmt.Sprintf("  [%d] OP_%d -> %s (at position %d, line %d, col %d)\n",
-			i, jump.Opcode, jump.Label, jump.Position, jump.Line, jump.Column)
+		result.WriteString(fmt.Sprintf("  [%d] OP_%d -> %s (at position %d, line %d, col %d)\n",
+			i, jump.Opcode, jump.Label, jump.Position, jump.Line, jump.Column))
 	}
-	return result
+	return result.String()
 }
 
 // DumpAll returns a comprehensive dump of all jump manager state
@@ -265,8 +265,8 @@ func (jm *JumpManager) DumpAll() string {
 }
 
 // GetStats returns statistics about the jump manager state
-func (jm *JumpManager) GetStats() map[string]interface{} {
-	return map[string]interface{}{
+func (jm *JumpManager) GetStats() map[string]any {
+	return map[string]any{
 		"label_count":        jm.GetLabelCount(),
 		"pending_jump_count": jm.GetPendingJumpCount(),
 		"next_label_number":  jm.labelCounter + 1,
@@ -314,8 +314,8 @@ func (jm *JumpManager) FindJumpsByOpcode(opcode Opcode) []PendingJump {
 }
 
 // GetJumpComplexity returns metrics about jump complexity
-func (jm *JumpManager) GetJumpComplexity() map[string]interface{} {
-	return map[string]interface{}{
+func (jm *JumpManager) GetJumpComplexity() map[string]any {
+	return map[string]any{
 		"total_jumps":         jm.GetPendingJumpCount(),
 		"unique_labels":       jm.GetLabelCount(),
 		"max_jumps_per_label": 0,

@@ -149,10 +149,7 @@ func FuzzAhoCorasickBinary(f *testing.F) {
 		// Split into patterns of varying lengths
 		var patterns [][]byte
 		for i := 0; i < len(data); i += 4 {
-			end := i + 4
-			if end > len(data) {
-				end = len(data)
-			}
+			end := min(i+4, len(data))
 			if end > i {
 				patterns = append(patterns, data[i:end])
 			}

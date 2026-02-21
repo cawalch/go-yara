@@ -868,7 +868,7 @@ func TestComplexStringExpressions(t *testing.T) {
 
 func generateUniqueRules(count int) string {
 	var rules strings.Builder
-	for i := 0; i < count; i++ {
+	for i := range count {
 		rules.WriteString(`rule test_`)
 		rules.WriteString(string(rune('0' + i)))
 		rules.WriteString(` { condition: true } `)
@@ -878,7 +878,7 @@ func generateUniqueRules(count int) string {
 
 func generateRulesWithStrings(count int) string {
 	var rules strings.Builder
-	for i := 0; i < count; i++ {
+	for i := range count {
 		rules.WriteString(`rule test_`)
 		rules.WriteString(string(rune('0' + i%10)))
 		rules.WriteString(` { strings: $a = "test`)
@@ -891,7 +891,7 @@ func generateRulesWithStrings(count int) string {
 func generateRuleWithStrings(count int) string {
 	var rule strings.Builder
 	rule.WriteString(`rule test { strings: `)
-	for i := 0; i < count; i++ {
+	for i := range count {
 		rule.WriteString(`$a`)
 		rule.WriteString(string(rune('0' + i%10)))
 		rule.WriteString(` = "test`)
@@ -906,7 +906,7 @@ func generateRulesWithStringModifiers(count int) string {
 	var rule strings.Builder
 	rule.WriteString(`rule test { strings: `)
 	modifiers := []string{"", " nocase", " ascii", " wide", " fullword", " private"}
-	for i := 0; i < count; i++ {
+	for i := range count {
 		rule.WriteString(`$a`)
 		rule.WriteString(string(rune('0' + i%10)))
 		rule.WriteString(` = "test`)
@@ -923,7 +923,7 @@ func generateMixedStringTypes(count int) string {
 	var rule strings.Builder
 	rule.WriteString(`rule test { strings: `)
 	types := []string{`$a = "text"`, `$b = { DE AD BE EF }`, `$c = /regex/`}
-	for i := 0; i < count; i++ {
+	for i := range count {
 		rule.WriteString(strings.Replace(types[i%3], "$a", "$"+string(rune('a'+i)), 1))
 		rule.WriteString(` `)
 	}
@@ -933,7 +933,7 @@ func generateMixedStringTypes(count int) string {
 
 func generateStringList(count int) string {
 	var list strings.Builder
-	for i := 0; i < count; i++ {
+	for i := range count {
 		list.WriteString(`$`)
 		list.WriteString(string(rune('a' + i%26)))
 		list.WriteString(` = "test`)
@@ -945,7 +945,7 @@ func generateStringList(count int) string {
 
 func repeatStrings(s string, count int, sep string) []string {
 	result := make([]string, count)
-	for i := 0; i < count; i++ {
+	for i := range count {
 		result[i] = s
 	}
 	return result

@@ -2,6 +2,8 @@ package compiler
 
 import (
 	"fmt"
+	"maps"
+	"strings"
 )
 
 // VariableManager handles variable mapping and indexing for the condition compiler
@@ -51,9 +53,7 @@ func (vm *VariableManager) HasVariable(name string) bool {
 // GetAllVariables returns a copy of all variables
 func (vm *VariableManager) GetAllVariables() map[string]int {
 	result := make(map[string]int)
-	for name, id := range vm.variables {
-		result[name] = id
-	}
+	maps.Copy(result, vm.variables)
 	return result
 }
 
@@ -100,9 +100,7 @@ func (vm *VariableManager) HasExternalVariable(name string) bool {
 // GetAllExternalVariables returns a copy of all external variables
 func (vm *VariableManager) GetAllExternalVariables() map[string]int {
 	result := make(map[string]int)
-	for name, id := range vm.externalVariables {
-		result[name] = id
-	}
+	maps.Copy(result, vm.externalVariables)
 	return result
 }
 
@@ -142,9 +140,7 @@ func (vm *VariableManager) HasRule(name string) bool {
 // GetAllRules returns a copy of all rule indices
 func (vm *VariableManager) GetAllRules() map[string]int {
 	result := make(map[string]int)
-	for name, index := range vm.ruleIndexMap {
-		result[name] = index
-	}
+	maps.Copy(result, vm.ruleIndexMap)
 	return result
 }
 
@@ -188,9 +184,7 @@ func (vm *VariableManager) SetExternalVariables(variables map[string]int) {
 
 // SetRules sets multiple rule indices at once
 func (vm *VariableManager) SetRules(rules map[string]int) {
-	for name, index := range rules {
-		vm.ruleIndexMap[name] = index
-	}
+	maps.Copy(vm.ruleIndexMap, rules)
 }
 
 // State Management
@@ -232,8 +226,8 @@ func (vm *VariableManager) ValidateVariableName(name string) error {
 }
 
 // GetVariableStats returns statistics about variable usage
-func (vm *VariableManager) GetVariableStats() map[string]interface{} {
-	return map[string]interface{}{
+func (vm *VariableManager) GetVariableStats() map[string]any {
+	return map[string]any{
 		"variables_count": vm.GetVariableCount(),
 		"external_count":  vm.GetExternalVariableCount(),
 		"rules_count":     vm.GetRuleCount(),
@@ -249,11 +243,12 @@ func (vm *VariableManager) DumpVariables() string {
 		return "No variables defined"
 	}
 
-	result := fmt.Sprintf("Variables (%d total):\n", len(vm.variables))
+	var result strings.Builder
+	result.WriteString(fmt.Sprintf("Variables (%d total):\n", len(vm.variables)))
 	for name, id := range vm.variables {
-		result += fmt.Sprintf("  %s -> ID %d\n", name, id)
+		result.WriteString(fmt.Sprintf("  %s -> ID %d\n", name, id))
 	}
-	return result
+	return result.String()
 }
 
 // DumpExternalVariables returns a string representation of all external variables
@@ -262,11 +257,12 @@ func (vm *VariableManager) DumpExternalVariables() string {
 		return "No external variables defined"
 	}
 
-	result := fmt.Sprintf("External Variables (%d total):\n", len(vm.externalVariables))
+	var result strings.Builder
+	result.WriteString(fmt.Sprintf("External Variables (%d total):\n", len(vm.externalVariables)))
 	for name, id := range vm.externalVariables {
-		result += fmt.Sprintf("  %s -> ID %d\n", name, id)
+		result.WriteString(fmt.Sprintf("  %s -> ID %d\n", name, id))
 	}
-	return result
+	return result.String()
 }
 
 // DumpRules returns a string representation of all rule indices
@@ -275,11 +271,12 @@ func (vm *VariableManager) DumpRules() string {
 		return "No rules indexed"
 	}
 
-	result := fmt.Sprintf("Rule Indices (%d total):\n", len(vm.ruleIndexMap))
+	var result strings.Builder
+	result.WriteString(fmt.Sprintf("Rule Indices (%d total):\n", len(vm.ruleIndexMap)))
 	for name, index := range vm.ruleIndexMap {
-		result += fmt.Sprintf("  %s -> Index %d\n", name, index)
+		result.WriteString(fmt.Sprintf("  %s -> Index %d\n", name, index))
 	}
-	return result
+	return result.String()
 }
 
 // DumpAll returns a comprehensive dump of all variable manager state

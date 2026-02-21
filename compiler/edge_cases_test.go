@@ -551,7 +551,7 @@ func TestRegexEdgeCases(t *testing.T) {
 // Helper function to generate a string with all possible byte values
 func generateAllByteString() string {
 	var result strings.Builder
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		if i >= 32 && i <= 126 { // Printable ASCII range
 			result.WriteByte(byte(i))
 		}

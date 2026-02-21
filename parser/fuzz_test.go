@@ -97,8 +97,8 @@ func FuzzYARAParser(f *testing.F) {
 		}
 
 		// Test with very long single lines
-		longLines := strings.Split(inputStr, "\n")
-		for _, line := range longLines {
+		longLines := strings.SplitSeq(inputStr, "\n")
+		for line := range longLines {
 			if len(line) > 1000 {
 				// Test with truncated versions of very long lines
 				for truncateLen := 100; truncateLen < len(line) && truncateLen < 2000; truncateLen += 100 {
