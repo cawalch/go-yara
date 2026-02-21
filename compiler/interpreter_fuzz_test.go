@@ -53,13 +53,13 @@ func FuzzInterpreter(f *testing.F) {
 		}()
 
 		// Split data into rule and test data
-		nullIndex := bytes.IndexByte(data, 0)
-		if nullIndex == -1 {
+		before, after, ok := bytes.Cut(data, []byte{0})
+		if !ok {
 			return
 		}
 
-		ruleBytes := data[:nullIndex]
-		testData := data[nullIndex+1:]
+		ruleBytes := before
+		testData := after
 
 		ruleStr := string(ruleBytes)
 
@@ -167,13 +167,13 @@ func FuzzInterpreterMultipleRules(f *testing.F) {
 		}()
 
 		// Split into rules and test data
-		nullIndex := bytes.IndexByte(data, 0)
-		if nullIndex == -1 {
+		before, after, ok := bytes.Cut(data, []byte{0})
+		if !ok {
 			return
 		}
 
-		ruleBytes := data[:nullIndex]
-		testData := data[nullIndex+1:]
+		ruleBytes := before
+		testData := after
 
 		ruleStr := string(ruleBytes)
 
@@ -378,7 +378,7 @@ func FuzzInterpreterMemory(f *testing.F) {
 		interp.SetRuleResults(make(map[string]bool))
 
 		// Pre-fill memory with values
-		for i := 0; i < 256; i++ {
+		for i := range 256 {
 			interp.memory[i] = Value{Type: ValueTypeInt, IntVal: int64(i)}
 		}
 
@@ -414,13 +414,13 @@ func FuzzInterpreterMatchContext(f *testing.F) {
 			}
 		}()
 
-		nullIndex := bytes.IndexByte(data, 0)
-		if nullIndex == -1 {
+		before, after, ok := bytes.Cut(data, []byte{0})
+		if !ok {
 			return
 		}
 
-		ruleBytes := data[:nullIndex]
-		testData := data[nullIndex+1:]
+		ruleBytes := before
+		testData := after
 
 		ruleStr := string(ruleBytes)
 

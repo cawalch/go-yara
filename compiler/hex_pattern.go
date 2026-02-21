@@ -72,11 +72,11 @@ func (sc *StringCompiler) parseHexPattern(hexStr string) (*HexPattern, error) {
 
 func stripHexBraces(hexStr string) string {
 	trimmed := strings.TrimSpace(hexStr)
-	if strings.HasPrefix(trimmed, "{") {
-		trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, "{"))
+	if after, ok := strings.CutPrefix(trimmed, "{"); ok {
+		trimmed = strings.TrimSpace(after)
 	}
-	if strings.HasSuffix(trimmed, "}") {
-		trimmed = strings.TrimSpace(strings.TrimSuffix(trimmed, "}"))
+	if before, ok := strings.CutSuffix(trimmed, "}"); ok {
+		trimmed = strings.TrimSpace(before)
 	}
 	return trimmed
 }
@@ -317,7 +317,7 @@ func FindHexMatches(pattern *HexPattern, data []byte) []Match {
 	if len(keys) == 0 && len(pattern.XorRange) > 0 {
 		keys = expandXorKeys(pattern.XorRange)
 	}
-	for start := 0; start < len(data); start++ {
+	for start := range data {
 		var ends []int
 		if len(keys) == 0 {
 			ends = matchHexTokens(pattern.Tokens, data, start)

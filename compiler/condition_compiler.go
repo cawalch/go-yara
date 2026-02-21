@@ -1432,8 +1432,8 @@ func (cc *ConditionCompiler) expandStringSetIdentifier(name string) ([]string, e
 	if name == "$" {
 		return cc.anonymousStringIdentifiers(), nil
 	}
-	if strings.HasSuffix(name, "*") {
-		prefix := strings.TrimSuffix(name, "*")
+	if before, ok := strings.CutSuffix(name, "*"); ok {
+		prefix := before
 		return cc.matchingStringIdentifiers(prefix), nil
 	}
 	if _, ok := cc.stringOffsets[name]; ok {

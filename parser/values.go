@@ -147,7 +147,7 @@ const (
 // OpcodeArg represents an argument to an opcode
 type OpcodeArg struct {
 	Type     OperandType
-	Value    interface{}
+	Value    any
 	Required bool
 	Position Position
 }
@@ -164,7 +164,7 @@ func NewOpcode(value string, name string, position Position) *Opcode {
 }
 
 // AddArg adds an argument to the opcode
-func (op *Opcode) AddArg(argType OperandType, value interface{}, required bool, position Position) {
+func (op *Opcode) AddArg(argType OperandType, value any, required bool, position Position) {
 	op.Args = append(op.Args, OpcodeArg{
 		Type:     argType,
 		Value:    value,
@@ -268,7 +268,7 @@ func categorizeOpcode(opcode string) OpcodeCategory {
 // Operand represents an operand with enhanced type safety and validation
 type Operand struct {
 	Type     OperandType
-	Value    interface{}
+	Value    any
 	Position Position
 }
 
@@ -301,7 +301,7 @@ const (
 )
 
 // NewOperand creates a new operand
-func NewOperand(operandType OperandType, value interface{}, position Position) *Operand {
+func NewOperand(operandType OperandType, value any, position Position) *Operand {
 	return &Operand{
 		Type:     operandType,
 		Value:    value,

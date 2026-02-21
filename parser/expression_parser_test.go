@@ -24,7 +24,7 @@ func (m *mockCompiler) CompileExpression(expr ast.Expression) error {
 func TestExpressionParserConvertToOpcode(t *testing.T) {
 	tests := []struct {
 		name        string
-		emitter     interface{}
+		emitter     any
 		expectError bool
 		expectCall  bool
 	}{

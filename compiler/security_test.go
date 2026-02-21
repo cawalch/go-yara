@@ -3,6 +3,7 @@ package compiler
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/cawalch/go-yara/ast"
@@ -318,20 +319,20 @@ func TestProcessIncludes_FileSizeLimits(t *testing.T) {
 	}`
 
 	// Repeat the rule many times to make the file large
-	var largeContent string
+	var largeContent strings.Builder
 	_ = content // Use content to avoid unused variable warning
-	for i := 0; i < 1000; i++ {
-		largeContent += `rule LargeRule` + string(rune(i)) + ` {
+	for i := range 1000 {
+		largeContent.WriteString(`rule LargeRule` + string(rune(i)) + ` {
 			strings:
 				$pattern` + string(rune(i)) + ` = "pattern` + string(rune(i)) + `"
 			condition:
 				$pattern` + string(rune(i)) + `
 		}
-		`
+		`)
 	}
 	_ = content // Avoid unused variable warning
 
-	if err := os.WriteFile(largeFile, []byte(largeContent), 0644); err != nil {
+	if err := os.WriteFile(largeFile, []byte(largeContent.String()), 0644); err != nil {
 		t.Fatalf("Failed to create large include file: %v", err)
 	}
 
