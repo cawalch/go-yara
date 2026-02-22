@@ -79,14 +79,14 @@ func FuzzAhoCorasickPatterns(f *testing.F) {
 
 		for _, text := range testTexts {
 			// Test Search method with byte data
-			matches := ac.Search([]byte(text))
-			_ = matches
+			for range ac.SearchIter([]byte(text)) {
+			}
 
 			// Test long text matching
 			if len(text) < 50 {
 				longText := strings.Repeat(text, 100)
-				matches = ac.Search([]byte(longText))
-				_ = matches
+				for range ac.SearchIter([]byte(longText)) {
+				}
 			}
 		}
 
@@ -99,7 +99,8 @@ func FuzzAhoCorasickPatterns(f *testing.F) {
 			if err := ac2.Compile(); err != nil {
 				continue
 			}
-			_ = ac2.Search(validPatterns[i])
+			for range ac2.SearchIter(validPatterns[i]) {
+			}
 		}
 
 		// Test with prefix/suffix variations
@@ -109,18 +110,18 @@ func FuzzAhoCorasickPatterns(f *testing.F) {
 			}
 			// Test pattern with prefix
 			withPrefix := "prefix" + pattern
-			matches := ac.Search([]byte(withPrefix))
-			_ = matches
+			for range ac.SearchIter([]byte(withPrefix)) {
+			}
 
 			// Test pattern with suffix
 			withSuffix := pattern + "suffix"
-			matches = ac.Search([]byte(withSuffix))
-			_ = matches
+			for range ac.SearchIter([]byte(withSuffix)) {
+			}
 
 			// Test pattern in middle
 			inMiddle := "start" + pattern + "end"
-			matches = ac.Search([]byte(inMiddle))
-			_ = matches
+			for range ac.SearchIter([]byte(inMiddle)) {
+			}
 		}
 	})
 }
@@ -179,19 +180,19 @@ func FuzzAhoCorasickBinary(f *testing.F) {
 		}
 
 		for _, testBytes := range testData {
-			matches := ac.Search(testBytes)
-			_ = matches
+			for range ac.SearchIter(testBytes) {
+			}
 
 			// Test with prefix/suffix
 			withPrefix := append([]byte("prefix"), testBytes...)
-			matches = ac.Search(withPrefix)
-			_ = matches
+			for range ac.SearchIter(withPrefix) {
+			}
 
 			withSuffix := make([]byte, len(testBytes)+6)
 			copy(withSuffix, testBytes)
 			copy(withSuffix[len(testBytes):], []byte("suffix"))
-			matches = ac.Search(withSuffix)
-			_ = matches
+			for range ac.SearchIter(withSuffix) {
+			}
 		}
 
 		// Test with individual patterns
@@ -203,7 +204,8 @@ func FuzzAhoCorasickBinary(f *testing.F) {
 			if err := ac2.Compile(); err != nil {
 				continue
 			}
-			_ = ac2.Search(pattern)
+			for range ac2.SearchIter(pattern) {
+			}
 		}
 	})
 }

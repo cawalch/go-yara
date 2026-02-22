@@ -35,7 +35,10 @@ func TestACAutomaton(t *testing.T) {
 
 	// Test search
 	testData := []byte("hello world")
-	matches := ac.Search(testData)
+	var matches []ACMatch
+	for match := range ac.SearchIter(testData) {
+		matches = append(matches, match)
+	}
 
 	if len(matches) == 0 {
 		t.Error("Expected matches but found none")
@@ -75,7 +78,10 @@ func TestACAutomatonSearch(t *testing.T) {
 
 	// Test search
 	testData := []byte("This is a test pattern for searching")
-	matches := ac.Search(testData)
+	var matches []ACMatch
+	for match := range ac.SearchIter(testData) {
+		matches = append(matches, match)
+	}
 
 	if len(matches) == 0 {
 		t.Error("Expected to find matches in test data")

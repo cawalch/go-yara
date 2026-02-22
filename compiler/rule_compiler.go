@@ -699,17 +699,6 @@ func (cr *CompiledRule) GetAutomaton() *ACAutomaton {
 	return cr.Automaton
 }
 
-// SearchPatternsOptimized searches for patterns using the optimized automaton
-func (cr *CompiledRule) SearchPatternsOptimized(data []byte) []ACMatch {
-	if cr.Automaton == nil {
-		return nil
-	}
-
-	// The optimized automaton is now the default implementation
-	// with cache-friendly state transitions and pre-allocated buffers
-	return cr.Automaton.Search(data)
-}
-
 // Validate validates the compiled rule
 func (cr *CompiledRule) Validate() error {
 	if len(cr.Bytecode) == 0 {

@@ -228,7 +228,7 @@ func BenchmarkEmitter(b *testing.B) {
 	}
 }
 
-// BenchmarkACAutomaton benchmarks the Aho-Corasick automaton
+// BenchmarkACAutomaton benchmarks the Aho-Corasick automaton iterator
 func BenchmarkACAutomaton(b *testing.B) {
 	ac := NewACAutomaton()
 
@@ -247,7 +247,9 @@ func BenchmarkACAutomaton(b *testing.B) {
 	testData := []byte("This is a test pattern for searching and benchmarking performance")
 
 	for b.Loop() {
-		ac.Search(testData)
+		for range ac.SearchIter(testData) {
+			// zero allocation
+		}
 	}
 }
 
