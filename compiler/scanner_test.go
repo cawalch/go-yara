@@ -169,3 +169,70 @@ func BenchmarkMultiRuleScanner(b *testing.B) {
 		}
 	}
 }
+
+// BenchmarkProductionScanner tests the performance of the Scanner engine using a realistic
+// mix of large rulesets, regex patterns, complex conditions, and various modifiers to simulate
+// a production scanning workload. This specifically targets interpreter/virtual machine throughput.
+func BenchmarkProductionScanner(b *testing.B) {
+	// Provide a realistic but scalable workload for benchmark profiling
+	const numRules = 20
+	var ruleSource strings.Builder
+
+	// Generate a mix of moderately complex rules
+	for i := range numRules {
+		// Even rules: hex strings and conditions
+		// Odd rules: regex strings and text modifiers
+		if i%2 == 0 {
+			fmt.Fprintf(&ruleSource, `
+			rule r_%d {
+				strings:
+					$hex1 = { 0a 0b [2-4] 0c 0d }
+					$hex2 = { DE AD BE EF }
+				condition:
+					$hex1 or ($hex2 at 0)
+			}
+			`, i)
+		} else {
+			fmt.Fprintf(&ruleSource, `
+			rule r_%d {
+				strings:
+					$str1 = "suspicious_payload" wide nocase
+					$re1 = /malwa[a-z]{1,2}\.exe/i
+				condition:
+					$str1 and $re1
+			}
+			`, i)
+		}
+	}
+
+	compiler := NewCompiler()
+	program, err := compiler.CompileSource(ruleSource.String())
+	if err != nil {
+		b.Fatalf("compile failed: %v", err)
+	}
+
+	scanner := NewScanner(program)
+	defer scanner.Close()
+
+	// A realistic 100KB payload mimicking a binary
+	data := make([]byte, 100*1024)
+	for i := range data {
+		data[i] = byte(i % 256)
+	}
+
+	// Inject some patterns that will match
+	copy(data[50:], []byte{0xDE, 0xAD, 0xBE, 0xEF})
+	copy(data[8000:], "suspicious_payload in a wide format maybe?")
+	copy(data[50000:], "some malware_variant.exe running")
+	copy(data[70000:], []byte{0x0a, 0x0b, 0x00, 0x00, 0x00, 0x0c, 0x0d})
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for b.Loop() {
+		_, err := scanner.Scan(data)
+		if err != nil {
+			b.Fatalf("scan failed: %v", err)
+		}
+	}
+}

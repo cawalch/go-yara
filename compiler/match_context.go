@@ -102,11 +102,16 @@ func addRegexMatches(ctx *MatchContext, id string, regexInfo RegexPattern, data 
 		if !matched {
 			return
 		}
+
 		absStart := pos + start
 		absEnd := pos + end
-		if absEnd < absStart {
-			return
+
+		// Handle invalid range or zero-length matches to prevent infinite allocation loops
+		if absEnd <= absStart {
+			pos = absStart + 1
+			continue
 		}
+
 		m := Match{
 			Pattern: id,
 			Offset:  int64(absStart),
@@ -115,6 +120,8 @@ func addRegexMatches(ctx *MatchContext, id string, regexInfo RegexPattern, data 
 		if matchPassesModifiers(data, m, modifiers, isWide) {
 			ctx.AddMatch(m)
 		}
+
+		// Advance position past the current match start to find overlapping/subsequent matches
 		pos = absStart + 1
 	}
 }

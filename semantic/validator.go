@@ -71,16 +71,6 @@ func (v *Validator) collectSymbols(rule *ast.Rule) {
 			Position: rule.Pos,
 		})
 	}
-
-	// Define strings in the global scope as well
-	for _, str := range rule.Strings {
-		if err := v.symbolTable.DefineString(str.Identifier, str.Pos, str); err != nil {
-			v.addError(&Error{
-				Message:  err.Error(),
-				Position: str.Pos,
-			})
-		}
-	}
 }
 
 // collectExternalVariable collects an external variable symbol

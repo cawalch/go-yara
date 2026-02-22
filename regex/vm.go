@@ -49,7 +49,7 @@ type thread struct {
 }
 
 // handleLiteralOp handles OpLiteral and OpNotLiteral opcodes
-func handleLiteralOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance int, noCase bool, negated bool, wide bool, bestEnd *int) bool {
+func handleLiteralOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance int, noCase bool, negated bool, wide bool, bestEnd *int, visited []bool) bool {
 	if pc+1 >= len(code) {
 		return false
 	}
@@ -68,7 +68,7 @@ func handleLiteralOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advan
 	}
 
 	if ok {
-		if addThread(code, s, next, pc+2, pos+advance, make(map[int]bool), wide) {
+		if addThread(code, s, next, pc+2, pos+advance, visited, wide) {
 			if pos+advance > *bestEnd {
 				*bestEnd = pos + advance
 			}
@@ -79,7 +79,7 @@ func handleLiteralOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advan
 }
 
 // handleMaskedLiteralOp handles OpMaskedLiteral and OpMaskedNotLiteral opcodes
-func handleMaskedLiteralOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance int, negated bool, wide bool, bestEnd *int) bool {
+func handleMaskedLiteralOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance int, negated bool, wide bool, bestEnd *int, visited []bool) bool {
 	if pc+2 >= len(code) {
 		return false
 	}
@@ -92,7 +92,7 @@ func handleMaskedLiteralOp(code, s []byte, next *[]thread, pc int, ch byte, pos,
 	}
 
 	if matches {
-		if addThread(code, s, next, pc+3, pos+advance, make(map[int]bool), wide) {
+		if addThread(code, s, next, pc+3, pos+advance, visited, wide) {
 			if pos+advance > *bestEnd {
 				*bestEnd = pos + advance
 			}
@@ -103,11 +103,11 @@ func handleMaskedLiteralOp(code, s []byte, next *[]thread, pc int, ch byte, pos,
 }
 
 // handleAnyOp handles OpAny opcode
-func handleAnyOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance int, dotAll, wide bool, bestEnd *int) bool {
+func handleAnyOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance int, dotAll, wide bool, bestEnd *int, visited []bool) bool {
 	// Dot doesn't match newline unless DOT_ALL
 	// In WIDE, newline is '\n'+0x00
 	if (!wide && (ch != '\n' || dotAll)) || (wide && ((ch != '\n') || dotAll)) {
-		if addThread(code, s, next, pc+1, pos+advance, make(map[int]bool), wide) {
+		if addThread(code, s, next, pc+1, pos+advance, visited, wide) {
 			if pos+advance > *bestEnd {
 				*bestEnd = pos + advance
 			}
@@ -140,7 +140,7 @@ func checkBitmapMembership(code []byte, bmStart int, ch byte, noCase bool) bool 
 }
 
 // handleClassOp handles OpClass opcode
-func handleClassOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance int, noCase bool, wide bool, bestEnd *int) bool {
+func handleClassOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance int, noCase bool, wide bool, bestEnd *int, visited []bool) bool {
 	// Layout: [op][32-byte bitmap][1-byte neg]
 	bmStart := pc + 1
 	negIdx := bmStart + 32
@@ -156,7 +156,7 @@ func handleClassOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance
 	}
 
 	if inSet {
-		if addThread(code, s, next, negIdx+1, pos+advance, make(map[int]bool), wide) {
+		if addThread(code, s, next, negIdx+1, pos+advance, visited, wide) {
 			if pos+advance > *bestEnd {
 				*bestEnd = pos + advance
 			}
@@ -167,9 +167,9 @@ func handleClassOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance
 }
 
 // handleCharClassOp handles character class opcodes (OpDigit, OpSpace, etc.)
-func handleCharClassOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance int, charClassFunc func(byte) bool, wide bool, bestEnd *int) bool {
+func handleCharClassOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance int, charClassFunc func(byte) bool, wide bool, bestEnd *int, visited []bool) bool {
 	if charClassFunc(ch) {
-		if addThread(code, s, next, pc+1, pos+advance, make(map[int]bool), wide) {
+		if addThread(code, s, next, pc+1, pos+advance, visited, wide) {
 			if pos+advance > *bestEnd {
 				*bestEnd = pos + advance
 			}
@@ -191,8 +191,12 @@ func runAtMatch(code, s []byte, flags Flags, start int) (matched bool, length in
 	// Track leftmost-longest end for this start position.
 	bestEnd := -1
 
+	// Pre-allocate a single visited array for the lifetime of this match attempt
+	// We clear it before computing each closure.
+	visited := make([]bool, len(code))
+
 	// Epsilon/assertion closure at the start position.
-	if addThread(code, s, &cur, 0, start, make(map[int]bool), wide) {
+	if addThread(code, s, &cur, 0, start, visited, wide) {
 		// MATCH reachable without consuming; end at current position.
 		bestEnd = start
 	}
@@ -206,31 +210,35 @@ func runAtMatch(code, s []byte, flags Flags, start int) (matched bool, length in
 				continue
 			}
 			// Use helper functions to handle each opcode type
+
+			// Clear visited array cleanly for each thread step
+			clear(visited)
+
 			switch code[pc] {
 			case OpLiteral:
-				handleLiteralOp(code, s, &next, pc, ch, pos, advance, noCase, false, wide, &bestEnd)
+				handleLiteralOp(code, s, &next, pc, ch, pos, advance, noCase, false, wide, &bestEnd, visited)
 			case OpNotLiteral:
-				handleLiteralOp(code, s, &next, pc, ch, pos, advance, noCase, true, wide, &bestEnd)
+				handleLiteralOp(code, s, &next, pc, ch, pos, advance, noCase, true, wide, &bestEnd, visited)
 			case OpMaskedLiteral:
-				handleMaskedLiteralOp(code, s, &next, pc, ch, pos, advance, false, wide, &bestEnd)
+				handleMaskedLiteralOp(code, s, &next, pc, ch, pos, advance, false, wide, &bestEnd, visited)
 			case OpMaskedNotLiteral:
-				handleMaskedLiteralOp(code, s, &next, pc, ch, pos, advance, true, wide, &bestEnd)
+				handleMaskedLiteralOp(code, s, &next, pc, ch, pos, advance, true, wide, &bestEnd, visited)
 			case OpAny:
-				handleAnyOp(code, s, &next, pc, ch, pos, advance, dotAll, wide, &bestEnd)
+				handleAnyOp(code, s, &next, pc, ch, pos, advance, dotAll, wide, &bestEnd, visited)
 			case OpClass:
-				handleClassOp(code, s, &next, pc, ch, pos, advance, noCase, wide, &bestEnd)
+				handleClassOp(code, s, &next, pc, ch, pos, advance, noCase, wide, &bestEnd, visited)
 			case OpWordChar:
-				handleCharClassOp(code, s, &next, pc, ch, pos, advance, isWord, wide, &bestEnd)
+				handleCharClassOp(code, s, &next, pc, ch, pos, advance, isWord, wide, &bestEnd, visited)
 			case OpNonWordChar:
-				handleCharClassOp(code, s, &next, pc, ch, pos, advance, func(b byte) bool { return !isWord(b) }, wide, &bestEnd)
+				handleCharClassOp(code, s, &next, pc, ch, pos, advance, func(b byte) bool { return !isWord(b) }, wide, &bestEnd, visited)
 			case OpSpace:
-				handleCharClassOp(code, s, &next, pc, ch, pos, advance, isSpace, wide, &bestEnd)
+				handleCharClassOp(code, s, &next, pc, ch, pos, advance, isSpace, wide, &bestEnd, visited)
 			case OpNonSpace:
-				handleCharClassOp(code, s, &next, pc, ch, pos, advance, func(b byte) bool { return !isSpace(b) }, wide, &bestEnd)
+				handleCharClassOp(code, s, &next, pc, ch, pos, advance, func(b byte) bool { return !isSpace(b) }, wide, &bestEnd, visited)
 			case OpDigit:
-				handleCharClassOp(code, s, &next, pc, ch, pos, advance, isDigit, wide, &bestEnd)
+				handleCharClassOp(code, s, &next, pc, ch, pos, advance, isDigit, wide, &bestEnd, visited)
 			case OpNonDigit:
-				handleCharClassOp(code, s, &next, pc, ch, pos, advance, func(b byte) bool { return !isDigit(b) }, wide, &bestEnd)
+				handleCharClassOp(code, s, &next, pc, ch, pos, advance, func(b byte) bool { return !isDigit(b) }, wide, &bestEnd, visited)
 			default:
 				// Unknown or assertion/non-consuming op remains handled in addThread; skip here
 			}
@@ -289,7 +297,7 @@ func runAtMatch(code, s []byte, flags Flags, start int) (matched bool, length in
 // addThread computes the epsilon/assertion closure from (pc,pos) and appends
 // consuming states into list. Returns true if OpMatch is reachable in the
 // closure at the given position.
-func addThread(code, s []byte, list *[]thread, pc, pos int, visited map[int]bool, wide bool) bool { //nolint:revive,cyclop // argument-limit and complexity are explicit for VM closure clarity
+func addThread(code, s []byte, list *[]thread, pc, pos int, visited []bool, wide bool) bool { //nolint:revive,cyclop // argument-limit and complexity are explicit for VM closure clarity
 	for {
 		if pc < 0 || pc >= len(code) {
 			return false
@@ -444,7 +452,7 @@ func checkAndReturnIfExhausted(cur []thread, matched *bool, length *int, bestEnd
 }
 
 // addSplitThreads adds threads for split operations based on the operation type
-func addSplitThreads(code, s []byte, list *[]thread, nextPC, altPC, pos int, visited map[int]bool, wide bool, op uint8) bool {
+func addSplitThreads(code, s []byte, list *[]thread, nextPC, altPC, pos int, visited []bool, wide bool, op uint8) bool {
 	if op == OpSplitA {
 		if addThread(code, s, list, nextPC, pos, visited, wide) {
 			return true
