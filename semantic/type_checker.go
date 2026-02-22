@@ -697,17 +697,19 @@ func (tc *TypeChecker) checkStringCount(strCount *ast.StringCount) *TypeInfo {
 
 // checkForLoop checks the type of for loop expressions
 func (tc *TypeChecker) checkForLoop(forLoop *ast.ForLoop) *TypeInfo {
-	// Create a scope for the loop variable so it is visible in the condition.
+	// Create a scope for the loop variables so it is visible in the condition.
 	tc.symbolTable.EnterScope("for_loop")
-	if forLoop.Variable != "" {
-		if err := tc.symbolTable.DefineVariable(forLoop.Variable, forLoop.Pos, SymbolVariable); err != nil {
-			tc.addError(err)
+	for _, variable := range forLoop.Variables {
+		if variable != "" {
+			if err := tc.symbolTable.DefineVariable(variable, forLoop.Pos, SymbolVariable); err != nil {
+				tc.addError(err)
+			}
 		}
 	}
 
 	// Check the range expression type
 	rangeType := tc.checkExpression(forLoop.Range)
-	if forLoop.Variable != "" {
+	if len(forLoop.Variables) > 0 {
 		if rangeType.DataType != TypeInteger && rangeType.DataType != TypeUnknown {
 			tc.addError(errors.New("for loop range must be an integer"))
 		}

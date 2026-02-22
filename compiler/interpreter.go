@@ -56,6 +56,7 @@ type Interpreter struct {
 	ip                  int        // Instruction pointer
 	stack               []Value    // Execution stack
 	memory              [256]Value // Memory slots for variables
+	iterators           []Iterator // Stack of active iteration frames for loops
 	stopped             bool
 	result              error
 	matchContext        *MatchContext   // Pattern matching context
@@ -70,6 +71,22 @@ type Interpreter struct {
 	regexCache          map[string]compiledRegex
 	PreserveRuleResults bool // If true, Reset() will not clear ruleResults
 	debugMode           bool // Debug mode flag for instruction tracing
+}
+
+// Iterator defines the state for a runtime for-loop
+type Iterator struct {
+	Type       Opcode // The type of iterator (e.g. OpIterStartIntRange)
+	Variables  []int  // Memory slots where loop variables are stored
+	Count      int    // Number of matches
+	Index      int    // Current iteration index
+	Total      int    // Total number of elements
+	Quantifier int    // Quantifier for condition (e.g. ForAll, ForAny, ForNone, ForExpression)
+	QuantExpr  int    // Target expression count if Quantifier == ForExpression
+	EndIP      int    // Instruction pointer to jump to when done
+	// Range/String Set state
+	StartValue int64
+	EndValue   int64
+	StringIDs  []string
 }
 
 type compiledRegex struct {
@@ -156,6 +173,9 @@ func (i *Interpreter) Release() {
 
 	// Clear string arena
 	i.stringArena = i.stringArena[:0]
+
+	// Clear iterators
+	i.iterators = i.iterators[:0]
 
 	interpreterPool.Put(i)
 }
@@ -307,6 +327,7 @@ func (i *Interpreter) Reset() {
 	} else if !i.PreserveRuleResults {
 		clear(i.ruleResults)
 	}
+	i.iterators = i.iterators[:0]
 }
 
 // Execute runs the bytecode
@@ -469,8 +490,8 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 		return i.executeLogicalOpcode(opcode)
 
 	// Control flow operations
-	case OpNop, OpHalt, OpJz, OpJtrue, OpJfalse:
-		return i.executeControlFlowOpcode(opcode)
+	case OpNop, OpHalt, OpJz, OpJzP, OpJtrue, OpJfalse:
+		return i.executeControlOpcode(opcode)
 
 	// Memory operations
 	case OpPushM, OpPopM, OpClearM, OpIncrM, OpSwapundef:
@@ -496,6 +517,16 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 	case OpPushRule, OpInitRule, OpMatchRule:
 		return i.executeRuleOperation(opcode)
 
+	// Iterator operations
+	case OpIterNext, OpIterStartArray, OpIterStartDict,
+		OpIterStartIntRange, OpIterStartIntEnum, OpIterStartStringSet,
+		OpIterCondition, OpIterPushTotal, OpIterEnd:
+		return i.executeIteratorOperation(opcode)
+
+	// Variable Loading
+	case OpLoadVar:
+		return i.executeLoadVarOperation()
+
 	default:
 		return &InterpreterError{
 			Type:    ErrorUnsupportedOpcode,
@@ -503,6 +534,204 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 			Message: fmt.Sprintf("unsupported opcode: %v", opcode),
 		}
 	}
+}
+
+// executeLoadVarOperation handles OpLoadVar opcode
+func (i *Interpreter) executeLoadVarOperation() error {
+	slot, err := i.readAndValidateMemorySlot(OpLoadVar)
+	if err != nil {
+		return err
+	}
+	return i.push(i.memory[slot])
+}
+
+// executeIteratorOperation handles all looping opcodes
+func (i *Interpreter) executeIteratorOperation(opcode Opcode) error {
+	switch opcode {
+	case OpIterStartIntRange:
+		return i.executeIterStartIntRange()
+	case OpIterStartStringSet:
+		return i.executeIterStartStringSet()
+	case OpIterStartArray, OpIterStartDict, OpIterStartTextStringSet, OpIterStartIntEnum:
+		return &InterpreterError{Type: ErrorUnsupportedOpcode, Opcode: opcode, Message: "iterator type not yet implemented"}
+	case OpIterNext:
+		return i.executeIterNext()
+	case OpIterCondition:
+		return i.executeIterCondition()
+	case OpIterPushTotal:
+		return i.executeIterPushTotal()
+	case OpIterEnd:
+		return i.executeIterEnd()
+	default:
+		return &InterpreterError{Type: ErrorUnsupportedOpcode, Opcode: opcode, Message: "invalid iterator opcode"}
+	}
+}
+
+func (i *Interpreter) executeIterStartIntRange() error {
+	if err := i.validateStackUnderflowN(OpIterStartIntRange, 2); err != nil {
+		return err
+	}
+
+	endVal := i.stack[len(i.stack)-1]
+	startVal := i.stack[len(i.stack)-2]
+	i.stack = i.stack[:len(i.stack)-2]
+
+	if startVal.Type != ValueTypeInt || endVal.Type != ValueTypeInt {
+		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpIterStartIntRange, Message: "range bounds must be integers"}
+	}
+
+	slot1, err := i.readAndValidateMemorySlot(OpIterStartIntRange)
+	if err != nil {
+		return err
+	}
+
+	iter := Iterator{
+		Type:       OpIterStartIntRange,
+		Variables:  []int{slot1},
+		StartValue: startVal.IntVal,
+		EndValue:   endVal.IntVal,
+		Index:      0,
+		Total:      int(endVal.IntVal - startVal.IntVal + 1),
+	}
+
+	if iter.Total <= 0 {
+		iter.Total = 0
+	}
+
+	i.iterators = append(i.iterators, iter)
+	return nil
+}
+
+func (i *Interpreter) executeIterStartStringSet() error {
+	if err := i.validateStackUnderflow(OpIterStartStringSet); err != nil {
+		return err
+	}
+
+	stringIDVal := i.stack[len(i.stack)-1]
+	i.stack = i.stack[:len(i.stack)-1]
+
+	var ids []string
+	switch stringIDVal.Type {
+	case ValueTypeInt:
+		switch stringIDVal.IntVal {
+		case stringSetAll:
+			ids = i.allStringIdentifiers()
+		case stringSetAnonymous:
+			ids = i.anonymousStringIdentifiers()
+		default:
+			if stringIDVal.IntVal < 0 || int(stringIDVal.IntVal) >= len(i.stringSets) {
+				return &InterpreterError{Type: ErrorRuntime, Opcode: OpIterStartStringSet, Message: "invalid string set reference"}
+			}
+			ids = i.stringSets[stringIDVal.IntVal]
+		}
+	case ValueTypeString:
+		ids = []string{i.getString(stringIDVal)}
+	default:
+		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpIterStartStringSet, Message: "invalid string set type"}
+	}
+
+	slot1, err := i.readAndValidateMemorySlot(OpIterStartStringSet)
+	if err != nil {
+		return err
+	}
+
+	iter := Iterator{
+		Type:      OpIterStartStringSet,
+		Variables: []int{slot1},
+		StringIDs: ids,
+		Index:     0,
+		Total:     len(ids),
+	}
+
+	i.iterators = append(i.iterators, iter)
+	return nil
+}
+
+func (i *Interpreter) executeIterNext() error {
+	if len(i.iterators) == 0 {
+		return &InterpreterError{Type: ErrorRuntime, Opcode: OpIterNext, Message: "no active iterator"}
+	}
+	if err := i.validateStackUnderflow(OpIterNext); err != nil {
+		return err
+	}
+	// The target IP is on the stack
+	targetIPVal := i.stack[len(i.stack)-1]
+	i.stack = i.stack[:len(i.stack)-1]
+
+	iter := &i.iterators[len(i.iterators)-1]
+
+	if iter.Index < iter.Total {
+		// Update variables based on type
+		switch iter.Type {
+		case OpIterStartIntRange:
+			i.memory[iter.Variables[0]] = Value{Type: ValueTypeInt, IntVal: iter.StartValue + int64(iter.Index)}
+		case OpIterStartStringSet:
+			id := iter.StringIDs[iter.Index]
+			i.memory[iter.Variables[0]] = Value{Type: ValueTypeString, StringRef: i.resolveStringRef(id)}
+		}
+
+		iter.Index++
+		i.ip = int(targetIPVal.IntVal)
+		return nil
+	}
+
+	// Iteration finished, do not jump
+	return nil
+}
+
+func (i *Interpreter) resolveStringRef(str string) int64 {
+	// First check static pool
+	for idx, s := range i.stringLiterals {
+		if s == str {
+			return int64(-1 - idx)
+		}
+	}
+	// Otherwise put back in arena
+	if err := i.pushString(str); err == nil {
+		val := i.stack[len(i.stack)-1]
+		i.stack = i.stack[:len(i.stack)-1]
+		return val.StringRef
+	}
+	return -1
+}
+
+func (i *Interpreter) executeIterCondition() error {
+	if len(i.iterators) == 0 {
+		return &InterpreterError{Type: ErrorRuntime, Opcode: OpIterCondition, Message: "no active iterator"}
+	}
+	if err := i.validateStackUnderflow(OpIterCondition); err != nil {
+		return err
+	}
+
+	condVal := i.stack[len(i.stack)-1]
+	i.stack = i.stack[:len(i.stack)-1]
+
+	iter := &i.iterators[len(i.iterators)-1]
+	if i.isTruthy(condVal) {
+		iter.Count++
+	}
+
+	return nil
+}
+
+func (i *Interpreter) executeIterPushTotal() error {
+	if len(i.iterators) == 0 {
+		return &InterpreterError{Type: ErrorRuntime, Opcode: OpIterPushTotal, Message: "no active iterator"}
+	}
+
+	iter := i.iterators[len(i.iterators)-1]
+	return i.push(Value{Type: ValueTypeInt, IntVal: int64(iter.Total)})
+}
+
+func (i *Interpreter) executeIterEnd() error {
+	if len(i.iterators) == 0 {
+		return &InterpreterError{Type: ErrorRuntime, Opcode: OpIterEnd, Message: "no active iterator"}
+	}
+
+	iter := i.iterators[len(i.iterators)-1]
+	i.iterators = i.iterators[:len(i.iterators)-1]
+
+	return i.push(Value{Type: ValueTypeInt, IntVal: int64(iter.Count)})
 }
 
 // executeStackOpcode handles stack operations
@@ -933,49 +1162,64 @@ func (i *Interpreter) executeDefinedOperation() error {
 	return nil
 }
 
-// executeControlFlowOpcode handles control flow operations
-func (i *Interpreter) executeControlFlowOpcode(opcode Opcode) error {
+// executeControlOpcode handles control flow operations
+func (i *Interpreter) executeControlOpcode(opcode Opcode) error {
 	switch opcode {
 	case OpNop:
-		return nil
+		return nil // No operation
 
 	case OpHalt:
 		i.stopped = true
 		return nil
-
-	case OpJz, OpJtrue, OpJfalse:
-		return i.executeJumpOpcode(opcode)
-
+	case OpJz, OpJzP, OpJtrue, OpJfalse:
+		return i.executeConditionalJump(opcode)
 	default:
-		return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: opcode, Message: "invalid control flow opcode"}
+		return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: opcode, Message: "invalid control opcode"}
 	}
 }
 
-// executeJumpOpcode handles jump operations with common logic
-func (i *Interpreter) executeJumpOpcode(opcode Opcode) error {
+// executeConditionalJump handles jump operations with common logic
+func (i *Interpreter) executeConditionalJump(opcode Opcode) error {
 	if err := i.validateStackUnderflow(opcode); err != nil {
 		return err
 	}
-	v := i.stack[len(i.stack)-1]
-	i.stack = i.stack[:len(i.stack)-1]
 
-	shouldJump := false
+	condition := i.stack[len(i.stack)-1]
+
+	if opcode == OpJzP {
+		i.stack = i.stack[:len(i.stack)-1]
+	}
+
+	// Read the 4-byte relative jump offset operand
+	if err := i.validateBytecodeBounds(opcode, 4); err != nil {
+		return err
+	}
+	relativeOffset := int32(i.bytecode[i.ip]) | int32(i.bytecode[i.ip+1])<<8 |
+		int32(i.bytecode[i.ip+2])<<16 | int32(i.bytecode[i.ip+3])<<24
+
+	var shouldJump bool
 	switch opcode {
-	case OpJz:
-		shouldJump = !i.isTruthy(v)
+	case OpJz, OpJzP:
+		shouldJump = !i.isTruthy(condition)
 	case OpJtrue:
-		shouldJump = i.isTruthy(v)
+		shouldJump = i.isTruthy(condition)
 	case OpJfalse:
-		shouldJump = !i.isTruthy(v)
+		shouldJump = !i.isTruthy(condition)
 	}
 
 	if shouldJump {
-		if i.ip >= len(i.bytecode) {
-			return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: opcode, Message: "jump target out of bounds"}
+		// Jump to the target: the emitter computed the relative offset from the END
+		// of the jump instruction (after the 4-byte operand). So the target is:
+		// (ip + 4) + relativeOffset, where ip points to the start of the operand
+		target := i.ip + 4 + int(relativeOffset)
+		if target < 0 || target > len(i.bytecode) {
+			return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: opcode,
+				Message: fmt.Sprintf("jump target out of bounds: %d (bytecode len: %d)", target, len(i.bytecode))}
 		}
-		i.ip++
+		i.ip = target
 	} else {
-		i.ip++
+		// Skip past the 4-byte operand
+		i.ip += 4
 	}
 	return nil
 }
@@ -998,13 +1242,15 @@ func (i *Interpreter) executeMemoryOpcode(opcode Opcode) error {
 	}
 }
 
-// readAndValidateMemorySlot reads and validates a memory slot from bytecode
+// readAndValidateMemorySlot reads and validates a memory slot from bytecode.
+// Memory slot operands are stored as OperandImmediate32 (4 bytes, little-endian).
 func (i *Interpreter) readAndValidateMemorySlot(opcode Opcode) (int, error) {
-	if err := i.validateBytecodeBounds(opcode, 1); err != nil {
+	if err := i.validateBytecodeBounds(opcode, 4); err != nil {
 		return 0, err
 	}
-	slot := int(i.bytecode[i.ip])
-	i.ip++
+	slot := int(i.bytecode[i.ip]) | int(i.bytecode[i.ip+1])<<8 |
+		int(i.bytecode[i.ip+2])<<16 | int(i.bytecode[i.ip+3])<<24
+	i.ip += 4
 	if slot < 0 || slot >= 256 {
 		return 0, &InterpreterError{Type: ErrorInvalidBytecode, Opcode: opcode, Message: fmt.Sprintf("memory slot %d out of range", slot)}
 	}

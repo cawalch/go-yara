@@ -172,13 +172,28 @@ func (b *Builder) StringLength(pos token.Position, strExpr Expression) *StringLe
 }
 
 // ForLoop creates a new ForLoop node
-func (b *Builder) ForLoop(pos token.Position, quantifier, variable string, rangeExpr, conditionExpr Expression) *ForLoop {
+func (b *Builder) ForLoop(pos token.Position, quantifier, variable string, rng, condition Expression) *ForLoop {
+	var variables []string
+	if variable != "" {
+		variables = []string{variable}
+	}
 	return &ForLoop{
 		Pos:        pos,
 		Quantifier: quantifier,
-		Variable:   variable,
-		Range:      rangeExpr,
-		Condition:  conditionExpr,
+		Variables:  variables,
+		Range:      rng,
+		Condition:  condition,
+	}
+}
+
+// ForLoopMultiVar creates a new ForLoop node with multiple iterator variables (e.g. k, v)
+func (b *Builder) ForLoopMultiVar(pos token.Position, quantifier string, variables []string, rng, condition Expression) *ForLoop {
+	return &ForLoop{
+		Pos:        pos,
+		Quantifier: quantifier,
+		Variables:  variables,
+		Range:      rng,
+		Condition:  condition,
 	}
 }
 

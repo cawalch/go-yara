@@ -179,6 +179,12 @@ const (
 // Chosen to avoid shifting existing opcode values.
 const OpPushStr Opcode = 90
 
+// OpLoadVar loads a runtime iteration variable by name onto the stack.
+const OpLoadVar Opcode = 91
+
+// OpIterPushTotal pushes the total count of the currently active iterator to the stack.
+const OpIterPushTotal Opcode = 92
+
 // Opcode categories for classification
 const (
 	OpCategoryControl    = "control"
@@ -232,7 +238,7 @@ func isJumpOpcode(op Opcode) bool {
 
 // isIteratorOpcode checks if opcode is an iterator operation
 func isIteratorOpcode(op Opcode) bool {
-	return op >= OpIterNext && op <= OpIterEnd
+	return (op >= OpIterNext && op <= OpIterEnd) || op == OpIterPushTotal
 }
 
 // isStringOpcode checks if opcode is a string operation

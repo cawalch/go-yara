@@ -573,14 +573,16 @@ func (v *Validator) validateFunctionCallExpression(funcCall *ast.FunctionCall) (
 func (v *Validator) validateForLoopExpression(forLoop *ast.ForLoop) (*TypeInfo, []error) {
 	var errors []error
 
-	// Create a scope for the loop variable so it is visible in the condition.
+	// Create a scope for the loop variables so it is visible in the condition.
 	v.symbolTable.EnterScope("for_loop")
-	if forLoop.Variable != "" {
-		if err := v.symbolTable.DefineVariable(forLoop.Variable, forLoop.Pos, SymbolVariable); err != nil {
-			errors = append(errors, &Error{
-				Message:  err.Error(),
-				Position: forLoop.Pos,
-			})
+	for _, variable := range forLoop.Variables {
+		if variable != "" {
+			if err := v.symbolTable.DefineVariable(variable, forLoop.Pos, SymbolVariable); err != nil {
+				errors = append(errors, &Error{
+					Message:  err.Error(),
+					Position: forLoop.Pos,
+				})
+			}
 		}
 	}
 
@@ -645,6 +647,29 @@ func (v *Validator) GetSymbolTable() *SymbolTable {
 
 // RuleVisitor implementations
 
+// VisitGlobalVariable visits a global variable - not used directly in validator
+func (v *Validator) VisitGlobalVariable(node *ast.GlobalVariable) any {
+	return nil
+}
+
+// VisitImport visits an import statement - not used directly in validator but needed for AST visitor
+func (v *Validator) VisitImport(node *ast.Import) any {
+	return nil
+}
+
+// VisitInclude visits an include statement - not used directly in validator but needed for AST visitor
+func (v *Validator) VisitInclude(node *ast.Include) any {
+	return nil
+}
+
+// VisitExternalVariable visits a global variable - not used directly in validator but needed for AST visitor
+func (v *Validator) VisitExternalVariable(node *ast.ExternalVariable) any {
+	return nil
+}
+
+// Ensure Validator implements ast.Visitor completely
+var _ ast.Visitor = (*Validator)(nil)
+
 // VisitProgram visits and validates a program node
 func (v *Validator) VisitProgram(program *ast.Program) any {
 	return v.ValidateProgram(program)
@@ -659,6 +684,21 @@ func (v *Validator) VisitRule(rule *ast.Rule) any {
 // VisitMeta visits and validates a meta node
 func (v *Validator) VisitMeta(_ *ast.Meta) any {
 	// Meta validation is handled in validateMeta
+	return nil
+}
+
+// VisitTextString visits and validates a text string node
+func (v *Validator) VisitTextString(_ *ast.TextString) any {
+	return nil
+}
+
+// VisitHexString visits and validates a hex string node
+func (v *Validator) VisitHexString(_ *ast.HexString) any {
+	return nil
+}
+
+// VisitRegexPattern visits and validates a regex pattern node
+func (v *Validator) VisitRegexPattern(_ *ast.RegexPattern) any {
 	return nil
 }
 
@@ -705,6 +745,14 @@ func (v *Validator) VisitLiteral(_ *ast.Literal) any {
 // VisitFunctionCall visits and validates a function call node
 func (v *Validator) VisitFunctionCall(_ *ast.FunctionCall) any {
 	// FunctionCall validation is handled in validateExpression
+	return nil
+}
+
+// VisitStringTuple visits a string tuple node
+func (v *Validator) VisitStringTuple(node *ast.StringTuple) any {
+	for _, expr := range node.Elements {
+		expr.Accept(v)
+	}
 	return nil
 }
 

@@ -235,9 +235,9 @@ func (jm *JumpManager) DumpLabels() string {
 	}
 
 	var result strings.Builder
-	result.WriteString(fmt.Sprintf("Labels (%d total):\n", len(jm.labels)))
+	fmt.Fprintf(&result, "Labels (%d total):\n", len(jm.labels))
 	for name, position := range jm.labels {
-		result.WriteString(fmt.Sprintf("  %s -> Position %d\n", name, position))
+		fmt.Fprintf(&result, "  %s -> Position %d\n", name, position)
 	}
 	return result.String()
 }
@@ -249,10 +249,10 @@ func (jm *JumpManager) DumpPendingJumps() string {
 	}
 
 	var result strings.Builder
-	result.WriteString(fmt.Sprintf("Pending Jumps (%d total):\n", len(jm.pendingJumps)))
+	fmt.Fprintf(&result, "Pending Jumps (%d total):\n", len(jm.pendingJumps))
 	for i, jump := range jm.pendingJumps {
-		result.WriteString(fmt.Sprintf("  [%d] OP_%d -> %s (at position %d, line %d, col %d)\n",
-			i, jump.Opcode, jump.Label, jump.Position, jump.Line, jump.Column))
+		fmt.Fprintf(&result, "  [%d] OP_%d -> %s (at position %d, line %d, col %d)\n",
+			i, jump.Opcode, jump.Label, jump.Position, jump.Line, jump.Column)
 	}
 	return result.String()
 }

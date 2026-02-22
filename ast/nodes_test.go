@@ -470,7 +470,14 @@ func (v *CountingVisitor) VisitOfExpression(_ *OfExpression) any {
 	return nil
 }
 
-func (v *CountingVisitor) VisitFunctionCall(_ *FunctionCall) any {
+func (v *CountingVisitor) VisitFunctionCall(n *FunctionCall) any {
 	v.count++
+	return nil
+}
+func (v *CountingVisitor) VisitStringTuple(n *StringTuple) any {
+	v.count++
+	for _, e := range n.Elements {
+		e.Accept(v)
+	}
 	return nil
 }

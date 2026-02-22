@@ -47,25 +47,25 @@ func (flqs *ForLoopQuantifierStrategy) Parse(parser *QuantifierParser, context P
 	parser.nextToken() // consume 'for'
 
 	// Handle different "for" quantifier forms
-	if parser.currentTokenIs(token.ANY) {
+	if parser.CurrentTokenIs(token.ANY) {
 		return flqs.parseAnyOfThem(parser, context)
 	}
 
-	if parser.currentTokenIs(token.ALL) {
+	if parser.CurrentTokenIs(token.ALL) {
 		return flqs.parseAllOfThem(parser, context)
 	}
 
-	if parser.currentTokenIs(token.NONE) {
+	if parser.CurrentTokenIs(token.NONE) {
 		return flqs.parseNoneOfThem(parser, context)
 	}
 
 	// Handle "for variable in range" format
-	if parser.currentTokenIs(token.IDENTIFIER) && parser.peekTokenIs(token.IN) {
+	if parser.CurrentTokenIs(token.IDENTIFIER) && parser.PeekTokenIs(token.IN) {
 		return flqs.parseForInRange(parser, context)
 	}
 
 	// Handle "for i in (0..n)" format
-	if parser.currentTokenIs(token.IDENTIFIER) && parser.peekTokenIs(token.IN) {
+	if parser.CurrentTokenIs(token.IDENTIFIER) && parser.PeekTokenIs(token.IN) {
 		variable := parser.current.Literal
 		return flqs.parseForInEnumeration(parser, context, variable)
 	}
@@ -76,7 +76,7 @@ func (flqs *ForLoopQuantifierStrategy) Parse(parser *QuantifierParser, context P
 func (flqs *ForLoopQuantifierStrategy) parseAnyOfThem(parser *QuantifierParser, context ParseContext) ParseResult {
 	parser.nextToken() // consume 'any'
 
-	if !parser.currentTokenIs(token.OF) {
+	if !parser.CurrentTokenIs(token.OF) {
 		return NewParseError(fmt.Errorf("expected 'of' after 'any' at %v", parser.current.Pos))
 	}
 	parser.nextToken() // consume 'of'
@@ -97,7 +97,7 @@ func (flqs *ForLoopQuantifierStrategy) parseAnyOfThem(parser *QuantifierParser, 
 func (flqs *ForLoopQuantifierStrategy) parseAllOfThem(parser *QuantifierParser, context ParseContext) ParseResult {
 	parser.nextToken() // consume 'all'
 
-	if !parser.currentTokenIs(token.OF) {
+	if !parser.CurrentTokenIs(token.OF) {
 		return NewParseError(fmt.Errorf("expected 'of' after 'all' at %v", parser.current.Pos))
 	}
 	parser.nextToken() // consume 'of'
@@ -118,7 +118,7 @@ func (flqs *ForLoopQuantifierStrategy) parseAllOfThem(parser *QuantifierParser, 
 func (flqs *ForLoopQuantifierStrategy) parseNoneOfThem(parser *QuantifierParser, context ParseContext) ParseResult {
 	parser.nextToken() // consume 'none'
 
-	if !parser.currentTokenIs(token.OF) {
+	if !parser.CurrentTokenIs(token.OF) {
 		return NewParseError(fmt.Errorf("expected 'of' after 'none' at %v", parser.current.Pos))
 	}
 	parser.nextToken() // consume 'of'
@@ -142,7 +142,7 @@ func (flqs *ForLoopQuantifierStrategy) parseForInRange(parser *QuantifierParser,
 	parser.nextToken() // consume 'in'
 
 	// Handle different range formats
-	if parser.currentTokenIs(token.LPAREN) {
+	if parser.CurrentTokenIs(token.LPAREN) {
 		return flqs.parseRange(parser, context, variable)
 	}
 
@@ -152,9 +152,14 @@ func (flqs *ForLoopQuantifierStrategy) parseForInRange(parser *QuantifierParser,
 		return NewParseError(fmt.Errorf("error parsing range expression: %w", err))
 	}
 
+	var variables []string
+	if variable != "" {
+		variables = []string{variable}
+	}
+
 	return NewParseResult(&ast.ForLoop{
 		Pos:       context.Position,
-		Variable:  variable,
+		Variables: variables,
 		Condition: expr,
 	}, 2) // consumed 'for', variable, 'in'
 }
@@ -169,12 +174,12 @@ func (flqs *ForLoopQuantifierStrategy) parseForInEnumeration(parser *QuantifierP
 	}
 
 	// Expect '..' (represented as two DOT tokens)
-	if !parser.currentTokenIs(token.DOT) {
+	if !parser.CurrentTokenIs(token.DOT) {
 		return NewParseError(fmt.Errorf("expected '..' in range at %v", parser.current.Pos))
 	}
 	parser.nextToken() // consume first '.'
 
-	if !parser.currentTokenIs(token.DOT) {
+	if !parser.CurrentTokenIs(token.DOT) {
 		return NewParseError(fmt.Errorf("expected '..' in range at %v", parser.current.Pos))
 	}
 	parser.nextToken() // consume second '.'
@@ -186,14 +191,19 @@ func (flqs *ForLoopQuantifierStrategy) parseForInEnumeration(parser *QuantifierP
 	}
 
 	// Expect ')'
-	if !parser.currentTokenIs(token.RPAREN) {
+	if !parser.CurrentTokenIs(token.RPAREN) {
 		return NewParseError(fmt.Errorf("expected ')' in range at %v", parser.current.Pos))
 	}
 	parser.nextToken() // consume ')'
 
+	var variables []string
+	if variable != "" {
+		variables = []string{variable}
+	}
+
 	return NewParseResult(&ast.ForLoop{
-		Pos:      context.Position,
-		Variable: variable,
+		Pos:       context.Position,
+		Variables: variables,
 		Range: &ast.BinaryOp{
 			Op:    token.DOT,
 			Left:  start,
@@ -253,7 +263,7 @@ func (sqs *StandardQuantifierStrategy) Parse(parser *QuantifierParser, context P
 	parser.nextToken() // consume quantifier
 
 	// Check if there's an "of" keyword
-	if parser.currentTokenIs(token.OF) {
+	if parser.CurrentTokenIs(token.OF) {
 		parser.nextToken() // consume 'of'
 		consumed++
 	}
@@ -298,7 +308,7 @@ func (nqs *NumericQuantifierStrategy) Parse(parser *QuantifierParser, context Pa
 	parser.nextToken() // consume number
 
 	// Expect "of"
-	if !parser.currentTokenIs(token.OF) {
+	if !parser.CurrentTokenIs(token.OF) {
 		return NewParseError(fmt.Errorf("expected 'of' after numeric count at %v", parser.current.Pos))
 	}
 	parser.nextToken() // consume 'of'
