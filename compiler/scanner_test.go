@@ -1,6 +1,8 @@
 package compiler
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -132,5 +134,38 @@ func TestScannerReuse(t *testing.T) {
 	}
 	if len(res3.MatchedRules) != 1 {
 		t.Errorf("Scan 3 expected match")
+	}
+}
+
+// BenchmarkMultiRuleScanner tests the performance of the Scanner engine when executing a massive amount of rules simultaneously
+func BenchmarkMultiRuleScanner(b *testing.B) {
+	// Create a large number of simple rules
+	const numRules = 1000
+	var ruleSource strings.Builder
+	for i := range numRules {
+		// Use simple true conditions and a string pattern so we engage the AC automaton
+		fmt.Fprintf(&ruleSource, "rule r%d { strings: $a = \"test_pattern\" condition: $a }\n", i)
+	}
+
+	compiler := NewCompiler()
+	program, err := compiler.CompileSource(ruleSource.String())
+	if err != nil {
+		b.Fatalf("compile failed: %v", err)
+	}
+
+	scanner := NewScanner(program)
+	defer scanner.Close()
+
+	data := []byte("some random data with test_pattern inside it for matching")
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for b.Loop() {
+		// We execute the scanner against the same payload repeatedly
+		_, err := scanner.Scan(data)
+		if err != nil {
+			b.Fatalf("scan failed: %v", err)
+		}
 	}
 }

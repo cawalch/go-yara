@@ -39,6 +39,7 @@ import (
 	"github.com/cawalch/go-yara/ast"
 	"github.com/cawalch/go-yara/internal/lexer"
 	"github.com/cawalch/go-yara/parser"
+	"github.com/cawalch/go-yara/regex"
 	"github.com/cawalch/go-yara/semantic"
 	"github.com/cawalch/go-yara/utils/fs"
 )
@@ -548,6 +549,52 @@ func (c *Compiler) compileCodeGenWithContext(ctx context.Context, program *ast.P
 
 	// Wrap in CompiledProgram
 	compiledProgram := NewCompiledProgram(compiledRules)
+
+	// Combine all rules' ACAutomatons into a single SharedAutomaton
+	sharedAutomaton := NewACAutomaton()
+	// Pre-size strings
+	totalStrings := 0
+	for _, rule := range compiledRules {
+		totalStrings += len(rule.Strings)
+	}
+	sharedAutomaton.ReserveStrings(totalStrings)
+
+	for _, rule := range compiledRules {
+		if rule.Automaton == nil {
+			continue
+		}
+
+		// Map the matched index back to the *original rule*.
+		// An ACAutomaton AddString expects a unique string identifier. We prefix the rule name.
+		// "ruleName:stringIdentifier" -> patternData
+		for strID, patternData := range rule.Strings {
+			// Find the StringKind and modifiers
+			kind := rule.StringKinds[strID]
+
+			// We only need to add static patterns to the AC automaton (Text, Hex).
+			// Regex is handled by the regex engine at match time.
+			if kind == StringKindRegex {
+				continue
+			}
+
+			globalID := fmt.Sprintf("%s:%s", rule.Name, strID)
+
+			modifiers := rule.StringModifiers[strID]
+			flags := regex.Flags(0)
+			for _, m := range modifiers {
+				switch m.Type {
+				case ast.StringModifierWide:
+					flags |= regex.FlagsWide
+				case ast.StringModifierNocase:
+					flags |= regex.FlagsNoCase
+				}
+			}
+
+			_ = sharedAutomaton.AddStringWithFlags(globalID, patternData, false, false, flags)
+		}
+	}
+	_ = sharedAutomaton.Compile()
+	compiledProgram.SetSharedAutomaton(sharedAutomaton)
 
 	// Update statistics (check for cancellation before expensive operations)
 	select {
