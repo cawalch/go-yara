@@ -399,10 +399,9 @@ func (cp *ChunkProcessor) processChunk(chunk []byte, offset int64) []StreamingMa
 
 // processRule processes a single rule's automaton against the chunk
 func (cp *ChunkProcessor) processRule(chunk []byte, offset int64, rule *CompiledRule) []StreamingMatch {
-	acMatches := rule.Automaton.Search(chunk)
-	matches := make([]StreamingMatch, 0, len(acMatches))
+	var matches []StreamingMatch
 
-	for _, match := range acMatches {
+	for match := range rule.Automaton.SearchIter(chunk) {
 		ruleMatch, ok := cp.createRuleMatch(chunk, offset, rule, match)
 		if !ok {
 			continue

@@ -39,7 +39,7 @@ func PopulateMatchContext(ctx *MatchContext, rule *CompiledRule, data []byte) {
 	}
 
 	if rule.Automaton != nil {
-		for _, match := range rule.Automaton.Search(data) {
+		for match := range rule.Automaton.SearchIter(data) {
 			if rule.StringKinds != nil && rule.StringKinds[match.StringID] != StringKindText {
 				continue
 			}

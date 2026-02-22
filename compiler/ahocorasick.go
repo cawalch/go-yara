@@ -3,6 +3,7 @@ package compiler
 import (
 	"errors"
 	"fmt"
+	"iter"
 	"slices"
 	"sync"
 
@@ -32,8 +33,7 @@ type ACAutomaton struct {
 	// String information
 	strings []ACStringInfo
 
-	// Performance optimization: pre-allocated match buffer
-	matchBuffer []ACMatch
+	// Performance optimization: matchBuffer removed, matching is now iterator-based
 
 	// Compilation state
 	compiledOnce sync.Once
@@ -59,7 +59,6 @@ func NewACAutomaton() *ACAutomaton {
 		states:      states,
 		outputs:     make([]int32, 0, 64),
 		strings:     make([]ACStringInfo, 0, 16),
-		matchBuffer: make([]ACMatch, 0, 32), // Pre-allocate reasonable capacity
 		compiled:    false,
 		StringCount: 0,
 		Strings:     make([]ACStringInfo, 0, 16),
@@ -244,50 +243,45 @@ func (ac *ACAutomaton) findNextState(currentState int32, b byte) int32 {
 	}
 }
 
-// processMatches processes all matches for the current state and position
-func (ac *ACAutomaton) processMatches(currentState int32, position int) {
-	outputStart := ac.states[currentState].outputStart
-	outputEnd := ac.states[currentState].outputEnd
+// SearchIter performs optimized pattern matching without allocating a slice, yielding matches via an iterator
+func (ac *ACAutomaton) SearchIter(data []byte) iter.Seq[ACMatch] {
+	return func(yield func(ACMatch) bool) {
+		if !ac.compiled {
+			return
+		}
 
-	if outputStart != outputEnd {
-		// Process all matches
-		for idx := outputStart; idx < outputEnd; idx++ {
-			stringIndex := ac.outputs[idx]
-			if stringIndex >= 0 && int(stringIndex) < len(ac.strings) {
-				stringInfo := ac.strings[stringIndex]
-				ac.matchBuffer = append(ac.matchBuffer, ACMatch{
-					StringIndex: int(stringIndex),
-					StringID:    stringInfo.Identifier,
-					Backtrack:   position + 1 - stringInfo.Length,
-				})
+		if len(data) == 0 {
+			return
+		}
+
+		currentState := int32(0) // Start at root
+
+		// Optimized search loop
+		for i, b := range data {
+			currentState = ac.findNextState(currentState, b)
+
+			// Process matches inline for the iterator
+			outputStart := ac.states[currentState].outputStart
+			outputEnd := ac.states[currentState].outputEnd
+
+			if outputStart != outputEnd {
+				for idx := outputStart; idx < outputEnd; idx++ {
+					stringIndex := ac.outputs[idx]
+					if stringIndex >= 0 && int(stringIndex) < len(ac.strings) {
+						stringInfo := ac.strings[stringIndex]
+						match := ACMatch{
+							StringIndex: int(stringIndex),
+							StringID:    stringInfo.Identifier,
+							Backtrack:   i + 1 - stringInfo.Length,
+						}
+						if !yield(match) {
+							return
+						}
+					}
+				}
 			}
 		}
 	}
-}
-
-// Search performs optimized pattern matching
-func (ac *ACAutomaton) Search(data []byte) []ACMatch {
-	if !ac.compiled {
-		return nil
-	}
-
-	if len(data) == 0 {
-		return nil
-	}
-
-	// Reset match buffer efficiently
-	ac.matchBuffer = ac.matchBuffer[:0]
-
-	currentState := int32(0) // Start at root
-
-	// Optimized search loop
-	for i, b := range data {
-		currentState = ac.findNextState(currentState, b)
-		ac.processMatches(currentState, i)
-	}
-
-	// Return a copy of matches (to avoid caller modifying internal buffer)
-	return slices.Clone(ac.matchBuffer)
 }
 
 // AddStringWithFlags adds a string and records regex VM flags alongside metadata
@@ -397,7 +391,6 @@ func (ac *ACAutomaton) Clone() *ACAutomaton {
 		states:      slices.Clone(ac.states),
 		outputs:     slices.Clone(ac.outputs),
 		strings:     slices.Clone(ac.strings),
-		matchBuffer: make([]ACMatch, 0, cap(ac.matchBuffer)),
 		StringCount: ac.StringCount,
 		Strings:     slices.Clone(ac.Strings),
 	}
@@ -484,10 +477,9 @@ func (ac *ACAutomaton) GetPatternData() map[string][]byte {
 func (ac *ACAutomaton) EstimateMemoryUsage() int {
 	stateMemory := len(ac.states) * (256*4 + 8) // transitions + failure + output indices
 	outputMemory := len(ac.outputs) * 4
-	stringMemory := len(ac.strings) * 64     // Approximate
-	bufferMemory := cap(ac.matchBuffer) * 16 // Approximate
+	stringMemory := len(ac.strings) * 64 // Approximate
 
-	return stateMemory + outputMemory + stringMemory + bufferMemory
+	return stateMemory + outputMemory + stringMemory
 }
 
 // Reset clears the automaton for reuse
