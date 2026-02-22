@@ -178,7 +178,7 @@ func (e *Emitter) FixupJumps() error {
 		}
 	}
 
-	e.fixups = make(map[int]int)
+	clear(e.fixups)
 	return nil
 }
 
@@ -301,11 +301,11 @@ func (e *Emitter) GetLineNumber(offset int) (int, bool) {
 // Reset clears all emitted instructions and resets the emitter state
 func (e *Emitter) Reset() {
 	e.instructions = e.instructions[:0]
-	e.fixups = make(map[int]int)
+	clear(e.fixups)
 	e.currentOffset = 0
-	e.lineNumbers = make(map[int]int)
+	clear(e.lineNumbers)
 	e.stringLiterals = e.stringLiterals[:0]
-	e.stringLiteralIndex = make(map[string]int)
+	clear(e.stringLiteralIndex)
 }
 
 // EmitArithmetic emits arithmetic operation instructions
