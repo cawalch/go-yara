@@ -4,29 +4,35 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/cawalch/go-yara/ast"
 	"github.com/cawalch/go-yara/internal/lexer"
-	"github.com/stretchr/testify/require"
 )
 
 // assertParseResult is a test helper that logs the parse outcome.
 func assertParseResult(t *testing.T, program *ast.Program, err error, expectError bool, description string) {
 	t.Helper()
 	if expectError {
-		if err == nil {
-			t.Logf("TODO: Expected parse error but got none - gap detected for: %s", description)
-			if program != nil {
-				t.Logf("Program was parsed with %d rules", len(program.Rules))
-			}
-		} else {
-			t.Logf("Parse error detected as expected: %v", err)
-		}
+		handleExpectedError(t, program, err, description)
 		return
 	}
 	if err != nil {
 		t.Logf("Unexpected parse error (documents current behavior): %v", err)
 	} else {
 		require.NotNil(t, program, "Program should not be nil")
+	}
+}
+
+func handleExpectedError(t *testing.T, program *ast.Program, err error, description string) {
+	t.Helper()
+	if err == nil {
+		t.Logf("TODO: Expected parse error but got none - gap detected for: %s", description)
+		if program != nil {
+			t.Logf("Program was parsed with %d rules", len(program.Rules))
+		}
+	} else {
+		t.Logf("Parse error detected as expected: %v", err)
 	}
 }
 

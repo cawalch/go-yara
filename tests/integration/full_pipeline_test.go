@@ -5,11 +5,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/cawalch/go-yara/compiler"
 	"github.com/cawalch/go-yara/internal/lexer"
 	"github.com/cawalch/go-yara/parser"
 	"github.com/cawalch/go-yara/token"
-	"github.com/stretchr/testify/require"
 )
 
 // assertPipelineResult is a test helper that flattens nested if/else for pipeline results.

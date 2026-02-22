@@ -118,6 +118,15 @@ func (l *lexer) handleEscapeSequence() token {
 	e := l.s[l.i]
 	l.i++
 
+	if e == 'x' && l.i+1 < l.len {
+		if h1, ok1 := parseHexDigit(l.s[l.i]); ok1 {
+			if h2, ok2 := parseHexDigit(l.s[l.i+1]); ok2 {
+				l.i += 2
+				return token{kind: tChar, ch: (h1 << 4) | h2}
+			}
+		}
+	}
+
 	if tokenKind, exists := escapeTokenMapping[e]; exists {
 		return token{kind: tokenKind}
 	}
@@ -128,4 +137,17 @@ func (l *lexer) handleEscapeSequence() token {
 
 	// For now, pass through unknown escapes as literal character (non-strict)
 	return token{kind: tChar, ch: e}
+}
+
+// parseHexDigit parses a single hex digit (0-9, a-f, A-F)
+func parseHexDigit(c byte) (byte, bool) {
+	switch {
+	case c >= '0' && c <= '9':
+		return c - '0', true
+	case c >= 'a' && c <= 'f':
+		return c - 'a' + 10, true
+	case c >= 'A' && c <= 'F':
+		return c - 'A' + 10, true
+	}
+	return 0, false
 }

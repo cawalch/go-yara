@@ -171,22 +171,25 @@ func (ac *ACAutomaton) processTransitionFailureLink(current, nextState int32, by
 
 	if failure != -1 {
 		ac.states[nextState].failure = ac.states[failure].transitions[byteVal]
-
-		// Merge output from failure state
-		failState := ac.states[ac.states[nextState].failure]
-		if failState.outputStart != failState.outputEnd {
-			// Append failure state's output to current state's output
-			failOutput := ac.outputs[failState.outputStart:failState.outputEnd]
-
-			// If current state has no output yet, initialize outputStart
-			if ac.states[nextState].outputStart == ac.states[nextState].outputEnd {
-				ac.states[nextState].outputStart = int32(len(ac.outputs)) // #nosec G115
-			}
-			ac.outputs = append(ac.outputs, failOutput...)
-			ac.states[nextState].outputEnd = int32(len(ac.outputs)) // #nosec G115
-		}
+		ac.mergeFailureOutput(nextState)
 	} else {
 		ac.states[nextState].failure = 0 // Fail to root
+	}
+}
+
+// mergeFailureOutput merges output from the failure state to the current state.
+func (ac *ACAutomaton) mergeFailureOutput(state int32) {
+	failState := ac.states[ac.states[state].failure]
+	if failState.outputStart != failState.outputEnd {
+		// Append failure state's output to current state's output
+		failOutput := ac.outputs[failState.outputStart:failState.outputEnd]
+
+		// If current state has no output yet, initialize outputStart
+		if ac.states[state].outputStart == ac.states[state].outputEnd {
+			ac.states[state].outputStart = int32(len(ac.outputs)) // #nosec G115
+		}
+		ac.outputs = append(ac.outputs, failOutput...)
+		ac.states[state].outputEnd = int32(len(ac.outputs)) // #nosec G115
 	}
 }
 

@@ -4,8 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cawalch/go-yara/internal/lexer"
 	"github.com/stretchr/testify/require"
+
+	"github.com/cawalch/go-yara/internal/lexer"
 )
 
 // TestDeeplyNestedParentheses documents parser behavior with deeply nested parentheses
@@ -171,12 +172,12 @@ func TestDeeplyNestedBinaryOps(t *testing.T) {
 				if err == nil {
 					t.Logf("TODO: Expected parse error but got none - gap detected for: %s", tt.description)
 				}
+				return
+			}
+			if err != nil {
+				t.Logf("Unexpected parse error (documents current behavior): %v", err)
 			} else {
-				if err != nil {
-					t.Logf("Unexpected parse error (documents current behavior): %v", err)
-				} else {
-					require.NotNil(t, program, "Program should not be nil")
-				}
+				require.NotNil(t, program, "Program should not be nil")
 			}
 		})
 	}
@@ -263,12 +264,12 @@ func TestDeeplyNestedUnaries(t *testing.T) {
 				if err == nil {
 					t.Logf("TODO: Expected parse error but got none - gap detected for: %s", tt.description)
 				}
+				return
+			}
+			if err != nil {
+				t.Logf("Unexpected parse error (documents current behavior): %v", err)
 			} else {
-				if err != nil {
-					t.Logf("Unexpected parse error (documents current behavior): %v", err)
-				} else {
-					require.NotNil(t, program, "Program should not be nil")
-				}
+				require.NotNil(t, program, "Program should not be nil")
 			}
 		})
 	}
@@ -395,12 +396,12 @@ func TestManyRulesInOneFile(t *testing.T) {
 				if err == nil {
 					t.Logf("TODO: Expected parse error but got none - gap detected for: %s", tt.description)
 				}
-			} else {
-				if err != nil {
-					t.Logf("Unexpected parse error (documents current behavior): %v", err)
-				} else if program != nil && len(program.Rules) > 0 {
-					t.Logf("Successfully parsed %d rules", len(program.Rules))
-				}
+				return
+			}
+			if err != nil {
+				t.Logf("Unexpected parse error (documents current behavior): %v", err)
+			} else if program != nil && len(program.Rules) > 0 {
+				t.Logf("Successfully parsed %d rules", len(program.Rules))
 			}
 		})
 	}
@@ -457,12 +458,12 @@ func TestManyStringsInOneRule(t *testing.T) {
 				if err == nil {
 					t.Logf("TODO: Expected parse error but got none - gap detected for: %s", tt.description)
 				}
-			} else {
-				if err != nil {
-					t.Logf("Unexpected parse error (documents current behavior): %v", err)
-				} else if program != nil && len(program.Rules) > 0 {
-					t.Logf("Successfully parsed rule with %d strings", len(program.Rules[0].Strings))
-				}
+				return
+			}
+			if err != nil {
+				t.Logf("Unexpected parse error (documents current behavior): %v", err)
+			} else if program != nil && len(program.Rules) > 0 {
+				t.Logf("Successfully parsed rule with %d strings", len(program.Rules[0].Strings))
 			}
 		})
 	}
@@ -525,12 +526,12 @@ func TestLongStringLiterals(t *testing.T) {
 				if err == nil {
 					t.Logf("TODO: Expected parse error but got none - gap detected for: %s", tt.description)
 				}
+				return
+			}
+			if err != nil {
+				t.Logf("Unexpected parse error (documents current behavior): %v", err)
 			} else {
-				if err != nil {
-					t.Logf("Unexpected parse error (documents current behavior): %v", err)
-				} else {
-					require.NotNil(t, program, "Program should not be nil")
-				}
+				require.NotNil(t, program, "Program should not be nil")
 			}
 		})
 	}
@@ -587,12 +588,12 @@ func TestLongHexPatterns(t *testing.T) {
 				if err == nil {
 					t.Logf("TODO: Expected parse error but got none - gap detected for: %s", tt.description)
 				}
+				return
+			}
+			if err != nil {
+				t.Logf("Unexpected parse error (documents current behavior): %v", err)
 			} else {
-				if err != nil {
-					t.Logf("Unexpected parse error (documents current behavior): %v", err)
-				} else {
-					require.NotNil(t, program, "Program should not be nil")
-				}
+				require.NotNil(t, program, "Program should not be nil")
 			}
 		})
 	}
@@ -649,12 +650,12 @@ func TestLongRegexPatterns(t *testing.T) {
 				if err == nil {
 					t.Logf("TODO: Expected parse error but got none - gap detected for: %s", tt.description)
 				}
+				return
+			}
+			if err != nil {
+				t.Logf("Unexpected parse error (documents current behavior): %v", err)
 			} else {
-				if err != nil {
-					t.Logf("Unexpected parse error (documents current behavior): %v", err)
-				} else {
-					require.NotNil(t, program, "Program should not be nil")
-				}
+				require.NotNil(t, program, "Program should not be nil")
 			}
 		})
 	}
@@ -717,12 +718,12 @@ func TestComplexBooleanExpressions(t *testing.T) {
 				if err == nil {
 					t.Logf("TODO: Expected parse error but got none - gap detected for: %s", tt.description)
 				}
+				return
+			}
+			if err != nil {
+				t.Logf("Unexpected parse error (documents current behavior): %v", err)
 			} else {
-				if err != nil {
-					t.Logf("Unexpected parse error (documents current behavior): %v", err)
-				} else {
-					require.NotNil(t, program, "Program should not be nil")
-				}
+				require.NotNil(t, program, "Program should not be nil")
 			}
 		})
 	}
@@ -785,12 +786,12 @@ func TestComplexArithmeticExpressions(t *testing.T) {
 				if err == nil {
 					t.Logf("TODO: Expected parse error but got none - gap detected for: %s", tt.description)
 				}
+				return
+			}
+			if err != nil {
+				t.Logf("Unexpected parse error (documents current behavior): %v", err)
 			} else {
-				if err != nil {
-					t.Logf("Unexpected parse error (documents current behavior): %v", err)
-				} else {
-					require.NotNil(t, program, "Program should not be nil")
-				}
+				require.NotNil(t, program, "Program should not be nil")
 			}
 		})
 	}
@@ -853,12 +854,12 @@ func TestComplexStringExpressions(t *testing.T) {
 				if err == nil {
 					t.Logf("TODO: Expected parse error but got none - gap detected for: %s", tt.description)
 				}
+				return
+			}
+			if err != nil {
+				t.Logf("Unexpected parse error (documents current behavior): %v", err)
 			} else {
-				if err != nil {
-					t.Logf("Unexpected parse error (documents current behavior): %v", err)
-				} else {
-					require.NotNil(t, program, "Program should not be nil")
-				}
+				require.NotNil(t, program, "Program should not be nil")
 			}
 		})
 	}

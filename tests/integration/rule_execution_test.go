@@ -126,12 +126,12 @@ func TestRuleCompilationBooleanLogic(t *testing.T) {
 				if err == nil {
 					t.Logf("TODO: Expected compilation error but got none - gap detected for: %s", tt.description)
 				}
-			} else {
-				if err != nil {
-					t.Logf("Unexpected compilation error (documents current behavior): %v", err)
-				} else if program != nil {
-					t.Logf("Successfully compiled: %s", tt.description)
-				}
+				return
+			}
+			if err != nil {
+				t.Logf("Unexpected compilation error (documents current behavior): %v", err)
+			} else if program != nil {
+				t.Logf("Successfully compiled: %s", tt.description)
 			}
 		})
 	}
@@ -193,12 +193,12 @@ func TestRuleCompilationComparison(t *testing.T) {
 				if err == nil {
 					t.Logf("TODO: Expected compilation error but got none - gap detected for: %s", tt.description)
 				}
-			} else {
-				if err != nil {
-					t.Logf("Unexpected compilation error (documents current behavior): %v", err)
-				} else if program != nil {
-					t.Logf("Successfully compiled: %s", tt.description)
-				}
+				return
+			}
+			if err != nil {
+				t.Logf("Unexpected compilation error (documents current behavior): %v", err)
+			} else if program != nil {
+				t.Logf("Successfully compiled: %s", tt.description)
 			}
 		})
 	}
@@ -296,12 +296,12 @@ func TestRuleCompilationArithmetic(t *testing.T) {
 				if err == nil {
 					t.Logf("TODO: Expected compilation error but got none - gap detected for: %s", tt.description)
 				}
-			} else {
-				if err != nil {
-					t.Logf("Unexpected compilation error (documents current behavior): %v", err)
-				} else if program != nil {
-					t.Logf("Successfully compiled: %s", tt.description)
-				}
+				return
+			}
+			if err != nil {
+				t.Logf("Unexpected compilation error (documents current behavior): %v", err)
+			} else if program != nil {
+				t.Logf("Successfully compiled: %s", tt.description)
 			}
 		})
 	}
@@ -351,12 +351,12 @@ func TestRuleCompilationStringOperators(t *testing.T) {
 				if err == nil {
 					t.Logf("TODO: Expected compilation error but got none - gap detected for: %s", tt.description)
 				}
-			} else {
-				if err != nil {
-					t.Logf("Unexpected compilation error (documents current behavior): %v", err)
-				} else if program != nil {
-					t.Logf("Successfully compiled: %s", tt.description)
-				}
+				return
+			}
+			if err != nil {
+				t.Logf("Unexpected compilation error (documents current behavior): %v", err)
+			} else if program != nil {
+				t.Logf("Successfully compiled: %s", tt.description)
 			}
 		})
 	}
@@ -412,12 +412,12 @@ func TestRuleCompilationOfExpressions(t *testing.T) {
 				if err == nil {
 					t.Logf("TODO: Expected compilation error but got none - gap detected for: %s", tt.description)
 				}
-			} else {
-				if err != nil {
-					t.Logf("Unexpected compilation error (documents current behavior): %v", err)
-				} else if program != nil {
-					t.Logf("Successfully compiled: %s", tt.description)
-				}
+				return
+			}
+			if err != nil {
+				t.Logf("Unexpected compilation error (documents current behavior): %v", err)
+			} else if program != nil {
+				t.Logf("Successfully compiled: %s", tt.description)
 			}
 		})
 	}
@@ -467,12 +467,12 @@ func TestRuleCompilationForLoops(t *testing.T) {
 				if err == nil {
 					t.Logf("TODO: Expected compilation error but got none - gap detected for: %s", tt.description)
 				}
-			} else {
-				if err != nil {
-					t.Logf("Unexpected compilation error (documents current behavior): %v", err)
-				} else if program != nil {
-					t.Logf("Successfully compiled: %s", tt.description)
-				}
+				return
+			}
+			if err != nil {
+				t.Logf("Unexpected compilation error (documents current behavior): %v", err)
+			} else if program != nil {
+				t.Logf("Successfully compiled: %s", tt.description)
 			}
 		})
 	}
@@ -540,12 +540,12 @@ func TestRuleCompilationBuiltinFunctions(t *testing.T) {
 				if err == nil {
 					t.Logf("TODO: Expected compilation error but got none - gap detected for: %s", tt.description)
 				}
-			} else {
-				if err != nil {
-					t.Logf("Unexpected compilation error (documents current behavior): %v", err)
-				} else if program != nil {
-					t.Logf("Successfully compiled: %s", tt.description)
-				}
+				return
+			}
+			if err != nil {
+				t.Logf("Unexpected compilation error (documents current behavior): %v", err)
+			} else if program != nil {
+				t.Logf("Successfully compiled: %s", tt.description)
 			}
 		})
 	}

@@ -238,21 +238,23 @@ rule TestRule {
 			}
 
 			// Only check program fields if parsing didn't completely fail
-			if program != nil {
-				if len(program.GlobalVariables) != tt.expectedVars {
-					t.Errorf("ParseRules() global variables = %d, want %d", len(program.GlobalVariables), tt.expectedVars)
+			if program == nil {
+				if !tt.expectError {
+					// If we don't expect errors but got nil program, that's an error
+					t.Errorf("ParseRules() returned nil program when no errors were expected")
+					// Log parser errors for debugging
+					if len(p.Errors()) > 0 {
+						t.Logf("Parser errors when none expected: %+v", p.Errors())
+					}
 				}
+				return
+			}
+			if len(program.GlobalVariables) != tt.expectedVars {
+				t.Errorf("ParseRules() global variables = %d, want %d", len(program.GlobalVariables), tt.expectedVars)
+			}
 
-				if len(program.Rules) != tt.expectedRules {
-					t.Errorf("ParseRules() rules = %d, want %d", len(program.Rules), tt.expectedRules)
-				}
-			} else if tt.expectError == false {
-				// If we don't expect errors but got nil program, that's an error
-				t.Errorf("ParseRules() returned nil program when no errors were expected")
-				// Log parser errors for debugging
-				if len(p.Errors()) > 0 {
-					t.Logf("Parser errors when none expected: %+v", p.Errors())
-				}
+			if len(program.Rules) != tt.expectedRules {
+				t.Errorf("ParseRules() rules = %d, want %d", len(program.Rules), tt.expectedRules)
 			}
 		})
 	}
@@ -327,13 +329,15 @@ rule TestRule {
 			}
 
 			// Only check program fields if parsing didn't completely fail
-			if program != nil {
-				if len(program.ExternalVariables) != tt.expectedExterns {
-					t.Errorf("ParseRules() external variables = %d, want %d", len(program.ExternalVariables), tt.expectedExterns)
+			if program == nil {
+				if !tt.expectError {
+					// If we don't expect errors but got nil program, that's an error
+					t.Errorf("ParseRules() returned nil program when no errors were expected")
 				}
-			} else if tt.expectError == false {
-				// If we don't expect errors but got nil program, that's an error
-				t.Errorf("ParseRules() returned nil program when no errors were expected")
+				return
+			}
+			if len(program.ExternalVariables) != tt.expectedExterns {
+				t.Errorf("ParseRules() external variables = %d, want %d", len(program.ExternalVariables), tt.expectedExterns)
 			}
 		})
 	}
@@ -408,13 +412,15 @@ rule TestRule {
 			}
 
 			// Only check program fields if parsing didn't completely fail
-			if program != nil {
-				if len(program.Imports) != tt.expectedImports {
-					t.Errorf("ParseRules() imports = %d, want %d", len(program.Imports), tt.expectedImports)
+			if program == nil {
+				if !tt.expectError {
+					// If we don't expect errors but got nil program, that's an error
+					t.Errorf("ParseRules() returned nil program when no errors were expected")
 				}
-			} else if tt.expectError == false {
-				// If we don't expect errors but got nil program, that's an error
-				t.Errorf("ParseRules() returned nil program when no errors were expected")
+				return
+			}
+			if len(program.Imports) != tt.expectedImports {
+				t.Errorf("ParseRules() imports = %d, want %d", len(program.Imports), tt.expectedImports)
 			}
 		})
 	}
@@ -489,13 +495,15 @@ rule TestRule {
 			}
 
 			// Only check program fields if parsing didn't completely fail
-			if program != nil {
-				if len(program.Includes) != tt.expectedIncludes {
-					t.Errorf("ParseRules() includes = %d, want %d", len(program.Includes), tt.expectedIncludes)
+			if program == nil {
+				if !tt.expectError {
+					// If we don't expect errors but got nil program, that's an error
+					t.Errorf("ParseRules() returned nil program when no errors were expected")
 				}
-			} else if tt.expectError == false {
-				// If we don't expect errors but got nil program, that's an error
-				t.Errorf("ParseRules() returned nil program when no errors were expected")
+				return
+			}
+			if len(program.Includes) != tt.expectedIncludes {
+				t.Errorf("ParseRules() includes = %d, want %d", len(program.Includes), tt.expectedIncludes)
 			}
 		})
 	}

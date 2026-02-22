@@ -311,6 +311,24 @@ func (p *Parser) parseClassContent(l *lexer, cls *Class) error {
 			break
 		}
 
+		// Check for POSIX class like [:alnum:]
+		if p.isPOSIXClass(l) {
+			if err := p.parsePOSIXClass(l, cls); err != nil {
+				return err
+			}
+			continue
+		}
+
+		// Check for shorthand class like \w
+		if l.s[l.i] == '\\' && l.i+1 < l.len {
+			e := l.s[l.i+1]
+			if isShorthandClass(e) {
+				l.i += 2
+				applyShorthandClass(cls, e)
+				continue
+			}
+		}
+
 		c, err := readEscaped(l, p.strictEscape)
 		if err != nil {
 			return err
@@ -325,6 +343,144 @@ func (p *Parser) parseClassContent(l *lexer, cls *Class) error {
 
 		classSet(cls, c)
 	}
+	return nil
+}
+
+func isShorthandClass(e byte) bool {
+	switch e {
+	case 'w', 'W', 's', 'S', 'd', 'D':
+		return true
+	}
+	return false
+}
+
+func applyShorthandClass(cls *Class, e byte) {
+	switch e {
+	case 'w':
+		for i := range 256 {
+			if isWord(byte(i)) {
+				classSet(cls, byte(i))
+			}
+		}
+	case 'W':
+		for i := range 256 {
+			if !isWord(byte(i)) {
+				classSet(cls, byte(i))
+			}
+		}
+	case 's':
+		for i := range 256 {
+			if isSpace(byte(i)) {
+				classSet(cls, byte(i))
+			}
+		}
+	case 'S':
+		for i := range 256 {
+			if !isSpace(byte(i)) {
+				classSet(cls, byte(i))
+			}
+		}
+	case 'd':
+		for i := range 256 {
+			if isDigit(byte(i)) {
+				classSet(cls, byte(i))
+			}
+		}
+	case 'D':
+		for i := range 256 {
+			if !isDigit(byte(i)) {
+				classSet(cls, byte(i))
+			}
+		}
+	}
+}
+
+// isPOSIXClass checks if the current position starts a POSIX class like [:alnum:]
+func (p *Parser) isPOSIXClass(l *lexer) bool {
+	if l.i+1 < l.len && l.s[l.i] == '[' && l.s[l.i+1] == ':' {
+		return true
+	}
+	return false
+}
+
+// parsePOSIXClass parses a POSIX class inside a character class
+func (p *Parser) parsePOSIXClass(l *lexer, cls *Class) error {
+	l.i += 2 // skip '[:'
+
+	negated := false
+	if l.i < l.len && l.s[l.i] == '^' {
+		negated = true
+		l.i++
+	}
+
+	start := l.i
+	end := -1
+	for i := l.i; i+1 < l.len; i++ {
+		if l.s[i] == ':' && l.s[i+1] == ']' {
+			end = i
+			break
+		}
+	}
+
+	if end == -1 {
+		return errors.New("unterminated POSIX class")
+	}
+
+	className := l.s[start:end]
+	l.i = end + 2 // skip ':]'
+
+	return applyPOSIXClass(cls, className, negated)
+}
+
+func applyPOSIXClass(cls *Class, name string, negated bool) error {
+	var matchFunc func(byte) bool
+
+	switch name {
+	case "alnum":
+		matchFunc = func(b byte) bool { return isWord(b) && b != '_' }
+	case "alpha":
+		matchFunc = func(b byte) bool { return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') }
+	case "ascii":
+		matchFunc = func(b byte) bool { return b <= 0x7F }
+	case "blank":
+		matchFunc = func(b byte) bool { return b == ' ' || b == '\t' }
+	case "cntrl":
+		matchFunc = func(b byte) bool { return b <= 0x1F || b == 0x7F }
+	case "digit":
+		matchFunc = isDigit
+	case "graph":
+		matchFunc = func(b byte) bool { return b >= 0x21 && b <= 0x7E }
+	case "lower":
+		matchFunc = func(b byte) bool { return b >= 'a' && b <= 'z' }
+	case "print":
+		matchFunc = func(b byte) bool { return b >= 0x20 && b <= 0x7E }
+	case "punct":
+		matchFunc = func(b byte) bool {
+			return (b >= 0x21 && b <= 0x2F) ||
+				(b >= 0x3A && b <= 0x40) ||
+				(b >= 0x5B && b <= 0x60) ||
+				(b >= 0x7B && b <= 0x7E)
+		}
+	case "space":
+		matchFunc = isSpace
+	case "upper":
+		matchFunc = func(b byte) bool { return b >= 'A' && b <= 'Z' }
+	case "word":
+		matchFunc = isWord
+	case "xdigit":
+		matchFunc = func(b byte) bool {
+			return isDigit(b) || (b >= 'a' && b <= 'f') || (b >= 'A' && b <= 'F')
+		}
+	default:
+		return fmt.Errorf("unknown POSIX class: %s", name)
+	}
+
+	for i := range 256 {
+		if matchFunc(byte(i)) != negated {
+			classSet(cls, byte(i))
+		}
+	}
+
 	return nil
 }
 
@@ -371,6 +527,15 @@ func readEscapeSequence(l *lexer, strict bool) (byte, error) {
 	}
 	e := l.s[l.i]
 	l.i++
+
+	if e == 'x' && l.i+1 < l.len {
+		if h1, ok1 := parseHexDigit(l.s[l.i]); ok1 {
+			if h2, ok2 := parseHexDigit(l.s[l.i+1]); ok2 {
+				l.i += 2
+				return (h1 << 4) | h2, nil
+			}
+		}
+	}
 
 	if mapped, isStandard := getStandardEscape(e); isStandard {
 		return mapped, nil

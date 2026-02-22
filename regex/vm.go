@@ -237,11 +237,9 @@ func runAtMatch(code, s []byte, flags Flags, start int) (matched bool, length in
 		}
 	}
 
-	if wide {
+	runWideLoop := func() bool {
 		for pos := start; pos+1 < len(s); pos += 2 {
-			// For WIDE, only positions with zero high byte are consumable "characters"
 			if !isWidePair(s, pos) {
-				// No valid UTF-16LE ASCII pair at this position; advance to next pair
 				continue
 			}
 			ch := s[pos]
@@ -249,19 +247,34 @@ func runAtMatch(code, s []byte, flags Flags, start int) (matched bool, length in
 			cur, next = next, cur
 
 			if checkAndReturnIfExhausted(cur, &matched, &length, bestEnd) {
-				return
+				return true
 			}
 		}
-	} else {
+		return false
+	}
+
+	runAsciiLoop := func() bool {
 		for pos := start; pos < len(s); pos++ {
 			ch := s[pos]
 			step(pos, ch, 1)
 			cur, next = next, cur
 
 			if checkAndReturnIfExhausted(cur, &matched, &length, bestEnd) {
-				return
+				return true
 			}
 		}
+		return false
+	}
+
+	var exhausted bool
+	if wide {
+		exhausted = runWideLoop()
+	} else {
+		exhausted = runAsciiLoop()
+	}
+
+	if exhausted {
+		return
 	}
 
 	// End of input: return the longest match (if any) for this start.

@@ -193,3 +193,49 @@ func TestParseWordBoundaries(t *testing.T) {
 		t.Fatalf("expected \\b then \\B")
 	}
 }
+
+func TestParseHexEscapes(t *testing.T) {
+	p := NewParser(0)
+	ast, err := p.Parse("\\x41\\x42")
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	n := ast.Root
+	if n.Kind != NodeConcat || len(n.Children) != 2 {
+		t.Fatalf("expected concat of 2")
+	}
+	if n.Children[0].Value != 0x41 || n.Children[1].Value != 0x42 {
+		t.Fatalf("expected 0x41 and 0x42, got %x %x", n.Children[0].Value, n.Children[1].Value)
+	}
+}
+
+func TestParseShorthandInClass(t *testing.T) {
+	p := NewParser(0)
+	ast, err := p.Parse("[\\w\\s]")
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	n := ast.Root
+	if n.Kind != NodeClass {
+		t.Fatalf("expected NodeClass")
+	}
+	// just check a few expected chars
+	if !bitSet(n.Class.Bitmap, 'a') || !bitSet(n.Class.Bitmap, ' ') {
+		t.Fatalf("missing expected chars in shorthand class")
+	}
+}
+
+func TestParsePOSIXClass(t *testing.T) {
+	p := NewParser(0)
+	ast, err := p.Parse("[[:alnum:]]")
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	n := ast.Root
+	if n.Kind != NodeClass {
+		t.Fatalf("expected NodeClass")
+	}
+	if !bitSet(n.Class.Bitmap, 'A') || !bitSet(n.Class.Bitmap, '9') || bitSet(n.Class.Bitmap, ' ') {
+		t.Fatalf("incorrect bits set for [:alnum:]")
+	}
+}

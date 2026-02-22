@@ -320,10 +320,9 @@ func extractLiteralsFromRegex(pattern string) []string {
 
 		// Handle escape sequences
 		if ch == '\\' && i+1 < len(pattern) {
-			next := rune(pattern[i+1])
-			// Add escaped character as literal
-			current = append(current, next)
-			i += 2
+			newCurrent, advance := parseRegexEscape(pattern, i, current, &literals)
+			current = newCurrent
+			i += advance
 			continue
 		}
 
@@ -358,6 +357,56 @@ func extractLiteralsFromRegex(pattern string) []string {
 	}
 
 	return literals
+}
+
+// parseRegexEscape parses an escape sequence in a regex pattern and updates the current sequence and literals list.
+// Returns the updated current sequence and the number of characters consumed from pattern.
+func parseRegexEscape(pattern string, i int, current []rune, literals *[]string) ([]rune, int) {
+	next := pattern[i+1]
+
+	if next == 'x' && i+3 < len(pattern) {
+		if h1, ok1 := parseHexDigit(pattern[i+2]); ok1 {
+			if h2, ok2 := parseHexDigit(pattern[i+3]); ok2 {
+				current = append(current, rune((h1<<4)|h2))
+				return current, 4
+			}
+		}
+	}
+
+	switch next {
+	case 'w', 'W', 's', 'S', 'd', 'D', 'b', 'B':
+		if len(current) > 0 {
+			*literals = append(*literals, string(current))
+			current = nil
+		}
+	case 'n':
+		current = append(current, '\n')
+	case 't':
+		current = append(current, '\t')
+	case 'r':
+		current = append(current, '\r')
+	case 'f':
+		current = append(current, '\f')
+	case 'a':
+		current = append(current, '\a')
+	default:
+		current = append(current, rune(next))
+	}
+
+	return current, 2
+}
+
+// parseHexDigit parses a single hex digit (0-9, a-f, A-F)
+func parseHexDigit(c byte) (byte, bool) {
+	switch {
+	case c >= '0' && c <= '9':
+		return c - '0', true
+	case c >= 'a' && c <= 'f':
+		return c - 'a' + 10, true
+	case c >= 'A' && c <= 'F':
+		return c - 'A' + 10, true
+	}
+	return 0, false
 }
 
 // HexByte represents a byte in a hex string that can be fixed or wildcard
@@ -396,20 +445,29 @@ func parseHexBytes(hexStr string) ([]HexByte, error) {
 
 		if pair == "??" {
 			hexBytes = append(hexBytes, HexByte{IsWildcard: true})
-		} else {
-			// Parse hex byte
-			var b byte
-			if _, err := fmt.Sscanf(pair, "%02x", &b); err != nil {
-				// Check for alternative syntax like "AA BB"
-				if len(hexBytes) > 0 && hexBytes[len(hexBytes)-1].IsWildcard {
-					// This might be an alternative, skip for now
-					continue
-				}
-				return nil, fmt.Errorf("invalid hex byte: %s", pair)
-			}
-			hexBytes = append(hexBytes, HexByte{Value: b, IsWildcard: false})
+			continue
 		}
+
+		hb, err := parseSingleHexByte(pair)
+		if err != nil {
+			// Check for alternative syntax like "AA BB"
+			if len(hexBytes) > 0 && hexBytes[len(hexBytes)-1].IsWildcard {
+				// This might be an alternative, skip for now
+				continue
+			}
+			return nil, err
+		}
+		hexBytes = append(hexBytes, hb)
 	}
 
 	return hexBytes, nil
+}
+
+// parseSingleHexByte parses a two-character hex pair into a HexByte.
+func parseSingleHexByte(pair string) (HexByte, error) {
+	var b byte
+	if _, err := fmt.Sscanf(pair, "%02x", &b); err != nil {
+		return HexByte{}, fmt.Errorf("invalid hex byte: %s", pair)
+	}
+	return HexByte{Value: b, IsWildcard: false}, nil
 }
