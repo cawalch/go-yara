@@ -1,9 +1,13 @@
-version: 2
+version: "2"
 
 run:
   timeout: 5m
+  # v2 defaults to relative-path-mode: cfg (relative to this file)
+  relative-path-mode: cfg
 
 linters:
+  # 'default: none' ensures only your selected linters run
+  default: none
   enable:
     - govet
     - staticcheck
@@ -13,23 +17,35 @@ linters:
     - revive
     - nestif
     - gocritic
+
   settings:
     revive:
       rules:
+        # Specifically flags 'if' statements that can be simplified with 'return'
         - name: early-return
-          disabled: false
+        # Flags unnecessary 'else' blocks after a return/break
+        - name: indent-error-flow
         - name: if-return
-          disabled: false
+
+    nestif:
+      # Threshold for nested if-statements (Cybersecurity audit preference: 3-4)
+      min-complexity: 4
 
     gocritic:
       enabled-checks:
         - nestingReduce
       settings:
         nestingReduce:
+          # Min statements in a block to suggest a reduction
           bodyWidth: 5
 
-linters-settings:
-  gofmt:
-    simplify: true
-  goimports:
-    local-prefixes: github.com/...
+# Formatting is now a dedicated top-level section in v2
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    gofmt:
+      simplify: true
+    goimports:
+      local-prefixes: github.com/cawalch/go-yara

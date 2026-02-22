@@ -268,16 +268,19 @@ func (cc *ConditionCompiler) compileSimpleLiteral(lit *ast.Literal) bool {
 func (cc *ConditionCompiler) compileIntegerLiteral(lit *ast.Literal) {
 	if value, ok := lit.Value.(int64); ok {
 		cc.emitter.EmitPush(safeInt64ToUint64(safeMax(0, value)), lit.Pos.Line, lit.Pos.Column)
-	} else if strValue, ok := lit.Value.(string); ok {
-		// Handle case where literal value is stored as string (parse it)
-		if intVal, err := parseIntLiteral(strValue); err == nil {
-			cc.emitter.EmitPush(safeInt64ToUint64(safeMax(0, intVal)), lit.Pos.Line, lit.Pos.Column)
-		} else {
-			cc.emitter.EmitPush(0, lit.Pos.Line, lit.Pos.Column)
-		}
-	} else {
-		cc.emitter.EmitPush(0, lit.Pos.Line, lit.Pos.Column)
+		return
 	}
+
+	if strValue, ok := lit.Value.(string); ok {
+		// Handle case where literal value is stored as string (parse it)
+		intVal, err := parseIntLiteral(strValue)
+		if err == nil {
+			cc.emitter.EmitPush(safeInt64ToUint64(safeMax(0, intVal)), lit.Pos.Line, lit.Pos.Column)
+			return
+		}
+	}
+
+	cc.emitter.EmitPush(0, lit.Pos.Line, lit.Pos.Column)
 }
 
 // parseIntLiteral parses a string as an integer literal

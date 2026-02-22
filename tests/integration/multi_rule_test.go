@@ -58,13 +58,13 @@ func TestMultipleRulesIndependent(t *testing.T) {
 				if err == nil {
 					t.Logf("TODO: Expected compilation error but got none - gap detected for: %s", tt.description)
 				}
-			} else {
-				if err != nil {
-					t.Logf("Unexpected compilation error (documents current behavior): %v", err)
-				} else if program != nil {
-					t.Logf("Successfully compiled: %s", tt.description)
-					t.Logf("  Program contains %d rules", program.GetRuleCount())
-				}
+				return
+			}
+			if err != nil {
+				t.Logf("Unexpected compilation error (documents current behavior): %v", err)
+			} else if program != nil {
+				t.Logf("Successfully compiled: %s", tt.description)
+				t.Logf("  Program contains %d rules", program.GetRuleCount())
 			}
 		})
 	}
@@ -285,12 +285,12 @@ func TestExternalVariables(t *testing.T) {
 				if err == nil {
 					t.Logf("TODO: Expected compilation error but got none - gap detected for: %s", tt.description)
 				}
-			} else {
-				if err != nil {
-					t.Logf("Unexpected compilation error (documents current behavior): %v", err)
-				} else if program != nil {
-					t.Logf("Successfully compiled: %s", tt.description)
-				}
+				return
+			}
+			if err != nil {
+				t.Logf("Unexpected compilation error (documents current behavior): %v", err)
+			} else if program != nil {
+				t.Logf("Successfully compiled: %s", tt.description)
 			}
 		})
 	}
@@ -346,12 +346,12 @@ func TestMetaInformation(t *testing.T) {
 				if err == nil {
 					t.Logf("TODO: Expected compilation error but got none - gap detected for: %s", tt.description)
 				}
-			} else {
-				if err != nil {
-					t.Logf("Unexpected compilation error (documents current behavior): %v", err)
-				} else if program != nil {
-					t.Logf("Successfully compiled: %s", tt.description)
-				}
+				return
+			}
+			if err != nil {
+				t.Logf("Unexpected compilation error (documents current behavior): %v", err)
+			} else if program != nil {
+				t.Logf("Successfully compiled: %s", tt.description)
 			}
 		})
 	}

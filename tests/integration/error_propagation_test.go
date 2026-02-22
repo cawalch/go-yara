@@ -531,12 +531,12 @@ func TestWarningConditions(t *testing.T) {
 				if err == nil {
 					t.Logf("TODO: Expected error but got none - gap detected for: %s", tt.description)
 				}
-			} else {
-				if err != nil {
-					t.Logf("Unexpected error (documents current behavior): %v", err)
-				} else if program != nil {
-					t.Logf("Successfully compiled (check for warnings): %s", tt.description)
-				}
+				return
+			}
+			if err != nil {
+				t.Logf("Unexpected error (documents current behavior): %v", err)
+			} else if program != nil {
+				t.Logf("Successfully compiled (check for warnings): %s", tt.description)
 			}
 		})
 	}

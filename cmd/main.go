@@ -546,16 +546,19 @@ func executeSingleRule(interp *compiler.Interpreter, _ *compiler.CompiledRule) {
 		fmt.Printf("  Execution: Success\n")
 	}
 
-	// Print stack result
-	stack := interp.GetStack()
-	if len(stack) > 0 {
-		result := stack[len(stack)-1]
-		if result.Type == compiler.ValueTypeInt {
-			if result.IntVal != 0 {
-				fmt.Printf("  Result: MATCH (value: %d)\n", result.IntVal)
-			} else {
-				fmt.Printf("  Result: NO MATCH\n")
-			}
+	outputRuleResult(interp.GetStack())
+}
+
+func outputRuleResult(stack []compiler.Value) {
+	if len(stack) == 0 {
+		return
+	}
+	result := stack[len(stack)-1]
+	if result.Type == compiler.ValueTypeInt {
+		if result.IntVal != 0 {
+			fmt.Printf("  Result: MATCH (value: %d)\n", result.IntVal)
+		} else {
+			fmt.Printf("  Result: NO MATCH\n")
 		}
 	}
 }
