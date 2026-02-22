@@ -756,8 +756,9 @@ func (cr *CompiledRule) PrintDebug() {
 
 // CompiledProgram represents a complete compiled YARA program
 type CompiledProgram struct {
-	Rules []*CompiledRule
-	Stats map[string]any
+	Rules           []*CompiledRule
+	SharedAutomaton *ACAutomaton
+	Stats           map[string]any
 
 	// Streaming support
 	streamingProcessor *StreamingProcessor
@@ -771,6 +772,11 @@ func NewCompiledProgram(rules []*CompiledRule) *CompiledProgram {
 		Stats:           make(map[string]any),
 		enableStreaming: false, // Disabled by default for backward compatibility
 	}
+}
+
+// SetSharedAutomaton attaches the global multi-rule search tree to the compiled program
+func (cp *CompiledProgram) SetSharedAutomaton(automaton *ACAutomaton) {
+	cp.SharedAutomaton = automaton
 }
 
 // GetRuleCount returns the number of compiled rules

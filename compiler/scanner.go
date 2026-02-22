@@ -3,6 +3,8 @@ package compiler
 import (
 	"io"
 	"os"
+
+	"github.com/cawalch/go-yara/ast"
 )
 
 // Scanner provides a reusable, allocation-efficient YARA scanning engine.
@@ -103,33 +105,33 @@ func (s *Scanner) Scan(data []byte) (*ScanResult, error) {
 		MatchedRules: make([]RuleMatch, 0),
 	}
 
-	// Reset rule results for next Scan
-	// Since PreserveRuleResults is true, the map isn't cleared by Reset().
-	// We must clear it here for the fresh scan.
-	clear(s.ruleResults)
+	// 1. One-pass scan over all static strings using the SharedAutomaton
+	// We map the global string ID "ruleName:stringID" back to its rules
+	globalMatches := make(map[string][]Match)
+
+	if s.program.SharedAutomaton != nil {
+		s.extractGlobalMatches(data, globalMatches)
+	}
 
 	// Reset rule results for next Scan
-	// Since PreserveRuleResults is true, the map isn't cleared by Reset().
-	// We must clear it here for the fresh scan.
 	clear(s.ruleResults)
 
 	for _, rule := range s.program.Rules {
-		PopulateMatchContext(s.matchCtx, rule, data)
+		// Populate context specific to this rule
+		s.matchCtx.Reset(data)
+
+		// 2. Add static matches found in the fast global pass
+		s.addStaticMatches(rule, data, globalMatches[rule.Name])
+
+		// 3. Process Regex (and un-analyzable) patterns locally since they require dynamic scans
+		for id, regexInfo := range rule.RegexPatterns {
+			modifiers := rule.StringModifiers[id]
+			addRegexMatchesWithModifiers(s.matchCtx, id, regexInfo, data, modifiers)
+		}
 
 		s.interp.SetCurrentRule(rule.Name)
 		s.interp.SetMatchContext(s.matchCtx)
-		s.interp.SetRuleResults(s.ruleResults) // Shared results?
-
-		// Wait, `SetRuleResults` sets the map used for condition checking (referencing other rules).
-		// We should clear `ruleResults` at start of Scan?
-		// Or assume it accumulates correctly?
-		// `ruleResults` map persists across rules in one Scan.
-		// `Interpreter.Reset()` clears it?
-		// `Reset()` calls `clear(i.ruleResults)`.
-		// But here `ruleResults` is passed in.
-		// Interpreter uses `i.ruleResults`.
-		// We should let Interpreter manage it or manage it here.
-		// If we use one interpreter instance, we can just use `interp.GetRuleResults()`.
+		s.interp.SetRuleResults(s.ruleResults)
 
 		if err := s.interp.Execute(); err != nil {
 			return nil, err
@@ -203,4 +205,54 @@ func (s *Scanner) ScanFile(filename string) (*ScanResult, error) {
 		return nil, err
 	}
 	return s.Scan(data)
+}
+
+func (s *Scanner) extractGlobalMatches(data []byte, globalMatches map[string][]Match) {
+	for match := range s.program.SharedAutomaton.SearchIter(data) {
+		colonIdx := -1
+		for i := 0; i < len(match.StringID); i++ {
+			if match.StringID[i] == ':' {
+				colonIdx = i
+				break
+			}
+		}
+		if colonIdx != -1 {
+			ruleName := match.StringID[:colonIdx]
+			stringID := match.StringID[colonIdx+1:]
+
+			length := 0
+			if match.StringIndex >= 0 && match.StringIndex < len(s.program.SharedAutomaton.Strings) {
+				info := s.program.SharedAutomaton.Strings[match.StringIndex]
+				length = info.Length
+			}
+
+			m := Match{
+				Pattern: stringID,
+				Offset:  int64(match.Backtrack),
+				Length:  length,
+			}
+
+			globalMatches[ruleName] = append(globalMatches[ruleName], m)
+		}
+	}
+}
+
+func (s *Scanner) addStaticMatches(rule *CompiledRule, data []byte, matches []Match) {
+	for _, m := range matches {
+		if rule.StringKinds != nil && rule.StringKinds[m.Pattern] == StringKindText {
+			isWide := false
+			modifiers := rule.StringModifiers[m.Pattern]
+			for _, mod := range modifiers {
+				if mod.Type == ast.StringModifierWide {
+					isWide = true
+					break
+				}
+			}
+			if matchPassesModifiers(data, m, modifiers, isWide) {
+				s.matchCtx.AddMatch(m)
+			}
+		} else if matchPassesModifiers(data, m, rule.StringModifiers[m.Pattern], false) {
+			s.matchCtx.AddMatch(m)
+		}
+	}
 }
