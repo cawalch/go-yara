@@ -53,6 +53,7 @@ type ExpressionVisitor interface {
 	VisitIdentifier(*Identifier) any
 	VisitLiteral(*Literal) any
 	VisitFunctionCall(*FunctionCall) any
+	VisitStringTuple(*StringTuple) any
 }
 
 // PatternVisitor handles string and pattern matching
@@ -130,6 +131,9 @@ func (v *BaseVisitor) VisitLiteral(_ *Literal) any { return nil }
 
 // VisitFunctionCall visits a function call node
 func (v *BaseVisitor) VisitFunctionCall(_ *FunctionCall) any { return nil }
+
+// VisitStringTuple visits a string tuple node
+func (v *BaseVisitor) VisitStringTuple(_ *StringTuple) any { return nil }
 
 // PatternVisitor implementations
 

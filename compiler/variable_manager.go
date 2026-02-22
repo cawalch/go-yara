@@ -244,9 +244,9 @@ func (vm *VariableManager) DumpVariables() string {
 	}
 
 	var result strings.Builder
-	result.WriteString(fmt.Sprintf("Variables (%d total):\n", len(vm.variables)))
+	fmt.Fprintf(&result, "Variables (%d total):\n", len(vm.variables))
 	for name, id := range vm.variables {
-		result.WriteString(fmt.Sprintf("  %s -> ID %d\n", name, id))
+		fmt.Fprintf(&result, "  %s -> ID %d\n", name, id)
 	}
 	return result.String()
 }
@@ -258,9 +258,9 @@ func (vm *VariableManager) DumpExternalVariables() string {
 	}
 
 	var result strings.Builder
-	result.WriteString(fmt.Sprintf("External Variables (%d total):\n", len(vm.externalVariables)))
+	fmt.Fprintf(&result, "External Variables (%d total):\n", len(vm.externalVariables))
 	for name, id := range vm.externalVariables {
-		result.WriteString(fmt.Sprintf("  %s -> ID %d\n", name, id))
+		fmt.Fprintf(&result, "  %s -> ID %d\n", name, id)
 	}
 	return result.String()
 }
@@ -272,9 +272,9 @@ func (vm *VariableManager) DumpRules() string {
 	}
 
 	var result strings.Builder
-	result.WriteString(fmt.Sprintf("Rule Indices (%d total):\n", len(vm.ruleIndexMap)))
+	fmt.Fprintf(&result, "Rule Indices (%d total):\n", len(vm.ruleIndexMap))
 	for name, index := range vm.ruleIndexMap {
-		result.WriteString(fmt.Sprintf("  %s -> Index %d\n", name, index))
+		fmt.Fprintf(&result, "  %s -> Index %d\n", name, index)
 	}
 	return result.String()
 }

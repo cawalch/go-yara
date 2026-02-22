@@ -273,7 +273,7 @@ func testForLoopBuilder(t *testing.T) {
 	condition := builder.Identifier(pos, "valid")
 	forLoop := builder.ForLoop(pos, quantifier, variable, rangeExpr, condition)
 
-	if forLoop.Quantifier != quantifier || forLoop.Variable != variable ||
+	if forLoop.Quantifier != quantifier || len(forLoop.Variables) == 0 || forLoop.Variables[0] != variable ||
 		forLoop.Range != rangeExpr || forLoop.Condition != condition {
 		t.Error("ForLoop fields do not match expected values")
 	}
@@ -615,7 +615,22 @@ func (v *ComprehensiveTestVisitor) VisitOfExpression(_ *OfExpression) any {
 	return "visited_of_expression"
 }
 
-func (v *ComprehensiveTestVisitor) VisitFunctionCall(_ *FunctionCall) any {
+func (v *ComprehensiveTestVisitor) VisitFunctionCall(node *FunctionCall) any {
 	v.visitedNodes = append(v.visitedNodes, "FunctionCall")
+	for _, arg := range node.Args {
+		if arg != nil {
+			arg.Accept(v)
+		}
+	}
 	return "visited_function_call"
+}
+
+func (v *ComprehensiveTestVisitor) VisitStringTuple(node *StringTuple) any {
+	v.visitedNodes = append(v.visitedNodes, "StringTuple")
+	for _, elem := range node.Elements {
+		if elem != nil {
+			elem.Accept(v)
+		}
+	}
+	return "visited_string_tuple"
 }

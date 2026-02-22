@@ -169,6 +169,9 @@ func (cc *ConditionCompiler) emitStringOffset(offset, line, column int) {
 
 func (cc *ConditionCompiler) emitStringIdentifier(offset int, identifier string, line, column int) {
 	_ = offset
+	if len(identifier) > 0 && identifier[0] != '$' {
+		identifier = "$" + identifier
+	}
 	cc.emitter.EmitPushString(identifier, line, column)
 }
 
@@ -343,7 +346,7 @@ func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 	}
 
 	if index, exists := cc.variableMap[ident.Name]; exists {
-		cc.emitter.EmitOpcodeWithOperand(OpObjLoad, Operand{Type: OperandImmediate32, Value: safeInt64ToUint64(safeMax(0, int64(index)))}, ident.Pos.Line, ident.Pos.Column)
+		cc.emitter.EmitOpcodeWithOperand(OpLoadVar, Operand{Type: OperandImmediate32, Value: safeInt64ToUint64(safeMax(0, int64(index)))}, ident.Pos.Line, ident.Pos.Column)
 		return nil
 	}
 
@@ -1097,31 +1100,49 @@ func (cc *ConditionCompiler) compileShortCircuitOr(orOp *ast.BinaryOp) error {
 	return cc.compileShortCircuitBinary(orOp, OpJtrue, OpOr)
 }
 
+func (cc *ConditionCompiler) allocateVariables(vars []string) ([]int, error) {
+	if cc.variableMap == nil {
+		cc.variableMap = make(map[string]int)
+	}
+	slots := make([]int, len(vars))
+	for i, v := range vars {
+		slot := len(cc.variableMap)
+		if slot >= 256 {
+			return nil, fmt.Errorf("too many variables")
+		}
+		cc.variableMap[v] = slot
+		slots[i] = slot
+	}
+	return slots, nil
+}
+
 func (cc *ConditionCompiler) compileForLoop(forLoop *ast.ForLoop) error {
-	if forLoop.Variable == "" {
+	if len(forLoop.Variables) == 0 {
 		return cc.compileForLoopOverStrings(forLoop)
 	}
 
-	start, end, ok := cc.extractForLoopRange(forLoop.Range)
-	if !ok {
-		return fmt.Errorf("unsupported for-loop range")
-	}
-	if end < start {
-		return fmt.Errorf("invalid for-loop range: %d..%d", start, end)
-	}
-	const maxUnroll = 1024
-	if end-start+1 > maxUnroll {
-		return fmt.Errorf("for-loop range too large (%d); max %d supported", end-start+1, maxUnroll)
+	rangeExpr, ok := forLoop.Range.(*ast.BinaryOp)
+	if !ok || rangeExpr.Op != token.DOT {
+		return fmt.Errorf("unsupported for-loop range type, expected binary range operator")
 	}
 
-	expressions := make([]ast.Expression, 0, end-start+1)
-	for i := start; i <= end; i++ {
-		lit := &ast.Literal{Type: token.IntegerLit, Value: i, Pos: forLoop.Pos}
-		expr := cc.replaceIdentifier(forLoop.Condition, forLoop.Variable, lit)
-		expressions = append(expressions, expr)
+	slots, err := cc.allocateVariables(forLoop.Variables)
+	if err != nil {
+		return err
 	}
 
-	return cc.compileForLoopExpressions(forLoop.Quantifier, expressions, forLoop.Pos)
+	// 1. Push start and end to stack dynamically
+	if err := cc.compileExpression(rangeExpr.Left); err != nil {
+		return fmt.Errorf("compiling range start: %w", err)
+	}
+	if err := cc.compileExpression(rangeExpr.Right); err != nil {
+		return fmt.Errorf("compiling range end: %w", err)
+	}
+
+	// 2. Start Iterator
+	cc.emitter.EmitOpcodeWithOperand(OpIterStartIntRange, Operand{Type: OperandImmediate32, Value: uint64(slots[0])}, forLoop.Pos.Line, forLoop.Pos.Column)
+
+	return cc.compileForLoopBody(forLoop.Quantifier, forLoop.Condition, forLoop.Pos)
 }
 
 func (cc *ConditionCompiler) compileForLoopOverStrings(forLoop *ast.ForLoop) error {
@@ -1141,53 +1162,78 @@ func (cc *ConditionCompiler) compileForLoopOverStrings(forLoop *ast.ForLoop) err
 			return err
 		}
 	}
-	if len(ids) == 0 {
-		return cc.compileForLoopExpressions(forLoop.Quantifier, nil, forLoop.Pos)
+
+	slots, err := cc.allocateVariables([]string{"$"}) // implicit variable
+	if err != nil {
+		return err
 	}
 
-	expressions := make([]ast.Expression, 0, len(ids))
-	for _, id := range ids {
-		replacement := &ast.Identifier{Name: id, Pos: forLoop.Pos}
-		expr := cc.replaceIdentifier(forLoop.Condition, "$", replacement)
-		expressions = append(expressions, expr)
-	}
+	index := cc.internStringSet(ids)
+	cc.emitter.EmitPush(uint64(index), forLoop.Pos.Line, forLoop.Pos.Column)
+	cc.emitter.EmitOpcodeWithOperand(OpIterStartStringSet, Operand{Type: OperandImmediate32, Value: uint64(slots[0])}, forLoop.Pos.Line, forLoop.Pos.Column)
 
-	return cc.compileForLoopExpressions(forLoop.Quantifier, expressions, forLoop.Pos)
+	return cc.compileForLoopBody(forLoop.Quantifier, forLoop.Condition, forLoop.Pos)
 }
 
-func (cc *ConditionCompiler) compileForLoopExpressions(quantifier string, exprs []ast.Expression, pos token.Position) error {
-	if len(exprs) == 0 {
-		// Empty range: any => false, all/none => true
-		result := int64(0)
-		switch quantifier {
-		case QuantifierAll, QuantifierNone:
-			result = 1
-		default:
-			if count, ok := parseNumericQuantifier(quantifier); ok && count <= 0 {
-				result = 1
-			}
-		}
-		cc.emitter.EmitPush(uint64(result), pos.Line, pos.Column) // #nosec G115
-		return nil
+func (cc *ConditionCompiler) compileForLoopBody(quantifier string, condition ast.Expression, pos token.Position) error {
+	// 1. Check if iterator is empty using OpIterPushTotal + OpJzP
+	cc.emitter.EmitOpcode(OpIterPushTotal, pos.Line, pos.Column)
+	jumpToEnd := cc.emitter.EmitJump(JumpConfig{Opcode: OpJzP, Line: pos.Line, Pos: pos.Column})
+
+	// 2. First iteration: push target and call OpIterNext to initialize
+	setupIndex := cc.emitter.GetInstructionCount()
+	cc.emitter.EmitOpcodeWithOperand(OpPush32, Operand{Type: OperandImmediate32, Value: 0}, pos.Line, pos.Column) // Placeholder for loopBodyIP
+	cc.emitter.EmitOpcode(OpIterNext, pos.Line, pos.Column)
+
+	loopBodyIP := cc.emitter.GetSize()
+
+	// Fixup the setup push with the loopBodyIP
+	if err := cc.emitter.UpdateOperandByIndex(setupIndex, Operand{Type: OperandImmediate32, Value: uint64(loopBodyIP)}); err != nil {
+		return err
 	}
 
+	// 3. Compile the condition expression
+	if err := cc.compileExpression(condition); err != nil {
+		return err
+	}
+
+	// 4. Accumulate condition
+	cc.emitter.EmitOpcode(OpIterCondition, pos.Line, pos.Column)
+
+	// 5. Push jump target and iterate
+	cc.emitter.EmitPush(uint64(loopBodyIP), pos.Line, pos.Column)
+	cc.emitter.EmitOpcode(OpIterNext, pos.Line, pos.Column)
+
+	// 6. End Iteration and evaluate target logic
+	endLoopIP := cc.emitter.GetSize()
+	cc.emitter.SetFixup(jumpToEnd, endLoopIP)
+
+	if quantifier == QuantifierAll {
+		cc.emitter.EmitOpcode(OpIterPushTotal, pos.Line, pos.Column)
+	}
+
+	cc.emitter.EmitOpcode(OpIterEnd, pos.Line, pos.Column) // Pushes final count to stack
+
+	// 8. Quantifier checks
 	switch quantifier {
 	case QuantifierAny:
-		return cc.compileBooleanFold(exprs, OpOr)
-	case QuantifierAll:
-		return cc.compileBooleanFold(exprs, OpAnd)
+		cc.emitter.EmitPush(0, pos.Line, pos.Column)
+		cc.emitter.EmitOpcode(OpIntGt, pos.Line, pos.Column)
 	case QuantifierNone:
-		negated := make([]ast.Expression, 0, len(exprs))
-		for _, expr := range exprs {
-			negated = append(negated, &ast.UnaryOp{Op: token.NOT, Right: expr, Pos: pos})
-		}
-		return cc.compileBooleanFold(negated, OpAnd)
+		cc.emitter.EmitPush(0, pos.Line, pos.Column)
+		cc.emitter.EmitOpcode(OpIntEq, pos.Line, pos.Column)
+	case QuantifierAll:
+		cc.emitter.EmitOpcode(OpIntEq, pos.Line, pos.Column)
 	default:
-		if count, ok := parseNumericQuantifier(quantifier); ok {
-			return cc.compileNumericForLoop(exprs, count, pos)
+		count, ok := parseNumericQuantifier(quantifier)
+		if !ok {
+			return fmt.Errorf("unsupported for-loop quantifier: %s", quantifier)
 		}
-		return fmt.Errorf("unsupported for-loop quantifier: %s", quantifier)
+		cc.emitter.EmitPush(uint64(count), pos.Line, pos.Column) // #nosec G115
+		cc.emitter.EmitOpcode(OpIntGe, pos.Line, pos.Column)
 	}
+
+	return nil
 }
 
 func parseNumericQuantifier(quantifier string) (int64, bool) {
@@ -1199,155 +1245,6 @@ func parseNumericQuantifier(quantifier string) (int64, bool) {
 		return 0, false
 	}
 	return val, true
-}
-
-func (cc *ConditionCompiler) compileNumericForLoop(exprs []ast.Expression, count int64, pos token.Position) error {
-	if count <= 0 {
-		cc.emitter.EmitPush(1, pos.Line, pos.Column)
-		return nil
-	}
-	if err := cc.compileExpression(exprs[0]); err != nil {
-		return err
-	}
-	for i := 1; i < len(exprs); i++ {
-		if err := cc.compileExpression(exprs[i]); err != nil {
-			return err
-		}
-		cc.emitter.EmitOpcode(OpIntAdd, pos.Line, pos.Column)
-	}
-	cc.emitter.EmitPush(uint64(count), pos.Line, pos.Column) // #nosec G115
-	cc.emitter.EmitOpcode(OpIntGe, pos.Line, pos.Column)
-	return nil
-}
-
-func (cc *ConditionCompiler) compileBooleanFold(exprs []ast.Expression, op Opcode) error {
-	if len(exprs) == 0 {
-		return nil
-	}
-	if err := cc.compileExpression(exprs[0]); err != nil {
-		return err
-	}
-	for i := 1; i < len(exprs); i++ {
-		if err := cc.compileExpression(exprs[i]); err != nil {
-			return err
-		}
-		cc.emitter.EmitOpcode(op, 0, 0)
-	}
-	return nil
-}
-
-func (cc *ConditionCompiler) extractForLoopRange(expr ast.Expression) (int64, int64, bool) {
-	switch e := expr.(type) {
-	case *ast.BinaryOp:
-		if e.Op != token.DOT {
-			return 0, 0, false
-		}
-		start, ok := cc.extractIntLiteral(e.Left)
-		if !ok {
-			return 0, 0, false
-		}
-		end, ok := cc.extractIntLiteral(e.Right)
-		if !ok {
-			return 0, 0, false
-		}
-		return start, end, true
-	default:
-		val, ok := cc.extractIntLiteral(expr)
-		if !ok {
-			return 0, 0, false
-		}
-		return val, val, true
-	}
-}
-
-func (cc *ConditionCompiler) extractIntLiteral(expr ast.Expression) (int64, bool) {
-	lit, ok := expr.(*ast.Literal)
-	if !ok {
-		return 0, false
-	}
-	switch v := lit.Value.(type) {
-	case int64:
-		return v, true
-	case int:
-		return int64(v), true
-	case string:
-		if i, err := strconv.ParseInt(v, 0, 64); err == nil {
-			return i, true
-		}
-	}
-	return 0, false
-}
-
-func (cc *ConditionCompiler) replaceIdentifier(expr ast.Expression, name string, replacement ast.Expression) ast.Expression {
-	switch e := expr.(type) {
-	case *ast.Identifier:
-		if e.Name == name {
-			return replacement
-		}
-		return e
-	case *ast.Literal:
-		return e
-	case *ast.BinaryOp:
-		return &ast.BinaryOp{
-			Op:    e.Op,
-			Left:  cc.replaceIdentifier(e.Left, name, replacement),
-			Right: cc.replaceIdentifier(e.Right, name, replacement),
-			Pos:   e.Pos,
-		}
-	case *ast.UnaryOp:
-		return &ast.UnaryOp{
-			Op:    e.Op,
-			Right: cc.replaceIdentifier(e.Right, name, replacement),
-			Pos:   e.Pos,
-		}
-	case *ast.FunctionCall:
-		args := make([]ast.Expression, len(e.Args))
-		for i, arg := range e.Args {
-			args[i] = cc.replaceIdentifier(arg, name, replacement)
-		}
-		return &ast.FunctionCall{
-			Pos:      e.Pos,
-			Function: e.Function,
-			Args:     args,
-		}
-	case *ast.StringCount:
-		var idx ast.Expression
-		if e.Index != nil {
-			idx = cc.replaceIdentifier(e.Index, name, replacement)
-		}
-		return &ast.StringCount{
-			Pos:    e.Pos,
-			String: cc.replaceIdentifier(e.String, name, replacement),
-			Index:  idx,
-		}
-	case *ast.StringOffset:
-		var idx ast.Expression
-		if e.Index != nil {
-			idx = cc.replaceIdentifier(e.Index, name, replacement)
-		}
-		return &ast.StringOffset{
-			Pos:    e.Pos,
-			String: cc.replaceIdentifier(e.String, name, replacement),
-			Index:  idx,
-		}
-	case *ast.StringLength:
-		var idx ast.Expression
-		if e.Index != nil {
-			idx = cc.replaceIdentifier(e.Index, name, replacement)
-		}
-		return &ast.StringLength{
-			Pos:    e.Pos,
-			String: cc.replaceIdentifier(e.String, name, replacement),
-			Index:  idx,
-		}
-	case *ast.OfExpression:
-		return &ast.OfExpression{
-			Pos:     e.Pos,
-			Count:   cc.replaceIdentifier(e.Count, name, replacement),
-			Strings: cc.replaceIdentifier(e.Strings, name, replacement),
-		}
-	}
-	return expr
 }
 
 func (cc *ConditionCompiler) compileOfExpression(ofExpr *ast.OfExpression) error {

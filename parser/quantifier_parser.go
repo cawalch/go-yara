@@ -54,7 +54,7 @@ func (p *QuantifierParser) SetCurrentTokens(current, peek token.Token) {
 // ParseQuantifier parses quantifier expressions (all/any/none of them, for any of them)
 func (p *QuantifierParser) ParseQuantifier(pos token.Position) (ast.Expression, error) {
 	// Handle "for" quantifier syntax
-	if p.currentTokenIs(token.FOR) {
+	if p.CurrentTokenIs(token.FOR) {
 		p.nextToken() // consume 'for'
 		return p.parseForQuantifier(pos)
 	}
@@ -75,8 +75,8 @@ func (p *QuantifierParser) parseForQuantifier(pos token.Position) (ast.Expressio
 
 	// Parse the quantifier after 'for' - could be keyword (all/any/none) or numeric
 	switch {
-	case p.currentTokenIs(token.ALL) || p.currentTokenIs(token.ANY) ||
-		p.currentTokenIs(token.NONE):
+	case p.CurrentTokenIs(token.ALL) || p.CurrentTokenIs(token.ANY) ||
+		p.CurrentTokenIs(token.NONE):
 		// Keyword quantifier
 		quantifierStr = p.current.Literal
 		quantifierExpr = p.builder.Identifier(pos, quantifierStr)
@@ -101,7 +101,7 @@ func (p *QuantifierParser) parseForQuantifier(pos token.Position) (ast.Expressio
 	// For keyword quantifiers, check if this is a for-loop with variable or standard 'of' syntax
 	if !numericQuantifier {
 		// Check if this is a for loop with variable (e.g., "for any i in (1..3) : ...")
-		if p.currentTokenIs(token.IDENTIFIER) {
+		if p.CurrentTokenIs(token.IDENTIFIER) {
 			return p.parseForLoopWithVariable(pos, quantifierStr)
 		}
 
@@ -118,7 +118,7 @@ func (p *QuantifierParser) parseForQuantifier(pos token.Position) (ast.Expressio
 	}
 
 	// Check for colon syntax in "for" quantifiers
-	if p.currentTokenIs(token.COLON) {
+	if p.CurrentTokenIs(token.COLON) {
 		p.nextToken() // consume ':'
 
 		// Parse the expression after colon
@@ -134,10 +134,22 @@ func (p *QuantifierParser) parseForQuantifier(pos token.Position) (ast.Expressio
 	return p.builder.OfExpression(pos, quantifierExpr, target), nil
 }
 
-// parseForLoopWithVariable parses for loops with variables like "for all i in (0..9) : ..."
+// parseForLoopWithVariable parses for loops with variables like "for all i in (0..9) : ..." or "for any k,v in dict : ..."
 func (p *QuantifierParser) parseForLoopWithVariable(pos token.Position, quantifier string) (ast.Expression, error) {
-	variableName := p.current.Literal
-	p.nextToken()
+	var variables []string
+
+	for {
+		if !p.CurrentTokenIs(token.IDENTIFIER) {
+			return nil, fmt.Errorf("expected identifier as loop variable, got %s", p.current.Type)
+		}
+		variables = append(variables, p.current.Literal)
+		p.nextToken()
+
+		if !p.CurrentTokenIs(token.COMMA) {
+			break
+		}
+		p.nextToken() // consume ','
+	}
 
 	if !p.expectToken(token.IN) {
 		return nil, errors.New("expected 'in' after variable name in for loop")
@@ -150,7 +162,7 @@ func (p *QuantifierParser) parseForLoopWithVariable(pos token.Position, quantifi
 	}
 
 	// Check for colon syntax in "for" quantifiers
-	if p.currentTokenIs(token.COLON) {
+	if p.CurrentTokenIs(token.COLON) {
 		p.nextToken() // consume ':'
 
 		// Parse the expression after colon
@@ -159,8 +171,8 @@ func (p *QuantifierParser) parseForLoopWithVariable(pos token.Position, quantifi
 			return nil, parseErr
 		}
 
-		// Create a ForLoop node for "for" quantifiers with colon
-		return p.builder.ForLoop(pos, quantifier, variableName, rangeExpr, expr), nil
+		// Create a ForLoopMultiVar node for "for" quantifiers with colon
+		return p.builder.ForLoopMultiVar(pos, quantifier, variables, rangeExpr, expr), nil
 	}
 
 	return nil, errors.New("expected ':' after for loop range")
@@ -168,7 +180,7 @@ func (p *QuantifierParser) parseForLoopWithVariable(pos token.Position, quantifi
 
 // parseRangeExpression parses range expressions, handling both parenthesized ranges and regular expressions
 func (p *QuantifierParser) parseRangeExpression() (ast.Expression, error) {
-	if p.currentTokenIs(token.LPAREN) {
+	if p.CurrentTokenIs(token.LPAREN) {
 		return p.parseParenthesizedRangeExpression()
 	}
 	return p.exprParser.parsePrimaryExcludingUnary()
@@ -176,11 +188,35 @@ func (p *QuantifierParser) parseRangeExpression() (ast.Expression, error) {
 
 // parseParenthesizedRangeExpression parses a parenthesized range expression like (0..9)
 func (p *QuantifierParser) parseParenthesizedRangeExpression() (ast.Expression, error) {
-	p.nextToken() // consume '('
+	pos := p.current.Pos // Store position of '('
+	p.nextToken()        // consume '('
 
+	// Handle single expression parenthesized or comma separated tuple
 	left, err := p.exprParser.parsePrimaryExcludingUnary()
 	if err != nil {
 		return nil, err
+	}
+
+	// If we see a comma, this is a tuple e.g., (1, 2, 3) or ("a", "b")
+	if p.CurrentTokenIs(token.COMMA) {
+		tupleElements := []ast.Expression{left}
+		for p.CurrentTokenIs(token.COMMA) {
+			p.nextToken() // consume ','
+			nextElem, err := p.exprParser.parsePrimaryExcludingUnary()
+			if err != nil {
+				return nil, err
+			}
+			tupleElements = append(tupleElements, nextElem)
+		}
+
+		if !p.expectToken(token.RPAREN) {
+			return nil, errors.New("expected ')' after tuple elements")
+		}
+
+		return &ast.StringTuple{
+			Pos:      pos,
+			Elements: tupleElements,
+		}, nil
 	}
 
 	rangeExpr, err := p.parseRangeSuffix(left)
@@ -197,7 +233,7 @@ func (p *QuantifierParser) parseParenthesizedRangeExpression() (ast.Expression, 
 
 // parseRangeSuffix parses the optional range suffix (..right) or returns the left expression as-is
 func (p *QuantifierParser) parseRangeSuffix(left ast.Expression) (ast.Expression, error) {
-	if p.currentTokenIs(token.DOT) && p.peekTokenIs(token.DOT) {
+	if p.CurrentTokenIs(token.DOT) && p.PeekTokenIs(token.DOT) {
 		return p.parseFullRange(left)
 	}
 	return left, nil
@@ -249,24 +285,24 @@ func (p *QuantifierParser) parseQuantifierExpressionPart(pos token.Position) (as
 
 // isNumericQuantifier checks if current token is a numeric quantifier
 func (p *QuantifierParser) isNumericQuantifier() bool {
-	isNumber := p.currentTokenIs(token.IntegerLit) ||
-		p.currentTokenIs(token.HexIntegerLit) ||
-		p.currentTokenIs(token.OctalIntegerLit)
-	return isNumber && p.peekTokenIs(token.OF)
+	isNumber := p.CurrentTokenIs(token.IntegerLit) ||
+		p.CurrentTokenIs(token.HexIntegerLit) ||
+		p.CurrentTokenIs(token.OctalIntegerLit)
+	return isNumber && p.PeekTokenIs(token.OF)
 }
 
 // isNumericLiteral checks if current token is a numeric literal
 func (p *QuantifierParser) isNumericLiteral() bool {
-	return p.currentTokenIs(token.IntegerLit) ||
-		p.currentTokenIs(token.HexIntegerLit) ||
-		p.currentTokenIs(token.OctalIntegerLit)
+	return p.CurrentTokenIs(token.IntegerLit) ||
+		p.CurrentTokenIs(token.HexIntegerLit) ||
+		p.CurrentTokenIs(token.OctalIntegerLit)
 }
 
 // isKeywordQuantifier checks if current token is a keyword quantifier
 func (p *QuantifierParser) isKeywordQuantifier() bool {
-	return p.currentTokenIs(token.ALL) ||
-		p.currentTokenIs(token.ANY) ||
-		p.currentTokenIs(token.NONE)
+	return p.CurrentTokenIs(token.ALL) ||
+		p.CurrentTokenIs(token.ANY) ||
+		p.CurrentTokenIs(token.NONE)
 }
 
 // parseNumericQuantifier parses numeric quantifiers like "1 of", "2 of"
@@ -298,15 +334,15 @@ func (p *QuantifierParser) parseKeywordQuantifier(pos token.Position) (ast.Expre
 // parseQuantifierTarget parses the target part of quantifier expressions (them, string patterns, etc.)
 func (p *QuantifierParser) parseQuantifierTarget(pos token.Position) (ast.Expression, error) {
 	switch {
-	case p.currentTokenIs(token.THEM):
+	case p.CurrentTokenIs(token.THEM):
 		target := p.builder.Identifier(pos, "them")
 		p.nextToken()
 		return target, nil
-	case p.currentTokenIs(token.StringIdentifier):
+	case p.CurrentTokenIs(token.StringIdentifier):
 		target := p.builder.Identifier(pos, p.current.Literal)
 		p.nextToken()
 		return target, nil
-	case p.currentTokenIs(token.LPAREN):
+	case p.CurrentTokenIs(token.LPAREN):
 		return p.parseParenthesizedTarget(pos)
 	default:
 		return nil, errors.New("expected 'them', string pattern, or '(' after 'of'")
@@ -339,10 +375,10 @@ func (p *QuantifierParser) parseParenthesizedTarget(pos token.Position) (ast.Exp
 // parseFirstParenthesizedExpression parses the first expression in parentheses
 func (p *QuantifierParser) parseFirstParenthesizedExpression(pos token.Position) (ast.Expression, error) {
 	switch {
-	case p.currentTokenIs(token.StringIdentifier) && p.current.Literal == "$":
+	case p.CurrentTokenIs(token.StringIdentifier) && p.current.Literal == "$":
 		p.nextToken()
 		return p.builder.Identifier(pos, "$"), nil
-	case p.currentTokenIs(token.StringIdentifier):
+	case p.CurrentTokenIs(token.StringIdentifier):
 		expr := p.builder.Identifier(pos, p.current.Literal)
 		p.nextToken()
 		return expr, nil
@@ -355,7 +391,7 @@ func (p *QuantifierParser) parseFirstParenthesizedExpression(pos token.Position)
 func (p *QuantifierParser) parseCommaSeparatedExpressions(pos token.Position, firstExpr ast.Expression) ([]ast.Expression, error) {
 	expressions := []ast.Expression{firstExpr}
 
-	for p.currentTokenIs(token.COMMA) {
+	for p.CurrentTokenIs(token.COMMA) {
 		p.nextToken() // consume ','
 		nextExpr, err := p.parseNextParenthesizedExpression(pos)
 		if err != nil {
@@ -369,7 +405,7 @@ func (p *QuantifierParser) parseCommaSeparatedExpressions(pos token.Position, fi
 
 // parseNextParenthesizedExpression parses subsequent expressions in a comma-separated list
 func (p *QuantifierParser) parseNextParenthesizedExpression(pos token.Position) (ast.Expression, error) {
-	if p.currentTokenIs(token.StringIdentifier) {
+	if p.CurrentTokenIs(token.StringIdentifier) {
 		expr := p.builder.Identifier(pos, p.current.Literal)
 		p.nextToken()
 		return expr, nil
@@ -398,25 +434,27 @@ func (p *QuantifierParser) isQuantifierToken() bool {
 
 // isNumericQuantifierToken checks if current token is a numeric quantifier
 func (p *QuantifierParser) isNumericQuantifierToken() bool {
-	isNumber := p.currentTokenIs(token.IntegerLit) ||
-		p.currentTokenIs(token.HexIntegerLit) ||
-		p.currentTokenIs(token.OctalIntegerLit)
-	return isNumber && p.peekTokenIs(token.OF)
+	isNumber := p.CurrentTokenIs(token.IntegerLit) ||
+		p.CurrentTokenIs(token.HexIntegerLit) ||
+		p.CurrentTokenIs(token.OctalIntegerLit)
+	return isNumber && p.PeekTokenIs(token.OF)
 }
 
 // Helper methods
-func (p *QuantifierParser) currentTokenIs(t token.Type) bool {
+func (p *QuantifierParser) CurrentTokenIs(t token.Type) bool {
 	return p.current.Type == t
 }
 
-func (p *QuantifierParser) peekTokenIs(t token.Type) bool {
+func (p *QuantifierParser) PeekTokenIs(t token.Type) bool {
 	return p.peek.Type == t
 }
 
 func (p *QuantifierParser) expectToken(t token.Type) bool {
-	if p.currentTokenIs(t) {
+	if p.CurrentTokenIs(t) {
 		p.nextToken()
 		return true
 	}
+	p.addError(fmt.Errorf("expected token %s, got %s at line %d, col %d",
+		t, p.current.Type, p.current.Pos.Line, p.current.Pos.Column))
 	return false
 }

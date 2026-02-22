@@ -169,7 +169,8 @@ func (e *Emitter) FixupJumps() error {
 			return err
 		}
 
-		inst := &e.instructions[jumpOffset]
+		jumpIndex, _ := e.findInstructionIndexByOffset(jumpOffset)
+		inst := &e.instructions[jumpIndex]
 		relativeOffset := e.calculateRelativeOffset(jumpOffset, targetOffset, inst)
 
 		if err := e.updateJumpOperand(inst, relativeOffset); err != nil {
@@ -181,13 +182,29 @@ func (e *Emitter) FixupJumps() error {
 	return nil
 }
 
+// findInstructionIndexByOffset finds the instruction slice index from its byte offset
+func (e *Emitter) findInstructionIndexByOffset(offset int) (int, error) {
+	currentOffset := 0
+	for i := range e.instructions {
+		if currentOffset == offset {
+			return i, nil
+		}
+		if currentOffset > offset {
+			break
+		}
+		currentOffset += e.instructions[i].Size()
+	}
+	return -1, fmt.Errorf("instruction not found at byte offset %d", offset)
+}
+
 // validateJumpInstruction validates that a jump instruction exists at the given offset
 func (e *Emitter) validateJumpInstruction(jumpOffset int) error {
-	if jumpOffset >= len(e.instructions) {
-		return fmt.Errorf("jump offset %d out of bounds", jumpOffset)
+	jumpIndex, err := e.findInstructionIndexByOffset(jumpOffset)
+	if err != nil {
+		return err
 	}
 
-	inst := &e.instructions[jumpOffset]
+	inst := &e.instructions[jumpIndex]
 	if !inst.IsJump() {
 		return fmt.Errorf("instruction at offset %d is not a jump", jumpOffset)
 	}
@@ -195,13 +212,12 @@ func (e *Emitter) validateJumpInstruction(jumpOffset int) error {
 }
 
 // calculateRelativeOffset calculates the relative offset for a jump instruction
+// Both jumpOffset and targetOffset are byte offsets within the bytecode stream.
+// The relative offset is measured from the end of the jump instruction (after its operand).
 func (e *Emitter) calculateRelativeOffset(jumpOffset, targetOffset int, inst *Instruction) int32 {
-	if targetOffset >= 0 && targetOffset < len(e.instructions) {
-		currentInstEnd := jumpOffset + inst.Size()
-		offset := targetOffset - currentInstEnd
-		return e.clampToInt32(offset)
-	}
-	return e.clampToInt32(targetOffset)
+	currentInstEnd := jumpOffset + inst.Size()
+	offset := targetOffset - currentInstEnd
+	return e.clampToInt32(offset)
 }
 
 // clampToInt32 clamps an integer to 32-bit signed range
@@ -268,6 +284,11 @@ func (e *Emitter) GetSize() int {
 
 // GetInstructionCount returns the number of instructions emitted
 func (e *Emitter) GetInstructionCount() int {
+	return len(e.instructions)
+}
+
+// GetCurrentIP returns the current instruction pointer (index of next instruction)
+func (e *Emitter) GetCurrentIP() int {
 	return len(e.instructions)
 }
 
@@ -462,8 +483,11 @@ func (e *Emitter) GetLength() int {
 	return e.currentOffset
 }
 
-// UpdateOperand updates the operand of an instruction at the given position
+// UpdateOperand updates the operand of an instruction at the given offset position
 func (e *Emitter) UpdateOperand(position int, operand Operand) error {
+	// We need to find the instruction at the byte offset `position`.
+	// For now, this is flawed if position is a byte offset but used as an array index!
+	// Leaving this here for backward compatibility if it's used elsewhere, but using UpdateOperandByIndex is safer.
 	if position < 0 || position >= len(e.instructions) {
 		return fmt.Errorf("instruction position %d out of range", position)
 	}
@@ -473,4 +497,18 @@ func (e *Emitter) UpdateOperand(position int, operand Operand) error {
 	inst.Operand = operand
 
 	return nil
+}
+
+// UpdateOperandByIndex updates the operand of an instruction at the given array index
+func (e *Emitter) UpdateOperandByIndex(index int, operand Operand) error {
+	if index < 0 || index >= len(e.instructions) {
+		return fmt.Errorf("instruction index %d out of range", index)
+	}
+	e.instructions[index].Operand = operand
+	return nil
+}
+
+// SetFixup explicitly adds a jump resolution request for a jump offset to a target offset
+func (e *Emitter) SetFixup(jumpOffset int, targetOffset int) {
+	e.fixups[jumpOffset] = targetOffset
 }

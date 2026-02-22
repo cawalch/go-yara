@@ -66,6 +66,8 @@ func (v *TestVisitor) VisitForLoop(_ *ForLoop) any                   { return ni
 func (v *TestVisitor) VisitOfExpression(_ *OfExpression) any         { return nil }
 func (v *TestVisitor) VisitFunctionCall(_ *FunctionCall) any         { return nil }
 
+func (v *TestVisitor) VisitStringTuple(_ *StringTuple) any { return nil }
+
 func TestBuilderUtilities(t *testing.T) {
 	builder := NewBuilder()
 
