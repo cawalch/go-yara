@@ -725,8 +725,8 @@ func (c *Compiler) processIncludesWithBaseDirContext(ctx context.Context, progra
 			return fmt.Errorf("failed to read include file %s: path traversal detected", include.File)
 		}
 
-		// Read the included file content
-		includedContent, err := os.ReadFile(includePath) // #nosec G304 - include file processing is intentional
+		// Read the included file content (use the cleaned, validated path)
+		includedContent, err := os.ReadFile(cleanIncludePath)
 		if err != nil {
 			return fmt.Errorf("failed to read include file %s: %w", include.File, err)
 		}
