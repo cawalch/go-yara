@@ -121,7 +121,7 @@ func (cc *ConditionCompiler) emitJumpWithLabel(opcode Opcode, label string, line
 		Line:     line,
 		Column:   column,
 	})
-	cc.emitter.EmitOpcodeWithOperand(opcode, Operand{Type: OperandImmediate32, Value: 0}, line, column)
+	cc.emitter.EmitOpcodeWithOperand(opcode, Operand{Type: OperandRelative32, Value: 0}, line, column)
 }
 
 func (cc *ConditionCompiler) resolveJumps() error {
@@ -132,7 +132,7 @@ func (cc *ConditionCompiler) resolveJumps() error {
 		}
 		relativeOffset := targetOffset - jump.Position - 1
 		// #nosec G115 - safe conversion with explicit bounds checking
-		if err := cc.emitter.UpdateOperand(jump.Position, Operand{Type: OperandImmediate32, Value: uint64(int64(relativeOffset))}); err != nil {
+		if err := cc.emitter.UpdateOperand(jump.Position, Operand{Type: OperandRelative32, Value: uint64(int64(relativeOffset))}); err != nil {
 			return fmt.Errorf("failed to resolve jump to label %s: %w", jump.Label, err)
 		}
 	}

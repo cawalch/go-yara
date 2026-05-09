@@ -249,9 +249,6 @@ func (e *Emitter) updateJumpOperand(inst *Instruction, relativeOffset int32) err
 
 // convertToUint64 safely converts int32 to uint64
 func (e *Emitter) convertToUint64(value int32) uint64 {
-	if value < 0 {
-		return 0
-	}
 	return uint64(value)
 }
 
