@@ -1,6 +1,7 @@
 # Build artifacts and test outputs
 *.out
 *.test
+.pi
 coverage.out
 coverage.html
 

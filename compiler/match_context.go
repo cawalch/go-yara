@@ -106,8 +106,8 @@ func addRegexMatches(ctx *MatchContext, id string, regexInfo RegexPattern, data 
 		absStart := pos + start
 		absEnd := pos + end
 
-		// Handle invalid range or zero-length matches to prevent infinite allocation loops
-		if absEnd <= absStart {
+		// Handle invalid range
+		if absEnd < absStart {
 			pos = absStart + 1
 			continue
 		}
