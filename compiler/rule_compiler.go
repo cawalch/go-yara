@@ -473,13 +473,18 @@ func (rc *RuleCompiler) compileCondition(rule *ast.Rule) error {
 	stringOffsets := rc.stringCompiler.GetStringOffsets()
 	rc.conditionCompiler.SetStringOffsets(stringOffsets)
 
-	// Compile the condition expression
-	if err := rc.conditionCompiler.compileExpression(rule.Condition); err != nil {
+	// Compile the condition expression using CompileBooleanExpression which handles short-circuit evaluation properly
+	if err := rc.conditionCompiler.CompileBooleanExpression(rule.Condition, false); err != nil {
 		return fmt.Errorf("compiling condition: %w", err)
 	}
 
 	// Emit final halt instruction (use a default position)
 	rc.emitter.EmitHalt(0, 0)
+
+	// Resolve any pending jumps
+	if err := rc.conditionCompiler.resolveJumps(); err != nil {
+		return fmt.Errorf("resolving jumps: %w", err)
+	}
 
 	return nil
 }
