@@ -1,7 +1,7 @@
 package compiler
 
 import (
-	"sync" // NEW
+	"sync"
 
 	"github.com/cawalch/go-yara/ast"
 	"github.com/cawalch/go-yara/regex"
