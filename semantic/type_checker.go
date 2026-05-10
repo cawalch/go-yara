@@ -8,6 +8,14 @@ import (
 	"github.com/cawalch/go-yara/token"
 )
 
+// Special identifier keywords
+const (
+	filesizeKeyword   = "filesize"
+	entrypointKeyword = "entrypoint"
+	flagsKeyword      = "flags"
+	themKeyword       = "them"
+)
+
 // TypeChecker handles type checking for expressions and operations
 type TypeChecker struct {
 	symbolTable *SymbolTable
