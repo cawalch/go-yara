@@ -86,9 +86,6 @@ func (ls *LiteralStrategy) Parse(parser *ExpressionParser, context ParseContext)
 	}
 }
 
-// Name returns the name of the strategy
-func (ls *LiteralStrategy) Name() string { return "LiteralStrategy" }
-
 // Priority returns the priority of the strategy
 func (ls *LiteralStrategy) Priority() int { return 1 }
 
@@ -160,9 +157,6 @@ func (is *IdentifierStrategy) parseMemberAccess(parser *ExpressionParser, contex
 	return NewParseResult(left, 1)
 }
 
-// Name returns the name of the strategy
-func (is *IdentifierStrategy) Name() string { return "IdentifierStrategy" }
-
 // Priority returns the priority of the strategy
 func (is *IdentifierStrategy) Priority() int { return 2 }
 
@@ -217,11 +211,8 @@ func (pes *ParenthesizedExpressionStrategy) Parse(parser *ExpressionParser, _ Pa
 	return NewParseResult(expr, 2) // consumed '(' and ')'
 }
 
-// Name returns the name of the strategy
-func (pes *ParenthesizedExpressionStrategy) Name() string { return "ParenthesizedExpressionStrategy" }
-
 // Priority returns the priority of the strategy
-func (pes *ParenthesizedExpressionStrategy) Priority() int { return 0 }
+func (pes *ParenthesizedExpressionStrategy) Priority() int { return 3 }
 
 // UnaryOperatorStrategy handles unary operators (not, -, ~, etc.)
 type UnaryOperatorStrategy struct {
@@ -353,11 +344,8 @@ func (dtfs *DataTypeFunctionStrategy) Parse(parser *ExpressionParser, context Pa
 	}, 2) // consumed function name and parentheses
 }
 
-// Name returns the name of the strategy
-func (dtfs *DataTypeFunctionStrategy) Name() string { return "DataTypeFunctionStrategy" }
-
 // Priority returns the priority of the strategy
-func (dtfs *DataTypeFunctionStrategy) Priority() int { return 4 }
+func (dtfs *DataTypeFunctionStrategy) Priority() int { return 5 }
 
 // YaraBuiltInStrategy handles YARA built-in functions and special literals
 type YaraBuiltInStrategy struct{}
@@ -433,9 +421,6 @@ func (ybs *YaraBuiltInStrategy) Parse(parser *ExpressionParser, context ParseCon
 	}
 }
 
-// Name returns the name of the strategy
-func (ybs *YaraBuiltInStrategy) Name() string { return "YaraBuiltInStrategy" }
-
 // Priority returns the priority of the strategy
 func (ybs *YaraBuiltInStrategy) Priority() int { return 6 }
 
@@ -489,9 +474,6 @@ func (qs *QuantifierTokenStrategy) Parse(parser *ExpressionParser, context Parse
 		return NewParseError(fmt.Errorf("unsupported quantifier: %s", context.CurrentToken.Type))
 	}
 }
-
-// Name returns the name of the strategy
-func (qs *QuantifierTokenStrategy) Name() string { return "QuantifierTokenStrategy" }
 
 // Priority returns the priority of the strategy
 func (qs *QuantifierTokenStrategy) Priority() int { return 7 }
@@ -554,11 +536,8 @@ func (qes *QuantifierExpressionStrategy) Parse(parser *ExpressionParser, context
 	return NewParseResult(ident, 1)
 }
 
-// Name returns the name of the strategy
-func (qes *QuantifierExpressionStrategy) Name() string { return "QuantifierExpressionStrategy" }
-
 // Priority returns the priority of the strategy
-func (qes *QuantifierExpressionStrategy) Priority() int { return 10 } // Very high priority
+func (qes *QuantifierExpressionStrategy) Priority() int { return 8 }
 
 // StringOperationStrategy handles YARA string operations (!, @, #)
 type StringOperationStrategy struct{}
@@ -682,11 +661,8 @@ func (sos *StringOperationStrategy) Parse(parser *ExpressionParser, context Pars
 	}
 }
 
-// Name returns the name of the strategy
-func (sos *StringOperationStrategy) Name() string { return "StringOperationStrategy" }
-
 // Priority returns the priority of the strategy
-func (sos *StringOperationStrategy) Priority() int { return 2 } // Higher than unary operators
+func (sos *StringOperationStrategy) Priority() int { return 9 }
 
 // RegisterDefaultPrimaryStrategies registers the default primary expression strategies
 func RegisterDefaultPrimaryStrategies(registry *StrategyRegistry) {

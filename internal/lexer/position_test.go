@@ -124,27 +124,6 @@ func TestReader_ReadPosition(t *testing.T) {
 	}
 }
 
-func TestReader_SliceRange(t *testing.T) {
-	input := "hello world"
-	r := NewReaderFast(input)
-
-	// Test slicing from position 0 to 5
-	slice := r.SliceRange(0, 5)
-	expected := "hello"
-
-	if slice != expected {
-		t.Errorf("Expected slice %q, got %q", expected, slice)
-	}
-
-	// Test slicing from position 6 to 11
-	slice = r.SliceRange(6, 11)
-	expected = "world"
-
-	if slice != expected {
-		t.Errorf("Expected slice %q, got %q", expected, slice)
-	}
-}
-
 func TestReader_PeekChar(t *testing.T) {
 	input := "hello"
 	r := NewReaderFast(input)

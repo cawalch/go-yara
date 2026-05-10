@@ -89,11 +89,6 @@ func (r *ReaderFast) Slice(start int) string {
 	return r.input[start:r.position]
 }
 
-// SliceRange returns a slice of the input from start to end.
-func (r *ReaderFast) SliceRange(start, end int) string {
-	return r.input[start:end]
-}
-
 // CurrentPosition returns the current position as a token.Position.
 // Optimized to avoid repeated struct creation.
 func (r *ReaderFast) CurrentPosition() token.Position {
@@ -143,14 +138,6 @@ func (r *ReaderFast) SetPosition(pos int) {
 	r.lastSetPos = pos
 }
 
-// BulkRead advances multiple characters at once for better performance.
-// This is useful for skipping known patterns like whitespace.
-func (r *ReaderFast) BulkRead(count int) {
-	for i := 0; i < count && r.readPosition <= len(r.input); i++ {
-		r.ReadChar()
-	}
-}
-
 // SkipWhitespace efficiently skips whitespace characters.
 // Optimized version that processes multiple characters at once.
 func (r *ReaderFast) SkipWhitespace() {
@@ -182,33 +169,6 @@ func (r *ReaderFast) SkipWhitespace() {
 	// End of input
 	r.position = r.readPosition
 	r.ch = 0
-}
-
-// ReadStringFast reads a string literal with optimized processing
-func (r *ReaderFast) ReadStringFast() (string, bool) {
-	// current r.ch is '"'
-	start := r.position
-	r.ReadChar() // skip opening quote
-
-	for r.ch != '"' && r.ch != 0 {
-		if r.ch == '\\' {
-			r.ReadChar() // skip backslash
-			if r.ch != 0 {
-				r.ReadChar() // skip escaped character
-			}
-		} else {
-			r.ReadChar()
-		}
-	}
-
-	if r.ch == 0 {
-		return r.input[start:], false
-	}
-
-	content := r.input[start+1:] // +1 to skip opening quote
-	r.ReadChar()                 // skip closing quote
-
-	return content, true
 }
 
 // ReadIdentifierFast reads an identifier with optimized processing
