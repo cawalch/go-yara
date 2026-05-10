@@ -108,8 +108,8 @@ func (l *Lexer) ReadChar() {
 	l.reader.ReadChar()
 }
 
-// Slice implements regexReader interface for Lexer
-func (l *Lexer) Slice(start int) string {
+// slice implements regexReader interface for Lexer
+func (l *Lexer) slice(start int) string {
 	return l.reader.Slice(start)
 }
 
@@ -134,7 +134,7 @@ type regexReader interface {
 	SetPosition(int)
 	GetCurrent() byte
 	ReadChar()
-	Slice(int) string
+	slice(int) string
 }
 
 // isEmptyRegexImpl is a shared implementation for checking empty regex patterns
@@ -232,7 +232,7 @@ func checkYARAModifier(r regexReader) bool {
 	for isWordChar(r) {
 		r.ReadChar()
 	}
-	word := r.Slice(wordStart)
+	word := r.slice(wordStart)
 	return isYARAModifier(word)
 }
 

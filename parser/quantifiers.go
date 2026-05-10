@@ -22,9 +22,6 @@ type QuantifierStrategy interface {
 	// Parse attempts to parse the quantifier using this strategy
 	Parse(parser *QuantifierParser, context ParseContext) ParseResult
 
-	// Name returns the name of this strategy for debugging
-	Name() string
-
 	// Priority returns the priority (lower number = higher priority) for strategy selection
 	Priority() int
 }
@@ -218,9 +215,6 @@ func (flqs *ForLoopQuantifierStrategy) parseRange(parser *QuantifierParser, cont
 	return flqs.parseForInEnumeration(parser, context, variable)
 }
 
-// Name returns the name of the strategy
-func (flqs *ForLoopQuantifierStrategy) Name() string { return "ForLoopQuantifierStrategy" }
-
 // Priority returns the priority of the strategy
 func (flqs *ForLoopQuantifierStrategy) Priority() int { return 1 }
 
@@ -281,9 +275,6 @@ func (sqs *StandardQuantifierStrategy) Parse(parser *QuantifierParser, context P
 	}, consumed)
 }
 
-// Name returns the name of the strategy
-func (sqs *StandardQuantifierStrategy) Name() string { return "StandardQuantifierStrategy" }
-
 // Priority returns the priority of the strategy
 func (sqs *StandardQuantifierStrategy) Priority() int { return 2 }
 
@@ -330,54 +321,5 @@ func (nqs *NumericQuantifierStrategy) Parse(parser *QuantifierParser, context Pa
 	}, 2) // consumed number and 'of'
 }
 
-// Name returns the name of the strategy
-func (nqs *NumericQuantifierStrategy) Name() string { return "NumericQuantifierStrategy" }
-
 // Priority returns the priority of the strategy
 func (nqs *NumericQuantifierStrategy) Priority() int { return 3 }
-
-// QuantifierStrategyRegistry manages quantifier strategies
-type QuantifierStrategyRegistry struct {
-	strategies []QuantifierStrategy
-	classifier TokenClassifier
-}
-
-// NewQuantifierStrategyRegistry creates a new quantifier strategy registry
-func NewQuantifierStrategyRegistry() *QuantifierStrategyRegistry {
-	registry := &QuantifierStrategyRegistry{
-		strategies: make([]QuantifierStrategy, 0),
-		classifier: DefaultTokenClassifier{},
-	}
-
-	// Register default quantifier strategies
-	registry.RegisterStrategy(NewForLoopQuantifierStrategy())
-	registry.RegisterStrategy(NewStandardQuantifierStrategy())
-	registry.RegisterStrategy(NewNumericQuantifierStrategy())
-
-	return registry
-}
-
-// RegisterStrategy adds a quantifier strategy to the registry
-func (qsr *QuantifierStrategyRegistry) RegisterStrategy(strategy QuantifierStrategy) {
-	qsr.strategies = append(qsr.strategies, strategy)
-}
-
-// FindStrategy finds the best strategy for parsing a quantifier
-func (qsr *QuantifierStrategyRegistry) FindStrategy(currentToken, peekToken token.Type) QuantifierStrategy {
-	for _, strategy := range qsr.strategies {
-		if strategy.CanHandle(currentToken, peekToken) {
-			return strategy
-		}
-	}
-	return nil
-}
-
-// GetClassifier returns the token classifier
-func (qsr *QuantifierStrategyRegistry) GetClassifier() TokenClassifier {
-	return qsr.classifier
-}
-
-// SetClassifier sets the token classifier
-func (qsr *QuantifierStrategyRegistry) SetClassifier(classifier TokenClassifier) {
-	qsr.classifier = classifier
-}

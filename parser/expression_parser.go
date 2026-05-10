@@ -348,7 +348,7 @@ func (p *ExpressionParser) parsePrimaryExcludingUnary() (ast.Expression, error) 
 	// Temporarily remove unary strategies
 	newRegistry := NewStrategyRegistry()
 	for _, strategy := range originalStrategies {
-		if strategy.Name() != "UnaryOperatorStrategy" {
+		if _, isUnary := strategy.(*UnaryOperatorStrategy); !isUnary {
 			newRegistry.RegisterPrimaryStrategy(strategy)
 		}
 	}
@@ -374,11 +374,6 @@ func (p *ExpressionParser) SetTokenHandler(nextToken func(), addError func(error
 // SetCurrentTokens sets the current and peek tokens (alias for SetTokens)
 func (p *ExpressionParser) SetCurrentTokens(current, peek token.Token) {
 	p.SetTokens(current, peek)
-}
-
-// GetStrategyRegistry returns the strategy registry
-func (p *ExpressionParser) GetStrategyRegistry() *StrategyRegistry {
-	return p.strategyRegistry
 }
 
 // GetDepth returns the current parsing depth
@@ -426,11 +421,6 @@ func (p *ExpressionParser) DisableStrategyMode() {
 	p.strategyRegistry = NewStrategyRegistry()
 }
 
-// isStrategyModeEnabled returns true if strategy mode is enabled
-func (p *ExpressionParser) isStrategyModeEnabled() bool {
-	return len(p.strategyRegistry.GetPrimaryStrategies()) > 0
-}
-
 // SetQuantifierParser sets the quantifier parser (for dependencies)
 func (p *ExpressionParser) SetQuantifierParser(qp *QuantifierParser) {
 	p.quantifierParser = qp
@@ -439,85 +429,6 @@ func (p *ExpressionParser) SetQuantifierParser(qp *QuantifierParser) {
 // GetQuantifierParser returns the quantifier parser
 func (p *ExpressionParser) GetQuantifierParser() *QuantifierParser {
 	return p.quantifierParser
-}
-
-// EmitOpcode emits an opcode with position information (interface-based)
-func (p *ExpressionParser) EmitOpcode(opcode any, line, column int) {
-	pos := NewPosition("", line, column, 0)
-	// Interface-based emission for flexibility
-	if emitter, ok := p.emitter.(interface{ EmitOpcode(any, int, int) }); ok {
-		emitter.EmitOpcode(opcode, line, column)
-	}
-	_ = pos
-}
-
-// EmitOpcodeWithOperand emits an opcode with operand (interface-based)
-func (p *ExpressionParser) EmitOpcodeWithOperand(opcode any, operand any, line, column int) {
-	pos := NewPosition("", line, column, 0)
-	// Interface-based emission for flexibility
-	if emitter, ok := p.emitter.(interface {
-		EmitOpcodeWithOperand(any, any, int, int)
-	}); ok {
-		emitter.EmitOpcodeWithOperand(opcode, operand, line, column)
-	}
-	_ = pos
-}
-
-// ConvertToOpcode converts an AST node to compiler opcodes (delegates to original)
-func (p *ExpressionParser) ConvertToOpcode(expr ast.Expression) error {
-	// Strategy pattern: check if emitter supports expression compilation
-	if p.emitter == nil {
-		return fmt.Errorf("no emitter available for opcode conversion")
-	}
-
-	// Try to find a compiler that can handle expression compilation
-	if compiler, ok := p.emitter.(interface {
-		CompileExpression(ast.Expression) error
-	}); ok {
-		return compiler.CompileExpression(expr)
-	}
-
-	// If that doesn't work, try the condition compiler approach
-	if compiler, ok := p.emitter.(interface {
-		compileExpression(ast.Expression) error
-	}); ok {
-		return compiler.compileExpression(expr)
-	}
-
-	// If no suitable compiler interface is found, return error
-	return fmt.Errorf("emitter does not support expression compilation")
-}
-
-// ValidateExpression performs validation on an expression
-func (p *ExpressionParser) ValidateExpression(expr ast.Expression) error {
-	// Basic validation - could be expanded with strategy-based validation
-	if expr == nil {
-		return fmt.Errorf("expression is nil")
-	}
-	return nil
-}
-
-// GetParseStatistics returns statistics about the parsing process
-func (p *ExpressionParser) GetParseStatistics() map[string]any {
-	return map[string]any{
-		"strategy_count":    len(p.strategyRegistry.GetPrimaryStrategies()),
-		"binary_strategies": len(p.strategyRegistry.GetBinaryStrategies()),
-		"unary_strategies":  len(p.strategyRegistry.GetUnaryStrategies()),
-		"current_depth":     p.depth,
-		"max_depth":         p.getMaxDepth(),
-		"strategy_mode":     p.isStrategyModeEnabled(),
-	}
-}
-
-// getMaxDepth returns the maximum depth encountered during parsing
-func (p *ExpressionParser) getMaxDepth() int {
-	maxDepth := p.depth
-	for _, depth := range p.depthStack {
-		if depth > maxDepth {
-			maxDepth = depth
-		}
-	}
-	return maxDepth
 }
 
 // parseCompatibilityExpression provides basic expression parsing for compatibility mode

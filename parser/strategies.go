@@ -15,9 +15,6 @@ type PrimaryExpressionStrategy interface {
 	// Parse attempts to parse the expression using this strategy
 	Parse(parser *ExpressionParser, context ParseContext) ParseResult
 
-	// Name returns the name of this strategy for debugging
-	Name() string
-
 	// Priority returns the priority (lower number = higher priority) for strategy selection
 	Priority() int
 }
@@ -29,9 +26,6 @@ type BinaryExpressionStrategy interface {
 
 	// Parse attempts to parse the binary expression using this strategy
 	Parse(parser *ExpressionParser, left ast.Expression, operator token.Type, right ast.Expression, context ParseContext) ParseResult
-
-	// Name returns the name of this strategy for debugging
-	Name() string
 
 	// Associativity returns the associativity of this operator
 	Associativity() Associativity
@@ -233,9 +227,6 @@ func (as *ArithmeticStrategy) Parse(_ *ExpressionParser, left ast.Expression, op
 	}, 1)
 }
 
-// Name returns the name of the strategy
-func (as *ArithmeticStrategy) Name() string { return "ArithmeticStrategy" }
-
 // Associativity returns the associativity of arithmetic operations
 func (as *ArithmeticStrategy) Associativity() Associativity { return LeftAssociative }
 
@@ -268,9 +259,6 @@ func (ls *LogicalStrategy) Parse(_ *ExpressionParser, left ast.Expression, opera
 		Pos:   context.Position,
 	}, 1)
 }
-
-// Name returns the name of the strategy
-func (ls *LogicalStrategy) Name() string { return "LogicalStrategy" }
 
 // Associativity returns the associativity of logical operations
 func (ls *LogicalStrategy) Associativity() Associativity { return LeftAssociative }
@@ -305,9 +293,6 @@ func (cs *ComparisonStrategy) Parse(_ *ExpressionParser, left ast.Expression, op
 	}, 1)
 }
 
-// Name returns the name of the strategy
-func (cs *ComparisonStrategy) Name() string { return "ComparisonStrategy" }
-
 // Associativity returns the associativity of comparison operations
 func (cs *ComparisonStrategy) Associativity() Associativity { return LeftAssociative }
 
@@ -340,9 +325,6 @@ func (bs *BitwiseStrategy) Parse(_ *ExpressionParser, left ast.Expression, opera
 		Pos:   context.Position,
 	}, 1)
 }
-
-// Name returns the name of the strategy
-func (bs *BitwiseStrategy) Name() string { return "BitwiseStrategy" }
 
 // Associativity returns the associativity of bitwise operations
 func (bs *BitwiseStrategy) Associativity() Associativity { return LeftAssociative }
@@ -487,9 +469,6 @@ func (os *OfStrategy) createCommaExpression(pos token.Position, expressions []as
 	}
 	return target
 }
-
-// Name returns the name of the strategy
-func (os *OfStrategy) Name() string { return "OfStrategy" }
 
 // Associativity returns the associativity of "of" operations
 func (os *OfStrategy) Associativity() Associativity { return LeftAssociative }
