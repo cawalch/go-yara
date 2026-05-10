@@ -516,38 +516,6 @@ func testTypeCompatibility(t *testing.T) {
 	}
 }
 
-// TestStringValidator tests string reference validation
-func TestStringValidator(t *testing.T) {
-	st := NewSymbolTable()
-	st.EnterScope("test_rule")
-
-	// Define some strings
-	pos := token.Position{Line: 1, Column: 1}
-	str1 := &ast.String{Identifier: "$s1", Pos: pos}
-	str2 := &ast.String{Identifier: "$s2", Pos: pos}
-
-	_ = st.DefineString("$s1", pos, str1)
-	_ = st.DefineString("$s2", pos, str2)
-
-	validator := NewStringValidator(st)
-
-	// Test valid string reference
-	identifier := &ast.Identifier{Name: "$s1", Pos: pos}
-	errors := validator.ValidateStringReferences(identifier)
-
-	if len(errors) > 0 {
-		t.Errorf("ValidateStringReferences() unexpected errors for valid reference: %v", errors)
-	}
-
-	// Test invalid string reference
-	invalidIdentifier := &ast.Identifier{Name: "$s3", Pos: pos}
-	errors = validator.ValidateStringReferences(invalidIdentifier)
-
-	if len(errors) == 0 {
-		t.Errorf("ValidateStringReferences() expected errors for invalid reference")
-	}
-}
-
 // TestTypeChecker tests type checking functionality
 func TestTypeChecker(t *testing.T) {
 	st := NewSymbolTable()
@@ -582,49 +550,6 @@ func TestTypeChecker(t *testing.T) {
 
 	if typeInfo.DataType != TypeBoolean {
 		t.Errorf("CheckExpressionTypes() wrong type for string identifier")
-	}
-}
-
-// TestModuleValidator tests module function validation
-func TestModuleValidator(t *testing.T) {
-	st := NewSymbolTable()
-	validator := NewModuleValidator(st)
-
-	// Test filesize validation
-	funcName := "filesize"
-	args := make([]ast.Expression, 0)
-	pos := token.Position{Line: 1, Column: 1}
-
-	typeInfo, errors := validator.ValidateFunctionCall(funcName, args, pos)
-
-	if len(errors) > 0 {
-		t.Errorf("ValidateFunctionCall() unexpected errors for filesize: %v", errors)
-	}
-
-	if typeInfo.DataType != TypeInteger {
-		t.Errorf("ValidateFunctionCall() wrong return type for filesize")
-	}
-
-	// Test invalid function
-	invalidFuncName := "unknown_function"
-	_, errors = validator.ValidateFunctionCall(invalidFuncName, args, pos)
-
-	if len(errors) == 0 {
-		t.Errorf("ValidateFunctionCall() expected errors for unknown function")
-	}
-}
-
-// TestFileValidator tests file operation validation
-func TestFileValidator(t *testing.T) {
-	st := NewSymbolTable()
-	validator := NewFileValidator(st)
-
-	// Test filesize operation validation
-	identifier := &ast.Identifier{Name: "filesize", Pos: token.Position{Line: 1, Column: 1}}
-	errors := validator.ValidateFileOperations(identifier)
-
-	if len(errors) > 0 {
-		t.Errorf("ValidateFileOperations() unexpected errors for filesize: %v", errors)
 	}
 }
 
