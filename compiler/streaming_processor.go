@@ -17,7 +17,7 @@ import (
 // IMPORTANT: StreamingProcessor only evaluates string pattern matches (via AC automaton).
 // It does NOT evaluate rule conditions (bytecode). A StreamingMatch means the pattern
 // was found in the data, NOT that the rule's condition was satisfied.
-// For full rule evaluation including conditions, use Scanner.Scan() or Scanner.ScanFile().
+// For full rule evaluation including conditions, use the Interpreter directly.
 type StreamingProcessor struct {
 	// Configuration
 	ChunkSize        int  // Size of each chunk (default: 1MB)
