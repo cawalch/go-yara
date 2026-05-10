@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"bytes"
 	"fmt"
 	"slices"
 	"strconv"
@@ -307,25 +308,100 @@ func hexByte(a, b byte) byte {
 	return (hexNibble(a) << 4) | hexNibble(b)
 }
 
+// anchorInfo describes an anchor byte for skip-based matching.
+type anchorInfo struct {
+	byteVal byte // the definite literal byte value
+	offset  int  // its position in the token sequence
+	ok      bool // true if a usable anchor was found
+}
+
+// findAnchorByte scans the token list for the first definite, non-negated
+// literal byte that can serve as an anchor for position skipping.
+func findAnchorByte(tokens []HexPatternToken) anchorInfo {
+	for i, tok := range tokens {
+		switch tok.Kind {
+		case HexTokenByte:
+			if !tok.Negated {
+				return anchorInfo{byteVal: tok.Value, offset: i, ok: true}
+			}
+		case HexTokenMasked:
+			// A masked byte is only a definite anchor when the mask is 0xFF
+			// (i.e. it's equivalent to a plain byte).
+			if !tok.Negated && tok.Mask == 0xFF {
+				return anchorInfo{byteVal: tok.Value, offset: i, ok: true}
+			}
+		case HexTokenWildcard:
+			// Skip — no definite value
+		case HexTokenJump:
+			// Skip — variable length, but continue looking past it
+		case HexTokenAlt:
+			// Skip — alternatives are ambiguous, continue looking past them
+		}
+	}
+	return anchorInfo{}
+}
+
 // FindHexMatches returns all matches of the hex pattern in data.
 func FindHexMatches(pattern *HexPattern, data []byte) []Match {
 	if pattern == nil || len(pattern.Tokens) == 0 || len(data) == 0 {
 		return nil
 	}
-	var matches []Match
 	keys := pattern.XorKeys
 	if len(keys) == 0 && len(pattern.XorRange) > 0 {
 		keys = expandXorKeys(pattern.XorRange)
 	}
-	for start := range data {
-		var ends []int
-		if len(keys) == 0 {
-			ends = matchHexTokens(pattern.Tokens, data, start)
-		} else {
-			for _, key := range keys {
-				ends = append(ends, matchHexTokensXor(pattern.Tokens, data, start, key)...)
-			}
+
+	// Try anchor-based skipping for the common case.
+	anchor := findAnchorByte(pattern.Tokens)
+
+	if len(keys) == 0 {
+		if anchor.ok {
+			return findHexMatchesAnchored(pattern.Tokens, data, anchor)
 		}
+		return findHexMatchesBruteForce(pattern.Tokens, data)
+	}
+
+	// XOR mode: for each key, compute the transformed anchor byte.
+	if anchor.ok {
+		return findHexMatchesXorAnchored(pattern.Tokens, data, keys, anchor)
+	}
+	return findHexMatchesXorBruteForce(pattern.Tokens, data, keys)
+}
+
+// findHexMatchesAnchored uses bytes.IndexByte to skip non-matching positions.
+func findHexMatchesAnchored(tokens []HexPatternToken, data []byte, anchor anchorInfo) []Match {
+	var matches []Match
+	pos := 0
+	for {
+		idx := bytes.IndexByte(data[pos:], anchor.byteVal)
+		if idx == -1 {
+			break
+		}
+		candidateStart := pos + idx - anchor.offset
+		pos = pos + idx + 1
+
+		if candidateStart < 0 {
+			continue
+		}
+		ends := matchHexTokensIterative(tokens, data, candidateStart)
+		for _, end := range ends {
+			if end <= candidateStart {
+				continue
+			}
+			matches = append(matches, Match{
+				Offset: int64(candidateStart),
+				Length: end - candidateStart,
+			})
+		}
+	}
+	return matches
+}
+
+// findHexMatchesBruteForce is the fallback when no anchor byte exists.
+func findHexMatchesBruteForce(tokens []HexPatternToken, data []byte) []Match {
+	var matches []Match
+	for start := range data {
+		ends := matchHexTokensIterative(tokens, data, start)
 		for _, end := range ends {
 			if end <= start {
 				continue
@@ -334,6 +410,58 @@ func FindHexMatches(pattern *HexPattern, data []byte) []Match {
 				Offset: int64(start),
 				Length: end - start,
 			})
+		}
+	}
+	return matches
+}
+
+// findHexMatchesXorAnchored uses per-key transformed anchor bytes for skip-based matching.
+func findHexMatchesXorAnchored(tokens []HexPatternToken, data []byte, keys []byte, anchor anchorInfo) []Match {
+	var matches []Match
+	for _, key := range keys {
+		targetByte := anchor.byteVal ^ key
+		pos := 0
+		for {
+			idx := bytes.IndexByte(data[pos:], targetByte)
+			if idx == -1 {
+				break
+			}
+			candidateStart := pos + idx - anchor.offset
+			pos = pos + idx + 1
+
+			if candidateStart < 0 {
+				continue
+			}
+			ends := matchHexTokensIterativeXor(tokens, data, candidateStart, key)
+			for _, end := range ends {
+				if end <= candidateStart {
+					continue
+				}
+				matches = append(matches, Match{
+					Offset: int64(candidateStart),
+					Length: end - candidateStart,
+				})
+			}
+		}
+	}
+	return matches
+}
+
+// findHexMatchesXorBruteForce is the fallback for XOR patterns with no anchor.
+func findHexMatchesXorBruteForce(tokens []HexPatternToken, data []byte, keys []byte) []Match {
+	var matches []Match
+	for start := range data {
+		for _, key := range keys {
+			ends := matchHexTokensIterativeXor(tokens, data, start, key)
+			for _, end := range ends {
+				if end <= start {
+					continue
+				}
+				matches = append(matches, Match{
+					Offset: int64(start),
+					Length: end - start,
+				})
+			}
 		}
 	}
 	return matches
@@ -372,144 +500,137 @@ func expandXorKeys(ranges []ast.XorRange) []byte {
 	return keys
 }
 
-func matchHexTokens(tokens []HexPatternToken, data []byte, pos int) []int {
-	if len(tokens) == 0 {
-		return []int{pos}
-	}
+// matchHexTokensIterative replaces the recursive matchHexTokens with an
+// iterative approach. It handles linear tokens (byte, masked, wildcard)
+// in a tight loop and only uses a worklist for branching tokens (jump, alt).
+func matchHexTokensIterative(tokens []HexPatternToken, data []byte, pos int) []int {
 	if pos > len(data) {
 		return nil
 	}
-	head := tokens[0]
-	tail := tokens[1:]
-
-	switch head.Kind {
-	case HexTokenByte:
-		if pos >= len(data) {
-			return nil
-		}
-		ok := data[pos] == head.Value
-		if head.Negated {
-			ok = !ok
-		}
-		if ok {
-			return matchHexTokens(tail, data, pos+1)
-		}
-		return nil
-	case HexTokenMasked:
-		if pos >= len(data) {
-			return nil
-		}
-		ok := (data[pos] & head.Mask) == (head.Value & head.Mask)
-		if head.Negated {
-			ok = !ok
-		}
-		if ok {
-			return matchHexTokens(tail, data, pos+1)
-		}
-		return nil
-	case HexTokenWildcard:
-		if head.Negated || pos >= len(data) {
-			return nil
-		}
-		return matchHexTokens(tail, data, pos+1)
-	case HexTokenJump:
-		if head.Min < 0 {
-			head.Min = 0
-		}
-		maxVal := head.Max
-		if maxVal < 0 {
-			maxVal = len(data) - pos
-		}
-		if maxVal < head.Min {
-			return nil
-		}
-		var ends []int
-		for jump := head.Min; jump <= maxVal; jump++ {
-			ends = append(ends, matchHexTokens(tail, data, pos+jump)...)
-		}
-		return ends
-	case HexTokenAlt:
-		var ends []int
-		for _, alt := range head.Alternatives {
-			altEnds := matchHexTokens(alt, data, pos)
-			for _, end := range altEnds {
-				ends = append(ends, matchHexTokens(tail, data, end)...)
-			}
-		}
-		return ends
-	default:
-		return nil
-	}
+	return matchHexIter(tokens, data, pos, nil)
 }
 
-func matchHexTokensXor(tokens []HexPatternToken, data []byte, pos int, key byte) []int {
-	if len(tokens) == 0 {
-		return []int{pos}
+// matchHexIter processes tokens iteratively. The xorKey pointer selects
+// between normal and XOR mode (nil = normal, non-nil = XOR with that key).
+func matchHexIter(tokens []HexPatternToken, data []byte, pos int, xorKey *byte) []int {
+	var results []int
+	// Each work item: tokens to match and the starting data position.
+	type workItem struct {
+		tokens  []HexPatternToken
+		dataPos int
 	}
+	worklist := []workItem{{tokens, pos}}
+
+	for len(worklist) > 0 {
+		item := worklist[len(worklist)-1]
+		worklist = worklist[:len(worklist)-1]
+
+		toks := item.tokens
+		dp := item.dataPos
+
+		// Fast linear path: consume non-branching tokens in a loop.
+		for {
+			if len(toks) == 0 {
+				results = append(results, dp)
+				goto nextItem
+			}
+			if dp > len(data) {
+				goto nextItem
+			}
+
+			head := toks[0]
+			switch head.Kind {
+			case HexTokenByte:
+				if dp >= len(data) {
+					goto nextItem
+				}
+				var ok bool
+				if xorKey != nil {
+					ok = data[dp] == (head.Value ^ *xorKey)
+				} else {
+					ok = data[dp] == head.Value
+				}
+				if head.Negated {
+					ok = !ok
+				}
+				if !ok {
+					goto nextItem
+				}
+				toks = toks[1:]
+				dp++
+
+			case HexTokenMasked:
+				if dp >= len(data) {
+					goto nextItem
+				}
+				var ok bool
+				if xorKey != nil {
+					expected := head.Value ^ (*xorKey & head.Mask)
+					ok = (data[dp] & head.Mask) == (expected & head.Mask)
+				} else {
+					ok = (data[dp] & head.Mask) == (head.Value & head.Mask)
+				}
+				if head.Negated {
+					ok = !ok
+				}
+				if !ok {
+					goto nextItem
+				}
+				toks = toks[1:]
+				dp++
+
+			case HexTokenWildcard:
+				if head.Negated || dp >= len(data) {
+					goto nextItem
+				}
+				toks = toks[1:]
+				dp++
+
+			case HexTokenJump:
+				minJ := head.Min
+				if minJ < 0 {
+					minJ = 0
+				}
+				maxJ := head.Max
+				if maxJ < 0 {
+					maxJ = len(data) - dp
+				}
+				if maxJ < minJ {
+					goto nextItem
+				}
+				tail := toks[1:]
+				// Push branches in reverse order so smallest jump is processed first.
+				for jump := maxJ; jump >= minJ; jump-- {
+					worklist = append(worklist, workItem{tail, dp + jump})
+				}
+				goto nextItem
+
+			case HexTokenAlt:
+				tail := toks[1:]
+				for _, alt := range head.Alternatives {
+					// Build combined token slice: alt + tail
+					combined := make([]HexPatternToken, len(alt)+len(tail))
+					copy(combined, alt)
+					copy(combined[len(alt):], tail)
+					worklist = append(worklist, workItem{combined, dp})
+				}
+				goto nextItem
+
+			default:
+				goto nextItem
+			}
+		}
+
+	nextItem:
+	}
+
+	return results
+}
+
+// matchHexTokensIterativeXor is the XOR variant of matchHexTokensIterative.
+func matchHexTokensIterativeXor(tokens []HexPatternToken, data []byte, pos int, key byte) []int {
 	if pos > len(data) {
 		return nil
 	}
-	head := tokens[0]
-	tail := tokens[1:]
-
-	switch head.Kind {
-	case HexTokenByte:
-		if pos >= len(data) {
-			return nil
-		}
-		expected := head.Value ^ key
-		ok := data[pos] == expected
-		if head.Negated {
-			ok = !ok
-		}
-		if ok {
-			return matchHexTokensXor(tail, data, pos+1, key)
-		}
-		return nil
-	case HexTokenMasked:
-		if pos >= len(data) {
-			return nil
-		}
-		expected := head.Value ^ (key & head.Mask)
-		ok := (data[pos] & head.Mask) == (expected & head.Mask)
-		if head.Negated {
-			ok = !ok
-		}
-		if ok {
-			return matchHexTokensXor(tail, data, pos+1, key)
-		}
-		return nil
-	case HexTokenWildcard:
-		if head.Negated || pos >= len(data) {
-			return nil
-		}
-		return matchHexTokensXor(tail, data, pos+1, key)
-	case HexTokenJump:
-		if head.Min < 0 {
-			head.Min = 0
-		}
-		maxVal := head.Max
-		if maxVal < 0 {
-			maxVal = len(data) - pos
-		}
-		if maxVal < head.Min {
-			return nil
-		}
-		var ends []int
-		for jump := head.Min; jump <= maxVal; jump++ {
-			ends = append(ends, matchHexTokensXor(tail, data, pos+jump, key)...)
-		}
-		return ends
-	case HexTokenAlt:
-		var ends []int
-		for _, alt := range head.Alternatives {
-			altEnds := matchHexTokensXor(alt, data, pos, key)
-			for _, end := range altEnds {
-				ends = append(ends, matchHexTokensXor(tail, data, end, key)...)
-			}
-		}
-		return ends
-	default:
-		return nil
-	}
+	return matchHexIter(tokens, data, pos, &key)
 }
