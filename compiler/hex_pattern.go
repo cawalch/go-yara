@@ -310,9 +310,9 @@ func hexByte(a, b byte) byte {
 
 // anchorInfo describes an anchor byte for skip-based matching.
 type anchorInfo struct {
-	byteVal byte    // the definite literal byte value
-	offset  int     // its position in the token sequence
-	ok      bool    // true if a usable anchor was found
+	byteVal byte // the definite literal byte value
+	offset  int  // its position in the token sequence
+	ok      bool // true if a usable anchor was found
 }
 
 // findAnchorByte scans the token list for the first definite, non-negated
@@ -427,7 +427,7 @@ func findHexMatchesXorAnchored(tokens []HexPatternToken, data []byte, keys []byt
 				break
 			}
 			candidateStart := pos + idx - anchor.offset
-		pos = pos + idx + 1
+			pos = pos + idx + 1
 
 			if candidateStart < 0 {
 				continue
