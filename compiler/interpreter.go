@@ -62,6 +62,7 @@ type Interpreter struct {
 	matchContext        *MatchContext   // Pattern matching context
 	ruleResults         map[string]bool // Track execution results of all rules in the program
 	currentRule         string          // Name of the currently executing rule
+	currentCompiledRule *CompiledRule   // Currently executing rule (for int string ID resolution)
 	compiledRules       []*CompiledRule // All compiled rules in the program
 	stringLiterals      []string        // String literal pool for OpPushStr
 	stringSets          [][]string      // String sets for OpOf
@@ -237,6 +238,7 @@ func (i *Interpreter) SetCurrentRule(ruleName string) {
 		if rule.Name != ruleName {
 			continue
 		}
+		i.currentCompiledRule = rule
 		i.stringLiterals = rule.StringLiterals
 		i.stringSets = rule.StringSets
 		i.allStrings = rule.StringIdentifiers()
@@ -777,13 +779,22 @@ func (i *Interpreter) executeIterNext() error {
 	return nil
 }
 
+// resolveStringRef resolves a string to a StringRef for the interpreter stack.
 func (i *Interpreter) resolveStringRef(str string) int64 {
-	// First check static pool
+	// First check pre-computed map on current rule (O(1) lookup)
+	if i.currentCompiledRule != nil && i.currentCompiledRule.StringNameToRef != nil {
+		if ref, ok := i.currentCompiledRule.StringNameToRef[str]; ok {
+			return ref
+		}
+	}
+
+	// Check static pool
 	for idx, s := range i.stringLiterals {
 		if s == str {
 			return int64(-1 - idx)
 		}
 	}
+
 	// Otherwise put back in arena
 	if err := i.pushString(str); err == nil {
 		val := i.stack[len(i.stack)-1]

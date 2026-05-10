@@ -26,25 +26,11 @@ type ScanResult struct {
 // RuleMatch represents a single rule match with details.
 type RuleMatch struct {
 	Rule    string
-	Matches map[string][]Match // pattern -> matches
+	Matches map[string][]Match // pattern -> matches (string-keyed for public API)
 }
 
 // NewScanner creates a new Scanner for the given compiled program.
 func NewScanner(program *CompiledProgram) *Scanner {
-	// Pre-allocate interpreter and context
-	// We use the interpreter pool to get an initial one, but we keep it
-	// instead of returning it to the pool, as the Scanner owns it.
-	// Actually, NewInterpreter creates one.
-	// But we want to use the Pool logic if possible to reuse memory.
-	// Interpreter doesn't have a public NewInterpreterFromPool.
-	// But NewInterpreter allocates.
-	// Let's use internal pool if accessible (it is in package compiler).
-
-	// Better: Use `pool.Get()` manually since we are in `package compiler`.
-	// But `interpreterPool` is private var `interpreterPool` in `interpreter.go` (Step 310).
-	// Yes, `var interpreterPool = ...`
-	// So we can use it.
-
 	interp := interpreterPool.Get().(*Interpreter)
 	interp.SetCompiledRules(program.Rules)
 	interp.PreserveRuleResults = true // We manage this manually in Scan()
@@ -62,55 +48,34 @@ func NewScanner(program *CompiledProgram) *Scanner {
 // Close releases resources held by the Scanner.
 func (s *Scanner) Close() {
 	if s.interp != nil {
-		s.interp.Release() // This puts it back in pool
+		s.interp.Release()
 		s.interp = nil
 	}
 	if s.matchCtx != nil {
-		s.matchCtx.Release() // This puts it back in pool
+		s.matchCtx.Release()
 		s.matchCtx = nil
 	}
 }
 
+// globalMatchEntry is a match routed by integer indices from the shared automaton.
+type globalMatchEntry struct {
+	strID string // string identifier (e.g. "$a")
+	m     Match  // the match itself
+}
+
 // Scan scans the provided byte slice against the compiled rules.
 func (s *Scanner) Scan(data []byte) (*ScanResult, error) {
-	// Reset and populate match context
-	PopulateMatchContext(s.matchCtx, nil, data)
-	// Wait, PopulateMatchContext expects *CompiledRule logic?
-	// No, BuildMatchContext takes *CompiledRule.
-	// But scanning against ALL rules?
-	// Currently BuildMatchContext takes ONE rule.
-	// This implies we need to build MatchContext for EACH rule?
-	// Oh. `evaluateRule` does: `ctx := BuildMatchContext(rule, data)`.
-	// This invokes AC search on `rule.Automaton`.
-
-	// If `CompiledProgram` has multiple rules, each has its own Automaton?
-	// Area 5 says: "Each CompiledRule has its own ACAutomaton... Consider a shared automaton".
-	// So currently, yes, we must iterate rules and build context for each.
-	// This makes reuse of `matchCtx` tricky if `Populate` accumulates.
-	// `Populate` resets.
-
-	// So `Scan` loop:
-	// for rule in program.Rules {
-	//    PopulateMatchContext(s.matchCtx, rule, data)
-	//    s.interp.SetMatchContext(s.matchCtx)
-	//    s.interp.Execute()
-	//    ...
-	// }
-
-	// This is inefficient (scanning data N times).
-	// But that's the current architecture (addressed in Area 5).
-	// Area 3 just formalizes the API.
-
 	result := &ScanResult{
 		MatchedRules: make([]RuleMatch, 0),
 	}
 
-	// 1. One-pass scan over all static strings using the SharedAutomaton
-	// We map the global string ID "ruleName:stringID" back to its rules
-	globalMatches := make(map[string][]Match)
+	// 1. One-pass scan over all static strings using the SharedAutomaton.
+	// Route matches by rule index using the SharedLookup table (O(1) integer routing,
+	// no colon parsing or string allocation).
+	globalByRule := make(map[int][]globalMatchEntry)
 
 	if s.program.SharedAutomaton != nil {
-		s.extractGlobalMatches(data, globalMatches)
+		s.extractGlobalMatchesInt(data, globalByRule)
 	}
 
 	// Reset rule results for next Scan
@@ -121,7 +86,7 @@ func (s *Scanner) Scan(data []byte) (*ScanResult, error) {
 		s.matchCtx.Reset(data)
 
 		// 2. Add static matches found in the fast global pass
-		s.addStaticMatches(rule, data, globalMatches[rule.Name])
+		s.addStaticMatchesInt(rule, data, globalByRule[rule.Index])
 
 		// 3. Process Regex (and un-analyzable) patterns locally since they require dynamic scans
 		for id, regexInfo := range rule.RegexPatterns {
@@ -137,19 +102,10 @@ func (s *Scanner) Scan(data []byte) (*ScanResult, error) {
 			return nil, err
 		}
 
-		// Check result
-		// Stack has result.
-		// `storeExecutionResult` in interpreter puts it in `ruleResults`.
-
-		// If matched, add to result.
+		// If matched, deep copy matches for the result.
 		if s.interp.GetRuleResults()[rule.Name] {
-			// Copy matches from context?
-			// The MatchContext matches are specific to this rule.
-			// We need to capture them.
-			matches := make(map[string][]Match)
+			matches := make(map[string][]Match, len(s.matchCtx.Matches))
 			for k, v := range s.matchCtx.Matches {
-				// Deep copy matches?
-				// Match struct is small. Slice is ref.
 				dst := make([]Match, len(v))
 				copy(dst, v)
 				matches[k] = dst
@@ -160,27 +116,6 @@ func (s *Scanner) Scan(data []byte) (*ScanResult, error) {
 				Matches: matches,
 			})
 		}
-
-		// Reset match context for next rule (done by Populate)
-		// But Interpreter needs Reset?
-		// `Execute` calls `Reset` internally at start.
-		// But `ruleResults` must persist!
-		// `Interpreter.Reset()`: if `i.ruleResults == nil` make new. else `clear`.
-		// THIS IS BAD for multi-rule scan.
-		// If `Reset` clears `ruleResults`, we lose previous rule results (needed for dependencies).
-
-		// We need `ResetExecutionState` vs `ResetFull`.
-		// `Reset` in `interpreter.go`:
-		// `i.ip = 0`, `i.stack = i.stack[:0]`, `i.memory...`.
-		// `i.ruleResults` IS CLEARED.
-
-		// So `Interpreter` as it stands is designed for ONE rule execution isolation?
-		// No, `Interpreter` is designed to be reused.
-		// But if we run multiple rules that depend on each other, they share `ruleResults`.
-		// The `evaluateRule` approach:
-		// `interp.SetRuleResults(sharedMap)`.
-		// Does `Reset` clear it?
-		// Let's check `interpreter.go` Reset logic again.
 	}
 
 	// Reset rule results for next Scan
@@ -207,38 +142,46 @@ func (s *Scanner) ScanFile(filename string) (*ScanResult, error) {
 	return s.Scan(data)
 }
 
-func (s *Scanner) extractGlobalMatches(data []byte, globalMatches map[string][]Match) {
+// extractGlobalMatchesInt uses the SharedLookup table for O(1) integer routing
+// instead of parsing colon-delimited string IDs.
+func (s *Scanner) extractGlobalMatchesInt(data []byte, globalByRule map[int][]globalMatchEntry) {
+	lookup := s.program.SharedLookup
+	rules := s.program.Rules
 	for match := range s.program.SharedAutomaton.SearchIter(data) {
-		colonIdx := -1
-		for i := 0; i < len(match.StringID); i++ {
-			if match.StringID[i] == ':' {
-				colonIdx = i
-				break
+		if match.StringIndex < 0 || match.StringIndex >= len(lookup) {
+			continue
+		}
+
+		entry := lookup[match.StringIndex]
+		length := 0
+		if match.StringIndex >= 0 && match.StringIndex < len(s.program.SharedAutomaton.Strings) {
+			info := s.program.SharedAutomaton.Strings[match.StringIndex]
+			length = info.Length
+		}
+
+		var strID string
+		if entry.RuleIndex >= 0 && entry.RuleIndex < len(rules) {
+			rule := rules[entry.RuleIndex]
+			if entry.StringIdx >= 0 && entry.StringIdx < len(rule.IndexToStringID) {
+				strID = rule.IndexToStringID[entry.StringIdx]
 			}
 		}
-		if colonIdx != -1 {
-			ruleName := match.StringID[:colonIdx]
-			stringID := match.StringID[colonIdx+1:]
 
-			length := 0
-			if match.StringIndex >= 0 && match.StringIndex < len(s.program.SharedAutomaton.Strings) {
-				info := s.program.SharedAutomaton.Strings[match.StringIndex]
-				length = info.Length
-			}
-
-			m := Match{
-				Pattern: stringID,
+		globalByRule[entry.RuleIndex] = append(globalByRule[entry.RuleIndex], globalMatchEntry{
+			strID: strID,
+			m: Match{
+				Pattern: strID,
 				Offset:  int64(match.Backtrack),
 				Length:  length,
-			}
-
-			globalMatches[ruleName] = append(globalMatches[ruleName], m)
-		}
+			},
+		})
 	}
 }
 
-func (s *Scanner) addStaticMatches(rule *CompiledRule, data []byte, matches []Match) {
-	for _, m := range matches {
+// addStaticMatchesInt adds matches routed by integer indices to the match context.
+func (s *Scanner) addStaticMatchesInt(rule *CompiledRule, data []byte, entries []globalMatchEntry) {
+	for _, e := range entries {
+		m := e.m
 		if rule.StringKinds != nil && rule.StringKinds[m.Pattern] == StringKindText {
 			isWide := false
 			modifiers := rule.StringModifiers[m.Pattern]

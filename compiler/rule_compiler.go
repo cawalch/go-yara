@@ -625,6 +625,11 @@ type CompiledRule struct {
 	Stats            map[string]any // Compilation statistics (lazy computed)
 	statsOnce        sync.Once      // Ensure stats computed only once
 	ruleCompiler     *RuleCompiler  // Reference for lazy stats computation
+
+	// Integer string ID optimization (built during compilation)
+	StringIDToIndex map[string]int   // string identifier ("$a") -> integer index
+	IndexToStringID []string         // integer index -> string identifier (reverse lookup)
+	StringNameToRef map[string]int64 // string identifier -> pre-computed StringRef for interpreter
 }
 
 // GetName returns the rule name
@@ -671,6 +676,39 @@ func (cr *CompiledRule) StringIdentifiers() []string {
 	}
 	slices.Sort(ids)
 	return ids
+}
+
+// BuildStringIndex builds the integer string ID lookup tables.
+// Must be called after all string patterns are added to the rule.
+func (cr *CompiledRule) BuildStringIndex() {
+	ids := cr.StringIdentifiers()
+	cr.IndexToStringID = ids
+	cr.StringIDToIndex = make(map[string]int, len(ids))
+	for i, id := range ids {
+		cr.StringIDToIndex[id] = i
+	}
+
+	// Pre-compute StringRef values for each string identifier.
+	// StringLiterals are stored as negative refs: -1 = StringLiterals[0], -2 = StringLiterals[1], etc.
+	// String identifiers that appear in StringLiterals get a fast O(1) lookup path.
+	cr.StringNameToRef = make(map[string]int64, len(ids))
+	literalMap := make(map[string]int64, len(cr.StringLiterals))
+	for idx, lit := range cr.StringLiterals {
+		literalMap[lit] = int64(-1 - idx)
+	}
+	for _, id := range ids {
+		if ref, ok := literalMap[id]; ok {
+			cr.StringNameToRef[id] = ref
+		}
+	}
+}
+
+// ResolveStringIndex returns the integer index for a string identifier.
+func (cr *CompiledRule) ResolveStringIndex(id string) int {
+	if idx, ok := cr.StringIDToIndex[id]; ok {
+		return idx
+	}
+	return -1
 }
 
 // IsPrivateString reports whether a string identifier is marked as private.
@@ -760,10 +798,20 @@ func (cr *CompiledRule) PrintDebug() {
 }
 
 // CompiledProgram represents a complete compiled YARA program
+// SharedAutomatonEntry maps a shared automaton string index to a rule and its local string index.
+type SharedAutomatonEntry struct {
+	RuleIndex int // index into CompiledProgram.Rules
+	StringIdx int // index into CompiledRule.IndexToStringID
+}
+
 type CompiledProgram struct {
 	Rules           []*CompiledRule
 	SharedAutomaton *ACAutomaton
 	Stats           map[string]any
+
+	// Lookup table: shared automaton string index -> (rule index, string index)
+	// Built once at compile time, used by extractGlobalMatches for O(1) routing.
+	SharedLookup []SharedAutomatonEntry
 
 	// Streaming support
 	streamingProcessor *StreamingProcessor

@@ -547,6 +547,11 @@ func (c *Compiler) compileCodeGenWithContext(ctx context.Context, program *ast.P
 
 	c.stats.CodeGenTime = time.Since(start)
 
+	// Build integer string ID indices for each rule (enables int-keyed match routing).
+	for _, rule := range compiledRules {
+		rule.BuildStringIndex()
+	}
+
 	// Wrap in CompiledProgram
 	compiledProgram := NewCompiledProgram(compiledRules)
 
@@ -559,20 +564,18 @@ func (c *Compiler) compileCodeGenWithContext(ctx context.Context, program *ast.P
 	}
 	sharedAutomaton.ReserveStrings(totalStrings)
 
-	for _, rule := range compiledRules {
+	// Track which (ruleIndex, stringIdx) each shared automaton entry corresponds to.
+	// We build this as we add strings so the lookup table is aligned with StringIndex.
+	var sharedLookup []SharedAutomatonEntry
+
+	for ruleIdx, rule := range compiledRules {
 		if rule.Automaton == nil {
 			continue
 		}
 
-		// Map the matched index back to the *original rule*.
-		// An ACAutomaton AddString expects a unique string identifier. We prefix the rule name.
-		// "ruleName:stringIdentifier" -> patternData
 		for strID, patternData := range rule.Strings {
-			// Find the StringKind and modifiers
 			kind := rule.StringKinds[strID]
 
-			// We only need to add static patterns to the AC automaton (Text, Hex).
-			// Regex is handled by the regex engine at match time.
 			if kind == StringKindRegex {
 				continue
 			}
@@ -591,10 +594,16 @@ func (c *Compiler) compileCodeGenWithContext(ctx context.Context, program *ast.P
 			}
 
 			_ = sharedAutomaton.AddStringWithFlags(globalID, patternData, false, false, flags)
+			stringIdx := rule.ResolveStringIndex(strID)
+			sharedLookup = append(sharedLookup, SharedAutomatonEntry{
+				RuleIndex: ruleIdx,
+				StringIdx: stringIdx,
+			})
 		}
 	}
 	_ = sharedAutomaton.Compile()
 	compiledProgram.SetSharedAutomaton(sharedAutomaton)
+	compiledProgram.SharedLookup = sharedLookup
 
 	// Update statistics (check for cancellation before expensive operations)
 	select {
