@@ -142,6 +142,36 @@ func TestScannerWideTextSharedAutomaton(t *testing.T) {
 	}
 }
 
+func TestScannerRead64Functions(t *testing.T) {
+	tests := []struct {
+		name string
+		rule string
+		data []byte
+	}{
+		{name: "uint64", rule: `rule r { condition: uint64(0) == 1 }`, data: []byte{1, 0, 0, 0, 0, 0, 0, 0}},
+		{name: "int64", rule: `rule r { condition: int64(0) == 1 }`, data: []byte{1, 0, 0, 0, 0, 0, 0, 0}},
+		{name: "uint64be", rule: `rule r { condition: uint64be(0) == 1 }`, data: []byte{0, 0, 0, 0, 0, 0, 0, 1}},
+		{name: "int64be", rule: `rule r { condition: int64be(0) == 1 }`, data: []byte{0, 0, 0, 0, 0, 0, 0, 1}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			compiler := NewCompiler()
+			program, err := compiler.CompileSource(tt.rule)
+			if err != nil {
+				t.Fatalf("CompileSource: %v", err)
+			}
+			result, err := program.Scan(tt.data)
+			if err != nil {
+				t.Fatalf("Scan: %v", err)
+			}
+			if !result.RuleResults["r"] {
+				t.Fatalf("expected %s rule to match", tt.name)
+			}
+		})
+	}
+}
+
 func TestScannerReuse(t *testing.T) {
 	// Test reusing scanner for multiple scans
 	ruleSource := `rule find_foo { strings: $a = "foo" condition: $a }`

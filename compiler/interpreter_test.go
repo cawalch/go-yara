@@ -492,6 +492,37 @@ func TestInterpreterReadInt(t *testing.T) {
 	}
 }
 
+func TestInterpreterReadIntOpcodes64Bit(t *testing.T) {
+	data := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08}
+	tests := []struct {
+		name     string
+		opcode   Opcode
+		expected int64
+	}{
+		{name: "int64_little_endian", opcode: OpInt64, expected: 0x0807060504030201},
+		{name: "uint64_little_endian", opcode: OpUint64, expected: 0x0807060504030201},
+		{name: "int64_big_endian", opcode: OpInt64be, expected: 0x0102030405060708},
+		{name: "uint64_big_endian", opcode: OpUint64be, expected: 0x0102030405060708},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			interp := NewInterpreter([]byte{byte(OpPush8), 0, byte(tt.opcode), byte(OpHalt)})
+			interp.matchContext.Data = data
+			if err := interp.Execute(); err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+			stack := interp.GetStack()
+			if len(stack) != 1 {
+				t.Fatalf("stack length = %d, want 1", len(stack))
+			}
+			if stack[0].IntVal != tt.expected {
+				t.Fatalf("read value = %#x, want %#x", stack[0].IntVal, tt.expected)
+			}
+		})
+	}
+}
+
 // TestInterpreterNegation tests negation operations
 func TestInterpreterNegation(t *testing.T) {
 	tests := []struct {
