@@ -39,7 +39,6 @@ import (
 	"github.com/cawalch/go-yara/ast"
 	"github.com/cawalch/go-yara/internal/lexer"
 	"github.com/cawalch/go-yara/parser"
-	"github.com/cawalch/go-yara/regex"
 	"github.com/cawalch/go-yara/semantic"
 	"github.com/cawalch/go-yara/utils/fs"
 )
@@ -555,12 +554,16 @@ func (c *Compiler) compileCodeGenWithContext(ctx context.Context, program *ast.P
 	// Wrap in CompiledProgram
 	compiledProgram := NewCompiledProgram(compiledRules)
 
-	// Combine all rules' ACAutomatons into a single SharedAutomaton
+	// Combine all rules' text automatons into a single SharedAutomaton.
+	// Regex and hex patterns use different matching engines and stay per-rule.
 	sharedAutomaton := NewACAutomaton()
-	// Pre-size strings
+	// Pre-size strings from the concrete automaton entries so alternate text
+	// encodings (wide/base64 alignments) are included in the shared pass.
 	totalStrings := 0
 	for _, rule := range compiledRules {
-		totalStrings += len(rule.Strings)
+		if rule.Automaton != nil {
+			totalStrings += len(rule.Automaton.Strings)
+		}
 	}
 	sharedAutomaton.ReserveStrings(totalStrings)
 
@@ -573,35 +576,25 @@ func (c *Compiler) compileCodeGenWithContext(ctx context.Context, program *ast.P
 			continue
 		}
 
-		for strID, patternData := range rule.Strings {
-			kind := rule.StringKinds[strID]
-
-			if kind == StringKindRegex {
+		for _, info := range rule.Automaton.Strings {
+			strID := info.Identifier
+			if rule.StringKinds[strID] != StringKindText {
 				continue
 			}
 
 			globalID := fmt.Sprintf("%s:%s", rule.Name, strID)
-
-			modifiers := rule.StringModifiers[strID]
-			flags := regex.Flags(0)
-			for _, m := range modifiers {
-				switch m.Type {
-				case ast.StringModifierWide:
-					flags |= regex.FlagsWide
-				case ast.StringModifierNocase:
-					flags |= regex.FlagsNoCase
-				}
+			if err := sharedAutomaton.AddStringWithFlags(globalID, info.Data, false, false, info.Flags); err != nil {
+				return nil, fmt.Errorf("adding %s to shared automaton: %w", globalID, err)
 			}
-
-			_ = sharedAutomaton.AddStringWithFlags(globalID, patternData, false, false, flags)
-			stringIdx := rule.ResolveStringIndex(strID)
 			sharedLookup = append(sharedLookup, SharedAutomatonEntry{
 				RuleIndex: ruleIdx,
-				StringIdx: stringIdx,
+				StringIdx: rule.ResolveStringIndex(strID),
 			})
 		}
 	}
-	_ = sharedAutomaton.Compile()
+	if err := sharedAutomaton.Compile(); err != nil {
+		return nil, fmt.Errorf("compiling shared automaton: %w", err)
+	}
 	compiledProgram.SetSharedAutomaton(sharedAutomaton)
 	compiledProgram.SharedLookup = sharedLookup
 
