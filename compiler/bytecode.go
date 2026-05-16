@@ -148,8 +148,8 @@ const (
 	OpStrGe    = OpStrBegin + 5
 	OpStrEnd   = OpStrGe
 
-	// OpReadInt begins data type functions (240-251)
-	OpReadInt  = 240
+	// OpReadInt begins data type functions (224-239)
+	OpReadInt  = 224
 	OpInt8     = OpReadInt + 0
 	OpInt16    = OpReadInt + 1
 	OpInt32    = OpReadInt + 2
@@ -243,12 +243,12 @@ func isIteratorOpcode(op Opcode) bool {
 
 // isStringOpcode checks if opcode is a string operation
 func isStringOpcode(op Opcode) bool {
-	return op >= OpContains && op <= OpOfFoundAt
+	return (op >= OpContains && op <= OpOfFoundAt) || op == OpConcat
 }
 
 // isTypeFuncOpcode checks if opcode is a type function
 func isTypeFuncOpcode(op Opcode) bool {
-	return op >= OpReadInt
+	return op >= OpReadInt && op <= OpUint64be
 }
 
 // GetCategory returns category of an opcode
@@ -365,6 +365,7 @@ var opcodeNames = map[Opcode]string{
 	OpDefined:                "DEFINED",
 	OpIterStartTextStringSet: "ITER_START_TEXT_STRING_SET",
 	OpOfFoundAt:              "OF_FOUND_AT",
+	OpConcat:                 "CONCAT",
 }
 
 // intOpNames maps integer operations to their string names
@@ -388,7 +389,7 @@ var strOpNames = []string{
 var dataTypeNames = []string{
 	"INT8", "INT16", "INT32", "UINT8", "UINT16", "UINT32",
 	"INT8BE", "INT16BE", "INT32BE", "UINT8BE", "UINT16BE", "UINT32BE",
-	"LENGTH", "CONCAT",
+	"INT64", "UINT64", "INT64BE", "UINT64BE",
 }
 
 // getIntOpName returns the name for integer operation opcodes
@@ -452,7 +453,7 @@ func (op Opcode) getRangeName() string {
 		return op.getDblOpName()
 	case op >= OpStrBegin && op <= OpStrEnd:
 		return op.getStrOpName()
-	case op >= OpReadInt:
+	case op >= OpReadInt && op <= OpUint64be:
 		return op.getDataTypeName()
 	default:
 		return ""
@@ -793,13 +794,13 @@ func (inst *Instruction) IsJump() bool {
 
 // IsTypeFunction returns true if this instruction is a data type function
 func (inst *Instruction) IsTypeFunction() bool {
-	return inst.Opcode >= OpReadInt
+	return inst.Opcode >= OpReadInt && inst.Opcode <= OpUint64be
 }
 
 // IsStringOperation returns true if this instruction operates on strings
 func (inst *Instruction) IsStringOperation() bool {
-	// String operations (71-85) - same as GetCategory logic
-	if inst.Opcode >= OpContains && inst.Opcode <= OpOfFoundAt {
+	// String operations - same as GetCategory logic
+	if (inst.Opcode >= OpContains && inst.Opcode <= OpOfFoundAt) || inst.Opcode == OpConcat {
 		return true
 	}
 	// STR comparison operations are considered arithmetic by GetCategory,

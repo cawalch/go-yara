@@ -450,11 +450,11 @@ func init() {
 	opcodeTable[OpInt8be] = (*Interpreter).executeReadInt8be
 	opcodeTable[OpInt16be] = (*Interpreter).executeReadInt16be
 	opcodeTable[OpInt32be] = (*Interpreter).executeReadInt32be
+	opcodeTable[OpInt64be] = (*Interpreter).executeReadInt64be
 	opcodeTable[OpUint8be] = (*Interpreter).executeReadUint8be
 	opcodeTable[OpUint16be] = (*Interpreter).executeReadUint16be
 	opcodeTable[OpUint32be] = (*Interpreter).executeReadUint32be
-	// OpInt64be (254) and OpUint64be (255) share values with OpNop and OpHalt;
-	// they are handled as Nop/Halt per the original dispatch semantics.
+	opcodeTable[OpUint64be] = (*Interpreter).executeReadUint64be
 
 	// String operations
 	opcodeTable[OpLength] = (*Interpreter).executeLengthOperation
@@ -1399,9 +1399,11 @@ func (i *Interpreter) executeReadUint64() error { return i.executeReadIntOp(8, f
 func (i *Interpreter) executeReadInt8be() error   { return i.executeReadIntOpBE(1, true) }
 func (i *Interpreter) executeReadInt16be() error  { return i.executeReadIntOpBE(2, true) }
 func (i *Interpreter) executeReadInt32be() error  { return i.executeReadIntOpBE(4, true) }
+func (i *Interpreter) executeReadInt64be() error  { return i.executeReadIntOpBE(8, true) }
 func (i *Interpreter) executeReadUint8be() error  { return i.executeReadIntOpBE(1, false) }
 func (i *Interpreter) executeReadUint16be() error { return i.executeReadIntOpBE(2, false) }
 func (i *Interpreter) executeReadUint32be() error { return i.executeReadIntOpBE(4, false) }
+func (i *Interpreter) executeReadUint64be() error { return i.executeReadIntOpBE(8, false) }
 
 // executeStringOperation handles string operations using direct dispatch
 // to avoid per-call map allocation on this hot path.

@@ -25,6 +25,10 @@ func TestBytecodeOpcodes(t *testing.T) {
 		{OpContains, "CONTAINS", OpCategoryString},
 		{OpJz, "JZ", OpCategoryJump},
 		{OpInt8, "INT8", OpCategoryTypeFunc},
+		{OpUint64, "UINT64", OpCategoryTypeFunc},
+		{OpInt64be, "INT64BE", OpCategoryTypeFunc},
+		{OpUint64be, "UINT64BE", OpCategoryTypeFunc},
+		{OpConcat, "CONCAT", OpCategoryString},
 	}
 
 	for _, test := range tests {
@@ -37,6 +41,33 @@ func TestBytecodeOpcodes(t *testing.T) {
 				t.Errorf("Opcode.GetCategory() = %v, want %v", got, test.category)
 			}
 		})
+	}
+}
+
+func TestReadIntOpcodesDoNotCollideWithControlOrStringOps(t *testing.T) {
+	readOps := []Opcode{
+		OpInt8, OpInt16, OpInt32, OpUint8, OpUint16, OpUint32,
+		OpInt8be, OpInt16be, OpInt32be, OpUint8be, OpUint16be, OpUint32be,
+		OpInt64, OpUint64, OpInt64be, OpUint64be,
+	}
+	reserved := map[Opcode]string{
+		OpConcat: "CONCAT",
+		OpNop:    "NOP",
+		OpHalt:   "HALT",
+	}
+
+	seen := make(map[Opcode]struct{}, len(readOps))
+	for _, op := range readOps {
+		if name, exists := reserved[op]; exists {
+			t.Fatalf("read opcode %s collides with %s", op, name)
+		}
+		if _, exists := seen[op]; exists {
+			t.Fatalf("duplicate read opcode value: %s", op)
+		}
+		seen[op] = struct{}{}
+		if got := op.GetCategory(); got != OpCategoryTypeFunc {
+			t.Fatalf("read opcode %s category = %s, want %s", op, got, OpCategoryTypeFunc)
+		}
 	}
 }
 
