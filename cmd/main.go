@@ -448,18 +448,25 @@ func executeRules(compiledProgram *compiler.CompiledProgram, data []byte, args *
 		return
 	}
 
-	// Traditional execution
-	totalMatches := 0
-	ruleResults := make(map[string]bool)
+	result, err := compiledProgram.Scan(data)
+	if err != nil {
+		fmt.Printf("Execution error: %v\n", err)
+		return
+	}
 
+	totalMatches := 0
 	for _, rule := range compiledProgram.Rules {
 		fmt.Printf("Executing rule: %s\n", rule.GetName())
 
-		matchContext, printEntries := findPatternMatches(rule, data)
+		printEntries := matchEntriesFromMatches(rule, result.Matches[rule.GetName()])
 		totalMatches += printPatternMatches(printEntries)
 
-		interpreter := setupInterpreter(rule, data, ruleResults, compiledProgram.Rules, matchContext)
-		executeSingleRule(interpreter, rule)
+		fmt.Printf("  Execution: Success\n")
+		if result.RuleResults[rule.GetName()] {
+			fmt.Printf("  Result: MATCH (value: 1)\n")
+		} else {
+			fmt.Printf("  Result: NO MATCH\n")
+		}
 
 		fmt.Println()
 	}
@@ -467,17 +474,9 @@ func executeRules(compiledProgram *compiler.CompiledProgram, data []byte, args *
 	fmt.Printf("Total matches found: %d\n", totalMatches)
 }
 
-func findPatternMatches(rule *compiler.CompiledRule, data []byte) (*compiler.MatchContext, []printEntry) {
-	ctx := compiler.BuildMatchContext(rule, data)
-	return ctx, matchContextEntries(rule, ctx)
-}
-
-func matchContextEntries(rule *compiler.CompiledRule, ctx *compiler.MatchContext) []printEntry {
-	if ctx == nil {
-		return nil
-	}
+func matchEntriesFromMatches(rule *compiler.CompiledRule, matchesByID map[string][]compiler.Match) []printEntry {
 	entries := make([]printEntry, 0)
-	for id, matches := range ctx.Matches {
+	for id, matches := range matchesByID {
 		if rule != nil && rule.IsPrivateString(id) {
 			continue
 		}
@@ -509,58 +508,6 @@ func printPatternMatches(printEntries []printEntry) int {
 		totalMatches++
 	}
 	return totalMatches
-}
-
-func setupInterpreter(rule *compiler.CompiledRule, data []byte, ruleResults map[string]bool,
-	compiledRules []*compiler.CompiledRule, matchContext *compiler.MatchContext) *compiler.Interpreter {
-	interp := compiler.NewInterpreter(rule.GetBytecode())
-
-	// Set file size and data in match context
-	if matchContext != nil {
-		interp.SetMatchContext(matchContext)
-	} else {
-		interp.GetMatchContext().FileSize = int64(len(data))
-		interp.GetMatchContext().Data = data
-	}
-
-	// Set up rule tracking
-	interp.SetRuleResults(ruleResults)
-	interp.SetCurrentRule(rule.GetName())
-	interp.SetCompiledRules(compiledRules)
-
-	// Initialize VM memory slots
-	if rule.Automaton != nil {
-		for idx, s := range rule.Automaton.Strings {
-			interp.SetMemoryString(idx, s.Identifier)
-		}
-	}
-
-	return interp
-}
-
-func executeSingleRule(interp *compiler.Interpreter, _ *compiler.CompiledRule) {
-	execErr := interp.Execute()
-	if execErr != nil {
-		fmt.Printf("  Execution error: %v\n", execErr)
-	} else {
-		fmt.Printf("  Execution: Success\n")
-	}
-
-	outputRuleResult(interp.GetStack())
-}
-
-func outputRuleResult(stack []compiler.Value) {
-	if len(stack) == 0 {
-		return
-	}
-	result := stack[len(stack)-1]
-	if result.Type == compiler.ValueTypeInt {
-		if result.IntVal != 0 {
-			fmt.Printf("  Result: MATCH (value: %d)\n", result.IntVal)
-		} else {
-			fmt.Printf("  Result: NO MATCH\n")
-		}
-	}
 }
 
 // executeRulesStreaming executes rules using streaming approach
