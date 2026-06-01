@@ -52,6 +52,20 @@ func TestSemanticWarnings(t *testing.T) {
 			shouldWarn:      true,
 		},
 		{
+			name: "underscore_prefix_suppresses_warning",
+			source: `
+				rule Test {
+					strings:
+						$_suppressed = "test"
+						$used = "hello"
+					condition:
+						$used
+				}
+			`,
+			expectedWarning: "",
+			shouldWarn:      false,
+		},
+		{
 			name: "no_warnings_valid_rule",
 			source: `
 				rule Test {

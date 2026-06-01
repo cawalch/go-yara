@@ -448,6 +448,10 @@ func (c *Compiler) checkUnusedStrings(rule *ast.Rule) {
 	// Check for unused strings
 	for _, str := range rule.Strings {
 		if !referenced[str.Identifier] {
+			// YARA spec: strings prefixed with $_ suppress the unreferenced warning
+			if len(str.Identifier) >= 2 && str.Identifier[:2] == "$_" {
+				continue
+			}
 			c.AddWarning("semantic",
 				fmt.Sprintf("String '%s' is defined but never used in condition", str.Identifier),
 				rule.Pos.Line,
