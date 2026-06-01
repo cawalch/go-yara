@@ -332,6 +332,13 @@ func (v *Validator) validateQuantifierSymbol(ident *ast.Identifier) (*TypeInfo, 
 
 // tryAlternativeIdentifierLookups attempts to find identifier in alternative contexts
 func (v *Validator) tryAlternativeIdentifierLookups(ident *ast.Identifier, errors []error) (*TypeInfo, []error) {
+	// Check if this is a wildcard string set identifier (e.g., $a*, $str*)
+	// These are valid in quantifier expressions like "any of ($a*)" or "#a in (1..3) of ($a*)"
+	// The compiler handles expansion at compile time; we just need to allow the identifier.
+	if strings.HasPrefix(ident.Name, "$") && strings.HasSuffix(ident.Name, "*") {
+		return &TypeInfo{DataType: TypeBoolean}, nil
+	}
+
 	// Check if this might be a string reference without the $ prefix
 	// This happens when using #, @, or ! operators in conditions
 	if stringSymbol, hasStringSymbol := v.symbolTable.Lookup("$" + ident.Name); hasStringSymbol {
