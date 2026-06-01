@@ -130,9 +130,19 @@ func (cc *ConditionCompiler) resolveJumps() error {
 		if !exists {
 			return fmt.Errorf("undefined label: %s", jump.Label)
 		}
-		relativeOffset := targetOffset - jump.Position - 1
+
+		// Find the instruction index corresponding to the byte offset
+		instIndex, err := cc.emitter.FindInstructionIndexByOffset(jump.Position)
+		if err != nil {
+			return fmt.Errorf("failed to find instruction at offset %d: %w", jump.Position, err)
+		}
+
+		inst := cc.emitter.GetInstruction(instIndex)
+		instEnd := jump.Position + inst.Size()
+		relativeOffset := targetOffset - instEnd
+
 		// #nosec G115 - safe conversion with explicit bounds checking
-		if err := cc.emitter.UpdateOperand(jump.Position, Operand{Type: OperandRelative32, Value: uint64(int64(relativeOffset))}); err != nil {
+		if err := cc.emitter.UpdateOperandByIndex(instIndex, Operand{Type: OperandRelative32, Value: uint64(int64(relativeOffset))}); err != nil {
 			return fmt.Errorf("failed to resolve jump to label %s: %w", jump.Label, err)
 		}
 	}

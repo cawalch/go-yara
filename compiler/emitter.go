@@ -505,6 +505,29 @@ func (e *Emitter) UpdateOperandByIndex(index int, operand Operand) error {
 	return nil
 }
 
+// FindInstructionIndexByOffset finds the instruction slice index from its byte offset.
+func (e *Emitter) FindInstructionIndexByOffset(offset int) (int, error) {
+	currentOffset := 0
+	for i := range e.instructions {
+		if currentOffset == offset {
+			return i, nil
+		}
+		if currentOffset > offset {
+			break
+		}
+		currentOffset += e.instructions[i].Size()
+	}
+	return -1, fmt.Errorf("instruction not found at byte offset %d", offset)
+}
+
+// GetInstruction returns a pointer to the instruction at the given slice index.
+func (e *Emitter) GetInstruction(index int) *Instruction {
+	if index < 0 || index >= len(e.instructions) {
+		panic(fmt.Sprintf("instruction index %d out of range [0, %d)", index, len(e.instructions)))
+	}
+	return &e.instructions[index]
+}
+
 // SetFixup explicitly adds a jump resolution request for a jump offset to a target offset
 func (e *Emitter) SetFixup(jumpOffset int, targetOffset int) {
 	e.fixups[jumpOffset] = targetOffset
