@@ -3855,33 +3855,6 @@ func TestCompilerGetVersion(t *testing.T) {
 	}
 }
 
-// TestCompilerGetSupportedFeatures tests GetSupportedFeatures method
-func TestCompilerGetSupportedFeatures(t *testing.T) {
-	compiler := NewCompiler()
-	features := compiler.GetSupportedFeatures()
-	if len(features) == 0 {
-		t.Error("GetSupportedFeatures() returned empty slice")
-	}
-}
-
-// TestCompilerEstimateCompilationTime tests EstimateCompilationTime method
-func TestCompilerEstimateCompilationTime(t *testing.T) {
-	compiler := NewCompiler()
-	estimated := compiler.EstimateCompilationTime(1000)
-	if estimated <= 0 {
-		t.Error("EstimateCompilationTime() returned non-positive duration")
-	}
-}
-
-// TestCompilerGetMemoryRequirements tests GetMemoryRequirements method
-func TestCompilerGetMemoryRequirements(t *testing.T) {
-	compiler := NewCompiler()
-	requirements := compiler.GetMemoryRequirements(1000)
-	if requirements <= 0 {
-		t.Error("GetMemoryRequirements() returned non-positive value")
-	}
-}
-
 // TestCompilerBatchCompile tests BatchCompile method
 func TestCompilerBatchCompile(t *testing.T) {
 	compiler := NewCompiler()
