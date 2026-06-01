@@ -1116,9 +1116,9 @@ func TestInterpreterCountInRange(t *testing.T) {
 			emitter.EmitOpcode(OpHalt, 1, 1)
 
 			bytecode, err := emitter.GetBytecode()
-				if err != nil {
-					t.Fatalf("GetBytecode() error = %v", err)
-				}
+			if err != nil {
+				t.Fatalf("GetBytecode() error = %v", err)
+			}
 			interp := NewInterpreter(bytecode)
 			err = interp.Execute()
 			if err != nil {
