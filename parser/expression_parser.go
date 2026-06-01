@@ -93,7 +93,7 @@ func operatorPrecedence(tok token.Type) (prec int, leftAssoc bool) {
 		token.CONTAINS, token.ICONTAINS, token.STARTSWITH, token.ISTARTSWITH,
 		token.ENDSWITH, token.IENDSWITH, token.IEQUALS, token.MATCHES,
 		token.AT, token.IN:
-	return 3, true
+		return 3, true
 	case token.BitwiseAnd, token.BitwiseOr, token.BitwiseXor,
 		token.LeftShift, token.RightShift:
 		return 4, true
