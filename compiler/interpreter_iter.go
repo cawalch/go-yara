@@ -55,8 +55,7 @@ func (i *Interpreter) executeIterStartStringSet() error {
 	var inRange, atOffset bool
 	var offsetMin, offsetMax, atOffsetValue int64
 
-	switch markerVal.Type {
-	case ValueTypeInt:
+	if markerVal.Type == ValueTypeInt {
 		switch markerVal.IntVal {
 		case 0:
 			// No constraint

@@ -1220,30 +1220,30 @@ func (cc *ConditionCompiler) compileForLoopOverStrings(forLoop *ast.ForLoop) err
 	// Compile optional "in (range)" or "at offset" constraints
 	// Stack layout (bottom to top): [args..., stringSetIndex, constraintMarker]
 	// constraintMarker: 0=no constraint, 1=in range, 2=at offset
-	if forLoop.InRange != nil {
-		// Extract min/max from range expression (BinaryOp with DOT)
-		if rangeOp, ok := forLoop.InRange.(*ast.BinaryOp); ok && rangeOp.Op == token.DOT {
-			if err := cc.compileExpression(rangeOp.Left); err != nil {
-				return fmt.Errorf("compiling range min: %w", err)
-			}
-			if err := cc.compileExpression(rangeOp.Right); err != nil {
-				return fmt.Errorf("compiling range max: %w", err)
-			}
-		} else {
+	var constraintMarker uint64
+	switch {
+	case forLoop.InRange != nil:
+		rangeOp, ok := forLoop.InRange.(*ast.BinaryOp)
+		if !ok || rangeOp.Op != token.DOT {
 			return fmt.Errorf("invalid range expression for 'in' constraint")
 		}
-		cc.emitter.EmitPush(uint64(index), forLoop.Pos.Line, forLoop.Pos.Column)
-		cc.emitter.EmitPush(1, forLoop.Pos.Line, forLoop.Pos.Column) // marker: in range
-	} else if forLoop.AtOffset != nil {
+		if err := cc.compileExpression(rangeOp.Left); err != nil {
+			return fmt.Errorf("compiling range min: %w", err)
+		}
+		if err := cc.compileExpression(rangeOp.Right); err != nil {
+			return fmt.Errorf("compiling range max: %w", err)
+		}
+		constraintMarker = 1
+	case forLoop.AtOffset != nil:
 		if err := cc.compileExpression(forLoop.AtOffset); err != nil {
 			return fmt.Errorf("compiling offset expression: %w", err)
 		}
-		cc.emitter.EmitPush(uint64(index), forLoop.Pos.Line, forLoop.Pos.Column)
-		cc.emitter.EmitPush(2, forLoop.Pos.Line, forLoop.Pos.Column) // marker: at offset
-	} else {
-		cc.emitter.EmitPush(uint64(index), forLoop.Pos.Line, forLoop.Pos.Column)
-		cc.emitter.EmitPush(0, forLoop.Pos.Line, forLoop.Pos.Column) // marker: no constraint
+		constraintMarker = 2
+	default:
+		constraintMarker = 0
 	}
+	cc.emitter.EmitPush(uint64(index), forLoop.Pos.Line, forLoop.Pos.Column)
+	cc.emitter.EmitPush(constraintMarker, forLoop.Pos.Line, forLoop.Pos.Column)
 	cc.emitter.EmitOpcodeWithOperand(OpIterStartStringSet, Operand{Type: OperandImmediate32, Value: uint64(slots[0])}, forLoop.Pos.Line, forLoop.Pos.Column)
 
 	return cc.compileForLoopBody(forLoop.Quantifier, forLoop.Condition, forLoop.Pos)
@@ -1322,67 +1322,76 @@ func parseNumericQuantifier(quantifier string) (int64, bool) {
 }
 
 func (cc *ConditionCompiler) compileOfExpression(ofExpr *ast.OfExpression) error {
+	var opcode Opcode
+
 	// Check if the count is a percent expression ("N % of")
 	if percentExpr, ok := ofExpr.Count.(*ast.PercentExpression); ok {
 		if err := cc.compileExpression(percentExpr.Value); err != nil {
 			return fmt.Errorf("compiling percent expression: %w", err)
 		}
-		if err := cc.compileStringsExpression(ofExpr.Strings); err != nil {
-			return fmt.Errorf("compiling strings expression in of-expression: %w", err)
+		opcode = OpOfPercent
+	} else {
+		if err := cc.compileCountExpression(ofExpr.Count); err != nil {
+			return fmt.Errorf("compiling count expression in of-expression: %w", err)
 		}
-		if ofExpr.InRange != nil {
-			if rangeOp, ok := ofExpr.InRange.(*ast.BinaryOp); ok && rangeOp.Op == token.DOT {
-				if err := cc.compileExpression(rangeOp.Left); err != nil {
-					return fmt.Errorf("compiling range min: %w", err)
-				}
-				if err := cc.compileExpression(rangeOp.Right); err != nil {
-					return fmt.Errorf("compiling range max: %w", err)
-				}
-				cc.emitter.EmitOpcode(OpOfPercentIn, ofExpr.Pos.Line, ofExpr.Pos.Column)
-				return nil
-			}
-			return fmt.Errorf("invalid range expression for 'in' constraint")
-		} else if ofExpr.AtOffset != nil {
-			if err := cc.compileExpression(ofExpr.AtOffset); err != nil {
-				return fmt.Errorf("compiling offset expression: %w", err)
-			}
-			cc.emitter.EmitOpcode(OpOfPercentAt, ofExpr.Pos.Line, ofExpr.Pos.Column)
-			return nil
-		}
-		cc.emitter.EmitOpcode(OpOfPercent, ofExpr.Pos.Line, ofExpr.Pos.Column)
-		return nil
-	}
-
-	if err := cc.compileCountExpression(ofExpr.Count); err != nil {
-		return fmt.Errorf("compiling count expression in of-expression: %w", err)
+		opcode = OpOf
 	}
 
 	if err := cc.compileStringsExpression(ofExpr.Strings); err != nil {
 		return fmt.Errorf("compiling strings expression in of-expression: %w", err)
 	}
 
+	// Compile optional constraint and adjust opcode
+	isPercent := isPercentOpcode(opcode)
 	if ofExpr.InRange != nil {
-		if rangeOp, ok := ofExpr.InRange.(*ast.BinaryOp); ok && rangeOp.Op == token.DOT {
-			if err := cc.compileExpression(rangeOp.Left); err != nil {
-				return fmt.Errorf("compiling range min: %w", err)
-			}
-			if err := cc.compileExpression(rangeOp.Right); err != nil {
-				return fmt.Errorf("compiling range max: %w", err)
-			}
-			cc.emitter.EmitOpcode(OpOfFoundIn, ofExpr.Pos.Line, ofExpr.Pos.Column)
-			return nil
-		}
-		return fmt.Errorf("invalid range expression for 'in' constraint")
+		opcode = cc.compileInRangeConstraint(ofExpr.InRange, ofExpr.Pos, opcode, isPercent)
 	} else if ofExpr.AtOffset != nil {
-		if err := cc.compileExpression(ofExpr.AtOffset); err != nil {
-			return fmt.Errorf("compiling offset expression: %w", err)
-		}
-		cc.emitter.EmitOpcode(OpOfFoundAt, ofExpr.Pos.Line, ofExpr.Pos.Column)
-		return nil
+		opcode = cc.compileAtOffsetConstraint(ofExpr.AtOffset, ofExpr.Pos, opcode, isPercent)
 	}
 
-	cc.emitter.EmitOpcode(OpOf, ofExpr.Pos.Line, ofExpr.Pos.Column)
+	cc.emitter.EmitOpcode(opcode, ofExpr.Pos.Line, ofExpr.Pos.Column)
 	return nil
+}
+
+func isPercentOpcode(op Opcode) bool {
+	return op == OpOfPercent || op == OpOfPercentIn || op == OpOfPercentAt
+}
+
+func (cc *ConditionCompiler) compileInRangeConstraint(
+	expr ast.Expression,
+	pos token.Position,
+	baseOpcode Opcode,
+	isPercent bool,
+) Opcode {
+	rangeOp, ok := expr.(*ast.BinaryOp)
+	if !ok || rangeOp.Op != token.DOT {
+		return baseOpcode // fallback; error will be caught elsewhere
+	}
+	if err := cc.compileExpression(rangeOp.Left); err != nil {
+		return baseOpcode
+	}
+	if err := cc.compileExpression(rangeOp.Right); err != nil {
+		return baseOpcode
+	}
+	if isPercent {
+		return OpOfPercentIn
+	}
+	return OpOfFoundIn
+}
+
+func (cc *ConditionCompiler) compileAtOffsetConstraint(
+	expr ast.Expression,
+	pos token.Position,
+	baseOpcode Opcode,
+	isPercent bool,
+) Opcode {
+	if err := cc.compileExpression(expr); err != nil {
+		return baseOpcode
+	}
+	if isPercent {
+		return OpOfPercentAt
+	}
+	return OpOfFoundAt
 }
 
 func (cc *ConditionCompiler) compileCountExpression(countExpr ast.Expression) error {
