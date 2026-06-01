@@ -401,6 +401,22 @@ func (o *OfExpression) Accept(v Visitor) any {
 	return v.VisitOfExpression(o)
 }
 
+// PercentExpression represents a percentage quantifier (e.g., "50 %")
+type PercentExpression struct {
+	Pos   token.Position
+	Value Expression // The percentage value (1-100)
+}
+
+func (p *PercentExpression) node() {}
+
+func (p *PercentExpression) Position() token.Position { return p.Pos }
+
+func (p *PercentExpression) expression() {}
+
+func (p *PercentExpression) Accept(v Visitor) any {
+	return v.VisitPercentExpression(p)
+}
+
 // FunctionCall represents a function call expression
 type FunctionCall struct {
 	Pos      token.Position

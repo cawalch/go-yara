@@ -227,7 +227,46 @@ func (i *Interpreter) executeOfOperation() error {
 	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(result)})
 }
 
-// resolveStringSet resolves a string set identifier to a list of string IDs.
+// executeOfPercentOperation executes OpOfPercent.
+// Stack: [percentage, string_set_id]
+// Result: true if (matched/total)*100 >= percentage
+func (i *Interpreter) executeOfPercentOperation() error {
+	if err := i.validateStackUnderflowN(OpOfPercent, 2); err != nil {
+		return err
+	}
+
+	stringsID := i.stack[len(i.stack)-1]
+	percent := i.stack[len(i.stack)-2]
+	i.stack = i.stack[:len(i.stack)-2]
+
+	set, err := i.resolveStringSet(stringsID)
+	if err != nil {
+		return err
+	}
+
+	if percent.Type == ValueTypeUndefined {
+		return i.push(Value{Type: ValueTypeUndefined})
+	}
+	if percent.Type != ValueTypeInt {
+		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpOfPercent, Message: "percentage must be an integer"}
+	}
+
+	total := len(set)
+	matched := 0
+	for _, id := range set {
+		if matches, ok := i.matchContext.Matches[id]; ok && len(matches) > 0 {
+			matched++
+		}
+	}
+
+	if total == 0 {
+		return i.push(Value{Type: ValueTypeInt, IntVal: 0})
+	}
+
+	percentFloat := float64(matched) / float64(total) * 100.0
+	result := percentFloat >= float64(percent.IntVal)
+	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(result)})
+}
 func (i *Interpreter) resolveStringSet(stringsID Value) ([]string, error) {
 	switch stringsID.Type {
 	case ValueTypeInt:

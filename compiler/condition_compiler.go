@@ -1295,6 +1295,18 @@ func parseNumericQuantifier(quantifier string) (int64, bool) {
 }
 
 func (cc *ConditionCompiler) compileOfExpression(ofExpr *ast.OfExpression) error {
+	// Check if the count is a percent expression ("N % of")
+	if percentExpr, ok := ofExpr.Count.(*ast.PercentExpression); ok {
+		if err := cc.compileExpression(percentExpr.Value); err != nil {
+			return fmt.Errorf("compiling percent expression: %w", err)
+		}
+		if err := cc.compileStringsExpression(ofExpr.Strings); err != nil {
+			return fmt.Errorf("compiling strings expression in of-expression: %w", err)
+		}
+		cc.emitter.EmitOpcode(OpOfPercent, ofExpr.Pos.Line, ofExpr.Pos.Column)
+		return nil
+	}
+
 	if err := cc.compileCountExpression(ofExpr.Count); err != nil {
 		return fmt.Errorf("compiling count expression in of-expression: %w", err)
 	}

@@ -470,6 +470,10 @@ func (v *CountingVisitor) VisitOfExpression(_ *OfExpression) any {
 	return nil
 }
 
+func (v *CountingVisitor) VisitPercentExpression(_ *PercentExpression) any {
+	v.count++
+	return nil
+}
 func (v *CountingVisitor) VisitFunctionCall(n *FunctionCall) any {
 	v.count++
 	return nil

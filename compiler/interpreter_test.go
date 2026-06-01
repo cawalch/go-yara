@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/cawalch/go-yara/regex"
@@ -1132,6 +1133,79 @@ func TestInterpreterCountInRange(t *testing.T) {
 			got := interp.GetStack()[0].IntVal
 			if got != tt.expected {
 				t.Errorf("count=%d in (%d..%d) = %d, want %d", tt.count, tt.min, tt.max, got, tt.expected)
+			}
+		})
+	}
+}
+
+// TestInterpreterOfPercent tests OpOfPercent operation
+func TestInterpreterOfPercent(t *testing.T) {
+	tests := []struct {
+		name     string
+		matched  int // number of matched strings out of total
+		total    int // total strings in set
+		percent  int64
+		expected int64
+	}{
+		{"50_percent_2_of_3", 2, 3, 50, 1},   // 66.7% >= 50% => true
+		{"75_percent_2_of_3", 2, 3, 75, 0},   // 66.7% < 75% => false
+		{"100_percent_2_of_2", 2, 2, 100, 1}, // 100% >= 100% => true
+		{"33_percent_1_of_3", 1, 3, 33, 1},   // 33.3% >= 33% => true
+		{"34_percent_1_of_3", 1, 3, 34, 0},   // 33.3% < 34% => false
+		{"0_percent_0_of_3", 0, 3, 1, 0},     // 0% < 1% => false
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			emitter := NewEmitter()
+
+			// Push the percentage (bottom of stack)
+			emitter.EmitPush(uint64(tt.percent), 1, 1)
+
+			// Push the string set ID (top of stack)
+			emitter.EmitPush(stringSetAll, 1, 1)
+
+			// Emit OpOfPercent
+			emitter.EmitOpcode(OpOfPercent, 1, 1)
+
+			// Emit OpHalt
+			emitter.EmitOpcode(OpHalt, 1, 1)
+
+			bytecode, err := emitter.GetBytecode()
+			if err != nil {
+				t.Fatalf("GetBytecode() error = %v", err)
+			}
+
+			interp := NewInterpreter(bytecode)
+
+			// Set up match context with the right number of matched strings
+			mc := &MatchContext{
+				Matches: make(map[string][]Match),
+			}
+			for i := 0; i < tt.total; i++ {
+				id := fmt.Sprintf("$s%d", i)
+				if i < tt.matched {
+					mc.Matches[id] = []Match{{Offset: 0, Length: 1}}
+				}
+			}
+			interp.matchContext = mc
+			interp.allStrings = make([]string, tt.total)
+			for i := 0; i < tt.total; i++ {
+				interp.allStrings[i] = fmt.Sprintf("$s%d", i)
+			}
+
+			err = interp.Execute()
+			if err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+
+			if len(interp.GetStack()) != 1 {
+				t.Fatalf("stack length = %d, want 1", len(interp.GetStack()))
+			}
+
+			got := interp.GetStack()[0].IntVal
+			if got != tt.expected {
+				t.Errorf("%d%% of %d (matched=%d) = %d, want %d", tt.percent, tt.total, tt.matched, got, tt.expected)
 			}
 		})
 	}

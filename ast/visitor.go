@@ -76,6 +76,7 @@ type VariableVisitor interface {
 type ControlFlowVisitor interface {
 	VisitForLoop(*ForLoop) any
 	VisitOfExpression(*OfExpression) any
+	VisitPercentExpression(*PercentExpression) any
 }
 
 // ModuleVisitor handles imports and includes
@@ -170,6 +171,9 @@ func (v *BaseVisitor) VisitForLoop(_ *ForLoop) any { return nil }
 
 // VisitOfExpression visits an of expression node
 func (v *BaseVisitor) VisitOfExpression(_ *OfExpression) any { return nil }
+
+// VisitPercentExpression visits a percent expression node
+func (v *BaseVisitor) VisitPercentExpression(_ *PercentExpression) any { return nil }
 
 // ModuleVisitor implementations
 
