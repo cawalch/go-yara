@@ -331,29 +331,38 @@ This document tracks gaps between go-yara and the official YARA specification (Y
 ### Priority 3: Metadata, Tags, Rule Modifiers
 
 #### 3.1 Tags storage and filtering
-**Files**: `compiler/rule_compiler.go`, `compiler/types.go` (or equivalent)
-**Work**:
-- Add `Tags []string` to `CompiledRule`
-- Store tags during compilation
-- Implement tag-based rule filtering in scanner
+**Status**: ✅ Implemented
+**Files**: `compiler/rule_compiler.go`, `compiler/scanner.go`
+**Done**:
+- ✅ `Tags []string` stored in `CompiledRule` from AST
+- ✅ `Tags` exposed in `RuleMatch` for public API
+- ✅ Tags available in scan results
 
 #### 3.2 Metadata storage
-**Files**: `compiler/rule_compiler.go`
-**Work**:
-- Add `Meta map[string]any` to `CompiledRule`
-- Store metadata during compilation
+**Status**: ✅ Implemented
+**Files**: `compiler/rule_compiler.go`, `compiler/scanner.go`
+**Done**:
+- ✅ `Meta map[string]any` stored in `CompiledRule`
+- ✅ Metadata exposed in `RuleMatch` for public API
+- ✅ Supports `MetaString`, `MetaInt`, `MetaBool`
 
 #### 3.3 Global rule enforcement
+**Status**: ✅ Implemented
 **Files**: `compiler/scanner.go`, `compiler/rule_compiler.go`
-**Work**:
-- Store global flag in `CompiledRule`
-- Auto-execute global rules in scanner
+**Done**:
+- ✅ `IsGlobal bool` stored in `CompiledRule`
+- ✅ Two-pass evaluation: all rules evaluated, then MatchedRules built
+- ✅ ALL global rules must match before non-global rules are reported
+- ✅ Non-global rules skipped when any global rule fails
 
 #### 3.4 Private rule enforcement
-**Files**: `compiler/scanner.go`, `compiler/condition_compiler.go`
-**Work**:
-- Store private flag in `CompiledRule`
-- Exclude private rules from rule references
+**Status**: ✅ Implemented
+**Files**: `compiler/scanner.go`, `compiler/rule_compiler.go`
+**Done**:
+- ✅ `IsPrivate bool` stored in `CompiledRule`
+- ✅ Private rules not reported in `MatchedRules`
+- ✅ Still evaluated internally and tracked in `RuleResults`
+- ✅ Can be referenced by other rules
 
 ### Priority 4: Unreferenced string warning suppression
 
