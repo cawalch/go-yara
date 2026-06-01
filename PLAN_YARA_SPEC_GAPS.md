@@ -143,7 +143,7 @@ This document tracks gaps between go-yara and the official YARA specification (Y
 |---------|--------|-------|
 | `entrypoint` | ✅ | `OpEntrypoint` |
 | `filesize` | ✅ | `OpFilesize` |
-| `itersmax` | ⚠️ | YARA compile-time constant (`ITERSMAX`), not a rule directive. go-yara has no equivalent iteration depth limit; adding one would require a `ScannerOption` |
+| `itersmax` | ✅ | YARA compile-time constant (`ITERSMAX`). Implemented as `WithItersmax` `ScannerOption`; enforced in `executeIterNext` |
 
 ---
 
