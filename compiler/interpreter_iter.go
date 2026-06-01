@@ -56,37 +56,10 @@ func (i *Interpreter) executeIterStartStringSet() error {
 	var offsetMin, offsetMax, atOffsetValue int64
 
 	if markerVal.Type == ValueTypeInt {
-		switch markerVal.IntVal {
-		case 0:
-			// No constraint
-		case 1:
-			// In range: pop max, then min
-			if err := i.validateStackUnderflowN(OpIterStartStringSet, 2); err != nil {
-				return err
-			}
-			offsetMaxVal := i.stack[len(i.stack)-1]
-			offsetMinVal := i.stack[len(i.stack)-2]
-			i.stack = i.stack[:len(i.stack)-2]
-			if offsetMinVal.Type != ValueTypeInt || offsetMaxVal.Type != ValueTypeInt {
-				return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpIterStartStringSet, Message: "range bounds must be integers"}
-			}
-			inRange = true
-			offsetMin = offsetMinVal.IntVal
-			offsetMax = offsetMaxVal.IntVal
-		case 2:
-			// At offset: pop offset
-			if err := i.validateStackUnderflow(OpIterStartStringSet); err != nil {
-				return err
-			}
-			offsetVal := i.stack[len(i.stack)-1]
-			i.stack = i.stack[:len(i.stack)-1]
-			if offsetVal.Type != ValueTypeInt {
-				return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpIterStartStringSet, Message: "offset must be integer"}
-			}
-			atOffset = true
-			atOffsetValue = offsetVal.IntVal
-		default:
-			return &InterpreterError{Type: ErrorRuntime, Opcode: OpIterStartStringSet, Message: "invalid constraint marker"}
+		var err error
+		inRange, atOffset, offsetMin, offsetMax, atOffsetValue, err = i.parseConstraintMarker(markerVal.IntVal)
+		if err != nil {
+			return err
 		}
 	}
 
@@ -147,6 +120,52 @@ func (i *Interpreter) executeIterStartStringSet() error {
 
 	i.iterators = append(i.iterators, iter)
 	return nil
+}
+
+// parseConstraintMarker interprets the constraint marker value and pops
+// the necessary operands from the stack.
+func (i *Interpreter) parseConstraintMarker(
+	marker int64,
+) (inRange, atOffset bool, offsetMin, offsetMax, atOffsetValue int64, err error) {
+	switch marker {
+	case 0:
+		// No constraint
+	case 1:
+		// In range: pop max, then min
+		if err := i.validateStackUnderflowN(OpIterStartStringSet, 2); err != nil {
+			return false, false, 0, 0, 0, err
+		}
+		offsetMaxVal := i.stack[len(i.stack)-1]
+		offsetMinVal := i.stack[len(i.stack)-2]
+		i.stack = i.stack[:len(i.stack)-2]
+		if offsetMinVal.Type != ValueTypeInt || offsetMaxVal.Type != ValueTypeInt {
+			return false, false, 0, 0, 0, &InterpreterError{
+				Type: ErrorTypeMismatch, Opcode: OpIterStartStringSet,
+				Message: "range bounds must be integers",
+			}
+		}
+		return true, false, offsetMinVal.IntVal, offsetMaxVal.IntVal, 0, nil
+	case 2:
+		// At offset: pop offset
+		if err := i.validateStackUnderflow(OpIterStartStringSet); err != nil {
+			return false, false, 0, 0, 0, err
+		}
+		offsetVal := i.stack[len(i.stack)-1]
+		i.stack = i.stack[:len(i.stack)-1]
+		if offsetVal.Type != ValueTypeInt {
+			return false, false, 0, 0, 0, &InterpreterError{
+				Type: ErrorTypeMismatch, Opcode: OpIterStartStringSet,
+				Message: "offset must be integer",
+			}
+		}
+		return false, true, 0, 0, offsetVal.IntVal, nil
+	default:
+		return false, false, 0, 0, 0, &InterpreterError{
+			Type: ErrorRuntime, Opcode: OpIterStartStringSet,
+			Message: "invalid constraint marker",
+		}
+	}
+	return false, false, 0, 0, 0, nil
 }
 
 // executeIterNext advances the current iterator to the next element.
