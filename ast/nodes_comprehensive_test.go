@@ -605,6 +605,11 @@ func (v *ComprehensiveTestVisitor) VisitStringCount(_ *StringCount) any {
 	return "visited_string_count"
 }
 
+func (v *ComprehensiveTestVisitor) VisitLengthOf(_ *LengthOf) any {
+	v.visitedNodes = append(v.visitedNodes, "LengthOf")
+	return "visited_length_of"
+}
+
 func (v *ComprehensiveTestVisitor) VisitForLoop(_ *ForLoop) any {
 	v.visitedNodes = append(v.visitedNodes, "ForLoop")
 	return "visited_for_loop"

@@ -266,6 +266,8 @@ func (cc *ConditionCompiler) compileExpression(expr ast.Expression) error {
 		return cc.compileStringOffset(e)
 	case *ast.StringCount:
 		return cc.compileStringCount(e)
+	case *ast.LengthOf:
+		return cc.compileLengthOf(e)
 	default:
 		return fmt.Errorf("unsupported expression type: %T", expr)
 	}
@@ -895,6 +897,33 @@ func (cc *ConditionCompiler) compileBitwiseNotOperator(unaryOp *ast.UnaryOp) err
 	}
 	cc.emitter.EmitOpcode(OpBitwiseNot, unaryOp.Pos.Line, unaryOp.Pos.Column)
 	return nil
+}
+
+// compileLengthOf compiles a "length of" expression.
+// Stack: [setIndex] -> [totalLength]
+func (cc *ConditionCompiler) compileLengthOf(lengthOf *ast.LengthOf) error {
+	setIndex, pos := cc.resolveLengthOfTarget(lengthOf)
+	if pos.Line == 0 {
+		return fmt.Errorf("unsupported 'length of' target")
+	}
+	cc.emitter.EmitPush(safeInt64ToUint64(int64(setIndex)), lengthOf.Pos.Line, lengthOf.Pos.Column)
+	cc.emitter.EmitOpcode(OpLengthOf, lengthOf.Pos.Line, lengthOf.Pos.Column)
+	return nil
+}
+
+// resolveLengthOfTarget resolves the target of a "length of" expression to a string set index.
+func (cc *ConditionCompiler) resolveLengthOfTarget(lengthOf *ast.LengthOf) (int, token.Position) {
+	switch target := lengthOf.Target.(type) {
+	case *ast.Identifier:
+		// length of them [*/**] or length of ($a)
+		if target.Name == "them" {
+			return cc.internStringSet(cc.allStringIdentifiers()), target.Pos
+		}
+		// length of ($a) — the parenthesized expression unwraps to Identifier
+		return cc.resolveStringSetIndex(target)
+	default:
+		return 0, token.Position{}
+	}
 }
 
 func (cc *ConditionCompiler) compileMinusOperator(unaryOp *ast.UnaryOp) error {

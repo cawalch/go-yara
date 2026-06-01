@@ -194,6 +194,11 @@ func (p *ExpressionParser) parsePrimary() (ast.Expression, error) {
 		return p.parseQuantifierPrimary()
 	}
 
+	// Handle "length of" expression
+	if p.currentTokenIs(token.LENGTH) && p.peekTokenIs(token.OF) {
+		return p.parseLengthOf()
+	}
+
 	// Handle parenthesized expressions
 	if p.currentTokenIs(token.LPAREN) {
 		return p.parseParenthesizedExpression()
@@ -860,8 +865,60 @@ func (p *ExpressionParser) tryParsePercentOf(left ast.Expression, op token.Type)
 	return ofExpr, nil
 }
 
-// tryParseCountInOf attempts to parse "#a in (min..max) of ($a*)" when left is
-// a BinaryOp with IN (count-in-range) and the next token is OF.
+// parseLengthOf parses "length of" expressions:
+//   - length of ($a)
+//   - length of them
+//   - length of them*
+//   - length of them**
+//   - length of ($a*)
+func (p *ExpressionParser) parseLengthOf() (ast.Expression, error) {
+	pos := p.current.Pos
+
+	// Consume "length" and "of"
+	p.nextToken() // LENGTH
+	p.nextToken() // OF
+
+	// Parse the target: ($a), them, them*, them**, ($a*)
+	var target ast.Expression
+	var quantifier string
+
+	switch {
+	case p.currentTokenIs(token.LPAREN):
+		// length of ($a) or length of ($a*)
+		var err error
+		target, err = p.parseParenthesizedExpression()
+		if err != nil {
+			return nil, err
+		}
+	case p.currentTokenIs(token.THEM):
+		// length of them [*/**]
+		target = &ast.Identifier{
+			Name: p.current.Literal,
+			Pos:  p.current.Pos,
+		}
+		p.nextToken() // consume THEM
+
+		// Check for * or **
+		if p.currentTokenIs(token.MULTIPLY) {
+			quantifier = "*"
+			p.nextToken()
+			if p.currentTokenIs(token.MULTIPLY) {
+				quantifier = "**"
+				p.nextToken()
+			}
+		}
+	default:
+		return nil, fmt.Errorf("expected '(' or 'them' in 'length of' expression at %v", pos)
+	}
+
+	return &ast.LengthOf{
+		Pos:        pos,
+		Target:     target,
+		Quantifier: quantifier,
+	}, nil
+}
+
+// parseOfInExpression parses an "of" expression that appears after a "in" operator
 // Returns the parsed *ast.OfExpression on success, (nil, nil) if it's not a count-in-of expression.
 func (p *ExpressionParser) tryParseCountInOf(left ast.Expression) (*ast.OfExpression, error) {
 	binOp, ok := left.(*ast.BinaryOp)

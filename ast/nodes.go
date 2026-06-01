@@ -361,6 +361,26 @@ func (s *StringCount) Accept(v Visitor) any {
 	return v.VisitStringCount(s)
 }
 
+// LengthOf represents a YARA "length of" expression.
+// Syntax: length of ($a), length of them, length of them*, length of them**, length of ($a*)
+type LengthOf struct {
+	Pos        token.Position
+	Target     Expression // Identifier, ParenExpr, or QuantifiedString
+	Quantifier string     // "*" or "**" for them*/them**, empty for others
+}
+
+func (l *LengthOf) node() {}
+
+// Position returns position of LengthOf node
+func (l *LengthOf) Position() token.Position { return l.Pos }
+
+func (l *LengthOf) expression() {}
+
+// Accept implements the Visitor pattern for LengthOf
+func (l *LengthOf) Accept(v Visitor) any {
+	return v.VisitLengthOf(l)
+}
+
 // ForLoop represents a for loop expression
 type ForLoop struct {
 	Pos        token.Position

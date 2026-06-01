@@ -133,7 +133,87 @@ func TestInterpreterComparison(t *testing.T) {
 	}
 }
 
-// TestInterpreterLogical tests logical operations
+// TestInterpreterLengthOf tests OpLengthOf ("length of ($a)" / "length of them").
+func TestInterpreterLengthOf(t *testing.T) {
+	tests := []struct {
+		name     string
+		set      []string
+		matches  map[string][]Match // pattern -> matches with lengths
+		expected int64
+	}{
+		{
+			"single string single match",
+			[]string{"$a"},
+			map[string][]Match{"$a": {{Pattern: "$a", Offset: 0, Length: 5}}},
+			5,
+		},
+		{
+			"single string multiple matches",
+			[]string{"$a"},
+			map[string][]Match{
+				"$a": {
+					{Pattern: "$a", Offset: 0, Length: 3},
+					{Pattern: "$a", Offset: 10, Length: 7},
+				},
+			},
+			10,
+		},
+		{
+			"multiple strings mixed matches",
+			[]string{"$a", "$b", "$c"},
+			map[string][]Match{
+				"$a": {{Pattern: "$a", Offset: 0, Length: 4}},
+				"$c": {{Pattern: "$c", Offset: 20, Length: 6}},
+			},
+			10,
+		},
+		{
+			"no matches",
+			[]string{"$a", "$b"},
+			map[string][]Match{},
+			0,
+		},
+		{
+			"empty set",
+			[]string{},
+			map[string][]Match{"$a": {{Pattern: "$a", Offset: 0, Length: 5}}},
+			0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			emitter := NewEmitter()
+			emitter.EmitPush(0, 1, 1) // setIndex = 0
+			emitter.EmitOpcode(OpLengthOf, 1, 1)
+			emitter.EmitOpcode(OpHalt, 1, 1)
+
+			bytecode, err := emitter.GetBytecode()
+			if err != nil {
+				t.Fatalf("GetBytecode() error = %v", err)
+			}
+			interp := NewInterpreter(bytecode)
+
+			interp.stringSets = [][]string{tt.set}
+			mc := &MatchContext{Matches: tt.matches}
+			interp.matchContext = mc
+
+			if err := interp.Execute(); err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+
+			stack := interp.GetStack()
+			if len(stack) == 0 {
+				t.Fatalf("expected value on stack, got empty stack")
+			}
+			if stack[0].IntVal != tt.expected {
+				t.Errorf("got %d, want %d", stack[0].IntVal, tt.expected)
+			}
+		})
+	}
+}
+
+// TestInterpreterDebugMode tests debug mode functionality.
 func TestInterpreterLogical(t *testing.T) {
 	tests := []struct {
 		name     string

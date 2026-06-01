@@ -37,6 +37,7 @@ const (
 	OpIndexArray
 	OpCount
 	OpLength
+	OpLengthOf
 	OpFound
 	OpFoundAt
 	OpFoundIn
@@ -85,7 +86,7 @@ const (
 	OpJz
 	OpJzP
 
-	// OpPush8 begins push operations (66-71)
+	// OpPush8 begins push operations (64-69)
 	OpPush8
 	OpPush16
 	OpPush32
@@ -307,10 +308,11 @@ var opcodeNames = map[Opcode]string{
 	OpIndexArray:             "INDEX_ARRAY",
 	OpCount:                  "COUNT",
 	OpLength:                 "LENGTH",
+	OpLengthOf:               "LENGTH_OF",
+	OpOffset:                 "OFFSET",
 	OpFound:                  "FOUND",
 	OpFoundAt:                "FOUND_AT",
 	OpFoundIn:                "FOUND_IN",
-	OpOffset:                 "OFFSET",
 	OpOf:                     "OF",
 	OpPushRule:               "PUSH_RULE",
 	OpInitRule:               "INIT_RULE",

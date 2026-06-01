@@ -4581,3 +4581,155 @@ rule test {
 		}
 	}
 }
+
+// TestLengthOfEndToEnd tests "length of" expressions in YARA conditions.
+func TestLengthOfEndToEnd(t *testing.T) {
+	// Test 1: length of ($a) with single match
+	{
+		src := `
+rule test {
+    strings:
+        $a = "hello"
+    condition:
+        length of ($a) == 5
+}`
+		compiler := NewCompiler()
+		program, err := compiler.CompileSource(src)
+		if err != nil {
+			t.Fatalf("Test 1 CompileSource() error = %v", err)
+		}
+		scanner := NewScanner(program)
+		results, err := scanner.Scan([]byte("say hello world"))
+		if err != nil {
+			t.Fatalf("Test 1 Scan() error = %v", err)
+		}
+		if len(results.MatchedRules) != 1 {
+			t.Errorf("Test 1: expected 1 match, got %d", len(results.MatchedRules))
+		}
+	}
+
+	// Test 2: length of ($a) with multiple matches
+	{
+		src := `
+rule test {
+    strings:
+        $a = "ab"
+    condition:
+        length of ($a) == 6
+}`
+		compiler := NewCompiler()
+		program, err := compiler.CompileSource(src)
+		if err != nil {
+			t.Fatalf("Test 2 CompileSource() error = %v", err)
+		}
+		scanner := NewScanner(program)
+		// "ab" appears 3 times = 6 bytes total
+		results, err := scanner.Scan([]byte("ababab"))
+		if err != nil {
+			t.Fatalf("Test 2 Scan() error = %v", err)
+		}
+		if len(results.MatchedRules) != 1 {
+			t.Errorf("Test 2: expected 1 match, got %d", len(results.MatchedRules))
+		}
+	}
+
+	// Test 3: length of them
+	{
+		src := `
+rule test {
+    strings:
+        $a = "hello"
+        $b = "world"
+    condition:
+        length of them >= 10
+}`
+		compiler := NewCompiler()
+		program, err := compiler.CompileSource(src)
+		if err != nil {
+			t.Fatalf("Test 3 CompileSource() error = %v", err)
+		}
+		scanner := NewScanner(program)
+		results, err := scanner.Scan([]byte("hello world"))
+		if err != nil {
+			t.Fatalf("Test 3 Scan() error = %v", err)
+		}
+		if len(results.MatchedRules) != 1 {
+			t.Errorf("Test 3: expected 1 match, got %d", len(results.MatchedRules))
+		}
+	}
+
+	// Test 4: length of them with no matches
+	{
+		src := `
+rule test {
+    strings:
+        $a = "hello"
+        $b = "world"
+    condition:
+        length of them == 0
+}`
+		compiler := NewCompiler()
+		program, err := compiler.CompileSource(src)
+		if err != nil {
+			t.Fatalf("Test 4 CompileSource() error = %v", err)
+		}
+		scanner := NewScanner(program)
+		results, err := scanner.Scan([]byte("nothing here"))
+		if err != nil {
+			t.Fatalf("Test 4 Scan() error = %v", err)
+		}
+		if len(results.MatchedRules) != 1 {
+			t.Errorf("Test 4: expected 1 match, got %d", len(results.MatchedRules))
+		}
+	}
+
+	// Test 5: length of them*
+	{
+		src := `
+rule test {
+    strings:
+        $a1 = "hi"
+        $a2 = "bye"
+    condition:
+        length of ($a*) == 5
+}`
+		compiler := NewCompiler()
+		program, err := compiler.CompileSource(src)
+		if err != nil {
+			t.Fatalf("Test 5 CompileSource() error = %v", err)
+		}
+		scanner := NewScanner(program)
+		// "hi" (2) + "bye" (3) = 5
+		results, err := scanner.Scan([]byte("hi bye"))
+		if err != nil {
+			t.Fatalf("Test 5 Scan() error = %v", err)
+		}
+		if len(results.MatchedRules) != 1 {
+			t.Errorf("Test 5: expected 1 match, got %d", len(results.MatchedRules))
+		}
+	}
+
+	// Test 6: length of ($a) with no match should be 0
+	{
+		src := `
+rule test {
+    strings:
+        $a = "hello"
+    condition:
+        length of ($a) == 0
+}`
+		compiler := NewCompiler()
+		program, err := compiler.CompileSource(src)
+		if err != nil {
+			t.Fatalf("Test 6 CompileSource() error = %v", err)
+		}
+		scanner := NewScanner(program)
+		results, err := scanner.Scan([]byte("no match here"))
+		if err != nil {
+			t.Fatalf("Test 6 Scan() error = %v", err)
+		}
+		if len(results.MatchedRules) != 1 {
+			t.Errorf("Test 6: expected 1 match, got %d", len(results.MatchedRules))
+		}
+	}
+}

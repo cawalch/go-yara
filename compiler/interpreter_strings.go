@@ -63,6 +63,38 @@ func (i *Interpreter) executeCountOperation() error {
 	return i.push(Value{Type: ValueTypeInt, IntVal: int64(len(matches))})
 }
 
+// executeLengthOfOperation executes OpLengthOf: "length of (X)".
+// Stack: [setIndex] -> [totalLength]
+func (i *Interpreter) executeLengthOfOperation() error {
+	if err := i.validateStackUnderflow(OpLengthOf); err != nil {
+		return err
+	}
+
+	setIndex := i.stack[len(i.stack)-1]
+	i.stack = i.stack[:len(i.stack)-1]
+
+	set, err := i.resolveStringSet(setIndex)
+	if err != nil {
+		return err
+	}
+
+	if len(set) == 0 || i.matchContext == nil {
+		return i.push(Value{Type: ValueTypeInt, IntVal: 0})
+	}
+
+	// Sum the total length of all matches for all strings in the set
+	var totalLength int64
+	for _, id := range set {
+		if matches, ok := i.matchContext.Matches[id]; ok {
+			for _, match := range matches {
+				totalLength += int64(match.Length)
+			}
+		}
+	}
+
+	return i.push(Value{Type: ValueTypeInt, IntVal: totalLength})
+}
+
 // executeFoundOperation executes OpFound.
 func (i *Interpreter) executeFoundOperation() error {
 	if err := i.validateStackUnderflow(OpFound); err != nil {

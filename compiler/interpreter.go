@@ -469,6 +469,7 @@ func init() {
 	// String operations
 	opcodeTable[OpLength] = (*Interpreter).executeLengthOperation
 	opcodeTable[OpCount] = (*Interpreter).executeCountOperation
+	opcodeTable[OpLengthOf] = (*Interpreter).executeLengthOfOperation
 	opcodeTable[OpFound] = (*Interpreter).executeFoundOperation
 	opcodeTable[OpFoundAt] = (*Interpreter).executeFoundAtOperation
 	opcodeTable[OpFoundIn] = (*Interpreter).executeFoundInOperation
