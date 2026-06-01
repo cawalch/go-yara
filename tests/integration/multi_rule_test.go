@@ -56,7 +56,7 @@ func TestMultipleRulesIndependent(t *testing.T) {
 
 			if tt.expectError {
 				if err == nil {
-					t.Logf("TODO: Expected compilation error but got none - gap detected for: %s", tt.description)
+					t.Skipf("known gap: %s (no compilation error produced)", tt.description)
 				}
 				return
 			}
@@ -283,7 +283,7 @@ func TestExternalVariables(t *testing.T) {
 
 			if tt.expectError {
 				if err == nil {
-					t.Logf("TODO: Expected compilation error but got none - gap detected for: %s", tt.description)
+					t.Skipf("known gap: %s (no compilation error produced)", tt.description)
 				}
 				return
 			}
@@ -344,7 +344,7 @@ func TestMetaInformation(t *testing.T) {
 
 			if tt.expectError {
 				if err == nil {
-					t.Logf("TODO: Expected compilation error but got none - gap detected for: %s", tt.description)
+					t.Skipf("known gap: %s (no compilation error produced)", tt.description)
 				}
 				return
 			}

@@ -18,7 +18,7 @@ func assertPipelineResult(t *testing.T, program *compiler.CompiledProgram, err e
 	t.Helper()
 	if expectError {
 		if err == nil {
-			t.Logf("TODO: Expected pipeline error but got none - gap detected for: %s", description)
+			t.Skipf("known gap: %s (no pipeline error produced)", description)
 		}
 		return
 	}
@@ -90,7 +90,7 @@ func TestFullPipelineSimpleRule(t *testing.T) {
 
 			if tt.expectError {
 				if err == nil {
-					t.Logf("TODO: Expected pipeline error but got none - gap detected for: %s", tt.description)
+					t.Skipf("known gap: %s (no pipeline error produced)", tt.description)
 				}
 				return
 			}
@@ -107,7 +107,7 @@ func TestFullPipelineSimpleRule(t *testing.T) {
 
 			if tt.expectError {
 				if err == nil {
-					t.Logf("TODO: Expected compilation error but got none - gap detected for: %s", tt.description)
+					t.Skipf("known gap: %s (no compilation error produced)", tt.description)
 				}
 				return
 			}
