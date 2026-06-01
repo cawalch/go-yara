@@ -255,7 +255,7 @@ This document tracks gaps between go-yara and the official YARA specification (Y
 | Unicode flag `(?u)` | ✅ | Implemented |
 This document tracks gaps between go-yara and the official YARA specification (YARA 4.5.3). It is updated as features are implemented and verified. The analysis is based on comparing the go-yara implementation with the YARA documentation at `yara/docs/writingrules.rst` and code review of the YARA source.
 
-**Summary**: ✅ 14/15 implemented · ⚠️ 1/15 partial · ❌ 0/15 missing
+**Summary**: ✅ 15/15 implemented · ⚠️ 0/15 partial · ❌ 0/15 missing
 
 ---
 
@@ -430,8 +430,8 @@ This is tracked separately and not part of the initial gap closure plan.
 
 ## Remaining Gaps
 
-### Tag-based scan filtering (⚠️)
-Tags are stored in `CompiledRule` and exposed in `RuleMatch`, but the Scanner doesn't support filtering rules by tag at scan time. YARA CLI supports `-t tag1,tag2` to only scan specific rules.
+### Tag-based scan filtering (✅)
+Implemented in `compiler/scanner.go` via `WithTagsFilter` scanner option. The Scanner skips non-global rules that don't have any matching tag. Global rules are always evaluated regardless of tag filter, matching YARA semantics.
 
 ### Module system (❌, out of scope)
 Module loading and execution is a large feature requiring a module registration system, function compilation, and individual module implementations.
