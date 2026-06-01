@@ -17,7 +17,7 @@ This document tracks gaps between go-yara and the official YARA specification (Y
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Text strings (`$a = "hello"`) | ✅ | Fully implemented |
-| Hex strings (`$a = { DE AD BE EF }`) | ✅ | Including wildcards, jumps, alts, not-operator |
+| Hex strings (`$a = { DE AD BE EF }`) | ✅ | Including wildcards, jumps, alts |
 | Regex strings (`$a = /abc.*/`) | ✅ | Including modifiers |
 | Anonymous strings (`$ = "..."`) | ✅ | ID assignment via `assignAnonymousStringIdentifiers()` |
 | String modifiers: `ascii` | ✅ | Implemented |
@@ -30,12 +30,12 @@ This document tracks gaps between go-yara and the official YARA specification (Y
 | String modifiers: `base64` | ✅ | With custom alphabets |
 | String modifiers: `base64wide` | ✅ | With custom alphabets |
 | String modifiers: `base64 "alphabet"` | ✅ | Custom alphabet |
-| Hex string not-operator (`!xx`) | ✅ | Implemented |
+| Hex string not-operator (`!xx`) | ❌ | Not implemented — hex parser rejects `!xx` tokens |
 | Hex string wildcards (`??`) | ✅ | Implemented |
 | Hex string jumps (`- min,max`) | ✅ | Implemented |
 | Hex string alternatives (`( AA \\| BB )`) | ✅ | Implemented |
-| Hex string word alignment | ✅ | `align` keyword |
-| Hex string binary operators | ✅ | `&`, `|` in hex strings |
+| Hex string word alignment | ❌ | Not implemented — `align` keyword not parsed |
+| Hex string binary operators | ❌ | Not implemented — `&`, `|` in hex strings rejected |
 
 ---
 
@@ -78,13 +78,15 @@ This document tracks gaps between go-yara and the official YARA specification (Y
 | `N % of ($a*) in (0..100)` | ✅ | `OpOfPercentIn` emitted; interpreter handler `executeOfPercentIn` |
 | `N % of ($a*) at offset` | ✅ | `OpOfPercentAt` emitted; interpreter handler `executeOfPercentAt` |
 | `of ($a, $b, $c)` | ✅ | String list in `of` expressions |
-| `of ($a*)` | ✅ | Wildcard string sets |
+| `length of` | ❌ | Not implemented — parser rejects all `length of` variants |
 | `of them` | ✅ | Implemented |
 | `all of them` | ✅ | Implemented |
 | `any of them` | ✅ | Implemented |
 | `none of them` | ✅ | Implemented |
 | `N of them` | ✅ | Numeric quantifiers |
 | `N percent of them` | ✅ | `PercentExpression` AST node; Pratt parser detects `N % OF`; `OpOfPercent` opcode; `executeOfPercentOperation` handler |
+| `of them*` | ❌ | Not implemented — parser rejects `them*` |
+| `of them**` | ❌ | Not implemented — parser rejects `them**` |
 
 ---
 
@@ -100,10 +102,10 @@ This document tracks gaps between go-yara and the official YARA specification (Y
 | `istartswith` | ✅ | Case-insensitive startswith |
 | `iendswith` | ✅ | Case-insensitive endswith |
 | `iequals` | ✅ | Case-insensitive equals |
-| `uint8`, `uint16`, `uint32`, `uint64` | ✅ | Implemented |
-| `int8`, `int16`, `int32`, `int64` | ✅ | Implemented |
-| `uint8be`, `uint16be`, `uint32be`, `uint64be` | ✅ | Big-endian variants |
-| `int8be`, `int16be`, `int32be`, `int64be` | ✅ | Big-endian variants |
+| `uint8`, `uint16`, `uint32`, `uint64` | ⚠️ | Basic form `uint8(0)` works; `.`, `at`, `base` modifiers not parsed |
+| `int8`, `int16`, `int32`, `int64` | ⚠️ | Basic form works; `.`, `at`, `base` modifiers not parsed |
+| `uint8be`, `uint16be`, `uint32be`, `uint64be` | ⚠️ | Big-endian basic form; `.`, `at`, `base` modifiers not parsed |
+| `int8be`, `int16be`, `int32be`, `int64be` | ⚠️ | Big-endian basic form; `.`, `at`, `base` modifiers not parsed |
 
 ---
 
@@ -122,6 +124,8 @@ This document tracks gaps between go-yara and the official YARA specification (Y
 | `for any of ($a*) in (0..100) : ($)` | ✅ | Range-constrained string set iteration |
 | `for any of ($a*) at (0..100) : ($)` | ✅ | Offset-constrained string set iteration |
 | `for any s in ("text1", "text2") : ($a matches s)` | ✅ | `OpIterStartTextStringSet` implemented |
+| `for N i in (0..n) : (...)` | ❌ | Not implemented — parser rejects numeric quantifier in `for` loops |
+| `for any s in ($*) : ($s)` | ❌ | Not implemented — parser rejects `$*` in `for` iteration |
 | `for any s in ("a", "b") : (s of them)` | ❌ | Not standard YARA syntax — `of` is a prefix operator, not infix |
 
 ---
@@ -255,7 +259,7 @@ This document tracks gaps between go-yara and the official YARA specification (Y
 | Unicode flag `(?u)` | ✅ | Implemented |
 This document tracks gaps between go-yara and the official YARA specification (YARA 4.5.3). It is updated as features are implemented and verified. The analysis is based on comparing the go-yara implementation with the YARA documentation at `yara/docs/writingrules.rst` and code review of the YARA source.
 
-**Summary**: ✅ 15/15 implemented · ⚠️ 0/15 partial · ❌ 0/15 missing
+**Summary**: ✅ 12/15 implemented · ⚠️ 4/15 partial · ❌ 8/15 missing
 
 ---
 
