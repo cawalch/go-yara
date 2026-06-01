@@ -16,6 +16,7 @@ type Scanner struct {
 	interp      *Interpreter    // reused across calls
 	matchCtx    *MatchContext   // reused across calls
 	ruleResults map[string]bool // reused across calls
+	tagsFilter  map[string]bool // non-empty means: only scan rules with these tags
 }
 
 // ScanResult represents the result of scanning data against compiled rules.
@@ -38,8 +39,23 @@ type RuleMatch struct {
 	Matches map[string][]Match // pattern -> matches (string-keyed for public API)
 }
 
+// ScannerOption configures a Scanner.
+type ScannerOption func(*Scanner)
+
+// WithTagsFilter restricts scanning to rules that have at least one of the given tags.
+// Global rules are always evaluated regardless of tags.
+func WithTagsFilter(tags []string) ScannerOption {
+	filter := make(map[string]bool, len(tags))
+	for _, t := range tags {
+		filter[t] = true
+	}
+	return func(s *Scanner) {
+		s.tagsFilter = filter
+	}
+}
+
 // NewScanner creates a new Scanner for the given compiled program.
-func NewScanner(program *CompiledProgram) *Scanner {
+func NewScanner(program *CompiledProgram, opts ...ScannerOption) *Scanner {
 	interp := acquireScannerInterpreter()
 	if program != nil {
 		interp.SetCompiledRules(program.Rules)
@@ -47,12 +63,16 @@ func NewScanner(program *CompiledProgram) *Scanner {
 
 	ctx := matchContextPool.Get().(*MatchContext)
 
-	return &Scanner{
+	s := &Scanner{
 		program:     program,
 		interp:      interp,
 		matchCtx:    ctx,
 		ruleResults: make(map[string]bool),
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 func acquireScannerInterpreter() *Interpreter {
@@ -129,6 +149,19 @@ type globalMatchEntry struct {
 	isWide bool   // whether this concrete automaton pattern is wide-encoded
 }
 
+// hasMatchingTag returns true if the rule has at least one tag in the filter.
+func (s *Scanner) hasMatchingTag(rule *CompiledRule) bool {
+	if len(s.tagsFilter) == 0 {
+		return true
+	}
+	for _, tag := range rule.Tags {
+		if s.tagsFilter[tag] {
+			return true
+		}
+	}
+	return false
+}
+
 // Scan scans the provided byte slice against the compiled rules.
 func (s *Scanner) Scan(data []byte) (*ScanResult, error) {
 	result := &ScanResult{
@@ -151,6 +184,7 @@ func (s *Scanner) Scan(data []byte) (*ScanResult, error) {
 	// YARA spec: global rules are evaluated first and ALL must match
 	// before non-global rules are evaluated.
 	// Private rules are never reported in MatchedRules.
+	// Tag filtering: only evaluate rules with matching tags (global rules always evaluated).
 	//
 	// Two-pass approach:
 	// 1. Evaluate all rules to populate match context and rule results.
@@ -158,6 +192,10 @@ func (s *Scanner) Scan(data []byte) (*ScanResult, error) {
 
 	// Pass 1: evaluate every rule
 	for _, rule := range s.program.Rules {
+		// Global rules are always evaluated; others only if they match the tag filter.
+		if !rule.IsGlobal && !s.hasMatchingTag(rule) {
+			continue
+		}
 		s.matchCtx.Reset(data)
 		if useSharedAutomaton {
 			s.addStaticMatchesInt(rule, data, globalByRule[rule.Index])
@@ -189,6 +227,10 @@ func (s *Scanner) Scan(data []byte) (*ScanResult, error) {
 	for _, rule := range s.program.Rules {
 		// Skip non-global rules if not all global rules matched
 		if !rule.IsGlobal && !allGlobalMatched {
+			continue
+		}
+		// Skip rules not matching the tag filter
+		if !s.hasMatchingTag(rule) {
 			continue
 		}
 		// Private rules are not reported in results

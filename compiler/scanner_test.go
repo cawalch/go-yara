@@ -1,18 +1,45 @@
 package compiler
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/cawalch/go-yara/ast"
+	"github.com/cawalch/go-yara/internal/lexer"
+	"github.com/cawalch/go-yara/parser"
 )
 
-func TestScannerSimple(t *testing.T) {
+// compileSources compiles multiple YARA rule source strings into a CompiledProgram.
+func compileSources(sources []string) (*CompiledProgram, error) {
+	program := &ast.Program{
+		Rules: make([]*ast.Rule, 0, len(sources)),
+	}
+	for _, src := range sources {
+		l := lexer.New(src)
+		p := parser.New(l)
+		parsed, err := p.ParseRulesWithContext(context.Background())
+		if err != nil {
+			return nil, err
+		}
+		program.Rules = append(program.Rules, parsed.Rules...)
+	}
+	rc := NewRuleCompiler()
+	rules, err := rc.CompileProgram(program)
+	if err != nil {
+		return nil, err
+	}
+	return &CompiledProgram{Rules: rules}, nil
+}
+
+func BenchmarkScanner(b *testing.B) {
 	// Simple rule match
 	ruleSource := `rule test { condition: true }`
 	compiler := NewCompiler()
 	program, err := compiler.CompileSource(ruleSource)
 	if err != nil {
-		t.Fatalf("CompileSource: %v", err)
+		b.Fatalf("CompileSource: %v", err)
 	}
 
 	scanner := NewScanner(program)
@@ -20,14 +47,14 @@ func TestScannerSimple(t *testing.T) {
 
 	result, err := scanner.Scan([]byte("dummy data"))
 	if err != nil {
-		t.Fatalf("Scan: %v", err)
+		b.Fatalf("Scan: %v", err)
 	}
 
 	if len(result.MatchedRules) != 1 {
-		t.Fatalf("Expected 1 match, got %d", len(result.MatchedRules))
+		b.Fatalf("Expected 1 match, got %d", len(result.MatchedRules))
 	}
 	if result.MatchedRules[0].Rule != "test" {
-		t.Errorf("Expected rule 'test', got '%s'", result.MatchedRules[0].Rule)
+		b.Errorf("Expected rule 'test', got '%s'", result.MatchedRules[0].Rule)
 	}
 }
 
@@ -309,5 +336,109 @@ func BenchmarkProductionScanner(b *testing.B) {
 		if err != nil {
 			b.Fatalf("scan failed: %v", err)
 		}
+	}
+}
+
+func TestScannerTagsFilter(t *testing.T) {
+	sources := []string{
+		`rule test_a : tag1 { strings: $a = "hello" condition: $a }`,
+		`rule test_b : tag2 { strings: $b = "world" condition: $b }`,
+		`rule test_c : tag3 { strings: $c = "foo" condition: $c }`,
+	}
+	program, err := compileSources(sources)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	scanner := NewScanner(program, WithTagsFilter([]string{"tag2"}))
+	defer scanner.Close()
+
+	data := []byte("hello world foo")
+	result, err := scanner.Scan(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(result.MatchedRules) != 1 {
+		t.Errorf("expected 1 matched rule, got %d", len(result.MatchedRules))
+	}
+	if len(result.MatchedRules) > 0 && result.MatchedRules[0].Rule != "test_b" {
+		t.Errorf("expected test_b, got %s", result.MatchedRules[0].Rule)
+	}
+}
+
+func TestScannerTagsFilterMultiple(t *testing.T) {
+	sources := []string{
+		`rule test_a : tag1 { strings: $a = "hello" condition: $a }`,
+		`rule test_b : tag2 { strings: $b = "world" condition: $b }`,
+		`rule test_c : tag3 { strings: $c = "foo" condition: $c }`,
+	}
+	program, err := compileSources(sources)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	scanner := NewScanner(program, WithTagsFilter([]string{"tag1", "tag3"}))
+	defer scanner.Close()
+
+	data := []byte("hello world foo")
+	result, err := scanner.Scan(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(result.MatchedRules) != 2 {
+		t.Errorf("expected 2 matched rules, got %d", len(result.MatchedRules))
+	}
+}
+
+func TestScannerTagsFilterNoneMatch(t *testing.T) {
+	sources := []string{
+		`rule test_a : tag1 { strings: $a = "hello" condition: $a }`,
+	}
+	program, err := compileSources(sources)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	scanner := NewScanner(program, WithTagsFilter([]string{"nonexistent"}))
+	defer scanner.Close()
+
+	data := []byte("hello")
+	result, err := scanner.Scan(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(result.MatchedRules) != 0 {
+		t.Errorf("expected 0 matched rules, got %d", len(result.MatchedRules))
+	}
+}
+
+func TestScannerTagsFilterGlobalAlwaysEvaluated(t *testing.T) {
+	sources := []string{
+		`global rule global_rule { strings: $g = "goodbye" condition: $g }`,
+		`rule test_a : tag1 { strings: $a = "hello" condition: $a }`,
+	}
+	program, err := compileSources(sources)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Filter for tag1 only; global_rule has no matching tag.
+	// Global rules are always evaluated, so if global_rule doesn't match,
+	// test_a should also be skipped.
+	scanner := NewScanner(program, WithTagsFilter([]string{"tag1"}))
+	defer scanner.Close()
+
+	data := []byte("hello") // matches test_a but NOT global_rule
+	result, err := scanner.Scan(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// global_rule doesn't match, so test_a should be skipped (all global must match)
+	if len(result.MatchedRules) != 0 {
+		t.Errorf("expected 0 matched rules (global failed), got %d", len(result.MatchedRules))
 	}
 }
