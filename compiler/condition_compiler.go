@@ -1580,7 +1580,10 @@ func (cc *ConditionCompiler) resolveStringSetIndex(stringsExpr ast.Expression) (
 			return cc.internStringSet(cc.anonymousStringIdentifiers()), ident.Pos
 		default:
 			if cc.isStringSetIdentifier(ident.Name) {
-				ids := []string{ident.Name}
+				ids, err := cc.expandStringSetIdentifier(ident.Name)
+				if err != nil {
+					ids = []string{ident.Name}
+				}
 				return cc.internStringSet(ids), ident.Pos
 			}
 		}

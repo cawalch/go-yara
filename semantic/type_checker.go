@@ -3,6 +3,7 @@ package semantic
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/cawalch/go-yara/ast"
 	"github.com/cawalch/go-yara/token"
@@ -112,6 +113,13 @@ func (tc *TypeChecker) checkIdentifier(identifier *ast.Identifier) *TypeInfo {
 			}
 		}
 		return info
+	}
+
+	// Check for wildcard string set identifiers (e.g., $a*, $str*)
+	// These are valid in quantifier expressions like "any of ($a*)" or "#a in (1..3) of ($a*)"
+	// The compiler handles expansion at compile time; we just need to allow the identifier.
+	if strings.HasPrefix(identifier.Name, "$") && strings.HasSuffix(identifier.Name, "*") {
+		return &TypeInfo{DataType: TypeBoolean}
 	}
 
 	// Check for special identifiers
