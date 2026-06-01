@@ -114,6 +114,8 @@ func TestCompileAlt(t *testing.T) {
 }
 
 // Helper function to validate alternation compilation
+//
+//nolint:revive // argument-limit: test helper
 func validateAlternationCode(t *testing.T, code []byte, expectSplit bool, expectedLits []byte) {
 	t.Helper()
 

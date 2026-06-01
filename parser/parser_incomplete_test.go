@@ -11,6 +11,8 @@ import (
 )
 
 // assertParseResult is a test helper that logs the parse outcome.
+//
+//nolint:revive // argument-limit: test helper
 func assertParseResult(t *testing.T, program *ast.Program, err error, expectError bool, description string) {
 	t.Helper()
 	if expectError {
@@ -24,6 +26,7 @@ func assertParseResult(t *testing.T, program *ast.Program, err error, expectErro
 	}
 }
 
+//nolint:revive // argument-limit: test helper
 func handleExpectedError(t *testing.T, program *ast.Program, err error, description string) {
 	t.Helper()
 	if err == nil {

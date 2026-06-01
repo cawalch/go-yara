@@ -415,6 +415,8 @@ func (cp *ChunkProcessor) processRule(chunk []byte, offset int64, rule *Compiled
 }
 
 // createRuleMatch creates a StreamingMatch from an automaton match
+//
+//nolint:revive // argument-limit: API surface
 func (cp *ChunkProcessor) createRuleMatch(chunk []byte, offset int64, rule *CompiledRule, match ACMatch) (StreamingMatch, bool) {
 	if rule != nil && rule.IsPrivateString(match.StringID) {
 		return StreamingMatch{}, false

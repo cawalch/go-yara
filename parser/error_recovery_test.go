@@ -713,6 +713,8 @@ rule BadRule {
 }
 
 // validateProgramExpectation validates parser results based on program expectations
+//
+//nolint:revive // argument-limit: test helper
 func validateProgramExpectation(t *testing.T, expectProgram bool, program *ast.Program, err error, p *Parser) {
 	if expectProgram {
 		validateExpectedProgramBehavior(t, program, err, p)
@@ -722,6 +724,8 @@ func validateProgramExpectation(t *testing.T, expectProgram bool, program *ast.P
 }
 
 // validateExpectedProgramBehavior validates behavior when program is expected
+//
+//nolint:revive // argument-limit: test helper
 func validateExpectedProgramBehavior(t *testing.T, program *ast.Program, err error, p *Parser) {
 	if program == nil {
 		// When parser fails, we expect both nil program and error

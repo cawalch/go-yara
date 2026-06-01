@@ -73,6 +73,8 @@ func testInvalidCharacters(t *testing.T) {
 }
 
 // generateHexRangeTests creates test cases for a range of characters
+//
+//nolint:revive // argument-limit: test helper
 func generateHexRangeTests(namePrefix string, start, end byte, expectedFunc func(byte) int) []struct {
 	name     string
 	input    byte

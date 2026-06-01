@@ -334,6 +334,7 @@ func runCompileMode(content, filename string) {
 	}
 }
 
+//nolint:revive // argument-limit: CLI entry point
 func runExecuteMode(content, dataFile, filename string, args *commandArgs) {
 	data := validateAndReadDataFile(dataFile)
 	if data == nil {

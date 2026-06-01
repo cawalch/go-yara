@@ -48,6 +48,7 @@ func evaluateProgramRules(t *testing.T, program *CompiledProgram, data []byte) m
 	return results
 }
 
+//nolint:revive // argument-limit: test helper
 func assertExpectedMatches(t *testing.T, results map[string]bool, expected map[string]bool, dataFile string) {
 	t.Helper()
 	for ruleName, want := range expected {

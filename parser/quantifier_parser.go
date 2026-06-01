@@ -11,6 +11,7 @@ import (
 )
 
 // QuantifierParser handles parsing of quantifier expressions in YARA rules
+// QuantifierParser handles parsing of quantifier expressions in YARA rules
 type QuantifierParser struct {
 	lexer      *internal.Lexer
 	current    token.Token
@@ -20,6 +21,16 @@ type QuantifierParser struct {
 	nextToken  func()
 	addError   func(error)
 	exprParser *ExpressionParser
+}
+
+// forLoopFields groups the components of a for-loop quantifier.
+type forLoopFields struct {
+	pos           token.Position
+	quantifierStr string
+	variables     []string
+	target        ast.Expression
+	constraint    ast.Expression
+	isRange       bool
 }
 
 // NewQuantifierParser creates a new quantifier parser instance
@@ -124,7 +135,7 @@ func (p *QuantifierParser) parseForQuantifier(pos token.Position) (ast.Expressio
 	}
 	if constraint != nil {
 		if p.CurrentTokenIs(token.COLON) {
-			return p.parseForLoopWithConstraint(pos, quantifierStr, nil, target, constraint, isRange)
+			return p.parseForLoopWithConstraint(forLoopFields{pos, quantifierStr, nil, target, constraint, isRange})
 		}
 		return p.parseOfExpressionWithConstraint(pos, quantifierExpr, target, constraint, isRange), nil
 	}
@@ -301,34 +312,29 @@ func (p *QuantifierParser) parseStandardQuantifier(pos token.Position) (ast.Expr
 }
 
 // parseForLoopWithConstraint creates a ForLoop with the given constraint.
-func (p *QuantifierParser) parseForLoopWithConstraint(
-	pos token.Position,
-	quantifierStr string,
-	variables []string,
-	target ast.Expression,
-	constraint ast.Expression,
-	isRange bool,
-) (*ast.ForLoop, error) {
+func (p *QuantifierParser) parseForLoopWithConstraint(fields forLoopFields) (*ast.ForLoop, error) {
 	p.nextToken() // consume ':'
 	expr, err := p.exprParser.ParseExpression()
 	if err != nil {
 		return nil, err
 	}
 	var forLoop *ast.ForLoop
-	if len(variables) > 0 {
-		forLoop = p.builder.ForLoopMultiVar(pos, quantifierStr, variables, target, expr)
+	if len(fields.variables) > 0 {
+		forLoop = p.builder.ForLoopMultiVar(fields.pos, fields.quantifierStr, fields.variables, fields.target, expr)
 	} else {
-		forLoop = p.builder.ForLoop(pos, quantifierStr, "", target, expr)
+		forLoop = p.builder.ForLoop(fields.pos, fields.quantifierStr, "", fields.target, expr)
 	}
-	if isRange {
-		forLoop.InRange = constraint
+	if fields.isRange {
+		forLoop.InRange = fields.constraint
 	} else {
-		forLoop.AtOffset = constraint
+		forLoop.AtOffset = fields.constraint
 	}
 	return forLoop, nil
 }
 
 // parseOfExpressionWithConstraint creates an OfExpression with the given constraint.
+//
+//nolint:revive // argument-limit: parser method
 func (p *QuantifierParser) parseOfExpressionWithConstraint(
 	pos token.Position,
 	quantifierExpr, target ast.Expression,

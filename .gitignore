@@ -38,3 +38,6 @@ yara
 testdata/performance/large_*.exe
 testdata/performance/large_*.txt
 testdata/performance/large_*.bin
+
+# LLM/tooling cache
+tmp/.cache/

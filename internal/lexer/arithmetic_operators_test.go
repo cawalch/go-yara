@@ -271,6 +271,8 @@ func TestArithmeticOperators_InYARARule(t *testing.T) {
 }
 
 // assertArithmeticOperators validates that the input contains the expected arithmetic operators
+//
+//nolint:revive // argument-limit: test helper
 func assertArithmeticOperators(t *testing.T, helper *lexer.TestHelper, input string, expectedOps []string) {
 	t.Helper()
 

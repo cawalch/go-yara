@@ -46,6 +46,8 @@ type errorRecoveryTestCase struct {
 }
 
 // assertTokenSequence asserts that the collected tokens match the expected sequence
+//
+//nolint:revive // argument-limit: test helper
 func assertTokenSequence(t *testing.T, input string, expected []token.Token) {
 	l := lexer.New(input)
 	got := collectTokens(l)

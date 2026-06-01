@@ -612,6 +612,8 @@ func containsSubstring(s, substr string) bool {
 }
 
 // validateExpectedError validates that expected parsing errors occur
+//
+//nolint:revive // argument-limit: test helper
 func validateExpectedError(t *testing.T, tt struct {
 	name        string
 	rule        string

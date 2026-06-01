@@ -519,6 +519,8 @@ func NewInstruction(opcode Opcode, line, pos int) *Instruction {
 }
 
 // NewInstructionWithOperand creates a new instruction with opcode and operand
+//
+//nolint:revive // argument-limit: factory method
 func NewInstructionWithOperand(opcode Opcode, operand Operand, line, pos int) *Instruction {
 	return &Instruction{
 		Opcode:   opcode,

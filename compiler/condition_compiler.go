@@ -113,6 +113,7 @@ func (cc *ConditionCompiler) defineLabel(label string) {
 	cc.labels[label] = cc.emitter.GetLength()
 }
 
+//nolint:revive // argument-limit: internal helper
 func (cc *ConditionCompiler) emitJumpWithLabel(opcode Opcode, label string, line, column int) {
 	pos := cc.emitter.GetLength()
 	cc.pendingJumps = append(cc.pendingJumps, PendingJump{
@@ -178,6 +179,7 @@ func (cc *ConditionCompiler) emitStringOffset(offset, line, column int) {
 	}
 }
 
+//nolint:revive // argument-limit: internal helper
 func (cc *ConditionCompiler) emitStringIdentifier(offset int, identifier string, line, column int) {
 	_ = offset
 	if len(identifier) > 0 && identifier[0] != '$' {
@@ -605,6 +607,7 @@ func (cc *ConditionCompiler) compileOperands(binOp *ast.BinaryOp) error {
 	return cc.compileExpressions(binOp.Right, binOp.Left)
 }
 
+//nolint:revive // argument-limit: internal helper
 func (cc *ConditionCompiler) handleBitShiftFloatConversion(binOp *ast.BinaryOp, leftIsFloat, rightIsFloat, isComparison bool) {
 	if isComparison {
 		if leftIsFloat {
@@ -630,6 +633,7 @@ func (cc *ConditionCompiler) handleMixedTypeLiteralComparison(binOp *ast.BinaryO
 	return false
 }
 
+//nolint:revive // argument-limit: internal helper
 func (cc *ConditionCompiler) convertForMixedType(binOp *ast.BinaryOp, leftIsFloat, rightIsFloat, isComparison bool) {
 	if isComparison {
 		cc.convertForMixedTypeComparison(binOp, leftIsFloat, rightIsFloat)
@@ -660,6 +664,7 @@ func (cc *ConditionCompiler) emitIntToDoubleWithSwap(binOp *ast.BinaryOp) {
 	cc.emitter.EmitOpcode(OpSwapundef, binOp.Pos.Line, binOp.Pos.Column)
 }
 
+//nolint:revive // argument-limit: internal helper
 func (cc *ConditionCompiler) handleFloatOperations(binOp *ast.BinaryOp, leftIsFloat, rightIsFloat, isComparison bool) error {
 	isFloatOp := leftIsFloat || rightIsFloat
 	if !isFloatOp {
@@ -1511,6 +1516,7 @@ func isPercentOpcode(op Opcode) bool {
 	return op == OpOfPercent || op == OpOfPercentIn || op == OpOfPercentAt
 }
 
+//nolint:revive // argument-limit: internal helper
 func (cc *ConditionCompiler) compileInRangeConstraint(
 	expr ast.Expression,
 	pos token.Position,
@@ -1533,6 +1539,7 @@ func (cc *ConditionCompiler) compileInRangeConstraint(
 	return OpOfFoundIn
 }
 
+//nolint:revive // argument-limit: internal helper
 func (cc *ConditionCompiler) compileAtOffsetConstraint(
 	expr ast.Expression,
 	pos token.Position,

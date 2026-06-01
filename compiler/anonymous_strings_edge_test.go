@@ -5,6 +5,8 @@ import (
 )
 
 // assertAnonymousStringResult is a test helper that logs the compilation outcome.
+//
+//nolint:revive // argument-limit: test helper
 func assertAnonymousStringResult(t *testing.T, program *CompiledProgram, err error, expectError bool, description string) {
 	t.Helper()
 	if expectError {

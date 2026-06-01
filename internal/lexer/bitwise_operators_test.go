@@ -297,6 +297,8 @@ func TestBitwiseOperators_InYARARule(t *testing.T) {
 }
 
 // assertBitwiseOperators validates that the input contains the expected bitwise operators
+//
+//nolint:revive // argument-limit: test helper
 func assertBitwiseOperators(t *testing.T, helper *lexer.TestHelper, input string, expectedOps []string) {
 	t.Helper()
 
