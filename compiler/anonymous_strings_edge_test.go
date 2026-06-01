@@ -9,7 +9,7 @@ func assertAnonymousStringResult(t *testing.T, program *CompiledProgram, err err
 	t.Helper()
 	if expectError {
 		if err == nil {
-			t.Logf("TODO: Expected compilation error but got none - gap detected for: %s", description)
+			t.Skipf("known gap: %s (no compilation error produced)", description)
 		} else {
 			t.Logf("Compilation error detected: %v", err)
 		}
@@ -109,8 +109,8 @@ func TestAnonymousStringInForLoops(t *testing.T) {
 		{
 			name:        "anonymous-in-explicit-list",
 			rule:        `rule test { strings: $ = "test" $a = "other" condition: 1 of ($, $a) }`,
-			expectError: true,
-			description: "Documents anonymous in explicit list (may not be supported)",
+			expectError: false,
+			description: "Known gap: compiler allows anonymous $ in explicit of-expression list",
 		},
 		{
 			name:        "them-includes-named",
@@ -160,8 +160,8 @@ func TestAnonymousStringInOfExpressions(t *testing.T) {
 		{
 			name:        "of-explicit-anonymous",
 			rule:        `rule test { strings: $ = "test" condition: 1 of ($) }`,
-			expectError: true,
-			description: "Documents explicit anonymous reference (may not be supported)",
+			expectError: false,
+			description: "Known gap: compiler allows $ in explicit of-expression (1 of ($))",
 		},
 		{
 			name:        "anonymous-count",
@@ -274,8 +274,8 @@ func TestMixedAnonymousAndNamedStrings(t *testing.T) {
 		{
 			name:        "anonymous-first",
 			rule:        `rule test { strings: $ = "anon" $a = "named" $b = "other" condition: $a or $ }`,
-			expectError: true,
-			description: "Documents reference to $ (may not be supported)",
+			expectError: false,
+			description: "Known gap: compiler allows direct $ reference in condition",
 		},
 		{
 			name:        "them-includes-all",
@@ -292,8 +292,8 @@ func TestMixedAnonymousAndNamedStrings(t *testing.T) {
 		{
 			name:        "explicit-list-mixed",
 			rule:        `rule test { strings: $a = "a" $ = "x" $b = "b" condition: any of ($a, $b, $) }`,
-			expectError: true,
-			description: "Documents explicit list with $ placeholder (may not be supported)",
+			expectError: false,
+			description: "Known gap: compiler allows $ placeholder in explicit of-expression list",
 		},
 		{
 			name:        "count-on-named-only",

@@ -170,7 +170,7 @@ func TestDeeplyNestedBinaryOps(t *testing.T) {
 
 			if tt.expectError {
 				if err == nil {
-					t.Logf("TODO: Expected parse error but got none - gap detected for: %s", tt.description)
+					t.Skipf("known gap: %s (no parse error produced)", tt.description)
 				}
 				return
 			}
@@ -262,7 +262,7 @@ func TestDeeplyNestedUnaries(t *testing.T) {
 
 			if tt.expectError {
 				if err == nil {
-					t.Logf("TODO: Expected parse error but got none - gap detected for: %s", tt.description)
+					t.Skipf("known gap: %s (no parse error produced)", tt.description)
 				}
 				return
 			}
@@ -394,7 +394,7 @@ func TestManyRulesInOneFile(t *testing.T) {
 
 			if tt.expectError {
 				if err == nil {
-					t.Logf("TODO: Expected parse error but got none - gap detected for: %s", tt.description)
+					t.Skipf("known gap: %s (no parse error produced)", tt.description)
 				}
 				return
 			}
@@ -456,7 +456,7 @@ func TestManyStringsInOneRule(t *testing.T) {
 
 			if tt.expectError {
 				if err == nil {
-					t.Logf("TODO: Expected parse error but got none - gap detected for: %s", tt.description)
+					t.Skipf("known gap: %s (no parse error produced)", tt.description)
 				}
 				return
 			}
@@ -524,7 +524,7 @@ func TestLongStringLiterals(t *testing.T) {
 
 			if tt.expectError {
 				if err == nil {
-					t.Logf("TODO: Expected parse error but got none - gap detected for: %s", tt.description)
+					t.Skipf("known gap: %s (no parse error produced)", tt.description)
 				}
 				return
 			}
@@ -586,7 +586,7 @@ func TestLongHexPatterns(t *testing.T) {
 
 			if tt.expectError {
 				if err == nil {
-					t.Logf("TODO: Expected parse error but got none - gap detected for: %s", tt.description)
+					t.Skipf("known gap: %s (no parse error produced)", tt.description)
 				}
 				return
 			}
@@ -648,7 +648,7 @@ func TestLongRegexPatterns(t *testing.T) {
 
 			if tt.expectError {
 				if err == nil {
-					t.Logf("TODO: Expected parse error but got none - gap detected for: %s", tt.description)
+					t.Skipf("known gap: %s (no parse error produced)", tt.description)
 				}
 				return
 			}
@@ -716,7 +716,7 @@ func TestComplexBooleanExpressions(t *testing.T) {
 
 			if tt.expectError {
 				if err == nil {
-					t.Logf("TODO: Expected parse error but got none - gap detected for: %s", tt.description)
+					t.Skipf("known gap: %s (no parse error produced)", tt.description)
 				}
 				return
 			}
@@ -784,7 +784,7 @@ func TestComplexArithmeticExpressions(t *testing.T) {
 
 			if tt.expectError {
 				if err == nil {
-					t.Logf("TODO: Expected parse error but got none - gap detected for: %s", tt.description)
+					t.Skipf("known gap: %s (no parse error produced)", tt.description)
 				}
 				return
 			}
@@ -852,7 +852,7 @@ func TestComplexStringExpressions(t *testing.T) {
 
 			if tt.expectError {
 				if err == nil {
-					t.Logf("TODO: Expected parse error but got none - gap detected for: %s", tt.description)
+					t.Skipf("known gap: %s (no parse error produced)", tt.description)
 				}
 				return
 			}

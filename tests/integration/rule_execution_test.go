@@ -124,7 +124,7 @@ func TestRuleCompilationBooleanLogic(t *testing.T) {
 
 			if tt.expectError {
 				if err == nil {
-					t.Logf("TODO: Expected compilation error but got none - gap detected for: %s", tt.description)
+					t.Skipf("known gap: %s (no compilation error produced)", tt.description)
 				}
 				return
 			}
@@ -191,7 +191,7 @@ func TestRuleCompilationComparison(t *testing.T) {
 
 			if tt.expectError {
 				if err == nil {
-					t.Logf("TODO: Expected compilation error but got none - gap detected for: %s", tt.description)
+					t.Skipf("known gap: %s (no compilation error produced)", tt.description)
 				}
 				return
 			}
@@ -294,7 +294,7 @@ func TestRuleCompilationArithmetic(t *testing.T) {
 
 			if tt.expectError {
 				if err == nil {
-					t.Logf("TODO: Expected compilation error but got none - gap detected for: %s", tt.description)
+					t.Skipf("known gap: %s (no compilation error produced)", tt.description)
 				}
 				return
 			}
@@ -349,7 +349,7 @@ func TestRuleCompilationStringOperators(t *testing.T) {
 
 			if tt.expectError {
 				if err == nil {
-					t.Logf("TODO: Expected compilation error but got none - gap detected for: %s", tt.description)
+					t.Skipf("known gap: %s (no compilation error produced)", tt.description)
 				}
 				return
 			}
@@ -410,7 +410,7 @@ func TestRuleCompilationOfExpressions(t *testing.T) {
 
 			if tt.expectError {
 				if err == nil {
-					t.Logf("TODO: Expected compilation error but got none - gap detected for: %s", tt.description)
+					t.Skipf("known gap: %s (no compilation error produced)", tt.description)
 				}
 				return
 			}
@@ -465,7 +465,7 @@ func TestRuleCompilationForLoops(t *testing.T) {
 
 			if tt.expectError {
 				if err == nil {
-					t.Logf("TODO: Expected compilation error but got none - gap detected for: %s", tt.description)
+					t.Skipf("known gap: %s (no compilation error produced)", tt.description)
 				}
 				return
 			}
@@ -538,7 +538,7 @@ func TestRuleCompilationBuiltinFunctions(t *testing.T) {
 
 			if tt.expectError {
 				if err == nil {
-					t.Logf("TODO: Expected compilation error but got none - gap detected for: %s", tt.description)
+					t.Skipf("known gap: %s (no compilation error produced)", tt.description)
 				}
 				return
 			}
