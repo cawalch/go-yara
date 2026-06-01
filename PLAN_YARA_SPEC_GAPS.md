@@ -124,7 +124,7 @@ This document tracks gaps between go-yara and the official YARA specification (Y
 | `for any of ($a*) at (0..100) : ($)` | ✅ | Offset-constrained string set iteration |
 | `for any s in ("text1", "text2") : ($a matches s)` | ✅ | `OpIterStartTextStringSet` implemented |
 | `for N i in (0..n) : (...)` | ❌ | Not implemented — parser rejects numeric quantifier in `for` loops |
-| `for any s in ($*) : ($s)` | ❌ | Not implemented — parser rejects `$*` in `for` iteration |
+| `for any s in ($*) : ($s)` | ✅ | Implemented — `compileForLoop()` handles `*ast.Identifier` ranges; supports `$*`, `them`, `$a*` |
 | `for any s in ("a", "b") : (s of them)` | ✅ | N/A — invalid YARA syntax (confirmed by reference YARA) |
 
 ---
