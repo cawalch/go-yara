@@ -158,6 +158,26 @@ func (i *Interpreter) executeFoundInOperation() error {
 	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(false)})
 }
 
+// executeCountInRange executes OpCountIn.
+// Stack: count, min, max → pops 3, pushes (count >= min && count <= max)
+func (i *Interpreter) executeCountInRange() error {
+	if err := i.validateStackUnderflowN(OpCountIn, 3); err != nil {
+		return err
+	}
+
+	maxVal := i.stack[len(i.stack)-1]
+	minVal := i.stack[len(i.stack)-2]
+	count := i.stack[len(i.stack)-3]
+	i.stack = i.stack[:len(i.stack)-3]
+
+	if count.Type != ValueTypeInt || minVal.Type != ValueTypeInt || maxVal.Type != ValueTypeInt {
+		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpCountIn, Message: "count-in requires integer operands"}
+	}
+
+	result := count.IntVal >= minVal.IntVal && count.IntVal <= maxVal.IntVal
+	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(result)})
+}
+
 // executeOffsetOperation executes OpOffset.
 func (i *Interpreter) executeOffsetOperation() error {
 	if err := i.validateStackUnderflowN(OpOffset, 2); err != nil {

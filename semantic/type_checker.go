@@ -264,11 +264,12 @@ func (tc *TypeChecker) checkAtOperator(leftType, rightType *TypeInfo, pos token.
 
 // checkInOperator handles IN operator type checking
 func (tc *TypeChecker) checkInOperator(leftType, rightType *TypeInfo, pos token.Position) *TypeInfo {
-	// IN operator: $string in (start..end)
-	// Left should be string identifier, right should be range
-	if !tc.isStringIdentifier(leftType) {
+	// IN operator has two forms:
+	// 1. $string in (start..end) — left is string identifier, right is integer range
+	// 2. #string in (min..max) — left is integer (count), right is integer range
+	if !tc.isStringIdentifier(leftType) && leftType.DataType != TypeInteger {
 		tc.addError(&Error{
-			Message:  "IN operator requires string identifier as left operand",
+			Message:  "IN operator requires string identifier or count as left operand",
 			Position: pos,
 		})
 	}

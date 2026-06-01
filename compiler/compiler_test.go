@@ -3936,3 +3936,63 @@ func TestCompilerGetCompilationReport(t *testing.T) {
 		t.Error("GetCompilationReport() returned empty string")
 	}
 }
+
+// TestCountInRangeEndToEnd tests the full pipeline for "#a in (min..max)"
+func TestCountInRangeEndToEnd(t *testing.T) {
+	ruleSource := `
+rule test_count_in {
+    strings:
+        $a = "hello"
+    condition:
+        #a in (1..5)
+}`
+
+	compiler := NewCompiler()
+	program, err := compiler.CompileSource(ruleSource)
+	if err != nil {
+		t.Fatalf("CompileSource() error = %v", err)
+	}
+
+	if len(program.Rules) != 1 {
+		t.Fatalf("expected 1 compiled rule, got %d", len(program.Rules))
+	}
+
+	// Execute against data containing 2 occurrences of "hello"
+	data := []byte("hello world hello")
+	scanner := NewScanner(program)
+	results, err := scanner.Scan(data)
+	if err != nil {
+		t.Fatalf("Scan() error = %v", err)
+	}
+
+	if len(results.MatchedRules) != 1 {
+		t.Errorf("expected 1 match, got %d", len(results.MatchedRules))
+	}
+
+	// Test with data that has too many matches (outside range)
+	ruleSource2 := `
+rule test_count_in_fail {
+    strings:
+        $a = "a"
+    condition:
+        #a in (0..2)
+}`
+
+	compiler2 := NewCompiler()
+	program2, err := compiler2.CompileSource(ruleSource2)
+	if err != nil {
+		t.Fatalf("CompileSource2() error = %v", err)
+	}
+
+	// "a b a b a b" has 3 'a's, which is outside (0..2)
+	data2 := []byte("a b a b a b")
+	scanner2 := NewScanner(program2)
+	results2, err := scanner2.Scan(data2)
+	if err != nil {
+		t.Fatalf("Scan2() error = %v", err)
+	}
+
+	if len(results2.MatchedRules) != 0 {
+		t.Errorf("expected 0 matches (count 3 not in range 0..2), got %d", len(results2.MatchedRules))
+	}
+}
