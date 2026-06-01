@@ -403,8 +403,8 @@ func (o *OfExpression) Accept(v Visitor) any {
 
 // PercentExpression represents a percentage quantifier (e.g., "50 %")
 type PercentExpression struct {
-	Pos     token.Position
-	Value   Expression // The percentage value (1-100)
+	Pos   token.Position
+	Value Expression // The percentage value (1-100)
 }
 
 func (p *PercentExpression) node() {}

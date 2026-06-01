@@ -1141,11 +1141,11 @@ func TestInterpreterCountInRange(t *testing.T) {
 // TestInterpreterOfPercent tests OpOfPercent operation
 func TestInterpreterOfPercent(t *testing.T) {
 	tests := []struct {
-		name       string
-		matched    int // number of matched strings out of total
-		total      int // total strings in set
-		percent    int64
-		expected   int64
+		name     string
+		matched  int // number of matched strings out of total
+		total    int // total strings in set
+		percent  int64
+		expected int64
 	}{
 		{"50_percent_2_of_3", 2, 3, 50, 1},   // 66.7% >= 50% => true
 		{"75_percent_2_of_3", 2, 3, 75, 0},   // 66.7% < 75% => false
