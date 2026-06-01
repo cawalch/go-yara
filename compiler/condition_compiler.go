@@ -1245,6 +1245,11 @@ func (cc *ConditionCompiler) compileForLoop(forLoop *ast.ForLoop) error {
 			Elements: []ast.Expression{lit},
 		})
 	}
+	// Handle string set iteration: for any s in ($*) or for any s in (them)
+	if ident, ok := forLoop.Range.(*ast.Identifier); ok {
+		_ = ident // handled by compileForLoopOverStrings
+		return cc.compileForLoopOverStrings(forLoop)
+	}
 
 	rangeExpr, ok := forLoop.Range.(*ast.BinaryOp)
 	if !ok || rangeExpr.Op != token.DOT {
@@ -1339,7 +1344,11 @@ func (cc *ConditionCompiler) compileForLoopOverStrings(forLoop *ast.ForLoop) err
 		}
 	}
 
-	slots, err := cc.allocateVariables([]string{"$"}) // implicit variable
+	varName := "$"
+	if len(forLoop.Variables) > 0 {
+		varName = forLoop.Variables[0]
+	}
+	slots, err := cc.allocateVariables([]string{varName})
 	if err != nil {
 		return err
 	}

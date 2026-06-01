@@ -600,6 +600,9 @@ func (v *Validator) validateForLoopExpression(forLoop *ast.ForLoop) (*TypeInfo, 
 	case *ast.BinaryOp:
 		// Integer range (min..max)
 		loopVarType = "integer"
+	case *ast.Identifier:
+		// String set iteration: for any s in ($*), for any s in (them)
+		loopVarType = "string"
 	}
 
 	// Create a scope for the loop variables so it is visible in the condition.
