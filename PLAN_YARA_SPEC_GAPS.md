@@ -143,7 +143,7 @@ This document tracks gaps between go-yara and the official YARA specification (Y
 |---------|--------|-------|
 | `entrypoint` | ✅ | `OpEntrypoint` |
 | `filesize` | ✅ | `OpFilesize` |
-| `itersmax` | ❌ | Not implemented — no iteration depth limit enforcement |
+| `itersmax` | ⚠️ | YARA compile-time constant (`ITERSMAX`), not a rule directive. go-yara has no equivalent iteration depth limit; adding one would require a `ScannerOption` |
 
 ---
 
@@ -282,7 +282,7 @@ This document tracks gaps between go-yara and the official YARA specification (Y
 | Private rule exclusion from references | ✅ | Private rules excluded from `MatchedRules` output; still referenceable internally |
 | Callback-based matching | ✅ | Scanner callbacks |
 | Scan timeout / cancellation | ✅ | Context-based cancellation |
-| `itersmax` enforcement | ❌ | `executeIterStart*` ops exist but have no iteration depth bound; no `itersmax` opcode or configuration |
+| `itersmax` enforcement | ✅ | `WithItersmax` scanner option; `executeIterNext` enforces limit per-scan |
 
 ---
 

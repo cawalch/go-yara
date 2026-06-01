@@ -68,6 +68,8 @@ type Interpreter struct {
 	regexCache          map[string]compiledRegex
 	PreserveRuleResults bool // If true, Reset() will not clear ruleResults
 	debugMode           bool // Debug mode flag for instruction tracing
+	itersmax            int  // Max total iterations across all for-loops (0 = unlimited)
+	iterations          int  // Current total iteration count
 }
 
 // Iterator defines the state for a runtime for-loop
@@ -136,6 +138,17 @@ var interpreterPool = sync.Pool{
 }
 
 // NewInterpreter creates a new bytecode interpreter
+// SetItersmax sets the maximum number of for-loop iterations.
+// A value of 0 means unlimited.
+func (i *Interpreter) SetItersmax(limit int) {
+	i.itersmax = limit
+}
+
+// ResetIterationCount resets the iteration counter.
+func (i *Interpreter) ResetIterationCount() {
+	i.iterations = 0
+}
+
 func NewInterpreter(bytecode []byte) *Interpreter {
 	i := interpreterPool.Get().(*Interpreter)
 	i.bytecode = bytecode

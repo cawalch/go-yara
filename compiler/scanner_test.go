@@ -473,3 +473,55 @@ func TestScannerTagsFilterGlobalAlwaysEvaluated(t *testing.T) {
 		t.Errorf("expected 0 matched rules (global failed), got %d", len(result.MatchedRules))
 	}
 }
+
+func TestScannerItersmax(t *testing.T) {
+	src := `
+rule test {
+    condition:
+        for any i in (0..1000) : (
+            i > 0
+        )
+}`
+	c := NewCompiler()
+	program, err := c.CompileSource(src)
+	if err != nil {
+		t.Fatalf("CompileSource() error = %v", err)
+	}
+
+	// Without limit — should match
+	scanner := NewScanner(program)
+	result, err := scanner.Scan([]byte("test"))
+	if err != nil {
+		t.Fatalf("Scan() without limit error = %v", err)
+	}
+	if len(result.MatchedRules) != 1 {
+		t.Errorf("expected 1 match, got %d", len(result.MatchedRules))
+	}
+
+	// With limit of 100 — should exceed (1001 iterations)
+	scanner = NewScanner(program, WithItersmax(100))
+	_, err = scanner.Scan([]byte("test"))
+	if err == nil {
+		t.Fatal("expected iteration limit error, got nil")
+	}
+	if err.Error() != "iteration limit exceeded (itersmax=100)" {
+		t.Errorf("unexpected error message: %v", err)
+	}
+
+	// With limit of 1001 — should succeed (exactly at limit)
+	scanner = NewScanner(program, WithItersmax(1001))
+	result, err = scanner.Scan([]byte("test"))
+	if err != nil {
+		t.Fatalf("Scan() with limit 1001 error = %v", err)
+	}
+	if len(result.MatchedRules) != 1 {
+		t.Errorf("expected 1 match, got %d", len(result.MatchedRules))
+	}
+
+	// With limit of 1000 — should exceed (1001 > 1000)
+	scanner = NewScanner(program, WithItersmax(1000))
+	_, err = scanner.Scan([]byte("test"))
+	if err == nil {
+		t.Fatal("expected iteration limit error, got nil")
+	}
+}
