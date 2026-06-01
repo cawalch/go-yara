@@ -548,7 +548,21 @@ func (i *Interpreter) executeMatchesOperation() error {
 		return &InterpreterError{Type: ErrorRuntime, Opcode: OpMatches, Message: err.Error()}
 	}
 
-	matched := regex.Exec(compiled, []byte(i.getString(value)), flags|regex.FlagsScan)
+	valueStr := i.getString(value)
+	if strings.HasPrefix(valueStr, "$") {
+		// String identifier: check if any match content matches the regex
+		if matches, ok := i.matchContext.Matches[valueStr]; ok {
+			for _, m := range matches {
+				end := min(int(m.Offset)+m.Length, len(i.matchContext.Data))
+			if matched := regex.Exec(compiled, i.matchContext.Data[int(m.Offset):end], flags|regex.FlagsScan); matched {
+				return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(true)})
+				}
+			}
+		}
+		return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(false)})
+	}
+
+	matched := regex.Exec(compiled, []byte(valueStr), flags|regex.FlagsScan)
 	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(matched)})
 }
 

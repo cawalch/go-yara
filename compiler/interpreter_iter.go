@@ -122,6 +122,72 @@ func (i *Interpreter) executeIterStartStringSet() error {
 	return nil
 }
 
+// executeIterStartTextStringSet starts iterating over a set of literal text strings.
+// Used for: for any s in ("text1", "text2") : (condition)
+// Stack: [textStringSetRef, constraintMarker]
+func (i *Interpreter) executeIterStartTextStringSet() error {
+	if err := i.validateStackUnderflowN(OpIterStartTextStringSet, 2); err != nil {
+		return err
+	}
+
+	// Pop constraint marker
+	markerVal := i.stack[len(i.stack)-1]
+	i.stack = i.stack[:len(i.stack)-1]
+
+	// Pop text string set index (index into textStringSets)
+	textSetVal := i.stack[len(i.stack)-1]
+	i.stack = i.stack[:len(i.stack)-1]
+
+	var inRange, atOffset bool
+	var offsetMin, offsetMax, atOffsetValue int64
+
+	if markerVal.Type == ValueTypeInt {
+		var err error
+		inRange, atOffset, offsetMin, offsetMax, atOffsetValue, err = i.parseConstraintMarker(markerVal.IntVal)
+		if err != nil {
+			return err
+		}
+	}
+
+	var textStrings []string
+	switch textSetVal.Type {
+	case ValueTypeInt:
+		if textSetVal.IntVal < 0 || int(textSetVal.IntVal) >= len(i.textStringSets) {
+			return &InterpreterError{Type: ErrorRuntime, Opcode: OpIterStartTextStringSet, Message: "invalid text string set reference"}
+		}
+		textStrings = i.textStringSets[textSetVal.IntVal]
+	case ValueTypeString:
+		textStrings = []string{i.getString(textSetVal)}
+	default:
+		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpIterStartTextStringSet, Message: "invalid text string set type"}
+	}
+
+	// Text string sets don't have offset constraints (they're not YARA strings),
+	// so inRange/atOffset constraints are ignored.
+	_ = inRange
+	_ = atOffset
+	_ = offsetMin
+	_ = offsetMax
+	_ = atOffsetValue
+
+	// Read the loop variable slot from the operand
+	slot1, err := i.readAndValidateMemorySlot(OpIterStartTextStringSet)
+	if err != nil {
+		return err
+	}
+
+	iter := Iterator{
+		Type:        OpIterStartTextStringSet,
+		Variables:   []int{slot1},
+		TextStrings: textStrings,
+		Index:       0,
+		Total:       len(textStrings),
+	}
+
+	i.iterators = append(i.iterators, iter)
+	return nil
+}
+
 // parseConstraintMarker interprets the constraint marker value and pops
 // the necessary operands from the stack.
 func (i *Interpreter) parseConstraintMarker(
@@ -188,6 +254,12 @@ func (i *Interpreter) executeIterNext() error {
 		case OpIterStartStringSet:
 			id := iter.StringIDs[iter.Index]
 			i.memory[iter.Variables[0]] = Value{Type: ValueTypeString, StringRef: i.resolveStringRef(id)}
+		case OpIterStartTextStringSet:
+			text := iter.TextStrings[iter.Index]
+			if err := i.pushString(text); err != nil {
+				return err
+			}
+			i.memory[iter.Variables[0]] = Value{Type: ValueTypeString, StringRef: int64(len(i.stringArena) - 1)}
 		}
 
 		iter.Index++

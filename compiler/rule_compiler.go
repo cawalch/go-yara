@@ -98,6 +98,7 @@ func (rc *RuleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 		Strings:          rc.copyAllPatterns(),
 		Automaton:        rc.automaton,
 		StringSets:       rc.conditionCompiler.GetStringSets(),
+		TextStringSets:   rc.conditionCompiler.GetTextStringSets(),
 		AnonymousStrings: anonymousStrings,
 		StringLiterals:   rc.emitter.GetStringLiterals(),
 		StringKinds:      rc.copyStringKinds(),
@@ -615,6 +616,7 @@ type CompiledRule struct {
 	Strings          map[string][]byte // String identifier to pattern data mapping
 	Automaton        *ACAutomaton      // Aho-Corasick automaton for pattern matching
 	StringSets       [][]string        // String sets for "of" expressions
+	TextStringSets   [][]string        // Text string sets for text-string-set iteration
 	AnonymousStrings []string          // Anonymous string identifiers for "$" expressions
 	StringLiterals   []string          // String literal pool for OpPushStr
 	StringKinds      map[string]StringKind
