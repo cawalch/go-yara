@@ -427,6 +427,34 @@ func (cc *ConditionCompiler) compileStringOffsetOperator(binOp *ast.BinaryOp) er
 	return nil
 }
 
+// compileCountInRange compiles "#a in (min..max)" expressions.
+// Stack layout (bottom to top): count, min, max → OpCountIn → result
+func (cc *ConditionCompiler) compileCountInRange(binOp *ast.BinaryOp) error {
+	// Compile the count expression (#a)
+	if err := cc.compileExpression(binOp.Left); err != nil {
+		return fmt.Errorf("compiling count expression: %w", err)
+	}
+
+	// The right side should be a range expression (min..max)
+	rangeExpr, ok := binOp.Right.(*ast.BinaryOp)
+	if !ok || rangeExpr.Op != token.DOT {
+		return fmt.Errorf("IN operator with count requires a range expression (min..max)")
+	}
+
+	// Compile min (left side of ..)
+	if err := cc.compileExpression(rangeExpr.Left); err != nil {
+		return fmt.Errorf("compiling range minimum: %w", err)
+	}
+
+	// Compile max (right side of ..)
+	if err := cc.compileExpression(rangeExpr.Right); err != nil {
+		return fmt.Errorf("compiling range maximum: %w", err)
+	}
+
+	cc.emitter.EmitOpcode(OpCountIn, binOp.Pos.Line, binOp.Pos.Column)
+	return nil
+}
+
 // compileCommaOperator compiles COMMA operators used in 'of' expressions
 // The COMMA creates a string list/set that can be iterated over by the 'of' operator
 func (cc *ConditionCompiler) compileCommaOperator(binOp *ast.BinaryOp) error {
@@ -672,7 +700,13 @@ func (cc *ConditionCompiler) selectOpcode(binOp *ast.BinaryOp, isFloatOp, isStri
 
 func (cc *ConditionCompiler) handleSpecialOperators(binOp *ast.BinaryOp) (bool, error) {
 	switch binOp.Op {
-	case token.AT, token.IN:
+	case token.AT:
+		return true, cc.compileStringOffsetOperator(binOp)
+	case token.IN:
+		// Handle "#a in (min..max)" — count range check
+		if _, ok := binOp.Left.(*ast.StringCount); ok {
+			return true, cc.compileCountInRange(binOp)
+		}
 		return true, cc.compileStringOffsetOperator(binOp)
 	case token.DOT:
 		return true, cc.compileExpressions(binOp.Left, binOp.Right)

@@ -1087,3 +1087,52 @@ func setupRegexInterpreter(t *testing.T) *Interpreter {
 
 	return interp
 }
+
+// TestInterpreterCountInRange tests OpCountIn operation
+func TestInterpreterCountInRange(t *testing.T) {
+	tests := []struct {
+		name     string
+		count    int64
+		min      int64
+		max      int64
+		expected int64
+	}{
+		{"count within range", 5, 3, 10, 1},
+		{"count at min boundary", 3, 3, 10, 1},
+		{"count at max boundary", 10, 3, 10, 1},
+		{"count below range", 2, 3, 10, 0},
+		{"count above range", 11, 3, 10, 0},
+		{"zero count in range", 0, 0, 5, 1},
+		{"zero count below range", 0, 1, 5, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			emitter := NewEmitter()
+			emitter.EmitPush(uint64(tt.count), 1, 1)
+			emitter.EmitPush(uint64(tt.min), 1, 1)
+			emitter.EmitPush(uint64(tt.max), 1, 1)
+			emitter.EmitOpcode(OpCountIn, 1, 1)
+			emitter.EmitOpcode(OpHalt, 1, 1)
+
+			bytecode, err := emitter.GetBytecode()
+				if err != nil {
+					t.Fatalf("GetBytecode() error = %v", err)
+				}
+			interp := NewInterpreter(bytecode)
+			err = interp.Execute()
+			if err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+
+			if len(interp.GetStack()) != 1 {
+				t.Fatalf("stack length = %d, want 1", len(interp.GetStack()))
+			}
+
+			got := interp.GetStack()[0].IntVal
+			if got != tt.expected {
+				t.Errorf("count=%d in (%d..%d) = %d, want %d", tt.count, tt.min, tt.max, got, tt.expected)
+			}
+		})
+	}
+}
