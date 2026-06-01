@@ -3996,3 +3996,86 @@ rule test_count_in_fail {
 		t.Errorf("expected 0 matches (count 3 not in range 0..2), got %d", len(results2.MatchedRules))
 	}
 }
+
+// TestOfPercentEndToEnd tests the full pipeline for "N % of them"
+func TestOfPercentEndToEnd(t *testing.T) {
+	// Test 1: 50% of them — 2 out of 3 match (66.7% >= 50%)
+	ruleSource := `rule test_percent {
+		strings:
+			$a = "hello"
+			$b = "world"
+			$c = "foo"
+		condition:
+			50 % of them
+	}`
+
+	data := []byte("hello world")
+
+	compiler := NewCompiler()
+	program, err := compiler.CompileSource(ruleSource)
+	if err != nil {
+		t.Fatalf("CompileSource() error = %v", err)
+	}
+
+	scanner := NewScanner(program)
+	results, err := scanner.Scan(data)
+	if err != nil {
+		t.Fatalf("Scan() error = %v", err)
+	}
+
+	if len(results.MatchedRules) != 1 {
+		t.Errorf("expected 1 match (50%% of them, 2/3 = 66.7%%), got %d", len(results.MatchedRules))
+	}
+
+	// Test 2: 75% of them — 2 out of 3 match (66.7% < 75%)
+	ruleSource2 := `rule test_percent_high {
+		strings:
+			$a = "hello"
+			$b = "world"
+			$c = "foo"
+		condition:
+			75 % of them
+	}`
+
+	compiler2 := NewCompiler()
+	program2, err := compiler2.CompileSource(ruleSource2)
+	if err != nil {
+		t.Fatalf("CompileSource2() error = %v", err)
+	}
+
+	scanner2 := NewScanner(program2)
+	results2, err := scanner2.Scan(data)
+	if err != nil {
+		t.Fatalf("Scan2() error = %v", err)
+	}
+
+	if len(results2.MatchedRules) != 0 {
+		t.Errorf("expected 0 matches (75%% of them, 2/3 = 66.7%%), got %d", len(results2.MatchedRules))
+	}
+
+	// Test 3: 100% of them — all 3 match
+	ruleSource3 := `rule test_percent_100 {
+		strings:
+			$a = "hello"
+			$b = "world"
+			$c = "foo"
+		condition:
+			100 % of them
+	}`
+
+	compiler3 := NewCompiler()
+	program3, err := compiler3.CompileSource(ruleSource3)
+	if err != nil {
+		t.Fatalf("CompileSource3() error = %v", err)
+	}
+
+	scanner3 := NewScanner(program3)
+	results3, err := scanner3.Scan([]byte("hello world foo"))
+	if err != nil {
+		t.Fatalf("Scan3() error = %v", err)
+	}
+
+	if len(results3.MatchedRules) != 1 {
+		t.Errorf("expected 1 match (100%% of them, 3/3 = 100%%), got %d", len(results3.MatchedRules))
+	}
+}

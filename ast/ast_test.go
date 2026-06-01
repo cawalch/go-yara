@@ -64,6 +64,7 @@ func (v *TestVisitor) VisitStringOffset(_ *StringOffset) any         { return ni
 func (v *TestVisitor) VisitStringCount(_ *StringCount) any           { return nil }
 func (v *TestVisitor) VisitForLoop(_ *ForLoop) any                   { return nil }
 func (v *TestVisitor) VisitOfExpression(_ *OfExpression) any         { return nil }
+func (v *TestVisitor) VisitPercentExpression(_ *PercentExpression) any { return nil }
 func (v *TestVisitor) VisitFunctionCall(_ *FunctionCall) any         { return nil }
 
 func (v *TestVisitor) VisitStringTuple(_ *StringTuple) any { return nil }

@@ -302,13 +302,17 @@ This document tracks gaps between go-yara and the official YARA specification (Y
 **Files**: Same as 1.2
 **Work**: Similar to range-constrained but checks `at` instead of `in`
 
-#### 1.4 `percent` quantifier — `50 percent of them`
-**Files**: `internal/lexer/`, `token/`, `parser/quantifier_parser.go`, `ast/nodes.go`, `compiler/condition_compiler.go`
-**Work**:
-- Lexer: Add `PERCENT` token
-- AST: Add `Percent` expression or extend `OfExpression`
-- Parser: Parse `N percent of ...`
-- Compiler: Emit percentage calculation
+#### 1.4 `percent` quantifier — `50 % of them`
+**Status**: ✅ Implemented
+**Files**: `ast/nodes.go`, `ast/visitor.go`, `ast/builder.go`, `parser/expression_parser.go`, `compiler/condition_compiler.go`, `compiler/bytecode.go`, `compiler/interpreter.go`, `compiler/interpreter_strings.go`, `semantic/validator.go`
+**Implementation**:
+- AST: Added `PercentExpression` with `Pos` and `Value` fields
+- Visitor: Added `VisitPercentExpression` to `ControlFlowVisitor` and `BaseVisitor`
+- Parser: Detected `N % OF` in Pratt parser binary expression loop (avoids conflict with modulo operator)
+- Compiler: Emits `OpOfPercent` with percentage and string set on stack
+- Interpreter: `executeOfPercentOperation` calculates `(matched * 100) / total >= percent`
+- Semantic: Validates percentage value is integer
+**Tests**: `TestInterpreterOfPercent` (unit), `TestOfPercentEndToEnd` (full pipeline)
 
 ### Priority 2: Text string set iteration
 

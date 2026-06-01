@@ -206,6 +206,14 @@ func (b *Builder) OfExpression(pos token.Position, countExpr, stringsExpr Expres
 	}
 }
 
+// PercentExpression creates a new PercentExpression node
+func (b *Builder) PercentExpression(pos token.Position, value Expression) *PercentExpression {
+	return &PercentExpression{
+		Pos:   pos,
+		Value: value,
+	}
+}
+
 // StringOffset creates a new StringOffset node for the YARA @ operator
 // This implements the correct YARA syntax for string offset operations
 func (b *Builder) StringOffset(pos token.Position, strExpr, indexExpr Expression) *StringOffset {

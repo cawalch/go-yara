@@ -196,7 +196,7 @@ func (v *Validator) isOperationExpression(expr ast.Expression) bool {
 // isSpecialExpression checks if expression is a special type (function call, for loop, etc.)
 func (v *Validator) isSpecialExpression(expr ast.Expression) bool {
 	switch expr.(type) {
-	case *ast.OfExpression, *ast.FunctionCall, *ast.ForLoop:
+	case *ast.OfExpression, *ast.FunctionCall, *ast.ForLoop, *ast.PercentExpression:
 		return true
 	case *ast.StringLength, *ast.StringOffset, *ast.StringCount:
 		return true
@@ -244,6 +244,8 @@ func (v *Validator) validateSpecialExpression(expr ast.Expression) (*TypeInfo, [
 		return v.validateStringOffsetExpression(e)
 	case *ast.StringCount:
 		return v.validateStringCountExpression(e)
+	case *ast.PercentExpression:
+		return v.validatePercentExpression(e)
 	default:
 		return v.validateUnknownExpression()
 	}
@@ -758,6 +760,23 @@ func (v *Validator) VisitForLoop(_ *ast.ForLoop) any {
 func (v *Validator) VisitOfExpression(_ *ast.OfExpression) any {
 	// OfExpression validation is handled in validateExpression
 	return nil
+}
+
+// VisitPercentExpression visits and validates a percent expression node
+func (v *Validator) VisitPercentExpression(_ *ast.PercentExpression) any {
+	// PercentExpression validation is handled in compileOfExpression
+	return nil
+}
+
+// validatePercentExpression validates a percent expression ("N %")
+func (v *Validator) validatePercentExpression(expr *ast.PercentExpression) (*TypeInfo, []error) {
+	// The inner value should be an integer (1-100)
+	valType, errs := v.validateExpression(expr.Value)
+	if valType.DataType != TypeInteger {
+		errs = append(errs, fmt.Errorf("percentage must be an integer, got %v", valType.DataType))
+	}
+	// PercentExpression itself is an integer (used as count in OfExpression)
+	return &TypeInfo{DataType: TypeInteger}, errs
 }
 
 // VisitStringLength visits and validates a string length node

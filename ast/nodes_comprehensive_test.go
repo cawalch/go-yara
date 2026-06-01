@@ -615,6 +615,10 @@ func (v *ComprehensiveTestVisitor) VisitOfExpression(_ *OfExpression) any {
 	return "visited_of_expression"
 }
 
+func (v *ComprehensiveTestVisitor) VisitPercentExpression(_ *PercentExpression) any {
+	v.visitedNodes = append(v.visitedNodes, "PercentExpression")
+	return "visited_percent_expression"
+}
 func (v *ComprehensiveTestVisitor) VisitFunctionCall(node *FunctionCall) any {
 	v.visitedNodes = append(v.visitedNodes, "FunctionCall")
 	for _, arg := range node.Args {

@@ -134,6 +134,32 @@ func (p *ExpressionParser) parseBinaryExpressionWithPrecedence(minPrecedence int
 			rightPrec++
 		}
 
+		// Special case: "N % of" — percent quantifier
+		// When left is an integer literal and op is MODULO and next token is OF,
+		// this is a percent quantifier, not a modulo operation.
+		if op == token.MODULO && p.peekTokenIs(token.OF) {
+			if intLit, ok := left.(*ast.Literal); ok &&
+				(intLit.Type == token.IntegerLit || intLit.Type == token.HexIntegerLit || intLit.Type == token.OctalIntegerLit) {
+				p.nextToken() // consume '%'
+				p.nextToken() // consume 'of'
+				// Parse the target (string set)
+				target, err := p.parseQuantifierTarget(intLit.Pos)
+				if err != nil {
+					return nil, err
+				}
+				percentExpr := &ast.PercentExpression{
+					Pos:   intLit.Pos,
+					Value: intLit,
+				}
+				left = &ast.OfExpression{
+					Pos:     intLit.Pos,
+					Count:   percentExpr,
+					Strings: target,
+				}
+				continue
+			}
+		}
+
 		p.nextToken() // consume operator
 
 		right, err := p.parseBinaryExpressionWithPrecedence(rightPrec)
@@ -233,6 +259,56 @@ func (p *ExpressionParser) isQuantifierExpression() bool {
 		return true
 	}
 	return false
+}
+
+// parseQuantifierTarget parses the target of a quantifier ("them", string identifiers, parenthesized list).
+func (p *ExpressionParser) parseQuantifierTarget(pos token.Position) (ast.Expression, error) {
+	switch {
+	case p.currentTokenIs(token.THEM):
+		ident := &ast.Identifier{Name: "them", Pos: pos}
+		p.nextToken()
+		return ident, nil
+	case p.currentTokenIs(token.StringIdentifier):
+		ident := &ast.Identifier{Name: p.current.Literal, Pos: pos}
+		p.nextToken()
+		return ident, nil
+	case p.currentTokenIs(token.LPAREN):
+		return p.parseParenthesizedTarget(pos)
+	default:
+		return nil, fmt.Errorf("expected 'them', string pattern, or '(' after 'of'")
+	}
+}
+
+// parseParenthesizedTarget parses a parenthesized target like ($a, $b) or ($a*)
+func (p *ExpressionParser) parseParenthesizedTarget(pos token.Position) (ast.Expression, error) {
+	p.nextToken() // consume '('
+	first, err := p.parsePrimary()
+	if err != nil {
+		return nil, err
+	}
+	// Check for comma-separated list
+	if p.currentTokenIs(token.COMMA) {
+		// Build a comma-separated BinaryOp chain
+		list := first
+		for p.currentTokenIs(token.COMMA) {
+			p.nextToken() // consume ','
+			next, err := p.parsePrimary()
+			if err != nil {
+				return nil, err
+			}
+			list = &ast.BinaryOp{Left: list, Op: token.COMMA, Right: next, Pos: pos}
+		}
+		if !p.currentTokenIs(token.RPAREN) {
+			return nil, fmt.Errorf("expected ')' after target list")
+		}
+		p.nextToken() // consume ')'
+		return list, nil
+	}
+	if !p.currentTokenIs(token.RPAREN) {
+		return nil, fmt.Errorf("expected ')' after target")
+	}
+	p.nextToken() // consume ')'
+	return first, nil
 }
 
 func (p *ExpressionParser) parseQuantifierPrimary() (ast.Expression, error) {
