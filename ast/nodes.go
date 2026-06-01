@@ -201,6 +201,8 @@ func (u *UnaryOp) Accept(v Visitor) any {
 type Identifier struct {
 	Pos  token.Position
 	Name string
+	// Quantifier is "*" or "**" for them*/them** in of/for/length expressions
+	Quantifier string
 }
 
 func (i *Identifier) node() {}

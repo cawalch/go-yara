@@ -85,8 +85,7 @@ This document tracks gaps between go-yara and the official YARA specification (Y
 | `none of them` | ✅ | Implemented |
 | `N of them` | ✅ | Numeric quantifiers |
 | `N percent of them` | ✅ | `PercentExpression` AST node; Pratt parser detects `N % OF`; `OpOfPercent` opcode; `executeOfPercentOperation` handler |
-| `of them*` | ❌ | Not implemented — parser rejects `them*` |
-| `of them**` | ❌ | Not implemented — parser rejects `them**` |
+| `of ($foo*)` | ✅ | Wildcard string sets via `$foo*` syntax; `expandStringSetIdentifier` resolves prefix matches |
 
 ---
 

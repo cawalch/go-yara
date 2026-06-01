@@ -4733,3 +4733,148 @@ rule test {
 		}
 	}
 }
+
+// TestForLoopStringSet tests for-loop iteration over string sets ($*, them, $a*)
+func TestForLoopStringSet(t *testing.T) {
+	// Test 1: for any s in ($*) : (s)
+	{
+		src := `
+rule test {
+    strings:
+        $a = "hello"
+        $b = "world"
+    condition:
+        for any s in ($*) : (
+            s
+        )
+}`
+		compiler := NewCompiler()
+		program, err := compiler.CompileSource(src)
+		if err != nil {
+			t.Fatalf("Test 1 CompileSource() error = %v", err)
+		}
+		scanner := NewScanner(program)
+		results, err := scanner.Scan([]byte("say hello world"))
+		if err != nil {
+			t.Fatalf("Test 1 Scan() error = %v", err)
+		}
+		if len(results.MatchedRules) != 1 {
+			t.Errorf("Test 1: expected 1 match, got %d", len(results.MatchedRules))
+		}
+	}
+
+	// Test 2: for any s in (them) : (s)
+	{
+		src := `
+rule test {
+    strings:
+        $a = "hello"
+        $b = "world"
+    condition:
+        for any s in (them) : (
+            s
+        )
+}`
+		compiler := NewCompiler()
+		program, err := compiler.CompileSource(src)
+		if err != nil {
+			t.Fatalf("Test 2 CompileSource() error = %v", err)
+		}
+		scanner := NewScanner(program)
+		results, err := scanner.Scan([]byte("say hello world"))
+		if err != nil {
+			t.Fatalf("Test 2 Scan() error = %v", err)
+		}
+		if len(results.MatchedRules) != 1 {
+			t.Errorf("Test 2: expected 1 match, got %d", len(results.MatchedRules))
+		}
+	}
+
+	// Test 3: for any s in ($a*) : (s) — wildcard prefix
+	{
+		src := `
+rule test {
+    strings:
+        $a1 = "hello"
+        $a2 = "world"
+        $b1 = "foo"
+    condition:
+        for any s in ($a*) : (
+            s
+        )
+}`
+		compiler := NewCompiler()
+		program, err := compiler.CompileSource(src)
+		if err != nil {
+			t.Fatalf("Test 3 CompileSource() error = %v", err)
+		}
+		scanner := NewScanner(program)
+		results, err := scanner.Scan([]byte("say hello world"))
+		if err != nil {
+			t.Fatalf("Test 3 Scan() error = %v", err)
+		}
+		if len(results.MatchedRules) != 1 {
+			t.Errorf("Test 3: expected 1 match, got %d", len(results.MatchedRules))
+		}
+		// Verify $b1 is not in the matched strings
+		if _, hasB1 := results.MatchedRules[0].Matches["$b1"]; hasB1 {
+			t.Errorf("Test 3: $b1 should not be in for-loop matches")
+		}
+	}
+
+	// Test 4: for all s in ($*) : (s) — all must match
+	{
+		src := `
+rule test {
+    strings:
+        $a = "hello"
+        $b = "world"
+    condition:
+        for all s in ($*) : (
+            s
+        )
+}`
+		compiler := NewCompiler()
+		program, err := compiler.CompileSource(src)
+		if err != nil {
+			t.Fatalf("Test 4 CompileSource() error = %v", err)
+		}
+		scanner := NewScanner(program)
+		// Both present — should match
+		results, err := scanner.Scan([]byte("say hello world"))
+		if err != nil {
+			t.Fatalf("Test 4 Scan() error = %v", err)
+		}
+		if len(results.MatchedRules) != 1 {
+			t.Errorf("Test 4: expected 1 match, got %d", len(results.MatchedRules))
+		}
+	}
+
+	// Test 5: for any s in ($a*) : (s) — wildcard with simple condition
+	{
+		src := `
+rule test {
+    strings:
+        $a1 = "hello"
+        $a2 = "world"
+        $b1 = "foo"
+    condition:
+        for any s in ($a*) : (
+            s
+        )
+}`
+		compiler := NewCompiler()
+		program, err := compiler.CompileSource(src)
+		if err != nil {
+			t.Fatalf("Test 5 CompileSource() error = %v", err)
+		}
+		scanner := NewScanner(program)
+		results, err := scanner.Scan([]byte("say hello world"))
+		if err != nil {
+			t.Fatalf("Test 5 Scan() error = %v", err)
+		}
+		if len(results.MatchedRules) != 1 {
+			t.Errorf("Test 5: expected 1 match, got %d", len(results.MatchedRules))
+		}
+	}
+}
