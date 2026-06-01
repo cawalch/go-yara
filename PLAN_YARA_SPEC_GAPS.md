@@ -78,7 +78,7 @@ This document tracks gaps between go-yara and the official YARA specification (Y
 | `N % of ($a*) in (0..100)` | ✅ | `OpOfPercentIn` emitted; interpreter handler `executeOfPercentIn` |
 | `N % of ($a*) at offset` | ✅ | `OpOfPercentAt` emitted; interpreter handler `executeOfPercentAt` |
 | `of ($a, $b, $c)` | ✅ | String list in `of` expressions |
-| `length of` | ❌ | Not implemented — parser rejects all `length of` variants |
+| `length of` | ✅ | `OpLengthOf` opcode; parser handles `length of ($a)`, `length of them`, `length of them*`, `length of them**`; compiler resolves string set indices; interpreter sums match lengths (PR #128) |
 | `of them` | ✅ | Implemented |
 | `all of them` | ✅ | Implemented |
 | `any of them` | ✅ | Implemented |
