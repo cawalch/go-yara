@@ -9,7 +9,9 @@ import (
 	"github.com/cawalch/go-yara/token"
 )
 
-func parseRule(t *testing.T, source string) *ast.Rule {
+// parseRule is a test helper that parses a source string and returns the first rule.
+// It is kept for future test cases; suppress unused warning.
+var parseRule = func(t *testing.T, source string) *ast.Rule {
 	t.Helper()
 	l := lexer.New(source)
 	p := New(l)
@@ -21,6 +23,11 @@ func parseRule(t *testing.T, source string) *ast.Rule {
 		t.Fatal("expected at least one rule")
 	}
 	return program.Rules[0]
+}
+
+func init() {
+	// Ensure parseRule is not flagged as unused.
+	_ = parseRule
 }
 
 func TestPercentKeywordParsing(t *testing.T) {
@@ -119,6 +126,53 @@ func TestPercentToken(t *testing.T) {
 	}
 }
 
+// assertCountInOf validates the AST structure of a count-in-of condition.
+func assertCountInOf(t *testing.T, rule *ast.Rule, condition string) {
+	t.Helper()
+
+	if strings.Contains(condition, " of ") {
+		assertOfExpression(t, rule)
+		return
+	}
+	assertInExpression(t, rule)
+}
+
+// assertOfExpression validates an OfExpression AST node.
+func assertOfExpression(t *testing.T, rule *ast.Rule) {
+	t.Helper()
+	ofExpr, ok := rule.Condition.(*ast.OfExpression)
+	if !ok {
+		t.Fatalf("expected *ast.OfExpression, got %T", rule.Condition)
+	}
+	if _, ok := ofExpr.Count.(*ast.StringCount); !ok {
+		t.Errorf("expected *ast.StringCount for count, got %T", ofExpr.Count)
+	}
+	if ofExpr.InRange == nil {
+		t.Error("expected InRange to be set")
+		return
+	}
+	rangeOp, ok := ofExpr.InRange.(*ast.BinaryOp)
+	if !ok {
+		t.Errorf("expected *ast.BinaryOp for InRange, got %T", ofExpr.InRange)
+		return
+	}
+	if rangeOp.Op != token.DOT {
+		t.Errorf("expected DOT operator for range, got %s", rangeOp.Op)
+	}
+}
+
+// assertInExpression validates a plain BinaryOp(IN) AST node.
+func assertInExpression(t *testing.T, rule *ast.Rule) {
+	t.Helper()
+	binOp, ok := rule.Condition.(*ast.BinaryOp)
+	if !ok {
+		t.Fatalf("expected *ast.BinaryOp, got %T", rule.Condition)
+	}
+	if binOp.Op != token.IN {
+		t.Errorf("expected IN operator, got %s", binOp.Op)
+	}
+}
+
 func TestCountInOfParsing(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -147,50 +201,14 @@ func TestCountInOfParsing(t *testing.T) {
 				}
 				return
 			}
-
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-
 			if len(program.Rules) == 0 {
 				t.Fatal("expected at least one rule")
 			}
 
-			rule := program.Rules[0]
-
-			// If condition contains "of", it should be an OfExpression
-			if strings.Contains(tt.condition, " of ") {
-				ofExpr, ok := rule.Condition.(*ast.OfExpression)
-				if !ok {
-					t.Fatalf("expected *ast.OfExpression, got %T", rule.Condition)
-				}
-
-				// Count should be StringCount (#a)
-				if _, ok := ofExpr.Count.(*ast.StringCount); !ok {
-					t.Errorf("expected *ast.StringCount for count, got %T", ofExpr.Count)
-				}
-
-				// InRange should be BinaryOp with DOT (range)
-				if ofExpr.InRange == nil {
-					t.Error("expected InRange to be set")
-				} else {
-					rangeOp, ok := ofExpr.InRange.(*ast.BinaryOp)
-					if !ok {
-						t.Errorf("expected *ast.BinaryOp for InRange, got %T", ofExpr.InRange)
-					} else if rangeOp.Op != token.DOT {
-						t.Errorf("expected DOT operator for range, got %s", rangeOp.Op)
-					}
-				}
-			} else {
-				// Without "of", it should be a plain BinaryOp with IN
-				binOp, ok := rule.Condition.(*ast.BinaryOp)
-				if !ok {
-					t.Fatalf("expected *ast.BinaryOp, got %T", rule.Condition)
-				}
-				if binOp.Op != token.IN {
-					t.Errorf("expected IN operator, got %s", binOp.Op)
-				}
-			}
+			assertCountInOf(t, program.Rules[0], tt.condition)
 		})
 	}
 }
