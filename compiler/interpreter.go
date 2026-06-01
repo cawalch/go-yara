@@ -61,6 +61,7 @@ type Interpreter struct {
 	compiledRules       []*CompiledRule // All compiled rules in the program
 	stringLiterals      []string        // String literal pool for OpPushStr
 	stringSets          [][]string      // String sets for OpOf
+	textStringSets      [][]string      // Text string sets for text-string-set iteration
 	allStrings          []string        // All string identifiers for current rule
 	anonymousStrings    []string        // Anonymous string identifiers for current rule
 	stringArena         []string        // Arena for dynamic strings (new in PR 3)
@@ -83,6 +84,8 @@ type Iterator struct {
 	StartValue int64
 	EndValue   int64
 	StringIDs  []string
+	// Text strings for text-string-set iteration (e.g. for any s in ("a", "b") : ...)
+	TextStrings []string
 	// Optional offset constraints for string set iteration
 	InRange       bool // Filter matches to those within [OffsetMin..OffsetMax]
 	OffsetMin     int64
@@ -159,6 +162,7 @@ func (i *Interpreter) Release() {
 	i.compiledRules = nil
 	i.stringLiterals = nil
 	i.stringSets = nil
+	i.textStringSets = nil
 	i.allStrings = nil
 	i.anonymousStrings = nil
 	i.matchContext = nil // Don't return to pool as we don't know ownership (caller vs internal)
@@ -242,6 +246,7 @@ func (i *Interpreter) SetCurrentRule(ruleName string) {
 		i.currentCompiledRule = rule
 		i.stringLiterals = rule.StringLiterals
 		i.stringSets = rule.StringSets
+		i.textStringSets = rule.TextStringSets
 		i.allStrings = rule.StringIdentifiers()
 		i.anonymousStrings = rule.AnonymousStrings
 		i.bytecode = rule.Bytecode // Ensure bytecode is updated for the rule
@@ -272,6 +277,11 @@ func (i *Interpreter) SetStringLiterals(literals []string) {
 // SetStringSets sets the string sets used by OpOf.
 func (i *Interpreter) SetStringSets(sets [][]string) {
 	i.stringSets = sets
+}
+
+// SetTextStringSets sets the text string sets for text-string-set iteration.
+func (i *Interpreter) SetTextStringSets(sets [][]string) {
+	i.textStringSets = sets
 }
 
 // SetMemoryString sets a string identifier in memory at the specified index
@@ -497,7 +507,7 @@ func init() {
 	// Iterator operations — not yet implemented
 	opcodeTable[OpIterStartArray] = (*Interpreter).executeIterUnimplemented
 	opcodeTable[OpIterStartDict] = (*Interpreter).executeIterUnimplemented
-	opcodeTable[OpIterStartTextStringSet] = (*Interpreter).executeIterUnimplemented
+	opcodeTable[OpIterStartTextStringSet] = (*Interpreter).executeIterStartTextStringSet
 	opcodeTable[OpIterStartIntEnum] = (*Interpreter).executeIterUnimplemented
 
 	// Variable loading

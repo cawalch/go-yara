@@ -42,6 +42,7 @@ type ConditionCompiler struct {
 	stringSets        [][]string
 	stringSetIndex    map[string]int
 	anonymousStrings  []string
+	textStringSets    [][]string
 }
 
 func parseSizeLiteral(literal string) (int64, error) {
@@ -199,7 +200,50 @@ func (cc *ConditionCompiler) CompileCondition(condition *ast.Condition) error {
 	return nil
 }
 
-// compileExpression compiles an expression to bytecode
+// compileMatchesExpression compiles "<string_identifier> matches <regex>"
+// For the left operand (string identifier), it pushes the identifier string directly.
+// For the right operand (regex), it pushes the regex pattern string.
+// Then it emits OpMatches.
+func (cc *ConditionCompiler) compileMatchesExpression(binOp *ast.BinaryOp) error {
+	// Left operand: string identifier
+	leftIdent, ok := binOp.Left.(*ast.Identifier)
+	if !ok {
+		return fmt.Errorf("MATCHES requires a string identifier on the left")
+	}
+
+	// Look up the string identifier in stringOffsets
+	offset, exists := cc.findStringOffset(leftIdent.Name)
+	if !exists {
+		return fmt.Errorf("undefined string identifier for MATCHES: %s", leftIdent.Name)
+	}
+
+	// Emit the string identifier (pushes the identifier string, not a boolean)
+	cc.emitStringIdentifier(offset, leftIdent.Name, leftIdent.Pos.Line, leftIdent.Pos.Column)
+
+	// Right operand: regex pattern
+	switch right := binOp.Right.(type) {
+	case *ast.Literal:
+		if right.Type != token.RegexLit {
+			return fmt.Errorf("MATCHES requires a regex pattern on the right")
+		}
+		cc.compileRegexLiteral(right)
+	case *ast.Identifier:
+		// Loop variable containing the regex pattern
+		slot, exists := cc.variableMap[right.Name]
+		if !exists {
+			return fmt.Errorf("undefined identifier in MATCHES: %s", right.Name)
+		}
+		cc.emitter.EmitOpcodeWithOperand(OpLoadVar, Operand{Type: OperandImmediate32, Value: safeInt64ToUint64(safeMax(0, int64(slot)))}, right.Pos.Line, right.Pos.Column)
+	default:
+		return fmt.Errorf("MATCHES requires a regex pattern on the right")
+	}
+
+	// Emit the MATCHES operation
+	cc.emitter.EmitOpcode(OpMatches, binOp.Pos.Line, binOp.Pos.Column)
+	return nil
+}
+
+// compileBinaryOp compiles a binary operation expression
 func (cc *ConditionCompiler) compileExpression(expr ast.Expression) error {
 	switch e := expr.(type) {
 	case *ast.Literal:
@@ -711,8 +755,13 @@ func (cc *ConditionCompiler) handleSpecialOperators(binOp *ast.BinaryOp) (bool, 
 	case token.DOT:
 		return true, cc.compileExpressions(binOp.Left, binOp.Right)
 	case token.COMMA:
-		// COMMA creates a string list for 'of' expressions
+		// COMMA creates a list for 'of' expressions
 		return true, cc.compileCommaOperator(binOp)
+	case token.MATCHES:
+		if _, ok := binOp.Left.(*ast.Identifier); ok {
+			return true, cc.compileMatchesExpression(binOp)
+		}
+		return false, nil // fall through to normal comparison path
 	}
 	return false, nil
 }
@@ -774,8 +823,6 @@ func (cc *ConditionCompiler) compileUnaryOp(unaryOp *ast.UnaryOp) error {
 		return cc.compileBitwiseNotOperator(unaryOp)
 	case token.MINUS:
 		return cc.compileMinusOperator(unaryOp)
-	case token.DEFINED:
-		return cc.compileDefinedOperator(unaryOp)
 	default:
 		return fmt.Errorf("unsupported unary operator: %s", unaryOp.Op)
 	}
@@ -1168,6 +1215,17 @@ func (cc *ConditionCompiler) compileForLoop(forLoop *ast.ForLoop) error {
 		return cc.compileForLoopOverStrings(forLoop)
 	}
 
+	// Handle text string set iteration: for any s in ("text1", "text2") : (...)
+	if tuple, ok := forLoop.Range.(*ast.StringTuple); ok {
+		return cc.compileForLoopOverTextStrings(forLoop, tuple)
+	}
+	// Handle single string literal: for any s in ("text") : (...)
+	if lit, ok := forLoop.Range.(*ast.Literal); ok && lit.Type == token.StringLit {
+		return cc.compileForLoopOverTextStrings(forLoop, &ast.StringTuple{
+			Elements: []ast.Expression{lit},
+		})
+	}
+
 	rangeExpr, ok := forLoop.Range.(*ast.BinaryOp)
 	if !ok || rangeExpr.Op != token.DOT {
 		return fmt.Errorf("unsupported for-loop range type, expected binary range operator")
@@ -1190,6 +1248,57 @@ func (cc *ConditionCompiler) compileForLoop(forLoop *ast.ForLoop) error {
 	cc.emitter.EmitOpcodeWithOperand(OpIterStartIntRange, Operand{Type: OperandImmediate32, Value: uint64(slots[0])}, forLoop.Pos.Line, forLoop.Pos.Column)
 
 	return cc.compileForLoopBody(forLoop.Quantifier, forLoop.Condition, forLoop.Pos)
+}
+
+// compileForLoopOverTextStrings compiles: for any s in ("text1", "text2") : (...)
+func (cc *ConditionCompiler) compileForLoopOverTextStrings(forLoop *ast.ForLoop, tuple *ast.StringTuple) error {
+	// Extract string literals from the tuple
+	var literals []string
+	for _, elem := range tuple.Elements {
+		switch e := elem.(type) {
+		case *ast.Literal:
+			if e.Type != token.StringLit {
+				return fmt.Errorf("text string set elements must be string literals")
+			}
+			literals = append(literals, e.Value.(string))
+		default:
+			return fmt.Errorf("text string set elements must be string literals")
+		}
+	}
+
+	// Register the text string set and get its index
+	idx := cc.registerTextStringSet(literals)
+
+	slots, err := cc.allocateVariables(forLoop.Variables)
+	if err != nil {
+		return err
+	}
+
+	// Push text string set index and constraint marker (0 = no constraint) onto stack
+	cc.emitter.EmitPush(uint64(idx), forLoop.Pos.Line, forLoop.Pos.Column)
+	cc.emitter.EmitPush(0, forLoop.Pos.Line, forLoop.Pos.Column)
+
+	// Start iterator with the variable slot
+	cc.emitter.EmitOpcodeWithOperand(OpIterStartTextStringSet, Operand{Type: OperandImmediate32, Value: uint64(slots[0])}, forLoop.Pos.Line, forLoop.Pos.Column)
+
+	return cc.compileForLoopBody(forLoop.Quantifier, forLoop.Condition, forLoop.Pos)
+}
+
+// registerTextStringSet registers a text string set and returns its index.
+func (cc *ConditionCompiler) registerTextStringSet(literals []string) int {
+	cc.textStringSets = append(cc.textStringSets, literals)
+	return len(cc.textStringSets) - 1
+}
+
+// GetTextStringSets returns the compiled text string sets for this condition.
+func (cc *ConditionCompiler) GetTextStringSets() [][]string {
+	sets := make([][]string, len(cc.textStringSets))
+	for i, set := range cc.textStringSets {
+		copied := make([]string, len(set))
+		copy(copied, set)
+		sets[i] = copied
+	}
+	return sets
 }
 
 func (cc *ConditionCompiler) compileForLoopOverStrings(forLoop *ast.ForLoop) error {

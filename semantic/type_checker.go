@@ -18,15 +18,17 @@ const (
 
 // TypeChecker handles type checking for expressions and operations
 type TypeChecker struct {
-	symbolTable *SymbolTable
-	errors      []error
+	symbolTable   *SymbolTable
+	errors        []error
+	loopVariables map[string]string // loop variable name -> type
 }
 
 // NewTypeChecker creates a new type checker
 func NewTypeChecker(symbolTable *SymbolTable) *TypeChecker {
 	return &TypeChecker{
-		symbolTable: symbolTable,
-		errors:      make([]error, 0),
+		symbolTable:   symbolTable,
+		errors:        make([]error, 0),
+		loopVariables: make(map[string]string),
 	}
 }
 
@@ -80,12 +82,36 @@ func (tc *TypeChecker) checkLiteral(literal *ast.Literal) *TypeInfo {
 	return InferTypeFromLiteral(literal.Type, literal.Value)
 }
 
-// checkIdentifier checks the type of an identifier
+// checkIdentifier validates an identifier against the symbol table and returns its type
 func (tc *TypeChecker) checkIdentifier(identifier *ast.Identifier) *TypeInfo {
-	// Look up the identifier in the symbol table
+	// Check if it's a loop variable
+	if loopType, ok := tc.loopVariables[identifier.Name]; ok {
+		switch loopType {
+		case "string":
+			return &TypeInfo{DataType: TypeString}
+		case "integer":
+			return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
+		default:
+			return &TypeInfo{DataType: TypeUnknown}
+		}
+	}
+
+	// Check if it's a symbol in the symbol table
 	if symbol, exists := tc.symbolTable.Lookup(identifier.Name); exists {
 		symbol.Used = true
-		return tc.getTypeFromSymbol(symbol)
+		info := tc.getTypeFromSymbol(symbol)
+		// If symbol is a loop variable, use the loopVariables map for type info
+		if info.DataType == TypeUnknown {
+			if typ, ok := tc.loopVariables[identifier.Name]; ok {
+				switch typ {
+				case "string":
+					return &TypeInfo{DataType: TypeString}
+				case "integer":
+					return &TypeInfo{DataType: TypeInteger, IntegerType: Uint64Type}
+				}
+			}
+		}
+		return info
 	}
 
 	// Check for special identifiers
@@ -565,6 +591,16 @@ func (tc *TypeChecker) checkStringCount(strCount *ast.StringCount) *TypeInfo {
 
 // checkForLoop checks the type of for loop expressions
 func (tc *TypeChecker) checkForLoop(forLoop *ast.ForLoop) *TypeInfo {
+	// Determine loop variable type from range expression
+	loopVarType := TypeUnknown
+	switch forLoop.Range.(type) {
+	case *ast.StringTuple:
+		loopVarType = TypeString
+	case *ast.BinaryOp:
+		// Integer range (min..max)
+		loopVarType = TypeInteger
+	}
+
 	// Create a scope for the loop variables so it is visible in the condition.
 	tc.symbolTable.EnterScope("for_loop")
 	for _, variable := range forLoop.Variables {
@@ -572,14 +608,21 @@ func (tc *TypeChecker) checkForLoop(forLoop *ast.ForLoop) *TypeInfo {
 			if err := tc.symbolTable.DefineVariable(variable, forLoop.Pos, SymbolVariable); err != nil {
 				tc.addError(err)
 			}
+			// Register in loopVariables map so getExpressionType can resolve the type
+			switch loopVarType {
+			case TypeString:
+				tc.loopVariables[variable] = "string"
+			case TypeInteger:
+				tc.loopVariables[variable] = "integer"
+			}
 		}
 	}
 
 	// Check the range expression type
 	rangeType := tc.checkExpression(forLoop.Range)
 	if len(forLoop.Variables) > 0 {
-		if rangeType.DataType != TypeInteger && rangeType.DataType != TypeUnknown {
-			tc.addError(errors.New("for loop range must be an integer"))
+		if rangeType.DataType != TypeInteger && rangeType.DataType != TypeUnknown && rangeType.DataType != TypeString {
+			tc.addError(errors.New("for loop range must be an integer or string tuple"))
 		}
 	}
 
@@ -587,6 +630,11 @@ func (tc *TypeChecker) checkForLoop(forLoop *ast.ForLoop) *TypeInfo {
 	conditionType := tc.checkExpression(forLoop.Condition)
 	if conditionType.DataType != TypeBoolean && conditionType.DataType != TypeUnknown {
 		tc.addError(errors.New("for loop condition must be boolean"))
+	}
+
+	// Clean up loop variables
+	for _, variable := range forLoop.Variables {
+		delete(tc.loopVariables, variable)
 	}
 
 	tc.symbolTable.ExitScope()

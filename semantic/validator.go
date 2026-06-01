@@ -22,8 +22,9 @@ func (e *Error) Error() string {
 
 // Validator performs semantic analysis on YARA rules
 type Validator struct {
-	symbolTable *SymbolTable
-	errors      []error
+	symbolTable   *SymbolTable
+	errors        []error
+	loopVariables map[string]string // loop variable name -> "string" or "integer"
 }
 
 // Ensure Validator implements the focused visitor interfaces it needs
@@ -34,8 +35,9 @@ var _ ast.ControlFlowVisitor = (*Validator)(nil)
 // NewValidator creates a new semantic validator
 func NewValidator() *Validator {
 	return &Validator{
-		symbolTable: NewSymbolTable(),
-		errors:      make([]error, 0),
+		symbolTable:   NewSymbolTable(),
+		errors:        make([]error, 0),
+		loopVariables: make(map[string]string),
 	}
 }
 
@@ -289,7 +291,19 @@ func (v *Validator) validateIdentifierExpression(ident *ast.Identifier) (*TypeIn
 	// Look up the identifier in symbol table
 	if symbol, exists := v.symbolTable.Lookup(ident.Name); exists {
 		symbol.Used = true
-		return v.getTypeFromSymbol(symbol), nil
+		info := v.getTypeFromSymbol(symbol)
+		// If symbol is a loop variable, use the loopVariables map for type info
+		if info.DataType == TypeUnknown || symbol.Type == SymbolVariable {
+			if typ, ok := v.loopVariables[ident.Name]; ok {
+				switch typ {
+				case "string":
+					return &TypeInfo{DataType: TypeString}, nil
+				case "integer":
+					return &TypeInfo{DataType: TypeInteger, IntegerType: Uint64Type}, nil
+				}
+			}
+		}
+		return info, nil
 	}
 
 	// Try alternative lookups for special cases
@@ -565,6 +579,20 @@ func (v *Validator) validateFunctionCallExpression(funcCall *ast.FunctionCall) (
 func (v *Validator) validateForLoopExpression(forLoop *ast.ForLoop) (*TypeInfo, []error) {
 	var errors []error
 
+	// Determine loop variable type from range expression
+	loopVarType := ""
+	switch r := forLoop.Range.(type) {
+	case *ast.StringTuple:
+		loopVarType = "string"
+	case *ast.Literal:
+		if r.Type == token.StringLit {
+			loopVarType = "string"
+		}
+	case *ast.BinaryOp:
+		// Integer range (min..max)
+		loopVarType = "integer"
+	}
+
 	// Create a scope for the loop variables so it is visible in the condition.
 	v.symbolTable.EnterScope("for_loop")
 	for _, variable := range forLoop.Variables {
@@ -574,6 +602,9 @@ func (v *Validator) validateForLoopExpression(forLoop *ast.ForLoop) (*TypeInfo, 
 					Message:  err.Error(),
 					Position: forLoop.Pos,
 				})
+			}
+			if loopVarType != "" {
+				v.loopVariables[variable] = loopVarType
 			}
 		}
 	}
@@ -585,6 +616,11 @@ func (v *Validator) validateForLoopExpression(forLoop *ast.ForLoop) (*TypeInfo, 
 	// Validate the condition expression
 	_, conditionErrs := v.validateExpression(forLoop.Condition)
 	errors = append(errors, conditionErrs...)
+
+	// Clean up loop variables
+	for _, variable := range forLoop.Variables {
+		delete(v.loopVariables, variable)
+	}
 
 	v.symbolTable.ExitScope()
 
