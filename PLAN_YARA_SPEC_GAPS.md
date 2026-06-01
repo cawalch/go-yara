@@ -120,8 +120,8 @@ This document tracks gaps between go-yara and the official YARA specification (Y
 | `for any of ($a*) : (...)` | ✅ | Wildcard string set iteration |
 | `for any of ($a*) in (0..100) : ($)` | ✅ | Range-constrained string set iteration |
 | `for any of ($a*) at (0..100) : ($)` | ✅ | Offset-constrained string set iteration |
-| `for any s in ("text1", "text2") : ($a matches s)` | ❌ | `OpIterStartTextStringSet` unimplemented |
-| `for any s in ("a", "b") : (s of them)` | ❌ | Text string set iteration |
+| `for any s in ("text1", "text2") : ($a matches s)` | ✅ | `OpIterStartTextStringSet` implemented |
+| `for any s in ("a", "b") : (s of them)` | ❌ | Not standard YARA syntax — `of` is a prefix operator, not infix |
 
 ---
 
@@ -262,7 +262,7 @@ This document tracks gaps between go-yara and the official YARA specification (Y
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Warning on unreferenced strings | ✅ | Warning emitted |
-| `$_` prefix suppresses warning | ❌ | Not implemented |
+| `$_` prefix suppresses warning | ✅ | Implemented |
 
 ---
 
@@ -367,9 +367,22 @@ This document tracks gaps between go-yara and the official YARA specification (Y
 ### Priority 4: Unreferenced string warning suppression
 
 #### 4.1 `$_` prefix suppression
+**Status**: ✅ Implemented
 **Files**: `compiler/compiler.go`
-**Work**:
-- In `collectReferencedStrings` check, skip warning if identifier starts with `$_`
+**Done**:
+- ✅ Skip warning in `checkUnusedStrings` when identifier starts with `$_`
+
+### Priority 2: Text string set iteration
+
+#### 2.1 `$a matches s` in for loops
+**Status**: ✅ Implemented
+**Files**: `compiler/condition_compiler.go`, `compiler/interpreter_iter.go`
+**Done**:
+- ✅ `OpIterStartTextStringSet` opcode and handler
+- ✅ Text strings iterated in for loops, usable with `matches` operator
+
+#### 2.2 `s of them` in for loops
+**Status**: ❌ Not standard YARA — `of` is a prefix quantifier, not an infix operator
 
 ### Priority 5: Module system (out of scope for now)
 
