@@ -1337,3 +1337,56 @@ func TestInterpreterOfFoundAt(t *testing.T) {
 		})
 	}
 }
+
+// TestInterpreterCountInOf tests OpCountInOf ("#a in (min..max) of ($str*)").
+func TestInterpreterCountInOf(t *testing.T) {
+	tests := []struct {
+		name     string
+		set      []string
+		matched  map[string]int // pattern -> number of matches
+		min      int64
+		max      int64
+		expected bool
+	}{
+		{"2 of 3 matched, range 1..3", []string{"$a", "$b", "$c"}, map[string]int{"$a": 1, "$b": 1}, 1, 3, true},
+		{"2 of 3 matched, range 3..5", []string{"$a", "$b", "$c"}, map[string]int{"$a": 1, "$b": 1}, 3, 5, false},
+		{"0 of 3 matched, range 0..0", []string{"$a", "$b", "$c"}, map[string]int{}, 0, 0, true},
+		{"0 of 3 matched, range 1..3", []string{"$a", "$b", "$c"}, map[string]int{}, 1, 3, false},
+		{"3 of 3 matched, range 3..3", []string{"$a", "$b", "$c"}, map[string]int{"$a": 2, "$b": 1, "$c": 1}, 3, 3, true},
+		{"empty set, range 0..0", []string{}, map[string]int{}, 0, 0, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			emitter := NewEmitter()
+			emitter.EmitPush(0, 1, 1) // setIndex = 0
+			emitter.EmitPush(uint64(tt.min), 1, 1)
+			emitter.EmitPush(uint64(tt.max), 1, 1)
+			emitter.EmitOpcode(OpCountInOf, 1, 1)
+			emitter.EmitOpcode(OpHalt, 1, 1)
+
+			bytecode, err := emitter.GetBytecode()
+			if err != nil {
+				t.Fatalf("GetBytecode() error = %v", err)
+			}
+			interp := NewInterpreter(bytecode)
+
+			interp.stringSets = [][]string{tt.set}
+			mc := &MatchContext{Matches: make(map[string][]Match)}
+			for pattern, count := range tt.matched {
+				mc.Matches[pattern] = make([]Match, count)
+			}
+			interp.matchContext = mc
+
+			if err := interp.Execute(); err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+
+			stack := interp.GetStack()
+			got := len(stack) > 0 && stack[0].IntVal == 1
+			if got != tt.expected {
+				t.Errorf("got %v, want %v (matched=%d, range=[%d,%d])", got, tt.expected, len(tt.matched), tt.min, tt.max)
+			}
+		})
+	}
+}

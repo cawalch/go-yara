@@ -1433,6 +1433,22 @@ func parseNumericQuantifier(quantifier string) (int64, bool) {
 func (cc *ConditionCompiler) compileOfExpression(ofExpr *ast.OfExpression) error {
 	var opcode Opcode
 
+	// Special case: "#a in (min..max) of ($a*)" — count-in-range with string set.
+	// We handle this before the general flow to avoid emitting OpOf which would
+	// consume the setIndex we need for OpOfFoundIn.
+	if _, ok := ofExpr.Count.(*ast.StringCount); ok && ofExpr.InRange != nil {
+		// #a in (min..max) of ($str*)
+		// Resolve the string set and emit OpCountInOf.
+		// Stack: [setIndex, min, max] → OpCountInOf counts matched strings in set, checks if count is within [min, max].
+		setIndex, pos := cc.resolveStringSetIndex(ofExpr.Strings)
+		cc.emitter.EmitPush(uint64(setIndex), pos.Line, pos.Column)
+		if err := cc.compileExpression(ofExpr.InRange); err != nil {
+			return err
+		}
+		cc.emitter.EmitOpcode(OpCountInOf, ofExpr.Pos.Line, ofExpr.Pos.Column)
+		return nil
+	}
+
 	// Check if the count is a percent expression ("N % of")
 	if percentExpr, ok := ofExpr.Count.(*ast.PercentExpression); ok {
 		if err := cc.compileExpression(percentExpr.Value); err != nil {
@@ -1551,6 +1567,32 @@ func (cc *ConditionCompiler) compileStringsExpression(stringsExpr ast.Expression
 		return nil
 	}
 	return cc.compileExpression(stringsExpr)
+}
+
+// resolveStringSetIndex resolves a string set expression to its interned index and position.
+// It does NOT emit any bytecode — just returns the index for the caller to use.
+func (cc *ConditionCompiler) resolveStringSetIndex(stringsExpr ast.Expression) (int, token.Position) {
+	if ident, ok := stringsExpr.(*ast.Identifier); ok {
+		switch ident.Name {
+		case "them", "all":
+			return cc.internStringSet(cc.allStringIdentifiers()), ident.Pos
+		case "$":
+			return cc.internStringSet(cc.anonymousStringIdentifiers()), ident.Pos
+		default:
+			if cc.isStringSetIdentifier(ident.Name) {
+				ids := []string{ident.Name}
+				return cc.internStringSet(ids), ident.Pos
+			}
+		}
+	}
+	if binOp, ok := stringsExpr.(*ast.BinaryOp); ok && binOp.Op == token.COMMA {
+		ids, err := cc.collectStringSetFromComma(binOp)
+		if err != nil {
+			return 0, binOp.Pos
+		}
+		return cc.internStringSet(ids), binOp.Pos
+	}
+	return 0, token.Position{}
 }
 
 func (cc *ConditionCompiler) isStringSetIdentifier(name string) bool {

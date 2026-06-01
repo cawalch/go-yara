@@ -155,6 +155,14 @@ func (p *ExpressionParser) parseBinaryExpressionWithPrecedence(minPrecedence int
 			Right: right,
 			Pos:   p.current.Pos,
 		}
+
+		// Special case: "#a in (min..max) of ($a*)" — count-in-range with string set constraint
+		if ofExpr, err := p.tryParseCountInOf(left); err != nil {
+			return nil, err
+		} else if ofExpr != nil {
+			left = ofExpr
+			continue
+		}
 	}
 
 	return left, nil
@@ -821,31 +829,71 @@ func (p *ExpressionParser) GetQuantifierParser() *QuantifierParser {
 }
 
 // tryParsePercentOf attempts to parse "N % of (strings)" or "N percent of (strings)" when op is MODULO/PERCENT and next token is OF.
+// tryParsePercentOf attempts to parse "N % of (strings)" or "N percent of (strings)" when op is MODULO/PERCENT and next token is OF.
 // Returns the parsed *ast.OfExpression on success, (nil, nil) if it's not a percent-of expression.
 func (p *ExpressionParser) tryParsePercentOf(left ast.Expression, op token.Type) (*ast.OfExpression, error) {
 	if (op != token.MODULO && op != token.PERCENT) || !p.peekTokenIs(token.OF) {
 		return nil, nil
 	}
+
 	intLit, ok := left.(*ast.Literal)
-	if !ok {
+	if !ok || intLit.Type != token.IntegerLit {
 		return nil, nil
 	}
-	if intLit.Type != token.IntegerLit && intLit.Type != token.HexIntegerLit && intLit.Type != token.OctalIntegerLit {
-		return nil, nil
-	}
-	p.nextToken() // consume '%'
+
+	p.nextToken() // consume '%' or 'percent'
 	p.nextToken() // consume 'of'
 	target, err := p.parseQuantifierTarget(intLit.Pos)
 	if err != nil {
 		return nil, err
 	}
-	percentExpr := &ast.PercentExpression{
-		Pos:   intLit.Pos,
-		Value: intLit,
-	}
+
 	ofExpr := &ast.OfExpression{
 		Pos:     intLit.Pos,
-		Count:   percentExpr,
+		Count:   &ast.PercentExpression{Pos: intLit.Pos, Value: intLit},
+		Strings: target,
+	}
+	ofExpr, err = p.parseOfConstraints(ofExpr)
+	if err != nil {
+		return nil, err
+	}
+	return ofExpr, nil
+}
+
+// tryParseCountInOf attempts to parse "#a in (min..max) of ($a*)" when left is
+// a BinaryOp with IN (count-in-range) and the next token is OF.
+// Returns the parsed *ast.OfExpression on success, (nil, nil) if it's not a count-in-of expression.
+func (p *ExpressionParser) tryParseCountInOf(left ast.Expression) (*ast.OfExpression, error) {
+	binOp, ok := left.(*ast.BinaryOp)
+	if !ok || binOp.Op != token.IN {
+		return nil, nil
+	}
+
+	// Check if left side is a StringCount (#a) and right side is a range (BinaryOp with DOT)
+	count, isCount := binOp.Left.(*ast.StringCount)
+	rangeOp, isRange := binOp.Right.(*ast.BinaryOp)
+	if !isCount || !isRange {
+		return nil, nil
+	}
+	if rangeOp.Op != token.DOT {
+		return nil, nil
+	}
+
+	if !p.currentTokenIs(token.OF) {
+		return nil, nil
+	}
+
+	p.nextToken() // consume OF
+
+	target, err := p.parseQuantifierTarget(binOp.Pos)
+	if err != nil {
+		return nil, err
+	}
+
+	ofExpr := &ast.OfExpression{
+		Pos:     binOp.Pos,
+		Count:   count,
+		InRange: binOp.Right,
 		Strings: target,
 	}
 	ofExpr, err = p.parseOfConstraints(ofExpr)

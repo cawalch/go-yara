@@ -178,6 +178,48 @@ func (i *Interpreter) executeCountInRange() error {
 	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(result)})
 }
 
+// executeCountInOf executes OpCountInOf: "#a in (min..max) of ($str*)".
+// Stack: [setIndex, min, max]
+// Counts how many strings in the set have at least one match, then checks if that count is within [min, max].
+func (i *Interpreter) executeCountInOf() error {
+	if err := i.validateStackUnderflowN(OpCountInOf, 3); err != nil {
+		return err
+	}
+
+	maxVal := i.stack[len(i.stack)-1]
+	minVal := i.stack[len(i.stack)-2]
+	setIndex := i.stack[len(i.stack)-3]
+	i.stack = i.stack[:len(i.stack)-3]
+
+	if minVal.Type != ValueTypeInt || maxVal.Type != ValueTypeInt {
+		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpCountInOf, Message: "count-in-of requires integer range bounds"}
+	}
+
+	set, err := i.resolveStringSet(setIndex)
+	if err != nil {
+		return err
+	}
+
+	if len(set) == 0 {
+		return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(minVal.IntVal <= 0 && maxVal.IntVal >= 0)})
+	}
+
+	if i.matchContext == nil {
+		return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(minVal.IntVal <= 0 && maxVal.IntVal >= 0)})
+	}
+
+	// Count how many strings in the set have at least one match
+	matchedCount := 0
+	for _, id := range set {
+		if matches, ok := i.matchContext.Matches[id]; ok && len(matches) > 0 {
+			matchedCount++
+		}
+	}
+
+	result := int64(matchedCount) >= minVal.IntVal && int64(matchedCount) <= maxVal.IntVal
+	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(result)})
+}
+
 // executeOffsetOperation executes OpOffset.
 func (i *Interpreter) executeOffsetOperation() error {
 	if err := i.validateStackUnderflowN(OpOffset, 2); err != nil {
