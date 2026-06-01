@@ -24,7 +24,7 @@ This document tracks gaps between go-yara and the official YARA specification (Y
 | String modifiers: `wide` | ✅ | Implemented |
 | String modifiers: `nocase` | ✅ | Implemented |
 | String modifiers: `fullword` | ✅ | Implemented at match time in `MatchContext` |
-| String modifiers: `private` (string-level) | ⚠️ | Parsed into AST but not enforced (private strings excluded from certain contexts) |
+| String modifiers: `private` (string-level) | ✅ | Parsed, compiled, and enforced — private strings filtered from `RuleMatch.Matches` and CLI output |
 | String modifiers: `xor` | ✅ | Both no-arg and range forms |
 | String modifiers: `xor N` | ✅ | Range form |
 | String modifiers: `base64` | ✅ | With custom alphabets |
@@ -274,7 +274,7 @@ This document tracks gaps between go-yara and the official YARA specification (Y
 |---------|--------|-------|
 | Single file scanning | ✅ | Implemented |
 | Multiple rules scanning | ✅ | Implemented |
-| Tag-based rule filtering | ⚠️ | Tags stored but no tag-based scan filtering yet |
+| Tag-based rule filtering | ✅ | `WithTagsFilter` scanner option; skips non-global rules lacking matching tags |
 | Global rule auto-execution | ✅ | Two-pass evaluation: all global rules must match before non-global rules reported |
 | Private rule exclusion from references | ✅ | Private rules excluded from `MatchedRules` output; still referenceable internally |
 | Callback-based matching | ✅ | Scanner callbacks |
@@ -432,6 +432,10 @@ This is tracked separately and not part of the initial gap closure plan.
 
 ### Tag-based scan filtering (✅)
 Implemented in `compiler/scanner.go` via `WithTagsFilter` scanner option. The Scanner skips non-global rules that don't have any matching tag. Global rules are always evaluated regardless of tag filter, matching YARA semantics.
+
+### Bugs Fixed During Review
+- **`not $y` stack underflow**: `compileNotOperator` incorrectly compiled `not $string` as `emitStringIdentifier + OpLength`, which expected 2 stack operands but only 1 was pushed. Fixed to use `compileExpression + OpNot` consistently.
+- **Private strings in API**: `Scanner.Scan` now filters private strings from `RuleMatch.Matches`, matching YARA semantics.
 
 ### Module system (❌, out of scope)
 Module loading and execution is a large feature requiring a module registration system, function compilation, and individual module implementations.

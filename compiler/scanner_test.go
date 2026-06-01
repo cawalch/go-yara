@@ -339,6 +339,37 @@ func BenchmarkProductionScanner(b *testing.B) {
 	}
 }
 
+func TestScannerPrivateStringsFiltered(t *testing.T) {
+	sources := []string{
+		`rule test_rule { strings: $pub = "hello" $priv = "world" private condition: $pub and $priv }`,
+	}
+	program, err := compileSources(sources)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	scanner := NewScanner(program)
+	defer scanner.Close()
+
+	data := []byte("hello world")
+	result, err := scanner.Scan(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(result.MatchedRules) != 1 {
+		t.Fatalf("expected 1 matched rule, got %d", len(result.MatchedRules))
+	}
+
+	matches := result.MatchedRules[0].Matches
+	if _, ok := matches["$priv"]; ok {
+		t.Error("private string $priv should not appear in matches")
+	}
+	if _, ok := matches["$pub"]; !ok {
+		t.Error("public string $pub should appear in matches")
+	}
+}
+
 func TestScannerTagsFilter(t *testing.T) {
 	sources := []string{
 		`rule test_a : tag1 { strings: $a = "hello" condition: $a }`,
