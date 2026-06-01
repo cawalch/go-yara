@@ -33,6 +33,8 @@ type ScanResult struct {
 // RuleMatch represents a single rule match with details.
 type RuleMatch struct {
 	Rule    string
+	Tags    []string           // Rule tags
+	Meta    map[string]any     // Rule metadata
 	Matches map[string][]Match // pattern -> matches (string-keyed for public API)
 }
 
@@ -146,15 +148,21 @@ func (s *Scanner) Scan(data []byte) (*ScanResult, error) {
 
 	clear(s.ruleResults)
 
+	// YARA spec: global rules are evaluated first and ALL must match
+	// before non-global rules are evaluated.
+	// Private rules are never reported in MatchedRules.
+	//
+	// Two-pass approach:
+	// 1. Evaluate all rules to populate match context and rule results.
+	// 2. Build MatchedRules, skipping non-global rules if any global rule failed.
+
+	// Pass 1: evaluate every rule
 	for _, rule := range s.program.Rules {
 		s.matchCtx.Reset(data)
 		if useSharedAutomaton {
-			// Add text matches from the one-pass shared automaton, then scan dynamic
-			// regex/hex patterns locally because they require different engines.
 			s.addStaticMatchesInt(rule, data, globalByRule[rule.Index])
 			s.addLocalNonTextMatches(rule, data)
 		} else {
-			// Fallback for programs constructed manually without CompileSource.
 			PopulateMatchContext(s.matchCtx, rule, data)
 		}
 
@@ -165,13 +173,34 @@ func (s *Scanner) Scan(data []byte) (*ScanResult, error) {
 
 		ruleMatches := cloneMatches(s.matchCtx.Matches)
 		result.Matches[rule.Name] = ruleMatches
+		result.RuleResults[rule.Name] = s.interp.GetRuleResults()[rule.Name]
+	}
 
-		matched := s.interp.GetRuleResults()[rule.Name]
-		result.RuleResults[rule.Name] = matched
-		if matched {
+	// Check if all global rules matched
+	allGlobalMatched := true
+	for _, rule := range s.program.Rules {
+		if rule.IsGlobal && !result.RuleResults[rule.Name] {
+			allGlobalMatched = false
+			break
+		}
+	}
+
+	// Pass 2: build MatchedRules
+	for _, rule := range s.program.Rules {
+		// Skip non-global rules if not all global rules matched
+		if !rule.IsGlobal && !allGlobalMatched {
+			continue
+		}
+		// Private rules are not reported in results
+		if rule.IsPrivate {
+			continue
+		}
+		if result.RuleResults[rule.Name] {
 			result.MatchedRules = append(result.MatchedRules, RuleMatch{
 				Rule:    rule.Name,
-				Matches: ruleMatches,
+				Tags:    rule.Tags,
+				Meta:    rule.Meta,
+				Matches: result.Matches[rule.Name],
 			})
 		}
 	}

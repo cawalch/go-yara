@@ -107,10 +107,40 @@ func (rc *RuleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 		RegexPatterns:    rc.copyRegexPatterns(),
 		HexPatterns:      rc.copyHexPatterns(),
 		Stats:            rc.getCompilationStats(),
+		Tags:             rule.Tags,
+		Meta:             rc.compileMeta(rule.Meta),
+		IsGlobal:         rc.hasModifier(rule.Modifiers, ast.ModifierGlobal),
+		IsPrivate:        rc.hasModifier(rule.Modifiers, ast.ModifierPrivate),
 	}
 
 	rc.ruleIndex++
 	return compiledRule, nil
+}
+
+// hasModifier checks if the rule has a specific modifier
+func (rc *RuleCompiler) hasModifier(modifiers []ast.Modifier, m ast.Modifier) bool {
+	for _, mod := range modifiers {
+		if mod == m {
+			return true
+		}
+	}
+	return false
+}
+
+// compileMeta converts AST metadata entries into a flat map[string]any
+func (rc *RuleCompiler) compileMeta(metas []*ast.Meta) map[string]any {
+	result := make(map[string]any, len(metas))
+	for _, m := range metas {
+		switch v := m.Value.(type) {
+		case ast.MetaString:
+			result[m.Key] = string(v)
+		case ast.MetaInt:
+			result[m.Key] = int64(v)
+		case ast.MetaBool:
+			result[m.Key] = bool(v)
+		}
+	}
+	return result
 }
 
 // validateRuleStrings validates all strings in a rule
@@ -630,6 +660,12 @@ type CompiledRule struct {
 	StringIDToIndex map[string]int   // string identifier ("$a") -> integer index
 	IndexToStringID []string         // integer index -> string identifier (reverse lookup)
 	StringNameToRef map[string]int64 // string identifier -> pre-computed StringRef for interpreter
+
+	// Rule metadata (from AST)
+	Tags      []string       // Rule tags (e.g., {"malware", "trojan"})
+	Meta      map[string]any // Meta key-value pairs
+	IsGlobal  bool           // Rule is marked as global
+	IsPrivate bool           // Rule is marked as private
 }
 
 // GetName returns the rule name
