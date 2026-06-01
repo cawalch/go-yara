@@ -83,7 +83,7 @@ func NewWithOptions(l *lexer.Lexer, options Options) *Parser {
 	}
 
 	// Initialize specialized parsers
-	p.exprParser = NewExpressionParser(NewLexerAdapter(l), p.builder)
+	p.exprParser = NewExpressionParser(l, p.builder)
 	p.quantParser = NewQuantifierParser(l, p.builder, p.exprParser)
 	p.declParser = NewDeclarationParser(l, p.builder)
 	p.ruleParser = NewRuleParser(l, p.builder, p.exprParser, p.declParser)
