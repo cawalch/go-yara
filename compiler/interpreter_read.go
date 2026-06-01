@@ -55,6 +55,8 @@ func (i *Interpreter) executeReadIntOpBE(size int, signed bool) error {
 }
 
 // readIntBE reads an integer in big-endian byte order.
+//
+//nolint:revive // argument-limit: API surface
 func (i *Interpreter) readIntBE(data []byte, offset int64, size int, signed bool) (int64, error) {
 	switch size {
 	case 1:

@@ -33,6 +33,8 @@ func parseAndValidateProgram(_ *testing.T, input string) ([]error, error) {
 }
 
 // assertValidationResults validates program validation results against expectations
+//
+//nolint:revive // argument-limit: test helper
 func assertValidationResults(t *testing.T, errors []error, wantErr bool, minErrCount int) {
 	if wantErr && len(errors) == 0 {
 		t.Errorf("ValidateProgram() expected errors, got none")

@@ -26,6 +26,10 @@ linters:
         # Flags unnecessary 'else' blocks after a return/break
         - name: indent-error-flow
         - name: if-return
+        # Flag functions with too many parameters (performance-critical VM code
+        # should use structs to group related params)
+        - name: argument-limit
+          arguments: [3]
 
     nestif:
       # Threshold for nested if-statements (Cybersecurity audit preference: 3-4)

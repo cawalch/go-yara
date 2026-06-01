@@ -470,6 +470,8 @@ func visitRuleComponents(visitor *struct {
 }
 
 // assertVisitorCounts asserts that the visitor has counted the expected number of nodes
+//
+//nolint:revive // argument-limit: test helper with many expected values
 func assertVisitorCounts(t *testing.T, visitor *struct {
 	Visitor
 	*countingVisitor

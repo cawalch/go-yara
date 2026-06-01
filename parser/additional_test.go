@@ -25,6 +25,8 @@ type parserTestCase struct {
 }
 
 // assertParserResult validates parser results against expectations
+//
+//nolint:revive // argument-limit: test helper
 func assertParserResult(t *testing.T, p *Parser, program *ast.Program, err error, tc parserTestCase) {
 	if tc.expectError {
 		if err == nil {
@@ -156,6 +158,8 @@ rule test_rule_2 {
 }
 
 // validateRuleTags is a helper function that validates rule tags
+//
+//nolint:revive // argument-limit: test helper
 func validateRuleTags(t *testing.T, rule *ast.Rule, expectedTags []string, description string) {
 	if len(rule.Tags) != len(expectedTags) {
 		t.Errorf("Expected %d tags but got %d: %s", len(expectedTags), len(rule.Tags), description)
@@ -170,6 +174,8 @@ func validateRuleTags(t *testing.T, rule *ast.Rule, expectedTags []string, descr
 }
 
 // validateRuleMeta is a helper function that validates rule meta information
+//
+//nolint:revive // argument-limit: test helper
 func validateRuleMeta(t *testing.T, rule *ast.Rule, expectedMeta map[string]string, description string) {
 	if len(rule.Meta) != len(expectedMeta) {
 		t.Errorf("Expected %d meta entries but got %d: %s", len(expectedMeta), len(rule.Meta), description)
@@ -199,6 +205,8 @@ func validateRuleMeta(t *testing.T, rule *ast.Rule, expectedMeta map[string]stri
 }
 
 // parseRuleWithErrorHandling is a helper function that handles parsing and basic error checking
+//
+//nolint:revive // argument-limit: test helper
 func parseRuleWithErrorHandling(t *testing.T, input string, expectError bool, description string) *ast.Rule {
 	l := lexer.New(input)
 	p := New(l)
@@ -306,6 +314,8 @@ func TestParserAdvancedFeaturesAdditional(t *testing.T) {
 }
 
 // parseAndValidate is a helper function that reduces repetitive parsing and validation logic
+//
+//nolint:revive // argument-limit: test helper
 func parseAndValidate(t *testing.T, input string, testName string, expectedRules int) {
 	l := lexer.New(input)
 	p := New(l)

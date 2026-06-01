@@ -64,6 +64,8 @@ func (e *Emitter) EmitOpcode(opcode Opcode, line, pos int) int {
 }
 
 // EmitOpcodeWithOperand emits an instruction with opcode and operand
+//
+//nolint:revive // argument-limit: API surface
 func (e *Emitter) EmitOpcodeWithOperand(opcode Opcode, operand Operand, line, pos int) int {
 	inst := NewInstructionWithOperand(opcode, operand, line, pos)
 	return e.Emit(inst)

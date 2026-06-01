@@ -22,7 +22,19 @@ type RuleParser struct {
 	declParser *DeclarationParser
 }
 
+// ruleFields groups the components of a parsed rule before assembly.
+type ruleFields struct {
+	modifiers []ast.Modifier
+	ruleName  string
+	tags      []string
+	meta      []*ast.Meta
+	strings   []*ast.String
+	condition ast.Expression
+}
+
 // NewRuleParser creates a new rule parser instance
+//
+//nolint:revive // argument-limit: constructor
 func NewRuleParser(lexer *internal.Lexer, builder *ast.Builder, exprParser *ExpressionParser, declParser *DeclarationParser) *RuleParser {
 	rp := &RuleParser{
 		lexer:      lexer,
@@ -97,7 +109,7 @@ func (p *RuleParser) ParseRule() (*ast.Rule, error) {
 		return nil, errors.New("expected '}' at end of rule")
 	}
 
-	return p.buildRule(modifiers, ruleName, tags, meta, strings, condition), nil
+	return p.buildRule(ruleFields{modifiers, ruleName, tags, meta, strings, condition}), nil
 }
 
 // ParseRulePartial parses a rule with error recovery, returning partial results
@@ -135,7 +147,7 @@ func (p *RuleParser) ParseRulePartial() (*ast.Rule, []error) {
 			if p.currentTokenIs(token.RULE) || p.currentTokenIs(token.IMPORT) ||
 				p.currentTokenIs(token.GLOBAL) || p.currentTokenIs(token.INCLUDE) {
 				// Give up on this rule and let upper level handle synchronization
-				return p.buildRule(modifiers, ruleName, tags, nil, nil, p.createMinimalCondition()), errors
+				return p.buildRule(ruleFields{modifiers, ruleName, tags, nil, nil, p.createMinimalCondition()}), errors
 			}
 			p.nextToken()
 		}
@@ -166,7 +178,7 @@ func (p *RuleParser) ParseRulePartial() (*ast.Rule, []error) {
 		}
 	}
 
-	return p.buildRule(modifiers, ruleName, tags, meta, strings, condition), errors
+	return p.buildRule(ruleFields{modifiers, ruleName, tags, meta, strings, condition}), errors
 }
 
 // parseRuleModifiers parses rule modifiers (private, global)
@@ -272,13 +284,13 @@ func (p *RuleParser) parseConditionSection() (ast.Expression, error) {
 }
 
 // buildRule constructs and returns the final rule AST node
-func (p *RuleParser) buildRule(modifiers []ast.Modifier, ruleName string, tags []string, meta []*ast.Meta, strings []*ast.String, condition ast.Expression) *ast.Rule {
-	rule := p.builder.Rule(p.current.Pos, ruleName)
-	rule.Modifiers = modifiers
-	rule.Tags = tags
-	rule.Meta = meta
-	rule.Strings = strings
-	rule.Condition = condition
+func (p *RuleParser) buildRule(fields ruleFields) *ast.Rule {
+	rule := p.builder.Rule(p.current.Pos, fields.ruleName)
+	rule.Modifiers = fields.modifiers
+	rule.Tags = fields.tags
+	rule.Meta = fields.meta
+	rule.Strings = fields.strings
+	rule.Condition = fields.condition
 	return rule
 }
 

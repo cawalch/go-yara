@@ -361,6 +361,8 @@ func extractLiteralsFromRegex(pattern string) []string {
 
 // parseRegexEscape parses an escape sequence in a regex pattern and updates the current sequence and literals list.
 // Returns the updated current sequence and the number of characters consumed from pattern.
+//
+//nolint:revive // argument-limit: internal helper
 func parseRegexEscape(pattern string, i int, current []rune, literals *[]string) ([]rune, int) {
 	next := pattern[i+1]
 

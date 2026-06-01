@@ -66,6 +66,8 @@ func NewACAutomaton() *ACAutomaton {
 }
 
 // AddString adds a string pattern to the automaton
+//
+//nolint:revive // argument-limit: API surface
 func (ac *ACAutomaton) AddString(identifier string, data []byte, isHex, isRegex bool) error {
 	config := StringConfig{
 		Identifier: identifier,
@@ -157,6 +159,8 @@ func (ac *ACAutomaton) Compile() error {
 }
 
 // processTransitionFailureLink processes failure link for a single transition
+//
+//nolint:revive // argument-limit: internal helper
 func (ac *ACAutomaton) processTransitionFailureLink(current, nextState int32, byteVal byte, queue *[]int32) {
 	*queue = append(*queue, nextState)
 
@@ -285,6 +289,8 @@ func (ac *ACAutomaton) SearchIter(data []byte) iter.Seq[ACMatch] {
 }
 
 // AddStringWithFlags adds a string and records regex VM flags alongside metadata
+//
+//nolint:revive // argument-limit: API surface
 func (ac *ACAutomaton) AddStringWithFlags(
 	identifier string,
 	data []byte,

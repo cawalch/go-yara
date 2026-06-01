@@ -15,6 +15,8 @@ type tokenTestCase struct {
 }
 
 // assertTokenSequenceForStringOps validates that the lexer produces the expected token sequence for string operations
+//
+//nolint:revive // argument-limit: test helper
 func assertTokenSequenceForStringOps(t *testing.T, input string, expected []token.Token) {
 	l := lexer.New(input)
 	for i, expectedToken := range expected {

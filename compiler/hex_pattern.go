@@ -244,6 +244,7 @@ func parseHexJumpRange(content string) (int, int, error) {
 	return val, val, nil
 }
 
+//nolint:revive // argument-limit: internal helper
 func extractHexGroup(hexStr string, pos int, open, close byte) (int, int, error) {
 	if pos >= len(hexStr) || hexStr[pos] != open {
 		return 0, 0, fmt.Errorf("expected %c at %d", open, pos)
@@ -416,6 +417,8 @@ func findHexMatchesBruteForce(tokens []HexPatternToken, data []byte) []Match {
 }
 
 // findHexMatchesXorAnchored uses per-key transformed anchor bytes for skip-based matching.
+//
+//nolint:revive // argument-limit: internal helper
 func findHexMatchesXorAnchored(tokens []HexPatternToken, data []byte, keys []byte, anchor anchorInfo) []Match {
 	var matches []Match
 	for _, key := range keys {
@@ -512,6 +515,8 @@ func matchHexTokensIterative(tokens []HexPatternToken, data []byte, pos int) []i
 
 // matchHexIter processes tokens iteratively. The xorKey pointer selects
 // between normal and XOR mode (nil = normal, non-nil = XOR with that key).
+//
+//nolint:revive // argument-limit: internal helper
 func matchHexIter(tokens []HexPatternToken, data []byte, pos int, xorKey *byte) []int {
 	var results []int
 	// Each work item: tokens to match and the starting data position.
@@ -628,6 +633,8 @@ func matchHexIter(tokens []HexPatternToken, data []byte, pos int, xorKey *byte) 
 }
 
 // matchHexTokensIterativeXor is the XOR variant of matchHexTokensIterative.
+//
+//nolint:revive // argument-limit: internal helper
 func matchHexTokensIterativeXor(tokens []HexPatternToken, data []byte, pos int, key byte) []int {
 	if pos > len(data) {
 		return nil

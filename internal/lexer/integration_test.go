@@ -359,6 +359,8 @@ func getComplexYARARuleExpectedTokens() []token.Type {
 }
 
 // assertTokenization is a helper function that validates tokenization results
+//
+//nolint:revive // argument-limit: test helper
 func assertTokenization(t *testing.T, input string, expectedTokens []token.Type, expectedLiterals map[int]string) {
 	l := lexer.New(input)
 	tokens := collectTokens(l)

@@ -176,6 +176,8 @@ type tokenExpectation struct {
 }
 
 // assertIdentifierTokenSequence validates that the input produces the expected token sequence for identifiers
+//
+//nolint:revive // argument-limit: test helper
 func assertIdentifierTokenSequence(t *testing.T, helper *lexer.TestHelper, input string, expected []tokenExpectation) {
 	t.Helper()
 

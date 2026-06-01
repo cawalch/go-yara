@@ -54,17 +54,18 @@ type Interpreter struct {
 	iterators           []Iterator // Stack of active iteration frames for loops
 	stopped             bool
 	result              error
-	matchContext        *MatchContext   // Pattern matching context
-	ruleResults         map[string]bool // Track execution results of all rules in the program
-	currentRule         string          // Name of the currently executing rule
-	currentCompiledRule *CompiledRule   // Currently executing rule (for int string ID resolution)
-	compiledRules       []*CompiledRule // All compiled rules in the program
-	stringLiterals      []string        // String literal pool for OpPushStr
-	stringSets          [][]string      // String sets for OpOf
-	textStringSets      [][]string      // Text string sets for text-string-set iteration
-	allStrings          []string        // All string identifiers for current rule
-	anonymousStrings    []string        // Anonymous string identifiers for current rule
-	stringArena         []string        // Arena for dynamic strings (new in PR 3)
+	matchContext        *MatchContext            // Pattern matching context
+	ruleResults         map[string]bool          // Track execution results of all rules in the program
+	currentRule         string                   // Name of the currently executing rule
+	currentCompiledRule *CompiledRule            // Currently executing rule (for int string ID resolution)
+	compiledRules       []*CompiledRule          // All compiled rules in the program
+	ruleMap             map[string]*CompiledRule // Index for O(1) rule lookup by name
+	stringLiterals      []string                 // String literal pool for OpPushStr
+	stringSets          [][]string               // String sets for OpOf
+	textStringSets      [][]string               // Text string sets for text-string-set iteration
+	allStrings          []string                 // All string identifiers for current rule
+	anonymousStrings    []string                 // Anonymous string identifiers for current rule
+	stringArena         []string                 // Arena for dynamic strings (new in PR 3)
 	regexCache          map[string]compiledRegex
 	PreserveRuleResults bool // If true, Reset() will not clear ruleResults
 	debugMode           bool // Debug mode flag for instruction tracing
@@ -166,6 +167,8 @@ func NewInterpreter(bytecode []byte) *Interpreter {
 	// Note: matchContextPool.Get() returns struct with Matches map initialized.
 	i.matchContext.Reset(nil)
 
+	i.stack = i.stack[:0] // Ensure clean stack on reuse
+
 	return i
 }
 
@@ -173,6 +176,7 @@ func NewInterpreter(bytecode []byte) *Interpreter {
 func (i *Interpreter) Release() {
 	i.bytecode = nil
 	i.compiledRules = nil
+	i.ruleMap = nil
 	i.stringLiterals = nil
 	i.stringSets = nil
 	i.textStringSets = nil
@@ -192,6 +196,9 @@ func (i *Interpreter) Release() {
 
 	// Clear string arena
 	i.stringArena = i.stringArena[:0]
+
+	// Clear stack
+	i.stack = i.stack[:0]
 
 	// Clear iterators
 	i.iterators = i.iterators[:0]
@@ -236,6 +243,11 @@ func (i *Interpreter) SetMatchContext(ctx *MatchContext) {
 // SetCompiledRules sets the compiled rules for rule reference resolution
 func (i *Interpreter) SetCompiledRules(rules []*CompiledRule) {
 	i.compiledRules = rules
+	// Build O(1) lookup map by rule name
+	i.ruleMap = make(map[string]*CompiledRule, len(rules))
+	for _, rule := range rules {
+		i.ruleMap[rule.Name] = rule
+	}
 	if i.currentRule != "" {
 		i.SetCurrentRule(i.currentRule)
 	}
@@ -249,22 +261,17 @@ func (i *Interpreter) GetMatchContext() *MatchContext {
 // SetCurrentRule sets the name of the currently executing rule
 func (i *Interpreter) SetCurrentRule(ruleName string) {
 	i.currentRule = ruleName
-	if len(i.compiledRules) == 0 {
-		return
-	}
-	for _, rule := range i.compiledRules {
-		if rule.Name != ruleName {
-			continue
-		}
+	if rule, ok := i.ruleMap[ruleName]; ok {
 		i.currentCompiledRule = rule
 		i.stringLiterals = rule.StringLiterals
 		i.stringSets = rule.StringSets
 		i.textStringSets = rule.TextStringSets
-		i.allStrings = rule.StringIdentifiers()
+		i.allStrings = rule.IndexToStringID // Pre-built in BuildStringIndex()
 		i.anonymousStrings = rule.AnonymousStrings
 		i.bytecode = rule.Bytecode // Ensure bytecode is updated for the rule
 		return
 	}
+	i.currentCompiledRule = nil
 }
 
 // GetString resolves a Value to a string (exported version of getString)
@@ -338,10 +345,11 @@ func (i *Interpreter) GetMemoryAt(address int) Value {
 func (i *Interpreter) Reset() {
 	i.ip = 0
 	i.stack = i.stack[:0]
-	// Don't clear memory slots that contain string identifiers
-	// Only clear undefined values
-	for idx := range i.memory {
-		if i.memory[idx].Type != ValueTypeString {
+	// Memory is cleared by prepareInterpreter before Execute().
+	// This method is also called standalone (e.g., in tests), so clear
+	// memory only when not using the scanner's prepareInterpreter path.
+	if i.matchContext == nil {
+		for idx := range i.memory {
 			i.memory[idx] = Value{Type: ValueTypeUndefined}
 		}
 	}

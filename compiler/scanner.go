@@ -219,8 +219,11 @@ func (s *Scanner) Scan(data []byte) (*ScanResult, error) {
 			return nil, err
 		}
 
-		ruleMatches := cloneMatches(s.matchCtx.Matches)
-		result.Matches[rule.Name] = ruleMatches
+		// Only clone when there are matches — avoids allocating map + slices for empty results.
+		if len(s.matchCtx.Matches) > 0 {
+			ruleMatches := cloneMatches(s.matchCtx.Matches)
+			result.Matches[rule.Name] = ruleMatches
+		}
 		result.RuleResults[rule.Name] = s.interp.GetRuleResults()[rule.Name]
 	}
 
@@ -347,9 +350,6 @@ func (s *Scanner) addLocalNonTextMatches(rule *CompiledRule, data []byte) {
 }
 
 func (s *Scanner) prepareInterpreter(rule *CompiledRule) {
-	for idx := range s.interp.memory {
-		s.interp.memory[idx] = Value{Type: ValueTypeUndefined}
-	}
 	s.interp.stringArena = s.interp.stringArena[:0]
 
 	s.interp.SetCurrentRule(rule.Name)

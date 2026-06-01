@@ -9,6 +9,8 @@ import (
 )
 
 // assertSimpleCompileResult is a test helper for structs without errorStage.
+//
+//nolint:revive // argument-limit: test helper
 func assertSimpleCompileResult(t *testing.T, program *compiler.CompiledProgram, err error, expectError bool, description string) {
 	t.Helper()
 	if expectError {
@@ -27,6 +29,8 @@ func assertSimpleCompileResult(t *testing.T, program *compiler.CompiledProgram, 
 }
 
 // assertCompileResult is a test helper that logs the compilation outcome.
+//
+//nolint:revive // argument-limit: test helper
 func assertCompileResult(t *testing.T, program *compiler.CompiledProgram, err error, tt struct {
 	name        string
 	rule        string

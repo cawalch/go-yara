@@ -91,16 +91,23 @@ func (ctx *MatchContext) Release() {
 	matchContextPool.Put(ctx)
 }
 
+//nolint:revive // argument-limit: API surface function; reducing params would require struct indirection
 func addRegexMatches(ctx *MatchContext, id string, regexInfo RegexPattern, data []byte, modifiers []ast.StringModifier, flags regex.Flags, isWide bool) {
 	if len(regexInfo.Code) == 0 {
 		return
 	}
-	flags |= regex.FlagsScan
+
+	// Use batched VM state to avoid sync.Pool Get/Put overhead
+	// when calling runAtMatch thousands of times in this loop.
+	bs, release := regex.NewVMBatch(len(regexInfo.Code))
+	defer release()
+
 	pos := 0
 	for pos <= len(data) {
-		matched, start, end := regex.ExecMatch(regexInfo.Code, data[pos:], flags)
+		matched, start, end := regex.ExecMatchBatch(bs, regexInfo.Code, data, flags, pos)
 		if !matched {
-			return
+			pos++
+			continue
 		}
 
 		absStart := pos + start
@@ -126,6 +133,7 @@ func addRegexMatches(ctx *MatchContext, id string, regexInfo RegexPattern, data 
 	}
 }
 
+//nolint:revive // argument-limit: API surface
 func addRegexMatchesWithModifiers(ctx *MatchContext, id string, regexInfo RegexPattern, data []byte, modifiers []ast.StringModifier) {
 	hasWide := hasModifier(modifiers, ast.StringModifierWide)
 	hasASCII := hasModifier(modifiers, ast.StringModifierASCII)
@@ -142,6 +150,7 @@ func addRegexMatchesWithModifiers(ctx *MatchContext, id string, regexInfo RegexP
 	}
 }
 
+//nolint:revive // argument-limit: internal helper
 func matchPassesModifiers(data []byte, m Match, modifiers []ast.StringModifier, isWide bool) bool {
 	if len(modifiers) == 0 {
 		return true
@@ -161,6 +170,7 @@ func hasModifier(modifiers []ast.StringModifier, mod ast.StringModifierType) boo
 	return false
 }
 
+//nolint:revive // argument-limit: internal helper
 func isFullwordMatch(data []byte, offset, length int, isWide bool) bool {
 	if offset < 0 || length <= 0 {
 		return false

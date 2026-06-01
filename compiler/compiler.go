@@ -632,6 +632,8 @@ func (c *Compiler) GetWarnings() []CompilationWarning {
 }
 
 // AddWarning adds a compilation warning
+//
+//nolint:revive // argument-limit: API surface
 func (c *Compiler) AddWarning(phase, message string, line, column int) {
 	warning := CompilationWarning{
 		Phase:   phase,

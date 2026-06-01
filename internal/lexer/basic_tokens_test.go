@@ -175,6 +175,8 @@ func TestWhitespace_Newlines_Position(t *testing.T) {
 }
 
 // assertTokenSequenceAndPositions validates both token sequence and their positions
+//
+//nolint:revive // argument-limit: test helper
 func assertTokenSequenceAndPositions(t *testing.T, input string, expectedTokens []token.Token, positions []positionCheck) {
 	t.Helper()
 

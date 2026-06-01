@@ -30,7 +30,9 @@ func (b *Builder) Rule(pos token.Position, name string) *Rule {
 	}
 }
 
-// BinaryOp creates a new BinaryOp node
+// BinaryOp creates a new BinaryOp node.
+//
+//nolint:revive // argument-limit: factory method
 func (b *Builder) BinaryOp(
 	pos token.Position,
 	left Expression,
@@ -105,6 +107,8 @@ func (b *Builder) Meta(pos token.Position, key string, value MetaValue) *Meta {
 }
 
 // String creates a new String node
+//
+//nolint:revive // argument-limit: factory method
 func (b *Builder) String(
 	pos token.Position,
 	identifier string,
@@ -137,6 +141,8 @@ func (b *Builder) GlobalVariable(pos token.Position, name string, value Expressi
 }
 
 // ExternalVariable creates a new ExternalVariable node
+//
+//nolint:revive // argument-limit: factory method
 func (b *Builder) ExternalVariable(pos token.Position, name, identifier, typeHint string) *ExternalVariable {
 	return &ExternalVariable{
 		Pos:        pos,
@@ -172,6 +178,8 @@ func (b *Builder) StringLength(pos token.Position, strExpr Expression) *StringLe
 }
 
 // ForLoop creates a new ForLoop node
+//
+//nolint:revive // argument-limit: factory method
 func (b *Builder) ForLoop(pos token.Position, quantifier, variable string, rng, condition Expression) *ForLoop {
 	var variables []string
 	if variable != "" {
@@ -187,6 +195,8 @@ func (b *Builder) ForLoop(pos token.Position, quantifier, variable string, rng, 
 }
 
 // ForLoopMultiVar creates a new ForLoop node with multiple iterator variables (e.g. k, v)
+//
+//nolint:revive // argument-limit: factory method
 func (b *Builder) ForLoopMultiVar(pos token.Position, quantifier string, variables []string, rng, condition Expression) *ForLoop {
 	return &ForLoop{
 		Pos:        pos,

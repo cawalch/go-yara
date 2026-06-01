@@ -94,6 +94,8 @@ func (jm *JumpManager) ResetLabels() {
 // Pending Jump Management
 
 // AddPendingJump adds a jump that needs to be resolved later
+//
+//nolint:revive // argument-limit: API surface
 func (jm *JumpManager) AddPendingJump(opcode Opcode, label string, position int, line, column int) {
 	jump := PendingJump{
 		Opcode:   opcode,
@@ -106,6 +108,8 @@ func (jm *JumpManager) AddPendingJump(opcode Opcode, label string, position int,
 }
 
 // AddPendingJumpAt adds a pending jump at a specific position (current bytecode position)
+//
+//nolint:revive // argument-limit: API surface
 func (jm *JumpManager) AddPendingJumpAt(opcode Opcode, label string, line, column int, currentPosition int) {
 	jm.AddPendingJump(opcode, label, currentPosition, line, column)
 }

@@ -174,6 +174,8 @@ func TestAdvancedNodeTypes(t *testing.T) {
 }
 
 // validateAdvancedNode is a helper that performs common validation for advanced node types
+//
+//nolint:revive // argument-limit: test helper
 func validateAdvancedNode(t *testing.T, name string, node Node, expectedPos token.Position) {
 	// Test Position method
 	nodePos := node.Position()

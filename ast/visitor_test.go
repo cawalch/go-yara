@@ -7,6 +7,8 @@ import (
 )
 
 // testVisitorMethodNilResult is a helper function that tests a visitor method returns nil
+//
+//nolint:revive // argument-limit: test helper
 func testVisitorMethodNilResult(t *testing.T, visitor *BaseVisitor, node interface{ Accept(v Visitor) any }, methodName string) {
 	if result := node.Accept(visitor); result != nil {
 		t.Errorf("%s.Accept() returned %v, want nil", methodName, result)

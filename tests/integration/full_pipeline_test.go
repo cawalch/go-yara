@@ -14,6 +14,8 @@ import (
 )
 
 // assertPipelineResult is a test helper that flattens nested if/else for pipeline results.
+//
+//nolint:revive // argument-limit: test helper
 func assertPipelineResult(t *testing.T, program *compiler.CompiledProgram, err error, expectError bool, description string) {
 	t.Helper()
 	if expectError {

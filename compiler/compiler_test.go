@@ -2003,6 +2003,8 @@ func setupTestCompiledProgram(t *testing.T) *CompiledProgram {
 }
 
 // createTestRuleForCompiledProgram creates a simple test rule with one string
+//
+//nolint:revive // argument-limit: test helper
 func createTestRuleForCompiledProgram(_ *testing.T, name, identifier, value string, lineNum int) *ast.Rule {
 	return &ast.Rule{
 		Pos:  token.Position{Line: lineNum, Column: 1},
