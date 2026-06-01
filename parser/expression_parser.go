@@ -71,7 +71,7 @@ func isBinaryOperator(tok token.Type) bool {
 		token.ENDSWITH, token.IENDSWITH, token.IEQUALS, token.MATCHES,
 		token.AT, token.IN:
 		return true
-	case token.PLUS, token.MINUS, token.MULTIPLY, token.DIVIDE, token.MODULO:
+	case token.PLUS, token.MINUS, token.MULTIPLY, token.DIVIDE, token.MODULO, token.PERCENT:
 		return true
 	case token.BitwiseAnd, token.BitwiseOr, token.BitwiseXor,
 		token.LeftShift, token.RightShift:
@@ -97,7 +97,7 @@ func operatorPrecedence(tok token.Type) (prec int, leftAssoc bool) {
 	case token.BitwiseAnd, token.BitwiseOr, token.BitwiseXor,
 		token.LeftShift, token.RightShift:
 		return 4, true
-	case token.PLUS, token.MINUS, token.MULTIPLY, token.DIVIDE, token.MODULO:
+	case token.PLUS, token.MINUS, token.MULTIPLY, token.DIVIDE, token.MODULO, token.PERCENT:
 		return 5, true
 	default:
 		return 0, false
@@ -820,10 +820,10 @@ func (p *ExpressionParser) GetQuantifierParser() *QuantifierParser {
 	return p.quantifierParser
 }
 
-// tryParsePercentOf attempts to parse "N % of (strings)" when op is MODULO and next token is OF.
-// Returns the parsed *ast.OfExpression on success, (nil, nil) if it's not a percent quantifier.
+// tryParsePercentOf attempts to parse "N % of (strings)" or "N percent of (strings)" when op is MODULO/PERCENT and next token is OF.
+// Returns the parsed *ast.OfExpression on success, (nil, nil) if it's not a percent-of expression.
 func (p *ExpressionParser) tryParsePercentOf(left ast.Expression, op token.Type) (*ast.OfExpression, error) {
-	if op != token.MODULO || !p.peekTokenIs(token.OF) {
+	if (op != token.MODULO && op != token.PERCENT) || !p.peekTokenIs(token.OF) {
 		return nil, nil
 	}
 	intLit, ok := left.(*ast.Literal)

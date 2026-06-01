@@ -1,3 +1,119 @@
 package parser
 
-// This file is kept as a placeholder for future expression parser tests.
+import (
+	"testing"
+
+	"github.com/cawalch/go-yara/ast"
+	"github.com/cawalch/go-yara/internal/lexer"
+	"github.com/cawalch/go-yara/token"
+)
+
+func parseRule(t *testing.T, source string) *ast.Rule {
+	t.Helper()
+	l := lexer.New(source)
+	p := New(l)
+	program, err := p.ParseRules()
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if len(program.Rules) == 0 {
+		t.Fatal("expected at least one rule")
+	}
+	return program.Rules[0]
+}
+
+func TestPercentKeywordParsing(t *testing.T) {
+	tests := []struct {
+		name        string
+		condition   string
+		wantPercent bool
+		wantError   bool
+	}{
+		{
+			name:        "N percent of them",
+			condition:   "50 percent of them",
+			wantPercent: true,
+			wantError:   false,
+		},
+		{
+			name:        "N % of them",
+			condition:   "50 % of them",
+			wantPercent: true,
+			wantError:   false,
+		},
+		{
+			name:        "N percent of ($a, $b)",
+			condition:   "33 percent of ($a, $b)",
+			wantPercent: true,
+			wantError:   false,
+		},
+		{
+			name:        "N % of ($a, $b)",
+			condition:   "33 % of ($a, $b)",
+			wantPercent: true,
+			wantError:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Build a minimal rule with the condition
+			source := "rule test {\n\tstrings:\n\t\t$a = \"hello\"\n\t\t$b = \"world\"\n\tcondition:\n\t\t" + tt.condition + "\n}"
+
+			l := lexer.New(source)
+			p := New(l)
+			program, err := p.ParseRules()
+
+			if tt.wantError {
+				if err == nil {
+					t.Error("expected error but got none")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if len(program.Rules) == 0 {
+				t.Fatal("expected at least one rule")
+			}
+
+			rule := program.Rules[0]
+			ofExpr, ok := rule.Condition.(*ast.OfExpression)
+			if !ok {
+				t.Fatalf("expected *ast.OfExpression, got %T", rule.Condition)
+			}
+
+			_, ok = ofExpr.Count.(*ast.PercentExpression)
+			if !ok {
+				t.Fatalf("expected *ast.PercentExpression for count, got %T", ofExpr.Count)
+			}
+		})
+	}
+}
+
+func TestPercentKeywordNotReserved(t *testing.T) {
+	// Ensure "percent" as an identifier still works in non-keyword contexts
+	// (e.g., in a string or as part of a larger identifier)
+	source := `rule test {
+		strings:
+			$a = "percent"
+		condition:
+			$a
+	}`
+
+	l := lexer.New(source)
+	p := New(l)
+	_, err := p.ParseRules()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestPercentToken(t *testing.T) {
+	// Verify the PERCENT token type exists and has the right string
+	if token.PERCENT.String() != "PERCENT" {
+		t.Errorf("expected PERCENT token string, got %s", token.PERCENT.String())
+	}
+}

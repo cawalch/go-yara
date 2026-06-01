@@ -77,6 +77,7 @@ var keywords = map[string]token.Type{
 	"iendswith":   token.IENDSWITH,
 	"iequals":     token.IEQUALS,
 	"matches":     token.MATCHES,
+	"percent":     token.PERCENT,
 	"hash":        token.HASH,
 	"length":      token.LENGTH,
 }

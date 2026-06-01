@@ -98,6 +98,7 @@ const (
 	MULTIPLY
 	DIVIDE
 	MODULO
+	PERCENT
 	IntDivide
 	ASSIGN
 	EQ
@@ -207,6 +208,7 @@ var tokenTypeNames = map[Type]string{
 	MULTIPLY:         "MULTIPLY",
 	DIVIDE:           "DIVIDE",
 	MODULO:           "MODULO",
+	PERCENT:          "PERCENT",
 	IntDivide:        "IntDivide",
 	ASSIGN:           "ASSIGN",
 	EQ:               "EQ",
