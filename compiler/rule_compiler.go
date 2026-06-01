@@ -473,7 +473,9 @@ func (rc *RuleCompiler) compileCondition(rule *ast.Rule) error {
 	stringOffsets := rc.stringCompiler.GetStringOffsets()
 	rc.conditionCompiler.SetStringOffsets(stringOffsets)
 
-	// Compile the condition expression using CompileBooleanExpression which handles short-circuit evaluation properly
+	// Compile the condition expression using CompileBooleanExpression.
+	// Short-circuit evaluation is disabled until the short-circuit code path properly
+	// manages stack state (see compileShortCircuitBinary for details).
 	if err := rc.conditionCompiler.CompileBooleanExpression(rule.Condition, false); err != nil {
 		return fmt.Errorf("compiling condition: %w", err)
 	}

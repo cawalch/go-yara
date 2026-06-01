@@ -322,7 +322,6 @@ func (i *Interpreter) Reset() {
 		}
 	}
 	i.stopped = false
-	i.stopped = false
 	i.result = nil
 	if i.ruleResults == nil {
 		i.ruleResults = make(map[string]bool)
