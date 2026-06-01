@@ -102,7 +102,7 @@ func (p *QuantifierParser) parseForQuantifier(pos token.Position) (ast.Expressio
 	if !numericQuantifier {
 		// Check if this is a for loop with variable (e.g., "for any i in (1..3) : ...")
 		if p.CurrentTokenIs(token.IDENTIFIER) {
-return p.parseForLoopWithVariable(pos, quantifierStr)
+			return p.parseForLoopWithVariable(pos, quantifierStr)
 		}
 
 		// For standard "for" quantifiers without variables, we expect 'of'
