@@ -118,12 +118,24 @@ func (i *Interpreter) executeDblGt() error  { return i.executeTypedComparison(Op
 func (i *Interpreter) executeDblLe() error  { return i.executeTypedComparison(OpDblLe) }
 func (i *Interpreter) executeDblGe() error  { return i.executeTypedComparison(OpDblGe) }
 
-func (i *Interpreter) executeStrEq() error  { return i.executeStringComparison(func(a, b string) bool { return a == b }) }
-func (i *Interpreter) executeStrNeq() error { return i.executeStringComparison(func(a, b string) bool { return a != b }) }
-func (i *Interpreter) executeStrLt() error  { return i.executeStringComparison(func(a, b string) bool { return a < b }) }
-func (i *Interpreter) executeStrGt() error  { return i.executeStringComparison(func(a, b string) bool { return a > b }) }
-func (i *Interpreter) executeStrLe() error  { return i.executeStringComparison(func(a, b string) bool { return a <= b }) }
-func (i *Interpreter) executeStrGe() error  { return i.executeStringComparison(func(a, b string) bool { return a >= b }) }
+func (i *Interpreter) executeStrEq() error {
+	return i.executeStringComparison(func(a, b string) bool { return a == b })
+}
+func (i *Interpreter) executeStrNeq() error {
+	return i.executeStringComparison(func(a, b string) bool { return a != b })
+}
+func (i *Interpreter) executeStrLt() error {
+	return i.executeStringComparison(func(a, b string) bool { return a < b })
+}
+func (i *Interpreter) executeStrGt() error {
+	return i.executeStringComparison(func(a, b string) bool { return a > b })
+}
+func (i *Interpreter) executeStrLe() error {
+	return i.executeStringComparison(func(a, b string) bool { return a <= b })
+}
+func (i *Interpreter) executeStrGe() error {
+	return i.executeStringComparison(func(a, b string) bool { return a >= b })
+}
 
 // executeIntToDouble handles OpIntToDbl opcode.
 func (i *Interpreter) executeIntToDouble() error {
