@@ -856,52 +856,6 @@ func (c *Compiler) GetVersion() string {
 	return "go-yara compiler v1.0"
 }
 
-// GetSupportedFeatures returns the features supported by this compiler
-func (c *Compiler) GetSupportedFeatures() []string {
-	return []string{
-		"lexical_analysis",
-		"parsing",
-		"semantic_analysis",
-		"code_generation",
-		"bytecode_optimization",
-		"pattern_matching",
-		"string_modifiers",
-		"rule_modifiers",
-		"metadata",
-		"conditions",
-		"expressions",
-		"functions",
-	}
-}
-
-// EstimateCompilationTime estimates compilation time for given source size
-func (c *Compiler) EstimateCompilationTime(sourceSize int) time.Duration {
-	// Rough estimate based on typical compilation speeds
-	// TODO: Real implementation would use historical data and profiling
-	// Currently uses a simple linear approximation based on typical YARA rule complexity
-
-	baseTime := 10 * time.Millisecond    // Base overhead
-	perByteTime := 100 * time.Nanosecond // Time per source byte
-
-	estimated := baseTime + time.Duration(sourceSize)*perByteTime
-
-	return estimated
-}
-
-// GetMemoryRequirements estimates memory requirements for compilation
-func (c *Compiler) GetMemoryRequirements(sourceSize int) int {
-	// Rough estimate of memory usage during compilation
-	// TODO: Real implementation would analyze rule complexity, string patterns, and AST size
-	// Currently provides a conservative estimate suitable for most YARA rule sets
-
-	baseMemory := 1024 * 1024 // 1MB base
-	perByteMemory := 4        // 4 bytes per source byte
-
-	estimated := baseMemory + sourceSize*perByteMemory
-
-	return estimated
-}
-
 // BatchCompile compiles multiple sources efficiently
 func (c *Compiler) BatchCompile(sources []string) ([]*CompiledProgram, error) {
 	programs := make([]*CompiledProgram, 0, len(sources))

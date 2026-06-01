@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"maps"
 	"slices"
-	"sync"
 
 	"github.com/cawalch/go-yara/ast"
 	"github.com/cawalch/go-yara/regex"
@@ -106,8 +105,7 @@ func (rc *RuleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 		TextPatterns:     rc.copyTextPatterns(),
 		RegexPatterns:    rc.copyRegexPatterns(),
 		HexPatterns:      rc.copyHexPatterns(),
-		Stats:            nil, // Lazy: computed on demand
-		ruleCompiler:     rc,  // Store reference for lazy computation
+		Stats:            rc.getCompilationStats(),
 	}
 
 	rc.ruleIndex++
@@ -624,9 +622,7 @@ type CompiledRule struct {
 	TextPatterns     map[string][]byte
 	RegexPatterns    map[string]RegexPattern
 	HexPatterns      map[string]*HexPattern
-	Stats            map[string]any // Compilation statistics (lazy computed)
-	statsOnce        sync.Once      // Ensure stats computed only once
-	ruleCompiler     *RuleCompiler  // Reference for lazy stats computation
+	Stats            map[string]any // Compilation statistics (computed at compile time)
 
 	// Integer string ID optimization (built during compilation)
 	StringIDToIndex map[string]int   // string identifier ("$a") -> integer index
@@ -727,15 +723,8 @@ func hasStringModifier(modifiers []ast.StringModifier, modifierType ast.StringMo
 	return false
 }
 
-// GetStats returns compilation statistics (computed lazily on first access)
+// GetStats returns compilation statistics (computed at compile time).
 func (cr *CompiledRule) GetStats() map[string]any {
-	cr.statsOnce.Do(func() {
-		if cr.ruleCompiler != nil {
-			cr.Stats = cr.ruleCompiler.getCompilationStats()
-		} else {
-			cr.Stats = make(map[string]any)
-		}
-	})
 	return cr.Stats
 }
 
