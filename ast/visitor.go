@@ -64,6 +64,7 @@ type PatternVisitor interface {
 	VisitStringLength(*StringLength) any
 	VisitStringOffset(*StringOffset) any
 	VisitStringCount(*StringCount) any
+	VisitLengthOf(*LengthOf) any
 }
 
 // VariableVisitor handles variable references
@@ -155,6 +156,9 @@ func (v *BaseVisitor) VisitStringOffset(_ *StringOffset) any { return nil }
 
 // VisitStringCount visits a string count node for YARA # operator
 func (v *BaseVisitor) VisitStringCount(_ *StringCount) any { return nil }
+
+// VisitLengthOf visits a length of node for YARA "length of" expression
+func (v *BaseVisitor) VisitLengthOf(_ *LengthOf) any { return nil }
 
 // VariableVisitor implementations
 

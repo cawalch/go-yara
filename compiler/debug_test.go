@@ -65,7 +65,7 @@ func TestInterpreterDebugMode(t *testing.T) {
 
 			// Check if debug output was produced and matches expected content
 			if tt.expectOutput {
-				expectedOutput := `DEBUG: Executing opcode 63 (PUSH_8) at ip 0
+				expectedOutput := `DEBUG: Executing opcode 64 (PUSH_8) at ip 0
 DEBUG: Stack after PUSH_8: len=1
 DEBUG: Top of stack: Type=Int, Value=42
 DEBUG: Executing opcode 14 (POP) at ip 2

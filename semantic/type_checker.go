@@ -69,6 +69,9 @@ func (tc *TypeChecker) checkExpression(expr ast.Expression) *TypeInfo {
 	case *ast.StringCount:
 		return tc.checkStringCount(e)
 
+	case *ast.LengthOf:
+		return tc.checkLengthOf(e)
+
 	case *ast.ForLoop:
 		return tc.checkForLoop(e)
 
@@ -594,6 +597,15 @@ func (tc *TypeChecker) checkStringCount(strCount *ast.StringCount) *TypeInfo {
 	}
 
 	// String count always returns an integer (number of matches)
+	return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
+}
+
+// checkLengthOf checks the type of length of expressions
+func (tc *TypeChecker) checkLengthOf(lengthOf *ast.LengthOf) *TypeInfo {
+	// Check the target expression type
+	tc.checkExpression(lengthOf.Target)
+
+	// Length of always returns an integer (total length of matches)
 	return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
 }
 

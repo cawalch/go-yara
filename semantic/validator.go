@@ -200,7 +200,7 @@ func (v *Validator) isSpecialExpression(expr ast.Expression) bool {
 	switch expr.(type) {
 	case *ast.OfExpression, *ast.FunctionCall, *ast.ForLoop, *ast.PercentExpression:
 		return true
-	case *ast.StringLength, *ast.StringOffset, *ast.StringCount:
+	case *ast.StringLength, *ast.StringOffset, *ast.StringCount, *ast.LengthOf:
 		return true
 	default:
 		return false
@@ -246,6 +246,8 @@ func (v *Validator) validateSpecialExpression(expr ast.Expression) (*TypeInfo, [
 		return v.validateStringOffsetExpression(e)
 	case *ast.StringCount:
 		return v.validateStringCountExpression(e)
+	case *ast.LengthOf:
+		return v.validateLengthOfExpression(e)
 	case *ast.PercentExpression:
 		return v.validatePercentExpression(e)
 	default:
@@ -840,6 +842,12 @@ func (v *Validator) VisitStringCount(_ *ast.StringCount) any {
 	return nil
 }
 
+// VisitLengthOf visits and validates a length of node
+func (v *Validator) VisitLengthOf(_ *ast.LengthOf) any {
+	// LengthOf validation is handled in validateExpression
+	return nil
+}
+
 // validateStringLengthExpression validates string length expressions (!a or !a[i])
 func (v *Validator) validateStringLengthExpression(stringLength *ast.StringLength) (*TypeInfo, []error) {
 	var errors []error
@@ -915,6 +923,27 @@ func (v *Validator) validateStringCountExpression(stringCount *ast.StringCount) 
 	}
 
 	// String count expressions return integers
+	return &TypeInfo{DataType: TypeInteger, IntegerType: Uint64Type}, errors
+}
+
+// validateLengthOfExpression validates "length of" expressions
+func (v *Validator) validateLengthOfExpression(lengthOf *ast.LengthOf) (*TypeInfo, []error) {
+	var errors []error
+
+	// Validate the target expression
+	targetType, targetErrs := v.validateExpression(lengthOf.Target)
+	errors = append(errors, targetErrs...)
+
+	// The target should be a string identifier, quantified string, or special identifier (them/all)
+	// String identifiers in conditions evaluate to boolean (found/not found), which is valid for length of
+	if targetType != nil && targetType.DataType != TypeBoolean && targetType.DataType != TypeString && targetType.DataType != TypeUnknown {
+		errors = append(errors, &Error{
+			Message:  "length of target must be a string identifier",
+			Position: lengthOf.Target.Position(),
+		})
+	}
+
+	// Length of expressions return integers
 	return &TypeInfo{DataType: TypeInteger, IntegerType: Uint64Type}, errors
 }
 
