@@ -17,6 +17,7 @@ type Scanner struct {
 	matchCtx    *MatchContext   // reused across calls
 	ruleResults map[string]bool // reused across calls
 	tagsFilter  map[string]bool // non-empty means: only scan rules with these tags
+	itersmax    int             // max for-loop iterations (0 = unlimited)
 }
 
 // ScanResult represents the result of scanning data against compiled rules.
@@ -27,7 +28,6 @@ type ScanResult struct {
 	RuleResults map[string]bool
 
 	// Matches contains per-rule pattern matches, keyed by rule name and string identifier.
-	// Entries are deep-copied so callers may keep the result after Scanner reuse.
 	Matches map[string]map[string][]Match
 }
 
@@ -51,6 +51,14 @@ func WithTagsFilter(tags []string) ScannerOption {
 	}
 	return func(s *Scanner) {
 		s.tagsFilter = filter
+	}
+}
+
+// WithItersmax sets a limit on the total number of for-loop iterations.
+// A value of 0 means unlimited. Corresponds to YARA's ITERSMAX compile-time constant.
+func WithItersmax(limit int) ScannerOption {
+	return func(scanner *Scanner) {
+		scanner.itersmax = limit
 	}
 }
 
@@ -191,6 +199,7 @@ func (s *Scanner) Scan(data []byte) (*ScanResult, error) {
 	// 2. Build MatchedRules, skipping non-global rules if any global rule failed.
 
 	// Pass 1: evaluate every rule
+	s.interp.ResetIterationCount()
 	for _, rule := range s.program.Rules {
 		// Global rules are always evaluated; others only if they match the tag filter.
 		if !rule.IsGlobal && !s.hasMatchingTag(rule) {
@@ -205,6 +214,7 @@ func (s *Scanner) Scan(data []byte) (*ScanResult, error) {
 		}
 
 		s.prepareInterpreter(rule)
+		s.interp.SetItersmax(s.itersmax)
 		if err := s.interp.Execute(); err != nil {
 			return nil, err
 		}

@@ -1,5 +1,7 @@
 package compiler
 
+import "fmt"
+
 // executeIterStartIntRange starts an integer range iterator.
 func (i *Interpreter) executeIterStartIntRange() error {
 	if err := i.validateStackUnderflowN(OpIterStartIntRange, 2); err != nil {
@@ -248,6 +250,12 @@ func (i *Interpreter) executeIterNext() error {
 	iter := &i.iterators[len(i.iterators)-1]
 
 	if iter.Index < iter.Total {
+		// Check iteration limit (itersmax)
+		i.iterations++
+		if i.itersmax > 0 && i.iterations > i.itersmax {
+			return fmt.Errorf("iteration limit exceeded (itersmax=%d)", i.itersmax)
+		}
+
 		switch iter.Type {
 		case OpIterStartIntRange:
 			i.memory[iter.Variables[0]] = Value{Type: ValueTypeInt, IntVal: iter.StartValue + int64(iter.Index)}
