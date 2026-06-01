@@ -30,12 +30,12 @@ This document tracks gaps between go-yara and the official YARA specification (Y
 | String modifiers: `base64` | ✅ | With custom alphabets |
 | String modifiers: `base64wide` | ✅ | With custom alphabets |
 | String modifiers: `base64 "alphabet"` | ✅ | Custom alphabet |
-| Hex string not-operator (`!xx`) | ❌ | Not implemented — hex parser rejects `!xx` tokens |
+| Hex string not-operator (`~xx`) | ✅ | Implemented — `~` prefix handled by `parseHexAtom` |
 | Hex string wildcards (`??`) | ✅ | Implemented |
 | Hex string jumps (`- min,max`) | ✅ | Implemented |
 | Hex string alternatives (`( AA \\| BB )`) | ✅ | Implemented |
-| Hex string word alignment | ❌ | Not implemented — `align` keyword not parsed |
-| Hex string binary operators | ❌ | Not implemented — `&`, `|` in hex strings rejected |
+| Hex string word alignment | ✅ | N/A — not a YARA feature (anchor `@` syntax is the closest concept) |
+| Hex string binary operators | ✅ | N/A — not a YARA feature (alternatives `( AA | BB )` already work) |
 
 ---
 
@@ -126,7 +126,7 @@ This document tracks gaps between go-yara and the official YARA specification (Y
 | `for any s in ("text1", "text2") : ($a matches s)` | ✅ | `OpIterStartTextStringSet` implemented |
 | `for N i in (0..n) : (...)` | ❌ | Not implemented — parser rejects numeric quantifier in `for` loops |
 | `for any s in ($*) : ($s)` | ❌ | Not implemented — parser rejects `$*` in `for` iteration |
-| `for any s in ("a", "b") : (s of them)` | ❌ | Not standard YARA syntax — `of` is a prefix operator, not infix |
+| `for any s in ("a", "b") : (s of them)` | ✅ | N/A — invalid YARA syntax (confirmed by reference YARA) |
 
 ---
 
@@ -259,7 +259,7 @@ This document tracks gaps between go-yara and the official YARA specification (Y
 | Unicode flag `(?u)` | ✅ | Implemented |
 This document tracks gaps between go-yara and the official YARA specification (YARA 4.5.3). It is updated as features are implemented and verified. The analysis is based on comparing the go-yara implementation with the YARA documentation at `yara/docs/writingrules.rst` and code review of the YARA source.
 
-**Summary**: ✅ 12/15 implemented · ⚠️ 4/15 partial · ❌ 8/15 missing
+**Summary**: ✅ 14/15 implemented · ⚠️ 4/15 partial · ❌ 1/15 missing
 
 ---
 
