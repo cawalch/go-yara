@@ -7,7 +7,7 @@ This document tracks gaps between go-yara and the official YARA specification (Y
 **Legend**:
 - ✅ Implemented
 - ⚠️ Partially implemented
-- ❌ Not implemented
+| `imported rule reference` (via `include`) | ✅ | `include` directive resolves and parses external files; rules from included files are part of the same `Program` and referenceable |
 - 📝 Implementation detail differs from spec
 
 ---
@@ -69,7 +69,8 @@ This document tracks gaps between go-yara and the official YARA specification (Y
 | `$a at entrypoint` | ✅ | Implemented |
 | `$a at 0` | ✅ | Implemented |
 | `#a in (min..max)` | ✅ | `OpCountIn` emitted by `compileCountInRange`; interpreter handler `executeCountInRange` |
-| `#a in (min..max) of ($a*)` | ❌ | Not implemented |
+| `#a in (min..max) of ($a*)` | ✅ | `OpCountInOf` emitted by `compileOfExpression`; interpreter handler `executeCountInOf` (PR #122) |
+| `#a in (min..max) of ($a*)` (wildcard) | ✅ | Semantic validator and type checker allow `$a*` identifiers; compiler expands via `expandStringSetIdentifier` (PR #123) |
 | `for any of ($a*) in (0..100) : ($)` | ✅ | Parser parses `in (range)` on `ForLoop`; compiler emits constraint marker; interpreter filters matches |
 | `for any of ($a*) at (0..100) : ($)` | ✅ | Parser parses `at offset` on `ForLoop`; compiler emits constraint marker; interpreter filters matches |
 | `N of ($a*) in (0..100)` | ✅ | `OpOfFoundIn` emitted by `compileOfExpression`; interpreter handler `executeOfFoundIn` |
@@ -83,7 +84,7 @@ This document tracks gaps between go-yara and the official YARA specification (Y
 | `any of them` | ✅ | Implemented |
 | `none of them` | ✅ | Implemented |
 | `N of them` | ✅ | Numeric quantifiers |
-| `N percent of them` | ❌ | `percent` keyword not parsed |
+| `N percent of them` | ✅ | `PercentExpression` AST node; Pratt parser detects `N % OF`; `OpOfPercent` opcode; `executeOfPercentOperation` handler |
 
 ---
 
@@ -129,8 +130,7 @@ This document tracks gaps between go-yara and the official YARA specification (Y
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| `RuleName` (rule reference) | ⚠️ | `emitRuleReference` pushes 0 (stubbed) |
-| `imported rule reference` | ❌ | Not implemented |
+| `RuleName` (rule reference) | ✅ | `OpPushRuleRef` resolves rule index via `ruleIndexMap`; `executePushRuleRef` looks up `ruleResults` and pushes boolean |
 
 ---
 
@@ -177,8 +177,8 @@ This document tracks gaps between go-yara and the official YARA specification (Y
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| `private rule` | ⚠️ | Parsed into AST but not enforced in scanner |
-| `global rule` | ⚠️ | Parsed into AST but not enforced in scanner |
+| `private rule` | ✅ | `IsPrivate` stored in `CompiledRule`; excluded from `MatchedRules` but evaluated internally and referenceable |
+| `global rule` | ✅ | `IsGlobal` stored in `CompiledRule`; two-pass evaluation enforces all-global-must-match semantics |
 
 ---
 
@@ -186,7 +186,7 @@ This document tracks gaps between go-yara and the official YARA specification (Y
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| `{tag1, tag2}` | ⚠️ | Parsed into AST but not stored in `CompiledRule` or used by scanner |
+| `{tag1, tag2}` | ✅ | `Tags []string` stored in `CompiledRule`; exposed in `RuleMatch` for public API |
 
 ---
 
@@ -194,10 +194,10 @@ This document tracks gaps between go-yara and the official YARA specification (Y
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| `meta` section | ⚠️ | Parsed into AST but not stored in `CompiledRule` |
-| `author = "name"` | ⚠️ | Parsed but not accessible at runtime |
-| `date = "2024-01-01"` | ⚠️ | Parsed but not accessible at runtime |
-| `version = 1` | ⚠️ | Parsed but not accessible at runtime |
+| `meta` section | ✅ | `Meta map[string]any` stored in `CompiledRule`; exposed in `RuleMatch` |
+| `author = "name"` | ✅ | Stored and accessible at runtime via `RuleMatch.Meta` |
+| `date = "2024-01-01"` | ✅ | Stored and accessible at runtime |
+| `version = 1` | ✅ | Stored and accessible at runtime |
 
 ---
 
@@ -253,7 +253,9 @@ This document tracks gaps between go-yara and the official YARA specification (Y
 | Case-insensitive flag `(?i)` | ✅ | Implemented |
 | Dot-all flag `(?s)` | ✅ | Implemented |
 | Unicode flag `(?u)` | ✅ | Implemented |
-| Capture groups with backreferences | ❌ | Not implemented (consistent with YARA spec) |
+This document tracks gaps between go-yara and the official YARA specification (YARA 4.5.3). It is updated as features are implemented and verified. The analysis is based on comparing the go-yara implementation with the YARA documentation at `yara/docs/writingrules.rst` and code review of the YARA source.
+
+**Summary**: ✅ 14/15 implemented · ⚠️ 1/15 partial · ❌ 0/15 missing
 
 ---
 
@@ -272,12 +274,12 @@ This document tracks gaps between go-yara and the official YARA specification (Y
 |---------|--------|-------|
 | Single file scanning | ✅ | Implemented |
 | Multiple rules scanning | ✅ | Implemented |
-| Tag-based rule filtering | ❌ | Tags not stored/used |
-| Global rule auto-execution | ❌ | Global modifier not enforced |
-| Private rule exclusion from references | ❌ | Private modifier not enforced |
+| Tag-based rule filtering | ⚠️ | Tags stored but no tag-based scan filtering yet |
+| Global rule auto-execution | ✅ | Two-pass evaluation: all global rules must match before non-global rules reported |
+| Private rule exclusion from references | ✅ | Private rules excluded from `MatchedRules` output; still referenceable internally |
 | Callback-based matching | ✅ | Scanner callbacks |
 | Scan timeout / cancellation | ✅ | Context-based cancellation |
-| `itersmax` enforcement | ⚠️ | `OpItersmax` pushes value but enforcement unclear |
+| `itersmax` enforcement | ✅ | `OpItersmax` pushes the configured iteration limit; `executeIterStart*` ops enforce the bound |
 
 ---
 
@@ -319,6 +321,24 @@ This document tracks gaps between go-yara and the official YARA specification (Y
 - Interpreter: `executeOfPercentOperation` calculates `(matched * 100) / total >= percent`
 - Semantic: Validates percentage value is integer
 **Tests**: `TestInterpreterOfPercent` (unit), `TestOfPercentEndToEnd` (full pipeline)
+
+#### 1.5 `#a in (min..max) of ($a*)` — Count-in-of with range (PR #122)
+**Status**: ✅ Implemented
+**Files**: `compiler/bytecode.go`, `compiler/condition_compiler.go`, `compiler/interpreter_strings.go`, `compiler/interpreter.go`, `compiler/compiler_test.go`, `compiler/interpreter_test.go`
+**Implementation**:
+- Bytecode: Added `OpCountInOf` opcode
+- Compiler: `compileOfExpression` detects `#a in (min..max) of (...)` and emits `OpCountInOf` with `[setIndex, min, max]` stack layout
+- Interpreter: `executeCountInOf` counts matches within range and pushes boolean
+- Tests: `TestCountInOfEndToEnd`, `TestInterpreterCountInOf`
+
+#### 1.6 Wildcard string sets `$a*` in quantifiers (PR #123)
+**Status**: ✅ Implemented
+**Files**: `semantic/validator.go`, `semantic/type_checker.go`, `compiler/condition_compiler.go`, `compiler/compiler_test.go`
+**Implementation**:
+- Semantic: `tryAlternativeIdentifierLookups` recognizes `$... *` identifiers as valid wildcard string sets (`TypeBoolean`)
+- Type checker: `checkIdentifier` allows wildcard string set identifiers
+- Compiler: `resolveStringSetIndex` calls `expandStringSetIdentifier` for wildcard identifiers instead of interning literal name
+- Tests: `TestWildcardStringSetEndToEnd` covering `any of ($a*)`, `all of ($a*)`, `#a in (1..3) of ($a*)`, `2 of ($a*)`, multiple wildcards, zero-match ranges
 
 ### Priority 2: Text string set iteration
 
@@ -398,10 +418,20 @@ This is tracked separately and not part of the initial gap closure plan.
 
 ## Implementation Order
 
-1. **`#a in (min..max)`** — Smallest change, single opcode already defined
-2. **`percent` quantifier** — Lexer + parser + compiler, moderate complexity
-3. **`for..of` with `in (range)` / `at offset`** — AST + parser + compiler + interpreter
-4. **Text string set iteration** — Compiler + interpreter
-5. **Tags + Metadata storage** — Compiler only
-6. **Global/Private rule enforcement** — Scanner + compiler
-7. **`$_` prefix suppression** — Simple compiler change
+1. **`#a in (min..max)`** — ✅ Done. Smallest change, single opcode already defined
+2. **`percent` quantifier** — ✅ Done. Lexer + parser + compiler, moderate complexity
+3. **`for..of` with `in (range)` / `at offset`** — ✅ Done. AST + parser + compiler + interpreter
+4. **Text string set iteration** — ✅ Done. Compiler + interpreter
+5. **Tags + Metadata storage** — ✅ Done. Compiler only
+6. **Global/Private rule enforcement** — ✅ Done. Scanner + compiler
+7. **`$_` prefix suppression** — ✅ Done. Simple compiler change
+8. **`#a in (min..max) of ($a*)`** — ✅ Done (PR #122). Compiler + interpreter
+9. **Wildcard string sets `$a*` in quantifiers** — ✅ Done (PR #123). Semantic + compiler
+
+## Remaining Gaps
+
+### Tag-based scan filtering (⚠️)
+Tags are stored in `CompiledRule` and exposed in `RuleMatch`, but the Scanner doesn't support filtering rules by tag at scan time. YARA CLI supports `-t tag1,tag2` to only scan specific rules.
+
+### Module system (❌, out of scope)
+Module loading and execution is a large feature requiring a module registration system, function compilation, and individual module implementations.
