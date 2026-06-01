@@ -238,11 +238,15 @@ func (s *Scanner) Scan(data []byte) (*ScanResult, error) {
 			continue
 		}
 		if result.RuleResults[rule.Name] {
+			matches := result.Matches[rule.Name]
+			// Filter out private strings from the report
+			publicMatches := filterPrivateStrings(rule, matches)
+			result.Matches[rule.Name] = publicMatches
 			result.MatchedRules = append(result.MatchedRules, RuleMatch{
 				Rule:    rule.Name,
 				Tags:    rule.Tags,
 				Meta:    rule.Meta,
-				Matches: result.Matches[rule.Name],
+				Matches: publicMatches,
 			})
 		}
 	}
@@ -356,6 +360,16 @@ func cloneMatches(src map[string][]Match) map[string][]Match {
 		dst := make([]Match, len(v))
 		copy(dst, v)
 		matches[k] = dst
+	}
+	return matches
+}
+
+// filterPrivateStrings removes private strings from the matches map.
+func filterPrivateStrings(rule *CompiledRule, matches map[string][]Match) map[string][]Match {
+	for id := range matches {
+		if rule.IsPrivateString(id) {
+			delete(matches, id)
+		}
 	}
 	return matches
 }

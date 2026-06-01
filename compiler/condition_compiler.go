@@ -882,15 +882,6 @@ func (cc *ConditionCompiler) compileStringLengthOperator(unaryOp *ast.UnaryOp) e
 }
 
 func (cc *ConditionCompiler) compileNotOperator(unaryOp *ast.UnaryOp) error {
-	if id, ok := unaryOp.Right.(*ast.Identifier); ok {
-		if offset, exists := cc.findStringOffset(id.Name); exists {
-			cc.emitStringIdentifier(offset, id.Name, unaryOp.Pos.Line, unaryOp.Pos.Column)
-			cc.emitter.EmitOpcode(OpLength, unaryOp.Pos.Line, unaryOp.Pos.Column)
-			return nil
-		}
-		return fmt.Errorf("undefined string identifier for length operator: %s", id.Name)
-	}
-
 	if err := cc.compileExpression(unaryOp.Right); err != nil {
 		return err
 	}
