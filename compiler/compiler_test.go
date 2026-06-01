@@ -4135,6 +4135,113 @@ func TestOfFoundInEndToEnd(t *testing.T) {
 	}
 }
 
+// TestCountInOfEndToEnd tests "#a in (min..max) of ($str*)" end-to-end.
+// Semantics: at least #a strings from the set are found within offsets [min, max].
+func TestCountInOfEndToEnd(t *testing.T) {
+	// Test 1: #a in (1..3) of ($a, $b, $c) — $a and $b match at offsets 0 and 6.
+	// #a = 1 ("hello" appears once). 1 >= 1 is true, and 2 strings are in range 0..100.
+	ruleSource1 := `rule test_count_in_of {
+		strings:
+			$a = "hello"
+			$b = "world"
+			$c = "notfound"
+		condition:
+			#a in (1..3) of ($a, $b, $c)
+	}`
+
+	compiler1 := NewCompiler()
+	program1, err := compiler1.CompileSource(ruleSource1)
+	if err != nil {
+		t.Fatalf("CompileSource1() error = %v", err)
+	}
+
+	scanner1 := NewScanner(program1)
+	results1, err := scanner1.Scan([]byte("hello world"))
+	if err != nil {
+		t.Fatalf("Scan1() error = %v", err)
+	}
+
+	if len(results1.MatchedRules) != 1 {
+		t.Errorf("expected 1 match (#a=1, 2 strings in range 0..100, 2 >= 1), got %d", len(results1.MatchedRules))
+	}
+
+	// Test 2: #a in (1..3) of them — same as above but with "them"
+	ruleSource2 := `rule test_count_in_of_them {
+		strings:
+			$a = "hello"
+			$b = "world"
+			$c = "notfound"
+		condition:
+			#a in (1..3) of them
+	}`
+
+	compiler2 := NewCompiler()
+	program2, err := compiler2.CompileSource(ruleSource2)
+	if err != nil {
+		t.Fatalf("CompileSource2() error = %v", err)
+	}
+
+	scanner2 := NewScanner(program2)
+	results2, err := scanner2.Scan([]byte("hello world"))
+	if err != nil {
+		t.Fatalf("Scan2() error = %v", err)
+	}
+
+	if len(results2.MatchedRules) != 1 {
+		t.Errorf("expected 1 match with 'them', got %d", len(results2.MatchedRules))
+	}
+
+	// Test 3: #a in (1..3) of ($a, $b, $c) — no strings in range 500..600
+	ruleSource3 := `rule test_count_in_of_no_match {
+		strings:
+			$a = "hello"
+			$b = "world"
+			$c = "notfound"
+		condition:
+			#a in (1..3) of ($a, $b, $c) in (500..600)
+	}`
+
+	compiler3 := NewCompiler()
+	program3, err := compiler3.CompileSource(ruleSource3)
+	if err != nil {
+		t.Fatalf("CompileSource3() error = %v", err)
+	}
+
+	scanner3 := NewScanner(program3)
+	results3, err := scanner3.Scan([]byte("hello world"))
+	if err != nil {
+		t.Fatalf("Scan3() error = %v", err)
+	}
+
+	if len(results3.MatchedRules) != 0 {
+		t.Errorf("expected 0 matches (no strings in range 500..600), got %d", len(results3.MatchedRules))
+	}
+
+	// Test 4: plain "#a in (min..max)" without "of" — should still work
+	ruleSource4 := `rule test_count_in_plain {
+		strings:
+			$a = "hello"
+		condition:
+			#a in (1..10)
+	}`
+
+	compiler4 := NewCompiler()
+	program4, err := compiler4.CompileSource(ruleSource4)
+	if err != nil {
+		t.Fatalf("CompileSource4() error = %v", err)
+	}
+
+	scanner4 := NewScanner(program4)
+	results4, err := scanner4.Scan([]byte("hello hello"))
+	if err != nil {
+		t.Fatalf("Scan4() error = %v", err)
+	}
+
+	if len(results4.MatchedRules) != 1 {
+		t.Errorf("expected 1 match (#a=2 in range 1..10), got %d", len(results4.MatchedRules))
+	}
+}
+
 // TestOfFoundAtEndToEnd tests "N of ($str*) at offset" end-to-end
 func TestOfFoundAtEndToEnd(t *testing.T) {
 	// Test 1: 1 of ($a, $b, $c) at 0 — $a at offset 0

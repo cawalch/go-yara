@@ -109,6 +109,7 @@ const (
 	OpOfFoundAt
 	OpOfPercentIn
 	OpOfPercentAt
+	OpCountInOf
 
 	// OpIntBegin begins integer operations (100-110)
 	OpIntBegin = 100
@@ -369,6 +370,7 @@ var opcodeNames = map[Opcode]string{
 	OpOfFoundAt:              "OF_FOUND_AT",
 	OpOfPercentIn:            "OF_PERCENT_IN",
 	OpOfPercentAt:            "OF_PERCENT_AT",
+	OpCountInOf:              "COUNT_IN_OF",
 	OpConcat:                 "CONCAT",
 }
 
