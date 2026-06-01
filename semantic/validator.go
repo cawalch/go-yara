@@ -581,9 +581,13 @@ func (v *Validator) validateForLoopExpression(forLoop *ast.ForLoop) (*TypeInfo, 
 
 	// Determine loop variable type from range expression
 	loopVarType := ""
-	switch forLoop.Range.(type) {
+	switch r := forLoop.Range.(type) {
 	case *ast.StringTuple:
 		loopVarType = "string"
+	case *ast.Literal:
+		if r.Type == token.StringLit {
+			loopVarType = "string"
+		}
 	case *ast.BinaryOp:
 		// Integer range (min..max)
 		loopVarType = "integer"

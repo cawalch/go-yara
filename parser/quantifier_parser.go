@@ -102,7 +102,7 @@ func (p *QuantifierParser) parseForQuantifier(pos token.Position) (ast.Expressio
 	if !numericQuantifier {
 		// Check if this is a for loop with variable (e.g., "for any i in (1..3) : ...")
 		if p.CurrentTokenIs(token.IDENTIFIER) {
-			return p.parseForLoopWithVariable(pos, quantifierStr)
+return p.parseForLoopWithVariable(pos, quantifierStr)
 		}
 
 		// For standard "for" quantifiers without variables, we expect 'of'
@@ -124,7 +124,7 @@ func (p *QuantifierParser) parseForQuantifier(pos token.Position) (ast.Expressio
 	}
 	if constraint != nil {
 		if p.CurrentTokenIs(token.COLON) {
-			return p.parseForLoopWithConstraint(pos, quantifierStr, target, constraint, isRange)
+			return p.parseForLoopWithConstraint(pos, quantifierStr, nil, target, constraint, isRange)
 		}
 		return p.parseOfExpressionWithConstraint(pos, quantifierExpr, target, constraint, isRange), nil
 	}
@@ -304,6 +304,7 @@ func (p *QuantifierParser) parseStandardQuantifier(pos token.Position) (ast.Expr
 func (p *QuantifierParser) parseForLoopWithConstraint(
 	pos token.Position,
 	quantifierStr string,
+	variables []string,
 	target ast.Expression,
 	constraint ast.Expression,
 	isRange bool,
@@ -313,7 +314,12 @@ func (p *QuantifierParser) parseForLoopWithConstraint(
 	if err != nil {
 		return nil, err
 	}
-	forLoop := p.builder.ForLoop(pos, quantifierStr, "", target, expr)
+	var forLoop *ast.ForLoop
+	if len(variables) > 0 {
+		forLoop = p.builder.ForLoopMultiVar(pos, quantifierStr, variables, target, expr)
+	} else {
+		forLoop = p.builder.ForLoop(pos, quantifierStr, "", target, expr)
+	}
 	if isRange {
 		forLoop.InRange = constraint
 	} else {

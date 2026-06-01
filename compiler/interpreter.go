@@ -245,9 +245,9 @@ func (i *Interpreter) SetCurrentRule(ruleName string) {
 		}
 		i.currentCompiledRule = rule
 		i.stringLiterals = rule.StringLiterals
-	i.stringSets = rule.StringSets
-	i.textStringSets = rule.TextStringSets
-	i.allStrings = rule.StringIdentifiers()
+		i.stringSets = rule.StringSets
+		i.textStringSets = rule.TextStringSets
+		i.allStrings = rule.StringIdentifiers()
 		i.anonymousStrings = rule.AnonymousStrings
 		i.bytecode = rule.Bytecode // Ensure bytecode is updated for the rule
 		return

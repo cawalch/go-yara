@@ -82,9 +82,21 @@ func (tc *TypeChecker) checkLiteral(literal *ast.Literal) *TypeInfo {
 	return InferTypeFromLiteral(literal.Type, literal.Value)
 }
 
-// checkIdentifier checks the type of an identifier
+// checkIdentifier validates an identifier against the symbol table and returns its type
 func (tc *TypeChecker) checkIdentifier(identifier *ast.Identifier) *TypeInfo {
-	// Look up the identifier in the symbol table
+	// Check if it's a loop variable
+	if loopType, ok := tc.loopVariables[identifier.Name]; ok {
+		switch loopType {
+		case "string":
+			return &TypeInfo{DataType: TypeString}
+		case "integer":
+			return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
+		default:
+			return &TypeInfo{DataType: TypeUnknown}
+		}
+	}
+
+	// Check if it's a symbol in the symbol table
 	if symbol, exists := tc.symbolTable.Lookup(identifier.Name); exists {
 		symbol.Used = true
 		info := tc.getTypeFromSymbol(symbol)

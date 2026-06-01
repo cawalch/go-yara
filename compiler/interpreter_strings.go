@@ -554,8 +554,8 @@ func (i *Interpreter) executeMatchesOperation() error {
 		if matches, ok := i.matchContext.Matches[valueStr]; ok {
 			for _, m := range matches {
 				end := min(int(m.Offset)+m.Length, len(i.matchContext.Data))
-			if matched := regex.Exec(compiled, i.matchContext.Data[int(m.Offset):end], flags|regex.FlagsScan); matched {
-				return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(true)})
+				if matched := regex.Exec(compiled, i.matchContext.Data[int(m.Offset):end], flags|regex.FlagsScan); matched {
+					return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(true)})
 				}
 			}
 		}

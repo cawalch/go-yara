@@ -223,18 +223,17 @@ func (cc *ConditionCompiler) compileMatchesExpression(binOp *ast.BinaryOp) error
 	// Right operand: regex pattern
 	switch right := binOp.Right.(type) {
 	case *ast.Literal:
-		if right.Type == token.RegexLit {
-			cc.compileRegexLiteral(right)
-		} else {
+		if right.Type != token.RegexLit {
 			return fmt.Errorf("MATCHES requires a regex pattern on the right")
 		}
+		cc.compileRegexLiteral(right)
 	case *ast.Identifier:
 		// Loop variable containing the regex pattern
-		if slot, exists := cc.variableMap[right.Name]; exists {
-			cc.emitter.EmitOpcodeWithOperand(OpLoadVar, Operand{Type: OperandImmediate32, Value: safeInt64ToUint64(safeMax(0, int64(slot)))}, right.Pos.Line, right.Pos.Column)
-		} else {
+		slot, exists := cc.variableMap[right.Name]
+		if !exists {
 			return fmt.Errorf("undefined identifier in MATCHES: %s", right.Name)
 		}
+		cc.emitter.EmitOpcodeWithOperand(OpLoadVar, Operand{Type: OperandImmediate32, Value: safeInt64ToUint64(safeMax(0, int64(slot)))}, right.Pos.Line, right.Pos.Column)
 	default:
 		return fmt.Errorf("MATCHES requires a regex pattern on the right")
 	}
@@ -1220,6 +1219,12 @@ func (cc *ConditionCompiler) compileForLoop(forLoop *ast.ForLoop) error {
 	if tuple, ok := forLoop.Range.(*ast.StringTuple); ok {
 		return cc.compileForLoopOverTextStrings(forLoop, tuple)
 	}
+	// Handle single string literal: for any s in ("text") : (...)
+	if lit, ok := forLoop.Range.(*ast.Literal); ok && lit.Type == token.StringLit {
+		return cc.compileForLoopOverTextStrings(forLoop, &ast.StringTuple{
+			Elements: []ast.Expression{lit},
+		})
+	}
 
 	rangeExpr, ok := forLoop.Range.(*ast.BinaryOp)
 	if !ok || rangeExpr.Op != token.DOT {
@@ -1252,11 +1257,10 @@ func (cc *ConditionCompiler) compileForLoopOverTextStrings(forLoop *ast.ForLoop,
 	for _, elem := range tuple.Elements {
 		switch e := elem.(type) {
 		case *ast.Literal:
-			if e.Type == token.StringLit {
-				literals = append(literals, e.Value.(string))
-			} else {
+			if e.Type != token.StringLit {
 				return fmt.Errorf("text string set elements must be string literals")
 			}
+			literals = append(literals, e.Value.(string))
 		default:
 			return fmt.Errorf("text string set elements must be string literals")
 		}
