@@ -368,6 +368,9 @@ type ForLoop struct {
 	Variables  []string   // e.g. ["i"] or ["k", "v"]
 	Range      Expression // The iterable (Identifier, BinaryOp range, StringTuple)
 	Condition  Expression
+	// Optional constraints on string set iteration (for..of with in/at)
+	InRange  Expression // nil unless "for ... of ($x*) in (min..max) : ..."
+	AtOffset Expression // nil unless "for ... of ($x*) at offset : ..."
 }
 
 func (f *ForLoop) node() {}
@@ -387,6 +390,9 @@ type OfExpression struct {
 	Pos     token.Position
 	Count   Expression
 	Strings Expression // Can be "them" or a list of strings
+	// Optional constraints on string set (of ... in/at)
+	InRange  Expression // nil unless "of ($x*) in (min..max)"
+	AtOffset Expression // nil unless "of ($x*) at offset"
 }
 
 func (o *OfExpression) node() {}

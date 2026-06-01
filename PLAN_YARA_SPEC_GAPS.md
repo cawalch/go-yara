@@ -70,8 +70,12 @@ This document tracks gaps between go-yara and the official YARA specification (Y
 | `$a at 0` | ✅ | Implemented |
 | `#a in (min..max)` | ✅ | `OpCountIn` emitted by `compileCountInRange`; interpreter handler `executeCountInRange` |
 | `#a in (min..max) of ($a*)` | ❌ | Not implemented |
-| `for any of ($a*) in (0..100) : ($)` | ❌ | Parser doesn't parse `in (range)` on `of` expressions |
-| `for any of ($a*) at (0..100) : ($)` | ❌ | Parser doesn't parse `at offset` on `of` expressions |
+| `for any of ($a*) in (0..100) : ($)` | ✅ | Parser parses `in (range)` on `ForLoop`; compiler emits constraint marker; interpreter filters matches |
+| `for any of ($a*) at (0..100) : ($)` | ✅ | Parser parses `at offset` on `ForLoop`; compiler emits constraint marker; interpreter filters matches |
+| `N of ($a*) in (0..100)` | ✅ | `OpOfFoundIn` emitted by `compileOfExpression`; interpreter handler `executeOfFoundIn` |
+| `N of ($a*) at offset` | ✅ | `OpOfFoundAt` emitted by `compileOfExpression`; interpreter handler `executeOfFoundAt` |
+| `N % of ($a*) in (0..100)` | ✅ | `OpOfPercentIn` emitted; interpreter handler `executeOfPercentIn` |
+| `N % of ($a*) at offset` | ✅ | `OpOfPercentAt` emitted; interpreter handler `executeOfPercentAt` |
 | `of ($a, $b, $c)` | ✅ | String list in `of` expressions |
 | `of ($a*)` | ✅ | Wildcard string sets |
 | `of them` | ✅ | Implemented |
@@ -114,8 +118,8 @@ This document tracks gaps between go-yara and the official YARA specification (Y
 | `for none of them : ($)` | ✅ | Implemented |
 | `for any of ($a, $b) : (...)` | ✅ | String set iteration |
 | `for any of ($a*) : (...)` | ✅ | Wildcard string set iteration |
-| `for any of ($a*) in (0..100) : ($)` | ❌ | Range-constrained string set iteration |
-| `for any of ($a*) at (0..100) : ($)` | ❌ | Offset-constrained string set iteration |
+| `for any of ($a*) in (0..100) : ($)` | ✅ | Range-constrained string set iteration |
+| `for any of ($a*) at (0..100) : ($)` | ✅ | Offset-constrained string set iteration |
 | `for any s in ("text1", "text2") : ($a matches s)` | ❌ | `OpIterStartTextStringSet` unimplemented |
 | `for any s in ("a", "b") : (s of them)` | ❌ | Text string set iteration |
 
@@ -290,17 +294,19 @@ This document tracks gaps between go-yara and the official YARA specification (Y
 - Semantic: Updated `checkInOperator` and `inferInOperatorType` to accept integer (count) on left
 **Tests**: `TestInterpreterCountInRange`, `TestCountInRangeEndToEnd`
 
-#### 1.2 `for any of ($a*) in (0..100) : ($)` — Range-constrained string set iteration
-**Files**: `parser/quantifier_parser.go`, `ast/nodes.go`, `compiler/condition_compiler.go`, `compiler/interpreter_iter.go`
-**Work**:
-- AST: Add `InRange` and `AtOffset` fields to `OfExpression` and `ForLoop`
-- Parser: Parse `in (range)` and `at offset` after quantifier target
-- Compiler: Emit `OpIterStartStringSetInRange` with range operands
-- Interpreter: Implement `executeIterStartStringSetInRange`
+#### 1.2 `for any of ($a*) in (0..100) : ($)` — Range-constrained string set iteration ✅ DONE
+**Status**: ✅ Implemented
+**Files**: `ast/nodes.go`, `parser/quantifier_parser.go`, `compiler/condition_compiler.go`, `compiler/interpreter_iter.go`
+**Implementation**:
+- AST: Added `InRange` and `AtOffset` fields to `ForLoop`
+- Parser: Parse `in (range)` and `at offset` after quantifier target in `parseForLoop`/`parseQuantifier` and `parseForLoopOverStrings`
+- Compiler: `compileForLoopOverStrings` emits constraint marker (0=no constraint, 1=in range, 2=at offset) on stack before `OpIterStartStringSet`
+- Interpreter: `executeIterStartStringSet` reads constraint marker and filters matches accordingly
+- Also added `N of ($a*) in (min..max)` via `OpOfFoundIn` and `N of ($a*) at offset` via `OpOfFoundAt` in `compileOfExpression`
+- Also added `N % of ($a*) in (min..max)` via `OpOfPercentIn` and `N % of ($a*) at offset` via `OpOfPercentAt`
+**Tests**: `TestInterpreterOfFoundIn`, `TestInterpreterOfFoundAt`, `TestOfFoundInEndToEnd`, `TestOfFoundAtEndToEnd`, `TestForLoopInRangeEndToEnd`, `TestForLoopAtOffsetEndToEnd`
 
-#### 1.3 `for any of ($a*) at (0..100) : ($)` — Offset-constrained string set iteration
-**Files**: Same as 1.2
-**Work**: Similar to range-constrained but checks `at` instead of `in`
+#### 1.3 (merged into 1.2) ✅ DONE
 
 #### 1.4 `percent` quantifier — `50 % of them`
 **Status**: ✅ Implemented

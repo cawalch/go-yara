@@ -4079,3 +4079,223 @@ func TestOfPercentEndToEnd(t *testing.T) {
 		t.Errorf("expected 1 match (100%% of them, 3/3 = 100%%), got %d", len(results3.MatchedRules))
 	}
 }
+
+// TestOfFoundInEndToEnd tests "N of ($str*) in (min..max)" end-to-end
+func TestOfFoundInEndToEnd(t *testing.T) {
+	// Test 1: 2 of ($a, $b, $c) in (0..100) — $a at offset 0, $b at offset 6
+	ruleSource1 := `rule test_of_in {
+		strings:
+			$a = "hello"
+			$b = "world"
+			$c = "notfound"
+		condition:
+			2 of ($a, $b, $c) in (0..100)
+	}`
+
+	compiler1 := NewCompiler()
+	program1, err := compiler1.CompileSource(ruleSource1)
+	if err != nil {
+		t.Fatalf("CompileSource1() error = %v", err)
+	}
+
+	scanner1 := NewScanner(program1)
+	results1, err := scanner1.Scan([]byte("hello world"))
+	if err != nil {
+		t.Fatalf("Scan1() error = %v", err)
+	}
+
+	if len(results1.MatchedRules) != 1 {
+		t.Errorf("expected 1 match (2 of in range 0..100), got %d", len(results1.MatchedRules))
+	}
+
+	// Test 2: 2 of ($a, $b, $c) in (500..600) — no matches in range
+	ruleSource2 := `rule test_of_in_no_match {
+		strings:
+			$a = "hello"
+			$b = "world"
+			$c = "notfound"
+		condition:
+			2 of ($a, $b, $c) in (500..600)
+	}`
+
+	compiler2 := NewCompiler()
+	program2, err := compiler2.CompileSource(ruleSource2)
+	if err != nil {
+		t.Fatalf("CompileSource2() error = %v", err)
+	}
+
+	scanner2 := NewScanner(program2)
+	results2, err := scanner2.Scan([]byte("hello world"))
+	if err != nil {
+		t.Fatalf("Scan2() error = %v", err)
+	}
+
+	if len(results2.MatchedRules) != 0 {
+		t.Errorf("expected 0 matches (no strings in range 500..600), got %d", len(results2.MatchedRules))
+	}
+}
+
+// TestOfFoundAtEndToEnd tests "N of ($str*) at offset" end-to-end
+func TestOfFoundAtEndToEnd(t *testing.T) {
+	// Test 1: 1 of ($a, $b, $c) at 0 — $a at offset 0
+	ruleSource1 := `rule test_of_at {
+		strings:
+			$a = "hello"
+			$b = "world"
+			$c = "notfound"
+		condition:
+			1 of ($a, $b, $c) at 0
+	}`
+
+	compiler1 := NewCompiler()
+	program1, err := compiler1.CompileSource(ruleSource1)
+	if err != nil {
+		t.Fatalf("CompileSource1() error = %v", err)
+	}
+
+	scanner1 := NewScanner(program1)
+	results1, err := scanner1.Scan([]byte("hello world"))
+	if err != nil {
+		t.Fatalf("Scan1() error = %v", err)
+	}
+
+	if len(results1.MatchedRules) != 1 {
+		t.Errorf("expected 1 match (1 of at offset 0), got %d", len(results1.MatchedRules))
+	}
+
+	// Test 2: 1 of ($a, $b, $c) at 50 — no matches at offset 50
+	ruleSource2 := `rule test_of_at_no_match {
+		strings:
+			$a = "hello"
+			$b = "world"
+			$c = "notfound"
+		condition:
+			1 of ($a, $b, $c) at 50
+	}`
+
+	compiler2 := NewCompiler()
+	program2, err := compiler2.CompileSource(ruleSource2)
+	if err != nil {
+		t.Fatalf("CompileSource2() error = %v", err)
+	}
+
+	scanner2 := NewScanner(program2)
+	results2, err := scanner2.Scan([]byte("hello world"))
+	if err != nil {
+		t.Fatalf("Scan2() error = %v", err)
+	}
+
+	if len(results2.MatchedRules) != 0 {
+		t.Errorf("expected 0 matches (no strings at offset 50), got %d", len(results2.MatchedRules))
+	}
+}
+
+// TestForLoopInRangeEndToEnd tests "for any of ($str*) in (min..max) : ($"
+func TestForLoopInRangeEndToEnd(t *testing.T) {
+	// Test 1: for any of ($a, $b, $c) in (0..100) : ($)
+	ruleSource1 := `rule test_for_in {
+		strings:
+			$a = "hello"
+			$b = "world"
+			$c = "notfound"
+		condition:
+			for any of ($a, $b, $c) in (0..100) : ($)
+	}`
+
+	compiler1 := NewCompiler()
+	program1, err := compiler1.CompileSource(ruleSource1)
+	if err != nil {
+		t.Fatalf("CompileSource1() error = %v", err)
+	}
+
+	scanner1 := NewScanner(program1)
+	results1, err := scanner1.Scan([]byte("hello world"))
+	if err != nil {
+		t.Fatalf("Scan1() error = %v", err)
+	}
+
+	if len(results1.MatchedRules) != 1 {
+		t.Errorf("expected 1 match (for any in range 0..100), got %d", len(results1.MatchedRules))
+	}
+
+	// Test 2: for any of ($a, $b, $c) in (500..600) : ($)
+	ruleSource2 := `rule test_for_in_no_match {
+		strings:
+			$a = "hello"
+			$b = "world"
+			$c = "notfound"
+		condition:
+			for any of ($a, $b, $c) in (500..600) : ($)
+	}`
+
+	compiler2 := NewCompiler()
+	program2, err := compiler2.CompileSource(ruleSource2)
+	if err != nil {
+		t.Fatalf("CompileSource2() error = %v", err)
+	}
+
+	scanner2 := NewScanner(program2)
+	results2, err := scanner2.Scan([]byte("hello world"))
+	if err != nil {
+		t.Fatalf("Scan2() error = %v", err)
+	}
+
+	if len(results2.MatchedRules) != 0 {
+		t.Errorf("expected 0 matches (for any in range 500..600), got %d", len(results2.MatchedRules))
+	}
+}
+
+// TestForLoopAtOffsetEndToEnd tests "for any of ($str*) at offset : ($"
+func TestForLoopAtOffsetEndToEnd(t *testing.T) {
+	// Test 1: for any of ($a, $b, $c) at 0 : ($)
+	ruleSource1 := `rule test_for_at {
+		strings:
+			$a = "hello"
+			$b = "world"
+			$c = "notfound"
+		condition:
+			for any of ($a, $b, $c) at 0 : ($)
+	}`
+
+	compiler1 := NewCompiler()
+	program1, err := compiler1.CompileSource(ruleSource1)
+	if err != nil {
+		t.Fatalf("CompileSource1() error = %v", err)
+	}
+
+	scanner1 := NewScanner(program1)
+	results1, err := scanner1.Scan([]byte("hello world"))
+	if err != nil {
+		t.Fatalf("Scan1() error = %v", err)
+	}
+
+	if len(results1.MatchedRules) != 1 {
+		t.Errorf("expected 1 match (for any at offset 0), got %d", len(results1.MatchedRules))
+	}
+
+	// Test 2: for any of ($a, $b, $c) at 50 : ($)
+	ruleSource2 := `rule test_for_at_no_match {
+		strings:
+			$a = "hello"
+			$b = "world"
+			$c = "notfound"
+		condition:
+			for any of ($a, $b, $c) at 50 : ($)
+	}`
+
+	compiler2 := NewCompiler()
+	program2, err := compiler2.CompileSource(ruleSource2)
+	if err != nil {
+		t.Fatalf("CompileSource2() error = %v", err)
+	}
+
+	scanner2 := NewScanner(program2)
+	results2, err := scanner2.Scan([]byte("hello world"))
+	if err != nil {
+		t.Fatalf("Scan2() error = %v", err)
+	}
+
+	if len(results2.MatchedRules) != 0 {
+		t.Errorf("expected 0 matches (for any at offset 50), got %d", len(results2.MatchedRules))
+	}
+}

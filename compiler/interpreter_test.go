@@ -1210,3 +1210,130 @@ func TestInterpreterOfPercent(t *testing.T) {
 		})
 	}
 }
+
+// TestInterpreterOfFoundIn tests OpOfFoundIn (N of strings in range)
+func TestInterpreterOfFoundIn(t *testing.T) {
+	tests := []struct {
+		name     string
+		count    int64
+		min      int64
+		max      int64
+		matched  int // strings with matches in range
+		total    int
+		expected int64
+	}{
+		{"2 of 3 in range", 2, 0, 100, 2, 3, 1},
+		{"1 of 3 in range", 1, 0, 100, 2, 3, 1},
+		{"3 of 3 in range not enough", 3, 0, 100, 2, 3, 0},
+		{"any of 3 in range", 1, 0, 100, 1, 3, 1},
+		{"none in range", 1, 0, 100, 0, 3, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Stack layout: [count, stringSetIndex, min, max]
+			emitter := NewEmitter()
+			emitter.EmitPush(uint64(tt.count), 1, 1)
+			emitter.EmitPush(0, 1, 1) // string set index 0
+			emitter.EmitPush(uint64(tt.min), 1, 1)
+			emitter.EmitPush(uint64(tt.max), 1, 1)
+			emitter.EmitOpcode(OpOfFoundIn, 1, 1)
+			emitter.EmitOpcode(OpHalt, 1, 1)
+
+			bytecode, err := emitter.GetBytecode()
+			if err != nil {
+				t.Fatalf("GetBytecode() error = %v", err)
+			}
+			interp := NewInterpreter(bytecode)
+
+			// Set up string set
+			interp.stringSets = [][]string{{}}
+			mc := &MatchContext{Matches: make(map[string][]Match)}
+			for i := 0; i < tt.total; i++ {
+				id := fmt.Sprintf("$s%d", i)
+				interp.stringSets[0] = append(interp.stringSets[0], id)
+				if i < tt.matched {
+					mc.Matches[id] = []Match{{Offset: 10, Length: 1}}
+				} else {
+					mc.Matches[id] = []Match{{Offset: 500, Length: 1}}
+				}
+			}
+			interp.matchContext = mc
+
+			err = interp.Execute()
+			if err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+
+			if len(interp.GetStack()) != 1 {
+				t.Fatalf("stack length = %d, want 1", len(interp.GetStack()))
+			}
+
+			got := interp.GetStack()[0].IntVal
+			if got != tt.expected {
+				t.Errorf("%d of %d in (%d..%d) = %d, want %d", tt.count, tt.matched, tt.min, tt.max, got, tt.expected)
+			}
+		})
+	}
+}
+
+// TestInterpreterOfFoundAt tests OpOfFoundAt (N of strings at offset)
+func TestInterpreterOfFoundAt(t *testing.T) {
+	tests := []struct {
+		name     string
+		count    int64
+		offset   int64
+		matched  int // strings with match at exact offset
+		total    int
+		expected int64
+	}{
+		{"1 at offset 0", 1, 0, 1, 3, 1},
+		{"2 at offset 0 not enough", 2, 0, 1, 3, 0},
+		{"1 at offset 42 none", 1, 42, 0, 3, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Stack layout: [count, stringSetIndex, offset]
+			emitter := NewEmitter()
+			emitter.EmitPush(uint64(tt.count), 1, 1)
+			emitter.EmitPush(0, 1, 1) // string set index 0
+			emitter.EmitPush(uint64(tt.offset), 1, 1)
+			emitter.EmitOpcode(OpOfFoundAt, 1, 1)
+			emitter.EmitOpcode(OpHalt, 1, 1)
+
+			bytecode, err := emitter.GetBytecode()
+			if err != nil {
+				t.Fatalf("GetBytecode() error = %v", err)
+			}
+			interp := NewInterpreter(bytecode)
+
+			interp.stringSets = [][]string{{}}
+			mc := &MatchContext{Matches: make(map[string][]Match)}
+			for i := 0; i < tt.total; i++ {
+				id := fmt.Sprintf("$s%d", i)
+				interp.stringSets[0] = append(interp.stringSets[0], id)
+				if i < tt.matched {
+					mc.Matches[id] = []Match{{Offset: tt.offset, Length: 1}}
+				} else {
+					mc.Matches[id] = []Match{{Offset: 999, Length: 1}}
+				}
+			}
+			interp.matchContext = mc
+
+			err = interp.Execute()
+			if err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+
+			if len(interp.GetStack()) != 1 {
+				t.Fatalf("stack length = %d, want 1", len(interp.GetStack()))
+			}
+
+			got := interp.GetStack()[0].IntVal
+			if got != tt.expected {
+				t.Errorf("%d of %d at %d = %d, want %d", tt.count, tt.matched, tt.offset, got, tt.expected)
+			}
+		})
+	}
+}

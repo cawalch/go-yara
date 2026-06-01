@@ -267,6 +267,183 @@ func (i *Interpreter) executeOfPercentOperation() error {
 	result := percentFloat >= float64(percent.IntVal)
 	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(result)})
 }
+
+// executeOfFoundIn executes OpOfFoundIn.
+// Stack: [count, string_set_id, min, max] (bottom to top)
+// Counts how many strings in the set have at least one match within [min, max].
+// Returns true if matched_count >= count.
+func (i *Interpreter) executeOfFoundIn() error {
+	if err := i.validateStackUnderflowN(OpOfFoundIn, 4); err != nil {
+		return err
+	}
+
+	maxVal := i.stack[len(i.stack)-1]
+	minVal := i.stack[len(i.stack)-2]
+	stringsID := i.stack[len(i.stack)-3]
+	count := i.stack[len(i.stack)-4]
+	i.stack = i.stack[:len(i.stack)-4]
+
+	if minVal.Type != ValueTypeInt || maxVal.Type != ValueTypeInt {
+		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpOfFoundIn, Message: "range bounds must be integers"}
+	}
+
+	set, err := i.resolveStringSet(stringsID)
+	if err != nil {
+		return err
+	}
+
+	matched := 0
+	for _, id := range set {
+		matches, ok := i.matchContext.Matches[id]
+		if !ok {
+			continue
+		}
+		for _, m := range matches {
+			if m.Offset >= minVal.IntVal && m.Offset <= maxVal.IntVal {
+				matched++
+				break
+			}
+		}
+	}
+
+	result := i.applyCountLogicWithValue(count, int64(matched), len(set))
+	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(result)})
+}
+
+// executeOfFoundAt executes OpOfFoundAt.
+// Stack: [count, string_set_id, offset] (bottom to top)
+// Counts how many strings in the set have at least one match at exactly the given offset.
+// Returns true if matched_count >= count.
+func (i *Interpreter) executeOfFoundAt() error {
+	if err := i.validateStackUnderflowN(OpOfFoundAt, 3); err != nil {
+		return err
+	}
+
+	offsetVal := i.stack[len(i.stack)-1]
+	stringsID := i.stack[len(i.stack)-2]
+	count := i.stack[len(i.stack)-3]
+	i.stack = i.stack[:len(i.stack)-3]
+
+	if offsetVal.Type != ValueTypeInt {
+		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpOfFoundAt, Message: "offset must be integer"}
+	}
+
+	set, err := i.resolveStringSet(stringsID)
+	if err != nil {
+		return err
+	}
+
+	matched := 0
+	for _, id := range set {
+		matches, ok := i.matchContext.Matches[id]
+		if !ok {
+			continue
+		}
+		for _, m := range matches {
+			if m.Offset == offsetVal.IntVal {
+				matched++
+				break
+			}
+		}
+	}
+
+	result := i.applyCountLogicWithValue(count, int64(matched), len(set))
+	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(result)})
+}
+
+// executeOfPercentIn executes OpOfPercentIn.
+// Stack: [percent, string_set_id, min, max] (bottom to top)
+// Counts how many strings in the set have at least one match within [min, max].
+// Returns true if (matched/total)*100 >= percent.
+func (i *Interpreter) executeOfPercentIn() error {
+	if err := i.validateStackUnderflowN(OpOfPercentIn, 4); err != nil {
+		return err
+	}
+
+	maxVal := i.stack[len(i.stack)-1]
+	minVal := i.stack[len(i.stack)-2]
+	stringsID := i.stack[len(i.stack)-3]
+	percent := i.stack[len(i.stack)-4]
+	i.stack = i.stack[:len(i.stack)-4]
+
+	if minVal.Type != ValueTypeInt || maxVal.Type != ValueTypeInt {
+		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpOfPercentIn, Message: "range bounds must be integers"}
+	}
+
+	set, err := i.resolveStringSet(stringsID)
+	if err != nil {
+		return err
+	}
+
+	matched := 0
+	for _, id := range set {
+		matches, ok := i.matchContext.Matches[id]
+		if !ok {
+			continue
+		}
+		for _, m := range matches {
+			if m.Offset >= minVal.IntVal && m.Offset <= maxVal.IntVal {
+				matched++
+				break
+			}
+		}
+	}
+
+	if len(set) == 0 {
+		return i.push(Value{Type: ValueTypeInt, IntVal: 0})
+	}
+
+	percentFloat := float64(matched) / float64(len(set)) * 100.0
+	result := percentFloat >= float64(percent.IntVal)
+	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(result)})
+}
+
+// executeOfPercentAt executes OpOfPercentAt.
+// Stack: [percent, string_set_id, offset] (bottom to top)
+// Counts how many strings in the set have at least one match at the given offset.
+// Returns true if (matched/total)*100 >= percent.
+func (i *Interpreter) executeOfPercentAt() error {
+	if err := i.validateStackUnderflowN(OpOfPercentAt, 3); err != nil {
+		return err
+	}
+
+	offsetVal := i.stack[len(i.stack)-1]
+	stringsID := i.stack[len(i.stack)-2]
+	percent := i.stack[len(i.stack)-3]
+	i.stack = i.stack[:len(i.stack)-3]
+
+	if offsetVal.Type != ValueTypeInt {
+		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpOfPercentAt, Message: "offset must be integer"}
+	}
+
+	set, err := i.resolveStringSet(stringsID)
+	if err != nil {
+		return err
+	}
+
+	matched := 0
+	for _, id := range set {
+		matches, ok := i.matchContext.Matches[id]
+		if !ok {
+			continue
+		}
+		for _, m := range matches {
+			if m.Offset == offsetVal.IntVal {
+				matched++
+				break
+			}
+		}
+	}
+
+	if len(set) == 0 {
+		return i.push(Value{Type: ValueTypeInt, IntVal: 0})
+	}
+
+	percentFloat := float64(matched) / float64(len(set)) * 100.0
+	result := percentFloat >= float64(percent.IntVal)
+	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(result)})
+}
+
 func (i *Interpreter) resolveStringSet(stringsID Value) ([]string, error) {
 	switch stringsID.Type {
 	case ValueTypeInt:
@@ -326,19 +503,29 @@ func (i *Interpreter) applyCountLogic(ids []string, count Value) bool {
 			matched++
 		}
 	}
+	return i.applyCountLogicWithValue(count, int64(matched), total)
+}
+
+// applyCountLogicWithValue applies count logic given a pre-computed matched count.
+// The optional total parameter is used for the "all" (countAll) quantifier check.
+func (i *Interpreter) applyCountLogicWithValue(count Value, matched int64, total ...int) bool {
 	if count.Type != ValueTypeInt {
 		return false
+	}
+	var totalCount int
+	if len(total) > 0 {
+		totalCount = total[0]
 	}
 	switch count.IntVal {
 	case 0:
 		return matched == 0
 	case countAll:
-		return total > 0 && matched == total
+		return totalCount > 0 && matched == int64(totalCount)
 	default:
 		if count.IntVal < 0 {
 			return false
 		}
-		return matched >= int(count.IntVal)
+		return matched >= count.IntVal
 	}
 }
 

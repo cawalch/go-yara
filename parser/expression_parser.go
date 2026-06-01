@@ -135,29 +135,11 @@ func (p *ExpressionParser) parseBinaryExpressionWithPrecedence(minPrecedence int
 		}
 
 		// Special case: "N % of" — percent quantifier
-		// When left is an integer literal and op is MODULO and next token is OF,
-		// this is a percent quantifier, not a modulo operation.
-		if op == token.MODULO && p.peekTokenIs(token.OF) {
-			if intLit, ok := left.(*ast.Literal); ok &&
-				(intLit.Type == token.IntegerLit || intLit.Type == token.HexIntegerLit || intLit.Type == token.OctalIntegerLit) {
-				p.nextToken() // consume '%'
-				p.nextToken() // consume 'of'
-				// Parse the target (string set)
-				target, err := p.parseQuantifierTarget(intLit.Pos)
-				if err != nil {
-					return nil, err
-				}
-				percentExpr := &ast.PercentExpression{
-					Pos:   intLit.Pos,
-					Value: intLit,
-				}
-				left = &ast.OfExpression{
-					Pos:     intLit.Pos,
-					Count:   percentExpr,
-					Strings: target,
-				}
-				continue
-			}
+		if pctOf, err := p.tryParsePercentOf(left, op); err != nil {
+			return nil, err
+		} else if pctOf != nil {
+			left = pctOf
+			continue
 		}
 
 		p.nextToken() // consume operator
@@ -309,6 +291,58 @@ func (p *ExpressionParser) parseParenthesizedTarget(pos token.Position) (ast.Exp
 	}
 	p.nextToken() // consume ')'
 	return first, nil
+}
+
+// parseOfConstraints checks for optional "in (range)" or "at offset" constraints
+// after an of expression's string set target and returns the updated expression.
+func (p *ExpressionParser) parseOfConstraints(ofExpr *ast.OfExpression) (*ast.OfExpression, error) {
+	if p.currentTokenIs(token.IN) {
+		p.nextToken() // consume 'in'
+		rangeExpr, err := p.parseRangeExpression()
+		if err != nil {
+			return nil, err
+		}
+		ofExpr.InRange = rangeExpr
+	} else if p.currentTokenIs(token.AT) {
+		p.nextToken() // consume 'at'
+		offsetExpr, err := p.ParseExpression()
+		if err != nil {
+			return nil, err
+		}
+		ofExpr.AtOffset = offsetExpr
+	}
+	return ofExpr, nil
+}
+
+// parseRangeExpression parses a range expression like (min..max)
+func (p *ExpressionParser) parseRangeExpression() (ast.Expression, error) {
+	if !p.currentTokenIs(token.LPAREN) {
+		return nil, fmt.Errorf("expected '(' for range expression")
+	}
+	p.nextToken() // consume '('
+	minExpr, err := p.ParseExpression()
+	if err != nil {
+		return nil, err
+	}
+	if !p.currentTokenIs(token.DOT) || !p.peekTokenIs(token.DOT) {
+		return nil, fmt.Errorf("expected '..' in range expression")
+	}
+	p.nextToken() // consume first '.'
+	p.nextToken() // consume second '.'
+	maxExpr, err := p.ParseExpression()
+	if err != nil {
+		return nil, err
+	}
+	if !p.currentTokenIs(token.RPAREN) {
+		return nil, fmt.Errorf("expected ')' after range expression")
+	}
+	p.nextToken() // consume ')'
+	return &ast.BinaryOp{
+		Pos:   minExpr.Position(),
+		Left:  minExpr,
+		Op:    token.DOT,
+		Right: maxExpr,
+	}, nil
 }
 
 func (p *ExpressionParser) parseQuantifierPrimary() (ast.Expression, error) {
@@ -784,4 +818,39 @@ func (p *ExpressionParser) SetQuantifierParser(qp *QuantifierParser) {
 // GetQuantifierParser returns the quantifier parser.
 func (p *ExpressionParser) GetQuantifierParser() *QuantifierParser {
 	return p.quantifierParser
+}
+
+// tryParsePercentOf attempts to parse "N % of (strings)" when op is MODULO and next token is OF.
+// Returns the parsed *ast.OfExpression on success, (nil, nil) if it's not a percent quantifier.
+func (p *ExpressionParser) tryParsePercentOf(left ast.Expression, op token.Type) (*ast.OfExpression, error) {
+	if op != token.MODULO || !p.peekTokenIs(token.OF) {
+		return nil, nil
+	}
+	intLit, ok := left.(*ast.Literal)
+	if !ok {
+		return nil, nil
+	}
+	if intLit.Type != token.IntegerLit && intLit.Type != token.HexIntegerLit && intLit.Type != token.OctalIntegerLit {
+		return nil, nil
+	}
+	p.nextToken() // consume '%'
+	p.nextToken() // consume 'of'
+	target, err := p.parseQuantifierTarget(intLit.Pos)
+	if err != nil {
+		return nil, err
+	}
+	percentExpr := &ast.PercentExpression{
+		Pos:   intLit.Pos,
+		Value: intLit,
+	}
+	ofExpr := &ast.OfExpression{
+		Pos:     intLit.Pos,
+		Count:   percentExpr,
+		Strings: target,
+	}
+	ofExpr, err = p.parseOfConstraints(ofExpr)
+	if err != nil {
+		return nil, err
+	}
+	return ofExpr, nil
 }
