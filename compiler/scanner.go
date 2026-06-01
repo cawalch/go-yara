@@ -33,8 +33,8 @@ type ScanResult struct {
 // RuleMatch represents a single rule match with details.
 type RuleMatch struct {
 	Rule    string
-	Tags    []string       // Rule tags
-	Meta    map[string]any // Rule metadata
+	Tags    []string           // Rule tags
+	Meta    map[string]any     // Rule metadata
 	Matches map[string][]Match // pattern -> matches (string-keyed for public API)
 }
 
