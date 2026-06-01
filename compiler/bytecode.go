@@ -107,6 +107,8 @@ const (
 	OpDefined
 	OpIterStartTextStringSet
 	OpOfFoundAt
+	OpOfPercentIn
+	OpOfPercentAt
 
 	// OpIntBegin begins integer operations (100-110)
 	OpIntBegin = 100
@@ -243,7 +245,7 @@ func isIteratorOpcode(op Opcode) bool {
 
 // isStringOpcode checks if opcode is a string operation
 func isStringOpcode(op Opcode) bool {
-	return (op >= OpContains && op <= OpOfFoundAt) || op == OpConcat
+	return (op >= OpContains && op <= OpOfPercentAt) || op == OpConcat
 }
 
 // isTypeFuncOpcode checks if opcode is a type function
@@ -365,6 +367,8 @@ var opcodeNames = map[Opcode]string{
 	OpDefined:                "DEFINED",
 	OpIterStartTextStringSet: "ITER_START_TEXT_STRING_SET",
 	OpOfFoundAt:              "OF_FOUND_AT",
+	OpOfPercentIn:            "OF_PERCENT_IN",
+	OpOfPercentAt:            "OF_PERCENT_AT",
 	OpConcat:                 "CONCAT",
 }
 
@@ -800,7 +804,7 @@ func (inst *Instruction) IsTypeFunction() bool {
 // IsStringOperation returns true if this instruction operates on strings
 func (inst *Instruction) IsStringOperation() bool {
 	// String operations - same as GetCategory logic
-	if (inst.Opcode >= OpContains && inst.Opcode <= OpOfFoundAt) || inst.Opcode == OpConcat {
+	if (inst.Opcode >= OpContains && inst.Opcode <= OpOfPercentAt) || inst.Opcode == OpConcat {
 		return true
 	}
 	// STR comparison operations are considered arithmetic by GetCategory,

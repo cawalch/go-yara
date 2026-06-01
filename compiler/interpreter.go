@@ -83,6 +83,12 @@ type Iterator struct {
 	StartValue int64
 	EndValue   int64
 	StringIDs  []string
+	// Optional offset constraints for string set iteration
+	InRange       bool // Filter matches to those within [OffsetMin..OffsetMax]
+	OffsetMin     int64
+	OffsetMax     int64
+	AtOffset      bool // Filter matches to those at exactly AtOffsetValue
+	AtOffsetValue int64
 }
 
 type compiledRegex struct {
@@ -459,6 +465,10 @@ func init() {
 	opcodeTable[OpOffset] = (*Interpreter).executeOffsetOperation
 	opcodeTable[OpOf] = (*Interpreter).executeOfOperation
 	opcodeTable[OpOfPercent] = (*Interpreter).executeOfPercentOperation
+	opcodeTable[OpOfFoundIn] = (*Interpreter).executeOfFoundIn
+	opcodeTable[OpOfFoundAt] = (*Interpreter).executeOfFoundAt
+	opcodeTable[OpOfPercentIn] = (*Interpreter).executeOfPercentIn
+	opcodeTable[OpOfPercentAt] = (*Interpreter).executeOfPercentAt
 	opcodeTable[OpCountIn] = (*Interpreter).executeCountInRange
 	opcodeTable[OpMatches] = (*Interpreter).executeMatchesOperation
 	opcodeTable[OpContains] = (*Interpreter).executeContainsOperation

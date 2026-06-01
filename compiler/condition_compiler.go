@@ -1216,7 +1216,34 @@ func (cc *ConditionCompiler) compileForLoopOverStrings(forLoop *ast.ForLoop) err
 	}
 
 	index := cc.internStringSet(ids)
-	cc.emitter.EmitPush(uint64(index), forLoop.Pos.Line, forLoop.Pos.Column)
+
+	// Compile optional "in (range)" or "at offset" constraints
+	// Stack layout (bottom to top): [args..., stringSetIndex, constraintMarker]
+	// constraintMarker: 0=no constraint, 1=in range, 2=at offset
+	if forLoop.InRange != nil {
+		// Extract min/max from range expression (BinaryOp with DOT)
+		if rangeOp, ok := forLoop.InRange.(*ast.BinaryOp); ok && rangeOp.Op == token.DOT {
+			if err := cc.compileExpression(rangeOp.Left); err != nil {
+				return fmt.Errorf("compiling range min: %w", err)
+			}
+			if err := cc.compileExpression(rangeOp.Right); err != nil {
+				return fmt.Errorf("compiling range max: %w", err)
+			}
+		} else {
+			return fmt.Errorf("invalid range expression for 'in' constraint")
+		}
+		cc.emitter.EmitPush(uint64(index), forLoop.Pos.Line, forLoop.Pos.Column)
+		cc.emitter.EmitPush(1, forLoop.Pos.Line, forLoop.Pos.Column) // marker: in range
+	} else if forLoop.AtOffset != nil {
+		if err := cc.compileExpression(forLoop.AtOffset); err != nil {
+			return fmt.Errorf("compiling offset expression: %w", err)
+		}
+		cc.emitter.EmitPush(uint64(index), forLoop.Pos.Line, forLoop.Pos.Column)
+		cc.emitter.EmitPush(2, forLoop.Pos.Line, forLoop.Pos.Column) // marker: at offset
+	} else {
+		cc.emitter.EmitPush(uint64(index), forLoop.Pos.Line, forLoop.Pos.Column)
+		cc.emitter.EmitPush(0, forLoop.Pos.Line, forLoop.Pos.Column) // marker: no constraint
+	}
 	cc.emitter.EmitOpcodeWithOperand(OpIterStartStringSet, Operand{Type: OperandImmediate32, Value: uint64(slots[0])}, forLoop.Pos.Line, forLoop.Pos.Column)
 
 	return cc.compileForLoopBody(forLoop.Quantifier, forLoop.Condition, forLoop.Pos)
@@ -1303,6 +1330,25 @@ func (cc *ConditionCompiler) compileOfExpression(ofExpr *ast.OfExpression) error
 		if err := cc.compileStringsExpression(ofExpr.Strings); err != nil {
 			return fmt.Errorf("compiling strings expression in of-expression: %w", err)
 		}
+		if ofExpr.InRange != nil {
+			if rangeOp, ok := ofExpr.InRange.(*ast.BinaryOp); ok && rangeOp.Op == token.DOT {
+				if err := cc.compileExpression(rangeOp.Left); err != nil {
+					return fmt.Errorf("compiling range min: %w", err)
+				}
+				if err := cc.compileExpression(rangeOp.Right); err != nil {
+					return fmt.Errorf("compiling range max: %w", err)
+				}
+				cc.emitter.EmitOpcode(OpOfPercentIn, ofExpr.Pos.Line, ofExpr.Pos.Column)
+				return nil
+			}
+			return fmt.Errorf("invalid range expression for 'in' constraint")
+		} else if ofExpr.AtOffset != nil {
+			if err := cc.compileExpression(ofExpr.AtOffset); err != nil {
+				return fmt.Errorf("compiling offset expression: %w", err)
+			}
+			cc.emitter.EmitOpcode(OpOfPercentAt, ofExpr.Pos.Line, ofExpr.Pos.Column)
+			return nil
+		}
 		cc.emitter.EmitOpcode(OpOfPercent, ofExpr.Pos.Line, ofExpr.Pos.Column)
 		return nil
 	}
@@ -1313,6 +1359,26 @@ func (cc *ConditionCompiler) compileOfExpression(ofExpr *ast.OfExpression) error
 
 	if err := cc.compileStringsExpression(ofExpr.Strings); err != nil {
 		return fmt.Errorf("compiling strings expression in of-expression: %w", err)
+	}
+
+	if ofExpr.InRange != nil {
+		if rangeOp, ok := ofExpr.InRange.(*ast.BinaryOp); ok && rangeOp.Op == token.DOT {
+			if err := cc.compileExpression(rangeOp.Left); err != nil {
+				return fmt.Errorf("compiling range min: %w", err)
+			}
+			if err := cc.compileExpression(rangeOp.Right); err != nil {
+				return fmt.Errorf("compiling range max: %w", err)
+			}
+			cc.emitter.EmitOpcode(OpOfFoundIn, ofExpr.Pos.Line, ofExpr.Pos.Column)
+			return nil
+		}
+		return fmt.Errorf("invalid range expression for 'in' constraint")
+	} else if ofExpr.AtOffset != nil {
+		if err := cc.compileExpression(ofExpr.AtOffset); err != nil {
+			return fmt.Errorf("compiling offset expression: %w", err)
+		}
+		cc.emitter.EmitOpcode(OpOfFoundAt, ofExpr.Pos.Line, ofExpr.Pos.Column)
+		return nil
 	}
 
 	cc.emitter.EmitOpcode(OpOf, ofExpr.Pos.Line, ofExpr.Pos.Column)

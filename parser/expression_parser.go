@@ -151,11 +151,17 @@ func (p *ExpressionParser) parseBinaryExpressionWithPrecedence(minPrecedence int
 					Pos:   intLit.Pos,
 					Value: intLit,
 				}
-				left = &ast.OfExpression{
+				ofExpr := &ast.OfExpression{
 					Pos:     intLit.Pos,
 					Count:   percentExpr,
 					Strings: target,
 				}
+				// Check for "in (range)" or "at offset" constraints
+				ofExpr, err = p.parseOfConstraints(ofExpr)
+				if err != nil {
+					return nil, err
+				}
+				left = ofExpr
 				continue
 			}
 		}
@@ -309,6 +315,58 @@ func (p *ExpressionParser) parseParenthesizedTarget(pos token.Position) (ast.Exp
 	}
 	p.nextToken() // consume ')'
 	return first, nil
+}
+
+// parseOfConstraints checks for optional "in (range)" or "at offset" constraints
+// after an of expression's string set target and returns the updated expression.
+func (p *ExpressionParser) parseOfConstraints(ofExpr *ast.OfExpression) (*ast.OfExpression, error) {
+	if p.currentTokenIs(token.IN) {
+		p.nextToken() // consume 'in'
+		rangeExpr, err := p.parseRangeExpression()
+		if err != nil {
+			return nil, err
+		}
+		ofExpr.InRange = rangeExpr
+	} else if p.currentTokenIs(token.AT) {
+		p.nextToken() // consume 'at'
+		offsetExpr, err := p.ParseExpression()
+		if err != nil {
+			return nil, err
+		}
+		ofExpr.AtOffset = offsetExpr
+	}
+	return ofExpr, nil
+}
+
+// parseRangeExpression parses a range expression like (min..max)
+func (p *ExpressionParser) parseRangeExpression() (ast.Expression, error) {
+	if !p.currentTokenIs(token.LPAREN) {
+		return nil, fmt.Errorf("expected '(' for range expression")
+	}
+	p.nextToken() // consume '('
+	minExpr, err := p.ParseExpression()
+	if err != nil {
+		return nil, err
+	}
+	if !p.currentTokenIs(token.DOT) || !p.peekTokenIs(token.DOT) {
+		return nil, fmt.Errorf("expected '..' in range expression")
+	}
+	p.nextToken() // consume first '.'
+	p.nextToken() // consume second '.'
+	maxExpr, err := p.ParseExpression()
+	if err != nil {
+		return nil, err
+	}
+	if !p.currentTokenIs(token.RPAREN) {
+		return nil, fmt.Errorf("expected ')' after range expression")
+	}
+	p.nextToken() // consume ')'
+	return &ast.BinaryOp{
+		Pos:   minExpr.Position(),
+		Left:  minExpr,
+		Op:    token.DOT,
+		Right: maxExpr,
+	}, nil
 }
 
 func (p *ExpressionParser) parseQuantifierPrimary() (ast.Expression, error) {

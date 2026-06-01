@@ -117,6 +117,51 @@ func (p *QuantifierParser) parseForQuantifier(pos token.Position) (ast.Expressio
 		return nil, err
 	}
 
+	// Check for "in (range)" or "at offset" constraints
+	if p.CurrentTokenIs(token.IN) {
+		p.nextToken() // consume 'in'
+		rangeExpr, err := p.parseRangeExpression()
+		if err != nil {
+			return nil, err
+		}
+		// If followed by colon, it's a for-loop with range constraint
+		if p.CurrentTokenIs(token.COLON) {
+			p.nextToken() // consume ':'
+			expr, parseErr := p.exprParser.ParseExpression()
+			if parseErr != nil {
+				return nil, parseErr
+			}
+			forLoop := p.builder.ForLoop(pos, quantifierStr, "", target, expr)
+			forLoop.InRange = rangeExpr
+			return forLoop, nil
+		}
+		// Standalone of expression with range
+		ofExpr := p.builder.OfExpression(pos, quantifierExpr, target)
+		ofExpr.InRange = rangeExpr
+		return ofExpr, nil
+	} else if p.CurrentTokenIs(token.AT) {
+		p.nextToken() // consume 'at'
+		offsetExpr, err := p.exprParser.ParseExpression()
+		if err != nil {
+			return nil, err
+		}
+		// If followed by colon, it's a for-loop with offset constraint
+		if p.CurrentTokenIs(token.COLON) {
+			p.nextToken() // consume ':'
+			expr, parseErr := p.exprParser.ParseExpression()
+			if parseErr != nil {
+				return nil, parseErr
+			}
+			forLoop := p.builder.ForLoop(pos, quantifierStr, "", target, expr)
+			forLoop.AtOffset = offsetExpr
+			return forLoop, nil
+		}
+		// Standalone of expression with offset
+		ofExpr := p.builder.OfExpression(pos, quantifierExpr, target)
+		ofExpr.AtOffset = offsetExpr
+		return ofExpr, nil
+	}
+
 	// Check for colon syntax in "for" quantifiers
 	if p.CurrentTokenIs(token.COLON) {
 		p.nextToken() // consume ':'
@@ -266,8 +311,26 @@ func (p *QuantifierParser) parseStandardQuantifier(pos token.Position) (ast.Expr
 		return nil, err
 	}
 
-	// Create an OfExpression node
-	return p.builder.OfExpression(pos, quantifierExpr, target), nil
+	ofExpr := p.builder.OfExpression(pos, quantifierExpr, target)
+
+	// Check for "in (range)" or "at offset" constraints
+	if p.CurrentTokenIs(token.IN) {
+		p.nextToken() // consume 'in'
+		rangeExpr, err := p.parseRangeExpression()
+		if err != nil {
+			return nil, err
+		}
+		ofExpr.InRange = rangeExpr
+	} else if p.CurrentTokenIs(token.AT) {
+		p.nextToken() // consume 'at'
+		offsetExpr, err := p.exprParser.ParseExpression()
+		if err != nil {
+			return nil, err
+		}
+		ofExpr.AtOffset = offsetExpr
+	}
+
+	return ofExpr, nil
 }
 
 // parseQuantifierExpressionPart parses the quantifier part of a standard quantifier
