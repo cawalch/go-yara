@@ -827,7 +827,10 @@ func (cr *CompiledRule) Validate() error {
 	return nil
 }
 
-// GetMemoryUsage estimates the memory usage of the compiled rule
+// GetMemoryUsage returns a deterministic heuristic byte estimate for the rule.
+// It includes bytecode, automaton estimate, and coarse stats-map overhead.
+// The value is useful for relative sizing and diagnostics; it is not an exact
+// measurement of Go heap usage.
 func (cr *CompiledRule) GetMemoryUsage() int {
 	usage := len(cr.Bytecode)
 
@@ -921,7 +924,9 @@ func (cp *CompiledProgram) GetTotalBytecodeSize() int {
 	return total
 }
 
-// GetTotalMemoryUsage returns the estimated total memory usage
+// GetTotalMemoryUsage returns the sum of each rule's heuristic memory estimate.
+// It is intended for relative sizing and diagnostics, not exact Go heap
+// accounting for the compiled program.
 func (cp *CompiledProgram) GetTotalMemoryUsage() int {
 	total := 0
 	for _, rule := range cp.Rules {

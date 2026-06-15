@@ -24,6 +24,8 @@ Several previously planned cleanup items have already landed:
   full rule condition evaluation.
 - Known-gap tests use explicit helper metadata, and non-gap expected errors fail
   when no error is produced.
+- Public diagnostic metrics such as memory usage and complexity estimates are
+  documented as deterministic heuristics, with tests covering their contract.
 
 ## Cleanup Principles
 
@@ -55,18 +57,6 @@ Acceptance criteria:
 - No opcode value changes.
 - No behavior changes.
 - Existing interpreter and compiler tests continue to pass.
-
-### 2. Audit Placeholder Public APIs
-
-Review exported helpers that advertise estimates or broad support claims, such
-as compilation time or memory requirement estimates. Either remove unused
-placeholder APIs or document them clearly as heuristics with a tested contract.
-
-Acceptance criteria:
-
-- Public API docs do not overclaim precision.
-- Unsupported or heuristic behavior is named directly.
-- README and package docs stay consistent.
 
 ## Validation Checklist
 

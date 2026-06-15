@@ -1287,7 +1287,10 @@ func (sc *StringCompiler) applyPenaltyForCommonPatterns(pattern []byte, uniqueBy
 	return quality
 }
 
-// EstimatePatternComplexity estimates the complexity/quality of a pattern for matching
+// EstimatePatternComplexity returns the atom-quality heuristic for a byte pattern.
+// Higher scores generally indicate more selective patterns for matching. The
+// score is deterministic for a pattern, but it is not a runtime cost estimate;
+// modifiers are currently ignored by this heuristic.
 func (sc *StringCompiler) EstimatePatternComplexity(pattern []byte, _ []ast.StringModifier) int {
 	if len(pattern) == 0 {
 		return 0

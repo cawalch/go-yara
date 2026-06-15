@@ -479,7 +479,8 @@ func (ac *ACAutomaton) GetPatternData() map[string][]byte {
 	return result
 }
 
-// EstimateMemoryUsage estimates memory usage
+// EstimateMemoryUsage returns a deterministic heuristic byte estimate for the automaton.
+// It is intended for relative sizing and diagnostics, not exact Go heap accounting.
 func (ac *ACAutomaton) EstimateMemoryUsage() int {
 	stateMemory := len(ac.states) * (256*4 + 8) // transitions + failure + output indices
 	outputMemory := len(ac.outputs) * 4
