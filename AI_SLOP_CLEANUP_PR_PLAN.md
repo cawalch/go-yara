@@ -18,6 +18,8 @@ Several previously planned cleanup items have already landed:
 - Big-endian 64-bit read opcodes no longer collide with `OpNop` or `OpHalt`;
   read opcodes occupy `224..239`, while `OpNop` and `OpHalt` remain `254` and
   `255`.
+- Compiled rule stats are captured as per-rule snapshots, and `GetStats`
+  returns a defensive copy.
 
 ## Cleanup Principles
 
@@ -74,20 +76,7 @@ Acceptance criteria:
 - No behavior changes.
 - Existing interpreter and compiler tests continue to pass.
 
-### 3. Snapshot Rule Compilation Stats
-
-`CompiledRule` still keeps a pointer back to `RuleCompiler` for lazy stats.
-Snapshot per-rule stats during compilation instead, then remove the mutable
-compiler back-reference from compiled rules.
-
-Acceptance criteria:
-
-- Stats describe the compiled rule they are attached to, not the last reused
-  compiler state.
-- `CompiledRule` no longer owns a mutable compiler pointer.
-- Existing compiler stats/report tests are updated or preserved.
-
-### 4. Audit Placeholder Public APIs
+### 3. Audit Placeholder Public APIs
 
 Review exported helpers that advertise estimates or broad support claims, such
 as compilation time or memory requirement estimates. Either remove unused
@@ -99,7 +88,7 @@ Acceptance criteria:
 - Unsupported or heuristic behavior is named directly.
 - README and package docs stay consistent.
 
-### 5. Revisit Streaming Semantics
+### 4. Revisit Streaming Semantics
 
 `StreamingProcessor` reports pattern matches from chunked scanning and does not
 fully evaluate rule conditions. Decide whether to keep that behavior as a
