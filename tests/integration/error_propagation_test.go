@@ -8,21 +8,51 @@ import (
 	"github.com/cawalch/go-yara/compiler"
 )
 
+type compileExpectation struct {
+	expectError bool
+	knownGap    bool
+	errorStage  string
+	description string
+}
+
+func handleExpectedCompileError(t *testing.T, err error, expectation compileExpectation, noErrorDetail string) bool {
+	t.Helper()
+	if !expectation.expectError {
+		return false
+	}
+	if err == nil {
+		if expectation.knownGap {
+			t.Skipf("known gap: %s (%s)", expectation.description, noErrorDetail)
+		}
+		t.Fatalf("expected error not produced: %s (%s)", expectation.description, noErrorDetail)
+	}
+	if expectation.errorStage != "" {
+		t.Logf("Error detected at %s stage as expected: %v", expectation.errorStage, err)
+	} else {
+		t.Logf("Error detected as expected: %v", err)
+	}
+	return true
+}
+
 // assertSimpleCompileResult is a test helper for structs without errorStage.
-//
-//nolint:revive // argument-limit: test helper
 func assertSimpleCompileResult(t *testing.T, program *compiler.CompiledProgram, err error, expectError bool, description string) {
 	t.Helper()
-	if expectError {
-		if err == nil {
-			t.Skipf("known gap: %s (no error produced)", description)
-		} else {
-			t.Logf("Error detected as expected: %v", err)
-		}
+	assertSimpleCompileExpectation(t, program, err, compileExpectation{
+		expectError: expectError,
+		knownGap:    expectError,
+		description: description,
+	})
+}
+
+func assertSimpleCompileExpectation(t *testing.T, program *compiler.CompiledProgram, err error, expectation compileExpectation) {
+	t.Helper()
+	if handleExpectedCompileError(t, err, expectation, "no error produced") {
 		return
 	}
 	if err != nil {
 		t.Logf("Unexpected error (documents current behavior): %v", err)
+	} else if expectation.knownGap {
+		t.Logf("Known gap preserved: %s (no error produced)", expectation.description)
 	} else if program != nil {
 		t.Logf("Successfully compiled")
 	}
@@ -35,20 +65,24 @@ func assertCompileResult(t *testing.T, program *compiler.CompiledProgram, err er
 	name        string
 	rule        string
 	expectError bool
+	knownGap    bool
 	errorStage  string
 	description string
 }) {
 	t.Helper()
-	if tt.expectError {
-		if err == nil {
-			t.Skipf("known gap: %s (no error produced)", tt.description)
-		} else {
-			t.Logf("Error detected at %s stage as expected: %v", tt.errorStage, err)
-		}
+	expectation := compileExpectation{
+		expectError: tt.expectError,
+		knownGap:    tt.knownGap,
+		errorStage:  tt.errorStage,
+		description: tt.description,
+	}
+	if handleExpectedCompileError(t, err, expectation, "no error produced") {
 		return
 	}
 	if err != nil {
 		t.Logf("Unexpected error (documents current behavior): %v", err)
+	} else if tt.knownGap {
+		t.Logf("Known gap preserved: %s (no error produced)", tt.description)
 	} else if program != nil {
 		t.Logf("Successfully compiled despite expecting error")
 	}
@@ -61,6 +95,7 @@ func TestLexerErrorPropagation(t *testing.T) {
 		name        string
 		rule        string
 		expectError bool
+		knownGap    bool
 		errorStage  string
 		description string
 	}{
@@ -89,6 +124,7 @@ func TestLexerErrorPropagation(t *testing.T) {
 			name:        "invalid-escape-string",
 			rule:        `rule test { strings: $a = "test\p" condition: $a }`,
 			expectError: false,
+			knownGap:    true,
 			errorStage:  "lexer",
 			description: "Known gap: lexer does not reject invalid escape sequence in strings",
 		},
@@ -96,6 +132,7 @@ func TestLexerErrorPropagation(t *testing.T) {
 			name:        "invalid-escape-regex",
 			rule:        `rule test { strings: $a = /test\p/ condition: $a }`,
 			expectError: false,
+			knownGap:    true,
 			errorStage:  "lexer",
 			description: "Known gap: lexer does not reject invalid escape sequence in regex",
 		},
@@ -132,6 +169,7 @@ func TestParserErrorPropagation(t *testing.T) {
 		name        string
 		rule        string
 		expectError bool
+		knownGap    bool
 		errorStage  string
 		description string
 	}{
@@ -195,6 +233,7 @@ func TestParserErrorPropagation(t *testing.T) {
 			name:        "empty-hex-alternative",
 			rule:        `rule test { strings: $a = { DE AD () BE EF } condition: $a }`,
 			expectError: false,
+			knownGap:    true,
 			errorStage:  "parser",
 			description: "Known gap: parser does not reject empty hex alternative group",
 		},
@@ -238,6 +277,7 @@ func TestSemanticErrorPropagation(t *testing.T) {
 		name        string
 		rule        string
 		expectError bool
+		knownGap    bool
 		errorStage  string
 		description string
 	}{
@@ -273,6 +313,7 @@ func TestSemanticErrorPropagation(t *testing.T) {
 			name:        "invalid-function-argument",
 			rule:        `rule test { condition: int8("string") }`,
 			expectError: false,
+			knownGap:    true,
 			errorStage:  "semantic",
 			description: "Known gap: type checker does not validate int8() argument is an integer",
 		},
@@ -294,6 +335,7 @@ func TestSemanticErrorPropagation(t *testing.T) {
 			name:        "circular-dependency",
 			rule:        `rule a { condition: b } rule b { condition: a }`,
 			expectError: false,
+			knownGap:    true,
 			errorStage:  "semantic",
 			description: "Known gap: semantic analyzer does not detect circular rule dependencies",
 		},
@@ -330,6 +372,7 @@ func TestCompilerErrorPropagation(t *testing.T) {
 		name        string
 		rule        string
 		expectError bool
+		knownGap    bool
 		errorStage  string
 		description string
 	}{
@@ -413,10 +456,13 @@ func TestCompilerErrorPropagation(t *testing.T) {
 			compiler := compiler.NewCompiler()
 			program, err := compiler.CompileSourceWithContext(context.Background(), tt.rule)
 
-			if tt.expectError {
-				if err == nil {
-					t.Skipf("known gap: %s (no error produced)", tt.description)
-				}
+			expectation := compileExpectation{
+				expectError: tt.expectError,
+				knownGap:    tt.knownGap,
+				errorStage:  tt.errorStage,
+				description: tt.description,
+			}
+			if handleExpectedCompileError(t, err, expectation, "no error produced") {
 				return
 			}
 			if err != nil {
@@ -435,6 +481,7 @@ func TestErrorRecovery(t *testing.T) {
 		name        string
 		rules       string
 		expectError bool
+		knownGap    bool
 		description string
 	}{
 		{
@@ -468,7 +515,11 @@ func TestErrorRecovery(t *testing.T) {
 			compiler := compiler.NewCompiler()
 			program, err := compiler.CompileSourceWithContext(context.Background(), tt.rules)
 
-			assertSimpleCompileResult(t, program, err, tt.expectError, tt.description)
+			assertSimpleCompileExpectation(t, program, err, compileExpectation{
+				expectError: tt.expectError,
+				knownGap:    tt.knownGap,
+				description: tt.description,
+			})
 		})
 	}
 }
@@ -480,6 +531,7 @@ func TestWarningConditions(t *testing.T) {
 		name        string
 		rule        string
 		expectError bool
+		knownGap    bool
 		description string
 	}{
 		{
@@ -531,14 +583,18 @@ func TestWarningConditions(t *testing.T) {
 			compiler := compiler.NewCompiler()
 			program, err := compiler.CompileSourceWithContext(context.Background(), tt.rule)
 
-			if tt.expectError {
-				if err == nil {
-					t.Skipf("known gap: %s (no error produced)", tt.description)
-				}
+			expectation := compileExpectation{
+				expectError: tt.expectError,
+				knownGap:    tt.knownGap,
+				description: tt.description,
+			}
+			if handleExpectedCompileError(t, err, expectation, "no error produced") {
 				return
 			}
 			if err != nil {
 				t.Logf("Unexpected error (documents current behavior): %v", err)
+			} else if tt.knownGap {
+				t.Logf("Known gap preserved: %s (no error produced)", tt.description)
 			} else if program != nil {
 				t.Logf("Successfully compiled (check for warnings): %s", tt.description)
 			}
@@ -553,6 +609,7 @@ func TestEdgeCaseErrorConditions(t *testing.T) {
 		name        string
 		rule        string
 		expectError bool
+		knownGap    bool
 		description string
 	}{
 		{
@@ -583,6 +640,7 @@ func TestEdgeCaseErrorConditions(t *testing.T) {
 			name:        "zero-length-hex",
 			rule:        `rule test { strings: $a = {} condition: true }`,
 			expectError: false,
+			knownGap:    true,
 			description: "Known gap: compiler does not reject zero-length hex pattern",
 		},
 		{
@@ -610,7 +668,11 @@ func TestEdgeCaseErrorConditions(t *testing.T) {
 			compiler := compiler.NewCompiler()
 			program, err := compiler.CompileSourceWithContext(context.Background(), tt.rule)
 
-			assertSimpleCompileResult(t, program, err, tt.expectError, tt.description)
+			assertSimpleCompileExpectation(t, program, err, compileExpectation{
+				expectError: tt.expectError,
+				knownGap:    tt.knownGap,
+				description: tt.description,
+			})
 		})
 	}
 }

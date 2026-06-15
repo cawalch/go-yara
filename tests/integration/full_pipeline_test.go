@@ -13,19 +13,36 @@ import (
 	"github.com/cawalch/go-yara/token"
 )
 
-// assertPipelineResult is a test helper that flattens nested if/else for pipeline results.
-//
-//nolint:revive // argument-limit: test helper
-func assertPipelineResult(t *testing.T, program *compiler.CompiledProgram, err error, expectError bool, description string) {
+type pipelineExpectation struct {
+	expectError bool
+	knownGap    bool
+	description string
+}
+
+func handleExpectedPipelineError(t *testing.T, err error, expectation pipelineExpectation, noErrorDetail string) bool {
 	t.Helper()
-	if expectError {
-		if err == nil {
-			t.Skipf("known gap: %s (no pipeline error produced)", description)
+	if !expectation.expectError {
+		return false
+	}
+	if err == nil {
+		if expectation.knownGap {
+			t.Skipf("known gap: %s (%s)", expectation.description, noErrorDetail)
 		}
+		t.Fatalf("expected error not produced: %s (%s)", expectation.description, noErrorDetail)
+	}
+	return true
+}
+
+// assertPipelineResult is a test helper that flattens nested if/else for pipeline results.
+func assertPipelineResult(t *testing.T, program *compiler.CompiledProgram, err error, expectation pipelineExpectation) {
+	t.Helper()
+	if handleExpectedPipelineError(t, err, expectation, "no pipeline error produced") {
 		return
 	}
 	if err != nil {
 		t.Logf("Unexpected pipeline error (documents current behavior): %v", err)
+	} else if expectation.knownGap {
+		t.Logf("Known gap preserved: %s (no pipeline error produced)", expectation.description)
 	} else if program != nil {
 		t.Logf("Successfully completed full pipeline")
 	}
@@ -38,6 +55,7 @@ func TestFullPipelineSimpleRule(t *testing.T) {
 		name        string
 		rule        string
 		expectError bool
+		knownGap    bool
 		description string
 	}{
 		{
@@ -90,10 +108,12 @@ func TestFullPipelineSimpleRule(t *testing.T) {
 			p := parser.New(l2)
 			program, err := p.ParseRulesWithContext(context.Background())
 
-			if tt.expectError {
-				if err == nil {
-					t.Skipf("known gap: %s (no pipeline error produced)", tt.description)
-				}
+			expectation := pipelineExpectation{
+				expectError: tt.expectError,
+				knownGap:    tt.knownGap,
+				description: tt.description,
+			}
+			if handleExpectedPipelineError(t, err, expectation, "no pipeline error produced") {
 				return
 			}
 
@@ -107,10 +127,7 @@ func TestFullPipelineSimpleRule(t *testing.T) {
 			compiler := compiler.NewCompiler()
 			compiledProgram, err := compiler.CompileSourceWithContext(context.Background(), tt.rule)
 
-			if tt.expectError {
-				if err == nil {
-					t.Skipf("known gap: %s (no compilation error produced)", tt.description)
-				}
+			if handleExpectedPipelineError(t, err, expectation, "no compilation error produced") {
 				return
 			}
 
@@ -138,6 +155,7 @@ func TestFullPipelineComplexRule(t *testing.T) {
 		name        string
 		rule        string
 		expectError bool
+		knownGap    bool
 		description string
 	}{
 		{
@@ -231,7 +249,11 @@ func TestFullPipelineComplexRule(t *testing.T) {
 			compiler := compiler.NewCompiler()
 			program, err := compiler.CompileSourceWithContext(context.Background(), tt.rule)
 
-			assertPipelineResult(t, program, err, tt.expectError, tt.description)
+			assertPipelineResult(t, program, err, pipelineExpectation{
+				expectError: tt.expectError,
+				knownGap:    tt.knownGap,
+				description: tt.description,
+			})
 		})
 	}
 }
@@ -243,6 +265,7 @@ func TestFullPipelineMultipleRules(t *testing.T) {
 		name        string
 		rules       string
 		expectError bool
+		knownGap    bool
 		description string
 	}{
 		{
@@ -294,7 +317,11 @@ func TestFullPipelineMultipleRules(t *testing.T) {
 			compiler := compiler.NewCompiler()
 			program, err := compiler.CompileSourceWithContext(context.Background(), tt.rules)
 
-			assertPipelineResult(t, program, err, tt.expectError, tt.description)
+			assertPipelineResult(t, program, err, pipelineExpectation{
+				expectError: tt.expectError,
+				knownGap:    tt.knownGap,
+				description: tt.description,
+			})
 		})
 	}
 }
@@ -307,6 +334,7 @@ func TestFullPipelineWithIncludes(t *testing.T) {
 		mainRule     string
 		includedFile string
 		expectError  bool
+		knownGap     bool
 		description  string
 	}{
 		{
@@ -347,6 +375,7 @@ func TestFullPipelineWithErrorRecovery(t *testing.T) {
 		name        string
 		rule        string
 		expectError bool
+		knownGap    bool
 		errorStage  string
 		description string
 	}{
@@ -385,7 +414,11 @@ func TestFullPipelineWithErrorRecovery(t *testing.T) {
 			compiler := compiler.NewCompiler()
 			program, err := compiler.CompileSourceWithContext(context.Background(), tt.rule)
 
-			assertPipelineResult(t, program, err, tt.expectError, tt.description)
+			assertPipelineResult(t, program, err, pipelineExpectation{
+				expectError: tt.expectError,
+				knownGap:    tt.knownGap,
+				description: tt.description,
+			})
 		})
 	}
 }

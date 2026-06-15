@@ -122,17 +122,7 @@ func TestRuleCompilationBooleanLogic(t *testing.T) {
 			c := compiler.NewCompiler()
 			program, err := c.CompileSourceWithContext(context.Background(), tt.rule)
 
-			if tt.expectError {
-				if err == nil {
-					t.Skipf("known gap: %s (no compilation error produced)", tt.description)
-				}
-				return
-			}
-			if err != nil {
-				t.Logf("Unexpected compilation error (documents current behavior): %v", err)
-			} else if program != nil {
-				t.Logf("Successfully compiled: %s", tt.description)
-			}
+			assertSimpleCompileResult(t, program, err, tt.expectError, tt.description)
 		})
 	}
 }
@@ -189,17 +179,7 @@ func TestRuleCompilationComparison(t *testing.T) {
 			c := compiler.NewCompiler()
 			program, err := c.CompileSourceWithContext(context.Background(), tt.rule)
 
-			if tt.expectError {
-				if err == nil {
-					t.Skipf("known gap: %s (no compilation error produced)", tt.description)
-				}
-				return
-			}
-			if err != nil {
-				t.Logf("Unexpected compilation error (documents current behavior): %v", err)
-			} else if program != nil {
-				t.Logf("Successfully compiled: %s", tt.description)
-			}
+			assertSimpleCompileResult(t, program, err, tt.expectError, tt.description)
 		})
 	}
 }
@@ -292,17 +272,7 @@ func TestRuleCompilationArithmetic(t *testing.T) {
 			c := compiler.NewCompiler()
 			program, err := c.CompileSourceWithContext(context.Background(), tt.rule)
 
-			if tt.expectError {
-				if err == nil {
-					t.Skipf("known gap: %s (no compilation error produced)", tt.description)
-				}
-				return
-			}
-			if err != nil {
-				t.Logf("Unexpected compilation error (documents current behavior): %v", err)
-			} else if program != nil {
-				t.Logf("Successfully compiled: %s", tt.description)
-			}
+			assertSimpleCompileResult(t, program, err, tt.expectError, tt.description)
 		})
 	}
 }
@@ -347,17 +317,7 @@ func TestRuleCompilationStringOperators(t *testing.T) {
 			c := compiler.NewCompiler()
 			program, err := c.CompileSourceWithContext(context.Background(), tt.rule)
 
-			if tt.expectError {
-				if err == nil {
-					t.Skipf("known gap: %s (no compilation error produced)", tt.description)
-				}
-				return
-			}
-			if err != nil {
-				t.Logf("Unexpected compilation error (documents current behavior): %v", err)
-			} else if program != nil {
-				t.Logf("Successfully compiled: %s", tt.description)
-			}
+			assertSimpleCompileResult(t, program, err, tt.expectError, tt.description)
 		})
 	}
 }
@@ -408,17 +368,7 @@ func TestRuleCompilationOfExpressions(t *testing.T) {
 			c := compiler.NewCompiler()
 			program, err := c.CompileSourceWithContext(context.Background(), tt.rule)
 
-			if tt.expectError {
-				if err == nil {
-					t.Skipf("known gap: %s (no compilation error produced)", tt.description)
-				}
-				return
-			}
-			if err != nil {
-				t.Logf("Unexpected compilation error (documents current behavior): %v", err)
-			} else if program != nil {
-				t.Logf("Successfully compiled: %s", tt.description)
-			}
+			assertSimpleCompileResult(t, program, err, tt.expectError, tt.description)
 		})
 	}
 }
@@ -463,17 +413,7 @@ func TestRuleCompilationForLoops(t *testing.T) {
 			c := compiler.NewCompiler()
 			program, err := c.CompileSourceWithContext(context.Background(), tt.rule)
 
-			if tt.expectError {
-				if err == nil {
-					t.Skipf("known gap: %s (no compilation error produced)", tt.description)
-				}
-				return
-			}
-			if err != nil {
-				t.Logf("Unexpected compilation error (documents current behavior): %v", err)
-			} else if program != nil {
-				t.Logf("Successfully compiled: %s", tt.description)
-			}
+			assertSimpleCompileResult(t, program, err, tt.expectError, tt.description)
 		})
 	}
 }
@@ -536,17 +476,7 @@ func TestRuleCompilationBuiltinFunctions(t *testing.T) {
 			c := compiler.NewCompiler()
 			program, err := c.CompileSourceWithContext(context.Background(), tt.rule)
 
-			if tt.expectError {
-				if err == nil {
-					t.Skipf("known gap: %s (no compilation error produced)", tt.description)
-				}
-				return
-			}
-			if err != nil {
-				t.Logf("Unexpected compilation error (documents current behavior): %v", err)
-			} else if program != nil {
-				t.Logf("Successfully compiled: %s", tt.description)
-			}
+			assertSimpleCompileResult(t, program, err, tt.expectError, tt.description)
 		})
 	}
 }
