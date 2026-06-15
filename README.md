@@ -132,6 +132,14 @@ func scanMany(program *compiler.CompiledProgram, samples ...[]byte) error {
 - `RuleResults`: boolean condition results for evaluated rules.
 - `Matches`: per-rule string matches keyed by rule name and string identifier.
 
+### Diagnostics And Heuristic Metrics
+
+The compiler exposes diagnostic helpers such as `GetStats`,
+`GetMemoryUsage`, `GetTotalMemoryUsage`, `EstimateComplexity`, and
+`EstimatePatternComplexity`. These are deterministic project-level metrics for
+debugging, relative sizing, and tests. They are not exact measurements of Go
+heap usage or scan/runtime cost.
+
 ## Command-Line Usage
 
 The CLI expects the YARA file as the first positional argument, followed by

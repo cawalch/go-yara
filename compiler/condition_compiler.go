@@ -1176,7 +1176,11 @@ func (cc *ConditionCompiler) OptimizeExpression(expr ast.Expression) ast.Express
 	return expr
 }
 
-// EstimateComplexity estimates the complexity of an expression
+// EstimateComplexity returns a simple structural complexity score for an expression.
+// Supported nodes contribute fixed weights: literals count as 1, identifiers as
+// 2, and unary or binary operators add 1 plus their operands. Unsupported node
+// types return 0. The score is a heuristic for relative diagnostics, not a
+// runtime cost model.
 func (cc *ConditionCompiler) EstimateComplexity(expr ast.Expression) int {
 	switch e := expr.(type) {
 	case *ast.Literal:
