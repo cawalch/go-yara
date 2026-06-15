@@ -71,7 +71,7 @@ func TestRuleCompilationSimple(t *testing.T) {
 			c := compiler.NewCompiler()
 			program, err := c.CompileSourceWithContext(context.Background(), tt.rule)
 
-			assertSimpleCompileResult(t, program, err, tt.expectError, tt.description)
+			assertSimpleCompileExpectation(t, compileResult{program: program, err: err}, simpleKnownGapExpectation(tt.expectError, tt.description))
 		})
 	}
 }
@@ -122,7 +122,7 @@ func TestRuleCompilationBooleanLogic(t *testing.T) {
 			c := compiler.NewCompiler()
 			program, err := c.CompileSourceWithContext(context.Background(), tt.rule)
 
-			assertSimpleCompileResult(t, program, err, tt.expectError, tt.description)
+			assertSimpleCompileExpectation(t, compileResult{program: program, err: err}, simpleKnownGapExpectation(tt.expectError, tt.description))
 		})
 	}
 }
@@ -179,7 +179,7 @@ func TestRuleCompilationComparison(t *testing.T) {
 			c := compiler.NewCompiler()
 			program, err := c.CompileSourceWithContext(context.Background(), tt.rule)
 
-			assertSimpleCompileResult(t, program, err, tt.expectError, tt.description)
+			assertSimpleCompileExpectation(t, compileResult{program: program, err: err}, simpleKnownGapExpectation(tt.expectError, tt.description))
 		})
 	}
 }
@@ -272,7 +272,7 @@ func TestRuleCompilationArithmetic(t *testing.T) {
 			c := compiler.NewCompiler()
 			program, err := c.CompileSourceWithContext(context.Background(), tt.rule)
 
-			assertSimpleCompileResult(t, program, err, tt.expectError, tt.description)
+			assertSimpleCompileExpectation(t, compileResult{program: program, err: err}, simpleKnownGapExpectation(tt.expectError, tt.description))
 		})
 	}
 }
@@ -317,7 +317,7 @@ func TestRuleCompilationStringOperators(t *testing.T) {
 			c := compiler.NewCompiler()
 			program, err := c.CompileSourceWithContext(context.Background(), tt.rule)
 
-			assertSimpleCompileResult(t, program, err, tt.expectError, tt.description)
+			assertSimpleCompileExpectation(t, compileResult{program: program, err: err}, simpleKnownGapExpectation(tt.expectError, tt.description))
 		})
 	}
 }
@@ -368,7 +368,7 @@ func TestRuleCompilationOfExpressions(t *testing.T) {
 			c := compiler.NewCompiler()
 			program, err := c.CompileSourceWithContext(context.Background(), tt.rule)
 
-			assertSimpleCompileResult(t, program, err, tt.expectError, tt.description)
+			assertSimpleCompileExpectation(t, compileResult{program: program, err: err}, simpleKnownGapExpectation(tt.expectError, tt.description))
 		})
 	}
 }
@@ -413,7 +413,7 @@ func TestRuleCompilationForLoops(t *testing.T) {
 			c := compiler.NewCompiler()
 			program, err := c.CompileSourceWithContext(context.Background(), tt.rule)
 
-			assertSimpleCompileResult(t, program, err, tt.expectError, tt.description)
+			assertSimpleCompileExpectation(t, compileResult{program: program, err: err}, simpleKnownGapExpectation(tt.expectError, tt.description))
 		})
 	}
 }
@@ -476,7 +476,7 @@ func TestRuleCompilationBuiltinFunctions(t *testing.T) {
 			c := compiler.NewCompiler()
 			program, err := c.CompileSourceWithContext(context.Background(), tt.rule)
 
-			assertSimpleCompileResult(t, program, err, tt.expectError, tt.description)
+			assertSimpleCompileExpectation(t, compileResult{program: program, err: err}, simpleKnownGapExpectation(tt.expectError, tt.description))
 		})
 	}
 }

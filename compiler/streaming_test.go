@@ -44,7 +44,7 @@ func TestStreamingWithLargeData(t *testing.T) {
 			c := NewCompiler()
 			program, err := c.CompileSource(tt.rule)
 
-			assertAnonymousStringResult(t, program, err, tt.expectError, tt.description)
+			anonymousStringCompileResult{program: program, err: err}.assertExpected(t, tt.expectError, tt.description)
 		})
 	}
 }
@@ -89,7 +89,7 @@ func TestStreamingWithMultipleMatches(t *testing.T) {
 			c := NewCompiler()
 			program, err := c.CompileSource(tt.rule)
 
-			assertAnonymousStringResult(t, program, err, tt.expectError, tt.description)
+			anonymousStringCompileResult{program: program, err: err}.assertExpected(t, tt.expectError, tt.description)
 		})
 	}
 }
@@ -140,7 +140,7 @@ func TestStreamingWithNoMatches(t *testing.T) {
 			c := NewCompiler()
 			program, err := c.CompileSource(tt.rule)
 
-			assertAnonymousStringResult(t, program, err, tt.expectError, tt.description)
+			anonymousStringCompileResult{program: program, err: err}.assertExpected(t, tt.expectError, tt.description)
 		})
 	}
 }
@@ -191,7 +191,7 @@ func TestStreamingStateManagement(t *testing.T) {
 			c := NewCompiler()
 			program, err := c.CompileSource(tt.rule)
 
-			assertAnonymousStringResult(t, program, err, tt.expectError, tt.description)
+			anonymousStringCompileResult{program: program, err: err}.assertExpected(t, tt.expectError, tt.description)
 		})
 	}
 }

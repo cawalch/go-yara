@@ -12,43 +12,46 @@ type anonymousStringTestCase struct {
 	description string
 }
 
+type anonymousStringCompileResult struct {
+	program *CompiledProgram
+	err     error
+}
+
 // assertAnonymousStringResult is a test helper that logs the compilation outcome.
-//
-//nolint:revive // argument-limit: shared test helper
-func assertAnonymousStringResult(t *testing.T, program *CompiledProgram, err error, expectError bool, description string) {
+func (result anonymousStringCompileResult) assertExpected(t *testing.T, expectError bool, description string) {
 	t.Helper()
 	if expectError {
-		if err == nil {
+		if result.err == nil {
 			t.Fatalf("expected compilation error not produced: %s", description)
 		} else {
-			t.Logf("Compilation error detected: %v", err)
+			t.Logf("Compilation error detected: %v", result.err)
 		}
 		return
 	}
-	if err != nil {
-		t.Logf("Unexpected compilation error (documents current behavior): %v", err)
-	} else if program != nil {
+	if result.err != nil {
+		t.Logf("Unexpected compilation error (documents current behavior): %v", result.err)
+	} else if result.program != nil {
 		t.Logf("Successfully compiled")
 	}
 }
 
-func assertAnonymousStringCaseResult(t *testing.T, program *CompiledProgram, err error, tt anonymousStringTestCase) {
+func (result anonymousStringCompileResult) assertCase(t *testing.T, tt anonymousStringTestCase) {
 	t.Helper()
 	if tt.knownGap == "" {
-		assertAnonymousStringResult(t, program, err, tt.expectError, tt.description)
+		result.assertExpected(t, tt.expectError, tt.description)
 		return
 	}
 	if tt.expectError {
-		if err == nil {
+		if result.err == nil {
 			t.Skipf("known gap: %s (no compilation error produced)", tt.knownGap)
 		} else {
-			t.Logf("Compilation error detected: %v", err)
+			t.Logf("Compilation error detected: %v", result.err)
 		}
 		return
 	}
-	if err != nil {
-		t.Logf("Unexpected compilation error (documents current behavior): %v", err)
-	} else if program != nil {
+	if result.err != nil {
+		t.Logf("Unexpected compilation error (documents current behavior): %v", result.err)
+	} else if result.program != nil {
 		t.Logf("Known gap accepted: %s", tt.knownGap)
 		t.Logf("Successfully compiled")
 	}
@@ -95,7 +98,7 @@ func TestMultipleAnonymousStrings(t *testing.T) {
 			c := NewCompiler()
 			program, err := c.CompileSource(tt.rule)
 
-			assertAnonymousStringCaseResult(t, program, err, tt)
+			anonymousStringCompileResult{program: program, err: err}.assertCase(t, tt)
 		})
 	}
 }
@@ -155,7 +158,7 @@ func TestAnonymousStringInForLoops(t *testing.T) {
 			c := NewCompiler()
 			program, err := c.CompileSource(tt.rule)
 
-			assertAnonymousStringCaseResult(t, program, err, tt)
+			anonymousStringCompileResult{program: program, err: err}.assertCase(t, tt)
 		})
 	}
 }
@@ -218,7 +221,7 @@ func TestAnonymousStringInOfExpressions(t *testing.T) {
 			c := NewCompiler()
 			program, err := c.CompileSource(tt.rule)
 
-			assertAnonymousStringCaseResult(t, program, err, tt)
+			anonymousStringCompileResult{program: program, err: err}.assertCase(t, tt)
 		})
 	}
 }
@@ -270,7 +273,7 @@ func TestAnonymousStringCollisions(t *testing.T) {
 			c := NewCompiler()
 			program, err := c.CompileSource(tt.rule)
 
-			assertAnonymousStringCaseResult(t, program, err, tt)
+			anonymousStringCompileResult{program: program, err: err}.assertCase(t, tt)
 		})
 	}
 }
@@ -331,7 +334,7 @@ func TestMixedAnonymousAndNamedStrings(t *testing.T) {
 			c := NewCompiler()
 			program, err := c.CompileSource(tt.rule)
 
-			assertAnonymousStringCaseResult(t, program, err, tt)
+			anonymousStringCompileResult{program: program, err: err}.assertCase(t, tt)
 		})
 	}
 }
@@ -395,7 +398,7 @@ func TestAnonymousStringWithModifiers(t *testing.T) {
 			c := NewCompiler()
 			program, err := c.CompileSource(tt.rule)
 
-			assertAnonymousStringCaseResult(t, program, err, tt)
+			anonymousStringCompileResult{program: program, err: err}.assertCase(t, tt)
 		})
 	}
 }

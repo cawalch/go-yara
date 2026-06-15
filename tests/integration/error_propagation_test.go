@@ -15,53 +15,54 @@ type compileExpectation struct {
 	description string
 }
 
-func handleExpectedCompileError(t *testing.T, err error, expectation compileExpectation, noErrorDetail string) bool {
+type compileResult struct {
+	program *compiler.CompiledProgram
+	err     error
+}
+
+func (result compileResult) handleExpectedError(t *testing.T, expectation compileExpectation, noErrorDetail string) bool {
 	t.Helper()
 	if !expectation.expectError {
 		return false
 	}
-	if err == nil {
-		if expectation.knownGap {
-			t.Skipf("known gap: %s (%s)", expectation.description, noErrorDetail)
-		}
+	switch {
+	case result.err == nil && expectation.knownGap:
+		t.Skipf("known gap: %s (%s)", expectation.description, noErrorDetail)
+	case result.err == nil:
 		t.Fatalf("expected error not produced: %s (%s)", expectation.description, noErrorDetail)
-	}
-	if expectation.errorStage != "" {
-		t.Logf("Error detected at %s stage as expected: %v", expectation.errorStage, err)
-	} else {
-		t.Logf("Error detected as expected: %v", err)
+	case expectation.errorStage != "":
+		t.Logf("Error detected at %s stage as expected: %v", expectation.errorStage, result.err)
+	default:
+		t.Logf("Error detected as expected: %v", result.err)
 	}
 	return true
 }
 
-// assertSimpleCompileResult is a test helper for structs without errorStage.
-func assertSimpleCompileResult(t *testing.T, program *compiler.CompiledProgram, err error, expectError bool, description string) {
+func assertSimpleCompileExpectation(t *testing.T, result compileResult, expectation compileExpectation) {
 	t.Helper()
-	assertSimpleCompileExpectation(t, program, err, compileExpectation{
-		expectError: expectError,
-		knownGap:    expectError,
-		description: description,
-	})
-}
-
-func assertSimpleCompileExpectation(t *testing.T, program *compiler.CompiledProgram, err error, expectation compileExpectation) {
-	t.Helper()
-	if handleExpectedCompileError(t, err, expectation, "no error produced") {
+	if result.handleExpectedError(t, expectation, "no error produced") {
 		return
 	}
-	if err != nil {
-		t.Logf("Unexpected error (documents current behavior): %v", err)
-	} else if expectation.knownGap {
+	switch {
+	case result.err != nil:
+		t.Logf("Unexpected error (documents current behavior): %v", result.err)
+	case expectation.knownGap:
 		t.Logf("Known gap preserved: %s (no error produced)", expectation.description)
-	} else if program != nil {
+	case result.program != nil:
 		t.Logf("Successfully compiled")
 	}
 }
 
+func simpleKnownGapExpectation(expectError bool, description string) compileExpectation {
+	return compileExpectation{
+		expectError: expectError,
+		knownGap:    expectError,
+		description: description,
+	}
+}
+
 // assertCompileResult is a test helper that logs the compilation outcome.
-//
-//nolint:revive // argument-limit: test helper
-func assertCompileResult(t *testing.T, program *compiler.CompiledProgram, err error, tt struct {
+func assertCompileResult(t *testing.T, result compileResult, tt struct {
 	name        string
 	rule        string
 	expectError bool
@@ -76,14 +77,15 @@ func assertCompileResult(t *testing.T, program *compiler.CompiledProgram, err er
 		errorStage:  tt.errorStage,
 		description: tt.description,
 	}
-	if handleExpectedCompileError(t, err, expectation, "no error produced") {
+	if result.handleExpectedError(t, expectation, "no error produced") {
 		return
 	}
-	if err != nil {
-		t.Logf("Unexpected error (documents current behavior): %v", err)
-	} else if tt.knownGap {
+	switch {
+	case result.err != nil:
+		t.Logf("Unexpected error (documents current behavior): %v", result.err)
+	case tt.knownGap:
 		t.Logf("Known gap preserved: %s (no error produced)", tt.description)
-	} else if program != nil {
+	case result.program != nil:
 		t.Logf("Successfully compiled despite expecting error")
 	}
 }
@@ -156,7 +158,7 @@ func TestLexerErrorPropagation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			compiler := compiler.NewCompiler()
 			program, err := compiler.CompileSourceWithContext(context.Background(), tt.rule)
-			assertCompileResult(t, program, err, tt)
+			assertCompileResult(t, compileResult{program: program, err: err}, tt)
 
 		})
 	}
@@ -264,7 +266,7 @@ func TestParserErrorPropagation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			compiler := compiler.NewCompiler()
 			program, err := compiler.CompileSourceWithContext(context.Background(), tt.rule)
-			assertCompileResult(t, program, err, tt)
+			assertCompileResult(t, compileResult{program: program, err: err}, tt)
 
 		})
 	}
@@ -359,7 +361,7 @@ func TestSemanticErrorPropagation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			compiler := compiler.NewCompiler()
 			program, err := compiler.CompileSourceWithContext(context.Background(), tt.rule)
-			assertCompileResult(t, program, err, tt)
+			assertCompileResult(t, compileResult{program: program, err: err}, tt)
 
 		})
 	}
@@ -462,12 +464,14 @@ func TestCompilerErrorPropagation(t *testing.T) {
 				errorStage:  tt.errorStage,
 				description: tt.description,
 			}
-			if handleExpectedCompileError(t, err, expectation, "no error produced") {
+			result := compileResult{program: program, err: err}
+			if result.handleExpectedError(t, expectation, "no error produced") {
 				return
 			}
-			if err != nil {
-				t.Logf("Unexpected error (documents current behavior): %v", err)
-			} else if program != nil {
+			switch {
+			case result.err != nil:
+				t.Logf("Unexpected error (documents current behavior): %v", result.err)
+			case result.program != nil:
 				t.Logf("Successfully compiled complex rule")
 			}
 		})
@@ -515,7 +519,7 @@ func TestErrorRecovery(t *testing.T) {
 			compiler := compiler.NewCompiler()
 			program, err := compiler.CompileSourceWithContext(context.Background(), tt.rules)
 
-			assertSimpleCompileExpectation(t, program, err, compileExpectation{
+			assertSimpleCompileExpectation(t, compileResult{program: program, err: err}, compileExpectation{
 				expectError: tt.expectError,
 				knownGap:    tt.knownGap,
 				description: tt.description,
@@ -588,14 +592,16 @@ func TestWarningConditions(t *testing.T) {
 				knownGap:    tt.knownGap,
 				description: tt.description,
 			}
-			if handleExpectedCompileError(t, err, expectation, "no error produced") {
+			result := compileResult{program: program, err: err}
+			if result.handleExpectedError(t, expectation, "no error produced") {
 				return
 			}
-			if err != nil {
-				t.Logf("Unexpected error (documents current behavior): %v", err)
-			} else if tt.knownGap {
+			switch {
+			case result.err != nil:
+				t.Logf("Unexpected error (documents current behavior): %v", result.err)
+			case tt.knownGap:
 				t.Logf("Known gap preserved: %s (no error produced)", tt.description)
-			} else if program != nil {
+			case result.program != nil:
 				t.Logf("Successfully compiled (check for warnings): %s", tt.description)
 			}
 		})
@@ -668,7 +674,7 @@ func TestEdgeCaseErrorConditions(t *testing.T) {
 			compiler := compiler.NewCompiler()
 			program, err := compiler.CompileSourceWithContext(context.Background(), tt.rule)
 
-			assertSimpleCompileExpectation(t, program, err, compileExpectation{
+			assertSimpleCompileExpectation(t, compileResult{program: program, err: err}, compileExpectation{
 				expectError: tt.expectError,
 				knownGap:    tt.knownGap,
 				description: tt.description,

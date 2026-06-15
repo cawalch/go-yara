@@ -45,7 +45,7 @@ func TestEmptyStringMatching(t *testing.T) {
 			c := NewCompiler()
 			program, err := c.CompileSource(tt.rule)
 
-			assertAnonymousStringResult(t, program, err, tt.expectError, tt.description)
+			anonymousStringCompileResult{program: program, err: err}.assertExpected(t, tt.expectError, tt.description)
 		})
 	}
 }
@@ -90,7 +90,7 @@ func TestSingleCharStrings(t *testing.T) {
 			c := NewCompiler()
 			program, err := c.CompileSource(tt.rule)
 
-			assertAnonymousStringResult(t, program, err, tt.expectError, tt.description)
+			anonymousStringCompileResult{program: program, err: err}.assertExpected(t, tt.expectError, tt.description)
 		})
 	}
 }
@@ -135,7 +135,7 @@ func TestVeryLongStrings(t *testing.T) {
 			c := NewCompiler()
 			program, err := c.CompileSource(tt.rule)
 
-			assertAnonymousStringResult(t, program, err, tt.expectError, tt.description)
+			anonymousStringCompileResult{program: program, err: err}.assertExpected(t, tt.expectError, tt.description)
 		})
 	}
 }
@@ -186,7 +186,7 @@ func TestOverlappingPatterns(t *testing.T) {
 			c := NewCompiler()
 			program, err := c.CompileSource(tt.rule)
 
-			assertAnonymousStringResult(t, program, err, tt.expectError, tt.description)
+			anonymousStringCompileResult{program: program, err: err}.assertExpected(t, tt.expectError, tt.description)
 		})
 	}
 }
@@ -267,7 +267,7 @@ func TestAllStringModifiersCombinations(t *testing.T) {
 			c := NewCompiler()
 			program, err := c.CompileSource(tt.rule)
 
-			assertAnonymousStringResult(t, program, err, tt.expectError, tt.description)
+			anonymousStringCompileResult{program: program, err: err}.assertExpected(t, tt.expectError, tt.description)
 		})
 	}
 }
@@ -336,7 +336,7 @@ func TestXorModifierBoundaries(t *testing.T) {
 			c := NewCompiler()
 			program, err := c.CompileSource(tt.rule)
 
-			assertAnonymousStringResult(t, program, err, tt.expectError, tt.description)
+			anonymousStringCompileResult{program: program, err: err}.assertExpected(t, tt.expectError, tt.description)
 		})
 	}
 }
@@ -399,7 +399,7 @@ func TestBase64AlphabetVariations(t *testing.T) {
 			c := NewCompiler()
 			program, err := c.CompileSource(tt.rule)
 
-			assertAnonymousStringResult(t, program, err, tt.expectError, tt.description)
+			anonymousStringCompileResult{program: program, err: err}.assertExpected(t, tt.expectError, tt.description)
 		})
 	}
 }
@@ -468,7 +468,7 @@ func TestHexPatternJumpExtremes(t *testing.T) {
 			c := NewCompiler()
 			program, err := c.CompileSource(tt.rule)
 
-			assertAnonymousStringResult(t, program, err, tt.expectError, tt.description)
+			anonymousStringCompileResult{program: program, err: err}.assertExpected(t, tt.expectError, tt.description)
 		})
 	}
 }
@@ -543,7 +543,7 @@ func TestRegexEdgeCases(t *testing.T) {
 			c := NewCompiler()
 			program, err := c.CompileSource(tt.rule)
 
-			assertAnonymousStringResult(t, program, err, tt.expectError, tt.description)
+			anonymousStringCompileResult{program: program, err: err}.assertExpected(t, tt.expectError, tt.description)
 		})
 	}
 }
