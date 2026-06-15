@@ -26,6 +26,8 @@ Several previously planned cleanup items have already landed:
   when no error is produced.
 - Public diagnostic metrics such as memory usage and complexity estimates are
   documented as deterministic heuristics, with tests covering their contract.
+- Interpreter dispatch/debug helpers are split out of `compiler/interpreter.go`
+  while preserving the `[256]OpcodeHandler` dispatch table.
 
 ## Cleanup Principles
 
@@ -38,25 +40,8 @@ Several previously planned cleanup items have already landed:
 
 ## Next PR Candidates
 
-### 1. Split Interpreter By Opcode Category
-
-The interpreter is still a high-churn area. Keep the existing `[256]OpcodeHandler`
-dispatch table, but group implementation files by behavior so future opcode
-work is easier to review.
-
-Suggested shape:
-
-- stack and control operations
-- arithmetic and comparison operations
-- string and regex operations
-- iterator operations
-- file/read operations
-
-Acceptance criteria:
-
-- No opcode value changes.
-- No behavior changes.
-- Existing interpreter and compiler tests continue to pass.
+No high-confidence cleanup candidates are currently queued. Rebuild this section
+from code review findings rather than carrying forward stale generated plans.
 
 ## Validation Checklist
 
