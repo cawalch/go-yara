@@ -46,7 +46,10 @@ func (v *Validator) ValidateProgram(program *ast.Program) []error {
 	v.errors = v.errors[:0] // Clear previous errors
 	v.symbolTable.Reset()
 
-	// First: collect external variables
+	// First: collect global variables and external variables
+	for _, globalVar := range program.GlobalVariables {
+		v.collectGlobalVariable(globalVar)
+	}
 	for _, extVar := range program.ExternalVariables {
 		v.collectExternalVariable(extVar)
 	}
@@ -71,6 +74,36 @@ func (v *Validator) collectSymbols(rule *ast.Rule) {
 		v.addError(&Error{
 			Message:  err.Error(),
 			Position: rule.Pos,
+		})
+	}
+}
+
+// collectGlobalVariable collects a global variable symbol.
+func (v *Validator) collectGlobalVariable(globalVar *ast.GlobalVariable) {
+	typeInfo := &TypeInfo{DataType: TypeUnknown}
+	if globalVar.Value != nil {
+		var errs []error
+		typeInfo, errs = v.validateExpression(globalVar.Value)
+		v.errors = append(v.errors, errs...)
+	}
+	if typeInfo == nil || typeInfo.DataType == TypeUnknown {
+		v.addError(&Error{
+			Message:  "global variable " + globalVar.Name + " must have a literal integer, string, or boolean value",
+			Position: globalVar.Pos,
+		})
+		return
+	}
+
+	def := globalVariableDefinition{
+		name:     globalVar.Name,
+		pos:      globalVar.Pos,
+		global:   globalVar,
+		typeInfo: typeInfo,
+	}
+	if err := v.symbolTable.defineGlobalVariable(def); err != nil {
+		v.addError(&Error{
+			Message:  err.Error(),
+			Position: globalVar.Pos,
 		})
 	}
 }
@@ -152,7 +185,7 @@ func (v *Validator) validateCondition(condition ast.Expression) {
 		v.errors = append(v.errors, errs...)
 
 		// Condition should evaluate to boolean or numeric (integers/floats are truthy/falsy)
-		if conditionType != nil && conditionType.DataType != TypeBoolean && !conditionType.IsNumeric() {
+		if conditionType != nil && conditionType.DataType != TypeUnknown && conditionType.DataType != TypeBoolean && !conditionType.IsNumeric() {
 			v.addError(&Error{
 				Message:  "condition must evaluate to boolean or numeric",
 				Position: condition.Position(),
@@ -653,9 +686,13 @@ func (v *Validator) getTypeFromSymbol(symbol *Symbol) *TypeInfo {
 		// This will be refined as we add more type information
 		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
 	case SymbolExternal:
-		// External variables could be string, integer, or boolean
-		// For now, assume integer type (will be refined with type hints)
-		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
+		// Runtime external variables are dynamically typed by the caller.
+		return &TypeInfo{DataType: TypeUnknown}
+	case SymbolGlobal:
+		if symbol.TypeInfo != nil {
+			return symbol.TypeInfo
+		}
+		return &TypeInfo{DataType: TypeUnknown}
 	default:
 		return &TypeInfo{DataType: TypeUnknown}
 	}

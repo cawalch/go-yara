@@ -35,6 +35,7 @@ type ConditionCompiler struct {
 	stringOffsets     map[string]int
 	variableMap       map[string]int
 	externalVariables map[string]int
+	globalVariables   map[string]int
 	ruleIndexMap      map[string]int
 	labelCounter      int
 	labels            map[string]int
@@ -91,6 +92,7 @@ func NewConditionCompiler(emitter *Emitter, stringOffsets map[string]int) *Condi
 		stringOffsets:     stringOffsets,
 		variableMap:       make(map[string]int),
 		externalVariables: make(map[string]int),
+		globalVariables:   make(map[string]int),
 		ruleIndexMap:      make(map[string]int),
 		labels:            make(map[string]int),
 		pendingJumps:      make([]PendingJump, 0),
@@ -402,6 +404,11 @@ func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 	}
 
 	if index, exists := cc.externalVariables[ident.Name]; exists {
+		cc.emitter.EmitOpcodeWithOperand(OpPushM, Operand{Type: OperandImmediate32, Value: uint64(int64(index))}, ident.Pos.Line, ident.Pos.Column) // #nosec G115
+		return nil
+	}
+
+	if index, exists := cc.globalVariables[ident.Name]; exists {
 		cc.emitter.EmitOpcodeWithOperand(OpPushM, Operand{Type: OperandImmediate32, Value: uint64(int64(index))}, ident.Pos.Line, ident.Pos.Column) // #nosec G115
 		return nil
 	}
@@ -1120,6 +1127,21 @@ func (cc *ConditionCompiler) GetExternalVariables() map[string]int {
 	return cc.externalVariables
 }
 
+// SetExternalVariables sets the memory slots for declared external variables.
+func (cc *ConditionCompiler) SetExternalVariables(externalVariables map[string]int) {
+	cc.externalVariables = externalVariables
+}
+
+// SetGlobalVariables sets the memory slots for declared global variables.
+func (cc *ConditionCompiler) SetGlobalVariables(globalVariables map[string]int) {
+	cc.globalVariables = globalVariables
+}
+
+// GetGlobalVariables returns the compiler's global variables map.
+func (cc *ConditionCompiler) GetGlobalVariables() map[string]int {
+	return cc.globalVariables
+}
+
 // SetStringOffsets sets the string offsets for the compiler
 func (cc *ConditionCompiler) SetStringOffsets(offsets map[string]int) {
 	cc.stringOffsets = offsets
@@ -1146,13 +1168,14 @@ func (cc *ConditionCompiler) GetStringSets() [][]string {
 	return sets
 }
 
-// ResetForRule clears per-rule state while preserving external/rule variable maps.
+// ResetForRule clears per-rule state while preserving program-level maps.
 func (cc *ConditionCompiler) ResetForRule() {
 	cc.labelCounter = 0
 	cc.labels = make(map[string]int)
 	cc.pendingJumps = cc.pendingJumps[:0]
 	cc.stringSets = cc.stringSets[:0]
 	cc.stringSetIndex = make(map[string]int)
+	cc.globalVariables = make(map[string]int)
 }
 
 // GetStats returns compilation statistics

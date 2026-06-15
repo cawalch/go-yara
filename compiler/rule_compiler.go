@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 
 	"github.com/cawalch/go-yara/ast"
 	"github.com/cawalch/go-yara/regex"
+	"github.com/cawalch/go-yara/token"
 )
 
 // RuleCompiler handles compilation of complete YARA rules
@@ -25,6 +27,9 @@ type RuleCompiler struct {
 	hexPatterns       map[string]*HexPattern
 	stringKinds       map[string]StringKind
 	stringModifiers   map[string][]ast.StringModifier
+	externalNames     []string
+	globalNames       []string
+	globalValues      map[string]compiledGlobalValue
 }
 
 // NewRuleCompiler creates a new rule compiler
@@ -44,6 +49,9 @@ func NewRuleCompiler() *RuleCompiler {
 		hexPatterns:       make(map[string]*HexPattern),
 		stringKinds:       make(map[string]StringKind),
 		stringModifiers:   make(map[string][]ast.StringModifier),
+		externalNames:     make([]string, 0),
+		globalNames:       make([]string, 0),
+		globalValues:      make(map[string]compiledGlobalValue),
 	}
 }
 
@@ -69,6 +77,14 @@ func (rc *RuleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 	if err := rc.compileStrings(rule); err != nil {
 		return nil, fmt.Errorf("compiling strings: %w", err)
 	}
+	externalSlots, err := rc.allocateExternalSlots(rc.stringCompiler.GetStringOffsets())
+	if err != nil {
+		return nil, err
+	}
+	globalSlots, err := rc.allocateGlobalSlots(rc.stringCompiler.GetStringOffsets(), externalSlots)
+	if err != nil {
+		return nil, err
+	}
 
 	// Compile the automaton if we have text strings
 	if len(rc.textPatterns) > 0 {
@@ -78,6 +94,8 @@ func (rc *RuleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 	}
 
 	// Compile condition
+	rc.conditionCompiler.SetExternalVariables(externalSlots)
+	rc.conditionCompiler.SetGlobalVariables(globalSlots)
 	rc.conditionCompiler.SetAnonymousStrings(anonymousStrings)
 	if err := rc.compileCondition(rule); err != nil {
 		return nil, fmt.Errorf("compiling condition: %w", err)
@@ -107,6 +125,9 @@ func (rc *RuleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 		RegexPatterns:    rc.copyRegexPatterns(),
 		HexPatterns:      rc.copyHexPatterns(),
 		Stats:            rc.snapshotCompilationStats(rule),
+		ExternalSlots:    maps.Clone(externalSlots),
+		GlobalSlots:      maps.Clone(globalSlots),
+		GlobalValues:     rc.copyGlobalValuesForSlots(globalSlots),
 		Tags:             rule.Tags,
 		Meta:             rc.compileMeta(rule.Meta),
 		IsGlobal:         rc.hasModifier(rule.Modifiers, ast.ModifierGlobal),
@@ -523,8 +544,18 @@ func (rc *RuleCompiler) compileCondition(rule *ast.Rule) error {
 // CompileProgram compiles a complete YARA program (multiple rules)
 func (rc *RuleCompiler) CompileProgram(program *ast.Program) ([]*CompiledRule, error) {
 	compiledRules := make([]*CompiledRule, 0, len(program.Rules))
+	rc.externalNames = rc.externalNames[:0]
+	rc.globalNames = rc.globalNames[:0]
+	rc.globalValues = make(map[string]compiledGlobalValue, len(program.GlobalVariables))
+	rc.conditionCompiler.SetExternalVariables(make(map[string]int))
+	rc.conditionCompiler.SetGlobalVariables(make(map[string]int))
 
-	// First, register all external variables with the condition compiler
+	// First, register all global and external variables with the condition compiler.
+	for _, globalVar := range program.GlobalVariables {
+		if err := rc.registerGlobalVariable(globalVar); err != nil {
+			return nil, err
+		}
+	}
 	for _, extVar := range program.ExternalVariables {
 		rc.registerExternalVariable(extVar)
 	}
@@ -551,9 +582,187 @@ func (rc *RuleCompiler) CompileProgram(program *ast.Program) ([]*CompiledRule, e
 
 // registerExternalVariable registers an external variable with the condition compiler
 func (rc *RuleCompiler) registerExternalVariable(extVar *ast.ExternalVariable) {
-	// Generate a unique index for this external variable
-	index := len(rc.conditionCompiler.externalVariables)
-	rc.conditionCompiler.externalVariables[extVar.Name] = index
+	for _, name := range rc.externalNames {
+		if name == extVar.Name {
+			return
+		}
+	}
+	rc.externalNames = append(rc.externalNames, extVar.Name)
+}
+
+func (rc *RuleCompiler) allocateExternalSlots(stringOffsets map[string]int) (map[string]int, error) {
+	externalSlots := make(map[string]int, len(rc.externalNames))
+	if len(rc.externalNames) == 0 {
+		return externalSlots, nil
+	}
+
+	highestStringSlot := -1
+	for _, slot := range stringOffsets {
+		if slot > highestStringSlot {
+			highestStringSlot = slot
+		}
+	}
+
+	slot := interpreterMemorySlotCount - 1
+	for _, name := range rc.externalNames {
+		if slot <= highestStringSlot {
+			return nil, fmt.Errorf("too many strings and external variables share interpreter memory")
+		}
+		externalSlots[name] = slot
+		slot--
+	}
+	return externalSlots, nil
+}
+
+func (rc *RuleCompiler) registerGlobalVariable(globalVar *ast.GlobalVariable) error {
+	for _, name := range rc.globalNames {
+		if name == globalVar.Name {
+			return fmt.Errorf("global variable %q already defined", globalVar.Name)
+		}
+	}
+	value, err := compileGlobalValue(globalVar.Value)
+	if err != nil {
+		return fmt.Errorf("global variable %s: %w", globalVar.Name, err)
+	}
+	rc.globalNames = append(rc.globalNames, globalVar.Name)
+	rc.globalValues[globalVar.Name] = value
+	return nil
+}
+
+func (rc *RuleCompiler) allocateGlobalSlots(stringOffsets, externalSlots map[string]int) (map[string]int, error) {
+	globalSlots := make(map[string]int, len(rc.globalNames))
+	if len(rc.globalNames) == 0 {
+		return globalSlots, nil
+	}
+
+	occupied := make(map[int]bool, len(externalSlots))
+	for _, slot := range externalSlots {
+		occupied[slot] = true
+	}
+
+	slot := highestMemorySlot(stringOffsets) + 1
+	for _, name := range rc.globalNames {
+		for slot < interpreterMemorySlotCount && occupied[slot] {
+			slot++
+		}
+		if slot >= interpreterMemorySlotCount {
+			return nil, fmt.Errorf("too many strings, external variables, and global variables share interpreter memory")
+		}
+		globalSlots[name] = slot
+		occupied[slot] = true
+		slot++
+	}
+	return globalSlots, nil
+}
+
+func highestMemorySlot(slots map[string]int) int {
+	highest := -1
+	for _, slot := range slots {
+		if slot > highest {
+			highest = slot
+		}
+	}
+	return highest
+}
+
+func (rc *RuleCompiler) copyGlobalValuesForSlots(globalSlots map[string]int) map[string]compiledGlobalValue {
+	values := make(map[string]compiledGlobalValue, len(globalSlots))
+	for name := range globalSlots {
+		values[name] = rc.globalValues[name]
+	}
+	return values
+}
+
+type compiledGlobalValue struct {
+	valueType ValueType
+	intVal    int64
+	doubleVal float64
+	stringVal string
+}
+
+func compileGlobalValue(expr ast.Expression) (compiledGlobalValue, error) {
+	lit, ok := expr.(*ast.Literal)
+	if !ok {
+		return compiledGlobalValue{}, fmt.Errorf("initializer must be a literal")
+	}
+
+	switch lit.Type {
+	case token.IntegerLit, token.HexIntegerLit, token.OctalIntegerLit, token.SizeLit:
+		value, err := globalLiteralInt(lit)
+		if err != nil {
+			return compiledGlobalValue{}, err
+		}
+		return compiledGlobalValue{valueType: ValueTypeInt, intVal: value}, nil
+	case token.FloatLit:
+		value, err := globalLiteralFloat(lit)
+		if err != nil {
+			return compiledGlobalValue{}, err
+		}
+		return compiledGlobalValue{valueType: ValueTypeDouble, doubleVal: value}, nil
+	case token.StringLit:
+		value, ok := lit.Value.(string)
+		if !ok {
+			return compiledGlobalValue{}, fmt.Errorf("string literal has invalid value type %T", lit.Value)
+		}
+		return compiledGlobalValue{valueType: ValueTypeString, stringVal: value}, nil
+	case token.TRUE, token.FALSE:
+		value, err := globalLiteralBool(lit)
+		if err != nil {
+			return compiledGlobalValue{}, err
+		}
+		if value {
+			return compiledGlobalValue{valueType: ValueTypeInt, intVal: 1}, nil
+		}
+		return compiledGlobalValue{valueType: ValueTypeInt, intVal: 0}, nil
+	default:
+		return compiledGlobalValue{}, fmt.Errorf("unsupported initializer literal type %s", lit.Type)
+	}
+}
+
+func globalLiteralInt(lit *ast.Literal) (int64, error) {
+	switch value := lit.Value.(type) {
+	case int:
+		return int64(value), nil
+	case int8:
+		return int64(value), nil
+	case int16:
+		return int64(value), nil
+	case int32:
+		return int64(value), nil
+	case int64:
+		return value, nil
+	case string:
+		if lit.Type == token.SizeLit {
+			return parseSizeLiteral(value)
+		}
+		return strconv.ParseInt(value, 0, 64)
+	default:
+		return 0, fmt.Errorf("integer literal has invalid value type %T", lit.Value)
+	}
+}
+
+func globalLiteralFloat(lit *ast.Literal) (float64, error) {
+	switch value := lit.Value.(type) {
+	case float32:
+		return float64(value), nil
+	case float64:
+		return value, nil
+	case string:
+		return strconv.ParseFloat(value, 64)
+	default:
+		return 0, fmt.Errorf("float literal has invalid value type %T", lit.Value)
+	}
+}
+
+func globalLiteralBool(lit *ast.Literal) (bool, error) {
+	switch value := lit.Value.(type) {
+	case bool:
+		return value, nil
+	case string:
+		return strconv.ParseBool(value)
+	default:
+		return false, fmt.Errorf("boolean literal has invalid value type %T", lit.Value)
+	}
 }
 
 // snapshotCompilationStats returns an owned snapshot of rule compilation stats.
@@ -692,6 +901,9 @@ type CompiledRule struct {
 	RegexPatterns    map[string]RegexPattern
 	HexPatterns      map[string]*HexPattern
 	Stats            map[string]any // Compilation statistics (computed at compile time)
+	ExternalSlots    map[string]int // external variable name -> interpreter memory slot
+	GlobalSlots      map[string]int // global variable name -> interpreter memory slot
+	GlobalValues     map[string]compiledGlobalValue
 
 	// Integer string ID optimization (built during compilation)
 	StringIDToIndex map[string]int   // string identifier ("$a") -> integer index
@@ -877,6 +1089,7 @@ type CompiledProgram struct {
 	Rules           []*CompiledRule
 	SharedAutomaton *ACAutomaton
 	Stats           map[string]any
+	externalValues  map[string]externalValue
 
 	// Lookup table: shared automaton string index -> (rule index, string index)
 	// Built once at compile time, used by extractGlobalMatches for O(1) routing.
@@ -894,6 +1107,16 @@ func NewCompiledProgram(rules []*CompiledRule) *CompiledProgram {
 		Stats:           make(map[string]any),
 		enableStreaming: false, // Disabled by default for backward compatibility
 	}
+}
+
+// SetExternalVariables replaces runtime values for declared external variables.
+func (cp *CompiledProgram) SetExternalVariables(vars map[string]any) error {
+	values, err := normalizeExternalVariables(cp, vars)
+	if err != nil {
+		return err
+	}
+	cp.externalValues = values
+	return nil
 }
 
 // SetSharedAutomaton attaches the global multi-rule search tree to the compiled program

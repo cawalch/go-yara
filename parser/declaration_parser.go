@@ -602,6 +602,13 @@ func (p *DeclarationParser) parseExpression() (ast.Expression, error) {
 		p.nextToken()
 		return p.builder.Literal(pos, token.StringLit, literal), nil
 	}
+	if p.currentTokenIs(token.TRUE) || p.currentTokenIs(token.FALSE) {
+		value := p.currentTokenIs(token.TRUE)
+		pos := p.current.Pos
+		tok := p.current.Type
+		p.nextToken()
+		return p.builder.Literal(pos, tok, value), nil
+	}
 	return nil, fmt.Errorf("unsupported expression type: %s", p.current.Type)
 }
 

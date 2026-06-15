@@ -189,6 +189,10 @@ func (ti *TypeInfo) IsBoolean() bool {
 
 // CanCompare returns true if two types can be compared
 func (ti *TypeInfo) CanCompare(other *TypeInfo) bool {
+	if ti.DataType == TypeUnknown || other.DataType == TypeUnknown {
+		return true
+	}
+
 	// Same types can always be compared
 	if ti.DataType == other.DataType {
 		return true
@@ -406,6 +410,9 @@ var binaryOpHandlers = map[token.Type]func(*TypeInfo, *TypeInfo) (*TypeInfo, err
 
 // inferArithmeticType infers the result type of arithmetic operations
 func inferArithmeticType(left *TypeInfo, op token.Type, right *TypeInfo) (*TypeInfo, error) {
+	if left.DataType == TypeUnknown || right.DataType == TypeUnknown {
+		return &TypeInfo{DataType: TypeUnknown}, nil
+	}
 	if !left.CanPerformArithmetic(right) {
 		return nil, fmt.Errorf("cannot perform arithmetic operation %s between %s and %s",
 			op, left.String(), right.String())
@@ -419,6 +426,9 @@ func inferArithmeticType(left *TypeInfo, op token.Type, right *TypeInfo) (*TypeI
 
 // inferBitwiseType infers the result type of bitwise operations
 func inferBitwiseType(left *TypeInfo, op token.Type, right *TypeInfo) (*TypeInfo, error) {
+	if left.DataType == TypeUnknown || right.DataType == TypeUnknown {
+		return &TypeInfo{DataType: TypeUnknown}, nil
+	}
 	if !left.CanPerformBitwise(right) {
 		return nil, fmt.Errorf("cannot perform bitwise operation %s between %s and %s",
 			op, left.String(), right.String())
@@ -440,7 +450,7 @@ func inferLogicalType(left, right *TypeInfo) (*TypeInfo, error) {
 	// They are treated as truthy/falsy values
 	// Both operands must be comparable types, but don't have to be boolean
 	if left.DataType == TypeUnknown || right.DataType == TypeUnknown {
-		return nil, errors.New("logical operators require known operand types")
+		return &TypeInfo{DataType: TypeBoolean}, nil
 	}
 	return &TypeInfo{DataType: TypeBoolean}, nil
 }
@@ -450,6 +460,9 @@ func inferStringOperationType(left, right *TypeInfo) (*TypeInfo, error) {
 	// In YARA, string operations work with:
 	// - Left: string identifier (boolean type when used in conditions)
 	// - Right: string literal or regex pattern
+	if left.DataType == TypeUnknown || right.DataType == TypeUnknown {
+		return &TypeInfo{DataType: TypeBoolean}, nil
+	}
 	if (!left.IsString() && left.DataType != TypeBoolean) || !right.IsString() {
 		return nil, errors.New("string operations require string operands")
 	}
@@ -524,6 +537,9 @@ var unaryOpHandlers = map[token.Type]func(*TypeInfo) (*TypeInfo, error){
 
 // handleLogicalNotOp handles logical NOT operator
 func handleLogicalNotOp(operand *TypeInfo) (*TypeInfo, error) {
+	if operand.DataType == TypeUnknown {
+		return &TypeInfo{DataType: TypeBoolean}, nil
+	}
 	if operand.DataType != TypeBoolean {
 		return nil, errors.New("logical not requires boolean operand")
 	}
@@ -532,6 +548,9 @@ func handleLogicalNotOp(operand *TypeInfo) (*TypeInfo, error) {
 
 // handleBitwiseNotOp handles bitwise NOT operator
 func handleBitwiseNotOp(operand *TypeInfo) (*TypeInfo, error) {
+	if operand.DataType == TypeUnknown {
+		return &TypeInfo{DataType: TypeUnknown}, nil
+	}
 	if !operand.IsInteger() {
 		return nil, errors.New("bitwise not requires integer operand")
 	}
@@ -540,6 +559,9 @@ func handleBitwiseNotOp(operand *TypeInfo) (*TypeInfo, error) {
 
 // handleUnaryMinusOp handles unary minus operator
 func handleUnaryMinusOp(operand *TypeInfo) (*TypeInfo, error) {
+	if operand.DataType == TypeUnknown {
+		return &TypeInfo{DataType: TypeUnknown}, nil
+	}
 	if !operand.IsNumeric() {
 		return nil, errors.New("unary minus requires numeric operand")
 	}

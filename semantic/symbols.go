@@ -19,6 +19,8 @@ const (
 	SymbolVariable
 	// SymbolExternal represents an external variable symbol
 	SymbolExternal
+	// SymbolGlobal represents a global variable symbol
+	SymbolGlobal
 	// SymbolFunction represents a function symbol
 	SymbolFunction
 )
@@ -32,6 +34,7 @@ type Symbol struct {
 	Scope    *Scope
 	IsGlobal bool
 	Used     bool // Track if symbol is referenced
+	TypeInfo *TypeInfo
 }
 
 // Scope represents a scope in the symbol table (global, rule, etc.)
@@ -151,6 +154,36 @@ func (st *SymbolTable) DefineVariable(name string, pos token.Position, varType S
 	}
 
 	st.Current.Symbols[name] = symbol
+	return nil
+}
+
+type globalVariableDefinition struct {
+	name     string
+	pos      token.Position
+	global   *ast.GlobalVariable
+	typeInfo *TypeInfo
+}
+
+func (st *SymbolTable) defineGlobalVariable(def globalVariableDefinition) error {
+	current := st.Current
+	st.Current = st.Root
+	defer func() { st.Current = current }()
+
+	if existing, exists := st.Current.Symbols[def.name]; exists {
+		return fmt.Errorf("global variable %q already defined at %v (previously at %v)",
+			def.name, def.pos, existing.Position)
+	}
+
+	st.Current.Symbols[def.name] = &Symbol{
+		Name:     def.name,
+		Type:     SymbolGlobal,
+		Position: def.pos,
+		Node:     def.global,
+		Scope:    st.Current,
+		IsGlobal: true,
+		Used:     false,
+		TypeInfo: def.typeInfo,
+	}
 	return nil
 }
 

@@ -1,7 +1,9 @@
 package compiler
 
 import (
+	"fmt"
 	"io"
+	"math"
 	"os"
 
 	"github.com/cawalch/go-yara/regex"
@@ -18,6 +20,9 @@ type Scanner struct {
 	ruleResults map[string]bool // reused across calls
 	tagsFilter  map[string]bool // non-empty means: only scan rules with these tags
 	itersmax    int             // max for-loop iterations (0 = unlimited)
+
+	externalValues map[string]externalValue
+	externalErr    error
 }
 
 // ScanResult represents the result of scanning data against compiled rules.
@@ -62,6 +67,17 @@ func WithItersmax(limit int) ScannerOption {
 	}
 }
 
+// WithExternalVariables provides runtime values for declared external variables.
+//
+// Invalid variable names or unsupported values are reported by Scan.
+func WithExternalVariables(vars map[string]any) ScannerOption {
+	return func(scanner *Scanner) {
+		if err := scanner.SetExternalVariables(vars); err != nil {
+			scanner.externalErr = err
+		}
+	}
+}
+
 // NewScanner creates a new Scanner for the given compiled program.
 func NewScanner(program *CompiledProgram, opts ...ScannerOption) *Scanner {
 	interp := acquireScannerInterpreter()
@@ -76,6 +92,9 @@ func NewScanner(program *CompiledProgram, opts ...ScannerOption) *Scanner {
 		interp:      interp,
 		matchCtx:    ctx,
 		ruleResults: make(map[string]bool),
+	}
+	if program != nil {
+		s.externalValues = cloneExternalValues(program.externalValues)
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -179,6 +198,9 @@ func (s *Scanner) Scan(data []byte) (*ScanResult, error) {
 	}
 	if s == nil || s.program == nil {
 		return result, nil
+	}
+	if s.externalErr != nil {
+		return nil, s.externalErr
 	}
 
 	globalByRule := make(map[int][]globalMatchEntry)
@@ -356,12 +378,172 @@ func (s *Scanner) prepareInterpreter(rule *CompiledRule) {
 	s.interp.SetMatchContext(s.matchCtx)
 	s.interp.SetRuleResults(s.ruleResults)
 
-	if rule.Automaton == nil {
-		return
+	if rule.Automaton != nil {
+		for idx, str := range rule.Automaton.Strings {
+			s.interp.SetMemoryString(idx, str.Identifier)
+		}
 	}
-	for idx, str := range rule.Automaton.Strings {
-		s.interp.SetMemoryString(idx, str.Identifier)
+	s.setExternalVariables(rule)
+	s.setGlobalVariables(rule)
+}
+
+func (s *Scanner) setExternalVariables(rule *CompiledRule) {
+	for name, slot := range rule.ExternalSlots {
+		value, ok := s.externalValues[name]
+		if !ok {
+			s.interp.memory[slot] = Value{Type: ValueTypeUndefined}
+			continue
+		}
+		s.interp.memory[slot] = value.toInterpreterValue(s.interp)
 	}
+}
+
+func (s *Scanner) setGlobalVariables(rule *CompiledRule) {
+	for name, slot := range rule.GlobalSlots {
+		value, ok := rule.GlobalValues[name]
+		if !ok {
+			s.interp.memory[slot] = Value{Type: ValueTypeUndefined}
+			continue
+		}
+		s.interp.memory[slot] = value.toInterpreterValue(s.interp)
+	}
+}
+
+func (v compiledGlobalValue) toInterpreterValue(interp *Interpreter) Value {
+	switch v.valueType {
+	case ValueTypeInt:
+		return Value{Type: ValueTypeInt, IntVal: v.intVal}
+	case ValueTypeDouble:
+		return Value{Type: ValueTypeDouble, DoubleVal: v.doubleVal}
+	case ValueTypeString:
+		idx := len(interp.stringArena)
+		interp.stringArena = append(interp.stringArena, v.stringVal)
+		return Value{Type: ValueTypeString, StringRef: int64(idx)}
+	default:
+		return Value{Type: ValueTypeUndefined}
+	}
+}
+
+// SetExternalVariables replaces runtime values for declared external variables.
+func (s *Scanner) SetExternalVariables(vars map[string]any) error {
+	values, err := normalizeExternalVariables(s.program, vars)
+	if err != nil {
+		return err
+	}
+	s.externalValues = values
+	s.externalErr = nil
+	return nil
+}
+
+type externalValue struct {
+	valueType ValueType
+	intVal    int64
+	doubleVal float64
+	stringVal string
+}
+
+func (v externalValue) toInterpreterValue(interp *Interpreter) Value {
+	switch v.valueType {
+	case ValueTypeInt:
+		return Value{Type: ValueTypeInt, IntVal: v.intVal}
+	case ValueTypeDouble:
+		return Value{Type: ValueTypeDouble, DoubleVal: v.doubleVal}
+	case ValueTypeString:
+		idx := len(interp.stringArena)
+		interp.stringArena = append(interp.stringArena, v.stringVal)
+		return Value{Type: ValueTypeString, StringRef: int64(idx)}
+	default:
+		return Value{Type: ValueTypeUndefined}
+	}
+}
+
+func normalizeExternalVariables(program *CompiledProgram, vars map[string]any) (map[string]externalValue, error) {
+	if len(vars) == 0 {
+		return nil, nil
+	}
+
+	declared := declaredExternalVariables(program)
+	values := make(map[string]externalValue, len(vars))
+	for name, raw := range vars {
+		if !declared[name] {
+			return nil, fmt.Errorf("external variable %q is not declared", name)
+		}
+		value, err := normalizeExternalValue(raw)
+		if err != nil {
+			return nil, fmt.Errorf("external variable %q: %w", name, err)
+		}
+		values[name] = value
+	}
+	return values, nil
+}
+
+func declaredExternalVariables(program *CompiledProgram) map[string]bool {
+	declared := make(map[string]bool)
+	if program == nil {
+		return declared
+	}
+	for _, rule := range program.Rules {
+		for name := range rule.ExternalSlots {
+			declared[name] = true
+		}
+	}
+	return declared
+}
+
+func normalizeExternalValue(value any) (externalValue, error) {
+	switch v := value.(type) {
+	case bool:
+		if v {
+			return externalValue{valueType: ValueTypeInt, intVal: 1}, nil
+		}
+		return externalValue{valueType: ValueTypeInt, intVal: 0}, nil
+	case int:
+		return externalValue{valueType: ValueTypeInt, intVal: int64(v)}, nil
+	case int8:
+		return externalValue{valueType: ValueTypeInt, intVal: int64(v)}, nil
+	case int16:
+		return externalValue{valueType: ValueTypeInt, intVal: int64(v)}, nil
+	case int32:
+		return externalValue{valueType: ValueTypeInt, intVal: int64(v)}, nil
+	case int64:
+		return externalValue{valueType: ValueTypeInt, intVal: v}, nil
+	case uint:
+		return normalizeExternalUint(uint64(v))
+	case uint8:
+		return normalizeExternalUint(uint64(v))
+	case uint16:
+		return normalizeExternalUint(uint64(v))
+	case uint32:
+		return normalizeExternalUint(uint64(v))
+	case uint64:
+		return normalizeExternalUint(v)
+	case float32:
+		return externalValue{valueType: ValueTypeDouble, doubleVal: float64(v)}, nil
+	case float64:
+		return externalValue{valueType: ValueTypeDouble, doubleVal: v}, nil
+	case string:
+		return externalValue{valueType: ValueTypeString, stringVal: v}, nil
+	default:
+		return externalValue{}, fmt.Errorf("unsupported value type %T", value)
+	}
+}
+
+func normalizeExternalUint(value uint64) (externalValue, error) {
+	if value > math.MaxInt64 {
+		return externalValue{}, fmt.Errorf("unsigned integer %d exceeds int64 range", value)
+	}
+	return externalValue{valueType: ValueTypeInt, intVal: int64(value)}, nil
+}
+
+func cloneExternalValues(values map[string]externalValue) map[string]externalValue {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make(map[string]externalValue, len(values))
+	for name, value := range values {
+		cloned[name] = value
+	}
+	return cloned
 }
 
 func cloneMatches(src map[string][]Match) map[string][]Match {

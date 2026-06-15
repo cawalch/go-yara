@@ -17,6 +17,8 @@ type Value struct {
 	StringRef int64 // Index into stringArena (>=0) or static pool (<0)
 }
 
+const interpreterMemorySlotCount = 256
+
 // ValueType represents the type of a YARA value
 type ValueType uint8
 
@@ -48,10 +50,10 @@ const (
 // Interpreter represents a bytecode interpreter for YARA rules
 type Interpreter struct {
 	bytecode            []byte
-	ip                  int        // Instruction pointer
-	stack               []Value    // Execution stack
-	memory              [256]Value // Memory slots for variables
-	iterators           []Iterator // Stack of active iteration frames for loops
+	ip                  int                               // Instruction pointer
+	stack               []Value                           // Execution stack
+	memory              [interpreterMemorySlotCount]Value // Memory slots for variables
+	iterators           []Iterator                        // Stack of active iteration frames for loops
 	stopped             bool
 	result              error
 	matchContext        *MatchContext            // Pattern matching context
@@ -65,7 +67,7 @@ type Interpreter struct {
 	textStringSets      [][]string               // Text string sets for text-string-set iteration
 	allStrings          []string                 // All string identifiers for current rule
 	anonymousStrings    []string                 // Anonymous string identifiers for current rule
-	stringArena         []string                 // Arena for dynamic strings (new in PR 3)
+	stringArena         []string                 // Arena for dynamic strings
 	regexCache          map[string]compiledRegex
 	PreserveRuleResults bool // If true, Reset() will not clear ruleResults
 	debugMode           bool // Debug mode flag for instruction tracing

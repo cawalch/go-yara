@@ -169,6 +169,143 @@ func TestScannerWideTextSharedAutomaton(t *testing.T) {
 	}
 }
 
+func TestCompiledProgramExternalVariables(t *testing.T) {
+	ruleSource := `
+		external gate
+		external threshold
+		rule gate_rule { condition: gate }
+		rule threshold_rule { condition: threshold == 7 }
+	`
+	compiler := NewCompiler()
+	program, err := compiler.CompileSource(ruleSource)
+	if err != nil {
+		t.Fatalf("CompileSource: %v", err)
+	}
+
+	if err := program.SetExternalVariables(map[string]any{
+		"gate":      true,
+		"threshold": uint(7),
+	}); err != nil {
+		t.Fatalf("SetExternalVariables: %v", err)
+	}
+	result, err := program.Scan([]byte("data"))
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if !result.RuleResults["gate_rule"] || !result.RuleResults["threshold_rule"] {
+		t.Fatalf("expected external values to satisfy rule")
+	}
+
+	if err := program.SetExternalVariables(map[string]any{
+		"gate":      false,
+		"threshold": int64(7),
+	}); err != nil {
+		t.Fatalf("SetExternalVariables false gate: %v", err)
+	}
+	result, err = program.Scan([]byte("data"))
+	if err != nil {
+		t.Fatalf("Scan false gate: %v", err)
+	}
+	if result.RuleResults["gate_rule"] {
+		t.Fatalf("expected false external value to prevent match")
+	}
+	if !result.RuleResults["threshold_rule"] {
+		t.Fatalf("expected integer external value to continue satisfying rule")
+	}
+}
+
+func TestScannerStringExternalVariable(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+		external marker
+		rule r { condition: marker == "needle" }
+	`)
+	if err != nil {
+		t.Fatalf("CompileSource: %v", err)
+	}
+
+	scanner := NewScanner(program, WithExternalVariables(map[string]any{"marker": "needle"}))
+	defer scanner.Close()
+
+	result, err := scanner.Scan([]byte("data"))
+	if err != nil {
+		t.Fatalf("Scan matching marker: %v", err)
+	}
+	if !result.RuleResults["r"] {
+		t.Fatalf("expected string external value to satisfy rule")
+	}
+
+	if err := scanner.SetExternalVariables(map[string]any{"marker": "other"}); err != nil {
+		t.Fatalf("SetExternalVariables other marker: %v", err)
+	}
+	result, err = scanner.Scan([]byte("data"))
+	if err != nil {
+		t.Fatalf("Scan nonmatching marker: %v", err)
+	}
+	if result.RuleResults["r"] {
+		t.Fatalf("expected nonmatching string external value to prevent match")
+	}
+}
+
+func TestScannerExternalVariables(t *testing.T) {
+	ruleSource := `
+		external gate
+		rule r {
+			strings:
+				$a = "needle"
+			condition:
+				gate and $a
+		}
+	`
+	compiler := NewCompiler()
+	program, err := compiler.CompileSource(ruleSource)
+	if err != nil {
+		t.Fatalf("CompileSource: %v", err)
+	}
+
+	scanner := NewScanner(program, WithExternalVariables(map[string]any{"gate": true}))
+	defer scanner.Close()
+
+	result, err := scanner.Scan([]byte("needle"))
+	if err != nil {
+		t.Fatalf("Scan true gate: %v", err)
+	}
+	if !result.RuleResults["r"] {
+		t.Fatalf("expected scanner external value and string match to satisfy rule")
+	}
+
+	if err := scanner.SetExternalVariables(map[string]any{"gate": false}); err != nil {
+		t.Fatalf("SetExternalVariables false gate: %v", err)
+	}
+	result, err = scanner.Scan([]byte("needle"))
+	if err != nil {
+		t.Fatalf("Scan false gate: %v", err)
+	}
+	if result.RuleResults["r"] {
+		t.Fatalf("expected scanner external override to prevent match")
+	}
+}
+
+func TestExternalVariablesRejectInvalidInput(t *testing.T) {
+	compiler := NewCompiler()
+	program, err := compiler.CompileSource(`external gate rule r { condition: gate }`)
+	if err != nil {
+		t.Fatalf("CompileSource: %v", err)
+	}
+
+	if err := program.SetExternalVariables(map[string]any{"missing": true}); err == nil {
+		t.Fatalf("expected undeclared external variable to be rejected")
+	}
+	if err := program.SetExternalVariables(map[string]any{"gate": uint64(1 << 63)}); err == nil {
+		t.Fatalf("expected out-of-range unsigned integer to be rejected")
+	}
+
+	scanner := NewScanner(program, WithExternalVariables(map[string]any{"missing": true}))
+	defer scanner.Close()
+	if _, err := scanner.Scan([]byte("data")); err == nil {
+		t.Fatalf("expected scanner option error to be reported by Scan")
+	}
+}
+
 func TestScannerRead64Functions(t *testing.T) {
 	tests := []struct {
 		name string
