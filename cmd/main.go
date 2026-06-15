@@ -462,9 +462,10 @@ func printPatternMatches(printEntries []printEntry) int {
 	return totalMatches
 }
 
-// executeRulesStreaming executes rules using streaming approach
+// executeRulesStreaming reports chunked pattern matches. It does not evaluate rule conditions.
 func executeRulesStreaming(compiledProgram *compiler.CompiledProgram, data []byte, args *commandArgs) {
-	fmt.Printf("Streaming execution enabled (chunk size: %d bytes, concurrency: %d)\n", args.chunkSize, args.maxConcurrency)
+	fmt.Printf("Streaming pattern scan enabled (chunk size: %d bytes, concurrency: %d)\n", args.chunkSize, args.maxConcurrency)
+	fmt.Printf("Note: streaming mode reports string pattern matches only; rule conditions are not evaluated.\n")
 
 	// Configure streaming
 	compiledProgram.EnableStreaming(true)
@@ -486,12 +487,12 @@ func executeRulesStreaming(compiledProgram *compiler.CompiledProgram, data []byt
 	elapsed := time.Since(start)
 
 	// Print results
-	fmt.Printf("\nStreaming Results:\n")
+	fmt.Printf("\nStreaming Pattern Results:\n")
 	fmt.Printf("  Processing time: %v\n", elapsed)
-	fmt.Printf("  Total matches: %d\n", len(matches))
+	fmt.Printf("  Total pattern matches: %d\n", len(matches))
 
 	if len(matches) > 0 {
-		fmt.Printf("  Matches found:\n")
+		fmt.Printf("  Pattern matches found:\n")
 		for _, match := range matches {
 			fmt.Printf("    Rule: %s, Pattern: %s, Offset: %d, Length: %d\n",
 				match.Rule, match.Pattern, match.Offset, match.Length)
