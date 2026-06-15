@@ -22,6 +22,8 @@ Several previously planned cleanup items have already landed:
   returns a defensive copy.
 - Streaming mode is documented and presented as chunked pattern matching, not
   full rule condition evaluation.
+- Known-gap tests use explicit helper metadata, and non-gap expected errors fail
+  when no error is produced.
 
 ## Cleanup Principles
 
@@ -34,31 +36,7 @@ Several previously planned cleanup items have already landed:
 
 ## Next PR Candidates
 
-### 1. Normalize Known-Gap Tests
-
-Many parser and integration tests intentionally skip when a known gap does not
-produce an error. Keep the explicit `t.Skipf("known gap: ...")` behavior where
-the gap is real, but reduce generated-looking duplication and make the table
-metadata clearer.
-
-Focus areas:
-
-- `parser/parser_stress_test.go`
-- `parser/parser_incomplete_test.go`
-- `tests/integration/error_propagation_test.go`
-- `tests/integration/full_pipeline_test.go`
-- `tests/integration/multi_rule_test.go`
-- `tests/integration/rule_execution_test.go`
-- `compiler/anonymous_strings_edge_test.go`
-
-Acceptance criteria:
-
-- Real known gaps remain explicit skips.
-- Supported behavior fails loudly instead of being silently logged.
-- Duplicate generated tables are collapsed where doing so does not reduce
-  coverage.
-
-### 2. Split Interpreter By Opcode Category
+### 1. Split Interpreter By Opcode Category
 
 The interpreter is still a high-churn area. Keep the existing `[256]OpcodeHandler`
 dispatch table, but group implementation files by behavior so future opcode
@@ -78,7 +56,7 @@ Acceptance criteria:
 - No behavior changes.
 - Existing interpreter and compiler tests continue to pass.
 
-### 3. Audit Placeholder Public APIs
+### 2. Audit Placeholder Public APIs
 
 Review exported helpers that advertise estimates or broad support claims, such
 as compilation time or memory requirement estimates. Either remove unused

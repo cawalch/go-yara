@@ -74,7 +74,7 @@ func TestBytecodeInstructionSequence(t *testing.T) {
 			c := NewCompiler()
 			program, err := c.CompileSource(tt.rule)
 
-			assertAnonymousStringResult(t, program, err, tt.expectError, tt.description)
+			anonymousStringCompileResult{program: program, err: err}.assertExpected(t, tt.expectError, tt.description)
 		})
 	}
 }
@@ -137,7 +137,7 @@ func TestJumpTargetCorrectness(t *testing.T) {
 			c := NewCompiler()
 			program, err := c.CompileSource(tt.rule)
 
-			assertAnonymousStringResult(t, program, err, tt.expectError, tt.description)
+			anonymousStringCompileResult{program: program, err: err}.assertExpected(t, tt.expectError, tt.description)
 		})
 	}
 }
@@ -188,7 +188,7 @@ func TestLabelResolution(t *testing.T) {
 			c := NewCompiler()
 			program, err := c.CompileSource(tt.rule)
 
-			assertAnonymousStringResult(t, program, err, tt.expectError, tt.description)
+			anonymousStringCompileResult{program: program, err: err}.assertExpected(t, tt.expectError, tt.description)
 		})
 	}
 }
@@ -245,7 +245,7 @@ func TestStackBalance(t *testing.T) {
 			c := NewCompiler()
 			program, err := c.CompileSource(tt.rule)
 
-			assertAnonymousStringResult(t, program, err, tt.expectError, tt.description)
+			anonymousStringCompileResult{program: program, err: err}.assertExpected(t, tt.expectError, tt.description)
 		})
 	}
 }
@@ -302,7 +302,7 @@ func TestMemorySlotUsage(t *testing.T) {
 			c := NewCompiler()
 			program, err := c.CompileSource(tt.rule)
 
-			assertAnonymousStringResult(t, program, err, tt.expectError, tt.description)
+			anonymousStringCompileResult{program: program, err: err}.assertExpected(t, tt.expectError, tt.description)
 		})
 	}
 }
@@ -359,7 +359,7 @@ func TestStringLiteralPool(t *testing.T) {
 			c := NewCompiler()
 			program, err := c.CompileSource(tt.rule)
 
-			assertAnonymousStringResult(t, program, err, tt.expectError, tt.description)
+			anonymousStringCompileResult{program: program, err: err}.assertExpected(t, tt.expectError, tt.description)
 		})
 	}
 }

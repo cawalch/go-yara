@@ -54,16 +54,8 @@ func TestMultipleRulesIndependent(t *testing.T) {
 			c := compiler.NewCompiler()
 			program, err := c.CompileSourceWithContext(context.Background(), tt.rules)
 
-			if tt.expectError {
-				if err == nil {
-					t.Skipf("known gap: %s (no compilation error produced)", tt.description)
-				}
-				return
-			}
-			if err != nil {
-				t.Logf("Unexpected compilation error (documents current behavior): %v", err)
-			} else if program != nil {
-				t.Logf("Successfully compiled: %s", tt.description)
+			assertSimpleCompileExpectation(t, compileResult{program: program, err: err}, simpleKnownGapExpectation(tt.expectError, tt.description))
+			if err == nil && program != nil {
 				t.Logf("  Program contains %d rules", program.GetRuleCount())
 			}
 		})
@@ -134,7 +126,7 @@ func TestRuleDependencies(t *testing.T) {
 			c := compiler.NewCompiler()
 			program, err := c.CompileSourceWithContext(context.Background(), tt.rules)
 
-			assertSimpleCompileResult(t, program, err, tt.expectError, tt.description)
+			assertSimpleCompileExpectation(t, compileResult{program: program, err: err}, simpleKnownGapExpectation(tt.expectError, tt.description))
 		})
 	}
 }
@@ -191,7 +183,7 @@ func TestRuleModifiers(t *testing.T) {
 			c := compiler.NewCompiler()
 			program, err := c.CompileSourceWithContext(context.Background(), tt.rules)
 
-			assertSimpleCompileResult(t, program, err, tt.expectError, tt.description)
+			assertSimpleCompileExpectation(t, compileResult{program: program, err: err}, simpleKnownGapExpectation(tt.expectError, tt.description))
 		})
 	}
 }
@@ -236,7 +228,7 @@ func TestRuleNameConflicts(t *testing.T) {
 			c := compiler.NewCompiler()
 			program, err := c.CompileSourceWithContext(context.Background(), tt.rules)
 
-			assertSimpleCompileResult(t, program, err, tt.expectError, tt.description)
+			assertSimpleCompileExpectation(t, compileResult{program: program, err: err}, simpleKnownGapExpectation(tt.expectError, tt.description))
 		})
 	}
 }
@@ -281,17 +273,7 @@ func TestExternalVariables(t *testing.T) {
 			c := compiler.NewCompiler()
 			program, err := c.CompileSourceWithContext(context.Background(), tt.rule)
 
-			if tt.expectError {
-				if err == nil {
-					t.Skipf("known gap: %s (no compilation error produced)", tt.description)
-				}
-				return
-			}
-			if err != nil {
-				t.Logf("Unexpected compilation error (documents current behavior): %v", err)
-			} else if program != nil {
-				t.Logf("Successfully compiled: %s", tt.description)
-			}
+			assertSimpleCompileExpectation(t, compileResult{program: program, err: err}, simpleKnownGapExpectation(tt.expectError, tt.description))
 		})
 	}
 }
@@ -342,17 +324,7 @@ func TestMetaInformation(t *testing.T) {
 			c := compiler.NewCompiler()
 			program, err := c.CompileSourceWithContext(context.Background(), tt.rule)
 
-			if tt.expectError {
-				if err == nil {
-					t.Skipf("known gap: %s (no compilation error produced)", tt.description)
-				}
-				return
-			}
-			if err != nil {
-				t.Logf("Unexpected compilation error (documents current behavior): %v", err)
-			} else if program != nil {
-				t.Logf("Successfully compiled: %s", tt.description)
-			}
+			assertSimpleCompileExpectation(t, compileResult{program: program, err: err}, simpleKnownGapExpectation(tt.expectError, tt.description))
 		})
 	}
 }

@@ -4,22 +4,55 @@ import (
 	"testing"
 )
 
+type anonymousStringTestCase struct {
+	name        string
+	rule        string
+	expectError bool
+	knownGap    string
+	description string
+}
+
+type anonymousStringCompileResult struct {
+	program *CompiledProgram
+	err     error
+}
+
 // assertAnonymousStringResult is a test helper that logs the compilation outcome.
-//
-//nolint:revive // argument-limit: test helper
-func assertAnonymousStringResult(t *testing.T, program *CompiledProgram, err error, expectError bool, description string) {
+func (result anonymousStringCompileResult) assertExpected(t *testing.T, expectError bool, description string) {
 	t.Helper()
 	if expectError {
-		if err == nil {
-			t.Skipf("known gap: %s (no compilation error produced)", description)
+		if result.err == nil {
+			t.Fatalf("expected compilation error not produced: %s", description)
 		} else {
-			t.Logf("Compilation error detected: %v", err)
+			t.Logf("Compilation error detected: %v", result.err)
 		}
 		return
 	}
-	if err != nil {
-		t.Logf("Unexpected compilation error (documents current behavior): %v", err)
-	} else if program != nil {
+	if result.err != nil {
+		t.Logf("Unexpected compilation error (documents current behavior): %v", result.err)
+	} else if result.program != nil {
+		t.Logf("Successfully compiled")
+	}
+}
+
+func (result anonymousStringCompileResult) assertCase(t *testing.T, tt anonymousStringTestCase) {
+	t.Helper()
+	if tt.knownGap == "" {
+		result.assertExpected(t, tt.expectError, tt.description)
+		return
+	}
+	if tt.expectError {
+		if result.err == nil {
+			t.Skipf("known gap: %s (no compilation error produced)", tt.knownGap)
+		} else {
+			t.Logf("Compilation error detected: %v", result.err)
+		}
+		return
+	}
+	if result.err != nil {
+		t.Logf("Unexpected compilation error (documents current behavior): %v", result.err)
+	} else if result.program != nil {
+		t.Logf("Known gap accepted: %s", tt.knownGap)
 		t.Logf("Successfully compiled")
 	}
 }
@@ -27,12 +60,7 @@ func assertAnonymousStringResult(t *testing.T, program *CompiledProgram, err err
 // TestMultipleAnonymousStrings documents compiler behavior with multiple anonymous strings
 // DO NOT modify code to make tests pass - document current behavior only
 func TestMultipleAnonymousStrings(t *testing.T) {
-	tests := []struct {
-		name        string
-		rule        string
-		expectError bool
-		description string
-	}{
+	tests := []anonymousStringTestCase{
 		{
 			name:        "single-anonymous",
 			rule:        `rule test { strings: $ = "test" condition: $ }`,
@@ -70,7 +98,7 @@ func TestMultipleAnonymousStrings(t *testing.T) {
 			c := NewCompiler()
 			program, err := c.CompileSource(tt.rule)
 
-			assertAnonymousStringResult(t, program, err, tt.expectError, tt.description)
+			anonymousStringCompileResult{program: program, err: err}.assertCase(t, tt)
 		})
 	}
 }
@@ -78,12 +106,7 @@ func TestMultipleAnonymousStrings(t *testing.T) {
 // TestAnonymousStringInForLoops documents anonymous strings in for-loops
 // DO NOT modify code to make tests pass - document current behavior only
 func TestAnonymousStringInForLoops(t *testing.T) {
-	tests := []struct {
-		name        string
-		rule        string
-		expectError bool
-		description string
-	}{
+	tests := []anonymousStringTestCase{
 		{
 			name:        "for-of-anonymous",
 			rule:        `rule test { strings: $ = "test" condition: any of them }`,
@@ -106,13 +129,15 @@ func TestAnonymousStringInForLoops(t *testing.T) {
 			name:        "for-loop-with-dollar",
 			rule:        `rule test { strings: $ = "test" condition: for any $ in them : ( $ ) }`,
 			expectError: true,
+			knownGap:    "compiler accepts for-loop with anonymous $ placeholder",
 			description: "Documents for-loop with $ placeholder (may not be supported)",
 		},
 		{
 			name:        "anonymous-in-explicit-list",
 			rule:        `rule test { strings: $ = "test" $a = "other" condition: 1 of ($, $a) }`,
 			expectError: false,
-			description: "Known gap: compiler allows anonymous $ in explicit of-expression list",
+			knownGap:    "compiler allows anonymous $ in explicit of-expression list",
+			description: "Documents anonymous $ in explicit of-expression list",
 		},
 		{
 			name:        "them-includes-named",
@@ -133,7 +158,7 @@ func TestAnonymousStringInForLoops(t *testing.T) {
 			c := NewCompiler()
 			program, err := c.CompileSource(tt.rule)
 
-			assertAnonymousStringResult(t, program, err, tt.expectError, tt.description)
+			anonymousStringCompileResult{program: program, err: err}.assertCase(t, tt)
 		})
 	}
 }
@@ -141,12 +166,7 @@ func TestAnonymousStringInForLoops(t *testing.T) {
 // TestAnonymousStringInOfExpressions documents anonymous strings in of-expressions
 // DO NOT modify code to make tests pass - document current behavior only
 func TestAnonymousStringInOfExpressions(t *testing.T) {
-	tests := []struct {
-		name        string
-		rule        string
-		expectError bool
-		description string
-	}{
+	tests := []anonymousStringTestCase{
 		{
 			name:        "any-of-anonymous-only",
 			rule:        `rule test { strings: $ = "test1" $ = "test2" condition: any of them }`,
@@ -163,30 +183,35 @@ func TestAnonymousStringInOfExpressions(t *testing.T) {
 			name:        "of-explicit-anonymous",
 			rule:        `rule test { strings: $ = "test" condition: 1 of ($) }`,
 			expectError: false,
-			description: "Known gap: compiler allows $ in explicit of-expression (1 of ($))",
+			knownGap:    "compiler allows $ in explicit of-expression (1 of ($))",
+			description: "Documents $ in explicit of-expression",
 		},
 		{
 			name:        "anonymous-count",
 			rule:        `rule test { strings: $ = "test" condition: # > 0 }`,
 			expectError: true,
+			knownGap:    "compiler accepts count on anonymous string",
 			description: "Documents count on anonymous string (may not be supported)",
 		},
 		{
 			name:        "anonymous-offset",
 			rule:        `rule test { strings: $ = "test" condition: @ < 100 }`,
 			expectError: true,
+			knownGap:    "compiler accepts offset on anonymous string",
 			description: "Documents offset on anonymous string (may not be supported)",
 		},
 		{
 			name:        "anonymous-length",
 			rule:        `rule test { strings: $ = "test" condition: ! == 4 }`,
 			expectError: true,
+			knownGap:    "compiler accepts length on anonymous string",
 			description: "Documents length on anonymous string (may not be supported)",
 		},
 		{
 			name:        "multiple-anonymous-matches",
 			rule:        `rule test { strings: $ = "a" $ = "a" $ = "b" condition: # >= 2 }`,
 			expectError: true,
+			knownGap:    "compiler accepts count on multiple anonymous strings",
 			description: "Documents count on anonymous strings (may not be supported)",
 		},
 	}
@@ -196,7 +221,7 @@ func TestAnonymousStringInOfExpressions(t *testing.T) {
 			c := NewCompiler()
 			program, err := c.CompileSource(tt.rule)
 
-			assertAnonymousStringResult(t, program, err, tt.expectError, tt.description)
+			anonymousStringCompileResult{program: program, err: err}.assertCase(t, tt)
 		})
 	}
 }
@@ -204,12 +229,7 @@ func TestAnonymousStringInOfExpressions(t *testing.T) {
 // TestAnonymousStringCollisions documents potential collisions with anonymous strings
 // DO NOT modify code to make tests pass - document current behavior only
 func TestAnonymousStringCollisions(t *testing.T) {
-	tests := []struct {
-		name        string
-		rule        string
-		expectError bool
-		description string
-	}{
+	tests := []anonymousStringTestCase{
 		{
 			name:        "identical-anonymous",
 			rule:        `rule test { strings: $ = "test" $ = "test" condition: any of them }`,
@@ -253,7 +273,7 @@ func TestAnonymousStringCollisions(t *testing.T) {
 			c := NewCompiler()
 			program, err := c.CompileSource(tt.rule)
 
-			assertAnonymousStringResult(t, program, err, tt.expectError, tt.description)
+			anonymousStringCompileResult{program: program, err: err}.assertCase(t, tt)
 		})
 	}
 }
@@ -261,12 +281,7 @@ func TestAnonymousStringCollisions(t *testing.T) {
 // TestMixedAnonymousAndNamedStrings documents mixed anonymous and named string handling
 // DO NOT modify code to make tests pass - document current behavior only
 func TestMixedAnonymousAndNamedStrings(t *testing.T) {
-	tests := []struct {
-		name        string
-		rule        string
-		expectError bool
-		description string
-	}{
+	tests := []anonymousStringTestCase{
 		{
 			name:        "interleaved",
 			rule:        `rule test { strings: $a = "a" $ = "x" $b = "b" $ = "y" condition: any of them }`,
@@ -277,7 +292,8 @@ func TestMixedAnonymousAndNamedStrings(t *testing.T) {
 			name:        "anonymous-first",
 			rule:        `rule test { strings: $ = "anon" $a = "named" $b = "other" condition: $a or $ }`,
 			expectError: false,
-			description: "Known gap: compiler allows direct $ reference in condition",
+			knownGap:    "compiler allows direct $ reference in condition",
+			description: "Documents direct $ reference in condition",
 		},
 		{
 			name:        "them-includes-all",
@@ -295,12 +311,14 @@ func TestMixedAnonymousAndNamedStrings(t *testing.T) {
 			name:        "explicit-list-mixed",
 			rule:        `rule test { strings: $a = "a" $ = "x" $b = "b" condition: any of ($a, $b, $) }`,
 			expectError: false,
-			description: "Known gap: compiler allows $ placeholder in explicit of-expression list",
+			knownGap:    "compiler allows $ placeholder in explicit of-expression list",
+			description: "Documents $ placeholder in explicit of-expression list",
 		},
 		{
 			name:        "count-on-named-only",
 			rule:        `rule test { strings: $a = "a" $ = "x" $b = "b" condition: #a + # > 1 }`,
 			expectError: true,
+			knownGap:    "compiler accepts anonymous count shorthand with named strings present",
 			description: "Documents count on named strings with anonymous present",
 		},
 		{
@@ -316,7 +334,7 @@ func TestMixedAnonymousAndNamedStrings(t *testing.T) {
 			c := NewCompiler()
 			program, err := c.CompileSource(tt.rule)
 
-			assertAnonymousStringResult(t, program, err, tt.expectError, tt.description)
+			anonymousStringCompileResult{program: program, err: err}.assertCase(t, tt)
 		})
 	}
 }
@@ -324,12 +342,7 @@ func TestMixedAnonymousAndNamedStrings(t *testing.T) {
 // TestAnonymousStringWithModifiers documents anonymous strings with various modifiers
 // DO NOT modify code to make tests pass - document current behavior only
 func TestAnonymousStringWithModifiers(t *testing.T) {
-	tests := []struct {
-		name        string
-		rule        string
-		expectError bool
-		description string
-	}{
+	tests := []anonymousStringTestCase{
 		{
 			name:        "anonymous-nocase",
 			rule:        `rule test { strings: $ = "test" nocase condition: $ }`,
@@ -385,7 +398,7 @@ func TestAnonymousStringWithModifiers(t *testing.T) {
 			c := NewCompiler()
 			program, err := c.CompileSource(tt.rule)
 
-			assertAnonymousStringResult(t, program, err, tt.expectError, tt.description)
+			anonymousStringCompileResult{program: program, err: err}.assertCase(t, tt)
 		})
 	}
 }

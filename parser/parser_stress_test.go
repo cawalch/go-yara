@@ -4,8 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/cawalch/go-yara/internal/lexer"
 )
 
@@ -15,67 +13,67 @@ func TestDeeplyNestedParentheses(t *testing.T) {
 	tests := []struct {
 		name        string
 		rule        string
-		expectError bool
+		expect      parseExpectation
 		description string
 	}{
 		{
 			name:        "single-nesting",
 			rule:        `rule test { condition: ((true)) }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents single level of nesting",
 		},
 		{
 			name:        "triple-nesting",
 			rule:        `rule test { condition: (((true))) }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents three levels of nesting",
 		},
 		{
 			name:        "ten-nesting",
 			rule:        `rule test { condition: ` + strings.Repeat("(", 10) + `true` + strings.Repeat(")", 10) + ` }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents ten levels of nesting",
 		},
 		{
 			name:        "fifty-nesting",
 			rule:        `rule test { condition: ` + strings.Repeat("(", 50) + `true` + strings.Repeat(")", 50) + ` }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents fifty levels of nesting",
 		},
 		{
 			name:        "hundred-nesting",
 			rule:        `rule test { condition: ` + strings.Repeat("(", 100) + `true` + strings.Repeat(")", 100) + ` }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents hundred levels of nesting",
 		},
 		{
 			name:        "unmatched-open",
 			rule:        `rule test { condition: ((true) }`,
-			expectError: true,
+			expect:      parseErrorKnownGap,
 			description: "Documents unmatched opening parenthesis",
 		},
 		{
 			name:        "unmatched-close",
 			rule:        `rule test { condition: (true)) }`,
-			expectError: true,
+			expect:      parseErrorKnownGap,
 			description: "Documents unmatched closing parenthesis",
 		},
 		{
 			name:        "nested-with-operators",
 			rule:        `rule test { condition: (((1 + 2) * 3)) }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents nesting with binary operators",
 		},
 		{
 			name:        "nested-with-strings",
 			rule:        `rule test { strings: $a = "test" condition: (($a and $b) or $c) }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents nesting with string identifiers",
 		},
 		{
 			name:        "deep-nesting-expression",
 			rule:        `rule test { condition: ` + strings.Repeat("(", 20) + `1 and 2 and 3` + strings.Repeat(")", 20) + ` }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents deep nesting with boolean operators",
 		},
 	}
@@ -86,7 +84,7 @@ func TestDeeplyNestedParentheses(t *testing.T) {
 			p := New(l)
 			program, err := p.ParseRules()
 
-			assertParseResult(t, program, err, tt.expectError, tt.description)
+			assertParseResult(t, program, err, tt.expect, tt.description)
 		})
 	}
 }
@@ -97,67 +95,67 @@ func TestDeeplyNestedBinaryOps(t *testing.T) {
 	tests := []struct {
 		name        string
 		rule        string
-		expectError bool
+		expect      parseExpectation
 		description string
 	}{
 		{
 			name:        "left-associative-and",
 			rule:        `rule test { condition: 1 and 2 and 3 and 4 and 5 }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents left-associative AND chain",
 		},
 		{
 			name:        "left-associative-or",
 			rule:        `rule test { condition: 1 or 2 or 3 or 4 or 5 }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents left-associative OR chain",
 		},
 		{
 			name:        "mixed-operators",
 			rule:        `rule test { condition: 1 and 2 or 3 and 4 }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents mixed AND/OR operators",
 		},
 		{
 			name:        "arithmetic-chain",
 			rule:        `rule test { condition: 1 + 2 + 3 + 4 + 5 }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents arithmetic operator chain",
 		},
 		{
 			name:        "comparison-chain",
 			rule:        `rule test { condition: 1 < 2 < 3 }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents comparison chaining (may have semantic issues)",
 		},
 		{
 			name:        "complex-nesting",
 			rule:        `rule test { condition: (1 and 2) or (3 and 4) or (5 and 6) }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents complex nested binary ops",
 		},
 		{
 			name:        "deep-operator-nesting",
 			rule:        `rule test { condition: 1 and (2 or (3 and (4 or 5))) }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents deep operator nesting",
 		},
 		{
 			name:        "all-binary-operators",
 			rule:        `rule test { condition: 1 + 2 - 3 * 4 / 5 % 6 }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents all arithmetic binary operators",
 		},
 		{
 			name:        "bitwise-operators",
 			rule:        `rule test { condition: 1 & 2 | 3 ^ 4 }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents bitwise operators",
 		},
 		{
 			name:        "shift-operators",
 			rule:        `rule test { condition: 1 << 2 >> 3 }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents shift operators",
 		},
 	}
@@ -168,17 +166,7 @@ func TestDeeplyNestedBinaryOps(t *testing.T) {
 			p := New(l)
 			program, err := p.ParseRules()
 
-			if tt.expectError {
-				if err == nil {
-					t.Skipf("known gap: %s (no parse error produced)", tt.description)
-				}
-				return
-			}
-			if err != nil {
-				t.Logf("Unexpected parse error (documents current behavior): %v", err)
-			} else {
-				require.NotNil(t, program, "Program should not be nil")
-			}
+			assertParseResult(t, program, err, tt.expect, tt.description)
 		})
 	}
 }
@@ -189,67 +177,67 @@ func TestDeeplyNestedUnaries(t *testing.T) {
 	tests := []struct {
 		name        string
 		rule        string
-		expectError bool
+		expect      parseExpectation
 		description string
 	}{
 		{
 			name:        "single-not",
 			rule:        `rule test { condition: not true }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents single NOT operator",
 		},
 		{
 			name:        "double-not",
 			rule:        `rule test { condition: not not true }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents double NOT",
 		},
 		{
 			name:        "triple-not",
 			rule:        `rule test { condition: not not not true }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents triple NOT",
 		},
 		{
 			name:        "many-nots",
 			rule:        `rule test { condition: ` + strings.Repeat("not ", 10) + `true }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents many NOT operators",
 		},
 		{
 			name:        "minus-operator",
 			rule:        `rule test { condition: -100 }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents unary minus",
 		},
 		{
 			name:        "double-minus",
 			rule:        `rule test { condition: --100 }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents double minus",
 		},
 		{
 			name:        "bitwise-not",
 			rule:        `rule test { condition: ~0xFF }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents bitwise NOT",
 		},
 		{
 			name:        "mixed-unaries",
 			rule:        `rule test { condition: not -~100 }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents mixed unary operators",
 		},
 		{
 			name:        "unary-with-binary",
 			rule:        `rule test { condition: not true and false }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents unary with binary operators",
 		},
 		{
 			name:        "defined-operator",
 			rule:        `rule test { condition: defined extern_var }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents defined operator",
 		},
 	}
@@ -260,17 +248,7 @@ func TestDeeplyNestedUnaries(t *testing.T) {
 			p := New(l)
 			program, err := p.ParseRules()
 
-			if tt.expectError {
-				if err == nil {
-					t.Skipf("known gap: %s (no parse error produced)", tt.description)
-				}
-				return
-			}
-			if err != nil {
-				t.Logf("Unexpected parse error (documents current behavior): %v", err)
-			} else {
-				require.NotNil(t, program, "Program should not be nil")
-			}
+			assertParseResult(t, program, err, tt.expect, tt.description)
 		})
 	}
 }
@@ -281,55 +259,55 @@ func TestDeeplyNestedForLoops(t *testing.T) {
 	tests := []struct {
 		name        string
 		rule        string
-		expectError bool
+		expect      parseExpectation
 		description string
 	}{
 		{
 			name:        "single-for-loop",
 			rule:        `rule test { strings: $a = "test" condition: for any i in (0..10) : ( true ) }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents single for-in loop",
 		},
 		{
 			name:        "double-nested-for",
 			rule:        `rule test { condition: for any i in (0..10) : ( for any j in (0..5) : ( true ) ) }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents double nested for-in loops",
 		},
 		{
 			name:        "triple-nested-for",
 			rule:        `rule test { condition: for any i in (0..10) : ( for any j in (0..5) : ( for any k in (0..3) : ( true ) ) ) }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents triple nested for-in loops",
 		},
 		{
 			name:        "mixed-for-of-for-in",
 			rule:        `rule test { strings: $a = "test" condition: for any $s in ($a) : ( for any i in (0..10) : ( true ) ) }`,
-			expectError: true,
+			expect:      parseErrorKnownGap,
 			description: "Documents mixed for-of and for-in (may not be supported)",
 		},
 		{
 			name:        "nested-for-of",
 			rule:        `rule test { strings: $a = "a" $b = "b" condition: for any $x in ($a) : ( for any $y in ($b) : ( true ) ) }`,
-			expectError: true,
+			expect:      parseErrorKnownGap,
 			description: "Documents nested for-of loops (may not be supported)",
 		},
 		{
 			name:        "deep-nesting-limit",
 			rule:        `rule test { condition: ` + strings.Repeat("for any i in (0..1) : (", 10) + "true" + strings.Repeat(")", 10) + ` }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents very deep for-loop nesting",
 		},
 		{
 			name:        "for-loop-in-expression",
 			rule:        `rule test { condition: (for any i in (0..10) : (true)) and false }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents for-loop as expression",
 		},
 		{
 			name:        "complex-nesting",
 			rule:        `rule test { strings: $a = "a" $b = "b" $c = "c" condition: (any of ($a, $b)) and (for any i in (0..10) : (true)) }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents complex nested structures",
 		},
 	}
@@ -340,7 +318,7 @@ func TestDeeplyNestedForLoops(t *testing.T) {
 			p := New(l)
 			program, err := p.ParseRules()
 
-			assertParseResult(t, program, err, tt.expectError, tt.description)
+			assertParseResult(t, program, err, tt.expect, tt.description)
 		})
 	}
 }
@@ -351,37 +329,37 @@ func TestManyRulesInOneFile(t *testing.T) {
 	tests := []struct {
 		name        string
 		rule        string
-		expectError bool
+		expect      parseExpectation
 		description string
 	}{
 		{
 			name:        "ten-rules",
 			rule:        strings.Repeat(`rule test { condition: true }`, 10),
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents parsing 10 rules",
 		},
 		{
 			name:        "fifty-rules",
 			rule:        strings.Repeat(`rule test { condition: true }`, 50),
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents parsing 50 rules",
 		},
 		{
 			name:        "hundred-rules",
 			rule:        strings.Repeat(`rule test`, 100),
-			expectError: true,
+			expect:      parseErrorKnownGap,
 			description: "Documents parsing 100 rules (may fail due to syntax)",
 		},
 		{
 			name:        "unique-rule-names",
 			rule:        generateUniqueRules(20),
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents parsing 20 unique rules",
 		},
 		{
 			name:        "rules-with-strings",
 			rule:        generateRulesWithStrings(10),
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents parsing multiple rules with strings",
 		},
 	}
@@ -392,15 +370,8 @@ func TestManyRulesInOneFile(t *testing.T) {
 			p := New(l)
 			program, err := p.ParseRules()
 
-			if tt.expectError {
-				if err == nil {
-					t.Skipf("known gap: %s (no parse error produced)", tt.description)
-				}
-				return
-			}
-			if err != nil {
-				t.Logf("Unexpected parse error (documents current behavior): %v", err)
-			} else if program != nil && len(program.Rules) > 0 {
+			assertParseResult(t, program, err, tt.expect, tt.description)
+			if err == nil && program != nil && len(program.Rules) > 0 {
 				t.Logf("Successfully parsed %d rules", len(program.Rules))
 			}
 		})
@@ -413,37 +384,37 @@ func TestManyStringsInOneRule(t *testing.T) {
 	tests := []struct {
 		name        string
 		rule        string
-		expectError bool
+		expect      parseExpectation
 		description string
 	}{
 		{
 			name:        "ten-strings",
 			rule:        generateRuleWithStrings(10),
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents rule with 10 strings",
 		},
 		{
 			name:        "fifty-strings",
 			rule:        generateRuleWithStrings(50),
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents rule with 50 strings",
 		},
 		{
 			name:        "hundred-strings",
 			rule:        generateRuleWithStrings(100),
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents rule with 100 strings",
 		},
 		{
 			name:        "strings-with-modifiers",
 			rule:        generateRulesWithStringModifiers(20),
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents many strings with various modifiers",
 		},
 		{
 			name:        "mixed-string-types",
 			rule:        generateMixedStringTypes(15),
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents mix of text, hex, and regex strings",
 		},
 	}
@@ -454,15 +425,8 @@ func TestManyStringsInOneRule(t *testing.T) {
 			p := New(l)
 			program, err := p.ParseRules()
 
-			if tt.expectError {
-				if err == nil {
-					t.Skipf("known gap: %s (no parse error produced)", tt.description)
-				}
-				return
-			}
-			if err != nil {
-				t.Logf("Unexpected parse error (documents current behavior): %v", err)
-			} else if program != nil && len(program.Rules) > 0 {
+			assertParseResult(t, program, err, tt.expect, tt.description)
+			if err == nil && program != nil && len(program.Rules) > 0 {
 				t.Logf("Successfully parsed rule with %d strings", len(program.Rules[0].Strings))
 			}
 		})
@@ -475,43 +439,43 @@ func TestLongStringLiterals(t *testing.T) {
 	tests := []struct {
 		name        string
 		rule        string
-		expectError bool
+		expect      parseExpectation
 		description string
 	}{
 		{
 			name:        "hundred-char-string",
 			rule:        `rule test { strings: $a = "` + strings.Repeat("a", 100) + `" condition: $a }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents 100 character string literal",
 		},
 		{
 			name:        "thousand-char-string",
 			rule:        `rule test { strings: $a = "` + strings.Repeat("b", 1000) + `" condition: $a }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents 1000 character string literal",
 		},
 		{
 			name:        "with-escape-sequences",
 			rule:        `rule test { strings: $a = "` + strings.Repeat("\\x41", 50) + `" condition: $a }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents long string with escape sequences",
 		},
 		{
 			name:        "with-newlines",
 			rule:        `rule test { strings: $a = "` + strings.Repeat("\\n", 20) + `" condition: $a }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents string with many newlines",
 		},
 		{
 			name:        "with-tabs",
 			rule:        `rule test { strings: $a = "` + strings.Repeat("\\t", 20) + `" condition: $a }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents string with many tabs",
 		},
 		{
 			name:        "unicode-escapes",
 			rule:        `rule test { strings: $a = "` + strings.Repeat("\\u0041", 20) + `" condition: $a }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents string with unicode escapes",
 		},
 	}
@@ -522,17 +486,7 @@ func TestLongStringLiterals(t *testing.T) {
 			p := New(l)
 			program, err := p.ParseRules()
 
-			if tt.expectError {
-				if err == nil {
-					t.Skipf("known gap: %s (no parse error produced)", tt.description)
-				}
-				return
-			}
-			if err != nil {
-				t.Logf("Unexpected parse error (documents current behavior): %v", err)
-			} else {
-				require.NotNil(t, program, "Program should not be nil")
-			}
+			assertParseResult(t, program, err, tt.expect, tt.description)
 		})
 	}
 }
@@ -543,37 +497,37 @@ func TestLongHexPatterns(t *testing.T) {
 	tests := []struct {
 		name        string
 		rule        string
-		expectError bool
+		expect      parseExpectation
 		description string
 	}{
 		{
 			name:        "long-hex-pattern",
 			rule:        `rule test { strings: $a = { ` + strings.Repeat("DE AD BE EF ", 25) + `} condition: $a }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents 100 byte hex pattern",
 		},
 		{
 			name:        "with-jumps",
 			rule:        `rule test { strings: $a = { ` + strings.Repeat("DE AD [2-3] BE ", 20) + `} condition: $a }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents long hex pattern with jumps",
 		},
 		{
 			name:        "with-alternatives",
 			rule:        `rule test { strings: $a = { ` + strings.Repeat("(DE | AD | BE | EF) ", 20) + `} condition: $a }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents long hex pattern with alternatives",
 		},
 		{
 			name:        "with-wildcards",
 			rule:        `rule test { strings: $a = { ` + strings.Repeat("DE ?? AD ?? ", 20) + `} condition: $a }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents long hex pattern with wildcards",
 		},
 		{
 			name:        "complex-mix",
 			rule:        `rule test { strings: $a = { ` + strings.Repeat("DE [2-3] (AD | BE) ?? FF ", 15) + `} condition: $a }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents long hex pattern with complex mix",
 		},
 	}
@@ -584,17 +538,7 @@ func TestLongHexPatterns(t *testing.T) {
 			p := New(l)
 			program, err := p.ParseRules()
 
-			if tt.expectError {
-				if err == nil {
-					t.Skipf("known gap: %s (no parse error produced)", tt.description)
-				}
-				return
-			}
-			if err != nil {
-				t.Logf("Unexpected parse error (documents current behavior): %v", err)
-			} else {
-				require.NotNil(t, program, "Program should not be nil")
-			}
+			assertParseResult(t, program, err, tt.expect, tt.description)
 		})
 	}
 }
@@ -605,37 +549,37 @@ func TestLongRegexPatterns(t *testing.T) {
 	tests := []struct {
 		name        string
 		rule        string
-		expectError bool
+		expect      parseExpectation
 		description string
 	}{
 		{
 			name:        "long-regex",
 			rule:        `rule test { strings: $a = /` + strings.Repeat("a", 200) + `/ condition: $a }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents 200 character regex",
 		},
 		{
 			name:        "complex-regex",
 			rule:        `rule test { strings: $a = /` + strings.Repeat("[a-z]+", 20) + `/ condition: $a }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents complex regex with character classes",
 		},
 		{
 			name:        "with-quantifiers",
 			rule:        `rule test { strings: $a = /` + strings.Repeat("a*", 30) + `/ condition: $a }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents regex with many quantifiers",
 		},
 		{
 			name:        "with-groups",
 			rule:        `rule test { strings: $a = /` + strings.Repeat("(abc)", 20) + `/ condition: $a }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents regex with many groups",
 		},
 		{
 			name:        "with-escapes",
 			rule:        `rule test { strings: $a = /` + strings.Repeat("\\d+", 20) + `/ condition: $a }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents regex with many escape sequences",
 		},
 	}
@@ -646,17 +590,7 @@ func TestLongRegexPatterns(t *testing.T) {
 			p := New(l)
 			program, err := p.ParseRules()
 
-			if tt.expectError {
-				if err == nil {
-					t.Skipf("known gap: %s (no parse error produced)", tt.description)
-				}
-				return
-			}
-			if err != nil {
-				t.Logf("Unexpected parse error (documents current behavior): %v", err)
-			} else {
-				require.NotNil(t, program, "Program should not be nil")
-			}
+			assertParseResult(t, program, err, tt.expect, tt.description)
 		})
 	}
 }
@@ -667,43 +601,43 @@ func TestComplexBooleanExpressions(t *testing.T) {
 	tests := []struct {
 		name        string
 		rule        string
-		expectError bool
+		expect      parseExpectation
 		description string
 	}{
 		{
 			name:        "long-and-chain",
 			rule:        `rule test { condition: ` + strings.Join(repeatStrings("true", 20, " and "), " and ") + ` }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents long AND chain",
 		},
 		{
 			name:        "long-or-chain",
 			rule:        `rule test { condition: ` + strings.Join(repeatStrings("false", 20, " or "), " or ") + ` }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents long OR chain",
 		},
 		{
 			name:        "mixed-and-or",
 			rule:        `rule test { condition: true and false or true and false or true }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents mixed AND/OR",
 		},
 		{
 			name:        "with-parentheses",
 			rule:        `rule test { condition: (true and false) or (true and false) }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents boolean with parentheses",
 		},
 		{
 			name:        "with-not",
 			rule:        `rule test { condition: not true and not false or not (true and false) }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents boolean with NOT",
 		},
 		{
 			name:        "deeply-nested",
 			rule:        `rule test { condition: (((true and false) or true) and (false or (true and false))) }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents deeply nested boolean",
 		},
 	}
@@ -714,17 +648,7 @@ func TestComplexBooleanExpressions(t *testing.T) {
 			p := New(l)
 			program, err := p.ParseRules()
 
-			if tt.expectError {
-				if err == nil {
-					t.Skipf("known gap: %s (no parse error produced)", tt.description)
-				}
-				return
-			}
-			if err != nil {
-				t.Logf("Unexpected parse error (documents current behavior): %v", err)
-			} else {
-				require.NotNil(t, program, "Program should not be nil")
-			}
+			assertParseResult(t, program, err, tt.expect, tt.description)
 		})
 	}
 }
@@ -735,43 +659,43 @@ func TestComplexArithmeticExpressions(t *testing.T) {
 	tests := []struct {
 		name        string
 		rule        string
-		expectError bool
+		expect      parseExpectation
 		description string
 	}{
 		{
 			name:        "long-chain",
 			rule:        `rule test { condition: ` + strings.Join(repeatStrings("1", 10, "+"), " + ") + ` }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents long arithmetic chain",
 		},
 		{
 			name:        "mixed-operators",
 			rule:        `rule test { condition: 1 + 2 * 3 - 4 / 5 % 6 }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents mixed arithmetic operators",
 		},
 		{
 			name:        "with-parentheses",
 			rule:        `rule test { condition: ((1 + 2) * 3) - ((4 / 5) % 6) }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents arithmetic with parentheses",
 		},
 		{
 			name:        "with-unary",
 			rule:        `rule test { condition: -1 + -2 * --3 }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents arithmetic with unary minus",
 		},
 		{
 			name:        "hex-literals",
 			rule:        `rule test { condition: 0x100 + 0x200 * 0xFF }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents arithmetic with hex literals",
 		},
 		{
 			name:        "comparison",
 			rule:        `rule test { condition: 1 + 2 * 3 > 10 and 5 / 2 < 3 }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents arithmetic in comparisons",
 		},
 	}
@@ -782,17 +706,7 @@ func TestComplexArithmeticExpressions(t *testing.T) {
 			p := New(l)
 			program, err := p.ParseRules()
 
-			if tt.expectError {
-				if err == nil {
-					t.Skipf("known gap: %s (no parse error produced)", tt.description)
-				}
-				return
-			}
-			if err != nil {
-				t.Logf("Unexpected parse error (documents current behavior): %v", err)
-			} else {
-				require.NotNil(t, program, "Program should not be nil")
-			}
+			assertParseResult(t, program, err, tt.expect, tt.description)
 		})
 	}
 }
@@ -803,43 +717,43 @@ func TestComplexStringExpressions(t *testing.T) {
 	tests := []struct {
 		name        string
 		rule        string
-		expectError bool
+		expect      parseExpectation
 		description string
 	}{
 		{
 			name:        "long-string-list",
 			rule:        `rule test { strings: ` + generateStringList(20) + ` condition: any of them }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents many strings in condition",
 		},
 		{
 			name:        "complex-of",
 			rule:        `rule test { strings: $a1 = "a1" $a2 = "a2" $b1 = "b1" $b2 = "b2" condition: any of ($a*) or all of ($b*) }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents complex of-expression",
 		},
 		{
 			name:        "string-operations",
 			rule:        `rule test { strings: $a = "test" condition: #a > 0 and @a < 100 and !a == 4 }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents string operations in condition",
 		},
 		{
 			name:        "at-operator",
 			rule:        `rule test { strings: $a = "test" condition: $a at 0 or $a at 100 }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents at operator usage",
 		},
 		{
 			name:        "in-operator",
 			rule:        `rule test { strings: $a = "test" condition: $a in (0..100) }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents in operator usage",
 		},
 		{
 			name:        "matches-operator",
 			rule:        `rule test { strings: $a = "test" condition: $a matches /test/ }`,
-			expectError: false,
+			expect:      parseOK,
 			description: "Documents matches operator usage",
 		},
 	}
@@ -850,17 +764,7 @@ func TestComplexStringExpressions(t *testing.T) {
 			p := New(l)
 			program, err := p.ParseRules()
 
-			if tt.expectError {
-				if err == nil {
-					t.Skipf("known gap: %s (no parse error produced)", tt.description)
-				}
-				return
-			}
-			if err != nil {
-				t.Logf("Unexpected parse error (documents current behavior): %v", err)
-			} else {
-				require.NotNil(t, program, "Program should not be nil")
-			}
+			assertParseResult(t, program, err, tt.expect, tt.description)
 		})
 	}
 }
