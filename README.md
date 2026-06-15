@@ -1,94 +1,244 @@
 # go-yara
 
-A lexical analyzer for the YARA language, implemented in Go.
+`go-yara` is a Go implementation of core YARA rule processing. It can parse
+YARA source, validate rules, compile them to bytecode, and scan byte slices,
+readers, or files through a reusable scanner API.
 
-## Overview
-
-This project provides a lexer for the YARA rule language. It tokenizes YARA rule files into a stream of tokens, which can then be used by a parser or other analysis tools.
+This project is actively evolving. It supports a broad set of YARA rule syntax,
+string modifiers, expressions, rule metadata, tags, includes, and execution
+features, but it is not a complete drop-in replacement for upstream YARA. In
+particular, YARA modules such as `pe`, `hash`, `math`, `elf`, and `dotnet` are
+not implemented. See [PLAN_YARA_SPEC_GAPS.md](PLAN_YARA_SPEC_GAPS.md) for the
+detailed compatibility notes.
 
 ## Features
 
-- **YARA Language Support**: Tokenizes the complete YARA language, including all keywords, operators, and literals.
-- **Error Recovery**: Includes mechanisms for recovering from syntax errors.
-- **Performance**: Optimized for performance, using techniques such as memory pooling and string interning.
+- Parse YARA rules into an AST.
+- Run semantic validation and collect compiler errors or warnings.
+- Compile rules to executable bytecode.
+- Scan data with public APIs in `github.com/cawalch/go-yara/compiler`.
+- Reuse scanners across many inputs to reduce allocations.
+- Filter scans by tags and configure `itersmax` for loop-heavy rules.
+- Evaluate text, hex, and regex strings, string modifiers, metadata, private and
+  global rules, rule references, and common condition operators.
+- Use the CLI to lex, parse, compile, or execute rules against data files.
 
 ## Installation
-
-To use go-yara in your project, you can use `go get`:
 
 ```bash
 go get github.com/cawalch/go-yara
 ```
 
-## Usage
+The module currently declares Go `1.26.0` in [go.mod](go.mod).
 
-The following example demonstrates how to use the lexer to tokenize a YARA rule.
+## Library Usage
+
+Use the exported `compiler` package for normal rule compilation and scanning.
+Do not import packages under `internal/`; those are implementation details and
+cannot be imported by external modules.
+
+### Compile And Scan Bytes
 
 ```go
 package main
 
 import (
+	"context"
 	"fmt"
-	"github.com/cawalch/go-yara/internal/lexer"
-	"github.com/cawalch/go-yara/token"
+	"log"
+
+	"github.com/cawalch/go-yara/compiler"
 )
 
 func main() {
-	input := `rule ExampleRule {
-    meta:
-        author = "Example"
+	source := `rule MalwareString {
     strings:
-        $a = "malware"
+        $a = "malware" nocase
     condition:
         $a
 }`
 
-	l := lexer.New(input)
-	for {
-		tok := l.NextToken()
-		if tok.Type == token.EOF {
-			break
-		}
-		fmt.Println(tok)
+	c := compiler.NewCompiler()
+	program, err := c.CompileSourceWithContext(context.Background(), source)
+	if err != nil {
+		log.Fatalf("compile failed: %v", err)
+	}
+
+	result, err := program.Scan([]byte("sample contains MALWARE marker"))
+	if err != nil {
+		log.Fatalf("scan failed: %v", err)
+	}
+
+	for _, match := range result.MatchedRules {
+		fmt.Println(match.Rule)
 	}
 }
 ```
 
-### Lexer Example
-
-This example shows how to create a new lexer and tokenize a simple YARA rule.
+### Compile And Scan Files
 
 ```go
-l := lexer.New("rule test { condition: true }")
+func scanFile(ctx context.Context, ruleFile, dataFile string) error {
+	c := compiler.NewCompiler()
+	program, err := c.CompileFileWithContext(ctx, ruleFile)
+	if err != nil {
+		return err
+	}
 
-// Get tokens one by one
-tok1 := l.NextToken()
-tok2 := l.NextToken()
-tok3 := l.NextToken()
+	result, err := program.ScanFile(dataFile)
+	if err != nil {
+		return err
+	}
 
-fmt.Printf("First token: %s\n", tok1.String())
-fmt.Printf("Second token: %s\n", tok2.String())
-fmt.Printf("Third token: %s\n", tok3.String())
-// Output:
-// First token: {RULE "rule" @ 1:1}
-// Second token: {IDENTIFIER "test" @ 1:6}
-// Third token: {LBRACE "{" @ 1:11}
+	for _, rule := range result.MatchedRules {
+		fmt.Printf("%s matched with tags %v\n", rule.Rule, rule.Tags)
+	}
+
+	return nil
+}
 ```
 
-## Command-Line Tool
+### Reuse A Scanner
 
-The project includes a command-line tool for lexing YARA files.
+Create a scanner when you want to scan many inputs with the same compiled
+program.
 
-To use it, run the following command:
+```go
+func scanMany(program *compiler.CompiledProgram, samples ...[]byte) error {
+	scanner := compiler.NewScanner(
+		program,
+		compiler.WithTagsFilter([]string{"malware", "triage"}),
+		compiler.WithItersmax(100000),
+	)
+	defer scanner.Close()
+
+	for _, sample := range samples {
+		result, err := scanner.Scan(sample)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(len(result.MatchedRules))
+	}
+
+	return nil
+}
+```
+
+`ScanResult` includes:
+
+- `MatchedRules`: public, matched rules with tags, metadata, and public string
+  matches.
+- `RuleResults`: boolean condition results for evaluated rules.
+- `Matches`: per-rule string matches keyed by rule name and string identifier.
+
+## Command-Line Usage
+
+The CLI expects the YARA file as the first positional argument, followed by
+options.
 
 ```bash
-go run ./cmd/main.go ./examples/demo_rule.yar
+# Compile rules. This is the default mode.
+go run ./cmd ./examples/demo_rule.yar --mode=compile
+
+# Show lexer tokens.
+go run ./cmd ./examples/demo_rule.yar --mode=lex
+
+# Parse and summarize the AST.
+go run ./cmd ./examples/demo_rule.yar --mode=parse
+
+# Execute rules against a data file.
+go run ./cmd ./testdata/rules/simple_strings.yar --mode=execute --data ./testdata/execution/test_1kb.dat
 ```
+
+Legacy shorthand flags are also available:
+
+```bash
+go run ./cmd ./examples/demo_rule.yar --lex
+go run ./cmd ./examples/demo_rule.yar --parse
+go run ./cmd ./examples/demo_rule.yar --compile
+go run ./cmd ./testdata/rules/simple_strings.yar --execute --data ./testdata/execution/test_1kb.dat
+```
+
+Advanced execute-mode streaming flags:
+
+```bash
+go run ./cmd ./testdata/rules/simple_strings.yar \
+  --mode=execute \
+  --data ./testdata/execution/test_1mb.dat \
+  --streaming \
+  --chunk-size 1048576 \
+  --max-concurrency 4 \
+  --early-termination
+```
+
+Streaming mode is intended for chunked large-input processing. The normal
+execute path is the primary path for full rule condition results.
+
+## Repository Layout
+
+- `compiler/`: compilation pipeline, bytecode, scanner, interpreter, string
+  matching, and streaming support.
+- `parser/`: YARA parser.
+- `semantic/`: semantic validation and type checks.
+- `ast/`: AST nodes, builder, and visitors.
+- `regex/`: in-repo YARA-compatible regex engine.
+- `token/`: public token types.
+- `internal/lexer/`: lexer implementation used by parser and compiler.
+- `cmd/`: command-line entry point.
+- `examples/`, `testdata/`, `test_regression/`: sample rules, data, and
+  regression fixtures.
+
+## Known Limitations
+
+- YARA modules are not implemented; imports such as `import "pe"` and module
+  function calls are documented as gaps.
+- Some YARA data read function variants are partially supported; see the gap
+  analysis for exact coverage.
+- The project has explicit known-gap tests in parser and integration suites.
+- The `yara/` directory is ignored by git and is not part of the public Go API.
+
+## Testing And Development
+
+Run the full test suite:
+
+```bash
+go test ./...
+```
+
+Run fuzz targets through the helper script:
+
+```bash
+make fuzz FUZZTIME=60s
+```
+
+Run benchmarks:
+
+```bash
+make bench
+make bench PKG=./compiler
+```
+
+Useful generated benchmark and profile output is written under ignored
+directories such as `benchmarks/` and `profiles/`.
+
+## More Documentation
+
+- [PLAN_YARA_SPEC_GAPS.md](PLAN_YARA_SPEC_GAPS.md): current compatibility gap
+  analysis against upstream YARA.
+- [test_regression/README.md](test_regression/README.md): targeted regression
+  fixture notes.
+- [testdata/regex/README.md](testdata/regex/README.md): staged regex parity
+  suite notes.
 
 ## Contributing
 
-Contributions are welcome. Please open an issue or submit a pull request.
+Contributions are welcome. Please keep changes focused, run the relevant tests,
+and include regression coverage for behavior changes.
 
 ## License
 
-This project is licensed under the MIT License.
+The previous README stated that this project is licensed under the MIT License,
+but this repository currently does not include a root `LICENSE` file. Add the
+license file before relying on or redistributing the project under that license
+statement.
