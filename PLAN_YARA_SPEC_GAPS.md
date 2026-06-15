@@ -238,7 +238,7 @@ This document tracks gaps between go-yara and the official YARA specification (Y
 | Feature | Status | Notes |
 |---------|--------|-------|
 | External variable declarations | ✅ | `external` keyword parsed |
-| Runtime external variable injection | ✅ | `SetExternalVariables()` |
+| Runtime external variable injection | ✅ | `CompiledProgram.SetExternalVariables()`, `Scanner.SetExternalVariables()`, `WithExternalVariables()` |
 
 ---
 

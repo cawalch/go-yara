@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -54,6 +55,56 @@ rule test_rule {
 	if err != nil {
 		t.Errorf("Program validation failed: %v", err)
 	}
+}
+
+func TestCompileSourceWithImportDoesNotWriteStdout(t *testing.T) {
+	source := `import "pe"
+
+rule unused_import {
+    condition:
+        true
+}`
+
+	output := captureStdout(t, func() {
+		compiler := NewCompiler()
+		if _, err := compiler.CompileSourceWithContext(context.Background(), source); err != nil {
+			t.Fatalf("CompileSourceWithContext() error = %v", err)
+		}
+	})
+
+	if output != "" {
+		t.Fatalf("CompileSourceWithContext() wrote to stdout: %q", output)
+	}
+}
+
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() error = %v", err)
+	}
+	os.Stdout = w
+	defer func() {
+		os.Stdout = oldStdout
+	}()
+
+	fn()
+
+	if err := w.Close(); err != nil {
+		t.Fatalf("closing stdout pipe writer: %v", err)
+	}
+	output, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("reading stdout pipe: %v", err)
+	}
+	if err := r.Close(); err != nil {
+		t.Fatalf("closing stdout pipe reader: %v", err)
+	}
+
+	os.Stdout = oldStdout
+	return string(output)
 }
 
 // TestOpcodeClassification tests opcode classification functions

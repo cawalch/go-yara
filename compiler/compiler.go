@@ -788,8 +788,10 @@ func (c *Compiler) ProcessIncludes(program *ast.Program) error {
 
 // processImportsWithContext processes import statements with context support
 func (c *Compiler) processImportsWithContext(ctx context.Context, program *ast.Program) error {
-	// For now, just log the imports - full implementation would load modules
-	for _, importStmt := range program.Imports {
+	// Imported modules are parsed and retained for future module support. Module
+	// functions are currently compiled as stubs elsewhere, so this phase only
+	// honors cancellation and avoids public compile-time side effects.
+	for range program.Imports {
 		// Check for cancellation before processing each import
 		select {
 		case <-ctx.Done():
@@ -802,9 +804,6 @@ func (c *Compiler) processImportsWithContext(ctx context.Context, program *ast.P
 		// 2. Load module definition
 		// 3. Register module functions and variables
 		// 4. Make module available to the condition compiler
-
-		// For now, just acknowledge the import
-		fmt.Printf("Import module: %s\n", importStmt.Module)
 	}
 	return nil
 }

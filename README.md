@@ -125,6 +125,35 @@ func scanMany(program *compiler.CompiledProgram, samples ...[]byte) error {
 }
 ```
 
+### Set External Variables
+
+Rules can declare runtime-provided values with `external`. Set those values on
+the compiled program for one-shot scans, or on a reusable scanner.
+
+```go
+program, err := compiler.NewCompiler().CompileSourceWithContext(ctx, `
+external gate
+external marker
+rule gated { condition: gate and marker == "needle" }
+`)
+if err != nil {
+	return err
+}
+
+if err := program.SetExternalVariables(map[string]any{
+	"gate":   true,
+	"marker": "needle",
+}); err != nil {
+	return err
+}
+
+result, err := program.Scan(data)
+```
+
+For reusable scanners, pass `compiler.WithExternalVariables(...)` to
+`compiler.NewScanner` or call `scanner.SetExternalVariables(...)` between
+scans.
+
 `ScanResult` includes:
 
 - `MatchedRules`: public, matched rules with tags, metadata, and public string
