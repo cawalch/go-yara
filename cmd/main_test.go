@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/cawalch/go-yara/compiler"
 	"github.com/cawalch/go-yara/token"
 )
 
@@ -207,6 +209,47 @@ func captureOutput(fn func()) string {
 	_ = w.Close()
 	out, _ := io.ReadAll(r)
 	return string(out)
+}
+
+func TestExecuteRulesStreamingReportsPatternOnlySemantics(t *testing.T) {
+	source := `rule FalseCondition {
+  strings:
+    $a = "foo"
+  condition:
+    false
+}`
+
+	c := compiler.NewCompiler()
+	program, err := c.CompileSourceWithContext(context.Background(), source)
+	if err != nil {
+		t.Fatalf("CompileSourceWithContext() error = %v", err)
+	}
+
+	out := captureOutput(func() {
+		args := &commandArgs{
+			enableStreaming: false,
+			chunkSize:       4,
+			maxConcurrency:  1,
+		}
+		executeRulesStreaming(program, []byte("foo"), args)
+	})
+
+	expected := []string{
+		"Streaming pattern scan enabled",
+		"reports string pattern matches only; rule conditions are not evaluated",
+		"Streaming Pattern Results",
+		"Total pattern matches: 1",
+		"Rule: FalseCondition, Pattern: $a",
+	}
+	for _, text := range expected {
+		if !strings.Contains(out, text) {
+			t.Fatalf("expected streaming output to contain %q, got:\n%s", text, out)
+		}
+	}
+
+	if strings.Contains(out, "Result: MATCH") || strings.Contains(out, "Execution: Success") {
+		t.Fatalf("streaming output implied full rule execution, got:\n%s", out)
+	}
 }
 
 // patternMatchingSupported checks if pattern matching is working in the current implementation

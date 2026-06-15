@@ -20,6 +20,8 @@ Several previously planned cleanup items have already landed:
   `255`.
 - Compiled rule stats are captured as per-rule snapshots, and `GetStats`
   returns a defensive copy.
+- Streaming mode is documented and presented as chunked pattern matching, not
+  full rule condition evaluation.
 
 ## Cleanup Principles
 
@@ -87,21 +89,6 @@ Acceptance criteria:
 - Public API docs do not overclaim precision.
 - Unsupported or heuristic behavior is named directly.
 - README and package docs stay consistent.
-
-### 4. Revisit Streaming Semantics
-
-`StreamingProcessor` reports pattern matches from chunked scanning and does not
-fully evaluate rule conditions. Decide whether to keep that behavior as a
-pattern-only API, rename/document it more clearly, or route large-file scanning
-through the full scanner path.
-
-Acceptance criteria:
-
-- Streaming docs and API names make condition-evaluation limits obvious.
-- CLI streaming output does not imply full YARA rule success if only pattern
-  matching occurred.
-- Tests cover at least one case where a pattern matches but the rule condition
-  should fail.
 
 ## Validation Checklist
 

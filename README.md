@@ -172,7 +172,8 @@ go run ./cmd ./testdata/rules/simple_strings.yar \
   --early-termination
 ```
 
-Streaming mode is intended for chunked large-input processing. The normal
+Streaming mode is intended for chunked large-input pattern scanning. It reports
+string pattern matches only and does not evaluate rule conditions. The normal
 execute path is the primary path for full rule condition results.
 
 ## Repository Layout

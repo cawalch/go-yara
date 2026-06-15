@@ -1038,9 +1038,13 @@ func (ep *ExecutionPlan) GetTotalSize() int {
 	return lastRegion.Offset + lastRegion.Size
 }
 
-// Streaming methods for CompiledProgram
+// Streaming methods for CompiledProgram.
+//
+// Streaming reports chunked string-pattern matches only. It does not evaluate
+// rule condition bytecode. Use Scan, ScanReader, or ScanFile for full rule
+// evaluation.
 
-// EnableStreaming enables or disables streaming processing for large files
+// EnableStreaming enables or disables pattern-only streaming for large files.
 func (cp *CompiledProgram) EnableStreaming(enable bool) {
 	cp.enableStreaming = enable
 	if enable && cp.streamingProcessor == nil {
@@ -1074,7 +1078,7 @@ func (cp *CompiledProgram) EnableStreamingEarlyTermination(enable bool) {
 	}
 }
 
-// ProcessFileStreaming processes a file using streaming approach
+// ProcessFileStreaming returns pattern matches from a file using chunked streaming.
 func (cp *CompiledProgram) ProcessFileStreaming(ctx context.Context, filename string) ([]StreamingMatch, error) {
 	if !cp.enableStreaming {
 		return nil, errors.New("streaming is not enabled")
@@ -1087,7 +1091,7 @@ func (cp *CompiledProgram) ProcessFileStreaming(ctx context.Context, filename st
 	return cp.streamingProcessor.ProcessFile(ctx, filename)
 }
 
-// ProcessBytesStreaming processes byte data using streaming approach
+// ProcessBytesStreaming returns pattern matches from byte data using chunked streaming.
 func (cp *CompiledProgram) ProcessBytesStreaming(ctx context.Context, data []byte) ([]StreamingMatch, error) {
 	if !cp.enableStreaming {
 		return nil, errors.New("streaming is not enabled")
