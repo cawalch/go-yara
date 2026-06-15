@@ -1974,6 +1974,113 @@ func TestCompiledRuleGetters(t *testing.T) {
 	}
 }
 
+func TestCompiledRuleStatsSurviveRuleCompilerReuse(t *testing.T) {
+	rc := NewRuleCompiler()
+
+	firstRule := createTestRuleForCompiledProgram(t, "first_rule", "$first", "first", 1)
+	firstCompiled, err := rc.CompileRule(firstRule)
+	if err != nil {
+		t.Fatalf("CompileRule(first) error = %v", err)
+	}
+
+	secondRule := &ast.Rule{
+		Pos:  token.Position{Line: 10, Column: 1},
+		Name: "second_rule",
+		Strings: []*ast.String{
+			{
+				Pos:        token.Position{Line: 11, Column: 1},
+				Identifier: "$second1",
+				Pattern: &ast.TextString{
+					Value: "second one",
+					Pos:   token.Position{Line: 11, Column: 10},
+				},
+			},
+			{
+				Pos:        token.Position{Line: 12, Column: 1},
+				Identifier: "$second2",
+				Pattern: &ast.TextString{
+					Value: "second two",
+					Pos:   token.Position{Line: 12, Column: 10},
+				},
+			},
+		},
+		Condition: &ast.Literal{
+			Pos:   token.Position{Line: 13, Column: 1},
+			Type:  token.TRUE,
+			Value: true,
+		},
+	}
+	secondCompiled, err := rc.CompileRule(secondRule)
+	if err != nil {
+		t.Fatalf("CompileRule(second) error = %v", err)
+	}
+
+	firstStats := firstCompiled.GetStats()
+	if got := firstStats["string_count"]; got != 1 {
+		t.Fatalf("first rule string_count = %v, want 1", got)
+	}
+
+	secondStats := secondCompiled.GetStats()
+	if got := secondStats["string_count"]; got != 2 {
+		t.Fatalf("second rule string_count = %v, want 2", got)
+	}
+}
+
+func TestCompiledRuleGetStatsReturnsCopy(t *testing.T) {
+	rc := NewRuleCompiler()
+	rule := createTestRuleForCompiledProgram(t, "copy_rule", "$copy", "copy", 1)
+
+	compiled, err := rc.CompileRule(rule)
+	if err != nil {
+		t.Fatalf("CompileRule() error = %v", err)
+	}
+	compiled.Stats["string_info"] = []StringInfo{
+		{
+			Identifier: "$copy",
+			Pattern:    []byte("copy"),
+		},
+	}
+
+	stats := compiled.GetStats()
+	stats["instruction_count"] = -1
+
+	categories, ok := stats["emitter_categories"].(map[string]int)
+	if !ok {
+		t.Fatalf("emitter_categories has type %T, want map[string]int", stats["emitter_categories"])
+	}
+	categories["control"] = -99
+
+	stringInfo, ok := stats["string_info"].([]StringInfo)
+	if !ok {
+		t.Fatalf("string_info has type %T, want []StringInfo", stats["string_info"])
+	}
+	if len(stringInfo) != 1 {
+		t.Fatalf("string_info length = %d, want 1", len(stringInfo))
+	}
+	stringInfo[0].Pattern[0] = 'X'
+
+	freshStats := compiled.GetStats()
+	if got := freshStats["instruction_count"]; got == -1 {
+		t.Fatalf("GetStats returned mutable top-level map; instruction_count = %v", got)
+	}
+
+	freshCategories, ok := freshStats["emitter_categories"].(map[string]int)
+	if !ok {
+		t.Fatalf("fresh emitter_categories has type %T, want map[string]int", freshStats["emitter_categories"])
+	}
+	if got := freshCategories["control"]; got == -99 {
+		t.Fatalf("GetStats returned mutable nested category map; control = %d", got)
+	}
+
+	freshStringInfo, ok := freshStats["string_info"].([]StringInfo)
+	if !ok {
+		t.Fatalf("fresh string_info has type %T, want []StringInfo", freshStats["string_info"])
+	}
+	if got := string(freshStringInfo[0].Pattern); got != "copy" {
+		t.Fatalf("GetStats returned mutable string pattern data = %q, want copy", got)
+	}
+}
+
 // TestCompiledProgramGetters tests CompiledProgram getter methods
 func TestCompiledProgramGetters(t *testing.T) {
 	_ = setupTestCompiledProgram(t)

@@ -106,7 +106,7 @@ func (rc *RuleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 		TextPatterns:     rc.copyTextPatterns(),
 		RegexPatterns:    rc.copyRegexPatterns(),
 		HexPatterns:      rc.copyHexPatterns(),
-		Stats:            rc.getCompilationStats(),
+		Stats:            rc.snapshotCompilationStats(rule),
 		Tags:             rule.Tags,
 		Meta:             rc.compileMeta(rule.Meta),
 		IsGlobal:         rc.hasModifier(rule.Modifiers, ast.ModifierGlobal),
@@ -556,13 +556,13 @@ func (rc *RuleCompiler) registerExternalVariable(extVar *ast.ExternalVariable) {
 	rc.conditionCompiler.externalVariables[extVar.Name] = index
 }
 
-// getCompilationStats returns statistics about the compilation process
-func (rc *RuleCompiler) getCompilationStats() map[string]any {
+// snapshotCompilationStats returns an owned snapshot of rule compilation stats.
+func (rc *RuleCompiler) snapshotCompilationStats(rule *ast.Rule) map[string]any {
 	stats := make(map[string]any)
 
 	stats["instruction_count"] = rc.emitter.GetInstructionCount()
 	stats["bytecode_size"] = rc.emitter.GetSize()
-	stats["string_count"] = len(rc.currentRule.Strings)
+	stats["string_count"] = len(rule.Strings)
 	stats["automaton_states"] = rc.automaton.GetStateCount()
 	stats["variables"] = len(rc.conditionCompiler.GetVariableMap())
 
@@ -577,6 +577,43 @@ func (rc *RuleCompiler) getCompilationStats() map[string]any {
 	stats["string_info"] = stringInfo
 
 	return stats
+}
+
+func cloneStats(stats map[string]any) map[string]any {
+	if stats == nil {
+		return nil
+	}
+
+	out := make(map[string]any, len(stats))
+	for k, v := range stats {
+		out[k] = cloneStatsValue(v)
+	}
+	return out
+}
+
+func cloneStatsValue(value any) any {
+	switch v := value.(type) {
+	case map[string]int:
+		return maps.Clone(v)
+	case []StringInfo:
+		return cloneStringInfo(v)
+	default:
+		return v
+	}
+}
+
+func cloneStringInfo(info []StringInfo) []StringInfo {
+	out := make([]StringInfo, len(info))
+	for i, item := range info {
+		out[i] = item
+		if item.Pattern != nil {
+			out[i].Pattern = slices.Clone(item.Pattern)
+		}
+		if item.Modifiers != nil {
+			out[i].Modifiers = slices.Clone(item.Modifiers)
+		}
+	}
+	return out
 }
 
 func (rc *RuleCompiler) copyTextPatterns() map[string][]byte {
@@ -763,7 +800,7 @@ func hasStringModifier(modifiers []ast.StringModifier, modifierType ast.StringMo
 
 // GetStats returns compilation statistics (computed at compile time).
 func (cr *CompiledRule) GetStats() map[string]any {
-	return cr.Stats
+	return cloneStats(cr.Stats)
 }
 
 // GetAutomaton returns the Aho-Corasick automaton
