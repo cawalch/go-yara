@@ -25,10 +25,22 @@ func (l *Lexer) getPeekChar() byte {
 	return l.reader.PeekChar()
 }
 
-// isStringLengthContext checks if the current ! should be treated as StringLength operator
-// This is true when the next non-whitespace character starts an identifier that represents a string
+// isStringLengthContext checks if the current ! should be treated as the
+// StringLength operator.
+//
+// Upstream YARA lexes '!' + an identifier run as a single _STRING_LENGTH_ token
+// via the regex `!({letter}|{digit}|_)*`. '!' is documented ONLY as the
+// string-length operator (logical NOT is the keyword `not`), so "!a", "!foo",
+// "!$a" are all string length. Previously go-yara only treated '!' as
+// StringLength when followed by '$', so "!a" lexed as NOT + IDENTIFIER("a")
+// and parsed as logical-not-of-an-identifier ("undefined identifier: a").
+//
+// We now match the upstream behavior: treat '!' as StringLength when followed
+// by '$', a letter, digit, or underscore. '!' followed by anything else —
+// '(' (grouping), whitespace + expression, etc. — remains logical NOT, so
+// "!($a and $b)" still works. (Note: writing "!true" for logical not is
+// non-standard YARA; use the "not" keyword.)
 func (l *Lexer) isStringLengthContext() bool {
-	// Save current position
 	snapshot := l.reader.SavePosition()
 	defer l.reader.RestorePosition(snapshot)
 
@@ -38,9 +50,12 @@ func (l *Lexer) isStringLengthContext() bool {
 		l.reader.ReadChar()
 	}
 
-	// String length applies only to $-prefixed string identifiers.
 	peekChar := l.reader.PeekChar()
-	return peekChar == '$'
+	return peekChar == '$' ||
+		(peekChar >= 'a' && peekChar <= 'z') ||
+		(peekChar >= 'A' && peekChar <= 'Z') ||
+		(peekChar >= '0' && peekChar <= '9') ||
+		peekChar == '_'
 }
 
 // isRegexAllowed returns true when regex literals are valid in the current context.
