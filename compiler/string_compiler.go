@@ -309,6 +309,14 @@ func (sc *StringCompiler) EncodeTextPatterns(text string, modifiers []ast.String
 	hasASCII := sc.hasModifier(modifiers, ast.StringModifierASCII)
 	isNocase := sc.hasModifier(modifiers, ast.StringModifierNocase)
 
+	// nocaseFlag propagates FlagsNoCase into each TextPattern so downstream
+	// stages (the Aho-Corasick automaton) know to match case-insensitively.
+	// The pattern bytes are also lowercased below; both are required.
+	nocaseFlag := regex.Flags(0)
+	if isNocase {
+		nocaseFlag = regex.FlagsNoCase
+	}
+
 	basePatterns := make([]TextPattern, 0, 2)
 
 	switch {
@@ -320,21 +328,21 @@ func (sc *StringCompiler) EncodeTextPatterns(text string, modifiers []ast.String
 			wide = sc.applyNocaseModifier(wide, true)
 		}
 		basePatterns = append(basePatterns,
-			TextPattern{Data: ascii, Flags: 0},
-			TextPattern{Data: wide, Flags: regex.FlagsWide},
+			TextPattern{Data: ascii, Flags: nocaseFlag},
+			TextPattern{Data: wide, Flags: regex.FlagsWide | nocaseFlag},
 		)
 	case hasWide:
 		wide := sc.encodeTextBytes(text, true)
 		if isNocase {
 			wide = sc.applyNocaseModifier(wide, true)
 		}
-		basePatterns = append(basePatterns, TextPattern{Data: wide, Flags: regex.FlagsWide})
+		basePatterns = append(basePatterns, TextPattern{Data: wide, Flags: regex.FlagsWide | nocaseFlag})
 	default:
 		ascii := sc.encodeTextBytes(text, false)
 		if isNocase {
 			ascii = sc.applyNocaseModifier(ascii, false)
 		}
-		basePatterns = append(basePatterns, TextPattern{Data: ascii, Flags: 0})
+		basePatterns = append(basePatterns, TextPattern{Data: ascii, Flags: nocaseFlag})
 	}
 
 	patterns := basePatterns
