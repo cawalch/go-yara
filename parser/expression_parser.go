@@ -2,6 +2,7 @@ package parser
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/cawalch/go-yara/ast"
 	"github.com/cawalch/go-yara/token"
@@ -561,8 +562,16 @@ func (p *ExpressionParser) parseStringOperation() (ast.Expression, error) {
 	if !p.currentTokenIs(token.StringIdentifier) && !p.currentTokenIs(token.IDENTIFIER) {
 		stringIdent = &ast.Identifier{Name: "$", Pos: pos}
 	} else {
+		name := p.current.Literal
+		// String operations are always keyed by the $-prefixed identifier.
+		// The lexer emits StringLength for "!a" (matching upstream YARA's
+		// `!({letter}|{digit}|_)*` rule), so normalize "a" -> "$a" here. The
+		// explicit "$a" form is already prefixed and passes through unchanged.
+		if op == token.StringLength && !strings.HasPrefix(name, "$") {
+			name = "$" + name
+		}
 		stringIdent = &ast.Identifier{
-			Name: p.current.Literal,
+			Name: name,
 			Pos:  p.current.Pos,
 		}
 		p.nextToken()
