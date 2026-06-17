@@ -343,9 +343,16 @@ func (cc *ConditionCompiler) compileIntegerLiteral(lit *ast.Literal) {
 	cc.emitter.EmitPush(0, lit.Pos.Line, lit.Pos.Column)
 }
 
-// parseIntLiteral parses a string as an integer literal
+// parseIntLiteral parses a string as an integer literal.
+//
+// Base 0 lets strconv auto-detect the prefix: "0x" -> hexadecimal, "0o" ->
+// octal, otherwise decimal. The lexer preserves the prefix in the token
+// literal for HexIntegerLit and OctalIntegerLit, so a fixed base-10 parse
+// would silently fail and compile those literals to 0. This matches the
+// convention used by the other literal-parsing call sites in the codebase
+// (declaration_parser, quantifier_parser, rule_compiler).
 func parseIntLiteral(s string) (int64, error) {
-	return strconv.ParseInt(s, 10, 64)
+	return strconv.ParseInt(s, 0, 64)
 }
 
 // compileFloatLiteral compiles float literals
