@@ -508,12 +508,23 @@ func (cc *ConditionCompiler) compileStringOffsetOperator(binOp *ast.BinaryOp) er
 		}[binOp.Op])
 	}
 
-	offset, exists := cc.findStringOffset(id.Name)
-	if !exists {
-		return fmt.Errorf("undefined string identifier: %s", id.Name)
+	// "$" as the left operand is the for-loop placeholder: it refers to the
+	// current iteration's string, whose StringRef is held in the active loop
+	// variable's memory slot. Load it directly instead of looking up a fixed
+	// string offset ("$" has no fixed offset). This makes "$ at <offset>" and
+	// "$ in (range)" work inside for-loop bodies, mirroring how "$" alone is
+	// compiled in compileIdentifier.
+	if id.Name == "$" && len(cc.loopVarSlots) > 0 && cc.loopVarSlots[len(cc.loopVarSlots)-1] >= 0 {
+		slot := cc.loopVarSlots[len(cc.loopVarSlots)-1]
+		cc.emitter.EmitOpcodeWithOperand(OpLoadVar, Operand{Type: OperandImmediate32, Value: uint64(slot)}, binOp.Pos.Line, binOp.Pos.Column)
+	} else {
+		offset, exists := cc.findStringOffset(id.Name)
+		if !exists {
+			return fmt.Errorf("undefined string identifier: %s", id.Name)
+		}
+		cc.emitStringIdentifier(offset, id.Name, binOp.Pos.Line, binOp.Pos.Column)
 	}
 
-	cc.emitStringIdentifier(offset, id.Name, binOp.Pos.Line, binOp.Pos.Column)
 	if err := cc.compileExpression(binOp.Right); err != nil {
 		return err
 	}
