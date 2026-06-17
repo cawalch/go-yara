@@ -172,17 +172,13 @@ func (sc *StringCompiler) compileTextString(identifier string, pattern *ast.Text
 	return nil
 }
 
-// compileHexString compiles a hex string pattern
+// compileHexString compiles a hex string pattern. Used only by the
+// StringCompiler.CompileStrings entry point (test-only); the production path
+// goes through RuleCompiler.compileHexString which uses parseHexPattern.
 func (sc *StringCompiler) compileHexString(identifier string, pattern *ast.HexString, modifiers []ast.StringModifier) error {
-	// Parse hex string (simplified - would need full hex grammar parser)
 	hexData := sc.parseHexString(pattern.Value)
-
-	// Apply modifiers
 	encoded := sc.encodeHexString(hexData, modifiers)
-
-	// Store pattern data for automaton building
 	sc.patternData[identifier] = encoded
-
 	return nil
 }
 
@@ -362,7 +358,10 @@ func (sc *StringCompiler) EncodeTextPatterns(text string, modifiers []ast.String
 	return sc.uniqueTextPatterns(patterns), nil
 }
 
-// encodeHexString encodes a hex string with modifiers applied
+// encodeHexString encodes a hex string with modifiers applied. Used only by the
+// StringCompiler.CompileStrings entry point (test-only); the production
+// RuleCompiler path matches hex strings via HexPattern/FindHexMatches and no
+// longer calls this.
 func (sc *StringCompiler) encodeHexString(hexData []byte, modifiers []ast.StringModifier) []byte {
 	// Apply XOR modifier if present
 	hexData = sc.applyXorModifier(hexData, modifiers)
@@ -993,13 +992,6 @@ func (sc *StringCompiler) applyNocaseToWide(data []byte) []byte {
 	return result
 }
 
-// applyNocaseToSmallString handles case conversion for small strings
-//
-// Deprecated: Use applyNocaseToLargeString for all cases for better maintainability
-func (sc *StringCompiler) applyNocaseToSmallString(data []byte) []byte {
-	return sc.applyNocaseToLargeString(data)
-}
-
 // applyNocaseToLargeString handles case conversion for strings of any size
 func (sc *StringCompiler) applyNocaseToLargeString(data []byte) []byte {
 	// Fast check for case conversion need using lookup table
@@ -1020,12 +1012,6 @@ func (sc *StringCompiler) applyNocaseModifier(data []byte, isWide bool) []byte {
 	if isWide {
 		return sc.applyNocaseToWide(data)
 	}
-
-	// Optimized case-insensitive conversion for ASCII strings
-	if len(data) <= 128 {
-		return sc.applyNocaseToSmallString(data)
-	}
-
 	return sc.applyNocaseToLargeString(data)
 }
 
