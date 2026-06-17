@@ -25,7 +25,7 @@ func FuzzLexer(f *testing.F) {
 		// Test basic lexer initialization and tokenization
 		defer func() {
 			if r := recover(); r != nil {
-				t.Logf("Lexer recovered from panic: %v", r)
+				t.Errorf("Lexer panicked (fuzz input triggered crash): %v", r)
 			}
 		}()
 

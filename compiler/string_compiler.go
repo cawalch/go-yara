@@ -722,6 +722,15 @@ func (sc *StringCompiler) parseAlternativesToken(hexStr string, pos int) (token 
 		i++
 	}
 
+	// Unterminated group: no matching ')' was found before end of input.
+	// When '(' is the last byte, the scan loop never runs so i-1 < altStart
+	// and hexStr[altStart:i-1] would slice out of range. Return an empty
+	// token, matching the malformed-input convention used by parseHexToken's
+	// other branches (parseWildcardToken, parseHexByteToken).
+	if depth > 0 {
+		return HexToken{}, i - pos
+	}
+
 	altStr := hexStr[altStart : i-1]
 	alts := sc.parseAlternatives(altStr)
 	return HexToken{Type: "alternative", Value: alts}, i - pos

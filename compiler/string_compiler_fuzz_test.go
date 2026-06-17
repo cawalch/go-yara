@@ -32,7 +32,7 @@ func FuzzStringCompiler(f *testing.F) {
 	f.Fuzz(func(t *testing.T, input []byte) {
 		defer func() {
 			if r := recover(); r != nil {
-				t.Logf("String compiler recovered from panic: %v", r)
+				t.Errorf("String compiler panicked (fuzz input triggered crash): %v", r)
 			}
 		}()
 
@@ -87,7 +87,7 @@ func FuzzBase64Decoder(f *testing.F) {
 	f.Fuzz(func(t *testing.T, input []byte) {
 		defer func() {
 			if r := recover(); r != nil {
-				t.Logf("Base64 decoder recovered from panic: %v", r)
+				t.Errorf("Base64 decoder panicked (fuzz input triggered crash): %v", r)
 			}
 		}()
 
@@ -136,7 +136,7 @@ func FuzzAtomExtractor(f *testing.F) {
 	f.Fuzz(func(t *testing.T, input []byte) {
 		defer func() {
 			if r := recover(); r != nil {
-				t.Logf("Atom extractor recovered from panic: %v", r)
+				t.Errorf("Atom extractor panicked (fuzz input triggered crash): %v", r)
 			}
 		}()
 

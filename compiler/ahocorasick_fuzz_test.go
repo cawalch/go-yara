@@ -31,7 +31,7 @@ func FuzzAhoCorasickPatterns(f *testing.F) {
 	f.Fuzz(func(t *testing.T, data []byte) {
 		defer func() {
 			if r := recover(); r != nil {
-				t.Logf("Aho-Corasick recovered from panic: %v", r)
+				t.Errorf("Aho-Corasick panicked (fuzz input triggered crash): %v", r)
 			}
 		}()
 
@@ -139,7 +139,7 @@ func FuzzAhoCorasickBinary(f *testing.F) {
 	f.Fuzz(func(t *testing.T, data []byte) {
 		defer func() {
 			if r := recover(); r != nil {
-				t.Logf("Aho-Corasick binary recovered from panic: %v", r)
+				t.Errorf("Aho-Corasick binary panicked (fuzz input triggered crash): %v", r)
 			}
 		}()
 
