@@ -613,90 +613,60 @@ func TestEmitterJumpFixup(t *testing.T) {
 func TestEmitterArithmetic(t *testing.T) {
 	emitter := NewEmitter()
 
+	// EmitArithmetic must accept arithmetic opcodes and reject non-arithmetic
+	// ones (returns -1). The previous version of this test marked every case
+	// wantErr:false and only asserted on wantErr, so the -1-on-invalid contract
+	// was never actually verified.
 	tests := []struct {
-		name    string
-		opcode  Opcode
-		wantErr bool
+		name   string
+		opcode Opcode
+		wantOK bool // true => expect a non-negative offset; false => expect -1
 	}{
-		{
-			name:    "valid_arithmetic",
-			opcode:  OpIntAdd,
-			wantErr: false,
-		},
-		{
-			name:    "invalid_arithmetic",
-			opcode:  OpAnd,
-			wantErr: false, // Returns -1 but doesn't error
-		},
+		{name: "valid_int_add", opcode: OpIntAdd, wantOK: true},
+		{name: "invalid_logical_op", opcode: OpAnd, wantOK: false},
+		{name: "invalid_comparison_op", opcode: OpIntEq, wantOK: false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			offset := emitter.EmitArithmetic(tt.opcode, 1, 1)
-			if tt.wantErr && offset >= 0 {
-				t.Errorf("EmitArithmetic() expected error, got offset %d", offset)
+			if tt.wantOK && offset < 0 {
+				t.Errorf("EmitArithmetic(%v) expected non-negative offset, got %d", tt.opcode, offset)
+			}
+			if !tt.wantOK && offset >= 0 {
+				t.Errorf("EmitArithmetic(%v) expected -1 for non-arithmetic op, got %d", tt.opcode, offset)
 			}
 		})
 	}
 }
 
-// TestEmitterComparison tests comparison operation emission
-func TestEmitterComparison(t *testing.T) {
-	emitter := NewEmitter()
-
+// TestEmitterOpCategoryGuards verifies the Comparison and Logical opcode
+// emitters accept in-category opcodes and reject out-of-category ones by
+// returning -1. Consolidated from TestEmitterComparison and TestEmitterLogical,
+// which previously asserted nothing (every case was wantErr:false and the
+// assertion only ran when wantErr was true).
+func TestEmitterOpCategoryGuards(t *testing.T) {
 	tests := []struct {
 		name    string
-		opcode  Opcode
-		wantErr bool
+		emit    func(e *Emitter, op Opcode) int
+		valid   Opcode
+		invalid Opcode
 	}{
-		{
-			name:    "valid_comparison",
-			opcode:  OpIntEq,
-			wantErr: false,
-		},
-		{
-			name:    "invalid_comparison",
-			opcode:  OpAnd,
-			wantErr: false, // Returns -1 but doesn't error
-		},
+		{name: "comparison", emit: func(e *Emitter, op Opcode) int { return e.EmitComparison(op, 1, 1) }, valid: OpIntEq, invalid: OpAnd},
+		{name: "logical", emit: func(e *Emitter, op Opcode) int { return e.EmitLogical(op, 1, 1) }, valid: OpAnd, invalid: OpIntAdd},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			offset := emitter.EmitComparison(tt.opcode, 1, 1)
-			if tt.wantErr && offset >= 0 {
-				t.Errorf("EmitComparison() expected error, got offset %d", offset)
+		t.Run(tt.name+"_valid", func(t *testing.T) {
+			e := NewEmitter()
+			if off := tt.emit(e, tt.valid); off < 0 {
+				t.Errorf("expected non-negative offset for valid op %v, got %d", tt.valid, off)
 			}
 		})
-	}
-}
-
-// TestEmitterLogical tests logical operation emission
-func TestEmitterLogical(t *testing.T) {
-	emitter := NewEmitter()
-
-	tests := []struct {
-		name    string
-		opcode  Opcode
-		wantErr bool
-	}{
-		{
-			name:    "valid_logical",
-			opcode:  OpAnd,
-			wantErr: false,
-		},
-		{
-			name:    "invalid_logical",
-			opcode:  OpIntAdd,
-			wantErr: false, // Returns -1 but doesn't error
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			offset := emitter.EmitLogical(tt.opcode, 1, 1)
-			if tt.wantErr && offset >= 0 {
-				t.Errorf("EmitLogical() expected error, got offset %d", offset)
+		t.Run(tt.name+"_invalid", func(t *testing.T) {
+			e := NewEmitter()
+			if off := tt.emit(e, tt.invalid); off >= 0 {
+				t.Errorf("expected -1 for out-of-category op %v, got %d", tt.invalid, off)
 			}
 		})
 	}
@@ -710,22 +680,10 @@ func TestEmitterPushVariousSizes(t *testing.T) {
 		name  string
 		value uint64
 	}{
-		{
-			name:  "8-bit_value",
-			value: 0xFF,
-		},
-		{
-			name:  "16-bit_value",
-			value: 0xFFFF,
-		},
-		{
-			name:  "32-bit_value",
-			value: 0xFFFFFFFF,
-		},
-		{
-			name:  "64-bit_value",
-			value: 0xFFFFFFFFFFFFFFFF,
-		},
+		{name: "8-bit_value", value: 0xFF},
+		{name: "16-bit_value", value: 0xFFFF},
+		{name: "32-bit_value", value: 0xFFFFFFFF},
+		{name: "64-bit_value", value: 0xFFFFFFFFFFFFFFFF},
 	}
 
 	for _, tt := range tests {
