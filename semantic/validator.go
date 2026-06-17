@@ -347,13 +347,16 @@ func (v *Validator) validateIdentifierExpression(ident *ast.Identifier) (*TypeIn
 
 // validateQuantifierSymbol handles the special $ symbol in quantifiers
 func (v *Validator) validateQuantifierSymbol(ident *ast.Identifier) (*TypeInfo, []error) {
-	// Special case for $ in quantifiers like "for any of them : ($)"
-	// Create a synthetic symbol for this special case to maintain consistency
+	// "$" refers to the current string in a for-loop body (for any of them : ($))
+	// or to the rule's anonymous string set in other quantifier contexts. In a
+	// condition a string identifier evaluates to boolean (whether it matched),
+	// so it must be typed as SymbolString, not SymbolVariable. Typing it as a
+	// variable (integer) previously made "$ at <offset>" and "$ in (range)"
+	// fail semantic checks that require a string (boolean) left operand.
 	if symbol, exists := v.symbolTable.LookupInCurrentScope("$"); exists {
 		return v.getTypeFromSymbol(symbol), nil
 	}
-	// Define a synthetic symbol for the quantifier context
-	if err := v.symbolTable.DefineVariable("$", ident.Position(), SymbolVariable); err != nil {
+	if err := v.symbolTable.DefineVariable("$", ident.Position(), SymbolString); err != nil {
 		return &TypeInfo{DataType: TypeUnknown}, []error{&Error{
 			Message:  err.Error(),
 			Position: ident.Position(),

@@ -285,3 +285,69 @@ rule ForNone {
 		}
 	})
 }
+
+// TestForLoopPlaceholderAtAndIn is the regression test for "$ at <offset>" and
+// "$ in (range)" inside a for-loop body. Previously the bare "$" was rejected
+// by the semantic AT check (typed as a variable/integer rather than a string)
+// and by the compiler's string-offset lookup ("$" has no fixed offset), so
+// neither constraint form could appear in a for-loop body. With the loop-var
+// resolution from #144, "$" must resolve to the current iteration's string
+// for OpFoundAt/OpFoundIn just as it does for OpFound. Data layout: "foo" at
+// offset 0, "bar" at offset 4.
+func TestForLoopPlaceholderAtAndIn(t *testing.T) {
+	strs := `$a = "foo" $b = "bar"`
+	data := []byte("foo bar here")
+
+	cases := []struct {
+		name      string
+		condition string
+		want      bool
+	}{
+		// "$ at <offset>"
+		{name: "at_0_foo_matches", condition: `for any of ($a,$b) : ($ at 0)`, want: true},
+		{name: "at_4_bar_matches", condition: `for any of ($a,$b) : ($ at 4)`, want: true},
+		{name: "at_8_neither", condition: `for any of ($a,$b) : ($ at 8)`, want: false},
+		// for all : ($ at 0) must be FALSE because $b (bar) is not at offset 0.
+		{name: "for_all_at_0_false", condition: `for all of ($a,$b) : ($ at 0)`, want: false},
+
+		// "$ in (min..max)"
+		{name: "in_0_3_foo_qualifies", condition: `for any of ($a,$b) : ($ in (0..3))`, want: true},
+		{name: "in_5_10_neither", condition: `for any of ($a,$b) : ($ in (5..10))`, want: false},
+		{name: "for_all_in_0_10_both", condition: `for all of ($a,$b) : ($ in (0..10))`, want: true},
+		{name: "for_2_in_0_3_only_one", condition: `for 2 of ($a,$b) : ($ in (0..3))`, want: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			src := "rule t { strings: " + strs + " condition: " + tc.condition + " }"
+			compiler := NewCompiler()
+			program, err := compiler.CompileSource(src)
+			if err != nil {
+				t.Fatalf("compile %q: %v", tc.condition, err)
+			}
+			ok, err := evaluateRule(program.Rules[0], program, data)
+			if err != nil {
+				t.Fatalf("evaluate %q: %v", tc.condition, err)
+			}
+			if ok != tc.want {
+				t.Fatalf("condition %q on %q: matched=%v, want %v", tc.condition, data, ok, tc.want)
+			}
+		})
+	}
+
+	// Guard: fixed-name forms must still work (no regression in the offset path).
+	t.Run("fixed_name_at_and_in_unaffected", func(t *testing.T) {
+		src := `rule t { strings: $a = "foo" $b = "bar" condition: $a at 0 and $b in (0..10) }`
+		program, err := NewCompiler().CompileSource(src)
+		if err != nil {
+			t.Fatalf("compile: %v", err)
+		}
+		ok, err := evaluateRule(program.Rules[0], program, data)
+		if err != nil {
+			t.Fatalf("evaluate: %v", err)
+		}
+		if !ok {
+			t.Fatalf("fixed-name $a at / $b in regressed")
+		}
+	})
+}
