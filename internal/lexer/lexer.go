@@ -28,18 +28,22 @@ func (l *Lexer) getPeekChar() byte {
 // isStringLengthContext checks if the current ! should be treated as the
 // StringLength operator.
 //
-// Upstream YARA lexes '!' + an identifier run as a single _STRING_LENGTH_ token
-// via the regex `!({letter}|{digit}|_)*`. '!' is documented ONLY as the
-// string-length operator (logical NOT is the keyword `not`), so "!a", "!foo",
-// "!$a" are all string length. Previously go-yara only treated '!' as
-// StringLength when followed by '$', so "!a" lexed as NOT + IDENTIFIER("a")
-// and parsed as logical-not-of-an-identifier ("undefined identifier: a").
+// Upstream YARA lexes '!' + an identifier run as a single _STRING_LENGTH_
+// token via the regex `!({letter}|{digit}|_)*` — the '*' means a BARE '!' also
+// matches, becoming the string-length placeholder for the current iteration's
+// string in a for-loop body ("for all of them : (! > 3)"). '!' is documented
+// ONLY as the string-length operator (logical NOT is the keyword `not`).
 //
-// We now match the upstream behavior: treat '!' as StringLength when followed
-// by '$', a letter, digit, or underscore. '!' followed by anything else —
-// '(' (grouping), whitespace + expression, etc. — remains logical NOT, so
-// "!($a and $b)" still works. (Note: writing "!true" for logical not is
-// non-standard YARA; use the "not" keyword.)
+// History: go-yara originally treated '!' as StringLength only when followed
+// by '$', so "!a" lexed as NOT + IDENTIFIER and the bare placeholder never
+// parsed. #147 extended it to identifier characters so "!a" works. This change
+// completes the upstream match: a bare '!' (no following identifier) is also
+// StringLength — the loop placeholder.
+//
+// The one exception preserved for backward compatibility is '!' followed by
+// '(': that remains logical NOT, so "!($a and $b)" keeps working. Every other
+// following character (comparison operator, ')', EOF, etc.) makes '!' the
+// StringLength placeholder, matching upstream.
 func (l *Lexer) isStringLengthContext() bool {
 	snapshot := l.reader.SavePosition()
 	defer l.reader.RestorePosition(snapshot)
@@ -50,12 +54,10 @@ func (l *Lexer) isStringLengthContext() bool {
 		l.reader.ReadChar()
 	}
 
-	peekChar := l.reader.PeekChar()
-	return peekChar == '$' ||
-		(peekChar >= 'a' && peekChar <= 'z') ||
-		(peekChar >= 'A' && peekChar <= 'Z') ||
-		(peekChar >= '0' && peekChar <= '9') ||
-		peekChar == '_'
+	// '!' followed by '(' is logical NOT of a grouped expression; everything
+	// else is the string-length operator (named, $-prefixed, or bare
+	// placeholder).
+	return l.reader.PeekChar() != '('
 }
 
 // isRegexAllowed returns true when regex literals are valid in the current context.
