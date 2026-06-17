@@ -351,3 +351,73 @@ func TestForLoopPlaceholderAtAndIn(t *testing.T) {
 		}
 	})
 }
+
+// TestForLoopPlaceholderCountAndOffset is the regression test for the bare
+// "#" (count) and "@" (offset) placeholders inside a for-loop body. Per the
+// YARA spec ("for all of them : (# > 3)", "for all of ($a*) : (@ > @b)")
+// these refer to the count / first-offset of the current iteration's string.
+// Previously the parser rejected them ("string operations require a string
+// identifier"). Data layout: "foo" at offsets 0 and 8 (count 2), "bar" at
+// offset 4 (count 1).
+func TestForLoopPlaceholderCountAndOffset(t *testing.T) {
+	strs := `$a = "foo" $b = "bar"`
+	data := []byte("foo bar xxx foo") // foo at 0,8; bar at 4
+
+	cases := []struct {
+		name      string
+		condition string
+		want      bool
+	}{
+		// "#" — count of current string.
+		{name: "count_gt_1_any_a_qualifies", condition: `for any of ($a,$b) : (# > 1)`, want: true},
+		{name: "count_gt_5_any_none", condition: `for any of ($a,$b) : (# > 5)`, want: false},
+		{name: "count_gt_0_all_both", condition: `for all of ($a,$b) : (# > 0)`, want: true},
+		{name: "count_gt_1_all_b_has_1", condition: `for all of ($a,$b) : (# > 1)`, want: false},
+		{name: "count_gt_1_for_1_only_a", condition: `for 1 of ($a,$b) : (# > 1)`, want: true},
+		{name: "count_gt_1_for_2_need_both", condition: `for 2 of ($a,$b) : (# > 1)`, want: false},
+
+		// "@" — first offset of current string.
+		{name: "offset_eq_0_any_a_at_0", condition: `for any of ($a,$b) : (@ == 0)`, want: true},
+		{name: "offset_eq_4_any_b_at_4", condition: `for any of ($a,$b) : (@ == 4)`, want: true},
+		{name: "offset_eq_8_any_none_first", condition: `for any of ($a,$b) : (@ == 8)`, want: false},
+		{name: "offset_lt_100_all_both", condition: `for all of ($a,$b) : (@ < 100)`, want: true},
+		{name: "offset_eq_0_all_b_not_0", condition: `for all of ($a,$b) : (@ == 0)`, want: false},
+
+		// Spec example: "for all of them : (# > 3)".
+		{name: "spec_count_gt_3_all_false", condition: `for all of them : (# > 3)`, want: false},
+		{name: "spec_count_gt_0_all_true", condition: `for all of them : (# > 0)`, want: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			src := "rule t { strings: " + strs + " condition: " + tc.condition + " }"
+			program, err := NewCompiler().CompileSource(src)
+			if err != nil {
+				t.Fatalf("compile %q: %v", tc.condition, err)
+			}
+			ok, err := evaluateRule(program.Rules[0], program, data)
+			if err != nil {
+				t.Fatalf("evaluate %q: %v", tc.condition, err)
+			}
+			if ok != tc.want {
+				t.Fatalf("condition %q on %q: matched=%v, want %v", tc.condition, data, ok, tc.want)
+			}
+		})
+	}
+
+	// Guard: explicit-name #a / @a must still work (no regression).
+	t.Run("explicit_name_count_offset_unaffected", func(t *testing.T) {
+		src := `rule t { strings: $a = "foo" condition: #a > 1 and @a == 0 }`
+		program, err := NewCompiler().CompileSource(src)
+		if err != nil {
+			t.Fatalf("compile: %v", err)
+		}
+		ok, err := evaluateRule(program.Rules[0], program, data)
+		if err != nil {
+			t.Fatalf("evaluate: %v", err)
+		}
+		if !ok {
+			t.Fatalf("explicit #a / @a regressed")
+		}
+	})
+}

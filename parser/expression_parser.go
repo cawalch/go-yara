@@ -552,15 +552,21 @@ func (p *ExpressionParser) parseStringOperation() (ast.Expression, error) {
 	pos := p.current.Pos
 	p.nextToken()
 
+	// Bare "#" or "@" with no following identifier is the for-loop
+	// placeholder: it refers to the count/offset of the current iteration's
+	// string ("for all of them : (# > 3)", "for all of them : (@ > @b)").
+	// Represent it as the "$" identifier so downstream stages resolve it
+	// via the loop-variable slot, exactly like the bare "$" placeholder.
+	var stringIdent *ast.Identifier
 	if !p.currentTokenIs(token.StringIdentifier) && !p.currentTokenIs(token.IDENTIFIER) {
-		return nil, fmt.Errorf("string operations require a string identifier, got token: %v", p.current.Type)
+		stringIdent = &ast.Identifier{Name: "$", Pos: pos}
+	} else {
+		stringIdent = &ast.Identifier{
+			Name: p.current.Literal,
+			Pos:  p.current.Pos,
+		}
+		p.nextToken()
 	}
-
-	stringIdent := &ast.Identifier{
-		Name: p.current.Literal,
-		Pos:  p.current.Pos,
-	}
-	p.nextToken()
 
 	// Handle optional index [i]
 	var index ast.Expression
