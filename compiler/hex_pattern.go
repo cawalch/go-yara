@@ -174,6 +174,14 @@ func parseHexAlternatives(hexStr string, pos int) ([][]HexPatternToken, int, err
 		if err != nil {
 			return nil, pos, err
 		}
+		// Upstream YARA's hex grammar requires every alternative branch to
+		// contain at least one token ('alternatives : tokens | alternatives
+		// '|' tokens'). Empty branches — from (), (|), (DE|), (|DE), or a
+		// whitespace-only group — are invalid and previously compiled
+		// silently into a degenerate HexTokenAlt with empty alternatives.
+		if len(tokens) == 0 {
+			return nil, pos, fmt.Errorf("empty alternative in hex group at offset %d", pos)
+		}
 		alts = append(alts, tokens)
 	}
 	return alts, end + 1, nil
