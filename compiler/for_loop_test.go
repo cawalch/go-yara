@@ -421,3 +421,65 @@ func TestForLoopPlaceholderCountAndOffset(t *testing.T) {
 		}
 	})
 }
+
+// TestForLoopPlaceholderLength is the regression test for the bare "!"
+// (length) placeholder inside a for-loop body, completing the placeholder
+// set alongside "$" (#144), "#"/"@" (#146). Per the YARA spec "!" is the
+// string-length operator and upstream's lexer regex `!({letter}|{digit}|_)*`
+// (with '*') matches a bare "!" as the length of the current iteration's
+// string (e.g. "for all of them : (! > 3)"). Previously the bare form failed
+// to parse because go-yara's lexer only emitted StringLength for "!" followed
+// by an identifier character. Data: $a="foo" (len 3), $b="hello" (len 5).
+func TestForLoopPlaceholderLength(t *testing.T) {
+	strs := `$a = "foo" $b = "hello"`
+	data := []byte("foo hello") // both present
+
+	cases := []struct {
+		name      string
+		condition string
+		want      bool
+	}{
+		// "!" — length of current string.
+		{name: "len_gt_3_any_b_qualifies", condition: `for any of ($a,$b) : (! > 3)`, want: true},
+		{name: "len_gt_10_any_none", condition: `for any of ($a,$b) : (! > 10)`, want: false},
+		{name: "len_gt_0_all_both", condition: `for all of ($a,$b) : (! > 0)`, want: true},
+		{name: "len_gt_3_all_a_is_3", condition: `for all of ($a,$b) : (! > 3)`, want: false},
+		{name: "len_eq_5_for_1_only_b", condition: `for 1 of ($a,$b) : (! == 5)`, want: true},
+		{name: "len_eq_5_for_2_need_both", condition: `for 2 of ($a,$b) : (! == 5)`, want: false},
+		{name: "len_eq_3_any_a", condition: `for any of ($a,$b) : (! == 3)`, want: true},
+
+		// Over "them".
+		{name: "them_len_gt_2_all", condition: `for all of them : (! > 2)`, want: true},
+		{name: "them_len_gt_4_all_false", condition: `for all of them : (! > 4)`, want: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			src := "rule t { strings: " + strs + " condition: " + tc.condition + " }"
+			program, err := NewCompiler().CompileSource(src)
+			if err != nil {
+				t.Fatalf("compile %q: %v", tc.condition, err)
+			}
+			ok, err := evaluateRule(program.Rules[0], program, data)
+			if err != nil {
+				t.Fatalf("evaluate %q: %v", tc.condition, err)
+			}
+			if ok != tc.want {
+				t.Fatalf("condition %q on %q: matched=%v, want %v", tc.condition, data, ok, tc.want)
+			}
+		})
+	}
+
+	// Guard: named "!a" / "!$a" still work (no regression from #147), and
+	// "!(...)" grouping remains logical NOT.
+	t.Run("named_and_grouping_unaffected", func(t *testing.T) {
+		src := `rule t { strings: $a = "foo" condition: !a == 3 and !$a == 3 and !($a) }`
+		program, err := NewCompiler().CompileSource(src)
+		if err != nil {
+			t.Fatalf("compile: %v", err)
+		}
+		// $a absent: !a==3 is false, so the whole conjunction is false; but it
+		// must COMPILE (the regression is about compilation, not the value).
+		_, _ = evaluateRule(program.Rules[0], program, data)
+	})
+}

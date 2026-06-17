@@ -1018,12 +1018,20 @@ func (cc *ConditionCompiler) compileStringLength(strLen *ast.StringLength) error
 		return errors.New("STRING LENGTH (!) expects a string identifier operand")
 	}
 
-	offset, exists := cc.findStringOffset(id.Name)
-	if !exists {
-		return fmt.Errorf("undefined string identifier for string length operator: %s", id.Name)
+	// "!" with no name is the for-loop placeholder: length of the current
+	// iteration's string. Load its StringRef from the active loop variable
+	// slot instead of looking up a fixed offset ("$" has none). Mirrors the
+	// handling of "#"/"@" placeholders in compileStringCount/compileStringOffset.
+	if id.Name == "$" && len(cc.loopVarSlots) > 0 && cc.loopVarSlots[len(cc.loopVarSlots)-1] >= 0 {
+		slot := cc.loopVarSlots[len(cc.loopVarSlots)-1]
+		cc.emitter.EmitOpcodeWithOperand(OpLoadVar, Operand{Type: OperandImmediate32, Value: uint64(slot)}, strLen.Pos.Line, strLen.Pos.Column)
+	} else {
+		offset, exists := cc.findStringOffset(id.Name)
+		if !exists {
+			return fmt.Errorf("undefined string identifier for string length operator: %s", id.Name)
+		}
+		cc.emitStringIdentifier(offset, id.Name, strLen.Pos.Line, strLen.Pos.Column)
 	}
-
-	cc.emitStringIdentifier(offset, id.Name, strLen.Pos.Line, strLen.Pos.Column)
 
 	// If there's an index, compile it and push it
 	if strLen.Index != nil {
