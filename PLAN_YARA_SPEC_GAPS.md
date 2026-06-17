@@ -101,10 +101,11 @@ This document tracks gaps between go-yara and the official YARA specification (Y
 | `istartswith` | ✅ | Case-insensitive startswith |
 | `iendswith` | ✅ | Case-insensitive endswith |
 | `iequals` | ✅ | Case-insensitive equals |
-| `uint8`, `uint16`, `uint32`, `uint64` | ⚠️ | Basic form `uint8(0)` works; `.`, `at`, `base` modifiers not parsed |
-| `int8`, `int16`, `int32`, `int64` | ⚠️ | Basic form works; `.`, `at`, `base` modifiers not parsed |
-| `uint8be`, `uint16be`, `uint32be`, `uint64be` | ⚠️ | Big-endian basic form; `.`, `at`, `base` modifiers not parsed |
-| `int8be`, `int16be`, `int32be`, `int64be` | ⚠️ | Big-endian basic form; `.`, `at`, `base` modifiers not parsed |
+| `uint8`, `uint16`, `uint32` | ✅ | `OpReadInt+3..5`; single integer offset arg, verified end-to-end |
+| `int8`, `int16`, `int32` | ✅ | `OpReadInt+0..2`; signed variants |
+| `uint8be`, `uint16be`, `uint32be` | ✅ | `OpReadInt+9..11`; big-endian via `executeReadIntOpBE` |
+| `int8be`, `int16be`, `int32be` | ✅ | `OpReadInt+6..8`; signed big-endian |
+| `int64`, `uint64`, `int64be`, `uint64be` | 📝 | go-yara extension — not in upstream YARA 4.5.3 (its lexer matches only `u?int(8|16|32)(be)?`). Implemented as `OpReadInt+12..15` |
 
 ---
 
@@ -258,7 +259,7 @@ This document tracks gaps between go-yara and the official YARA specification (Y
 | Unicode flag `(?u)` | ✅ | Implemented |
 This document tracks gaps between go-yara and the official YARA specification (YARA 4.5.3). It is updated as features are implemented and verified. The analysis is based on comparing the go-yara implementation with the YARA documentation at `yara/docs/writingrules.rst` and code review of the YARA source.
 
-**Summary**: ✅ 14/15 implemented · ⚠️ 4/15 partial · ❌ 1/15 missing
+**Summary**: ✅ 15/15 implemented · ⚠️ 0 partial · ❌ 1/15 missing (module system). The 64-bit `int64/uint64` data-read variants are a go-yara extension (📝), not an upstream YARA feature.
 
 ---
 
