@@ -893,79 +893,43 @@ func (v *Validator) VisitLengthOf(_ *ast.LengthOf) any {
 
 // validateStringLengthExpression validates string length expressions (!a or !a[i])
 func (v *Validator) validateStringLengthExpression(stringLength *ast.StringLength) (*TypeInfo, []error) {
-	var errors []error
-
-	// Validate the string identifier
-	if err := v.validateStringIdentifier(stringLength.String); err != nil {
-		errors = append(errors, err)
-	}
-
-	// If there's an index, validate it
-	if stringLength.Index != nil {
-		indexType, indexErrs := v.validateExpression(stringLength.Index)
-		errors = append(errors, indexErrs...)
-
-		if indexType != nil && indexType.DataType != TypeInteger {
-			errors = append(errors, &Error{
-				Message:  "string length index must be integer",
-				Position: stringLength.Index.Position(),
-			})
-		}
-	}
-
-	// String length expressions return integers
-	return &TypeInfo{DataType: TypeInteger, IntegerType: Uint64Type}, errors
+	return v.validateStringIndexExpression(stringLength.String, stringLength.Index, "length")
 }
 
 // validateStringOffsetExpression validates string offset expressions (@a or @a[i])
 func (v *Validator) validateStringOffsetExpression(stringOffset *ast.StringOffset) (*TypeInfo, []error) {
-	var errors []error
-
-	// Validate the string identifier
-	if err := v.validateStringIdentifier(stringOffset.String); err != nil {
-		errors = append(errors, err)
-	}
-
-	// If there's an index, validate it
-	if stringOffset.Index != nil {
-		indexType, indexErrs := v.validateExpression(stringOffset.Index)
-		errors = append(errors, indexErrs...)
-
-		if indexType != nil && indexType.DataType != TypeInteger {
-			errors = append(errors, &Error{
-				Message:  "string offset index must be integer",
-				Position: stringOffset.Index.Position(),
-			})
-		}
-	}
-
-	// String offset expressions return integers
-	return &TypeInfo{DataType: TypeInteger, IntegerType: Uint64Type}, errors
+	return v.validateStringIndexExpression(stringOffset.String, stringOffset.Index, "offset")
 }
 
 // validateStringCountExpression validates string count expressions (#a or #a[i])
 func (v *Validator) validateStringCountExpression(stringCount *ast.StringCount) (*TypeInfo, []error) {
+	return v.validateStringIndexExpression(stringCount.String, stringCount.Index, "count")
+}
+
+// validateStringIndexExpression is the shared body for the string length / offset /
+// count validators. The three AST node types (StringLength, StringOffset,
+// StringCount) carry the same String and Index fields with the same semantics,
+// so their validation differs only in the operator name used in the index-type
+// error message. Returns TypeInteger, matching the YARA semantics of !a / @a / #a.
+func (v *Validator) validateStringIndexExpression(str ast.Expression, index ast.Expression, opName string) (*TypeInfo, []error) {
 	var errors []error
 
-	// Validate the string identifier
-	if err := v.validateStringIdentifier(stringCount.String); err != nil {
+	if err := v.validateStringIdentifier(str); err != nil {
 		errors = append(errors, err)
 	}
 
-	// If there's an index, validate it
-	if stringCount.Index != nil {
-		indexType, indexErrs := v.validateExpression(stringCount.Index)
+	if index != nil {
+		indexType, indexErrs := v.validateExpression(index)
 		errors = append(errors, indexErrs...)
 
 		if indexType != nil && indexType.DataType != TypeInteger {
 			errors = append(errors, &Error{
-				Message:  "string count index must be integer",
-				Position: stringCount.Index.Position(),
+				Message:  "string " + opName + " index must be integer",
+				Position: index.Position(),
 			})
 		}
 	}
 
-	// String count expressions return integers
 	return &TypeInfo{DataType: TypeInteger, IntegerType: Uint64Type}, errors
 }
 
