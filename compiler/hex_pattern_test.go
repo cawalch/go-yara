@@ -322,3 +322,68 @@ func TestFindAnchorByte(t *testing.T) {
 		})
 	}
 }
+
+// TestParseHexPatternRejectsEmptyAlternatives is a regression test for empty
+// alternative branches in hex groups. Upstream YARA's hex grammar requires
+// every alternative to contain at least one token ('alternatives : tokens |
+// alternatives '|' tokens'), so (), (|), (DE|), (|DE), and whitespace-only
+// groups are invalid. Previously these compiled silently into a degenerate
+// HexTokenAlt with empty alternatives; one such input ({()()() (00 00 (|) )})
+// also triggered a slice-out-of-bounds panic (fixed in #141) before the
+// panic guard landed. They must now produce a clean compile error.
+func TestParseHexPatternRejectsEmptyAlternatives(t *testing.T) {
+	sc := &StringCompiler{}
+
+	for _, tt := range []struct {
+		name    string
+		pattern string
+	}{
+		{"empty group", "{ () }"},
+		{"empty alt both", "{ (|) }"},
+		{"empty alt left", "{ (|DE AD) }"},
+		{"empty alt right", "{ (DE AD|) }"},
+		{"whitespace only group", "{ (   ) }"},
+		{"nested empty alt", "{ ()()() (00 00 (|) ) }"}, // PR #141 crash input
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := sc.parseHexPattern(tt.pattern)
+			if err == nil {
+				t.Fatalf("parseHexPattern(%q) succeeded; expected an error for an empty alternative", tt.pattern)
+			}
+		})
+	}
+}
+
+// TestParseHexPatternAcceptsValidAlternatives guards against over-rejecting:
+// single-branch groups and nested alternatives must still compile.
+func TestParseHexPatternAcceptsValidAlternatives(t *testing.T) {
+	sc := &StringCompiler{}
+
+	for _, tt := range []struct {
+		name         string
+		pattern      string
+		wantAltCount int // number of top-level alternative branches expected
+	}{
+		{"single branch group", "{ (DE AD) }", 1},
+		{"two alternatives", "{ (DE|AD) }", 2},
+		{"three alternatives", "{ (DE|AD|BE) }", 3},
+		{"nested alternatives", "{ (AA (BB|CC)) }", 1}, // outer group has 1 branch (the nested alt is a sub-token)
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			pat, err := sc.parseHexPattern(tt.pattern)
+			if err != nil {
+				t.Fatalf("parseHexPattern(%q) error = %v", tt.pattern, err)
+			}
+			// Find the HexTokenAlt token and check its branch count.
+			for _, tok := range pat.Tokens {
+				if tok.Kind == HexTokenAlt {
+					if len(tok.Alternatives) != tt.wantAltCount {
+						t.Errorf("alternatives: got %d branches, want %d", len(tok.Alternatives), tt.wantAltCount)
+					}
+					return
+				}
+			}
+			t.Fatalf("no HexTokenAlt found in parsed pattern")
+		})
+	}
+}
