@@ -30,7 +30,7 @@ func FuzzStringScanner(f *testing.F) {
 	f.Fuzz(func(t *testing.T, input []byte) {
 		defer func() {
 			if r := recover(); r != nil {
-				t.Logf("String scanner recovered from panic: %v", r)
+				t.Errorf("String scanner panicked (fuzz input triggered crash): %v", r)
 			}
 		}()
 
@@ -87,7 +87,7 @@ func FuzzRegexScanner(f *testing.F) {
 	f.Fuzz(func(t *testing.T, input []byte) {
 		defer func() {
 			if r := recover(); r != nil {
-				t.Logf("Regex scanner recovered from panic: %v", r)
+				t.Errorf("Regex scanner panicked (fuzz input triggered crash): %v", r)
 			}
 		}()
 

@@ -112,7 +112,7 @@ func FuzzConditionCompiler(f *testing.F) {
 	f.Fuzz(func(t *testing.T, input []byte) {
 		defer func() {
 			if r := recover(); r != nil {
-				t.Logf("Condition compiler recovered from panic: %v", r)
+				t.Errorf("Condition compiler panicked (fuzz input triggered crash): %v", r)
 			}
 		}()
 
@@ -190,7 +190,7 @@ func FuzzConditionOperatorPrecedence(f *testing.F) {
 	f.Fuzz(func(t *testing.T, input []byte) {
 		defer func() {
 			if r := recover(); r != nil {
-				t.Logf("Operator precedence fuzz recovered from panic: %v", r)
+				t.Errorf("Operator precedence fuzz panicked (fuzz input triggered crash): %v", r)
 			}
 		}()
 
@@ -266,7 +266,7 @@ func FuzzStringOperators(f *testing.F) {
 	f.Fuzz(func(t *testing.T, input []byte) {
 		defer func() {
 			if r := recover(); r != nil {
-				t.Logf("String operators fuzz recovered from panic: %v", r)
+				t.Errorf("String operators fuzz panicked (fuzz input triggered crash): %v", r)
 			}
 		}()
 
@@ -339,7 +339,7 @@ func FuzzOfExpressions(f *testing.F) {
 	f.Fuzz(func(t *testing.T, input []byte) {
 		defer func() {
 			if r := recover(); r != nil {
-				t.Logf("Of-expressions fuzz recovered from panic: %v", r)
+				t.Errorf("Of-expressions fuzz panicked (fuzz input triggered crash): %v", r)
 			}
 		}()
 
@@ -408,7 +408,7 @@ func FuzzForLoops(f *testing.F) {
 	f.Fuzz(func(t *testing.T, input []byte) {
 		defer func() {
 			if r := recover(); r != nil {
-				t.Logf("For-loops fuzz recovered from panic: %v", r)
+				t.Errorf("For-loops fuzz panicked (fuzz input triggered crash): %v", r)
 			}
 		}()
 
@@ -492,7 +492,7 @@ func FuzzBuiltinFunctions(f *testing.F) {
 	f.Fuzz(func(t *testing.T, input []byte) {
 		defer func() {
 			if r := recover(); r != nil {
-				t.Logf("Builtin functions fuzz recovered from panic: %v", r)
+				t.Errorf("Builtin functions fuzz panicked (fuzz input triggered crash): %v", r)
 			}
 		}()
 

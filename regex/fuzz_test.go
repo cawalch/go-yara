@@ -46,7 +46,7 @@ func FuzzRegexParser(f *testing.F) {
 	f.Fuzz(func(t *testing.T, input []byte) {
 		defer func() {
 			if r := recover(); r != nil {
-				t.Logf("Regex parser recovered from panic: %v", r)
+				t.Errorf("Regex parser panicked (fuzz input triggered crash): %v", r)
 			}
 		}()
 
@@ -79,7 +79,7 @@ func FuzzRegexVM(f *testing.F) {
 	f.Fuzz(func(t *testing.T, data []byte) {
 		defer func() {
 			if r := recover(); r != nil {
-				t.Logf("Regex VM recovered from panic: %v", r)
+				t.Errorf("Regex VM panicked (fuzz input triggered crash): %v", r)
 			}
 		}()
 

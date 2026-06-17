@@ -78,7 +78,7 @@ func FuzzHexPatternParser(f *testing.F) {
 	f.Fuzz(func(t *testing.T, input []byte) {
 		defer func() {
 			if r := recover(); r != nil {
-				t.Logf("Hex pattern parser recovered from panic: %v", r)
+				t.Errorf("Hex pattern parser panicked (fuzz input triggered crash): %v", r)
 			}
 		}()
 
@@ -158,7 +158,7 @@ func FuzzHexPatternJumps(f *testing.F) {
 	f.Fuzz(func(t *testing.T, input []byte) {
 		defer func() {
 			if r := recover(); r != nil {
-				t.Logf("Hex pattern jumps fuzz recovered from panic: %v", r)
+				t.Errorf("Hex pattern jumps fuzz panicked (fuzz input triggered crash): %v", r)
 			}
 		}()
 
@@ -222,7 +222,7 @@ func FuzzHexPatternAlternatives(f *testing.F) {
 	f.Fuzz(func(t *testing.T, input []byte) {
 		defer func() {
 			if r := recover(); r != nil {
-				t.Logf("Hex pattern alternatives fuzz recovered from panic: %v", r)
+				t.Errorf("Hex pattern alternatives fuzz panicked (fuzz input triggered crash): %v", r)
 			}
 		}()
 
@@ -284,7 +284,7 @@ func FuzzHexPatternWildcards(f *testing.F) {
 	f.Fuzz(func(t *testing.T, input []byte) {
 		defer func() {
 			if r := recover(); r != nil {
-				t.Logf("Hex pattern wildcards fuzz recovered from panic: %v", r)
+				t.Errorf("Hex pattern wildcards fuzz panicked (fuzz input triggered crash): %v", r)
 			}
 		}()
 
@@ -342,7 +342,7 @@ func FuzzHexPatternNegation(f *testing.F) {
 	f.Fuzz(func(t *testing.T, input []byte) {
 		defer func() {
 			if r := recover(); r != nil {
-				t.Logf("Hex pattern negation fuzz recovered from panic: %v", r)
+				t.Errorf("Hex pattern negation fuzz panicked (fuzz input triggered crash): %v", r)
 			}
 		}()
 
@@ -398,7 +398,7 @@ func FuzzHexPatternComplex(f *testing.F) {
 	f.Fuzz(func(t *testing.T, input []byte) {
 		defer func() {
 			if r := recover(); r != nil {
-				t.Logf("Hex pattern complex fuzz recovered from panic: %v", r)
+				t.Errorf("Hex pattern complex fuzz panicked (fuzz input triggered crash): %v", r)
 			}
 		}()
 

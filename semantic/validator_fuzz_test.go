@@ -169,7 +169,7 @@ func FuzzSemanticValidator(f *testing.F) {
 	f.Fuzz(func(t *testing.T, input []byte) {
 		defer func() {
 			if r := recover(); r != nil {
-				t.Logf("Semantic validator recovered from panic: %v", r)
+				t.Errorf("Semantic validator panicked (fuzz input triggered crash): %v", r)
 			}
 		}()
 
@@ -365,7 +365,7 @@ func FuzzTypeChecker(f *testing.F) {
 	f.Fuzz(func(t *testing.T, input []byte) {
 		defer func() {
 			if r := recover(); r != nil {
-				t.Logf("Type checker recovered from panic: %v", r)
+				t.Errorf("Type checker panicked (fuzz input triggered crash): %v", r)
 			}
 		}()
 
@@ -568,7 +568,7 @@ func FuzzSymbolTable(f *testing.F) {
 	f.Fuzz(func(t *testing.T, input []byte) {
 		defer func() {
 			if r := recover(); r != nil {
-				t.Logf("Symbol table recovered from panic: %v", r)
+				t.Errorf("Symbol table panicked (fuzz input triggered crash): %v", r)
 			}
 		}()
 

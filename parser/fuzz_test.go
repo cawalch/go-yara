@@ -53,7 +53,7 @@ func FuzzYARAParser(f *testing.F) {
 	f.Fuzz(func(t *testing.T, input []byte) {
 		defer func() {
 			if r := recover(); r != nil {
-				t.Logf("YARA parser recovered from panic: %v", r)
+				t.Errorf("YARA parser panicked (fuzz input triggered crash): %v", r)
 			}
 		}()
 
@@ -158,7 +158,7 @@ func FuzzExpressionParser(f *testing.F) {
 	f.Fuzz(func(t *testing.T, input []byte) {
 		defer func() {
 			if r := recover(); r != nil {
-				t.Logf("Expression parser recovered from panic: %v", r)
+				t.Errorf("Expression parser panicked (fuzz input triggered crash): %v", r)
 			}
 		}()
 

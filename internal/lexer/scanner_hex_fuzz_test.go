@@ -32,7 +32,7 @@ func FuzzHexScanner(f *testing.F) {
 	f.Fuzz(func(t *testing.T, input []byte) {
 		defer func() {
 			if r := recover(); r != nil {
-				t.Logf("Hex scanner recovered from panic: %v", r)
+				t.Errorf("Hex scanner panicked (fuzz input triggered crash): %v", r)
 			}
 		}()
 

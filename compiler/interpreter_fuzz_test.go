@@ -48,7 +48,7 @@ func FuzzInterpreter(f *testing.F) {
 	f.Fuzz(func(t *testing.T, data []byte) {
 		defer func() {
 			if r := recover(); r != nil {
-				t.Logf("Interpreter recovered from panic: %v", r)
+				t.Errorf("Interpreter panicked (fuzz input triggered crash): %v", r)
 			}
 		}()
 
@@ -162,7 +162,7 @@ func FuzzInterpreterMultipleRules(f *testing.F) {
 	f.Fuzz(func(t *testing.T, data []byte) {
 		defer func() {
 			if r := recover(); r != nil {
-				t.Logf("Multiple rules interpreter recovered from panic: %v", r)
+				t.Errorf("Multiple rules interpreter panicked (fuzz input triggered crash): %v", r)
 			}
 		}()
 
@@ -249,7 +249,7 @@ func FuzzInterpreterBytecode(f *testing.F) {
 	f.Fuzz(func(t *testing.T, bytecode []byte) {
 		defer func() {
 			if r := recover(); r != nil {
-				t.Logf("Bytecode interpreter recovered from panic: %v", r)
+				t.Errorf("Bytecode interpreter panicked (fuzz input triggered crash): %v", r)
 			}
 		}()
 
@@ -306,7 +306,7 @@ func FuzzInterpreterStack(f *testing.F) {
 	f.Fuzz(func(t *testing.T, bytecode []byte) {
 		defer func() {
 			if r := recover(); r != nil {
-				t.Logf("Stack interpreter recovered from panic: %v", r)
+				t.Errorf("Stack interpreter panicked (fuzz input triggered crash): %v", r)
 			}
 		}()
 
@@ -363,7 +363,7 @@ func FuzzInterpreterMemory(f *testing.F) {
 	f.Fuzz(func(t *testing.T, bytecode []byte) {
 		defer func() {
 			if r := recover(); r != nil {
-				t.Logf("Memory interpreter recovered from panic: %v", r)
+				t.Errorf("Memory interpreter panicked (fuzz input triggered crash): %v", r)
 			}
 		}()
 
@@ -410,7 +410,7 @@ func FuzzInterpreterMatchContext(f *testing.F) {
 	f.Fuzz(func(t *testing.T, data []byte) {
 		defer func() {
 			if r := recover(); r != nil {
-				t.Logf("Match context interpreter recovered from panic: %v", r)
+				t.Errorf("Match context interpreter panicked (fuzz input triggered crash): %v", r)
 			}
 		}()
 
