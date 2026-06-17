@@ -106,10 +106,34 @@ func (ac *ACAutomaton) addStringToAutomaton(config StringConfig) error {
 
 	// Build trie for pattern matching
 	currentState := int32(0) // Start at root
+	noCase := config.Flags&regex.FlagsNoCase != 0
 
 	for _, b := range config.Data {
-		// Check if transition exists
-		nextState := ac.states[currentState].transitions[b]
+		// For nocase strings the pattern is already lowercased; register both
+		// ASCII cases of each alphabetic byte so the shared automaton fires on
+		// any case. Case-sensitive strings keep a single transition. Because
+		// trie states are shared, a case-sensitive string can end up reachable
+		// via a nocase string's dual transitions; PopulateMatchContext re-verifies
+		// the matched bytes (case-sensitively for case-sensitive strings) to
+		// reject those false candidates.
+		var variants [2]byte
+		n := 1
+		variants[0] = b
+		if noCase {
+			if flipped := flipASCIICase(b); flipped != b {
+				variants[1] = flipped
+				n = 2
+			}
+		}
+
+		// Reuse an existing transition across any variant if present.
+		nextState := int32(-1)
+		for k := 0; k < n; k++ {
+			if t := ac.states[currentState].transitions[variants[k]]; t != -1 {
+				nextState = t
+				break
+			}
+		}
 		if nextState == -1 {
 			// Create new state
 			newState := ACState{
@@ -123,7 +147,12 @@ func (ac *ACAutomaton) addStringToAutomaton(config StringConfig) error {
 			}
 			ac.states = append(ac.states, newState)
 			nextState = int32(len(ac.states) - 1) // #nosec G115
-			ac.states[currentState].transitions[b] = nextState
+		}
+		// Point every variant at the resolved state (skip those already bound).
+		for k := 0; k < n; k++ {
+			if ac.states[currentState].transitions[variants[k]] == -1 {
+				ac.states[currentState].transitions[variants[k]] = nextState
+			}
 		}
 		currentState = nextState
 	}
@@ -506,4 +535,18 @@ func (ac *ACAutomaton) Reset() {
 
 	// Reset compilation state
 	ac.compiled = false
+}
+
+// flipASCIICase returns the opposite-ASCII-case equivalent of b for letters,
+// and b unchanged otherwise. Used to register dual trie transitions for
+// nocase strings (whose pattern bytes are already lowercased).
+func flipASCIICase(b byte) byte {
+	switch {
+	case b >= 'a' && b <= 'z':
+		return b - 32
+	case b >= 'A' && b <= 'Z':
+		return b + 32
+	default:
+		return b
+	}
 }

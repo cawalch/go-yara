@@ -171,9 +171,11 @@ func (cp *CompiledProgram) ScanFile(filename string) (*ScanResult, error) {
 
 // globalMatchEntry is a match routed by integer indices from the shared automaton.
 type globalMatchEntry struct {
-	strID  string // string identifier (e.g. "$a")
-	m      Match  // the match itself
-	isWide bool   // whether this concrete automaton pattern is wide-encoded
+	strID    string // string identifier (e.g. "$a")
+	m        Match  // the match itself
+	isWide   bool   // whether this concrete automaton pattern is wide-encoded
+	isNocase bool   // whether the originating string is nocase
+	pattern  []byte // stored automaton pattern bytes for re-verification
 }
 
 // hasMatchingTag returns true if the rule has at least one tag in the filter.
@@ -337,7 +339,9 @@ func (s *Scanner) extractGlobalMatchesInt(data []byte, globalByRule map[int][]gl
 				Offset:  int64(match.Backtrack),
 				Length:  info.Length,
 			},
-			isWide: (info.Flags & regex.FlagsWide) != 0,
+			isWide:   (info.Flags & regex.FlagsWide) != 0,
+			isNocase: (info.Flags & regex.FlagsNoCase) != 0,
+			pattern:  info.Data,
 		})
 	}
 }
@@ -346,6 +350,13 @@ func (s *Scanner) extractGlobalMatchesInt(data []byte, globalByRule map[int][]gl
 func (s *Scanner) addStaticMatchesInt(rule *CompiledRule, data []byte, entries []globalMatchEntry) {
 	for _, e := range entries {
 		m := e.m
+		// Re-verify the candidate bytes against the stored pattern. The shared
+		// automaton registers both ASCII cases for nocase strings, so a
+		// case-sensitive string whose output state lies on a nocase path could
+		// fire on the wrong case; reject those false candidates here.
+		if !verifyTextMatch(data, m, e.pattern, e.isNocase) {
+			continue
+		}
 		modifiers := rule.StringModifiers[m.Pattern]
 		if matchPassesModifiers(data, m, modifiers, e.isWide) {
 			s.matchCtx.AddMatch(m)

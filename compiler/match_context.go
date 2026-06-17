@@ -40,24 +40,7 @@ func PopulateMatchContext(ctx *MatchContext, rule *CompiledRule, data []byte) {
 
 	if rule.Automaton != nil {
 		for match := range rule.Automaton.SearchIter(data) {
-			if rule.StringKinds != nil && rule.StringKinds[match.StringID] != StringKindText {
-				continue
-			}
-			length := 0
-			isWide := false
-			if match.StringIndex >= 0 && match.StringIndex < len(rule.Automaton.Strings) {
-				info := rule.Automaton.Strings[match.StringIndex]
-				length = info.Length
-				isWide = (info.Flags & regex.FlagsWide) != 0
-			}
-			m := Match{
-				Pattern: match.StringID,
-				Offset:  int64(match.Backtrack),
-				Length:  length,
-			}
-			if matchPassesModifiers(data, m, rule.StringModifiers[match.StringID], isWide) {
-				ctx.AddMatch(m)
-			}
+			acceptAutomatonMatch(ctx, rule, data, match)
 		}
 	}
 
@@ -148,6 +131,78 @@ func addRegexMatchesWithModifiers(ctx *MatchContext, id string, regexInfo RegexP
 	default:
 		addRegexMatches(ctx, id, regexInfo, data, modifiers, baseFlags&^regex.FlagsWide, false)
 	}
+}
+
+// verifyTextMatch confirms the data region at m.Offset matches the stored
+// pattern exactly (case-sensitive strings) or case-insensitively (nocase
+// strings). The Aho-Corasick automaton is a candidate finder: for nocase
+// strings it registers both ASCII cases of each letter, which means a
+// case-sensitive string sharing a trie state could fire on the wrong case.
+// This re-check rejects those false candidates. For legitimate candidates the
+// check is a no-op. For nocase we lowercase both sides: plain nocase patterns
+// are already lowercased, but xor+nocase applies xor after lowercasing so the
+// stored variant bytes may be uppercase. Wide strings are handled
+// transparently because they are byte-interleaved with 0x00 (unaffected by
+// case folding).
+//
+// acceptAutomatonMatch verifies and records a single Aho-Corasick candidate.
+// The automaton is a candidate finder: for nocase strings it registers both
+// ASCII cases of each letter, so a case-sensitive string sharing a trie state
+// can fire on the wrong case. verifyTextMatch rejects those false candidates;
+// matchPassesModifiers then applies remaining modifiers (e.g. fullword).
+//
+//nolint:revive // argument-limit: internal helper
+func acceptAutomatonMatch(ctx *MatchContext, rule *CompiledRule, data []byte, match ACMatch) {
+	if rule.StringKinds != nil && rule.StringKinds[match.StringID] != StringKindText {
+		return
+	}
+	length := 0
+	isWide := false
+	isNocase := false
+	var pattern []byte
+	if match.StringIndex >= 0 && match.StringIndex < len(rule.Automaton.Strings) {
+		info := rule.Automaton.Strings[match.StringIndex]
+		length = info.Length
+		isWide = (info.Flags & regex.FlagsWide) != 0
+		isNocase = (info.Flags & regex.FlagsNoCase) != 0
+		pattern = info.Data
+	}
+	m := Match{
+		Pattern: match.StringID,
+		Offset:  int64(match.Backtrack),
+		Length:  length,
+	}
+	if !verifyTextMatch(data, m, pattern, isNocase) {
+		return
+	}
+	if matchPassesModifiers(data, m, rule.StringModifiers[match.StringID], isWide) {
+		ctx.AddMatch(m)
+	}
+}
+
+//nolint:revive // argument-limit: internal helper
+func verifyTextMatch(data []byte, m Match, pattern []byte, noCase bool) bool {
+	if len(pattern) == 0 || m.Length != len(pattern) {
+		return false
+	}
+	offset := int(m.Offset)
+	if offset < 0 || offset+m.Length > len(data) {
+		return false
+	}
+	if noCase {
+		for i := 0; i < m.Length; i++ {
+			if toLowerTable[data[offset+i]] != toLowerTable[pattern[i]] {
+				return false
+			}
+		}
+		return true
+	}
+	for i := 0; i < m.Length; i++ {
+		if data[offset+i] != pattern[i] {
+			return false
+		}
+	}
+	return true
 }
 
 //nolint:revive // argument-limit: internal helper
