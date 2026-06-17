@@ -44,6 +44,15 @@ type ConditionCompiler struct {
 	stringSetIndex    map[string]int
 	anonymousStrings  []string
 	textStringSets    [][]string
+
+	// loopVarSlots tracks the memory slot for the loop variable of each
+	// enclosing for-loop. For "for any of them : ($)" the slot holds the
+	// current iteration's string identifier, and "$" in the body must load
+	// that slot (OpLoadVar + OpFound) instead of compiling as OpOf against
+	// the whole rule's anonymous set. Without this, "for all of them : ($)"
+	// returns true whenever any string matches, ignoring whether the *current*
+	// string matched. Slots are pushed/popped around the loop body.
+	loopVarSlots []int
 }
 
 func parseSizeLiteral(literal string) (int64, error) {
@@ -404,6 +413,18 @@ func (cc *ConditionCompiler) compileSizeLiteral(lit *ast.Literal) error {
 
 // compileIdentifier compiles an identifier reference
 func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
+	// Inside a for-loop over strings, "$" is the loop placeholder: it must
+	// resolve to the current iteration's string (held in the loop variable's
+	// memory slot) and check whether that specific string matched. This check
+	// must come before the stringOffsets lookup below, which has its own "$"
+	// entry for the rule's anonymous strings and would otherwise capture it.
+	if ident.Name == "$" && len(cc.loopVarSlots) > 0 && cc.loopVarSlots[len(cc.loopVarSlots)-1] >= 0 {
+		slot := cc.loopVarSlots[len(cc.loopVarSlots)-1]
+		cc.emitter.EmitOpcodeWithOperand(OpLoadVar, Operand{Type: OperandImmediate32, Value: uint64(slot)}, ident.Pos.Line, ident.Pos.Column)
+		cc.emitter.EmitOpcode(OpFound, ident.Pos.Line, ident.Pos.Column)
+		return nil
+	}
+
 	if offset, exists := cc.stringOffsets[ident.Name]; exists {
 		cc.emitStringIdentifier(offset, ident.Name, ident.Pos.Line, ident.Pos.Column)
 		cc.emitter.EmitOpcode(OpFound, ident.Pos.Line, ident.Pos.Column)
@@ -460,6 +481,19 @@ func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 }
 
 func (cc *ConditionCompiler) compileAnonymousIdentifier(line, column int) error {
+	// Inside a for-loop over strings, "$" is the loop placeholder: it must
+	// resolve to the current iteration's string identifier (held in the
+	// loop variable's memory slot) and check whether that specific string
+	// matched. Compiling it as OpOf against the whole rule's anonymous set
+	// is the bug: it asks "does any string match?" on every iteration,
+	// inflating the count and making "for all of them : ($)" true whenever
+	// a single string matches.
+	if n := len(cc.loopVarSlots); n > 0 && cc.loopVarSlots[n-1] >= 0 {
+		cc.emitter.EmitOpcodeWithOperand(OpLoadVar, Operand{Type: OperandImmediate32, Value: uint64(cc.loopVarSlots[n-1])}, line, column)
+		cc.emitter.EmitOpcode(OpFound, line, column)
+		return nil
+	}
+
 	cc.emitter.EmitPush(1, line, column)
 	cc.emitter.EmitPush(stringSetAnonymous, line, column)
 	cc.emitter.EmitOpcode(OpOf, line, column)
@@ -1311,7 +1345,7 @@ func (cc *ConditionCompiler) compileForLoop(forLoop *ast.ForLoop) error {
 	// 2. Start Iterator
 	cc.emitter.EmitOpcodeWithOperand(OpIterStartIntRange, Operand{Type: OperandImmediate32, Value: uint64(slots[0])}, forLoop.Pos.Line, forLoop.Pos.Column)
 
-	return cc.compileForLoopBody(forLoop.Quantifier, forLoop.Condition, forLoop.Pos)
+	return cc.compileForLoopBody(forLoop.Quantifier, forLoop.Condition, forLoop.Pos, -1)
 }
 
 // compileForLoopOverTextStrings compiles: for any s in ("text1", "text2") : (...)
@@ -1345,7 +1379,7 @@ func (cc *ConditionCompiler) compileForLoopOverTextStrings(forLoop *ast.ForLoop,
 	// Start iterator with the variable slot
 	cc.emitter.EmitOpcodeWithOperand(OpIterStartTextStringSet, Operand{Type: OperandImmediate32, Value: uint64(slots[0])}, forLoop.Pos.Line, forLoop.Pos.Column)
 
-	return cc.compileForLoopBody(forLoop.Quantifier, forLoop.Condition, forLoop.Pos)
+	return cc.compileForLoopBody(forLoop.Quantifier, forLoop.Condition, forLoop.Pos, slots[0])
 }
 
 // registerTextStringSet registers a text string set and returns its index.
@@ -1423,10 +1457,16 @@ func (cc *ConditionCompiler) compileForLoopOverStrings(forLoop *ast.ForLoop) err
 	cc.emitter.EmitPush(constraintMarker, forLoop.Pos.Line, forLoop.Pos.Column)
 	cc.emitter.EmitOpcodeWithOperand(OpIterStartStringSet, Operand{Type: OperandImmediate32, Value: uint64(slots[0])}, forLoop.Pos.Line, forLoop.Pos.Column)
 
-	return cc.compileForLoopBody(forLoop.Quantifier, forLoop.Condition, forLoop.Pos)
+	return cc.compileForLoopBody(forLoop.Quantifier, forLoop.Condition, forLoop.Pos, slots[0])
 }
 
-func (cc *ConditionCompiler) compileForLoopBody(quantifier string, condition ast.Expression, pos token.Position) error {
+// compileForLoopBody emits the shared loop body and quantifier check used by
+// all for-loop variants. loopVarSlot is the memory slot holding the current
+// iteration's value, or -1 for loops without a string variable (integer-range
+// loops), in which case "$" in the body is invalid.
+//
+//nolint:revive // argument-limit: internal helper
+func (cc *ConditionCompiler) compileForLoopBody(quantifier string, condition ast.Expression, pos token.Position, loopVarSlot int) error {
 	// 1. Check if iterator is empty using OpIterPushTotal + OpJzP
 	cc.emitter.EmitOpcode(OpIterPushTotal, pos.Line, pos.Column)
 	jumpToEnd := cc.emitter.EmitJump(JumpConfig{Opcode: OpJzP, Line: pos.Line, Pos: pos.Column})
@@ -1444,9 +1484,16 @@ func (cc *ConditionCompiler) compileForLoopBody(quantifier string, condition ast
 	}
 
 	// 3. Compile the condition expression
+	// Push the loop variable slot so "$" in the body resolves to the current
+	// iteration's string (OpLoadVar + OpFound) instead of the whole rule's
+	// anonymous set. -1 means no string loop variable (e.g. integer-range
+	// loops), in which case "$" is invalid.
+	cc.loopVarSlots = append(cc.loopVarSlots, loopVarSlot)
 	if err := cc.compileExpression(condition); err != nil {
+		cc.loopVarSlots = cc.loopVarSlots[:len(cc.loopVarSlots)-1]
 		return err
 	}
+	cc.loopVarSlots = cc.loopVarSlots[:len(cc.loopVarSlots)-1]
 
 	// 4. Accumulate condition
 	cc.emitter.EmitOpcode(OpIterCondition, pos.Line, pos.Column)
