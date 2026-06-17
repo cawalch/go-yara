@@ -1046,12 +1046,19 @@ func (cc *ConditionCompiler) compileStringOffset(strOffset *ast.StringOffset) er
 		return errors.New("STRING OFFSET (@) expects a string identifier operand")
 	}
 
-	offset, exists := cc.findStringOffset(id.Name)
-	if !exists {
-		return fmt.Errorf("undefined string identifier for string offset operator: %s", id.Name)
+	// "@" with no name is the for-loop placeholder: first offset of the
+	// current iteration's string. Load its StringRef from the active loop
+	// variable slot instead of looking up a fixed offset ("$" has none).
+	if id.Name == "$" && len(cc.loopVarSlots) > 0 && cc.loopVarSlots[len(cc.loopVarSlots)-1] >= 0 {
+		slot := cc.loopVarSlots[len(cc.loopVarSlots)-1]
+		cc.emitter.EmitOpcodeWithOperand(OpLoadVar, Operand{Type: OperandImmediate32, Value: uint64(slot)}, strOffset.Pos.Line, strOffset.Pos.Column)
+	} else {
+		offset, exists := cc.findStringOffset(id.Name)
+		if !exists {
+			return fmt.Errorf("undefined string identifier for string offset operator: %s", id.Name)
+		}
+		cc.emitStringIdentifier(offset, id.Name, strOffset.Pos.Line, strOffset.Pos.Column)
 	}
-
-	cc.emitStringIdentifier(offset, id.Name, strOffset.Pos.Line, strOffset.Pos.Column)
 
 	// If there's an index, compile it and push it
 	if strOffset.Index != nil {
@@ -1074,12 +1081,20 @@ func (cc *ConditionCompiler) compileStringCount(strCount *ast.StringCount) error
 		return errors.New("STRING COUNT (#) expects a string identifier operand")
 	}
 
-	offset, exists := cc.findStringOffset(id.Name)
-	if !exists {
-		return fmt.Errorf("undefined string identifier for string count operator: %s", id.Name)
+	// "#" with no name is the for-loop placeholder: count occurrences of the
+	// current iteration's string. Load its StringRef from the active loop
+	// variable slot instead of looking up a fixed offset ("$" has none).
+	if id.Name == "$" && len(cc.loopVarSlots) > 0 && cc.loopVarSlots[len(cc.loopVarSlots)-1] >= 0 {
+		slot := cc.loopVarSlots[len(cc.loopVarSlots)-1]
+		cc.emitter.EmitOpcodeWithOperand(OpLoadVar, Operand{Type: OperandImmediate32, Value: uint64(slot)}, strCount.Pos.Line, strCount.Pos.Column)
+	} else {
+		offset, exists := cc.findStringOffset(id.Name)
+		if !exists {
+			return fmt.Errorf("undefined string identifier for string count operator: %s", id.Name)
+		}
+		cc.emitStringIdentifier(offset, id.Name, strCount.Pos.Line, strCount.Pos.Column)
 	}
 
-	cc.emitStringIdentifier(offset, id.Name, strCount.Pos.Line, strCount.Pos.Column)
 	cc.emitter.EmitOpcode(OpCount, strCount.Pos.Line, strCount.Pos.Column)
 	return nil
 }
