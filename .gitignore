@@ -9,6 +9,10 @@ coverage.html
 benchmarks/
 profiles/
 
+# Security scanner outputs
+*.sarif
+gosec.sarif
+
 # LLM documentation (not for version control)
 LINTING_RESULTS.md
 PROGRESS_SUMMARY.md
@@ -39,5 +43,6 @@ testdata/performance/large_*.exe
 testdata/performance/large_*.txt
 testdata/performance/large_*.bin
 
-# LLM/tooling cache
+# Local tool caches
 tmp/.cache/
+.cache/

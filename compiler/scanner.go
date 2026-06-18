@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"math"
@@ -20,6 +21,11 @@ type Scanner struct {
 	ruleResults map[string]bool // reused across calls
 	tagsFilter  map[string]bool // non-empty means: only scan rules with these tags
 	itersmax    int             // max for-loop iterations (0 = unlimited)
+
+	matchDataMax        int
+	matchContextBefore  int
+	matchContextAfter   int
+	matchContextEnabled bool
 
 	externalValues map[string]externalValue
 	externalErr    error
@@ -64,6 +70,33 @@ func WithTagsFilter(tags []string) ScannerOption {
 func WithItersmax(limit int) ScannerOption {
 	return func(scanner *Scanner) {
 		scanner.itersmax = limit
+	}
+}
+
+// WithMatchData includes up to maxBytes of matched data in each reported match.
+// Non-positive values disable matched data evidence.
+func WithMatchData(maxBytes int) ScannerOption {
+	if maxBytes < 0 {
+		maxBytes = 0
+	}
+	return func(scanner *Scanner) {
+		scanner.matchDataMax = maxBytes
+	}
+}
+
+// WithMatchContext includes byte context before and after each reported match.
+// Negative values are treated as zero.
+func WithMatchContext(beforeBytes, afterBytes int) ScannerOption {
+	if beforeBytes < 0 {
+		beforeBytes = 0
+	}
+	if afterBytes < 0 {
+		afterBytes = 0
+	}
+	return func(scanner *Scanner) {
+		scanner.matchContextBefore = beforeBytes
+		scanner.matchContextAfter = afterBytes
+		scanner.matchContextEnabled = true
 	}
 }
 
@@ -144,29 +177,44 @@ func (s *Scanner) Close() {
 }
 
 // NewScanner creates a Scanner for this compiled program.
-func (cp *CompiledProgram) NewScanner() *Scanner {
-	return NewScanner(cp)
+func (cp *CompiledProgram) NewScanner(opts ...ScannerOption) *Scanner {
+	return NewScanner(cp, opts...)
 }
 
 // Scan evaluates all rules in this compiled program against data.
 func (cp *CompiledProgram) Scan(data []byte) (*ScanResult, error) {
+	return cp.ScanWithContext(context.Background(), data)
+}
+
+// ScanWithContext evaluates all rules in this compiled program against data.
+func (cp *CompiledProgram) ScanWithContext(ctx context.Context, data []byte) (*ScanResult, error) {
 	scanner := NewScanner(cp)
 	defer scanner.Close()
-	return scanner.Scan(data)
+	return scanner.ScanWithContext(ctx, data)
 }
 
 // ScanReader reads from r and evaluates all rules in this compiled program.
 func (cp *CompiledProgram) ScanReader(r io.Reader) (*ScanResult, error) {
+	return cp.ScanReaderWithContext(context.Background(), r)
+}
+
+// ScanReaderWithContext reads from r and evaluates all rules in this compiled program.
+func (cp *CompiledProgram) ScanReaderWithContext(ctx context.Context, r io.Reader) (*ScanResult, error) {
 	scanner := NewScanner(cp)
 	defer scanner.Close()
-	return scanner.ScanReader(r)
+	return scanner.ScanReaderWithContext(ctx, r)
 }
 
 // ScanFile reads filename and evaluates all rules in this compiled program.
 func (cp *CompiledProgram) ScanFile(filename string) (*ScanResult, error) {
+	return cp.ScanFileWithContext(context.Background(), filename)
+}
+
+// ScanFileWithContext reads filename and evaluates all rules in this compiled program.
+func (cp *CompiledProgram) ScanFileWithContext(ctx context.Context, filename string) (*ScanResult, error) {
 	scanner := NewScanner(cp)
 	defer scanner.Close()
-	return scanner.ScanFile(filename)
+	return scanner.ScanFileWithContext(ctx, filename)
 }
 
 // globalMatchEntry is a match routed by integer indices from the shared automaton.
@@ -193,6 +241,14 @@ func (s *Scanner) hasMatchingTag(rule *CompiledRule) bool {
 
 // Scan scans the provided byte slice against the compiled rules.
 func (s *Scanner) Scan(data []byte) (*ScanResult, error) {
+	return s.ScanWithContext(context.Background(), data)
+}
+
+// ScanWithContext scans the provided byte slice against the compiled rules.
+func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	result := &ScanResult{
 		MatchedRules: make([]RuleMatch, 0),
 		RuleResults:  make(map[string]bool),
@@ -204,10 +260,16 @@ func (s *Scanner) Scan(data []byte) (*ScanResult, error) {
 	if s.externalErr != nil {
 		return nil, s.externalErr
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 
 	globalByRule := make(map[int][]globalMatchEntry)
 	useSharedAutomaton := s.program.SharedAutomaton != nil && len(s.program.SharedLookup) > 0
 	if useSharedAutomaton {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		s.extractGlobalMatchesInt(data, globalByRule)
 	}
 
@@ -225,6 +287,9 @@ func (s *Scanner) Scan(data []byte) (*ScanResult, error) {
 	// Pass 1: evaluate every rule
 	s.interp.ResetIterationCount()
 	for _, rule := range s.program.Rules {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		// Global rules are always evaluated; others only if they match the tag filter.
 		if !rule.IsGlobal && !s.hasMatchingTag(rule) {
 			continue
@@ -246,6 +311,10 @@ func (s *Scanner) Scan(data []byte) (*ScanResult, error) {
 		// Only clone when there are matches — avoids allocating map + slices for empty results.
 		if len(s.matchCtx.Matches) > 0 {
 			ruleMatches := cloneMatches(s.matchCtx.Matches)
+			ruleMatches = filterPrivateStrings(rule, ruleMatches)
+			if err := s.populateMatchEvidence(ctx, data, ruleMatches); err != nil {
+				return nil, err
+			}
 			result.Matches[rule.Name] = ruleMatches
 		}
 		result.RuleResults[rule.Name] = s.interp.GetRuleResults()[rule.Name]
@@ -262,6 +331,9 @@ func (s *Scanner) Scan(data []byte) (*ScanResult, error) {
 
 	// Pass 2: build MatchedRules
 	for _, rule := range s.program.Rules {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		// Skip non-global rules if not all global rules matched
 		if !rule.IsGlobal && !allGlobalMatched {
 			continue
@@ -294,20 +366,48 @@ func (s *Scanner) Scan(data []byte) (*ScanResult, error) {
 
 // ScanReader reads from the reader and scans the data.
 func (s *Scanner) ScanReader(r io.Reader) (*ScanResult, error) {
+	return s.ScanReaderWithContext(context.Background(), r)
+}
+
+// ScanReaderWithContext reads from the reader and scans the data.
+func (s *Scanner) ScanReaderWithContext(ctx context.Context, r io.Reader) (*ScanResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	data, err := io.ReadAll(r)
 	if err != nil {
 		return nil, err
 	}
-	return s.Scan(data)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return s.ScanWithContext(ctx, data)
 }
 
 // ScanFile scans the given file.
 func (s *Scanner) ScanFile(filename string) (*ScanResult, error) {
+	return s.ScanFileWithContext(context.Background(), filename)
+}
+
+// ScanFileWithContext scans the given file.
+func (s *Scanner) ScanFileWithContext(ctx context.Context, filename string) (*ScanResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	data, err := os.ReadFile(filename) // #nosec G304 - caller intentionally scans this path
 	if err != nil {
 		return nil, err
 	}
-	return s.Scan(data)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return s.ScanWithContext(ctx, data)
 }
 
 // extractGlobalMatchesInt uses the SharedLookup table for O(1) integer routing
@@ -555,6 +655,67 @@ func cloneExternalValues(values map[string]externalValue) map[string]externalVal
 		cloned[name] = value
 	}
 	return cloned
+}
+
+func (s *Scanner) populateMatchEvidence(ctx context.Context, data []byte, matches map[string][]Match) error {
+	if s.matchDataMax <= 0 && !s.matchContextEnabled {
+		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	for id, perStringMatches := range matches {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		for i := range perStringMatches {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			s.populateSingleMatchEvidence(data, &perStringMatches[i])
+		}
+		matches[id] = perStringMatches
+	}
+	return nil
+}
+
+func (s *Scanner) populateSingleMatchEvidence(data []byte, match *Match) {
+	if match.Offset < 0 || match.Length < 0 || match.Offset > int64(len(data)) {
+		return
+	}
+	endOffset := match.Offset + int64(match.Length)
+	if endOffset < match.Offset || endOffset > int64(len(data)) {
+		return
+	}
+
+	start := int(match.Offset)
+	end := int(endOffset)
+	if s.matchDataMax > 0 {
+		copyLength := match.Length
+		if copyLength > s.matchDataMax {
+			copyLength = s.matchDataMax
+			match.MatchedDataTruncated = true
+		}
+		match.MatchedData = copyBytes(data[start : start+copyLength])
+	}
+	if s.matchContextEnabled {
+		beforeStart := start - s.matchContextBefore
+		if beforeStart < 0 {
+			beforeStart = 0
+		}
+		afterEnd := end + s.matchContextAfter
+		if afterEnd > len(data) {
+			afterEnd = len(data)
+		}
+		match.ContextBefore = copyBytes(data[beforeStart:start])
+		match.ContextAfter = copyBytes(data[end:afterEnd])
+	}
+}
+
+func copyBytes(src []byte) []byte {
+	dst := make([]byte, len(src))
+	copy(dst, src)
+	return dst
 }
 
 func cloneMatches(src map[string][]Match) map[string][]Match {

@@ -40,6 +40,7 @@ import (
 	"github.com/cawalch/go-yara/internal/lexer"
 	"github.com/cawalch/go-yara/parser"
 	"github.com/cawalch/go-yara/semantic"
+	"github.com/cawalch/go-yara/token"
 	"github.com/cawalch/go-yara/utils/fs"
 )
 
@@ -230,6 +231,10 @@ func (c *Compiler) CompileSourceWithContext(ctx context.Context, source string) 
 		return nil, fmt.Errorf("input size %d bytes exceeds maximum allowed %d bytes", len(source), c.options.MaxInputSize)
 	}
 
+	if err := c.rejectUnsupportedModuleReferences(source); err != nil {
+		return nil, err
+	}
+
 	// Phase 1: Parsing (parser creates its own lexer, no need for separate lexical analysis)
 	program, err := c.compileParseWithContext(ctx, source)
 	if err != nil {
@@ -307,6 +312,38 @@ func (c *Compiler) CompileFileWithContext(ctx context.Context, filename string) 
 	c.baseDir = filepath.Dir(filename)
 
 	return c.CompileSourceWithContext(ctx, source)
+}
+
+func (c *Compiler) rejectUnsupportedModuleReferences(source string) error {
+	lex := lexer.New(source)
+	prev := token.Token{Type: token.EOF}
+
+	for tok := lex.NextToken(); tok.Type != token.EOF; tok = lex.NextToken() {
+		if tok.Type == token.DOT && isUnsupportedModuleReferenceStart(prev) {
+			message := "unsupported module: " + prev.Literal
+			c.stats.Errors = append(c.stats.Errors, CompilationError{
+				Phase:   "semantic",
+				Message: message,
+				Line:    prev.Pos.Line,
+				Column:  prev.Pos.Column,
+			})
+			return errors.New(message)
+		}
+		prev = tok
+	}
+
+	return nil
+}
+
+func isUnsupportedModuleReferenceStart(tok token.Token) bool {
+	switch tok.Type {
+	case token.IDENTIFIER:
+		return tok.Literal != ""
+	case token.HASH:
+		return tok.Literal == "hash"
+	default:
+		return false
+	}
 }
 
 // compileParseWithContext performs parsing with context support
@@ -398,7 +435,7 @@ func (c *Compiler) compileSemanticWithContext(ctx context.Context, program *ast.
 				Column:  0,
 			})
 		}
-		return fmt.Errorf("semantic analysis failed: %d errors", len(errs))
+		return fmt.Errorf("%d semantic errors: first: %w", len(errs), errs[0])
 	}
 
 	c.stats.SemanticTime = time.Since(start)
@@ -788,24 +825,25 @@ func (c *Compiler) ProcessIncludes(program *ast.Program) error {
 
 // processImportsWithContext processes import statements with context support
 func (c *Compiler) processImportsWithContext(ctx context.Context, program *ast.Program) error {
-	// Imported modules are parsed and retained for future module support. Module
-	// functions are currently compiled as stubs elsewhere, so this phase only
-	// honors cancellation and avoids public compile-time side effects.
-	for range program.Imports {
-		// Check for cancellation before processing each import
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		// In a full implementation, we would:
-		// 1. Resolve module path
-		// 2. Load module definition
-		// 3. Register module functions and variables
-		// 4. Make module available to the condition compiler
+	if len(program.Imports) == 0 {
+		return nil
 	}
-	return nil
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
+	importStmt := program.Imports[0]
+	message := "unsupported module: " + importStmt.Module
+	c.stats.Errors = append(c.stats.Errors, CompilationError{
+		Phase:   "imports",
+		Message: message,
+		Line:    importStmt.Pos.Line,
+		Column:  importStmt.Pos.Column,
+	})
+	return errors.New(message)
 }
 
 func (c *Compiler) readFile(filename string) (string, error) {
@@ -887,6 +925,10 @@ func (c *Compiler) CompileWithProgress(source string, progressCallback func(phas
 	if progressCallback != nil {
 		progressCallback("parsing", 30)
 	}
+	if err := c.rejectUnsupportedModuleReferences(source); err != nil {
+		return nil, err
+	}
+
 	program, err := c.compileParseWithContext(context.Background(), source)
 	if err != nil {
 		return nil, err

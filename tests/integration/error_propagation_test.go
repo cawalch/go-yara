@@ -125,18 +125,16 @@ func TestLexerErrorPropagation(t *testing.T) {
 		{
 			name:        "invalid-escape-string",
 			rule:        `rule test { strings: $a = "test\p" condition: $a }`,
-			expectError: false,
-			knownGap:    true,
+			expectError: true,
 			errorStage:  "lexer",
-			description: "Known gap: lexer does not reject invalid escape sequence in strings",
+			description: "Rejects invalid escape sequence in strings",
 		},
 		{
 			name:        "invalid-escape-regex",
 			rule:        `rule test { strings: $a = /test\p/ condition: $a }`,
-			expectError: false,
-			knownGap:    true,
+			expectError: true,
 			errorStage:  "lexer",
-			description: "Known gap: lexer does not reject invalid escape sequence in regex",
+			description: "Rejects invalid escape sequence in regex",
 		},
 		{
 			name:        "invalid-hex-digit",
@@ -314,10 +312,9 @@ func TestSemanticErrorPropagation(t *testing.T) {
 		{
 			name:        "invalid-function-argument",
 			rule:        `rule test { condition: int8("string") }`,
-			expectError: false,
-			knownGap:    true,
+			expectError: true,
 			errorStage:  "semantic",
-			description: "Known gap: type checker does not validate int8() argument is an integer",
+			description: "Rejects int8() with a non-integer argument",
 		},
 		{
 			name:        "undefined-function",
@@ -336,10 +333,9 @@ func TestSemanticErrorPropagation(t *testing.T) {
 		{
 			name:        "circular-dependency",
 			rule:        `rule a { condition: b } rule b { condition: a }`,
-			expectError: false,
-			knownGap:    true,
+			expectError: true,
 			errorStage:  "semantic",
-			description: "Known gap: semantic analyzer does not detect circular rule dependencies",
+			description: "Rejects circular rule dependencies",
 		},
 		{
 			name:        "invalid-of-expression",
@@ -645,9 +641,8 @@ func TestEdgeCaseErrorConditions(t *testing.T) {
 		{
 			name:        "zero-length-hex",
 			rule:        `rule test { strings: $a = {} condition: true }`,
-			expectError: false,
-			knownGap:    true,
-			description: "Known gap: compiler does not reject zero-length hex pattern",
+			expectError: true,
+			description: "Rejects zero-length hex pattern",
 		},
 		{
 			name:        "single-byte-hex",

@@ -7,9 +7,7 @@ readers, or files through a reusable scanner API.
 This project is actively evolving. It supports a broad set of YARA rule syntax,
 string modifiers, expressions, rule metadata, tags, includes, and execution
 features, but it is not a complete drop-in replacement for upstream YARA. In
-particular, YARA modules such as `pe`, `hash`, `math`, `elf`, and `dotnet` are
-not implemented. See [PLAN_YARA_SPEC_GAPS.md](PLAN_YARA_SPEC_GAPS.md) for the
-detailed compatibility notes.
+particular, upstream YARA modules are not implemented for v1.0.
 
 ## Features
 
@@ -22,6 +20,20 @@ detailed compatibility notes.
 - Evaluate text, hex, and regex strings, string modifiers, metadata, private and
   global rules, rule references, and common condition operators.
 - Use the CLI to lex, parse, compile, or execute rules against data files.
+
+## Compatibility
+
+`go-yara` supports core YARA parsing, validation, compilation, and scanning for
+v1.0. The public API is focused on normal rules, strings, modifiers, metadata,
+tags, includes, external variables, private and global rules, and common
+condition expressions.
+
+Upstream YARA modules such as `pe`, `hash`, `math`, `elf`, and `dotnet` are
+unsupported for v1.0. Rules that import modules or call module functions should
+be treated as outside the supported compatibility surface.
+
+Future JavaScript or QuickJS support may be added as an optional external
+integration. QuickJS is not bundled with `go-yara` for v1.0.
 
 ## Installation
 
@@ -230,9 +242,9 @@ execute path is the primary path for full rule condition results.
 ## Known Limitations
 
 - YARA modules are not implemented; imports such as `import "pe"` and module
-  function calls are documented as gaps.
-- Some YARA data read function variants are partially supported; see the gap
-  analysis for exact coverage.
+  function calls are outside the v1.0 compatibility target.
+- Some YARA data read function variants and advanced edge cases may differ from
+  upstream YARA.
 - The project has explicit known-gap tests in parser and integration suites.
 - The `yara/` directory is ignored by git and is not part of the public Go API.
 
@@ -262,8 +274,6 @@ directories such as `benchmarks/` and `profiles/`.
 
 ## More Documentation
 
-- [PLAN_YARA_SPEC_GAPS.md](PLAN_YARA_SPEC_GAPS.md): current compatibility gap
-  analysis against upstream YARA.
 - [test_regression/README.md](test_regression/README.md): targeted regression
   fixture notes.
 - [testdata/regex/README.md](testdata/regex/README.md): staged regex parity
@@ -276,7 +286,4 @@ and include regression coverage for behavior changes.
 
 ## License
 
-The previous README stated that this project is licensed under the MIT License,
-but this repository currently does not include a root `LICENSE` file. Add the
-license file before relying on or redistributing the project under that license
-statement.
+This project is licensed under the MIT License. See [LICENSE](LICENSE).

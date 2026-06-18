@@ -114,10 +114,14 @@ type MatchContext struct {
 
 // Match represents a pattern match
 type Match struct {
-	Pattern string
-	Offset  int64
-	Length  int
-	Base    int64 // Base address for match
+	Pattern              string
+	Offset               int64
+	Length               int
+	Base                 int64 // Base address for match
+	MatchedData          []byte
+	ContextBefore        []byte
+	ContextAfter         []byte
+	MatchedDataTruncated bool
 }
 
 // AddMatch adds a match to the context

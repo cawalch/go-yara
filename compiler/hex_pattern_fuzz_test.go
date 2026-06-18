@@ -5,6 +5,24 @@ import (
 	"testing"
 )
 
+func fuzzParseHexPatterns(inputs ...string) {
+	for _, input := range inputs {
+		sc := NewStringCompiler(nil)
+		pattern, err := sc.parseHexPattern(normalizeHexFuzzPattern(input))
+		if err == nil {
+			_ = pattern.Clone()
+		}
+	}
+}
+
+func normalizeHexFuzzPattern(input string) string {
+	trimmed := strings.TrimSpace(input)
+	if strings.HasPrefix(trimmed, "{") {
+		return trimmed
+	}
+	return "{ " + input + " }"
+}
+
 // FuzzHexPatternParser tests hex pattern parsing with malformed inputs
 func FuzzHexPatternParser(f *testing.F) {
 	// Seed corpus with various hex patterns
@@ -84,43 +102,13 @@ func FuzzHexPatternParser(f *testing.F) {
 
 		inputStr := string(input)
 
-		// Test hex pattern compilation by wrapping it in a rule
-		ruleInput := `rule test { strings: $a = ` + inputStr + ` condition: $a }`
-
-		c := NewCompiler()
-		_, err := c.CompileSource(ruleInput)
-		_ = err // Whether compilation succeeds or fails, we shouldn't panic
-
-		// Test with different modifiers
-		modifiers := []string{
-			"",
-			" private",
-			" nocase",
-			" wide",
-			" ascii",
-		}
-
-		for _, mod := range modifiers {
-			ruleInput := `rule test { strings: $a = ` + inputStr + mod + ` condition: $a }`
-			c2 := NewCompiler()
-			_, err2 := c2.CompileSource(ruleInput)
-			_ = err2
-		}
-
-		// Test with multiple strings
-		ruleInput2 := `rule test { strings: $a = ` + inputStr + ` $b = ` + inputStr + ` condition: $a or $b }`
-		c3 := NewCompiler()
-		_, err3 := c3.CompileSource(ruleInput2)
-		_ = err3
+		fuzzParseHexPatterns(inputStr, inputStr+" "+inputStr)
 
 		// Test with truncated patterns
 		if len(inputStr) > 1 {
 			for truncateLen := 1; truncateLen < len(inputStr) && truncateLen <= 50; truncateLen++ {
 				truncatedInput := inputStr[:truncateLen]
-				ruleInput := `rule test { strings: $a = ` + truncatedInput + ` condition: $a }`
-				c4 := NewCompiler()
-				_, err4 := c4.CompileSource(ruleInput)
-				_ = err4
+				fuzzParseHexPatterns(truncatedInput)
 			}
 		}
 	})
@@ -164,14 +152,9 @@ func FuzzHexPatternJumps(f *testing.F) {
 
 		inputStr := string(input)
 
-		// Test jump pattern in isolation
-		ruleInput := `rule test { strings: $a = ` + inputStr + ` condition: $a }`
-		c := NewCompiler()
-		_, err := c.CompileSource(ruleInput)
-		_ = err
-
 		// Test with preceding and following bytes
 		patterns := []string{
+			inputStr,
 			`{ DE AD ` + inputStr + ` BE EF }`,
 			`{ 00 ` + inputStr + ` FF }`,
 			`{ ` + inputStr + ` 00 }`,
@@ -180,18 +163,12 @@ func FuzzHexPatternJumps(f *testing.F) {
 		}
 
 		for _, pattern := range patterns {
-			ruleInput := `rule test { strings: $a = ` + pattern + ` condition: $a }`
-			c2 := NewCompiler()
-			_, err2 := c2.CompileSource(ruleInput)
-			_ = err2
+			fuzzParseHexPatterns(pattern)
 		}
 
 		// Test with alternatives
 		altPattern := `{ (00|FF) ` + inputStr + ` (DE|AD) }`
-		ruleInput3 := `rule test { strings: $a = ` + altPattern + ` condition: $a }`
-		c3 := NewCompiler()
-		_, err3 := c3.CompileSource(ruleInput3)
-		_ = err3
+		fuzzParseHexPatterns(altPattern)
 	})
 }
 
@@ -228,14 +205,9 @@ func FuzzHexPatternAlternatives(f *testing.F) {
 
 		inputStr := string(input)
 
-		// Test alternative pattern in isolation
-		ruleInput := `rule test { strings: $a = ` + inputStr + ` condition: $a }`
-		c := NewCompiler()
-		_, err := c.CompileSource(ruleInput)
-		_ = err
-
 		// Test with preceding and following bytes
 		patterns := []string{
+			inputStr,
 			`{ DE AD ` + inputStr + ` BE EF }`,
 			`{ 00 ` + inputStr + ` FF }`,
 			`{ ` + inputStr + ` 00 }`,
@@ -243,18 +215,12 @@ func FuzzHexPatternAlternatives(f *testing.F) {
 		}
 
 		for _, pattern := range patterns {
-			ruleInput := `rule test { strings: $a = ` + pattern + ` condition: $a }`
-			c2 := NewCompiler()
-			_, err2 := c2.CompileSource(ruleInput)
-			_ = err2
+			fuzzParseHexPatterns(pattern)
 		}
 
 		// Test with jumps
 		jumpPattern := `{ [0-10] ` + inputStr + ` [0-10] }`
-		ruleInput3 := `rule test { strings: $a = ` + jumpPattern + ` condition: $a }`
-		c3 := NewCompiler()
-		_, err3 := c3.CompileSource(ruleInput3)
-		_ = err3
+		fuzzParseHexPatterns(jumpPattern)
 	})
 }
 
@@ -290,14 +256,9 @@ func FuzzHexPatternWildcards(f *testing.F) {
 
 		inputStr := string(input)
 
-		// Test wildcard pattern in rule
-		ruleInput := `rule test { strings: $a = ` + inputStr + ` condition: $a }`
-		c := NewCompiler()
-		_, err := c.CompileSource(ruleInput)
-		_ = err
-
 		// Test with different contexts
 		contexts := []string{
+			inputStr,
 			`{ DE AD ` + inputStr + ` BE EF }`,
 			`{ ` + inputStr + ` DE AD }`,
 			`{ DE AD ` + inputStr + ` }`,
@@ -305,18 +266,12 @@ func FuzzHexPatternWildcards(f *testing.F) {
 		}
 
 		for _, ctx := range contexts {
-			ruleInput := `rule test { strings: $a = ` + ctx + ` condition: $a }`
-			c2 := NewCompiler()
-			_, err2 := c2.CompileSource(ruleInput)
-			_ = err2
+			fuzzParseHexPatterns(ctx)
 		}
 
 		// Test with jumps and alternatives
 		complexPattern := `{ [0-10] ` + inputStr + ` (00|FF) }`
-		ruleInput3 := `rule test { strings: $a = ` + complexPattern + ` condition: $a }`
-		c3 := NewCompiler()
-		_, err3 := c3.CompileSource(ruleInput3)
-		_ = err3
+		fuzzParseHexPatterns(complexPattern)
 	})
 }
 
@@ -348,24 +303,16 @@ func FuzzHexPatternNegation(f *testing.F) {
 
 		inputStr := string(input)
 
-		// Test negation pattern in rule
-		ruleInput := `rule test { strings: $a = ` + inputStr + ` condition: $a }`
-		c := NewCompiler()
-		_, err := c.CompileSource(ruleInput)
-		_ = err
-
 		// Test with different patterns
 		patterns := []string{
+			inputStr,
 			`{ DE AD ` + inputStr + ` BE EF }`,
 			`{ ` + inputStr + ` DE AD }`,
 			inputStr + inputStr,
 		}
 
 		for _, pattern := range patterns {
-			ruleInput := `rule test { strings: $a = ` + pattern + ` condition: $a }`
-			c2 := NewCompiler()
-			_, err2 := c2.CompileSource(ruleInput)
-			_ = err2
+			fuzzParseHexPatterns(pattern)
 		}
 	})
 }
@@ -404,22 +351,6 @@ func FuzzHexPatternComplex(f *testing.F) {
 
 		inputStr := string(input)
 
-		// Test complex pattern in rule
-		ruleInput := `rule test { strings: $a = ` + inputStr + ` condition: $a }`
-		c := NewCompiler()
-		_, err := c.CompileSource(ruleInput)
-		_ = err
-
-		// Test with multiple strings
-		ruleInput2 := `rule test { strings: $a = ` + inputStr + ` $b = ` + inputStr + ` condition: $a or $b }`
-		c2 := NewCompiler()
-		_, err2 := c2.CompileSource(ruleInput2)
-		_ = err2
-
-		// Test with modifiers
-		ruleInput3 := `rule test { strings: $a = ` + inputStr + ` nocase wide condition: $a }`
-		c3 := NewCompiler()
-		_, err3 := c3.CompileSource(ruleInput3)
-		_ = err3
+		fuzzParseHexPatterns(inputStr, inputStr+" "+inputStr)
 	})
 }

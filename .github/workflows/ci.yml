@@ -20,33 +20,36 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           check-latest: true
-          cache-dependency-path: go.mod
+          cache: false
 
       - name: Cache Go modules
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.mod') }}
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.mod', '**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
 
       - name: Download dependencies
         run: go mod download
 
+      - name: Run go vet
+        run: go vet ./...
+
       - name: Install golangci-lint
         run: |
-          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v2.10.1
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b "$(go env GOPATH)/bin" v2.10.1
 
       - name: Run golangci-lint
         run: |
@@ -86,32 +89,33 @@ jobs:
       matrix:
         go-version: ["1.26.0"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ matrix.go-version }}
           check-latest: true
-          cache-dependency-path: go.mod
+          cache: false
 
       - name: Cache Go modules
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ matrix.go-version }}-${{ hashFiles('**/go.mod') }}
+          key: ${{ runner.os }}-go-${{ matrix.go-version }}-${{ hashFiles('**/go.mod', '**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-${{ matrix.go-version }}-
 
       - name: Download dependencies
         run: go mod download
 
-      - name: Run tests
-        run: |
-          pkgs=$(go list ./... | grep -v '/cmd$')
-          go test -race -coverprofile=coverage.out $pkgs
+      - name: Run race tests
+        run: go test -race ./...
+
+      - name: Run coverage
+        run: go test -coverprofile=coverage.out ./...
 
       - name: Check test coverage
         run: |
@@ -136,23 +140,76 @@ jobs:
     name: Security Scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache: false
+
+      - name: Cache Go modules
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-security-${{ hashFiles('**/go.mod', '**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-security-
 
       - name: Run security scan
         run: |
           go install github.com/securego/gosec/v2/cmd/gosec@latest
           gosec -exclude=G115,G204,G304 ./...
 
+  # Fuzz gate
+  fuzz:
+    name: Fuzz
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache: false
+
+      - name: Cache Go modules
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-fuzz-${{ hashFiles('**/go.mod', '**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-fuzz-
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run fuzz gate
+        run: make fuzz FUZZTIME=10s
+
+      - name: Upload fuzz artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-fuzz-crash-logs
+          path: |
+            **/testdata/fuzz/
+          if-no-files-found: ignore
+          retention-days: 30
+
   # Quality gate
   quality-gate:
     name: Quality Gate
     runs-on: ubuntu-latest
-    needs: [lint, test, security]
+    needs: [lint, test, security, fuzz]
     if: always()
     steps:
       - name: Check job results
@@ -169,6 +226,11 @@ jobs:
 
           if [ "${{ needs.security.result }}" != "success" ]; then
             echo "❌ Security job failed"
+            exit 1
+          fi
+
+          if [ "${{ needs.fuzz.result }}" != "success" ]; then
+            echo "❌ Fuzz job failed"
             exit 1
           fi
 

@@ -132,6 +132,8 @@ func (p *Parser) ParseRulesWithContext(ctx context.Context) (*ast.Program, error
 		}
 	}
 
+	p.collectLexerErrors()
+
 	if len(p.errors) > 0 {
 		if p.errorRecovery {
 			// Return partial program with errors instead of failing completely
@@ -145,6 +147,13 @@ func (p *Parser) ParseRulesWithContext(ctx context.Context) (*ast.Program, error
 	}
 
 	return program, nil
+}
+
+func (p *Parser) collectLexerErrors() {
+	for _, err := range p.lexer.Errors() {
+		lexErr := err
+		p.addError(&lexErr)
+	}
 }
 
 // SetErrorRecovery enables or disables error recovery mode

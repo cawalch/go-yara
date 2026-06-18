@@ -2,7 +2,6 @@ package semantic
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/cawalch/go-yara/ast"
@@ -22,9 +21,10 @@ func (e *Error) Error() string {
 
 // Validator performs semantic analysis on YARA rules
 type Validator struct {
-	symbolTable   *SymbolTable
-	errors        []error
-	loopVariables map[string]string // loop variable name -> "string" or "integer"
+	symbolTable     *SymbolTable
+	errors          []error
+	loopVariables   map[string]string // loop variable name -> "string" or "integer"
+	stringLoopDepth int
 }
 
 // Ensure Validator implements the focused visitor interfaces it needs
@@ -46,7 +46,12 @@ func (v *Validator) ValidateProgram(program *ast.Program) []error {
 	v.errors = v.errors[:0] // Clear previous errors
 	v.symbolTable.Reset()
 
-	// First: collect global variables and external variables
+	// First: reject modules explicitly. v1.0 does not ship module support.
+	for _, importStmt := range program.Imports {
+		v.addError(v.unsupportedModuleError(importStmt.Module, importStmt.Pos))
+	}
+
+	// Second: collect global variables and external variables
 	for _, globalVar := range program.GlobalVariables {
 		v.collectGlobalVariable(globalVar)
 	}
@@ -54,12 +59,15 @@ func (v *Validator) ValidateProgram(program *ast.Program) []error {
 		v.collectExternalVariable(extVar)
 	}
 
-	// Second pass: collect all rule and string definitions
+	// Third pass: collect all rule and string definitions
 	for _, rule := range program.Rules {
 		v.collectSymbols(rule)
 	}
 
-	// Third pass: validate all rules
+	// Fourth pass: reject circular rule dependencies before code generation.
+	v.validateRuleDependencyCycles(program)
+
+	// Fifth pass: validate all rules
 	for _, rule := range program.Rules {
 		v.validateRule(rule)
 	}
@@ -76,6 +84,134 @@ func (v *Validator) collectSymbols(rule *ast.Rule) {
 			Position: rule.Pos,
 		})
 	}
+}
+
+func (v *Validator) validateRuleDependencyCycles(program *ast.Program) {
+	ruleNames := make(map[string]token.Position, len(program.Rules))
+	for _, rule := range program.Rules {
+		ruleNames[rule.Name] = rule.Pos
+	}
+
+	deps := make(map[string]map[string]token.Position, len(program.Rules))
+	for _, rule := range program.Rules {
+		refs := make(map[string]token.Position)
+		collector := ruleReferenceCollector{
+			ruleNames: ruleNames,
+			refs:      refs,
+		}
+		collector.collect(rule.Condition, nil)
+		deps[rule.Name] = refs
+	}
+
+	state := make(map[string]int, len(program.Rules))
+	reported := make(map[string]bool)
+	var path []string
+	var visit func(string)
+	visit = func(ruleName string) {
+		state[ruleName] = 1
+		path = append(path, ruleName)
+		defer func() {
+			path = path[:len(path)-1]
+			state[ruleName] = 2
+		}()
+
+		for dep, pos := range deps[ruleName] {
+			switch state[dep] {
+			case 0:
+				visit(dep)
+			case 1:
+				cycle := appendCyclePath(path, dep)
+				key := strings.Join(cycle, " -> ")
+				if reported[key] {
+					continue
+				}
+				reported[key] = true
+				v.addError(&Error{
+					Message:  "circular rule dependency: " + key,
+					Position: pos,
+				})
+			}
+		}
+	}
+
+	for _, rule := range program.Rules {
+		if state[rule.Name] == 0 {
+			visit(rule.Name)
+		}
+	}
+}
+
+func appendCyclePath(path []string, dep string) []string {
+	for i, name := range path {
+		if name == dep {
+			cycle := make([]string, 0, len(path)-i+1)
+			cycle = append(cycle, path[i:]...)
+			cycle = append(cycle, dep)
+			return cycle
+		}
+	}
+	return append(append([]string{}, path...), dep)
+}
+
+type ruleReferenceCollector struct {
+	ruleNames map[string]token.Position
+	refs      map[string]token.Position
+}
+
+func (c ruleReferenceCollector) collect(expr ast.Expression, scoped map[string]bool) {
+	switch e := expr.(type) {
+	case nil, *ast.Literal:
+		return
+	case *ast.Identifier:
+		if scoped[e.Name] {
+			return
+		}
+		if _, ok := c.ruleNames[e.Name]; ok {
+			c.refs[e.Name] = e.Position()
+		}
+	case *ast.BinaryOp:
+		c.collect(e.Left, scoped)
+		c.collect(e.Right, scoped)
+	case *ast.UnaryOp:
+		c.collect(e.Right, scoped)
+	case *ast.FunctionCall:
+		for _, arg := range e.Args {
+			c.collect(arg, scoped)
+		}
+	case *ast.ForLoop:
+		c.collect(e.Range, scoped)
+		innerScoped := cloneBoolMap(scoped)
+		for _, variable := range e.Variables {
+			innerScoped[variable] = true
+		}
+		c.collect(e.Condition, innerScoped)
+		c.collect(e.InRange, innerScoped)
+		c.collect(e.AtOffset, innerScoped)
+	case *ast.OfExpression:
+		c.collect(e.Count, scoped)
+		c.collect(e.InRange, scoped)
+		c.collect(e.AtOffset, scoped)
+	case *ast.StringLength:
+		c.collect(e.Index, scoped)
+	case *ast.StringOffset:
+		c.collect(e.Index, scoped)
+	case *ast.StringCount:
+		c.collect(e.Index, scoped)
+	case *ast.LengthOf:
+		return
+	case *ast.PercentExpression:
+		c.collect(e.Value, scoped)
+	case *ast.StringTuple:
+		return
+	}
+}
+
+func cloneBoolMap(src map[string]bool) map[string]bool {
+	dst := make(map[string]bool, len(src)+1)
+	for key, value := range src {
+		dst[key] = value
+	}
+	return dst
 }
 
 // collectGlobalVariable collects a global variable symbol.
@@ -347,12 +483,15 @@ func (v *Validator) validateIdentifierExpression(ident *ast.Identifier) (*TypeIn
 
 // validateQuantifierSymbol handles the special $ symbol in quantifiers
 func (v *Validator) validateQuantifierSymbol(ident *ast.Identifier) (*TypeInfo, []error) {
-	// "$" refers to the current string in a for-loop body (for any of them : ($))
-	// or to the rule's anonymous string set in other quantifier contexts. In a
-	// condition a string identifier evaluates to boolean (whether it matched),
-	// so it must be typed as SymbolString, not SymbolVariable. Typing it as a
-	// variable (integer) previously made "$ at <offset>" and "$ in (range)"
-	// fail semantic checks that require a string (boolean) left operand.
+	if v.stringLoopDepth == 0 {
+		return &TypeInfo{DataType: TypeUnknown}, []error{&Error{
+			Message:  "anonymous string placeholder cannot be used directly; use a string-set expression such as them",
+			Position: ident.Position(),
+		}}
+	}
+	// "$" refers to the current string in a for-loop body (for any of them : ($)).
+	// In that context it evaluates to boolean (whether the string matched), so
+	// it must be typed as SymbolString, not SymbolVariable.
 	if symbol, exists := v.symbolTable.LookupInCurrentScope("$"); exists {
 		return v.getTypeFromSymbol(symbol), nil
 	}
@@ -384,10 +523,12 @@ func (v *Validator) tryAlternativeIdentifierLookups(ident *ast.Identifier, error
 		return v.getTypeFromSymbol(stringSymbol), nil
 	}
 
-	// Check if this might be a module function (e.g., pe.is_pe)
-	if strings.Contains(ident.Name, ".") {
-		// This is likely a module function, return integer type
-		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}, nil
+	// Dotted identifiers are module/member references in YARA. Modules are
+	// intentionally unsupported for v1.0, so fail explicitly instead of
+	// guessing a placeholder type.
+	if moduleName, ok := moduleNameFromDottedName(ident.Name); ok {
+		errors = append(errors, v.unsupportedModuleError(moduleName, ident.Position()))
+		return &TypeInfo{DataType: TypeUnknown}, errors
 	}
 
 	// Check if this might be a rule reference from an included file
@@ -410,8 +551,9 @@ func (v *Validator) validateBinaryOpExpression(binOp *ast.BinaryOp) (*TypeInfo, 
 
 	// Special handling for module access (dot notation)
 	if binOp.Op == token.DOT {
-		if resultType, handled := v.handleModuleAccess(binOp, errors); handled {
-			return resultType, errors
+		if moduleName, handled := moduleNameFromMemberAccess(binOp); handled {
+			errors = append(errors, v.unsupportedModuleError(moduleName, binOp.Position()))
+			return &TypeInfo{DataType: TypeUnknown}, errors
 		}
 	}
 
@@ -434,36 +576,6 @@ func (v *Validator) validateBinaryOpExpression(binOp *ast.BinaryOp) (*TypeInfo, 
 	}
 
 	return &TypeInfo{DataType: TypeUnknown}, errors
-}
-
-// handleModuleAccess handles module access expressions (e.g., pe.is_pe)
-func (v *Validator) handleModuleAccess(binOp *ast.BinaryOp, _ []error) (*TypeInfo, bool) {
-	leftIdent, ok := binOp.Left.(*ast.Identifier)
-	if !ok {
-		return nil, false
-	}
-
-	rightIdent, isRightIdent := binOp.Right.(*ast.Identifier)
-	if !isRightIdent {
-		return nil, false
-	}
-
-	return v.handleModuleFunctionCall(leftIdent.Name, rightIdent.Name)
-}
-
-// handleModuleFunctionCall handles module function calls and determines return type
-func (v *Validator) handleModuleFunctionCall(moduleName, functionName string) (*TypeInfo, bool) {
-	if !v.isModuleFunction(moduleName) {
-		return nil, false
-	}
-
-	// Module functions return integer or boolean depending on the function
-	// For now, we'll assume they return integer for most functions
-	// and boolean for is_* functions
-	if strings.HasPrefix(functionName, "is_") {
-		return &TypeInfo{DataType: TypeBoolean}, true
-	}
-	return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}, true
 }
 
 // validateUnaryOpExpression validates unary operation expressions
@@ -527,6 +639,12 @@ func (v *Validator) validateOfExpression(ofExpr *ast.OfExpression) (*TypeInfo, [
 	// Validate the strings expression
 	_, stringsErrs := v.validateExpression(ofExpr.Strings)
 	errors = append(errors, stringsErrs...)
+	if containsAnonymousPlaceholder(ofExpr.Strings) {
+		errors = append(errors, &Error{
+			Message:  "anonymous string placeholder cannot be used in explicit string lists; use them",
+			Position: ofExpr.Strings.Position(),
+		})
+	}
 
 	// Of expressions always return boolean
 	return &TypeInfo{DataType: TypeBoolean}, errors
@@ -535,6 +653,11 @@ func (v *Validator) validateOfExpression(ofExpr *ast.OfExpression) (*TypeInfo, [
 // validateFunctionCallExpression validates function call expressions
 func (v *Validator) validateFunctionCallExpression(funcCall *ast.FunctionCall) (*TypeInfo, []error) {
 	var errors []error
+
+	if moduleName, ok := moduleNameFromDottedName(funcCall.Function); ok {
+		errors = append(errors, v.unsupportedModuleError(moduleName, funcCall.Pos))
+		return &TypeInfo{DataType: TypeUnknown}, errors
+	}
 
 	// Check if this is a valid YARA function call
 	validFunctions := map[string]struct {
@@ -611,13 +734,160 @@ func (v *Validator) validateFunctionCallExpression(funcCall *ast.FunctionCall) (
 	}
 
 	// Validate function arguments
-	for _, arg := range funcCall.Args {
-		_, argErrs := v.validateExpression(arg)
+	argTypes := make([]*TypeInfo, len(funcCall.Args))
+	for i, arg := range funcCall.Args {
+		argType, argErrs := v.validateExpression(arg)
+		argTypes[i] = argType
 		errors = append(errors, argErrs...)
 	}
+	errors = append(errors, v.validateFunctionArgumentTypes(funcCall, argTypes)...)
 
 	// Return appropriate type based on function
 	return &TypeInfo{DataType: funcInfo.dataType, IntegerType: funcInfo.retType}, errors
+}
+
+func (v *Validator) validateFunctionArgumentTypes(funcCall *ast.FunctionCall, argTypes []*TypeInfo) []error {
+	var errors []error
+	switch {
+	case isIntegerReadFunction(funcCall.Function):
+		if len(argTypes) == 1 && !isIntegerCompatible(argTypes[0]) {
+			errors = append(errors, &Error{
+				Message:  fmt.Sprintf("function '%s' argument 1 must be integer", funcCall.Function),
+				Position: funcCall.Args[0].Position(),
+			})
+		}
+	case isHashFunction(funcCall.Function):
+		errors = append(errors, validateHashFunctionArguments(funcCall, argTypes)...)
+	}
+	return errors
+}
+
+func validateHashFunctionArguments(funcCall *ast.FunctionCall, argTypes []*TypeInfo) []error {
+	switch len(argTypes) {
+	case 1:
+		if !isStringCompatible(argTypes[0]) {
+			return []error{&Error{
+				Message:  fmt.Sprintf("function '%s' argument 1 must be string", funcCall.Function),
+				Position: funcCall.Args[0].Position(),
+			}}
+		}
+	case 2:
+		var errors []error
+		if !isIntegerCompatible(argTypes[0]) {
+			errors = append(errors, &Error{
+				Message:  fmt.Sprintf("function '%s' argument 1 must be integer", funcCall.Function),
+				Position: funcCall.Args[0].Position(),
+			})
+		}
+		if !isIntegerCompatible(argTypes[1]) {
+			errors = append(errors, &Error{
+				Message:  fmt.Sprintf("function '%s' argument 2 must be integer", funcCall.Function),
+				Position: funcCall.Args[1].Position(),
+			})
+		}
+		return errors
+	}
+	return nil
+}
+
+func isIntegerReadFunction(name string) bool {
+	switch strings.ToLower(name) {
+	case "uint8", "uint16", "uint32", "uint64",
+		"uint8be", "uint16be", "uint32be", "uint64be",
+		"int8", "int16", "int32", "int64",
+		"int8be", "int16be", "int32be", "int64be":
+		return true
+	default:
+		return false
+	}
+}
+
+func isHashFunction(name string) bool {
+	switch name {
+	case "md5", "sha1", "sha256":
+		return true
+	default:
+		return false
+	}
+}
+
+func isIntegerCompatible(typeInfo *TypeInfo) bool {
+	return typeInfo == nil || typeInfo.DataType == TypeUnknown || typeInfo.DataType == TypeInteger
+}
+
+func isStringCompatible(typeInfo *TypeInfo) bool {
+	return typeInfo == nil || typeInfo.DataType == TypeUnknown || typeInfo.DataType == TypeString
+}
+
+func containsAnonymousPlaceholder(expr ast.Expression) bool {
+	switch e := expr.(type) {
+	case nil:
+		return false
+	case *ast.Identifier:
+		return e.Name == "$"
+	case *ast.StringTuple:
+		for _, element := range e.Elements {
+			if containsAnonymousPlaceholder(element) {
+				return true
+			}
+		}
+	case *ast.BinaryOp:
+		return containsAnonymousPlaceholder(e.Left) || containsAnonymousPlaceholder(e.Right)
+	case *ast.UnaryOp:
+		return containsAnonymousPlaceholder(e.Right)
+	case *ast.FunctionCall:
+		for _, arg := range e.Args {
+			if containsAnonymousPlaceholder(arg) {
+				return true
+			}
+		}
+	case *ast.ForLoop:
+		return containsAnonymousPlaceholder(e.Range) ||
+			containsAnonymousPlaceholder(e.Condition) ||
+			containsAnonymousPlaceholder(e.InRange) ||
+			containsAnonymousPlaceholder(e.AtOffset)
+	case *ast.OfExpression:
+		return containsAnonymousPlaceholder(e.Count) ||
+			containsAnonymousPlaceholder(e.Strings) ||
+			containsAnonymousPlaceholder(e.InRange) ||
+			containsAnonymousPlaceholder(e.AtOffset)
+	case *ast.StringLength:
+		return containsAnonymousPlaceholder(e.String) || containsAnonymousPlaceholder(e.Index)
+	case *ast.StringOffset:
+		return containsAnonymousPlaceholder(e.String) || containsAnonymousPlaceholder(e.Index)
+	case *ast.StringCount:
+		return containsAnonymousPlaceholder(e.String) || containsAnonymousPlaceholder(e.Index)
+	case *ast.LengthOf:
+		return containsAnonymousPlaceholder(e.Target)
+	case *ast.PercentExpression:
+		return containsAnonymousPlaceholder(e.Value)
+	}
+	return false
+}
+
+func isAnonymousPlaceholder(expr ast.Expression) bool {
+	ident, ok := expr.(*ast.Identifier)
+	return ok && ident.Name == "$"
+}
+
+func isStringSetExpression(expr ast.Expression) bool {
+	switch e := expr.(type) {
+	case nil:
+		return false
+	case *ast.Identifier:
+		return e.Name == "them" || (strings.HasPrefix(e.Name, "$") && e.Name != "$")
+	case *ast.StringTuple:
+		for _, element := range e.Elements {
+			if !isStringSetExpression(element) {
+				return false
+			}
+		}
+		return true
+	case *ast.BinaryOp:
+		return e.Op == token.COMMA && isStringSetExpression(e.Left) && isStringSetExpression(e.Right)
+	default:
+		return false
+	}
 }
 
 // validateForLoopExpression validates for loop expressions
@@ -635,16 +905,34 @@ func (v *Validator) validateForLoopExpression(forLoop *ast.ForLoop) (*TypeInfo, 
 		}
 	case *ast.BinaryOp:
 		// Integer range (min..max)
-		loopVarType = "integer"
+		if r.Op == token.DOT {
+			loopVarType = "integer"
+		}
 	case *ast.Identifier:
 		// String set iteration: for any s in ($*), for any s in (them)
 		loopVarType = "string"
+	}
+	if loopVarType == "" && isStringSetExpression(forLoop.Range) {
+		loopVarType = "string"
+	}
+	if containsAnonymousPlaceholder(forLoop.Range) {
+		errors = append(errors, &Error{
+			Message:  "anonymous string placeholder cannot be used in explicit string lists; use them",
+			Position: forLoop.Range.Position(),
+		})
 	}
 
 	// Create a scope for the loop variables so it is visible in the condition.
 	v.symbolTable.EnterScope("for_loop")
 	for _, variable := range forLoop.Variables {
 		if variable != "" {
+			if variable == "$" {
+				errors = append(errors, &Error{
+					Message:  "for-loop variable cannot be anonymous string placeholder $",
+					Position: forLoop.Pos,
+				})
+				continue
+			}
 			if err := v.symbolTable.DefineVariable(variable, forLoop.Pos, SymbolVariable); err != nil {
 				errors = append(errors, &Error{
 					Message:  err.Error(),
@@ -662,7 +950,13 @@ func (v *Validator) validateForLoopExpression(forLoop *ast.ForLoop) (*TypeInfo, 
 	errors = append(errors, rangeErrs...)
 
 	// Validate the condition expression
+	if loopVarType == "string" {
+		v.stringLoopDepth++
+	}
 	_, conditionErrs := v.validateExpression(forLoop.Condition)
+	if loopVarType == "string" {
+		v.stringLoopDepth--
+	}
 	errors = append(errors, conditionErrs...)
 
 	// Clean up loop variables
@@ -914,7 +1208,12 @@ func (v *Validator) validateStringCountExpression(stringCount *ast.StringCount) 
 func (v *Validator) validateStringIndexExpression(str ast.Expression, index ast.Expression, opName string) (*TypeInfo, []error) {
 	var errors []error
 
-	if err := v.validateStringIdentifier(str); err != nil {
+	if isAnonymousPlaceholder(str) && v.stringLoopDepth == 0 {
+		errors = append(errors, &Error{
+			Message:  "anonymous string placeholder cannot be used with string " + opName + " outside a string loop",
+			Position: str.Position(),
+		})
+	} else if err := v.validateStringIdentifier(str); err != nil {
 		errors = append(errors, err)
 	}
 
@@ -982,12 +1281,48 @@ func (v *Validator) validateStringIdentifier(expr ast.Expression) error {
 	return nil
 }
 
-// isModuleFunction checks if an identifier is a known module
-func (v *Validator) isModuleFunction(moduleName string) bool {
-	// List of known YARA modules
-	knownModules := []string{
-		"pe", "elf", "macho", "dotnet", "cuckoo", "hash", "text",
+func (v *Validator) unsupportedModuleError(moduleName string, pos token.Position) *Error {
+	return &Error{
+		Message:  "unsupported module: " + moduleName,
+		Position: pos,
 	}
+}
 
-	return slices.Contains(knownModules, moduleName)
+func moduleNameFromDottedName(name string) (string, bool) {
+	moduleName, _, found := strings.Cut(name, ".")
+	if !found || moduleName == "" {
+		return "", false
+	}
+	return moduleName, true
+}
+
+func moduleNameFromMemberAccess(expr ast.Expression) (string, bool) {
+	binOp, ok := expr.(*ast.BinaryOp)
+	if !ok || binOp.Op != token.DOT {
+		return "", false
+	}
+	if _, ok := binOp.Right.(*ast.Identifier); !ok {
+		return "", false
+	}
+	return leftmostIdentifierName(binOp.Left)
+}
+
+func leftmostIdentifierName(expr ast.Expression) (string, bool) {
+	switch e := expr.(type) {
+	case *ast.Identifier:
+		if e.Name == "" {
+			return "", false
+		}
+		if moduleName, ok := moduleNameFromDottedName(e.Name); ok {
+			return moduleName, true
+		}
+		return e.Name, true
+	case *ast.BinaryOp:
+		if e.Op != token.DOT {
+			return "", false
+		}
+		return leftmostIdentifierName(e.Left)
+	default:
+		return "", false
+	}
 }

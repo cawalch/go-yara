@@ -88,7 +88,7 @@ var escapeTokenMapping = map[byte]tokenKind{
 var literalEscapeChars = map[byte]bool{
 	'\\': true, '.': true, '|': true, '(': true, ')': true, '^': true,
 	'$': true, '[': true, ']': true, '*': true, '+': true, '?': true,
-	'{': true, '}': true, ',': true,
+	'{': true, '}': true, ',': true, '-': true, '/': true,
 }
 
 func (l *lexer) next() token {
@@ -129,6 +129,10 @@ func (l *lexer) handleEscapeSequence() token {
 
 	if tokenKind, exists := escapeTokenMapping[e]; exists {
 		return token{kind: tokenKind}
+	}
+
+	if mapped, isStandard := getStandardEscape(e); isStandard {
+		return token{kind: tChar, ch: mapped}
 	}
 
 	if literalEscapeChars[e] {

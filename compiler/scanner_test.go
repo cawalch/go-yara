@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -121,6 +122,138 @@ func TestScannerStringMatch(t *testing.T) {
 	}
 	if matches[0].Offset != 4 {
 		t.Errorf("Offset expected 4, got %d", matches[0].Offset)
+	}
+}
+
+func TestScannerMatchEvidenceDefaultDisabled(t *testing.T) {
+	ruleSource := `rule match_foo { strings: $a = "foo" condition: $a }`
+	compiler := NewCompiler()
+	program, err := compiler.CompileSource(ruleSource)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+
+	for _, tt := range []struct {
+		name string
+		opts []ScannerOption
+	}{
+		{name: "default"},
+		{name: "zero match data", opts: []ScannerOption{WithMatchData(0)}},
+		{name: "negative match data", opts: []ScannerOption{WithMatchData(-1)}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			scanner := NewScanner(program, tt.opts...)
+			defer scanner.Close()
+
+			result, err := scanner.Scan([]byte("bar foo baz"))
+			if err != nil {
+				t.Fatalf("Scan: %v", err)
+			}
+
+			match := result.MatchedRules[0].Matches["$a"][0]
+			if match.MatchedData != nil {
+				t.Fatalf("MatchedData = %q, want nil", match.MatchedData)
+			}
+			if match.ContextBefore != nil {
+				t.Fatalf("ContextBefore = %q, want nil", match.ContextBefore)
+			}
+			if match.ContextAfter != nil {
+				t.Fatalf("ContextAfter = %q, want nil", match.ContextAfter)
+			}
+			if match.MatchedDataTruncated {
+				t.Fatalf("MatchedDataTruncated = true, want false")
+			}
+		})
+	}
+}
+
+func TestScannerMatchDataTruncation(t *testing.T) {
+	ruleSource := `rule match_blob { strings: $a = "abcdef" condition: $a }`
+	compiler := NewCompiler()
+	program, err := compiler.CompileSource(ruleSource)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+
+	scanner := NewScanner(program, WithMatchData(3))
+	defer scanner.Close()
+
+	data := []byte("xxabcdefyy")
+	result, err := scanner.Scan(data)
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+
+	match := result.MatchedRules[0].Matches["$a"][0]
+	if string(match.MatchedData) != "abc" {
+		t.Fatalf("MatchedData = %q, want %q", match.MatchedData, "abc")
+	}
+	if !match.MatchedDataTruncated {
+		t.Fatalf("MatchedDataTruncated = false, want true")
+	}
+
+	data[2] = 'z'
+	if string(match.MatchedData) != "abc" {
+		t.Fatalf("MatchedData was not copied, got %q after mutating input", match.MatchedData)
+	}
+}
+
+func TestCompiledProgramNewScannerOptions(t *testing.T) {
+	ruleSource := `rule match_blob { strings: $a = "abcdef" condition: $a }`
+	compiler := NewCompiler()
+	program, err := compiler.CompileSource(ruleSource)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+
+	scanner := program.NewScanner(WithMatchData(4))
+	defer scanner.Close()
+
+	result, err := scanner.Scan([]byte("xxabcdefyy"))
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+
+	match := result.MatchedRules[0].Matches["$a"][0]
+	if string(match.MatchedData) != "abcd" {
+		t.Fatalf("MatchedData = %q, want %q", match.MatchedData, "abcd")
+	}
+	if !match.MatchedDataTruncated {
+		t.Fatalf("MatchedDataTruncated = false, want true")
+	}
+}
+
+func TestScannerMatchContextBoundaries(t *testing.T) {
+	ruleSource := `rule boundary { strings: $start = "foo" $end = "bar" condition: all of them }`
+	compiler := NewCompiler()
+	program, err := compiler.CompileSource(ruleSource)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+
+	scanner := NewScanner(program, WithMatchContext(10, 10))
+	defer scanner.Close()
+
+	result, err := scanner.Scan([]byte("foo--bar"))
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+
+	matches := result.MatchedRules[0].Matches
+	start := matches["$start"][0]
+	if start.ContextBefore == nil || string(start.ContextBefore) != "" {
+		t.Fatalf("start ContextBefore = %q, want empty copied slice", start.ContextBefore)
+	}
+	if string(start.ContextAfter) != "--bar" {
+		t.Fatalf("start ContextAfter = %q, want %q", start.ContextAfter, "--bar")
+	}
+
+	end := matches["$end"][0]
+	if string(end.ContextBefore) != "foo--" {
+		t.Fatalf("end ContextBefore = %q, want %q", end.ContextBefore, "foo--")
+	}
+	if end.ContextAfter == nil || string(end.ContextAfter) != "" {
+		t.Fatalf("end ContextAfter = %q, want empty copied slice", end.ContextAfter)
 	}
 }
 
@@ -485,7 +618,7 @@ func TestScannerPrivateStringsFiltered(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	scanner := NewScanner(program)
+	scanner := NewScanner(program, WithMatchData(16), WithMatchContext(3, 3))
 	defer scanner.Close()
 
 	data := []byte("hello world")
@@ -504,6 +637,50 @@ func TestScannerPrivateStringsFiltered(t *testing.T) {
 	}
 	if _, ok := matches["$pub"]; !ok {
 		t.Error("public string $pub should appear in matches")
+	}
+	if _, ok := result.Matches["test_rule"]["$priv"]; ok {
+		t.Error("private string $priv should not appear in result.Matches")
+	}
+	pubMatches := result.Matches["test_rule"]["$pub"]
+	if len(pubMatches) != 1 {
+		t.Fatalf("expected public match in result.Matches, got %d", len(pubMatches))
+	}
+	if string(pubMatches[0].MatchedData) != "hello" {
+		t.Fatalf("public MatchedData = %q, want %q", pubMatches[0].MatchedData, "hello")
+	}
+}
+
+func TestScanWithContextCancellation(t *testing.T) {
+	ruleSource := `rule match_foo { strings: $a = "foo" condition: $a }`
+	compiler := NewCompiler()
+	program, err := compiler.CompileSource(ruleSource)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if _, err := program.ScanWithContext(ctx, []byte("foo")); !errors.Is(err, context.Canceled) {
+		t.Fatalf("CompiledProgram.ScanWithContext error = %v, want context.Canceled", err)
+	}
+
+	scanner := NewScanner(program)
+	defer scanner.Close()
+	if _, err := scanner.ScanWithContext(ctx, []byte("foo")); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Scanner.ScanWithContext error = %v, want context.Canceled", err)
+	}
+	if _, err := program.ScanReaderWithContext(ctx, strings.NewReader("foo")); !errors.Is(err, context.Canceled) {
+		t.Fatalf("CompiledProgram.ScanReaderWithContext error = %v, want context.Canceled", err)
+	}
+	if _, err := program.ScanFileWithContext(ctx, "unused.bin"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("CompiledProgram.ScanFileWithContext error = %v, want context.Canceled", err)
+	}
+	if _, err := scanner.ScanReaderWithContext(ctx, strings.NewReader("foo")); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Scanner.ScanReaderWithContext error = %v, want context.Canceled", err)
+	}
+	if _, err := scanner.ScanFileWithContext(ctx, "unused.bin"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Scanner.ScanFileWithContext error = %v, want context.Canceled", err)
 	}
 }
 

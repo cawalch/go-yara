@@ -244,7 +244,8 @@ func TestValidator_FunctionCalls(t *testing.T) {
 				condition:
 					uint32("not_a_number")
 			}`,
-			expectError: false, // Current implementation allows this
+			expectError: true,
+			errorMsg:    "argument 1 must be integer",
 		},
 		{
 			name: "nested function calls",
@@ -537,7 +538,8 @@ func TestValidator_TypeConversions(t *testing.T) {
 				condition:
 					uint32("not_a_number")
 			}`,
-			expectError: false, // Current implementation allows this syntax
+			expectError: true,
+			errorMsg:    "argument 1 must be integer",
 		},
 		{
 			name: "invalid conversion - wrong argument count",

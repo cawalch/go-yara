@@ -26,6 +26,11 @@ func NewParser(flags ParserFlags) *Parser {
 
 // Parse parses the provided pattern into an AST (minimal subset: alt, concat, primary).
 func (p *Parser) Parse(pattern string) (*AST, error) {
+	if p.strictEscape {
+		if err := validateStrictEscapes(pattern); err != nil {
+			return nil, err
+		}
+	}
 	p.lx = newLexer(pattern)
 	p.cur = p.lx.next()
 	root, err := p.parseAlternative()
@@ -523,6 +528,9 @@ func readEscaped(l *lexer, strict bool) (byte, error) {
 // readEscapeSequence handles escape sequences after a backslash
 func readEscapeSequence(l *lexer, strict bool) (byte, error) {
 	if l.i >= l.len { // trailing backslash
+		if strict {
+			return 0, errors.New("trailing backslash in escape")
+		}
 		return '\\', nil
 	}
 	e := l.s[l.i]
@@ -539,6 +547,10 @@ func readEscapeSequence(l *lexer, strict bool) (byte, error) {
 
 	if mapped, isStandard := getStandardEscape(e); isStandard {
 		return mapped, nil
+	}
+
+	if literalEscapeChars[e] {
+		return e, nil
 	}
 
 	return handleUnknownEscape(e, strict)
@@ -570,6 +582,47 @@ func handleUnknownEscape(e byte, strict bool) (byte, error) {
 		return 0, fmt.Errorf("unknown escape \\%c", e)
 	}
 	return e, nil
+}
+
+func validateStrictEscapes(pattern string) error {
+	for i := 0; i < len(pattern); i++ {
+		if pattern[i] != '\\' {
+			continue
+		}
+		i++
+		if i >= len(pattern) {
+			return errors.New("trailing backslash in escape")
+		}
+		e := pattern[i]
+		if e == 'x' {
+			if i+2 >= len(pattern) {
+				return errors.New("incomplete hex escape")
+			}
+			if _, ok := parseHexDigit(pattern[i+1]); !ok {
+				return fmt.Errorf("invalid hex escape \\x%c%c", pattern[i+1], pattern[i+2])
+			}
+			if _, ok := parseHexDigit(pattern[i+2]); !ok {
+				return fmt.Errorf("invalid hex escape \\x%c%c", pattern[i+1], pattern[i+2])
+			}
+			i += 2
+			continue
+		}
+		if isStrictEscape(e) {
+			continue
+		}
+		return fmt.Errorf("unknown escape \\%c", e)
+	}
+	return nil
+}
+
+func isStrictEscape(e byte) bool {
+	if _, exists := escapeTokenMapping[e]; exists {
+		return true
+	}
+	if _, exists := getStandardEscape(e); exists {
+		return true
+	}
+	return literalEscapeChars[e]
 }
 
 func classSet(c *Class, b byte) {

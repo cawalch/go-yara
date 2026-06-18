@@ -34,13 +34,15 @@ func formatToken(tok token.Token) string {
 }
 
 type commandArgs struct {
-	filename         string
-	mode             string
-	dataFile         string
-	enableStreaming  bool
-	chunkSize        int
-	maxConcurrency   int
-	earlyTermination bool
+	filename          string
+	mode              string
+	dataFile          string
+	enableStreaming   bool
+	chunkSize         int
+	maxConcurrency    int
+	earlyTermination  bool
+	matchDataBytes    int
+	matchContextBytes int
 }
 
 func main() {
@@ -67,6 +69,8 @@ func parseArgs(rawArgs []string) (*commandArgs, error) {
 	chunkSize := fs.Int("chunk-size", 1024*1024, "chunk size in bytes (default: 1MB)")
 	maxConcurrency := fs.Int("max-concurrency", 4, "maximum concurrent goroutines (default: 4)")
 	earlyTermination := fs.Bool("early-termination", false, "enable early termination when matches found")
+	matchData := fs.Int("match-data", 0, "include up to n matched bytes in execute output")
+	matchContext := fs.Int("match-context", 0, "include n bytes before and after each match in execute output")
 
 	// Legacy shorthand flags (--lex, --parse, --compile, --execute) mapped to --mode
 	lexFlag := fs.Bool("lex", false, "shorthand for --mode=lex")
@@ -138,15 +142,23 @@ func parseArgs(rawArgs []string) (*commandArgs, error) {
 	if effectiveMode == modeExecute && *dataFile == "" {
 		return nil, fmt.Errorf("--execute mode requires --data <data-file>")
 	}
+	if *matchData < 0 {
+		return nil, fmt.Errorf("--match-data must be non-negative")
+	}
+	if *matchContext < 0 {
+		return nil, fmt.Errorf("--match-context must be non-negative")
+	}
 
 	return &commandArgs{
-		filename:         filename,
-		mode:             effectiveMode,
-		dataFile:         *dataFile,
-		enableStreaming:  *streaming,
-		chunkSize:        *chunkSize,
-		maxConcurrency:   *maxConcurrency,
-		earlyTermination: *earlyTermination,
+		filename:          filename,
+		mode:              effectiveMode,
+		dataFile:          *dataFile,
+		enableStreaming:   *streaming,
+		chunkSize:         *chunkSize,
+		maxConcurrency:    *maxConcurrency,
+		earlyTermination:  *earlyTermination,
+		matchDataBytes:    *matchData,
+		matchContextBytes: *matchContext,
 	}, nil
 }
 
@@ -400,7 +412,17 @@ func executeRules(compiledProgram *compiler.CompiledProgram, data []byte, args *
 		return
 	}
 
-	result, err := compiledProgram.Scan(data)
+	scannerOptions := make([]compiler.ScannerOption, 0, 2)
+	if args.matchDataBytes > 0 {
+		scannerOptions = append(scannerOptions, compiler.WithMatchData(args.matchDataBytes))
+	}
+	if args.matchContextBytes > 0 {
+		scannerOptions = append(scannerOptions, compiler.WithMatchContext(args.matchContextBytes, args.matchContextBytes))
+	}
+	scanner := compiler.NewScanner(compiledProgram, scannerOptions...)
+	defer scanner.Close()
+
+	result, err := scanner.Scan(data)
 	if err != nil {
 		fmt.Printf("Execution error: %v\n", err)
 		return
@@ -434,9 +456,13 @@ func matchEntriesFromMatches(rule *compiler.CompiledRule, matchesByID map[string
 		}
 		for _, m := range matches {
 			entries = append(entries, printEntry{
-				id:     id,
-				offset: int(m.Offset),
-				length: m.Length,
+				id:                   id,
+				offset:               int(m.Offset),
+				length:               m.Length,
+				matchedData:          m.MatchedData,
+				contextBefore:        m.ContextBefore,
+				contextAfter:         m.ContextAfter,
+				matchedDataTruncated: m.MatchedDataTruncated,
 			})
 		}
 	}
@@ -457,9 +483,24 @@ func printPatternMatches(printEntries []printEntry) int {
 	totalMatches := 0
 	for _, e := range printEntries {
 		fmt.Printf("    - %s at offset %d (length: %d)\n", e.id, e.offset, e.length)
+		if e.matchedData != nil || e.matchedDataTruncated {
+			fmt.Printf("      matched-data: %s", formatBytes(e.matchedData))
+			if e.matchedDataTruncated {
+				fmt.Printf(" (truncated)")
+			}
+			fmt.Println()
+		}
+		if e.contextBefore != nil || e.contextAfter != nil {
+			fmt.Printf("      context-before: %s\n", formatBytes(e.contextBefore))
+			fmt.Printf("      context-after: %s\n", formatBytes(e.contextAfter))
+		}
 		totalMatches++
 	}
 	return totalMatches
+}
+
+func formatBytes(data []byte) string {
+	return fmt.Sprintf("%q", data)
 }
 
 // executeRulesStreaming reports chunked pattern matches. It does not evaluate rule conditions.
@@ -510,7 +551,11 @@ func executeRulesStreaming(compiledProgram *compiler.CompiledProgram, data []byt
 }
 
 type printEntry struct {
-	id     string
-	offset int
-	length int
+	id                   string
+	offset               int
+	length               int
+	matchedData          []byte
+	contextBefore        []byte
+	contextAfter         []byte
+	matchedDataTruncated bool
 }

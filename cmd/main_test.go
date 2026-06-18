@@ -88,6 +88,34 @@ func TestMainArgumentValidation(t *testing.T) {
 	}
 }
 
+func TestParseArgsMatchEvidenceValidation(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "negative-match-data",
+			args: []string{"rules.yar", "--execute", "--data", "sample.bin", "--match-data=-1"},
+			want: "--match-data must be non-negative",
+		},
+		{
+			name: "negative-match-context",
+			args: []string{"rules.yar", "--execute", "--data", "sample.bin", "--match-context=-1"},
+			want: "--match-context must be non-negative",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := parseArgs(tt.args)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("parseArgs() error = %v, want containing %q", err, tt.want)
+			}
+		})
+	}
+}
+
 // TestExecuteModeIntegration tests the execute mode with pattern matching
 func TestExecuteModeIntegration(t *testing.T) {
 	// Create temporary test files
@@ -640,6 +668,41 @@ func TestExecuteMode_Offset_String(t *testing.T) {
 
 	if !strings.Contains(out, "Result: MATCH") {
 		t.Fatalf("expected MATCH for @$a == 4 (string), got output:\n%s", out)
+	}
+}
+
+func TestExecuteModeMatchEvidenceOutput(t *testing.T) {
+	source := `rule Evidence {
+  strings:
+    $a = "bar"
+  condition:
+    $a
+}`
+
+	c := compiler.NewCompiler()
+	program, err := c.CompileSourceWithContext(context.Background(), source)
+	if err != nil {
+		t.Fatalf("CompileSourceWithContext() error = %v", err)
+	}
+
+	out := captureOutput(func() {
+		args := &commandArgs{
+			matchDataBytes:    2,
+			matchContextBytes: 4,
+		}
+		executeRules(program, []byte("foo bar baz"), args)
+	})
+
+	expected := []string{
+		"- $a at offset 4 (length: 3)",
+		`matched-data: "ba" (truncated)`,
+		`context-before: "foo "`,
+		`context-after: " baz"`,
+	}
+	for _, text := range expected {
+		if !strings.Contains(out, text) {
+			t.Fatalf("expected execute output to contain %q, got:\n%s", text, out)
+		}
 	}
 }
 

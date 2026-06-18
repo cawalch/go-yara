@@ -209,6 +209,39 @@ func TestParseHexEscapes(t *testing.T) {
 	}
 }
 
+func TestParseStrictEscapeSequences(t *testing.T) {
+	p := NewParser(ParserFlagEnableStrictEscapeSequences)
+
+	validPatterns := []string{
+		`https?:\/\/[a-zA-Z0-9\.]+\/`,
+		`\n\t\x41\w\.`,
+	}
+	for _, pattern := range validPatterns {
+		if _, err := p.Parse(pattern); err != nil {
+			t.Fatalf("Parse(%q) unexpected error: %v", pattern, err)
+		}
+	}
+
+	invalidPatterns := []string{
+		`test\p`,
+		`test\x4`,
+		`test\x4g`,
+		`test\`,
+	}
+	for _, pattern := range invalidPatterns {
+		if _, err := p.Parse(pattern); err == nil {
+			t.Fatalf("Parse(%q) expected strict escape error", pattern)
+		}
+	}
+}
+
+func TestParseUnknownEscapeNonStrict(t *testing.T) {
+	p := NewParser(0)
+	if _, err := p.Parse(`test\p`); err != nil {
+		t.Fatalf("Parse() in non-strict mode error = %v, want nil", err)
+	}
+}
+
 func TestParseShorthandInClass(t *testing.T) {
 	p := NewParser(0)
 	ast, err := p.Parse("[\\w\\s]")

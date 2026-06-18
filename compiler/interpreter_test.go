@@ -77,6 +77,45 @@ func TestInterpreterBasicStack(t *testing.T) {
 	}
 }
 
+func TestInterpreterIntegerOnlyMixedDoubleDoesNotPanic(t *testing.T) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			t.Fatalf("Execute() panicked: %v", recovered)
+		}
+	}()
+
+	interp := NewInterpreter([]byte("D00000000@0\n"))
+	interp.SetCurrentRule("test")
+	interp.SetRuleResults(make(map[string]bool))
+
+	err := interp.Execute()
+	if err == nil {
+		t.Fatal("Execute() error = nil, want type mismatch")
+	}
+	if _, ok := err.(*InterpreterError); !ok {
+		t.Fatalf("Execute() error = %T %v, want *InterpreterError", err, err)
+	}
+}
+
+func TestInterpreterRejectsBackwardConditionalJump(t *testing.T) {
+	interp := NewInterpreter([]byte("A002\xfb\xff\xff\xff"))
+	interp.SetCurrentRule("test")
+	interp.SetRuleResults(make(map[string]bool))
+
+	err := interp.Execute()
+	if err == nil {
+		t.Fatal("Execute() error = nil, want invalid bytecode")
+	}
+
+	interpErr, ok := err.(*InterpreterError)
+	if !ok {
+		t.Fatalf("Execute() error = %T %v, want *InterpreterError", err, err)
+	}
+	if interpErr.Type != ErrorInvalidBytecode {
+		t.Fatalf("Execute() error type = %v, want %v", interpErr.Type, ErrorInvalidBytecode)
+	}
+}
+
 // TestInterpreterArithmetic tests arithmetic operations
 func TestInterpreterArithmetic(t *testing.T) {
 	tests := []struct {
