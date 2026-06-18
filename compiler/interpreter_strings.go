@@ -647,7 +647,7 @@ func (i *Interpreter) compileRegexLiteral(literal string) ([]byte, regex.Flags, 
 	}
 	cleaned := cleanRegexPattern(literal)
 	flags := parseInlineRegexFlags(literal)
-	parser := regex.NewParser(0)
+	parser := regex.NewParser(regex.ParserFlagEnableStrictEscapeSequences)
 	astRe, err := parser.Parse(cleaned)
 	if err != nil {
 		return nil, flags, fmt.Errorf("parse regex: %w", err)

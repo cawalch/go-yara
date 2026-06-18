@@ -82,6 +82,7 @@ func (i *Interpreter) executeConditionalJump(opcode Opcode) error {
 	if err := i.validateStackUnderflow(opcode); err != nil {
 		return err
 	}
+	instructionStart := i.ip - 1
 
 	condition := i.stack[len(i.stack)-1]
 
@@ -114,6 +115,10 @@ func (i *Interpreter) executeConditionalJump(opcode Opcode) error {
 		if target < 0 || target > len(i.bytecode) {
 			return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: opcode,
 				Message: fmt.Sprintf("jump target out of bounds: %d (bytecode len: %d)", target, len(i.bytecode))}
+		}
+		if target <= instructionStart {
+			return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: opcode,
+				Message: fmt.Sprintf("backward conditional jump target: %d (instruction start: %d)", target, instructionStart)}
 		}
 		i.ip = target
 	} else {

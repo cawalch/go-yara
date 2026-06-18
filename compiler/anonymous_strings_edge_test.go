@@ -63,9 +63,9 @@ func TestMultipleAnonymousStrings(t *testing.T) {
 	tests := []anonymousStringTestCase{
 		{
 			name:        "single-anonymous",
-			rule:        `rule test { strings: $ = "test" condition: $ }`,
+			rule:        `rule test { strings: $ = "test" condition: any of them }`,
 			expectError: false,
-			description: "Documents single anonymous string",
+			description: "Documents single anonymous string via them",
 		},
 		{
 			name:        "two-anonymous",
@@ -129,15 +129,13 @@ func TestAnonymousStringInForLoops(t *testing.T) {
 			name:        "for-loop-with-dollar",
 			rule:        `rule test { strings: $ = "test" condition: for any $ in them : ( $ ) }`,
 			expectError: true,
-			knownGap:    "compiler accepts for-loop with anonymous $ placeholder",
-			description: "Documents for-loop with $ placeholder (may not be supported)",
+			description: "Rejects $ as a for-loop variable",
 		},
 		{
 			name:        "anonymous-in-explicit-list",
 			rule:        `rule test { strings: $ = "test" $a = "other" condition: 1 of ($, $a) }`,
-			expectError: false,
-			knownGap:    "compiler allows anonymous $ in explicit of-expression list",
-			description: "Documents anonymous $ in explicit of-expression list",
+			expectError: true,
+			description: "Rejects anonymous $ in explicit of-expression list",
 		},
 		{
 			name:        "them-includes-named",
@@ -182,37 +180,32 @@ func TestAnonymousStringInOfExpressions(t *testing.T) {
 		{
 			name:        "of-explicit-anonymous",
 			rule:        `rule test { strings: $ = "test" condition: 1 of ($) }`,
-			expectError: false,
-			knownGap:    "compiler allows $ in explicit of-expression (1 of ($))",
-			description: "Documents $ in explicit of-expression",
+			expectError: true,
+			description: "Rejects $ in explicit of-expression",
 		},
 		{
 			name:        "anonymous-count",
 			rule:        `rule test { strings: $ = "test" condition: # > 0 }`,
 			expectError: true,
-			knownGap:    "compiler accepts count on anonymous string",
-			description: "Documents count on anonymous string (may not be supported)",
+			description: "Rejects count on anonymous string placeholder",
 		},
 		{
 			name:        "anonymous-offset",
 			rule:        `rule test { strings: $ = "test" condition: @ < 100 }`,
 			expectError: true,
-			knownGap:    "compiler accepts offset on anonymous string",
-			description: "Documents offset on anonymous string (may not be supported)",
+			description: "Rejects offset on anonymous string placeholder",
 		},
 		{
 			name:        "anonymous-length",
 			rule:        `rule test { strings: $ = "test" condition: ! == 4 }`,
 			expectError: true,
-			knownGap:    "compiler accepts length on anonymous string",
-			description: "Documents length on anonymous string (may not be supported)",
+			description: "Rejects length on anonymous string placeholder",
 		},
 		{
 			name:        "multiple-anonymous-matches",
 			rule:        `rule test { strings: $ = "a" $ = "a" $ = "b" condition: # >= 2 }`,
 			expectError: true,
-			knownGap:    "compiler accepts count on multiple anonymous strings",
-			description: "Documents count on anonymous strings (may not be supported)",
+			description: "Rejects count on anonymous string placeholder",
 		},
 	}
 
@@ -291,9 +284,8 @@ func TestMixedAnonymousAndNamedStrings(t *testing.T) {
 		{
 			name:        "anonymous-first",
 			rule:        `rule test { strings: $ = "anon" $a = "named" $b = "other" condition: $a or $ }`,
-			expectError: false,
-			knownGap:    "compiler allows direct $ reference in condition",
-			description: "Documents direct $ reference in condition",
+			expectError: true,
+			description: "Rejects direct $ reference in condition",
 		},
 		{
 			name:        "them-includes-all",
@@ -310,16 +302,14 @@ func TestMixedAnonymousAndNamedStrings(t *testing.T) {
 		{
 			name:        "explicit-list-mixed",
 			rule:        `rule test { strings: $a = "a" $ = "x" $b = "b" condition: any of ($a, $b, $) }`,
-			expectError: false,
-			knownGap:    "compiler allows $ placeholder in explicit of-expression list",
-			description: "Documents $ placeholder in explicit of-expression list",
+			expectError: true,
+			description: "Rejects $ placeholder in explicit of-expression list",
 		},
 		{
 			name:        "count-on-named-only",
 			rule:        `rule test { strings: $a = "a" $ = "x" $b = "b" condition: #a + # > 1 }`,
 			expectError: true,
-			knownGap:    "compiler accepts anonymous count shorthand with named strings present",
-			description: "Documents count on named strings with anonymous present",
+			description: "Rejects anonymous count shorthand with named strings present",
 		},
 		{
 			name:        "offset-on-named-with-anon",
@@ -345,37 +335,37 @@ func TestAnonymousStringWithModifiers(t *testing.T) {
 	tests := []anonymousStringTestCase{
 		{
 			name:        "anonymous-nocase",
-			rule:        `rule test { strings: $ = "test" nocase condition: $ }`,
+			rule:        `rule test { strings: $ = "test" nocase condition: any of them }`,
 			expectError: false,
 			description: "Documents anonymous string with nocase",
 		},
 		{
 			name:        "anonymous-wide",
-			rule:        `rule test { strings: $ = "test" wide condition: $ }`,
+			rule:        `rule test { strings: $ = "test" wide condition: any of them }`,
 			expectError: false,
 			description: "Documents anonymous string with wide",
 		},
 		{
 			name:        "anonymous-fullword",
-			rule:        `rule test { strings: $ = "test" fullword condition: $ }`,
+			rule:        `rule test { strings: $ = "test" fullword condition: any of them }`,
 			expectError: false,
 			description: "Documents anonymous string with fullword",
 		},
 		{
 			name:        "anonymous-private",
-			rule:        `rule test { strings: $ = "test" private condition: $ }`,
+			rule:        `rule test { strings: $ = "test" private condition: any of them }`,
 			expectError: false,
 			description: "Documents anonymous string with private",
 		},
 		{
 			name:        "anonymous-xor",
-			rule:        `rule test { strings: $ = "test" xor condition: $ }`,
+			rule:        `rule test { strings: $ = "test" xor condition: any of them }`,
 			expectError: false,
 			description: "Documents anonymous string with xor",
 		},
 		{
 			name:        "anonymous-all-modifiers",
-			rule:        `rule test { strings: $ = "test" nocase wide fullword private condition: $ }`,
+			rule:        `rule test { strings: $ = "test" nocase wide fullword private condition: any of them }`,
 			expectError: false,
 			description: "Documents anonymous string with all modifiers",
 		},
@@ -387,7 +377,7 @@ func TestAnonymousStringWithModifiers(t *testing.T) {
 		},
 		{
 			name:        "anonymous-base64",
-			rule:        `rule test { strings: $ = "test" base64 condition: $ }`,
+			rule:        `rule test { strings: $ = "test" base64 condition: any of them }`,
 			expectError: false,
 			description: "Documents anonymous string with base64",
 		},

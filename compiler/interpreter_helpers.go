@@ -35,6 +35,13 @@ func (e *InterpreterError) Error() string {
 	return e.Message
 }
 
+func numericTypeMismatch(message string) error {
+	if message == "" {
+		message = "numeric operation requires compatible operands"
+	}
+	return &InterpreterError{Type: ErrorTypeMismatch, Message: message}
+}
+
 // push pushes a value onto the stack with overflow checking
 func (i *Interpreter) push(value Value) error {
 	const maxStackDepth = 1024 // Configurable stack limit
@@ -78,6 +85,13 @@ type numericOperationConfig struct {
 	ErrorMsg     string
 }
 
+func (config numericOperationConfig) hasMixedNumericHandler() bool {
+	if config.IsComparison {
+		return config.FloatOp64 != nil
+	}
+	return config.FloatOp != nil
+}
+
 // executeNumericOperation executes numeric operations with automatic type promotion
 func (i *Interpreter) executeNumericOperation(config numericOperationConfig) error {
 	a, b, err := i.popTwo()
@@ -114,6 +128,9 @@ func (i *Interpreter) executeIntOperation(a, b Value, config numericOperationCon
 		return i.push(Value{Type: config.ResultType, IntVal: result})
 
 	case ValueTypeDouble:
+		if !config.hasMixedNumericHandler() {
+			return numericTypeMismatch(config.ErrorMsg)
+		}
 		return i.executeIntDoubleOperation(a, b, config)
 
 	default:
@@ -125,9 +142,15 @@ func (i *Interpreter) executeIntOperation(a, b Value, config numericOperationCon
 func (i *Interpreter) executeDoubleOperation(a, b Value, config numericOperationConfig) error {
 	switch b.Type {
 	case ValueTypeInt:
+		if !config.hasMixedNumericHandler() {
+			return numericTypeMismatch(config.ErrorMsg)
+		}
 		return i.executeDoubleIntOperation(a, b, config)
 
 	case ValueTypeDouble:
+		if !config.hasMixedNumericHandler() {
+			return numericTypeMismatch(config.ErrorMsg)
+		}
 		var result Value
 		if config.IsComparison {
 			result = Value{Type: config.ResultType, IntVal: config.FloatOp64(a.DoubleVal, b.DoubleVal)}
@@ -219,6 +242,9 @@ func (i *Interpreter) executeIntBinaryOp(a, b Value, ops binaryOps) error {
 
 	case ValueTypeDouble:
 		// int + double = double (promote int to double)
+		if ops.floatOp == nil {
+			return numericTypeMismatch("integer-only operation requires integer operands")
+		}
 		result, err := ops.floatOp(float64(a.IntVal), b.DoubleVal)
 		if err != nil {
 			return err
@@ -235,6 +261,9 @@ func (i *Interpreter) executeDoubleBinaryOp(a, b Value, ops binaryOps) error {
 	switch b.Type {
 	case ValueTypeInt:
 		// double + int = double (promote int to double)
+		if ops.floatOp == nil {
+			return numericTypeMismatch("integer-only operation requires integer operands")
+		}
 		result, err := ops.floatOp(a.DoubleVal, float64(b.IntVal))
 		if err != nil {
 			return err
@@ -242,6 +271,9 @@ func (i *Interpreter) executeDoubleBinaryOp(a, b Value, ops binaryOps) error {
 		return i.push(Value{Type: ValueTypeDouble, DoubleVal: result})
 
 	case ValueTypeDouble:
+		if ops.floatOp == nil {
+			return numericTypeMismatch("integer-only operation requires integer operands")
+		}
 		result, err := ops.floatOp(a.DoubleVal, b.DoubleVal)
 		if err != nil {
 			return err

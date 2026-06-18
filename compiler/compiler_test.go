@@ -67,8 +67,12 @@ rule unused_import {
 
 	output := captureStdout(t, func() {
 		compiler := NewCompiler()
-		if _, err := compiler.CompileSourceWithContext(context.Background(), source); err != nil {
-			t.Fatalf("CompileSourceWithContext() error = %v", err)
+		_, err := compiler.CompileSourceWithContext(context.Background(), source)
+		if err == nil {
+			t.Fatal("CompileSourceWithContext() expected unsupported module error, got nil")
+		}
+		if !strings.Contains(err.Error(), "unsupported module: pe") {
+			t.Fatalf("CompileSourceWithContext() error = %v, want unsupported module: pe", err)
 		}
 	})
 

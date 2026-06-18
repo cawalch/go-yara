@@ -506,26 +506,26 @@ func TestInvalidEscapeSequences(t *testing.T) {
 		{
 			name:        "invalid-hex-escape",
 			rule:        `rule test { strings: $a = "test\xZZ" condition: $a }`,
-			expectError: false,
-			description: "Known gap: lexer does not reject invalid hex escape sequence",
+			expectError: true,
+			description: "Rejects invalid hex escape sequence",
 		},
 		{
 			name:        "incomplete-hex-escape",
 			rule:        `rule test { strings: $a = "test\xZ" condition: $a }`,
-			expectError: false,
-			description: "Known gap: lexer does not reject incomplete hex escape",
+			expectError: true,
+			description: "Rejects incomplete hex escape",
 		},
 		{
 			name:        "invalid-unicode-escape",
 			rule:        `rule test { strings: $a = "test\uZZZZ" condition: $a }`,
-			expectError: false,
-			description: "Known gap: lexer does not reject invalid unicode escape",
+			expectError: true,
+			description: "Rejects unsupported unicode escape",
 		},
 		{
 			name:        "invalid-octal-escape",
 			rule:        `rule test { strings: $a = "test\999" condition: $a }`,
-			expectError: false,
-			description: "Known gap: lexer does not reject invalid octal escape",
+			expectError: true,
+			description: "Rejects unsupported octal escape",
 		},
 		{
 			name:        "backslash-at-end",
@@ -536,8 +536,8 @@ func TestInvalidEscapeSequences(t *testing.T) {
 		{
 			name:        "invalid-control-char",
 			rule:        `rule test { strings: $a = "test\c" condition: $a }`,
-			expectError: false,
-			description: "Known gap: lexer does not reject invalid control character escape",
+			expectError: true,
+			description: "Rejects unsupported control character escape",
 		},
 	}
 

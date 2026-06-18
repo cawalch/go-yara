@@ -23,8 +23,8 @@ func TestEmptyStringMatching(t *testing.T) {
 		{
 			name:        "empty-hex-pattern",
 			rule:        `rule test { strings: $a = { } condition: $a }`,
-			expectError: false,
-			description: "Known gap: compiler does not reject empty hex pattern",
+			expectError: true,
+			description: "Rejects empty hex pattern",
 		},
 		{
 			name:        "empty-regex",

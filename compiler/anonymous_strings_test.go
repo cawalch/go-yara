@@ -9,7 +9,7 @@ rule AnonymousAny {
 		$ = "foo"
 		$ = "bar"
 	condition:
-		$
+		any of them
 }`
 
 	compiler := NewCompiler()
@@ -49,7 +49,7 @@ rule AnonymousAll {
 		$ = "foo"
 		$ = "bar"
 	condition:
-		all of ($)
+		all of them
 }`
 
 	compiler := NewCompiler()
@@ -89,7 +89,7 @@ rule AnonymousIds {
 		$ = "bar"
 		$named = "baz"
 	condition:
-		any of ($)
+		any of them
 }`
 
 	compiler := NewCompiler()

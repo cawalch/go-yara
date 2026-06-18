@@ -965,7 +965,7 @@ func (sc *StringCompiler) compileRegex(pattern string, _ []ast.StringModifier) (
 	// Remove delimiters and any inline flags; runtime flags (i/s) are propagated separately
 	cleaned := cleanRegexPattern(pattern)
 
-	p := regex.NewParser(0)
+	p := regex.NewParser(regex.ParserFlagEnableStrictEscapeSequences)
 	astRe, err := p.Parse(cleaned)
 	if err != nil {
 		return nil, fmt.Errorf("parsing regex pattern: %w", err)

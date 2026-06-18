@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/cawalch/go-yara/ast"
@@ -248,8 +249,13 @@ func TestConditionCompiler_RuleReferences(t *testing.T) {
 		moduleName := "pe"
 		line := 1
 		column := 1
-		cc.emitModuleFunctionCall(moduleName, line, column)
-		t.Log("emitModuleFunctionCall executed without error")
+		err := cc.emitModuleFunctionCall(moduleName, line, column)
+		if err == nil {
+			t.Fatal("emitModuleFunctionCall() expected unsupported module error, got nil")
+		}
+		if !strings.Contains(err.Error(), "unsupported module: pe") {
+			t.Fatalf("emitModuleFunctionCall() error = %v, want unsupported module: pe", err)
+		}
 	})
 }
 

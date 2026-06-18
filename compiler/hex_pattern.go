@@ -68,6 +68,9 @@ func (sc *StringCompiler) parseHexPattern(hexStr string) (*HexPattern, error) {
 	if err != nil {
 		return nil, err
 	}
+	if len(tokens) == 0 {
+		return nil, fmt.Errorf("empty hex pattern")
+	}
 	return &HexPattern{Tokens: tokens}, nil
 }
 

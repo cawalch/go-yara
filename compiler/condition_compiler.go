@@ -470,9 +470,8 @@ func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 		return cc.compileAnonymousIdentifier(ident.Pos.Line, ident.Pos.Column)
 	}
 
-	if cc.isModuleFunction(ident.Name) {
-		cc.emitModuleFunctionCall(ident.Name, ident.Pos.Line, ident.Pos.Column)
-		return nil
+	if moduleName, ok := moduleNameFromDottedName(ident.Name); ok {
+		return cc.emitModuleFunctionCall(moduleName, ident.Pos.Line, ident.Pos.Column)
 	}
 
 	cc.emitter.EmitOpcode(OpPushU, ident.Pos.Line, ident.Pos.Column)
@@ -819,6 +818,9 @@ func (cc *ConditionCompiler) handleSpecialOperators(binOp *ast.BinaryOp) (bool, 
 		}
 		return true, cc.compileStringOffsetOperator(binOp)
 	case token.DOT:
+		if moduleName, ok := moduleNameFromMemberAccess(binOp); ok {
+			return true, unsupportedModuleError(moduleName)
+		}
 		return true, cc.compileExpressions(binOp.Left, binOp.Right)
 	case token.COMMA:
 		// COMMA creates a list for 'of' expressions
@@ -1865,6 +1867,10 @@ func (cc *ConditionCompiler) internStringSet(ids []string) int {
 }
 
 func (cc *ConditionCompiler) compileFunctionCall(call *ast.FunctionCall) error {
+	if moduleName, ok := moduleNameFromDottedName(call.Function); ok {
+		return unsupportedModuleError(moduleName)
+	}
+
 	for i := 0; i < len(call.Args); i++ {
 		if err := cc.compileExpression(call.Args[i]); err != nil {
 			return fmt.Errorf("compiling function argument %d: %w", i, err)
@@ -1958,32 +1964,49 @@ func (cc *ConditionCompiler) compileRuleReference(ruleName string, line, column 
 	return nil
 }
 
-func (cc *ConditionCompiler) isModuleFunction(name string) bool {
-	if !strings.Contains(name, ".") {
-		return false
-	}
-
-	parts := strings.Split(name, ".")
-	if len(parts) != 2 {
-		return false
-	}
-
-	modulePrefixes := []string{"pe.", "cuckoo.", "hash.", "elf.", "macho.", "dotnet.", "text."}
-	moduleName := parts[0]
-
-	for _, prefix := range modulePrefixes {
-		if strings.HasPrefix(name, prefix) {
-			return true
-		}
-	}
-
-	moduleFunctions := map[string]bool{
-		"elf": true, "macho": true, "dotnet": true, "text": true,
-	}
-
-	return moduleFunctions[moduleName]
+func (*ConditionCompiler) emitModuleFunctionCall(moduleName string, _, _ int) error {
+	return unsupportedModuleError(moduleName)
 }
 
-func (cc *ConditionCompiler) emitModuleFunctionCall(_ string, line, column int) {
-	cc.emitter.EmitPush(0, line, column)
+func unsupportedModuleError(moduleName string) error {
+	return fmt.Errorf("unsupported module: %s", moduleName)
+}
+
+func moduleNameFromDottedName(name string) (string, bool) {
+	moduleName, _, found := strings.Cut(name, ".")
+	if !found || moduleName == "" {
+		return "", false
+	}
+	return moduleName, true
+}
+
+func moduleNameFromMemberAccess(expr ast.Expression) (string, bool) {
+	binOp, ok := expr.(*ast.BinaryOp)
+	if !ok || binOp.Op != token.DOT {
+		return "", false
+	}
+	if _, ok := binOp.Right.(*ast.Identifier); !ok {
+		return "", false
+	}
+	return leftmostIdentifierName(binOp.Left)
+}
+
+func leftmostIdentifierName(expr ast.Expression) (string, bool) {
+	switch e := expr.(type) {
+	case *ast.Identifier:
+		if e.Name == "" {
+			return "", false
+		}
+		if moduleName, ok := moduleNameFromDottedName(e.Name); ok {
+			return moduleName, true
+		}
+		return e.Name, true
+	case *ast.BinaryOp:
+		if e.Op != token.DOT {
+			return "", false
+		}
+		return leftmostIdentifierName(e.Left)
+	default:
+		return "", false
+	}
 }
