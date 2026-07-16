@@ -87,6 +87,30 @@ func TestCompiledRegexPrefersBoundedMandatoryAtom(t *testing.T) {
 	}
 }
 
+func TestCompiledRegexCarriesMandatoryByteSet(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+		rule byte_set_atom {
+			strings:
+				$pattern = /.{2}[a-z]{2}/
+			condition:
+				$pattern
+		}
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pattern := program.Rules[0].RegexPatterns["$pattern"]
+	if pattern.byteSetCount != 26 || !pattern.byteSetContiguous {
+		t.Fatalf("byte set count = %d, contiguous = %v", pattern.byteSetCount, pattern.byteSetContiguous)
+	}
+	if pattern.byteSetLower != 'a' || pattern.byteSetUpper != 'z' {
+		t.Fatalf("byte set bounds = [%#x,%#x], want ['a','z']", pattern.byteSetLower, pattern.byteSetUpper)
+	}
+	if pattern.byteSetMinOffset != 2 || pattern.byteSetMaxOffset != 2 {
+		t.Fatalf("byte set offsets = [%d,%d], want [2,2]", pattern.byteSetMinOffset, pattern.byteSetMaxOffset)
+	}
+}
+
 func TestMandatoryRegexAtomMatchesLinearScan(t *testing.T) {
 	program, err := NewCompiler().CompileSource(`
 		rule internal_atoms {
@@ -102,6 +126,15 @@ func TestMandatoryRegexAtomMatchesLinearScan(t *testing.T) {
 				$overlap = /[a-z]{1,2}aba/
 				$optional = /(family_marker)?/
 				$anchored = /^[a-z]{1,8}anchored_marker/
+				$atomless = /[a-z]{2,4}[0-9]{2}/
+				$atomless_nocase = /[a-z]{2}[0-9]{2}/i
+				$atomless_wide = /[a-z]{2}[0-9]{2}/ wide
+				$optional_first = /[a-z]?[0-9]{2}/
+				$later_fixed = /.{2}[a-z]{2}/
+				$later_variable = /.{1,3}[a-z]{2}/
+				$alt_classes = /([a-c]|[x-z])[0-9]/
+				$alt_offsets = /[a-c]|..[x-z]/
+				$plus_class = /[a-z]+[0-9]{2}/
 			condition:
 				any of them
 		}
@@ -110,13 +143,14 @@ func TestMandatoryRegexAtomMatchesLinearScan(t *testing.T) {
 		t.Fatal(err)
 	}
 	rule := program.Rules[0]
-	wideData := widenRegexPrefix([]byte("xywide_marker zzdual_marker"))
+	wideData := widenRegexPrefix([]byte("xywide_marker zzdual_marker ab12"))
 	dataSets := [][]byte{
 		make([]byte, 128),
 		[]byte("xfamily_marker longfamily_marker alpha_marker beta_marker xxCASE_MARKER zaba zzaba"),
 		[]byte("abcdefghanchored_marker and later abcanchored_marker"),
 		append([]byte("ascii xydual_marker "), wideData...),
 		[]byte("family_markerfamily_marker"),
+		[]byte("ab12 z99 AB34 12 xxab z7 xyz99"),
 	}
 
 	for dataIndex, data := range dataSets {
@@ -131,6 +165,44 @@ func TestMandatoryRegexAtomMatchesLinearScan(t *testing.T) {
 		}
 		optimized.Release()
 		linear.Release()
+	}
+}
+
+func TestScannerReusesMandatoryByteSetPositions(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+		rule reused_byte_set {
+			strings:
+				$first = /.{2}[a-z]{2}/
+				$second = /.{4}[a-z]{2}/
+			condition:
+				any of them
+		}
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scanner := NewScanner(program)
+	defer scanner.Close()
+	if _, err := scanner.Scan(make([]byte, 128)); err != nil {
+		t.Fatal(err)
+	}
+	if len(scanner.regexByteSetCache.entries) != 1 {
+		t.Fatalf("byte-set cache entries = %d, want 1", len(scanner.regexByteSetCache.entries))
+	}
+
+	data := []byte("00ab 0000cd")
+	result, err := scanner.Scan(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	linear := buildLinearRegexContext(program.Rules[0], data)
+	defer linear.Release()
+	for _, id := range []string{"$first", "$second"} {
+		got := matchRangesInOrder(result.Matches["reused_byte_set"][id])
+		want := matchRangesInOrder(linear.Matches[id])
+		if !slices.Equal(got, want) {
+			t.Errorf("%s cached ranges = %v, linear scan = %v", id, got, want)
+		}
 	}
 }
 
@@ -190,6 +262,7 @@ func buildLinearRegexContext(rule *CompiledRule, data []byte) *MatchContext {
 		pattern.widePrefix = nil
 		pattern.atom = nil
 		pattern.wideAtom = nil
+		pattern.byteSetCount = 0
 		modifiers := rule.StringModifiers[id]
 		addRegexMatchesWithModifiers(ctx, id, pattern, data, modifiers)
 	}

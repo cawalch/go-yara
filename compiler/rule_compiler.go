@@ -300,20 +300,28 @@ func (rc *RuleCompiler) compileSingleString(str *ast.String) error {
 	case StringKindRegex:
 		prefix, anchored := regex.LiteralPrefix(result.patternData)
 		pattern := RegexPattern{
-			Code:          result.patternData,
-			Flags:         result.flags,
-			prefix:        prefix,
-			widePrefix:    widenRegexPrefix(prefix),
-			atomMaxOffset: -1,
-			anchored:      anchored,
-			cacheKey:      result.cacheKey,
-			cacheIndex:    -1,
+			Code:             result.patternData,
+			Flags:            result.flags,
+			prefix:           prefix,
+			widePrefix:       widenRegexPrefix(prefix),
+			atomMaxOffset:    -1,
+			byteSetMaxOffset: -1,
+			anchored:         anchored,
+			cacheKey:         result.cacheKey,
+			cacheIndex:       -1,
 		}
 		if atom, ok := selectMandatoryRegexAtom(result.regexAtoms); ok {
 			pattern.atom = append([]byte(nil), atom.data...)
 			pattern.wideAtom = widenRegexPrefix(atom.data)
 			pattern.atomMinOffset = atom.minOffset
 			pattern.atomMaxOffset = atom.maxOffset
+		}
+		if atom, ok := selectMandatoryRegexByteSetAtom(result.regexByteSetAtoms, result.flags); ok {
+			pattern.byteSet = atom.set
+			pattern.byteSetMinOffset = atom.minOffset
+			pattern.byteSetMaxOffset = atom.maxOffset
+			pattern.byteSetCount = atom.count
+			pattern.byteSetLower, pattern.byteSetUpper, pattern.byteSetContiguous = atom.set.ContiguousRange()
 		}
 		rc.regexPatterns[str.Identifier] = pattern
 	case StringKindHex:
@@ -327,15 +335,16 @@ func (rc *RuleCompiler) compileSingleString(str *ast.String) error {
 }
 
 type stringCompilationResult struct {
-	patternData     []byte
-	kind            StringKind
-	flags           regex.Flags
-	hexPattern      *HexPattern
-	altPatterns     [][]byte
-	patternFlags    regex.Flags
-	altPatternFlags []regex.Flags
-	cacheKey        string
-	regexAtoms      []regex.LiteralAtom
+	patternData       []byte
+	kind              StringKind
+	flags             regex.Flags
+	hexPattern        *HexPattern
+	altPatterns       [][]byte
+	patternFlags      regex.Flags
+	altPatternFlags   []regex.Flags
+	cacheKey          string
+	regexAtoms        []regex.LiteralAtom
+	regexByteSetAtoms []regex.ByteSetAtom
 }
 
 func (rc *RuleCompiler) compileStringPattern(str *ast.String) (*stringCompilationResult, error) {
@@ -433,13 +442,13 @@ func (rc *RuleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers
 	}
 
 	flags := rc.deriveRegexFlags(pattern.Value, modifiers)
-
 	return &stringCompilationResult{
-		patternData: code, // VM bytecode
-		kind:        StringKindRegex,
-		flags:       flags,
-		cacheKey:    patternCacheKey("regex", pattern.Value, modifiers),
-		regexAtoms:  regex.MandatoryLiteralAtoms(parsed),
+		patternData:       code, // VM bytecode
+		kind:              StringKindRegex,
+		flags:             flags,
+		cacheKey:          patternCacheKey("regex", pattern.Value, modifiers),
+		regexAtoms:        regex.MandatoryLiteralAtoms(parsed),
+		regexByteSetAtoms: regex.MandatoryByteSetAtoms(parsed),
 	}, nil
 }
 
@@ -885,17 +894,24 @@ func (rc *RuleCompiler) copyRegexPatterns() map[string]RegexPattern {
 		cp := make([]byte, len(v.Code))
 		copy(cp, v.Code)
 		out[k] = RegexPattern{
-			Code:          cp,
-			Flags:         v.Flags,
-			prefix:        slices.Clone(v.prefix),
-			widePrefix:    slices.Clone(v.widePrefix),
-			atom:          slices.Clone(v.atom),
-			wideAtom:      slices.Clone(v.wideAtom),
-			atomMinOffset: v.atomMinOffset,
-			atomMaxOffset: v.atomMaxOffset,
-			anchored:      v.anchored,
-			cacheKey:      v.cacheKey,
-			cacheIndex:    v.cacheIndex,
+			Code:              cp,
+			Flags:             v.Flags,
+			prefix:            slices.Clone(v.prefix),
+			widePrefix:        slices.Clone(v.widePrefix),
+			atom:              slices.Clone(v.atom),
+			wideAtom:          slices.Clone(v.wideAtom),
+			atomMinOffset:     v.atomMinOffset,
+			atomMaxOffset:     v.atomMaxOffset,
+			byteSet:           v.byteSet,
+			byteSetMinOffset:  v.byteSetMinOffset,
+			byteSetMaxOffset:  v.byteSetMaxOffset,
+			byteSetCount:      v.byteSetCount,
+			byteSetLower:      v.byteSetLower,
+			byteSetUpper:      v.byteSetUpper,
+			byteSetContiguous: v.byteSetContiguous,
+			anchored:          v.anchored,
+			cacheKey:          v.cacheKey,
+			cacheIndex:        v.cacheIndex,
 		}
 	}
 	return out

@@ -19,6 +19,7 @@ type atomAnalysis struct {
 	minLength int
 	maxLength int
 	atoms     []LiteralAtom
+	byteAtoms []ByteSetAtom
 	exact     []byte
 	isExact   bool
 }
@@ -45,6 +46,7 @@ func analyzeAtoms(node *Node) atomAnalysis {
 			minLength: 1,
 			maxLength: 1,
 			atoms:     []LiteralAtom{{Data: data, MaxOffset: 0}},
+			byteAtoms: usefulByteSetAtom(byteSetOf(node.Value)),
 			exact:     data,
 			isExact:   true,
 		}
@@ -60,8 +62,29 @@ func analyzeAtoms(node *Node) atomAnalysis {
 		return analyzeRangeAtoms(node)
 	case NodeEmpty, NodeAnchorStart, NodeAnchorEnd, NodeWordBoundary, NodeNonWordBoundary:
 		return atomAnalysis{maxLength: 0, isExact: true}
-	case NodeAny, NodeClass, NodeWordChar, NodeNonWordChar, NodeSpace, NodeNonSpace,
-		NodeDigit, NodeNonDigit, NodeNotLiteral, NodeMaskedLiteral, NodeMaskedNotLiteral:
+	case NodeMaskedLiteral:
+		return singleByteAtomAnalysis(maskedByteSet(node.Value, node.Mask, false))
+	case NodeMaskedNotLiteral:
+		return singleByteAtomAnalysis(maskedByteSet(node.Value, node.Mask, true))
+	case NodeNotLiteral:
+		set := fullByteSet()
+		set.remove(node.Value)
+		return singleByteAtomAnalysis(set)
+	case NodeClass:
+		return singleByteAtomAnalysis(classByteSet(node.Class))
+	case NodeWordChar:
+		return singleByteAtomAnalysis(predicateByteSet(isWord))
+	case NodeNonWordChar:
+		return singleByteAtomAnalysis(predicateByteSet(notWord))
+	case NodeSpace:
+		return singleByteAtomAnalysis(predicateByteSet(isSpace))
+	case NodeNonSpace:
+		return singleByteAtomAnalysis(predicateByteSet(notSpace))
+	case NodeDigit:
+		return singleByteAtomAnalysis(predicateByteSet(isDigit))
+	case NodeNonDigit:
+		return singleByteAtomAnalysis(predicateByteSet(notDigit))
+	case NodeAny:
 		return atomAnalysis{minLength: 1, maxLength: 1}
 	case NodeRangeAny:
 		maxLength := int(node.End)
@@ -71,6 +94,14 @@ func analyzeAtoms(node *Node) atomAnalysis {
 		return atomAnalysis{minLength: int(node.Start), maxLength: maxLength}
 	default:
 		return atomAnalysis{maxLength: -1}
+	}
+}
+
+func singleByteAtomAnalysis(set ByteSet) atomAnalysis {
+	return atomAnalysis{
+		minLength: 1,
+		maxLength: 1,
+		byteAtoms: usefulByteSetAtom(set),
 	}
 }
 
@@ -100,6 +131,9 @@ func analyzeConcatAtoms(children []*Node) atomAnalysis {
 		analysis := analyzeAtoms(child)
 		for _, atom := range analysis.atoms {
 			result.atoms = append(result.atoms, shiftLiteralAtom(atom, result.minLength, result.maxLength))
+		}
+		for _, atom := range analysis.byteAtoms {
+			result.byteAtoms = append(result.byteAtoms, shiftByteSetAtom(atom, result.minLength, result.maxLength))
 		}
 
 		if analysis.isExact {
@@ -150,6 +184,7 @@ func analyzeAltAtoms(children []*Node) atomAnalysis {
 		}
 	}
 
+	result.byteAtoms = mergeAlternativeByteSetAtoms(analyses)
 	if result.isExact && len(result.exact) > 0 {
 		result.atoms = []LiteralAtom{{Data: append([]byte(nil), result.exact...), MaxOffset: 0}}
 		return result
@@ -172,6 +207,7 @@ func analyzePlusAtoms(node *Node) atomAnalysis {
 		minLength: child.minLength,
 		maxLength: -1,
 		atoms:     cloneLiteralAtoms(child.atoms),
+		byteAtoms: cloneByteSetAtoms(child.byteAtoms),
 	}
 	if child.maxLength == 0 {
 		result.maxLength = 0
@@ -197,6 +233,7 @@ func analyzeRangeAtoms(node *Node) atomAnalysis {
 	}
 	if minimum > 0 {
 		result.atoms = cloneLiteralAtoms(child.atoms)
+		result.byteAtoms = cloneByteSetAtoms(child.byteAtoms)
 		if child.isExact && len(child.exact) > 0 {
 			result.atoms = append(result.atoms, LiteralAtom{
 				Data:      repeatLiteral(child.exact, minimum),
@@ -226,6 +263,14 @@ func shiftLiteralAtom(atom LiteralAtom, minOffset, maxOffset int) LiteralAtom {
 	}
 }
 
+func shiftByteSetAtom(atom ByteSetAtom, minOffset, maxOffset int) ByteSetAtom {
+	return ByteSetAtom{
+		Set:       atom.Set,
+		MinOffset: addLength(minOffset, atom.MinOffset),
+		MaxOffset: addLength(maxOffset, atom.MaxOffset),
+	}
+}
+
 func cloneLiteralAtoms(atoms []LiteralAtom) []LiteralAtom {
 	result := make([]LiteralAtom, len(atoms))
 	for i, atom := range atoms {
@@ -236,6 +281,65 @@ func cloneLiteralAtoms(atoms []LiteralAtom) []LiteralAtom {
 		}
 	}
 	return result
+}
+
+func cloneByteSetAtoms(atoms []ByteSetAtom) []ByteSetAtom {
+	return append([]ByteSetAtom(nil), atoms...)
+}
+
+func mergeAlternativeByteSetAtoms(analyses []atomAnalysis) []ByteSetAtom {
+	if len(analyses) == 0 {
+		return nil
+	}
+	var merged ByteSetAtom
+	for index, analysis := range analyses {
+		candidate, ok := bestByteSetAtom(analysis.byteAtoms)
+		if !ok {
+			return nil
+		}
+		if index == 0 {
+			merged = candidate
+			continue
+		}
+		merged.Set.union(candidate.Set)
+		merged.MinOffset = min(merged.MinOffset, candidate.MinOffset)
+		merged.MaxOffset = maxLength(merged.MaxOffset, candidate.MaxOffset)
+	}
+	if merged.Set.Count() > maxUsefulByteSetSize {
+		return nil
+	}
+	return []ByteSetAtom{merged}
+}
+
+func bestByteSetAtom(atoms []ByteSetAtom) (ByteSetAtom, bool) {
+	var best ByteSetAtom
+	found := false
+	for _, candidate := range atoms {
+		if !found || betterByteSetAtom(candidate, best) {
+			best = candidate
+			found = true
+		}
+	}
+	return best, found
+}
+
+func betterByteSetAtom(candidate, current ByteSetAtom) bool {
+	candidateBounded := candidate.MaxOffset >= 0
+	currentBounded := current.MaxOffset >= 0
+	if candidateBounded != currentBounded {
+		return candidateBounded
+	}
+	if candidate.Set.Count() != current.Set.Count() {
+		return candidate.Set.Count() < current.Set.Count()
+	}
+	if candidateBounded {
+		candidateWidth := candidate.MaxOffset - candidate.MinOffset
+		currentWidth := current.MaxOffset - current.MinOffset
+		if candidateWidth != currentWidth {
+			return candidateWidth < currentWidth
+		}
+	}
+	return true
 }
 
 func intersectMandatoryAtoms(analyses []atomAnalysis) []LiteralAtom {

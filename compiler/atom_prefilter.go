@@ -11,6 +11,7 @@ import (
 const (
 	minPrefilterAtomLength = 2
 	maxPrefilterAtomLength = 8
+	maxRegexByteSetSize    = 96
 	// Below this crossover, the existing per-pattern SIMD byte searches are
 	// cheaper than adding more root transitions to the global automaton.
 	minSharedNonTextEntries = 32
@@ -27,6 +28,13 @@ type regexPrefilterAtom struct {
 	minOffset int
 	maxOffset int
 	score     int
+}
+
+type regexByteSetPrefilter struct {
+	set       regex.ByteSet
+	minOffset int
+	maxOffset int
+	count     int
 }
 
 type prefilterDedupKey struct {
@@ -297,6 +305,51 @@ func betterRegexPrefilterAtom(candidate, current regexPrefilterAtom) bool {
 	}
 	if candidate.score != current.score {
 		return candidate.score > current.score
+	}
+	if candidateBounded {
+		candidateWidth := candidate.maxOffset - candidate.minOffset
+		currentWidth := current.maxOffset - current.minOffset
+		if candidateWidth != currentWidth {
+			return candidateWidth < currentWidth
+		}
+	}
+	return true
+}
+
+func selectMandatoryRegexByteSetAtom(atoms []regex.ByteSetAtom, flags regex.Flags) (regexByteSetPrefilter, bool) {
+	var best regexByteSetPrefilter
+	found := false
+	for _, atom := range atoms {
+		set := atom.Set
+		if flags&regex.FlagsNoCase != 0 {
+			set = set.ASCIIFolded()
+		}
+		count := set.Count()
+		if count == 0 || count > maxRegexByteSetSize {
+			continue
+		}
+		candidate := regexByteSetPrefilter{
+			set:       set,
+			minOffset: atom.MinOffset,
+			maxOffset: atom.MaxOffset,
+			count:     count,
+		}
+		if !found || betterRegexByteSetPrefilter(candidate, best) {
+			best = candidate
+			found = true
+		}
+	}
+	return best, found
+}
+
+func betterRegexByteSetPrefilter(candidate, current regexByteSetPrefilter) bool {
+	candidateBounded := candidate.maxOffset >= 0
+	currentBounded := current.maxOffset >= 0
+	if candidateBounded != currentBounded {
+		return candidateBounded
+	}
+	if candidate.count != current.count {
+		return candidate.count < current.count
 	}
 	if candidateBounded {
 		candidateWidth := candidate.maxOffset - candidate.minOffset
