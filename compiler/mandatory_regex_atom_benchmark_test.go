@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 	"testing"
@@ -42,6 +43,36 @@ func BenchmarkMandatoryRegexAtomScanner(b *testing.B) {
 	for _, size := range []int{16 * 1024, 1024 * 1024} {
 		b.Run(fmt.Sprintf("%dKiB", size/1024), func(b *testing.B) {
 			data := make([]byte, size)
+			b.SetBytes(int64(size))
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				if _, err := scanner.Scan(data); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkNoCaseMandatoryRegexAtomScanner(b *testing.B) {
+	program, err := NewCompiler().CompileSource(`
+		rule nocase_internal_atom {
+			strings:
+				$pattern = /(exp[-_ ]?date|expir(y|ation))\b/ nocase
+			condition:
+				$pattern
+		}
+	`)
+	if err != nil {
+		b.Fatal(err)
+	}
+	scanner := NewScanner(program)
+	defer scanner.Close()
+
+	for _, size := range []int{16 * 1024, 1024 * 1024} {
+		b.Run(fmt.Sprintf("%dKiB", size/1024), func(b *testing.B) {
+			data := bytes.Repeat([]byte(" benignFillerCode123"), size/20+1)[:size]
 			b.SetBytes(int64(size))
 			b.ReportAllocs()
 			b.ResetTimer()
