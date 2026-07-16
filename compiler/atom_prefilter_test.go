@@ -71,6 +71,98 @@ func TestCompiledRegexCarriesMandatoryInternalAtom(t *testing.T) {
 	}
 }
 
+func TestCompiledRegexCarriesLiteralAlternativeAtoms(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+		rule literal_alternatives {
+			strings:
+				$pattern = /(cardholder|nameoncard|expiry|expiration)\b/
+			condition:
+				$pattern
+		}
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pattern := program.Rules[0].RegexPatterns["$pattern"]
+	if len(pattern.atom) != 0 {
+		t.Fatalf("mandatory atom = %q, want none", pattern.atom)
+	}
+	if len(pattern.alternativeAtoms) != 4 || len(pattern.wideAlternativeAtoms) != 4 {
+		t.Fatalf("alternative atom counts = ascii:%d wide:%d, want 4 each",
+			len(pattern.alternativeAtoms), len(pattern.wideAlternativeAtoms))
+	}
+	for index, atom := range pattern.alternativeAtoms {
+		if len(atom.data) < minPrefilterAtomLength || atom.minOffset != atom.maxOffset {
+			t.Errorf("alternative atom %d = %+v, want a useful exact-offset atom", index, atom)
+		}
+		wide := pattern.wideAlternativeAtoms[index]
+		if wide.minOffset != atom.minOffset*2 || wide.maxOffset != atom.maxOffset*2 {
+			t.Errorf("wide alternative atom %d offsets = [%d,%d], want [%d,%d]",
+				index, wide.minOffset, wide.maxOffset, atom.minOffset*2, atom.maxOffset*2)
+		}
+	}
+}
+
+func TestLiteralAlternativeRegexAtomsMatchLinearScan(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+		rule literal_alternatives {
+			strings:
+				$issue = /(cardholder|nameoncard|expiry|expiration)\b/
+				$nocase = /(alpha_marker|beta_token|gamma_value)/ nocase
+				$wide = /(wide_alpha|wide_beta|wide_gamma)/ wide
+				$both = /(dual_alpha|dual_beta|dual_gamma)/ ascii wide
+				$leading_assertion = /\b(boundary_alpha|boundary_beta)/
+				$offset_window = /(abcdefghij|klmnopqrst|uvwxyzabcd)/
+			condition:
+				any of them
+		}
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rule := program.Rules[0]
+	dataSets := [][]byte{
+		make([]byte, 1024),
+		[]byte("cardholder nameoncardx expiry expiration! ALPHA_MARKER beta_token gamma_value boundary_alpha xboundary_beta abcdefghij klmnopqrst uvwxyzabcd"),
+		append([]byte("dual_alpha "), widenRegexPrefix([]byte("wide_beta dual_gamma"))...),
+	}
+	for dataIndex, data := range dataSets {
+		optimized := BuildMatchContext(rule, data)
+		linear := buildLinearRegexContext(rule, data)
+		for _, id := range sortedPatternIDs(rule.RegexPatterns) {
+			got := matchRangesInOrder(optimized.Matches[id])
+			want := matchRangesInOrder(linear.Matches[id])
+			if !slices.Equal(got, want) {
+				t.Errorf("data %d, %s ranges = %v, linear scan = %v", dataIndex, id, got, want)
+			}
+		}
+		optimized.Release()
+		linear.Release()
+	}
+}
+
+func TestCompiledRegexRejectsIncompleteLiteralAlternatives(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+		rule incomplete_alternatives {
+			strings:
+				$prefix = /prefix(foo|bar)/
+				$suffix = /(foo|bar)suffix/
+				$mixed = /(foo|b.r)/
+				$short = /(a|bar)/
+			condition:
+				any of them
+		}
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for id, pattern := range program.Rules[0].RegexPatterns {
+		if len(pattern.alternativeAtoms) != 0 {
+			t.Errorf("%s alternative atoms = %+v, want none", id, pattern.alternativeAtoms)
+		}
+	}
+}
+
 func TestCompiledRegexPrefersBoundedMandatoryAtom(t *testing.T) {
 	program, err := NewCompiler().CompileSource(`
 		rule bounded_atom {
@@ -431,6 +523,8 @@ func buildLinearRegexContext(rule *CompiledRule, data []byte) *MatchContext {
 		pattern.widePrefix = nil
 		pattern.atom = nil
 		pattern.wideAtom = nil
+		pattern.alternativeAtoms = nil
+		pattern.wideAlternativeAtoms = nil
 		pattern.byteSetCount = 0
 		pattern.fixedByteSets = nil
 		modifiers := rule.StringModifiers[id]

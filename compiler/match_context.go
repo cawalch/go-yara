@@ -134,6 +134,14 @@ func addRegexMatchesCached(
 		}
 		atomRequiresLinearFallback = true
 	}
+	alternativeAtoms := regexInfo.alternativeAtoms
+	if isWide {
+		alternativeAtoms = regexInfo.wideAlternativeAtoms
+	}
+	if len(alternativeAtoms) > 0 {
+		addRegexMatchesFromAlternatives(ctx, id, regexInfo, data, modifiers, flags, isWide, alternativeAtoms)
+		return
+	}
 	useByteSet := regexInfo.byteSetCount > 0 &&
 		(!atomRequiresLinearFallback || regexInfo.byteSetMaxOffset >= 0)
 	if useByteSet {
@@ -161,6 +169,75 @@ func addRegexMatchesCached(
 	bs, release := newRegexMatchBatch(regexInfo)
 	defer releaseRegexMatchBatch(release)
 	addRegexMatchesLinear(ctx, id, regexInfo, data, modifiers, flags, isWide, bs)
+}
+
+type regexAlternativeCursor struct {
+	atom       regexPrefilterAtom
+	searchFrom int
+	start      int
+}
+
+func (cursor *regexAlternativeCursor) advance(data []byte, flags regex.Flags, isWide bool) {
+	for cursor.searchFrom <= len(data) {
+		occurrence := indexRegexLiteral(data, cursor.searchFrom, cursor.atom.data, flags, isWide)
+		if occurrence < 0 {
+			cursor.start = -1
+			return
+		}
+		cursor.searchFrom = occurrence + 1
+		start := occurrence - cursor.atom.minOffset
+		if start >= 0 {
+			cursor.start = start
+			return
+		}
+	}
+	cursor.start = -1
+}
+
+//nolint:revive // argument-limit: hot path avoids allocating an options struct
+func addRegexMatchesFromAlternatives(
+	ctx *MatchContext,
+	id string,
+	regexInfo RegexPattern,
+	data []byte,
+	modifiers []ast.StringModifier,
+	flags regex.Flags,
+	isWide bool,
+	atoms []regexPrefilterAtom,
+) {
+	var inline [8]regexAlternativeCursor
+	var cursors []regexAlternativeCursor
+	if len(atoms) <= len(inline) {
+		cursors = inline[:len(atoms)]
+	} else {
+		cursors = make([]regexAlternativeCursor, len(atoms))
+	}
+	for index, atom := range atoms {
+		cursors[index].atom = atom
+		cursors[index].advance(data, flags, isWide)
+	}
+
+	bs, release := newRegexMatchBatch(regexInfo)
+	defer releaseRegexMatchBatch(release)
+	for {
+		candidate := -1
+		for index := range cursors {
+			start := cursors[index].start
+			if start >= 0 && (candidate < 0 || start < candidate) {
+				candidate = start
+			}
+		}
+		if candidate < 0 {
+			return
+		}
+
+		addRegexMatchAt(ctx, id, regexInfo, data, modifiers, flags, isWide, bs, candidate)
+		for index := range cursors {
+			if cursors[index].start == candidate {
+				cursors[index].advance(data, flags, isWide)
+			}
+		}
+	}
 }
 
 //nolint:revive // argument-limit: hot path avoids allocating an options struct
