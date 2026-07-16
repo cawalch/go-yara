@@ -85,6 +85,48 @@ func BenchmarkNoCaseMandatoryRegexAtomScanner(b *testing.B) {
 	}
 }
 
+func BenchmarkLiteralAlternationRegexScanner(b *testing.B) {
+	for _, benchmark := range []struct {
+		name    string
+		pattern string
+	}{
+		{name: "single_literal", pattern: `/cardholder\b/`},
+		{name: "single_literal_nocase", pattern: `/cardholder\b/ nocase`},
+		{name: "literal_alternation", pattern: `/(cardholder|nameoncard|expiry|expiration)\b/`},
+		{name: "literal_alternation_nocase", pattern: `/(cardholder|nameoncard|expiry|expiration)\b/ nocase`},
+	} {
+		b.Run(benchmark.name, func(b *testing.B) {
+			program, err := NewCompiler().CompileSource(fmt.Sprintf(`
+				rule literal_alternation {
+					strings:
+						$pattern = %s
+					condition:
+						$pattern
+				}
+			`, benchmark.pattern))
+			if err != nil {
+				b.Fatal(err)
+			}
+			scanner := NewScanner(program)
+			defer scanner.Close()
+
+			for _, size := range []int{16 * 1024, 1024 * 1024} {
+				b.Run(fmt.Sprintf("%dKiB", size/1024), func(b *testing.B) {
+					data := bytes.Repeat([]byte("benignFillerCode123 "), size/20+1)[:size]
+					b.SetBytes(int64(size))
+					b.ReportAllocs()
+					b.ResetTimer()
+					for b.Loop() {
+						if _, err := scanner.Scan(data); err != nil {
+							b.Fatal(err)
+						}
+					}
+				})
+			}
+		})
+	}
+}
+
 func BenchmarkSharedMandatoryRegexAtomScale(b *testing.B) {
 	for _, ruleCount := range []int{20, 50, 100, 500} {
 		b.Run(fmt.Sprintf("rules_%d", ruleCount), func(b *testing.B) {

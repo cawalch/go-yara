@@ -34,6 +34,11 @@ type regexPrefilterAtom struct {
 	score     int
 }
 
+type regexAlternativeDedupKey struct {
+	data   string
+	offset int
+}
+
 type regexByteSetPrefilter struct {
 	set       regex.ByteSet
 	minOffset int
@@ -393,6 +398,62 @@ func selectMandatoryRegexAtom(atoms []regex.LiteralAtom) (regexPrefilterAtom, bo
 		}
 	}
 	return best, len(best.data) >= minPrefilterAtomLength
+}
+
+// selectLiteralAlternativeAtoms keeps one exact-offset atom for every branch.
+// The set is all-or-nothing: omitting even one branch would make the candidate
+// scan unsound and could hide a valid regex match.
+func selectLiteralAlternativeAtoms(alternatives []regex.LiteralAtom) ([]regexPrefilterAtom, bool) {
+	if len(alternatives) < 2 {
+		return nil, false
+	}
+	atoms := make([]regexPrefilterAtom, 0, len(alternatives))
+	seen := make(map[regexAlternativeDedupKey]struct{}, len(alternatives))
+	for _, alternative := range alternatives {
+		atom, ok := selectLiteralAtom(alternative.Data)
+		if !ok || alternative.MinOffset != alternative.MaxOffset {
+			return nil, false
+		}
+		offset := alternative.MinOffset + atom.offset
+		key := regexAlternativeDedupKey{data: string(atom.data), offset: offset}
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		atoms = append(atoms, regexPrefilterAtom{
+			data:      atom.data,
+			minOffset: offset,
+			maxOffset: offset,
+			score:     atom.score,
+		})
+	}
+	return atoms, len(atoms) > 0
+}
+
+func cloneRegexPrefilterAtoms(atoms []regexPrefilterAtom) []regexPrefilterAtom {
+	if len(atoms) == 0 {
+		return nil
+	}
+	cloned := make([]regexPrefilterAtom, len(atoms))
+	for index, atom := range atoms {
+		cloned[index] = atom
+		cloned[index].data = append([]byte(nil), atom.data...)
+	}
+	return cloned
+}
+
+func widenRegexPrefilterAtoms(atoms []regexPrefilterAtom) []regexPrefilterAtom {
+	if len(atoms) == 0 {
+		return nil
+	}
+	wide := make([]regexPrefilterAtom, len(atoms))
+	for index, atom := range atoms {
+		wide[index] = atom
+		wide[index].data = widenRegexPrefix(atom.data)
+		wide[index].minOffset *= 2
+		wide[index].maxOffset *= 2
+	}
+	return wide
 }
 
 func betterRegexPrefilterAtom(candidate, current regexPrefilterAtom) bool {

@@ -24,6 +24,11 @@ type atomAnalysis struct {
 	isExact   bool
 }
 
+const (
+	maxLiteralAlternatives     = 256
+	maxLiteralAlternativeBytes = 16 << 10
+)
+
 // MandatoryLiteralAtoms returns only literals that are present in every match
 // accepted by ast. The caller can use their offset bounds to turn literal
 // occurrences into a conservative set of regex start positions.
@@ -32,6 +37,81 @@ func MandatoryLiteralAtoms(ast *AST) []LiteralAtom {
 		return nil
 	}
 	return analyzeAtoms(ast.Root).atoms
+}
+
+// LiteralAlternatives returns the exact, non-empty literal branches when the
+// entire consuming portion of ast is an alternation. Zero-width assertions may
+// surround the alternation; the regex VM still verifies them at each candidate
+// start. Mixed or variable branches return nil so callers never use a branch
+// atom as though it covered the whole regex language.
+func LiteralAlternatives(ast *AST) []LiteralAtom {
+	if ast == nil || ast.Root == nil {
+		return nil
+	}
+
+	node := ast.Root
+	if node.Kind == NodeConcat {
+		var consuming *Node
+		for _, child := range node.Children {
+			analysis := analyzeAtoms(child)
+			if analysis.minLength == 0 && analysis.maxLength == 0 {
+				continue
+			}
+			if consuming != nil {
+				return nil
+			}
+			consuming = child
+		}
+		if consuming == nil {
+			return nil
+		}
+		node = consuming
+	}
+	if node.Kind != NodeAlt {
+		return nil
+	}
+
+	leaves := make([]*Node, 0, len(node.Children))
+	if !appendAlternativeLeaves(&leaves, node) {
+		return nil
+	}
+
+	totalBytes := 0
+	alternatives := make([]LiteralAtom, 0, len(leaves))
+	for _, leaf := range leaves {
+		analysis := analyzeAtoms(leaf)
+		if !analysis.isExact || len(analysis.exact) == 0 {
+			return nil
+		}
+		totalBytes += len(analysis.exact)
+		if totalBytes > maxLiteralAlternativeBytes {
+			return nil
+		}
+		alternatives = append(alternatives, LiteralAtom{
+			Data:      append([]byte(nil), analysis.exact...),
+			MaxOffset: 0,
+		})
+	}
+	return alternatives
+}
+
+func appendAlternativeLeaves(dst *[]*Node, node *Node) bool {
+	if node == nil {
+		return false
+	}
+	if node.Kind != NodeAlt {
+		if len(*dst) >= maxLiteralAlternatives {
+			return false
+		}
+		*dst = append(*dst, node)
+		return true
+	}
+	for _, child := range node.Children {
+		if !appendAlternativeLeaves(dst, child) {
+			return false
+		}
+	}
+	return true
 }
 
 func analyzeAtoms(node *Node) atomAnalysis {

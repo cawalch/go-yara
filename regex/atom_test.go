@@ -77,3 +77,54 @@ func TestMandatoryLiteralAtomsDoesNotMutateResults(t *testing.T) {
 		t.Fatalf("analysis changed between calls: first=%+v second=%+v", first, second)
 	}
 }
+
+func TestLiteralAlternatives(t *testing.T) {
+	tests := []struct {
+		name    string
+		pattern string
+		want    []string
+	}{
+		{name: "nested alternation", pattern: "(cardholder|nameoncard|expiry|expiration)\\b", want: []string{"cardholder", "nameoncard", "expiry", "expiration"}},
+		{name: "leading assertion", pattern: "\\b(foo|bar)", want: []string{"foo", "bar"}},
+		{name: "singleton classes", pattern: "(foo|[b][a][r])", want: []string{"foo", "bar"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			parsed, err := NewParser(ParserFlagEnableStrictEscapeSequences).Parse(tt.pattern)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := LiteralAlternatives(parsed)
+			if len(got) != len(tt.want) {
+				t.Fatalf("LiteralAlternatives(%q) = %+v, want %v", tt.pattern, got, tt.want)
+			}
+			for index, want := range tt.want {
+				if string(got[index].Data) != want || got[index].MinOffset != 0 || got[index].MaxOffset != 0 {
+					t.Errorf("alternative %d = %+v, want %q at [0,0]", index, got[index], want)
+				}
+			}
+		})
+	}
+}
+
+func TestLiteralAlternativesRejectsIncompleteCoverage(t *testing.T) {
+	patterns := []string{
+		"prefix(foo|bar)",
+		"(foo|bar)suffix",
+		"(foo|b.r)",
+		"(foo|)",
+		"foo",
+	}
+	for _, pattern := range patterns {
+		t.Run(pattern, func(t *testing.T) {
+			parsed, err := NewParser(ParserFlagEnableStrictEscapeSequences).Parse(pattern)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := LiteralAlternatives(parsed); got != nil {
+				t.Fatalf("LiteralAlternatives(%q) = %+v, want nil", pattern, got)
+			}
+		})
+	}
+}

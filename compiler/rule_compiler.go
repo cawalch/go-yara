@@ -316,6 +316,12 @@ func (rc *RuleCompiler) compileSingleString(str *ast.String) error {
 			pattern.atomMinOffset = atom.minOffset
 			pattern.atomMaxOffset = atom.maxOffset
 		}
+		if len(pattern.prefix) < minPrefilterAtomLength && len(pattern.atom) == 0 {
+			if atoms, ok := selectLiteralAlternativeAtoms(result.regexAlternatives); ok {
+				pattern.alternativeAtoms = cloneRegexPrefilterAtoms(atoms)
+				pattern.wideAlternativeAtoms = widenRegexPrefilterAtoms(atoms)
+			}
+		}
 		if atom, ok := selectMandatoryRegexByteSetAtom(result.regexByteSetAtoms, result.flags); ok {
 			pattern.byteSet = atom.set
 			pattern.byteSetMinOffset = atom.minOffset
@@ -345,6 +351,7 @@ type stringCompilationResult struct {
 	altPatternFlags    []regex.Flags
 	cacheKey           string
 	regexAtoms         []regex.LiteralAtom
+	regexAlternatives  []regex.LiteralAtom
 	regexByteSetAtoms  []regex.ByteSetAtom
 	regexFixedByteSets []regex.ByteSet
 }
@@ -451,6 +458,7 @@ func (rc *RuleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers
 		flags:              flags,
 		cacheKey:           patternCacheKey("regex", pattern.Value, modifiers),
 		regexAtoms:         regex.MandatoryLiteralAtoms(parsed),
+		regexAlternatives:  regex.LiteralAlternatives(parsed),
 		regexByteSetAtoms:  regex.MandatoryByteSetAtoms(parsed),
 		regexFixedByteSets: fixedByteSets,
 	}, nil
@@ -898,25 +906,27 @@ func (rc *RuleCompiler) copyRegexPatterns() map[string]RegexPattern {
 		cp := make([]byte, len(v.Code))
 		copy(cp, v.Code)
 		out[k] = RegexPattern{
-			Code:              cp,
-			Flags:             v.Flags,
-			prefix:            slices.Clone(v.prefix),
-			widePrefix:        slices.Clone(v.widePrefix),
-			atom:              slices.Clone(v.atom),
-			wideAtom:          slices.Clone(v.wideAtom),
-			atomMinOffset:     v.atomMinOffset,
-			atomMaxOffset:     v.atomMaxOffset,
-			byteSet:           v.byteSet,
-			byteSetMinOffset:  v.byteSetMinOffset,
-			byteSetMaxOffset:  v.byteSetMaxOffset,
-			byteSetCount:      v.byteSetCount,
-			byteSetLower:      v.byteSetLower,
-			byteSetUpper:      v.byteSetUpper,
-			byteSetContiguous: v.byteSetContiguous,
-			fixedByteSets:     slices.Clone(v.fixedByteSets),
-			anchored:          v.anchored,
-			cacheKey:          v.cacheKey,
-			cacheIndex:        v.cacheIndex,
+			Code:                 cp,
+			Flags:                v.Flags,
+			prefix:               slices.Clone(v.prefix),
+			widePrefix:           slices.Clone(v.widePrefix),
+			atom:                 slices.Clone(v.atom),
+			wideAtom:             slices.Clone(v.wideAtom),
+			atomMinOffset:        v.atomMinOffset,
+			atomMaxOffset:        v.atomMaxOffset,
+			alternativeAtoms:     cloneRegexPrefilterAtoms(v.alternativeAtoms),
+			wideAlternativeAtoms: cloneRegexPrefilterAtoms(v.wideAlternativeAtoms),
+			byteSet:              v.byteSet,
+			byteSetMinOffset:     v.byteSetMinOffset,
+			byteSetMaxOffset:     v.byteSetMaxOffset,
+			byteSetCount:         v.byteSetCount,
+			byteSetLower:         v.byteSetLower,
+			byteSetUpper:         v.byteSetUpper,
+			byteSetContiguous:    v.byteSetContiguous,
+			fixedByteSets:        slices.Clone(v.fixedByteSets),
+			anchored:             v.anchored,
+			cacheKey:             v.cacheKey,
+			cacheIndex:           v.cacheIndex,
 		}
 	}
 	return out
