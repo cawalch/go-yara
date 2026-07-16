@@ -594,47 +594,12 @@ func (c *Compiler) compileCodeGenWithContext(ctx context.Context, program *ast.P
 
 	// Wrap in CompiledProgram
 	compiledProgram := NewCompiledProgram(compiledRules)
+	compiledProgram.nonTextCacheSize = assignNonTextCacheIndices(compiledRules)
 
-	// Combine all rules' text automatons into a single SharedAutomaton.
-	// Regex and hex patterns use different matching engines and stay per-rule.
-	sharedAutomaton := NewACAutomaton()
-	// Pre-size strings from the concrete automaton entries so alternate text
-	// encodings (wide/base64 alignments) are included in the shared pass.
-	totalStrings := 0
-	for _, rule := range compiledRules {
-		if rule.Automaton != nil {
-			totalStrings += len(rule.Automaton.Strings)
-		}
-	}
-	sharedAutomaton.ReserveStrings(totalStrings)
-
-	// Track which (ruleIndex, stringIdx) each shared automaton entry corresponds to.
-	// We build this as we add strings so the lookup table is aligned with StringIndex.
-	var sharedLookup []SharedAutomatonEntry
-
-	for ruleIdx, rule := range compiledRules {
-		if rule.Automaton == nil {
-			continue
-		}
-
-		for _, info := range rule.Automaton.Strings {
-			strID := info.Identifier
-			if rule.StringKinds[strID] != StringKindText {
-				continue
-			}
-
-			globalID := fmt.Sprintf("%s:%s", rule.Name, strID)
-			if err := sharedAutomaton.AddStringWithFlags(globalID, info.Data, false, false, info.Flags); err != nil {
-				return nil, fmt.Errorf("adding %s to shared automaton: %w", globalID, err)
-			}
-			sharedLookup = append(sharedLookup, SharedAutomatonEntry{
-				RuleIndex: ruleIdx,
-				StringIdx: rule.ResolveStringIndex(strID),
-			})
-		}
-	}
-	if err := sharedAutomaton.Compile(); err != nil {
-		return nil, fmt.Errorf("compiling shared automaton: %w", err)
+	// Combine text strings and safe regex/hex atoms into one global candidate pass.
+	sharedAutomaton, sharedLookup, err := buildSharedPatternAutomaton(compiledRules)
+	if err != nil {
+		return nil, err
 	}
 	compiledProgram.SetSharedAutomaton(sharedAutomaton)
 	compiledProgram.SharedLookup = sharedLookup

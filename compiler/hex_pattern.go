@@ -31,10 +31,11 @@ type HexPatternToken struct {
 }
 
 type HexPattern struct {
-	Tokens   []HexPatternToken
-	XorKeys  []byte
-	XorRange []ast.XorRange
-	cacheKey string
+	Tokens     []HexPatternToken
+	XorKeys    []byte
+	XorRange   []ast.XorRange
+	cacheKey   string
+	cacheIndex int
 }
 
 func (p *HexPattern) Clone() *HexPattern {
@@ -42,10 +43,11 @@ func (p *HexPattern) Clone() *HexPattern {
 		return nil
 	}
 	out := &HexPattern{
-		Tokens:   cloneHexTokens(p.Tokens),
-		XorKeys:  slices.Clone(p.XorKeys),
-		XorRange: slices.Clone(p.XorRange),
-		cacheKey: p.cacheKey,
+		Tokens:     cloneHexTokens(p.Tokens),
+		XorKeys:    slices.Clone(p.XorKeys),
+		XorRange:   slices.Clone(p.XorRange),
+		cacheKey:   p.cacheKey,
+		cacheIndex: p.cacheIndex,
 	}
 	return out
 }

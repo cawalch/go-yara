@@ -268,6 +268,8 @@ Run benchmarks:
 make bench
 make bench PKG=./compiler
 make bench-scan
+make bench-prefilter-scale
+make bench-single-rule-size
 make profile-scan
 make trace-scan
 ```
@@ -275,7 +277,10 @@ make trace-scan
 Useful generated benchmark and profile output is written under ignored
 directories such as `benchmarks/` and `profiles/`. The scanner suite includes
 both repeated-pattern and unique-pattern production mixes so optimizations are
-checked against reuse-heavy and heterogeneous rule sets.
+checked against reuse-heavy and heterogeneous rule sets. The prefilter scaling
+suite measures the 20, 50, 100, and 500-rule crossover for unique regex and hex
+atoms. The single-rule size suite covers text, regex, hex, and mixed rules from
+16 KiB through 1 MiB.
 
 ## More Documentation
 

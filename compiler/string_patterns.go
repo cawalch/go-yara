@@ -19,4 +19,5 @@ type RegexPattern struct {
 	widePrefix []byte
 	anchored   bool
 	cacheKey   string
+	cacheIndex int
 }

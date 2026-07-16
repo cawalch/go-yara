@@ -1,5 +1,5 @@
 .PHONY: bench bench-save bench-profiles bench-detailed bench-memory bench-cpu bench-trace \
-        bench-scan profile-scan trace-scan \
+        bench-scan bench-prefilter-scale bench-single-rule-size profile-scan trace-scan \
         pprof-cpu pprof-mem pprof-alloc pprof-heap pprof-trace benchstat bench-compare \
         bench-string-modifiers bench-regression bench-hotspots profile-analysis \
         compare-yara compare-yara-quick compare-yara-deep compare-yara-report \
@@ -41,6 +41,12 @@ bench-cpu:
 # Scanner-focused end-to-end benchmarks and profiles.
 bench-scan:
 	go test ./compiler -run '^$$' -bench '^Benchmark(ProductionScanner|ProductionScannerUniquePatterns|MultiRuleScanner)$$' -benchmem -count=5
+
+bench-prefilter-scale:
+	go test ./compiler -run '^$$' -bench '^BenchmarkSharedNonTextPrefilterScale$$' -benchmem -count=5
+
+bench-single-rule-size:
+	go test ./compiler -run '^$$' -bench '^BenchmarkSingleRuleScanSize$$' -benchmem -count=5
 
 profile-scan:
 	@mkdir -p profiles

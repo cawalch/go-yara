@@ -6,7 +6,6 @@ import (
 	"io"
 	"math"
 	"os"
-	"slices"
 
 	"github.com/cawalch/go-yara/regex"
 )
@@ -30,6 +29,10 @@ type Scanner struct {
 
 	externalValues map[string]externalValue
 	externalErr    error
+	nonTextCache   nonTextMatchCache
+
+	// Candidate offsets grouped by SharedLookup index and retained across scans.
+	prefilterCandidates [][]int
 }
 
 // ScanResult represents the result of scanning data against compiled rules.
@@ -228,8 +231,40 @@ type globalMatchEntry struct {
 }
 
 type nonTextMatchCache struct {
-	regex map[string][]Match
-	hex   map[string][]Match
+	matches [][]Match
+	ready   []bool
+}
+
+func (cache *nonTextMatchCache) reset(size int) {
+	if cap(cache.matches) < size {
+		cache.matches = make([][]Match, size)
+	} else {
+		cache.matches = cache.matches[:size]
+		for idx := range cache.matches {
+			cache.matches[idx] = cache.matches[idx][:0]
+		}
+	}
+	if cap(cache.ready) < size {
+		cache.ready = make([]bool, size)
+	} else {
+		cache.ready = cache.ready[:size]
+		clear(cache.ready)
+	}
+}
+
+func (cache *nonTextMatchCache) get(index int) ([]Match, bool) {
+	if index < 0 || index >= len(cache.ready) || !cache.ready[index] {
+		return nil, false
+	}
+	return cache.matches[index], true
+}
+
+func (cache *nonTextMatchCache) set(index int, matches []Match) {
+	if index < 0 || index >= len(cache.ready) {
+		return
+	}
+	cache.matches[index] = matches
+	cache.ready[index] = true
 }
 
 // hasMatchingTag returns true if the rule has at least one tag in the filter.
@@ -255,9 +290,13 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	ruleCount := 0
+	if s != nil && s.program != nil {
+		ruleCount = len(s.program.Rules)
+	}
 	result := &ScanResult{
 		MatchedRules: make([]RuleMatch, 0),
-		RuleResults:  make(map[string]bool),
+		RuleResults:  make(map[string]bool, ruleCount),
 		Matches:      make(map[string]map[string][]Match),
 	}
 	if s == nil || s.program == nil {
@@ -271,13 +310,13 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 	}
 
 	globalByRule := make(map[int][]globalMatchEntry)
-	nonTextCache := nonTextMatchCache{}
+	s.nonTextCache.reset(s.program.nonTextCacheSize)
 	useSharedAutomaton := s.program.SharedAutomaton != nil && len(s.program.SharedLookup) > 0
 	if useSharedAutomaton {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		s.extractGlobalMatchesInt(data, globalByRule)
+		s.extractGlobalMatchesInt(data, globalByRule, &s.nonTextCache)
 	}
 
 	clear(s.ruleResults)
@@ -307,7 +346,7 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 		} else {
 			s.addLocalTextMatches(rule, data)
 		}
-		s.addLocalNonTextMatches(rule, data, &nonTextCache)
+		s.addLocalNonTextMatches(rule, data, &s.nonTextCache)
 
 		s.prepareInterpreter(rule)
 		s.interp.SetItersmax(s.itersmax)
@@ -419,15 +458,27 @@ func (s *Scanner) ScanFileWithContext(ctx context.Context, filename string) (*Sc
 
 // extractGlobalMatchesInt uses the SharedLookup table for O(1) integer routing
 // instead of parsing colon-delimited string IDs.
-func (s *Scanner) extractGlobalMatchesInt(data []byte, globalByRule map[int][]globalMatchEntry) {
+func (s *Scanner) extractGlobalMatchesInt(
+	data []byte,
+	globalByRule map[int][]globalMatchEntry,
+	cache *nonTextMatchCache,
+) {
 	lookup := s.program.SharedLookup
 	rules := s.program.Rules
+	s.resetPrefilterCandidates(len(lookup))
 	for match := range s.program.SharedAutomaton.SearchIter(data) {
 		if match.StringIndex < 0 || match.StringIndex >= len(lookup) {
 			continue
 		}
 
 		entry := lookup[match.StringIndex]
+		if entry.Kind == StringKindRegex || entry.Kind == StringKindHex {
+			s.prefilterCandidates[match.StringIndex] = append(
+				s.prefilterCandidates[match.StringIndex],
+				match.Backtrack,
+			)
+			continue
+		}
 		if entry.RuleIndex < 0 || entry.RuleIndex >= len(rules) {
 			continue
 		}
@@ -451,6 +502,7 @@ func (s *Scanner) extractGlobalMatchesInt(data []byte, globalByRule map[int][]gl
 			pattern:  info.Data,
 		})
 	}
+	s.populateNonTextPrefilterCache(data, cache)
 }
 
 // addStaticMatchesInt adds matches routed by integer indices to the match context.
@@ -485,24 +537,21 @@ func (s *Scanner) addLocalNonTextMatches(rule *CompiledRule, data []byte, cache 
 		return
 	}
 	for id, regexInfo := range rule.RegexPatterns {
-		if regexInfo.cacheKey != "" && cache.regex != nil {
-			if matches, ok := cache.regex[regexInfo.cacheKey]; ok {
-				addCachedMatches(s.matchCtx, id, matches)
-				continue
-			}
+		if matches, ok := cache.get(regexInfo.cacheIndex); ok {
+			addCachedMatches(s.matchCtx, id, matches)
+			continue
 		}
 		modifiers := rule.StringModifiers[id]
 		addRegexMatchesWithModifiers(s.matchCtx, id, regexInfo, data, modifiers)
-		if regexInfo.cacheKey != "" {
-			if cache.regex == nil {
-				cache.regex = make(map[string][]Match)
-			}
-			cache.regex[regexInfo.cacheKey] = slices.Clone(s.matchCtx.Matches[id])
+		if regexInfo.cacheIndex >= 0 && regexInfo.cacheIndex < len(cache.matches) {
+			dst := cache.matches[regexInfo.cacheIndex][:0]
+			dst = append(dst, s.matchCtx.Matches[id]...)
+			cache.set(regexInfo.cacheIndex, dst)
 		}
 	}
 	for id, pattern := range rule.HexPatterns {
-		if pattern != nil && pattern.cacheKey != "" && cache.hex != nil {
-			if matches, ok := cache.hex[pattern.cacheKey]; ok {
+		if pattern != nil {
+			if matches, ok := cache.get(pattern.cacheIndex); ok {
 				addCachedMatches(s.matchCtx, id, matches)
 				continue
 			}
@@ -513,11 +562,10 @@ func (s *Scanner) addLocalNonTextMatches(rule *CompiledRule, data []byte, cache 
 				s.matchCtx.AddMatch(m)
 			}
 		}
-		if pattern != nil && pattern.cacheKey != "" {
-			if cache.hex == nil {
-				cache.hex = make(map[string][]Match)
-			}
-			cache.hex[pattern.cacheKey] = slices.Clone(s.matchCtx.Matches[id])
+		if pattern != nil && pattern.cacheIndex >= 0 && pattern.cacheIndex < len(cache.matches) {
+			dst := cache.matches[pattern.cacheIndex][:0]
+			dst = append(dst, s.matchCtx.Matches[id]...)
+			cache.set(pattern.cacheIndex, dst)
 		}
 	}
 }
