@@ -46,7 +46,8 @@ func BenchmarkScanner(b *testing.B) {
 	scanner := NewScanner(program)
 	defer scanner.Close()
 
-	result, err := scanner.Scan([]byte("dummy data"))
+	data := []byte("dummy data")
+	result, err := scanner.Scan(data)
 	if err != nil {
 		b.Fatalf("Scan: %v", err)
 	}
@@ -56,6 +57,15 @@ func BenchmarkScanner(b *testing.B) {
 	}
 	if result.MatchedRules[0].Rule != "test" {
 		b.Errorf("Expected rule 'test', got '%s'", result.MatchedRules[0].Rule)
+	}
+
+	b.SetBytes(int64(len(data)))
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		if _, err := scanner.Scan(data); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
@@ -532,6 +542,7 @@ func BenchmarkMultiRuleScanner(b *testing.B) {
 
 	b.ResetTimer()
 	b.ReportAllocs()
+	b.SetBytes(int64(len(data)))
 
 	for b.Loop() {
 		// We execute the scanner against the same payload repeatedly
@@ -600,11 +611,151 @@ func BenchmarkProductionScanner(b *testing.B) {
 
 	b.ResetTimer()
 	b.ReportAllocs()
+	b.SetBytes(int64(len(data)))
 
 	for b.Loop() {
 		_, err := scanner.Scan(data)
 		if err != nil {
 			b.Fatalf("scan failed: %v", err)
+		}
+	}
+}
+
+func BenchmarkProductionScannerUniquePatterns(b *testing.B) {
+	const numRules = 20
+	var source strings.Builder
+	for i := range numRules {
+		if i%2 == 0 {
+			fmt.Fprintf(&source, `
+				rule unique_hex_%d {
+					strings:
+						$hex = { %02X %02X [2-4] 0C 0D }
+					condition: $hex
+				}
+			`, i, 0x20+i, 0x40+i)
+		} else {
+			fmt.Fprintf(&source, `
+				rule unique_regex_%d {
+					strings:
+						$text = "unique_text_%d" nocase
+						$re = /family%d_[a-z]{1,2}\.exe/i
+					condition: $text or $re
+				}
+			`, i, i, i)
+		}
+	}
+
+	program, err := NewCompiler().CompileSource(source.String())
+	if err != nil {
+		b.Fatal(err)
+	}
+	scanner := NewScanner(program)
+	defer scanner.Close()
+	data := make([]byte, 100*1024)
+	for i := range data {
+		data[i] = byte(i % 256)
+	}
+
+	b.SetBytes(int64(len(data)))
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		if _, err := scanner.Scan(data); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func TestScannerSharedPatternsPreserveRuleMatches(t *testing.T) {
+	source := `
+		rule regex_a {
+			strings: $a = /malwa[a-z]{1,2}\.exe/i
+			condition: #a == 2
+		}
+		rule regex_b {
+			strings: $other = /malwa[a-z]{1,2}\.exe/i
+			condition: #other == 2
+		}
+		rule hex_a {
+			strings: $h = { DE AD BE EF }
+			condition: $h
+		}
+		rule hex_b {
+			strings: $bytes = { DE AD BE EF }
+			condition: $bytes
+		}
+		rule text_a {
+			strings: $text = "shared literal"
+			condition: $text
+		}
+		rule text_b {
+			strings: $other_text = "shared literal"
+			condition: $other_text
+		}
+	`
+	program, err := NewCompiler().CompileSource(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scanner := NewScanner(program)
+	defer scanner.Close()
+
+	data := append([]byte("MALWARE.EXE then malware.exe shared literal "), 0xDE, 0xAD, 0xBE, 0xEF)
+	result, err := scanner.Scan(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rule, id := range map[string]string{
+		"regex_a": "$a",
+		"regex_b": "$other",
+		"hex_a":   "$h",
+		"hex_b":   "$bytes",
+		"text_a":  "$text",
+		"text_b":  "$other_text",
+	} {
+		if !result.RuleResults[rule] {
+			t.Errorf("rule %s did not match", rule)
+			continue
+		}
+		matches := result.Matches[rule][id]
+		if len(matches) == 0 {
+			t.Errorf("rule %s has no matches for %s", rule, id)
+			continue
+		}
+		for _, match := range matches {
+			if match.Pattern != id {
+				t.Errorf("rule %s match pattern = %q, want %q", rule, match.Pattern, id)
+			}
+		}
+	}
+}
+
+func TestScannerSharedRegexPatternsWithoutTextAutomaton(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+		rule first {
+			strings: $a = /prefix_[a-z]+/i
+			condition: #a == 2
+		}
+		rule second {
+			strings: $b = /prefix_[a-z]+/i
+			condition: #b == 2
+		}
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(program.SharedLookup) != 0 {
+		t.Fatalf("SharedLookup has %d text entries, want 0", len(program.SharedLookup))
+	}
+	scanner := NewScanner(program)
+	defer scanner.Close()
+	result, err := scanner.Scan([]byte("PREFIX_one prefix_two"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rule, id := range map[string]string{"first": "$a", "second": "$b"} {
+		if !result.RuleResults[rule] || len(result.Matches[rule][id]) != 2 {
+			t.Errorf("%s results = %v, matches = %v", rule, result.RuleResults[rule], result.Matches[rule][id])
 		}
 	}
 }

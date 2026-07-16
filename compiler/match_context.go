@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"bytes"
 	"sync"
 
 	"github.com/cawalch/go-yara/ast"
@@ -87,8 +88,21 @@ func addRegexMatches(ctx *MatchContext, id string, regexInfo RegexPattern, data 
 
 	pos := 0
 	for pos <= len(data) {
+		if regexInfo.anchored && pos > 0 {
+			break
+		}
+		if len(regexInfo.prefix) > 0 {
+			candidate := indexRegexPrefix(data, pos, regexInfo, flags, isWide)
+			if candidate < 0 {
+				break
+			}
+			pos = candidate
+		}
 		matched, start, end := regex.ExecMatchBatch(bs, regexInfo.Code, data, flags, pos)
 		if !matched {
+			if regexInfo.anchored {
+				break
+			}
 			pos++
 			continue
 		}
@@ -114,6 +128,84 @@ func addRegexMatches(ctx *MatchContext, id string, regexInfo RegexPattern, data 
 		// Advance position past the current match start to find overlapping/subsequent matches
 		pos = absStart + 1
 	}
+}
+
+func widenRegexPrefix(prefix []byte) []byte {
+	if len(prefix) == 0 {
+		return nil
+	}
+	wide := make([]byte, len(prefix)*2)
+	for i, b := range prefix {
+		wide[i*2] = b
+	}
+	return wide
+}
+
+//nolint:revive // argument-limit: hot path avoids allocating an options struct
+func indexRegexPrefix(data []byte, pos int, pattern RegexPattern, flags regex.Flags, isWide bool) int {
+	prefix := pattern.prefix
+	if isWide {
+		prefix = pattern.widePrefix
+	}
+	if len(prefix) == 0 || pos < 0 || pos > len(data) {
+		return -1
+	}
+	if flags&regex.FlagsNoCase == 0 {
+		idx := bytes.Index(data[pos:], prefix)
+		if idx < 0 {
+			return -1
+		}
+		return pos + idx
+	}
+
+	last := len(data) - len(prefix)
+	for searchPos := pos; searchPos <= last; {
+		rel := indexASCIIFoldByte(data[searchPos:last+1], prefix[0])
+		if rel < 0 {
+			return -1
+		}
+		candidate := searchPos + rel
+		if equalRegexPrefixFold(data[candidate:candidate+len(prefix)], prefix, isWide) {
+			return candidate
+		}
+		searchPos = candidate + 1
+	}
+	return -1
+}
+
+func indexASCIIFoldByte(data []byte, want byte) int {
+	other := flipASCIICase(want)
+	first := bytes.IndexByte(data, want)
+	if other == want {
+		return first
+	}
+	second := bytes.IndexByte(data, other)
+	if first < 0 {
+		return second
+	}
+	if second >= 0 && second < first {
+		return second
+	}
+	return first
+}
+
+func equalRegexPrefixFold(data, prefix []byte, wide bool) bool {
+	step := 1
+	if wide {
+		step = 2
+		if len(data) < 2 || data[1] != 0 {
+			return false
+		}
+	}
+	for i := step; i < len(prefix); i += step {
+		if data[i] != prefix[i] && data[i] != flipASCIICase(prefix[i]) {
+			return false
+		}
+		if wide && data[i+1] != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 //nolint:revive // argument-limit: API surface

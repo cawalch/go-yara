@@ -61,3 +61,20 @@ func (e *Emitter) EmitU32(v uint32) *Emitter {
 
 // Len returns the current size of the emitted bytecode buffer.
 func (e *Emitter) Len() int { return len(e.buf) }
+
+// LiteralPrefix returns the leading literal bytes in compiled regex bytecode.
+// anchored is true when the regex begins with a start-of-input assertion.
+// A non-empty prefix is a safe prefilter: an anchored VM attempt can only
+// match at positions where these bytes occur.
+func LiteralPrefix(code []byte) (prefix []byte, anchored bool) {
+	pc := 0
+	if len(code) > 0 && code[0] == OpMatchAtStart {
+		anchored = true
+		pc++
+	}
+	for pc+1 < len(code) && code[pc] == OpLiteral {
+		prefix = append(prefix, code[pc+1])
+		pc += 2
+	}
+	return prefix, anchored
+}

@@ -6,6 +6,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"slices"
 
 	"github.com/cawalch/go-yara/regex"
 )
@@ -226,6 +227,11 @@ type globalMatchEntry struct {
 	pattern  []byte // stored automaton pattern bytes for re-verification
 }
 
+type nonTextMatchCache struct {
+	regex map[string][]Match
+	hex   map[string][]Match
+}
+
 // hasMatchingTag returns true if the rule has at least one tag in the filter.
 func (s *Scanner) hasMatchingTag(rule *CompiledRule) bool {
 	if len(s.tagsFilter) == 0 {
@@ -265,6 +271,7 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 	}
 
 	globalByRule := make(map[int][]globalMatchEntry)
+	nonTextCache := nonTextMatchCache{}
 	useSharedAutomaton := s.program.SharedAutomaton != nil && len(s.program.SharedLookup) > 0
 	if useSharedAutomaton {
 		if err := ctx.Err(); err != nil {
@@ -297,10 +304,10 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 		s.matchCtx.Reset(data)
 		if useSharedAutomaton {
 			s.addStaticMatchesInt(rule, data, globalByRule[rule.Index])
-			s.addLocalNonTextMatches(rule, data)
 		} else {
-			PopulateMatchContext(s.matchCtx, rule, data)
+			s.addLocalTextMatches(rule, data)
 		}
+		s.addLocalNonTextMatches(rule, data, &nonTextCache)
 
 		s.prepareInterpreter(rule)
 		s.interp.SetItersmax(s.itersmax)
@@ -464,21 +471,61 @@ func (s *Scanner) addStaticMatchesInt(rule *CompiledRule, data []byte, entries [
 	}
 }
 
-func (s *Scanner) addLocalNonTextMatches(rule *CompiledRule, data []byte) {
+func (s *Scanner) addLocalTextMatches(rule *CompiledRule, data []byte) {
+	if rule == nil || rule.Automaton == nil || len(data) == 0 {
+		return
+	}
+	for match := range rule.Automaton.SearchIter(data) {
+		acceptAutomatonMatch(s.matchCtx, rule, data, match)
+	}
+}
+
+func (s *Scanner) addLocalNonTextMatches(rule *CompiledRule, data []byte, cache *nonTextMatchCache) {
 	if rule == nil {
 		return
 	}
 	for id, regexInfo := range rule.RegexPatterns {
+		if regexInfo.cacheKey != "" && cache.regex != nil {
+			if matches, ok := cache.regex[regexInfo.cacheKey]; ok {
+				addCachedMatches(s.matchCtx, id, matches)
+				continue
+			}
+		}
 		modifiers := rule.StringModifiers[id]
 		addRegexMatchesWithModifiers(s.matchCtx, id, regexInfo, data, modifiers)
+		if regexInfo.cacheKey != "" {
+			if cache.regex == nil {
+				cache.regex = make(map[string][]Match)
+			}
+			cache.regex[regexInfo.cacheKey] = slices.Clone(s.matchCtx.Matches[id])
+		}
 	}
 	for id, pattern := range rule.HexPatterns {
+		if pattern != nil && pattern.cacheKey != "" && cache.hex != nil {
+			if matches, ok := cache.hex[pattern.cacheKey]; ok {
+				addCachedMatches(s.matchCtx, id, matches)
+				continue
+			}
+		}
 		for _, m := range FindHexMatches(pattern, data) {
 			m.Pattern = id
 			if matchPassesModifiers(data, m, rule.StringModifiers[id], false) {
 				s.matchCtx.AddMatch(m)
 			}
 		}
+		if pattern != nil && pattern.cacheKey != "" {
+			if cache.hex == nil {
+				cache.hex = make(map[string][]Match)
+			}
+			cache.hex[pattern.cacheKey] = slices.Clone(s.matchCtx.Matches[id])
+		}
+	}
+}
+
+func addCachedMatches(ctx *MatchContext, id string, matches []Match) {
+	for _, match := range matches {
+		match.Pattern = id
+		ctx.AddMatch(match)
 	}
 }
 

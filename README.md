@@ -267,10 +267,15 @@ Run benchmarks:
 ```bash
 make bench
 make bench PKG=./compiler
+make bench-scan
+make profile-scan
+make trace-scan
 ```
 
 Useful generated benchmark and profile output is written under ignored
-directories such as `benchmarks/` and `profiles/`.
+directories such as `benchmarks/` and `profiles/`. The scanner suite includes
+both repeated-pattern and unique-pattern production mixes so optimizations are
+checked against reuse-heavy and heterogeneous rule sets.
 
 ## More Documentation
 
