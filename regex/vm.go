@@ -50,7 +50,7 @@ func ExecMatch(code, input []byte, flags Flags) (matched bool, start, end int) {
 // to the slice beginning at `start`.
 //
 //nolint:revive // argument-limit: performance-critical VM entry point
-func ExecMatchBatch(bs *vmBatchState, code, input []byte, flags Flags, start int) (matched bool, startOff, endOff int) {
+func ExecMatchBatch(bs *VMBatch, code, input []byte, flags Flags, start int) (matched bool, startOff, endOff int) {
 	if len(code) == 0 || start > len(input) {
 		return false, -1, -1
 	}
@@ -235,14 +235,14 @@ func runAtMatch(code, s []byte, flags Flags, start int) (matched bool, length in
 	step := func(pos int, ch byte, advance int) {
 		// Step all current threads consuming one "character" (1 or 2 bytes)
 		next = next[:0]
+		// One generation identifies the full epsilon closure for this input
+		// position, deduplicating paths reached from different threads.
+		gen++
 		for _, t := range cur {
 			pc := t.pc
 			if pc < 0 || pc >= len(code) {
 				continue
 			}
-			// Increment generation so visited[] entries from the previous step are stale.
-			gen++
-
 			switch code[pc] {
 			case OpLiteral:
 				handleLiteralOp(code, s, &next, pc, ch, pos, advance, noCase, false, wide, &bestEnd, visited, gen)
@@ -277,7 +277,8 @@ func runAtMatch(code, s []byte, flags Flags, start int) (matched bool, length in
 	runWideLoop := func() bool {
 		for pos := start; pos+1 < len(s); pos += 2 {
 			if !isWidePair(s, pos) {
-				continue
+				cur = cur[:0]
+				return checkAndReturnIfExhausted(cur, &matched, &length, bestEnd)
 			}
 			ch := s[pos]
 			step(pos, ch, 2)
@@ -311,6 +312,7 @@ func runAtMatch(code, s []byte, flags Flags, start int) (matched bool, length in
 	}
 
 	if exhausted {
+		st.gen = gen
 		putVMState(st)
 		return
 	}
@@ -321,6 +323,7 @@ func runAtMatch(code, s []byte, flags Flags, start int) (matched bool, length in
 	} else {
 		matched, length = false, 0
 	}
+	st.gen = gen
 	putVMState(st)
 	return //nolint:nakedret
 }
@@ -342,10 +345,6 @@ func runAtMatchBatch(bs *vmBatchState, code, s []byte, flags Flags, start int) (
 	st.cur = st.cur[:0]
 	st.next = st.next[:0]
 	gen := bs.gen
-	bs.gen--
-	if bs.gen == 0 {
-		bs.gen = vmGen.Add(1 << 20)
-	}
 	visited := st.visited[:len(code)]
 	cur := st.cur
 	next := st.next
@@ -358,12 +357,12 @@ func runAtMatchBatch(bs *vmBatchState, code, s []byte, flags Flags, start int) (
 
 	stepFn := func(pos int, ch byte, advance int) {
 		next = next[:0]
+		gen++
 		for _, t := range cur {
 			pc := t.pc
 			if pc < 0 || pc >= len(code) {
 				continue
 			}
-			gen++
 			switch code[pc] {
 			case OpLiteral:
 				handleLiteralOp(code, s, &next, pc, ch, pos, advance, noCase, false, wide, &bestEnd, visited, gen)
@@ -397,7 +396,9 @@ func runAtMatchBatch(bs *vmBatchState, code, s []byte, flags Flags, start int) (
 	if wide { //nolint:nestif // wide/ascii loop dispatch is intentional for VM
 		for pos := start; pos+1 < len(s); pos += 2 {
 			if !isWidePair(s, pos) {
-				continue
+				cur = cur[:0]
+				exhausted = checkAndReturnIfExhausted(cur, &matched, &length, bestEnd)
+				break
 			}
 			stepFn(pos, s[pos], 2)
 			cur, next = next, cur
@@ -418,6 +419,8 @@ func runAtMatchBatch(bs *vmBatchState, code, s []byte, flags Flags, start int) (
 	}
 
 	if exhausted {
+		bs.gen = gen + 1
+		st.gen = gen
 		return
 	}
 
@@ -426,6 +429,8 @@ func runAtMatchBatch(bs *vmBatchState, code, s []byte, flags Flags, start int) (
 	} else {
 		matched, length = false, 0
 	}
+	bs.gen = gen + 1
+	st.gen = gen
 	return
 }
 

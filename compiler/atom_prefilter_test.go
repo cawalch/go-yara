@@ -45,6 +45,165 @@ func TestSelectHexAtomUsesOnlyFixedOffsets(t *testing.T) {
 	}
 }
 
+func TestCompiledRegexCarriesMandatoryInternalAtom(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+		rule internal_atom {
+			strings:
+				$pattern = /[a-z]{1,8}family_marker/
+			condition:
+				$pattern
+		}
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pattern := program.Rules[0].RegexPatterns["$pattern"]
+	if len(pattern.prefix) != 0 {
+		t.Fatalf("literal prefix = %q, want none", pattern.prefix)
+	}
+	if string(pattern.atom) != "ly_marke" {
+		t.Fatalf("mandatory atom = %q, want %q", pattern.atom, "ly_marke")
+	}
+	if pattern.atomMinOffset != 5 || pattern.atomMaxOffset != 12 {
+		t.Fatalf("mandatory atom offsets = [%d,%d], want [5,12]", pattern.atomMinOffset, pattern.atomMaxOffset)
+	}
+}
+
+func TestCompiledRegexPrefersBoundedMandatoryAtom(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+		rule bounded_atom {
+			strings:
+				$pattern = /[a-z]{1,2}bounded_marker.*unbounded_entropy/
+			condition:
+				$pattern
+		}
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pattern := program.Rules[0].RegexPatterns["$pattern"]
+	if len(pattern.atom) == 0 || pattern.atomMaxOffset < 0 {
+		t.Fatalf("selected atom = %q at [%d,%d], want a bounded atom", pattern.atom, pattern.atomMinOffset, pattern.atomMaxOffset)
+	}
+}
+
+func TestMandatoryRegexAtomMatchesLinearScan(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+		rule internal_atoms {
+			strings:
+				$bounded = /[a-z]{1,8}family_marker/
+				$zero_width = /.{0,8}family_marker/
+				$unbounded = /.*family_marker/
+				$alternation = /alpha_marker|beta_marker/
+				$branch_prefix = /(x|long)family_marker/
+				$nocase = /[a-z]{1,3}case_marker/i
+				$wide = /[a-z]{1,3}wide_marker/ wide
+				$both = /[a-z]{1,3}dual_marker/ ascii wide
+				$overlap = /[a-z]{1,2}aba/
+				$optional = /(family_marker)?/
+				$anchored = /^[a-z]{1,8}anchored_marker/
+			condition:
+				any of them
+		}
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rule := program.Rules[0]
+	wideData := widenRegexPrefix([]byte("xywide_marker zzdual_marker"))
+	dataSets := [][]byte{
+		make([]byte, 128),
+		[]byte("xfamily_marker longfamily_marker alpha_marker beta_marker xxCASE_MARKER zaba zzaba"),
+		[]byte("abcdefghanchored_marker and later abcanchored_marker"),
+		append([]byte("ascii xydual_marker "), wideData...),
+		[]byte("family_markerfamily_marker"),
+	}
+
+	for dataIndex, data := range dataSets {
+		optimized := BuildMatchContext(rule, data)
+		linear := buildLinearRegexContext(rule, data)
+		for _, id := range sortedPatternIDs(rule.RegexPatterns) {
+			got := matchRangesInOrder(optimized.Matches[id])
+			want := matchRangesInOrder(linear.Matches[id])
+			if !slices.Equal(got, want) {
+				t.Errorf("data %d, %s ranges = %v, linear scan = %v", dataIndex, id, got, want)
+			}
+		}
+		optimized.Release()
+		linear.Release()
+	}
+}
+
+func TestSharedMandatoryRegexAtomsMatchLinearScan(t *testing.T) {
+	var source strings.Builder
+	source.WriteString("rule shared_internal_atoms {\nstrings:\n")
+	for i := range 40 {
+		switch i {
+		case 0:
+			fmt.Fprintln(&source, "$pattern_00 = /[a-z]{1,3}wide_marker_00/ wide")
+		case 1:
+			fmt.Fprintln(&source, "$pattern_01 = /[a-z]{1,3}case_marker_01/i")
+		default:
+			fmt.Fprintf(&source, "$pattern_%02d = /[a-z]{0,3}family_marker_%02d/\n", i, i)
+		}
+	}
+	source.WriteString("condition: any of them\n}\n")
+	program, err := NewCompiler().CompileSource(source.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	regexEntries := 0
+	for _, entry := range program.SharedLookup {
+		if entry.Kind == StringKindRegex {
+			regexEntries++
+		}
+	}
+	if regexEntries < 40 {
+		t.Fatalf("shared regex entries = %d, want at least 40", regexEntries)
+	}
+
+	data := []byte("abfamily_marker_05 FAMILY_MARKER_01 xyzfamily_marker_37 ")
+	data = append(data, widenRegexPrefix([]byte("xywide_marker_00"))...)
+	scanner := NewScanner(program)
+	defer scanner.Close()
+	result, err := scanner.Scan(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rule := program.Rules[0]
+	linear := buildLinearRegexContext(rule, data)
+	defer linear.Release()
+	for _, id := range sortedPatternIDs(rule.RegexPatterns) {
+		got := matchRangesInOrder(result.Matches[rule.Name][id])
+		want := matchRangesInOrder(linear.Matches[id])
+		if !slices.Equal(got, want) {
+			t.Errorf("%s shared ranges = %v, linear scan = %v", id, got, want)
+		}
+	}
+}
+
+func buildLinearRegexContext(rule *CompiledRule, data []byte) *MatchContext {
+	ctx := matchContextPool.Get().(*MatchContext)
+	ctx.Reset(data)
+	for id, pattern := range rule.RegexPatterns {
+		pattern.prefix = nil
+		pattern.widePrefix = nil
+		pattern.atom = nil
+		pattern.wideAtom = nil
+		modifiers := rule.StringModifiers[id]
+		addRegexMatchesWithModifiers(ctx, id, pattern, data, modifiers)
+	}
+	return ctx
+}
+
+func matchRangesInOrder(matches []Match) []matchRange {
+	ranges := make([]matchRange, len(matches))
+	for i, match := range matches {
+		ranges[i] = matchRange{offset: match.Offset, length: match.Length}
+	}
+	return ranges
+}
+
 func TestSharedNonTextPrefilterMatchesLocalEngines(t *testing.T) {
 	var source strings.Builder
 	source.WriteString(`

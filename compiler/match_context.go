@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"bytes"
+	"sort"
 	"sync"
 
 	"github.com/cawalch/go-yara/ast"
@@ -81,53 +82,200 @@ func addRegexMatches(ctx *MatchContext, id string, regexInfo RegexPattern, data 
 		return
 	}
 
-	// Use batched VM state to avoid sync.Pool Get/Put overhead
-	// when calling runAtMatch thousands of times in this loop.
+	if regexInfo.anchored {
+		bs, release := regex.NewVMBatch(len(regexInfo.Code))
+		defer release()
+		addRegexMatchAt(ctx, id, regexInfo, data, modifiers, flags, isWide, bs, 0)
+		return
+	}
+
+	prefix := regexInfo.prefix
+	if isWide {
+		prefix = regexInfo.widePrefix
+	}
+	if len(prefix) >= minPrefilterAtomLength || len(regexInfo.atom) == 0 {
+		if len(prefix) > 0 {
+			addRegexMatchesFromPrefix(ctx, id, regexInfo, data, modifiers, flags, isWide, prefix)
+			return
+		}
+	}
+
+	atom := regexInfo.atom
+	if isWide {
+		atom = regexInfo.wideAtom
+	}
+	if len(atom) > 0 {
+		starts, handled := regexAtomCandidateStarts(data, atom, regexInfo, flags, isWide)
+		if handled {
+			if len(starts) == 0 {
+				return
+			}
+			bs, release := regex.NewVMBatch(len(regexInfo.Code))
+			defer release()
+			for _, start := range starts {
+				addRegexMatchAt(ctx, id, regexInfo, data, modifiers, flags, isWide, bs, start)
+			}
+			return
+		}
+	}
+
 	bs, release := regex.NewVMBatch(len(regexInfo.Code))
 	defer release()
+	addRegexMatchesLinear(ctx, id, regexInfo, data, modifiers, flags, isWide, bs)
+}
 
-	pos := 0
-	for pos <= len(data) {
-		if regexInfo.anchored && pos > 0 {
+//nolint:revive // argument-limit: hot path avoids allocating an options struct
+func addRegexMatchesFromPrefix(
+	ctx *MatchContext,
+	id string,
+	regexInfo RegexPattern,
+	data []byte,
+	modifiers []ast.StringModifier,
+	flags regex.Flags,
+	isWide bool,
+	prefix []byte,
+) {
+	candidate := indexRegexLiteral(data, 0, prefix, flags, isWide)
+	if candidate < 0 {
+		return
+	}
+	bs, release := regex.NewVMBatch(len(regexInfo.Code))
+	defer release()
+	for candidate >= 0 {
+		addRegexMatchAt(ctx, id, regexInfo, data, modifiers, flags, isWide, bs, candidate)
+		searchFrom := candidate + 1
+		if searchFrom > len(data) {
+			return
+		}
+		candidate = indexRegexLiteral(data, searchFrom, prefix, flags, isWide)
+	}
+}
+
+//nolint:revive // argument-limit: hot path avoids allocating an options struct
+func addRegexMatchesLinear(
+	ctx *MatchContext,
+	id string,
+	regexInfo RegexPattern,
+	data []byte,
+	modifiers []ast.StringModifier,
+	flags regex.Flags,
+	isWide bool,
+	bs *regex.VMBatch,
+) {
+	for pos := 0; pos <= len(data); pos++ {
+		addRegexMatchAt(ctx, id, regexInfo, data, modifiers, flags, isWide, bs, pos)
+	}
+}
+
+//nolint:revive // argument-limit: hot path avoids allocating an options struct
+func addRegexMatchAt(
+	ctx *MatchContext,
+	id string,
+	regexInfo RegexPattern,
+	data []byte,
+	modifiers []ast.StringModifier,
+	flags regex.Flags,
+	isWide bool,
+	bs *regex.VMBatch,
+	start int,
+) {
+	matched, startOffset, endOffset := regex.ExecMatchBatch(bs, regexInfo.Code, data, flags, start)
+	if !matched {
+		return
+	}
+	absStart := start + startOffset
+	absEnd := start + endOffset
+	if absEnd < absStart {
+		return
+	}
+	match := Match{Pattern: id, Offset: int64(absStart), Length: absEnd - absStart}
+	if matchPassesModifiers(data, match, modifiers, isWide) {
+		ctx.AddMatch(match)
+	}
+}
+
+//nolint:revive // argument-limit: hot path avoids allocating an options struct
+func regexAtomCandidateStarts(
+	data, atom []byte,
+	pattern RegexPattern,
+	flags regex.Flags,
+	isWide bool,
+) ([]int, bool) {
+	first := indexRegexLiteral(data, 0, atom, flags, isWide)
+	if first < 0 {
+		return nil, true
+	}
+	if pattern.atomMaxOffset < 0 {
+		return nil, false
+	}
+
+	limit := max(1024, len(data)/4)
+	atomStarts := make([]int, 0, min(limit, 64))
+	atomStarts = append(atomStarts, first)
+	for searchFrom := first + 1; searchFrom <= len(data); {
+		next := indexRegexLiteral(data, searchFrom, atom, flags, isWide)
+		if next < 0 {
 			break
 		}
-		if len(regexInfo.prefix) > 0 {
-			candidate := indexRegexPrefix(data, pos, regexInfo, flags, isWide)
-			if candidate < 0 {
-				break
-			}
-			pos = candidate
+		atomStarts = append(atomStarts, next)
+		if len(atomStarts) > limit {
+			return nil, false
 		}
-		matched, start, end := regex.ExecMatchBatch(bs, regexInfo.Code, data, flags, pos)
-		if !matched {
-			if regexInfo.anchored {
-				break
-			}
-			pos++
-			continue
-		}
-
-		absStart := pos + start
-		absEnd := pos + end
-
-		// Handle invalid range
-		if absEnd < absStart {
-			pos = absStart + 1
-			continue
-		}
-
-		m := Match{
-			Pattern: id,
-			Offset:  int64(absStart),
-			Length:  absEnd - absStart,
-		}
-		if matchPassesModifiers(data, m, modifiers, isWide) {
-			ctx.AddMatch(m)
-		}
-
-		// Advance position past the current match start to find overlapping/subsequent matches
-		pos = absStart + 1
+		searchFrom = next + 1
 	}
+
+	minOffset := pattern.atomMinOffset
+	maxOffset := pattern.atomMaxOffset
+	if isWide {
+		minOffset *= 2
+		maxOffset *= 2
+	}
+	return collectRegexCandidateStarts(atomStarts, minOffset, maxOffset, isWide, len(data), limit)
+}
+
+//nolint:revive // argument-limit: shared by local and Aho-Corasick candidate paths
+func collectRegexCandidateStarts(
+	atomStarts []int,
+	minOffset, maxOffset int,
+	isWide bool,
+	dataLength, limit int,
+) ([]int, bool) {
+	step := 1
+	if isWide {
+		step = 2
+	}
+	starts := make([]int, 0, min(limit, len(atomStarts)*2))
+	for _, atomStart := range atomStarts {
+		first := max(0, atomStart-maxOffset)
+		last := min(dataLength, atomStart-minOffset)
+		if first > last {
+			continue
+		}
+		if isWide && first&1 != atomStart&1 {
+			first++
+		}
+		count := (last-first)/step + 1
+		if count <= 0 || len(starts) > limit-count {
+			return nil, false
+		}
+		for start := first; start <= last; start += step {
+			starts = append(starts, start)
+		}
+	}
+	if len(starts) < 2 {
+		return starts, true
+	}
+
+	sort.Ints(starts)
+	unique := 1
+	for _, start := range starts[1:] {
+		if start == starts[unique-1] {
+			continue
+		}
+		starts[unique] = start
+		unique++
+	}
+	return starts[:unique], true
 }
 
 func widenRegexPrefix(prefix []byte) []byte {
@@ -141,31 +289,27 @@ func widenRegexPrefix(prefix []byte) []byte {
 	return wide
 }
 
-//nolint:revive // argument-limit: hot path avoids allocating an options struct
-func indexRegexPrefix(data []byte, pos int, pattern RegexPattern, flags regex.Flags, isWide bool) int {
-	prefix := pattern.prefix
-	if isWide {
-		prefix = pattern.widePrefix
-	}
-	if len(prefix) == 0 || pos < 0 || pos > len(data) {
+//nolint:revive // argument-limit: byte-search hot path avoids options indirection
+func indexRegexLiteral(data []byte, pos int, literal []byte, flags regex.Flags, isWide bool) int {
+	if len(literal) == 0 || pos < 0 || pos > len(data) {
 		return -1
 	}
 	if flags&regex.FlagsNoCase == 0 {
-		idx := bytes.Index(data[pos:], prefix)
+		idx := bytes.Index(data[pos:], literal)
 		if idx < 0 {
 			return -1
 		}
 		return pos + idx
 	}
 
-	last := len(data) - len(prefix)
+	last := len(data) - len(literal)
 	for searchPos := pos; searchPos <= last; {
-		rel := indexASCIIFoldByte(data[searchPos:last+1], prefix[0])
+		rel := indexASCIIFoldByte(data[searchPos:last+1], literal[0])
 		if rel < 0 {
 			return -1
 		}
 		candidate := searchPos + rel
-		if equalRegexPrefixFold(data[candidate:candidate+len(prefix)], prefix, isWide) {
+		if equalRegexPrefixFold(data[candidate:candidate+len(literal)], literal, isWide) {
 			return candidate
 		}
 		searchPos = candidate + 1

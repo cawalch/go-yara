@@ -299,15 +299,23 @@ func (rc *RuleCompiler) compileSingleString(str *ast.String) error {
 		rc.textPatterns[str.Identifier] = result.patternData
 	case StringKindRegex:
 		prefix, anchored := regex.LiteralPrefix(result.patternData)
-		rc.regexPatterns[str.Identifier] = RegexPattern{
-			Code:       result.patternData,
-			Flags:      result.flags,
-			prefix:     prefix,
-			widePrefix: widenRegexPrefix(prefix),
-			anchored:   anchored,
-			cacheKey:   result.cacheKey,
-			cacheIndex: -1,
+		pattern := RegexPattern{
+			Code:          result.patternData,
+			Flags:         result.flags,
+			prefix:        prefix,
+			widePrefix:    widenRegexPrefix(prefix),
+			atomMaxOffset: -1,
+			anchored:      anchored,
+			cacheKey:      result.cacheKey,
+			cacheIndex:    -1,
 		}
+		if atom, ok := selectMandatoryRegexAtom(result.regexAtoms); ok {
+			pattern.atom = append([]byte(nil), atom.data...)
+			pattern.wideAtom = widenRegexPrefix(atom.data)
+			pattern.atomMinOffset = atom.minOffset
+			pattern.atomMaxOffset = atom.maxOffset
+		}
+		rc.regexPatterns[str.Identifier] = pattern
 	case StringKindHex:
 		rc.hexPatterns[str.Identifier] = result.hexPattern
 	default:
@@ -327,6 +335,7 @@ type stringCompilationResult struct {
 	patternFlags    regex.Flags
 	altPatternFlags []regex.Flags
 	cacheKey        string
+	regexAtoms      []regex.LiteralAtom
 }
 
 func (rc *RuleCompiler) compileStringPattern(str *ast.String) (*stringCompilationResult, error) {
@@ -418,7 +427,7 @@ func (rc *RuleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers
 		rc.stringCompiler.hasModifier(modifiers, ast.StringModifierBase64Wide) {
 		return nil, fmt.Errorf("base64 modifiers are only supported for text strings")
 	}
-	code, err := rc.stringCompiler.compileRegex(pattern.Value, modifiers)
+	code, parsed, err := rc.stringCompiler.compileRegexWithAST(pattern.Value, modifiers)
 	if err != nil {
 		return nil, fmt.Errorf("compile regex pattern: %w", err)
 	}
@@ -430,6 +439,7 @@ func (rc *RuleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers
 		kind:        StringKindRegex,
 		flags:       flags,
 		cacheKey:    patternCacheKey("regex", pattern.Value, modifiers),
+		regexAtoms:  regex.MandatoryLiteralAtoms(parsed),
 	}, nil
 }
 
@@ -875,13 +885,17 @@ func (rc *RuleCompiler) copyRegexPatterns() map[string]RegexPattern {
 		cp := make([]byte, len(v.Code))
 		copy(cp, v.Code)
 		out[k] = RegexPattern{
-			Code:       cp,
-			Flags:      v.Flags,
-			prefix:     slices.Clone(v.prefix),
-			widePrefix: slices.Clone(v.widePrefix),
-			anchored:   v.anchored,
-			cacheKey:   v.cacheKey,
-			cacheIndex: v.cacheIndex,
+			Code:          cp,
+			Flags:         v.Flags,
+			prefix:        slices.Clone(v.prefix),
+			widePrefix:    slices.Clone(v.widePrefix),
+			atom:          slices.Clone(v.atom),
+			wideAtom:      slices.Clone(v.wideAtom),
+			atomMinOffset: v.atomMinOffset,
+			atomMaxOffset: v.atomMaxOffset,
+			anchored:      v.anchored,
+			cacheKey:      v.cacheKey,
+			cacheIndex:    v.cacheIndex,
 		}
 	}
 	return out
@@ -1117,8 +1131,11 @@ type SharedAutomatonEntry struct {
 	StringIdx  int // index into CompiledRule.IndexToStringID
 	Kind       StringKind
 	AtomOffset int
-	IsWide     bool
-	CacheIndex int
+	// AtomMaxOffset is the maximum number of bytes before a regex atom. It
+	// equals AtomOffset for fixed-offset regex and hex atoms.
+	AtomMaxOffset int
+	IsWide        bool
+	CacheIndex    int
 }
 
 type CompiledProgram struct {

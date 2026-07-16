@@ -13,11 +13,15 @@ const (
 
 // RegexPattern holds compiled regex bytecode and flags.
 type RegexPattern struct {
-	Code       []byte
-	Flags      regex.Flags
-	prefix     []byte
-	widePrefix []byte
-	anchored   bool
-	cacheKey   string
-	cacheIndex int
+	Code          []byte
+	Flags         regex.Flags
+	prefix        []byte
+	widePrefix    []byte
+	atom          []byte
+	wideAtom      []byte
+	atomMinOffset int
+	atomMaxOffset int
+	anchored      bool
+	cacheKey      string
+	cacheIndex    int
 }

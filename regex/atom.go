@@ -1,0 +1,369 @@
+package regex
+
+import (
+	"bytes"
+	"math"
+	"sort"
+)
+
+// LiteralAtom describes a literal that every match of a regex must contain.
+// Offsets are measured in input characters before the literal. MaxOffset is
+// -1 when the amount of preceding input is unbounded.
+type LiteralAtom struct {
+	Data      []byte
+	MinOffset int
+	MaxOffset int
+}
+
+type atomAnalysis struct {
+	minLength int
+	maxLength int
+	atoms     []LiteralAtom
+	exact     []byte
+	isExact   bool
+}
+
+// MandatoryLiteralAtoms returns only literals that are present in every match
+// accepted by ast. The caller can use their offset bounds to turn literal
+// occurrences into a conservative set of regex start positions.
+func MandatoryLiteralAtoms(ast *AST) []LiteralAtom {
+	if ast == nil || ast.Root == nil {
+		return nil
+	}
+	return analyzeAtoms(ast.Root).atoms
+}
+
+func analyzeAtoms(node *Node) atomAnalysis {
+	if node == nil {
+		return atomAnalysis{maxLength: 0, isExact: true}
+	}
+
+	switch node.Kind {
+	case NodeLiteral:
+		data := []byte{node.Value}
+		return atomAnalysis{
+			minLength: 1,
+			maxLength: 1,
+			atoms:     []LiteralAtom{{Data: data, MaxOffset: 0}},
+			exact:     data,
+			isExact:   true,
+		}
+	case NodeConcat:
+		return analyzeConcatAtoms(node.Children)
+	case NodeAlt:
+		return analyzeAltAtoms(node.Children)
+	case NodeStar:
+		return analyzeStarAtoms(node)
+	case NodePlus:
+		return analyzePlusAtoms(node)
+	case NodeRange:
+		return analyzeRangeAtoms(node)
+	case NodeEmpty, NodeAnchorStart, NodeAnchorEnd, NodeWordBoundary, NodeNonWordBoundary:
+		return atomAnalysis{maxLength: 0, isExact: true}
+	case NodeAny, NodeClass, NodeWordChar, NodeNonWordChar, NodeSpace, NodeNonSpace,
+		NodeDigit, NodeNonDigit, NodeNotLiteral, NodeMaskedLiteral, NodeMaskedNotLiteral:
+		return atomAnalysis{minLength: 1, maxLength: 1}
+	case NodeRangeAny:
+		maxLength := int(node.End)
+		if node.End == math.MaxUint16 {
+			maxLength = -1
+		}
+		return atomAnalysis{minLength: int(node.Start), maxLength: maxLength}
+	default:
+		return atomAnalysis{maxLength: -1}
+	}
+}
+
+func analyzeConcatAtoms(children []*Node) atomAnalysis {
+	result := atomAnalysis{maxLength: 0, isExact: true}
+	runMinOffset := 0
+	runMaxOffset := 0
+	runActive := false
+	var run []byte
+
+	flushRun := func() {
+		if !runActive || len(run) == 0 {
+			run = run[:0]
+			runActive = false
+			return
+		}
+		result.atoms = append(result.atoms, LiteralAtom{
+			Data:      append([]byte(nil), run...),
+			MinOffset: runMinOffset,
+			MaxOffset: runMaxOffset,
+		})
+		run = run[:0]
+		runActive = false
+	}
+
+	for _, child := range children {
+		analysis := analyzeAtoms(child)
+		for _, atom := range analysis.atoms {
+			result.atoms = append(result.atoms, shiftLiteralAtom(atom, result.minLength, result.maxLength))
+		}
+
+		if analysis.isExact {
+			if !runActive {
+				runMinOffset = result.minLength
+				runMaxOffset = result.maxLength
+				runActive = true
+			}
+			run = append(run, analysis.exact...)
+		} else {
+			flushRun()
+			result.isExact = false
+		}
+
+		result.minLength = addLength(result.minLength, analysis.minLength)
+		result.maxLength = addLength(result.maxLength, analysis.maxLength)
+		if result.isExact {
+			result.exact = append(result.exact, analysis.exact...)
+		}
+	}
+	flushRun()
+	return result
+}
+
+func analyzeAltAtoms(children []*Node) atomAnalysis {
+	if len(children) == 0 {
+		return atomAnalysis{maxLength: 0, isExact: true}
+	}
+
+	first := analyzeAtoms(children[0])
+	result := atomAnalysis{
+		minLength: first.minLength,
+		maxLength: first.maxLength,
+		exact:     append([]byte(nil), first.exact...),
+		isExact:   first.isExact,
+	}
+	analyses := make([]atomAnalysis, 0, len(children))
+	analyses = append(analyses, first)
+
+	for _, child := range children[1:] {
+		analysis := analyzeAtoms(child)
+		analyses = append(analyses, analysis)
+		result.minLength = min(result.minLength, analysis.minLength)
+		result.maxLength = maxLength(result.maxLength, analysis.maxLength)
+		if !analysis.isExact || !result.isExact || !bytes.Equal(result.exact, analysis.exact) {
+			result.isExact = false
+			result.exact = nil
+		}
+	}
+
+	if result.isExact && len(result.exact) > 0 {
+		result.atoms = []LiteralAtom{{Data: append([]byte(nil), result.exact...), MaxOffset: 0}}
+		return result
+	}
+	result.atoms = intersectMandatoryAtoms(analyses)
+	return result
+}
+
+func analyzeStarAtoms(node *Node) atomAnalysis {
+	child := firstChildAnalysis(node)
+	if child.maxLength == 0 {
+		return atomAnalysis{maxLength: 0, isExact: true}
+	}
+	return atomAnalysis{maxLength: -1}
+}
+
+func analyzePlusAtoms(node *Node) atomAnalysis {
+	child := firstChildAnalysis(node)
+	result := atomAnalysis{
+		minLength: child.minLength,
+		maxLength: -1,
+		atoms:     cloneLiteralAtoms(child.atoms),
+	}
+	if child.maxLength == 0 {
+		result.maxLength = 0
+		result.exact = append([]byte(nil), child.exact...)
+		result.isExact = child.isExact
+	}
+	if child.isExact && len(child.exact) > 0 {
+		result.atoms = append(result.atoms, LiteralAtom{Data: append([]byte(nil), child.exact...), MaxOffset: 0})
+	}
+	return result
+}
+
+func analyzeRangeAtoms(node *Node) atomAnalysis {
+	child := firstChildAnalysis(node)
+	minimum := int(node.Start)
+	maximum := int(node.End)
+	result := atomAnalysis{
+		minLength: multiplyLength(child.minLength, minimum),
+		maxLength: multiplyLength(child.maxLength, maximum),
+	}
+	if node.End == math.MaxUint16 && child.maxLength > 0 {
+		result.maxLength = -1
+	}
+	if minimum > 0 {
+		result.atoms = cloneLiteralAtoms(child.atoms)
+		if child.isExact && len(child.exact) > 0 {
+			result.atoms = append(result.atoms, LiteralAtom{
+				Data:      repeatLiteral(child.exact, minimum),
+				MaxOffset: 0,
+			})
+		}
+	}
+	if minimum == maximum && child.isExact {
+		result.exact = repeatLiteral(child.exact, minimum)
+		result.isExact = true
+	}
+	return result
+}
+
+func firstChildAnalysis(node *Node) atomAnalysis {
+	if len(node.Children) == 0 {
+		return atomAnalysis{maxLength: 0, isExact: true}
+	}
+	return analyzeAtoms(node.Children[0])
+}
+
+func shiftLiteralAtom(atom LiteralAtom, minOffset, maxOffset int) LiteralAtom {
+	return LiteralAtom{
+		Data:      append([]byte(nil), atom.Data...),
+		MinOffset: addLength(minOffset, atom.MinOffset),
+		MaxOffset: addLength(maxOffset, atom.MaxOffset),
+	}
+}
+
+func cloneLiteralAtoms(atoms []LiteralAtom) []LiteralAtom {
+	result := make([]LiteralAtom, len(atoms))
+	for i, atom := range atoms {
+		result[i] = LiteralAtom{
+			Data:      append([]byte(nil), atom.Data...),
+			MinOffset: atom.MinOffset,
+			MaxOffset: atom.MaxOffset,
+		}
+	}
+	return result
+}
+
+func intersectMandatoryAtoms(analyses []atomAnalysis) []LiteralAtom {
+	if len(analyses) == 0 || len(analyses[0].atoms) == 0 {
+		return nil
+	}
+	const maxAlternativeAtomBytes = 16 * 1024
+	totalBytes := 0
+	for _, analysis := range analyses {
+		for _, atom := range analysis.atoms {
+			totalBytes += len(atom.Data)
+			if totalBytes > maxAlternativeAtomBytes {
+				return nil
+			}
+		}
+	}
+
+	const maxWidth = 8
+	for width := maxWidth; width >= 2; width-- {
+		windows := make([]map[string]LiteralAtom, len(analyses))
+		usable := true
+		for i, analysis := range analyses {
+			windows[i] = mandatoryAtomWindows(analysis.atoms, width)
+			if len(windows[i]) == 0 {
+				usable = false
+				break
+			}
+		}
+		if !usable {
+			continue
+		}
+		common := intersectAtomWindows(windows)
+		if len(common) > 0 {
+			return common
+		}
+	}
+	return nil
+}
+
+func mandatoryAtomWindows(atoms []LiteralAtom, width int) map[string]LiteralAtom {
+	windows := make(map[string]LiteralAtom)
+	for _, atom := range atoms {
+		for offset := 0; offset+width <= len(atom.Data); offset++ {
+			key := string(atom.Data[offset : offset+width])
+			candidate := LiteralAtom{
+				Data:      []byte(key),
+				MinOffset: addLength(atom.MinOffset, offset),
+				MaxOffset: addLength(atom.MaxOffset, offset),
+			}
+			current, exists := windows[key]
+			if !exists || literalAtomOffsetWidth(candidate) < literalAtomOffsetWidth(current) {
+				windows[key] = candidate
+			}
+		}
+	}
+	return windows
+}
+
+func intersectAtomWindows(windows []map[string]LiteralAtom) []LiteralAtom {
+	keys := make([]string, 0, len(windows[0]))
+	for key := range windows[0] {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	result := make([]LiteralAtom, 0, len(keys))
+	for _, key := range keys {
+		atom := windows[0][key]
+		common := true
+		for _, alternatives := range windows[1:] {
+			alternative, ok := alternatives[key]
+			if !ok {
+				common = false
+				break
+			}
+			atom.MinOffset = min(atom.MinOffset, alternative.MinOffset)
+			atom.MaxOffset = maxLength(atom.MaxOffset, alternative.MaxOffset)
+		}
+		if common {
+			result = append(result, atom)
+		}
+	}
+	return result
+}
+
+func literalAtomOffsetWidth(atom LiteralAtom) int {
+	if atom.MaxOffset < 0 {
+		return math.MaxInt
+	}
+	return atom.MaxOffset - atom.MinOffset
+}
+
+func addLength(left, right int) int {
+	if left < 0 || right < 0 {
+		return -1
+	}
+	if left > math.MaxInt-right {
+		return -1
+	}
+	return left + right
+}
+
+func multiplyLength(length, count int) int {
+	if length < 0 {
+		return -1
+	}
+	if length != 0 && count > math.MaxInt/length {
+		return -1
+	}
+	return length * count
+}
+
+func maxLength(left, right int) int {
+	if left < 0 || right < 0 {
+		return -1
+	}
+	return max(left, right)
+}
+
+func repeatLiteral(data []byte, count int) []byte {
+	if len(data) == 0 || count <= 0 {
+		return nil
+	}
+	if count > math.MaxInt/len(data) {
+		return nil
+	}
+	result := make([]byte, 0, len(data)*count)
+	for range count {
+		result = append(result, data...)
+	}
+	return result
+}
