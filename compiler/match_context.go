@@ -143,14 +143,15 @@ func addRegexMatchesCached(
 			wide:    isWide,
 			cache:   byteSetCache,
 		}
-		starts, handled := search.candidateStarts()
+		plan, handled := search.candidatePlan()
 		if handled {
-			if len(starts) == 0 {
+			if plan.count == 0 {
 				return
 			}
 			bs, release := regex.NewVMBatch(len(regexInfo.Code))
 			defer release()
-			for _, start := range starts {
+			candidates := search.candidateIterator(plan)
+			for start, ok := candidates.next(); ok; start, ok = candidates.next() {
 				addRegexMatchAt(ctx, id, regexInfo, data, modifiers, flags, isWide, bs, start)
 			}
 			return
@@ -278,37 +279,17 @@ type regexByteSetSearch struct {
 	cache   *regexByteSetCandidateCache
 }
 
-func (search regexByteSetSearch) candidateStarts() ([]int, bool) {
-	limit := max(1024, len(search.data)/4)
-	positions, dense := search.positions(limit)
-	if dense {
-		return nil, false
-	}
-	if len(positions) == 0 {
-		return nil, true
-	}
-	if search.pattern.byteSetMaxOffset < 0 {
-		return nil, false
-	}
-
-	minOffset := search.pattern.byteSetMinOffset
-	maxOffset := search.pattern.byteSetMaxOffset
-	if search.wide {
-		minOffset *= 2
-		maxOffset *= 2
-	}
-	return collectRegexCandidateStarts(positions, minOffset, maxOffset, search.wide, len(search.data), limit)
-}
-
 type regexByteSetCacheKey struct {
 	set  regex.ByteSet
 	wide bool
 }
 
+const maxCachedRegexByteSetPositions = 64
+
 type regexByteSetCacheEntry struct {
 	positions []int
 	ready     bool
-	dense     bool
+	complete  bool
 }
 
 type regexByteSetCandidateCache struct {
@@ -319,13 +300,13 @@ func (cache *regexByteSetCandidateCache) reset() {
 	for _, entry := range cache.entries {
 		entry.positions = entry.positions[:0]
 		entry.ready = false
-		entry.dense = false
+		entry.complete = false
 	}
 }
 
-func (search regexByteSetSearch) positions(limit int) ([]int, bool) {
+func (search regexByteSetSearch) cacheEntry() *regexByteSetCacheEntry {
 	if search.cache == nil {
-		return search.findPositions(nil, limit)
+		return nil
 	}
 	if search.cache.entries == nil {
 		search.cache.entries = make(map[regexByteSetCacheKey]*regexByteSetCacheEntry)
@@ -336,26 +317,239 @@ func (search regexByteSetSearch) positions(limit int) ([]int, bool) {
 		entry = &regexByteSetCacheEntry{}
 		search.cache.entries[key] = entry
 	}
-	if !entry.ready {
-		entry.positions, entry.dense = search.findPositions(entry.positions[:0], limit)
-		entry.ready = true
-	}
-	return entry.positions, entry.dense
+	return entry
 }
 
-func (search regexByteSetSearch) findPositions(positions []int, limit int) ([]int, bool) {
-	for searchFrom := 0; searchFrom <= len(search.data); {
-		next := search.index(searchFrom)
-		if next < 0 {
-			return positions, false
-		}
-		positions = append(positions, next)
-		if len(positions) > limit {
-			return positions[:0], true
-		}
-		searchFrom = next + 1
+type regexByteSetCandidatePlan struct {
+	positions []int
+	useCached bool
+	count     int
+}
+
+func (search regexByteSetSearch) candidatePlan() (regexByteSetCandidatePlan, bool) {
+	entry := search.cacheEntry()
+	if search.pattern.byteSetMaxOffset < 0 {
+		return search.unboundedCandidatePlan(entry)
 	}
-	return positions, false
+	limit := max(1024, len(search.data)/4)
+	if entry != nil && entry.ready && entry.complete {
+		return search.planCachedPositions(entry.positions, limit)
+	}
+	return search.planScannedPositions(entry, limit)
+}
+
+func (search regexByteSetSearch) unboundedCandidatePlan(entry *regexByteSetCacheEntry) (regexByteSetCandidatePlan, bool) {
+	if entry != nil && entry.ready && entry.complete {
+		return regexByteSetCandidatePlan{positions: entry.positions, useCached: true}, len(entry.positions) == 0
+	}
+	if search.index(0) >= 0 {
+		if entry != nil {
+			entry.positions = entry.positions[:0]
+			entry.ready = true
+			entry.complete = false
+		}
+		return regexByteSetCandidatePlan{}, false
+	}
+	if entry != nil {
+		entry.positions = entry.positions[:0]
+		entry.ready = true
+		entry.complete = true
+	}
+	return regexByteSetCandidatePlan{useCached: entry != nil}, true
+}
+
+func (search regexByteSetSearch) planCachedPositions(positions []int, limit int) (regexByteSetCandidatePlan, bool) {
+	counter := newRegexCandidateStartCounter(search, limit)
+	for _, position := range positions {
+		if !counter.add(position) {
+			return regexByteSetCandidatePlan{}, false
+		}
+	}
+	return regexByteSetCandidatePlan{positions: positions, useCached: true, count: counter.count}, true
+}
+
+func (search regexByteSetSearch) planScannedPositions(entry *regexByteSetCacheEntry, limit int) (regexByteSetCandidatePlan, bool) {
+	counter := newRegexCandidateStartCounter(search, limit)
+	collect := entry != nil && !entry.ready
+	complete := collect
+	if collect {
+		entry.positions = entry.positions[:0]
+	}
+
+	for searchFrom := 0; searchFrom <= len(search.data); {
+		position := search.index(searchFrom)
+		if position < 0 {
+			break
+		}
+		if collect {
+			if len(entry.positions) < maxCachedRegexByteSetPositions {
+				entry.positions = append(entry.positions, position)
+			} else {
+				entry.positions = entry.positions[:0]
+				complete = false
+				collect = false
+			}
+		}
+		if !counter.add(position) {
+			search.finishCacheEntry(entry, false)
+			return regexByteSetCandidatePlan{}, false
+		}
+		searchFrom = position + 1
+	}
+
+	search.finishCacheEntry(entry, complete)
+	plan := regexByteSetCandidatePlan{count: counter.count}
+	if entry != nil && entry.complete {
+		plan.positions = entry.positions
+		plan.useCached = true
+	}
+	return plan, true
+}
+
+func (search regexByteSetSearch) finishCacheEntry(entry *regexByteSetCacheEntry, complete bool) {
+	if entry == nil || entry.ready {
+		return
+	}
+	entry.ready = true
+	entry.complete = complete
+	if !complete {
+		entry.positions = entry.positions[:0]
+	}
+}
+
+type regexCandidateStartCounter struct {
+	ranges regexCandidateStartRanges
+	count  int
+	limit  int
+}
+
+type regexCandidateStartRanges struct {
+	minOffset  int
+	maxOffset  int
+	dataLength int
+	step       int
+	wide       bool
+	covered    [2]int
+}
+
+func newRegexCandidateStartCounter(search regexByteSetSearch, limit int) regexCandidateStartCounter {
+	return regexCandidateStartCounter{ranges: newRegexCandidateStartRanges(search), limit: limit}
+}
+
+func newRegexCandidateStartRanges(search regexByteSetSearch) regexCandidateStartRanges {
+	minOffset := search.pattern.byteSetMinOffset
+	maxOffset := search.pattern.byteSetMaxOffset
+	step := 1
+	covered := [2]int{-1, -1}
+	if search.wide {
+		minOffset *= 2
+		maxOffset *= 2
+		step = 2
+		covered = [2]int{-2, -1}
+	}
+	return regexCandidateStartRanges{
+		minOffset:  minOffset,
+		maxOffset:  maxOffset,
+		dataLength: len(search.data),
+		step:       step,
+		wide:       search.wide,
+		covered:    covered,
+	}
+}
+
+func (counter *regexCandidateStartCounter) add(position int) bool {
+	first, last, ok := counter.ranges.next(position)
+	if !ok {
+		return true
+	}
+	added := (last-first)/counter.ranges.step + 1
+	counter.count += added
+	return counter.count <= counter.limit
+}
+
+func (ranges *regexCandidateStartRanges) next(position int) (int, int, bool) {
+	first := max(0, position-ranges.maxOffset)
+	last := min(ranges.dataLength, position-ranges.minOffset)
+	lane := 0
+	if ranges.wide {
+		lane = position & 1
+		if first&1 != lane {
+			first++
+		}
+	}
+	first = max(first, ranges.covered[lane]+ranges.step)
+	if first > last {
+		return 0, 0, false
+	}
+	count := (last-first)/ranges.step + 1
+	last = first + (count-1)*ranges.step
+	ranges.covered[lane] = last
+	return first, last, true
+}
+
+type regexByteSetPositionIterator struct {
+	search    regexByteSetSearch
+	positions []int
+	useCached bool
+	index     int
+	searchPos int
+}
+
+func (iterator *regexByteSetPositionIterator) next() (int, bool) {
+	if iterator.useCached {
+		if iterator.index >= len(iterator.positions) {
+			return 0, false
+		}
+		position := iterator.positions[iterator.index]
+		iterator.index++
+		return position, true
+	}
+	position := iterator.search.index(iterator.searchPos)
+	if position < 0 {
+		return 0, false
+	}
+	iterator.searchPos = position + 1
+	return position, true
+}
+
+type regexByteSetCandidateIterator struct {
+	positions regexByteSetPositionIterator
+	ranges    regexCandidateStartRanges
+	current   int
+	last      int
+}
+
+func (search regexByteSetSearch) candidateIterator(plan regexByteSetCandidatePlan) regexByteSetCandidateIterator {
+	return regexByteSetCandidateIterator{
+		positions: regexByteSetPositionIterator{
+			search:    search,
+			positions: plan.positions,
+			useCached: plan.useCached,
+		},
+		ranges:  newRegexCandidateStartRanges(search),
+		current: 1,
+	}
+}
+
+func (iterator *regexByteSetCandidateIterator) next() (int, bool) {
+	for {
+		if iterator.current <= iterator.last {
+			start := iterator.current
+			iterator.current += iterator.ranges.step
+			return start, true
+		}
+		position, ok := iterator.positions.next()
+		if !ok {
+			return 0, false
+		}
+		first, last, ok := iterator.ranges.next(position)
+		if !ok {
+			continue
+		}
+		iterator.last = last
+		iterator.current = first + iterator.ranges.step
+		return first, true
+	}
 }
 
 //nolint:revive // argument-limit: shared by local and Aho-Corasick candidate paths

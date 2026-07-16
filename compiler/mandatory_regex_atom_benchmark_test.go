@@ -182,3 +182,33 @@ func BenchmarkAtomlessRegexScanner(b *testing.B) {
 		})
 	}
 }
+
+func BenchmarkRegexByteSetCandidateMemory(b *testing.B) {
+	program, err := NewCompiler().CompileSource(`
+		rule candidate_heavy {
+			strings:
+				$a = /[a]{2}[0-9]/
+				$b = /[b]{2}[0-9]/
+				$c = /[c]{2}[0-9]/
+				$d = /[d]{2}[0-9]/
+				$e = /[e]{2}[0-9]/
+				$f = /[f]{2}[0-9]/
+				$g = /[g]{2}[0-9]/
+				$h = /[h]{2}[0-9]/
+			condition:
+				any of them
+		}
+	`)
+	if err != nil {
+		b.Fatal(err)
+	}
+	data := bytes.Repeat([]byte("a0b0c0d0e0f0g0h0"), (1<<20)/16)
+	b.SetBytes(int64(len(data)))
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		if _, err := program.Scan(data); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
