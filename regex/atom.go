@@ -98,11 +98,18 @@ func analyzeAtoms(node *Node) atomAnalysis {
 }
 
 func singleByteAtomAnalysis(set ByteSet) atomAnalysis {
-	return atomAnalysis{
+	result := atomAnalysis{
 		minLength: 1,
 		maxLength: 1,
 		byteAtoms: usefulByteSetAtom(set),
 	}
+	if value, ok := set.singletonValue(); ok {
+		data := []byte{value}
+		result.atoms = []LiteralAtom{{Data: data, MaxOffset: 0}}
+		result.exact = data
+		result.isExact = true
+	}
+	return result
 }
 
 func analyzeConcatAtoms(children []*Node) atomAnalysis {

@@ -15,6 +15,10 @@ const (
 	// Below this crossover, the existing per-pattern SIMD byte searches are
 	// cheaper than adding more root transitions to the global automaton.
 	minSharedNonTextEntries = 32
+	// Fixed class-only regexes cannot use the literal automaton. Once several
+	// are present, one byte-dispatch pass is cheaper than rescanning the input
+	// independently for every pattern.
+	minSharedFixedRegexEntries = 4
 )
 
 type prefilterAtom struct {
@@ -46,6 +50,26 @@ type prefilterDedupKey struct {
 type nonTextCacheKey struct {
 	kind     StringKind
 	cacheKey string
+}
+
+type fixedRegexDispatchEntry struct {
+	pattern    RegexPattern
+	modifiers  []ast.StringModifier
+	cacheIndex int
+	atomOffset int
+	wide       bool
+}
+
+type fixedRegexDispatch struct {
+	buckets      [256][]int
+	entries      []fixedRegexDispatchEntry
+	cacheIndices []int
+	cacheOrder   []fixedRegexCacheOrder
+}
+
+type fixedRegexCacheOrder struct {
+	cacheIndex int
+	wideLength int
 }
 
 type sharedPrefilterSpec struct {
@@ -248,6 +272,83 @@ func assignNonTextCacheIndices(rules []*CompiledRule) int {
 		}
 	}
 	return nextIndex
+}
+
+func buildFixedRegexDispatch(rules []*CompiledRule) *fixedRegexDispatch {
+	entries := make([]fixedRegexDispatchEntry, 0)
+	seen := make(map[prefilterDedupKey]struct{})
+	for _, rule := range rules {
+		for _, strID := range sortedPatternIDs(rule.RegexPatterns) {
+			pattern := rule.RegexPatterns[strID]
+			if len(pattern.fixedByteSets) == 0 ||
+				len(pattern.prefix) >= minPrefilterAtomLength ||
+				len(pattern.atom) >= minPrefilterAtomLength ||
+				pattern.byteSetCount == 0 ||
+				pattern.byteSetMinOffset != pattern.byteSetMaxOffset ||
+				pattern.cacheIndex < 0 {
+				continue
+			}
+
+			modifiers := rule.StringModifiers[strID]
+			hasWide := hasModifier(modifiers, ast.StringModifierWide)
+			hasASCII := hasModifier(modifiers, ast.StringModifierASCII)
+			encodings := []bool{false}
+			switch {
+			case hasWide && hasASCII:
+				encodings = []bool{true, false}
+			case hasWide:
+				encodings = []bool{true}
+			}
+
+			for _, wide := range encodings {
+				key := prefilterDedupKey{kind: StringKindRegex, cacheKey: pattern.cacheKey, wide: wide}
+				if _, exists := seen[key]; exists {
+					continue
+				}
+				seen[key] = struct{}{}
+				atomOffset := pattern.byteSetMinOffset
+				if wide {
+					atomOffset *= 2
+				}
+				entries = append(entries, fixedRegexDispatchEntry{
+					pattern:    pattern,
+					modifiers:  modifiers,
+					cacheIndex: pattern.cacheIndex,
+					atomOffset: atomOffset,
+					wide:       wide,
+				})
+			}
+		}
+	}
+	if len(entries) < minSharedFixedRegexEntries {
+		return nil
+	}
+
+	dispatch := &fixedRegexDispatch{entries: entries}
+	cacheSeen := make(map[int]struct{}, len(entries))
+	cacheEntryCounts := make(map[int]int, len(entries))
+	for entryIndex, entry := range entries {
+		for value := 0; value < 256; value++ {
+			if entry.pattern.byteSet.Contains(byte(value)) {
+				dispatch.buckets[value] = append(dispatch.buckets[value], entryIndex)
+			}
+		}
+		if _, exists := cacheSeen[entry.cacheIndex]; !exists {
+			cacheSeen[entry.cacheIndex] = struct{}{}
+			dispatch.cacheIndices = append(dispatch.cacheIndices, entry.cacheIndex)
+		}
+		cacheEntryCounts[entry.cacheIndex]++
+	}
+	for _, entry := range entries {
+		if !entry.wide || cacheEntryCounts[entry.cacheIndex] < 2 {
+			continue
+		}
+		dispatch.cacheOrder = append(dispatch.cacheOrder, fixedRegexCacheOrder{
+			cacheIndex: entry.cacheIndex,
+			wideLength: len(entry.pattern.fixedByteSets) * 2,
+		})
+	}
+	return dispatch
 }
 
 // selectLiteralAtom chooses a bounded, high-information window from a literal
@@ -529,13 +630,13 @@ func appendRegexPrefilterMatches(
 	if len(starts) == 0 {
 		return dst
 	}
-	bs, release := regex.NewVMBatch(len(pattern.Code))
-	defer release()
+	bs, release := newRegexMatchBatch(pattern)
+	defer releaseRegexMatchBatch(release)
 	for _, start := range starts {
 		if pattern.anchored && start != 0 {
 			continue
 		}
-		matched, startOff, endOff := regex.ExecMatchBatch(bs, pattern.Code, data, flags, start)
+		matched, startOff, endOff := execRegexMatchAt(bs, pattern, data, flags, entry.IsWide, start)
 		if !matched {
 			continue
 		}

@@ -97,8 +97,8 @@ func addRegexMatchesCached(
 	}
 
 	if regexInfo.anchored {
-		bs, release := regex.NewVMBatch(len(regexInfo.Code))
-		defer release()
+		bs, release := newRegexMatchBatch(regexInfo)
+		defer releaseRegexMatchBatch(release)
 		addRegexMatchAt(ctx, id, regexInfo, data, modifiers, flags, isWide, bs, 0)
 		return
 	}
@@ -125,8 +125,8 @@ func addRegexMatchesCached(
 			if len(starts) == 0 {
 				return
 			}
-			bs, release := regex.NewVMBatch(len(regexInfo.Code))
-			defer release()
+			bs, release := newRegexMatchBatch(regexInfo)
+			defer releaseRegexMatchBatch(release)
 			for _, start := range starts {
 				addRegexMatchAt(ctx, id, regexInfo, data, modifiers, flags, isWide, bs, start)
 			}
@@ -148,8 +148,8 @@ func addRegexMatchesCached(
 			if plan.count == 0 {
 				return
 			}
-			bs, release := regex.NewVMBatch(len(regexInfo.Code))
-			defer release()
+			bs, release := newRegexMatchBatch(regexInfo)
+			defer releaseRegexMatchBatch(release)
 			candidates := search.candidateIterator(plan)
 			for start, ok := candidates.next(); ok; start, ok = candidates.next() {
 				addRegexMatchAt(ctx, id, regexInfo, data, modifiers, flags, isWide, bs, start)
@@ -158,8 +158,8 @@ func addRegexMatchesCached(
 		}
 	}
 
-	bs, release := regex.NewVMBatch(len(regexInfo.Code))
-	defer release()
+	bs, release := newRegexMatchBatch(regexInfo)
+	defer releaseRegexMatchBatch(release)
 	addRegexMatchesLinear(ctx, id, regexInfo, data, modifiers, flags, isWide, bs)
 }
 
@@ -178,8 +178,8 @@ func addRegexMatchesFromPrefix(
 	if candidate < 0 {
 		return
 	}
-	bs, release := regex.NewVMBatch(len(regexInfo.Code))
-	defer release()
+	bs, release := newRegexMatchBatch(regexInfo)
+	defer releaseRegexMatchBatch(release)
 	for candidate >= 0 {
 		addRegexMatchAt(ctx, id, regexInfo, data, modifiers, flags, isWide, bs, candidate)
 		searchFrom := candidate + 1
@@ -218,7 +218,7 @@ func addRegexMatchAt(
 	bs *regex.VMBatch,
 	start int,
 ) {
-	matched, startOffset, endOffset := regex.ExecMatchBatch(bs, regexInfo.Code, data, flags, start)
+	matched, startOffset, endOffset := execRegexMatchAt(bs, regexInfo, data, flags, isWide, start)
 	if !matched {
 		return
 	}
@@ -231,6 +231,57 @@ func addRegexMatchAt(
 	if matchPassesModifiers(data, match, modifiers, isWide) {
 		ctx.AddMatch(match)
 	}
+}
+
+func newRegexMatchBatch(pattern RegexPattern) (*regex.VMBatch, func()) {
+	if len(pattern.fixedByteSets) > 0 {
+		return nil, nil
+	}
+	return regex.NewVMBatch(len(pattern.Code))
+}
+
+func releaseRegexMatchBatch(release func()) {
+	if release != nil {
+		release()
+	}
+}
+
+//nolint:revive // argument-limit: exact and VM paths share one hot verifier
+func execRegexMatchAt(
+	bs *regex.VMBatch,
+	pattern RegexPattern,
+	data []byte,
+	flags regex.Flags,
+	isWide bool,
+	start int,
+) (matched bool, startOffset, endOffset int) {
+	if len(pattern.fixedByteSets) > 0 {
+		length, ok := fixedRegexMatchAt(pattern.fixedByteSets, data, isWide, start)
+		if !ok {
+			return false, -1, -1
+		}
+		return true, 0, length
+	}
+	return regex.ExecMatchBatch(bs, pattern.Code, data, flags, start)
+}
+
+//nolint:revive // argument-limit: fixed-width hot path avoids options indirection
+func fixedRegexMatchAt(sets []regex.ByteSet, data []byte, wide bool, start int) (int, bool) {
+	step := 1
+	if wide {
+		step = 2
+	}
+	length := len(sets) * step
+	if start < 0 || start > len(data)-length {
+		return 0, false
+	}
+	for index, set := range sets {
+		position := start + index*step
+		if !set.Contains(data[position]) || wide && data[position+1] != 0 {
+			return 0, false
+		}
+	}
+	return length, true
 }
 
 //nolint:revive // argument-limit: hot path avoids allocating an options struct

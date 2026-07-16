@@ -595,6 +595,7 @@ func (c *Compiler) compileCodeGenWithContext(ctx context.Context, program *ast.P
 	// Wrap in CompiledProgram
 	compiledProgram := NewCompiledProgram(compiledRules)
 	compiledProgram.nonTextCacheSize = assignNonTextCacheIndices(compiledRules)
+	compiledProgram.fixedRegexScan = buildFixedRegexDispatch(compiledRules)
 
 	// Combine text strings and safe regex/hex atoms into one global candidate pass.
 	sharedAutomaton, sharedLookup, err := buildSharedPatternAutomaton(compiledRules)

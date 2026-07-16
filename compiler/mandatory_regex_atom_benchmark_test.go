@@ -212,3 +212,33 @@ func BenchmarkRegexByteSetCandidateMemory(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkFixedRegexClassSequence(b *testing.B) {
+	program, err := NewCompiler().CompileSource(`
+		rule fixed_class_sequences {
+			strings:
+				$a = /[ai]{2}[0-9]/
+				$b = /[bj]{2}[0-9]/
+				$c = /[ck]{2}[0-9]/
+				$d = /[dl]{2}[0-9]/
+				$e = /[em]{2}[0-9]/
+				$f = /[fn]{2}[0-9]/
+				$g = /[go]{2}[0-9]/
+				$h = /[hp]{2}[0-9]/
+			condition:
+				any of them
+		}
+	`)
+	if err != nil {
+		b.Fatal(err)
+	}
+	data := bytes.Repeat([]byte("a0b0c0d0e0f0g0h0"), (1<<20)/16)
+	b.SetBytes(int64(len(data)))
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		if _, err := program.Scan(data); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
