@@ -320,6 +320,80 @@ func (ac *ACAutomaton) yieldMatches(state int32, offset int, yield func(ACMatch)
 	return true
 }
 
+func indexSinglePattern(data []byte, pattern []byte, noCase bool) int {
+	if len(pattern) == 0 || len(pattern) > len(data) {
+		return -1
+	}
+	if !noCase {
+		return bytes.Index(data, pattern)
+	}
+
+	last := len(data) - len(pattern)
+	for pos := 0; pos <= last; {
+		rel := indexASCIIFoldByte(data[pos:last+1], pattern[0])
+		if rel < 0 {
+			return -1
+		}
+		candidate := pos + rel
+		matched := true
+		for idx := 1; idx < len(pattern); idx++ {
+			if toLowerTable[data[candidate+idx]] != toLowerTable[pattern[idx]] {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return candidate
+		}
+		pos = candidate + 1
+	}
+	return -1
+}
+
+func singlePatternIsDense(data []byte, pattern []byte, noCase bool) bool {
+	const sampleSize = 256
+	if len(data) > sampleSize {
+		data = data[:sampleSize]
+	}
+	matches := 0
+	for pos := 0; pos <= len(data)-len(pattern); {
+		rel := indexSinglePattern(data[pos:], pattern, noCase)
+		if rel < 0 {
+			return false
+		}
+		matches++
+		if matches == 8 {
+			return true
+		}
+		pos += rel + 1
+	}
+	return false
+}
+
+// searchSinglePattern uses the platform byte-search primitives when an
+// automaton contains only one concrete pattern. This avoids walking the AC
+// state machine for the common one-rule/one-string case while preserving
+// overlapping matches and nocase semantics.
+func (ac *ACAutomaton) searchSinglePattern(data []byte, yield func(ACMatch) bool) {
+	info := ac.strings[0]
+	noCase := info.Flags&regex.FlagsNoCase != 0
+	for pos := 0; pos <= len(data)-len(info.Data); {
+		rel := indexSinglePattern(data[pos:], info.Data, noCase)
+		if rel < 0 {
+			return
+		}
+		start := pos + rel
+		if !yield(ACMatch{
+			StringIndex: 0,
+			StringID:    info.Identifier,
+			Backtrack:   start,
+		}) {
+			return
+		}
+		pos = start + 1
+	}
+}
+
 // SearchIter performs optimized pattern matching without allocating a slice, yielding matches via an iterator
 //
 //nolint:nestif // the sparse-root and general loops are intentionally separate hot paths
@@ -331,6 +405,16 @@ func (ac *ACAutomaton) SearchIter(data []byte) iter.Seq[ACMatch] {
 
 		if len(data) == 0 {
 			return
+		}
+		if len(ac.strings) == 1 {
+			info := ac.strings[0]
+			if len(info.Data) > 0 {
+				noCase := info.Flags&regex.FlagsNoCase != 0
+				if !singlePatternIsDense(data, info.Data, noCase) {
+					ac.searchSinglePattern(data, yield)
+					return
+				}
+			}
 		}
 
 		currentState := int32(0) // Start at root
@@ -357,8 +441,17 @@ func (ac *ACAutomaton) SearchIter(data []byte) iter.Seq[ACMatch] {
 			return
 		}
 
+		rootTransitions := &ac.states[0].transitions
 		for i, b := range data {
-			currentState = ac.findNextState(currentState, b)
+			if currentState == 0 {
+				currentState = rootTransitions[b]
+				if currentState == -1 {
+					currentState = 0
+					continue
+				}
+			} else {
+				currentState = ac.findNextState(currentState, b)
+			}
 			outputStart := ac.states[currentState].outputStart
 			outputEnd := ac.states[currentState].outputEnd
 			for idx := outputStart; idx < outputEnd; idx++ {

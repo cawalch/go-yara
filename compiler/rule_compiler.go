@@ -306,6 +306,7 @@ func (rc *RuleCompiler) compileSingleString(str *ast.String) error {
 			widePrefix: widenRegexPrefix(prefix),
 			anchored:   anchored,
 			cacheKey:   result.cacheKey,
+			cacheIndex: -1,
 		}
 	case StringKindHex:
 		rc.hexPatterns[str.Identifier] = result.hexPattern
@@ -402,6 +403,7 @@ func (rc *RuleCompiler) compileHexString(value string, modifiers []ast.StringMod
 		hexPattern.XorKeys = keys
 	}
 	hexPattern.cacheKey = patternCacheKey("hex", value, modifiers)
+	hexPattern.cacheIndex = -1
 	legacy := rc.stringCompiler.parseHexString(value)
 	legacy = rc.stringCompiler.encodeHexString(legacy, modifiers)
 	return &stringCompilationResult{
@@ -879,6 +881,7 @@ func (rc *RuleCompiler) copyRegexPatterns() map[string]RegexPattern {
 			widePrefix: slices.Clone(v.widePrefix),
 			anchored:   v.anchored,
 			cacheKey:   v.cacheKey,
+			cacheIndex: v.cacheIndex,
 		}
 	}
 	return out
@@ -1108,10 +1111,14 @@ func (cr *CompiledRule) PrintDebug() {
 }
 
 // CompiledProgram represents a complete compiled YARA program
-// SharedAutomatonEntry maps a shared automaton string index to a rule and its local string index.
+// SharedAutomatonEntry maps a shared automaton entry to its exact verifier.
 type SharedAutomatonEntry struct {
-	RuleIndex int // index into CompiledProgram.Rules
-	StringIdx int // index into CompiledRule.IndexToStringID
+	RuleIndex  int // index into CompiledProgram.Rules
+	StringIdx  int // index into CompiledRule.IndexToStringID
+	Kind       StringKind
+	AtomOffset int
+	IsWide     bool
+	CacheIndex int
 }
 
 type CompiledProgram struct {
@@ -1120,9 +1127,12 @@ type CompiledProgram struct {
 	Stats           map[string]any
 	externalValues  map[string]externalValue
 
-	// Lookup table: shared automaton string index -> (rule index, string index)
+	// Lookup table: shared automaton entry -> exact text/regex/hex verifier.
 	// Built once at compile time, used by extractGlobalMatches for O(1) routing.
 	SharedLookup []SharedAutomatonEntry
+
+	// Number of compile-time integer slots used to cache regex/hex matches.
+	nonTextCacheSize int
 
 	// Streaming support
 	streamingProcessor *StreamingProcessor

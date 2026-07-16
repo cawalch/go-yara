@@ -3,7 +3,10 @@ package compiler
 import (
 	"fmt"
 	"os"
+	"slices"
 	"testing"
+
+	"github.com/cawalch/go-yara/regex"
 )
 
 // TestACAutomaton tests the Aho-Corasick automaton
@@ -96,6 +99,68 @@ func TestACAutomatonSearch(t *testing.T) {
 	// Should find "test" and "pattern"
 	if !foundPatterns["p0"] || !foundPatterns["p1"] {
 		t.Error("Expected to find test and pattern matches")
+	}
+}
+
+func TestACAutomatonSinglePatternFastPath(t *testing.T) {
+	tests := []struct {
+		name    string
+		pattern []byte
+		flags   regex.Flags
+		data    []byte
+		want    []int
+	}{
+		{
+			name:    "case sensitive overlaps",
+			pattern: []byte("aba"),
+			data:    []byte("ababa"),
+			want:    []int{0, 2},
+		},
+		{
+			name:    "nocase overlaps",
+			pattern: []byte("aba"),
+			flags:   regex.FlagsNoCase,
+			data:    []byte("AbABa"),
+			want:    []int{0, 2},
+		},
+		{
+			name:    "wide nocase",
+			pattern: []byte{'h', 0, 'i', 0},
+			flags:   regex.FlagsWide | regex.FlagsNoCase,
+			data:    []byte{'x', 0, 'H', 0, 'I', 0, 'x'},
+			want:    []int{2},
+		},
+		{
+			name:    "pattern longer than data",
+			pattern: []byte("long pattern"),
+			data:    []byte("short"),
+		},
+		{
+			name:    "dense matches fall back to automaton",
+			pattern: []byte("aa"),
+			data:    []byte("aaaaaaaaaaaa"),
+			want:    []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ac := NewACAutomaton()
+			if err := ac.AddStringWithFlags("single", tt.pattern, false, false, tt.flags); err != nil {
+				t.Fatal(err)
+			}
+			if err := ac.Compile(); err != nil {
+				t.Fatal(err)
+			}
+
+			var got []int
+			for match := range ac.SearchIter(tt.data) {
+				got = append(got, match.Backtrack)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Fatalf("match offsets = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 

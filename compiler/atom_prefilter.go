@@ -1,0 +1,463 @@
+package compiler
+
+import (
+	"fmt"
+	"sort"
+
+	"github.com/cawalch/go-yara/ast"
+	"github.com/cawalch/go-yara/regex"
+)
+
+const (
+	minPrefilterAtomLength = 2
+	maxPrefilterAtomLength = 8
+	// Below this crossover, the existing per-pattern SIMD byte searches are
+	// cheaper than adding more root transitions to the global automaton.
+	minSharedNonTextEntries = 32
+)
+
+type prefilterAtom struct {
+	data   []byte
+	offset int
+	score  int
+}
+
+type prefilterDedupKey struct {
+	kind     StringKind
+	cacheKey string
+	wide     bool
+}
+
+type nonTextCacheKey struct {
+	kind     StringKind
+	cacheKey string
+}
+
+type sharedPrefilterSpec struct {
+	identifier string
+	data       []byte
+	isHex      bool
+	isRegex    bool
+	flags      regex.Flags
+	entry      SharedAutomatonEntry
+}
+
+// buildSharedPatternAutomaton combines text strings and safe regex/hex atoms
+// into one global candidate pass. Non-text entries are exact-verified after
+// the automaton reports their candidate offsets.
+func buildSharedPatternAutomaton(rules []*CompiledRule) (*ACAutomaton, []SharedAutomatonEntry, error) {
+	automaton := NewACAutomaton()
+	totalEntries := 0
+	for _, rule := range rules {
+		if rule.Automaton != nil {
+			totalEntries += len(rule.Automaton.Strings)
+		}
+		totalEntries += len(rule.RegexPatterns)*2 + len(rule.HexPatterns)
+	}
+	automaton.ReserveStrings(totalEntries)
+
+	lookup := make([]SharedAutomatonEntry, 0, totalEntries)
+	seen := make(map[prefilterDedupKey]struct{})
+	prefilterSpecs := make([]sharedPrefilterSpec, 0, totalEntries)
+
+	for ruleIdx, rule := range rules {
+		if rule.Automaton != nil {
+			for _, info := range rule.Automaton.Strings {
+				strID := info.Identifier
+				if rule.StringKinds[strID] != StringKindText {
+					continue
+				}
+				globalID := fmt.Sprintf("%s:%s", rule.Name, strID)
+				if err := automaton.AddStringWithFlags(globalID, info.Data, false, false, info.Flags); err != nil {
+					return nil, nil, fmt.Errorf("adding %s to shared automaton: %w", globalID, err)
+				}
+				lookup = append(lookup, SharedAutomatonEntry{
+					RuleIndex: ruleIdx,
+					StringIdx: rule.ResolveStringIndex(strID),
+					Kind:      StringKindText,
+				})
+			}
+		}
+
+		for _, strID := range sortedPatternIDs(rule.RegexPatterns) {
+			pattern := rule.RegexPatterns[strID]
+			atom, ok := selectLiteralAtom(pattern.prefix)
+			if !ok || pattern.cacheKey == "" {
+				continue
+			}
+
+			modifiers := rule.StringModifiers[strID]
+			hasWide := hasModifier(modifiers, ast.StringModifierWide)
+			hasASCII := hasModifier(modifiers, ast.StringModifierASCII)
+			encodings := []bool{false}
+			switch {
+			case hasWide && hasASCII:
+				// Preserve the existing matcher order: wide, then ASCII.
+				encodings = []bool{true, false}
+			case hasWide:
+				encodings = []bool{true}
+			}
+
+			for _, wide := range encodings {
+				key := prefilterDedupKey{kind: StringKindRegex, cacheKey: pattern.cacheKey, wide: wide}
+				if _, exists := seen[key]; exists {
+					continue
+				}
+				seen[key] = struct{}{}
+
+				atomData := atom.data
+				atomOffset := atom.offset
+				flags := pattern.Flags &^ regex.FlagsWide
+				if wide {
+					atomData = widenRegexPrefix(atomData)
+					atomOffset *= 2
+					flags |= regex.FlagsWide
+				}
+				prefilterSpecs = append(prefilterSpecs, sharedPrefilterSpec{
+					identifier: fmt.Sprintf("%s:%s:regex:%t", rule.Name, strID, wide),
+					data:       atomData,
+					isRegex:    true,
+					flags:      flags,
+					entry: SharedAutomatonEntry{
+						RuleIndex:  ruleIdx,
+						StringIdx:  rule.ResolveStringIndex(strID),
+						Kind:       StringKindRegex,
+						AtomOffset: atomOffset,
+						IsWide:     wide,
+						CacheIndex: pattern.cacheIndex,
+					},
+				})
+			}
+		}
+
+		for _, strID := range sortedPatternIDs(rule.HexPatterns) {
+			pattern := rule.HexPatterns[strID]
+			if pattern == nil || pattern.cacheKey == "" || len(pattern.XorKeys) > 0 || len(pattern.XorRange) > 0 {
+				continue
+			}
+			atom, ok := selectHexAtom(pattern.Tokens)
+			if !ok {
+				continue
+			}
+			key := prefilterDedupKey{kind: StringKindHex, cacheKey: pattern.cacheKey}
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
+
+			prefilterSpecs = append(prefilterSpecs, sharedPrefilterSpec{
+				identifier: fmt.Sprintf("%s:%s:hex", rule.Name, strID),
+				data:       atom.data,
+				isHex:      true,
+				entry: SharedAutomatonEntry{
+					RuleIndex:  ruleIdx,
+					StringIdx:  rule.ResolveStringIndex(strID),
+					Kind:       StringKindHex,
+					AtomOffset: atom.offset,
+					CacheIndex: pattern.cacheIndex,
+				},
+			})
+		}
+	}
+
+	if len(prefilterSpecs) >= minSharedNonTextEntries {
+		for _, spec := range prefilterSpecs {
+			if err := automaton.AddStringWithFlags(
+				spec.identifier,
+				spec.data,
+				spec.isHex,
+				spec.isRegex,
+				spec.flags,
+			); err != nil {
+				return nil, nil, fmt.Errorf("adding %s atom to shared automaton: %w", spec.identifier, err)
+			}
+			lookup = append(lookup, spec.entry)
+		}
+	}
+
+	if err := automaton.Compile(); err != nil {
+		return nil, nil, fmt.Errorf("compiling shared automaton: %w", err)
+	}
+	return automaton, lookup, nil
+}
+
+func sortedPatternIDs[V any](patterns map[string]V) []string {
+	ids := make([]string, 0, len(patterns))
+	for id := range patterns {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+func assignNonTextCacheIndices(rules []*CompiledRule) int {
+	indices := make(map[nonTextCacheKey]int)
+	nextIndex := 0
+	for _, rule := range rules {
+		for _, strID := range sortedPatternIDs(rule.RegexPatterns) {
+			pattern := rule.RegexPatterns[strID]
+			pattern.cacheIndex = -1
+			if pattern.cacheKey != "" {
+				key := nonTextCacheKey{kind: StringKindRegex, cacheKey: pattern.cacheKey}
+				index, exists := indices[key]
+				if !exists {
+					index = nextIndex
+					nextIndex++
+					indices[key] = index
+				}
+				pattern.cacheIndex = index
+			}
+			rule.RegexPatterns[strID] = pattern
+		}
+		for _, strID := range sortedPatternIDs(rule.HexPatterns) {
+			pattern := rule.HexPatterns[strID]
+			if pattern == nil {
+				continue
+			}
+			pattern.cacheIndex = -1
+			if pattern.cacheKey == "" {
+				continue
+			}
+			key := nonTextCacheKey{kind: StringKindHex, cacheKey: pattern.cacheKey}
+			index, exists := indices[key]
+			if !exists {
+				index = nextIndex
+				nextIndex++
+				indices[key] = index
+			}
+			pattern.cacheIndex = index
+		}
+	}
+	return nextIndex
+}
+
+// selectLiteralAtom chooses a bounded, high-information window from a literal
+// prefix. Later windows win ties because generated rule families commonly
+// share their leading bytes and vary near the end of the prefix.
+func selectLiteralAtom(literal []byte) (prefilterAtom, bool) {
+	if len(literal) < minPrefilterAtomLength {
+		return prefilterAtom{}, false
+	}
+	width := min(len(literal), maxPrefilterAtomLength)
+	best := prefilterAtom{score: -1}
+	for offset := 0; offset+width <= len(literal); offset++ {
+		data := literal[offset : offset+width]
+		score := prefilterAtomScore(data)
+		if score >= best.score {
+			best = prefilterAtom{data: data, offset: offset, score: score}
+		}
+	}
+	return best, true
+}
+
+func prefilterAtomScore(atom []byte) int {
+	score := 0
+	var seen [256]bool
+	for _, b := range atom {
+		switch {
+		case b == 0 || b >= 0x80:
+			score += 6
+		case b >= '0' && b <= '9':
+			score += 3
+		case b >= 'A' && b <= 'Z', b >= 'a' && b <= 'z':
+			score += 2
+		default:
+			score += 4
+		}
+		if !seen[b] {
+			score++
+			seen[b] = true
+		}
+	}
+	return score
+}
+
+// selectHexAtom chooses the best literal run whose byte offset from the start
+// is statically known. Variable jumps and alternatives end the safe region;
+// patterns without a useful atom remain on the existing matcher path.
+func selectHexAtom(tokens []HexPatternToken) (prefilterAtom, bool) {
+	best := prefilterAtom{score: -1}
+	fixedOffset := 0
+	runOffset := 0
+	var run []byte
+
+	considerRun := func() {
+		atom, ok := selectLiteralAtom(run)
+		if ok {
+			atom.offset += runOffset
+			if len(atom.data) > len(best.data) || (len(atom.data) == len(best.data) && atom.score >= best.score) {
+				best = atom
+			}
+		}
+		run = nil
+	}
+
+	for _, token := range tokens {
+		exact := token.Kind == HexTokenByte && !token.Negated
+		if token.Kind == HexTokenMasked && token.Mask == 0xFF && !token.Negated {
+			exact = true
+		}
+		if exact {
+			if len(run) == 0 {
+				runOffset = fixedOffset
+			}
+			run = append(run, token.Value)
+			fixedOffset++
+			continue
+		}
+
+		considerRun()
+		switch token.Kind {
+		case HexTokenByte, HexTokenMasked, HexTokenWildcard:
+			fixedOffset++
+		case HexTokenJump:
+			if token.Min < 0 || token.Min != token.Max {
+				return best, len(best.data) >= minPrefilterAtomLength
+			}
+			fixedOffset += token.Min
+		case HexTokenAlt:
+			return best, len(best.data) >= minPrefilterAtomLength
+		}
+	}
+	considerRun()
+	return best, len(best.data) >= minPrefilterAtomLength
+}
+
+func (s *Scanner) resetPrefilterCandidates(size int) {
+	if cap(s.prefilterCandidates) < size {
+		s.prefilterCandidates = make([][]int, size)
+		return
+	}
+	s.prefilterCandidates = s.prefilterCandidates[:size]
+	for idx := range s.prefilterCandidates {
+		s.prefilterCandidates[idx] = s.prefilterCandidates[idx][:0]
+	}
+}
+
+func (s *Scanner) populateNonTextPrefilterCache(data []byte, cache *nonTextMatchCache) {
+	for lookupIdx, entry := range s.program.SharedLookup {
+		if entry.Kind == StringKindText || entry.CacheIndex < 0 || entry.CacheIndex >= len(cache.matches) {
+			continue
+		}
+		if entry.RuleIndex < 0 || entry.RuleIndex >= len(s.program.Rules) {
+			continue
+		}
+		rule := s.program.Rules[entry.RuleIndex]
+		if entry.StringIdx < 0 || entry.StringIdx >= len(rule.IndexToStringID) {
+			continue
+		}
+		strID := rule.IndexToStringID[entry.StringIdx]
+		candidates := s.prefilterCandidates[lookupIdx]
+
+		switch entry.Kind {
+		case StringKindRegex:
+			dst := cache.matches[entry.CacheIndex]
+			if len(candidates) > 0 {
+				dst = appendRegexPrefilterMatches(dst, rule, strID, entry, data, candidates)
+			}
+			cache.set(entry.CacheIndex, dst)
+		case StringKindHex:
+			dst := cache.matches[entry.CacheIndex]
+			if len(candidates) > 0 {
+				dst = appendHexPrefilterMatches(dst, rule, strID, entry, data, candidates)
+			}
+			cache.set(entry.CacheIndex, dst)
+		}
+	}
+}
+
+//nolint:revive // argument-limit: hot-path helper keeps candidate verification direct
+func appendRegexPrefilterMatches(
+	dst []Match,
+	rule *CompiledRule,
+	strID string,
+	entry SharedAutomatonEntry,
+	data []byte,
+	candidates []int,
+) []Match {
+	pattern, ok := rule.RegexPatterns[strID]
+	if !ok || len(pattern.Code) == 0 {
+		return dst
+	}
+	flags := pattern.Flags &^ regex.FlagsWide
+	if entry.IsWide {
+		flags |= regex.FlagsWide
+	}
+	bs, release := regex.NewVMBatch(len(pattern.Code))
+	defer release()
+
+	lastStart := -1
+	for _, atomStart := range candidates {
+		start := atomStart - entry.AtomOffset
+		if start < 0 || start > len(data) || start == lastStart {
+			continue
+		}
+		lastStart = start
+		if pattern.anchored && start != 0 {
+			continue
+		}
+		matched, startOff, endOff := regex.ExecMatchBatch(bs, pattern.Code, data, flags, start)
+		if !matched {
+			continue
+		}
+		absStart := start + startOff
+		absEnd := start + endOff
+		if absEnd < absStart {
+			continue
+		}
+		match := Match{Pattern: strID, Offset: int64(absStart), Length: absEnd - absStart}
+		if matchPassesModifiers(data, match, rule.StringModifiers[strID], entry.IsWide) {
+			dst = append(dst, match)
+		}
+	}
+	return dst
+}
+
+//nolint:revive // argument-limit: hot-path helper keeps candidate verification direct
+func appendHexPrefilterMatches(
+	dst []Match,
+	rule *CompiledRule,
+	strID string,
+	entry SharedAutomatonEntry,
+	data []byte,
+	candidates []int,
+) []Match {
+	pattern := rule.HexPatterns[strID]
+	if pattern == nil {
+		return dst
+	}
+	linear := isLinearHexPattern(pattern.Tokens)
+	var scratch hexMatchScratch
+	lastStart := -1
+
+	for _, atomStart := range candidates {
+		start := atomStart - entry.AtomOffset
+		if start < 0 || start >= len(data) || start == lastStart {
+			continue
+		}
+		lastStart = start
+
+		if linear {
+			end, ok := matchLinearHexPattern(pattern.Tokens, data, start, nil)
+			if !ok || end <= start {
+				continue
+			}
+			match := Match{Pattern: strID, Offset: int64(start), Length: end - start}
+			if matchPassesModifiers(data, match, rule.StringModifiers[strID], false) {
+				dst = append(dst, match)
+			}
+			continue
+		}
+
+		for _, end := range scratch.match(pattern.Tokens, data, start, nil) {
+			if end <= start {
+				continue
+			}
+			match := Match{Pattern: strID, Offset: int64(start), Length: end - start}
+			if matchPassesModifiers(data, match, rule.StringModifiers[strID], false) {
+				dst = append(dst, match)
+			}
+		}
+	}
+	return dst
+}
