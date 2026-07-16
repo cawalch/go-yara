@@ -1,9 +1,6 @@
 package regex
 
-import (
-	"sync"
-	"sync/atomic"
-)
+import "sync"
 
 // vmState holds the reusable per-match buffers for runAtMatch.
 // Using sync.Pool avoids the dominant allocation cost in the regex VM:
@@ -11,19 +8,14 @@ import (
 // cur, and next ([]thread).
 //
 // The visited array uses a generation counter (int64) instead of []bool to avoid
-// calling clear() on every step/thread iteration. A global atomic counter ensures
-// each runAtMatch call gets a fresh generation even when the buffer is reused.
+// calling clear() on every step/thread iteration. Each pooled state advances its
+// own generation while it is exclusively owned by a VM attempt or batch.
 type vmState struct {
 	visited []int64 // generation counter per bytecode position
 	cur     []thread
 	next    []thread
+	gen     int64
 }
-
-// vmGen is a global monotonically increasing generation counter.
-// Each call to runAtMatch atomically increments it so that pooled visited[]
-// arrays never need to be zeroed — stale entries from previous uses are
-// automatically invalidated by the new generation value.
-var vmGen atomic.Int64
 
 // vmPool is a sync.Pool for vmState instances.
 var vmPool = sync.Pool{
@@ -37,9 +29,8 @@ var vmPool = sync.Pool{
 }
 
 // getVMState retrieves a vmState from the pool, growing visited if needed.
-// Returns the start of a generation block for this match attempt.
-// Each match reserves a block of 1M generation values to avoid atomic overhead per step.
-// Stale values in the visited array are safe because the new block start is unique.
+// Returns a generation value unique within this state. A vmState is exclusively
+// owned between getVMState and putVMState, so it needs no global atomic.
 func getVMState(codeLen int) (*vmState, int64) {
 	st := vmPool.Get().(*vmState)
 	if cap(st.visited) < codeLen {
@@ -48,7 +39,12 @@ func getVMState(codeLen int) (*vmState, int64) {
 	st.visited = st.visited[:codeLen]
 	st.cur = st.cur[:0]
 	st.next = st.next[:0]
-	return st, vmGen.Add(1 << 20) // Reserve 1M generation values per match
+	st.gen++
+	if st.gen <= 0 {
+		clear(st.visited)
+		st.gen = 1
+	}
+	return st, st.gen
 }
 
 // putVMState returns a vmState to the pool.
@@ -70,21 +66,30 @@ func putVMState(st *vmState) {
 // thousands of times in a tight loop (e.g., addRegexMatches).
 type vmBatchState struct {
 	st  *vmState
-	gen int64 // remaining generation values in current batch
+	gen int64
 }
+
+// VMBatch names the reusable VM state returned by NewVMBatch. Its fields stay
+// private; callers pass it to ExecMatchBatch for repeated anchored attempts.
+type VMBatch = vmBatchState
 
 // NewVMBatch acquires a vmState for a batch of runAtMatch calls.
 // Returns a release function to call when the batch is complete.
 // Use when calling runAtMatch thousands of times in a tight loop.
-func NewVMBatch(codeLen int) (*vmBatchState, func()) {
+func NewVMBatch(codeLen int) (*VMBatch, func()) {
 	st := vmPool.Get().(*vmState)
 	if cap(st.visited) < codeLen {
 		st.visited = make([]int64, codeLen)
 	}
 	bs := &vmBatchState{
-		st:  st,
-		gen: vmGen.Add(1 << 20),
+		st: st,
 	}
+	st.gen++
+	if st.gen <= 0 {
+		clear(st.visited[:codeLen])
+		st.gen = 1
+	}
+	bs.gen = st.gen
 	return bs, func() {
 		if cap(st.visited) <= 4096 {
 			st.visited = st.visited[:0]

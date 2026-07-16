@@ -11,6 +11,7 @@ import (
 const (
 	minPrefilterAtomLength = 2
 	maxPrefilterAtomLength = 8
+	maxRegexByteSetSize    = 96
 	// Below this crossover, the existing per-pattern SIMD byte searches are
 	// cheaper than adding more root transitions to the global automaton.
 	minSharedNonTextEntries = 32
@@ -20,6 +21,20 @@ type prefilterAtom struct {
 	data   []byte
 	offset int
 	score  int
+}
+
+type regexPrefilterAtom struct {
+	data      []byte
+	minOffset int
+	maxOffset int
+	score     int
+}
+
+type regexByteSetPrefilter struct {
+	set       regex.ByteSet
+	minOffset int
+	maxOffset int
+	count     int
 }
 
 type prefilterDedupKey struct {
@@ -81,7 +96,7 @@ func buildSharedPatternAutomaton(rules []*CompiledRule) (*ACAutomaton, []SharedA
 
 		for _, strID := range sortedPatternIDs(rule.RegexPatterns) {
 			pattern := rule.RegexPatterns[strID]
-			atom, ok := selectLiteralAtom(pattern.prefix)
+			atom, ok := selectSharedRegexAtom(pattern)
 			if !ok || pattern.cacheKey == "" {
 				continue
 			}
@@ -106,11 +121,13 @@ func buildSharedPatternAutomaton(rules []*CompiledRule) (*ACAutomaton, []SharedA
 				seen[key] = struct{}{}
 
 				atomData := atom.data
-				atomOffset := atom.offset
+				atomMinOffset := atom.minOffset
+				atomMaxOffset := atom.maxOffset
 				flags := pattern.Flags &^ regex.FlagsWide
 				if wide {
 					atomData = widenRegexPrefix(atomData)
-					atomOffset *= 2
+					atomMinOffset *= 2
+					atomMaxOffset *= 2
 					flags |= regex.FlagsWide
 				}
 				prefilterSpecs = append(prefilterSpecs, sharedPrefilterSpec{
@@ -119,12 +136,13 @@ func buildSharedPatternAutomaton(rules []*CompiledRule) (*ACAutomaton, []SharedA
 					isRegex:    true,
 					flags:      flags,
 					entry: SharedAutomatonEntry{
-						RuleIndex:  ruleIdx,
-						StringIdx:  rule.ResolveStringIndex(strID),
-						Kind:       StringKindRegex,
-						AtomOffset: atomOffset,
-						IsWide:     wide,
-						CacheIndex: pattern.cacheIndex,
+						RuleIndex:     ruleIdx,
+						StringIdx:     rule.ResolveStringIndex(strID),
+						Kind:          StringKindRegex,
+						AtomOffset:    atomMinOffset,
+						AtomMaxOffset: atomMaxOffset,
+						IsWide:        wide,
+						CacheIndex:    pattern.cacheIndex,
 					},
 				})
 			}
@@ -150,11 +168,12 @@ func buildSharedPatternAutomaton(rules []*CompiledRule) (*ACAutomaton, []SharedA
 				data:       atom.data,
 				isHex:      true,
 				entry: SharedAutomatonEntry{
-					RuleIndex:  ruleIdx,
-					StringIdx:  rule.ResolveStringIndex(strID),
-					Kind:       StringKindHex,
-					AtomOffset: atom.offset,
-					CacheIndex: pattern.cacheIndex,
+					RuleIndex:     ruleIdx,
+					StringIdx:     rule.ResolveStringIndex(strID),
+					Kind:          StringKindHex,
+					AtomOffset:    atom.offset,
+					AtomMaxOffset: atom.offset,
+					CacheIndex:    pattern.cacheIndex,
 				},
 			})
 		}
@@ -248,6 +267,118 @@ func selectLiteralAtom(literal []byte) (prefilterAtom, bool) {
 		}
 	}
 	return best, true
+}
+
+func selectMandatoryRegexAtom(atoms []regex.LiteralAtom) (regexPrefilterAtom, bool) {
+	best := regexPrefilterAtom{score: -1}
+	for _, candidate := range atoms {
+		atom, ok := selectLiteralAtom(candidate.Data)
+		if !ok {
+			continue
+		}
+		minOffset := candidate.MinOffset + atom.offset
+		maxOffset := candidate.MaxOffset
+		if maxOffset >= 0 {
+			maxOffset += atom.offset
+		}
+		candidateAtom := regexPrefilterAtom{
+			data:      atom.data,
+			minOffset: minOffset,
+			maxOffset: maxOffset,
+			score:     atom.score,
+		}
+		if betterRegexPrefilterAtom(candidateAtom, best) {
+			best = candidateAtom
+		}
+	}
+	return best, len(best.data) >= minPrefilterAtomLength
+}
+
+func betterRegexPrefilterAtom(candidate, current regexPrefilterAtom) bool {
+	if len(candidate.data) != len(current.data) {
+		return len(candidate.data) > len(current.data)
+	}
+	candidateBounded := candidate.maxOffset >= 0
+	currentBounded := current.maxOffset >= 0
+	if candidateBounded != currentBounded {
+		return candidateBounded
+	}
+	if candidate.score != current.score {
+		return candidate.score > current.score
+	}
+	if candidateBounded {
+		candidateWidth := candidate.maxOffset - candidate.minOffset
+		currentWidth := current.maxOffset - current.minOffset
+		if candidateWidth != currentWidth {
+			return candidateWidth < currentWidth
+		}
+	}
+	return true
+}
+
+func selectMandatoryRegexByteSetAtom(atoms []regex.ByteSetAtom, flags regex.Flags) (regexByteSetPrefilter, bool) {
+	var best regexByteSetPrefilter
+	found := false
+	for _, atom := range atoms {
+		set := atom.Set
+		if flags&regex.FlagsNoCase != 0 {
+			set = set.ASCIIFolded()
+		}
+		count := set.Count()
+		if count == 0 || count > maxRegexByteSetSize {
+			continue
+		}
+		candidate := regexByteSetPrefilter{
+			set:       set,
+			minOffset: atom.MinOffset,
+			maxOffset: atom.MaxOffset,
+			count:     count,
+		}
+		if !found || betterRegexByteSetPrefilter(candidate, best) {
+			best = candidate
+			found = true
+		}
+	}
+	return best, found
+}
+
+func betterRegexByteSetPrefilter(candidate, current regexByteSetPrefilter) bool {
+	candidateBounded := candidate.maxOffset >= 0
+	currentBounded := current.maxOffset >= 0
+	if candidateBounded != currentBounded {
+		return candidateBounded
+	}
+	if candidate.count != current.count {
+		return candidate.count < current.count
+	}
+	if candidateBounded {
+		candidateWidth := candidate.maxOffset - candidate.minOffset
+		currentWidth := current.maxOffset - current.minOffset
+		if candidateWidth != currentWidth {
+			return candidateWidth < currentWidth
+		}
+	}
+	return true
+}
+
+func selectSharedRegexAtom(pattern RegexPattern) (regexPrefilterAtom, bool) {
+	if atom, ok := selectLiteralAtom(pattern.prefix); ok {
+		return regexPrefilterAtom{
+			data:      atom.data,
+			minOffset: atom.offset,
+			maxOffset: atom.offset,
+			score:     atom.score,
+		}, true
+	}
+	if len(pattern.atom) < minPrefilterAtomLength || pattern.atomMaxOffset < 0 {
+		return regexPrefilterAtom{}, false
+	}
+	return regexPrefilterAtom{
+		data:      pattern.atom,
+		minOffset: pattern.atomMinOffset,
+		maxOffset: pattern.atomMaxOffset,
+		score:     prefilterAtomScore(pattern.atom),
+	}, true
 }
 
 func prefilterAtomScore(atom []byte) int {
@@ -383,16 +514,24 @@ func appendRegexPrefilterMatches(
 	if entry.IsWide {
 		flags |= regex.FlagsWide
 	}
+	limit := max(1024, len(data)/4)
+	starts, handled := collectRegexCandidateStarts(
+		candidates,
+		entry.AtomOffset,
+		entry.AtomMaxOffset,
+		entry.IsWide,
+		len(data),
+		limit,
+	)
+	if !handled {
+		return appendRegexFallbackMatches(dst, rule, strID, pattern, data, flags, entry.IsWide)
+	}
+	if len(starts) == 0 {
+		return dst
+	}
 	bs, release := regex.NewVMBatch(len(pattern.Code))
 	defer release()
-
-	lastStart := -1
-	for _, atomStart := range candidates {
-		start := atomStart - entry.AtomOffset
-		if start < 0 || start > len(data) || start == lastStart {
-			continue
-		}
-		lastStart = start
+	for _, start := range starts {
 		if pattern.anchored && start != 0 {
 			continue
 		}
@@ -410,6 +549,24 @@ func appendRegexPrefilterMatches(
 			dst = append(dst, match)
 		}
 	}
+	return dst
+}
+
+//nolint:revive // argument-limit: rare fallback keeps hot-path state explicit
+func appendRegexFallbackMatches(
+	dst []Match,
+	rule *CompiledRule,
+	strID string,
+	pattern RegexPattern,
+	data []byte,
+	flags regex.Flags,
+	isWide bool,
+) []Match {
+	ctx := matchContextPool.Get().(*MatchContext)
+	ctx.Reset(data)
+	addRegexMatches(ctx, strID, pattern, data, rule.StringModifiers[strID], flags, isWide)
+	dst = append(dst, ctx.Matches[strID]...)
+	ctx.Release()
 	return dst
 }
 

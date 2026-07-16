@@ -962,19 +962,24 @@ func isHexDigit(ch byte) bool {
 
 // compileRegex compiles a regex pattern to internal VM bytecode
 func (sc *StringCompiler) compileRegex(pattern string, _ []ast.StringModifier) ([]byte, error) {
+	code, _, err := sc.compileRegexWithAST(pattern, nil)
+	return code, err
+}
+
+func (sc *StringCompiler) compileRegexWithAST(pattern string, _ []ast.StringModifier) ([]byte, *regex.AST, error) {
 	// Remove delimiters and any inline flags; runtime flags (i/s) are propagated separately
 	cleaned := cleanRegexPattern(pattern)
 
 	p := regex.NewParser(regex.ParserFlagEnableStrictEscapeSequences)
 	astRe, err := p.Parse(cleaned)
 	if err != nil {
-		return nil, fmt.Errorf("parsing regex pattern: %w", err)
+		return nil, nil, fmt.Errorf("parsing regex pattern: %w", err)
 	}
 	code, err := regex.Compile(astRe)
 	if err != nil {
-		return nil, fmt.Errorf("compiling regex: %w", err)
+		return nil, nil, fmt.Errorf("compiling regex: %w", err)
 	}
-	return code, nil
+	return code, astRe, nil
 }
 
 // applyNocaseToWide converts wide UTF-16 strings to lowercase

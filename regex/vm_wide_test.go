@@ -25,6 +25,18 @@ func TestVM_WIDE_Scan(t *testing.T) {
 	}
 }
 
+func TestVM_WIDE_DoesNotSkipInvalidPairs(t *testing.T) {
+	code := mustCompile(t, "ab")
+	data := append([]byte("prefix"), 'a', 0, 'b', 0)
+	if Exec(code, data, FlagsWide) {
+		t.Fatal("anchored WIDE match skipped invalid ASCII pairs")
+	}
+	matched, start, end := ExecMatch(code, data, FlagsWide|FlagsScan)
+	if !matched || start != len("prefix") || end != len(data) {
+		t.Fatalf("WIDE scan = (%v,%d,%d), want (true,%d,%d)", matched, start, end, len("prefix"), len(data))
+	}
+}
+
 func TestVM_WIDE_WordBoundaries(t *testing.T) {
 	code := mustCompile(t, "\\bab\\b")
 

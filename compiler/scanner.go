@@ -27,9 +27,10 @@ type Scanner struct {
 	matchContextAfter   int
 	matchContextEnabled bool
 
-	externalValues map[string]externalValue
-	externalErr    error
-	nonTextCache   nonTextMatchCache
+	externalValues    map[string]externalValue
+	externalErr       error
+	nonTextCache      nonTextMatchCache
+	regexByteSetCache regexByteSetCandidateCache
 
 	// Candidate offsets grouped by SharedLookup index and retained across scans.
 	prefilterCandidates [][]int
@@ -311,6 +312,7 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 
 	globalByRule := make(map[int][]globalMatchEntry)
 	s.nonTextCache.reset(s.program.nonTextCacheSize)
+	s.regexByteSetCache.reset()
 	useSharedAutomaton := s.program.SharedAutomaton != nil && len(s.program.SharedLookup) > 0
 	if useSharedAutomaton {
 		if err := ctx.Err(); err != nil {
@@ -542,7 +544,7 @@ func (s *Scanner) addLocalNonTextMatches(rule *CompiledRule, data []byte, cache 
 			continue
 		}
 		modifiers := rule.StringModifiers[id]
-		addRegexMatchesWithModifiers(s.matchCtx, id, regexInfo, data, modifiers)
+		addRegexMatchesWithModifiersCached(s.matchCtx, id, regexInfo, data, modifiers, &s.regexByteSetCache)
 		if regexInfo.cacheIndex >= 0 && regexInfo.cacheIndex < len(cache.matches) {
 			dst := cache.matches[regexInfo.cacheIndex][:0]
 			dst = append(dst, s.matchCtx.Matches[id]...)

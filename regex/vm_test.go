@@ -62,6 +62,32 @@ func TestVM_Quantifiers(t *testing.T) {
 	}
 }
 
+func TestExecMatchBatchRepeatedStartsMatchesFreshState(t *testing.T) {
+	code := mustCompile(t, "[a-z]{1,2}aba")
+	data := []byte("zaba zzaba")
+	batch, release := NewVMBatch(len(code))
+	defer release()
+
+	for start := 0; start <= len(data); start++ {
+		gotMatch, gotStart, gotEnd := ExecMatchBatch(batch, code, data, 0, start)
+		fresh, freshRelease := NewVMBatch(len(code))
+		wantMatch, wantStart, wantEnd := ExecMatchBatch(fresh, code, data, 0, start)
+		freshRelease()
+		if gotMatch != wantMatch || gotStart != wantStart || gotEnd != wantEnd {
+			t.Fatalf(
+				"start %d: repeated batch = (%v,%d,%d), fresh state = (%v,%d,%d)",
+				start,
+				gotMatch,
+				gotStart,
+				gotEnd,
+				wantMatch,
+				wantStart,
+				wantEnd,
+			)
+		}
+	}
+}
+
 func TestVM_AnchorsAndClass(t *testing.T) {
 	code := mustCompile(t, "^[a-c]$")
 	if !Exec(code, []byte("b"), 0) {

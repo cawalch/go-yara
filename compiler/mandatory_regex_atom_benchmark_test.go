@@ -1,0 +1,153 @@
+package compiler
+
+import (
+	"fmt"
+	"strings"
+	"testing"
+)
+
+func BenchmarkMandatoryRegexAtomScanner(b *testing.B) {
+	var source strings.Builder
+	patternIndex := 0
+	for ruleIndex := range 8 {
+		visibility := ""
+		if ruleIndex >= 6 {
+			visibility = "private "
+		}
+		fmt.Fprintf(&source, "%srule regex_family_%d {\nstrings:\n", visibility, ruleIndex)
+		patternsInRule := 2
+		if ruleIndex == 7 {
+			patternsInRule = 1
+		}
+		for stringIndex := range patternsInRule {
+			fmt.Fprintf(
+				&source,
+				"$pattern_%d = /[a-z]{1,8}family_%02d_%02d_marker/\n",
+				stringIndex,
+				ruleIndex,
+				patternIndex,
+			)
+			patternIndex++
+		}
+		source.WriteString("condition: any of them\n}\n")
+	}
+
+	program, err := NewCompiler().CompileSource(source.String())
+	if err != nil {
+		b.Fatal(err)
+	}
+	scanner := NewScanner(program)
+	defer scanner.Close()
+
+	for _, size := range []int{16 * 1024, 1024 * 1024} {
+		b.Run(fmt.Sprintf("%dKiB", size/1024), func(b *testing.B) {
+			data := make([]byte, size)
+			b.SetBytes(int64(size))
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				if _, err := scanner.Scan(data); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkSharedMandatoryRegexAtomScale(b *testing.B) {
+	for _, ruleCount := range []int{20, 50, 100, 500} {
+		b.Run(fmt.Sprintf("rules_%d", ruleCount), func(b *testing.B) {
+			var source strings.Builder
+			for ruleIndex := range ruleCount {
+				fmt.Fprintf(
+					&source,
+					"rule internal_atom_%d { strings: $pattern = /[a-z]{1,8}family_%04d_marker/ condition: $pattern }\n",
+					ruleIndex,
+					ruleIndex,
+				)
+			}
+			program, err := NewCompiler().CompileSource(source.String())
+			if err != nil {
+				b.Fatal(err)
+			}
+			scanner := NewScanner(program)
+			defer scanner.Close()
+			data := make([]byte, 100*1024)
+
+			b.SetBytes(int64(len(data)))
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				if _, err := scanner.Scan(data); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkAtomlessRegexScanner(b *testing.B) {
+	for _, benchmark := range []struct {
+		name    string
+		pattern func(int) string
+	}{
+		{
+			name: "leading_class",
+			pattern: func(index int) string {
+				return fmt.Sprintf("[a-%c]{%d}[0-9]{4}", 'k'+rune(index%10), 2+index%4)
+			},
+		},
+		{
+			name: "leading_any",
+			pattern: func(index int) string {
+				return fmt.Sprintf(".{%d}[a-z]{%d}", 2+index%4, 2+(index/4)%4)
+			},
+		},
+	} {
+		b.Run(benchmark.name, func(b *testing.B) {
+			var source strings.Builder
+			patternIndex := 0
+			for ruleIndex := range 8 {
+				visibility := ""
+				if ruleIndex >= 6 {
+					visibility = "private "
+				}
+				fmt.Fprintf(&source, "%srule atomless_%d {\nstrings:\n", visibility, ruleIndex)
+				patternsInRule := 2
+				if ruleIndex == 7 {
+					patternsInRule = 1
+				}
+				for stringIndex := range patternsInRule {
+					fmt.Fprintf(
+						&source,
+						"$pattern_%d = /%s/\n",
+						stringIndex,
+						benchmark.pattern(patternIndex),
+					)
+					patternIndex++
+				}
+				source.WriteString("condition: any of them\n}\n")
+			}
+
+			program, err := NewCompiler().CompileSource(source.String())
+			if err != nil {
+				b.Fatal(err)
+			}
+			scanner := NewScanner(program)
+			defer scanner.Close()
+			for _, size := range []int{16 * 1024, 1024 * 1024} {
+				b.Run(fmt.Sprintf("%dKiB", size/1024), func(b *testing.B) {
+					data := make([]byte, size)
+					b.SetBytes(int64(size))
+					b.ReportAllocs()
+					b.ResetTimer()
+					for b.Loop() {
+						if _, err := scanner.Scan(data); err != nil {
+							b.Fatal(err)
+						}
+					}
+				})
+			}
+		})
+	}
+}
