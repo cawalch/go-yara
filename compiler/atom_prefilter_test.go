@@ -113,6 +113,33 @@ func TestCompiledRegexCarriesMandatoryByteSet(t *testing.T) {
 	}
 }
 
+func TestCompiledRegexCarriesFixedByteSets(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+		rule fixed_byte_sets {
+			strings:
+				$singleton = /[a]{2}[0-9]/
+				$classes = /[ab]{2}[0-9]/
+			condition:
+				any of them
+		}
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	singleton := program.Rules[0].RegexPatterns["$singleton"]
+	if string(singleton.atom) != "aa" || singleton.atomMinOffset != 0 || singleton.atomMaxOffset != 0 {
+		t.Fatalf("singleton atom = %q at [%d,%d], want aa at [0,0]", singleton.atom, singleton.atomMinOffset, singleton.atomMaxOffset)
+	}
+	classes := program.Rules[0].RegexPatterns["$classes"]
+	if len(classes.fixedByteSets) != 3 {
+		t.Fatalf("fixed byte sets = %d, want 3", len(classes.fixedByteSets))
+	}
+	if classes.fixedByteSets[0].Count() != 2 || classes.fixedByteSets[2].Count() != 10 {
+		t.Fatalf("fixed byte-set counts = [%d,%d,%d], want [2,2,10]",
+			classes.fixedByteSets[0].Count(), classes.fixedByteSets[1].Count(), classes.fixedByteSets[2].Count())
+	}
+}
+
 func TestIndexRegexLiteralNoCaseUsesEitherASCIICase(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -198,8 +225,8 @@ func TestScannerReusesMandatoryByteSetPositions(t *testing.T) {
 	program, err := NewCompiler().CompileSource(`
 		rule reused_byte_set {
 			strings:
-				$first = /.{2}[a-z]{2}/
-				$second = /.{4}[a-z]{2}/
+				$first = /.{1,2}[a-z]{2}/
+				$second = /.{3,4}[a-z]{2}/
 			condition:
 				any of them
 		}
@@ -346,6 +373,56 @@ func TestSharedMandatoryRegexAtomsMatchLinearScan(t *testing.T) {
 	}
 }
 
+func TestFixedRegexDispatchMatchesLinearScan(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+		rule fixed_dispatch {
+			strings:
+				$a = /[ab]{2}[0-9]/
+				$b = /[cd]{2}[0-9]/ nocase
+				$c = /[ef]{2}[0-9]/ wide
+				$d = /[gh]{2}[0-9]/ ascii wide
+				$e = /[ij]{2}[0-9]/
+				$f = /[kl]{2}[0-9]/ fullword
+				$g = /.[mn]/
+				$h = /.[op]/s
+				$negated = /[^q]{2}[0-9]/ nocase
+			condition:
+				any of them
+		}
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if program.fixedRegexScan == nil {
+		t.Fatal("fixed regex dispatch was not built")
+	}
+	if shouldUseFixedRegexDispatch(make([]byte, 4096), program.fixedRegexScan) {
+		t.Fatal("fixed regex dispatch selected for a no-candidate sample")
+	}
+	if !shouldUseFixedRegexDispatch(bytes.Repeat([]byte("a0c0e0g0"), 512), program.fixedRegexScan) {
+		t.Fatal("fixed regex dispatch not selected for a candidate-rich sample")
+	}
+
+	data := []byte("aa1 CC2 gg4 xkk6x kk6 \nm \np qq1 rr2 ")
+	data = append(data, widenRegexPrefix([]byte("ee3 hh5"))...)
+	scanner := NewScanner(program)
+	defer scanner.Close()
+	result, err := scanner.Scan(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rule := program.Rules[0]
+	linear := buildLinearRegexContext(rule, data)
+	defer linear.Release()
+	for _, id := range sortedPatternIDs(rule.RegexPatterns) {
+		got := matchRangesInOrder(result.Matches[rule.Name][id])
+		want := matchRangesInOrder(linear.Matches[id])
+		if !slices.Equal(got, want) {
+			t.Errorf("%s dispatch ranges = %v, linear scan = %v", id, got, want)
+		}
+	}
+}
+
 func buildLinearRegexContext(rule *CompiledRule, data []byte) *MatchContext {
 	ctx := matchContextPool.Get().(*MatchContext)
 	ctx.Reset(data)
@@ -355,6 +432,7 @@ func buildLinearRegexContext(rule *CompiledRule, data []byte) *MatchContext {
 		pattern.atom = nil
 		pattern.wideAtom = nil
 		pattern.byteSetCount = 0
+		pattern.fixedByteSets = nil
 		modifiers := rule.StringModifiers[id]
 		addRegexMatchesWithModifiers(ctx, id, pattern, data, modifiers)
 	}

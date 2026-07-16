@@ -28,6 +28,7 @@ type RegexPattern struct {
 	byteSetLower      byte
 	byteSetUpper      byte
 	byteSetContiguous bool
+	fixedByteSets     []regex.ByteSet
 	anchored          bool
 	cacheKey          string
 	cacheIndex        int

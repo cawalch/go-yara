@@ -323,6 +323,7 @@ func (rc *RuleCompiler) compileSingleString(str *ast.String) error {
 			pattern.byteSetCount = atom.count
 			pattern.byteSetLower, pattern.byteSetUpper, pattern.byteSetContiguous = atom.set.ContiguousRange()
 		}
+		pattern.fixedByteSets = slices.Clone(result.regexFixedByteSets)
 		rc.regexPatterns[str.Identifier] = pattern
 	case StringKindHex:
 		rc.hexPatterns[str.Identifier] = result.hexPattern
@@ -335,16 +336,17 @@ func (rc *RuleCompiler) compileSingleString(str *ast.String) error {
 }
 
 type stringCompilationResult struct {
-	patternData       []byte
-	kind              StringKind
-	flags             regex.Flags
-	hexPattern        *HexPattern
-	altPatterns       [][]byte
-	patternFlags      regex.Flags
-	altPatternFlags   []regex.Flags
-	cacheKey          string
-	regexAtoms        []regex.LiteralAtom
-	regexByteSetAtoms []regex.ByteSetAtom
+	patternData        []byte
+	kind               StringKind
+	flags              regex.Flags
+	hexPattern         *HexPattern
+	altPatterns        [][]byte
+	patternFlags       regex.Flags
+	altPatternFlags    []regex.Flags
+	cacheKey           string
+	regexAtoms         []regex.LiteralAtom
+	regexByteSetAtoms  []regex.ByteSetAtom
+	regexFixedByteSets []regex.ByteSet
 }
 
 func (rc *RuleCompiler) compileStringPattern(str *ast.String) (*stringCompilationResult, error) {
@@ -442,13 +444,15 @@ func (rc *RuleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers
 	}
 
 	flags := rc.deriveRegexFlags(pattern.Value, modifiers)
+	fixedByteSets, _ := regex.FixedByteSets(parsed, flags)
 	return &stringCompilationResult{
-		patternData:       code, // VM bytecode
-		kind:              StringKindRegex,
-		flags:             flags,
-		cacheKey:          patternCacheKey("regex", pattern.Value, modifiers),
-		regexAtoms:        regex.MandatoryLiteralAtoms(parsed),
-		regexByteSetAtoms: regex.MandatoryByteSetAtoms(parsed),
+		patternData:        code, // VM bytecode
+		kind:               StringKindRegex,
+		flags:              flags,
+		cacheKey:           patternCacheKey("regex", pattern.Value, modifiers),
+		regexAtoms:         regex.MandatoryLiteralAtoms(parsed),
+		regexByteSetAtoms:  regex.MandatoryByteSetAtoms(parsed),
+		regexFixedByteSets: fixedByteSets,
 	}, nil
 }
 
@@ -909,6 +913,7 @@ func (rc *RuleCompiler) copyRegexPatterns() map[string]RegexPattern {
 			byteSetLower:      v.byteSetLower,
 			byteSetUpper:      v.byteSetUpper,
 			byteSetContiguous: v.byteSetContiguous,
+			fixedByteSets:     slices.Clone(v.fixedByteSets),
 			anchored:          v.anchored,
 			cacheKey:          v.cacheKey,
 			cacheIndex:        v.cacheIndex,
@@ -1166,6 +1171,7 @@ type CompiledProgram struct {
 
 	// Number of compile-time integer slots used to cache regex/hex matches.
 	nonTextCacheSize int
+	fixedRegexScan   *fixedRegexDispatch
 
 	// Streaming support
 	streamingProcessor *StreamingProcessor

@@ -21,6 +21,7 @@ func TestMandatoryLiteralAtoms(t *testing.T) {
 		{name: "common alternation atom", pattern: "alpha_marker|beta_marker", data: "a_marker", minOffset: 3, maxOffset: 4},
 		{name: "required repeat", pattern: "[0-9](ab)+[A-Z]", data: "ab", minOffset: 1, maxOffset: 1},
 		{name: "fixed repeat joins literal", pattern: "[0-9]ab{2}cd", data: "abbcd", minOffset: 1, maxOffset: 1},
+		{name: "singleton class repeat", pattern: "[a]{2}[0-9]", data: "aa", minOffset: 0, maxOffset: 0},
 	}
 
 	for _, tt := range tests {

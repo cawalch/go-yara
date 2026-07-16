@@ -6,6 +6,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"slices"
 
 	"github.com/cawalch/go-yara/regex"
 )
@@ -312,6 +313,7 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 
 	globalByRule := make(map[int][]globalMatchEntry)
 	s.nonTextCache.reset(s.program.nonTextCacheSize)
+	s.populateFixedRegexCache(data, &s.nonTextCache)
 	s.regexByteSetCache.reset()
 	useSharedAutomaton := s.program.SharedAutomaton != nil && len(s.program.SharedLookup) > 0
 	if useSharedAutomaton {
@@ -532,6 +534,80 @@ func (s *Scanner) addLocalTextMatches(rule *CompiledRule, data []byte) {
 	for match := range rule.Automaton.SearchIter(data) {
 		acceptAutomatonMatch(s.matchCtx, rule, data, match)
 	}
+}
+
+func (s *Scanner) populateFixedRegexCache(data []byte, cache *nonTextMatchCache) {
+	dispatch := s.program.fixedRegexScan
+	if dispatch == nil || len(data) == 0 || !shouldUseFixedRegexDispatch(data, dispatch) {
+		return
+	}
+	for position, value := range data {
+		for _, entryIndex := range dispatch.buckets[value] {
+			entry := dispatch.entries[entryIndex]
+			if entry.wide && (position+1 >= len(data) || data[position+1] != 0) {
+				continue
+			}
+			start := position - entry.atomOffset
+			if start < 0 {
+				continue
+			}
+			flags := entry.pattern.Flags &^ regex.FlagsWide
+			if entry.wide {
+				flags |= regex.FlagsWide
+			}
+			matched, startOffset, endOffset := execRegexMatchAt(nil, entry.pattern, data, flags, entry.wide, start)
+			if !matched {
+				continue
+			}
+			absoluteStart := start + startOffset
+			absoluteEnd := start + endOffset
+			if absoluteEnd < absoluteStart {
+				continue
+			}
+			match := Match{Offset: int64(absoluteStart), Length: absoluteEnd - absoluteStart}
+			if matchPassesModifiers(data, match, entry.modifiers, entry.wide) {
+				cache.matches[entry.cacheIndex] = append(cache.matches[entry.cacheIndex], match)
+			}
+		}
+	}
+	for _, order := range dispatch.cacheOrder {
+		matches := cache.matches[order.cacheIndex]
+		slices.SortStableFunc(matches, func(left, right Match) int {
+			leftWide := left.Length == order.wideLength
+			rightWide := right.Length == order.wideLength
+			switch {
+			case leftWide == rightWide:
+				return 0
+			case leftWide:
+				return -1
+			default:
+				return 1
+			}
+		})
+	}
+	for _, cacheIndex := range dispatch.cacheIndices {
+		cache.ready[cacheIndex] = true
+	}
+}
+
+func shouldUseFixedRegexDispatch(data []byte, dispatch *fixedRegexDispatch) bool {
+	if len(data) == 0 || dispatch == nil {
+		return false
+	}
+	const maxSamples = 1024
+	stride := max(1, len(data)/maxSamples)
+	if stride > 1 {
+		stride++
+	}
+	samples := 0
+	bucketHits := 0
+	for position := 0; position < len(data) && samples < maxSamples; position += stride {
+		bucketHits += len(dispatch.buckets[data[position]])
+		samples++
+	}
+	// Below roughly one routed pattern per sixteen sampled bytes, SIMD-backed
+	// per-pattern searches are cheaper than scalar dispatch over the whole file.
+	return bucketHits*16 >= samples
 }
 
 func (s *Scanner) addLocalNonTextMatches(rule *CompiledRule, data []byte, cache *nonTextMatchCache) {
