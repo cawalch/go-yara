@@ -232,6 +232,72 @@ func TestScannerReusesMandatoryByteSetPositions(t *testing.T) {
 	}
 }
 
+func TestRegexByteSetCandidateIteratorMatchesCollectedStarts(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+		rule byte_set_candidates {
+			strings:
+				$fixed = /.{2}[a-z]{2}/
+				$variable = /.{1,3}[a-z]{2}/
+				$alternative = /[a-c]|..[x-z]/
+				$optional = /[a-z]?[0-9]{2}/
+				$wide = /.{1,2}[a-z]{2}/ wide
+			condition:
+				any of them
+		}
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rule := program.Rules[0]
+	data := append([]byte("00ab xz z99 12 "), widenRegexPrefix([]byte("00ab xz"))...)
+
+	for _, cached := range []bool{false, true} {
+		var cache regexByteSetCandidateCache
+		for _, id := range sortedPatternIDs(rule.RegexPatterns) {
+			pattern := rule.RegexPatterns[id]
+			wide := id == "$wide"
+			search := regexByteSetSearch{data: data, pattern: pattern, wide: wide}
+			if cached {
+				search.cache = &cache
+			}
+
+			positions := make([]int, 0)
+			for searchFrom := 0; searchFrom <= len(data); {
+				position := search.index(searchFrom)
+				if position < 0 {
+					break
+				}
+				positions = append(positions, position)
+				searchFrom = position + 1
+			}
+			minOffset := pattern.byteSetMinOffset
+			maxOffset := pattern.byteSetMaxOffset
+			if wide {
+				minOffset *= 2
+				maxOffset *= 2
+			}
+			limit := max(1024, len(data)/4)
+			want, wantHandled := collectRegexCandidateStarts(positions, minOffset, maxOffset, wide, len(data), limit)
+
+			plan, handled := search.candidatePlan()
+			if handled != wantHandled {
+				t.Fatalf("cached=%v %s handled=%v, want %v", cached, id, handled, wantHandled)
+			}
+			if !handled {
+				continue
+			}
+			got := make([]int, 0, plan.count)
+			iterator := search.candidateIterator(plan)
+			for start, ok := iterator.next(); ok; start, ok = iterator.next() {
+				got = append(got, start)
+			}
+			if !slices.Equal(got, want) {
+				t.Errorf("cached=%v %s starts=%v, want %v", cached, id, got, want)
+			}
+		}
+	}
+}
+
 func TestSharedMandatoryRegexAtomsMatchLinearScan(t *testing.T) {
 	var source strings.Builder
 	source.WriteString("rule shared_internal_atoms {\nstrings:\n")
