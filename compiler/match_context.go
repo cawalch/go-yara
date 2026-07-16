@@ -428,16 +428,17 @@ func indexRegexLiteral(data []byte, pos int, literal []byte, flags regex.Flags, 
 	}
 
 	last := len(data) - len(literal)
-	for searchPos := pos; searchPos <= last; {
-		rel := indexASCIIFoldByte(data[searchPos:last+1], literal[0])
-		if rel < 0 {
-			return -1
+	first := literal[0]
+	other := flipASCIICase(first)
+	// Check both cases in one pass. Separate IndexByte searches can repeatedly
+	// rescan the remaining input when only one case occurs frequently.
+	for candidate := pos; candidate <= last; candidate++ {
+		if data[candidate] != first && data[candidate] != other {
+			continue
 		}
-		candidate := searchPos + rel
 		if equalRegexPrefixFold(data[candidate:candidate+len(literal)], literal, isWide) {
 			return candidate
 		}
-		searchPos = candidate + 1
 	}
 	return -1
 }
@@ -498,18 +499,13 @@ func (search regexByteSetSearch) indexGeneral(pos int) int {
 
 func indexASCIIFoldByte(data []byte, want byte) int {
 	other := flipASCIICase(want)
-	first := bytes.IndexByte(data, want)
-	if other == want {
-		return first
+	// Keep this linear even when one case is absent and the other is dense.
+	for index, value := range data {
+		if value == want || value == other {
+			return index
+		}
 	}
-	second := bytes.IndexByte(data, other)
-	if first < 0 {
-		return second
-	}
-	if second >= 0 && second < first {
-		return second
-	}
-	return first
+	return -1
 }
 
 func equalRegexPrefixFold(data, prefix []byte, wide bool) bool {

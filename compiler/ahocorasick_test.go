@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"slices"
@@ -122,6 +123,12 @@ func TestACAutomatonSinglePatternFastPath(t *testing.T) {
 			flags:   regex.FlagsNoCase,
 			data:    []byte("AbABa"),
 			want:    []int{0, 2},
+		},
+		{
+			name:    "nocase frequent first byte without match",
+			pattern: []byte("exp"),
+			flags:   regex.FlagsNoCase,
+			data:    bytes.Repeat([]byte("e"), 256),
 		},
 		{
 			name:    "wide nocase",

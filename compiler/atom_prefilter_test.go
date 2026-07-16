@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/cawalch/go-yara/regex"
 )
 
 func TestSelectHexAtomUsesOnlyFixedOffsets(t *testing.T) {
@@ -108,6 +110,30 @@ func TestCompiledRegexCarriesMandatoryByteSet(t *testing.T) {
 	}
 	if pattern.byteSetMinOffset != 2 || pattern.byteSetMaxOffset != 2 {
 		t.Fatalf("byte set offsets = [%d,%d], want [2,2]", pattern.byteSetMinOffset, pattern.byteSetMaxOffset)
+	}
+}
+
+func TestIndexRegexLiteralNoCaseUsesEitherASCIICase(t *testing.T) {
+	tests := []struct {
+		name    string
+		data    []byte
+		literal []byte
+		wide    bool
+		want    int
+	}{
+		{name: "lowercase literal", data: []byte("xxEXPyy"), literal: []byte("exp"), want: 2},
+		{name: "uppercase literal", data: []byte("xxexpyy"), literal: []byte("EXP"), want: 2},
+		{name: "frequent first byte absent", data: []byte(strings.Repeat("e", 256)), literal: []byte("exp"), want: -1},
+		{name: "nonletter first byte", data: []byte("xx_0Xyy"), literal: []byte("_0x"), want: 2},
+		{name: "wide", data: widenRegexPrefix([]byte("EXP")), literal: widenRegexPrefix([]byte("exp")), wide: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := indexRegexLiteral(tt.data, 0, tt.literal, regex.FlagsNoCase, tt.wide)
+			if got != tt.want {
+				t.Fatalf("indexRegexLiteral() = %d, want %d", got, tt.want)
+			}
+		})
 	}
 }
 
