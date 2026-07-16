@@ -34,6 +34,7 @@ type HexPattern struct {
 	Tokens   []HexPatternToken
 	XorKeys  []byte
 	XorRange []ast.XorRange
+	cacheKey string
 }
 
 func (p *HexPattern) Clone() *HexPattern {
@@ -44,6 +45,7 @@ func (p *HexPattern) Clone() *HexPattern {
 		Tokens:   cloneHexTokens(p.Tokens),
 		XorKeys:  slices.Clone(p.XorKeys),
 		XorRange: slices.Clone(p.XorRange),
+		cacheKey: p.cacheKey,
 	}
 	return out
 }
@@ -383,6 +385,8 @@ func FindHexMatches(pattern *HexPattern, data []byte) []Match {
 // findHexMatchesAnchored uses bytes.IndexByte to skip non-matching positions.
 func findHexMatchesAnchored(tokens []HexPatternToken, data []byte, anchor anchorInfo) []Match {
 	var matches []Match
+	linear := isLinearHexPattern(tokens)
+	var scratch hexMatchScratch
 	pos := 0
 	for {
 		idx := bytes.IndexByte(data[pos:], anchor.byteVal)
@@ -395,7 +399,16 @@ func findHexMatchesAnchored(tokens []HexPatternToken, data []byte, anchor anchor
 		if candidateStart < 0 {
 			continue
 		}
-		ends := matchHexTokensIterative(tokens, data, candidateStart)
+		if linear {
+			if end, ok := matchLinearHexPattern(tokens, data, candidateStart, nil); ok {
+				matches = append(matches, Match{
+					Offset: int64(candidateStart),
+					Length: end - candidateStart,
+				})
+			}
+			continue
+		}
+		ends := scratch.match(tokens, data, candidateStart, nil)
 		for _, end := range ends {
 			if end <= candidateStart {
 				continue
@@ -412,8 +425,9 @@ func findHexMatchesAnchored(tokens []HexPatternToken, data []byte, anchor anchor
 // findHexMatchesBruteForce is the fallback when no anchor byte exists.
 func findHexMatchesBruteForce(tokens []HexPatternToken, data []byte) []Match {
 	var matches []Match
+	var scratch hexMatchScratch
 	for start := range data {
-		ends := matchHexTokensIterative(tokens, data, start)
+		ends := scratch.match(tokens, data, start, nil)
 		for _, end := range ends {
 			if end <= start {
 				continue
@@ -432,6 +446,8 @@ func findHexMatchesBruteForce(tokens []HexPatternToken, data []byte) []Match {
 //nolint:revive // argument-limit: internal helper
 func findHexMatchesXorAnchored(tokens []HexPatternToken, data []byte, keys []byte, anchor anchorInfo) []Match {
 	var matches []Match
+	linear := isLinearHexPattern(tokens)
+	var scratch hexMatchScratch
 	for _, key := range keys {
 		targetByte := anchor.byteVal ^ key
 		pos := 0
@@ -446,7 +462,16 @@ func findHexMatchesXorAnchored(tokens []HexPatternToken, data []byte, keys []byt
 			if candidateStart < 0 {
 				continue
 			}
-			ends := matchHexTokensIterativeXor(tokens, data, candidateStart, key)
+			if linear {
+				if end, ok := matchLinearHexPattern(tokens, data, candidateStart, &key); ok {
+					matches = append(matches, Match{
+						Offset: int64(candidateStart),
+						Length: end - candidateStart,
+					})
+				}
+				continue
+			}
+			ends := scratch.match(tokens, data, candidateStart, &key)
 			for _, end := range ends {
 				if end <= candidateStart {
 					continue
@@ -461,12 +486,58 @@ func findHexMatchesXorAnchored(tokens []HexPatternToken, data []byte, keys []byt
 	return matches
 }
 
+func isLinearHexPattern(tokens []HexPatternToken) bool {
+	for _, token := range tokens {
+		if token.Kind == HexTokenJump || token.Kind == HexTokenAlt {
+			return false
+		}
+	}
+	return true
+}
+
+//nolint:revive // argument-limit: hot path avoids allocating an options struct
+func matchLinearHexPattern(tokens []HexPatternToken, data []byte, pos int, xorKey *byte) (int, bool) {
+	if pos < 0 || len(tokens) > len(data)-pos {
+		return 0, false
+	}
+	for _, token := range tokens {
+		var ok bool
+		switch token.Kind {
+		case HexTokenByte:
+			want := token.Value
+			if xorKey != nil {
+				want ^= *xorKey
+			}
+			ok = data[pos] == want
+		case HexTokenMasked:
+			want := token.Value
+			if xorKey != nil {
+				want ^= *xorKey & token.Mask
+			}
+			ok = data[pos]&token.Mask == want&token.Mask
+		case HexTokenWildcard:
+			ok = !token.Negated
+		default:
+			return 0, false
+		}
+		if token.Kind != HexTokenWildcard && token.Negated {
+			ok = !ok
+		}
+		if !ok {
+			return 0, false
+		}
+		pos++
+	}
+	return pos, true
+}
+
 // findHexMatchesXorBruteForce is the fallback for XOR patterns with no anchor.
 func findHexMatchesXorBruteForce(tokens []HexPatternToken, data []byte, keys []byte) []Match {
 	var matches []Match
+	var scratch hexMatchScratch
 	for start := range data {
 		for _, key := range keys {
-			ends := matchHexTokensIterativeXor(tokens, data, start, key)
+			ends := scratch.match(tokens, data, start, &key)
 			for _, end := range ends {
 				if end <= start {
 					continue
@@ -514,32 +585,42 @@ func expandXorKeys(ranges []ast.XorRange) []byte {
 	return keys
 }
 
-// matchHexTokensIterative replaces the recursive matchHexTokens with an
-// iterative approach. It handles linear tokens (byte, masked, wildcard)
-// in a tight loop and only uses a worklist for branching tokens (jump, alt).
-func matchHexTokensIterative(tokens []HexPatternToken, data []byte, pos int) []int {
-	if pos > len(data) {
-		return nil
-	}
-	return matchHexIter(tokens, data, pos, nil)
+type hexWorkItem struct {
+	tokens  []HexPatternToken
+	dataPos int
 }
 
-// matchHexIter processes tokens iteratively. The xorKey pointer selects
-// between normal and XOR mode (nil = normal, non-nil = XOR with that key).
-//
-//nolint:revive // argument-limit: internal helper
-func matchHexIter(tokens []HexPatternToken, data []byte, pos int, xorKey *byte) []int {
-	var results []int
-	// Each work item: tokens to match and the starting data position.
-	type workItem struct {
-		tokens  []HexPatternToken
-		dataPos int
-	}
-	worklist := []workItem{{tokens, pos}}
+type hexMatchScratch struct {
+	worklist   []hexWorkItem
+	results    []int
+	inlineWork [16]hexWorkItem
+	inlineEnds [8]int
+}
 
-	for len(worklist) > 0 {
-		item := worklist[len(worklist)-1]
-		worklist = worklist[:len(worklist)-1]
+func (scratch *hexMatchScratch) reset() {
+	if scratch.worklist == nil {
+		scratch.worklist = scratch.inlineWork[:0]
+	} else {
+		scratch.worklist = scratch.worklist[:0]
+	}
+	if scratch.results == nil {
+		scratch.results = scratch.inlineEnds[:0]
+	} else {
+		scratch.results = scratch.results[:0]
+	}
+}
+
+// match processes tokens iteratively while retaining branch/result buffers
+// across anchor candidates in the same scan.
+//
+//nolint:revive // argument-limit: hot path avoids allocating an options struct
+func (scratch *hexMatchScratch) match(tokens []HexPatternToken, data []byte, pos int, xorKey *byte) []int {
+	scratch.reset()
+	scratch.worklist = append(scratch.worklist, hexWorkItem{tokens, pos})
+
+	for len(scratch.worklist) > 0 {
+		item := scratch.worklist[len(scratch.worklist)-1]
+		scratch.worklist = scratch.worklist[:len(scratch.worklist)-1]
 
 		toks := item.tokens
 		dp := item.dataPos
@@ -547,7 +628,7 @@ func matchHexIter(tokens []HexPatternToken, data []byte, pos int, xorKey *byte) 
 		// Fast linear path: consume non-branching tokens in a loop.
 		for {
 			if len(toks) == 0 {
-				results = append(results, dp)
+				scratch.results = append(scratch.results, dp)
 				goto nextItem
 			}
 			if dp > len(data) {
@@ -617,7 +698,7 @@ func matchHexIter(tokens []HexPatternToken, data []byte, pos int, xorKey *byte) 
 				tail := toks[1:]
 				// Push branches in reverse order so smallest jump is processed first.
 				for jump := maxJ; jump >= minJ; jump-- {
-					worklist = append(worklist, workItem{tail, dp + jump})
+					scratch.worklist = append(scratch.worklist, hexWorkItem{tail, dp + jump})
 				}
 				goto nextItem
 
@@ -628,7 +709,7 @@ func matchHexIter(tokens []HexPatternToken, data []byte, pos int, xorKey *byte) 
 					combined := make([]HexPatternToken, len(alt)+len(tail))
 					copy(combined, alt)
 					copy(combined[len(alt):], tail)
-					worklist = append(worklist, workItem{combined, dp})
+					scratch.worklist = append(scratch.worklist, hexWorkItem{combined, dp})
 				}
 				goto nextItem
 
@@ -640,15 +721,5 @@ func matchHexIter(tokens []HexPatternToken, data []byte, pos int, xorKey *byte) 
 	nextItem:
 	}
 
-	return results
-}
-
-// matchHexTokensIterativeXor is the XOR variant of matchHexTokensIterative.
-//
-//nolint:revive // argument-limit: internal helper
-func matchHexTokensIterativeXor(tokens []HexPatternToken, data []byte, pos int, key byte) []int {
-	if pos > len(data) {
-		return nil
-	}
-	return matchHexIter(tokens, data, pos, &key)
+	return scratch.results
 }

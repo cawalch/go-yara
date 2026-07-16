@@ -1,4 +1,5 @@
 .PHONY: bench bench-save bench-profiles bench-detailed bench-memory bench-cpu bench-trace \
+        bench-scan profile-scan trace-scan \
         pprof-cpu pprof-mem pprof-alloc pprof-heap pprof-trace benchstat bench-compare \
         bench-string-modifiers bench-regression bench-hotspots profile-analysis \
         compare-yara compare-yara-quick compare-yara-deep compare-yara-report \
@@ -36,6 +37,20 @@ bench-memory:
 bench-cpu:
 	@echo "Running CPU-focused benchmarks..."
 	go test -bench . -benchtime=10s -cpu=1,2,4,8 -run ^$$ $(PKG)
+
+# Scanner-focused end-to-end benchmarks and profiles.
+bench-scan:
+	go test ./compiler -run '^$$' -bench '^Benchmark(ProductionScanner|ProductionScannerUniquePatterns|MultiRuleScanner)$$' -benchmem -count=5
+
+profile-scan:
+	@mkdir -p profiles
+	go test ./compiler -run '^$$' -bench '^BenchmarkProductionScanner$$' -benchtime=5s \
+		-cpuprofile profiles/scanner_cpu.out -memprofile profiles/scanner_mem.out
+
+trace-scan:
+	@mkdir -p profiles
+	go test ./compiler -run '^$$' -bench '^BenchmarkProductionScanner$$' -benchtime=2s \
+		-trace profiles/scanner_trace.out
 
 # String modifier specific benchmarks
 bench-string-modifiers:
@@ -425,4 +440,3 @@ compare-yara-report:
 	@if [ -f comparison-results/detailed-report.txt ]; then \
 		grep -E "(Speedup|Reduction|Score|Accuracy)" comparison-results/detailed-report.txt | head -10; \
 	fi
-

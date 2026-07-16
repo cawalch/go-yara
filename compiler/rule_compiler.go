@@ -7,6 +7,7 @@ import (
 	"maps"
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/cawalch/go-yara/ast"
 	"github.com/cawalch/go-yara/regex"
@@ -297,9 +298,14 @@ func (rc *RuleCompiler) compileSingleString(str *ast.String) error {
 		}
 		rc.textPatterns[str.Identifier] = result.patternData
 	case StringKindRegex:
+		prefix, anchored := regex.LiteralPrefix(result.patternData)
 		rc.regexPatterns[str.Identifier] = RegexPattern{
-			Code:  result.patternData,
-			Flags: result.flags,
+			Code:       result.patternData,
+			Flags:      result.flags,
+			prefix:     prefix,
+			widePrefix: widenRegexPrefix(prefix),
+			anchored:   anchored,
+			cacheKey:   result.cacheKey,
 		}
 	case StringKindHex:
 		rc.hexPatterns[str.Identifier] = result.hexPattern
@@ -319,6 +325,7 @@ type stringCompilationResult struct {
 	altPatterns     [][]byte
 	patternFlags    regex.Flags
 	altPatternFlags []regex.Flags
+	cacheKey        string
 }
 
 func (rc *RuleCompiler) compileStringPattern(str *ast.String) (*stringCompilationResult, error) {
@@ -394,6 +401,7 @@ func (rc *RuleCompiler) compileHexString(value string, modifiers []ast.StringMod
 	if keys, ok := rc.stringCompiler.xorKeys(modifiers); ok {
 		hexPattern.XorKeys = keys
 	}
+	hexPattern.cacheKey = patternCacheKey("hex", value, modifiers)
 	legacy := rc.stringCompiler.parseHexString(value)
 	legacy = rc.stringCompiler.encodeHexString(legacy, modifiers)
 	return &stringCompilationResult{
@@ -419,7 +427,21 @@ func (rc *RuleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers
 		patternData: code, // VM bytecode
 		kind:        StringKindRegex,
 		flags:       flags,
+		cacheKey:    patternCacheKey("regex", pattern.Value, modifiers),
 	}, nil
+}
+
+func patternCacheKey(kind, value string, modifiers []ast.StringModifier) string {
+	var key strings.Builder
+	key.Grow(len(kind) + len(value) + len(modifiers)*8 + 2)
+	key.WriteString(kind)
+	key.WriteByte(0)
+	key.WriteString(value)
+	for _, modifier := range modifiers {
+		key.WriteByte(0)
+		fmt.Fprintf(&key, "%d=%v", modifier.Type, modifier.Value)
+	}
+	return key.String()
 }
 
 func (rc *RuleCompiler) deriveRegexFlags(patternValue string, modifiers []ast.StringModifier) regex.Flags {
@@ -850,7 +872,14 @@ func (rc *RuleCompiler) copyRegexPatterns() map[string]RegexPattern {
 	for k, v := range rc.regexPatterns {
 		cp := make([]byte, len(v.Code))
 		copy(cp, v.Code)
-		out[k] = RegexPattern{Code: cp, Flags: v.Flags}
+		out[k] = RegexPattern{
+			Code:       cp,
+			Flags:      v.Flags,
+			prefix:     slices.Clone(v.prefix),
+			widePrefix: slices.Clone(v.widePrefix),
+			anchored:   v.anchored,
+			cacheKey:   v.cacheKey,
+		}
 	}
 	return out
 }

@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"iter"
@@ -32,6 +33,10 @@ type ACAutomaton struct {
 
 	// String information
 	strings []ACStringInfo
+
+	// Explicit bytes reachable from the root before failure links are built.
+	// Small sets can use SIMD-optimized byte search to skip root misses.
+	rootBytes []byte
 
 	// Performance optimization: matchBuffer removed, matching is now iterator-based
 
@@ -157,8 +162,18 @@ func (ac *ACAutomaton) addStringToAutomaton(config StringConfig) error {
 		currentState = nextState
 	}
 
-	// Add output for final state
-	ac.states[currentState].outputStart = int32(len(ac.outputs)) // #nosec G115
+	// Add output for the final state. Multiple patterns can share the same
+	// terminal state (for example, identical strings in different rules).
+	// Preserve the existing range by copying it to a new contiguous range.
+	existingStart := ac.states[currentState].outputStart
+	existingEnd := ac.states[currentState].outputEnd
+	switch {
+	case existingStart == existingEnd:
+		ac.states[currentState].outputStart = int32(len(ac.outputs)) // #nosec G115
+	case int(existingEnd) != len(ac.outputs):
+		ac.states[currentState].outputStart = int32(len(ac.outputs)) // #nosec G115
+		ac.outputs = append(ac.outputs, ac.outputs[existingStart:existingEnd]...)
+	}
 	ac.outputs = append(ac.outputs, stringIndex)
 	ac.states[currentState].outputEnd = int32(len(ac.outputs)) // #nosec G115
 
@@ -174,6 +189,7 @@ func (ac *ACAutomaton) Compile() error {
 			compileErr = errors.New("already compiled")
 			return
 		}
+		ac.collectRootBytes()
 
 		// Build failure links using BFS
 		if err := ac.buildFailureLinks(); err != nil {
@@ -187,39 +203,37 @@ func (ac *ACAutomaton) Compile() error {
 	return compileErr
 }
 
-// processTransitionFailureLink processes failure link for a single transition
-//
-//nolint:revive // argument-limit: internal helper
-func (ac *ACAutomaton) processTransitionFailureLink(current, nextState int32, byteVal byte, queue *[]int32) {
-	*queue = append(*queue, nextState)
+func (ac *ACAutomaton) collectRootBytes() {
+	ac.rootBytes = ac.rootBytes[:0]
+	for byteVal, nextState := range ac.states[0].transitions {
+		if nextState != -1 {
+			ac.rootBytes = append(ac.rootBytes, byte(byteVal))
+		}
+	}
+}
 
-	// Find failure link for this transition
+func (ac *ACAutomaton) failureState(current int32, byteVal byte) int32 {
 	failure := ac.states[current].failure
-
-	// Follow failure links to find a state that has this transition
 	for failure != -1 && ac.states[failure].transitions[byteVal] == -1 {
 		failure = ac.states[failure].failure
 	}
-
 	if failure != -1 {
-		ac.states[nextState].failure = ac.states[failure].transitions[byteVal]
-		ac.mergeFailureOutput(nextState)
-	} else {
-		ac.states[nextState].failure = 0 // Fail to root
+		return ac.states[failure].transitions[byteVal]
 	}
+	return 0
 }
 
 // mergeFailureOutput merges output from the failure state to the current state.
 func (ac *ACAutomaton) mergeFailureOutput(state int32) {
 	failState := ac.states[ac.states[state].failure]
 	if failState.outputStart != failState.outputEnd {
-		// Append failure state's output to current state's output
+		// Copy both ranges into a new contiguous range. Output ranges for other
+		// states may have been appended between this state's original range and
+		// the current end of the flat output storage.
+		stateOutput := slices.Clone(ac.outputs[ac.states[state].outputStart:ac.states[state].outputEnd])
 		failOutput := ac.outputs[failState.outputStart:failState.outputEnd]
-
-		// If current state has no output yet, initialize outputStart
-		if ac.states[state].outputStart == ac.states[state].outputEnd {
-			ac.states[state].outputStart = int32(len(ac.outputs)) // #nosec G115
-		}
+		ac.states[state].outputStart = int32(len(ac.outputs)) // #nosec G115
+		ac.outputs = append(ac.outputs, stateOutput...)
 		ac.outputs = append(ac.outputs, failOutput...)
 		ac.states[state].outputEnd = int32(len(ac.outputs)) // #nosec G115
 	}
@@ -231,52 +245,84 @@ func (ac *ACAutomaton) buildFailureLinks() error {
 		return errors.New("no states in automaton")
 	}
 
-	// Queue for BFS
 	queue := make([]int32, 0, len(ac.states))
-
-	// Initialize root's children
+	seen := make([]bool, len(ac.states))
+	seen[0] = true
 	for _, nextState := range &ac.states[0].transitions {
-		if nextState != -1 {
-			ac.states[nextState].failure = 0 // Root's children fail to root
+		if nextState != -1 && !seen[nextState] {
+			seen[nextState] = true
+			ac.states[nextState].failure = 0
 			queue = append(queue, nextState)
 		}
 	}
 
-	// Process remaining states
 	for len(queue) > 0 {
 		current := queue[0]
 		queue = queue[1:]
-
-		// Process all transitions from current state
-		for byteVal, nextState := range &ac.states[current].transitions {
+		ac.mergeFailureOutput(current)
+		for byteVal, nextState := range ac.states[current].transitions {
 			if nextState == -1 {
-				continue // No transition
+				continue
 			}
-
-			ac.processTransitionFailureLink(current, nextState, byte(byteVal), &queue)
+			ac.states[nextState].failure = ac.failureState(current, byte(byteVal))
+			if !seen[nextState] {
+				seen[nextState] = true
+				queue = append(queue, nextState)
+			}
 		}
 	}
 
 	return nil
 }
 
-// findNextState finds the next state by following transitions and failure links
+// findNextState follows failure links until a transition is available.
 func (ac *ACAutomaton) findNextState(currentState int32, b byte) int32 {
 	for {
 		nextState := ac.states[currentState].transitions[b]
 		if nextState != -1 {
 			return nextState
 		}
-
 		if currentState == 0 {
-			return 0 // At root, no transition found
+			return 0
 		}
-
 		currentState = ac.states[currentState].failure
 	}
 }
 
+func indexAnyByte(data, values []byte) int {
+	best := -1
+	for _, value := range values {
+		idx := bytes.IndexByte(data, value)
+		if idx >= 0 && (best < 0 || idx < best) {
+			best = idx
+		}
+	}
+	return best
+}
+
+func (ac *ACAutomaton) yieldMatches(state int32, offset int, yield func(ACMatch) bool) bool {
+	outputStart := ac.states[state].outputStart
+	outputEnd := ac.states[state].outputEnd
+	for idx := outputStart; idx < outputEnd; idx++ {
+		stringIndex := ac.outputs[idx]
+		if stringIndex < 0 || int(stringIndex) >= len(ac.strings) {
+			continue
+		}
+		stringInfo := ac.strings[stringIndex]
+		if !yield(ACMatch{
+			StringIndex: int(stringIndex),
+			StringID:    stringInfo.Identifier,
+			Backtrack:   offset + 1 - stringInfo.Length,
+		}) {
+			return false
+		}
+	}
+	return true
+}
+
 // SearchIter performs optimized pattern matching without allocating a slice, yielding matches via an iterator
+//
+//nolint:nestif // the sparse-root and general loops are intentionally separate hot paths
 func (ac *ACAutomaton) SearchIter(data []byte) iter.Seq[ACMatch] {
 	return func(yield func(ACMatch) bool) {
 		if !ac.compiled {
@@ -289,28 +335,44 @@ func (ac *ACAutomaton) SearchIter(data []byte) iter.Seq[ACMatch] {
 
 		currentState := int32(0) // Start at root
 
-		// Optimized search loop
+		// When the automaton has only a few root transitions, skip root misses
+		// with the platform byte-search routine. Keep the tight range loop for
+		// small inputs and wider roots where repeated byte searches cost more.
+		rootHasNoOutput := ac.states[0].outputStart == ac.states[0].outputEnd
+		if rootHasNoOutput && len(data) >= 256 && len(ac.rootBytes) > 0 && len(ac.rootBytes) <= 4 {
+			for i := 0; i < len(data); i++ {
+				if currentState == 0 && len(data)-i >= 256 {
+					skip := indexAnyByte(data[i:], ac.rootBytes)
+					if skip < 0 {
+						return
+					}
+					i += skip
+				}
+				currentState = ac.findNextState(currentState, data[i])
+				if ac.states[currentState].outputStart != ac.states[currentState].outputEnd &&
+					!ac.yieldMatches(currentState, i, yield) {
+					return
+				}
+			}
+			return
+		}
+
 		for i, b := range data {
 			currentState = ac.findNextState(currentState, b)
-
-			// Process matches inline for the iterator
 			outputStart := ac.states[currentState].outputStart
 			outputEnd := ac.states[currentState].outputEnd
-
-			if outputStart != outputEnd {
-				for idx := outputStart; idx < outputEnd; idx++ {
-					stringIndex := ac.outputs[idx]
-					if stringIndex >= 0 && int(stringIndex) < len(ac.strings) {
-						stringInfo := ac.strings[stringIndex]
-						match := ACMatch{
-							StringIndex: int(stringIndex),
-							StringID:    stringInfo.Identifier,
-							Backtrack:   i + 1 - stringInfo.Length,
-						}
-						if !yield(match) {
-							return
-						}
-					}
+			for idx := outputStart; idx < outputEnd; idx++ {
+				stringIndex := ac.outputs[idx]
+				if stringIndex < 0 || int(stringIndex) >= len(ac.strings) {
+					continue
+				}
+				stringInfo := ac.strings[stringIndex]
+				if !yield(ACMatch{
+					StringIndex: int(stringIndex),
+					StringID:    stringInfo.Identifier,
+					Backtrack:   i + 1 - stringInfo.Length,
+				}) {
+					return
 				}
 			}
 		}
