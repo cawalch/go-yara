@@ -810,7 +810,8 @@ func indexRegexLiteral(data []byte, pos int, literal []byte, flags regex.Flags, 
 	} else {
 		flags &^= regex.FlagsWide
 	}
-	return newRegexLiteralSearcher(data, literal, flags).index(pos)
+	searcher := newRegexLiteralSearcher(data, literal, flags)
+	return searcher.index(pos)
 }
 
 type regexLiteralSearcher struct {
@@ -819,7 +820,7 @@ type regexLiteralSearcher struct {
 	noCase  bool
 	wide    bool
 	anchor  int
-	dense   bool
+	cursor  asciiFoldByteCursor
 }
 
 // newRegexLiteralSearcher chooses a data-sensitive anchor once for all
@@ -833,12 +834,13 @@ func newRegexLiteralSearcher(data, literal []byte, flags regex.Flags) regexLiter
 		wide:    flags&regex.FlagsWide != 0,
 	}
 	if searcher.noCase && len(literal) > 0 {
-		searcher.anchor, searcher.dense = selectRegexLiteralSearchAnchor(data, literal, searcher.wide)
+		searcher.anchor = selectRegexLiteralSearchAnchor(data, literal, searcher.wide)
+		searcher.cursor = newASCIIFoldByteCursor(literal[searcher.anchor])
 	}
 	return searcher
 }
 
-func (searcher regexLiteralSearcher) index(pos int) int {
+func (searcher *regexLiteralSearcher) index(pos int) int {
 	data := searcher.data
 	literal := searcher.literal
 	if len(literal) == 0 || pos < 0 || pos > len(data) {
@@ -856,9 +858,8 @@ func (searcher regexLiteralSearcher) index(pos int) int {
 	anchor := searcher.anchor
 	searchFrom := pos + anchor
 	searchLimit := last + anchor + 1
-	cursor := newASCIIFoldByteCursor(literal[anchor], searcher.dense)
 	for searchFrom < searchLimit {
-		occurrence := cursor.next(data[:searchLimit], searchFrom)
+		occurrence := searcher.cursor.next(data[:searchLimit], searchFrom)
 		if occurrence < 0 {
 			return -1
 		}
@@ -952,9 +953,8 @@ func indexSparseRegexByteSet(data []byte, from int, values []byte) int {
 const maxRegexLiteralAnchorCandidates = 8
 
 // selectRegexLiteralSearchAnchor samples the input and chooses the least
-// frequent byte from the literal. Dense anchors stay on a scalar scan; sparse
-// anchors use the platform byte-search primitive through bounded chunks.
-func selectRegexLiteralSearchAnchor(data, literal []byte, wide bool) (int, bool) {
+// frequent byte from the literal for the case-folded byte cursor.
+func selectRegexLiteralSearchAnchor(data, literal []byte, wide bool) int {
 	step := 1
 	if wide {
 		step = 2
@@ -980,7 +980,7 @@ func selectRegexLiteralSearchAnchor(data, literal []byte, wide bool) (int, bool)
 		candidateCount++
 	}
 	if candidateCount < 2 || len(data) < 64 {
-		return 0, false
+		return 0
 	}
 
 	var counts [maxRegexLiteralAnchorCandidates]uint16
@@ -1002,21 +1002,28 @@ func selectRegexLiteralSearchAnchor(data, literal []byte, wide bool) (int, bool)
 			best = index
 		}
 	}
-	return offsets[best], counts[best] >= 8
+	return offsets[best]
 }
 
 type asciiFoldByteCursor struct {
-	values [2]byte
-	count  int
-	linear bool
+	values    [2]byte
+	positions [2]int
+	count     int
+	lastFrom  int
 }
 
-func newASCIIFoldByteCursor(want byte, linear bool) asciiFoldByteCursor {
+const (
+	asciiFoldCursorExhausted  = -1
+	asciiFoldCursorUnsearched = -2
+)
+
+func newASCIIFoldByteCursor(want byte) asciiFoldByteCursor {
 	other := flipASCIICase(want)
 	cursor := asciiFoldByteCursor{
-		values: [2]byte{want, other},
-		count:  1,
-		linear: linear,
+		values:    [2]byte{want, other},
+		positions: [2]int{asciiFoldCursorUnsearched, asciiFoldCursorUnsearched},
+		count:     1,
+		lastFrom:  -1,
 	}
 	if other != want {
 		cursor.count = 2
@@ -1025,35 +1032,30 @@ func newASCIIFoldByteCursor(want byte, linear bool) asciiFoldByteCursor {
 }
 
 func (cursor *asciiFoldByteCursor) next(data []byte, from int) int {
-	if cursor.linear {
-		for index := from; index < len(data); index++ {
-			if data[index] == cursor.values[0] || cursor.count == 2 && data[index] == cursor.values[1] {
-				return index
-			}
-		}
-		return -1
+	if from < cursor.lastFrom {
+		cursor.positions = [2]int{asciiFoldCursorUnsearched, asciiFoldCursorUnsearched}
 	}
-
-	// Bound each pair of platform searches. Searching each ASCII case across
-	// the entire remaining input can become quadratic when matches use only one
-	// case and the caller asks for successive occurrences.
-	const chunkSize = 4096
-	for from < len(data) {
-		end := min(len(data), from+chunkSize)
-		chunk := data[from:end]
-		best := -1
-		for index := 0; index < cursor.count; index++ {
-			position := bytes.IndexByte(chunk, cursor.values[index])
-			if position >= 0 && (best < 0 || position < best) {
-				best = position
+	cursor.lastFrom = from
+	best := -1
+	for index := 0; index < cursor.count; index++ {
+		position := cursor.positions[index]
+		if position == asciiFoldCursorExhausted {
+			continue
+		}
+		if position < from {
+			relative := bytes.IndexByte(data[from:], cursor.values[index])
+			if relative < 0 {
+				cursor.positions[index] = asciiFoldCursorExhausted
+				continue
 			}
+			position = from + relative
+			cursor.positions[index] = position
 		}
-		if best >= 0 {
-			return from + best
+		if best < 0 || position < best {
+			best = position
 		}
-		from = end
 	}
-	return -1
+	return best
 }
 
 func indexASCIIFoldByte(data []byte, want byte) int {
