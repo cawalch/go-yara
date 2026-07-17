@@ -24,6 +24,9 @@ control.
 - The comparison rejects a cell when the engines disagree on matching rule
   count or the fingerprint of the actual public rule names.
 - Three repetitions are reduced to the median for each engine and cell.
+- A cell that crosses the regression threshold is confirmed with five
+  repetitions before the gate fails. The confirmation pass runs only the
+  affected rule cases and reverses engine order to cancel hosted-runner drift.
 
 The two-engine runner design is deliberate: yara-x's Go binding is CGO-based,
 so it cannot coexist in the `CGO_ENABLED=0` go-yara benchmark binary. The
@@ -74,12 +77,15 @@ an M1 baseline can otherwise create false regressions in individual cells.
 The default policy:
 
 - warns for every cell below 0.5x yara-x;
-- fails if a cell's ratio regresses by more than 25% from its baseline;
+- confirms any cell whose ratio regresses by more than 25% from its baseline,
+  then fails if that same cell exceeds 25% again;
 - reports the geomean ratio across the full matrix as an informational trend.
 
 The ratio is used for gating because both engines run back-to-back on the same
-host. Absolute MB/s remains in the report for diagnosis. Update the baseline
-only after reviewing the full report and confirming the change is intentional:
+host. The confirmation pass protects the per-cell gate from transient CPU
+scheduling differences between the two separate engine processes. Absolute
+MB/s remains in the report for diagnosis. Update the baseline only after
+reviewing the full report and confirming the change is intentional:
 
 ```bash
 make bench-vs-yarax-update-baseline

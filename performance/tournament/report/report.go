@@ -34,19 +34,20 @@ type Run struct {
 
 // Row is the median comparison for one matrix cell.
 type Row struct {
-	Cell            string
-	GoYaraMBPerSec  float64
-	YaraXMBPerSec   float64
-	Ratio           float64
-	GoYaraBytesOp   float64
-	YaraXBytesOp    float64
-	GoYaraAllocsOp  float64
-	YaraXAllocsOp   float64
-	MatchedRules    float64
-	MatchHash       float64
-	BaselineRatio   float64
-	Regression      float64
-	BaselinePresent bool
+	Cell             string
+	GoYaraMBPerSec   float64
+	YaraXMBPerSec    float64
+	Ratio            float64
+	GoYaraBytesOp    float64
+	YaraXBytesOp     float64
+	GoYaraAllocsOp   float64
+	YaraXAllocsOp    float64
+	MatchedRules     float64
+	MatchHash        float64
+	BaselineRatio    float64
+	Regression       float64
+	BaselinePresent  bool
+	RegressionFailed bool
 }
 
 // Comparison is one paired tournament result.
@@ -73,6 +74,7 @@ type Baseline struct {
 // Policy configures warning and regression thresholds.
 type Policy struct {
 	Baseline      *Baseline
+	CheckCells    map[string]struct{}
 	MinRatio      float64
 	MaxRegression float64
 }
@@ -228,7 +230,9 @@ func Compare(goYara, yaraX Run, policy Policy) (Comparison, error) {
 			row.BaselinePresent = true
 			row.BaselineRatio = baselineRatio
 			row.Regression = (baselineRatio - ratio) / baselineRatio
-			if row.Regression > policy.MaxRegression {
+			_, selected := policy.CheckCells[cell]
+			if row.Regression > policy.MaxRegression && (policy.CheckCells == nil || selected) {
+				row.RegressionFailed = true
 				comparison.Failures = append(comparison.Failures,
 					fmt.Sprintf("%s ratio regressed %.1f%% (%.3fx -> %.3fx)",
 						cell, row.Regression*100, baselineRatio, ratio))
@@ -239,6 +243,18 @@ func Compare(goYara, yaraX Run, policy Policy) (Comparison, error) {
 	}
 	comparison.Geomean = math.Exp(logRatioSum / float64(len(comparison.Rows)))
 	return comparison, nil
+}
+
+// FailedCells returns the matrix cells that crossed the enforced regression
+// threshold. It is used to scope a confirmation pass to the same failures.
+func FailedCells(comparison Comparison) []string {
+	cells := make([]string, 0, len(comparison.Failures))
+	for _, row := range comparison.Rows {
+		if row.RegressionFailed {
+			cells = append(cells, row.Cell)
+		}
+	}
+	return cells
 }
 
 func medianSample(samples []Sample) Sample {
