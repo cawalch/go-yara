@@ -127,6 +127,72 @@ func BenchmarkLiteralAlternationRegexScanner(b *testing.B) {
 	}
 }
 
+func BenchmarkVariableAlternationRegexSet(b *testing.B) {
+	for _, benchmark := range []struct {
+		name   string
+		source string
+	}{
+		{
+			name: "single_variable_alternation",
+			source: `rule r {
+				strings:
+					$c4 = /(cardholder|card[-_ ]?holder|nameoncard|name[-_ ]on[-_ ]card)\b/ nocase
+				condition:
+					$c4
+			}`,
+		},
+		{
+			name: "four_regexes",
+			source: `rule r {
+				strings:
+					$c1 = /["'#.\[]\s*(card[-_ ]?number|cardnum|ccnumber|cc[-_]number|pan)\b/ nocase
+					$c2 = /["'#.\[]\s*(cvv|cvc|cvv2|card[-_ ]?cvc|securitycode|security[-_ ]code)\b/ nocase
+					$c3 = /(exp[-_ ]?date|expir(y|ation)|card[-_ ]?expiry|cc[-_]exp)\b/ nocase
+					$c4 = /(cardholder|card[-_ ]?holder|nameoncard|name[-_ ]on[-_ ]card)\b/ nocase
+				condition:
+					2 of ($c*)
+			}`,
+		},
+		{
+			name: "literal_equivalent",
+			source: `rule r {
+				strings:
+					$c1 = "cardnumber" nocase
+					$c2 = "card_number" nocase
+					$c3 = "cardnum" nocase
+					$c4 = "ccnumber" nocase
+					$c5 = "cvv" nocase
+					$c6 = "cvc" nocase
+					$c7 = "cvv2" nocase
+					$c8 = "securitycode" nocase
+					$c9 = "cardholder" nocase
+					$c10 = "nameoncard" nocase
+				condition:
+					2 of ($c*)
+			}`,
+		},
+	} {
+		b.Run(benchmark.name, func(b *testing.B) {
+			program, err := NewCompiler().CompileSource(benchmark.source)
+			if err != nil {
+				b.Fatal(err)
+			}
+			scanner := NewScanner(program)
+			defer scanner.Close()
+			data := bytes.Repeat([]byte("benignFillerCode123 "), (1<<20)/20)
+
+			b.SetBytes(int64(len(data)))
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				if _, err := scanner.Scan(data); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
 func BenchmarkSharedMandatoryRegexAtomScale(b *testing.B) {
 	for _, ruleCount := range []int{20, 50, 100, 500} {
 		b.Run(fmt.Sprintf("rules_%d", ruleCount), func(b *testing.B) {

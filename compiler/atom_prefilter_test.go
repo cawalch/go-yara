@@ -141,6 +141,68 @@ func TestLiteralAlternativeRegexAtomsMatchLinearScan(t *testing.T) {
 	}
 }
 
+func TestVariableAlternativeRegexAtomsMatchLinearScan(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+		rule variable_alternatives {
+			strings:
+				$issue = /(cardholder|card[-_ ]?holder|nameoncard|name[-_ ]on[-_ ]card)\b/ nocase
+				$wide = /(widealpha|wide[-_ ]?beta|name[-_ ]oncard)/ wide
+				$both = /(dualalpha|dual[-_ ]?beta|dual[-_ ]gamma)/ ascii wide
+			condition:
+				any of them
+		}
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rule := program.Rules[0]
+	issuePattern := rule.RegexPatterns["$issue"]
+	if len(issuePattern.alternativeAtoms) != 4 {
+		t.Fatalf("issue alternative atoms = %+v, want 4", issuePattern.alternativeAtoms)
+	}
+	foundVariableOffset := false
+	for _, atom := range issuePattern.alternativeAtoms {
+		if atom.maxOffset > atom.minOffset {
+			foundVariableOffset = true
+		}
+	}
+	if !foundVariableOffset {
+		t.Fatal("issue alternative atoms contain no variable offset")
+	}
+	dataSets := [][]byte{
+		bytes.Repeat([]byte("holder card name on "), 128),
+		[]byte("CARD-HOLDER card holder name_on_card nameoncardx dual_beta dual-gamma"),
+		append([]byte("ascii dualalpha "), widenRegexPrefix([]byte("wide_beta name-oncard dual-gamma"))...),
+	}
+	for dataIndex, data := range dataSets {
+		optimized := BuildMatchContext(rule, data)
+		linear := buildLinearRegexContext(rule, data)
+		for _, id := range sortedPatternIDs(rule.RegexPatterns) {
+			got := matchRangesInOrder(optimized.Matches[id])
+			want := matchRangesInOrder(linear.Matches[id])
+			if !slices.Equal(got, want) {
+				t.Errorf("data %d, %s ranges = %v, linear scan = %v", dataIndex, id, got, want)
+			}
+		}
+		optimized.Release()
+		linear.Release()
+	}
+}
+
+func TestVariableAlternativeCandidateCursorMatchesCollectedStarts(t *testing.T) {
+	atom := regexPrefilterAtom{data: []byte("ab"), minOffset: 0, maxOffset: 2}
+	cursor := regexAlternativeCursor{atom: atom, start: -1}
+	data := []byte("xxabxab")
+	var got []int
+	for cursor.advance(data, 0, false); cursor.start >= 0; cursor.advance(data, 0, false) {
+		got = append(got, cursor.start)
+	}
+	want := []int{0, 1, 2, 3, 4, 5}
+	if !slices.Equal(got, want) {
+		t.Fatalf("candidate starts = %v, want %v", got, want)
+	}
+}
+
 func TestCompiledRegexRejectsIncompleteLiteralAlternatives(t *testing.T) {
 	program, err := NewCompiler().CompileSource(`
 		rule incomplete_alternatives {
@@ -149,6 +211,7 @@ func TestCompiledRegexRejectsIncompleteLiteralAlternatives(t *testing.T) {
 				$suffix = /(foo|bar)suffix/
 				$mixed = /(foo|b.r)/
 				$short = /(a|bar)/
+				$unbounded = /(foo|.*bar)/
 			condition:
 				any of them
 		}
