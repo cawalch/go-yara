@@ -313,6 +313,62 @@ func BenchmarkCombinedRegexAtomScale(b *testing.B) {
 	}
 }
 
+func BenchmarkMixedRegexPrefilter(b *testing.B) {
+	benchmarks := []struct {
+		name   string
+		source string
+	}{
+		{
+			name: "only_boundary",
+			source: `rule r {
+				strings: $exec1 = /\beval\s*\(/
+				condition: $exec1
+			}`,
+		},
+		{
+			name: "atoms_only",
+			source: `rule r {
+				strings:
+					$exec2 = /new\s+Function\s*\(/
+					$hexvar = /_0x[0-9a-f]{4,6}/
+					$ws = /new\s+WebSocket\s*\(\s*["']wss?:\/\//
+				condition: any of them
+			}`,
+		},
+		{
+			name: "atoms_plus_boundary",
+			source: `rule r {
+				strings:
+					$exec1 = /\beval\s*\(/
+					$exec2 = /new\s+Function\s*\(/
+					$hexvar = /_0x[0-9a-f]{4,6}/
+					$ws = /new\s+WebSocket\s*\(\s*["']wss?:\/\//
+				condition: any of them
+			}`,
+		},
+	}
+	data := bytes.Repeat([]byte("benignFillerCode123 "), (1<<20)/20)
+	for _, benchmark := range benchmarks {
+		b.Run(benchmark.name, func(b *testing.B) {
+			program, err := NewCompiler().CompileSource(benchmark.source)
+			if err != nil {
+				b.Fatal(err)
+			}
+			scanner := NewScanner(program)
+			defer scanner.Close()
+
+			b.SetBytes(int64(len(data)))
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				if _, err := scanner.Scan(data); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
 func BenchmarkAtomlessRegexScanner(b *testing.B) {
 	for _, benchmark := range []struct {
 		name    string
