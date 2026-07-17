@@ -60,12 +60,19 @@ type Comparison struct {
 	Failures []string
 }
 
-// Baseline maps matrix cells to their prior go-yara/yara-x ratio.
-type Baseline map[string]float64
+// Baseline contains ratios measured on one exact platform. Relative engine
+// performance can differ across CPU microarchitectures, so baseline metadata
+// is part of the comparison contract rather than informational decoration.
+type Baseline struct {
+	GOOS   string
+	GOARCH string
+	CPU    string
+	Ratios map[string]float64
+}
 
 // Policy configures warning and regression thresholds.
 type Policy struct {
-	Baseline      Baseline
+	Baseline      *Baseline
 	MinRatio      float64
 	MaxRegression float64
 }
@@ -148,6 +155,20 @@ func Compare(goYara, yaraX Run, policy Policy) (Comparison, error) {
 		return Comparison{}, fmt.Errorf("engine platforms differ: go-yara=%s/%s yara-x=%s/%s",
 			goYara.GOOS, goYara.GOARCH, yaraX.GOOS, yaraX.GOARCH)
 	}
+	if goYara.CPU == "" || yaraX.CPU == "" {
+		return Comparison{}, errors.New("benchmark output is missing CPU metadata")
+	}
+	if goYara.CPU != yaraX.CPU {
+		return Comparison{}, fmt.Errorf("engine CPUs differ: go-yara=%q yara-x=%q", goYara.CPU, yaraX.CPU)
+	}
+	if policy.Baseline != nil && (policy.Baseline.GOOS != goYara.GOOS ||
+		policy.Baseline.GOARCH != goYara.GOARCH || policy.Baseline.CPU != goYara.CPU) {
+		return Comparison{}, fmt.Errorf(
+			"baseline platform differs: benchmark=%s/%s (%s), baseline=%s/%s (%s)",
+			goYara.GOOS, goYara.GOARCH, goYara.CPU,
+			policy.Baseline.GOOS, policy.Baseline.GOARCH, policy.Baseline.CPU,
+		)
+	}
 	if policy.MinRatio <= 0 {
 		return Comparison{}, errors.New("minimum ratio must be positive")
 	}
@@ -199,7 +220,11 @@ func Compare(goYara, yaraX Run, policy Policy) (Comparison, error) {
 			comparison.Warnings = append(comparison.Warnings,
 				fmt.Sprintf("%s ratio %.3fx is below %.3fx", cell, ratio, policy.MinRatio))
 		}
-		if baselineRatio, ok := policy.Baseline[cell]; ok {
+		if policy.Baseline != nil {
+			baselineRatio, ok := policy.Baseline.Ratios[cell]
+			if !ok {
+				return Comparison{}, fmt.Errorf("baseline is missing cell %s", cell)
+			}
 			row.BaselinePresent = true
 			row.BaselineRatio = baselineRatio
 			row.Regression = (baselineRatio - ratio) / baselineRatio
@@ -240,7 +265,7 @@ func medianMetric(samples []Sample, metric func(Sample) float64) float64 {
 }
 
 // ReadBaseline reads a CSV previously emitted by WriteCSV.
-func ReadBaseline(reader io.Reader) (Baseline, error) {
+func ReadBaseline(reader io.Reader) (*Baseline, error) {
 	records, err := csv.NewReader(reader).ReadAll()
 	if err != nil {
 		return nil, err
@@ -252,21 +277,33 @@ func ReadBaseline(reader io.Reader) (Baseline, error) {
 	for index, heading := range records[0] {
 		headings[heading] = index
 	}
+	goosIndex, goosOK := headings["goos"]
+	goarchIndex, goarchOK := headings["goarch"]
+	cpuIndex, cpuOK := headings["cpu"]
 	cellIndex, cellOK := headings["cell"]
 	ratioIndex, ratioOK := headings["ratio"]
-	if !cellOK || !ratioOK {
-		return nil, errors.New("baseline must contain cell and ratio columns")
+	if !goosOK || !goarchOK || !cpuOK || !cellOK || !ratioOK {
+		return nil, errors.New("baseline must contain goos, goarch, cpu, cell, and ratio columns")
 	}
-	baseline := make(Baseline, len(records)-1)
-	for _, record := range records[1:] {
-		if len(record) <= cellIndex || len(record) <= ratioIndex {
+	baseline := &Baseline{Ratios: make(map[string]float64, len(records)-1)}
+	for rowIndex, record := range records[1:] {
+		if len(record) <= goosIndex || len(record) <= goarchIndex || len(record) <= cpuIndex ||
+			len(record) <= cellIndex || len(record) <= ratioIndex {
 			return nil, errors.New("baseline row has too few columns")
+		}
+		if rowIndex == 0 {
+			baseline.GOOS = record[goosIndex]
+			baseline.GOARCH = record[goarchIndex]
+			baseline.CPU = record[cpuIndex]
+		} else if record[goosIndex] != baseline.GOOS || record[goarchIndex] != baseline.GOARCH ||
+			record[cpuIndex] != baseline.CPU {
+			return nil, fmt.Errorf("baseline mixes platforms at cell %s", record[cellIndex])
 		}
 		ratio, parseErr := strconv.ParseFloat(record[ratioIndex], 64)
 		if parseErr != nil {
 			return nil, fmt.Errorf("parse baseline ratio for %s: %w", record[cellIndex], parseErr)
 		}
-		baseline[record[cellIndex]] = ratio
+		baseline.Ratios[record[cellIndex]] = ratio
 	}
 	return baseline, nil
 }

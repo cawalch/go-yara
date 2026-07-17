@@ -238,6 +238,8 @@ jobs:
           (cd performance/tournament/yarax && go mod download)
 
       - name: Run benchmark tournament
+        env:
+          TOURNAMENT_BASELINE: performance/tournament/baseline-ci.csv
         run: make bench-vs-yarax BENCHTIME=100ms BENCHCOUNT=3
 
       - name: Upload tournament report

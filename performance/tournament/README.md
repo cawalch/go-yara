@@ -61,8 +61,17 @@ Generated raw output, CSV, and Markdown reports are written under
 
 ## Baseline and policy
 
-`baseline.csv` is the versioned last-known-good ratio baseline. The default
-policy:
+The suite keeps separate versioned baselines for the exact CPUs that run it:
+
+- `baseline.csv` is the Apple M3 Max developer baseline;
+- `baseline-ci.csv` is the GitHub `macos-15` Apple M1 virtual-runner baseline.
+
+The reporter rejects a baseline unless its GOOS, architecture, and CPU metadata
+exactly match both benchmark runs. Ratios remove much same-host noise, but they
+are not invariant across CPU microarchitectures; comparing an M3 measurement to
+an M1 baseline can otherwise create false regressions in individual cells.
+
+The default policy:
 
 - warns for every cell below 0.5x yara-x;
 - fails if a cell's ratio regresses by more than 25% from its baseline;
@@ -76,5 +85,16 @@ only after reviewing the full report and confirming the change is intentional:
 make bench-vs-yarax-update-baseline
 ```
 
+To compare against or update another platform baseline, select it explicitly:
+
+```bash
+TOURNAMENT_BASELINE=performance/tournament/baseline-ci.csv \
+  make bench-vs-yarax
+
+TOURNAMENT_BASELINE=performance/tournament/baseline-ci.csv \
+  make bench-vs-yarax-update-baseline
+```
+
 CI runs the tournament on the GitHub `macos-15` arm64 image, uploads all report
-files, and includes its result in the repository quality gate.
+files, selects `baseline-ci.csv`, and includes its result in the repository
+quality gate.

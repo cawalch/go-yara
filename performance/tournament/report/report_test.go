@@ -33,8 +33,13 @@ func TestParseAndCompareUsesMedianRatios(t *testing.T) {
 		t.Fatal(err)
 	}
 	comparison, err := report.Compare(goYara, yaraX, report.Policy{
-		Baseline: report.Baseline{
-			"literal/punct_sparse/match_sparse/16KiB": 0.75,
+		Baseline: &report.Baseline{
+			GOOS:   "darwin",
+			GOARCH: "arm64",
+			CPU:    "Test CPU",
+			Ratios: map[string]float64{
+				"literal/punct_sparse/match_sparse/16KiB": 0.75,
+			},
 		},
 		MinRatio:      0.5,
 		MaxRegression: 0.2,
@@ -102,7 +107,34 @@ func TestCSVIsReusableAsBaseline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if difference := baseline[comparison.Rows[0].Cell] - comparison.Rows[0].Ratio; difference < -0.000001 || difference > 0.000001 {
-		t.Fatalf("baseline ratio = %.6f, want %.6f", baseline[comparison.Rows[0].Cell], comparison.Rows[0].Ratio)
+	if difference := baseline.Ratios[comparison.Rows[0].Cell] - comparison.Rows[0].Ratio; difference < -0.000001 || difference > 0.000001 {
+		t.Fatalf("baseline ratio = %.6f, want %.6f", baseline.Ratios[comparison.Rows[0].Cell], comparison.Rows[0].Ratio)
+	}
+}
+
+func TestCompareRejectsBaselineFromDifferentCPU(t *testing.T) {
+	goYara, _ := report.Parse(strings.NewReader(goYaraOutput))
+	yaraX, _ := report.Parse(strings.NewReader(yaraXOutput))
+	_, err := report.Compare(goYara, yaraX, report.Policy{
+		Baseline: &report.Baseline{
+			GOOS:   "darwin",
+			GOARCH: "arm64",
+			CPU:    "Another CPU",
+			Ratios: map[string]float64{},
+		},
+		MinRatio:      0.5,
+		MaxRegression: 0.2,
+	})
+	if err == nil || !strings.Contains(err.Error(), "baseline platform differs") {
+		t.Fatalf("Compare error = %v, want baseline platform mismatch", err)
+	}
+}
+
+func TestReadBaselineRejectsMixedPlatforms(t *testing.T) {
+	input := "goos,goarch,cpu,cell,ratio\n" +
+		"darwin,arm64,CPU A,cell-a,0.5\n" +
+		"darwin,arm64,CPU B,cell-b,0.6\n"
+	if _, err := report.ReadBaseline(strings.NewReader(input)); err == nil {
+		t.Fatal("ReadBaseline accepted mixed CPU metadata")
 	}
 }

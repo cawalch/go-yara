@@ -75,32 +75,36 @@ func TestDataAxesAreDeterministicAndExactSize(t *testing.T) {
 }
 
 func TestBaselineCoversEveryMatrixCell(t *testing.T) {
-	file, err := os.Open("../baseline.csv")
-	if err != nil {
-		t.Fatal(err)
-	}
-	baseline, readErr := report.ReadBaseline(file)
-	closeErr := file.Close()
-	if readErr != nil {
-		t.Fatal(readErr)
-	}
-	if closeErr != nil {
-		t.Fatal(closeErr)
-	}
+	for _, path := range []string{"../baseline.csv", "../baseline-ci.csv"} {
+		t.Run(path, func(t *testing.T) {
+			file, err := os.Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			baseline, readErr := report.ReadBaseline(file)
+			closeErr := file.Close()
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			if closeErr != nil {
+				t.Fatal(closeErr)
+			}
 
-	wantCells := len(matrix.Rules()) * len(matrix.Contents) * len(matrix.Sizes)
-	if len(baseline) != wantCells {
-		t.Fatalf("baseline cells = %d, want %d", len(baseline), wantCells)
-	}
-	for _, rule := range matrix.Rules() {
-		for _, content := range matrix.Contents {
-			for _, size := range matrix.Sizes {
-				cell := fmt.Sprintf("%s/%s/%dKiB", rule.Name, content.Name, size>>10)
-				if _, exists := baseline[cell]; !exists {
-					t.Errorf("baseline is missing %s", cell)
+			wantCells := len(matrix.Rules()) * len(matrix.Contents) * len(matrix.Sizes)
+			if len(baseline.Ratios) != wantCells {
+				t.Fatalf("baseline cells = %d, want %d", len(baseline.Ratios), wantCells)
+			}
+			for _, rule := range matrix.Rules() {
+				for _, content := range matrix.Contents {
+					for _, size := range matrix.Sizes {
+						cell := fmt.Sprintf("%s/%s/%dKiB", rule.Name, content.Name, size>>10)
+						if _, exists := baseline.Ratios[cell]; !exists {
+							t.Errorf("baseline is missing %s", cell)
+						}
+					}
 				}
 			}
-		}
+		})
 	}
 }
 

@@ -70,7 +70,7 @@ func readRun(path string) report.Run {
 	return run
 }
 
-func readBaseline(path string) report.Baseline {
+func readBaseline(path string) *report.Baseline {
 	if path == "" {
 		return nil
 	}
