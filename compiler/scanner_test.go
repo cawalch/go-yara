@@ -177,6 +177,24 @@ func TestScannerMatchEvidenceDefaultDisabled(t *testing.T) {
 	}
 }
 
+func TestMatchContextResetReusesMatchStorage(t *testing.T) {
+	ctx := &MatchContext{
+		Matches:      make(map[string][]Match),
+		matchBuffers: make(map[string][]Match),
+	}
+	ctx.Reset(nil)
+	for offset := range 128 {
+		ctx.AddMatch(Match{Pattern: "$a", Offset: int64(offset), Length: 1})
+	}
+	first := &ctx.Matches["$a"][0]
+
+	ctx.Reset(nil)
+	ctx.AddMatch(Match{Pattern: "$a", Offset: 7, Length: 1})
+	if second := &ctx.Matches["$a"][0]; first != second {
+		t.Fatal("Reset discarded the reusable match backing array")
+	}
+}
+
 func TestScannerMatchDataTruncation(t *testing.T) {
 	ruleSource := `rule match_blob { strings: $a = "abcdef" condition: $a }`
 	compiler := NewCompiler()

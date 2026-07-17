@@ -946,6 +946,9 @@ func copyBytes(src []byte) []byte {
 func cloneMatches(src map[string][]Match) map[string][]Match {
 	matches := make(map[string][]Match, len(src))
 	for k, v := range src {
+		if len(v) == 0 {
+			continue
+		}
 		dst := make([]Match, len(v))
 		copy(dst, v)
 		matches[k] = dst

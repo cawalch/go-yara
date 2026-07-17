@@ -23,6 +23,9 @@ const (
 	// are present, one byte-dispatch pass is cheaper than rescanning the input
 	// independently for every pattern.
 	minSharedFixedRegexEntries = 4
+	// Keep suffix-derived candidate ranges narrow. Wider ranges are better
+	// served by the existing byte-set or VM paths than by probing every offset.
+	maxLeadingGapAtomOffsetWidth = 64
 )
 
 type prefilterAtom struct {
@@ -485,6 +488,52 @@ func selectAlternativeRegexAtoms(alternatives [][]regex.LiteralAtom) ([]regexPre
 		atoms = append(atoms, atom)
 	}
 	return atoms, len(atoms) > 0
+}
+
+func selectLeadingGapRegexPlan(plan regex.LeadingByteGapPlan) (*regexLeadingGapPlan, bool) {
+	if len(plan.AtomGroups) == 0 || plan.GapSet.Count() > maxRegexByteSetSize {
+		return nil, false
+	}
+	atoms := make([]regexPrefilterAtom, 0, len(plan.AtomGroups))
+	seen := make(map[regexAlternativeDedupKey]struct{}, len(plan.AtomGroups))
+	for _, group := range plan.AtomGroups {
+		atom, ok := selectBoundedMandatoryRegexAtom(group)
+		if !ok {
+			return nil, false
+		}
+		if atom.maxOffset-atom.minOffset > maxLeadingGapAtomOffsetWidth {
+			return nil, false
+		}
+		key := regexAlternativeDedupKey{data: string(atom.data), minOffset: atom.minOffset, maxOffset: atom.maxOffset}
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		atoms = append(atoms, atom)
+	}
+	if len(atoms) == 0 {
+		return nil, false
+	}
+	return &regexLeadingGapPlan{
+		leadingSet: plan.LeadingSet,
+		gapSet:     plan.GapSet,
+		gapMin:     plan.GapMin,
+		gapMax:     plan.GapMax,
+		atoms:      atoms,
+	}, true
+}
+
+func cloneLeadingGapRegexPlan(plan *regexLeadingGapPlan) *regexLeadingGapPlan {
+	if plan == nil {
+		return nil
+	}
+	return &regexLeadingGapPlan{
+		leadingSet: plan.leadingSet,
+		gapSet:     plan.gapSet,
+		gapMin:     plan.gapMin,
+		gapMax:     plan.gapMax,
+		atoms:      cloneRegexPrefilterAtoms(plan.atoms),
+	}
 }
 
 func cloneRegexPrefilterAtoms(atoms []regexPrefilterAtom) []regexPrefilterAtom {

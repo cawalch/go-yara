@@ -23,6 +23,7 @@ type RegexPattern struct {
 	atomMaxOffset        int
 	alternativeAtoms     []regexPrefilterAtom
 	wideAlternativeAtoms []regexPrefilterAtom
+	leadingGap           *regexLeadingGapPlan
 	byteSet              regex.ByteSet
 	byteSetMinOffset     int
 	byteSetMaxOffset     int
@@ -35,4 +36,12 @@ type RegexPattern struct {
 	anchored             bool
 	cacheKey             string
 	cacheIndex           int
+}
+
+type regexLeadingGapPlan struct {
+	leadingSet regex.ByteSet
+	gapSet     regex.ByteSet
+	gapMin     int
+	gapMax     int
+	atoms      []regexPrefilterAtom
 }
