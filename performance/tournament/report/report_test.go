@@ -60,33 +60,6 @@ func TestParseAndCompareUsesMedianRatios(t *testing.T) {
 	if len(comparison.Failures) != 1 {
 		t.Fatalf("failures = %v, want one baseline regression", comparison.Failures)
 	}
-	if failed := report.FailedCells(comparison); len(failed) != 1 || failed[0] != row.Cell {
-		t.Fatalf("failed cells = %v, want %s", failed, row.Cell)
-	}
-}
-
-func TestCompareCanScopeRegressionChecks(t *testing.T) {
-	goYara, _ := report.Parse(strings.NewReader(goYaraOutput))
-	yaraX, _ := report.Parse(strings.NewReader(yaraXOutput))
-	comparison, err := report.Compare(goYara, yaraX, report.Policy{
-		Baseline: &report.Baseline{
-			GOOS:   "darwin",
-			GOARCH: "arm64",
-			CPU:    "Test CPU",
-			Ratios: map[string]float64{
-				"literal/punct_sparse/match_sparse/16KiB": 0.75,
-			},
-		},
-		CheckCells:    map[string]struct{}{},
-		MinRatio:      0.5,
-		MaxRegression: 0.2,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(comparison.Failures) != 0 || len(report.FailedCells(comparison)) != 0 {
-		t.Fatalf("scoped comparison failures = %v, want none", comparison.Failures)
-	}
 }
 
 func TestCompareRejectsSemanticMismatch(t *testing.T) {

@@ -8,10 +8,9 @@ ratio = go-yara MB/s / yara-x MB/s
 ```
 
 The matrix has 180 cells: 15 rule shapes, four punctuation/match-density
-profiles, and 16 KiB, 256 KiB, and 1 MiB inputs. It includes permanent guards
-for the performance failures from issues #160, #162, #164, #167, #169, #171,
-and #173, plus a realistic combined skimmer ruleset and a literal-string
-control.
+profiles, and 16 KiB, 256 KiB, and 1 MiB inputs. It retains the rule shapes
+from issues #160, #162, #164, #167, #169, #171, and #173, plus a realistic
+combined skimmer ruleset and a literal-string control.
 
 ## Methodology
 
@@ -24,9 +23,6 @@ control.
 - The comparison rejects a cell when the engines disagree on matching rule
   count or the fingerprint of the actual public rule names.
 - Three repetitions are reduced to the median for each engine and cell.
-- A cell that crosses the regression threshold is confirmed with five
-  repetitions before the gate fails. The confirmation pass runs only the
-  affected rule cases and reverses engine order to cancel hosted-runner drift.
 
 The two-engine runner design is deliberate: yara-x's Go binding is CGO-based,
 so it cannot coexist in the `CGO_ENABLED=0` go-yara benchmark binary. The
@@ -62,51 +58,24 @@ BENCH_REGEX='^BenchmarkTournament/combined_skimmer_regex/.*/1MiB$' \
 Generated raw output, CSV, and Markdown reports are written under
 `performance/tournament/results/` and ignored by Git.
 
-## Baseline and policy
+## Optional local baseline
 
-The suite keeps separate versioned baselines for the exact CPUs that run it:
+Throughput measurements and baselines are intentionally not checked in or used
+as a required CI gate. Repeated runs of unchanged code showed that shared CI
+hosts introduce enough per-cell variance to make that gate misleading. The
+tournament is a diagnostic tool for finding and validating actual performance
+work. Every tournament run still rejects engine disagreements in matched-rule
+count or identity, while normal Go tests cover the matrix and report logic.
 
-- `baseline.csv` is the Apple M3 Max developer baseline;
-- `baseline-ci.csv` is the GitHub `macos-15` Apple M1 virtual-runner baseline.
-
-The reporter rejects a baseline unless its GOOS, architecture, and CPU metadata
-exactly match both benchmark runs. Ratios remove much same-host noise, but they
-are not invariant across CPU microarchitectures; comparing an M3 measurement to
-an M1 baseline can otherwise create false regressions in individual cells.
-
-The default policy:
-
-- warns for every cell below 0.5x yara-x;
-- confirms any cell whose ratio regresses by more than 25% from its baseline,
-  then fails if that same cell exceeds 25% again;
-- reports the geomean ratio across the full matrix as an informational trend.
-
-The GitHub-hosted M1 runner overrides the regression threshold to 50%. Repeated
-runs of unchanged code showed nearly 50% single-cell ratio variance on that
-shared VM, even though the broad result remained consistent. The higher CI
-threshold still gates severe regressions in any cell; stable developer hardware
-keeps the tighter 25% default.
-
-The ratio is used for gating because both engines run back-to-back on the same
-host. The confirmation pass protects the per-cell gate from transient CPU
-scheduling differences between the two separate engine processes. Absolute
-MB/s remains in the report for diagnosis. Update the baseline only after
-reviewing the full report and confirming the change is intentional:
+The default run warns for every cell below 0.5x yara-x and reports the geomean
+ratio. To create an ignored, machine-local baseline after reviewing a complete
+run:
 
 ```bash
 make bench-vs-yarax-update-baseline
 ```
 
-To compare against or update another platform baseline, select it explicitly:
-
-```bash
-TOURNAMENT_BASELINE=performance/tournament/baseline-ci.csv \
-  make bench-vs-yarax
-
-TOURNAMENT_BASELINE=performance/tournament/baseline-ci.csv \
-  make bench-vs-yarax-update-baseline
-```
-
-CI runs the tournament on the GitHub `macos-15` arm64 image, uploads all report
-files, selects `baseline-ci.csv`, and includes its result in the repository
-quality gate.
+Subsequent runs on that exact GOOS, architecture, and CPU compare against the
+local baseline and fail when a ratio regresses by more than 25%. Use
+`TOURNAMENT_BASELINE=/path/to/baseline.csv` to keep a baseline elsewhere. Both
+the generated reports and default local baseline are ignored by Git.

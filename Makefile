@@ -24,7 +24,7 @@ fuzz:
 bench-vs-yarax:
 	@BENCHTIME="$(BENCHTIME)" BENCHCOUNT="$(BENCHCOUNT)" ./scripts/bench_vs_yarax.sh
 
-# Regenerate the checked-in ratio baseline after reviewing an intentional change.
+# Regenerate the ignored, machine-local ratio baseline after reviewing a run.
 bench-vs-yarax-update-baseline:
 	@BENCHTIME="$(BENCHTIME)" BENCHCOUNT="$(BENCHCOUNT)" \
 		TOURNAMENT_CHECK=0 TOURNAMENT_UPDATE_BASELINE=1 ./scripts/bench_vs_yarax.sh

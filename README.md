@@ -283,8 +283,8 @@ suite measures the 20, 50, 100, and 500-rule crossover for unique regex and hex
 atoms. The single-rule size suite covers text, regex, hex, and mixed rules from
 16 KiB through 1 MiB.
 The [yara-x tournament](performance/tournament/README.md) runs a fixed 180-cell
-rule-shape x content-shape matrix through both engines and gates per-cell ratio
-regressions against a versioned baseline.
+rule-shape x content-shape matrix through both engines for focused performance
+investigation. Its reports and optional machine-local baseline are ignored.
 
 ## More Documentation
 
