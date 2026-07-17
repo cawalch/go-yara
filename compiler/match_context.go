@@ -14,6 +14,8 @@ var matchContextPool = sync.Pool{
 		return &MatchContext{
 			Matches:      make(map[string][]Match),
 			matchBuffers: make(map[string][]Match),
+			spans:        make(map[string][]matchSpan),
+			spanBuffers:  make(map[string][]matchSpan),
 		}
 	},
 }
@@ -21,12 +23,14 @@ var matchContextPool = sync.Pool{
 // BuildMatchContext scans data for all patterns in the rule and returns a populated match context.
 func BuildMatchContext(rule *CompiledRule, data []byte) *MatchContext {
 	ctx := matchContextPool.Get().(*MatchContext)
+	ctx.compact = false
 	PopulateMatchContext(ctx, rule, data)
 	return ctx
 }
 
 // PopulateMatchContext populates an existing match context (reused) with matches from data
 func PopulateMatchContext(ctx *MatchContext, rule *CompiledRule, data []byte) {
+	ctx.compact = false
 	ctx.Reset(data)
 
 	if rule == nil {
@@ -65,6 +69,29 @@ func PopulateMatchContext(ctx *MatchContext, rule *CompiledRule, data []byte) {
 // Reset clears the match context for reuse
 func (ctx *MatchContext) Reset(data []byte) {
 	ctx.Data = data
+	if ctx.compact {
+		ctx.resetCompactStorage()
+	} else {
+		ctx.resetPublicStorage()
+	}
+	ctx.FileSize = int64(len(data))
+	ctx.EntryPoint = 0
+}
+
+func (ctx *MatchContext) resetCompactStorage() {
+	if ctx.spanBuffers == nil {
+		ctx.spanBuffers = make(map[string][]matchSpan, len(ctx.spans))
+	}
+	for id, spans := range ctx.spans {
+		if cap(spans) > cap(ctx.spanBuffers[id]) {
+			ctx.spanBuffers[id] = spans[:0]
+		}
+	}
+	clear(ctx.spans)
+	clear(ctx.Matches)
+}
+
+func (ctx *MatchContext) resetPublicStorage() {
 	if ctx.matchBuffers == nil {
 		ctx.matchBuffers = make(map[string][]Match, len(ctx.Matches))
 	}
@@ -74,14 +101,14 @@ func (ctx *MatchContext) Reset(data []byte) {
 		}
 	}
 	clear(ctx.Matches)
-	ctx.FileSize = int64(len(data))
-	ctx.EntryPoint = 0
+	clear(ctx.spans)
 }
 
 // Release returns the match context to the pool
 func (ctx *MatchContext) Release() {
 	// Clear data reference effectively to allow GC
 	ctx.Data = nil
+	ctx.compact = false
 	matchContextPool.Put(ctx)
 }
 

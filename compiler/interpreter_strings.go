@@ -29,12 +29,13 @@ func (i *Interpreter) executeLengthOperation() error {
 		return i.push(Value{Type: ValueTypeInt, IntVal: 0})
 	}
 
-	matches, exists := i.matchContext.Matches[i.getString(pattern)]
-	if !exists || index.IntVal < 1 || int(index.IntVal-1) >= len(matches) {
+	if index.IntVal < 1 {
 		return i.push(Value{Type: ValueTypeInt, IntVal: 0})
 	}
-
-	match := matches[index.IntVal-1] // Convert to 0-based indexing
+	match, exists := i.matchContext.matchAt(i.getString(pattern), int(index.IntVal-1))
+	if !exists {
+		return i.push(Value{Type: ValueTypeInt, IntVal: 0})
+	}
 	return i.push(Value{Type: ValueTypeInt, IntVal: int64(match.Length)})
 }
 
@@ -55,12 +56,7 @@ func (i *Interpreter) executeCountOperation() error {
 		return i.push(Value{Type: ValueTypeInt, IntVal: 0})
 	}
 
-	matches, exists := i.matchContext.Matches[i.getString(pattern)]
-	if !exists {
-		return i.push(Value{Type: ValueTypeInt, IntVal: 0})
-	}
-
-	return i.push(Value{Type: ValueTypeInt, IntVal: int64(len(matches))})
+	return i.push(Value{Type: ValueTypeInt, IntVal: int64(i.matchContext.matchCount(i.getString(pattern)))})
 }
 
 // executeLengthOfOperation executes OpLengthOf: "length of (X)".
@@ -85,11 +81,10 @@ func (i *Interpreter) executeLengthOfOperation() error {
 	// Sum the total length of all matches for all strings in the set
 	var totalLength int64
 	for _, id := range set {
-		if matches, ok := i.matchContext.Matches[id]; ok {
-			for _, match := range matches {
-				totalLength += int64(match.Length)
-			}
-		}
+		i.matchContext.eachMatch(id, func(match matchSpan) bool {
+			totalLength += int64(match.Length)
+			return true
+		})
 	}
 
 	return i.push(Value{Type: ValueTypeInt, IntVal: totalLength})
@@ -112,8 +107,7 @@ func (i *Interpreter) executeFoundOperation() error {
 		return i.push(Value{Type: ValueTypeInt, IntVal: 0})
 	}
 
-	matches, exists := i.matchContext.Matches[i.getString(pattern)]
-	found := exists && len(matches) > 0
+	found := i.matchContext.matchCount(i.getString(pattern)) > 0
 	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(found)})
 }
 
@@ -139,18 +133,10 @@ func (i *Interpreter) executeFoundAtOperation() error {
 		return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(false)})
 	}
 
-	matches, exists := i.matchContext.Matches[i.getString(pattern)]
-	if !exists {
-		return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(false)})
-	}
-
-	for _, match := range matches {
-		if match.Offset == offset.IntVal {
-			return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(true)})
-		}
-	}
-
-	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(false)})
+	found := i.matchContext.anyMatch(i.getString(pattern), func(match matchSpan) bool {
+		return match.Offset == offset.IntVal
+	})
+	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(found)})
 }
 
 // executeFoundInOperation executes OpFoundIn.
@@ -176,18 +162,10 @@ func (i *Interpreter) executeFoundInOperation() error {
 		return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(false)})
 	}
 
-	matches, exists := i.matchContext.Matches[i.getString(pattern)]
-	if !exists {
-		return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(false)})
-	}
-
-	for _, match := range matches {
-		if match.Offset >= startOffset.IntVal && match.Offset <= endOffset.IntVal {
-			return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(true)})
-		}
-	}
-
-	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(false)})
+	found := i.matchContext.anyMatch(i.getString(pattern), func(match matchSpan) bool {
+		return match.Offset >= startOffset.IntVal && match.Offset <= endOffset.IntVal
+	})
+	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(found)})
 }
 
 // executeCountInRange executes OpCountIn.
@@ -243,7 +221,7 @@ func (i *Interpreter) executeCountInOf() error {
 	// Count how many strings in the set have at least one match
 	matchedCount := 0
 	for _, id := range set {
-		if matches, ok := i.matchContext.Matches[id]; ok && len(matches) > 0 {
+		if i.matchContext.matchCount(id) > 0 {
 			matchedCount++
 		}
 	}
@@ -274,12 +252,13 @@ func (i *Interpreter) executeOffsetOperation() error {
 		return i.push(Value{Type: ValueTypeInt, IntVal: -1})
 	}
 
-	matches, exists := i.matchContext.Matches[i.getString(pattern)]
-	if !exists || index.IntVal < 1 || int(index.IntVal-1) >= len(matches) {
+	if index.IntVal < 1 {
 		return i.push(Value{Type: ValueTypeUndefined})
 	}
-
-	match := matches[index.IntVal-1]
+	match, exists := i.matchContext.matchAt(i.getString(pattern), int(index.IntVal-1))
+	if !exists {
+		return i.push(Value{Type: ValueTypeUndefined})
+	}
 	return i.push(Value{Type: ValueTypeInt, IntVal: match.Offset})
 }
 
@@ -328,7 +307,7 @@ func (i *Interpreter) executeOfPercentOperation() error {
 	total := len(set)
 	matched := 0
 	for _, id := range set {
-		if matches, ok := i.matchContext.Matches[id]; ok && len(matches) > 0 {
+		if i.matchContext.matchCount(id) > 0 {
 			matched++
 		}
 	}
@@ -368,15 +347,10 @@ func (i *Interpreter) executeOfFoundIn() error {
 
 	matched := 0
 	for _, id := range set {
-		matches, ok := i.matchContext.Matches[id]
-		if !ok {
-			continue
-		}
-		for _, m := range matches {
-			if m.Offset >= minVal.IntVal && m.Offset <= maxVal.IntVal {
-				matched++
-				break
-			}
+		if i.matchContext.anyMatch(id, func(match matchSpan) bool {
+			return match.Offset >= minVal.IntVal && match.Offset <= maxVal.IntVal
+		}) {
+			matched++
 		}
 	}
 
@@ -409,15 +383,10 @@ func (i *Interpreter) executeOfFoundAt() error {
 
 	matched := 0
 	for _, id := range set {
-		matches, ok := i.matchContext.Matches[id]
-		if !ok {
-			continue
-		}
-		for _, m := range matches {
-			if m.Offset == offsetVal.IntVal {
-				matched++
-				break
-			}
+		if i.matchContext.anyMatch(id, func(match matchSpan) bool {
+			return match.Offset == offsetVal.IntVal
+		}) {
+			matched++
 		}
 	}
 
@@ -451,15 +420,10 @@ func (i *Interpreter) executeOfPercentIn() error {
 
 	matched := 0
 	for _, id := range set {
-		matches, ok := i.matchContext.Matches[id]
-		if !ok {
-			continue
-		}
-		for _, m := range matches {
-			if m.Offset >= minVal.IntVal && m.Offset <= maxVal.IntVal {
-				matched++
-				break
-			}
+		if i.matchContext.anyMatch(id, func(match matchSpan) bool {
+			return match.Offset >= minVal.IntVal && match.Offset <= maxVal.IntVal
+		}) {
+			matched++
 		}
 	}
 
@@ -497,15 +461,10 @@ func (i *Interpreter) executeOfPercentAt() error {
 
 	matched := 0
 	for _, id := range set {
-		matches, ok := i.matchContext.Matches[id]
-		if !ok {
-			continue
-		}
-		for _, m := range matches {
-			if m.Offset == offsetVal.IntVal {
-				matched++
-				break
-			}
+		if i.matchContext.anyMatch(id, func(match matchSpan) bool {
+			return match.Offset == offsetVal.IntVal
+		}) {
+			matched++
 		}
 	}
 
@@ -548,11 +507,7 @@ func (i *Interpreter) allStringIdentifiers() []string {
 	if i.matchContext == nil {
 		return nil
 	}
-	ids := make([]string, 0, len(i.matchContext.Matches))
-	for id := range i.matchContext.Matches {
-		ids = append(ids, id)
-	}
-	return ids
+	return i.matchContext.matchIDs()
 }
 
 // anonymousStringIdentifiers returns all anonymous string identifiers.
@@ -573,7 +528,7 @@ func (i *Interpreter) applyCountLogic(ids []string, count Value) bool {
 	total := len(ids)
 	matched := 0
 	for _, id := range ids {
-		if matches, ok := i.matchContext.Matches[id]; ok && len(matches) > 0 {
+		if i.matchContext.matchCount(id) > 0 {
 			matched++
 		}
 	}
@@ -625,15 +580,11 @@ func (i *Interpreter) executeMatchesOperation() error {
 	valueStr := i.getString(value)
 	if strings.HasPrefix(valueStr, "$") {
 		// String identifier: check if any match content matches the regex
-		if matches, ok := i.matchContext.Matches[valueStr]; ok {
-			for _, m := range matches {
-				end := min(int(m.Offset)+m.Length, len(i.matchContext.Data))
-				if matched := regex.Exec(compiled, i.matchContext.Data[int(m.Offset):end], flags|regex.FlagsScan); matched {
-					return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(true)})
-				}
-			}
-		}
-		return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(false)})
+		matched := i.matchContext.anyMatch(valueStr, func(match matchSpan) bool {
+			end := min(int(match.Offset)+match.Length, len(i.matchContext.Data))
+			return regex.Exec(compiled, i.matchContext.Data[int(match.Offset):end], flags|regex.FlagsScan)
+		})
+		return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(matched)})
 	}
 
 	matched := regex.Exec(compiled, []byte(valueStr), flags|regex.FlagsScan)

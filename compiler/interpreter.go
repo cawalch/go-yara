@@ -111,6 +111,17 @@ type MatchContext struct {
 	FileSize     int64
 	EntryPoint   int64
 	matchBuffers map[string][]Match
+	spans        map[string][]matchSpan
+	spanBuffers  map[string][]matchSpan
+	compact      bool
+}
+
+// matchSpan is the scanner's compact representation of a match. Pattern is
+// supplied by the containing map and public Match values are materialized only
+// at the result boundary, keeping the evaluation hot path to offset and length.
+type matchSpan struct {
+	Offset int64
+	Length int
 }
 
 // Match represents a pattern match
@@ -130,11 +141,109 @@ func (mc *MatchContext) AddMatch(m Match) {
 	if m.Pattern == "" {
 		return
 	}
+	if mc.compact {
+		mc.addMatchSpan(m.Pattern, matchSpan{Offset: m.Offset, Length: m.Length})
+		return
+	}
+	if mc.Matches == nil {
+		mc.Matches = make(map[string][]Match)
+	}
 	matches, exists := mc.Matches[m.Pattern]
 	if !exists && mc.matchBuffers != nil {
 		matches = mc.matchBuffers[m.Pattern]
 	}
 	mc.Matches[m.Pattern] = append(matches, m)
+}
+
+func (mc *MatchContext) addMatchSpan(id string, span matchSpan) {
+	if id == "" {
+		return
+	}
+	if mc.spans == nil {
+		mc.spans = make(map[string][]matchSpan)
+	}
+	spans, exists := mc.spans[id]
+	if !exists && mc.spanBuffers != nil {
+		spans = mc.spanBuffers[id]
+	}
+	mc.spans[id] = append(spans, span)
+}
+
+func (mc *MatchContext) matchCount(id string) int {
+	if mc == nil {
+		return 0
+	}
+	if mc.compact {
+		return len(mc.spans[id])
+	}
+	return len(mc.Matches[id])
+}
+
+func (mc *MatchContext) matchAt(id string, index int) (matchSpan, bool) {
+	if mc == nil || index < 0 {
+		return matchSpan{}, false
+	}
+	if mc.compact {
+		spans := mc.spans[id]
+		if index >= len(spans) {
+			return matchSpan{}, false
+		}
+		return spans[index], true
+	}
+	matches := mc.Matches[id]
+	if index >= len(matches) {
+		return matchSpan{}, false
+	}
+	return matchSpan{Offset: matches[index].Offset, Length: matches[index].Length}, true
+}
+
+func (mc *MatchContext) eachMatch(id string, visit func(matchSpan) bool) {
+	if mc == nil || visit == nil {
+		return
+	}
+	if mc.compact {
+		for _, span := range mc.spans[id] {
+			if !visit(span) {
+				return
+			}
+		}
+		return
+	}
+	for _, match := range mc.Matches[id] {
+		if !visit(matchSpan{Offset: match.Offset, Length: match.Length}) {
+			return
+		}
+	}
+}
+
+func (mc *MatchContext) anyMatch(id string, predicate func(matchSpan) bool) bool {
+	found := false
+	mc.eachMatch(id, func(span matchSpan) bool {
+		if predicate(span) {
+			found = true
+			return false
+		}
+		return true
+	})
+	return found
+}
+
+func (mc *MatchContext) matchIDs() []string {
+	if mc == nil {
+		return nil
+	}
+	if mc.compact {
+		ids := make([]string, 0, len(mc.spans))
+		for id := range mc.spans {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	ids := make([]string, 0, len(mc.Matches))
+	for id := range mc.Matches {
+		ids = append(ids, id)
+	}
+	return ids
 }
 
 // interpreterPool allows reusing interpreter instances to reduce allocation overhead
@@ -176,6 +285,7 @@ func NewInterpreter(bytecode []byte) *Interpreter {
 		i.matchContext = matchContextPool.Get().(*MatchContext)
 	}
 	// Note: matchContextPool.Get() returns struct with Matches map initialized.
+	i.matchContext.compact = false
 	i.matchContext.Reset(nil)
 
 	i.stack = i.stack[:0] // Ensure clean stack on reuse

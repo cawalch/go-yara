@@ -173,6 +173,9 @@ scans.
 - `RuleResults`: boolean condition results for evaluated rules.
 - `Matches`: per-rule string matches keyed by rule name and string identifier.
 
+Pass `compiler.WithReportedMatchesOnly()` to a reusable scanner when only
+public matching rules need entries in `Matches`; `RuleResults` is unaffected.
+
 ### Diagnostics And Heuristic Metrics
 
 The compiler exposes diagnostic helpers such as `GetStats`,
