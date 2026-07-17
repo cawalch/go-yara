@@ -97,6 +97,183 @@ func AlternativeMandatoryLiteralAtoms(ast *AST) [][]LiteralAtom {
 	return alternatives
 }
 
+// LiteralAtomCover returns groups of literals that collectively cover every
+// match accepted by ast. At least one literal from every returned group must
+// be selected by the caller. Unlike AlternativeMandatoryLiteralAtoms, the
+// covered alternation may be nested inside a required concatenation or repeat.
+// minimumLength excludes atoms too short for the caller's prefilter.
+func LiteralAtomCover(ast *AST, minimumLength int) [][]LiteralAtom {
+	if ast == nil || ast.Root == nil {
+		return nil
+	}
+	minimumLength = max(1, minimumLength)
+	if cover, ok := literalAtomCoverFromAlternatives(AlternativeMandatoryLiteralAtoms(ast), minimumLength); ok {
+		return cover.groups
+	}
+	cover, ok := literalAtomCover(ast.Root, minimumLength)
+	if !ok {
+		return nil
+	}
+	return cover.groups
+}
+
+func literalAtomCoverFromAlternatives(
+	alternatives [][]LiteralAtom,
+	minimumLength int,
+) (literalAtomCoverPlan, bool) {
+	if len(alternatives) < 2 {
+		return literalAtomCoverPlan{}, false
+	}
+	groups := make([][]LiteralAtom, 0, len(alternatives))
+	for _, alternative := range alternatives {
+		cover, ok := literalAtomCoverFromMandatory(alternative, minimumLength)
+		if !ok {
+			return literalAtomCoverPlan{}, false
+		}
+		groups = append(groups, cover.groups[0])
+	}
+	return newLiteralAtomCoverPlan(groups)
+}
+
+type literalAtomCoverPlan struct {
+	groups       [][]LiteralAtom
+	fullyBounded bool
+	score        int
+	totalBytes   int
+}
+
+func literalAtomCover(node *Node, minimumLength int) (literalAtomCoverPlan, bool) {
+	if node == nil {
+		return literalAtomCoverPlan{}, false
+	}
+	if cover, ok := literalAtomCoverFromMandatory(analyzeAtoms(node).atoms, minimumLength); ok {
+		return cover, true
+	}
+
+	switch node.Kind {
+	case NodeConcat:
+		return literalConcatAtomCover(node.Children, minimumLength)
+	case NodeAlt:
+		return literalAlternativeAtomCover(node.Children, minimumLength)
+	case NodePlus:
+		return literalAtomCover(firstChild(node), minimumLength)
+	case NodeRange:
+		if node.Start > 0 {
+			return literalAtomCover(firstChild(node), minimumLength)
+		}
+	}
+	return literalAtomCoverPlan{}, false
+}
+
+func literalAtomCoverFromMandatory(atoms []LiteralAtom, minimumLength int) (literalAtomCoverPlan, bool) {
+	group := make([]LiteralAtom, 0, len(atoms))
+	for _, atom := range atoms {
+		if len(atom.Data) < minimumLength {
+			continue
+		}
+		group = append(group, LiteralAtom{
+			Data:      append([]byte(nil), atom.Data...),
+			MinOffset: atom.MinOffset,
+			MaxOffset: atom.MaxOffset,
+		})
+	}
+	if len(group) == 0 {
+		return literalAtomCoverPlan{}, false
+	}
+	return newLiteralAtomCoverPlan([][]LiteralAtom{group})
+}
+
+func literalConcatAtomCover(children []*Node, minimumLength int) (literalAtomCoverPlan, bool) {
+	prefixMin := 0
+	prefixMax := 0
+	var best literalAtomCoverPlan
+	found := false
+	for _, child := range children {
+		cover, ok := literalAtomCover(child, minimumLength)
+		if ok {
+			cover = shiftLiteralAtomCover(cover, prefixMin, prefixMax)
+			if !found || betterLiteralAtomCover(cover, best) {
+				best = cover
+				found = true
+			}
+		}
+		analysis := analyzeAtoms(child)
+		prefixMin = addLength(prefixMin, analysis.minLength)
+		prefixMax = addLength(prefixMax, analysis.maxLength)
+	}
+	return best, found
+}
+
+func literalAlternativeAtomCover(children []*Node, minimumLength int) (literalAtomCoverPlan, bool) {
+	if len(children) < 2 {
+		return literalAtomCoverPlan{}, false
+	}
+	groups := make([][]LiteralAtom, 0, len(children))
+	for _, child := range children {
+		cover, ok := literalAtomCover(child, minimumLength)
+		if !ok || len(groups) > maxLiteralAlternatives-len(cover.groups) {
+			return literalAtomCoverPlan{}, false
+		}
+		groups = append(groups, cover.groups...)
+	}
+	return newLiteralAtomCoverPlan(groups)
+}
+
+func newLiteralAtomCoverPlan(groups [][]LiteralAtom) (literalAtomCoverPlan, bool) {
+	cover := literalAtomCoverPlan{groups: groups, fullyBounded: len(groups) > 0}
+	for _, group := range groups {
+		bounded := false
+		bestLength := 0
+		for _, atom := range group {
+			cover.totalBytes += len(atom.Data)
+			if cover.totalBytes > maxLiteralAlternativeBytes {
+				return literalAtomCoverPlan{}, false
+			}
+			bounded = bounded || atom.MaxOffset >= 0
+			bestLength = max(bestLength, len(atom.Data))
+		}
+		if !bounded {
+			cover.fullyBounded = false
+		}
+		cover.score += bestLength
+	}
+	return cover, len(groups) > 0
+}
+
+func shiftLiteralAtomCover(cover literalAtomCoverPlan, minOffset, maxOffset int) literalAtomCoverPlan {
+	for groupIndex := range cover.groups {
+		for atomIndex := range cover.groups[groupIndex] {
+			cover.groups[groupIndex][atomIndex] = shiftLiteralAtom(
+				cover.groups[groupIndex][atomIndex], minOffset, maxOffset,
+			)
+		}
+	}
+	if maxOffset < 0 {
+		cover.fullyBounded = false
+	}
+	return cover
+}
+
+func betterLiteralAtomCover(candidate, current literalAtomCoverPlan) bool {
+	if candidate.fullyBounded != current.fullyBounded {
+		return candidate.fullyBounded
+	}
+	if len(candidate.groups) != len(current.groups) {
+		return len(candidate.groups) < len(current.groups)
+	}
+	if candidate.score != current.score {
+		return candidate.score > current.score
+	}
+	return candidate.totalBytes < current.totalBytes
+}
+
+func firstChild(node *Node) *Node {
+	if node == nil || len(node.Children) == 0 {
+		return nil
+	}
+	return node.Children[0]
+}
+
 func alternativeLeaves(ast *AST) []*Node {
 	if ast == nil || ast.Root == nil {
 		return nil

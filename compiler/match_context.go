@@ -138,20 +138,29 @@ func addRegexMatchesCached(
 	if isWide {
 		alternativeAtoms = regexInfo.wideAlternativeAtoms
 	}
-	if len(alternativeAtoms) > 0 {
-		addRegexMatchesFromAlternatives(ctx, id, regexInfo, data, modifiers, flags, isWide, alternativeAtoms)
-		return
-	}
 	useByteSet := regexInfo.byteSetCount > 0 &&
 		(!atomRequiresLinearFallback || regexInfo.byteSetMaxOffset >= 0)
+	useSparseByteSet := useByteSet && !regexInfo.byteSetContiguous &&
+		shouldUseSparseRegexByteSetSearch(data, regexInfo.byteSetValues, isWide)
+	if len(alternativeAtoms) > 0 {
+		if !hasUnboundedRegexAlternative(alternativeAtoms) {
+			addRegexMatchesFromAlternatives(ctx, id, regexInfo, data, modifiers, flags, isWide, alternativeAtoms)
+			return
+		}
+		// A sparse leading byte set is cheaper to scan directly than probing every
+		// unbounded literal. For dense sets, absent literals avoid that linear scan.
+		if !useSparseByteSet && !unboundedRegexAlternativePresent(data, alternativeAtoms, flags) {
+			addRegexMatchesFromAlternatives(ctx, id, regexInfo, data, modifiers, flags, isWide, alternativeAtoms)
+			return
+		}
+	}
 	if useByteSet {
 		search := regexByteSetSearch{
-			data:    data,
-			pattern: regexInfo,
-			wide:    isWide,
-			cache:   byteSetCache,
-			useSparseValues: !regexInfo.byteSetContiguous &&
-				shouldUseSparseRegexByteSetSearch(data, regexInfo.byteSetValues, isWide),
+			data:            data,
+			pattern:         regexInfo,
+			wide:            isWide,
+			cache:           byteSetCache,
+			useSparseValues: useSparseByteSet,
 		}
 		plan, handled := search.candidatePlan()
 		if handled {
@@ -182,6 +191,28 @@ type regexAlternativeCursor struct {
 	pendingStart int
 	pendingEnd   int
 	hasPending   bool
+}
+
+func hasUnboundedRegexAlternative(atoms []regexPrefilterAtom) bool {
+	for _, atom := range atoms {
+		if atom.maxOffset < 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func unboundedRegexAlternativePresent(data []byte, atoms []regexPrefilterAtom, flags regex.Flags) bool {
+	for _, atom := range atoms {
+		if atom.maxOffset >= 0 {
+			continue
+		}
+		searcher := newRegexLiteralSearcher(data, atom.data, flags)
+		if searcher.index(0) >= 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func (cursor *regexAlternativeCursor) advance() {
@@ -247,14 +278,29 @@ func addRegexMatchesFromAlternatives(
 	isWide bool,
 	atoms []regexPrefilterAtom,
 ) {
+	boundedCount := 0
+	for _, atom := range atoms {
+		if atom.maxOffset >= 0 {
+			boundedCount++
+		}
+	}
+	if boundedCount == 0 {
+		return
+	}
 	var inline [8]regexAlternativeCursor
 	var cursors []regexAlternativeCursor
-	if len(atoms) <= len(inline) {
-		cursors = inline[:len(atoms)]
+	if boundedCount <= len(inline) {
+		cursors = inline[:boundedCount]
 	} else {
-		cursors = make([]regexAlternativeCursor, len(atoms))
+		cursors = make([]regexAlternativeCursor, boundedCount)
 	}
-	for index, atom := range atoms {
+	cursorIndex := 0
+	for _, atom := range atoms {
+		if atom.maxOffset < 0 {
+			continue
+		}
+		index := cursorIndex
+		cursorIndex++
 		cursors[index].atom = atom
 		cursors[index].searcher = newRegexLiteralSearcher(data, atom.data, flags)
 		cursors[index].start = -1

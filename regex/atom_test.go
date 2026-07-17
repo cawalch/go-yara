@@ -178,3 +178,75 @@ func TestAlternativeMandatoryLiteralAtomsRequiresEveryBranch(t *testing.T) {
 		})
 	}
 }
+
+func TestLiteralAtomCoverFindsRequiredNestedAlternation(t *testing.T) {
+	tests := []struct {
+		name      string
+		pattern   string
+		want      []string
+		minOffset int
+		maxOffset int
+	}{
+		{
+			name:      "unbounded leading class",
+			pattern:   `["'#.\[]\s*(cardnumber|cvv|cardholder)\b`,
+			want:      []string{"cardnumber", "cvv", "cardholder"},
+			minOffset: 1,
+			maxOffset: -1,
+		},
+		{
+			name:      "required repeat",
+			pattern:   `(alpha|beta)+`,
+			want:      []string{"alpha", "beta"},
+			maxOffset: 0,
+		},
+		{
+			name:      "prefer bounded required sibling",
+			pattern:   `(alpha|beta).*(gamma|delta)`,
+			want:      []string{"alpha", "beta"},
+			maxOffset: 0,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			parsed, err := NewParser(ParserFlagEnableStrictEscapeSequences).Parse(tt.pattern)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cover := LiteralAtomCover(parsed, 2)
+			if len(cover) != len(tt.want) {
+				t.Fatalf("LiteralAtomCover(%q) = %+v, want %v", tt.pattern, cover, tt.want)
+			}
+			for index, want := range tt.want {
+				found := false
+				for _, atom := range cover[index] {
+					if string(atom.Data) == want && atom.MinOffset == tt.minOffset && atom.MaxOffset == tt.maxOffset {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("group %d = %+v, missing %q at [%d,%d]", index, cover[index], want, tt.minOffset, tt.maxOffset)
+				}
+			}
+		})
+	}
+}
+
+func TestLiteralAtomCoverRejectsOptionalOrIncompleteBranches(t *testing.T) {
+	for _, pattern := range []string{
+		`(alpha|beta)?`,
+		`(alpha|[a-z]+)`,
+		`[a-z]*`,
+	} {
+		t.Run(pattern, func(t *testing.T) {
+			parsed, err := NewParser(ParserFlagEnableStrictEscapeSequences).Parse(pattern)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cover := LiteralAtomCover(parsed, 2); cover != nil {
+				t.Fatalf("LiteralAtomCover(%q) = %+v, want nil", pattern, cover)
+			}
+		})
+	}
+}

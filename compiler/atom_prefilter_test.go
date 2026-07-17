@@ -223,10 +223,16 @@ func TestCompiledRegexRejectsIncompleteLiteralAlternatives(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for id, pattern := range program.Rules[0].RegexPatterns {
+	patterns := program.Rules[0].RegexPatterns
+	for _, id := range []string{"$prefix", "$suffix", "$mixed", "$short"} {
+		pattern := patterns[id]
 		if len(pattern.alternativeAtoms) != 0 {
 			t.Errorf("%s alternative atoms = %+v, want none", id, pattern.alternativeAtoms)
 		}
+	}
+	unbounded := patterns["$unbounded"].alternativeAtoms
+	if len(unbounded) != 2 || unbounded[0].maxOffset != 0 || unbounded[1].maxOffset != -1 {
+		t.Errorf("$unbounded alternative atoms = %+v, want bounded foo and unbounded bar", unbounded)
 	}
 }
 

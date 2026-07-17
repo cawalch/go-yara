@@ -455,9 +455,10 @@ func selectRegexAtom(atoms []regex.LiteralAtom, boundedOnly bool) (regexPrefilte
 	return best, len(best.data) >= minPrefilterAtomLength
 }
 
-// selectAlternativeRegexAtoms keeps one bounded mandatory atom for every branch.
-// The set is all-or-nothing: omitting even one branch would make the candidate
-// scan unsound and could hide a valid regex match.
+// selectAlternativeRegexAtoms keeps one mandatory atom for every cover group.
+// Bounded atoms are preferred, but an unbounded atom can still prove its branch
+// cannot match when the atom is absent. The set is all-or-nothing: omitting a
+// group would make the candidate scan unsound and could hide a valid match.
 func selectAlternativeRegexAtoms(alternatives [][]regex.LiteralAtom) ([]regexPrefilterAtom, bool) {
 	if len(alternatives) < 2 {
 		return nil, false
@@ -466,6 +467,9 @@ func selectAlternativeRegexAtoms(alternatives [][]regex.LiteralAtom) ([]regexPre
 	seen := make(map[regexAlternativeDedupKey]struct{}, len(alternatives))
 	for _, alternative := range alternatives {
 		atom, ok := selectBoundedMandatoryRegexAtom(alternative)
+		if !ok {
+			atom, ok = selectMandatoryRegexAtom(alternative)
+		}
 		if !ok {
 			return nil, false
 		}
@@ -504,7 +508,9 @@ func widenRegexPrefilterAtoms(atoms []regexPrefilterAtom) []regexPrefilterAtom {
 		wide[index] = atom
 		wide[index].data = widenRegexPrefix(atom.data)
 		wide[index].minOffset *= 2
-		wide[index].maxOffset *= 2
+		if wide[index].maxOffset >= 0 {
+			wide[index].maxOffset *= 2
+		}
 	}
 	return wide
 }
