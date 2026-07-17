@@ -328,6 +328,14 @@ func (rc *RuleCompiler) compileSingleString(str *ast.String) error {
 			pattern.byteSetMaxOffset = atom.maxOffset
 			pattern.byteSetCount = atom.count
 			pattern.byteSetLower, pattern.byteSetUpper, pattern.byteSetContiguous = atom.set.ContiguousRange()
+			if atom.count <= maxSparseRegexByteSetValues {
+				pattern.byteSetValues = make([]byte, 0, atom.count)
+				for value := range 256 {
+					if atom.set.Contains(byte(value)) {
+						pattern.byteSetValues = append(pattern.byteSetValues, byte(value))
+					}
+				}
+			}
 		}
 		pattern.fixedByteSets = slices.Clone(result.regexFixedByteSets)
 		rc.regexPatterns[str.Identifier] = pattern
@@ -923,6 +931,7 @@ func (rc *RuleCompiler) copyRegexPatterns() map[string]RegexPattern {
 			byteSetLower:         v.byteSetLower,
 			byteSetUpper:         v.byteSetUpper,
 			byteSetContiguous:    v.byteSetContiguous,
+			byteSetValues:        slices.Clone(v.byteSetValues),
 			fixedByteSets:        slices.Clone(v.fixedByteSets),
 			anchored:             v.anchored,
 			cacheKey:             v.cacheKey,
