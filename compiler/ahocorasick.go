@@ -289,12 +289,47 @@ func (ac *ACAutomaton) findNextState(currentState int32, b byte) int32 {
 	}
 }
 
-func indexAnyByte(data, values []byte) int {
+const (
+	maxSparseRootTransitions = 4
+	rootCandidateExhausted   = -1
+	rootCandidateUnsearched  = -2
+)
+
+// rootCandidateCursor keeps one next-occurrence cursor per root transition.
+// Every lane advances monotonically, so an absent root byte is searched once
+// instead of rescanning the remaining input at every candidate from another
+// lane.
+type rootCandidateCursor struct {
+	values    []byte
+	positions [maxSparseRootTransitions]int
+}
+
+func newRootCandidateCursor(values []byte) rootCandidateCursor {
+	cursor := rootCandidateCursor{values: values}
+	for index := range cursor.positions {
+		cursor.positions[index] = rootCandidateUnsearched
+	}
+	return cursor
+}
+
+func (cursor *rootCandidateCursor) next(data []byte, from int) int {
 	best := -1
-	for _, value := range values {
-		idx := bytes.IndexByte(data, value)
-		if idx >= 0 && (best < 0 || idx < best) {
-			best = idx
+	for index, value := range cursor.values {
+		position := cursor.positions[index]
+		if position == rootCandidateExhausted {
+			continue
+		}
+		if position < from {
+			relative := bytes.IndexByte(data[from:], value)
+			if relative < 0 {
+				cursor.positions[index] = rootCandidateExhausted
+				continue
+			}
+			position = from + relative
+			cursor.positions[index] = position
+		}
+		if best < 0 || position < best {
+			best = position
 		}
 	}
 	return best
@@ -423,14 +458,15 @@ func (ac *ACAutomaton) SearchIter(data []byte) iter.Seq[ACMatch] {
 		// with the platform byte-search routine. Keep the tight range loop for
 		// small inputs and wider roots where repeated byte searches cost more.
 		rootHasNoOutput := ac.states[0].outputStart == ac.states[0].outputEnd
-		if rootHasNoOutput && len(data) >= 256 && len(ac.rootBytes) > 0 && len(ac.rootBytes) <= 4 {
+		if rootHasNoOutput && len(data) >= 256 && len(ac.rootBytes) > 0 && len(ac.rootBytes) <= maxSparseRootTransitions {
+			rootCursor := newRootCandidateCursor(ac.rootBytes)
 			for i := 0; i < len(data); i++ {
 				if currentState == 0 && len(data)-i >= 256 {
-					skip := indexAnyByte(data[i:], ac.rootBytes)
-					if skip < 0 {
+					candidate := rootCursor.next(data, i)
+					if candidate < 0 {
 						return
 					}
-					i += skip
+					i = candidate
 				}
 				currentState = ac.findNextState(currentState, data[i])
 				if ac.states[currentState].outputStart != ac.states[currentState].outputEnd &&
