@@ -322,6 +322,9 @@ func (rc *RuleCompiler) compileSingleString(str *ast.String) error {
 				pattern.wideAlternativeAtoms = widenRegexPrefilterAtoms(atoms)
 			}
 		}
+		if plan, ok := selectLeadingGapRegexPlan(result.regexLeadingGap); ok {
+			pattern.leadingGap = plan
+		}
 		if atom, ok := selectMandatoryRegexByteSetAtom(result.regexByteSetAtoms, result.flags); ok {
 			pattern.byteSet = atom.set
 			pattern.byteSetMinOffset = atom.minOffset
@@ -360,6 +363,7 @@ type stringCompilationResult struct {
 	cacheKey           string
 	regexAtoms         []regex.LiteralAtom
 	regexAlternatives  [][]regex.LiteralAtom
+	regexLeadingGap    regex.LeadingByteGapPlan
 	regexByteSetAtoms  []regex.ByteSetAtom
 	regexFixedByteSets []regex.ByteSet
 }
@@ -460,6 +464,7 @@ func (rc *RuleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers
 
 	flags := rc.deriveRegexFlags(pattern.Value, modifiers)
 	fixedByteSets, _ := regex.FixedByteSets(parsed, flags)
+	leadingGap, _ := regex.LeadingByteGapAtomCover(parsed, flags, minPrefilterAtomLength)
 	return &stringCompilationResult{
 		patternData:        code, // VM bytecode
 		kind:               StringKindRegex,
@@ -467,6 +472,7 @@ func (rc *RuleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers
 		cacheKey:           patternCacheKey("regex", pattern.Value, modifiers),
 		regexAtoms:         regex.MandatoryLiteralAtoms(parsed),
 		regexAlternatives:  regex.LiteralAtomCover(parsed, minPrefilterAtomLength),
+		regexLeadingGap:    leadingGap,
 		regexByteSetAtoms:  regex.MandatoryByteSetAtoms(parsed),
 		regexFixedByteSets: fixedByteSets,
 	}, nil
@@ -924,6 +930,7 @@ func (rc *RuleCompiler) copyRegexPatterns() map[string]RegexPattern {
 			atomMaxOffset:        v.atomMaxOffset,
 			alternativeAtoms:     cloneRegexPrefilterAtoms(v.alternativeAtoms),
 			wideAlternativeAtoms: cloneRegexPrefilterAtoms(v.wideAlternativeAtoms),
+			leadingGap:           cloneLeadingGapRegexPlan(v.leadingGap),
 			byteSet:              v.byteSet,
 			byteSetMinOffset:     v.byteSetMinOffset,
 			byteSetMaxOffset:     v.byteSetMaxOffset,

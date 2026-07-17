@@ -12,7 +12,8 @@ import (
 var matchContextPool = sync.Pool{
 	New: func() any {
 		return &MatchContext{
-			Matches: make(map[string][]Match),
+			Matches:      make(map[string][]Match),
+			matchBuffers: make(map[string][]Match),
 		}
 	},
 }
@@ -64,6 +65,14 @@ func PopulateMatchContext(ctx *MatchContext, rule *CompiledRule, data []byte) {
 // Reset clears the match context for reuse
 func (ctx *MatchContext) Reset(data []byte) {
 	ctx.Data = data
+	if ctx.matchBuffers == nil {
+		ctx.matchBuffers = make(map[string][]Match, len(ctx.Matches))
+	}
+	for id, matches := range ctx.Matches {
+		if cap(matches) > cap(ctx.matchBuffers[id]) {
+			ctx.matchBuffers[id] = matches[:0]
+		}
+	}
 	clear(ctx.Matches)
 	ctx.FileSize = int64(len(data))
 	ctx.EntryPoint = 0
@@ -154,6 +163,20 @@ func addRegexMatchesCached(
 			return
 		}
 	}
+	if !isWide && regexInfo.leadingGap != nil && !useSparseByteSet {
+		starts, handled := leadingGapRegexCandidateStarts(data, regexInfo.leadingGap, flags)
+		if handled {
+			if len(starts) == 0 {
+				return
+			}
+			bs, release := newRegexMatchBatch(regexInfo)
+			defer releaseRegexMatchBatch(release)
+			for _, start := range starts {
+				addRegexMatchAt(ctx, id, regexInfo, data, modifiers, flags, isWide, bs, start)
+			}
+			return
+		}
+	}
 	if useByteSet {
 		search := regexByteSetSearch{
 			data:            data,
@@ -180,6 +203,57 @@ func addRegexMatchesCached(
 	bs, release := newRegexMatchBatch(regexInfo)
 	defer releaseRegexMatchBatch(release)
 	addRegexMatchesLinear(ctx, id, regexInfo, data, modifiers, flags, isWide, bs)
+}
+
+func leadingGapRegexCandidateStarts(data []byte, plan *regexLeadingGapPlan, flags regex.Flags) ([]int, bool) {
+	if plan == nil || len(plan.atoms) == 0 {
+		return nil, false
+	}
+	limit := max(1024, len(data)/4)
+	starts := make([]int, 0, min(limit, 64))
+	for _, atom := range plan.atoms {
+		searcher := newRegexLiteralSearcher(data, atom.data, flags)
+		for occurrence := searcher.index(0); occurrence >= 0; occurrence = searcher.index(occurrence + 1) {
+			for offset := atom.minOffset; offset <= atom.maxOffset; offset++ {
+				suffixStart := occurrence - offset
+				if suffixStart < 1 || suffixStart > len(data) {
+					continue
+				}
+				maxGap := suffixStart - 1
+				if plan.gapMax >= 0 {
+					maxGap = min(maxGap, plan.gapMax)
+				}
+				for gapLength := 0; gapLength <= maxGap; gapLength++ {
+					leadingPosition := suffixStart - gapLength - 1
+					if gapLength >= plan.gapMin && plan.leadingSet.Contains(data[leadingPosition]) {
+						if len(starts) >= limit {
+							return nil, false
+						}
+						starts = append(starts, leadingPosition)
+					}
+					if gapLength == maxGap || !plan.gapSet.Contains(data[leadingPosition]) {
+						break
+					}
+				}
+			}
+			if occurrence == len(data) {
+				break
+			}
+		}
+	}
+	if len(starts) < 2 {
+		return starts, true
+	}
+	sort.Ints(starts)
+	unique := 1
+	for _, start := range starts[1:] {
+		if start == starts[unique-1] {
+			continue
+		}
+		starts[unique] = start
+		unique++
+	}
+	return starts[:unique], true
 }
 
 type regexAlternativeCursor struct {

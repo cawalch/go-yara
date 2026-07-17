@@ -70,6 +70,9 @@ func TestLeadingClassRegexMatches(t *testing.T) {
 	scanner := NewScanner(program)
 	defer scanner.Close()
 	pattern := program.Rules[0].RegexPatterns["$c"]
+	if pattern.leadingGap == nil || len(pattern.leadingGap.atoms) != 3 {
+		t.Fatalf("leading gap plan = %+v, want 3 suffix atoms", pattern.leadingGap)
+	}
 	if len(pattern.alternativeAtoms) != 3 {
 		t.Fatalf("alternative atoms = %+v, want 3", pattern.alternativeAtoms)
 	}
@@ -103,6 +106,7 @@ func TestNestedAlternativeAtomCoverMatchesLinearScan(t *testing.T) {
 				$bounded = /[x]?(alpha_token|beta_value)/
 				$repeat = /(left_token|right_value)+/
 				$wide = /["']\s*(wide_alpha|wide_beta)/ nocase wide
+				$numbered = /["'#.\[]\s*(marker_00|token_00)\b/ nocase
 			condition:
 				any of them
 		}
@@ -117,7 +121,11 @@ func TestNestedAlternativeAtomCoverMatchesLinearScan(t *testing.T) {
 		[]byte(`prefix .   CARDNUMBER suffix 'cvv [ cardholder`),
 		[]byte(`alphaone prefix zulu_two xalpha_token beta_value left_tokenright_value`),
 		[]byte(`cardnumber without a leading selector and unrelated zulu`),
+		[]byte(`marker_00 token_00 a.b['c']="d"; '. marker_00 " token_00`),
 		wide,
+	}
+	if plan := rule.RegexPatterns["$numbered"].leadingGap; plan == nil || len(plan.atoms) != 2 {
+		t.Fatalf("numbered leading gap plan = %+v, want 2 suffix atoms", plan)
 	}
 	for dataIndex, data := range dataSets {
 		optimized := BuildMatchContext(rule, data)

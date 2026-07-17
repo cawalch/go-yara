@@ -15,6 +15,18 @@ type LiteralAtom struct {
 	MaxOffset int
 }
 
+// LeadingByteGapPlan describes regexes that begin with one constrained byte,
+// followed by a repeated byte class and a suffix covered by literal atoms.
+// A scanner can find the suffix atoms first, walk the repeated gap backwards,
+// and recover exact candidate starts without probing every leading byte.
+type LeadingByteGapPlan struct {
+	LeadingSet ByteSet
+	GapSet     ByteSet
+	GapMin     int
+	GapMax     int
+	AtomGroups [][]LiteralAtom
+}
+
 type atomAnalysis struct {
 	minLength int
 	maxLength int
@@ -115,6 +127,91 @@ func LiteralAtomCover(ast *AST, minimumLength int) [][]LiteralAtom {
 		return nil
 	}
 	return cover.groups
+}
+
+// LeadingByteGapAtomCover returns a candidate plan for regexes shaped like
+// <one byte><repeated byte class><literal-bearing suffix>. The suffix may be
+// an alternation; every returned group must contribute one atom to keep the
+// plan complete. GapMax is -1 for an unbounded repeat.
+func LeadingByteGapAtomCover(ast *AST, flags Flags, minimumLength int) (LeadingByteGapPlan, bool) {
+	if ast == nil || ast.Root == nil || ast.Root.Kind != NodeConcat || len(ast.Root.Children) < 3 {
+		return LeadingByteGapPlan{}, false
+	}
+	children := ast.Root.Children
+	leadingSet, ok := fixedConsumingByteSet(children[0], flags)
+	if !ok {
+		return LeadingByteGapPlan{}, false
+	}
+	gapSet, gapMin, gapMax, ok := repeatedSingleByteSet(children[1], flags)
+	if !ok {
+		return LeadingByteGapPlan{}, false
+	}
+
+	suffix := children[2]
+	if len(children) > 3 {
+		suffix = &Node{Kind: NodeConcat, Children: children[2:], Greedy: true}
+	}
+	groups, ok := suffixLiteralAtomGroups(suffix, max(1, minimumLength))
+	if !ok {
+		return LeadingByteGapPlan{}, false
+	}
+	return LeadingByteGapPlan{
+		LeadingSet: leadingSet,
+		GapSet:     gapSet,
+		GapMin:     gapMin,
+		GapMax:     gapMax,
+		AtomGroups: groups,
+	}, true
+}
+
+func repeatedSingleByteSet(node *Node, flags Flags) (ByteSet, int, int, bool) {
+	if node == nil || len(node.Children) != 1 {
+		return ByteSet{}, 0, 0, false
+	}
+	minimum := 0
+	maximum := -1
+	switch node.Kind {
+	case NodeStar:
+	case NodePlus:
+		minimum = 1
+	case NodeRange:
+		minimum = int(node.Start)
+		maximum = int(node.End)
+		if node.End == math.MaxUint16 {
+			maximum = -1
+		}
+	default:
+		return ByteSet{}, 0, 0, false
+	}
+	set, ok := fixedConsumingByteSet(node.Children[0], flags)
+	return set, minimum, maximum, ok
+}
+
+func suffixLiteralAtomGroups(node *Node, minimumLength int) ([][]LiteralAtom, bool) {
+	leaves := alternativeLeaves(&AST{Root: node})
+	if len(leaves) == 0 {
+		leaves = []*Node{node}
+	}
+	groups := make([][]LiteralAtom, 0, len(leaves))
+	for _, leaf := range leaves {
+		analysis := analyzeAtoms(leaf)
+		group := make([]LiteralAtom, 0, len(analysis.atoms))
+		for _, atom := range analysis.atoms {
+			if len(atom.Data) < minimumLength || atom.MaxOffset < 0 {
+				continue
+			}
+			group = append(group, LiteralAtom{
+				Data:      append([]byte(nil), atom.Data...),
+				MinOffset: atom.MinOffset,
+				MaxOffset: atom.MaxOffset,
+			})
+		}
+		if len(group) == 0 {
+			return nil, false
+		}
+		groups = append(groups, group)
+	}
+	return groups, len(groups) > 0
 }
 
 func literalAtomCoverFromAlternatives(

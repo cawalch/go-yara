@@ -106,10 +106,11 @@ type compiledRegex struct {
 
 // MatchContext holds pattern matching state
 type MatchContext struct {
-	Data       []byte
-	Matches    map[string][]Match // Pattern -> list of matches
-	FileSize   int64
-	EntryPoint int64
+	Data         []byte
+	Matches      map[string][]Match // Pattern -> list of matches
+	FileSize     int64
+	EntryPoint   int64
+	matchBuffers map[string][]Match
 }
 
 // Match represents a pattern match
@@ -129,7 +130,11 @@ func (mc *MatchContext) AddMatch(m Match) {
 	if m.Pattern == "" {
 		return
 	}
-	mc.Matches[m.Pattern] = append(mc.Matches[m.Pattern], m)
+	matches, exists := mc.Matches[m.Pattern]
+	if !exists && mc.matchBuffers != nil {
+		matches = mc.matchBuffers[m.Pattern]
+	}
+	mc.Matches[m.Pattern] = append(matches, m)
 }
 
 // interpreterPool allows reusing interpreter instances to reduce allocation overhead
