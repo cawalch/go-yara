@@ -191,10 +191,14 @@ func TestVariableAlternativeRegexAtomsMatchLinearScan(t *testing.T) {
 
 func TestVariableAlternativeCandidateCursorMatchesCollectedStarts(t *testing.T) {
 	atom := regexPrefilterAtom{data: []byte("ab"), minOffset: 0, maxOffset: 2}
-	cursor := regexAlternativeCursor{atom: atom, start: -1}
 	data := []byte("xxabxab")
+	cursor := regexAlternativeCursor{
+		atom:     atom,
+		searcher: newRegexLiteralSearcher(data, atom.data, 0),
+		start:    -1,
+	}
 	var got []int
-	for cursor.advance(data, 0, false); cursor.start >= 0; cursor.advance(data, 0, false) {
+	for cursor.advance(); cursor.start >= 0; cursor.advance() {
 		got = append(got, cursor.start)
 	}
 	want := []int{0, 1, 2, 3, 4, 5}
@@ -263,8 +267,56 @@ func TestCompiledRegexCarriesMandatoryByteSet(t *testing.T) {
 	if pattern.byteSetLower != 'a' || pattern.byteSetUpper != 'z' {
 		t.Fatalf("byte set bounds = [%#x,%#x], want ['a','z']", pattern.byteSetLower, pattern.byteSetUpper)
 	}
+	if pattern.byteSetValues != nil {
+		t.Fatalf("byte-set values = %v, want nil for a 26-byte set", pattern.byteSetValues)
+	}
 	if pattern.byteSetMinOffset != 2 || pattern.byteSetMaxOffset != 2 {
 		t.Fatalf("byte set offsets = [%d,%d], want [2,2]", pattern.byteSetMinOffset, pattern.byteSetMaxOffset)
+	}
+}
+
+func TestCompiledRegexCarriesSparseByteSetValues(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+		rule sparse_byte_set {
+			strings:
+				$pattern = /["'#.\[]\s*(card[-_ ]?number|cardnum|ccnumber|pan)\b/ nocase
+			condition:
+				$pattern
+		}
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pattern := program.Rules[0].RegexPatterns["$pattern"]
+	want := []byte{'"', '#', '\'', '.', '['}
+	if !slices.Equal(pattern.byteSetValues, want) {
+		t.Fatalf(
+			"byte-set values = %v, want %v (count %d, offsets [%d,%d], contiguous %t)",
+			pattern.byteSetValues,
+			want,
+			pattern.byteSetCount,
+			pattern.byteSetMinOffset,
+			pattern.byteSetMaxOffset,
+			pattern.byteSetContiguous,
+		)
+	}
+}
+
+func TestIndexSparseRegexByteSetReturnsEarliestValue(t *testing.T) {
+	data := []byte(strings.Repeat("x", 5000) + "..#")
+	values := []byte{'#', '.'}
+	for _, test := range []struct {
+		from int
+		want int
+	}{
+		{want: 5000},
+		{from: 5001, want: 5001},
+		{from: 5002, want: 5002},
+		{from: 5003, want: -1},
+	} {
+		if got := indexSparseRegexByteSet(data, test.from, values); got != test.want {
+			t.Fatalf("from %d: got %d, want %d", test.from, got, test.want)
+		}
 	}
 }
 
@@ -306,8 +358,16 @@ func TestIndexRegexLiteralNoCaseUsesEitherASCIICase(t *testing.T) {
 		{name: "lowercase literal", data: []byte("xxEXPyy"), literal: []byte("exp"), want: 2},
 		{name: "uppercase literal", data: []byte("xxexpyy"), literal: []byte("EXP"), want: 2},
 		{name: "frequent first byte absent", data: []byte(strings.Repeat("e", 256)), literal: []byte("exp"), want: -1},
+		{name: "selective internal anchor", data: []byte(strings.Repeat("c", 256) + "CARDHOLDER"), literal: []byte("cardholder"), want: 256},
 		{name: "nonletter first byte", data: []byte("xx_0Xyy"), literal: []byte("_0x"), want: 2},
 		{name: "wide", data: widenRegexPrefix([]byte("EXP")), literal: widenRegexPrefix([]byte("exp")), wide: true},
+		{
+			name:    "wide selective internal anchor",
+			data:    append(bytes.Repeat([]byte{'e', 0}, 64), widenRegexPrefix([]byte("EXP"))...),
+			literal: widenRegexPrefix([]byte("exp")),
+			wide:    true,
+			want:    128,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -316,6 +376,48 @@ func TestIndexRegexLiteralNoCaseUsesEitherASCIICase(t *testing.T) {
 				t.Fatalf("indexRegexLiteral() = %d, want %d", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestIndexASCIIFoldByteMatchesScalarSearch(t *testing.T) {
+	for length := 0; length <= 40; length++ {
+		for alignment := 0; alignment < 8; alignment++ {
+			data := make([]byte, alignment+length)
+			for index := range data {
+				data[index] = byte(index*37 + length*11)
+			}
+			data = data[alignment:]
+			for _, want := range []byte{'a', 'A', 'z', 'Z', '_', 0, 0xff} {
+				got := indexASCIIFoldByte(data, want)
+				other := flipASCIICase(want)
+				wantIndex := -1
+				for index, value := range data {
+					if value == want || value == other {
+						wantIndex = index
+						break
+					}
+				}
+				if got != wantIndex {
+					t.Fatalf("length %d alignment %d byte %#x: got %d, want %d", length, alignment, want, got, wantIndex)
+				}
+			}
+		}
+	}
+}
+
+func TestASCIIFoldByteCursorReturnsCasesInOrder(t *testing.T) {
+	data := []byte("__A__a__A")
+	for _, linear := range []bool{false, true} {
+		cursor := newASCIIFoldByteCursor('a', linear)
+		from := 0
+		for index, want := range []int{2, 5, 8, -1} {
+			if got := cursor.next(data, from); got != want {
+				t.Fatalf("linear %t, result %d = %d, want %d", linear, index, got, want)
+			}
+			if want >= 0 {
+				from = want + 1
+			}
+		}
 	}
 }
 

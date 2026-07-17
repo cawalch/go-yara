@@ -30,6 +30,7 @@ type RegexPattern struct {
 	byteSetLower         byte
 	byteSetUpper         byte
 	byteSetContiguous    bool
+	byteSetValues        []byte
 	fixedByteSets        []regex.ByteSet
 	anchored             bool
 	cacheKey             string

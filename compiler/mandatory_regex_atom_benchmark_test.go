@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/cawalch/go-yara/regex"
 )
 
 func BenchmarkMandatoryRegexAtomScanner(b *testing.B) {
@@ -122,6 +124,56 @@ func BenchmarkLiteralAlternationRegexScanner(b *testing.B) {
 						}
 					}
 				})
+			}
+		})
+	}
+}
+
+func BenchmarkNoCaseRegexLiteralSearchDensity(b *testing.B) {
+	literal := []byte("cardholder")
+	for _, benchmark := range []struct {
+		name string
+		data []byte
+		want int
+	}{
+		{
+			name: "negative",
+			data: bytes.Repeat([]byte("benignFillerCode123 "), (1<<20)/20),
+		},
+		{
+			name: "sparse",
+			data: func() []byte {
+				data := bytes.Repeat([]byte("benignFillerCode123 "), (1<<20)/20)
+				for offset := 32 << 10; offset+len(literal) <= len(data); offset += 64 << 10 {
+					copy(data[offset:], "CARDHOLDER")
+				}
+				return data
+			}(),
+			want: 16,
+		},
+		{
+			name: "dense",
+			data: bytes.Repeat([]byte("cardholder "), (1<<20)/11),
+			want: (1 << 20) / 11,
+		},
+	} {
+		b.Run(benchmark.name, func(b *testing.B) {
+			b.SetBytes(int64(len(benchmark.data)))
+			b.ReportAllocs()
+			for b.Loop() {
+				searcher := newRegexLiteralSearcher(benchmark.data, literal, regex.FlagsNoCase)
+				matches := 0
+				for pos := 0; pos <= len(benchmark.data); {
+					match := searcher.index(pos)
+					if match < 0 {
+						break
+					}
+					matches++
+					pos = match + 1
+				}
+				if matches != benchmark.want {
+					b.Fatalf("matches = %d, want %d", matches, benchmark.want)
+				}
 			}
 		})
 	}

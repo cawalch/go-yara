@@ -150,6 +150,8 @@ func addRegexMatchesCached(
 			pattern: regexInfo,
 			wide:    isWide,
 			cache:   byteSetCache,
+			useSparseValues: !regexInfo.byteSetContiguous &&
+				shouldUseSparseRegexByteSetSearch(data, regexInfo.byteSetValues, isWide),
 		}
 		plan, handled := search.candidatePlan()
 		if handled {
@@ -173,6 +175,7 @@ func addRegexMatchesCached(
 
 type regexAlternativeCursor struct {
 	atom         regexPrefilterAtom
+	searcher     regexLiteralSearcher
 	searchFrom   int
 	start        int
 	rangeEnd     int
@@ -181,19 +184,19 @@ type regexAlternativeCursor struct {
 	hasPending   bool
 }
 
-func (cursor *regexAlternativeCursor) advance(data []byte, flags regex.Flags, isWide bool) {
+func (cursor *regexAlternativeCursor) advance() {
 	if cursor.start >= 0 && cursor.start < cursor.rangeEnd {
 		cursor.start++
 		return
 	}
 
-	start, end, ok := cursor.nextRange(data, flags, isWide)
+	start, end, ok := cursor.nextRange()
 	if !ok {
 		cursor.start = -1
 		return
 	}
 	for {
-		nextStart, nextEnd, found := cursor.nextAtomRange(data, flags, isWide)
+		nextStart, nextEnd, found := cursor.nextAtomRange()
 		if !found {
 			break
 		}
@@ -209,23 +212,23 @@ func (cursor *regexAlternativeCursor) advance(data []byte, flags regex.Flags, is
 	cursor.rangeEnd = end
 }
 
-func (cursor *regexAlternativeCursor) nextRange(data []byte, flags regex.Flags, isWide bool) (int, int, bool) {
+func (cursor *regexAlternativeCursor) nextRange() (int, int, bool) {
 	if cursor.hasPending {
 		cursor.hasPending = false
 		return cursor.pendingStart, cursor.pendingEnd, true
 	}
-	return cursor.nextAtomRange(data, flags, isWide)
+	return cursor.nextAtomRange()
 }
 
-func (cursor *regexAlternativeCursor) nextAtomRange(data []byte, flags regex.Flags, isWide bool) (int, int, bool) {
-	for cursor.searchFrom <= len(data) {
-		occurrence := indexRegexLiteral(data, cursor.searchFrom, cursor.atom.data, flags, isWide)
+func (cursor *regexAlternativeCursor) nextAtomRange() (int, int, bool) {
+	for cursor.searchFrom <= len(cursor.searcher.data) {
+		occurrence := cursor.searcher.index(cursor.searchFrom)
 		if occurrence < 0 {
 			return 0, 0, false
 		}
 		cursor.searchFrom = occurrence + 1
 		start := max(0, occurrence-cursor.atom.maxOffset)
-		end := min(len(data), occurrence-cursor.atom.minOffset)
+		end := min(len(cursor.searcher.data), occurrence-cursor.atom.minOffset)
 		if start <= end {
 			return start, end, true
 		}
@@ -253,8 +256,9 @@ func addRegexMatchesFromAlternatives(
 	}
 	for index, atom := range atoms {
 		cursors[index].atom = atom
+		cursors[index].searcher = newRegexLiteralSearcher(data, atom.data, flags)
 		cursors[index].start = -1
-		cursors[index].advance(data, flags, isWide)
+		cursors[index].advance()
 	}
 
 	bs, release := newRegexMatchBatch(regexInfo)
@@ -274,7 +278,7 @@ func addRegexMatchesFromAlternatives(
 		addRegexMatchAt(ctx, id, regexInfo, data, modifiers, flags, isWide, bs, candidate)
 		for index := range cursors {
 			if cursors[index].start == candidate {
-				cursors[index].advance(data, flags, isWide)
+				cursors[index].advance()
 			}
 		}
 	}
@@ -291,7 +295,8 @@ func addRegexMatchesFromPrefix(
 	isWide bool,
 	prefix []byte,
 ) {
-	candidate := indexRegexLiteral(data, 0, prefix, flags, isWide)
+	searcher := newRegexLiteralSearcher(data, prefix, flags)
+	candidate := searcher.index(0)
 	if candidate < 0 {
 		return
 	}
@@ -303,7 +308,7 @@ func addRegexMatchesFromPrefix(
 		if searchFrom > len(data) {
 			return
 		}
-		candidate = indexRegexLiteral(data, searchFrom, prefix, flags, isWide)
+		candidate = searcher.index(searchFrom)
 	}
 }
 
@@ -408,7 +413,8 @@ func regexAtomCandidateStarts(
 	flags regex.Flags,
 	isWide bool,
 ) ([]int, bool) {
-	first := indexRegexLiteral(data, 0, atom, flags, isWide)
+	searcher := newRegexLiteralSearcher(data, atom, flags)
+	first := searcher.index(0)
 	if first < 0 {
 		return nil, true
 	}
@@ -420,7 +426,7 @@ func regexAtomCandidateStarts(
 	atomStarts := make([]int, 0, min(limit, 64))
 	atomStarts = append(atomStarts, first)
 	for searchFrom := first + 1; searchFrom <= len(data); {
-		next := indexRegexLiteral(data, searchFrom, atom, flags, isWide)
+		next := searcher.index(searchFrom)
 		if next < 0 {
 			break
 		}
@@ -441,10 +447,31 @@ func regexAtomCandidateStarts(
 }
 
 type regexByteSetSearch struct {
-	data    []byte
-	pattern RegexPattern
-	wide    bool
-	cache   *regexByteSetCandidateCache
+	data            []byte
+	pattern         RegexPattern
+	wide            bool
+	cache           *regexByteSetCandidateCache
+	useSparseValues bool
+}
+
+func shouldUseSparseRegexByteSetSearch(data, values []byte, wide bool) bool {
+	if wide || len(values) == 0 || len(data) < 64 {
+		return false
+	}
+	sample := data[:min(len(data), 512)]
+	matches := 0
+	for _, value := range sample {
+		for _, candidate := range values {
+			if value == candidate {
+				matches++
+				if matches >= 8 {
+					return false
+				}
+				break
+			}
+		}
+	}
+	return true
 }
 
 type regexByteSetCacheKey struct {
@@ -778,10 +805,46 @@ func widenRegexPrefix(prefix []byte) []byte {
 
 //nolint:revive // argument-limit: byte-search hot path avoids options indirection
 func indexRegexLiteral(data []byte, pos int, literal []byte, flags regex.Flags, isWide bool) int {
+	if isWide {
+		flags |= regex.FlagsWide
+	} else {
+		flags &^= regex.FlagsWide
+	}
+	return newRegexLiteralSearcher(data, literal, flags).index(pos)
+}
+
+type regexLiteralSearcher struct {
+	data    []byte
+	literal []byte
+	noCase  bool
+	wide    bool
+	anchor  int
+	dense   bool
+}
+
+// newRegexLiteralSearcher chooses a data-sensitive anchor once for all
+// occurrences of one literal in a scan. Reusing the plan is important for
+// match-heavy inputs, where resampling for every returned match is expensive.
+func newRegexLiteralSearcher(data, literal []byte, flags regex.Flags) regexLiteralSearcher {
+	searcher := regexLiteralSearcher{
+		data:    data,
+		literal: literal,
+		noCase:  flags&regex.FlagsNoCase != 0,
+		wide:    flags&regex.FlagsWide != 0,
+	}
+	if searcher.noCase && len(literal) > 0 {
+		searcher.anchor, searcher.dense = selectRegexLiteralSearchAnchor(data, literal, searcher.wide)
+	}
+	return searcher
+}
+
+func (searcher regexLiteralSearcher) index(pos int) int {
+	data := searcher.data
+	literal := searcher.literal
 	if len(literal) == 0 || pos < 0 || pos > len(data) {
 		return -1
 	}
-	if flags&regex.FlagsNoCase == 0 {
+	if !searcher.noCase {
 		idx := bytes.Index(data[pos:], literal)
 		if idx < 0 {
 			return -1
@@ -790,17 +853,20 @@ func indexRegexLiteral(data []byte, pos int, literal []byte, flags regex.Flags, 
 	}
 
 	last := len(data) - len(literal)
-	first := literal[0]
-	other := flipASCIICase(first)
-	// Check both cases in one pass. Separate IndexByte searches can repeatedly
-	// rescan the remaining input when only one case occurs frequently.
-	for candidate := pos; candidate <= last; candidate++ {
-		if data[candidate] != first && data[candidate] != other {
-			continue
+	anchor := searcher.anchor
+	searchFrom := pos + anchor
+	searchLimit := last + anchor + 1
+	cursor := newASCIIFoldByteCursor(literal[anchor], searcher.dense)
+	for searchFrom < searchLimit {
+		occurrence := cursor.next(data[:searchLimit], searchFrom)
+		if occurrence < 0 {
+			return -1
 		}
-		if equalRegexPrefixFold(data[candidate:candidate+len(literal)], literal, isWide) {
+		candidate := occurrence - anchor
+		if equalRegexPrefixFold(data[candidate:candidate+len(literal)], literal, searcher.wide) {
 			return candidate
 		}
+		searchFrom = occurrence + 1
 	}
 	return -1
 }
@@ -843,6 +909,9 @@ func indexRegexByte(data []byte, pos int, value byte) int {
 }
 
 func (search regexByteSetSearch) indexGeneral(pos int) int {
+	if search.useSparseValues {
+		return indexSparseRegexByteSet(search.data, pos, search.pattern.byteSetValues)
+	}
 	data := search.data
 	set := search.pattern.byteSet
 	wide := search.wide
@@ -859,9 +928,136 @@ func (search regexByteSetSearch) indexGeneral(pos int) int {
 	return -1
 }
 
+func indexSparseRegexByteSet(data []byte, from int, values []byte) int {
+	const chunkSize = 4096
+	from = max(0, from)
+	for from < len(data) {
+		end := min(len(data), from+chunkSize)
+		chunk := data[from:end]
+		best := -1
+		for _, value := range values {
+			position := bytes.IndexByte(chunk, value)
+			if position >= 0 && (best < 0 || position < best) {
+				best = position
+			}
+		}
+		if best >= 0 {
+			return from + best
+		}
+		from = end
+	}
+	return -1
+}
+
+const maxRegexLiteralAnchorCandidates = 8
+
+// selectRegexLiteralSearchAnchor samples the input and chooses the least
+// frequent byte from the literal. Dense anchors stay on a scalar scan; sparse
+// anchors use the platform byte-search primitive through bounded chunks.
+func selectRegexLiteralSearchAnchor(data, literal []byte, wide bool) (int, bool) {
+	step := 1
+	if wide {
+		step = 2
+	}
+
+	var offsets [maxRegexLiteralAnchorCandidates]int
+	var folded [maxRegexLiteralAnchorCandidates]byte
+	candidateCount := 0
+	for offset := 0; offset < len(literal) && candidateCount < len(offsets); offset += step {
+		value := toLowerTable[literal[offset]]
+		duplicate := false
+		for index := 0; index < candidateCount; index++ {
+			if folded[index] == value {
+				duplicate = true
+				break
+			}
+		}
+		if duplicate {
+			continue
+		}
+		offsets[candidateCount] = offset
+		folded[candidateCount] = value
+		candidateCount++
+	}
+	if candidateCount < 2 || len(data) < 64 {
+		return 0, false
+	}
+
+	var counts [maxRegexLiteralAnchorCandidates]uint16
+	sample := data[:min(len(data), 512)]
+	for _, value := range sample {
+		value = toLowerTable[value]
+		for index := 0; index < candidateCount; index++ {
+			if value == folded[index] {
+				counts[index]++
+			}
+		}
+	}
+
+	best := 0
+	for index := 1; index < candidateCount; index++ {
+		if counts[index] < counts[best] ||
+			counts[index] == counts[best] && prefilterAtomScore(literal[offsets[index]:offsets[index]+1]) >
+				prefilterAtomScore(literal[offsets[best]:offsets[best]+1]) {
+			best = index
+		}
+	}
+	return offsets[best], counts[best] >= 8
+}
+
+type asciiFoldByteCursor struct {
+	values [2]byte
+	count  int
+	linear bool
+}
+
+func newASCIIFoldByteCursor(want byte, linear bool) asciiFoldByteCursor {
+	other := flipASCIICase(want)
+	cursor := asciiFoldByteCursor{
+		values: [2]byte{want, other},
+		count:  1,
+		linear: linear,
+	}
+	if other != want {
+		cursor.count = 2
+	}
+	return cursor
+}
+
+func (cursor *asciiFoldByteCursor) next(data []byte, from int) int {
+	if cursor.linear {
+		for index := from; index < len(data); index++ {
+			if data[index] == cursor.values[0] || cursor.count == 2 && data[index] == cursor.values[1] {
+				return index
+			}
+		}
+		return -1
+	}
+
+	// Bound each pair of platform searches. Searching each ASCII case across
+	// the entire remaining input can become quadratic when matches use only one
+	// case and the caller asks for successive occurrences.
+	const chunkSize = 4096
+	for from < len(data) {
+		end := min(len(data), from+chunkSize)
+		chunk := data[from:end]
+		best := -1
+		for index := 0; index < cursor.count; index++ {
+			position := bytes.IndexByte(chunk, cursor.values[index])
+			if position >= 0 && (best < 0 || position < best) {
+				best = position
+			}
+		}
+		if best >= 0 {
+			return from + best
+		}
+		from = end
+	}
+	return -1
+}
+
 func indexASCIIFoldByte(data []byte, want byte) int {
 	other := flipASCIICase(want)
-	// Keep this linear even when one case is absent and the other is dense.
 	for index, value := range data {
 		if value == want || value == other {
 			return index
@@ -874,11 +1070,8 @@ func equalRegexPrefixFold(data, prefix []byte, wide bool) bool {
 	step := 1
 	if wide {
 		step = 2
-		if len(data) < 2 || data[1] != 0 {
-			return false
-		}
 	}
-	for i := step; i < len(prefix); i += step {
+	for i := 0; i < len(prefix); i += step {
 		if data[i] != prefix[i] && data[i] != flipASCIICase(prefix[i]) {
 			return false
 		}

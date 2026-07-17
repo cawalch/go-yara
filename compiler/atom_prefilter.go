@@ -9,9 +9,10 @@ import (
 )
 
 const (
-	minPrefilterAtomLength = 2
-	maxPrefilterAtomLength = 8
-	maxRegexByteSetSize    = 96
+	minPrefilterAtomLength      = 2
+	maxPrefilterAtomLength      = 8
+	maxRegexByteSetSize         = 96
+	maxSparseRegexByteSetValues = 8
 	// Below this crossover, the existing per-pattern SIMD byte searches are
 	// cheaper than adding more root transitions to the global automaton.
 	minSharedNonTextEntries = 32
