@@ -13,6 +13,9 @@ const (
 	maxPrefilterAtomLength      = 8
 	maxRegexByteSetSize         = 96
 	maxSparseRegexByteSetValues = 8
+	// A few non-text atoms with the same sparse root can share one fast
+	// byte-search pass without paying the general automaton crossover cost.
+	minSparseSharedNonTextEntries = 2
 	// Below this crossover, the existing per-pattern SIMD byte searches are
 	// cheaper than adding more root transitions to the global automaton.
 	minSharedNonTextEntries = 32
@@ -158,7 +161,9 @@ func buildSharedPatternAutomaton(rules []*CompiledRule) (*ACAutomaton, []SharedA
 				if wide {
 					atomData = widenRegexPrefix(atomData)
 					atomMinOffset *= 2
-					atomMaxOffset *= 2
+					if atomMaxOffset >= 0 {
+						atomMaxOffset *= 2
+					}
 					flags |= regex.FlagsWide
 				}
 				prefilterSpecs = append(prefilterSpecs, sharedPrefilterSpec{
@@ -210,7 +215,7 @@ func buildSharedPatternAutomaton(rules []*CompiledRule) (*ACAutomaton, []SharedA
 		}
 	}
 
-	if len(prefilterSpecs) >= minSharedNonTextEntries {
+	if shouldAddSharedNonTextPrefilters(automaton, prefilterSpecs) {
 		for _, spec := range prefilterSpecs {
 			if err := automaton.AddStringWithFlags(
 				spec.identifier,
@@ -229,6 +234,43 @@ func buildSharedPatternAutomaton(rules []*CompiledRule) (*ACAutomaton, []SharedA
 		return nil, nil, fmt.Errorf("compiling shared automaton: %w", err)
 	}
 	return automaton, lookup, nil
+}
+
+func shouldAddSharedNonTextPrefilters(automaton *ACAutomaton, specs []sharedPrefilterSpec) bool {
+	if len(specs) >= minSharedNonTextEntries {
+		return true
+	}
+	if len(specs) < minSparseSharedNonTextEntries {
+		return false
+	}
+
+	var rootBytes [256]bool
+	rootCount := 0
+	addRootByte := func(value byte) bool {
+		if !rootBytes[value] {
+			rootBytes[value] = true
+			rootCount++
+		}
+		return rootCount <= maxSparseRootTransitions
+	}
+	for value, nextState := range automaton.states[0].transitions {
+		if nextState != -1 && !addRootByte(byte(value)) {
+			return false
+		}
+	}
+	for _, spec := range specs {
+		if len(spec.data) == 0 {
+			continue
+		}
+		first := spec.data[0]
+		if !addRootByte(first) {
+			return false
+		}
+		if spec.flags&regex.FlagsNoCase != 0 && !addRootByte(flipASCIICase(first)) {
+			return false
+		}
+	}
+	return true
 }
 
 func sortedPatternIDs[V any](patterns map[string]V) []string {
@@ -543,7 +585,7 @@ func selectSharedRegexAtom(pattern RegexPattern) (regexPrefilterAtom, bool) {
 			score:     atom.score,
 		}, true
 	}
-	if len(pattern.atom) < minPrefilterAtomLength || pattern.atomMaxOffset < 0 {
+	if len(pattern.atom) < minPrefilterAtomLength {
 		return regexPrefilterAtom{}, false
 	}
 	return regexPrefilterAtom{
@@ -686,6 +728,12 @@ func appendRegexPrefilterMatches(
 	flags := pattern.Flags &^ regex.FlagsWide
 	if entry.IsWide {
 		flags |= regex.FlagsWide
+	}
+	// An atom after an unbounded prefix cannot identify candidate starts, but
+	// its absence still proves the regex cannot match. If it is present, keep
+	// correctness by delegating to the existing exact matcher.
+	if entry.AtomMaxOffset < 0 {
+		return appendRegexFallbackMatches(dst, rule, strID, pattern, data, flags, entry.IsWide)
 	}
 	limit := max(1024, len(data)/4)
 	starts, handled := collectRegexCandidateStarts(

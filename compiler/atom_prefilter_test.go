@@ -630,6 +630,109 @@ func TestSharedMandatoryRegexAtomsMatchLinearScan(t *testing.T) {
 	}
 }
 
+func TestSharedUnboundedRegexAtomsMatchLinearScan(t *testing.T) {
+	var source strings.Builder
+	source.WriteString("rule shared_unbounded_atoms {\nstrings:\n")
+	for index := range 3 {
+		fmt.Fprintf(
+			&source,
+			"$pattern_%d = /[\"'#.\\[]\\s*(tok%02d_number|tok%02d_code)\\b/ nocase\n",
+			index,
+			index,
+			index,
+		)
+	}
+	source.WriteString("$wide = /[\"'#.\\[]\\s*(wide_number|wide_code)\\b/ wide\n")
+	source.WriteString("condition: any of them\n}\n")
+
+	program, err := NewCompiler().CompileSource(source.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	rule := program.Rules[0]
+	regexEntries := 0
+	for _, entry := range program.SharedLookup {
+		if entry.Kind != StringKindRegex {
+			continue
+		}
+		regexEntries++
+		if entry.AtomMaxOffset != -1 {
+			t.Errorf("shared atom max offset = %d, want -1", entry.AtomMaxOffset)
+		}
+	}
+	if regexEntries != 4 {
+		t.Fatalf("shared regex entries = %d, want 4", regexEntries)
+	}
+	for id, pattern := range rule.RegexPatterns {
+		if len(pattern.atom) < minPrefilterAtomLength || pattern.atomMaxOffset != -1 {
+			t.Errorf("%s mandatory atom = %q at [%d,%d], want an unbounded atom",
+				id, pattern.atom, pattern.atomMinOffset, pattern.atomMaxOffset)
+		}
+	}
+
+	scanner := NewScanner(program)
+	defer scanner.Close()
+	atomOnly := []byte("tok00_number tok01_code tok02_number ")
+	atomOnly = append(atomOnly, widenRegexPrefix([]byte("wide_number"))...)
+	positive := []byte("prefix \"  TOK00_NUMBER middle #tok01_code suffix [\tToK02_CoDe ")
+	positive = append(positive, widenRegexPrefix([]byte("\" wide_code"))...)
+	dataSets := [][]byte{
+		[]byte("a benign payload without any configured token"),
+		atomOnly,
+		positive,
+	}
+	for dataIndex, data := range dataSets {
+		result, scanErr := scanner.Scan(data)
+		if scanErr != nil {
+			t.Fatal(scanErr)
+		}
+		linear := buildLinearRegexContext(rule, data)
+		for _, id := range sortedPatternIDs(rule.RegexPatterns) {
+			got := matchRangesInOrder(result.Matches[rule.Name][id])
+			want := matchRangesInOrder(linear.Matches[id])
+			if !slices.Equal(got, want) {
+				t.Errorf("data %d, %s shared ranges = %v, linear scan = %v", dataIndex, id, got, want)
+			}
+			if dataIndex == len(dataSets)-1 && len(want) == 0 {
+				t.Errorf("data %d, %s did not exercise a positive match", dataIndex, id)
+			}
+		}
+		linear.Release()
+	}
+}
+
+func TestSingleUnboundedRegexStaysOnLocalPrefilter(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+		rule local_unbounded_atom {
+			strings:
+				$pattern = /["'#.\[]\s*(token_number|token_code)\b/ nocase
+			condition:
+				$pattern
+		}
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range program.SharedLookup {
+		if entry.Kind == StringKindRegex {
+			t.Fatal("single unbounded regex unexpectedly used the shared prefilter")
+		}
+	}
+}
+
+func TestSmallBroadRootSetStaysOnLocalPrefilter(t *testing.T) {
+	specs := []sharedPrefilterSpec{
+		{data: []byte("alpha")},
+		{data: []byte("bravo")},
+		{data: []byte("charlie")},
+		{data: []byte("delta")},
+		{data: []byte("echo")},
+	}
+	if shouldAddSharedNonTextPrefilters(NewACAutomaton(), specs) {
+		t.Fatal("small broad-root set unexpectedly selected the shared prefilter")
+	}
+}
+
 func TestFixedRegexDispatchMatchesLinearScan(t *testing.T) {
 	program, err := NewCompiler().CompileSource(`
 		rule fixed_dispatch {
