@@ -171,6 +171,57 @@ func TestACAutomatonSinglePatternFastPath(t *testing.T) {
 	}
 }
 
+func TestRootCandidateCursorAdvancesEachLaneMonotonically(t *testing.T) {
+	cursor := newRootCandidateCursor([]byte{'c', 'n'})
+	data := []byte("nxn--c-n")
+	for _, query := range []struct {
+		from int
+		want int
+	}{
+		{from: 0, want: 0},
+		{from: 1, want: 2},
+		{from: 3, want: 5},
+		{from: 6, want: 7},
+		{from: 8, want: -1},
+	} {
+		if got := cursor.next(data, query.from); got != query.want {
+			t.Fatalf("next(from=%d) = %d, want %d", query.from, got, query.want)
+		}
+	}
+}
+
+func TestACAutomatonSparseRootsWithAbsentAndDenseLanes(t *testing.T) {
+	patterns := []string{"cardnumber", "cardnum", "ccnumber", "cardholder", "nameoncard"}
+	ac := NewACAutomaton()
+	for _, pattern := range patterns {
+		if err := ac.AddString(pattern, []byte(pattern), false, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := ac.Compile(); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(ac.rootBytes, []byte{'c', 'n'}) {
+		t.Fatalf("root bytes = %q, want %q", ac.rootBytes, []byte{'c', 'n'})
+	}
+
+	data := bytes.Repeat([]byte("benignFillerCode123 "), 32)
+	data = append(data, []byte("cardnumber cardnum ccnumber cardholder nameoncard")...)
+	counts := make(map[string]int, len(patterns))
+	for match := range ac.SearchIter(data) {
+		counts[match.StringID]++
+	}
+	for _, pattern := range patterns {
+		want := 1
+		if pattern == "cardnum" {
+			want = 2
+		}
+		if counts[pattern] != want {
+			t.Errorf("%s matches = %d, want %d", pattern, counts[pattern], want)
+		}
+	}
+}
+
 // TestACAutomatonClone tests Clone method
 func TestACAutomatonClone(t *testing.T) {
 	ac := NewACAutomaton()
