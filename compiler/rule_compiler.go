@@ -317,7 +317,7 @@ func (rc *RuleCompiler) compileSingleString(str *ast.String) error {
 			pattern.atomMaxOffset = atom.maxOffset
 		}
 		if len(pattern.prefix) < minPrefilterAtomLength && len(pattern.atom) == 0 {
-			if atoms, ok := selectLiteralAlternativeAtoms(result.regexAlternatives); ok {
+			if atoms, ok := selectAlternativeRegexAtoms(result.regexAlternatives); ok {
 				pattern.alternativeAtoms = cloneRegexPrefilterAtoms(atoms)
 				pattern.wideAlternativeAtoms = widenRegexPrefilterAtoms(atoms)
 			}
@@ -351,7 +351,7 @@ type stringCompilationResult struct {
 	altPatternFlags    []regex.Flags
 	cacheKey           string
 	regexAtoms         []regex.LiteralAtom
-	regexAlternatives  []regex.LiteralAtom
+	regexAlternatives  [][]regex.LiteralAtom
 	regexByteSetAtoms  []regex.ByteSetAtom
 	regexFixedByteSets []regex.ByteSet
 }
@@ -458,7 +458,7 @@ func (rc *RuleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers
 		flags:              flags,
 		cacheKey:           patternCacheKey("regex", pattern.Value, modifiers),
 		regexAtoms:         regex.MandatoryLiteralAtoms(parsed),
-		regexAlternatives:  regex.LiteralAlternatives(parsed),
+		regexAlternatives:  regex.AlternativeMandatoryLiteralAtoms(parsed),
 		regexByteSetAtoms:  regex.MandatoryByteSetAtoms(parsed),
 		regexFixedByteSets: fixedByteSets,
 	}, nil

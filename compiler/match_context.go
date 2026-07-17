@@ -172,26 +172,65 @@ func addRegexMatchesCached(
 }
 
 type regexAlternativeCursor struct {
-	atom       regexPrefilterAtom
-	searchFrom int
-	start      int
+	atom         regexPrefilterAtom
+	searchFrom   int
+	start        int
+	rangeEnd     int
+	pendingStart int
+	pendingEnd   int
+	hasPending   bool
 }
 
 func (cursor *regexAlternativeCursor) advance(data []byte, flags regex.Flags, isWide bool) {
+	if cursor.start >= 0 && cursor.start < cursor.rangeEnd {
+		cursor.start++
+		return
+	}
+
+	start, end, ok := cursor.nextRange(data, flags, isWide)
+	if !ok {
+		cursor.start = -1
+		return
+	}
+	for {
+		nextStart, nextEnd, found := cursor.nextAtomRange(data, flags, isWide)
+		if !found {
+			break
+		}
+		if nextStart > end+1 {
+			cursor.pendingStart = nextStart
+			cursor.pendingEnd = nextEnd
+			cursor.hasPending = true
+			break
+		}
+		end = max(end, nextEnd)
+	}
+	cursor.start = start
+	cursor.rangeEnd = end
+}
+
+func (cursor *regexAlternativeCursor) nextRange(data []byte, flags regex.Flags, isWide bool) (int, int, bool) {
+	if cursor.hasPending {
+		cursor.hasPending = false
+		return cursor.pendingStart, cursor.pendingEnd, true
+	}
+	return cursor.nextAtomRange(data, flags, isWide)
+}
+
+func (cursor *regexAlternativeCursor) nextAtomRange(data []byte, flags regex.Flags, isWide bool) (int, int, bool) {
 	for cursor.searchFrom <= len(data) {
 		occurrence := indexRegexLiteral(data, cursor.searchFrom, cursor.atom.data, flags, isWide)
 		if occurrence < 0 {
-			cursor.start = -1
-			return
+			return 0, 0, false
 		}
 		cursor.searchFrom = occurrence + 1
-		start := occurrence - cursor.atom.minOffset
-		if start >= 0 {
-			cursor.start = start
-			return
+		start := max(0, occurrence-cursor.atom.maxOffset)
+		end := min(len(data), occurrence-cursor.atom.minOffset)
+		if start <= end {
+			return start, end, true
 		}
 	}
-	cursor.start = -1
+	return 0, 0, false
 }
 
 //nolint:revive // argument-limit: hot path avoids allocating an options struct
@@ -214,6 +253,7 @@ func addRegexMatchesFromAlternatives(
 	}
 	for index, atom := range atoms {
 		cursors[index].atom = atom
+		cursors[index].start = -1
 		cursors[index].advance(data, flags, isWide)
 	}
 

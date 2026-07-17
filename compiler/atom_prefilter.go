@@ -35,8 +35,9 @@ type regexPrefilterAtom struct {
 }
 
 type regexAlternativeDedupKey struct {
-	data   string
-	offset int
+	data      string
+	minOffset int
+	maxOffset int
 }
 
 type regexByteSetPrefilter struct {
@@ -376,8 +377,19 @@ func selectLiteralAtom(literal []byte) (prefilterAtom, bool) {
 }
 
 func selectMandatoryRegexAtom(atoms []regex.LiteralAtom) (regexPrefilterAtom, bool) {
+	return selectRegexAtom(atoms, false)
+}
+
+func selectBoundedMandatoryRegexAtom(atoms []regex.LiteralAtom) (regexPrefilterAtom, bool) {
+	return selectRegexAtom(atoms, true)
+}
+
+func selectRegexAtom(atoms []regex.LiteralAtom, boundedOnly bool) (regexPrefilterAtom, bool) {
 	best := regexPrefilterAtom{score: -1}
 	for _, candidate := range atoms {
+		if boundedOnly && candidate.MaxOffset < 0 {
+			continue
+		}
 		atom, ok := selectLiteralAtom(candidate.Data)
 		if !ok {
 			continue
@@ -400,32 +412,30 @@ func selectMandatoryRegexAtom(atoms []regex.LiteralAtom) (regexPrefilterAtom, bo
 	return best, len(best.data) >= minPrefilterAtomLength
 }
 
-// selectLiteralAlternativeAtoms keeps one exact-offset atom for every branch.
+// selectAlternativeRegexAtoms keeps one bounded mandatory atom for every branch.
 // The set is all-or-nothing: omitting even one branch would make the candidate
 // scan unsound and could hide a valid regex match.
-func selectLiteralAlternativeAtoms(alternatives []regex.LiteralAtom) ([]regexPrefilterAtom, bool) {
+func selectAlternativeRegexAtoms(alternatives [][]regex.LiteralAtom) ([]regexPrefilterAtom, bool) {
 	if len(alternatives) < 2 {
 		return nil, false
 	}
 	atoms := make([]regexPrefilterAtom, 0, len(alternatives))
 	seen := make(map[regexAlternativeDedupKey]struct{}, len(alternatives))
 	for _, alternative := range alternatives {
-		atom, ok := selectLiteralAtom(alternative.Data)
-		if !ok || alternative.MinOffset != alternative.MaxOffset {
+		atom, ok := selectBoundedMandatoryRegexAtom(alternative)
+		if !ok {
 			return nil, false
 		}
-		offset := alternative.MinOffset + atom.offset
-		key := regexAlternativeDedupKey{data: string(atom.data), offset: offset}
+		key := regexAlternativeDedupKey{
+			data:      string(atom.data),
+			minOffset: atom.minOffset,
+			maxOffset: atom.maxOffset,
+		}
 		if _, exists := seen[key]; exists {
 			continue
 		}
 		seen[key] = struct{}{}
-		atoms = append(atoms, regexPrefilterAtom{
-			data:      atom.data,
-			minOffset: offset,
-			maxOffset: offset,
-			score:     atom.score,
-		})
+		atoms = append(atoms, atom)
 	}
 	return atoms, len(atoms) > 0
 }

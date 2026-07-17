@@ -128,3 +128,53 @@ func TestLiteralAlternativesRejectsIncompleteCoverage(t *testing.T) {
 		})
 	}
 }
+
+func TestAlternativeMandatoryLiteralAtoms(t *testing.T) {
+	parsed, err := NewParser(ParserFlagEnableStrictEscapeSequences).Parse(
+		"(cardholder|card[-_ ]?holder|nameoncard|name[-_ ]on[-_ ]card)\\b",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	alternatives := AlternativeMandatoryLiteralAtoms(parsed)
+	if len(alternatives) != 4 {
+		t.Fatalf("alternative groups = %+v, want 4", alternatives)
+	}
+	foundVariableOffset := false
+	for branch, atoms := range alternatives {
+		foundUseful := false
+		for _, atom := range atoms {
+			if len(atom.Data) >= 2 && atom.MaxOffset >= 0 {
+				foundUseful = true
+			}
+			if atom.MaxOffset > atom.MinOffset {
+				foundVariableOffset = true
+			}
+		}
+		if !foundUseful {
+			t.Errorf("branch %d has no useful bounded atom: %+v", branch, atoms)
+		}
+	}
+	if !foundVariableOffset {
+		t.Fatal("expected at least one variable-offset branch atom")
+	}
+}
+
+func TestAlternativeMandatoryLiteralAtomsRequiresEveryBranch(t *testing.T) {
+	for _, pattern := range []string{
+		"prefix(foo|bar)",
+		"(foo|bar)suffix",
+		"(foo|[a-z]+)",
+		"foo",
+	} {
+		t.Run(pattern, func(t *testing.T) {
+			parsed, err := NewParser(ParserFlagEnableStrictEscapeSequences).Parse(pattern)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := AlternativeMandatoryLiteralAtoms(parsed); got != nil {
+				t.Fatalf("AlternativeMandatoryLiteralAtoms(%q) = %+v, want nil", pattern, got)
+			}
+		})
+	}
+}

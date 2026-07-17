@@ -45,6 +45,59 @@ func MandatoryLiteralAtoms(ast *AST) []LiteralAtom {
 // start. Mixed or variable branches return nil so callers never use a branch
 // atom as though it covered the whole regex language.
 func LiteralAlternatives(ast *AST) []LiteralAtom {
+	leaves := alternativeLeaves(ast)
+	if len(leaves) == 0 {
+		return nil
+	}
+
+	totalBytes := 0
+	alternatives := make([]LiteralAtom, 0, len(leaves))
+	for _, leaf := range leaves {
+		analysis := analyzeAtoms(leaf)
+		if !analysis.isExact || len(analysis.exact) == 0 {
+			return nil
+		}
+		totalBytes += len(analysis.exact)
+		if totalBytes > maxLiteralAlternativeBytes {
+			return nil
+		}
+		alternatives = append(alternatives, LiteralAtom{
+			Data:      append([]byte(nil), analysis.exact...),
+			MaxOffset: 0,
+		})
+	}
+	return alternatives
+}
+
+// AlternativeMandatoryLiteralAtoms returns one group of mandatory literals
+// for every branch when the entire consuming portion of ast is an
+// alternation. Callers must select at least one usable atom from every group;
+// omitting a group would make the candidate plan incomplete.
+func AlternativeMandatoryLiteralAtoms(ast *AST) [][]LiteralAtom {
+	leaves := alternativeLeaves(ast)
+	if len(leaves) == 0 {
+		return nil
+	}
+
+	totalBytes := 0
+	alternatives := make([][]LiteralAtom, 0, len(leaves))
+	for _, leaf := range leaves {
+		atoms := analyzeAtoms(leaf).atoms
+		if len(atoms) == 0 {
+			return nil
+		}
+		for _, atom := range atoms {
+			totalBytes += len(atom.Data)
+			if totalBytes > maxLiteralAlternativeBytes {
+				return nil
+			}
+		}
+		alternatives = append(alternatives, cloneLiteralAtoms(atoms))
+	}
+	return alternatives
+}
+
+func alternativeLeaves(ast *AST) []*Node {
 	if ast == nil || ast.Root == nil {
 		return nil
 	}
@@ -75,24 +128,7 @@ func LiteralAlternatives(ast *AST) []LiteralAtom {
 	if !appendAlternativeLeaves(&leaves, node) {
 		return nil
 	}
-
-	totalBytes := 0
-	alternatives := make([]LiteralAtom, 0, len(leaves))
-	for _, leaf := range leaves {
-		analysis := analyzeAtoms(leaf)
-		if !analysis.isExact || len(analysis.exact) == 0 {
-			return nil
-		}
-		totalBytes += len(analysis.exact)
-		if totalBytes > maxLiteralAlternativeBytes {
-			return nil
-		}
-		alternatives = append(alternatives, LiteralAtom{
-			Data:      append([]byte(nil), analysis.exact...),
-			MaxOffset: 0,
-		})
-	}
-	return alternatives
+	return leaves
 }
 
 func appendAlternativeLeaves(dst *[]*Node, node *Node) bool {
