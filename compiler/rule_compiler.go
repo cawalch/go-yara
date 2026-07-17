@@ -31,17 +31,36 @@ type RuleCompiler struct {
 	externalNames     []string
 	globalNames       []string
 	globalValues      map[string]compiledGlobalValue
+	moduleBindings    map[string]compiledModuleFunction
+	moduleFunctions   map[builtinFunction]ModuleFunction
+	moduleNames       map[builtinFunction]string
 }
 
 // NewRuleCompiler creates a new rule compiler
 func NewRuleCompiler() *RuleCompiler {
+	compiler, err := NewRuleCompilerWithModules(nil)
+	if err != nil {
+		panic(err)
+	}
+	return compiler
+}
+
+// NewRuleCompilerWithModules creates a rule compiler with pluggable module
+// functions available to dotted calls.
+func NewRuleCompilerWithModules(modules map[string]Module) (*RuleCompiler, error) {
 	emitter := NewEmitter()
 	automaton := NewACAutomaton()
+	bindings, functions, names, err := compileModuleFunctions(modules)
+	if err != nil {
+		return nil, err
+	}
+	conditionCompiler := NewConditionCompiler(emitter, make(map[string]int))
+	conditionCompiler.SetModuleFunctions(bindings)
 
 	return &RuleCompiler{
 		emitter:           emitter,
 		stringCompiler:    NewStringCompiler(emitter),
-		conditionCompiler: NewConditionCompiler(emitter, make(map[string]int)),
+		conditionCompiler: conditionCompiler,
 		automaton:         automaton,
 		ruleIndex:         0,
 		allPatterns:       make(map[string][]byte),
@@ -53,7 +72,10 @@ func NewRuleCompiler() *RuleCompiler {
 		externalNames:     make([]string, 0),
 		globalNames:       make([]string, 0),
 		globalValues:      make(map[string]compiledGlobalValue),
-	}
+		moduleBindings:    bindings,
+		moduleFunctions:   functions,
+		moduleNames:       names,
+	}, nil
 }
 
 // CompileRule compiles a complete YARA rule to bytecode
@@ -110,33 +132,81 @@ func (rc *RuleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 
 	// Create compiled rule
 	compiledRule := &CompiledRule{
-		Name:             rule.Name,
-		Index:            rc.ruleIndex,
-		Bytecode:         bytecode,
-		StringCount:      len(rule.Strings),
-		Strings:          rc.copyAllPatterns(),
-		Automaton:        rc.automaton,
-		StringSets:       rc.conditionCompiler.GetStringSets(),
-		TextStringSets:   rc.conditionCompiler.GetTextStringSets(),
-		AnonymousStrings: anonymousStrings,
-		StringLiterals:   rc.emitter.GetStringLiterals(),
-		StringKinds:      rc.copyStringKinds(),
-		StringModifiers:  rc.copyStringModifiers(),
-		TextPatterns:     rc.copyTextPatterns(),
-		RegexPatterns:    rc.copyRegexPatterns(),
-		HexPatterns:      rc.copyHexPatterns(),
-		Stats:            rc.snapshotCompilationStats(rule),
-		ExternalSlots:    maps.Clone(externalSlots),
-		GlobalSlots:      maps.Clone(globalSlots),
-		GlobalValues:     rc.copyGlobalValuesForSlots(globalSlots),
-		Tags:             rule.Tags,
-		Meta:             rc.compileMeta(rule.Meta),
-		IsGlobal:         rc.hasModifier(rule.Modifiers, ast.ModifierGlobal),
-		IsPrivate:        rc.hasModifier(rule.Modifiers, ast.ModifierPrivate),
+		Name:              rule.Name,
+		Index:             rc.ruleIndex,
+		Bytecode:          bytecode,
+		StringCount:       len(rule.Strings),
+		Strings:           rc.copyAllPatterns(),
+		Automaton:         rc.automaton,
+		StringSets:        rc.conditionCompiler.GetStringSets(),
+		TextStringSets:    rc.conditionCompiler.GetTextStringSets(),
+		AnonymousStrings:  anonymousStrings,
+		StringLiterals:    rc.emitter.GetStringLiterals(),
+		StringKinds:       rc.copyStringKinds(),
+		StringModifiers:   rc.copyStringModifiers(),
+		TextPatterns:      rc.copyTextPatterns(),
+		RegexPatterns:     rc.copyRegexPatterns(),
+		HexPatterns:       rc.copyHexPatterns(),
+		Stats:             rc.snapshotCompilationStats(rule),
+		ExternalSlots:     maps.Clone(externalSlots),
+		GlobalSlots:       maps.Clone(globalSlots),
+		GlobalValues:      rc.copyGlobalValuesForSlots(globalSlots),
+		Tags:              rule.Tags,
+		Meta:              rc.compileMeta(rule.Meta),
+		IsGlobal:          rc.hasModifier(rule.Modifiers, ast.ModifierGlobal),
+		IsPrivate:         rc.hasModifier(rule.Modifiers, ast.ModifierPrivate),
+		FastScanSafe:      !conditionObservesMatchOccurrences(rule.Condition),
+		ModuleFunctions:   maps.Clone(rc.moduleFunctions),
+		ModuleNames:       maps.Clone(rc.moduleNames),
+		HeaderConstraints: deriveHeaderConstraints(rule.Condition),
 	}
 
 	rc.ruleIndex++
 	return compiledRule, nil
+}
+
+func conditionObservesMatchOccurrences(expr ast.Expression) bool {
+	switch e := expr.(type) {
+	case nil, *ast.Literal, *ast.Identifier:
+		return false
+	case *ast.StringCount, *ast.StringOffset, *ast.StringLength, *ast.LengthOf:
+		return true
+	case *ast.BinaryOp:
+		if e.Op == token.AT || e.Op == token.IN {
+			return true
+		}
+		return conditionObservesMatchOccurrences(e.Left) || conditionObservesMatchOccurrences(e.Right)
+	case *ast.UnaryOp:
+		return conditionObservesMatchOccurrences(e.Right)
+	case *ast.FunctionCall:
+		for _, arg := range e.Args {
+			if conditionObservesMatchOccurrences(arg) {
+				return true
+			}
+		}
+		return false
+	case *ast.ForLoop:
+		if e.InRange != nil || e.AtOffset != nil {
+			return true
+		}
+		return conditionObservesMatchOccurrences(e.Range) || conditionObservesMatchOccurrences(e.Condition)
+	case *ast.OfExpression:
+		if e.InRange != nil || e.AtOffset != nil {
+			return true
+		}
+		return conditionObservesMatchOccurrences(e.Count) || conditionObservesMatchOccurrences(e.Strings)
+	case *ast.PercentExpression:
+		return conditionObservesMatchOccurrences(e.Value)
+	case *ast.StringTuple:
+		for _, element := range e.Elements {
+			if conditionObservesMatchOccurrences(element) {
+				return true
+			}
+		}
+		return false
+	default:
+		return true
+	}
 }
 
 // hasModifier checks if the rule has a specific modifier
@@ -610,6 +680,23 @@ func (rc *RuleCompiler) compileCondition(rule *ast.Rule) error {
 	return nil
 }
 
+// RuleCompileError identifies a code-generation failure for one rule. It lets
+// resilient compilation omit that rule and its dependents without hiding
+// program-level code-generation failures.
+type RuleCompileError struct {
+	Rule string
+	Err  error
+}
+
+func (e *RuleCompileError) Error() string {
+	return fmt.Sprintf("compiling rule %s: %v", e.Rule, e.Err)
+}
+
+// Unwrap returns the underlying code-generation error.
+func (e *RuleCompileError) Unwrap() error {
+	return e.Err
+}
+
 // CompileProgram compiles a complete YARA program (multiple rules)
 func (rc *RuleCompiler) CompileProgram(program *ast.Program) ([]*CompiledRule, error) {
 	compiledRules := make([]*CompiledRule, 0, len(program.Rules))
@@ -641,7 +728,7 @@ func (rc *RuleCompiler) CompileProgram(program *ast.Program) ([]*CompiledRule, e
 	for _, rule := range program.Rules {
 		compiledRule, err := rc.CompileRule(rule)
 		if err != nil {
-			return nil, fmt.Errorf("compiling rule %s: %w", rule.Name, err)
+			return nil, &RuleCompileError{Rule: rule.Name, Err: err}
 		}
 		compiledRules = append(compiledRules, compiledRule)
 	}
@@ -1008,6 +1095,12 @@ type CompiledRule struct {
 	Meta      map[string]any // Meta key-value pairs
 	IsGlobal  bool           // Rule is marked as global
 	IsPrivate bool           // Rule is marked as private
+	// FastScanSafe is true when the condition only observes whether strings
+	// matched, not occurrence counts, offsets, lengths, or constrained ranges.
+	FastScanSafe      bool
+	ModuleFunctions   map[builtinFunction]ModuleFunction
+	ModuleNames       map[builtinFunction]string
+	HeaderConstraints []HeaderConstraint
 }
 
 // GetName returns the rule name
@@ -1199,6 +1292,7 @@ type CompiledProgram struct {
 	// Number of compile-time integer slots used to cache regex/hex matches.
 	nonTextCacheSize int
 	fixedRegexScan   *fixedRegexDispatch
+	dependencies     map[string][]string
 
 	// Streaming support
 	streamingProcessor *StreamingProcessor
@@ -1212,6 +1306,34 @@ func NewCompiledProgram(rules []*CompiledRule) *CompiledProgram {
 		Stats:           make(map[string]any),
 		enableStreaming: false, // Disabled by default for backward compatibility
 	}
+}
+
+// RuleDependencies returns the direct rule references made by name. The
+// returned slice is sorted and independent of the program's internal state.
+func (cp *CompiledProgram) RuleDependencies(name string) []string {
+	return slices.Clone(cp.dependencies[name])
+}
+
+// RuleDependents returns the rules that directly reference name. The returned
+// slice is sorted and independent of the program's internal state.
+func (cp *CompiledProgram) RuleDependents(name string) []string {
+	dependents := make([]string, 0)
+	for rule, dependencies := range cp.dependencies {
+		if slices.Contains(dependencies, name) {
+			dependents = append(dependents, rule)
+		}
+	}
+	slices.Sort(dependents)
+	return dependents
+}
+
+// DependencyGraph returns all direct rule-to-rule dependencies.
+func (cp *CompiledProgram) DependencyGraph() map[string][]string {
+	graph := make(map[string][]string, len(cp.dependencies))
+	for rule, dependencies := range cp.dependencies {
+		graph[rule] = slices.Clone(dependencies)
+	}
+	return graph
 }
 
 // SetExternalVariables replaces runtime values for declared external variables.

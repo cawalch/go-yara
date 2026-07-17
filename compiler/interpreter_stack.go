@@ -145,7 +145,61 @@ func (i *Interpreter) executeCall() error {
 	case builtinSHA256:
 		return i.executeBuiltinSHA256(args)
 	default:
+		if i.currentCompiledRule != nil {
+			if moduleFunction, ok := i.currentCompiledRule.ModuleFunctions[fn]; ok {
+				return i.executeModuleFunction(moduleFunction, args)
+			}
+		}
 		return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: OpCall, Message: "unknown builtin"}
+	}
+}
+
+func (i *Interpreter) executeModuleFunction(function ModuleFunction, args []Value) error {
+	moduleArgs := make([]ModuleValue, len(args))
+	for index, arg := range args {
+		switch arg.Type {
+		case ValueTypeInt:
+			moduleArgs[index] = IntegerValue(arg.IntVal)
+		case ValueTypeDouble:
+			moduleArgs[index] = FloatValue(arg.DoubleVal)
+		case ValueTypeString:
+			moduleArgs[index] = StringValue(i.getString(arg))
+		case ValueTypeUndefined:
+			moduleArgs[index] = ModuleValue{Type: ModuleUndefined}
+		default:
+			return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpCall, Message: "unsupported module argument type"}
+		}
+	}
+
+	ctx := ModuleContext{RuleName: i.currentRule}
+	if i.matchContext != nil {
+		ctx.Data = i.matchContext.Data
+		ctx.Blocks = i.matchContext.Blocks
+	}
+	result, err := function.Evaluate(ctx, moduleArgs)
+	if err != nil {
+		return &InterpreterError{Type: ErrorRuntime, Opcode: OpCall, Message: err.Error()}
+	}
+	if result.Type != function.ReturnType {
+		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpCall, Message: "module returned an unexpected value type"}
+	}
+
+	switch result.Type {
+	case ModuleInteger:
+		return i.push(Value{Type: ValueTypeInt, IntVal: result.Integer})
+	case ModuleFloat:
+		return i.push(Value{Type: ValueTypeDouble, DoubleVal: result.Float})
+	case ModuleString:
+		return i.pushString(result.String)
+	case ModuleBoolean:
+		if result.Boolean {
+			return i.push(Value{Type: ValueTypeInt, IntVal: 1})
+		}
+		return i.push(Value{Type: ValueTypeInt, IntVal: 0})
+	case ModuleUndefined:
+		return i.push(Value{Type: ValueTypeUndefined})
+	default:
+		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpCall, Message: "unsupported module return type"}
 	}
 }
 
@@ -248,15 +302,14 @@ func (i *Interpreter) extractHashInput(args []Value) ([]byte, error) {
 		if args[0].IntVal < 0 || args[1].IntVal < 0 {
 			return nil, fmt.Errorf("hash range must be non-negative")
 		}
-		if i.matchContext == nil || i.matchContext.Data == nil {
+		if i.matchContext == nil {
 			return nil, fmt.Errorf("hash functions require data context")
 		}
-		start := int(args[0].IntVal)
-		size := int(args[1].IntVal)
-		if start > len(i.matchContext.Data) || start+size > len(i.matchContext.Data) {
+		data, ok := i.matchContext.dataRange(args[0].IntVal, args[1].IntVal)
+		if !ok {
 			return nil, fmt.Errorf("hash range out of bounds")
 		}
-		return i.matchContext.Data[start : start+size], nil
+		return data, nil
 	default:
 		return nil, fmt.Errorf("hash functions expect 1 or 2 arguments")
 	}

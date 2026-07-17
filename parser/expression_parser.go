@@ -221,6 +221,11 @@ func (p *ExpressionParser) parsePrimary() (ast.Expression, error) {
 	}
 
 	// Handle string operations (!, @, #)
+	// The lexer uses HASH for both the # string-count operator and the "hash"
+	// module namespace. Dotted access disambiguates the module form.
+	if p.currentTokenIs(token.HASH) && p.current.Literal == "hash" && p.peekTokenIs(token.DOT) {
+		return p.parseIdentifier()
+	}
 	if p.currentTokenIs(token.StringLength) || p.currentTokenIs(token.AT) || p.currentTokenIs(token.HASH) {
 		return p.parseStringOperation()
 	}

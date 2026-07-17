@@ -33,6 +33,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -40,7 +41,6 @@ import (
 	"github.com/cawalch/go-yara/internal/lexer"
 	"github.com/cawalch/go-yara/parser"
 	"github.com/cawalch/go-yara/semantic"
-	"github.com/cawalch/go-yara/token"
 	"github.com/cawalch/go-yara/utils/fs"
 )
 
@@ -77,7 +77,9 @@ type CompilationOptions struct {
 	EnableOptimizations bool   // Enable bytecode optimizations (default: true)
 	EnableDebugInfo     bool   // Include debug information in bytecode (default: false)
 	EnableWarnings      bool   // Collect and report compilation warnings (default: true)
+	IgnoreInvalidRules  bool   // Compile valid rules while reporting invalid rules (default: false)
 	TargetVersion       string // Target YARA version compatibility (default: "latest")
+	Modules             map[string]Module
 
 	// Security limits to prevent resource exhaustion attacks
 	MaxInputSize      int64 // Maximum input file size in bytes (0 = no limit, default: 10MB)
@@ -99,6 +101,7 @@ type CompilationStats struct {
 	TotalBytecodeSize int
 	Errors            []CompilationError
 	Warnings          []CompilationWarning
+	IgnoredRules      []IgnoredRule
 }
 
 // CompilationError represents a compilation error
@@ -111,10 +114,33 @@ type CompilationError struct {
 
 // CompilationWarning represents a compilation warning
 type CompilationWarning struct {
+	Code    string
 	Phase   string
 	Message string
+	Rule    string
+	String  string
 	Line    int
 	Column  int
+}
+
+const (
+	WarningUnusedString     = "unused-string"
+	WarningMissingCondition = "missing-condition"
+	WarningTrivialCondition = "trivial-condition"
+	WarningDuplicatePattern = "duplicate-pattern"
+	WarningSlowPattern      = "slow-pattern"
+)
+
+// IgnoredRule describes a rule omitted from an otherwise successful
+// compilation when WithIgnoreInvalidRules is enabled.
+type IgnoredRule struct {
+	Rule       string
+	Phase      string
+	Message    string
+	Dependency string
+	Global     bool
+	Line       int
+	Column     int
 }
 
 // Option represents a functional option for configuring a Compiler
@@ -141,7 +167,9 @@ func NewCompiler(opts ...Option) *Compiler {
 		EnableOptimizations: true,
 		EnableDebugInfo:     false,
 		EnableWarnings:      true,
+		IgnoreInvalidRules:  false,
 		TargetVersion:       "1.0",
+		Modules:             defaultModules(),
 		MaxInputSize:        100 * 1024 * 1024, // 100MB default
 		MaxIncludeSize:      10 * 1024 * 1024,  // 10MB default
 		MaxRecursionDepth:   1000,              // 1000 levels default
@@ -155,8 +183,9 @@ func NewCompiler(opts ...Option) *Compiler {
 	return &Compiler{
 		options: options,
 		stats: CompilationStats{
-			Errors:   make([]CompilationError, 0),
-			Warnings: make([]CompilationWarning, 0),
+			Errors:       make([]CompilationError, 0),
+			Warnings:     make([]CompilationWarning, 0),
+			IgnoredRules: make([]IgnoredRule, 0),
 		},
 	}
 }
@@ -197,6 +226,27 @@ func WithWarnings(enabled bool) Option {
 	}
 }
 
+// WithIgnoreInvalidRules compiles rules that pass parsing and semantic
+// validation while reporting omitted rules through GetIgnoredRules. Rules that
+// depend on an omitted rule are omitted as well. Strict compilation remains
+// the default.
+func WithIgnoreInvalidRules(enabled bool) Option {
+	return func(opts *CompilationOptions) {
+		opts.IgnoreInvalidRules = enabled
+	}
+}
+
+// WithModule registers or replaces a pluggable module. The module name is the
+// namespace used by import statements and dotted function calls.
+func WithModule(module Module) Option {
+	return func(opts *CompilationOptions) {
+		if opts.Modules == nil {
+			opts.Modules = make(map[string]Module)
+		}
+		opts.Modules[module.Name] = module
+	}
+}
+
 // WithMaxInputSize sets the maximum input file size limit (0 = no limit)
 func WithMaxInputSize(size int64) Option {
 	return func(opts *CompilationOptions) {
@@ -221,18 +271,15 @@ func (c *Compiler) CompileSourceWithContext(ctx context.Context, source string) 
 	}
 
 	c.stats = CompilationStats{
-		StartTime: time.Now(),
-		Errors:    make([]CompilationError, 0),
-		Warnings:  make([]CompilationWarning, 0),
+		StartTime:    time.Now(),
+		Errors:       make([]CompilationError, 0),
+		Warnings:     make([]CompilationWarning, 0),
+		IgnoredRules: make([]IgnoredRule, 0),
 	}
 
 	// Validate input size to prevent DoS attacks
 	if c.options.MaxInputSize > 0 && int64(len(source)) > c.options.MaxInputSize {
 		return nil, fmt.Errorf("input size %d bytes exceeds maximum allowed %d bytes", len(source), c.options.MaxInputSize)
-	}
-
-	if err := c.rejectUnsupportedModuleReferences(source); err != nil {
-		return nil, err
 	}
 
 	// Phase 1: Parsing (parser creates its own lexer, no need for separate lexical analysis)
@@ -314,38 +361,6 @@ func (c *Compiler) CompileFileWithContext(ctx context.Context, filename string) 
 	return c.CompileSourceWithContext(ctx, source)
 }
 
-func (c *Compiler) rejectUnsupportedModuleReferences(source string) error {
-	lex := lexer.New(source)
-	prev := token.Token{Type: token.EOF}
-
-	for tok := lex.NextToken(); tok.Type != token.EOF; tok = lex.NextToken() {
-		if tok.Type == token.DOT && isUnsupportedModuleReferenceStart(prev) {
-			message := "unsupported module: " + prev.Literal
-			c.stats.Errors = append(c.stats.Errors, CompilationError{
-				Phase:   "semantic",
-				Message: message,
-				Line:    prev.Pos.Line,
-				Column:  prev.Pos.Column,
-			})
-			return errors.New(message)
-		}
-		prev = tok
-	}
-
-	return nil
-}
-
-func isUnsupportedModuleReferenceStart(tok token.Token) bool {
-	switch tok.Type {
-	case token.IDENTIFIER:
-		return tok.Literal != ""
-	case token.HASH:
-		return tok.Literal == "hash"
-	default:
-		return false
-	}
-}
-
 // compileParseWithContext performs parsing with context support
 func (c *Compiler) compileParseWithContext(ctx context.Context, source string) (*ast.Program, error) {
 	start := time.Now()
@@ -365,17 +380,28 @@ func (c *Compiler) compileParseWithContext(ctx context.Context, source string) (
 	c.parser = parser.NewWithOptions(freshLexer, parser.Options{
 		MaxRecursionDepth: c.options.MaxRecursionDepth,
 	})
+	if c.options.IgnoreInvalidRules {
+		c.parser.SetErrorRecovery(true)
+		c.parser.SetSkipInvalidRules(true)
+	}
 
 	// Parse with context support
 	program, err := c.parser.ParseRulesWithContext(ctx)
 	if err != nil {
-		c.stats.Errors = append(c.stats.Errors, CompilationError{
-			Phase:   "parsing",
-			Message: err.Error(),
-			Line:    0,
-			Column:  0,
-		})
-		return nil, fmt.Errorf("parsing rules: %w", err)
+		var partialErr *parser.PartialParseError
+		if !c.options.IgnoreInvalidRules || !errors.As(err, &partialErr) || len(c.parser.ProgramErrors()) != 0 {
+			c.stats.Errors = append(c.stats.Errors, CompilationError{
+				Phase:   "parsing",
+				Message: err.Error(),
+				Line:    0,
+				Column:  0,
+			})
+			return nil, fmt.Errorf("parsing rules: %w", err)
+		}
+		program = partialErr.Program
+		for _, invalid := range c.parser.InvalidRules() {
+			c.recordParseInvalidRule(invalid)
+		}
 	}
 
 	// Process includes - resolve and parse included files
@@ -395,7 +421,7 @@ func (c *Compiler) compileParseWithContext(ctx context.Context, source string) (
 	c.stats.ParserTime = time.Since(start)
 
 	// Check for parser errors
-	if len(c.parser.Errors()) > 0 {
+	if len(c.parser.Errors()) > 0 && !c.options.IgnoreInvalidRules {
 		for _, err := range c.parser.Errors() {
 			c.stats.Errors = append(c.stats.Errors, CompilationError{
 				Phase:   "parsing",
@@ -410,6 +436,176 @@ func (c *Compiler) compileParseWithContext(ctx context.Context, source string) (
 	return program, nil
 }
 
+func (c *Compiler) recordParseInvalidRule(invalid parser.InvalidRule) {
+	ignored := IgnoredRule{
+		Phase:   "parsing",
+		Message: "rule contains parse errors",
+	}
+	if invalid.Rule != nil {
+		ignored.Rule = invalid.Rule.Name
+		ignored.Line = invalid.Rule.Pos.Line
+		ignored.Column = invalid.Rule.Pos.Column
+		ignored.Global = ruleHasModifier(invalid.Rule, ast.ModifierGlobal)
+	}
+	if len(invalid.Errors) > 0 {
+		ignored.Message = invalid.Errors[0].Error()
+	}
+	c.recordIgnoredRule(ignored)
+}
+
+func (c *Compiler) recordIgnoredRule(ignored IgnoredRule) {
+	for _, existing := range c.stats.IgnoredRules {
+		if existing.Rule == ignored.Rule {
+			return
+		}
+	}
+	c.stats.IgnoredRules = append(c.stats.IgnoredRules, ignored)
+}
+
+func (c *Compiler) ignoredRuleNames() []string {
+	names := make([]string, 0, len(c.stats.IgnoredRules))
+	for _, ignored := range c.stats.IgnoredRules {
+		if ignored.Rule != "" {
+			names = append(names, ignored.Rule)
+		}
+	}
+	return names
+}
+
+func (c *Compiler) ignoredRuleNameSet() map[string]bool {
+	ignored := make(map[string]bool, len(c.stats.IgnoredRules))
+	for _, rule := range c.stats.IgnoredRules {
+		if rule.Rule != "" {
+			ignored[rule.Rule] = true
+		}
+	}
+	return ignored
+}
+
+func (c *Compiler) removeSemanticallyInvalidRules(program *ast.Program, validationErrors []error) error {
+	for len(validationErrors) > 0 {
+		ruleErrors := make(map[string]*semantic.Error)
+		var programErrors []error
+		for _, err := range validationErrors {
+			semanticErr, ok := err.(*semantic.Error)
+			if !ok || semanticErr.Rule == "" {
+				programErrors = append(programErrors, err)
+				continue
+			}
+			if _, exists := ruleErrors[semanticErr.Rule]; !exists {
+				ruleErrors[semanticErr.Rule] = semanticErr
+			}
+		}
+
+		if len(programErrors) > 0 {
+			for _, err := range programErrors {
+				c.stats.Errors = append(c.stats.Errors, CompilationError{
+					Phase:   "semantic",
+					Message: err.Error(),
+				})
+			}
+			return fmt.Errorf("%d program-level semantic errors: first: %w", len(programErrors), programErrors[0])
+		}
+		if len(ruleErrors) == 0 {
+			return errors.New("semantic validation failed without an attributable rule error")
+		}
+
+		for _, rule := range program.Rules {
+			semanticErr, invalid := ruleErrors[rule.Name]
+			if !invalid {
+				continue
+			}
+			c.recordIgnoredRule(IgnoredRule{
+				Rule:    rule.Name,
+				Phase:   "semantic",
+				Message: semanticErr.Message,
+				Global:  ruleHasModifier(rule, ast.ModifierGlobal),
+				Line:    semanticErr.Position.Line,
+				Column:  semanticErr.Position.Column,
+			})
+		}
+
+		c.propagateIgnoredRuleDependencies(program)
+		program.Rules = filterIgnoredRules(program.Rules, c.ignoredRuleNameSet())
+		validationErrors = c.analyzer.ValidateProgram(program)
+	}
+	return nil
+}
+
+func (c *Compiler) propagateIgnoredRuleDependencies(program *ast.Program) {
+	dependencies := semantic.RuleDependencies(program, c.ignoredRuleNames()...)
+	ignored := c.ignoredRuleNameSet()
+
+	for {
+		changed := false
+		globalDependency := ""
+		for _, ignoredRule := range c.stats.IgnoredRules {
+			if ignoredRule.Global {
+				globalDependency = ignoredRule.Rule
+				break
+			}
+		}
+
+		for _, rule := range program.Rules {
+			if ignored[rule.Name] {
+				continue
+			}
+
+			dependency := ""
+			if globalDependency != "" {
+				dependency = globalDependency
+			} else {
+				for _, candidate := range dependencies[rule.Name] {
+					if ignored[candidate] {
+						dependency = candidate
+						break
+					}
+				}
+			}
+			if dependency == "" {
+				continue
+			}
+
+			c.recordIgnoredRule(IgnoredRule{
+				Rule:       rule.Name,
+				Phase:      "dependency",
+				Message:    fmt.Sprintf("depends on ignored rule %q", dependency),
+				Dependency: dependency,
+				Global:     ruleHasModifier(rule, ast.ModifierGlobal),
+				Line:       rule.Pos.Line,
+				Column:     rule.Pos.Column,
+			})
+			ignored[rule.Name] = true
+			changed = true
+		}
+		if !changed {
+			return
+		}
+	}
+}
+
+func filterIgnoredRules(rules []*ast.Rule, ignored map[string]bool) []*ast.Rule {
+	filtered := make([]*ast.Rule, 0, len(rules))
+	for _, rule := range rules {
+		if !ignored[rule.Name] {
+			filtered = append(filtered, rule)
+		}
+	}
+	return filtered
+}
+
+func ruleHasModifier(rule *ast.Rule, modifier ast.Modifier) bool {
+	if rule == nil {
+		return false
+	}
+	for _, candidate := range rule.Modifiers {
+		if candidate == modifier {
+			return true
+		}
+	}
+	return false
+}
+
 // compileSemanticWithContext performs semantic analysis with context support
 func (c *Compiler) compileSemanticWithContext(ctx context.Context, program *ast.Program) error {
 	start := time.Now()
@@ -422,10 +618,16 @@ func (c *Compiler) compileSemanticWithContext(ctx context.Context, program *ast.
 	}
 
 	// Create semantic analyzer
-	c.analyzer = semantic.NewValidator()
+	c.analyzer = semantic.NewValidatorWithModules(semanticModuleFunctions(c.options.Modules))
 
 	// Analyze - ValidateProgram returns errors, not error
 	errs := c.analyzer.ValidateProgram(program)
+	if len(errs) > 0 && c.options.IgnoreInvalidRules {
+		if err := c.removeSemanticallyInvalidRules(program, errs); err != nil {
+			return err
+		}
+		errs = nil
+	}
 	if len(errs) > 0 {
 		for _, err := range errs {
 			c.stats.Errors = append(c.stats.Errors, CompilationError{
@@ -470,6 +672,10 @@ func (c *Compiler) collectRuleWarnings(rule *ast.Rule) {
 
 	// Check for potentially problematic patterns
 	c.checkProblematicPatterns(rule)
+
+	// Duplicate patterns waste compilation and matching work, and often signal
+	// a copy/paste error in a rule.
+	c.checkDuplicatePatterns(rule)
 }
 
 // checkUnusedStrings warns about strings that are defined but never used
@@ -484,15 +690,16 @@ func (c *Compiler) checkUnusedStrings(rule *ast.Rule) {
 
 	// Check for unused strings
 	for _, str := range rule.Strings {
-		if !referenced[str.Identifier] {
+		if !stringIsReferenced(str.Identifier, referenced) {
 			// YARA spec: strings prefixed with $_ suppress the unreferenced warning
 			if len(str.Identifier) >= 2 && str.Identifier[:2] == "$_" {
 				continue
 			}
-			c.AddWarning("semantic",
-				fmt.Sprintf("String '%s' is defined but never used in condition", str.Identifier),
-				rule.Pos.Line,
-				rule.Pos.Column)
+			c.addRuleWarning(CompilationWarning{
+				Code: WarningUnusedString, Phase: "semantic",
+				Message: fmt.Sprintf("String '%s' is defined but never used in condition", str.Identifier),
+				Rule:    rule.Name, String: str.Identifier, Line: str.Pos.Line, Column: str.Pos.Column,
+			})
 		}
 	}
 }
@@ -506,14 +713,19 @@ func (c *Compiler) collectReferencedStrings(expr ast.Expression, referenced map[
 	switch e := expr.(type) {
 	case *ast.Identifier:
 		// This could be a string reference
-		if len(e.Name) > 0 && e.Name[0] == '$' {
-			referenced[e.Name] = true
+		if e.Name == "them" {
+			referenced["*"] = true
+		} else if len(e.Name) > 0 && e.Name[0] == '$' {
+			referenced[e.Name+e.Quantifier] = true
 		}
 	case *ast.OfExpression:
 		// Check strings in "of" expressions
 		if e.Strings != nil {
 			c.collectReferencedStrings(e.Strings, referenced)
 		}
+		c.collectReferencedStrings(e.Count, referenced)
+		c.collectReferencedStrings(e.InRange, referenced)
+		c.collectReferencedStrings(e.AtOffset, referenced)
 	case *ast.BinaryOp:
 		c.collectReferencedStrings(e.Left, referenced)
 		c.collectReferencedStrings(e.Right, referenced)
@@ -524,17 +736,52 @@ func (c *Compiler) collectReferencedStrings(expr ast.Expression, referenced map[
 		for _, arg := range e.Args {
 			c.collectReferencedStrings(arg, referenced)
 		}
+	case *ast.StringCount:
+		c.collectReferencedStrings(e.String, referenced)
+		c.collectReferencedStrings(e.Index, referenced)
+	case *ast.StringOffset:
+		c.collectReferencedStrings(e.String, referenced)
+		c.collectReferencedStrings(e.Index, referenced)
+	case *ast.StringLength:
+		c.collectReferencedStrings(e.String, referenced)
+		c.collectReferencedStrings(e.Index, referenced)
+	case *ast.LengthOf:
+		c.collectReferencedStrings(e.Target, referenced)
+	case *ast.ForLoop:
+		c.collectReferencedStrings(e.Range, referenced)
+		c.collectReferencedStrings(e.Condition, referenced)
+		c.collectReferencedStrings(e.InRange, referenced)
+		c.collectReferencedStrings(e.AtOffset, referenced)
+	case *ast.PercentExpression:
+		c.collectReferencedStrings(e.Value, referenced)
+	case *ast.StringTuple:
+		for _, element := range e.Elements {
+			c.collectReferencedStrings(element, referenced)
+		}
 	}
+}
+
+func stringIsReferenced(id string, referenced map[string]bool) bool {
+	if referenced["*"] || referenced[id] {
+		return true
+	}
+	for pattern := range referenced {
+		if strings.HasSuffix(pattern, "*") && strings.HasPrefix(id, strings.TrimSuffix(pattern, "*")) {
+			return true
+		}
+	}
+	return false
 }
 
 // checkEmptyRule warns about rules with empty conditions
 func (c *Compiler) checkEmptyRule(rule *ast.Rule) {
 	// This is a basic check - could be expanded
 	if rule.Condition == nil {
-		c.AddWarning("semantic",
-			fmt.Sprintf("Rule '%s' has no condition", rule.Name),
-			rule.Pos.Line,
-			rule.Pos.Column)
+		c.addRuleWarning(CompilationWarning{
+			Code: WarningMissingCondition, Phase: "semantic",
+			Message: fmt.Sprintf("Rule '%s' has no condition", rule.Name),
+			Rule:    rule.Name, Line: rule.Pos.Line, Column: rule.Pos.Column,
+		})
 	}
 }
 
@@ -542,11 +789,119 @@ func (c *Compiler) checkEmptyRule(rule *ast.Rule) {
 func (c *Compiler) checkProblematicPatterns(rule *ast.Rule) {
 	// Check for rules with only trivial conditions
 	if c.isTrivialCondition(rule.Condition) {
-		c.AddWarning("semantic",
-			fmt.Sprintf("Rule '%s' has a trivial condition that may always be true", rule.Name),
-			rule.Pos.Line,
-			rule.Pos.Column)
+		c.addRuleWarning(CompilationWarning{
+			Code: WarningTrivialCondition, Phase: "semantic",
+			Message: fmt.Sprintf("Rule '%s' has a trivial condition that may always be true", rule.Name),
+			Rule:    rule.Name, Line: rule.Pos.Line, Column: rule.Pos.Column,
+		})
 	}
+}
+
+func (c *Compiler) checkDuplicatePatterns(rule *ast.Rule) {
+	seen := make(map[string]string, len(rule.Strings))
+	for _, str := range rule.Strings {
+		signature := patternSignature(str)
+		if original, duplicate := seen[signature]; duplicate {
+			c.addRuleWarning(CompilationWarning{
+				Code: WarningDuplicatePattern, Phase: "semantic",
+				Message: fmt.Sprintf("String '%s' duplicates pattern from '%s'", str.Identifier, original),
+				Rule:    rule.Name, String: str.Identifier, Line: str.Pos.Line, Column: str.Pos.Column,
+			})
+			continue
+		}
+		seen[signature] = str.Identifier
+	}
+}
+
+func patternSignature(str *ast.String) string {
+	if str == nil || str.Pattern == nil {
+		return ""
+	}
+	kind := "unknown"
+	value := ""
+	switch pattern := str.Pattern.(type) {
+	case *ast.TextString:
+		kind, value = "text", pattern.Value
+	case *ast.RegexPattern:
+		kind, value = "regex", pattern.Value
+	case *ast.HexString:
+		kind, value = "hex", strings.Join(strings.Fields(pattern.Value), " ")
+	}
+	modifiers := make([]string, 0, len(str.Modifiers))
+	for _, modifier := range str.Modifiers {
+		modifiers = append(modifiers, fmt.Sprintf("%d=%v", modifier.Type, modifier.Value))
+	}
+	slices.Sort(modifiers)
+	return kind + "\x00" + value + "\x00" + strings.Join(modifiers, ",")
+}
+
+func (c *Compiler) collectCompiledPatternWarnings(program *ast.Program, compiledRules []*CompiledRule) {
+	astRules := make(map[string]*ast.Rule, len(program.Rules))
+	for _, rule := range program.Rules {
+		astRules[rule.Name] = rule
+	}
+
+	for _, rule := range compiledRules {
+		for _, id := range rule.StringIdentifiers() {
+			reason := slowPatternReason(rule, id)
+			if reason == "" {
+				continue
+			}
+			line, column := 0, 0
+			if sourceRule := astRules[rule.Name]; sourceRule != nil {
+				if sourceString := findASTString(sourceRule.Strings, id); sourceString != nil {
+					line, column = sourceString.Pos.Line, sourceString.Pos.Column
+				}
+			}
+			c.addRuleWarning(CompilationWarning{
+				Code: WarningSlowPattern, Phase: "performance",
+				Message: fmt.Sprintf("String '%s' %s and may slow scanning", id, reason),
+				Rule:    rule.Name, String: id, Line: line, Column: column,
+			})
+		}
+	}
+}
+
+func slowPatternReason(rule *CompiledRule, id string) string {
+	switch rule.StringKinds[id] {
+	case StringKindText:
+		if len(rule.TextPatterns[id]) < 3 {
+			return "is shorter than three bytes"
+		}
+	case StringKindRegex:
+		pattern, ok := rule.RegexPatterns[id]
+		if !ok || pattern.anchored {
+			return ""
+		}
+		if len(pattern.prefix) >= 2 || len(pattern.atom) >= 2 || pattern.leadingGap != nil {
+			return ""
+		}
+		for _, atom := range pattern.alternativeAtoms {
+			if len(atom.data) >= 2 {
+				return ""
+			}
+		}
+		return "has no selective literal prefilter"
+	case StringKindHex:
+		pattern := rule.HexPatterns[id]
+		if pattern == nil {
+			return ""
+		}
+		atom, ok := selectHexAtom(pattern.Tokens)
+		if !ok || len(atom.data) < 2 {
+			return "has no selective two-byte atom"
+		}
+	}
+	return ""
+}
+
+func findASTString(strings []*ast.String, id string) *ast.String {
+	for _, str := range strings {
+		if str.Identifier == id {
+			return str
+		}
+	}
+	return nil
 }
 
 // isTrivialCondition checks if a condition is overly simple (e.g., just "true")
@@ -570,12 +925,39 @@ func (c *Compiler) compileCodeGenWithContext(ctx context.Context, program *ast.P
 	default:
 	}
 
-	// Create code generator
-	c.generator = NewRuleCompiler()
+	var compiledRules []*CompiledRule
+	for {
+		generator, moduleErr := NewRuleCompilerWithModules(c.options.Modules)
+		if moduleErr != nil {
+			return nil, fmt.Errorf("configuring modules: %w", moduleErr)
+		}
+		c.generator = generator
 
-	// Generate code - CompileProgram returns []*CompiledRule
-	compiledRules, err := c.generator.CompileProgram(program)
-	if err != nil {
+		var err error
+		compiledRules, err = c.generator.CompileProgram(program)
+		if err == nil {
+			break
+		}
+
+		var ruleErr *RuleCompileError
+		if c.options.IgnoreInvalidRules && errors.As(err, &ruleErr) {
+			rule := findRule(program.Rules, ruleErr.Rule)
+			if rule == nil {
+				return nil, fmt.Errorf("code generation identified unknown rule %q: %w", ruleErr.Rule, err)
+			}
+			c.recordIgnoredRule(IgnoredRule{
+				Rule:    rule.Name,
+				Phase:   "codegen",
+				Message: ruleErr.Err.Error(),
+				Global:  ruleHasModifier(rule, ast.ModifierGlobal),
+				Line:    rule.Pos.Line,
+				Column:  rule.Pos.Column,
+			})
+			c.propagateIgnoredRuleDependencies(program)
+			program.Rules = filterIgnoredRules(program.Rules, c.ignoredRuleNameSet())
+			continue
+		}
+
 		c.stats.Errors = append(c.stats.Errors, CompilationError{
 			Phase:   "codegen",
 			Message: err.Error(),
@@ -594,6 +976,7 @@ func (c *Compiler) compileCodeGenWithContext(ctx context.Context, program *ast.P
 
 	// Wrap in CompiledProgram
 	compiledProgram := NewCompiledProgram(compiledRules)
+	compiledProgram.dependencies = semantic.RuleDependencies(program)
 	compiledProgram.nonTextCacheSize = assignNonTextCacheIndices(compiledRules)
 	compiledProgram.fixedRegexScan = buildFixedRegexDispatch(compiledRules)
 
@@ -604,6 +987,9 @@ func (c *Compiler) compileCodeGenWithContext(ctx context.Context, program *ast.P
 	}
 	compiledProgram.SetSharedAutomaton(sharedAutomaton)
 	compiledProgram.SharedLookup = sharedLookup
+	if c.options.EnableWarnings {
+		c.collectCompiledPatternWarnings(program, compiledRules)
+	}
 
 	// Update statistics (check for cancellation before expensive operations)
 	select {
@@ -617,6 +1003,15 @@ func (c *Compiler) compileCodeGenWithContext(ctx context.Context, program *ast.P
 	c.stats.TotalBytecodeSize = compiledProgram.GetTotalBytecodeSize()
 
 	return compiledProgram, nil
+}
+
+func findRule(rules []*ast.Rule, name string) *ast.Rule {
+	for _, rule := range rules {
+		if rule.Name == name {
+			return rule
+		}
+	}
+	return nil
 }
 
 // GetStats returns compilation statistics
@@ -634,16 +1029,19 @@ func (c *Compiler) GetWarnings() []CompilationWarning {
 	return c.stats.Warnings
 }
 
+// GetIgnoredRules returns rules omitted by resilient compilation.
+func (c *Compiler) GetIgnoredRules() []IgnoredRule {
+	return append([]IgnoredRule(nil), c.stats.IgnoredRules...)
+}
+
 // AddWarning adds a compilation warning
 //
 //nolint:revive // argument-limit: API surface
 func (c *Compiler) AddWarning(phase, message string, line, column int) {
-	warning := CompilationWarning{
-		Phase:   phase,
-		Message: message,
-		Line:    line,
-		Column:  column,
-	}
+	c.addRuleWarning(CompilationWarning{Phase: phase, Message: message, Line: line, Column: column})
+}
+
+func (c *Compiler) addRuleWarning(warning CompilationWarning) {
 	c.stats.Warnings = append(c.stats.Warnings, warning)
 }
 
@@ -678,8 +1076,9 @@ func (c *Compiler) Reset() {
 	c.analyzer = nil
 	c.generator = nil
 	c.stats = CompilationStats{
-		Errors:   make([]CompilationError, 0),
-		Warnings: make([]CompilationWarning, 0),
+		Errors:       make([]CompilationError, 0),
+		Warnings:     make([]CompilationWarning, 0),
+		IgnoredRules: make([]IgnoredRule, 0),
 	}
 }
 
@@ -750,14 +1149,27 @@ func (c *Compiler) processIncludesWithBaseDirContext(ctx context.Context, progra
 
 		// Parse the included content
 		includedLexer := lexer.New(string(includedContent))
-		includedParser := parser.New(includedLexer)
+		includedParser := parser.NewWithOptions(includedLexer, parser.Options{
+			MaxRecursionDepth: c.options.MaxRecursionDepth,
+		})
+		if c.options.IgnoreInvalidRules {
+			includedParser.SetErrorRecovery(true)
+			includedParser.SetSkipInvalidRules(true)
+		}
 		includedProgram, parseErr := includedParser.ParseRulesWithContext(ctx)
 		if parseErr != nil {
-			return fmt.Errorf("failed to parse include file %s: %w", include.File, parseErr)
+			var partialErr *parser.PartialParseError
+			if !c.options.IgnoreInvalidRules || !errors.As(parseErr, &partialErr) || len(includedParser.ProgramErrors()) != 0 {
+				return fmt.Errorf("failed to parse include file %s: %w", include.File, parseErr)
+			}
+			includedProgram = partialErr.Program
+			for _, invalid := range includedParser.InvalidRules() {
+				c.recordParseInvalidRule(invalid)
+			}
 		}
 
 		// Check for parser errors in included file
-		if len(includedParser.Errors()) > 0 {
+		if len(includedParser.Errors()) > 0 && !c.options.IgnoreInvalidRules {
 			return fmt.Errorf("parser errors in include file %s: %v", include.File, includedParser.Errors())
 		}
 
@@ -801,15 +1213,20 @@ func (c *Compiler) processImportsWithContext(ctx context.Context, program *ast.P
 	default:
 	}
 
-	importStmt := program.Imports[0]
-	message := "unsupported module: " + importStmt.Module
-	c.stats.Errors = append(c.stats.Errors, CompilationError{
-		Phase:   "imports",
-		Message: message,
-		Line:    importStmt.Pos.Line,
-		Column:  importStmt.Pos.Column,
-	})
-	return errors.New(message)
+	for _, importStmt := range program.Imports {
+		if _, supported := c.options.Modules[importStmt.Module]; supported {
+			continue
+		}
+		message := "unsupported module: " + importStmt.Module
+		c.stats.Errors = append(c.stats.Errors, CompilationError{
+			Phase:   "imports",
+			Message: message,
+			Line:    importStmt.Pos.Line,
+			Column:  importStmt.Pos.Column,
+		})
+		return errors.New(message)
+	}
+	return nil
 }
 
 func (c *Compiler) readFile(filename string) (string, error) {
@@ -891,10 +1308,6 @@ func (c *Compiler) CompileWithProgress(source string, progressCallback func(phas
 	if progressCallback != nil {
 		progressCallback("parsing", 30)
 	}
-	if err := c.rejectUnsupportedModuleReferences(source); err != nil {
-		return nil, err
-	}
-
 	program, err := c.compileParseWithContext(context.Background(), source)
 	if err != nil {
 		return nil, err

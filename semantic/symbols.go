@@ -255,5 +255,13 @@ func (st *SymbolTable) HasErrors() bool {
 
 // Reset clears all errors
 func (st *SymbolTable) Reset() {
+	root := &Scope{
+		Name:     "global",
+		Symbols:  make(map[string]*Symbol, 64),
+		Children: make([]*Scope, 0, 8),
+		Level:    0,
+	}
+	st.Root = root
+	st.Current = root
 	st.Errors = st.Errors[:0]
 }
