@@ -246,19 +246,17 @@ func (mc *MatchContext) matchIDs() []string {
 	return ids
 }
 
-// interpreterPool allows reusing interpreter instances to reduce allocation overhead
+// interpreterPool reuses interpreter allocations between executions.
 var interpreterPool = sync.Pool{
 	New: func() any {
 		return &Interpreter{
 			stack:       make([]Value, 0, 256),
 			ruleResults: make(map[string]bool),
 			regexCache:  make(map[string]compiledRegex),
-			// memory is array, automatically zero-initialized
 		}
 	},
 }
 
-// NewInterpreter creates a new bytecode interpreter
 // SetItersmax sets the maximum number of for-loop iterations.
 // A value of 0 means unlimited.
 func (i *Interpreter) SetItersmax(limit int) {
@@ -270,6 +268,7 @@ func (i *Interpreter) ResetIterationCount() {
 	i.iterations = 0
 }
 
+// NewInterpreter creates a bytecode interpreter.
 func NewInterpreter(bytecode []byte) *Interpreter {
 	i := interpreterPool.Get().(*Interpreter)
 	i.bytecode = bytecode
@@ -278,17 +277,13 @@ func NewInterpreter(bytecode []byte) *Interpreter {
 	i.result = nil
 	i.currentRule = ""
 
-	// Create default match context from pool if needed (mimics original behavior)
-	// If the caller overwrites this with SetMatchContext, this one will be GC'd (leaked from pool)
-	// which is acceptable.
 	if i.matchContext == nil {
 		i.matchContext = matchContextPool.Get().(*MatchContext)
 	}
-	// Note: matchContextPool.Get() returns struct with Matches map initialized.
 	i.matchContext.compact = false
 	i.matchContext.Reset(nil)
 
-	i.stack = i.stack[:0] // Ensure clean stack on reuse
+	i.stack = i.stack[:0]
 
 	return i
 }
@@ -303,25 +298,14 @@ func (i *Interpreter) Release() {
 	i.textStringSets = nil
 	i.allStrings = nil
 	i.anonymousStrings = nil
-	i.matchContext = nil // Don't return to pool as we don't know ownership (caller vs internal)
+	i.matchContext = nil // Match contexts can be caller-owned.
 
-	// Clear memory (hard reset)
 	for idx := range i.memory {
-		i.memory[idx] = Value{} // Reset to zero value
+		i.memory[idx] = Value{}
 	}
 
-	// Clear regex cache?
-	// Prefer to keep it for reuse efficiency, assuming keys are consistent across runs.
-	// If strict clean state is required, uncomment:
-	// clear(i.regexCache)
-
-	// Clear string arena
 	i.stringArena = i.stringArena[:0]
-
-	// Clear stack
 	i.stack = i.stack[:0]
-
-	// Clear iterators
 	i.iterators = i.iterators[:0]
 
 	interpreterPool.Put(i)
@@ -339,16 +323,14 @@ func (i *Interpreter) getString(v Value) string {
 	if v.Type != ValueTypeString {
 		return ""
 	}
-	// Postive index = Arena
+	// Nonnegative references index the arena; negative references encode
+	// stringLiterals as -(index + 1).
 	if v.StringRef >= 0 {
 		if int(v.StringRef) < len(i.stringArena) {
 			return i.stringArena[v.StringRef]
 		}
 		return ""
 	}
-	// Negative index = Static string literal
-	// -1 = stringLiterals[0]
-	// -2 = stringLiterals[1]
 	idx := -v.StringRef - 1
 	if int(idx) < len(i.stringLiterals) {
 		return i.stringLiterals[idx]

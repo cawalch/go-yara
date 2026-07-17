@@ -29,11 +29,8 @@ tags, includes, external variables, private and global rules, and common
 condition expressions.
 
 Upstream YARA modules such as `pe`, `hash`, `math`, `elf`, and `dotnet` are
-unsupported for v1.0. Rules that import modules or call module functions should
-be treated as outside the supported compatibility surface.
-
-Future JavaScript or QuickJS support may be added as an optional external
-integration. QuickJS is not bundled with `go-yara` for v1.0.
+unsupported for v1.0. Rules that import modules or call module functions are
+outside the supported compatibility surface.
 
 ## Installation
 
@@ -203,15 +200,6 @@ go run ./cmd ./examples/demo_rule.yar --mode=parse
 go run ./cmd ./testdata/rules/simple_strings.yar --mode=execute --data ./testdata/execution/test_1kb.dat
 ```
 
-Legacy shorthand flags are also available:
-
-```bash
-go run ./cmd ./examples/demo_rule.yar --lex
-go run ./cmd ./examples/demo_rule.yar --parse
-go run ./cmd ./examples/demo_rule.yar --compile
-go run ./cmd ./testdata/rules/simple_strings.yar --execute --data ./testdata/execution/test_1kb.dat
-```
-
 Advanced execute-mode streaming flags:
 
 ```bash
@@ -248,8 +236,6 @@ execute path is the primary path for full rule condition results.
   function calls are outside the v1.0 compatibility target.
 - Some YARA data read function variants and advanced edge cases may differ from
   upstream YARA.
-- The project has explicit known-gap tests in parser and integration suites.
-- The `yara/` directory is ignored by git and is not part of the public Go API.
 
 ## Testing And Development
 
@@ -277,20 +263,18 @@ make profile-scan
 make trace-scan
 ```
 
-Useful generated benchmark and profile output is written under ignored
-directories such as `benchmarks/` and `profiles/`. The scanner suite includes
-both repeated-pattern and unique-pattern production mixes so optimizations are
-checked against reuse-heavy and heterogeneous rule sets. The prefilter scaling
-suite measures the 20, 50, 100, and 500-rule crossover for unique regex and hex
-atoms. The single-rule size suite covers text, regex, hex, and mixed rules from
-16 KiB through 1 MiB.
+Generated output is written under ignored directories such as `benchmarks/`
+and `profiles/`. The suites cover repeated and unique patterns, prefilter
+scaling, and several input sizes.
 
 ## More Documentation
 
 - [test_regression/README.md](test_regression/README.md): targeted regression
   fixture notes.
-- [testdata/regex/README.md](testdata/regex/README.md): staged regex parity
-  suite notes.
+- [testdata/performance/README.md](testdata/performance/README.md): tracked and
+  generated benchmark inputs.
+- [testdata/regex/README.md](testdata/regex/README.md): regex parity fixture
+  notes.
 
 ## Contributing
 

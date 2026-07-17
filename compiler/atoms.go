@@ -122,9 +122,6 @@ func ExtractAtoms(pattern ast.Pattern, modifiers []ast.StringModifier) []*Atom {
 
 // ExtractFromTextString extracts atoms from a literal text string.
 func ExtractFromTextString(s string, _ []ast.StringModifier) []*Atom {
-	// For now, we'll extract a single, best-quality atom from the string,
-	// similar to how yr_atoms_extract_from_string works for simple strings.
-
 	if len(s) < MinAtomLength {
 		return nil
 	}
@@ -132,7 +129,7 @@ func ExtractFromTextString(s string, _ []ast.StringModifier) []*Atom {
 	var bestAtom *Atom
 	maxQuality := -1
 
-	// Iterate through all possible substrings of MaxAtomLength
+	// Select the highest-quality MaxAtomLength window.
 	for i := 0; i <= len(s)-MaxAtomLength; i++ {
 		substring := s[i : i+MaxAtomLength]
 		atom := &Atom{

@@ -477,25 +477,19 @@ func (e *Emitter) GetStats() map[string]any {
 	return stats
 }
 
-// GetLength returns the current bytecode length (alias for GetSize)
+// GetLength returns the current bytecode length.
+//
+// Deprecated: Use GetSize.
 func (e *Emitter) GetLength() int {
-	return e.currentOffset
+	return e.GetSize()
 }
 
-// UpdateOperand updates the operand of an instruction at the given offset position
-func (e *Emitter) UpdateOperand(position int, operand Operand) error {
-	// We need to find the instruction at the byte offset `position`.
-	// For now, this is flawed if position is a byte offset but used as an array index!
-	// Leaving this here for backward compatibility if it's used elsewhere, but using UpdateOperandByIndex is safer.
-	if position < 0 || position >= len(e.instructions) {
-		return fmt.Errorf("instruction position %d out of range", position)
-	}
-
-	// Update the operand of the instruction
-	inst := &e.instructions[position]
-	inst.Operand = operand
-
-	return nil
+// UpdateOperand updates an instruction by slice index.
+//
+// Deprecated: Use UpdateOperandByIndex, or FindInstructionIndexByOffset when
+// starting from a bytecode offset.
+func (e *Emitter) UpdateOperand(index int, operand Operand) error {
+	return e.UpdateOperandByIndex(index, operand)
 }
 
 // UpdateOperandByIndex updates the operand of an instruction at the given array index
