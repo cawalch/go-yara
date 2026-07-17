@@ -277,6 +277,42 @@ func BenchmarkSharedMandatoryRegexAtomScale(b *testing.B) {
 	}
 }
 
+func BenchmarkCombinedRegexAtomScale(b *testing.B) {
+	for _, regexCount := range []int{1, 2, 4, 8, 16} {
+		b.Run(fmt.Sprintf("regexes_%d", regexCount), func(b *testing.B) {
+			var source strings.Builder
+			source.WriteString("rule combined_regex_atoms {\nstrings:\n")
+			for index := range regexCount {
+				fmt.Fprintf(
+					&source,
+					"$pattern_%d = /[\"'#.\\[]\\s*(tok%02d_number|tok%02d_code)\\b/ nocase\n",
+					index,
+					index,
+					index,
+				)
+			}
+			source.WriteString("condition: any of them\n}\n")
+
+			program, err := NewCompiler().CompileSource(source.String())
+			if err != nil {
+				b.Fatal(err)
+			}
+			scanner := NewScanner(program)
+			defer scanner.Close()
+			data := bytes.Repeat([]byte("benignFillerCode123 "), (1<<20)/20)
+
+			b.SetBytes(int64(len(data)))
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				if _, err := scanner.Scan(data); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
 func BenchmarkAtomlessRegexScanner(b *testing.B) {
 	for _, benchmark := range []struct {
 		name    string

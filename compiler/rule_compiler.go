@@ -1171,8 +1171,9 @@ type SharedAutomatonEntry struct {
 	StringIdx  int // index into CompiledRule.IndexToStringID
 	Kind       StringKind
 	AtomOffset int
-	// AtomMaxOffset is the maximum number of bytes before a regex atom. It
-	// equals AtomOffset for fixed-offset regex and hex atoms.
+	// AtomMaxOffset is the maximum number of bytes before a regex atom. It is
+	// -1 for an atom after an unbounded prefix and equals AtomOffset for
+	// fixed-offset regex and hex atoms.
 	AtomMaxOffset int
 	IsWide        bool
 	CacheIndex    int
