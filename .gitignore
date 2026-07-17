@@ -8,6 +8,7 @@ coverage.html
 # Benchmarks and profiling data
 benchmarks/
 profiles/
+performance/tournament/results/
 
 # Security scanner outputs
 *.sarif

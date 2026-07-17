@@ -6,17 +6,28 @@
         performance-suite performance-monitor performance-baseline performance-compare \
         performance-dashboard performance-cleanup perf-automaton perf-e2e perf-scaling \
         bench-greentea perf-greentea-compare bench-greentea-memory bench-greentea-cpu \
-        fuzz
+        bench-vs-yarax bench-vs-yarax-update-baseline fuzz
 
 # Default package to benchmark/profile
 PKG=./internal/lexer
 
 # Fuzzing duration per target
 FUZZTIME=30s
+BENCHTIME?=100ms
+BENCHCOUNT?=3
 
 # Run all fuzz targets sequentially
 fuzz:
 	@./scripts/fuzz_all.sh $(FUZZTIME)
+
+# Run the same matrix through go-yara and the pinned yara-x Go binding.
+bench-vs-yarax:
+	@BENCHTIME="$(BENCHTIME)" BENCHCOUNT="$(BENCHCOUNT)" ./scripts/bench_vs_yarax.sh
+
+# Regenerate the checked-in ratio baseline after reviewing an intentional change.
+bench-vs-yarax-update-baseline:
+	@BENCHTIME="$(BENCHTIME)" BENCHCOUNT="$(BENCHCOUNT)" \
+		TOURNAMENT_CHECK=0 TOURNAMENT_UPDATE_BASELINE=1 ./scripts/bench_vs_yarax.sh
 
 
 # Basic benchmarking
@@ -358,6 +369,8 @@ help:
 	@echo "  bench-memory       - Run memory-focused benchmarks"
 	@echo "  bench-cpu          - Run CPU-focused benchmarks"
 	@echo "  bench-string-modifiers - Run string modifier benchmarks"
+	@echo "  bench-vs-yarax       - Run the go-yara/yara-x matrix tournament"
+	@echo "  bench-vs-yarax-update-baseline - Review and replace the tournament baseline"
 	@echo ""
 	@echo "Enhanced Performance Monitoring:"
 	@echo "  performance-suite     - Run comprehensive performance suite"
