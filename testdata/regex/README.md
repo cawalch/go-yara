@@ -1,12 +1,11 @@
-# Regex parity suite (staged)
+# Regex Parity Fixtures
 
-This directory contains a small, curated set of regex-only YARA rules and sample data intended for parity checks against the official `yara` binary. These are staged tests for the in-repo zero-dependency regex engine plan.
+This directory contains regex-only YARA rules and matching sample inputs for
+targeted comparisons with the official `yara` binary.
 
-Structure:
-- rules/: YARA rule files, each focusing on a specific feature area
-- data/: Sample data files used when running targeted parity comparisons
+- `rules/`: fixtures for literals, alternation, anchors, boundaries, classes,
+  and quantifiers
+- `data/`: matching sample inputs
 
-Notes:
-- These are not wired into the global parity harness yet (keep `-skip-regex` in global runs).
-- Once the executor exists (Phase 4), we can add an opt-in flag to run this suite.
-
+These fixtures are not part of an automated cross-implementation parity
+command; use them for focused manual checks.

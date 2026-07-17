@@ -479,12 +479,6 @@ func (s *StringTuple) expression() {}
 
 // Accept implements the Visitor pattern for StringTuple
 func (s *StringTuple) Accept(v Visitor) any {
-	// StringTuple acts as a container; a specific visitor method might be needed eventually,
-	// but for now we'll route it as an expression.
-	// We'll add VisitStringTuple to the Visitor interface if necessary.
-	// For now, doing a no-op or returning nil to avoid interface changes across the entire codebase.
-	// To be perfectly rigorous, we should add VisitStringTuple to Visitor interface, but that requires updating all visitors.
-	// Let's just define it here.
 	if stv, ok := v.(interface{ VisitStringTuple(*StringTuple) any }); ok {
 		return stv.VisitStringTuple(s)
 	}

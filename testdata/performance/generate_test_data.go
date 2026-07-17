@@ -29,9 +29,8 @@ func main() {
 			generateSampleFiles(dir)
 			return
 		case "all":
-			// Generate everything
 		default:
-			fmt.Println("Usage: go run generate_test_data.go [all|large|samples]")
+			fmt.Println("Usage: go run ./testdata/performance/generate_test_data.go [all|large|samples]")
 			fmt.Println("  all     - Generate all test data (default)")
 			fmt.Println("  large   - Generate only large performance files")
 			fmt.Println("  samples - Generate only malware sample files")
@@ -39,7 +38,6 @@ func main() {
 		}
 	}
 
-	// Generate all test data
 	generateSampleFiles(dir)
 	generateLargePerformanceFiles(dir)
 
