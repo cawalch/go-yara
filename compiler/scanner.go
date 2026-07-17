@@ -315,7 +315,7 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 	s.nonTextCache.reset(s.program.nonTextCacheSize)
 	s.populateFixedRegexCache(data, &s.nonTextCache)
 	s.regexByteSetCache.reset()
-	useSharedAutomaton := s.program.SharedAutomaton != nil && len(s.program.SharedLookup) > 0
+	useSharedAutomaton := shouldUseSharedPatternAutomaton(data, s.program)
 	if useSharedAutomaton {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -588,6 +588,58 @@ func (s *Scanner) populateFixedRegexCache(data []byte, cache *nonTextMatchCache)
 	for _, cacheIndex := range dispatch.cacheIndices {
 		cache.ready[cacheIndex] = true
 	}
+}
+
+func shouldUseSharedPatternAutomaton(data []byte, program *CompiledProgram) bool {
+	if program == nil || program.SharedAutomaton == nil || len(program.SharedLookup) == 0 {
+		return false
+	}
+	// Text strings rely on the shared automaton, and large non-text sets have
+	// already crossed the compile-time threshold where one pass wins broadly.
+	if len(program.SharedLookup) >= minSharedNonTextEntries {
+		return true
+	}
+	for _, entry := range program.SharedLookup {
+		if entry.Kind == StringKindText {
+			return true
+		}
+	}
+
+	// Small non-text automata are profitable when their root bytes are sparse
+	// in the input. Candidate-dense roots make the AC state machine more
+	// expensive than independent SIMD literal searches, so sample the input
+	// and retain the local paths above roughly one root hit per 32 bytes.
+	if len(data) == 0 || len(program.SharedAutomaton.rootBytes) == 0 {
+		return false
+	}
+	const (
+		sampleBlocks     = 8
+		sampleBlockSize  = 32
+		rootDensityScale = 32
+	)
+	samples := 0
+	rootHits := 0
+	rootTransitions := &program.SharedAutomaton.states[0].transitions
+	sampleAt := func(position int) {
+		if rootTransitions[data[position]] != -1 {
+			rootHits++
+		}
+		samples++
+	}
+	if len(data) <= sampleBlocks*sampleBlockSize {
+		for position := range data {
+			sampleAt(position)
+		}
+	} else {
+		maxStart := len(data) - sampleBlockSize
+		for block := range sampleBlocks {
+			start := block * maxStart / (sampleBlocks - 1)
+			for position := start; position < start+sampleBlockSize; position++ {
+				sampleAt(position)
+			}
+		}
+	}
+	return rootHits*rootDensityScale < samples
 }
 
 func shouldUseFixedRegexDispatch(data []byte, dispatch *fixedRegexDispatch) bool {

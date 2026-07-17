@@ -733,6 +733,76 @@ func TestSmallBroadRootSetStaysOnLocalPrefilter(t *testing.T) {
 	}
 }
 
+func TestMixedRegexPrefilterUsesDensityGate(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+		rule mixed_regexes {
+			strings:
+				$exec1 = /\beval\s*\(/
+				$exec2 = /new\s+Function\s*\(/
+				$hexvar = /_0x[0-9a-f]{4,6}/
+				$ws = /new\s+WebSocket\s*\(\s*["']wss?:\/\//
+			condition:
+				any of them
+		}
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(program.SharedLookup) != 4 {
+		t.Fatalf("shared lookup entries = %d, want 4", len(program.SharedLookup))
+	}
+	if shouldUseSharedPatternAutomaton(bytes.Repeat([]byte("benignFillerCode123 "), 4096), program) {
+		t.Fatal("candidate-dense mixed regex set selected the shared automaton")
+	}
+	if !shouldUseSharedPatternAutomaton(make([]byte, 1<<20), program) {
+		t.Fatal("candidate-sparse mixed regex set did not select the shared automaton")
+	}
+
+	dataSets := [][]byte{
+		[]byte("benignFillerCode123 benignFillerCode123"),
+		[]byte("eval( new Function( _0x12af new WebSocket(\"ws://"),
+	}
+	scanner := NewScanner(program)
+	defer scanner.Close()
+	for dataIndex, data := range dataSets {
+		result, scanErr := scanner.Scan(data)
+		if scanErr != nil {
+			t.Fatal(scanErr)
+		}
+		linear := buildLinearRegexContext(program.Rules[0], data)
+		for _, id := range sortedPatternIDs(program.Rules[0].RegexPatterns) {
+			got := matchRangesInOrder(result.Matches["mixed_regexes"][id])
+			want := matchRangesInOrder(linear.Matches[id])
+			if !slices.Equal(got, want) {
+				t.Errorf("data %d, %s ranges = %v, linear scan = %v", dataIndex, id, got, want)
+			}
+			if dataIndex == len(dataSets)-1 && len(want) == 0 {
+				t.Errorf("data %d, %s did not exercise a positive match", dataIndex, id)
+			}
+		}
+		linear.Release()
+	}
+}
+
+func TestSharedTextAutomatonBypassesNonTextDensityGate(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+		rule mixed_text_regex {
+			strings:
+				$text = "text_marker"
+				$first = /eval_marker[0-9]+/
+				$second = /event_marker[0-9]+/
+			condition:
+				any of them
+		}
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !shouldUseSharedPatternAutomaton(bytes.Repeat([]byte("eeee"), 1024), program) {
+		t.Fatal("shared text automaton was disabled by non-text root density")
+	}
+}
+
 func TestFixedRegexDispatchMatchesLinearScan(t *testing.T) {
 	program, err := NewCompiler().CompileSource(`
 		rule fixed_dispatch {
