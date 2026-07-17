@@ -6,8 +6,7 @@ readers, or files through a reusable scanner API.
 
 This project is actively evolving. It supports a broad set of YARA rule syntax,
 string modifiers, expressions, rule metadata, tags, includes, and execution
-features, but it is not a complete drop-in replacement for upstream YARA. In
-particular, upstream YARA modules are not implemented for v1.0.
+features, but it is not a complete drop-in replacement for upstream YARA.
 
 ## Features
 
@@ -16,6 +15,16 @@ particular, upstream YARA modules are not implemented for v1.0.
 - Compile rules to executable bytecode.
 - Scan data with public APIs in `github.com/cawalch/go-yara/compiler`.
 - Reuse scanners across many inputs to reduce allocations.
+- Compile valid rules from partially invalid rule sets with structured omitted-
+  rule diagnostics.
+- Use conservative fast-scan retention without changing count-, offset-, or
+  range-sensitive rule results.
+- Scan sparse or non-contiguous address spaces incrementally with a block
+  scanner that still evaluates full rule conditions.
+- Import built-in `hash` and `math` modules or register typed custom modules.
+- Cache compiled programs in a versioned binary format while retaining regex,
+  hex, and shared-prefilter optimizations.
+- Inspect direct rule dependencies and dependents.
 - Filter scans by tags and configure `itersmax` for loop-heavy rules.
 - Evaluate text, hex, and regex strings, string modifiers, metadata, private and
   global rules, rule references, and common condition operators.
@@ -28,9 +37,10 @@ v1.0. The public API is focused on normal rules, strings, modifiers, metadata,
 tags, includes, external variables, private and global rules, and common
 condition expressions.
 
-Upstream YARA modules such as `pe`, `hash`, `math`, `elf`, and `dotnet` are
-unsupported for v1.0. Rules that import modules or call module functions are
-outside the supported compatibility surface.
+The built-in `hash` module provides `md5`, `sha1`, and `sha256`; the built-in
+`math` module provides `entropy`, `mean`, and `deviation`. Each accepts the
+YARA-compatible forms implemented by the typed module registry. Other upstream
+module object models such as `pe`, `elf`, and `dotnet` are not yet implemented.
 
 ## Installation
 
@@ -173,6 +183,137 @@ scans.
 Pass `compiler.WithReportedMatchesOnly()` to a reusable scanner when only
 public matching rules need entries in `Matches`; `RuleResults` is unaffected.
 
+Pass `compiler.WithFastScan()` when only the first occurrence of each string is
+needed. The compiler marks rules whose conditions inspect occurrence counts,
+offsets, lengths, or constrained ranges as ineligible and automatically keeps
+all of their matches, preserving condition results.
+
+### Compile Around Invalid Rules
+
+Strict compilation remains the default. For bulk rule feeds where one bad rule
+should not reject unrelated valid rules, opt into resilient compilation:
+
+```go
+c := compiler.NewCompiler(compiler.WithIgnoreInvalidRules(true))
+program, err := c.CompileSourceWithContext(ctx, source)
+if err != nil {
+	return err // program-level errors still fail compilation
+}
+
+for _, ignored := range c.GetIgnoredRules() {
+	fmt.Printf("ignored %s during %s: %s\n",
+		ignored.Rule, ignored.Phase, ignored.Message)
+}
+```
+
+Rules that depend on an omitted rule are omitted transitively. An omitted
+`global` rule also omits every remaining rule because silently dropping its
+gate would change program semantics.
+
+Compiler warnings have stable `Code`, `Phase`, `Rule`, `String`, `Line`, and
+`Column` fields. Current warning codes include `unused-string`,
+`missing-condition`, `trivial-condition`, `duplicate-pattern`, and
+`slow-pattern`.
+
+### Modules
+
+Rules can import the built-in `hash` and `math` modules directly:
+
+```go
+program, err := compiler.NewCompiler().CompileSourceWithContext(ctx, `
+import "hash"
+import "math"
+rule measured {
+    condition:
+        hash.sha256("abc") ==
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" and
+        math.mean(0, filesize) >= 0.0
+}
+`)
+```
+
+Register an application module with `compiler.WithModule`. Each
+`ModuleFunction` declares accepted typed signatures, its return type, and an
+`Evaluate` callback. The callback receives immutable scan data, sparse blocks
+when applicable, and the current rule name. Imported module functions execute
+inside the scan call, so callbacks should be deterministic, bounded, and safe
+for the caller's scanner concurrency model.
+
+### Scan Non-Contiguous Blocks
+
+`BlockScanner` accumulates matches at logical addresses and evaluates rule
+conditions once `Finish` is called:
+
+```go
+scanner := program.NewBlockScanner(compiler.WithFastScan())
+defer scanner.Close()
+
+if err := scanner.SetFileSize(logicalSize); err != nil {
+	return err
+}
+if err := scanner.Scan(0x1000, firstBlock); err != nil {
+	return err
+}
+if err := scanner.Scan(0x8000, secondBlock); err != nil {
+	return err
+}
+result, err := scanner.Finish()
+```
+
+Blocks may be sparse or overlapping. Overlapping bytes must be consistent.
+Matches that cross a block boundary require the caller to provide overlapping
+block data; the scanner does not invent bytes for address gaps. Match offsets
+are absolute logical offsets, and `Match.Base` records the supplying block.
+
+This differs from the older `EnableStreaming` API: streaming reports chunked
+pattern matches only, while `BlockScanner.Finish` evaluates complete rule
+conditions.
+
+### Cache Compiled Programs
+
+Compiled programs can be stored and loaded without parsing and code generation:
+
+```go
+encoded, err := program.MarshalBinary()
+if err != nil {
+	return err
+}
+
+loaded, err := compiler.UnmarshalCompiledProgram(encoded)
+```
+
+Use `WriteTo` and `ReadCompiledProgram` for `io.Writer` and `io.Reader` flows.
+The format has a magic header and explicit version and rejects incompatible or
+truncated data. It preserves compiled pattern and prefilter plans. Runtime
+external-variable values are intentionally not serialized and must be set on
+the loaded program or scanner. When a compiler was configured with custom
+modules, pass those modules again while loading so callbacks can be rebound:
+
+```go
+loaded, err := compiler.UnmarshalCompiledProgram(encoded, customModule)
+```
+
+Treat compiled blobs as trusted cache artifacts; the decoder is not an
+authentication or sandbox boundary.
+
+### Inspect Rule Dependencies
+
+The compiled program exposes direct dependency data:
+
+```go
+dependencies := program.RuleDependencies("child")
+dependents := program.RuleDependents("base")
+graph := program.DependencyGraph()
+```
+
+Returned slices and maps are copies and can be modified by the caller.
+
+Rules with mandatory fixed-offset checks such as `uint32(0) == 0x464c457f` or
+`$magic at 0` are pruned before their general pattern search when the check is
+false. `ScanResult.PrunedRules` exposes which rules took this path. Constraint
+derivation is conservative across boolean expressions and does not change rule
+semantics.
+
 ### Diagnostics And Heuristic Metrics
 
 The compiler exposes diagnostic helpers such as `GetStats`,
@@ -232,8 +373,10 @@ execute path is the primary path for full rule condition results.
 
 ## Known Limitations
 
-- YARA modules are not implemented; imports such as `import "pe"` and module
-  function calls are outside the v1.0 compatibility target.
+- Structured upstream module object models such as `pe`, `elf`, and `dotnet`
+  are not implemented. The current module registry exposes typed functions.
+- Block scanning requires caller-provided overlap for patterns that cross block
+  boundaries.
 - Some YARA data read function variants and advanced edge cases may differ from
   upstream YARA.
 

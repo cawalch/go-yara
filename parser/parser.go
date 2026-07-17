@@ -22,6 +22,14 @@ type PartialParseError struct {
 	Errors  []error
 }
 
+// InvalidRule describes a rule that could not be parsed completely while
+// error recovery was enabled. Rule contains the best-effort AST, which lets
+// callers inspect its name and dependencies without treating it as valid.
+type InvalidRule struct {
+	Rule   *ast.Rule
+	Errors []error
+}
+
 // Error implements the error interface
 func (ppe *PartialParseError) Error() string {
 	if len(ppe.Errors) == 0 {
@@ -48,8 +56,12 @@ type Parser struct {
 	current           token.Token
 	peek              token.Token
 	errors            []error
+	programErrors     []error
+	invalidRules      []InvalidRule
 	builder           *ast.Builder
 	errorRecovery     bool // Enable error recovery mode
+	skipInvalidRules  bool // Keep invalid partial rules out of the returned program
+	recoveringRule    bool // Record nested parser errors without program-level synchronization
 	maxRecursionDepth int  // Maximum allowed recursion depth
 
 	// Specialized parsers
@@ -77,6 +89,8 @@ func NewWithOptions(l *lexer.Lexer, options Options) *Parser {
 	p := &Parser{
 		lexer:             l,
 		errors:            make([]error, 0),
+		programErrors:     make([]error, 0),
+		invalidRules:      make([]InvalidRule, 0),
 		builder:           ast.NewBuilder(),
 		errorRecovery:     false, // Default to strict parsing for backward compatibility
 		maxRecursionDepth: options.MaxRecursionDepth,
@@ -128,7 +142,7 @@ func (p *Parser) ParseRulesWithContext(ctx context.Context) (*ast.Program, error
 		}
 
 		if err := p.parseProgramElement(ctx, program); err != nil {
-			p.addError(err)
+			p.addProgramError(err)
 		}
 	}
 
@@ -152,13 +166,38 @@ func (p *Parser) ParseRulesWithContext(ctx context.Context) (*ast.Program, error
 func (p *Parser) collectLexerErrors() {
 	for _, err := range p.lexer.Errors() {
 		lexErr := err
-		p.addError(&lexErr)
+		p.recordProgramError(&lexErr)
 	}
 }
 
 // SetErrorRecovery enables or disables error recovery mode
 func (p *Parser) SetErrorRecovery(enabled bool) {
 	p.errorRecovery = enabled
+}
+
+// SetSkipInvalidRules controls whether partial rules with parse errors are
+// omitted from the returned program. It only has an effect in error recovery
+// mode. InvalidRules still reports every omitted rule and its errors.
+func (p *Parser) SetSkipInvalidRules(enabled bool) {
+	p.skipInvalidRules = enabled
+}
+
+// InvalidRules returns rules omitted by SetSkipInvalidRules.
+func (p *Parser) InvalidRules() []InvalidRule {
+	result := make([]InvalidRule, len(p.invalidRules))
+	for i, invalid := range p.invalidRules {
+		result[i] = InvalidRule{
+			Rule:   invalid.Rule,
+			Errors: append([]error(nil), invalid.Errors...),
+		}
+	}
+	return result
+}
+
+// ProgramErrors returns errors that are not attributable to an individual
+// rule, such as invalid top-level declarations or lexer failures.
+func (p *Parser) ProgramErrors() []error {
+	return append([]error(nil), p.programErrors...)
 }
 
 // ParseRulesStrict parses a complete YARA rules file without error recovery (original behavior)
@@ -175,7 +214,7 @@ func (p *Parser) ParseRulesStrict() (*ast.Program, error) {
 
 	for !p.currentTokenIs(token.EOF) {
 		if err := p.parseProgramElement(context.Background(), program); err != nil {
-			p.addError(err)
+			p.addProgramError(err)
 		}
 	}
 
@@ -207,12 +246,26 @@ func (p *Parser) parseProgramElement(ctx context.Context, program *ast.Program) 
 		// Delegate to rule parser with or without error recovery
 		p.updateParserTokens()
 		if p.errorRecovery {
+			beforeErrors := len(p.errors)
+			p.recoveringRule = true
 			rule, ruleErrors := p.ruleParser.ParseRulePartial()
-			// Always add the rule (even if partial) to the program
-			program.Rules = append(program.Rules, rule)
-			// Add all rule errors to the parser's error list
+			p.recoveringRule = false
+
+			allRuleErrors := append([]error(nil), p.errors[beforeErrors:]...)
 			for _, ruleErr := range ruleErrors {
-				p.addError(ruleErr)
+				if !containsError(allRuleErrors, ruleErr) {
+					p.recordError(ruleErr)
+					allRuleErrors = append(allRuleErrors, ruleErr)
+				}
+			}
+
+			if p.skipInvalidRules && len(allRuleErrors) > 0 {
+				p.invalidRules = append(p.invalidRules, InvalidRule{
+					Rule:   rule,
+					Errors: allRuleErrors,
+				})
+			} else {
+				program.Rules = append(program.Rules, rule)
 			}
 			return nil // Don't return error since we want to continue parsing
 		}
@@ -326,9 +379,44 @@ func (p *Parser) peekTokenIs(t token.Type) bool {
 
 func (p *Parser) addError(err error) {
 	if err != nil {
-		p.errors = append(p.errors, err)
+		p.recordError(err)
+		if p.recoveringRule {
+			return
+		}
 		p.synchronize()
 	}
+}
+
+func (p *Parser) addProgramError(err error) {
+	if err != nil {
+		p.recordProgramError(err)
+		p.synchronize()
+	}
+}
+
+func (p *Parser) recordError(err error) {
+	if err != nil {
+		p.errors = append(p.errors, err)
+	}
+}
+
+func (p *Parser) recordProgramError(err error) {
+	if err != nil {
+		p.programErrors = append(p.programErrors, err)
+		p.recordError(err)
+	}
+}
+
+func containsError(errs []error, candidate error) bool {
+	if candidate == nil {
+		return true
+	}
+	for _, err := range errs {
+		if err != nil && err.Error() == candidate.Error() {
+			return true
+		}
+	}
+	return false
 }
 
 // synchronize recovers from parsing errors by skipping to the next valid program element

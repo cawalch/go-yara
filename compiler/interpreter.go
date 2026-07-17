@@ -107,6 +107,7 @@ type compiledRegex struct {
 // MatchContext holds pattern matching state
 type MatchContext struct {
 	Data         []byte
+	Blocks       []MemoryBlock
 	Matches      map[string][]Match // Pattern -> list of matches
 	FileSize     int64
 	EntryPoint   int64
@@ -114,6 +115,30 @@ type MatchContext struct {
 	spans        map[string][]matchSpan
 	spanBuffers  map[string][]matchSpan
 	compact      bool
+	// maxMatchesPerPattern bounds retained occurrences. Zero means unlimited.
+	maxMatchesPerPattern int
+}
+
+func (mc *MatchContext) dataRange(offset, size int64) ([]byte, bool) {
+	if mc == nil || offset < 0 || size < 0 {
+		return nil, false
+	}
+	if mc.Data != nil {
+		if offset > int64(len(mc.Data)) || size > int64(len(mc.Data))-offset {
+			return nil, false
+		}
+		return mc.Data[offset : offset+size], true
+	}
+	for _, block := range mc.Blocks {
+		if offset < block.Base {
+			continue
+		}
+		relative := offset - block.Base
+		if relative <= int64(len(block.Data)) && size <= int64(len(block.Data))-relative {
+			return block.Data[relative : relative+size], true
+		}
+	}
+	return nil, false
 }
 
 // matchSpan is the scanner's compact representation of a match. Pattern is
@@ -141,6 +166,9 @@ func (mc *MatchContext) AddMatch(m Match) {
 	if m.Pattern == "" {
 		return
 	}
+	if mc.maxMatchesPerPattern > 0 && mc.matchCount(m.Pattern) >= mc.maxMatchesPerPattern {
+		return
+	}
 	if mc.compact {
 		mc.addMatchSpan(m.Pattern, matchSpan{Offset: m.Offset, Length: m.Length})
 		return
@@ -157,6 +185,9 @@ func (mc *MatchContext) AddMatch(m Match) {
 
 func (mc *MatchContext) addMatchSpan(id string, span matchSpan) {
 	if id == "" {
+		return
+	}
+	if mc.maxMatchesPerPattern > 0 && mc.matchCount(id) >= mc.maxMatchesPerPattern {
 		return
 	}
 	if mc.spans == nil {

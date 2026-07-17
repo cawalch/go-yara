@@ -53,9 +53,9 @@ func addRegexMatchesWithModifiersCached(
 // matchPassesModifiers then applies remaining modifiers (e.g. fullword).
 //
 //nolint:revive // argument-limit: internal helper
-func acceptAutomatonMatch(ctx *MatchContext, rule *CompiledRule, data []byte, match ACMatch) {
+func acceptAutomatonMatch(ctx *MatchContext, rule *CompiledRule, data []byte, match ACMatch) bool {
 	if rule.StringKinds != nil && rule.StringKinds[match.StringID] != StringKindText {
-		return
+		return false
 	}
 	length := 0
 	isWide := false
@@ -74,11 +74,13 @@ func acceptAutomatonMatch(ctx *MatchContext, rule *CompiledRule, data []byte, ma
 		Length:  length,
 	}
 	if !verifyTextMatch(data, m, pattern, isNocase) {
-		return
+		return false
 	}
 	if matchPassesModifiers(data, m, rule.StringModifiers[match.StringID], isWide) {
 		ctx.AddMatch(m)
+		return true
 	}
+	return false
 }
 
 //nolint:revive // argument-limit: internal helper

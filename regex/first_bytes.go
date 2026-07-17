@@ -22,6 +22,27 @@ type ByteSetAtom struct {
 	MaxOffset int
 }
 
+// NewByteSet constructs a byte set containing values. Duplicate values are
+// ignored.
+func NewByteSet(values []byte) ByteSet {
+	var set ByteSet
+	for _, value := range values {
+		set.add(value)
+	}
+	return set
+}
+
+// Values returns the members of the set in ascending order.
+func (set ByteSet) Values() []byte {
+	values := make([]byte, 0, set.Count())
+	for value := range 256 {
+		if set.Contains(byte(value)) {
+			values = append(values, byte(value))
+		}
+	}
+	return values
+}
+
 // Contains reports whether value belongs to the set.
 func (set ByteSet) Contains(value byte) bool {
 	return set.words[value>>6]&(uint64(1)<<uint(value&63)) != 0

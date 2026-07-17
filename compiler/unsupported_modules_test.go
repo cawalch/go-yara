@@ -38,12 +38,12 @@ rule test {
 			wantError: "unsupported module: pe",
 		},
 		{
-			name: "hash_function_call",
+			name: "hash_function_call_without_import",
 			source: `rule test {
 	condition:
 		hash.md5(0, 4) == ""
 }`,
-			wantError: "unsupported module: hash",
+			wantError: `module "hash" must be imported`,
 		},
 	}
 

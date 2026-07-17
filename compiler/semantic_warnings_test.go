@@ -4,6 +4,71 @@ import (
 	"testing"
 )
 
+func TestWarningsHaveStableCodesAndLocations(t *testing.T) {
+	c := NewCompiler()
+	_, err := c.CompileSource(`
+rule diagnostics {
+    strings:
+        $short = "x"
+        $duplicate = "x"
+        $regex = /[a-z]+/
+        $hex = { ?? ?? }
+    condition:
+        any of them
+}
+`)
+	if err != nil {
+		t.Fatalf("CompileSource() error = %v", err)
+	}
+
+	warnings := c.GetWarnings()
+	assertWarning(t, warnings, WarningDuplicatePattern, "diagnostics", "$duplicate")
+	for _, id := range []string{"$short", "$duplicate", "$regex", "$hex"} {
+		assertWarning(t, warnings, WarningSlowPattern, "diagnostics", id)
+	}
+	for _, warning := range warnings {
+		if warning.Code == WarningUnusedString {
+			t.Fatalf("any of them produced unused-string warning: %+v", warning)
+		}
+	}
+}
+
+func TestSelectivePatternsDoNotProduceSlowWarnings(t *testing.T) {
+	c := NewCompiler()
+	_, err := c.CompileSource(`
+rule selective {
+    strings:
+        $text = "abcdef"
+        $regex = /abcdef/
+        $hex = { 01 02 03 }
+    condition:
+        any of them
+}
+`)
+	if err != nil {
+		t.Fatalf("CompileSource() error = %v", err)
+	}
+	for _, warning := range c.GetWarnings() {
+		if warning.Code == WarningSlowPattern {
+			t.Fatalf("selective pattern warning = %+v", warning)
+		}
+	}
+}
+
+//nolint:revive // argument-limit: test assertion helper
+func assertWarning(t *testing.T, warnings []CompilationWarning, code, rule, stringID string) {
+	t.Helper()
+	for _, warning := range warnings {
+		if warning.Code == code && warning.Rule == rule && warning.String == stringID {
+			if warning.Line <= 0 || warning.Column <= 0 {
+				t.Fatalf("warning lacks source location: %+v", warning)
+			}
+			return
+		}
+	}
+	t.Fatalf("warnings = %+v, missing code=%s rule=%s string=%s", warnings, code, rule, stringID)
+}
+
 func TestSemanticWarnings(t *testing.T) {
 	tests := []struct {
 		name            string

@@ -33,6 +33,7 @@ type Scanner struct {
 	nonTextCache        nonTextMatchCache
 	regexByteSetCache   regexByteSetCandidateCache
 	reportedMatchesOnly bool
+	fastScan            bool
 
 	// Candidate offsets grouped by SharedLookup index and retained across scans.
 	prefilterCandidates [][]int
@@ -41,6 +42,9 @@ type Scanner struct {
 // ScanResult represents the result of scanning data against compiled rules.
 type ScanResult struct {
 	MatchedRules []RuleMatch
+	// PrunedRules lists rules rejected by mandatory fixed-offset header
+	// constraints before pattern matching.
+	PrunedRules []string
 
 	// RuleResults contains the boolean condition result for every evaluated rule.
 	RuleResults map[string]bool
@@ -113,6 +117,16 @@ func WithMatchContext(beforeBytes, afterBytes int) ScannerOption {
 func WithReportedMatchesOnly() ScannerOption {
 	return func(scanner *Scanner) {
 		scanner.reportedMatchesOnly = true
+	}
+}
+
+// WithFastScan retains only the first occurrence of each pattern for rules
+// whose conditions only test pattern presence. Rules that inspect counts,
+// offsets, lengths, or constrained ranges automatically retain all matches so
+// their condition result remains exact.
+func WithFastScan() ScannerOption {
+	return func(scanner *Scanner) {
+		scanner.fastScan = true
 	}
 }
 
@@ -309,6 +323,7 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 	}
 	result := &ScanResult{
 		MatchedRules: make([]RuleMatch, 0),
+		PrunedRules:  make([]string, 0),
 		RuleResults:  make(map[string]bool, ruleCount),
 		Matches:      make(map[string]map[string][]Match),
 	}
@@ -355,7 +370,17 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 		if !rule.IsGlobal && !s.hasMatchingTag(rule) {
 			continue
 		}
+		if !ruleHeaderConstraintsMatch(rule, data) {
+			s.ruleResults[rule.Name] = false
+			result.RuleResults[rule.Name] = false
+			result.PrunedRules = append(result.PrunedRules, rule.Name)
+			continue
+		}
 		s.matchCtx.Reset(data)
+		s.matchCtx.maxMatchesPerPattern = 0
+		if s.fastScan && rule.FastScanSafe {
+			s.matchCtx.maxMatchesPerPattern = 1
+		}
 		if useSharedAutomaton {
 			s.addStaticMatchesInt(rule, data, globalByRule[rule.Index])
 		} else {
@@ -489,6 +514,7 @@ func (s *Scanner) extractGlobalMatchesInt(
 ) {
 	lookup := s.program.SharedLookup
 	rules := s.program.Rules
+	fastSeen := make(map[uint64]bool)
 	s.resetPrefilterCandidates(len(lookup))
 	for match := range s.program.SharedAutomaton.SearchIter(data) {
 		if match.StringIndex < 0 || match.StringIndex >= len(lookup) {
@@ -514,13 +540,30 @@ func (s *Scanner) extractGlobalMatchesInt(
 
 		info := s.program.SharedAutomaton.Strings[match.StringIndex]
 		strID := rule.IndexToStringID[entry.StringIdx]
-		globalByRule[entry.RuleIndex] = append(globalByRule[entry.RuleIndex], globalMatchEntry{
+		globalEntry := globalMatchEntry{
 			strID:    strID,
 			span:     matchSpan{Offset: int64(match.Backtrack), Length: info.Length},
 			isWide:   (info.Flags & regex.FlagsWide) != 0,
 			isNocase: (info.Flags & regex.FlagsNoCase) != 0,
 			pattern:  info.Data,
-		})
+		}
+		if s.fastScan && rule.FastScanSafe {
+			key := uint64(uint32(entry.RuleIndex))<<32 | uint64(uint32(entry.StringIdx))
+			if fastSeen[key] {
+				continue
+			}
+			candidate := Match{
+				Pattern: strID,
+				Offset:  globalEntry.span.Offset,
+				Length:  globalEntry.span.Length,
+			}
+			if !verifyTextMatch(data, candidate, globalEntry.pattern, globalEntry.isNocase) ||
+				!matchPassesModifiers(data, candidate, rule.StringModifiers[strID], globalEntry.isWide) {
+				continue
+			}
+			fastSeen[key] = true
+		}
+		globalByRule[entry.RuleIndex] = append(globalByRule[entry.RuleIndex], globalEntry)
 	}
 	s.populateNonTextPrefilterCache(data, cache)
 }
@@ -528,6 +571,9 @@ func (s *Scanner) extractGlobalMatchesInt(
 // addStaticMatchesInt adds matches routed by integer indices to the match context.
 func (s *Scanner) addStaticMatchesInt(rule *CompiledRule, data []byte, entries []globalMatchEntry) {
 	for _, e := range entries {
+		if s.matchCtx.maxMatchesPerPattern > 0 && s.matchCtx.matchCount(e.strID) > 0 {
+			continue
+		}
 		m := Match{Pattern: e.strID, Offset: e.span.Offset, Length: e.span.Length}
 		// Re-verify the candidate bytes against the stored pattern. The shared
 		// automaton registers both ASCII cases for nocase strings, so a
@@ -547,8 +593,24 @@ func (s *Scanner) addLocalTextMatches(rule *CompiledRule, data []byte) {
 	if rule == nil || rule.Automaton == nil || len(data) == 0 {
 		return
 	}
+	if s.matchCtx.maxMatchesPerPattern <= 0 {
+		for match := range rule.Automaton.SearchIter(data) {
+			acceptAutomatonMatch(s.matchCtx, rule, data, match)
+		}
+		return
+	}
+
+	matched := make(map[string]bool, len(rule.TextPatterns))
 	for match := range rule.Automaton.SearchIter(data) {
-		acceptAutomatonMatch(s.matchCtx, rule, data, match)
+		if matched[match.StringID] {
+			continue
+		}
+		if acceptAutomatonMatch(s.matchCtx, rule, data, match) {
+			matched[match.StringID] = true
+			if len(matched) == len(rule.TextPatterns) {
+				break
+			}
+		}
 	}
 }
 
@@ -692,7 +754,7 @@ func (s *Scanner) addLocalNonTextMatches(rule *CompiledRule, data []byte, cache 
 		}
 		modifiers := rule.StringModifiers[id]
 		addRegexMatchesWithModifiersCached(s.matchCtx, id, regexInfo, data, modifiers, &s.regexByteSetCache)
-		if regexInfo.cacheIndex >= 0 && regexInfo.cacheIndex < len(cache.matches) {
+		if s.matchCtx.maxMatchesPerPattern <= 0 && regexInfo.cacheIndex >= 0 && regexInfo.cacheIndex < len(cache.matches) {
 			dst := cache.matches[regexInfo.cacheIndex][:0]
 			dst = append(dst, s.matchCtx.spans[id]...)
 			cache.set(regexInfo.cacheIndex, dst)
@@ -711,7 +773,7 @@ func (s *Scanner) addLocalNonTextMatches(rule *CompiledRule, data []byte, cache 
 				s.matchCtx.AddMatch(m)
 			}
 		}
-		if pattern != nil && pattern.cacheIndex >= 0 && pattern.cacheIndex < len(cache.matches) {
+		if s.matchCtx.maxMatchesPerPattern <= 0 && pattern != nil && pattern.cacheIndex >= 0 && pattern.cacheIndex < len(cache.matches) {
 			dst := cache.matches[pattern.cacheIndex][:0]
 			dst = append(dst, s.matchCtx.spans[id]...)
 			cache.set(pattern.cacheIndex, dst)

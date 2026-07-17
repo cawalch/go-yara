@@ -44,6 +44,7 @@ type ConditionCompiler struct {
 	stringSetIndex    map[string]int
 	anonymousStrings  []string
 	textStringSets    [][]string
+	moduleFunctions   map[string]compiledModuleFunction
 
 	// loopVarSlots tracks the memory slot for the loop variable of each
 	// enclosing for-loop. For "for any of them : ($)" the slot holds the
@@ -103,6 +104,7 @@ func NewConditionCompiler(emitter *Emitter, stringOffsets map[string]int) *Condi
 		externalVariables: make(map[string]int),
 		globalVariables:   make(map[string]int),
 		ruleIndexMap:      make(map[string]int),
+		moduleFunctions:   make(map[string]compiledModuleFunction),
 		labels:            make(map[string]int),
 		pendingJumps:      make([]PendingJump, 0),
 		stringSets:        make([][]string, 0, 8),
@@ -368,6 +370,12 @@ func parseIntLiteral(s string) (int64, error) {
 func (cc *ConditionCompiler) compileFloatLiteral(lit *ast.Literal) {
 	if value, ok := lit.Value.(float64); ok {
 		cc.emitter.EmitPushDouble(value, lit.Pos.Line, lit.Pos.Column)
+		return
+	}
+	if value, ok := lit.Value.(string); ok {
+		if parsed, err := strconv.ParseFloat(value, 64); err == nil {
+			cc.emitter.EmitPushDouble(parsed, lit.Pos.Line, lit.Pos.Column)
+		}
 	}
 }
 
@@ -590,6 +598,9 @@ func (cc *ConditionCompiler) isFloatExpression(expr ast.Expression) bool {
 		return cc.isFloatExpression(e.Left) || cc.isFloatExpression(e.Right)
 	case *ast.UnaryOp:
 		return cc.isFloatExpression(e.Right)
+	case *ast.FunctionCall:
+		function, ok := cc.moduleFunctions[e.Function]
+		return ok && function.function.ReturnType == ModuleFloat
 	default:
 		return false
 	}
@@ -611,6 +622,9 @@ func (cc *ConditionCompiler) isStringExpression(expr ast.Expression) bool {
 }
 
 func (cc *ConditionCompiler) isStringFunction(name string) bool {
+	if function, ok := cc.moduleFunctions[name]; ok {
+		return function.function.ReturnType == ModuleString
+	}
 	switch name {
 	case "string", "concat", "tostring", "md5", "sha1", "sha256":
 		return true
@@ -724,6 +738,12 @@ func (cc *ConditionCompiler) emitIntToDoubleWithSwap(binOp *ast.BinaryOp) {
 
 //nolint:revive // argument-limit: internal helper
 func (cc *ConditionCompiler) handleFloatOperations(binOp *ast.BinaryOp, leftIsFloat, rightIsFloat, isComparison bool) error {
+	// Logical operands are boolean even when a nested comparison contains
+	// floating-point expressions. Promoting either result would turn a valid
+	// boolean into a double before OpAnd/OpOr executes.
+	if binOp.Op == token.AND || binOp.Op == token.OR {
+		return nil
+	}
 	isFloatOp := leftIsFloat || rightIsFloat
 	if !isFloatOp {
 		return nil
@@ -1253,6 +1273,10 @@ func (cc *ConditionCompiler) ResetForRule() {
 	cc.stringSets = cc.stringSets[:0]
 	cc.stringSetIndex = make(map[string]int)
 	cc.globalVariables = make(map[string]int)
+}
+
+func (cc *ConditionCompiler) SetModuleFunctions(functions map[string]compiledModuleFunction) {
+	cc.moduleFunctions = functions
 }
 
 // GetStats returns compilation statistics
@@ -1867,7 +1891,8 @@ func (cc *ConditionCompiler) internStringSet(ids []string) int {
 }
 
 func (cc *ConditionCompiler) compileFunctionCall(call *ast.FunctionCall) error {
-	if moduleName, ok := moduleNameFromDottedName(call.Function); ok {
+	moduleFunction, isModuleFunction := cc.moduleFunctions[call.Function]
+	if moduleName, dotted := moduleNameFromDottedName(call.Function); dotted && !isModuleFunction {
 		return unsupportedModuleError(moduleName)
 	}
 
@@ -1890,6 +1915,15 @@ func (cc *ConditionCompiler) compileFunctionCall(call *ast.FunctionCall) error {
 
 	if opcode, exists := functionOpcodes[call.Function]; exists {
 		cc.emitter.EmitOpcode(opcode, call.Pos.Line, call.Pos.Column)
+		return nil
+	}
+	if isModuleFunction {
+		cc.emitter.EmitOpcodeWithOperand(
+			OpCall,
+			Operand{Type: OperandImmediate32, Value: encodeBuiltinCall(moduleFunction.id, len(call.Args))},
+			call.Pos.Line,
+			call.Pos.Column,
+		)
 		return nil
 	}
 

@@ -38,14 +38,17 @@ func (i *Interpreter) executeReadIntOpBE(size int, signed bool) error {
 		return &InterpreterError{Type: ErrorRuntime, Message: "no match context available"}
 	}
 
-	data := i.matchContext.Data
 	offset := offsetVal.IntVal
+	data, ok := i.matchContext.dataRange(offset, int64(size))
+	if !ok {
+		return &InterpreterError{Type: ErrorInvalidMemoryAccess, Message: "integer read extends beyond available data"}
+	}
 
 	if err := i.validateReadIntAccess(offset); err != nil {
 		return err
 	}
 
-	val, err := i.readIntBE(data, offset, size, signed)
+	val, err := i.readIntBE(data, 0, size, signed)
 	if err != nil {
 		return err
 	}
@@ -64,7 +67,7 @@ func (i *Interpreter) readIntBE(data []byte, offset int64, size int, signed bool
 		return safeByteToInt64(b, signed), nil
 
 	case 2:
-		if err := i.validateBounds(offset, 1, "16-bit read"); err != nil {
+		if err := i.validateBounds(data, offset, 1, "16-bit read"); err != nil {
 			return 0, err
 		}
 		b1 := data[offset]
@@ -73,7 +76,7 @@ func (i *Interpreter) readIntBE(data []byte, offset int64, size int, signed bool
 		return safeUint16ToInt64(combined, !signed), nil
 
 	case 4:
-		if err := i.validateBounds(offset, 3, "32-bit read"); err != nil {
+		if err := i.validateBounds(data, offset, 3, "32-bit read"); err != nil {
 			return 0, err
 		}
 		b1 := data[offset]
@@ -84,7 +87,7 @@ func (i *Interpreter) readIntBE(data []byte, offset int64, size int, signed bool
 		return safeUint32ToInt64(combined, !signed), nil
 
 	case 8:
-		if err := i.validateBounds(offset, 7, "64-bit read"); err != nil {
+		if err := i.validateBounds(data, offset, 7, "64-bit read"); err != nil {
 			return 0, err
 		}
 		b1 := data[offset]
@@ -108,8 +111,10 @@ func (i *Interpreter) readIntBE(data []byte, offset int64, size int, signed bool
 }
 
 // validateBounds checks if a read operation is within data bounds.
-func (i *Interpreter) validateBounds(offset int64, extraBytes int, operation string) error {
-	if offset+int64(extraBytes) >= int64(len(i.matchContext.Data)) {
+//
+//nolint:revive // argument-limit: compact validation helper
+func (*Interpreter) validateBounds(data []byte, offset int64, extraBytes int, operation string) error {
+	if offset+int64(extraBytes) >= int64(len(data)) {
 		return &InterpreterError{
 			Type:    ErrorInvalidMemoryAccess,
 			Message: operation + " extends beyond data bounds",
@@ -124,16 +129,22 @@ func (i *Interpreter) executeReadInt(offset int64, size int, unsigned bool) (int
 		return 0, err
 	}
 
-	data := i.matchContext.Data
+	data, ok := i.matchContext.dataRange(offset, int64(size))
+	if !ok {
+		return 0, &InterpreterError{
+			Type:    ErrorInvalidMemoryAccess,
+			Message: fmt.Sprintf("%d-bit read extends beyond available data", size*8),
+		}
+	}
 	switch size {
 	case 1:
-		return i.readInt8(data, offset, unsigned)
+		return i.readInt8(data, 0, unsigned)
 	case 2:
-		return i.readInt16(data, offset, unsigned)
+		return i.readInt16(data, 0, unsigned)
 	case 4:
-		return i.readInt32(data, offset, unsigned)
+		return i.readInt32(data, 0, unsigned)
 	case 8:
-		return i.readInt64(data, offset, unsigned)
+		return i.readInt64(data, 0, unsigned)
 	default:
 		return 0, &InterpreterError{
 			Type:    ErrorInvalidMemoryAccess,
@@ -151,8 +162,7 @@ func (i *Interpreter) validateReadIntAccess(offset int64) error {
 		}
 	}
 
-	data := i.matchContext.Data
-	if offset < 0 || int(offset) >= len(data) {
+	if offset < 0 {
 		return &InterpreterError{
 			Type:    ErrorInvalidMemoryAccess,
 			Message: fmt.Sprintf("offset %d is out of bounds", offset),

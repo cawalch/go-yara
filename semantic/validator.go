@@ -2,6 +2,7 @@ package semantic
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/cawalch/go-yara/ast"
@@ -12,6 +13,7 @@ import (
 type Error struct {
 	Message  string
 	Position token.Position
+	Rule     string
 }
 
 func (e *Error) Error() string {
@@ -25,6 +27,9 @@ type Validator struct {
 	errors          []error
 	loopVariables   map[string]string // loop variable name -> "string" or "integer"
 	stringLoopDepth int
+	currentRule     string
+	moduleFunctions ModuleFunctions
+	importedModules map[string]bool
 }
 
 // Ensure Validator implements the focused visitor interfaces it needs
@@ -34,10 +39,18 @@ var _ ast.ControlFlowVisitor = (*Validator)(nil)
 
 // NewValidator creates a new semantic validator
 func NewValidator() *Validator {
+	return NewValidatorWithModules(nil)
+}
+
+// NewValidatorWithModules creates a validator that accepts the supplied
+// module function signatures.
+func NewValidatorWithModules(moduleFunctions ModuleFunctions) *Validator {
 	return &Validator{
-		symbolTable:   NewSymbolTable(),
-		errors:        make([]error, 0),
-		loopVariables: make(map[string]string),
+		symbolTable:     NewSymbolTable(),
+		errors:          make([]error, 0),
+		loopVariables:   make(map[string]string),
+		moduleFunctions: moduleFunctions,
+		importedModules: make(map[string]bool),
 	}
 }
 
@@ -45,10 +58,17 @@ func NewValidator() *Validator {
 func (v *Validator) ValidateProgram(program *ast.Program) []error {
 	v.errors = v.errors[:0] // Clear previous errors
 	v.symbolTable.Reset()
+	v.currentRule = ""
+	clear(v.importedModules)
 
-	// First: reject modules explicitly. v1.0 does not ship module support.
+	// First: validate module imports and remember the namespaces available to
+	// dotted calls in rule conditions.
 	for _, importStmt := range program.Imports {
-		v.addError(v.unsupportedModuleError(importStmt.Module, importStmt.Pos))
+		if !v.moduleFunctions.hasModule(importStmt.Module) {
+			v.addError(v.unsupportedModuleError(importStmt.Module, importStmt.Pos))
+			continue
+		}
+		v.importedModules[importStmt.Module] = true
 	}
 
 	// Second: collect global variables and external variables
@@ -82,6 +102,7 @@ func (v *Validator) collectSymbols(rule *ast.Rule) {
 		v.addError(&Error{
 			Message:  err.Error(),
 			Position: rule.Pos,
+			Rule:     rule.Name,
 		})
 	}
 }
@@ -129,6 +150,7 @@ func (v *Validator) validateRuleDependencyCycles(program *ast.Program) {
 				v.addError(&Error{
 					Message:  "circular rule dependency: " + key,
 					Position: pos,
+					Rule:     ruleName,
 				})
 			}
 		}
@@ -156,6 +178,38 @@ func appendCyclePath(path []string, dep string) []string {
 type ruleReferenceCollector struct {
 	ruleNames map[string]token.Position
 	refs      map[string]token.Position
+}
+
+// RuleDependencies returns direct rule references for each rule in program.
+// additionalRuleNames can be used to recognize references to rules that were
+// removed from the AST, such as rules skipped during error recovery.
+func RuleDependencies(program *ast.Program, additionalRuleNames ...string) map[string][]string {
+	ruleNames := make(map[string]token.Position, len(program.Rules)+len(additionalRuleNames))
+	for _, rule := range program.Rules {
+		ruleNames[rule.Name] = rule.Pos
+	}
+	for _, name := range additionalRuleNames {
+		if _, exists := ruleNames[name]; !exists {
+			ruleNames[name] = token.Position{}
+		}
+	}
+
+	dependencies := make(map[string][]string, len(program.Rules))
+	for _, rule := range program.Rules {
+		refs := make(map[string]token.Position)
+		collector := ruleReferenceCollector{
+			ruleNames: ruleNames,
+			refs:      refs,
+		}
+		collector.collect(rule.Condition, nil)
+
+		dependencies[rule.Name] = make([]string, 0, len(refs))
+		for name := range refs {
+			dependencies[rule.Name] = append(dependencies[rule.Name], name)
+		}
+		sort.Strings(dependencies[rule.Name])
+	}
+	return dependencies
 }
 
 func (c ruleReferenceCollector) collect(expr ast.Expression, scoped map[string]bool) {
@@ -220,7 +274,7 @@ func (v *Validator) collectGlobalVariable(globalVar *ast.GlobalVariable) {
 	if globalVar.Value != nil {
 		var errs []error
 		typeInfo, errs = v.validateExpression(globalVar.Value)
-		v.errors = append(v.errors, errs...)
+		v.addErrors(errs)
 	}
 	if typeInfo == nil || typeInfo.DataType == TypeUnknown {
 		v.addError(&Error{
@@ -256,6 +310,12 @@ func (v *Validator) collectExternalVariable(extVar *ast.ExternalVariable) {
 
 // validateRule performs semantic validation on a single rule
 func (v *Validator) validateRule(rule *ast.Rule) {
+	previousRule := v.currentRule
+	v.currentRule = rule.Name
+	defer func() {
+		v.currentRule = previousRule
+	}()
+
 	// Enter rule scope for validation
 	v.symbolTable.EnterScope("rule_" + rule.Name)
 
@@ -318,7 +378,7 @@ func (v *Validator) validateStrings(stringsSlice []*ast.String) {
 func (v *Validator) validateCondition(condition ast.Expression) {
 	if condition != nil {
 		conditionType, errs := v.validateExpression(condition)
-		v.errors = append(v.errors, errs...)
+		v.addErrors(errs)
 
 		// Condition should evaluate to boolean or numeric (integers/floats are truthy/falsy)
 		if conditionType != nil && conditionType.DataType != TypeUnknown && conditionType.DataType != TypeBoolean && !conditionType.IsNumeric() {
@@ -523,9 +583,9 @@ func (v *Validator) tryAlternativeIdentifierLookups(ident *ast.Identifier, error
 		return v.getTypeFromSymbol(stringSymbol), nil
 	}
 
-	// Dotted identifiers are module/member references in YARA. Modules are
-	// intentionally unsupported for v1.0, so fail explicitly instead of
-	// guessing a placeholder type.
+	// Bare dotted identifiers are structured module/member references. The
+	// current module registry exposes typed function calls, not object fields,
+	// so fail explicitly instead of guessing a placeholder type.
 	if moduleName, ok := moduleNameFromDottedName(ident.Name); ok {
 		errors = append(errors, v.unsupportedModuleError(moduleName, ident.Position()))
 		return &TypeInfo{DataType: TypeUnknown}, errors
@@ -655,8 +715,19 @@ func (v *Validator) validateFunctionCallExpression(funcCall *ast.FunctionCall) (
 	var errors []error
 
 	if moduleName, ok := moduleNameFromDottedName(funcCall.Function); ok {
-		errors = append(errors, v.unsupportedModuleError(moduleName, funcCall.Pos))
-		return &TypeInfo{DataType: TypeUnknown}, errors
+		moduleFunction, exists := v.moduleFunctions[funcCall.Function]
+		if !exists {
+			errors = append(errors, v.unsupportedModuleError(moduleName, funcCall.Pos))
+			return &TypeInfo{DataType: TypeUnknown}, errors
+		}
+		if !v.importedModules[moduleName] {
+			errors = append(errors, &Error{
+				Message:  fmt.Sprintf("module %q must be imported before calling %s", moduleName, funcCall.Function),
+				Position: funcCall.Pos,
+			})
+			return &TypeInfo{DataType: moduleFunction.ReturnType}, errors
+		}
+		return v.validateModuleFunctionCall(funcCall, moduleFunction)
 	}
 
 	// Check if this is a valid YARA function call
@@ -744,6 +815,45 @@ func (v *Validator) validateFunctionCallExpression(funcCall *ast.FunctionCall) (
 
 	// Return appropriate type based on function
 	return &TypeInfo{DataType: funcInfo.dataType, IntegerType: funcInfo.retType}, errors
+}
+
+func (v *Validator) validateModuleFunctionCall(
+	funcCall *ast.FunctionCall,
+	function ModuleFunction,
+) (*TypeInfo, []error) {
+	errors := make([]error, 0)
+	argTypes := make([]*TypeInfo, len(funcCall.Args))
+	for index, arg := range funcCall.Args {
+		argType, argErrors := v.validateExpression(arg)
+		argTypes[index] = argType
+		errors = append(errors, argErrors...)
+	}
+
+	matchedArity := false
+	for _, signature := range function.Signatures {
+		if len(signature) != len(argTypes) {
+			continue
+		}
+		matchedArity = true
+		matches := true
+		for index, expected := range signature {
+			actual := argTypes[index]
+			if actual != nil && actual.DataType != TypeUnknown && actual.DataType != expected {
+				matches = false
+				break
+			}
+		}
+		if matches {
+			return &TypeInfo{DataType: function.ReturnType}, errors
+		}
+	}
+
+	message := fmt.Sprintf("module function %q does not accept the supplied argument types", funcCall.Function)
+	if !matchedArity {
+		message = fmt.Sprintf("module function %q does not accept %d arguments", funcCall.Function, len(argTypes))
+	}
+	errors = append(errors, &Error{Message: message, Position: funcCall.Pos})
+	return &TypeInfo{DataType: function.ReturnType}, errors
 }
 
 func (v *Validator) validateFunctionArgumentTypes(funcCall *ast.FunctionCall, argTypes []*TypeInfo) []error {
@@ -997,7 +1107,16 @@ func (v *Validator) getTypeFromSymbol(symbol *Symbol) *TypeInfo {
 
 // addError adds a semantic error
 func (v *Validator) addError(err error) {
+	if semanticErr, ok := err.(*Error); ok && semanticErr.Rule == "" {
+		semanticErr.Rule = v.currentRule
+	}
 	v.errors = append(v.errors, err)
+}
+
+func (v *Validator) addErrors(errs []error) {
+	for _, err := range errs {
+		v.addError(err)
+	}
 }
 
 // GetErrors returns all semantic errors

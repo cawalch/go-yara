@@ -62,6 +62,7 @@ func PopulateMatchContext(ctx *MatchContext, rule *CompiledRule, data []byte) {
 // Reset clears the match context for reuse
 func (ctx *MatchContext) Reset(data []byte) {
 	ctx.Data = data
+	ctx.Blocks = nil
 	if ctx.compact {
 		ctx.resetCompactStorage()
 	} else {
@@ -101,6 +102,8 @@ func (ctx *MatchContext) resetPublicStorage() {
 func (ctx *MatchContext) Release() {
 	// Clear data reference effectively to allow GC
 	ctx.Data = nil
+	ctx.Blocks = nil
 	ctx.compact = false
+	ctx.maxMatchesPerPattern = 0
 	matchContextPool.Put(ctx)
 }
