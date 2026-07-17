@@ -407,15 +407,43 @@ func TestIndexASCIIFoldByteMatchesScalarSearch(t *testing.T) {
 
 func TestASCIIFoldByteCursorReturnsCasesInOrder(t *testing.T) {
 	data := []byte("__A__a__A")
-	for _, linear := range []bool{false, true} {
-		cursor := newASCIIFoldByteCursor('a', linear)
-		from := 0
-		for index, want := range []int{2, 5, 8, -1} {
-			if got := cursor.next(data, from); got != want {
-				t.Fatalf("linear %t, result %d = %d, want %d", linear, index, got, want)
-			}
-			if want >= 0 {
-				from = want + 1
+	cursor := newASCIIFoldByteCursor('a')
+	from := 0
+	for index, want := range []int{2, 5, 8, -1} {
+		if got := cursor.next(data, from); got != want {
+			t.Fatalf("result %d = %d, want %d", index, got, want)
+		}
+		if want >= 0 {
+			from = want + 1
+		}
+	}
+	if got := cursor.next(data, 0); got != 2 {
+		t.Fatalf("cursor reset result = %d, want 2", got)
+	}
+}
+
+func TestASCIIFoldByteCursorMatchesScalarSearch(t *testing.T) {
+	for length := 0; length <= 80; length++ {
+		data := make([]byte, length)
+		for index := range data {
+			data[index] = byte(index*37 + length*11)
+		}
+		for _, want := range []byte{'a', 'A', 'z', 'Z', '_', 0, 0xff} {
+			cursor := newASCIIFoldByteCursor(want)
+			for from := 0; from <= len(data); {
+				got := cursor.next(data, from)
+				wantRelative := indexASCIIFoldByte(data[from:], want)
+				wantIndex := -1
+				if wantRelative >= 0 {
+					wantIndex = from + wantRelative
+				}
+				if got != wantIndex {
+					t.Fatalf("length %d byte %#x from %d: got %d, want %d", length, want, from, got, wantIndex)
+				}
+				if got < 0 {
+					break
+				}
+				from = got + 1
 			}
 		}
 	}
