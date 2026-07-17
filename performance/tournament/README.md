@@ -81,6 +81,12 @@ The default policy:
   then fails if that same cell exceeds 25% again;
 - reports the geomean ratio across the full matrix as an informational trend.
 
+The GitHub-hosted M1 runner overrides the regression threshold to 50%. Repeated
+runs of unchanged code showed nearly 50% single-cell ratio variance on that
+shared VM, even though the broad result remained consistent. The higher CI
+threshold still gates severe regressions in any cell; stable developer hardware
+keeps the tighter 25% default.
+
 The ratio is used for gating because both engines run back-to-back on the same
 host. The confirmation pass protects the per-cell gate from transient CPU
 scheduling differences between the two separate engine processes. Absolute

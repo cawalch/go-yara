@@ -240,6 +240,7 @@ jobs:
       - name: Run benchmark tournament
         env:
           TOURNAMENT_BASELINE: performance/tournament/baseline-ci.csv
+          TOURNAMENT_MAX_REGRESSION: "0.50"
         run: make bench-vs-yarax BENCHTIME=100ms BENCHCOUNT=3
 
       - name: Upload tournament report
