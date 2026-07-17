@@ -466,7 +466,7 @@ func (rc *RuleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers
 		flags:              flags,
 		cacheKey:           patternCacheKey("regex", pattern.Value, modifiers),
 		regexAtoms:         regex.MandatoryLiteralAtoms(parsed),
-		regexAlternatives:  regex.AlternativeMandatoryLiteralAtoms(parsed),
+		regexAlternatives:  regex.LiteralAtomCover(parsed, minPrefilterAtomLength),
 		regexByteSetAtoms:  regex.MandatoryByteSetAtoms(parsed),
 		regexFixedByteSets: fixedByteSets,
 	}, nil
