@@ -89,19 +89,11 @@ func (i *Interpreter) executeIterStartStringSet() error {
 	if (inRange || atOffset) && i.matchContext != nil {
 		filtered := make([]string, 0, len(ids))
 		for _, id := range ids {
-			matches, exists := i.matchContext.Matches[id]
-			if !exists {
-				continue
-			}
-			for _, m := range matches {
-				if inRange && m.Offset >= offsetMin && m.Offset <= offsetMax {
-					filtered = append(filtered, id)
-					break
-				}
-				if atOffset && m.Offset == atOffsetValue {
-					filtered = append(filtered, id)
-					break
-				}
+			if i.matchContext.anyMatch(id, func(match matchSpan) bool {
+				return inRange && match.Offset >= offsetMin && match.Offset <= offsetMax ||
+					atOffset && match.Offset == atOffsetValue
+			}) {
+				filtered = append(filtered, id)
 			}
 		}
 		ids = filtered

@@ -769,13 +769,13 @@ func (s *Scanner) populateNonTextPrefilterCache(data []byte, cache *nonTextMatch
 
 //nolint:revive // argument-limit: hot-path helper keeps candidate verification direct
 func appendRegexPrefilterMatches(
-	dst []Match,
+	dst []matchSpan,
 	rule *CompiledRule,
 	strID string,
 	entry SharedAutomatonEntry,
 	data []byte,
 	candidates []int,
-) []Match {
+) []matchSpan {
 	pattern, ok := rule.RegexPatterns[strID]
 	if !ok || len(pattern.Code) == 0 {
 		return dst
@@ -822,7 +822,7 @@ func appendRegexPrefilterMatches(
 		}
 		match := Match{Pattern: strID, Offset: int64(absStart), Length: absEnd - absStart}
 		if matchPassesModifiers(data, match, rule.StringModifiers[strID], entry.IsWide) {
-			dst = append(dst, match)
+			dst = append(dst, matchSpan{Offset: match.Offset, Length: match.Length})
 		}
 	}
 	return dst
@@ -830,31 +830,32 @@ func appendRegexPrefilterMatches(
 
 //nolint:revive // argument-limit: rare fallback keeps hot-path state explicit
 func appendRegexFallbackMatches(
-	dst []Match,
+	dst []matchSpan,
 	rule *CompiledRule,
 	strID string,
 	pattern RegexPattern,
 	data []byte,
 	flags regex.Flags,
 	isWide bool,
-) []Match {
+) []matchSpan {
 	ctx := matchContextPool.Get().(*MatchContext)
+	ctx.compact = true
 	ctx.Reset(data)
 	addRegexMatches(ctx, strID, pattern, data, rule.StringModifiers[strID], flags, isWide)
-	dst = append(dst, ctx.Matches[strID]...)
+	dst = append(dst, ctx.spans[strID]...)
 	ctx.Release()
 	return dst
 }
 
 //nolint:revive // argument-limit: hot-path helper keeps candidate verification direct
 func appendHexPrefilterMatches(
-	dst []Match,
+	dst []matchSpan,
 	rule *CompiledRule,
 	strID string,
 	entry SharedAutomatonEntry,
 	data []byte,
 	candidates []int,
-) []Match {
+) []matchSpan {
 	pattern := rule.HexPatterns[strID]
 	if pattern == nil {
 		return dst
@@ -877,7 +878,7 @@ func appendHexPrefilterMatches(
 			}
 			match := Match{Pattern: strID, Offset: int64(start), Length: end - start}
 			if matchPassesModifiers(data, match, rule.StringModifiers[strID], false) {
-				dst = append(dst, match)
+				dst = append(dst, matchSpan{Offset: match.Offset, Length: match.Length})
 			}
 			continue
 		}
@@ -888,7 +889,7 @@ func appendHexPrefilterMatches(
 			}
 			match := Match{Pattern: strID, Offset: int64(start), Length: end - start}
 			if matchPassesModifiers(data, match, rule.StringModifiers[strID], false) {
-				dst = append(dst, match)
+				dst = append(dst, matchSpan{Offset: match.Offset, Length: match.Length})
 			}
 		}
 	}

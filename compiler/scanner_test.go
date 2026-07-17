@@ -135,6 +135,66 @@ func TestScannerStringMatch(t *testing.T) {
 	}
 }
 
+func TestScannerReportedMatchesOnly(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+		private rule helper {
+			strings: $helper = "needle"
+			condition: $helper
+		}
+		rule accepted {
+			strings:
+				$public = "needle"
+				$hidden = "needle" private
+			condition: $public and $hidden and helper
+		}
+		rule rejected {
+			strings: $rejected = "needle"
+			condition: false
+		}
+	`)
+	if err != nil {
+		t.Fatalf("CompileSource: %v", err)
+	}
+
+	defaultScanner := NewScanner(program)
+	defer defaultScanner.Close()
+	defaultResult, err := defaultScanner.Scan([]byte("needle"))
+	if err != nil {
+		t.Fatalf("default Scan: %v", err)
+	}
+	for _, rule := range []string{"helper", "accepted", "rejected"} {
+		if _, ok := defaultResult.Matches[rule]; !ok {
+			t.Errorf("default result omitted matches for evaluated rule %q", rule)
+		}
+	}
+
+	reportedScanner := NewScanner(program, WithReportedMatchesOnly())
+	defer reportedScanner.Close()
+	reportedResult, err := reportedScanner.Scan([]byte("needle"))
+	if err != nil {
+		t.Fatalf("reported-only Scan: %v", err)
+	}
+	if len(reportedResult.Matches) != 1 {
+		t.Fatalf("reported-only Matches = %v, want accepted only", reportedResult.Matches)
+	}
+	accepted, ok := reportedResult.Matches["accepted"]
+	if !ok {
+		t.Fatalf("reported-only result omitted accepted rule: %v", reportedResult.Matches)
+	}
+	if len(accepted["$public"]) != 1 {
+		t.Fatalf("accepted public matches = %v, want one", accepted["$public"])
+	}
+	if _, ok := accepted["$hidden"]; ok {
+		t.Fatal("reported-only result included a private string")
+	}
+	if len(reportedResult.MatchedRules) != 1 || reportedResult.MatchedRules[0].Rule != "accepted" {
+		t.Fatalf("MatchedRules = %v, want accepted only", reportedResult.MatchedRules)
+	}
+	if !reportedResult.RuleResults["helper"] || !reportedResult.RuleResults["accepted"] || reportedResult.RuleResults["rejected"] {
+		t.Fatalf("RuleResults changed in reported-only mode: %v", reportedResult.RuleResults)
+	}
+}
+
 func TestScannerMatchEvidenceDefaultDisabled(t *testing.T) {
 	ruleSource := `rule match_foo { strings: $a = "foo" condition: $a }`
 	compiler := NewCompiler()

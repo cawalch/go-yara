@@ -28,10 +28,11 @@ type Scanner struct {
 	matchContextAfter   int
 	matchContextEnabled bool
 
-	externalValues    map[string]externalValue
-	externalErr       error
-	nonTextCache      nonTextMatchCache
-	regexByteSetCache regexByteSetCandidateCache
+	externalValues      map[string]externalValue
+	externalErr         error
+	nonTextCache        nonTextMatchCache
+	regexByteSetCache   regexByteSetCandidateCache
+	reportedMatchesOnly bool
 
 	// Candidate offsets grouped by SharedLookup index and retained across scans.
 	prefilterCandidates [][]int
@@ -106,6 +107,15 @@ func WithMatchContext(beforeBytes, afterBytes int) ScannerOption {
 	}
 }
 
+// WithReportedMatchesOnly restricts ScanResult.Matches to public rules that
+// matched. RuleResults remains unchanged. This avoids materializing matches for
+// private and non-matching rules when scanning match-dense inputs.
+func WithReportedMatchesOnly() ScannerOption {
+	return func(scanner *Scanner) {
+		scanner.reportedMatchesOnly = true
+	}
+}
+
 // WithExternalVariables provides runtime values for declared external variables.
 //
 // Invalid variable names or unsupported values are reported by Scan.
@@ -125,6 +135,7 @@ func NewScanner(program *CompiledProgram, opts ...ScannerOption) *Scanner {
 	}
 
 	ctx := matchContextPool.Get().(*MatchContext)
+	ctx.compact = true
 
 	s := &Scanner{
 		program:     program,
@@ -226,20 +237,20 @@ func (cp *CompiledProgram) ScanFileWithContext(ctx context.Context, filename str
 // globalMatchEntry is a match routed by integer indices from the shared automaton.
 type globalMatchEntry struct {
 	strID    string // string identifier (e.g. "$a")
-	m        Match  // the match itself
+	span     matchSpan
 	isWide   bool   // whether this concrete automaton pattern is wide-encoded
 	isNocase bool   // whether the originating string is nocase
 	pattern  []byte // stored automaton pattern bytes for re-verification
 }
 
 type nonTextMatchCache struct {
-	matches [][]Match
+	matches [][]matchSpan
 	ready   []bool
 }
 
 func (cache *nonTextMatchCache) reset(size int) {
 	if cap(cache.matches) < size {
-		cache.matches = make([][]Match, size)
+		cache.matches = make([][]matchSpan, size)
 	} else {
 		cache.matches = cache.matches[:size]
 		for idx := range cache.matches {
@@ -254,14 +265,14 @@ func (cache *nonTextMatchCache) reset(size int) {
 	}
 }
 
-func (cache *nonTextMatchCache) get(index int) ([]Match, bool) {
+func (cache *nonTextMatchCache) get(index int) ([]matchSpan, bool) {
 	if index < 0 || index >= len(cache.ready) || !cache.ready[index] {
 		return nil, false
 	}
 	return cache.matches[index], true
 }
 
-func (cache *nonTextMatchCache) set(index int, matches []Match) {
+func (cache *nonTextMatchCache) set(index int, matches []matchSpan) {
 	if index < 0 || index >= len(cache.ready) {
 		return
 	}
@@ -358,16 +369,19 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 			return nil, err
 		}
 
-		// Only clone when there are matches — avoids allocating map + slices for empty results.
-		if len(s.matchCtx.Matches) > 0 {
-			ruleMatches := cloneMatches(s.matchCtx.Matches)
+		matched := s.interp.GetRuleResults()[rule.Name]
+		// The default preserves the historical all-evaluated-rules result shape.
+		// The opt-in compact result mode materializes only matching public rules.
+		materialize := !s.reportedMatchesOnly || matched && !rule.IsPrivate
+		if materialize && len(s.matchCtx.spans) > 0 {
+			ruleMatches := materializeMatches(s.matchCtx.spans)
 			ruleMatches = filterPrivateStrings(rule, ruleMatches)
 			if err := s.populateMatchEvidence(ctx, data, ruleMatches); err != nil {
 				return nil, err
 			}
 			result.Matches[rule.Name] = ruleMatches
 		}
-		result.RuleResults[rule.Name] = s.interp.GetRuleResults()[rule.Name]
+		result.RuleResults[rule.Name] = matched
 	}
 
 	// Check if all global rules matched
@@ -386,10 +400,16 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 		}
 		// Skip non-global rules if not all global rules matched
 		if !rule.IsGlobal && !allGlobalMatched {
+			if s.reportedMatchesOnly {
+				delete(result.Matches, rule.Name)
+			}
 			continue
 		}
 		// Skip rules not matching the tag filter
 		if !s.hasMatchingTag(rule) {
+			if s.reportedMatchesOnly {
+				delete(result.Matches, rule.Name)
+			}
 			continue
 		}
 		// Private rules are not reported in results
@@ -495,12 +515,8 @@ func (s *Scanner) extractGlobalMatchesInt(
 		info := s.program.SharedAutomaton.Strings[match.StringIndex]
 		strID := rule.IndexToStringID[entry.StringIdx]
 		globalByRule[entry.RuleIndex] = append(globalByRule[entry.RuleIndex], globalMatchEntry{
-			strID: strID,
-			m: Match{
-				Pattern: strID,
-				Offset:  int64(match.Backtrack),
-				Length:  info.Length,
-			},
+			strID:    strID,
+			span:     matchSpan{Offset: int64(match.Backtrack), Length: info.Length},
 			isWide:   (info.Flags & regex.FlagsWide) != 0,
 			isNocase: (info.Flags & regex.FlagsNoCase) != 0,
 			pattern:  info.Data,
@@ -512,7 +528,7 @@ func (s *Scanner) extractGlobalMatchesInt(
 // addStaticMatchesInt adds matches routed by integer indices to the match context.
 func (s *Scanner) addStaticMatchesInt(rule *CompiledRule, data []byte, entries []globalMatchEntry) {
 	for _, e := range entries {
-		m := e.m
+		m := Match{Pattern: e.strID, Offset: e.span.Offset, Length: e.span.Length}
 		// Re-verify the candidate bytes against the stored pattern. The shared
 		// automaton registers both ASCII cases for nocase strings, so a
 		// case-sensitive string whose output state lies on a nocase path could
@@ -566,13 +582,16 @@ func (s *Scanner) populateFixedRegexCache(data []byte, cache *nonTextMatchCache)
 			}
 			match := Match{Offset: int64(absoluteStart), Length: absoluteEnd - absoluteStart}
 			if matchPassesModifiers(data, match, entry.modifiers, entry.wide) {
-				cache.matches[entry.cacheIndex] = append(cache.matches[entry.cacheIndex], match)
+				cache.matches[entry.cacheIndex] = append(cache.matches[entry.cacheIndex], matchSpan{
+					Offset: match.Offset,
+					Length: match.Length,
+				})
 			}
 		}
 	}
 	for _, order := range dispatch.cacheOrder {
 		matches := cache.matches[order.cacheIndex]
-		slices.SortStableFunc(matches, func(left, right Match) int {
+		slices.SortStableFunc(matches, func(left, right matchSpan) int {
 			leftWide := left.Length == order.wideLength
 			rightWide := right.Length == order.wideLength
 			switch {
@@ -675,7 +694,7 @@ func (s *Scanner) addLocalNonTextMatches(rule *CompiledRule, data []byte, cache 
 		addRegexMatchesWithModifiersCached(s.matchCtx, id, regexInfo, data, modifiers, &s.regexByteSetCache)
 		if regexInfo.cacheIndex >= 0 && regexInfo.cacheIndex < len(cache.matches) {
 			dst := cache.matches[regexInfo.cacheIndex][:0]
-			dst = append(dst, s.matchCtx.Matches[id]...)
+			dst = append(dst, s.matchCtx.spans[id]...)
 			cache.set(regexInfo.cacheIndex, dst)
 		}
 	}
@@ -694,16 +713,15 @@ func (s *Scanner) addLocalNonTextMatches(rule *CompiledRule, data []byte, cache 
 		}
 		if pattern != nil && pattern.cacheIndex >= 0 && pattern.cacheIndex < len(cache.matches) {
 			dst := cache.matches[pattern.cacheIndex][:0]
-			dst = append(dst, s.matchCtx.Matches[id]...)
+			dst = append(dst, s.matchCtx.spans[id]...)
 			cache.set(pattern.cacheIndex, dst)
 		}
 	}
 }
 
-func addCachedMatches(ctx *MatchContext, id string, matches []Match) {
+func addCachedMatches(ctx *MatchContext, id string, matches []matchSpan) {
 	for _, match := range matches {
-		match.Pattern = id
-		ctx.AddMatch(match)
+		ctx.addMatchSpan(id, match)
 	}
 }
 
@@ -943,15 +961,17 @@ func copyBytes(src []byte) []byte {
 	return dst
 }
 
-func cloneMatches(src map[string][]Match) map[string][]Match {
+func materializeMatches(src map[string][]matchSpan) map[string][]Match {
 	matches := make(map[string][]Match, len(src))
-	for k, v := range src {
-		if len(v) == 0 {
+	for id, spans := range src {
+		if len(spans) == 0 {
 			continue
 		}
-		dst := make([]Match, len(v))
-		copy(dst, v)
-		matches[k] = dst
+		dst := make([]Match, len(spans))
+		for index, span := range spans {
+			dst[index] = Match{Pattern: id, Offset: span.Offset, Length: span.Length}
+		}
+		matches[id] = dst
 	}
 	return matches
 }
