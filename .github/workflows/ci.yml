@@ -80,9 +80,6 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
     strategy:
       matrix:
         go-version: ["1.26.0"]
@@ -125,15 +122,6 @@ jobs:
             echo "Total statement coverage is below 79%"
             exit 1
           fi
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v7
-        with:
-          files: ./coverage.out
-          flags: unittests
-          name: codecov-umbrella
-          use_oidc: true
-          fail_ci_if_error: true
 
   security:
     name: Security Scan
