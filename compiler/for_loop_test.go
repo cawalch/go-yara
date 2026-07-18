@@ -27,6 +27,34 @@ rule ForLoopAny {
 	}
 }
 
+func TestForLoopNumericRangeQuantifier(t *testing.T) {
+	tests := []struct {
+		name      string
+		condition string
+		want      bool
+	}{
+		{name: "exactly-three", condition: `for 3 i in (1..5) : ( i > 2 )`, want: true},
+		{name: "only-two", condition: `for 3 i in (1..5) : ( i > 3 )`, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			source := `rule numeric_range { condition: ` + tt.condition + ` }`
+			program, err := NewCompiler().CompileSource(source)
+			if err != nil {
+				t.Fatalf("compile: %v", err)
+			}
+			got, err := evaluateRule(program.Rules[0], program, nil)
+			if err != nil {
+				t.Fatalf("evaluate: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("evaluate = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestForLoopAnyOfStrings(t *testing.T) {
 	source := `
 rule ForAnyOf {

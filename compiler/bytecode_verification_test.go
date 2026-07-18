@@ -268,7 +268,7 @@ func TestMemorySlotUsage(t *testing.T) {
 		},
 		{
 			name:        "external-variables",
-			rule:        `rule test { extern: a = 10 condition: a == 10 }`,
+			rule:        `external a rule test { condition: a == 10 }`,
 			expectError: false,
 			description: "Documents memory slots for external variables",
 		},
@@ -286,7 +286,7 @@ func TestMemorySlotUsage(t *testing.T) {
 		},
 		{
 			name:        "many-variables",
-			rule:        `rule test { extern: a = 1 extern: b = 2 extern: c = 3 extern: d = 4 extern: e = 5 condition: a + b + c + d + e > 0 }`,
+			rule:        `external a external b external c external d external e rule test { condition: a + b + c + d + e > 0 }`,
 			expectError: false,
 			description: "Documents memory slots for many variables",
 		},

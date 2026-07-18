@@ -53,7 +53,7 @@ func TestMultipleRulesIndependent(t *testing.T) {
 			c := compiler.NewCompiler()
 			program, err := c.CompileSourceWithContext(context.Background(), tt.rules)
 
-			assertSimpleCompileExpectation(t, compileResult{program: program, err: err}, simpleKnownGapExpectation(tt.expectError, tt.description))
+			assertSimpleCompileExpectation(t, compileResult{program: program, err: err}, simpleCompileExpectation(tt.expectError, tt.description))
 			if err == nil && program != nil {
 				t.Logf("  Program contains %d rules", program.GetRuleCount())
 			}
@@ -124,7 +124,7 @@ func TestRuleDependencies(t *testing.T) {
 			c := compiler.NewCompiler()
 			program, err := c.CompileSourceWithContext(context.Background(), tt.rules)
 
-			assertSimpleCompileExpectation(t, compileResult{program: program, err: err}, simpleKnownGapExpectation(tt.expectError, tt.description))
+			assertSimpleCompileExpectation(t, compileResult{program: program, err: err}, simpleCompileExpectation(tt.expectError, tt.description))
 		})
 	}
 }
@@ -157,19 +157,19 @@ func TestRuleModifiers(t *testing.T) {
 		},
 		{
 			name:        "tagged-rule",
-			rules:       `rule test tag : malware { condition: true }`,
+			rules:       `rule test : malware { condition: true }`,
 			expectError: false,
 			description: "Documents tagged rule compiles",
 		},
 		{
 			name:        "multiple-tags",
-			rules:       `rule test tag : malware trojan { condition: true }`,
+			rules:       `rule test : malware trojan { condition: true }`,
 			expectError: false,
 			description: "Documents rule with multiple tags compiles",
 		},
 		{
 			name:        "same-name-different-tags",
-			rules:       `rule test tag : malware { condition: true } rule test tag : benign { condition: false }`,
+			rules:       `rule test : malware { condition: true } rule test : benign { condition: false }`,
 			expectError: true,
 			description: "Documents duplicate rule names (should error)",
 		},
@@ -180,7 +180,7 @@ func TestRuleModifiers(t *testing.T) {
 			c := compiler.NewCompiler()
 			program, err := c.CompileSourceWithContext(context.Background(), tt.rules)
 
-			assertSimpleCompileExpectation(t, compileResult{program: program, err: err}, simpleKnownGapExpectation(tt.expectError, tt.description))
+			assertSimpleCompileExpectation(t, compileResult{program: program, err: err}, simpleCompileExpectation(tt.expectError, tt.description))
 		})
 	}
 }
@@ -201,7 +201,7 @@ func TestRuleNameConflicts(t *testing.T) {
 		},
 		{
 			name:        "duplicate-names-with-tags",
-			rules:       `rule test tag : a { condition: true } rule test tag : b { condition: false }`,
+			rules:       `rule test : a { condition: true } rule test : b { condition: false }`,
 			expectError: true,
 			description: "Documents duplicate names with different tags",
 		},
@@ -224,7 +224,7 @@ func TestRuleNameConflicts(t *testing.T) {
 			c := compiler.NewCompiler()
 			program, err := c.CompileSourceWithContext(context.Background(), tt.rules)
 
-			assertSimpleCompileExpectation(t, compileResult{program: program, err: err}, simpleKnownGapExpectation(tt.expectError, tt.description))
+			assertSimpleCompileExpectation(t, compileResult{program: program, err: err}, simpleCompileExpectation(tt.expectError, tt.description))
 		})
 	}
 }
@@ -239,25 +239,25 @@ func TestExternalVariables(t *testing.T) {
 	}{
 		{
 			name:        "external-integer",
-			rule:        `rule test { extern: a = 10 condition: a == 10 }`,
+			rule:        `external a rule test { condition: a == 10 }`,
 			expectError: false,
 			description: "Documents external integer variable compiles",
 		},
 		{
 			name:        "external-string",
-			rule:        `rule test { extern: s = "test" condition: s == "test" }`,
+			rule:        `external s rule test { condition: s == "test" }`,
 			expectError: false,
 			description: "Documents external string variable compiles",
 		},
 		{
 			name:        "external-bool",
-			rule:        `rule test { extern: b = true condition: b }`,
+			rule:        `external b rule test { condition: b }`,
 			expectError: false,
 			description: "Documents external boolean variable compiles",
 		},
 		{
 			name:        "multiple-externals",
-			rule:        `rule test { extern: a = 1 extern: b = 2 extern: c = 3 condition: a + b + c == 6 }`,
+			rule:        `external a external b external c rule test { condition: a + b + c == 6 }`,
 			expectError: false,
 			description: "Documents multiple external variables compile",
 		},
@@ -268,7 +268,7 @@ func TestExternalVariables(t *testing.T) {
 			c := compiler.NewCompiler()
 			program, err := c.CompileSourceWithContext(context.Background(), tt.rule)
 
-			assertSimpleCompileExpectation(t, compileResult{program: program, err: err}, simpleKnownGapExpectation(tt.expectError, tt.description))
+			assertSimpleCompileExpectation(t, compileResult{program: program, err: err}, simpleCompileExpectation(tt.expectError, tt.description))
 		})
 	}
 }
@@ -318,7 +318,7 @@ func TestMetaInformation(t *testing.T) {
 			c := compiler.NewCompiler()
 			program, err := c.CompileSourceWithContext(context.Background(), tt.rule)
 
-			assertSimpleCompileExpectation(t, compileResult{program: program, err: err}, simpleKnownGapExpectation(tt.expectError, tt.description))
+			assertSimpleCompileExpectation(t, compileResult{program: program, err: err}, simpleCompileExpectation(tt.expectError, tt.description))
 		})
 	}
 }

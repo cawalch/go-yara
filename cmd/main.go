@@ -46,17 +46,26 @@ type commandArgs struct {
 }
 
 func main() {
-	args, err := parseArgs(os.Args[1:])
-	if err != nil {
+	if err := run(os.Args[1:]); err != nil {
 		if err == flag.ErrHelp {
 			return
 		}
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+}
 
-	content := readFileContent(args.filename)
-	runMode(args.mode, content, args)
+func run(rawArgs []string) error {
+	args, err := parseArgs(rawArgs)
+	if err != nil {
+		return err
+	}
+
+	content, err := readFileContent(args.filename)
+	if err != nil {
+		return err
+	}
+	return runMode(args.mode, content, args)
 }
 
 func parseArgs(rawArgs []string) (*commandArgs, error) {
@@ -138,35 +147,33 @@ func parseArgs(rawArgs []string) (*commandArgs, error) {
 	}, nil
 }
 
-func readFileContent(filename string) []byte {
+func readFileContent(filename string) ([]byte, error) {
 	content, err := fs.ReadFile("", filename) // #nosec G304 - file reading is intentional
 	if err != nil {
-		fmt.Printf("Error reading file %s: %v\n", filename, err)
-		os.Exit(1)
+		return nil, fmt.Errorf("reading YARA file %s: %w", filename, err)
 	}
-	return content
+	return content, nil
 }
 
-func runMode(mode string, content []byte, args *commandArgs) {
+func runMode(mode string, content []byte, args *commandArgs) error {
 	fmt.Printf("Processing YARA file: %s (mode: %s)\n", args.filename, mode)
 	fmt.Printf("File content:\n%s\n\n", string(content))
 
 	switch mode {
 	case modeLex:
-		runLexerMode(string(content))
+		return runLexerMode(string(content))
 	case modeParse:
-		runParserMode(string(content))
+		return runParserMode(string(content), args.filename)
 	case modeCompile:
-		runCompileMode(string(content), args.filename)
+		return runCompileMode(string(content), args.filename)
 	case modeExecute:
-		runExecuteMode(string(content), args.dataFile, args.filename, args)
+		return runExecuteMode(string(content), args.dataFile, args.filename, args)
 	default:
-		fmt.Printf("Unknown mode: %s\n", mode)
-		os.Exit(1)
+		return fmt.Errorf("unknown mode %q", mode)
 	}
 }
 
-func runLexerMode(content string) {
+func runLexerMode(content string) error {
 	// Create lexer
 	l := lexer.New(content)
 
@@ -187,37 +194,37 @@ func runLexerMode(content string) {
 		for _, err := range lexerErrors {
 			fmt.Printf("  %s\n", err.Error())
 		}
-		os.Exit(1)
+		return fmt.Errorf("lexer errors detected")
 	}
 
 	fmt.Printf("\nSuccessfully lexed with no errors!\n")
+	return nil
 }
 
-func runParserMode(content string) {
-	program := parseContent(content)
-	if program == nil {
-		return
+func runParserMode(content, filename string) error {
+	program, err := parseContent(content)
+	if err != nil {
+		return err
 	}
 
-	processIncludes(program)
+	if err := processIncludes(program, filename); err != nil {
+		return err
+	}
 	printParseSummary(program)
+	return nil
 }
 
-func parseContent(content string) *ast.Program {
+func parseContent(content string) (*ast.Program, error) {
 	l := lexer.New(content)
 	p := parser.New(l)
 
 	program, err := p.ParseRulesWithContext(context.Background())
 	if err != nil {
 		printParserErrors(p, err)
-		os.Exit(1)
+		return nil, err
 	}
 
-	if parseErr := checkForParserErrors(p); parseErr != nil {
-		os.Exit(1)
-	}
-
-	return program
+	return program, nil
 }
 
 func printParserErrors(p *parser.Parser, mainErr error) {
@@ -231,30 +238,18 @@ func printParserErrors(p *parser.Parser, mainErr error) {
 	}
 }
 
-func checkForParserErrors(p *parser.Parser) error {
-	parserErrors := p.Errors()
-	if len(parserErrors) > 0 {
-		fmt.Printf("\nParser errors (%d):\n", len(parserErrors))
-		for _, err := range parserErrors {
-			fmt.Printf("  %s\n", err.Error())
-		}
-		return fmt.Errorf("parser errors detected")
-	}
-	return nil
-}
-
-func processIncludes(program *ast.Program) {
+func processIncludes(program *ast.Program, filename string) error {
 	if len(program.Includes) == 0 {
-		return
+		return nil
 	}
 
 	comp := compiler.NewCompiler()
-	comp.SetBaseDir(filepath.Dir(os.Args[1]))
+	comp.SetBaseDir(filepath.Dir(filename))
 
 	if err := comp.ProcessIncludes(program); err != nil {
-		fmt.Printf("Error processing includes: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("processing includes: %w", err)
 	}
+	return nil
 }
 
 func printParseSummary(program *ast.Program) {
@@ -284,7 +279,7 @@ func printIncludeSummary(includes []*ast.Include) {
 	}
 }
 
-func runCompileMode(content, filename string) {
+func runCompileMode(content, filename string) error {
 	// Create compiler
 	comp := compiler.NewCompiler()
 	// Set base directory for resolving includes
@@ -302,7 +297,7 @@ func runCompileMode(content, filename string) {
 				fmt.Printf("  [%s] %s\n", cerr.Phase, cerr.Message)
 			}
 		}
-		os.Exit(1)
+		return fmt.Errorf("compilation failed: %w", err)
 	}
 
 	compilationErrors := comp.GetErrors()
@@ -311,7 +306,7 @@ func runCompileMode(content, filename string) {
 		for _, cerr := range compilationErrors {
 			fmt.Printf("  [%s] %s\n", cerr.Phase, cerr.Message)
 		}
-		os.Exit(1)
+		return fmt.Errorf("compilation errors detected")
 	}
 
 	fmt.Printf("Compilation: Successfully compiled %d rules\n", len(compiledProgram.Rules))
@@ -320,34 +315,34 @@ func runCompileMode(content, filename string) {
 	for i, rule := range compiledProgram.Rules {
 		fmt.Printf("  Rule %d: %s (%d bytes)\n", i+1, rule.GetName(), len(rule.GetBytecode()))
 	}
+	return nil
 }
 
 //nolint:revive // argument-limit: CLI entry point
-func runExecuteMode(content, dataFile, filename string, args *commandArgs) {
-	data := validateAndReadDataFile(dataFile)
-	if data == nil {
-		return
+func runExecuteMode(content, dataFile, filename string, args *commandArgs) error {
+	data, err := validateAndReadDataFile(dataFile)
+	if err != nil {
+		return err
 	}
 
 	printDataSummary(dataFile, data)
 
-	compiledProgram := compileRules(content, filename)
-	if compiledProgram == nil {
-		return
+	compiledProgram, err := compileRules(content, filename)
+	if err != nil {
+		return err
 	}
 
-	executeRules(compiledProgram, data, args)
+	return executeRules(compiledProgram, data, args)
 }
 
-func validateAndReadDataFile(dataFile string) []byte {
+func validateAndReadDataFile(dataFile string) ([]byte, error) {
 	// Use centralized file reading utility with validation
 	data, err := fs.ReadFile("", dataFile) // #nosec G304 - file reading is intentional
 	if err != nil {
-		fmt.Printf("Error reading data file %s: %v\n", dataFile, err)
-		return nil
+		return nil, fmt.Errorf("reading data file %s: %w", dataFile, err)
 	}
 
-	return data
+	return data, nil
 }
 
 func printDataSummary(dataFile string, data []byte) {
@@ -360,13 +355,12 @@ func printDataSummary(dataFile string, data []byte) {
 	}
 }
 
-func compileRules(content, filename string) *compiler.CompiledProgram {
+func compileRules(content, filename string) (*compiler.CompiledProgram, error) {
 	comp := compiler.NewCompiler()
 	comp.SetBaseDir(filepath.Dir(filename))
 	compiledProgram, err := comp.CompileSourceWithContext(context.Background(), content)
 	if err != nil {
-		fmt.Printf("Compilation error: %v\n", err)
-		return nil
+		return nil, fmt.Errorf("compiling rules: %w", err)
 	}
 
 	compilationErrors := comp.GetErrors()
@@ -375,17 +369,16 @@ func compileRules(content, filename string) *compiler.CompiledProgram {
 		for _, cerr := range compilationErrors {
 			fmt.Printf("  [%s] %s\n", cerr.Phase, cerr.Message)
 		}
-		return nil
+		return nil, fmt.Errorf("compilation errors detected")
 	}
 
 	fmt.Printf("Compilation: Successfully compiled %d rules\n\n", len(compiledProgram.Rules))
-	return compiledProgram
+	return compiledProgram, nil
 }
 
-func executeRules(compiledProgram *compiler.CompiledProgram, data []byte, args *commandArgs) {
+func executeRules(compiledProgram *compiler.CompiledProgram, data []byte, args *commandArgs) error {
 	if args.enableStreaming {
-		executeRulesStreaming(compiledProgram, data, args)
-		return
+		return executeRulesStreaming(compiledProgram, data, args)
 	}
 
 	scannerOptions := make([]compiler.ScannerOption, 0, 2)
@@ -400,8 +393,7 @@ func executeRules(compiledProgram *compiler.CompiledProgram, data []byte, args *
 
 	result, err := scanner.Scan(data)
 	if err != nil {
-		fmt.Printf("Execution error: %v\n", err)
-		return
+		return fmt.Errorf("executing rules: %w", err)
 	}
 
 	totalMatches := 0
@@ -422,6 +414,7 @@ func executeRules(compiledProgram *compiler.CompiledProgram, data []byte, args *
 	}
 
 	fmt.Printf("Total matches found: %d\n", totalMatches)
+	return nil
 }
 
 func matchEntriesFromMatches(rule *compiler.CompiledRule, matchesByID map[string][]compiler.Match) []printEntry {
@@ -480,7 +473,7 @@ func formatBytes(data []byte) string {
 }
 
 // executeRulesStreaming reports chunked pattern matches. It does not evaluate rule conditions.
-func executeRulesStreaming(compiledProgram *compiler.CompiledProgram, data []byte, args *commandArgs) {
+func executeRulesStreaming(compiledProgram *compiler.CompiledProgram, data []byte, args *commandArgs) error {
 	fmt.Printf("Streaming pattern scan enabled (chunk size: %d bytes)\n", args.chunkSize)
 	fmt.Printf("Note: streaming mode reports literal text-pattern matches only; regex, hex, and rule conditions are not evaluated.\n")
 
@@ -497,8 +490,7 @@ func executeRulesStreaming(compiledProgram *compiler.CompiledProgram, data []byt
 	start := time.Now()
 	matches, err := compiledProgram.ProcessBytesStreaming(ctx, data)
 	if err != nil {
-		fmt.Printf("Error during streaming execution: %v\n", err)
-		return
+		return fmt.Errorf("streaming execution: %w", err)
 	}
 	elapsed := time.Since(start)
 
@@ -523,6 +515,7 @@ func executeRulesStreaming(compiledProgram *compiler.CompiledProgram, data []byt
 		throughput := float64(len(data)) / elapsed.Seconds() / 1024 / 1024
 		fmt.Printf("  Throughput: %.2f MB/s\n", throughput)
 	}
+	return nil
 }
 
 type printEntry struct {

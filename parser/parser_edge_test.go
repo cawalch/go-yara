@@ -259,6 +259,34 @@ func TestParseQuantifierVariations(t *testing.T) {
 	}
 }
 
+func TestParseNumericQuantifiedRangeLoop(t *testing.T) {
+	input := `rule numeric_loop { condition: for 3 i in (1..10) : ( i > 5 ) }`
+	l := lexer.New(input)
+	p := New(l)
+
+	program, err := p.ParseRules()
+	if err != nil {
+		t.Fatalf("parsing failed: %v", err)
+	}
+	if len(program.Rules) != 1 {
+		t.Fatalf("expected 1 rule, got %d", len(program.Rules))
+	}
+
+	loop, ok := program.Rules[0].Condition.(*ast.ForLoop)
+	if !ok {
+		t.Fatalf("condition type = %T, want *ast.ForLoop", program.Rules[0].Condition)
+	}
+	if loop.Quantifier != "3" {
+		t.Fatalf("quantifier = %q, want 3", loop.Quantifier)
+	}
+	if len(loop.Variables) != 1 || loop.Variables[0] != "i" {
+		t.Fatalf("variables = %v, want [i]", loop.Variables)
+	}
+	if loop.Range == nil || loop.Condition == nil {
+		t.Fatalf("numeric range loop is incomplete: range=%T condition=%T", loop.Range, loop.Condition)
+	}
+}
+
 // TestParseStringModifiers tests string modifier parsing
 func TestParseStringModifiers(t *testing.T) {
 	t.Run("SingleModifiers", testSingleStringModifiers)
