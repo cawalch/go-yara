@@ -1,11 +1,11 @@
-// Package compiler implements bytecode format based on libyara's instruction set,
-// providing a stack-based virtual machine architecture for efficient pattern matching.
 package compiler
 
 import (
 	"encoding/binary"
 	"fmt"
 )
+
+// The compiler uses a compact stack-based bytecode instruction set.
 
 // Opcode represents a bytecode instruction opcode
 type Opcode uint8

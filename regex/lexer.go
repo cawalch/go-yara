@@ -1,13 +1,7 @@
 package regex
 
-// Minimal lexer for Phase 2 (incremental). Handles:
-// - literals (ASCII bytes)
-// - dot '.'
-// - grouping '(', ')'
-// - alternation '|'
-// - anchors '^', '$'
-// - simple escapes for metacharacters: \\ . | ( ) ^ $
-// Character classes and quantifiers will be added incrementally.
+// The regex lexer recognizes literals, groups, alternation, anchors, character
+// classes, quantifiers, shorthand classes, boundaries, and escapes.
 
 type tokenKind int
 
@@ -139,7 +133,7 @@ func (l *lexer) handleEscapeSequence() token {
 		return token{kind: tChar, ch: e}
 	}
 
-	// For now, pass through unknown escapes as literal character (non-strict)
+	// Unknown escapes are treated as literals for YARA-compatible non-strict parsing.
 	return token{kind: tChar, ch: e}
 }
 

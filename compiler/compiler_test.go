@@ -230,43 +230,36 @@ func TestCompiledRuleMemoryUsage(t *testing.T) {
 
 // TestCompilerOptions tests compiler options
 func TestCompilerOptions(t *testing.T) {
-	// Test default options
 	compiler := NewCompiler()
 	options := compiler.GetOptions()
 
-	if !options.EnableOptimizations {
-		t.Error("Optimizations should be enabled by default")
+	if !options.EnableWarnings {
+		t.Error("Warnings should be enabled by default")
+	}
+	if options.MaxInputSize != 100*1024*1024 {
+		t.Errorf("Default max input size = %d, want %d", options.MaxInputSize, 100*1024*1024)
 	}
 
-	if options.TargetVersion != "1.0" {
-		t.Errorf("Default target version = %v, want 1.0", options.TargetVersion)
-	}
-
-	// Test custom options
 	customOptions := CompilationOptions{
-		EnableOptimizations: false,
-		EnableDebugInfo:     true,
-		EnableWarnings:      false,
-		TargetVersion:       "2.0",
+		EnableWarnings:     false,
+		IgnoreInvalidRules: true,
+		Modules:            defaultModules(),
+		MaxInputSize:       1024,
+		MaxIncludeSize:     512,
+		MaxRecursionDepth:  10,
 	}
 
 	compilerWithOptions := NewCompilerWithOptions(customOptions)
 	retrievedOptions := compilerWithOptions.GetOptions()
 
-	if retrievedOptions.EnableOptimizations {
-		t.Error("Optimizations should be disabled")
-	}
-
-	if !retrievedOptions.EnableDebugInfo {
-		t.Error("Debug info should be enabled")
-	}
-
 	if retrievedOptions.EnableWarnings {
 		t.Error("Warnings should be disabled")
 	}
-
-	if retrievedOptions.TargetVersion != "2.0" {
-		t.Errorf("Target version = %v, want 2.0", retrievedOptions.TargetVersion)
+	if !retrievedOptions.IgnoreInvalidRules {
+		t.Error("Invalid rules should be ignored")
+	}
+	if retrievedOptions.MaxInputSize != 1024 {
+		t.Errorf("Max input size = %d, want 1024", retrievedOptions.MaxInputSize)
 	}
 }
 
@@ -310,8 +303,7 @@ func BenchmarkACAutomaton(b *testing.B) {
 
 // BenchmarkStringCompiler benchmarks the string compiler
 func BenchmarkStringCompiler(b *testing.B) {
-	emitter := NewEmitter()
-	sc := NewStringCompiler(emitter)
+	sc := NewStringCompiler()
 
 	text := "This is a test string for benchmarking the string compiler"
 	modifiers := []ast.StringModifier{
@@ -378,10 +370,11 @@ rule test_rule {
 		t.Error("Total time should be greater than 0")
 	}
 
-	// LexerTime is no longer tracked separately (parser creates its own lexer)
-	// Just verify ParserTime is set
 	if stats.ParserTime == 0 {
 		t.Error("Parser time should be greater than 0")
+	}
+	if stats.TotalInstructions != program.GetExecutionPlan().TotalInstructions {
+		t.Errorf("TotalInstructions = %d, want %d", stats.TotalInstructions, program.GetExecutionPlan().TotalInstructions)
 	}
 
 	// Test program statistics
@@ -433,8 +426,7 @@ rule test_rule {
 
 // TestPatternComplexityEstimation tests the pattern complexity estimation
 func TestPatternComplexityEstimation(t *testing.T) {
-	emitter := NewEmitter()
-	sc := NewStringCompiler(emitter)
+	sc := NewStringCompiler()
 
 	tests := []struct {
 		name       string
@@ -473,81 +465,6 @@ func TestPatternComplexityEstimation(t *testing.T) {
 			quality := sc.EstimatePatternComplexity(tt.pattern, tt.modifiers)
 			if quality < tt.minQuality {
 				t.Errorf("Expected quality >= %d, got %d", tt.minQuality, quality)
-			}
-		})
-	}
-}
-
-// TestHexStringCompilation tests hex string pattern compilation
-func TestHexStringCompilation(t *testing.T) {
-	emitter := NewEmitter()
-	sc := NewStringCompiler(emitter)
-
-	tests := []struct {
-		name     string
-		hexStr   string
-		wantErr  bool
-		wantData []byte
-	}{
-		{
-			name:     "simple_hex",
-			hexStr:   "61 62 63 64",
-			wantErr:  false,
-			wantData: []byte{0x61, 0x62, 0x63, 0x64},
-		},
-		{
-			name:     "hex_with_wildcards",
-			hexStr:   "61 62 ?? 64",
-			wantErr:  false,
-			wantData: []byte{0x61, 0x62, 0x00, 0x64},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			hexPattern := &ast.HexString{
-				Value: tt.hexStr,
-				Pos:   token.Position{Line: 1, Column: 1},
-			}
-			err := sc.compileHexString("test_hex", hexPattern, []ast.StringModifier{})
-			if (err != nil) != tt.wantErr {
-				t.Errorf("compileHexString() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
-// TestRegexPatternCompilation tests regex pattern compilation
-func TestRegexPatternCompilation(t *testing.T) {
-	emitter := NewEmitter()
-	sc := NewStringCompiler(emitter)
-
-	tests := []struct {
-		name    string
-		pattern string
-		wantErr bool
-	}{
-		{
-			name:    "simple_regex",
-			pattern: "abc.*def",
-			wantErr: false,
-		},
-		{
-			name:    "regex_with_alternation",
-			pattern: "(abc|def)",
-			wantErr: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			regexPattern := &ast.RegexPattern{
-				Value: tt.pattern,
-				Pos:   token.Position{Line: 1, Column: 1},
-			}
-			err := sc.compileRegexPattern("test_regex", regexPattern, []ast.StringModifier{})
-			if (err != nil) != tt.wantErr {
-				t.Errorf("compileRegexPattern() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}
@@ -925,54 +842,9 @@ func TestConditionCompilerUnaryOp(t *testing.T) {
 	}
 }
 
-// TestStringCompilerGetters tests string compiler getter methods
-func TestStringCompilerGetters(t *testing.T) {
-	emitter := NewEmitter()
-	sc := NewStringCompiler(emitter)
-
-	// Compile a string using the full compilation path
-	textPattern := &ast.TextString{
-		Value: "test",
-		Pos:   token.Position{Line: 1, Column: 1},
-	}
-	str := &ast.String{
-		Pos:        token.Position{Line: 1, Column: 1},
-		Identifier: "$test",
-		Pattern:    textPattern,
-		Modifiers:  []ast.StringModifier{},
-	}
-	if err := sc.CompileStrings(&ast.Rule{
-		Pos:       token.Position{Line: 1, Column: 1},
-		Name:      "test_rule",
-		Strings:   []*ast.String{str},
-		Condition: nil,
-	}); err != nil {
-		t.Fatalf("Failed to compile strings: %v", err)
-	}
-
-	// Test GetStringOffsets
-	offsets := sc.GetStringOffsets()
-	if len(offsets) == 0 {
-		t.Errorf("GetStringOffsets() returned empty map")
-	}
-
-	// Test GetPatternData
-	patterns := sc.GetPatternData()
-	if len(patterns) == 0 {
-		t.Errorf("GetPatternData() returned empty map")
-	}
-
-	// Test GetStringInfo
-	info := sc.GetStringInfo()
-	if len(info) == 0 {
-		t.Errorf("GetStringInfo() returned empty slice")
-	}
-}
-
 // TestStringCompilerOptimizePattern tests pattern optimization
 func TestStringCompilerOptimizePattern(t *testing.T) {
-	emitter := NewEmitter()
-	sc := NewStringCompiler(emitter)
+	sc := NewStringCompiler()
 
 	tests := []struct {
 		name      string
@@ -1201,55 +1073,9 @@ func TestCompiledRuleMemory(t *testing.T) {
 	}
 }
 
-// TestStringCompilerEncodeHexString tests hex string encoding
-func TestStringCompilerEncodeHexString(t *testing.T) {
-	emitter := NewEmitter()
-	sc := NewStringCompiler(emitter)
-
-	tests := []struct {
-		name      string
-		hexStr    string
-		modifiers []ast.StringModifier
-		wantErr   bool
-	}{
-		{
-			name:      "simple_hex",
-			hexStr:    "61 62 63",
-			modifiers: []ast.StringModifier{},
-			wantErr:   false,
-		},
-		{
-			name:      "hex_with_wildcards",
-			hexStr:    "61 ?? 63",
-			modifiers: []ast.StringModifier{},
-			wantErr:   false,
-		},
-		{
-			name:      "hex_with_ranges",
-			hexStr:    "61 [00-FF] 63",
-			modifiers: []ast.StringModifier{},
-			wantErr:   false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			hexPattern := &ast.HexString{
-				Value: tt.hexStr,
-				Pos:   token.Position{Line: 1, Column: 1},
-			}
-			err := sc.compileHexString("$hex", hexPattern, tt.modifiers)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("compileHexString() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
 // TestStringCompilerApplyNocaseModifier tests nocase modifier application
 func TestStringCompilerApplyNocaseModifier(t *testing.T) {
-	emitter := NewEmitter()
-	sc := NewStringCompiler(emitter)
+	sc := NewStringCompiler()
 
 	tests := []struct {
 		name    string
@@ -1286,8 +1112,7 @@ func TestStringCompilerApplyNocaseModifier(t *testing.T) {
 
 // TestStringCompilerOptimizeWidePattern tests wide pattern optimization
 func TestStringCompilerOptimizeWidePattern(t *testing.T) {
-	emitter := NewEmitter()
-	sc := NewStringCompiler(emitter)
+	sc := NewStringCompiler()
 
 	tests := []struct {
 		name    string
@@ -1323,8 +1148,7 @@ func TestStringCompilerOptimizeWidePattern(t *testing.T) {
 
 // TestStringCompilerOptimizeASCIIPattern tests ASCII pattern optimization
 func TestStringCompilerOptimizeASCIIPattern(t *testing.T) {
-	emitter := NewEmitter()
-	sc := NewStringCompiler(emitter)
+	sc := NewStringCompiler()
 
 	tests := []struct {
 		name    string
@@ -1889,26 +1713,6 @@ func TestCompilerHasWarnings(t *testing.T) {
 	}
 }
 
-// TestCompilerSetOptions tests setting compiler options
-func TestCompilerSetOptions(t *testing.T) {
-	compiler := NewCompiler()
-
-	options := CompilationOptions{
-		EnableOptimizations: true,
-		EnableDebugInfo:     true,
-		EnableWarnings:      true,
-		TargetVersion:       "4.3",
-	}
-
-	compiler.SetOptions(options)
-
-	// Verify options were set
-	opts := compiler.GetOptions()
-	if opts.EnableOptimizations != true {
-		t.Errorf("GetOptions() EnableOptimizations = false, want true")
-	}
-}
-
 // TestCompilerReset tests resetting the compiler
 func TestCompilerReset(t *testing.T) {
 	compiler := NewCompiler()
@@ -2047,13 +1851,6 @@ func TestCompiledRuleGetStatsReturnsCopy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CompileRule() error = %v", err)
 	}
-	compiled.Stats["string_info"] = []StringInfo{
-		{
-			Identifier: "$copy",
-			Pattern:    []byte("copy"),
-		},
-	}
-
 	stats := compiled.GetStats()
 	stats["instruction_count"] = -1
 
@@ -2062,15 +1859,6 @@ func TestCompiledRuleGetStatsReturnsCopy(t *testing.T) {
 		t.Fatalf("emitter_categories has type %T, want map[string]int", stats["emitter_categories"])
 	}
 	categories["control"] = -99
-
-	stringInfo, ok := stats["string_info"].([]StringInfo)
-	if !ok {
-		t.Fatalf("string_info has type %T, want []StringInfo", stats["string_info"])
-	}
-	if len(stringInfo) != 1 {
-		t.Fatalf("string_info length = %d, want 1", len(stringInfo))
-	}
-	stringInfo[0].Pattern[0] = 'X'
 
 	freshStats := compiled.GetStats()
 	if got := freshStats["instruction_count"]; got == -1 {
@@ -2083,14 +1871,6 @@ func TestCompiledRuleGetStatsReturnsCopy(t *testing.T) {
 	}
 	if got := freshCategories["control"]; got == -99 {
 		t.Fatalf("GetStats returned mutable nested category map; control = %d", got)
-	}
-
-	freshStringInfo, ok := freshStats["string_info"].([]StringInfo)
-	if !ok {
-		t.Fatalf("fresh string_info has type %T, want []StringInfo", freshStats["string_info"])
-	}
-	if got := string(freshStringInfo[0].Pattern); got != "copy" {
-		t.Fatalf("GetStats returned mutable string pattern data = %q, want copy", got)
 	}
 }
 
@@ -2322,78 +2102,6 @@ func TestInstructionOperandProperties(t *testing.T) {
 	}
 }
 
-// createTestStringCompiler creates a string compiler with a test string compiled
-func createTestStringCompiler(t *testing.T) *StringCompiler {
-	emitter := NewEmitter()
-	sc := NewStringCompiler(emitter)
-
-	// Compile a test string
-	str := &ast.String{
-		Pos:        token.Position{Line: 1, Column: 1},
-		Identifier: "$test",
-		Pattern: &ast.TextString{
-			Value: "test",
-			Pos:   token.Position{Line: 1, Column: 10},
-		},
-		Modifiers: []ast.StringModifier{},
-	}
-
-	err := sc.compileString(str)
-	if err != nil {
-		t.Fatalf("compileString() error = %v", err)
-	}
-
-	return sc
-}
-
-// TestStringCompilerMethods tests various string compiler methods
-func TestStringCompilerMethods(t *testing.T) {
-	tests := []struct {
-		name     string
-		testFunc func(*testing.T, *StringCompiler)
-	}{
-		{
-			name: "GetAtoms",
-			testFunc: func(t *testing.T, sc *StringCompiler) {
-				atoms := sc.GetAtoms("$test")
-				if atoms == nil {
-					t.Errorf("GetAtoms() returned nil")
-				}
-			},
-		},
-		{
-			name: "GetStringInfo",
-			testFunc: func(t *testing.T, sc *StringCompiler) {
-				infos := sc.GetStringInfo()
-				if len(infos) == 0 {
-					t.Errorf("GetStringInfo() returned empty list")
-				}
-			},
-		},
-		{
-			name: "PrintStringInfo",
-			testFunc: func(_ *testing.T, sc *StringCompiler) {
-				// This should not panic
-				// Capture stdout to avoid cluttering test output
-				oldStdout := os.Stdout
-				r, w, _ := os.Pipe()
-				os.Stdout = w
-				sc.PrintStringInfo()
-				_ = w.Close()
-				os.Stdout = oldStdout
-				_ = r.Close()
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			sc := createTestStringCompiler(t)
-			tt.testFunc(t, sc)
-		})
-	}
-}
-
 // createTestConditionCompiler creates a condition compiler for testing
 func createTestConditionCompiler() *ConditionCompiler {
 	emitter := NewEmitter()
@@ -2513,48 +2221,6 @@ func TestCompiledProgramPrintDebug(t *testing.T) {
 	_ = w.Close()
 	os.Stdout = oldStdout
 	_ = r.Close()
-}
-
-// TestCompiledProgramOptimize tests Optimize method
-func TestCompiledProgramOptimize(t *testing.T) {
-	rc := NewRuleCompiler()
-
-	rule := &ast.Rule{
-		Pos:  token.Position{Line: 1, Column: 1},
-		Name: "test_rule",
-		Strings: []*ast.String{
-			{
-				Pos:        token.Position{Line: 2, Column: 1},
-				Identifier: "$test",
-				Pattern: &ast.TextString{
-					Value: "test",
-					Pos:   token.Position{Line: 2, Column: 10},
-				},
-				Modifiers: []ast.StringModifier{},
-			},
-		},
-		Condition: &ast.Literal{
-			Pos:   token.Position{Line: 3, Column: 1},
-			Type:  token.TRUE,
-			Value: true,
-		},
-	}
-
-	program := &ast.Program{
-		Rules: []*ast.Rule{rule},
-	}
-
-	compiled, err := rc.CompileProgram(program)
-	if err != nil {
-		t.Errorf("CompileProgram() error = %v", err)
-	}
-
-	compiledProgram := NewCompiledProgram(compiled)
-
-	// This should not panic
-	if err := compiledProgram.Optimize(); err != nil {
-		t.Errorf("Optimize() error = %v", err)
-	}
 }
 
 // TestCompiledProgramGetExecutionPlan tests GetExecutionPlan method
@@ -3382,7 +3048,7 @@ func TestRuleCompilerCompileSingleString(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			emitter := NewEmitter()
-			sc := NewStringCompiler(emitter)
+			sc := NewStringCompiler()
 			ac := NewACAutomaton()
 			rc := &RuleCompiler{
 				emitter:           emitter,
@@ -3408,7 +3074,7 @@ func TestRuleCompilerCompileSingleString(t *testing.T) {
 // TestRuleCompilerCompileCondition tests compileCondition method
 func TestRuleCompilerCompileCondition(t *testing.T) {
 	emitter := NewEmitter()
-	sc := NewStringCompiler(emitter)
+	sc := NewStringCompiler()
 	ac := NewACAutomaton()
 	cc := NewConditionCompiler(emitter, make(map[string]int))
 	rc := &RuleCompiler{
@@ -3499,59 +3165,6 @@ func TestCompilerCompileSemantic(t *testing.T) {
 	}
 }
 
-// TestStringCompilerCompileString tests compileString method
-func TestStringCompilerCompileString(t *testing.T) {
-	tests := []struct {
-		name    string
-		pattern ast.Pattern
-		wantErr bool
-	}{
-		{
-			name: "text_string",
-			pattern: &ast.TextString{
-				Pos:   token.Position{Line: 1, Column: 1},
-				Value: "test_pattern",
-			},
-			wantErr: false,
-		},
-		{
-			name: "hex_string",
-			pattern: &ast.HexString{
-				Pos:   token.Position{Line: 1, Column: 1},
-				Value: "01 02 03",
-			},
-			wantErr: false,
-		},
-		{
-			name: "regex_pattern",
-			pattern: &ast.RegexPattern{
-				Pos:   token.Position{Line: 1, Column: 1},
-				Value: "test.*",
-			},
-			wantErr: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			emitter := NewEmitter()
-			sc := NewStringCompiler(emitter)
-
-			str := &ast.String{
-				Identifier: "$test",
-				Pattern:    tt.pattern,
-				Modifiers:  []ast.StringModifier{},
-				Pos:        token.Position{Line: 1, Column: 1},
-			}
-
-			err := sc.compileString(str)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("compileString() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
 // Helper functions for complexity testing
 func createTestIdentifierForComplexity(name string) *ast.Identifier {
 	return &ast.Identifier{
@@ -3631,61 +3244,6 @@ func TestInterpreterStackOperations(t *testing.T) {
 			err := interp.Execute()
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Execute() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
-// TestStringCompilerEdgeCases tests edge cases in string compilation
-func TestStringCompilerEdgeCases(t *testing.T) {
-	tests := []struct {
-		name      string
-		pattern   ast.Pattern
-		modifiers []ast.StringModifier
-		wantErr   bool
-	}{
-		{
-			name:      "empty_text_string",
-			pattern:   &ast.TextString{Value: ""},
-			modifiers: []ast.StringModifier{},
-			wantErr:   false,
-		},
-		{
-			name:      "text_string_with_nocase",
-			pattern:   &ast.TextString{Value: "Test"},
-			modifiers: []ast.StringModifier{{Type: ast.StringModifierNocase}},
-			wantErr:   false,
-		},
-		{
-			name:      "hex_string",
-			pattern:   &ast.HexString{Value: "48656C6C6F"},
-			modifiers: []ast.StringModifier{},
-			wantErr:   false,
-		},
-		{
-			name:      "regex_pattern",
-			pattern:   &ast.RegexPattern{Value: "test.*"},
-			modifiers: []ast.StringModifier{},
-			wantErr:   false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			emitter := NewEmitter()
-			sc := NewStringCompiler(emitter)
-			str := &ast.String{
-				Identifier: "$test",
-				Pattern:    tt.pattern,
-				Modifiers:  tt.modifiers,
-			}
-			err := sc.CompileStrings(&ast.Rule{
-				Name:      "test_rule",
-				Strings:   []*ast.String{str},
-				Condition: nil,
-			})
-			if (err != nil) != tt.wantErr {
-				t.Errorf("CompileStrings() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}
@@ -3968,15 +3526,6 @@ func TestCompilerFullPipeline(t *testing.T) {
 	}
 }
 
-// TestCompilerGetVersion tests GetVersion method
-func TestCompilerGetVersion(t *testing.T) {
-	compiler := NewCompiler()
-	version := compiler.GetVersion()
-	if version == "" {
-		t.Error("GetVersion() returned empty string")
-	}
-}
-
 // TestCompilerBatchCompile tests BatchCompile method
 func TestCompilerBatchCompile(t *testing.T) {
 	compiler := NewCompiler()
@@ -3991,39 +3540,6 @@ func TestCompilerBatchCompile(t *testing.T) {
 	}
 	if len(programs) != 2 {
 		t.Errorf("BatchCompile() returned %d programs, want 2", len(programs))
-	}
-}
-
-// TestCompilerCompileWithProgress tests CompileWithProgress method
-func TestCompilerCompileWithProgress(t *testing.T) {
-	compiler := NewCompiler()
-	source := `rule test { condition: true }`
-
-	var phases []string
-	var percents []float64
-
-	program, err := compiler.CompileWithProgress(source, func(phase string, percent float64) {
-		phases = append(phases, phase)
-		percents = append(percents, percent)
-	})
-
-	if err != nil {
-		t.Errorf("CompileWithProgress() error = %v", err)
-	}
-	if program == nil {
-		t.Error("CompileWithProgress() returned nil program")
-	}
-	if len(phases) == 0 {
-		t.Error("CompileWithProgress() did not call progress callback")
-	}
-}
-
-// TestCompilerGetPhaseDependencies tests GetPhaseDependencies method
-func TestCompilerGetPhaseDependencies(t *testing.T) {
-	compiler := NewCompiler()
-	deps := compiler.GetPhaseDependencies()
-	if len(deps) == 0 {
-		t.Error("GetPhaseDependencies() returned empty map")
 	}
 }
 

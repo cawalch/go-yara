@@ -8,7 +8,6 @@ import (
 )
 
 // TestDeeplyNestedParentheses documents parser behavior with deeply nested parentheses
-// DO NOT modify code to make tests pass - document current behavior only
 func TestDeeplyNestedParentheses(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -90,7 +89,6 @@ func TestDeeplyNestedParentheses(t *testing.T) {
 }
 
 // TestDeeplyNestedBinaryOps documents parser behavior with deeply nested binary operations
-// DO NOT modify code to make tests pass - document current behavior only
 func TestDeeplyNestedBinaryOps(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -172,7 +170,6 @@ func TestDeeplyNestedBinaryOps(t *testing.T) {
 }
 
 // TestDeeplyNestedUnaries documents parser behavior with nested unary operations
-// DO NOT modify code to make tests pass - document current behavior only
 func TestDeeplyNestedUnaries(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -254,7 +251,6 @@ func TestDeeplyNestedUnaries(t *testing.T) {
 }
 
 // TestDeeplyNestedForLoops documents parser behavior with nested for-loops
-// DO NOT modify code to make tests pass - document current behavior only
 func TestDeeplyNestedForLoops(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -324,7 +320,6 @@ func TestDeeplyNestedForLoops(t *testing.T) {
 }
 
 // TestManyRulesInOneFile documents parser behavior with many rules
-// DO NOT modify code to make tests pass - document current behavior only
 func TestManyRulesInOneFile(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -379,7 +374,6 @@ func TestManyRulesInOneFile(t *testing.T) {
 }
 
 // TestManyStringsInOneRule documents parser behavior with many strings
-// DO NOT modify code to make tests pass - document current behavior only
 func TestManyStringsInOneRule(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -434,7 +428,6 @@ func TestManyStringsInOneRule(t *testing.T) {
 }
 
 // TestLongStringLiterals documents parser behavior with very long string literals
-// DO NOT modify code to make tests pass - document current behavior only
 func TestLongStringLiterals(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -492,7 +485,6 @@ func TestLongStringLiterals(t *testing.T) {
 }
 
 // TestLongHexPatterns documents parser behavior with long hex patterns
-// DO NOT modify code to make tests pass - document current behavior only
 func TestLongHexPatterns(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -544,7 +536,6 @@ func TestLongHexPatterns(t *testing.T) {
 }
 
 // TestLongRegexPatterns documents parser behavior with long regex patterns
-// DO NOT modify code to make tests pass - document current behavior only
 func TestLongRegexPatterns(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -596,7 +587,6 @@ func TestLongRegexPatterns(t *testing.T) {
 }
 
 // TestComplexBooleanExpressions documents parser behavior with complex boolean expressions
-// DO NOT modify code to make tests pass - document current behavior only
 func TestComplexBooleanExpressions(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -654,7 +644,6 @@ func TestComplexBooleanExpressions(t *testing.T) {
 }
 
 // TestComplexArithmeticExpressions documents parser behavior with complex arithmetic
-// DO NOT modify code to make tests pass - document current behavior only
 func TestComplexArithmeticExpressions(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -712,7 +701,6 @@ func TestComplexArithmeticExpressions(t *testing.T) {
 }
 
 // TestComplexStringExpressions documents parser behavior with complex string expressions
-// DO NOT modify code to make tests pass - document current behavior only
 func TestComplexStringExpressions(t *testing.T) {
 	tests := []struct {
 		name        string

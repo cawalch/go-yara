@@ -443,8 +443,7 @@ func (tc *TypeChecker) checkQuantifierOp(_, _ *TypeInfo, _ token.Position) *Type
 	// Left side should be a quantifier (all, any, none) or number
 	// Right side should be a string set or "them"
 
-	// For now, assume quantifier operations return boolean
-	// This would be more sophisticated in a full implementation
+	// Quantifier operations evaluate to boolean.
 	return &TypeInfo{DataType: TypeBoolean}
 }
 
@@ -456,8 +455,7 @@ func (tc *TypeChecker) getTypeFromSymbol(symbol *Symbol) *TypeInfo {
 	case SymbolString:
 		return &TypeInfo{DataType: TypeBoolean}
 	case SymbolVariable:
-		// For now, assume variables are integers
-		// This will be refined as we add more type information
+		// Variables without explicit type metadata default to int64.
 		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
 	case SymbolExternal:
 		// Runtime external variables are dynamically typed by the caller.
@@ -489,9 +487,8 @@ func (tc *TypeChecker) HasErrors() bool {
 
 // isStringIdentifier checks if a type represents a string identifier (like $a, $b, etc.)
 func (tc *TypeChecker) isStringIdentifier(typeInfo *TypeInfo) bool {
-	// String identifiers have boolean type in YARA (they represent whether the pattern matches)
-	// For now, we assume any boolean type from a string identifier is valid
-	// In a more complete implementation, we'd track the symbol type more precisely
+	// String identifiers evaluate to boolean; this checker does not retain their
+	// symbol origin after type inference.
 	return typeInfo.DataType == TypeBoolean
 }
 
@@ -554,7 +551,7 @@ func (tc *TypeChecker) checkOfExpression(ofExpr *ast.OfExpression) *TypeInfo {
 	}
 
 	// Check the strings expression
-	_ = tc.checkExpression(ofExpr.Strings) // Check strings expression but ignore type for now
+	_ = tc.checkExpression(ofExpr.Strings) // Validate the string-set expression; its type is not used.
 
 	// "of" expressions always return boolean (true/false)
 	return &TypeInfo{DataType: TypeBoolean}

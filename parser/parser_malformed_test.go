@@ -7,7 +7,6 @@ import (
 )
 
 // TestUnterminatedStrings documents parser behavior with unterminated string literals
-// DO NOT modify code to make tests pass - document current behavior only
 func TestUnterminatedStrings(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -65,7 +64,6 @@ func TestUnterminatedStrings(t *testing.T) {
 }
 
 // TestUnterminatedHexPatterns documents parser behavior with unterminated hex patterns
-// DO NOT modify code to make tests pass - document current behavior only
 func TestUnterminatedHexPatterns(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -135,7 +133,6 @@ func TestUnterminatedHexPatterns(t *testing.T) {
 }
 
 // TestUnterminatedRegex documents parser behavior with unterminated regex patterns
-// DO NOT modify code to make tests pass - document current behavior only
 func TestUnterminatedRegex(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -193,7 +190,6 @@ func TestUnterminatedRegex(t *testing.T) {
 }
 
 // TestUnbalancedBraces documents parser behavior with unbalanced braces
-// DO NOT modify code to make tests pass - document current behavior only
 func TestUnbalancedBraces(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -257,7 +253,6 @@ func TestUnbalancedBraces(t *testing.T) {
 }
 
 // TestUnbalancedParentheses documents parser behavior with unbalanced parentheses
-// DO NOT modify code to make tests pass - document current behavior only
 func TestUnbalancedParentheses(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -315,7 +310,6 @@ func TestUnbalancedParentheses(t *testing.T) {
 }
 
 // TestInvalidOperators documents parser behavior with invalid operators
-// DO NOT modify code to make tests pass - document current behavior only
 func TestInvalidOperators(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -385,7 +379,6 @@ func TestInvalidOperators(t *testing.T) {
 }
 
 // TestInvalidModifiers documents parser behavior with invalid string modifiers
-// DO NOT modify code to make tests pass - document current behavior only
 func TestInvalidModifiers(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -449,7 +442,6 @@ func TestInvalidModifiers(t *testing.T) {
 }
 
 // TestDuplicateIdentifiers documents parser behavior with duplicate identifiers
-// DO NOT modify code to make tests pass - document current behavior only
 func TestDuplicateIdentifiers(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -495,7 +487,6 @@ func TestDuplicateIdentifiers(t *testing.T) {
 }
 
 // TestInvalidEscapeSequences documents parser behavior with invalid escape sequences
-// DO NOT modify code to make tests pass - document current behavior only
 func TestInvalidEscapeSequences(t *testing.T) {
 	tests := []struct {
 		name        string

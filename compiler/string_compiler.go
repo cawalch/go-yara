@@ -83,117 +83,20 @@ func fastNeedsConversion(data []byte) bool {
 
 // StringCompiler handles compilation of string patterns to bytecode
 type StringCompiler struct {
-	emitter *Emitter // kept for backward-compatibility with tests
 	// Maps for string identifiers to automaton indices
 	stringOffsets map[string]int
-	// Maps for pattern data
-	patternData map[string][]byte
-	// Extracted atoms for optimization
-	atoms map[string][]*Atom
 }
 
-// NewStringCompiler creates a new string compiler
-// The emitter parameter is kept for backward compatibility; it's unused.
-func NewStringCompiler(_ *Emitter) *StringCompiler {
+// NewStringCompiler creates a string compiler.
+func NewStringCompiler() *StringCompiler {
 	return &StringCompiler{
 		stringOffsets: make(map[string]int),
-		patternData:   make(map[string][]byte),
-		atoms:         make(map[string][]*Atom),
 	}
 }
 
 // Reset clears per-rule compiler state so offsets and patterns don't leak between rules.
 func (sc *StringCompiler) Reset() {
 	sc.stringOffsets = make(map[string]int)
-	sc.patternData = make(map[string][]byte)
-	sc.atoms = make(map[string][]*Atom)
-}
-
-// CompileStrings compiles all strings in a rule to bytecode
-func (sc *StringCompiler) CompileStrings(rule *ast.Rule) error {
-	for idx, str := range rule.Strings {
-		// Assign a provisional offset so callers can inspect non-empty offsets map.
-		// The RuleCompiler may later overwrite these with automaton-based indices.
-		if _, exists := sc.stringOffsets[str.Identifier]; !exists {
-			sc.stringOffsets[str.Identifier] = idx
-		}
-		if err := sc.compileString(str); err != nil {
-			return fmt.Errorf("compiling string %s: %w", str.Identifier, err)
-		}
-	}
-	return nil
-}
-
-// compileString compiles a single string pattern
-func (sc *StringCompiler) compileString(str *ast.String) error {
-	// Do not emit bytecode for string definitions; they are matched via the automaton.
-	// Offsets for string identifiers are assigned by the rule compiler based on
-	// the automaton's string index. Here we only preprocess/store pattern data.
-
-	// Compile the pattern based on its type
-	switch p := str.Pattern.(type) {
-	case *ast.TextString:
-		if err := sc.compileTextString(str.Identifier, p, str.Modifiers); err != nil {
-			return err
-		}
-	case *ast.HexString:
-		if err := sc.compileHexString(str.Identifier, p, str.Modifiers); err != nil {
-			return err
-		}
-	case *ast.RegexPattern:
-		if err := sc.compileRegexPattern(str.Identifier, p, str.Modifiers); err != nil {
-			return err
-		}
-	default:
-		return errors.New("unknown pattern type")
-	}
-
-	// Extract atoms for optimization
-	sc.atoms[str.Identifier] = ExtractAtoms(str.Pattern, str.Modifiers)
-
-	return nil
-}
-
-// GetAtoms returns the extracted atoms for a string identifier
-func (sc *StringCompiler) GetAtoms(identifier string) []*Atom {
-	return sc.atoms[identifier]
-}
-
-// compileTextString compiles a text string pattern
-func (sc *StringCompiler) compileTextString(identifier string, pattern *ast.TextString, modifiers []ast.StringModifier) error {
-	text := pattern.Value
-
-	// Apply modifiers
-	encoded := sc.encodeTextString(text, modifiers)
-
-	// Store pattern data for automaton building
-	sc.patternData[identifier] = encoded
-
-	return nil
-}
-
-// compileHexString compiles a hex string pattern. Used only by the
-// StringCompiler.CompileStrings entry point (test-only); the production path
-// goes through RuleCompiler.compileHexString which uses parseHexPattern.
-func (sc *StringCompiler) compileHexString(identifier string, pattern *ast.HexString, modifiers []ast.StringModifier) error {
-	hexData := sc.parseHexString(pattern.Value)
-	encoded := sc.encodeHexString(hexData, modifiers)
-	sc.patternData[identifier] = encoded
-	return nil
-}
-
-// compileRegexPattern compiles a regular expression pattern
-func (sc *StringCompiler) compileRegexPattern(identifier string, pattern *ast.RegexPattern, modifiers []ast.StringModifier) error {
-	// Compile regex to internal VM bytecode
-	regexData, err := sc.compileRegex(pattern.Value, modifiers)
-	if err != nil {
-		return fmt.Errorf("compile regex %q: %w", pattern.Value, err)
-	}
-
-	// Store pattern data (VM bytecode) for later execution
-	sc.patternData[identifier] = regexData
-
-	return nil
 }
 
 // hasModifier checks if a specific modifier type exists in the modifier list
@@ -238,28 +141,6 @@ func (sc *StringCompiler) applyXorModifier(data []byte, modifiers []ast.StringMo
 		data[i] ^= key
 	}
 	return data
-}
-
-// applyBase64Modifier applies base64 decoding to data
-func (sc *StringCompiler) applyBase64Modifier(data []byte, modifier ast.StringModifier) ([]byte, error) {
-	alphabet, err := sc.base64Alphabet(modifier)
-	if err != nil {
-		return nil, err
-	}
-
-	if modifier.Type == ast.StringModifierBase64Wide {
-		data = sc.encodeToWideBytes(string(data))
-	}
-
-	encoded, err := sc.encodeBase64Variants(data, alphabet)
-	if err != nil {
-		return nil, err
-	}
-	if len(encoded) == 0 {
-		return []byte{}, nil
-	}
-	// Return the first variant for compatibility with legacy callers.
-	return encoded[0], nil
 }
 
 // encodeToWideBytes converts a string to UTF-16LE encoded bytes
@@ -356,29 +237,6 @@ func (sc *StringCompiler) EncodeTextPatterns(text string, modifiers []ast.String
 	}
 
 	return sc.uniqueTextPatterns(patterns), nil
-}
-
-// encodeHexString encodes a hex string with modifiers applied. Used only by the
-// StringCompiler.CompileStrings entry point (test-only); the production
-// RuleCompiler path matches hex strings via HexPattern/FindHexMatches and no
-// longer calls this.
-func (sc *StringCompiler) encodeHexString(hexData []byte, modifiers []ast.StringModifier) []byte {
-	// Apply XOR modifier if present
-	hexData = sc.applyXorModifier(hexData, modifiers)
-
-	// Apply base64 modifiers if present
-	for _, mod := range modifiers {
-		if mod.Type == ast.StringModifierBase64 || mod.Type == ast.StringModifierBase64Wide {
-			var err error
-			hexData, err = sc.applyBase64Modifier(hexData, mod)
-			if err != nil {
-				// If base64 encoding fails, return original data
-				continue
-			}
-		}
-	}
-
-	return hexData
 }
 
 type xorRange struct {
@@ -560,26 +418,6 @@ func (sc *StringCompiler) base64AlignedPatterns(data []byte, alphabet string, wi
 	}
 
 	return patterns, nil
-}
-
-func (sc *StringCompiler) encodeBase64Variants(data []byte, alphabet string) ([][]byte, error) {
-	enc := base64.StdEncoding
-	if alphabet != "" {
-		enc = base64.NewEncoding(alphabet)
-	}
-	padded := enc.EncodeToString(data)
-	noPad := enc.WithPadding(base64.NoPadding).EncodeToString(data)
-
-	variants := []string{padded}
-	if noPad != padded {
-		variants = append(variants, noPad)
-	}
-
-	out := make([][]byte, 0, len(variants))
-	for _, v := range variants {
-		out = append(out, []byte(v))
-	}
-	return out, nil
 }
 
 func (sc *StringCompiler) uniqueTextPatterns(patterns []TextPattern) []TextPattern {
@@ -901,7 +739,7 @@ func (sc *StringCompiler) processJumpToken(result *[]byte, token HexToken) {
 // processAlternativeToken processes an alternative token and appends to result
 func (sc *StringCompiler) processAlternativeToken(result *[]byte, token HexToken) {
 	if alts, ok := token.Value.([][]byte); ok && len(alts) > 0 {
-		// Use first alternative for now (simplified)
+		// Representative bytes use the first arm; HexPattern retains all arms.
 		*result = append(*result, alts[0]...)
 	}
 }
@@ -1022,49 +860,7 @@ func (sc *StringCompiler) applyNocaseModifier(data []byte, isWide bool) []byte {
 
 // GetStringOffsets returns the bytecode offsets for all compiled strings
 func (sc *StringCompiler) GetStringOffsets() map[string]int {
-	// Reference emitter to satisfy linters and maintain backward compatibility
-	if sc.emitter == nil {
-		// Emitter is not set, which is expected in some usage patterns
-		// This function will return the string offsets regardless of emitter state
-		_ = sc.emitter // Suppress nil check warning
-	}
 	return sc.stringOffsets
-}
-
-// GetPatternData returns the encoded pattern data for all strings
-func (sc *StringCompiler) GetPatternData() map[string][]byte {
-	return sc.patternData
-}
-
-// StringInfo holds information about a compiled string
-type StringInfo struct {
-	Identifier string
-	Offset     int
-	Pattern    []byte
-	Modifiers  []ast.StringModifier
-}
-
-// GetStringInfo returns information about all compiled strings
-// Populate from patternData to ensure visibility even when stringOffsets
-// are assigned later by the RuleCompiler.
-func (sc *StringCompiler) GetStringInfo() []StringInfo {
-	info := make([]StringInfo, 0, len(sc.patternData))
-
-	for identifier, pattern := range sc.patternData {
-		offset, ok := sc.stringOffsets[identifier]
-		if !ok {
-			// Unknown at this stage; RuleCompiler assigns real offsets.
-			offset = -1
-		}
-		info = append(info, StringInfo{
-			Identifier: identifier,
-			Offset:     offset,
-			Pattern:    pattern,
-			Modifiers:  []ast.StringModifier{}, // Would be populated during compilation
-		})
-	}
-
-	return info
 }
 
 // ValidateStringModifiers validates that string modifiers are compatible
@@ -1308,24 +1104,4 @@ func (sc *StringCompiler) EstimatePatternComplexity(pattern []byte, _ []ast.Stri
 	quality += 2 * uniqueBytes
 
 	return sc.applyPenaltyForCommonPatterns(pattern, uniqueBytes, quality)
-}
-
-// PrintStringInfo prints information about all compiled strings
-func (sc *StringCompiler) PrintStringInfo() {
-	fmt.Println("Compiled String Information:")
-	fmt.Printf("% -8s % -8s % -12s % -s\n", "ID", "Offset", "Size", "Pattern")
-	fmt.Println("─────────────────────────────────────────")
-
-	for _, info := range sc.GetStringInfo() {
-		patternStr := fmt.Sprintf("%X", info.Pattern)
-		if len(patternStr) > 20 {
-			patternStr = patternStr[:17] + "..."
-		}
-
-		fmt.Printf("% -8s % -8d % -12d % -s\n",
-			info.Identifier,
-			info.Offset,
-			len(info.Pattern),
-			patternStr)
-	}
 }

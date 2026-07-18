@@ -83,7 +83,8 @@ func TestLexer_ErrorMethod(t *testing.T) {
 func TestLexer_FastForward(t *testing.T) {
 	// Test fastForward functionality
 	input := "   \t\ninvalid_token rule test"
-	l := NewWithRecovery(input, RecoverySection)
+	l := New(input)
+	l.SetRecoveryMode(RecoverySection)
 
 	// Position at start
 	if l.position() != 0 {

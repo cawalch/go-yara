@@ -18,7 +18,6 @@ type ExpressionParser struct {
 	quantifierParser  *QuantifierParser
 	current           token.Token
 	peek              token.Token
-	emitter           any
 	depth             int
 	depthStack        []int
 	src               tokenSource
@@ -29,19 +28,12 @@ type ExpressionParser struct {
 	useExternalTokens bool
 }
 
-// NewExpressionParser creates a new expression parser.
-// The first argument can be a tokenSource or *lexer.Lexer (for legacy callers).
-func NewExpressionParser(first any, second any) *ExpressionParser {
-	var src tokenSource
-	if s, ok := first.(tokenSource); ok {
-		src = s
-	}
-
+// NewExpressionParser creates an expression parser from a token source.
+func NewExpressionParser(src tokenSource) *ExpressionParser {
 	return &ExpressionParser{
 		quantifierParser: nil,
 		depth:            0,
 		depthStack:       make([]int, 0),
-		emitter:          second,
 		src:              src,
 	}
 }
@@ -819,11 +811,6 @@ func (p *ExpressionParser) SetCurrentTokens(current, peek token.Token) {
 	p.SetTokens(current, peek)
 }
 
-// GetDepth returns the current parsing depth.
-func (p *ExpressionParser) GetDepth() int {
-	return p.depth
-}
-
 // SetMaxRecursionDepth sets the maximum allowed recursion depth.
 func (p *ExpressionParser) SetMaxRecursionDepth(maxDepth int) {
 	p.maxRecursionDepth = maxDepth
@@ -848,12 +835,6 @@ func (p *ExpressionParser) SetQuantifierParser(qp *QuantifierParser) {
 	p.quantifierParser = qp
 }
 
-// GetQuantifierParser returns the quantifier parser.
-func (p *ExpressionParser) GetQuantifierParser() *QuantifierParser {
-	return p.quantifierParser
-}
-
-// tryParsePercentOf attempts to parse "N % of (strings)" or "N percent of (strings)" when op is MODULO/PERCENT and next token is OF.
 // tryParsePercentOf attempts to parse "N % of (strings)" or "N percent of (strings)" when op is MODULO/PERCENT and next token is OF.
 // Returns the parsed *ast.OfExpression on success, (nil, nil) if it's not a percent-of expression.
 func (p *ExpressionParser) tryParsePercentOf(left ast.Expression, op token.Type) (*ast.OfExpression, error) {

@@ -78,9 +78,8 @@ func FuzzYARAParser(f *testing.F) {
 		}
 
 		// Test with recovery mode enabled
-		// Note: NewWithRecovery is deprecated but kept for fuzz testing compatibility
-		//nolint:staticcheck // Kept for fuzz testing compatibility
-		l2 := lexer.NewWithRecovery(inputStr, lexer.RecoverySection)
+		l2 := lexer.New(inputStr)
+		l2.SetRecoveryMode(lexer.RecoverySection)
 		p2 := New(l2)
 		program2, err2 := p2.ParseRules()
 		_ = program2

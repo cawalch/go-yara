@@ -5,19 +5,6 @@ import (
 	"sync"
 )
 
-// Pool management and string optimization utilities.
-// This module provides memory pooling and string interning optimizations
-// to reduce allocations during lexical analysis.
-
-// Pool for byte slices used in escape sequence processing
-var byteSlicePool = sync.Pool{
-	New: func() any {
-		// Pre-allocate with reasonable capacity for most strings
-		slice := make([]byte, 0, 256)
-		return &slice
-	},
-}
-
 // Pool for strings.Builder used in string processing
 var stringBuilderPool = sync.Pool{
 	New: func() any {
@@ -44,10 +31,6 @@ var globalInterner = &stringInterner{
 // internString returns an interned version of the string if beneficial
 // Thread-safe implementation optimized for read-heavy workloads
 func (si *stringInterner) internString(s string) string {
-	if !isStringInterningEnabled() {
-		return s
-	}
-
 	// Only intern short strings to avoid memory bloat
 	if len(s) > si.maxLength {
 		return s

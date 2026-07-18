@@ -7,8 +7,7 @@ import (
 )
 
 // Error represents a recoverable lexical error with precise position information.
-// Note: Errors are surfaced to consumers via ILLEGAL tokens today. This structured type
-// is provided for future use in higher-level APIs that may stream tokens alongside errors.
+// Errors are available through Lexer.Errors and may also produce ILLEGAL tokens.
 type Error struct {
 	Position token.Position
 	Message  string

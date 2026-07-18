@@ -1161,7 +1161,7 @@ func TestInterpreterRegexFoundOps_FOUND_IN(t *testing.T) {
 // setupRegexInterpreter creates an interpreter with regex matches for testing
 func setupRegexInterpreter(t *testing.T) *Interpreter {
 	// Compile a simple regex via the internal compiler path
-	sc := NewStringCompiler(NewEmitter())
+	sc := NewStringCompiler()
 	code, err := sc.compileRegex(`/ab+/`, nil)
 	if err != nil {
 		t.Fatalf("compileRegex error: %v", err)

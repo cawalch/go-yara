@@ -5,7 +5,6 @@ import (
 )
 
 // TestBytecodeInstructionSequence documents compiler bytecode generation behavior
-// DO NOT modify code to make tests pass - document current behavior only
 func TestBytecodeInstructionSequence(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -80,7 +79,6 @@ func TestBytecodeInstructionSequence(t *testing.T) {
 }
 
 // TestJumpTargetCorrectness documents jump target resolution in bytecode
-// DO NOT modify code to make tests pass - document current behavior only
 func TestJumpTargetCorrectness(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -143,7 +141,6 @@ func TestJumpTargetCorrectness(t *testing.T) {
 }
 
 // TestLabelResolution documents label resolution in bytecode generation
-// DO NOT modify code to make tests pass - document current behavior only
 func TestLabelResolution(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -194,7 +191,6 @@ func TestLabelResolution(t *testing.T) {
 }
 
 // TestStackBalance documents stack balance in bytecode execution
-// DO NOT modify code to make tests pass - document current behavior only
 func TestStackBalance(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -251,7 +247,6 @@ func TestStackBalance(t *testing.T) {
 }
 
 // TestMemorySlotUsage documents memory slot allocation and usage
-// DO NOT modify code to make tests pass - document current behavior only
 func TestMemorySlotUsage(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -308,7 +303,6 @@ func TestMemorySlotUsage(t *testing.T) {
 }
 
 // TestStringLiteralPool documents string literal pool in bytecode
-// DO NOT modify code to make tests pass - document current behavior only
 func TestStringLiteralPool(t *testing.T) {
 	tests := []struct {
 		name        string

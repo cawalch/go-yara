@@ -582,9 +582,8 @@ func (cc *ConditionCompiler) compileCommaOperator(binOp *ast.BinaryOp) error {
 		return fmt.Errorf("compiling right operand of comma: %w", err)
 	}
 
-	// Emit the comma operation to create a string list
-	// For now, we'll treat it as a push operation since the 'of' operator
-	// will handle the list creation from the stack
+	// The enclosing 'of' expression builds the string set from the AST, so the
+	// comma node itself does not require a VM operation.
 	cc.emitter.EmitOpcode(OpNop, binOp.Pos.Line, binOp.Pos.Column)
 
 	return nil

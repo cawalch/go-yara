@@ -8,8 +8,7 @@ import (
 
 // TestStringCompiler tests the string compilation system
 func TestStringCompiler(t *testing.T) {
-	emitter := NewEmitter()
-	sc := NewStringCompiler(emitter)
+	sc := NewStringCompiler()
 
 	// Test text string encoding
 	text := "Hello, World!"
@@ -35,17 +34,11 @@ func TestStringCompiler(t *testing.T) {
 		t.Error("Pattern optimization returned empty result")
 	}
 
-	// Test string info
-	info := sc.GetStringInfo()
-	if len(info) != 0 {
-		t.Error("Expected no string info before compilation")
-	}
 }
 
 // TestStringCompilerValidation tests string modifier validation
 func TestStringCompilerValidation(t *testing.T) {
-	emitter := NewEmitter()
-	sc := NewStringCompiler(emitter)
+	sc := NewStringCompiler()
 
 	// Test wide+ascii combination (should be allowed and match both encodings)
 	dualModifiers := []ast.StringModifier{

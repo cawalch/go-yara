@@ -1,3 +1,0 @@
-[submodule "yara"]
-	path = yara
-	url = git@github.com:VirusTotal/yara.git

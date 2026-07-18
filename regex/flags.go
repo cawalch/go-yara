@@ -24,14 +24,9 @@ const (
 	FlagsUngreedy Flags = 0x800
 )
 
-// ParserFlags control parsing behavior. Values are internal and do not need to
-// match libyara, but we keep names aligned to improve traceability.
-// See: RE_PARSER_FLAG_ENABLE_STRICT_ESCAPE_SEQUENCES
-
 // ParserFlags control parser behavior; names mirror libyara for traceability.
 type ParserFlags uint32
 
-// ParserFlagEnableStrictEscapeSequences enables strict escape validation.
 // ParserFlagEnableStrictEscapeSequences enables strict escape validation.
 const (
 	ParserFlagEnableStrictEscapeSequences ParserFlags = 1 << 0

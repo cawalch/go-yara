@@ -1,31 +1,4 @@
-// Package lexer provides a high-performance lexical analyzer for YARA rule syntax.
-//
-// The lexer is organized into several focused modules:
-//
-// Core Components:
-//   - Lexer: Main tokenization engine (lexer.go)
-//   - Reader: Input reading and position tracking (reader.go, position.go)
-//   - Token emission: Centralized token creation (emit.go, token_handlers.go)
-//
-// Specialized Scanners:
-//   - String literals and regex patterns (scanner_string.go)
-//   - Hexadecimal strings (scanner_hex.go)
-//   - Identifiers and keywords (scanner_ident.go)
-//   - Numeric literals (scanner_numeric.go)
-//   - Escape sequences (scanner_escape.go)
-//
-// Performance Optimizations:
-//   - Memory pooling for reduced allocations (pooling.go)
-//   - String interning for common tokens (pooling.go)
-//   - Position caching for efficient seeking (position.go)
-//   - Feature flags for experimental optimizations (optimization_flags.go)
-//
-// Error Handling:
-//   - Robust error recovery mechanisms (error_recovery.go)
-//   - Detailed error reporting (errors.go)
-//
-// The lexer maintains zero-allocation fast paths for common operations
-// and provides comprehensive error recovery for malformed input.
+// Package lexer tokenizes YARA rule syntax for the parser and compiler.
 package lexer
 
 import "github.com/cawalch/go-yara/token"
@@ -67,16 +40,6 @@ func New(input string) *Lexer {
 	return &Lexer{
 		reader:       NewReaderFast(input),
 		recoveryMode: RecoveryBasic,
-	}
-}
-
-// NewWithRecovery creates a new lexer with the specified recovery mode
-//
-// Deprecated: This function is only used in fuzz testing and may be removed in future versions
-func NewWithRecovery(input string, mode RecoveryMode) *Lexer {
-	return &Lexer{
-		reader:       NewReaderFast(input),
-		recoveryMode: mode,
 	}
 }
 

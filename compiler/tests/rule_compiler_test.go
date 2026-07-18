@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/cawalch/go-yara/compiler"
-	"github.com/cawalch/go-yara/compiler/tests/testutils"
 )
 
 // TestRuleCompilerIntegration tests rule compiler integration
@@ -14,7 +13,7 @@ func TestRuleCompilerIntegration(t *testing.T) {
 	rc := compiler.NewRuleCompiler()
 
 	// Create a test AST node
-	testAST := testutils.CreateTestAST()
+	testAST := createTestAST()
 
 	// Compile the rule
 	compiledRule, err := rc.CompileRule(testAST.Rules[0])
@@ -58,8 +57,8 @@ rule multi_string_test {
         $s1 and $s2 and $s3 and $hex1 and $regex1
 }`
 
-	c := testutils.CreateTestCompiler()
-	program := testutils.CompileTestRule(t, source)
+	c := createTestCompiler()
+	program := compileTestRule(t, source)
 
 	// Test string access methods to CompiledProgram
 	// Verify we have the expected number of compiled strings
@@ -67,9 +66,9 @@ rule multi_string_test {
 		t.Errorf("Expected 5 compiled strings, got %d", program.GetStringCount())
 	}
 
-	// For now, just verify compilation succeeded
-	testutils.AssertProgramValid(t, program)
-	testutils.AssertRuleCount(t, program, 1)
+	// Verify compilation succeeds through the public compiler path.
+	assertProgramValid(t, program)
+	assertRuleCount(t, program, 1)
 	_ = c // Use the compiler variable
 }
 
@@ -85,12 +84,12 @@ rule no_strings_test {
         true
 }`
 
-	c := testutils.CreateTestCompiler()
-	program := testutils.CompileTestRule(t, source)
+	c := createTestCompiler()
+	program := compileTestRule(t, source)
 
 	// But we should still have a valid rule
-	testutils.AssertProgramValid(t, program)
-	testutils.AssertRuleCount(t, program, 1)
+	assertProgramValid(t, program)
+	assertRuleCount(t, program, 1)
 	_ = c // Use the compiler variable
 }
 
@@ -214,7 +213,7 @@ func TestRuleCompilerSingleStringCompilation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			compiler := testutils.CreateTestCompiler()
+			compiler := createTestCompiler()
 
 			program, err := compiler.CompileSourceWithContext(context.Background(), tt.source)
 
@@ -231,8 +230,8 @@ func TestRuleCompilerSingleStringCompilation(t *testing.T) {
 			}
 
 			// Validate the program
-			testutils.AssertProgramValid(t, program)
-			testutils.AssertRuleCount(t, program, 1)
+			assertProgramValid(t, program)
+			assertRuleCount(t, program, 1)
 
 			rule := program.Rules[0]
 			strings := rule.GetStrings()
@@ -471,7 +470,7 @@ func TestRuleCompilerComplexConditions(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a fresh compiler for each test to avoid interference
-			compiler := testutils.CreateTestCompiler()
+			compiler := createTestCompiler()
 
 			program, err := compiler.CompileSourceWithContext(context.Background(), tt.source)
 
@@ -676,7 +675,7 @@ func TestRuleCompilerModifiers(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			compiler := testutils.CreateTestCompiler()
+			compiler := createTestCompiler()
 
 			program, err := compiler.CompileSourceWithContext(context.Background(), tt.source)
 
@@ -827,7 +826,7 @@ func TestRuleCompilerMetaInfo(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			compiler := testutils.CreateTestCompiler()
+			compiler := createTestCompiler()
 
 			program, err := compiler.CompileSourceWithContext(context.Background(), tt.source)
 
@@ -1031,7 +1030,7 @@ func TestRuleCompilerErrorHandling(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			compiler := testutils.CreateTestCompiler()
+			compiler := createTestCompiler()
 
 			program, err := compiler.CompileSourceWithContext(context.Background(), tt.source)
 

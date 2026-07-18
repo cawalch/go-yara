@@ -1,3 +1,4 @@
+// Package parser parses YARA rule source into the public AST model.
 package parser
 
 import (
@@ -76,7 +77,7 @@ func New(l *lexer.Lexer) *Parser {
 	return NewWithOptions(
 		l,
 		Options{MaxRecursionDepth: 0},
-	) // 0 means no limit for backward compatibility
+	)
 }
 
 // Options configures parser behavior
@@ -92,12 +93,12 @@ func NewWithOptions(l *lexer.Lexer, options Options) *Parser {
 		programErrors:     make([]error, 0),
 		invalidRules:      make([]InvalidRule, 0),
 		builder:           ast.NewBuilder(),
-		errorRecovery:     false, // Default to strict parsing for backward compatibility
+		errorRecovery:     false,
 		maxRecursionDepth: options.MaxRecursionDepth,
 	}
 
 	// Initialize specialized parsers
-	p.exprParser = NewExpressionParser(l, p.builder)
+	p.exprParser = NewExpressionParser(l)
 	p.quantParser = NewQuantifierParser(l, p.builder, p.exprParser)
 	p.declParser = NewDeclarationParser(l, p.builder)
 	p.ruleParser = NewRuleParser(l, p.builder, p.exprParser, p.declParser)

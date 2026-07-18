@@ -204,7 +204,8 @@ func TestFastForwardRecovery(t *testing.T) {
 	}
 
 	// Test section recovery mode
-	l2 := lexer.NewWithRecovery(input, lexer.RecoverySection)
+	l2 := lexer.New(input)
+	l2.SetRecoveryMode(lexer.RecoverySection)
 	tokens2 := collectTokens(l2)
 
 	// Should have fewer tokens due to fast-forward recovery
@@ -241,7 +242,8 @@ func TestRecoveryModeConfiguration(t *testing.T) {
 	}
 
 	// Test creating with recovery mode
-	l2 := lexer.NewWithRecovery(input, lexer.RecoverySection)
+	l2 := lexer.New(input)
+	l2.SetRecoveryMode(lexer.RecoverySection)
 	if l2.RecoveryMode() != lexer.RecoverySection {
 		t.Fatalf("expected recovery mode to be RecoverySection, got %v", l2.RecoveryMode())
 	}

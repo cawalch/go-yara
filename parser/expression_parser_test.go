@@ -9,27 +9,6 @@ import (
 	"github.com/cawalch/go-yara/token"
 )
 
-// parseRule is a test helper that parses a source string and returns the first rule.
-// It is kept for future test cases; suppress unused warning.
-var parseRule = func(t *testing.T, source string) *ast.Rule {
-	t.Helper()
-	l := lexer.New(source)
-	p := New(l)
-	program, err := p.ParseRules()
-	if err != nil {
-		t.Fatalf("parse error: %v", err)
-	}
-	if len(program.Rules) == 0 {
-		t.Fatal("expected at least one rule")
-	}
-	return program.Rules[0]
-}
-
-func init() {
-	// Ensure parseRule is not flagged as unused.
-	_ = parseRule
-}
-
 func TestPercentKeywordParsing(t *testing.T) {
 	tests := []struct {
 		name        string

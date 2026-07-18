@@ -2,6 +2,8 @@ package integration
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -55,7 +57,6 @@ func assertPipelineResult(t *testing.T, result pipelineResult, expectation pipel
 }
 
 // TestFullPipelineSimpleRule documents end-to-end pipeline for simple rules
-// DO NOT modify code to make tests pass - document current behavior only
 func TestFullPipelineSimpleRule(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -155,7 +156,6 @@ func TestFullPipelineSimpleRule(t *testing.T) {
 }
 
 // TestFullPipelineComplexRule documents end-to-end pipeline for complex rules
-// DO NOT modify code to make tests pass - document current behavior only
 func TestFullPipelineComplexRule(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -265,7 +265,6 @@ func TestFullPipelineComplexRule(t *testing.T) {
 }
 
 // TestFullPipelineMultipleRules documents end-to-end pipeline for multiple rules
-// DO NOT modify code to make tests pass - document current behavior only
 func TestFullPipelineMultipleRules(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -332,50 +331,64 @@ func TestFullPipelineMultipleRules(t *testing.T) {
 	}
 }
 
-// TestFullPipelineWithIncludes documents end-to-end pipeline with include directives
-// DO NOT modify code to make tests pass - document current behavior only
+// TestFullPipelineWithIncludes verifies include resolution through compilation and scanning.
 func TestFullPipelineWithIncludes(t *testing.T) {
-	tests := []struct {
-		name         string
-		mainRule     string
-		includedFile string
-		expectError  bool
-		knownGap     bool
-		description  string
-	}{
-		{
-			name:         "simple-include",
-			mainRule:     `rule main { include "included.yar" condition: $a }`,
-			includedFile: `rule included { strings: $a = "test" condition: $a }`,
-			expectError:  false,
-			description:  "Documents pipeline with include directive",
-		},
-		{
-			name:         "multiple-includes",
-			mainRule:     `rule main { include "file1.yar" include "file2.yar" condition: $a or $b }`,
-			includedFile: `rule file1 { strings: $a = "test1" condition: $a }`,
-			expectError:  true,
-			description:  "Documents pipeline with multiple includes (file2 missing)",
-		},
-		{
-			name:         "nested-includes",
-			mainRule:     `rule main { include "nested.yar" condition: $a }`,
-			includedFile: `rule nested { include "inner.yar" strings: $a = "test" condition: $a }`,
-			expectError:  true,
-			description:  "Documents pipeline with nested includes (inner file missing)",
-		},
-	}
+	t.Run("simple include", func(t *testing.T) {
+		dir := t.TempDir()
+		includedPath := filepath.Join(dir, "included.yar")
+		mainPath := filepath.Join(dir, "main.yar")
+		require.NoError(t, os.WriteFile(includedPath, []byte(`
+rule included {
+    strings: $a = "test"
+    condition: $a
+}`), 0600))
+		require.NoError(t, os.WriteFile(mainPath, []byte(`
+include "included.yar"
+rule main { condition: true }
+`), 0600))
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Skip("Include file testing requires file system - skipped for now")
-			t.Logf("Would test: %s", tt.description)
-		})
-	}
+		program, err := compiler.NewCompiler().CompileFileWithContext(context.Background(), mainPath)
+		require.NoError(t, err)
+		require.Len(t, program.Rules, 2)
+
+		result, err := program.Scan([]byte("contains test data"))
+		require.NoError(t, err)
+		require.True(t, result.RuleResults["included"])
+		require.True(t, result.RuleResults["main"])
+	})
+
+	t.Run("missing include", func(t *testing.T) {
+		dir := t.TempDir()
+		mainPath := filepath.Join(dir, "main.yar")
+		require.NoError(t, os.WriteFile(mainPath, []byte(`
+include "missing.yar"
+rule main { condition: true }
+`), 0600))
+
+		_, err := compiler.NewCompiler().CompileFileWithContext(context.Background(), mainPath)
+		require.ErrorContains(t, err, "failed to read include file missing.yar")
+	})
+
+	t.Run("missing nested include", func(t *testing.T) {
+		dir := t.TempDir()
+		nestedPath := filepath.Join(dir, "nested.yar")
+		mainPath := filepath.Join(dir, "main.yar")
+		require.NoError(t, os.WriteFile(nestedPath, []byte(`
+include "inner.yar"
+rule nested { condition: true }
+`), 0600))
+		require.NoError(t, os.WriteFile(mainPath, []byte(`
+include "nested.yar"
+rule main { condition: nested }
+`), 0600))
+
+		_, err := compiler.NewCompiler().CompileFileWithContext(context.Background(), mainPath)
+		require.ErrorContains(t, err, "failed to process includes in nested.yar")
+		require.ErrorContains(t, err, "failed to read include file inner.yar")
+	})
 }
 
 // TestFullPipelineWithErrorRecovery documents error handling across pipeline stages
-// DO NOT modify code to make tests pass - document current behavior only
 func TestFullPipelineWithErrorRecovery(t *testing.T) {
 	tests := []struct {
 		name        string

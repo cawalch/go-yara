@@ -114,7 +114,8 @@ func ExampleRecoveryMode() {
 	_ = lexer1.NextToken() // This will encounter an error
 
 	// Section recovery mode - more aggressive error recovery
-	lexer2 := lexer.NewWithRecovery("?", lexer.RecoverySection)
+	lexer2 := lexer.New("?")
+	lexer2.SetRecoveryMode(lexer.RecoverySection)
 	_ = lexer2.NextToken()
 
 	fmt.Printf("Basic recovery errors: %d\n", len(lexer1.Errors()))

@@ -2,66 +2,14 @@ package compiler
 
 import (
 	"bytes"
-	"encoding/base64"
 	"testing"
 
 	"github.com/cawalch/go-yara/ast"
-	"github.com/cawalch/go-yara/token"
 )
-
-// TestStringCompilerTextString tests text string compilation
-func TestStringCompilerTextString(t *testing.T) {
-	emitter := NewEmitter()
-	sc := NewStringCompiler(emitter)
-
-	tests := []struct {
-		name      string
-		text      string
-		modifiers []ast.StringModifier
-		wantErr   bool
-	}{
-		{
-			name:      "simple_text",
-			text:      "hello",
-			modifiers: []ast.StringModifier{},
-			wantErr:   false,
-		},
-		{
-			name: "text_with_nocase",
-			text: "hello",
-			modifiers: []ast.StringModifier{
-				{Type: ast.StringModifierNocase},
-			},
-			wantErr: false,
-		},
-		{
-			name: "text_with_wide",
-			text: "hello",
-			modifiers: []ast.StringModifier{
-				{Type: ast.StringModifierWide},
-			},
-			wantErr: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			textPattern := &ast.TextString{
-				Value: tt.text,
-				Pos:   token.Position{Line: 1, Column: 1},
-			}
-			err := sc.compileTextString("$test", textPattern, tt.modifiers)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("compileTextString() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
 
 // TestStringCompilerValidateModifiers tests string modifier validation
 func TestStringCompilerValidateModifiers(t *testing.T) {
-	emitter := NewEmitter()
-	sc := NewStringCompiler(emitter)
+	sc := NewStringCompiler()
 
 	tests := []struct {
 		name      string
@@ -162,67 +110,8 @@ func TestStringCompilerValidateModifiers(t *testing.T) {
 	}
 }
 
-func TestStringCompilerBase64Modifier(t *testing.T) {
-	sc := NewStringCompiler(nil)
-
-	tests := []struct {
-		name      string
-		input     []byte
-		modifier  ast.StringModifier
-		want      []byte
-		wantError bool
-	}{
-		{
-			name:     "standard_base64_encoding",
-			input:    []byte("Hello World"),
-			modifier: ast.StringModifier{Type: ast.StringModifierBase64},
-			want:     []byte("SGVsbG8gV29ybGQ="),
-		},
-		{
-			name:     "base64wide_encoding",
-			input:    []byte("Hello World"),
-			modifier: ast.StringModifier{Type: ast.StringModifierBase64Wide},
-			want:     []byte(base64.StdEncoding.EncodeToString(sc.encodeToWideBytes("Hello World"))),
-		},
-		{
-			name:      "invalid_base64_alphabet",
-			input:     []byte("Hello"),
-			modifier:  ast.StringModifier{Type: ast.StringModifierBase64, Value: "short"},
-			wantError: true,
-		},
-		{
-			name:     "empty_base64_string",
-			input:    []byte(""),
-			modifier: ast.StringModifier{Type: ast.StringModifierBase64},
-			want:     []byte{},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result, err := sc.applyBase64Modifier(tt.input, tt.modifier)
-
-			if tt.wantError {
-				if err == nil {
-					t.Errorf("applyBase64Modifier() expected error, got nil")
-				}
-				return
-			}
-
-			if err != nil {
-				t.Errorf("applyBase64Modifier() unexpected error: %v", err)
-				return
-			}
-
-			if !bytes.Equal(result, tt.want) {
-				t.Errorf("applyBase64Modifier() = %v, want %v", result, tt.want)
-			}
-		})
-	}
-}
-
 func TestBase64AlignmentVariants(t *testing.T) {
-	sc := NewStringCompiler(nil)
+	sc := NewStringCompiler()
 	input := []byte("This program cannot")
 	variants, err := sc.base64AlignedPatterns(input, "", false)
 	if err != nil {
@@ -251,7 +140,7 @@ func TestBase64AlignmentVariants(t *testing.T) {
 }
 
 func TestBase64WideAlignmentVariants(t *testing.T) {
-	sc := NewStringCompiler(nil)
+	sc := NewStringCompiler()
 	input := []byte("This program cannot")
 	variants, err := sc.base64AlignedPatterns(input, "", true)
 	if err != nil {
@@ -276,7 +165,7 @@ func TestBase64WideAlignmentVariants(t *testing.T) {
 }
 
 func TestStringCompilerEncodeToWideBytes(t *testing.T) {
-	sc := NewStringCompiler(nil)
+	sc := NewStringCompiler()
 
 	tests := []struct {
 		name  string

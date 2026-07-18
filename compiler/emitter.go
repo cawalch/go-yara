@@ -139,8 +139,7 @@ type JumpConfig struct {
 func (e *Emitter) EmitJump(config JumpConfig) int {
 	var operand Operand
 
-	// For now, emit a placeholder offset (0)
-	// This will be fixed up later when the target is known
+	// Emit a zero displacement; FixupJumps writes the final target later.
 	switch config.Opcode {
 	case OpJz, OpJzP, OpJtrue, OpJtrueP, OpJfalse, OpJfalseP:
 		operand = Operand{Type: OperandRelative32, Value: 0}

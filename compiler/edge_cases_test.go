@@ -6,7 +6,6 @@ import (
 )
 
 // TestEmptyStringMatching documents compiler behavior with empty strings
-// DO NOT modify code to make tests pass - document current behavior only
 func TestEmptyStringMatching(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -51,7 +50,6 @@ func TestEmptyStringMatching(t *testing.T) {
 }
 
 // TestSingleCharStrings documents compiler behavior with single character strings
-// DO NOT modify code to make tests pass - document current behavior only
 func TestSingleCharStrings(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -96,7 +94,6 @@ func TestSingleCharStrings(t *testing.T) {
 }
 
 // TestVeryLongStrings documents compiler behavior with very long strings
-// DO NOT modify code to make tests pass - document current behavior only
 func TestVeryLongStrings(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -141,7 +138,6 @@ func TestVeryLongStrings(t *testing.T) {
 }
 
 // TestOverlappingPatterns documents compiler behavior with overlapping patterns
-// DO NOT modify code to make tests pass - document current behavior only
 func TestOverlappingPatterns(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -192,7 +188,6 @@ func TestOverlappingPatterns(t *testing.T) {
 }
 
 // TestAllStringModifiersCombinations documents compiler behavior with all modifier combinations
-// DO NOT modify code to make tests pass - document current behavior only
 func TestAllStringModifiersCombinations(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -273,7 +268,6 @@ func TestAllStringModifiersCombinations(t *testing.T) {
 }
 
 // TestXorModifierBoundaries documents compiler behavior with xor modifier edge cases
-// DO NOT modify code to make tests pass - document current behavior only
 func TestXorModifierBoundaries(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -342,7 +336,6 @@ func TestXorModifierBoundaries(t *testing.T) {
 }
 
 // TestBase64AlphabetVariations documents compiler behavior with base64 alphabets
-// DO NOT modify code to make tests pass - document current behavior only
 func TestBase64AlphabetVariations(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -405,7 +398,6 @@ func TestBase64AlphabetVariations(t *testing.T) {
 }
 
 // TestHexPatternJumpExtremes documents compiler behavior with hex pattern jump extremes
-// DO NOT modify code to make tests pass - document current behavior only
 func TestHexPatternJumpExtremes(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -474,7 +466,6 @@ func TestHexPatternJumpExtremes(t *testing.T) {
 }
 
 // TestRegexEdgeCases documents compiler behavior with regex edge cases
-// DO NOT modify code to make tests pass - document current behavior only
 func TestRegexEdgeCases(t *testing.T) {
 	tests := []struct {
 		name        string

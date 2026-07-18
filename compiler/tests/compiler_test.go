@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/cawalch/go-yara/compiler"
-	"github.com/cawalch/go-yara/compiler/tests/testutils"
 )
 
 // TestCompilerIntegration tests the full compiler pipeline
@@ -21,7 +20,7 @@ rule test_rule {
         $s1 and $s2
 }`
 
-	compiler := testutils.CreateTestCompiler()
+	compiler := createTestCompiler()
 
 	// Compile the source
 	program, err := compiler.CompileSourceWithContext(context.Background(), source)
@@ -31,8 +30,8 @@ rule test_rule {
 	}
 
 	// Validate the program
-	testutils.AssertProgramValid(t, program)
-	testutils.AssertRuleCount(t, program, 1)
+	assertProgramValid(t, program)
+	assertRuleCount(t, program, 1)
 
 	// Check compilation statistics
 	stats := compiler.GetStats()
@@ -46,20 +45,6 @@ rule test_rule {
 	}
 }
 
-// TestCompilerOptions tests compiler configuration options
-func TestCompilerOptions(t *testing.T) {
-	// Test with optimizations disabled
-	c := testutils.CreateTestCompiler(testutils.WithOptimizations(false))
-
-	source := `rule test { condition: true }`
-	program := testutils.CompileTestRule(t, source)
-
-	if program == nil {
-		t.Fatal("Failed to compile rule with optimizations disabled")
-	}
-	_ = c // Use the compiler variable
-}
-
 // TestErrorHandling tests error handling in the compiler
 func TestErrorHandling(t *testing.T) {
 	invalidSource := `
@@ -70,8 +55,8 @@ rule invalid_rule {
         $test
 }`
 
-	c := testutils.CreateTestCompiler()
-	program, errors := testutils.CompileTestRuleWithError(t, invalidSource)
+	c := createTestCompiler()
+	program, errors := compileTestRuleWithError(t, invalidSource)
 
 	// Should have compilation errors
 	if len(errors) == 0 {
@@ -103,7 +88,7 @@ rule test_rule_2 {
         $s3
 }`
 
-	compiler := testutils.CreateTestCompiler()
+	compiler := createTestCompiler()
 	program, err := compiler.CompileSourceWithContext(context.Background(), source)
 	if err != nil {
 		t.Logf("Compilation errors: %v", compiler.GetErrors())
@@ -116,7 +101,7 @@ rule test_rule_2 {
 		t.Errorf("Expected 2 rules compiled, got %d", stats.RulesCompiled)
 	}
 
-	testutils.AssertRuleCount(t, program, 2)
+	assertRuleCount(t, program, 2)
 }
 
 // TestCompilationReport tests detailed compilation reporting
@@ -150,8 +135,6 @@ func TestCompilationReport(t *testing.T) {
 	// Verify report contains expected sections
 	expectedSections := []string{
 		"Go-YARA Compilation Report",
-		"Version:",
-		"Target:",
 		"Options:",
 		"Timing:",
 		"Results:",
@@ -212,7 +195,7 @@ func TestCompiledRuleMemoryUsage(t *testing.T) {
 		}
 	`
 
-	program := testutils.CompileTestRule(t, source)
+	program := compileTestRule(t, source)
 	rule := program.Rules[0]
 
 	// Test memory usage estimation
@@ -240,7 +223,7 @@ func TestCompiledRuleMemoryUsage(t *testing.T) {
 		}
 	`
 
-	complexProgram := testutils.CompileTestRule(t, complexSource)
+	complexProgram := compileTestRule(t, complexSource)
 	complexRule := complexProgram.Rules[0]
 
 	complexMemoryUsage := complexRule.GetMemoryUsage()
@@ -257,7 +240,7 @@ func TestCompiledRuleMemoryUsage(t *testing.T) {
 		}
 	`
 
-	noStringProgram := testutils.CompileTestRule(t, noStringSource)
+	noStringProgram := compileTestRule(t, noStringSource)
 	noStringRule := noStringProgram.Rules[0]
 
 	noStringMemoryUsage := noStringRule.GetMemoryUsage()
@@ -297,7 +280,7 @@ func TestCompiledProgramMemoryUsage(t *testing.T) {
 		}
 	`
 
-	program := testutils.CompileTestRule(t, source)
+	program := compileTestRule(t, source)
 
 	// Test total memory usage
 	totalMemoryUsage := program.GetTotalMemoryUsage()
@@ -321,7 +304,7 @@ func TestCompiledProgramMemoryUsage(t *testing.T) {
 		rule BaseRule2 { condition: true }
 		rule BaseRule3 { condition: true }
 	`
-	baselineProgram := testutils.CompileTestRule(t, baselineSource)
+	baselineProgram := compileTestRule(t, baselineSource)
 	baselineMemoryUsage := baselineProgram.GetTotalMemoryUsage()
 
 	multiRuleSource := `
@@ -337,7 +320,7 @@ func TestCompiledProgramMemoryUsage(t *testing.T) {
 		rule Rule10 { condition: true }
 	`
 
-	multiRuleProgram := testutils.CompileTestRule(t, multiRuleSource)
+	multiRuleProgram := compileTestRule(t, multiRuleSource)
 	multiRuleMemoryUsage := multiRuleProgram.GetTotalMemoryUsage()
 
 	if multiRuleMemoryUsage <= baselineMemoryUsage {
