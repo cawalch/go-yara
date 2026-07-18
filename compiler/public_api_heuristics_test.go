@@ -65,7 +65,7 @@ func TestPublicComplexityHeuristics(t *testing.T) {
 }
 
 func TestPublicPatternQualityHeuristic(t *testing.T) {
-	sc := NewStringCompiler(NewEmitter())
+	sc := NewStringCompiler()
 
 	empty := sc.EstimatePatternComplexity(nil, nil)
 	repeated := sc.EstimatePatternComplexity([]byte("aaaa"), nil)

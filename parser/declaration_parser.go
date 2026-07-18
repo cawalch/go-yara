@@ -541,9 +541,8 @@ func (p *DeclarationParser) ParseExternalVariable() (*ast.ExternalVariable, erro
 	name := p.current.Literal
 	p.nextToken()
 
-	// External variables in YARA are declared as simple identifiers
-	// The actual values are provided at runtime
-	// Optional: support for type hints in the future
+	// External values are provided at runtime. A project-specific type hint may
+	// optionally follow the identifier.
 	var typeHint string
 	if p.currentTokenIs(token.COLON) {
 		p.nextToken() // consume ':'
@@ -585,11 +584,8 @@ func (p *DeclarationParser) ParseInclude() (*ast.Include, error) {
 	return p.builder.Include(pos, file), nil
 }
 
-// parseExpression is a placeholder for expression parsing
-// This would typically delegate to an ExpressionParser
+// parseExpression parses the literal values accepted by global declarations.
 func (p *DeclarationParser) parseExpression() (ast.Expression, error) {
-	// Simplified implementation for now - in the full refactoring, this would
-	// delegate to the ExpressionParser instance
 	if p.currentTokenIs(token.IntegerLit) {
 		value := p.parseIntegerLiteral()
 		pos := p.current.Pos

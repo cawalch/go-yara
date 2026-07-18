@@ -59,7 +59,7 @@ func NewRuleCompilerWithModules(modules map[string]Module) (*RuleCompiler, error
 
 	return &RuleCompiler{
 		emitter:           emitter,
-		stringCompiler:    NewStringCompiler(emitter),
+		stringCompiler:    NewStringCompiler(),
 		conditionCompiler: conditionCompiler,
 		automaton:         automaton,
 		ruleIndex:         0,
@@ -513,10 +513,10 @@ func (rc *RuleCompiler) compileHexString(value string, modifiers []ast.StringMod
 	}
 	hexPattern.cacheKey = patternCacheKey("hex", value, modifiers)
 	hexPattern.cacheIndex = -1
-	legacy := rc.stringCompiler.parseHexString(value)
-	legacy = rc.stringCompiler.encodeHexString(legacy, modifiers)
+	encodedPattern := rc.stringCompiler.parseHexString(value)
+	encodedPattern = rc.stringCompiler.applyXorModifier(encodedPattern, modifiers)
 	return &stringCompilationResult{
-		patternData: legacy,
+		patternData: encodedPattern,
 		kind:        StringKindHex,
 		hexPattern:  hexPattern,
 	}, nil
@@ -937,10 +937,6 @@ func (rc *RuleCompiler) snapshotCompilationStats(rule *ast.Rule) map[string]any 
 		stats["emitter_"+k] = v
 	}
 
-	// Add string compiler stats
-	stringInfo := rc.stringCompiler.GetStringInfo()
-	stats["string_info"] = stringInfo
-
 	return stats
 }
 
@@ -960,25 +956,9 @@ func cloneStatsValue(value any) any {
 	switch v := value.(type) {
 	case map[string]int:
 		return maps.Clone(v)
-	case []StringInfo:
-		return cloneStringInfo(v)
 	default:
 		return v
 	}
-}
-
-func cloneStringInfo(info []StringInfo) []StringInfo {
-	out := make([]StringInfo, len(info))
-	for i, item := range info {
-		out[i] = item
-		if item.Pattern != nil {
-			out[i].Pattern = slices.Clone(item.Pattern)
-		}
-		if item.Modifiers != nil {
-			out[i].Modifiers = slices.Clone(item.Modifiers)
-		}
-	}
-	return out
 }
 
 func (rc *RuleCompiler) copyTextPatterns() map[string][]byte {
@@ -1419,30 +1399,12 @@ func (cp *CompiledProgram) PrintDebug() {
 	}
 }
 
-// Optimize optimizes the compiled program for better performance
-func (cp *CompiledProgram) Optimize() error {
-	// This would perform various optimizations:
-	// - Merge similar automata
-	// - Eliminate redundant bytecode
-	// - Optimize memory layout
-
-	// For now, just validate
-	return cp.Validate()
-}
-
 // GetExecutionPlan creates an execution plan for the compiled program
 func (cp *CompiledProgram) GetExecutionPlan() *ExecutionPlan {
 	plan := &ExecutionPlan{
 		RuleCount:         len(cp.Rules),
-		TotalInstructions: 0,
+		TotalInstructions: cp.totalInstructionCount(),
 		MemoryLayout:      make([]MemoryRegion, 0),
-	}
-
-	// Calculate total instructions
-	for _, rule := range cp.Rules {
-		if stats, ok := rule.Stats["instruction_count"].(int); ok {
-			plan.TotalInstructions += stats
-		}
 	}
 
 	// Plan memory layout
@@ -1458,6 +1420,16 @@ func (cp *CompiledProgram) GetExecutionPlan() *ExecutionPlan {
 	}
 
 	return plan
+}
+
+func (cp *CompiledProgram) totalInstructionCount() int {
+	total := 0
+	for _, rule := range cp.Rules {
+		if count, ok := rule.Stats["instruction_count"].(int); ok {
+			total += count
+		}
+	}
+	return total
 }
 
 // ExecutionPlan represents the execution plan for a compiled program

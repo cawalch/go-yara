@@ -5,7 +5,7 @@ import (
 )
 
 func TestHexPatternMatching(t *testing.T) {
-	sc := NewStringCompiler(NewEmitter())
+	sc := NewStringCompiler()
 	tests := []struct {
 		name    string
 		pattern string
@@ -72,7 +72,7 @@ func generateData(size int) []byte {
 
 // BenchmarkFindHexMatches_Simple benchmarks a simple 4-byte literal pattern.
 func BenchmarkFindHexMatches_Simple(b *testing.B) {
-	sc := NewStringCompiler(NewEmitter())
+	sc := NewStringCompiler()
 	pat, _ := sc.parseHexPattern("{ DE AD BE EF }")
 	data := generateData(100_000)
 
@@ -84,7 +84,7 @@ func BenchmarkFindHexMatches_Simple(b *testing.B) {
 
 // BenchmarkFindHexMatches_Jump benchmarks a pattern with a jump (variable gap).
 func BenchmarkFindHexMatches_Jump(b *testing.B) {
-	sc := NewStringCompiler(NewEmitter())
+	sc := NewStringCompiler()
 	pat, _ := sc.parseHexPattern("{ 0A 0B [2-4] 0C 0D }")
 	data := generateData(100_000)
 
@@ -96,7 +96,7 @@ func BenchmarkFindHexMatches_Jump(b *testing.B) {
 
 // BenchmarkFindHexMatches_Alt benchmarks a pattern with alternatives.
 func BenchmarkFindHexMatches_Alt(b *testing.B) {
-	sc := NewStringCompiler(NewEmitter())
+	sc := NewStringCompiler()
 	pat, _ := sc.parseHexPattern("{ 0A ( 1A | 2A | 3A ) 0B }")
 	data := generateData(100_000)
 
@@ -108,7 +108,7 @@ func BenchmarkFindHexMatches_Alt(b *testing.B) {
 
 // BenchmarkFindHexMatches_Wildcard benchmarks a pattern with wildcards.
 func BenchmarkFindHexMatches_Wildcard(b *testing.B) {
-	sc := NewStringCompiler(NewEmitter())
+	sc := NewStringCompiler()
 	pat, _ := sc.parseHexPattern("{ 0A ?? ?? 0B }")
 	data := generateData(100_000)
 
@@ -120,7 +120,7 @@ func BenchmarkFindHexMatches_Wildcard(b *testing.B) {
 
 // BenchmarkFindHexMatches_Xor benchmarks XOR matching with a single key.
 func BenchmarkFindHexMatches_Xor(b *testing.B) {
-	sc := NewStringCompiler(NewEmitter())
+	sc := NewStringCompiler()
 	pat, _ := sc.parseHexPattern("{ DE AD BE EF }")
 	pat.XorKeys = []byte{0x42}
 	data := generateData(100_000)
@@ -133,7 +133,7 @@ func BenchmarkFindHexMatches_Xor(b *testing.B) {
 
 // BenchmarkFindHexMatches_XorWide benchmarks XOR matching with 256 keys.
 func BenchmarkFindHexMatches_XorWide(b *testing.B) {
-	sc := NewStringCompiler(NewEmitter())
+	sc := NewStringCompiler()
 	pat, _ := sc.parseHexPattern("{ DE AD BE EF }")
 	keys := make([]byte, 256)
 	for i := range keys {
@@ -151,7 +151,7 @@ func BenchmarkFindHexMatches_XorWide(b *testing.B) {
 // BenchmarkFindHexMatches_NoAnchor benchmarks a pattern with no anchor byte
 // (wildcard-only prefix), forcing brute-force fallback.
 func BenchmarkFindHexMatches_NoAnchor(b *testing.B) {
-	sc := NewStringCompiler(NewEmitter())
+	sc := NewStringCompiler()
 	pat, _ := sc.parseHexPattern("{ ?? ?? DE AD }")
 	data := generateData(100_000)
 
@@ -163,7 +163,7 @@ func BenchmarkFindHexMatches_NoAnchor(b *testing.B) {
 
 // BenchmarkFindHexMatches_Complex benchmarks a realistic complex hex pattern.
 func BenchmarkFindHexMatches_Complex(b *testing.B) {
-	sc := NewStringCompiler(NewEmitter())
+	sc := NewStringCompiler()
 	pat, _ := sc.parseHexPattern("{ 50 45 00 00 [0-2] 4C 01 }")
 	data := generateData(100_000)
 
@@ -175,7 +175,7 @@ func BenchmarkFindHexMatches_Complex(b *testing.B) {
 
 // TestFindHexMatchesAdditional tests edge cases for the optimized matcher.
 func TestFindHexMatchesAdditional(t *testing.T) {
-	sc := NewStringCompiler(NewEmitter())
+	sc := NewStringCompiler()
 
 	tests := []struct {
 		name    string
@@ -273,7 +273,7 @@ func TestFindHexMatchesAdditional(t *testing.T) {
 
 // TestFindAnchorByte tests the anchor byte extraction logic.
 func TestFindAnchorByte(t *testing.T) {
-	sc := NewStringCompiler(NewEmitter())
+	sc := NewStringCompiler()
 
 	tests := []struct {
 		name     string

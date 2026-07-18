@@ -212,7 +212,8 @@ func FuzzSemanticValidator(f *testing.F) {
 		}
 
 		// Test with error recovery mode
-		l2 := lexer.NewWithRecovery(inputStr, lexer.RecoverySection) //nolint:staticcheck // fuzz test uses recovery mode
+		l2 := lexer.New(inputStr)
+		l2.SetRecoveryMode(lexer.RecoverySection)
 		p2 := parser.New(l2)
 		p2.SetErrorRecovery(true)
 		program2, err2 := p2.ParseRulesWithContext(context.Background())

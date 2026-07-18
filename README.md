@@ -32,10 +32,10 @@ features, but it is not a complete drop-in replacement for upstream YARA.
 
 ## Compatibility
 
-`go-yara` supports core YARA parsing, validation, compilation, and scanning for
-v1.0. The public API is focused on normal rules, strings, modifiers, metadata,
-tags, includes, external variables, private and global rules, and common
-condition expressions.
+`go-yara` supports core YARA parsing, validation, compilation, and scanning.
+The public API is focused on normal rules, strings, modifiers, metadata, tags,
+includes, external variables, private and global rules, and common condition
+expressions.
 
 The built-in `hash` module provides `md5`, `sha1`, and `sha256`; the built-in
 `math` module provides `entropy`, `mean`, and `deviation`. Each accepts the
@@ -45,7 +45,7 @@ module object models such as `pe`, `elf`, and `dotnet` are not yet implemented.
 ## Installation
 
 ```bash
-go get github.com/cawalch/go-yara
+go get github.com/cawalch/go-yara/compiler
 ```
 
 The module currently declares Go `1.26.0` in [go.mod](go.mod).
@@ -265,9 +265,9 @@ Matches that cross a block boundary require the caller to provide overlapping
 block data; the scanner does not invent bytes for address gaps. Match offsets
 are absolute logical offsets, and `Match.Base` records the supplying block.
 
-This differs from the older `EnableStreaming` API: streaming reports chunked
-pattern matches only, while `BlockScanner.Finish` evaluates complete rule
-conditions.
+This differs from pattern-only streaming through `EnableStreaming`: streaming
+reports chunked pattern matches, while `BlockScanner.Finish` evaluates complete
+rule conditions.
 
 ### Cache Compiled Programs
 
@@ -382,11 +382,13 @@ execute path is the primary path for full rule condition results.
 
 ## Testing And Development
 
-Run the full test suite:
+Run the complete local validation gate:
 
 ```bash
-go test ./...
+make check
 ```
+
+Use `make test` or `go test ./...` when only the test suite is needed.
 
 Run fuzz targets through the helper script:
 

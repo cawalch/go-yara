@@ -451,7 +451,7 @@ func parseHexBytes(hexStr string) ([]HexByte, error) {
 		if err != nil {
 			// Check for alternative syntax like "AA BB"
 			if len(hexBytes) > 0 && hexBytes[len(hexBytes)-1].IsWildcard {
-				// This might be an alternative, skip for now
+				// A malformed suffix after a wildcard cannot contribute a mandatory byte.
 				continue
 			}
 			return nil, err

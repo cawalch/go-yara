@@ -58,7 +58,6 @@ func (result anonymousStringCompileResult) assertCase(t *testing.T, tt anonymous
 }
 
 // TestMultipleAnonymousStrings documents compiler behavior with multiple anonymous strings
-// DO NOT modify code to make tests pass - document current behavior only
 func TestMultipleAnonymousStrings(t *testing.T) {
 	tests := []anonymousStringTestCase{
 		{
@@ -104,7 +103,6 @@ func TestMultipleAnonymousStrings(t *testing.T) {
 }
 
 // TestAnonymousStringInForLoops documents anonymous strings in for-loops
-// DO NOT modify code to make tests pass - document current behavior only
 func TestAnonymousStringInForLoops(t *testing.T) {
 	tests := []anonymousStringTestCase{
 		{
@@ -162,7 +160,6 @@ func TestAnonymousStringInForLoops(t *testing.T) {
 }
 
 // TestAnonymousStringInOfExpressions documents anonymous strings in of-expressions
-// DO NOT modify code to make tests pass - document current behavior only
 func TestAnonymousStringInOfExpressions(t *testing.T) {
 	tests := []anonymousStringTestCase{
 		{
@@ -220,7 +217,6 @@ func TestAnonymousStringInOfExpressions(t *testing.T) {
 }
 
 // TestAnonymousStringCollisions documents potential collisions with anonymous strings
-// DO NOT modify code to make tests pass - document current behavior only
 func TestAnonymousStringCollisions(t *testing.T) {
 	tests := []anonymousStringTestCase{
 		{
@@ -272,7 +268,6 @@ func TestAnonymousStringCollisions(t *testing.T) {
 }
 
 // TestMixedAnonymousAndNamedStrings documents mixed anonymous and named string handling
-// DO NOT modify code to make tests pass - document current behavior only
 func TestMixedAnonymousAndNamedStrings(t *testing.T) {
 	tests := []anonymousStringTestCase{
 		{
@@ -330,7 +325,6 @@ func TestMixedAnonymousAndNamedStrings(t *testing.T) {
 }
 
 // TestAnonymousStringWithModifiers documents anonymous strings with various modifiers
-// DO NOT modify code to make tests pass - document current behavior only
 func TestAnonymousStringWithModifiers(t *testing.T) {
 	tests := []anonymousStringTestCase{
 		{

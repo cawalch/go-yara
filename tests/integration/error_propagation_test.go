@@ -91,7 +91,6 @@ func assertCompileResult(t *testing.T, result compileResult, tt struct {
 }
 
 // TestLexerErrorPropagation documents how lexer errors propagate through pipeline
-// DO NOT modify code to make tests pass - document current behavior only
 func TestLexerErrorPropagation(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -163,7 +162,6 @@ func TestLexerErrorPropagation(t *testing.T) {
 }
 
 // TestParserErrorPropagation documents how parser errors propagate through pipeline
-// DO NOT modify code to make tests pass - document current behavior only
 func TestParserErrorPropagation(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -271,7 +269,6 @@ func TestParserErrorPropagation(t *testing.T) {
 }
 
 // TestSemanticErrorPropagation documents how semantic validation errors propagate
-// DO NOT modify code to make tests pass - document current behavior only
 func TestSemanticErrorPropagation(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -364,7 +361,6 @@ func TestSemanticErrorPropagation(t *testing.T) {
 }
 
 // TestCompilerErrorPropagation documents how compiler errors propagate
-// DO NOT modify code to make tests pass - document current behavior only
 func TestCompilerErrorPropagation(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -475,7 +471,6 @@ func TestCompilerErrorPropagation(t *testing.T) {
 }
 
 // TestErrorRecovery documents how errors are recovered from
-// DO NOT modify code to make tests pass - document current behavior only
 func TestErrorRecovery(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -525,7 +520,6 @@ func TestErrorRecovery(t *testing.T) {
 }
 
 // TestWarningConditions documents conditions that might generate warnings
-// DO NOT modify code to make tests pass - document current behavior only
 func TestWarningConditions(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -605,7 +599,6 @@ func TestWarningConditions(t *testing.T) {
 }
 
 // TestEdgeCaseErrorConditions documents edge cases in error handling
-// DO NOT modify code to make tests pass - document current behavior only
 func TestEdgeCaseErrorConditions(t *testing.T) {
 	tests := []struct {
 		name        string

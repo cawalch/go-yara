@@ -5,7 +5,6 @@ import (
 )
 
 // TestStreamingWithLargeData documents compiler behavior with large data patterns
-// DO NOT modify code to make tests pass - document current behavior only
 func TestStreamingWithLargeData(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -50,7 +49,6 @@ func TestStreamingWithLargeData(t *testing.T) {
 }
 
 // TestStreamingWithMultipleMatches documents compiler behavior for multiple matches
-// DO NOT modify code to make tests pass - document current behavior only
 func TestStreamingWithMultipleMatches(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -95,7 +93,6 @@ func TestStreamingWithMultipleMatches(t *testing.T) {
 }
 
 // TestStreamingWithNoMatches documents compiler behavior when no matches occur
-// DO NOT modify code to make tests pass - document current behavior only
 func TestStreamingWithNoMatches(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -146,7 +143,6 @@ func TestStreamingWithNoMatches(t *testing.T) {
 }
 
 // TestStreamingStateManagement documents compiler state management for multiple rules
-// DO NOT modify code to make tests pass - document current behavior only
 func TestStreamingStateManagement(t *testing.T) {
 	tests := []struct {
 		name        string

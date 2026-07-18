@@ -9,7 +9,6 @@ import (
 )
 
 // TestMultipleRulesIndependent documents behavior with multiple independent rules
-// DO NOT modify code to make tests pass - document current behavior only
 func TestMultipleRulesIndependent(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -63,7 +62,6 @@ func TestMultipleRulesIndependent(t *testing.T) {
 }
 
 // TestRuleDependencies documents rule reference compilation
-// DO NOT modify code to make tests pass - document current behavior only
 func TestRuleDependencies(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -132,7 +130,6 @@ func TestRuleDependencies(t *testing.T) {
 }
 
 // TestRuleModifiers documents rule modifier compilation
-// DO NOT modify code to make tests pass - document current behavior only
 func TestRuleModifiers(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -189,7 +186,6 @@ func TestRuleModifiers(t *testing.T) {
 }
 
 // TestRuleNameConflicts documents behavior with duplicate rule names
-// DO NOT modify code to make tests pass - document current behavior only
 func TestRuleNameConflicts(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -234,7 +230,6 @@ func TestRuleNameConflicts(t *testing.T) {
 }
 
 // TestExternalVariables documents external variable compilation
-// DO NOT modify code to make tests pass - document current behavior only
 func TestExternalVariables(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -279,7 +274,6 @@ func TestExternalVariables(t *testing.T) {
 }
 
 // TestMetaInformation documents meta section compilation
-// DO NOT modify code to make tests pass - document current behavior only
 func TestMetaInformation(t *testing.T) {
 	tests := []struct {
 		name        string

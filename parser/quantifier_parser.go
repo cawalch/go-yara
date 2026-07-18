@@ -11,7 +11,6 @@ import (
 )
 
 // QuantifierParser handles parsing of quantifier expressions in YARA rules
-// QuantifierParser handles parsing of quantifier expressions in YARA rules
 type QuantifierParser struct {
 	lexer      *internal.Lexer
 	current    token.Token
@@ -520,7 +519,7 @@ func (p *QuantifierParser) createCommaExpression(pos token.Position, expressions
 		return expressions[0]
 	}
 
-	// Create a temporary representation for comma-separated list
+	// Represent the comma-separated list as left-associated binary nodes.
 	target := expressions[0]
 	for i := 1; i < len(expressions); i++ {
 		target = p.builder.BinaryOp(pos, target, token.COMMA, expressions[i])

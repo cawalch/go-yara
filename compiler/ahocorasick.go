@@ -74,7 +74,7 @@ func NewACAutomaton() *ACAutomaton {
 //
 //nolint:revive // argument-limit: API surface
 func (ac *ACAutomaton) AddString(identifier string, data []byte, isHex, isRegex bool) error {
-	config := StringConfig{
+	config := stringConfig{
 		Identifier: identifier,
 		Data:       data,
 		IsHex:      isHex,
@@ -85,7 +85,7 @@ func (ac *ACAutomaton) AddString(identifier string, data []byte, isHex, isRegex 
 }
 
 // addStringToAutomaton implements the core string addition logic
-func (ac *ACAutomaton) addStringToAutomaton(config StringConfig) error {
+func (ac *ACAutomaton) addStringToAutomaton(config stringConfig) error {
 	if ac.compiled {
 		return errors.New("cannot add strings to compiled automaton")
 	}
@@ -517,7 +517,7 @@ func (ac *ACAutomaton) AddStringWithFlags(
 	isHex, isRegex bool,
 	flags regex.Flags,
 ) error {
-	config := StringConfig{
+	config := stringConfig{
 		Identifier: identifier,
 		Data:       data,
 		IsHex:      isHex,
@@ -525,20 +525,6 @@ func (ac *ACAutomaton) AddStringWithFlags(
 		Flags:      flags,
 	}
 	return ac.addStringToAutomaton(config)
-}
-
-// AddStringWithConfig adds a string using configuration
-func (ac *ACAutomaton) AddStringWithConfig(config StringConfig) error {
-	return ac.addStringToAutomaton(config)
-}
-
-// AddStringWithFlagsAndConfig adds a string with flags using configuration
-func (ac *ACAutomaton) AddStringWithFlagsAndConfig(config StringConfigWithFlags) error {
-	if err := ac.AddStringWithConfig(config.StringConfig); err != nil {
-		return err
-	}
-	// Store flags if needed in the future
-	return nil
 }
 
 // ReserveStrings ensures capacity for at least n string infos to avoid slice growth
@@ -560,28 +546,11 @@ func (ac *ACAutomaton) BuildFailureLinks() error {
 	return ac.buildFailureLinks()
 }
 
-// GetTransitionTable returns the compiled transition table
-func (ac *ACAutomaton) GetTransitionTable() []ACTransition {
-	return nil // Transition table not used in optimized implementation
-}
-
-// GetMatchTable returns the compiled match table
-func (ac *ACAutomaton) GetMatchTable() []uint32 {
-	return nil // Match table not used in optimized implementation
-}
-
-// GetTableSize returns the size of the transition table
-func (ac *ACAutomaton) GetTableSize() int {
-	return 0 // No transition table in optimized implementation
-}
-
 // PrintDebug prints debug information about the automaton
 func (ac *ACAutomaton) PrintDebug() {
 	fmt.Printf("Aho-Corasick Automaton Debug Information:\n")
 	fmt.Printf("States: %d\n", len(ac.states))
 	fmt.Printf("Strings: %d\n", len(ac.strings))
-	fmt.Printf("Table Size: %d\n", 0) // No transition table
-
 	fmt.Printf("\nStates:\n")
 	for i := range ac.states {
 		state := &ac.states[i]
@@ -641,37 +610,12 @@ type ACStringInfo struct {
 	Flags      regex.Flags
 }
 
-// ACTransition represents a state transition in the automaton
-type ACTransition uint32
-
-// ACMakeTransition creates a transition with state index and offset
-func ACMakeTransition(stateIndex, offset int) ACTransition {
-	return ACTransition((stateIndex << 16) | offset) // #nosec G115 - bit manipulation is intentional
-}
-
-// GetStateIndex returns the state index from a transition
-func (t ACTransition) GetStateIndex() int {
-	return int(t >> 16)
-}
-
-// GetOffset returns the offset from a transition
-func (t ACTransition) GetOffset() int {
-	return int(t & 0xFFFF)
-}
-
-// StringConfig contains configuration for adding a string to the automaton
-type StringConfig struct {
+type stringConfig struct {
 	Identifier string
 	Data       []byte
 	IsHex      bool
 	IsRegex    bool
 	Flags      regex.Flags
-}
-
-// StringConfigWithFlags extends StringConfig with regex flags
-type StringConfigWithFlags struct {
-	StringConfig
-	Flags regex.Flags
 }
 
 // GetStateCount returns the number of states in the automaton

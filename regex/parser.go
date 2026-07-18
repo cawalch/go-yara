@@ -12,10 +12,7 @@ type Parser struct {
 	strictEscape bool // validate escape sequences strictly (ParserFlagEnableStrictEscapeSequences)
 }
 
-// ErrNotImplemented is returned for parser features not yet implemented.
-var ErrNotImplemented = errors.New("regex: parser not implemented yet")
-
-// NewParser constructs a Parser. Flags are accepted for future use.
+// NewParser constructs a parser with the requested validation flags.
 func NewParser(flags ParserFlags) *Parser {
 	p := &Parser{}
 	if flags&ParserFlagEnableStrictEscapeSequences != 0 {

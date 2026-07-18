@@ -9,38 +9,7 @@ func processEscapeSequences(s string) string {
 	if s == "" {
 		return s
 	}
-
-	if isPoolingOptimizationEnabled() {
-		return processEscapeSequencesOptimized(s)
-	}
-
-	// Original implementation for comparison
-	return processEscapeSequencesOriginal(s)
-}
-
-// processEscapeSequencesOriginal is the original implementation
-func processEscapeSequencesOriginal(s string) string {
-	// Get a byte slice from the pool
-	resultPtr, ok := byteSlicePool.Get().(*[]byte)
-	if !ok {
-		// Fallback if pool returns unexpected type
-		slice := make([]byte, 0, len(s))
-		resultPtr = &slice
-	}
-	result := (*resultPtr)[:0] // Reset length but keep capacity
-	defer func() {
-		// Return to pool, but cap the size to prevent memory bloat
-		if cap(result) <= 1024 {
-			*resultPtr = result
-			byteSlicePool.Put(resultPtr)
-		}
-	}()
-
-	processEscapeSequencesWithBuffer(s, result)
-
-	// Intern the result if it's short enough
-	resultStr := string(result)
-	return globalInterner.internString(resultStr)
+	return processEscapeSequencesOptimized(s)
 }
 
 // processEscapeSequencesOptimized uses string builder pooling for better performance
@@ -97,20 +66,6 @@ func hasEscapeSequence(s string) bool {
 		}
 	}
 	return false
-}
-
-// processEscapeSequencesWithBuffer processes escape sequences using a byte buffer
-func processEscapeSequencesWithBuffer(s string, result []byte) []byte {
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\\' && i+1 < len(s) {
-			i = processEscapeChar(s, i, func(ch byte) {
-				result = append(result, ch)
-			})
-		} else {
-			result = append(result, s[i])
-		}
-	}
-	return result
 }
 
 // processEscapeSequencesWithBuilder processes escape sequences using a string builder

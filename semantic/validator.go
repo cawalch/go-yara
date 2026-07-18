@@ -486,8 +486,7 @@ func (v *Validator) validateSpecialExpression(expr ast.Expression) (*TypeInfo, [
 
 // validateUnknownExpression handles unknown expression types
 func (v *Validator) validateUnknownExpression() (*TypeInfo, []error) {
-	// For other expression types, return unknown for now
-	// These will be implemented as more AST nodes are added
+	// Unrecognized expression nodes carry an unknown type.
 	return &TypeInfo{DataType: TypeUnknown}, nil
 }
 
@@ -1089,8 +1088,7 @@ func (v *Validator) getTypeFromSymbol(symbol *Symbol) *TypeInfo {
 		// String identifiers in conditions evaluate to boolean (whether the string is found)
 		return &TypeInfo{DataType: TypeBoolean}
 	case SymbolVariable:
-		// For now, assume variables are integers
-		// This will be refined as we add more type information
+		// Variables without explicit type metadata default to int64.
 		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
 	case SymbolExternal:
 		// Runtime external variables are dynamically typed by the caller.

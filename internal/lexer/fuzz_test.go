@@ -30,7 +30,8 @@ func FuzzLexer(f *testing.F) {
 		}()
 
 		// Test with recovery mode enabled to catch more edge cases
-		l := NewWithRecovery(string(input), RecoverySection)
+		l := New(string(input))
+		l.SetRecoveryMode(RecoverySection)
 
 		// Tokenize the entire input
 		for {
@@ -41,7 +42,7 @@ func FuzzLexer(f *testing.F) {
 		}
 
 		// Also test with basic recovery mode
-		l2 := NewWithRecovery(string(input), RecoveryBasic)
+		l2 := New(string(input))
 		for {
 			tok := l2.NextToken()
 			if tok.Type == token.EOF || tok.Type == token.ILLEGAL {

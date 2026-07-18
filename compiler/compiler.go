@@ -10,7 +10,10 @@
 // Basic usage:
 //
 //	c := compiler.NewCompiler()
-//	program, err := c.CompileSource("rule test { condition: true }")
+//	program, err := c.CompileSourceWithContext(
+//		context.Background(),
+//		"rule test { condition: true }",
+//	)
 //	if err != nil {
 //		log.Fatal(err)
 //	}
@@ -71,27 +74,23 @@ type Compiler struct {
 
 // CompilationOptions configures the compilation process.
 //
-// These options control compiler behavior, optimization levels, and security limits.
-// Use NewCompilerWithOptions() to create a compiler with custom options.
+// These options control compiler behavior, modules, and security limits.
+// Prefer NewCompiler with functional options for custom settings.
 type CompilationOptions struct {
-	EnableOptimizations bool   // Enable bytecode optimizations (default: true)
-	EnableDebugInfo     bool   // Include debug information in bytecode (default: false)
-	EnableWarnings      bool   // Collect and report compilation warnings (default: true)
-	IgnoreInvalidRules  bool   // Compile valid rules while reporting invalid rules (default: false)
-	TargetVersion       string // Target YARA version compatibility (default: "latest")
-	Modules             map[string]Module
+	EnableWarnings     bool // Collect and report compilation warnings (default: true)
+	IgnoreInvalidRules bool // Compile valid rules while reporting invalid rules (default: false)
+	Modules            map[string]Module
 
 	// Security limits to prevent resource exhaustion attacks
-	MaxInputSize      int64 // Maximum input file size in bytes (0 = no limit, default: 10MB)
-	MaxIncludeSize    int64 // Maximum include file size in bytes (0 = no limit, default: 1MB)
-	MaxRecursionDepth int   // Maximum nesting depth for rules (0 = no limit, default: 100)
+	MaxInputSize      int64 // Maximum input file size in bytes (0 = no limit, default: 100MB)
+	MaxIncludeSize    int64 // Maximum include file size in bytes (0 = no limit, default: 10MB)
+	MaxRecursionDepth int   // Maximum nesting depth for rules (0 = no limit, default: 1000)
 }
 
 // CompilationStats tracks compilation metrics
 type CompilationStats struct {
 	StartTime         time.Time
 	EndTime           time.Time
-	LexerTime         time.Duration
 	ParserTime        time.Duration
 	SemanticTime      time.Duration
 	CodeGenTime       time.Duration
@@ -148,31 +147,30 @@ type Option func(*CompilationOptions)
 
 // NewCompiler creates a new YARA compiler with default options.
 //
-// The default compiler enables optimizations and warnings with reasonable security limits.
+// The default compiler enables warnings with reasonable security limits.
 //
 // Example:
 //
 //	c := compiler.NewCompiler()
-//	program, err := c.CompileSource("rule test { condition: true }")
+//	program, err := c.CompileSourceWithContext(
+//		context.Background(),
+//		"rule test { condition: true }",
+//	)
 //
 // With options:
 //
 //	c := compiler.NewCompiler(
-//		compiler.WithOptimizations(false),
 //		compiler.WithWarnings(true),
 //		compiler.WithMaxInputSize(50*1024*1024), // 50MB
 //	)
 func NewCompiler(opts ...Option) *Compiler {
 	options := CompilationOptions{
-		EnableOptimizations: true,
-		EnableDebugInfo:     false,
-		EnableWarnings:      true,
-		IgnoreInvalidRules:  false,
-		TargetVersion:       "1.0",
-		Modules:             defaultModules(),
-		MaxInputSize:        100 * 1024 * 1024, // 100MB default
-		MaxIncludeSize:      10 * 1024 * 1024,  // 10MB default
-		MaxRecursionDepth:   1000,              // 1000 levels default
+		EnableWarnings:     true,
+		IgnoreInvalidRules: false,
+		Modules:            defaultModules(),
+		MaxInputSize:       100 * 1024 * 1024, // 100MB default
+		MaxIncludeSize:     10 * 1024 * 1024,  // 10MB default
+		MaxRecursionDepth:  1000,              // 1000 levels default
 	}
 
 	// Apply functional options
@@ -201,7 +199,6 @@ func NewCompiler(opts ...Option) *Compiler {
 // New way:
 //
 //	c := compiler.NewCompiler(
-//		compiler.WithOptimizations(false),
 //		compiler.WithWarnings(true),
 //	)
 func NewCompilerWithOptions(options CompilationOptions) *Compiler {
@@ -211,13 +208,6 @@ func NewCompilerWithOptions(options CompilationOptions) *Compiler {
 }
 
 // ===== Functional Options =====
-
-// WithOptimizations enables or disables optimizations
-func WithOptimizations(enabled bool) Option {
-	return func(opts *CompilationOptions) {
-		opts.EnableOptimizations = enabled
-	}
-}
 
 // WithWarnings enables or disables warning collection
 func WithWarnings(enabled bool) Option {
@@ -999,7 +989,7 @@ func (c *Compiler) compileCodeGenWithContext(ctx context.Context, program *ast.P
 	}
 
 	c.stats.RulesCompiled = compiledProgram.GetRuleCount()
-	c.stats.TotalInstructions = compiledProgram.GetTotalBytecodeSize()
+	c.stats.TotalInstructions = compiledProgram.totalInstructionCount()
 	c.stats.TotalBytecodeSize = compiledProgram.GetTotalBytecodeSize()
 
 	return compiledProgram, nil
@@ -1053,11 +1043,6 @@ func (c *Compiler) HasErrors() bool {
 // HasWarnings returns true if there were compilation warnings
 func (c *Compiler) HasWarnings() bool {
 	return len(c.stats.Warnings) > 0
-}
-
-// SetOptions updates the compilation options
-func (c *Compiler) SetOptions(options CompilationOptions) {
-	c.options = options
 }
 
 // GetOptions returns the current compilation options
@@ -1234,60 +1219,12 @@ func (c *Compiler) readFile(filename string) (string, error) {
 	return fs.ReadFileString(c.baseDir, filename)
 }
 
-// PrintStats prints compilation statistics
-func (c *Compiler) PrintStats() {
-	stats := c.stats
-
-	fmt.Printf("Compilation Statistics:\n")
-	fmt.Printf("  Total Time: %v\n", stats.TotalTime)
-	fmt.Printf("  Lexer Time: %v\n", stats.LexerTime)
-	fmt.Printf("  Parser Time: %v\n", stats.ParserTime)
-	fmt.Printf("  Semantic Time: %v\n", stats.SemanticTime)
-	fmt.Printf("  Code Gen Time: %v\n", stats.CodeGenTime)
-	fmt.Printf("  Rules Compiled: %d\n", stats.RulesCompiled)
-	fmt.Printf("  Total Instructions: %d\n", stats.TotalInstructions)
-	fmt.Printf("  Total Bytecode Size: %d bytes\n", stats.TotalBytecodeSize)
-	fmt.Printf("  Errors: %d\n", len(stats.Errors))
-	fmt.Printf("  Warnings: %d\n", len(stats.Warnings))
-
-	if len(stats.Errors) > 0 {
-		fmt.Printf("\nErrors:\n")
-		for _, err := range stats.Errors {
-			fmt.Printf("  [%s] %s at line %d, column %d\n",
-				err.Phase, err.Message, err.Line, err.Column)
-		}
-	}
-
-	if len(stats.Warnings) > 0 {
-		fmt.Printf("\nWarnings:\n")
-		for _, warn := range stats.Warnings {
-			fmt.Printf("  [%s] %s at line %d, column %d\n",
-				warn.Phase, warn.Message, warn.Line, warn.Column)
-		}
-	}
-}
-
-// ValidateOptions validates the compilation options
-func (c *Compiler) ValidateOptions() error {
-	// Validate target version
-	if c.options.TargetVersion == "" {
-		return errors.New("target version cannot be empty")
-	}
-
-	return nil
-}
-
-// GetVersion returns the compiler version
-func (c *Compiler) GetVersion() string {
-	return "go-yara compiler v1.0"
-}
-
 // BatchCompile compiles multiple sources efficiently
 func (c *Compiler) BatchCompile(sources []string) ([]*CompiledProgram, error) {
 	programs := make([]*CompiledProgram, 0, len(sources))
 
 	for i, source := range sources {
-		program, err := c.CompileSource(source)
+		program, err := c.CompileSourceWithContext(context.Background(), source)
 		if err != nil {
 			return nil, fmt.Errorf("compiling source %d: %w", i, err)
 		}
@@ -1295,57 +1232,6 @@ func (c *Compiler) BatchCompile(sources []string) ([]*CompiledProgram, error) {
 	}
 
 	return programs, nil
-}
-
-// CompileWithProgress compiles source with progress reporting
-func (c *Compiler) CompileWithProgress(source string, progressCallback func(phase string, percent float64)) (*CompiledProgram, error) {
-	// Set up progress callback
-	if progressCallback != nil {
-		progressCallback("starting", 0)
-	}
-
-	// Parsing (parser creates its own lexer)
-	if progressCallback != nil {
-		progressCallback("parsing", 30)
-	}
-	program, err := c.compileParseWithContext(context.Background(), source)
-	if err != nil {
-		return nil, err
-	}
-
-	// Semantic analysis
-	if progressCallback != nil {
-		progressCallback("semantic", 60)
-	}
-	if semErr := c.compileSemanticWithContext(context.Background(), program); semErr != nil {
-		return nil, semErr
-	}
-
-	// Code generation
-	if progressCallback != nil {
-		progressCallback("codegen", 90)
-	}
-	compiledProgram, codeGenErr := c.compileCodeGenWithContext(context.Background(), program)
-	if codeGenErr != nil {
-		return nil, codeGenErr
-	}
-
-	if progressCallback != nil {
-		progressCallback("complete", 100)
-	}
-
-	return compiledProgram, nil
-}
-
-// GetPhaseDependencies returns the dependencies between compilation phases
-func (c *Compiler) GetPhaseDependencies() map[string][]string {
-	return map[string][]string{
-		"lexical":  {},
-		"parsing":  {"lexical"},
-		"semantic": {"parsing"},
-		"codegen":  {"semantic"},
-		"optimize": {"codegen"},
-	}
 }
 
 // ValidateCompilation validates that the compilation completed successfully
@@ -1370,16 +1256,13 @@ func (c *Compiler) ValidateCompilation(program *CompiledProgram) error {
 func (c *Compiler) GetCompilationReport() string {
 	report := "Go-YARA Compilation Report\n"
 	report += "========================\n\n"
-	report += fmt.Sprintf("Version: %s\n", c.GetVersion())
-	report += fmt.Sprintf("Target: %s\n", c.options.TargetVersion)
-	report += fmt.Sprintf("Options: Optimizations=%v, Debug=%v, Warnings=%v\n",
-		c.options.EnableOptimizations, c.options.EnableDebugInfo, c.options.EnableWarnings)
+	report += fmt.Sprintf("Options: Warnings=%v, IgnoreInvalidRules=%v\n",
+		c.options.EnableWarnings, c.options.IgnoreInvalidRules)
 	report += "\n"
 
 	// Timing information
 	report += "Timing:\n"
 	report += fmt.Sprintf("  Total: %v\n", c.stats.TotalTime)
-	report += fmt.Sprintf("  Lexer: %v\n", c.stats.LexerTime)
 	report += fmt.Sprintf("  Parser: %v\n", c.stats.ParserTime)
 	report += fmt.Sprintf("  Semantic: %v\n", c.stats.SemanticTime)
 	report += fmt.Sprintf("  Code Generation: %v\n", c.stats.CodeGenTime)

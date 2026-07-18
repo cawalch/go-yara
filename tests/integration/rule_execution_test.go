@@ -8,7 +8,6 @@ import (
 )
 
 // TestRuleCompilationSimple documents basic rule compilation scenarios
-// DO NOT modify code to make tests pass - document current behavior only
 func TestRuleCompilationSimple(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -77,7 +76,6 @@ func TestRuleCompilationSimple(t *testing.T) {
 }
 
 // TestRuleCompilationBooleanLogic documents boolean expression compilation
-// DO NOT modify code to make tests pass - document current behavior only
 func TestRuleCompilationBooleanLogic(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -128,7 +126,6 @@ func TestRuleCompilationBooleanLogic(t *testing.T) {
 }
 
 // TestRuleCompilationComparison documents comparison operator compilation
-// DO NOT modify code to make tests pass - document current behavior only
 func TestRuleCompilationComparison(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -185,7 +182,6 @@ func TestRuleCompilationComparison(t *testing.T) {
 }
 
 // TestRuleCompilationArithmetic documents arithmetic expression compilation
-// DO NOT modify code to make tests pass - document current behavior only
 func TestRuleCompilationArithmetic(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -278,7 +274,6 @@ func TestRuleCompilationArithmetic(t *testing.T) {
 }
 
 // TestRuleCompilationStringOperators documents string-specific operator compilation
-// DO NOT modify code to make tests pass - document current behavior only
 func TestRuleCompilationStringOperators(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -323,7 +318,6 @@ func TestRuleCompilationStringOperators(t *testing.T) {
 }
 
 // TestRuleCompilationOfExpressions documents of-expression compilation
-// DO NOT modify code to make tests pass - document current behavior only
 func TestRuleCompilationOfExpressions(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -374,7 +368,6 @@ func TestRuleCompilationOfExpressions(t *testing.T) {
 }
 
 // TestRuleCompilationForLoops documents for-loop expression compilation
-// DO NOT modify code to make tests pass - document current behavior only
 func TestRuleCompilationForLoops(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -419,7 +412,6 @@ func TestRuleCompilationForLoops(t *testing.T) {
 }
 
 // TestRuleCompilationBuiltinFunctions documents builtin function compilation
-// DO NOT modify code to make tests pass - document current behavior only
 func TestRuleCompilationBuiltinFunctions(t *testing.T) {
 	tests := []struct {
 		name        string

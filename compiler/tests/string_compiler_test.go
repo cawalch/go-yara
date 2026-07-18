@@ -2,8 +2,6 @@ package tests
 
 import (
 	"testing"
-
-	"github.com/cawalch/go-yara/compiler/tests/testutils"
 )
 
 func TestStringCompilerTextString(t *testing.T) {
@@ -16,7 +14,7 @@ func TestStringCompilerTextString(t *testing.T) {
 		}
 	`
 
-	program := testutils.CompileTestRule(t, source)
+	program := compileTestRule(t, source)
 	if program.GetStringCount() != 1 {
 		t.Errorf("Expected 1 string, got %d", program.GetStringCount())
 	}
@@ -49,7 +47,7 @@ func TestStringCompilerHexString(t *testing.T) {
 		}
 	`
 
-	program := testutils.CompileTestRule(t, source)
+	program := compileTestRule(t, source)
 	if program.GetStringCount() != 1 {
 		t.Errorf("Expected 1 string, got %d", program.GetStringCount())
 	}
@@ -78,7 +76,7 @@ func TestStringCompilerRegexString(t *testing.T) {
 		}
 	`
 
-	program := testutils.CompileTestRule(t, source)
+	program := compileTestRule(t, source)
 	if program.GetStringCount() != 1 {
 		t.Errorf("Expected 1 string, got %d", program.GetStringCount())
 	}
@@ -107,7 +105,7 @@ func TestStringCompilerModifiers(t *testing.T) {
 		}
 	`
 
-	program := testutils.CompileTestRule(t, source)
+	program := compileTestRule(t, source)
 	if program.GetStringCount() != 3 {
 		t.Errorf("Expected 3 strings, got %d", program.GetStringCount())
 	}

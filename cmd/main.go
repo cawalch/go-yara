@@ -1,4 +1,5 @@
-// Package main provides a command-line tool for compiling YARA files.
+// Package main provides a command-line tool for inspecting, compiling, and
+// executing YARA rules.
 package main
 
 import (
@@ -48,23 +49,22 @@ type commandArgs struct {
 func main() {
 	args, err := parseArgs(os.Args[1:])
 	if err != nil {
+		if err == flag.ErrHelp {
+			return
+		}
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
 	content := readFileContent(args.filename)
-	if content == nil {
-		return
-	}
-
 	runMode(args.mode, content, args)
 }
 
 func parseArgs(rawArgs []string) (*commandArgs, error) {
-	fs := flag.NewFlagSet("go-yara", flag.ExitOnError)
+	fs := flag.NewFlagSet("go-yara", flag.ContinueOnError)
 
 	mode := fs.String("mode", modeCompile, "processing mode: lex, parse, compile, execute")
-	dataFile := fs.String("data", "", "data file to match against (for --execute mode)")
+	dataFile := fs.String("data", "", "data file to match against (for --mode=execute)")
 	streaming := fs.Bool("streaming", false, "enable streaming processing for large files")
 	chunkSize := fs.Int("chunk-size", 1024*1024, "chunk size in bytes (default: 1MB)")
 	maxConcurrency := fs.Int("max-concurrency", 4, "maximum concurrent goroutines (default: 4)")
@@ -72,75 +72,57 @@ func parseArgs(rawArgs []string) (*commandArgs, error) {
 	matchData := fs.Int("match-data", 0, "include up to n matched bytes in execute output")
 	matchContext := fs.Int("match-context", 0, "include n bytes before and after each match in execute output")
 
-	// Legacy shorthand flags (--lex, --parse, --compile, --execute) mapped to --mode
-	lexFlag := fs.Bool("lex", false, "shorthand for --mode=lex")
-	parseFlag := fs.Bool("parse", false, "shorthand for --mode=parse")
-	compileFlag := fs.Bool("compile", false, "shorthand for --mode=compile")
-	executeFlag := fs.Bool("execute", false, "shorthand for --mode=execute")
-
 	fs.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: go-yara <yara-file> [options]\n\n")
-		fmt.Fprintf(os.Stderr, "Options:\n")
+		_, _ = fmt.Fprintf(fs.Output(), "Usage: go-yara <yara-file> [options]\n\n")
+		_, _ = fmt.Fprintf(fs.Output(), "Options:\n")
 		fs.PrintDefaults()
-		fmt.Fprintf(os.Stderr, "\nModes:\n")
-		fmt.Fprintf(os.Stderr, "  --lex       Show lexer tokens only (shorthand for --mode=lex)\n")
-		fmt.Fprintf(os.Stderr, "  --parse     Show parser AST only (shorthand for --mode=parse)\n")
-		fmt.Fprintf(os.Stderr, "  --compile   Full compilation (default, shorthand for --mode=compile)\n")
-		fmt.Fprintf(os.Stderr, "  --execute   Execute rules against data (shorthand for --mode=execute)\n")
-		fmt.Fprintf(os.Stderr, "\nStreaming options (for --execute mode):\n")
-		fmt.Fprintf(os.Stderr, "  --streaming           Enable streaming processing for large files\n")
-		fmt.Fprintf(os.Stderr, "  --chunk-size <n>      Set chunk size in bytes (default: 1MB)\n")
-		fmt.Fprintf(os.Stderr, "  --max-concurrency <n> Set maximum concurrent goroutines (default: 4)\n")
-		fmt.Fprintf(os.Stderr, "  --early-termination   Enable early termination when matches found\n")
+		_, _ = fmt.Fprintf(fs.Output(), "\nModes: lex, parse, compile (default), execute\n")
 	}
 
 	if len(rawArgs) == 0 {
 		fs.Usage()
-		os.Exit(1)
-		return nil, nil
+		return nil, fmt.Errorf("missing YARA file")
+	}
+	if rawArgs[0] == "-h" || rawArgs[0] == "--help" {
+		return nil, fs.Parse(rawArgs)
 	}
 
 	// Extract the positional filename (first non-flag argument)
 	filename := rawArgs[0]
+	if filename == "" {
+		return nil, fmt.Errorf("missing YARA file")
+	}
 	flagArgs := rawArgs[1:]
 	// If the first arg looks like a flag, there's no positional filename
-	if len(flagArgs) == 0 && len(rawArgs) > 0 && rawArgs[0][0] == '-' {
+	if rawArgs[0][0] == '-' {
 		fs.Usage()
-		os.Exit(1)
-		return nil, nil
-	}
-	if len(flagArgs) == 0 {
-		flagArgs = nil
+		return nil, fmt.Errorf("YARA file must be the first argument")
 	}
 
 	if err := fs.Parse(flagArgs); err != nil {
 		return nil, err
 	}
-
-	// Resolve effective mode from shorthands
-	effectiveMode := *mode
-	switch {
-	case *lexFlag:
-		effectiveMode = modeLex
-	case *parseFlag:
-		effectiveMode = modeParse
-	case *compileFlag:
-		effectiveMode = modeCompile
-	case *executeFlag:
-		effectiveMode = modeExecute
+	if fs.NArg() != 0 {
+		return nil, fmt.Errorf("unexpected argument %q", fs.Arg(0))
 	}
 
 	// Validate mode
-	switch effectiveMode {
+	switch *mode {
 	case modeLex, modeParse, modeCompile, modeExecute:
 		// ok
 	default:
-		return nil, fmt.Errorf("unknown mode %q", effectiveMode)
+		return nil, fmt.Errorf("unknown mode %q", *mode)
 	}
 
 	// Validate --data is provided for execute mode
-	if effectiveMode == modeExecute && *dataFile == "" {
-		return nil, fmt.Errorf("--execute mode requires --data <data-file>")
+	if *mode == modeExecute && *dataFile == "" {
+		return nil, fmt.Errorf("--mode=execute requires --data <data-file>")
+	}
+	if *chunkSize <= 0 {
+		return nil, fmt.Errorf("--chunk-size must be positive")
+	}
+	if *maxConcurrency <= 0 {
+		return nil, fmt.Errorf("--max-concurrency must be positive")
 	}
 	if *matchData < 0 {
 		return nil, fmt.Errorf("--match-data must be non-negative")
@@ -151,7 +133,7 @@ func parseArgs(rawArgs []string) (*commandArgs, error) {
 
 	return &commandArgs{
 		filename:          filename,
-		mode:              effectiveMode,
+		mode:              *mode,
 		dataFile:          *dataFile,
 		enableStreaming:   *streaming,
 		chunkSize:         *chunkSize,

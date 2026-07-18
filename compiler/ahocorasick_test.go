@@ -3,7 +3,6 @@ package compiler
 import (
 	"bytes"
 	"fmt"
-	"os"
 	"slices"
 	"testing"
 
@@ -301,96 +300,4 @@ func TestACAutomatonEdgeCases(t *testing.T) {
 			}
 		})
 	}
-}
-
-// TestACTransitionGetStateIndex tests GetStateIndex method
-func TestACTransitionGetStateIndex(t *testing.T) {
-	transition := ACMakeTransition(42, 10)
-	index := transition.GetStateIndex()
-	if index != 42 {
-		t.Errorf("GetStateIndex() = %d, want 42", index)
-	}
-}
-
-// TestACTransitionGetOffset tests GetOffset method
-func TestACTransitionGetOffset(t *testing.T) {
-	transition := ACMakeTransition(42, 10)
-	offset := transition.GetOffset()
-	if offset != 10 {
-		t.Errorf("GetOffset() = %d, want 10", offset)
-	}
-}
-
-// TestACAutomatonGetTransitionTable tests GetTransitionTable method
-// NOTE: Transition table is no longer built, so this returns nil
-func TestACAutomatonGetTransitionTable(t *testing.T) {
-	ac := NewACAutomaton()
-	if err := ac.AddString("test", []byte("test"), false, false); err != nil {
-		t.Fatalf("Failed to add string: %v", err)
-	}
-	if err := ac.Compile(); err != nil {
-		t.Fatalf("Failed to compile: %v", err)
-	}
-
-	table := ac.GetTransitionTable()
-	if table != nil {
-		t.Errorf("GetTransitionTable() returned %v, want nil", table)
-	}
-}
-
-// TestACAutomatonGetMatchTable tests GetMatchTable method
-// NOTE: Match table is no longer built, so this returns nil
-func TestACAutomatonGetMatchTable(t *testing.T) {
-	ac := NewACAutomaton()
-	if err := ac.AddString("test", []byte("test"), false, false); err != nil {
-		t.Fatalf("Failed to add string: %v", err)
-	}
-	if err := ac.Compile(); err != nil {
-		t.Fatalf("Failed to compile: %v", err)
-	}
-
-	table := ac.GetMatchTable()
-	if table != nil {
-		t.Errorf("GetMatchTable() returned %v, want nil", table)
-	}
-}
-
-// TestACAutomatonGetTableSize tests GetTableSize method
-// NOTE: Table size is no longer calculated, so this returns 0
-func TestACAutomatonGetTableSize(t *testing.T) {
-	ac := NewACAutomaton()
-	if err := ac.AddString("test", []byte("test"), false, false); err != nil {
-		t.Fatalf("Failed to add string: %v", err)
-	}
-	if err := ac.Compile(); err != nil {
-		t.Fatalf("Failed to compile: %v", err)
-	}
-
-	size := ac.GetTableSize()
-	if size != 0 {
-		t.Errorf("GetTableSize() = %d, want 0", size)
-	}
-}
-
-// TestACAutomatonPrintDebug tests PrintDebug method
-func TestACAutomatonPrintDebug(_ *testing.T) {
-	ac := NewACAutomaton()
-	if err := ac.AddString("test", []byte("test"), false, false); err != nil {
-		// Since this is a debug function that just shouldn't panic, we can log the error
-		return
-	}
-	if err := ac.Compile(); err != nil {
-		// Since this is a debug function that just shouldn't panic, we can log the error
-		return
-	}
-
-	// This should not panic
-	// Capture stdout to avoid cluttering test output
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-	ac.PrintDebug()
-	_ = w.Close()
-	os.Stdout = oldStdout
-	_ = r.Close()
 }

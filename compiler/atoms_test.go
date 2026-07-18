@@ -59,7 +59,7 @@ func TestExtractFromTextString(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := ExtractFromTextString(tt.input, tt.modifiers)
 
-			// For now, we are just checking if the number of atoms is correct.
+			// Check that extraction returns the expected number of candidates.
 			// We will add more detailed checks later.
 			if len(got) != len(tt.want) {
 				t.Errorf("ExtractFromTextString() len = %v, want %v", len(got), len(tt.want))

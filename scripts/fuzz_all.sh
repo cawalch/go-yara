@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
 # Default values
@@ -14,7 +14,7 @@ while [[ "$#" -gt 0 ]]; do
     case $1 in
         -v|--verbose) VERBOSE=true ;;
         -t|--time) FUZZTIME="$2"; shift ;;
-        *) FUZZTIME="$1" ;; # Support legacy positional argument
+        *) echo "usage: $0 [--time duration] [--verbose]" >&2; exit 2 ;;
     esac
     shift
 done
@@ -61,12 +61,12 @@ TOTAL_TARGETS_COUNT=$(wc -l < "$TARGET_FILE" | xargs)
 while IFS= read -r item; do
     pkg_path="${item%%:*}"
     target="${item#*:}"
-    
+
     TOTAL_TARGETS=$((TOTAL_TARGETS + 1))
     printf "🏃 [%-2d/%-2d] Running %-35s ... " "$TOTAL_TARGETS" "$TOTAL_TARGETS_COUNT" "$target"
-    
+
     LOG_FILE="$LOG_DIR/${target}.log"
-    
+
     # Run fuzz test
     if go test -v "$pkg_path" -run=^$ -fuzz="^${target}$" -fuzztime="$FUZZTIME" > "$LOG_FILE" 2>&1; then
         printf "✅ PASS\n"
@@ -76,16 +76,16 @@ while IFS= read -r item; do
     else
         printf "❌ FAILED\n"
         echo "$pkg_path: $target" >> "$FAILED_FILE"
-        
+
         echo "----------------------------------------------------------------"
         echo "🚨 FAILURE DETAILS: $target"
-        
+
         CRASH_LINE=$(grep "failing input written to" "$LOG_FILE" || true)
         if [ -n "$CRASH_LINE" ]; then
             CRASH_FILE=${CRASH_LINE##*failing input written to }
             echo "📁 Crashing input: $CRASH_FILE"
         fi
-        
+
         echo "📝 Log output (filtered):"
         grep -vE "^(fuzz: elapsed:|    --- PASS:|=== RUN)" "$LOG_FILE" | grep -v "^$" | tail -n 20 || true
         echo "----------------------------------------------------------------"

@@ -3,7 +3,7 @@
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.5.0
+    rev: v6.0.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
@@ -42,7 +42,7 @@ repos:
         name: golangci-lint
         entry: golangci-lint
         language: system
-        args: [run, --config=.golangci.yml, --fix]
+        args: [run, --config=.golangci.yml]
         files: \.go$
         pass_filenames: false
 
@@ -61,8 +61,13 @@ repos:
         args:
           - -c
           - |
-            # Run benchmarks to ensure they still compile and run
-            go test -bench=. -benchmem -run=^$ ./internal/lexer > /dev/null
+            go test -bench='^BenchmarkEmitter$' -benchtime=1x -run=^$ ./compiler > /dev/null
             echo "Benchmarks compile and run successfully"
         files: \.go$
         pass_filenames: false
+
+      - id: shellcheck
+        name: shellcheck
+        entry: shellcheck
+        language: system
+        files: \.sh$

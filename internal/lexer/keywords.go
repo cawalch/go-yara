@@ -26,7 +26,7 @@ var keywords = map[string]token.Type{
 	"false":          token.FALSE,
 	KeywordStrings:   token.STRINGS,
 	KeywordCondition: token.CONDITION,
-	// String modifiers (Phase 2)
+	// String modifiers
 	"nocase":     token.NOCASE,
 	"wide":       token.WIDE,
 	"ascii":      token.ASCII,
@@ -35,7 +35,7 @@ var keywords = map[string]token.Type{
 	"xor":        token.XOR,
 	"base64":     token.BASE64,
 	"base64wide": token.BASE64WIDE,
-	// Data type functions (Phase 3)
+	// Data type functions
 	"int8":     token.INT8,
 	"int16":    token.INT16,
 	"int32":    token.INT32,
@@ -53,22 +53,22 @@ var keywords = map[string]token.Type{
 	"uint64":   token.UINT64,
 	"int64be":  token.INT64BE,
 	"uint64be": token.UINT64BE,
-	// File operations (Phase 3)
+	// File operations
 	"filesize":   token.FILESIZE,
 	"entrypoint": token.ENTRYPOINT,
-	// Control flow keywords (Phase 4)
+	// Control flow keywords
 	"for":     token.FOR,
 	"in":      token.IN,
 	"at":      token.AT,
 	"them":    token.THEM,
 	"defined": token.DEFINED,
-	// Rule modifiers (Phase 4)
+	// Rule modifiers
 	"global":   token.GLOBAL,
 	"external": token.EXTERNAL,
-	// Import system (Phase 4)
+	// Import system
 	"import":  token.IMPORT,
 	"include": token.INCLUDE,
-	// String operations (Phase 4)
+	// String operations
 	"contains":    token.CONTAINS,
 	"icontains":   token.ICONTAINS,
 	"startswith":  token.STARTSWITH,

@@ -45,7 +45,6 @@ func handleKnownGap(t *testing.T, err error, description string) {
 }
 
 // TestEmptyRule documents parser behavior with empty rule
-// DO NOT modify code to make tests pass - document current behavior only
 func TestEmptyRule(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -103,7 +102,6 @@ func TestEmptyRule(t *testing.T) {
 }
 
 // TestRuleWithoutCondition documents parser behavior with rules missing conditions
-// DO NOT modify code to make tests pass - document current behavior only
 func TestRuleWithoutCondition(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -161,7 +159,6 @@ func TestRuleWithoutCondition(t *testing.T) {
 }
 
 // TestRuleWithOnlyMeta documents parser behavior with rules having only meta
-// DO NOT modify code to make tests pass - document current behavior only
 func TestRuleWithOnlyMeta(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -225,7 +222,6 @@ func TestRuleWithOnlyMeta(t *testing.T) {
 }
 
 // TestRuleWithOnlyStrings documents parser behavior with rules having only strings
-// DO NOT modify code to make tests pass - document current behavior only
 func TestRuleWithOnlyStrings(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -289,7 +285,6 @@ func TestRuleWithOnlyStrings(t *testing.T) {
 }
 
 // TestTruncatedInput documents parser behavior with truncated input
-// DO NOT modify code to make tests pass - document current behavior only
 func TestTruncatedInput(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -365,7 +360,6 @@ func TestTruncatedInput(t *testing.T) {
 }
 
 // TestPartialStringsSection documents parser behavior with partial strings section
-// DO NOT modify code to make tests pass - document current behavior only
 func TestPartialStringsSection(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -429,7 +423,6 @@ func TestPartialStringsSection(t *testing.T) {
 }
 
 // TestPartialCondition documents parser behavior with partial condition section
-// DO NOT modify code to make tests pass - document current behavior only
 func TestPartialCondition(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -511,7 +504,6 @@ func TestPartialCondition(t *testing.T) {
 }
 
 // TestPartialMeta documents parser behavior with partial meta section
-// DO NOT modify code to make tests pass - document current behavior only
 func TestPartialMeta(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -569,7 +561,6 @@ func TestPartialMeta(t *testing.T) {
 }
 
 // TestMultipleIncompleteRules documents parser behavior with multiple incomplete rules
-// DO NOT modify code to make tests pass - document current behavior only
 func TestMultipleIncompleteRules(t *testing.T) {
 	tests := []struct {
 		name        string
