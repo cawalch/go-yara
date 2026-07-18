@@ -116,7 +116,7 @@ func (l *Lexer) slice(start int) string {
 // isYARAModifier checks if a word is a YARA string modifier keyword
 func isYARAModifier(word string) bool {
 	switch word {
-	case "nocase", "wide", "ascii", "fullword", "private", "xor", "base64", "base64wide":
+	case "nocase", "wide", "ascii", "fullword", "private", "xor", "base64", "base64wide", "capture":
 		return true
 	default:
 		return false

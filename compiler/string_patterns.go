@@ -14,6 +14,8 @@ const (
 // RegexPattern holds compiled regex bytecode and flags.
 type RegexPattern struct {
 	Code                 []byte
+	CaptureCode          []byte
+	CaptureGroups        []int
 	Flags                regex.Flags
 	prefix               []byte
 	widePrefix           []byte
@@ -36,6 +38,14 @@ type RegexPattern struct {
 	anchored             bool
 	cacheKey             string
 	cacheIndex           int
+}
+
+// EvidencePlan is the compiled form of an evidence declaration.
+type EvidencePlan struct {
+	Name   string
+	Fields []string
+	Anchor string
+	Within int64
 }
 
 type regexLeadingGapPlan struct {

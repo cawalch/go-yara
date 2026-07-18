@@ -26,6 +26,10 @@ func TestParseGroupingAndAlt(t *testing.T) {
 		t.Fatalf("want concat of 2, got %d", len(ast.Root.Children))
 	}
 	alt := ast.Root.Children[0]
+	if alt.Kind != NodeGroup || alt.Group != 1 || len(alt.Children) != 1 {
+		t.Fatalf("want numbered group, got kind=%v group=%d", alt.Kind, alt.Group)
+	}
+	alt = alt.Children[0]
 	if alt.Kind != NodeAlt || len(alt.Children) != 2 {
 		t.Fatalf("want alt with 2 branches")
 	}

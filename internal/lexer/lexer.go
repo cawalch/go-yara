@@ -79,6 +79,8 @@ func (l *Lexer) updateSectionState(tok token.Token) {
 		l.pendingSection = sectionMeta
 	case token.STRINGS:
 		l.pendingSection = sectionStrings
+	case token.EVIDENCE:
+		l.pendingSection = sectionEvidence
 	case token.CONDITION:
 		l.pendingSection = sectionCondition
 	case token.COLON:

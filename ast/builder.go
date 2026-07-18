@@ -123,6 +123,21 @@ func (b *Builder) String(
 	}
 }
 
+// EvidenceDeclaration creates an evidence-correlation declaration.
+//
+//nolint:revive // builder factory mirrors all declaration fields directly
+func (b *Builder) EvidenceDeclaration(
+	pos token.Position,
+	name string,
+	fields []string,
+	anchor string,
+	within int64,
+) *EvidenceDeclaration {
+	return &EvidenceDeclaration{
+		Pos: pos, Name: name, Fields: fields, Anchor: anchor, Within: within,
+	}
+}
+
 // Condition creates a new Condition node
 func (b *Builder) Condition(pos token.Position, expr Expression) *Condition {
 	return &Condition{

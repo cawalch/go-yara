@@ -24,6 +24,8 @@ features, but it is not a complete drop-in replacement for upstream YARA.
 - Import built-in `hash` and `math` modules or register typed custom modules.
 - Cache compiled programs in a versioned binary format while retaining regex,
   hex, and shared-prefilter optimizations.
+- Opt into exact capture spans and deterministic credential-candidate
+  correlation without changing rule conditions or ordinary scan results.
 - Inspect direct rule dependencies and dependents.
 - Filter scans by tags and configure `itersmax` for loop-heavy rules.
 - Evaluate text, hex, and regex strings, string modifiers, metadata, private and
@@ -188,6 +190,61 @@ needed. The compiler marks rules whose conditions inspect occurrence counts,
 offsets, lengths, or constrained ranges as ineligible and automatically keeps
 all of their matches, preserving condition results.
 
+### Extract Structured Secret Evidence
+
+[Upstream YARA regular expressions](https://yara.readthedocs.io/en/stable/writingrules.html)
+group expressions but do not expose capture groups. `capture(...)` and
+`evidence:` are go-yara extensions for applications that need exact source
+spans to pass to a human or an external validator. The extraction model is
+similar to Gitleaks' [`secretGroup`](https://github.com/gitleaks/gitleaks#configuration),
+while allowing several named fields. Neither construct changes the rule's
+Boolean condition.
+
+```yara
+rule database_credential {
+    strings:
+        $uri = /postgres:\/\/([^: ]+):([^@ ]+)@([^\/ ]+)/
+            capture(username = 1, secret = 2, endpoint = 3)
+    evidence:
+        credential = (endpoint, username, secret) within 4KB of secret
+    condition:
+        $uri
+}
+```
+
+Evidence extraction is disabled by default. Enable it on a reusable scanner
+with an explicit per-capture byte cap:
+
+```go
+scanner := program.NewScanner(compiler.WithEvidence(4096))
+defer scanner.Close()
+
+result, err := scanner.Scan(data)
+for _, finding := range result.Evidence["database_credential"]["credential"] {
+	if finding.Status == compiler.EvidenceStatusReady {
+		// Ready means associated and complete, not externally verified.
+		validate(finding.Fields)
+	}
+}
+```
+
+Group zero captures the entire text, hex, or regex match. Positive group
+numbers are regex parentheses numbered from left to right. Optional unmatched
+groups are omitted, and repeated groups expose the last participating
+occurrence. A pattern may bind at most 32 names; anonymous strings and
+[`private` strings](https://yara.readthedocs.io/en/stable/writingrules.html#private-strings)
+cannot declare captures. Findings are anchored and correlate remaining fields
+to the unique nearest anchor inside the declared window, preferring captures
+from the same outer match. Missing or truncated fields are `partial`; ties or
+multiple candidates are `ambiguous` and retain every candidate.
+
+`Capture.Data` contains copied raw source bytes only. JSON escapes, URI
+encoding, YAML/TOML quoting, provider normalization, and credential validation
+remain application responsibilities. The CLI deliberately does not print raw
+capture data. Capture/evidence rules retain all candidate occurrences even
+with `WithFastScan`, and legacy pattern-only streaming does not produce
+evidence. Normal byte, reader, file, and `BlockScanner` scans are supported.
+
 ### Compile Around Invalid Rules
 
 Strict compilation remains the default. For bulk rule feeds where one bad rule
@@ -283,6 +340,8 @@ loaded, err := compiler.UnmarshalCompiledProgram(encoded)
 ```
 
 Use `WriteTo` and `ReadCompiledProgram` for `io.Writer` and `io.Reader` flows.
+The current compiled-program format is version 2. Version 1 blobs are rejected
+and must be rebuilt from rule source.
 The format has a magic header and explicit version and rejects incompatible or
 truncated data. It preserves compiled pattern and prefilter plans. Runtime
 external-variable values are intentionally not serialized and must be set on

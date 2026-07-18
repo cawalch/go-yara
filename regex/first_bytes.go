@@ -111,6 +111,8 @@ func fixedByteSets(node *Node, flags Flags, remaining int) ([]ByteSet, bool) {
 	}
 
 	switch node.Kind {
+	case NodeGroup:
+		return fixedByteSets(firstChild(node), flags, remaining)
 	case NodeEmpty:
 		return []ByteSet{}, true
 	case NodeConcat:
@@ -152,6 +154,8 @@ func fixedByteSets(node *Node, flags Flags, remaining int) ([]ByteSet, bool) {
 func fixedConsumingByteSet(node *Node, flags Flags) (ByteSet, bool) {
 	noCase := flags&FlagsNoCase != 0
 	switch node.Kind {
+	case NodeGroup:
+		return fixedConsumingByteSet(firstChild(node), flags)
 	case NodeLiteral:
 		set := byteSetOf(node.Value)
 		if noCase {

@@ -147,3 +147,53 @@ func FuzzRegexVM(f *testing.F) {
 		}
 	})
 }
+
+// FuzzTaggedCaptureReplay verifies that replay-only tagged bytecode reproduces
+// every outer match returned by the ordinary VM without changing that VM.
+func FuzzTaggedCaptureReplay(f *testing.F) {
+	f.Add([]byte("((ab|cd)+):([A-Z]+)?\x00abcd:XYZ"))
+	f.Add([]byte("^token=([a-z]+)$\x00token=value"))
+	f.Add([]byte("x(.+)x\x00xaxbxcx"))
+	f.Fuzz(func(t *testing.T, data []byte) {
+		separator := -1
+		for index, value := range data {
+			if value == 0 {
+				separator = index
+				break
+			}
+		}
+		if separator <= 0 || separator == len(data)-1 || separator > 512 || len(data)-separator > 4096 {
+			return
+		}
+		parsed, err := NewParser(0).Parse(string(data[:separator]))
+		if err != nil || parsed.GroupCount == 0 || parsed.GroupCount > 32 {
+			return
+		}
+		ordinary, err := Compile(parsed)
+		if err != nil {
+			return
+		}
+		groups := make([]int, parsed.GroupCount)
+		for index := range groups {
+			groups[index] = index + 1
+		}
+		tagged, err := CompileCaptures(parsed, groups)
+		if err != nil {
+			t.Fatalf("CompileCaptures() error = %v", err)
+		}
+		input := data[separator+1:]
+		matched, start, end := ExecMatch(ordinary, input, FlagsScan)
+		if !matched {
+			return
+		}
+		spans, replayed := ExecCapturesAt(tagged, input, 0, start, end, len(groups))
+		if !replayed {
+			t.Fatalf("tagged replay failed for ordinary match [%d,%d)", start, end)
+		}
+		for _, span := range spans {
+			if span.Matched && (span.Start < start || span.End < span.Start || span.End > end) {
+				t.Fatalf("capture span %#v escapes outer match [%d,%d)", span, start, end)
+			}
+		}
+	})
+}

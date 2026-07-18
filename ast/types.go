@@ -25,6 +25,13 @@ type XorRange struct {
 	Max int64
 }
 
+// CaptureBinding maps a public evidence name to a regex capture group.
+// Group zero denotes the complete pattern match.
+type CaptureBinding struct {
+	Name  string
+	Group int
+}
+
 // StringModifierType defines the type of string modifier
 type StringModifierType int
 
@@ -45,6 +52,8 @@ const (
 	StringModifierBase64
 	// StringModifierBase64Wide applies Base64 encoding to wide strings
 	StringModifierBase64Wide
+	// StringModifierCapture exposes selected match or regex-group spans as evidence.
+	StringModifierCapture
 )
 
 // Pattern represents different types of string patterns

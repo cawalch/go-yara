@@ -34,6 +34,7 @@ type Scanner struct {
 	regexByteSetCache   regexByteSetCandidateCache
 	reportedMatchesOnly bool
 	fastScan            bool
+	evidenceMax         int
 
 	// Candidate offsets grouped by SharedLookup index and retained across scans.
 	prefilterCandidates [][]int
@@ -51,14 +52,18 @@ type ScanResult struct {
 
 	// Matches contains per-rule pattern matches, keyed by rule name and string identifier.
 	Matches map[string]map[string][]Match
+
+	// Evidence contains candidate tuples keyed first by rule, then declaration.
+	Evidence map[string]map[string][]EvidenceFinding
 }
 
 // RuleMatch represents a single rule match with details.
 type RuleMatch struct {
-	Rule    string
-	Tags    []string           // Rule tags
-	Meta    map[string]any     // Rule metadata
-	Matches map[string][]Match // pattern -> matches (string-keyed for public API)
+	Rule     string
+	Tags     []string           // Rule tags
+	Meta     map[string]any     // Rule metadata
+	Matches  map[string][]Match // pattern -> matches (string-keyed for public API)
+	Evidence map[string][]EvidenceFinding
 }
 
 // ScannerOption configures a Scanner.
@@ -92,6 +97,17 @@ func WithMatchData(maxBytes int) ScannerOption {
 	}
 	return func(scanner *Scanner) {
 		scanner.matchDataMax = maxBytes
+	}
+}
+
+// WithEvidence enables capture extraction and correlation, copying at most
+// maxCaptureBytes per capture. Non-positive values disable evidence.
+func WithEvidence(maxCaptureBytes int) ScannerOption {
+	if maxCaptureBytes < 0 {
+		maxCaptureBytes = 0
+	}
+	return func(scanner *Scanner) {
+		scanner.evidenceMax = maxCaptureBytes
 	}
 }
 
@@ -441,16 +457,43 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 		if rule.IsPrivate {
 			continue
 		}
+		// Evidence extraction is deliberately colocated with final public-rule
+		// reporting so private or globally filtered matches cannot expose bytes.
+		//nolint:nestif // the nested gates mirror that security-sensitive result boundary
 		if result.RuleResults[rule.Name] {
 			matches := result.Matches[rule.Name]
 			// Filter out private strings from the report
 			publicMatches := filterPrivateStrings(rule, matches)
+			var evidence map[string][]EvidenceFinding
+			if s.evidenceMax > 0 {
+				var err error
+				evidence, err = s.populateRuleEvidence(ctx, rule, publicMatches, func(match Match) (captureInput, bool) {
+					if match.Offset < 0 || match.Length < 0 || match.Offset > int64(len(data)) {
+						return captureInput{}, false
+					}
+					end := match.Offset + int64(match.Length)
+					if end < match.Offset || end > int64(len(data)) {
+						return captureInput{}, false
+					}
+					return captureInput{data: data, start: int(match.Offset), end: int(end)}, true
+				})
+				if err != nil {
+					return nil, err
+				}
+			}
 			result.Matches[rule.Name] = publicMatches
+			if len(evidence) != 0 {
+				if result.Evidence == nil {
+					result.Evidence = make(map[string]map[string][]EvidenceFinding)
+				}
+				result.Evidence[rule.Name] = evidence
+			}
 			result.MatchedRules = append(result.MatchedRules, RuleMatch{
-				Rule:    rule.Name,
-				Tags:    rule.Tags,
-				Meta:    rule.Meta,
-				Matches: publicMatches,
+				Rule:     rule.Name,
+				Tags:     rule.Tags,
+				Meta:     rule.Meta,
+				Matches:  publicMatches,
+				Evidence: evidence,
 			})
 		}
 	}

@@ -19,6 +19,7 @@ func FuzzSemanticValidator(f *testing.F) {
 	f.Add([]byte("rule test { strings: $a = \"hello\" $b = \"world\" condition: $a and $b }"))
 	f.Add([]byte("rule test { strings: $a = { DE AD BE EF } condition: $a }"))
 	f.Add([]byte("rule test { strings: $a = /pattern/ condition: $a }"))
+	f.Add([]byte("rule test { strings: $a = /(user):([^ ]+)/ capture(username = 1, secret = 2) evidence: credential = (username, secret) within 4KB of secret condition: $a }"))
 	f.Add([]byte("rule test { meta: author = \"test\" condition: true }"))
 	f.Add([]byte("rule test1 { condition: true } rule test2 { condition: false }"))
 	f.Add([]byte("rule test { condition: 1 and 2 or 3 }"))

@@ -34,4 +34,6 @@ const (
 	OpRepeatEndGreedy     = 0xC4
 	OpRepeatStartUngreedy = 0xC5
 	OpRepeatEndUngreedy   = 0xC6
+	OpSaveStart           = 0xC7
+	OpSaveEnd             = 0xC8
 )

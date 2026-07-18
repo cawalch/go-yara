@@ -13,6 +13,7 @@ import (
 type Compiler struct {
 	e           *Emitter
 	nextSplitID byte
+	captureSlot map[int]byte
 }
 
 // NewCompiler constructs a Compiler with a fresh emitter.
@@ -28,6 +29,30 @@ func Compile(ast *AST) ([]byte, error) {
 	c := NewCompiler()
 	if ast == nil || ast.Root == nil {
 		return nil, errors.New("regex: empty AST")
+	}
+	if err := c.emitNode(ast.Root); err != nil {
+		return nil, err
+	}
+	c.e.Emit(OpMatch)
+	return c.e.Bytes(), nil
+}
+
+// CompileCaptures emits a replay-only regex program with save instructions for
+// selected one-based source groups. The returned slot order matches groups.
+func CompileCaptures(ast *AST, groups []int) ([]byte, error) {
+	c := NewCompiler()
+	if ast == nil || ast.Root == nil {
+		return nil, errors.New("regex: empty AST")
+	}
+	c.captureSlot = make(map[int]byte, len(groups))
+	for slot, group := range groups {
+		if group <= 0 || group > ast.GroupCount {
+			return nil, fmt.Errorf("regex: capture group %d is out of range", group)
+		}
+		if slot > 255 {
+			return nil, fmt.Errorf("regex: too many capture groups")
+		}
+		c.captureSlot[group] = byte(slot)
 	}
 	if err := c.emitNode(ast.Root); err != nil {
 		return nil, err
@@ -279,6 +304,19 @@ func (c *Compiler) emitNode(n *Node) error { //nolint:maintidx // high complexit
 		return fmt.Errorf("regex too large")
 	}
 	switch n.Kind {
+	case NodeGroup:
+		if len(n.Children) != 1 {
+			return errors.New("regex: invalid group node")
+		}
+		if slot, ok := c.captureSlot[n.Group]; ok {
+			c.e.Emit(OpSaveStart).EmitU8(slot)
+			if err := c.emitNode(n.Children[0]); err != nil {
+				return err
+			}
+			c.e.Emit(OpSaveEnd).EmitU8(slot)
+			return nil
+		}
+		return c.emitNode(n.Children[0])
 	case NodeClass:
 		c.emitClassNode(n)
 		return nil

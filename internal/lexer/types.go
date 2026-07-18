@@ -50,5 +50,6 @@ const (
 	sectionNone sectionMode = iota
 	sectionMeta
 	sectionStrings
+	sectionEvidence
 	sectionCondition
 )
