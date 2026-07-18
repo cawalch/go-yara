@@ -40,7 +40,6 @@ type commandArgs struct {
 	dataFile          string
 	enableStreaming   bool
 	chunkSize         int
-	maxConcurrency    int
 	earlyTermination  bool
 	matchDataBytes    int
 	matchContextBytes int
@@ -67,7 +66,6 @@ func parseArgs(rawArgs []string) (*commandArgs, error) {
 	dataFile := fs.String("data", "", "data file to match against (for --mode=execute)")
 	streaming := fs.Bool("streaming", false, "enable streaming processing for large files")
 	chunkSize := fs.Int("chunk-size", 1024*1024, "chunk size in bytes (default: 1MB)")
-	maxConcurrency := fs.Int("max-concurrency", 4, "maximum concurrent goroutines (default: 4)")
 	earlyTermination := fs.Bool("early-termination", false, "enable early termination when matches found")
 	matchData := fs.Int("match-data", 0, "include up to n matched bytes in execute output")
 	matchContext := fs.Int("match-context", 0, "include n bytes before and after each match in execute output")
@@ -121,9 +119,6 @@ func parseArgs(rawArgs []string) (*commandArgs, error) {
 	if *chunkSize <= 0 {
 		return nil, fmt.Errorf("--chunk-size must be positive")
 	}
-	if *maxConcurrency <= 0 {
-		return nil, fmt.Errorf("--max-concurrency must be positive")
-	}
 	if *matchData < 0 {
 		return nil, fmt.Errorf("--match-data must be non-negative")
 	}
@@ -137,7 +132,6 @@ func parseArgs(rawArgs []string) (*commandArgs, error) {
 		dataFile:          *dataFile,
 		enableStreaming:   *streaming,
 		chunkSize:         *chunkSize,
-		maxConcurrency:    *maxConcurrency,
 		earlyTermination:  *earlyTermination,
 		matchDataBytes:    *matchData,
 		matchContextBytes: *matchContext,
@@ -487,13 +481,12 @@ func formatBytes(data []byte) string {
 
 // executeRulesStreaming reports chunked pattern matches. It does not evaluate rule conditions.
 func executeRulesStreaming(compiledProgram *compiler.CompiledProgram, data []byte, args *commandArgs) {
-	fmt.Printf("Streaming pattern scan enabled (chunk size: %d bytes, concurrency: %d)\n", args.chunkSize, args.maxConcurrency)
-	fmt.Printf("Note: streaming mode reports string pattern matches only; rule conditions are not evaluated.\n")
+	fmt.Printf("Streaming pattern scan enabled (chunk size: %d bytes)\n", args.chunkSize)
+	fmt.Printf("Note: streaming mode reports literal text-pattern matches only; regex, hex, and rule conditions are not evaluated.\n")
 
 	// Configure streaming
 	compiledProgram.EnableStreaming(true)
 	compiledProgram.SetStreamingChunkSize(args.chunkSize)
-	compiledProgram.SetStreamingConcurrency(args.maxConcurrency)
 	compiledProgram.EnableStreamingEarlyTermination(args.earlyTermination)
 
 	// Create context with timeout

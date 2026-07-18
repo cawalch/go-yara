@@ -88,7 +88,6 @@ func TestParseArgsValidation(t *testing.T) {
 		{name: "unknown-mode", args: []string{"rules.yar", "--mode=unknown"}, want: "unknown mode"},
 		{name: "execute-without-data", args: []string{"rules.yar", "--mode=execute"}, want: "requires --data"},
 		{name: "zero-chunk-size", args: []string{"rules.yar", "--chunk-size=0"}, want: "--chunk-size must be positive"},
-		{name: "zero-concurrency", args: []string{"rules.yar", "--max-concurrency=0"}, want: "--max-concurrency must be positive"},
 	}
 
 	for _, tt := range tests {
@@ -184,14 +183,13 @@ func TestExecuteRulesStreamingReportsPatternOnlySemantics(t *testing.T) {
 		args := &commandArgs{
 			enableStreaming: false,
 			chunkSize:       4,
-			maxConcurrency:  1,
 		}
 		executeRulesStreaming(program, []byte("foo"), args)
 	})
 
 	expected := []string{
 		"Streaming pattern scan enabled",
-		"reports string pattern matches only; rule conditions are not evaluated",
+		"reports literal text-pattern matches only; regex, hex, and rule conditions are not evaluated",
 		"Streaming Pattern Results",
 		"Total pattern matches: 1",
 		"Rule: FalseCondition, Pattern: $a",

@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"testing/iotest"
 
 	"github.com/cawalch/go-yara/ast"
 	"github.com/cawalch/go-yara/internal/lexer"
@@ -910,6 +913,78 @@ func TestScanWithContextCancellation(t *testing.T) {
 	}
 	if _, err := scanner.ScanFileWithContext(ctx, "unused.bin"); !errors.Is(err, context.Canceled) {
 		t.Fatalf("Scanner.ScanFileWithContext error = %v, want context.Canceled", err)
+	}
+}
+
+func TestScannerReaderAndFileEntryPoints(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+rule io_entry_points {
+  strings:
+    $a = "foo"
+  condition:
+    $a
+}`)
+	if err != nil {
+		t.Fatalf("CompileSource() error = %v", err)
+	}
+
+	input := []byte("xxfooxx")
+	filename := filepath.Join(t.TempDir(), "input.bin")
+	if err := os.WriteFile(filename, input, 0o600); err != nil {
+		t.Fatalf("os.WriteFile() error = %v", err)
+	}
+
+	scanner := program.NewScanner()
+	defer scanner.Close()
+
+	tests := []struct {
+		name string
+		scan func() (*ScanResult, error)
+	}{
+		{name: "program reader", scan: func() (*ScanResult, error) {
+			return program.ScanReader(strings.NewReader(string(input)))
+		}},
+		{name: "program file", scan: func() (*ScanResult, error) {
+			return program.ScanFile(filename)
+		}},
+		{name: "scanner reader", scan: func() (*ScanResult, error) {
+			return scanner.ScanReader(strings.NewReader(string(input)))
+		}},
+		{name: "scanner file", scan: func() (*ScanResult, error) {
+			return scanner.ScanFile(filename)
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := tt.scan()
+			if err != nil {
+				t.Fatalf("scan error = %v", err)
+			}
+			if len(result.MatchedRules) != 1 || result.MatchedRules[0].Rule != "io_entry_points" {
+				t.Fatalf("MatchedRules = %+v, want io_entry_points", result.MatchedRules)
+			}
+			matches := result.MatchedRules[0].Matches["$a"]
+			if len(matches) != 1 || matches[0].Offset != 2 || matches[0].Length != 3 {
+				t.Fatalf("$a matches = %+v, want one match at offset 2 with length 3", matches)
+			}
+		})
+	}
+
+	readErr := errors.New("reader failed")
+	if _, err := program.ScanReader(iotest.ErrReader(readErr)); !errors.Is(err, readErr) {
+		t.Fatalf("CompiledProgram.ScanReader() error = %v, want %v", err, readErr)
+	}
+	if _, err := scanner.ScanReader(iotest.ErrReader(readErr)); !errors.Is(err, readErr) {
+		t.Fatalf("Scanner.ScanReader() error = %v, want %v", err, readErr)
+	}
+
+	missing := filepath.Join(t.TempDir(), "missing.bin")
+	if _, err := program.ScanFile(missing); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("CompiledProgram.ScanFile() error = %v, want os.ErrNotExist", err)
+	}
+	if _, err := scanner.ScanFile(missing); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("Scanner.ScanFile() error = %v, want os.ErrNotExist", err)
 	}
 }
 

@@ -1,193 +1,269 @@
 package compiler
 
 import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 )
 
-// TestStreamingWithLargeData documents compiler behavior with large data patterns
-func TestStreamingWithLargeData(t *testing.T) {
-	tests := []struct {
-		name        string
-		rule        string
-		expectError bool
-		description string
-	}{
-		{
-			name:        "simple-pattern-for-large-data",
-			rule:        `rule test { strings: $a = "test" condition: $a }`,
-			expectError: false,
-			description: "Documents compilation for large data scanning",
-		},
-		{
-			name:        "hex-pattern-for-large-data",
-			rule:        `rule test { strings: $a = { DE AD BE EF } condition: $a }`,
-			expectError: false,
-			description: "Documents hex pattern compilation for large data",
-		},
-		{
-			name:        "regex-for-large-data",
-			rule:        `rule test { strings: $a = /test.*end/ condition: $a }`,
-			expectError: false,
-			description: "Documents regex compilation for large data",
-		},
-		{
-			name:        "count-based-condition",
-			rule:        `rule test { strings: $a = "ab" condition: #a > 10 }`,
-			expectError: false,
-			description: "Documents match count condition for large data",
-		},
+func TestCompiledProgramStreamingLifecycleAndProgress(t *testing.T) {
+	program := mustCompileStreamingProgram(t, `
+rule pattern_only {
+  strings:
+    $a = "foo"
+  condition:
+    false
+}`)
+
+	if program.IsStreamingEnabled() {
+		t.Fatal("streaming must be disabled by default")
+	}
+	if _, err := program.ProcessBytesStreaming(context.Background(), []byte("foo")); err == nil ||
+		err.Error() != "streaming is not enabled" {
+		t.Fatalf("ProcessBytesStreaming() error = %v, want streaming-disabled error", err)
+	}
+	if _, err := program.ProcessFileStreaming(context.Background(), "unused"); err == nil ||
+		err.Error() != "streaming is not enabled" {
+		t.Fatalf("ProcessFileStreaming() error = %v, want streaming-disabled error", err)
+	}
+	assertStreamingProgress(t, program, streamingProgressExpectation{})
+
+	program.EnableStreaming(true)
+	program.SetStreamingChunkSize(2)
+	program.EnableStreamingEarlyTermination(false)
+	if !program.IsStreamingEnabled() {
+		t.Fatal("EnableStreaming(true) did not enable streaming")
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := NewCompiler()
-			program, err := c.CompileSource(tt.rule)
+	input := []byte("xxfooxxfoo")
+	matches, err := program.ProcessBytesStreaming(context.Background(), input)
+	if err != nil {
+		t.Fatalf("ProcessBytesStreaming() error = %v", err)
+	}
+	assertStreamingOffsets(t, matches, streamingOffsets{pattern: "$a", offsets: []int64{2, 7}})
+	assertStreamingProgress(t, program, streamingProgressExpectation{
+		processed: int64(len(input)),
+		total:     int64(len(input)),
+		percent:   100,
+		matches:   2,
+	})
 
-			anonymousStringCompileResult{program: program, err: err}.assertExpected(t, tt.expectError, tt.description)
-		})
+	// Reusing a program starts a fresh progress window rather than accumulating
+	// processed bytes and match counts from the prior scan.
+	matches, err = program.ProcessBytesStreaming(context.Background(), []byte("bar"))
+	if err != nil {
+		t.Fatalf("second ProcessBytesStreaming() error = %v", err)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("second ProcessBytesStreaming() returned %d matches, want 0", len(matches))
+	}
+	assertStreamingProgress(t, program, streamingProgressExpectation{processed: 3, total: 3, percent: 100})
+}
+
+func TestStreamingFileVerifiesFullwordAtChunkBoundaryWithoutLibraryOutput(t *testing.T) {
+	program := mustCompileStreamingProgram(t, `
+rule boundary {
+  strings:
+    $a = "ABCDEF" fullword
+  condition:
+    $a
+}`)
+	program.EnableStreaming(true)
+	program.SetStreamingChunkSize(8)
+	program.EnableStreamingEarlyTermination(false)
+
+	input := []byte("--xABCDEF! ABCDEF!")
+	filename := filepath.Join(t.TempDir(), "input.bin")
+	if err := os.WriteFile(filename, input, 0o600); err != nil {
+		t.Fatalf("os.WriteFile() error = %v", err)
+	}
+
+	var (
+		matches []StreamingMatch
+		err     error
+	)
+	output := captureStdout(t, func() {
+		matches, err = program.ProcessFileStreaming(context.Background(), filename)
+	})
+	if err != nil {
+		t.Fatalf("ProcessFileStreaming() error = %v", err)
+	}
+	if output != "" {
+		t.Fatalf("ProcessFileStreaming() wrote to stdout: %q", output)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("ProcessFileStreaming() returned %d matches, want 1: %+v", len(matches), matches)
+	}
+	match := matches[0]
+	if match.Rule != "boundary" || match.Pattern != "$a" || match.Offset != 11 ||
+		match.Length != 6 || string(match.Data) != "ABCDEF" {
+		t.Fatalf("ProcessFileStreaming() match = %+v, want boundary:$a at offset 11", match)
+	}
+	assertStreamingProgress(t, program, streamingProgressExpectation{
+		processed: int64(len(input)),
+		total:     int64(len(input)),
+		percent:   100,
+		matches:   1,
+	})
+}
+
+func TestStreamingVerifiesTextCandidatesAndModifiers(t *testing.T) {
+	program := mustCompileStreamingProgram(t, `
+rule exact_text_matches {
+  strings:
+    $nocase = "abc" nocase
+    $case = "abc"
+    $full = "word" fullword
+    $private = "secret" private
+  condition:
+    any of them
+}`)
+	program.EnableStreaming(true)
+	program.SetStreamingChunkSize(14)
+	program.EnableStreamingEarlyTermination(false)
+
+	input := []byte("ABC abc xxwordy word secret")
+	matches, err := program.ProcessBytesStreaming(context.Background(), input)
+	if err != nil {
+		t.Fatalf("ProcessBytesStreaming() error = %v", err)
+	}
+
+	assertStreamingOffsets(t, matches, streamingOffsets{pattern: "$nocase", offsets: []int64{0, 4}})
+	assertStreamingOffsets(t, matches, streamingOffsets{pattern: "$case", offsets: []int64{4}})
+	assertStreamingOffsets(t, matches, streamingOffsets{pattern: "$full", offsets: []int64{16}})
+	assertStreamingOffsets(t, matches, streamingOffsets{pattern: "$private"})
+	assertStreamingProgress(t, program, streamingProgressExpectation{
+		processed: int64(len(input)),
+		total:     int64(len(input)),
+		percent:   100,
+		matches:   4,
+	})
+}
+
+func TestStreamingReportsAllDenseMatches(t *testing.T) {
+	program := mustCompileStreamingProgram(t, `
+rule dense {
+  strings:
+    $a = "a"
+  condition:
+    $a
+}`)
+	program.EnableStreaming(true)
+	program.SetStreamingChunkSize(128)
+	program.EnableStreamingEarlyTermination(false)
+
+	const matchCount = 1050
+	input := []byte(strings.Repeat("a", matchCount))
+	matches, err := program.ProcessBytesStreaming(context.Background(), input)
+	if err != nil {
+		t.Fatalf("ProcessBytesStreaming() error = %v", err)
+	}
+	if len(matches) != matchCount {
+		t.Fatalf("ProcessBytesStreaming() returned %d matches, want %d", len(matches), matchCount)
+	}
+	if matches[len(matches)-1].Offset != matchCount-1 {
+		t.Fatalf("last match offset = %d, want %d", matches[len(matches)-1].Offset, matchCount-1)
+	}
+	assertStreamingProgress(t, program, streamingProgressExpectation{
+		processed: int64(len(input)),
+		total:     int64(len(input)),
+		percent:   100,
+		matches:   matchCount,
+	})
+}
+
+func TestStreamingEarlyTerminationReportsPartialProgress(t *testing.T) {
+	program := mustCompileStreamingProgram(t, `
+rule early {
+  strings:
+    $a = "foo"
+  condition:
+    $a
+}`)
+	program.EnableStreaming(true)
+	program.SetStreamingChunkSize(4)
+
+	input := []byte("foo-----foo")
+	matches, err := program.ProcessBytesStreaming(context.Background(), input)
+	if err != nil {
+		t.Fatalf("ProcessBytesStreaming() error = %v", err)
+	}
+	assertStreamingOffsets(t, matches, streamingOffsets{pattern: "$a", offsets: []int64{0}})
+	assertStreamingProgress(t, program, streamingProgressExpectation{
+		processed: 4,
+		total:     int64(len(input)),
+		percent:   float64(4) / float64(len(input)) * 100,
+		matches:   1,
+	})
+}
+
+func TestStreamingHonorsCancellation(t *testing.T) {
+	program := mustCompileStreamingProgram(t, `rule canceled { condition: true }`)
+	program.EnableStreaming(true)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := program.ProcessBytesStreaming(ctx, []byte("data")); !errors.Is(err, context.Canceled) {
+		t.Fatalf("ProcessBytesStreaming() error = %v, want context.Canceled", err)
+	}
+	if _, err := program.ProcessFileStreaming(ctx, "unused"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("ProcessFileStreaming() error = %v, want context.Canceled", err)
 	}
 }
 
-// TestStreamingWithMultipleMatches documents compiler behavior for multiple matches
-func TestStreamingWithMultipleMatches(t *testing.T) {
-	tests := []struct {
-		name        string
-		rule        string
-		expectError bool
-		description string
-	}{
-		{
-			name:        "many-overlapping-matches",
-			rule:        `rule test { strings: $a = "aa" condition: #a > 50 }`,
-			expectError: false,
-			description: "Documents compilation for many overlapping matches",
-		},
-		{
-			name:        "multiple-strings-count",
-			rule:        `rule test { strings: $a = "aa" $b = "bb" condition: #a > 5 and #b > 5 }`,
-			expectError: false,
-			description: "Documents compilation for multiple string counts",
-		},
-		{
-			name:        "wide-strings",
-			rule:        `rule test { strings: $a = "AB" wide condition: #a > 0 }`,
-			expectError: false,
-			description: "Documents wide string compilation",
-		},
-		{
-			name:        "nocase-matches",
-			rule:        `rule test { strings: $a = "test" nocase condition: #a > 3 }`,
-			expectError: false,
-			description: "Documents nocase string compilation",
-		},
+func mustCompileStreamingProgram(t *testing.T, source string) *CompiledProgram {
+	t.Helper()
+	program, err := NewCompiler().CompileSource(source)
+	if err != nil {
+		t.Fatalf("CompileSource() error = %v", err)
 	}
+	return program
+}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := NewCompiler()
-			program, err := c.CompileSource(tt.rule)
+type streamingOffsets struct {
+	pattern string
+	offsets []int64
+}
 
-			anonymousStringCompileResult{program: program, err: err}.assertExpected(t, tt.expectError, tt.description)
-		})
+func assertStreamingOffsets(t *testing.T, matches []StreamingMatch, want streamingOffsets) {
+	t.Helper()
+	got := make([]int64, 0)
+	for _, match := range matches {
+		if match.Pattern == want.pattern {
+			got = append(got, match.Offset)
+		}
+	}
+	slices.Sort(got)
+	if !slices.Equal(got, want.offsets) {
+		t.Fatalf("offsets for %s = %v, want %v; matches: %+v", want.pattern, got, want.offsets, matches)
 	}
 }
 
-// TestStreamingWithNoMatches documents compiler behavior when no matches occur
-func TestStreamingWithNoMatches(t *testing.T) {
-	tests := []struct {
-		name        string
-		rule        string
-		expectError bool
-		description string
-	}{
-		{
-			name:        "simple-no-match",
-			rule:        `rule test { strings: $a = "notfound" condition: $a }`,
-			expectError: false,
-			description: "Documents simple no-match compilation",
-		},
-		{
-			name:        "hex-no-match",
-			rule:        `rule test { strings: $a = { DE AD BE EF } condition: $a }`,
-			expectError: false,
-			description: "Documents hex pattern compilation",
-		},
-		{
-			name:        "regex-no-match",
-			rule:        `rule test { strings: $a = /test.*end/ condition: $a }`,
-			expectError: false,
-			description: "Documents regex compilation",
-		},
-		{
-			name:        "wide-no-match",
-			rule:        `rule test { strings: $a = "AB" wide condition: $a }`,
-			expectError: false,
-			description: "Documents wide string compilation",
-		},
-		{
-			name:        "fullword-no-match",
-			rule:        `rule test { strings: $a = "test" fullword condition: $a }`,
-			expectError: false,
-			description: "Documents fullword compilation",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := NewCompiler()
-			program, err := c.CompileSource(tt.rule)
-
-			anonymousStringCompileResult{program: program, err: err}.assertExpected(t, tt.expectError, tt.description)
-		})
-	}
+type streamingProgressExpectation struct {
+	processed int64
+	total     int64
+	percent   float64
+	matches   int
 }
 
-// TestStreamingStateManagement documents compiler state management for multiple rules
-func TestStreamingStateManagement(t *testing.T) {
-	tests := []struct {
-		name        string
-		rule        string
-		expectError bool
-		description string
-	}{
-		{
-			name:        "sequential-rules",
-			rule:        `rule test1 { strings: $a = "a" condition: $a } rule test2 { strings: $b = "b" condition: $b }`,
-			expectError: false,
-			description: "Documents multiple sequential rules compilation",
-		},
-		{
-			name:        "interdependent-rules",
-			rule:        `rule test1 { strings: $a = "a" condition: $a } rule test2 { strings: $b = "b" condition: test1 and $b }`,
-			expectError: false,
-			description: "Documents rule dependency compilation",
-		},
-		{
-			name:        "global-rule",
-			rule:        `global rule test { strings: $a = "a" condition: $a } rule other { condition: test }`,
-			expectError: false,
-			description: "Documents global rule compilation",
-		},
-		{
-			name:        "private-rule",
-			rule:        `private rule test { strings: $a = "a" condition: $a } rule other { condition: true }`,
-			expectError: false,
-			description: "Documents private rule compilation",
-		},
-		{
-			name:        "tags-usage",
-			rule:        `rule test1 tag : tag1 { strings: $a = "a" condition: $a } rule test2 tag : tag2 { strings: $b = "b" condition: $b }`,
-			expectError: false,
-			description: "Documents tag filtering compilation",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := NewCompiler()
-			program, err := c.CompileSource(tt.rule)
-
-			anonymousStringCompileResult{program: program, err: err}.assertExpected(t, tt.expectError, tt.description)
-		})
+func assertStreamingProgress(t *testing.T, program *CompiledProgram, want streamingProgressExpectation) {
+	t.Helper()
+	processed, total, percent, matches := program.GetStreamingProgress()
+	if processed != want.processed || total != want.total || percent != want.percent || matches != want.matches {
+		t.Fatalf(
+			"GetStreamingProgress() = (%d, %d, %.1f, %d), want (%d, %d, %.1f, %d)",
+			processed,
+			total,
+			percent,
+			matches,
+			want.processed,
+			want.total,
+			want.percent,
+			want.matches,
+		)
 	}
 }
