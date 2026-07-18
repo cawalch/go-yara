@@ -349,13 +349,13 @@ go run ./cmd ./testdata/rules/simple_strings.yar \
   --data ./testdata/execution/test_1mb.dat \
   --streaming \
   --chunk-size 1048576 \
-  --max-concurrency 4 \
   --early-termination
 ```
 
 Streaming mode is intended for chunked large-input pattern scanning. It reports
-string pattern matches only and does not evaluate rule conditions. The normal
-execute path is the primary path for full rule condition results.
+literal text-pattern matches only; regex and hex patterns are not included, and
+rule conditions are not evaluated. The normal execute path is the primary path
+for full rule condition results.
 
 ## Repository Layout
 

@@ -1467,9 +1467,9 @@ func (ep *ExecutionPlan) GetTotalSize() int {
 
 // Streaming methods for CompiledProgram.
 //
-// Streaming reports chunked string-pattern matches only. It does not evaluate
-// rule condition bytecode. Use Scan, ScanReader, or ScanFile for full rule
-// evaluation.
+// Streaming reports exact text-pattern matches only. It does not report regex
+// or hex matches and does not evaluate rule condition bytecode. Use Scan,
+// ScanReader, or ScanFile for full rule evaluation.
 
 // EnableStreaming enables or disables pattern-only streaming for large files.
 func (cp *CompiledProgram) EnableStreaming(enable bool) {
@@ -1491,13 +1491,6 @@ func (cp *CompiledProgram) SetStreamingChunkSize(chunkSize int) {
 	}
 }
 
-// SetStreamingConcurrency sets the maximum concurrency for streaming processing
-func (cp *CompiledProgram) SetStreamingConcurrency(maxConcurrency int) {
-	if cp.streamingProcessor != nil {
-		cp.streamingProcessor.SetMaxConcurrency(maxConcurrency)
-	}
-}
-
 // EnableStreamingEarlyTermination enables or disables early termination in streaming
 func (cp *CompiledProgram) EnableStreamingEarlyTermination(enable bool) {
 	if cp.streamingProcessor != nil {
@@ -1505,7 +1498,7 @@ func (cp *CompiledProgram) EnableStreamingEarlyTermination(enable bool) {
 	}
 }
 
-// ProcessFileStreaming returns pattern matches from a file using chunked streaming.
+// ProcessFileStreaming returns text-pattern matches from a file using chunked streaming.
 func (cp *CompiledProgram) ProcessFileStreaming(ctx context.Context, filename string) ([]StreamingMatch, error) {
 	if !cp.enableStreaming {
 		return nil, errors.New("streaming is not enabled")
@@ -1518,7 +1511,7 @@ func (cp *CompiledProgram) ProcessFileStreaming(ctx context.Context, filename st
 	return cp.streamingProcessor.ProcessFile(ctx, filename)
 }
 
-// ProcessBytesStreaming returns pattern matches from byte data using chunked streaming.
+// ProcessBytesStreaming returns text-pattern matches from byte data using chunked streaming.
 func (cp *CompiledProgram) ProcessBytesStreaming(ctx context.Context, data []byte) ([]StreamingMatch, error) {
 	if !cp.enableStreaming {
 		return nil, errors.New("streaming is not enabled")
