@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -100,6 +101,194 @@ func TestParseArgsValidation(t *testing.T) {
 	}
 }
 
+func TestParseArgsSuccess(t *testing.T) {
+	args, err := parseArgs([]string{
+		"rules.yar",
+		"--mode=execute",
+		"--data=sample.bin",
+		"--streaming",
+		"--chunk-size=4096",
+		"--early-termination",
+		"--match-data=8",
+		"--match-context=4",
+	})
+	if err != nil {
+		t.Fatalf("parseArgs() error = %v", err)
+	}
+	if args.filename != "rules.yar" || args.mode != modeExecute || args.dataFile != "sample.bin" {
+		t.Fatalf("parseArgs() paths = %+v", args)
+	}
+	if !args.enableStreaming || !args.earlyTermination || args.chunkSize != 4096 {
+		t.Fatalf("parseArgs() streaming options = %+v", args)
+	}
+	if args.matchDataBytes != 8 || args.matchContextBytes != 4 {
+		t.Fatalf("parseArgs() match options = %+v", args)
+	}
+}
+
+func TestRunModes(t *testing.T) {
+	tmpDir := t.TempDir()
+	ruleFile := filepath.Join(tmpDir, "rules.yar")
+	dataFile := filepath.Join(tmpDir, "data.bin")
+	rule := []byte(`rule test : sample { strings: $a = "hello" condition: $a }`)
+	if err := os.WriteFile(ruleFile, rule, 0600); err != nil {
+		t.Fatalf("write rule file: %v", err)
+	}
+	if err := os.WriteFile(dataFile, []byte("hello"), 0600); err != nil {
+		t.Fatalf("write data file: %v", err)
+	}
+
+	tests := []struct {
+		mode string
+		args []string
+		want string
+	}{
+		{mode: modeLex, args: []string{ruleFile, "--mode=lex"}, want: "Successfully lexed"},
+		{mode: modeParse, args: []string{ruleFile, "--mode=parse"}, want: "Tags: [sample]"},
+		{mode: modeCompile, args: []string{ruleFile}, want: "Successfully compiled 1 rules"},
+		{mode: modeExecute, args: []string{ruleFile, "--mode=execute", "--data=" + dataFile}, want: "Result: MATCH"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.mode, func(t *testing.T) {
+			out, err := captureOutputWithError(func() error { return run(tt.args) })
+			if err != nil {
+				t.Fatalf("run() error = %v", err)
+			}
+			if !strings.Contains(out, tt.want) {
+				t.Fatalf("run() output missing %q:\n%s", tt.want, out)
+			}
+		})
+	}
+}
+
+func TestRunErrorPaths(t *testing.T) {
+	tmpDir := t.TempDir()
+	dataFile := filepath.Join(tmpDir, "data.bin")
+	if err := os.WriteFile(dataFile, []byte("sample"), 0600); err != nil {
+		t.Fatalf("write data file: %v", err)
+	}
+
+	writeRule := func(t *testing.T, name, source string) string {
+		t.Helper()
+		filename := filepath.Join(tmpDir, name)
+		if err := os.WriteFile(filename, []byte(source), 0600); err != nil {
+			t.Fatalf("write rule file: %v", err)
+		}
+		return filename
+	}
+
+	validRule := writeRule(t, "valid.yar", `rule valid { condition: true }`)
+	lexerError := writeRule(t, "lexer-error.yar", `rule broken { strings: $a = "unterminated condition: $a }`)
+	parserError := writeRule(t, "parser-error.yar", `rule broken { condition: ) }`)
+	compileError := writeRule(t, "compile-error.yar", `rule broken { condition: missing_identifier }`)
+	missingInclude := writeRule(t, "include-error.yar", `include "missing.yar" rule main { condition: true }`)
+
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "missing-arguments", want: "missing YARA file"},
+		{name: "missing-rule-file", args: []string{filepath.Join(tmpDir, "missing.yar")}, want: "reading YARA file"},
+		{name: "lexer-error", args: []string{lexerError, "--mode=lex"}, want: "lexer errors detected"},
+		{name: "parser-error", args: []string{parserError, "--mode=parse"}, want: "parsing failed"},
+		{name: "compile-error", args: []string{compileError}, want: "compilation failed"},
+		{name: "include-error", args: []string{missingInclude, "--mode=parse"}, want: "processing includes"},
+		{name: "missing-data-file", args: []string{validRule, "--mode=execute", "--data=" + filepath.Join(tmpDir, "missing.bin")}, want: "reading data file"},
+		{name: "execute-compile-error", args: []string{compileError, "--mode=execute", "--data=" + dataFile}, want: "compiling rules"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := captureOutputWithError(func() error { return run(tt.args) })
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("run() error = %v, want containing %q", err, tt.want)
+			}
+		})
+	}
+
+	if err := runMode("invalid", nil, &commandArgs{filename: validRule}); err == nil {
+		t.Fatal("runMode() accepted an unknown mode")
+	}
+}
+
+func TestCLIHelperProcess(t *testing.T) {
+	if os.Getenv("GO_YARA_CLI_HELPER") != "1" {
+		return
+	}
+	separator := 0
+	for i, arg := range os.Args {
+		if arg == "--" {
+			separator = i
+			break
+		}
+	}
+	os.Args = append([]string{"go-yara"}, os.Args[separator+1:]...)
+	main()
+}
+
+func TestCLIExecutionErrorsExitNonZero(t *testing.T) {
+	tmpDir := t.TempDir()
+	validRule := filepath.Join(tmpDir, "valid.yar")
+	invalidRule := filepath.Join(tmpDir, "invalid.yar")
+	dataFile := filepath.Join(tmpDir, "data.bin")
+	for filename, content := range map[string]string{
+		validRule:   `rule valid { condition: true }`,
+		invalidRule: `rule invalid { condition: missing_identifier }`,
+		dataFile:    "sample",
+	} {
+		if err := os.WriteFile(filename, []byte(content), 0600); err != nil {
+			t.Fatalf("write %s: %v", filename, err)
+		}
+	}
+
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "missing-data",
+			args: []string{validRule, "--mode=execute", "--data=" + filepath.Join(tmpDir, "missing.bin")},
+			want: "reading data file",
+		},
+		{
+			name: "invalid-rule",
+			args: []string{invalidRule, "--mode=execute", "--data=" + dataFile},
+			want: "compiling rules",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmdArgs := append([]string{"-test.run=TestCLIHelperProcess", "--"}, tt.args...)
+			cmd := exec.Command(os.Args[0], cmdArgs...)
+			cmd.Env = append(os.Environ(), "GO_YARA_CLI_HELPER=1")
+			output, err := cmd.CombinedOutput()
+			exitErr, ok := err.(*exec.ExitError)
+			if !ok || exitErr.ExitCode() != 1 {
+				t.Fatalf("CLI error = %v, output:\n%s", err, output)
+			}
+			if !strings.Contains(string(output), tt.want) {
+				t.Fatalf("CLI output missing %q:\n%s", tt.want, output)
+			}
+		})
+	}
+}
+
+func TestCLIHelpExitsZero(t *testing.T) {
+	cmd := exec.Command(os.Args[0], "-test.run=TestCLIHelperProcess", "--", "--help")
+	cmd.Env = append(os.Environ(), "GO_YARA_CLI_HELPER=1")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("CLI help error = %v, output:\n%s", err, output)
+	}
+	if !strings.Contains(string(output), "Usage: go-yara") {
+		t.Fatalf("CLI help output missing usage:\n%s", output)
+	}
+}
+
 // TestExecuteModeIntegration tests the execute mode with pattern matching
 func TestExecuteModeIntegration(t *testing.T) {
 	ruleContent := `rule TestRule {
@@ -146,6 +335,14 @@ func captureOutput(fn func()) string {
 	return string(out)
 }
 
+func captureOutputWithError(fn func() error) (string, error) {
+	var err error
+	out := captureOutput(func() {
+		err = fn()
+	})
+	return out, err
+}
+
 func executeModeOutput(t *testing.T, rule string, data []byte) string {
 	t.Helper()
 	tmpDir := t.TempDir()
@@ -155,14 +352,18 @@ func executeModeOutput(t *testing.T, rule string, data []byte) string {
 		t.Fatalf("write data file: %v", err)
 	}
 
-	return captureOutput(func() {
+	out, err := captureOutputWithError(func() error {
 		args := &commandArgs{
 			filename: ruleFile,
 			mode:     modeExecute,
 			dataFile: dataFile,
 		}
-		runExecuteMode(rule, dataFile, ruleFile, args)
+		return runExecuteMode(rule, dataFile, ruleFile, args)
 	})
+	if err != nil {
+		t.Fatalf("runExecuteMode() error = %v", err)
+	}
+	return out
 }
 
 func TestExecuteRulesStreamingReportsPatternOnlySemantics(t *testing.T) {
@@ -179,13 +380,16 @@ func TestExecuteRulesStreamingReportsPatternOnlySemantics(t *testing.T) {
 		t.Fatalf("CompileSourceWithContext() error = %v", err)
 	}
 
-	out := captureOutput(func() {
+	out, err := captureOutputWithError(func() error {
 		args := &commandArgs{
 			enableStreaming: false,
 			chunkSize:       4,
 		}
-		executeRulesStreaming(program, []byte("foo"), args)
+		return executeRulesStreaming(program, []byte("foo"), args)
 	})
+	if err != nil {
+		t.Fatalf("executeRulesStreaming() error = %v", err)
+	}
 
 	expected := []string{
 		"Streaming pattern scan enabled",
@@ -334,13 +538,16 @@ func TestExecuteModeMatchEvidenceOutput(t *testing.T) {
 		t.Fatalf("CompileSourceWithContext() error = %v", err)
 	}
 
-	out := captureOutput(func() {
+	out, err := captureOutputWithError(func() error {
 		args := &commandArgs{
 			matchDataBytes:    2,
 			matchContextBytes: 4,
 		}
-		executeRules(program, []byte("foo bar baz"), args)
+		return executeRules(program, []byte("foo bar baz"), args)
 	})
+	if err != nil {
+		t.Fatalf("executeRules() error = %v", err)
+	}
 
 	expected := []string{
 		"- $a at offset 4 (length: 3)",
@@ -364,9 +571,12 @@ func TestRunLexerMode(t *testing.T) {
 	       $a
 }`
 
-	out := captureOutput(func() {
-		runLexerMode(content)
+	out, err := captureOutputWithError(func() error {
+		return runLexerMode(content)
 	})
+	if err != nil {
+		t.Fatalf("runLexerMode() error = %v", err)
+	}
 
 	if !strings.Contains(out, "Successfully lexed with no errors!") {
 		t.Fatalf("expected successful lexing, got output:\n%s", out)
@@ -385,9 +595,12 @@ func TestRunParserMode(t *testing.T) {
 	       $a
 }`
 
-	out := captureOutput(func() {
-		runParserMode(content)
+	out, err := captureOutputWithError(func() error {
+		return runParserMode(content, "test.yar")
 	})
+	if err != nil {
+		t.Fatalf("runParserMode() error = %v", err)
+	}
 
 	if !strings.Contains(out, "Successfully parsed!") {
 		t.Fatalf("expected successful parsing, got output:\n%s", out)
@@ -406,9 +619,12 @@ func TestRunCompileMode(t *testing.T) {
 	       $a
 }`
 
-	out := captureOutput(func() {
-		runCompileMode(content, "test.yar")
+	out, err := captureOutputWithError(func() error {
+		return runCompileMode(content, "test.yar")
 	})
+	if err != nil {
+		t.Fatalf("runCompileMode() error = %v", err)
+	}
 
 	if !strings.Contains(out, "Compilation: Successfully compiled 1 rules") {
 		t.Fatalf("expected successful compilation in compile mode, got output:\n%s", out)

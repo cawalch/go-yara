@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -16,8 +17,8 @@ func TestEmptyStringMatching(t *testing.T) {
 		{
 			name:        "empty-text-string",
 			rule:        `rule test { strings: $a = "" condition: $a }`,
-			expectError: false,
-			description: "Documents empty text string compilation",
+			expectError: true,
+			description: "Rejects empty text strings",
 		},
 		{
 			name:        "empty-hex-pattern",
@@ -34,8 +35,8 @@ func TestEmptyStringMatching(t *testing.T) {
 		{
 			name:        "empty-with-modifiers",
 			rule:        `rule test { strings: $a = "" nocase condition: $a }`,
-			expectError: false,
-			description: "Documents empty string with modifiers",
+			expectError: true,
+			description: "Rejects empty text strings with modifiers",
 		},
 	}
 
@@ -223,7 +224,7 @@ func TestAllStringModifiersCombinations(t *testing.T) {
 			name:        "ascii-wide",
 			rule:        `rule test { strings: $a = "test" ascii wide condition: $a }`,
 			expectError: false,
-			description: "Known gap: compiler does not reject ascii+wide modifier combination",
+			description: "Compiles explicit ASCII and wide variants",
 		},
 		{
 			name:        "nocase-wide",
@@ -252,8 +253,8 @@ func TestAllStringModifiersCombinations(t *testing.T) {
 		{
 			name:        "base64-with-modifiers",
 			rule:        `rule test { strings: $a = "test" base64 fullword condition: $a }`,
-			expectError: false,
-			description: "Documents base64 with other modifiers",
+			expectError: true,
+			description: "Rejects base64 combined with fullword",
 		},
 	}
 
@@ -314,8 +315,8 @@ func TestXorModifierBoundaries(t *testing.T) {
 		{
 			name:        "xor-inverted-range",
 			rule:        `rule test { strings: $a = "test" xor(0xFF-0x00) condition: $a }`,
-			expectError: false,
-			description: "Documents xor with inverted range",
+			expectError: true,
+			description: "Rejects inverted xor ranges",
 		},
 		{
 			name:        "xor-with-wide",
@@ -375,15 +376,15 @@ func TestBase64AlphabetVariations(t *testing.T) {
 		},
 		{
 			name:        "base64-duplicate-chars",
-			rule:        `rule test { strings: $a = "test" base64("AAA") condition: $a }`,
-			expectError: false,
-			description: "Documents base64 with duplicate characters",
+			rule:        `rule test { strings: $a = "test" base64("` + strings.Repeat("A", 64) + `") condition: $a }`,
+			expectError: true,
+			description: "Rejects a 64-character base64 alphabet with duplicates",
 		},
 		{
 			name:        "base64-with-modifiers",
 			rule:        `rule test { strings: $a = "test" base64 wide fullword condition: $a }`,
-			expectError: false,
-			description: "Documents base64 with other modifiers",
+			expectError: true,
+			description: "Rejects incompatible base64 modifiers",
 		},
 	}
 
@@ -543,9 +544,7 @@ func TestRegexEdgeCases(t *testing.T) {
 func generateAllByteString() string {
 	var result strings.Builder
 	for i := range 256 {
-		if i >= 32 && i <= 126 { // Printable ASCII range
-			result.WriteByte(byte(i))
-		}
+		_, _ = fmt.Fprintf(&result, `\x%02x`, i)
 	}
 	return result.String()
 }

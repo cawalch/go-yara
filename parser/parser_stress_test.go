@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -48,13 +49,13 @@ func TestDeeplyNestedParentheses(t *testing.T) {
 		{
 			name:        "unmatched-open",
 			rule:        `rule test { condition: ((true) }`,
-			expect:      parseErrorKnownGap,
+			expect:      parseError,
 			description: "Documents unmatched opening parenthesis",
 		},
 		{
 			name:        "unmatched-close",
 			rule:        `rule test { condition: (true)) }`,
-			expect:      parseErrorKnownGap,
+			expect:      parseError,
 			description: "Documents unmatched closing parenthesis",
 		},
 		{
@@ -279,13 +280,13 @@ func TestDeeplyNestedForLoops(t *testing.T) {
 		{
 			name:        "mixed-for-of-for-in",
 			rule:        `rule test { strings: $a = "test" condition: for any $s in ($a) : ( for any i in (0..10) : ( true ) ) }`,
-			expect:      parseErrorKnownGap,
+			expect:      parseError,
 			description: "Documents mixed for-of and for-in (may not be supported)",
 		},
 		{
 			name:        "nested-for-of",
 			rule:        `rule test { strings: $a = "a" $b = "b" condition: for any $x in ($a) : ( for any $y in ($b) : ( true ) ) }`,
-			expect:      parseErrorKnownGap,
+			expect:      parseError,
 			description: "Documents nested for-of loops (may not be supported)",
 		},
 		{
@@ -342,7 +343,7 @@ func TestManyRulesInOneFile(t *testing.T) {
 		{
 			name:        "hundred-rules",
 			rule:        strings.Repeat(`rule test`, 100),
-			expect:      parseErrorKnownGap,
+			expect:      parseError,
 			description: "Documents parsing 100 rules (may fail due to syntax)",
 		},
 		{
@@ -468,8 +469,8 @@ func TestLongStringLiterals(t *testing.T) {
 		{
 			name:        "unicode-escapes",
 			rule:        `rule test { strings: $a = "` + strings.Repeat("\\u0041", 20) + `" condition: $a }`,
-			expect:      parseOK,
-			description: "Documents string with unicode escapes",
+			expect:      parseError,
+			description: "Rejects unsupported Unicode escape sequences",
 		},
 	}
 
@@ -763,7 +764,7 @@ func generateUniqueRules(count int) string {
 	var rules strings.Builder
 	for i := range count {
 		rules.WriteString(`rule test_`)
-		rules.WriteString(string(rune('0' + i)))
+		rules.WriteString(strconv.Itoa(i))
 		rules.WriteString(` { condition: true } `)
 	}
 	return rules.String()
@@ -773,9 +774,9 @@ func generateRulesWithStrings(count int) string {
 	var rules strings.Builder
 	for i := range count {
 		rules.WriteString(`rule test_`)
-		rules.WriteString(string(rune('0' + i%10)))
+		rules.WriteString(strconv.Itoa(i))
 		rules.WriteString(` { strings: $a = "test`)
-		rules.WriteString(string(rune('0' + i)))
+		rules.WriteString(strconv.Itoa(i))
 		rules.WriteString(`" condition: $a } `)
 	}
 	return rules.String()
@@ -786,9 +787,9 @@ func generateRuleWithStrings(count int) string {
 	rule.WriteString(`rule test { strings: `)
 	for i := range count {
 		rule.WriteString(`$a`)
-		rule.WriteString(string(rune('0' + i%10)))
+		rule.WriteString(strconv.Itoa(i))
 		rule.WriteString(` = "test`)
-		rule.WriteString(string(rune('0' + i)))
+		rule.WriteString(strconv.Itoa(i))
 		rule.WriteString(`" `)
 	}
 	rule.WriteString(`condition: any of them }`)
@@ -801,9 +802,9 @@ func generateRulesWithStringModifiers(count int) string {
 	modifiers := []string{"", " nocase", " ascii", " wide", " fullword", " private"}
 	for i := range count {
 		rule.WriteString(`$a`)
-		rule.WriteString(string(rune('0' + i%10)))
+		rule.WriteString(strconv.Itoa(i))
 		rule.WriteString(` = "test`)
-		rule.WriteString(string(rune('0' + i)))
+		rule.WriteString(strconv.Itoa(i))
 		rule.WriteString(`"`)
 		rule.WriteString(modifiers[i%len(modifiers)])
 		rule.WriteString(` `)

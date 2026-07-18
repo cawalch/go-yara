@@ -81,7 +81,6 @@ func (p *QuantifierParser) ParseQuantifier(pos token.Position) (ast.Expression, 
 func (p *QuantifierParser) parseForQuantifier(pos token.Position) (ast.Expression, error) {
 	var quantifierExpr ast.Expression
 	var quantifierStr string
-	numericQuantifier := false
 
 	// Parse the quantifier after 'for' - could be keyword (all/any/none) or numeric
 	switch {
@@ -92,13 +91,12 @@ func (p *QuantifierParser) parseForQuantifier(pos token.Position) (ast.Expressio
 		quantifierExpr = p.builder.Identifier(pos, quantifierStr)
 		p.nextToken()
 	case p.isNumericLiteral():
-		// Numeric quantifier like "for 2 of them"
-		numericQuantifier = true
+		// Numeric quantifier like "for 2 of them" or "for 2 i in (1..3)".
 		quantifierStr = p.current.Literal
 		if parsed, err := strconv.ParseInt(quantifierStr, 0, 64); err == nil {
 			quantifierStr = strconv.FormatInt(parsed, 10)
 		}
-		numericExpr, err := p.parseNumericQuantifier()
+		numericExpr, err := p.exprParser.parsePrimaryExcludingUnary()
 		if err != nil {
 			return nil, fmt.Errorf("error parsing numeric quantifier: %w", err)
 		}
@@ -107,18 +105,14 @@ func (p *QuantifierParser) parseForQuantifier(pos token.Position) (ast.Expressio
 		return nil, errors.New("expected quantifier (all/any/none) or number after 'for'")
 	}
 
-	// For numeric quantifiers, we already consumed the 'of' in parseNumericQuantifier()
-	// For keyword quantifiers, check if this is a for-loop with variable or standard 'of' syntax
-	if !numericQuantifier {
-		// Check if this is a for loop with variable (e.g., "for any i in (1..3) : ...")
-		if p.CurrentTokenIs(token.IDENTIFIER) {
-			return p.parseForLoopWithVariable(pos, quantifierStr)
-		}
+	// A variable after either a keyword or numeric quantifier starts a range loop.
+	if p.CurrentTokenIs(token.IDENTIFIER) {
+		return p.parseForLoopWithVariable(pos, quantifierStr)
+	}
 
-		// For standard "for" quantifiers without variables, we expect 'of'
-		if !p.expectToken(token.OF) {
-			return nil, errors.New("expected 'of' after quantifier")
-		}
+	// Standard string-set quantifiers use "of".
+	if !p.expectToken(token.OF) {
+		return nil, errors.New("expected 'of' after quantifier")
 	}
 
 	// Parse the target (them, string patterns, etc.)

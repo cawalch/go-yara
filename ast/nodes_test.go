@@ -233,6 +233,61 @@ func TestExpressionMarker(t *testing.T) {
 	}
 }
 
+func TestRemainingBuilderExpressionContracts(t *testing.T) {
+	builder := NewBuilder()
+	pos := token.Position{Line: 7, Column: 11}
+	value := builder.Literal(pos, token.IntegerLit, 50)
+	stringExpr := builder.Identifier(pos, "$a")
+	indexExpr := builder.Literal(pos, token.IntegerLit, 2)
+	rangeExpr := builder.Identifier(pos, "range")
+	condition := builder.Identifier(pos, "condition")
+
+	t.Run("ForLoopMultiVar", func(t *testing.T) {
+		variables := []string{"key", "value"}
+		loop := builder.ForLoopMultiVar(pos, "all", variables, rangeExpr, condition)
+		assertBuiltExpression(t, loop, pos)
+		if loop.Quantifier != "all" || len(loop.Variables) != 2 || loop.Variables[0] != "key" || loop.Variables[1] != "value" {
+			t.Fatalf("ForLoopMultiVar fields = %+v", loop)
+		}
+		if loop.Range != rangeExpr || loop.Condition != condition {
+			t.Fatalf("ForLoopMultiVar range/condition = %T/%T", loop.Range, loop.Condition)
+		}
+	})
+
+	t.Run("PercentExpression", func(t *testing.T) {
+		percent := builder.PercentExpression(pos, value)
+		assertBuiltExpression(t, percent, pos)
+		if percent.Value != value {
+			t.Fatalf("PercentExpression.Value = %v, want %v", percent.Value, value)
+		}
+	})
+
+	t.Run("StringOffset", func(t *testing.T) {
+		offset := builder.StringOffset(pos, stringExpr, indexExpr)
+		assertBuiltExpression(t, offset, pos)
+		if offset.String != stringExpr || offset.Index != indexExpr {
+			t.Fatalf("StringOffset fields = %+v", offset)
+		}
+	})
+
+	t.Run("StringCount", func(t *testing.T) {
+		count := builder.StringCount(pos, stringExpr, indexExpr)
+		assertBuiltExpression(t, count, pos)
+		if count.String != stringExpr || count.Index != indexExpr {
+			t.Fatalf("StringCount fields = %+v", count)
+		}
+	})
+}
+
+func assertBuiltExpression(t *testing.T, expr Expression, wantPos token.Position) {
+	t.Helper()
+	if got := expr.Position(); got != wantPos {
+		t.Fatalf("%T.Position() = %v, want %v", expr, got, wantPos)
+	}
+	expr.expression()
+	assertNodeAcceptance(t, expr, 1)
+}
+
 // TestPatternMarker tests that pattern nodes implement the pattern marker
 func TestPatternMarker(t *testing.T) {
 	builder := NewBuilder()

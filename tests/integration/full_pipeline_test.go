@@ -17,7 +17,6 @@ import (
 
 type pipelineExpectation struct {
 	expectError bool
-	knownGap    bool
 	description string
 }
 
@@ -31,10 +30,7 @@ func (result pipelineResult) handleExpectedError(t *testing.T, expectation pipel
 	if !expectation.expectError {
 		return false
 	}
-	switch {
-	case result.err == nil && expectation.knownGap:
-		t.Skipf("known gap: %s (%s)", expectation.description, noErrorDetail)
-	case result.err == nil:
+	if result.err == nil {
 		t.Fatalf("expected error not produced: %s (%s)", expectation.description, noErrorDetail)
 	}
 	return true
@@ -48,11 +44,9 @@ func assertPipelineResult(t *testing.T, result pipelineResult, expectation pipel
 	}
 	switch {
 	case result.err != nil:
-		t.Logf("Unexpected pipeline error (documents current behavior): %v", result.err)
-	case expectation.knownGap:
-		t.Logf("Known gap preserved: %s (no pipeline error produced)", expectation.description)
-	case result.program != nil:
-		t.Logf("Successfully completed full pipeline")
+		t.Fatalf("unexpected pipeline error: %v", result.err)
+	case result.program == nil:
+		t.Fatal("pipeline succeeded without a program")
 	}
 }
 
@@ -62,7 +56,6 @@ func TestFullPipelineSimpleRule(t *testing.T) {
 		name        string
 		rule        string
 		expectError bool
-		knownGap    bool
 		description string
 	}{
 		{
@@ -117,7 +110,6 @@ func TestFullPipelineSimpleRule(t *testing.T) {
 
 			expectation := pipelineExpectation{
 				expectError: tt.expectError,
-				knownGap:    tt.knownGap,
 				description: tt.description,
 			}
 			if (pipelineResult{err: err}).handleExpectedError(t, expectation, "no pipeline error produced") {
@@ -161,7 +153,6 @@ func TestFullPipelineComplexRule(t *testing.T) {
 		name        string
 		rule        string
 		expectError bool
-		knownGap    bool
 		description string
 	}{
 		{
@@ -257,7 +248,6 @@ func TestFullPipelineComplexRule(t *testing.T) {
 
 			assertPipelineResult(t, pipelineResult{program: program, err: err}, pipelineExpectation{
 				expectError: tt.expectError,
-				knownGap:    tt.knownGap,
 				description: tt.description,
 			})
 		})
@@ -270,7 +260,6 @@ func TestFullPipelineMultipleRules(t *testing.T) {
 		name        string
 		rules       string
 		expectError bool
-		knownGap    bool
 		description string
 	}{
 		{
@@ -299,7 +288,7 @@ func TestFullPipelineMultipleRules(t *testing.T) {
 		},
 		{
 			name:        "tagged-rules",
-			rules:       `rule test tag : malware { condition: true } rule test tag : benign { condition: false }`,
+			rules:       `rule first : malware { condition: true } rule second : benign { condition: false }`,
 			expectError: false,
 			description: "Documents pipeline with tagged rules",
 		},
@@ -324,7 +313,6 @@ func TestFullPipelineMultipleRules(t *testing.T) {
 
 			assertPipelineResult(t, pipelineResult{program: program, err: err}, pipelineExpectation{
 				expectError: tt.expectError,
-				knownGap:    tt.knownGap,
 				description: tt.description,
 			})
 		})
@@ -394,36 +382,30 @@ func TestFullPipelineWithErrorRecovery(t *testing.T) {
 		name        string
 		rule        string
 		expectError bool
-		knownGap    bool
-		errorStage  string
 		description string
 	}{
 		{
 			name:        "lexer-error",
 			rule:        `rule test { strings: $a = "unclosed string condition: $a }`,
 			expectError: true,
-			errorStage:  "lexer",
 			description: "Documents error handling for lexer errors",
 		},
 		{
 			name:        "parser-error",
 			rule:        `rule test { condition: ) }`,
 			expectError: true,
-			errorStage:  "parser",
 			description: "Documents error handling for parser errors",
 		},
 		{
 			name:        "semantic-error",
 			rule:        `rule test { strings: $a = "test" condition: $undefined }`,
 			expectError: true,
-			errorStage:  "semantic",
 			description: "Documents error handling for undefined references",
 		},
 		{
 			name:        "compiler-error",
 			rule:        `rule test { strings: $a = "test" invalid_syntax }`,
 			expectError: true,
-			errorStage:  "parser",
 			description: "Documents error handling for invalid syntax",
 		},
 	}
@@ -435,7 +417,6 @@ func TestFullPipelineWithErrorRecovery(t *testing.T) {
 
 			assertPipelineResult(t, pipelineResult{program: program, err: err}, pipelineExpectation{
 				expectError: tt.expectError,
-				knownGap:    tt.knownGap,
 				description: tt.description,
 			})
 		})

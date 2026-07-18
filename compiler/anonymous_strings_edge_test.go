@@ -8,7 +8,6 @@ type anonymousStringTestCase struct {
 	name        string
 	rule        string
 	expectError bool
-	knownGap    string
 	description string
 }
 
@@ -17,44 +16,26 @@ type anonymousStringCompileResult struct {
 	err     error
 }
 
-// assertAnonymousStringResult is a test helper that logs the compilation outcome.
+// assertExpected verifies whether compilation succeeds or fails as expected.
 func (result anonymousStringCompileResult) assertExpected(t *testing.T, expectError bool, description string) {
 	t.Helper()
 	if expectError {
 		if result.err == nil {
 			t.Fatalf("expected compilation error not produced: %s", description)
-		} else {
-			t.Logf("Compilation error detected: %v", result.err)
 		}
 		return
 	}
 	if result.err != nil {
-		t.Logf("Unexpected compilation error (documents current behavior): %v", result.err)
-	} else if result.program != nil {
-		t.Logf("Successfully compiled")
+		t.Fatalf("unexpected compilation error: %v", result.err)
+	}
+	if result.program == nil {
+		t.Fatal("compilation succeeded without a program")
 	}
 }
 
 func (result anonymousStringCompileResult) assertCase(t *testing.T, tt anonymousStringTestCase) {
 	t.Helper()
-	if tt.knownGap == "" {
-		result.assertExpected(t, tt.expectError, tt.description)
-		return
-	}
-	if tt.expectError {
-		if result.err == nil {
-			t.Skipf("known gap: %s (no compilation error produced)", tt.knownGap)
-		} else {
-			t.Logf("Compilation error detected: %v", result.err)
-		}
-		return
-	}
-	if result.err != nil {
-		t.Logf("Unexpected compilation error (documents current behavior): %v", result.err)
-	} else if result.program != nil {
-		t.Logf("Known gap accepted: %s", tt.knownGap)
-		t.Logf("Successfully compiled")
-	}
+	result.assertExpected(t, tt.expectError, tt.description)
 }
 
 // TestMultipleAnonymousStrings documents compiler behavior with multiple anonymous strings
