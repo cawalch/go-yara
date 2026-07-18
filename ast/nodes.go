@@ -35,6 +35,7 @@ type Rule struct {
 	Tags      []string
 	Meta      []*Meta
 	Strings   []*String
+	Evidence  []*EvidenceDeclaration
 	Condition Expression
 }
 
@@ -140,6 +141,30 @@ func (s *String) Position() token.Position { return s.Pos }
 // Accept implements the Visitor pattern for String
 func (s *String) Accept(v Visitor) any {
 	return v.VisitString(s)
+}
+
+// EvidenceDeclaration describes a deterministic candidate grouping over named captures.
+type EvidenceDeclaration struct {
+	Pos    token.Position
+	Name   string
+	Fields []string
+	Anchor string
+	Within int64
+}
+
+func (e *EvidenceDeclaration) node() {}
+
+// Position returns the position of the evidence declaration.
+func (e *EvidenceDeclaration) Position() token.Position { return e.Pos }
+
+// Accept visits the evidence declaration when the visitor implements
+// EvidenceVisitor. EvidenceVisitor remains optional for compatibility with
+// visitors written before the evidence extension.
+func (e *EvidenceDeclaration) Accept(v Visitor) any {
+	if visitor, ok := v.(EvidenceVisitor); ok {
+		return visitor.VisitEvidenceDeclaration(e)
+	}
+	return nil
 }
 
 // Condition represents the condition section

@@ -25,6 +25,7 @@ var keywords = map[string]token.Type{
 	"none":           token.NONE,
 	"false":          token.FALSE,
 	KeywordStrings:   token.STRINGS,
+	"evidence":       token.EVIDENCE,
 	KeywordCondition: token.CONDITION,
 	// String modifiers
 	"nocase":     token.NOCASE,
@@ -35,6 +36,7 @@ var keywords = map[string]token.Type{
 	"xor":        token.XOR,
 	"base64":     token.BASE64,
 	"base64wide": token.BASE64WIDE,
+	"capture":    token.CAPTURE,
 	// Data type functions
 	"int8":     token.INT8,
 	"int16":    token.INT16,
@@ -60,6 +62,7 @@ var keywords = map[string]token.Type{
 	"for":     token.FOR,
 	"in":      token.IN,
 	"at":      token.AT,
+	"within":  token.WITHIN,
 	"them":    token.THEM,
 	"defined": token.DEFINED,
 	// Rule modifiers

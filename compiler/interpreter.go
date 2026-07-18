@@ -159,6 +159,7 @@ type Match struct {
 	ContextBefore        []byte
 	ContextAfter         []byte
 	MatchedDataTruncated bool
+	Captures             []Capture
 }
 
 // AddMatch adds a match to the context

@@ -81,6 +81,9 @@ func NewRuleCompilerWithModules(modules map[string]Module) (*RuleCompiler, error
 // CompileRule compiles a complete YARA rule to bytecode
 func (rc *RuleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 	rc.currentRule = rule
+	if err := validateCaptureAndEvidenceDeclarations(rule); err != nil {
+		return nil, err
+	}
 
 	// Reset components for new rule
 	rc.emitter.Reset()
@@ -144,6 +147,8 @@ func (rc *RuleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 		StringLiterals:    rc.emitter.GetStringLiterals(),
 		StringKinds:       rc.copyStringKinds(),
 		StringModifiers:   rc.copyStringModifiers(),
+		CaptureBindings:   captureBindingsByPattern(rule),
+		EvidencePlans:     compileEvidencePlans(rule.Evidence),
 		TextPatterns:      rc.copyTextPatterns(),
 		RegexPatterns:     rc.copyRegexPatterns(),
 		HexPatterns:       rc.copyHexPatterns(),
@@ -155,7 +160,7 @@ func (rc *RuleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 		Meta:              rc.compileMeta(rule.Meta),
 		IsGlobal:          rc.hasModifier(rule.Modifiers, ast.ModifierGlobal),
 		IsPrivate:         rc.hasModifier(rule.Modifiers, ast.ModifierPrivate),
-		FastScanSafe:      !conditionObservesMatchOccurrences(rule.Condition),
+		FastScanSafe:      !conditionObservesMatchOccurrences(rule.Condition) && !ruleDeclaresEvidence(rule),
 		ModuleFunctions:   maps.Clone(rc.moduleFunctions),
 		ModuleNames:       maps.Clone(rc.moduleNames),
 		HeaderConstraints: deriveHeaderConstraints(rule.Condition),
@@ -371,6 +376,8 @@ func (rc *RuleCompiler) compileSingleString(str *ast.String) error {
 		prefix, anchored := regex.LiteralPrefix(result.patternData)
 		pattern := RegexPattern{
 			Code:             result.patternData,
+			CaptureCode:      result.captureCode,
+			CaptureGroups:    slices.Clone(result.captureGroups),
 			Flags:            result.flags,
 			prefix:           prefix,
 			widePrefix:       widenRegexPrefix(prefix),
@@ -436,6 +443,8 @@ type stringCompilationResult struct {
 	regexLeadingGap    regex.LeadingByteGapPlan
 	regexByteSetAtoms  []regex.ByteSetAtom
 	regexFixedByteSets []regex.ByteSet
+	captureCode        []byte
+	captureGroups      []int
 }
 
 func (rc *RuleCompiler) compileStringPattern(str *ast.String) (*stringCompilationResult, error) {
@@ -452,6 +461,9 @@ func (rc *RuleCompiler) compileStringPattern(str *ast.String) (*stringCompilatio
 }
 
 func (rc *RuleCompiler) compileTextString(value string, modifiers []ast.StringModifier) (*stringCompilationResult, error) {
+	if hasPositiveCaptureGroup(modifiers) {
+		return nil, fmt.Errorf("positive capture groups are only supported for regex patterns")
+	}
 	patterns, err := rc.stringCompiler.EncodeTextPatterns(value, modifiers)
 	if err != nil {
 		return nil, err
@@ -500,6 +512,9 @@ func stripWideModifier(modifiers []ast.StringModifier) []ast.StringModifier {
 }
 
 func (rc *RuleCompiler) compileHexString(value string, modifiers []ast.StringModifier) (*stringCompilationResult, error) {
+	if hasPositiveCaptureGroup(modifiers) {
+		return nil, fmt.Errorf("positive capture groups are only supported for regex patterns")
+	}
 	if rc.stringCompiler.hasModifier(modifiers, ast.StringModifierBase64) ||
 		rc.stringCompiler.hasModifier(modifiers, ast.StringModifierBase64Wide) {
 		return nil, fmt.Errorf("base64 modifiers are only supported for text strings")
@@ -533,6 +548,14 @@ func (rc *RuleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers
 	}
 
 	flags := rc.deriveRegexFlags(pattern.Value, modifiers)
+	groups := positiveCaptureGroups(modifiers)
+	var captureCode []byte
+	if len(groups) > 0 {
+		captureCode, err = regex.CompileCaptures(parsed, groups)
+		if err != nil {
+			return nil, fmt.Errorf("compile regex captures: %w", err)
+		}
+	}
 	fixedByteSets, _ := regex.FixedByteSets(parsed, flags)
 	leadingGap, _ := regex.LeadingByteGapAtomCover(parsed, flags, minPrefilterAtomLength)
 	return &stringCompilationResult{
@@ -545,6 +568,8 @@ func (rc *RuleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers
 		regexLeadingGap:    leadingGap,
 		regexByteSetAtoms:  regex.MandatoryByteSetAtoms(parsed),
 		regexFixedByteSets: fixedByteSets,
+		captureCode:        captureCode,
+		captureGroups:      groups,
 	}, nil
 }
 
@@ -555,6 +580,9 @@ func patternCacheKey(kind, value string, modifiers []ast.StringModifier) string 
 	key.WriteByte(0)
 	key.WriteString(value)
 	for _, modifier := range modifiers {
+		if modifier.Type == ast.StringModifierCapture {
+			continue
+		}
 		key.WriteByte(0)
 		fmt.Fprintf(&key, "%d=%v", modifier.Type, modifier.Value)
 	}
@@ -988,6 +1016,8 @@ func (rc *RuleCompiler) copyRegexPatterns() map[string]RegexPattern {
 		copy(cp, v.Code)
 		out[k] = RegexPattern{
 			Code:                 cp,
+			CaptureCode:          slices.Clone(v.CaptureCode),
+			CaptureGroups:        slices.Clone(v.CaptureGroups),
 			Flags:                v.Flags,
 			prefix:               slices.Clone(v.prefix),
 			widePrefix:           slices.Clone(v.widePrefix),
@@ -1037,7 +1067,12 @@ func (rc *RuleCompiler) copyStringModifiers() map[string][]ast.StringModifier {
 			continue
 		}
 		cp := make([]ast.StringModifier, len(mods))
-		copy(cp, mods)
+		for i, modifier := range mods {
+			cp[i] = modifier
+			if bindings, ok := modifier.Value.([]ast.CaptureBinding); ok {
+				cp[i].Value = slices.Clone(bindings)
+			}
+		}
 		out[k] = cp
 	}
 	return out
@@ -1057,6 +1092,8 @@ type CompiledRule struct {
 	StringLiterals   []string          // String literal pool for OpPushStr
 	StringKinds      map[string]StringKind
 	StringModifiers  map[string][]ast.StringModifier
+	CaptureBindings  map[string][]ast.CaptureBinding
+	EvidencePlans    []EvidencePlan
 	TextPatterns     map[string][]byte
 	RegexPatterns    map[string]RegexPattern
 	HexPatterns      map[string]*HexPattern
@@ -1200,6 +1237,9 @@ func (cr *CompiledRule) Validate() error {
 		if err := cr.Automaton.Validate(); err != nil {
 			return fmt.Errorf("invalid automaton: %w", err)
 		}
+	}
+	if err := validateCompiledEvidence(cr); err != nil {
+		return fmt.Errorf("invalid evidence plan: %w", err)
 	}
 
 	return nil

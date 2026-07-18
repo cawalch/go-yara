@@ -46,6 +46,13 @@ type RuleVisitor interface {
 	VisitCondition(*Condition) any
 }
 
+// EvidenceVisitor optionally handles go-yara evidence declarations. It is
+// intentionally separate from Visitor so existing visitor implementations do
+// not break when using rules that do not inspect evidence declarations.
+type EvidenceVisitor interface {
+	VisitEvidenceDeclaration(*EvidenceDeclaration) any
+}
+
 // ExpressionVisitor handles expressions and operations
 type ExpressionVisitor interface {
 	VisitBinaryOp(*BinaryOp) any
@@ -116,6 +123,9 @@ func (v *BaseVisitor) VisitString(_ *String) any { return nil }
 
 // VisitCondition visits a condition node
 func (v *BaseVisitor) VisitCondition(_ *Condition) any { return nil }
+
+// VisitEvidenceDeclaration visits an evidence declaration node.
+func (v *BaseVisitor) VisitEvidenceDeclaration(_ *EvidenceDeclaration) any { return nil }
 
 // ExpressionVisitor implementations
 
@@ -206,6 +216,9 @@ func (v *RuleBaseVisitor) VisitString(_ *String) any { return nil }
 
 // VisitCondition visits a condition node
 func (v *RuleBaseVisitor) VisitCondition(_ *Condition) any { return nil }
+
+// VisitEvidenceDeclaration visits an evidence declaration node.
+func (v *RuleBaseVisitor) VisitEvidenceDeclaration(_ *EvidenceDeclaration) any { return nil }
 
 // ExpressionBaseVisitor provides implementations only for expressions
 type ExpressionBaseVisitor struct{}

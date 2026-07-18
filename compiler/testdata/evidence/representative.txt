@@ -1,0 +1,31 @@
+{
+  "type": "service_account",
+  "project_id": "fixture-project",
+  "private_key_id": "EXAMPLE_NOT_REAL",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIExampleNotARealKey\n-----END PRIVATE KEY-----\n",
+  "client_email": "fixture@fixture-project.iam.gserviceaccount.com",
+  "token_uri": "https://oauth2.googleapis.com/token"
+}
+
+-----BEGIN PRIVATE KEY-----
+TEST FIXTURE ONLY
+-----END PRIVATE KEY-----
+
+[profile.one]
+endpoint = https://service-one.example
+aws_access_key_id = AKIAIOSFODNN7EXAMPLE
+aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+
+[profile.two]
+endpoint = https://service-two.example
+aws_access_key_id = AKIAI44QH8DHBEXAMPLE
+# Intentionally absent secret: this candidate remains partial.
+
+DATABASE_URL=postgres://fixture:not-a-real-password@db.example/app
+
+chat: the api key is EXAMPLE_CHAT_TOKEN_1234567890
+
+# Intentionally ambiguous negative: two nearby usernames for one secret.
+username = first-user
+username = second-user
+secret = placeholder-only

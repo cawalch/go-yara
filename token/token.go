@@ -20,6 +20,7 @@ const (
 	LENGTH Type = iota
 	META
 	STRINGS
+	EVIDENCE
 	CONDITION
 	AND
 	OR
@@ -39,6 +40,7 @@ const (
 	XOR
 	BASE64
 	BASE64WIDE
+	CAPTURE
 	// BitwiseAnd bitwise AND operator
 	BitwiseAnd
 	BitwiseOr
@@ -75,6 +77,7 @@ const (
 	FOR
 	IN
 	AT
+	WITHIN
 	THEM
 	DEFINED
 	// GLOBAL rule modifier
@@ -141,6 +144,7 @@ var tokenTypeNames = map[Type]string{
 	RULE:             "RULE",
 	META:             "META",
 	STRINGS:          "STRINGS",
+	EVIDENCE:         "EVIDENCE",
 	CONDITION:        "CONDITION",
 	AND:              "AND",
 	OR:               "OR",
@@ -159,6 +163,7 @@ var tokenTypeNames = map[Type]string{
 	XOR:              "XOR",
 	BASE64:           "BASE64",
 	BASE64WIDE:       "BASE64WIDE",
+	CAPTURE:          "CAPTURE",
 	BitwiseAnd:       "BITWISE_AND",
 	BitwiseOr:        "BITWISE_OR",
 	BitwiseXor:       "BITWISE_XOR",
@@ -188,6 +193,7 @@ var tokenTypeNames = map[Type]string{
 	FOR:              "FOR",
 	IN:               "IN",
 	AT:               "AT",
+	WITHIN:           "WITHIN",
 	THEM:             "THEM",
 	DEFINED:          "DEFINED",
 	GLOBAL:           "GLOBAL",

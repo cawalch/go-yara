@@ -15,7 +15,7 @@ import (
 
 const (
 	compiledProgramMagic   = "GOYARA\x00"
-	compiledProgramVersion = uint16(1)
+	compiledProgramVersion = uint16(2)
 )
 
 type serializedProgram struct {
@@ -36,6 +36,8 @@ type serializedRule struct {
 	StringLiterals    []string
 	StringKinds       map[string]StringKind
 	StringModifiers   map[string][]serializedStringModifier
+	CaptureBindings   map[string][]serializedCaptureBinding
+	EvidencePlans     []serializedEvidencePlan
 	TextPatterns      map[string][]byte
 	RegexPatterns     map[string]serializedRegexPattern
 	HexPatterns       map[string]serializedHexPattern
@@ -64,16 +66,32 @@ type serializedStringModifier struct {
 	String     string
 	XorMinimum int64
 	XorMaximum int64
+	Captures   []serializedCaptureBinding
+}
+
+type serializedCaptureBinding struct {
+	Name  string
+	Group int
+}
+
+type serializedEvidencePlan struct {
+	Name   string
+	Fields []string
+	Anchor string
+	Within int64
 }
 
 const (
 	serializedModifierNone uint8 = iota
 	serializedModifierString
 	serializedModifierXorRange
+	serializedModifierCapture
 )
 
 type serializedRegexPattern struct {
 	Code                 []byte
+	CaptureCode          []byte
+	CaptureGroups        []int
 	Flags                regex.Flags
 	Prefix               []byte
 	WidePrefix           []byte
@@ -201,7 +219,7 @@ func ReadCompiledProgram(reader io.Reader, modules ...Module) (*CompiledProgram,
 		return nil, fmt.Errorf("reading compiled program version: %w", err)
 	}
 	if version != compiledProgramVersion {
-		return nil, fmt.Errorf("unsupported compiled program version %d", version)
+		return nil, fmt.Errorf("unsupported compiled program version %d; rebuild with format version %d", version, compiledProgramVersion)
 	}
 
 	var payload serializedProgram
@@ -248,6 +266,8 @@ func serializeRule(rule *CompiledRule) (serializedRule, error) {
 		StringLiterals:    slices.Clone(rule.StringLiterals),
 		StringKinds:       maps.Clone(rule.StringKinds),
 		StringModifiers:   modifiers,
+		CaptureBindings:   serializeCaptureBindings(rule.CaptureBindings),
+		EvidencePlans:     serializeEvidencePlans(rule.EvidencePlans),
 		TextPatterns:      cloneByteMap(rule.TextPatterns),
 		RegexPatterns:     make(map[string]serializedRegexPattern, len(rule.RegexPatterns)),
 		HexPatterns:       make(map[string]serializedHexPattern, len(rule.HexPatterns)),
@@ -369,6 +389,8 @@ func deserializeRule(serialized serializedRule, bindings map[string]compiledModu
 		StringLiterals:    slices.Clone(serialized.StringLiterals),
 		StringKinds:       maps.Clone(serialized.StringKinds),
 		StringModifiers:   modifiers,
+		CaptureBindings:   deserializeCaptureBindings(serialized.CaptureBindings),
+		EvidencePlans:     deserializeEvidencePlans(serialized.EvidencePlans),
 		TextPatterns:      cloneByteMap(serialized.TextPatterns),
 		RegexPatterns:     make(map[string]RegexPattern, len(serialized.RegexPatterns)),
 		HexPatterns:       make(map[string]*HexPattern, len(serialized.HexPatterns)),
@@ -489,6 +511,8 @@ func deserializeAutomaton(infos []ACStringInfo) (*ACAutomaton, error) {
 func serializeRegexPattern(pattern RegexPattern) serializedRegexPattern {
 	serialized := serializedRegexPattern{
 		Code:                 slices.Clone(pattern.Code),
+		CaptureCode:          slices.Clone(pattern.CaptureCode),
+		CaptureGroups:        slices.Clone(pattern.CaptureGroups),
 		Flags:                pattern.Flags,
 		Prefix:               slices.Clone(pattern.prefix),
 		WidePrefix:           slices.Clone(pattern.widePrefix),
@@ -528,6 +552,8 @@ func serializeRegexPattern(pattern RegexPattern) serializedRegexPattern {
 func deserializeRegexPattern(serialized serializedRegexPattern) RegexPattern {
 	pattern := RegexPattern{
 		Code:                 slices.Clone(serialized.Code),
+		CaptureCode:          slices.Clone(serialized.CaptureCode),
+		CaptureGroups:        slices.Clone(serialized.CaptureGroups),
 		Flags:                serialized.Flags,
 		prefix:               slices.Clone(serialized.Prefix),
 		widePrefix:           slices.Clone(serialized.WidePrefix),
@@ -603,6 +629,9 @@ func serializeStringModifiers(
 				serialized.ValueKind = serializedModifierXorRange
 				serialized.XorMinimum = value.Min
 				serialized.XorMaximum = value.Max
+			case []ast.CaptureBinding:
+				serialized.ValueKind = serializedModifierCapture
+				serialized.Captures = serializeCaptureBindingSlice(value)
 			default:
 				return nil, fmt.Errorf("unsupported value type %T for string modifier", modifier.Value)
 			}
@@ -626,6 +655,8 @@ func deserializeStringModifiers(
 				modifier.Value = serialized.String
 			case serializedModifierXorRange:
 				modifier.Value = ast.XorRange{Min: serialized.XorMinimum, Max: serialized.XorMaximum}
+			case serializedModifierCapture:
+				modifier.Value = deserializeCaptureBindingSlice(serialized.Captures)
 			default:
 				return nil, fmt.Errorf("unknown serialized string modifier value kind %d", serialized.ValueKind)
 			}
@@ -633,6 +664,58 @@ func deserializeStringModifiers(
 		}
 	}
 	return result, nil
+}
+
+func serializeCaptureBindings(all map[string][]ast.CaptureBinding) map[string][]serializedCaptureBinding {
+	result := make(map[string][]serializedCaptureBinding, len(all))
+	for pattern, bindings := range all {
+		result[pattern] = serializeCaptureBindingSlice(bindings)
+	}
+	return result
+}
+
+func deserializeCaptureBindings(all map[string][]serializedCaptureBinding) map[string][]ast.CaptureBinding {
+	result := make(map[string][]ast.CaptureBinding, len(all))
+	for pattern, bindings := range all {
+		result[pattern] = deserializeCaptureBindingSlice(bindings)
+	}
+	return result
+}
+
+func serializeCaptureBindingSlice(bindings []ast.CaptureBinding) []serializedCaptureBinding {
+	result := make([]serializedCaptureBinding, len(bindings))
+	for index, binding := range bindings {
+		result[index] = serializedCaptureBinding{Name: binding.Name, Group: binding.Group}
+	}
+	return result
+}
+
+func deserializeCaptureBindingSlice(bindings []serializedCaptureBinding) []ast.CaptureBinding {
+	result := make([]ast.CaptureBinding, len(bindings))
+	for index, binding := range bindings {
+		result[index] = ast.CaptureBinding{Name: binding.Name, Group: binding.Group}
+	}
+	return result
+}
+
+func serializeEvidencePlans(plans []EvidencePlan) []serializedEvidencePlan {
+	result := make([]serializedEvidencePlan, len(plans))
+	for index, plan := range plans {
+		result[index] = serializedEvidencePlan{
+			Name: plan.Name, Fields: slices.Clone(plan.Fields), Anchor: plan.Anchor, Within: plan.Within,
+		}
+	}
+	return result
+}
+
+func deserializeEvidencePlans(plans []serializedEvidencePlan) []EvidencePlan {
+	result := make([]EvidencePlan, len(plans))
+	for index, plan := range plans {
+		result[index] = EvidencePlan{
+			Name: plan.Name, Fields: slices.Clone(plan.Fields), Anchor: plan.Anchor, Within: plan.Within,
+		}
+	}
+	return result
 }
 
 func serializeScalars(values map[string]any) (map[string]serializedScalar, error) {

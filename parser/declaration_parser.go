@@ -68,7 +68,8 @@ func (p *DeclarationParser) ParseMetaSection() ([]*ast.Meta, error) {
 func (p *DeclarationParser) parseMetaDeclarations() []*ast.Meta {
 	meta := make([]*ast.Meta, 0)
 
-	for !p.currentTokenIs(token.STRINGS) && !p.currentTokenIs(token.CONDITION) && !p.currentTokenIs(token.RBRACE) {
+	for !p.currentTokenIs(token.STRINGS) && !p.currentTokenIs(token.EVIDENCE) &&
+		!p.currentTokenIs(token.CONDITION) && !p.currentTokenIs(token.RBRACE) {
 		if !p.currentTokenIs(token.IDENTIFIER) && !p.isIdentifierKeyword(p.current.Type) {
 			break
 		}
@@ -163,7 +164,7 @@ func (p *DeclarationParser) ParseStringsSection() ([]*ast.String, error) {
 func (p *DeclarationParser) parseStringDeclarations() []*ast.String {
 	parsedStrings := make([]*ast.String, 0)
 
-	for !p.currentTokenIs(token.CONDITION) && !p.currentTokenIs(token.RBRACE) {
+	for !p.currentTokenIs(token.EVIDENCE) && !p.currentTokenIs(token.CONDITION) && !p.currentTokenIs(token.RBRACE) {
 		if !p.currentTokenIs(token.StringIdentifier) {
 			break
 		}
@@ -263,6 +264,8 @@ func (p *DeclarationParser) parseStringModifiers() []ast.StringModifier {
 			modifiers = append(modifiers, p.parseXorModifier())
 		case ast.StringModifierBase64, ast.StringModifierBase64Wide:
 			modifiers = append(modifiers, p.parseBase64Modifier(modifierType))
+		case ast.StringModifierCapture:
+			modifiers = append(modifiers, p.parseCaptureModifier())
 		default:
 			modifiers = append(modifiers, ast.StringModifier{Type: modifierType})
 			p.nextToken()
@@ -271,6 +274,65 @@ func (p *DeclarationParser) parseStringModifiers() []ast.StringModifier {
 
 	p.validateStringModifiers(modifiers)
 	return modifiers
+}
+
+func (p *DeclarationParser) parseCaptureModifier() ast.StringModifier {
+	modifier := ast.StringModifier{Type: ast.StringModifierCapture}
+	p.nextToken() // consume capture
+	if !p.expectToken(token.LPAREN) {
+		p.addError(errors.New("expected '(' after capture modifier"))
+		return modifier
+	}
+
+	bindings := make([]ast.CaptureBinding, 0, 2)
+	seen := make(map[string]struct{})
+	for !p.currentTokenIs(token.RPAREN) && !p.currentTokenIs(token.EOF) {
+		if !p.currentTokenIs(token.IDENTIFIER) {
+			p.addError(fmt.Errorf("expected capture name at %v", p.current.Pos))
+			p.skipToToken(token.RPAREN)
+			break
+		}
+		name := p.current.Literal
+		p.nextToken()
+		if !p.expectToken(token.ASSIGN) {
+			p.addError(fmt.Errorf("expected '=' after capture name %q", name))
+			p.skipToToken(token.RPAREN)
+			break
+		}
+		if !p.currentTokenIs(token.IntegerLit) {
+			p.addError(fmt.Errorf("expected non-negative decimal group number for capture %q", name))
+			p.skipToToken(token.RPAREN)
+			break
+		}
+		group, err := strconv.Atoi(p.current.Literal)
+		if err != nil {
+			p.addError(fmt.Errorf("invalid capture group %q: %w", p.current.Literal, err))
+		}
+		p.nextToken()
+		if _, duplicate := seen[name]; duplicate {
+			p.addError(fmt.Errorf("duplicate capture name %q", name))
+		} else {
+			seen[name] = struct{}{}
+			bindings = append(bindings, ast.CaptureBinding{Name: name, Group: group})
+		}
+		if p.currentTokenIs(token.COMMA) {
+			p.nextToken()
+			if p.currentTokenIs(token.RPAREN) {
+				p.addError(errors.New("capture modifier cannot end with a trailing comma"))
+				break
+			}
+			continue
+		}
+		break
+	}
+	if !p.expectToken(token.RPAREN) {
+		p.addError(errors.New("expected ')' after capture modifier"))
+	}
+	if len(bindings) == 0 {
+		p.addError(errors.New("capture modifier requires at least one binding"))
+	}
+	modifier.Value = bindings
+	return modifier
 }
 
 func (p *DeclarationParser) parseXorModifier() ast.StringModifier {
@@ -663,6 +725,8 @@ func (p *DeclarationParser) getStringModifierType(tokenType token.Type) ast.Stri
 		return ast.StringModifierBase64
 	case token.BASE64WIDE:
 		return ast.StringModifierBase64Wide
+	case token.CAPTURE:
+		return ast.StringModifierCapture
 	default:
 		// This should not happen if isStringModifier is called first
 		return ast.StringModifierNocase // Fallback
@@ -672,7 +736,7 @@ func (p *DeclarationParser) getStringModifierType(tokenType token.Type) ast.Stri
 func (p *DeclarationParser) isStringModifier(t token.Type) bool {
 	return t == token.NOCASE || t == token.WIDE || t == token.ASCII ||
 		t == token.FULLWORD || t == token.PRIVATE || t == token.XOR ||
-		t == token.BASE64 || t == token.BASE64WIDE
+		t == token.BASE64 || t == token.BASE64WIDE || t == token.CAPTURE
 }
 
 func (p *DeclarationParser) parseIntegerLiteral() int64 {

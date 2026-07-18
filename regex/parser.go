@@ -10,6 +10,7 @@ type Parser struct {
 	lx           *lexer
 	cur          token
 	strictEscape bool // validate escape sequences strictly (ParserFlagEnableStrictEscapeSequences)
+	groupCount   int
 }
 
 // NewParser constructs a parser with the requested validation flags.
@@ -30,6 +31,7 @@ func (p *Parser) Parse(pattern string) (*AST, error) {
 	}
 	p.lx = newLexer(pattern)
 	p.cur = p.lx.next()
+	p.groupCount = 0
 	root, err := p.parseAlternative()
 	if err != nil {
 		return nil, err
@@ -37,7 +39,7 @@ func (p *Parser) Parse(pattern string) (*AST, error) {
 	if p.cur.kind != tEOF {
 		return nil, errors.New("unexpected input after parse")
 	}
-	return &AST{Flags: 0, Root: root}, nil
+	return &AST{Flags: 0, Root: root, GroupCount: p.groupCount}, nil
 }
 
 // alternative := concatenation ( '|' concatenation )*
@@ -131,6 +133,8 @@ func (p *Parser) parseBase() (*Node, error) {
 		p.next()
 		return &Node{Kind: NodeLiteral, Value: ch, Greedy: true}, nil
 	case tLParen:
+		p.groupCount++
+		group := p.groupCount
 		p.next()
 		n, err := p.parseAlternative()
 		if err != nil {
@@ -140,7 +144,7 @@ func (p *Parser) parseBase() (*Node, error) {
 			return nil, errors.New("missing ')' in group")
 		}
 		p.next()
-		return n, nil
+		return &Node{Kind: NodeGroup, Group: group, Children: []*Node{n}, Greedy: true}, nil
 	case tLBracket:
 		return p.parseClass()
 	}

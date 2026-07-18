@@ -233,11 +233,37 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (*ScanResult
 			continue
 		}
 		matches := result.Matches[rule.Name]
+		var evidence map[string][]EvidenceFinding
+		if s.evidenceMax > 0 {
+			var err error
+			evidence, err = s.populateRuleEvidence(ctx, rule, matches, func(match Match) (captureInput, bool) {
+				block := scanner.blockForMatch(match)
+				if block == nil {
+					return captureInput{}, false
+				}
+				start := int(match.Offset - block.Base)
+				end := start + match.Length
+				if start < 0 || end < start || end > len(block.Data) {
+					return captureInput{}, false
+				}
+				return captureInput{data: block.Data, start: start, end: end, base: block.Base}, true
+			})
+			if err != nil {
+				return nil, err
+			}
+		}
+		if len(evidence) != 0 {
+			if result.Evidence == nil {
+				result.Evidence = make(map[string]map[string][]EvidenceFinding)
+			}
+			result.Evidence[rule.Name] = evidence
+		}
 		result.MatchedRules = append(result.MatchedRules, RuleMatch{
-			Rule:    rule.Name,
-			Tags:    rule.Tags,
-			Meta:    rule.Meta,
-			Matches: matches,
+			Rule:     rule.Name,
+			Tags:     rule.Tags,
+			Meta:     rule.Meta,
+			Matches:  matches,
+			Evidence: evidence,
 		})
 	}
 	clear(s.ruleResults)

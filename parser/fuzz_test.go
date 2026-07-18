@@ -15,6 +15,8 @@ func FuzzYARAParser(f *testing.F) {
 	f.Add([]byte("rule test { strings: $a = \"hello\" condition: $a }"))
 	f.Add([]byte("rule test { strings: $a = { DE AD BE EF } condition: $a }"))
 	f.Add([]byte("rule test { strings: $a = /pattern/ condition: $a }"))
+	f.Add([]byte("rule test { strings: $a = /(user):([^ ]+)/ capture(username = 1, secret = 2) evidence: credential = (username, secret) within 4KB of secret condition: $a }"))
+	f.Add([]byte("rule test { strings: $a = /(a)/ capture(value = 1,) evidence: broken = (value) within nope of value condition: $a }"))
 	f.Add([]byte("rule test { meta: author = \"test\" condition: true }"))
 	f.Add([]byte("import \"pe\" rule test { condition: pe.version_info }"))
 	f.Add([]byte("rule test1 { condition: true } rule test2 { condition: false }"))

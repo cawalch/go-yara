@@ -31,6 +31,7 @@ const (
 	NodeRangeAny         NodeKind = 21
 	NodeNotLiteral       NodeKind = 22
 	NodeMaskedNotLiteral NodeKind = 23
+	NodeGroup            NodeKind = 24
 )
 
 // Class is a simple 256-bit bitmap (32 bytes) with negation support.
@@ -50,6 +51,7 @@ type Node struct {
 	End      uint16 // For {m,n}
 	Greedy   bool
 	Class    *Class
+	Group    int // One-based source group number for NodeGroup.
 	Children []*Node
 }
 
@@ -60,6 +62,7 @@ func NewNode(kind NodeKind) *Node {
 
 // AST is the root of a parsed regex along with flags captured during parse.
 type AST struct {
-	Flags Flags
-	Root  *Node
+	Flags      Flags
+	Root       *Node
+	GroupCount int
 }

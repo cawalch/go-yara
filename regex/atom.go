@@ -134,10 +134,14 @@ func LiteralAtomCover(ast *AST, minimumLength int) [][]LiteralAtom {
 // an alternation; every returned group must contribute one atom to keep the
 // plan complete. GapMax is -1 for an unbounded repeat.
 func LeadingByteGapAtomCover(ast *AST, flags Flags, minimumLength int) (LeadingByteGapPlan, bool) {
-	if ast == nil || ast.Root == nil || ast.Root.Kind != NodeConcat || len(ast.Root.Children) < 3 {
+	if ast == nil || ast.Root == nil {
 		return LeadingByteGapPlan{}, false
 	}
-	children := ast.Root.Children
+	root := unwrapGroups(ast.Root)
+	if root == nil || root.Kind != NodeConcat || len(root.Children) < 3 {
+		return LeadingByteGapPlan{}, false
+	}
+	children := root.Children
 	leadingSet, ok := fixedConsumingByteSet(children[0], flags)
 	if !ok {
 		return LeadingByteGapPlan{}, false
@@ -171,6 +175,8 @@ func repeatedSingleByteSet(node *Node, flags Flags) (ByteSet, int, int, bool) {
 	minimum := 0
 	maximum := -1
 	switch node.Kind {
+	case NodeGroup:
+		return repeatedSingleByteSet(firstChild(node), flags)
 	case NodeStar:
 	case NodePlus:
 		minimum = 1
@@ -248,6 +254,8 @@ func literalAtomCover(node *Node, minimumLength int) (literalAtomCoverPlan, bool
 	}
 
 	switch node.Kind {
+	case NodeGroup:
+		return literalAtomCover(firstChild(node), minimumLength)
 	case NodeConcat:
 		return literalConcatAtomCover(node.Children, minimumLength)
 	case NodeAlt:
@@ -371,12 +379,19 @@ func firstChild(node *Node) *Node {
 	return node.Children[0]
 }
 
+func unwrapGroups(node *Node) *Node {
+	for node != nil && node.Kind == NodeGroup {
+		node = firstChild(node)
+	}
+	return node
+}
+
 func alternativeLeaves(ast *AST) []*Node {
 	if ast == nil || ast.Root == nil {
 		return nil
 	}
 
-	node := ast.Root
+	node := unwrapGroups(ast.Root)
 	if node.Kind == NodeConcat {
 		var consuming *Node
 		for _, child := range node.Children {
@@ -392,7 +407,7 @@ func alternativeLeaves(ast *AST) []*Node {
 		if consuming == nil {
 			return nil
 		}
-		node = consuming
+		node = unwrapGroups(consuming)
 	}
 	if node.Kind != NodeAlt {
 		return nil
@@ -406,6 +421,7 @@ func alternativeLeaves(ast *AST) []*Node {
 }
 
 func appendAlternativeLeaves(dst *[]*Node, node *Node) bool {
+	node = unwrapGroups(node)
 	if node == nil {
 		return false
 	}
@@ -430,6 +446,8 @@ func analyzeAtoms(node *Node) atomAnalysis {
 	}
 
 	switch node.Kind {
+	case NodeGroup:
+		return analyzeAtoms(firstChild(node))
 	case NodeLiteral:
 		data := []byte{node.Value}
 		return atomAnalysis{
