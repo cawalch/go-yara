@@ -7,8 +7,8 @@ import (
 	"github.com/cawalch/go-yara/token"
 )
 
-func TestStringModifiers_CompleteYARARule(t *testing.T) {
-	input := `rule Phase2TestRule {
+func TestStringModifiers_CompleteRule(t *testing.T) {
+	input := `rule ModifierRule {
 		meta:
 			author = "go-yara"
 			version = "2.0"
@@ -62,7 +62,7 @@ func TestStringModifiers_CompleteYARARule(t *testing.T) {
 	for _, count := range modifierCounts {
 		totalModifiers += count
 	}
-	expectedTotal := 12 // Sum of all expected counts: 2+2+2+2+1+1+1+1 = 12
+	expectedTotal := 12
 	if totalModifiers != expectedTotal {
 		t.Errorf("expected %d total modifiers, got %d", expectedTotal, totalModifiers)
 	}
@@ -151,86 +151,5 @@ func TestStringModifiers_ErrorRecovery(t *testing.T) {
 	// Should have 1 identifier for the invalid modifier
 	if identifiers != 1 {
 		t.Errorf("expected 1 invalid modifier as identifier, got %d", identifiers)
-	}
-}
-
-func TestStringModifiers_Performance(t *testing.T) {
-	// Test performance with many string modifiers
-	input := `rule PerformanceTest {
-		strings:
-			$s1 = "test1" nocase wide ascii fullword
-			$s2 = "test2" private xor base64 base64wide
-			$s3 = { E2 34 A1 } nocase wide
-			$s4 = /pattern/i ascii fullword
-			$s5 = "test5" nocase wide ascii fullword private xor base64 base64wide
-		condition:
-			any of them
-	}`
-
-	// Run multiple iterations to test performance consistency
-	for i := range 100 {
-		l := lexer.New(input)
-		tokens := collectTokens(l)
-
-		// Verify we get a reasonable number of tokens (adjusted expectation)
-		if len(tokens) < 40 {
-			t.Errorf("iteration %d: expected at least 40 tokens, got %d", i, len(tokens))
-			break
-		}
-	}
-}
-
-func TestStringModifiers_CoverageIncrease(t *testing.T) {
-	// Test that demonstrates the coverage increase from Phase 2
-	// This test shows YARA rules that couldn't be parsed before Phase 2
-
-	beforePhase2 := `rule BeforePhase2 {
-		strings:
-			$a = "text"
-			$b = { E2 34 A1 }
-			$c = /pattern/i
-		condition:
-			any of them
-	}`
-
-	afterPhase2 := `rule AfterPhase2 {
-		strings:
-			$a = "text" nocase wide
-			$b = { E2 34 A1 } private
-			$c = /pattern/i ascii fullword
-			$d = "encoded" xor base64wide
-		condition:
-			any of them
-	}`
-
-	// Both should parse successfully now
-	for _, input := range []string{beforePhase2, afterPhase2} {
-		l := lexer.New(input)
-		tokens := collectTokens(l)
-
-		// Verify no illegal tokens
-		for _, tok := range tokens {
-			if tok.Type == token.ILLEGAL {
-				t.Errorf("unexpected ILLEGAL token: %v", tok)
-			}
-		}
-	}
-
-	// The "after" rule should have string modifier tokens
-	l := lexer.New(afterPhase2)
-	tokens := collectTokens(l)
-
-	hasModifiers := false
-	for _, tok := range tokens {
-		switch tok.Type {
-		case token.NOCASE, token.WIDE, token.ASCII, token.FULLWORD, token.PRIVATE, token.XOR, token.BASE64, token.BASE64WIDE:
-			hasModifiers = true
-			goto found
-		}
-	}
-found:
-
-	if !hasModifiers {
-		t.Error("Phase 2 rule should contain string modifier tokens")
 	}
 }

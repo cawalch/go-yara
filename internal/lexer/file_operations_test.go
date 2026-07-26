@@ -285,10 +285,9 @@ func TestFileOperations_InYARARule(t *testing.T) {
 	}
 }
 
-func TestFileOperations_WithAllPhase3Features(t *testing.T) {
+func TestFileOperations_WithTypedReadAndBitwiseMask(t *testing.T) {
 	helper := lexer.NewTestHelper(t)
 
-	// Test that file operations work with all other Phase 3 features
 	input := `filesize > 1MB and uint32(entrypoint) & 0xFF00 == 0x4D00`
 
 	expected := []token.Token{
