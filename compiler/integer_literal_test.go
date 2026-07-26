@@ -36,6 +36,12 @@ func TestIntegerLiteralCompilation(t *testing.T) {
 		// Decimal still works (regression guard for the base change).
 		{"decimal equals", `65 == 65`, nil, true},
 		{"decimal mismatch", `65 == 66`, nil, false},
+		// Values above uint32 require the dedicated 64-bit operand contract.
+		{"64-bit equals", `4294967296 == 4294967296`, nil, true},
+		{"64-bit differs from zero", `4294967296 == 0`, nil, false},
+		{"64-bit neighboring values", `4294967297 == 4294967296`, nil, false},
+		{"max int64 equals", `9223372036854775807 == 9223372036854775807`, nil, true},
+		{"max int64 mismatch", `9223372036854775807 == 9223372036854775806`, nil, false},
 	}
 
 	for _, tt := range tests {

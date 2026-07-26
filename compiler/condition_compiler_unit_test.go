@@ -48,12 +48,11 @@ func TestConditionCompiler_StringOffsetFunctions(t *testing.T) {
 		}
 	})
 
-	t.Run("emit functions", func(t *testing.T) {
+	t.Run("emit string identifier", func(t *testing.T) {
 		before := emitter.GetInstructionCount()
-		cc.emitStringOffset(0, 1, 1)
 		cc.emitStringIdentifier(0, "$test", 1, 1)
 		if emitter.GetInstructionCount() <= before {
-			t.Fatal("string offset emitters did not emit instructions")
+			t.Fatal("string identifier emitter did not emit instructions")
 		}
 	})
 }
@@ -273,6 +272,28 @@ func TestConditionCompiler_RuleReferences(t *testing.T) {
 		err := cc.compileRuleReference(ruleName, line, column)
 		if err == nil || !strings.Contains(err.Error(), "undefined rule reference: test_rule") {
 			t.Fatalf("compileRuleReference() error = %v, want undefined rule reference", err)
+		}
+	})
+
+	t.Run("compileRuleReference operand", func(t *testing.T) {
+		cc.SetRuleIndexMap(map[string]int{"test_rule": 7})
+		if err := cc.compileRuleReference("test_rule", 1, 1); err != nil {
+			t.Fatalf("compileRuleReference() error = %v", err)
+		}
+		instructions := emitter.GetInstructions()
+		instruction := instructions[len(instructions)-1]
+		if instruction.Opcode != OpPushRuleRef ||
+			instruction.Operand.Type != OperandImmediate8 ||
+			instruction.Operand.Value != 7 {
+			t.Fatalf("rule reference instruction = %#v", instruction)
+		}
+	})
+
+	t.Run("compileRuleReference overflow", func(t *testing.T) {
+		cc.SetRuleIndexMap(map[string]int{"test_rule": 256})
+		err := cc.compileRuleReference("test_rule", 1, 1)
+		if err == nil || !strings.Contains(err.Error(), "exceeds bytecode capacity") {
+			t.Fatalf("compileRuleReference() error = %v, want capacity error", err)
 		}
 	})
 

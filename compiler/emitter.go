@@ -73,41 +73,57 @@ func (e *Emitter) EmitOpcodeWithOperand(opcode Opcode, operand Operand, line, po
 
 // EmitPush emits a push instruction with various operand sizes
 func (e *Emitter) EmitPush(value uint64, line, pos int) int {
-	var opcode Opcode
-	var operand Operand
-
-	// Choose the most efficient push instruction based on value size
 	switch {
 	case value <= math.MaxUint8:
-		opcode = OpPush8
-		operand = Operand{Type: OperandImmediate8, Value: value}
+		return e.EmitOpcodeWithOperand(
+			OpPush8,
+			Operand{Type: OperandImmediate8, Value: value},
+			line,
+			pos,
+		)
 	case value <= math.MaxUint16:
-		opcode = OpPush16
-		operand = Operand{Type: OperandImmediate16, Value: value}
+		return e.EmitOpcodeWithOperand(
+			OpPush16,
+			Operand{Type: OperandImmediate16, Value: value},
+			line,
+			pos,
+		)
 	case value <= math.MaxUint32:
-		opcode = OpPush32
-		operand = Operand{Type: OperandImmediate32, Value: value}
+		return e.EmitOpcodeWithOperand(
+			OpPush32,
+			Operand{Type: OperandImmediate32, Value: value},
+			line,
+			pos,
+		)
 	default:
-		opcode = OpPushU
-		operand = Operand{Type: OperandImmediate64, Value: value}
+		return e.EmitOpcodeWithOperand(
+			OpPush64,
+			Operand{Type: OperandImmediate64, Value: value},
+			line,
+			pos,
+		)
 	}
-
-	return e.EmitOpcodeWithOperand(opcode, operand, line, pos)
 }
 
 // EmitPushDouble emits a push instruction for floating point values
 func (e *Emitter) EmitPushDouble(value float64, line, pos int) int {
-	// Convert float64 to uint64 bits for storage
-	bits := math.Float64bits(value)
-	operand := Operand{Type: OperandImmediate64, Value: bits}
-	return e.EmitOpcodeWithOperand(OpPushDbl, operand, line, pos)
+	return e.EmitOpcodeWithOperand(
+		OpPushDbl,
+		Operand{Type: OperandImmediate64, Value: math.Float64bits(value)},
+		line,
+		pos,
+	)
 }
 
 // EmitPushString emits a push instruction for string values
 func (e *Emitter) EmitPushString(value string, line, pos int) int {
 	index := e.internStringLiteral(value)
-	operand := Operand{Type: OperandImmediate32, Value: uint64(index)}
-	return e.EmitOpcodeWithOperand(OpPushStr, operand, line, pos)
+	return e.EmitOpcodeWithOperand(
+		OpPushStr,
+		Operand{Type: OperandImmediate32, Value: uint64(index)},
+		line,
+		pos,
+	)
 }
 
 func (e *Emitter) internStringLiteral(value string) int {

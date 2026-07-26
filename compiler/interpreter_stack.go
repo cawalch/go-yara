@@ -42,15 +42,26 @@ func (i *Interpreter) executePush32() error {
 	return i.push(Value{Type: ValueTypeInt, IntVal: val})
 }
 
-// executePushU pushes an undefined value or a 32-bit integer.
+// executePushU pushes an undefined value.
 func (i *Interpreter) executePushU() error {
-	if i.ip+3 >= len(i.bytecode) {
-		return i.push(Value{Type: ValueTypeUndefined})
+	return i.push(Value{Type: ValueTypeUndefined})
+}
+
+// executePush64 pushes a 64-bit integer.
+func (i *Interpreter) executePush64() error {
+	if err := i.validateBytecodeBounds(OpPush64, 8); err != nil {
+		return err
 	}
-	val := int64(i.bytecode[i.ip]) | int64(i.bytecode[i.ip+1])<<8 |
-		int64(i.bytecode[i.ip+2])<<16 | int64(i.bytecode[i.ip+3])<<24
-	i.ip += 4
-	return i.push(Value{Type: ValueTypeInt, IntVal: val})
+	value := int64(uint64(i.bytecode[i.ip]) | //checkednarrow:ignore uint64 bits encode the signed VM integer
+		uint64(i.bytecode[i.ip+1])<<8 |
+		uint64(i.bytecode[i.ip+2])<<16 |
+		uint64(i.bytecode[i.ip+3])<<24 |
+		uint64(i.bytecode[i.ip+4])<<32 |
+		uint64(i.bytecode[i.ip+5])<<40 |
+		uint64(i.bytecode[i.ip+6])<<48 |
+		uint64(i.bytecode[i.ip+7])<<56)
+	i.ip += 8
+	return i.push(Value{Type: ValueTypeInt, IntVal: value})
 }
 
 // executePushDouble pushes a 64-bit floating-point value.

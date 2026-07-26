@@ -20,6 +20,7 @@ func TestBytecodeOpcodes(t *testing.T) {
 		{OpNot, "NOT", OpCategoryLogical},
 		{OpPush, "PUSH", OpCategoryStack},
 		{OpPop, "POP", OpCategoryStack},
+		{OpPush64, "PUSH_64", OpCategoryStack},
 		{OpIntAdd, "INT_ADD", OpCategoryArithmetic},
 		{OpIntEq, "INT_EQ", OpCategoryArithmetic},
 		{OpFilesize, "FILESIZE", OpCategoryObject},
