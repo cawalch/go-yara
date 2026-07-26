@@ -26,6 +26,16 @@ PACKAGE_FILE="$LOG_DIR/packages.txt"
 TARGET_FILE="$LOG_DIR/targets.txt"
 FAILED_FILE="$LOG_DIR/failed_list.txt"
 
+is_fuzz_deadline_race() {
+    local log_file="$1"
+
+    # Go issue #75804 can turn the fuzz duration's normal shutdown into a
+    # spurious failure. Real fuzz failures either write a crashing input or
+    # report a different error, so retry only this exact coordinator error.
+    ! grep -qi "failing input written to" "$log_file" &&
+        grep -Eq '^[[:space:]]+context deadline exceeded$' "$log_file"
+}
+
 while IFS= read -r -d '' file; do
     if grep -q "func Fuzz" "$file"; then
         dirname "$file"
@@ -68,7 +78,18 @@ while IFS= read -r item; do
     LOG_FILE="$LOG_DIR/${target}.log"
 
     # Run fuzz test
+    TARGET_PASSED=false
     if go test -v "$pkg_path" -run=^$ -fuzz="^${target}$" -fuzztime="$FUZZTIME" > "$LOG_FILE" 2>&1; then
+        TARGET_PASSED=true
+    elif is_fuzz_deadline_race "$LOG_FILE"; then
+        printf "⚠️  RETRY (Go fuzz deadline race)\n"
+        printf "   Retrying %-35s ... " "$target"
+        if go test -v "$pkg_path" -run=^$ -fuzz="^${target}$" -fuzztime="$FUZZTIME" > "$LOG_FILE" 2>&1; then
+            TARGET_PASSED=true
+        fi
+    fi
+
+    if [ "$TARGET_PASSED" = true ]; then
         printf "✅ PASS\n"
         if [ "$VERBOSE" = true ]; then
             cat "$LOG_FILE"
@@ -80,9 +101,9 @@ while IFS= read -r item; do
         echo "----------------------------------------------------------------"
         echo "🚨 FAILURE DETAILS: $target"
 
-        CRASH_LINE=$(grep "failing input written to" "$LOG_FILE" || true)
+        CRASH_LINE=$(grep -i "failing input written to" "$LOG_FILE" || true)
         if [ -n "$CRASH_LINE" ]; then
-            CRASH_FILE=${CRASH_LINE##*failing input written to }
+            CRASH_FILE=${CRASH_LINE##*written to }
             echo "📁 Crashing input: $CRASH_FILE"
         fi
 

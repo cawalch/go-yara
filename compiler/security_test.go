@@ -71,7 +71,16 @@ func TestProcessIncludes_Security(t *testing.T) {
 
 			err := comp.ProcessIncludes(tt.program)
 
-			validateTestResult(t, tt, err)
+			if tt.expectError {
+				if err == nil {
+					t.Fatal("ProcessIncludes() expected error, got nil")
+				}
+				if tt.errorContains != "" && !strings.Contains(err.Error(), tt.errorContains) {
+					t.Fatalf("ProcessIncludes() error = %q, want substring %q", err, tt.errorContains)
+				}
+			} else if err != nil {
+				t.Fatalf("ProcessIncludes() unexpected error: %v", err)
+			}
 		})
 	}
 }
@@ -180,7 +189,7 @@ func TestProcessIncludes_MalformedFile(t *testing.T) {
 		t.Error("ProcessIncludes() expected error for malformed include but got none")
 	}
 
-	if !contains(err.Error(), "failed to parse include file") {
+	if !strings.Contains(err.Error(), "failed to parse include file") {
 		t.Errorf("ProcessIncludes() error = %q, want contains 'failed to parse include file'", err.Error())
 	}
 }
@@ -239,7 +248,7 @@ func TestValidateCompilation(t *testing.T) {
 					t.Errorf("ValidateCompilation() expected error but got none")
 					return
 				}
-				if tt.errorMsg != "" && !contains(err.Error(), tt.errorMsg) {
+				if tt.errorMsg != "" && !strings.Contains(err.Error(), tt.errorMsg) {
 					t.Errorf("ValidateCompilation() error = %q, want contains %q", err.Error(), tt.errorMsg)
 				}
 			} else if err != nil {
@@ -305,34 +314,14 @@ func TestSetBaseDir(t *testing.T) {
 // TestProcessIncludes_FileSizeLimits tests include file size handling
 func TestProcessIncludes_FileSizeLimits(t *testing.T) {
 	tempDir := t.TempDir()
-
-	// Create a large include file (simulate potential DoS vector)
 	largeFile := filepath.Join(tempDir, "large.yar")
-
-	// Create content that's large enough to potentially cause issues
-	// In a real implementation, you'd want to enforce size limits
-	content := `rule LargeRule {
+	content := []byte(`rule LargeRule {
 		strings:
 			$pattern = "pattern"
 		condition:
 			$pattern
-	}`
-
-	// Repeat the rule many times to make the file large
-	var largeContent strings.Builder
-	_ = content // Use content to avoid unused variable warning
-	for i := range 1000 {
-		largeContent.WriteString(`rule LargeRule` + string(rune(i)) + ` {
-			strings:
-				$pattern` + string(rune(i)) + ` = "pattern` + string(rune(i)) + `"
-			condition:
-				$pattern` + string(rune(i)) + `
-		}
-		`)
-	}
-	_ = content // Avoid unused variable warning
-
-	if err := os.WriteFile(largeFile, []byte(largeContent.String()), 0644); err != nil {
+	}`)
+	if err := os.WriteFile(largeFile, content, 0644); err != nil {
 		t.Fatalf("Failed to create large include file: %v", err)
 	}
 
@@ -343,69 +332,34 @@ func TestProcessIncludes_FileSizeLimits(t *testing.T) {
 		Rules: []*ast.Rule{},
 	}
 
-	comp := NewCompiler()
+	comp := NewCompiler(WithMaxIncludeSize(int64(len(content) - 1)))
 	comp.SetBaseDir(tempDir)
 
-	// This should handle large files gracefully
 	err := comp.ProcessIncludes(program)
-
-	// The test passes if it doesn't panic or crash
-	// It may fail due to parsing errors, but shouldn't crash
-	if err != nil {
-		t.Logf("ProcessIncludes() with large file failed as expected: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "exceeds maximum allowed") {
+		t.Fatalf("ProcessIncludes() error = %v, want include size limit error", err)
 	}
 }
 
-// Helper function to check if string contains substring
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) &&
-		(s[:len(substr)] == substr || s[len(s)-len(substr):] == substr ||
-			findSubstring(s, substr)))
-}
-
-func findSubstring(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
+func TestProcessIncludesRejectsCircularInclude(t *testing.T) {
+	tempDir := t.TempDir()
+	files := map[string]string{
+		"a.yar": "include \"b.yar\"\nrule A { condition: true }",
+		"b.yar": "include \"a.yar\"\nrule B { condition: true }",
+	}
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(tempDir, name), []byte(content), 0644); err != nil {
+			t.Fatalf("WriteFile(%q) error = %v", name, err)
 		}
 	}
-	return false
-}
 
-// validateTestResult validates test results based on expected error conditions
-func validateTestResult(t *testing.T, tt struct {
-	name          string
-	baseDir       string
-	program       *ast.Program
-	expectError   bool
-	errorContains string
-}, err error) {
-	if tt.expectError {
-		validateExpectedErrorWithDetails(t, struct{ errorContains string }{errorContains: tt.errorContains}, err)
-	} else {
-		validateNoUnexpectedError(t, err)
+	program := &ast.Program{
+		Includes: []*ast.Include{{File: "a.yar"}},
 	}
-}
-
-// validateExpectedErrorWithDetails validates that expected errors occur with correct details
-func validateExpectedErrorWithDetails(t *testing.T, tt struct {
-	errorContains string
-}, err error) {
-	if err == nil {
-		t.Errorf("ProcessIncludes() expected error but got none")
-		return
-	}
-	if tt.errorContains != "" && err.Error()[:len(tt.errorContains)] != tt.errorContains {
-		// Check if error starts with expected substring (for path-related errors)
-		if !contains(err.Error(), tt.errorContains) {
-			t.Errorf("ProcessIncludes() error = %q, want contains %q", err.Error(), tt.errorContains)
-		}
-	}
-}
-
-// validateNoUnexpectedError validates that no unexpected errors occur
-func validateNoUnexpectedError(t *testing.T, err error) {
-	if err != nil {
-		t.Errorf("ProcessIncludes() unexpected error: %v", err)
+	comp := NewCompiler()
+	comp.SetBaseDir(tempDir)
+	err := comp.ProcessIncludes(program)
+	if err == nil || !strings.Contains(err.Error(), "circular include detected") {
+		t.Fatalf("ProcessIncludes() error = %v, want circular include error", err)
 	}
 }

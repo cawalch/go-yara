@@ -245,6 +245,16 @@ func TestACAutomatonClone(t *testing.T) {
 	if len(cloned.Strings) != len(ac.Strings) {
 		t.Errorf("Clone() Strings length = %d, want %d", len(cloned.Strings), len(ac.Strings))
 	}
+
+	matches := slices.Collect(cloned.SearchIter([]byte("test")))
+	if len(matches) != 1 || matches[0].StringID != "test" {
+		t.Fatalf("Clone().SearchIter() matches = %+v, want one test match", matches)
+	}
+
+	cloned.Strings[0].Data[0] = 'X'
+	if string(ac.Strings[0].Data) != "test" {
+		t.Fatal("Clone() shares exported pattern data with the original")
+	}
 }
 
 // TestACAutomatonEdgeCases tests edge cases in Aho-Corasick automaton

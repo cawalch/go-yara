@@ -244,6 +244,20 @@ func WithMaxInputSize(size int64) Option {
 	}
 }
 
+// WithMaxIncludeSize sets the maximum included file size limit (0 = no limit).
+func WithMaxIncludeSize(size int64) Option {
+	return func(opts *CompilationOptions) {
+		opts.MaxIncludeSize = size
+	}
+}
+
+// WithMaxRecursionDepth sets the parser recursion limit (0 = no limit).
+func WithMaxRecursionDepth(depth int) Option {
+	return func(opts *CompilationOptions) {
+		opts.MaxRecursionDepth = depth
+	}
+}
+
 // CompileSource compiles YARA source code to bytecode.
 //
 // Deprecated: Use CompileSourceWithContext for better cancellation and timeout support.
@@ -1086,98 +1100,103 @@ func (c *Compiler) processIncludesWithBaseDir(program *ast.Program, baseDir stri
 
 // processIncludesWithBaseDirContext processes includes with a specific base directory and context support
 func (c *Compiler) processIncludesWithBaseDirContext(ctx context.Context, program *ast.Program, baseDir string) error {
-	// Process each include statement
+	traversal := includeTraversal{
+		compiler:    c,
+		ctx:         ctx,
+		activePaths: make(map[string]struct{}),
+	}
+	return traversal.processTree(program, baseDir)
+}
+
+type includeTraversal struct {
+	compiler    *Compiler
+	ctx         context.Context
+	activePaths map[string]struct{}
+}
+
+func (traversal *includeTraversal) processTree(program *ast.Program, baseDir string) error {
 	for _, include := range program.Includes {
-		// Check for cancellation before processing each include
 		select {
-		case <-ctx.Done():
-			return ctx.Err()
+		case <-traversal.ctx.Done():
+			return traversal.ctx.Err()
 		default:
 		}
 
-		// Resolve the include path relative to base directory
-		includePath := filepath.Join(baseDir, include.File)
-
-		// Clean the path to resolve any .. components
-		cleanIncludePath := filepath.Clean(includePath)
-
-		// Get the absolute base directory
-		absBaseDir, err := filepath.Abs(baseDir)
-		if err != nil {
-			return fmt.Errorf("failed to resolve base directory: %w", err)
+		if err := traversal.processInclude(program, baseDir, include); err != nil {
+			return err
 		}
-		absBaseDir = filepath.Clean(absBaseDir)
-
-		// Get the absolute include path
-		absIncludePath, err := filepath.Abs(cleanIncludePath)
-		if err != nil {
-			return fmt.Errorf("failed to resolve include path: %w", err)
-		}
-		absIncludePath = filepath.Clean(absIncludePath)
-
-		// Check if the include path is within the base directory (prevents directory traversal)
-		if !strings.HasPrefix(absIncludePath, absBaseDir+string(filepath.Separator)) && absIncludePath != absBaseDir {
-			return fmt.Errorf("failed to read include file %s: path traversal detected", include.File)
-		}
-
-		// Read the included file content (use the cleaned, validated path)
-		includedContent, err := os.ReadFile(cleanIncludePath)
-		if err != nil {
-			return fmt.Errorf("failed to read include file %s: %w", include.File, err)
-		}
-
-		// Check file size limit if set
-		if c.options.MaxIncludeSize > 0 && int64(len(includedContent)) > c.options.MaxIncludeSize {
-			return fmt.Errorf("include file %s size %d bytes exceeds maximum allowed %d bytes",
-				include.File, len(includedContent), c.options.MaxIncludeSize)
-		}
-
-		// Parse the included content
-		includedLexer := lexer.New(string(includedContent))
-		includedParser := parser.NewWithOptions(includedLexer, parser.Options{
-			MaxRecursionDepth: c.options.MaxRecursionDepth,
-		})
-		if c.options.IgnoreInvalidRules {
-			includedParser.SetErrorRecovery(true)
-			includedParser.SetSkipInvalidRules(true)
-		}
-		includedProgram, parseErr := includedParser.ParseRulesWithContext(ctx)
-		if parseErr != nil {
-			var partialErr *parser.PartialParseError
-			if !c.options.IgnoreInvalidRules || !errors.As(parseErr, &partialErr) || len(includedParser.ProgramErrors()) != 0 {
-				return fmt.Errorf("failed to parse include file %s: %w", include.File, parseErr)
-			}
-			includedProgram = partialErr.Program
-			for _, invalid := range includedParser.InvalidRules() {
-				c.recordParseInvalidRule(invalid)
-			}
-		}
-
-		// Check for parser errors in included file
-		if len(includedParser.Errors()) > 0 && !c.options.IgnoreInvalidRules {
-			return fmt.Errorf("parser errors in include file %s: %v", include.File, includedParser.Errors())
-		}
-
-		// Recursively process includes in the included file first
-		// Use the directory of the included file as the new baseDir
-		if len(includedProgram.Includes) > 0 {
-			// Resolve the actual path for the included file to get its directory
-			// We use filepath.Join and filepath.Clean to get the canonical path
-			includedFilePath := filepath.Join(baseDir, include.File)
-			includedFileDir := filepath.Dir(filepath.Clean(includedFilePath))
-			processErr := c.processIncludesWithBaseDirContext(ctx, includedProgram, includedFileDir)
-			if processErr != nil {
-				return fmt.Errorf("failed to process includes in %s: %w", include.File, processErr)
-			}
-		}
-
-		// Add all rules from included file (including nested includes) to main program
-		program.Rules = append(program.Rules, includedProgram.Rules...)
-
-		// Also add any imports from the included file
-		program.Imports = append(program.Imports, includedProgram.Imports...)
 	}
 
+	return nil
+}
+
+func (traversal *includeTraversal) processInclude(program *ast.Program, baseDir string, include *ast.Include) error {
+	cleanIncludePath := filepath.Clean(filepath.Join(baseDir, include.File))
+
+	absBaseDir, err := filepath.Abs(baseDir)
+	if err != nil {
+		return fmt.Errorf("failed to resolve base directory: %w", err)
+	}
+	absBaseDir = filepath.Clean(absBaseDir)
+
+	absIncludePath, err := filepath.Abs(cleanIncludePath)
+	if err != nil {
+		return fmt.Errorf("failed to resolve include path: %w", err)
+	}
+	absIncludePath = filepath.Clean(absIncludePath)
+
+	if !strings.HasPrefix(absIncludePath, absBaseDir+string(filepath.Separator)) && absIncludePath != absBaseDir {
+		return fmt.Errorf("failed to read include file %s: path traversal detected", include.File)
+	}
+	if _, exists := traversal.activePaths[absIncludePath]; exists {
+		return fmt.Errorf("circular include detected: %s", include.File)
+	}
+	traversal.activePaths[absIncludePath] = struct{}{}
+	defer delete(traversal.activePaths, absIncludePath)
+
+	includedContent, err := os.ReadFile(cleanIncludePath)
+	if err != nil {
+		return fmt.Errorf("failed to read include file %s: %w", include.File, err)
+	}
+	if traversal.compiler.options.MaxIncludeSize > 0 &&
+		int64(len(includedContent)) > traversal.compiler.options.MaxIncludeSize {
+		return fmt.Errorf("include file %s size %d bytes exceeds maximum allowed %d bytes",
+			include.File, len(includedContent), traversal.compiler.options.MaxIncludeSize)
+	}
+
+	includedLexer := lexer.New(string(includedContent))
+	includedParser := parser.NewWithOptions(includedLexer, parser.Options{
+		MaxRecursionDepth: traversal.compiler.options.MaxRecursionDepth,
+	})
+	if traversal.compiler.options.IgnoreInvalidRules {
+		includedParser.SetErrorRecovery(true)
+		includedParser.SetSkipInvalidRules(true)
+	}
+	includedProgram, parseErr := includedParser.ParseRulesWithContext(traversal.ctx)
+	if parseErr != nil {
+		var partialErr *parser.PartialParseError
+		if !traversal.compiler.options.IgnoreInvalidRules ||
+			!errors.As(parseErr, &partialErr) ||
+			len(includedParser.ProgramErrors()) != 0 {
+			return fmt.Errorf("failed to parse include file %s: %w", include.File, parseErr)
+		}
+		includedProgram = partialErr.Program
+		for _, invalid := range includedParser.InvalidRules() {
+			traversal.compiler.recordParseInvalidRule(invalid)
+		}
+	}
+	if len(includedParser.Errors()) > 0 && !traversal.compiler.options.IgnoreInvalidRules {
+		return fmt.Errorf("parser errors in include file %s: %v", include.File, includedParser.Errors())
+	}
+
+	if len(includedProgram.Includes) > 0 {
+		if err := traversal.processTree(includedProgram, filepath.Dir(absIncludePath)); err != nil {
+			return fmt.Errorf("failed to process includes in %s: %w", include.File, err)
+		}
+	}
+
+	program.Rules = append(program.Rules, includedProgram.Rules...)
+	program.Imports = append(program.Imports, includedProgram.Imports...)
 	return nil
 }
 
