@@ -3,6 +3,7 @@ package compiler
 import (
 	"errors"
 	"fmt"
+	"math"
 	"regexp"
 	"slices"
 	"sort"
@@ -182,14 +183,6 @@ func (cc *ConditionCompiler) findStringOffset(name string) (int, bool) {
 		return offset, true
 	}
 	return 0, false
-}
-
-func (cc *ConditionCompiler) emitStringOffset(offset, line, column int) {
-	if offset < 0 {
-		cc.emitter.EmitOpcodeWithOperand(OpPushM, Operand{Type: OperandImmediate64, Value: uint64(0)}, line, column)
-	} else {
-		cc.emitter.EmitOpcodeWithOperand(OpPushM, Operand{Type: OperandImmediate64, Value: uint64(int64(offset))}, line, column) // #nosec G115
-	}
 }
 
 //nolint:revive // argument-limit: internal helper
@@ -455,18 +448,23 @@ func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 	}
 
 	if ruleIndex, exists := cc.ruleIndexMap[ident.Name]; exists {
-		cc.emitter.EmitOpcodeWithOperand(OpPushRule, Operand{Type: OperandImmediate8, Value: uint64(int64(ruleIndex))}, ident.Pos.Line, ident.Pos.Column) // #nosec G115
+		if ruleIndex < 0 || ruleIndex > math.MaxUint8 {
+			return fmt.Errorf("rule reference index %d exceeds bytecode capacity", ruleIndex)
+		}
+		cc.emitter.EmitOpcodeWithOperand(
+			OpPushRule,
+			Operand{Type: OperandImmediate8, Value: uint64(ruleIndex)},
+			ident.Pos.Line,
+			ident.Pos.Column,
+		)
 		return nil
 	}
 
 	specialIdentifiers := map[string]func(){
-		"filesize":     func() { cc.emitter.EmitOpcode(OpFilesize, ident.Pos.Line, ident.Pos.Column) },
-		"entrypoint":   func() { cc.emitter.EmitOpcode(OpEntrypoint, ident.Pos.Line, ident.Pos.Column) },
-		"them":         func() { cc.emitter.EmitPush(stringSetAll, ident.Pos.Line, ident.Pos.Column) },
-		"flags":        func() { cc.emitter.EmitPush(0, ident.Pos.Line, ident.Pos.Column) },
-		QuantifierAny:  func() { cc.emitter.EmitOpcode(OpPush8, ident.Pos.Line, ident.Pos.Column) },
-		QuantifierAll:  func() { cc.emitter.EmitOpcode(OpPush8, ident.Pos.Line, ident.Pos.Column) },
-		QuantifierNone: func() { cc.emitter.EmitOpcode(OpPush8, ident.Pos.Line, ident.Pos.Column) },
+		"filesize":   func() { cc.emitter.EmitOpcode(OpFilesize, ident.Pos.Line, ident.Pos.Column) },
+		"entrypoint": func() { cc.emitter.EmitOpcode(OpEntrypoint, ident.Pos.Line, ident.Pos.Column) },
+		"them":       func() { cc.emitter.EmitPush(stringSetAll, ident.Pos.Line, ident.Pos.Column) },
+		"flags":      func() { cc.emitter.EmitPush(0, ident.Pos.Line, ident.Pos.Column) },
 	}
 
 	if handler, exists := specialIdentifiers[ident.Name]; exists {
@@ -1127,45 +1125,6 @@ func (cc *ConditionCompiler) compileStringCount(strCount *ast.StringCount) error
 	cc.emitter.EmitOpcode(OpCount, strCount.Pos.Line, strCount.Pos.Column)
 	return nil
 }
-
-/*
-// func (cc *ConditionCompiler) compileArrayIndex(arrayIndex *ast.ArrayIndex) error {
-	unaryOp, ok := arrayIndex.Array.(*ast.UnaryOp)
-	if !ok {
-		return errors.New("array indexing requires @ or # operator")
-	}
-
-	if err := cc.compileExpression(arrayIndex.Index); err != nil {
-		return err
-	}
-
-	if unaryOp.Op != token.AT && unaryOp.Op != token.HASH {
-		return fmt.Errorf("unsupported operator for array indexing: %s", unaryOp.Op)
-	}
-
-	ident, isIdent := unaryOp.Right.(*ast.Identifier)
-	if !isIdent {
-		return fmt.Errorf("%s operator expects a string identifier", map[token.Type]string{
-			token.AT: "@", token.HASH: "#",
-		}[unaryOp.Op])
-	}
-
-	offset, hasOffset := cc.stringOffsets[ident.Name]
-	if !hasOffset {
-		return fmt.Errorf("undefined string identifier: %s", ident.Name)
-	}
-
-	cc.emitter.EmitOpcodeWithOperand(OpPushM, Operand{Type: OperandImmediate64, Value: uint64(int64(offset))}, arrayIndex.Pos.Line, arrayIndex.Pos.Column) // #nosec G115
-
-	marker := int64(0)
-	if unaryOp.Op == token.HASH {
-		marker = 1
-	}
-	cc.emitter.EmitPush(safeInt64ToUint64(marker), arrayIndex.Pos.Line, arrayIndex.Pos.Column)
-	cc.emitter.EmitOpcode(OpIndexArray, arrayIndex.Pos.Line, arrayIndex.Pos.Column)
-	return nil
-}
-*/
 
 // AddVariable adds a variable to the compiler's variable map
 func (cc *ConditionCompiler) AddVariable(name string, index int) {
@@ -1990,9 +1949,12 @@ func (cc *ConditionCompiler) compileRuleReference(ruleName string, line, column 
 	if !exists {
 		return fmt.Errorf("undefined rule reference: %s", ruleName)
 	}
+	if ruleIndex < 0 || ruleIndex > math.MaxUint8 {
+		return fmt.Errorf("rule reference index %d exceeds bytecode capacity", ruleIndex)
+	}
 
 	cc.emitter.EmitOpcodeWithOperand(OpPushRuleRef,
-		Operand{Type: OperandImmediate64, Value: uint64(int64(ruleIndex))}, // #nosec G115
+		Operand{Type: OperandImmediate8, Value: uint64(ruleIndex)},
 		line, column)
 	return nil
 }

@@ -189,6 +189,10 @@ const OpLoadVar Opcode = 91
 // OpIterPushTotal pushes the total count of the currently active iterator to the stack.
 const OpIterPushTotal Opcode = 92
 
+// OpPush64 pushes a 64-bit integer. It has a distinct opcode because OpPushU
+// represents an undefined value and carries no operand.
+const OpPush64 Opcode = 93
+
 // Opcode categories for classification
 const (
 	OpCategoryControl    = "control"
@@ -225,7 +229,7 @@ func isArithmeticOpcode(op Opcode) bool {
 func isStackOpcode(op Opcode) bool {
 	return (op >= OpPush && op <= OpCall) ||
 		(op >= OpPush8 && op <= OpPushRuleRef) ||
-		op == OpPushStr || op == OpLoadVar
+		op == OpPushStr || op == OpLoadVar || op == OpPush64
 }
 
 // isObjectOpcode checks if opcode is an object operation
@@ -360,6 +364,7 @@ var opcodeNames = map[Opcode]string{
 	OpPushU:                  "PUSH_U",
 	OpPushDbl:                "PUSH_DBL",
 	OpPushRuleRef:            "PUSH_RULE_REF",
+	OpPush64:                 "PUSH_64",
 	OpContains:               "CONTAINS",
 	OpStartswith:             "STARTSWITH",
 	OpEndswith:               "ENDSWITH",

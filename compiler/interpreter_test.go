@@ -58,6 +58,15 @@ func TestInterpreterBasicStack(t *testing.T) {
 			}(),
 			expected: 65536,
 		},
+		{
+			name: "push_64_and_halt",
+			bytecode: []byte{
+				byte(OpPush64),
+				0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+				byte(OpHalt),
+			},
+			expected: 1 << 32,
+		},
 	}
 
 	for _, tt := range tests {
@@ -292,7 +301,7 @@ func TestInterpreterMemory(t *testing.T) {
 			name: "clear_memory",
 			bytecode: func() []byte {
 				b := []byte{byte(OpClearM)}
-				b = append(b, 0, 0, 0, 0, 0, 0, 0, 0, byte(OpHalt)) // addr 0 + halt
+				b = append(b, 0, 0, 0, 0, byte(OpHalt)) // addr 0 + halt
 				return b
 			}(),
 			memAddr:  0,
@@ -302,7 +311,7 @@ func TestInterpreterMemory(t *testing.T) {
 			name: "push_and_pop_memory",
 			bytecode: func() []byte {
 				b := []byte{byte(OpPush8), 42}
-				b = append(b, byte(OpPopM), 0, 0, 0, 0, 0, 0, 0, 0, byte(OpPushM), 0, 0, 0, 0, 0, 0, 0, 0, byte(OpHalt)) // addr 0 + halt
+				b = append(b, byte(OpPopM), 0, 0, 0, 0, byte(OpPushM), 0, 0, 0, 0, byte(OpHalt)) // addr 0 + halt
 				return b
 			}(),
 			memAddr:  0,
@@ -459,9 +468,9 @@ func TestInterpreterMiscOps(t *testing.T) {
 			name: "increment_memory",
 			bytecode: func() []byte {
 				b := []byte{byte(OpIncrM)}
-				b = append(b, 0, 0, 0, 0, 0, 0, 0, 0, // addr 0
-					byte(OpIncrM), 0, 0, 0, 0, 0, 0, 0, 0, // addr 0
-					byte(OpPushM), 0, 0, 0, 0, 0, 0, 0, 0, // addr 0
+				b = append(b, 0, 0, 0, 0, // addr 0
+					byte(OpIncrM), 0, 0, 0, 0, // addr 0
+					byte(OpPushM), 0, 0, 0, 0, // addr 0
 					byte(OpHalt))
 				return b
 			}(),

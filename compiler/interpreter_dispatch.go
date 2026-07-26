@@ -21,6 +21,7 @@ func init() {
 	opcodeTable[OpPush16] = (*Interpreter).executePush16
 	opcodeTable[OpPush32] = (*Interpreter).executePush32
 	opcodeTable[OpPushU] = (*Interpreter).executePushU
+	opcodeTable[OpPush64] = (*Interpreter).executePush64
 	opcodeTable[OpPushDbl] = (*Interpreter).executePushDouble
 	opcodeTable[OpPushRuleRef] = (*Interpreter).executePushRuleRef
 	opcodeTable[OpPushStr] = (*Interpreter).executePushString

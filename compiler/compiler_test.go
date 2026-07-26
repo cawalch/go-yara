@@ -513,7 +513,7 @@ func TestEmitterJumpFixup(t *testing.T) {
 	emitter := NewEmitter()
 
 	// Emit some instructions
-	emitter.EmitOpcode(OpPush8, 1, 1)
+	emitter.EmitPush(1, 1, 1)
 	jumpOffset := emitter.EmitJump(JumpConfig{Opcode: OpJz, Target: 10, Line: 1, Pos: 1})
 	emitter.EmitOpcode(OpNop, 1, 1)
 	emitter.EmitLabel(10, 1, 1)
@@ -595,23 +595,35 @@ func TestEmitterOpCategoryGuards(t *testing.T) {
 
 // TestEmitterPushVariousSizes tests push instruction with various value sizes
 func TestEmitterPushVariousSizes(t *testing.T) {
-	emitter := NewEmitter()
-
 	tests := []struct {
-		name  string
-		value uint64
+		name        string
+		value       uint64
+		opcode      Opcode
+		operandType OperandType
 	}{
-		{name: "8-bit_value", value: 0xFF},
-		{name: "16-bit_value", value: 0xFFFF},
-		{name: "32-bit_value", value: 0xFFFFFFFF},
-		{name: "64-bit_value", value: 0xFFFFFFFFFFFFFFFF},
+		{name: "8-bit_value", value: 0xFF, opcode: OpPush8, operandType: OperandImmediate8},
+		{name: "16-bit_value", value: 0xFFFF, opcode: OpPush16, operandType: OperandImmediate16},
+		{name: "32-bit_value", value: 0xFFFFFFFF, opcode: OpPush32, operandType: OperandImmediate32},
+		{name: "64-bit_value", value: 0xFFFFFFFFFFFFFFFF, opcode: OpPush64, operandType: OperandImmediate64},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			emitter := NewEmitter()
 			offset := emitter.EmitPush(tt.value, 1, 1)
 			if offset < 0 {
-				t.Errorf("EmitPush() returned negative offset %d", offset)
+				t.Fatalf("EmitPush() returned negative offset %d", offset)
+			}
+
+			instructions := emitter.GetInstructions()
+			if len(instructions) != 1 {
+				t.Fatalf("EmitPush() emitted %d instructions, want 1", len(instructions))
+			}
+			if got := instructions[0].Opcode; got != tt.opcode {
+				t.Errorf("EmitPush() opcode = %s, want %s", got, tt.opcode)
+			}
+			if got := instructions[0].Operand.Type; got != tt.operandType {
+				t.Errorf("EmitPush() operand type = %d, want %d", got, tt.operandType)
 			}
 		})
 	}
@@ -622,7 +634,7 @@ func TestEmitterGetBytecode(t *testing.T) {
 	emitter := NewEmitter()
 
 	// Emit some instructions
-	emitter.EmitOpcode(OpPush8, 1, 1)
+	emitter.EmitPush(1, 1, 1)
 	emitter.EmitOpcode(OpNop, 1, 1)
 	emitter.EmitHalt(1, 1)
 
@@ -1475,7 +1487,7 @@ func TestEmitterGetInstructions(t *testing.T) {
 	emitter := NewEmitter()
 
 	// Emit some instructions
-	emitter.EmitOpcode(OpPush8, 1, 1)
+	emitter.EmitPush(1, 1, 1)
 	emitter.EmitOpcode(OpNop, 1, 1)
 	emitter.EmitHalt(1, 1)
 
@@ -1491,7 +1503,7 @@ func TestEmitterGetLineNumber(t *testing.T) {
 	emitter := NewEmitter()
 
 	// Emit an instruction with line number
-	emitter.EmitOpcode(OpPush8, 42, 1)
+	emitter.EmitPush(1, 42, 1)
 
 	// Get line number
 	lineNum, exists := emitter.GetLineNumber(0)
@@ -1527,7 +1539,7 @@ func TestEmitterPrintInstructions(t *testing.T) {
 	emitter := NewEmitter()
 
 	// Emit some instructions
-	emitter.EmitOpcode(OpPush8, 1, 1)
+	emitter.EmitPush(1, 1, 1)
 	emitter.EmitOpcode(OpNop, 1, 1)
 	emitter.EmitHalt(1, 1)
 
@@ -1542,7 +1554,7 @@ func TestEmitterPrintBytecode(t *testing.T) {
 	emitter := NewEmitter()
 
 	// Emit some instructions
-	emitter.EmitOpcode(OpPush8, 1, 1)
+	emitter.EmitPush(1, 1, 1)
 	emitter.EmitHalt(1, 1)
 
 	var err error
@@ -2576,6 +2588,7 @@ func TestOpcodeStringCoverage(t *testing.T) {
 			{OpPush8, "PUSH_8"},
 			{OpPush16, "PUSH_16"},
 			{OpPush32, "PUSH_32"},
+			{OpPush64, "PUSH_64"},
 			{OpPushStr, "PUSH_STR"},
 		},
 		"Object": {
@@ -2815,9 +2828,9 @@ func TestInstructionBytes(t *testing.T) {
 		},
 		{
 			name:      "immediate64",
-			instr:     NewInstructionWithOperand(OpPushU, Operand{Type: OperandImmediate64, Value: 1000000}, 1, 1),
+			instr:     NewInstructionWithOperand(OpPush64, Operand{Type: OperandImmediate64, Value: 1000000}, 1, 1),
 			minLen:    9,
-			firstByte: byte(OpPushU),
+			firstByte: byte(OpPush64),
 		},
 	}
 
@@ -2863,7 +2876,7 @@ func TestInstructionSize(t *testing.T) {
 		},
 		{
 			name:     "immediate64",
-			instr:    NewInstructionWithOperand(OpPushU, Operand{Type: OperandImmediate64, Value: 1000000}, 1, 1),
+			instr:    NewInstructionWithOperand(OpPush64, Operand{Type: OperandImmediate64, Value: 1000000}, 1, 1),
 			expected: 9,
 		},
 		{
