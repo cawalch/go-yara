@@ -118,8 +118,8 @@ func (sc *StringCompiler) encodeTextBytes(text string, isWide bool) []byte {
 
 		// Convert runes to UTF-16LE bytes in single pass
 		for i, r := range runes {
-			v := uint16(r)
-			result[i*2] = byte(v)
+			v := uint16(r) //checkednarrow:ignore existing wide-string encoding keeps the low UTF-16 code unit
+			result[i*2] = byte(v & 0xff)
 			result[i*2+1] = byte(v >> 8)
 		}
 		return result
@@ -148,7 +148,7 @@ func (sc *StringCompiler) encodeToWideBytes(text string) []byte {
 	utf16Data := utf16.Encode([]rune(text))
 	result := make([]byte, len(utf16Data)*2)
 	for i, v := range utf16Data {
-		result[i*2] = byte(v)
+		result[i*2] = byte(v & 0xff)
 		result[i*2+1] = byte(v >> 8)
 	}
 	return result
@@ -257,6 +257,9 @@ func (sc *StringCompiler) xorKeys(modifiers []ast.StringModifier) ([]byte, bool)
 		seen := make(map[byte]struct{})
 		for _, r := range ranges {
 			for k := r.min; k <= r.max; k++ {
+				if k < 0 || k > 0xff {
+					continue
+				}
 				b := byte(k)
 				if _, ok := seen[b]; ok {
 					continue

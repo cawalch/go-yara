@@ -71,6 +71,9 @@ func (set ByteSet) ContiguousRange() (byte, byte, bool) {
 	for upper >= 0 && !set.Contains(byte(upper)) {
 		upper--
 	}
+	if lower < 0 || lower > 255 || upper < 0 || upper > 255 {
+		return 0, 0, false
+	}
 	if upper-lower+1 != count {
 		return 0, 0, false
 	}

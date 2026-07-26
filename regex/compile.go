@@ -91,7 +91,7 @@ func (c *Compiler) patchI16(at int, v int16) {
 	// Safe conversion with explicit truncation
 	// This conversion is intentional - we're reinterpreting signed int16 bits as uint16 for encoding
 	u := uint16(v) // #nosec G115 - intentional reinterpretation of signed bits as unsigned for encoding
-	c.e.buf[at+0] = byte(u)
+	c.e.buf[at+0] = byte(u & 0xff)
 	c.e.buf[at+1] = byte(u >> 8)
 }
 

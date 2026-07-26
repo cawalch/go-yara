@@ -643,6 +643,38 @@ func TestInterpreterReadIntOpcodes64Bit(t *testing.T) {
 	}
 }
 
+func TestInterpreterReadInt64SignedNegative(t *testing.T) {
+	tests := []struct {
+		name   string
+		opcode Opcode
+		data   []byte
+	}{
+		{
+			name:   "little_endian",
+			opcode: OpInt64,
+			data:   []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff},
+		},
+		{
+			name:   "big_endian",
+			opcode: OpInt64be,
+			data:   []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			interp := NewInterpreter([]byte{byte(OpPush8), 0, byte(test.opcode), byte(OpHalt)})
+			interp.matchContext.Data = test.data
+			if err := interp.Execute(); err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+			if got := interp.GetStack()[0].IntVal; got != -1 {
+				t.Fatalf("signed 64-bit read = %d, want -1", got)
+			}
+		})
+	}
+}
+
 // TestInterpreterNegation tests negation operations
 func TestInterpreterNegation(t *testing.T) {
 	tests := []struct {

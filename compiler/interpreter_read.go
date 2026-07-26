@@ -177,7 +177,7 @@ func (i *Interpreter) readInt8(data []byte, offset int64, unsigned bool) (int64,
 	if unsigned {
 		return int64(val), nil
 	}
-	return int64(int8(val)), nil
+	return int64(int8(val)), nil //checkednarrow:ignore byte bits are interpreted as a signed int8
 }
 
 // readInt16 reads a 16-bit little-endian integer.
@@ -244,15 +244,9 @@ func safeUint32ToInt64(val uint32, unsigned bool) int64 {
 	return int64(val)
 }
 
-// safeUint64ToInt64 converts uint64 to int64 with optional sign extension.
-func safeUint64ToInt64(val uint64, unsigned bool) int64 {
-	if unsigned {
-		return int64(val)
-	}
-	if val&0x8000000000000000 != 0 {
-		return int64(^val + 1)
-	}
-	return int64(val)
+// safeUint64ToInt64 preserves the uint64 bit pattern in the VM's int64 value.
+func safeUint64ToInt64(val uint64, _ bool) int64 {
+	return int64(val) //checkednarrow:ignore uint64 bits are represented in the signed VM integer
 }
 
 // safeByteToInt64 converts a byte to int64 with optional sign extension.

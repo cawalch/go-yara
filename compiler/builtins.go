@@ -28,7 +28,7 @@ func encodeBuiltinCall(fn builtinFunction, argc int) uint64 {
 }
 
 func decodeBuiltinCall(encoded uint32) (builtinFunction, int) {
-	fn := builtinFunction(encoded >> builtinArgShift)
+	fn := builtinFunction((encoded >> builtinArgShift) & uint32(^builtinFunction(0)))
 	argc := int(encoded & builtinArgMask)
 	return fn, argc
 }

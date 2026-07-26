@@ -3,11 +3,35 @@ package compiler
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"slices"
+	"strconv"
 	"testing"
 
 	"github.com/cawalch/go-yara/regex"
 )
+
+func TestMustACIndex(t *testing.T) {
+	if got := mustACIndex(math.MaxInt32); got != math.MaxInt32 {
+		t.Fatalf("mustACIndex(MaxInt32) = %d", got)
+	}
+
+	invalid := []int{-1}
+	tooLarge := int64(math.MaxInt32) + 1
+	if strconv.IntSize == 64 {
+		invalid = append(invalid, int(tooLarge))
+	}
+	for _, value := range invalid {
+		t.Run(fmt.Sprintf("%d", value), func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Fatalf("mustACIndex(%d) did not panic", value)
+				}
+			}()
+			mustACIndex(value)
+		})
+	}
+}
 
 // TestACAutomaton tests the Aho-Corasick automaton
 func TestACAutomaton(t *testing.T) {
