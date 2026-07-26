@@ -49,9 +49,12 @@ func TestConditionCompiler_StringOffsetFunctions(t *testing.T) {
 	})
 
 	t.Run("emit functions", func(t *testing.T) {
+		before := emitter.GetInstructionCount()
 		cc.emitStringOffset(0, 1, 1)
 		cc.emitStringIdentifier(0, "$test", 1, 1)
-		t.Log("String offset functions executed without error")
+		if emitter.GetInstructionCount() <= before {
+			t.Fatal("string offset emitters did not emit instructions")
+		}
 	})
 }
 
@@ -64,27 +67,36 @@ func TestConditionCompiler_VariableManagement(t *testing.T) {
 	t.Run("SetRuleIndexMap", func(t *testing.T) {
 		ruleIndexMap := map[string]int{"rule1": 0}
 		cc.SetRuleIndexMap(ruleIndexMap)
-		t.Log("SetRuleIndexMap executed without error")
+		if index, ok := cc.ruleIndexMap["rule1"]; !ok || index != 0 {
+			t.Fatalf("SetRuleIndexMap() map = %v, want rule1 at index 0", cc.ruleIndexMap)
+		}
 	})
 
 	t.Run("Variable maps", func(t *testing.T) {
 		cc.AddVariable("test_var", 0)
 
 		varMap := cc.GetVariableMap()
-		if varMap == nil {
-			t.Error("GetVariableMap returned nil")
+		if index, ok := varMap["test_var"]; !ok || index != 0 {
+			t.Fatalf("GetVariableMap() = %v, want test_var at index 0", varMap)
 		}
 
-		extVars := cc.GetExternalVariables()
-		if extVars == nil {
-			t.Error("GetExternalVariables returned nil")
+		cc.SetExternalVariables(map[string]int{"external": 1})
+		if index, ok := cc.GetExternalVariables()["external"]; !ok || index != 1 {
+			t.Fatalf("GetExternalVariables() = %v, want external at index 1", cc.GetExternalVariables())
+		}
+
+		cc.SetGlobalVariables(map[string]int{"global": 2})
+		if index, ok := cc.GetGlobalVariables()["global"]; !ok || index != 2 {
+			t.Fatalf("GetGlobalVariables() = %v, want global at index 2", cc.GetGlobalVariables())
 		}
 	})
 
 	t.Run("SetStringOffsets", func(t *testing.T) {
 		newOffsets := map[string]int{"$new": 1}
 		cc.SetStringOffsets(newOffsets)
-		t.Log("SetStringOffsets executed without error")
+		if offset, ok := cc.findStringOffset("$new"); !ok || offset != 1 {
+			t.Fatalf("findStringOffset($new) = %d, %v, want 1, true", offset, ok)
+		}
 	})
 }
 
@@ -98,8 +110,9 @@ func TestConditionCompiler_BooleanExpressions(t *testing.T) {
 
 	t.Run("CompileBooleanExpression", func(t *testing.T) {
 		expr := builder.Literal(pos, token.TRUE, true)
-		err := cc.CompileBooleanExpression(expr, false)
-		t.Logf("CompileBooleanExpression result: %v", err)
+		if err := cc.CompileBooleanExpression(expr, false); err != nil {
+			t.Fatalf("CompileBooleanExpression() error = %v", err)
+		}
 	})
 
 	t.Run("Short circuit functions", func(t *testing.T) {
@@ -107,9 +120,12 @@ func TestConditionCompiler_BooleanExpressions(t *testing.T) {
 		andOp := builder.BinaryOp(pos, expr, token.AND, expr)
 		orOp := builder.BinaryOp(pos, expr, token.OR, expr)
 
-		_ = cc.compileShortCircuitAnd(andOp)
-		_ = cc.compileShortCircuitOr(orOp)
-		t.Log("Boolean expression functions executed without error")
+		if err := cc.compileShortCircuitAnd(andOp); err != nil {
+			t.Fatalf("compileShortCircuitAnd() error = %v", err)
+		}
+		if err := cc.compileShortCircuitOr(orOp); err != nil {
+			t.Fatalf("compileShortCircuitOr() error = %v", err)
+		}
 	})
 }
 
@@ -128,8 +144,9 @@ func TestConditionCompiler_SpecialOperators(t *testing.T) {
 			token.AT,
 			builder.Literal(pos, token.IntegerLit, 0),
 		)
-		err := cc.compileStringOffsetOperator(atExpr)
-		t.Logf("compileStringOffsetOperator result: %v", err)
+		if err := cc.compileStringOffsetOperator(atExpr); err != nil {
+			t.Fatalf("compileStringOffsetOperator() error = %v", err)
+		}
 	})
 
 	t.Run("Hash operator", func(t *testing.T) {
@@ -138,8 +155,9 @@ func TestConditionCompiler_SpecialOperators(t *testing.T) {
 			token.HASH,
 			builder.Identifier(pos, "$test"),
 		)
-		err := cc.compileHashOperator(hashExpr)
-		t.Logf("compileHashOperator result: %v", err)
+		if err := cc.compileHashOperator(hashExpr); err != nil {
+			t.Fatalf("compileHashOperator() error = %v", err)
+		}
 	})
 
 	t.Run("At operator", func(t *testing.T) {
@@ -148,8 +166,9 @@ func TestConditionCompiler_SpecialOperators(t *testing.T) {
 			token.AT,
 			builder.Identifier(pos, "$test"),
 		)
-		err := cc.compileAtOperator(atUnaryExpr)
-		t.Logf("compileAtOperator result: %v", err)
+		if err := cc.compileAtOperator(atUnaryExpr); err != nil {
+			t.Fatalf("compileAtOperator() error = %v", err)
+		}
 	})
 
 	t.Run("Defined operator", func(t *testing.T) {
@@ -159,13 +178,16 @@ func TestConditionCompiler_SpecialOperators(t *testing.T) {
 			builder.Identifier(pos, "test_var"),
 		)
 		err := cc.compileDefinedOperator(definedExpr)
-		t.Logf("compileDefinedOperator result: %v", err)
+		if err == nil || !strings.Contains(err.Error(), "undefined identifier: test_var") {
+			t.Fatalf("compileDefinedOperator() error = %v, want undefined identifier", err)
+		}
 	})
 
 	t.Run("Size literal", func(t *testing.T) {
 		sizeExpr := builder.Literal(pos, token.StringLit, "10KB")
-		err := cc.compileSizeLiteral(sizeExpr)
-		t.Logf("compileSizeLiteral result: %v", err)
+		if err := cc.compileSizeLiteral(sizeExpr); err != nil {
+			t.Fatalf("compileSizeLiteral() error = %v", err)
+		}
 	})
 }
 
@@ -183,8 +205,9 @@ func TestConditionCompiler_AdvancedExpressions(t *testing.T) {
 			builder.Literal(pos, token.IntegerLit, 1),
 			builder.Identifier(pos, "them"),
 		)
-		err := cc.compileOfExpression(ofExpr)
-		t.Logf("compileOfExpression result: %v", err)
+		if err := cc.compileOfExpression(ofExpr); err != nil {
+			t.Fatalf("compileOfExpression() error = %v", err)
+		}
 	})
 
 	t.Run("Count expression", func(t *testing.T) {
@@ -193,14 +216,16 @@ func TestConditionCompiler_AdvancedExpressions(t *testing.T) {
 			builder.Literal(pos, token.IntegerLit, 1),
 			builder.Identifier(pos, "them"),
 		)
-		err := cc.compileCountExpression(ofExpr)
-		t.Logf("compileCountExpression result: %v", err)
+		if err := cc.compileCountExpression(ofExpr); err != nil {
+			t.Fatalf("compileCountExpression() error = %v", err)
+		}
 	})
 
 	t.Run("Strings expression", func(t *testing.T) {
 		stringsExpr := builder.Identifier(pos, "them")
-		err := cc.compileStringsExpression(stringsExpr)
-		t.Logf("compileStringsExpression result: %v", err)
+		if err := cc.compileStringsExpression(stringsExpr); err != nil {
+			t.Fatalf("compileStringsExpression() error = %v", err)
+		}
 	})
 
 	t.Run("Function call", func(t *testing.T) {
@@ -212,7 +237,9 @@ func TestConditionCompiler_AdvancedExpressions(t *testing.T) {
 			},
 		)
 		err := cc.compileFunctionCall(fnCall)
-		t.Logf("compileFunctionCall result: %v", err)
+		if err == nil || !strings.Contains(err.Error(), "unsupported module: pe") {
+			t.Fatalf("compileFunctionCall() error = %v, want unsupported pe module", err)
+		}
 	})
 
 	t.Run("String length", func(t *testing.T) {
@@ -220,8 +247,9 @@ func TestConditionCompiler_AdvancedExpressions(t *testing.T) {
 			pos,
 			builder.Identifier(pos, "$test"),
 		)
-		err := cc.compileStringLength(strLenExpr)
-		t.Logf("compileStringLength result: %v", err)
+		if err := cc.compileStringLength(strLenExpr); err != nil {
+			t.Fatalf("compileStringLength() error = %v", err)
+		}
 	})
 }
 
@@ -233,8 +261,9 @@ func TestConditionCompiler_RuleReferences(t *testing.T) {
 
 	t.Run("isRuleReference", func(t *testing.T) {
 		ruleName := "test_rule"
-		isRef := cc.isRuleReference(ruleName)
-		t.Logf("isRuleReference result: %v", isRef)
+		if cc.isRuleReference(ruleName) {
+			t.Fatalf("isRuleReference(%q) = true, want false", ruleName)
+		}
 	})
 
 	t.Run("compileRuleReference", func(t *testing.T) {
@@ -242,7 +271,9 @@ func TestConditionCompiler_RuleReferences(t *testing.T) {
 		line := 1
 		column := 1
 		err := cc.compileRuleReference(ruleName, line, column)
-		t.Logf("compileRuleReference result: %v", err)
+		if err == nil || !strings.Contains(err.Error(), "undefined rule reference: test_rule") {
+			t.Fatalf("compileRuleReference() error = %v, want undefined rule reference", err)
+		}
 	})
 
 	t.Run("emitModuleFunctionCall", func(t *testing.T) {
@@ -346,12 +377,12 @@ func TestConditionCompiler_MixedTypeOperations(t *testing.T) {
 
 		cc.handleBitShiftFloatConversion(bitShiftOp, false, true, false)
 		result := cc.handleMixedTypeLiteralComparison(comparisonOp)
-		t.Logf("handleMixedTypeLiteralComparison result: %v", result)
+		if !result {
+			t.Fatal("handleMixedTypeLiteralComparison() = false, want true")
+		}
 
 		cc.convertForMixedTypeComparison(comparisonOp, false, true)
 		cc.convertForMixedTypeArithmetic(arithmeticOp, false, true)
-
-		t.Log("Mixed type operation handlers executed without error")
 	})
 }
 
@@ -393,16 +424,14 @@ func TestConditionCompiler_OptimizationAndValidation(t *testing.T) {
 			TargetLabel: "test_label",
 			Position:    JumpPosition{Line: 1, Column: 1},
 		}
-		err := cc.EmitJump(config)
-		t.Logf("EmitJump result: %v", err)
+		if err := cc.EmitJump(config); err != nil {
+			t.Fatalf("EmitJump() error = %v", err)
+		}
 	})
 }
 
 // TestConditionCompilerEdgeCasesAndErrors tests edge cases and error conditions
 func TestConditionCompilerEdgeCasesAndErrors(t *testing.T) {
-	emitter := NewEmitter()
-	_ = NewConditionCompiler(emitter, map[string]int{})
-
 	t.Run("NilAndEmptyInputs", testConditionCompilerNilInputs)
 	t.Run("UndefinedReferences", testConditionCompilerUndefinedReferences)
 	t.Run("InvalidSizeLiterals", testConditionCompilerInvalidSizeLiterals)
@@ -421,18 +450,20 @@ func testConditionCompilerNilInputs(t *testing.T) {
 	}{
 		{
 			name: "nil_string_offsets_map",
-			test: func(_ *testing.T, _ *ConditionCompiler) {
+			test: func(t *testing.T, _ *ConditionCompiler) {
 				nilCC := NewConditionCompiler(emitter, nil)
-				_, _ = nilCC.findStringOffset("$test")
-				// Note: This is just a coverage test
-				// Log the result for debugging purposes (coverage test)
+				if offset, ok := nilCC.findStringOffset("$test"); ok {
+					t.Fatalf("findStringOffset() = %d, true with nil offsets, want not found", offset)
+				}
 			},
 		},
 		{
 			name: "nil_expression_validation",
 			test: func(t *testing.T, cc *ConditionCompiler) {
 				err := cc.ValidateExpression(nil)
-				t.Logf("ValidateExpression with nil result: %v", err)
+				if err == nil || !strings.Contains(err.Error(), "unsupported expression type") {
+					t.Fatalf("ValidateExpression(nil) error = %v, want unsupported expression type", err)
+				}
 			},
 		},
 	}
@@ -457,9 +488,10 @@ func testConditionCompilerUndefinedReferences(t *testing.T) {
 	}{
 		{
 			name: "undefined_string",
-			test: func(_ *testing.T, cc *ConditionCompiler, _ *ast.Builder, _ token.Position) {
-				_, _ = cc.findStringOffset("$undefined")
-				// Note: This is just a coverage test
+			test: func(t *testing.T, cc *ConditionCompiler, _ *ast.Builder, _ token.Position) {
+				if offset, ok := cc.findStringOffset("$undefined"); ok {
+					t.Fatalf("findStringOffset() = %d, true for undefined string", offset)
+				}
 			},
 		},
 		{
@@ -467,7 +499,9 @@ func testConditionCompilerUndefinedReferences(t *testing.T) {
 			test: func(t *testing.T, cc *ConditionCompiler, builder *ast.Builder, pos token.Position) {
 				undefinedExpr := builder.Identifier(pos, "undefined_var")
 				err := cc.compileExpression(undefinedExpr)
-				t.Logf("Compilation with undefined variable result: %v", err)
+				if err == nil || !strings.Contains(err.Error(), "undefined identifier: undefined_var") {
+					t.Fatalf("compileExpression() error = %v, want undefined identifier", err)
+				}
 			},
 		},
 	}
@@ -510,8 +544,9 @@ func testConditionCompilerComplexExpressions(t *testing.T) {
 	builder := ast.NewBuilder()
 
 	tests := []struct {
-		name string
-		expr ast.Expression
+		name          string
+		expr          ast.Expression
+		errorContains string
 	}{
 		{
 			name: "nested_function_call",
@@ -527,6 +562,7 @@ func testConditionCompilerComplexExpressions(t *testing.T) {
 				token.EQ,
 				builder.Literal(pos, token.IntegerLit, 42),
 			),
+			errorContains: "unsupported module: module",
 		},
 		{
 			name: "chained_binary_ops",
@@ -541,13 +577,16 @@ func testConditionCompilerComplexExpressions(t *testing.T) {
 				token.MULTIPLY,
 				builder.Identifier(pos, "c"),
 			),
+			errorContains: "undefined identifier: c",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := cc.compileExpression(tt.expr)
-			t.Logf("Complex expression compilation result for %s: %v", tt.name, err)
+			if err == nil || !strings.Contains(err.Error(), tt.errorContains) {
+				t.Fatalf("compileExpression() error = %v, want substring %q", err, tt.errorContains)
+			}
 		})
 	}
 }
@@ -592,7 +631,9 @@ func testConditionCompilerFunctionCallVariations(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			fn := builder.FunctionCall(pos, tt.function, tt.args)
 			err := cc.compileFunctionCall(fn)
-			t.Logf("Function call compilation result for %s: %v", tt.name, err)
+			if err == nil || !strings.Contains(err.Error(), "unsupported module: test") {
+				t.Fatalf("compileFunctionCall() error = %v, want unsupported test module", err)
+			}
 		})
 	}
 }

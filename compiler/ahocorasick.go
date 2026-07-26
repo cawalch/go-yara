@@ -38,13 +38,11 @@ type ACAutomaton struct {
 	// Small sets can use SIMD-optimized byte search to skip root misses.
 	rootBytes []byte
 
-	// Performance optimization: matchBuffer removed, matching is now iterator-based
-
 	// Compilation state
 	compiledOnce sync.Once
 	compiled     bool
 
-	// Backward compatibility fields
+	// Exported metadata retained for compatibility with existing callers.
 	StringCount int
 	Strings     []ACStringInfo
 }
@@ -104,9 +102,7 @@ func (ac *ACAutomaton) addStringToAutomaton(config stringConfig) error {
 	// Add string to collection
 	ac.strings = append(ac.strings, stringInfo)
 	ac.StringCount = len(ac.strings)
-
-	// Update backward compatibility field
-	ac.Strings = slices.Clone(ac.strings)
+	ac.Strings = append(ac.Strings, stringInfo)
 	stringIndex := int32(len(ac.strings) - 1) // #nosec G115
 
 	// Build trie for pattern matching
@@ -532,6 +528,9 @@ func (ac *ACAutomaton) ReserveStrings(n int) {
 	if n > 0 && cap(ac.strings) < n {
 		ac.strings = slices.Grow(ac.strings, n-len(ac.strings))
 	}
+	if n > 0 && cap(ac.Strings) < n {
+		ac.Strings = slices.Grow(ac.Strings, n-len(ac.Strings))
+	}
 }
 
 // ReserveStates ensures capacity for at least n states to avoid slice growth
@@ -582,15 +581,29 @@ func (ac *ACAutomaton) Validate() error {
 
 // Clone creates a copy of the automaton
 func (ac *ACAutomaton) Clone() *ACAutomaton {
+	internalStrings := cloneACStringInfos(ac.strings)
 	newAC := &ACAutomaton{
 		states:      slices.Clone(ac.states),
 		outputs:     slices.Clone(ac.outputs),
-		strings:     slices.Clone(ac.strings),
+		strings:     internalStrings,
+		rootBytes:   slices.Clone(ac.rootBytes),
+		compiled:    ac.compiled,
 		StringCount: ac.StringCount,
-		Strings:     slices.Clone(ac.Strings),
+		Strings:     cloneACStringInfos(ac.Strings),
+	}
+	if ac.compiled {
+		newAC.compiledOnce.Do(func() {})
 	}
 
 	return newAC
+}
+
+func cloneACStringInfos(in []ACStringInfo) []ACStringInfo {
+	out := slices.Clone(in)
+	for index := range out {
+		out[index].Data = slices.Clone(out[index].Data)
+	}
+	return out
 }
 
 // ACMatch represents a pattern match found by the automaton
@@ -667,8 +680,12 @@ func (ac *ACAutomaton) Reset() {
 	// Clear outputs and strings
 	ac.outputs = ac.outputs[:0]
 	ac.strings = ac.strings[:0]
+	ac.rootBytes = ac.rootBytes[:0]
+	ac.StringCount = 0
+	ac.Strings = ac.Strings[:0]
 
 	// Reset compilation state
+	ac.compiledOnce = sync.Once{}
 	ac.compiled = false
 }
 

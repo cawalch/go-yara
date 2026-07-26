@@ -1,9 +1,6 @@
 package compiler
 
 import (
-	"bytes"
-	"io"
-	"os"
 	"testing"
 )
 
@@ -27,11 +24,6 @@ func TestInterpreterDebugMode(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Capture stdout to check debug output
-			oldStdout := os.Stdout
-			r, w, _ := os.Pipe()
-			os.Stdout = w
-
 			// Create simple bytecode: push 42, pop
 			bytecode := []byte{
 				byte(OpPush8), 42,
@@ -45,18 +37,13 @@ func TestInterpreterDebugMode(t *testing.T) {
 				interpreter.EnableDebugMode()
 			}
 
-			// Execute the bytecode
-			err := interpreter.Execute()
-			if err != nil {
-				t.Fatalf("Execute() error = %v", err)
+			var executeErr error
+			output := captureStdout(t, func() {
+				executeErr = interpreter.Execute()
+			})
+			if executeErr != nil {
+				t.Fatalf("Execute() error = %v", executeErr)
 			}
-
-			// Restore stdout and capture output
-			_ = w.Close()
-			os.Stdout = oldStdout
-			var buf bytes.Buffer
-			_, _ = io.Copy(&buf, r)
-			output := buf.String()
 
 			// Check debug mode state
 			if interpreter.IsDebugModeEnabled() != tt.enableDebug {

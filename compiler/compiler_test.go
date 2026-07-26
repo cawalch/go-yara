@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -92,6 +93,8 @@ func captureStdout(t *testing.T, fn func()) string {
 	os.Stdout = w
 	defer func() {
 		os.Stdout = oldStdout
+		_ = w.Close()
+		_ = r.Close()
 	}()
 
 	fn()
@@ -216,16 +219,6 @@ func TestCompiledRuleMemoryUsage(t *testing.T) {
 	if usage <= 0 {
 		t.Error("Memory usage should be positive")
 	}
-
-	// Test debug printing (should not panic)
-	// Capture stdout to avoid cluttering test output
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-	compiledRule.PrintDebug()
-	_ = w.Close()
-	os.Stdout = oldStdout
-	_ = r.Close()
 }
 
 // TestCompilerOptions tests compiler options
@@ -240,16 +233,13 @@ func TestCompilerOptions(t *testing.T) {
 		t.Errorf("Default max input size = %d, want %d", options.MaxInputSize, 100*1024*1024)
 	}
 
-	customOptions := CompilationOptions{
-		EnableWarnings:     false,
-		IgnoreInvalidRules: true,
-		Modules:            defaultModules(),
-		MaxInputSize:       1024,
-		MaxIncludeSize:     512,
-		MaxRecursionDepth:  10,
-	}
-
-	compilerWithOptions := NewCompilerWithOptions(customOptions)
+	compilerWithOptions := NewCompiler(
+		WithWarnings(false),
+		WithIgnoreInvalidRules(true),
+		WithMaxInputSize(1024),
+		WithMaxIncludeSize(512),
+		WithMaxRecursionDepth(10),
+	)
 	retrievedOptions := compilerWithOptions.GetOptions()
 
 	if retrievedOptions.EnableWarnings {
@@ -260,6 +250,16 @@ func TestCompilerOptions(t *testing.T) {
 	}
 	if retrievedOptions.MaxInputSize != 1024 {
 		t.Errorf("Max input size = %d, want 1024", retrievedOptions.MaxInputSize)
+	}
+	if retrievedOptions.MaxIncludeSize != 512 {
+		t.Errorf("Max include size = %d, want 512", retrievedOptions.MaxIncludeSize)
+	}
+	if retrievedOptions.MaxRecursionDepth != 10 {
+		t.Errorf("Max recursion depth = %d, want 10", retrievedOptions.MaxRecursionDepth)
+	}
+
+	if _, err := NewCompiler(WithMaxInputSize(1)).CompileSource("rule test { condition: true }"); err == nil {
+		t.Fatal("WithMaxInputSize(1) did not reject oversized source")
 	}
 }
 
@@ -944,6 +944,25 @@ func TestAhoCorasickReset(t *testing.T) {
 	if ac.GetStateCount() != 1 {
 		t.Errorf("After Reset(), state count = %d, want 1", ac.GetStateCount())
 	}
+	if ac.GetStringCount() != 0 || ac.StringCount != 0 || len(ac.Strings) != 0 {
+		t.Fatalf(
+			"After Reset(), string counts = internal:%d exported:%d metadata:%d, want all zero",
+			ac.GetStringCount(),
+			ac.StringCount,
+			len(ac.Strings),
+		)
+	}
+
+	if err := ac.AddString("fresh", []byte("fresh"), false, false); err != nil {
+		t.Fatalf("AddString() after Reset() error = %v", err)
+	}
+	if err := ac.Compile(); err != nil {
+		t.Fatalf("Compile() after Reset() error = %v", err)
+	}
+	matches := slices.Collect(ac.SearchIter([]byte("fresh")))
+	if len(matches) != 1 || matches[0].StringID != "fresh" {
+		t.Fatalf("SearchIter() after Reset() matches = %+v, want one fresh match", matches)
+	}
 }
 
 // TestRuleCompilerMultipleStrings tests rule compilation with multiple strings
@@ -1445,15 +1464,10 @@ func TestCompiledRulePrintDebug(t *testing.T) {
 		t.Errorf("CompileRule() error = %v", err)
 	}
 
-	// This should not panic
-	// Capture stdout to avoid cluttering test output
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-	compiled.PrintDebug()
-	_ = w.Close()
-	os.Stdout = oldStdout
-	_ = r.Close()
+	output := captureStdout(t, compiled.PrintDebug)
+	if !strings.Contains(output, "Compiled Rule: debug_test") {
+		t.Fatalf("PrintDebug() output = %q, want compiled rule name", output)
+	}
 }
 
 // TestEmitterGetInstructions tests getting instructions
@@ -1509,7 +1523,7 @@ func TestEmitterEmitNop(t *testing.T) {
 }
 
 // TestEmitterPrintInstructions tests instruction printing
-func TestEmitterPrintInstructions(_ *testing.T) {
+func TestEmitterPrintInstructions(t *testing.T) {
 	emitter := NewEmitter()
 
 	// Emit some instructions
@@ -1517,15 +1531,10 @@ func TestEmitterPrintInstructions(_ *testing.T) {
 	emitter.EmitOpcode(OpNop, 1, 1)
 	emitter.EmitHalt(1, 1)
 
-	// This should not panic
-	// Capture stdout to avoid cluttering test output
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-	emitter.PrintInstructions()
-	_ = w.Close()
-	os.Stdout = oldStdout
-	_ = r.Close()
+	output := captureStdout(t, emitter.PrintInstructions)
+	if !strings.Contains(output, "PUSH_8") || !strings.Contains(output, "HALT") {
+		t.Fatalf("PrintInstructions() output = %q, want emitted instructions", output)
+	}
 }
 
 // TestEmitterPrintBytecode tests bytecode printing
@@ -1536,17 +1545,15 @@ func TestEmitterPrintBytecode(t *testing.T) {
 	emitter.EmitOpcode(OpPush8, 1, 1)
 	emitter.EmitHalt(1, 1)
 
-	// This should not panic
-	// Capture stdout to avoid cluttering test output
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-	err := emitter.PrintBytecode()
-	_ = w.Close()
-	os.Stdout = oldStdout
-	_ = r.Close()
+	var err error
+	output := captureStdout(t, func() {
+		err = emitter.PrintBytecode()
+	})
 	if err != nil {
 		t.Errorf("PrintBytecode() error = %v", err)
+	}
+	if !strings.Contains(output, "Raw Bytecode:") {
+		t.Fatalf("PrintBytecode() output = %q, want raw bytecode header", output)
 	}
 }
 
@@ -2212,15 +2219,10 @@ func TestCompiledProgramPrintDebug(t *testing.T) {
 
 	compiledProgram := NewCompiledProgram(compiled)
 
-	// This should not panic
-	// Capture stdout to avoid cluttering test output
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-	compiledProgram.PrintDebug()
-	_ = w.Close()
-	os.Stdout = oldStdout
-	_ = r.Close()
+	output := captureStdout(t, compiledProgram.PrintDebug)
+	if !strings.Contains(output, "[0] test_rule") {
+		t.Fatalf("PrintDebug() output = %q, want compiled rule summary", output)
+	}
 }
 
 // TestCompiledProgramGetExecutionPlan tests GetExecutionPlan method
@@ -3161,7 +3163,7 @@ func TestCompilerCompileSemantic(t *testing.T) {
 
 	err := c.compileSemanticWithContext(context.Background(), program)
 	if err != nil {
-		t.Logf("compileSemanticWithContext() error = %v (this may be expected)", err)
+		t.Fatalf("compileSemanticWithContext() error = %v", err)
 	}
 }
 
