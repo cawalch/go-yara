@@ -1,4 +1,4 @@
-.PHONY: check test test-race vet lint fmt-check tidy-check fuzz \
+.PHONY: check test test-race vet analyze lint fmt-check tidy-check fuzz \
 	bench bench-save benchstat bench-scan bench-prefilter-scale \
 	bench-single-rule-size profile-scan trace-scan help
 
@@ -8,7 +8,7 @@ BENCHTIME ?= 1s
 COUNT ?= 1
 FUZZTIME ?= 30s
 
-check: fmt-check tidy-check vet lint test
+check: fmt-check tidy-check vet analyze lint test
 
 test:
 	go test ./...
@@ -18,6 +18,9 @@ test-race:
 
 vet:
 	go vet ./...
+
+analyze:
+	go run ./cmd/go-yara-analyzers ./...
 
 lint:
 	golangci-lint run --config=.golangci.yml
@@ -101,6 +104,7 @@ help:
 	@echo "  check                  Run formatting, tidy, vet, lint, and tests"
 	@echo "  test                   Run the full test suite"
 	@echo "  test-race              Run the full test suite with the race detector"
+	@echo "  analyze                Run repository-specific static analyzers"
 	@echo "  fuzz FUZZTIME=30s      Run every fuzz target sequentially"
 	@echo ""
 	@echo "Benchmark targets:"

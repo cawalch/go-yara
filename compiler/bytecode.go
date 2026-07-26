@@ -225,7 +225,7 @@ func isArithmeticOpcode(op Opcode) bool {
 func isStackOpcode(op Opcode) bool {
 	return (op >= OpPush && op <= OpCall) ||
 		(op >= OpPush8 && op <= OpPushRuleRef) ||
-		op == OpPushStr
+		op == OpPushStr || op == OpLoadVar
 }
 
 // isObjectOpcode checks if opcode is an object operation
@@ -247,7 +247,8 @@ func isIteratorOpcode(op Opcode) bool {
 
 // isStringOpcode checks if opcode is a string operation
 func isStringOpcode(op Opcode) bool {
-	return (op >= OpContains && op <= OpOfPercentAt) || op == OpConcat
+	return (op >= OpContains && op <= OpOfPercentAt) ||
+		op == OpCountInOf || op == OpConcat
 }
 
 // isTypeFuncOpcode checks if opcode is a type function
@@ -318,6 +319,8 @@ var opcodeNames = map[Opcode]string{
 	OpInitRule:               "INIT_RULE",
 	OpMatchRule:              "MATCH_RULE",
 	OpPushStr:                "PUSH_STR",
+	OpLoadVar:                "LOAD_VAR",
+	OpIterPushTotal:          "ITER_PUSH_TOTAL",
 	OpIncrM:                  "INCR_M",
 	OpClearM:                 "CLEAR_M",
 	OpAddM:                   "ADD_M",

@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -41,6 +42,22 @@ func TestBytecodeOpcodes(t *testing.T) {
 				t.Errorf("Opcode.GetCategory() = %v, want %v", got, test.category)
 			}
 		})
+	}
+}
+
+func TestDispatchedOpcodesHaveMetadata(t *testing.T) {
+	for value, handler := range opcodeTable {
+		if handler == nil {
+			continue
+		}
+
+		opcode := Opcode(value)
+		if name := opcode.String(); strings.HasPrefix(name, "OPCODE_") {
+			t.Errorf("dispatched opcode %d has no stable name", value)
+		}
+		if category := opcode.GetCategory(); category == "unknown" {
+			t.Errorf("dispatched opcode %s has no category", opcode)
+		}
 	}
 }
 
