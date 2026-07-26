@@ -455,8 +455,7 @@ func addThread(code, s []byte, list *[]thread, pc, pos int, visited []int64, gen
 				return false
 			}
 			u16 := binary.LittleEndian.Uint16(code[pc+2 : pc+4])
-			// Safe conversion with explicit truncation
-			rel := int16(u16 & 0xFFFF) // #nosec G115 - safe conversion with explicit masking
+			rel := int16(u16) //checkednarrow:ignore uint16 bits encode a signed relative offset
 			// sequential next
 			nextPC := pc + 4
 			altPC := pc + int(rel)
@@ -467,8 +466,7 @@ func addThread(code, s []byte, list *[]thread, pc, pos int, visited []int64, gen
 				return false
 			}
 			u16 := binary.LittleEndian.Uint16(code[pc+1 : pc+3])
-			// Safe conversion with explicit truncation
-			rel := int16(u16 & 0xFFFF) // #nosec G115 - safe conversion with explicit masking
+			rel := int16(u16) //checkednarrow:ignore uint16 bits encode a signed relative offset
 			pc += int(rel)
 			continue
 		case OpMatchAtStart:

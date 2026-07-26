@@ -4,9 +4,13 @@ package main
 import (
 	"golang.org/x/tools/go/analysis/multichecker"
 
+	"github.com/cawalch/go-yara/internal/analyzers/checkednarrow"
 	"github.com/cawalch/go-yara/internal/analyzers/opcodecontract"
 )
 
 func main() {
-	multichecker.Main(opcodecontract.Analyzer)
+	multichecker.Main(
+		checkednarrow.Analyzer,
+		opcodecontract.Analyzer,
+	)
 }

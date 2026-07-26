@@ -106,7 +106,7 @@ func addCaptureThread(
 			if pc+3 >= len(code) {
 				return
 			}
-			rel := int(int16(binary.LittleEndian.Uint16(code[pc+2 : pc+4])))
+			rel := int(int16(binary.LittleEndian.Uint16(code[pc+2 : pc+4]))) //checkednarrow:ignore uint16 bits encode a signed relative offset
 			nextPC, altPC := pc+4, pc+rel
 			first, second := nextPC, altPC
 			if code[pc] == OpSplitB {
@@ -121,7 +121,7 @@ func addCaptureThread(
 			if pc+2 >= len(code) {
 				return
 			}
-			pc += int(int16(binary.LittleEndian.Uint16(code[pc+1 : pc+3])))
+			pc += int(int16(binary.LittleEndian.Uint16(code[pc+1 : pc+3]))) //checkednarrow:ignore uint16 bits encode a signed relative offset
 		case OpSaveStart, OpSaveEnd:
 			if pc+1 >= len(code) {
 				return

@@ -591,7 +591,10 @@ func (s *Scanner) extractGlobalMatchesInt(
 			pattern:  info.Data,
 		}
 		if s.fastScan && rule.FastScanSafe {
-			key := uint64(uint32(entry.RuleIndex))<<32 | uint64(uint32(entry.StringIdx))
+			key, ok := packFastScanKey(entry.RuleIndex, entry.StringIdx)
+			if !ok {
+				continue
+			}
 			if fastSeen[key] {
 				continue
 			}
@@ -630,6 +633,15 @@ func (s *Scanner) addStaticMatchesInt(rule *CompiledRule, data []byte, entries [
 			s.matchCtx.AddMatch(m)
 		}
 	}
+}
+
+func packFastScanKey(ruleIndex, stringIndex int) (uint64, bool) {
+	if ruleIndex < 0 || stringIndex < 0 ||
+		uint64(ruleIndex) > math.MaxUint32 || uint64(stringIndex) > math.MaxUint32 {
+		return 0, false
+	}
+	key := uint64(ruleIndex)<<32 | uint64(stringIndex)
+	return key, true
 }
 
 func (s *Scanner) addLocalTextMatches(rule *CompiledRule, data []byte) {

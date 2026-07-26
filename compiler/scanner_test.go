@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"testing/iotest"
@@ -14,6 +16,35 @@ import (
 	"github.com/cawalch/go-yara/internal/lexer"
 	"github.com/cawalch/go-yara/parser"
 )
+
+func TestPackFastScanKey(t *testing.T) {
+	key, ok := packFastScanKey(3, 7)
+	if !ok || key != uint64(3)<<32|7 {
+		t.Fatalf("packFastScanKey(3, 7) = (%#x, %v)", key, ok)
+	}
+
+	type indexes struct {
+		ruleIndex   int
+		stringIndex int
+	}
+	invalid := []indexes{
+		{ruleIndex: -1, stringIndex: 0},
+		{ruleIndex: 0, stringIndex: -1},
+	}
+	tooLarge := uint64(math.MaxUint32) + 1
+	if strconv.IntSize == 64 {
+		invalid = append(
+			invalid,
+			indexes{ruleIndex: int(tooLarge), stringIndex: 0},
+			indexes{ruleIndex: 0, stringIndex: int(tooLarge)},
+		)
+	}
+	for _, test := range invalid {
+		if _, ok := packFastScanKey(test.ruleIndex, test.stringIndex); ok {
+			t.Fatalf("packFastScanKey(%d, %d) accepted out-of-range input", test.ruleIndex, test.stringIndex)
+		}
+	}
+}
 
 // compileSources compiles multiple YARA rule source strings into a CompiledProgram.
 func compileSources(sources []string) (*CompiledProgram, error) {

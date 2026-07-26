@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"math"
 	"slices"
 	"sync"
 
@@ -103,7 +104,7 @@ func (ac *ACAutomaton) addStringToAutomaton(config stringConfig) error {
 	ac.strings = append(ac.strings, stringInfo)
 	ac.StringCount = len(ac.strings)
 	ac.Strings = append(ac.Strings, stringInfo)
-	stringIndex := int32(len(ac.strings) - 1) // #nosec G115
+	stringIndex := mustACIndex(len(ac.strings) - 1)
 
 	// Build trie for pattern matching
 	currentState := int32(0) // Start at root
@@ -147,7 +148,7 @@ func (ac *ACAutomaton) addStringToAutomaton(config stringConfig) error {
 				newState.transitions[i] = -1
 			}
 			ac.states = append(ac.states, newState)
-			nextState = int32(len(ac.states) - 1) // #nosec G115
+			nextState = mustACIndex(len(ac.states) - 1)
 		}
 		// Point every variant at the resolved state (skip those already bound).
 		for k := 0; k < n; k++ {
@@ -165,13 +166,13 @@ func (ac *ACAutomaton) addStringToAutomaton(config stringConfig) error {
 	existingEnd := ac.states[currentState].outputEnd
 	switch {
 	case existingStart == existingEnd:
-		ac.states[currentState].outputStart = int32(len(ac.outputs)) // #nosec G115
+		ac.states[currentState].outputStart = mustACIndex(len(ac.outputs))
 	case int(existingEnd) != len(ac.outputs):
-		ac.states[currentState].outputStart = int32(len(ac.outputs)) // #nosec G115
+		ac.states[currentState].outputStart = mustACIndex(len(ac.outputs))
 		ac.outputs = append(ac.outputs, ac.outputs[existingStart:existingEnd]...)
 	}
 	ac.outputs = append(ac.outputs, stringIndex)
-	ac.states[currentState].outputEnd = int32(len(ac.outputs)) // #nosec G115
+	ac.states[currentState].outputEnd = mustACIndex(len(ac.outputs))
 
 	return nil
 }
@@ -228,11 +229,18 @@ func (ac *ACAutomaton) mergeFailureOutput(state int32) {
 		// the current end of the flat output storage.
 		stateOutput := slices.Clone(ac.outputs[ac.states[state].outputStart:ac.states[state].outputEnd])
 		failOutput := ac.outputs[failState.outputStart:failState.outputEnd]
-		ac.states[state].outputStart = int32(len(ac.outputs)) // #nosec G115
+		ac.states[state].outputStart = mustACIndex(len(ac.outputs))
 		ac.outputs = append(ac.outputs, stateOutput...)
 		ac.outputs = append(ac.outputs, failOutput...)
-		ac.states[state].outputEnd = int32(len(ac.outputs)) // #nosec G115
+		ac.states[state].outputEnd = mustACIndex(len(ac.outputs))
 	}
+}
+
+func mustACIndex(value int) int32 {
+	if value < 0 || value > math.MaxInt32 {
+		panic("Aho-Corasick index exceeds int32 capacity")
+	}
+	return int32(value)
 }
 
 // buildFailureLinks builds failure links for the optimized automaton

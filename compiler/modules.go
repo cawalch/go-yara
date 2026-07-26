@@ -144,7 +144,7 @@ func compileModuleFunctions(
 	for index, qualifiedName := range qualifiedNames {
 		moduleName, functionName, _ := strings.Cut(qualifiedName, ".")
 		function := registered[moduleName].Functions[functionName]
-		id := firstModuleFunctionID + builtinFunction(index) // #nosec G115 -- bounded above.
+		id := firstModuleFunctionID + builtinFunction(index) // #nosec G115 -- checkednarrow:ignore qualifiedNames length is bounded above
 		bindings[qualifiedName] = compiledModuleFunction{id: id, name: qualifiedName, function: function}
 		functions[id] = function
 		names[id] = qualifiedName
