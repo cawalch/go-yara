@@ -3,12 +3,292 @@ package compiler
 import (
 	"bytes"
 	"context"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/cawalch/go-yara/internal/lexer"
 	"github.com/cawalch/go-yara/parser"
 )
+
+const maxFuzzBytecodeSize = 4096
+
+type interpreterFuzzSeed struct {
+	name      string
+	bytecode  []byte
+	wantStack []Value
+}
+
+type fuzzSeedTest interface {
+	Helper()
+	Fatalf(format string, args ...any)
+}
+
+func buildInterpreterFuzzBytecode(
+	tb fuzzSeedTest,
+	emit func(*Emitter),
+) []byte {
+	tb.Helper()
+	emitter := NewEmitter()
+	emit(emitter)
+	emitter.EmitHalt(1, 1)
+	bytecode, err := emitter.GetBytecode()
+	if err != nil {
+		tb.Fatalf("building interpreter fuzz seed: %v", err)
+	}
+	return bytecode
+}
+
+func interpreterBytecodeSeeds(tb fuzzSeedTest) []interpreterFuzzSeed {
+	tb.Helper()
+	return []interpreterFuzzSeed{
+		{
+			name: "nop",
+			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *Emitter) {
+				emitter.EmitNop(1, 1)
+			}),
+		},
+		{
+			name: "undefined",
+			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *Emitter) {
+				emitter.EmitOpcode(OpPushU, 1, 1)
+			}),
+			wantStack: []Value{{Type: ValueTypeUndefined}},
+		},
+		{
+			name: "push_8",
+			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *Emitter) {
+				emitter.EmitPush(1, 1, 1)
+			}),
+			wantStack: []Value{{Type: ValueTypeInt, IntVal: 1}},
+		},
+		{
+			name: "push_16",
+			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *Emitter) {
+				emitter.EmitPush(256, 1, 1)
+			}),
+			wantStack: []Value{{Type: ValueTypeInt, IntVal: 256}},
+		},
+		{
+			name: "push_32",
+			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *Emitter) {
+				emitter.EmitPush(65536, 1, 1)
+			}),
+			wantStack: []Value{{Type: ValueTypeInt, IntVal: 65536}},
+		},
+		{
+			name: "push_64",
+			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *Emitter) {
+				emitter.EmitPush(1<<32, 1, 1)
+			}),
+			wantStack: []Value{{Type: ValueTypeInt, IntVal: 1 << 32}},
+		},
+		{
+			name: "push_double",
+			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *Emitter) {
+				emitter.EmitPushDouble(1.5, 1, 1)
+			}),
+			wantStack: []Value{{Type: ValueTypeDouble, DoubleVal: 1.5}},
+		},
+		{
+			name: "defined",
+			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *Emitter) {
+				emitter.EmitOpcode(OpPushU, 1, 1)
+				emitter.EmitOpcode(OpDefined, 1, 1)
+			}),
+			wantStack: []Value{{Type: ValueTypeInt}},
+		},
+	}
+}
+
+func interpreterStackSeeds(tb fuzzSeedTest) []interpreterFuzzSeed {
+	tb.Helper()
+	return []interpreterFuzzSeed{
+		{
+			name: "logical_and",
+			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *Emitter) {
+				emitter.EmitPush(1, 1, 1)
+				emitter.EmitPush(1, 1, 1)
+				emitter.EmitOpcode(OpAnd, 1, 1)
+			}),
+			wantStack: []Value{{Type: ValueTypeInt, IntVal: 1}},
+		},
+		{
+			name: "logical_or",
+			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *Emitter) {
+				emitter.EmitPush(1, 1, 1)
+				emitter.EmitPush(0, 1, 1)
+				emitter.EmitOpcode(OpOr, 1, 1)
+			}),
+			wantStack: []Value{{Type: ValueTypeInt, IntVal: 1}},
+		},
+		{
+			name: "logical_not",
+			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *Emitter) {
+				emitter.EmitPush(1, 1, 1)
+				emitter.EmitOpcode(OpNot, 1, 1)
+			}),
+			wantStack: []Value{{Type: ValueTypeInt}},
+		},
+		{
+			name: "integer_add",
+			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *Emitter) {
+				emitter.EmitPush(10, 1, 1)
+				emitter.EmitPush(20, 1, 1)
+				emitter.EmitOpcode(OpIntAdd, 1, 1)
+			}),
+			wantStack: []Value{{Type: ValueTypeInt, IntVal: 30}},
+		},
+		{
+			name: "integer_multiply",
+			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *Emitter) {
+				emitter.EmitPush(10, 1, 1)
+				emitter.EmitPush(5, 1, 1)
+				emitter.EmitOpcode(OpIntMul, 1, 1)
+			}),
+			wantStack: []Value{{Type: ValueTypeInt, IntVal: 50}},
+		},
+		{
+			name: "shift_left",
+			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *Emitter) {
+				emitter.EmitPush(2, 1, 1)
+				emitter.EmitPush(3, 1, 1)
+				emitter.EmitOpcode(OpShl, 1, 1)
+			}),
+			wantStack: []Value{{Type: ValueTypeInt, IntVal: 16}},
+		},
+		{
+			name: "many_pushes",
+			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *Emitter) {
+				for range 100 {
+					emitter.EmitPush(1, 1, 1)
+				}
+			}),
+			wantStack: []Value{{Type: ValueTypeInt, IntVal: 1}},
+		},
+	}
+}
+
+func interpreterMemorySeeds(tb fuzzSeedTest) []interpreterFuzzSeed {
+	tb.Helper()
+	memoryOperand := func(emitter *Emitter, opcode Opcode, slot uint64) {
+		emitter.EmitOpcodeWithOperand(
+			opcode,
+			Operand{Type: OperandImmediate32, Value: slot},
+			1,
+			1,
+		)
+	}
+	return []interpreterFuzzSeed{
+		{
+			name: "store_and_load",
+			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *Emitter) {
+				emitter.EmitPush(0x42, 1, 1)
+				memoryOperand(emitter, OpPopM, 0)
+				memoryOperand(emitter, OpPushM, 0)
+			}),
+			wantStack: []Value{{Type: ValueTypeInt, IntVal: 0x42}},
+		},
+		{
+			name: "clear_and_load",
+			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *Emitter) {
+				memoryOperand(emitter, OpClearM, 255)
+				memoryOperand(emitter, OpPushM, 255)
+			}),
+			wantStack: []Value{{Type: ValueTypeUndefined}},
+		},
+		{
+			name: "increment_and_load",
+			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *Emitter) {
+				memoryOperand(emitter, OpIncrM, 1)
+				memoryOperand(emitter, OpPushM, 1)
+			}),
+			wantStack: []Value{{Type: ValueTypeInt, IntVal: 2}},
+		},
+		{
+			name: "load",
+			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *Emitter) {
+				memoryOperand(emitter, OpPushM, 42)
+			}),
+			wantStack: []Value{{Type: ValueTypeInt, IntVal: 42}},
+		},
+	}
+}
+
+func newBytecodeFuzzInterpreter(bytecode []byte) *Interpreter {
+	interpreter := NewInterpreter(bytecode)
+	interpreter.SetItersmax(1024)
+	interpreter.ResetIterationCount()
+	interpreter.SetCurrentRule("test")
+	interpreter.SetCompiledRules([]*CompiledRule{})
+	interpreter.SetRuleResults(make(map[string]bool))
+	interpreter.SetMatchContext(&MatchContext{
+		Data:     []byte("test"),
+		Matches:  make(map[string][]Match),
+		FileSize: 4,
+	})
+	return interpreter
+}
+
+func prefillFuzzMemory(interpreter *Interpreter) {
+	for index := range interpreterMemorySlotCount {
+		interpreter.memory[index] = Value{Type: ValueTypeInt, IntVal: int64(index)}
+	}
+}
+
+func executeWithFuzzStackDepth(interpreter *Interpreter, stackSize int) error {
+	interpreter.Reset()
+	for index := range stackSize {
+		interpreter.stack = append(
+			interpreter.stack,
+			Value{Type: ValueTypeInt, IntVal: int64(index)},
+		)
+	}
+	return interpreter.executeMainLoop()
+}
+
+func TestInterpreterFuzzSeedsExecute(t *testing.T) {
+	groups := []struct {
+		name          string
+		seeds         []interpreterFuzzSeed
+		prefillMemory bool
+	}{
+		{name: "bytecode", seeds: interpreterBytecodeSeeds(t)},
+		{name: "stack", seeds: interpreterStackSeeds(t)},
+		{name: "memory", seeds: interpreterMemorySeeds(t), prefillMemory: true},
+	}
+
+	for _, group := range groups {
+		t.Run(group.name, func(t *testing.T) {
+			for _, seed := range group.seeds {
+				t.Run(seed.name, func(t *testing.T) {
+					interpreter := newBytecodeFuzzInterpreter(seed.bytecode)
+					defer interpreter.Release()
+					if group.prefillMemory {
+						prefillFuzzMemory(interpreter)
+					}
+					if err := interpreter.Execute(); err != nil {
+						t.Fatalf("Execute() error = %v", err)
+					}
+					if got := interpreter.GetStack(); !slices.Equal(got, seed.wantStack) {
+						t.Fatalf("stack = %#v, want %#v", got, seed.wantStack)
+					}
+				})
+			}
+		})
+	}
+
+	t.Run("prefilled_stack", func(t *testing.T) {
+		bytecode := buildInterpreterFuzzBytecode(t, func(emitter *Emitter) {
+			emitter.EmitOpcode(OpPop, 1, 1)
+		})
+		interpreter := newBytecodeFuzzInterpreter(bytecode)
+		defer interpreter.Release()
+		if err := executeWithFuzzStackDepth(interpreter, 1); err != nil {
+			t.Fatalf("executeWithFuzzStackDepth() error = %v", err)
+		}
+	})
+}
 
 // FuzzInterpreter tests bytecode interpretation with various rules and data
 func FuzzInterpreter(f *testing.F) {
@@ -223,28 +503,14 @@ func FuzzInterpreterMultipleRules(f *testing.F) {
 
 // FuzzInterpreterBytecode tests interpreter with raw bytecode
 func FuzzInterpreterBytecode(f *testing.F) {
-	// Seed corpus with simple bytecode sequences
-	f.Add([]byte("\x01\x00\x00\x00\x00"))                     // OpPushTrue
-	f.Add([]byte("\x02\x00\x00\x00\x00"))                     // OpPushFalse
-	f.Add([]byte("\x03\x01\x00\x00\x00\x0A\x00\x00\x00\x00")) // OpPushInt 10
-	f.Add([]byte("\x04\x01\x00\x00\x00\x74"))                 // OpPushStr "t"
-	f.Add([]byte("\x05\x00\x00\x00\x00"))                     // OpPop
-	f.Add([]byte("\x06\x00\x00\x00\x00"))                     // OpDup
-	f.Add([]byte("\x07\x00\x00\x00\x00"))                     // OpNot
-	f.Add([]byte("\x10\x00\x00\x00\x00"))                     // OpAnd
-	f.Add([]byte("\x11\x00\x00\x00\x00"))                     // OpOr
-	f.Add([]byte("\x12\x00\x00\x00\x00"))                     // OpAdd
-	f.Add([]byte("\x13\x00\x00\x00\x00"))                     // OpSub
-	f.Add([]byte("\x14\x00\x00\x00\x00"))                     // OpMul
-	f.Add([]byte("\x15\x00\x00\x00\x00"))                     // OpDiv
-	f.Add([]byte("\x16\x00\x00\x00\x00"))                     // OpMod
-	f.Add([]byte("\x17\x00\x00\x00\x00"))                     // OpShl
-	f.Add([]byte("\x18\x00\x00\x00\x00"))                     // OpShr
-	f.Add([]byte("\x19\x00\x00\x00\x00"))                     // OpBAnd
-	f.Add([]byte("\x1A\x00\x00\x00\x00"))                     // OpBOr
-	f.Add([]byte("\x1B\x00\x00\x00\x00"))                     // OpBXor
-	f.Add([]byte("\x1C\x00\x00\x00\x00"))                     // OpBNot
-	f.Add([]byte("\x01\x00\x00\x00\x00\xFF"))                 // Valid + invalid
+	for _, seed := range interpreterBytecodeSeeds(f) {
+		f.Add(seed.bytecode)
+	}
+	for _, seed := range interpreterStackSeeds(f) {
+		f.Add(seed.bytecode)
+	}
+	f.Add([]byte{byte(OpPush64), 0}) // Truncated operand.
+	f.Add([]byte{0xF0})              // Unassigned opcode.
 
 	f.Fuzz(func(t *testing.T, bytecode []byte) {
 		defer func() {
@@ -253,39 +519,31 @@ func FuzzInterpreterBytecode(f *testing.F) {
 			}
 		}()
 
-		if len(bytecode) == 0 {
+		if len(bytecode) == 0 || len(bytecode) > maxFuzzBytecodeSize {
 			return
 		}
 
-		// Create interpreter with bytecode
-		interp := NewInterpreter(bytecode)
-		interp.SetCurrentRule("test")
-		interp.SetCompiledRules([]*CompiledRule{})
-		interp.SetRuleResults(make(map[string]bool))
-
-		// Create match context
-		matchCtx := &MatchContext{
-			Data:     []byte("test"),
-			Matches:  make(map[string][]Match),
-			FileSize: 4,
-		}
-		interp.SetMatchContext(matchCtx)
-
-		// Execute
+		interp := newBytecodeFuzzInterpreter(bytecode)
 		err := interp.Execute()
 		_ = err
+		interp.Release()
 
-		// Test with truncated bytecode
+		// Exercise a bounded sample of prefixes so large mutations do not turn
+		// one fuzz iteration into quadratic interpreter work.
 		if len(bytecode) > 1 {
-			for truncateLen := 1; truncateLen < len(bytecode); truncateLen++ {
+			truncationLimit := min(len(bytecode)-1, 64)
+			for truncateLen := 1; truncateLen <= truncationLimit; truncateLen++ {
 				truncatedBytecode := bytecode[:truncateLen]
-				interp2 := NewInterpreter(truncatedBytecode)
-				interp2.SetCurrentRule("test")
-				interp2.SetCompiledRules([]*CompiledRule{})
-				interp2.SetRuleResults(make(map[string]bool))
-				interp2.SetMatchContext(matchCtx)
+				interp2 := newBytecodeFuzzInterpreter(truncatedBytecode)
 				err2 := interp2.Execute()
 				_ = err2
+				interp2.Release()
+			}
+			if len(bytecode)-1 > truncationLimit {
+				interp2 := newBytecodeFuzzInterpreter(bytecode[:len(bytecode)-1])
+				err2 := interp2.Execute()
+				_ = err2
+				interp2.Release()
 			}
 		}
 	})
@@ -293,15 +551,9 @@ func FuzzInterpreterBytecode(f *testing.F) {
 
 // FuzzInterpreterStack tests interpreter stack behavior with various instruction sequences
 func FuzzInterpreterStack(f *testing.F) {
-	// Seed corpus with instruction sequences
-	f.Add([]byte("\x01\x00\x00\x00\x00\x06\x00\x00\x00\x00\x05\x00\x00\x00\x00"))                                         // push true, dup, pop
-	f.Add([]byte("\x03\x01\x00\x00\x00\x0A\x00\x00\x00\x00\x03\x01\x00\x00\x00\x14\x00\x00\x00\x00\x12\x00\x00\x00\x00")) // push 10, push 20, add
-	f.Add([]byte("\x03\x01\x00\x00\x00\x0A\x00\x00\x00\x00\x03\x01\x00\x00\x00\x05\x00\x00\x00\x00\x13\x00\x00\x00\x00")) // push 10, push 5, mul
-	f.Add([]byte("\x01\x00\x00\x00\x00\x01\x00\x00\x00\x00\x10\x00\x00\x00\x00"))                                         // true, true, and
-	f.Add([]byte("\x01\x00\x00\x00\x00\x02\x00\x00\x00\x00\x11\x00\x00\x00\x00"))                                         // true, false, or
-	f.Add([]byte("\x01\x00\x00\x00\x00\x07\x00\x00\x00\x00"))                                                             // true, not
-	f.Add([]byte(strings.Repeat("\x01\x00\x00\x00\x00", 100)))                                                            // 100 push true
-	f.Add([]byte(strings.Repeat("\x03\x01\x00\x00\x00\x01\x00\x00\x00\x00", 50)))                                         // 50 push 1
+	for _, seed := range interpreterStackSeeds(f) {
+		f.Add(seed.bytecode)
+	}
 
 	f.Fuzz(func(t *testing.T, bytecode []byte) {
 		defer func() {
@@ -310,44 +562,22 @@ func FuzzInterpreterStack(f *testing.F) {
 			}
 		}()
 
-		if len(bytecode) == 0 {
+		if len(bytecode) == 0 || len(bytecode) > maxFuzzBytecodeSize {
 			return
 		}
 
-		// Create interpreter
-		interp := NewInterpreter(bytecode)
-		interp.SetCurrentRule("test")
-		interp.SetCompiledRules([]*CompiledRule{})
-		interp.SetRuleResults(make(map[string]bool))
-
-		matchCtx := &MatchContext{
-			Data:     []byte("test"),
-			Matches:  make(map[string][]Match),
-			FileSize: 4,
-		}
-		interp.SetMatchContext(matchCtx)
-
-		// Execute
+		interp := newBytecodeFuzzInterpreter(bytecode)
 		err := interp.Execute()
 		_ = err
+		interp.Release()
 
 		// Test with different stack depths
 		if len(bytecode) < 1000 {
-			// Pre-fill stack with values
 			for stackSize := 0; stackSize <= 100; stackSize += 10 {
-				interp2 := NewInterpreter(bytecode)
-				interp2.SetCurrentRule("test")
-				interp2.SetCompiledRules([]*CompiledRule{})
-				interp2.SetRuleResults(make(map[string]bool))
-				interp2.SetMatchContext(matchCtx)
-
-				// Push some values onto stack first
-				for i := 0; i < stackSize; i++ {
-					interp2.stack = append(interp2.stack, Value{Type: ValueTypeInt, IntVal: int64(i)})
-				}
-
-				err2 := interp2.Execute()
+				interp2 := newBytecodeFuzzInterpreter(bytecode)
+				err2 := executeWithFuzzStackDepth(interp2, stackSize)
 				_ = err2
+				interp2.Release()
 			}
 		}
 	})
@@ -355,10 +585,9 @@ func FuzzInterpreterStack(f *testing.F) {
 
 // FuzzInterpreterMemory tests interpreter memory operations
 func FuzzInterpreterMemory(f *testing.F) {
-	// Seed corpus with memory operations
-	// Note: Actual opcodes depend on implementation
-	f.Add([]byte("\x03\x01\x00\x00\x00\x42\x00\x00\x00\x00"))                      // push 0x42
-	f.Add([]byte(strings.Repeat("\x03\x01\x00\x00\x00\x00\x00\x00\x00\x00", 256))) // 256 push 0
+	for _, seed := range interpreterMemorySeeds(f) {
+		f.Add(seed.bytecode)
+	}
 
 	f.Fuzz(func(t *testing.T, bytecode []byte) {
 		defer func() {
@@ -367,31 +596,15 @@ func FuzzInterpreterMemory(f *testing.F) {
 			}
 		}()
 
-		if len(bytecode) == 0 {
+		if len(bytecode) == 0 || len(bytecode) > maxFuzzBytecodeSize {
 			return
 		}
 
-		// Create interpreter
-		interp := NewInterpreter(bytecode)
-		interp.SetCurrentRule("test")
-		interp.SetCompiledRules([]*CompiledRule{})
-		interp.SetRuleResults(make(map[string]bool))
-
-		// Pre-fill memory with values
-		for i := range 256 {
-			interp.memory[i] = Value{Type: ValueTypeInt, IntVal: int64(i)}
-		}
-
-		matchCtx := &MatchContext{
-			Data:     []byte("test"),
-			Matches:  make(map[string][]Match),
-			FileSize: 4,
-		}
-		interp.SetMatchContext(matchCtx)
-
-		// Execute
+		interp := newBytecodeFuzzInterpreter(bytecode)
+		prefillFuzzMemory(interp)
 		err := interp.Execute()
 		_ = err
+		interp.Release()
 	})
 }
 
