@@ -23,12 +23,13 @@ rule base : executable sample {
     strings:
         $magic = "MZ"
         $regex = /pay(load|mint)/ nocase
+        $regex_alternation = /"(phone|phone_number|mobile)":"[0-9]{7}"/
         $hex = { 50 41 ?? 4C 4F 41 44 }
     condition:
         uint16(0) == 0x5a4d and
         $magic at 0 and
         gate and threshold == 1 and
-        any of ($regex, $hex) and
+        any of ($regex, $regex_alternation, $hex) and
         hash.sha256("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
 }
 
@@ -78,12 +79,14 @@ rule child {
 
 	originalRule, _ := program.GetRuleByName("base")
 	loadedRule, _ := loaded.GetRuleByName("base")
-	loadedRegex := loadedRule.RegexPatterns["$regex"]
-	originalRegex := originalRule.RegexPatterns["$regex"]
-	canonicalizeRegexPlan(&loadedRegex)
-	canonicalizeRegexPlan(&originalRegex)
-	if !reflect.DeepEqual(loadedRegex, originalRegex) {
-		t.Fatalf("regex prefilter plan changed across serialization\n got: %#v\nwant: %#v", loadedRegex, originalRegex)
+	for id, originalRegex := range originalRule.RegexPatterns {
+		loadedRegex := loadedRule.RegexPatterns[id]
+		canonicalizeRegexPlan(&loadedRegex)
+		canonicalizeRegexPlan(&originalRegex)
+		if !reflect.DeepEqual(loadedRegex, originalRegex) {
+			t.Fatalf("%s prefilter plan changed across serialization\n got: %#v\nwant: %#v",
+				id, loadedRegex, originalRegex)
+		}
 	}
 	if !reflect.DeepEqual(loadedRule.HexPatterns, originalRule.HexPatterns) {
 		t.Fatal("hex prefilter plan changed across serialization")

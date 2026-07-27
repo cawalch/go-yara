@@ -103,6 +103,130 @@ func TestCompiledRegexCarriesLiteralAlternativeAtoms(t *testing.T) {
 	}
 }
 
+func TestSharedRegexPrefilterUsesCompleteAlternativeAtomSet(t *testing.T) {
+	var manyAlternatives strings.Builder
+	for index := range 32 {
+		if index > 0 {
+			manyAlternatives.WriteByte('|')
+		}
+		prefix := byte('A' + index)
+		if index >= 26 {
+			prefix = byte('a' + index - 26)
+		}
+		fmt.Fprintf(&manyAlternatives, "%c_token", prefix)
+	}
+
+	tests := []struct {
+		name             string
+		pattern          string
+		wantMinimumAtoms int
+		wantShared       bool
+	}{
+		{
+			name:             "two alternatives with common suffix",
+			pattern:          `"(phone|mobile)":"[0-9]{7}"`,
+			wantMinimumAtoms: 2,
+			wantShared:       true,
+		},
+		{
+			name:             "three alternatives",
+			pattern:          `"(alpha|bravo|charlie)":"[0-9]{7}"`,
+			wantMinimumAtoms: 3,
+			wantShared:       true,
+		},
+		{
+			name:             "bounded many alternatives",
+			pattern:          "(" + manyAlternatives.String() + ")",
+			wantMinimumAtoms: 32,
+			wantShared:       true,
+		},
+		{
+			name:       "optional alternative falls back",
+			pattern:    "(phone|mobile)?",
+			wantShared: false,
+		},
+		{
+			name:       "short alternatives fall back",
+			pattern:    "(a|b|c)",
+			wantShared: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			source := fmt.Sprintf(`
+rule alternative {
+    strings:
+        $value = /%s/
+    condition:
+        $value
+}
+`, test.pattern)
+			program, err := NewCompiler().CompileSource(source)
+			if err != nil {
+				t.Fatalf("CompileSource() error = %v", err)
+			}
+			pattern := program.Rules[0].RegexPatterns["$value"]
+			if len(pattern.alternativeAtoms) < test.wantMinimumAtoms {
+				t.Fatalf("alternative atom count = %d, want at least %d",
+					len(pattern.alternativeAtoms), test.wantMinimumAtoms)
+			}
+			shared := 0
+			for _, entry := range program.SharedLookup {
+				if entry.Kind == StringKindRegex {
+					shared++
+				}
+			}
+			if test.wantShared && shared < test.wantMinimumAtoms {
+				t.Fatalf("shared regex entries = %d, want at least %d", shared, test.wantMinimumAtoms)
+			}
+			if !test.wantShared && shared != 0 {
+				t.Fatalf("shared regex entries = %d, want conservative fallback", shared)
+			}
+		})
+	}
+}
+
+func TestSharedAlternativeRegexAtomsMatchLinearScan(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+rule shared_alternatives {
+    strings:
+        $ascii = /(alpha|amber|angle)[0-9]+/
+        $nocase = /(alpha|amber|angle)[0-9]+/ nocase
+        $wide = /(alpha|amber|angle)[0-9]+/ wide
+        $both = /(alpha|amber|angle)[0-9]+/ ascii wide
+    condition:
+        any of them
+}
+`)
+	if err != nil {
+		t.Fatalf("CompileSource() error = %v", err)
+	}
+	if len(program.SharedLookup) < 12 {
+		t.Fatalf("shared lookup entries = %d, want the complete alternative covers", len(program.SharedLookup))
+	}
+
+	data := []byte("angle3 alpha1 amber2 ANGLE6 ALPHA4 AMBER5 ")
+	data = append(data, widenRegexPrefix([]byte("angle8 alpha7 amber9"))...)
+
+	scanner := NewScanner(program)
+	defer scanner.Close()
+	result, err := scanner.Scan(data)
+	if err != nil {
+		t.Fatalf("Scan() error = %v", err)
+	}
+	rule := program.Rules[0]
+	linear := buildLinearRegexContext(rule, data)
+	defer linear.Release()
+	for _, id := range sortedPatternIDs(rule.RegexPatterns) {
+		got := matchRangesInOrder(result.Matches[rule.Name][id])
+		want := matchRangesInOrder(linear.Matches[id])
+		if !slices.Equal(got, want) {
+			t.Errorf("%s shared ranges = %v, linear scan = %v", id, got, want)
+		}
+	}
+}
+
 func TestLiteralAlternativeRegexAtomsMatchLinearScan(t *testing.T) {
 	program, err := NewCompiler().CompileSource(`
 		rule literal_alternatives {
@@ -207,7 +331,7 @@ func TestVariableAlternativeCandidateCursorMatchesCollectedStarts(t *testing.T) 
 	}
 }
 
-func TestCompiledRegexRejectsIncompleteLiteralAlternatives(t *testing.T) {
+func TestCompiledRegexKeepsOnlyCompleteLiteralAlternatives(t *testing.T) {
 	program, err := NewCompiler().CompileSource(`
 		rule incomplete_alternatives {
 			strings:
@@ -224,11 +348,17 @@ func TestCompiledRegexRejectsIncompleteLiteralAlternatives(t *testing.T) {
 		t.Fatal(err)
 	}
 	patterns := program.Rules[0].RegexPatterns
-	for _, id := range []string{"$prefix", "$suffix", "$mixed", "$short"} {
+	for _, id := range []string{"$prefix", "$mixed", "$short"} {
 		pattern := patterns[id]
 		if len(pattern.alternativeAtoms) != 0 {
 			t.Errorf("%s alternative atoms = %+v, want none", id, pattern.alternativeAtoms)
 		}
+	}
+	suffix := patterns["$suffix"].alternativeAtoms
+	if len(suffix) != 2 ||
+		suffix[0].minOffset != 0 || suffix[0].maxOffset != 0 ||
+		suffix[1].minOffset != 0 || suffix[1].maxOffset != 0 {
+		t.Errorf("$suffix alternative atoms = %+v, want two bounded branch atoms", suffix)
 	}
 	unbounded := patterns["$unbounded"].alternativeAtoms
 	if len(unbounded) != 2 || unbounded[0].maxOffset != 0 || unbounded[1].maxOffset != -1 {

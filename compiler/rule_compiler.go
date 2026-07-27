@@ -394,7 +394,7 @@ func (rc *RuleCompiler) compileSingleString(str *ast.String) error {
 			pattern.atomMinOffset = atom.minOffset
 			pattern.atomMaxOffset = atom.maxOffset
 		}
-		if len(pattern.prefix) < minPrefilterAtomLength && len(pattern.atom) == 0 {
+		if len(pattern.prefix) < minPrefilterAtomLength {
 			if atoms, ok := selectAlternativeRegexAtoms(result.regexAlternatives); ok {
 				pattern.alternativeAtoms = cloneRegexPrefilterAtoms(atoms)
 				pattern.wideAlternativeAtoms = widenRegexPrefilterAtoms(atoms)
@@ -565,7 +565,7 @@ func (rc *RuleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers
 		flags:              flags,
 		cacheKey:           patternCacheKey("regex", pattern.Value, modifiers),
 		regexAtoms:         regex.MandatoryLiteralAtoms(parsed),
-		regexAlternatives:  regex.LiteralAtomCover(parsed, minPrefilterAtomLength),
+		regexAlternatives:  regex.RequiredLiteralAlternationAtoms(parsed, minPrefilterAtomLength),
 		regexLeadingGap:    leadingGap,
 		regexByteSetAtoms:  regex.MandatoryByteSetAtoms(parsed),
 		regexFixedByteSets: fixedByteSets,
@@ -1298,9 +1298,10 @@ type SharedAutomatonEntry struct {
 	// AtomMaxOffset is the maximum number of bytes before a regex atom. It is
 	// -1 for an atom after an unbounded prefix and equals AtomOffset for
 	// fixed-offset regex and hex atoms.
-	AtomMaxOffset int
-	IsWide        bool
-	CacheIndex    int
+	AtomMaxOffset   int
+	alternativeAtom bool
+	IsWide          bool
+	CacheIndex      int
 }
 
 type CompiledProgram struct {

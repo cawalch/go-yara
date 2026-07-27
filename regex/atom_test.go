@@ -250,3 +250,47 @@ func TestLiteralAtomCoverRejectsOptionalOrIncompleteBranches(t *testing.T) {
 		})
 	}
 }
+
+func TestRequiredLiteralAlternationAtomsPreservesNestedBranches(t *testing.T) {
+	parsed, err := NewParser(ParserFlagEnableStrictEscapeSequences).Parse(
+		`"(phone|phone_number|mobile)":"[0-9]{7}"`,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	alternatives := RequiredLiteralAlternationAtoms(parsed, 2)
+	if len(alternatives) != 3 {
+		t.Fatalf("required alternation groups = %+v, want 3", alternatives)
+	}
+	for index, want := range []string{"phone", "phone_number", "mobile"} {
+		found := false
+		for _, atom := range alternatives[index] {
+			if string(atom.Data) == want && atom.MinOffset == 1 && atom.MaxOffset == 1 {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("group %d = %+v, missing %q at [1,1]", index, alternatives[index], want)
+		}
+	}
+}
+
+func TestRequiredLiteralAlternationAtomsRejectsIncompleteBranches(t *testing.T) {
+	for _, pattern := range []string{
+		`(phone|)`,
+		`(a|mobile)`,
+		`(phone|[a-z]+)`,
+		`(phone|mobile)?`,
+	} {
+		t.Run(pattern, func(t *testing.T) {
+			parsed, err := NewParser(ParserFlagEnableStrictEscapeSequences).Parse(pattern)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := RequiredLiteralAlternationAtoms(parsed, 2); got != nil {
+				t.Fatalf("RequiredLiteralAlternationAtoms(%q) = %+v, want nil", pattern, got)
+			}
+		})
+	}
+}

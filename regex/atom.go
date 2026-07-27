@@ -129,6 +129,73 @@ func LiteralAtomCover(ast *AST, minimumLength int) [][]LiteralAtom {
 	return cover.groups
 }
 
+// RequiredLiteralAlternationAtoms returns one mandatory-literal group for
+// every branch of a required alternation anywhere in ast. Unlike
+// LiteralAtomCover, it deliberately preserves the alternation even when a
+// shorter literal is common to the entire regex. Callers must keep every
+// returned group; a match may contain an atom from any one of them.
+func RequiredLiteralAlternationAtoms(ast *AST, minimumLength int) [][]LiteralAtom {
+	if ast == nil || ast.Root == nil {
+		return nil
+	}
+	minimumLength = max(1, minimumLength)
+	cover, ok := requiredLiteralAlternationCover(ast.Root, minimumLength)
+	if !ok {
+		return nil
+	}
+	return cover.groups
+}
+
+func requiredLiteralAlternationCover(node *Node, minimumLength int) (literalAtomCoverPlan, bool) {
+	node = unwrapGroups(node)
+	if node == nil {
+		return literalAtomCoverPlan{}, false
+	}
+
+	switch node.Kind {
+	case NodeAlt:
+		leaves := make([]*Node, 0, len(node.Children))
+		if !appendAlternativeLeaves(&leaves, node) {
+			return literalAtomCoverPlan{}, false
+		}
+		groups := make([][]LiteralAtom, 0, len(leaves))
+		for _, leaf := range leaves {
+			cover, ok := literalAtomCover(leaf, minimumLength)
+			if !ok || len(groups) > maxLiteralAlternatives-len(cover.groups) {
+				return literalAtomCoverPlan{}, false
+			}
+			groups = append(groups, cover.groups...)
+		}
+		return newLiteralAtomCoverPlan(groups)
+	case NodeConcat:
+		prefixMin := 0
+		prefixMax := 0
+		var best literalAtomCoverPlan
+		found := false
+		for _, child := range node.Children {
+			cover, ok := requiredLiteralAlternationCover(child, minimumLength)
+			if ok {
+				cover = shiftLiteralAtomCover(cover, prefixMin, prefixMax)
+				if !found || betterLiteralAtomCover(cover, best) {
+					best = cover
+					found = true
+				}
+			}
+			analysis := analyzeAtoms(child)
+			prefixMin = addLength(prefixMin, analysis.minLength)
+			prefixMax = addLength(prefixMax, analysis.maxLength)
+		}
+		return best, found
+	case NodePlus:
+		return requiredLiteralAlternationCover(firstChild(node), minimumLength)
+	case NodeRange:
+		if node.Start > 0 {
+			return requiredLiteralAlternationCover(firstChild(node), minimumLength)
+		}
+	}
+	return literalAtomCoverPlan{}, false
+}
+
 // LeadingByteGapAtomCover returns a candidate plan for regexes shaped like
 // <one byte><repeated byte class><literal-bearing suffix>. The suffix may be
 // an alternation; every returned group must contribute one atom to keep the

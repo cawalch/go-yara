@@ -44,6 +44,13 @@ rule dependency {
         direct and $f
 }
 
+rule contact_field {
+    strings:
+        $contact = /"(phone|phone_number|mobile)":"[0-9]{7}"/
+    condition:
+        $contact
+}
+
 private rule hidden {
     strings:
         $g = "golf"
@@ -66,6 +73,9 @@ func TestPrefilterFastRejectResultParity(t *testing.T) {
 		[]byte("charlie42"),
 		[]byte("DELTA"),
 		[]byte("alpha foxtrot"),
+		[]byte(`{"phone":"1234567"}`),
+		[]byte(`{"phone":"1234567","mobile":"7654321"}`),
+		[]byte(`{"mobile":"7654321","phone":"1234567"}`),
 		[]byte("echo"),
 		[]byte("golf"),
 		[]byte("alpha beta beta charlie7 DELTA echo foxtrot golf"),
@@ -138,6 +148,7 @@ func FuzzPrefilterFastRejectResultParity(f *testing.F) {
 		[]byte("alpha beta"),
 		[]byte("charlie42 DELTA"),
 		[]byte("alpha foxtrot golf"),
+		[]byte(`{"phone":"1234567","mobile":"7654321"}`),
 	} {
 		f.Add(seed)
 	}
@@ -278,6 +289,69 @@ rule api_key {
 	}
 	if allocations != 0 {
 		t.Fatalf("clean reject allocations = %v, want 0", allocations)
+	}
+}
+
+func TestScannerMatchesLeadingAlternationCleanRejectHasNoAllocations(t *testing.T) {
+	tests := []struct {
+		name   string
+		source string
+	}{
+		{
+			name: "alternation rule",
+			source: `
+rule contact {
+    strings:
+        $value = /"(phone|phone_number|mobile)":"[0-9]{7}"/
+    condition:
+        $value
+}
+`,
+		},
+		{
+			name: "mixed ruleset",
+			source: `
+rule api_key {
+    strings:
+        $value = "api_key"
+    condition:
+        $value
+}
+
+rule contact {
+    strings:
+        $value = /"(phone|phone_number|mobile)":"[0-9]{7}"/
+    condition:
+        $value
+}
+`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			program, err := NewCompiler().CompileSource(test.source)
+			if err != nil {
+				t.Fatalf("CompileSource() error = %v", err)
+			}
+			scanner := NewScanner(program)
+			defer scanner.Close()
+			data := []byte(`{"level":"info","message":"request completed"}`)
+			if matched, err := scanner.Matches(data); err != nil || matched {
+				t.Fatalf("warm-up Matches() = (%v, %v), want (false, nil)", matched, err)
+			}
+
+			var scanErr error
+			allocations := testing.AllocsPerRun(1000, func() {
+				_, scanErr = scanner.Matches(data)
+			})
+			if scanErr != nil {
+				t.Fatalf("Matches() error = %v", scanErr)
+			}
+			if allocations != 0 {
+				t.Fatalf("clean reject allocations = %v, want 0", allocations)
+			}
+		})
 	}
 }
 

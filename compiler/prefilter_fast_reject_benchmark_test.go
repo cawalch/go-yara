@@ -25,19 +25,7 @@ rule structured_secret {
 	}
 	for _, input := range inputs {
 		b.Run(input.name, func(b *testing.B) {
-			scanner := NewScanner(program)
-			defer scanner.Close()
-			if _, err := scanner.Matches(input.data); err != nil {
-				b.Fatalf("warm-up Matches() error = %v", err)
-			}
-			b.ReportAllocs()
-			b.SetBytes(int64(len(input.data)))
-			b.ResetTimer()
-			for b.Loop() {
-				if _, err := scanner.Matches(input.data); err != nil {
-					b.Fatal(err)
-				}
-			}
+			benchmarkScannerMatches(b, program, input.data)
 		})
 	}
 
@@ -60,4 +48,36 @@ rule structured_secret {
 			}
 		})
 	})
+
+	alternationProgram, err := NewCompiler().CompileSource(`
+rule contact {
+    strings:
+        $value = /"(phone|phone_number|mobile)":"[0-9]{7}"/
+    condition:
+        $value
+}
+`)
+	if err != nil {
+		b.Fatalf("CompileSource() alternation error = %v", err)
+	}
+	b.Run("alternation_reject", func(b *testing.B) {
+		benchmarkScannerMatches(b, alternationProgram, reject)
+	})
+}
+
+func benchmarkScannerMatches(b *testing.B, program *CompiledProgram, data []byte) {
+	b.Helper()
+	scanner := NewScanner(program)
+	defer scanner.Close()
+	if _, err := scanner.Matches(data); err != nil {
+		b.Fatalf("warm-up Matches() error = %v", err)
+	}
+	b.ReportAllocs()
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for b.Loop() {
+		if _, err := scanner.Matches(data); err != nil {
+			b.Fatal(err)
+		}
+	}
 }

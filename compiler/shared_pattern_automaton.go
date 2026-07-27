@@ -29,7 +29,10 @@ func newSharedPatternAutomatonBuilder(rules []*CompiledRule) *sharedPatternAutom
 		if rule.Automaton != nil {
 			totalEntries += len(rule.Automaton.Strings)
 		}
-		totalEntries += len(rule.RegexPatterns)*2 + len(rule.HexPatterns)
+		for _, pattern := range rule.RegexPatterns {
+			totalEntries += max(2, len(pattern.alternativeAtoms)*2)
+		}
+		totalEntries += len(rule.HexPatterns)
 	}
 
 	automaton := NewACAutomaton()
@@ -95,8 +98,8 @@ func (builder *sharedPatternAutomatonBuilder) addTextPatterns(ruleIndex int, rul
 func (builder *sharedPatternAutomatonBuilder) addRegexPrefilters(ruleIndex int, rule *CompiledRule) {
 	for _, strID := range sortedPatternIDs(rule.RegexPatterns) {
 		pattern := rule.RegexPatterns[strID]
-		atom, ok := selectSharedRegexAtom(pattern)
-		if !ok || pattern.cacheKey == "" {
+		atoms := selectSharedRegexAtoms(pattern)
+		if len(atoms) == 0 || pattern.cacheKey == "" {
 			continue
 		}
 
@@ -113,39 +116,49 @@ func (builder *sharedPatternAutomatonBuilder) addRegexPrefilters(ruleIndex int, 
 		}
 
 		for _, wide := range encodings {
-			key := prefilterDedupKey{kind: StringKindRegex, cacheKey: pattern.cacheKey, wide: wide}
-			if _, exists := builder.seen[key]; exists {
-				continue
-			}
-			builder.seen[key] = struct{}{}
-
-			atomData := atom.data
-			atomMinOffset := atom.minOffset
-			atomMaxOffset := atom.maxOffset
-			flags := pattern.Flags &^ regex.FlagsWide
-			if wide {
-				atomData = widenRegexPrefix(atomData)
-				atomMinOffset *= 2
-				if atomMaxOffset >= 0 {
-					atomMaxOffset *= 2
+			for atomIndex, atom := range atoms {
+				key := prefilterDedupKey{
+					kind:          StringKindRegex,
+					cacheKey:      pattern.cacheKey,
+					wide:          wide,
+					atomData:      string(atom.data),
+					atomMinOffset: atom.minOffset,
+					atomMaxOffset: atom.maxOffset,
 				}
-				flags |= regex.FlagsWide
+				if _, exists := builder.seen[key]; exists {
+					continue
+				}
+				builder.seen[key] = struct{}{}
+
+				atomData := atom.data
+				atomMinOffset := atom.minOffset
+				atomMaxOffset := atom.maxOffset
+				flags := pattern.Flags &^ regex.FlagsWide
+				if wide {
+					atomData = widenRegexPrefix(atomData)
+					atomMinOffset *= 2
+					if atomMaxOffset >= 0 {
+						atomMaxOffset *= 2
+					}
+					flags |= regex.FlagsWide
+				}
+				builder.prefilterSpecs = append(builder.prefilterSpecs, sharedPrefilterSpec{
+					identifier: fmt.Sprintf("%s:%s:regex:%t:%d", rule.Name, strID, wide, atomIndex),
+					data:       atomData,
+					isRegex:    true,
+					flags:      flags,
+					entry: SharedAutomatonEntry{
+						RuleIndex:       ruleIndex,
+						StringIdx:       rule.ResolveStringIndex(strID),
+						Kind:            StringKindRegex,
+						AtomOffset:      atomMinOffset,
+						AtomMaxOffset:   atomMaxOffset,
+						alternativeAtom: len(atoms) > 1,
+						IsWide:          wide,
+						CacheIndex:      pattern.cacheIndex,
+					},
+				})
 			}
-			builder.prefilterSpecs = append(builder.prefilterSpecs, sharedPrefilterSpec{
-				identifier: fmt.Sprintf("%s:%s:regex:%t", rule.Name, strID, wide),
-				data:       atomData,
-				isRegex:    true,
-				flags:      flags,
-				entry: SharedAutomatonEntry{
-					RuleIndex:     ruleIndex,
-					StringIdx:     rule.ResolveStringIndex(strID),
-					Kind:          StringKindRegex,
-					AtomOffset:    atomMinOffset,
-					AtomMaxOffset: atomMaxOffset,
-					IsWide:        wide,
-					CacheIndex:    pattern.cacheIndex,
-				},
-			})
 		}
 	}
 }
