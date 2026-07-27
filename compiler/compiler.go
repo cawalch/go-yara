@@ -394,12 +394,7 @@ func (c *Compiler) compileParseWithContext(ctx context.Context, source string) (
 	if err != nil {
 		var partialErr *parser.PartialParseError
 		if !c.options.IgnoreInvalidRules || !errors.As(err, &partialErr) || len(c.parser.ProgramErrors()) != 0 {
-			c.stats.Errors = append(c.stats.Errors, CompilationError{
-				Phase:   "parsing",
-				Message: err.Error(),
-				Line:    0,
-				Column:  0,
-			})
+			c.recordParserDiagnostics(err)
 			return nil, fmt.Errorf("parsing rules: %w", err)
 		}
 		program = partialErr.Program
@@ -426,18 +421,40 @@ func (c *Compiler) compileParseWithContext(ctx context.Context, source string) (
 
 	// Check for parser errors
 	if len(c.parser.Errors()) > 0 && !c.options.IgnoreInvalidRules {
-		for _, err := range c.parser.Errors() {
-			c.stats.Errors = append(c.stats.Errors, CompilationError{
-				Phase:   "parsing",
-				Message: err.Error(),
-				Line:    0,
-				Column:  0,
-			})
-		}
+		c.recordParserDiagnostics(nil)
 		return nil, errors.New("parser errors found")
 	}
 
 	return program, nil
+}
+
+func (c *Compiler) recordParserDiagnostics(fallback error) {
+	parserErrors := c.parser.Errors()
+	if len(parserErrors) == 0 {
+		message := "parser errors found"
+		if fallback != nil {
+			message = fallback.Error()
+		}
+		c.stats.Errors = append(c.stats.Errors, CompilationError{
+			Phase:   "parsing",
+			Message: message,
+		})
+		return
+	}
+	for _, parseErr := range parserErrors {
+		line, column := 0, 0
+		var lexicalErr *lexer.Error
+		if errors.As(parseErr, &lexicalErr) {
+			line = lexicalErr.Position.Line
+			column = lexicalErr.Position.Column
+		}
+		c.stats.Errors = append(c.stats.Errors, CompilationError{
+			Phase:   "parsing",
+			Message: parseErr.Error(),
+			Line:    line,
+			Column:  column,
+		})
+	}
 }
 
 func (c *Compiler) recordParseInvalidRule(invalid parser.InvalidRule) {

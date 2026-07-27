@@ -37,8 +37,6 @@ func TestRegexLiterals_EdgeCases(t *testing.T) {
 		input    string
 		expected token.Token
 	}{
-		{"empty regex", "//", token.Token{Type: token.RegexLit, Literal: "//"}},
-		{"regex only flags", "//is", token.Token{Type: token.RegexLit, Literal: "//is"}},
 		{"unterminated", "/pattern", token.Token{Type: token.RegexLit, Literal: "/pattern"}},
 		{"escaped backslash", "/pattern\\/", token.Token{Type: token.RegexLit, Literal: "/pattern\\/"}},
 		{"char class", "/[a-zA-Z0-9]/", token.Token{Type: token.RegexLit, Literal: "/[a-zA-Z0-9]/"}},
@@ -55,6 +53,47 @@ func TestRegexLiterals_EdgeCases(t *testing.T) {
 	}
 }
 
+func TestRegexLiterals_EmptyRegexRequiresPatternContext(t *testing.T) {
+	helper := lexer.NewTestHelper(t)
+	tokens := helper.CollectTokens(`
+rule empty_regexes {
+    strings:
+        $plain = //
+        $flagged = //is nocase
+    condition:
+        any of them
+}
+`)
+	var regexes []string
+	nocase := 0
+	for _, tok := range tokens {
+		switch tok.Type {
+		case token.RegexLit:
+			regexes = append(regexes, tok.Literal)
+		case token.NOCASE:
+			nocase++
+		}
+	}
+	if len(regexes) != 2 || regexes[0] != "//" || regexes[1] != "//is" {
+		t.Fatalf("regex literals = %v, want [// //is]", regexes)
+	}
+	if nocase != 1 {
+		t.Fatalf("nocase modifier count = %d, want 1", nocase)
+	}
+
+	tokens = helper.CollectTokens(`"value" matches //`)
+	foundEmptyMatchRegex := false
+	for _, tok := range tokens {
+		if tok.Type == token.RegexLit && tok.Literal == "//" {
+			foundEmptyMatchRegex = true
+			break
+		}
+	}
+	if !foundEmptyMatchRegex {
+		t.Fatalf("matches expression tokens = %v, want empty regex literal", tokens)
+	}
+}
+
 func TestRegexLiterals_VsComments_AndInYARARule(t *testing.T) {
 	helper := lexer.NewTestHelper(t)
 	// Vs comments
@@ -66,6 +105,8 @@ func TestRegexLiterals_VsComments_AndInYARARule(t *testing.T) {
 		{"regex then line comment", "/pattern/ // comment", lexer.CreateTokenSequence(token.RegexLit, "/pattern/")},
 		{"regex then block comment", "/pattern/ /* comment */", lexer.CreateTokenSequence(token.RegexLit, "/pattern/")},
 		{"line comment not regex", "// not a regex", lexer.CreateTokenSequence()},
+		{"empty line comment not regex", "//", lexer.CreateTokenSequence()},
+		{"flag-like line comment not regex", "//is", lexer.CreateTokenSequence()},
 		{"block comment not regex", "/* not a regex */", lexer.CreateTokenSequence()},
 	}
 	for _, tt := range cases {
