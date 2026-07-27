@@ -110,8 +110,6 @@ func truthWithoutStringMatches(expr ast.Expression) noStringTruth {
 		return invertTruth(truthWithoutStringMatches(e.Right))
 	case *ast.OfExpression:
 		return ofTruthWithoutStringMatches(e)
-	case *ast.ForLoop:
-		return forLoopTruthWithoutStringMatches(e)
 	case *ast.PercentExpression:
 		return truthWithoutStringMatches(e.Value)
 	default:
@@ -368,42 +366,6 @@ func ofTruthWithoutStringMatches(expr *ast.OfExpression) noStringTruth {
 		return noStringTrue
 	}
 	return noStringFalse
-}
-
-func forLoopTruthWithoutStringMatches(expr *ast.ForLoop) noStringTruth {
-	if len(expr.Variables) != 0 || !isRuleStringSet(expr.Range) {
-		return noStringUnknown
-	}
-	if expr.InRange != nil && !staticStringConstraint(token.IN, expr.InRange) {
-		return noStringUnknown
-	}
-	if expr.AtOffset != nil && !staticStringConstraint(token.AT, expr.AtOffset) {
-		return noStringUnknown
-	}
-	if truthWithoutStringMatches(expr.Condition)&noStringTrue != 0 {
-		return noStringUnknown
-	}
-
-	switch expr.Quantifier {
-	case QuantifierAny:
-		return noStringFalse
-	case QuantifierNone:
-		return noStringTrue
-	case QuantifierAll:
-		if stringSetStaticallyNonEmpty(expr.Range) {
-			return noStringFalse
-		}
-		return noStringUnknown
-	default:
-		count, err := strconv.ParseInt(expr.Quantifier, 10, 64)
-		if err != nil {
-			return noStringUnknown
-		}
-		if count <= 0 {
-			return noStringTrue
-		}
-		return noStringFalse
-	}
 }
 
 func isRuleStringSet(expr ast.Expression) bool {

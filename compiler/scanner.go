@@ -418,29 +418,19 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 		if !rule.IsGlobal && !s.hasMatchingTag(rule) {
 			continue
 		}
-		if !ruleHeaderConstraintsMatch(rule, data) {
-			s.ruleResults[rule.Name] = false
-			result.RuleResults[rule.Name] = false
-			result.PrunedRules = append(result.PrunedRules, rule.Name)
-			continue
-		}
-		s.populateRuleMatchContext(rule, data, useSharedAutomaton)
-		if !s.prefilterDisabled && rule.RequiresStringMatch && len(s.matchCtx.spans) == 0 {
-			s.ruleResults[rule.Name] = false
-			result.RuleResults[rule.Name] = false
-			continue
-		}
-
-		s.prepareInterpreter(rule)
-		s.interp.SetItersmax(s.itersmax)
-		if err := s.interp.Execute(); err != nil {
+		evaluation, err := s.evaluateRuleCondition(rule, data, useSharedAutomaton)
+		if err != nil {
 			return nil, err
 		}
+		if evaluation.pruned {
+			result.PrunedRules = append(result.PrunedRules, rule.Name)
+			result.RuleResults[rule.Name] = false
+			continue
+		}
 
-		matched := s.interp.GetRuleResults()[rule.Name]
 		// The default preserves the historical all-evaluated-rules result shape.
 		// The opt-in compact result mode materializes only matching public rules.
-		materialize := !s.reportedMatchesOnly || matched && !rule.IsPrivate
+		materialize := !s.reportedMatchesOnly || evaluation.matched && !rule.IsPrivate
 		if materialize && len(s.matchCtx.spans) > 0 {
 			ruleMatches := materializeMatches(s.matchCtx.spans)
 			ruleMatches = filterPrivateStrings(rule, ruleMatches)
@@ -452,7 +442,7 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 			}
 			result.Matches[rule.Name] = ruleMatches
 		}
-		result.RuleResults[rule.Name] = matched
+		result.RuleResults[rule.Name] = evaluation.matched
 	}
 
 	// Check if all global rules matched
@@ -578,24 +568,15 @@ func (s *Scanner) MatchesWithContext(ctx context.Context, data []byte) (bool, er
 			continue
 		}
 
-		matched := false
-		if ruleHeaderConstraintsMatch(rule, data) {
-			s.populateRuleMatchContext(rule, data, useSharedAutomaton)
-			if s.prefilterDisabled || !rule.RequiresStringMatch || len(s.matchCtx.spans) != 0 {
-				s.prepareInterpreter(rule)
-				s.interp.SetItersmax(s.itersmax)
-				if err := s.interp.Execute(); err != nil {
-					return false, err
-				}
-				matched = s.interp.GetRuleResults()[rule.Name]
-			}
+		evaluation, err := s.evaluateRuleCondition(rule, data, useSharedAutomaton)
+		if err != nil {
+			return false, err
 		}
-		s.ruleResults[rule.Name] = matched
 
-		if rule.IsGlobal && !matched {
+		if rule.IsGlobal && !evaluation.matched {
 			allGlobalMatched = false
 		}
-		if rule.IsPrivate || !s.hasMatchingTag(rule) || !matched {
+		if rule.IsPrivate || !s.hasMatchingTag(rule) || !evaluation.matched {
 			continue
 		}
 		if rule.IsGlobal {
@@ -606,121 +587,6 @@ func (s *Scanner) MatchesWithContext(ctx context.Context, data []byte) (bool, er
 	}
 	clear(s.ruleResults)
 	return matchedPublicGlobal || allGlobalMatched && matchedPublicNonGlobal, nil
-}
-
-func (s *Scanner) preparePatternScan(ctx context.Context, data []byte) (bool, error) {
-	s.nonTextCache.reset(s.program.nonTextCacheSize)
-	s.populateFixedRegexCache(data, &s.nonTextCache)
-	s.regexByteSetCache.reset()
-	s.resetGlobalMatches(len(s.program.Rules))
-	s.resetPrefilterCandidates(len(s.program.SharedLookup))
-
-	useSharedAutomaton := shouldUseSharedPatternAutomaton(data, s.program)
-	if !useSharedAutomaton {
-		return false, nil
-	}
-	if err := ctx.Err(); err != nil {
-		return false, err
-	}
-	s.extractGlobalMatchesInt(data, s.globalMatches, &s.nonTextCache)
-	return true, nil
-}
-
-func (s *Scanner) populateRuleMatchContext(rule *CompiledRule, data []byte, useSharedAutomaton bool) {
-	s.matchCtx.Reset(data)
-	s.matchCtx.maxMatchesPerPattern = 0
-	if s.fastScan && rule.FastScanSafe {
-		s.matchCtx.maxMatchesPerPattern = 1
-	}
-	if useSharedAutomaton {
-		s.addStaticMatchesInt(rule, data, s.globalMatches[rule.Index])
-	} else {
-		s.addLocalTextMatches(rule, data)
-	}
-	s.addLocalNonTextMatches(rule, data, &s.nonTextCache)
-}
-
-func (s *Scanner) allEvaluatedRulesPrefilterRejected(data []byte, useSharedAutomaton bool) bool {
-	for _, rule := range s.program.Rules {
-		if !rule.IsGlobal && !s.hasMatchingTag(rule) {
-			continue
-		}
-		if !ruleHeaderConstraintsMatch(rule, data) {
-			continue
-		}
-		if !rule.RequiresStringMatch {
-			return false
-		}
-		mayMatch, complete := s.ruleMayHavePrefilterMatch(rule, useSharedAutomaton)
-		if mayMatch || !complete {
-			return false
-		}
-	}
-	return true
-}
-
-func (s *Scanner) ruleMayHavePrefilterMatch(rule *CompiledRule, useSharedAutomaton bool) (bool, bool) {
-	if !useSharedAutomaton || rule.Index < 0 || rule.Index >= len(s.globalMatches) {
-		return true, false
-	}
-	if len(rule.IndexToStringID) == 0 {
-		return true, false
-	}
-	if len(s.globalMatches[rule.Index]) != 0 {
-		return true, true
-	}
-
-	complete := true
-	for _, identifier := range rule.IndexToStringID {
-		kind, exists := rule.StringKinds[identifier]
-		if !exists {
-			return true, false
-		}
-		switch kind {
-		case StringKindText:
-			// Text strings are always represented in the shared automaton.
-		case StringKindRegex:
-			pattern, exists := rule.RegexPatterns[identifier]
-			if !exists {
-				return true, false
-			}
-			matches, ready := s.nonTextCache.get(pattern.cacheIndex)
-			if !ready {
-				complete = false
-				continue
-			}
-			if len(matches) != 0 {
-				return true, true
-			}
-		case StringKindHex:
-			pattern, exists := rule.HexPatterns[identifier]
-			if !exists || pattern == nil {
-				return true, false
-			}
-			matches, ready := s.nonTextCache.get(pattern.cacheIndex)
-			if !ready {
-				complete = false
-				continue
-			}
-			if len(matches) != 0 {
-				return true, true
-			}
-		default:
-			return true, false
-		}
-	}
-	return false, complete
-}
-
-func (s *Scanner) resetGlobalMatches(size int) {
-	if cap(s.globalMatches) < size {
-		s.globalMatches = make([][]globalMatchEntry, size)
-		return
-	}
-	s.globalMatches = s.globalMatches[:size]
-	for index := range s.globalMatches {
-		s.globalMatches[index] = s.globalMatches[index][:0]
-	}
 }
 
 // ScanReader reads from the reader and scans the data.
