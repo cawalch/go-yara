@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"slices"
 	"sort"
 
 	"github.com/cawalch/go-yara/ast"
@@ -54,9 +55,12 @@ type regexByteSetPrefilter struct {
 }
 
 type prefilterDedupKey struct {
-	kind     StringKind
-	cacheKey string
-	wide     bool
+	kind          StringKind
+	cacheKey      string
+	wide          bool
+	atomData      string
+	atomMinOffset int
+	atomMaxOffset int
 }
 
 type nonTextCacheKey struct {
@@ -439,24 +443,33 @@ func betterRegexByteSetPrefilter(candidate, current regexByteSetPrefilter) bool 
 	return true
 }
 
-func selectSharedRegexAtom(pattern RegexPattern) (regexPrefilterAtom, bool) {
+func selectSharedRegexAtoms(pattern RegexPattern) []regexPrefilterAtom {
 	if atom, ok := selectLiteralAtom(pattern.prefix); ok {
-		return regexPrefilterAtom{
+		return []regexPrefilterAtom{{
 			data:      atom.data,
 			minOffset: atom.offset,
 			maxOffset: atom.offset,
 			score:     atom.score,
-		}, true
+		}}
 	}
-	if len(pattern.atom) < minPrefilterAtomLength {
-		return regexPrefilterAtom{}, false
+	if len(pattern.alternativeAtoms) > 1 && !hasUnboundedRegexAlternative(pattern.alternativeAtoms) {
+		// Prefer a complete OR-cover to a single common atom. Besides being
+		// more selective, multiple sparse entries let a lone alternation regex
+		// cross the shared-automaton threshold and participate in whole-scan
+		// rejection. Unbounded covers retain the existing single-atom plan,
+		// which avoids expanding sparse root sets without improving candidate
+		// start recovery.
+		return pattern.alternativeAtoms
 	}
-	return regexPrefilterAtom{
-		data:      pattern.atom,
-		minOffset: pattern.atomMinOffset,
-		maxOffset: pattern.atomMaxOffset,
-		score:     prefilterAtomScore(pattern.atom),
-	}, true
+	if len(pattern.atom) >= minPrefilterAtomLength {
+		return []regexPrefilterAtom{{
+			data:      pattern.atom,
+			minOffset: pattern.atomMinOffset,
+			maxOffset: pattern.atomMaxOffset,
+			score:     prefilterAtomScore(pattern.atom),
+		}}
+	}
+	return nil
 }
 
 func prefilterAtomScore(atom []byte) int {
@@ -544,18 +557,58 @@ func (s *Scanner) resetPrefilterCandidates(size int) {
 }
 
 func (s *Scanner) populateNonTextPrefilterCache(data []byte, cache *nonTextMatchCache) {
-	for lookupIdx, entry := range s.program.SharedLookup {
+	for lookupIdx := 0; lookupIdx < len(s.program.SharedLookup); {
+		entry := s.program.SharedLookup[lookupIdx]
 		if entry.Kind == StringKindText || entry.CacheIndex < 0 || entry.CacheIndex >= len(cache.matches) {
+			lookupIdx++
 			continue
 		}
 		if entry.RuleIndex < 0 || entry.RuleIndex >= len(s.program.Rules) {
+			lookupIdx++
 			continue
 		}
 		rule := s.program.Rules[entry.RuleIndex]
 		if entry.StringIdx < 0 || entry.StringIdx >= len(rule.IndexToStringID) {
+			lookupIdx++
 			continue
 		}
 		strID := rule.IndexToStringID[entry.StringIdx]
+		if entry.Kind == StringKindRegex && entry.alternativeAtom {
+			groupEnd := lookupIdx + 1
+			for groupEnd < len(s.program.SharedLookup) {
+				next := s.program.SharedLookup[groupEnd]
+				if !next.alternativeAtom ||
+					next.Kind != StringKindRegex ||
+					next.CacheIndex != entry.CacheIndex ||
+					next.IsWide != entry.IsWide {
+					break
+				}
+				groupEnd++
+			}
+
+			dst := cache.matches[entry.CacheIndex]
+			groupStart := len(dst)
+			for candidateIndex := lookupIdx; candidateIndex < groupEnd; candidateIndex++ {
+				candidateEntry := s.program.SharedLookup[candidateIndex]
+				candidates := s.prefilterCandidates[candidateIndex]
+				if len(candidates) > 0 {
+					dst = appendRegexPrefilterMatches(
+						dst,
+						rule,
+						strID,
+						candidateEntry,
+						data,
+						candidates,
+					)
+				}
+			}
+			group := sortAndDedupeMatchSpans(dst[groupStart:])
+			dst = dst[:groupStart+len(group)]
+			cache.set(entry.CacheIndex, dst)
+			lookupIdx = groupEnd
+			continue
+		}
+
 		candidates := s.prefilterCandidates[lookupIdx]
 
 		switch entry.Kind {
@@ -572,7 +625,37 @@ func (s *Scanner) populateNonTextPrefilterCache(data []byte, cache *nonTextMatch
 			}
 			cache.set(entry.CacheIndex, dst)
 		}
+		lookupIdx++
 	}
+}
+
+func sortAndDedupeMatchSpans(matches []matchSpan) []matchSpan {
+	slices.SortFunc(matches, func(left, right matchSpan) int {
+		switch {
+		case left.Offset < right.Offset:
+			return -1
+		case left.Offset > right.Offset:
+			return 1
+		case left.Length < right.Length:
+			return -1
+		case left.Length > right.Length:
+			return 1
+		default:
+			return 0
+		}
+	})
+	if len(matches) < 2 {
+		return matches
+	}
+	unique := 1
+	for _, candidate := range matches[1:] {
+		if candidate == matches[unique-1] {
+			continue
+		}
+		matches[unique] = candidate
+		unique++
+	}
+	return matches[:unique]
 }
 
 //nolint:revive // argument-limit: hot-path helper keeps candidate verification direct
