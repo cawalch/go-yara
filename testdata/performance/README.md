@@ -9,7 +9,6 @@ performance tests. Large inputs are generated locally and ignored by git.
 
 - `pe_malware_sample.bin` - PE file with malware patterns
 - `elf_backdoor_sample.bin` - ELF file with backdoor patterns
-- `webshell_sample.php` - PHP webshell sample
 - `ransomware_sample.exe` - Ransomware patterns
 - `banker_sample.dll` - Banking trojan patterns
 - `ddos_bot_sample.exe` - DDoS bot patterns
