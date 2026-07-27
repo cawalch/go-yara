@@ -58,6 +58,13 @@ rule credential_field {
         $credential
 }
 
+rule date_of_birth_field {
+    strings:
+        $dob = /"(date_of_birth|birth_date|birthdate|dateOfBirth|birthday|dob)":"[0-9]{4}"/
+    condition:
+        $dob
+}
+
 private rule hidden {
     strings:
         $g = "golf"
@@ -86,6 +93,10 @@ func TestPrefilterFastRejectResultParity(t *testing.T) {
 		[]byte(`{"PASSWORD":"REDACTED"}`),
 		[]byte(`{"PassWord":"null"}`),
 		[]byte(`{"P4ssWord":"REDACTED"}`),
+		[]byte(`{"date_of_birth":"1984"}`),
+		[]byte(`{"dateOfBirth":"2001"}`),
+		[]byte(`{"dob":"1999"}`),
+		[]byte(`{"dob":"99"}`),
 		[]byte("echo"),
 		[]byte("golf"),
 		[]byte("alpha beta beta charlie7 DELTA echo foxtrot golf"),
@@ -161,6 +172,9 @@ func FuzzPrefilterFastRejectResultParity(f *testing.F) {
 		[]byte(`{"phone":"1234567","mobile":"7654321"}`),
 		[]byte(`{"PASSWORD":"REDACTED"}`),
 		[]byte(`{"PassWord":"null"}`),
+		[]byte(`{"date_of_birth":"1984"}`),
+		[]byte(`{"dateOfBirth":"2001"}`),
+		[]byte(`{"dob":"1999"}`),
 	} {
 		f.Add(seed)
 	}
@@ -305,6 +319,26 @@ rule api_key {
 }
 
 func TestScannerMatchesLeadingAlternationCleanRejectHasNoAllocations(t *testing.T) {
+	var piiRuleset bytes.Buffer
+	for index := range 22 {
+		fmt.Fprintf(&piiRuleset, `
+rule pii_marker_%02d {
+    strings:
+        $value = "pii_marker_%02d"
+    condition:
+        $value
+}
+`, index, index)
+	}
+	piiRuleset.WriteString(`
+rule pii_dob_in_assignment {
+    strings:
+        $value = /"(date_of_birth|birth_date|birthdate|dateOfBirth|birthday|dob)":"[0-9]{4}"/
+    condition:
+        $value
+}
+`)
+
 	tests := []struct {
 		name   string
 		source string
@@ -337,6 +371,21 @@ rule contact {
         $value
 }
 `,
+		},
+		{
+			name: "six alternatives including dob",
+			source: `
+rule pii_dob_in_assignment {
+    strings:
+        $value = /"(date_of_birth|birth_date|birthdate|dateOfBirth|birthday|dob)":"[0-9]{4}"/
+    condition:
+        $value
+}
+`,
+		},
+		{
+			name:   "23-rule PII-shaped ruleset",
+			source: piiRuleset.String(),
 		},
 	}
 

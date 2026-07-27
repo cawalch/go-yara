@@ -244,6 +244,24 @@ func TestSharedRegexPrefilterUsesCompleteAlternativeAtomSet(t *testing.T) {
 			wantShared:       true,
 		},
 		{
+			name:             "five alternatives including dob",
+			pattern:          `"(date_of_birth|birth_date|birthdate|birthday|dob)":"[0-9]{4}"`,
+			wantMinimumAtoms: 5,
+			wantShared:       true,
+		},
+		{
+			name:             "six alternatives including dob",
+			pattern:          `"(date_of_birth|birth_date|birthdate|dateOfBirth|birthday|dob)":"[0-9]{4}"`,
+			wantMinimumAtoms: 6,
+			wantShared:       true,
+		},
+		{
+			name:             "seven long alternatives",
+			pattern:          "(alpha000|bravo111|charlie2|delta333|echo4444|foxtrot5|golf6666)",
+			wantMinimumAtoms: 7,
+			wantShared:       true,
+		},
+		{
 			name:             "bounded many alternatives",
 			pattern:          "(" + manyAlternatives.String() + ")",
 			wantMinimumAtoms: 32,
@@ -257,6 +275,11 @@ func TestSharedRegexPrefilterUsesCompleteAlternativeAtomSet(t *testing.T) {
 		{
 			name:       "short alternatives fall back",
 			pattern:    "(a|b|c)",
+			wantShared: false,
+		},
+		{
+			name:       "dot-only branch falls back",
+			pattern:    `"(date_of_birth|birth_date|birthdate|dateOfBirth|birthday|.)`,
 			wantShared: false,
 		},
 	}
@@ -293,6 +316,34 @@ rule alternative {
 				t.Fatalf("shared regex entries = %d, want conservative fallback", shared)
 			}
 		})
+	}
+}
+
+func TestIncompleteAlternativeDoesNotSuppressOtherSharedRegexes(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+rule alternatives {
+    strings:
+        $complete = /(alpha_token|bravo_token|charlie_token)/
+        $incomplete = /(delta_token|.)/
+    condition:
+        any of them
+}
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if atoms := program.Rules[0].RegexPatterns["$incomplete"].alternativeAtoms; len(atoms) != 0 {
+		t.Fatalf("incomplete alternative atoms = %+v, want conservative fallback", atoms)
+	}
+	completeIndex := program.Rules[0].ResolveStringIndex("$complete")
+	shared := 0
+	for _, entry := range program.SharedLookup {
+		if entry.Kind == StringKindRegex && entry.StringIdx == completeIndex {
+			shared++
+		}
+	}
+	if shared != 3 {
+		t.Fatalf("complete alternative shared entries = %d, want 3", shared)
 	}
 }
 

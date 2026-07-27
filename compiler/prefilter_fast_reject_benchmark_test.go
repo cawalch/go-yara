@@ -64,6 +64,28 @@ rule contact {
 		benchmarkScannerMatches(b, alternationProgram, reject)
 	})
 
+	largeAlternationProgram, err := NewCompiler().CompileSource(`
+rule pii_dob_in_assignment {
+    strings:
+        $value = /"(date_of_birth|birth_date|birthdate|dateOfBirth|birthday|dob)":"[0-9]{4}"/
+    condition:
+        $value
+}
+`)
+	if err != nil {
+		b.Fatalf("CompileSource() large alternation error = %v", err)
+	}
+	b.Run("large_alternation_reject", func(b *testing.B) {
+		benchmarkScannerMatches(b, largeAlternationProgram, reject)
+	})
+	b.Run("large_alternation_match", func(b *testing.B) {
+		benchmarkScannerMatches(
+			b,
+			largeAlternationProgram,
+			[]byte(`{"date_of_birth":"1984"}`),
+		)
+	})
+
 	caseClassProgram, err := NewCompiler().CompileSource(`
 rule credential {
     strings:
