@@ -358,6 +358,31 @@ func TestRequiredLiteralAlternationAtomsPreservesNestedBranches(t *testing.T) {
 	}
 }
 
+func TestRequiredLiteralAlternationAtomsPrefersSelectiveCover(t *testing.T) {
+	parsed, err := NewParser(ParserFlagEnableStrictEscapeSequences).Parse(
+		`"(dob|date_of_birth|birth_date)":"(19|20)[0-9]{2}"`,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	alternatives := RequiredLiteralAlternationAtoms(parsed, 2)
+	if len(alternatives) != 3 {
+		t.Fatalf("required alternation groups = %+v, want the three field-name branches", alternatives)
+	}
+	for index, want := range []string{"dob", "date_of_birth", "birth_date"} {
+		found := false
+		for _, atom := range alternatives[index] {
+			if string(atom.Data) == want && atom.MinOffset == 1 && atom.MaxOffset == 1 {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("group %d = %+v, missing %q at [1,1]", index, alternatives[index], want)
+		}
+	}
+}
+
 func TestRequiredLiteralAlternationAtomsRejectsIncompleteBranches(t *testing.T) {
 	for _, pattern := range []string{
 		`(phone|)`,

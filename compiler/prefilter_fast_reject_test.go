@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -65,6 +66,14 @@ rule date_of_birth_field {
         $dob
 }
 
+rule date_of_birth_assignment {
+    strings:
+        $iso = /"(dob|date_of_birth|birth_date|birthdate|dateOfBirth|birthday|bday)":"(19|20)[0-9]{2}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])"/
+        $us = /"(dob|date_of_birth|birth_date|birthdate|dateOfBirth|birthday|bday)":"(0[1-9]|1[0-2])\/(0[1-9]|[12][0-9]|3[01])\/(19|20)[0-9]{2}"/
+    condition:
+        any of them
+}
+
 private rule hidden {
     strings:
         $g = "golf"
@@ -97,6 +106,10 @@ func TestPrefilterFastRejectResultParity(t *testing.T) {
 		[]byte(`{"dateOfBirth":"2001"}`),
 		[]byte(`{"dob":"1999"}`),
 		[]byte(`{"dob":"99"}`),
+		[]byte(`{"dob":"1984-02-29"}`),
+		[]byte(`{"birth_date":"02/29/1984"}`),
+		[]byte(`{"birthday":"1984-13-40"}`),
+		[]byte(`{"level":"INFO","msg":"ok","status":200}`),
 		[]byte("echo"),
 		[]byte("golf"),
 		[]byte("alpha beta beta charlie7 DELTA echo foxtrot golf"),
@@ -175,6 +188,9 @@ func FuzzPrefilterFastRejectResultParity(f *testing.F) {
 		[]byte(`{"date_of_birth":"1984"}`),
 		[]byte(`{"dateOfBirth":"2001"}`),
 		[]byte(`{"dob":"1999"}`),
+		[]byte(`{"dob":"1984-02-29"}`),
+		[]byte(`{"birth_date":"02/29/1984"}`),
+		[]byte(`{"level":"INFO","msg":"ok","status":200}`),
 	} {
 		f.Add(seed)
 	}
@@ -333,16 +349,19 @@ rule pii_marker_%02d {
 	piiRuleset.WriteString(`
 rule pii_dob_in_assignment {
     strings:
-        $value = /"(date_of_birth|birth_date|birthdate|dateOfBirth|birthday|dob)":"[0-9]{4}"/
+        $iso = /"(dob|date_of_birth|birth_date|birthdate|dateOfBirth|birthday|bday)":"(19|20)[0-9]{2}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])"/
+        $us = /"(dob|date_of_birth|birth_date|birthdate|dateOfBirth|birthday|bday)":"(0[1-9]|1[0-2])\/(0[1-9]|[12][0-9]|3[01])\/(19|20)[0-9]{2}"/
     condition:
-        $value
+        any of them
 }
 `)
 
-	tests := []struct {
+	type allocationTest struct {
 		name   string
 		source string
-	}{
+		data   []byte
+	}
+	tests := []allocationTest{
 		{
 			name: "alternation rule",
 			source: `
@@ -384,35 +403,93 @@ rule pii_dob_in_assignment {
 `,
 		},
 		{
+			name: "head alternatives with tail group",
+			source: `
+rule pii_dob_in_assignment {
+    strings:
+        $value = /"(dob|date_of_birth|birth_date)":"(19|20)[0-9]{2}"/
+    condition:
+        $value
+}
+`,
+			data: []byte(`{"level":"INFO","msg":"ok","status":200}`),
+		},
+		{
 			name:   "23-rule PII-shaped ruleset",
 			source: piiRuleset.String(),
+			data:   []byte(`{"level":"INFO","msg":"ok","status":200}`),
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			program, err := NewCompiler().CompileSource(test.source)
-			if err != nil {
-				t.Fatalf("CompileSource() error = %v", err)
+			data := test.data
+			if data == nil {
+				data = []byte(`{"level":"info","message":"request completed"}`)
 			}
-			scanner := NewScanner(program)
-			defer scanner.Close()
-			data := []byte(`{"level":"info","message":"request completed"}`)
-			if matched, err := scanner.Matches(data); err != nil || matched {
-				t.Fatalf("warm-up Matches() = (%v, %v), want (false, nil)", matched, err)
-			}
-
-			var scanErr error
-			allocations := testing.AllocsPerRun(1000, func() {
-				_, scanErr = scanner.Matches(data)
-			})
-			if scanErr != nil {
-				t.Fatalf("Matches() error = %v", scanErr)
-			}
-			if allocations != 0 {
-				t.Fatalf("clean reject allocations = %v, want 0", allocations)
-			}
+			assertScannerMatchesCleanRejectHasNoAllocations(t, test.source, data)
 		})
+	}
+}
+
+func TestScannerMatchesAlternationHeadTailMatrixHasNoAllocations(t *testing.T) {
+	headAlternatives := []string{
+		"dob",
+		"date_of_birth",
+		"birth_date",
+		"birthdate",
+		"dateOfBirth",
+		"birthday",
+		"bday",
+	}
+	tails := []string{
+		`[0-9]{4}`,
+		`(19|20)[0-9]{2}`,
+		`(19|20)[0-9]{2}-(01|02)`,
+		`(19|20)[0-9]{2}-(01|02)-(03|04)`,
+	}
+	for _, headCount := range []int{1, 2, 3, 4, 7} {
+		for tailGroups, tail := range tails {
+			t.Run(fmt.Sprintf("head %d tail groups %d", headCount, tailGroups), func(t *testing.T) {
+				source := fmt.Sprintf(`
+rule pii_dob_in_assignment {
+    strings:
+        $value = /"(%s)":"%s"/
+    condition:
+        $value
+}
+`, strings.Join(headAlternatives[:headCount], "|"), tail)
+				assertScannerMatchesCleanRejectHasNoAllocations(
+					t,
+					source,
+					[]byte(`{"level":"INFO","msg":"ok","status":200}`),
+				)
+			})
+		}
+	}
+}
+
+func assertScannerMatchesCleanRejectHasNoAllocations(t *testing.T, source string, data []byte) {
+	t.Helper()
+	program, err := NewCompiler().CompileSource(source)
+	if err != nil {
+		t.Fatalf("CompileSource() error = %v", err)
+	}
+	scanner := NewScanner(program)
+	defer scanner.Close()
+	if matched, err := scanner.Matches(data); err != nil || matched {
+		t.Fatalf("warm-up Matches() = (%v, %v), want (false, nil)", matched, err)
+	}
+
+	var scanErr error
+	allocations := testing.AllocsPerRun(1000, func() {
+		_, scanErr = scanner.Matches(data)
+	})
+	if scanErr != nil {
+		t.Fatalf("Matches() error = %v", scanErr)
+	}
+	if allocations != 0 {
+		t.Fatalf("clean reject allocations = %v, want 0", allocations)
 	}
 }
 

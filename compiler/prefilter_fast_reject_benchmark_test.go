@@ -86,6 +86,32 @@ rule pii_dob_in_assignment {
 		)
 	})
 
+	tailAlternationProgram, err := NewCompiler().CompileSource(`
+rule pii_dob_in_assignment {
+    strings:
+        $value = /"(dob|date_of_birth|birth_date)":"(19|20)[0-9]{2}"/
+    condition:
+        $value
+}
+`)
+	if err != nil {
+		b.Fatalf("CompileSource() tail alternation error = %v", err)
+	}
+	b.Run("tail_alternation_reject", func(b *testing.B) {
+		benchmarkScannerMatches(
+			b,
+			tailAlternationProgram,
+			[]byte(`{"level":"INFO","msg":"ok","status":200}`),
+		)
+	})
+	b.Run("tail_alternation_match", func(b *testing.B) {
+		benchmarkScannerMatches(
+			b,
+			tailAlternationProgram,
+			[]byte(`{"date_of_birth":"1984"}`),
+		)
+	})
+
 	caseClassProgram, err := NewCompiler().CompileSource(`
 rule credential {
     strings:
