@@ -91,6 +91,13 @@ rule child {
 	if !reflect.DeepEqual(loadedRule.HeaderConstraints, originalRule.HeaderConstraints) {
 		t.Fatal("header constraints changed across serialization")
 	}
+	if loadedRule.RequiresStringMatch != originalRule.RequiresStringMatch {
+		t.Fatalf(
+			"RequiresStringMatch changed across serialization: got %v, want %v",
+			loadedRule.RequiresStringMatch,
+			originalRule.RequiresStringMatch,
+		)
+	}
 
 	blockScanner := loaded.NewBlockScanner()
 	defer blockScanner.Close()
@@ -138,6 +145,34 @@ func TestCompiledProgramWriteToAndRead(t *testing.T) {
 	result, err := loaded.Scan(nil)
 	if err != nil || !result.RuleResults["always"] {
 		t.Fatalf("loaded Scan() result = %+v, error = %v", result, err)
+	}
+}
+
+func TestCompiledProgramSerializationPreservesStringMatchRequirement(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+rule required {
+    strings:
+        $a = "alpha"
+    condition:
+        $a
+}
+`)
+	if err != nil {
+		t.Fatalf("CompileSource() error = %v", err)
+	}
+	if !program.Rules[0].RequiresStringMatch {
+		t.Fatal("compiled rule is not marked RequiresStringMatch")
+	}
+	data, err := program.MarshalBinary()
+	if err != nil {
+		t.Fatalf("MarshalBinary() error = %v", err)
+	}
+	loaded, err := UnmarshalCompiledProgram(data)
+	if err != nil {
+		t.Fatalf("UnmarshalCompiledProgram() error = %v", err)
+	}
+	if !loaded.Rules[0].RequiresStringMatch {
+		t.Fatal("loaded rule lost RequiresStringMatch")
 	}
 }
 

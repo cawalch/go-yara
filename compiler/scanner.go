@@ -38,6 +38,13 @@ type Scanner struct {
 
 	// Candidate offsets grouped by SharedLookup index and retained across scans.
 	prefilterCandidates [][]int
+	// Shared text matches grouped by rule index and retained across scans.
+	globalMatches [][]globalMatchEntry
+	// Fast-scan candidate keys retained across scans.
+	fastSeen map[uint64]bool
+
+	// Test-only escape hatch used by parity coverage.
+	prefilterDisabled bool
 }
 
 // ScanResult represents the result of scanning data against compiled rules.
@@ -240,6 +247,21 @@ func (cp *CompiledProgram) ScanWithContext(ctx context.Context, data []byte) (*S
 	return scanner.ScanWithContext(ctx, data)
 }
 
+// Matches reports whether this compiled program has at least one public rule
+// match. Reuse a Scanner and call Scanner.Matches for the allocation-free
+// prefilter reject path.
+func (cp *CompiledProgram) Matches(data []byte) (bool, error) {
+	return cp.MatchesWithContext(context.Background(), data)
+}
+
+// MatchesWithContext reports whether this compiled program has at least one
+// public rule match.
+func (cp *CompiledProgram) MatchesWithContext(ctx context.Context, data []byte) (bool, error) {
+	scanner := NewScanner(cp)
+	defer scanner.Close()
+	return scanner.MatchesWithContext(ctx, data)
+}
+
 // ScanReader reads from r and evaluates all rules in this compiled program.
 func (cp *CompiledProgram) ScanReader(r io.Reader) (*ScanResult, error) {
 	return cp.ScanReaderWithContext(context.Background(), r)
@@ -341,7 +363,9 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 		MatchedRules: make([]RuleMatch, 0),
 		PrunedRules:  make([]string, 0),
 		RuleResults:  make(map[string]bool, ruleCount),
-		Matches:      make(map[string]map[string][]Match),
+	}
+	if s == nil || !s.reportedMatchesOnly {
+		result.Matches = make(map[string]map[string][]Match)
 	}
 	if s == nil || s.program == nil {
 		return result, nil
@@ -353,19 +377,27 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 		return nil, err
 	}
 
-	globalByRule := make(map[int][]globalMatchEntry)
-	s.nonTextCache.reset(s.program.nonTextCacheSize)
-	s.populateFixedRegexCache(data, &s.nonTextCache)
-	s.regexByteSetCache.reset()
-	useSharedAutomaton := shouldUseSharedPatternAutomaton(data, s.program)
-	if useSharedAutomaton {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		s.extractGlobalMatchesInt(data, globalByRule, &s.nonTextCache)
+	useSharedAutomaton, err := s.preparePatternScan(ctx, data)
+	if err != nil {
+		return nil, err
 	}
 
 	clear(s.ruleResults)
+	if !s.prefilterDisabled && s.allEvaluatedRulesPrefilterRejected(data, useSharedAutomaton) {
+		for _, rule := range s.program.Rules {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			if !rule.IsGlobal && !s.hasMatchingTag(rule) {
+				continue
+			}
+			result.RuleResults[rule.Name] = false
+			if !ruleHeaderConstraintsMatch(rule, data) {
+				result.PrunedRules = append(result.PrunedRules, rule.Name)
+			}
+		}
+		return result, nil
+	}
 
 	// YARA spec: global rules are evaluated first and ALL must match
 	// before non-global rules are evaluated.
@@ -386,43 +418,31 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 		if !rule.IsGlobal && !s.hasMatchingTag(rule) {
 			continue
 		}
-		if !ruleHeaderConstraintsMatch(rule, data) {
-			s.ruleResults[rule.Name] = false
-			result.RuleResults[rule.Name] = false
-			result.PrunedRules = append(result.PrunedRules, rule.Name)
-			continue
-		}
-		s.matchCtx.Reset(data)
-		s.matchCtx.maxMatchesPerPattern = 0
-		if s.fastScan && rule.FastScanSafe {
-			s.matchCtx.maxMatchesPerPattern = 1
-		}
-		if useSharedAutomaton {
-			s.addStaticMatchesInt(rule, data, globalByRule[rule.Index])
-		} else {
-			s.addLocalTextMatches(rule, data)
-		}
-		s.addLocalNonTextMatches(rule, data, &s.nonTextCache)
-
-		s.prepareInterpreter(rule)
-		s.interp.SetItersmax(s.itersmax)
-		if err := s.interp.Execute(); err != nil {
+		evaluation, err := s.evaluateRuleCondition(rule, data, useSharedAutomaton)
+		if err != nil {
 			return nil, err
 		}
+		if evaluation.pruned {
+			result.PrunedRules = append(result.PrunedRules, rule.Name)
+			result.RuleResults[rule.Name] = false
+			continue
+		}
 
-		matched := s.interp.GetRuleResults()[rule.Name]
 		// The default preserves the historical all-evaluated-rules result shape.
 		// The opt-in compact result mode materializes only matching public rules.
-		materialize := !s.reportedMatchesOnly || matched && !rule.IsPrivate
+		materialize := !s.reportedMatchesOnly || evaluation.matched && !rule.IsPrivate
 		if materialize && len(s.matchCtx.spans) > 0 {
 			ruleMatches := materializeMatches(s.matchCtx.spans)
 			ruleMatches = filterPrivateStrings(rule, ruleMatches)
 			if err := s.populateMatchEvidence(ctx, data, ruleMatches); err != nil {
 				return nil, err
 			}
+			if result.Matches == nil {
+				result.Matches = make(map[string]map[string][]Match)
+			}
 			result.Matches[rule.Name] = ruleMatches
 		}
-		result.RuleResults[rule.Name] = matched
+		result.RuleResults[rule.Name] = evaluation.matched
 	}
 
 	// Check if all global rules matched
@@ -481,6 +501,9 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 					return nil, err
 				}
 			}
+			if result.Matches == nil {
+				result.Matches = make(map[string]map[string][]Match)
+			}
 			result.Matches[rule.Name] = publicMatches
 			if len(evidence) != 0 {
 				if result.Evidence == nil {
@@ -500,6 +523,70 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 
 	clear(s.ruleResults)
 	return result, nil
+}
+
+// Matches reports whether at least one public rule matches data. A reusable
+// scanner can reject clean inputs without allocating once its internal buffers
+// have been warmed.
+func (s *Scanner) Matches(data []byte) (bool, error) {
+	return s.MatchesWithContext(context.Background(), data)
+}
+
+// MatchesWithContext reports whether at least one public rule matches data.
+func (s *Scanner) MatchesWithContext(ctx context.Context, data []byte) (bool, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if s == nil || s.program == nil {
+		return false, nil
+	}
+	if s.externalErr != nil {
+		return false, s.externalErr
+	}
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+
+	useSharedAutomaton, err := s.preparePatternScan(ctx, data)
+	if err != nil {
+		return false, err
+	}
+	clear(s.ruleResults)
+	if !s.prefilterDisabled && s.allEvaluatedRulesPrefilterRejected(data, useSharedAutomaton) {
+		return false, nil
+	}
+
+	allGlobalMatched := true
+	matchedPublicGlobal := false
+	matchedPublicNonGlobal := false
+	s.interp.ResetIterationCount()
+	for _, rule := range s.program.Rules {
+		if err := ctx.Err(); err != nil {
+			return false, err
+		}
+		if !rule.IsGlobal && !s.hasMatchingTag(rule) {
+			continue
+		}
+
+		evaluation, err := s.evaluateRuleCondition(rule, data, useSharedAutomaton)
+		if err != nil {
+			return false, err
+		}
+
+		if rule.IsGlobal && !evaluation.matched {
+			allGlobalMatched = false
+		}
+		if rule.IsPrivate || !s.hasMatchingTag(rule) || !evaluation.matched {
+			continue
+		}
+		if rule.IsGlobal {
+			matchedPublicGlobal = true
+		} else {
+			matchedPublicNonGlobal = true
+		}
+	}
+	clear(s.ruleResults)
+	return matchedPublicGlobal || allGlobalMatched && matchedPublicNonGlobal, nil
 }
 
 // ScanReader reads from the reader and scans the data.
@@ -552,13 +639,20 @@ func (s *Scanner) ScanFileWithContext(ctx context.Context, filename string) (*Sc
 // instead of parsing colon-delimited string IDs.
 func (s *Scanner) extractGlobalMatchesInt(
 	data []byte,
-	globalByRule map[int][]globalMatchEntry,
+	globalByRule [][]globalMatchEntry,
 	cache *nonTextMatchCache,
 ) {
 	lookup := s.program.SharedLookup
 	rules := s.program.Rules
-	fastSeen := make(map[uint64]bool)
-	s.resetPrefilterCandidates(len(lookup))
+	fastSeen := s.fastSeen
+	if s.fastScan {
+		if fastSeen == nil {
+			fastSeen = make(map[uint64]bool)
+			s.fastSeen = fastSeen
+		} else {
+			clear(fastSeen)
+		}
+	}
 	for match := range s.program.SharedAutomaton.SearchIter(data) {
 		if match.StringIndex < 0 || match.StringIndex >= len(lookup) {
 			continue

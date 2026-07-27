@@ -24,35 +24,36 @@ type serializedProgram struct {
 }
 
 type serializedRule struct {
-	Name              string
-	Index             int
-	Bytecode          []byte
-	StringCount       int
-	Strings           map[string][]byte
-	AutomatonStrings  []ACStringInfo
-	StringSets        [][]string
-	TextStringSets    [][]string
-	AnonymousStrings  []string
-	StringLiterals    []string
-	StringKinds       map[string]StringKind
-	StringModifiers   map[string][]serializedStringModifier
-	CaptureBindings   map[string][]serializedCaptureBinding
-	EvidencePlans     []serializedEvidencePlan
-	TextPatterns      map[string][]byte
-	RegexPatterns     map[string]serializedRegexPattern
-	HexPatterns       map[string]serializedHexPattern
-	Stats             map[string]int
-	ExternalSlots     map[string]int
-	GlobalSlots       map[string]int
-	GlobalValues      map[string]serializedGlobalValue
-	Tags              []string
-	Meta              map[string]serializedScalar
-	IsGlobal          bool
-	IsPrivate         bool
-	FastScanSafe      bool
-	ModuleNames       map[uint8]string
-	ModuleSignatures  map[uint8]serializedModuleFunction
-	HeaderConstraints []HeaderConstraint
+	Name                string
+	Index               int
+	Bytecode            []byte
+	StringCount         int
+	Strings             map[string][]byte
+	AutomatonStrings    []ACStringInfo
+	StringSets          [][]string
+	TextStringSets      [][]string
+	AnonymousStrings    []string
+	StringLiterals      []string
+	StringKinds         map[string]StringKind
+	StringModifiers     map[string][]serializedStringModifier
+	CaptureBindings     map[string][]serializedCaptureBinding
+	EvidencePlans       []serializedEvidencePlan
+	TextPatterns        map[string][]byte
+	RegexPatterns       map[string]serializedRegexPattern
+	HexPatterns         map[string]serializedHexPattern
+	Stats               map[string]int
+	ExternalSlots       map[string]int
+	GlobalSlots         map[string]int
+	GlobalValues        map[string]serializedGlobalValue
+	Tags                []string
+	Meta                map[string]serializedScalar
+	IsGlobal            bool
+	IsPrivate           bool
+	FastScanSafe        bool
+	RequiresStringMatch bool
+	ModuleNames         map[uint8]string
+	ModuleSignatures    map[uint8]serializedModuleFunction
+	HeaderConstraints   []HeaderConstraint
 }
 
 type serializedModuleFunction struct {
@@ -255,34 +256,35 @@ func serializeRule(rule *CompiledRule) (serializedRule, error) {
 	}
 
 	serialized := serializedRule{
-		Name:              rule.Name,
-		Index:             rule.Index,
-		Bytecode:          slices.Clone(rule.Bytecode),
-		StringCount:       rule.StringCount,
-		Strings:           cloneByteMap(rule.Strings),
-		StringSets:        cloneStringSlices(rule.StringSets),
-		TextStringSets:    cloneStringSlices(rule.TextStringSets),
-		AnonymousStrings:  slices.Clone(rule.AnonymousStrings),
-		StringLiterals:    slices.Clone(rule.StringLiterals),
-		StringKinds:       maps.Clone(rule.StringKinds),
-		StringModifiers:   modifiers,
-		CaptureBindings:   serializeCaptureBindings(rule.CaptureBindings),
-		EvidencePlans:     serializeEvidencePlans(rule.EvidencePlans),
-		TextPatterns:      cloneByteMap(rule.TextPatterns),
-		RegexPatterns:     make(map[string]serializedRegexPattern, len(rule.RegexPatterns)),
-		HexPatterns:       make(map[string]serializedHexPattern, len(rule.HexPatterns)),
-		Stats:             serializeIntegerStats(rule.Stats),
-		ExternalSlots:     maps.Clone(rule.ExternalSlots),
-		GlobalSlots:       maps.Clone(rule.GlobalSlots),
-		GlobalValues:      make(map[string]serializedGlobalValue, len(rule.GlobalValues)),
-		Tags:              slices.Clone(rule.Tags),
-		Meta:              meta,
-		IsGlobal:          rule.IsGlobal,
-		IsPrivate:         rule.IsPrivate,
-		FastScanSafe:      rule.FastScanSafe,
-		ModuleNames:       make(map[uint8]string, len(rule.ModuleNames)),
-		ModuleSignatures:  make(map[uint8]serializedModuleFunction, len(rule.ModuleFunctions)),
-		HeaderConstraints: slices.Clone(rule.HeaderConstraints),
+		Name:                rule.Name,
+		Index:               rule.Index,
+		Bytecode:            slices.Clone(rule.Bytecode),
+		StringCount:         rule.StringCount,
+		Strings:             cloneByteMap(rule.Strings),
+		StringSets:          cloneStringSlices(rule.StringSets),
+		TextStringSets:      cloneStringSlices(rule.TextStringSets),
+		AnonymousStrings:    slices.Clone(rule.AnonymousStrings),
+		StringLiterals:      slices.Clone(rule.StringLiterals),
+		StringKinds:         maps.Clone(rule.StringKinds),
+		StringModifiers:     modifiers,
+		CaptureBindings:     serializeCaptureBindings(rule.CaptureBindings),
+		EvidencePlans:       serializeEvidencePlans(rule.EvidencePlans),
+		TextPatterns:        cloneByteMap(rule.TextPatterns),
+		RegexPatterns:       make(map[string]serializedRegexPattern, len(rule.RegexPatterns)),
+		HexPatterns:         make(map[string]serializedHexPattern, len(rule.HexPatterns)),
+		Stats:               serializeIntegerStats(rule.Stats),
+		ExternalSlots:       maps.Clone(rule.ExternalSlots),
+		GlobalSlots:         maps.Clone(rule.GlobalSlots),
+		GlobalValues:        make(map[string]serializedGlobalValue, len(rule.GlobalValues)),
+		Tags:                slices.Clone(rule.Tags),
+		Meta:                meta,
+		IsGlobal:            rule.IsGlobal,
+		IsPrivate:           rule.IsPrivate,
+		FastScanSafe:        rule.FastScanSafe,
+		RequiresStringMatch: rule.RequiresStringMatch,
+		ModuleNames:         make(map[uint8]string, len(rule.ModuleNames)),
+		ModuleSignatures:    make(map[uint8]serializedModuleFunction, len(rule.ModuleFunctions)),
+		HeaderConstraints:   slices.Clone(rule.HeaderConstraints),
 	}
 	if rule.Automaton != nil {
 		serialized.AutomatonStrings = cloneACStringInfo(rule.Automaton.GetStrings())
@@ -377,35 +379,36 @@ func deserializeRule(serialized serializedRule, bindings map[string]compiledModu
 	}
 
 	rule := &CompiledRule{
-		Name:              serialized.Name,
-		Index:             serialized.Index,
-		Bytecode:          slices.Clone(serialized.Bytecode),
-		StringCount:       serialized.StringCount,
-		Strings:           cloneByteMap(serialized.Strings),
-		Automaton:         automaton,
-		StringSets:        cloneStringSlices(serialized.StringSets),
-		TextStringSets:    cloneStringSlices(serialized.TextStringSets),
-		AnonymousStrings:  slices.Clone(serialized.AnonymousStrings),
-		StringLiterals:    slices.Clone(serialized.StringLiterals),
-		StringKinds:       maps.Clone(serialized.StringKinds),
-		StringModifiers:   modifiers,
-		CaptureBindings:   deserializeCaptureBindings(serialized.CaptureBindings),
-		EvidencePlans:     deserializeEvidencePlans(serialized.EvidencePlans),
-		TextPatterns:      cloneByteMap(serialized.TextPatterns),
-		RegexPatterns:     make(map[string]RegexPattern, len(serialized.RegexPatterns)),
-		HexPatterns:       make(map[string]*HexPattern, len(serialized.HexPatterns)),
-		Stats:             deserializeIntegerStats(serialized.Stats),
-		ExternalSlots:     maps.Clone(serialized.ExternalSlots),
-		GlobalSlots:       maps.Clone(serialized.GlobalSlots),
-		GlobalValues:      make(map[string]compiledGlobalValue, len(serialized.GlobalValues)),
-		Tags:              append([]string{}, serialized.Tags...),
-		Meta:              meta,
-		IsGlobal:          serialized.IsGlobal,
-		IsPrivate:         serialized.IsPrivate,
-		FastScanSafe:      serialized.FastScanSafe,
-		ModuleFunctions:   make(map[builtinFunction]ModuleFunction, len(serialized.ModuleNames)),
-		ModuleNames:       make(map[builtinFunction]string, len(serialized.ModuleNames)),
-		HeaderConstraints: slices.Clone(serialized.HeaderConstraints),
+		Name:                serialized.Name,
+		Index:               serialized.Index,
+		Bytecode:            slices.Clone(serialized.Bytecode),
+		StringCount:         serialized.StringCount,
+		Strings:             cloneByteMap(serialized.Strings),
+		Automaton:           automaton,
+		StringSets:          cloneStringSlices(serialized.StringSets),
+		TextStringSets:      cloneStringSlices(serialized.TextStringSets),
+		AnonymousStrings:    slices.Clone(serialized.AnonymousStrings),
+		StringLiterals:      slices.Clone(serialized.StringLiterals),
+		StringKinds:         maps.Clone(serialized.StringKinds),
+		StringModifiers:     modifiers,
+		CaptureBindings:     deserializeCaptureBindings(serialized.CaptureBindings),
+		EvidencePlans:       deserializeEvidencePlans(serialized.EvidencePlans),
+		TextPatterns:        cloneByteMap(serialized.TextPatterns),
+		RegexPatterns:       make(map[string]RegexPattern, len(serialized.RegexPatterns)),
+		HexPatterns:         make(map[string]*HexPattern, len(serialized.HexPatterns)),
+		Stats:               deserializeIntegerStats(serialized.Stats),
+		ExternalSlots:       maps.Clone(serialized.ExternalSlots),
+		GlobalSlots:         maps.Clone(serialized.GlobalSlots),
+		GlobalValues:        make(map[string]compiledGlobalValue, len(serialized.GlobalValues)),
+		Tags:                append([]string{}, serialized.Tags...),
+		Meta:                meta,
+		IsGlobal:            serialized.IsGlobal,
+		IsPrivate:           serialized.IsPrivate,
+		FastScanSafe:        serialized.FastScanSafe,
+		RequiresStringMatch: serialized.RequiresStringMatch,
+		ModuleFunctions:     make(map[builtinFunction]ModuleFunction, len(serialized.ModuleNames)),
+		ModuleNames:         make(map[builtinFunction]string, len(serialized.ModuleNames)),
+		HeaderConstraints:   slices.Clone(serialized.HeaderConstraints),
 	}
 	for identifier, pattern := range serialized.RegexPatterns {
 		rule.RegexPatterns[identifier] = deserializeRegexPattern(pattern)
