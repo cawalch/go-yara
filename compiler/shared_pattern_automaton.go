@@ -116,8 +116,14 @@ func (builder *sharedPatternAutomatonBuilder) addRegexPrefilters(ruleIndex int, 
 			encodings = []bool{true}
 		}
 
+		// A bounded alternative cover is all-or-nothing: omitting even one
+		// member would make the prefilter unsound. Keep the complete cover in
+		// the shared automaton even when its root fanout crosses the normal
+		// density threshold.
+		forceAlternativeCover := len(atoms) > 1
 		for _, wide := range encodings {
 			for atomIndex, atom := range atoms {
+				forceShared := atom.asciiNoCase || forceAlternativeCover
 				key := prefilterDedupKey{
 					kind:          StringKindRegex,
 					cacheKey:      pattern.cacheKey,
@@ -152,7 +158,7 @@ func (builder *sharedPatternAutomatonBuilder) addRegexPrefilters(ruleIndex int, 
 					data:        atomData,
 					isRegex:     true,
 					flags:       flags,
-					forceShared: atom.asciiNoCase,
+					forceShared: forceShared,
 					entry: SharedAutomatonEntry{
 						RuleIndex:       ruleIndex,
 						StringIdx:       rule.ResolveStringIndex(strID),
@@ -160,7 +166,7 @@ func (builder *sharedPatternAutomatonBuilder) addRegexPrefilters(ruleIndex int, 
 						AtomOffset:      atomMinOffset,
 						AtomMaxOffset:   atomMaxOffset,
 						alternativeAtom: len(atoms) > 1,
-						forceShared:     atom.asciiNoCase,
+						forceShared:     forceShared,
 						IsWide:          wide,
 						CacheIndex:      pattern.cacheIndex,
 					},
