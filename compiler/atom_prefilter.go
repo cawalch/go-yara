@@ -35,16 +35,18 @@ type prefilterAtom struct {
 }
 
 type regexPrefilterAtom struct {
-	data      []byte
-	minOffset int
-	maxOffset int
-	score     int
+	data        []byte
+	minOffset   int
+	maxOffset   int
+	score       int
+	asciiNoCase bool
 }
 
 type regexAlternativeDedupKey struct {
-	data      string
-	minOffset int
-	maxOffset int
+	data        string
+	minOffset   int
+	maxOffset   int
+	asciiNoCase bool
 }
 
 type regexByteSetPrefilter struct {
@@ -61,6 +63,7 @@ type prefilterDedupKey struct {
 	atomData      string
 	atomMinOffset int
 	atomMaxOffset int
+	atomNoCase    bool
 }
 
 type nonTextCacheKey struct {
@@ -235,14 +238,18 @@ func selectLiteralAtom(literal []byte) (prefilterAtom, bool) {
 }
 
 func selectMandatoryRegexAtom(atoms []regex.LiteralAtom) (regexPrefilterAtom, bool) {
-	return selectRegexAtom(atoms, false)
+	return selectRegexAtom(atoms, false, false)
+}
+
+func selectMandatoryASCIIFoldedRegexAtom(atoms []regex.LiteralAtom) (regexPrefilterAtom, bool) {
+	return selectRegexAtom(atoms, false, true)
 }
 
 func selectBoundedMandatoryRegexAtom(atoms []regex.LiteralAtom) (regexPrefilterAtom, bool) {
-	return selectRegexAtom(atoms, true)
+	return selectRegexAtom(atoms, true, false)
 }
 
-func selectRegexAtom(atoms []regex.LiteralAtom, boundedOnly bool) (regexPrefilterAtom, bool) {
+func selectRegexAtom(atoms []regex.LiteralAtom, boundedOnly, asciiNoCase bool) (regexPrefilterAtom, bool) {
 	best := regexPrefilterAtom{score: -1}
 	for _, candidate := range atoms {
 		if boundedOnly && candidate.MaxOffset < 0 {
@@ -258,10 +265,11 @@ func selectRegexAtom(atoms []regex.LiteralAtom, boundedOnly bool) (regexPrefilte
 			maxOffset += atom.offset
 		}
 		candidateAtom := regexPrefilterAtom{
-			data:      atom.data,
-			minOffset: minOffset,
-			maxOffset: maxOffset,
-			score:     atom.score,
+			data:        atom.data,
+			minOffset:   minOffset,
+			maxOffset:   maxOffset,
+			score:       atom.score,
+			asciiNoCase: asciiNoCase,
 		}
 		if betterRegexPrefilterAtom(candidateAtom, best) {
 			best = candidateAtom
@@ -289,9 +297,10 @@ func selectAlternativeRegexAtoms(alternatives [][]regex.LiteralAtom) ([]regexPre
 			return nil, false
 		}
 		key := regexAlternativeDedupKey{
-			data:      string(atom.data),
-			minOffset: atom.minOffset,
-			maxOffset: atom.maxOffset,
+			data:        string(atom.data),
+			minOffset:   atom.minOffset,
+			maxOffset:   atom.maxOffset,
+			asciiNoCase: atom.asciiNoCase,
 		}
 		if _, exists := seen[key]; exists {
 			continue
@@ -316,7 +325,12 @@ func selectLeadingGapRegexPlan(plan regex.LeadingByteGapPlan) (*regexLeadingGapP
 		if atom.maxOffset-atom.minOffset > maxLeadingGapAtomOffsetWidth {
 			return nil, false
 		}
-		key := regexAlternativeDedupKey{data: string(atom.data), minOffset: atom.minOffset, maxOffset: atom.maxOffset}
+		key := regexAlternativeDedupKey{
+			data:        string(atom.data),
+			minOffset:   atom.minOffset,
+			maxOffset:   atom.maxOffset,
+			asciiNoCase: atom.asciiNoCase,
+		}
 		if _, exists := seen[key]; exists {
 			continue
 		}
@@ -452,6 +466,15 @@ func selectSharedRegexAtoms(pattern RegexPattern) []regexPrefilterAtom {
 			score:     atom.score,
 		}}
 	}
+	if pattern.atomASCIINoCase && len(pattern.atom) >= minPrefilterAtomLength {
+		return []regexPrefilterAtom{{
+			data:        pattern.atom,
+			minOffset:   pattern.atomMinOffset,
+			maxOffset:   pattern.atomMaxOffset,
+			score:       prefilterAtomScore(pattern.atom),
+			asciiNoCase: true,
+		}}
+	}
 	if len(pattern.alternativeAtoms) > 1 && !hasUnboundedRegexAlternative(pattern.alternativeAtoms) {
 		// Prefer a complete OR-cover to a single common atom. Besides being
 		// more selective, multiple sparse entries let a lone alternation regex
@@ -463,10 +486,11 @@ func selectSharedRegexAtoms(pattern RegexPattern) []regexPrefilterAtom {
 	}
 	if len(pattern.atom) >= minPrefilterAtomLength {
 		return []regexPrefilterAtom{{
-			data:      pattern.atom,
-			minOffset: pattern.atomMinOffset,
-			maxOffset: pattern.atomMaxOffset,
-			score:     prefilterAtomScore(pattern.atom),
+			data:        pattern.atom,
+			minOffset:   pattern.atomMinOffset,
+			maxOffset:   pattern.atomMaxOffset,
+			score:       prefilterAtomScore(pattern.atom),
+			asciiNoCase: pattern.atomASCIINoCase,
 		}}
 	}
 	return nil

@@ -8,12 +8,13 @@ import (
 )
 
 type sharedPrefilterSpec struct {
-	identifier string
-	data       []byte
-	isHex      bool
-	isRegex    bool
-	flags      regex.Flags
-	entry      SharedAutomatonEntry
+	identifier  string
+	data        []byte
+	isHex       bool
+	isRegex     bool
+	flags       regex.Flags
+	forceShared bool
+	entry       SharedAutomatonEntry
 }
 
 type sharedPatternAutomatonBuilder struct {
@@ -124,6 +125,7 @@ func (builder *sharedPatternAutomatonBuilder) addRegexPrefilters(ruleIndex int, 
 					atomData:      string(atom.data),
 					atomMinOffset: atom.minOffset,
 					atomMaxOffset: atom.maxOffset,
+					atomNoCase:    atom.asciiNoCase,
 				}
 				if _, exists := builder.seen[key]; exists {
 					continue
@@ -134,6 +136,9 @@ func (builder *sharedPatternAutomatonBuilder) addRegexPrefilters(ruleIndex int, 
 				atomMinOffset := atom.minOffset
 				atomMaxOffset := atom.maxOffset
 				flags := pattern.Flags &^ regex.FlagsWide
+				if atom.asciiNoCase {
+					flags |= regex.FlagsNoCase
+				}
 				if wide {
 					atomData = widenRegexPrefix(atomData)
 					atomMinOffset *= 2
@@ -143,10 +148,11 @@ func (builder *sharedPatternAutomatonBuilder) addRegexPrefilters(ruleIndex int, 
 					flags |= regex.FlagsWide
 				}
 				builder.prefilterSpecs = append(builder.prefilterSpecs, sharedPrefilterSpec{
-					identifier: fmt.Sprintf("%s:%s:regex:%t:%d", rule.Name, strID, wide, atomIndex),
-					data:       atomData,
-					isRegex:    true,
-					flags:      flags,
+					identifier:  fmt.Sprintf("%s:%s:regex:%t:%d", rule.Name, strID, wide, atomIndex),
+					data:        atomData,
+					isRegex:     true,
+					flags:       flags,
+					forceShared: atom.asciiNoCase,
 					entry: SharedAutomatonEntry{
 						RuleIndex:       ruleIndex,
 						StringIdx:       rule.ResolveStringIndex(strID),
@@ -154,6 +160,7 @@ func (builder *sharedPatternAutomatonBuilder) addRegexPrefilters(ruleIndex int, 
 						AtomOffset:      atomMinOffset,
 						AtomMaxOffset:   atomMaxOffset,
 						alternativeAtom: len(atoms) > 1,
+						forceShared:     atom.asciiNoCase,
 						IsWide:          wide,
 						CacheIndex:      pattern.cacheIndex,
 					},
@@ -196,10 +203,11 @@ func (builder *sharedPatternAutomatonBuilder) addHexPrefilters(ruleIndex int, ru
 }
 
 func (builder *sharedPatternAutomatonBuilder) addDeferredPrefilters() error {
-	if !shouldAddSharedNonTextPrefilters(builder.automaton, builder.prefilterSpecs) {
-		return nil
-	}
+	addAll := shouldAddSharedNonTextPrefilters(builder.automaton, builder.prefilterSpecs)
 	for _, spec := range builder.prefilterSpecs {
+		if !addAll && !spec.forceShared {
+			continue
+		}
 		if err := builder.automaton.AddStringWithFlags(
 			spec.identifier,
 			spec.data,

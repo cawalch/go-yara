@@ -63,6 +63,21 @@ rule contact {
 	b.Run("alternation_reject", func(b *testing.B) {
 		benchmarkScannerMatches(b, alternationProgram, reject)
 	})
+
+	caseClassProgram, err := NewCompiler().CompileSource(`
+rule credential {
+    strings:
+        $value = /"[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]":"(REDACTED|null)"/
+    condition:
+        $value
+}
+`)
+	if err != nil {
+		b.Fatalf("CompileSource() case-class error = %v", err)
+	}
+	b.Run("case_class_reject", func(b *testing.B) {
+		benchmarkScannerMatches(b, caseClassProgram, reject)
+	})
 }
 
 func benchmarkScannerMatches(b *testing.B, program *CompiledProgram, data []byte) {

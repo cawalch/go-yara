@@ -830,7 +830,7 @@ func shouldUseSharedPatternAutomaton(data []byte, program *CompiledProgram) bool
 		return true
 	}
 	for _, entry := range program.SharedLookup {
-		if entry.Kind == StringKindText || entry.alternativeAtom {
+		if entry.Kind == StringKindText || entry.alternativeAtom || entry.forceShared {
 			return true
 		}
 	}

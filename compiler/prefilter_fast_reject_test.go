@@ -51,6 +51,13 @@ rule contact_field {
         $contact
 }
 
+rule credential_field {
+    strings:
+        $credential = /"[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]":"(REDACTED|null)"/
+    condition:
+        $credential
+}
+
 private rule hidden {
     strings:
         $g = "golf"
@@ -76,6 +83,9 @@ func TestPrefilterFastRejectResultParity(t *testing.T) {
 		[]byte(`{"phone":"1234567"}`),
 		[]byte(`{"phone":"1234567","mobile":"7654321"}`),
 		[]byte(`{"mobile":"7654321","phone":"1234567"}`),
+		[]byte(`{"PASSWORD":"REDACTED"}`),
+		[]byte(`{"PassWord":"null"}`),
+		[]byte(`{"P4ssWord":"REDACTED"}`),
 		[]byte("echo"),
 		[]byte("golf"),
 		[]byte("alpha beta beta charlie7 DELTA echo foxtrot golf"),
@@ -149,6 +159,8 @@ func FuzzPrefilterFastRejectResultParity(f *testing.F) {
 		[]byte("charlie42 DELTA"),
 		[]byte("alpha foxtrot golf"),
 		[]byte(`{"phone":"1234567","mobile":"7654321"}`),
+		[]byte(`{"PASSWORD":"REDACTED"}`),
+		[]byte(`{"PassWord":"null"}`),
 	} {
 		f.Add(seed)
 	}
@@ -343,6 +355,69 @@ rule contact {
 
 			var scanErr error
 			allocations := testing.AllocsPerRun(1000, func() {
+				_, scanErr = scanner.Matches(data)
+			})
+			if scanErr != nil {
+				t.Fatalf("Matches() error = %v", scanErr)
+			}
+			if allocations != 0 {
+				t.Fatalf("clean reject allocations = %v, want 0", allocations)
+			}
+		})
+	}
+}
+
+func TestScannerMatchesCaseClassSequenceCleanRejectHasNoAllocations(t *testing.T) {
+	tests := []struct {
+		name   string
+		source string
+	}{
+		{
+			name: "case-class rule",
+			source: `
+rule credential {
+    strings:
+        $value = /"[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]":"(REDACTED|null)"/
+    condition:
+        $value
+}
+`,
+		},
+		{
+			name: "mixed ruleset",
+			source: `
+rule api_key {
+    strings:
+        $value = "api_key"
+    condition:
+        $value
+}
+
+rule credential {
+    strings:
+        $value = /"[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]":"(REDACTED|null)"/
+    condition:
+        $value
+}
+`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			program, err := NewCompiler().CompileSource(test.source)
+			if err != nil {
+				t.Fatalf("CompileSource() error = %v", err)
+			}
+			scanner := NewScanner(program)
+			defer scanner.Close()
+			data := []byte(`{"level":"INFO","msg":"ok","status":200}`)
+			if matched, err := scanner.Matches(data); err != nil || matched {
+				t.Fatalf("warm-up Matches() = (%v, %v), want (false, nil)", matched, err)
+			}
+
+			var scanErr error
+			allocations := testing.AllocsPerRun(2000, func() {
 				_, scanErr = scanner.Matches(data)
 			})
 			if scanErr != nil {

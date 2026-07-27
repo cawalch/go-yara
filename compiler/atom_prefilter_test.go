@@ -71,6 +71,115 @@ func TestCompiledRegexCarriesMandatoryInternalAtom(t *testing.T) {
 	}
 }
 
+func TestCompiledRegexSelectsOnlyPureASCIICasePairRuns(t *testing.T) {
+	tests := []struct {
+		name             string
+		pattern          string
+		wantAtom         string
+		wantASCIINoCase  bool
+		wantSharedLookup bool
+		matchInput       string
+	}{
+		{
+			name:             "pure case pairs",
+			pattern:          `"[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]":`,
+			wantAtom:         "password",
+			wantASCIINoCase:  true,
+			wantSharedLookup: true,
+			matchInput:       `"PASSWORD":`,
+		},
+		{
+			name:            "wider class falls back",
+			pattern:         `"[Pp0][Aa][Ss][Ss][Ww][Oo][Rr][Dd]":`,
+			wantAtom:        `":`,
+			wantASCIINoCase: false,
+			matchInput:      `"0ASSWORD":`,
+		},
+		{
+			name:            "mixed class and literal keeps literal atom",
+			pattern:         `"[Pp]assword":`,
+			wantAtom:        `ssword":`,
+			wantASCIINoCase: false,
+			matchInput:      `"Password":`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			source := fmt.Sprintf(`
+rule folded {
+    strings:
+        $value = /%s/
+    condition:
+        $value
+}
+`, test.pattern)
+			program, err := NewCompiler().CompileSource(source)
+			if err != nil {
+				t.Fatalf("CompileSource() error = %v", err)
+			}
+			pattern := program.Rules[0].RegexPatterns["$value"]
+			if string(pattern.atom) != test.wantAtom {
+				t.Fatalf("atom = %q, want %q", pattern.atom, test.wantAtom)
+			}
+			if pattern.atomASCIINoCase != test.wantASCIINoCase {
+				t.Fatalf("atomASCIINoCase = %v, want %v", pattern.atomASCIINoCase, test.wantASCIINoCase)
+			}
+			hasSharedLookup := len(program.SharedLookup) > 0
+			if hasSharedLookup != test.wantSharedLookup {
+				t.Fatalf("shared lookup = %v, want %v", hasSharedLookup, test.wantSharedLookup)
+			}
+			scanner := NewScanner(program)
+			defer scanner.Close()
+			matched, err := scanner.Matches([]byte(test.matchInput))
+			if err != nil || !matched {
+				t.Fatalf("Matches(%q) = (%v, %v), want (true, nil)", test.matchInput, matched, err)
+			}
+		})
+	}
+}
+
+func TestSharedASCIIFoldedRegexAtomMatchesLinearScan(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+rule folded {
+    strings:
+        $ascii = /"[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]":"(REDACTED|null)"/
+        $wide = /"[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]":"(REDACTED|null)"/ wide
+        $both = /"[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]":"(REDACTED|null)"/ ascii wide
+    condition:
+        any of them
+}
+`)
+	if err != nil {
+		t.Fatalf("CompileSource() error = %v", err)
+	}
+	if len(program.SharedLookup) != 4 {
+		t.Fatalf("shared lookup entries = %d, want 4", len(program.SharedLookup))
+	}
+
+	data := []byte(`"PASSWORD":"REDACTED" `)
+	data = append(data, widenRegexPrefix([]byte(`"PassWord":"null"`))...)
+	scanner := NewScanner(program)
+	defer scanner.Close()
+	result, err := scanner.Scan(data)
+	if err != nil {
+		t.Fatalf("Scan() error = %v", err)
+	}
+	rule := program.Rules[0]
+	linear := buildLinearRegexContext(rule, data)
+	defer linear.Release()
+	for _, id := range sortedPatternIDs(rule.RegexPatterns) {
+		got := matchRangesInOrder(result.Matches[rule.Name][id])
+		want := matchRangesInOrder(linear.Matches[id])
+		if !slices.Equal(got, want) {
+			t.Errorf("%s shared ranges = %v, linear scan = %v", id, got, want)
+		}
+		if len(got) == 0 {
+			t.Errorf("%s did not match either case variant", id)
+		}
+	}
+}
+
 func TestCompiledRegexCarriesLiteralAlternativeAtoms(t *testing.T) {
 	program, err := NewCompiler().CompileSource(`
 		rule literal_alternatives {

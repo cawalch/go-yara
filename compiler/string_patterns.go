@@ -23,6 +23,7 @@ type RegexPattern struct {
 	wideAtom             []byte
 	atomMinOffset        int
 	atomMaxOffset        int
+	atomASCIINoCase      bool
 	alternativeAtoms     []regexPrefilterAtom
 	wideAlternativeAtoms []regexPrefilterAtom
 	leadingGap           *regexLeadingGapPlan

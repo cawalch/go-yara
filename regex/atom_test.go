@@ -78,6 +78,88 @@ func TestMandatoryLiteralAtomsDoesNotMutateResults(t *testing.T) {
 	}
 }
 
+func TestMandatoryASCIIFoldedLiteralAtoms(t *testing.T) {
+	tests := []struct {
+		name      string
+		pattern   string
+		data      string
+		minOffset int
+		maxOffset int
+	}{
+		{
+			name:      "pure case-pair run",
+			pattern:   `"[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]":`,
+			data:      "password",
+			minOffset: 1,
+			maxOffset: 1,
+		},
+		{
+			name:      "variable required prefix",
+			pattern:   `(x|long)[Pp][Aa][Ss][Ss]`,
+			data:      "pass",
+			minOffset: 1,
+			maxOffset: 4,
+		},
+		{
+			name:      "required repeat",
+			pattern:   `([Aa][Bb])+`,
+			data:      "ab",
+			minOffset: 0,
+			maxOffset: 0,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			parsed, err := NewParser(ParserFlagEnableStrictEscapeSequences).Parse(test.pattern)
+			if err != nil {
+				t.Fatal(err)
+			}
+			atoms := MandatoryASCIIFoldedLiteralAtoms(parsed)
+			for _, atom := range atoms {
+				if string(atom.Data) == test.data &&
+					atom.MinOffset == test.minOffset &&
+					atom.MaxOffset == test.maxOffset {
+					return
+				}
+			}
+			t.Fatalf(
+				"MandatoryASCIIFoldedLiteralAtoms(%q) = %+v, missing %q at [%d,%d]",
+				test.pattern,
+				atoms,
+				test.data,
+				test.minOffset,
+				test.maxOffset,
+			)
+		})
+	}
+}
+
+func TestMandatoryASCIIFoldedLiteralAtomsRejectsUnsafeRuns(t *testing.T) {
+	for _, pattern := range []string{
+		`[Pp0][Aa][Ss][Ss][Ww][Oo][Rr][Dd]`,
+		`([Pp][Aa][Ss][Ss])?`,
+		`([Pp][Aa][Ss][Ss]|other)`,
+		`[^Pp][Aa][Ss][Ss]`,
+	} {
+		t.Run(pattern, func(t *testing.T) {
+			parsed, err := NewParser(ParserFlagEnableStrictEscapeSequences).Parse(pattern)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, atom := range MandatoryASCIIFoldedLiteralAtoms(parsed) {
+				if len(atom.Data) >= 2 {
+					t.Fatalf(
+						"MandatoryASCIIFoldedLiteralAtoms(%q) returned unsafe atom %+v",
+						pattern,
+						atom,
+					)
+				}
+			}
+		})
+	}
+}
+
 func TestLiteralAlternatives(t *testing.T) {
 	tests := []struct {
 		name    string
