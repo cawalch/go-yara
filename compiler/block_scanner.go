@@ -190,6 +190,11 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (*ScanResult
 				s.matchCtx.addMatchSpan(id, matchSpan{Offset: match.Offset, Length: match.Length})
 			}
 		}
+		if !s.prefilterDisabled && rule.RequiresStringMatch && len(s.matchCtx.spans) == 0 {
+			s.ruleResults[rule.Name] = false
+			result.RuleResults[rule.Name] = false
+			continue
+		}
 
 		s.prepareInterpreter(rule)
 		s.interp.SetItersmax(s.itersmax)

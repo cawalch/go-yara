@@ -135,35 +135,36 @@ func (rc *RuleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 
 	// Create compiled rule
 	compiledRule := &CompiledRule{
-		Name:              rule.Name,
-		Index:             rc.ruleIndex,
-		Bytecode:          bytecode,
-		StringCount:       len(rule.Strings),
-		Strings:           rc.copyAllPatterns(),
-		Automaton:         rc.automaton,
-		StringSets:        rc.conditionCompiler.GetStringSets(),
-		TextStringSets:    rc.conditionCompiler.GetTextStringSets(),
-		AnonymousStrings:  anonymousStrings,
-		StringLiterals:    rc.emitter.GetStringLiterals(),
-		StringKinds:       rc.copyStringKinds(),
-		StringModifiers:   rc.copyStringModifiers(),
-		CaptureBindings:   captureBindingsByPattern(rule),
-		EvidencePlans:     compileEvidencePlans(rule.Evidence),
-		TextPatterns:      rc.copyTextPatterns(),
-		RegexPatterns:     rc.copyRegexPatterns(),
-		HexPatterns:       rc.copyHexPatterns(),
-		Stats:             rc.snapshotCompilationStats(rule),
-		ExternalSlots:     maps.Clone(externalSlots),
-		GlobalSlots:       maps.Clone(globalSlots),
-		GlobalValues:      rc.copyGlobalValuesForSlots(globalSlots),
-		Tags:              rule.Tags,
-		Meta:              rc.compileMeta(rule.Meta),
-		IsGlobal:          rc.hasModifier(rule.Modifiers, ast.ModifierGlobal),
-		IsPrivate:         rc.hasModifier(rule.Modifiers, ast.ModifierPrivate),
-		FastScanSafe:      !conditionObservesMatchOccurrences(rule.Condition) && !ruleDeclaresEvidence(rule),
-		ModuleFunctions:   maps.Clone(rc.moduleFunctions),
-		ModuleNames:       maps.Clone(rc.moduleNames),
-		HeaderConstraints: deriveHeaderConstraints(rule.Condition),
+		Name:                rule.Name,
+		Index:               rc.ruleIndex,
+		Bytecode:            bytecode,
+		StringCount:         len(rule.Strings),
+		Strings:             rc.copyAllPatterns(),
+		Automaton:           rc.automaton,
+		StringSets:          rc.conditionCompiler.GetStringSets(),
+		TextStringSets:      rc.conditionCompiler.GetTextStringSets(),
+		AnonymousStrings:    anonymousStrings,
+		StringLiterals:      rc.emitter.GetStringLiterals(),
+		StringKinds:         rc.copyStringKinds(),
+		StringModifiers:     rc.copyStringModifiers(),
+		CaptureBindings:     captureBindingsByPattern(rule),
+		EvidencePlans:       compileEvidencePlans(rule.Evidence),
+		TextPatterns:        rc.copyTextPatterns(),
+		RegexPatterns:       rc.copyRegexPatterns(),
+		HexPatterns:         rc.copyHexPatterns(),
+		Stats:               rc.snapshotCompilationStats(rule),
+		ExternalSlots:       maps.Clone(externalSlots),
+		GlobalSlots:         maps.Clone(globalSlots),
+		GlobalValues:        rc.copyGlobalValuesForSlots(globalSlots),
+		Tags:                rule.Tags,
+		Meta:                rc.compileMeta(rule.Meta),
+		IsGlobal:            rc.hasModifier(rule.Modifiers, ast.ModifierGlobal),
+		IsPrivate:           rc.hasModifier(rule.Modifiers, ast.ModifierPrivate),
+		FastScanSafe:        !conditionObservesMatchOccurrences(rule.Condition) && !ruleDeclaresEvidence(rule),
+		RequiresStringMatch: len(rule.Strings) > 0 && conditionRequiresStringMatch(rule.Condition),
+		ModuleFunctions:     maps.Clone(rc.moduleFunctions),
+		ModuleNames:         maps.Clone(rc.moduleNames),
+		HeaderConstraints:   deriveHeaderConstraints(rule.Condition),
 	}
 
 	rc.ruleIndex++
@@ -1114,10 +1115,13 @@ type CompiledRule struct {
 	IsPrivate bool           // Rule is marked as private
 	// FastScanSafe is true when the condition only observes whether strings
 	// matched, not occurrence counts, offsets, lengths, or constrained ranges.
-	FastScanSafe      bool
-	ModuleFunctions   map[builtinFunction]ModuleFunction
-	ModuleNames       map[builtinFunction]string
-	HeaderConstraints []HeaderConstraint
+	FastScanSafe bool
+	// RequiresStringMatch is true only when the condition is proven false if
+	// none of this rule's strings match.
+	RequiresStringMatch bool
+	ModuleFunctions     map[builtinFunction]ModuleFunction
+	ModuleNames         map[builtinFunction]string
+	HeaderConstraints   []HeaderConstraint
 }
 
 // GetName returns the rule name

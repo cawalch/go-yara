@@ -15,6 +15,8 @@ features, but it is not a complete drop-in replacement for upstream YARA.
 - Compile rules to executable bytecode.
 - Scan data with public APIs in `github.com/cawalch/go-yara/compiler`.
 - Reuse scanners across many inputs to reduce allocations.
+- Reject clean inputs through a conservative mandatory-literal prefilter before
+  running rule bytecode.
 - Compile valid rules from partially invalid rule sets with structured omitted-
   rule diagnostics.
 - Use conservative fast-scan retention without changing count-, offset-, or
@@ -184,11 +186,22 @@ scans.
 
 Pass `compiler.WithReportedMatchesOnly()` to a reusable scanner when only
 public matching rules need entries in `Matches`; `RuleResults` is unaffected.
+In this compact mode, `Matches` remains `nil` until a public rule match is
+materialized.
 
 Pass `compiler.WithFastScan()` when only the first occurrence of each string is
 needed. The compiler marks rules whose conditions inspect occurrence counts,
 offsets, lengths, or constrained ranges as ineligible and automatically keeps
 all of their matches, preserving condition results.
+
+When a caller only needs a Boolean answer, reuse `scanner.Matches(data)`. Rules
+whose conditions are proven to require at least one string match are rejected
+before interpreter execution when the shared literal prefilter finds no
+candidate. If every evaluated rule is rejectable, `Matches` returns before the
+per-rule loop; after scanner warm-up this clean-input path performs no heap
+allocations. Rules without strings, conditions based only on file or module
+state, negated string conditions, and any condition the compiler cannot prove
+safe continue through normal evaluation.
 
 ### Extract Structured Secret Evidence
 
