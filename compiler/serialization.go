@@ -100,6 +100,7 @@ type serializedRegexPattern struct {
 	WideAtom             []byte
 	AtomMinOffset        int
 	AtomMaxOffset        int
+	AtomASCIINoCase      bool
 	AlternativeAtoms     []serializedRegexAtom
 	WideAlternativeAtoms []serializedRegexAtom
 	LeadingGap           *serializedLeadingGap
@@ -117,10 +118,11 @@ type serializedRegexPattern struct {
 }
 
 type serializedRegexAtom struct {
-	Data      []byte
-	MinOffset int
-	MaxOffset int
-	Score     int
+	Data        []byte
+	MinOffset   int
+	MaxOffset   int
+	Score       int
+	ASCIINoCase bool
 }
 
 type serializedLeadingGap struct {
@@ -523,6 +525,7 @@ func serializeRegexPattern(pattern RegexPattern) serializedRegexPattern {
 		WideAtom:             slices.Clone(pattern.wideAtom),
 		AtomMinOffset:        pattern.atomMinOffset,
 		AtomMaxOffset:        pattern.atomMaxOffset,
+		AtomASCIINoCase:      pattern.atomASCIINoCase,
 		AlternativeAtoms:     serializeRegexAtoms(pattern.alternativeAtoms),
 		WideAlternativeAtoms: serializeRegexAtoms(pattern.wideAlternativeAtoms),
 		ByteSet:              pattern.byteSet.Values(),
@@ -564,6 +567,7 @@ func deserializeRegexPattern(serialized serializedRegexPattern) RegexPattern {
 		wideAtom:             slices.Clone(serialized.WideAtom),
 		atomMinOffset:        serialized.AtomMinOffset,
 		atomMaxOffset:        serialized.AtomMaxOffset,
+		atomASCIINoCase:      serialized.AtomASCIINoCase,
 		alternativeAtoms:     deserializeRegexAtoms(serialized.AlternativeAtoms),
 		wideAlternativeAtoms: deserializeRegexAtoms(serialized.WideAlternativeAtoms),
 		byteSet:              regex.NewByteSet(serialized.ByteSet),
@@ -598,7 +602,8 @@ func serializeRegexAtoms(atoms []regexPrefilterAtom) []serializedRegexAtom {
 	serialized := make([]serializedRegexAtom, len(atoms))
 	for index, atom := range atoms {
 		serialized[index] = serializedRegexAtom{
-			Data: slices.Clone(atom.data), MinOffset: atom.minOffset, MaxOffset: atom.maxOffset, Score: atom.score,
+			Data: slices.Clone(atom.data), MinOffset: atom.minOffset, MaxOffset: atom.maxOffset,
+			Score: atom.score, ASCIINoCase: atom.asciiNoCase,
 		}
 	}
 	return serialized
@@ -608,7 +613,8 @@ func deserializeRegexAtoms(atoms []serializedRegexAtom) []regexPrefilterAtom {
 	result := make([]regexPrefilterAtom, len(atoms))
 	for index, atom := range atoms {
 		result[index] = regexPrefilterAtom{
-			data: slices.Clone(atom.Data), minOffset: atom.MinOffset, maxOffset: atom.MaxOffset, score: atom.Score,
+			data: slices.Clone(atom.Data), minOffset: atom.MinOffset, maxOffset: atom.MaxOffset,
+			score: atom.Score, asciiNoCase: atom.ASCIINoCase,
 		}
 	}
 	return result

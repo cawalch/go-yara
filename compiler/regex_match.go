@@ -203,7 +203,11 @@ func unboundedRegexAlternativePresent(data []byte, atoms []regexPrefilterAtom, f
 		if atom.maxOffset >= 0 {
 			continue
 		}
-		searcher := newRegexLiteralSearcher(data, atom.data, flags)
+		searchFlags := flags
+		if atom.asciiNoCase {
+			searchFlags |= regex.FlagsNoCase
+		}
+		searcher := newRegexLiteralSearcher(data, atom.data, searchFlags)
 		if searcher.index(0) >= 0 {
 			return true
 		}
@@ -298,7 +302,11 @@ func addRegexMatchesFromAlternatives(
 		index := cursorIndex
 		cursorIndex++
 		cursors[index].atom = atom
-		cursors[index].searcher = newRegexLiteralSearcher(data, atom.data, flags)
+		searchFlags := flags
+		if atom.asciiNoCase {
+			searchFlags |= regex.FlagsNoCase
+		}
+		cursors[index].searcher = newRegexLiteralSearcher(data, atom.data, searchFlags)
 		cursors[index].start = -1
 		cursors[index].advance()
 	}
@@ -455,6 +463,9 @@ func regexAtomCandidateStarts(
 	flags regex.Flags,
 	isWide bool,
 ) ([]int, bool) {
+	if pattern.atomASCIINoCase {
+		flags |= regex.FlagsNoCase
+	}
 	searcher := newRegexLiteralSearcher(data, atom, flags)
 	first := searcher.index(0)
 	if first < 0 {

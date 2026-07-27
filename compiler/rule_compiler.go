@@ -394,6 +394,22 @@ func (rc *RuleCompiler) compileSingleString(str *ast.String) error {
 			pattern.atomMinOffset = atom.minOffset
 			pattern.atomMaxOffset = atom.maxOffset
 		}
+		if atom, ok := selectMandatoryASCIIFoldedRegexAtom(result.regexASCIIFoldedAtoms); ok {
+			current := regexPrefilterAtom{
+				data:        pattern.atom,
+				minOffset:   pattern.atomMinOffset,
+				maxOffset:   pattern.atomMaxOffset,
+				score:       prefilterAtomScore(pattern.atom),
+				asciiNoCase: pattern.atomASCIINoCase,
+			}
+			if len(pattern.atom) == 0 || betterRegexPrefilterAtom(atom, current) {
+				pattern.atom = append([]byte(nil), atom.data...)
+				pattern.wideAtom = widenRegexPrefix(atom.data)
+				pattern.atomMinOffset = atom.minOffset
+				pattern.atomMaxOffset = atom.maxOffset
+				pattern.atomASCIINoCase = true
+			}
+		}
 		if len(pattern.prefix) < minPrefilterAtomLength {
 			if atoms, ok := selectAlternativeRegexAtoms(result.regexAlternatives); ok {
 				pattern.alternativeAtoms = cloneRegexPrefilterAtoms(atoms)
@@ -431,21 +447,22 @@ func (rc *RuleCompiler) compileSingleString(str *ast.String) error {
 }
 
 type stringCompilationResult struct {
-	patternData        []byte
-	kind               StringKind
-	flags              regex.Flags
-	hexPattern         *HexPattern
-	altPatterns        [][]byte
-	patternFlags       regex.Flags
-	altPatternFlags    []regex.Flags
-	cacheKey           string
-	regexAtoms         []regex.LiteralAtom
-	regexAlternatives  [][]regex.LiteralAtom
-	regexLeadingGap    regex.LeadingByteGapPlan
-	regexByteSetAtoms  []regex.ByteSetAtom
-	regexFixedByteSets []regex.ByteSet
-	captureCode        []byte
-	captureGroups      []int
+	patternData           []byte
+	kind                  StringKind
+	flags                 regex.Flags
+	hexPattern            *HexPattern
+	altPatterns           [][]byte
+	patternFlags          regex.Flags
+	altPatternFlags       []regex.Flags
+	cacheKey              string
+	regexAtoms            []regex.LiteralAtom
+	regexASCIIFoldedAtoms []regex.LiteralAtom
+	regexAlternatives     [][]regex.LiteralAtom
+	regexLeadingGap       regex.LeadingByteGapPlan
+	regexByteSetAtoms     []regex.ByteSetAtom
+	regexFixedByteSets    []regex.ByteSet
+	captureCode           []byte
+	captureGroups         []int
 }
 
 func (rc *RuleCompiler) compileStringPattern(str *ast.String) (*stringCompilationResult, error) {
@@ -560,17 +577,18 @@ func (rc *RuleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers
 	fixedByteSets, _ := regex.FixedByteSets(parsed, flags)
 	leadingGap, _ := regex.LeadingByteGapAtomCover(parsed, flags, minPrefilterAtomLength)
 	return &stringCompilationResult{
-		patternData:        code, // VM bytecode
-		kind:               StringKindRegex,
-		flags:              flags,
-		cacheKey:           patternCacheKey("regex", pattern.Value, modifiers),
-		regexAtoms:         regex.MandatoryLiteralAtoms(parsed),
-		regexAlternatives:  regex.RequiredLiteralAlternationAtoms(parsed, minPrefilterAtomLength),
-		regexLeadingGap:    leadingGap,
-		regexByteSetAtoms:  regex.MandatoryByteSetAtoms(parsed),
-		regexFixedByteSets: fixedByteSets,
-		captureCode:        captureCode,
-		captureGroups:      groups,
+		patternData:           code, // VM bytecode
+		kind:                  StringKindRegex,
+		flags:                 flags,
+		cacheKey:              patternCacheKey("regex", pattern.Value, modifiers),
+		regexAtoms:            regex.MandatoryLiteralAtoms(parsed),
+		regexASCIIFoldedAtoms: regex.MandatoryASCIIFoldedLiteralAtoms(parsed),
+		regexAlternatives:     regex.RequiredLiteralAlternationAtoms(parsed, minPrefilterAtomLength),
+		regexLeadingGap:       leadingGap,
+		regexByteSetAtoms:     regex.MandatoryByteSetAtoms(parsed),
+		regexFixedByteSets:    fixedByteSets,
+		captureCode:           captureCode,
+		captureGroups:         groups,
 	}, nil
 }
 
@@ -1026,6 +1044,7 @@ func (rc *RuleCompiler) copyRegexPatterns() map[string]RegexPattern {
 			wideAtom:             slices.Clone(v.wideAtom),
 			atomMinOffset:        v.atomMinOffset,
 			atomMaxOffset:        v.atomMaxOffset,
+			atomASCIINoCase:      v.atomASCIINoCase,
 			alternativeAtoms:     cloneRegexPrefilterAtoms(v.alternativeAtoms),
 			wideAlternativeAtoms: cloneRegexPrefilterAtoms(v.wideAlternativeAtoms),
 			leadingGap:           cloneLeadingGapRegexPlan(v.leadingGap),
@@ -1300,6 +1319,7 @@ type SharedAutomatonEntry struct {
 	// fixed-offset regex and hex atoms.
 	AtomMaxOffset   int
 	alternativeAtom bool
+	forceShared     bool
 	IsWide          bool
 	CacheIndex      int
 }

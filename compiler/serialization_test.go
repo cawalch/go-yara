@@ -24,12 +24,13 @@ rule base : executable sample {
         $magic = "MZ"
         $regex = /pay(load|mint)/ nocase
         $regex_alternation = /"(phone|phone_number|mobile)":"[0-9]{7}"/
+        $regex_case_class = /"[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]":"(REDACTED|null)"/
         $hex = { 50 41 ?? 4C 4F 41 44 }
     condition:
         uint16(0) == 0x5a4d and
         $magic at 0 and
         gate and threshold == 1 and
-        any of ($regex, $regex_alternation, $hex) and
+        any of ($regex, $regex_alternation, $regex_case_class, $hex) and
         hash.sha256("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
 }
 

@@ -51,6 +51,109 @@ func MandatoryLiteralAtoms(ast *AST) []LiteralAtom {
 	return analyzeAtoms(ast.Root).atoms
 }
 
+// MandatoryASCIIFoldedLiteralAtoms returns literals formed by required runs of
+// pure ASCII case-pair classes such as [Pp][Aa][Ss][Ss]. Data is normalized to
+// lowercase and must be searched with ASCII case folding. A maximal adjacent
+// class run containing any wider class is rejected as a whole.
+func MandatoryASCIIFoldedLiteralAtoms(ast *AST) []LiteralAtom {
+	if ast == nil || ast.Root == nil {
+		return nil
+	}
+	return analyzeASCIIFoldedLiteralAtoms(ast.Root)
+}
+
+func analyzeASCIIFoldedLiteralAtoms(node *Node) []LiteralAtom {
+	node = unwrapGroups(node)
+	if node == nil {
+		return nil
+	}
+
+	switch node.Kind {
+	case NodeConcat:
+		return analyzeConcatASCIIFoldedLiteralAtoms(node.Children)
+	case NodeAlt:
+		analyses := make([]atomAnalysis, len(node.Children))
+		for index, child := range node.Children {
+			analyses[index].atoms = analyzeASCIIFoldedLiteralAtoms(child)
+		}
+		return intersectMandatoryAtoms(analyses)
+	case NodePlus:
+		return cloneLiteralAtoms(analyzeASCIIFoldedLiteralAtoms(firstChild(node)))
+	case NodeRange:
+		if node.Start > 0 {
+			return cloneLiteralAtoms(analyzeASCIIFoldedLiteralAtoms(firstChild(node)))
+		}
+	}
+	return nil
+}
+
+func analyzeConcatASCIIFoldedLiteralAtoms(children []*Node) []LiteralAtom {
+	var atoms []LiteralAtom
+	prefixMin := 0
+	prefixMax := 0
+
+	for index := 0; index < len(children); {
+		if isClassNode(children[index]) {
+			runMinOffset := prefixMin
+			runMaxOffset := prefixMax
+			runValid := true
+			run := make([]byte, 0, len(children)-index)
+			for index < len(children) && isClassNode(children[index]) {
+				value, ok := asciiCasePairValue(children[index])
+				if !ok {
+					runValid = false
+				} else {
+					run = append(run, value)
+				}
+				analysis := analyzeAtoms(children[index])
+				prefixMin = addLength(prefixMin, analysis.minLength)
+				prefixMax = addLength(prefixMax, analysis.maxLength)
+				index++
+			}
+			if runValid && len(run) > 0 {
+				atoms = append(atoms, LiteralAtom{
+					Data:      run,
+					MinOffset: runMinOffset,
+					MaxOffset: runMaxOffset,
+				})
+			}
+			continue
+		}
+
+		for _, atom := range analyzeASCIIFoldedLiteralAtoms(children[index]) {
+			atoms = append(atoms, shiftLiteralAtom(atom, prefixMin, prefixMax))
+		}
+		analysis := analyzeAtoms(children[index])
+		prefixMin = addLength(prefixMin, analysis.minLength)
+		prefixMax = addLength(prefixMax, analysis.maxLength)
+		index++
+	}
+	return atoms
+}
+
+func isClassNode(node *Node) bool {
+	node = unwrapGroups(node)
+	return node != nil && node.Kind == NodeClass
+}
+
+func asciiCasePairValue(node *Node) (byte, bool) {
+	node = unwrapGroups(node)
+	if node == nil || node.Kind != NodeClass {
+		return 0, false
+	}
+	set := classByteSet(node.Class)
+	if set.Count() != 2 {
+		return 0, false
+	}
+	for lower := byte('a'); lower <= 'z'; lower++ {
+		upper := lower - ('a' - 'A')
+		if set.Contains(lower) && set.Contains(upper) {
+			return lower, true
+		}
+	}
+	return 0, false
+}
+
 // LiteralAlternatives returns the exact, non-empty literal branches when the
 // entire consuming portion of ast is an alternation. Zero-width assertions may
 // surround the alternation; the regex VM still verifies them at each candidate
