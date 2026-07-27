@@ -244,6 +244,12 @@ func TestSharedRegexPrefilterUsesCompleteAlternativeAtomSet(t *testing.T) {
 			wantShared:       true,
 		},
 		{
+			name:             "head alternatives with tail group",
+			pattern:          `"(dob|date_of_birth|birth_date)":"(19|20)[0-9]{2}"`,
+			wantMinimumAtoms: 3,
+			wantShared:       true,
+		},
+		{
 			name:             "five alternatives including dob",
 			pattern:          `"(date_of_birth|birth_date|birthdate|birthday|dob)":"[0-9]{4}"`,
 			wantMinimumAtoms: 5,
@@ -280,6 +286,11 @@ func TestSharedRegexPrefilterUsesCompleteAlternativeAtomSet(t *testing.T) {
 		{
 			name:       "dot-only branch falls back",
 			pattern:    `"(date_of_birth|birth_date|birthdate|dateOfBirth|birthday|.)`,
+			wantShared: false,
+		},
+		{
+			name:       "no mandatory literal falls back",
+			pattern:    `.*([a-z]+|[0-9]+)`,
 			wantShared: false,
 		},
 	}

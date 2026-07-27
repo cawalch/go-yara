@@ -533,11 +533,16 @@ func betterLiteralAtomCover(candidate, current literalAtomCoverPlan) bool {
 	if candidate.fullyBounded != current.fullyBounded {
 		return candidate.fullyBounded
 	}
+	candidateQuality := candidate.score * len(current.groups)
+	currentQuality := current.score * len(candidate.groups)
+	if candidateQuality != currentQuality {
+		// Compare average best-literal length before group count. A smaller
+		// cover of short atoms can produce far more VM candidates than a
+		// slightly larger cover of selective literals.
+		return candidateQuality > currentQuality
+	}
 	if len(candidate.groups) != len(current.groups) {
 		return len(candidate.groups) < len(current.groups)
-	}
-	if candidate.score != current.score {
-		return candidate.score > current.score
 	}
 	return candidate.totalBytes < current.totalBytes
 }
