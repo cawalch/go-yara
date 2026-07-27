@@ -43,9 +43,9 @@ func (l *Lexer) isWhitespaceChar() bool {
 // skipLineComment skips line comments (// comment)
 func (l *Lexer) skipLineComment() bool {
 	if l.reader.Current() == '/' && l.reader.PeekChar() == '/' {
-		// Check if this might be an empty regex before treating as comment
-		if l.isEmptyRegex() {
-			// This is an empty regex, don't consume it here
+		// An empty regex is only unambiguous where a regex value is expected.
+		// Elsewhere, a bare // through the end of the line is a comment.
+		if l.emptyRegexExpected() && l.isEmptyRegex() {
 			return false
 		}
 		// Skip line comment: // comment text
@@ -57,6 +57,11 @@ func (l *Lexer) skipLineComment() bool {
 		return true
 	}
 	return false
+}
+
+func (l *Lexer) emptyRegexExpected() bool {
+	return l.lastTokenType == token.MATCHES ||
+		(l.section == sectionStrings && l.lastTokenType == token.ASSIGN)
 }
 
 // skipBlockComment skips block comments (/* comment */)

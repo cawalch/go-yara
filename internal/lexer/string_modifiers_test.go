@@ -94,11 +94,6 @@ func TestStringModifiers_AllStringTypes(t *testing.T) {
 			`{ } wide`,
 			[]token.Type{token.HexStringLit, token.WIDE, token.EOF},
 		},
-		{
-			"empty regex with modifiers",
-			`//i nocase`,
-			[]token.Type{token.RegexLit, token.NOCASE, token.EOF},
-		},
 	}
 
 	for _, tt := range tests {
