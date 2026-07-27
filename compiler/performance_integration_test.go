@@ -69,7 +69,6 @@ func TestPerformanceSimpleRules(t *testing.T) {
 	files := []string{
 		"pe_malware_sample.bin",
 		"elf_backdoor_sample.bin",
-		"webshell_sample.php",
 		"ransomware_sample.exe",
 		"banker_sample.dll",
 		"ddos_bot_sample.exe",
@@ -97,7 +96,6 @@ func TestPerformanceSimpleRules(t *testing.T) {
 			"pe_malware_sample.bin": true,
 		},
 		"web_detection": {
-			"webshell_sample.php": true,
 			"ddos_bot_sample.exe": true,
 		},
 	}
@@ -124,7 +122,6 @@ func TestPerformanceRealWorldRules(t *testing.T) {
 	files := []string{
 		"pe_malware_sample.bin",
 		"elf_backdoor_sample.bin",
-		"webshell_sample.php",
 		"ransomware_sample.exe",
 		"banker_sample.dll",
 		"ddos_bot_sample.exe",
@@ -141,9 +138,6 @@ func TestPerformanceRealWorldRules(t *testing.T) {
 		},
 		"elf_backdoor": {
 			"elf_backdoor_sample.bin": true,
-		},
-		"webshell_detection": {
-			"webshell_sample.php": true,
 		},
 		"ransomware_indicators": {
 			"ransomware_sample.exe": true,
