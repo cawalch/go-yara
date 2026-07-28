@@ -100,6 +100,66 @@ func sortedPatternIDs[V any](patterns map[string]V) []string {
 	return ids
 }
 
+// prefilterStringClass tells the reject path what, if anything, it must probe
+// for one of a rule's strings.
+type prefilterStringClass uint8
+
+const (
+	// prefilterStringUnresolved marks a string whose kind or pattern could not be
+	// resolved at compile time. The reject path cannot reason about the rule and
+	// reports rulePrefilterUnknown, exactly as the map-lookup version did when a
+	// lookup missed.
+	prefilterStringUnresolved prefilterStringClass = iota
+	// prefilterStringText is a text string, always represented in the shared
+	// automaton, so the reject path has nothing extra to check.
+	prefilterStringText
+	// prefilterStringNonText is a regex or hex string whose candidate spans live
+	// in the scanner's non-text cache at cacheIndex.
+	prefilterStringNonText
+)
+
+// prefilterStringInfo is one string's resolved reject-path data.
+type prefilterStringInfo struct {
+	class      prefilterStringClass
+	cacheIndex int
+}
+
+// buildPrefilterStrings resolves each of a rule's strings to the class and cache
+// index the reject path needs.
+//
+// This is pure precomputation of compile-time-constant data. rulePrefilterStatus
+// previously re-resolved it on every scan through the string-keyed StringKinds,
+// RegexPatterns and HexPatterns maps, costing two string hashes per string per
+// rule per event — which dominated the reject path on realistic rulesets.
+//
+// Must run after cache indices are assigned, since it captures cacheIndex.
+func buildPrefilterStrings(rule *CompiledRule) {
+	infos := make([]prefilterStringInfo, len(rule.IndexToStringID))
+	for i, identifier := range rule.IndexToStringID {
+		kind, exists := rule.StringKinds[identifier]
+		if !exists {
+			continue // leaves prefilterStringUnresolved
+		}
+		switch kind {
+		case StringKindText:
+			infos[i] = prefilterStringInfo{class: prefilterStringText}
+		case StringKindRegex:
+			pattern, ok := rule.RegexPatterns[identifier]
+			if !ok {
+				continue
+			}
+			infos[i] = prefilterStringInfo{class: prefilterStringNonText, cacheIndex: pattern.cacheIndex}
+		case StringKindHex:
+			pattern, ok := rule.HexPatterns[identifier]
+			if !ok || pattern == nil {
+				continue
+			}
+			infos[i] = prefilterStringInfo{class: prefilterStringNonText, cacheIndex: pattern.cacheIndex}
+		}
+	}
+	rule.prefilterStrings = infos
+}
+
 func assignNonTextCacheIndices(rules []*CompiledRule) int {
 	indices := make(map[nonTextCacheKey]int)
 	nextIndex := 0
@@ -137,6 +197,12 @@ func assignNonTextCacheIndices(rules []*CompiledRule) int {
 			}
 			pattern.cacheIndex = index
 		}
+	}
+	// Every cacheIndex is final at this point, so the reject path's per-string
+	// table can be resolved once here. Both the fresh-compile and deserialize
+	// paths route through this function, so neither needs its own call.
+	for _, rule := range rules {
+		buildPrefilterStrings(rule)
 	}
 	return nextIndex
 }
