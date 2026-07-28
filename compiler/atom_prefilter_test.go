@@ -1119,6 +1119,21 @@ func TestMixedRegexPrefilterUsesDensityGate(t *testing.T) {
 	}
 }
 
+func TestSharedPatternDensityGateAccountsForEntriesPerRoot(t *testing.T) {
+	data := []byte(strings.Repeat("abcdefghij0123456789 msg=payload ", 512))
+	for _, entries := range []int{4, 12, 31} {
+		t.Run(fmt.Sprintf("entries=%d", entries), func(t *testing.T) {
+			program := buildCommonRootRegexProgram(t, entries)
+			if len(program.SharedAutomaton.rootBytes) != 1 {
+				t.Fatalf("shared root bytes = %q, want one common root", program.SharedAutomaton.rootBytes)
+			}
+			if !shouldUseSharedPatternAutomaton(data, program) {
+				t.Fatal("common-root regex set did not select the shared automaton")
+			}
+		})
+	}
+}
+
 func TestSharedTextAutomatonBypassesNonTextDensityGate(t *testing.T) {
 	program, err := NewCompiler().CompileSource(`
 		rule mixed_text_regex {

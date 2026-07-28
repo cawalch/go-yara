@@ -837,8 +837,13 @@ func shouldUseSharedPatternAutomaton(data []byte, program *CompiledProgram) bool
 
 	// Small non-text automata are profitable when their root bytes are sparse
 	// in the input. Candidate-dense roots make the AC state machine more
-	// expensive than independent SIMD literal searches, so sample the input
-	// and retain the local paths above roughly one root hit per 32 bytes.
+	// expensive than independent SIMD literal searches, so sample the input.
+	//
+	// The independent path performs one search per entry, while the sparse-root
+	// automaton performs one search per distinct root byte. Scale the tolerated
+	// root density by that entries-per-root reuse ratio. This retains the old
+	// one-hit-per-32-bytes crossover when every entry has its own root, while
+	// avoiding repeated full-input scans when many entries share a root.
 	if len(data) == 0 || len(program.SharedAutomaton.rootBytes) == 0 {
 		return false
 	}
@@ -874,7 +879,8 @@ func shouldUseSharedPatternAutomaton(data []byte, program *CompiledProgram) bool
 			}
 		}
 	}
-	return rootHits*rootDensityScale < samples
+	return rootHits*rootDensityScale*len(program.SharedAutomaton.rootBytes) <
+		samples*len(program.SharedLookup)
 }
 
 func shouldUseFixedRegexDispatch(data []byte, dispatch *fixedRegexDispatch) bool {
