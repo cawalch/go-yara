@@ -95,41 +95,25 @@ func (s *Scanner) rulePrefilterStatus(rule *CompiledRule, useSharedAutomaton boo
 	if !useSharedAutomaton || rule.Index < 0 || rule.Index >= len(s.globalMatches) {
 		return rulePrefilterUnknown
 	}
-	if len(rule.IndexToStringID) == 0 {
+	if len(rule.prefilterStrings) == 0 {
 		return rulePrefilterUnknown
 	}
 	if len(s.globalMatches[rule.Index]) != 0 {
 		return rulePrefilterCandidate
 	}
 
+	// rule.prefilterStrings resolves kind and cache index at compile time. This
+	// loop runs for every evaluated rule on every event, so it deliberately does
+	// no map lookups: hashing each string identifier here dominated the reject
+	// path, costing far more than the automaton scan it is meant to protect.
 	complete := true
-	for _, identifier := range rule.IndexToStringID {
-		kind, exists := rule.StringKinds[identifier]
-		if !exists {
-			return rulePrefilterUnknown
-		}
-		switch kind {
-		case StringKindText:
+	for i := range rule.prefilterStrings {
+		info := &rule.prefilterStrings[i]
+		switch info.class {
+		case prefilterStringText:
 			// Text strings are always represented in the shared automaton.
-		case StringKindRegex:
-			pattern, exists := rule.RegexPatterns[identifier]
-			if !exists {
-				return rulePrefilterUnknown
-			}
-			matches, ready := s.nonTextCache.get(pattern.cacheIndex)
-			if !ready {
-				complete = false
-				continue
-			}
-			if len(matches) != 0 {
-				return rulePrefilterCandidate
-			}
-		case StringKindHex:
-			pattern, exists := rule.HexPatterns[identifier]
-			if !exists || pattern == nil {
-				return rulePrefilterUnknown
-			}
-			matches, ready := s.nonTextCache.get(pattern.cacheIndex)
+		case prefilterStringNonText:
+			matches, ready := s.nonTextCache.get(info.cacheIndex)
 			if !ready {
 				complete = false
 				continue

@@ -1127,6 +1127,12 @@ type CompiledRule struct {
 	IndexToStringID []string         // integer index -> string identifier (reverse lookup)
 	StringNameToRef map[string]int64 // string identifier -> pre-computed StringRef for interpreter
 
+	// prefilterStrings is the per-string data the prefilter reject path needs,
+	// resolved at compile time and parallel to IndexToStringID. Built by
+	// assignNonTextCacheIndices, immutable afterwards, so it is safe to share
+	// across concurrent scanners alongside the rest of the program.
+	prefilterStrings []prefilterStringInfo
+
 	// Rule metadata (from AST)
 	Tags      []string       // Rule tags (e.g., {"malware", "trojan"})
 	Meta      map[string]any // Meta key-value pairs
