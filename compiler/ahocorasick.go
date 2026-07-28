@@ -193,6 +193,8 @@ func (ac *ACAutomaton) Compile() error {
 			compileErr = fmt.Errorf("building failure links: %w", err)
 			return
 		}
+		// Fold the failure links into the goto table so the scan never walks them.
+		ac.closeTransitions()
 
 		ac.compiled = true
 	})
@@ -279,17 +281,65 @@ func (ac *ACAutomaton) buildFailureLinks() error {
 	return nil
 }
 
-// findNextState follows failure links until a transition is available.
+// findNextState returns the next state for b. closeTransitions has already
+// folded every failure-link hop into the goto table, so this is one load with no
+// loop and no branch.
 func (ac *ACAutomaton) findNextState(currentState int32, b byte) int32 {
-	for {
-		nextState := ac.states[currentState].transitions[b]
-		if nextState != -1 {
-			return nextState
+	return ac.states[currentState].transitions[b]
+}
+
+// closeTransitions converts the goto table from the sparse Aho-Corasick form,
+// where a missing edge is -1 and the scan follows failure links at run time, to
+// the full deterministic form, where every (state, byte) pair has an explicit
+// target.
+//
+// The scan is the whole cost on large inputs — on a 16KB event it was 99% of
+// Matches(), split between the SearchIter loop and findNextState's failure
+// walk — so paying once at compile time to make the per-byte step a single
+// indexed load is a large win. This costs no extra memory: ACState.transitions
+// is already a dense [256]int32.
+//
+// Must run after buildFailureLinks, and after collectRootBytes, which
+// distinguishes real root edges by their -1 absence.
+func (ac *ACAutomaton) closeTransitions() {
+	// Breadth-first from the root so a state's failure target, which is always
+	// strictly shallower, is closed before the state itself.
+	//
+	// The seen guard is required, not defensive: case-insensitive strings point
+	// several byte values at the same next state, so a state is reachable more
+	// than once and an unguarded walk re-enqueues it without bound.
+	queue := make([]int32, 0, len(ac.states))
+	seen := make([]bool, len(ac.states))
+	seen[0] = true
+	for b := range ac.states[0].transitions {
+		next := ac.states[0].transitions[b]
+		if next == -1 {
+			// A miss at the root restarts the scan at the root.
+			ac.states[0].transitions[b] = 0
+			continue
 		}
-		if currentState == 0 {
-			return 0
+		if !seen[next] {
+			seen[next] = true
+			queue = append(queue, next)
 		}
-		currentState = ac.states[currentState].failure
+	}
+	for head := 0; head < len(queue); head++ {
+		state := queue[head]
+		failure := ac.states[state].failure
+		if failure < 0 {
+			failure = 0
+		}
+		for b := range ac.states[state].transitions {
+			next := ac.states[state].transitions[b]
+			if next == -1 {
+				ac.states[state].transitions[b] = ac.states[failure].transitions[b]
+				continue
+			}
+			if !seen[next] {
+				seen[next] = true
+				queue = append(queue, next)
+			}
+		}
 	}
 }
 
@@ -485,8 +535,11 @@ func (ac *ACAutomaton) SearchIter(data []byte) iter.Seq[ACMatch] {
 		for i, b := range data {
 			if currentState == 0 {
 				currentState = rootTransitions[b]
-				if currentState == -1 {
-					currentState = 0
+				// After closeTransitions a root miss reads back as 0 rather than
+				// -1. No real edge can target the root, so 0 still means "no
+				// transition", and skipping the output check below preserves the
+				// original behaviour exactly.
+				if currentState == 0 {
 					continue
 				}
 			} else {

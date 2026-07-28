@@ -851,7 +851,12 @@ func shouldUseSharedPatternAutomaton(data []byte, program *CompiledProgram) bool
 	rootHits := 0
 	rootTransitions := &program.SharedAutomaton.states[0].transitions
 	sampleAt := func(position int) {
-		if rootTransitions[data[position]] != -1 {
+		// A compiled automaton's goto table is closed over failure links, so an
+		// absent root edge reads back as 0 rather than -1. No real transition can
+		// target the root, so 0 is the "no root edge" test. Comparing against -1
+		// here would count every byte as a root hit and stop the shared automaton
+		// from ever being selected.
+		if rootTransitions[data[position]] != 0 {
 			rootHits++
 		}
 		samples++
