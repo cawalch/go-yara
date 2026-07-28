@@ -136,28 +136,41 @@ type prefilterStringInfo struct {
 func buildPrefilterStrings(rule *CompiledRule) {
 	infos := make([]prefilterStringInfo, len(rule.IndexToStringID))
 	for i, identifier := range rule.IndexToStringID {
-		kind, exists := rule.StringKinds[identifier]
-		if !exists {
-			continue // leaves prefilterStringUnresolved
-		}
-		switch kind {
-		case StringKindText:
-			infos[i] = prefilterStringInfo{class: prefilterStringText}
-		case StringKindRegex:
-			pattern, ok := rule.RegexPatterns[identifier]
-			if !ok {
-				continue
-			}
-			infos[i] = prefilterStringInfo{class: prefilterStringNonText, cacheIndex: pattern.cacheIndex}
-		case StringKindHex:
-			pattern, ok := rule.HexPatterns[identifier]
-			if !ok || pattern == nil {
-				continue
-			}
-			infos[i] = prefilterStringInfo{class: prefilterStringNonText, cacheIndex: pattern.cacheIndex}
-		}
+		infos[i] = resolvePrefilterString(rule, identifier)
 	}
 	rule.prefilterStrings = infos
+}
+
+// resolvePrefilterString resolves one string to the class and cache index the
+// reject path needs, reporting prefilterStringUnresolved when the string's kind
+// or pattern is missing or unrecognised. Each of those cases made the previous
+// map-lookup implementation return rulePrefilterUnknown for the whole rule, and
+// still does.
+func resolvePrefilterString(rule *CompiledRule, identifier string) prefilterStringInfo {
+	unresolved := prefilterStringInfo{class: prefilterStringUnresolved}
+
+	kind, exists := rule.StringKinds[identifier]
+	if !exists {
+		return unresolved
+	}
+	switch kind {
+	case StringKindText:
+		return prefilterStringInfo{class: prefilterStringText}
+	case StringKindRegex:
+		pattern, ok := rule.RegexPatterns[identifier]
+		if !ok {
+			return unresolved
+		}
+		return prefilterStringInfo{class: prefilterStringNonText, cacheIndex: pattern.cacheIndex}
+	case StringKindHex:
+		pattern, ok := rule.HexPatterns[identifier]
+		if !ok || pattern == nil {
+			return unresolved
+		}
+		return prefilterStringInfo{class: prefilterStringNonText, cacheIndex: pattern.cacheIndex}
+	default:
+		return unresolved
+	}
 }
 
 func assignNonTextCacheIndices(rules []*CompiledRule) int {
