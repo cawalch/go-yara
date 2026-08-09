@@ -433,6 +433,39 @@ func TestScannerStringMatch(t *testing.T) {
 	}
 }
 
+func TestScannerRepeatedTextBytesAreSignificant(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+		rule repeated_bytes {
+			strings: $a = "sig_00000=deny_00000"
+			condition: $a
+		}
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scanner := NewScanner(program)
+	defer scanner.Close()
+
+	for _, test := range []struct {
+		name  string
+		data  string
+		match bool
+	}{
+		{name: "exact", data: "sig_00000=deny_00000", match: true},
+		{name: "collapsed run", data: "sig_000=deny_000", match: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			matched, scanErr := scanner.Matches([]byte(test.data))
+			if scanErr != nil {
+				t.Fatal(scanErr)
+			}
+			if matched != test.match {
+				t.Fatalf("Matches(%q) = %v, want %v", test.data, matched, test.match)
+			}
+		})
+	}
+}
+
 func TestScannerReportedMatchesOnly(t *testing.T) {
 	program, err := NewCompiler().CompileSource(`
 		private rule helper {

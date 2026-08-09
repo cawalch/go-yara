@@ -7,6 +7,35 @@ import (
 	"github.com/cawalch/go-yara/ast"
 )
 
+func TestStringCompilerOptimizePatternPreservesBytes(t *testing.T) {
+	sc := NewStringCompiler()
+	for _, test := range []struct {
+		name      string
+		pattern   []byte
+		modifiers []ast.StringModifier
+	}{
+		{name: "repeated ASCII", pattern: []byte("sig_00000=deny_00000")},
+		{
+			name:      "wide NUL code unit",
+			pattern:   []byte{0, 0, 'A', 0},
+			modifiers: []ast.StringModifier{{Type: ast.StringModifierWide}},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got := sc.OptimizePattern(test.pattern, test.modifiers)
+			if !bytes.Equal(got, test.pattern) {
+				t.Fatalf("OptimizePattern() = %v, want exact bytes %v", got, test.pattern)
+			}
+			if len(got) > 0 {
+				got[0] ^= 0xff
+				if bytes.Equal(got, test.pattern) {
+					t.Fatal("OptimizePattern returned an alias of caller-owned bytes")
+				}
+			}
+		})
+	}
+}
+
 // TestStringCompilerValidateModifiers tests string modifier validation
 func TestStringCompilerValidateModifiers(t *testing.T) {
 	sc := NewStringCompiler()
