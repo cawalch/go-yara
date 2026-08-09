@@ -356,6 +356,8 @@ func deserializeProgram(payload serializedProgram, modules []Module) (*CompiledP
 	}
 	program.SharedAutomaton = sharedAutomaton
 	program.SharedLookup = sharedLookup
+	program.sharedNonTextCaches = sharedNonTextCacheCoverage(program.nonTextCacheSize, sharedLookup)
+	program.sharedNonTextCacheRules = sharedNonTextCacheRuleLookup(rules, program.sharedNonTextCaches)
 	program.Stats = map[string]any{
 		"rule_count":          len(rules),
 		"total_bytecode_size": program.GetTotalBytecodeSize(),

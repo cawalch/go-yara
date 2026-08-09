@@ -1016,6 +1016,14 @@ func (c *Compiler) compileCodeGenWithContext(ctx context.Context, program *ast.P
 	}
 	compiledProgram.SetSharedAutomaton(sharedAutomaton)
 	compiledProgram.SharedLookup = sharedLookup
+	compiledProgram.sharedNonTextCaches = sharedNonTextCacheCoverage(
+		compiledProgram.nonTextCacheSize,
+		sharedLookup,
+	)
+	compiledProgram.sharedNonTextCacheRules = sharedNonTextCacheRuleLookup(
+		compiledRules,
+		compiledProgram.sharedNonTextCaches,
+	)
 	if c.options.EnableWarnings {
 		c.collectCompiledPatternWarnings(program, compiledRules)
 	}

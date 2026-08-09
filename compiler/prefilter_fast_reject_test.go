@@ -302,6 +302,164 @@ private rule hidden {
 	}
 }
 
+func TestScannerMatchesSparseCandidateParity(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+global rule guard : selected {
+    strings: $g = /guard[0-9]{2}/
+    condition: $g
+}
+
+private rule helper : selected {
+    strings: $h = "alpha"
+    condition: $h
+}
+
+rule dependent : selected {
+    strings: $d = /fo(o|x)trot/
+    condition: helper and $d
+}
+
+rule counted : selected {
+    strings: $c = /beta[0-9]/
+    condition: #c >= 2
+}
+
+rule positioned : selected {
+    strings: $p = { 4d 5a [0-2] 50 45 }
+    condition: $p at 0
+}
+
+rule folded_wide : selected {
+    strings: $w = "Delta" nocase wide ascii
+    condition: $w
+}
+
+rule negated : selected {
+    strings: $n = "forbidden"
+    condition: not $n
+}
+
+rule atomless : selected {
+    strings: $a = /a*/
+    condition: $a
+}
+
+rule unselected : other {
+    strings: $u = /unselected[0-9]+/
+    condition: $u
+}
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob, err := program.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := UnmarshalCompiledProgram(blob)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	corpus := [][]byte{
+		[]byte("clean"),
+		[]byte("guard42"),
+		[]byte("guard42 alpha foxtrot"),
+		[]byte("guard42 beta1 beta2"),
+		[]byte("guard42 MZxxPE"),
+		[]byte("guard42 DELTA"),
+		append([]byte("guard42 "), []byte{'D', 0, 'e', 0, 'l', 0, 't', 0, 'a', 0}...),
+		[]byte("guard42 unselected123"),
+		[]byte("alpha foxtrot guard42"),
+		[]byte("clean"),
+	}
+	for _, candidateProgram := range []*CompiledProgram{program, loaded} {
+		for _, options := range [][]ScannerOption{
+			{WithFastScan()},
+			{WithFastScan(), WithTagsFilter([]string{"selected"})},
+		} {
+			fast := NewScanner(candidateProgram, options...)
+			full := NewScanner(candidateProgram, options...)
+			full.prefilterDisabled = true
+			for iteration := range 3 {
+				for index, input := range corpus {
+					got, gotErr := fast.Matches(input)
+					want, wantErr := full.Matches(input)
+					if fmt.Sprint(gotErr) != fmt.Sprint(wantErr) || got != want {
+						t.Fatalf(
+							"iteration %d input %d %q: sparse=(%v,%v), full=(%v,%v)",
+							iteration,
+							index,
+							input,
+							got,
+							gotErr,
+							want,
+							wantErr,
+						)
+					}
+				}
+			}
+			fast.Close()
+			full.Close()
+		}
+	}
+}
+
+func FuzzScannerMatchesSparseCandidateParity(f *testing.F) {
+	for _, seed := range [][]byte{
+		nil,
+		[]byte("clean"),
+		[]byte("alpha"),
+		[]byte("beta12"),
+		[]byte("alpha beta12"),
+		[]byte("MZxxPE"),
+		{'D', 0, 'e', 0, 'l', 0, 't', 0, 'a', 0},
+	} {
+		f.Add(seed)
+	}
+	program, err := NewCompiler().CompileSource(`
+private rule helper {
+    strings: $h = "alpha"
+    condition: $h
+}
+rule dependent {
+    strings: $d = /beta[0-9]{2}/
+    condition: helper and $d
+}
+rule counted {
+    strings: $c = /charlie[0-9]/
+    condition: #c >= 2
+}
+rule positioned {
+    strings: $p = { 4d 5a [0-2] 50 45 }
+    condition: $p at 0
+}
+rule folded_wide {
+    strings: $w = "Delta" nocase wide ascii
+    condition: $w
+}
+rule atomless {
+    strings: $a = /x*/
+    condition: $a
+}
+	`)
+	if err != nil {
+		f.Fatal(err)
+	}
+	fast := NewScanner(program, WithFastScan())
+	defer fast.Close()
+	full := NewScanner(program, WithFastScan())
+	full.prefilterDisabled = true
+	defer full.Close()
+	f.Fuzz(func(t *testing.T, input []byte) {
+		got, gotErr := fast.Matches(input)
+		want, wantErr := full.Matches(input)
+		if fmt.Sprint(gotErr) != fmt.Sprint(wantErr) || got != want {
+			t.Fatalf("input %q: sparse=(%v,%v), full=(%v,%v)", input, got, gotErr, want, wantErr)
+		}
+	})
+}
+
 func TestScannerMatchesCleanRejectHasNoAllocations(t *testing.T) {
 	program, err := NewCompiler().CompileSource(`
 rule api_key {
