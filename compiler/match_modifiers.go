@@ -61,8 +61,8 @@ func acceptAutomatonMatch(ctx *MatchContext, rule *CompiledRule, data []byte, ma
 	isWide := false
 	isNocase := false
 	var pattern []byte
-	if match.StringIndex >= 0 && match.StringIndex < len(rule.Automaton.Strings) {
-		info := rule.Automaton.Strings[match.StringIndex]
+	if match.StringIndex >= 0 && match.StringIndex < len(rule.Automaton.strings) {
+		info := rule.Automaton.strings[match.StringIndex]
 		length = info.Length
 		isWide = (info.Flags & regex.FlagsWide) != 0
 		isNocase = (info.Flags & regex.FlagsNoCase) != 0

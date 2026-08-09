@@ -46,7 +46,7 @@ func (s *Scanner) evaluateRuleCondition(
 		}
 		return ruleEvaluation{}, err
 	}
-	matched := s.interp.GetRuleResults()[rule.Name]
+	matched := s.interp.ruleResult(rule.Name)
 	s.ruleResults[rule.Name] = matched
 	return ruleEvaluation{matched: matched}, nil
 }

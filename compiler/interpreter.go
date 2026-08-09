@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"fmt"
+	"maps"
 	"math"
 	"strconv"
 	"sync"
@@ -389,7 +390,8 @@ func (i *Interpreter) SetCompiledRules(rules []*CompiledRule) {
 	}
 }
 
-// GetMatchContext returns the current match context
+// GetMatchContext returns the interpreter's live match context. The returned
+// pointer is borrowed and intended for advanced VM integrations.
 func (i *Interpreter) GetMatchContext() *MatchContext {
 	return i.matchContext
 }
@@ -452,9 +454,13 @@ func (i *Interpreter) SetMemoryString(index int, identifier string) {
 	}
 }
 
-// GetRuleResults returns the execution results for all rules
+// GetRuleResults returns an owned snapshot of all rule results.
 func (i *Interpreter) GetRuleResults() map[string]bool {
-	return i.ruleResults
+	return maps.Clone(i.ruleResults)
+}
+
+func (i *Interpreter) ruleResult(name string) bool {
+	return i.ruleResults[name]
 }
 
 // GetStack returns a copy of the current stack (for debugging)

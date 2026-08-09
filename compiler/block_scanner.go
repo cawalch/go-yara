@@ -212,7 +212,7 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (*ScanResult
 			}
 			return nil, err
 		}
-		matched := s.interp.GetRuleResults()[rule.Name]
+		matched := s.interp.ruleResult(rule.Name)
 		materialize := !s.reportedMatchesOnly || matched && !rule.IsPrivate
 		if materialize && len(perRule) > 0 {
 			publicMatches := cloneRuleMatches(perRule)
