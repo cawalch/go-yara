@@ -84,7 +84,9 @@ func (scanner *BlockScanner) ScanWithContext(ctx context.Context, base int64, da
 
 	s := scanner.scanner
 	s.nonTextCache.reset(scanner.program.nonTextCacheSize)
-	s.populateFixedRegexCache(blockData, &s.nonTextCache)
+	if err := s.populateFixedRegexCache(ctx, blockData, &s.nonTextCache); err != nil {
+		return err
+	}
 	s.regexByteSetCache.reset()
 	for _, rule := range scanner.program.Rules {
 		if err := ctx.Err(); err != nil {
@@ -95,12 +97,17 @@ func (scanner *BlockScanner) ScanWithContext(ctx context.Context, base int64, da
 		}
 
 		s.matchCtx.Reset(blockData)
+		s.matchCtx.cancelDone = ctx.Done()
 		s.matchCtx.maxMatchesPerPattern = 0
 		if s.fastScan && rule.FastScanSafe {
 			s.matchCtx.maxMatchesPerPattern = 1
 		}
-		s.addLocalTextMatches(rule, blockData)
-		s.addLocalNonTextMatches(rule, blockData, &s.nonTextCache)
+		if err := s.addLocalTextMatches(ctx, rule, blockData); err != nil {
+			return err
+		}
+		if err := s.addLocalNonTextMatches(ctx, rule, blockData, &s.nonTextCache); err != nil {
+			return err
+		}
 
 		if len(s.matchCtx.spans) == 0 {
 			continue
@@ -183,6 +190,7 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (*ScanResult
 
 		perRule := normalizedBlockMatches(scanner.matches[rule.Name])
 		s.matchCtx.Reset(nil)
+		s.matchCtx.cancelDone = ctx.Done()
 		s.matchCtx.Blocks = blocks
 		s.matchCtx.FileSize = scanner.fileSize
 		for id, matches := range perRule {
@@ -199,6 +207,9 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (*ScanResult
 		s.prepareInterpreter(rule)
 		s.interp.SetItersmax(s.itersmax)
 		if err := s.interp.Execute(); err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, ctxErr
+			}
 			return nil, err
 		}
 		matched := s.interp.GetRuleResults()[rule.Name]

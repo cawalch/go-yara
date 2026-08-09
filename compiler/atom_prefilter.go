@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"context"
 	"slices"
 	"sort"
 
@@ -659,8 +660,15 @@ func (s *Scanner) resetPrefilterCandidates(size int) {
 	}
 }
 
-func (s *Scanner) populateNonTextPrefilterCache(data []byte, cache *nonTextMatchCache) {
+func (s *Scanner) populateNonTextPrefilterCache(
+	ctx context.Context,
+	data []byte,
+	cache *nonTextMatchCache,
+) error {
 	for lookupIdx := 0; lookupIdx < len(s.program.SharedLookup); {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		entry := s.program.SharedLookup[lookupIdx]
 		if entry.Kind == StringKindText || entry.CacheIndex < 0 || entry.CacheIndex >= len(cache.matches) {
 			lookupIdx++
@@ -702,6 +710,7 @@ func (s *Scanner) populateNonTextPrefilterCache(data []byte, cache *nonTextMatch
 						candidateEntry,
 						data,
 						candidates,
+						ctx.Done(),
 					)
 				}
 			}
@@ -718,18 +727,19 @@ func (s *Scanner) populateNonTextPrefilterCache(data []byte, cache *nonTextMatch
 		case StringKindRegex:
 			dst := cache.matches[entry.CacheIndex]
 			if len(candidates) > 0 {
-				dst = appendRegexPrefilterMatches(dst, rule, strID, entry, data, candidates)
+				dst = appendRegexPrefilterMatches(dst, rule, strID, entry, data, candidates, ctx.Done())
 			}
 			cache.set(entry.CacheIndex, dst)
 		case StringKindHex:
 			dst := cache.matches[entry.CacheIndex]
 			if len(candidates) > 0 {
-				dst = appendHexPrefilterMatches(dst, rule, strID, entry, data, candidates)
+				dst = appendHexPrefilterMatches(dst, rule, strID, entry, data, candidates, ctx.Done())
 			}
 			cache.set(entry.CacheIndex, dst)
 		}
 		lookupIdx++
 	}
+	return ctx.Err()
 }
 
 func sortAndDedupeMatchSpans(matches []matchSpan) []matchSpan {
@@ -769,6 +779,7 @@ func appendRegexPrefilterMatches(
 	entry SharedAutomatonEntry,
 	data []byte,
 	candidates []int,
+	done <-chan struct{},
 ) []matchSpan {
 	pattern, ok := rule.RegexPatterns[strID]
 	if !ok || len(pattern.Code) == 0 {
@@ -782,7 +793,7 @@ func appendRegexPrefilterMatches(
 	// its absence still proves the regex cannot match. If it is present, keep
 	// correctness by delegating to the existing exact matcher.
 	if entry.AtomMaxOffset < 0 {
-		return appendRegexFallbackMatches(dst, rule, strID, pattern, data, flags, entry.IsWide)
+		return appendRegexFallbackMatches(dst, rule, strID, pattern, data, flags, entry.IsWide, done)
 	}
 	limit := max(1024, len(data)/4)
 	starts, handled := collectRegexCandidateStarts(
@@ -794,14 +805,17 @@ func appendRegexPrefilterMatches(
 		limit,
 	)
 	if !handled {
-		return appendRegexFallbackMatches(dst, rule, strID, pattern, data, flags, entry.IsWide)
+		return appendRegexFallbackMatches(dst, rule, strID, pattern, data, flags, entry.IsWide, done)
 	}
 	if len(starts) == 0 {
 		return dst
 	}
 	bs, release := newRegexMatchBatch(pattern)
 	defer releaseRegexMatchBatch(release)
-	for _, start := range starts {
+	for index, start := range starts {
+		if scanCanceledAt(done, index) {
+			return dst
+		}
 		if pattern.anchored && start != 0 {
 			continue
 		}
@@ -831,10 +845,12 @@ func appendRegexFallbackMatches(
 	data []byte,
 	flags regex.Flags,
 	isWide bool,
+	done <-chan struct{},
 ) []matchSpan {
 	ctx := matchContextPool.Get().(*MatchContext)
 	ctx.compact = true
 	ctx.Reset(data)
+	ctx.cancelDone = done
 	addRegexMatches(ctx, strID, pattern, data, rule.StringModifiers[strID], flags, isWide)
 	dst = append(dst, ctx.spans[strID]...)
 	ctx.Release()
@@ -849,6 +865,7 @@ func appendHexPrefilterMatches(
 	entry SharedAutomatonEntry,
 	data []byte,
 	candidates []int,
+	done <-chan struct{},
 ) []matchSpan {
 	pattern := rule.HexPatterns[strID]
 	if pattern == nil {
@@ -858,7 +875,10 @@ func appendHexPrefilterMatches(
 	var scratch hexMatchScratch
 	lastStart := -1
 
-	for _, atomStart := range candidates {
+	for index, atomStart := range candidates {
+		if scanCanceledAt(done, index) {
+			return dst
+		}
 		start := atomStart - entry.AtomOffset
 		if start < 0 || start >= len(data) || start == lastStart {
 			continue

@@ -2,14 +2,94 @@ package compiler
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"math"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/cawalch/go-yara/regex"
 )
+
+func TestSearchIterWithCancelStopsDenseScan(t *testing.T) {
+	automaton := NewACAutomaton()
+	if err := automaton.AddString("$a", []byte("a"), false, false); err != nil {
+		t.Fatalf("AddString() error = %v", err)
+	}
+	if err := automaton.Compile(); err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	data := []byte(strings.Repeat("a", 4*scanCancellationInterval))
+	count := 0
+	for range automaton.searchIterWithCancel(data, ctx.Done()) {
+		count++
+		if count == 100 {
+			cancel()
+		}
+	}
+	if count != scanCancellationInterval {
+		t.Fatalf(
+			"context-aware scan yielded %d matches after cancellation, want %d",
+			count,
+			scanCancellationInterval,
+		)
+	}
+}
+
+func TestSearchIterWithCancelPreservesSparseBoundaryMatches(t *testing.T) {
+	automaton := NewACAutomaton()
+	pattern := []byte("boundary-pattern")
+	if err := automaton.AddString("$a", pattern, false, false); err != nil {
+		t.Fatalf("AddString() error = %v", err)
+	}
+	if err := automaton.Compile(); err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	data := []byte(strings.Repeat("x", 2*cancelableSearchWindow))
+	start := cancelableSearchWindow - len(pattern)/2
+	copy(data[start:], pattern)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	want := slices.Collect(automaton.SearchIter(data))
+	got := slices.Collect(automaton.searchIterWithCancel(data, ctx.Done()))
+	if !slices.Equal(got, want) {
+		t.Fatalf("context-aware matches = %+v, want %+v", got, want)
+	}
+}
+
+func TestSearchIterWithCancelPreservesSparseRootMatches(t *testing.T) {
+	automaton := NewACAutomaton()
+	for id, pattern := range map[string]string{
+		"$a": "alpha-pattern",
+		"$b": "bravo-pattern",
+	} {
+		if err := automaton.AddString(id, []byte(pattern), false, false); err != nil {
+			t.Fatalf("AddString(%s) error = %v", id, err)
+		}
+	}
+	if err := automaton.Compile(); err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	data := []byte(strings.Repeat("x", 2*cancelableSearchWindow))
+	copy(data[cancelableSearchWindow-4:], "alpha-pattern")
+	copy(data[len(data)-32:], "bravo-pattern")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	want := slices.Collect(automaton.SearchIter(data))
+	got := slices.Collect(automaton.searchIterWithCancel(data, ctx.Done()))
+	if !slices.Equal(got, want) {
+		t.Fatalf("context-aware sparse-root matches = %+v, want %+v", got, want)
+	}
+}
 
 func TestMustACIndex(t *testing.T) {
 	if got := mustACIndex(math.MaxInt32); got != math.MaxInt32 {

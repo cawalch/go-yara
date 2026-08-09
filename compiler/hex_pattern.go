@@ -359,6 +359,10 @@ func findAnchorByte(tokens []HexPatternToken) anchorInfo {
 
 // FindHexMatches returns all matches of the hex pattern in data.
 func FindHexMatches(pattern *HexPattern, data []byte) []Match {
+	return findHexMatches(pattern, data, nil)
+}
+
+func findHexMatches(pattern *HexPattern, data []byte, done <-chan struct{}) []Match {
 	if pattern == nil || len(pattern.Tokens) == 0 || len(data) == 0 {
 		return nil
 	}
@@ -372,25 +376,37 @@ func FindHexMatches(pattern *HexPattern, data []byte) []Match {
 
 	if len(keys) == 0 {
 		if anchor.ok {
-			return findHexMatchesAnchored(pattern.Tokens, data, anchor)
+			return findHexMatchesAnchored(pattern.Tokens, data, anchor, done)
 		}
-		return findHexMatchesBruteForce(pattern.Tokens, data)
+		return findHexMatchesBruteForce(pattern.Tokens, data, done)
 	}
 
 	// XOR mode: for each key, compute the transformed anchor byte.
 	if anchor.ok {
-		return findHexMatchesXorAnchored(pattern.Tokens, data, keys, anchor)
+		return findHexMatchesXorAnchored(pattern.Tokens, data, keys, anchor, done)
 	}
-	return findHexMatchesXorBruteForce(pattern.Tokens, data, keys)
+	return findHexMatchesXorBruteForce(pattern.Tokens, data, keys, done)
 }
 
 // findHexMatchesAnchored uses bytes.IndexByte to skip non-matching positions.
-func findHexMatchesAnchored(tokens []HexPatternToken, data []byte, anchor anchorInfo) []Match {
+//
+//nolint:revive // cancellation signal remains explicit on the matching hot path
+func findHexMatchesAnchored(
+	tokens []HexPatternToken,
+	data []byte,
+	anchor anchorInfo,
+	done <-chan struct{},
+) []Match {
 	var matches []Match
 	linear := isLinearHexPattern(tokens)
 	var scratch hexMatchScratch
 	pos := 0
+	checkpoint := 0
 	for {
+		if scanCanceledAt(done, checkpoint) {
+			return matches
+		}
+		checkpoint++
 		idx := bytes.IndexByte(data[pos:], anchor.byteVal)
 		if idx == -1 {
 			break
@@ -425,10 +441,13 @@ func findHexMatchesAnchored(tokens []HexPatternToken, data []byte, anchor anchor
 }
 
 // findHexMatchesBruteForce is the fallback when no anchor byte exists.
-func findHexMatchesBruteForce(tokens []HexPatternToken, data []byte) []Match {
+func findHexMatchesBruteForce(tokens []HexPatternToken, data []byte, done <-chan struct{}) []Match {
 	var matches []Match
 	var scratch hexMatchScratch
 	for start := range data {
+		if scanCanceledAt(done, start) {
+			return matches
+		}
 		ends := scratch.match(tokens, data, start, nil)
 		for _, end := range ends {
 			if end <= start {
@@ -446,14 +465,25 @@ func findHexMatchesBruteForce(tokens []HexPatternToken, data []byte) []Match {
 // findHexMatchesXorAnchored uses per-key transformed anchor bytes for skip-based matching.
 //
 //nolint:revive // argument-limit: internal helper
-func findHexMatchesXorAnchored(tokens []HexPatternToken, data []byte, keys []byte, anchor anchorInfo) []Match {
+func findHexMatchesXorAnchored(
+	tokens []HexPatternToken,
+	data []byte,
+	keys []byte,
+	anchor anchorInfo,
+	done <-chan struct{},
+) []Match {
 	var matches []Match
 	linear := isLinearHexPattern(tokens)
 	var scratch hexMatchScratch
+	checkpoint := 0
 	for _, key := range keys {
 		targetByte := anchor.byteVal ^ key
 		pos := 0
 		for {
+			if scanCanceledAt(done, checkpoint) {
+				return matches
+			}
+			checkpoint++
 			idx := bytes.IndexByte(data[pos:], targetByte)
 			if idx == -1 {
 				break
@@ -534,10 +564,20 @@ func matchLinearHexPattern(tokens []HexPatternToken, data []byte, pos int, xorKe
 }
 
 // findHexMatchesXorBruteForce is the fallback for XOR patterns with no anchor.
-func findHexMatchesXorBruteForce(tokens []HexPatternToken, data []byte, keys []byte) []Match {
+//
+//nolint:revive // cancellation signal remains explicit on the matching hot path
+func findHexMatchesXorBruteForce(
+	tokens []HexPatternToken,
+	data []byte,
+	keys []byte,
+	done <-chan struct{},
+) []Match {
 	var matches []Match
 	var scratch hexMatchScratch
 	for start := range data {
+		if scanCanceledAt(done, start) {
+			return matches
+		}
 		for _, key := range keys {
 			ends := scratch.match(tokens, data, start, &key)
 			for _, end := range ends {
