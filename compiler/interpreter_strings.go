@@ -581,8 +581,8 @@ func (i *Interpreter) executeMatchesOperation() error {
 	if strings.HasPrefix(valueStr, "$") {
 		// String identifier: check if any match content matches the regex
 		matched := i.matchContext.anyMatch(valueStr, func(match matchSpan) bool {
-			end := min(int(match.Offset)+match.Length, len(i.matchContext.Data))
-			return regex.Exec(compiled, i.matchContext.Data[int(match.Offset):end], flags|regex.FlagsScan)
+			data, ok := i.matchContext.dataRange(match.Offset, int64(match.Length))
+			return ok && regex.Exec(compiled, data, flags|regex.FlagsScan)
 		})
 		return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(matched)})
 	}

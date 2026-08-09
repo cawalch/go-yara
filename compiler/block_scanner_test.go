@@ -229,6 +229,66 @@ rule options {
 	}
 }
 
+func TestBlockScannerFastScanRetainsConditionRequiredMatches(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+rule counted {
+    strings:
+        $c = /beta[0-9]/
+    condition:
+        #c >= 2
+}
+rule presence {
+    strings:
+        $p = "present"
+    condition:
+        $p
+}
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	scanner := program.NewBlockScanner(WithFastScan())
+	defer scanner.Close()
+	if err := scanner.Scan(1000, []byte("beta1 beta2 present")); err != nil {
+		t.Fatal(err)
+	}
+	result, err := scanner.Finish()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.RuleResults["counted"] || len(result.Matches["counted"]["$c"]) != 2 {
+		t.Fatalf("counted result = %+v, want two retained matches", result)
+	}
+}
+
+func TestBlockScannerStringMatchesReadsAbsoluteBlockOffset(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+rule content_regex {
+    strings:
+        $a = "needle"
+    condition:
+        $a and $a matches /^need/
+}
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	scanner := program.NewBlockScanner()
+	defer scanner.Close()
+	if err := scanner.Scan(4096, []byte("xxneedlexx")); err != nil {
+		t.Fatal(err)
+	}
+	result, err := scanner.Finish()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.RuleResults["content_regex"] {
+		t.Fatalf("content_regex result = %+v, want match", result)
+	}
+}
+
 func TestBlockScannerHeaderConstraintChecksAllOverlappingBlocks(t *testing.T) {
 	program, err := NewCompiler().CompileSource(`
 rule overlap_header {

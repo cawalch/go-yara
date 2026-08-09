@@ -191,6 +191,10 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (*ScanResult
 		perRule := normalizedBlockMatches(scanner.matches[rule.Name])
 		s.matchCtx.Reset(nil)
 		s.matchCtx.cancelDone = ctx.Done()
+		s.matchCtx.maxMatchesPerPattern = 0
+		if s.fastScan && rule.FastScanSafe {
+			s.matchCtx.maxMatchesPerPattern = 1
+		}
 		s.matchCtx.Blocks = blocks
 		s.matchCtx.FileSize = scanner.fileSize
 		for id, matches := range perRule {
