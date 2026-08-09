@@ -92,6 +92,22 @@ rule test : malware {
 	if match.Meta["author"] != "test" {
 		t.Errorf("Expected meta author=test, got %v", match.Meta["author"])
 	}
+
+	match.Tags[0] = "changed"
+	match.Meta["author"] = "changed"
+	match.Meta["extra"] = true
+
+	result, err = scanner.Scan([]byte("dummy"))
+	if err != nil {
+		t.Fatalf("second Scan: %v", err)
+	}
+	match = result.MatchedRules[0]
+	if len(match.Tags) != 1 || match.Tags[0] != "malware" {
+		t.Fatalf("second match tags = %v, want [malware]", match.Tags)
+	}
+	if match.Meta["author"] != "test" || match.Meta["extra"] != nil {
+		t.Fatalf("second match metadata = %v, want unchanged compiled metadata", match.Meta)
+	}
 }
 
 // --- Global Rules ---

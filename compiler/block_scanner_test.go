@@ -6,6 +6,50 @@ import (
 	"testing"
 )
 
+func TestBlockScannerMatchMetadataIsOwnedByResult(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+rule owned : stable {
+    meta:
+        author = "test"
+    condition:
+        true
+}
+`)
+	if err != nil {
+		t.Fatalf("CompileSource() error = %v", err)
+	}
+
+	scanner := program.NewBlockScanner()
+	defer scanner.Close()
+	if err := scanner.Scan(0, []byte("data")); err != nil {
+		t.Fatalf("Scan() error = %v", err)
+	}
+	result, err := scanner.Finish()
+	if err != nil {
+		t.Fatalf("Finish() error = %v", err)
+	}
+	match := result.MatchedRules[0]
+	match.Tags[0] = "changed"
+	match.Meta["author"] = "changed"
+	match.Meta["extra"] = true
+
+	scanner.Reset()
+	if err := scanner.Scan(0, []byte("data")); err != nil {
+		t.Fatalf("second Scan() error = %v", err)
+	}
+	result, err = scanner.Finish()
+	if err != nil {
+		t.Fatalf("second Finish() error = %v", err)
+	}
+	match = result.MatchedRules[0]
+	if len(match.Tags) != 1 || match.Tags[0] != "stable" {
+		t.Fatalf("second match tags = %v, want [stable]", match.Tags)
+	}
+	if match.Meta["author"] != "test" || match.Meta["extra"] != nil {
+		t.Fatalf("second match metadata = %v, want unchanged compiled metadata", match.Meta)
+	}
+}
+
 func TestBlockScannerNonContiguousBlocks(t *testing.T) {
 	program, err := NewCompiler().CompileSource(`
 rule test {

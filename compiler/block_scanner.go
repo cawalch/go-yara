@@ -263,13 +263,7 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (*ScanResult
 			}
 			result.Evidence[rule.Name] = evidence
 		}
-		result.MatchedRules = append(result.MatchedRules, RuleMatch{
-			Rule:     rule.Name,
-			Tags:     rule.Tags,
-			Meta:     rule.Meta,
-			Matches:  matches,
-			Evidence: evidence,
-		})
+		result.MatchedRules = append(result.MatchedRules, newPublicRuleMatch(rule, matches, evidence))
 	}
 	clear(s.ruleResults)
 	return result, nil
