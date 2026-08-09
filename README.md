@@ -203,6 +203,26 @@ allocations. Rules without strings, conditions based only on file or module
 state, negated string conditions, and any condition the compiler cannot prove
 safe continue through normal evaluation.
 
+When a caller needs details for matching rules but not a boolean entry for
+every rule, use `scanner.MatchingRules(data)`:
+
+```go
+matches, err := scanner.MatchingRules(event)
+if err != nil {
+	return err
+}
+for _, match := range matches {
+	fmt.Printf("%s matched with tags %v\n", match.Rule, match.Tags)
+}
+```
+
+`MatchingRules` preserves global/private rule behavior, tag filters, exact
+count and offset conditions, match data/context, captures, and evidence. It
+returns caller-owned `RuleMatch` values while avoiding `ScanResult.RuleResults`
+and per-rule `Matches` entries for rules that did not match. Clean events can
+therefore take the same sparse candidate path as `Matches`; use `Scan` when the
+application needs the historical result for every evaluated rule.
+
 ### Extract Structured Secret Evidence
 
 [Upstream YARA regular expressions](https://yara.readthedocs.io/en/stable/writingrules.html)

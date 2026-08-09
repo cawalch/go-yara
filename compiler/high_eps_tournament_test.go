@@ -9,9 +9,10 @@ import (
 )
 
 var (
-	highEPSBoolSink   bool
-	highEPSResultSink *ScanResult
-	highEPSWorkerSink atomic.Uint64
+	highEPSBoolSink        bool
+	highEPSResultSink      *ScanResult
+	highEPSRuleMatchesSink []RuleMatch
+	highEPSWorkerSink      atomic.Uint64
 )
 
 func BenchmarkHighEPSEventScan(b *testing.B) {
@@ -44,6 +45,23 @@ func BenchmarkHighEPSEventScan(b *testing.B) {
 									b.Fatal(err)
 								}
 								highEPSBoolSink = matched
+								index++
+							}
+						})
+
+						b.Run("matching_rules", func(b *testing.B) {
+							scanner := NewScanner(program, WithFastScan())
+							defer scanner.Close()
+							b.ReportAllocs()
+							b.SetBytes(int64(eventSize))
+							index := 0
+							b.ResetTimer()
+							for b.Loop() {
+								matches, err := scanner.MatchingRules(events[index&1_023])
+								if err != nil {
+									b.Fatal(err)
+								}
+								highEPSRuleMatchesSink = matches
 								index++
 							}
 						})
@@ -127,6 +145,35 @@ func BenchmarkHighEPSSelectivity(b *testing.B) {
 						b.Fatal(scanErr)
 					}
 					highEPSBoolSink = matched
+					index++
+				}
+			})
+		}
+	}
+}
+
+func BenchmarkHighEPSMatchingRulesSelectivity(b *testing.B) {
+	const ruleCount = 10_000
+	for _, portfolio := range []string{"literal", "regex", "mixed"} {
+		program, err := NewCompiler().CompileSource(highEPSRuleSource(portfolio, ruleCount))
+		if err != nil {
+			b.Fatalf("compile %s: %v", portfolio, err)
+		}
+		for _, traffic := range []string{"sparse", "dense"} {
+			events := highEPSPortfolioEvents(portfolio, ruleCount, 256, 1_024, traffic)
+			b.Run(portfolio+"/"+traffic, func(b *testing.B) {
+				scanner := NewScanner(program, WithFastScan())
+				defer scanner.Close()
+				b.ReportAllocs()
+				b.SetBytes(256)
+				index := 0
+				b.ResetTimer()
+				for b.Loop() {
+					matches, scanErr := scanner.MatchingRules(events[index&1_023])
+					if scanErr != nil {
+						b.Fatal(scanErr)
+					}
+					highEPSRuleMatchesSink = matches
 					index++
 				}
 			})

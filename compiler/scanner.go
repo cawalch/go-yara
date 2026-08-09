@@ -61,6 +61,9 @@ type Scanner struct {
 	// condition evaluation.
 	candidateRuleIndices []int
 	candidateRuleSeen    []bool
+	// Public rules whose conditions matched during the current compact scan.
+	// The indices are retained across calls; returned RuleMatch values are owned.
+	matchedRuleIndices []int
 
 	// Test-only escape hatch used by parity coverage.
 	prefilterDisabled bool
@@ -370,6 +373,21 @@ func (cp *CompiledProgram) MatchesWithContext(ctx context.Context, data []byte) 
 	return scanner.MatchesWithContext(ctx, data)
 }
 
+// MatchingRules returns detailed public rule matches without materializing a
+// boolean result or match-map entry for every evaluated rule. Reuse a Scanner
+// for high-throughput event streams.
+func (cp *CompiledProgram) MatchingRules(data []byte) ([]RuleMatch, error) {
+	return cp.MatchingRulesWithContext(context.Background(), data)
+}
+
+// MatchingRulesWithContext returns detailed public rule matches without
+// materializing per-rule results for rules that did not match.
+func (cp *CompiledProgram) MatchingRulesWithContext(ctx context.Context, data []byte) ([]RuleMatch, error) {
+	scanner := NewScanner(cp)
+	defer scanner.Close()
+	return scanner.MatchingRulesWithContext(ctx, data)
+}
+
 // ScanReader reads from r and evaluates all rules in this compiled program.
 func (cp *CompiledProgram) ScanReader(r io.Reader) (*ScanResult, error) {
 	return cp.ScanReaderWithContext(context.Background(), r)
@@ -600,22 +618,12 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 			matches := result.Matches[rule.Name]
 			// Filter out private strings from the report
 			publicMatches := filterPrivateStrings(rule, matches)
-			var evidence map[string][]EvidenceFinding
-			if s.evidenceMax > 0 {
-				var err error
-				evidence, err = s.populateRuleEvidence(ctx, rule, publicMatches, func(match Match) (captureInput, bool) {
-					if match.Offset < 0 || match.Length < 0 || match.Offset > int64(len(data)) {
-						return captureInput{}, false
-					}
-					end := match.Offset + int64(match.Length)
-					if end < match.Offset || end > int64(len(data)) {
-						return captureInput{}, false
-					}
-					return captureInput{data: data, start: int(match.Offset), end: int(end)}, true
-				})
-				if err != nil {
-					return nil, err
-				}
+			evidence, err := s.populatePublicRuleEvidence(ctx, rule, publicRuleMaterialization{
+				data:    data,
+				matches: publicMatches,
+			})
+			if err != nil {
+				return nil, err
 			}
 			if result.Matches == nil {
 				result.Matches = make(map[string]map[string][]Match)
@@ -670,99 +678,219 @@ func (s *Scanner) MatchesWithContext(ctx context.Context, data []byte) (bool, er
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
-
-	useSharedAutomaton, err := s.preparePatternScan(ctx, data)
+	clear(s.ruleResults)
+	defer clear(s.ruleResults)
+	evaluation, err := s.evaluatePublicRules(ctx, data, nil)
 	if err != nil {
 		return false, err
 	}
-	scanInput := ruleScanInput{data: data, useSharedAutomaton: useSharedAutomaton}
-	clear(s.ruleResults)
-	if !s.prefilterDisabled && useSharedAutomaton {
-		if len(s.candidateRuleIndices) == 0 {
-			return false, nil
-		}
-		return s.matchesSharedCandidates(ctx, scanInput)
-	}
-	if !s.prefilterDisabled && s.allEvaluatedRulesPrefilterRejected(data, useSharedAutomaton) {
-		return false, nil
-	}
-
-	allGlobalMatched := true
-	matchedPublicGlobal := false
-	matchedPublicNonGlobal := false
-	s.interp.ResetIterationCount()
-	for _, rule := range s.program.Rules {
-		if err := ctx.Err(); err != nil {
-			return false, err
-		}
-		if !rule.IsGlobal && !s.hasMatchingTag(rule) {
-			continue
-		}
-
-		evaluation, err := s.evaluateRuleCondition(ctx, rule, scanInput)
-		if err != nil {
-			return false, err
-		}
-
-		if rule.IsGlobal && !evaluation.matched {
-			allGlobalMatched = false
-		}
-		if rule.IsPrivate || !s.hasMatchingTag(rule) || !evaluation.matched {
-			continue
-		}
-		if rule.IsGlobal {
-			matchedPublicGlobal = true
-		} else {
-			matchedPublicNonGlobal = true
-		}
-	}
-	clear(s.ruleResults)
-	return matchedPublicGlobal || allGlobalMatched && matchedPublicNonGlobal, nil
+	return evaluation.matchedPublicGlobal ||
+		evaluation.allGlobalMatched && evaluation.matchedPublicNonGlobal, nil
 }
 
-func (s *Scanner) matchesSharedCandidates(ctx context.Context, scanInput ruleScanInput) (bool, error) {
+// MatchingRules returns detailed public rule matches without constructing the
+// all-rules maps in ScanResult. The returned slice and RuleMatch values are
+// owned by the caller and remain valid across later scanner calls.
+func (s *Scanner) MatchingRules(data []byte) ([]RuleMatch, error) {
+	return s.MatchingRulesWithContext(context.Background(), data)
+}
+
+// MatchingRulesWithContext returns detailed public rule matches without
+// constructing the all-rules maps in ScanResult.
+func (s *Scanner) MatchingRulesWithContext(ctx context.Context, data []byte) ([]RuleMatch, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if s == nil || s.program == nil {
+		return nil, nil
+	}
+	if s.externalErr != nil {
+		return nil, s.externalErr
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	clear(s.ruleResults)
+	defer clear(s.ruleResults)
+	s.matchedRuleIndices = s.matchedRuleIndices[:0]
+	evaluation, err := s.evaluatePublicRules(ctx, data, &s.matchedRuleIndices)
+	if err != nil {
+		return nil, err
+	}
+	return s.materializeMatchingRules(ctx, data, evaluation)
+}
+
+type publicRuleEvaluation struct {
+	scanInput              ruleScanInput
+	allGlobalMatched       bool
+	matchedPublicGlobal    bool
+	matchedPublicNonGlobal bool
+	matchedRuleIndices     *[]int
+}
+
+func (s *Scanner) evaluatePublicRules(
+	ctx context.Context,
+	data []byte,
+	matchedRuleIndices *[]int,
+) (publicRuleEvaluation, error) {
+	useSharedAutomaton, err := s.preparePatternScan(ctx, data)
+	if err != nil {
+		return publicRuleEvaluation{}, err
+	}
+	result := publicRuleEvaluation{
+		scanInput:          ruleScanInput{data: data, useSharedAutomaton: useSharedAutomaton},
+		allGlobalMatched:   true,
+		matchedRuleIndices: matchedRuleIndices,
+	}
+	s.interp.ResetIterationCount()
+	if !s.prefilterDisabled && useSharedAutomaton {
+		return s.evaluateSharedPublicRules(ctx, result)
+	}
+	if !s.prefilterDisabled && s.allEvaluatedRulesPrefilterRejected(data, useSharedAutomaton) {
+		return result, nil
+	}
+	for _, rule := range s.program.Rules {
+		if err := s.evaluatePublicRule(ctx, rule, &result); err != nil {
+			return publicRuleEvaluation{}, err
+		}
+	}
+	return result, nil
+}
+
+func (s *Scanner) evaluateSharedPublicRules(
+	ctx context.Context,
+	result publicRuleEvaluation,
+) (publicRuleEvaluation, error) {
+	if len(s.candidateRuleIndices) == 0 {
+		return result, nil
+	}
 	slices.Sort(s.candidateRuleIndices)
-	allGlobalMatched := true
 	for _, ruleIndex := range s.evaluatedGlobalRules {
 		if !s.candidateRuleSeen[ruleIndex] {
-			allGlobalMatched = false
+			result.allGlobalMatched = false
 			break
 		}
 	}
-
-	matchedPublicGlobal := false
-	matchedPublicNonGlobal := false
-	s.interp.ResetIterationCount()
 	for _, ruleIndex := range s.candidateRuleIndices {
+		if ruleIndex < 0 || ruleIndex >= len(s.program.Rules) {
+			continue
+		}
+		if err := s.evaluatePublicRule(ctx, s.program.Rules[ruleIndex], &result); err != nil {
+			return publicRuleEvaluation{}, err
+		}
+	}
+	return result, nil
+}
+
+func (s *Scanner) evaluatePublicRule(
+	ctx context.Context,
+	rule *CompiledRule,
+	result *publicRuleEvaluation,
+) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if !rule.IsGlobal && !s.hasMatchingTag(rule) {
+		return nil
+	}
+	evaluation, err := s.evaluateRuleCondition(ctx, rule, result.scanInput)
+	if err != nil {
+		return err
+	}
+	if rule.IsGlobal && !evaluation.matched {
+		result.allGlobalMatched = false
+	}
+	if rule.IsPrivate || !s.hasMatchingTag(rule) || !evaluation.matched {
+		return nil
+	}
+	if rule.IsGlobal {
+		result.matchedPublicGlobal = true
+	} else {
+		result.matchedPublicNonGlobal = true
+	}
+	if result.matchedRuleIndices != nil {
+		*result.matchedRuleIndices = append(*result.matchedRuleIndices, rule.Index)
+	}
+	return nil
+}
+
+func (s *Scanner) materializeMatchingRules(
+	ctx context.Context,
+	data []byte,
+	evaluation publicRuleEvaluation,
+) ([]RuleMatch, error) {
+	resultCount := 0
+	for _, ruleIndex := range s.matchedRuleIndices {
+		if ruleIndex < 0 || ruleIndex >= len(s.program.Rules) {
+			continue
+		}
+		if s.program.Rules[ruleIndex].IsGlobal || evaluation.allGlobalMatched {
+			resultCount++
+		}
+	}
+	if resultCount == 0 {
+		return nil, nil
+	}
+
+	result := make([]RuleMatch, 0, resultCount)
+	for _, ruleIndex := range s.matchedRuleIndices {
 		if err := ctx.Err(); err != nil {
-			return false, err
+			return nil, err
 		}
 		if ruleIndex < 0 || ruleIndex >= len(s.program.Rules) {
 			continue
 		}
 		rule := s.program.Rules[ruleIndex]
-		if !rule.IsGlobal && !s.hasMatchingTag(rule) {
+		if !rule.IsGlobal && !evaluation.allGlobalMatched {
 			continue
+		}
+		if err := s.populateRuleMatchContext(ctx, rule, evaluation.scanInput); err != nil {
+			return nil, err
 		}
 
-		evaluation, err := s.evaluateRuleCondition(ctx, rule, scanInput)
+		var publicMatches map[string][]Match
+		if len(s.matchCtx.spans) > 0 {
+			publicMatches = filterPrivateStrings(rule, materializeMatches(s.matchCtx.spans))
+			if err := s.populateMatchEvidence(ctx, data, publicMatches); err != nil {
+				return nil, err
+			}
+		}
+		evidence, err := s.populatePublicRuleEvidence(ctx, rule, publicRuleMaterialization{
+			data:    data,
+			matches: publicMatches,
+		})
 		if err != nil {
-			return false, err
+			return nil, err
 		}
-		if rule.IsGlobal && !evaluation.matched {
-			allGlobalMatched = false
-		}
-		if rule.IsPrivate || !s.hasMatchingTag(rule) || !evaluation.matched {
-			continue
-		}
-		if rule.IsGlobal {
-			matchedPublicGlobal = true
-		} else {
-			matchedPublicNonGlobal = true
-		}
+		result = append(result, newPublicRuleMatch(rule, publicMatches, evidence))
 	}
-	clear(s.ruleResults)
-	return matchedPublicGlobal || allGlobalMatched && matchedPublicNonGlobal, nil
+	return result, nil
+}
+
+type publicRuleMaterialization struct {
+	data    []byte
+	matches map[string][]Match
+}
+
+func (s *Scanner) populatePublicRuleEvidence(
+	ctx context.Context,
+	rule *CompiledRule,
+	materialization publicRuleMaterialization,
+) (map[string][]EvidenceFinding, error) {
+	if s.evidenceMax <= 0 {
+		return nil, nil
+	}
+	return s.populateRuleEvidence(ctx, rule, materialization.matches, func(match Match) (captureInput, bool) {
+		if match.Offset < 0 || match.Length < 0 || match.Offset > int64(len(materialization.data)) {
+			return captureInput{}, false
+		}
+		end := match.Offset + int64(match.Length)
+		if end < match.Offset || end > int64(len(materialization.data)) {
+			return captureInput{}, false
+		}
+		return captureInput{data: materialization.data, start: int(match.Offset), end: int(end)}, true
+	})
 }
 
 // ScanReader reads from the reader and scans the data.
