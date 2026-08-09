@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	"os"
 	"slices"
@@ -511,18 +512,26 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 				}
 				result.Evidence[rule.Name] = evidence
 			}
-			result.MatchedRules = append(result.MatchedRules, RuleMatch{
-				Rule:     rule.Name,
-				Tags:     rule.Tags,
-				Meta:     rule.Meta,
-				Matches:  publicMatches,
-				Evidence: evidence,
-			})
+			result.MatchedRules = append(result.MatchedRules, newPublicRuleMatch(rule, publicMatches, evidence))
 		}
 	}
 
 	clear(s.ruleResults)
 	return result, nil
+}
+
+func newPublicRuleMatch(
+	rule *CompiledRule,
+	matches map[string][]Match,
+	evidence map[string][]EvidenceFinding,
+) RuleMatch {
+	return RuleMatch{
+		Rule:     rule.Name,
+		Tags:     slices.Clone(rule.Tags),
+		Meta:     maps.Clone(rule.Meta),
+		Matches:  matches,
+		Evidence: evidence,
+	}
 }
 
 // Matches reports whether at least one public rule matches data. A reusable
