@@ -85,6 +85,60 @@ func TestProcessIncludes_Security(t *testing.T) {
 	}
 }
 
+func TestProcessIncludesRejectsSymlinkEscape(t *testing.T) {
+	root := t.TempDir()
+	baseDir := filepath.Join(root, "base")
+	outsideDir := filepath.Join(root, "outside")
+	if err := os.MkdirAll(baseDir, 0o700); err != nil {
+		t.Fatalf("MkdirAll(base) error = %v", err)
+	}
+	if err := os.MkdirAll(outsideDir, 0o700); err != nil {
+		t.Fatalf("MkdirAll(outside) error = %v", err)
+	}
+
+	outsideRule := filepath.Join(outsideDir, "outside.yar")
+	if err := os.WriteFile(outsideRule, []byte(`rule escaped { condition: true }`), 0o600); err != nil {
+		t.Fatalf("WriteFile(outside) error = %v", err)
+	}
+	link := filepath.Join(baseDir, "link.yar")
+	if err := os.Symlink(outsideRule, link); err != nil {
+		t.Skipf("symlinks are unavailable: %v", err)
+	}
+
+	program := &ast.Program{Includes: []*ast.Include{{File: "link.yar"}}}
+	comp := NewCompiler()
+	comp.SetBaseDir(baseDir)
+	err := comp.ProcessIncludes(program)
+	if err == nil || !strings.Contains(err.Error(), "path traversal detected") {
+		t.Fatalf("ProcessIncludes() error = %v, want symlink traversal rejection", err)
+	}
+}
+
+func TestProcessIncludesAllowsSymlinkWithinBase(t *testing.T) {
+	baseDir := t.TempDir()
+	targetDir := filepath.Join(baseDir, "rules")
+	if err := os.MkdirAll(targetDir, 0o700); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	target := filepath.Join(targetDir, "target.yar")
+	if err := os.WriteFile(target, []byte(`rule linked { condition: true }`), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	if err := os.Symlink(target, filepath.Join(baseDir, "link.yar")); err != nil {
+		t.Skipf("symlinks are unavailable: %v", err)
+	}
+
+	program := &ast.Program{Includes: []*ast.Include{{File: "link.yar"}}}
+	comp := NewCompiler()
+	comp.SetBaseDir(baseDir)
+	if err := comp.ProcessIncludes(program); err != nil {
+		t.Fatalf("ProcessIncludes() error = %v", err)
+	}
+	if len(program.Rules) != 1 || program.Rules[0].Name != "linked" {
+		t.Fatalf("included rules = %+v, want linked", program.Rules)
+	}
+}
+
 // TestProcessIncludes_NestedIncludes tests circular include detection and nested includes
 func TestProcessIncludes_NestedIncludes(t *testing.T) {
 	tempDir := t.TempDir()
@@ -338,6 +392,47 @@ func TestProcessIncludes_FileSizeLimits(t *testing.T) {
 	err := comp.ProcessIncludes(program)
 	if err == nil || !strings.Contains(err.Error(), "exceeds maximum allowed") {
 		t.Fatalf("ProcessIncludes() error = %v, want include size limit error", err)
+	}
+}
+
+func TestCompileFileEnforcesInputSizeBeforeCompilation(t *testing.T) {
+	filename := filepath.Join(t.TempDir(), "large.yar")
+	content := []byte(`rule large { condition: true }`)
+	if err := os.WriteFile(filename, content, 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	_, err := NewCompiler(WithMaxInputSize(int64(len(content) - 1))).CompileFile(filename)
+	if err == nil || !strings.Contains(err.Error(), "exceeds maximum allowed") {
+		t.Fatalf("CompileFile() error = %v, want input size limit error", err)
+	}
+}
+
+func TestCompileFileResolvesIncludesFromConfiguredBaseDirectory(t *testing.T) {
+	baseDir := t.TempDir()
+	if err := os.WriteFile(
+		filepath.Join(baseDir, "included.yar"),
+		[]byte(`rule included { condition: true }`),
+		0o600,
+	); err != nil {
+		t.Fatalf("WriteFile(include) error = %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(baseDir, "main.yar"),
+		[]byte("include \"included.yar\"\nrule main { condition: included }"),
+		0o600,
+	); err != nil {
+		t.Fatalf("WriteFile(main) error = %v", err)
+	}
+
+	comp := NewCompiler()
+	comp.SetBaseDir(baseDir)
+	program, err := comp.CompileFile("main.yar")
+	if err != nil {
+		t.Fatalf("CompileFile() error = %v", err)
+	}
+	if len(program.Rules) != 2 {
+		t.Fatalf("CompileFile() compiled %d rules, want 2", len(program.Rules))
 	}
 }
 

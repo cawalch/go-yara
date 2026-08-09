@@ -34,6 +34,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -44,7 +46,6 @@ import (
 	"github.com/cawalch/go-yara/internal/lexer"
 	"github.com/cawalch/go-yara/parser"
 	"github.com/cawalch/go-yara/semantic"
-	"github.com/cawalch/go-yara/utils/fs"
 )
 
 // Compiler represents the main YARA compiler.
@@ -353,16 +354,22 @@ func (c *Compiler) CompileFileWithContext(ctx context.Context, filename string) 
 	default:
 	}
 
-	// Read file content
-	source, err := c.readFile(filename)
+	resolvedFilename, err := resolveFilePath(c.baseDir, filename)
+	if err != nil {
+		return nil, fmt.Errorf("resolving file %s: %w", filename, err)
+	}
+
+	// Bound file reads before allocating the source buffer. CompileSource also
+	// retains its in-memory size check for callers that already have source.
+	source, err := readFileWithLimit(resolvedFilename, c.options.MaxInputSize)
 	if err != nil {
 		return nil, fmt.Errorf("reading file %s: %w", filename, err)
 	}
 
 	// Store the base directory for resolving includes
-	c.baseDir = filepath.Dir(filename)
+	c.baseDir = filepath.Dir(resolvedFilename)
 
-	return c.CompileSourceWithContext(ctx, source)
+	return c.CompileSourceWithContext(ctx, string(source))
 }
 
 // compileParseWithContext performs parsing with context support
@@ -1154,15 +1161,21 @@ func (traversal *includeTraversal) processInclude(program *ast.Program, baseDir 
 	if err != nil {
 		return fmt.Errorf("failed to resolve base directory: %w", err)
 	}
-	absBaseDir = filepath.Clean(absBaseDir)
+	absBaseDir, err = filepath.EvalSymlinks(filepath.Clean(absBaseDir))
+	if err != nil {
+		return fmt.Errorf("failed to resolve include base directory: %w", err)
+	}
 
 	absIncludePath, err := filepath.Abs(cleanIncludePath)
 	if err != nil {
 		return fmt.Errorf("failed to resolve include path: %w", err)
 	}
-	absIncludePath = filepath.Clean(absIncludePath)
+	absIncludePath, err = filepath.EvalSymlinks(filepath.Clean(absIncludePath))
+	if err != nil {
+		return fmt.Errorf("failed to read include file %s: %w", include.File, err)
+	}
 
-	if !strings.HasPrefix(absIncludePath, absBaseDir+string(filepath.Separator)) && absIncludePath != absBaseDir {
+	if !pathWithinBase(absBaseDir, absIncludePath) {
 		return fmt.Errorf("failed to read include file %s: path traversal detected", include.File)
 	}
 	if _, exists := traversal.activePaths[absIncludePath]; exists {
@@ -1171,14 +1184,9 @@ func (traversal *includeTraversal) processInclude(program *ast.Program, baseDir 
 	traversal.activePaths[absIncludePath] = struct{}{}
 	defer delete(traversal.activePaths, absIncludePath)
 
-	includedContent, err := os.ReadFile(cleanIncludePath)
+	includedContent, err := readFileWithLimit(absIncludePath, traversal.compiler.options.MaxIncludeSize)
 	if err != nil {
 		return fmt.Errorf("failed to read include file %s: %w", include.File, err)
-	}
-	if traversal.compiler.options.MaxIncludeSize > 0 &&
-		int64(len(includedContent)) > traversal.compiler.options.MaxIncludeSize {
-		return fmt.Errorf("include file %s size %d bytes exceeds maximum allowed %d bytes",
-			include.File, len(includedContent), traversal.compiler.options.MaxIncludeSize)
 	}
 
 	includedLexer := lexer.New(string(includedContent))
@@ -1250,9 +1258,55 @@ func (c *Compiler) processImportsWithContext(ctx context.Context, program *ast.P
 	return nil
 }
 
-func (c *Compiler) readFile(filename string) (string, error) {
-	// Use centralized file reading utility
-	return fs.ReadFileString(c.baseDir, filename)
+func resolveFilePath(baseDir, filename string) (string, error) {
+	resolved := filename
+	if !filepath.IsAbs(resolved) && baseDir != "" {
+		resolved = filepath.Join(baseDir, resolved)
+	}
+	return filepath.Abs(resolved)
+}
+
+func pathWithinBase(baseDir, filename string) bool {
+	relative, err := filepath.Rel(baseDir, filename)
+	if err != nil || filepath.IsAbs(relative) {
+		return false
+	}
+	return relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
+}
+
+func readFileWithLimit(filename string, limit int64) ([]byte, error) {
+	file, err := os.Open(filename) // #nosec G304 - callers intentionally select compiler inputs
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = file.Close() }()
+
+	if limit > 0 {
+		info, statErr := file.Stat()
+		if statErr != nil {
+			return nil, statErr
+		}
+		if info.Mode().IsRegular() && info.Size() > limit {
+			return nil, fmt.Errorf("file size %d bytes exceeds maximum allowed %d bytes", info.Size(), limit)
+		}
+	}
+
+	reader := io.Reader(file)
+	if limit > 0 {
+		readLimit := limit
+		if readLimit < math.MaxInt64 {
+			readLimit++
+		}
+		reader = io.LimitReader(file, readLimit)
+	}
+	content, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, err
+	}
+	if limit > 0 && int64(len(content)) > limit {
+		return nil, fmt.Errorf("file size exceeds maximum allowed %d bytes", limit)
+	}
+	return content, nil
 }
 
 // BatchCompile compiles multiple sources efficiently
