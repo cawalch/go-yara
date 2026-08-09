@@ -105,7 +105,7 @@ func (scanner *BlockScanner) ScanWithContext(ctx context.Context, base int64, da
 		if err := s.addLocalTextMatches(ctx, rule, blockData); err != nil {
 			return err
 		}
-		if err := s.addLocalNonTextMatches(ctx, rule, blockData, &s.nonTextCache); err != nil {
+		if err := s.addLocalNonTextMatches(ctx, rule, blockData, &s.nonTextCache, false); err != nil {
 			return err
 		}
 

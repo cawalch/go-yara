@@ -52,6 +52,7 @@ func (s *Scanner) evaluateRuleCondition(
 }
 
 func (s *Scanner) preparePatternScan(ctx context.Context, data []byte) (bool, error) {
+	s.sharedNonTextMatched = false
 	s.nonTextCache.reset(s.program.nonTextCacheSize)
 	if err := s.populateFixedRegexCache(ctx, data, &s.nonTextCache); err != nil {
 		return false, err
@@ -59,6 +60,7 @@ func (s *Scanner) preparePatternScan(ctx context.Context, data []byte) (bool, er
 	s.regexByteSetCache.reset()
 	s.resetGlobalMatches(len(s.program.Rules))
 	s.resetPrefilterCandidates(len(s.program.SharedLookup))
+	s.resetCandidateRules(len(s.program.Rules))
 
 	useSharedAutomaton := shouldUseSharedPatternAutomaton(data, s.program)
 	if !useSharedAutomaton {
@@ -93,10 +95,14 @@ func (s *Scanner) populateRuleMatchContext(
 			return err
 		}
 	}
-	return s.addLocalNonTextMatches(ctx, rule, input.data, &s.nonTextCache)
+	return s.addLocalNonTextMatches(ctx, rule, input.data, &s.nonTextCache, input.useSharedAutomaton)
 }
 
 func (s *Scanner) allEvaluatedRulesPrefilterRejected(data []byte, useSharedAutomaton bool) bool {
+	if useSharedAutomaton && s.allEvaluatedRulesRequireSharedPatterns &&
+		len(s.touchedGlobalMatches) == 0 && !s.sharedNonTextMatched {
+		return true
+	}
 	for _, rule := range s.program.Rules {
 		if !rule.IsGlobal && !s.hasMatchingTag(rule) {
 			continue
@@ -136,7 +142,7 @@ func (s *Scanner) rulePrefilterStatus(rule *CompiledRule, useSharedAutomaton boo
 		case prefilterStringText:
 			// Text strings are always represented in the shared automaton.
 		case prefilterStringNonText:
-			matches, ready := s.nonTextCache.get(info.cacheIndex)
+			matches, ready := s.getNonTextMatches(&s.nonTextCache, info.cacheIndex, useSharedAutomaton)
 			if !ready {
 				complete = false
 				continue
@@ -157,10 +163,14 @@ func (s *Scanner) rulePrefilterStatus(rule *CompiledRule, useSharedAutomaton boo
 func (s *Scanner) resetGlobalMatches(size int) {
 	if cap(s.globalMatches) < size {
 		s.globalMatches = make([][]globalMatchEntry, size)
+		s.touchedGlobalMatches = s.touchedGlobalMatches[:0]
 		return
 	}
-	s.globalMatches = s.globalMatches[:size]
-	for index := range s.globalMatches {
-		s.globalMatches[index] = s.globalMatches[index][:0]
+	for _, index := range s.touchedGlobalMatches {
+		if index >= 0 && index < len(s.globalMatches) {
+			s.globalMatches[index] = s.globalMatches[index][:0]
+		}
 	}
+	s.touchedGlobalMatches = s.touchedGlobalMatches[:0]
+	s.globalMatches = s.globalMatches[:size]
 }

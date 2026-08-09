@@ -65,6 +65,37 @@ func buildSharedPatternAutomaton(rules []*CompiledRule) (*ACAutomaton, []SharedA
 	return builder.automaton, builder.lookup, nil
 }
 
+func sharedNonTextCacheCoverage(size int, lookup []SharedAutomatonEntry) []bool {
+	covered := make([]bool, size)
+	// Non-text specs are emitted as complete mandatory-atom covers: the builder
+	// either adds every deferred spec, adds every forced alternative/case spec,
+	// or adds none. Deduplicated specs share the same exact-match cache key.
+	for _, entry := range lookup {
+		if entry.Kind == StringKindText || entry.CacheIndex < 0 || entry.CacheIndex >= size {
+			continue
+		}
+		covered[entry.CacheIndex] = true
+	}
+	return covered
+}
+
+func sharedNonTextCacheRuleLookup(rules []*CompiledRule, covered []bool) [][]int {
+	lookup := make([][]int, len(covered))
+	for ruleIndex, rule := range rules {
+		for _, info := range rule.prefilterStrings {
+			if info.class != prefilterStringNonText || info.cacheIndex < 0 ||
+				info.cacheIndex >= len(covered) || !covered[info.cacheIndex] {
+				continue
+			}
+			ruleIndices := lookup[info.cacheIndex]
+			if len(ruleIndices) == 0 || ruleIndices[len(ruleIndices)-1] != ruleIndex {
+				lookup[info.cacheIndex] = append(ruleIndices, ruleIndex)
+			}
+		}
+	}
+	return lookup
+}
+
 func (builder *sharedPatternAutomatonBuilder) addRule(ruleIndex int, rule *CompiledRule) error {
 	if err := builder.addTextPatterns(ruleIndex, rule); err != nil {
 		return err
