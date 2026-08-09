@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"maps"
 	"math"
+	"slices"
 	"strconv"
 	"sync"
 
@@ -302,10 +303,11 @@ func (i *Interpreter) ResetIterationCount() {
 	i.iterations = 0
 }
 
-// NewInterpreter creates a bytecode interpreter.
+// NewInterpreter creates a bytecode interpreter with an owned snapshot of
+// bytecode. Callers may reuse or modify the input after construction.
 func NewInterpreter(bytecode []byte) *Interpreter {
 	i := interpreterPool.Get().(*Interpreter)
-	i.bytecode = bytecode
+	i.bytecode = slices.Clone(bytecode)
 	i.ip = 0
 	i.stopped = false
 	i.result = nil
@@ -372,13 +374,20 @@ func (i *Interpreter) getString(v Value) string {
 	return ""
 }
 
-// SetMatchContext sets the pattern matching context
+// SetMatchContext sets the pattern matching context. The context is borrowed
+// and must remain valid while the interpreter uses it.
 func (i *Interpreter) SetMatchContext(ctx *MatchContext) {
 	i.matchContext = ctx
 }
 
-// SetCompiledRules sets the compiled rules for rule reference resolution
+// SetCompiledRules sets the compiled rules for rule reference resolution. The
+// input slice is copied; the compiled rule pointers are borrowed and should be
+// treated as immutable while the interpreter uses them.
 func (i *Interpreter) SetCompiledRules(rules []*CompiledRule) {
+	i.setCompiledRules(slices.Clone(rules))
+}
+
+func (i *Interpreter) setCompiledRules(rules []*CompiledRule) {
 	i.compiledRules = rules
 	// Build O(1) lookup map by rule name
 	i.ruleMap = make(map[string]*CompiledRule, len(rules))
@@ -422,24 +431,27 @@ func (i *Interpreter) PushString(s string) error {
 	return i.pushString(s)
 }
 
-// SetRuleResults sets the shared rule results map
+// SetRuleResults sets the shared rule results map. The map is borrowed because
+// rule execution writes results that the caller may consume.
 func (i *Interpreter) SetRuleResults(ruleResults map[string]bool) {
 	i.ruleResults = ruleResults
 }
 
-// SetStringLiterals sets the string literal pool for OpPushStr.
+// SetStringLiterals sets an owned snapshot of the string literal pool for
+// OpPushStr.
 func (i *Interpreter) SetStringLiterals(literals []string) {
-	i.stringLiterals = literals
+	i.stringLiterals = slices.Clone(literals)
 }
 
-// SetStringSets sets the string sets used by OpOf.
+// SetStringSets sets an owned snapshot of the string sets used by OpOf.
 func (i *Interpreter) SetStringSets(sets [][]string) {
-	i.stringSets = sets
+	i.stringSets = cloneStringSlices(sets)
 }
 
-// SetTextStringSets sets the text string sets for text-string-set iteration.
+// SetTextStringSets sets an owned snapshot of the text string sets used for
+// text-string-set iteration.
 func (i *Interpreter) SetTextStringSets(sets [][]string) {
-	i.textStringSets = sets
+	i.textStringSets = cloneStringSlices(sets)
 }
 
 // SetMemoryString sets a string identifier in memory at the specified index

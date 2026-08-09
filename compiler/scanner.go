@@ -169,7 +169,9 @@ func WithExternalVariables(vars map[string]any) ScannerOption {
 func NewScanner(program *CompiledProgram, opts ...ScannerOption) *Scanner {
 	interp := acquireScannerInterpreter()
 	if program != nil {
-		interp.SetCompiledRules(program.Rules)
+		// CompiledProgram owns this slice for the scanner's lifetime, so avoid
+		// the public API's defensive copy on scanner construction.
+		interp.setCompiledRules(program.Rules)
 	}
 
 	ctx := matchContextPool.Get().(*MatchContext)
