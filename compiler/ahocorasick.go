@@ -89,21 +89,28 @@ func (ac *ACAutomaton) addStringToAutomaton(config stringConfig) error {
 		return errors.New("cannot add strings to compiled automaton")
 	}
 
-	// Create string info
+	// Keep private and compatibility metadata in disjoint slices while using a
+	// single allocation. Restrict each slice's capacity so an append cannot
+	// cross into the other copy.
+	patternLength := len(config.Data)
+	patternCopies := make([]byte, patternLength*2)
+	copy(patternCopies[:patternLength], config.Data)
+	copy(patternCopies[patternLength:], config.Data)
 	stringInfo := ACStringInfo{
 		Identifier: config.Identifier,
-		Length:     len(config.Data),
+		Length:     patternLength,
 		IsHex:      config.IsHex,
 		IsRegex:    config.IsRegex,
-		Data:       make([]byte, len(config.Data)),
+		Data:       patternCopies[:patternLength:patternLength],
 		Flags:      config.Flags,
 	}
-	copy(stringInfo.Data, config.Data)
+	compatibilityInfo := stringInfo
+	compatibilityInfo.Data = patternCopies[patternLength : patternLength*2 : patternLength*2]
 
 	// Add string to collection
 	ac.strings = append(ac.strings, stringInfo)
 	ac.StringCount = len(ac.strings)
-	ac.Strings = append(ac.Strings, stringInfo)
+	ac.Strings = append(ac.Strings, compatibilityInfo)
 	stringIndex := mustACIndex(len(ac.strings) - 1)
 
 	// Build trie for pattern matching
@@ -195,7 +202,6 @@ func (ac *ACAutomaton) Compile() error {
 		}
 		// Fold the failure links into the goto table so the scan never walks them.
 		ac.closeTransitions()
-
 		ac.compiled = true
 	})
 
@@ -827,8 +833,8 @@ func (ac *ACAutomaton) Clone() *ACAutomaton {
 		strings:     internalStrings,
 		rootBytes:   slices.Clone(ac.rootBytes),
 		compiled:    ac.compiled,
-		StringCount: ac.StringCount,
-		Strings:     cloneACStringInfos(ac.Strings),
+		StringCount: len(internalStrings),
+		Strings:     cloneACStringInfos(internalStrings),
 	}
 	if ac.compiled {
 		newAC.compiledOnce.Do(func() {})
@@ -880,17 +886,17 @@ func (ac *ACAutomaton) GetStringCount() int {
 	return len(ac.strings)
 }
 
-// GetStrings returns all string information from the automaton
+// GetStrings returns an owned snapshot of all string information.
 func (ac *ACAutomaton) GetStrings() []ACStringInfo {
-	return ac.strings
+	return cloneACStringInfos(ac.strings)
 }
 
-// GetPatternData returns a map of string identifiers to their pattern data
+// GetPatternData returns owned pattern data keyed by string identifier.
 func (ac *ACAutomaton) GetPatternData() map[string][]byte {
 	// Pre-allocate map with known capacity for better performance
 	result := make(map[string][]byte, len(ac.strings))
 	for _, strInfo := range ac.strings {
-		result[strInfo.Identifier] = strInfo.Data
+		result[strInfo.Identifier] = slices.Clone(strInfo.Data)
 	}
 	return result
 }

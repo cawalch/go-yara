@@ -87,6 +87,32 @@ func defaultModules() map[string]Module {
 	return modules
 }
 
+func cloneModules(modules map[string]Module) map[string]Module {
+	if modules == nil {
+		return nil
+	}
+	cloned := make(map[string]Module, len(modules))
+	for name, module := range modules {
+		cloned[name] = cloneModule(module)
+	}
+	return cloned
+}
+
+func cloneModule(module Module) Module {
+	functions := make(map[string]ModuleFunction, len(module.Functions))
+	for functionName, function := range module.Functions {
+		signatures := make([]ModuleSignature, len(function.Signatures))
+		for index, signature := range function.Signatures {
+			signatures[index] = signature
+			signatures[index].Arguments = slices.Clone(signature.Arguments)
+		}
+		function.Signatures = signatures
+		functions[functionName] = function
+	}
+	module.Functions = functions
+	return module
+}
+
 func semanticModuleFunctions(registered map[string]Module) semantic.ModuleFunctions {
 	functions := make(semantic.ModuleFunctions)
 	for moduleName, module := range registered {

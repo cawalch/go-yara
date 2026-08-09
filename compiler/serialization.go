@@ -289,7 +289,7 @@ func serializeRule(rule *CompiledRule) (serializedRule, error) {
 		HeaderConstraints:   slices.Clone(rule.HeaderConstraints),
 	}
 	if rule.Automaton != nil {
-		serialized.AutomatonStrings = cloneACStringInfo(rule.Automaton.GetStrings())
+		serialized.AutomatonStrings = cloneACStringInfos(rule.Automaton.strings)
 	}
 	for identifier, pattern := range rule.RegexPatterns {
 		serialized.RegexPatterns[identifier] = serializeRegexPattern(pattern)
@@ -775,15 +775,6 @@ func deserializeIntegerStats(stats map[string]int) map[string]any {
 	result := make(map[string]any, len(stats))
 	for name, value := range stats {
 		result[name] = value
-	}
-	return result
-}
-
-func cloneACStringInfo(infos []ACStringInfo) []ACStringInfo {
-	result := make([]ACStringInfo, len(infos))
-	for index, info := range infos {
-		result[index] = info
-		result[index].Data = slices.Clone(info.Data)
 	}
 	return result
 }

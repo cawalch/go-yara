@@ -78,7 +78,7 @@ func NewStreamingProcessor(program *CompiledProgram) *StreamingProcessor {
 			if rule == nil || rule.Automaton == nil {
 				continue
 			}
-			for _, str := range rule.Automaton.Strings {
+			for _, str := range rule.Automaton.strings {
 				maxPatternLen = max(maxPatternLen, str.Length)
 			}
 		}
@@ -336,11 +336,11 @@ func (cp *streamingChunkProcessor) createRuleMatch(
 	if rule.StringKinds != nil && rule.StringKinds[match.StringID] != StringKindText {
 		return StreamingMatch{}, false
 	}
-	if match.StringIndex < 0 || match.StringIndex >= len(rule.Automaton.Strings) {
+	if match.StringIndex < 0 || match.StringIndex >= len(rule.Automaton.strings) {
 		return StreamingMatch{}, false
 	}
 
-	info := rule.Automaton.Strings[match.StringIndex]
+	info := rule.Automaton.strings[match.StringIndex]
 	position := match.Backtrack
 	if position < 0 || info.Length <= 0 || position+info.Length > len(window.data) {
 		return StreamingMatch{}, false

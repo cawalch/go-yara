@@ -3,6 +3,7 @@ package compiler
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"regexp"
 	"slices"
@@ -98,6 +99,10 @@ type PendingJump struct {
 
 // NewConditionCompiler creates a new condition compiler
 func NewConditionCompiler(emitter *Emitter, stringOffsets map[string]int) *ConditionCompiler {
+	return newConditionCompiler(emitter, maps.Clone(stringOffsets))
+}
+
+func newConditionCompiler(emitter *Emitter, stringOffsets map[string]int) *ConditionCompiler {
 	return &ConditionCompiler{
 		emitter:           emitter,
 		stringOffsets:     stringOffsets,
@@ -115,6 +120,10 @@ func NewConditionCompiler(emitter *Emitter, stringOffsets map[string]int) *Condi
 
 // SetRuleIndexMap sets the rule index map for the compiler
 func (cc *ConditionCompiler) SetRuleIndexMap(ruleIndexMap map[string]int) {
+	cc.setRuleIndexMap(maps.Clone(ruleIndexMap))
+}
+
+func (cc *ConditionCompiler) setRuleIndexMap(ruleIndexMap map[string]int) {
 	cc.ruleIndexMap = ruleIndexMap
 }
 
@@ -1172,33 +1181,45 @@ func (cc *ConditionCompiler) compileShortCircuitBinary(binOp *ast.BinaryOp, jump
 	return nil
 }
 
-// GetVariableMap returns the compiler's variable map
+// GetVariableMap returns an owned snapshot of the compiler's variable map.
 func (cc *ConditionCompiler) GetVariableMap() map[string]int {
-	return cc.variableMap
+	return maps.Clone(cc.variableMap)
 }
 
-// GetExternalVariables returns the compiler's external variables map
+// GetExternalVariables returns an owned snapshot of the external variable map.
 func (cc *ConditionCompiler) GetExternalVariables() map[string]int {
-	return cc.externalVariables
+	return maps.Clone(cc.externalVariables)
 }
 
 // SetExternalVariables sets the memory slots for declared external variables.
 func (cc *ConditionCompiler) SetExternalVariables(externalVariables map[string]int) {
+	cc.setExternalVariables(maps.Clone(externalVariables))
+}
+
+func (cc *ConditionCompiler) setExternalVariables(externalVariables map[string]int) {
 	cc.externalVariables = externalVariables
 }
 
 // SetGlobalVariables sets the memory slots for declared global variables.
 func (cc *ConditionCompiler) SetGlobalVariables(globalVariables map[string]int) {
+	cc.setGlobalVariables(maps.Clone(globalVariables))
+}
+
+func (cc *ConditionCompiler) setGlobalVariables(globalVariables map[string]int) {
 	cc.globalVariables = globalVariables
 }
 
-// GetGlobalVariables returns the compiler's global variables map.
+// GetGlobalVariables returns an owned snapshot of the global variable map.
 func (cc *ConditionCompiler) GetGlobalVariables() map[string]int {
-	return cc.globalVariables
+	return maps.Clone(cc.globalVariables)
 }
 
 // SetStringOffsets sets the string offsets for the compiler
 func (cc *ConditionCompiler) SetStringOffsets(offsets map[string]int) {
+	cc.setStringOffsets(maps.Clone(offsets))
+}
+
+func (cc *ConditionCompiler) setStringOffsets(offsets map[string]int) {
 	cc.stringOffsets = offsets
 }
 
@@ -1234,6 +1255,10 @@ func (cc *ConditionCompiler) ResetForRule() {
 }
 
 func (cc *ConditionCompiler) SetModuleFunctions(functions map[string]compiledModuleFunction) {
+	cc.setModuleFunctions(maps.Clone(functions))
+}
+
+func (cc *ConditionCompiler) setModuleFunctions(functions map[string]compiledModuleFunction) {
 	cc.moduleFunctions = functions
 }
 

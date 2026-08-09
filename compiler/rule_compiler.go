@@ -54,8 +54,8 @@ func NewRuleCompilerWithModules(modules map[string]Module) (*RuleCompiler, error
 	if err != nil {
 		return nil, err
 	}
-	conditionCompiler := NewConditionCompiler(emitter, make(map[string]int))
-	conditionCompiler.SetModuleFunctions(bindings)
+	conditionCompiler := newConditionCompiler(emitter, make(map[string]int))
+	conditionCompiler.setModuleFunctions(bindings)
 
 	return &RuleCompiler{
 		emitter:           emitter,
@@ -103,11 +103,11 @@ func (rc *RuleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 	if err := rc.compileStrings(rule); err != nil {
 		return nil, fmt.Errorf("compiling strings: %w", err)
 	}
-	externalSlots, err := rc.allocateExternalSlots(rc.stringCompiler.GetStringOffsets())
+	externalSlots, err := rc.allocateExternalSlots(rc.stringCompiler.stringOffsets)
 	if err != nil {
 		return nil, err
 	}
-	globalSlots, err := rc.allocateGlobalSlots(rc.stringCompiler.GetStringOffsets(), externalSlots)
+	globalSlots, err := rc.allocateGlobalSlots(rc.stringCompiler.stringOffsets, externalSlots)
 	if err != nil {
 		return nil, err
 	}
@@ -120,8 +120,8 @@ func (rc *RuleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 	}
 
 	// Compile condition
-	rc.conditionCompiler.SetExternalVariables(externalSlots)
-	rc.conditionCompiler.SetGlobalVariables(globalSlots)
+	rc.conditionCompiler.setExternalVariables(externalSlots)
+	rc.conditionCompiler.setGlobalVariables(globalSlots)
 	rc.conditionCompiler.SetAnonymousStrings(anonymousStrings)
 	if err := rc.compileCondition(rule); err != nil {
 		return nil, fmt.Errorf("compiling condition: %w", err)
@@ -654,7 +654,7 @@ func (rc *RuleCompiler) parseInlineRegexFlags(patternValue string) regex.Flags {
 }
 
 func (rc *RuleCompiler) recordStringOffset(identifier string) {
-	offset := rc.automaton.StringCount
+	offset := rc.automaton.GetStringCount()
 	rc.stringCompiler.stringOffsets[identifier] = offset
 }
 
@@ -706,8 +706,8 @@ func (rc *RuleCompiler) ensurePatternMaps() {
 // compileCondition compiles the rule condition
 func (rc *RuleCompiler) compileCondition(rule *ast.Rule) error {
 	// Set up string offsets for condition compiler
-	stringOffsets := rc.stringCompiler.GetStringOffsets()
-	rc.conditionCompiler.SetStringOffsets(stringOffsets)
+	stringOffsets := rc.stringCompiler.stringOffsets
+	rc.conditionCompiler.setStringOffsets(stringOffsets)
 
 	// Compile the condition expression using CompileBooleanExpression.
 	// Short-circuit evaluation is disabled until the short-circuit code path properly
@@ -750,8 +750,8 @@ func (rc *RuleCompiler) CompileProgram(program *ast.Program) ([]*CompiledRule, e
 	rc.externalNames = rc.externalNames[:0]
 	rc.globalNames = rc.globalNames[:0]
 	rc.globalValues = make(map[string]compiledGlobalValue, len(program.GlobalVariables))
-	rc.conditionCompiler.SetExternalVariables(make(map[string]int))
-	rc.conditionCompiler.SetGlobalVariables(make(map[string]int))
+	rc.conditionCompiler.setExternalVariables(make(map[string]int))
+	rc.conditionCompiler.setGlobalVariables(make(map[string]int))
 
 	// First, register all global and external variables with the condition compiler.
 	for _, globalVar := range program.GlobalVariables {
@@ -770,7 +770,7 @@ func (rc *RuleCompiler) CompileProgram(program *ast.Program) ([]*CompiledRule, e
 	}
 
 	// Set the rule index map in the condition compiler
-	rc.conditionCompiler.SetRuleIndexMap(ruleIndexMap)
+	rc.conditionCompiler.setRuleIndexMap(ruleIndexMap)
 
 	for _, rule := range program.Rules {
 		compiledRule, err := rc.CompileRule(rule)
@@ -976,7 +976,7 @@ func (rc *RuleCompiler) snapshotCompilationStats(rule *ast.Rule) map[string]any 
 	stats["bytecode_size"] = rc.emitter.GetSize()
 	stats["string_count"] = len(rule.Strings)
 	stats["automaton_states"] = rc.automaton.GetStateCount()
-	stats["variables"] = len(rc.conditionCompiler.GetVariableMap())
+	stats["variables"] = len(rc.conditionCompiler.variableMap)
 
 	// Add emitter stats
 	emitterStats := rc.emitter.GetStats()
@@ -1154,14 +1154,14 @@ func (cr *CompiledRule) GetName() string {
 	return cr.Name
 }
 
-// GetBytecode returns the compiled bytecode
+// GetBytecode returns an owned snapshot of the compiled bytecode.
 func (cr *CompiledRule) GetBytecode() []byte {
-	return cr.Bytecode
+	return slices.Clone(cr.Bytecode)
 }
 
-// GetStrings returns the string pattern data
+// GetStrings returns an owned snapshot of the string pattern data.
 func (cr *CompiledRule) GetStrings() map[string][]byte {
-	return cr.Strings
+	return cloneByteMap(cr.Strings)
 }
 
 // GetStringCount returns the number of strings in this rule
@@ -1247,7 +1247,9 @@ func (cr *CompiledRule) GetStats() map[string]any {
 	return cloneStats(cr.Stats)
 }
 
-// GetAutomaton returns the Aho-Corasick automaton
+// GetAutomaton returns the rule's live Aho-Corasick automaton. The returned
+// pointer is borrowed and compiled rules should be treated as immutable while
+// scanners are using them.
 func (cr *CompiledRule) GetAutomaton() *ACAutomaton {
 	return cr.Automaton
 }
@@ -1446,7 +1448,8 @@ func (cp *CompiledProgram) Validate() error {
 	return nil
 }
 
-// GetRuleByName finds a rule by name
+// GetRuleByName finds a rule by name. The returned pointer is borrowed from the
+// compiled program and should be treated as immutable while scanners use it.
 func (cp *CompiledProgram) GetRuleByName(name string) (*CompiledRule, bool) {
 	for _, rule := range cp.Rules {
 		if rule.Name == name {

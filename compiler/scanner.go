@@ -690,7 +690,7 @@ func (s *Scanner) extractGlobalMatchesInt(
 				continue
 			}
 
-			info := s.program.SharedAutomaton.Strings[match.StringIndex]
+			info := s.program.SharedAutomaton.strings[match.StringIndex]
 			strID := rule.IndexToStringID[entry.StringIdx]
 			globalEntry := globalMatchEntry{
 				strID:    strID,
@@ -743,7 +743,7 @@ func (s *Scanner) extractGlobalMatchesInt(
 				continue
 			}
 
-			info := s.program.SharedAutomaton.Strings[match.StringIndex]
+			info := s.program.SharedAutomaton.strings[match.StringIndex]
 			strID := rule.IndexToStringID[entry.StringIdx]
 			globalEntry := globalMatchEntry{
 				strID:    strID,
@@ -1084,7 +1084,7 @@ func (s *Scanner) prepareInterpreter(rule *CompiledRule) {
 	s.interp.SetRuleResults(s.ruleResults)
 
 	if rule.Automaton != nil {
-		for idx, str := range rule.Automaton.Strings {
+		for idx, str := range rule.Automaton.strings {
 			s.interp.SetMemoryString(idx, str.Identifier)
 		}
 	}

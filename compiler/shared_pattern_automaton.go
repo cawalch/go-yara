@@ -28,7 +28,7 @@ func newSharedPatternAutomatonBuilder(rules []*CompiledRule) *sharedPatternAutom
 	totalEntries := 0
 	for _, rule := range rules {
 		if rule.Automaton != nil {
-			totalEntries += len(rule.Automaton.Strings)
+			totalEntries += len(rule.Automaton.strings)
 		}
 		for _, pattern := range rule.RegexPatterns {
 			totalEntries += max(2, len(pattern.alternativeAtoms)*2)
@@ -78,7 +78,7 @@ func (builder *sharedPatternAutomatonBuilder) addTextPatterns(ruleIndex int, rul
 	if rule.Automaton == nil {
 		return nil
 	}
-	for _, info := range rule.Automaton.Strings {
+	for _, info := range rule.Automaton.strings {
 		strID := info.Identifier
 		if rule.StringKinds[strID] != StringKindText {
 			continue

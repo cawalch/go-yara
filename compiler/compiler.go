@@ -205,6 +205,7 @@ func NewCompiler(opts ...Option) *Compiler {
 func NewCompilerWithOptions(options CompilationOptions) *Compiler {
 	return NewCompiler(func(opts *CompilationOptions) {
 		*opts = options
+		opts.Modules = cloneModules(options.Modules)
 	})
 }
 
@@ -234,7 +235,7 @@ func WithModule(module Module) Option {
 		if opts.Modules == nil {
 			opts.Modules = make(map[string]Module)
 		}
-		opts.Modules[module.Name] = module
+		opts.Modules[module.Name] = cloneModule(module)
 	}
 }
 
@@ -1044,22 +1045,22 @@ func findRule(rules []*ast.Rule, name string) *ast.Rule {
 
 // GetStats returns compilation statistics
 func (c *Compiler) GetStats() CompilationStats {
-	return c.stats
+	return cloneCompilationStats(c.stats)
 }
 
 // GetErrors returns all compilation errors
 func (c *Compiler) GetErrors() []CompilationError {
-	return c.stats.Errors
+	return slices.Clone(c.stats.Errors)
 }
 
 // GetWarnings returns all compilation warnings
 func (c *Compiler) GetWarnings() []CompilationWarning {
-	return c.stats.Warnings
+	return slices.Clone(c.stats.Warnings)
 }
 
 // GetIgnoredRules returns rules omitted by resilient compilation.
 func (c *Compiler) GetIgnoredRules() []IgnoredRule {
-	return append([]IgnoredRule(nil), c.stats.IgnoredRules...)
+	return slices.Clone(c.stats.IgnoredRules)
 }
 
 // AddWarning adds a compilation warning
@@ -1085,7 +1086,16 @@ func (c *Compiler) HasWarnings() bool {
 
 // GetOptions returns the current compilation options
 func (c *Compiler) GetOptions() CompilationOptions {
-	return c.options
+	options := c.options
+	options.Modules = cloneModules(c.options.Modules)
+	return options
+}
+
+func cloneCompilationStats(stats CompilationStats) CompilationStats {
+	stats.Errors = slices.Clone(stats.Errors)
+	stats.Warnings = slices.Clone(stats.Warnings)
+	stats.IgnoredRules = slices.Clone(stats.IgnoredRules)
+	return stats
 }
 
 // SetBaseDir sets the base directory for resolving relative include paths

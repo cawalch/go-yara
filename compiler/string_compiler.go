@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"maps"
 	"strconv"
 	"strings"
 	"unicode/utf16"
@@ -861,9 +862,9 @@ func (sc *StringCompiler) applyNocaseModifier(data []byte, isWide bool) []byte {
 	return sc.applyNocaseToLargeString(data)
 }
 
-// GetStringOffsets returns the bytecode offsets for all compiled strings
+// GetStringOffsets returns an owned snapshot of compiled string offsets.
 func (sc *StringCompiler) GetStringOffsets() map[string]int {
-	return sc.stringOffsets
+	return maps.Clone(sc.stringOffsets)
 }
 
 // ValidateStringModifiers validates that string modifiers are compatible

@@ -3,6 +3,7 @@ package compiler
 import (
 	"fmt"
 	"math"
+	"slices"
 )
 
 // Emitter manages bytecode generation and instruction emission
@@ -269,9 +270,9 @@ func (e *Emitter) convertToUint64(value int32) uint64 {
 	return uint64(value)
 }
 
-// GetInstructions returns all emitted instructions
+// GetInstructions returns an owned snapshot of all emitted instructions.
 func (e *Emitter) GetInstructions() []Instruction {
-	return e.instructions
+	return slices.Clone(e.instructions)
 }
 
 // GetBytecode returns the final bytecode as bytes
@@ -531,12 +532,14 @@ func (e *Emitter) FindInstructionIndexByOffset(offset int) (int, error) {
 	return -1, fmt.Errorf("instruction not found at byte offset %d", offset)
 }
 
-// GetInstruction returns a pointer to the instruction at the given slice index.
+// GetInstruction returns an owned snapshot of the instruction at the given
+// slice index. Use UpdateOperandByIndex to mutate emitted instructions.
 func (e *Emitter) GetInstruction(index int) *Instruction {
 	if index < 0 || index >= len(e.instructions) {
 		panic(fmt.Sprintf("instruction index %d out of range [0, %d)", index, len(e.instructions)))
 	}
-	return &e.instructions[index]
+	instruction := e.instructions[index]
+	return &instruction
 }
 
 // SetFixup explicitly adds a jump resolution request for a jump offset to a target offset
