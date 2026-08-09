@@ -64,6 +64,11 @@ type Scanner struct {
 	// Public rules whose conditions matched during the current compact scan.
 	// The indices are retained across calls; returned RuleMatch values are owned.
 	matchedRuleIndices []int
+	// Single-block scans reuse this slot to expose absolute addresses to the
+	// interpreter without allocating a []MemoryBlock per event.
+	blockContext  [1]MemoryBlock
+	blockFileSize int64
+	blockScan     bool
 
 	// Test-only escape hatch used by parity coverage.
 	prefilterDisabled bool
@@ -386,6 +391,28 @@ func (cp *CompiledProgram) MatchingRulesWithContext(ctx context.Context, data []
 	scanner := NewScanner(cp)
 	defer scanner.Close()
 	return scanner.MatchingRulesWithContext(ctx, data)
+}
+
+// MatchingRulesInBlock evaluates public rules against one explicit block in a
+// logical address space. Match offsets are absolute, and fileSize is visible to
+// rule conditions. Patterns cannot inspect bytes outside block.
+func (cp *CompiledProgram) MatchingRulesInBlock(
+	block MemoryBlock,
+	fileSize int64,
+) ([]RuleMatch, error) {
+	return cp.MatchingRulesInBlockWithContext(context.Background(), block, fileSize)
+}
+
+// MatchingRulesInBlockWithContext evaluates public rules against one explicit
+// block without constructing the all-rules maps in ScanResult.
+func (cp *CompiledProgram) MatchingRulesInBlockWithContext(
+	ctx context.Context,
+	block MemoryBlock,
+	fileSize int64,
+) ([]RuleMatch, error) {
+	scanner := NewScanner(cp)
+	defer scanner.Close()
+	return scanner.MatchingRulesInBlockWithContext(ctx, block, fileSize)
 }
 
 // ScanReader reads from r and evaluates all rules in this compiled program.
@@ -721,6 +748,68 @@ func (s *Scanner) MatchingRulesWithContext(ctx context.Context, data []byte) ([]
 	return s.materializeMatchingRules(ctx, data, evaluation)
 }
 
+// MatchingRulesInBlock evaluates public rules against one explicit block in a
+// logical address space. Match offsets are absolute, and fileSize is visible to
+// rule conditions. Patterns cannot inspect bytes outside block. Reuse a Scanner
+// for high-throughput structured-event streams.
+func (s *Scanner) MatchingRulesInBlock(
+	block MemoryBlock,
+	fileSize int64,
+) ([]RuleMatch, error) {
+	return s.MatchingRulesInBlockWithContext(context.Background(), block, fileSize)
+}
+
+// MatchingRulesInBlockWithContext evaluates public rules against one explicit
+// block without constructing the all-rules maps in ScanResult.
+func (s *Scanner) MatchingRulesInBlockWithContext(
+	ctx context.Context,
+	block MemoryBlock,
+	fileSize int64,
+) ([]RuleMatch, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if block.Base < 0 {
+		return nil, fmt.Errorf("block base must be non-negative")
+	}
+	if fileSize < 0 {
+		return nil, fmt.Errorf("block file size must be non-negative")
+	}
+	if int64(len(block.Data)) > math.MaxInt64-block.Base {
+		return nil, fmt.Errorf("block end offset overflows int64")
+	}
+	if s == nil || s.program == nil {
+		return nil, nil
+	}
+	if s.externalErr != nil {
+		return nil, s.externalErr
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	clear(s.ruleResults)
+	defer clear(s.ruleResults)
+	s.blockContext[0] = block
+	s.blockFileSize = fileSize
+	s.blockScan = true
+	s.matchedRuleIndices = s.matchedRuleIndices[:0]
+	evaluation, err := s.evaluatePublicRules(ctx, block.Data, &s.matchedRuleIndices)
+	if err != nil {
+		s.resetBlockScan()
+		return nil, err
+	}
+	matches, err := s.materializeMatchingRules(ctx, block.Data, evaluation)
+	s.resetBlockScan()
+	return matches, err
+}
+
+func (s *Scanner) resetBlockScan() {
+	s.blockScan = false
+	s.blockFileSize = 0
+	s.blockContext[0] = MemoryBlock{}
+}
+
 type publicRuleEvaluation struct {
 	scanInput              ruleScanInput
 	allGlobalMatched       bool
@@ -833,6 +922,10 @@ func (s *Scanner) materializeMatchingRules(
 		return nil, nil
 	}
 
+	matchBase := int64(0)
+	if s.blockScan {
+		matchBase = s.blockContext[0].Base
+	}
 	result := make([]RuleMatch, 0, resultCount)
 	for _, ruleIndex := range s.matchedRuleIndices {
 		if err := ctx.Err(); err != nil {
@@ -851,14 +944,22 @@ func (s *Scanner) materializeMatchingRules(
 
 		var publicMatches map[string][]Match
 		if len(s.matchCtx.spans) > 0 {
-			publicMatches = filterPrivateStrings(rule, materializeMatches(s.matchCtx.spans))
-			if err := s.populateMatchEvidence(ctx, data, publicMatches); err != nil {
+			publicMatches = filterPrivateStrings(
+				rule,
+				materializeMatchesAt(s.matchCtx.spans, matchBase),
+			)
+			if err := s.populateMatchEvidenceFrom(ctx, publicRuleMaterialization{
+				data:    data,
+				matches: publicMatches,
+				base:    matchBase,
+			}); err != nil {
 				return nil, err
 			}
 		}
 		evidence, err := s.populatePublicRuleEvidence(ctx, rule, publicRuleMaterialization{
 			data:    data,
 			matches: publicMatches,
+			base:    matchBase,
 		})
 		if err != nil {
 			return nil, err
@@ -871,6 +972,7 @@ func (s *Scanner) materializeMatchingRules(
 type publicRuleMaterialization struct {
 	data    []byte
 	matches map[string][]Match
+	base    int64
 }
 
 func (s *Scanner) populatePublicRuleEvidence(
@@ -882,14 +984,20 @@ func (s *Scanner) populatePublicRuleEvidence(
 		return nil, nil
 	}
 	return s.populateRuleEvidence(ctx, rule, materialization.matches, func(match Match) (captureInput, bool) {
-		if match.Offset < 0 || match.Length < 0 || match.Offset > int64(len(materialization.data)) {
+		relativeOffset := match.Offset - materialization.base
+		if relativeOffset < 0 || match.Length < 0 || relativeOffset > int64(len(materialization.data)) {
 			return captureInput{}, false
 		}
-		end := match.Offset + int64(match.Length)
-		if end < match.Offset || end > int64(len(materialization.data)) {
+		end := relativeOffset + int64(match.Length)
+		if end < relativeOffset || end > int64(len(materialization.data)) {
 			return captureInput{}, false
 		}
-		return captureInput{data: materialization.data, start: int(match.Offset), end: int(end)}, true
+		return captureInput{
+			data:  materialization.data,
+			start: int(relativeOffset),
+			end:   int(end),
+			base:  materialization.base,
+		}, true
 	})
 }
 
@@ -1560,13 +1668,17 @@ func cloneExternalValues(values map[string]externalValue) map[string]externalVal
 }
 
 func (s *Scanner) populateMatchEvidence(ctx context.Context, data []byte, matches map[string][]Match) error {
+	return s.populateMatchEvidenceFrom(ctx, publicRuleMaterialization{data: data, matches: matches})
+}
+
+func (s *Scanner) populateMatchEvidenceFrom(ctx context.Context, materialization publicRuleMaterialization) error {
 	if s.matchDataMax <= 0 && !s.matchContextEnabled {
 		return nil
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	for id, perStringMatches := range matches {
+	for id, perStringMatches := range materialization.matches {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -1574,23 +1686,24 @@ func (s *Scanner) populateMatchEvidence(ctx context.Context, data []byte, matche
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			s.populateSingleMatchEvidence(data, &perStringMatches[i])
+			s.populateSingleMatchEvidenceAt(materialization.data, materialization.base, &perStringMatches[i])
 		}
-		matches[id] = perStringMatches
+		materialization.matches[id] = perStringMatches
 	}
 	return nil
 }
 
-func (s *Scanner) populateSingleMatchEvidence(data []byte, match *Match) {
-	if match.Offset < 0 || match.Length < 0 || match.Offset > int64(len(data)) {
+func (s *Scanner) populateSingleMatchEvidenceAt(data []byte, base int64, match *Match) {
+	relativeOffset := match.Offset - base
+	if relativeOffset < 0 || match.Length < 0 || relativeOffset > int64(len(data)) {
 		return
 	}
-	endOffset := match.Offset + int64(match.Length)
-	if endOffset < match.Offset || endOffset > int64(len(data)) {
+	endOffset := relativeOffset + int64(match.Length)
+	if endOffset < relativeOffset || endOffset > int64(len(data)) {
 		return
 	}
 
-	start := int(match.Offset)
+	start := int(relativeOffset)
 	end := int(endOffset)
 	if s.matchDataMax > 0 {
 		copyLength := match.Length
@@ -1621,6 +1734,10 @@ func copyBytes(src []byte) []byte {
 }
 
 func materializeMatches(src map[string][]matchSpan) map[string][]Match {
+	return materializeMatchesAt(src, 0)
+}
+
+func materializeMatchesAt(src map[string][]matchSpan, base int64) map[string][]Match {
 	matches := make(map[string][]Match, len(src))
 	for id, spans := range src {
 		if len(spans) == 0 {
@@ -1628,7 +1745,7 @@ func materializeMatches(src map[string][]matchSpan) map[string][]Match {
 		}
 		dst := make([]Match, len(spans))
 		for index, span := range spans {
-			dst[index] = Match{Pattern: id, Offset: span.Offset, Length: span.Length}
+			dst[index] = Match{Pattern: id, Offset: span.Offset, Length: span.Length, Base: base}
 		}
 		matches[id] = dst
 	}

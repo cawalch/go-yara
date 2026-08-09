@@ -25,7 +25,7 @@ func (s *Scanner) evaluateRuleCondition(
 	rule *CompiledRule,
 	input ruleScanInput,
 ) (ruleEvaluation, error) {
-	if !ruleHeaderConstraintsMatch(rule, input.data) {
+	if !s.ruleHeaderConstraintsMatchInput(rule, input) {
 		s.ruleResults[rule.Name] = false
 		return ruleEvaluation{pruned: true}, nil
 	}
@@ -49,6 +49,16 @@ func (s *Scanner) evaluateRuleCondition(
 	matched := s.interp.ruleResult(rule.Name)
 	s.ruleResults[rule.Name] = matched
 	return ruleEvaluation{matched: matched}, nil
+}
+
+func (s *Scanner) ruleHeaderConstraintsMatchInput(rule *CompiledRule, input ruleScanInput) bool {
+	if !s.blockScan {
+		return ruleHeaderConstraintsMatch(rule, input.data)
+	}
+	return ruleHeaderConstraintsMatchContext(rule, &MatchContext{
+		Blocks:   s.blockContext[:],
+		FileSize: s.blockFileSize,
+	})
 }
 
 func (s *Scanner) preparePatternScan(ctx context.Context, data []byte) (bool, error) {
@@ -95,7 +105,22 @@ func (s *Scanner) populateRuleMatchContext(
 			return err
 		}
 	}
-	return s.addLocalNonTextMatches(ctx, rule, input.data, &s.nonTextCache, input.useSharedAutomaton)
+	if err := s.addLocalNonTextMatches(ctx, rule, input.data, &s.nonTextCache, input.useSharedAutomaton); err != nil {
+		return err
+	}
+	if s.blockScan {
+		base := s.blockContext[0].Base
+		for id, spans := range s.matchCtx.spans {
+			for index := range spans {
+				spans[index].Offset += base
+			}
+			s.matchCtx.spans[id] = spans
+		}
+		s.matchCtx.Data = nil
+		s.matchCtx.Blocks = s.blockContext[:]
+		s.matchCtx.FileSize = s.blockFileSize
+	}
+	return nil
 }
 
 func (s *Scanner) allEvaluatedRulesPrefilterRejected(data []byte, useSharedAutomaton bool) bool {
@@ -107,7 +132,7 @@ func (s *Scanner) allEvaluatedRulesPrefilterRejected(data []byte, useSharedAutom
 		if !rule.IsGlobal && !s.hasMatchingTag(rule) {
 			continue
 		}
-		if !ruleHeaderConstraintsMatch(rule, data) {
+		if !s.ruleHeaderConstraintsMatchInput(rule, ruleScanInput{data: data}) {
 			continue
 		}
 		if !rule.RequiresStringMatch {
