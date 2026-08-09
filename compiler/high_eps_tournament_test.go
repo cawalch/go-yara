@@ -105,6 +105,107 @@ func BenchmarkHighEPSEventParallel(b *testing.B) {
 	}
 }
 
+func BenchmarkHighEPSSelectivity(b *testing.B) {
+	const ruleCount = 10_000
+	for _, portfolio := range []string{"literal", "regex", "mixed"} {
+		program, err := NewCompiler().CompileSource(highEPSRuleSource(portfolio, ruleCount))
+		if err != nil {
+			b.Fatalf("compile %s: %v", portfolio, err)
+		}
+		for _, traffic := range []string{"clean", "sparse", "dense", "common_miss", "near_miss"} {
+			events := highEPSPortfolioEvents(portfolio, ruleCount, 256, 1_024, traffic)
+			b.Run(portfolio+"/"+traffic, func(b *testing.B) {
+				scanner := NewScanner(program, WithFastScan())
+				defer scanner.Close()
+				b.ReportAllocs()
+				b.SetBytes(256)
+				index := 0
+				b.ResetTimer()
+				for b.Loop() {
+					matched, scanErr := scanner.Matches(events[index&1_023])
+					if scanErr != nil {
+						b.Fatal(scanErr)
+					}
+					highEPSBoolSink = matched
+					index++
+				}
+			})
+		}
+	}
+}
+
+func BenchmarkHighEPSParallel10K(b *testing.B) {
+	const ruleCount = 10_000
+	for _, portfolio := range []string{"regex", "mixed"} {
+		program, err := NewCompiler().CompileSource(highEPSRuleSource(portfolio, ruleCount))
+		if err != nil {
+			b.Fatalf("compile %s: %v", portfolio, err)
+		}
+		for _, traffic := range []string{"sparse", "dense"} {
+			events := highEPSPortfolioEvents(portfolio, ruleCount, 256, 1_024, traffic)
+			b.Run(portfolio+"/"+traffic, func(b *testing.B) {
+				b.ReportAllocs()
+				b.SetBytes(256)
+				b.RunParallel(func(pb *testing.PB) {
+					scanner := NewScanner(program, WithFastScan())
+					defer scanner.Close()
+					index := 0
+					matchedSink := false
+					for pb.Next() {
+						matched, scanErr := scanner.Matches(events[index&1_023])
+						if scanErr != nil {
+							b.Error(scanErr)
+							return
+						}
+						matchedSink = matched
+						index++
+					}
+					if matchedSink {
+						highEPSWorkerSink.Add(1)
+					}
+				})
+			})
+		}
+	}
+}
+
+func BenchmarkHighEPSGateThenScan(b *testing.B) {
+	const ruleCount = 10_000
+	for _, portfolio := range []string{"literal", "regex", "mixed"} {
+		program, err := NewCompiler().CompileSource(highEPSRuleSource(portfolio, ruleCount))
+		if err != nil {
+			b.Fatalf("compile %s: %v", portfolio, err)
+		}
+		for _, traffic := range []string{"sparse", "dense"} {
+			events := highEPSPortfolioEvents(portfolio, ruleCount, 256, 1_024, traffic)
+			b.Run(portfolio+"/"+traffic, func(b *testing.B) {
+				scanner := NewScanner(program, WithFastScan(), WithReportedMatchesOnly())
+				defer scanner.Close()
+				b.ReportAllocs()
+				b.SetBytes(256)
+				index := 0
+				b.ResetTimer()
+				for b.Loop() {
+					event := events[index&1_023]
+					matched, matchErr := scanner.Matches(event)
+					if matchErr != nil {
+						b.Fatal(matchErr)
+					}
+					if matched {
+						result, scanErr := scanner.Scan(event)
+						if scanErr != nil {
+							b.Fatal(scanErr)
+						}
+						highEPSResultSink = result
+					}
+					highEPSBoolSink = matched
+					index++
+				}
+			})
+		}
+	}
+}
+
 func TestHighEPSEventCorpusParity(t *testing.T) {
 	for _, portfolio := range []string{"literal", "regex", "mixed"} {
 		t.Run(portfolio, func(t *testing.T) {
@@ -232,4 +333,65 @@ func highEPSEvents(size, count int) [][]byte {
 		events[index] = event
 	}
 	return events
+}
+
+//nolint:revive // benchmark fixture dimensions remain explicit at call sites
+func highEPSPortfolioEvents(portfolio string, ruleCount, size, count int, traffic string) [][]byte {
+	events := make([][]byte, count)
+	for index := range events {
+		positive := traffic == "dense" || traffic == "sparse" && index%100 == 0
+		payload := ""
+		if positive {
+			ruleIndex := index % ruleCount
+			switch portfolio {
+			case "literal":
+				payload = fmt.Sprintf(" sig_%05d=deny_%05d", ruleIndex, ruleIndex)
+			case "regex":
+				payload = fmt.Sprintf(" sig_%05d=AB123456", ruleIndex)
+			case "mixed":
+				ruleIndex = (ruleIndex/4)*4 + 1
+				if ruleIndex >= ruleCount {
+					ruleIndex = 1
+				}
+				payload = fmt.Sprintf(" sig_%05d=AB123456", ruleIndex)
+			}
+		} else {
+			switch traffic {
+			case "clean", "sparse", "dense":
+			case "common_miss":
+				payload = " sig_99999=AB123456"
+			case "near_miss":
+				payload = " sig_00000=ab12345x sig_00001=A1234567"
+			default:
+				panic("unknown high-EPS traffic: " + traffic)
+			}
+		}
+		if payload == "" {
+			events[index] = highEPSJSONEvent(size, index, "")
+		} else {
+			events[index] = highEPSJSONEvent(size, index, payload)
+		}
+	}
+	return events
+}
+
+func highEPSJSONEvent(size, index int, payload string) []byte {
+	prefix := fmt.Sprintf(
+		`{"timestamp":%d,"tenant":"tenant-%02d","src_ip":"10.20.%d.%d","path":"/api/v1/events","message":"`,
+		1_800_000_000+index,
+		index%32,
+		index%256,
+		(index*17)%256,
+	)
+	suffix := `"}`
+	filler := size - len(prefix) - len(payload) - len(suffix)
+	if filler < 0 {
+		panic("high-EPS event size is too small")
+	}
+	event := make([]byte, 0, size)
+	event = append(event, prefix...)
+	event = append(event, strings.Repeat("x", filler)...)
+	event = append(event, payload...)
+	event = append(event, suffix...)
+	return event
 }

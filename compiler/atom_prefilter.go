@@ -652,12 +652,16 @@ func selectHexAtom(tokens []HexPatternToken) (prefilterAtom, bool) {
 func (s *Scanner) resetPrefilterCandidates(size int) {
 	if cap(s.prefilterCandidates) < size {
 		s.prefilterCandidates = make([][]int, size)
+		s.touchedPrefilterCandidates = s.touchedPrefilterCandidates[:0]
 		return
 	}
-	s.prefilterCandidates = s.prefilterCandidates[:size]
-	for idx := range s.prefilterCandidates {
-		s.prefilterCandidates[idx] = s.prefilterCandidates[idx][:0]
+	for _, index := range s.touchedPrefilterCandidates {
+		if index >= 0 && index < len(s.prefilterCandidates) {
+			s.prefilterCandidates[index] = s.prefilterCandidates[index][:0]
+		}
 	}
+	s.touchedPrefilterCandidates = s.touchedPrefilterCandidates[:0]
+	s.prefilterCandidates = s.prefilterCandidates[:size]
 }
 
 func (s *Scanner) populateNonTextPrefilterCache(
@@ -665,26 +669,39 @@ func (s *Scanner) populateNonTextPrefilterCache(
 	data []byte,
 	cache *nonTextMatchCache,
 ) error {
-	for lookupIdx := 0; lookupIdx < len(s.program.SharedLookup); {
+	if s.program.nonTextCacheSize == 0 || len(s.touchedPrefilterCandidates) == 0 {
+		return ctx.Err()
+	}
+	slices.Sort(s.touchedPrefilterCandidates)
+	for touchedIndex := 0; touchedIndex < len(s.touchedPrefilterCandidates); {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		lookupIdx := s.touchedPrefilterCandidates[touchedIndex]
+		if lookupIdx < 0 || lookupIdx >= len(s.program.SharedLookup) {
+			touchedIndex++
+			continue
+		}
 		entry := s.program.SharedLookup[lookupIdx]
 		if entry.Kind == StringKindText || entry.CacheIndex < 0 || entry.CacheIndex >= len(cache.matches) {
-			lookupIdx++
+			touchedIndex++
 			continue
 		}
 		if entry.RuleIndex < 0 || entry.RuleIndex >= len(s.program.Rules) {
-			lookupIdx++
+			touchedIndex++
 			continue
 		}
-		rule := s.program.Rules[entry.RuleIndex]
-		if entry.StringIdx < 0 || entry.StringIdx >= len(rule.IndexToStringID) {
-			lookupIdx++
-			continue
-		}
-		strID := rule.IndexToStringID[entry.StringIdx]
+		//nolint:nestif // a touched alternative must expand and deduplicate its complete atom cover
 		if entry.Kind == StringKindRegex && entry.alternativeAtom {
+			lookupGroupStart := lookupIdx
+			for lookupGroupStart > 0 {
+				previous := s.program.SharedLookup[lookupGroupStart-1]
+				if !previous.alternativeAtom || previous.Kind != StringKindRegex ||
+					previous.CacheIndex != entry.CacheIndex || previous.IsWide != entry.IsWide {
+					break
+				}
+				lookupGroupStart--
+			}
 			groupEnd := lookupIdx + 1
 			for groupEnd < len(s.program.SharedLookup) {
 				next := s.program.SharedLookup[groupEnd]
@@ -697,9 +714,16 @@ func (s *Scanner) populateNonTextPrefilterCache(
 				groupEnd++
 			}
 
+			groupEntry := s.program.SharedLookup[lookupGroupStart]
+			rule := s.program.Rules[groupEntry.RuleIndex]
+			if groupEntry.StringIdx < 0 || groupEntry.StringIdx >= len(rule.IndexToStringID) {
+				touchedIndex++
+				continue
+			}
+			strID := rule.IndexToStringID[groupEntry.StringIdx]
 			dst := cache.matches[entry.CacheIndex]
-			groupStart := len(dst)
-			for candidateIndex := lookupIdx; candidateIndex < groupEnd; candidateIndex++ {
+			matchGroupStart := len(dst)
+			for candidateIndex := lookupGroupStart; candidateIndex < groupEnd; candidateIndex++ {
 				candidateEntry := s.program.SharedLookup[candidateIndex]
 				candidates := s.prefilterCandidates[candidateIndex]
 				if len(candidates) > 0 {
@@ -714,13 +738,26 @@ func (s *Scanner) populateNonTextPrefilterCache(
 					)
 				}
 			}
-			group := sortAndDedupeMatchSpans(dst[groupStart:])
-			dst = dst[:groupStart+len(group)]
+			group := sortAndDedupeMatchSpans(dst[matchGroupStart:])
+			dst = dst[:matchGroupStart+len(group)]
 			cache.set(entry.CacheIndex, dst)
-			lookupIdx = groupEnd
+			if len(dst) > 0 {
+				s.sharedNonTextMatched = true
+				s.markNonTextCacheRules(entry.CacheIndex)
+			}
+			for touchedIndex < len(s.touchedPrefilterCandidates) &&
+				s.touchedPrefilterCandidates[touchedIndex] < groupEnd {
+				touchedIndex++
+			}
 			continue
 		}
 
+		rule := s.program.Rules[entry.RuleIndex]
+		if entry.StringIdx < 0 || entry.StringIdx >= len(rule.IndexToStringID) {
+			touchedIndex++
+			continue
+		}
+		strID := rule.IndexToStringID[entry.StringIdx]
 		candidates := s.prefilterCandidates[lookupIdx]
 
 		switch entry.Kind {
@@ -737,7 +774,11 @@ func (s *Scanner) populateNonTextPrefilterCache(
 			}
 			cache.set(entry.CacheIndex, dst)
 		}
-		lookupIdx++
+		if len(cache.matches[entry.CacheIndex]) > 0 {
+			s.sharedNonTextMatched = true
+			s.markNonTextCacheRules(entry.CacheIndex)
+		}
+		touchedIndex++
 	}
 	return ctx.Err()
 }

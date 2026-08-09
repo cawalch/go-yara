@@ -1344,8 +1344,14 @@ type CompiledProgram struct {
 
 	// Number of compile-time integer slots used to cache regex/hex matches.
 	nonTextCacheSize int
-	fixedRegexScan   *fixedRegexDispatch
-	dependencies     map[string][]string
+	// sharedNonTextCaches marks cache slots whose mandatory atom cover is fully
+	// represented in SharedAutomaton.
+	sharedNonTextCaches []bool
+	// sharedNonTextCacheRules routes one verified cache slot to every rule that
+	// references the deduplicated pattern.
+	sharedNonTextCacheRules [][]int
+	fixedRegexScan          *fixedRegexDispatch
+	dependencies            map[string][]string
 
 	// Streaming support
 	streamingProcessor *StreamingProcessor
