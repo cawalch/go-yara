@@ -348,7 +348,7 @@ func runExecuteMode(content, dataFile, filename string, args *commandArgs) error
 }
 
 func printStreamingDataSummary(dataFile string) error {
-	file, err := os.Open(dataFile) // #nosec G304 - caller intentionally selects scan input
+	file, err := os.Open(dataFile) // #nosec G304,G703 - caller intentionally selects scan input
 	if err != nil {
 		return fmt.Errorf("reading data file %s: %w", dataFile, err)
 	}
