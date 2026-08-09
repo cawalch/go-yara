@@ -379,13 +379,17 @@ func TestExecuteRulesStreamingReportsPatternOnlySemantics(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CompileSourceWithContext() error = %v", err)
 	}
+	dataFile := filepath.Join(t.TempDir(), "data.bin")
+	if err := os.WriteFile(dataFile, []byte("foo"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
 
 	out, err := captureOutputWithError(func() error {
 		args := &commandArgs{
 			enableStreaming: false,
 			chunkSize:       4,
 		}
-		return executeRulesStreaming(program, []byte("foo"), args)
+		return executeRulesStreaming(program, dataFile, args)
 	})
 	if err != nil {
 		t.Fatalf("executeRulesStreaming() error = %v", err)
@@ -406,6 +410,62 @@ func TestExecuteRulesStreamingReportsPatternOnlySemantics(t *testing.T) {
 
 	if strings.Contains(out, "Result: MATCH") || strings.Contains(out, "Execution: Success") {
 		t.Fatalf("streaming output implied full rule execution, got:\n%s", out)
+	}
+}
+
+func TestRunExecuteModeStreamsFromFile(t *testing.T) {
+	rule := `rule streamed {
+  strings:
+    $a = "foo"
+  condition:
+    $a
+}`
+	tmpDir := t.TempDir()
+	ruleFile := filepath.Join(tmpDir, "rules.yar")
+	dataFile := filepath.Join(tmpDir, "data.bin")
+	if err := os.WriteFile(dataFile, []byte("foo---foo"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	out, err := captureOutputWithError(func() error {
+		args := &commandArgs{
+			enableStreaming: true,
+			chunkSize:       4,
+		}
+		return runExecuteMode(rule, dataFile, ruleFile, args)
+	})
+	if err != nil {
+		t.Fatalf("runExecuteMode() error = %v", err)
+	}
+	for _, want := range []string{
+		"Data content (first 256 bytes):",
+		"Streaming pattern scan enabled",
+		"Total pattern matches: 2",
+		"Progress: 9/9 bytes (100.0%)",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("streaming execute output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestPrintStreamingDataSummaryBoundsPreview(t *testing.T) {
+	dataFile := filepath.Join(t.TempDir(), "data.bin")
+	if err := os.WriteFile(dataFile, []byte(strings.Repeat("z", 300)), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	out, err := captureOutputWithError(func() error {
+		return printStreamingDataSummary(dataFile)
+	})
+	if err != nil {
+		t.Fatalf("printStreamingDataSummary() error = %v", err)
+	}
+	if !strings.Contains(out, strings.Repeat("z", 256)+"...") {
+		t.Fatalf("streaming preview was not truncated at 256 bytes:\n%s", out)
+	}
+	if strings.Contains(out, strings.Repeat("z", 257)) {
+		t.Fatalf("streaming preview included more than 256 data bytes:\n%s", out)
 	}
 }
 

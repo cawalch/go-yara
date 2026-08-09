@@ -3,6 +3,7 @@ package compiler
 import (
 	"context"
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -215,7 +216,105 @@ func TestStreamingHonorsCancellation(t *testing.T) {
 	}
 }
 
-func mustCompileStreamingProgram(t *testing.T, source string) *CompiledProgram {
+func TestStreamingHandlesMaxIntChunkSize(t *testing.T) {
+	program := mustCompileStreamingProgram(t, `
+rule large_chunk {
+  strings:
+    $a = "foo"
+  condition:
+    $a
+}`)
+	program.EnableStreaming(true)
+	program.SetStreamingChunkSize(math.MaxInt)
+	program.EnableStreamingEarlyTermination(false)
+
+	input := []byte("xxfooxx")
+	matches, err := program.ProcessBytesStreaming(context.Background(), input)
+	if err != nil {
+		t.Fatalf("ProcessBytesStreaming() error = %v", err)
+	}
+	assertStreamingOffsets(t, matches, streamingOffsets{pattern: "$a", offsets: []int64{2}})
+
+	filename := filepath.Join(t.TempDir(), "input.bin")
+	if err := os.WriteFile(filename, input, 0o600); err != nil {
+		t.Fatalf("os.WriteFile() error = %v", err)
+	}
+	matches, err = program.ProcessFileStreaming(context.Background(), filename)
+	if err != nil {
+		t.Fatalf("ProcessFileStreaming() error = %v", err)
+	}
+	assertStreamingOffsets(t, matches, streamingOffsets{pattern: "$a", offsets: []int64{2}})
+}
+
+func TestStreamingMatchDataOwnership(t *testing.T) {
+	program := mustCompileStreamingProgram(t, `
+rule ownership {
+  strings:
+    $a = "foo"
+  condition:
+    $a
+}`)
+	program.EnableStreaming(true)
+	program.SetStreamingChunkSize(8)
+	program.EnableStreamingEarlyTermination(false)
+
+	input := []byte("foo-----foo")
+	filename := filepath.Join(t.TempDir(), "input.bin")
+	if err := os.WriteFile(filename, input, 0o600); err != nil {
+		t.Fatalf("os.WriteFile() error = %v", err)
+	}
+
+	fileMatches, err := program.ProcessFileStreaming(context.Background(), filename)
+	if err != nil {
+		t.Fatalf("ProcessFileStreaming() error = %v", err)
+	}
+	if len(fileMatches) != 2 {
+		t.Fatalf("ProcessFileStreaming() returned %d matches, want 2", len(fileMatches))
+	}
+	for _, match := range fileMatches {
+		if string(match.Data) != "foo" || cap(match.Data) != len(match.Data) {
+			t.Fatalf("file match data = %q (len=%d cap=%d), want an exact owned copy", match.Data, len(match.Data), cap(match.Data))
+		}
+	}
+
+	byteMatches, err := program.ProcessBytesStreaming(context.Background(), input)
+	if err != nil {
+		t.Fatalf("ProcessBytesStreaming() error = %v", err)
+	}
+	if len(byteMatches) != 2 {
+		t.Fatalf("ProcessBytesStreaming() returned %d matches, want 2", len(byteMatches))
+	}
+	input[0] = 'F'
+	if string(byteMatches[0].Data) != "Foo" {
+		t.Fatalf("byte match data = %q, want caller-input alias", byteMatches[0].Data)
+	}
+}
+
+func BenchmarkStreamingProcessBytes(b *testing.B) {
+	program := mustCompileStreamingProgram(b, `
+rule streaming_benchmark {
+  strings:
+    $a = "stream-target"
+  condition:
+    $a
+}`)
+	program.EnableStreaming(true)
+	program.SetStreamingChunkSize(64 * 1024)
+	program.EnableStreamingEarlyTermination(false)
+
+	input := []byte(strings.Repeat("x", 1*1024*1024))
+	copy(input[len(input)-len("stream-target"):], "stream-target")
+	b.SetBytes(int64(len(input)))
+	b.ReportAllocs()
+
+	for b.Loop() {
+		if _, err := program.ProcessBytesStreaming(context.Background(), input); err != nil {
+			b.Fatalf("ProcessBytesStreaming() error = %v", err)
+		}
+	}
+}
+
+func mustCompileStreamingProgram(t testing.TB, source string) *CompiledProgram {
 	t.Helper()
 	program, err := NewCompiler().CompileSource(source)
 	if err != nil {

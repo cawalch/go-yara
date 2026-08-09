@@ -6,6 +6,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -320,6 +321,17 @@ func runCompileMode(content, filename string) error {
 
 //nolint:revive // argument-limit: CLI entry point
 func runExecuteMode(content, dataFile, filename string, args *commandArgs) error {
+	if args.enableStreaming {
+		if err := printStreamingDataSummary(dataFile); err != nil {
+			return err
+		}
+		compiledProgram, err := compileRules(content, filename)
+		if err != nil {
+			return err
+		}
+		return executeRulesStreaming(compiledProgram, dataFile, args)
+	}
+
 	data, err := validateAndReadDataFile(dataFile)
 	if err != nil {
 		return err
@@ -333,6 +345,36 @@ func runExecuteMode(content, dataFile, filename string, args *commandArgs) error
 	}
 
 	return executeRules(compiledProgram, data, args)
+}
+
+func printStreamingDataSummary(dataFile string) error {
+	file, err := os.Open(dataFile) // #nosec G304,G703 - caller intentionally selects scan input
+	if err != nil {
+		return fmt.Errorf("reading data file %s: %w", dataFile, err)
+	}
+	defer func() { _ = file.Close() }()
+
+	info, err := file.Stat()
+	if err != nil {
+		return fmt.Errorf("reading data file %s: %w", dataFile, err)
+	}
+	preview, err := io.ReadAll(io.LimitReader(file, 257))
+	if err != nil {
+		return fmt.Errorf("reading data file %s: %w", dataFile, err)
+	}
+	truncated := len(preview) > 256
+	if truncated {
+		preview = preview[:256]
+	}
+
+	fmt.Printf("Data file: %s (%d bytes)\n", dataFile, info.Size())
+	fmt.Printf("Data content (first 256 bytes):\n")
+	fmt.Printf("%s", string(preview))
+	if truncated {
+		fmt.Printf("...")
+	}
+	fmt.Printf("\n\n")
+	return nil
 }
 
 func validateAndReadDataFile(dataFile string) ([]byte, error) {
@@ -377,10 +419,6 @@ func compileRules(content, filename string) (*compiler.CompiledProgram, error) {
 }
 
 func executeRules(compiledProgram *compiler.CompiledProgram, data []byte, args *commandArgs) error {
-	if args.enableStreaming {
-		return executeRulesStreaming(compiledProgram, data, args)
-	}
-
 	scannerOptions := make([]compiler.ScannerOption, 0, 2)
 	if args.matchDataBytes > 0 {
 		scannerOptions = append(scannerOptions, compiler.WithMatchData(args.matchDataBytes))
@@ -473,7 +511,7 @@ func formatBytes(data []byte) string {
 }
 
 // executeRulesStreaming reports chunked pattern matches. It does not evaluate rule conditions.
-func executeRulesStreaming(compiledProgram *compiler.CompiledProgram, data []byte, args *commandArgs) error {
+func executeRulesStreaming(compiledProgram *compiler.CompiledProgram, dataFile string, args *commandArgs) error {
 	fmt.Printf("Streaming pattern scan enabled (chunk size: %d bytes)\n", args.chunkSize)
 	fmt.Printf("Note: streaming mode reports literal text-pattern matches only; regex, hex, and rule conditions are not evaluated.\n")
 
@@ -488,7 +526,7 @@ func executeRulesStreaming(compiledProgram *compiler.CompiledProgram, data []byt
 
 	// Process with streaming
 	start := time.Now()
-	matches, err := compiledProgram.ProcessBytesStreaming(ctx, data)
+	matches, err := compiledProgram.ProcessFileStreaming(ctx, dataFile)
 	if err != nil {
 		return fmt.Errorf("streaming execution: %w", err)
 	}
@@ -511,8 +549,8 @@ func executeRulesStreaming(compiledProgram *compiler.CompiledProgram, data []byt
 	processed, total, percent, _ := compiledProgram.GetStreamingProgress()
 	fmt.Printf("  Progress: %d/%d bytes (%.1f%%)\n", processed, total, percent)
 
-	if elapsed > 0 {
-		throughput := float64(len(data)) / elapsed.Seconds() / 1024 / 1024
+	if elapsed > 0 && processed > 0 {
+		throughput := float64(processed) / elapsed.Seconds() / 1024 / 1024
 		fmt.Printf("  Throughput: %.2f MB/s\n", throughput)
 	}
 	return nil

@@ -3,8 +3,10 @@ package compiler
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"sync"
 
@@ -42,14 +44,17 @@ type streamingChunkProcessor struct {
 }
 
 type streamingWindow struct {
-	data         []byte
-	offset       int64
-	primaryStart int64
-	primaryEnd   int64
+	data          []byte
+	offset        int64
+	primaryStart  int64
+	primaryEnd    int64
+	copyMatchData bool
 }
 
 // StreamingMatch represents a text-pattern match found during chunked
 // streaming. It does not imply that the containing rule's condition matched.
+// Data returned by ProcessFile is owned by the match. Data returned by
+// ProcessBytes aliases the caller-provided input.
 type StreamingMatch struct {
 	Rule    string
 	Pattern string
@@ -110,7 +115,7 @@ func (sp *StreamingProcessor) ProcessFile(ctx context.Context, filename string) 
 
 	sp.resetProgress(fileInfo.Size())
 	sp.prepareScan()
-	return sp.processFileChunks(ctx, file)
+	return sp.processFileChunks(ctx, file, fileInfo)
 }
 
 // ProcessBytes reports text-pattern matches from data using chunked processing.
@@ -156,12 +161,27 @@ func (sp *StreamingProcessor) effectiveBufferSize() int {
 	return max(sp.BufferSize, streamingBoundaryContext)
 }
 
+func (sp *StreamingProcessor) effectiveOverlapSize() (int, error) {
+	patternOverlap := max(sp.maxPatternLen-1, 0)
+	if patternOverlap > math.MaxInt-streamingBoundaryContext {
+		return 0, errors.New("streaming overlap size is too large")
+	}
+	return patternOverlap + streamingBoundaryContext, nil
+}
+
 // processFileChunks processes a file sequentially with enough overlap for a
 // boundary-crossing pattern and enough lookahead to validate fullword.
-func (sp *StreamingProcessor) processFileChunks(ctx context.Context, file *os.File) ([]StreamingMatch, error) {
+func (sp *StreamingProcessor) processFileChunks(
+	ctx context.Context,
+	file *os.File,
+	fileInfo os.FileInfo,
+) ([]StreamingMatch, error) {
 	reader := bufio.NewReaderSize(file, sp.effectiveBufferSize())
 	chunkSize := sp.effectiveChunkSize()
-	overlapCapacity := max(sp.maxPatternLen-1, 0) + streamingBoundaryContext
+	overlapCapacity, err := sp.effectiveOverlapSize()
+	if err != nil {
+		return nil, err
+	}
 
 	var (
 		allMatches          []StreamingMatch
@@ -174,8 +194,22 @@ func (sp *StreamingProcessor) processFileChunks(ctx context.Context, file *os.Fi
 			return nil, fmt.Errorf("stream file: %w", err)
 		}
 
+		readSize := chunkSize
+		if fileInfo.Mode().IsRegular() {
+			remaining := fileInfo.Size() - currentStreamOffset
+			if remaining <= 0 {
+				break
+			}
+			if remaining < int64(readSize) {
+				readSize = int(remaining)
+			}
+		}
+
 		overlapSize := min(overlapCapacity, len(overlap))
-		chunk := make([]byte, overlapSize+chunkSize, overlapSize+chunkSize+streamingBoundaryContext)
+		if readSize > math.MaxInt-overlapSize-streamingBoundaryContext {
+			return nil, errors.New("streaming chunk size is too large")
+		}
+		chunk := make([]byte, overlapSize+readSize, overlapSize+readSize+streamingBoundaryContext)
 		copy(chunk, overlap[len(overlap)-overlapSize:])
 
 		n, readErr := io.ReadFull(reader, chunk[overlapSize:])
@@ -195,10 +229,11 @@ func (sp *StreamingProcessor) processFileChunks(ctx context.Context, file *os.Fi
 		primaryEnd := primaryStart + int64(n)
 		chunkOffset := primaryStart - int64(overlapSize)
 		matches := sp.chunkProcessor.processChunk(streamingWindow{
-			data:         chunk,
-			offset:       chunkOffset,
-			primaryStart: primaryStart,
-			primaryEnd:   primaryEnd,
+			data:          chunk,
+			offset:        chunkOffset,
+			primaryStart:  primaryStart,
+			primaryEnd:    primaryEnd,
+			copyMatchData: true,
 		})
 		allMatches = append(allMatches, matches...)
 		sp.updateProgress(int64(n), len(matches))
@@ -224,8 +259,14 @@ func (sp *StreamingProcessor) processFileChunks(ctx context.Context, file *os.Fi
 // chunk containing their final byte, preventing duplicate overlap results.
 func (sp *StreamingProcessor) processDataChunks(ctx context.Context, data []byte) ([]StreamingMatch, error) {
 	chunkSize := sp.effectiveChunkSize()
-	overlapSize := max(sp.maxPatternLen-1, 0) + streamingBoundaryContext
-	chunkCount := (len(data) + chunkSize - 1) / chunkSize
+	overlapSize, err := sp.effectiveOverlapSize()
+	if err != nil {
+		return nil, err
+	}
+	chunkCount := 0
+	if len(data) > 0 {
+		chunkCount = 1 + (len(data)-1)/chunkSize
+	}
 	allMatches := make([]StreamingMatch, 0)
 
 	for chunkIndex := range chunkCount {
@@ -234,9 +275,15 @@ func (sp *StreamingProcessor) processDataChunks(ctx context.Context, data []byte
 		}
 
 		primaryStart := chunkIndex * chunkSize
-		primaryEnd := min(primaryStart+chunkSize, len(data))
+		primaryEnd := len(data)
+		if chunkSize < len(data)-primaryStart {
+			primaryEnd = primaryStart + chunkSize
+		}
 		searchStart := max(primaryStart-overlapSize, 0)
-		searchEnd := min(primaryEnd+streamingBoundaryContext, len(data))
+		searchEnd := len(data)
+		if streamingBoundaryContext < len(data)-primaryEnd {
+			searchEnd = primaryEnd + streamingBoundaryContext
+		}
 
 		matches := sp.chunkProcessor.processChunk(streamingWindow{
 			data:         data[searchStart:searchEnd],
@@ -317,12 +364,17 @@ func (cp *streamingChunkProcessor) createRuleMatch(
 		return StreamingMatch{}, false
 	}
 
+	matchData := window.data[position : position+info.Length]
+	if window.copyMatchData {
+		matchData = copyBytes(matchData)
+	}
+
 	return StreamingMatch{
 		Rule:    rule.Name,
 		Pattern: match.StringID,
 		Offset:  absoluteStart,
 		Length:  info.Length,
-		Data:    window.data[position : position+info.Length],
+		Data:    matchData,
 	}, true
 }
 
