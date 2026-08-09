@@ -1,6 +1,9 @@
 package compiler
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+)
 
 // OpcodeHandler is the function signature for opcode dispatch table entries.
 // Each handler executes exactly one opcode, reading operands from i.bytecode
@@ -201,6 +204,46 @@ func (i *Interpreter) executeMainLoop() error {
 	i.storeExecutionResult()
 	i.cleanupStack()
 
+	return i.result
+}
+
+// executeMainLoopWithCancel keeps cancellation polling out of the ordinary
+// interpreter dispatch path.
+func (i *Interpreter) executeMainLoopWithCancel(done <-chan struct{}) error {
+	for steps := 0; !i.stopped && i.ip < len(i.bytecode); steps++ {
+		if steps&(scanCancellationInterval-1) == 0 && scanCanceled(done) {
+			i.result = context.Canceled
+			return i.result
+		}
+		opcode := Opcode(i.bytecode[i.ip])
+		i.ip++
+
+		if i.debugMode {
+			i.debugExecution(opcode)
+		}
+
+		handler := opcodeTable[opcode]
+		if handler == nil {
+			err := &InterpreterError{
+				Type:    ErrorUnsupportedOpcode,
+				Opcode:  opcode,
+				Message: fmt.Sprintf("unsupported opcode: %v", opcode),
+			}
+			i.result = err
+			return err
+		}
+		if err := handler(i); err != nil {
+			i.result = err
+			return err
+		}
+
+		if i.debugMode {
+			i.debugStackState(opcode)
+		}
+	}
+
+	i.storeExecutionResult()
+	i.cleanupStack()
 	return i.result
 }
 

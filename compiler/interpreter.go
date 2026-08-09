@@ -115,6 +115,7 @@ type MatchContext struct {
 	spans        map[string][]matchSpan
 	spanBuffers  map[string][]matchSpan
 	compact      bool
+	cancelDone   <-chan struct{}
 	// maxMatchesPerPattern bounds retained occurrences. Zero means unlimited.
 	maxMatchesPerPattern int
 }
@@ -503,6 +504,9 @@ func (i *Interpreter) Execute() error {
 	// Reset interpreter state for clean execution
 	i.Reset()
 
+	if i.matchContext != nil && i.matchContext.cancelDone != nil {
+		return i.executeMainLoopWithCancel(i.matchContext.cancelDone)
+	}
 	return i.executeMainLoop()
 }
 

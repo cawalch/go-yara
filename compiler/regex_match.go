@@ -26,6 +26,9 @@ func addRegexMatchesCached(
 	if len(regexInfo.Code) == 0 {
 		return
 	}
+	if scanCanceled(ctx.cancelDone) {
+		return
+	}
 
 	if regexInfo.anchored {
 		bs, release := newRegexMatchBatch(regexInfo)
@@ -50,15 +53,19 @@ func addRegexMatchesCached(
 		atom = regexInfo.wideAtom
 	}
 	atomRequiresLinearFallback := false
+	//nolint:nestif // candidate verification keeps cancellation local to hot loops
 	if len(atom) > 0 {
-		starts, handled := regexAtomCandidateStarts(data, atom, regexInfo, flags, isWide)
+		starts, handled := regexAtomCandidateStarts(data, atom, regexInfo, flags, isWide, ctx.cancelDone)
 		if handled {
 			if len(starts) == 0 {
 				return
 			}
 			bs, release := newRegexMatchBatch(regexInfo)
 			defer releaseRegexMatchBatch(release)
-			for _, start := range starts {
+			for index, start := range starts {
+				if scanCanceledAt(ctx.cancelDone, index) {
+					return
+				}
 				addRegexMatchAt(ctx, id, regexInfo, data, modifiers, flags, isWide, bs, start)
 			}
 			return
@@ -80,25 +87,30 @@ func addRegexMatchesCached(
 		}
 		// A sparse leading byte set is cheaper to scan directly than probing every
 		// unbounded literal. For dense sets, absent literals avoid that linear scan.
-		if !useSparseByteSet && !unboundedRegexAlternativePresent(data, alternativeAtoms, flags) {
+		if !useSparseByteSet && !unboundedRegexAlternativePresent(data, alternativeAtoms, flags, ctx.cancelDone) {
 			addRegexMatchesFromAlternatives(ctx, id, regexInfo, data, modifiers, flags, isWide, alternativeAtoms)
 			return
 		}
 	}
+	//nolint:nestif // candidate verification keeps cancellation local to hot loops
 	if !isWide && regexInfo.leadingGap != nil && !useSparseByteSet {
-		starts, handled := leadingGapRegexCandidateStarts(data, regexInfo.leadingGap, flags)
+		starts, handled := leadingGapRegexCandidateStarts(data, regexInfo.leadingGap, flags, ctx.cancelDone)
 		if handled {
 			if len(starts) == 0 {
 				return
 			}
 			bs, release := newRegexMatchBatch(regexInfo)
 			defer releaseRegexMatchBatch(release)
-			for _, start := range starts {
+			for index, start := range starts {
+				if scanCanceledAt(ctx.cancelDone, index) {
+					return
+				}
 				addRegexMatchAt(ctx, id, regexInfo, data, modifiers, flags, isWide, bs, start)
 			}
 			return
 		}
 	}
+	//nolint:nestif // candidate verification keeps cancellation local to hot loops
 	if useByteSet {
 		search := regexByteSetSearch{
 			data:            data,
@@ -106,6 +118,7 @@ func addRegexMatchesCached(
 			wide:            isWide,
 			cache:           byteSetCache,
 			useSparseValues: useSparseByteSet,
+			done:            ctx.cancelDone,
 		}
 		plan, handled := search.candidatePlan()
 		if handled {
@@ -115,10 +128,16 @@ func addRegexMatchesCached(
 			bs, release := newRegexMatchBatch(regexInfo)
 			defer releaseRegexMatchBatch(release)
 			candidates := search.candidateIterator(plan)
-			for start, ok := candidates.next(); ok; start, ok = candidates.next() {
+			for index, start, ok := 0, 0, false; ; index++ {
+				start, ok = candidates.next()
+				if !ok {
+					return
+				}
+				if scanCanceledAt(ctx.cancelDone, index) {
+					return
+				}
 				addRegexMatchAt(ctx, id, regexInfo, data, modifiers, flags, isWide, bs, start)
 			}
-			return
 		}
 	}
 
@@ -127,15 +146,26 @@ func addRegexMatchesCached(
 	addRegexMatchesLinear(ctx, id, regexInfo, data, modifiers, flags, isWide, bs)
 }
 
-func leadingGapRegexCandidateStarts(data []byte, plan *regexLeadingGapPlan, flags regex.Flags) ([]int, bool) {
+//nolint:revive // cancellation signal stays explicit in the candidate hot path
+func leadingGapRegexCandidateStarts(
+	data []byte,
+	plan *regexLeadingGapPlan,
+	flags regex.Flags,
+	done <-chan struct{},
+) ([]int, bool) {
 	if plan == nil || len(plan.atoms) == 0 {
 		return nil, false
 	}
 	limit := max(1024, len(data)/4)
 	starts := make([]int, 0, min(limit, 64))
+	checkpoint := 0
 	for _, atom := range plan.atoms {
 		searcher := newRegexLiteralSearcher(data, atom.data, flags)
 		for occurrence := searcher.index(0); occurrence >= 0; occurrence = searcher.index(occurrence + 1) {
+			if scanCanceledAt(done, checkpoint) {
+				return nil, true
+			}
+			checkpoint++
 			for offset := atom.minOffset; offset <= atom.maxOffset; offset++ {
 				suffixStart := occurrence - offset
 				if suffixStart < 1 || suffixStart > len(data) {
@@ -146,6 +176,10 @@ func leadingGapRegexCandidateStarts(data []byte, plan *regexLeadingGapPlan, flag
 					maxGap = min(maxGap, plan.gapMax)
 				}
 				for gapLength := 0; gapLength <= maxGap; gapLength++ {
+					if scanCanceledAt(done, checkpoint) {
+						return nil, true
+					}
+					checkpoint++
 					leadingPosition := suffixStart - gapLength - 1
 					if gapLength >= plan.gapMin && plan.leadingSet.Contains(data[leadingPosition]) {
 						if len(starts) >= limit {
@@ -198,8 +232,17 @@ func hasUnboundedRegexAlternative(atoms []regexPrefilterAtom) bool {
 	return false
 }
 
-func unboundedRegexAlternativePresent(data []byte, atoms []regexPrefilterAtom, flags regex.Flags) bool {
-	for _, atom := range atoms {
+//nolint:revive // cancellation signal stays explicit in the candidate hot path
+func unboundedRegexAlternativePresent(
+	data []byte,
+	atoms []regexPrefilterAtom,
+	flags regex.Flags,
+	done <-chan struct{},
+) bool {
+	for index, atom := range atoms {
+		if scanCanceledAt(done, index) {
+			return false
+		}
 		if atom.maxOffset >= 0 {
 			continue
 		}
@@ -313,7 +356,12 @@ func addRegexMatchesFromAlternatives(
 
 	bs, release := newRegexMatchBatch(regexInfo)
 	defer releaseRegexMatchBatch(release)
+	checkpoint := 0
 	for {
+		if scanCanceledAt(ctx.cancelDone, checkpoint) {
+			return
+		}
+		checkpoint++
 		candidate := -1
 		for index := range cursors {
 			start := cursors[index].start
@@ -352,7 +400,10 @@ func addRegexMatchesFromPrefix(
 	}
 	bs, release := newRegexMatchBatch(regexInfo)
 	defer releaseRegexMatchBatch(release)
-	for candidate >= 0 {
+	for checkpoint := 0; candidate >= 0; checkpoint++ {
+		if scanCanceledAt(ctx.cancelDone, checkpoint) {
+			return
+		}
 		addRegexMatchAt(ctx, id, regexInfo, data, modifiers, flags, isWide, bs, candidate)
 		searchFrom := candidate + 1
 		if searchFrom > len(data) {
@@ -374,6 +425,9 @@ func addRegexMatchesLinear(
 	bs *regex.VMBatch,
 ) {
 	for pos := 0; pos <= len(data); pos++ {
+		if scanCanceledAt(ctx.cancelDone, pos) {
+			return
+		}
 		addRegexMatchAt(ctx, id, regexInfo, data, modifiers, flags, isWide, bs, pos)
 	}
 }
@@ -462,6 +516,7 @@ func regexAtomCandidateStarts(
 	pattern RegexPattern,
 	flags regex.Flags,
 	isWide bool,
+	done <-chan struct{},
 ) ([]int, bool) {
 	if pattern.atomASCIINoCase {
 		flags |= regex.FlagsNoCase
@@ -478,7 +533,10 @@ func regexAtomCandidateStarts(
 	limit := max(1024, len(data)/4)
 	atomStarts := make([]int, 0, min(limit, 64))
 	atomStarts = append(atomStarts, first)
-	for searchFrom := first + 1; searchFrom <= len(data); {
+	for checkpoint, searchFrom := 0, first+1; searchFrom <= len(data); checkpoint++ {
+		if scanCanceledAt(done, checkpoint) {
+			return nil, true
+		}
 		next := searcher.index(searchFrom)
 		if next < 0 {
 			break

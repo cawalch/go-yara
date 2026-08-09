@@ -13,6 +13,7 @@ type regexByteSetSearch struct {
 	wide            bool
 	cache           *regexByteSetCandidateCache
 	useSparseValues bool
+	done            <-chan struct{}
 }
 
 func shouldUseSparseRegexByteSetSearch(data, values []byte, wide bool) bool {
@@ -83,6 +84,9 @@ type regexByteSetCandidatePlan struct {
 }
 
 func (search regexByteSetSearch) candidatePlan() (regexByteSetCandidatePlan, bool) {
+	if scanCanceled(search.done) {
+		return regexByteSetCandidatePlan{}, true
+	}
 	entry := search.cacheEntry()
 	if search.pattern.byteSetMaxOffset < 0 {
 		return search.unboundedCandidatePlan(entry)
@@ -106,6 +110,9 @@ func (search regexByteSetSearch) unboundedCandidatePlan(entry *regexByteSetCache
 		}
 		return regexByteSetCandidatePlan{}, false
 	}
+	if scanCanceled(search.done) {
+		return regexByteSetCandidatePlan{}, true
+	}
 	if entry != nil {
 		entry.positions = entry.positions[:0]
 		entry.ready = true
@@ -116,7 +123,10 @@ func (search regexByteSetSearch) unboundedCandidatePlan(entry *regexByteSetCache
 
 func (search regexByteSetSearch) planCachedPositions(positions []int, limit int) (regexByteSetCandidatePlan, bool) {
 	counter := newRegexCandidateStartCounter(search, limit)
-	for _, position := range positions {
+	for index, position := range positions {
+		if scanCanceledAt(search.done, index) {
+			return regexByteSetCandidatePlan{}, true
+		}
 		if !counter.add(position) {
 			return regexByteSetCandidatePlan{}, false
 		}
@@ -132,7 +142,10 @@ func (search regexByteSetSearch) planScannedPositions(entry *regexByteSetCacheEn
 		entry.positions = entry.positions[:0]
 	}
 
-	for searchFrom := 0; searchFrom <= len(search.data); {
+	for checkpoint, searchFrom := 0, 0; searchFrom <= len(search.data); checkpoint++ {
+		if scanCanceledAt(search.done, checkpoint) {
+			return regexByteSetCandidatePlan{}, true
+		}
 		position := search.index(searchFrom)
 		if position < 0 {
 			break

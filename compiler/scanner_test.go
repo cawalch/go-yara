@@ -11,11 +11,275 @@ import (
 	"strings"
 	"testing"
 	"testing/iotest"
+	"time"
 
 	"github.com/cawalch/go-yara/ast"
 	"github.com/cawalch/go-yara/internal/lexer"
 	"github.com/cawalch/go-yara/parser"
 )
+
+func TestScannerCancellationInterruptsDenseLiteralScan(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+rule dense {
+  strings:
+    $a = "a"
+  condition:
+    #a > 0
+}`)
+	if err != nil {
+		t.Fatalf("CompileSource() error = %v", err)
+	}
+	scanner := NewScanner(program)
+	defer scanner.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	data := []byte(strings.Repeat("a", 8*1024*1024))
+	go func() {
+		time.Sleep(time.Millisecond)
+		cancel()
+	}()
+
+	if _, err := scanner.ScanWithContext(ctx, data); !errors.Is(err, context.Canceled) {
+		t.Fatalf("ScanWithContext() error = %v, want context.Canceled", err)
+	}
+}
+
+func TestScannerCancellationInterruptsDenseNonTextScans(t *testing.T) {
+	tests := []struct {
+		name   string
+		source string
+		data   []byte
+	}{
+		{
+			name: "fixed regex",
+			source: `rule dense_regex {
+  strings:
+    $a = /[a-z]{4}/
+  condition:
+    #a > 0
+}`,
+			data: []byte(strings.Repeat("a", 4*1024*1024)),
+		},
+		{
+			name: "wildcard hex",
+			source: `rule dense_hex {
+  strings:
+    $a = { ?? ?? ?? ?? }
+  condition:
+    #a > 0
+}`,
+			data: make([]byte, 4*1024*1024),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			program, err := NewCompiler().CompileSource(test.source)
+			if err != nil {
+				t.Fatalf("CompileSource() error = %v", err)
+			}
+			scanner := NewScanner(program)
+			defer scanner.Close()
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			go func() {
+				time.Sleep(time.Millisecond)
+				cancel()
+			}()
+
+			if _, err := scanner.ScanWithContext(ctx, test.data); !errors.Is(err, context.Canceled) {
+				t.Fatalf("ScanWithContext() error = %v, want context.Canceled", err)
+			}
+		})
+	}
+}
+
+func TestScannerCancellationInterruptsConditionLoop(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+rule long_condition {
+  condition:
+    for all i in (1..1000000000) : (i > 0)
+}`)
+	if err != nil {
+		t.Fatalf("CompileSource() error = %v", err)
+	}
+	scanner := NewScanner(program)
+	defer scanner.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		time.Sleep(time.Millisecond)
+		cancel()
+	}()
+
+	if _, err := scanner.ScanWithContext(ctx, nil); !errors.Is(err, context.Canceled) {
+		t.Fatalf("ScanWithContext() error = %v, want context.Canceled", err)
+	}
+}
+
+func TestScannerActiveContextPreservesTextMatches(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+rule active_context {
+  strings:
+    $a = "alpha"
+    $b = "bravo"
+  condition:
+    all of them
+}`)
+	if err != nil {
+		t.Fatalf("CompileSource() error = %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	data := []byte("alpha bravo")
+
+	scanner := NewScanner(program)
+	defer scanner.Close()
+	result, err := scanner.ScanWithContext(ctx, data)
+	if err != nil {
+		t.Fatalf("ScanWithContext() error = %v", err)
+	}
+	if !result.RuleResults["active_context"] || len(result.MatchedRules) != 1 {
+		t.Fatalf("ScanWithContext() result = %+v, want active_context match", result)
+	}
+	matched, err := scanner.MatchesWithContext(ctx, data)
+	if err != nil || !matched {
+		t.Fatalf("MatchesWithContext() = (%v, %v), want (true, nil)", matched, err)
+	}
+
+	fastScanner := NewScanner(program, WithFastScan())
+	defer fastScanner.Close()
+	result, err = fastScanner.ScanWithContext(ctx, []byte("alpha alpha bravo bravo"))
+	if err != nil {
+		t.Fatalf("fast ScanWithContext() error = %v", err)
+	}
+	if !result.RuleResults["active_context"] ||
+		len(result.Matches["active_context"]["$a"]) != 1 ||
+		len(result.Matches["active_context"]["$b"]) != 1 {
+		t.Fatalf("fast ScanWithContext() result = %+v, want one match per pattern", result)
+	}
+
+	blockScanner := program.NewBlockScanner(WithFastScan())
+	defer blockScanner.Close()
+	if err := blockScanner.ScanWithContext(ctx, 0, data); err != nil {
+		t.Fatalf("BlockScanner.ScanWithContext() error = %v", err)
+	}
+	result, err = blockScanner.FinishWithContext(ctx)
+	if err != nil {
+		t.Fatalf("BlockScanner.FinishWithContext() error = %v", err)
+	}
+	if !result.RuleResults["active_context"] {
+		t.Fatalf("BlockScanner result = %+v, want active_context match", result)
+	}
+}
+
+func TestScannerActiveContextPreservesNonTextMatches(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+rule active_nontext {
+  strings:
+    $regex = /alpha[0-9]+/
+    $hex = { 62 72 61 76 6F ?? }
+  condition:
+    all of them
+}`)
+	if err != nil {
+		t.Fatalf("CompileSource() error = %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	scanner := NewScanner(program)
+	defer scanner.Close()
+
+	result, err := scanner.ScanWithContext(ctx, []byte("alpha123 bravo!"))
+	if err != nil {
+		t.Fatalf("ScanWithContext() error = %v", err)
+	}
+	if !result.RuleResults["active_nontext"] ||
+		len(result.Matches["active_nontext"]["$regex"]) != 1 ||
+		len(result.Matches["active_nontext"]["$hex"]) != 1 {
+		t.Fatalf("ScanWithContext() result = %+v, want regex and hex matches", result)
+	}
+}
+
+func BenchmarkScannerCancellationPolling(b *testing.B) {
+	program, err := NewCompiler().CompileSource(`
+rule cancellation_benchmark {
+  strings:
+    $a = "alpha-target"
+    $b = "bravo-target"
+    $c = "charlie-target"
+    $d = "delta-target"
+    $e = "echo-target"
+    $f = "foxtrot-target"
+    $g = "golf-target"
+    $h = "hotel-target"
+  condition:
+    any of them
+}`)
+	if err != nil {
+		b.Fatalf("CompileSource() error = %v", err)
+	}
+	data := []byte(strings.Repeat("0123456789", 100_000))
+	cancelable, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	benchmarks := []struct {
+		name string
+		ctx  context.Context
+	}{
+		{name: "background", ctx: context.Background()},
+		{name: "cancelable", ctx: cancelable},
+	}
+	for _, benchmark := range benchmarks {
+		b.Run(benchmark.name, func(b *testing.B) {
+			scanner := NewScanner(program)
+			defer scanner.Close()
+			b.SetBytes(int64(len(data)))
+			b.ReportAllocs()
+			for b.Loop() {
+				if _, err := scanner.MatchesWithContext(benchmark.ctx, data); err != nil {
+					b.Fatalf("MatchesWithContext() error = %v", err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkScannerConditionLoopCancellationPolling(b *testing.B) {
+	program, err := NewCompiler().CompileSource(`
+rule condition_loop_benchmark {
+  condition:
+    for all i in (1..10000) : (i > 0)
+}`)
+	if err != nil {
+		b.Fatalf("CompileSource() error = %v", err)
+	}
+	cancelable, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	benchmarks := []struct {
+		name string
+		ctx  context.Context
+	}{
+		{name: "background", ctx: context.Background()},
+		{name: "cancelable", ctx: cancelable},
+	}
+	for _, benchmark := range benchmarks {
+		b.Run(benchmark.name, func(b *testing.B) {
+			scanner := NewScanner(program)
+			defer scanner.Close()
+			b.ReportAllocs()
+			for b.Loop() {
+				if _, err := scanner.MatchesWithContext(benchmark.ctx, nil); err != nil {
+					b.Fatalf("MatchesWithContext() error = %v", err)
+				}
+			}
+		})
+	}
+}
 
 func TestPackFastScanKey(t *testing.T) {
 	key, ok := packFastScanKey(3, 7)

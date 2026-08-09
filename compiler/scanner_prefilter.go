@@ -7,6 +7,11 @@ type ruleEvaluation struct {
 	pruned  bool
 }
 
+type ruleScanInput struct {
+	data               []byte
+	useSharedAutomaton bool
+}
+
 type rulePrefilterStatus uint8
 
 const (
@@ -16,16 +21,18 @@ const (
 )
 
 func (s *Scanner) evaluateRuleCondition(
+	ctx context.Context,
 	rule *CompiledRule,
-	data []byte,
-	useSharedAutomaton bool,
+	input ruleScanInput,
 ) (ruleEvaluation, error) {
-	if !ruleHeaderConstraintsMatch(rule, data) {
+	if !ruleHeaderConstraintsMatch(rule, input.data) {
 		s.ruleResults[rule.Name] = false
 		return ruleEvaluation{pruned: true}, nil
 	}
 
-	s.populateRuleMatchContext(rule, data, useSharedAutomaton)
+	if err := s.populateRuleMatchContext(ctx, rule, input); err != nil {
+		return ruleEvaluation{}, err
+	}
 	if !s.prefilterDisabled && rule.RequiresStringMatch && len(s.matchCtx.spans) == 0 {
 		s.ruleResults[rule.Name] = false
 		return ruleEvaluation{}, nil
@@ -34,6 +41,9 @@ func (s *Scanner) evaluateRuleCondition(
 	s.prepareInterpreter(rule)
 	s.interp.SetItersmax(s.itersmax)
 	if err := s.interp.Execute(); err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ruleEvaluation{}, ctxErr
+		}
 		return ruleEvaluation{}, err
 	}
 	matched := s.interp.GetRuleResults()[rule.Name]
@@ -43,7 +53,9 @@ func (s *Scanner) evaluateRuleCondition(
 
 func (s *Scanner) preparePatternScan(ctx context.Context, data []byte) (bool, error) {
 	s.nonTextCache.reset(s.program.nonTextCacheSize)
-	s.populateFixedRegexCache(data, &s.nonTextCache)
+	if err := s.populateFixedRegexCache(ctx, data, &s.nonTextCache); err != nil {
+		return false, err
+	}
 	s.regexByteSetCache.reset()
 	s.resetGlobalMatches(len(s.program.Rules))
 	s.resetPrefilterCandidates(len(s.program.SharedLookup))
@@ -55,22 +67,33 @@ func (s *Scanner) preparePatternScan(ctx context.Context, data []byte) (bool, er
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
-	s.extractGlobalMatchesInt(data, s.globalMatches, &s.nonTextCache)
+	if err := s.extractGlobalMatchesInt(ctx, data); err != nil {
+		return false, err
+	}
 	return true, nil
 }
 
-func (s *Scanner) populateRuleMatchContext(rule *CompiledRule, data []byte, useSharedAutomaton bool) {
-	s.matchCtx.Reset(data)
+func (s *Scanner) populateRuleMatchContext(
+	ctx context.Context,
+	rule *CompiledRule,
+	input ruleScanInput,
+) error {
+	s.matchCtx.Reset(input.data)
+	s.matchCtx.cancelDone = ctx.Done()
 	s.matchCtx.maxMatchesPerPattern = 0
 	if s.fastScan && rule.FastScanSafe {
 		s.matchCtx.maxMatchesPerPattern = 1
 	}
-	if useSharedAutomaton {
-		s.addStaticMatchesInt(rule, data, s.globalMatches[rule.Index])
+	if input.useSharedAutomaton {
+		if err := s.addStaticMatchesInt(ctx, rule, input.data, s.globalMatches[rule.Index]); err != nil {
+			return err
+		}
 	} else {
-		s.addLocalTextMatches(rule, data)
+		if err := s.addLocalTextMatches(ctx, rule, input.data); err != nil {
+			return err
+		}
 	}
-	s.addLocalNonTextMatches(rule, data, &s.nonTextCache)
+	return s.addLocalNonTextMatches(ctx, rule, input.data, &s.nonTextCache)
 }
 
 func (s *Scanner) allEvaluatedRulesPrefilterRejected(data []byte, useSharedAutomaton bool) bool {

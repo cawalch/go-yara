@@ -389,6 +389,42 @@ func (cursor *rootCandidateCursor) next(data []byte, from int) int {
 	return best
 }
 
+func (cursor *rootCandidateCursor) nextWithCancel(data []byte, from int, done <-chan struct{}) int {
+	best := -1
+	for index, value := range cursor.values {
+		position := cursor.positions[index]
+		if position == rootCandidateExhausted {
+			continue
+		}
+		if position < from {
+			position = indexByteWithCancel(data, from, value, done)
+			if position < 0 {
+				cursor.positions[index] = rootCandidateExhausted
+				continue
+			}
+			cursor.positions[index] = position
+		}
+		if best < 0 || position < best {
+			best = position
+		}
+	}
+	return best
+}
+
+//nolint:revive // cancellation-aware hot path avoids an options allocation
+func indexByteWithCancel(data []byte, from int, value byte, done <-chan struct{}) int {
+	for windowStart := from; windowStart < len(data); windowStart += cancelableSearchWindow {
+		if scanCanceled(done) {
+			return -1
+		}
+		windowEnd := min(windowStart+cancelableSearchWindow, len(data))
+		if relative := bytes.IndexByte(data[windowStart:windowEnd], value); relative >= 0 {
+			return windowStart + relative
+		}
+	}
+	return -1
+}
+
 func (ac *ACAutomaton) yieldMatches(state int32, offset int, yield func(ACMatch) bool) bool {
 	outputStart := ac.states[state].outputStart
 	outputEnd := ac.states[state].outputEnd
@@ -481,6 +517,148 @@ func (ac *ACAutomaton) searchSinglePattern(data []byte, yield func(ACMatch) bool
 		}
 		pos = start + 1
 	}
+}
+
+func (ac *ACAutomaton) searchSinglePatternWithCancel(
+	data []byte,
+	yield func(ACMatch) bool,
+	done <-chan struct{},
+) {
+	info := ac.strings[0]
+	noCase := info.Flags&regex.FlagsNoCase != 0
+	for pos := 0; pos <= len(data)-len(info.Data); {
+		rel := indexSinglePatternWithCancel(data[pos:], info.Data, noCase, done)
+		if rel < 0 {
+			return
+		}
+		start := pos + rel
+		if !yield(ACMatch{
+			StringIndex: 0,
+			StringID:    info.Identifier,
+			Backtrack:   start,
+		}) {
+			return
+		}
+		pos = start + 1
+	}
+}
+
+//nolint:revive // cancellation-aware hot path avoids an options allocation
+func indexSinglePatternWithCancel(data, pattern []byte, noCase bool, done <-chan struct{}) int {
+	if len(pattern) == 0 || len(pattern) > len(data) {
+		return -1
+	}
+	lastStart := len(data) - len(pattern)
+	for windowStart := 0; windowStart <= lastStart; windowStart += cancelableSearchWindow {
+		if scanCanceled(done) {
+			return -1
+		}
+		windowEnd := min(windowStart+cancelableSearchWindow, lastStart+1)
+		searchEnd := windowEnd + len(pattern) - 1
+		if relative := indexSinglePattern(data[windowStart:searchEnd], pattern, noCase); relative >= 0 {
+			return windowStart + relative
+		}
+	}
+	return -1
+}
+
+// searchIterWithCancel is the context-aware counterpart to SearchIter. The
+// ordinary iterator remains a separate hot path so Scan pays no cancellation
+// polling cost.
+//
+//nolint:nestif // mirrors SearchIter with bounded cancellation checkpoints
+func (ac *ACAutomaton) searchIterWithCancel(data []byte, done <-chan struct{}) iter.Seq[ACMatch] {
+	return func(yield func(ACMatch) bool) {
+		if !ac.compiled || len(data) == 0 || scanCanceled(done) {
+			return
+		}
+		if len(ac.strings) == 1 {
+			info := ac.strings[0]
+			if len(info.Data) > 0 {
+				noCase := info.Flags&regex.FlagsNoCase != 0
+				if !singlePatternIsDense(data, info.Data, noCase) {
+					ac.searchSinglePatternWithCancel(data, yield, done)
+					return
+				}
+			}
+		}
+
+		currentState := int32(0)
+		rootHasNoOutput := ac.states[0].outputStart == ac.states[0].outputEnd
+		if rootHasNoOutput && len(data) >= 256 && len(ac.rootBytes) > 0 && len(ac.rootBytes) <= maxSparseRootTransitions {
+			rootCursor := newRootCandidateCursor(ac.rootBytes)
+			for i := 0; i < len(data); i++ {
+				if i&(scanCancellationInterval-1) == 0 && scanCanceled(done) {
+					return
+				}
+				if currentState == 0 && len(data)-i >= 256 {
+					candidate := rootCursor.nextWithCancel(data, i, done)
+					if candidate < 0 {
+						return
+					}
+					i = candidate
+				}
+				currentState = ac.findNextState(currentState, data[i])
+				if ac.states[currentState].outputStart != ac.states[currentState].outputEnd &&
+					!ac.yieldMatchesWithCancel(currentState, i, yield, done) {
+					return
+				}
+			}
+			return
+		}
+
+		rootTransitions := &ac.states[0].transitions
+		for blockStart := 0; blockStart < len(data); blockStart += scanCancellationInterval {
+			if scanCanceled(done) {
+				return
+			}
+			blockEnd := min(blockStart+scanCancellationInterval, len(data))
+			for relative, b := range data[blockStart:blockEnd] {
+				if currentState == 0 {
+					currentState = rootTransitions[b]
+					if currentState == 0 {
+						continue
+					}
+				} else {
+					currentState = ac.findNextState(currentState, b)
+				}
+				if ac.states[currentState].outputStart != ac.states[currentState].outputEnd &&
+					!ac.yieldMatchesWithCancel(currentState, blockStart+relative, yield, done) {
+					return
+				}
+			}
+		}
+	}
+}
+
+//nolint:revive // iterator callback and cancellation signal stay on the hot path
+func (ac *ACAutomaton) yieldMatchesWithCancel(
+	state int32,
+	offset int,
+	yield func(ACMatch) bool,
+	done <-chan struct{},
+) bool {
+	outputStart := ac.states[state].outputStart
+	outputEnd := ac.states[state].outputEnd
+	for idx := outputStart; idx < outputEnd; idx++ {
+		relative := int(idx - outputStart)
+		if relative > 0 && relative&(scanCancellationInterval-1) == 0 && scanCanceled(done) {
+			return false
+		}
+		stringIndex := ac.outputs[idx]
+		if stringIndex < 0 || int(stringIndex) >= len(ac.strings) {
+			continue
+		}
+		stringInfo := ac.strings[stringIndex]
+		if !yield(ACMatch{
+			StringIndex: int(stringIndex),
+			StringID:    stringInfo.Identifier,
+			Backtrack:   offset + 1 - stringInfo.Length,
+		}) {
+			return false
+		}
+	}
+	return true
 }
 
 // SearchIter performs optimized pattern matching without allocating a slice, yielding matches via an iterator
