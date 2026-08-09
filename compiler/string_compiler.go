@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf16"
@@ -974,74 +975,22 @@ func validateXorRange(min, max int64) error {
 	return nil
 }
 
-// OptimizePattern optimizes a pattern for better matching performance
-func (sc *StringCompiler) OptimizePattern(pattern []byte, modifiers []ast.StringModifier) []byte {
-	// Apply various optimizations:
-	// 1. Remove redundant bytes
-	// 2. Optimize for alignment
-	// 3. Apply modifier-specific optimizations
-
-	optimized := make([]byte, len(pattern))
-	copy(optimized, pattern)
-
-	// Check for wide modifier
-	isWide := false
-	for _, mod := range modifiers {
-		if mod.Type == ast.StringModifierWide {
-			isWide = true
-			break
-		}
-	}
-
-	if isWide {
-		// Optimize UTF-16 pattern
-		optimized = sc.optimizeWidePattern(optimized)
-	} else {
-		// Optimize ASCII pattern
-		optimized = sc.optimizeASCIIPattern(optimized)
-	}
-
-	return optimized
+// OptimizePattern returns an owned copy of an exact text pattern. Repeated
+// bytes and UTF-16 NUL code units are significant input, not redundant
+// representation, so an optimization must never remove them.
+func (sc *StringCompiler) OptimizePattern(pattern []byte, _ []ast.StringModifier) []byte {
+	return slices.Clone(pattern)
 }
 
-// optimizeWidePattern optimizes a UTF-16 encoded pattern
+// optimizeWidePattern preserves every UTF-16 code unit. It remains separate
+// for callers that select an encoding-specific path, but cannot remove bytes.
 func (sc *StringCompiler) optimizeWidePattern(pattern []byte) []byte {
-	if len(pattern)%2 != 0 {
-		return pattern // Invalid wide string
-	}
-
-	// Remove null bytes that don't contribute to matching
-	optimized := make([]byte, 0, len(pattern))
-	for i := 0; i < len(pattern); i += 2 {
-		// Keep non-null UTF-16 characters
-		if pattern[i] != 0 || pattern[i+1] != 0 {
-			optimized = append(optimized, pattern[i], pattern[i+1])
-		}
-	}
-
-	return optimized
+	return slices.Clone(pattern)
 }
 
-// optimizeASCIIPattern optimizes an ASCII pattern
+// optimizeASCIIPattern preserves repeated bytes, which are part of the literal.
 func (sc *StringCompiler) optimizeASCIIPattern(pattern []byte) []byte {
-	// Remove redundant sequences
-	// This is a simplified optimization - real implementation would be more sophisticated
-
-	optimized := make([]byte, 0, len(pattern))
-
-	for i := 0; i < len(pattern); {
-		// Skip consecutive identical bytes (simple run-length optimization)
-		if i < len(pattern)-2 && pattern[i] == pattern[i+1] && pattern[i] == pattern[i+2] {
-			// Found a run of 3+ identical bytes, optimize it
-			optimized = append(optimized, pattern[i])
-			i += 3
-		} else {
-			optimized = append(optimized, pattern[i])
-			i++
-		}
-	}
-
-	return optimized
+	return slices.Clone(pattern)
 }
 
 // Debug printing functions
