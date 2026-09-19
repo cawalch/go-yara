@@ -73,6 +73,11 @@ func (tc *TypeChecker) checkExpression(expr ast.Expression) *TypeInfo {
 
 	case *ast.ForLoop:
 		return tc.checkForLoop(e)
+	case *ast.PercentExpression:
+		if tc.checkExpression(e.Value).DataType != TypeInteger {
+			tc.addError(errors.New("percentage must be an integer"))
+		}
+		return &TypeInfo{DataType: TypeInteger}
 
 	default:
 		// For unimplemented expression types, return unknown
@@ -213,7 +218,8 @@ func (tc *TypeChecker) checkFunctionCall(funcCall *ast.FunctionCall) *TypeInfo {
 	}
 
 	// YARA has several built-in functions with known return types
-	switch funcCall.Function {
+	function := strings.ToLower(funcCall.Function)
+	switch function {
 	case "filesize":
 		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
 	case "entrypoint", "offset", "read":
@@ -229,14 +235,17 @@ func (tc *TypeChecker) checkFunctionCall(funcCall *ast.FunctionCall) *TypeInfo {
 		"int8", "int16", "int32", "int64",
 		"uint8be", "uint16be", "uint32be", "uint64be",
 		"int8be", "int16be", "int32be", "int64be":
-		returnType, err := GetIntegerTypeFromFunction(funcCall.Function)
+		returnType, err := GetIntegerTypeFromFunction(function)
 		if err != nil {
 			// This should not happen if the function name is valid
 			return &TypeInfo{DataType: TypeUnknown}
 		}
 		return &TypeInfo{DataType: TypeInteger, IntegerType: returnType}
 	default:
-		tc.addError(&Error{Message: "unknown function: " + funcCall.Function, Position: funcCall.Pos})
+		// Module signatures are owned by Validator; this checker has no registry.
+		if _, moduleCall := moduleNameFromDottedName(funcCall.Function); !moduleCall {
+			tc.addError(&Error{Message: "unknown function: " + funcCall.Function, Position: funcCall.Pos})
+		}
 		return &TypeInfo{DataType: TypeUnknown}
 	}
 }
