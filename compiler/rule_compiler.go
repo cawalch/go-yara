@@ -1369,6 +1369,7 @@ type CompiledProgram struct {
 	fixedRegexScan          *fixedRegexDispatch
 	dependencies            map[string][]string
 	preparationErr          error
+	compactPrefilter        *ACAutomaton
 
 	// Streaming support
 	streamingProcessor *StreamingProcessor
@@ -1437,7 +1438,8 @@ func (cp *CompiledProgram) prepare() error {
 	}
 	cp.sharedNonTextCaches = sharedNonTextCacheCoverage(cp.nonTextCacheSize, cp.SharedLookup)
 	cp.sharedNonTextCacheRules = sharedNonTextCacheRuleLookup(cp.Rules, cp.sharedNonTextCaches)
-	return nil
+	cp.compactPrefilter, err = cp.buildCompactPrefilter()
+	return err
 }
 
 // RuleDependencies returns the direct rule references made by name. The
