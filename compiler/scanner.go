@@ -195,7 +195,7 @@ func WithExternalVariables(vars map[string]any) ScannerOption {
 // NewScanner creates a new Scanner for the given compiled program.
 func NewScanner(program *CompiledProgram, opts ...ScannerOption) *Scanner {
 	interp := acquireScannerInterpreter()
-	if program != nil {
+	if program != nil && program.preparationErr == nil {
 		// CompiledProgram owns this slice for the scanner's lifetime, so avoid
 		// the public API's defensive copy on scanner construction.
 		interp.setCompiledRules(program.Rules)
@@ -222,7 +222,7 @@ func NewScanner(program *CompiledProgram, opts ...ScannerOption) *Scanner {
 }
 
 func (s *Scanner) computeAllEvaluatedRulesRequireSharedPatterns() bool {
-	if s == nil || s.program == nil {
+	if s == nil || s.program == nil || s.program.preparationErr != nil {
 		return false
 	}
 	for _, rule := range s.program.Rules {
@@ -494,8 +494,15 @@ func (cache *nonTextMatchCache) set(index int, matches []matchSpan) {
 	cache.ready[index] = true
 }
 
+func (s *Scanner) scanError() error {
+	if s.program.preparationErr != nil {
+		return s.program.preparationErr
+	}
+	return s.externalErr
+}
+
 func (s *Scanner) selectEvaluatedRules() {
-	if s.program == nil || len(s.tagsFilter) == 0 {
+	if s.program == nil || s.program.preparationErr != nil || len(s.tagsFilter) == 0 {
 		return
 	}
 	s.evaluatedRules = make(map[string]bool)
@@ -557,8 +564,8 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 	if s == nil || s.program == nil {
 		return result, nil
 	}
-	if s.externalErr != nil {
-		return nil, s.externalErr
+	if err := s.scanError(); err != nil {
+		return nil, err
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -730,8 +737,8 @@ func (s *Scanner) MatchesWithContext(ctx context.Context, data []byte) (bool, er
 	if s == nil || s.program == nil {
 		return false, nil
 	}
-	if s.externalErr != nil {
-		return false, s.externalErr
+	if err := s.scanError(); err != nil {
+		return false, err
 	}
 	if err := ctx.Err(); err != nil {
 		return false, err
@@ -762,8 +769,8 @@ func (s *Scanner) MatchingRulesWithContext(ctx context.Context, data []byte) ([]
 	if s == nil || s.program == nil {
 		return nil, nil
 	}
-	if s.externalErr != nil {
-		return nil, s.externalErr
+	if err := s.scanError(); err != nil {
+		return nil, err
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -812,8 +819,8 @@ func (s *Scanner) MatchingRulesInBlockWithContext(
 	if s == nil || s.program == nil {
 		return nil, nil
 	}
-	if s.externalErr != nil {
-		return nil, s.externalErr
+	if err := s.scanError(); err != nil {
+		return nil, err
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -1610,6 +1617,9 @@ func (v externalValue) toInterpreterValue(interp *Interpreter) Value {
 }
 
 func normalizeExternalVariables(program *CompiledProgram, vars map[string]any) (map[string]externalValue, error) {
+	if program != nil && program.preparationErr != nil {
+		return nil, program.preparationErr
+	}
 	if len(vars) == 0 {
 		return nil, nil
 	}

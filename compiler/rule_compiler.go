@@ -11,6 +11,7 @@ import (
 
 	"github.com/cawalch/go-yara/ast"
 	"github.com/cawalch/go-yara/regex"
+	"github.com/cawalch/go-yara/semantic"
 	"github.com/cawalch/go-yara/token"
 )
 
@@ -774,11 +775,13 @@ func (rc *RuleCompiler) CompileProgram(program *ast.Program) ([]*CompiledRule, e
 	// Set the rule index map in the condition compiler
 	rc.conditionCompiler.setRuleIndexMap(ruleIndexMap)
 
+	dependencies := semantic.RuleDependencies(program)
 	for _, rule := range program.Rules {
 		compiledRule, err := rc.CompileRule(rule)
 		if err != nil {
 			return nil, &RuleCompileError{Rule: rule.Name, Err: err}
 		}
+		compiledRule.dependencies = slices.Clone(dependencies[rule.Name])
 		compiledRules = append(compiledRules, compiledRule)
 	}
 
@@ -1134,6 +1137,7 @@ type CompiledRule struct {
 	// assignNonTextCacheIndices, immutable afterwards, so it is safe to share
 	// across concurrent scanners alongside the rest of the program.
 	prefilterStrings []prefilterStringInfo
+	dependencies     []string
 
 	// Rule metadata (from AST)
 	Tags      []string       // Rule tags (e.g., {"malware", "trojan"})
@@ -1354,19 +1358,71 @@ type CompiledProgram struct {
 	sharedNonTextCacheRules [][]int
 	fixedRegexScan          *fixedRegexDispatch
 	dependencies            map[string][]string
+	preparationErr          error
 
 	// Streaming support
 	streamingProcessor *StreamingProcessor
 	enableStreaming    bool
 }
 
-// NewCompiledProgram creates a new compiled program
+// NewCompiledProgram prepares compiled rules for scanning. Preparation errors
+// are returned by Validate and scan methods. Input rules remain borrowed and
+// immutable; derived per-program caches are owned by the returned program.
 func NewCompiledProgram(rules []*CompiledRule) *CompiledProgram {
-	return &CompiledProgram{
-		Rules:           rules,
-		Stats:           make(map[string]any),
-		enableStreaming: false, // Disabled by default for backward compatibility
+	owned := make([]*CompiledRule, len(rules))
+	for index, rule := range rules {
+		if rule == nil {
+			continue
+		}
+		copyRule := *rule
+		copyRule.RegexPatterns = maps.Clone(rule.RegexPatterns)
+		copyRule.HexPatterns = make(map[string]*HexPattern, len(rule.HexPatterns))
+		for id, pattern := range rule.HexPatterns {
+			if pattern != nil {
+				copyPattern := *pattern
+				copyRule.HexPatterns[id] = &copyPattern
+			}
+		}
+		owned[index] = &copyRule
 	}
+	return newCompiledProgram(owned)
+}
+
+func newCompiledProgram(rules []*CompiledRule) *CompiledProgram {
+	program := &CompiledProgram{Rules: rules, Stats: make(map[string]any)}
+	program.preparationErr = program.prepare()
+	return program
+}
+
+func (cp *CompiledProgram) prepare() error {
+	if err := cp.Validate(); err != nil {
+		return err
+	}
+	cp.dependencies = make(map[string][]string, len(cp.Rules))
+	for index, rule := range cp.Rules {
+		if rule.Name == "" {
+			return fmt.Errorf("rule %d has empty rule name", index)
+		}
+		if _, duplicate := cp.dependencies[rule.Name]; duplicate {
+			return fmt.Errorf("duplicate rule name %q", rule.Name)
+		}
+		if rule.Index != index {
+			return fmt.Errorf("rule %q index %d does not match position %d", rule.Name, rule.Index, index)
+		}
+		rule.BuildStringIndex()
+		cp.dependencies[rule.Name] = slices.Clone(rule.dependencies)
+		slices.Sort(cp.dependencies[rule.Name])
+	}
+	cp.nonTextCacheSize = assignNonTextCacheIndices(cp.Rules)
+	cp.fixedRegexScan = buildFixedRegexDispatch(cp.Rules)
+	var err error
+	cp.SharedAutomaton, cp.SharedLookup, err = buildSharedPatternAutomaton(cp.Rules)
+	if err != nil {
+		return err
+	}
+	cp.sharedNonTextCaches = sharedNonTextCacheCoverage(cp.nonTextCacheSize, cp.SharedLookup)
+	cp.sharedNonTextCacheRules = sharedNonTextCacheRuleLookup(cp.Rules, cp.sharedNonTextCaches)
+	return nil
 }
 
 // RuleDependencies returns the direct rule references made by name. The
@@ -1448,7 +1504,13 @@ func (cp *CompiledProgram) GetTotalMemoryUsage() int {
 
 // Validate validates all compiled rules
 func (cp *CompiledProgram) Validate() error {
+	if cp.preparationErr != nil {
+		return cp.preparationErr
+	}
 	for i, rule := range cp.Rules {
+		if rule == nil {
+			return fmt.Errorf("rule %d is nil", i)
+		}
 		if err := rule.Validate(); err != nil {
 			return fmt.Errorf("validating rule %d (%s): %w", i, rule.Name, err)
 		}
