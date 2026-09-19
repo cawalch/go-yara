@@ -128,7 +128,7 @@ func TestRequiredStringsGateWorkBound(t *testing.T) {
 	scanner := program.NewScanner()
 	defer scanner.Close()
 	data := []byte(strings.Repeat("alpha ", 256))
-	if shared, err := scanner.preparePatternScan(context.Background(), data); err != nil || !shared {
+	if shared, err := scanner.preparePatternScan(context.Background(), data, false); err != nil || !shared {
 		t.Fatalf("shared=%v error=%v", shared, err)
 	}
 	if scanner.missingRequiredString(program.Rules[0]) {

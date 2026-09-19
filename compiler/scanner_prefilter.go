@@ -71,7 +71,8 @@ func (s *Scanner) ruleHeaderConstraintsMatchInput(ctx context.Context, rule *Com
 	})
 }
 
-func (s *Scanner) preparePatternScan(ctx context.Context, data []byte) (bool, error) {
+func (s *Scanner) preparePatternScan(ctx context.Context, data []byte, compact bool) (bool, error) {
+	s.compactCandidates = compact && !s.prefilterDisabled
 	s.sharedNonTextMatched = false
 	s.nonTextCache.reset(s.program.nonTextCacheSize)
 	if err := s.populateFixedRegexCache(ctx, data, &s.nonTextCache); err != nil {

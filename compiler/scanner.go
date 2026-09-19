@@ -62,6 +62,7 @@ type Scanner struct {
 	// condition evaluation.
 	candidateRuleIndices []int
 	candidateRuleSeen    []bool
+	compactCandidates    bool
 	// Public rules whose conditions matched during the current compact scan.
 	// The indices are retained across calls; returned RuleMatch values are owned.
 	matchedRuleIndices []int
@@ -232,14 +233,14 @@ func (s *Scanner) computeAllEvaluatedRulesRequireSharedPatterns() bool {
 		if rule.IsGlobal {
 			s.evaluatedGlobalRules = append(s.evaluatedGlobalRules, rule.Index)
 		}
-		if !s.ruleHasCompleteSharedPrefilter(rule) {
+		if !s.program.ruleHasCompleteSharedPrefilter(rule) {
 			s.alwaysEvaluateSharedRules = append(s.alwaysEvaluateSharedRules, rule.Index)
 		}
 	}
 	return len(s.alwaysEvaluateSharedRules) == 0
 }
 
-func (s *Scanner) ruleHasCompleteSharedPrefilter(rule *CompiledRule) bool {
+func (cp *CompiledProgram) ruleHasCompleteSharedPrefilter(rule *CompiledRule) bool {
 	if !rule.RequiresStringMatch || len(rule.prefilterStrings) == 0 {
 		return false
 	}
@@ -247,8 +248,8 @@ func (s *Scanner) ruleHasCompleteSharedPrefilter(rule *CompiledRule) bool {
 		switch info.class {
 		case prefilterStringText:
 		case prefilterStringNonText:
-			if info.cacheIndex < 0 || info.cacheIndex >= len(s.program.sharedNonTextCaches) ||
-				!s.program.sharedNonTextCaches[info.cacheIndex] {
+			if info.cacheIndex < 0 || info.cacheIndex >= len(cp.sharedNonTextCaches) ||
+				!cp.sharedNonTextCaches[info.cacheIndex] {
 				return false
 			}
 		default:
@@ -299,10 +300,14 @@ func (s *Scanner) markCandidateRule(index int) {
 }
 
 func (s *Scanner) markNonTextCacheRules(cacheIndex int) {
-	if cacheIndex < 0 || cacheIndex >= len(s.program.sharedNonTextCacheRules) {
+	lookup := s.program.sharedNonTextCacheRules
+	if s.compactCandidates {
+		lookup = s.program.compactNonTextCacheRules
+	}
+	if cacheIndex < 0 || cacheIndex >= len(lookup) {
 		return
 	}
-	for _, ruleIndex := range s.program.sharedNonTextCacheRules[cacheIndex] {
+	for _, ruleIndex := range lookup[cacheIndex] {
 		s.markCandidateRule(ruleIndex)
 	}
 }
@@ -551,7 +556,7 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 		return nil, err
 	}
 
-	useSharedAutomaton, err := s.preparePatternScan(ctx, data)
+	useSharedAutomaton, err := s.preparePatternScan(ctx, data, s.reportedMatchesOnly)
 	if err != nil {
 		return nil, err
 	}
@@ -865,7 +870,7 @@ func (s *Scanner) evaluatePublicRules(
 	data []byte,
 	matchedRuleIndices *[]int,
 ) (publicRuleEvaluation, error) {
-	useSharedAutomaton, err := s.preparePatternScan(ctx, data)
+	useSharedAutomaton, err := s.preparePatternScan(ctx, data, true)
 	if err != nil {
 		return publicRuleEvaluation{}, err
 	}
@@ -1186,7 +1191,9 @@ func (s *Scanner) extractGlobalMatchesInt(
 				s.touchedGlobalMatches = append(s.touchedGlobalMatches, entry.RuleIndex)
 			}
 			globalByRule[entry.RuleIndex] = append(globalByRule[entry.RuleIndex], globalEntry)
-			s.markCandidateRule(entry.RuleIndex)
+			if !s.compactCandidates || !entry.skipCompactCandidate {
+				s.markCandidateRule(entry.RuleIndex)
+			}
 		}
 	} else {
 		for match := range s.program.SharedAutomaton.searchIterWithCancel(data, ctx.Done()) {
@@ -1246,7 +1253,9 @@ func (s *Scanner) extractGlobalMatchesInt(
 				s.touchedGlobalMatches = append(s.touchedGlobalMatches, entry.RuleIndex)
 			}
 			globalByRule[entry.RuleIndex] = append(globalByRule[entry.RuleIndex], globalEntry)
-			s.markCandidateRule(entry.RuleIndex)
+			if !s.compactCandidates || !entry.skipCompactCandidate {
+				s.markCandidateRule(entry.RuleIndex)
+			}
 		}
 	}
 	if err := ctx.Err(); err != nil {

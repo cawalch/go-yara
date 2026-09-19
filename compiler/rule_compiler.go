@@ -1341,11 +1341,12 @@ type SharedAutomatonEntry struct {
 	// AtomMaxOffset is the maximum number of bytes before a regex atom. It is
 	// -1 for an atom after an unbounded prefix and equals AtomOffset for
 	// fixed-offset regex and hex atoms.
-	AtomMaxOffset   int
-	alternativeAtom bool
-	forceShared     bool
-	IsWide          bool
-	CacheIndex      int
+	AtomMaxOffset        int
+	alternativeAtom      bool
+	forceShared          bool
+	skipCompactCandidate bool
+	IsWide               bool
+	CacheIndex           int
 }
 
 type CompiledProgram struct {
@@ -1365,10 +1366,11 @@ type CompiledProgram struct {
 	sharedNonTextCaches []bool
 	// sharedNonTextCacheRules routes one verified cache slot to every rule that
 	// references the deduplicated pattern.
-	sharedNonTextCacheRules [][]int
-	fixedRegexScan          *fixedRegexDispatch
-	dependencies            map[string][]string
-	preparationErr          error
+	sharedNonTextCacheRules  [][]int
+	compactNonTextCacheRules [][]int
+	fixedRegexScan           *fixedRegexDispatch
+	dependencies             map[string][]string
+	preparationErr           error
 
 	// Streaming support
 	streamingProcessor *StreamingProcessor
@@ -1437,6 +1439,7 @@ func (cp *CompiledProgram) prepare() error {
 	}
 	cp.sharedNonTextCaches = sharedNonTextCacheCoverage(cp.nonTextCacheSize, cp.SharedLookup)
 	cp.sharedNonTextCacheRules = sharedNonTextCacheRuleLookup(cp.Rules, cp.sharedNonTextCaches)
+	cp.buildRequiredAnchorRoutes()
 	return nil
 }
 
