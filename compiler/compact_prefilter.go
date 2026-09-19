@@ -106,7 +106,8 @@ func (cp *CompiledProgram) buildCompactPrefilter() (*ACAutomaton, error) {
 
 func (s *Scanner) compactPrefilterRejects(ctx context.Context, data []byte) bool {
 	gate := s.program.compactPrefilter
-	if gate == nil || s.prefilterDisabled {
+	// Large positive records would pay for two full passes.
+	if gate == nil || s.prefilterDisabled || len(data) > 1024 {
 		return false
 	}
 	if done := ctx.Done(); done != nil {
