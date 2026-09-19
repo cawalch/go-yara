@@ -21,7 +21,7 @@ func (i *Interpreter) executeAndOperation() error {
 			return 1
 		}
 		return 0
-	}, nil)
+	})
 }
 
 // executeOrOperation handles OR logical operation.
@@ -32,7 +32,7 @@ func (i *Interpreter) executeOrOperation() error {
 			return 1
 		}
 		return 0
-	}, nil)
+	})
 }
 
 // executeNotOperation handles NOT logical operation.
