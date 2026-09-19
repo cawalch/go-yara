@@ -226,11 +226,23 @@ func ReadCompiledProgram(reader io.Reader, modules ...Module) (*CompiledProgram,
 		return nil, fmt.Errorf("unsupported compiled program version %d; rebuild with format version %d", version, compiledProgramVersion)
 	}
 
+	if _, ok := reader.(io.ByteReader); !ok {
+		reader = compiledProgramReader{reader}
+	}
 	var payload serializedProgram
 	if err := gob.NewDecoder(reader).Decode(&payload); err != nil {
 		return nil, fmt.Errorf("decoding compiled program: %w", err)
 	}
 	return deserializeProgram(payload, modules)
+}
+
+// ReadByte prevents gob from buffering bytes belonging to the next artifact.
+type compiledProgramReader struct{ io.Reader }
+
+func (reader compiledProgramReader) ReadByte() (byte, error) {
+	var data [1]byte
+	_, err := io.ReadFull(reader.Reader, data[:])
+	return data[0], err
 }
 
 func serializeProgram(cp *CompiledProgram) (serializedProgram, error) {

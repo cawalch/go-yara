@@ -3,6 +3,9 @@ package compiler
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/gob"
+	"fmt"
+	"io"
 	"reflect"
 	"strings"
 	"testing"
@@ -264,5 +267,70 @@ func testSerializationModule() Module {
 				},
 			},
 		},
+	}
+}
+
+func TestCompiledProgramRejectsInvalidVariableSlots(t *testing.T) {
+	for _, kind := range []string{"external", "global"} {
+		for _, slot := range []int{-1, 0, interpreterMemorySlotCount - 1, interpreterMemorySlotCount} {
+			t.Run(fmt.Sprintf("%s/%d", kind, slot), func(t *testing.T) {
+				rule := &CompiledRule{Name: "test", Bytecode: []byte{byte(OpPush8), 1, byte(OpHalt)}}
+				if kind == "external" {
+					rule.ExternalSlots = map[string]int{"value": slot}
+				} else {
+					rule.GlobalSlots = map[string]int{"value": slot}
+				}
+				program := NewCompiledProgram([]*CompiledRule{rule})
+				invalid := slot < 0 || slot >= interpreterMemorySlotCount
+				if err := program.Validate(); (err != nil) != invalid {
+					t.Fatalf("Validate() = %v, invalid=%v", err, invalid)
+				}
+				if _, err := program.Scan(nil); (err != nil) != invalid {
+					t.Fatalf("Scan() = %v, invalid=%v", err, invalid)
+				}
+				payload, err := serializeProgram(program)
+				if err != nil {
+					t.Fatal(err)
+				}
+				encoded := bytes.NewBufferString(compiledProgramMagic)
+				if err := binary.Write(encoded, binary.BigEndian, compiledProgramVersion); err != nil {
+					t.Fatal(err)
+				}
+				if err := gob.NewEncoder(encoded).Encode(payload); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := UnmarshalCompiledProgram(encoded.Bytes()); (err != nil) != invalid {
+					t.Fatalf("UnmarshalCompiledProgram() = %v, invalid=%v", err, invalid)
+				}
+			})
+		}
+	}
+}
+
+func TestReadCompiledProgramPreservesReaderPosition(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`rule test { condition: true }`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, generic := range []bool{false, true} {
+		var encoded bytes.Buffer
+		for range 2 {
+			if _, err := program.WriteTo(&encoded); err != nil {
+				t.Fatal(err)
+			}
+		}
+		encoded.WriteString("sentinel")
+		var reader io.Reader = &encoded
+		if generic {
+			reader = struct{ io.Reader }{reader}
+		}
+		for range 2 {
+			if _, err := ReadCompiledProgram(reader); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if encoded.String() != "sentinel" {
+			t.Fatalf("trailing bytes = %q, want sentinel", encoded.String())
+		}
 	}
 }
