@@ -19,6 +19,8 @@ func TestMatchesOperandKinds(t *testing.T) {
 		{`for any value in ($a) : (value matches /needle/)`, "needle", true},
 		{`for any value in ($a) : (value matches /needle/)`, "", false},
 		{`$a matches /needle/`, "needle", true},
+		{`a matches /needle/`, "needle", true},
+		{`a matches /needle/`, "", false},
 		{`$a matches /needle/`, "", false},
 		{`for any of them : ($ matches /needle/)`, "needle", true},
 		{`for all of them : ($ matches /needle/)`, "needle other", false},
@@ -28,7 +30,7 @@ func TestMatchesOperandKinds(t *testing.T) {
 		t.Run(test.condition+"/"+test.data, func(t *testing.T) {
 			program, err := NewCompiler().CompileSource(`external marker
 			global constant = "$a"
-			rule r { strings: $a = "needle" $b = "other" condition: ` + test.condition + ` }`)
+			rule r { strings: $a = "needle" $b = "other" $marker = "other" $constant = "other" condition: ` + test.condition + ` }`)
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -249,15 +249,16 @@ func (cc *ConditionCompiler) compileMatchesOperand(expr ast.Expression) (Opcode,
 		}
 		return OpMatchesValue, nil
 	}
-	if !strings.HasPrefix(id.Name, "$") {
+	_, external := cc.externalVariables[id.Name]
+	_, global := cc.globalVariables[id.Name]
+	if external || global {
 		return OpMatchesValue, cc.compileExpression(expr)
 	}
-	offset, exists := cc.findStringOffset(id.Name)
-	if !exists {
-		return OpMatches, fmt.Errorf("undefined string identifier for MATCHES: %s", id.Name)
+	if offset, exists := cc.findStringOffset(id.Name); exists {
+		cc.emitStringIdentifier(offset, id.Name, id.Pos.Line, id.Pos.Column)
+		return OpMatches, nil
 	}
-	cc.emitStringIdentifier(offset, id.Name, id.Pos.Line, id.Pos.Column)
-	return OpMatches, nil
+	return OpMatchesValue, cc.compileExpression(expr)
 }
 
 // compileBinaryOp compiles a binary operation expression
