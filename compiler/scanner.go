@@ -558,8 +558,16 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 	scanInput := ruleScanInput{data: data, useSharedAutomaton: useSharedAutomaton}
 
 	clear(s.ruleResults)
+	allRejected := false
+	if !s.prefilterDisabled {
+		if useSharedAutomaton {
+			allRejected = len(s.candidateRuleIndices) == 0
+		} else {
+			allRejected = s.allEvaluatedRulesPrefilterRejected(ctx, data, false)
+		}
+	}
 	//nolint:nestif // cancellation and result materialization share the rejection boundary
-	if !s.prefilterDisabled && s.allEvaluatedRulesPrefilterRejected(ctx, data, useSharedAutomaton) {
+	if allRejected {
 		for _, rule := range s.program.Rules {
 			if err := ctx.Err(); err != nil {
 				return nil, err
@@ -587,7 +595,8 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 	// 1. Evaluate all rules to populate match context and rule results.
 	// 2. Build MatchedRules, skipping non-global rules if any global rule failed.
 
-	// Pass 1: evaluate every rule
+	// Pass 1: evaluate candidate rules and retain the full result map.
+	s.matchedRuleIndices = s.matchedRuleIndices[:0]
 	s.interp.ResetIterationCount()
 	for _, rule := range s.program.Rules {
 		if err := ctx.Err(); err != nil {
@@ -595,6 +604,13 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 		}
 		// Evaluation includes dependencies of selected and global rules.
 		if !s.shouldEvaluateRule(rule) {
+			continue
+		}
+		if useSharedAutomaton && !s.prefilterDisabled && !s.candidateRuleSeen[rule.Index] {
+			result.RuleResults[rule.Name] = false
+			if !s.ruleHeaderConstraintsMatchInput(ctx, rule, scanInput) {
+				result.PrunedRules = append(result.PrunedRules, rule.Name)
+			}
 			continue
 		}
 		evaluation, err := s.evaluateRuleCondition(ctx, rule, scanInput)
@@ -622,19 +638,27 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 			result.Matches[rule.Name] = ruleMatches
 		}
 		result.RuleResults[rule.Name] = evaluation.matched
+		if evaluation.matched {
+			s.matchedRuleIndices = append(s.matchedRuleIndices, rule.Index)
+		}
+	}
+
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 
 	// Check if all global rules matched
 	allGlobalMatched := true
-	for _, rule := range s.program.Rules {
-		if rule.IsGlobal && !result.RuleResults[rule.Name] {
+	for _, ruleIndex := range s.evaluatedGlobalRules {
+		if !result.RuleResults[s.program.Rules[ruleIndex].Name] {
 			allGlobalMatched = false
 			break
 		}
 	}
 
 	// Pass 2: build MatchedRules
-	for _, rule := range s.program.Rules {
+	for _, ruleIndex := range s.matchedRuleIndices {
+		rule := s.program.Rules[ruleIndex]
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
