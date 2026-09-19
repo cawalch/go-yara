@@ -111,6 +111,9 @@ func (s *Scanner) populateRuleMatchContext(
 	if s.blockScan {
 		base := s.blockContext[0].Base
 		for id, spans := range s.matchCtx.spans {
+			// Match BlockScanner's ordering and deduplication before indexed
+			// offset/length conditions run; mixed encodings arrive separately.
+			spans = sortAndDedupeMatchSpans(spans)
 			for index := range spans {
 				spans[index].Offset += base
 			}

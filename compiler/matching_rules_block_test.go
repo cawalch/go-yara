@@ -265,3 +265,40 @@ func BenchmarkHighEPSMatchingRulesInBlock(b *testing.B) {
 		highEPSRuleMatchesSink = matches
 	}
 }
+
+func TestMatchingRulesInBlockOrdersMixedEncodingOccurrences(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+rule ordered {
+    strings: $a = /ab/ ascii wide
+    condition:
+        #a == 2 and @a[1] == 100 and !a[1] == 2 and
+        @a[2] == 104 and !a[2] == 4
+}
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block := MemoryBlock{Base: 100, Data: []byte("ab--a\x00b\x00")}
+	for _, options := range [][]ScannerOption{nil, {WithFastScan()}} {
+		for _, disabled := range []bool{false, true} {
+			scanner := NewScanner(program, options...)
+			scanner.prefilterDisabled = disabled
+			defer scanner.Close()
+			oracle := NewBlockScanner(program, options...)
+			defer oracle.Close()
+			if err := oracle.Scan(block.Base, block.Data); err != nil {
+				t.Fatal(err)
+			}
+			want, err := oracle.Finish()
+			if err != nil || len(want.MatchedRules) != 1 {
+				t.Fatalf("Finish() = (%+v, %v), want ordered rule", want, err)
+			}
+			for range 3 {
+				got, err := scanner.MatchingRulesInBlock(block, 200)
+				if err != nil || !matchingRulesEqual(got, want.MatchedRules) {
+					t.Fatalf("MatchingRulesInBlock() = (%+v, %v), want %+v", got, err, want.MatchedRules)
+				}
+			}
+		}
+	}
+}

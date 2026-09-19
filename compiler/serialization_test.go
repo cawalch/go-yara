@@ -241,6 +241,12 @@ func TestCompiledProgramSerializationRejectsInvalidHeader(t *testing.T) {
 		t.Fatalf("v1 error = %v, want explicit rebuild requirement", err)
 	}
 
+	v2 := bytes.Clone(data)
+	binary.BigEndian.PutUint16(v2[len(compiledProgramMagic):], 2)
+	if _, err := UnmarshalCompiledProgram(v2); err == nil || !strings.Contains(err.Error(), "rebuild") {
+		t.Fatalf("v2 error = %v, want rebuild of cached fast-scan analysis", err)
+	}
+
 	if _, err := UnmarshalCompiledProgram(data[:len(data)-1]); err == nil {
 		t.Fatal("truncated compiled program unexpectedly loaded")
 	}

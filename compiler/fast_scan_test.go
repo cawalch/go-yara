@@ -170,3 +170,59 @@ rule in_range {
 		}
 	}
 }
+
+func TestFastScanPreservesMatchContentConditions(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+rule content {
+    strings: $a = /foo|bar/
+    condition: $a matches /bar/
+}
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob, err := program.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := UnmarshalCompiledProgram(blob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, candidate := range []*CompiledProgram{program, loaded} {
+		scanner := NewScanner(candidate, WithFastScan())
+		defer scanner.Close()
+		blocks := NewBlockScanner(candidate, WithFastScan())
+		defer blocks.Close()
+		for _, input := range []struct {
+			data string
+			want bool
+		}{{"foo bar", true}, {"foo", false}, {"bar foo", true}, {"foo bar", true}} {
+			data := []byte(input.data)
+			result, err := scanner.Scan(data)
+			if err != nil || result.RuleResults["content"] != input.want {
+				t.Fatalf("Scan(%q) = (%+v, %v), want matched=%v", data, result, err, input.want)
+			}
+			matched, err := scanner.Matches(data)
+			if err != nil || matched != input.want {
+				t.Fatalf("Matches(%q) = (%v, %v), want %v", data, matched, err, input.want)
+			}
+			matches, err := scanner.MatchingRules(data)
+			if err != nil || (len(matches) != 0) != input.want {
+				t.Fatalf("MatchingRules(%q) = (%+v, %v), want matched=%v", data, matches, err, input.want)
+			}
+			matches, err = scanner.MatchingRulesInBlock(MemoryBlock{Base: 100, Data: data}, 200)
+			if err != nil || (len(matches) != 0) != input.want {
+				t.Fatalf("MatchingRulesInBlock(%q) = (%+v, %v), want matched=%v", data, matches, err, input.want)
+			}
+			blocks.Reset()
+			if err := blocks.Scan(100, data); err != nil {
+				t.Fatal(err)
+			}
+			result, err = blocks.Finish()
+			if err != nil || result.RuleResults["content"] != input.want {
+				t.Fatalf("Finish(%q) = (%+v, %v), want matched=%v", data, result, err, input.want)
+			}
+		}
+	}
+}

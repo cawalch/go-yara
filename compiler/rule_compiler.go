@@ -178,7 +178,9 @@ func conditionObservesMatchOccurrences(expr ast.Expression) bool {
 	case *ast.StringCount, *ast.StringOffset, *ast.StringLength, *ast.LengthOf:
 		return true
 	case *ast.BinaryOp:
-		if e.Op == token.AT || e.Op == token.IN {
+		// MATCHES can inspect the content of every occurrence of a string.
+		// Keeping only the first occurrence can discard a later qualifying match.
+		if e.Op == token.AT || e.Op == token.IN || e.Op == token.MATCHES {
 			return true
 		}
 		return conditionObservesMatchOccurrences(e.Left) || conditionObservesMatchOccurrences(e.Right)
