@@ -555,7 +555,7 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 	if err != nil {
 		return nil, err
 	}
-	scanInput := ruleScanInput{data: data, useSharedAutomaton: useSharedAutomaton}
+	scanInput := ruleScanInput{data: data, useSharedAutomaton: useSharedAutomaton, skipUnmatchedContext: s.reportedMatchesOnly}
 
 	clear(s.ruleResults)
 	//nolint:nestif // cancellation and result materialization share the rejection boundary
@@ -846,7 +846,7 @@ func (s *Scanner) evaluatePublicRules(
 		return publicRuleEvaluation{}, err
 	}
 	result := publicRuleEvaluation{
-		scanInput:          ruleScanInput{data: data, useSharedAutomaton: useSharedAutomaton},
+		scanInput:          ruleScanInput{data: data, useSharedAutomaton: useSharedAutomaton, skipUnmatchedContext: true},
 		allGlobalMatched:   true,
 		matchedRuleIndices: matchedRuleIndices,
 	}

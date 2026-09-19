@@ -167,6 +167,7 @@ func (rc *RuleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 		ModuleFunctions:     maps.Clone(rc.moduleFunctions),
 		ModuleNames:         maps.Clone(rc.moduleNames),
 		HeaderConstraints:   deriveHeaderConstraints(rule.Condition),
+		requiredStrings:     deriveRequiredStrings(rule.Condition, rule.Strings),
 	}
 
 	rc.ruleIndex++
@@ -1138,6 +1139,7 @@ type CompiledRule struct {
 	// assignNonTextCacheIndices, immutable afterwards, so it is safe to share
 	// across concurrent scanners alongside the rest of the program.
 	prefilterStrings []prefilterStringInfo
+	requiredStrings  []string
 	dependencies     []string // nil means dependency metadata is unavailable
 
 	// Rule metadata (from AST)
@@ -1383,6 +1385,7 @@ func NewCompiledProgram(rules []*CompiledRule) *CompiledProgram {
 			continue
 		}
 		copyRule := *rule
+		copyRule.requiredStrings = slices.Clone(rule.requiredStrings)
 		copyRule.RegexPatterns = maps.Clone(rule.RegexPatterns)
 		copyRule.HexPatterns = make(map[string]*HexPattern, len(rule.HexPatterns))
 		for id, pattern := range rule.HexPatterns {
