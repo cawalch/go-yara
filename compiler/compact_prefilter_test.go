@@ -10,10 +10,19 @@ import (
 	"testing"
 )
 
+const compactPrefilterPadding = `
+rule padding0 { strings: $source="event" $rare="sentinel_0" condition: all of them }
+rule padding1 { strings: $source="event" $rare="sentinel_1" condition: all of them }
+rule padding2 { strings: $source="event" $rare="sentinel_2" condition: all of them }
+rule padding3 { strings: $source="event" $rare="sentinel_3" condition: all of them }
+rule padding4 { strings: $source="event" $rare="sentinel_4" condition: all of them }
+rule padding5 { strings: $source="event" $rare="sentinel_5" condition: all of them }
+`
+
 const compactPrefilterRules = `
 rule first { strings: $source="event" $rare="rare_one" fullword $value=/value=[0-9]{4}/ condition: $source and $rare }
 rule second { strings: $source="event" $rare="rare_two" condition: all of them }
-`
+` + compactPrefilterPadding
 
 //nolint:revive // parity inputs include scanner options
 func compactPrefilterParity(t *testing.T, program *CompiledProgram, inputs [][]byte, extra ...ScannerOption) {
@@ -92,7 +101,7 @@ func TestCompactPrefilterEncodedLiterals(t *testing.T) {
 	for _, modifier := range []string{"nocase ascii wide", "xor(1-2) ascii wide"} {
 		t.Run(modifier, func(t *testing.T) {
 			source := fmt.Sprintf(`rule a { strings: $source="event" $rare="rare_one" %s condition: all of them }
-rule b { strings: $source="event" $rare="rare_two" %s condition: all of them }`, modifier, modifier)
+rule b { strings: $source="event" $rare="rare_two" %s condition: all of them }`, modifier, modifier) + compactPrefilterPadding
 			program, err := NewCompiler().CompileSource(source)
 			if err != nil {
 				t.Fatal(err)
@@ -209,7 +218,8 @@ func TestCompactPrefilterMixedCaseTransitions(t *testing.T) {
 	program, err := NewCompiler().CompileSource(`
 rule a { strings: $common="A" nocase $rare="aX" condition: all of them }
 rule b { strings: $common="A" nocase $rare="Ay" condition: all of them }
-rule c { strings: $common="A" nocase $rare="az" nocase condition: all of them }`)
+rule c { strings: $common="A" nocase $rare="az" nocase condition: all of them }` +
+		strings.ReplaceAll(compactPrefilterPadding, `"event"`, `"A" nocase`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -265,7 +275,7 @@ private rule hidden { strings: $a="private" condition: $a }`
 func TestCompactPrefilterBase64(t *testing.T) {
 	for _, modifier := range []string{"base64", "base64wide"} {
 		source := fmt.Sprintf(`rule a { strings: $source="event" $rare="rare_one" %s condition: all of them }
-rule b { strings: $source="event" $rare="rare_two" %s condition: all of them }`, modifier, modifier)
+rule b { strings: $source="event" $rare="rare_two" %s condition: all of them }`, modifier, modifier) + compactPrefilterPadding
 		program, err := NewCompiler().CompileSource(source)
 		if err != nil {
 			t.Fatal(err)
@@ -310,4 +320,21 @@ func TestCompactPrefilterAutomatonReplacement(t *testing.T) {
 		t.Fatal("replaced shared automaton must bypass the compact gate")
 	}
 	compactPrefilterParity(t, program, [][]byte{[]byte("event"), []byte("event rare_one"), []byte("event rare_two"), nil})
+}
+
+func TestCompactPrefilterSmallFanout(t *testing.T) {
+	for _, count := range []int{2, 4} {
+		var source strings.Builder
+		for i := range count {
+			fmt.Fprintf(&source, `rule r%d { strings: $common="event" $rare="rare%d" condition: all of them }`, i, i)
+		}
+		program, err := NewCompiler().CompileSource(source.String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if program.compactPrefilter != nil {
+			t.Fatalf("%d-way fanout must bypass the compact gate", count)
+		}
+		compactPrefilterParity(t, program, [][]byte{[]byte("event"), []byte("event rare0"), []byte("rare1"), nil})
+	}
 }

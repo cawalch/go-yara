@@ -6,6 +6,8 @@ import (
 	"github.com/cawalch/go-yara/regex"
 )
 
+const minCompactFanout = 8
+
 type compactPatternKey struct {
 	data  string
 	flags regex.Flags
@@ -69,7 +71,8 @@ func (cp *CompiledProgram) buildCompactPrefilter() *compactPrefilter {
 	}
 	useful := false
 	for key, count := range counts {
-		if count > 1 && !selected[key] {
+		// The extra pass needs enough avoided fanout to amortize its cost.
+		if count >= minCompactFanout && !selected[key] {
 			useful = true
 		}
 	}
