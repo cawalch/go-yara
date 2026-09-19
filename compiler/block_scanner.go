@@ -289,7 +289,11 @@ func (scanner *BlockScanner) Reset() {
 	if scanner == nil {
 		return
 	}
+	clear(scanner.blocks)
 	scanner.blocks = scanner.blocks[:0]
+	if scanner.scanner != nil {
+		scanner.scanner.matchCtx.Reset(nil)
+	}
 	clear(scanner.matches)
 	scanner.fileSize = 0
 	scanner.fileSizeSet = false
@@ -297,10 +301,11 @@ func (scanner *BlockScanner) Reset() {
 
 // Close releases pooled scanner resources.
 func (scanner *BlockScanner) Close() {
-	if scanner != nil && scanner.scanner != nil {
-		scanner.scanner.Close()
-		scanner.scanner = nil
+	if scanner == nil {
+		return
 	}
+	scanner.scanner.Close()
+	*scanner = BlockScanner{}
 }
 
 func normalizedBlockMatches(matches map[string][]Match) map[string][]Match {

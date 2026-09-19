@@ -307,43 +307,22 @@ func (s *Scanner) markNonTextCacheRules(cacheIndex int) {
 
 func acquireScannerInterpreter() *Interpreter {
 	interp := interpreterPool.Get().(*Interpreter)
-	interp.bytecode = nil
-	interp.ip = 0
-	interp.stack = interp.stack[:0]
-	for idx := range interp.memory {
-		interp.memory[idx] = Value{}
-	}
-	interp.iterators = interp.iterators[:0]
-	interp.stopped = false
-	interp.result = nil
-	interp.matchContext = nil
-	interp.ruleResults = nil
-	interp.currentRule = ""
-	interp.currentCompiledRule = nil
-	interp.compiledRules = nil
-	interp.stringLiterals = nil
-	interp.stringSets = nil
-	interp.allStrings = nil
-	interp.anonymousStrings = nil
-	interp.stringArena = interp.stringArena[:0]
-	if interp.regexCache == nil {
-		interp.regexCache = make(map[string]compiledRegex)
-	}
 	interp.PreserveRuleResults = true
 	return interp
 }
 
 // Close releases resources held by the Scanner.
 func (s *Scanner) Close() {
+	if s == nil {
+		return
+	}
 	if s.interp != nil {
-		s.interp.PreserveRuleResults = false
 		s.interp.Release()
-		s.interp = nil
 	}
 	if s.matchCtx != nil {
 		s.matchCtx.Release()
-		s.matchCtx = nil
 	}
+	*s = Scanner{}
 }
 
 // NewScanner creates a Scanner for this compiled program.

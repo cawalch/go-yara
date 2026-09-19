@@ -285,9 +285,8 @@ func (mc *MatchContext) matchIDs() []string {
 var interpreterPool = sync.Pool{
 	New: func() any {
 		return &Interpreter{
-			stack:       make([]Value, 0, 256),
-			ruleResults: make(map[string]bool),
-			regexCache:  make(map[string]compiledRegex),
+			stack:      make([]Value, 0, 256),
+			regexCache: make(map[string]compiledRegex),
 		}
 	},
 }
@@ -308,43 +307,27 @@ func (i *Interpreter) ResetIterationCount() {
 func NewInterpreter(bytecode []byte) *Interpreter {
 	i := interpreterPool.Get().(*Interpreter)
 	i.bytecode = slices.Clone(bytecode)
-	i.ip = 0
-	i.stopped = false
-	i.result = nil
-	i.currentRule = ""
-
-	if i.matchContext == nil {
-		i.matchContext = matchContextPool.Get().(*MatchContext)
-	}
-	i.matchContext.compact = false
-	i.matchContext.Reset(nil)
-
-	i.stack = i.stack[:0]
+	i.matchContext = &MatchContext{Matches: make(map[string][]Match)}
 
 	return i
 }
 
 // Release returns the interpreter to the pool for reuse
 func (i *Interpreter) Release() {
-	i.bytecode = nil
-	i.compiledRules = nil
-	i.ruleMap = nil
-	i.stringLiterals = nil
-	i.stringSets = nil
-	i.textStringSets = nil
-	i.allStrings = nil
-	i.anonymousStrings = nil
-	i.matchContext = nil // Match contexts can be caller-owned.
-
-	for idx := range i.memory {
-		i.memory[idx] = Value{}
-	}
-
-	i.stringArena = i.stringArena[:0]
-	i.stack = i.stack[:0]
-	i.iterators = i.iterators[:0]
-
+	i.resetForPool()
 	interpreterPool.Put(i)
+}
+
+func (i *Interpreter) resetForPool() {
+	clear(i.stringArena[:cap(i.stringArena)])
+	clear(i.iterators[:cap(i.iterators)])
+	clear(i.regexCache)
+	*i = Interpreter{
+		stack:       i.stack[:0],
+		stringArena: i.stringArena[:0],
+		iterators:   i.iterators[:0],
+		regexCache:  i.regexCache,
+	}
 }
 
 // pushString appends a string to the arena and pushes a Value pointing to it
