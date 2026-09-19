@@ -15,8 +15,7 @@ jobs:
     env:
       GOMAXPROCS: "2"
       BASELINE_REF: fcd4e78754aeba52bc90d0cb36a2bc3e28bb7bf2
-      BOUNDED_REF: 2d7eb76e2c96fb570673d413c0d9cfdd62ba0328
-      STATE_REF: b98586c6860bf9f8e87563957c4fe98b6c5383b6
+      FINAL_REF: PENDING
     steps:
       - uses: actions/checkout@v7
         with:
