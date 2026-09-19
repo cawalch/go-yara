@@ -192,6 +192,58 @@ func TestRoutingOwnershipBudgetAndUnconstrainedEdges(t *testing.T) {
 	}
 }
 
+func TestRoutingDeepCorrelatedContexts(t *testing.T) {
+	anchor := []byte("DEEP_SHARED_0123456789ABCDE")
+	rules := make([]Rule, 2048)
+	for i := range rules {
+		a, b := byte(i>>8), byte(i)
+		sequence := Sequence{{Literal: anchor}}
+		for _, value := range []byte{a, b, a + b} {
+			sequence = append(sequence, Term{Set: routingSet(value, value), Min: 1, Max: 1})
+		}
+		rules[i] = Rule{All: []Pattern{{Any: []Sequence{sequence}}}}
+	}
+	program, err := CompileRouted(rules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var depth func(uint32) int
+	depth = func(index uint32) int {
+		node := program.nodes[index]
+		if node.count != 0 {
+			return 0
+		}
+		return 1 + max(depth(node.yes), depth(node.no))
+	}
+	maxDepth := 0
+	for _, root := range program.roots {
+		if root != 0 {
+			maxDepth = max(maxDepth, depth(root))
+		}
+	}
+	if maxDepth < 8 || program.Stats().MaxLeaf > 8 {
+		t.Fatalf("insufficient routing depth or oversized leaf: depth=%d, %+v", maxDepth, program.Stats())
+	}
+	scanner := program.NewScanner()
+	scanner.exact.budgetLimit = 1 << 20
+	for i := range rules {
+		a, b := byte(i>>8), byte(i)
+		for alignment := 0; alignment < 8; alignment++ {
+			data := append(bytes.Repeat([]byte{0xff}, alignment), anchor...)
+			data = append(data, a, b, a+b)
+			if got := scanner.Match(data); got != Match {
+				t.Fatalf("code %d, alignment %d: positive = %v", i, alignment, got)
+			}
+			// The first two bytes uniquely identify a rule; a changed checksum matches none.
+			data[len(data)-1]++
+			if got := scanner.Match(data); got != NoMatch {
+				t.Fatalf("code %d, alignment %d: invalid checksum = %v", i, alignment, got)
+			}
+		}
+	}
+	t.Logf("16384 positives and 16384 invalid checksums, each code at all eight alignments; depth=%d, %+v", maxDepth, program.Stats())
+}
+
 func FuzzRoutingParity(f *testing.F) {
 	f.Add([]byte("near shared anchor"), []byte("sample"))
 	f.Add([]byte{0, 0xff, 0x80}, []byte{0, 0xff})
