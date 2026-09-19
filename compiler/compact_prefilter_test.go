@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"reflect"
@@ -14,9 +15,11 @@ rule first { strings: $source="event" $rare="rare_one" fullword $value=/value=[0
 rule second { strings: $source="event" $rare="rare_two" condition: all of them }
 `
 
-func compactPrefilterParity(t *testing.T, program *CompiledProgram, inputs [][]byte) {
+//nolint:revive // parity inputs include scanner options
+func compactPrefilterParity(t *testing.T, program *CompiledProgram, inputs [][]byte, extra ...ScannerOption) {
 	t.Helper()
 	for _, options := range [][]ScannerOption{nil, {WithFastScan()}, {WithReportedMatchesOnly()}} {
+		options = append(options, extra...)
 		fast, oracle := program.NewScanner(options...), program.NewScanner(options...)
 		oracle.prefilterDisabled = true
 		defer fast.Close()
@@ -53,6 +56,13 @@ func TestCompactPrefilterRejectionAndReuse(t *testing.T) {
 	}
 	scanner := program.NewScanner()
 	defer scanner.Close()
+	for _, size := range []int{1024, 1025} {
+		input := []byte(strings.Repeat(" ", size))
+		copy(input, "event")
+		if got := scanner.compactPrefilterRejects(context.Background(), input); got != (size == 1024) {
+			t.Fatalf("rejection for %d bytes = %v", size, got)
+		}
+	}
 	data := []byte("event value=1234 event")
 	if !scanner.compactPrefilterRejects(context.Background(), data) {
 		t.Fatal("common source alone passed compact gate")
@@ -73,7 +83,7 @@ func TestCompactPrefilterRejectionAndReuse(t *testing.T) {
 	if _, err := scanner.MatchesWithContext(ctx, data); !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
 	}
-	if got, err := scanner.MatchesWithContext(nil, []byte("event rare_two")); !got || err != nil {
+	if got, err := scanner.MatchesWithContext(nil, []byte("event rare_two")); !got || err != nil { //nolint:staticcheck // verify supported nil contexts
 		t.Fatalf("nil context = %v,%v", got, err)
 	}
 }
@@ -146,14 +156,16 @@ rule alternate { strings: $a=/(phone|mobile)=[0-9]{4}/ condition: $a }`,
 			return ModuleValue{}, errors.New("module failure")
 		},
 	}}}
-	program, err := NewCompiler(WithModule(module)).CompileSource(`import "fail" ` + compactPrefilterRules + `rule unsafe { strings: $a="unsafe" condition: fail.check() and $a }`)
-	if err != nil {
-		t.Fatal(err)
+	for _, condition := range []string{"fail.check() and $a", "$a and fail.check() and $b"} {
+		program, err := NewCompiler(WithModule(module)).CompileSource(`import "fail" ` + compactPrefilterRules + `rule unsafe { strings: $a="event" $b="unsafe" condition: ` + condition + ` }`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := program.Matches([]byte("event")); err == nil {
+			t.Fatal("compact gate suppressed condition error before absent rare literal")
+		}
+		compactPrefilterParity(t, program, [][]byte{[]byte("event"), []byte("event unsafe"), []byte("event rare_one")})
 	}
-	if _, err := program.Matches([]byte("clean")); err == nil {
-		t.Fatal("compact gate suppressed condition error")
-	}
-	compactPrefilterParity(t, program, [][]byte{nil, []byte("clean"), []byte("unsafe"), []byte("event rare_one")})
 }
 
 func TestCompactPrefilterPreparation(t *testing.T) {
@@ -191,4 +203,93 @@ func TestCompactPrefilterPreparation(t *testing.T) {
 		t.Fatal("missing required-string metadata enabled selective gate")
 	}
 	compactPrefilterParity(t, legacy, [][]byte{[]byte("event"), []byte("event rare_one"), nil})
+}
+
+func TestCompactPrefilterMixedCaseTransitions(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+rule a { strings: $common="A" nocase $rare="aX" condition: all of them }
+rule b { strings: $common="A" nocase $rare="Ay" condition: all of them }
+rule c { strings: $common="A" nocase $rare="az" nocase condition: all of them }`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if program.compactPrefilter != nil {
+		t.Fatal("mixed case-sensitive/nocase cover must fall back")
+	}
+	compactPrefilterParity(t, program, [][]byte{[]byte("Az"), []byte("aZ"), []byte("AZ"), []byte("az"), []byte("aX"), []byte("Ay")})
+}
+
+func TestCompactPrefilterSharedRegexCover(t *testing.T) {
+	var source strings.Builder
+	source.WriteString(compactPrefilterRules)
+	for i := range 32 {
+		fmt.Fprintf(&source, `rule regex_%d { strings: $a=/alias%02d=[0-9]{4}/ condition: $a }`, i, i)
+	}
+	source.WriteString(`rule alias_copy { strings: $a=/alias00=[0-9]{4}/ condition: $a }
+rule alternate { strings: $a=/(phone|mobile)=[0-9]{4}/ condition: $a }`)
+	program, err := NewCompiler().CompileSource(source.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if program.compactPrefilter == nil {
+		t.Fatal("shared regex fixture must activate compact gate")
+	}
+	for _, rule := range program.Rules[2:] {
+		if !program.ruleHasCompleteSharedPrefilter(rule) {
+			t.Fatalf("%s lacks shared atom coverage", rule.Name)
+		}
+	}
+	matches, err := program.MatchingRules([]byte("alias00=1234"))
+	if err != nil || len(matches) != 2 {
+		t.Fatalf("alias fanout = %+v,%v", matches, err)
+	}
+	compactPrefilterParity(t, program, [][]byte{nil, []byte("event"), []byte("alias00=1234"), []byte("alias31=1234"), []byte("phone=1234"), []byte("mobile=1234"), []byte("alias00=12xx"), []byte("event rare_two"), nil})
+}
+
+func TestCompactPrefilterGlobalPrivateTags(t *testing.T) {
+	source := strings.Replace(compactPrefilterRules, "rule first {", "rule first : wanted {", 1) + `
+private global rule guard { strings: $a="permit" condition: $a }
+private rule hidden { strings: $a="private" condition: $a }`
+	program, err := NewCompiler().CompileSource(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if program.compactPrefilter == nil {
+		t.Fatal("global/private fixture must activate compact gate")
+	}
+	inputs := [][]byte{nil, []byte("event"), []byte("event rare_one"), []byte("permit event rare_one"), []byte("permit private"), []byte("permit event rare_two"), []byte("permit event rare_one rare_two private"), nil}
+	compactPrefilterParity(t, program, inputs)
+	compactPrefilterParity(t, program, inputs, WithTagsFilter([]string{"wanted"}))
+}
+
+func TestCompactPrefilterBase64(t *testing.T) {
+	for _, modifier := range []string{"base64", "base64wide"} {
+		source := fmt.Sprintf(`rule a { strings: $source="event" $rare="rare_one" %s condition: all of them }
+rule b { strings: $source="event" $rare="rare_two" %s condition: all of them }`, modifier, modifier)
+		program, err := NewCompiler().CompileSource(source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if program.compactPrefilter == nil {
+			t.Fatal("base64 fixture must activate compact gate")
+		}
+		inputs := [][]byte{nil, []byte("event"), []byte("event rare_one")}
+		for _, text := range []string{"rare_one", "rare_two"} {
+			for _, prefix := range []string{"", "x", "xy"} {
+				encoded := base64.StdEncoding.EncodeToString([]byte(prefix + text + "zz"))
+				data := []byte("event ")
+				for _, b := range []byte(encoded) {
+					data = append(data, b)
+					if modifier == "base64wide" {
+						data = append(data, 0)
+					}
+				}
+				if got, err := program.Matches(data); !got || err != nil {
+					t.Fatalf("%s alignment %d: %v,%v", modifier, len(prefix), got, err)
+				}
+				inputs = append(inputs, data)
+			}
+		}
+		compactPrefilterParity(t, program, inputs)
+	}
 }
