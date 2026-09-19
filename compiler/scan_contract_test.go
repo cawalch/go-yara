@@ -32,6 +32,14 @@ rule selected : selected {
 			if err != nil {
 				t.Fatal(err)
 			}
+			syntax, err := NewCompiler().compileParseWithContext(t.Context(), tc.source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rawRules, err := NewRuleCompiler().CompileProgram(syntax)
+			if err != nil {
+				t.Fatal(err)
+			}
 			encoded, err := program.MarshalBinary()
 			if err != nil {
 				t.Fatal(err)
@@ -40,7 +48,7 @@ rule selected : selected {
 			if err != nil {
 				t.Fatal(err)
 			}
-			for index, candidate := range []*CompiledProgram{program, loaded} {
+			for index, candidate := range []*CompiledProgram{program, loaded, NewCompiledProgram(program.Rules), NewCompiledProgram(loaded.Rules), NewCompiledProgram(rawRules)} {
 				for mode, options := range [][]ScannerOption{nil, {WithFastScan()}, {WithReportedMatchesOnly()}, {WithFastScan(), WithReportedMatchesOnly()}} {
 					t.Run(fmt.Sprintf("program%d/mode%d", index, mode), func(t *testing.T) {
 						options = append(options, WithTagsFilter([]string{"selected"}), WithItersmax(1))

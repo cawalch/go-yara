@@ -329,42 +329,23 @@ func deserializeProgram(payload serializedProgram, modules []Module) (*CompiledP
 		return nil, err
 	}
 	rules := make([]*CompiledRule, len(payload.Rules))
-	ruleNames := make(map[string]struct{}, len(payload.Rules))
 	for index, serialized := range payload.Rules {
 		rule, err := deserializeRule(serialized, bindings)
 		if err != nil {
 			return nil, fmt.Errorf("loading rule %q: %w", serialized.Name, err)
 		}
-		if rule.Name == "" {
-			return nil, fmt.Errorf("loading rule %d: empty rule name", index)
+		if dependencies, known := payload.Dependencies[rule.Name]; known {
+			rule.dependencies = append([]string{}, dependencies...)
 		}
-		if _, duplicate := ruleNames[rule.Name]; duplicate {
-			return nil, fmt.Errorf("loading rule %q: duplicate rule name", rule.Name)
-		}
-		if rule.Index != index {
-			return nil, fmt.Errorf("loading rule %q: index %d does not match position %d", rule.Name, rule.Index, index)
-		}
-		ruleNames[rule.Name] = struct{}{}
 		rules[index] = rule
 	}
 
-	program := NewCompiledProgram(rules)
-	program.dependencies = cloneDependencyGraph(payload.Dependencies)
-	program.nonTextCacheSize = assignNonTextCacheIndices(rules)
-	program.fixedRegexScan = buildFixedRegexDispatch(rules)
-	sharedAutomaton, sharedLookup, err := buildSharedPatternAutomaton(rules)
-	if err != nil {
-		return nil, fmt.Errorf("rebuilding shared automaton: %w", err)
-	}
-	program.SharedAutomaton = sharedAutomaton
-	program.SharedLookup = sharedLookup
-	program.sharedNonTextCaches = sharedNonTextCacheCoverage(program.nonTextCacheSize, sharedLookup)
-	program.sharedNonTextCacheRules = sharedNonTextCacheRuleLookup(rules, program.sharedNonTextCaches)
+	program := newCompiledProgram(rules)
 	program.Stats = map[string]any{
 		"rule_count":          len(rules),
 		"total_bytecode_size": program.GetTotalBytecodeSize(),
 	}
-	if err := program.Validate(); err != nil {
+	if err := program.preparationErr; err != nil {
 		return nil, fmt.Errorf("validating loaded compiled program: %w", err)
 	}
 	return program, nil
@@ -452,7 +433,6 @@ func deserializeRule(serialized serializedRule, bindings map[string]compiledModu
 		rule.ModuleFunctions[id] = binding.function
 		rule.ModuleNames[id] = name
 	}
-	rule.BuildStringIndex()
 	return rule, nil
 }
 
@@ -795,15 +775,6 @@ func cloneStringSlices(values [][]string) [][]string {
 	result := make([][]string, len(values))
 	for index, value := range values {
 		result[index] = slices.Clone(value)
-	}
-	return result
-}
-
-func cloneDependencyGraph(graph map[string][]string) map[string][]string {
-	result := make(map[string][]string, len(graph))
-	for name, dependencies := range graph {
-		result[name] = append([]string{}, dependencies...)
-		slices.Sort(result[name])
 	}
 	return result
 }

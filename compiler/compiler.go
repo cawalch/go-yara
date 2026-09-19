@@ -998,32 +998,10 @@ func (c *Compiler) compileCodeGenWithContext(ctx context.Context, program *ast.P
 
 	c.stats.CodeGenTime = time.Since(start)
 
-	// Build integer string ID indices for each rule (enables int-keyed match routing).
-	for _, rule := range compiledRules {
-		rule.BuildStringIndex()
-	}
-
-	// Wrap in CompiledProgram
-	compiledProgram := NewCompiledProgram(compiledRules)
-	compiledProgram.dependencies = semantic.RuleDependencies(program)
-	compiledProgram.nonTextCacheSize = assignNonTextCacheIndices(compiledRules)
-	compiledProgram.fixedRegexScan = buildFixedRegexDispatch(compiledRules)
-
-	// Combine text strings and safe regex/hex atoms into one global candidate pass.
-	sharedAutomaton, sharedLookup, err := buildSharedPatternAutomaton(compiledRules)
-	if err != nil {
+	compiledProgram := newCompiledProgram(compiledRules)
+	if err := compiledProgram.preparationErr; err != nil {
 		return nil, err
 	}
-	compiledProgram.SetSharedAutomaton(sharedAutomaton)
-	compiledProgram.SharedLookup = sharedLookup
-	compiledProgram.sharedNonTextCaches = sharedNonTextCacheCoverage(
-		compiledProgram.nonTextCacheSize,
-		sharedLookup,
-	)
-	compiledProgram.sharedNonTextCacheRules = sharedNonTextCacheRuleLookup(
-		compiledRules,
-		compiledProgram.sharedNonTextCaches,
-	)
 	if c.options.EnableWarnings {
 		c.collectCompiledPatternWarnings(program, compiledRules)
 	}

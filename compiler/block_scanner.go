@@ -71,8 +71,8 @@ func (scanner *BlockScanner) ScanWithContext(ctx context.Context, base int64, da
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if scanner.scanner.externalErr != nil {
-		return scanner.scanner.externalErr
+	if err := scanner.scanner.scanError(); err != nil {
+		return err
 	}
 
 	blockData := append([]byte(nil), data...)
@@ -152,6 +152,9 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (*ScanResult
 	}
 
 	s := scanner.scanner
+	if err := s.scanError(); err != nil {
+		return nil, err
+	}
 	result := &ScanResult{
 		MatchedRules: make([]RuleMatch, 0),
 		PrunedRules:  make([]string, 0),
