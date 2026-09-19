@@ -35,13 +35,6 @@ func (e *InterpreterError) Error() string {
 	return e.Message
 }
 
-func numericTypeMismatch(message string) error {
-	if message == "" {
-		message = "numeric operation requires compatible operands"
-	}
-	return &InterpreterError{Type: ErrorTypeMismatch, Message: message}
-}
-
 // push pushes a value onto the stack with overflow checking
 func (i *Interpreter) push(value Value) error {
 	const maxStackDepth = 1024 // Configurable stack limit
@@ -75,214 +68,38 @@ func (i *Interpreter) popTwo() (a, b Value, err error) {
 	return a, b, nil
 }
 
-// numericOperationConfig holds configuration for executing numeric operations
-type numericOperationConfig struct {
-	IntOp        func(int64, int64) int64
-	FloatOp      func(float64, float64) float64
-	FloatOp64    func(float64, float64) int64 // For comparison operations
-	ResultType   ValueType
-	IsComparison bool
-	ErrorMsg     string
-}
-
-func (config numericOperationConfig) hasMixedNumericHandler() bool {
-	if config.IsComparison {
-		return config.FloatOp64 != nil
-	}
-	return config.FloatOp != nil
-}
-
-// executeNumericOperation executes numeric operations with automatic type promotion
-func (i *Interpreter) executeNumericOperation(config numericOperationConfig) error {
+func (i *Interpreter) executeBinaryOp(operation func(int64, int64) int64) error {
 	a, b, err := i.popTwo()
 	if err != nil {
 		return err
 	}
-
-	// Handle undefined values - any operation with undefined results in undefined
-	if a.Type == ValueTypeUndefined || b.Type == ValueTypeUndefined {
-		return i.push(Value{Type: ValueTypeUndefined})
+	if a.Type != ValueTypeInt || b.Type != ValueTypeInt {
+		return i.handleNonIntegerOperands(a, b, "binary operation requires numeric operands")
 	}
-
-	// Dispatch based on operand types
-	return i.executeTypedOperation(a, b, config)
+	return i.push(Value{Type: ValueTypeInt, IntVal: operation(a.IntVal, b.IntVal)})
 }
 
-// executeTypedOperation handles the actual operation based on operand types
-func (i *Interpreter) executeTypedOperation(a, b Value, config numericOperationConfig) error {
-	switch a.Type {
-	case ValueTypeInt:
-		return i.executeIntOperation(a, b, config)
-	case ValueTypeDouble:
-		return i.executeDoubleOperation(a, b, config)
-	default:
-		return i.push(Value{Type: ValueTypeUndefined})
-	}
-}
-
-// executeIntOperation handles operations where first operand is an integer
-func (i *Interpreter) executeIntOperation(a, b Value, config numericOperationConfig) error {
-	switch b.Type {
-	case ValueTypeInt:
-		result := config.IntOp(a.IntVal, b.IntVal)
-		return i.push(Value{Type: config.ResultType, IntVal: result})
-
-	case ValueTypeDouble:
-		if !config.hasMixedNumericHandler() {
-			return numericTypeMismatch(config.ErrorMsg)
-		}
-		return i.executeIntDoubleOperation(a, b, config)
-
-	default:
-		return i.push(Value{Type: ValueTypeUndefined})
-	}
-}
-
-// executeDoubleOperation handles operations where first operand is a double
-func (i *Interpreter) executeDoubleOperation(a, b Value, config numericOperationConfig) error {
-	switch b.Type {
-	case ValueTypeInt:
-		if !config.hasMixedNumericHandler() {
-			return numericTypeMismatch(config.ErrorMsg)
-		}
-		return i.executeDoubleIntOperation(a, b, config)
-
-	case ValueTypeDouble:
-		if !config.hasMixedNumericHandler() {
-			return numericTypeMismatch(config.ErrorMsg)
-		}
-		var result Value
-		if config.IsComparison {
-			result = Value{Type: config.ResultType, IntVal: config.FloatOp64(a.DoubleVal, b.DoubleVal)}
-		} else {
-			result = Value{Type: config.ResultType, DoubleVal: config.FloatOp(a.DoubleVal, b.DoubleVal)}
-		}
-		return i.push(result)
-
-	default:
-		return i.push(Value{Type: ValueTypeUndefined})
-	}
-}
-
-// executeIntDoubleOperation handles int op double operations
-func (i *Interpreter) executeIntDoubleOperation(a, b Value, config numericOperationConfig) error {
-	if config.IsComparison {
-		result := config.FloatOp64(float64(a.IntVal), b.DoubleVal)
-		return i.push(Value{Type: config.ResultType, IntVal: result})
-	}
-	result := config.FloatOp(float64(a.IntVal), b.DoubleVal)
-	return i.push(Value{Type: config.ResultType, DoubleVal: result})
-}
-
-// executeDoubleIntOperation handles double op int operations
-func (i *Interpreter) executeDoubleIntOperation(a, b Value, config numericOperationConfig) error {
-	if config.IsComparison {
-		result := config.FloatOp64(a.DoubleVal, float64(b.IntVal))
-		return i.push(Value{Type: config.ResultType, IntVal: result})
-	}
-	result := config.FloatOp(a.DoubleVal, float64(b.IntVal))
-	return i.push(Value{Type: config.ResultType, DoubleVal: result})
-}
-
-// executeBinaryOp executes a binary operation with automatic type promotion for mixed int/float operations
-func (i *Interpreter) executeBinaryOp(intOp func(int64, int64) int64, _ func(float64, float64) float64) error {
-	config := numericOperationConfig{
-		IntOp:      intOp,
-		FloatOp64:  nil, // Not used for integer-only operations
-		ResultType: ValueTypeInt,
-		ErrorMsg:   "binary operation requires numeric operands",
-	}
-	return i.executeNumericOperation(config)
-}
-
-// executeBinaryOpWithCheck executes a binary operation with error checking and automatic type promotion
-func (i *Interpreter) executeBinaryOpWithCheck(intOp func(int64, int64) (int64, error), _ func(float64, float64) (float64, error)) error {
+func (i *Interpreter) executeBinaryOpWithCheck(operation func(int64, int64) (int64, error)) error {
 	a, b, err := i.popTwo()
 	if err != nil {
 		return err
 	}
-
-	return i.executeTypedBinaryOp(a, b, binaryOps{intOp: intOp, floatOp: nil})
+	if a.Type != ValueTypeInt || b.Type != ValueTypeInt {
+		return i.handleNonIntegerOperands(a, b, "integer-only operation requires integer operands")
+	}
+	result, err := operation(a.IntVal, b.IntVal)
+	if err != nil {
+		return err
+	}
+	return i.push(Value{Type: ValueTypeInt, IntVal: result})
 }
 
-// binaryOps represents binary operation functions for different types
-type binaryOps struct {
-	intOp   func(int64, int64) (int64, error)
-	floatOp func(float64, float64) (float64, error)
-}
-
-// executeTypedBinaryOp executes a binary operation based on operand types
-func (i *Interpreter) executeTypedBinaryOp(a, b Value, ops binaryOps) error {
-	// Handle undefined values - any operation with undefined results in undefined
-	if a.Type == ValueTypeUndefined || b.Type == ValueTypeUndefined {
-		return i.push(Value{Type: ValueTypeUndefined})
+func (i *Interpreter) handleNonIntegerOperands(a, b Value, message string) error {
+	if (a.Type == ValueTypeInt || a.Type == ValueTypeDouble) &&
+		(b.Type == ValueTypeInt || b.Type == ValueTypeDouble) {
+		return &InterpreterError{Type: ErrorTypeMismatch, Message: message}
 	}
-
-	switch a.Type {
-	case ValueTypeInt:
-		return i.executeIntBinaryOp(a, b, ops)
-
-	case ValueTypeDouble:
-		return i.executeDoubleBinaryOp(a, b, ops)
-
-	default:
-		return i.push(Value{Type: ValueTypeUndefined})
-	}
-}
-
-// executeIntBinaryOp handles operations where the first operand is an integer
-func (i *Interpreter) executeIntBinaryOp(a, b Value, ops binaryOps) error {
-	switch b.Type {
-	case ValueTypeInt:
-		result, err := ops.intOp(a.IntVal, b.IntVal)
-		if err != nil {
-			return err
-		}
-		return i.push(Value{Type: ValueTypeInt, IntVal: result})
-
-	case ValueTypeDouble:
-		// int + double = double (promote int to double)
-		if ops.floatOp == nil {
-			return numericTypeMismatch("integer-only operation requires integer operands")
-		}
-		result, err := ops.floatOp(float64(a.IntVal), b.DoubleVal)
-		if err != nil {
-			return err
-		}
-		return i.push(Value{Type: ValueTypeDouble, DoubleVal: result})
-
-	default:
-		return i.push(Value{Type: ValueTypeUndefined})
-	}
-}
-
-// executeDoubleBinaryOp handles operations where the first operand is a double
-func (i *Interpreter) executeDoubleBinaryOp(a, b Value, ops binaryOps) error {
-	switch b.Type {
-	case ValueTypeInt:
-		// double + int = double (promote int to double)
-		if ops.floatOp == nil {
-			return numericTypeMismatch("integer-only operation requires integer operands")
-		}
-		result, err := ops.floatOp(a.DoubleVal, float64(b.IntVal))
-		if err != nil {
-			return err
-		}
-		return i.push(Value{Type: ValueTypeDouble, DoubleVal: result})
-
-	case ValueTypeDouble:
-		if ops.floatOp == nil {
-			return numericTypeMismatch("integer-only operation requires integer operands")
-		}
-		result, err := ops.floatOp(a.DoubleVal, b.DoubleVal)
-		if err != nil {
-			return err
-		}
-		return i.push(Value{Type: ValueTypeDouble, DoubleVal: result})
-
-	default:
-		return i.push(Value{Type: ValueTypeUndefined})
-	}
+	return i.push(Value{Type: ValueTypeUndefined})
 }
 
 // executeDoubleOp executes a binary double operation

@@ -2,17 +2,17 @@ package compiler
 
 // executeBitwiseAnd handles OpBitwiseAnd opcode.
 func (i *Interpreter) executeBitwiseAnd() error {
-	return i.executeBinaryOp(func(a, b int64) int64 { return a & b }, nil)
+	return i.executeBinaryOp(func(a, b int64) int64 { return a & b })
 }
 
 // executeBitwiseOr handles OpBitwiseOr opcode.
 func (i *Interpreter) executeBitwiseOr() error {
-	return i.executeBinaryOp(func(a, b int64) int64 { return a | b }, nil)
+	return i.executeBinaryOp(func(a, b int64) int64 { return a | b })
 }
 
 // executeBitwiseXor handles OpBitwiseXor opcode.
 func (i *Interpreter) executeBitwiseXor() error {
-	return i.executeBinaryOp(func(a, b int64) int64 { return a ^ b }, nil)
+	return i.executeBinaryOp(func(a, b int64) int64 { return a ^ b })
 }
 
 // executeBitwiseNot handles OpBitwiseNot opcode.
@@ -43,7 +43,7 @@ func (i *Interpreter) executeShiftLeft() error {
 			b = 63
 		}
 		return a << uint64(b) // #nosec G115 - safe conversion with bounds check above
-	}, nil)
+	})
 }
 
 // executeShiftRight handles OpShr opcode.
@@ -56,21 +56,21 @@ func (i *Interpreter) executeShiftRight() error {
 			b = 63
 		}
 		return a >> uint64(b) // #nosec G115 - safe conversion with bounds check above
-	}, nil)
+	})
 }
 
 // --- Individual integer arithmetic handlers ---
 
 func (i *Interpreter) executeIntAdd() error {
-	return i.executeBinaryOp(func(a, b int64) int64 { return a + b }, nil)
+	return i.executeBinaryOp(func(a, b int64) int64 { return a + b })
 }
 
 func (i *Interpreter) executeIntSub() error {
-	return i.executeBinaryOp(func(a, b int64) int64 { return a - b }, nil)
+	return i.executeBinaryOp(func(a, b int64) int64 { return a - b })
 }
 
 func (i *Interpreter) executeIntMul() error {
-	return i.executeBinaryOp(func(a, b int64) int64 { return a * b }, nil)
+	return i.executeBinaryOp(func(a, b int64) int64 { return a * b })
 }
 
 func (i *Interpreter) executeIntDiv() error {
@@ -79,7 +79,7 @@ func (i *Interpreter) executeIntDiv() error {
 			return 0, &InterpreterError{Type: ErrorDivisionByZero, Opcode: OpIntDiv, Message: "division by zero"}
 		}
 		return a / b, nil
-	}, nil)
+	})
 }
 
 func (i *Interpreter) executeMod() error {
@@ -88,7 +88,7 @@ func (i *Interpreter) executeMod() error {
 			return 0, &InterpreterError{Type: ErrorDivisionByZero, Opcode: OpMod, Message: "modulo by zero"}
 		}
 		return a % b, nil
-	}, nil)
+	})
 }
 
 func (i *Interpreter) executeIntMinus() error {
