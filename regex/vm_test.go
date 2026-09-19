@@ -2,7 +2,7 @@ package regex
 
 import "testing"
 
-func mustCompile(t *testing.T, pat string) []byte {
+func mustCompile(t testing.TB, pat string) []byte {
 	t.Helper()
 	p := NewParser(0)
 	ast, err := p.Parse(pat)
