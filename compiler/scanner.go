@@ -232,14 +232,14 @@ func (s *Scanner) computeAllEvaluatedRulesRequireSharedPatterns() bool {
 		if rule.IsGlobal {
 			s.evaluatedGlobalRules = append(s.evaluatedGlobalRules, rule.Index)
 		}
-		if !s.ruleHasCompleteSharedPrefilter(rule) {
+		if !s.program.ruleHasCompleteSharedPrefilter(rule) {
 			s.alwaysEvaluateSharedRules = append(s.alwaysEvaluateSharedRules, rule.Index)
 		}
 	}
 	return len(s.alwaysEvaluateSharedRules) == 0
 }
 
-func (s *Scanner) ruleHasCompleteSharedPrefilter(rule *CompiledRule) bool {
+func (cp *CompiledProgram) ruleHasCompleteSharedPrefilter(rule *CompiledRule) bool {
 	if !rule.RequiresStringMatch || len(rule.prefilterStrings) == 0 {
 		return false
 	}
@@ -247,8 +247,8 @@ func (s *Scanner) ruleHasCompleteSharedPrefilter(rule *CompiledRule) bool {
 		switch info.class {
 		case prefilterStringText:
 		case prefilterStringNonText:
-			if info.cacheIndex < 0 || info.cacheIndex >= len(s.program.sharedNonTextCaches) ||
-				!s.program.sharedNonTextCaches[info.cacheIndex] {
+			if info.cacheIndex < 0 || info.cacheIndex >= len(cp.sharedNonTextCaches) ||
+				!cp.sharedNonTextCaches[info.cacheIndex] {
 				return false
 			}
 		default:
@@ -865,6 +865,9 @@ func (s *Scanner) evaluatePublicRules(
 	data []byte,
 	matchedRuleIndices *[]int,
 ) (publicRuleEvaluation, error) {
+	if s.compactPrefilterRejects(ctx, data) {
+		return publicRuleEvaluation{}, ctx.Err()
+	}
 	useSharedAutomaton, err := s.preparePatternScan(ctx, data)
 	if err != nil {
 		return publicRuleEvaluation{}, err

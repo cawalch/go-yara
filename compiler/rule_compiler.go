@@ -1369,6 +1369,7 @@ type CompiledProgram struct {
 	fixedRegexScan          *fixedRegexDispatch
 	dependencies            map[string][]string
 	preparationErr          error
+	compactPrefilter        *compactPrefilter
 
 	// Streaming support
 	streamingProcessor *StreamingProcessor
@@ -1437,6 +1438,7 @@ func (cp *CompiledProgram) prepare() error {
 	}
 	cp.sharedNonTextCaches = sharedNonTextCacheCoverage(cp.nonTextCacheSize, cp.SharedLookup)
 	cp.sharedNonTextCacheRules = sharedNonTextCacheRuleLookup(cp.Rules, cp.sharedNonTextCaches)
+	cp.compactPrefilter = cp.buildCompactPrefilter()
 	return nil
 }
 
