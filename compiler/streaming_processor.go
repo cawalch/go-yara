@@ -176,7 +176,7 @@ func (sp *StreamingProcessor) processFileChunks(
 	file *os.File,
 	fileInfo os.FileInfo,
 ) ([]StreamingMatch, error) {
-	reader := bufio.NewReaderSize(file, sp.effectiveBufferSize())
+	reader := bufio.NewReaderSize(contextReader{ctx, file}, sp.effectiveBufferSize())
 	chunkSize := sp.effectiveChunkSize()
 	overlapCapacity, err := sp.effectiveOverlapSize()
 	if err != nil {
@@ -228,13 +228,16 @@ func (sp *StreamingProcessor) processFileChunks(
 		primaryStart := currentStreamOffset
 		primaryEnd := primaryStart + int64(n)
 		chunkOffset := primaryStart - int64(overlapSize)
-		matches := sp.chunkProcessor.processChunk(streamingWindow{
+		matches, err := sp.chunkProcessor.processChunk(ctx, streamingWindow{
 			data:          chunk,
 			offset:        chunkOffset,
 			primaryStart:  primaryStart,
 			primaryEnd:    primaryEnd,
 			copyMatchData: true,
 		})
+		if err != nil {
+			return nil, err
+		}
 		allMatches = append(allMatches, matches...)
 		sp.updateProgress(int64(n), len(matches))
 
@@ -252,6 +255,9 @@ func (sp *StreamingProcessor) processFileChunks(
 		}
 	}
 
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	return allMatches, nil
 }
 
@@ -285,12 +291,15 @@ func (sp *StreamingProcessor) processDataChunks(ctx context.Context, data []byte
 			searchEnd = primaryEnd + streamingBoundaryContext
 		}
 
-		matches := sp.chunkProcessor.processChunk(streamingWindow{
+		matches, err := sp.chunkProcessor.processChunk(ctx, streamingWindow{
 			data:         data[searchStart:searchEnd],
 			offset:       int64(searchStart),
 			primaryStart: int64(primaryStart),
 			primaryEnd:   int64(primaryEnd),
 		})
+		if err != nil {
+			return nil, err
+		}
 		allMatches = append(allMatches, matches...)
 		sp.updateProgress(int64(primaryEnd-primaryStart), len(matches))
 
@@ -299,30 +308,41 @@ func (sp *StreamingProcessor) processDataChunks(ctx context.Context, data []byte
 		}
 	}
 
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	return allMatches, nil
 }
 
-func (cp *streamingChunkProcessor) processChunk(window streamingWindow) []StreamingMatch {
+func (cp *streamingChunkProcessor) processChunk(ctx context.Context, window streamingWindow) ([]StreamingMatch, error) {
 	var matches []StreamingMatch
 	for _, rule := range cp.rules {
 		if rule == nil || rule.Automaton == nil {
 			continue
 		}
-		matches = append(matches, cp.processRule(window, rule)...)
+		ruleMatches, err := cp.processRule(ctx, window, rule)
+		if err != nil {
+			return nil, err
+		}
+		matches = append(matches, ruleMatches...)
 	}
-	return matches
+	return matches, ctx.Err()
 }
 
-func (cp *streamingChunkProcessor) processRule(window streamingWindow, rule *CompiledRule) []StreamingMatch {
+func (cp *streamingChunkProcessor) processRule(ctx context.Context, window streamingWindow, rule *CompiledRule) ([]StreamingMatch, error) {
 	var matches []StreamingMatch
-	for match := range rule.Automaton.SearchIter(window.data) {
+	iterator := rule.Automaton.SearchIter(window.data)
+	if done := ctx.Done(); done != nil {
+		iterator = rule.Automaton.searchIterWithCancel(window.data, done)
+	}
+	for match := range iterator {
 		ruleMatch, ok := cp.createRuleMatch(window, rule, match)
 		if !ok {
 			continue
 		}
 		matches = append(matches, ruleMatch)
 	}
-	return matches
+	return matches, ctx.Err()
 }
 
 func (cp *streamingChunkProcessor) createRuleMatch(

@@ -1025,6 +1025,7 @@ func (s *Scanner) ScanReader(r io.Reader) (*ScanResult, error) {
 }
 
 // ScanReaderWithContext reads from the reader and scans the data.
+// Cancellation is checked between reads; it cannot interrupt a blocked Read.
 func (s *Scanner) ScanReaderWithContext(ctx context.Context, r io.Reader) (*ScanResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -1032,7 +1033,7 @@ func (s *Scanner) ScanReaderWithContext(ctx context.Context, r io.Reader) (*Scan
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	data, err := io.ReadAll(r)
+	data, err := io.ReadAll(contextReader{ctx, r})
 	if err != nil {
 		return nil, err
 	}
@@ -1055,14 +1056,31 @@ func (s *Scanner) ScanFileWithContext(ctx context.Context, filename string) (*Sc
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(filename) // #nosec G304 - caller intentionally scans this path
+	if ctx.Done() == nil {
+		data, err := os.ReadFile(filename) // #nosec G304 - caller intentionally scans this path
+		if err != nil {
+			return nil, err
+		}
+		return s.ScanWithContext(ctx, data)
+	}
+	file, err := os.Open(filename) // #nosec G304 - caller intentionally scans this path
 	if err != nil {
 		return nil, err
 	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
+	defer func() { _ = file.Close() }()
+	return s.ScanReaderWithContext(ctx, file)
+}
+
+type contextReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+func (r contextReader) Read(data []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
 	}
-	return s.ScanWithContext(ctx, data)
+	return r.reader.Read(data)
 }
 
 // extractGlobalMatchesInt uses the SharedLookup table for O(1) integer routing
