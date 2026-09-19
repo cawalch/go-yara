@@ -1262,6 +1262,13 @@ func (cr *CompiledRule) GetAutomaton() *ACAutomaton {
 
 // Validate validates the compiled rule
 func (cr *CompiledRule) Validate() error {
+	for _, slots := range []map[string]int{cr.ExternalSlots, cr.GlobalSlots} {
+		for name, slot := range slots {
+			if slot < 0 || slot >= interpreterMemorySlotCount {
+				return fmt.Errorf("variable %q has invalid memory slot %d", name, slot)
+			}
+		}
+	}
 	if len(cr.Bytecode) == 0 {
 		return errors.New("empty bytecode")
 	}
