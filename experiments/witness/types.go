@@ -7,7 +7,8 @@ type Pattern struct{ Any []Sequence }
 type Sequence []Term
 
 // A term is either a literal or a bounded run of bytes from Set.
-// Literal terms ignore Min/Max/Set. Any-byte gaps use AllBytes().
+// Literal terms ignore Min/Max/Set; NoCase applies only to ASCII literals.
+// Any-byte gaps use AllBytes().
 type Term struct {
 	Literal  []byte
 	Set      [4]uint64

@@ -77,6 +77,17 @@ def summarize(directory):
         baseline, hybrid = median(variants, "baseline"), median(variants, "hybrid")
         if baseline and hybrid:
             ratios[case] = hybrid / baseline
+    if len(compile_results) != 9:
+        missing.append(f"expected nine compile cases, found {len(compile_results)}")
+    for case, variants in compile_results.items():
+        for variant in ("baseline", "candidate"):
+            if variants.get(variant, {}).get("ns/op", {}).get("samples") != 6:
+                missing.append(f"compile {case}/{variant}: expected six samples")
+    if len(memory) != 18:
+        missing.append(f"expected 18 memory cases, found {len(memory)}")
+    for case, metrics in memory.items():
+        if metrics.get("program_heap_B", {}).get("samples") != 3:
+            missing.append(f"memory {case}: expected three samples")
     if len(scans) != 76:
         missing.append(f"expected 76 cases, found {len(scans)}")
     primaries = {case: ratio for case, ratio in ratios.items() if primary(case)}

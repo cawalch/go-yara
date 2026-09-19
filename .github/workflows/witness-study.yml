@@ -4,6 +4,11 @@ on:
   workflow_dispatch:
   push:
     branches: [research/word-witness]
+    paths:
+      - .github/workflows/witness-study.yml
+      - experiments/witness/*.go
+      - experiments/witness/README.md
+      - experiments/witness/summarize.py
 
 permissions:
   contents: read
@@ -58,6 +63,7 @@ jobs:
           sha256sum results/witness.test > results/binary.sha256
           go version -m results/witness.test > results/build-info.txt
           results/witness.test -test.run '^TestWitnessStudy(Parity|Coverage)$' -test.count=1 -test.v > results/parity.txt 2>&1
+          results/witness.test -test.run '^TestWitnessStressParity$' -test.count=1 -test.v > results/stress-parity.txt 2>&1
 
       - name: Six alternating scan rounds
         shell: bash
@@ -67,6 +73,15 @@ jobs:
             export WITNESS_REVERSE=$(((round - 1) % 2))
             printf 'scan round=%s reverse=%s start=%s\n' "$round" "$WITNESS_REVERSE" "$(date -u +%FT%TZ)" >> results/order.txt
             results/witness.test -test.run '^$' -test.bench '^BenchmarkWitnessStudy$' -test.benchtime=100ms -test.count=1 > "results/scan-$round.txt" 2>&1
+          done
+
+      - name: Supplemental stress rounds
+        shell: bash
+        run: |
+          set -euo pipefail
+          for round in 1 2 3 4 5 6; do
+            export WITNESS_REVERSE=$(((round - 1) % 2))
+            results/witness.test -test.run '^$' -test.bench '^BenchmarkWitnessStress$' -test.benchtime=100ms -test.count=1 > "results/stress-$round.txt" 2>&1
           done
 
       - name: Compilation and fresh-process retained heap
