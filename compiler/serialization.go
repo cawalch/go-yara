@@ -334,7 +334,9 @@ func deserializeProgram(payload serializedProgram, modules []Module) (*CompiledP
 		if err != nil {
 			return nil, fmt.Errorf("loading rule %q: %w", serialized.Name, err)
 		}
-		rule.dependencies = slices.Clone(payload.Dependencies[rule.Name])
+		if dependencies, known := payload.Dependencies[rule.Name]; known {
+			rule.dependencies = append([]string{}, dependencies...)
+		}
 		rules[index] = rule
 	}
 

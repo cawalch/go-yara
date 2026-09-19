@@ -65,3 +65,26 @@ func TestInvalidProgramPreparationReturnsErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestProgramPreparationPreservesUnknownDependencies(t *testing.T) {
+	program := NewCompiledProgram([]*CompiledRule{
+		{Name: "helper", IsPrivate: true, Bytecode: []byte{byte(OpPush8), 1, byte(OpHalt)}, dependencies: []string{}},
+		{Name: "selected", Index: 1, Tags: []string{"selected"}, Bytecode: []byte{byte(OpPushRuleRef), 0, byte(OpHalt)}},
+	})
+	encoded, err := program.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := UnmarshalCompiledProgram(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, candidate := range []*CompiledProgram{program, loaded} {
+		scanner := NewScanner(candidate, WithTagsFilter([]string{"selected"}))
+		defer scanner.Close()
+		matches, err := scanner.MatchingRules(nil)
+		if err != nil || len(matches) != 1 || matches[0].Rule != "selected" {
+			t.Fatalf("MatchingRules = (%+v, %v), want selected", matches, err)
+		}
+	}
+}

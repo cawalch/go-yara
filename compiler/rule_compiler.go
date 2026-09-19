@@ -781,7 +781,7 @@ func (rc *RuleCompiler) CompileProgram(program *ast.Program) ([]*CompiledRule, e
 		if err != nil {
 			return nil, &RuleCompileError{Rule: rule.Name, Err: err}
 		}
-		compiledRule.dependencies = slices.Clone(dependencies[rule.Name])
+		compiledRule.dependencies = append([]string{}, dependencies[rule.Name]...)
 		compiledRules = append(compiledRules, compiledRule)
 	}
 
@@ -1137,7 +1137,7 @@ type CompiledRule struct {
 	// assignNonTextCacheIndices, immutable afterwards, so it is safe to share
 	// across concurrent scanners alongside the rest of the program.
 	prefilterStrings []prefilterStringInfo
-	dependencies     []string
+	dependencies     []string // nil means dependency metadata is unavailable
 
 	// Rule metadata (from AST)
 	Tags      []string       // Rule tags (e.g., {"malware", "trojan"})
@@ -1399,19 +1399,23 @@ func (cp *CompiledProgram) prepare() error {
 		return err
 	}
 	cp.dependencies = make(map[string][]string, len(cp.Rules))
+	names := make(map[string]bool, len(cp.Rules))
 	for index, rule := range cp.Rules {
 		if rule.Name == "" {
 			return fmt.Errorf("rule %d has empty rule name", index)
 		}
-		if _, duplicate := cp.dependencies[rule.Name]; duplicate {
+		if names[rule.Name] {
 			return fmt.Errorf("duplicate rule name %q", rule.Name)
 		}
 		if rule.Index != index {
 			return fmt.Errorf("rule %q index %d does not match position %d", rule.Name, rule.Index, index)
 		}
+		names[rule.Name] = true
 		rule.BuildStringIndex()
-		cp.dependencies[rule.Name] = slices.Clone(rule.dependencies)
-		slices.Sort(cp.dependencies[rule.Name])
+		if rule.dependencies != nil {
+			cp.dependencies[rule.Name] = slices.Clone(rule.dependencies)
+			slices.Sort(cp.dependencies[rule.Name])
+		}
 	}
 	cp.nonTextCacheSize = assignNonTextCacheIndices(cp.Rules)
 	cp.fixedRegexScan = buildFixedRegexDispatch(cp.Rules)

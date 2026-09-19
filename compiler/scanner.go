@@ -502,7 +502,8 @@ func (s *Scanner) scanError() error {
 }
 
 func (s *Scanner) selectEvaluatedRules() {
-	if s.program == nil || s.program.preparationErr != nil || len(s.tagsFilter) == 0 {
+	if s.program == nil || s.program.preparationErr != nil || len(s.tagsFilter) == 0 ||
+		len(s.program.dependencies) < len(s.program.Rules) {
 		return
 	}
 	s.evaluatedRules = make(map[string]bool)
