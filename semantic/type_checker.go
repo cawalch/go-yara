@@ -236,7 +236,7 @@ func (tc *TypeChecker) checkFunctionCall(funcCall *ast.FunctionCall) *TypeInfo {
 		}
 		return &TypeInfo{DataType: TypeInteger, IntegerType: returnType}
 	default:
-		// Unknown function - return unknown type
+		tc.addError(&Error{Message: "unknown function: " + funcCall.Function, Position: funcCall.Pos})
 		return &TypeInfo{DataType: TypeUnknown}
 	}
 }

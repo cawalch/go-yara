@@ -22,6 +22,7 @@ func TestOperatorValidationParity(t *testing.T) {
 		{`not value`, TypeBoolean, false},
 		{`"text" + 1`, TypeUnknown, true},
 		{`1 matches /a/`, TypeUnknown, true},
+		{`missing() + 1`, TypeUnknown, true},
 	} {
 		t.Run(test.expression, func(t *testing.T) {
 			program, err := parser.New(lexer.New(`external value rule r { condition: ` + test.expression + ` }`)).ParseRulesWithContext(context.Background())
