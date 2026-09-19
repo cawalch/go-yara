@@ -61,7 +61,7 @@ func CompileRouted(rules []Rule) (*RoutedProgram, error) {
 				seq := &r.all[r.trigger].alternatives[ref.alternative]
 				refs[i] = routeRef{id: id, features: routingFeatures(seq, ref.offset)}
 			}
-			remaining := len(ids) * 8
+			remaining := len(ids) * 12
 			root, ok := p.build(refs, 0, &remaining)
 			if !ok {
 				return nil, fmt.Errorf("%w: unresolved bucket or compile limit", ErrIneligible)
@@ -164,7 +164,7 @@ func (p *RoutedProgram) build(refs []routeRef, depth int, remaining *int) (uint3
 		p.stats.MaxLeaf = max(p.stats.MaxLeaf, len(refs))
 		return index, true
 	}
-	if depth == 8 {
+	if depth == 12 {
 		return 0, false
 	}
 	positions := make([]int, 0, len(refs[0].features))
@@ -207,7 +207,7 @@ func (p *RoutedProgram) build(refs []routeRef, depth int, remaining *int) (uint3
 			inverse := complement(test)
 			for _, ref := range refs {
 				p.stats.Work++
-				if p.stats.Work > 64_000_000 {
+				if p.stats.Work > 128_000_000 {
 					return 0, false
 				}
 				set := ref.features[pos]
