@@ -213,8 +213,8 @@ rule c { strings: $common="A" nocase $rare="az" nocase condition: all of them }`
 	if err != nil {
 		t.Fatal(err)
 	}
-	if program.compactPrefilter != nil {
-		t.Fatal("mixed case-sensitive/nocase cover must fall back")
+	if program.compactPrefilter == nil {
+		t.Fatal("mixed case-sensitive/nocase cover must reuse the original trie")
 	}
 	compactPrefilterParity(t, program, [][]byte{[]byte("Az"), []byte("aZ"), []byte("AZ"), []byte("az"), []byte("aX"), []byte("Ay")})
 }
@@ -292,4 +292,22 @@ rule b { strings: $source="event" $rare="rare_two" %s condition: all of them }`,
 		}
 		compactPrefilterParity(t, program, inputs)
 	}
+}
+
+func TestCompactPrefilterAutomatonReplacement(t *testing.T) {
+	program, err := NewCompiler().CompileSource(compactPrefilterRules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gate := program.compactPrefilter
+	if gate == nil || gate.automaton != program.SharedAutomaton {
+		t.Fatal("compact gate must retain the original shared automaton")
+	}
+	program.SetSharedAutomaton(nil)
+	scanner := program.NewScanner()
+	defer scanner.Close()
+	if scanner.compactPrefilterRejects(context.Background(), []byte("event")) {
+		t.Fatal("replaced shared automaton must bypass the compact gate")
+	}
+	compactPrefilterParity(t, program, [][]byte{[]byte("event"), []byte("event rare_one"), []byte("event rare_two"), nil})
 }

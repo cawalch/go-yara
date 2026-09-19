@@ -2,7 +2,6 @@ package compiler
 
 import (
 	"context"
-	"strconv"
 
 	"github.com/cawalch/go-yara/regex"
 )
@@ -12,8 +11,13 @@ type compactPatternKey struct {
 	flags regex.Flags
 }
 
+type compactPrefilter struct {
+	automaton *ACAutomaton
+	accepting []bool
+}
+
 // The compact pass needs only a necessary pattern cover, not match spans.
-func (cp *CompiledProgram) buildCompactPrefilter() (*ACAutomaton, error) {
+func (cp *CompiledProgram) buildCompactPrefilter() *compactPrefilter {
 	frequencies := make(map[string]int)
 	for _, rule := range cp.Rules {
 		for _, data := range rule.TextPatterns {
@@ -36,7 +40,7 @@ func (cp *CompiledProgram) buildCompactPrefilter() (*ACAutomaton, error) {
 			continue
 		}
 		if !cp.ruleHasCompleteSharedPrefilter(rule) {
-			return nil, nil
+			return nil
 		}
 		for _, info := range rule.prefilterStrings {
 			if info.class == prefilterStringNonText {
@@ -45,7 +49,7 @@ func (cp *CompiledProgram) buildCompactPrefilter() (*ACAutomaton, error) {
 		}
 	}
 	if !hasAnchor {
-		return nil, nil
+		return nil
 	}
 
 	counts := make(map[compactPatternKey]int)
@@ -69,53 +73,70 @@ func (cp *CompiledProgram) buildCompactPrefilter() (*ACAutomaton, error) {
 			useful = true
 		}
 	}
-	if !useful {
-		return nil, nil
+	if !useful || len(selected) == 0 {
+		return nil
 	}
-	var sensitive, folded bool
-	for key := range selected {
-		if key.flags&regex.FlagsNoCase != 0 {
-			folded = true
-		} else {
-			sensitive = true
+	ac := cp.SharedAutomaton
+	patterns := make([]bool, len(ac.strings))
+	for i, info := range ac.strings {
+		if selected[compactPatternKey{string(info.Data), info.Flags}] {
+			if len(info.Data) == 0 {
+				return nil
+			}
+			patterns[i] = true
 		}
 	}
-	// Rebuilding mixed-case tries can split existing case-folded transitions.
-	if sensitive && folded {
-		return nil, nil
-	}
-	gate := NewACAutomaton()
-	for _, info := range cp.SharedAutomaton.strings {
-		key := compactPatternKey{string(info.Data), info.Flags}
-		if !selected[key] {
-			continue
-		}
-		if len(info.Data) == 0 {
-			return nil, nil
-		}
-		delete(selected, key)
-		if err := gate.AddStringWithFlags(strconv.Itoa(len(gate.strings)), info.Data, false, false, info.Flags); err != nil {
-			return nil, err
+	gate := &compactPrefilter{automaton: ac, accepting: make([]bool, len(ac.states))}
+	for i := range ac.states {
+		state := &ac.states[i]
+		for _, pattern := range ac.outputs[state.outputStart:state.outputEnd] {
+			if patterns[pattern] {
+				gate.accepting[i] = true
+				break
+			}
 		}
 	}
-	if err := gate.Compile(); err != nil {
-		return nil, err
-	}
-	return gate, nil
+	return gate
 }
 
+//nolint:nestif // the sparse-root and general loops are intentionally separate hot paths
 func (s *Scanner) compactPrefilterRejects(ctx context.Context, data []byte) bool {
 	gate := s.program.compactPrefilter
 	// Large positive records would pay for two full passes.
-	if gate == nil || s.prefilterDisabled || len(data) > 1024 {
+	if gate == nil || s.prefilterDisabled || len(data) > 1024 || s.program.SharedAutomaton != gate.automaton {
 		return false
 	}
-	if done := ctx.Done(); done != nil {
-		for range gate.searchIterWithCancel(data, done) {
-			return false
+	if ctx.Err() != nil {
+		return true
+	}
+	ac, state := gate.automaton, int32(0)
+	if len(data) >= 256 && len(ac.rootBytes) > 0 && len(ac.rootBytes) <= maxSparseRootTransitions {
+		cursor := newRootCandidateCursor(ac.rootBytes)
+		for i := 0; i < len(data); i++ {
+			if state == 0 && len(data)-i >= 256 {
+				i = cursor.next(data, i)
+				if i < 0 {
+					return true
+				}
+			}
+			state = ac.states[state].transitions[data[i]]
+			if gate.accepting[state] {
+				return false
+			}
 		}
-	} else {
-		for range gate.SearchIter(data) {
+		return true
+	}
+	rootTransitions := &ac.states[0].transitions
+	for _, b := range data {
+		if state == 0 {
+			state = rootTransitions[b]
+			if state == 0 {
+				continue
+			}
+		} else {
+			state = ac.states[state].transitions[b]
+		}
+		if gate.accepting[state] {
 			return false
 		}
 	}
