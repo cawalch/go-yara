@@ -2,7 +2,6 @@ package semantic
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/cawalch/go-yara/ast"
@@ -147,304 +146,25 @@ func (tc *TypeChecker) checkIdentifier(identifier *ast.Identifier) *TypeInfo {
 	}
 }
 
-// checkBinaryOp checks the types of a binary operation.
-func (tc *TypeChecker) checkBinaryOp(binaryOp *ast.BinaryOp) *TypeInfo {
-	leftType := tc.checkExpression(binaryOp.Left)
-	rightType := tc.checkExpression(binaryOp.Right)
+func (tc *TypeChecker) checkBinaryOp(expr *ast.BinaryOp) *TypeInfo {
+	left := tc.checkExpression(expr.Left)
+	right := tc.checkExpression(expr.Right)
+	result, err := InferTypeFromBinaryOp(left, expr.Op, right)
+	return tc.operatorResult(result, err, expr.Position())
+}
 
-	if leftType == nil || rightType == nil {
+func (tc *TypeChecker) checkUnaryOp(expr *ast.UnaryOp) *TypeInfo {
+	operand := tc.checkExpression(expr.Right)
+	result, err := InferTypeFromUnaryOp(expr.Op, operand)
+	return tc.operatorResult(result, err, expr.Position())
+}
+
+func (tc *TypeChecker) operatorResult(result *TypeInfo, err error, pos token.Position) *TypeInfo {
+	if err != nil {
+		tc.addError(&Error{Message: err.Error(), Position: pos})
 		return &TypeInfo{DataType: TypeUnknown}
 	}
-
-	switch binaryOp.Op {
-	case token.PLUS, token.MINUS, token.MULTIPLY, token.DIVIDE, token.MODULO, token.IntDivide:
-		return tc.checkArithmeticOp(binaryOp, leftType, rightType)
-	case token.BitwiseAnd, token.BitwiseOr, token.BitwiseXor, token.LeftShift, token.RightShift:
-		return tc.checkBitwiseOp(binaryOp, leftType, rightType)
-	case token.AND, token.OR:
-		return tc.checkLogicalOp(binaryOp, leftType, rightType)
-	case token.EQ, token.NEQ, token.LT, token.LE, token.GT, token.GE:
-		return tc.checkComparisonOp(binaryOp, leftType, rightType)
-	case token.CONTAINS, token.ICONTAINS, token.STARTSWITH, token.ENDSWITH,
-		token.ISTARTSWITH, token.IENDSWITH, token.IEQUALS, token.MATCHES:
-		return tc.checkStringOp(binaryOp, leftType, rightType)
-	case token.OF:
-		return tc.checkQuantifierOp(leftType, rightType, binaryOp.Position())
-	case token.AT:
-		return tc.checkAtOperator(leftType, rightType, binaryOp.Position())
-	case token.IN:
-		return tc.checkInOperator(leftType, rightType, binaryOp.Position())
-	case token.DOT:
-		return tc.checkDotOperator(leftType, rightType, binaryOp.Position())
-	case token.COLON:
-		return tc.checkColonOperator()
-	case token.COMMA:
-		// Comma is only used to build string sets (e.g., ($a, $b)).
-		// Its value is not directly used in conditions, so treat as unknown.
-		return &TypeInfo{DataType: TypeUnknown}
-	default:
-		tc.addError(&Error{
-			Message:  fmt.Sprintf("unknown binary operator: %s", binaryOp.Op),
-			Position: binaryOp.Position(),
-		})
-		return &TypeInfo{DataType: TypeUnknown}
-	}
-}
-
-// checkArithmeticOp handles arithmetic operations (+, -, *, /, %, //)
-func (tc *TypeChecker) checkArithmeticOp(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
-	if !leftType.CanPerformArithmetic(rightType) {
-		tc.addError(&Error{
-			Message:  fmt.Sprintf("cannot perform %s between %s and %s", binaryOp.Op, leftType.String(), rightType.String()),
-			Position: binaryOp.Position(),
-		})
-		return &TypeInfo{DataType: TypeUnknown}
-	}
-
-	// Result is float if either operand is float, otherwise integer
-	if leftType.DataType == TypeFloat || rightType.DataType == TypeFloat {
-		return &TypeInfo{DataType: TypeFloat}
-	}
-	return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
-}
-
-// checkBitwiseOp handles bitwise operations (&, |, ^, <<, >>)
-func (tc *TypeChecker) checkBitwiseOp(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
-	if !leftType.CanPerformBitwise(rightType) {
-		tc.addError(&Error{
-			Message:  fmt.Sprintf("cannot perform %s between %s and %s", binaryOp.Op, leftType.String(), rightType.String()),
-			Position: binaryOp.Position(),
-		})
-		return &TypeInfo{DataType: TypeUnknown}
-	}
-
-	// For shift operations, right operand should be integer
-	if binaryOp.Op == token.LeftShift || binaryOp.Op == token.RightShift {
-		if !rightType.IsInteger() {
-			tc.addError(&Error{
-				Message:  "shift amount must be integer, got " + rightType.String(),
-				Position: binaryOp.Position(),
-			})
-			return &TypeInfo{DataType: TypeUnknown}
-		}
-	}
-	return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
-}
-
-// checkComparisonOp handles comparison operations (==, !=, <, <=, >, >=)
-func (tc *TypeChecker) checkComparisonOp(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
-	if !leftType.CanCompare(rightType) {
-		tc.addError(&Error{
-			Message:  fmt.Sprintf("cannot compare %s and %s", leftType.String(), rightType.String()),
-			Position: binaryOp.Position(),
-		})
-		return &TypeInfo{DataType: TypeUnknown}
-	}
-	return &TypeInfo{DataType: TypeBoolean}
-}
-
-// checkLogicalOp handles logical operations (&&, ||)
-func (tc *TypeChecker) checkLogicalOp(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
-	if leftType.DataType != TypeBoolean || rightType.DataType != TypeBoolean {
-		tc.addError(&Error{
-			Message:  fmt.Sprintf("logical %s requires boolean operands", binaryOp.Op),
-			Position: binaryOp.Position(),
-		})
-		return &TypeInfo{DataType: TypeUnknown}
-	}
-	return &TypeInfo{DataType: TypeBoolean}
-}
-
-// checkStringOp handles string operations (contains, matches, etc.)
-func (tc *TypeChecker) checkStringOp(binaryOp *ast.BinaryOp, leftType, rightType *TypeInfo) *TypeInfo {
-	// In YARA, string operations like "contains" and "matches" work with:
-	// - Left: string identifier (boolean type when used in conditions)
-	// - Right: string literal or regex pattern
-	// So we need to be more flexible about the left operand type
-	if !leftType.IsString() && leftType.DataType != TypeBoolean {
-		tc.addError(&Error{
-			Message:  fmt.Sprintf("string operation %s requires string or string identifier as left operand", binaryOp.Op),
-			Position: binaryOp.Position(),
-		})
-		return &TypeInfo{DataType: TypeUnknown}
-	}
-
-	if !rightType.IsString() {
-		tc.addError(&Error{
-			Message:  fmt.Sprintf("string operation %s requires string as right operand", binaryOp.Op),
-			Position: binaryOp.Position(),
-		})
-		return &TypeInfo{DataType: TypeUnknown}
-	}
-	return &TypeInfo{DataType: TypeBoolean}
-}
-
-// checkAtOperator handles AT operator type checking
-func (tc *TypeChecker) checkAtOperator(leftType, rightType *TypeInfo, pos token.Position) *TypeInfo {
-	// AT operator: $string at offset
-	// Left should be string identifier, right should be integer
-	if !tc.isStringIdentifier(leftType) {
-		tc.addError(&Error{
-			Message:  "AT operator requires string identifier as left operand",
-			Position: pos,
-		})
-	}
-	if rightType.DataType != TypeInteger {
-		tc.addError(&Error{
-			Message:  "AT operator requires integer offset as right operand",
-			Position: pos,
-		})
-	}
-	// The result should be integer (the offset)
-	return &TypeInfo{DataType: TypeInteger}
-}
-
-// checkInOperator handles IN operator type checking
-func (tc *TypeChecker) checkInOperator(leftType, rightType *TypeInfo, pos token.Position) *TypeInfo {
-	// IN operator has two forms:
-	// 1. $string in (start..end) — left is string identifier, right is integer range
-	// 2. #string in (min..max) — left is integer (count), right is integer range
-	if !tc.isStringIdentifier(leftType) && leftType.DataType != TypeInteger {
-		tc.addError(&Error{
-			Message:  "IN operator requires string identifier or count as left operand",
-			Position: pos,
-		})
-	}
-	// Right operand should be a range (integer type)
-	if rightType.DataType != TypeInteger {
-		tc.addError(&Error{
-			Message:  "IN operator requires integer range as right operand",
-			Position: pos,
-		})
-	}
-	// The result should be boolean
-	return &TypeInfo{DataType: TypeBoolean}
-}
-
-// checkDotOperator handles DOT operator type checking
-func (tc *TypeChecker) checkDotOperator(leftType, rightType *TypeInfo, pos token.Position) *TypeInfo {
-	// DOT operator (..) represents range expression: start..end
-	// Both operands should be integers, result is integer (represents the range)
-	if leftType.DataType != TypeInteger {
-		tc.addError(&Error{
-			Message:  "range expression requires integer start value",
-			Position: pos,
-		})
-	}
-	if rightType.DataType != TypeInteger {
-		tc.addError(&Error{
-			Message:  "range expression requires integer end value",
-			Position: pos,
-		})
-	}
-	// Range expressions evaluate to integer type
-	return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
-}
-
-// checkColonOperator handles COLON operator type checking
-func (tc *TypeChecker) checkColonOperator() *TypeInfo {
-	// COLON is used in "for" quantifiers like "for any of them : ($)"
-	// The left side is the quantifier expression, right side is the condition
-	// The result should be boolean
-	return &TypeInfo{DataType: TypeBoolean}
-}
-
-// checkUnaryOp checks the types of a unary operation
-func (tc *TypeChecker) checkUnaryOp(unaryOp *ast.UnaryOp) *TypeInfo {
-	operandType := tc.checkExpression(unaryOp.Right)
-
-	if operandType == nil {
-		return &TypeInfo{DataType: TypeUnknown}
-	}
-
-	switch unaryOp.Op {
-	case token.NOT:
-		return tc.checkLogicalNotOp(unaryOp, operandType)
-	case token.BitwiseNot:
-		return tc.checkBitwiseNotOp(unaryOp, operandType)
-	case token.MINUS:
-		return tc.checkUnaryMinusOp(unaryOp, operandType)
-	case token.DEFINED:
-		return tc.checkDefinedOp()
-	case token.HASH:
-		return tc.checkHashOp()
-	case token.AT:
-		return tc.checkAtOp()
-	default:
-		return tc.checkUnknownUnaryOp(unaryOp)
-	}
-}
-
-// checkLogicalNotOp handles logical NOT operator
-func (tc *TypeChecker) checkLogicalNotOp(unaryOp *ast.UnaryOp, operandType *TypeInfo) *TypeInfo {
-	if operandType.DataType != TypeBoolean {
-		tc.addError(&Error{
-			Message:  "logical NOT requires boolean operand",
-			Position: unaryOp.Position(),
-		})
-		return &TypeInfo{DataType: TypeUnknown}
-	}
-	return &TypeInfo{DataType: TypeBoolean}
-}
-
-// checkBitwiseNotOp handles bitwise NOT operator
-func (tc *TypeChecker) checkBitwiseNotOp(unaryOp *ast.UnaryOp, operandType *TypeInfo) *TypeInfo {
-	if !operandType.IsInteger() {
-		tc.addError(&Error{
-			Message:  "bitwise NOT requires integer operand",
-			Position: unaryOp.Position(),
-		})
-		return &TypeInfo{DataType: TypeUnknown}
-	}
-	return &TypeInfo{DataType: TypeInteger, IntegerType: operandType.IntegerType}
-}
-
-// checkUnaryMinusOp handles unary minus operator
-func (tc *TypeChecker) checkUnaryMinusOp(unaryOp *ast.UnaryOp, operandType *TypeInfo) *TypeInfo {
-	if !operandType.IsNumeric() {
-		tc.addError(&Error{
-			Message:  "unary minus requires numeric operand",
-			Position: unaryOp.Position(),
-		})
-		return &TypeInfo{DataType: TypeUnknown}
-	}
-	return operandType
-}
-
-// checkDefinedOp handles DEFINED operator
-func (tc *TypeChecker) checkDefinedOp() *TypeInfo {
-	// DEFINED can work on any type
-	return &TypeInfo{DataType: TypeBoolean}
-}
-
-// checkHashOp handles HASH (#) operator
-func (tc *TypeChecker) checkHashOp() *TypeInfo {
-	// '#' count returns integer; operand should be a string identifier but we allow validation to proceed
-	return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
-}
-
-// checkAtOp handles AT (@) operator
-func (tc *TypeChecker) checkAtOp() *TypeInfo {
-	// '@' position returns integer offset
-	return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
-}
-
-// checkUnknownUnaryOp handles unknown unary operators
-func (tc *TypeChecker) checkUnknownUnaryOp(unaryOp *ast.UnaryOp) *TypeInfo {
-	tc.addError(&Error{
-		Message:  fmt.Sprintf("unknown unary operator: %s", unaryOp.Op),
-		Position: unaryOp.Position(),
-	})
-	return &TypeInfo{DataType: TypeUnknown}
-}
-
-// checkQuantifierOp checks quantifier operation types
-func (tc *TypeChecker) checkQuantifierOp(_, _ *TypeInfo, _ token.Position) *TypeInfo {
-	// Left side should be a quantifier (all, any, none) or number
-	// Right side should be a string set or "them"
-
-	// Quantifier operations evaluate to boolean.
-	return &TypeInfo{DataType: TypeBoolean}
+	return result
 }
 
 // getTypeFromSymbol returns type information for a symbol
@@ -483,13 +203,6 @@ func (tc *TypeChecker) GetErrors() []error {
 // HasErrors returns true if there are type checking errors
 func (tc *TypeChecker) HasErrors() bool {
 	return len(tc.errors) > 0
-}
-
-// isStringIdentifier checks if a type represents a string identifier (like $a, $b, etc.)
-func (tc *TypeChecker) isStringIdentifier(typeInfo *TypeInfo) bool {
-	// String identifiers evaluate to boolean; this checker does not retain their
-	// symbol origin after type inference.
-	return typeInfo.DataType == TypeBoolean
 }
 
 // checkFunctionCall checks the type of function call expressions
