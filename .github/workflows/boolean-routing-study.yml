@@ -1,0 +1,89 @@
+name: Boolean routing public API study
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [research/boolean-routing-api]
+    paths:
+      - .github/workflows/boolean-routing-study.yml
+      - experiments/witness/**
+      - compiler/**
+      - internal/wordmatch/**
+
+permissions:
+  contents: read
+
+env:
+  GOMAXPROCS: "2"
+  GOAMD64: v1
+  GOTOOLCHAIN: local
+
+jobs:
+  linux-amd64:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26.0"
+          check-latest: false
+          cache: false
+      - name: Record exact sources and environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p results
+          {
+            git rev-parse HEAD
+            git status --porcelain
+            uname -a
+            lscpu
+            go version
+            go env GOOS GOARCH GOAMD64 GOTOOLCHAIN
+            printf 'GOMAXPROCS=%s\n' "$GOMAXPROCS"
+          } > results/environment.txt
+          [[ "$(go env GOOS)/$(go env GOARCH)" == linux/amd64 ]]
+          [[ "$(go env GOVERSION)" == go1.26.0 ]]
+          find compiler internal/wordmatch experiments/witness -name '*.go' -type f -print0 | sort -z | xargs -0 sha256sum > results/sources.sha256
+          sha256sum .github/workflows/boolean-routing-study.yml experiments/witness/api-protocol.md >> results/sources.sha256
+          sha256sum -c experiments/witness/api-fixtures.sha256 > results/fixture-check.txt
+      - name: Validate and build standalone binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test ./... > results/repository-tests.txt 2>&1
+          go test -race ./internal/wordmatch ./compiler > results/race.txt 2>&1
+          go vet ./internal/wordmatch ./compiler > results/vet.txt 2>&1
+          go test -c -tags=witnessstudy -o results/api.test ./experiments/witness > results/build.txt 2>&1
+          sha256sum results/api.test > results/binary.sha256
+          go version -m results/api.test > results/build-info.txt
+          results/api.test -test.run '^TestBooleanRoutingAPIParity$' -test.count=1 -test.v > results/parity.txt 2>&1
+      - name: Six alternating public API scan rounds
+        shell: bash
+        run: |
+          set -euo pipefail
+          for round in 1 2 3 4 5 6; do
+            export BOOLEAN_API_REVERSE=$(((round - 1) % 2))
+            printf 'round=%s reverse=%s start=%s\n' "$round" "$BOOLEAN_API_REVERSE" "$(date -u +%FT%TZ)" >> results/order.txt
+            results/api.test -test.run '^$' -test.bench '^BenchmarkBooleanRoutingAPI$' -test.benchtime=100ms -test.count=1 > "results/scan-$round.txt" 2>&1
+            results/api.test -test.run '^$' -test.bench '^BenchmarkBooleanRoutingAPIPositive$' -test.benchtime=100ms -test.count=1 > "results/positive-$round.txt" 2>&1
+          done
+      - name: First and cached-plan scanner construction
+        shell: bash
+        run: |
+          set -euo pipefail
+          for round in 1 2 3 4 5 6; do
+            export BOOLEAN_API_REVERSE=$(((round - 1) % 2))
+            results/api.test -test.run '^$' -test.bench '^BenchmarkBooleanRoutingAPIFirstScanner$' -test.benchtime=1x -test.count=1 > "results/first-scanner-$round.txt" 2>&1
+            results/api.test -test.run '^$' -test.bench '^BenchmarkBooleanRoutingAPIReusedScanner$' -test.benchtime=100x -test.count=1 > "results/reused-scanner-$round.txt" 2>&1
+          done
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: boolean-routing-api-${{ github.run_id }}-${{ github.run_attempt }}
+          path: results/
+          if-no-files-found: error
+          retention-days: 30
