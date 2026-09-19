@@ -175,6 +175,67 @@ rule fixed_offset {
 	}
 }
 
+func TestScanSparseCandidateResultParity(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+global rule guard { strings: $a = "guard" condition: $a }
+private rule dependency { strings: $a = "dependency" condition: $a }
+rule selected : keep { strings: $a = "selected" condition: $a and dependency }
+rule missing : keep { strings: $a = "missing" condition: $a }
+rule header : keep { strings: $a = "MZ" condition: $a at 0 }
+rule counted : keep { strings: $a = "count" condition: #a == 2 }
+rule rejected : keep { strings: $a = "selected" condition: $a and false }
+rule negative : keep { strings: $a = "negative" condition: not $a }
+rule ignored { strings: $a = /selected[0-9]+/ condition: $a }
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, options := range [][]ScannerOption{
+		nil,
+		{WithReportedMatchesOnly()},
+		{WithFastScan(), WithTagsFilter([]string{"keep"})},
+		{WithFastScan(), WithTagsFilter([]string{"keep"}), WithReportedMatchesOnly()},
+	} {
+		fast := NewScanner(program, options...)
+		full := NewScanner(program, options...)
+		full.prefilterDisabled = true
+		for _, data := range []string{
+			"selected dependency count count selected42",
+			"MZ guard selected dependency count count selected42",
+			"guard", "clean", "guard selected dependency",
+		} {
+			assertPrefilterResultParity(t, prefilterParityScanners{fast: fast, full: full},
+				prefilterParityInput{name: data, data: []byte(data)})
+		}
+		fast.Close()
+		full.Close()
+	}
+}
+
+func TestScanSparseCandidatesPreserveIterationErrors(t *testing.T) {
+	for _, condition := range []string{
+		"$a and (for all i in (1..3) : (true))",
+		"(for all i in (1..3) : (true)) and $a",
+	} {
+		program, err := NewCompiler().CompileSource(`
+rule guarded { strings: $a = "loop" condition: ` + condition + ` }
+rule hit { strings: $a = "hit" condition: $a }
+`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		scanner := NewScanner(program, WithItersmax(1))
+		for _, data := range []string{"hit", "hit loop", "hit"} {
+			_, err := scanner.Scan([]byte(data))
+			wantError := strings.HasPrefix(condition, "(") || strings.Contains(data, "loop")
+			if (err != nil) != wantError {
+				t.Fatalf("%s: Scan(%q) error = %v", condition, data, err)
+			}
+		}
+		scanner.Close()
+	}
+}
+
 func FuzzPrefilterFastRejectResultParity(f *testing.F) {
 	for _, seed := range [][]byte{
 		nil,
