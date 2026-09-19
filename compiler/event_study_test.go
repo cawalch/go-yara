@@ -3,6 +3,7 @@
 package compiler
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"strings"
 	"testing"
@@ -20,7 +21,13 @@ func eventStudyProgram(tb testing.TB, kind string, count int) (*CompiledProgram,
 	markers := make([]string, count)
 	for n := range count {
 		stem := fmt.Sprintf("%s%04x", eventStudyPrefixes[n%len(eventStudyPrefixes)], n*37+11)
-		markers[n] = stem + "Ab12Cd34Ef56Gh78"
+		digest := sha256.Sum256([]byte(stem))
+		const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+		token := make([]byte, 16)
+		for i := range token {
+			token[i] = alphabet[int(digest[i])%len(alphabet)]
+		}
+		markers[n] = stem + string(token)
 		pattern := fmt.Sprintf("%q", markers[n])
 		if kind == "regex" {
 			pattern = "/" + strings.ReplaceAll(stem, ".", `\.`) + "[A-Za-z0-9]{16}/"
