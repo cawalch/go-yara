@@ -101,11 +101,19 @@ func (ctx *MatchContext) resetPublicStorage() {
 
 // Release returns the match context to the pool
 func (ctx *MatchContext) Release() {
-	// Clear data reference effectively to allow GC
-	ctx.Data = nil
-	ctx.Blocks = nil
-	ctx.compact = false
-	ctx.cancelDone = nil
-	ctx.maxMatchesPerPattern = 0
+	ctx.resetForPool()
 	matchContextPool.Put(ctx)
+}
+
+func (ctx *MatchContext) resetForPool() {
+	clear(ctx.Matches)
+	clear(ctx.matchBuffers)
+	clear(ctx.spans)
+	clear(ctx.spanBuffers)
+	*ctx = MatchContext{
+		Matches:      ctx.Matches,
+		matchBuffers: ctx.matchBuffers,
+		spans:        ctx.spans,
+		spanBuffers:  ctx.spanBuffers,
+	}
 }
