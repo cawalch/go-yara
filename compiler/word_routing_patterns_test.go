@@ -226,3 +226,74 @@ func TestWordRoutingPatternExpansionAllocation(t *testing.T) {
 		runtime.KeepAlive(converted)
 	}
 }
+
+func wordRoutingPattern(str *ast.String) (wordmatch.Pattern, bool) {
+	return newWordRoutingConverter().pattern(str)
+}
+
+func wordRoutingRegex(source string, flags regex.Flags) ([]wordmatch.Sequence, bool) {
+	return newWordRoutingConverter().regex(source, flags)
+}
+
+func TestWordRoutingConversionBudget(t *testing.T) {
+	pattern := &ast.String{Pattern: &ast.RegexPattern{Value: `/abcdefghijklmnop(foo|bar)[0-9]{1,3}done/`}}
+	probe := newWordRoutingConverter()
+	if _, ok := probe.pattern(pattern); !ok {
+		t.Fatal("declined representative pattern")
+	}
+	work, material := wordRoutingWorkLimit-probe.work, wordRoutingMaterialLimit-probe.material
+	for _, budget := range []wordRoutingConverter{{work: 2 * work, material: wordRoutingMaterialLimit}, {work: wordRoutingWorkLimit, material: 2 * material}} {
+		for i := range 3 {
+			if _, ok := budget.pattern(pattern); ok != (i < 2) {
+				t.Fatalf("pattern %d accepted=%v, remaining=%+v", i, ok, budget)
+			}
+		}
+		if _, ok := budget.pattern(&ast.String{Pattern: &ast.TextString{Value: "a"}}); ok {
+			t.Fatal("exhausted conversion resumed")
+		}
+	}
+	portfolio := newWordRoutingConverter()
+	for i := range 2048 {
+		if _, ok := portfolio.pattern(pattern); !ok {
+			t.Fatalf("ordinary portfolio exhausted at pattern %d", i)
+		}
+	}
+}
+
+func TestWordRoutingLiteralRunAllocations(t *testing.T) {
+	node := &regex.Node{Kind: regex.NodeConcat}
+	for range 4096 {
+		node.Children = append(node.Children, &regex.Node{Kind: regex.NodeLiteral, Value: 'x'})
+	}
+	allocations := testing.AllocsPerRun(3, func() {
+		converted, ok := newWordRoutingConverter().node(node, 0, 0)
+		if !ok || len(converted) != 1 || len(converted[0]) != 1 || len(converted[0][0].Literal) != 4096 {
+			t.Fatal("literal run was not preserved")
+		}
+	})
+	if allocations > 8 {
+		t.Fatalf("literal run allocated %.0f objects", allocations)
+	}
+}
+
+func TestWordRoutingClassBitmapParity(t *testing.T) {
+	for value := range 256 {
+		for _, negated := range []bool{false, true} {
+			class := &regex.Class{Negated: negated}
+			class.Bitmap[value/8] = 1 << (value % 8)
+			for _, flags := range []regex.Flags{0, regex.FlagsNoCase} {
+				sets, ok := regex.FixedByteSets(&regex.AST{Root: &regex.Node{Kind: regex.NodeClass, Class: class}}, flags)
+				if !ok {
+					t.Fatal("invalid class")
+				}
+				converted := wordRoutingClass(class, flags)
+				for b := range 256 {
+					got := converted.Set[b/64]&(uint64(1)<<(b%64)) != 0
+					if got != sets[0].Contains(byte(b)) {
+						t.Fatalf("class %02x negated=%v flags=%v byte=%02x", value, negated, flags, b)
+					}
+				}
+			}
+		}
+	}
+}

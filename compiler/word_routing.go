@@ -19,16 +19,15 @@ func WithBooleanRouting() ScannerOption {
 }
 
 func (cp *CompiledProgram) buildBooleanRouting() *wordmatch.RoutedProgram {
+	if !cp.booleanRoutingInput() {
+		return nil
+	}
+	conversion := newWordRoutingConverter()
 	rules := make([]wordmatch.Rule, 0, len(cp.Rules))
 	for _, rule := range cp.Rules {
-		if len(rule.booleanPatterns) == 0 || rule.IsGlobal || rule.IsPrivate ||
-			len(rule.CaptureBindings) != 0 || len(rule.EvidencePlans) != 0 ||
-			len(rule.GlobalSlots) != 0 {
-			return nil
-		}
 		var compiled wordmatch.Rule
 		for _, pattern := range rule.booleanPatterns {
-			converted, ok := wordRoutingPattern(pattern)
+			converted, ok := conversion.pattern(pattern)
 			if !ok {
 				return nil
 			}
@@ -36,14 +35,42 @@ func (cp *CompiledProgram) buildBooleanRouting() *wordmatch.RoutedProgram {
 		}
 		rules = append(rules, compiled)
 	}
-	if len(rules) == 0 {
-		return nil
-	}
 	plan, err := wordmatch.CompileRouted(rules)
 	if err != nil {
 		return nil
 	}
 	return plan
+}
+
+func (cp *CompiledProgram) booleanRoutingInput() bool {
+	if len(cp.Rules) == 0 || len(cp.Rules) > 4096 {
+		return false
+	}
+	patterns, sourceBytes := 8192, 1<<20
+	for _, rule := range cp.Rules {
+		if rule == nil || len(rule.booleanPatterns) == 0 || len(rule.booleanPatterns) > patterns ||
+			rule.IsGlobal || rule.IsPrivate || len(rule.CaptureBindings) != 0 ||
+			len(rule.EvidencePlans) != 0 || len(rule.GlobalSlots) != 0 {
+			return false
+		}
+		patterns -= len(rule.booleanPatterns)
+		for _, pattern := range rule.booleanPatterns {
+			var size int
+			switch source := pattern.Pattern.(type) {
+			case *ast.TextString:
+				size = len(source.Value)
+			case *ast.RegexPattern:
+				size = len(source.Value)
+			default:
+				return false
+			}
+			if size > sourceBytes {
+				return false
+			}
+			sourceBytes -= size
+		}
+	}
+	return true
 }
 
 // Keep owned source only for exact conjunctions; parsing and route construction

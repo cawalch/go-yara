@@ -41,6 +41,9 @@ type verifier struct {
 }
 
 func compile(rules []Rule) (*program, error) {
+	if !boundedInput(rules) {
+		return nil, fmt.Errorf("%w: input limit", ErrIneligible)
+	}
 	p := &program{postings: []posting{{}}}
 	frequencies := make(map[string]int)
 	for _, r := range rules {
@@ -126,9 +129,14 @@ func compile(rules []Rule) (*program, error) {
 	}
 	l.table = make([]slot, size)
 	l.shift = 64 - bits.TrailingZeros(uint(size))
+	probes := 1 << 20
 	for word, refs := range pending {
 		index := hash(word, l.shift)
 		for l.table[index].head != 0 {
+			if probes == 0 {
+				return nil, fmt.Errorf("%w: table probe limit", ErrIneligible)
+			}
+			probes--
 			index = (index + 1) & uint64(size-1)
 		}
 		head := uint32(0)
@@ -140,6 +148,39 @@ func compile(rules []Rule) (*program, error) {
 		l.table[index] = slot{word: word, head: head}
 	}
 	return p, nil
+}
+
+// Bound work and owned input before cloning or building hash tables.
+func boundedInput(rules []Rule) bool {
+	if len(rules) > 4096 {
+		return false
+	}
+	patterns, sequences, terms, literalBytes := 8192, 16384, 65536, 1<<20
+	for _, r := range rules {
+		if len(r.All) > patterns {
+			return false
+		}
+		patterns -= len(r.All)
+		for _, pattern := range r.All {
+			if len(pattern.Any) > sequences {
+				return false
+			}
+			sequences -= len(pattern.Any)
+			for _, sequence := range pattern.Any {
+				if len(sequence) > terms {
+					return false
+				}
+				terms -= len(sequence)
+				for _, term := range sequence {
+					if len(term.Literal) > literalBytes {
+						return false
+					}
+					literalBytes -= len(term.Literal)
+				}
+			}
+		}
+	}
+	return true
 }
 func hash(word uint64, shift int) uint64 {
 	return ((word ^ (word >> 33)) * 0x9e3779b185ebca87) >> shift
