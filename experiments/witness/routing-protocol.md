@@ -14,7 +14,8 @@ and routing `nodes/op`; a declined portfolio is not an optimized rejection.
 Both v1 and routed timed variants are complete hybrids, including fallback.
 
 Before any timings, the fixed construction bounds are depth 12, cumulative child
-reference membership 12N, scoring work 128 million, at most 2N+1 nodes per bucket,
+reference membership 12N per bucket, scoring work 128 million, a global node
+limit proportional to twice total postings,
 at most eight references per leaf, offsets within ±256 bytes, and width-eight
 witnesses only. Depth eight would require perfect partitions to reduce 2,048
 references to eight; depth twelve provides capacity slack. This is a structural
@@ -24,7 +25,9 @@ The independent generator creates 24-byte non-hex mixed-case markers, eight
 actual log layouts (JSON, syslog, key/value, CSV, tabular, access, alternate JSON,
 and plain health records), rotating placement, and late/end records. Its seeds,
 marker alphabet, formats and contextual constraints differ from v1. This remains
-a deterministic synthetic corpus, not representative customer traffic.
+a deterministic synthetic corpus, not representative customer traffic. Large
+controls are predominantly space-padded synthetic guards, not representative
+large-event payloads.
 
 The 32 fresh cases are fixed as follows:
 
