@@ -14,9 +14,7 @@ func Exec(code, input []byte, flags Flags) bool {
 	return matched
 }
 
-// ExecWithCancel behaves like Exec but interrupts matching when done closes.
-// Cancellation returns context.Canceled; callers with a context can use its
-// Err method to distinguish cancellation from a deadline.
+// ExecWithCancel returns context.Canceled if done closes during matching.
 //
 //nolint:revive // cancellation signal accompanies the existing VM arguments
 func ExecWithCancel(code, input []byte, flags Flags, done <-chan struct{}) (bool, error) {
@@ -34,7 +32,7 @@ func ExecWithCancel(code, input []byte, flags Flags, done <-chan struct{}) (bool
 		if vmCanceled(done) {
 			return false, context.Canceled
 		}
-		matched, _ := runAtMatchWithCancel(code, input, flags, start, done)
+		matched, _ := runAtMatch(code, input, flags, start, done)
 		if vmCanceled(done) {
 			return false, context.Canceled
 		}
@@ -67,13 +65,13 @@ func ExecMatch(code, input []byte, flags Flags) (matched bool, start, end int) {
 	}
 	if (flags & FlagsScan) != 0 {
 		for start = 0; start <= len(input); start++ { //nolint:intrange // keeping traditional for loop for compatibility
-			if matched, end = runAtMatch(code, input, flags, start); matched {
+			if matched, end = runAtMatch(code, input, flags, start, nil); matched {
 				return true, start, end
 			}
 		}
 		return false, -1, -1
 	}
-	if matched, end = runAtMatch(code, input, flags, 0); matched {
+	if matched, end = runAtMatch(code, input, flags, 0, nil); matched {
 		return true, 0, end
 	}
 	return false, -1, -1
@@ -90,9 +88,7 @@ func ExecMatchBatch(bs *VMBatch, code, input []byte, flags Flags, start int) (ma
 	return
 }
 
-// ExecMatchBatchWithCancel behaves like ExecMatchBatch but interrupts an
-// anchored attempt when done closes. A nil batch uses temporary pooled state.
-// Cancellation returns context.Canceled and no match.
+// ExecMatchBatchWithCancel supports cancellation and a nil (temporary) batch.
 //
 //nolint:revive // cancellation signal accompanies the existing VM arguments
 func ExecMatchBatchWithCancel(bs *VMBatch, code, input []byte, flags Flags, start int, done <-chan struct{}) (bool, int, int, error) {
@@ -105,7 +101,7 @@ func ExecMatchBatchWithCancel(bs *VMBatch, code, input []byte, flags Flags, star
 	var matched bool
 	var end int
 	if bs == nil {
-		matched, end = runAtMatchWithCancel(code, input, flags, start, done)
+		matched, end = runAtMatch(code, input, flags, start, done)
 	} else {
 		matched, end = runAtMatchBatchWithCancel(bs, code, input, flags, start, done)
 	}
@@ -265,12 +261,7 @@ func handleCharClassOp(code, s []byte, next *[]thread, pc int, ch byte, pos, adv
 	return false
 }
 
-//nolint:revive // existing VM entry point
-func runAtMatch(code, s []byte, flags Flags, start int) (bool, int) {
-	return runAtMatchWithCancel(code, s, flags, start, nil)
-}
-
-func runAtMatchWithCancel(code, s []byte, flags Flags, start int, done <-chan struct{}) (matched bool, length int) { //nolint:cyclop,revive,maintidx,nakedret // complex but performance-critical; splitting would hurt hot path, arg count intentional
+func runAtMatch(code, s []byte, flags Flags, start int, done <-chan struct{}) (matched bool, length int) { //nolint:cyclop,revive,maintidx,nakedret // complex but performance-critical; splitting would hurt hot path, arg count intentional
 	dotAll := (flags & FlagsDotAll) != 0
 	noCase := (flags & FlagsNoCase) != 0
 	wide := (flags & FlagsWide) != 0

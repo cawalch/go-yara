@@ -1316,7 +1316,7 @@ func (s *Scanner) populateFixedRegexCache(
 			if entry.wide {
 				flags |= regex.FlagsWide
 			}
-			matched, startOffset, endOffset := execRegexMatchAt(nil, entry.pattern, data, flags, entry.wide, start)
+			matched, startOffset, endOffset := execRegexMatchAt(nil, entry.pattern, data, flags, entry.wide, start, ctx.Done())
 			if !matched {
 				continue
 			}

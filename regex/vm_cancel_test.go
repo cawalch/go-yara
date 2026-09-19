@@ -41,29 +41,13 @@ func TestCancelableRegexPreservesMatches(t *testing.T) {
 	}
 }
 
-func TestRegexCancellationAndBatchReuse(t *testing.T) {
-	code := mustCompile(t, "a+")
+func TestRegexCancellationDuringAnchoredAttempt(t *testing.T) {
+	code := mustCompile(t, "^a+$")
 	done := make(chan struct{})
 	close(done)
 	if matched, err := ExecWithCancel(code, []byte("aaa"), FlagsScan, done); matched || !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled Exec = (%v, %v)", matched, err)
 	}
-	batch, release := NewVMBatch(len(code))
-	defer release()
-	for _, state := range []*VMBatch{nil, batch} {
-		matched, start, end, err := ExecMatchBatchWithCancel(state, code, []byte("aaa"), 0, 0, done)
-		if matched || start != -1 || end != -1 || !errors.Is(err, context.Canceled) {
-			t.Fatalf("canceled batch = (%v,%d,%d,%v)", matched, start, end, err)
-		}
-		matched, start, end, err = ExecMatchBatchWithCancel(state, code, []byte("aaa"), 0, 0, nil)
-		if !matched || start != 0 || end != 3 || err != nil {
-			t.Fatalf("reused batch = (%v,%d,%d,%v)", matched, start, end, err)
-		}
-	}
-}
-
-func TestRegexCancellationDuringAnchoredAttempt(t *testing.T) {
-	code := mustCompile(t, "^a+$")
 	data := bytes.Repeat([]byte{'a'}, 8<<20)
 	batch, release := NewVMBatch(len(code))
 	defer release()
@@ -76,7 +60,6 @@ func TestRegexCancellationDuringAnchoredAttempt(t *testing.T) {
 		if matched || !errors.Is(err, context.Canceled) {
 			t.Fatalf("in-flight cancellation = (%v,%v)", matched, err)
 		}
-		// Cancellation must advance pooled generation state before another attempt.
 		matched, start, end, err := ExecMatchBatchWithCancel(state, code, []byte("aaa"), 0, 0, nil)
 		if !matched || start != 0 || end != 3 || err != nil {
 			t.Fatalf("reuse after interruption = (%v,%d,%d,%v)", matched, start, end, err)

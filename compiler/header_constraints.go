@@ -275,7 +275,7 @@ func compiledPatternMatchesAtWithCancel(rule *CompiledRule, id string, data []by
 			if useWide {
 				flags |= regex.FlagsWide
 			}
-			matched, start, end := execRegexMatchAtWithCancel(nil, pattern, data, flags, useWide, int(offset), done)
+			matched, start, end := execRegexMatchAt(nil, pattern, data, flags, useWide, int(offset), done)
 			candidate := Match{Pattern: id, Offset: offset + int64(start), Length: end - start}
 			if matched && start == 0 && matchPassesModifiers(data, candidate, modifiers, useWide) {
 				return true
