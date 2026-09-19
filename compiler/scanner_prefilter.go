@@ -25,7 +25,10 @@ func (s *Scanner) evaluateRuleCondition(
 	rule *CompiledRule,
 	input ruleScanInput,
 ) (ruleEvaluation, error) {
-	if !s.ruleHeaderConstraintsMatchInput(rule, input) {
+	if !s.ruleHeaderConstraintsMatchInput(ctx, rule, input) {
+		if err := ctx.Err(); err != nil {
+			return ruleEvaluation{}, err
+		}
 		s.ruleResults[rule.Name] = false
 		return ruleEvaluation{pruned: true}, nil
 	}
@@ -51,13 +54,14 @@ func (s *Scanner) evaluateRuleCondition(
 	return ruleEvaluation{matched: matched}, nil
 }
 
-func (s *Scanner) ruleHeaderConstraintsMatchInput(rule *CompiledRule, input ruleScanInput) bool {
+func (s *Scanner) ruleHeaderConstraintsMatchInput(ctx context.Context, rule *CompiledRule, input ruleScanInput) bool {
 	if !s.blockScan {
-		return ruleHeaderConstraintsMatch(rule, input.data)
+		return ruleHeaderConstraintsMatchContext(rule, &MatchContext{Data: input.data, cancelDone: ctx.Done()})
 	}
 	return ruleHeaderConstraintsMatchContext(rule, &MatchContext{
-		Blocks:   s.blockContext[:],
-		FileSize: s.blockFileSize,
+		cancelDone: ctx.Done(),
+		Blocks:     s.blockContext[:],
+		FileSize:   s.blockFileSize,
 	})
 }
 
@@ -126,7 +130,7 @@ func (s *Scanner) populateRuleMatchContext(
 	return nil
 }
 
-func (s *Scanner) allEvaluatedRulesPrefilterRejected(data []byte, useSharedAutomaton bool) bool {
+func (s *Scanner) allEvaluatedRulesPrefilterRejected(ctx context.Context, data []byte, useSharedAutomaton bool) bool {
 	if useSharedAutomaton && s.allEvaluatedRulesRequireSharedPatterns &&
 		len(s.touchedGlobalMatches) == 0 && !s.sharedNonTextMatched {
 		return true
@@ -135,7 +139,7 @@ func (s *Scanner) allEvaluatedRulesPrefilterRejected(data []byte, useSharedAutom
 		if !rule.IsGlobal && !s.hasMatchingTag(rule) {
 			continue
 		}
-		if !s.ruleHeaderConstraintsMatchInput(rule, ruleScanInput{data: data}) {
+		if !s.ruleHeaderConstraintsMatchInput(ctx, rule, ruleScanInput{data: data}) {
 			continue
 		}
 		if !rule.RequiresStringMatch {

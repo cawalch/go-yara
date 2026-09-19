@@ -1,6 +1,7 @@
 package regex
 
 import (
+	"context"
 	"encoding/binary"
 )
 
@@ -9,20 +10,52 @@ import (
 // - Otherwise it attempts only from position 0 (anchored semantics).
 // Other flags like DOT_ALL and NO_CASE are honored by the VM.
 func Exec(code, input []byte, flags Flags) bool {
-	if len(code) == 0 {
-		return false
-	}
-	if (flags & FlagsScan) != 0 {
-		for start := 0; start <= len(input); start++ {
-			if ok, _ := runAtMatch(code, input, flags, start); ok {
-				return true
-			}
-		}
-		return false
-	}
-	ok, _ := runAtMatch(code, input, flags, 0)
-	return ok
+	matched, _ := ExecWithCancel(code, input, flags, nil)
+	return matched
 }
+
+// ExecWithCancel returns context.Canceled if done closes during matching.
+//
+//nolint:revive // cancellation signal accompanies the existing VM arguments
+func ExecWithCancel(code, input []byte, flags Flags, done <-chan struct{}) (bool, error) {
+	if vmCanceled(done) {
+		return false, context.Canceled
+	}
+	if len(code) == 0 {
+		return false, nil
+	}
+	lastStart := 0
+	if flags&FlagsScan != 0 {
+		lastStart = len(input)
+	}
+	for start := 0; start <= lastStart; start++ {
+		if vmCanceled(done) {
+			return false, context.Canceled
+		}
+		matched, _ := runAtMatch(code, input, flags, start, done)
+		if vmCanceled(done) {
+			return false, context.Canceled
+		}
+		if matched {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func vmCanceled(done <-chan struct{}) bool {
+	if done == nil {
+		return false
+	}
+	select {
+	case <-done:
+		return true
+	default:
+		return false
+	}
+}
+
+const vmCancellationInterval = 4096
 
 // ExecMatch behaves like Exec but also returns the [start,end) byte range of the
 // first match found. If no match is found it returns (false, -1, -1).
@@ -32,13 +65,13 @@ func ExecMatch(code, input []byte, flags Flags) (matched bool, start, end int) {
 	}
 	if (flags & FlagsScan) != 0 {
 		for start = 0; start <= len(input); start++ { //nolint:intrange // keeping traditional for loop for compatibility
-			if matched, end = runAtMatch(code, input, flags, start); matched {
+			if matched, end = runAtMatch(code, input, flags, start, nil); matched {
 				return true, start, end
 			}
 		}
 		return false, -1, -1
 	}
-	if matched, end = runAtMatch(code, input, flags, 0); matched {
+	if matched, end = runAtMatch(code, input, flags, 0, nil); matched {
 		return true, 0, end
 	}
 	return false, -1, -1
@@ -51,15 +84,34 @@ func ExecMatch(code, input []byte, flags Flags) (matched bool, start, end int) {
 //
 //nolint:revive // argument-limit: performance-critical VM entry point
 func ExecMatchBatch(bs *VMBatch, code, input []byte, flags Flags, start int) (matched bool, startOff, endOff int) {
-	if len(code) == 0 || start > len(input) {
-		return false, -1, -1
+	matched, startOff, endOff, _ = ExecMatchBatchWithCancel(bs, code, input, flags, start, nil)
+	return
+}
+
+// ExecMatchBatchWithCancel supports cancellation and a nil (temporary) batch.
+//
+//nolint:revive // cancellation signal accompanies the existing VM arguments
+func ExecMatchBatchWithCancel(bs *VMBatch, code, input []byte, flags Flags, start int, done <-chan struct{}) (bool, int, int, error) {
+	if vmCanceled(done) {
+		return false, -1, -1, context.Canceled
 	}
-	matched, l := runAtMatchBatch(bs, code, input, flags, start)
+	if len(code) == 0 || start < 0 || start > len(input) {
+		return false, -1, -1, nil
+	}
+	var matched bool
+	var end int
+	if bs == nil {
+		matched, end = runAtMatch(code, input, flags, start, done)
+	} else {
+		matched, end = runAtMatchBatchWithCancel(bs, code, input, flags, start, done)
+	}
+	if vmCanceled(done) {
+		return false, -1, -1, context.Canceled
+	}
 	if matched {
-		// l is the absolute end position; convert to length relative to start
-		return true, 0, l - start
+		return true, 0, end - start, nil
 	}
-	return false, -1, -1
+	return false, -1, -1, nil
 }
 
 type thread struct {
@@ -209,7 +261,7 @@ func handleCharClassOp(code, s []byte, next *[]thread, pc int, ch byte, pos, adv
 	return false
 }
 
-func runAtMatch(code, s []byte, flags Flags, start int) (matched bool, length int) { //nolint:cyclop,revive,maintidx,nakedret // complex but performance-critical; splitting would hurt hot path, arg count intentional
+func runAtMatch(code, s []byte, flags Flags, start int, done <-chan struct{}) (matched bool, length int) { //nolint:cyclop,revive,maintidx,nakedret // complex but performance-critical; splitting would hurt hot path, arg count intentional
 	dotAll := (flags & FlagsDotAll) != 0
 	noCase := (flags & FlagsNoCase) != 0
 	wide := (flags & FlagsWide) != 0
@@ -276,6 +328,9 @@ func runAtMatch(code, s []byte, flags Flags, start int) (matched bool, length in
 
 	runWideLoop := func() bool {
 		for pos := start; pos+1 < len(s); pos += 2 {
+			if done != nil && (pos-start)&(vmCancellationInterval-1) == 0 && vmCanceled(done) {
+				return true
+			}
 			if !isWidePair(s, pos) {
 				cur = cur[:0]
 				return checkAndReturnIfExhausted(cur, &matched, &length, bestEnd)
@@ -293,6 +348,9 @@ func runAtMatch(code, s []byte, flags Flags, start int) (matched bool, length in
 
 	runAsciiLoop := func() bool {
 		for pos := start; pos < len(s); pos++ {
+			if done != nil && (pos-start)&(vmCancellationInterval-1) == 0 && vmCanceled(done) {
+				return true
+			}
 			ch := s[pos]
 			step(pos, ch, 1)
 			cur, next = next, cur
@@ -331,7 +389,7 @@ func runAtMatch(code, s []byte, flags Flags, start int) (matched bool, length in
 // runAtMatchBatch is like runAtMatch but uses a pre-pinned vmBatchState
 // to avoid sync.Pool Get/Put overhead. Use when calling runAtMatch
 // thousands of times in a tight loop (e.g., addRegexMatches).
-func runAtMatchBatch(bs *vmBatchState, code, s []byte, flags Flags, start int) (matched bool, length int) { //nolint:nestif,revive // argument-limit: performance-critical VM hot path; nested wide/ascii loops are intentional for VM dispatch
+func runAtMatchBatchWithCancel(bs *vmBatchState, code, s []byte, flags Flags, start int, done <-chan struct{}) (matched bool, length int) { //nolint:nestif,revive // argument-limit: performance-critical VM hot path; nested wide/ascii loops are intentional for VM dispatch
 	dotAll := (flags & FlagsDotAll) != 0
 	noCase := (flags & FlagsNoCase) != 0
 	wide := (flags & FlagsWide) != 0
@@ -395,6 +453,10 @@ func runAtMatchBatch(bs *vmBatchState, code, s []byte, flags Flags, start int) (
 	var exhausted bool
 	if wide { //nolint:nestif // wide/ascii loop dispatch is intentional for VM
 		for pos := start; pos+1 < len(s); pos += 2 {
+			if done != nil && (pos-start)&(vmCancellationInterval-1) == 0 && vmCanceled(done) {
+				exhausted = true
+				break
+			}
 			if !isWidePair(s, pos) {
 				cur = cur[:0]
 				exhausted = checkAndReturnIfExhausted(cur, &matched, &length, bestEnd)
@@ -409,6 +471,10 @@ func runAtMatchBatch(bs *vmBatchState, code, s []byte, flags Flags, start int) (
 		}
 	} else {
 		for pos := start; pos < len(s); pos++ {
+			if done != nil && (pos-start)&(vmCancellationInterval-1) == 0 && vmCanceled(done) {
+				exhausted = true
+				break
+			}
 			stepFn(pos, s[pos], 1)
 			cur, next = next, cur
 			if checkAndReturnIfExhausted(cur, &matched, &length, bestEnd) {

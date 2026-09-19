@@ -242,6 +242,11 @@ func (i *Interpreter) executeMainLoopWithCancel(done <-chan struct{}) error {
 		}
 	}
 
+	if scanCanceled(done) {
+		i.result = context.Canceled
+		return i.result
+	}
+
 	i.storeExecutionResult()
 	i.cleanupStack()
 	return i.result

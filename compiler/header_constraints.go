@@ -172,10 +172,6 @@ func headerConstraintKey(constraint HeaderConstraint) string {
 		constraint.BigEndian, constraint.Value, constraint.String)
 }
 
-func ruleHeaderConstraintsMatch(rule *CompiledRule, data []byte) bool {
-	return ruleHeaderConstraintsMatchContext(rule, &MatchContext{Data: data})
-}
-
 func ruleHeaderConstraintsMatchContext(rule *CompiledRule, ctx *MatchContext) bool {
 	for _, constraint := range rule.HeaderConstraints {
 		switch constraint.Kind {
@@ -234,21 +230,21 @@ func compiledPatternMatchesAtContext(rule *CompiledRule, id string, ctx *MatchCo
 		return false
 	}
 	if ctx.Data != nil {
-		return compiledPatternMatchesAt(rule, id, ctx.Data, offset)
+		return compiledPatternMatchesAtWithCancel(rule, id, ctx.Data, offset, ctx.cancelDone)
 	}
 	for _, block := range ctx.Blocks {
 		if offset < block.Base || offset > block.Base+int64(len(block.Data)) {
 			continue
 		}
-		if compiledPatternMatchesAt(rule, id, block.Data, offset-block.Base) {
+		if compiledPatternMatchesAtWithCancel(rule, id, block.Data, offset-block.Base, ctx.cancelDone) {
 			return true
 		}
 	}
 	return false
 }
 
-//nolint:revive // argument-limit: scan-hot internal predicate
-func compiledPatternMatchesAt(rule *CompiledRule, id string, data []byte, offset int64) bool {
+//nolint:revive // cancellation signal accompanies the fixed-offset predicate
+func compiledPatternMatchesAtWithCancel(rule *CompiledRule, id string, data []byte, offset int64, done <-chan struct{}) bool {
 	if offset < 0 || offset > int64(len(data)) {
 		return false
 	}
@@ -279,7 +275,7 @@ func compiledPatternMatchesAt(rule *CompiledRule, id string, data []byte, offset
 			if useWide {
 				flags |= regex.FlagsWide
 			}
-			matched, start, end := execRegexMatchAt(nil, pattern, data, flags, useWide, int(offset))
+			matched, start, end := execRegexMatchAt(nil, pattern, data, flags, useWide, int(offset), done)
 			candidate := Match{Pattern: id, Offset: offset + int64(start), Length: end - start}
 			if matched && start == 0 && matchPassesModifiers(data, candidate, modifiers, useWide) {
 				return true
@@ -290,7 +286,7 @@ func compiledPatternMatchesAt(rule *CompiledRule, id string, data []byte, offset
 		}
 	case StringKindHex:
 		pattern := rule.HexPatterns[id]
-		for _, match := range FindHexMatches(pattern, data[int(offset):]) {
+		for _, match := range findHexMatches(pattern, data[int(offset):], done) {
 			if match.Offset > 0 {
 				break
 			}

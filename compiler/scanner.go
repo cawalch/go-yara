@@ -544,7 +544,8 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 	scanInput := ruleScanInput{data: data, useSharedAutomaton: useSharedAutomaton}
 
 	clear(s.ruleResults)
-	if !s.prefilterDisabled && s.allEvaluatedRulesPrefilterRejected(data, useSharedAutomaton) {
+	//nolint:nestif // cancellation and result materialization share the rejection boundary
+	if !s.prefilterDisabled && s.allEvaluatedRulesPrefilterRejected(ctx, data, useSharedAutomaton) {
 		for _, rule := range s.program.Rules {
 			if err := ctx.Err(); err != nil {
 				return nil, err
@@ -553,9 +554,12 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 				continue
 			}
 			result.RuleResults[rule.Name] = false
-			if !ruleHeaderConstraintsMatch(rule, data) {
+			if !s.ruleHeaderConstraintsMatchInput(ctx, rule, scanInput) {
 				result.PrunedRules = append(result.PrunedRules, rule.Name)
 			}
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
 		}
 		return result, nil
 	}
@@ -836,15 +840,15 @@ func (s *Scanner) evaluatePublicRules(
 	if !s.prefilterDisabled && useSharedAutomaton {
 		return s.evaluateSharedPublicRules(ctx, result)
 	}
-	if !s.prefilterDisabled && s.allEvaluatedRulesPrefilterRejected(data, useSharedAutomaton) {
-		return result, nil
+	if !s.prefilterDisabled && s.allEvaluatedRulesPrefilterRejected(ctx, data, useSharedAutomaton) {
+		return result, ctx.Err()
 	}
 	for _, rule := range s.program.Rules {
 		if err := s.evaluatePublicRule(ctx, rule, &result); err != nil {
 			return publicRuleEvaluation{}, err
 		}
 	}
-	return result, nil
+	return result, ctx.Err()
 }
 
 func (s *Scanner) evaluateSharedPublicRules(
@@ -1312,7 +1316,7 @@ func (s *Scanner) populateFixedRegexCache(
 			if entry.wide {
 				flags |= regex.FlagsWide
 			}
-			matched, startOffset, endOffset := execRegexMatchAt(nil, entry.pattern, data, flags, entry.wide, start)
+			matched, startOffset, endOffset := execRegexMatchAt(nil, entry.pattern, data, flags, entry.wide, start, ctx.Done())
 			if !matched {
 				continue
 			}

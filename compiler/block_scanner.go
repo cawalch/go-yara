@@ -172,7 +172,7 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (*ScanResult
 			return 0
 		}
 	})
-	headerContext := &MatchContext{Blocks: blocks, FileSize: scanner.fileSize}
+	headerContext := &MatchContext{Blocks: blocks, FileSize: scanner.fileSize, cancelDone: ctx.Done()}
 
 	for _, rule := range scanner.program.Rules {
 		if err := ctx.Err(); err != nil {

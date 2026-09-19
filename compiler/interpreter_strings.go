@@ -577,17 +577,31 @@ func (i *Interpreter) executeMatchesOperation() error {
 		return &InterpreterError{Type: ErrorRuntime, Opcode: OpMatches, Message: err.Error()}
 	}
 
+	var done <-chan struct{}
+	if i.matchContext != nil {
+		done = i.matchContext.cancelDone
+	}
 	valueStr := i.getString(value)
 	if strings.HasPrefix(valueStr, "$") {
-		// String identifier: check if any match content matches the regex
+		var matchErr error
 		matched := i.matchContext.anyMatch(valueStr, func(match matchSpan) bool {
 			data, ok := i.matchContext.dataRange(match.Offset, int64(match.Length))
-			return ok && regex.Exec(compiled, data, flags|regex.FlagsScan)
+			if !ok {
+				return false
+			}
+			found, err := regex.ExecWithCancel(compiled, data, flags|regex.FlagsScan, done)
+			matchErr = err
+			return found || err != nil // Stop visiting occurrences on cancellation.
 		})
+		if matchErr != nil {
+			return matchErr
+		}
 		return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(matched)})
 	}
-
-	matched := regex.Exec(compiled, []byte(valueStr), flags|regex.FlagsScan)
+	matched, err := regex.ExecWithCancel(compiled, []byte(valueStr), flags|regex.FlagsScan, done)
+	if err != nil {
+		return err
+	}
 	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(matched)})
 }
 
