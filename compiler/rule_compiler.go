@@ -8,8 +8,10 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/cawalch/go-yara/ast"
+	"github.com/cawalch/go-yara/internal/wordmatch"
 	"github.com/cawalch/go-yara/regex"
 	"github.com/cawalch/go-yara/semantic"
 	"github.com/cawalch/go-yara/token"
@@ -168,6 +170,7 @@ func (rc *RuleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 		ModuleNames:         maps.Clone(rc.moduleNames),
 		HeaderConstraints:   deriveHeaderConstraints(rule.Condition),
 		requiredStrings:     deriveRequiredStrings(rule.Condition, rule.Strings),
+		booleanPatterns:     booleanRoutingPatterns(rule),
 	}
 
 	rc.ruleIndex++
@@ -1140,6 +1143,7 @@ type CompiledRule struct {
 	// across concurrent scanners alongside the rest of the program.
 	prefilterStrings []prefilterStringInfo
 	requiredStrings  []string
+	booleanPatterns  []*ast.String
 	dependencies     []string // nil means dependency metadata is unavailable
 
 	// Rule metadata (from AST)
@@ -1370,6 +1374,7 @@ type CompiledProgram struct {
 	dependencies            map[string][]string
 	preparationErr          error
 	compactPrefilter        *compactPrefilter
+	booleanRouting          func() *wordmatch.RoutedProgram
 
 	// Streaming support
 	streamingProcessor *StreamingProcessor
@@ -1439,6 +1444,7 @@ func (cp *CompiledProgram) prepare() error {
 	cp.sharedNonTextCaches = sharedNonTextCacheCoverage(cp.nonTextCacheSize, cp.SharedLookup)
 	cp.sharedNonTextCacheRules = sharedNonTextCacheRuleLookup(cp.Rules, cp.sharedNonTextCaches)
 	cp.compactPrefilter = cp.buildCompactPrefilter()
+	cp.booleanRouting = sync.OnceValue(cp.buildBooleanRouting)
 	return nil
 }
 
