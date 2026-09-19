@@ -9,7 +9,7 @@ import (
 )
 
 func TestRegexConditionDeadline(t *testing.T) {
-	source := `rule expensive { condition: "` + strings.Repeat("a", 8192) + `" matches /a+b/ }`
+	source := `rule expensive { condition: "` + strings.Repeat("a", 1<<20) + `" matches /a+b/ }`
 	program, err := NewCompiler().CompileSource(source)
 	if err != nil {
 		t.Fatal(err)
@@ -71,7 +71,7 @@ func TestRegexPatternDeadlineAndReuse(t *testing.T) {
 		reuse     string
 		want      bool
 	}{
-		{`$a matches /a+b/`, 8192, "b", false},
+		{`$a matches /a+b/`, 1 << 20, "b", false},
 		{`$a at 0`, 8 << 20, "aaa", true},
 	} {
 		t.Run(test.condition, func(t *testing.T) {

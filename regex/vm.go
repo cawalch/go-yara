@@ -24,15 +24,13 @@ func ExecWithCancel(code, input []byte, flags Flags, done <-chan struct{}) (bool
 	if len(code) == 0 {
 		return false, nil
 	}
+	scan := flags&FlagsScan != 0 && code[0] != OpMatchAtStart
 	lastStart := 0
-	if flags&FlagsScan != 0 {
-		lastStart = len(input)
+	if scan && flags&FlagsWide != 0 && len(input) > 0 {
+		lastStart = 1 // Search both wide alignments, including odd byte offsets.
 	}
 	for start := 0; start <= lastStart; start++ {
-		if vmCanceled(done) {
-			return false, context.Canceled
-		}
-		matched, _ := runAtMatch(code, input, flags, start, done)
+		matched, _ := runMatch(code, input, flags, start, done, scan)
 		if vmCanceled(done) {
 			return false, context.Canceled
 		}
@@ -261,7 +259,12 @@ func handleCharClassOp(code, s []byte, next *[]thread, pc int, ch byte, pos, adv
 	return false
 }
 
-func runAtMatch(code, s []byte, flags Flags, start int, done <-chan struct{}) (matched bool, length int) { //nolint:cyclop,revive,maintidx,nakedret // complex but performance-critical; splitting would hurt hot path, arg count intentional
+//nolint:revive // VM arguments shared with the batch entry point
+func runAtMatch(code, s []byte, flags Flags, start int, done <-chan struct{}) (bool, int) {
+	return runMatch(code, s, flags, start, done, false)
+}
+
+func runMatch(code, s []byte, flags Flags, start int, done <-chan struct{}, scan bool) (matched bool, length int) { //nolint:cyclop,revive,maintidx,nakedret // performance-critical VM dispatch
 	dotAll := (flags & FlagsDotAll) != 0
 	noCase := (flags & FlagsNoCase) != 0
 	wide := (flags & FlagsWide) != 0
@@ -271,9 +274,6 @@ func runAtMatch(code, s []byte, flags Flags, start int, done <-chan struct{}) (m
 	visited := st.visited[:len(code)]
 	cur := st.cur
 	next := st.next
-	// gen is a unique token from a global atomic counter. Each step increments
-	// it locally so visited[] entries from the previous step are stale.
-	// A block of 1M generation values is reserved per match in getVMState.
 
 	// Track leftmost-longest end for this start position.
 	bestEnd := -1
@@ -326,47 +326,37 @@ func runAtMatch(code, s []byte, flags Flags, start int, done <-chan struct{}) (m
 		}
 	}
 
-	runWideLoop := func() bool {
-		for pos := start; pos+1 < len(s); pos += 2 {
-			if done != nil && (pos-start)&(vmCancellationInterval-1) == 0 && vmCanceled(done) {
-				return true
-			}
-			if !isWidePair(s, pos) {
-				cur = cur[:0]
-				return checkAndReturnIfExhausted(cur, &matched, &length, bestEnd)
-			}
-			ch := s[pos]
-			step(pos, ch, 2)
-			cur, next = next, cur
-
-			if checkAndReturnIfExhausted(cur, &matched, &length, bestEnd) {
-				return true
-			}
-		}
-		return false
-	}
-
-	runAsciiLoop := func() bool {
-		for pos := start; pos < len(s); pos++ {
-			if done != nil && (pos-start)&(vmCancellationInterval-1) == 0 && vmCanceled(done) {
-				return true
-			}
-			ch := s[pos]
-			step(pos, ch, 1)
-			cur, next = next, cur
-
-			if checkAndReturnIfExhausted(cur, &matched, &length, bestEnd) {
-				return true
-			}
-		}
-		return false
-	}
-
-	var exhausted bool
+	advance := 1
 	if wide {
-		exhausted = runWideLoop()
-	} else {
-		exhausted = runAsciiLoop()
+		advance = 2
+	}
+	exhausted := false
+	for pos := start; pos <= len(s); pos += advance {
+		if done != nil && (pos-start)&(vmCancellationInterval-1) == 0 && vmCanceled(done) {
+			exhausted = true
+			break
+		}
+		// Merge new starts into the current closure: each state runs once per position.
+		if scan && addThread(code, s, &cur, 0, pos, visited, gen, wide) {
+			bestEnd = pos
+		}
+		if scan && bestEnd >= 0 || pos+advance > len(s) {
+			break
+		}
+		if wide && !isWidePair(s, pos) {
+			cur = cur[:0]
+			if scan {
+				gen++
+				continue
+			}
+		} else {
+			step(pos, s[pos], advance)
+			cur, next = next, cur
+		}
+		if !scan && checkAndReturnIfExhausted(cur, &matched, &length, bestEnd) {
+			exhausted = true
+			break
+		}
 	}
 
 	if exhausted {
