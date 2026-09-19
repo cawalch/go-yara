@@ -373,8 +373,9 @@ loaded, err := compiler.UnmarshalCompiledProgram(encoded)
 ```
 
 Use `WriteTo` and `ReadCompiledProgram` for `io.Writer` and `io.Reader` flows.
-The current compiled-program format is version 2. Version 1 blobs are rejected
-and must be rebuilt from rule source.
+The current compiled-program format is version 3. Version 1 and 2 blobs are
+rejected and must be rebuilt from rule source. Version 3 requires updated
+fast-scan analysis that retains all occurrences for `matches` conditions.
 The format has a magic header and explicit version and rejects incompatible or
 truncated data. It preserves compiled pattern and prefilter plans. Runtime
 external-variable values are intentionally not serialized and must be set on

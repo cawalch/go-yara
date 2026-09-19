@@ -14,8 +14,10 @@ import (
 )
 
 const (
-	compiledProgramMagic   = "GOYARA\x00"
-	compiledProgramVersion = uint16(2)
+	compiledProgramMagic = "GOYARA\x00"
+	// Version 3 invalidates cached FastScanSafe flags that allowed MATCHES
+	// conditions to discard occurrences whose content affects the result.
+	compiledProgramVersion = uint16(3)
 )
 
 type serializedProgram struct {
