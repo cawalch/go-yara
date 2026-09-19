@@ -1,0 +1,95 @@
+name: Witness routing study
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [research/witness-routing]
+    paths:
+      - .github/workflows/routing-study.yml
+      - experiments/witness/*.go
+      - experiments/witness/routing-protocol.md
+      - experiments/witness/summarize_routing.py
+
+permissions:
+  contents: read
+
+env:
+  GOMAXPROCS: "2"
+  GOAMD64: v1
+  GOTOOLCHAIN: local
+
+jobs:
+  linux-amd64:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26.0"
+          check-latest: false
+          cache: false
+      - name: Record sources and environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p results
+          {
+            git rev-parse HEAD
+            uname -a
+            lscpu
+            go version
+            go env GOOS GOARCH GOAMD64 GOTOOLCHAIN
+            printf 'GOMAXPROCS=%s\n' "$GOMAXPROCS"
+          } > results/environment.txt
+          [[ "$(go env GOOS)/$(go env GOARCH)" == linux/amd64 ]]
+          [[ "$(go env GOVERSION)" == go1.26.0 ]]
+          git diff a0093fe HEAD -- compiler experiments/witness/witness.go experiments/witness/types.go experiments/witness/study_test.go experiments/witness/stress_test.go > results/controls.diff
+          test ! -s results/controls.diff
+          sha256sum experiments/witness/*.go experiments/witness/*.md experiments/witness/*.py .github/workflows/routing-study.yml > results/sources.sha256
+          printf '%s  %s\n' 0e0ecd3a4bef34bebd29725644f803da6910c51ef35d5747b9533401c9e00cbc experiments/witness/routing_study_test.go | sha256sum -c - > results/fixture-check.txt
+      - name: Validate before timing
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test ./... > results/repository-tests.txt 2>&1
+          go test -race ./experiments/witness > results/race.txt 2>&1
+          go vet ./experiments/witness > results/vet.txt 2>&1
+          go test -c -tags=witnessstudy -o results/routing.test ./experiments/witness > results/build.txt 2>&1
+          sha256sum results/routing.test > results/binary.sha256
+          go version -m results/routing.test > results/build-info.txt
+          results/routing.test -test.run '^TestWitnessRouting(Parity|HistoricalParity)$' -test.count=1 -test.v > results/parity.txt 2>&1
+      - name: Six alternating fresh and historical rounds
+        shell: bash
+        run: |
+          set -euo pipefail
+          for round in 1 2 3 4 5 6; do
+            export WITNESS_REVERSE=$(((round - 1) % 2))
+            printf 'round=%s reverse=%s start=%s\n' "$round" "$WITNESS_REVERSE" "$(date -u +%FT%TZ)" >> results/order.txt
+            results/routing.test -test.run '^$' -test.bench '^BenchmarkWitnessRouting$' -test.benchtime=100ms -test.count=1 > "results/scan-$round.txt" 2>&1
+            results/routing.test -test.run '^$' -test.bench '^BenchmarkWitnessRoutingHistorical$' -test.benchtime=100ms -test.count=1 > "results/historical-$round.txt" 2>&1
+          done
+      - name: Compilation and program heap
+        shell: bash
+        run: |
+          set -euo pipefail
+          for round in 1 2 3 4 5 6; do
+            results/routing.test -test.run '^$' -test.bench '^BenchmarkWitnessRoutingCompile$' -test.benchtime=1x -test.count=1 > "results/compile-$round.txt" 2>&1
+          done
+          for round in 1 2 3; do
+            results/routing.test -test.run '^TestWitnessRoutingMemory$' -test.count=1 -test.v > "results/memory-$round.txt" 2>&1
+          done
+      - name: Summarize
+        if: always()
+        run: |
+          python3 experiments/witness/summarize_routing.py results
+          cat results/routing-summary.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: routing-study-${{ github.run_id }}-${{ github.run_attempt }}
+          path: results/
+          if-no-files-found: error
+          retention-days: 30
