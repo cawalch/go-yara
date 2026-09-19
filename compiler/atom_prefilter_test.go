@@ -1218,6 +1218,7 @@ func buildLinearRegexContext(rule *CompiledRule, data []byte) *MatchContext {
 		modifiers := rule.StringModifiers[id]
 		addRegexMatchesWithModifiers(ctx, id, pattern, data, modifiers)
 	}
+	ctx.normalizeMatches()
 	return ctx
 }
 

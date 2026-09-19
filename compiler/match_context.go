@@ -1,6 +1,9 @@
 package compiler
 
-import "sync"
+import (
+	"slices"
+	"sync"
+)
 
 var matchContextPool = sync.Pool{
 	New: func() any {
@@ -25,6 +28,7 @@ func BuildMatchContext(rule *CompiledRule, data []byte) *MatchContext {
 func PopulateMatchContext(ctx *MatchContext, rule *CompiledRule, data []byte) {
 	ctx.compact = false
 	ctx.Reset(data)
+	defer ctx.normalizeMatches()
 
 	if rule == nil {
 		return
@@ -57,6 +61,40 @@ func PopulateMatchContext(ctx *MatchContext, rule *CompiledRule, data []byte) {
 			}
 		}
 	}
+}
+
+func (ctx *MatchContext) normalizeMatches() {
+	for id, spans := range ctx.spans {
+		ctx.spans[id] = sortAndDedupeMatchSpans(spans)
+	}
+	for id, matches := range ctx.Matches {
+		ctx.Matches[id] = sortAndDedupeMatches(matches)
+	}
+}
+
+func sortAndDedupeMatches(matches []Match) []Match {
+	slices.SortStableFunc(matches, func(left, right Match) int {
+		switch {
+		case left.Offset < right.Offset:
+			return -1
+		case left.Offset > right.Offset:
+			return 1
+		case left.Length < right.Length:
+			return -1
+		case left.Length > right.Length:
+			return 1
+		default:
+			return 0
+		}
+	})
+	unique := matches[:0]
+	for _, match := range matches {
+		if len(unique) > 0 && unique[len(unique)-1].Offset == match.Offset && unique[len(unique)-1].Length == match.Length {
+			continue
+		}
+		unique = append(unique, match)
+	}
+	return unique
 }
 
 // Reset clears the match context for reuse
