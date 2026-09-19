@@ -731,6 +731,9 @@ func (ac *ACAutomaton) SearchIter(data []byte) iter.Seq[ACMatch] {
 			}
 			outputStart := ac.states[currentState].outputStart
 			outputEnd := ac.states[currentState].outputEnd
+			if outputStart == outputEnd {
+				continue
+			}
 			for idx := outputStart; idx < outputEnd; idx++ {
 				stringIndex := ac.outputs[idx]
 				if stringIndex < 0 || int(stringIndex) >= len(ac.strings) {
