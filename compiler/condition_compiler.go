@@ -441,6 +441,11 @@ func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 		return nil
 	}
 
+	if index, exists := cc.variableMap[ident.Name]; exists {
+		cc.emitter.EmitOpcodeWithOperand(OpLoadVar, Operand{Type: OperandImmediate32, Value: safeInt64ToUint64(safeMax(0, int64(index)))}, ident.Pos.Line, ident.Pos.Column)
+		return nil
+	}
+
 	if index, exists := cc.externalVariables[ident.Name]; exists {
 		cc.emitter.EmitOpcodeWithOperand(OpPushM, Operand{Type: OperandImmediate32, Value: uint64(int64(index))}, ident.Pos.Line, ident.Pos.Column) // #nosec G115
 		return nil
@@ -448,11 +453,6 @@ func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 
 	if index, exists := cc.globalVariables[ident.Name]; exists {
 		cc.emitter.EmitOpcodeWithOperand(OpPushM, Operand{Type: OperandImmediate32, Value: uint64(int64(index))}, ident.Pos.Line, ident.Pos.Column) // #nosec G115
-		return nil
-	}
-
-	if index, exists := cc.variableMap[ident.Name]; exists {
-		cc.emitter.EmitOpcodeWithOperand(OpLoadVar, Operand{Type: OperandImmediate32, Value: safeInt64ToUint64(safeMax(0, int64(index)))}, ident.Pos.Line, ident.Pos.Column)
 		return nil
 	}
 

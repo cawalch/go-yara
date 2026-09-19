@@ -54,6 +54,9 @@ func TestMatchesOperandKinds(t *testing.T) {
 
 func TestMatchesPreservesLoopAndDeclaredValues(t *testing.T) {
 	for _, condition := range []string{
+		`(for any n in (1..2) : (n == 1)) and n == 7`,
+		`(for any constant in ("inner") : (constant matches /inner/ and constant == "inner")) and constant == "needle"`,
+		`(for any marker in ("inner") : (marker matches /inner/ and marker == "inner")) and marker == "needle"`,
 		`(for any s in ("value") : (s matches /value/)) and marker matches /needle/`,
 		`(for any s in ("value") : (s matches /value/)) and constant matches /needle/`,
 		`for any outer in ("needle") : ((for any inner in ("other") : (true)) and outer matches /needle/)`,
@@ -61,7 +64,7 @@ func TestMatchesPreservesLoopAndDeclaredValues(t *testing.T) {
 		`for any s in ("outer") : ((for any s in ("middle") : ((for any s in ("inner") : (s matches /inner/)) and s matches /middle/)) and s matches /outer/)`,
 	} {
 		t.Run(condition, func(t *testing.T) {
-			program, err := NewCompiler().CompileSource(`external marker global constant = "needle" rule r { condition: ` + condition + ` }`)
+			program, err := NewCompiler().CompileSource(`external marker global constant = "needle" global n = 7 rule r { condition: ` + condition + ` }`)
 			if err != nil {
 				t.Fatal(err)
 			}
