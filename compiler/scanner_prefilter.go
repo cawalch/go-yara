@@ -8,8 +8,9 @@ type ruleEvaluation struct {
 }
 
 type ruleScanInput struct {
-	data               []byte
-	useSharedAutomaton bool
+	data                 []byte
+	useSharedAutomaton   bool
+	skipUnmatchedContext bool
 }
 
 type rulePrefilterStatus uint8
@@ -31,6 +32,11 @@ func (s *Scanner) evaluateRuleCondition(
 		}
 		s.ruleResults[rule.Name] = false
 		return ruleEvaluation{pruned: true}, nil
+	}
+
+	if !s.prefilterDisabled && input.skipUnmatchedContext && input.useSharedAutomaton && s.missingRequiredString(rule) {
+		s.ruleResults[rule.Name] = false
+		return ruleEvaluation{}, nil
 	}
 
 	if err := s.populateRuleMatchContext(ctx, rule, input); err != nil {
