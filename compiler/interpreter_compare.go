@@ -1,6 +1,9 @@
 package compiler
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // executeTypedComparison performs a typed comparison for the given opcode.
 func (i *Interpreter) executeTypedComparison(opcode Opcode) error {
@@ -20,13 +23,19 @@ func (i *Interpreter) executeTypedComparison(opcode Opcode) error {
 	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(result)})
 }
 
-// compareValues dispatches to integer or double comparison based on operand type.
+// compareValues resolves comparison operands that may be dynamically typed.
 func (i *Interpreter) compareValues(a, b Value, opcode Opcode) (bool, error) {
 	switch a.Type {
 	case ValueTypeInt:
 		return i.compareIntegers(a, b, opcode)
 	case ValueTypeDouble:
 		return i.compareDoubles(a, b, opcode)
+	case ValueTypeString:
+		if b.Type != ValueTypeString {
+			return false, &InterpreterError{Type: ErrorTypeMismatch, Message: "string operands required"}
+		}
+		order := int64(strings.Compare(i.getString(a), i.getString(b)))
+		return i.compareIntegers(Value{Type: ValueTypeInt, IntVal: order}, Value{Type: ValueTypeInt}, opcode)
 	default:
 		return false, &InterpreterError{Type: ErrorTypeMismatch, Message: "numeric operands required"}
 	}

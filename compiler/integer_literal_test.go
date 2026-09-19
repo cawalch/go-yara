@@ -2,6 +2,9 @@ package compiler
 
 import (
 	"testing"
+
+	"github.com/cawalch/go-yara/ast"
+	"github.com/cawalch/go-yara/token"
 )
 
 // TestIntegerLiteralCompilation is a regression test for hex and octal integer
@@ -42,6 +45,13 @@ func TestIntegerLiteralCompilation(t *testing.T) {
 		{"64-bit neighboring values", `4294967297 == 4294967296`, nil, false},
 		{"max int64 equals", `9223372036854775807 == 9223372036854775807`, nil, true},
 		{"max int64 mismatch", `9223372036854775807 == 9223372036854775806`, nil, false},
+		{"min int64", `-9223372036854775808 < -9223372036854775807`, nil, true},
+		{"min int64 not zero", `-9223372036854775808 == 0`, nil, false},
+		{"hex signed bits", `0xffffffffffffffff == -1`, nil, true},
+		{"hex sign bit", `0x8000000000000000 == -9223372036854775808`, nil, true},
+		{"hex high bits", `0xfffffffffffffffe == -2`, nil, true},
+		{"largest valid KB size", `9007199254740991KB == 9223372036854774784`, nil, true},
+		{"octal signed maximum", `0o777777777777777777777 == 9223372036854775807`, nil, true},
 	}
 
 	for _, tt := range tests {
@@ -71,4 +81,26 @@ func TestIntegerLiteralCompilation(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestIntegerLiteralOverflow(t *testing.T) {
+	for _, literal := range []string{"9223372036854775808", "18446744073709551616", "-9223372036854775809", "0x10000000000000000", "0o1000000000000000000000", "9007199254740992KB", "8796093022208MB", "8589934592GB"} {
+		if _, err := NewCompiler().CompileSource("rule r { condition: " + literal + " == 0 }"); err == nil {
+			t.Errorf("out-of-range literal %s compiled successfully", literal)
+		}
+	}
+}
+
+func TestSignedIntegerASTLiteral(t *testing.T) {
+	emitter := NewEmitter()
+	cc := NewConditionCompiler(emitter, nil)
+	if err := cc.CompileCondition(&ast.Condition{Expression: &ast.Literal{Type: token.IntegerLit, Value: int64(-7)}}); err != nil {
+		t.Fatal(err)
+	}
+	emitter.EmitHalt(0, 0)
+	code, err := emitter.GetBytecode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertInterpreterResult(t, code, -7)
 }

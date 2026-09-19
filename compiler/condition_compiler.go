@@ -38,6 +38,7 @@ type ConditionCompiler struct {
 	variableMap       map[string]int
 	externalVariables map[string]int
 	globalVariables   map[string]int
+	globalValues      map[string]compiledGlobalValue
 	ruleIndexMap      map[string]int
 	labelCounter      int
 	labels            map[string]int
@@ -86,6 +87,9 @@ func parseSizeLiteral(literal string) (int64, error) {
 	}
 
 	if multiplier, exists := sizeMultipliers[strings.ToUpper(matches[2])]; exists {
+		if num > math.MaxInt64/multiplier {
+			return 0, fmt.Errorf("size literal exceeds int64 range: %s", literal)
+		}
 		return num * multiplier, nil
 	}
 	return 0, fmt.Errorf("unsupported size unit: %s", matches[2])
@@ -293,6 +297,8 @@ func (cc *ConditionCompiler) compileExpression(expr ast.Expression) error {
 
 func (cc *ConditionCompiler) compileLiteral(lit *ast.Literal) error {
 	switch lit.Type {
+	case token.IntegerLit, token.HexIntegerLit, token.OctalIntegerLit:
+		return cc.compileIntegerLiteral(lit)
 	case token.SizeLit:
 		return cc.compileSizeLiteral(lit)
 	case token.FILESIZE:
@@ -313,10 +319,6 @@ func (cc *ConditionCompiler) compileLiteral(lit *ast.Literal) error {
 // compileSimpleLiteral compiles simple literal types (integer, float, string, boolean)
 func (cc *ConditionCompiler) compileSimpleLiteral(lit *ast.Literal) bool {
 	switch lit.Type {
-	case token.IntegerLit, token.HexIntegerLit, token.OctalIntegerLit:
-		cc.compileIntegerLiteral(lit)
-		return true
-
 	case token.FloatLit:
 		cc.compileFloatLiteral(lit)
 		return true
@@ -339,33 +341,20 @@ func (cc *ConditionCompiler) compileSimpleLiteral(lit *ast.Literal) bool {
 }
 
 // compileIntegerLiteral compiles integer literals
-func (cc *ConditionCompiler) compileIntegerLiteral(lit *ast.Literal) {
-	if value, ok := lit.Value.(int64); ok {
-		cc.emitter.EmitPush(safeInt64ToUint64(safeMax(0, value)), lit.Pos.Line, lit.Pos.Column)
-		return
+func (cc *ConditionCompiler) compileIntegerLiteral(lit *ast.Literal) error {
+	value, err := globalLiteralInt(lit)
+	if err != nil {
+		return fmt.Errorf("invalid integer literal %v: %w", lit.Value, err)
 	}
-
-	if strValue, ok := lit.Value.(string); ok {
-		// Handle case where literal value is stored as string (parse it)
-		intVal, err := parseIntLiteral(strValue)
-		if err == nil {
-			cc.emitter.EmitPush(safeInt64ToUint64(safeMax(0, intVal)), lit.Pos.Line, lit.Pos.Column)
-			return
-		}
-	}
-
-	cc.emitter.EmitPush(0, lit.Pos.Line, lit.Pos.Column)
+	cc.emitter.EmitPush(uint64(value), lit.Pos.Line, lit.Pos.Column) // #nosec G115 -- preserve signed integer bits
+	return nil
 }
 
-// parseIntLiteral parses a string as an integer literal.
-//
-// Base 0 lets strconv auto-detect the prefix: "0x" -> hexadecimal, "0o" ->
-// octal, otherwise decimal. The lexer preserves the prefix in the token
-// literal for HexIntegerLit and OctalIntegerLit, so a fixed base-10 parse
-// would silently fail and compile those literals to 0. This matches the
-// convention used by the other literal-parsing call sites in the codebase
-// (declaration_parser, quantifier_parser, rule_compiler).
 func parseIntLiteral(s string) (int64, error) {
+	if strings.HasPrefix(strings.ToLower(s), "0x") {
+		bits, err := strconv.ParseUint(s, 0, 64)
+		return int64(bits), err //checkednarrow:ignore hex literals preserve all 64 bits
+	}
 	return strconv.ParseInt(s, 0, 64)
 }
 
@@ -599,12 +588,19 @@ func (cc *ConditionCompiler) compileCommaOperator(binOp *ast.BinaryOp) error {
 
 func (cc *ConditionCompiler) isFloatExpression(expr ast.Expression) bool {
 	switch e := expr.(type) {
+	case *ast.Identifier:
+		_, loop := cc.variableMap[e.Name]
+		return !loop && cc.globalValues[e.Name].valueType == ValueTypeDouble
 	case *ast.Literal:
 		return e.Type == token.FloatLit
 	case *ast.BinaryOp:
-		return cc.isFloatExpression(e.Left) || cc.isFloatExpression(e.Right)
+		switch e.Op {
+		case token.PLUS, token.MINUS, token.MULTIPLY, token.DIVIDE:
+			return cc.isFloatExpression(e.Left) || cc.isFloatExpression(e.Right)
+		}
+		return false
 	case *ast.UnaryOp:
-		return cc.isFloatExpression(e.Right)
+		return e.Op == token.MINUS && cc.isFloatExpression(e.Right)
 	case *ast.FunctionCall:
 		function, ok := cc.moduleFunctions[e.Function]
 		return ok && function.function.ReturnType == ModuleFloat
@@ -615,14 +611,15 @@ func (cc *ConditionCompiler) isFloatExpression(expr ast.Expression) bool {
 
 func (cc *ConditionCompiler) isStringExpression(expr ast.Expression) bool {
 	switch e := expr.(type) {
+	case *ast.Identifier:
+		if slot, loop := cc.variableMap[e.Name]; loop {
+			return e.Name != "$" && slices.Contains(cc.loopVarSlots, slot)
+		}
+		return cc.globalValues[e.Name].valueType == ValueTypeString
 	case *ast.Literal:
 		return e.Type == token.StringLit || e.Type == token.RegexLit
 	case *ast.FunctionCall:
 		return cc.isStringFunction(e.Function)
-	case *ast.BinaryOp:
-		return cc.isStringExpression(e.Left) || cc.isStringExpression(e.Right)
-	case *ast.UnaryOp:
-		return cc.isStringExpression(e.Right)
 	default:
 		return false
 	}
@@ -638,20 +635,6 @@ func (cc *ConditionCompiler) isStringFunction(name string) bool {
 	default:
 		return false
 	}
-}
-
-func (cc *ConditionCompiler) isLiteralFloat(expr ast.Expression) bool {
-	if lit, ok := expr.(*ast.Literal); ok {
-		return lit.Type == token.FloatLit
-	}
-	if unaryOp, ok := expr.(*ast.UnaryOp); ok && unaryOp.Op == token.MINUS {
-		return cc.isLiteralFloat(unaryOp.Right)
-	}
-	return false
-}
-
-func (cc *ConditionCompiler) isMixedTypeComparison(leftIsFloat, rightIsFloat bool) bool {
-	return leftIsFloat != rightIsFloat
 }
 
 func (cc *ConditionCompiler) isComparisonOperator(op token.Type) bool {
@@ -677,97 +660,20 @@ func (cc *ConditionCompiler) isNonCommutativeOperator(op token.Type) bool {
 }
 
 func (cc *ConditionCompiler) compileOperands(binOp *ast.BinaryOp) error {
-	isComparison := cc.isComparisonOperator(binOp.Op)
-	isNonCommutative := cc.isNonCommutativeOperator(binOp.Op)
-
-	if isComparison || isNonCommutative {
-		return cc.compileExpressions(binOp.Left, binOp.Right)
+	left, right := binOp.Left, binOp.Right
+	if !cc.isComparisonOperator(binOp.Op) && !cc.isNonCommutativeOperator(binOp.Op) {
+		left, right = right, left
 	}
-	return cc.compileExpressions(binOp.Right, binOp.Left)
-}
-
-//nolint:revive // argument-limit: internal helper
-func (cc *ConditionCompiler) handleBitShiftFloatConversion(binOp *ast.BinaryOp, leftIsFloat, rightIsFloat, isComparison bool) {
-	if isComparison {
-		if leftIsFloat {
-			cc.emitter.EmitOpcode(OpSwapundef, binOp.Pos.Line, binOp.Pos.Column)
+	promote := binOp.Op != token.AND && binOp.Op != token.OR &&
+		(cc.isFloatExpression(left) || cc.isFloatExpression(right))
+	for _, operand := range []ast.Expression{left, right} {
+		if err := cc.compileExpression(operand); err != nil {
+			return err
+		}
+		if promote && !cc.isFloatExpression(operand) {
 			cc.emitter.EmitOpcode(OpIntToDbl, binOp.Pos.Line, binOp.Pos.Column)
-			cc.emitter.EmitOpcode(OpSwapundef, binOp.Pos.Line, binOp.Pos.Column)
-		}
-		if rightIsFloat {
-			_ = rightIsFloat
 		}
 	}
-}
-
-func (cc *ConditionCompiler) handleMixedTypeLiteralComparison(binOp *ast.BinaryOp) bool {
-	if cc.isLiteralFloat(binOp.Left) || cc.isLiteralFloat(binOp.Right) {
-		result := int64(0)
-		if binOp.Op == token.NEQ {
-			result = 1
-		}
-		cc.emitter.EmitPush(safeInt64ToUint64(result), binOp.Pos.Line, binOp.Pos.Column)
-		return true
-	}
-	return false
-}
-
-//nolint:revive // argument-limit: internal helper
-func (cc *ConditionCompiler) convertForMixedType(binOp *ast.BinaryOp, leftIsFloat, rightIsFloat, isComparison bool) {
-	if isComparison {
-		cc.convertForMixedTypeComparison(binOp, leftIsFloat, rightIsFloat)
-	} else {
-		cc.convertForMixedTypeArithmetic(binOp, leftIsFloat, rightIsFloat)
-	}
-}
-
-func (cc *ConditionCompiler) convertForMixedTypeComparison(binOp *ast.BinaryOp, leftIsFloat, rightIsFloat bool) {
-	if leftIsFloat && !rightIsFloat {
-		cc.emitter.EmitOpcode(OpIntToDbl, binOp.Pos.Line, binOp.Pos.Column)
-	} else if !leftIsFloat && rightIsFloat {
-		cc.emitIntToDoubleWithSwap(binOp)
-	}
-}
-
-func (cc *ConditionCompiler) convertForMixedTypeArithmetic(binOp *ast.BinaryOp, leftIsFloat, rightIsFloat bool) {
-	if leftIsFloat && !rightIsFloat {
-		cc.emitIntToDoubleWithSwap(binOp)
-	} else if !leftIsFloat && rightIsFloat {
-		cc.emitter.EmitOpcode(OpIntToDbl, binOp.Pos.Line, binOp.Pos.Column)
-	}
-}
-
-func (cc *ConditionCompiler) emitIntToDoubleWithSwap(binOp *ast.BinaryOp) {
-	cc.emitter.EmitOpcode(OpSwapundef, binOp.Pos.Line, binOp.Pos.Column)
-	cc.emitter.EmitOpcode(OpIntToDbl, binOp.Pos.Line, binOp.Pos.Column)
-	cc.emitter.EmitOpcode(OpSwapundef, binOp.Pos.Line, binOp.Pos.Column)
-}
-
-//nolint:revive // argument-limit: internal helper
-func (cc *ConditionCompiler) handleFloatOperations(binOp *ast.BinaryOp, leftIsFloat, rightIsFloat, isComparison bool) error {
-	// Logical operands are boolean even when a nested comparison contains
-	// floating-point expressions. Promoting either result would turn a valid
-	// boolean into a double before OpAnd/OpOr executes.
-	if binOp.Op == token.AND || binOp.Op == token.OR {
-		return nil
-	}
-	isFloatOp := leftIsFloat || rightIsFloat
-	if !isFloatOp {
-		return nil
-	}
-
-	switch {
-	case binOp.Op == token.LeftShift || binOp.Op == token.RightShift:
-		cc.handleBitShiftFloatConversion(binOp, leftIsFloat, rightIsFloat, isComparison)
-	case cc.isMixedTypeComparison(leftIsFloat, rightIsFloat) && (binOp.Op == token.EQ || binOp.Op == token.NEQ):
-		if cc.handleMixedTypeLiteralComparison(binOp) {
-			return nil
-		}
-		cc.convertForMixedType(binOp, leftIsFloat, rightIsFloat, isComparison)
-	default:
-		cc.convertForMixedType(binOp, leftIsFloat, rightIsFloat, isComparison)
-	}
-
 	return nil
 }
 
@@ -876,7 +782,6 @@ func (cc *ConditionCompiler) compileBinaryOp(binOp *ast.BinaryOp) error {
 	leftIsString := cc.isStringExpression(binOp.Left)
 	rightIsString := cc.isStringExpression(binOp.Right)
 	isStringCompare := cc.isStringComparisonOperator(binOp.Op) && (leftIsString || rightIsString)
-	isComparison := cc.isComparisonOperator(binOp.Op)
 	isFloatOp := leftIsFloat || rightIsFloat
 
 	if isStringCompare {
@@ -886,10 +791,6 @@ func (cc *ConditionCompiler) compileBinaryOp(binOp *ast.BinaryOp) error {
 		}
 		cc.emitter.EmitOpcode(opcode, binOp.Pos.Line, binOp.Pos.Column)
 		return nil
-	}
-
-	if err := cc.handleFloatOperations(binOp, leftIsFloat, rightIsFloat, isComparison); err != nil {
-		return err
 	}
 
 	opcode, err := cc.selectOpcode(binOp, isFloatOp, false)
@@ -1017,11 +918,17 @@ func (cc *ConditionCompiler) resolveLengthOfTarget(lengthOf *ast.LengthOf) (int,
 }
 
 func (cc *ConditionCompiler) compileMinusOperator(unaryOp *ast.UnaryOp) error {
+	if lit, ok := unaryOp.Right.(*ast.Literal); ok && lit.Type == token.IntegerLit {
+		if text, ok := lit.Value.(string); ok && text == "9223372036854775808" {
+			cc.emitter.EmitPush(uint64(1)<<63, lit.Pos.Line, lit.Pos.Column)
+			return nil
+		}
+	}
 	if err := cc.compileExpression(unaryOp.Right); err != nil {
 		return err
 	}
 
-	if cc.isLiteralFloat(unaryOp.Right) {
+	if cc.isFloatExpression(unaryOp.Right) {
 		cc.emitter.EmitOpcode(OpDblMinus, unaryOp.Pos.Line, unaryOp.Pos.Column)
 	} else {
 		cc.emitter.EmitOpcode(OpIntMinus, unaryOp.Pos.Line, unaryOp.Pos.Column)
