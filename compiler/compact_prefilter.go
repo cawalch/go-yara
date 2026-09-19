@@ -72,6 +72,18 @@ func (cp *CompiledProgram) buildCompactPrefilter() (*ACAutomaton, error) {
 	if !useful {
 		return nil, nil
 	}
+	var sensitive, folded bool
+	for key := range selected {
+		if key.flags&regex.FlagsNoCase != 0 {
+			folded = true
+		} else {
+			sensitive = true
+		}
+	}
+	// Rebuilding mixed-case tries can split existing case-folded transitions.
+	if sensitive && folded {
+		return nil, nil
+	}
 	gate := NewACAutomaton()
 	for _, info := range cp.SharedAutomaton.strings {
 		key := compactPatternKey{string(info.Data), info.Flags}
