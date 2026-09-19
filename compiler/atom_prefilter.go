@@ -860,7 +860,7 @@ func appendRegexPrefilterMatches(
 		if pattern.anchored && start != 0 {
 			continue
 		}
-		matched, startOff, endOff := execRegexMatchAt(bs, pattern, data, flags, entry.IsWide, start)
+		matched, startOff, endOff := execRegexMatchAtWithCancel(bs, pattern, data, flags, entry.IsWide, start, done)
 		if !matched {
 			continue
 		}

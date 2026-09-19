@@ -444,7 +444,7 @@ func addRegexMatchAt(
 	bs *regex.VMBatch,
 	start int,
 ) {
-	matched, startOffset, endOffset := execRegexMatchAt(bs, regexInfo, data, flags, isWide, start)
+	matched, startOffset, endOffset := execRegexMatchAtWithCancel(bs, regexInfo, data, flags, isWide, start, ctx.cancelDone)
 	if !matched {
 		return
 	}
@@ -481,6 +481,15 @@ func execRegexMatchAt(
 	isWide bool,
 	start int,
 ) (matched bool, startOffset, endOffset int) {
+	return execRegexMatchAtWithCancel(bs, pattern, data, flags, isWide, start, nil)
+}
+
+//nolint:revive // cancellation signal accompanies the exact verifier arguments
+func execRegexMatchAtWithCancel(bs *regex.VMBatch, pattern RegexPattern, data []byte, flags regex.Flags, isWide bool, start int, done <-chan struct{}) (matched bool, startOffset, endOffset int) {
+	if scanCanceled(done) {
+		return false, -1, -1
+	}
+
 	if len(pattern.fixedByteSets) > 0 {
 		length, ok := fixedRegexMatchAt(pattern.fixedByteSets, data, isWide, start)
 		if !ok {
@@ -488,7 +497,8 @@ func execRegexMatchAt(
 		}
 		return true, 0, length
 	}
-	return regex.ExecMatchBatch(bs, pattern.Code, data, flags, start)
+	matched, startOffset, endOffset, _ = regex.ExecMatchBatchWithCancel(bs, pattern.Code, data, flags, start, done)
+	return
 }
 
 //nolint:revive // argument-limit: fixed-width hot path avoids options indirection
