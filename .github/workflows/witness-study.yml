@@ -1,0 +1,99 @@
+name: Restricted witness study
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [research/word-witness]
+
+permissions:
+  contents: read
+
+env:
+  GOMAXPROCS: "2"
+  GOAMD64: v1
+  GOTOOLCHAIN: local
+
+jobs:
+  linux-amd64:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26.0"
+          check-latest: false
+          cache: false
+
+      - name: Record revision and environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p results
+          {
+            git rev-parse HEAD
+            git status --short
+            uname -a
+            lscpu
+            go version
+            go env GOOS GOARCH GOAMD64 GOTOOLCHAIN
+            printf 'GOMAXPROCS=%s\n' "$GOMAXPROCS"
+            printf 'baseline-source='; git rev-parse 39ee778
+            printf 'compiler-tree='; git rev-parse HEAD:compiler
+          } > results/environment.txt
+          [[ "$(go env GOOS)/$(go env GOARCH)" == linux/amd64 ]]
+          [[ "$(go env GOVERSION)" == go1.26.0 ]]
+          git diff 39ee778 HEAD -- compiler > results/baseline-source.diff
+          test ! -s results/baseline-source.diff
+          sha256sum experiments/witness/*.go experiments/witness/*.md experiments/witness/summarize.py .github/workflows/witness-study.yml > results/sources.sha256
+          printf '%s  %s\n' 29f63a0e615c861cf48f2d62d8c7a35aa6f96a38b7c4fc8a74a29a9994420bfc experiments/witness/study_test.go | sha256sum -c - > results/fixture-check.txt
+
+      - name: Build and validate frozen parity
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test -c -tags=witnessstudy -o results/witness.test ./experiments/witness > results/build.txt 2>&1
+          sha256sum results/witness.test > results/binary.sha256
+          go version -m results/witness.test > results/build-info.txt
+          results/witness.test -test.run '^TestWitnessStudy(Parity|Coverage)$' -test.count=1 -test.v > results/parity.txt 2>&1
+
+      - name: Six alternating scan rounds
+        shell: bash
+        run: |
+          set -euo pipefail
+          for round in 1 2 3 4 5 6; do
+            export WITNESS_REVERSE=$(((round - 1) % 2))
+            printf 'scan round=%s reverse=%s start=%s\n' "$round" "$WITNESS_REVERSE" "$(date -u +%FT%TZ)" >> results/order.txt
+            results/witness.test -test.run '^$' -test.bench '^BenchmarkWitnessStudy$' -test.benchtime=100ms -test.count=1 > "results/scan-$round.txt" 2>&1
+          done
+
+      - name: Compilation and fresh-process retained heap
+        shell: bash
+        run: |
+          set -euo pipefail
+          for round in 1 2 3 4 5 6; do
+            printf 'compile round=%s start=%s\n' "$round" "$(date -u +%FT%TZ)" >> results/order.txt
+            results/witness.test -test.run '^$' -test.bench '^BenchmarkWitnessCompile$' -test.benchtime=1x -test.count=1 > "results/compile-$round.txt" 2>&1
+          done
+          for round in 1 2 3; do
+            printf 'memory round=%s start=%s\n' "$round" "$(date -u +%FT%TZ)" >> results/order.txt
+            results/witness.test -test.run '^TestWitnessStudyMemory$' -test.count=1 -test.v > "results/memory-$round.txt" 2>&1
+          done
+
+      - name: Summarize frozen decision gate
+        if: always()
+        shell: bash
+        run: |
+          python3 experiments/witness/summarize.py results
+          cat results/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload raw evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: witness-study-${{ github.run_id }}-${{ github.run_attempt }}
+          path: results/
+          if-no-files-found: error
+          retention-days: 30
