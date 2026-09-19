@@ -1,7 +1,6 @@
 package compiler
 
 import (
-	"strings"
 	"testing"
 )
 
@@ -23,6 +22,8 @@ func TestMatchesOperandKinds(t *testing.T) {
 		{`$a matches /needle/`, "", false},
 		{`for any of them : ($ matches /needle/)`, "needle", true},
 		{`for all of them : ($ matches /needle/)`, "needle other", false},
+		{`for any outer in ($a) : (for any inner in ("$a") : (outer matches /needle/ and inner matches /^\$a$/))`, "needle", true},
+		{`for any outer in ("$a") : (for any inner in ($a) : (outer matches /^\$a$/ and inner matches /needle/))`, "needle", true},
 	} {
 		t.Run(test.condition+"/"+test.data, func(t *testing.T) {
 			program, err := NewCompiler().CompileSource(`external marker
@@ -51,12 +52,27 @@ func TestMatchesOperandKinds(t *testing.T) {
 	}
 }
 
-func TestMatchesRejectsNestedLoopBindings(t *testing.T) {
-	for _, operand := range []string{"inner", "outer", "$"} {
-		source := `rule r { strings: $a="needle" condition: for any outer in ($a) : (for any inner in ("$a") : (` + operand + ` matches /needle/)) }`
-		_, err := NewCompiler().CompileSource(source)
-		if err == nil || !strings.Contains(err.Error(), "MATCHES on nested loop variables") {
-			t.Fatalf("%s: expected unsupported nested binding, got %v", operand, err)
-		}
+func TestMatchesPreservesLoopAndDeclaredValues(t *testing.T) {
+	for _, condition := range []string{
+		`(for any s in ("value") : (s matches /value/)) and marker matches /needle/`,
+		`(for any s in ("value") : (s matches /value/)) and constant matches /needle/`,
+		`for any outer in ("needle") : ((for any inner in ("other") : (true)) and outer matches /needle/)`,
+		`for any s in ("needle") : ((for any s in ("other") : (s matches /other/)) and s matches /needle/)`,
+		`for any s in ("outer") : ((for any s in ("middle") : ((for any s in ("inner") : (s matches /inner/)) and s matches /middle/)) and s matches /outer/)`,
+	} {
+		t.Run(condition, func(t *testing.T) {
+			program, err := NewCompiler().CompileSource(`external marker global constant = "needle" rule r { condition: ` + condition + ` }`)
+			if err != nil {
+				t.Fatal(err)
+			}
+			scanner := program.NewScanner(WithExternalVariables(map[string]any{"marker": "needle"}))
+			defer scanner.Close()
+			for range 2 {
+				matched, err := scanner.Matches(nil)
+				if err != nil || !matched {
+					t.Fatalf("Matches = %v, %v; want true", matched, err)
+				}
+			}
+		})
 	}
 }

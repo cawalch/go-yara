@@ -57,6 +57,7 @@ type ConditionCompiler struct {
 	// string matched. Slots are pushed/popped around the loop body.
 	loopVarSlots     []int
 	patternLoopSlots map[int]bool
+	nextVariableSlot int
 }
 
 func parseSizeLiteral(literal string) (int64, error) {
@@ -240,9 +241,6 @@ func (cc *ConditionCompiler) compileMatchesOperand(expr ast.Expression) (Opcode,
 	if id.Name == "$" && len(cc.loopVarSlots) > 0 {
 		slot = cc.loopVarSlots[len(cc.loopVarSlots)-1]
 		loop = slot >= 0
-	}
-	if loop && len(cc.loopVarSlots) > 1 {
-		return OpMatches, errors.New("MATCHES on nested loop variables is not supported")
 	}
 	if loop {
 		cc.emitter.EmitOpcodeWithOperand(OpLoadVar, Operand{Type: OperandImmediate32, Value: uint64(slot)}, id.Pos.Line, id.Pos.Column)
@@ -1333,22 +1331,33 @@ func (cc *ConditionCompiler) allocateVariables(vars []string) ([]int, error) {
 	if cc.variableMap == nil {
 		cc.variableMap = make(map[string]int)
 	}
+	used := make(map[int]bool)
+	for _, bindings := range []map[string]int{cc.variableMap, cc.externalVariables, cc.globalVariables} {
+		for _, slot := range bindings {
+			used[slot] = true
+		}
+	}
 	slots := make([]int, len(vars))
 	for i, v := range vars {
-		slot := len(cc.variableMap)
+		slot := cc.nextVariableSlot
+		for used[slot] {
+			slot++
+		}
 		if slot >= 256 {
 			return nil, fmt.Errorf("too many variables")
 		}
 		cc.variableMap[v] = slot
+		used[slot] = true
+		cc.nextVariableSlot = slot + 1
 		slots[i] = slot
 	}
 	return slots, nil
 }
 
 func (cc *ConditionCompiler) compileForLoop(forLoop *ast.ForLoop) error {
-	outerVariables := cc.variableMap
+	outerVariables, outerSlot := cc.variableMap, cc.nextVariableSlot
 	cc.variableMap = maps.Clone(outerVariables)
-	defer func() { cc.variableMap = outerVariables }()
+	defer func() { cc.variableMap, cc.nextVariableSlot = outerVariables, outerSlot }()
 
 	if len(forLoop.Variables) == 0 {
 		return cc.compileForLoopOverStrings(forLoop)

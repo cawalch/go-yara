@@ -256,10 +256,8 @@ func (i *Interpreter) executeIterNext() error {
 			i.memory[iter.Variables[0]] = Value{Type: ValueTypeString, StringRef: i.resolveStringRef(id)}
 		case OpIterStartTextStringSet:
 			text := iter.TextStrings[iter.Index]
-			if err := i.pushString(text); err != nil {
-				return err
-			}
-			i.memory[iter.Variables[0]] = Value{Type: ValueTypeString, StringRef: int64(len(i.stringArena) - 1)}
+			i.memory[iter.Variables[0]] = Value{Type: ValueTypeString, StringRef: int64(len(i.stringArena))}
+			i.stringArena = append(i.stringArena, text)
 		}
 
 		iter.Index++
