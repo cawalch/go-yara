@@ -25,6 +25,16 @@ func (i *Interpreter) executeTypedComparison(opcode Opcode) error {
 
 // compareValues resolves comparison operands that may be dynamically typed.
 func (i *Interpreter) compareValues(a, b Value, opcode Opcode) (bool, error) {
+	if a.Type != b.Type && (a.Type == ValueTypeInt || a.Type == ValueTypeDouble) &&
+		(b.Type == ValueTypeInt || b.Type == ValueTypeDouble) {
+		if a.Type == ValueTypeInt {
+			a = Value{Type: ValueTypeDouble, DoubleVal: float64(a.IntVal)}
+		}
+		if b.Type == ValueTypeInt {
+			b = Value{Type: ValueTypeDouble, DoubleVal: float64(b.IntVal)}
+		}
+	}
+
 	switch a.Type {
 	case ValueTypeInt:
 		return i.compareIntegers(a, b, opcode)
