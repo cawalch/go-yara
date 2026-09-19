@@ -123,6 +123,7 @@ func (rc *RuleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 	// Compile condition
 	rc.conditionCompiler.setExternalVariables(externalSlots)
 	rc.conditionCompiler.setGlobalVariables(globalSlots)
+	rc.conditionCompiler.globalValues = rc.globalValues
 	rc.conditionCompiler.SetAnonymousStrings(anonymousStrings)
 	if err := rc.compileCondition(rule); err != nil {
 		return nil, fmt.Errorf("compiling condition: %w", err)
@@ -943,7 +944,7 @@ func globalLiteralInt(lit *ast.Literal) (int64, error) {
 		if lit.Type == token.SizeLit {
 			return parseSizeLiteral(value)
 		}
-		return strconv.ParseInt(value, 0, 64)
+		return parseIntLiteral(value)
 	default:
 		return 0, fmt.Errorf("integer literal has invalid value type %T", lit.Value)
 	}
