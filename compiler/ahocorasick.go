@@ -38,6 +38,7 @@ type ACAutomaton struct {
 	// Explicit bytes reachable from the root before failure links are built.
 	// Small sets can use SIMD-optimized byte search to skip root misses.
 	rootBytes []byte
+	pairGate  *acPairGate
 
 	// Compilation state
 	compiledOnce sync.Once
@@ -194,6 +195,7 @@ func (ac *ACAutomaton) Compile() error {
 			return
 		}
 		ac.collectRootBytes()
+		ac.buildPairGate()
 
 		// Build failure links using BFS
 		if err := ac.buildFailureLinks(); err != nil {
@@ -613,8 +615,15 @@ func (ac *ACAutomaton) searchIterWithCancel(data []byte, done <-chan struct{}) i
 			return
 		}
 
+		start := 0
+		if ac.pairGate != nil {
+			start = ac.pairGate.startWithCancel(data, done)
+			if start < 0 {
+				return
+			}
+		}
 		rootTransitions := &ac.states[0].transitions
-		for blockStart := 0; blockStart < len(data); blockStart += scanCancellationInterval {
+		for blockStart := start; blockStart < len(data); blockStart += scanCancellationInterval {
 			if scanCanceled(done) {
 				return
 			}
@@ -715,8 +724,16 @@ func (ac *ACAutomaton) SearchIter(data []byte) iter.Seq[ACMatch] {
 			return
 		}
 
+		start := 0
+		if ac.pairGate != nil {
+			start = ac.pairGate.start(data)
+			if start < 0 {
+				return
+			}
+		}
 		rootTransitions := &ac.states[0].transitions
-		for i, b := range data {
+		for relative, b := range data[start:] {
+			i := start + relative
 			if currentState == 0 {
 				currentState = rootTransitions[b]
 				// After closeTransitions a root miss reads back as 0 rather than
@@ -832,6 +849,7 @@ func (ac *ACAutomaton) Clone() *ACAutomaton {
 		outputs:     slices.Clone(ac.outputs),
 		strings:     internalStrings,
 		rootBytes:   slices.Clone(ac.rootBytes),
+		pairGate:    ac.pairGate,
 		compiled:    ac.compiled,
 		StringCount: len(internalStrings),
 		Strings:     cloneACStringInfos(internalStrings),
@@ -908,7 +926,11 @@ func (ac *ACAutomaton) EstimateMemoryUsage() int {
 	outputMemory := len(ac.outputs) * 4
 	stringMemory := len(ac.strings) * 64 // Approximate
 
-	return stateMemory + outputMemory + stringMemory
+	gateMemory := 0
+	if ac.pairGate != nil {
+		gateMemory = len(ac.pairGate.pairs)*8 + 8
+	}
+	return stateMemory + outputMemory + stringMemory + gateMemory
 }
 
 // Reset clears the automaton for reuse
@@ -926,6 +948,7 @@ func (ac *ACAutomaton) Reset() {
 	ac.outputs = ac.outputs[:0]
 	ac.strings = ac.strings[:0]
 	ac.rootBytes = ac.rootBytes[:0]
+	ac.pairGate = nil
 	ac.StringCount = 0
 	ac.Strings = ac.Strings[:0]
 
