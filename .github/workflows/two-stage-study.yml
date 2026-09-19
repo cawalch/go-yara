@@ -10,12 +10,17 @@ permissions:
 
 jobs:
   paired:
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        replicate: [1, 2]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
       GOMAXPROCS: "2"
       BASELINE_REF: fcd4e78754aeba52bc90d0cb36a2bc3e28bb7bf2
-      FINAL_REF: PENDING
+      FINAL_REF: c644c214c241c80ee9429dd0e4fa0d2360ee04c2
     steps:
       - uses: actions/checkout@v7
         with:
@@ -29,6 +34,6 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: two-stage-study-linux-amd64
+          name: two-stage-study-linux-amd64-${{ matrix.replicate }}
           path: results/
           retention-days: 30
