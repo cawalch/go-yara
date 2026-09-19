@@ -9,6 +9,7 @@ import (
 	"os"
 	"slices"
 
+	"github.com/cawalch/go-yara/internal/wordmatch"
 	"github.com/cawalch/go-yara/regex"
 )
 
@@ -37,6 +38,9 @@ type Scanner struct {
 	fastScan            bool
 	evidenceMax         int
 	evaluatedRules      map[string]bool
+
+	booleanRoutingEnabled bool
+	booleanRouting        *wordmatch.RoutedScanner
 
 	// Candidate offsets grouped by SharedLookup index and retained across scans.
 	prefilterCandidates [][]int
@@ -218,6 +222,12 @@ func NewScanner(program *CompiledProgram, opts ...ScannerOption) *Scanner {
 	}
 	s.selectEvaluatedRules()
 	s.allEvaluatedRulesRequireSharedPatterns = s.computeAllEvaluatedRulesRequireSharedPatterns()
+	if s.booleanRoutingEnabled && len(s.tagsFilter) == 0 && program != nil &&
+		program.preparationErr == nil && program.booleanRouting != nil {
+		if plan := program.booleanRouting(); plan != nil {
+			s.booleanRouting = plan.NewScanner()
+		}
+	}
 	return s
 }
 
@@ -749,6 +759,15 @@ func (s *Scanner) MatchesWithContext(ctx context.Context, data []byte) (bool, er
 	}
 	clear(s.ruleResults)
 	defer clear(s.ruleResults)
+	if s.booleanRouting != nil && len(data) <= 1024 && !s.prefilterDisabled {
+		decision := s.booleanRouting.Match(data)
+		if err := ctx.Err(); err != nil {
+			return false, err
+		}
+		if decision != wordmatch.Unknown {
+			return decision == wordmatch.Match, nil
+		}
+	}
 	evaluation, err := s.evaluatePublicRules(ctx, data, nil)
 	if err != nil {
 		return false, err
