@@ -55,7 +55,8 @@ type ConditionCompiler struct {
 	// the whole rule's anonymous set. Without this, "for all of them : ($)"
 	// returns true whenever any string matches, ignoring whether the *current*
 	// string matched. Slots are pushed/popped around the loop body.
-	loopVarSlots []int
+	loopVarSlots     []int
+	patternLoopSlots map[int]bool
 }
 
 func parseSizeLiteral(literal string) (int64, error) {
@@ -107,6 +108,7 @@ func newConditionCompiler(emitter *Emitter, stringOffsets map[string]int) *Condi
 		emitter:           emitter,
 		stringOffsets:     stringOffsets,
 		variableMap:       make(map[string]int),
+		patternLoopSlots:  make(map[int]bool),
 		externalVariables: make(map[string]int),
 		globalVariables:   make(map[string]int),
 		ruleIndexMap:      make(map[string]int),
@@ -217,47 +219,47 @@ func (cc *ConditionCompiler) CompileCondition(condition *ast.Condition) error {
 	return nil
 }
 
-// compileMatchesExpression compiles "<string_identifier> matches <regex>"
-// For the left operand (string identifier), it pushes the identifier string directly.
-// For the right operand (regex), it pushes the regex pattern string.
-// Then it emits OpMatches.
-func (cc *ConditionCompiler) compileMatchesExpression(binOp *ast.BinaryOp) error {
-	// Left operand: string identifier
-	leftIdent, ok := binOp.Left.(*ast.Identifier)
-	if !ok {
-		return fmt.Errorf("MATCHES requires a string identifier on the left")
+func (cc *ConditionCompiler) compileMatchesExpression(expr *ast.BinaryOp) error {
+	op, err := cc.compileMatchesOperand(expr.Left)
+	if err != nil {
+		return err
 	}
-
-	// Look up the string identifier in stringOffsets
-	offset, exists := cc.findStringOffset(leftIdent.Name)
-	if !exists {
-		return fmt.Errorf("undefined string identifier for MATCHES: %s", leftIdent.Name)
+	if err := cc.compileExpression(expr.Right); err != nil {
+		return err
 	}
-
-	// Emit the string identifier (pushes the identifier string, not a boolean)
-	cc.emitStringIdentifier(offset, leftIdent.Name, leftIdent.Pos.Line, leftIdent.Pos.Column)
-
-	// Right operand: regex pattern
-	switch right := binOp.Right.(type) {
-	case *ast.Literal:
-		if right.Type != token.RegexLit {
-			return fmt.Errorf("MATCHES requires a regex pattern on the right")
-		}
-		cc.compileRegexLiteral(right)
-	case *ast.Identifier:
-		// Loop variable containing the regex pattern
-		slot, exists := cc.variableMap[right.Name]
-		if !exists {
-			return fmt.Errorf("undefined identifier in MATCHES: %s", right.Name)
-		}
-		cc.emitter.EmitOpcodeWithOperand(OpLoadVar, Operand{Type: OperandImmediate32, Value: safeInt64ToUint64(safeMax(0, int64(slot)))}, right.Pos.Line, right.Pos.Column)
-	default:
-		return fmt.Errorf("MATCHES requires a regex pattern on the right")
-	}
-
-	// Emit the MATCHES operation
-	cc.emitter.EmitOpcode(OpMatches, binOp.Pos.Line, binOp.Pos.Column)
+	cc.emitter.EmitOpcode(op, expr.Pos.Line, expr.Pos.Column)
 	return nil
+}
+
+func (cc *ConditionCompiler) compileMatchesOperand(expr ast.Expression) (Opcode, error) {
+	id, ok := expr.(*ast.Identifier)
+	if !ok {
+		return OpMatchesValue, cc.compileExpression(expr)
+	}
+	slot, loop := cc.variableMap[id.Name]
+	if id.Name == "$" && len(cc.loopVarSlots) > 0 {
+		slot = cc.loopVarSlots[len(cc.loopVarSlots)-1]
+		loop = slot >= 0
+	}
+	if loop && len(cc.loopVarSlots) > 1 {
+		return OpMatches, errors.New("MATCHES on nested loop variables is not supported")
+	}
+	if loop {
+		cc.emitter.EmitOpcodeWithOperand(OpLoadVar, Operand{Type: OperandImmediate32, Value: uint64(slot)}, id.Pos.Line, id.Pos.Column)
+		if cc.patternLoopSlots[slot] {
+			return OpMatches, nil
+		}
+		return OpMatchesValue, nil
+	}
+	if !strings.HasPrefix(id.Name, "$") {
+		return OpMatchesValue, cc.compileExpression(expr)
+	}
+	offset, exists := cc.findStringOffset(id.Name)
+	if !exists {
+		return OpMatches, fmt.Errorf("undefined string identifier for MATCHES: %s", id.Name)
+	}
+	cc.emitStringIdentifier(offset, id.Name, id.Pos.Line, id.Pos.Column)
+	return OpMatches, nil
 }
 
 // compileBinaryOp compiles a binary operation expression
@@ -852,10 +854,7 @@ func (cc *ConditionCompiler) handleSpecialOperators(binOp *ast.BinaryOp) (bool, 
 		// COMMA creates a list for 'of' expressions
 		return true, cc.compileCommaOperator(binOp)
 	case token.MATCHES:
-		if _, ok := binOp.Left.(*ast.Identifier); ok {
-			return true, cc.compileMatchesExpression(binOp)
-		}
-		return false, nil // fall through to normal comparison path
+		return true, cc.compileMatchesExpression(binOp)
 	}
 	return false, nil
 }
@@ -1347,6 +1346,10 @@ func (cc *ConditionCompiler) allocateVariables(vars []string) ([]int, error) {
 }
 
 func (cc *ConditionCompiler) compileForLoop(forLoop *ast.ForLoop) error {
+	outerVariables := cc.variableMap
+	cc.variableMap = maps.Clone(outerVariables)
+	defer func() { cc.variableMap = outerVariables }()
+
 	if len(forLoop.Variables) == 0 {
 		return cc.compileForLoopOverStrings(forLoop)
 	}
@@ -1468,6 +1471,9 @@ func (cc *ConditionCompiler) compileForLoopOverStrings(forLoop *ast.ForLoop) err
 	if err != nil {
 		return err
 	}
+
+	cc.patternLoopSlots[slots[0]] = true
+	defer delete(cc.patternLoopSlots, slots[0])
 
 	index := cc.internStringSet(ids)
 

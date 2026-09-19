@@ -139,6 +139,7 @@ func init() {
 	opcodeTable[OpCountIn] = (*Interpreter).executeCountInRange
 	opcodeTable[OpCountInOf] = (*Interpreter).executeCountInOf
 	opcodeTable[OpMatches] = (*Interpreter).executeMatchesOperation
+	opcodeTable[OpMatchesValue] = (*Interpreter).executeMatchesValueOperation
 	opcodeTable[OpContains] = (*Interpreter).executeContainsOperation
 	opcodeTable[OpStartswith] = (*Interpreter).executeStartswithOperation
 	opcodeTable[OpEndswith] = (*Interpreter).executeEndswithOperation
