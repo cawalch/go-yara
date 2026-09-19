@@ -670,7 +670,11 @@ func (cc *ConditionCompiler) compileOperands(binOp *ast.BinaryOp) error {
 		if err := cc.compileExpression(operand); err != nil {
 			return err
 		}
-		if promote && !cc.isFloatExpression(operand) {
+		isExternal := false
+		if ident, ok := operand.(*ast.Identifier); ok {
+			_, isExternal = cc.externalVariables[ident.Name]
+		}
+		if promote && !isExternal && !cc.isFloatExpression(operand) {
 			cc.emitter.EmitOpcode(OpIntToDbl, binOp.Pos.Line, binOp.Pos.Column)
 		}
 	}
