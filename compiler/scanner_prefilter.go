@@ -112,16 +112,13 @@ func (s *Scanner) populateRuleMatchContext(
 	if err := s.addLocalNonTextMatches(ctx, rule, input.data, &s.nonTextCache, input.useSharedAutomaton); err != nil {
 		return err
 	}
+	s.matchCtx.normalizeMatches()
 	if s.blockScan {
 		base := s.blockContext[0].Base
-		for id, spans := range s.matchCtx.spans {
-			// Match BlockScanner's ordering and deduplication before indexed
-			// offset/length conditions run; mixed encodings arrive separately.
-			spans = sortAndDedupeMatchSpans(spans)
+		for _, spans := range s.matchCtx.spans {
 			for index := range spans {
 				spans[index].Offset += base
 			}
-			s.matchCtx.spans[id] = spans
 		}
 		s.matchCtx.Data = nil
 		s.matchCtx.Blocks = s.blockContext[:]
@@ -136,7 +133,7 @@ func (s *Scanner) allEvaluatedRulesPrefilterRejected(ctx context.Context, data [
 		return true
 	}
 	for _, rule := range s.program.Rules {
-		if !rule.IsGlobal && !s.hasMatchingTag(rule) {
+		if !s.shouldEvaluateRule(rule) {
 			continue
 		}
 		if !s.ruleHeaderConstraintsMatchInput(ctx, rule, ruleScanInput{data: data}) {

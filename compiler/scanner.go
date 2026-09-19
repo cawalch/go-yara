@@ -21,7 +21,7 @@ type Scanner struct {
 	interp      *Interpreter    // reused across calls
 	matchCtx    *MatchContext   // reused across calls
 	ruleResults map[string]bool // reused across calls
-	tagsFilter  map[string]bool // non-empty means: only scan rules with these tags
+	tagsFilter  map[string]bool // non-empty means: only report rules with these tags
 	itersmax    int             // max for-loop iterations (0 = unlimited)
 
 	matchDataMax        int
@@ -36,6 +36,7 @@ type Scanner struct {
 	reportedMatchesOnly bool
 	fastScan            bool
 	evidenceMax         int
+	evaluatedRules      map[string]bool
 
 	// Candidate offsets grouped by SharedLookup index and retained across scans.
 	prefilterCandidates [][]int
@@ -103,8 +104,8 @@ type RuleMatch struct {
 // ScannerOption configures a Scanner.
 type ScannerOption func(*Scanner)
 
-// WithTagsFilter restricts scanning to rules that have at least one of the given tags.
-// Global rules are always evaluated regardless of tags.
+// WithTagsFilter reports rules with at least one of the given tags.
+// Their dependencies and all global rules are evaluated regardless of tags.
 func WithTagsFilter(tags []string) ScannerOption {
 	filter := make(map[string]bool, len(tags))
 	for _, t := range tags {
@@ -215,6 +216,7 @@ func NewScanner(program *CompiledProgram, opts ...ScannerOption) *Scanner {
 	for _, opt := range opts {
 		opt(s)
 	}
+	s.selectEvaluatedRules()
 	s.allEvaluatedRulesRequireSharedPatterns = s.computeAllEvaluatedRulesRequireSharedPatterns()
 	return s
 }
@@ -224,7 +226,7 @@ func (s *Scanner) computeAllEvaluatedRulesRequireSharedPatterns() bool {
 		return false
 	}
 	for _, rule := range s.program.Rules {
-		if !rule.IsGlobal && !s.hasMatchingTag(rule) {
+		if !s.shouldEvaluateRule(rule) {
 			continue
 		}
 		if rule.IsGlobal {
@@ -492,6 +494,31 @@ func (cache *nonTextMatchCache) set(index int, matches []matchSpan) {
 	cache.ready[index] = true
 }
 
+func (s *Scanner) selectEvaluatedRules() {
+	if s.program == nil || len(s.tagsFilter) == 0 {
+		return
+	}
+	s.evaluatedRules = make(map[string]bool)
+	pending := make([]string, 0)
+	for _, rule := range s.program.Rules {
+		if rule.IsGlobal || s.hasMatchingTag(rule) {
+			pending = append(pending, rule.Name)
+		}
+	}
+	for len(pending) > 0 {
+		name := pending[len(pending)-1]
+		pending = pending[:len(pending)-1]
+		if !s.evaluatedRules[name] {
+			s.evaluatedRules[name] = true
+			pending = append(pending, s.program.dependencies[name]...)
+		}
+	}
+}
+
+func (s *Scanner) shouldEvaluateRule(rule *CompiledRule) bool {
+	return s.evaluatedRules == nil || s.evaluatedRules[rule.Name]
+}
+
 // hasMatchingTag returns true if the rule has at least one tag in the filter.
 func (s *Scanner) hasMatchingTag(rule *CompiledRule) bool {
 	if len(s.tagsFilter) == 0 {
@@ -550,7 +577,7 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 			if err := ctx.Err(); err != nil {
 				return nil, err
 			}
-			if !rule.IsGlobal && !s.hasMatchingTag(rule) {
+			if !s.shouldEvaluateRule(rule) {
 				continue
 			}
 			result.RuleResults[rule.Name] = false
@@ -567,7 +594,7 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 	// YARA spec: global rules are evaluated first and ALL must match
 	// before non-global rules are evaluated.
 	// Private rules are never reported in MatchedRules.
-	// Tag filtering: only evaluate rules with matching tags (global rules always evaluated).
+	// Tag filtering includes dependencies during evaluation, but not reporting.
 	//
 	// Two-pass approach:
 	// 1. Evaluate all rules to populate match context and rule results.
@@ -579,8 +606,8 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		// Global rules are always evaluated; others only if they match the tag filter.
-		if !rule.IsGlobal && !s.hasMatchingTag(rule) {
+		// Evaluation includes dependencies of selected and global rules.
+		if !s.shouldEvaluateRule(rule) {
 			continue
 		}
 		evaluation, err := s.evaluateRuleCondition(ctx, rule, scanInput)
@@ -884,7 +911,7 @@ func (s *Scanner) evaluatePublicRule(
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if !rule.IsGlobal && !s.hasMatchingTag(rule) {
+	if !s.shouldEvaluateRule(rule) {
 		return nil
 	}
 	evaluation, err := s.evaluateRuleCondition(ctx, rule, result.scanInput)

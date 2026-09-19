@@ -92,7 +92,7 @@ func (scanner *BlockScanner) ScanWithContext(ctx context.Context, base int64, da
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if !rule.IsGlobal && !s.hasMatchingTag(rule) {
+		if !s.shouldEvaluateRule(rule) {
 			continue
 		}
 
@@ -178,7 +178,7 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (*ScanResult
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		if !rule.IsGlobal && !s.hasMatchingTag(rule) {
+		if !s.shouldEvaluateRule(rule) {
 			continue
 		}
 		if !ruleHeaderConstraintsMatchContext(rule, headerContext) {
@@ -310,28 +310,7 @@ func normalizedBlockMatches(matches map[string][]Match) map[string][]Match {
 	result := make(map[string][]Match, len(matches))
 	for id, perString := range matches {
 		copyMatches := append([]Match(nil), perString...)
-		slices.SortStableFunc(copyMatches, func(left, right Match) int {
-			switch {
-			case left.Offset < right.Offset:
-				return -1
-			case left.Offset > right.Offset:
-				return 1
-			case left.Length < right.Length:
-				return -1
-			case left.Length > right.Length:
-				return 1
-			default:
-				return 0
-			}
-		})
-		unique := copyMatches[:0]
-		for _, match := range copyMatches {
-			if len(unique) > 0 && unique[len(unique)-1].Offset == match.Offset && unique[len(unique)-1].Length == match.Length {
-				continue
-			}
-			unique = append(unique, match)
-		}
-		result[id] = unique
+		result[id] = sortAndDedupeMatches(copyMatches)
 	}
 	return result
 }
