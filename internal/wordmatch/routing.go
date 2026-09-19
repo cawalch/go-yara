@@ -405,7 +405,7 @@ func (s *RoutedScanner) Match(data []byte) Decision {
 	if len(p.base.lane.table) == 0 {
 		return NoMatch
 	}
-	lane := &p.base.lane
+	lane := p.base.lane
 	mask := uint64(len(lane.table) - 1)
 	for pos := 0; pos <= len(data)-8; pos += 8 {
 		word := readWord(data[pos:])
