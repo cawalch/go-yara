@@ -183,7 +183,8 @@ func boundedInput(rules []Rule) bool {
 	return true
 }
 func hash(word uint64, shift int) uint64 {
-	return ((word ^ (word >> 33)) * 0x9e3779b185ebca87) >> shift
+	// Table sizes guarantee a shift in 1..63; make that range visible to the compiler.
+	return ((word ^ (word >> 33)) * 0x9e3779b185ebca87) >> (shift & 63)
 }
 func readWord(data []byte) uint64 {
 	return binary.LittleEndian.Uint64(data) | 0x2020202020202020
