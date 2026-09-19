@@ -193,6 +193,9 @@ const OpIterPushTotal Opcode = 92
 // represents an undefined value and carries no operand.
 const OpPush64 Opcode = 93
 
+// OpMatchesValue matches a string value without interpreting it as a pattern identifier.
+const OpMatchesValue Opcode = 94
+
 // Opcode categories for classification
 const (
 	OpCategoryControl    = "control"
@@ -252,7 +255,7 @@ func isIteratorOpcode(op Opcode) bool {
 // isStringOpcode checks if opcode is a string operation
 func isStringOpcode(op Opcode) bool {
 	return (op >= OpContains && op <= OpOfPercentAt) ||
-		op == OpCountInOf || op == OpConcat
+		op == OpCountInOf || op == OpConcat || op == OpMatchesValue
 }
 
 // isTypeFuncOpcode checks if opcode is a type function
@@ -336,6 +339,7 @@ var opcodeNames = map[Opcode]string{
 	OpEntrypoint:             "ENTRYPOINT",
 	OpUnused:                 "UNUSED",
 	OpMatches:                "MATCHES",
+	OpMatchesValue:           "MATCHES_VALUE",
 	OpImport:                 "IMPORT",
 	OpLookupDict:             "LOOKUP_DICT",
 	OpJundef:                 "JUNDEF",
@@ -818,7 +822,7 @@ func (inst *Instruction) IsTypeFunction() bool {
 // IsStringOperation returns true if this instruction operates on strings
 func (inst *Instruction) IsStringOperation() bool {
 	// String operations - same as GetCategory logic
-	if (inst.Opcode >= OpContains && inst.Opcode <= OpOfPercentAt) || inst.Opcode == OpConcat {
+	if (inst.Opcode >= OpContains && inst.Opcode <= OpOfPercentAt) || inst.Opcode == OpConcat || inst.Opcode == OpMatchesValue {
 		return true
 	}
 	// STR comparison operations are considered arithmetic by GetCategory,

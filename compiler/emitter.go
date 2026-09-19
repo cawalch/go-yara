@@ -370,7 +370,7 @@ func isComparisonOp(op Opcode) bool {
 	return (op >= OpIntEq && op <= OpIntGe) ||
 		(op >= OpDblEq && op <= OpDblGe) ||
 		(op >= OpStrEq && op <= OpStrGe) ||
-		op == OpContains || op == OpMatches ||
+		op == OpContains || op == OpMatches || op == OpMatchesValue ||
 		op == OpStartswith || op == OpEndswith
 }
 
@@ -395,7 +395,7 @@ func (e *Emitter) EmitStringOperation(op Opcode, line, pos int) (int, error) {
 func isStringOperation(op Opcode) bool {
 	return (op >= OpContains && op <= OpIequals) ||
 		(op >= OpFound && op <= OpOfFoundAt) ||
-		op == OpMatches
+		op == OpMatches || op == OpMatchesValue
 }
 
 // EmitHalt emits a halt instruction to terminate execution

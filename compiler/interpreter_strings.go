@@ -560,7 +560,15 @@ func (i *Interpreter) applyCountLogicWithValue(count Value, matched int64, total
 
 // executeMatchesOperation executes OpMatches.
 func (i *Interpreter) executeMatchesOperation() error {
-	if err := i.validateStackUnderflowN(OpMatches, 2); err != nil {
+	return i.executeRegexMatch(OpMatches)
+}
+
+func (i *Interpreter) executeMatchesValueOperation() error {
+	return i.executeRegexMatch(OpMatchesValue)
+}
+
+func (i *Interpreter) executeRegexMatch(op Opcode) error {
+	if err := i.validateStackUnderflowN(op, 2); err != nil {
 		return err
 	}
 
@@ -574,7 +582,7 @@ func (i *Interpreter) executeMatchesOperation() error {
 
 	compiled, flags, err := i.compileRegexLiteral(i.getString(regexVal))
 	if err != nil {
-		return &InterpreterError{Type: ErrorRuntime, Opcode: OpMatches, Message: err.Error()}
+		return &InterpreterError{Type: ErrorRuntime, Opcode: op, Message: err.Error()}
 	}
 
 	var done <-chan struct{}
@@ -582,7 +590,7 @@ func (i *Interpreter) executeMatchesOperation() error {
 		done = i.matchContext.cancelDone
 	}
 	valueStr := i.getString(value)
-	if strings.HasPrefix(valueStr, "$") {
+	if op == OpMatches && strings.HasPrefix(valueStr, "$") {
 		var matchErr error
 		matched := i.matchContext.anyMatch(valueStr, func(match matchSpan) bool {
 			data, ok := i.matchContext.dataRange(match.Offset, int64(match.Length))

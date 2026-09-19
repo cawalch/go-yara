@@ -2,6 +2,7 @@ package semantic
 
 import (
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 
@@ -1134,6 +1135,9 @@ func isStringSetExpression(expr ast.Expression) bool {
 
 // validateForLoopExpression validates for loop expressions
 func (v *Validator) validateForLoopExpression(forLoop *ast.ForLoop) (*TypeInfo, []error) {
+	outerVariables := v.loopVariables
+	v.loopVariables = maps.Clone(outerVariables)
+	defer func() { v.loopVariables = outerVariables }()
 	var errors []error
 
 	// Determine loop variable type from range expression
@@ -1200,11 +1204,6 @@ func (v *Validator) validateForLoopExpression(forLoop *ast.ForLoop) (*TypeInfo, 
 		v.stringLoopDepth--
 	}
 	errors = append(errors, conditionErrs...)
-
-	// Clean up loop variables
-	for _, variable := range forLoop.Variables {
-		delete(v.loopVariables, variable)
-	}
 
 	v.symbolTable.ExitScope()
 
