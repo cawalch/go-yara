@@ -73,6 +73,7 @@ func (cp *CompiledProgram) buildCompactPrefilter() (*ACAutomaton, error) {
 		return nil, nil
 	}
 	gate := NewACAutomaton()
+	added := make(map[compactPatternKey]bool)
 	for _, info := range cp.SharedAutomaton.strings {
 		key := compactPatternKey{string(info.Data), info.Flags}
 		if !selected[key] {
@@ -82,7 +83,16 @@ func (cp *CompiledProgram) buildCompactPrefilter() (*ACAutomaton, error) {
 			return nil, nil
 		}
 		delete(selected, key)
-		if err := gate.AddStringWithFlags(strconv.Itoa(len(gate.strings)), info.Data, false, false, info.Flags); err != nil {
+		data := info.Data
+		if atom, ok := selectLiteralAtom(data); ok {
+			data = atom.data
+		}
+		key.data = string(data)
+		if added[key] {
+			continue
+		}
+		added[key] = true
+		if err := gate.AddStringWithFlags(strconv.Itoa(len(gate.strings)), data, false, false, info.Flags); err != nil {
 			return nil, err
 		}
 	}
