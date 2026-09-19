@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-: "${FULL_REF:?Set FULL_REF to the frozen full-literal candidate revision}"
-: "${ATOMS_REF:?Set ATOMS_REF to the frozen atom candidate revision}"
+: "${BASELINE_REF:?Set BASELINE_REF to the frozen baseline revision}"
+: "${STATE_REF:?Set STATE_REF to the frozen state candidate revision}"
 : "${BOUNDED_REF:?Set BOUNDED_REF to the frozen bounded candidate revision}"
 export GOMAXPROCS=2
 study_dir="$PWD"
@@ -17,8 +17,8 @@ mkdir -p results
 } > results/environment.txt
 [[ "$(go env GOOS)/$(go env GOARCH)" == linux/amd64 ]] || { echo 'Linux amd64 required'; exit 1; }
 
-variants=(baseline full atoms bounded)
-revisions=(fcd4e78754aeba52bc90d0cb36a2bc3e28bb7bf2 "$FULL_REF" "$ATOMS_REF" "$BOUNDED_REF")
+variants=(baseline bounded state)
+revisions=("$BASELINE_REF" "$BOUNDED_REF" "$STATE_REF")
 work_dir="$(mktemp -d "${RUNNER_TEMP:-/tmp}/two-stage-study.XXXXXX")"
 trap 'rm -f "$study_dir"/results/*.test' EXIT
 for i in "${!variants[@]}"; do
@@ -39,8 +39,8 @@ done
 
 bench='^Benchmark(TwoStageStudy|TwoStageLatePositive|EventStudy|ACEventGuard)$'
 for round in 1 2 3 4 5 6; do
-  order=(baseline full atoms bounded)
-  if ((round % 2 == 0)); then order=(bounded atoms full baseline); fi
+  order=(baseline bounded state)
+  if ((round % 2 == 0)); then order=(state bounded baseline); fi
   for variant in "${order[@]}"; do
     printf 'round=%s variant=%s start=%s\n' "$round" "$variant" "$(date -u +%FT%TZ)" | tee -a results/order.txt
     "results/$variant.test" -test.run '^$' -test.bench "$bench" -test.benchtime=100ms -test.count=1 >> "results/$variant.txt" 2>&1
@@ -48,8 +48,8 @@ for round in 1 2 3 4 5 6; do
 done
 
 for round in 1 2 3 4 5 6; do
-  order=(baseline full atoms bounded)
-  if ((round % 2 == 0)); then order=(bounded atoms full baseline); fi
+  order=(baseline bounded state)
+  if ((round % 2 == 0)); then order=(state bounded baseline); fi
   for variant in "${order[@]}"; do
     "results/$variant.test" -test.run '^$' -test.bench '^BenchmarkTwoStageCompile$' -test.benchtime=1x -test.count=1 >> "results/$variant-compile.txt" 2>&1
   done

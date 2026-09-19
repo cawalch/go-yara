@@ -14,9 +14,9 @@ jobs:
     timeout-minutes: 30
     env:
       GOMAXPROCS: "2"
-      FULL_REF: c9e2fcc2561558a151d838c4da1e48b5ae352a8e
-      ATOMS_REF: 021ea02429228f1fae5c0d8f058351660d7e962d
+      BASELINE_REF: fcd4e78754aeba52bc90d0cb36a2bc3e28bb7bf2
       BOUNDED_REF: 2d7eb76e2c96fb570673d413c0d9cfdd62ba0328
+      STATE_REF: b98586c6860bf9f8e87563957c4fe98b6c5383b6
     steps:
       - uses: actions/checkout@v7
         with:
