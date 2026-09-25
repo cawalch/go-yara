@@ -1,0 +1,53 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/cawalch/go-yara/compiler
+cpu: Apple M3 Max
+                                                  │ benchmarks/2026-09-25-go127-simd/fused-root/original.txt │ benchmarks/2026-09-25-go127-simd/fused-root/simd.txt │
+                                                  │                          sec/op                          │            sec/op             vs base                │
+SIMDRootScan/roots=2/absent-14                                                                  542.0n ± 11%                  1277.0n ±  2%  +135.63% (p=0.002 n=6)
+SIMDRootScan/roots=2/tail-14                                                                    1.164µ ±  5%                   1.916µ ±  2%   +64.56% (p=0.002 n=6)
+SIMDRootScan/roots=2/dense_candidates-14                                                        20.35µ ±  2%                   17.71µ ±  3%   -12.98% (p=0.002 n=6)
+SIMDRootScan/roots=4/absent-14                                                                  941.3n ±  5%                  1291.0n ±  2%   +37.15% (p=0.002 n=6)
+SIMDRootScan/roots=4/tail-14                                                                    1.647µ ±  6%                   2.026µ ±  5%   +23.02% (p=0.002 n=6)
+SIMDRootScan/roots=4/dense_candidates-14                                                        51.82µ ±  6%                   30.96µ ± 24%   -40.26% (p=0.002 n=6)
+SparseRootTextSet/distinct_roots-14                                                             852.3µ ±  4%                   850.5µ ±  4%         ~ (p=0.589 n=6)
+SparseRootTextSet/mixed_absent_and_dense_roots-14                                              1131.2µ ±  3%                   886.5µ ±  2%   -21.63% (p=0.002 n=6)
+geomean                                                                                         13.33µ                         15.06µ         +13.01%
+
+                                                  │ benchmarks/2026-09-25-go127-simd/fused-root/original.txt │ benchmarks/2026-09-25-go127-simd/fused-root/simd.txt │
+                                                  │                           B/s                            │              B/s               vs base               │
+SIMDRootScan/roots=2/absent-14                                                                 28.16Gi ± 10%                   11.95Gi ±  2%  -57.56% (p=0.002 n=6)
+SIMDRootScan/roots=2/tail-14                                                                  13.110Gi ±  5%                   7.966Gi ±  2%  -39.24% (p=0.002 n=6)
+SIMDRootScan/roots=2/dense_candidates-14                                                       767.8Mi ±  2%                   882.3Mi ±  3%  +14.92% (p=0.002 n=6)
+SIMDRootScan/roots=4/absent-14                                                                 16.21Gi ±  5%                   11.82Gi ±  2%  -27.08% (p=0.002 n=6)
+SIMDRootScan/roots=4/tail-14                                                                   9.266Gi ±  6%                   7.534Gi ±  6%  -18.69% (p=0.002 n=6)
+SIMDRootScan/roots=4/dense_candidates-14                                                       301.5Mi ±  5%                   504.7Mi ± 20%  +67.38% (p=0.002 n=6)
+SparseRootTextSet/distinct_roots-14                                                            1.146Gi ±  4%                   1.148Gi ±  4%        ~ (p=0.589 n=6)
+SparseRootTextSet/mixed_absent_and_dense_roots-14                                              884.0Mi ±  3%                  1128.1Mi ±  2%  +27.60% (p=0.002 n=6)
+geomean                                                                                        3.239Gi                         2.866Gi        -11.51%
+
+                                                  │ benchmarks/2026-09-25-go127-simd/fused-root/original.txt │ benchmarks/2026-09-25-go127-simd/fused-root/simd.txt │
+                                                  │                           B/op                           │             B/op              vs base                │
+SIMDRootScan/roots=2/absent-14                                                                    384.0 ± 0%                     384.0 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDRootScan/roots=2/tail-14                                                                    1.219Ki ± 0%                   1.219Ki ± 0%       ~ (p=1.000 n=6) ¹
+SIMDRootScan/roots=2/dense_candidates-14                                                          384.0 ± 0%                     384.0 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDRootScan/roots=4/absent-14                                                                    384.0 ± 0%                     384.0 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDRootScan/roots=4/tail-14                                                                    1.219Ki ± 0%                   1.219Ki ± 0%       ~ (p=1.000 n=6) ¹
+SIMDRootScan/roots=4/dense_candidates-14                                                          384.0 ± 0%                     384.0 ± 0%       ~ (p=1.000 n=6) ¹
+SparseRootTextSet/distinct_roots-14                                                               384.0 ± 0%                     384.0 ± 0%       ~ (p=1.000 n=6) ¹
+SparseRootTextSet/mixed_absent_and_dense_roots-14                                                 385.0 ± 0%                     384.0 ± 0%  -0.26% (p=0.002 n=6)
+geomean                                                                                           515.8                          515.6       -0.03%
+¹ all samples are equal
+
+                                                  │ benchmarks/2026-09-25-go127-simd/fused-root/original.txt │ benchmarks/2026-09-25-go127-simd/fused-root/simd.txt │
+                                                  │                        allocs/op                         │          allocs/op            vs base                │
+SIMDRootScan/roots=2/absent-14                                                                    4.000 ± 0%                     4.000 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDRootScan/roots=2/tail-14                                                                      10.00 ± 0%                     10.00 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDRootScan/roots=2/dense_candidates-14                                                          4.000 ± 0%                     4.000 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDRootScan/roots=4/absent-14                                                                    4.000 ± 0%                     4.000 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDRootScan/roots=4/tail-14                                                                      10.00 ± 0%                     10.00 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDRootScan/roots=4/dense_candidates-14                                                          4.000 ± 0%                     4.000 ± 0%       ~ (p=1.000 n=6) ¹
+SparseRootTextSet/distinct_roots-14                                                               4.000 ± 0%                     4.000 ± 0%       ~ (p=1.000 n=6) ¹
+SparseRootTextSet/mixed_absent_and_dense_roots-14                                                 4.000 ± 0%                     4.000 ± 0%       ~ (p=1.000 n=6) ¹
+geomean                                                                                           5.030                          5.030       +0.00%
+¹ all samples are equal

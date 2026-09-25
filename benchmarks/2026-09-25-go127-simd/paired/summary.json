@@ -1,0 +1,442 @@
+[
+  {
+    "benchmark": "BenchmarkACScanLargeInput/size=1024-14",
+    "original_ns": 1124.5,
+    "simd_ns": 1130.5,
+    "delta_percent": 0.533570475767009,
+    "speedup": 0.9946926138876603,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkACScanLargeInput/size=8192-14",
+    "original_ns": 8509.5,
+    "simd_ns": 8460.5,
+    "delta_percent": -0.575827016863506,
+    "speedup": 1.0057916198806218,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkACScanLargeInput/size=16384-14",
+    "original_ns": 16761.0,
+    "simd_ns": 16633.0,
+    "delta_percent": -0.7636775848696375,
+    "speedup": 1.0076955450009017,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkACScanLargeInput/size=51200-14",
+    "original_ns": 51902.0,
+    "simd_ns": 52466.5,
+    "delta_percent": 1.0876266810527557,
+    "speedup": 0.9892407536237409,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkLeadingClassRegexAtoms/with_class/dense-14",
+    "original_ns": 78427.5,
+    "simd_ns": 78586.0,
+    "delta_percent": 0.20209747856301252,
+    "speedup": 0.997983101315756,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkLeadingClassRegexAtoms/with_class/sparse-14",
+    "original_ns": 72389.0,
+    "simd_ns": 72416.0,
+    "delta_percent": 0.03729848457638685,
+    "speedup": 0.9996271542200619,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkLeadingClassRegexAtoms/without_class/dense-14",
+    "original_ns": 1266887.0,
+    "simd_ns": 1271068.5,
+    "delta_percent": 0.3300610078089017,
+    "speedup": 0.996710248110153,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkLeadingClassRegexAtoms/without_class/sparse-14",
+    "original_ns": 664753.5,
+    "simd_ns": 659896.0,
+    "delta_percent": -0.7307219894291617,
+    "speedup": 1.0073610084013238,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkNoCaseRegexLiteralSearchDensity/negative-14",
+    "original_ns": 26861.0,
+    "simd_ns": 26603.0,
+    "delta_percent": -0.9605003536726109,
+    "speedup": 1.009698154343495,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkNoCaseRegexLiteralSearchDensity/sparse-14",
+    "original_ns": 27154.5,
+    "simd_ns": 27053.0,
+    "delta_percent": -0.37378703345669617,
+    "speedup": 1.0037518944294532,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkNoCaseRegexLiteralSearchDensity/dense-14",
+    "original_ns": 1667944.5,
+    "simd_ns": 1655521.5,
+    "delta_percent": -0.7448089549742187,
+    "speedup": 1.0075039798637468,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkAtomlessRegexScanner/leading_class/16KiB-14",
+    "original_ns": 9771.5,
+    "simd_ns": 3882.0,
+    "delta_percent": -60.27222023230825,
+    "speedup": 2.5171303451828955,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkAtomlessRegexScanner/leading_class/1024KiB-14",
+    "original_ns": 433617.0,
+    "simd_ns": 57560.0,
+    "delta_percent": -86.72561269507423,
+    "speedup": 7.533304378040306,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkAtomlessRegexScanner/leading_any/16KiB-14",
+    "original_ns": 9730.5,
+    "simd_ns": 3879.0,
+    "delta_percent": -60.13565592723909,
+    "speedup": 2.5085073472544472,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkAtomlessRegexScanner/leading_any/1024KiB-14",
+    "original_ns": 431851.5,
+    "simd_ns": 57418.0,
+    "delta_percent": -86.70422587394046,
+    "speedup": 7.521186735866801,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkRegexMatchDensity/few_matches-14",
+    "original_ns": 1029280.0,
+    "simd_ns": 1025512.5,
+    "delta_percent": -0.3660325664542219,
+    "speedup": 1.0036737728696628,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkRegexMatchDensity/many_matches-14",
+    "original_ns": 1031727.5,
+    "simd_ns": 1035735.5,
+    "delta_percent": 0.38847466991041024,
+    "speedup": 0.9961302861589663,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkMultiRuleScanner-14",
+    "original_ns": 657833.5,
+    "simd_ns": 659249.5,
+    "delta_percent": 0.21525203565948559,
+    "speedup": 0.9978521030353456,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkProductionScanner-14",
+    "original_ns": 47861.0,
+    "simd_ns": 47588.0,
+    "delta_percent": -0.5704017885125645,
+    "speedup": 1.0057367403547113,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkProductionScannerUniquePatterns-14",
+    "original_ns": 145597.0,
+    "simd_ns": 144280.5,
+    "delta_percent": -0.9042081911028399,
+    "speedup": 1.009124587175675,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkSIMDScan/nocase/64/absent-14",
+    "original_ns": 177.8,
+    "simd_ns": 180.4,
+    "delta_percent": 1.462317210348707,
+    "speedup": 0.9855875831485588,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkSIMDScan/nocase/64/tail-14",
+    "original_ns": 809.1,
+    "simd_ns": 802.0,
+    "delta_percent": -0.877518230132246,
+    "speedup": 1.008852867830424,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkSIMDScan/nocase/64/dense-14",
+    "original_ns": 1030.0,
+    "simd_ns": 1039.0,
+    "delta_percent": 0.8737864077669855,
+    "speedup": 0.9913378248315688,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkSIMDScan/nocase/1024/absent-14",
+    "original_ns": 674.9000000000001,
+    "simd_ns": 255.7,
+    "delta_percent": -62.112905615646774,
+    "speedup": 2.639421196714901,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkSIMDScan/nocase/1024/tail-14",
+    "original_ns": 1300.0,
+    "simd_ns": 877.8,
+    "delta_percent": -32.47692307692308,
+    "speedup": 1.4809751651856915,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkSIMDScan/nocase/1024/dense-14",
+    "original_ns": 6126.0,
+    "simd_ns": 6213.5,
+    "delta_percent": 1.428338230492976,
+    "speedup": 0.9859177597167458,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkSIMDScan/nocase/16384/absent-14",
+    "original_ns": 6993.5,
+    "simd_ns": 1315.5,
+    "delta_percent": -81.18967612783298,
+    "speedup": 5.316229570505511,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkSIMDScan/nocase/16384/tail-14",
+    "original_ns": 7656.0,
+    "simd_ns": 1960.5,
+    "delta_percent": -74.39263322884014,
+    "speedup": 3.905126243305279,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkSIMDScan/nocase/16384/dense-14",
+    "original_ns": 81140.5,
+    "simd_ns": 82122.5,
+    "delta_percent": 1.210246424411987,
+    "speedup": 0.988042253949892,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkSIMDScan/range/64/absent-14",
+    "original_ns": 388.9,
+    "simd_ns": 385.0,
+    "delta_percent": -1.002828490614549,
+    "speedup": 1.01012987012987,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkSIMDScan/range/64/tail-14",
+    "original_ns": 1168.0,
+    "simd_ns": 1137.5,
+    "delta_percent": -2.611301369863017,
+    "speedup": 1.026813186813187,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkSIMDScan/range/64/dense-14",
+    "original_ns": 1845.0,
+    "simd_ns": 1856.5,
+    "delta_percent": 0.6233062330623262,
+    "speedup": 0.9938055480743334,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkSIMDScan/range/1024/absent-14",
+    "original_ns": 818.85,
+    "simd_ns": 439.15,
+    "delta_percent": -46.3699090187458,
+    "speedup": 1.8646248434475694,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkSIMDScan/range/1024/tail-14",
+    "original_ns": 1575.0,
+    "simd_ns": 1204.5,
+    "delta_percent": -23.523809523809526,
+    "speedup": 1.307596513075965,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkSIMDScan/range/1024/dense-14",
+    "original_ns": 21448.0,
+    "simd_ns": 21653.5,
+    "delta_percent": 0.9581312942931852,
+    "speedup": 0.9905096173828711,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkSIMDScan/range/16384/absent-14",
+    "original_ns": 7130.5,
+    "simd_ns": 1235.5,
+    "delta_percent": -82.67302433209453,
+    "speedup": 5.771347632537434,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkSIMDScan/range/16384/tail-14",
+    "original_ns": 7943.5,
+    "simd_ns": 2002.0,
+    "delta_percent": -74.79700383961729,
+    "speedup": 3.9677822177822177,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkSIMDScan/range/16384/dense-14",
+    "original_ns": 323996.5,
+    "simd_ns": 329107.0,
+    "delta_percent": 1.5773318538934822,
+    "speedup": 0.9844716156143747,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkSIMDScan/literal_control/64/absent-14",
+    "original_ns": 139.45,
+    "simd_ns": 138.7,
+    "delta_percent": -0.5378271782000676,
+    "speedup": 1.0054073540014419,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkSIMDScan/literal_control/64/tail-14",
+    "original_ns": 752.35,
+    "simd_ns": 747.7,
+    "delta_percent": -0.6180634013424613,
+    "speedup": 1.0062190718202488,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkSIMDScan/literal_control/64/dense-14",
+    "original_ns": 984.85,
+    "simd_ns": 1013.35,
+    "delta_percent": 2.893841701781996,
+    "speedup": 0.9718754625746288,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkSIMDScan/literal_control/1024/absent-14",
+    "original_ns": 154.05,
+    "simd_ns": 155.75,
+    "delta_percent": 1.1035378123985584,
+    "speedup": 0.9890850722311397,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkSIMDScan/literal_control/1024/tail-14",
+    "original_ns": 752.8499999999999,
+    "simd_ns": 749.3499999999999,
+    "delta_percent": -0.46490004649000216,
+    "speedup": 1.0046707146193368,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkSIMDScan/literal_control/1024/dense-14",
+    "original_ns": 5847.0,
+    "simd_ns": 5967.0,
+    "delta_percent": 2.0523345305284657,
+    "speedup": 0.9798893916540975,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkSIMDScan/literal_control/16384/absent-14",
+    "original_ns": 336.70000000000005,
+    "simd_ns": 337.05,
+    "delta_percent": 0.10395010395010118,
+    "speedup": 0.9989615784008309,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkSIMDScan/literal_control/16384/tail-14",
+    "original_ns": 939.15,
+    "simd_ns": 937.8,
+    "delta_percent": -0.14374700527072237,
+    "speedup": 1.001439539347409,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkSIMDScan/literal_control/16384/dense-14",
+    "original_ns": 76310.0,
+    "simd_ns": 76911.0,
+    "delta_percent": 0.7875769885991257,
+    "speedup": 0.9921857731663871,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkSIMDRootScan/roots=2/absent-14",
+    "original_ns": 548.75,
+    "simd_ns": 547.4,
+    "delta_percent": -0.24601366742597053,
+    "speedup": 1.0024662038728536,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkSIMDRootScan/roots=2/tail-14",
+    "original_ns": 1207.5,
+    "simd_ns": 1201.0,
+    "delta_percent": -0.5383022774327118,
+    "speedup": 1.0054121565362197,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkSIMDRootScan/roots=2/dense_candidates-14",
+    "original_ns": 20422.5,
+    "simd_ns": 20458.5,
+    "delta_percent": 0.17627616599338314,
+    "speedup": 0.9982403402008945,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkSIMDRootScan/roots=4/absent-14",
+    "original_ns": 943.6500000000001,
+    "simd_ns": 939.4000000000001,
+    "delta_percent": -0.45037884808986073,
+    "speedup": 1.0045241643602298,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkSIMDRootScan/roots=4/tail-14",
+    "original_ns": 1628.5,
+    "simd_ns": 1605.0,
+    "delta_percent": -1.4430457476205083,
+    "speedup": 1.0146417445482867,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkSIMDRootScan/roots=4/dense_candidates-14",
+    "original_ns": 51282.5,
+    "simd_ns": 51036.0,
+    "delta_percent": -0.48067079413055547,
+    "speedup": 1.0048299239752332,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkSparseRootTextSet/distinct_roots-14",
+    "original_ns": 854027.0,
+    "simd_ns": 852355.0,
+    "delta_percent": -0.1957783536117752,
+    "speedup": 1.0019616239712326,
+    "samples": 6
+  },
+  {
+    "benchmark": "BenchmarkSparseRootTextSet/mixed_absent_and_dense_roots-14",
+    "original_ns": 1132213.5,
+    "simd_ns": 1128552.5,
+    "delta_percent": -0.3233489090176067,
+    "speedup": 1.0032439784591325,
+    "samples": 6
+  }
+]

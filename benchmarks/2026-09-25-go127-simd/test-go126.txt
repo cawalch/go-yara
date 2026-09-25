@@ -1,0 +1,1 @@
+ok  	github.com/cawalch/go-yara/compiler	3.281s

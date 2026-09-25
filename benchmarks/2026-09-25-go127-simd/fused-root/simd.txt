@@ -1,0 +1,78 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/cawalch/go-yara/compiler
+cpu: Apple M3 Max
+BenchmarkSIMDRootScan/roots=2/absent-14         	  145155	      1259 ns/op	13017.22 MB/s	     384 B/op	       4 allocs/op
+BenchmarkSIMDRootScan/roots=2/tail-14           	   95377	      1905 ns/op	8599.68 MB/s	    1248 B/op	      10 allocs/op
+BenchmarkSIMDRootScan/roots=2/dense_candidates-14         	   10000	     17451 ns/op	 938.85 MB/s	     384 B/op	       4 allocs/op
+BenchmarkSIMDRootScan/roots=4/absent-14                   	  144142	      1267 ns/op	12932.31 MB/s	     384 B/op	       4 allocs/op
+BenchmarkSIMDRootScan/roots=4/tail-14                     	   95276	      1959 ns/op	8361.86 MB/s	    1248 B/op	      10 allocs/op
+BenchmarkSIMDRootScan/roots=4/dense_candidates-14         	    4792	     36793 ns/op	 445.30 MB/s	     384 B/op	       4 allocs/op
+BenchmarkSparseRootTextSet/distinct_roots-14              	     218	    822516 ns/op	1274.82 MB/s	     384 B/op	       4 allocs/op
+BenchmarkSparseRootTextSet/mixed_absent_and_dense_roots-14         	     205	    869920 ns/op	1205.35 MB/s	     384 B/op	       4 allocs/op
+PASS
+goos: darwin
+goarch: arm64
+pkg: github.com/cawalch/go-yara/compiler
+cpu: Apple M3 Max
+BenchmarkSIMDRootScan/roots=2/absent-14         	  142590	      1292 ns/op	12676.78 MB/s	     384 B/op	       4 allocs/op
+BenchmarkSIMDRootScan/roots=2/tail-14           	   93898	      1940 ns/op	8443.97 MB/s	    1248 B/op	      10 allocs/op
+BenchmarkSIMDRootScan/roots=2/dense_candidates-14         	    9982	     17602 ns/op	 930.82 MB/s	     384 B/op	       4 allocs/op
+BenchmarkSIMDRootScan/roots=4/absent-14                   	  137799	      1300 ns/op	12605.23 MB/s	     384 B/op	       4 allocs/op
+BenchmarkSIMDRootScan/roots=4/tail-14                     	   93445	      2041 ns/op	8028.04 MB/s	    1248 B/op	      10 allocs/op
+BenchmarkSIMDRootScan/roots=4/dense_candidates-14         	    4542	     38541 ns/op	 425.10 MB/s	     384 B/op	       4 allocs/op
+BenchmarkSparseRootTextSet/distinct_roots-14              	     205	    844822 ns/op	1241.16 MB/s	     384 B/op	       4 allocs/op
+BenchmarkSparseRootTextSet/mixed_absent_and_dense_roots-14         	     204	    877171 ns/op	1195.39 MB/s	     384 B/op	       4 allocs/op
+PASS
+goos: darwin
+goarch: arm64
+pkg: github.com/cawalch/go-yara/compiler
+cpu: Apple M3 Max
+BenchmarkSIMDRootScan/roots=2/absent-14         	  139762	      1262 ns/op	12986.56 MB/s	     384 B/op	       4 allocs/op
+BenchmarkSIMDRootScan/roots=2/tail-14           	   95083	      1915 ns/op	8555.02 MB/s	    1248 B/op	      10 allocs/op
+BenchmarkSIMDRootScan/roots=2/dense_candidates-14         	    9936	     17695 ns/op	 925.90 MB/s	     384 B/op	       4 allocs/op
+BenchmarkSIMDRootScan/roots=4/absent-14                   	  144700	      1275 ns/op	12845.57 MB/s	     384 B/op	       4 allocs/op
+BenchmarkSIMDRootScan/roots=4/tail-14                     	   89103	      2012 ns/op	8144.91 MB/s	    1248 B/op	      10 allocs/op
+BenchmarkSIMDRootScan/roots=4/dense_candidates-14         	    5890	     30947 ns/op	 529.42 MB/s	     384 B/op	       4 allocs/op
+BenchmarkSparseRootTextSet/distinct_roots-14              	     206	    861266 ns/op	1217.46 MB/s	     384 B/op	       4 allocs/op
+BenchmarkSparseRootTextSet/mixed_absent_and_dense_roots-14         	     200	    886845 ns/op	1182.35 MB/s	     384 B/op	       4 allocs/op
+PASS
+goos: darwin
+goarch: arm64
+pkg: github.com/cawalch/go-yara/compiler
+cpu: Apple M3 Max
+BenchmarkSIMDRootScan/roots=2/absent-14         	  135460	      1301 ns/op	12589.50 MB/s	     384 B/op	       4 allocs/op
+BenchmarkSIMDRootScan/roots=2/tail-14           	   90122	      1946 ns/op	8420.97 MB/s	    1248 B/op	      10 allocs/op
+BenchmarkSIMDRootScan/roots=2/dense_candidates-14         	   10000	     17925 ns/op	 914.05 MB/s	     384 B/op	       4 allocs/op
+BenchmarkSIMDRootScan/roots=4/absent-14                   	  139339	      1282 ns/op	12780.71 MB/s	     384 B/op	       4 allocs/op
+BenchmarkSIMDRootScan/roots=4/tail-14                     	   96292	      1917 ns/op	8548.90 MB/s	    1248 B/op	      10 allocs/op
+BenchmarkSIMDRootScan/roots=4/dense_candidates-14         	    6133	     30972 ns/op	 528.99 MB/s	     384 B/op	       4 allocs/op
+BenchmarkSparseRootTextSet/distinct_roots-14              	     208	    856192 ns/op	1224.68 MB/s	     384 B/op	       4 allocs/op
+BenchmarkSparseRootTextSet/mixed_absent_and_dense_roots-14         	     198	    897573 ns/op	1168.22 MB/s	     384 B/op	       4 allocs/op
+PASS
+goos: darwin
+goarch: arm64
+pkg: github.com/cawalch/go-yara/compiler
+cpu: Apple M3 Max
+BenchmarkSIMDRootScan/roots=2/absent-14         	  140444	      1260 ns/op	13008.02 MB/s	     384 B/op	       4 allocs/op
+BenchmarkSIMDRootScan/roots=2/tail-14           	   94768	      1915 ns/op	8553.47 MB/s	    1248 B/op	      10 allocs/op
+BenchmarkSIMDRootScan/roots=2/dense_candidates-14         	    9805	     17723 ns/op	 924.45 MB/s	     384 B/op	       4 allocs/op
+BenchmarkSIMDRootScan/roots=4/absent-14                   	  140774	      1303 ns/op	12571.57 MB/s	     384 B/op	       4 allocs/op
+BenchmarkSIMDRootScan/roots=4/tail-14                     	   88268	      2039 ns/op	8034.54 MB/s	    1248 B/op	      10 allocs/op
+BenchmarkSIMDRootScan/roots=4/dense_candidates-14         	    6001	     30366 ns/op	 539.56 MB/s	     384 B/op	       4 allocs/op
+BenchmarkSparseRootTextSet/distinct_roots-14              	     198	    887489 ns/op	1181.49 MB/s	     384 B/op	       4 allocs/op
+BenchmarkSparseRootTextSet/mixed_absent_and_dense_roots-14         	     196	    898255 ns/op	1167.33 MB/s	     384 B/op	       4 allocs/op
+PASS
+goos: darwin
+goarch: arm64
+pkg: github.com/cawalch/go-yara/compiler
+cpu: Apple M3 Max
+BenchmarkSIMDRootScan/roots=2/absent-14         	  134403	      1304 ns/op	12562.28 MB/s	     384 B/op	       4 allocs/op
+BenchmarkSIMDRootScan/roots=2/tail-14           	   93342	      1916 ns/op	8553.10 MB/s	    1248 B/op	      10 allocs/op
+BenchmarkSIMDRootScan/roots=2/dense_candidates-14         	   10000	     18271 ns/op	 896.74 MB/s	     384 B/op	       4 allocs/op
+BenchmarkSIMDRootScan/roots=4/absent-14                   	  138475	      1310 ns/op	12506.39 MB/s	     384 B/op	       4 allocs/op
+BenchmarkSIMDRootScan/roots=4/tail-14                     	   87051	      2065 ns/op	7934.93 MB/s	    1248 B/op	      10 allocs/op
+BenchmarkSIMDRootScan/roots=4/dense_candidates-14         	    6124	     30651 ns/op	 534.53 MB/s	     384 B/op	       4 allocs/op
+BenchmarkSparseRootTextSet/distinct_roots-14              	     212	    835544 ns/op	1254.94 MB/s	     384 B/op	       4 allocs/op
+BenchmarkSparseRootTextSet/mixed_absent_and_dense_roots-14         	     205	    886077 ns/op	1183.37 MB/s	     384 B/op	       4 allocs/op
+PASS

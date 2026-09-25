@@ -1,0 +1,11 @@
+--- a/compiler/ahocorasick.go
++++ b/compiler/ahocorasick.go
+@@ -375,0 +376,8 @@
++	if byteSearchSIMDEnabled && len(cursor.values) > 1 && len(data)-from >= 256 {
++		relative := indexRootSetSIMD(data[from:], cursor.values)
++		if relative < 0 {
++			return -1
++		}
++		return from + relative
++	}
++

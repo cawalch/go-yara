@@ -1,0 +1,29 @@
+//go:build go1.27 && goexperiment.simd
+
+package compiler
+
+import "simd"
+
+func indexRootSetSIMD(data, values []byte) int {
+	a := simd.BroadcastUint8s(values[0])
+	b := simd.BroadcastUint8s(values[1])
+	c := simd.BroadcastUint8s(values[min(2, len(values)-1)])
+	d := simd.BroadcastUint8s(values[len(values)-1])
+	width := a.Len()
+	pos := 0
+	for ; pos <= len(data)-width; pos += width {
+		value := simd.LoadUint8s(data[pos : pos+width])
+		mask := value.Equal(a).Or(value.Equal(b)).Or(value.Equal(c)).Or(value.Equal(d))
+		if lane := firstMatchingByte(mask); lane >= 0 {
+			return pos + lane
+		}
+	}
+	for ; pos < len(data); pos++ {
+		for _, value := range values {
+			if data[pos] == value {
+				return pos
+			}
+		}
+	}
+	return -1
+}

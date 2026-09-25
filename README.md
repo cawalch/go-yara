@@ -54,6 +54,30 @@ go get github.com/cawalch/go-yara/compiler
 
 The module currently declares Go `1.26.0` in [go.mod](go.mod).
 
+### Experimental SIMD scanning
+
+With Go 1.27 or newer, build with `GOEXPERIMENT=simd` to try vectorized ASCII
+case-fold and contiguous character-class candidate searches:
+
+```bash
+GOEXPERIMENT=simd go test ./compiler
+GOEXPERIMENT=simd go build ./...
+```
+
+This prototype uses Go's experimental portable SIMD API with small ARM64 and
+amd64 helpers to locate matching bytes. Other architectures and forced emulation
+use scalar search. Ordinary builds retain the existing search paths and Go 1.26
+compatibility. SIMD is an implementation detail; scanner APIs and compiled rule
+formats do not change.
+
+Benefits depend on the rules and input: long scans with few candidate bytes can
+improve substantially, while short records, dense matches, and existing literal
+searches may see little benefit. Benchmark complete scans on the deployment CPU
+before enabling this experimental path.
+
+See the [SIMD benchmark report](benchmarks/2026-09-25-go127-simd/report.md) for
+measurements, validation, and remaining architecture coverage.
+
 ## Library Usage
 
 Use the exported `compiler` package for normal rule compilation and scanning.
