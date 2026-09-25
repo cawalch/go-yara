@@ -1,0 +1,243 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/cawalch/go-yara/compiler
+cpu: Apple M3 Max
+                                                  │ benchmarks/2026-09-25-go127-simd/paired/original.txt │ benchmarks/2026-09-25-go127-simd/paired/simd.txt │
+                                                  │                        sec/op                        │          sec/op            vs base               │
+ACScanLargeInput/size=1024-14                                                               1.125µ ±  7%                1.131µ ±  3%        ~ (p=0.937 n=6)
+ACScanLargeInput/size=8192-14                                                               8.510µ ±  3%                8.461µ ±  2%        ~ (p=0.589 n=6)
+ACScanLargeInput/size=16384-14                                                              16.76µ ±  4%                16.63µ ±  4%        ~ (p=0.818 n=6)
+ACScanLargeInput/size=51200-14                                                              51.90µ ±  4%                52.47µ ±  5%        ~ (p=0.937 n=6)
+LeadingClassRegexAtoms/with_class/dense-14                                                  78.43µ ±  3%                78.59µ ±  1%        ~ (p=0.818 n=6)
+LeadingClassRegexAtoms/with_class/sparse-14                                                 72.39µ ±  3%                72.42µ ±  1%        ~ (p=0.699 n=6)
+LeadingClassRegexAtoms/without_class/dense-14                                               1.267m ±  2%                1.271m ±  1%        ~ (p=0.937 n=6)
+LeadingClassRegexAtoms/without_class/sparse-14                                              664.8µ ±  1%                659.9µ ±  1%        ~ (p=0.065 n=6)
+NoCaseRegexLiteralSearchDensity/negative-14                                                 26.86µ ±  3%                26.60µ ±  1%        ~ (p=0.180 n=6)
+NoCaseRegexLiteralSearchDensity/sparse-14                                                   27.15µ ±  2%                27.05µ ±  1%        ~ (p=0.240 n=6)
+NoCaseRegexLiteralSearchDensity/dense-14                                                    1.668m ±  2%                1.656m ±  1%        ~ (p=0.180 n=6)
+AtomlessRegexScanner/leading_class/16KiB-14                                                 9.772µ ±  1%                3.882µ ±  2%  -60.27% (p=0.002 n=6)
+AtomlessRegexScanner/leading_class/1024KiB-14                                              433.62µ ±  1%                57.56µ ±  1%  -86.73% (p=0.002 n=6)
+AtomlessRegexScanner/leading_any/16KiB-14                                                   9.731µ ±  3%                3.879µ ±  1%  -60.14% (p=0.002 n=6)
+AtomlessRegexScanner/leading_any/1024KiB-14                                                431.85µ ±  2%                57.42µ ±  1%  -86.70% (p=0.002 n=6)
+RegexMatchDensity/few_matches-14                                                            1.029m ±  1%                1.026m ±  2%        ~ (p=0.589 n=6)
+RegexMatchDensity/many_matches-14                                                           1.032m ±  3%                1.036m ±  2%        ~ (p=0.937 n=6)
+MultiRuleScanner-14                                                                         657.8µ ±  3%                659.2µ ±  4%        ~ (p=1.000 n=6)
+ProductionScanner-14                                                                        47.86µ ±  5%                47.59µ ±  4%        ~ (p=0.310 n=6)
+ProductionScannerUniquePatterns-14                                                          145.6µ ±  3%                144.3µ ±  3%        ~ (p=0.589 n=6)
+SIMDScan/nocase/64/absent-14                                                                177.8n ±  5%                180.4n ±  5%        ~ (p=0.240 n=6)
+SIMDScan/nocase/64/tail-14                                                                  809.1n ±  5%                802.0n ±  6%        ~ (p=0.818 n=6)
+SIMDScan/nocase/64/dense-14                                                                 1.030µ ±  3%                1.039µ ±  5%        ~ (p=0.310 n=6)
+SIMDScan/nocase/1024/absent-14                                                              674.9n ±  3%                255.7n ±  4%  -62.11% (p=0.002 n=6)
+SIMDScan/nocase/1024/tail-14                                                               1300.0n ±  2%                877.8n ±  5%  -32.48% (p=0.002 n=6)
+SIMDScan/nocase/1024/dense-14                                                               6.126µ ±  4%                6.214µ ±  4%        ~ (p=0.937 n=6)
+SIMDScan/nocase/16384/absent-14                                                             6.994µ ±  3%                1.315µ ±  3%  -81.19% (p=0.002 n=6)
+SIMDScan/nocase/16384/tail-14                                                               7.656µ ±  3%                1.961µ ±  4%  -74.39% (p=0.002 n=6)
+SIMDScan/nocase/16384/dense-14                                                              81.14µ ±  5%                82.12µ ±  2%        ~ (p=0.240 n=6)
+SIMDScan/range/64/absent-14                                                                 388.9n ± 10%                385.0n ±  2%        ~ (p=0.240 n=6)
+SIMDScan/range/64/tail-14                                                                   1.168µ ±  7%                1.138µ ±  5%        ~ (p=0.132 n=6)
+SIMDScan/range/64/dense-14                                                                  1.845µ ±  5%                1.857µ ±  3%        ~ (p=0.937 n=6)
+SIMDScan/range/1024/absent-14                                                               818.9n ±  4%                439.2n ±  3%  -46.37% (p=0.002 n=6)
+SIMDScan/range/1024/tail-14                                                                 1.575µ ±  6%                1.205µ ±  3%  -23.52% (p=0.002 n=6)
+SIMDScan/range/1024/dense-14                                                                21.45µ ±  2%                21.65µ ±  2%        ~ (p=0.180 n=6)
+SIMDScan/range/16384/absent-14                                                              7.131µ ±  2%                1.236µ ±  2%  -82.67% (p=0.002 n=6)
+SIMDScan/range/16384/tail-14                                                                7.943µ ±  3%                2.002µ ±  5%  -74.80% (p=0.002 n=6)
+SIMDScan/range/16384/dense-14                                                               324.0µ ±  3%                329.1µ ±  1%        ~ (p=0.180 n=6)
+SIMDScan/literal_control/64/absent-14                                                       139.5n ± 13%                138.7n ±  7%        ~ (p=0.937 n=6)
+SIMDScan/literal_control/64/tail-14                                                         752.4n ± 14%                747.7n ±  6%        ~ (p=0.485 n=6)
+SIMDScan/literal_control/64/dense-14                                                        984.8n ± 14%               1013.4n ±  6%        ~ (p=0.818 n=6)
+SIMDScan/literal_control/1024/absent-14                                                     154.1n ± 10%                155.8n ± 13%        ~ (p=0.589 n=6)
+SIMDScan/literal_control/1024/tail-14                                                       752.8n ± 12%                749.4n ± 16%        ~ (p=0.699 n=6)
+SIMDScan/literal_control/1024/dense-14                                                      5.847µ ±  5%                5.967µ ±  4%        ~ (p=0.331 n=6)
+SIMDScan/literal_control/16384/absent-14                                                    336.7n ±  7%                337.1n ±  4%        ~ (p=0.818 n=6)
+SIMDScan/literal_control/16384/tail-14                                                      939.1n ±  6%                937.8n ±  3%        ~ (p=0.699 n=6)
+SIMDScan/literal_control/16384/dense-14                                                     76.31µ ±  2%                76.91µ ±  3%   +0.79% (p=0.004 n=6)
+SIMDRootScan/roots=2/absent-14                                                              548.8n ±  5%                547.4n ±  4%        ~ (p=0.937 n=6)
+SIMDRootScan/roots=2/tail-14                                                                1.208µ ±  5%                1.201µ ±  2%        ~ (p=0.853 n=6)
+SIMDRootScan/roots=2/dense_candidates-14                                                    20.42µ ±  5%                20.46µ ±  2%        ~ (p=0.699 n=6)
+SIMDRootScan/roots=4/absent-14                                                              943.6n ±  5%                939.4n ±  2%        ~ (p=0.394 n=6)
+SIMDRootScan/roots=4/tail-14                                                                1.629µ ±  7%                1.605µ ±  3%        ~ (p=0.180 n=6)
+SIMDRootScan/roots=4/dense_candidates-14                                                    51.28µ ±  4%                51.04µ ±  1%        ~ (p=0.310 n=6)
+SparseRootTextSet/distinct_roots-14                                                         854.0µ ±  2%                852.4µ ±  2%        ~ (p=0.818 n=6)
+SparseRootTextSet/mixed_absent_and_dense_roots-14                                           1.132m ±  1%                1.129m ±  2%        ~ (p=0.699 n=6)
+geomean                                                                                     11.35µ                      8.757µ        -22.87%
+
+                                                  │ benchmarks/2026-09-25-go127-simd/paired/original.txt │ benchmarks/2026-09-25-go127-simd/paired/simd.txt │
+                                                  │                         B/s                          │           B/s             vs base                │
+ACScanLargeInput/size=1024-14                                                              878.7Mi ±  6%              874.0Mi ±  3%         ~ (p=0.937 n=6)
+ACScanLargeInput/size=8192-14                                                              919.4Mi ±  3%              924.8Mi ±  2%         ~ (p=0.589 n=6)
+ACScanLargeInput/size=16384-14                                                             932.9Mi ±  4%              940.1Mi ±  4%         ~ (p=0.818 n=6)
+ACScanLargeInput/size=51200-14                                                             941.0Mi ±  4%              930.9Mi ±  5%         ~ (p=0.937 n=6)
+LeadingClassRegexAtoms/with_class/dense-14                                                 12.45Gi ±  2%              12.43Gi ±  1%         ~ (p=0.818 n=6)
+LeadingClassRegexAtoms/with_class/sparse-14                                                13.49Gi ±  3%              13.49Gi ±  1%         ~ (p=0.699 n=6)
+LeadingClassRegexAtoms/without_class/dense-14                                              789.4Mi ±  2%              786.8Mi ±  1%         ~ (p=0.937 n=6)
+LeadingClassRegexAtoms/without_class/sparse-14                                             1.469Gi ±  1%              1.480Gi ±  1%    +0.74% (p=0.045 n=6)
+NoCaseRegexLiteralSearchDensity/negative-14                                                36.36Gi ±  3%              36.71Gi ±  1%         ~ (p=0.180 n=6)
+NoCaseRegexLiteralSearchDensity/sparse-14                                                  35.96Gi ±  2%              36.10Gi ±  1%         ~ (p=0.240 n=6)
+NoCaseRegexLiteralSearchDensity/dense-14                                                   599.5Mi ±  2%              604.0Mi ±  1%         ~ (p=0.180 n=6)
+AtomlessRegexScanner/leading_class/16KiB-14                                                1.562Gi ±  1%              3.931Gi ±  2%  +151.72% (p=0.002 n=6)
+AtomlessRegexScanner/leading_class/1024KiB-14                                              2.252Gi ±  1%             16.966Gi ±  1%  +653.31% (p=0.002 n=6)
+AtomlessRegexScanner/leading_any/16KiB-14                                                  1.568Gi ±  2%              3.933Gi ±  2%  +150.83% (p=0.002 n=6)
+AtomlessRegexScanner/leading_any/1024KiB-14                                                2.261Gi ±  1%             17.008Gi ±  1%  +652.11% (p=0.002 n=6)
+RegexMatchDensity/few_matches-14                                                           971.6Mi ±  1%              975.1Mi ±  2%         ~ (p=0.589 n=6)
+RegexMatchDensity/many_matches-14                                                          969.3Mi ±  3%              965.5Mi ±  2%         ~ (p=0.937 n=6)
+MultiRuleScanner-14                                                                        87.89Ki ± 11%              87.89Ki ±  0%         ~ (p=1.000 n=6)
+ProductionScanner-14                                                                       1.993Gi ±  5%              2.004Gi ±  4%         ~ (p=0.310 n=6)
+ProductionScannerUniquePatterns-14                                                         670.7Mi ±  3%              676.9Mi ±  3%         ~ (p=0.589 n=6)
+SIMDScan/nocase/64/absent-14                                                               343.3Mi ±  5%              338.3Mi ±  5%         ~ (p=0.240 n=6)
+SIMDScan/nocase/64/tail-14                                                                 75.44Mi ±  6%              76.11Mi ±  5%         ~ (p=0.818 n=6)
+SIMDScan/nocase/64/dense-14                                                                59.28Mi ±  3%              58.76Mi ±  5%         ~ (p=0.310 n=6)
+SIMDScan/nocase/1024/absent-14                                                             1.413Gi ±  3%              3.730Gi ±  4%  +163.97% (p=0.002 n=6)
+SIMDScan/nocase/1024/tail-14                                                               751.2Mi ±  2%             1112.5Mi ±  4%   +48.10% (p=0.002 n=6)
+SIMDScan/nocase/1024/dense-14                                                              159.4Mi ±  4%              157.2Mi ±  4%         ~ (p=0.937 n=6)
+SIMDScan/nocase/16384/absent-14                                                            2.182Gi ±  3%             11.599Gi ±  3%  +431.55% (p=0.002 n=6)
+SIMDScan/nocase/16384/tail-14                                                              1.993Gi ±  2%              7.783Gi ±  4%  +290.48% (p=0.002 n=6)
+SIMDScan/nocase/16384/dense-14                                                             192.6Mi ±  4%              190.3Mi ±  2%         ~ (p=0.240 n=6)
+SIMDScan/range/64/absent-14                                                                156.9Mi ±  9%              158.5Mi ±  2%         ~ (p=0.240 n=6)
+SIMDScan/range/64/tail-14                                                                  52.27Mi ±  6%              53.66Mi ±  5%         ~ (p=0.132 n=6)
+SIMDScan/range/64/dense-14                                                                 33.09Mi ±  5%              32.88Mi ±  3%         ~ (p=0.981 n=6)
+SIMDScan/range/1024/absent-14                                                              1.165Gi ±  4%              2.172Gi ±  3%   +86.47% (p=0.002 n=6)
+SIMDScan/range/1024/tail-14                                                                620.2Mi ±  6%              810.8Mi ±  3%   +30.74% (p=0.002 n=6)
+SIMDScan/range/1024/dense-14                                                               45.53Mi ±  2%              45.10Mi ±  2%         ~ (p=0.197 n=6)
+SIMDScan/range/16384/absent-14                                                             2.140Gi ±  2%             12.354Gi ±  2%  +477.35% (p=0.002 n=6)
+SIMDScan/range/16384/tail-14                                                               1.921Gi ±  2%              7.622Gi ±  4%  +296.79% (p=0.002 n=6)
+SIMDScan/range/16384/dense-14                                                              48.23Mi ±  3%              47.48Mi ±  1%         ~ (p=0.180 n=6)
+SIMDScan/literal_control/64/absent-14                                                      437.7Mi ± 11%              440.0Mi ±  6%         ~ (p=0.937 n=6)
+SIMDScan/literal_control/64/tail-14                                                        81.13Mi ± 12%              81.67Mi ±  5%         ~ (p=0.485 n=6)
+SIMDScan/literal_control/64/dense-14                                                       61.97Mi ± 12%              60.26Mi ±  6%         ~ (p=0.818 n=6)
+SIMDScan/literal_control/1024/absent-14                                                    6.192Gi ±  9%              6.123Gi ± 12%         ~ (p=0.589 n=6)
+SIMDScan/literal_control/1024/tail-14                                                      1.267Gi ± 11%              1.273Gi ± 14%         ~ (p=0.699 n=6)
+SIMDScan/literal_control/1024/dense-14                                                     167.0Mi ±  5%              163.7Mi ±  5%         ~ (p=0.331 n=6)
+SIMDScan/literal_control/16384/absent-14                                                   45.31Gi ±  6%              45.27Gi ±  3%         ~ (p=0.818 n=6)
+SIMDScan/literal_control/16384/tail-14                                                     16.25Gi ±  6%              16.27Gi ±  3%         ~ (p=0.699 n=6)
+SIMDScan/literal_control/16384/dense-14                                                    204.8Mi ±  2%              203.2Mi ±  3%    -0.78% (p=0.004 n=6)
+SIMDRootScan/roots=2/absent-14                                                             27.81Gi ±  5%              27.88Gi ±  4%         ~ (p=0.937 n=6)
+SIMDRootScan/roots=2/tail-14                                                               12.63Gi ±  5%              12.71Gi ±  3%         ~ (p=0.937 n=6)
+SIMDRootScan/roots=2/dense_candidates-14                                                   765.1Mi ±  5%              763.7Mi ±  2%         ~ (p=0.699 n=6)
+SIMDRootScan/roots=4/absent-14                                                             16.17Gi ±  5%              16.24Gi ±  2%         ~ (p=0.394 n=6)
+SIMDRootScan/roots=4/tail-14                                                               9.369Gi ±  6%              9.509Gi ±  3%         ~ (p=0.180 n=6)
+SIMDRootScan/roots=4/dense_candidates-14                                                   304.7Mi ±  3%              306.2Mi ±  1%         ~ (p=0.310 n=6)
+SparseRootTextSet/distinct_roots-14                                                        1.143Gi ±  2%              1.146Gi ±  2%         ~ (p=0.818 n=6)
+SparseRootTextSet/mixed_absent_and_dense_roots-14                                          883.2Mi ±  1%              886.1Mi ±  2%         ~ (p=0.699 n=6)
+geomean                                                                                    872.5Mi                    1.105Gi         +29.65%
+
+                                                  │ benchmarks/2026-09-25-go127-simd/paired/original.txt │ benchmarks/2026-09-25-go127-simd/paired/simd.txt │
+                                                  │                         B/op                         │           B/op            vs base                │
+ACScanLargeInput/size=1024-14                                                               0.000 ± 0%                   0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ACScanLargeInput/size=8192-14                                                               0.000 ± 0%                   0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ACScanLargeInput/size=16384-14                                                              0.000 ± 0%                   0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ACScanLargeInput/size=51200-14                                                              0.000 ± 0%                   0.000 ± 0%       ~ (p=1.000 n=6) ¹
+LeadingClassRegexAtoms/with_class/dense-14                                                  384.0 ± 0%                   384.0 ± 0%       ~ (p=1.000 n=6) ¹
+LeadingClassRegexAtoms/with_class/sparse-14                                                 384.0 ± 0%                   384.0 ± 0%       ~ (p=1.000 n=6) ¹
+LeadingClassRegexAtoms/without_class/dense-14                                               384.0 ± 0%                   384.0 ± 0%       ~ (p=1.000 n=6) ¹
+LeadingClassRegexAtoms/without_class/sparse-14                                              384.0 ± 0%                   384.0 ± 0%       ~ (p=1.000 n=6) ¹
+NoCaseRegexLiteralSearchDensity/negative-14                                                 0.000 ± 0%                   0.000 ± 0%       ~ (p=1.000 n=6) ¹
+NoCaseRegexLiteralSearchDensity/sparse-14                                                   0.000 ± 0%                   0.000 ± 0%       ~ (p=1.000 n=6) ¹
+NoCaseRegexLiteralSearchDensity/dense-14                                                    0.000 ± 0%                   0.000 ± 0%       ~ (p=1.000 n=6) ¹
+AtomlessRegexScanner/leading_class/16KiB-14                                                 384.0 ± 0%                   384.0 ± 0%       ~ (p=1.000 n=6) ¹
+AtomlessRegexScanner/leading_class/1024KiB-14                                               384.0 ± 0%                   384.0 ± 0%       ~ (p=1.000 n=6) ¹
+AtomlessRegexScanner/leading_any/16KiB-14                                                   384.0 ± 0%                   384.0 ± 0%       ~ (p=1.000 n=6) ¹
+AtomlessRegexScanner/leading_any/1024KiB-14                                                 384.0 ± 0%                   384.0 ± 0%       ~ (p=1.000 n=6) ¹
+RegexMatchDensity/few_matches-14                                                          2.979Ki ± 0%                 2.979Ki ± 0%       ~ (p=1.000 n=6)
+RegexMatchDensity/many_matches-14                                                         4.168Ki ± 0%                 4.168Ki ± 0%       ~ (p=0.935 n=6)
+MultiRuleScanner-14                                                                       881.4Ki ± 0%                 881.4Ki ± 0%       ~ (p=0.818 n=6)
+ProductionScanner-14                                                                      12.56Ki ± 0%                 12.56Ki ± 0%       ~ (p=0.695 n=6)
+ProductionScannerUniquePatterns-14                                                        7.338Ki ± 0%                 7.338Ki ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/nocase/64/absent-14                                                                384.0 ± 0%                   384.0 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/nocase/64/tail-14                                                                1.219Ki ± 0%                 1.219Ki ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/nocase/64/dense-14                                                               1.703Ki ± 0%                 1.703Ki ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/nocase/1024/absent-14                                                              384.0 ± 0%                   384.0 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/nocase/1024/tail-14                                                              1.219Ki ± 0%                 1.219Ki ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/nocase/1024/dense-14                                                             10.33Ki ± 0%                 10.33Ki ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/nocase/16384/absent-14                                                             384.0 ± 0%                   384.0 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/nocase/16384/tail-14                                                             1.219Ki ± 0%                 1.219Ki ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/nocase/16384/dense-14                                                            145.1Ki ± 0%                 145.1Ki ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/range/64/absent-14                                                                 384.0 ± 0%                   384.0 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/range/64/tail-14                                                                 1.219Ki ± 0%                 1.219Ki ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/range/64/dense-14                                                                1.703Ki ± 0%                 1.703Ki ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/range/1024/absent-14                                                               384.0 ± 0%                   384.0 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/range/1024/tail-14                                                               1.219Ki ± 0%                 1.219Ki ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/range/1024/dense-14                                                              10.33Ki ± 0%                 10.33Ki ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/range/16384/absent-14                                                              384.0 ± 0%                   384.0 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/range/16384/tail-14                                                              1.219Ki ± 0%                 1.219Ki ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/range/16384/dense-14                                                             145.1Ki ± 0%                 145.1Ki ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/literal_control/64/absent-14                                                       384.0 ± 0%                   384.0 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/literal_control/64/tail-14                                                       1.219Ki ± 0%                 1.219Ki ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/literal_control/64/dense-14                                                      1.703Ki ± 0%                 1.703Ki ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/literal_control/1024/absent-14                                                     384.0 ± 0%                   384.0 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/literal_control/1024/tail-14                                                     1.219Ki ± 0%                 1.219Ki ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/literal_control/1024/dense-14                                                    10.33Ki ± 0%                 10.33Ki ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/literal_control/16384/absent-14                                                    384.0 ± 0%                   384.0 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/literal_control/16384/tail-14                                                    1.219Ki ± 0%                 1.219Ki ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/literal_control/16384/dense-14                                                   145.1Ki ± 0%                 145.1Ki ± 0%       ~ (p=1.000 n=6) ¹
+SIMDRootScan/roots=2/absent-14                                                              384.0 ± 0%                   384.0 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDRootScan/roots=2/tail-14                                                              1.219Ki ± 0%                 1.219Ki ± 0%       ~ (p=1.000 n=6) ¹
+SIMDRootScan/roots=2/dense_candidates-14                                                    384.0 ± 0%                   384.0 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDRootScan/roots=4/absent-14                                                              384.0 ± 0%                   384.0 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDRootScan/roots=4/tail-14                                                              1.219Ki ± 0%                 1.219Ki ± 0%       ~ (p=1.000 n=6) ¹
+SIMDRootScan/roots=4/dense_candidates-14                                                    384.0 ± 0%                   384.0 ± 0%       ~ (p=1.000 n=6) ¹
+SparseRootTextSet/distinct_roots-14                                                         384.0 ± 0%                   384.0 ± 0%       ~ (p=1.000 n=6) ¹
+SparseRootTextSet/mixed_absent_and_dense_roots-14                                           384.0 ± 0%                   384.0 ± 0%       ~ (p=1.000 n=6) ¹
+geomean                                                                                                ²                             +0.00%               ²
+¹ all samples are equal
+² summaries must be >0 to compute geomean
+
+                                                  │ benchmarks/2026-09-25-go127-simd/paired/original.txt │ benchmarks/2026-09-25-go127-simd/paired/simd.txt │
+                                                  │                      allocs/op                       │        allocs/op          vs base                │
+ACScanLargeInput/size=1024-14                                                               0.000 ± 0%                   0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ACScanLargeInput/size=8192-14                                                               0.000 ± 0%                   0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ACScanLargeInput/size=16384-14                                                              0.000 ± 0%                   0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ACScanLargeInput/size=51200-14                                                              0.000 ± 0%                   0.000 ± 0%       ~ (p=1.000 n=6) ¹
+LeadingClassRegexAtoms/with_class/dense-14                                                  4.000 ± 0%                   4.000 ± 0%       ~ (p=1.000 n=6) ¹
+LeadingClassRegexAtoms/with_class/sparse-14                                                 4.000 ± 0%                   4.000 ± 0%       ~ (p=1.000 n=6) ¹
+LeadingClassRegexAtoms/without_class/dense-14                                               4.000 ± 0%                   4.000 ± 0%       ~ (p=1.000 n=6) ¹
+LeadingClassRegexAtoms/without_class/sparse-14                                              4.000 ± 0%                   4.000 ± 0%       ~ (p=1.000 n=6) ¹
+NoCaseRegexLiteralSearchDensity/negative-14                                                 0.000 ± 0%                   0.000 ± 0%       ~ (p=1.000 n=6) ¹
+NoCaseRegexLiteralSearchDensity/sparse-14                                                   0.000 ± 0%                   0.000 ± 0%       ~ (p=1.000 n=6) ¹
+NoCaseRegexLiteralSearchDensity/dense-14                                                    0.000 ± 0%                   0.000 ± 0%       ~ (p=1.000 n=6) ¹
+AtomlessRegexScanner/leading_class/16KiB-14                                                 4.000 ± 0%                   4.000 ± 0%       ~ (p=1.000 n=6) ¹
+AtomlessRegexScanner/leading_class/1024KiB-14                                               4.000 ± 0%                   4.000 ± 0%       ~ (p=1.000 n=6) ¹
+AtomlessRegexScanner/leading_any/16KiB-14                                                   4.000 ± 0%                   4.000 ± 0%       ~ (p=1.000 n=6) ¹
+AtomlessRegexScanner/leading_any/1024KiB-14                                                 4.000 ± 0%                   4.000 ± 0%       ~ (p=1.000 n=6) ¹
+RegexMatchDensity/few_matches-14                                                            20.00 ± 0%                   20.00 ± 0%       ~ (p=1.000 n=6) ¹
+RegexMatchDensity/many_matches-14                                                           34.00 ± 0%                   34.00 ± 0%       ~ (p=1.000 n=6) ¹
+MultiRuleScanner-14                                                                        4.042k ± 0%                  4.042k ± 0%       ~ (p=1.000 n=6)
+ProductionScanner-14                                                                        71.00 ± 0%                   71.00 ± 0%       ~ (p=1.000 n=6) ¹
+ProductionScannerUniquePatterns-14                                                          16.00 ± 0%                   16.00 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/nocase/64/absent-14                                                                4.000 ± 0%                   4.000 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/nocase/64/tail-14                                                                  10.00 ± 0%                   10.00 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/nocase/64/dense-14                                                                 10.00 ± 0%                   10.00 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/nocase/1024/absent-14                                                              4.000 ± 0%                   4.000 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/nocase/1024/tail-14                                                                10.00 ± 0%                   10.00 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/nocase/1024/dense-14                                                               10.00 ± 0%                   10.00 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/nocase/16384/absent-14                                                             4.000 ± 0%                   4.000 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/nocase/16384/tail-14                                                               10.00 ± 0%                   10.00 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/nocase/16384/dense-14                                                              10.00 ± 0%                   10.00 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/range/64/absent-14                                                                 4.000 ± 0%                   4.000 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/range/64/tail-14                                                                   10.00 ± 0%                   10.00 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/range/64/dense-14                                                                  10.00 ± 0%                   10.00 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/range/1024/absent-14                                                               4.000 ± 0%                   4.000 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/range/1024/tail-14                                                                 10.00 ± 0%                   10.00 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/range/1024/dense-14                                                                10.00 ± 0%                   10.00 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/range/16384/absent-14                                                              4.000 ± 0%                   4.000 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/range/16384/tail-14                                                                10.00 ± 0%                   10.00 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/range/16384/dense-14                                                               10.00 ± 0%                   10.00 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/literal_control/64/absent-14                                                       4.000 ± 0%                   4.000 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/literal_control/64/tail-14                                                         10.00 ± 0%                   10.00 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/literal_control/64/dense-14                                                        10.00 ± 0%                   10.00 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/literal_control/1024/absent-14                                                     4.000 ± 0%                   4.000 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/literal_control/1024/tail-14                                                       10.00 ± 0%                   10.00 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/literal_control/1024/dense-14                                                      10.00 ± 0%                   10.00 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/literal_control/16384/absent-14                                                    4.000 ± 0%                   4.000 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/literal_control/16384/tail-14                                                      10.00 ± 0%                   10.00 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDScan/literal_control/16384/dense-14                                                     10.00 ± 0%                   10.00 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDRootScan/roots=2/absent-14                                                              4.000 ± 0%                   4.000 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDRootScan/roots=2/tail-14                                                                10.00 ± 0%                   10.00 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDRootScan/roots=2/dense_candidates-14                                                    4.000 ± 0%                   4.000 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDRootScan/roots=4/absent-14                                                              4.000 ± 0%                   4.000 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDRootScan/roots=4/tail-14                                                                10.00 ± 0%                   10.00 ± 0%       ~ (p=1.000 n=6) ¹
+SIMDRootScan/roots=4/dense_candidates-14                                                    4.000 ± 0%                   4.000 ± 0%       ~ (p=1.000 n=6) ¹
+SparseRootTextSet/distinct_roots-14                                                         4.000 ± 0%                   4.000 ± 0%       ~ (p=1.000 n=6) ¹
+SparseRootTextSet/mixed_absent_and_dense_roots-14                                           4.000 ± 0%                   4.000 ± 0%       ~ (p=1.000 n=6) ¹
+geomean                                                                                                ²                             +0.00%               ²
+¹ all samples are equal
+² summaries must be >0 to compute geomean

@@ -125,6 +125,32 @@ jobs:
             exit 1
           fi
 
+  simd:
+    name: Experimental SIMD
+    runs-on: ubuntu-latest
+    env:
+      GOEXPERIMENT: simd
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: "1.27.1"
+          cache: true
+
+      - name: Run vet
+        run: go vet ./...
+
+      - name: Run race tests
+        run: go test -race ./...
+
+      - name: Test 128-bit SIMD searches
+        run: GODEBUG=simd=+128 go test ./compiler -run TestByteSearch -count=1
+
+      - name: Test scalar emulation fallback
+        run: GODEBUG=simd=0 go test ./compiler -run TestByteSearch -count=1
+
   security:
     name: Security Scan
     runs-on: ubuntu-latest
@@ -196,7 +222,7 @@ jobs:
   quality-gate:
     name: Quality Gate
     runs-on: ubuntu-latest
-    needs: [lint, test, security, fuzz]
+    needs: [lint, test, simd, security, fuzz]
     if: always()
     steps:
       - name: Check job results
@@ -213,6 +239,11 @@ jobs:
 
           if [ "${{ needs.security.result }}" != "success" ]; then
             echo "❌ Security job failed"
+            exit 1
+          fi
+
+          if [ "${{ needs.simd.result }}" != "success" ]; then
+            echo "❌ Experimental SIMD job failed"
             exit 1
           fi
 

@@ -1,0 +1,20 @@
+go vet ./...
+go run ./cmd/go-yara-analyzers ./...
+golangci-lint run --config=.golangci.yml
+0 issues.
+go test ./...
+ok  	github.com/cawalch/go-yara/ast	0.208s
+ok  	github.com/cawalch/go-yara/cmd	0.379s
+?   	github.com/cawalch/go-yara/cmd/go-yara-analyzers	[no test files]
+ok  	github.com/cawalch/go-yara/compiler	1.391s
+ok  	github.com/cawalch/go-yara/internal/analyzers/checkednarrow	0.983s
+ok  	github.com/cawalch/go-yara/internal/analyzers/opcodecontract	1.031s
+ok  	github.com/cawalch/go-yara/internal/analyzers/operandcontract	1.567s
+ok  	github.com/cawalch/go-yara/internal/lexer	1.102s
+ok  	github.com/cawalch/go-yara/internal/wordmatch	1.848s
+ok  	github.com/cawalch/go-yara/parser	1.525s
+ok  	github.com/cawalch/go-yara/regex	1.847s
+ok  	github.com/cawalch/go-yara/semantic	1.908s
+ok  	github.com/cawalch/go-yara/tests/integration	2.309s
+ok  	github.com/cawalch/go-yara/token	2.058s
+ok  	github.com/cawalch/go-yara/utils/fs	2.436s

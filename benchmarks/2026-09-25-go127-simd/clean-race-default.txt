@@ -1,0 +1,15 @@
+ok  	github.com/cawalch/go-yara/ast	1.235s
+ok  	github.com/cawalch/go-yara/cmd	2.284s
+?   	github.com/cawalch/go-yara/cmd/go-yara-analyzers	[no test files]
+ok  	github.com/cawalch/go-yara/compiler	8.084s
+ok  	github.com/cawalch/go-yara/internal/analyzers/checkednarrow	3.349s
+ok  	github.com/cawalch/go-yara/internal/analyzers/opcodecontract	2.019s
+ok  	github.com/cawalch/go-yara/internal/analyzers/operandcontract	3.401s
+ok  	github.com/cawalch/go-yara/internal/lexer	3.176s
+ok  	github.com/cawalch/go-yara/internal/wordmatch	4.067s
+ok  	github.com/cawalch/go-yara/parser	3.659s
+ok  	github.com/cawalch/go-yara/regex	4.577s
+ok  	github.com/cawalch/go-yara/semantic	1.621s
+ok  	github.com/cawalch/go-yara/tests/integration	2.990s
+ok  	github.com/cawalch/go-yara/token	1.686s
+ok  	github.com/cawalch/go-yara/utils/fs	2.873s
