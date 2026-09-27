@@ -458,6 +458,15 @@ func (search regexByteSetSearch) indexContiguous(pos int) int {
 	if search.pattern.byteSetLower == search.pattern.byteSetUpper && !search.wide {
 		return indexRegexByte(search.data, start, search.pattern.byteSetLower)
 	}
+	if byteSearchSIMDEnabled && !search.wide {
+		if start >= len(search.data) {
+			return -1
+		}
+		if relative := indexByteRange(search.data[start:], search.pattern.byteSetLower, search.pattern.byteSetUpper); relative >= 0 {
+			return start + relative
+		}
+		return -1
+	}
 	data := search.data
 	lower := search.pattern.byteSetLower
 	width := search.pattern.byteSetUpper - lower
@@ -632,10 +641,20 @@ func (cursor *asciiFoldByteCursor) next(data []byte, from int) int {
 	return best
 }
 
-func indexASCIIFoldByte(data []byte, want byte) int {
+func indexASCIIFoldByteScalar(data []byte, want byte) int {
 	other := flipASCIICase(want)
 	for index, value := range data {
 		if value == want || value == other {
+			return index
+		}
+	}
+	return -1
+}
+
+func indexByteRangeScalar(data []byte, lower, upper byte) int {
+	width := upper - lower
+	for index, value := range data {
+		if value-lower <= width {
 			return index
 		}
 	}
