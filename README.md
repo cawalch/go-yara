@@ -7,7 +7,7 @@
 ## Features
 
 - **AST and parsing**: Parse YARA source into a structured abstract syntax tree (AST).
-- **Semantic analysis**: Validate rule semantics and emit structured errors and warnings.
+- **Semantic analysis**: Validate rule semantics and emit structured diagnostics, machine-readable error codes, and typo suggestions.
 - **Bytecode compilation**: Compile valid rules to executable bytecode.
 - **Resilient compilation**: Optionally compile valid rules from rule sets containing syntax or semantic errors, while collecting omitted-rule diagnostics.
 - **Prefiltering and fast rejection**: Reject clean inputs using a conservative mandatory-literal prefilter before executing rule bytecode, achieving zero heap allocations on clean inputs after warm-up.
@@ -314,13 +314,31 @@ if err != nil {
 
 // Inspect omitted rules and diagnostics:
 for _, ignored := range c.GetIgnoredRules() {
-	fmt.Printf("Omitted rule %s in phase %s: %s\n",
-		ignored.Rule, ignored.Phase, ignored.Message)
+	fmt.Printf("Omitted rule %s at %d:%d (code %s): %s\n",
+		ignored.Rule, ignored.Line, ignored.Column, ignored.Code, ignored.Message)
 }
 ```
 
 > [!NOTE]
 > Rules that reference an omitted rule are transitively omitted. If an omitted rule is declared `global`, all subsequent rules are also omitted to prevent unintended matching behavior.
+
+### Inspect semantic diagnostics and suggestions
+
+When performing standalone semantic analysis or linting, the `semantic` package emits structured `Error` diagnostics with machine-readable error codes (such as `undefined-identifier`, `type-mismatch`, and `invalid-modifier`), line/column coordinates, and "did you mean...?" suggestions for misspelled identifiers, module functions, and keywords:
+
+```go
+v := semantic.NewValidator()
+errors := v.ValidateProgram(program)
+for _, err := range errors {
+	if semErr, ok := err.(*semantic.Error); ok {
+		fmt.Printf("[%s] %s at %d:%d\n",
+			semErr.Code, semErr.Error(), semErr.Position.Line, semErr.Position.Column)
+		if semErr.Suggestion != "" {
+			fmt.Printf("  Suggestion: did you mean %s?\n", semErr.Suggestion)
+		}
+	}
+}
+```
 
 ### Use built-in and custom modules
 
