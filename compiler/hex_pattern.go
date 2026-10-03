@@ -673,8 +673,11 @@ func (scratch *hexMatchScratch) match(tokens []HexPatternToken, data []byte, pos
 				scratch.results = append(scratch.results, dp)
 				goto nextItem
 			}
-			if dp > len(data) {
-				goto nextItem
+			if dp >= len(data) {
+				head := toks[0]
+				if (head.Kind != HexTokenJump && head.Kind != HexTokenAlt) || dp > len(data) || (head.Kind == HexTokenJump && head.Min > 0) {
+					goto nextItem
+				}
 			}
 
 			head := toks[0]

@@ -340,7 +340,7 @@ func runMatch(code, s []byte, flags Flags, start int, done <-chan struct{}, scan
 		if scan && addThread(code, s, &cur, 0, pos, visited, gen, wide) {
 			bestEnd = pos
 		}
-		if scan && bestEnd >= 0 || pos+advance > len(s) {
+		if (scan && bestEnd >= 0) || pos >= len(s) || pos+advance > len(s) {
 			break
 		}
 		if wide && !isWidePair(s, pos) {
