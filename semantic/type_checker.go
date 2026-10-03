@@ -1,7 +1,6 @@
 package semantic
 
 import (
-	"errors"
 	"strings"
 
 	"github.com/cawalch/go-yara/ast"
@@ -75,7 +74,7 @@ func (tc *TypeChecker) checkExpression(expr ast.Expression) *TypeInfo {
 		return tc.checkForLoop(e)
 	case *ast.PercentExpression:
 		if tc.checkExpression(e.Value).DataType != TypeInteger {
-			tc.addError(errors.New("percentage must be an integer"))
+			tc.addError(NewError(ErrCodeTypeMismatch, "percentage must be an integer", e.Position()))
 		}
 		return &TypeInfo{DataType: TypeInteger}
 
@@ -143,10 +142,7 @@ func (tc *TypeChecker) checkIdentifier(identifier *ast.Identifier) *TypeInfo {
 		// Special case for $ in quantifiers like "for any of them : ($)"
 		return &TypeInfo{DataType: TypeBoolean}
 	default:
-		tc.addError(&Error{
-			Message:  "undefined identifier: " + identifier.Name,
-			Position: identifier.Position(),
-		})
+		tc.addError(NewError(ErrCodeUndefinedIdentifier, "undefined identifier: "+identifier.Name, identifier.Position()))
 		return &TypeInfo{DataType: TypeUnknown}
 	}
 }
@@ -155,7 +151,15 @@ func (tc *TypeChecker) checkBinaryOp(expr *ast.BinaryOp) *TypeInfo {
 	left := tc.checkExpression(expr.Left)
 	right := tc.checkExpression(expr.Right)
 	result, err := InferTypeFromBinaryOp(left, expr.Op, right)
-	return tc.operatorResult(result, err, expr.Position())
+	if err != nil {
+		semErr := NewError(ErrCodeTypeMismatch, err.Error(), expr.Position())
+		if sugg := bitwiseSuggestion(expr.Op, left, right); sugg != "" {
+			semErr = semErr.WithSuggestion(sugg)
+		}
+		tc.addError(semErr)
+		return &TypeInfo{DataType: TypeUnknown}
+	}
+	return result
 }
 
 func (tc *TypeChecker) checkUnaryOp(expr *ast.UnaryOp) *TypeInfo {
@@ -166,7 +170,7 @@ func (tc *TypeChecker) checkUnaryOp(expr *ast.UnaryOp) *TypeInfo {
 
 func (tc *TypeChecker) operatorResult(result *TypeInfo, err error, pos token.Position) *TypeInfo {
 	if err != nil {
-		tc.addError(&Error{Message: err.Error(), Position: pos})
+		tc.addError(NewError(ErrCodeTypeMismatch, err.Error(), pos))
 		return &TypeInfo{DataType: TypeUnknown}
 	}
 	return result
@@ -244,7 +248,11 @@ func (tc *TypeChecker) checkFunctionCall(funcCall *ast.FunctionCall) *TypeInfo {
 	default:
 		// Module signatures are owned by Validator; this checker has no registry.
 		if _, moduleCall := moduleNameFromDottedName(funcCall.Function); !moduleCall {
-			tc.addError(&Error{Message: "unknown function: " + funcCall.Function, Position: funcCall.Pos})
+			semErr := NewError(ErrCodeInvalidFunction, "unknown function: "+funcCall.Function, funcCall.Pos)
+			if sugg, ok := findSimilarIdentifier(strings.ToLower(funcCall.Function), builtinFunctionNames); ok {
+				semErr = semErr.WithSuggestion(sugg)
+			}
+			tc.addError(semErr)
 		}
 		return &TypeInfo{DataType: TypeUnknown}
 	}
@@ -269,7 +277,7 @@ func (tc *TypeChecker) checkOfExpression(ofExpr *ast.OfExpression) *TypeInfo {
 	// Check the count expression
 	countType := tc.checkExpression(ofExpr.Count)
 	if countType.DataType != TypeInteger && countType.DataType != TypeUnknown {
-		tc.addError(errors.New("count in 'of' expression must be an integer"))
+		tc.addError(NewError(ErrCodeTypeMismatch, "count in 'of' expression must be an integer", ofExpr.Position()))
 	}
 
 	// Check the strings expression
@@ -293,7 +301,7 @@ func (tc *TypeChecker) checkStringOffset(strOffset *ast.StringOffset) *TypeInfo 
 	if strOffset.Index != nil {
 		indexType := tc.checkExpression(strOffset.Index)
 		if indexType.DataType != TypeInteger && indexType.DataType != TypeUnknown {
-			tc.addError(errors.New("string offset index must be an integer"))
+			tc.addError(NewError(ErrCodeTypeMismatch, "string offset index must be an integer", strOffset.Position()))
 		}
 	}
 
@@ -315,7 +323,7 @@ func (tc *TypeChecker) checkStringCount(strCount *ast.StringCount) *TypeInfo {
 	if strCount.Index != nil {
 		indexType := tc.checkExpression(strCount.Index)
 		if indexType.DataType != TypeInteger && indexType.DataType != TypeUnknown {
-			tc.addError(errors.New("string count index must be an integer"))
+			tc.addError(NewError(ErrCodeTypeMismatch, "string count index must be an integer", strCount.Position()))
 		}
 	}
 
@@ -365,14 +373,14 @@ func (tc *TypeChecker) checkForLoop(forLoop *ast.ForLoop) *TypeInfo {
 	rangeType := tc.checkExpression(forLoop.Range)
 	if len(forLoop.Variables) > 0 {
 		if rangeType.DataType != TypeInteger && rangeType.DataType != TypeUnknown && rangeType.DataType != TypeString {
-			tc.addError(errors.New("for loop range must be an integer or string tuple"))
+			tc.addError(NewError(ErrCodeInvalidLoop, "for loop range must be an integer or string tuple", forLoop.Position()))
 		}
 	}
 
 	// Check the condition expression type
 	conditionType := tc.checkExpression(forLoop.Condition)
 	if conditionType.DataType != TypeBoolean && conditionType.DataType != TypeUnknown {
-		tc.addError(errors.New("for loop condition must be boolean"))
+		tc.addError(NewError(ErrCodeTypeMismatch, "for loop condition must be boolean", forLoop.Position()))
 	}
 
 	// Clean up loop variables

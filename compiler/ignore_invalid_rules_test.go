@@ -156,3 +156,54 @@ func assertIgnoredRule(t *testing.T, ignored []IgnoredRule, name, phase, depende
 	}
 	t.Fatalf("ignored rules = %+v, missing %s", ignored, name)
 }
+
+func TestSemanticIgnoredRuleDiagnostics(t *testing.T) {
+	source := `rule bad { condition: missing_identifier }
+rule good { condition: true }`
+
+	c := NewCompiler(WithIgnoreInvalidRules(true))
+	_, err := c.CompileSource(source)
+	if err != nil {
+		t.Fatalf("CompileSource() unexpected error: %v", err)
+	}
+
+	ignored := c.GetIgnoredRules()
+	if len(ignored) != 1 {
+		t.Fatalf("expected 1 ignored rule, got %d", len(ignored))
+	}
+	r := ignored[0]
+	if r.Rule != "bad" {
+		t.Errorf("Rule = %q, want 'bad'", r.Rule)
+	}
+	if r.Code != "undefined-identifier" {
+		t.Errorf("Code = %q, want 'undefined-identifier'", r.Code)
+	}
+	if r.Line <= 0 || r.Column <= 0 {
+		t.Errorf("Line/Column = %d:%d, want positive coordinates", r.Line, r.Column)
+	}
+}
+
+func TestSemanticCompilationErrorDiagnostics(t *testing.T) {
+	source := `rule bad { condition: missing_identifier }`
+
+	c := NewCompiler()
+	_, err := c.CompileSource(source)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	errors := c.GetErrors()
+	if len(errors) == 0 {
+		t.Fatal("expected compilation errors in stats, got none")
+	}
+	e := errors[0]
+	if e.Phase != "semantic" {
+		t.Errorf("Phase = %q, want 'semantic'", e.Phase)
+	}
+	if e.Code != "undefined-identifier" {
+		t.Errorf("Code = %q, want 'undefined-identifier'", e.Code)
+	}
+	if e.Line <= 0 || e.Column <= 0 {
+		t.Errorf("Line/Column = %d:%d, want positive coordinates", e.Line, e.Column)
+	}
+}

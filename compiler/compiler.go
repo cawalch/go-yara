@@ -106,6 +106,7 @@ type CompilationStats struct {
 
 // CompilationError represents a compilation error
 type CompilationError struct {
+	Code    string
 	Phase   string
 	Message string
 	Line    int
@@ -137,6 +138,7 @@ type IgnoredRule struct {
 	Rule       string
 	Phase      string
 	Message    string
+	Code       string
 	Dependency string
 	Global     bool
 	Line       int
@@ -548,6 +550,7 @@ func (c *Compiler) removeSemanticallyInvalidRules(program *ast.Program, validati
 				Rule:    rule.Name,
 				Phase:   "semantic",
 				Message: semanticErr.Message,
+				Code:    string(semanticErr.Code),
 				Global:  ruleHasModifier(rule, ast.ModifierGlobal),
 				Line:    semanticErr.Position.Line,
 				Column:  semanticErr.Position.Column,
@@ -659,11 +662,19 @@ func (c *Compiler) compileSemanticWithContext(ctx context.Context, program *ast.
 	}
 	if len(errs) > 0 {
 		for _, err := range errs {
+			line, col := 0, 0
+			code := ""
+			if semErr, ok := err.(*semantic.Error); ok {
+				line = semErr.Position.Line
+				col = semErr.Position.Column
+				code = string(semErr.Code)
+			}
 			c.stats.Errors = append(c.stats.Errors, CompilationError{
+				Code:    code,
 				Phase:   "semantic",
 				Message: err.Error(),
-				Line:    0,
-				Column:  0,
+				Line:    line,
+				Column:  col,
 			})
 		}
 		return fmt.Errorf("%d semantic errors: first: %w", len(errs), errs[0])

@@ -1,6 +1,7 @@
 package semantic
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"sort"
@@ -11,27 +12,18 @@ import (
 	"github.com/cawalch/go-yara/token"
 )
 
-// Error represents a semantic analysis error
-type Error struct {
-	Message  string
-	Position token.Position
-	Rule     string
-}
-
-func (e *Error) Error() string {
-	return fmt.Sprintf("semantic error at %d:%d: %s",
-		e.Position.Line, e.Position.Column, e.Message)
-}
-
 // Validator performs semantic analysis on YARA rules
 type Validator struct {
-	symbolTable     *SymbolTable
-	errors          []error
-	loopVariables   map[string]string // loop variable name -> "string" or "integer"
-	stringLoopDepth int
-	currentRule     string
-	moduleFunctions ModuleFunctions
-	importedModules map[string]bool
+	symbolTable        *SymbolTable
+	errors             []error
+	loopVariables      map[string]string // loop variable name -> "string" or "integer"
+	stringLoopDepth    int
+	currentRule        string
+	currentRuleStrings []string
+	allRuleNames       []string
+	globalVarNames     []string
+	moduleFunctions    ModuleFunctions
+	importedModules    map[string]bool
 }
 
 // Ensure Validator implements the focused visitor interfaces it needs
@@ -61,6 +53,9 @@ func (v *Validator) ValidateProgram(program *ast.Program) []error {
 	v.errors = v.errors[:0] // Clear previous errors
 	v.symbolTable.Reset()
 	v.currentRule = ""
+	v.currentRuleStrings = nil
+	v.allRuleNames = v.allRuleNames[:0]
+	v.globalVarNames = v.globalVarNames[:0]
 	clear(v.importedModules)
 
 	// First: validate module imports and remember the namespaces available to
@@ -99,9 +94,11 @@ func (v *Validator) ValidateProgram(program *ast.Program) []error {
 
 // collectSymbols collects all symbols from a rule
 func (v *Validator) collectSymbols(rule *ast.Rule) {
+	v.allRuleNames = append(v.allRuleNames, rule.Name)
 	// Define the rule itself in the global scope (rules should be globally accessible)
 	if err := v.symbolTable.DefineRule(rule.Name, rule.Pos, rule); err != nil {
 		v.addError(&Error{
+			Code:     ErrCodeDuplicateRule,
 			Message:  err.Error(),
 			Position: rule.Pos,
 			Rule:     rule.Name,
@@ -150,6 +147,7 @@ func (v *Validator) validateRuleDependencyCycles(program *ast.Program) {
 				}
 				reported[key] = true
 				v.addError(&Error{
+					Code:     ErrCodeCircularDependency,
 					Message:  "circular rule dependency: " + key,
 					Position: pos,
 					Rule:     ruleName,
@@ -272,6 +270,7 @@ func cloneBoolMap(src map[string]bool) map[string]bool {
 
 // collectGlobalVariable collects a global variable symbol.
 func (v *Validator) collectGlobalVariable(globalVar *ast.GlobalVariable) {
+	v.globalVarNames = append(v.globalVarNames, globalVar.Name)
 	typeInfo := &TypeInfo{DataType: TypeUnknown}
 	if globalVar.Value != nil {
 		var errs []error
@@ -280,6 +279,7 @@ func (v *Validator) collectGlobalVariable(globalVar *ast.GlobalVariable) {
 	}
 	if typeInfo == nil || typeInfo.DataType == TypeUnknown {
 		v.addError(&Error{
+			Code:     ErrCodeInvalidVariable,
 			Message:  "global variable " + globalVar.Name + " must have a literal integer, string, or boolean value",
 			Position: globalVar.Pos,
 		})
@@ -294,6 +294,7 @@ func (v *Validator) collectGlobalVariable(globalVar *ast.GlobalVariable) {
 	}
 	if err := v.symbolTable.defineGlobalVariable(def); err != nil {
 		v.addError(&Error{
+			Code:     ErrCodeDuplicateVariable,
 			Message:  err.Error(),
 			Position: globalVar.Pos,
 		})
@@ -302,8 +303,10 @@ func (v *Validator) collectGlobalVariable(globalVar *ast.GlobalVariable) {
 
 // collectExternalVariable collects an external variable symbol
 func (v *Validator) collectExternalVariable(extVar *ast.ExternalVariable) {
+	v.globalVarNames = append(v.globalVarNames, extVar.Name)
 	if err := v.symbolTable.DefineVariable(extVar.Name, extVar.Pos, SymbolExternal); err != nil {
 		v.addError(&Error{
+			Code:     ErrCodeDuplicateVariable,
 			Message:  err.Error(),
 			Position: extVar.Pos,
 		})
@@ -314,8 +317,16 @@ func (v *Validator) collectExternalVariable(extVar *ast.ExternalVariable) {
 func (v *Validator) validateRule(rule *ast.Rule) {
 	previousRule := v.currentRule
 	v.currentRule = rule.Name
+	prevStrings := v.currentRuleStrings
+	v.currentRuleStrings = make([]string, 0, len(rule.Strings))
+	for _, str := range rule.Strings {
+		if str != nil {
+			v.currentRuleStrings = append(v.currentRuleStrings, str.Identifier)
+		}
+	}
 	defer func() {
 		v.currentRule = previousRule
+		v.currentRuleStrings = prevStrings
 	}()
 
 	// Enter rule scope for validation
@@ -325,8 +336,10 @@ func (v *Validator) validateRule(rule *ast.Rule) {
 	for _, str := range rule.Strings {
 		if err := v.symbolTable.DefineString(str.Identifier, str.Pos, str); err != nil {
 			v.addError(&Error{
+				Code:     ErrCodeDuplicateString,
 				Message:  err.Error(),
 				Position: str.Pos,
+				Rule:     rule.Name,
 			})
 		}
 	}
@@ -337,6 +350,7 @@ func (v *Validator) validateRule(rule *ast.Rule) {
 	// Validate strings section
 	v.validateStrings(rule.Strings)
 	v.validateEvidence(rule)
+	v.validateStringModifiers(rule)
 
 	// Validate condition
 	v.validateCondition(rule.Condition)
@@ -451,7 +465,12 @@ func (v *Validator) validateEvidence(rule *ast.Rule) {
 }
 
 func (v *Validator) addEvidenceError(position token.Position, message string) {
-	v.addError(&Error{Message: message, Position: position})
+	v.addError(&Error{
+		Code:     ErrCodeInvalidEvidence,
+		Message:  message,
+		Position: position,
+		Rule:     v.currentRule,
+	})
 }
 
 func semanticRegexGroupCount(pattern ast.Pattern) (int, bool) {
@@ -483,8 +502,10 @@ func (v *Validator) validateMeta(meta []*ast.Meta) {
 		if existing, exists := v.symbolTable.LookupInCurrentScope(m.Key); exists {
 			if existing.Type == SymbolVariable {
 				v.addError(&Error{
+					Code:     ErrCodeDuplicateMeta,
 					Message:  "duplicate meta key: " + m.Key,
 					Position: m.Pos,
+					Rule:     v.currentRule,
 				})
 			}
 		}
@@ -492,8 +513,10 @@ func (v *Validator) validateMeta(meta []*ast.Meta) {
 		// Define meta as variable for potential use in conditions
 		if err := v.symbolTable.DefineVariable(m.Key, m.Pos, SymbolVariable); err != nil {
 			v.addError(&Error{
+				Code:     ErrCodeDuplicateMeta,
 				Message:  err.Error(),
 				Position: m.Pos,
+				Rule:     v.currentRule,
 			})
 		}
 	}
@@ -517,8 +540,10 @@ func (v *Validator) validateCondition(condition ast.Expression) {
 		// Condition should evaluate to boolean or numeric (integers/floats are truthy/falsy)
 		if conditionType != nil && conditionType.DataType != TypeUnknown && conditionType.DataType != TypeBoolean && !conditionType.IsNumeric() {
 			v.addError(&Error{
+				Code:     ErrCodeInvalidCondition,
 				Message:  "condition must evaluate to boolean or numeric",
 				Position: condition.Position(),
+				Rule:     v.currentRule,
 			})
 		}
 	}
@@ -678,8 +703,10 @@ func (v *Validator) validateIdentifierExpression(ident *ast.Identifier) (*TypeIn
 func (v *Validator) validateQuantifierSymbol(ident *ast.Identifier) (*TypeInfo, []error) {
 	if v.stringLoopDepth == 0 {
 		return &TypeInfo{DataType: TypeUnknown}, []error{&Error{
+			Code:     ErrCodeInvalidLoop,
 			Message:  "anonymous string placeholder cannot be used directly; use a string-set expression such as them",
 			Position: ident.Position(),
+			Rule:     v.currentRule,
 		}}
 	}
 	// "$" refers to the current string in a for-loop body (for any of them : ($)).
@@ -690,8 +717,10 @@ func (v *Validator) validateQuantifierSymbol(ident *ast.Identifier) (*TypeInfo, 
 	}
 	if err := v.symbolTable.DefineVariable("$", ident.Position(), SymbolString); err != nil {
 		return &TypeInfo{DataType: TypeUnknown}, []error{&Error{
+			Code:     ErrCodeInvalidLoop,
 			Message:  err.Error(),
 			Position: ident.Position(),
+			Rule:     v.currentRule,
 		}}
 	}
 	if symbol, exists := v.symbolTable.Lookup("$"); exists {
@@ -708,9 +737,8 @@ func (v *Validator) tryAlternativeIdentifierLookups(ident *ast.Identifier, error
 	if strings.HasPrefix(ident.Name, "$") && strings.HasSuffix(ident.Name, "*") {
 		return &TypeInfo{DataType: TypeBoolean}, nil
 	}
-
 	// Check if this might be a string reference without the $ prefix
-	// This happens when using #, @, or ! operators in conditions
+	// This happens when using #, @, or ! operators in conditions or matches operands
 	if stringSymbol, hasStringSymbol := v.symbolTable.Lookup("$" + ident.Name); hasStringSymbol {
 		stringSymbol.Used = true
 		return v.getTypeFromSymbol(stringSymbol), nil
@@ -731,10 +759,16 @@ func (v *Validator) tryAlternativeIdentifierLookups(ident *ast.Identifier, error
 		return v.getTypeFromSymbol(globalSymbol), nil
 	}
 
-	errors = append(errors, &Error{
+	err := &Error{
+		Code:     ErrCodeUndefinedIdentifier,
 		Message:  "undefined identifier: " + ident.Name,
 		Position: ident.Position(),
-	})
+		Rule:     v.currentRule,
+	}
+	if sugg := v.suggestIdentifier(ident.Name); sugg != "" {
+		err.Suggestion = sugg
+	}
+	errors = append(errors, err)
 	return &TypeInfo{DataType: TypeUnknown}, errors
 }
 
@@ -756,19 +790,23 @@ func (v *Validator) validateBinaryOpExpression(binOp *ast.BinaryOp) (*TypeInfo, 
 	errors = append(errors, leftErrs...)
 	errors = append(errors, rightErrs...)
 
-	if leftType != nil && rightType != nil {
-		resultType, err := InferTypeFromBinaryOp(leftType, binOp.Op, rightType)
-		if err != nil {
-			errors = append(errors, &Error{
-				Message:  err.Error(),
-				Position: binOp.Position(),
-			})
-			return &TypeInfo{DataType: TypeUnknown}, errors
-		}
-		return resultType, errors
+	if leftType == nil || rightType == nil {
+		return &TypeInfo{DataType: TypeUnknown}, errors
 	}
 
-	return &TypeInfo{DataType: TypeUnknown}, errors
+	resultType, err := InferTypeFromBinaryOp(leftType, binOp.Op, rightType)
+	if err != nil {
+		semErr := &Error{
+			Code:       ErrCodeTypeMismatch,
+			Message:    err.Error(),
+			Position:   binOp.Position(),
+			Rule:       v.currentRule,
+			Suggestion: bitwiseSuggestion(binOp.Op, leftType, rightType),
+		}
+		errors = append(errors, semErr)
+		return &TypeInfo{DataType: TypeUnknown}, errors
+	}
+	return resultType, errors
 }
 
 // validateUnaryOpExpression validates unary operation expressions
@@ -790,8 +828,10 @@ func (v *Validator) validateUnaryOpExpression(unaryOp *ast.UnaryOp) (*TypeInfo, 
 		resultType, err := InferTypeFromUnaryOp(unaryOp.Op, operandType)
 		if err != nil {
 			errors = append(errors, &Error{
+				Code:     ErrCodeTypeMismatch,
 				Message:  err.Error(),
 				Position: unaryOp.Position(),
+				Rule:     v.currentRule,
 			})
 			return &TypeInfo{DataType: TypeUnknown}, errors
 		}
@@ -834,8 +874,10 @@ func (v *Validator) validateOfExpression(ofExpr *ast.OfExpression) (*TypeInfo, [
 	errors = append(errors, stringsErrs...)
 	if containsAnonymousPlaceholder(ofExpr.Strings) {
 		errors = append(errors, &Error{
+			Code:     ErrCodeInvalidLoop,
 			Message:  "anonymous string placeholder cannot be used in explicit string lists; use them",
 			Position: ofExpr.Strings.Position(),
+			Rule:     v.currentRule,
 		})
 	}
 
@@ -845,23 +887,11 @@ func (v *Validator) validateOfExpression(ofExpr *ast.OfExpression) (*TypeInfo, [
 
 // validateFunctionCallExpression validates function call expressions
 func (v *Validator) validateFunctionCallExpression(funcCall *ast.FunctionCall) (*TypeInfo, []error) {
-	var errors []error
-
 	if moduleName, ok := moduleNameFromDottedName(funcCall.Function); ok {
-		moduleFunction, exists := v.moduleFunctions[funcCall.Function]
-		if !exists {
-			errors = append(errors, v.unsupportedModuleError(moduleName, funcCall.Pos))
-			return &TypeInfo{DataType: TypeUnknown}, errors
-		}
-		if !v.importedModules[moduleName] {
-			errors = append(errors, &Error{
-				Message:  fmt.Sprintf("module %q must be imported before calling %s", moduleName, funcCall.Function),
-				Position: funcCall.Pos,
-			})
-			return &TypeInfo{DataType: moduleFunction.ReturnType}, errors
-		}
-		return v.validateModuleFunctionCall(funcCall, moduleFunction)
+		return v.validateDottedFunctionCall(funcCall, moduleName)
 	}
+
+	var errors []error
 
 	// Check if this is a valid YARA function call
 	validFunctions := map[string]struct {
@@ -912,8 +942,10 @@ func (v *Validator) validateFunctionCallExpression(funcCall *ast.FunctionCall) (
 	// Reject keywords that should not be function calls
 	if funcCall.Function == "FILESIZE" || funcCall.Function == "ENTRYPOINT" {
 		errors = append(errors, &Error{
+			Code:     ErrCodeInvalidFunction,
 			Message:  fmt.Sprintf("'%s' is a keyword, not a function - use without parentheses", funcCall.Function),
 			Position: funcCall.Pos,
+			Rule:     v.currentRule,
 		})
 		return &TypeInfo{DataType: TypeUnknown}, errors
 	}
@@ -921,10 +953,20 @@ func (v *Validator) validateFunctionCallExpression(funcCall *ast.FunctionCall) (
 	// Check if function is valid
 	funcInfo, isValid := validFunctions[funcCall.Function]
 	if !isValid {
-		errors = append(errors, &Error{
+		err := &Error{
+			Code:     ErrCodeInvalidFunction,
 			Message:  fmt.Sprintf("unknown function: %s", funcCall.Function),
 			Position: funcCall.Pos,
-		})
+			Rule:     v.currentRule,
+		}
+		var fnNames []string
+		for name := range validFunctions {
+			fnNames = append(fnNames, name)
+		}
+		if sugg, ok := findSimilarIdentifier(funcCall.Function, fnNames); ok {
+			err.Suggestion = sugg
+		}
+		errors = append(errors, err)
 		return &TypeInfo{DataType: TypeUnknown}, errors
 	}
 
@@ -932,8 +974,10 @@ func (v *Validator) validateFunctionCallExpression(funcCall *ast.FunctionCall) (
 	argCount := len(funcCall.Args)
 	if argCount < funcInfo.minArgs || argCount > funcInfo.maxArgs {
 		errors = append(errors, &Error{
+			Code:     ErrCodeInvalidArgumentCount,
 			Message:  fmt.Sprintf("function '%s' expects %d to %d arguments, got %d", funcCall.Function, funcInfo.minArgs, funcInfo.maxArgs, argCount),
 			Position: funcCall.Pos,
+			Rule:     v.currentRule,
 		})
 	}
 
@@ -948,6 +992,45 @@ func (v *Validator) validateFunctionCallExpression(funcCall *ast.FunctionCall) (
 
 	// Return appropriate type based on function
 	return &TypeInfo{DataType: funcInfo.dataType, IntegerType: funcInfo.retType}, errors
+}
+
+func (v *Validator) validateDottedFunctionCall(funcCall *ast.FunctionCall, moduleName string) (*TypeInfo, []error) {
+	moduleFunction, exists := v.moduleFunctions[funcCall.Function]
+	if !exists {
+		if v.moduleFunctions.hasModule(moduleName) {
+			return &TypeInfo{DataType: TypeUnknown}, []error{v.unknownModuleFunctionError(funcCall, moduleName)}
+		}
+		return &TypeInfo{DataType: TypeUnknown}, []error{v.unsupportedModuleError(moduleName, funcCall.Pos)}
+	}
+	if !v.importedModules[moduleName] {
+		err := &Error{
+			Code:     ErrCodeUnsupportedModule,
+			Message:  fmt.Sprintf("module %q must be imported before calling %s", moduleName, funcCall.Function),
+			Position: funcCall.Pos,
+			Rule:     v.currentRule,
+		}
+		return &TypeInfo{DataType: moduleFunction.ReturnType}, []error{err}
+	}
+	return v.validateModuleFunctionCall(funcCall, moduleFunction)
+}
+
+func (v *Validator) unknownModuleFunctionError(funcCall *ast.FunctionCall, moduleName string) *Error {
+	var fnCandidates []string
+	for fn := range v.moduleFunctions {
+		if strings.HasPrefix(fn, moduleName+".") {
+			fnCandidates = append(fnCandidates, fn)
+		}
+	}
+	err := &Error{
+		Code:     ErrCodeInvalidFunction,
+		Message:  fmt.Sprintf("unknown function %q in module %q (unsupported module: %s)", funcCall.Function, moduleName, moduleName),
+		Position: funcCall.Pos,
+		Rule:     v.currentRule,
+	}
+	if sugg, ok := findSimilarIdentifier(funcCall.Function, fnCandidates); ok {
+		err.Suggestion = fmt.Sprintf("%q", sugg)
+	}
+	return err
 }
 
 func (v *Validator) validateModuleFunctionCall(
@@ -982,10 +1065,17 @@ func (v *Validator) validateModuleFunctionCall(
 	}
 
 	message := fmt.Sprintf("module function %q does not accept the supplied argument types", funcCall.Function)
+	code := ErrCodeInvalidArgumentType
 	if !matchedArity {
 		message = fmt.Sprintf("module function %q does not accept %d arguments", funcCall.Function, len(argTypes))
+		code = ErrCodeInvalidArgumentCount
 	}
-	errors = append(errors, &Error{Message: message, Position: funcCall.Pos})
+	errors = append(errors, &Error{
+		Code:     code,
+		Message:  message,
+		Position: funcCall.Pos,
+		Rule:     v.currentRule,
+	})
 	return &TypeInfo{DataType: function.ReturnType}, errors
 }
 
@@ -995,37 +1085,45 @@ func (v *Validator) validateFunctionArgumentTypes(funcCall *ast.FunctionCall, ar
 	case isIntegerReadFunction(funcCall.Function):
 		if len(argTypes) == 1 && !isIntegerCompatible(argTypes[0]) {
 			errors = append(errors, &Error{
+				Code:     ErrCodeInvalidArgumentType,
 				Message:  fmt.Sprintf("function '%s' argument 1 must be integer", funcCall.Function),
 				Position: funcCall.Args[0].Position(),
+				Rule:     v.currentRule,
 			})
 		}
 	case isHashFunction(funcCall.Function):
-		errors = append(errors, validateHashFunctionArguments(funcCall, argTypes)...)
+		errors = append(errors, v.validateHashFunctionArguments(funcCall, argTypes)...)
 	}
 	return errors
 }
 
-func validateHashFunctionArguments(funcCall *ast.FunctionCall, argTypes []*TypeInfo) []error {
+func (v *Validator) validateHashFunctionArguments(funcCall *ast.FunctionCall, argTypes []*TypeInfo) []error {
 	switch len(argTypes) {
 	case 1:
 		if !isStringCompatible(argTypes[0]) {
 			return []error{&Error{
+				Code:     ErrCodeInvalidArgumentType,
 				Message:  fmt.Sprintf("function '%s' argument 1 must be string", funcCall.Function),
 				Position: funcCall.Args[0].Position(),
+				Rule:     v.currentRule,
 			}}
 		}
 	case 2:
 		var errors []error
 		if !isIntegerCompatible(argTypes[0]) {
 			errors = append(errors, &Error{
+				Code:     ErrCodeInvalidArgumentType,
 				Message:  fmt.Sprintf("function '%s' argument 1 must be integer", funcCall.Function),
 				Position: funcCall.Args[0].Position(),
+				Rule:     v.currentRule,
 			})
 		}
 		if !isIntegerCompatible(argTypes[1]) {
 			errors = append(errors, &Error{
+				Code:     ErrCodeInvalidArgumentType,
 				Message:  fmt.Sprintf("function '%s' argument 2 must be integer", funcCall.Function),
 				Position: funcCall.Args[1].Position(),
+				Rule:     v.currentRule,
 			})
 		}
 		return errors
@@ -1163,8 +1261,10 @@ func (v *Validator) validateForLoopExpression(forLoop *ast.ForLoop) (*TypeInfo, 
 	}
 	if containsAnonymousPlaceholder(forLoop.Range) {
 		errors = append(errors, &Error{
+			Code:     ErrCodeInvalidLoop,
 			Message:  "anonymous string placeholder cannot be used in explicit string lists; use them",
 			Position: forLoop.Range.Position(),
+			Rule:     v.currentRule,
 		})
 	}
 
@@ -1174,15 +1274,19 @@ func (v *Validator) validateForLoopExpression(forLoop *ast.ForLoop) (*TypeInfo, 
 		if variable != "" {
 			if variable == "$" {
 				errors = append(errors, &Error{
+					Code:     ErrCodeInvalidLoop,
 					Message:  "for-loop variable cannot be anonymous string placeholder $",
 					Position: forLoop.Pos,
+					Rule:     v.currentRule,
 				})
 				continue
 			}
 			if err := v.symbolTable.DefineVariable(variable, forLoop.Pos, SymbolVariable); err != nil {
 				errors = append(errors, &Error{
+					Code:     ErrCodeDuplicateVariable,
 					Message:  err.Error(),
 					Position: forLoop.Pos,
+					Rule:     v.currentRule,
 				})
 			}
 			if loopVarType != "" {
@@ -1459,8 +1563,10 @@ func (v *Validator) validateStringIndexExpression(str ast.Expression, index ast.
 
 	if isAnonymousPlaceholder(str) && v.stringLoopDepth == 0 {
 		errors = append(errors, &Error{
+			Code:     ErrCodeInvalidStringOp,
 			Message:  "anonymous string placeholder cannot be used with string " + opName + " outside a string loop",
 			Position: str.Position(),
+			Rule:     v.currentRule,
 		})
 	} else if err := v.validateStringIdentifier(str); err != nil {
 		errors = append(errors, err)
@@ -1472,8 +1578,10 @@ func (v *Validator) validateStringIndexExpression(str ast.Expression, index ast.
 
 		if indexType != nil && indexType.DataType != TypeInteger {
 			errors = append(errors, &Error{
+				Code:     ErrCodeInvalidArgumentType,
 				Message:  "string " + opName + " index must be integer",
 				Position: index.Position(),
+				Rule:     v.currentRule,
 			})
 		}
 	}
@@ -1493,8 +1601,10 @@ func (v *Validator) validateLengthOfExpression(lengthOf *ast.LengthOf) (*TypeInf
 	// String identifiers in conditions evaluate to boolean (found/not found), which is valid for length of
 	if targetType != nil && targetType.DataType != TypeBoolean && targetType.DataType != TypeString && targetType.DataType != TypeUnknown {
 		errors = append(errors, &Error{
+			Code:     ErrCodeInvalidStringOp,
 			Message:  "length of target must be a string identifier",
 			Position: lengthOf.Target.Position(),
+			Rule:     v.currentRule,
 		})
 	}
 
@@ -1507,8 +1617,10 @@ func (v *Validator) validateStringIdentifier(expr ast.Expression) error {
 	ident, ok := expr.(*ast.Identifier)
 	if !ok {
 		return &Error{
+			Code:     ErrCodeInvalidStringOp,
 			Message:  "string operations require string identifier",
 			Position: expr.Position(),
+			Rule:     v.currentRule,
 		}
 	}
 
@@ -1530,10 +1642,291 @@ func (v *Validator) validateStringIdentifier(expr ast.Expression) error {
 	return nil
 }
 
+func (v *Validator) availableModuleNames() []string {
+	if len(v.moduleFunctions) == 0 {
+		return nil
+	}
+	var available []string
+	seen := make(map[string]struct{})
+	for fn := range v.moduleFunctions {
+		mod, _, found := strings.Cut(fn, ".")
+		if !found || mod == "" {
+			continue
+		}
+		if _, ok := seen[mod]; !ok {
+			seen[mod] = struct{}{}
+			available = append(available, mod)
+		}
+	}
+	return available
+}
+
 func (v *Validator) unsupportedModuleError(moduleName string, pos token.Position) *Error {
-	return &Error{
+	err := &Error{
+		Code:     ErrCodeUnsupportedModule,
 		Message:  "unsupported module: " + moduleName,
 		Position: pos,
+		Rule:     v.currentRule,
+	}
+	if sugg, ok := findSimilarIdentifier(moduleName, v.availableModuleNames()); ok {
+		err.Suggestion = fmt.Sprintf("%q", sugg)
+	}
+	return err
+}
+
+func (v *Validator) suggestIdentifier(name string) string {
+	var candidates []string
+	if strings.HasPrefix(name, "$") {
+		candidates = v.currentRuleStrings
+	} else {
+		candidates = append(candidates, v.currentRuleStrings...)
+		candidates = append(candidates, v.allRuleNames...)
+		candidates = append(candidates, v.globalVarNames...)
+		candidates = append(candidates, filesizeKeyword, entrypointKeyword, themKeyword)
+		for mod := range v.importedModules {
+			candidates = append(candidates, mod)
+		}
+		for loopVar := range v.loopVariables {
+			candidates = append(candidates, loopVar)
+		}
+	}
+	if suggestion, ok := findSimilarIdentifier(name, candidates); ok {
+		return suggestion
+	}
+	return ""
+}
+
+func (v *Validator) validateStringModifiers(rule *ast.Rule) {
+	for _, str := range rule.Strings {
+		if str == nil {
+			continue
+		}
+
+		seenModifiers := make(map[ast.StringModifierType]token.Position)
+		hasWide := false
+		hasASCII := false
+		hasBase64 := false
+		hasBase64Wide := false
+		hasXor := false
+		hasNocase := false
+		hasFullword := false
+
+		_, isRegex := str.Pattern.(*ast.RegexPattern)
+		_, isHex := str.Pattern.(*ast.HexString)
+
+		for _, mod := range str.Modifiers {
+			if mod.Type != ast.StringModifierCapture {
+				if prevPos, exists := seenModifiers[mod.Type]; exists {
+					v.addError(&Error{
+						Code:     ErrCodeInvalidModifier,
+						Message:  fmt.Sprintf("string %s declares duplicate modifier '%s' (previously at %v)", str.Identifier, modifierTypeName(mod.Type), prevPos),
+						Position: str.Pos,
+						Rule:     rule.Name,
+					})
+				}
+				seenModifiers[mod.Type] = str.Pos
+			}
+
+			switch mod.Type {
+			case ast.StringModifierWide:
+				hasWide = true
+				if isHex {
+					v.addError(&Error{
+						Code:     ErrCodeInvalidModifier,
+						Message:  fmt.Sprintf("hex string %s cannot have 'wide' modifier", str.Identifier),
+						Position: str.Pos,
+						Rule:     rule.Name,
+					})
+				}
+			case ast.StringModifierASCII:
+				hasASCII = true
+				if isHex {
+					v.addError(&Error{
+						Code:     ErrCodeInvalidModifier,
+						Message:  fmt.Sprintf("hex string %s cannot have 'ascii' modifier", str.Identifier),
+						Position: str.Pos,
+						Rule:     rule.Name,
+					})
+				}
+			case ast.StringModifierNocase:
+				hasNocase = true
+				if isHex {
+					v.addError(&Error{
+						Code:     ErrCodeInvalidModifier,
+						Message:  fmt.Sprintf("hex string %s cannot have 'nocase' modifier", str.Identifier),
+						Position: str.Pos,
+						Rule:     rule.Name,
+					})
+				}
+			case ast.StringModifierFullword:
+				hasFullword = true
+				if isHex {
+					v.addError(&Error{
+						Code:     ErrCodeInvalidModifier,
+						Message:  fmt.Sprintf("hex string %s cannot have 'fullword' modifier", str.Identifier),
+						Position: str.Pos,
+						Rule:     rule.Name,
+					})
+				}
+			case ast.StringModifierBase64:
+				hasBase64 = true
+				if isHex || isRegex {
+					v.addError(&Error{
+						Code:     ErrCodeInvalidModifier,
+						Message:  "base64 modifiers are only supported for text strings",
+						Position: str.Pos,
+						Rule:     rule.Name,
+					})
+				}
+				if err := validateSemanticBase64Alphabet(mod.Value); err != nil {
+					v.addError(&Error{
+						Code:     ErrCodeInvalidModifier,
+						Message:  err.Error(),
+						Position: str.Pos,
+						Rule:     rule.Name,
+					})
+				}
+			case ast.StringModifierBase64Wide:
+				hasBase64Wide = true
+				if isHex || isRegex {
+					v.addError(&Error{
+						Code:     ErrCodeInvalidModifier,
+						Message:  "base64 modifiers are only supported for text strings",
+						Position: str.Pos,
+						Rule:     rule.Name,
+					})
+				}
+				if err := validateSemanticBase64Alphabet(mod.Value); err != nil {
+					v.addError(&Error{
+						Code:     ErrCodeInvalidModifier,
+						Message:  err.Error(),
+						Position: str.Pos,
+						Rule:     rule.Name,
+					})
+				}
+			case ast.StringModifierXor:
+				hasXor = true
+				if isRegex {
+					v.addError(&Error{
+						Code:     ErrCodeInvalidModifier,
+						Message:  fmt.Sprintf("regex string %s cannot have 'xor' modifier", str.Identifier),
+						Position: str.Pos,
+						Rule:     rule.Name,
+					})
+				}
+				if err := validateSemanticXorModifier(mod.Value); err != nil {
+					v.addError(&Error{
+						Code:     ErrCodeInvalidModifier,
+						Message:  err.Error(),
+						Position: str.Pos,
+						Rule:     rule.Name,
+					})
+				}
+			}
+		}
+
+		if hasBase64 && hasBase64Wide {
+			v.addError(&Error{
+				Code:     ErrCodeInvalidModifier,
+				Message:  "cannot use both 'base64' and 'base64wide' modifiers",
+				Position: str.Pos,
+				Rule:     rule.Name,
+			})
+		}
+		if (hasBase64 || hasBase64Wide) && (hasXor || hasNocase || hasFullword) {
+			v.addError(&Error{
+				Code:     ErrCodeInvalidModifier,
+				Message:  "base64 modifiers are incompatible with 'xor', 'nocase', or 'fullword'",
+				Position: str.Pos,
+				Rule:     rule.Name,
+			})
+		}
+		if (hasBase64 || hasBase64Wide) && (hasWide || hasASCII) {
+			v.addError(&Error{
+				Code:     ErrCodeInvalidModifier,
+				Message:  "base64 modifiers are incompatible with 'wide' or 'ascii'",
+				Position: str.Pos,
+				Rule:     rule.Name,
+			})
+		}
+	}
+}
+
+func validateSemanticBase64Alphabet(value any) error {
+	alphabet, ok := value.(string)
+	if !ok || alphabet == "" {
+		return nil
+	}
+	if len(alphabet) != 64 {
+		return fmt.Errorf("invalid base64 alphabet length: expected 64, got %d", len(alphabet))
+	}
+	seen := make(map[byte]struct{}, 64)
+	for i := 0; i < len(alphabet); i++ {
+		ch := alphabet[i]
+		if ch == '=' {
+			return errors.New("invalid base64 alphabet: '=' is not allowed")
+		}
+		if _, exists := seen[ch]; exists {
+			return errors.New("invalid base64 alphabet: duplicate characters")
+		}
+		seen[ch] = struct{}{}
+	}
+	return nil
+}
+
+func validateSemanticXorModifier(value any) error {
+	if value == nil {
+		return nil
+	}
+	switch v := value.(type) {
+	case int:
+		if v < 0 || v > 255 {
+			return fmt.Errorf("xor value must be between 0 and 255, got %d", v)
+		}
+	case int64:
+		if v < 0 || v > 255 {
+			return fmt.Errorf("xor value must be between 0 and 255, got %d", v)
+		}
+	case [2]int:
+		if v[0] < 0 || v[0] > 255 || v[1] < 0 || v[1] > 255 {
+			return fmt.Errorf("xor range values must be between 0 and 255, got %d-%d", v[0], v[1])
+		}
+		if v[0] > v[1] {
+			return errors.New("xor range minimum cannot be greater than maximum")
+		}
+	case ast.XorRange:
+		if v.Min < 0 || v.Min > 255 || v.Max < 0 || v.Max > 255 {
+			return fmt.Errorf("xor range values must be between 0 and 255, got %d-%d", v.Min, v.Max)
+		}
+		if v.Min > v.Max {
+			return errors.New("xor range minimum cannot be greater than maximum")
+		}
+	}
+	return nil
+}
+
+func modifierTypeName(t ast.StringModifierType) string {
+	switch t {
+	case ast.StringModifierNocase:
+		return "nocase"
+	case ast.StringModifierWide:
+		return "wide"
+	case ast.StringModifierASCII:
+		return "ascii"
+	case ast.StringModifierFullword:
+		return "fullword"
+	case ast.StringModifierPrivate:
+		return "private"
+	case ast.StringModifierXor:
+		return "xor"
+	case ast.StringModifierBase64:
+		return "base64"
+	case ast.StringModifierBase64Wide:
+		return "base64wide"
+	case ast.StringModifierCapture:
+		return "capture"
+	default:
+		return "unknown"
 	}
 }
 
