@@ -1,0 +1,97 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  id-token: write
+
+env:
+  GO_VERSION: "1.26.0"
+
+jobs:
+  release:
+    name: Build & Publish Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache: true
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.8.1
+
+      - name: Build cross-platform CLI binaries
+        run: |
+          mkdir -p dist
+          TAG="${GITHUB_REF#refs/tags/}"
+          TARGETS=(
+            "linux/amd64/go-yara"
+            "linux/arm64/go-yara"
+            "darwin/amd64/go-yara"
+            "darwin/arm64/go-yara"
+            "windows/amd64/go-yara.exe"
+          )
+
+          for TARGET in "${TARGETS[@]}"; do
+            OS=$(echo "$TARGET" | cut -d'/' -f1)
+            ARCH=$(echo "$TARGET" | cut -d'/' -f2)
+            BIN_NAME=$(echo "$TARGET" | cut -d'/' -f3)
+            OUTPUT_DIR="build/${OS}_${ARCH}"
+            mkdir -p "$OUTPUT_DIR"
+
+            echo "Building for ${OS}/${ARCH}..."
+            CGO_ENABLED=0 GOOS=$OS GOARCH=$ARCH go build \
+              -trimpath \
+              -ldflags="-s -w -X main.version=${TAG}" \
+              -o "${OUTPUT_DIR}/${BIN_NAME}" \
+              ./cmd
+
+            ARCHIVE_NAME="go-yara_${TAG}_${OS}_${ARCH}"
+            if [ "$OS" = "windows" ]; then
+              (cd "$OUTPUT_DIR" && zip -9 "../../dist/${ARCHIVE_NAME}.zip" "${BIN_NAME}")
+            else
+              tar -czvf "dist/${ARCHIVE_NAME}.tar.gz" -C "$OUTPUT_DIR" "${BIN_NAME}"
+            fi
+          done
+
+      - name: Generate SHA256 checksums
+        working-directory: dist
+        run: |
+          sha256sum * > checksums.txt
+
+      - name: Sign checksums with Cosign (Keyless)
+        working-directory: dist
+        run: |
+          cosign sign-blob \
+            --yes \
+            --bundle cosign.bundle \
+            checksums.txt
+
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          gh release create "$TAG" \
+            --title "Release $TAG" \
+            --generate-notes \
+            dist/*
+
+      - name: Index on Go Module Proxy & pkg.go.dev
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          echo "Warming Go module proxy for github.com/cawalch/go-yara@${TAG}..."
+          GOPROXY=https://proxy.golang.org go list -m "github.com/cawalch/go-yara@${TAG}" || true
