@@ -26,7 +26,7 @@ lint:
 	golangci-lint run --config=.golangci.yml
 
 vulncheck:
-	go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+	go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 
 fmt-check:
 	@files="$$(gofmt -s -l .)"; \
