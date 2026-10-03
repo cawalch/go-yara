@@ -353,7 +353,14 @@ func (cc *ConditionCompiler) compileIntegerLiteral(lit *ast.Literal) error {
 func parseIntLiteral(s string) (int64, error) {
 	if strings.HasPrefix(strings.ToLower(s), "0x") {
 		bits, err := strconv.ParseUint(s, 0, 64)
-		return int64(bits), err //checkednarrow:ignore hex literals preserve all 64 bits
+		if err != nil {
+			return 0, err
+		}
+		if bits <= math.MaxInt64 {
+			return int64(bits), nil
+		}
+		// Negative two's-complement value for 64-bit hex literals with high bit set (e.g. 0xffffffffffffffff -> -1).
+		return int64(bits-math.MaxInt64-1) - math.MaxInt64 - 1, nil //checkednarrow:ignore bounded within [0, math.MaxInt64]
 	}
 	return strconv.ParseInt(s, 0, 64)
 }
