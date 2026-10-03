@@ -1,4 +1,4 @@
-.PHONY: check test test-race vet analyze lint fmt-check tidy-check fuzz \
+.PHONY: check test test-race vet analyze lint vulncheck fmt-check tidy-check fuzz \
 	bench bench-save benchstat bench-scan bench-prefilter-scale \
 	bench-single-rule-size profile-scan trace-scan help
 
@@ -8,7 +8,7 @@ BENCHTIME ?= 1s
 COUNT ?= 1
 FUZZTIME ?= 30s
 
-check: fmt-check tidy-check vet analyze lint test
+check: fmt-check tidy-check vet analyze lint vulncheck test
 
 test:
 	go test ./...
@@ -24,6 +24,9 @@ analyze:
 
 lint:
 	golangci-lint run --config=.golangci.yml
+
+vulncheck:
+	go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
 fmt-check:
 	@files="$$(gofmt -s -l .)"; \
