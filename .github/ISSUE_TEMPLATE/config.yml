@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://github.com/cawalch/go-yara#readme
+    about: Read the go-yara documentation and usage guides.

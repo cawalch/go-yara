@@ -1,0 +1,38 @@
+name: Feature request
+description: Suggest a feature or enhancement for go-yara
+title: "feat: <brief description>"
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for suggesting an improvement!
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: Is your feature request related to a specific problem, limitation, or YARA standard gap?
+      placeholder: A clear and concise description of the problem...
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: A clear and concise description of what you want to happen.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any alternative solutions or workarounds you have considered.
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: References to upstream YARA documentation, ruleset examples, or performance considerations.
+    validations:
+      required: false

@@ -2,8 +2,12 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
   pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
@@ -15,6 +19,7 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
         with:
@@ -82,6 +87,7 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       matrix:
         go-version: ["1.26.0"]
@@ -128,6 +134,7 @@ jobs:
   simd:
     name: Experimental SIMD
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       GOEXPERIMENT: simd
     steps:
@@ -154,6 +161,7 @@ jobs:
   security:
     name: Security Scan
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 
@@ -222,6 +230,7 @@ jobs:
   quality-gate:
     name: Quality Gate
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     needs: [lint, test, simd, security, fuzz]
     if: always()
     steps:
