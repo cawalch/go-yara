@@ -122,3 +122,59 @@ func TestRegexUnsupportedConstructDiagnostics(t *testing.T) {
 		})
 	}
 }
+
+func TestRegexOmittedLowerBoundCompilationAndMatching(t *testing.T) {
+	// 1. Both explicit {0,3} and shorthand {,3} compile cleanly
+	srcExplicit := `rule explicit { strings: $s = /a{0,3}/ condition: $s }`
+	progExplicit, err := NewCompiler().CompileSource(srcExplicit)
+	if err != nil {
+		t.Fatalf("CompileSource(explicit) error = %v", err)
+	}
+
+	srcShorthand := `rule shorthand { strings: $s = /a{,3}/ condition: $s }`
+	progShorthand, err := NewCompiler().CompileSource(srcShorthand)
+	if err != nil {
+		t.Fatalf("CompileSource(shorthand) error = %v", err)
+	}
+
+	// 2. Both produce identical matches across test inputs
+	inputs := [][]byte{
+		[]byte("aaa"),
+		[]byte("aa"),
+		[]byte("a"),
+		[]byte("baaac"),
+		[]byte("xyz"),
+	}
+
+	for _, in := range inputs {
+		resExp, errExp := progExplicit.Scan(in)
+		if errExp != nil {
+			t.Fatalf("Scan(explicit) on %q error: %v", in, errExp)
+		}
+		resShort, errShort := progShorthand.Scan(in)
+		if errShort != nil {
+			t.Fatalf("Scan(shorthand) on %q error: %v", in, errShort)
+		}
+
+		matchesExp := len(resExp.MatchedRules)
+		matchesShort := len(resShort.MatchedRules)
+		if matchesExp != matchesShort {
+			t.Fatalf("input %q: explicit matched %d rules, shorthand matched %d rules", in, matchesExp, matchesShort)
+		}
+	}
+
+	// 3. Various spellings with whitespace and bounds compile cleanly
+	validSources := []string{
+		`rule r1 { strings: $s = /a{,5}/ condition: $s }`,
+		`rule r2 { strings: $s = /a{ , 5 }/ condition: $s }`,
+		`rule r3 { strings: $s = /a{ 3 , 8 }/ condition: $s }`,
+		`rule r4 { strings: $s = /a{ 2 , }/ condition: $s }`,
+		`rule r5 { strings: $s = /a{ , }/ condition: $s }`,
+		`rule r6 { strings: $s = /a{,3}?/ condition: $s }`,
+	}
+	for _, src := range validSources {
+		if _, err := NewCompiler().CompileSource(src); err != nil {
+			t.Fatalf("CompileSource(%q) unexpected error: %v", src, err)
+		}
+	}
+}
