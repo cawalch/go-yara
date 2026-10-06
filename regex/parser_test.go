@@ -375,3 +375,88 @@ func TestParseValidQuantifiersAccepted(t *testing.T) {
 		}
 	}
 }
+
+func TestParseOmittedLowerBound(t *testing.T) {
+	p := NewParser(0)
+
+	// {,3} should parse as NodeRange with Start=0, End=3
+	ast, err := p.Parse("a{,3}")
+	if err != nil {
+		t.Fatalf("Parse(\"a{,3}\") unexpected error: %v", err)
+	}
+	n := ast.Root
+	if n.Kind != NodeRange || n.Start != 0 || n.End != 3 || !n.Greedy {
+		t.Fatalf("Parse(\"a{,3}\") = {Kind: %v, Start: %d, End: %d, Greedy: %v}, want {NodeRange, 0, 3, true}",
+			n.Kind, n.Start, n.End, n.Greedy)
+	}
+
+	// a{,3}? ungreedy
+	ast, err = p.Parse("a{,3}?")
+	if err != nil {
+		t.Fatalf("Parse(\"a{,3}?\") unexpected error: %v", err)
+	}
+	n = ast.Root
+	if n.Kind != NodeRange || n.Start != 0 || n.End != 3 || n.Greedy {
+		t.Fatalf("Parse(\"a{,3}?\") want ungreedy range {0, 3, false}")
+	}
+
+	// a{,0} should parse as NodeRange with Start=0, End=0
+	ast, err = p.Parse("a{,0}")
+	if err != nil {
+		t.Fatalf("Parse(\"a{,0}\") unexpected error: %v", err)
+	}
+	n = ast.Root
+	if n.Kind != NodeRange || n.Start != 0 || n.End != 0 {
+		t.Fatalf("Parse(\"a{,0}\") want range {0, 0}")
+	}
+
+	// a{,} should parse as NodeRange with Start=0, End=65535 (unbounded)
+	ast, err = p.Parse("a{,}")
+	if err != nil {
+		t.Fatalf("Parse(\"a{,}\") unexpected error: %v", err)
+	}
+	n = ast.Root
+	if n.Kind != NodeRange || n.Start != 0 || n.End != 65535 {
+		t.Fatalf("Parse(\"a{,}\") want range {0, 65535}")
+	}
+
+	// Empty braces a{} should be rejected
+	if _, err := p.Parse("a{}"); err == nil {
+		t.Fatalf("Parse(\"a{}\") expected error, got nil")
+	}
+}
+
+func TestParseBoundWithWhitespace(t *testing.T) {
+	p := NewParser(0)
+	tests := []struct {
+		pattern  string
+		wantMin  uint16
+		wantMax  uint16
+		ungreedy bool
+	}{
+		{"a{ 3, 8 }", 3, 8, false},
+		{"a{3, 8}", 3, 8, false},
+		{"a{3 ,8}", 3, 8, false},
+		{"a{3 , 8}", 3, 8, false},
+		{"a{ , 5 }", 0, 5, false},
+		{"a{, 5}", 0, 5, false},
+		{"a{7, }", 7, 65535, false},
+		{"a{ 7 , }", 7, 65535, false},
+		{"a{ , }", 0, 65535, false},
+		{"a{ 5 }", 5, 5, false},
+		{"a{ 3, 8 }?", 3, 8, true},
+		{"a{ , 3 }?", 0, 3, true},
+	}
+
+	for _, tt := range tests {
+		ast, err := p.Parse(tt.pattern)
+		if err != nil {
+			t.Fatalf("Parse(%q) unexpected error: %v", tt.pattern, err)
+		}
+		n := ast.Root
+		if n.Kind != NodeRange || n.Start != tt.wantMin || n.End != tt.wantMax || n.Greedy != !tt.ungreedy {
+			t.Fatalf("Parse(%q) = {Start: %d, End: %d, Greedy: %v}, want {Start: %d, End: %d, Greedy: %v}",
+				tt.pattern, n.Start, n.End, n.Greedy, tt.wantMin, tt.wantMax, !tt.ungreedy)
+		}
+	}
+}

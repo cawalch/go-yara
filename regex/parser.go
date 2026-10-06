@@ -202,13 +202,24 @@ func (p *Parser) maybeMakeUngreedy(n *Node) {
 	}
 }
 
-// parseBound parses {m}, {m,}, or {m,n}. After '}', it advances p.cur to the next meaningful token.
+func skipSpaces(l *lexer) {
+	for l.i < l.len && (l.s[l.i] == ' ' || l.s[l.i] == '\t') {
+		l.i++
+	}
+}
+
+// parseBound parses {m}, {m,}, {m,n}, or {,m}. After '}', it advances p.cur to the next meaningful token.
 func (p *Parser) parseBound() (minVal, maxVal uint16, err error) {
 	l := p.lx // current index is just after '{'
+	skipSpaces(l)
 
-	minVal, err = p.readBoundNumber(l)
-	if err != nil {
-		return 0, 0, err
+	if l.i < l.len && l.s[l.i] == ',' {
+		minVal = 0
+	} else {
+		minVal, err = p.readBoundNumber(l)
+		if err != nil {
+			return 0, 0, err
+		}
 	}
 
 	maxVal, err = p.parseMaxBound(l, minVal)
@@ -247,11 +258,13 @@ func (p *Parser) readBoundNumber(l *lexer) (uint16, error) {
 
 // parseMaxBound parses the maximum value part of a bound specification
 func (p *Parser) parseMaxBound(l *lexer, minVal uint16) (uint16, error) {
+	skipSpaces(l)
 	if l.i >= l.len || l.s[l.i] != ',' {
 		return minVal, nil
 	}
 
 	l.i++ // skip comma
+	skipSpaces(l)
 
 	if l.i < l.len && l.s[l.i] == '}' {
 		return 65535, nil // unbounded
@@ -262,6 +275,7 @@ func (p *Parser) parseMaxBound(l *lexer, minVal uint16) (uint16, error) {
 
 // finalizeBound validates and finalizes bound parsing
 func (p *Parser) finalizeBound(l *lexer) error {
+	skipSpaces(l)
 	if l.i >= l.len || l.s[l.i] != '}' {
 		return errors.New("missing '}' in bound")
 	}
