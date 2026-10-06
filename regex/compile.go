@@ -14,6 +14,7 @@ type Compiler struct {
 	e           *Emitter
 	nextSplitID byte
 	captureSlot map[int]byte
+	root        *Node
 }
 
 // NewCompiler constructs a Compiler with a fresh emitter.
@@ -30,6 +31,7 @@ func Compile(ast *AST) ([]byte, error) {
 	if ast == nil || ast.Root == nil {
 		return nil, errors.New("regex: empty AST")
 	}
+	c.root = ast.Root
 	if err := c.emitNode(ast.Root); err != nil {
 		return nil, err
 	}
@@ -44,6 +46,7 @@ func CompileCaptures(ast *AST, groups []int) ([]byte, error) {
 	if ast == nil || ast.Root == nil {
 		return nil, errors.New("regex: empty AST")
 	}
+	c.root = ast.Root
 	c.captureSlot = make(map[int]byte, len(groups))
 	for slot, group := range groups {
 		if group <= 0 || group > ast.GroupCount {
@@ -330,13 +333,18 @@ func (c *Compiler) emitNode(n *Node) error { //nolint:maintidx // high complexit
 		return c.emitPlusNode(n)
 	case NodeRange:
 		return c.emitRangeNode(n)
+	case NodeEmpty:
+		if c.root == n {
+			return errors.New("unsupported regex construct: empty expression")
+		}
+		return errors.New("unsupported regex construct: empty alternation branch")
 	default:
 		// Handle simple nodes
 		if c.isSimpleNode(n.Kind) {
 			c.emitSimpleNode(n)
 			return nil
 		}
-		return fmt.Errorf("regex: emit unsupported node kind %d", n.Kind)
+		return fmt.Errorf("unsupported regex construct: %s", n.Kind)
 	}
 }
 

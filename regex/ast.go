@@ -1,5 +1,7 @@
 package regex
 
+import "fmt"
+
 // NodeKind mirrors re.h's RE_NODE_* constants for easier auditing.
 // Only a subset is needed initially; we include the full set for parity.
 
@@ -33,6 +35,62 @@ const (
 	NodeMaskedNotLiteral NodeKind = 23
 	NodeGroup            NodeKind = 24
 )
+
+// String returns a human-readable representation of a NodeKind.
+func (k NodeKind) String() string {
+	switch k {
+	case NodeLiteral:
+		return "literal"
+	case NodeMaskedLiteral:
+		return "masked literal"
+	case NodeAny:
+		return "any"
+	case NodeConcat:
+		return "concatenation"
+	case NodeAlt:
+		return "alternation"
+	case NodeRange:
+		return "range"
+	case NodeStar:
+		return "star"
+	case NodePlus:
+		return "plus"
+	case NodeClass:
+		return "character class"
+	case NodeWordChar:
+		return "word char"
+	case NodeNonWordChar:
+		return "non-word char"
+	case NodeSpace:
+		return "space"
+	case NodeNonSpace:
+		return "non-space"
+	case NodeDigit:
+		return "digit"
+	case NodeNonDigit:
+		return "non-digit"
+	case NodeEmpty:
+		return "empty alternation branch"
+	case NodeAnchorStart:
+		return "anchor start"
+	case NodeAnchorEnd:
+		return "anchor end"
+	case NodeWordBoundary:
+		return "word boundary"
+	case NodeNonWordBoundary:
+		return "non-word boundary"
+	case NodeRangeAny:
+		return "any-byte range"
+	case NodeNotLiteral:
+		return "not literal"
+	case NodeMaskedNotLiteral:
+		return "masked not literal"
+	case NodeGroup:
+		return "group"
+	default:
+		return fmt.Sprintf("node kind %d", int(k))
+	}
+}
 
 // Class is a simple 256-bit bitmap (32 bytes) with negation support.
 // This mirrors libyara's approach, keeping things ASCII-centric initially.

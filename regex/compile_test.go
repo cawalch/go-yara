@@ -2,6 +2,7 @@ package regex
 
 import (
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -260,5 +261,66 @@ func TestCompileRangeUnboundedUngreedy(t *testing.T) {
 	}
 	if countOpcode(code, OpSplitB) == 0 {
 		t.Fatalf("expect ungreedy loop to use OpSplitB")
+	}
+}
+
+func TestCompileUnsupportedConstructEmptyAlternationBranch(t *testing.T) {
+	cases := []string{
+		"(foo|)",
+		"(|foo)",
+		"foo|",
+		"|foo",
+		"(|)",
+		"foo||bar",
+	}
+	p := NewParser(0)
+	for _, pattern := range cases {
+		ast, err := p.Parse(pattern)
+		if err != nil {
+			t.Fatalf("Parse(%q) unexpected error: %v", pattern, err)
+		}
+		_, err = Compile(ast)
+		if err == nil {
+			t.Fatalf("Compile(%q) expected error, got nil", pattern)
+		}
+		want := "unsupported regex construct: empty alternation branch"
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("Compile(%q) error = %v, want substring %q", pattern, err, want)
+		}
+		if strings.Contains(err.Error(), "node kind") {
+			t.Fatalf("Compile(%q) error leaked internal node kind: %v", pattern, err)
+		}
+	}
+}
+
+func TestCompileUnsupportedConstructEmptyExpression(t *testing.T) {
+	p := NewParser(0)
+	ast, err := p.Parse("")
+	if err != nil {
+		t.Fatalf("Parse(\"\") unexpected error: %v", err)
+	}
+	_, err = Compile(ast)
+	if err == nil {
+		t.Fatalf("Compile(\"\") expected error, got nil")
+	}
+	want := "unsupported regex construct: empty expression"
+	if !strings.Contains(err.Error(), want) {
+		t.Fatalf("Compile(\"\") error = %v, want substring %q", err, want)
+	}
+}
+
+func TestCompileUnsupportedUnknownNodeKind(t *testing.T) {
+	ast := &AST{
+		Root: &Node{
+			Kind: NodeKind(999),
+		},
+	}
+	_, err := Compile(ast)
+	if err == nil {
+		t.Fatalf("Compile expected error for unknown node kind, got nil")
+	}
+	want := "unsupported regex construct: node kind 999"
+	if !strings.Contains(err.Error(), want) {
+		t.Fatalf("Compile error = %v, want substring %q", err, want)
 	}
 }

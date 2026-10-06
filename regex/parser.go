@@ -87,42 +87,50 @@ func (p *Parser) parseConcat() (*Node, error) {
 	return &Node{Kind: NodeConcat, Children: nodes, Greedy: true}, nil
 }
 
-// primary := base ( quantifier )*
+func isQuantifier(k tokenKind) bool {
+	return k == tStar || k == tPlus || k == tQMark || k == tLBrace
+}
+
+// primary := base ( quantifier )?
 func (p *Parser) parsePrimary() (*Node, error) {
 	base, err := p.parseBase()
 	if err != nil || base == nil {
 		return base, err
 	}
-	for {
-		switch p.cur.kind {
-		case tStar:
-			p.next()
-			n := &Node{Kind: NodeStar, Children: []*Node{base}, Greedy: true}
-			p.maybeMakeUngreedy(n)
-			base = n
-		case tPlus:
-			p.next()
-			n := &Node{Kind: NodePlus, Children: []*Node{base}, Greedy: true}
-			p.maybeMakeUngreedy(n)
-			base = n
-		case tQMark:
-			// '?' quantifier (0 or 1)
-			p.next()
-			n := &Node{Kind: NodeRange, Children: []*Node{base}, Start: 0, End: 1, Greedy: true}
-			p.maybeMakeUngreedy(n)
-			base = n
-		case tLBrace:
-			minVal, maxVal, err2 := p.parseBound()
-			if err2 != nil {
-				return nil, err2
-			}
-			n := &Node{Kind: NodeRange, Children: []*Node{base}, Start: minVal, End: maxVal, Greedy: true}
-			p.maybeMakeUngreedy(n)
-			base = n
-		default:
-			return base, nil
+	switch p.cur.kind {
+	case tStar:
+		p.next()
+		n := &Node{Kind: NodeStar, Children: []*Node{base}, Greedy: true}
+		p.maybeMakeUngreedy(n)
+		base = n
+	case tPlus:
+		p.next()
+		n := &Node{Kind: NodePlus, Children: []*Node{base}, Greedy: true}
+		p.maybeMakeUngreedy(n)
+		base = n
+	case tQMark:
+		// '?' quantifier (0 or 1)
+		p.next()
+		n := &Node{Kind: NodeRange, Children: []*Node{base}, Start: 0, End: 1, Greedy: true}
+		p.maybeMakeUngreedy(n)
+		base = n
+	case tLBrace:
+		minVal, maxVal, err2 := p.parseBound()
+		if err2 != nil {
+			return nil, err2
 		}
+		n := &Node{Kind: NodeRange, Children: []*Node{base}, Start: minVal, End: maxVal, Greedy: true}
+		p.maybeMakeUngreedy(n)
+		base = n
+	default:
+		return base, nil
 	}
+
+	if isQuantifier(p.cur.kind) {
+		return nil, errors.New("syntax error")
+	}
+
+	return base, nil
 }
 
 // base := literal | '.' | '^' | '$' | '(' alternative ')' | '[' class ']' | shorthand classes | word boundaries
@@ -210,6 +218,10 @@ func (p *Parser) parseBound() (minVal, maxVal uint16, err error) {
 
 	if err := p.finalizeBound(l); err != nil {
 		return 0, 0, err
+	}
+
+	if minVal > maxVal {
+		return 0, 0, errors.New("bad repeat interval")
 	}
 
 	return minVal, maxVal, nil
@@ -505,7 +517,7 @@ func (p *Parser) parseRange(l *lexer, cls *Class, start byte) error {
 	}
 
 	if start > end {
-		start, end = end, start
+		return errors.New("bad character range")
 	}
 
 	for i := int(start); i <= int(end); i++ {
