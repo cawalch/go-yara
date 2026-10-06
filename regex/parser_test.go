@@ -1,6 +1,9 @@
 package regex
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestParseLiteralsAndDot(t *testing.T) {
 	p := NewParser(0)
@@ -274,5 +277,101 @@ func TestParsePOSIXClass(t *testing.T) {
 	}
 	if !bitSet(n.Class.Bitmap, 'A') || !bitSet(n.Class.Bitmap, '9') || bitSet(n.Class.Bitmap, ' ') {
 		t.Fatalf("incorrect bits set for [:alnum:]")
+	}
+}
+
+func TestParseReversedRangeRejected(t *testing.T) {
+	p := NewParser(0)
+	cases := []string{
+		"[z-a]",
+		"[9-0]",
+		`[\xff-\x00]`,
+		"[^z-a]",
+		"[a-d9-0]",
+	}
+	for _, pattern := range cases {
+		_, err := p.Parse(pattern)
+		if err == nil {
+			t.Fatalf("Parse(%q) expected error, got nil", pattern)
+		}
+		if !strings.Contains(err.Error(), "bad character range") {
+			t.Fatalf("Parse(%q) error = %v, want 'bad character range'", pattern, err)
+		}
+	}
+}
+
+func TestParseInvertedBoundsRejected(t *testing.T) {
+	p := NewParser(0)
+	cases := []string{
+		"a{3,2}",
+		"a{10,2}",
+		"a{1,0}",
+	}
+	for _, pattern := range cases {
+		_, err := p.Parse(pattern)
+		if err == nil {
+			t.Fatalf("Parse(%q) expected error, got nil", pattern)
+		}
+		if !strings.Contains(err.Error(), "bad repeat interval") {
+			t.Fatalf("Parse(%q) error = %v, want 'bad repeat interval'", pattern, err)
+		}
+	}
+}
+
+func TestParseStackedQuantifiersRejected(t *testing.T) {
+	p := NewParser(0)
+	cases := []string{
+		"x**",
+		"x*+",
+		"x+*",
+		"x++",
+		"x???",
+		"x?*",
+		"x?+",
+		"x{2}*",
+		"x*{2}",
+		"x{2}{3}",
+		"x{2}?{3}",
+		"x*?*",
+		"(x**)",
+		"[a-z]**",
+		".**",
+	}
+	for _, pattern := range cases {
+		_, err := p.Parse(pattern)
+		if err == nil {
+			t.Fatalf("Parse(%q) expected error, got nil", pattern)
+		}
+		if !strings.Contains(err.Error(), "syntax error") {
+			t.Fatalf("Parse(%q) error = %v, want 'syntax error'", pattern, err)
+		}
+	}
+}
+
+func TestParseValidQuantifiersAccepted(t *testing.T) {
+	p := NewParser(0)
+	valid := []string{
+		"x*",
+		"x+",
+		"x?",
+		"x*?",
+		"x+?",
+		"x??",
+		"x{2,3}?",
+		"x{3}",
+		"x{3,}",
+		"(x*)*",
+		"(x+)+",
+		"x*y",
+		"x?y",
+		"x??y",
+		"[a-z]*",
+		"[a-z]+?",
+		"[a-a]",
+	}
+	for _, pattern := range valid {
+		if _, err := p.Parse(pattern); err != nil {
+			t.Fatalf("Parse(%q) unexpected error: %v", pattern, err)
+		}
 	}
 }
