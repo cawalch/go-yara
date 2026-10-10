@@ -3,11 +3,26 @@
 package compiler
 
 import (
+	"math"
 	"math/bits"
 	"simd/archsimd"
 )
 
 const teddySIMDEnabled = true
+
+// firstMatchInUint64x2 returns the byte index (0..15) of the first non-zero byte
+// in a 16-byte vector (split into two 64-bit words), or -1 if all bytes are zero.
+func firstMatchInUint64x2(words archsimd.Uint64x2) int {
+	w0 := words.GetElem(0)
+	if w0 != 0 {
+		return bits.TrailingZeros64(w0) >> 3
+	}
+	w1 := words.GetElem(1)
+	if w1 != 0 {
+		return 8 + (bits.TrailingZeros64(w1) >> 3)
+	}
+	return -1
+}
 
 type teddyNeon1Bank struct {
 	mask0Lo   archsimd.Uint8x16
@@ -32,16 +47,13 @@ type teddyNeon2Bank struct {
 }
 
 func newTeddyPlatform(strings []acStringInfo) teddyPrefilter {
-	minLen := 1000
+	minLen := math.MaxInt
 	for _, s := range strings {
 		if len(s.Data) < minLen {
 			minLen = len(s.Data)
 		}
 	}
-	prefixLen := 3
-	if minLen < 3 {
-		prefixLen = minLen
-	}
+	prefixLen := min(3, minLen)
 	if prefixLen < 1 {
 		return nil
 	}
@@ -151,23 +163,10 @@ func (t *teddyNeon1Bank) findCandidate(data []byte, from int) int {
 			continue
 		}
 
-		words0 := res0.ReshapeToUint64s()
-		w0 := words0.GetElem(0)
-		w1 := words0.GetElem(1)
-		if (w0 | w1) != 0 {
-			if w0 != 0 {
-				return pos + (bits.TrailingZeros64(w0) >> 3)
-			}
-			return pos + 8 + (bits.TrailingZeros64(w1) >> 3)
+		if offset := firstMatchInUint64x2(res0.ReshapeToUint64s()); offset >= 0 {
+			return pos + offset
 		}
-
-		words1 := res1.ReshapeToUint64s()
-		w0b := words1.GetElem(0)
-		w1b := words1.GetElem(1)
-		if w0b != 0 {
-			return pos + 16 + (bits.TrailingZeros64(w0b) >> 3)
-		}
-		return pos + 24 + (bits.TrailingZeros64(w1b) >> 3)
+		return pos + 16 + firstMatchInUint64x2(res1.ReshapeToUint64s())
 	}
 
 	limit16 := len(data) - 16 - offsetShift
@@ -190,16 +189,9 @@ func (t *teddyNeon1Bank) findCandidate(data []byte, from int) int {
 			m = m.And(mask2Lo.LookupOrZero(v2Lo).And(mask2Hi.LookupOrZero(v2Hi)))
 		}
 
-		words := m.ReshapeToUint64s()
-		w0 := words.GetElem(0)
-		w1 := words.GetElem(1)
-		if (w0 | w1) == 0 {
-			continue
+		if offset := firstMatchInUint64x2(m.ReshapeToUint64s()); offset >= 0 {
+			return pos + offset
 		}
-		if w0 != 0 {
-			return pos + (bits.TrailingZeros64(w0) >> 3)
-		}
-		return pos + 8 + (bits.TrailingZeros64(w1) >> 3)
 	}
 
 	return -1
@@ -357,23 +349,10 @@ func (t *teddyNeon2Bank) findCandidate(data []byte, from int) int {
 			continue
 		}
 
-		wordsA := combA.ReshapeToUint64s()
-		w0A := wordsA.GetElem(0)
-		w1A := wordsA.GetElem(1)
-		if (w0A | w1A) != 0 {
-			if w0A != 0 {
-				return pos + (bits.TrailingZeros64(w0A) >> 3)
-			}
-			return pos + 8 + (bits.TrailingZeros64(w1A) >> 3)
+		if offset := firstMatchInUint64x2(combA.ReshapeToUint64s()); offset >= 0 {
+			return pos + offset
 		}
-
-		wordsB := combB.ReshapeToUint64s()
-		w0B := wordsB.GetElem(0)
-		w1B := wordsB.GetElem(1)
-		if w0B != 0 {
-			return pos + 16 + (bits.TrailingZeros64(w0B) >> 3)
-		}
-		return pos + 24 + (bits.TrailingZeros64(w1B) >> 3)
+		return pos + 16 + firstMatchInUint64x2(combB.ReshapeToUint64s())
 	}
 
 	limit16 := len(data) - 16 - offsetShift
@@ -403,16 +382,9 @@ func (t *teddyNeon2Bank) findCandidate(data []byte, from int) int {
 		}
 
 		combined := res0.Or(res1)
-		words := combined.ReshapeToUint64s()
-		w0 := words.GetElem(0)
-		w1 := words.GetElem(1)
-		if (w0 | w1) == 0 {
-			continue
+		if offset := firstMatchInUint64x2(combined.ReshapeToUint64s()); offset >= 0 {
+			return pos + offset
 		}
-		if w0 != 0 {
-			return pos + (bits.TrailingZeros64(w0) >> 3)
-		}
-		return pos + 8 + (bits.TrailingZeros64(w1) >> 3)
 	}
 
 	return -1

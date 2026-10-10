@@ -23,7 +23,7 @@
 - **Cache serialization**: Save and load compiled programs using a versioned binary format that preserves prefilter plans and regex state.
 - **Dependency analysis**: Inspect direct rule dependencies, dependents, and full dependency graphs.
 - **Secret extraction**: Extract structured capture spans and correlate credential candidates using the `capture(...)` and `evidence:` syntax extensions.
-- **Experimental SIMD acceleration**: Compile-time opt-in with `GOEXPERIMENT=simd` on Go 1.27+ enables hardware-vectorized (`AVX2`, `AVX-512`, `ARM NEON`) case-folding (`nocase`), character range testing, and multi-gigabyte/second Aho-Corasick root skips.
+- **Experimental SIMD acceleration**: Compile-time opt-in with `GOEXPERIMENT=simd` on Go 1.27+ enables hardware-vectorized (`AVX2`, `AVX-512`, `ARM NEON`) case-folding (`nocase`), character range testing, Teddy multi-literal prefiltering (7–11+ GB/s across 4–64 patterns), and multi-gigabyte/second Aho-Corasick root skips.
 - **Command-line tool**: Lex, parse, compile, or execute rules against data files with optional streaming.
 
 ## Compatibility
@@ -63,6 +63,7 @@ When compiled with **Go 1.27** or later using the standard vector experiment fla
 
 - **ASCII case-folding (`nocase`)**: `indexASCIIFoldByte` broadcasts and case-folds byte comparisons across 16-byte (NEON/SSE), 32-byte (AVX2), or 64-byte (AVX-512) vector lanes, accelerating case-insensitive string matching.
 - **Character range scanning**: `indexByteRange` evaluates character sets (e.g. `[a-z]`, `[0-9]`) using parallel vector subtraction and unsigned span comparisons.
+- **Teddy multi-literal prefiltering**: Vectorized multi-pattern prefilter inspired by Hyperscan's Teddy algorithm. Uses 16-byte parallel nibble lookups (`archsimd.Uint8x16.LookupOrZero` on ARM NEON) or broadcast equality vectors (AVX2/SSE on AMD64) across 1-byte, 2-byte, or 3-byte prefixes (including case-folded variants), scanning clean and sparse data at 7–11+ GB/s across 2–64 patterns before invoking Aho-Corasick state traversal. Runtime support can be verified with `compiler.TeddySIMDSupported()`.
 - **Aho-Corasick root-miss skipping**: Scans input for matching automaton root transitions at up to 30+ GB/s, rapidly skipping clean or non-matching regions before bytecode evaluation.
 
 #### Enabling SIMD at build time
