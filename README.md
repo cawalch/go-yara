@@ -322,6 +322,138 @@ for _, ignored := range c.GetIgnoredRules() {
 > [!NOTE]
 > Rules that reference an omitted rule are transitively omitted. If an omitted rule is declared `global`, all subsequent rules are also omitted to prevent unintended matching behavior.
 
+### Observability, hooks, and telemetry
+
+`go-yara` provides an allocation-conscious hooks and telemetry system for long-running batch scans, large-file inspection, and high-throughput pipelines. When hooks are disabled (the default), internal bitmask dispatching incurs **zero allocations** and unmeasurable CPU overhead (< 0.5%).
+
+#### Public Scanner Options
+
+| Option | Purpose | Incurred Cost |
+| :--- | :--- | :--- |
+| `WithTelemetry(sink *ScanTelemetry)` | Updates aggregate counters (scans, rejects, rules pruned/evaluated, candidate hits) in-place. | < 1.5 ns (zero heap allocs) |
+| `WithTelemetryLatency(sink *ScanTelemetry)` | Measures phase durations and total scan latency in addition to counters. | ~25 ns (vDSO clock calls) |
+| `WithPollHook(hook PollHook, byteStride int)` | Cooperative callback during rule loops for progress, CPU yielding, throttling, or early abort. | Invoked per byte-stride / rule |
+| `WithRuleProfiling(hook RuleEfficiencyHook)` | Per-rule profiling (`RuleProfile`: duration, condition VM steps, candidate hits, verified matches, pass/reject). | Invoked per evaluated rule |
+| `WithPrefilterHook(hook PrefilterHook)` | Observes prefilter decisions across literal routing, compact masks, shared automata, and header checks. | Invoked per prefilter stage |
+| `WithRuleGate(gate RuleGateFunc)` | Dynamically gates/skips individual rules at runtime based on external conditions without recompiling. | Single boolean check per rule |
+| `WithMatchHook(hook MatchHook)` | Invoked immediately upon a rule match, allowing streaming match ingestion or early termination (`MatchActionStopScan`). | Invoked per matched rule |
+| `WithMaxMatches(limit int, onExceeded func)` | Safety threshold capping matches per rule, aborting when the limit is exceeded. | Counter check |
+| `WithChunkHook(hook ChunkHook)` | Boundary progress callback during streaming and `BlockScanner` execution. | Invoked per block/chunk |
+| `WithHooks(hooks ScanHooks)` | Bundles any combination of the above callbacks plus `OnScanStart` and `OnScanComplete` lifecycle hooks. | Configured once on Scanner |
+
+#### Telemetry and latency measurement
+
+Aggregate scanner metrics and reject/prune counters in-place with zero heap allocations:
+
+```go
+var telemetry compiler.ScanTelemetry
+
+// Use WithTelemetry for counter-only tracking (< 1.5 ns overhead)
+// Or WithTelemetryLatency to also track scan durations
+scanner := program.NewScanner(compiler.WithTelemetryLatency(&telemetry))
+defer scanner.Close()
+
+for _, sample := range samples {
+	_, _ = scanner.Scan(sample)
+}
+
+fmt.Printf("Scans: %d, Prefilter Rejects: %d, Evaluated: %d, Matches: %d (Total time: %d ns)\n",
+	telemetry.TotalScans, telemetry.PrefilterRejects, telemetry.RulesEvaluated,
+	telemetry.TotalMatches, telemetry.TotalScanDurationNs)
+```
+
+#### Cooperative polling and throttling
+
+For background scans or massive files, `WithPollHook` enables cooperative CPU throttling, yielding (`runtime.Gosched()`), and responsive cancellation:
+
+```go
+scanner := program.NewScanner(compiler.WithPollHook(func(ctx context.Context, p compiler.PollProgress) (compiler.PollAction, time.Duration) {
+	fmt.Printf("Phase: %s | Scanned %d/%d bytes | Rule: %s (%d/%d)\n",
+		p.Phase, p.BytesScanned, p.TotalBytes, p.CurrentRule, p.RulesEvaluated, p.TotalRules)
+
+	// Cooperatively throttle CPU for background worker workloads
+	if p.RulesEvaluated%100 == 0 {
+		return compiler.PollThrottle, 50 * time.Microsecond
+	}
+	return compiler.PollContinue, 0
+}, 64*1024))
+```
+
+#### Rule efficiency profiling (TSDB / metrics ingestion)
+
+Track single-rule performance, pass/reject rates, VM evaluation steps, and candidate false-positive ratios (ideal for emitting to InfluxDB, Prometheus, or Datadog):
+
+```go
+scanner := program.NewScanner(compiler.WithRuleProfiling(func(p compiler.RuleProfile) {
+	// Log or aggregate per-rule execution metrics:
+	// - p.RuleName: rule identifier
+	// - p.Duration: exact evaluation latency
+	// - p.Matched: whether rule fired (pass rate)
+	// - p.Pruned: rejected by header constraints
+	// - p.CandidateHits vs p.VerifiedMatches: pattern selectivity / noise ratio
+	if p.Duration > 5*time.Millisecond {
+		fmt.Printf("Slow rule: %s took %v (VM steps: %d, candidates: %d)\n",
+			p.RuleName, p.Duration, p.ConditionSteps, p.CandidateHits)
+	}
+}))
+```
+
+#### Prefilter observability and dynamic rule gating
+
+Inspect prefilter decisions or dynamically bypass rules at runtime without recompiling the ruleset:
+
+```go
+scanner := program.NewScanner(
+	compiler.WithPrefilterHook(func(d compiler.PrefilterDecision) {
+		if d.Rejected {
+			fmt.Printf("Prefilter fast-rejected input at stage %s\n", d.Stage)
+		}
+	}),
+	compiler.WithRuleGate(func(rule *compiler.CompiledRule) bool {
+		// Dynamically evaluate only rules tagged for this environment
+		return len(rule.Tags) == 0 || rule.Tags[0] == "production"
+	}),
+)
+```
+
+#### Streaming match alerts and threshold limits
+
+Stream matches in real time and abort as soon as a target match threshold is reached:
+
+```go
+scanner := program.NewScanner(
+	// Process matches immediately as they are verified
+	compiler.WithMatchHook(func(rule *compiler.CompiledRule, match compiler.RuleMatch) compiler.MatchAction {
+		fmt.Printf("Immediate match found: %s\n", match.Rule)
+		return compiler.MatchActionStopScan // Abort scan immediately upon first match
+	}),
+	// Or enforce a safety cap on maximum matches per rule
+	compiler.WithMaxMatches(100, func(rule string, count int) {
+		fmt.Printf("Rule %s exceeded %d match limit\n", rule, count)
+	}),
+)
+```
+
+#### Bundled configuration via `ScanHooks`
+
+All callbacks can alternatively be passed as a single cohesive [`compiler.ScanHooks`](compiler/hooks.go) bundle:
+
+```go
+hooks := compiler.ScanHooks{
+	OnScanStart: func(ctx context.Context, inputLen int64) {
+		fmt.Printf("Starting scan on %d bytes\n", inputLen)
+	},
+	OnScanComplete: func(ctx context.Context, result *compiler.ScanResult, duration time.Duration) {
+		fmt.Printf("Scan completed in %v with %d matching rules\n", duration, len(result.MatchedRules))
+	},
+	OnChunk: func(offset int64, chunkSize int, matchesFound int) {
+		fmt.Printf("Chunk at %d (%d bytes): %d matches\n", offset, chunkSize, matchesFound)
+	},
+}
+scanner := program.NewScanner(compiler.WithHooks(hooks))
+```
+
+
 ### Inspect semantic diagnostics and suggestions
 
 When performing standalone semantic analysis or linting, the `semantic` package emits structured `Error` diagnostics with machine-readable error codes (such as `undefined-identifier`, `type-mismatch`, and `invalid-modifier`), line/column coordinates, and "did you mean...?" suggestions for misspelled identifiers, module functions, and keywords:

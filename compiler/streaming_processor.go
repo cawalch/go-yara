@@ -32,6 +32,7 @@ type StreamingProcessor struct {
 	ChunkSize        int  // Size of each chunk (default: 1MB)
 	BufferSize       int  // Read buffer size (default: 64KB)
 	EarlyTermination bool // Stop processing after the first chunk containing matches
+	ChunkHook        ChunkHook
 
 	compiledProgram *CompiledProgram
 	chunkProcessor  *streamingChunkProcessor
@@ -240,6 +241,9 @@ func (sp *StreamingProcessor) processFileChunks(
 		}
 		allMatches = append(allMatches, matches...)
 		sp.updateProgress(int64(n), len(matches))
+		if sp.ChunkHook != nil {
+			sp.ChunkHook(primaryStart, n, len(matches))
+		}
 
 		if sp.EarlyTermination && len(matches) > 0 {
 			break
@@ -302,6 +306,9 @@ func (sp *StreamingProcessor) processDataChunks(ctx context.Context, data []byte
 		}
 		allMatches = append(allMatches, matches...)
 		sp.updateProgress(int64(primaryEnd-primaryStart), len(matches))
+		if sp.ChunkHook != nil {
+			sp.ChunkHook(int64(primaryStart), primaryEnd-primaryStart, len(matches))
+		}
 
 		if sp.EarlyTermination && len(matches) > 0 {
 			break

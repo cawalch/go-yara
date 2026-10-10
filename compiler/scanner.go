@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"slices"
+	"time"
 
 	"github.com/cawalch/go-yara/internal/wordmatch"
 	"github.com/cawalch/go-yara/regex"
@@ -77,6 +78,17 @@ type Scanner struct {
 
 	// Test-only escape hatch used by parity coverage.
 	prefilterDisabled bool
+
+	// Hooks & Telemetry
+	hookMask              hookMask
+	hooks                 *ScanHooks
+	telemetrySink         *ScanTelemetry
+	trackTelemetryLatency bool
+	ruleGate              RuleGateFunc
+	matchHook             MatchHook
+	pollByteStride        int
+	maxMatchesLimit       int
+	onMaxMatchesExceeded  func(rule string, count int)
 }
 
 // ScanResult represents the result of scanning data against compiled rules.
@@ -220,6 +232,7 @@ func NewScanner(program *CompiledProgram, opts ...ScannerOption) *Scanner {
 	for _, opt := range opts {
 		opt(s)
 	}
+	s.recomputeHookMask()
 	s.selectEvaluatedRules()
 	s.allEvaluatedRulesRequireSharedPatterns = s.computeAllEvaluatedRulesRequireSharedPatterns()
 	if s.booleanRoutingEnabled && len(s.tagsFilter) == 0 && program != nil &&
@@ -513,6 +526,9 @@ func (s *Scanner) selectEvaluatedRules() {
 }
 
 func (s *Scanner) shouldEvaluateRule(rule *CompiledRule) bool {
+	if s != nil && s.hookMask&hookBitRuleGate != 0 && s.ruleGate != nil && !s.ruleGate(rule) {
+		return false
+	}
 	return s.evaluatedRules == nil || s.evaluatedRules[rule.Name]
 }
 
@@ -561,6 +577,16 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 		return nil, err
 	}
 
+	var scanStart time.Time
+	if s.hookMask&(hookBitScanLifecycle|hookBitTelemetryLatency) != 0 {
+		scanStart = time.Now()
+		s.dispatchScanStart(ctx, int64(len(data)))
+	}
+	if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
+		s.telemetrySink.TotalScans++
+		s.telemetrySink.BytesScanned += int64(len(data))
+	}
+
 	useSharedAutomaton, err := s.preparePatternScan(ctx, data)
 	if err != nil {
 		return nil, err
@@ -593,6 +619,17 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
+		if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
+			s.telemetrySink.PrefilterRejects++
+			s.telemetrySink.RulesPruned += uint64(len(result.PrunedRules))
+		}
+		if s.hookMask&(hookBitScanLifecycle|hookBitTelemetryLatency) != 0 {
+			dur := time.Since(scanStart)
+			s.dispatchScanComplete(ctx, result, dur)
+			if s.hookMask&hookBitTelemetryLatency != 0 && s.telemetrySink != nil {
+				s.telemetrySink.TotalScanDurationNs += uint64(dur.Nanoseconds())
+			}
+		}
 		return result, nil
 	}
 
@@ -616,11 +653,21 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 		if !s.shouldEvaluateRule(rule) {
 			continue
 		}
-		if useSharedAutomaton && !s.prefilterDisabled && !s.candidateRuleSeen[rule.Index] {
-			result.RuleResults[rule.Name] = false
-			if !s.ruleHeaderConstraintsMatchInput(ctx, rule, scanInput) {
-				result.PrunedRules = append(result.PrunedRules, rule.Name)
+		if s.hookMask&hookBitPoll != 0 {
+			if err := s.dispatchPoll(ctx, PollProgress{
+				BytesScanned:   int64(len(data)),
+				TotalBytes:     int64(len(data)),
+				Phase:          PhaseRuleCondition,
+				CurrentRule:    rule.Name,
+				RulesEvaluated: len(result.RuleResults),
+				TotalRules:     len(s.program.Rules),
+			}); err != nil {
+				return nil, err
 			}
+		}
+		if useSharedAutomaton && !s.prefilterDisabled && !s.candidateRuleSeen[rule.Index] {
+			pruned := !s.ruleHeaderConstraintsMatchInput(ctx, rule, scanInput)
+			s.recordSkippedCandidateRule(rule, result, pruned)
 			continue
 		}
 		evaluation, err := s.evaluateRuleCondition(ctx, rule, scanInput)
@@ -714,11 +761,42 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 				}
 				result.Evidence[rule.Name] = evidence
 			}
-			result.MatchedRules = append(result.MatchedRules, newPublicRuleMatch(rule, publicMatches, evidence))
+			ruleMatch := newPublicRuleMatch(rule, publicMatches, evidence)
+			if s.hookMask&hookBitMatch != 0 && s.matchHook != nil {
+				action := s.matchHook(rule, ruleMatch)
+				switch action {
+				case MatchActionStopScan:
+					result.MatchedRules = append(result.MatchedRules, ruleMatch)
+					clear(s.ruleResults)
+					if s.hookMask&(hookBitScanLifecycle|hookBitTelemetry) != 0 {
+						dur := time.Since(scanStart)
+						s.dispatchScanComplete(ctx, result, dur)
+						if s.telemetrySink != nil {
+							s.telemetrySink.TotalScanDurationNs += uint64(dur.Nanoseconds())
+							s.telemetrySink.TotalMatches += uint64(len(result.MatchedRules))
+						}
+					}
+					return result, nil
+				case MatchActionSkipRule:
+					continue
+				case MatchActionContinue:
+				}
+			}
+			result.MatchedRules = append(result.MatchedRules, ruleMatch)
 		}
 	}
 
 	clear(s.ruleResults)
+	if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
+		s.telemetrySink.TotalMatches += uint64(len(result.MatchedRules))
+	}
+	if s.hookMask&(hookBitScanLifecycle|hookBitTelemetryLatency) != 0 {
+		dur := time.Since(scanStart)
+		s.dispatchScanComplete(ctx, result, dur)
+		if s.hookMask&hookBitTelemetryLatency != 0 && s.telemetrySink != nil {
+			s.telemetrySink.TotalScanDurationNs += uint64(dur.Nanoseconds())
+		}
+	}
 	return result, nil
 }
 
@@ -759,21 +837,23 @@ func (s *Scanner) MatchesWithContext(ctx context.Context, data []byte) (bool, er
 	}
 	clear(s.ruleResults)
 	defer clear(s.ruleResults)
-	if s.booleanRouting != nil && len(data) <= 1024 && !s.prefilterDisabled {
-		decision := s.booleanRouting.Match(data)
-		if err := ctx.Err(); err != nil {
-			return false, err
-		}
-		if decision != wordmatch.Unknown {
-			return decision == wordmatch.Match, nil
-		}
+	if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
+		s.telemetrySink.TotalScans++
+		s.telemetrySink.BytesScanned += int64(len(data))
+	}
+	if matched, handled, err := s.matchBooleanRouting(ctx, data); handled || err != nil {
+		return matched, err
 	}
 	evaluation, err := s.evaluatePublicRules(ctx, data, nil)
 	if err != nil {
 		return false, err
 	}
-	return evaluation.matchedPublicGlobal ||
-		evaluation.allGlobalMatched && evaluation.matchedPublicNonGlobal, nil
+	hasMatch := evaluation.matchedPublicGlobal ||
+		evaluation.allGlobalMatched && evaluation.matchedPublicNonGlobal
+	if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil && hasMatch {
+		s.telemetrySink.TotalMatches++
+	}
+	return hasMatch, nil
 }
 
 // MatchingRules returns detailed public rule matches without constructing the
@@ -885,6 +965,12 @@ func (s *Scanner) evaluatePublicRules(
 	matchedRuleIndices *[]int,
 ) (publicRuleEvaluation, error) {
 	if s.compactPrefilterRejects(ctx, data) {
+		if s.hookMask&hookBitPrefilter != 0 {
+			s.dispatchPrefilter(PrefilterDecision{Stage: PrefilterStageCompactMask, Rejected: true})
+		}
+		if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
+			s.telemetrySink.PrefilterRejects++
+		}
 		return publicRuleEvaluation{}, ctx.Err()
 	}
 	useSharedAutomaton, err := s.preparePatternScan(ctx, data)
@@ -901,6 +987,12 @@ func (s *Scanner) evaluatePublicRules(
 		return s.evaluateSharedPublicRules(ctx, result)
 	}
 	if !s.prefilterDisabled && s.allEvaluatedRulesPrefilterRejected(ctx, data, useSharedAutomaton) {
+		if s.hookMask&hookBitPrefilter != 0 {
+			s.dispatchPrefilter(PrefilterDecision{Stage: PrefilterStageSharedAutomaton, Rejected: true})
+		}
+		if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
+			s.telemetrySink.PrefilterRejects++
+		}
 		return result, ctx.Err()
 	}
 	for _, rule := range s.program.Rules {
@@ -916,6 +1008,12 @@ func (s *Scanner) evaluateSharedPublicRules(
 	result publicRuleEvaluation,
 ) (publicRuleEvaluation, error) {
 	if len(s.candidateRuleIndices) == 0 {
+		if s.hookMask&hookBitPrefilter != 0 {
+			s.dispatchPrefilter(PrefilterDecision{Stage: PrefilterStageSharedAutomaton, Rejected: true})
+		}
+		if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
+			s.telemetrySink.PrefilterRejects++
+		}
 		return result, nil
 	}
 	slices.Sort(s.candidateRuleIndices)
@@ -1028,7 +1126,19 @@ func (s *Scanner) materializeMatchingRules(
 		if err != nil {
 			return nil, err
 		}
-		result = append(result, newPublicRuleMatch(rule, publicMatches, evidence))
+		ruleMatch := newPublicRuleMatch(rule, publicMatches, evidence)
+		if s.hookMask&hookBitMatch != 0 && s.matchHook != nil {
+			action := s.matchHook(rule, ruleMatch)
+			switch action {
+			case MatchActionStopScan:
+				result = append(result, ruleMatch)
+				return result, nil
+			case MatchActionSkipRule:
+				continue
+			case MatchActionContinue:
+			}
+		}
+		result = append(result, ruleMatch)
 	}
 	return result, nil
 }
@@ -1845,4 +1955,53 @@ func filterPrivateStrings(rule *CompiledRule, matches map[string][]Match) map[st
 		}
 	}
 	return matches
+}
+
+func (s *Scanner) recordSkippedCandidateRule(
+	rule *CompiledRule,
+	result *ScanResult,
+	pruned bool,
+) {
+	result.RuleResults[rule.Name] = false
+	if pruned {
+		result.PrunedRules = append(result.PrunedRules, rule.Name)
+		if s.hookMask&hookBitRuleProfile != 0 {
+			s.dispatchRuleEvaluated(RuleProfile{
+				RuleName:  rule.Name,
+				RuleIndex: rule.Index,
+				Pruned:    true,
+			})
+		}
+		if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
+			s.telemetrySink.RulesPruned++
+		}
+	}
+}
+
+func (s *Scanner) matchBooleanRouting(ctx context.Context, data []byte) (bool, bool, error) {
+	if s.booleanRouting == nil || len(data) > 1024 || s.prefilterDisabled {
+		return false, false, nil
+	}
+	decision := s.booleanRouting.Match(data)
+	if err := ctx.Err(); err != nil {
+		return false, false, err
+	}
+	if decision == wordmatch.Unknown {
+		return false, false, nil
+	}
+	if s.hookMask&hookBitPrefilter != 0 {
+		s.dispatchPrefilter(PrefilterDecision{
+			Stage:    PrefilterStageWordRouting,
+			Rejected: decision == wordmatch.NoMatch,
+		})
+	}
+	matched := decision == wordmatch.Match
+	if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
+		if !matched {
+			s.telemetrySink.PrefilterRejects++
+		} else {
+			s.telemetrySink.TotalMatches++
+		}
+	}
+	return matched, true, nil
 }

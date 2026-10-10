@@ -1,6 +1,9 @@
 package compiler
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 type ruleEvaluation struct {
 	matched bool
@@ -26,16 +29,35 @@ func (s *Scanner) evaluateRuleCondition(
 	rule *CompiledRule,
 	input ruleScanInput,
 ) (ruleEvaluation, error) {
+	var ruleStart time.Time
+	if s.hookMask&hookBitRuleProfile != 0 {
+		ruleStart = time.Now()
+	}
+
 	if !s.ruleHeaderConstraintsMatchInput(ctx, rule, input) {
 		if err := ctx.Err(); err != nil {
 			return ruleEvaluation{}, err
 		}
 		s.ruleResults[rule.Name] = false
+		if s.hookMask&hookBitRuleProfile != 0 {
+			s.dispatchRuleEvaluated(RuleProfile{
+				RuleName:  rule.Name,
+				RuleIndex: rule.Index,
+				Duration:  time.Since(ruleStart),
+				Pruned:    true,
+			})
+		}
+		if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
+			s.telemetrySink.RulesPruned++
+		}
 		return ruleEvaluation{pruned: true}, nil
 	}
 
 	if !s.prefilterDisabled && input.skipUnmatchedContext && input.useSharedAutomaton && s.missingRequiredString(rule) {
 		s.ruleResults[rule.Name] = false
+		if s.hookMask&(hookBitTelemetry|hookBitRuleProfile) != 0 {
+			s.recordRuleEvaluatedHooks(rule, false, ruleStart)
+		}
 		return ruleEvaluation{}, nil
 	}
 
@@ -44,6 +66,9 @@ func (s *Scanner) evaluateRuleCondition(
 	}
 	if !s.prefilterDisabled && rule.RequiresStringMatch && len(s.matchCtx.spans) == 0 {
 		s.ruleResults[rule.Name] = false
+		if s.hookMask&(hookBitTelemetry|hookBitRuleProfile) != 0 {
+			s.recordRuleEvaluatedHooks(rule, false, ruleStart)
+		}
 		return ruleEvaluation{}, nil
 	}
 
@@ -57,7 +82,49 @@ func (s *Scanner) evaluateRuleCondition(
 	}
 	matched := s.interp.ruleResult(rule.Name)
 	s.ruleResults[rule.Name] = matched
+
+	if s.hookMask&(hookBitTelemetry|hookBitRuleProfile) != 0 {
+		s.recordRuleEvaluatedHooks(rule, matched, ruleStart)
+	}
+
 	return ruleEvaluation{matched: matched}, nil
+}
+
+func (s *Scanner) recordRuleEvaluatedHooks(
+	rule *CompiledRule,
+	matched bool,
+	ruleStart time.Time,
+) {
+	candidates := 0
+	if rule.Index < len(s.globalMatches) {
+		candidates = len(s.globalMatches[rule.Index])
+	}
+	matches := 0
+	for _, spans := range s.matchCtx.spans {
+		matches += len(spans)
+	}
+
+	if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
+		s.telemetrySink.RulesEvaluated++
+		s.telemetrySink.CandidateHits += uint64(candidates)
+		s.telemetrySink.VerifiedMatches += uint64(matches)
+		if candidates > matches {
+			s.telemetrySink.FalseCandidateHits += uint64(candidates - matches)
+		}
+	}
+
+	if s.hookMask&hookBitRuleProfile != 0 {
+		s.dispatchRuleEvaluated(RuleProfile{
+			RuleName:        rule.Name,
+			RuleIndex:       rule.Index,
+			Duration:        time.Since(ruleStart),
+			ConditionSteps:  s.interp.iterations,
+			Matched:         matched,
+			Pruned:          false,
+			CandidateHits:   candidates,
+			VerifiedMatches: matches,
+		})
+	}
 }
 
 func (s *Scanner) ruleHeaderConstraintsMatchInput(ctx context.Context, rule *CompiledRule, input ruleScanInput) bool {

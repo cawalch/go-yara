@@ -134,6 +134,9 @@ func (scanner *BlockScanner) ScanWithContext(ctx context.Context, base int64, da
 			}
 		}
 	}
+	if s.hookMask&hookBitChunkBoundary != 0 {
+		s.dispatchChunk(base, len(data), len(scanner.matches))
+	}
 	return nil
 }
 
@@ -183,6 +186,18 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (*ScanResult
 		}
 		if !s.shouldEvaluateRule(rule) {
 			continue
+		}
+		if s.hookMask&hookBitPoll != 0 {
+			if err := s.dispatchPoll(ctx, PollProgress{
+				BytesScanned:   scanner.fileSize,
+				TotalBytes:     scanner.fileSize,
+				Phase:          PhaseBlockScan,
+				CurrentRule:    rule.Name,
+				RulesEvaluated: len(result.RuleResults),
+				TotalRules:     len(scanner.program.Rules),
+			}); err != nil {
+				return nil, err
+			}
 		}
 		if !ruleHeaderConstraintsMatchContext(rule, headerContext) {
 			s.ruleResults[rule.Name] = false
@@ -281,7 +296,20 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (*ScanResult
 			}
 			result.Evidence[rule.Name] = evidence
 		}
-		result.MatchedRules = append(result.MatchedRules, newPublicRuleMatch(rule, matches, evidence))
+		ruleMatch := newPublicRuleMatch(rule, matches, evidence)
+		if s.hookMask&hookBitMatch != 0 && s.matchHook != nil {
+			action := s.matchHook(rule, ruleMatch)
+			switch action {
+			case MatchActionStopScan:
+				result.MatchedRules = append(result.MatchedRules, ruleMatch)
+				clear(s.ruleResults)
+				return result, nil
+			case MatchActionSkipRule:
+				continue
+			case MatchActionContinue:
+			}
+		}
+		result.MatchedRules = append(result.MatchedRules, ruleMatch)
 	}
 	clear(s.ruleResults)
 	return result, nil
