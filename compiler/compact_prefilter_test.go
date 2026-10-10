@@ -86,6 +86,12 @@ func TestCompactPrefilterRejectionAndReuse(t *testing.T) {
 	if err != nil || len(report.Matches["first"]["$source"]) != 2 || len(report.Matches["first"]["$value"]) != 1 {
 		t.Fatalf("Scan lost unmatched-rule spans: %+v,%v", report, err)
 	}
+	reportedScanner := program.NewScanner(WithReportedMatchesOnly())
+	defer reportedScanner.Close()
+	reportedResult, err := reportedScanner.Scan(data)
+	if err != nil || len(reportedResult.MatchedRules) != 0 || len(reportedResult.Matches) != 0 {
+		t.Fatalf("WithReportedMatchesOnly Scan failed: %+v,%v", reportedResult, err)
+	}
 	compactPrefilterParity(t, program, [][]byte{data, []byte("event rare_one value=1234"), data, []byte("rare_one"), []byte("event xrare_onez"), []byte("event rare_two"), nil, []byte("event rare_one rare_two"), data})
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
