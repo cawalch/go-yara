@@ -14,7 +14,7 @@ import (
 )
 
 func TestSearchIterWithCancelStopsDenseScan(t *testing.T) {
-	automaton := NewACAutomaton()
+	automaton := newacAutomaton()
 	if err := automaton.AddString("$a", []byte("a"), false, false); err != nil {
 		t.Fatalf("AddString() error = %v", err)
 	}
@@ -42,7 +42,7 @@ func TestSearchIterWithCancelStopsDenseScan(t *testing.T) {
 }
 
 func TestSearchIterWithCancelPreservesSparseBoundaryMatches(t *testing.T) {
-	automaton := NewACAutomaton()
+	automaton := newacAutomaton()
 	pattern := []byte("boundary-pattern")
 	if err := automaton.AddString("$a", pattern, false, false); err != nil {
 		t.Fatalf("AddString() error = %v", err)
@@ -65,7 +65,7 @@ func TestSearchIterWithCancelPreservesSparseBoundaryMatches(t *testing.T) {
 }
 
 func TestSearchIterWithCancelPreservesSparseRootMatches(t *testing.T) {
-	automaton := NewACAutomaton()
+	automaton := newacAutomaton()
 	for id, pattern := range map[string]string{
 		"$a": "alpha-pattern",
 		"$b": "bravo-pattern",
@@ -115,7 +115,7 @@ func TestMustACIndex(t *testing.T) {
 
 // TestACAutomaton tests the Aho-Corasick automaton
 func TestACAutomaton(t *testing.T) {
-	ac := NewACAutomaton()
+	ac := newacAutomaton()
 
 	// Test adding strings
 	testStrings := []struct {
@@ -142,7 +142,7 @@ func TestACAutomaton(t *testing.T) {
 
 	// Test search
 	testData := []byte("hello world")
-	var matches []ACMatch
+	var matches []acMatch
 	for match := range ac.SearchIter(testData) {
 		matches = append(matches, match)
 	}
@@ -166,7 +166,7 @@ func TestACAutomaton(t *testing.T) {
 
 // TestACAutomatonSearch tests pattern searching
 func TestACAutomatonSearch(t *testing.T) {
-	ac := NewACAutomaton()
+	ac := newacAutomaton()
 
 	// Add test patterns
 	patterns := []string{"test", "pattern", "search"}
@@ -185,7 +185,7 @@ func TestACAutomatonSearch(t *testing.T) {
 
 	// Test search
 	testData := []byte("This is a test pattern for searching")
-	var matches []ACMatch
+	var matches []acMatch
 	for match := range ac.SearchIter(testData) {
 		matches = append(matches, match)
 	}
@@ -255,7 +255,7 @@ func TestACAutomatonSinglePatternFastPath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ac := NewACAutomaton()
+			ac := newacAutomaton()
 			if err := ac.AddStringWithFlags("single", tt.pattern, false, false, tt.flags); err != nil {
 				t.Fatal(err)
 			}
@@ -295,7 +295,7 @@ func TestRootCandidateCursorAdvancesEachLaneMonotonically(t *testing.T) {
 
 func TestACAutomatonSparseRootsWithAbsentAndDenseLanes(t *testing.T) {
 	patterns := []string{"cardnumber", "cardnum", "ccnumber", "cardholder", "nameoncard"}
-	ac := NewACAutomaton()
+	ac := newacAutomaton()
 	for _, pattern := range patterns {
 		if err := ac.AddString(pattern, []byte(pattern), false, false); err != nil {
 			t.Fatal(err)
@@ -327,7 +327,7 @@ func TestACAutomatonSparseRootsWithAbsentAndDenseLanes(t *testing.T) {
 
 // TestACAutomatonClone tests Clone method
 func TestACAutomatonClone(t *testing.T) {
-	ac := NewACAutomaton()
+	ac := newacAutomaton()
 	if err := ac.AddString("test", []byte("test"), false, false); err != nil {
 		t.Fatalf("Failed to add string: %v", err)
 	}
@@ -402,7 +402,7 @@ func TestACAutomatonEdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ac := NewACAutomaton()
+			ac := newacAutomaton()
 			for _, s := range tt.strings {
 				if err := ac.AddString(s, []byte(s), false, false); err != nil {
 					t.Fatalf("Failed to add string %s: %v", s, err)

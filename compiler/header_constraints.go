@@ -16,7 +16,9 @@ import (
 type HeaderConstraintKind uint8
 
 const (
+	// HeaderIntegerEquals asserts that an integer at a fixed offset equals an expected value.
 	HeaderIntegerEquals HeaderConstraintKind = iota
+	// HeaderStringAt asserts that a literal string occurs at a fixed offset.
 	HeaderStringAt
 )
 
@@ -250,7 +252,7 @@ func compiledPatternMatchesAtWithCancel(rule *CompiledRule, id string, data []by
 	}
 	switch rule.StringKinds[id] {
 	case StringKindText:
-		for _, info := range rule.Automaton.strings {
+		for _, info := range rule.automaton.strings {
 			if info.Identifier != id {
 				continue
 			}

@@ -7,7 +7,7 @@ import (
 )
 
 // Emitter manages bytecode generation and instruction emission
-type Emitter struct {
+type emitter struct {
 	instructions []Instruction
 	// Maps for fixups and relocations
 	fixups map[int]int // Maps instruction index to fixup location
@@ -20,8 +20,8 @@ type Emitter struct {
 }
 
 // NewEmitter creates a new bytecode emitter
-func NewEmitter() *Emitter {
-	return &Emitter{
+func newEmitter() *emitter {
+	return &emitter{
 		instructions:       make([]Instruction, 0),
 		fixups:             make(map[int]int),
 		currentOffset:      0,
@@ -32,7 +32,7 @@ func NewEmitter() *Emitter {
 }
 
 // ReserveInstructions ensures that instruction buffer has capacity for at least n entries
-func (e *Emitter) ReserveInstructions(n int) {
+func (e *emitter) ReserveInstructions(n int) {
 	if n <= 0 {
 		return
 	}
@@ -45,7 +45,7 @@ func (e *Emitter) ReserveInstructions(n int) {
 }
 
 // Emit adds an instruction to the bytecode stream
-func (e *Emitter) Emit(inst *Instruction) int {
+func (e *emitter) Emit(inst *Instruction) int {
 	offset := e.currentOffset
 	e.instructions = append(e.instructions, *inst)
 	e.currentOffset += inst.Size()
@@ -59,7 +59,7 @@ func (e *Emitter) Emit(inst *Instruction) int {
 }
 
 // EmitOpcode emits an instruction with just an opcode
-func (e *Emitter) EmitOpcode(opcode Opcode, line, pos int) int {
+func (e *emitter) EmitOpcode(opcode Opcode, line, pos int) int {
 	inst := NewInstruction(opcode, line, pos)
 	return e.Emit(inst)
 }
@@ -67,13 +67,13 @@ func (e *Emitter) EmitOpcode(opcode Opcode, line, pos int) int {
 // EmitOpcodeWithOperand emits an instruction with opcode and operand
 //
 //nolint:revive // argument-limit: API surface
-func (e *Emitter) EmitOpcodeWithOperand(opcode Opcode, operand Operand, line, pos int) int {
+func (e *emitter) EmitOpcodeWithOperand(opcode Opcode, operand Operand, line, pos int) int {
 	inst := NewInstructionWithOperand(opcode, operand, line, pos)
 	return e.Emit(inst)
 }
 
 // EmitPush emits a push instruction with various operand sizes
-func (e *Emitter) EmitPush(value uint64, line, pos int) int {
+func (e *emitter) EmitPush(value uint64, line, pos int) int {
 	switch {
 	case value <= math.MaxUint8:
 		return e.EmitOpcodeWithOperand(
@@ -107,7 +107,7 @@ func (e *Emitter) EmitPush(value uint64, line, pos int) int {
 }
 
 // EmitPushDouble emits a push instruction for floating point values
-func (e *Emitter) EmitPushDouble(value float64, line, pos int) int {
+func (e *emitter) EmitPushDouble(value float64, line, pos int) int {
 	return e.EmitOpcodeWithOperand(
 		OpPushDbl,
 		Operand{Type: OperandImmediate64, Value: math.Float64bits(value)},
@@ -117,7 +117,7 @@ func (e *Emitter) EmitPushDouble(value float64, line, pos int) int {
 }
 
 // EmitPushString emits a push instruction for string values
-func (e *Emitter) EmitPushString(value string, line, pos int) int {
+func (e *emitter) EmitPushString(value string, line, pos int) int {
 	index := e.internStringLiteral(value)
 	return e.EmitOpcodeWithOperand(
 		OpPushStr,
@@ -127,7 +127,7 @@ func (e *Emitter) EmitPushString(value string, line, pos int) int {
 	)
 }
 
-func (e *Emitter) internStringLiteral(value string) int {
+func (e *emitter) internStringLiteral(value string) int {
 	if idx, ok := e.stringLiteralIndex[value]; ok {
 		return idx
 	}
@@ -138,14 +138,14 @@ func (e *Emitter) internStringLiteral(value string) int {
 }
 
 // GetStringLiterals returns a copy of the current string literal pool.
-func (e *Emitter) GetStringLiterals() []string {
+func (e *emitter) GetStringLiterals() []string {
 	out := make([]string, len(e.stringLiterals))
 	copy(out, e.stringLiterals)
 	return out
 }
 
-// JumpConfig holds configuration for jump instruction emission
-type JumpConfig struct {
+// jumpConfig holds configuration for jump instruction emission
+type jumpConfig struct {
 	Opcode Opcode
 	Target int
 	Line   int
@@ -153,7 +153,7 @@ type JumpConfig struct {
 }
 
 // EmitJump emits a jump instruction and returns an offset for potential fixup
-func (e *Emitter) EmitJump(config JumpConfig) int {
+func (e *emitter) EmitJump(config jumpConfig) int {
 	var operand Operand
 
 	// Emit a zero displacement; FixupJumps writes the final target later.
@@ -176,12 +176,12 @@ func (e *Emitter) EmitJump(config JumpConfig) int {
 
 // EmitLabel emits a label (no-op) at the current position
 // This is used as a target for jumps
-func (e *Emitter) EmitLabel(_, line, pos int) int {
+func (e *emitter) EmitLabel(_, line, pos int) int {
 	return e.EmitOpcode(OpNop, line, pos)
 }
 
 // FixupJumps resolves all jump targets that were previously emitted
-func (e *Emitter) FixupJumps() error {
+func (e *emitter) FixupJumps() error {
 	for jumpOffset, targetOffset := range e.fixups {
 		if err := e.validateJumpInstruction(jumpOffset); err != nil {
 			return err
@@ -201,7 +201,7 @@ func (e *Emitter) FixupJumps() error {
 }
 
 // findInstructionIndexByOffset finds the instruction slice index from its byte offset
-func (e *Emitter) findInstructionIndexByOffset(offset int) (int, error) {
+func (e *emitter) findInstructionIndexByOffset(offset int) (int, error) {
 	currentOffset := 0
 	for i := range e.instructions {
 		if currentOffset == offset {
@@ -216,7 +216,7 @@ func (e *Emitter) findInstructionIndexByOffset(offset int) (int, error) {
 }
 
 // validateJumpInstruction validates that a jump instruction exists at the given offset
-func (e *Emitter) validateJumpInstruction(jumpOffset int) error {
+func (e *emitter) validateJumpInstruction(jumpOffset int) error {
 	jumpIndex, err := e.findInstructionIndexByOffset(jumpOffset)
 	if err != nil {
 		return err
@@ -232,14 +232,14 @@ func (e *Emitter) validateJumpInstruction(jumpOffset int) error {
 // calculateRelativeOffset calculates the relative offset for a jump instruction
 // Both jumpOffset and targetOffset are byte offsets within the bytecode stream.
 // The relative offset is measured from the end of the jump instruction (after its operand).
-func (e *Emitter) calculateRelativeOffset(jumpOffset, targetOffset int, inst *Instruction) int32 {
+func (e *emitter) calculateRelativeOffset(jumpOffset, targetOffset int, inst *Instruction) int32 {
 	currentInstEnd := jumpOffset + inst.Size()
 	offset := targetOffset - currentInstEnd
 	return e.clampToInt32(offset)
 }
 
 // clampToInt32 clamps an integer to 32-bit signed range
-func (e *Emitter) clampToInt32(value int) int32 {
+func (e *emitter) clampToInt32(value int) int32 {
 	if value > 0x7FFFFFFF {
 		return 0x7FFFFFFF
 	}
@@ -250,7 +250,7 @@ func (e *Emitter) clampToInt32(value int) int32 {
 }
 
 // updateJumpOperand updates the operand of a jump instruction with the relative offset
-func (e *Emitter) updateJumpOperand(inst *Instruction, relativeOffset int32) error {
+func (e *emitter) updateJumpOperand(inst *Instruction, relativeOffset int32) error {
 	switch inst.Operand.Type {
 	case OperandRelative16:
 		if relativeOffset > math.MaxInt16 || relativeOffset < math.MinInt16 {
@@ -266,17 +266,17 @@ func (e *Emitter) updateJumpOperand(inst *Instruction, relativeOffset int32) err
 }
 
 // convertToUint64 safely converts int32 to uint64
-func (e *Emitter) convertToUint64(value int32) uint64 {
+func (e *emitter) convertToUint64(value int32) uint64 {
 	return uint64(value)
 }
 
 // GetInstructions returns an owned snapshot of all emitted instructions.
-func (e *Emitter) GetInstructions() []Instruction {
+func (e *emitter) GetInstructions() []Instruction {
 	return slices.Clone(e.instructions)
 }
 
 // GetBytecode returns the final bytecode as bytes
-func (e *Emitter) GetBytecode() ([]byte, error) {
+func (e *emitter) GetBytecode() ([]byte, error) {
 	// First, fix up any jump targets
 	if err := e.FixupJumps(); err != nil {
 		return nil, fmt.Errorf("fixing up jumps: %w", err)
@@ -293,28 +293,28 @@ func (e *Emitter) GetBytecode() ([]byte, error) {
 }
 
 // GetSize returns the total size of the generated bytecode in bytes
-func (e *Emitter) GetSize() int {
+func (e *emitter) GetSize() int {
 	return e.currentOffset
 }
 
 // GetInstructionCount returns the number of instructions emitted
-func (e *Emitter) GetInstructionCount() int {
+func (e *emitter) GetInstructionCount() int {
 	return len(e.instructions)
 }
 
 // GetCurrentIP returns the current instruction pointer (index of next instruction)
-func (e *Emitter) GetCurrentIP() int {
+func (e *emitter) GetCurrentIP() int {
 	return len(e.instructions)
 }
 
 // GetLineNumber returns the source line number for a given bytecode offset
-func (e *Emitter) GetLineNumber(offset int) (int, bool) {
+func (e *emitter) GetLineNumber(offset int) (int, bool) {
 	line, exists := e.lineNumbers[offset]
 	return line, exists
 }
 
 // Reset clears all emitted instructions and resets the emitter state
-func (e *Emitter) Reset() {
+func (e *emitter) Reset() {
 	e.instructions = e.instructions[:0]
 	clear(e.fixups)
 	e.currentOffset = 0
@@ -325,7 +325,7 @@ func (e *Emitter) Reset() {
 
 // EmitArithmetic emits arithmetic operation instructions
 // Returns -1 and does not emit if opcode is not arithmetic
-func (e *Emitter) EmitArithmetic(op Opcode, line, pos int) int {
+func (e *emitter) EmitArithmetic(op Opcode, line, pos int) int {
 	if !isArithmeticOp(op) {
 		return -1
 	}
@@ -334,7 +334,7 @@ func (e *Emitter) EmitArithmetic(op Opcode, line, pos int) int {
 
 // EmitComparison emits comparison operation instructions
 // Returns -1 and does not emit if opcode is not a comparison
-func (e *Emitter) EmitComparison(op Opcode, line, pos int) int {
+func (e *emitter) EmitComparison(op Opcode, line, pos int) int {
 	if !isComparisonOp(op) {
 		return -1
 	}
@@ -343,7 +343,7 @@ func (e *Emitter) EmitComparison(op Opcode, line, pos int) int {
 
 // EmitLogical emits logical operation instructions
 // Returns -1 and does not emit if opcode is not logical
-func (e *Emitter) EmitLogical(op Opcode, line, pos int) int {
+func (e *emitter) EmitLogical(op Opcode, line, pos int) int {
 	if !isLogicalOp(op) {
 		return -1
 	}
@@ -351,7 +351,7 @@ func (e *Emitter) EmitLogical(op Opcode, line, pos int) int {
 }
 
 // EmitDataTypeFunction emits data type conversion function instructions
-func (e *Emitter) EmitDataTypeFunction(op Opcode, line, pos int) (int, error) {
+func (e *emitter) EmitDataTypeFunction(op Opcode, line, pos int) (int, error) {
 	if !isDataTypeFunction(op) {
 		return -1, fmt.Errorf("opcode %s is not a data type function", op.String())
 	}
@@ -385,7 +385,7 @@ func isDataTypeFunction(op Opcode) bool {
 }
 
 // EmitStringOperation emits string operation instructions
-func (e *Emitter) EmitStringOperation(op Opcode, line, pos int) (int, error) {
+func (e *emitter) EmitStringOperation(op Opcode, line, pos int) (int, error) {
 	if !isStringOperation(op) {
 		return -1, fmt.Errorf("opcode %s is not a string operation", op.String())
 	}
@@ -399,19 +399,19 @@ func isStringOperation(op Opcode) bool {
 }
 
 // EmitHalt emits a halt instruction to terminate execution
-func (e *Emitter) EmitHalt(line, pos int) int {
+func (e *emitter) EmitHalt(line, pos int) int {
 	return e.EmitOpcode(OpHalt, line, pos)
 }
 
 // EmitNop emits a no-operation instruction
-func (e *Emitter) EmitNop(line, pos int) int {
+func (e *emitter) EmitNop(line, pos int) int {
 	return e.EmitOpcode(OpNop, line, pos)
 }
 
 // Debug printing functions
 
 // PrintInstructions prints all instructions with their offsets
-func (e *Emitter) PrintInstructions() {
+func (e *emitter) PrintInstructions() {
 	fmt.Println("Bytecode Instructions:")
 	fmt.Printf("%-4s %-8s %-12s %-s\n", "Addr", "Opcode", "Operand", "Disassembly")
 	fmt.Println("─────────────────────────────────────────")
@@ -436,7 +436,7 @@ func (e *Emitter) PrintInstructions() {
 }
 
 // PrintBytecode prints the raw bytecode in hex format
-func (e *Emitter) PrintBytecode() error {
+func (e *emitter) PrintBytecode() error {
 	bytecode, err := e.GetBytecode()
 	if err != nil {
 		return err
@@ -470,7 +470,7 @@ func (e *Emitter) PrintBytecode() error {
 }
 
 // GetStats returns statistics about the generated bytecode
-func (e *Emitter) GetStats() map[string]any {
+func (e *emitter) GetStats() map[string]any {
 	stats := make(map[string]any)
 
 	stats["instruction_count"] = len(e.instructions)
@@ -496,7 +496,7 @@ func (e *Emitter) GetStats() map[string]any {
 // GetLength returns the current bytecode length.
 //
 // Deprecated: Use GetSize.
-func (e *Emitter) GetLength() int {
+func (e *emitter) GetLength() int {
 	return e.GetSize()
 }
 
@@ -504,12 +504,12 @@ func (e *Emitter) GetLength() int {
 //
 // Deprecated: Use UpdateOperandByIndex, or FindInstructionIndexByOffset when
 // starting from a bytecode offset.
-func (e *Emitter) UpdateOperand(index int, operand Operand) error {
+func (e *emitter) UpdateOperand(index int, operand Operand) error {
 	return e.UpdateOperandByIndex(index, operand)
 }
 
 // UpdateOperandByIndex updates the operand of an instruction at the given array index
-func (e *Emitter) UpdateOperandByIndex(index int, operand Operand) error {
+func (e *emitter) UpdateOperandByIndex(index int, operand Operand) error {
 	if index < 0 || index >= len(e.instructions) {
 		return fmt.Errorf("instruction index %d out of range", index)
 	}
@@ -518,7 +518,7 @@ func (e *Emitter) UpdateOperandByIndex(index int, operand Operand) error {
 }
 
 // FindInstructionIndexByOffset finds the instruction slice index from its byte offset.
-func (e *Emitter) FindInstructionIndexByOffset(offset int) (int, error) {
+func (e *emitter) FindInstructionIndexByOffset(offset int) (int, error) {
 	currentOffset := 0
 	for i := range e.instructions {
 		if currentOffset == offset {
@@ -534,7 +534,7 @@ func (e *Emitter) FindInstructionIndexByOffset(offset int) (int, error) {
 
 // GetInstruction returns an owned snapshot of the instruction at the given
 // slice index. Use UpdateOperandByIndex to mutate emitted instructions.
-func (e *Emitter) GetInstruction(index int) *Instruction {
+func (e *emitter) GetInstruction(index int) *Instruction {
 	if index < 0 || index >= len(e.instructions) {
 		panic(fmt.Sprintf("instruction index %d out of range [0, %d)", index, len(e.instructions)))
 	}
@@ -543,6 +543,6 @@ func (e *Emitter) GetInstruction(index int) *Instruction {
 }
 
 // SetFixup explicitly adds a jump resolution request for a jump offset to a target offset
-func (e *Emitter) SetFixup(jumpOffset int, targetOffset int) {
+func (e *emitter) SetFixup(jumpOffset int, targetOffset int) {
 	e.fixups[jumpOffset] = targetOffset
 }

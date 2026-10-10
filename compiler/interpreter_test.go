@@ -231,7 +231,7 @@ func TestInterpreterLengthOf(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			emitter := NewEmitter()
+			emitter := newEmitter()
 			emitter.EmitPush(0, 1, 1) // setIndex = 0
 			emitter.EmitOpcode(OpLengthOf, 1, 1)
 			emitter.EmitOpcode(OpHalt, 1, 1)
@@ -1202,7 +1202,7 @@ func TestInterpreterRegexFoundOps_FOUND_IN(t *testing.T) {
 // setupRegexInterpreter creates an interpreter with regex matches for testing
 func setupRegexInterpreter(t *testing.T) *Interpreter {
 	// Compile a simple regex via the internal compiler path
-	sc := NewStringCompiler()
+	sc := newStringCompiler()
 	code, err := sc.compileRegex(`/ab+/`, nil)
 	if err != nil {
 		t.Fatalf("compileRegex error: %v", err)
@@ -1269,7 +1269,7 @@ func TestInterpreterCountInRange(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			emitter := NewEmitter()
+			emitter := newEmitter()
 			emitter.EmitPush(uint64(tt.count), 1, 1)
 			emitter.EmitPush(uint64(tt.min), 1, 1)
 			emitter.EmitPush(uint64(tt.max), 1, 1)
@@ -1317,7 +1317,7 @@ func TestInterpreterOfPercent(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			emitter := NewEmitter()
+			emitter := newEmitter()
 
 			// Push the percentage (bottom of stack)
 			emitter.EmitPush(uint64(tt.percent), 1, 1)
@@ -1392,7 +1392,7 @@ func TestInterpreterOfFoundIn(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Stack layout: [count, stringSetIndex, min, max]
-			emitter := NewEmitter()
+			emitter := newEmitter()
 			emitter.EmitPush(uint64(tt.count), 1, 1)
 			emitter.EmitPush(0, 1, 1) // string set index 0
 			emitter.EmitPush(uint64(tt.min), 1, 1)
@@ -1455,7 +1455,7 @@ func TestInterpreterOfFoundAt(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Stack layout: [count, stringSetIndex, offset]
-			emitter := NewEmitter()
+			emitter := newEmitter()
 			emitter.EmitPush(uint64(tt.count), 1, 1)
 			emitter.EmitPush(0, 1, 1) // string set index 0
 			emitter.EmitPush(uint64(tt.offset), 1, 1)
@@ -1518,7 +1518,7 @@ func TestInterpreterCountInOf(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			emitter := NewEmitter()
+			emitter := newEmitter()
 			emitter.EmitPush(0, 1, 1) // setIndex = 0
 			emitter.EmitPush(uint64(tt.min), 1, 1)
 			emitter.EmitPush(uint64(tt.max), 1, 1)

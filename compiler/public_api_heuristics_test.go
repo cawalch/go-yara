@@ -47,7 +47,7 @@ rule larger {
 }
 
 func TestPublicComplexityHeuristics(t *testing.T) {
-	cc := NewConditionCompiler(NewEmitter(), nil)
+	cc := newConditionCompiler(newEmitter(), nil)
 
 	literal := &ast.Literal{Type: token.TRUE, Value: true}
 	identifier := &ast.Identifier{Name: "external"}
@@ -65,7 +65,7 @@ func TestPublicComplexityHeuristics(t *testing.T) {
 }
 
 func TestPublicPatternQualityHeuristic(t *testing.T) {
-	sc := NewStringCompiler()
+	sc := newStringCompiler()
 
 	empty := sc.EstimatePatternComplexity(nil, nil)
 	repeated := sc.EstimatePatternComplexity([]byte("aaaa"), nil)

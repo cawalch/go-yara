@@ -59,7 +59,7 @@ func assertCompiledRule(t *testing.T, compiledRule *CompiledRule, expectedName s
 }
 
 // compileAndAssertRule compiles a rule and validates the result
-func compileAndAssertRule(t *testing.T, rc *RuleCompiler, rule *ast.Rule) *CompiledRule {
+func compileAndAssertRule(t *testing.T, rc *ruleCompiler, rule *ast.Rule) *CompiledRule {
 	compiledRule, err := rc.CompileRule(rule)
 	if err != nil {
 		t.Errorf("Failed to compile rule %s: %v", rule.Name, err)
@@ -72,7 +72,7 @@ func compileAndAssertRule(t *testing.T, rc *RuleCompiler, rule *ast.Rule) *Compi
 
 // runRuleCompilerTests runs multiple rule compilation test cases
 func runRuleCompilerTests(t *testing.T, tests []ruleCompilerTestCase) {
-	rc := NewRuleCompiler()
+	rc := newRuleCompiler()
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -83,7 +83,7 @@ func runRuleCompilerTests(t *testing.T, tests []ruleCompilerTestCase) {
 
 // TestRuleCompiler tests the rule compilation system
 func TestRuleCompiler(t *testing.T) {
-	rc := NewRuleCompiler()
+	rc := newRuleCompiler()
 
 	// Create a simple test rule
 	rule := createTestRule("test_rule", "$s1", "test string")

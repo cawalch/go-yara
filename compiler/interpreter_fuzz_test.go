@@ -26,10 +26,10 @@ type fuzzSeedTest interface {
 
 func buildInterpreterFuzzBytecode(
 	tb fuzzSeedTest,
-	emit func(*Emitter),
+	emit func(*emitter),
 ) []byte {
 	tb.Helper()
-	emitter := NewEmitter()
+	emitter := newEmitter()
 	emit(emitter)
 	emitter.EmitHalt(1, 1)
 	bytecode, err := emitter.GetBytecode()
@@ -44,55 +44,55 @@ func interpreterBytecodeSeeds(tb fuzzSeedTest) []interpreterFuzzSeed {
 	return []interpreterFuzzSeed{
 		{
 			name: "nop",
-			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *Emitter) {
+			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *emitter) {
 				emitter.EmitNop(1, 1)
 			}),
 		},
 		{
 			name: "undefined",
-			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *Emitter) {
+			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *emitter) {
 				emitter.EmitOpcode(OpPushU, 1, 1)
 			}),
 			wantStack: []Value{{Type: ValueTypeUndefined}},
 		},
 		{
 			name: "push_8",
-			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *Emitter) {
+			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *emitter) {
 				emitter.EmitPush(1, 1, 1)
 			}),
 			wantStack: []Value{{Type: ValueTypeInt, IntVal: 1}},
 		},
 		{
 			name: "push_16",
-			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *Emitter) {
+			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *emitter) {
 				emitter.EmitPush(256, 1, 1)
 			}),
 			wantStack: []Value{{Type: ValueTypeInt, IntVal: 256}},
 		},
 		{
 			name: "push_32",
-			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *Emitter) {
+			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *emitter) {
 				emitter.EmitPush(65536, 1, 1)
 			}),
 			wantStack: []Value{{Type: ValueTypeInt, IntVal: 65536}},
 		},
 		{
 			name: "push_64",
-			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *Emitter) {
+			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *emitter) {
 				emitter.EmitPush(1<<32, 1, 1)
 			}),
 			wantStack: []Value{{Type: ValueTypeInt, IntVal: 1 << 32}},
 		},
 		{
 			name: "push_double",
-			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *Emitter) {
+			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *emitter) {
 				emitter.EmitPushDouble(1.5, 1, 1)
 			}),
 			wantStack: []Value{{Type: ValueTypeDouble, DoubleVal: 1.5}},
 		},
 		{
 			name: "defined",
-			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *Emitter) {
+			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *emitter) {
 				emitter.EmitOpcode(OpPushU, 1, 1)
 				emitter.EmitOpcode(OpDefined, 1, 1)
 			}),
@@ -106,7 +106,7 @@ func interpreterStackSeeds(tb fuzzSeedTest) []interpreterFuzzSeed {
 	return []interpreterFuzzSeed{
 		{
 			name: "logical_and",
-			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *Emitter) {
+			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *emitter) {
 				emitter.EmitPush(1, 1, 1)
 				emitter.EmitPush(1, 1, 1)
 				emitter.EmitOpcode(OpAnd, 1, 1)
@@ -115,7 +115,7 @@ func interpreterStackSeeds(tb fuzzSeedTest) []interpreterFuzzSeed {
 		},
 		{
 			name: "logical_or",
-			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *Emitter) {
+			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *emitter) {
 				emitter.EmitPush(1, 1, 1)
 				emitter.EmitPush(0, 1, 1)
 				emitter.EmitOpcode(OpOr, 1, 1)
@@ -124,7 +124,7 @@ func interpreterStackSeeds(tb fuzzSeedTest) []interpreterFuzzSeed {
 		},
 		{
 			name: "logical_not",
-			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *Emitter) {
+			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *emitter) {
 				emitter.EmitPush(1, 1, 1)
 				emitter.EmitOpcode(OpNot, 1, 1)
 			}),
@@ -132,7 +132,7 @@ func interpreterStackSeeds(tb fuzzSeedTest) []interpreterFuzzSeed {
 		},
 		{
 			name: "integer_add",
-			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *Emitter) {
+			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *emitter) {
 				emitter.EmitPush(10, 1, 1)
 				emitter.EmitPush(20, 1, 1)
 				emitter.EmitOpcode(OpIntAdd, 1, 1)
@@ -141,7 +141,7 @@ func interpreterStackSeeds(tb fuzzSeedTest) []interpreterFuzzSeed {
 		},
 		{
 			name: "integer_multiply",
-			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *Emitter) {
+			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *emitter) {
 				emitter.EmitPush(10, 1, 1)
 				emitter.EmitPush(5, 1, 1)
 				emitter.EmitOpcode(OpIntMul, 1, 1)
@@ -150,7 +150,7 @@ func interpreterStackSeeds(tb fuzzSeedTest) []interpreterFuzzSeed {
 		},
 		{
 			name: "shift_left",
-			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *Emitter) {
+			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *emitter) {
 				emitter.EmitPush(2, 1, 1)
 				emitter.EmitPush(3, 1, 1)
 				emitter.EmitOpcode(OpShl, 1, 1)
@@ -159,7 +159,7 @@ func interpreterStackSeeds(tb fuzzSeedTest) []interpreterFuzzSeed {
 		},
 		{
 			name: "many_pushes",
-			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *Emitter) {
+			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *emitter) {
 				for range 100 {
 					emitter.EmitPush(1, 1, 1)
 				}
@@ -171,7 +171,7 @@ func interpreterStackSeeds(tb fuzzSeedTest) []interpreterFuzzSeed {
 
 func interpreterMemorySeeds(tb fuzzSeedTest) []interpreterFuzzSeed {
 	tb.Helper()
-	memoryOperand := func(emitter *Emitter, opcode Opcode, slot uint64) {
+	memoryOperand := func(emitter *emitter, opcode Opcode, slot uint64) {
 		emitter.EmitOpcodeWithOperand(
 			opcode,
 			Operand{Type: OperandImmediate32, Value: slot},
@@ -182,7 +182,7 @@ func interpreterMemorySeeds(tb fuzzSeedTest) []interpreterFuzzSeed {
 	return []interpreterFuzzSeed{
 		{
 			name: "store_and_load",
-			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *Emitter) {
+			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *emitter) {
 				emitter.EmitPush(0x42, 1, 1)
 				memoryOperand(emitter, OpPopM, 0)
 				memoryOperand(emitter, OpPushM, 0)
@@ -191,7 +191,7 @@ func interpreterMemorySeeds(tb fuzzSeedTest) []interpreterFuzzSeed {
 		},
 		{
 			name: "clear_and_load",
-			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *Emitter) {
+			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *emitter) {
 				memoryOperand(emitter, OpClearM, 255)
 				memoryOperand(emitter, OpPushM, 255)
 			}),
@@ -199,7 +199,7 @@ func interpreterMemorySeeds(tb fuzzSeedTest) []interpreterFuzzSeed {
 		},
 		{
 			name: "increment_and_load",
-			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *Emitter) {
+			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *emitter) {
 				memoryOperand(emitter, OpIncrM, 1)
 				memoryOperand(emitter, OpPushM, 1)
 			}),
@@ -207,7 +207,7 @@ func interpreterMemorySeeds(tb fuzzSeedTest) []interpreterFuzzSeed {
 		},
 		{
 			name: "load",
-			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *Emitter) {
+			bytecode: buildInterpreterFuzzBytecode(tb, func(emitter *emitter) {
 				memoryOperand(emitter, OpPushM, 42)
 			}),
 			wantStack: []Value{{Type: ValueTypeInt, IntVal: 42}},
@@ -279,7 +279,7 @@ func TestInterpreterFuzzSeedsExecute(t *testing.T) {
 	}
 
 	t.Run("prefilled_stack", func(t *testing.T) {
-		bytecode := buildInterpreterFuzzBytecode(t, func(emitter *Emitter) {
+		bytecode := buildInterpreterFuzzBytecode(t, func(emitter *emitter) {
 			emitter.EmitOpcode(OpPop, 1, 1)
 		})
 		interpreter := newBytecodeFuzzInterpreter(bytecode)

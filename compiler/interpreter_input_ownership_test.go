@@ -3,7 +3,7 @@ package compiler
 import "testing"
 
 func TestNewInterpreterCopiesBytecode(t *testing.T) {
-	emitter := NewEmitter()
+	emitter := newEmitter()
 	emitter.EmitPush(7, 1, 1)
 	emitter.EmitHalt(1, 1)
 	bytecode, err := emitter.GetBytecode()
@@ -25,7 +25,7 @@ func TestNewInterpreterCopiesBytecode(t *testing.T) {
 }
 
 func TestInterpreterCopiesStringLiteralInput(t *testing.T) {
-	emitter := NewEmitter()
+	emitter := newEmitter()
 	emitter.EmitPushString("owned", 1, 1)
 	emitter.EmitHalt(1, 1)
 	bytecode, err := emitter.GetBytecode()
@@ -49,7 +49,7 @@ func TestInterpreterCopiesStringLiteralInput(t *testing.T) {
 }
 
 func TestInterpreterCopiesNestedStringSetInputs(t *testing.T) {
-	emitter := NewEmitter()
+	emitter := newEmitter()
 	emitter.EmitPush(1, 1, 1)
 	emitter.EmitPush(0, 1, 1)
 	emitter.EmitOpcode(OpOf, 1, 1)
@@ -84,7 +84,7 @@ func TestInterpreterCopiesNestedStringSetInputs(t *testing.T) {
 }
 
 func TestInterpreterCopiesCompiledRuleSlice(t *testing.T) {
-	emitter := NewEmitter()
+	emitter := newEmitter()
 	emitter.EmitOpcodeWithOperand(
 		OpPushRule,
 		Operand{Type: OperandImmediate8, Value: 0},

@@ -12,9 +12,9 @@ import (
 	"github.com/cawalch/go-yara/regex"
 )
 
-// ACState represents a state in the Aho-Corasick automaton
+// acState represents a state in the Aho-Corasick automaton
 // Using struct-of-arrays layout for better cache locality
-type ACState struct {
+type acState struct {
 	// Transition table (256 possible byte values)
 	transitions [256]int32 // -1 means no transition, >=0 is state index
 	// Failure link
@@ -24,16 +24,16 @@ type ACState struct {
 	outputEnd   int32
 }
 
-// ACAutomaton represents the high-performance Aho-Corasick automaton
-type ACAutomaton struct {
+// acAutomaton represents the high-performance Aho-Corasick automaton
+type acAutomaton struct {
 	// States with cache-friendly layout
-	states []ACState
+	states []acState
 
 	// Output storage (flattened)
 	outputs []int32
 
 	// String information
-	strings []ACStringInfo
+	strings []acStringInfo
 
 	// Explicit bytes reachable from the root before failure links are built.
 	// Small sets can use SIMD-optimized byte search to skip root misses.
@@ -45,13 +45,13 @@ type ACAutomaton struct {
 
 	// Exported metadata retained for compatibility with existing callers.
 	StringCount int
-	Strings     []ACStringInfo
+	Strings     []acStringInfo
 }
 
-// NewACAutomaton creates a new Aho-Corasick automaton
-func NewACAutomaton() *ACAutomaton {
+// NewacAutomaton creates a new Aho-Corasick automaton
+func newacAutomaton() *acAutomaton {
 	// Start with root state
-	states := make([]ACState, 1, 256) // Pre-allocate capacity
+	states := make([]acState, 1, 256) // Pre-allocate capacity
 	for i := range states[0].transitions {
 		states[0].transitions[i] = -1 // No transitions initially
 	}
@@ -59,20 +59,20 @@ func NewACAutomaton() *ACAutomaton {
 	states[0].outputStart = 0
 	states[0].outputEnd = 0
 
-	return &ACAutomaton{
+	return &acAutomaton{
 		states:      states,
 		outputs:     make([]int32, 0, 64),
-		strings:     make([]ACStringInfo, 0, 16),
+		strings:     make([]acStringInfo, 0, 16),
 		compiled:    false,
 		StringCount: 0,
-		Strings:     make([]ACStringInfo, 0, 16),
+		Strings:     make([]acStringInfo, 0, 16),
 	}
 }
 
 // AddString adds a string pattern to the automaton
 //
 //nolint:revive // argument-limit: API surface
-func (ac *ACAutomaton) AddString(identifier string, data []byte, isHex, isRegex bool) error {
+func (ac *acAutomaton) AddString(identifier string, data []byte, isHex, isRegex bool) error {
 	config := stringConfig{
 		Identifier: identifier,
 		Data:       data,
@@ -84,7 +84,7 @@ func (ac *ACAutomaton) AddString(identifier string, data []byte, isHex, isRegex 
 }
 
 // addStringToAutomaton implements the core string addition logic
-func (ac *ACAutomaton) addStringToAutomaton(config stringConfig) error {
+func (ac *acAutomaton) addStringToAutomaton(config stringConfig) error {
 	if ac.compiled {
 		return errors.New("cannot add strings to compiled automaton")
 	}
@@ -96,7 +96,7 @@ func (ac *ACAutomaton) addStringToAutomaton(config stringConfig) error {
 	patternCopies := make([]byte, patternLength*2)
 	copy(patternCopies[:patternLength], config.Data)
 	copy(patternCopies[patternLength:], config.Data)
-	stringInfo := ACStringInfo{
+	stringInfo := acStringInfo{
 		Identifier: config.Identifier,
 		Length:     patternLength,
 		IsHex:      config.IsHex,
@@ -145,7 +145,7 @@ func (ac *ACAutomaton) addStringToAutomaton(config stringConfig) error {
 		}
 		if nextState == -1 {
 			// Create new state
-			newState := ACState{
+			newState := acState{
 				transitions: [256]int32{},
 				failure:     -1,
 				outputStart: 0,
@@ -185,7 +185,7 @@ func (ac *ACAutomaton) addStringToAutomaton(config stringConfig) error {
 }
 
 // Compile compiles the optimized automaton
-func (ac *ACAutomaton) Compile() error {
+func (ac *acAutomaton) Compile() error {
 	var compileErr error
 
 	ac.compiledOnce.Do(func() {
@@ -208,7 +208,7 @@ func (ac *ACAutomaton) Compile() error {
 	return compileErr
 }
 
-func (ac *ACAutomaton) collectRootBytes() {
+func (ac *acAutomaton) collectRootBytes() {
 	ac.rootBytes = ac.rootBytes[:0]
 	for byteVal, nextState := range ac.states[0].transitions {
 		if nextState != -1 {
@@ -217,7 +217,7 @@ func (ac *ACAutomaton) collectRootBytes() {
 	}
 }
 
-func (ac *ACAutomaton) failureState(current int32, byteVal byte) int32 {
+func (ac *acAutomaton) failureState(current int32, byteVal byte) int32 {
 	failure := ac.states[current].failure
 	for failure != -1 && ac.states[failure].transitions[byteVal] == -1 {
 		failure = ac.states[failure].failure
@@ -229,7 +229,7 @@ func (ac *ACAutomaton) failureState(current int32, byteVal byte) int32 {
 }
 
 // mergeFailureOutput merges output from the failure state to the current state.
-func (ac *ACAutomaton) mergeFailureOutput(state int32) {
+func (ac *acAutomaton) mergeFailureOutput(state int32) {
 	failState := ac.states[ac.states[state].failure]
 	if failState.outputStart != failState.outputEnd {
 		// Copy both ranges into a new contiguous range. Output ranges for other
@@ -252,7 +252,7 @@ func mustACIndex(value int) int32 {
 }
 
 // buildFailureLinks builds failure links for the optimized automaton
-func (ac *ACAutomaton) buildFailureLinks() error {
+func (ac *acAutomaton) buildFailureLinks() error {
 	if len(ac.states) == 0 {
 		return errors.New("no states in automaton")
 	}
@@ -290,7 +290,7 @@ func (ac *ACAutomaton) buildFailureLinks() error {
 // findNextState returns the next state for b. closeTransitions has already
 // folded every failure-link hop into the goto table, so this is one load with no
 // loop and no branch.
-func (ac *ACAutomaton) findNextState(currentState int32, b byte) int32 {
+func (ac *acAutomaton) findNextState(currentState int32, b byte) int32 {
 	return ac.states[currentState].transitions[b]
 }
 
@@ -302,12 +302,12 @@ func (ac *ACAutomaton) findNextState(currentState int32, b byte) int32 {
 // The scan is the whole cost on large inputs — on a 16KB event it was 99% of
 // Matches(), split between the SearchIter loop and findNextState's failure
 // walk — so paying once at compile time to make the per-byte step a single
-// indexed load is a large win. This costs no extra memory: ACState.transitions
+// indexed load is a large win. This costs no extra memory: acState.transitions
 // is already a dense [256]int32.
 //
 // Must run after buildFailureLinks, and after collectRootBytes, which
 // distinguishes real root edges by their -1 absence.
-func (ac *ACAutomaton) closeTransitions() {
+func (ac *acAutomaton) closeTransitions() {
 	// Breadth-first from the root so a state's failure target, which is always
 	// strictly shallower, is closed before the state itself.
 	//
@@ -431,7 +431,7 @@ func indexByteWithCancel(data []byte, from int, value byte, done <-chan struct{}
 	return -1
 }
 
-func (ac *ACAutomaton) yieldMatches(state int32, offset int, yield func(ACMatch) bool) bool {
+func (ac *acAutomaton) yieldMatches(state int32, offset int, yield func(acMatch) bool) bool {
 	outputStart := ac.states[state].outputStart
 	outputEnd := ac.states[state].outputEnd
 	for idx := outputStart; idx < outputEnd; idx++ {
@@ -440,7 +440,7 @@ func (ac *ACAutomaton) yieldMatches(state int32, offset int, yield func(ACMatch)
 			continue
 		}
 		stringInfo := ac.strings[stringIndex]
-		if !yield(ACMatch{
+		if !yield(acMatch{
 			StringIndex: int(stringIndex),
 			StringID:    stringInfo.Identifier,
 			Backtrack:   offset + 1 - stringInfo.Length,
@@ -505,7 +505,7 @@ func singlePatternIsDense(data []byte, pattern []byte, noCase bool) bool {
 // automaton contains only one concrete pattern. This avoids walking the AC
 // state machine for the common one-rule/one-string case while preserving
 // overlapping matches and nocase semantics.
-func (ac *ACAutomaton) searchSinglePattern(data []byte, yield func(ACMatch) bool) {
+func (ac *acAutomaton) searchSinglePattern(data []byte, yield func(acMatch) bool) {
 	info := ac.strings[0]
 	noCase := info.Flags&regex.FlagsNoCase != 0
 	for pos := 0; pos <= len(data)-len(info.Data); {
@@ -514,7 +514,7 @@ func (ac *ACAutomaton) searchSinglePattern(data []byte, yield func(ACMatch) bool
 			return
 		}
 		start := pos + rel
-		if !yield(ACMatch{
+		if !yield(acMatch{
 			StringIndex: 0,
 			StringID:    info.Identifier,
 			Backtrack:   start,
@@ -525,9 +525,9 @@ func (ac *ACAutomaton) searchSinglePattern(data []byte, yield func(ACMatch) bool
 	}
 }
 
-func (ac *ACAutomaton) searchSinglePatternWithCancel(
+func (ac *acAutomaton) searchSinglePatternWithCancel(
 	data []byte,
-	yield func(ACMatch) bool,
+	yield func(acMatch) bool,
 	done <-chan struct{},
 ) {
 	info := ac.strings[0]
@@ -538,7 +538,7 @@ func (ac *ACAutomaton) searchSinglePatternWithCancel(
 			return
 		}
 		start := pos + rel
-		if !yield(ACMatch{
+		if !yield(acMatch{
 			StringIndex: 0,
 			StringID:    info.Identifier,
 			Backtrack:   start,
@@ -573,8 +573,8 @@ func indexSinglePatternWithCancel(data, pattern []byte, noCase bool, done <-chan
 // polling cost.
 //
 //nolint:nestif // mirrors SearchIter with bounded cancellation checkpoints
-func (ac *ACAutomaton) searchIterWithCancel(data []byte, done <-chan struct{}) iter.Seq[ACMatch] {
-	return func(yield func(ACMatch) bool) {
+func (ac *acAutomaton) searchIterWithCancel(data []byte, done <-chan struct{}) iter.Seq[acMatch] {
+	return func(yield func(acMatch) bool) {
 		if !ac.compiled || len(data) == 0 || scanCanceled(done) {
 			return
 		}
@@ -638,10 +638,10 @@ func (ac *ACAutomaton) searchIterWithCancel(data []byte, done <-chan struct{}) i
 }
 
 //nolint:revive // iterator callback and cancellation signal stay on the hot path
-func (ac *ACAutomaton) yieldMatchesWithCancel(
+func (ac *acAutomaton) yieldMatchesWithCancel(
 	state int32,
 	offset int,
-	yield func(ACMatch) bool,
+	yield func(acMatch) bool,
 	done <-chan struct{},
 ) bool {
 	outputStart := ac.states[state].outputStart
@@ -656,7 +656,7 @@ func (ac *ACAutomaton) yieldMatchesWithCancel(
 			continue
 		}
 		stringInfo := ac.strings[stringIndex]
-		if !yield(ACMatch{
+		if !yield(acMatch{
 			StringIndex: int(stringIndex),
 			StringID:    stringInfo.Identifier,
 			Backtrack:   offset + 1 - stringInfo.Length,
@@ -670,8 +670,8 @@ func (ac *ACAutomaton) yieldMatchesWithCancel(
 // SearchIter performs optimized pattern matching without allocating a slice, yielding matches via an iterator
 //
 //nolint:nestif // the sparse-root and general loops are intentionally separate hot paths
-func (ac *ACAutomaton) SearchIter(data []byte) iter.Seq[ACMatch] {
-	return func(yield func(ACMatch) bool) {
+func (ac *acAutomaton) SearchIter(data []byte) iter.Seq[acMatch] {
+	return func(yield func(acMatch) bool) {
 		if !ac.compiled {
 			return
 		}
@@ -737,7 +737,7 @@ func (ac *ACAutomaton) SearchIter(data []byte) iter.Seq[ACMatch] {
 					continue
 				}
 				stringInfo := ac.strings[stringIndex]
-				if !yield(ACMatch{
+				if !yield(acMatch{
 					StringIndex: int(stringIndex),
 					StringID:    stringInfo.Identifier,
 					Backtrack:   i + 1 - stringInfo.Length,
@@ -752,7 +752,7 @@ func (ac *ACAutomaton) SearchIter(data []byte) iter.Seq[ACMatch] {
 // AddStringWithFlags adds a string and records regex VM flags alongside metadata
 //
 //nolint:revive // argument-limit: API surface
-func (ac *ACAutomaton) AddStringWithFlags(
+func (ac *acAutomaton) AddStringWithFlags(
 	identifier string,
 	data []byte,
 	isHex, isRegex bool,
@@ -769,7 +769,7 @@ func (ac *ACAutomaton) AddStringWithFlags(
 }
 
 // ReserveStrings ensures capacity for at least n string infos to avoid slice growth
-func (ac *ACAutomaton) ReserveStrings(n int) {
+func (ac *acAutomaton) ReserveStrings(n int) {
 	if n > 0 && cap(ac.strings) < n {
 		ac.strings = slices.Grow(ac.strings, n-len(ac.strings))
 	}
@@ -779,19 +779,19 @@ func (ac *ACAutomaton) ReserveStrings(n int) {
 }
 
 // ReserveStates ensures capacity for at least n states to avoid slice growth
-func (ac *ACAutomaton) ReserveStates(n int) {
+func (ac *acAutomaton) ReserveStates(n int) {
 	if n > 0 && cap(ac.states) < n {
 		ac.states = slices.Grow(ac.states, n-len(ac.states))
 	}
 }
 
 // BuildFailureLinks builds the failure links for the automaton
-func (ac *ACAutomaton) BuildFailureLinks() error {
+func (ac *acAutomaton) BuildFailureLinks() error {
 	return ac.buildFailureLinks()
 }
 
 // PrintDebug prints debug information about the automaton
-func (ac *ACAutomaton) PrintDebug() {
+func (ac *acAutomaton) PrintDebug() {
 	fmt.Printf("Aho-Corasick Automaton Debug Information:\n")
 	fmt.Printf("States: %d\n", len(ac.states))
 	fmt.Printf("Strings: %d\n", len(ac.strings))
@@ -812,7 +812,7 @@ func (ac *ACAutomaton) PrintDebug() {
 }
 
 // Validate checks if the automaton is correctly constructed
-func (ac *ACAutomaton) Validate() error {
+func (ac *acAutomaton) Validate() error {
 	if len(ac.states) == 0 {
 		return errors.New("automaton has no states")
 	}
@@ -825,16 +825,16 @@ func (ac *ACAutomaton) Validate() error {
 }
 
 // Clone creates a copy of the automaton
-func (ac *ACAutomaton) Clone() *ACAutomaton {
-	internalStrings := cloneACStringInfos(ac.strings)
-	newAC := &ACAutomaton{
+func (ac *acAutomaton) Clone() *acAutomaton {
+	internalStrings := cloneacStringInfos(ac.strings)
+	newAC := &acAutomaton{
 		states:      slices.Clone(ac.states),
 		outputs:     slices.Clone(ac.outputs),
 		strings:     internalStrings,
 		rootBytes:   slices.Clone(ac.rootBytes),
 		compiled:    ac.compiled,
 		StringCount: len(internalStrings),
-		Strings:     cloneACStringInfos(internalStrings),
+		Strings:     cloneacStringInfos(internalStrings),
 	}
 	if ac.compiled {
 		newAC.compiledOnce.Do(func() {})
@@ -843,7 +843,7 @@ func (ac *ACAutomaton) Clone() *ACAutomaton {
 	return newAC
 }
 
-func cloneACStringInfos(in []ACStringInfo) []ACStringInfo {
+func cloneacStringInfos(in []acStringInfo) []acStringInfo {
 	out := slices.Clone(in)
 	for index := range out {
 		out[index].Data = slices.Clone(out[index].Data)
@@ -851,15 +851,15 @@ func cloneACStringInfos(in []ACStringInfo) []ACStringInfo {
 	return out
 }
 
-// ACMatch represents a pattern match found by the automaton
-type ACMatch struct {
+// acMatch represents a pattern match found by the automaton
+type acMatch struct {
 	StringIndex int    // Index of the matched string
 	StringID    string // Identifier of the matched string
 	Backtrack   int    // Backtrack distance
 }
 
-// ACStringInfo contains information about a registered string pattern
-type ACStringInfo struct {
+// acStringInfo contains information about a registered string pattern
+type acStringInfo struct {
 	Identifier string
 	Length     int
 	IsHex      bool
@@ -877,22 +877,22 @@ type stringConfig struct {
 }
 
 // GetStateCount returns the number of states in the automaton
-func (ac *ACAutomaton) GetStateCount() int {
+func (ac *acAutomaton) GetStateCount() int {
 	return len(ac.states)
 }
 
 // GetStringCount returns the number of strings in the automaton
-func (ac *ACAutomaton) GetStringCount() int {
+func (ac *acAutomaton) GetStringCount() int {
 	return len(ac.strings)
 }
 
 // GetStrings returns an owned snapshot of all string information.
-func (ac *ACAutomaton) GetStrings() []ACStringInfo {
-	return cloneACStringInfos(ac.strings)
+func (ac *acAutomaton) GetStrings() []acStringInfo {
+	return cloneacStringInfos(ac.strings)
 }
 
 // GetPatternData returns owned pattern data keyed by string identifier.
-func (ac *ACAutomaton) GetPatternData() map[string][]byte {
+func (ac *acAutomaton) GetPatternData() map[string][]byte {
 	// Pre-allocate map with known capacity for better performance
 	result := make(map[string][]byte, len(ac.strings))
 	for _, strInfo := range ac.strings {
@@ -903,7 +903,7 @@ func (ac *ACAutomaton) GetPatternData() map[string][]byte {
 
 // EstimateMemoryUsage returns a deterministic heuristic byte estimate for the automaton.
 // It is intended for relative sizing and diagnostics, not exact Go heap accounting.
-func (ac *ACAutomaton) EstimateMemoryUsage() int {
+func (ac *acAutomaton) EstimateMemoryUsage() int {
 	stateMemory := len(ac.states) * (256*4 + 8) // transitions + failure + output indices
 	outputMemory := len(ac.outputs) * 4
 	stringMemory := len(ac.strings) * 64 // Approximate
@@ -912,7 +912,7 @@ func (ac *ACAutomaton) EstimateMemoryUsage() int {
 }
 
 // Reset clears the automaton for reuse
-func (ac *ACAutomaton) Reset() {
+func (ac *acAutomaton) Reset() {
 	// Clear states but keep capacity
 	ac.states = ac.states[:1] // Keep root state
 	for i := range ac.states[0].transitions {

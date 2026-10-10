@@ -14,9 +14,17 @@ type MemoryBlock struct {
 	Data []byte
 }
 
-// BlockScanner incrementally scans non-contiguous blocks, then evaluates rule
-// conditions once all blocks have been supplied. It is not safe for concurrent
-// use.
+// BlockScanner incrementally scans non-contiguous or chunked blocks across an
+// address space or data stream, then evaluates rule conditions once all blocks
+// have been supplied via Finish.
+//
+// Architectural distinction: BlockScanner is designed for segmented or streaming
+// workloads where data arrives in multiple chunks and patterns may cross chunk
+// boundaries (requiring overlapping input windows). For single-block evaluation
+// against a discrete address space region (such as a single memory page), see
+// Scanner.MatchingRulesInBlock instead.
+//
+// BlockScanner is not safe for concurrent use.
 type BlockScanner struct {
 	program     *CompiledProgram
 	scanner     *Scanner

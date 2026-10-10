@@ -61,7 +61,7 @@ type Compiler struct {
 	// Compilation phases
 	parser    *parser.Parser      // YARA source parser
 	analyzer  *semantic.Validator // Semantic analysis and validation
-	generator *RuleCompiler       // Bytecode generation
+	generator *ruleCompiler       // Bytecode generation
 
 	// Configuration
 	options CompilationOptions // Compilation settings and limits
@@ -124,12 +124,18 @@ type CompilationWarning struct {
 	Column  int
 }
 
+// Compiler warning category identifiers.
 const (
-	WarningUnusedString     = "unused-string"
+	// WarningUnusedString indicates a string declared in the strings section is never referenced in the condition.
+	WarningUnusedString = "unused-string"
+	// WarningMissingCondition indicates a rule is missing a condition section.
 	WarningMissingCondition = "missing-condition"
+	// WarningTrivialCondition indicates a rule condition always evaluates to true (e.g. "true").
 	WarningTrivialCondition = "trivial-condition"
+	// WarningDuplicatePattern indicates identical string patterns defined in the same rule.
 	WarningDuplicatePattern = "duplicate-pattern"
-	WarningSlowPattern      = "slow-pattern"
+	// WarningSlowPattern indicates a pattern known to trigger high regex backtracking or poor selectivity.
+	WarningSlowPattern = "slow-pattern"
 )
 
 // IgnoredRule describes a rule omitted from an otherwise successful
@@ -193,7 +199,7 @@ func NewCompiler(opts ...Option) *Compiler {
 
 // NewCompilerWithOptions creates a new YARA compiler with custom options.
 //
-// Deprecated: Use NewCompiler with functional options instead.
+// Deprecated: Use [NewCompiler] with functional [Option] arguments instead.
 //
 // Old way:
 //
@@ -967,7 +973,7 @@ func (c *Compiler) compileCodeGenWithContext(ctx context.Context, program *ast.P
 
 	var compiledRules []*CompiledRule
 	for {
-		generator, moduleErr := NewRuleCompilerWithModules(c.options.Modules)
+		generator, moduleErr := newRuleCompilerWithModules(c.options.Modules)
 		if moduleErr != nil {
 			return nil, fmt.Errorf("configuring modules: %w", moduleErr)
 		}

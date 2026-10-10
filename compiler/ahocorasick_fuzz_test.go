@@ -51,7 +51,7 @@ func FuzzAhoCorasickPatterns(f *testing.F) {
 		}
 
 		// Convert to strings and add to automaton
-		ac := NewACAutomaton()
+		ac := newacAutomaton()
 		patternStrings := make([]string, len(validPatterns))
 		for i, pattern := range validPatterns {
 			patternStrings[i] = string(pattern)
@@ -92,7 +92,7 @@ func FuzzAhoCorasickPatterns(f *testing.F) {
 
 		// Test with single pattern sets
 		for i := range validPatterns {
-			ac2 := NewACAutomaton()
+			ac2 := newacAutomaton()
 			if err := ac2.AddString("p", validPatterns[i], false, false); err != nil {
 				continue
 			}
@@ -161,7 +161,7 @@ func FuzzAhoCorasickBinary(f *testing.F) {
 		}
 
 		// Test with binary patterns
-		ac := NewACAutomaton()
+		ac := newacAutomaton()
 		for i, p := range patterns {
 			if err := ac.AddString(fmt.Sprintf("b%d", i), p, false, false); err != nil {
 				return
@@ -197,7 +197,7 @@ func FuzzAhoCorasickBinary(f *testing.F) {
 
 		// Test with individual patterns
 		for _, pattern := range patterns {
-			ac2 := NewACAutomaton()
+			ac2 := newacAutomaton()
 			if err := ac2.AddString("p", pattern, false, false); err != nil {
 				continue
 			}

@@ -168,7 +168,7 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 		if s.hookMask&hookBitPrefilter != 0 {
 			s.dispatchPrefilter(PrefilterDecision{Stage: PrefilterStageCompactMask, Rejected: true})
 		}
-		scanInput := ruleScanInput{data: data, useSharedAutomaton: false, skipUnmatchedContext: true}
+		scanInput := ruleScanInput{data: data, usesharedAutomaton: false, skipUnmatchedContext: true}
 		clear(s.ruleResults)
 		if err := s.recordAllRulesRejected(ctx, result, scanInput); err != nil {
 			return nil, err
@@ -177,16 +177,16 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 		return result, nil
 	}
 
-	useSharedAutomaton, err := s.preparePatternScan(ctx, data)
+	usesharedAutomaton, err := s.preparePatternScan(ctx, data)
 	if err != nil {
 		return nil, err
 	}
-	scanInput := ruleScanInput{data: data, useSharedAutomaton: useSharedAutomaton, skipUnmatchedContext: s.reportedMatchesOnly}
+	scanInput := ruleScanInput{data: data, usesharedAutomaton: usesharedAutomaton, skipUnmatchedContext: s.reportedMatchesOnly}
 
 	clear(s.ruleResults)
 	allRejected := false
 	if !s.prefilterDisabled {
-		if useSharedAutomaton {
+		if usesharedAutomaton {
 			allRejected = len(s.candidateRuleIndices) == 0
 		} else {
 			allRejected = s.allEvaluatedRulesPrefilterRejected(ctx, data, false)
@@ -195,7 +195,7 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 	//nolint:nestif // cancellation and result materialization share the rejection boundary
 	if allRejected {
 		if s.hookMask&hookBitPrefilter != 0 {
-			s.dispatchPrefilter(PrefilterDecision{Stage: PrefilterStageSharedAutomaton, Rejected: true})
+			s.dispatchPrefilter(PrefilterDecision{Stage: PrefilterStagesharedAutomaton, Rejected: true})
 		}
 		if err := s.recordAllRulesRejected(ctx, result, scanInput); err != nil {
 			return nil, err
@@ -236,7 +236,7 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 				return nil, err
 			}
 		}
-		if useSharedAutomaton && !s.prefilterDisabled && !s.candidateRuleSeen[rule.Index] {
+		if usesharedAutomaton && !s.prefilterDisabled && !s.candidateRuleSeen[rule.Index] {
 			pruned := !s.ruleHeaderConstraintsMatchInput(ctx, rule, scanInput)
 			s.recordSkippedCandidateRule(rule, result, pruned)
 			continue
@@ -365,6 +365,8 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 	return result, nil
 }
 
+// Matches reports whether at least one public rule matches data.
+// It leverages the allocation-free prefilter rejection fast-path for non-matching inputs.
 func (s *Scanner) Matches(data []byte) (bool, error) {
 	return s.MatchesWithContext(context.Background(), data)
 }
@@ -451,22 +453,22 @@ func (s *Scanner) evaluatePublicRules(
 		}
 		return publicRuleEvaluation{}, ctx.Err()
 	}
-	useSharedAutomaton, err := s.preparePatternScan(ctx, data)
+	usesharedAutomaton, err := s.preparePatternScan(ctx, data)
 	if err != nil {
 		return publicRuleEvaluation{}, err
 	}
 	result := publicRuleEvaluation{
-		scanInput:          ruleScanInput{data: data, useSharedAutomaton: useSharedAutomaton, skipUnmatchedContext: true},
+		scanInput:          ruleScanInput{data: data, usesharedAutomaton: usesharedAutomaton, skipUnmatchedContext: true},
 		allGlobalMatched:   true,
 		matchedRuleIndices: matchedRuleIndices,
 	}
 	s.interp.ResetIterationCount()
-	if !s.prefilterDisabled && useSharedAutomaton {
+	if !s.prefilterDisabled && usesharedAutomaton {
 		return s.evaluateSharedPublicRules(ctx, result)
 	}
-	if !s.prefilterDisabled && s.allEvaluatedRulesPrefilterRejected(ctx, data, useSharedAutomaton) {
+	if !s.prefilterDisabled && s.allEvaluatedRulesPrefilterRejected(ctx, data, usesharedAutomaton) {
 		if s.hookMask&hookBitPrefilter != 0 {
-			s.dispatchPrefilter(PrefilterDecision{Stage: PrefilterStageSharedAutomaton, Rejected: true})
+			s.dispatchPrefilter(PrefilterDecision{Stage: PrefilterStagesharedAutomaton, Rejected: true})
 		}
 		if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
 			s.telemetrySink.PrefilterRejects++
@@ -487,7 +489,7 @@ func (s *Scanner) evaluateSharedPublicRules(
 ) (publicRuleEvaluation, error) {
 	if len(s.candidateRuleIndices) == 0 {
 		if s.hookMask&hookBitPrefilter != 0 {
-			s.dispatchPrefilter(PrefilterDecision{Stage: PrefilterStageSharedAutomaton, Rejected: true})
+			s.dispatchPrefilter(PrefilterDecision{Stage: PrefilterStagesharedAutomaton, Rejected: true})
 		}
 		if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
 			s.telemetrySink.PrefilterRejects++

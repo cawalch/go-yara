@@ -42,8 +42,8 @@ func PopulateMatchContext(ctx *MatchContext, rule *CompiledRule, data []byte) {
 		return
 	}
 
-	if rule.Automaton != nil {
-		for match := range rule.Automaton.SearchIter(data) {
+	if rule.automaton != nil {
+		for match := range rule.automaton.SearchIter(data) {
 			acceptAutomatonMatch(ctx, rule, data, match)
 		}
 	}

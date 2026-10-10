@@ -32,8 +32,8 @@ func safeMax(a, b int64) int64 {
 }
 
 // ConditionCompiler compiles YARA condition expressions to bytecode
-type ConditionCompiler struct {
-	emitter           *Emitter
+type conditionCompiler struct {
+	emitter           *emitter
 	stringOffsets     map[string]int
 	variableMap       map[string]int
 	externalVariables map[string]int
@@ -42,7 +42,7 @@ type ConditionCompiler struct {
 	ruleIndexMap      map[string]int
 	labelCounter      int
 	labels            map[string]int
-	pendingJumps      []PendingJump
+	pendingJumps      []pendingJump
 	stringSets        [][]string
 	stringSetIndex    map[string]int
 	anonymousStrings  []string
@@ -95,23 +95,19 @@ func parseSizeLiteral(literal string) (int64, error) {
 	return 0, fmt.Errorf("unsupported size unit: %s", matches[2])
 }
 
-// PendingJump represents a pending jump operation in bytecode generation
-type PendingJump struct {
+// pendingJump represents a pending jump operation in bytecode generation
+type pendingJump struct {
 	Opcode       Opcode
 	Label        string
 	Position     int
 	Line, Column int
 }
 
-// NewConditionCompiler creates a new condition compiler
-func NewConditionCompiler(emitter *Emitter, stringOffsets map[string]int) *ConditionCompiler {
-	return newConditionCompiler(emitter, maps.Clone(stringOffsets))
-}
-
-func newConditionCompiler(emitter *Emitter, stringOffsets map[string]int) *ConditionCompiler {
-	return &ConditionCompiler{
+// newConditionCompiler creates a new condition compiler
+func newConditionCompiler(emitter *emitter, stringOffsets map[string]int) *conditionCompiler {
+	return &conditionCompiler{
 		emitter:           emitter,
-		stringOffsets:     stringOffsets,
+		stringOffsets:     maps.Clone(stringOffsets),
 		variableMap:       make(map[string]int),
 		patternLoopSlots:  make(map[int]bool),
 		externalVariables: make(map[string]int),
@@ -119,34 +115,34 @@ func newConditionCompiler(emitter *Emitter, stringOffsets map[string]int) *Condi
 		ruleIndexMap:      make(map[string]int),
 		moduleFunctions:   make(map[string]compiledModuleFunction),
 		labels:            make(map[string]int),
-		pendingJumps:      make([]PendingJump, 0),
+		pendingJumps:      make([]pendingJump, 0),
 		stringSets:        make([][]string, 0, 8),
 		stringSetIndex:    make(map[string]int),
 	}
 }
 
 // SetRuleIndexMap sets the rule index map for the compiler
-func (cc *ConditionCompiler) SetRuleIndexMap(ruleIndexMap map[string]int) {
+func (cc *conditionCompiler) SetRuleIndexMap(ruleIndexMap map[string]int) {
 	cc.setRuleIndexMap(maps.Clone(ruleIndexMap))
 }
 
-func (cc *ConditionCompiler) setRuleIndexMap(ruleIndexMap map[string]int) {
+func (cc *conditionCompiler) setRuleIndexMap(ruleIndexMap map[string]int) {
 	cc.ruleIndexMap = ruleIndexMap
 }
 
-func (cc *ConditionCompiler) generateLabel() string {
+func (cc *conditionCompiler) generateLabel() string {
 	cc.labelCounter++
 	return fmt.Sprintf("L%d", cc.labelCounter)
 }
 
-func (cc *ConditionCompiler) defineLabel(label string) {
+func (cc *conditionCompiler) defineLabel(label string) {
 	cc.labels[label] = cc.emitter.GetLength()
 }
 
 //nolint:revive // argument-limit: internal helper
-func (cc *ConditionCompiler) emitJumpWithLabel(opcode Opcode, label string, line, column int) {
+func (cc *conditionCompiler) emitJumpWithLabel(opcode Opcode, label string, line, column int) {
 	pos := cc.emitter.GetLength()
-	cc.pendingJumps = append(cc.pendingJumps, PendingJump{
+	cc.pendingJumps = append(cc.pendingJumps, pendingJump{
 		Opcode:   opcode,
 		Label:    label,
 		Position: pos,
@@ -156,7 +152,7 @@ func (cc *ConditionCompiler) emitJumpWithLabel(opcode Opcode, label string, line
 	cc.emitter.EmitOpcodeWithOperand(opcode, Operand{Type: OperandRelative32, Value: 0}, line, column)
 }
 
-func (cc *ConditionCompiler) resolveJumps() error {
+func (cc *conditionCompiler) resolveJumps() error {
 	for _, jump := range cc.pendingJumps {
 		targetOffset, exists := cc.labels[jump.Label]
 		if !exists {
@@ -182,7 +178,7 @@ func (cc *ConditionCompiler) resolveJumps() error {
 	return nil
 }
 
-func (cc *ConditionCompiler) compileExpressions(exprs ...ast.Expression) error {
+func (cc *conditionCompiler) compileExpressions(exprs ...ast.Expression) error {
 	for _, expr := range exprs {
 		if err := cc.compileExpression(expr); err != nil {
 			return err
@@ -191,7 +187,7 @@ func (cc *ConditionCompiler) compileExpressions(exprs ...ast.Expression) error {
 	return nil
 }
 
-func (cc *ConditionCompiler) findStringOffset(name string) (int, bool) {
+func (cc *conditionCompiler) findStringOffset(name string) (int, bool) {
 	if offset, exists := cc.stringOffsets[name]; exists {
 		return offset, true
 	}
@@ -202,7 +198,7 @@ func (cc *ConditionCompiler) findStringOffset(name string) (int, bool) {
 }
 
 //nolint:revive // argument-limit: internal helper
-func (cc *ConditionCompiler) emitStringIdentifier(offset int, identifier string, line, column int) {
+func (cc *conditionCompiler) emitStringIdentifier(offset int, identifier string, line, column int) {
 	_ = offset
 	if len(identifier) > 0 && identifier[0] != '$' {
 		identifier = "$" + identifier
@@ -211,7 +207,7 @@ func (cc *ConditionCompiler) emitStringIdentifier(offset int, identifier string,
 }
 
 // CompileCondition compiles a condition expression to bytecode
-func (cc *ConditionCompiler) CompileCondition(condition *ast.Condition) error {
+func (cc *conditionCompiler) CompileCondition(condition *ast.Condition) error {
 	if err := cc.compileExpression(condition.Expression); err != nil {
 		return err
 	}
@@ -224,7 +220,7 @@ func (cc *ConditionCompiler) CompileCondition(condition *ast.Condition) error {
 	return nil
 }
 
-func (cc *ConditionCompiler) compileMatchesExpression(expr *ast.BinaryOp) error {
+func (cc *conditionCompiler) compileMatchesExpression(expr *ast.BinaryOp) error {
 	op, err := cc.compileMatchesOperand(expr.Left)
 	if err != nil {
 		return err
@@ -236,7 +232,7 @@ func (cc *ConditionCompiler) compileMatchesExpression(expr *ast.BinaryOp) error 
 	return nil
 }
 
-func (cc *ConditionCompiler) compileMatchesOperand(expr ast.Expression) (Opcode, error) {
+func (cc *conditionCompiler) compileMatchesOperand(expr ast.Expression) (Opcode, error) {
 	id, ok := expr.(*ast.Identifier)
 	if !ok {
 		return OpMatchesValue, cc.compileExpression(expr)
@@ -266,7 +262,7 @@ func (cc *ConditionCompiler) compileMatchesOperand(expr ast.Expression) (Opcode,
 }
 
 // compileBinaryOp compiles a binary operation expression
-func (cc *ConditionCompiler) compileExpression(expr ast.Expression) error {
+func (cc *conditionCompiler) compileExpression(expr ast.Expression) error {
 	switch e := expr.(type) {
 	case *ast.Literal:
 		return cc.compileLiteral(e)
@@ -295,7 +291,7 @@ func (cc *ConditionCompiler) compileExpression(expr ast.Expression) error {
 	}
 }
 
-func (cc *ConditionCompiler) compileLiteral(lit *ast.Literal) error {
+func (cc *conditionCompiler) compileLiteral(lit *ast.Literal) error {
 	switch lit.Type {
 	case token.IntegerLit, token.HexIntegerLit, token.OctalIntegerLit:
 		return cc.compileIntegerLiteral(lit)
@@ -317,7 +313,7 @@ func (cc *ConditionCompiler) compileLiteral(lit *ast.Literal) error {
 }
 
 // compileSimpleLiteral compiles simple literal types (integer, float, string, boolean)
-func (cc *ConditionCompiler) compileSimpleLiteral(lit *ast.Literal) bool {
+func (cc *conditionCompiler) compileSimpleLiteral(lit *ast.Literal) bool {
 	switch lit.Type {
 	case token.FloatLit:
 		cc.compileFloatLiteral(lit)
@@ -341,7 +337,7 @@ func (cc *ConditionCompiler) compileSimpleLiteral(lit *ast.Literal) bool {
 }
 
 // compileIntegerLiteral compiles integer literals
-func (cc *ConditionCompiler) compileIntegerLiteral(lit *ast.Literal) error {
+func (cc *conditionCompiler) compileIntegerLiteral(lit *ast.Literal) error {
 	value, err := globalLiteralInt(lit)
 	if err != nil {
 		return fmt.Errorf("invalid integer literal %v: %w", lit.Value, err)
@@ -366,7 +362,7 @@ func parseIntLiteral(s string) (int64, error) {
 }
 
 // compileFloatLiteral compiles float literals
-func (cc *ConditionCompiler) compileFloatLiteral(lit *ast.Literal) {
+func (cc *conditionCompiler) compileFloatLiteral(lit *ast.Literal) {
 	if value, ok := lit.Value.(float64); ok {
 		cc.emitter.EmitPushDouble(value, lit.Pos.Line, lit.Pos.Column)
 		return
@@ -379,14 +375,14 @@ func (cc *ConditionCompiler) compileFloatLiteral(lit *ast.Literal) {
 }
 
 // compileStringLiteral compiles string literals
-func (cc *ConditionCompiler) compileStringLiteral(lit *ast.Literal) {
+func (cc *conditionCompiler) compileStringLiteral(lit *ast.Literal) {
 	if value, ok := lit.Value.(string); ok {
 		cc.emitter.EmitPushString(value, lit.Pos.Line, lit.Pos.Column)
 	}
 }
 
 // compileRegexLiteral compiles regex literals
-func (cc *ConditionCompiler) compileRegexLiteral(lit *ast.Literal) {
+func (cc *conditionCompiler) compileRegexLiteral(lit *ast.Literal) {
 	if value, ok := lit.Value.(string); ok {
 		// Push the regex literal; OpMatches will handle compilation and matching.
 		cc.emitter.EmitPushString(value, lit.Pos.Line, lit.Pos.Column)
@@ -394,7 +390,7 @@ func (cc *ConditionCompiler) compileRegexLiteral(lit *ast.Literal) {
 }
 
 // compileBooleanLiteral compiles boolean literals
-func (cc *ConditionCompiler) compileBooleanLiteral(lit *ast.Literal) {
+func (cc *conditionCompiler) compileBooleanLiteral(lit *ast.Literal) {
 	if lit.Type == token.TRUE {
 		cc.emitter.EmitPush(1, lit.Pos.Line, lit.Pos.Column)
 	} else {
@@ -402,7 +398,7 @@ func (cc *ConditionCompiler) compileBooleanLiteral(lit *ast.Literal) {
 	}
 }
 
-func (cc *ConditionCompiler) compileSizeLiteral(lit *ast.Literal) error {
+func (cc *conditionCompiler) compileSizeLiteral(lit *ast.Literal) error {
 	if value, ok := lit.Value.(int64); ok {
 		cc.emitter.EmitPush(safeInt64ToUint64(safeMax(0, value)), lit.Pos.Line, lit.Pos.Column)
 		return nil
@@ -419,7 +415,7 @@ func (cc *ConditionCompiler) compileSizeLiteral(lit *ast.Literal) error {
 }
 
 // compileIdentifier compiles an identifier reference
-func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
+func (cc *conditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 	// Inside a for-loop over strings, "$" is the loop placeholder: it must
 	// resolve to the current iteration's string (held in the loop variable's
 	// memory slot) and check whether that specific string matched. This check
@@ -491,7 +487,7 @@ func (cc *ConditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 
 }
 
-func (cc *ConditionCompiler) compileAnonymousIdentifier(line, column int) error {
+func (cc *conditionCompiler) compileAnonymousIdentifier(line, column int) error {
 	// Inside a for-loop over strings, "$" is the loop placeholder: it must
 	// resolve to the current iteration's string identifier (held in the
 	// loop variable's memory slot) and check whether that specific string
@@ -511,7 +507,7 @@ func (cc *ConditionCompiler) compileAnonymousIdentifier(line, column int) error 
 	return nil
 }
 
-func (cc *ConditionCompiler) compileStringOffsetOperator(binOp *ast.BinaryOp) error {
+func (cc *conditionCompiler) compileStringOffsetOperator(binOp *ast.BinaryOp) error {
 	id, ok := binOp.Left.(*ast.Identifier)
 	if !ok {
 		return fmt.Errorf("%s operator requires string identifier as left operand", map[token.Type]string{
@@ -547,7 +543,7 @@ func (cc *ConditionCompiler) compileStringOffsetOperator(binOp *ast.BinaryOp) er
 
 // compileCountInRange compiles "#a in (min..max)" expressions.
 // Stack layout (bottom to top): count, min, max → OpCountIn → result
-func (cc *ConditionCompiler) compileCountInRange(binOp *ast.BinaryOp) error {
+func (cc *conditionCompiler) compileCountInRange(binOp *ast.BinaryOp) error {
 	// Compile the count expression (#a)
 	if err := cc.compileExpression(binOp.Left); err != nil {
 		return fmt.Errorf("compiling count expression: %w", err)
@@ -575,7 +571,7 @@ func (cc *ConditionCompiler) compileCountInRange(binOp *ast.BinaryOp) error {
 
 // compileCommaOperator compiles COMMA operators used in 'of' expressions
 // The COMMA creates a string list/set that can be iterated over by the 'of' operator
-func (cc *ConditionCompiler) compileCommaOperator(binOp *ast.BinaryOp) error {
+func (cc *conditionCompiler) compileCommaOperator(binOp *ast.BinaryOp) error {
 	// Compile the left side of the comma
 	if err := cc.compileExpression(binOp.Left); err != nil {
 		return fmt.Errorf("compiling left operand of comma: %w", err)
@@ -593,7 +589,7 @@ func (cc *ConditionCompiler) compileCommaOperator(binOp *ast.BinaryOp) error {
 	return nil
 }
 
-func (cc *ConditionCompiler) isFloatExpression(expr ast.Expression) bool {
+func (cc *conditionCompiler) isFloatExpression(expr ast.Expression) bool {
 	switch e := expr.(type) {
 	case *ast.Identifier:
 		_, loop := cc.variableMap[e.Name]
@@ -616,7 +612,7 @@ func (cc *ConditionCompiler) isFloatExpression(expr ast.Expression) bool {
 	}
 }
 
-func (cc *ConditionCompiler) isStringExpression(expr ast.Expression) bool {
+func (cc *conditionCompiler) isStringExpression(expr ast.Expression) bool {
 	switch e := expr.(type) {
 	case *ast.Identifier:
 		if slot, loop := cc.variableMap[e.Name]; loop {
@@ -632,7 +628,7 @@ func (cc *ConditionCompiler) isStringExpression(expr ast.Expression) bool {
 	}
 }
 
-func (cc *ConditionCompiler) isStringFunction(name string) bool {
+func (cc *conditionCompiler) isStringFunction(name string) bool {
 	if function, ok := cc.moduleFunctions[name]; ok {
 		return function.function.ReturnType == ModuleString
 	}
@@ -644,7 +640,7 @@ func (cc *ConditionCompiler) isStringFunction(name string) bool {
 	}
 }
 
-func (cc *ConditionCompiler) isComparisonOperator(op token.Type) bool {
+func (cc *conditionCompiler) isComparisonOperator(op token.Type) bool {
 	return slices.Contains([]token.Type{
 		token.EQ, token.NEQ, token.LT, token.LE, token.GT, token.GE,
 		token.LeftShift, token.RightShift, token.MODULO,
@@ -653,7 +649,7 @@ func (cc *ConditionCompiler) isComparisonOperator(op token.Type) bool {
 	}, op)
 }
 
-func (cc *ConditionCompiler) isStringComparisonOperator(op token.Type) bool {
+func (cc *conditionCompiler) isStringComparisonOperator(op token.Type) bool {
 	switch op {
 	case token.EQ, token.NEQ, token.LT, token.LE, token.GT, token.GE:
 		return true
@@ -662,11 +658,11 @@ func (cc *ConditionCompiler) isStringComparisonOperator(op token.Type) bool {
 	}
 }
 
-func (cc *ConditionCompiler) isNonCommutativeOperator(op token.Type) bool {
+func (cc *conditionCompiler) isNonCommutativeOperator(op token.Type) bool {
 	return op == token.MINUS || op == token.DIVIDE
 }
 
-func (cc *ConditionCompiler) compileOperands(binOp *ast.BinaryOp) error {
+func (cc *conditionCompiler) compileOperands(binOp *ast.BinaryOp) error {
 	left, right := binOp.Left, binOp.Right
 	if !cc.isComparisonOperator(binOp.Op) && !cc.isNonCommutativeOperator(binOp.Op) {
 		left, right = right, left
@@ -688,7 +684,7 @@ type opcodeMapping struct {
 	intOp, dblOp Opcode
 }
 
-func (cc *ConditionCompiler) selectOpcode(binOp *ast.BinaryOp, isFloatOp, isStringCompare bool) (Opcode, error) {
+func (cc *conditionCompiler) selectOpcode(binOp *ast.BinaryOp, isFloatOp, isStringCompare bool) (Opcode, error) {
 	if isStringCompare {
 		switch binOp.Op {
 		case token.EQ:
@@ -747,7 +743,7 @@ func (cc *ConditionCompiler) selectOpcode(binOp *ast.BinaryOp, isFloatOp, isStri
 	return mapping.intOp, nil
 }
 
-func (cc *ConditionCompiler) handleSpecialOperators(binOp *ast.BinaryOp) (bool, error) {
+func (cc *conditionCompiler) handleSpecialOperators(binOp *ast.BinaryOp) (bool, error) {
 	switch binOp.Op {
 	case token.AT:
 		return true, cc.compileStringOffsetOperator(binOp)
@@ -771,7 +767,7 @@ func (cc *ConditionCompiler) handleSpecialOperators(binOp *ast.BinaryOp) (bool, 
 	return false, nil
 }
 
-func (cc *ConditionCompiler) compileBinaryOp(binOp *ast.BinaryOp) error {
+func (cc *conditionCompiler) compileBinaryOp(binOp *ast.BinaryOp) error {
 	handled, err := cc.handleSpecialOperators(binOp)
 	if err != nil {
 		return err
@@ -809,7 +805,7 @@ func (cc *ConditionCompiler) compileBinaryOp(binOp *ast.BinaryOp) error {
 	return nil
 }
 
-func (cc *ConditionCompiler) compileUnaryOp(unaryOp *ast.UnaryOp) error {
+func (cc *conditionCompiler) compileUnaryOp(unaryOp *ast.UnaryOp) error {
 	switch unaryOp.Op {
 	case token.HASH:
 		return cc.compileHashOperator(unaryOp)
@@ -828,7 +824,7 @@ func (cc *ConditionCompiler) compileUnaryOp(unaryOp *ast.UnaryOp) error {
 	}
 }
 
-func (cc *ConditionCompiler) compileHashOperator(unaryOp *ast.UnaryOp) error {
+func (cc *conditionCompiler) compileHashOperator(unaryOp *ast.UnaryOp) error {
 	id, ok := unaryOp.Right.(*ast.Identifier)
 	if !ok {
 		return errors.New("COUNT (#) expects a string identifier operand")
@@ -845,7 +841,7 @@ func (cc *ConditionCompiler) compileHashOperator(unaryOp *ast.UnaryOp) error {
 	return nil
 }
 
-func (cc *ConditionCompiler) compileAtOperator(unaryOp *ast.UnaryOp) error {
+func (cc *conditionCompiler) compileAtOperator(unaryOp *ast.UnaryOp) error {
 	id, ok := unaryOp.Right.(*ast.Identifier)
 	if !ok {
 		return errors.New("POSITION (@) expects a string identifier operand")
@@ -863,7 +859,7 @@ func (cc *ConditionCompiler) compileAtOperator(unaryOp *ast.UnaryOp) error {
 	return nil
 }
 
-func (cc *ConditionCompiler) compileStringLengthOperator(unaryOp *ast.UnaryOp) error {
+func (cc *conditionCompiler) compileStringLengthOperator(unaryOp *ast.UnaryOp) error {
 	id, ok := unaryOp.Right.(*ast.Identifier)
 	if !ok {
 		return errors.New("STRING LENGTH (!) expects a string identifier operand")
@@ -881,7 +877,7 @@ func (cc *ConditionCompiler) compileStringLengthOperator(unaryOp *ast.UnaryOp) e
 	return nil
 }
 
-func (cc *ConditionCompiler) compileNotOperator(unaryOp *ast.UnaryOp) error {
+func (cc *conditionCompiler) compileNotOperator(unaryOp *ast.UnaryOp) error {
 	if err := cc.compileExpression(unaryOp.Right); err != nil {
 		return err
 	}
@@ -889,7 +885,7 @@ func (cc *ConditionCompiler) compileNotOperator(unaryOp *ast.UnaryOp) error {
 	return nil
 }
 
-func (cc *ConditionCompiler) compileBitwiseNotOperator(unaryOp *ast.UnaryOp) error {
+func (cc *conditionCompiler) compileBitwiseNotOperator(unaryOp *ast.UnaryOp) error {
 	if err := cc.compileExpression(unaryOp.Right); err != nil {
 		return err
 	}
@@ -899,7 +895,7 @@ func (cc *ConditionCompiler) compileBitwiseNotOperator(unaryOp *ast.UnaryOp) err
 
 // compileLengthOf compiles a "length of" expression.
 // Stack: [setIndex] -> [totalLength]
-func (cc *ConditionCompiler) compileLengthOf(lengthOf *ast.LengthOf) error {
+func (cc *conditionCompiler) compileLengthOf(lengthOf *ast.LengthOf) error {
 	setIndex, pos := cc.resolveLengthOfTarget(lengthOf)
 	if pos.Line == 0 {
 		return fmt.Errorf("unsupported 'length of' target")
@@ -910,7 +906,7 @@ func (cc *ConditionCompiler) compileLengthOf(lengthOf *ast.LengthOf) error {
 }
 
 // resolveLengthOfTarget resolves the target of a "length of" expression to a string set index.
-func (cc *ConditionCompiler) resolveLengthOfTarget(lengthOf *ast.LengthOf) (int, token.Position) {
+func (cc *conditionCompiler) resolveLengthOfTarget(lengthOf *ast.LengthOf) (int, token.Position) {
 	switch target := lengthOf.Target.(type) {
 	case *ast.Identifier:
 		// length of them [*/**] or length of ($a)
@@ -924,7 +920,7 @@ func (cc *ConditionCompiler) resolveLengthOfTarget(lengthOf *ast.LengthOf) (int,
 	}
 }
 
-func (cc *ConditionCompiler) compileMinusOperator(unaryOp *ast.UnaryOp) error {
+func (cc *conditionCompiler) compileMinusOperator(unaryOp *ast.UnaryOp) error {
 	if lit, ok := unaryOp.Right.(*ast.Literal); ok && lit.Type == token.IntegerLit {
 		if text, ok := lit.Value.(string); ok && text == "9223372036854775808" {
 			cc.emitter.EmitPush(uint64(1)<<63, lit.Pos.Line, lit.Pos.Column)
@@ -943,7 +939,7 @@ func (cc *ConditionCompiler) compileMinusOperator(unaryOp *ast.UnaryOp) error {
 	return nil
 }
 
-func (cc *ConditionCompiler) compileDefinedOperator(unaryOp *ast.UnaryOp) error {
+func (cc *conditionCompiler) compileDefinedOperator(unaryOp *ast.UnaryOp) error {
 	if err := cc.compileExpression(unaryOp.Right); err != nil {
 		return err
 	}
@@ -952,7 +948,7 @@ func (cc *ConditionCompiler) compileDefinedOperator(unaryOp *ast.UnaryOp) error 
 }
 
 // compileStringLength compiles string length expressions (!a or !a[i])
-func (cc *ConditionCompiler) compileStringLength(strLen *ast.StringLength) error {
+func (cc *conditionCompiler) compileStringLength(strLen *ast.StringLength) error {
 	id, ok := strLen.String.(*ast.Identifier)
 	if !ok {
 		return errors.New("STRING LENGTH (!) expects a string identifier operand")
@@ -988,7 +984,7 @@ func (cc *ConditionCompiler) compileStringLength(strLen *ast.StringLength) error
 }
 
 // compileStringOffset compiles string offset expressions (@a or @a[i])
-func (cc *ConditionCompiler) compileStringOffset(strOffset *ast.StringOffset) error {
+func (cc *conditionCompiler) compileStringOffset(strOffset *ast.StringOffset) error {
 	id, ok := strOffset.String.(*ast.Identifier)
 	if !ok {
 		return errors.New("STRING OFFSET (@) expects a string identifier operand")
@@ -1023,7 +1019,7 @@ func (cc *ConditionCompiler) compileStringOffset(strOffset *ast.StringOffset) er
 }
 
 // compileStringCount compiles string count expressions (#a)
-func (cc *ConditionCompiler) compileStringCount(strCount *ast.StringCount) error {
+func (cc *conditionCompiler) compileStringCount(strCount *ast.StringCount) error {
 	id, ok := strCount.String.(*ast.Identifier)
 	if !ok {
 		return errors.New("STRING COUNT (#) expects a string identifier operand")
@@ -1048,18 +1044,18 @@ func (cc *ConditionCompiler) compileStringCount(strCount *ast.StringCount) error
 }
 
 // AddVariable adds a variable to the compiler's variable map
-func (cc *ConditionCompiler) AddVariable(name string, index int) {
+func (cc *conditionCompiler) AddVariable(name string, index int) {
 	cc.variableMap[name] = index
 }
 
 // GetVariableIndex retrieves the index of a variable
-func (cc *ConditionCompiler) GetVariableIndex(name string) (int, bool) {
+func (cc *conditionCompiler) GetVariableIndex(name string) (int, bool) {
 	index, exists := cc.variableMap[name]
 	return index, exists
 }
 
 // CompileBooleanExpression compiles a boolean expression to bytecode
-func (cc *ConditionCompiler) CompileBooleanExpression(expr ast.Expression, shortCircuit bool) error {
+func (cc *conditionCompiler) CompileBooleanExpression(expr ast.Expression, shortCircuit bool) error {
 	if !shortCircuit {
 		return cc.compileExpression(expr)
 	}
@@ -1076,7 +1072,7 @@ func (cc *ConditionCompiler) CompileBooleanExpression(expr ast.Expression, short
 	return cc.compileExpression(expr)
 }
 
-func (cc *ConditionCompiler) compileShortCircuitBinary(binOp *ast.BinaryOp, jumpOpcode, resultOpcode Opcode) error {
+func (cc *conditionCompiler) compileShortCircuitBinary(binOp *ast.BinaryOp, jumpOpcode, resultOpcode Opcode) error {
 	if err := cc.compileExpression(binOp.Left); err != nil {
 		return err
 	}
@@ -1094,49 +1090,49 @@ func (cc *ConditionCompiler) compileShortCircuitBinary(binOp *ast.BinaryOp, jump
 }
 
 // GetVariableMap returns an owned snapshot of the compiler's variable map.
-func (cc *ConditionCompiler) GetVariableMap() map[string]int {
+func (cc *conditionCompiler) GetVariableMap() map[string]int {
 	return maps.Clone(cc.variableMap)
 }
 
 // GetExternalVariables returns an owned snapshot of the external variable map.
-func (cc *ConditionCompiler) GetExternalVariables() map[string]int {
+func (cc *conditionCompiler) GetExternalVariables() map[string]int {
 	return maps.Clone(cc.externalVariables)
 }
 
 // SetExternalVariables sets the memory slots for declared external variables.
-func (cc *ConditionCompiler) SetExternalVariables(externalVariables map[string]int) {
+func (cc *conditionCompiler) SetExternalVariables(externalVariables map[string]int) {
 	cc.setExternalVariables(maps.Clone(externalVariables))
 }
 
-func (cc *ConditionCompiler) setExternalVariables(externalVariables map[string]int) {
+func (cc *conditionCompiler) setExternalVariables(externalVariables map[string]int) {
 	cc.externalVariables = externalVariables
 }
 
 // SetGlobalVariables sets the memory slots for declared global variables.
-func (cc *ConditionCompiler) SetGlobalVariables(globalVariables map[string]int) {
+func (cc *conditionCompiler) SetGlobalVariables(globalVariables map[string]int) {
 	cc.setGlobalVariables(maps.Clone(globalVariables))
 }
 
-func (cc *ConditionCompiler) setGlobalVariables(globalVariables map[string]int) {
+func (cc *conditionCompiler) setGlobalVariables(globalVariables map[string]int) {
 	cc.globalVariables = globalVariables
 }
 
 // GetGlobalVariables returns an owned snapshot of the global variable map.
-func (cc *ConditionCompiler) GetGlobalVariables() map[string]int {
+func (cc *conditionCompiler) GetGlobalVariables() map[string]int {
 	return maps.Clone(cc.globalVariables)
 }
 
 // SetStringOffsets sets the string offsets for the compiler
-func (cc *ConditionCompiler) SetStringOffsets(offsets map[string]int) {
+func (cc *conditionCompiler) SetStringOffsets(offsets map[string]int) {
 	cc.setStringOffsets(maps.Clone(offsets))
 }
 
-func (cc *ConditionCompiler) setStringOffsets(offsets map[string]int) {
+func (cc *conditionCompiler) setStringOffsets(offsets map[string]int) {
 	cc.stringOffsets = offsets
 }
 
 // SetAnonymousStrings sets the anonymous string identifiers for the current rule.
-func (cc *ConditionCompiler) SetAnonymousStrings(ids []string) {
+func (cc *conditionCompiler) SetAnonymousStrings(ids []string) {
 	cc.anonymousStrings = nil
 	if len(ids) == 0 {
 		return
@@ -1146,7 +1142,7 @@ func (cc *ConditionCompiler) SetAnonymousStrings(ids []string) {
 }
 
 // GetStringSets returns the compiled string sets for this condition.
-func (cc *ConditionCompiler) GetStringSets() [][]string {
+func (cc *conditionCompiler) GetStringSets() [][]string {
 	sets := make([][]string, len(cc.stringSets))
 	for i, set := range cc.stringSets {
 		copied := make([]string, len(set))
@@ -1157,7 +1153,7 @@ func (cc *ConditionCompiler) GetStringSets() [][]string {
 }
 
 // ResetForRule clears per-rule state while preserving program-level maps.
-func (cc *ConditionCompiler) ResetForRule() {
+func (cc *conditionCompiler) ResetForRule() {
 	cc.labelCounter = 0
 	cc.labels = make(map[string]int)
 	cc.pendingJumps = cc.pendingJumps[:0]
@@ -1166,16 +1162,17 @@ func (cc *ConditionCompiler) ResetForRule() {
 	cc.globalVariables = make(map[string]int)
 }
 
-func (cc *ConditionCompiler) SetModuleFunctions(functions map[string]compiledModuleFunction) {
+// SetModuleFunctions configures the available module functions for condition compilation.
+func (cc *conditionCompiler) SetModuleFunctions(functions map[string]compiledModuleFunction) {
 	cc.setModuleFunctions(maps.Clone(functions))
 }
 
-func (cc *ConditionCompiler) setModuleFunctions(functions map[string]compiledModuleFunction) {
+func (cc *conditionCompiler) setModuleFunctions(functions map[string]compiledModuleFunction) {
 	cc.moduleFunctions = functions
 }
 
 // GetStats returns compilation statistics
-func (cc *ConditionCompiler) GetStats() map[string]any {
+func (cc *conditionCompiler) GetStats() map[string]any {
 	return map[string]any{
 		"variables":     len(cc.variableMap),
 		"label_counter": cc.labelCounter,
@@ -1183,15 +1180,15 @@ func (cc *ConditionCompiler) GetStats() map[string]any {
 }
 
 // ValidateExpression validates an expression
-func (cc *ConditionCompiler) ValidateExpression(expr ast.Expression) error {
+func (cc *conditionCompiler) ValidateExpression(expr ast.Expression) error {
 	savedEmitter := cc.emitter
-	cc.emitter = NewEmitter()
+	cc.emitter = newEmitter()
 	defer func() { cc.emitter = savedEmitter }()
 	return cc.compileExpression(expr)
 }
 
 // OptimizeExpression optimizes an expression
-func (cc *ConditionCompiler) OptimizeExpression(expr ast.Expression) ast.Expression {
+func (cc *conditionCompiler) OptimizeExpression(expr ast.Expression) ast.Expression {
 	return expr
 }
 
@@ -1200,7 +1197,7 @@ func (cc *ConditionCompiler) OptimizeExpression(expr ast.Expression) ast.Express
 // 2, and unary or binary operators add 1 plus their operands. Unsupported node
 // types return 0. The score is a heuristic for relative diagnostics, not a
 // runtime cost model.
-func (cc *ConditionCompiler) EstimateComplexity(expr ast.Expression) int {
+func (cc *conditionCompiler) EstimateComplexity(expr ast.Expression) int {
 	switch e := expr.(type) {
 	case *ast.Literal:
 		return 1
@@ -1215,34 +1212,34 @@ func (cc *ConditionCompiler) EstimateComplexity(expr ast.Expression) int {
 	}
 }
 
-// JumpPosition represents a position for a jump operation
-type JumpPosition struct {
+// jumpPosition represents a position for a jump operation
+type jumpPosition struct {
 	Line   int
 	Column int
 }
 
-// ConditionalJumpConfig represents configuration for conditional jumps
-type ConditionalJumpConfig struct {
+// conditionaljumpConfig represents configuration for conditional jumps
+type conditionaljumpConfig struct {
 	Opcode      Opcode
 	TargetLabel string
-	Position    JumpPosition
+	Position    jumpPosition
 }
 
 // EmitJump emits a jump operation
-func (cc *ConditionCompiler) EmitJump(config ConditionalJumpConfig) error {
+func (cc *conditionCompiler) EmitJump(config conditionaljumpConfig) error {
 	cc.emitJumpWithLabel(config.Opcode, config.TargetLabel, config.Position.Line, config.Position.Column)
 	return nil
 }
 
-func (cc *ConditionCompiler) compileShortCircuitAnd(andOp *ast.BinaryOp) error {
+func (cc *conditionCompiler) compileShortCircuitAnd(andOp *ast.BinaryOp) error {
 	return cc.compileShortCircuitBinary(andOp, OpJfalse, OpAnd)
 }
 
-func (cc *ConditionCompiler) compileShortCircuitOr(orOp *ast.BinaryOp) error {
+func (cc *conditionCompiler) compileShortCircuitOr(orOp *ast.BinaryOp) error {
 	return cc.compileShortCircuitBinary(orOp, OpJtrue, OpOr)
 }
 
-func (cc *ConditionCompiler) allocateVariables(vars []string) ([]int, error) {
+func (cc *conditionCompiler) allocateVariables(vars []string) ([]int, error) {
 	if cc.variableMap == nil {
 		cc.variableMap = make(map[string]int)
 	}
@@ -1269,7 +1266,7 @@ func (cc *ConditionCompiler) allocateVariables(vars []string) ([]int, error) {
 	return slots, nil
 }
 
-func (cc *ConditionCompiler) compileForLoop(forLoop *ast.ForLoop) error {
+func (cc *conditionCompiler) compileForLoop(forLoop *ast.ForLoop) error {
 	outerVariables, outerSlot := cc.variableMap, cc.nextVariableSlot
 	cc.variableMap = maps.Clone(outerVariables)
 	defer func() { cc.variableMap, cc.nextVariableSlot = outerVariables, outerSlot }()
@@ -1319,7 +1316,7 @@ func (cc *ConditionCompiler) compileForLoop(forLoop *ast.ForLoop) error {
 }
 
 // compileForLoopOverTextStrings compiles: for any s in ("text1", "text2") : (...)
-func (cc *ConditionCompiler) compileForLoopOverTextStrings(forLoop *ast.ForLoop, tuple *ast.StringTuple) error {
+func (cc *conditionCompiler) compileForLoopOverTextStrings(forLoop *ast.ForLoop, tuple *ast.StringTuple) error {
 	// Extract string literals from the tuple
 	var literals []string
 	for _, elem := range tuple.Elements {
@@ -1353,13 +1350,13 @@ func (cc *ConditionCompiler) compileForLoopOverTextStrings(forLoop *ast.ForLoop,
 }
 
 // registerTextStringSet registers a text string set and returns its index.
-func (cc *ConditionCompiler) registerTextStringSet(literals []string) int {
+func (cc *conditionCompiler) registerTextStringSet(literals []string) int {
 	cc.textStringSets = append(cc.textStringSets, literals)
 	return len(cc.textStringSets) - 1
 }
 
 // GetTextStringSets returns the compiled text string sets for this condition.
-func (cc *ConditionCompiler) GetTextStringSets() [][]string {
+func (cc *conditionCompiler) GetTextStringSets() [][]string {
 	sets := make([][]string, len(cc.textStringSets))
 	for i, set := range cc.textStringSets {
 		copied := make([]string, len(set))
@@ -1369,7 +1366,7 @@ func (cc *ConditionCompiler) GetTextStringSets() [][]string {
 	return sets
 }
 
-func (cc *ConditionCompiler) compileForLoopOverStrings(forLoop *ast.ForLoop) error {
+func (cc *conditionCompiler) compileForLoopOverStrings(forLoop *ast.ForLoop) error {
 	var ids []string
 	if expr, ok := forLoop.Range.(*ast.Identifier); ok {
 		if expr.Name == "them" {
@@ -1439,10 +1436,10 @@ func (cc *ConditionCompiler) compileForLoopOverStrings(forLoop *ast.ForLoop) err
 // loops), in which case "$" in the body is invalid.
 //
 //nolint:revive // argument-limit: internal helper
-func (cc *ConditionCompiler) compileForLoopBody(quantifier string, condition ast.Expression, pos token.Position, loopVarSlot int) error {
+func (cc *conditionCompiler) compileForLoopBody(quantifier string, condition ast.Expression, pos token.Position, loopVarSlot int) error {
 	// 1. Check if iterator is empty using OpIterPushTotal + OpJzP
 	cc.emitter.EmitOpcode(OpIterPushTotal, pos.Line, pos.Column)
-	jumpToEnd := cc.emitter.EmitJump(JumpConfig{Opcode: OpJzP, Line: pos.Line, Pos: pos.Column})
+	jumpToEnd := cc.emitter.EmitJump(jumpConfig{Opcode: OpJzP, Line: pos.Line, Pos: pos.Column})
 
 	// 2. First iteration: push target and call OpIterNext to initialize
 	setupIndex := cc.emitter.GetInstructionCount()
@@ -1518,7 +1515,7 @@ func parseNumericQuantifier(quantifier string) (int64, bool) {
 	return val, true
 }
 
-func (cc *ConditionCompiler) compileOfExpression(ofExpr *ast.OfExpression) error {
+func (cc *conditionCompiler) compileOfExpression(ofExpr *ast.OfExpression) error {
 	var opcode Opcode
 
 	// Special case: "#a in (min..max) of ($a*)" — count-in-range with string set.
@@ -1571,7 +1568,7 @@ func isPercentOpcode(op Opcode) bool {
 }
 
 //nolint:revive // argument-limit: internal helper
-func (cc *ConditionCompiler) compileInRangeConstraint(
+func (cc *conditionCompiler) compileInRangeConstraint(
 	expr ast.Expression,
 	pos token.Position,
 	baseOpcode Opcode,
@@ -1594,7 +1591,7 @@ func (cc *ConditionCompiler) compileInRangeConstraint(
 }
 
 //nolint:revive // argument-limit: internal helper
-func (cc *ConditionCompiler) compileAtOffsetConstraint(
+func (cc *conditionCompiler) compileAtOffsetConstraint(
 	expr ast.Expression,
 	pos token.Position,
 	baseOpcode Opcode,
@@ -1609,7 +1606,7 @@ func (cc *ConditionCompiler) compileAtOffsetConstraint(
 	return OpOfFoundAt
 }
 
-func (cc *ConditionCompiler) compileCountExpression(countExpr ast.Expression) error {
+func (cc *conditionCompiler) compileCountExpression(countExpr ast.Expression) error {
 	if ident, ok := countExpr.(*ast.Identifier); ok {
 		switch ident.Name {
 		case QuantifierAny:
@@ -1626,7 +1623,7 @@ func (cc *ConditionCompiler) compileCountExpression(countExpr ast.Expression) er
 	return cc.compileExpression(countExpr)
 }
 
-func (cc *ConditionCompiler) compileStringsExpression(stringsExpr ast.Expression) error {
+func (cc *conditionCompiler) compileStringsExpression(stringsExpr ast.Expression) error {
 	if ident, ok := stringsExpr.(*ast.Identifier); ok {
 		switch {
 		case ident.Name == "them":
@@ -1661,7 +1658,7 @@ func (cc *ConditionCompiler) compileStringsExpression(stringsExpr ast.Expression
 
 // resolveStringSetIndex resolves a string set expression to its interned index and position.
 // It does NOT emit any bytecode — just returns the index for the caller to use.
-func (cc *ConditionCompiler) resolveStringSetIndex(stringsExpr ast.Expression) (int, token.Position) {
+func (cc *conditionCompiler) resolveStringSetIndex(stringsExpr ast.Expression) (int, token.Position) {
 	if ident, ok := stringsExpr.(*ast.Identifier); ok {
 		switch ident.Name {
 		case "them", "all":
@@ -1688,7 +1685,7 @@ func (cc *ConditionCompiler) resolveStringSetIndex(stringsExpr ast.Expression) (
 	return 0, token.Position{}
 }
 
-func (cc *ConditionCompiler) isStringSetIdentifier(name string) bool {
+func (cc *conditionCompiler) isStringSetIdentifier(name string) bool {
 	if name == "$" {
 		return true
 	}
@@ -1703,7 +1700,7 @@ func (cc *ConditionCompiler) isStringSetIdentifier(name string) bool {
 	return exists
 }
 
-func (cc *ConditionCompiler) expandStringSetIdentifier(name string) ([]string, error) {
+func (cc *conditionCompiler) expandStringSetIdentifier(name string) ([]string, error) {
 	if name == "$" {
 		return cc.anonymousStringIdentifiers(), nil
 	}
@@ -1720,7 +1717,7 @@ func (cc *ConditionCompiler) expandStringSetIdentifier(name string) ([]string, e
 	return nil, fmt.Errorf("undefined string identifier: %s", name)
 }
 
-func (cc *ConditionCompiler) matchingStringIdentifiers(prefix string) []string {
+func (cc *conditionCompiler) matchingStringIdentifiers(prefix string) []string {
 	matches := make([]string, 0)
 	for ident := range cc.stringOffsets {
 		if strings.HasPrefix(ident, prefix) {
@@ -1731,7 +1728,7 @@ func (cc *ConditionCompiler) matchingStringIdentifiers(prefix string) []string {
 	return matches
 }
 
-func (cc *ConditionCompiler) allStringIdentifiers() []string {
+func (cc *conditionCompiler) allStringIdentifiers() []string {
 	ids := make([]string, 0, len(cc.stringOffsets))
 	for ident := range cc.stringOffsets {
 		ids = append(ids, ident)
@@ -1740,7 +1737,7 @@ func (cc *ConditionCompiler) allStringIdentifiers() []string {
 	return ids
 }
 
-func (cc *ConditionCompiler) anonymousStringIdentifiers() []string {
+func (cc *conditionCompiler) anonymousStringIdentifiers() []string {
 	if len(cc.anonymousStrings) == 0 {
 		return nil
 	}
@@ -1750,7 +1747,7 @@ func (cc *ConditionCompiler) anonymousStringIdentifiers() []string {
 	return ids
 }
 
-func (cc *ConditionCompiler) collectStringSetFromComma(expr *ast.BinaryOp) ([]string, error) {
+func (cc *conditionCompiler) collectStringSetFromComma(expr *ast.BinaryOp) ([]string, error) {
 	leftIDs, err := cc.collectStringSet(expr.Left)
 	if err != nil {
 		return nil, err
@@ -1763,7 +1760,7 @@ func (cc *ConditionCompiler) collectStringSetFromComma(expr *ast.BinaryOp) ([]st
 	return cc.uniqueSortedStrings(leftIDs), nil
 }
 
-func (cc *ConditionCompiler) collectStringSet(expr ast.Expression) ([]string, error) {
+func (cc *conditionCompiler) collectStringSet(expr ast.Expression) ([]string, error) {
 	switch e := expr.(type) {
 	case *ast.Identifier:
 		return cc.expandStringSetIdentifier(e.Name)
@@ -1775,7 +1772,7 @@ func (cc *ConditionCompiler) collectStringSet(expr ast.Expression) ([]string, er
 	return nil, fmt.Errorf("unsupported string set expression")
 }
 
-func (cc *ConditionCompiler) uniqueSortedStrings(values []string) []string {
+func (cc *conditionCompiler) uniqueSortedStrings(values []string) []string {
 	if len(values) == 0 {
 		return values
 	}
@@ -1791,7 +1788,7 @@ func (cc *ConditionCompiler) uniqueSortedStrings(values []string) []string {
 	return out
 }
 
-func (cc *ConditionCompiler) internStringSet(ids []string) int {
+func (cc *conditionCompiler) internStringSet(ids []string) int {
 	normalized := cc.uniqueSortedStrings(append([]string(nil), ids...))
 	key := strings.Join(normalized, "\x00")
 	if idx, ok := cc.stringSetIndex[key]; ok {
@@ -1803,7 +1800,7 @@ func (cc *ConditionCompiler) internStringSet(ids []string) int {
 	return idx
 }
 
-func (cc *ConditionCompiler) compileFunctionCall(call *ast.FunctionCall) error {
+func (cc *conditionCompiler) compileFunctionCall(call *ast.FunctionCall) error {
 	moduleFunction, isModuleFunction := cc.moduleFunctions[call.Function]
 	if moduleName, dotted := moduleNameFromDottedName(call.Function); dotted && !isModuleFunction {
 		return unsupportedModuleError(moduleName)
@@ -1894,12 +1891,12 @@ func (cc *ConditionCompiler) compileFunctionCall(call *ast.FunctionCall) error {
 	}
 }
 
-func (cc *ConditionCompiler) isRuleReference(name string) bool {
+func (cc *conditionCompiler) isRuleReference(name string) bool {
 	_, exists := cc.ruleIndexMap[name]
 	return exists
 }
 
-func (cc *ConditionCompiler) compileRuleReference(ruleName string, line, column int) error {
+func (cc *conditionCompiler) compileRuleReference(ruleName string, line, column int) error {
 	ruleIndex, exists := cc.ruleIndexMap[ruleName]
 	if !exists {
 		return fmt.Errorf("undefined rule reference: %s", ruleName)
@@ -1914,7 +1911,7 @@ func (cc *ConditionCompiler) compileRuleReference(ruleName string, line, column 
 	return nil
 }
 
-func (*ConditionCompiler) emitModuleFunctionCall(moduleName string, _, _ int) error {
+func (*conditionCompiler) emitModuleFunctionCall(moduleName string, _, _ int) error {
 	return unsupportedModuleError(moduleName)
 }
 

@@ -76,10 +76,10 @@ func NewStreamingProcessor(program *CompiledProgram) *StreamingProcessor {
 	maxPatternLen := 1
 	if program != nil {
 		for _, rule := range program.Rules {
-			if rule == nil || rule.Automaton == nil {
+			if rule == nil || rule.automaton == nil {
 				continue
 			}
-			for _, str := range rule.Automaton.strings {
+			for _, str := range rule.automaton.strings {
 				maxPatternLen = max(maxPatternLen, str.Length)
 			}
 		}
@@ -324,7 +324,7 @@ func (sp *StreamingProcessor) processDataChunks(ctx context.Context, data []byte
 func (cp *streamingChunkProcessor) processChunk(ctx context.Context, window streamingWindow) ([]StreamingMatch, error) {
 	var matches []StreamingMatch
 	for _, rule := range cp.rules {
-		if rule == nil || rule.Automaton == nil {
+		if rule == nil || rule.automaton == nil {
 			continue
 		}
 		ruleMatches, err := cp.processRule(ctx, window, rule)
@@ -338,9 +338,9 @@ func (cp *streamingChunkProcessor) processChunk(ctx context.Context, window stre
 
 func (cp *streamingChunkProcessor) processRule(ctx context.Context, window streamingWindow, rule *CompiledRule) ([]StreamingMatch, error) {
 	var matches []StreamingMatch
-	iterator := rule.Automaton.SearchIter(window.data)
+	iterator := rule.automaton.SearchIter(window.data)
 	if done := ctx.Done(); done != nil {
-		iterator = rule.Automaton.searchIterWithCancel(window.data, done)
+		iterator = rule.automaton.searchIterWithCancel(window.data, done)
 	}
 	for match := range iterator {
 		ruleMatch, ok := cp.createRuleMatch(window, rule, match)
@@ -355,19 +355,19 @@ func (cp *streamingChunkProcessor) processRule(ctx context.Context, window strea
 func (cp *streamingChunkProcessor) createRuleMatch(
 	window streamingWindow,
 	rule *CompiledRule,
-	match ACMatch,
+	match acMatch,
 ) (StreamingMatch, bool) {
-	if rule == nil || rule.Automaton == nil || rule.IsPrivateString(match.StringID) {
+	if rule == nil || rule.automaton == nil || rule.IsPrivateString(match.StringID) {
 		return StreamingMatch{}, false
 	}
 	if rule.StringKinds != nil && rule.StringKinds[match.StringID] != StringKindText {
 		return StreamingMatch{}, false
 	}
-	if match.StringIndex < 0 || match.StringIndex >= len(rule.Automaton.strings) {
+	if match.StringIndex < 0 || match.StringIndex >= len(rule.automaton.strings) {
 		return StreamingMatch{}, false
 	}
 
-	info := rule.Automaton.strings[match.StringIndex]
+	info := rule.automaton.strings[match.StringIndex]
 	position := match.Backtrack
 	if position < 0 || info.Length <= 0 || position+info.Length > len(window.data) {
 		return StreamingMatch{}, false

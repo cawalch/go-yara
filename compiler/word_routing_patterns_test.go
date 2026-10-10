@@ -105,7 +105,7 @@ func TestWordRoutingRegexByteParity(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			flags := (&RuleCompiler{}).deriveRegexFlags(source, nil) | regex.FlagsScan
+			flags := (&ruleCompiler{}).deriveRegexFlags(source, nil) | regex.FlagsScan
 			for b := 0; b < 256; b++ {
 				for phase := 0; phase < 8; phase++ {
 					text := anchor

@@ -17,12 +17,12 @@ import (
 	"github.com/cawalch/go-yara/token"
 )
 
-// RuleCompiler handles compilation of complete YARA rules
-type RuleCompiler struct {
-	emitter           *Emitter
-	stringCompiler    *StringCompiler
-	conditionCompiler *ConditionCompiler
-	automaton         *ACAutomaton
+// ruleCompiler handles compilation of complete YARA rules
+type ruleCompiler struct {
+	emitter           *emitter
+	stringCompiler    *stringCompiler
+	conditionCompiler *conditionCompiler
+	automaton         *acAutomaton
 	currentRule       *ast.Rule
 	ruleIndex         int
 	allPatterns       map[string][]byte
@@ -39,20 +39,20 @@ type RuleCompiler struct {
 	moduleNames       map[builtinFunction]string
 }
 
-// NewRuleCompiler creates a new rule compiler
-func NewRuleCompiler() *RuleCompiler {
-	compiler, err := NewRuleCompilerWithModules(nil)
+// newRuleCompiler creates a new rule compiler
+func newRuleCompiler() *ruleCompiler {
+	compiler, err := newRuleCompilerWithModules(nil)
 	if err != nil {
 		panic(err)
 	}
 	return compiler
 }
 
-// NewRuleCompilerWithModules creates a rule compiler with pluggable module
+// newRuleCompilerWithModules creates a rule compiler with pluggable module
 // functions available to dotted calls.
-func NewRuleCompilerWithModules(modules map[string]Module) (*RuleCompiler, error) {
-	emitter := NewEmitter()
-	automaton := NewACAutomaton()
+func newRuleCompilerWithModules(modules map[string]Module) (*ruleCompiler, error) {
+	emitter := newEmitter()
+	automaton := newacAutomaton()
 	bindings, functions, names, err := compileModuleFunctions(modules)
 	if err != nil {
 		return nil, err
@@ -60,9 +60,9 @@ func NewRuleCompilerWithModules(modules map[string]Module) (*RuleCompiler, error
 	conditionCompiler := newConditionCompiler(emitter, make(map[string]int))
 	conditionCompiler.setModuleFunctions(bindings)
 
-	return &RuleCompiler{
+	return &ruleCompiler{
 		emitter:           emitter,
-		stringCompiler:    NewStringCompiler(),
+		stringCompiler:    newStringCompiler(),
 		conditionCompiler: conditionCompiler,
 		automaton:         automaton,
 		ruleIndex:         0,
@@ -82,7 +82,7 @@ func NewRuleCompilerWithModules(modules map[string]Module) (*RuleCompiler, error
 }
 
 // CompileRule compiles a complete YARA rule to bytecode
-func (rc *RuleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
+func (rc *ruleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 	rc.currentRule = rule
 	if err := validateCaptureAndEvidenceDeclarations(rule); err != nil {
 		return nil, err
@@ -90,7 +90,7 @@ func (rc *RuleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 
 	// Reset components for new rule
 	rc.emitter.Reset()
-	rc.automaton = NewACAutomaton()
+	rc.automaton = newacAutomaton()
 	rc.conditionCompiler.ResetForRule()
 	rc.stringCompiler.Reset()
 	rc.allPatterns = make(map[string][]byte)
@@ -144,7 +144,7 @@ func (rc *RuleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 		Bytecode:            bytecode,
 		StringCount:         len(rule.Strings),
 		Strings:             rc.copyAllPatterns(),
-		Automaton:           rc.automaton,
+		automaton:           rc.automaton,
 		StringSets:          rc.conditionCompiler.GetStringSets(),
 		TextStringSets:      rc.conditionCompiler.GetTextStringSets(),
 		AnonymousStrings:    anonymousStrings,
@@ -224,7 +224,7 @@ func conditionObservesMatchOccurrences(expr ast.Expression) bool {
 }
 
 // hasModifier checks if the rule has a specific modifier
-func (rc *RuleCompiler) hasModifier(modifiers []ast.Modifier, m ast.Modifier) bool {
+func (rc *ruleCompiler) hasModifier(modifiers []ast.Modifier, m ast.Modifier) bool {
 	for _, mod := range modifiers {
 		if mod == m {
 			return true
@@ -234,7 +234,7 @@ func (rc *RuleCompiler) hasModifier(modifiers []ast.Modifier, m ast.Modifier) bo
 }
 
 // compileMeta converts AST metadata entries into a flat map[string]any
-func (rc *RuleCompiler) compileMeta(metas []*ast.Meta) map[string]any {
+func (rc *ruleCompiler) compileMeta(metas []*ast.Meta) map[string]any {
 	result := make(map[string]any, len(metas))
 	for _, m := range metas {
 		switch v := m.Value.(type) {
@@ -250,7 +250,7 @@ func (rc *RuleCompiler) compileMeta(metas []*ast.Meta) map[string]any {
 }
 
 // validateRuleStrings validates all strings in a rule
-func (rc *RuleCompiler) validateRuleStrings(rule *ast.Rule) error {
+func (rc *ruleCompiler) validateRuleStrings(rule *ast.Rule) error {
 	for _, str := range rule.Strings {
 		if err := rc.stringCompiler.ValidateStringModifiers(str.Modifiers); err != nil {
 			return fmt.Errorf("validating string %s: %w", str.Identifier, err)
@@ -259,7 +259,7 @@ func (rc *RuleCompiler) validateRuleStrings(rule *ast.Rule) error {
 	return nil
 }
 
-func (rc *RuleCompiler) assignAnonymousStringIdentifiers(rule *ast.Rule) []string {
+func (rc *ruleCompiler) assignAnonymousStringIdentifiers(rule *ast.Rule) []string {
 	if rule == nil || len(rule.Strings) == 0 {
 		return nil
 	}
@@ -291,7 +291,7 @@ func (rc *RuleCompiler) assignAnonymousStringIdentifiers(rule *ast.Rule) []strin
 }
 
 // calculateTextStringLength calculates the length of a text string with modifiers
-func (rc *RuleCompiler) calculateTextStringLength(text string, modifiers []ast.StringModifier) int {
+func (rc *ruleCompiler) calculateTextStringLength(text string, modifiers []ast.StringModifier) int {
 	l := len(text)
 	// Wide strings double the byte length
 	for _, m := range modifiers {
@@ -304,7 +304,7 @@ func (rc *RuleCompiler) calculateTextStringLength(text string, modifiers []ast.S
 }
 
 // estimatePatternStates estimates the number of states needed for a pattern
-func (rc *RuleCompiler) estimatePatternLength(str *ast.String) int {
+func (rc *ruleCompiler) estimatePatternLength(str *ast.String) int {
 	switch p := str.Pattern.(type) {
 	case *ast.TextString:
 		return rc.calculateTextStringLength(p.Value, str.Modifiers)
@@ -320,7 +320,7 @@ func (rc *RuleCompiler) estimatePatternLength(str *ast.String) int {
 }
 
 // reserveCompilationResources reserves buffers and automaton capacity
-func (rc *RuleCompiler) reserveCompilationResources(rule *ast.Rule) {
+func (rc *ruleCompiler) reserveCompilationResources(rule *ast.Rule) {
 	// Pre-size buffers to reduce allocations
 	rc.emitter.ReserveInstructions(2*len(rule.Strings) + 32)
 	rc.automaton.ReserveStrings(len(rule.Strings))
@@ -334,7 +334,7 @@ func (rc *RuleCompiler) reserveCompilationResources(rule *ast.Rule) {
 }
 
 // compileRuleStrings compiles all strings in a rule and builds the automaton
-func (rc *RuleCompiler) compileStrings(rule *ast.Rule) error {
+func (rc *ruleCompiler) compileStrings(rule *ast.Rule) error {
 	// First pass: validate and prepare strings
 	if err := rc.validateRuleStrings(rule); err != nil {
 		return err
@@ -354,7 +354,7 @@ func (rc *RuleCompiler) compileStrings(rule *ast.Rule) error {
 }
 
 // compileSingleString compiles a single string and adds it to the automaton
-func (rc *RuleCompiler) compileSingleString(str *ast.String) error {
+func (rc *ruleCompiler) compileSingleString(str *ast.String) error {
 	rc.ensurePatternMaps()
 	result, err := rc.compileStringPattern(str)
 	if err != nil {
@@ -473,7 +473,7 @@ type stringCompilationResult struct {
 	captureGroups         []int
 }
 
-func (rc *RuleCompiler) compileStringPattern(str *ast.String) (*stringCompilationResult, error) {
+func (rc *ruleCompiler) compileStringPattern(str *ast.String) (*stringCompilationResult, error) {
 	switch p := str.Pattern.(type) {
 	case *ast.TextString:
 		return rc.compileTextString(p.Value, str.Modifiers)
@@ -486,7 +486,7 @@ func (rc *RuleCompiler) compileStringPattern(str *ast.String) (*stringCompilatio
 	}
 }
 
-func (rc *RuleCompiler) compileTextString(value string, modifiers []ast.StringModifier) (*stringCompilationResult, error) {
+func (rc *ruleCompiler) compileTextString(value string, modifiers []ast.StringModifier) (*stringCompilationResult, error) {
 	if hasPositiveCaptureGroup(modifiers) {
 		return nil, fmt.Errorf("positive capture groups are only supported for regex patterns")
 	}
@@ -537,7 +537,7 @@ func stripWideModifier(modifiers []ast.StringModifier) []ast.StringModifier {
 	return out
 }
 
-func (rc *RuleCompiler) compileHexString(value string, modifiers []ast.StringModifier) (*stringCompilationResult, error) {
+func (rc *ruleCompiler) compileHexString(value string, modifiers []ast.StringModifier) (*stringCompilationResult, error) {
 	if hasPositiveCaptureGroup(modifiers) {
 		return nil, fmt.Errorf("positive capture groups are only supported for regex patterns")
 	}
@@ -563,7 +563,7 @@ func (rc *RuleCompiler) compileHexString(value string, modifiers []ast.StringMod
 	}, nil
 }
 
-func (rc *RuleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers []ast.StringModifier) (*stringCompilationResult, error) {
+func (rc *ruleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers []ast.StringModifier) (*stringCompilationResult, error) {
 	if rc.stringCompiler.hasModifier(modifiers, ast.StringModifierBase64) ||
 		rc.stringCompiler.hasModifier(modifiers, ast.StringModifierBase64Wide) {
 		return nil, fmt.Errorf("base64 modifiers are only supported for text strings")
@@ -616,7 +616,7 @@ func patternCacheKey(kind, value string, modifiers []ast.StringModifier) string 
 	return key.String()
 }
 
-func (rc *RuleCompiler) deriveRegexFlags(patternValue string, modifiers []ast.StringModifier) regex.Flags {
+func (rc *ruleCompiler) deriveRegexFlags(patternValue string, modifiers []ast.StringModifier) regex.Flags {
 	var flags regex.Flags
 
 	// Flags from string modifiers
@@ -635,7 +635,7 @@ func (rc *RuleCompiler) deriveRegexFlags(patternValue string, modifiers []ast.St
 	return flags
 }
 
-func (rc *RuleCompiler) parseInlineRegexFlags(patternValue string) regex.Flags {
+func (rc *ruleCompiler) parseInlineRegexFlags(patternValue string) regex.Flags {
 	var flags regex.Flags
 
 	if len(patternValue) < 2 || patternValue[0] != '/' {
@@ -661,12 +661,12 @@ func (rc *RuleCompiler) parseInlineRegexFlags(patternValue string) regex.Flags {
 	return flags
 }
 
-func (rc *RuleCompiler) recordStringOffset(identifier string) {
+func (rc *ruleCompiler) recordStringOffset(identifier string) {
 	offset := rc.automaton.GetStringCount()
 	rc.stringCompiler.stringOffsets[identifier] = offset
 }
 
-func (rc *RuleCompiler) recordStringModifiers(identifier string, modifiers []ast.StringModifier) {
+func (rc *ruleCompiler) recordStringModifiers(identifier string, modifiers []ast.StringModifier) {
 	if rc.stringModifiers == nil {
 		rc.stringModifiers = make(map[string][]ast.StringModifier)
 	}
@@ -678,7 +678,7 @@ func (rc *RuleCompiler) recordStringModifiers(identifier string, modifiers []ast
 	rc.stringModifiers[identifier] = cp
 }
 
-func (rc *RuleCompiler) recordPatternData(identifier string, data []byte) {
+func (rc *ruleCompiler) recordPatternData(identifier string, data []byte) {
 	if rc.allPatterns == nil {
 		rc.allPatterns = make(map[string][]byte)
 	}
@@ -690,7 +690,7 @@ func (rc *RuleCompiler) recordPatternData(identifier string, data []byte) {
 	rc.allPatterns[identifier] = cp
 }
 
-func (rc *RuleCompiler) ensurePatternMaps() {
+func (rc *ruleCompiler) ensurePatternMaps() {
 	if rc.allPatterns == nil {
 		rc.allPatterns = make(map[string][]byte)
 	}
@@ -712,7 +712,7 @@ func (rc *RuleCompiler) ensurePatternMaps() {
 }
 
 // compileCondition compiles the rule condition
-func (rc *RuleCompiler) compileCondition(rule *ast.Rule) error {
+func (rc *ruleCompiler) compileCondition(rule *ast.Rule) error {
 	// Set up string offsets for condition compiler
 	stringOffsets := rc.stringCompiler.stringOffsets
 	rc.conditionCompiler.setStringOffsets(stringOffsets)
@@ -753,7 +753,7 @@ func (e *RuleCompileError) Unwrap() error {
 }
 
 // CompileProgram compiles a complete YARA program (multiple rules)
-func (rc *RuleCompiler) CompileProgram(program *ast.Program) ([]*CompiledRule, error) {
+func (rc *ruleCompiler) CompileProgram(program *ast.Program) ([]*CompiledRule, error) {
 	compiledRules := make([]*CompiledRule, 0, len(program.Rules))
 	rc.externalNames = rc.externalNames[:0]
 	rc.globalNames = rc.globalNames[:0]
@@ -794,7 +794,7 @@ func (rc *RuleCompiler) CompileProgram(program *ast.Program) ([]*CompiledRule, e
 }
 
 // registerExternalVariable registers an external variable with the condition compiler
-func (rc *RuleCompiler) registerExternalVariable(extVar *ast.ExternalVariable) {
+func (rc *ruleCompiler) registerExternalVariable(extVar *ast.ExternalVariable) {
 	for _, name := range rc.externalNames {
 		if name == extVar.Name {
 			return
@@ -803,7 +803,7 @@ func (rc *RuleCompiler) registerExternalVariable(extVar *ast.ExternalVariable) {
 	rc.externalNames = append(rc.externalNames, extVar.Name)
 }
 
-func (rc *RuleCompiler) allocateExternalSlots(stringOffsets map[string]int) (map[string]int, error) {
+func (rc *ruleCompiler) allocateExternalSlots(stringOffsets map[string]int) (map[string]int, error) {
 	externalSlots := make(map[string]int, len(rc.externalNames))
 	if len(rc.externalNames) == 0 {
 		return externalSlots, nil
@@ -827,7 +827,7 @@ func (rc *RuleCompiler) allocateExternalSlots(stringOffsets map[string]int) (map
 	return externalSlots, nil
 }
 
-func (rc *RuleCompiler) registerGlobalVariable(globalVar *ast.GlobalVariable) error {
+func (rc *ruleCompiler) registerGlobalVariable(globalVar *ast.GlobalVariable) error {
 	for _, name := range rc.globalNames {
 		if name == globalVar.Name {
 			return fmt.Errorf("global variable %q already defined", globalVar.Name)
@@ -842,7 +842,7 @@ func (rc *RuleCompiler) registerGlobalVariable(globalVar *ast.GlobalVariable) er
 	return nil
 }
 
-func (rc *RuleCompiler) allocateGlobalSlots(stringOffsets, externalSlots map[string]int) (map[string]int, error) {
+func (rc *ruleCompiler) allocateGlobalSlots(stringOffsets, externalSlots map[string]int) (map[string]int, error) {
 	globalSlots := make(map[string]int, len(rc.globalNames))
 	if len(rc.globalNames) == 0 {
 		return globalSlots, nil
@@ -878,7 +878,7 @@ func highestMemorySlot(slots map[string]int) int {
 	return highest
 }
 
-func (rc *RuleCompiler) copyGlobalValuesForSlots(globalSlots map[string]int) map[string]compiledGlobalValue {
+func (rc *ruleCompiler) copyGlobalValuesForSlots(globalSlots map[string]int) map[string]compiledGlobalValue {
 	values := make(map[string]compiledGlobalValue, len(globalSlots))
 	for name := range globalSlots {
 		values[name] = rc.globalValues[name]
@@ -979,7 +979,7 @@ func globalLiteralBool(lit *ast.Literal) (bool, error) {
 }
 
 // snapshotCompilationStats returns an owned snapshot of rule compilation stats.
-func (rc *RuleCompiler) snapshotCompilationStats(rule *ast.Rule) map[string]any {
+func (rc *ruleCompiler) snapshotCompilationStats(rule *ast.Rule) map[string]any {
 	stats := make(map[string]any)
 
 	stats["instruction_count"] = rc.emitter.GetInstructionCount()
@@ -1018,7 +1018,7 @@ func cloneStatsValue(value any) any {
 	}
 }
 
-func (rc *RuleCompiler) copyTextPatterns() map[string][]byte {
+func (rc *ruleCompiler) copyTextPatterns() map[string][]byte {
 	out := make(map[string][]byte, len(rc.textPatterns))
 	for k, v := range rc.textPatterns {
 		cp := make([]byte, len(v))
@@ -1028,7 +1028,7 @@ func (rc *RuleCompiler) copyTextPatterns() map[string][]byte {
 	return out
 }
 
-func (rc *RuleCompiler) copyAllPatterns() map[string][]byte {
+func (rc *ruleCompiler) copyAllPatterns() map[string][]byte {
 	out := make(map[string][]byte, len(rc.allPatterns))
 	for k, v := range rc.allPatterns {
 		cp := make([]byte, len(v))
@@ -1038,7 +1038,7 @@ func (rc *RuleCompiler) copyAllPatterns() map[string][]byte {
 	return out
 }
 
-func (rc *RuleCompiler) copyRegexPatterns() map[string]RegexPattern {
+func (rc *ruleCompiler) copyRegexPatterns() map[string]RegexPattern {
 	out := make(map[string]RegexPattern, len(rc.regexPatterns))
 	for k, v := range rc.regexPatterns {
 		cp := make([]byte, len(v.Code))
@@ -1075,7 +1075,7 @@ func (rc *RuleCompiler) copyRegexPatterns() map[string]RegexPattern {
 	return out
 }
 
-func (rc *RuleCompiler) copyHexPatterns() map[string]*HexPattern {
+func (rc *ruleCompiler) copyHexPatterns() map[string]*HexPattern {
 	out := make(map[string]*HexPattern, len(rc.hexPatterns))
 	for k, v := range rc.hexPatterns {
 		if v == nil {
@@ -1086,11 +1086,11 @@ func (rc *RuleCompiler) copyHexPatterns() map[string]*HexPattern {
 	return out
 }
 
-func (rc *RuleCompiler) copyStringKinds() map[string]StringKind {
+func (rc *ruleCompiler) copyStringKinds() map[string]StringKind {
 	return maps.Clone(rc.stringKinds)
 }
 
-func (rc *RuleCompiler) copyStringModifiers() map[string][]ast.StringModifier {
+func (rc *ruleCompiler) copyStringModifiers() map[string][]ast.StringModifier {
 	out := make(map[string][]ast.StringModifier, len(rc.stringModifiers))
 	for k, mods := range rc.stringModifiers {
 		if len(mods) == 0 {
@@ -1115,7 +1115,7 @@ type CompiledRule struct {
 	Bytecode         []byte            // Compiled bytecode
 	StringCount      int               // Number of strings
 	Strings          map[string][]byte // String identifier to pattern data mapping
-	Automaton        *ACAutomaton      // Aho-Corasick automaton for pattern matching
+	automaton        *acAutomaton      // Aho-Corasick automaton for pattern matching
 	StringSets       [][]string        // String sets for "of" expressions
 	TextStringSets   [][]string        // Text string sets for text-string-set iteration
 	AnonymousStrings []string          // Anonymous string identifiers for "$" expressions
@@ -1260,11 +1260,11 @@ func (cr *CompiledRule) GetStats() map[string]any {
 	return cloneStats(cr.Stats)
 }
 
-// GetAutomaton returns the rule's live Aho-Corasick automaton. The returned
+// getAutomaton returns the rule's live Aho-Corasick automaton. The returned
 // pointer is borrowed and compiled rules should be treated as immutable while
 // scanners are using them.
-func (cr *CompiledRule) GetAutomaton() *ACAutomaton {
-	return cr.Automaton
+func (cr *CompiledRule) getAutomaton() *acAutomaton {
+	return cr.automaton
 }
 
 // Validate validates the compiled rule
@@ -1280,12 +1280,12 @@ func (cr *CompiledRule) Validate() error {
 		return errors.New("empty bytecode")
 	}
 
-	if len(cr.TextPatterns) > 0 && cr.Automaton == nil {
+	if len(cr.TextPatterns) > 0 && cr.automaton == nil {
 		return errors.New("strings present but no automaton")
 	}
 
-	if cr.Automaton != nil {
-		if err := cr.Automaton.Validate(); err != nil {
+	if cr.automaton != nil {
+		if err := cr.automaton.Validate(); err != nil {
 			return fmt.Errorf("invalid automaton: %w", err)
 		}
 	}
@@ -1303,8 +1303,8 @@ func (cr *CompiledRule) Validate() error {
 func (cr *CompiledRule) GetMemoryUsage() int {
 	usage := len(cr.Bytecode)
 
-	if cr.Automaton != nil {
-		usage += cr.Automaton.EstimateMemoryUsage()
+	if cr.automaton != nil {
+		usage += cr.automaton.EstimateMemoryUsage()
 	}
 
 	// Add stats map overhead (rough estimate)
@@ -1321,8 +1321,8 @@ func (cr *CompiledRule) PrintDebug() {
 	fmt.Printf("  String Count: %d\n", cr.StringCount)
 	fmt.Printf("  Memory Usage: ~%d bytes\n", cr.GetMemoryUsage())
 
-	if cr.Automaton != nil {
-		fmt.Printf("  Automaton States: %d\n", cr.Automaton.GetStateCount())
+	if cr.automaton != nil {
+		fmt.Printf("  Automaton States: %d\n", cr.automaton.GetStateCount())
 	}
 
 	fmt.Printf("  Instructions: %d\n", cr.Stats["instruction_count"])
@@ -1335,9 +1335,8 @@ func (cr *CompiledRule) PrintDebug() {
 	}
 }
 
-// CompiledProgram represents a complete compiled YARA program
-// SharedAutomatonEntry maps a shared automaton entry to its exact verifier.
-type SharedAutomatonEntry struct {
+// sharedAutomatonEntry maps a shared automaton entry to its exact verifier.
+type sharedAutomatonEntry struct {
 	RuleIndex  int // index into CompiledProgram.Rules
 	StringIdx  int // index into CompiledRule.IndexToStringID
 	Kind       StringKind
@@ -1352,20 +1351,28 @@ type SharedAutomatonEntry struct {
 	CacheIndex      int
 }
 
+// CompiledProgram represents an immutable, thread-safe collection of compiled YARA rules.
+// It encapsulates prefilter lookup tables, bytecode instruction sequences, and shared
+// automata. A CompiledProgram is safe for concurrent access across multiple goroutines.
+//
+// Performance note: Convenience scanning methods directly on CompiledProgram (such as Scan,
+// Matches, and MatchingRules) allocate a temporary Scanner on every call. For high-throughput,
+// batch, or event-loop processing, instantiate a reusable Scanner via NewScanner to eliminate
+// allocation overhead and maximize scanning throughput.
 type CompiledProgram struct {
 	Rules           []*CompiledRule
-	SharedAutomaton *ACAutomaton
+	sharedAutomaton *acAutomaton
 	Stats           map[string]any
 	externalValues  map[string]externalValue
 
 	// Lookup table: shared automaton entry -> exact text/regex/hex verifier.
 	// Built once at compile time, used by extractGlobalMatches for O(1) routing.
-	SharedLookup []SharedAutomatonEntry
+	sharedLookup []sharedAutomatonEntry
 
 	// Number of compile-time integer slots used to cache regex/hex matches.
 	nonTextCacheSize int
 	// sharedNonTextCaches marks cache slots whose mandatory atom cover is fully
-	// represented in SharedAutomaton.
+	// represented in sharedAutomaton.
 	sharedNonTextCaches []bool
 	// sharedNonTextCacheRules routes one verified cache slot to every rule that
 	// references the deduplicated pattern.
@@ -1379,6 +1386,8 @@ type CompiledProgram struct {
 	// Streaming support
 	streamingProcessor *StreamingProcessor
 	enableStreaming    bool
+
+	scannerPool *sync.Pool
 }
 
 // NewCompiledProgram prepares compiled rules for scanning. Preparation errors
@@ -1407,8 +1416,39 @@ func NewCompiledProgram(rules []*CompiledRule) *CompiledProgram {
 
 func newCompiledProgram(rules []*CompiledRule) *CompiledProgram {
 	program := &CompiledProgram{Rules: rules, Stats: make(map[string]any)}
+	program.scannerPool = &sync.Pool{
+		New: func() any {
+			return NewScanner(program)
+		},
+	}
 	program.preparationErr = program.prepare()
 	return program
+}
+
+func (cp *CompiledProgram) acquireScanner() *Scanner {
+	if cp == nil || cp.scannerPool == nil {
+		return NewScanner(cp)
+	}
+	if s, ok := cp.scannerPool.Get().(*Scanner); ok && s != nil {
+		if len(cp.externalValues) > 0 {
+			s.externalValues = maps.Clone(cp.externalValues)
+		} else {
+			s.externalValues = nil
+		}
+		return s
+	}
+	return NewScanner(cp)
+}
+
+func (cp *CompiledProgram) releaseScanner(s *Scanner) {
+	if cp == nil || cp.scannerPool == nil || s == nil {
+		return
+	}
+	if s.matchCtx != nil {
+		s.matchCtx.Data = nil
+	}
+	s.blockContext[0].Data = nil
+	cp.scannerPool.Put(s)
 }
 
 func (cp *CompiledProgram) prepare() error {
@@ -1437,11 +1477,11 @@ func (cp *CompiledProgram) prepare() error {
 	cp.nonTextCacheSize = assignNonTextCacheIndices(cp.Rules)
 	cp.fixedRegexScan = buildFixedRegexDispatch(cp.Rules)
 	var err error
-	cp.SharedAutomaton, cp.SharedLookup, err = buildSharedPatternAutomaton(cp.Rules)
+	cp.sharedAutomaton, cp.sharedLookup, err = buildSharedPatternAutomaton(cp.Rules)
 	if err != nil {
 		return err
 	}
-	cp.sharedNonTextCaches = sharedNonTextCacheCoverage(cp.nonTextCacheSize, cp.SharedLookup)
+	cp.sharedNonTextCaches = sharedNonTextCacheCoverage(cp.nonTextCacheSize, cp.sharedLookup)
 	cp.sharedNonTextCacheRules = sharedNonTextCacheRuleLookup(cp.Rules, cp.sharedNonTextCaches)
 	cp.compactPrefilter = cp.buildCompactPrefilter()
 	cp.booleanRouting = sync.OnceValue(cp.buildBooleanRouting)
@@ -1486,9 +1526,9 @@ func (cp *CompiledProgram) SetExternalVariables(vars map[string]any) error {
 	return nil
 }
 
-// SetSharedAutomaton attaches the global multi-rule search tree to the compiled program
-func (cp *CompiledProgram) SetSharedAutomaton(automaton *ACAutomaton) {
-	cp.SharedAutomaton = automaton
+// SetsharedAutomaton attaches the global multi-rule search tree to the compiled program
+func (cp *CompiledProgram) SetsharedAutomaton(automaton *acAutomaton) {
+	cp.sharedAutomaton = automaton
 }
 
 // GetRuleCount returns the number of compiled rules

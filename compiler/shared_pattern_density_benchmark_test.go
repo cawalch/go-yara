@@ -28,8 +28,8 @@ func buildCommonRootRegexProgram(tb testing.TB, entries int) *CompiledProgram {
 	if err != nil {
 		tb.Fatalf("CompileSource() error = %v", err)
 	}
-	if len(program.SharedLookup) != entries {
-		tb.Fatalf("shared lookup entries = %d, want %d", len(program.SharedLookup), entries)
+	if len(program.sharedLookup) != entries {
+		tb.Fatalf("shared lookup entries = %d, want %d", len(program.sharedLookup), entries)
 	}
 	return program
 }
@@ -37,12 +37,12 @@ func buildCommonRootRegexProgram(tb testing.TB, entries int) *CompiledProgram {
 func forceSharedPatternStrategy(program *CompiledProgram, shared bool) *CompiledProgram {
 	clone := *program
 	if !shared {
-		clone.SharedAutomaton = nil
+		clone.sharedAutomaton = nil
 		return &clone
 	}
 
-	clone.SharedLookup = append([]SharedAutomatonEntry(nil), program.SharedLookup...)
-	clone.SharedLookup[0].forceShared = true
+	clone.sharedLookup = append([]sharedAutomatonEntry(nil), program.sharedLookup...)
+	clone.sharedLookup[0].forceShared = true
 	return &clone
 }
 

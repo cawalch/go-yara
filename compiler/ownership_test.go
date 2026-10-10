@@ -87,10 +87,10 @@ func TestCompilerAccessorsReturnOwnedSnapshots(t *testing.T) {
 func TestCompilationComponentAccessorsReturnOwnedSnapshots(t *testing.T) {
 	t.Run("condition compiler maps", func(t *testing.T) {
 		stringOffsets := map[string]int{"$a": 1}
-		conditionCompiler := NewConditionCompiler(NewEmitter(), stringOffsets)
+		conditionCompiler := newConditionCompiler(newEmitter(), stringOffsets)
 		stringOffsets["$a"] = 99
 		if got, _ := conditionCompiler.findStringOffset("$a"); got != 1 {
-			t.Fatalf("NewConditionCompiler() retained caller map: got %d", got)
+			t.Fatalf("newConditionCompiler() retained caller map: got %d", got)
 		}
 
 		externals := map[string]int{"external": 2}
@@ -121,7 +121,7 @@ func TestCompilationComponentAccessorsReturnOwnedSnapshots(t *testing.T) {
 	})
 
 	t.Run("string compiler offsets", func(t *testing.T) {
-		stringCompiler := NewStringCompiler()
+		stringCompiler := newStringCompiler()
 		stringCompiler.stringOffsets["$a"] = 7
 		offsets := stringCompiler.GetStringOffsets()
 		offsets["$a"] = 70
@@ -131,7 +131,7 @@ func TestCompilationComponentAccessorsReturnOwnedSnapshots(t *testing.T) {
 	})
 
 	t.Run("emitter instructions", func(t *testing.T) {
-		emitter := NewEmitter()
+		emitter := newEmitter()
 		emitter.EmitHalt(1, 1)
 
 		instructions := emitter.GetInstructions()
@@ -174,7 +174,7 @@ rule owned {
 		t.Fatalf("GetStrings() exposed compiled patterns: got %q", got)
 	}
 
-	for _, automaton := range []*ACAutomaton{rule.Automaton, program.SharedAutomaton} {
+	for _, automaton := range []*acAutomaton{rule.automaton, program.sharedAutomaton} {
 		if automaton == nil || len(automaton.Strings) == 0 {
 			continue
 		}

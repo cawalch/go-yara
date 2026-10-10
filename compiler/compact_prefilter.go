@@ -14,7 +14,7 @@ type compactPatternKey struct {
 }
 
 type compactPrefilter struct {
-	automaton *ACAutomaton
+	automaton *acAutomaton
 	accepting []bool
 }
 
@@ -30,7 +30,7 @@ func (cp *CompiledProgram) buildCompactPrefilter() *compactPrefilter {
 	nonText := make([]bool, cp.nonTextCacheSize)
 	hasAnchor := false
 	for i, rule := range cp.Rules {
-		best := len(cp.SharedLookup) + 1
+		best := len(cp.sharedLookup) + 1
 		for _, id := range rule.requiredStrings {
 			data, ok := rule.TextPatterns[id]
 			if ok && len(data) > 0 && frequencies[string(data)] < best {
@@ -56,8 +56,8 @@ func (cp *CompiledProgram) buildCompactPrefilter() *compactPrefilter {
 
 	counts := make(map[compactPatternKey]int)
 	selected := make(map[compactPatternKey]bool)
-	for i, entry := range cp.SharedLookup {
-		info := cp.SharedAutomaton.strings[i]
+	for i, entry := range cp.sharedLookup {
+		info := cp.sharedAutomaton.strings[i]
 		key := compactPatternKey{string(info.Data), info.Flags}
 		counts[key]++
 		anchor := anchors[entry.RuleIndex]
@@ -79,7 +79,7 @@ func (cp *CompiledProgram) buildCompactPrefilter() *compactPrefilter {
 	if !useful || len(selected) == 0 {
 		return nil
 	}
-	ac := cp.SharedAutomaton
+	ac := cp.sharedAutomaton
 	patterns := make([]bool, len(ac.strings))
 	for i, info := range ac.strings {
 		if selected[compactPatternKey{string(info.Data), info.Flags}] {
@@ -106,7 +106,7 @@ func (cp *CompiledProgram) buildCompactPrefilter() *compactPrefilter {
 func (s *Scanner) compactPrefilterRejects(ctx context.Context, data []byte) bool {
 	gate := s.program.compactPrefilter
 	// Large positive records would pay for two full passes.
-	if gate == nil || s.prefilterDisabled || len(data) > 1024 || s.program.SharedAutomaton != gate.automaton {
+	if gate == nil || s.prefilterDisabled || len(data) > 1024 || s.program.sharedAutomaton != gate.automaton {
 		return false
 	}
 	if ctx.Err() != nil {

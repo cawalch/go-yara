@@ -191,7 +191,7 @@ func ExtractFromHexString(hexStr string, _ []ast.StringModifier) []*Atom {
 }
 
 // extractAtomsFromHexBytes extracts atoms from parsed hex bytes
-func extractAtomsFromHexBytes(hexBytes []HexByte) []*Atom {
+func extractAtomsFromHexBytes(hexBytes []atomHexByte) []*Atom {
 	var atoms []*Atom
 	currentSequence := make([]byte, 0)
 	currentOffset := 0
@@ -408,8 +408,8 @@ func parseHexDigit(c byte) (byte, bool) {
 	return 0, false
 }
 
-// HexByte represents a byte in a hex string that can be fixed or wildcard
-type HexByte struct {
+// atomHexByte represents a byte in a hex string that can be fixed or wildcard
+type atomHexByte struct {
 	Value      byte
 	IsWildcard bool
 }
@@ -433,17 +433,17 @@ func cleanHexString(hexStr string) string {
 }
 
 // parseHexBytes parses a cleaned hex string into bytes and wildcards
-func parseHexBytes(hexStr string) ([]HexByte, error) {
+func parseHexBytes(hexStr string) ([]atomHexByte, error) {
 	if len(hexStr)%2 != 0 {
 		return nil, errors.New("invalid hex string length")
 	}
 
-	var hexBytes []HexByte
+	var hexBytes []atomHexByte
 	for i := 0; i < len(hexStr); i += 2 {
 		pair := hexStr[i : i+2]
 
 		if pair == "??" {
-			hexBytes = append(hexBytes, HexByte{IsWildcard: true})
+			hexBytes = append(hexBytes, atomHexByte{IsWildcard: true})
 			continue
 		}
 
@@ -462,11 +462,11 @@ func parseHexBytes(hexStr string) ([]HexByte, error) {
 	return hexBytes, nil
 }
 
-// parseSingleHexByte parses a two-character hex pair into a HexByte.
-func parseSingleHexByte(pair string) (HexByte, error) {
+// parseSingleHexByte parses a two-character hex pair into an atomHexByte.
+func parseSingleHexByte(pair string) (atomHexByte, error) {
 	var b byte
 	if _, err := fmt.Sscanf(pair, "%02x", &b); err != nil {
-		return HexByte{}, fmt.Errorf("invalid hex byte: %s", pair)
+		return atomHexByte{}, fmt.Errorf("invalid hex byte: %s", pair)
 	}
-	return HexByte{Value: b, IsWildcard: false}, nil
+	return atomHexByte{Value: b, IsWildcard: false}, nil
 }

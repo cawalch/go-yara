@@ -77,7 +77,7 @@ func TestCompiledRegexSelectsOnlyPureASCIICasePairRuns(t *testing.T) {
 		pattern          string
 		wantAtom         string
 		wantASCIINoCase  bool
-		wantSharedLookup bool
+		wantsharedLookup bool
 		matchInput       string
 	}{
 		{
@@ -85,7 +85,7 @@ func TestCompiledRegexSelectsOnlyPureASCIICasePairRuns(t *testing.T) {
 			pattern:          `"[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]":`,
 			wantAtom:         "password",
 			wantASCIINoCase:  true,
-			wantSharedLookup: true,
+			wantsharedLookup: true,
 			matchInput:       `"PASSWORD":`,
 		},
 		{
@@ -125,9 +125,9 @@ rule folded {
 			if pattern.atomASCIINoCase != test.wantASCIINoCase {
 				t.Fatalf("atomASCIINoCase = %v, want %v", pattern.atomASCIINoCase, test.wantASCIINoCase)
 			}
-			hasSharedLookup := len(program.SharedLookup) > 0
-			if hasSharedLookup != test.wantSharedLookup {
-				t.Fatalf("shared lookup = %v, want %v", hasSharedLookup, test.wantSharedLookup)
+			hassharedLookup := len(program.sharedLookup) > 0
+			if hassharedLookup != test.wantsharedLookup {
+				t.Fatalf("shared lookup = %v, want %v", hassharedLookup, test.wantsharedLookup)
 			}
 			scanner := NewScanner(program)
 			defer scanner.Close()
@@ -153,8 +153,8 @@ rule folded {
 	if err != nil {
 		t.Fatalf("CompileSource() error = %v", err)
 	}
-	if len(program.SharedLookup) != 4 {
-		t.Fatalf("shared lookup entries = %d, want 4", len(program.SharedLookup))
+	if len(program.sharedLookup) != 4 {
+		t.Fatalf("shared lookup entries = %d, want 4", len(program.sharedLookup))
 	}
 
 	data := []byte(`"PASSWORD":"REDACTED" `)
@@ -315,7 +315,7 @@ rule alternative {
 					len(pattern.alternativeAtoms), test.wantMinimumAtoms)
 			}
 			shared := 0
-			for _, entry := range program.SharedLookup {
+			for _, entry := range program.sharedLookup {
 				if entry.Kind == StringKindRegex {
 					shared++
 				}
@@ -348,7 +348,7 @@ rule alternatives {
 	}
 	completeIndex := program.Rules[0].ResolveStringIndex("$complete")
 	shared := 0
-	for _, entry := range program.SharedLookup {
+	for _, entry := range program.sharedLookup {
 		if entry.Kind == StringKindRegex && entry.StringIdx == completeIndex {
 			shared++
 		}
@@ -373,8 +373,8 @@ rule shared_alternatives {
 	if err != nil {
 		t.Fatalf("CompileSource() error = %v", err)
 	}
-	if len(program.SharedLookup) < 12 {
-		t.Fatalf("shared lookup entries = %d, want the complete alternative covers", len(program.SharedLookup))
+	if len(program.sharedLookup) < 12 {
+		t.Fatalf("shared lookup entries = %d, want the complete alternative covers", len(program.sharedLookup))
 	}
 
 	data := []byte("angle3 alpha1 amber2 ANGLE6 ALPHA4 AMBER5 ")
@@ -936,7 +936,7 @@ func TestSharedMandatoryRegexAtomsMatchLinearScan(t *testing.T) {
 		t.Fatal(err)
 	}
 	regexEntries := 0
-	for _, entry := range program.SharedLookup {
+	for _, entry := range program.sharedLookup {
 		if entry.Kind == StringKindRegex {
 			regexEntries++
 		}
@@ -986,7 +986,7 @@ func TestSharedUnboundedRegexAtomsMatchLinearScan(t *testing.T) {
 	}
 	rule := program.Rules[0]
 	regexEntries := 0
-	for _, entry := range program.SharedLookup {
+	for _, entry := range program.sharedLookup {
 		if entry.Kind != StringKindRegex {
 			continue
 		}
@@ -1048,7 +1048,7 @@ func TestSingleUnboundedRegexStaysOnLocalPrefilter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, entry := range program.SharedLookup {
+	for _, entry := range program.sharedLookup {
 		if entry.Kind == StringKindRegex {
 			t.Fatal("single unbounded regex unexpectedly used the shared prefilter")
 		}
@@ -1063,7 +1063,7 @@ func TestSmallBroadRootSetStaysOnLocalPrefilter(t *testing.T) {
 		{data: []byte("delta")},
 		{data: []byte("echo")},
 	}
-	if shouldAddSharedNonTextPrefilters(NewACAutomaton(), specs) {
+	if shouldAddSharedNonTextPrefilters(newacAutomaton(), specs) {
 		t.Fatal("small broad-root set unexpectedly selected the shared prefilter")
 	}
 }
@@ -1083,8 +1083,8 @@ func TestMixedRegexPrefilterUsesDensityGate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(program.SharedLookup) != 4 {
-		t.Fatalf("shared lookup entries = %d, want 4", len(program.SharedLookup))
+	if len(program.sharedLookup) != 4 {
+		t.Fatalf("shared lookup entries = %d, want 4", len(program.sharedLookup))
 	}
 	if shouldUseSharedPatternAutomaton(bytes.Repeat([]byte("benignFillerCode123 "), 4096), program) {
 		t.Fatal("candidate-dense mixed regex set selected the shared automaton")
@@ -1124,8 +1124,8 @@ func TestSharedPatternDensityGateAccountsForEntriesPerRoot(t *testing.T) {
 	for _, entries := range []int{4, 12, 31} {
 		t.Run(fmt.Sprintf("entries=%d", entries), func(t *testing.T) {
 			program := buildCommonRootRegexProgram(t, entries)
-			if len(program.SharedAutomaton.rootBytes) != 1 {
-				t.Fatalf("shared root bytes = %q, want one common root", program.SharedAutomaton.rootBytes)
+			if len(program.sharedAutomaton.rootBytes) != 1 {
+				t.Fatalf("shared root bytes = %q, want one common root", program.sharedAutomaton.rootBytes)
 			}
 			if !shouldUseSharedPatternAutomaton(data, program) {
 				t.Fatal("common-root regex set did not select the shared automaton")
@@ -1281,7 +1281,7 @@ func TestSharedNonTextPrefilterMatchesLocalEngines(t *testing.T) {
 		t.Fatal(err)
 	}
 	var regexEntries, hexEntries int
-	for _, entry := range program.SharedLookup {
+	for _, entry := range program.sharedLookup {
 		switch entry.Kind {
 		case StringKindRegex:
 			regexEntries++

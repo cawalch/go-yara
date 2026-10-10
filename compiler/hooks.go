@@ -65,9 +65,13 @@ func (t *ScanTelemetry) Reset() {
 type PollAction uint8
 
 const (
+	// PollContinue instructs the scanner to continue execution normally.
 	PollContinue PollAction = iota
+	// PollYield yields CPU execution time to other goroutines via runtime.Gosched.
 	PollYield
+	// PollThrottle pauses scanning for the duration returned by PollHook before resuming.
 	PollThrottle
+	// PollAbort terminates the scanning operation immediately with context.Canceled.
 	PollAbort
 )
 
@@ -75,10 +79,15 @@ const (
 type ScanPhase uint8
 
 const (
+	// PhaseUnknown represents an unspecified scanner execution phase.
 	PhaseUnknown ScanPhase = iota
+	// PhasePrefilter represents the prefilter candidate screening phase.
 	PhasePrefilter
+	// PhasePatternSearch represents the pattern scanning and verification phase.
 	PhasePatternSearch
+	// PhaseRuleCondition represents the bytecode rule condition evaluation phase.
 	PhaseRuleCondition
+	// PhaseBlockScan represents multi-block memory scanning aggregation.
 	PhaseBlockScan
 )
 
@@ -142,9 +151,13 @@ type PatternEfficiencyHook func(profile PatternProfile)
 type PrefilterStage uint8
 
 const (
+	// PrefilterStageWordRouting represents Tier 0 word-match prefiltering.
 	PrefilterStageWordRouting PrefilterStage = iota
+	// PrefilterStageCompactMask represents Tier 1 compact bitmask prefiltering.
 	PrefilterStageCompactMask
-	PrefilterStageSharedAutomaton
+	// PrefilterStagesharedAutomaton represents Tier 2 shared Aho-Corasick automaton screening.
+	PrefilterStagesharedAutomaton
+	// PrefilterStageHeaderConstraints represents Tier 3 fixed-offset header constraint evaluation.
 	PrefilterStageHeaderConstraints
 )
 
@@ -154,7 +167,7 @@ func (s PrefilterStage) String() string {
 		return "word_routing"
 	case PrefilterStageCompactMask:
 		return "compact_mask"
-	case PrefilterStageSharedAutomaton:
+	case PrefilterStagesharedAutomaton:
 		return "shared_automaton"
 	case PrefilterStageHeaderConstraints:
 		return "header_constraints"
@@ -182,8 +195,11 @@ type RuleGateFunc func(rule *CompiledRule) bool
 type MatchAction uint8
 
 const (
+	// MatchActionContinue continues evaluating remaining rules normally.
 	MatchActionContinue MatchAction = iota
+	// MatchActionStopScan aborts scanning of all subsequent rules immediately upon match.
 	MatchActionStopScan
+	// MatchActionSkipRule skips further pattern verification for the current rule.
 	MatchActionSkipRule
 )
 

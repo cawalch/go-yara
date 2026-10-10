@@ -53,7 +53,7 @@ func addRegexMatchesWithModifiersCached(
 // matchPassesModifiers then applies remaining modifiers (e.g. fullword).
 //
 //nolint:revive // argument-limit: internal helper
-func acceptAutomatonMatch(ctx *MatchContext, rule *CompiledRule, data []byte, match ACMatch) bool {
+func acceptAutomatonMatch(ctx *MatchContext, rule *CompiledRule, data []byte, match acMatch) bool {
 	if rule.StringKinds != nil && rule.StringKinds[match.StringID] != StringKindText {
 		return false
 	}
@@ -61,8 +61,8 @@ func acceptAutomatonMatch(ctx *MatchContext, rule *CompiledRule, data []byte, ma
 	isWide := false
 	isNocase := false
 	var pattern []byte
-	if match.StringIndex >= 0 && match.StringIndex < len(rule.Automaton.strings) {
-		info := rule.Automaton.strings[match.StringIndex]
+	if match.StringIndex >= 0 && match.StringIndex < len(rule.automaton.strings) {
+		info := rule.automaton.strings[match.StringIndex]
 		length = info.Length
 		isWide = (info.Flags & regex.FlagsWide) != 0
 		isNocase = (info.Flags & regex.FlagsNoCase) != 0

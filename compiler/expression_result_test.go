@@ -70,7 +70,7 @@ func TestFloatGlobalExpressionResult(t *testing.T) {
 		t.Fatal(err)
 	}
 	program.GlobalVariables[0].Value = &ast.Literal{Type: token.FloatLit, Value: 1.5}
-	rules, err := NewRuleCompiler().CompileProgram(program)
+	rules, err := newRuleCompiler().CompileProgram(program)
 	if err != nil {
 		t.Fatal(err)
 	}

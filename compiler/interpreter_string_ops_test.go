@@ -21,7 +21,7 @@ func TestInterpreterStringOpsExtended(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			emitter := NewEmitter()
+			emitter := newEmitter()
 			emitter.EmitPushString(tt.left, 1, 1)
 			emitter.EmitPushString(tt.right, 1, 1)
 			emitter.EmitOpcode(tt.op, 1, 1)
@@ -47,7 +47,7 @@ func TestInterpreterStringOpsExtended(t *testing.T) {
 }
 
 func TestInterpreterMatchesOp(t *testing.T) {
-	emitter := NewEmitter()
+	emitter := newEmitter()
 	emitter.EmitPushString("hello world", 1, 1)
 	emitter.EmitPushString(`/world/`, 1, 1)
 	emitter.EmitOpcode(OpMatches, 1, 1)

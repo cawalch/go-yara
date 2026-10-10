@@ -121,7 +121,7 @@ rule Base64Mods {
 		t.Fatalf("compile: %v", err)
 	}
 
-	sc := NewStringCompiler()
+	sc := newStringCompiler()
 	baseVariants, err := sc.base64AlignedPatterns([]byte("Hi"), "", false)
 	if err != nil || len(baseVariants) == 0 {
 		t.Fatalf("base64 variants: %v", err)
