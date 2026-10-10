@@ -275,8 +275,27 @@ func TestACAutomatonSinglePatternFastPath(t *testing.T) {
 }
 
 func TestRootCandidateCursorAdvancesEachLaneMonotonically(t *testing.T) {
-	cursor := newRootCandidateCursor([]byte{'c', 'n'})
+	cursor := newRootCandidateCursor([]rootLane{{value: 'c'}, {value: 'n'}})
 	data := []byte("nxn--c-n")
+	for _, query := range []struct {
+		from int
+		want int
+	}{
+		{from: 0, want: 0},
+		{from: 1, want: 2},
+		{from: 3, want: 5},
+		{from: 6, want: 7},
+		{from: 8, want: -1},
+	} {
+		if got := cursor.next(data, query.from); got != query.want {
+			t.Fatalf("next(from=%d) = %d, want %d", query.from, got, query.want)
+		}
+	}
+}
+
+func TestRootCandidateCursorFoldedLane(t *testing.T) {
+	cursor := newRootCandidateCursor([]rootLane{{value: 'c', isFold: true}, {value: 'n', isFold: true}})
+	data := []byte("NxN--C-n")
 	for _, query := range []struct {
 		from int
 		want int

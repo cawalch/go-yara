@@ -643,15 +643,33 @@ func (cursor *asciiFoldByteCursor) next(data []byte, from int) int {
 
 func indexASCIIFoldByteScalar(data []byte, want byte) int {
 	other := flipASCIICase(want)
-	for index, value := range data {
-		if value == want || value == other {
-			return index
-		}
+	if want == other {
+		return bytes.IndexByte(data, want)
 	}
-	return -1
+	p1 := bytes.IndexByte(data, want)
+	if p1 < 0 {
+		return bytes.IndexByte(data, other)
+	}
+	if p2 := bytes.IndexByte(data[:p1], other); p2 >= 0 {
+		return p2
+	}
+	return p1
 }
 
 func indexByteRangeScalar(data []byte, lower, upper byte) int {
+	if lower == upper {
+		return bytes.IndexByte(data, lower)
+	}
+	if upper-lower == 1 {
+		p1 := bytes.IndexByte(data, lower)
+		if p1 < 0 {
+			return bytes.IndexByte(data, upper)
+		}
+		if p2 := bytes.IndexByte(data[:p1], upper); p2 >= 0 {
+			return p2
+		}
+		return p1
+	}
 	width := upper - lower
 	for index, value := range data {
 		if value-lower <= width {
