@@ -155,8 +155,8 @@ const (
 	PrefilterStageWordRouting PrefilterStage = iota
 	// PrefilterStageCompactMask represents Tier 1 compact bitmask prefiltering.
 	PrefilterStageCompactMask
-	// PrefilterStageSharedAutomaton represents Tier 2 shared Aho-Corasick automaton screening.
-	PrefilterStageSharedAutomaton
+	// PrefilterStagesharedAutomaton represents Tier 2 shared Aho-Corasick automaton screening.
+	PrefilterStagesharedAutomaton
 	// PrefilterStageHeaderConstraints represents Tier 3 fixed-offset header constraint evaluation.
 	PrefilterStageHeaderConstraints
 )
@@ -167,7 +167,7 @@ func (s PrefilterStage) String() string {
 		return "word_routing"
 	case PrefilterStageCompactMask:
 		return "compact_mask"
-	case PrefilterStageSharedAutomaton:
+	case PrefilterStagesharedAutomaton:
 		return "shared_automaton"
 	case PrefilterStageHeaderConstraints:
 		return "header_constraints"

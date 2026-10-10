@@ -76,7 +76,7 @@ func cloneHexTokens(tokens []HexPatternToken) []HexPatternToken {
 	return out
 }
 
-func (sc *StringCompiler) parseHexPattern(hexStr string) (*HexPattern, error) {
+func (sc *stringCompiler) parseHexPattern(hexStr string) (*HexPattern, error) {
 	content := stripHexBraces(hexStr)
 	tokens, err := parseHexTokens(content)
 	if err != nil {

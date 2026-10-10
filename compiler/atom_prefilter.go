@@ -678,11 +678,11 @@ func (s *Scanner) populateNonTextPrefilterCache(
 			return err
 		}
 		lookupIdx := s.touchedPrefilterCandidates[touchedIndex]
-		if lookupIdx < 0 || lookupIdx >= len(s.program.SharedLookup) {
+		if lookupIdx < 0 || lookupIdx >= len(s.program.sharedLookup) {
 			touchedIndex++
 			continue
 		}
-		entry := s.program.SharedLookup[lookupIdx]
+		entry := s.program.sharedLookup[lookupIdx]
 		if entry.Kind == StringKindText || entry.CacheIndex < 0 || entry.CacheIndex >= len(cache.matches) {
 			touchedIndex++
 			continue
@@ -695,7 +695,7 @@ func (s *Scanner) populateNonTextPrefilterCache(
 		if entry.Kind == StringKindRegex && entry.alternativeAtom {
 			lookupGroupStart := lookupIdx
 			for lookupGroupStart > 0 {
-				previous := s.program.SharedLookup[lookupGroupStart-1]
+				previous := s.program.sharedLookup[lookupGroupStart-1]
 				if !previous.alternativeAtom || previous.Kind != StringKindRegex ||
 					previous.CacheIndex != entry.CacheIndex || previous.IsWide != entry.IsWide {
 					break
@@ -703,8 +703,8 @@ func (s *Scanner) populateNonTextPrefilterCache(
 				lookupGroupStart--
 			}
 			groupEnd := lookupIdx + 1
-			for groupEnd < len(s.program.SharedLookup) {
-				next := s.program.SharedLookup[groupEnd]
+			for groupEnd < len(s.program.sharedLookup) {
+				next := s.program.sharedLookup[groupEnd]
 				if !next.alternativeAtom ||
 					next.Kind != StringKindRegex ||
 					next.CacheIndex != entry.CacheIndex ||
@@ -714,7 +714,7 @@ func (s *Scanner) populateNonTextPrefilterCache(
 				groupEnd++
 			}
 
-			groupEntry := s.program.SharedLookup[lookupGroupStart]
+			groupEntry := s.program.sharedLookup[lookupGroupStart]
 			rule := s.program.Rules[groupEntry.RuleIndex]
 			if groupEntry.StringIdx < 0 || groupEntry.StringIdx >= len(rule.IndexToStringID) {
 				touchedIndex++
@@ -724,7 +724,7 @@ func (s *Scanner) populateNonTextPrefilterCache(
 			dst := cache.matches[entry.CacheIndex]
 			matchGroupStart := len(dst)
 			for candidateIndex := lookupGroupStart; candidateIndex < groupEnd; candidateIndex++ {
-				candidateEntry := s.program.SharedLookup[candidateIndex]
+				candidateEntry := s.program.sharedLookup[candidateIndex]
 				candidates := s.prefilterCandidates[candidateIndex]
 				if len(candidates) > 0 {
 					dst = appendRegexPrefilterMatches(
@@ -817,7 +817,7 @@ func appendRegexPrefilterMatches(
 	dst []matchSpan,
 	rule *CompiledRule,
 	strID string,
-	entry SharedAutomatonEntry,
+	entry sharedAutomatonEntry,
 	data []byte,
 	candidates []int,
 	done <-chan struct{},
@@ -903,7 +903,7 @@ func appendHexPrefilterMatches(
 	dst []matchSpan,
 	rule *CompiledRule,
 	strID string,
-	entry SharedAutomatonEntry,
+	entry sharedAutomatonEntry,
 	data []byte,
 	candidates []int,
 	done <-chan struct{},

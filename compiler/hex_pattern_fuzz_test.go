@@ -7,7 +7,7 @@ import (
 
 func fuzzParseHexPatterns(inputs ...string) {
 	for _, input := range inputs {
-		sc := NewStringCompiler()
+		sc := newStringCompiler()
 		pattern, err := sc.parseHexPattern(normalizeHexFuzzPattern(input))
 		if err == nil {
 			_ = pattern.Clone()

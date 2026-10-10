@@ -3,7 +3,7 @@ package compiler
 import "testing"
 
 func TestInterpreterOfOperation(t *testing.T) {
-	emitter := NewEmitter()
+	emitter := newEmitter()
 	// count = 2
 	emitter.EmitPush(2, 1, 1)
 	// string set index 0

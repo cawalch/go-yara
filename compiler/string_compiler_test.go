@@ -8,7 +8,7 @@ import (
 
 // TestStringCompiler tests the string compilation system
 func TestStringCompiler(t *testing.T) {
-	sc := NewStringCompiler()
+	sc := newStringCompiler()
 
 	// Test text string encoding
 	text := "Hello, World!"
@@ -38,7 +38,7 @@ func TestStringCompiler(t *testing.T) {
 
 // TestStringCompilerValidation tests string modifier validation
 func TestStringCompilerValidation(t *testing.T) {
-	sc := NewStringCompiler()
+	sc := newStringCompiler()
 
 	// Test wide+ascii combination (should be allowed and match both encodings)
 	dualModifiers := []ast.StringModifier{

@@ -36,7 +36,7 @@ rule selected : selected {
 			if err != nil {
 				t.Fatal(err)
 			}
-			rawRules, err := NewRuleCompiler().CompileProgram(syntax)
+			rawRules, err := newRuleCompiler().CompileProgram(syntax)
 			if err != nil {
 				t.Fatal(err)
 			}

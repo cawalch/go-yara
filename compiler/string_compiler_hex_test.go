@@ -6,7 +6,7 @@ import (
 
 // TestParseHexString tests hex string parsing
 func TestParseHexString(t *testing.T) {
-	sc := NewStringCompiler()
+	sc := newStringCompiler()
 
 	tests := []struct {
 		name   string
@@ -33,7 +33,7 @@ func TestParseHexString(t *testing.T) {
 
 // TestTokenizeHexString tests hex string tokenization
 func TestTokenizeHexString(t *testing.T) {
-	sc := NewStringCompiler()
+	sc := newStringCompiler()
 
 	tests := []struct {
 		name           string
@@ -59,9 +59,9 @@ func TestTokenizeHexString(t *testing.T) {
 	}
 }
 
-// TestParseHexByte tests hex byte parsing
-func TestParseHexByte(t *testing.T) {
-	sc := NewStringCompiler()
+// TestParsehexByte tests hex byte parsing
+func TestParsehexByte(t *testing.T) {
+	sc := newStringCompiler()
 
 	tests := []struct {
 		name     string
@@ -79,7 +79,7 @@ func TestParseHexByte(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := sc.parseHexByte(tt.input)
+			result := sc.parsehexByte(tt.input)
 			if result != tt.expected {
 				t.Errorf("expected 0x%02X, got 0x%02X", tt.expected, result)
 			}
@@ -89,7 +89,7 @@ func TestParseHexByte(t *testing.T) {
 
 // TestParseJump tests jump range parsing
 func TestParseJump(t *testing.T) {
-	sc := NewStringCompiler()
+	sc := newStringCompiler()
 
 	tests := []struct {
 		name   string
@@ -118,7 +118,7 @@ func TestParseJump(t *testing.T) {
 
 // TestParseAlternatives tests alternatives parsing
 func TestParseAlternatives(t *testing.T) {
-	sc := NewStringCompiler()
+	sc := newStringCompiler()
 
 	tests := []struct {
 		name    string
@@ -171,7 +171,7 @@ func TestIsHexDigit(t *testing.T) {
 
 // TestComplexHexPatterns tests complex hex patterns
 func TestComplexHexPatterns(t *testing.T) {
-	sc := NewStringCompiler()
+	sc := newStringCompiler()
 
 	tests := []struct {
 		name  string

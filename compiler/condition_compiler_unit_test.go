@@ -37,9 +37,9 @@ func TestConditionCompiler_ParseSizeLiteral(t *testing.T) {
 
 // TestConditionCompiler_StringOffsetFunctions tests string offset related functions
 func TestConditionCompiler_StringOffsetFunctions(t *testing.T) {
-	emitter := NewEmitter()
+	emitter := newEmitter()
 	stringOffsets := map[string]int{"$test": 0}
-	cc := NewConditionCompiler(emitter, stringOffsets)
+	cc := newConditionCompiler(emitter, stringOffsets)
 
 	t.Run("findStringOffset", func(t *testing.T) {
 		offset, found := cc.findStringOffset("$test")
@@ -59,9 +59,9 @@ func TestConditionCompiler_StringOffsetFunctions(t *testing.T) {
 
 // TestConditionCompiler_VariableManagement tests variable-related functions
 func TestConditionCompiler_VariableManagement(t *testing.T) {
-	emitter := NewEmitter()
+	emitter := newEmitter()
 	stringOffsets := map[string]int{"$test": 0}
-	cc := NewConditionCompiler(emitter, stringOffsets)
+	cc := newConditionCompiler(emitter, stringOffsets)
 
 	t.Run("SetRuleIndexMap", func(t *testing.T) {
 		ruleIndexMap := map[string]int{"rule1": 0}
@@ -101,9 +101,9 @@ func TestConditionCompiler_VariableManagement(t *testing.T) {
 
 // TestConditionCompiler_BooleanExpressions tests boolean expression compilation
 func TestConditionCompiler_BooleanExpressions(t *testing.T) {
-	emitter := NewEmitter()
+	emitter := newEmitter()
 	stringOffsets := map[string]int{"$test": 0}
-	cc := NewConditionCompiler(emitter, stringOffsets)
+	cc := newConditionCompiler(emitter, stringOffsets)
 	pos := token.Position{Line: 1, Column: 1}
 	builder := ast.NewBuilder()
 
@@ -130,9 +130,9 @@ func TestConditionCompiler_BooleanExpressions(t *testing.T) {
 
 // TestConditionCompiler_SpecialOperators tests special operator compilation
 func TestConditionCompiler_SpecialOperators(t *testing.T) {
-	emitter := NewEmitter()
+	emitter := newEmitter()
 	stringOffsets := map[string]int{"$test": 0}
-	cc := NewConditionCompiler(emitter, stringOffsets)
+	cc := newConditionCompiler(emitter, stringOffsets)
 	pos := token.Position{Line: 1, Column: 1}
 	builder := ast.NewBuilder()
 
@@ -192,9 +192,9 @@ func TestConditionCompiler_SpecialOperators(t *testing.T) {
 
 // TestConditionCompiler_AdvancedExpressions tests advanced expression compilation
 func TestConditionCompiler_AdvancedExpressions(t *testing.T) {
-	emitter := NewEmitter()
+	emitter := newEmitter()
 	stringOffsets := map[string]int{"$test": 0}
-	cc := NewConditionCompiler(emitter, stringOffsets)
+	cc := newConditionCompiler(emitter, stringOffsets)
 	pos := token.Position{Line: 1, Column: 1}
 	builder := ast.NewBuilder()
 
@@ -254,9 +254,9 @@ func TestConditionCompiler_AdvancedExpressions(t *testing.T) {
 
 // TestConditionCompiler_RuleReferences tests rule reference functions
 func TestConditionCompiler_RuleReferences(t *testing.T) {
-	emitter := NewEmitter()
+	emitter := newEmitter()
 	stringOffsets := map[string]int{"$test": 0}
-	cc := NewConditionCompiler(emitter, stringOffsets)
+	cc := newConditionCompiler(emitter, stringOffsets)
 
 	t.Run("isRuleReference", func(t *testing.T) {
 		ruleName := "test_rule"
@@ -313,9 +313,9 @@ func TestConditionCompiler_RuleReferences(t *testing.T) {
 
 // TestConditionCompiler_TypeDetection tests type detection functions
 func TestConditionCompiler_TypeDetection(t *testing.T) {
-	emitter := NewEmitter()
+	emitter := newEmitter()
 	stringOffsets := map[string]int{"$test": 0}
-	cc := NewConditionCompiler(emitter, stringOffsets)
+	cc := newConditionCompiler(emitter, stringOffsets)
 	pos := token.Position{Line: 1, Column: 1}
 	builder := ast.NewBuilder()
 
@@ -339,9 +339,9 @@ func TestConditionCompiler_TypeDetection(t *testing.T) {
 
 // TestConditionCompiler_OptimizationAndValidation tests optimization and validation functions
 func TestConditionCompiler_OptimizationAndValidation(t *testing.T) {
-	emitter := NewEmitter()
+	emitter := newEmitter()
 	stringOffsets := map[string]int{"$test": 0}
-	cc := NewConditionCompiler(emitter, stringOffsets)
+	cc := newConditionCompiler(emitter, stringOffsets)
 	pos := token.Position{Line: 1, Column: 1}
 	builder := ast.NewBuilder()
 
@@ -370,10 +370,10 @@ func TestConditionCompiler_OptimizationAndValidation(t *testing.T) {
 
 	t.Run("EmitJump", func(t *testing.T) {
 		// Test EmitJump with proper parameters
-		config := ConditionalJumpConfig{
+		config := conditionaljumpConfig{
 			Opcode:      OpJz,
 			TargetLabel: "test_label",
-			Position:    JumpPosition{Line: 1, Column: 1},
+			Position:    jumpPosition{Line: 1, Column: 1},
 		}
 		if err := cc.EmitJump(config); err != nil {
 			t.Fatalf("EmitJump() error = %v", err)
@@ -392,17 +392,17 @@ func TestConditionCompilerEdgeCasesAndErrors(t *testing.T) {
 
 // testConditionCompilerNilInputs tests edge cases with nil and empty inputs
 func testConditionCompilerNilInputs(t *testing.T) {
-	emitter := NewEmitter()
-	cc := NewConditionCompiler(emitter, map[string]int{})
+	emitter := newEmitter()
+	cc := newConditionCompiler(emitter, map[string]int{})
 
 	tests := []struct {
 		name string
-		test func(*testing.T, *ConditionCompiler)
+		test func(*testing.T, *conditionCompiler)
 	}{
 		{
 			name: "nil_string_offsets_map",
-			test: func(t *testing.T, _ *ConditionCompiler) {
-				nilCC := NewConditionCompiler(emitter, nil)
+			test: func(t *testing.T, _ *conditionCompiler) {
+				nilCC := newConditionCompiler(emitter, nil)
 				if offset, ok := nilCC.findStringOffset("$test"); ok {
 					t.Fatalf("findStringOffset() = %d, true with nil offsets, want not found", offset)
 				}
@@ -410,7 +410,7 @@ func testConditionCompilerNilInputs(t *testing.T) {
 		},
 		{
 			name: "nil_expression_validation",
-			test: func(t *testing.T, cc *ConditionCompiler) {
+			test: func(t *testing.T, cc *conditionCompiler) {
 				err := cc.ValidateExpression(nil)
 				if err == nil || !strings.Contains(err.Error(), "unsupported expression type") {
 					t.Fatalf("ValidateExpression(nil) error = %v, want unsupported expression type", err)
@@ -428,18 +428,18 @@ func testConditionCompilerNilInputs(t *testing.T) {
 
 // testConditionCompilerUndefinedReferences tests behavior with undefined references
 func testConditionCompilerUndefinedReferences(t *testing.T) {
-	emitter := NewEmitter()
-	cc := NewConditionCompiler(emitter, map[string]int{})
+	emitter := newEmitter()
+	cc := newConditionCompiler(emitter, map[string]int{})
 	pos := token.Position{Line: 1, Column: 1}
 	builder := ast.NewBuilder()
 
 	tests := []struct {
 		name string
-		test func(*testing.T, *ConditionCompiler, *ast.Builder, token.Position)
+		test func(*testing.T, *conditionCompiler, *ast.Builder, token.Position)
 	}{
 		{
 			name: "undefined_string",
-			test: func(t *testing.T, cc *ConditionCompiler, _ *ast.Builder, _ token.Position) {
+			test: func(t *testing.T, cc *conditionCompiler, _ *ast.Builder, _ token.Position) {
 				if offset, ok := cc.findStringOffset("$undefined"); ok {
 					t.Fatalf("findStringOffset() = %d, true for undefined string", offset)
 				}
@@ -447,7 +447,7 @@ func testConditionCompilerUndefinedReferences(t *testing.T) {
 		},
 		{
 			name: "undefined_variable",
-			test: func(t *testing.T, cc *ConditionCompiler, builder *ast.Builder, pos token.Position) {
+			test: func(t *testing.T, cc *conditionCompiler, builder *ast.Builder, pos token.Position) {
 				undefinedExpr := builder.Identifier(pos, "undefined_var")
 				err := cc.compileExpression(undefinedExpr)
 				if err == nil || !strings.Contains(err.Error(), "undefined identifier: undefined_var") {
@@ -489,8 +489,8 @@ func testConditionCompilerInvalidSizeLiterals(t *testing.T) {
 
 // testConditionCompilerComplexExpressions tests compilation of complex nested expressions
 func testConditionCompilerComplexExpressions(t *testing.T) {
-	emitter := NewEmitter()
-	cc := NewConditionCompiler(emitter, map[string]int{})
+	emitter := newEmitter()
+	cc := newConditionCompiler(emitter, map[string]int{})
 	pos := token.Position{Line: 1, Column: 1}
 	builder := ast.NewBuilder()
 
@@ -544,8 +544,8 @@ func testConditionCompilerComplexExpressions(t *testing.T) {
 
 // testConditionCompilerFunctionCallVariations tests function calls with different argument patterns
 func testConditionCompilerFunctionCallVariations(t *testing.T) {
-	emitter := NewEmitter()
-	cc := NewConditionCompiler(emitter, map[string]int{})
+	emitter := newEmitter()
+	cc := newConditionCompiler(emitter, map[string]int{})
 	pos := token.Position{Line: 1, Column: 1}
 	builder := ast.NewBuilder()
 

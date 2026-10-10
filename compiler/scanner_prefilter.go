@@ -12,7 +12,7 @@ type ruleEvaluation struct {
 
 type ruleScanInput struct {
 	data                 []byte
-	useSharedAutomaton   bool
+	usesharedAutomaton   bool
 	skipUnmatchedContext bool
 }
 
@@ -53,7 +53,7 @@ func (s *Scanner) evaluateRuleCondition(
 		return ruleEvaluation{pruned: true}, nil
 	}
 
-	if !s.prefilterDisabled && input.skipUnmatchedContext && input.useSharedAutomaton && s.missingRequiredString(rule) {
+	if !s.prefilterDisabled && input.skipUnmatchedContext && input.usesharedAutomaton && s.missingRequiredString(rule) {
 		s.ruleResults[rule.Name] = false
 		if s.hookMask&(hookBitTelemetry|hookBitRuleProfile) != 0 {
 			s.recordRuleEvaluatedHooks(rule, false, ruleStart)
@@ -146,11 +146,11 @@ func (s *Scanner) preparePatternScan(ctx context.Context, data []byte) (bool, er
 	}
 	s.regexByteSetCache.reset()
 	s.resetGlobalMatches(len(s.program.Rules))
-	s.resetPrefilterCandidates(len(s.program.SharedLookup))
+	s.resetPrefilterCandidates(len(s.program.sharedLookup))
 	s.resetCandidateRules(len(s.program.Rules))
 
-	useSharedAutomaton := shouldUseSharedPatternAutomaton(data, s.program)
-	if !useSharedAutomaton {
+	usesharedAutomaton := shouldUseSharedPatternAutomaton(data, s.program)
+	if !usesharedAutomaton {
 		return false, nil
 	}
 	if err := ctx.Err(); err != nil {
@@ -173,7 +173,7 @@ func (s *Scanner) populateRuleMatchContext(
 	if s.fastScan && rule.FastScanSafe {
 		s.matchCtx.maxMatchesPerPattern = 1
 	}
-	if input.useSharedAutomaton {
+	if input.usesharedAutomaton {
 		if err := s.addStaticMatchesInt(ctx, rule, input.data, s.globalMatches[rule.Index]); err != nil {
 			return err
 		}
@@ -182,7 +182,7 @@ func (s *Scanner) populateRuleMatchContext(
 			return err
 		}
 	}
-	if err := s.addLocalNonTextMatches(ctx, rule, input.data, &s.nonTextCache, input.useSharedAutomaton); err != nil {
+	if err := s.addLocalNonTextMatches(ctx, rule, input.data, &s.nonTextCache, input.usesharedAutomaton); err != nil {
 		return err
 	}
 	s.matchCtx.normalizeMatches()
@@ -200,8 +200,8 @@ func (s *Scanner) populateRuleMatchContext(
 	return nil
 }
 
-func (s *Scanner) allEvaluatedRulesPrefilterRejected(ctx context.Context, data []byte, useSharedAutomaton bool) bool {
-	if useSharedAutomaton && s.allEvaluatedRulesRequireSharedPatterns &&
+func (s *Scanner) allEvaluatedRulesPrefilterRejected(ctx context.Context, data []byte, usesharedAutomaton bool) bool {
+	if usesharedAutomaton && s.allEvaluatedRulesRequireSharedPatterns &&
 		len(s.touchedGlobalMatches) == 0 && !s.sharedNonTextMatched {
 		return true
 	}
@@ -215,15 +215,15 @@ func (s *Scanner) allEvaluatedRulesPrefilterRejected(ctx context.Context, data [
 		if !rule.RequiresStringMatch {
 			return false
 		}
-		if s.rulePrefilterStatus(rule, useSharedAutomaton) != rulePrefilterRejected {
+		if s.rulePrefilterStatus(rule, usesharedAutomaton) != rulePrefilterRejected {
 			return false
 		}
 	}
 	return true
 }
 
-func (s *Scanner) rulePrefilterStatus(rule *CompiledRule, useSharedAutomaton bool) rulePrefilterStatus {
-	if !useSharedAutomaton || rule.Index < 0 || rule.Index >= len(s.globalMatches) {
+func (s *Scanner) rulePrefilterStatus(rule *CompiledRule, usesharedAutomaton bool) rulePrefilterStatus {
+	if !usesharedAutomaton || rule.Index < 0 || rule.Index >= len(s.globalMatches) {
 		return rulePrefilterUnknown
 	}
 	if len(rule.prefilterStrings) == 0 {
@@ -244,7 +244,7 @@ func (s *Scanner) rulePrefilterStatus(rule *CompiledRule, useSharedAutomaton boo
 		case prefilterStringText:
 			// Text strings are always represented in the shared automaton.
 		case prefilterStringNonText:
-			matches, ready := s.getNonTextMatches(&s.nonTextCache, info.cacheIndex, useSharedAutomaton)
+			matches, ready := s.getNonTextMatches(&s.nonTextCache, info.cacheIndex, usesharedAutomaton)
 			if !ready {
 				complete = false
 				continue

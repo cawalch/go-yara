@@ -186,7 +186,7 @@ func TestUndefinedValues(t *testing.T) {
 
 // TestCompiledRuleMemoryUsage tests memory usage estimation
 func TestCompiledRuleMemoryUsage(t *testing.T) {
-	rc := NewRuleCompiler()
+	rc := newRuleCompiler()
 
 	rule := &ast.Rule{
 		Pos:  token.Position{Line: 1, Column: 1},
@@ -265,7 +265,7 @@ func TestCompilerOptions(t *testing.T) {
 
 // BenchmarkEmitter benchmarks the bytecode emitter
 func BenchmarkEmitter(b *testing.B) {
-	emitter := NewEmitter()
+	emitter := newEmitter()
 
 	for b.Loop() {
 		emitter.Reset()
@@ -278,7 +278,7 @@ func BenchmarkEmitter(b *testing.B) {
 
 // BenchmarkACAutomaton benchmarks the Aho-Corasick automaton iterator
 func BenchmarkACAutomaton(b *testing.B) {
-	ac := NewACAutomaton()
+	ac := newacAutomaton()
 
 	// Add test patterns
 	patterns := []string{"test", "pattern", "search", "benchmark", "performance"}
@@ -303,7 +303,7 @@ func BenchmarkACAutomaton(b *testing.B) {
 
 // BenchmarkStringCompiler benchmarks the string compiler
 func BenchmarkStringCompiler(b *testing.B) {
-	sc := NewStringCompiler()
+	sc := newStringCompiler()
 
 	text := "This is a test string for benchmarking the string compiler"
 	modifiers := []ast.StringModifier{
@@ -426,7 +426,7 @@ rule test_rule {
 
 // TestPatternComplexityEstimation tests the pattern complexity estimation
 func TestPatternComplexityEstimation(t *testing.T) {
-	sc := NewStringCompiler()
+	sc := newStringCompiler()
 
 	tests := []struct {
 		name       string
@@ -510,11 +510,11 @@ func TestAtomExtraction(t *testing.T) {
 
 // TestEmitterJumpFixup tests jump fixup functionality
 func TestEmitterJumpFixup(t *testing.T) {
-	emitter := NewEmitter()
+	emitter := newEmitter()
 
 	// Emit some instructions
 	emitter.EmitPush(1, 1, 1)
-	jumpOffset := emitter.EmitJump(JumpConfig{Opcode: OpJz, Target: 10, Line: 1, Pos: 1})
+	jumpOffset := emitter.EmitJump(jumpConfig{Opcode: OpJz, Target: 10, Line: 1, Pos: 1})
 	emitter.EmitOpcode(OpNop, 1, 1)
 	emitter.EmitLabel(10, 1, 1)
 
@@ -532,7 +532,7 @@ func TestEmitterJumpFixup(t *testing.T) {
 
 // TestEmitterArithmetic tests arithmetic operation emission
 func TestEmitterArithmetic(t *testing.T) {
-	emitter := NewEmitter()
+	emitter := newEmitter()
 
 	// EmitArithmetic must accept arithmetic opcodes and reject non-arithmetic
 	// ones (returns -1). The previous version of this test marked every case
@@ -569,23 +569,23 @@ func TestEmitterArithmetic(t *testing.T) {
 func TestEmitterOpCategoryGuards(t *testing.T) {
 	tests := []struct {
 		name    string
-		emit    func(e *Emitter, op Opcode) int
+		emit    func(e *emitter, op Opcode) int
 		valid   Opcode
 		invalid Opcode
 	}{
-		{name: "comparison", emit: func(e *Emitter, op Opcode) int { return e.EmitComparison(op, 1, 1) }, valid: OpIntEq, invalid: OpAnd},
-		{name: "logical", emit: func(e *Emitter, op Opcode) int { return e.EmitLogical(op, 1, 1) }, valid: OpAnd, invalid: OpIntAdd},
+		{name: "comparison", emit: func(e *emitter, op Opcode) int { return e.EmitComparison(op, 1, 1) }, valid: OpIntEq, invalid: OpAnd},
+		{name: "logical", emit: func(e *emitter, op Opcode) int { return e.EmitLogical(op, 1, 1) }, valid: OpAnd, invalid: OpIntAdd},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name+"_valid", func(t *testing.T) {
-			e := NewEmitter()
+			e := newEmitter()
 			if off := tt.emit(e, tt.valid); off < 0 {
 				t.Errorf("expected non-negative offset for valid op %v, got %d", tt.valid, off)
 			}
 		})
 		t.Run(tt.name+"_invalid", func(t *testing.T) {
-			e := NewEmitter()
+			e := newEmitter()
 			if off := tt.emit(e, tt.invalid); off >= 0 {
 				t.Errorf("expected -1 for out-of-category op %v, got %d", tt.invalid, off)
 			}
@@ -609,7 +609,7 @@ func TestEmitterPushVariousSizes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			emitter := NewEmitter()
+			emitter := newEmitter()
 			offset := emitter.EmitPush(tt.value, 1, 1)
 			if offset < 0 {
 				t.Fatalf("EmitPush() returned negative offset %d", offset)
@@ -631,7 +631,7 @@ func TestEmitterPushVariousSizes(t *testing.T) {
 
 // TestEmitterGetBytecode tests bytecode generation
 func TestEmitterGetBytecode(t *testing.T) {
-	emitter := NewEmitter()
+	emitter := newEmitter()
 
 	// Emit some instructions
 	emitter.EmitPush(1, 1, 1)
@@ -650,8 +650,8 @@ func TestEmitterGetBytecode(t *testing.T) {
 
 // TestConditionCompilerLiteral tests literal compilation
 func TestConditionCompilerLiteral(t *testing.T) {
-	emitter := NewEmitter()
-	cc := NewConditionCompiler(emitter, make(map[string]int))
+	emitter := newEmitter()
+	cc := newConditionCompiler(emitter, make(map[string]int))
 
 	tests := []struct {
 		name    string
@@ -708,9 +708,9 @@ func TestConditionCompilerLiteral(t *testing.T) {
 
 // TestConditionCompilerIdentifier tests identifier compilation
 func TestConditionCompilerIdentifier(t *testing.T) {
-	emitter := NewEmitter()
+	emitter := newEmitter()
 	stringOffsets := map[string]int{"$test": 10}
-	cc := NewConditionCompiler(emitter, stringOffsets)
+	cc := newConditionCompiler(emitter, stringOffsets)
 
 	tests := []struct {
 		name    string
@@ -763,8 +763,8 @@ func TestConditionCompilerIdentifier(t *testing.T) {
 
 // TestConditionCompilerBinaryOp tests binary operation compilation
 func TestConditionCompilerBinaryOp(t *testing.T) {
-	emitter := NewEmitter()
-	cc := NewConditionCompiler(emitter, make(map[string]int))
+	emitter := newEmitter()
+	cc := newConditionCompiler(emitter, make(map[string]int))
 
 	tests := []struct {
 		name    string
@@ -821,8 +821,8 @@ func TestConditionCompilerBinaryOp(t *testing.T) {
 
 // TestConditionCompilerUnaryOp tests unary operation compilation
 func TestConditionCompilerUnaryOp(t *testing.T) {
-	emitter := NewEmitter()
-	cc := NewConditionCompiler(emitter, make(map[string]int))
+	emitter := newEmitter()
+	cc := newConditionCompiler(emitter, make(map[string]int))
 
 	tests := []struct {
 		name    string
@@ -856,7 +856,7 @@ func TestConditionCompilerUnaryOp(t *testing.T) {
 
 // TestStringCompilerOptimizePattern tests pattern optimization
 func TestStringCompilerOptimizePattern(t *testing.T) {
-	sc := NewStringCompiler()
+	sc := newStringCompiler()
 
 	tests := []struct {
 		name      string
@@ -889,7 +889,7 @@ func TestStringCompilerOptimizePattern(t *testing.T) {
 
 // TestAhoCorasickCompile tests Aho-Corasick automaton compilation
 func TestAhoCorasickCompile(t *testing.T) {
-	ac := NewACAutomaton()
+	ac := newacAutomaton()
 
 	// Add some strings
 	if err := ac.AddString("hello", []byte("hello"), false, false); err != nil {
@@ -913,7 +913,7 @@ func TestAhoCorasickCompile(t *testing.T) {
 
 // TestAhoCorasickValidate tests Aho-Corasick automaton validation
 func TestAhoCorasickValidate(t *testing.T) {
-	ac := NewACAutomaton()
+	ac := newacAutomaton()
 
 	// Add some strings
 	if err := ac.AddString("test", []byte("test"), false, false); err != nil {
@@ -934,7 +934,7 @@ func TestAhoCorasickValidate(t *testing.T) {
 
 // TestAhoCorasickReset tests Aho-Corasick automaton reset
 func TestAhoCorasickReset(t *testing.T) {
-	ac := NewACAutomaton()
+	ac := newacAutomaton()
 
 	// Add some strings
 	if err := ac.AddString("test", []byte("test"), false, false); err != nil {
@@ -979,7 +979,7 @@ func TestAhoCorasickReset(t *testing.T) {
 
 // TestRuleCompilerMultipleStrings tests rule compilation with multiple strings
 func TestRuleCompilerMultipleStrings(t *testing.T) {
-	rc := NewRuleCompiler()
+	rc := newRuleCompiler()
 
 	rule := &ast.Rule{
 		Pos:  token.Position{Line: 1, Column: 1},
@@ -1035,7 +1035,7 @@ func TestRuleCompilerMultipleStrings(t *testing.T) {
 
 // TestRuleCompilerNoStrings tests rule compilation without strings
 func TestRuleCompilerNoStrings(t *testing.T) {
-	rc := NewRuleCompiler()
+	rc := newRuleCompiler()
 
 	rule := &ast.Rule{
 		Pos:     token.Position{Line: 1, Column: 1},
@@ -1065,7 +1065,7 @@ func TestRuleCompilerNoStrings(t *testing.T) {
 
 // TestCompiledRuleMemory tests compiled rule memory usage
 func TestCompiledRuleMemory(t *testing.T) {
-	rc := NewRuleCompiler()
+	rc := newRuleCompiler()
 
 	rule := &ast.Rule{
 		Pos:  token.Position{Line: 1, Column: 1},
@@ -1106,7 +1106,7 @@ func TestCompiledRuleMemory(t *testing.T) {
 
 // TestStringCompilerApplyNocaseModifier tests nocase modifier application
 func TestStringCompilerApplyNocaseModifier(t *testing.T) {
-	sc := NewStringCompiler()
+	sc := newStringCompiler()
 
 	tests := []struct {
 		name    string
@@ -1143,7 +1143,7 @@ func TestStringCompilerApplyNocaseModifier(t *testing.T) {
 
 // TestStringCompilerOptimizeWidePattern tests wide pattern optimization
 func TestStringCompilerOptimizeWidePattern(t *testing.T) {
-	sc := NewStringCompiler()
+	sc := newStringCompiler()
 
 	tests := []struct {
 		name    string
@@ -1179,7 +1179,7 @@ func TestStringCompilerOptimizeWidePattern(t *testing.T) {
 
 // TestStringCompilerOptimizeASCIIPattern tests ASCII pattern optimization
 func TestStringCompilerOptimizeASCIIPattern(t *testing.T) {
-	sc := NewStringCompiler()
+	sc := newStringCompiler()
 
 	tests := []struct {
 		name    string
@@ -1266,8 +1266,8 @@ func createLiteralFromValue(val any) (ast.Expression, error) {
 
 // TestConditionCompilerCompileBinaryOpDetailed tests binary operation compilation in detail
 func TestConditionCompilerCompileBinaryOpDetailed(t *testing.T) {
-	emitter := NewEmitter()
-	cc := NewConditionCompiler(emitter, make(map[string]int))
+	emitter := newEmitter()
+	cc := newConditionCompiler(emitter, make(map[string]int))
 
 	tests := []struct {
 		name        string
@@ -1347,7 +1347,7 @@ func TestConditionCompilerCompileBinaryOpDetailed(t *testing.T) {
 
 // TestCompilerProgram tests full program compilation
 func TestCompilerProgram(t *testing.T) {
-	rc := NewRuleCompiler()
+	rc := newRuleCompiler()
 
 	rule1 := &ast.Rule{
 		Pos:  token.Position{Line: 1, Column: 1},
@@ -1411,7 +1411,7 @@ func TestCompilerProgram(t *testing.T) {
 
 // TestCompiledRuleValidate tests compiled rule validation
 func TestCompiledRuleValidate(t *testing.T) {
-	rc := NewRuleCompiler()
+	rc := newRuleCompiler()
 
 	rule := &ast.Rule{
 		Pos:  token.Position{Line: 1, Column: 1},
@@ -1448,7 +1448,7 @@ func TestCompiledRuleValidate(t *testing.T) {
 
 // TestCompiledRulePrintDebug tests debug printing
 func TestCompiledRulePrintDebug(t *testing.T) {
-	rc := NewRuleCompiler()
+	rc := newRuleCompiler()
 
 	rule := &ast.Rule{
 		Pos:  token.Position{Line: 1, Column: 1},
@@ -1484,7 +1484,7 @@ func TestCompiledRulePrintDebug(t *testing.T) {
 
 // TestEmitterGetInstructions tests getting instructions
 func TestEmitterGetInstructions(t *testing.T) {
-	emitter := NewEmitter()
+	emitter := newEmitter()
 
 	// Emit some instructions
 	emitter.EmitPush(1, 1, 1)
@@ -1500,7 +1500,7 @@ func TestEmitterGetInstructions(t *testing.T) {
 
 // TestEmitterGetLineNumber tests getting line number
 func TestEmitterGetLineNumber(t *testing.T) {
-	emitter := NewEmitter()
+	emitter := newEmitter()
 
 	// Emit an instruction with line number
 	emitter.EmitPush(1, 42, 1)
@@ -1517,7 +1517,7 @@ func TestEmitterGetLineNumber(t *testing.T) {
 
 // TestEmitterEmitNop tests NOP instruction emission
 func TestEmitterEmitNop(t *testing.T) {
-	emitter := NewEmitter()
+	emitter := newEmitter()
 
 	offset := emitter.EmitNop(1, 1)
 	if offset < 0 {
@@ -1536,7 +1536,7 @@ func TestEmitterEmitNop(t *testing.T) {
 
 // TestEmitterPrintInstructions tests instruction printing
 func TestEmitterPrintInstructions(t *testing.T) {
-	emitter := NewEmitter()
+	emitter := newEmitter()
 
 	// Emit some instructions
 	emitter.EmitPush(1, 1, 1)
@@ -1551,7 +1551,7 @@ func TestEmitterPrintInstructions(t *testing.T) {
 
 // TestEmitterPrintBytecode tests bytecode printing
 func TestEmitterPrintBytecode(t *testing.T) {
-	emitter := NewEmitter()
+	emitter := newEmitter()
 
 	// Emit some instructions
 	emitter.EmitPush(1, 1, 1)
@@ -1571,8 +1571,8 @@ func TestEmitterPrintBytecode(t *testing.T) {
 
 // TestConditionCompilerCompileCondition tests condition compilation
 func TestConditionCompilerCompileCondition(t *testing.T) {
-	emitter := NewEmitter()
-	cc := NewConditionCompiler(emitter, make(map[string]int))
+	emitter := newEmitter()
+	cc := newConditionCompiler(emitter, make(map[string]int))
 
 	condition := &ast.Condition{
 		Pos: token.Position{Line: 1, Column: 1},
@@ -1591,8 +1591,8 @@ func TestConditionCompilerCompileCondition(t *testing.T) {
 
 // TestConditionCompilerAddVariable tests adding variables
 func TestConditionCompilerAddVariable(t *testing.T) {
-	emitter := NewEmitter()
-	cc := NewConditionCompiler(emitter, make(map[string]int))
+	emitter := newEmitter()
+	cc := newConditionCompiler(emitter, make(map[string]int))
 
 	// Add a variable
 	cc.AddVariable("$test", 0)
@@ -1612,8 +1612,8 @@ func TestConditionCompilerAddVariable(t *testing.T) {
 
 // TestConditionCompilerGetVariableIndex tests getting variable index
 func TestConditionCompilerGetVariableIndex(t *testing.T) {
-	emitter := NewEmitter()
-	cc := NewConditionCompiler(emitter, make(map[string]int))
+	emitter := newEmitter()
+	cc := newConditionCompiler(emitter, make(map[string]int))
 
 	// Add a variable
 	cc.AddVariable("$test", 0)
@@ -1636,8 +1636,8 @@ func TestConditionCompilerGetVariableIndex(t *testing.T) {
 
 // TestConditionCompilerGetStats tests getting statistics
 func TestConditionCompilerGetStats(t *testing.T) {
-	emitter := NewEmitter()
-	cc := NewConditionCompiler(emitter, make(map[string]int))
+	emitter := newEmitter()
+	cc := newConditionCompiler(emitter, make(map[string]int))
 
 	// Compile a condition
 	condition := &ast.Condition{
@@ -1661,8 +1661,8 @@ func TestConditionCompilerGetStats(t *testing.T) {
 
 // TestConditionCompilerValidateExpression tests expression validation
 func TestConditionCompilerValidateExpression(t *testing.T) {
-	emitter := NewEmitter()
-	cc := NewConditionCompiler(emitter, make(map[string]int))
+	emitter := newEmitter()
+	cc := newConditionCompiler(emitter, make(map[string]int))
 
 	tests := []struct {
 		name    string
@@ -1753,7 +1753,7 @@ func TestCompilerReset(t *testing.T) {
 
 // TestCompiledRuleGetters tests CompiledRule getter methods
 func TestCompiledRuleGetters(t *testing.T) {
-	rc := NewRuleCompiler()
+	rc := newRuleCompiler()
 
 	rule := &ast.Rule{
 		Pos:  token.Position{Line: 1, Column: 1},
@@ -1803,15 +1803,15 @@ func TestCompiledRuleGetters(t *testing.T) {
 		t.Errorf("GetStats() returned nil")
 	}
 
-	// Test GetAutomaton
-	automaton := compiled.GetAutomaton()
+	// Test getAutomaton
+	automaton := compiled.getAutomaton()
 	if automaton == nil {
-		t.Errorf("GetAutomaton() returned nil")
+		t.Errorf("getAutomaton() returned nil")
 	}
 }
 
 func TestCompiledRuleStatsSurviveRuleCompilerReuse(t *testing.T) {
-	rc := NewRuleCompiler()
+	rc := newRuleCompiler()
 
 	firstRule := createTestRuleForCompiledProgram(t, "first_rule", "$first", "first", 1)
 	firstCompiled, err := rc.CompileRule(firstRule)
@@ -1863,7 +1863,7 @@ func TestCompiledRuleStatsSurviveRuleCompilerReuse(t *testing.T) {
 }
 
 func TestCompiledRuleGetStatsReturnsCopy(t *testing.T) {
-	rc := NewRuleCompiler()
+	rc := newRuleCompiler()
 	rule := createTestRuleForCompiledProgram(t, "copy_rule", "$copy", "copy", 1)
 
 	compiled, err := rc.CompileRule(rule)
@@ -1905,7 +1905,7 @@ func TestCompiledProgramGetters(t *testing.T) {
 
 // setupTestCompiledProgram creates a test compiled program with multiple rules
 func setupTestCompiledProgram(t *testing.T) *CompiledProgram {
-	rc := NewRuleCompiler()
+	rc := newRuleCompiler()
 
 	rules := []*ast.Rule{
 		createTestRuleForCompiledProgram(t, "rule1", "$test", "test", 1),
@@ -2122,9 +2122,9 @@ func TestInstructionOperandProperties(t *testing.T) {
 }
 
 // createTestConditionCompiler creates a condition compiler for testing
-func createTestConditionCompiler() *ConditionCompiler {
-	emitter := NewEmitter()
-	return NewConditionCompiler(emitter, make(map[string]int))
+func createTestConditionCompiler() *conditionCompiler {
+	emitter := newEmitter()
+	return newConditionCompiler(emitter, make(map[string]int))
 }
 
 // createTestLiteral creates a test literal expression
@@ -2140,11 +2140,11 @@ func createTestLiteral() *ast.Literal {
 func TestConditionCompilerMethods(t *testing.T) {
 	tests := []struct {
 		name     string
-		testFunc func(*testing.T, *ConditionCompiler)
+		testFunc func(*testing.T, *conditionCompiler)
 	}{
 		{
 			name: "GenerateLabel",
-			testFunc: func(t *testing.T, cc *ConditionCompiler) {
+			testFunc: func(t *testing.T, cc *conditionCompiler) {
 				label1 := cc.generateLabel()
 				label2 := cc.generateLabel()
 
@@ -2158,8 +2158,8 @@ func TestConditionCompilerMethods(t *testing.T) {
 		},
 		{
 			name: "EmitJump",
-			testFunc: func(t *testing.T, cc *ConditionCompiler) {
-				err := cc.EmitJump(ConditionalJumpConfig{Opcode: OpJz, TargetLabel: "L1", Position: JumpPosition{Line: 1, Column: 1}})
+			testFunc: func(t *testing.T, cc *conditionCompiler) {
+				err := cc.EmitJump(conditionaljumpConfig{Opcode: OpJz, TargetLabel: "L1", Position: jumpPosition{Line: 1, Column: 1}})
 				if err != nil {
 					t.Errorf("EmitJump() error = %v", err)
 				}
@@ -2167,7 +2167,7 @@ func TestConditionCompilerMethods(t *testing.T) {
 		},
 		{
 			name: "OptimizeExpression",
-			testFunc: func(t *testing.T, cc *ConditionCompiler) {
+			testFunc: func(t *testing.T, cc *conditionCompiler) {
 				expr := createTestLiteral()
 				optimized := cc.OptimizeExpression(expr)
 				if optimized == nil {
@@ -2177,7 +2177,7 @@ func TestConditionCompilerMethods(t *testing.T) {
 		},
 		{
 			name: "EstimateComplexity",
-			testFunc: func(t *testing.T, cc *ConditionCompiler) {
+			testFunc: func(t *testing.T, cc *conditionCompiler) {
 				expr := createTestLiteral()
 				complexity := cc.EstimateComplexity(expr)
 				if complexity < 0 {
@@ -2197,7 +2197,7 @@ func TestConditionCompilerMethods(t *testing.T) {
 
 // TestCompiledProgramPrintDebug tests PrintDebug method
 func TestCompiledProgramPrintDebug(t *testing.T) {
-	rc := NewRuleCompiler()
+	rc := newRuleCompiler()
 
 	rule := &ast.Rule{
 		Pos:  token.Position{Line: 1, Column: 1},
@@ -2239,7 +2239,7 @@ func TestCompiledProgramPrintDebug(t *testing.T) {
 
 // TestCompiledProgramGetExecutionPlan tests GetExecutionPlan method
 func TestCompiledProgramGetExecutionPlan(t *testing.T) {
-	rc := NewRuleCompiler()
+	rc := newRuleCompiler()
 
 	rule := &ast.Rule{
 		Pos:  token.Position{Line: 1, Column: 1},
@@ -2281,7 +2281,7 @@ func TestCompiledProgramGetExecutionPlan(t *testing.T) {
 
 // TestExecutionPlanGetRuleOffset tests GetRuleOffset method
 func TestExecutionPlanGetRuleOffset(t *testing.T) {
-	rc := NewRuleCompiler()
+	rc := newRuleCompiler()
 
 	rule := &ast.Rule{
 		Pos:  token.Position{Line: 1, Column: 1},
@@ -2328,7 +2328,7 @@ func TestExecutionPlanGetRuleOffset(t *testing.T) {
 
 // TestExecutionPlanGetTotalSize tests GetTotalSize method
 func TestExecutionPlanGetTotalSize(t *testing.T) {
-	rc := NewRuleCompiler()
+	rc := newRuleCompiler()
 
 	rule := &ast.Rule{
 		Pos:  token.Position{Line: 1, Column: 1},
@@ -2412,8 +2412,8 @@ rule test_rule {
 
 // TestConditionCompilerCompileBooleanExpression tests CompileBooleanExpression method
 func TestConditionCompilerCompileBooleanExpression(t *testing.T) {
-	emitter := NewEmitter()
-	cc := NewConditionCompiler(emitter, make(map[string]int))
+	emitter := newEmitter()
+	cc := newConditionCompiler(emitter, make(map[string]int))
 
 	expr := &ast.Literal{
 		Pos:   token.Position{Line: 1, Column: 1},
@@ -2436,8 +2436,8 @@ func TestConditionCompilerCompileBooleanExpression(t *testing.T) {
 
 // TestConditionCompilerCompileShortCircuitAnd tests compileShortCircuitAnd method
 func TestConditionCompilerCompileShortCircuitAnd(t *testing.T) {
-	emitter := NewEmitter()
-	cc := NewConditionCompiler(emitter, make(map[string]int))
+	emitter := newEmitter()
+	cc := newConditionCompiler(emitter, make(map[string]int))
 
 	andOp := &ast.BinaryOp{
 		Pos: token.Position{Line: 1, Column: 1},
@@ -2462,8 +2462,8 @@ func TestConditionCompilerCompileShortCircuitAnd(t *testing.T) {
 
 // TestConditionCompilerCompileShortCircuitOr tests compileShortCircuitOr method
 func TestConditionCompilerCompileShortCircuitOr(t *testing.T) {
-	emitter := NewEmitter()
-	cc := NewConditionCompiler(emitter, make(map[string]int))
+	emitter := newEmitter()
+	cc := newConditionCompiler(emitter, make(map[string]int))
 
 	orOp := &ast.BinaryOp{
 		Pos: token.Position{Line: 1, Column: 1},
@@ -2488,7 +2488,7 @@ func TestConditionCompilerCompileShortCircuitOr(t *testing.T) {
 
 // TestEmitterEmitDataTypeFunction tests EmitDataTypeFunction method
 func TestEmitterEmitDataTypeFunction(t *testing.T) {
-	emitter := NewEmitter()
+	emitter := newEmitter()
 
 	// Test with a valid data type function opcode
 	offset, err := emitter.EmitDataTypeFunction(OpReadInt, 1, 1)
@@ -2508,7 +2508,7 @@ func TestEmitterEmitDataTypeFunction(t *testing.T) {
 
 // TestEmitterEmitStringOperation tests EmitStringOperation method
 func TestEmitterEmitStringOperation(t *testing.T) {
-	emitter := NewEmitter()
+	emitter := newEmitter()
 
 	// Test with a valid string operation opcode
 	offset, err := emitter.EmitStringOperation(OpContains, 1, 1)
@@ -2528,7 +2528,7 @@ func TestEmitterEmitStringOperation(t *testing.T) {
 
 // TestEmitterEmitHalt tests EmitHalt method
 func TestEmitterEmitHalt(t *testing.T) {
-	emitter := NewEmitter()
+	emitter := newEmitter()
 
 	offset := emitter.EmitHalt(1, 1)
 	if offset < 0 {
@@ -2967,8 +2967,8 @@ func TestConditionCompilerCompileBinaryOp(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			emitter := NewEmitter()
-			cc := NewConditionCompiler(emitter, make(map[string]int))
+			emitter := newEmitter()
+			cc := newConditionCompiler(emitter, make(map[string]int))
 
 			binOp := &ast.BinaryOp{
 				Pos: token.Position{Line: 1, Column: 1},
@@ -3006,8 +3006,8 @@ func TestConditionCompilerCompileUnaryOp(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			emitter := NewEmitter()
-			cc := NewConditionCompiler(emitter, make(map[string]int))
+			emitter := newEmitter()
+			cc := newConditionCompiler(emitter, make(map[string]int))
 
 			unaryOp := &ast.UnaryOp{
 				Pos: token.Position{Line: 1, Column: 1},
@@ -3062,14 +3062,14 @@ func TestRuleCompilerCompileSingleString(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			emitter := NewEmitter()
-			sc := NewStringCompiler()
-			ac := NewACAutomaton()
-			rc := &RuleCompiler{
+			emitter := newEmitter()
+			sc := newStringCompiler()
+			ac := newacAutomaton()
+			rc := &ruleCompiler{
 				emitter:           emitter,
 				stringCompiler:    sc,
 				automaton:         ac,
-				conditionCompiler: NewConditionCompiler(emitter, make(map[string]int)),
+				conditionCompiler: newConditionCompiler(emitter, make(map[string]int)),
 			}
 
 			str := &ast.String{
@@ -3088,11 +3088,11 @@ func TestRuleCompilerCompileSingleString(t *testing.T) {
 
 // TestRuleCompilerCompileCondition tests compileCondition method
 func TestRuleCompilerCompileCondition(t *testing.T) {
-	emitter := NewEmitter()
-	sc := NewStringCompiler()
-	ac := NewACAutomaton()
-	cc := NewConditionCompiler(emitter, make(map[string]int))
-	rc := &RuleCompiler{
+	emitter := newEmitter()
+	sc := newStringCompiler()
+	ac := newacAutomaton()
+	cc := newConditionCompiler(emitter, make(map[string]int))
+	rc := &ruleCompiler{
 		emitter:           emitter,
 		stringCompiler:    sc,
 		automaton:         ac,
@@ -3198,8 +3198,8 @@ func createTestUnaryOpForComplexity(op token.Type, right ast.Expression) *ast.Un
 
 // TestConditionCompilerEstimateComplexityExtended tests complexity estimation for various expressions
 func TestConditionCompilerEstimateComplexityExtended(t *testing.T) {
-	emitter := NewEmitter()
-	cc := NewConditionCompiler(emitter, make(map[string]int))
+	emitter := newEmitter()
+	cc := newConditionCompiler(emitter, make(map[string]int))
 
 	testCases := []struct {
 		name       string
@@ -3305,8 +3305,8 @@ func TestConditionCompilerEdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			emitter := NewEmitter()
-			cc := NewConditionCompiler(emitter, make(map[string]int))
+			emitter := newEmitter()
+			cc := newConditionCompiler(emitter, make(map[string]int))
 			err := cc.CompileCondition(tt.condition)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("CompileCondition() error = %v, wantErr %v", err, tt.wantErr)
@@ -3379,12 +3379,12 @@ func TestAtomQualityCalculation(t *testing.T) {
 func TestEmitterInstructions(t *testing.T) {
 	tests := []struct {
 		name    string
-		testFn  func(*Emitter) error
+		testFn  func(*emitter) error
 		wantErr bool
 	}{
 		{
 			name: "emit_opcode",
-			testFn: func(e *Emitter) error {
+			testFn: func(e *emitter) error {
 				e.EmitOpcode(OpHalt, 1, 1)
 				return nil
 			},
@@ -3392,7 +3392,7 @@ func TestEmitterInstructions(t *testing.T) {
 		},
 		{
 			name: "emit_push",
-			testFn: func(e *Emitter) error {
+			testFn: func(e *emitter) error {
 				e.EmitPush(42, 1, 1)
 				return nil
 			},
@@ -3400,7 +3400,7 @@ func TestEmitterInstructions(t *testing.T) {
 		},
 		{
 			name: "emit_label",
-			testFn: func(e *Emitter) error {
+			testFn: func(e *emitter) error {
 				e.EmitLabel(1, 1, 1)
 				return nil
 			},
@@ -3408,8 +3408,8 @@ func TestEmitterInstructions(t *testing.T) {
 		},
 		{
 			name: "emit_jump",
-			testFn: func(e *Emitter) error {
-				offset := e.EmitJump(JumpConfig{Opcode: OpJz, Target: 1, Line: 1, Pos: 1})
+			testFn: func(e *emitter) error {
+				offset := e.EmitJump(jumpConfig{Opcode: OpJz, Target: 1, Line: 1, Pos: 1})
 				if offset < 0 {
 					return errors.New("EmitJump returned negative offset")
 				}
@@ -3421,7 +3421,7 @@ func TestEmitterInstructions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			emitter := NewEmitter()
+			emitter := newEmitter()
 			err := tt.testFn(emitter)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("test error = %v, wantErr %v", err, tt.wantErr)
@@ -3492,7 +3492,7 @@ func TestRuleCompilerIntegration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rc := NewRuleCompiler()
+			rc := newRuleCompiler()
 			_, err := rc.CompileRule(tt.rule)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("CompileRule() error = %v, wantErr %v", err, tt.wantErr)

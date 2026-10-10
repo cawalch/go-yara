@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"testing/iotest"
 	"time"
@@ -324,7 +325,7 @@ func compileSources(sources []string) (*CompiledProgram, error) {
 		}
 		program.Rules = append(program.Rules, parsed.Rules...)
 	}
-	rc := NewRuleCompiler()
+	rc := newRuleCompiler()
 	rules, err := rc.CompileProgram(program)
 	if err != nil {
 		return nil, err
@@ -701,14 +702,14 @@ func TestScannerHexMatch(t *testing.T) {
 	}
 }
 
-func TestScannerWideTextSharedAutomaton(t *testing.T) {
+func TestScannerWideTextsharedAutomaton(t *testing.T) {
 	ruleSource := `rule match_wide { strings: $a = "hi" wide condition: $a }`
 	compiler := NewCompiler()
 	program, err := compiler.CompileSource(ruleSource)
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
-	if program.SharedAutomaton == nil || len(program.SharedLookup) == 0 {
+	if program.sharedAutomaton == nil || len(program.sharedLookup) == 0 {
 		t.Fatalf("expected compiled program to build shared automaton")
 	}
 
@@ -1153,8 +1154,8 @@ func TestScannerSharedRegexPatternsWithoutTextAutomaton(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(program.SharedLookup) != 0 {
-		t.Fatalf("SharedLookup has %d text entries, want 0", len(program.SharedLookup))
+	if len(program.sharedLookup) != 0 {
+		t.Fatalf("sharedLookup has %d text entries, want 0", len(program.sharedLookup))
 	}
 	scanner := NewScanner(program)
 	defer scanner.Close()
@@ -1469,5 +1470,108 @@ rule test {
 	_, err = scanner.Scan([]byte("test"))
 	if err == nil {
 		t.Fatal("expected iteration limit error, got nil")
+	}
+}
+
+func TestCompiledProgramConcurrentPooledScanning(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+		rule match_alpha { strings: $a = "ALPHA" condition: $a }
+		rule match_beta { strings: $b = "BETA" condition: $b }
+	`)
+	if err != nil {
+		t.Fatalf("CompileSource: %v", err)
+	}
+
+	const workers = 16
+	const iterations = 50
+	var wg sync.WaitGroup
+
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			for j := 0; j < iterations; j++ {
+				var data []byte
+				switch (workerID + j) % 3 {
+				case 0:
+					data = []byte("xx ALPHA yy")
+					matched, err := program.Matches(data)
+					if err != nil || !matched {
+						t.Errorf("expected match for ALPHA: err=%v, matched=%v", err, matched)
+					}
+					rules, err := program.MatchingRules(data)
+					if err != nil || len(rules) != 1 || rules[0].Rule != "match_alpha" {
+						t.Errorf("unexpected MatchingRules for ALPHA: %v, %v", rules, err)
+					}
+				case 1:
+					data = []byte("zz BETA ww")
+					res, err := program.Scan(data)
+					if err != nil || len(res.MatchedRules) != 1 || res.MatchedRules[0].Rule != "match_beta" {
+						t.Errorf("unexpected Scan for BETA: %v, %v", res, err)
+					}
+				case 2:
+					data = []byte("nothing here")
+					matched, err := program.Matches(data)
+					if err != nil || matched {
+						t.Errorf("expected no match: err=%v, matched=%v", err, matched)
+					}
+				}
+			}
+		}(i)
+	}
+	wg.Wait()
+}
+
+func BenchmarkCompiledProgramMatches(b *testing.B) {
+	program, err := NewCompiler().CompileSource(`
+		rule r1 { strings: $a = "TARGET" condition: $a }
+	`)
+	if err != nil {
+		b.Fatalf("CompileSource: %v", err)
+	}
+	data := []byte("some benign payload without the target")
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_, err := program.Matches(data)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkCompiledProgramScan(b *testing.B) {
+	program, err := NewCompiler().CompileSource(`
+		rule r1 { strings: $a = "TARGET" condition: $a }
+	`)
+	if err != nil {
+		b.Fatalf("CompileSource: %v", err)
+	}
+	data := []byte("some benign payload without the target")
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_, err := program.Scan(data)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkCompiledProgramMatchingRules(b *testing.B) {
+	program, err := NewCompiler().CompileSource(`
+		rule r1 { strings: $a = "TARGET" condition: $a }
+	`)
+	if err != nil {
+		b.Fatalf("CompileSource: %v", err)
+	}
+	data := []byte("some benign payload without the target")
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_, err := program.MatchingRules(data)
+		if err != nil {
+			b.Fatal(err)
+		}
 	}
 }

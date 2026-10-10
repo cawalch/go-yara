@@ -252,7 +252,7 @@ func compiledPatternMatchesAtWithCancel(rule *CompiledRule, id string, data []by
 	}
 	switch rule.StringKinds[id] {
 	case StringKindText:
-		for _, info := range rule.Automaton.strings {
+		for _, info := range rule.automaton.strings {
 			if info.Identifier != id {
 				continue
 			}

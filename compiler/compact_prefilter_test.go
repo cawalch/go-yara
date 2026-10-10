@@ -316,10 +316,10 @@ func TestCompactPrefilterAutomatonReplacement(t *testing.T) {
 		t.Fatal(err)
 	}
 	gate := program.compactPrefilter
-	if gate == nil || gate.automaton != program.SharedAutomaton {
+	if gate == nil || gate.automaton != program.sharedAutomaton {
 		t.Fatal("compact gate must retain the original shared automaton")
 	}
-	program.SetSharedAutomaton(nil)
+	program.SetsharedAutomaton(nil)
 	scanner := program.NewScanner()
 	defer scanner.Close()
 	if scanner.compactPrefilterRejects(context.Background(), []byte("event")) {

@@ -12,25 +12,25 @@ import (
 func (s *Scanner) getNonTextMatches(
 	cache *nonTextMatchCache,
 	index int,
-	useSharedAutomaton bool,
+	usesharedAutomaton bool,
 ) ([]matchSpan, bool) {
 	if matches, ready := cache.get(index); ready {
 		return matches, true
 	}
-	if useSharedAutomaton && index >= 0 && index < len(s.program.sharedNonTextCaches) &&
+	if usesharedAutomaton && index >= 0 && index < len(s.program.sharedNonTextCaches) &&
 		s.program.sharedNonTextCaches[index] {
 		return nil, true
 	}
 	return nil, false
 }
 
-// extractGlobalMatchesInt uses the SharedLookup table for O(1) integer routing
+// extractGlobalMatchesInt uses the sharedLookup table for O(1) integer routing
 // instead of parsing colon-delimited string IDs.
 func (s *Scanner) extractGlobalMatchesInt(
 	ctx context.Context,
 	data []byte,
 ) error {
-	lookup := s.program.SharedLookup
+	lookup := s.program.sharedLookup
 	rules := s.program.Rules
 	globalByRule := s.globalMatches
 	fastSeen := s.fastSeen
@@ -46,7 +46,7 @@ func (s *Scanner) extractGlobalMatchesInt(
 	// iterator through an interface adds two allocations to clean Matches calls.
 	//nolint:nestif // duplicated hot paths preserve the zero-allocation default
 	if ctx.Done() == nil {
-		for match := range s.program.SharedAutomaton.SearchIter(data) {
+		for match := range s.program.sharedAutomaton.SearchIter(data) {
 			if match.StringIndex < 0 || match.StringIndex >= len(lookup) {
 				continue
 			}
@@ -71,7 +71,7 @@ func (s *Scanner) extractGlobalMatchesInt(
 				continue
 			}
 
-			info := s.program.SharedAutomaton.strings[match.StringIndex]
+			info := s.program.sharedAutomaton.strings[match.StringIndex]
 			strID := rule.IndexToStringID[entry.StringIdx]
 			globalEntry := globalMatchEntry{
 				strID:    strID,
@@ -106,7 +106,7 @@ func (s *Scanner) extractGlobalMatchesInt(
 			s.markCandidateRule(entry.RuleIndex)
 		}
 	} else {
-		for match := range s.program.SharedAutomaton.searchIterWithCancel(data, ctx.Done()) {
+		for match := range s.program.sharedAutomaton.searchIterWithCancel(data, ctx.Done()) {
 			if match.StringIndex < 0 || match.StringIndex >= len(lookup) {
 				continue
 			}
@@ -131,7 +131,7 @@ func (s *Scanner) extractGlobalMatchesInt(
 				continue
 			}
 
-			info := s.program.SharedAutomaton.strings[match.StringIndex]
+			info := s.program.sharedAutomaton.strings[match.StringIndex]
 			strID := rule.IndexToStringID[entry.StringIdx]
 			globalEntry := globalMatchEntry{
 				strID:    strID,
@@ -215,17 +215,17 @@ func packFastScanKey(ruleIndex, stringIndex int) (uint64, bool) {
 }
 
 func (s *Scanner) addLocalTextMatches(ctx context.Context, rule *CompiledRule, data []byte) error {
-	if rule == nil || rule.Automaton == nil || len(data) == 0 {
+	if rule == nil || rule.automaton == nil || len(data) == 0 {
 		return ctx.Err()
 	}
 	//nolint:nestif // separate iterator branches preserve zero-allocation Scan
 	if s.matchCtx.maxMatchesPerPattern <= 0 {
 		if ctx.Done() == nil {
-			for match := range rule.Automaton.SearchIter(data) {
+			for match := range rule.automaton.SearchIter(data) {
 				acceptAutomatonMatch(s.matchCtx, rule, data, match)
 			}
 		} else {
-			for match := range rule.Automaton.searchIterWithCancel(data, ctx.Done()) {
+			for match := range rule.automaton.searchIterWithCancel(data, ctx.Done()) {
 				acceptAutomatonMatch(s.matchCtx, rule, data, match)
 			}
 		}
@@ -235,7 +235,7 @@ func (s *Scanner) addLocalTextMatches(ctx context.Context, rule *CompiledRule, d
 	matched := make(map[string]bool, len(rule.TextPatterns))
 	//nolint:nestif // separate iterator branches preserve zero-allocation Scan
 	if ctx.Done() == nil {
-		for match := range rule.Automaton.SearchIter(data) {
+		for match := range rule.automaton.SearchIter(data) {
 			if matched[match.StringID] {
 				continue
 			}
@@ -247,7 +247,7 @@ func (s *Scanner) addLocalTextMatches(ctx context.Context, rule *CompiledRule, d
 			}
 		}
 	} else {
-		for match := range rule.Automaton.searchIterWithCancel(data, ctx.Done()) {
+		for match := range rule.automaton.searchIterWithCancel(data, ctx.Done()) {
 			if matched[match.StringID] {
 				continue
 			}
@@ -329,15 +329,15 @@ func (s *Scanner) populateFixedRegexCache(
 }
 
 func shouldUseSharedPatternAutomaton(data []byte, program *CompiledProgram) bool {
-	if program == nil || program.SharedAutomaton == nil || len(program.SharedLookup) == 0 {
+	if program == nil || program.sharedAutomaton == nil || len(program.sharedLookup) == 0 {
 		return false
 	}
 	// Text strings rely on the shared automaton, and large non-text sets have
 	// already crossed the compile-time threshold where one pass wins broadly.
-	if len(program.SharedLookup) >= minSharedNonTextEntries {
+	if len(program.sharedLookup) >= minSharedNonTextEntries {
 		return true
 	}
-	for _, entry := range program.SharedLookup {
+	for _, entry := range program.sharedLookup {
 		if entry.Kind == StringKindText || entry.alternativeAtom || entry.forceShared {
 			return true
 		}
@@ -352,7 +352,7 @@ func shouldUseSharedPatternAutomaton(data []byte, program *CompiledProgram) bool
 	// root density by that entries-per-root reuse ratio. This retains the old
 	// one-hit-per-32-bytes crossover when every entry has its own root, while
 	// avoiding repeated full-input scans when many entries share a root.
-	if len(data) == 0 || len(program.SharedAutomaton.rootBytes) == 0 {
+	if len(data) == 0 || len(program.sharedAutomaton.rootBytes) == 0 {
 		return false
 	}
 	const (
@@ -362,7 +362,7 @@ func shouldUseSharedPatternAutomaton(data []byte, program *CompiledProgram) bool
 	)
 	samples := 0
 	rootHits := 0
-	rootTransitions := &program.SharedAutomaton.states[0].transitions
+	rootTransitions := &program.sharedAutomaton.states[0].transitions
 	sampleAt := func(position int) {
 		// A compiled automaton's goto table is closed over failure links, so an
 		// absent root edge reads back as 0 rather than -1. No real transition can
@@ -387,8 +387,8 @@ func shouldUseSharedPatternAutomaton(data []byte, program *CompiledProgram) bool
 			}
 		}
 	}
-	return rootHits*rootDensityScale*len(program.SharedAutomaton.rootBytes) <
-		samples*len(program.SharedLookup)
+	return rootHits*rootDensityScale*len(program.sharedAutomaton.rootBytes) <
+		samples*len(program.sharedLookup)
 }
 
 func shouldUseFixedRegexDispatch(data []byte, dispatch *fixedRegexDispatch) bool {
@@ -417,7 +417,7 @@ func (s *Scanner) addLocalNonTextMatches(
 	rule *CompiledRule,
 	data []byte,
 	cache *nonTextMatchCache,
-	useSharedAutomaton bool,
+	usesharedAutomaton bool,
 ) error {
 	if rule == nil {
 		return ctx.Err()
@@ -426,7 +426,7 @@ func (s *Scanner) addLocalNonTextMatches(
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if matches, ok := s.getNonTextMatches(cache, regexInfo.cacheIndex, useSharedAutomaton); ok {
+		if matches, ok := s.getNonTextMatches(cache, regexInfo.cacheIndex, usesharedAutomaton); ok {
 			addCachedMatches(s.matchCtx, id, matches)
 			continue
 		}
@@ -443,7 +443,7 @@ func (s *Scanner) addLocalNonTextMatches(
 			return err
 		}
 		if pattern != nil {
-			if matches, ok := s.getNonTextMatches(cache, pattern.cacheIndex, useSharedAutomaton); ok {
+			if matches, ok := s.getNonTextMatches(cache, pattern.cacheIndex, usesharedAutomaton); ok {
 				addCachedMatches(s.matchCtx, id, matches)
 				continue
 			}
@@ -476,8 +476,8 @@ func (s *Scanner) prepareInterpreter(rule *CompiledRule) {
 	s.interp.SetMatchContext(s.matchCtx)
 	s.interp.SetRuleResults(s.ruleResults)
 
-	if rule.Automaton != nil {
-		for idx, str := range rule.Automaton.strings {
+	if rule.automaton != nil {
+		for idx, str := range rule.automaton.strings {
 			s.interp.SetMemoryString(idx, str.Identifier)
 		}
 	}

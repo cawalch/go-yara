@@ -61,7 +61,7 @@ type Compiler struct {
 	// Compilation phases
 	parser    *parser.Parser      // YARA source parser
 	analyzer  *semantic.Validator // Semantic analysis and validation
-	generator *RuleCompiler       // Bytecode generation
+	generator *ruleCompiler       // Bytecode generation
 
 	// Configuration
 	options CompilationOptions // Compilation settings and limits
@@ -973,7 +973,7 @@ func (c *Compiler) compileCodeGenWithContext(ctx context.Context, program *ast.P
 
 	var compiledRules []*CompiledRule
 	for {
-		generator, moduleErr := NewRuleCompilerWithModules(c.options.Modules)
+		generator, moduleErr := newRuleCompilerWithModules(c.options.Modules)
 		if moduleErr != nil {
 			return nil, fmt.Errorf("configuring modules: %w", moduleErr)
 		}

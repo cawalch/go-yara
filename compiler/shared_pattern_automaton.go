@@ -14,12 +14,12 @@ type sharedPrefilterSpec struct {
 	isRegex     bool
 	flags       regex.Flags
 	forceShared bool
-	entry       SharedAutomatonEntry
+	entry       sharedAutomatonEntry
 }
 
 type sharedPatternAutomatonBuilder struct {
-	automaton      *ACAutomaton
-	lookup         []SharedAutomatonEntry
+	automaton      *acAutomaton
+	lookup         []sharedAutomatonEntry
 	seen           map[prefilterDedupKey]struct{}
 	prefilterSpecs []sharedPrefilterSpec
 }
@@ -27,8 +27,8 @@ type sharedPatternAutomatonBuilder struct {
 func newSharedPatternAutomatonBuilder(rules []*CompiledRule) *sharedPatternAutomatonBuilder {
 	totalEntries := 0
 	for _, rule := range rules {
-		if rule.Automaton != nil {
-			totalEntries += len(rule.Automaton.strings)
+		if rule.automaton != nil {
+			totalEntries += len(rule.automaton.strings)
 		}
 		for _, pattern := range rule.RegexPatterns {
 			totalEntries += max(2, len(pattern.alternativeAtoms)*2)
@@ -36,11 +36,11 @@ func newSharedPatternAutomatonBuilder(rules []*CompiledRule) *sharedPatternAutom
 		totalEntries += len(rule.HexPatterns)
 	}
 
-	automaton := NewACAutomaton()
+	automaton := newacAutomaton()
 	automaton.ReserveStrings(totalEntries)
 	return &sharedPatternAutomatonBuilder{
 		automaton:      automaton,
-		lookup:         make([]SharedAutomatonEntry, 0, totalEntries),
+		lookup:         make([]sharedAutomatonEntry, 0, totalEntries),
 		seen:           make(map[prefilterDedupKey]struct{}),
 		prefilterSpecs: make([]sharedPrefilterSpec, 0, totalEntries),
 	}
@@ -49,7 +49,7 @@ func newSharedPatternAutomatonBuilder(rules []*CompiledRule) *sharedPatternAutom
 // buildSharedPatternAutomaton combines text strings and safe regex/hex atoms
 // into one global candidate pass. Non-text entries are exact-verified after
 // the automaton reports their candidate offsets.
-func buildSharedPatternAutomaton(rules []*CompiledRule) (*ACAutomaton, []SharedAutomatonEntry, error) {
+func buildSharedPatternAutomaton(rules []*CompiledRule) (*acAutomaton, []sharedAutomatonEntry, error) {
 	builder := newSharedPatternAutomatonBuilder(rules)
 	for ruleIndex, rule := range rules {
 		if err := builder.addRule(ruleIndex, rule); err != nil {
@@ -65,7 +65,7 @@ func buildSharedPatternAutomaton(rules []*CompiledRule) (*ACAutomaton, []SharedA
 	return builder.automaton, builder.lookup, nil
 }
 
-func sharedNonTextCacheCoverage(size int, lookup []SharedAutomatonEntry) []bool {
+func sharedNonTextCacheCoverage(size int, lookup []sharedAutomatonEntry) []bool {
 	covered := make([]bool, size)
 	// Non-text specs are emitted as complete mandatory-atom covers: the builder
 	// either adds every deferred spec, adds every forced alternative/case spec,
@@ -106,10 +106,10 @@ func (builder *sharedPatternAutomatonBuilder) addRule(ruleIndex int, rule *Compi
 }
 
 func (builder *sharedPatternAutomatonBuilder) addTextPatterns(ruleIndex int, rule *CompiledRule) error {
-	if rule.Automaton == nil {
+	if rule.automaton == nil {
 		return nil
 	}
-	for _, info := range rule.Automaton.strings {
+	for _, info := range rule.automaton.strings {
 		strID := info.Identifier
 		if rule.StringKinds[strID] != StringKindText {
 			continue
@@ -118,7 +118,7 @@ func (builder *sharedPatternAutomatonBuilder) addTextPatterns(ruleIndex int, rul
 		if err := builder.automaton.AddStringWithFlags(globalID, info.Data, false, false, info.Flags); err != nil {
 			return fmt.Errorf("adding %s to shared automaton: %w", globalID, err)
 		}
-		builder.lookup = append(builder.lookup, SharedAutomatonEntry{
+		builder.lookup = append(builder.lookup, sharedAutomatonEntry{
 			RuleIndex: ruleIndex,
 			StringIdx: rule.ResolveStringIndex(strID),
 			Kind:      StringKindText,
@@ -190,7 +190,7 @@ func (builder *sharedPatternAutomatonBuilder) addRegexPrefilters(ruleIndex int, 
 					isRegex:     true,
 					flags:       flags,
 					forceShared: forceShared,
-					entry: SharedAutomatonEntry{
+					entry: sharedAutomatonEntry{
 						RuleIndex:       ruleIndex,
 						StringIdx:       rule.ResolveStringIndex(strID),
 						Kind:            StringKindRegex,
@@ -227,7 +227,7 @@ func (builder *sharedPatternAutomatonBuilder) addHexPrefilters(ruleIndex int, ru
 			identifier: fmt.Sprintf("%s:%s:hex", rule.Name, strID),
 			data:       atom.data,
 			isHex:      true,
-			entry: SharedAutomatonEntry{
+			entry: sharedAutomatonEntry{
 				RuleIndex:     ruleIndex,
 				StringIdx:     rule.ResolveStringIndex(strID),
 				Kind:          StringKindHex,
@@ -259,7 +259,7 @@ func (builder *sharedPatternAutomatonBuilder) addDeferredPrefilters() error {
 	return nil
 }
 
-func shouldAddSharedNonTextPrefilters(automaton *ACAutomaton, specs []sharedPrefilterSpec) bool {
+func shouldAddSharedNonTextPrefilters(automaton *acAutomaton, specs []sharedPrefilterSpec) bool {
 	if len(specs) >= minSharedNonTextEntries {
 		return true
 	}

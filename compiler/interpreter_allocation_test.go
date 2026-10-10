@@ -20,7 +20,7 @@ func BenchmarkInterpreterAllocation(b *testing.B) {
 	}
 
 	// Create a single compiled rule
-	compiler := NewRuleCompiler()
+	compiler := newRuleCompiler()
 	compiledRule, err := compiler.CompileRule(rule)
 	if err != nil {
 		b.Fatalf("failed to compile rule: %v", err)

@@ -8,7 +8,7 @@ import (
 )
 
 func TestStringCompilerOptimizePatternPreservesBytes(t *testing.T) {
-	sc := NewStringCompiler()
+	sc := newStringCompiler()
 	for _, test := range []struct {
 		name      string
 		pattern   []byte
@@ -38,7 +38,7 @@ func TestStringCompilerOptimizePatternPreservesBytes(t *testing.T) {
 
 // TestStringCompilerValidateModifiers tests string modifier validation
 func TestStringCompilerValidateModifiers(t *testing.T) {
-	sc := NewStringCompiler()
+	sc := newStringCompiler()
 
 	tests := []struct {
 		name      string
@@ -140,7 +140,7 @@ func TestStringCompilerValidateModifiers(t *testing.T) {
 }
 
 func TestBase64AlignmentVariants(t *testing.T) {
-	sc := NewStringCompiler()
+	sc := newStringCompiler()
 	input := []byte("This program cannot")
 	variants, err := sc.base64AlignedPatterns(input, "", false)
 	if err != nil {
@@ -169,7 +169,7 @@ func TestBase64AlignmentVariants(t *testing.T) {
 }
 
 func TestBase64WideAlignmentVariants(t *testing.T) {
-	sc := NewStringCompiler()
+	sc := newStringCompiler()
 	input := []byte("This program cannot")
 	variants, err := sc.base64AlignedPatterns(input, "", true)
 	if err != nil {
@@ -194,7 +194,7 @@ func TestBase64WideAlignmentVariants(t *testing.T) {
 }
 
 func TestStringCompilerEncodeToWideBytes(t *testing.T) {
-	sc := NewStringCompiler()
+	sc := newStringCompiler()
 
 	tests := []struct {
 		name  string

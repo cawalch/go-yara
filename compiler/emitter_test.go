@@ -6,7 +6,7 @@ import (
 
 // TestEmitter tests the bytecode emitter
 func TestEmitter(t *testing.T) {
-	emitter := NewEmitter()
+	emitter := newEmitter()
 
 	// Test basic emission
 	offset1 := emitter.EmitOpcode(OpPush, 1, 1)
@@ -45,7 +45,7 @@ func TestEmitter(t *testing.T) {
 
 // TestEmitterStats tests emitter statistics
 func TestEmitterStats(t *testing.T) {
-	emitter := NewEmitter()
+	emitter := newEmitter()
 
 	// Emit some instructions
 	emitter.EmitOpcode(OpPush, 1, 1)

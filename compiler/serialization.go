@@ -30,7 +30,7 @@ type serializedRule struct {
 	Bytecode            []byte
 	StringCount         int
 	Strings             map[string][]byte
-	AutomatonStrings    []ACStringInfo
+	AutomatonStrings    []acStringInfo
 	StringSets          [][]string
 	TextStringSets      [][]string
 	AnonymousStrings    []string
@@ -303,8 +303,8 @@ func serializeRule(rule *CompiledRule) (serializedRule, error) {
 		HeaderConstraints:   slices.Clone(rule.HeaderConstraints),
 		RequiredStrings:     slices.Clone(rule.requiredStrings),
 	}
-	if rule.Automaton != nil {
-		serialized.AutomatonStrings = cloneACStringInfos(rule.Automaton.strings)
+	if rule.automaton != nil {
+		serialized.AutomatonStrings = cloneacStringInfos(rule.automaton.strings)
 	}
 	for identifier, pattern := range rule.RegexPatterns {
 		serialized.RegexPatterns[identifier] = serializeRegexPattern(pattern)
@@ -384,7 +384,7 @@ func deserializeRule(serialized serializedRule, bindings map[string]compiledModu
 		Bytecode:            slices.Clone(serialized.Bytecode),
 		StringCount:         serialized.StringCount,
 		Strings:             cloneByteMap(serialized.Strings),
-		Automaton:           automaton,
+		automaton:           automaton,
 		StringSets:          cloneStringSlices(serialized.StringSets),
 		TextStringSets:      cloneStringSlices(serialized.TextStringSets),
 		AnonymousStrings:    slices.Clone(serialized.AnonymousStrings),
@@ -492,11 +492,11 @@ func moduleBindingsForLoad(modules []Module) (map[string]compiledModuleFunction,
 	return bindings, nil
 }
 
-func deserializeAutomaton(infos []ACStringInfo) (*ACAutomaton, error) {
+func deserializeAutomaton(infos []acStringInfo) (*acAutomaton, error) {
 	if len(infos) == 0 {
 		return nil, nil
 	}
-	automaton := NewACAutomaton()
+	automaton := newacAutomaton()
 	automaton.ReserveStrings(len(infos))
 	for _, info := range infos {
 		if err := automaton.AddStringWithFlags(
