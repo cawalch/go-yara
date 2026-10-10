@@ -113,8 +113,8 @@ func (s *Scanner) compactPrefilterRejects(ctx context.Context, data []byte) bool
 		return true
 	}
 	ac, state := gate.automaton, int32(0)
-	if len(data) >= 256 && len(ac.rootBytes) > 0 && len(ac.rootBytes) <= maxSparseRootTransitions {
-		cursor := newRootCandidateCursor(ac.rootBytes)
+	if len(data) >= 256 && len(ac.rootLanes) > 0 && len(ac.rootLanes) <= maxSparseRootTransitions {
+		cursor := newRootCandidateCursor(ac.rootLanes)
 		for i := 0; i < len(data); i++ {
 			if state == 0 && len(data)-i >= 256 {
 				i = cursor.next(data, i)

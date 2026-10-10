@@ -38,6 +38,7 @@ type acAutomaton struct {
 	// Explicit bytes reachable from the root before failure links are built.
 	// Small sets can use SIMD-optimized byte search to skip root misses.
 	rootBytes []byte
+	rootLanes []rootLane
 
 	// Compilation state
 	compiledOnce sync.Once
@@ -210,9 +211,24 @@ func (ac *acAutomaton) Compile() error {
 
 func (ac *acAutomaton) collectRootBytes() {
 	ac.rootBytes = ac.rootBytes[:0]
+	ac.rootLanes = ac.rootLanes[:0]
 	for byteVal, nextState := range ac.states[0].transitions {
 		if nextState != -1 {
 			ac.rootBytes = append(ac.rootBytes, byte(byteVal))
+		}
+	}
+	var visited [256]bool
+	for _, b := range ac.rootBytes {
+		if visited[b] {
+			continue
+		}
+		visited[b] = true
+		other := flipASCIICase(b)
+		if other != b && ac.states[0].transitions[other] != -1 {
+			visited[other] = true
+			ac.rootLanes = append(ac.rootLanes, rootLane{value: toLowerTable[b], isFold: true})
+		} else {
+			ac.rootLanes = append(ac.rootLanes, rootLane{value: b, isFold: false})
 		}
 	}
 }
@@ -355,17 +371,22 @@ const (
 	rootCandidateUnsearched  = -2
 )
 
+type rootLane struct {
+	value  byte
+	isFold bool
+}
+
 // rootCandidateCursor keeps one next-occurrence cursor per root transition.
 // Every lane advances monotonically, so an absent root byte is searched once
 // instead of rescanning the remaining input at every candidate from another
 // lane.
 type rootCandidateCursor struct {
-	values    []byte
+	lanes     []rootLane
 	positions [maxSparseRootTransitions]int
 }
 
-func newRootCandidateCursor(values []byte) rootCandidateCursor {
-	cursor := rootCandidateCursor{values: values}
+func newRootCandidateCursor(lanes []rootLane) rootCandidateCursor {
+	cursor := rootCandidateCursor{lanes: lanes}
 	for index := range cursor.positions {
 		cursor.positions[index] = rootCandidateUnsearched
 	}
@@ -374,13 +395,18 @@ func newRootCandidateCursor(values []byte) rootCandidateCursor {
 
 func (cursor *rootCandidateCursor) next(data []byte, from int) int {
 	best := -1
-	for index, value := range cursor.values {
+	for index, lane := range cursor.lanes {
 		position := cursor.positions[index]
 		if position == rootCandidateExhausted {
 			continue
 		}
 		if position < from {
-			relative := bytes.IndexByte(data[from:], value)
+			var relative int
+			if lane.isFold {
+				relative = indexASCIIFoldByte(data[from:], lane.value)
+			} else {
+				relative = bytes.IndexByte(data[from:], lane.value)
+			}
 			if relative < 0 {
 				cursor.positions[index] = rootCandidateExhausted
 				continue
@@ -397,17 +423,23 @@ func (cursor *rootCandidateCursor) next(data []byte, from int) int {
 
 func (cursor *rootCandidateCursor) nextWithCancel(data []byte, from int, done <-chan struct{}) int {
 	best := -1
-	for index, value := range cursor.values {
+	for index, lane := range cursor.lanes {
 		position := cursor.positions[index]
 		if position == rootCandidateExhausted {
 			continue
 		}
 		if position < from {
-			position = indexByteWithCancel(data, from, value, done)
-			if position < 0 {
+			var positionFound int
+			if lane.isFold {
+				positionFound = indexASCIIFoldByteWithCancel(data, from, lane.value, done)
+			} else {
+				positionFound = indexByteWithCancel(data, from, lane.value, done)
+			}
+			if positionFound < 0 {
 				cursor.positions[index] = rootCandidateExhausted
 				continue
 			}
+			position = positionFound
 			cursor.positions[index] = position
 		}
 		if best < 0 || position < best {
@@ -425,6 +457,20 @@ func indexByteWithCancel(data []byte, from int, value byte, done <-chan struct{}
 		}
 		windowEnd := min(windowStart+cancelableSearchWindow, len(data))
 		if relative := bytes.IndexByte(data[windowStart:windowEnd], value); relative >= 0 {
+			return windowStart + relative
+		}
+	}
+	return -1
+}
+
+//nolint:revive // cancellation-aware hot path avoids an options allocation
+func indexASCIIFoldByteWithCancel(data []byte, from int, value byte, done <-chan struct{}) int {
+	for windowStart := from; windowStart < len(data); windowStart += cancelableSearchWindow {
+		if scanCanceled(done) {
+			return -1
+		}
+		windowEnd := min(windowStart+cancelableSearchWindow, len(data))
+		if relative := indexASCIIFoldByte(data[windowStart:windowEnd], value); relative >= 0 {
 			return windowStart + relative
 		}
 	}
@@ -457,6 +503,10 @@ func indexSinglePattern(data []byte, pattern []byte, noCase bool) int {
 	}
 	if !noCase {
 		return bytes.Index(data, pattern)
+	}
+
+	if len(pattern) == 1 {
+		return indexASCIIFoldByte(data, pattern[0])
 	}
 
 	last := len(data) - len(pattern)
@@ -497,6 +547,24 @@ func singlePatternIsDense(data []byte, pattern []byte, noCase bool) bool {
 			return true
 		}
 		pos += rel + 1
+	}
+	return false
+}
+
+func (ac *acAutomaton) rootIsDense(data []byte) bool {
+	sample := data
+	if len(sample) > 256 {
+		sample = sample[:256]
+	}
+	rootTransitions := &ac.states[0].transitions
+	hits := 0
+	for _, b := range sample {
+		if rootTransitions[b] != 0 {
+			hits++
+			if hits > 16 {
+				return true
+			}
+		}
 	}
 	return false
 }
@@ -591,20 +659,32 @@ func (ac *acAutomaton) searchIterWithCancel(data []byte, done <-chan struct{}) i
 
 		currentState := int32(0)
 		rootHasNoOutput := ac.states[0].outputStart == ac.states[0].outputEnd
-		if rootHasNoOutput && len(data) >= 256 && len(ac.rootBytes) > 0 && len(ac.rootBytes) <= maxSparseRootTransitions {
-			rootCursor := newRootCandidateCursor(ac.rootBytes)
+		if rootHasNoOutput && len(data) >= 256 && len(ac.rootLanes) > 0 && len(ac.rootLanes) <= maxSparseRootTransitions && !ac.rootIsDense(data) {
+			rootCursor := newRootCandidateCursor(ac.rootLanes)
+			rootTransitions := &ac.states[0].transitions
+			linearUntil := 0
 			for i := 0; i < len(data); i++ {
 				if i&(scanCancellationInterval-1) == 0 && scanCanceled(done) {
 					return
 				}
-				if currentState == 0 && len(data)-i >= 256 {
+				if currentState == 0 && i >= linearUntil && len(data)-i >= 256 {
 					candidate := rootCursor.nextWithCancel(data, i, done)
 					if candidate < 0 {
 						return
 					}
+					if candidate-i < 64 {
+						linearUntil = candidate + 256
+					}
 					i = candidate
 				}
-				currentState = ac.findNextState(currentState, data[i])
+				if currentState == 0 {
+					currentState = rootTransitions[data[i]]
+					if currentState == 0 {
+						continue
+					}
+				} else {
+					currentState = ac.findNextState(currentState, data[i])
+				}
 				if ac.states[currentState].outputStart != ac.states[currentState].outputEnd &&
 					!ac.yieldMatchesWithCancel(currentState, i, yield, done) {
 					return
@@ -696,17 +776,29 @@ func (ac *acAutomaton) SearchIter(data []byte) iter.Seq[acMatch] {
 		// with the platform byte-search routine. Keep the tight range loop for
 		// small inputs and wider roots where repeated byte searches cost more.
 		rootHasNoOutput := ac.states[0].outputStart == ac.states[0].outputEnd
-		if rootHasNoOutput && len(data) >= 256 && len(ac.rootBytes) > 0 && len(ac.rootBytes) <= maxSparseRootTransitions {
-			rootCursor := newRootCandidateCursor(ac.rootBytes)
+		if rootHasNoOutput && len(data) >= 256 && len(ac.rootLanes) > 0 && len(ac.rootLanes) <= maxSparseRootTransitions && !ac.rootIsDense(data) {
+			rootCursor := newRootCandidateCursor(ac.rootLanes)
+			rootTransitions := &ac.states[0].transitions
+			linearUntil := 0
 			for i := 0; i < len(data); i++ {
-				if currentState == 0 && len(data)-i >= 256 {
+				if currentState == 0 && i >= linearUntil && len(data)-i >= 256 {
 					candidate := rootCursor.next(data, i)
 					if candidate < 0 {
 						return
 					}
+					if candidate-i < 64 {
+						linearUntil = candidate + 256
+					}
 					i = candidate
 				}
-				currentState = ac.findNextState(currentState, data[i])
+				if currentState == 0 {
+					currentState = rootTransitions[data[i]]
+					if currentState == 0 {
+						continue
+					}
+				} else {
+					currentState = ac.findNextState(currentState, data[i])
+				}
 				if ac.states[currentState].outputStart != ac.states[currentState].outputEnd &&
 					!ac.yieldMatches(currentState, i, yield) {
 					return
@@ -832,6 +924,7 @@ func (ac *acAutomaton) Clone() *acAutomaton {
 		outputs:     slices.Clone(ac.outputs),
 		strings:     internalStrings,
 		rootBytes:   slices.Clone(ac.rootBytes),
+		rootLanes:   slices.Clone(ac.rootLanes),
 		compiled:    ac.compiled,
 		StringCount: len(internalStrings),
 		Strings:     cloneacStringInfos(internalStrings),
@@ -926,6 +1019,7 @@ func (ac *acAutomaton) Reset() {
 	ac.outputs = ac.outputs[:0]
 	ac.strings = ac.strings[:0]
 	ac.rootBytes = ac.rootBytes[:0]
+	ac.rootLanes = ac.rootLanes[:0]
 	ac.StringCount = 0
 	ac.Strings = ac.Strings[:0]
 
