@@ -25,8 +25,9 @@ type XorRange struct {
 	Max int64
 }
 
-// CaptureBinding maps a public evidence name to a regex capture group.
-// Group zero denotes the complete pattern match.
+// CaptureBinding maps a public evidence field name to a string or regex capture group.
+// Group zero (0) denotes the entire matched pattern span (valid for text, hex, and regex strings).
+// Groups >= 1 correspond to 1-indexed parenthesized sub-groups within a regular expression pattern.
 type CaptureBinding struct {
 	Name  string
 	Group int

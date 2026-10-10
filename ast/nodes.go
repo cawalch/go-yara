@@ -143,13 +143,17 @@ func (s *String) Accept(v Visitor) any {
 	return v.VisitString(s)
 }
 
-// EvidenceDeclaration describes a deterministic candidate grouping over named captures.
+// EvidenceDeclaration represents a spatial evidence correlation statement in the evidence: section
+// of a rule (e.g. "credential = (endpoint, username, secret) within 4KB of secret").
+//
+// It defines a target finding name, the ordered list of required capture fields, a reference
+// anchor capture, and a maximum byte proximity window.
 type EvidenceDeclaration struct {
 	Pos    token.Position
-	Name   string
-	Fields []string
-	Anchor string
-	Within int64
+	Name   string   // Logical name for the correlated finding tuple (e.g. "credential")
+	Fields []string // Ordered list of capture names required for this finding
+	Anchor string   // Capture name that acts as the spatial center of the proximity window
+	Within int64    // Maximum byte distance between candidate field spans and the anchor
 }
 
 func (e *EvidenceDeclaration) node() {}

@@ -9,33 +9,57 @@ import (
 	"github.com/cawalch/go-yara/regex"
 )
 
-// Capture is an exact source span exposed by a capture modifier.
+// Capture represents an exact source byte span extracted by a capture modifier
+// on a string pattern ($str = ... capture(name = group)).
 type Capture struct {
-	Name          string
-	Pattern       string
-	Group         int
-	Offset        int64
-	Length        int
-	Data          []byte
+	// Name is the logical identifier assigned to this capture (e.g. "secret" or "endpoint").
+	Name string
+	// Pattern is the rule string identifier that matched (e.g. "$token").
+	Pattern string
+	// Group is the capture group index (0 for full pattern match, >= 1 for regex sub-groups).
+	Group int
+	// Offset is the absolute zero-based byte offset in the scanned input where the capture starts.
+	Offset int64
+	// Length is the total byte length of the captured span in the scanned input.
+	Length int
+	// Data contains the copied bytes of the capture span, bounded by WithEvidence(maxCaptureBytes).
+	Data []byte
+	// DataTruncated indicates whether Length exceeded the scanner's configured byte limit,
+	// causing Data to contain only the initial prefix of the match.
 	DataTruncated bool
 }
 
-// EvidenceStatus describes whether a finding can be handed to a validator.
+// EvidenceStatus classifies whether a correlated finding tuple is complete, partial, or ambiguous.
 type EvidenceStatus string
 
 const (
-	// EvidenceStatusReady has exactly one complete capture for every field.
+	// EvidenceStatusReady indicates that every field declared in the evidence statement has
+	// exactly one unambiguous candidate capture within the proximity window, and none were truncated.
+	// Ready findings can typically be dispatched directly to credentials validators.
 	EvidenceStatusReady EvidenceStatus = "ready"
-	// EvidenceStatusPartial is missing a field or contains a truncated capture.
+
+	// EvidenceStatusPartial indicates that one or more declared fields are missing within the
+	// proximity window of the anchor, or that a capture's data was truncated by the byte limit.
 	EvidenceStatusPartial EvidenceStatus = "partial"
-	// EvidenceStatusAmbiguous retains multiple plausible candidates rather than guessing.
+
+	// EvidenceStatusAmbiguous indicates that multiple candidate captures for a field were located
+	// within the proximity window (such as equidistant occurrences or multiple competing spans).
+	// Rather than guessing which span is intended, all candidates are preserved in Fields.
 	EvidenceStatusAmbiguous EvidenceStatus = "ambiguous"
 )
 
-// EvidenceFinding is one candidate tuple rooted at an anchor occurrence.
+// EvidenceFinding represents a correlated candidate tuple for an evidence declaration,
+// rooted at an occurrence of its designated anchor capture.
+//
+// In multi-pattern rules, findings correlate scattered credentials (e.g. username,
+// password, and endpoint) that appear within a configured byte window of each other.
 type EvidenceFinding struct {
+	// Anchor is the designated anchor capture that serves as the spatial center of this finding.
 	Anchor Capture
+	// Status evaluates whether all declared fields were resolved unambiguously without truncation.
 	Status EvidenceStatus
+	// Fields maps each declared field name in the evidence declaration to candidate captures
+	// found within the configured byte distance of the anchor.
 	Fields map[string][]Capture
 }
 
