@@ -193,7 +193,7 @@ func NewCompiler(opts ...Option) *Compiler {
 
 // NewCompilerWithOptions creates a new YARA compiler with custom options.
 //
-// Deprecated: Use NewCompiler with functional options instead.
+// Deprecated: Use [NewCompiler] with functional [Option] arguments instead.
 //
 // Old way:
 //

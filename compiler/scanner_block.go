@@ -8,8 +8,14 @@ import (
 
 // MatchingRulesInBlock evaluates public rules against one explicit block in a
 // logical address space. Match offsets are absolute, and fileSize is visible to
-// rule conditions. Patterns cannot inspect bytes outside block. Reuse a Scanner
-// for high-throughput structured-event streams.
+// rule conditions. Patterns cannot inspect bytes outside block.
+//
+// Architectural distinction: MatchingRulesInBlock evaluates a single discrete block
+// immediately without retaining state across calls. If input data is split across
+// multiple sequential or overlapping chunks, use BlockScanner instead to aggregate
+// matches before evaluating rule conditions.
+//
+// Reuse a Scanner across calls for high-throughput structured-event streams.
 func (s *Scanner) MatchingRulesInBlock(
 	block MemoryBlock,
 	fileSize int64,
@@ -19,6 +25,10 @@ func (s *Scanner) MatchingRulesInBlock(
 
 // MatchingRulesInBlockWithContext evaluates public rules against one explicit
 // block without constructing the all-rules maps in ScanResult.
+//
+// Architectural distinction: MatchingRulesInBlockWithContext evaluates a single
+// discrete block immediately without retaining state across calls. For multi-block
+// or streaming chunks, use BlockScanner instead.
 func (s *Scanner) MatchingRulesInBlockWithContext(
 	ctx context.Context,
 	block MemoryBlock,

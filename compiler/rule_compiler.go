@@ -1335,7 +1335,6 @@ func (cr *CompiledRule) PrintDebug() {
 	}
 }
 
-// CompiledProgram represents a complete compiled YARA program
 // SharedAutomatonEntry maps a shared automaton entry to its exact verifier.
 type SharedAutomatonEntry struct {
 	RuleIndex  int // index into CompiledProgram.Rules
@@ -1352,6 +1351,14 @@ type SharedAutomatonEntry struct {
 	CacheIndex      int
 }
 
+// CompiledProgram represents an immutable, thread-safe collection of compiled YARA rules.
+// It encapsulates prefilter lookup tables, bytecode instruction sequences, and shared
+// automata. A CompiledProgram is safe for concurrent access across multiple goroutines.
+//
+// Performance note: Convenience scanning methods directly on CompiledProgram (such as Scan,
+// Matches, and MatchingRules) allocate a temporary Scanner on every call. For high-throughput,
+// batch, or event-loop processing, instantiate a reusable Scanner via NewScanner to eliminate
+// allocation overhead and maximize scanning throughput.
 type CompiledProgram struct {
 	Rules           []*CompiledRule
 	SharedAutomaton *ACAutomaton

@@ -10,16 +10,23 @@ import (
 	"github.com/cawalch/go-yara/ast"
 )
 
+// HexTokenKind identifies the syntactic kind of a token within a compiled hex pattern.
 type HexTokenKind uint8
 
 const (
+	// HexTokenByte matches an exact single byte literal.
 	HexTokenByte HexTokenKind = iota
+	// HexTokenWildcard matches any single byte (??).
 	HexTokenWildcard
+	// HexTokenMasked matches a byte matching a high or low nibble mask (?A or A?).
 	HexTokenMasked
+	// HexTokenJump matches a variable-length jump interval ([-], [n-m]).
 	HexTokenJump
+	// HexTokenAlt matches an alternative sequence of tokens ((AA | BB)).
 	HexTokenAlt
 )
 
+// HexPatternToken describes an individual token, jump, or alternative group within a HexPattern.
 type HexPatternToken struct {
 	Kind         HexTokenKind
 	Value        byte
@@ -30,6 +37,8 @@ type HexPatternToken struct {
 	Negated      bool
 }
 
+// HexPattern represents a compiled hexadecimal pattern, consisting of an ordered sequence
+// of tokens and optional XOR transformation configurations.
 type HexPattern struct {
 	Tokens     []HexPatternToken
 	XorKeys    []byte

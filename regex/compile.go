@@ -300,6 +300,8 @@ func (c *Compiler) emitRangeNode(n *Node) error {
 	return nil
 }
 
+// MaxBytecodeSize defines the maximum permissible bytecode size (in bytes) for a compiled
+// regular expression. Patterns exceeding this limit fail compilation to prevent unbounded memory growth.
 const MaxBytecodeSize = 2 * 1024 * 1024 // 2MB
 
 func (c *Compiler) emitNode(n *Node) error { //nolint:maintidx // high complexity is intentional for performance-critical regex compilation

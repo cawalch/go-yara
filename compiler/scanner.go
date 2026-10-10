@@ -171,19 +171,27 @@ func WithMatchContext(beforeBytes, afterBytes int) ScannerOption {
 	}
 }
 
-// WithReportedMatchesOnly restricts ScanResult.Matches to public rules that
-// matched. RuleResults remains unchanged. This avoids materializing matches for
-// private and non-matching rules when scanning match-dense inputs.
+// WithReportedMatchesOnly restricts ScanResult.Matches and ScanResult.MatchedRules
+// to public rules that satisfied their conditions. Non-matching and private helper
+// rules are omitted from the match maps, avoiding large map allocations and match
+// slice materialization on match-dense inputs.
+//
+// Note that ScanResult.RuleResults continues to record boolean evaluation outcomes
+// for all evaluated rules, ensuring complete visibility into rule decisions.
 func WithReportedMatchesOnly() ScannerOption {
 	return func(scanner *Scanner) {
 		scanner.reportedMatchesOnly = true
 	}
 }
 
-// WithFastScan retains only the first occurrence of each pattern for rules
-// whose conditions only test pattern presence. Rules that inspect counts,
-// offsets, lengths, or constrained ranges automatically retain all matches so
-// their condition result remains exact.
+// WithFastScan enables fast-scan mode, which optimizes pattern search by retaining
+// only the first occurrence of each pattern for rules whose conditions merely test
+// pattern presence ($a).
+//
+// Rules that inspect match counts (#a), match offsets (@a), match lengths (!a),
+// or range-constrained evaluations ($a in (x..y), $a at x) automatically bypass
+// early stopping and retain all occurrences so their condition evaluation remains
+// fully accurate and semantics-preserving.
 func WithFastScan() ScannerOption {
 	return func(scanner *Scanner) {
 		scanner.fastScan = true
@@ -334,26 +342,39 @@ func (cp *CompiledProgram) NewScanner(opts ...ScannerOption) *Scanner {
 }
 
 // Scan evaluates all rules in this compiled program against data.
+//
+// Performance note: Scan allocates and tears down an internal Scanner on every call.
+// In high-throughput, batch, or event-loop processing, instantiate a reusable Scanner via
+// NewScanner and reuse it across scans to eliminate per-scan allocation overhead.
 func (cp *CompiledProgram) Scan(data []byte) (*ScanResult, error) {
 	return cp.ScanWithContext(context.Background(), data)
 }
 
 // ScanWithContext evaluates all rules in this compiled program against data.
+//
+// Performance note: ScanWithContext allocates and tears down an internal Scanner on every call.
+// In high-throughput, batch, or event-loop processing, instantiate a reusable Scanner via
+// NewScanner and reuse it across scans to eliminate per-scan allocation overhead.
 func (cp *CompiledProgram) ScanWithContext(ctx context.Context, data []byte) (*ScanResult, error) {
 	scanner := NewScanner(cp)
 	defer scanner.Close()
 	return scanner.ScanWithContext(ctx, data)
 }
 
-// Matches reports whether this compiled program has at least one public rule
-// match. Reuse a Scanner and call Scanner.Matches for the allocation-free
-// prefilter reject path.
+// Matches reports whether this compiled program has at least one public rule match.
+//
+// Performance note: Matches allocates and tears down an internal Scanner on every call.
+// For tight loops or high-throughput event processing, instantiate a Scanner via
+// NewScanner and call Scanner.Matches to leverage the allocation-free prefilter rejection path.
 func (cp *CompiledProgram) Matches(data []byte) (bool, error) {
 	return cp.MatchesWithContext(context.Background(), data)
 }
 
-// MatchesWithContext reports whether this compiled program has at least one
-// public rule match.
+// MatchesWithContext reports whether this compiled program has at least one public rule match.
+//
+// Performance note: MatchesWithContext allocates and tears down an internal Scanner on every call.
+// For tight loops or high-throughput event processing, instantiate a Scanner via
+// NewScanner and call Scanner.MatchesWithContext to leverage the allocation-free prefilter rejection path.
 func (cp *CompiledProgram) MatchesWithContext(ctx context.Context, data []byte) (bool, error) {
 	scanner := NewScanner(cp)
 	defer scanner.Close()
@@ -361,14 +382,21 @@ func (cp *CompiledProgram) MatchesWithContext(ctx context.Context, data []byte) 
 }
 
 // MatchingRules returns detailed public rule matches without materializing a
-// boolean result or match-map entry for every evaluated rule. Reuse a Scanner
-// for high-throughput event streams.
+// boolean result or match-map entry for every evaluated rule.
+//
+// Performance note: MatchingRules allocates and tears down an internal Scanner on every call.
+// In event pipelines and high-volume streams, reuse a Scanner via NewScanner to avoid
+// allocating transient engine state.
 func (cp *CompiledProgram) MatchingRules(data []byte) ([]RuleMatch, error) {
 	return cp.MatchingRulesWithContext(context.Background(), data)
 }
 
 // MatchingRulesWithContext returns detailed public rule matches without
 // materializing per-rule results for rules that did not match.
+//
+// Performance note: MatchingRulesWithContext allocates and tears down an internal Scanner on every call.
+// In event pipelines and high-volume streams, reuse a Scanner via NewScanner to avoid
+// allocating transient engine state.
 func (cp *CompiledProgram) MatchingRulesWithContext(ctx context.Context, data []byte) ([]RuleMatch, error) {
 	scanner := NewScanner(cp)
 	defer scanner.Close()
@@ -378,6 +406,15 @@ func (cp *CompiledProgram) MatchingRulesWithContext(ctx context.Context, data []
 // MatchingRulesInBlock evaluates public rules against one explicit block in a
 // logical address space. Match offsets are absolute, and fileSize is visible to
 // rule conditions. Patterns cannot inspect bytes outside block.
+//
+// Architectural distinction: MatchingRulesInBlock evaluates a single memory block
+// immediately without accumulating state across multiple blocks. For streaming,
+// sliding windows, or multi-block input where patterns may span block boundaries,
+// use BlockScanner instead.
+//
+// Performance note: This method allocates a temporary Scanner on every call.
+// In high-throughput structured event pipelines, instantiate a reusable Scanner via
+// NewScanner and invoke Scanner.MatchingRulesInBlock instead.
 func (cp *CompiledProgram) MatchingRulesInBlock(
 	block MemoryBlock,
 	fileSize int64,
@@ -387,6 +424,15 @@ func (cp *CompiledProgram) MatchingRulesInBlock(
 
 // MatchingRulesInBlockWithContext evaluates public rules against one explicit
 // block without constructing the all-rules maps in ScanResult.
+//
+// Architectural distinction: MatchingRulesInBlockWithContext evaluates a single memory block
+// immediately without accumulating state across multiple blocks. For streaming,
+// sliding windows, or multi-block input where patterns may span block boundaries,
+// use BlockScanner instead.
+//
+// Performance note: This method allocates a temporary Scanner on every call.
+// In high-throughput structured event pipelines, instantiate a reusable Scanner via
+// NewScanner and invoke Scanner.MatchingRulesInBlockWithContext instead.
 func (cp *CompiledProgram) MatchingRulesInBlockWithContext(
 	ctx context.Context,
 	block MemoryBlock,
@@ -398,11 +444,17 @@ func (cp *CompiledProgram) MatchingRulesInBlockWithContext(
 }
 
 // ScanReader reads from r and evaluates all rules in this compiled program.
+//
+// Performance note: In high-throughput streaming scenarios, instantiate a Scanner via
+// NewScanner and invoke Scanner.ScanReader to reuse internal scratch buffers.
 func (cp *CompiledProgram) ScanReader(r io.Reader) (*ScanResult, error) {
 	return cp.ScanReaderWithContext(context.Background(), r)
 }
 
 // ScanReaderWithContext reads from r and evaluates all rules in this compiled program.
+//
+// Performance note: In high-throughput streaming scenarios, instantiate a Scanner via
+// NewScanner and invoke Scanner.ScanReaderWithContext to reuse internal scratch buffers.
 func (cp *CompiledProgram) ScanReaderWithContext(ctx context.Context, r io.Reader) (*ScanResult, error) {
 	scanner := NewScanner(cp)
 	defer scanner.Close()
@@ -410,11 +462,17 @@ func (cp *CompiledProgram) ScanReaderWithContext(ctx context.Context, r io.Reade
 }
 
 // ScanFile reads filename and evaluates all rules in this compiled program.
+//
+// Performance note: In batch file processing, instantiate a Scanner via NewScanner
+// and invoke Scanner.ScanFile to reuse scanner buffers across files.
 func (cp *CompiledProgram) ScanFile(filename string) (*ScanResult, error) {
 	return cp.ScanFileWithContext(context.Background(), filename)
 }
 
 // ScanFileWithContext reads filename and evaluates all rules in this compiled program.
+//
+// Performance note: In batch file processing, instantiate a Scanner via NewScanner
+// and invoke Scanner.ScanFileWithContext to reuse scanner buffers across files.
 func (cp *CompiledProgram) ScanFileWithContext(ctx context.Context, filename string) (*ScanResult, error) {
 	scanner := NewScanner(cp)
 	defer scanner.Close()
