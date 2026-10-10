@@ -14,6 +14,7 @@
 - **Rule pruning**: Prune rules with failing fixed-offset assertions (such as `$magic at 0` or `uint32(0) == 0x464c457f`) before scanning strings.
 - **Optimized scanning modes**:
   - Reusable scanners with pooled state across repeated evaluations.
+  - Zero-allocation convenience forwarders on `CompiledProgram` via an internal `sync.Pool`.
   - Boolean evaluation (`Matches`) for clean-input short-circuiting.
   - Compact matching (`MatchingRules`) to return matched rules without allocating full per-rule condition tables.
   - First-occurrence matching (`WithFastScan`) with automatic retention for rules that depend on counts or offsets.
@@ -145,9 +146,11 @@ for _, match := range result.MatchedRules {
 }
 ```
 
-### Reuse a scanner across multiple inputs
+### Reusable scanners and convenience pooling
 
-Creating a new scanner for each input incurs unnecessary allocations. When scanning multiple inputs against the same ruleset, create a reusable `Scanner`:
+Convenience scanning methods on `CompiledProgram` (`program.Scan`, `program.Matches`, `program.MatchingRules`) automatically manage an internal, thread-safe `sync.Pool` of reusable scanners, achieving zero heap allocations on repeated scans under default options.
+
+When custom scanning configurations (such as tag filters, match limits, hooks, or fast-scan flags) are required, or when binding per-worker external variables, instantiate an explicit reusable `Scanner` with functional options:
 
 ```go
 func scanBatch(program *compiler.CompiledProgram, samples [][]byte) error {
@@ -259,46 +262,160 @@ err = scanner.SetExternalVariables(map[string]any{
 
 ### Extract structured secret evidence
 
-`go-yara` extends standard YARA with `capture(...)` and `evidence:` declarations. This extension extracts structured submatch spans (such as credentials, API keys, or endpoints) without altering the rule's boolean condition:
+`go-yara` extends standard YARA with an opt-in `capture(...)` string modifier and `evidence:` rule section. This extension enables secret detection, credential extraction, and DLP workflows to extract structured submatch fields (such as usernames, API keys, and endpoints) and correlate fields appearing in close spatial proximity, without altering the rule's boolean condition evaluation.
+
+#### Syntax and Grammar
+
+##### 1. `capture(...)` String Modifier
+
+The `capture(...)` modifier assigns names to pattern match spans or regex capture groups:
+
+```yara
+strings:
+    // Regex pattern with 1-indexed parenthesized sub-groups:
+    $uri = /postgres:\/\/([^: ]+):([^@ ]+)@([^\/ ]+)/
+        capture(username = 1, secret = 2, endpoint = 3)
+
+    // Full match (group 0) on text and hex strings:
+    $key = "AKIAIOSFODNN7EXAMPLE" capture(access_key = 0)
+    $hex = { 4D 5A 90 00 } capture(dos_magic = 0)
+```
+
+- **Group numbers**:
+  - `0`: Denotes the entire matched pattern span. Allowed on text (`"..."`), hexadecimal (`{ ... }`), and regular expression patterns (`/.../`).
+  - `1..N`: Denotes the 1-indexed parenthesized capture group in a regular expression pattern.
+- **Grammar constraints**:
+  - Anonymous strings (`$ = "..."`) cannot declare captures.
+  - Private strings (`private`) cannot declare captures.
+  - At most 32 capture bindings per pattern string.
+  - Capture names must be unique within a given string pattern.
+  - Trailing commas in the capture binding list are disallowed.
+
+##### 2. `evidence:` Section
+
+The `evidence:` section appears after `strings:` (or `meta:`) and before `condition:`. It defines deterministic spatial correlation rules between captured fields:
+
+```yara
+evidence:
+    <declaration_name> = (<field1>, <field2>, ...) within <distance> of <anchor>
+```
+
+- `<declaration_name>`: Identifier for the correlated finding tuple.
+- `(<field1>, <field2>, ...)`: Comma-separated list of capture names defined across strings in the rule.
+- `<distance>`: Maximum byte window between any candidate field span and the anchor span:
+  - Byte count: Non-negative integer literal (e.g., `0`, `512`, `4096`).
+  - Sized units: Case-insensitive size suffix (`KB`, `MB`, `GB`, `TB`), such as `4KB` (4,096 bytes) or `1MB` (1,048,576 bytes).
+- `of <anchor>`: Designates the reference capture field that serves as the spatial center. The anchor must be included in the field list `(<field1>, <field2>, ...)`.
+- **Co-located matches (`within 0 of <anchor>`)**: A distance of `0` requires all fields to originate from the exact same pattern match span (ideal when a single regex extracts multiple sub-groups).
+
+#### Rule Examples
+
+See [`examples/structured_secrets.yar`](examples/structured_secrets.yar) for full runnable rule examples.
+
+##### Example 1: Single Regex Extraction (Co-located Fields)
+
+Extract database credentials from a single connection string:
 
 ```yara
 rule DatabaseConnectionSecret {
     strings:
-        $uri = /postgres:\/\/([^: ]+):([^@ ]+)@([^\/ ]+)/
-            capture(username = 1, secret = 2, endpoint = 3)
+        $uri = /(postgres|mysql):\/\/([^: ]+):([^@ ]+)@([^\/ ]+)/
+            capture(username = 2, secret = 3, endpoint = 4)
     evidence:
-        credential = (endpoint, username, secret) within 4KB of secret
+        credential = (endpoint, username, secret) within 0 of secret
     condition:
         $uri
 }
 ```
 
-To extract evidence, enable it on a scanner by providing an explicit per-capture byte limit:
+##### Example 2: Multi-String Spatial Proximity Correlation
+
+Correlate credentials declared across distinct lines or JSON fields in a configuration file or log:
+
+```yara
+rule AWSConfigCredentials {
+    strings:
+        $endpoint = /endpoint[ ]*[:=][ ]*["']?([^"' \n]+)/i capture(endpoint = 1)
+        $access   = /aws_access_key_id[ ]*[:=][ ]*["']?([A-Z0-9]{20})/i capture(access_key = 1)
+        $secret   = /aws_secret_access_key[ ]*[:=][ ]*["']?([A-Za-z0-9\/+=]{40})/i capture(secret = 1)
+    evidence:
+        credential = (endpoint, access_key, secret) within 4KB of secret
+    condition:
+        $access and $secret
+}
+```
+
+##### Example 3: Text and Hex Pattern Captures (Group 0)
+
+Extract full text tokens and binary signatures:
+
+```yara
+rule APIKeyAndSalt {
+    strings:
+        $key    = "AIzaSy" capture(key_prefix = 0)
+        $header = { 89 50 4E 47 0D 0A 1A 0A } capture(png_magic = 0)
+    evidence:
+        asset = (key_prefix, png_magic) within 1KB of key_prefix
+    condition:
+        $key and $header
+}
+```
+
+#### Go Scanning and Results API
+
+To extract evidence, pass `compiler.WithEvidence(maxCaptureBytes)` when constructing a scanner:
 
 ```go
-scanner := program.NewScanner(compiler.WithEvidence(4096))
+// 1. Create a scanner with evidence extraction enabled (max 4096 bytes per capture span).
+scanner := compiler.NewScanner(program, compiler.WithEvidence(4096))
 defer scanner.Close()
 
+// 2. Scan target input.
 result, err := scanner.Scan(data)
 if err != nil {
-	return err
+	log.Fatal(err)
 }
 
-findings := result.Evidence["DatabaseConnectionSecret"]["credential"]
-for _, finding := range findings {
-	if finding.Status == compiler.EvidenceStatusReady {
-		fmt.Printf("Endpoint: %s, User: %s, Secret: %s\n",
-			finding.Fields["endpoint"].Data,
-			finding.Fields["username"].Data,
-			finding.Fields["secret"].Data,
-		)
+// 3. Inspect structured evidence findings:
+// Result is keyed by rule name, then evidence declaration name.
+for ruleName, declarations := range result.Evidence {
+	for declName, findings := range declarations {
+		for _, finding := range findings {
+			fmt.Printf("Rule %s | Finding: %s | Status: %s\n", ruleName, declName, finding.Status)
+			fmt.Printf("  Anchor: offset=%d len=%d\n", finding.Anchor.Offset, finding.Anchor.Length)
+
+			switch finding.Status {
+			case compiler.EvidenceStatusReady:
+				// Exactly one unambiguous capture per field; ready for validation.
+				for fieldName, captures := range finding.Fields {
+					fmt.Printf("  %s: %s (offset %d)\n", fieldName, captures[0].Data, captures[0].Offset)
+				}
+			case compiler.EvidenceStatusPartial:
+				// A field was not found within the proximity window, or data was truncated.
+				fmt.Println("  (Partial finding: missing fields or truncated data)")
+			case compiler.EvidenceStatusAmbiguous:
+				// Multiple candidate captures fell within the window at equal or competing distance.
+				fmt.Println("  (Ambiguous finding: multiple competing candidates preserved)")
+			}
+		}
+	}
+}
+
+// 4. Inspect individual pattern captures directly on matches:
+for _, match := range result.Matches["AWSConfigCredentials"]["$access"] {
+	for _, cap := range match.Captures {
+		fmt.Printf("Capture: %s = %s (group %d, offset %d)\n", cap.Name, cap.Data, cap.Group, cap.Offset)
 	}
 }
 ```
 
-- Capture group `0` represents the full pattern match. Positive numbers correspond to parenthesized regex groups numbered from left to right.
-- `Capture.Data` contains copied raw bytes from the source. The application remains responsible for unescaping, URL decoding, and credential verification.
-- Capture extraction retains all candidate occurrences even when using `WithFastScan`.
+#### Status Classifications and Operational Notes
+
+- **`EvidenceStatusReady` ("ready")**: Every declared field has exactly one unambiguous candidate capture within the proximity window, and none were truncated. Safe for automated downstream validation.
+- **`EvidenceStatusPartial` ("partial")**: One or more declared fields were missing within the proximity window, or captured data exceeded `maxCaptureBytes` (`Capture.DataTruncated == true`).
+- **`EvidenceStatusAmbiguous` ("ambiguous")**: Multiple candidate captures for a field were located within the window (such as equidistant occurrences). Rather than guessing, all candidates are preserved in `Fields`.
+- **Fast-scan safety**: When `WithEvidence` is active, patterns with capture bindings automatically retain all occurrences across the input, even if `WithFastScan` is enabled, ensuring proximity correlation is never distorted.
+- **Zero overhead when disabled**: When `WithEvidence` is omitted or set to `<= 0` (the default), capture replay and correlation logic is completely skipped with zero allocations.
 
 ### Tolerate invalid rules during compilation
 

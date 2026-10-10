@@ -144,8 +144,23 @@ func WithMatchData(maxBytes int) ScannerOption {
 	}
 }
 
-// WithEvidence enables capture extraction and correlation, copying at most
-// maxCaptureBytes per capture. Non-positive values disable evidence.
+// WithEvidence enables capture extraction and spatial evidence correlation across
+// rules that define capture(...) string modifiers and evidence: sections.
+//
+// The maxCaptureBytes parameter sets an upper bound on the number of bytes copied
+// into each Capture.Data slice. If a capture span exceeds this limit, Data will contain
+// the initial prefix and Capture.DataTruncated will be set to true. Setting a reasonable
+// limit (e.g. 1KB to 8KB) prevents unbounded memory allocation on large inputs.
+//
+// Non-positive values (<= 0) disable evidence extraction entirely, incurring zero
+// runtime overhead and zero heap allocations.
+//
+// Note: When WithEvidence is active, strings with capture bindings automatically retain
+// all match occurrences across the input, even if WithFastScan is active, ensuring that
+// proximity correlation windows are accurately evaluated.
+//
+// Findings are returned in ScanResult.Evidence (keyed by rule and declaration name) and
+// individual capture spans are attached to Match.Captures in ScanResult.Matches.
 func WithEvidence(maxCaptureBytes int) ScannerOption {
 	if maxCaptureBytes < 0 {
 		maxCaptureBytes = 0
@@ -343,9 +358,10 @@ func (cp *CompiledProgram) NewScanner(opts ...ScannerOption) *Scanner {
 
 // Scan evaluates all rules in this compiled program against data.
 //
-// Performance note: Scan allocates and tears down an internal Scanner on every call.
-// In high-throughput, batch, or event-loop processing, instantiate a reusable Scanner via
-// NewScanner and reuse it across scans to eliminate per-scan allocation overhead.
+// Performance note: Scan borrows and returns a reusable Scanner from an internal
+// sync.Pool on CompiledProgram, eliminating allocation overhead for default configurations.
+// For custom scanner options (such as hooks or fast-scan), instantiate an explicit Scanner
+// via NewScanner instead.
 func (cp *CompiledProgram) Scan(data []byte) (*ScanResult, error) {
 	return cp.ScanWithContext(context.Background(), data)
 }
