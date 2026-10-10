@@ -23,6 +23,7 @@
 - **Cache serialization**: Save and load compiled programs using a versioned binary format that preserves prefilter plans and regex state.
 - **Dependency analysis**: Inspect direct rule dependencies, dependents, and full dependency graphs.
 - **Secret extraction**: Extract structured capture spans and correlate credential candidates using the `capture(...)` and `evidence:` syntax extensions.
+- **Experimental SIMD acceleration**: Compile-time opt-in with `GOEXPERIMENT=simd` on Go 1.27+ enables hardware-vectorized (`AVX2`, `AVX-512`, `ARM NEON`) case-folding (`nocase`), character range testing, and multi-gigabyte/second Aho-Corasick root skips.
 - **Command-line tool**: Lex, parse, compile, or execute rules against data files with optional streaming.
 
 ## Compatibility
@@ -55,6 +56,48 @@ go get github.com/cawalch/go-yara/compiler
 
 > [!IMPORTANT]
 > Import only the public packages (such as `compiler`, `parser`, `ast`, and `token`). Do not import packages under `internal/`, as their APIs are unstable and subject to change without notice.
+
+### Experimental SIMD acceleration (Go 1.27+)
+
+When compiled with **Go 1.27** or later using the standard vector experiment flag (`GOEXPERIMENT=simd`), `go-yara` unlocks hardware-vectorized byte scanning loops:
+
+- **ASCII case-folding (`nocase`)**: `indexASCIIFoldByte` broadcasts and case-folds byte comparisons across 16-byte (NEON/SSE), 32-byte (AVX2), or 64-byte (AVX-512) vector lanes, accelerating case-insensitive string matching.
+- **Character range scanning**: `indexByteRange` evaluates character sets (e.g. `[a-z]`, `[0-9]`) using parallel vector subtraction and unsigned span comparisons.
+- **Aho-Corasick root-miss skipping**: Scans input for matching automaton root transitions at up to 30+ GB/s, rapidly skipping clean or non-matching regions before bytecode evaluation.
+
+#### Enabling SIMD at build time
+
+Set `GOEXPERIMENT=simd` when building your application or running tests:
+
+```bash
+# Build binary with SIMD acceleration enabled:
+GOEXPERIMENT=simd go build ./cmd
+
+# Run tests with SIMD:
+make test-simd
+# or:
+GOEXPERIMENT=simd go test ./compiler -run TestByteSearch -count=1
+```
+
+#### Runtime vector width controls
+
+You can inspect, constrain, or disable vectorization at runtime using `GODEBUG=simd`:
+
+```bash
+# Force 128-bit vector width (e.g. ARM NEON or SSE):
+GODEBUG=simd=+128 ./my-scanner
+
+# Disable vectorization at runtime (forces scalar fallback):
+GODEBUG=simd=0 ./my-scanner
+```
+
+#### Platform support
+
+| Architecture | Vector Extension | Width | Fallback |
+| :--- | :--- | :--- | :--- |
+| `amd64` | AVX-512 / AVX2 / SSE | 64 / 32 / 16 bytes | Automatic scalar fallback |
+| `arm64` | ARM NEON | 16 bytes | Automatic scalar fallback |
+| Other / Non-SIMD | — | — | Highly optimized scalar loops |
 
 ## Quickstart
 
@@ -810,6 +853,9 @@ make bench PKG=./compiler
 
 # Run scanner performance benchmarks:
 make bench-scan
+
+# Benchmark experimental SIMD acceleration (Go 1.27+):
+make bench-simd
 
 # Benchmark prefilter scaling:
 make bench-prefilter-scale

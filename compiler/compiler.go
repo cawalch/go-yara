@@ -28,6 +28,13 @@
 //	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 //	defer cancel()
 //	program, err := c.CompileSourceWithContext(ctx, source)
+//
+// Experimental SIMD Vectorization:
+//
+// When built with Go 1.27+ and the GOEXPERIMENT=simd compile flag, the package enables
+// hardware-vectorized single-byte ASCII case-folding (nocase), byte range matching,
+// and Aho-Corasick automaton root-miss skipping across amd64 (AVX-512, AVX2, SSE) and
+// arm64 (NEON). Vector widths can be controlled at runtime with the GODEBUG=simd flag.
 package compiler
 
 import (
