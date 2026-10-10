@@ -39,6 +39,7 @@ type acAutomaton struct {
 	// Small sets can use SIMD-optimized byte search to skip root misses.
 	rootBytes []byte
 	rootLanes []rootLane
+	teddy     teddyPrefilter
 
 	// Compilation state
 	compiledOnce sync.Once
@@ -203,6 +204,7 @@ func (ac *acAutomaton) Compile() error {
 		}
 		// Fold the failure links into the goto table so the scan never walks them.
 		ac.closeTransitions()
+		ac.teddy = newTeddyPrefilter(ac.strings)
 		ac.compiled = true
 	})
 
@@ -659,6 +661,43 @@ func (ac *acAutomaton) searchIterWithCancel(data []byte, done <-chan struct{}) i
 
 		currentState := int32(0)
 		rootHasNoOutput := ac.states[0].outputStart == ac.states[0].outputEnd
+		if rootHasNoOutput && ac.teddy != nil && len(data) >= 256 {
+			rootTransitions := &ac.states[0].transitions
+			linearUntil := 0
+			for i := 0; i < len(data); i++ {
+				if i&(scanCancellationInterval-1) == 0 && scanCanceled(done) {
+					return
+				}
+				if currentState == 0 && i >= linearUntil && len(data)-i >= 32 {
+					candidate := ac.teddy.findCandidateWithCancel(data, i, done)
+					if candidate < 0 {
+						i = max(i, len(data)-31)
+						if i >= len(data) {
+							return
+						}
+					} else {
+						if candidate-i < 64 {
+							linearUntil = candidate + 256
+						}
+						i = candidate
+					}
+				}
+				if currentState == 0 {
+					currentState = rootTransitions[data[i]]
+					if currentState == 0 {
+						continue
+					}
+				} else {
+					currentState = ac.findNextState(currentState, data[i])
+				}
+				if ac.states[currentState].outputStart != ac.states[currentState].outputEnd &&
+					!ac.yieldMatchesWithCancel(currentState, i, yield, done) {
+					return
+				}
+			}
+			return
+		}
+
 		if rootHasNoOutput && len(data) >= 256 && len(ac.rootLanes) > 0 && len(ac.rootLanes) <= maxSparseRootTransitions && !ac.rootIsDense(data) {
 			rootCursor := newRootCandidateCursor(ac.rootLanes)
 			rootTransitions := &ac.states[0].transitions
@@ -772,10 +811,44 @@ func (ac *acAutomaton) SearchIter(data []byte) iter.Seq[acMatch] {
 
 		currentState := int32(0) // Start at root
 
+		rootHasNoOutput := ac.states[0].outputStart == ac.states[0].outputEnd
+		if rootHasNoOutput && ac.teddy != nil && len(data) >= 256 {
+			rootTransitions := &ac.states[0].transitions
+			linearUntil := 0
+			for i := 0; i < len(data); i++ {
+				if currentState == 0 && i >= linearUntil && len(data)-i >= 32 {
+					candidate := ac.teddy.findCandidate(data, i)
+					if candidate < 0 {
+						i = max(i, len(data)-31)
+						if i >= len(data) {
+							return
+						}
+					} else {
+						if candidate-i < 64 {
+							linearUntil = candidate + 256
+						}
+						i = candidate
+					}
+				}
+				if currentState == 0 {
+					currentState = rootTransitions[data[i]]
+					if currentState == 0 {
+						continue
+					}
+				} else {
+					currentState = ac.findNextState(currentState, data[i])
+				}
+				if ac.states[currentState].outputStart != ac.states[currentState].outputEnd &&
+					!ac.yieldMatches(currentState, i, yield) {
+					return
+				}
+			}
+			return
+		}
+
 		// When the automaton has only a few root transitions, skip root misses
 		// with the platform byte-search routine. Keep the tight range loop for
 		// small inputs and wider roots where repeated byte searches cost more.
-		rootHasNoOutput := ac.states[0].outputStart == ac.states[0].outputEnd
 		if rootHasNoOutput && len(data) >= 256 && len(ac.rootLanes) > 0 && len(ac.rootLanes) <= maxSparseRootTransitions && !ac.rootIsDense(data) {
 			rootCursor := newRootCandidateCursor(ac.rootLanes)
 			rootTransitions := &ac.states[0].transitions
@@ -925,6 +998,7 @@ func (ac *acAutomaton) Clone() *acAutomaton {
 		strings:     internalStrings,
 		rootBytes:   slices.Clone(ac.rootBytes),
 		rootLanes:   slices.Clone(ac.rootLanes),
+		teddy:       ac.teddy,
 		compiled:    ac.compiled,
 		StringCount: len(internalStrings),
 		Strings:     cloneacStringInfos(internalStrings),
@@ -1020,6 +1094,7 @@ func (ac *acAutomaton) Reset() {
 	ac.strings = ac.strings[:0]
 	ac.rootBytes = ac.rootBytes[:0]
 	ac.rootLanes = ac.rootLanes[:0]
+	ac.teddy = nil
 	ac.StringCount = 0
 	ac.Strings = ac.Strings[:0]
 
