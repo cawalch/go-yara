@@ -343,9 +343,10 @@ func (cp *CompiledProgram) NewScanner(opts ...ScannerOption) *Scanner {
 
 // Scan evaluates all rules in this compiled program against data.
 //
-// Performance note: Scan allocates and tears down an internal Scanner on every call.
-// In high-throughput, batch, or event-loop processing, instantiate a reusable Scanner via
-// NewScanner and reuse it across scans to eliminate per-scan allocation overhead.
+// Performance note: Scan borrows and returns a reusable Scanner from an internal
+// sync.Pool on CompiledProgram, eliminating allocation overhead for default configurations.
+// For custom scanner options (such as hooks or fast-scan), instantiate an explicit Scanner
+// via NewScanner instead.
 func (cp *CompiledProgram) Scan(data []byte) (*ScanResult, error) {
 	return cp.ScanWithContext(context.Background(), data)
 }

@@ -462,10 +462,12 @@ type PercentExpression struct {
 
 func (p *PercentExpression) node() {}
 
+// Position returns the source position of the PercentExpression node.
 func (p *PercentExpression) Position() token.Position { return p.Pos }
 
 func (p *PercentExpression) expression() {}
 
+// Accept implements the Visitor pattern for PercentExpression.
 func (p *PercentExpression) Accept(v Visitor) any {
 	return v.VisitPercentExpression(p)
 }

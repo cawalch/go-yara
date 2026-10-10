@@ -14,6 +14,7 @@
 - **Rule pruning**: Prune rules with failing fixed-offset assertions (such as `$magic at 0` or `uint32(0) == 0x464c457f`) before scanning strings.
 - **Optimized scanning modes**:
   - Reusable scanners with pooled state across repeated evaluations.
+  - Zero-allocation convenience forwarders on `CompiledProgram` via an internal `sync.Pool`.
   - Boolean evaluation (`Matches`) for clean-input short-circuiting.
   - Compact matching (`MatchingRules`) to return matched rules without allocating full per-rule condition tables.
   - First-occurrence matching (`WithFastScan`) with automatic retention for rules that depend on counts or offsets.
@@ -145,9 +146,11 @@ for _, match := range result.MatchedRules {
 }
 ```
 
-### Reuse a scanner across multiple inputs
+### Reusable scanners and convenience pooling
 
-Creating a new scanner for each input incurs unnecessary allocations. When scanning multiple inputs against the same ruleset, create a reusable `Scanner`:
+Convenience scanning methods on `CompiledProgram` (`program.Scan`, `program.Matches`, `program.MatchingRules`) automatically manage an internal, thread-safe `sync.Pool` of reusable scanners, achieving zero heap allocations on repeated scans under default options.
+
+When custom scanning configurations (such as tag filters, match limits, hooks, or fast-scan flags) are required, or when binding per-worker external variables, instantiate an explicit reusable `Scanner` with functional options:
 
 ```go
 func scanBatch(program *compiler.CompiledProgram, samples [][]byte) error {

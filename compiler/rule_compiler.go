@@ -1356,9 +1356,10 @@ type sharedAutomatonEntry struct {
 // automata. A CompiledProgram is safe for concurrent access across multiple goroutines.
 //
 // Performance note: Convenience scanning methods directly on CompiledProgram (such as Scan,
-// Matches, and MatchingRules) allocate a temporary Scanner on every call. For high-throughput,
-// batch, or event-loop processing, instantiate a reusable Scanner via NewScanner to eliminate
-// allocation overhead and maximize scanning throughput.
+// Matches, and MatchingRules) borrow reusable scanners from an internal sync.Pool, achieving
+// zero heap allocations on repeated scans with default options. When custom scanning options
+// (such as tag filters, match limits, hooks, or fast-scan flags) are required, instantiate an
+// explicit Scanner via NewScanner.
 type CompiledProgram struct {
 	Rules           []*CompiledRule
 	sharedAutomaton *acAutomaton
