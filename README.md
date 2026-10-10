@@ -317,6 +317,8 @@ for _, ignored := range c.GetIgnoredRules() {
 	fmt.Printf("Omitted rule %s at %d:%d (code %s): %s\n",
 		ignored.Rule, ignored.Line, ignored.Column, ignored.Code, ignored.Message)
 }
+```
+
 > [!NOTE]
 > Rules that reference an omitted rule are transitively omitted. If an omitted rule is declared `global`, all subsequent rules are also omitted to prevent unintended matching behavior.
 
@@ -434,7 +436,7 @@ scanner := program.NewScanner(
 
 #### Bundled configuration via `ScanHooks`
 
-All callbacks can alternatively be passed as a single cohesive [`ScanHooks`](file:///Users/cawalch/go-yara/compiler/hooks.go#L196-L216) bundle:
+All callbacks can alternatively be passed as a single cohesive [`compiler.ScanHooks`](compiler/hooks.go) bundle:
 
 ```go
 hooks := compiler.ScanHooks{
