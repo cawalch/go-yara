@@ -124,12 +124,18 @@ type CompilationWarning struct {
 	Column  int
 }
 
+// Compiler warning category identifiers.
 const (
-	WarningUnusedString     = "unused-string"
+	// WarningUnusedString indicates a string declared in the strings section is never referenced in the condition.
+	WarningUnusedString = "unused-string"
+	// WarningMissingCondition indicates a rule is missing a condition section.
 	WarningMissingCondition = "missing-condition"
+	// WarningTrivialCondition indicates a rule condition always evaluates to true (e.g. "true").
 	WarningTrivialCondition = "trivial-condition"
+	// WarningDuplicatePattern indicates identical string patterns defined in the same rule.
 	WarningDuplicatePattern = "duplicate-pattern"
-	WarningSlowPattern      = "slow-pattern"
+	// WarningSlowPattern indicates a pattern known to trigger high regex backtracking or poor selectivity.
+	WarningSlowPattern = "slow-pattern"
 )
 
 // IgnoredRule describes a rule omitted from an otherwise successful

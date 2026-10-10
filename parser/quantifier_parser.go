@@ -534,11 +534,12 @@ func (p *QuantifierParser) isNumericQuantifierToken() bool {
 	return isNumber && p.PeekTokenIs(token.OF)
 }
 
-// Helper methods
+// CurrentTokenIs reports whether the current token matches type t.
 func (p *QuantifierParser) CurrentTokenIs(t token.Type) bool {
 	return p.current.Type == t
 }
 
+// PeekTokenIs reports whether the next lookahead token matches type t.
 func (p *QuantifierParser) PeekTokenIs(t token.Type) bool {
 	return p.peek.Type == t
 }

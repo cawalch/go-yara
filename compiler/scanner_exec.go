@@ -365,6 +365,8 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 	return result, nil
 }
 
+// Matches reports whether at least one public rule matches data.
+// It leverages the allocation-free prefilter rejection fast-path for non-matching inputs.
 func (s *Scanner) Matches(data []byte) (bool, error) {
 	return s.MatchesWithContext(context.Background(), data)
 }

@@ -17,10 +17,15 @@ import (
 type ModuleValueType uint8
 
 const (
+	// ModuleUndefined indicates an uninitialized or undefined module value.
 	ModuleUndefined ModuleValueType = iota
+	// ModuleInteger indicates a 64-bit signed integer value.
 	ModuleInteger
+	// ModuleFloat indicates a 64-bit floating point value.
 	ModuleFloat
+	// ModuleString indicates a string value.
 	ModuleString
+	// ModuleBoolean indicates a boolean value.
 	ModuleBoolean
 )
 

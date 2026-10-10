@@ -47,6 +47,7 @@ type HexPattern struct {
 	cacheIndex int
 }
 
+// Clone creates a deep copy of the HexPattern and its token sequences.
 func (p *HexPattern) Clone() *HexPattern {
 	if p == nil {
 		return nil

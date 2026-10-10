@@ -1166,6 +1166,7 @@ func (cc *ConditionCompiler) ResetForRule() {
 	cc.globalVariables = make(map[string]int)
 }
 
+// SetModuleFunctions configures the available module functions for condition compilation.
 func (cc *ConditionCompiler) SetModuleFunctions(functions map[string]compiledModuleFunction) {
 	cc.setModuleFunctions(maps.Clone(functions))
 }

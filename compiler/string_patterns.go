@@ -6,8 +6,11 @@ import "github.com/cawalch/go-yara/regex"
 type StringKind uint8
 
 const (
+	// StringKindText represents a literal text string pattern.
 	StringKindText StringKind = iota
+	// StringKindHex represents a compiled hexadecimal pattern.
 	StringKindHex
+	// StringKindRegex represents a compiled regular expression pattern.
 	StringKindRegex
 )
 
