@@ -1,5 +1,5 @@
-.PHONY: check test test-race vet analyze lint vulncheck fmt-check tidy-check fuzz \
-	bench bench-save benchstat bench-scan bench-prefilter-scale \
+.PHONY: check test test-race test-simd vet analyze lint vulncheck fmt-check tidy-check fuzz \
+	bench bench-save benchstat bench-scan bench-simd bench-prefilter-scale \
 	bench-single-rule-size profile-scan trace-scan help
 
 PKG ?= ./compiler
@@ -15,6 +15,9 @@ test:
 
 test-race:
 	go test -race ./...
+
+test-simd:
+	GOEXPERIMENT=simd go test ./compiler -run TestByteSearch -count=1
 
 vet:
 	go vet ./...
@@ -83,6 +86,11 @@ bench-scan:
 		-bench '^Benchmark(ProductionScanner|ProductionScannerUniquePatterns|MultiRuleScanner)$$' \
 		-benchmem -count=5
 
+bench-simd:
+	GOEXPERIMENT=simd go test ./compiler -run '^$$' \
+		-bench '^BenchmarkSIMD' \
+		-benchmem -count=3
+
 bench-prefilter-scale:
 	go test ./compiler -run '^$$' -bench '^BenchmarkSharedNonTextPrefilterScale$$' \
 		-benchmem -count=5
@@ -107,6 +115,7 @@ help:
 	@echo "  check                  Run formatting, tidy, vet, lint, and tests"
 	@echo "  test                   Run the full test suite"
 	@echo "  test-race              Run the full test suite with the race detector"
+	@echo "  test-simd              Run SIMD byte search tests (Go 1.27+)"
 	@echo "  analyze                Run repository-specific static analyzers"
 	@echo "  fuzz FUZZTIME=30s      Run every fuzz target sequentially"
 	@echo ""
@@ -115,6 +124,7 @@ help:
 	@echo "  bench-save             Save benchmark output under benchmarks/"
 	@echo "  benchstat BASE=... NEW=..."
 	@echo "  bench-scan"
+	@echo "  bench-simd             Run experimental SIMD benchmarks (Go 1.27+)"
 	@echo "  bench-prefilter-scale"
 	@echo "  bench-single-rule-size"
 	@echo "  profile-scan"
