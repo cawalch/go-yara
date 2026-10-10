@@ -317,10 +317,58 @@ for _, ignored := range c.GetIgnoredRules() {
 	fmt.Printf("Omitted rule %s at %d:%d (code %s): %s\n",
 		ignored.Rule, ignored.Line, ignored.Column, ignored.Code, ignored.Message)
 }
-```
-
 > [!NOTE]
 > Rules that reference an omitted rule are transitively omitted. If an omitted rule is declared `global`, all subsequent rules are also omitted to prevent unintended matching behavior.
+
+### Observability, hooks, and telemetry
+
+`go-yara` provides an allocation-conscious hooks and telemetry system for long-running batch scans, large-file inspection, and high-throughput pipelines. When hooks are disabled (the default), internal bitmask dispatching incurs **zero allocations** and unmeasurable CPU overhead.
+
+#### Telemetry counters
+
+Aggregate scanner metrics and reject/prune counters in-place with zero heap allocations:
+
+```go
+var telemetry compiler.ScanTelemetry
+scanner := program.NewScanner(compiler.WithTelemetry(&telemetry))
+defer scanner.Close()
+
+for _, sample := range samples {
+	_, _ = scanner.Scan(sample)
+}
+
+fmt.Printf("Scans: %d, Prefilter rejects: %d, Pruned: %d, Matched: %d\n",
+	telemetry.TotalScans, telemetry.PrefilterRejects, telemetry.RulesPruned, telemetry.TotalMatches)
+```
+
+#### Cooperative polling and throttling
+
+For background or long-running scans, use `WithPollHook` to inspect progress, yield CPU time (`runtime.Gosched()`), throttle execution, or abort early:
+
+```go
+scanner := program.NewScanner(compiler.WithPollHook(func(ctx context.Context, p compiler.PollProgress) (compiler.PollAction, time.Duration) {
+	fmt.Printf("Scanning %s (%d/%d rules)...\n", p.CurrentRule, p.RulesEvaluated, p.TotalRules)
+	return compiler.PollContinue, 0
+}, 64*1024))
+```
+
+#### Rule efficiency profiling and streaming alerts
+
+Detect slow rules, monitor candidate selectivity, or abort on the first match:
+
+```go
+scanner := program.NewScanner(
+	compiler.WithRuleProfiling(func(profile compiler.RuleProfile) {
+		if profile.Duration > 5*time.Millisecond {
+			fmt.Printf("Slow rule detected: %s took %v\n", profile.RuleName, profile.Duration)
+		}
+	}),
+	compiler.WithMatchHook(func(rule *compiler.CompiledRule, match compiler.RuleMatch) compiler.MatchAction {
+		fmt.Printf("Immediate match: %s\n", match.Rule)
+		return compiler.MatchActionStopScan // Early-exit upon match
+	}),
+)
+```
 
 ### Inspect semantic diagnostics and suggestions
 
