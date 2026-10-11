@@ -229,6 +229,7 @@ You can customize scanner evaluation behavior using functional options:
 
 - **Compact matches (`WithReportedMatchesOnly`)**: Omits string match details for non-matching rules, reducing allocation overhead.
 - **Fast scan (`WithFastScan`)**: Halts pattern matching after finding the first occurrence of each string. The compiler automatically disables fast-scan for rules whose conditions depend on match counts, offsets, or ranges, preserving exact condition semantics.
+- **Match span windowing (`WithMaxMatchSpan`)**: Bounds the maximum byte length evaluated for a single regex match forward from candidate starts (e.g. `compiler.WithMaxMatchSpan(1024)`). Defaults to unlimited (0) for strict YARA specification compliance.
 
 #### Boolean-only matching
 
@@ -499,6 +500,7 @@ for _, ignored := range c.GetIgnoredRules() {
 | `WithRuleGate(gate RuleGateFunc)` | Dynamically gates/skips individual rules at runtime based on external conditions without recompiling. | Single boolean check per rule |
 | `WithMatchHook(hook MatchHook)` | Invoked immediately upon a rule match, allowing streaming match ingestion or early termination (`MatchActionStopScan`). | Invoked per matched rule |
 | `WithMaxMatches(limit int, onExceeded func)` | Safety threshold capping matches per rule, aborting when the limit is exceeded. | Counter check |
+| `WithMaxMatchSpan(maxBytes int)` | Bounds regex search window forward from candidate starts (0 = unlimited). | Window limit per candidate |
 | `WithChunkHook(hook ChunkHook)` | Boundary progress callback during streaming and `BlockScanner` execution. | Invoked per block/chunk |
 | `WithHooks(hooks ScanHooks)` | Bundles any combination of the above callbacks plus `OnScanStart` and `OnScanComplete` lifecycle hooks. | Configured once on Scanner |
 

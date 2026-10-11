@@ -44,6 +44,7 @@ type commandArgs struct {
 	earlyTermination  bool
 	matchDataBytes    int
 	matchContextBytes int
+	maxMatchSpan      int
 }
 
 func main() {
@@ -79,6 +80,7 @@ func parseArgs(rawArgs []string) (*commandArgs, error) {
 	earlyTermination := fs.Bool("early-termination", false, "enable early termination when matches found")
 	matchData := fs.Int("match-data", 0, "include up to n matched bytes in execute output")
 	matchContext := fs.Int("match-context", 0, "include n bytes before and after each match in execute output")
+	maxMatchSpan := fs.Int("max-match-span", 0, "bound maximum bytes evaluated for a single regex match (default: unlimited)")
 
 	fs.Usage = func() {
 		_, _ = fmt.Fprintf(fs.Output(), "Usage: go-yara <yara-file> [options]\n\n")
@@ -135,6 +137,9 @@ func parseArgs(rawArgs []string) (*commandArgs, error) {
 	if *matchContext < 0 {
 		return nil, fmt.Errorf("--match-context must be non-negative")
 	}
+	if *maxMatchSpan < 0 {
+		return nil, fmt.Errorf("--max-match-span must be non-negative")
+	}
 
 	return &commandArgs{
 		filename:          filename,
@@ -145,6 +150,7 @@ func parseArgs(rawArgs []string) (*commandArgs, error) {
 		earlyTermination:  *earlyTermination,
 		matchDataBytes:    *matchData,
 		matchContextBytes: *matchContext,
+		maxMatchSpan:      *maxMatchSpan,
 	}, nil
 }
 
@@ -419,12 +425,15 @@ func compileRules(content, filename string) (*compiler.CompiledProgram, error) {
 }
 
 func executeRules(compiledProgram *compiler.CompiledProgram, data []byte, args *commandArgs) error {
-	scannerOptions := make([]compiler.ScannerOption, 0, 2)
+	scannerOptions := make([]compiler.ScannerOption, 0, 3)
 	if args.matchDataBytes > 0 {
 		scannerOptions = append(scannerOptions, compiler.WithMatchData(args.matchDataBytes))
 	}
 	if args.matchContextBytes > 0 {
 		scannerOptions = append(scannerOptions, compiler.WithMatchContext(args.matchContextBytes, args.matchContextBytes))
+	}
+	if args.maxMatchSpan > 0 {
+		scannerOptions = append(scannerOptions, compiler.WithMaxMatchSpan(args.maxMatchSpan))
 	}
 	scanner := compiler.NewScanner(compiledProgram, scannerOptions...)
 	defer scanner.Close()
