@@ -803,7 +803,7 @@ func fastForwardGreedyTerminalLoop(code []byte, cur *[]thread, s []byte, pos *in
 	}
 
 	u16 := binary.LittleEndian.Uint16(code[splitPC+2 : splitPC+4])
-	rel := int16(u16)
+	rel := int16(u16) //checkednarrow:ignore uint16 bits encode a signed relative offset
 	altPC := splitPC + int(rel)
 	nextPC := splitPC + 4
 
