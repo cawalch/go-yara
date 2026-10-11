@@ -862,7 +862,9 @@ func fastForwardGreedyTerminalLoop(code []byte, cur *[]thread, s []byte, pos *in
 		} else {
 			p = len(s)
 		}
-		*bestEnd = p
+		if p > startPos {
+			*bestEnd = p
+		}
 	case op == OpAny:
 		if dotAll {
 			p = len(s)
@@ -874,7 +876,9 @@ func fastForwardGreedyTerminalLoop(code []byte, cur *[]thread, s []byte, pos *in
 				p = len(s)
 			}
 		}
-		*bestEnd = p
+		if p > startPos {
+			*bestEnd = p
+		}
 	default:
 		for p < len(s) {
 			if done != nil && (p-startPos)&(vmCancellationInterval-1) == 0 && vmCanceled(done) {

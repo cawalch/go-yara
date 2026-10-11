@@ -307,6 +307,29 @@ func TestVM_FastForwardGreedyTerminalLoop(t *testing.T) {
 		}
 	})
 
+	t.Run("NonMatchingFirstByte", func(t *testing.T) {
+		tests := []struct {
+			pattern string
+			input   string
+		}{
+			{`.+`, "\n"},
+			{`.+`, ""},
+			{`[^x]+`, "x"},
+			{`[^x]+`, ""},
+			{`a+`, "b"},
+			{`a+`, ""},
+			{`[0-9]+`, "abc"},
+			{`\s+`, "abc"},
+		}
+		for _, tc := range tests {
+			code := mustCompile(t, tc.pattern)
+			ok, _, _ := execMatchAt(code, []byte(tc.input), 0)
+			if ok {
+				t.Errorf("%q on %q: expected no match, got match", tc.pattern, tc.input)
+			}
+		}
+	})
+
 	t.Run("LargeBufferFastForward", func(t *testing.T) {
 		data := make([]byte, 200_000)
 		for i := range data {

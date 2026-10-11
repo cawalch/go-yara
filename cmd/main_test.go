@@ -83,6 +83,11 @@ func TestParseArgsValidation(t *testing.T) {
 			args: []string{"rules.yar", "--mode=execute", "--data", "sample.bin", "--match-context=-1"},
 			want: "--match-context must be non-negative",
 		},
+		{
+			name: "negative-max-match-span",
+			args: []string{"rules.yar", "--mode=execute", "--data", "sample.bin", "--max-match-span=-1"},
+			want: "--max-match-span must be non-negative",
+		},
 		{name: "missing-file", want: "missing YARA file"},
 		{name: "empty-file", args: []string{""}, want: "missing YARA file"},
 		{name: "file-not-first", args: []string{"--mode=lex", "rules.yar"}, want: "YARA file must be the first argument"},
@@ -111,6 +116,7 @@ func TestParseArgsSuccess(t *testing.T) {
 		"--early-termination",
 		"--match-data=8",
 		"--match-context=4",
+		"--max-match-span=1024",
 	})
 	if err != nil {
 		t.Fatalf("parseArgs() error = %v", err)
@@ -121,7 +127,7 @@ func TestParseArgsSuccess(t *testing.T) {
 	if !args.enableStreaming || !args.earlyTermination || args.chunkSize != 4096 {
 		t.Fatalf("parseArgs() streaming options = %+v", args)
 	}
-	if args.matchDataBytes != 8 || args.matchContextBytes != 4 {
+	if args.matchDataBytes != 8 || args.matchContextBytes != 4 || args.maxMatchSpan != 1024 {
 		t.Fatalf("parseArgs() match options = %+v", args)
 	}
 }
