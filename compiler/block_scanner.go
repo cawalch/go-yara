@@ -110,10 +110,11 @@ func (scanner *BlockScanner) ScanWithContext(ctx context.Context, base int64, da
 		if s.fastScan && rule.FastScanSafe {
 			s.matchCtx.maxMatchesPerPattern = 1
 		}
+		s.matchCtx.maxMatchSpan = s.maxMatchSpan
 		if err := s.addLocalTextMatches(ctx, rule, blockData); err != nil {
 			return err
 		}
-		if err := s.addLocalNonTextMatches(ctx, rule, blockData, &s.nonTextCache, false); err != nil {
+		if err := s.addLocalNonTextMatches(ctx, rule, blockData, &s.nonTextCache, false, false); err != nil {
 			return err
 		}
 

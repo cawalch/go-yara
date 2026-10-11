@@ -51,6 +51,7 @@ type serializedRule struct {
 	IsGlobal            bool
 	IsPrivate           bool
 	FastScanSafe        bool
+	ConditionMonotonic  bool
 	RequiresStringMatch bool
 	RequiredStrings     []string
 	ModuleNames         map[uint8]string
@@ -297,6 +298,7 @@ func serializeRule(rule *CompiledRule) (serializedRule, error) {
 		IsGlobal:            rule.IsGlobal,
 		IsPrivate:           rule.IsPrivate,
 		FastScanSafe:        rule.FastScanSafe,
+		ConditionMonotonic:  rule.ConditionMonotonic,
 		RequiresStringMatch: rule.RequiresStringMatch,
 		ModuleNames:         make(map[uint8]string, len(rule.ModuleNames)),
 		ModuleSignatures:    make(map[uint8]serializedModuleFunction, len(rule.ModuleFunctions)),
@@ -405,6 +407,7 @@ func deserializeRule(serialized serializedRule, bindings map[string]compiledModu
 		IsGlobal:            serialized.IsGlobal,
 		IsPrivate:           serialized.IsPrivate,
 		FastScanSafe:        serialized.FastScanSafe,
+		ConditionMonotonic:  serialized.ConditionMonotonic,
 		RequiresStringMatch: serialized.RequiresStringMatch,
 		ModuleFunctions:     make(map[builtinFunction]ModuleFunction, len(serialized.ModuleNames)),
 		ModuleNames:         make(map[builtinFunction]string, len(serialized.ModuleNames)),

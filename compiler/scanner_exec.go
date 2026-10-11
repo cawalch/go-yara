@@ -458,7 +458,12 @@ func (s *Scanner) evaluatePublicRules(
 		return publicRuleEvaluation{}, err
 	}
 	result := publicRuleEvaluation{
-		scanInput:          ruleScanInput{data: data, usesharedAutomaton: usesharedAutomaton, skipUnmatchedContext: true},
+		scanInput: ruleScanInput{
+			data:                 data,
+			usesharedAutomaton:   usesharedAutomaton,
+			skipUnmatchedContext: true,
+			booleanMatchOnly:     matchedRuleIndices == nil,
+		},
 		allGlobalMatched:   true,
 		matchedRuleIndices: matchedRuleIndices,
 	}

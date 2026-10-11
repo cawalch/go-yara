@@ -213,3 +213,135 @@ func TestVM_LeftmostLongest_GroupsAlternation(t *testing.T) {
 		t.Fatalf("want match at [1,3), got ok=%v [%d,%d)", ok, start, end)
 	}
 }
+
+func TestVM_FastForwardGreedyTerminalLoop(t *testing.T) {
+	execMatchAtWithFlags := func(code, input []byte, start int, flags Flags) (bool, int, int) {
+		bs, release := NewVMBatch(len(code))
+		defer release()
+		matched, sOff, eOff := ExecMatchBatch(bs, code, input, flags, start)
+		return matched, start + sOff, start + eOff
+	}
+	execMatchAt := func(code, input []byte, start int) (bool, int, int) {
+		return execMatchAtWithFlags(code, input, start, 0)
+	}
+
+	t.Run("ClassesAndNegatedClasses", func(t *testing.T) {
+		tests := []struct {
+			pattern string
+			input   string
+			wantEnd int
+		}{
+			{`[^\s]+`, "hello_world_12345 6789", 17},
+			{`[^\s]+`, "https://example.com/test\nnext", 24},
+			{`[a-z]+`, "abcdefghijklmnopqrstuvwxyz123", 26},
+			{`[^0-9]+`, "abcdef-xyz#$!12345", 13},
+			{`[0-9]+`, "1234567890abc", 10},
+		}
+		for _, tc := range tests {
+			code := mustCompile(t, tc.pattern)
+			ok, start, end := execMatchAt(code, []byte(tc.input), 0)
+			if !ok || start != 0 || end != tc.wantEnd {
+				t.Errorf("%q on %q: want [0,%d), got ok=%v [%d,%d)", tc.pattern, tc.input, tc.wantEnd, ok, start, end)
+			}
+		}
+	})
+
+	t.Run("CaseInsensitiveClasses", func(t *testing.T) {
+		code := mustCompile(t, `[a-z]+`)
+		input := "AbCdEfGhIjKlMnOpQrStUvWxYz123"
+		ok, start, end := execMatchAtWithFlags(code, []byte(input), 0, FlagsNoCase)
+		if !ok || start != 0 || end != 26 {
+			t.Fatalf("want [0,26), got ok=%v [%d,%d)", ok, start, end)
+		}
+	})
+
+	t.Run("OpAnyAndDotAll", func(t *testing.T) {
+		code := mustCompile(t, `.+`)
+		input := "line1\nline2"
+		ok, start, end := execMatchAt(code, []byte(input), 0)
+		if !ok || start != 0 || end != 5 {
+			t.Fatalf("want [0,5) without dotAll, got ok=%v [%d,%d)", ok, start, end)
+		}
+
+		ok, start, end = execMatchAtWithFlags(code, []byte(input), 0, FlagsDotAll)
+		if !ok || start != 0 || end != len(input) {
+			t.Fatalf("want [0,%d) with dotAll, got ok=%v [%d,%d)", len(input), ok, start, end)
+		}
+	})
+
+	t.Run("OpNotLiteralAndLiteral", func(t *testing.T) {
+		codeNotLit := mustCompile(t, `[^x]+`)
+		input := "abcde_12345xfoo"
+		ok, start, end := execMatchAt(codeNotLit, []byte(input), 0)
+		if !ok || start != 0 || end != 11 {
+			t.Fatalf("want [0,11), got ok=%v [%d,%d)", ok, start, end)
+		}
+
+		codeLit := mustCompile(t, `a+`)
+		inputA := "aaaaaaaabb"
+		ok, start, end = execMatchAt(codeLit, []byte(inputA), 0)
+		if !ok || start != 0 || end != 8 {
+			t.Fatalf("want [0,8), got ok=%v [%d,%d)", ok, start, end)
+		}
+	})
+
+	t.Run("CharacterClassShortcuts", func(t *testing.T) {
+		tests := []struct {
+			pattern string
+			input   string
+			wantEnd int
+		}{
+			{`\S+`, "non_space_chars remaining", 15},
+			{`\s+`, "   \t\t\nnext", 6},
+			{`\d+`, "9876543210abc", 10},
+			{`\D+`, "abcdef_not_digit123", 16},
+			{`\w+`, "word_123!@#", 8},
+			{`\W+`, "!@#$%^&abc", 7},
+		}
+		for _, tc := range tests {
+			code := mustCompile(t, tc.pattern)
+			ok, start, end := execMatchAt(code, []byte(tc.input), 0)
+			if !ok || start != 0 || end != tc.wantEnd {
+				t.Errorf("%q on %q: want [0,%d), got ok=%v [%d,%d)", tc.pattern, tc.input, tc.wantEnd, ok, start, end)
+			}
+		}
+	})
+
+	t.Run("LargeBufferFastForward", func(t *testing.T) {
+		data := make([]byte, 200_000)
+		for i := range data {
+			data[i] = 'a'
+		}
+		data[150_000] = ' '
+		code := mustCompile(t, `[^\s]+`)
+		ok, start, end := execMatchAt(code, data, 0)
+		if !ok || start != 0 || end != 150_000 {
+			t.Fatalf("want [0,150000), got ok=%v [%d,%d)", ok, start, end)
+		}
+	})
+
+	t.Run("NonTerminalLoopsDoNotOverrun", func(t *testing.T) {
+		code := mustCompile(t, `[^\s]+end`)
+		input := "prefix_end extra"
+		ok, start, end := execMatchAt(code, []byte(input), 0)
+		if !ok || start != 0 || end != 10 {
+			t.Fatalf("want [0,10), got ok=%v [%d,%d)", ok, start, end)
+		}
+	})
+
+	t.Run("CancellationStopsFastForward", func(t *testing.T) {
+		data := make([]byte, 100_000)
+		for i := range data {
+			data[i] = 'a'
+		}
+		code := mustCompile(t, `[^\s]+`)
+		done := make(chan struct{})
+		close(done)
+		bs, release := NewVMBatch(len(code))
+		defer release()
+		matched, _, _, _ := ExecMatchBatchWithCancel(bs, code, data, 0, 0, done)
+		if matched {
+			t.Fatal("expected match to stop due to cancellation")
+		}
+	})
+}

@@ -418,6 +418,7 @@ func (s *Scanner) addLocalNonTextMatches(
 	data []byte,
 	cache *nonTextMatchCache,
 	usesharedAutomaton bool,
+	canShortCircuit bool,
 ) error {
 	if rule == nil {
 		return ctx.Err()
@@ -428,6 +429,9 @@ func (s *Scanner) addLocalNonTextMatches(
 		}
 		if matches, ok := s.getNonTextMatches(cache, regexInfo.cacheIndex, usesharedAutomaton); ok {
 			addCachedMatches(s.matchCtx, id, matches)
+			if canShortCircuit && len(s.matchCtx.spans[id]) > 0 && s.isRuleConditionSatisfied(rule) {
+				return nil
+			}
 			continue
 		}
 		modifiers := rule.StringModifiers[id]
@@ -437,6 +441,9 @@ func (s *Scanner) addLocalNonTextMatches(
 			dst = append(dst, s.matchCtx.spans[id]...)
 			cache.set(regexInfo.cacheIndex, dst)
 		}
+		if canShortCircuit && len(s.matchCtx.spans[id]) > 0 && s.isRuleConditionSatisfied(rule) {
+			return nil
+		}
 	}
 	for id, pattern := range rule.HexPatterns {
 		if err := ctx.Err(); err != nil {
@@ -445,6 +452,9 @@ func (s *Scanner) addLocalNonTextMatches(
 		if pattern != nil {
 			if matches, ok := s.getNonTextMatches(cache, pattern.cacheIndex, usesharedAutomaton); ok {
 				addCachedMatches(s.matchCtx, id, matches)
+				if canShortCircuit && len(s.matchCtx.spans[id]) > 0 && s.isRuleConditionSatisfied(rule) {
+					return nil
+				}
 				continue
 			}
 		}
@@ -458,6 +468,9 @@ func (s *Scanner) addLocalNonTextMatches(
 			dst := cache.matches[pattern.cacheIndex][:0]
 			dst = append(dst, s.matchCtx.spans[id]...)
 			cache.set(pattern.cacheIndex, dst)
+		}
+		if canShortCircuit && len(s.matchCtx.spans[id]) > 0 && s.isRuleConditionSatisfied(rule) {
+			return nil
 		}
 	}
 	return ctx.Err()

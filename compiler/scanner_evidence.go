@@ -60,7 +60,9 @@ func (s *Scanner) materializeMatchingRules(
 		if !rule.IsGlobal && !evaluation.allGlobalMatched {
 			continue
 		}
-		if err := s.populateRuleMatchContext(ctx, rule, evaluation.scanInput); err != nil {
+		scanInput := evaluation.scanInput
+		scanInput.booleanMatchOnly = false
+		if err := s.populateRuleMatchContext(ctx, rule, scanInput); err != nil {
 			return nil, err
 		}
 
