@@ -444,7 +444,12 @@ func addRegexMatchAt(
 	bs *regex.VMBatch,
 	start int,
 ) {
-	matched, startOffset, endOffset := execRegexMatchAt(bs, regexInfo, data, flags, isWide, start, ctx.cancelDone)
+	scanData := data
+	if ctx != nil && ctx.maxMatchSpan > 0 && start < len(data) {
+		endBound := min(len(data), start+ctx.maxMatchSpan)
+		scanData = data[:endBound]
+	}
+	matched, startOffset, endOffset := execRegexMatchAt(bs, regexInfo, scanData, flags, isWide, start, ctx.cancelDone)
 	if !matched {
 		return
 	}

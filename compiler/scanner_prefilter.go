@@ -14,6 +14,7 @@ type ruleScanInput struct {
 	data                 []byte
 	usesharedAutomaton   bool
 	skipUnmatchedContext bool
+	booleanMatchOnly     bool
 }
 
 type rulePrefilterStatus uint8
@@ -173,6 +174,7 @@ func (s *Scanner) populateRuleMatchContext(
 	if s.fastScan && rule.FastScanSafe {
 		s.matchCtx.maxMatchesPerPattern = 1
 	}
+	s.matchCtx.maxMatchSpan = s.maxMatchSpan
 	if input.usesharedAutomaton {
 		if err := s.addStaticMatchesInt(ctx, rule, input.data, s.globalMatches[rule.Index]); err != nil {
 			return err
@@ -182,7 +184,28 @@ func (s *Scanner) populateRuleMatchContext(
 			return err
 		}
 	}
-	if err := s.addLocalNonTextMatches(ctx, rule, input.data, &s.nonTextCache, input.usesharedAutomaton); err != nil {
+
+	canShortCircuit := rule.ConditionMonotonic &&
+		input.booleanMatchOnly &&
+		(len(rule.RegexPatterns) > 0 || len(rule.HexPatterns) > 0)
+
+	if canShortCircuit && len(s.matchCtx.spans) > 0 && s.isRuleConditionSatisfied(rule) {
+		s.matchCtx.normalizeMatches()
+		if s.blockScan {
+			base := s.blockContext[0].Base
+			for _, spans := range s.matchCtx.spans {
+				for index := range spans {
+					spans[index].Offset += base
+				}
+			}
+			s.matchCtx.Data = nil
+			s.matchCtx.Blocks = s.blockContext[:]
+			s.matchCtx.FileSize = s.blockFileSize
+		}
+		return nil
+	}
+
+	if err := s.addLocalNonTextMatches(ctx, rule, input.data, &s.nonTextCache, input.usesharedAutomaton, canShortCircuit); err != nil {
 		return err
 	}
 	s.matchCtx.normalizeMatches()
@@ -198,6 +221,15 @@ func (s *Scanner) populateRuleMatchContext(
 		s.matchCtx.FileSize = s.blockFileSize
 	}
 	return nil
+}
+
+func (s *Scanner) isRuleConditionSatisfied(rule *CompiledRule) bool {
+	s.prepareInterpreter(rule)
+	s.interp.SetItersmax(s.itersmax)
+	if err := s.interp.Execute(); err != nil {
+		return false
+	}
+	return s.interp.ruleResult(rule.Name)
 }
 
 func (s *Scanner) allEvaluatedRulesPrefilterRejected(ctx context.Context, data []byte, usesharedAutomaton bool) bool {

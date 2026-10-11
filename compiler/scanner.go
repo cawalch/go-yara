@@ -82,6 +82,7 @@ type Scanner struct {
 	pollByteStride        int
 	maxMatchesLimit       int
 	onMaxMatchesExceeded  func(rule string, count int)
+	maxMatchSpan          int
 }
 
 // ScanResult represents the result of scanning data against compiled rules.
@@ -210,6 +211,21 @@ func WithReportedMatchesOnly() ScannerOption {
 func WithFastScan() ScannerOption {
 	return func(scanner *Scanner) {
 		scanner.fastScan = true
+	}
+}
+
+// WithMaxMatchSpan bounds the maximum byte length of a single regex match.
+// When maxBytes > 0, regex scanning evaluates at most maxBytes ahead from each
+// candidate start. Non-positive values mean unlimited match length (the default).
+func WithMaxMatchSpan(maxBytes int) ScannerOption {
+	if maxBytes < 0 {
+		maxBytes = 0
+	}
+	return func(scanner *Scanner) {
+		scanner.maxMatchSpan = maxBytes
+		if scanner.matchCtx != nil {
+			scanner.matchCtx.maxMatchSpan = maxBytes
+		}
 	}
 }
 

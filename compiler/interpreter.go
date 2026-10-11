@@ -120,6 +120,8 @@ type MatchContext struct {
 	cancelDone   <-chan struct{}
 	// maxMatchesPerPattern bounds retained occurrences. Zero means unlimited.
 	maxMatchesPerPattern int
+	// maxMatchSpan bounds the maximum byte length of a single regex match. Zero means unlimited.
+	maxMatchSpan int
 }
 
 func (mc *MatchContext) dataRange(offset, size int64) ([]byte, bool) {

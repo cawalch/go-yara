@@ -165,6 +165,7 @@ func (rc *ruleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 		IsGlobal:            rc.hasModifier(rule.Modifiers, ast.ModifierGlobal),
 		IsPrivate:           rc.hasModifier(rule.Modifiers, ast.ModifierPrivate),
 		FastScanSafe:        !conditionObservesMatchOccurrences(rule.Condition) && !ruleDeclaresEvidence(rule),
+		ConditionMonotonic:  !conditionObservesMatchOccurrences(rule.Condition) && !ruleDeclaresEvidence(rule) && conditionIsMonotonicInStrings(rule.Condition),
 		RequiresStringMatch: len(rule.Strings) > 0 && conditionRequiresStringMatch(rule.Condition),
 		ModuleFunctions:     maps.Clone(rc.moduleFunctions),
 		ModuleNames:         maps.Clone(rc.moduleNames),
@@ -220,6 +221,81 @@ func conditionObservesMatchOccurrences(expr ast.Expression) bool {
 		return false
 	default:
 		return true
+	}
+}
+
+func conditionIsMonotonicInStrings(expr ast.Expression) bool {
+	switch e := expr.(type) {
+	case nil, *ast.Literal:
+		return true
+	case *ast.Identifier:
+		return true
+	case *ast.BinaryOp:
+		if e.Op == token.AND || e.Op == token.OR {
+			return conditionIsMonotonicInStrings(e.Left) && conditionIsMonotonicInStrings(e.Right)
+		}
+		return !containsStringReference(e.Left) && !containsStringReference(e.Right)
+	case *ast.UnaryOp:
+		if e.Op == token.NOT {
+			return !containsStringReference(e.Right)
+		}
+		return conditionIsMonotonicInStrings(e.Right)
+	case *ast.OfExpression:
+		if e.InRange != nil || e.AtOffset != nil {
+			return false
+		}
+		if lit, ok := e.Count.(*ast.Literal); ok {
+			if s, ok := lit.Value.(string); ok && strings.EqualFold(s, "none") {
+				return false
+			}
+		}
+		return true
+	case *ast.StringTuple:
+		for _, el := range e.Elements {
+			if !conditionIsMonotonicInStrings(el) {
+				return false
+			}
+		}
+		return true
+	default:
+		return !containsStringReference(expr)
+	}
+}
+
+func containsStringReference(expr ast.Expression) bool {
+	switch e := expr.(type) {
+	case nil, *ast.Literal:
+		return false
+	case *ast.Identifier:
+		return strings.HasPrefix(e.Name, "$") || e.Name == "them"
+	case *ast.StringCount, *ast.StringOffset, *ast.StringLength, *ast.LengthOf:
+		return true
+	case *ast.BinaryOp:
+		return containsStringReference(e.Left) || containsStringReference(e.Right)
+	case *ast.UnaryOp:
+		return containsStringReference(e.Right)
+	case *ast.FunctionCall:
+		for _, arg := range e.Args {
+			if containsStringReference(arg) {
+				return true
+			}
+		}
+		return false
+	case *ast.ForLoop:
+		return containsStringReference(e.Range) || containsStringReference(e.Condition) || containsStringReference(e.InRange) || containsStringReference(e.AtOffset)
+	case *ast.OfExpression:
+		return true
+	case *ast.PercentExpression:
+		return containsStringReference(e.Value)
+	case *ast.StringTuple:
+		for _, el := range e.Elements {
+			if containsStringReference(el) {
+				return true
+			}
+		}
+		return false
+	default:
+		return false
 	}
 }
 
@@ -1154,6 +1230,9 @@ type CompiledRule struct {
 	// FastScanSafe is true when the condition only observes whether strings
 	// matched, not occurrence counts, offsets, lengths, or constrained ranges.
 	FastScanSafe bool
+	// ConditionMonotonic is true when string matches only contribute positively
+	// to condition truth (no negations, none-of, etc.).
+	ConditionMonotonic bool
 	// RequiresStringMatch is true only when the condition is proven false if
 	// none of this rule's strings match.
 	RequiresStringMatch bool
