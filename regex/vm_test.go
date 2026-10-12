@@ -3,6 +3,11 @@ package regex
 import "testing"
 
 func mustCompile(t testing.TB, pat string) []byte {
+	code, _ := mustCompileWithFlags(t, pat)
+	return code
+}
+
+func mustCompileWithFlags(t testing.TB, pat string) ([]byte, Flags) {
 	t.Helper()
 	p := NewParser(0)
 	ast, err := p.Parse(pat)
@@ -13,7 +18,7 @@ func mustCompile(t testing.TB, pat string) []byte {
 	if err != nil {
 		t.Fatalf("compile %q: %v", pat, err)
 	}
-	return code
+	return code, ast.Flags
 }
 
 func TestVM_LiteralAndAny(t *testing.T) {
@@ -146,14 +151,14 @@ func TestVM_LeftmostLongest_Alternation(t *testing.T) {
 		s          string
 		start, end int
 	}{
-		{"a|ab", "ab", 0, 2},
-		{"ab|a", "ab", 0, 2},
-		{"aa|a", "aab", 0, 2},  // prefer longer 'AA' at same start
-		{"a|aa", "zaab", 1, 3}, // leftmost start 1, longest end 3
+		{"a|ab", "ab", 0, 1},
+		{"ab|a", "ab", 0, 1},
+		{"aa|a", "aab", 0, 1},  // YARA matches first accepting branch
+		{"a|aa", "zaab", 1, 2}, // leftmost start 1, first accepting branch end 2
 	}
 	for _, c := range cases {
-		code := mustCompile(t, c.pat)
-		ok, start, end := ExecMatch(code, []byte(c.s), FlagsScan)
+		code, flags := mustCompileWithFlags(t, c.pat)
+		ok, start, end := ExecMatch(code, []byte(c.s), FlagsScan|flags)
 		if !ok || start != c.start || end != c.end {
 			t.Fatalf("%q on %q: want [%d,%d), got ok=%v [%d,%d)", c.pat, c.s, c.start, c.end, ok, start, end)
 		}
@@ -161,12 +166,12 @@ func TestVM_LeftmostLongest_Alternation(t *testing.T) {
 }
 
 func TestVM_NestedRepeats_LeftmostLongest(t *testing.T) {
-	code := mustCompile(t, "(ab*)*")
+	code, flags := mustCompileWithFlags(t, "(ab*)*")
 	s := []byte("abbbab")
-	if !Exec(code, s, 0) {
+	if !Exec(code, s, flags) {
 		t.Fatalf("expect match for nested repeats")
 	}
-	ok, start, end := ExecMatch(code, s, 0)
+	ok, start, end := ExecMatch(code, s, flags)
 	if !ok || start != 0 || end != len(s) {
 		t.Fatalf("want longest prefix match [0,%d), got ok=%v [%d,%d)", len(s), ok, start, end)
 	}
@@ -185,20 +190,20 @@ func TestVM_EmptyMatch_Scan(t *testing.T) {
 	}
 }
 
-// Nested repeats with alternation: ensure leftmost-longest across repeating groups
+// Nested repeats with alternation: ensure leftmost-first across repeating groups under YARA semantics
 func TestVM_NestedRepeats_WithAlternation_Scan(t *testing.T) {
 	cases := []struct {
 		pat        string
 		s          string
 		start, end int
 	}{
-		{"(a|ab)*", "ababa", 0, 5}, // consume 'ab' 'ab' 'a' => longest at start 0 is entire string
-		{"(ab|a)*", "ababa", 0, 5}, // equivalent ordering should yield same longest match
-		{"(a|ab)*b", "aab", 0, 3},  // ensure trailing literal enforces full consumption
+		{"(a|ab)*", "ababa", 0, 1}, // YARA leftmost-first: 'a' matches first and stops
+		{"(ab|a)*", "ababa", 0, 5}, // 'ab' is first branch, consumes whole string
+		{"(a|ab)*b", "aab", 0, 3},  // trailing literal enforces full consumption
 	}
 	for _, c := range cases {
-		code := mustCompile(t, c.pat)
-		ok, start, end := ExecMatch(code, []byte(c.s), FlagsScan)
+		code, flags := mustCompileWithFlags(t, c.pat)
+		ok, start, end := ExecMatch(code, []byte(c.s), FlagsScan|flags)
 		if !ok || start != c.start || end != c.end {
 			t.Fatalf("%q on %q: want [%d,%d), got ok=%v [%d,%d)", c.pat, c.s, c.start, c.end, ok, start, end)
 		}

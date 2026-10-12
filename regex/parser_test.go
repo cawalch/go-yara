@@ -420,9 +420,9 @@ func TestParseOmittedLowerBound(t *testing.T) {
 		t.Fatalf("Parse(\"a{,}\") want range {0, 65535}")
 	}
 
-	// Empty braces a{} should be rejected
-	if _, err := p.Parse("a{}"); err == nil {
-		t.Fatalf("Parse(\"a{}\") expected error, got nil")
+	// In YARA, a{} parses as literal characters rather than being rejected
+	if _, err := p.Parse("a{}"); err != nil {
+		t.Fatalf("Parse(\"a{}\") unexpected error: %v", err)
 	}
 }
 

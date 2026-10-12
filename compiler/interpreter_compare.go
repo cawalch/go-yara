@@ -15,6 +15,10 @@ func (i *Interpreter) executeTypedComparison(opcode Opcode) error {
 	a := i.stack[len(i.stack)-2]
 	i.stack = i.stack[:len(i.stack)-2]
 
+	if a.Type == ValueTypeUndefined || b.Type == ValueTypeUndefined {
+		return i.push(Value{Type: ValueTypeUndefined})
+	}
+
 	result, err := i.compareValues(a, b, opcode)
 	if err != nil {
 		return err
@@ -25,6 +29,9 @@ func (i *Interpreter) executeTypedComparison(opcode Opcode) error {
 
 // compareValues resolves comparison operands that may be dynamically typed.
 func (i *Interpreter) compareValues(a, b Value, opcode Opcode) (bool, error) {
+	if a.Type == ValueTypeUndefined || b.Type == ValueTypeUndefined {
+		return false, nil
+	}
 	switch a.Type {
 	case ValueTypeInt:
 		return i.compareIntegers(a, b, opcode)
@@ -96,6 +103,10 @@ func (i *Interpreter) executeStringComparison(comparison func(string, string) bo
 		return err
 	}
 
+	if a.Type == ValueTypeUndefined || b.Type == ValueTypeUndefined {
+		return i.push(Value{Type: ValueTypeUndefined})
+	}
+
 	if a.Type != ValueTypeString || b.Type != ValueTypeString {
 		return &InterpreterError{
 			Type:    ErrorTypeMismatch,
@@ -155,6 +166,9 @@ func (i *Interpreter) executeIntToDouble() error {
 	v := i.stack[len(i.stack)-1]
 	if v.Type == ValueTypeInt {
 		i.stack[len(i.stack)-1] = Value{Type: ValueTypeDouble, DoubleVal: float64(v.IntVal)}
+		return nil
+	}
+	if v.Type == ValueTypeUndefined {
 		return nil
 	}
 

@@ -89,7 +89,7 @@ func sortAndDedupeMatches(matches []Match) []Match {
 	})
 	unique := matches[:0]
 	for _, match := range matches {
-		if len(unique) > 0 && unique[len(unique)-1].Offset == match.Offset && unique[len(unique)-1].Length == match.Length {
+		if len(unique) > 0 && unique[len(unique)-1].Offset == match.Offset {
 			continue
 		}
 		unique = append(unique, match)

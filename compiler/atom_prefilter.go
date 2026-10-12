@@ -803,7 +803,7 @@ func sortAndDedupeMatchSpans(matches []matchSpan) []matchSpan {
 	}
 	unique := 1
 	for _, candidate := range matches[1:] {
-		if candidate == matches[unique-1] {
+		if candidate.Offset == matches[unique-1].Offset {
 			continue
 		}
 		matches[unique] = candidate

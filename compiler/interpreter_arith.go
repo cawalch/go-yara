@@ -74,21 +74,37 @@ func (i *Interpreter) executeIntMul() error {
 }
 
 func (i *Interpreter) executeIntDiv() error {
-	return i.executeBinaryOpWithCheck(func(a, b int64) (int64, error) {
-		if b == 0 {
-			return 0, &InterpreterError{Type: ErrorDivisionByZero, Opcode: OpIntDiv, Message: "division by zero"}
-		}
-		return a / b, nil
-	})
+	a, b, err := i.popTwo()
+	if err != nil {
+		return err
+	}
+	if a.Type == ValueTypeUndefined || b.Type == ValueTypeUndefined {
+		return i.push(Value{Type: ValueTypeUndefined})
+	}
+	if a.Type != ValueTypeInt || b.Type != ValueTypeInt {
+		return i.handleNonIntegerOperands(a, b, "integer-only operation requires integer operands")
+	}
+	if b.IntVal == 0 {
+		return i.push(Value{Type: ValueTypeUndefined})
+	}
+	return i.push(Value{Type: ValueTypeInt, IntVal: a.IntVal / b.IntVal})
 }
 
 func (i *Interpreter) executeMod() error {
-	return i.executeBinaryOpWithCheck(func(a, b int64) (int64, error) {
-		if b == 0 {
-			return 0, &InterpreterError{Type: ErrorDivisionByZero, Opcode: OpMod, Message: "modulo by zero"}
-		}
-		return a % b, nil
-	})
+	a, b, err := i.popTwo()
+	if err != nil {
+		return err
+	}
+	if a.Type == ValueTypeUndefined || b.Type == ValueTypeUndefined {
+		return i.push(Value{Type: ValueTypeUndefined})
+	}
+	if a.Type != ValueTypeInt || b.Type != ValueTypeInt {
+		return i.handleNonIntegerOperands(a, b, "integer-only operation requires integer operands")
+	}
+	if b.IntVal == 0 {
+		return i.push(Value{Type: ValueTypeUndefined})
+	}
+	return i.push(Value{Type: ValueTypeInt, IntVal: a.IntVal % b.IntVal})
 }
 
 func (i *Interpreter) executeIntMinus() error {
@@ -96,6 +112,9 @@ func (i *Interpreter) executeIntMinus() error {
 		return err
 	}
 	v := i.stack[len(i.stack)-1]
+	if v.Type == ValueTypeUndefined {
+		return nil
+	}
 	if v.Type != ValueTypeInt {
 		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpIntMinus, Message: "integer operand required"}
 	}
@@ -118,7 +137,20 @@ func (i *Interpreter) executeDblMul() error {
 }
 
 func (i *Interpreter) executeDblDiv() error {
-	return i.executeDoubleOp(func(a, b float64) float64 { return a / b })
+	a, b, err := i.popTwo()
+	if err != nil {
+		return err
+	}
+	if a.Type == ValueTypeUndefined || b.Type == ValueTypeUndefined {
+		return i.push(Value{Type: ValueTypeUndefined})
+	}
+	if a.Type != ValueTypeDouble || b.Type != ValueTypeDouble {
+		return i.push(Value{Type: ValueTypeUndefined})
+	}
+	if b.DoubleVal == 0.0 {
+		return i.push(Value{Type: ValueTypeUndefined})
+	}
+	return i.push(Value{Type: ValueTypeDouble, DoubleVal: a.DoubleVal / b.DoubleVal})
 }
 
 func (i *Interpreter) executeDblMinus() error {
@@ -126,6 +158,9 @@ func (i *Interpreter) executeDblMinus() error {
 		return err
 	}
 	v := i.stack[len(i.stack)-1]
+	if v.Type == ValueTypeUndefined {
+		return nil
+	}
 	if v.Type != ValueTypeDouble {
 		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpDblMinus, Message: "double operand required"}
 	}

@@ -75,7 +75,7 @@ func wordRoutingRegex(source string, flags regex.Flags) ([]wordmatch.Sequence, b
 			}
 		}
 	}
-	parsed, err := regex.NewParser(regex.ParserFlagEnableStrictEscapeSequences).Parse(cleanRegexPattern(source))
+	parsed, err := regex.NewParser(0).Parse(cleanRegexPattern(source))
 	if err != nil {
 		return nil, false
 	}

@@ -598,7 +598,7 @@ func (cc *conditionCompiler) isFloatExpression(expr ast.Expression) bool {
 		return e.Type == token.FloatLit
 	case *ast.BinaryOp:
 		switch e.Op {
-		case token.PLUS, token.MINUS, token.MULTIPLY, token.DIVIDE:
+		case token.PLUS, token.MINUS, token.MULTIPLY, token.DIVIDE, token.IntDivide:
 			return cc.isFloatExpression(e.Left) || cc.isFloatExpression(e.Right)
 		}
 		return false
@@ -659,7 +659,7 @@ func (cc *conditionCompiler) isStringComparisonOperator(op token.Type) bool {
 }
 
 func (cc *conditionCompiler) isNonCommutativeOperator(op token.Type) bool {
-	return op == token.MINUS || op == token.DIVIDE
+	return op == token.MINUS || op == token.DIVIDE || op == token.IntDivide
 }
 
 func (cc *conditionCompiler) compileOperands(binOp *ast.BinaryOp) error {
@@ -709,6 +709,7 @@ func (cc *conditionCompiler) selectOpcode(binOp *ast.BinaryOp, isFloatOp, isStri
 		token.MINUS:       {OpIntSub, OpDblSub},
 		token.MULTIPLY:    {OpIntMul, OpDblMul},
 		token.DIVIDE:      {OpIntDiv, OpDblDiv},
+		token.IntDivide:   {OpIntDiv, OpDblDiv},
 		token.MODULO:      {OpMod, OpMod},
 		token.BitwiseAnd:  {OpBitwiseAnd, OpBitwiseAnd},
 		token.BitwiseOr:   {OpBitwiseOr, OpBitwiseOr},
@@ -1291,8 +1292,14 @@ func (cc *conditionCompiler) compileForLoop(forLoop *ast.ForLoop) error {
 		return cc.compileForLoopOverStrings(forLoop)
 	}
 
-	rangeExpr, ok := forLoop.Range.(*ast.BinaryOp)
-	if !ok || rangeExpr.Op != token.DOT {
+	var startExpr, endExpr ast.Expression
+	if rangeExpr, ok := forLoop.Range.(*ast.BinaryOp); ok && rangeExpr.Op == token.DOT {
+		startExpr = rangeExpr.Left
+		endExpr = rangeExpr.Right
+	} else if forLoop.Range != nil {
+		startExpr = forLoop.Range
+		endExpr = forLoop.Range
+	} else {
 		return fmt.Errorf("unsupported for-loop range type, expected binary range operator")
 	}
 
@@ -1302,10 +1309,10 @@ func (cc *conditionCompiler) compileForLoop(forLoop *ast.ForLoop) error {
 	}
 
 	// 1. Push start and end to stack dynamically
-	if err := cc.compileExpression(rangeExpr.Left); err != nil {
+	if err := cc.compileExpression(startExpr); err != nil {
 		return fmt.Errorf("compiling range start: %w", err)
 	}
-	if err := cc.compileExpression(rangeExpr.Right); err != nil {
+	if err := cc.compileExpression(endExpr); err != nil {
 		return fmt.Errorf("compiling range end: %w", err)
 	}
 

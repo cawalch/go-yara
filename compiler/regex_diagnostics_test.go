@@ -72,31 +72,26 @@ func TestRegexMalformedPatternsRejected(t *testing.T) {
 	}
 }
 
-func TestRegexUnsupportedConstructDiagnostics(t *testing.T) {
+func TestRegexEmptyAlternationBranchSupport(t *testing.T) {
 	tests := []struct {
-		name      string
-		pattern   string
-		wantError string
+		name    string
+		pattern string
 	}{
 		{
-			name:      "trailing empty alternation branch in group",
-			pattern:   `(foo|)`,
-			wantError: "unsupported regex construct: empty alternation branch",
+			name:    "trailing empty alternation branch in group",
+			pattern: `(foo|)`,
 		},
 		{
-			name:      "leading empty alternation branch in group",
-			pattern:   `(|foo)`,
-			wantError: "unsupported regex construct: empty alternation branch",
+			name:    "leading empty alternation branch in group",
+			pattern: `(|foo)`,
 		},
 		{
-			name:      "trailing empty alternation branch",
-			pattern:   `foo|`,
-			wantError: "unsupported regex construct: empty alternation branch",
+			name:    "trailing empty alternation branch",
+			pattern: `foo|`,
 		},
 		{
-			name:      "leading empty alternation branch",
-			pattern:   `|foo`,
-			wantError: "unsupported regex construct: empty alternation branch",
+			name:    "leading empty alternation branch",
+			pattern: `|foo`,
 		},
 	}
 
@@ -104,20 +99,8 @@ func TestRegexUnsupportedConstructDiagnostics(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			src := `rule r { strings: $s = /` + tt.pattern + `/ condition: $s }`
 			_, err := NewCompiler().CompileSource(src)
-			if err == nil {
-				t.Fatalf("CompileSource() for /%s/ succeeded, want error containing %q", tt.pattern, tt.wantError)
-			}
-			errMsg := err.Error()
-			if !strings.Contains(errMsg, tt.wantError) {
-				t.Fatalf("CompileSource() for /%s/ error = %v, want substring %q", tt.pattern, err, tt.wantError)
-			}
-			// Must include rule and string context
-			if !strings.Contains(errMsg, "compiling rule r") || !strings.Contains(errMsg, "compiling string $s") {
-				t.Fatalf("CompileSource() error missing rule/string context: %v", err)
-			}
-			// Must NOT leak raw AST node kind
-			if strings.Contains(errMsg, "node kind") {
-				t.Fatalf("CompileSource() leaked internal node kind: %v", err)
+			if err != nil {
+				t.Fatalf("CompileSource() for /%s/ failed: %v", tt.pattern, err)
 			}
 		})
 	}

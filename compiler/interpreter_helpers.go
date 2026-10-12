@@ -79,21 +79,6 @@ func (i *Interpreter) executeBinaryOp(operation func(int64, int64) int64) error 
 	return i.push(Value{Type: ValueTypeInt, IntVal: operation(a.IntVal, b.IntVal)})
 }
 
-func (i *Interpreter) executeBinaryOpWithCheck(operation func(int64, int64) (int64, error)) error {
-	a, b, err := i.popTwo()
-	if err != nil {
-		return err
-	}
-	if a.Type != ValueTypeInt || b.Type != ValueTypeInt {
-		return i.handleNonIntegerOperands(a, b, "integer-only operation requires integer operands")
-	}
-	result, err := operation(a.IntVal, b.IntVal)
-	if err != nil {
-		return err
-	}
-	return i.push(Value{Type: ValueTypeInt, IntVal: result})
-}
-
 func (i *Interpreter) handleNonIntegerOperands(a, b Value, message string) error {
 	if (a.Type == ValueTypeInt || a.Type == ValueTypeDouble) &&
 		(b.Type == ValueTypeInt || b.Type == ValueTypeDouble) {
