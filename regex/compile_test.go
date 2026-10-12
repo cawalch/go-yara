@@ -264,7 +264,7 @@ func TestCompileRangeUnboundedUngreedy(t *testing.T) {
 	}
 }
 
-func TestCompileUnsupportedConstructEmptyAlternationBranch(t *testing.T) {
+func TestCompileEmptyAlternationBranch(t *testing.T) {
 	cases := []string{
 		"(foo|)",
 		"(|foo)",
@@ -279,16 +279,12 @@ func TestCompileUnsupportedConstructEmptyAlternationBranch(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Parse(%q) unexpected error: %v", pattern, err)
 		}
-		_, err = Compile(ast)
-		if err == nil {
-			t.Fatalf("Compile(%q) expected error, got nil", pattern)
+		code, err := Compile(ast)
+		if err != nil {
+			t.Fatalf("Compile(%q) unexpected error: %v", pattern, err)
 		}
-		want := "unsupported regex construct: empty alternation branch"
-		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("Compile(%q) error = %v, want substring %q", pattern, err, want)
-		}
-		if strings.Contains(err.Error(), "node kind") {
-			t.Fatalf("Compile(%q) error leaked internal node kind: %v", pattern, err)
+		if len(code) == 0 {
+			t.Fatalf("Compile(%q) returned empty bytecode", pattern)
 		}
 	}
 }

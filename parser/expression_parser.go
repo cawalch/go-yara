@@ -64,7 +64,7 @@ func isBinaryOperator(tok token.Type) bool {
 		token.ENDSWITH, token.IENDSWITH, token.IEQUALS, token.MATCHES,
 		token.AT, token.IN:
 		return true
-	case token.PLUS, token.MINUS, token.MULTIPLY, token.DIVIDE, token.MODULO, token.PERCENT:
+	case token.PLUS, token.MINUS, token.MULTIPLY, token.DIVIDE, token.IntDivide, token.MODULO, token.PERCENT:
 		return true
 	case token.BitwiseAnd, token.BitwiseOr, token.BitwiseXor,
 		token.LeftShift, token.RightShift:
@@ -78,20 +78,29 @@ func isBinaryOperator(tok token.Type) bool {
 // Higher number = binds tighter.
 func operatorPrecedence(tok token.Type) (prec int, leftAssoc bool) {
 	switch tok {
-	case token.AND, token.OR:
+	case token.OR:
 		return 1, true
-	case token.OF:
+	case token.AND:
 		return 2, true
+	case token.OF:
+		return 3, true
 	case token.EQ, token.NEQ, token.LT, token.LE, token.GT, token.GE,
 		token.CONTAINS, token.ICONTAINS, token.STARTSWITH, token.ISTARTSWITH,
 		token.ENDSWITH, token.IENDSWITH, token.IEQUALS, token.MATCHES,
 		token.AT, token.IN:
-		return 3, true
-	case token.BitwiseAnd, token.BitwiseOr, token.BitwiseXor,
-		token.LeftShift, token.RightShift:
 		return 4, true
-	case token.PLUS, token.MINUS, token.MULTIPLY, token.DIVIDE, token.MODULO, token.PERCENT:
+	case token.BitwiseOr:
 		return 5, true
+	case token.BitwiseXor:
+		return 6, true
+	case token.BitwiseAnd:
+		return 7, true
+	case token.LeftShift, token.RightShift:
+		return 8, true
+	case token.PLUS, token.MINUS:
+		return 9, true
+	case token.MULTIPLY, token.DIVIDE, token.IntDivide, token.MODULO, token.PERCENT:
+		return 10, true
 	default:
 		return 0, false
 	}
@@ -171,7 +180,11 @@ func (p *ExpressionParser) parsePrimary() (ast.Expression, error) {
 	if isUnaryOperator(p.current.Type) {
 		op := p.current.Type
 		p.nextToken()
-		operand, err := p.parsePrimary()
+		prec := 11
+		if op == token.NOT || op == token.DEFINED {
+			prec = 3
+		}
+		operand, err := p.parseBinaryExpressionWithPrecedence(prec)
 		if err != nil {
 			return nil, err
 		}

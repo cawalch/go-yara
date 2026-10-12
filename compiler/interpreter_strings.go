@@ -17,6 +17,10 @@ func (i *Interpreter) executeLengthOperation() error {
 	pattern := i.stack[len(i.stack)-2]
 	i.stack = i.stack[:len(i.stack)-2]
 
+	if pattern.Type == ValueTypeUndefined || index.Type == ValueTypeUndefined {
+		return i.push(Value{Type: ValueTypeUndefined})
+	}
+
 	if pattern.Type != ValueTypeString {
 		return &InterpreterError{Type: ErrorTypeMismatch, Message: "string pattern operand required"}
 	}
@@ -26,15 +30,15 @@ func (i *Interpreter) executeLengthOperation() error {
 	}
 
 	if i.matchContext == nil {
-		return i.push(Value{Type: ValueTypeInt, IntVal: 0})
+		return i.push(Value{Type: ValueTypeUndefined})
 	}
 
 	if index.IntVal < 1 {
-		return i.push(Value{Type: ValueTypeInt, IntVal: 0})
+		return i.push(Value{Type: ValueTypeUndefined})
 	}
 	match, exists := i.matchContext.matchAt(i.getString(pattern), int(index.IntVal-1))
 	if !exists {
-		return i.push(Value{Type: ValueTypeInt, IntVal: 0})
+		return i.push(Value{Type: ValueTypeUndefined})
 	}
 	return i.push(Value{Type: ValueTypeInt, IntVal: int64(match.Length)})
 }
@@ -240,6 +244,10 @@ func (i *Interpreter) executeOffsetOperation() error {
 	pattern := i.stack[len(i.stack)-2]
 	i.stack = i.stack[:len(i.stack)-2]
 
+	if pattern.Type == ValueTypeUndefined || index.Type == ValueTypeUndefined {
+		return i.push(Value{Type: ValueTypeUndefined})
+	}
+
 	if pattern.Type != ValueTypeString {
 		return &InterpreterError{Type: ErrorTypeMismatch, Message: "string pattern operand required"}
 	}
@@ -249,7 +257,7 @@ func (i *Interpreter) executeOffsetOperation() error {
 	}
 
 	if i.matchContext == nil {
-		return i.push(Value{Type: ValueTypeInt, IntVal: -1})
+		return i.push(Value{Type: ValueTypeUndefined})
 	}
 
 	if index.IntVal < 1 {
@@ -620,7 +628,7 @@ func (i *Interpreter) compileRegexLiteral(literal string) ([]byte, regex.Flags, 
 	}
 	cleaned := cleanRegexPattern(literal)
 	flags := parseInlineRegexFlags(literal)
-	parser := regex.NewParser(regex.ParserFlagEnableStrictEscapeSequences)
+	parser := regex.NewParser(0)
 	astRe, err := parser.Parse(cleaned)
 	if err != nil {
 		return nil, flags, fmt.Errorf("parse regex: %w", err)

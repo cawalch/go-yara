@@ -339,7 +339,7 @@ func (c *Compiler) emitNode(n *Node) error { //nolint:maintidx // high complexit
 		if c.root == n {
 			return errors.New("unsupported regex construct: empty expression")
 		}
-		return errors.New("unsupported regex construct: empty alternation branch")
+		return nil
 	default:
 		// Handle simple nodes
 		if c.isSimpleNode(n.Kind) {

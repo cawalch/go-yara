@@ -488,7 +488,7 @@ func semanticRegexGroupCount(pattern ast.Pattern) (int, bool) {
 			literal = literal[1:end]
 		}
 	}
-	parsed, err := regexengine.NewParser(regexengine.ParserFlagEnableStrictEscapeSequences).Parse(literal)
+	parsed, err := regexengine.NewParser(0).Parse(literal)
 	if err != nil {
 		return int(^uint(0) >> 1), true
 	}

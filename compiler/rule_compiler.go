@@ -650,6 +650,9 @@ func (rc *ruleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers
 	}
 
 	flags := rc.deriveRegexFlags(pattern.Value, modifiers)
+	if parsed != nil {
+		flags |= parsed.Flags
+	}
 	groups := positiveCaptureGroups(modifiers)
 	var captureCode []byte
 	if len(groups) > 0 {

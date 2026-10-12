@@ -106,7 +106,7 @@ func TestLexerErrorPropagation(t *testing.T) {
 		},
 		{
 			name:        "invalid-escape-regex",
-			rule:        `rule test { strings: $a = /test\p/ condition: $a }`,
+			rule:        `rule test { strings: $a = /test\xZZ/ condition: $a }`,
 			expectError: true,
 			description: "Rejects invalid escape sequence in regex",
 		},
@@ -204,7 +204,7 @@ func TestParserErrorPropagation(t *testing.T) {
 		},
 		{
 			name:        "invalid-regex-quantifier",
-			rule:        `rule test { strings: $a = /test{a}/ condition: $a }`,
+			rule:        `rule test { strings: $a = /test{5,2}/ condition: $a }`,
 			expectError: true,
 			description: "Documents parser error for invalid regex quantifier",
 		},

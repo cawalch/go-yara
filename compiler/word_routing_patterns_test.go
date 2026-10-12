@@ -51,7 +51,7 @@ func TestWordRoutingPatternDeclines(t *testing.T) {
 		`/abcdefghijklmnop.*/`, `/abcdefghijklmnop.+/`, `/abcdefghijklmnop[0-9]{1,}/`,
 		`/abcdefghijklmnop[0-9]{1,65535}/`, `/^abcdefghijklmnop/`, `/abcdefghijklmnop$/`,
 		`/abcdefghijklmnop\b/`, `/\Babcdefghijklmnop/`, `/abcdefghijklmnop/m`,
-		`/abcdefghijklmnop\q/`, `/abcdefghijklmnop|[0-9]{3}/`, `/[0-9]{3}/`,
+		`/abcdefghijklmnop\xZZ/`, `/abcdefghijklmnop|[0-9]{3}/`, `/[0-9]{3}/`,
 		`/abcdefghijklmnop(ab){1,2}/`, `/abcdefghijklmnop[0-9]{3,2}/`,
 		`/abcdefghijklmnop` + strings.Repeat(`(a|b)`, 7) + `/`,
 		`/abcdefghijklmnop` + strings.Repeat(`[0-9]`, 64) + `/`,

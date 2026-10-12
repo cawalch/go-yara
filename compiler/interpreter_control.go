@@ -15,24 +15,62 @@ func (i *Interpreter) executeHalt() error {
 
 // executeAndOperation handles AND logical operation.
 func (i *Interpreter) executeAndOperation() error {
-	return i.executeBinaryOp(func(a, b int64) int64 {
-		result := a != 0 && b != 0
-		if result {
-			return 1
+	a, b, err := i.popTwo()
+	if err != nil {
+		return err
+	}
+	if a.Type == ValueTypeUndefined && b.Type == ValueTypeUndefined {
+		return i.push(Value{Type: ValueTypeUndefined})
+	}
+	if a.Type == ValueTypeUndefined {
+		if b.Type == ValueTypeInt && b.IntVal == 0 {
+			return i.push(Value{Type: ValueTypeInt, IntVal: 0})
 		}
-		return 0
-	})
+		return i.push(Value{Type: ValueTypeUndefined})
+	}
+	if b.Type == ValueTypeUndefined {
+		if a.Type == ValueTypeInt && a.IntVal == 0 {
+			return i.push(Value{Type: ValueTypeInt, IntVal: 0})
+		}
+		return i.push(Value{Type: ValueTypeUndefined})
+	}
+	if a.Type != ValueTypeInt || b.Type != ValueTypeInt {
+		return i.handleNonIntegerOperands(a, b, "binary operation requires numeric operands")
+	}
+	if a.IntVal != 0 && b.IntVal != 0 {
+		return i.push(Value{Type: ValueTypeInt, IntVal: 1})
+	}
+	return i.push(Value{Type: ValueTypeInt, IntVal: 0})
 }
 
 // executeOrOperation handles OR logical operation.
 func (i *Interpreter) executeOrOperation() error {
-	return i.executeBinaryOp(func(a, b int64) int64 {
-		result := a != 0 || b != 0
-		if result {
-			return 1
+	a, b, err := i.popTwo()
+	if err != nil {
+		return err
+	}
+	if a.Type == ValueTypeUndefined && b.Type == ValueTypeUndefined {
+		return i.push(Value{Type: ValueTypeUndefined})
+	}
+	if a.Type == ValueTypeUndefined {
+		if b.Type == ValueTypeInt && b.IntVal != 0 {
+			return i.push(Value{Type: ValueTypeInt, IntVal: 1})
 		}
-		return 0
-	})
+		return i.push(Value{Type: ValueTypeUndefined})
+	}
+	if b.Type == ValueTypeUndefined {
+		if a.Type == ValueTypeInt && a.IntVal != 0 {
+			return i.push(Value{Type: ValueTypeInt, IntVal: 1})
+		}
+		return i.push(Value{Type: ValueTypeUndefined})
+	}
+	if a.Type != ValueTypeInt || b.Type != ValueTypeInt {
+		return i.handleNonIntegerOperands(a, b, "binary operation requires numeric operands")
+	}
+	if a.IntVal != 0 || b.IntVal != 0 {
+		return i.push(Value{Type: ValueTypeInt, IntVal: 1})
+	}
+	return i.push(Value{Type: ValueTypeInt, IntVal: 0})
 }
 
 // executeNotOperation handles NOT logical operation.
@@ -41,6 +79,9 @@ func (i *Interpreter) executeNotOperation() error {
 		return err
 	}
 	v := i.stack[len(i.stack)-1]
+	if v.Type == ValueTypeUndefined {
+		return nil
+	}
 	result := i.isTruthy(v)
 	i.stack[len(i.stack)-1] = Value{Type: ValueTypeInt, IntVal: boolToInt(!result)}
 	return nil

@@ -424,7 +424,11 @@ func addRegexMatchesLinear(
 	isWide bool,
 	bs *regex.VMBatch,
 ) {
-	for pos := 0; pos <= len(data); pos++ {
+	limit := len(data)
+	if limit == 0 {
+		limit = 1
+	}
+	for pos := 0; pos < limit; pos++ {
 		if scanCanceledAt(ctx.cancelDone, pos) {
 			return
 		}

@@ -296,33 +296,35 @@ func runMatch(code, s []byte, flags Flags, start int, done <-chan struct{}, scan
 			if pc < 0 || pc >= len(code) {
 				continue
 			}
+			var m bool
 			switch code[pc] {
 			case OpLiteral:
-				handleLiteralOp(code, s, &next, pc, ch, pos, advance, noCase, false, wide, &bestEnd, visited, gen)
+				m = handleLiteralOp(code, s, &next, pc, ch, pos, advance, noCase, false, wide, &bestEnd, visited, gen)
 			case OpNotLiteral:
-				handleLiteralOp(code, s, &next, pc, ch, pos, advance, noCase, true, wide, &bestEnd, visited, gen)
+				m = handleLiteralOp(code, s, &next, pc, ch, pos, advance, noCase, true, wide, &bestEnd, visited, gen)
 			case OpMaskedLiteral:
-				handleMaskedLiteralOp(code, s, &next, pc, ch, pos, advance, false, wide, &bestEnd, visited, gen)
+				m = handleMaskedLiteralOp(code, s, &next, pc, ch, pos, advance, false, wide, &bestEnd, visited, gen)
 			case OpMaskedNotLiteral:
-				handleMaskedLiteralOp(code, s, &next, pc, ch, pos, advance, true, wide, &bestEnd, visited, gen)
+				m = handleMaskedLiteralOp(code, s, &next, pc, ch, pos, advance, true, wide, &bestEnd, visited, gen)
 			case OpAny:
-				handleAnyOp(code, s, &next, pc, ch, pos, advance, dotAll, wide, &bestEnd, visited, gen)
+				m = handleAnyOp(code, s, &next, pc, ch, pos, advance, dotAll, wide, &bestEnd, visited, gen)
 			case OpClass:
-				handleClassOp(code, s, &next, pc, ch, pos, advance, noCase, wide, &bestEnd, visited, gen)
+				m = handleClassOp(code, s, &next, pc, ch, pos, advance, noCase, wide, &bestEnd, visited, gen)
 			case OpWordChar:
-				handleCharClassOp(code, s, &next, pc, ch, pos, advance, isWord, wide, &bestEnd, visited, gen)
+				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, isWord, wide, &bestEnd, visited, gen)
 			case OpNonWordChar:
-				handleCharClassOp(code, s, &next, pc, ch, pos, advance, notWord, wide, &bestEnd, visited, gen)
+				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, notWord, wide, &bestEnd, visited, gen)
 			case OpSpace:
-				handleCharClassOp(code, s, &next, pc, ch, pos, advance, isSpace, wide, &bestEnd, visited, gen)
+				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, isSpace, wide, &bestEnd, visited, gen)
 			case OpNonSpace:
-				handleCharClassOp(code, s, &next, pc, ch, pos, advance, notSpace, wide, &bestEnd, visited, gen)
+				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, notSpace, wide, &bestEnd, visited, gen)
 			case OpDigit:
-				handleCharClassOp(code, s, &next, pc, ch, pos, advance, isDigit, wide, &bestEnd, visited, gen)
+				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, isDigit, wide, &bestEnd, visited, gen)
 			case OpNonDigit:
-				handleCharClassOp(code, s, &next, pc, ch, pos, advance, notDigit, wide, &bestEnd, visited, gen)
-			default:
-				// Unknown or assertion/non-consuming op remains handled in addThread; skip here
+				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, notDigit, wide, &bestEnd, visited, gen)
+			}
+			if m {
+				break
 			}
 		}
 	}
@@ -368,6 +370,11 @@ func runMatch(code, s []byte, flags Flags, start int, done <-chan struct{}, scan
 		}
 		step(pos, s[pos], advance)
 		cur, next = next, cur
+		if !scan && (flags&FlagsGreedy) == 0 && bestEnd >= 0 {
+			matched, length = true, bestEnd
+			exhausted = true
+			break
+		}
 		if !scan && checkAndReturnIfExhausted(cur, &matched, &length, bestEnd) {
 			exhausted = true
 			break
@@ -432,31 +439,35 @@ func runAtMatchBatchWithCancel(bs *vmBatchState, code, s []byte, flags Flags, st
 			if pc < 0 || pc >= len(code) {
 				continue
 			}
+			var m bool
 			switch code[pc] {
 			case OpLiteral:
-				handleLiteralOp(code, s, &next, pc, ch, pos, advance, noCase, false, wide, &bestEnd, visited, gen)
+				m = handleLiteralOp(code, s, &next, pc, ch, pos, advance, noCase, false, wide, &bestEnd, visited, gen)
 			case OpNotLiteral:
-				handleLiteralOp(code, s, &next, pc, ch, pos, advance, noCase, true, wide, &bestEnd, visited, gen)
+				m = handleLiteralOp(code, s, &next, pc, ch, pos, advance, noCase, true, wide, &bestEnd, visited, gen)
 			case OpMaskedLiteral:
-				handleMaskedLiteralOp(code, s, &next, pc, ch, pos, advance, false, wide, &bestEnd, visited, gen)
+				m = handleMaskedLiteralOp(code, s, &next, pc, ch, pos, advance, false, wide, &bestEnd, visited, gen)
 			case OpMaskedNotLiteral:
-				handleMaskedLiteralOp(code, s, &next, pc, ch, pos, advance, true, wide, &bestEnd, visited, gen)
+				m = handleMaskedLiteralOp(code, s, &next, pc, ch, pos, advance, true, wide, &bestEnd, visited, gen)
 			case OpAny:
-				handleAnyOp(code, s, &next, pc, ch, pos, advance, dotAll, wide, &bestEnd, visited, gen)
+				m = handleAnyOp(code, s, &next, pc, ch, pos, advance, dotAll, wide, &bestEnd, visited, gen)
 			case OpClass:
-				handleClassOp(code, s, &next, pc, ch, pos, advance, noCase, wide, &bestEnd, visited, gen)
+				m = handleClassOp(code, s, &next, pc, ch, pos, advance, noCase, wide, &bestEnd, visited, gen)
 			case OpWordChar:
-				handleCharClassOp(code, s, &next, pc, ch, pos, advance, isWord, wide, &bestEnd, visited, gen)
+				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, isWord, wide, &bestEnd, visited, gen)
 			case OpNonWordChar:
-				handleCharClassOp(code, s, &next, pc, ch, pos, advance, notWord, wide, &bestEnd, visited, gen)
+				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, notWord, wide, &bestEnd, visited, gen)
 			case OpSpace:
-				handleCharClassOp(code, s, &next, pc, ch, pos, advance, isSpace, wide, &bestEnd, visited, gen)
+				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, isSpace, wide, &bestEnd, visited, gen)
 			case OpNonSpace:
-				handleCharClassOp(code, s, &next, pc, ch, pos, advance, notSpace, wide, &bestEnd, visited, gen)
+				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, notSpace, wide, &bestEnd, visited, gen)
 			case OpDigit:
-				handleCharClassOp(code, s, &next, pc, ch, pos, advance, isDigit, wide, &bestEnd, visited, gen)
+				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, isDigit, wide, &bestEnd, visited, gen)
 			case OpNonDigit:
-				handleCharClassOp(code, s, &next, pc, ch, pos, advance, notDigit, wide, &bestEnd, visited, gen)
+				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, notDigit, wide, &bestEnd, visited, gen)
+			}
+			if m {
+				break
 			}
 		}
 	}
@@ -475,6 +486,11 @@ func runAtMatchBatchWithCancel(bs *vmBatchState, code, s []byte, flags Flags, st
 			}
 			stepFn(pos, s[pos], 2)
 			cur, next = next, cur
+			if (flags&FlagsGreedy) == 0 && bestEnd >= 0 {
+				matched, length = true, bestEnd
+				exhausted = true
+				break
+			}
 			if checkAndReturnIfExhausted(cur, &matched, &length, bestEnd) {
 				exhausted = true
 				break
@@ -497,6 +513,11 @@ func runAtMatchBatchWithCancel(bs *vmBatchState, code, s []byte, flags Flags, st
 			}
 			stepFn(pos, s[pos], 1)
 			cur, next = next, cur
+			if (flags&FlagsGreedy) == 0 && bestEnd >= 0 {
+				matched, length = true, bestEnd
+				exhausted = true
+				break
+			}
 			if checkAndReturnIfExhausted(cur, &matched, &length, bestEnd) {
 				exhausted = true
 				break

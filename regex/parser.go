@@ -24,6 +24,9 @@ func NewParser(flags ParserFlags) *Parser {
 
 // Parse parses the provided pattern into an AST (minimal subset: alt, concat, primary).
 func (p *Parser) Parse(pattern string) (*AST, error) {
+	if err := validateHexEscapes(pattern); err != nil {
+		return nil, err
+	}
 	if p.strictEscape {
 		if err := validateStrictEscapes(pattern); err != nil {
 			return nil, err
@@ -39,7 +42,26 @@ func (p *Parser) Parse(pattern string) (*AST, error) {
 	if p.cur.kind != tEOF {
 		return nil, errors.New("unexpected input after parse")
 	}
-	return &AST{Flags: 0, Root: root, GroupCount: p.groupCount}, nil
+	var flags Flags
+	if hasGreedyQuantifier(root) {
+		flags |= FlagsGreedy
+	}
+	return &AST{Flags: flags, Root: root, GroupCount: p.groupCount}, nil
+}
+
+func hasGreedyQuantifier(n *Node) bool {
+	if n == nil {
+		return false
+	}
+	if (n.Kind == NodeStar || n.Kind == NodePlus || n.Kind == NodeRange) && n.Greedy {
+		return true
+	}
+	for _, child := range n.Children {
+		if hasGreedyQuantifier(child) {
+			return true
+		}
+	}
+	return false
 }
 
 // alternative := concatenation ( '|' concatenation )*
@@ -115,9 +137,16 @@ func (p *Parser) parsePrimary() (*Node, error) {
 		p.maybeMakeUngreedy(n)
 		base = n
 	case tLBrace:
+		savedI := p.lx.i
+		savedCur := p.cur
 		minVal, maxVal, err2 := p.parseBound()
 		if err2 != nil {
-			return nil, err2
+			if err2.Error() == "bad repeat interval" {
+				return nil, err2
+			}
+			p.lx.i = savedI
+			p.cur = savedCur
+			return base, nil
 		}
 		n := &Node{Kind: NodeRange, Children: []*Node{base}, Start: minVal, End: maxVal, Greedy: true}
 		p.maybeMakeUngreedy(n)
@@ -140,6 +169,18 @@ func (p *Parser) parseBase() (*Node, error) {
 		ch := p.cur.ch
 		p.next()
 		return &Node{Kind: NodeLiteral, Value: ch, Greedy: true}, nil
+	case tComma:
+		p.next()
+		return &Node{Kind: NodeLiteral, Value: ',', Greedy: true}, nil
+	case tRBracket:
+		p.next()
+		return &Node{Kind: NodeLiteral, Value: ']', Greedy: true}, nil
+	case tLBrace:
+		p.next()
+		return &Node{Kind: NodeLiteral, Value: '{', Greedy: true}, nil
+	case tRBrace:
+		p.next()
+		return &Node{Kind: NodeLiteral, Value: '}', Greedy: true}, nil
 	case tLParen:
 		p.groupCount++
 		group := p.groupCount
@@ -187,7 +228,7 @@ var tokenToSimpleNode = map[tokenKind]NodeKind{
 
 // isPrimaryStart reports whether a token can start a primary expression.
 func isPrimaryStart(k tokenKind) bool {
-	if k == tChar || k == tLParen || k == tLBracket {
+	if k == tChar || k == tLParen || k == tLBracket || k == tComma || k == tRBracket || k == tLBrace || k == tRBrace {
 		return true
 	}
 	_, ok := tokenToSimpleNode[k]
@@ -609,6 +650,31 @@ func handleUnknownEscape(e byte, strict bool) (byte, error) {
 		return 0, fmt.Errorf("unknown escape \\%c", e)
 	}
 	return e, nil
+}
+
+func validateHexEscapes(pattern string) error {
+	for i := 0; i < len(pattern); i++ {
+		if pattern[i] != '\\' {
+			continue
+		}
+		i++
+		if i >= len(pattern) {
+			continue
+		}
+		if pattern[i] == 'x' {
+			if i+2 >= len(pattern) {
+				return errors.New("incomplete hex escape")
+			}
+			if _, ok := parseHexDigit(pattern[i+1]); !ok {
+				return fmt.Errorf("invalid hex escape \\x%c%c", pattern[i+1], pattern[i+2])
+			}
+			if _, ok := parseHexDigit(pattern[i+2]); !ok {
+				return fmt.Errorf("invalid hex escape \\x%c%c", pattern[i+1], pattern[i+2])
+			}
+			i += 2
+		}
+	}
+	return nil
 }
 
 func validateStrictEscapes(pattern string) error {

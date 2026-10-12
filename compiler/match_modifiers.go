@@ -155,7 +155,7 @@ func isFullwordMatch(data []byte, offset, length int, isWide bool) bool {
 }
 
 func isWordChar(b byte) bool {
-	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') || b == '_'
+	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9')
 }
 
 func isWideWordChar(data []byte, pos int) bool {
