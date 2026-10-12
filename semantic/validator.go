@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/cawalch/go-yara/ast"
@@ -794,6 +795,17 @@ func (v *Validator) validateBinaryOpExpression(binOp *ast.BinaryOp) (*TypeInfo, 
 		return &TypeInfo{DataType: TypeUnknown}, errors
 	}
 
+	if (binOp.Op == token.DIVIDE || binOp.Op == token.IntDivide || binOp.Op == token.MODULO) && isZeroIntegerLiteral(binOp.Right) {
+		semErr := &Error{
+			Code:     ErrCodeDivisionByZero,
+			Message:  "division by zero",
+			Position: binOp.Position(),
+			Rule:     v.currentRule,
+		}
+		errors = append(errors, semErr)
+		return &TypeInfo{DataType: TypeUnknown}, errors
+	}
+
 	resultType, err := InferTypeFromBinaryOp(leftType, binOp.Op, rightType)
 	if err != nil {
 		semErr := &Error{
@@ -807,6 +819,33 @@ func (v *Validator) validateBinaryOpExpression(binOp *ast.BinaryOp) (*TypeInfo, 
 		return &TypeInfo{DataType: TypeUnknown}, errors
 	}
 	return resultType, errors
+}
+
+func isZeroIntegerLiteral(expr ast.Expression) bool {
+	if un, ok := expr.(*ast.UnaryOp); ok && (un.Op == token.MINUS || un.Op == token.PLUS) {
+		return isZeroIntegerLiteral(un.Right)
+	}
+	lit, ok := expr.(*ast.Literal)
+	if !ok {
+		return false
+	}
+	switch v := lit.Value.(type) {
+	case string:
+		if n, err := strconv.ParseInt(v, 0, 64); err == nil {
+			return n == 0
+		}
+		return false
+	case int64:
+		return v == 0
+	case int:
+		return v == 0
+	case uint64:
+		return v == 0
+	case uint:
+		return v == 0
+	default:
+		return false
+	}
 }
 
 // validateUnaryOpExpression validates unary operation expressions

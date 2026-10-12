@@ -293,7 +293,9 @@ func differentialSeeds() [][2]string {
 		{`rule r { strings: $a = "abc" ascii condition: $a }`, "abc"},
 		{`rule r { strings: $a = "abc" fullword condition: $a }`, " abc "},
 		{`rule r { strings: $a = "abc" xor(1-3) condition: $a }`, "\x02\x03\x04"},
+		{`rule r { strings: $a = "ABC" xor wide condition: $a }`, "A\x00B\x00C\x00"},
 		{`rule r { strings: $a = "abc" base64 condition: $a }`, "YWJj"},
+		{`rule r { strings: $a = "test" base64wide condition: $a }`, "d\x00G\x00V\x00z\x00d\x00A\x00=\x00=\x00"},
 		{`rule r { strings: $a = /a+b/ condition: $a }`, "aaab"},
 		{`rule r { strings: $a = /^(ab|a)c$/ condition: $a }`, "abc"},
 		{`rule r { strings: $a = { 41 42 43 } condition: $a }`, "ABC"},
@@ -304,11 +306,15 @@ func differentialSeeds() [][2]string {
 		{`rule r { strings: $a = "abc" $b = "xyz" condition: 1 of them }`, "abc"},
 		{`rule r { strings: $a = "abc" condition: for any i in (1..2) : ( @a[i] == 3 ) }`, "abcabc"},
 		{`rule r { strings: $a = "abc" condition: !a == 3 }`, "abc"},
-		{`rule r { strings: $a = "abc" condition: $a }`, "\xff\xfe\xfd"},
-		{`rule r { strings: $a = "abc" condition: $a }`, "\xff\xfe\xfd"},
+		{`rule r { strings: $a = "foo" condition: defined @a[1] and not defined @a[2] }`, "foo"},
 		{`rule r { strings: $a = /[a-c]+/ condition: $a }`, "abcd"},
 		{`rule r { strings: $a = "abc" nocase wide condition: $a }`, "ABC\x00"},
 		{`rule r { strings: $a = { 41 [1-2] 43 } condition: $a }`, "AABCAXC"},
+		{`rule r { strings: $a = { 01 ( 02 | 03 [1-2] 04 ) 05 } condition: $a }`, "\x01\x03\xaa\x04\x05"},
+		{`rule r { condition: uint16be(0) == 0x0102 and uint32be(0) == 0x01020304 }`, "\x01\x02\x03\x04"},
+		{`rule r { condition: int16be(0) == -2 }`, "\xff\xfe"},
+		{`rule r { strings: $a = "foo" condition: "hello123world" matches /[0-9]+/ and $a }`, "foo"},
+		{`rule r { strings: $a = "a" $b = "b" condition: 50% of them }`, "ab"},
 	}
 }
 

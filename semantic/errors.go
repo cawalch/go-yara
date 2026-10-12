@@ -21,6 +21,7 @@ const (
 	ErrCodeDuplicateMeta        ErrorCode = "duplicate-meta"
 	ErrCodeUnsupportedModule    ErrorCode = "unsupported-module"
 	ErrCodeInvalidCondition     ErrorCode = "invalid-condition"
+	ErrCodeDivisionByZero       ErrorCode = "division-by-zero"
 	ErrCodeInvalidFunction      ErrorCode = "invalid-function"
 	ErrCodeInvalidArgumentCount ErrorCode = "invalid-argument-count"
 	ErrCodeInvalidArgumentType  ErrorCode = "invalid-argument-type"
