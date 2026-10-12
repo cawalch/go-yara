@@ -114,8 +114,14 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
+      - name: Install libyara
+        run: sudo apt-get update && sudo apt-get install -y yara
+
       - name: Run race tests
         run: go test -race ./...
+
+      - name: Run libyara differential oracle tests
+        run: go test -tags bugproof -race ./tests/integration/ -run TestBug
 
       - name: Run coverage
         run: go test -coverprofile=coverage.out ./...

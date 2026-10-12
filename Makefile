@@ -1,4 +1,4 @@
-.PHONY: check test test-race test-simd vet analyze lint vulncheck fmt-check tidy-check fuzz \
+.PHONY: check test test-race test-simd test-bugproof vet analyze lint vulncheck fmt-check tidy-check fuzz \
 	bench bench-save benchstat bench-scan bench-simd bench-prefilter-scale \
 	bench-single-rule-size profile-scan trace-scan help
 
@@ -18,6 +18,9 @@ test-race:
 
 test-simd:
 	GOEXPERIMENT=simd go test ./compiler -run TestByteSearch -count=1
+
+test-bugproof:
+	go test -tags bugproof -race ./tests/integration/ -run TestBug
 
 vet:
 	go vet ./...
