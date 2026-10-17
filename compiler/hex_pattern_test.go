@@ -419,7 +419,7 @@ func TestFindHexMatchesEachEarlyTermination(t *testing.T) {
 
 	data := []byte{0xAA, 0xBB, 0x00, 0xAA, 0xBB, 0x00, 0xAA, 0xBB}
 	var seen []Match
-	findHexMatchesEach(pat, data, nil, func(m Match) bool {
+	findHexMatchesEach(pat, data, nil, nil, func(m Match) bool {
 		seen = append(seen, m)
 		return false // Abort after first match
 	})
@@ -428,6 +428,29 @@ func TestFindHexMatchesEachEarlyTermination(t *testing.T) {
 		t.Fatalf("expected exactly 1 match on early abort, got %d", len(seen))
 	}
 	if seen[0].Offset != 0 || seen[0].Length != 2 {
+		t.Fatalf("unexpected match: %+v", seen[0])
+	}
+}
+
+func TestFindHexMatchesEachNonLinearEarlyTermination(t *testing.T) {
+	sc := newStringCompiler()
+	pat, err := sc.parseHexPattern("{ AA [1-3] ( BB | CC ) }")
+	if err != nil {
+		t.Fatalf("parseHexPattern() error = %v", err)
+	}
+
+	data := []byte{0xAA, 0x01, 0xBB, 0xAA, 0x02, 0xCC}
+	var seen []Match
+	var scratch hexMatchScratch
+	findHexMatchesEach(pat, data, nil, &scratch, func(m Match) bool {
+		seen = append(seen, m)
+		return false // Abort after first match
+	})
+
+	if len(seen) != 1 {
+		t.Fatalf("expected exactly 1 match on early abort, got %d", len(seen))
+	}
+	if seen[0].Offset != 0 || seen[0].Length != 3 {
 		t.Fatalf("unexpected match: %+v", seen[0])
 	}
 }

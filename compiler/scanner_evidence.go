@@ -214,7 +214,11 @@ func materializeRuleMatchesAt(rule *CompiledRule, src map[string][]matchSpan, ba
 			continue
 		}
 		if matches == nil {
-			matches = make(map[string][]Match, len(src))
+			capHint := len(src)
+			if rule != nil && len(rule.IndexToStringID) > 0 && len(rule.IndexToStringID) < capHint {
+				capHint = len(rule.IndexToStringID)
+			}
+			matches = make(map[string][]Match, capHint)
 		}
 		dst := make([]Match, len(spans))
 		for index, span := range spans {
