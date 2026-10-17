@@ -122,6 +122,8 @@ type MatchContext struct {
 	maxMatchesPerPattern int
 	// maxMatchSpan bounds the maximum byte length of a single regex match. Zero means unlimited.
 	maxMatchSpan int
+
+	regexBatch regex.VMBatch
 }
 
 func (mc *MatchContext) dataRange(offset, size int64) ([]byte, bool) {

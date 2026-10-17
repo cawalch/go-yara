@@ -3,6 +3,8 @@ package compiler
 import (
 	"slices"
 	"sync"
+
+	"github.com/cawalch/go-yara/regex"
 )
 
 var matchContextPool = sync.Pool{
@@ -137,8 +139,19 @@ func (ctx *MatchContext) resetPublicStorage() {
 	clear(ctx.spans)
 }
 
+func (ctx *MatchContext) acquireRegexBatch(codeLen int) *regex.VMBatch {
+	if ctx == nil {
+		b := &regex.VMBatch{}
+		b.Prepare(codeLen)
+		return b
+	}
+	ctx.regexBatch.Prepare(codeLen)
+	return &ctx.regexBatch
+}
+
 // Release returns the match context to the pool
 func (ctx *MatchContext) Release() {
+	ctx.regexBatch.Release()
 	ctx.resetForPool()
 	matchContextPool.Put(ctx)
 }

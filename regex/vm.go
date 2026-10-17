@@ -402,10 +402,10 @@ func runMatch(code, s []byte, flags Flags, start int, done <-chan struct{}, scan
 	return false, 0
 }
 
-// runAtMatchBatch is like runAtMatch but uses a pre-pinned vmBatchState
+// runAtMatchBatch is like runAtMatch but uses a pre-pinned VMBatch
 // to avoid sync.Pool Get/Put overhead. Use when calling runAtMatch
 // thousands of times in a tight loop (e.g., addRegexMatches).
-func runAtMatchBatchWithCancel(bs *vmBatchState, code, s []byte, flags Flags, start int, done <-chan struct{}) (matched bool, length int) { //nolint:nestif,revive // argument-limit: performance-critical VM hot path; nested wide/ascii loops are intentional for VM dispatch
+func runAtMatchBatchWithCancel(bs *VMBatch, code, s []byte, flags Flags, start int, done <-chan struct{}) (matched bool, length int) { //nolint:nestif,revive // argument-limit: performance-critical VM hot path; nested wide/ascii loops are intentional for VM dispatch
 	dotAll := (flags & FlagsDotAll) != 0
 	noCase := (flags & FlagsNoCase) != 0
 	wide := (flags & FlagsWide) != 0
