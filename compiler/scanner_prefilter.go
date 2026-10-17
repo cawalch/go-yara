@@ -29,7 +29,6 @@ func (s *Scanner) recordRuleResult(rule *CompiledRule, matched bool) {
 	if rule.Index >= 0 && rule.Index < len(s.ruleResultsDense) {
 		s.ruleResultsDense[rule.Index] = matched
 	}
-	s.ruleResults[rule.Name] = matched
 }
 
 func (s *Scanner) evaluateRuleCondition(
@@ -236,7 +235,7 @@ func (s *Scanner) isRuleConditionSatisfied(rule *CompiledRule) bool {
 	if err := s.interp.Execute(); err != nil {
 		return false
 	}
-	return s.interp.ruleResult(rule.Name)
+	return s.interp.ruleResultByIndex(rule.Index, rule.Name)
 }
 
 func (s *Scanner) allEvaluatedRulesPrefilterRejected(ctx context.Context, data []byte, usesharedAutomaton bool) bool {

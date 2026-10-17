@@ -48,8 +48,8 @@ func newLexer(s string) *lexer {
 	return &lexer{s: s, len: len(s)}
 }
 
-// simpleTokenMapping maps simple regex characters to token types
-var simpleTokenMapping = map[byte]tokenKind{
+// simpleTokenMapping maps simple regex characters to token types (tEOF == 0 means unmapped).
+var simpleTokenMapping = [256]tokenKind{
 	'.': tDot,
 	'(': tLParen,
 	')': tRParen,
@@ -66,8 +66,8 @@ var simpleTokenMapping = map[byte]tokenKind{
 	',': tComma,
 }
 
-// escapeTokenMapping maps escaped characters to token types
-var escapeTokenMapping = map[byte]tokenKind{
+// escapeTokenMapping maps escaped characters to token types (tEOF == 0 means unmapped).
+var escapeTokenMapping = [256]tokenKind{
 	'w': tWord,
 	'W': tNonWord,
 	's': tSpace,
@@ -78,8 +78,8 @@ var escapeTokenMapping = map[byte]tokenKind{
 	'B': tNonWordBoundary,
 }
 
-// literalEscapeChars are characters that should be treated as literals when escaped
-var literalEscapeChars = map[byte]bool{
+// literalEscapeChars are characters that should be treated as literals when escaped.
+var literalEscapeChars = [256]bool{
 	'\\': true, '.': true, '|': true, '(': true, ')': true, '^': true,
 	'$': true, '[': true, ']': true, '*': true, '+': true, '?': true,
 	'{': true, '}': true, ',': true, '-': true, '/': true,
@@ -92,8 +92,8 @@ func (l *lexer) next() token {
 	c := l.s[l.i]
 	l.i++
 
-	if tokenKind, exists := simpleTokenMapping[c]; exists {
-		return token{kind: tokenKind}
+	if kind := simpleTokenMapping[c]; kind != tEOF {
+		return token{kind: kind}
 	}
 
 	if c == '\\' {
@@ -121,19 +121,15 @@ func (l *lexer) handleEscapeSequence() token {
 		}
 	}
 
-	if tokenKind, exists := escapeTokenMapping[e]; exists {
-		return token{kind: tokenKind}
+	if kind := escapeTokenMapping[e]; kind != tEOF {
+		return token{kind: kind}
 	}
 
 	if mapped, isStandard := getStandardEscape(e); isStandard {
 		return token{kind: tChar, ch: mapped}
 	}
 
-	if literalEscapeChars[e] {
-		return token{kind: tChar, ch: e}
-	}
-
-	// Unknown escapes are treated as literals for YARA-compatible non-strict parsing.
+	// Known and unknown escapes are treated as literals for YARA-compatible non-strict parsing.
 	return token{kind: tChar, ch: e}
 }
 

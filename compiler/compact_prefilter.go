@@ -155,7 +155,7 @@ func (s *Scanner) compactPrefilterRejects(ctx context.Context, data []byte) bool
 func (s *Scanner) compactPrefilterRejects16(data []byte, gate *compactPrefilter) bool {
 	ac := gate.automaton
 	trans := ac.transitions16
-	rootTransitions := trans[:256]
+	rootTransitions := &trans[0]
 	accepting := gate.accepting
 	state := uint16(0)
 
@@ -168,7 +168,7 @@ func (s *Scanner) compactPrefilterRejects16(data []byte, gate *compactPrefilter)
 					return true
 				}
 			}
-			state = trans[(uint32(state)<<8)|uint32(data[i])]
+			state = trans[state][data[i]]
 			if accepting[state] {
 				return false
 			}
@@ -182,7 +182,7 @@ func (s *Scanner) compactPrefilterRejects16(data []byte, gate *compactPrefilter)
 				continue
 			}
 		} else {
-			state = trans[(uint32(state)<<8)|uint32(b)]
+			state = trans[state][b]
 		}
 		if accepting[state] {
 			return false

@@ -389,17 +389,19 @@ func indexRegexLiteral(data []byte, pos int, literal []byte, flags regex.Flags, 
 }
 
 type regexLiteralSearcher struct {
-	data    []byte
-	literal []byte
-	noCase  bool
-	wide    bool
-	anchor  int
-	cursor  asciiFoldByteCursor
+	data          []byte
+	literal       []byte
+	noCase        bool
+	wide          bool
+	anchorSampled bool
+	anchor        int
+	cursor        asciiFoldByteCursor
 }
 
-// newRegexLiteralSearcher chooses a data-sensitive anchor once for all
-// occurrences of one literal in a scan. Reusing the plan is important for
-// match-heavy inputs, where resampling for every returned match is expensive.
+// newRegexLiteralSearcher starts with a static low-Selectivity byte cursor and
+// lazily samples the input on the first false positive. This avoids a 512-byte
+// frequency scan when the static anchor rarely or never occurs, while switching
+// immediately on inputs where that anchor is common.
 func newRegexLiteralSearcher(data, literal []byte, flags regex.Flags) regexLiteralSearcher {
 	searcher := regexLiteralSearcher{
 		data:    data,
@@ -408,10 +410,51 @@ func newRegexLiteralSearcher(data, literal []byte, flags regex.Flags) regexLiter
 		wide:    flags&regex.FlagsWide != 0,
 	}
 	if searcher.noCase && len(literal) > 0 {
-		searcher.anchor = selectRegexLiteralSearchAnchor(data, literal, searcher.wide)
+		searcher.anchor = selectStaticRegexLiteralAnchor(literal, searcher.wide)
 		searcher.cursor = newASCIIFoldByteCursor(literal[searcher.anchor])
 	}
 	return searcher
+}
+
+func selectStaticRegexLiteralAnchor(literal []byte, wide bool) int {
+	step := 1
+	if wide {
+		step = 2
+	}
+	bestOffset := 0
+	bestScore := prefilterByteScore(literal[0])
+	limit := min(len(literal), maxRegexLiteralAnchorCandidates*step)
+	for offset := step; offset < limit; offset += step {
+		if score := prefilterByteScore(literal[offset]); score > bestScore {
+			bestScore = score
+			bestOffset = offset
+		}
+	}
+	return bestOffset
+}
+
+func prefilterByteScore(b byte) int {
+	switch {
+	case b == 0 || b >= 0x80:
+		return 7
+	case b >= '0' && b <= '9':
+		return 4
+	case b >= 'A' && b <= 'Z', b >= 'a' && b <= 'z':
+		return 3
+	default:
+		return 5
+	}
+}
+
+func (searcher *regexLiteralSearcher) resampleAnchor() bool {
+	searcher.anchorSampled = true
+	newAnchor := selectRegexLiteralSearchAnchor(searcher.data, searcher.literal, searcher.wide)
+	if newAnchor == searcher.anchor {
+		return false
+	}
+	searcher.anchor = newAnchor
+	searcher.cursor = newASCIIFoldByteCursor(searcher.literal[newAnchor])
+	return true
 }
 
 func (searcher *regexLiteralSearcher) index(pos int) int {
@@ -440,6 +483,12 @@ func (searcher *regexLiteralSearcher) index(pos int) int {
 		candidate := occurrence - anchor
 		if equalRegexPrefixFold(data[candidate:candidate+len(literal)], literal, searcher.wide) {
 			return candidate
+		}
+		if !searcher.anchorSampled && searcher.resampleAnchor() {
+			anchor = searcher.anchor
+			searchFrom = candidate + 1 + anchor
+			searchLimit = last + anchor + 1
+			continue
 		}
 		searchFrom = occurrence + 1
 	}
@@ -566,23 +615,26 @@ func selectRegexLiteralSearchAnchor(data, literal []byte, wide bool) int {
 		return 0
 	}
 
-	var counts [maxRegexLiteralAnchorCandidates]uint16
+	var freq [256]uint16
 	sample := data[:min(len(data), 512)]
 	for _, value := range sample {
-		value = toLowerTable[value]
-		for index := 0; index < candidateCount; index++ {
-			if value == folded[index] {
-				counts[index]++
-			}
-		}
+		freq[toLowerTable[value]]++
 	}
 
 	best := 0
+	bestCount := freq[folded[0]]
+	bestScore := prefilterByteScore(literal[offsets[0]])
 	for index := 1; index < candidateCount; index++ {
-		if counts[index] < counts[best] ||
-			counts[index] == counts[best] && prefilterAtomScore(literal[offsets[index]:offsets[index]+1]) >
-				prefilterAtomScore(literal[offsets[best]:offsets[best]+1]) {
+		count := freq[folded[index]]
+		if count < bestCount {
 			best = index
+			bestCount = count
+			bestScore = prefilterByteScore(literal[offsets[index]])
+		} else if count == bestCount {
+			if score := prefilterByteScore(literal[offsets[index]]); score > bestScore {
+				best = index
+				bestScore = score
+			}
 		}
 	}
 	return offsets[best]

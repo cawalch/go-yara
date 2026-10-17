@@ -29,12 +29,12 @@ const (
 
 // HexPatternToken describes an individual token, jump, or alternative group within a HexPattern.
 type HexPatternToken struct {
+	Alternatives [][]HexPatternToken
+	Min          int
+	Max          int
 	Kind         HexTokenKind
 	Value        byte
 	Mask         byte
-	Min          int
-	Max          int
-	Alternatives [][]HexPatternToken
 	Negated      bool
 }
 

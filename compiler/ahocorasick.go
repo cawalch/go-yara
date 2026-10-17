@@ -43,9 +43,8 @@ type acAutomaton struct {
 
 	// Flattened transition table. If len(states) <= 65536, transitions16 is populated
 	// and transitions32 is nil. If len(states) > 65536, transitions32 is populated.
-	// Both use power-of-two state stride (256): index is (state << 8) | byteVal.
-	transitions16 []uint16
-	transitions32 []int32
+	transitions16 [][256]uint16
+	transitions32 [][256]int32
 
 	// hasOutput indicates whether a state has any outputs. 1 byte per state.
 	hasOutput []bool
@@ -320,10 +319,10 @@ func (ac *acAutomaton) buildFailureLinks() error {
 // loop and no branch.
 func (ac *acAutomaton) findNextState(currentState int32, b byte) int32 {
 	if len(ac.transitions16) > 0 {
-		return int32(ac.transitions16[(uint32(currentState)<<8)|uint32(b)])
+		return int32(ac.transitions16[currentState][b])
 	}
 	if len(ac.transitions32) > 0 {
-		return ac.transitions32[(uint32(currentState)<<8)|uint32(b)]
+		return ac.transitions32[currentState][b]
 	}
 	return ac.states[currentState].transitions[b]
 }
@@ -396,23 +395,19 @@ func (ac *acAutomaton) buildFlatTransitions() {
 	}
 
 	if numStates <= 65536 {
-		flat := make([]uint16, numStates*256)
+		flat := make([][256]uint16, numStates)
 		for s := range ac.states {
-			base := s << 8
 			transitions := &ac.states[s].transitions
+			row := &flat[s]
 			for b := range 256 {
-				flat[base|b] = uint16(transitions[b]) //checkednarrow:ignore guarded by numStates <= 65536
+				row[b] = uint16(transitions[b]) //checkednarrow:ignore guarded by numStates <= 65536
 			}
 		}
 		ac.transitions16 = flat
 	} else {
-		flat := make([]int32, numStates*256)
+		flat := make([][256]int32, numStates)
 		for s := range ac.states {
-			base := s << 8
-			transitions := &ac.states[s].transitions
-			for b := range 256 {
-				flat[base|b] = transitions[b]
-			}
+			flat[s] = ac.states[s].transitions
 		}
 		ac.transitions32 = flat
 	}
@@ -423,7 +418,7 @@ func (ac *acAutomaton) rootIsDense16(data []byte) bool {
 	if len(sample) > 256 {
 		sample = sample[:256]
 	}
-	rootTransitions := ac.transitions16[:256]
+	rootTransitions := &ac.transitions16[0]
 	hits := 0
 	for _, b := range sample {
 		if rootTransitions[b] != 0 {
@@ -739,7 +734,7 @@ func (ac *acAutomaton) SearchWithCancel(data []byte, done <-chan struct{}, yield
 //nolint:nestif // mirrors Search with bounded cancellation checkpoints
 func (ac *acAutomaton) searchWithCancel16(data []byte, done <-chan struct{}, yield func(acMatch) bool) {
 	trans := ac.transitions16
-	rootTransitions := trans[:256]
+	rootTransitions := &trans[0]
 	hasOutput := ac.hasOutput
 	currentState := uint16(0)
 	rootHasNoOutput := !hasOutput[0]
@@ -770,7 +765,7 @@ func (ac *acAutomaton) searchWithCancel16(data []byte, done <-chan struct{}, yie
 					continue
 				}
 			} else {
-				currentState = trans[(uint32(currentState)<<8)|uint32(data[i])]
+				currentState = trans[currentState][data[i]]
 			}
 			if hasOutput[currentState] &&
 				!ac.yieldMatchesWithCancel(int32(currentState), i, yield, done) {
@@ -803,7 +798,7 @@ func (ac *acAutomaton) searchWithCancel16(data []byte, done <-chan struct{}, yie
 					continue
 				}
 			} else {
-				currentState = trans[(uint32(currentState)<<8)|uint32(data[i])]
+				currentState = trans[currentState][data[i]]
 			}
 			if hasOutput[currentState] &&
 				!ac.yieldMatchesWithCancel(int32(currentState), i, yield, done) {
@@ -825,7 +820,7 @@ func (ac *acAutomaton) searchWithCancel16(data []byte, done <-chan struct{}, yie
 					continue
 				}
 			} else {
-				currentState = trans[(uint32(currentState)<<8)|uint32(b)]
+				currentState = trans[currentState][b]
 			}
 			if hasOutput[currentState] &&
 				!ac.yieldMatchesWithCancel(int32(currentState), blockStart+relative, yield, done) {
@@ -838,7 +833,7 @@ func (ac *acAutomaton) searchWithCancel16(data []byte, done <-chan struct{}, yie
 //nolint:nestif // mirrors Search with bounded cancellation checkpoints
 func (ac *acAutomaton) searchWithCancel32(data []byte, done <-chan struct{}, yield func(acMatch) bool) {
 	trans := ac.transitions32
-	rootTransitions := trans[:256]
+	rootTransitions := &trans[0]
 	hasOutput := ac.hasOutput
 	currentState := int32(0)
 	rootHasNoOutput := !hasOutput[0]
@@ -869,7 +864,7 @@ func (ac *acAutomaton) searchWithCancel32(data []byte, done <-chan struct{}, yie
 					continue
 				}
 			} else {
-				currentState = trans[(uint32(currentState)<<8)|uint32(data[i])]
+				currentState = trans[currentState][data[i]]
 			}
 			if hasOutput[currentState] &&
 				!ac.yieldMatchesWithCancel(currentState, i, yield, done) {
@@ -902,7 +897,7 @@ func (ac *acAutomaton) searchWithCancel32(data []byte, done <-chan struct{}, yie
 					continue
 				}
 			} else {
-				currentState = trans[(uint32(currentState)<<8)|uint32(data[i])]
+				currentState = trans[currentState][data[i]]
 			}
 			if hasOutput[currentState] &&
 				!ac.yieldMatchesWithCancel(currentState, i, yield, done) {
@@ -924,7 +919,7 @@ func (ac *acAutomaton) searchWithCancel32(data []byte, done <-chan struct{}, yie
 					continue
 				}
 			} else {
-				currentState = trans[(uint32(currentState)<<8)|uint32(b)]
+				currentState = trans[currentState][b]
 			}
 			if hasOutput[currentState] &&
 				!ac.yieldMatchesWithCancel(currentState, blockStart+relative, yield, done) {
@@ -996,7 +991,7 @@ func (ac *acAutomaton) Search(data []byte, yield func(acMatch) bool) {
 //nolint:nestif // the sparse-root and general loops are intentionally separate hot paths
 func (ac *acAutomaton) search16(data []byte, yield func(acMatch) bool) {
 	trans := ac.transitions16
-	rootTransitions := trans[:256]
+	rootTransitions := &trans[0]
 	hasOutput := ac.hasOutput
 	currentState := uint16(0)
 	rootHasNoOutput := !hasOutput[0]
@@ -1024,7 +1019,7 @@ func (ac *acAutomaton) search16(data []byte, yield func(acMatch) bool) {
 					continue
 				}
 			} else {
-				currentState = trans[(uint32(currentState)<<8)|uint32(data[i])]
+				currentState = trans[currentState][data[i]]
 			}
 			if hasOutput[currentState] && !ac.yieldMatches(int32(currentState), i, yield) {
 				return
@@ -1053,7 +1048,7 @@ func (ac *acAutomaton) search16(data []byte, yield func(acMatch) bool) {
 					continue
 				}
 			} else {
-				currentState = trans[(uint32(currentState)<<8)|uint32(data[i])]
+				currentState = trans[currentState][data[i]]
 			}
 			if hasOutput[currentState] && !ac.yieldMatches(int32(currentState), i, yield) {
 				return
@@ -1069,7 +1064,7 @@ func (ac *acAutomaton) search16(data []byte, yield func(acMatch) bool) {
 				continue
 			}
 		} else {
-			currentState = trans[(uint32(currentState)<<8)|uint32(b)]
+			currentState = trans[currentState][b]
 		}
 		if hasOutput[currentState] && !ac.yieldMatches(int32(currentState), i, yield) {
 			return
@@ -1080,7 +1075,7 @@ func (ac *acAutomaton) search16(data []byte, yield func(acMatch) bool) {
 //nolint:nestif // the sparse-root and general loops are intentionally separate hot paths
 func (ac *acAutomaton) search32(data []byte, yield func(acMatch) bool) {
 	trans := ac.transitions32
-	rootTransitions := trans[:256]
+	rootTransitions := &trans[0]
 	hasOutput := ac.hasOutput
 	currentState := int32(0)
 	rootHasNoOutput := !hasOutput[0]
@@ -1108,7 +1103,7 @@ func (ac *acAutomaton) search32(data []byte, yield func(acMatch) bool) {
 					continue
 				}
 			} else {
-				currentState = trans[(uint32(currentState)<<8)|uint32(data[i])]
+				currentState = trans[currentState][data[i]]
 			}
 			if hasOutput[currentState] && !ac.yieldMatches(currentState, i, yield) {
 				return
@@ -1137,7 +1132,7 @@ func (ac *acAutomaton) search32(data []byte, yield func(acMatch) bool) {
 					continue
 				}
 			} else {
-				currentState = trans[(uint32(currentState)<<8)|uint32(data[i])]
+				currentState = trans[currentState][data[i]]
 			}
 			if hasOutput[currentState] && !ac.yieldMatches(currentState, i, yield) {
 				return
@@ -1153,7 +1148,7 @@ func (ac *acAutomaton) search32(data []byte, yield func(acMatch) bool) {
 				continue
 			}
 		} else {
-			currentState = trans[(uint32(currentState)<<8)|uint32(b)]
+			currentState = trans[currentState][b]
 		}
 		if hasOutput[currentState] && !ac.yieldMatches(currentState, i, yield) {
 			return
@@ -1330,9 +1325,9 @@ func (ac *acAutomaton) GetPatternData() map[string][]byte {
 func (ac *acAutomaton) EstimateMemoryUsage() int {
 	stateMemory := len(ac.states) * (256*4 + 8) // transitions + failure + output indices
 	if len(ac.transitions16) > 0 {
-		stateMemory += len(ac.transitions16) * 2
+		stateMemory += len(ac.transitions16) * 256 * 2
 	} else if len(ac.transitions32) > 0 {
-		stateMemory += len(ac.transitions32) * 4
+		stateMemory += len(ac.transitions32) * 256 * 4
 	}
 	stateMemory += len(ac.hasOutput)
 	outputMemory := len(ac.outputs) * 4

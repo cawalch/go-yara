@@ -81,26 +81,24 @@ type Interpreter struct {
 
 // Iterator defines the state for a runtime for-loop
 type Iterator struct {
-	Type       Opcode // The type of iterator (e.g. OpIterStartIntRange)
-	Variables  []int  // Memory slots where loop variables are stored
-	Count      int    // Number of matches
-	Index      int    // Current iteration index
-	Total      int    // Total number of elements
-	Quantifier int    // Quantifier for condition (e.g. ForAll, ForAny, ForNone, ForExpression)
-	QuantExpr  int    // Target expression count if Quantifier == ForExpression
-	EndIP      int    // Instruction pointer to jump to when done
-	// Range/String Set state
-	StartValue int64
-	EndValue   int64
-	StringIDs  []string
+	Variables []int // Memory slots where loop variables are stored
+	StringIDs []string
 	// Text strings for text-string-set iteration (e.g. for any s in ("a", "b") : ...)
-	TextStrings []string
-	// Optional offset constraints for string set iteration
-	InRange       bool // Filter matches to those within [OffsetMin..OffsetMax]
+	TextStrings   []string
+	Count         int // Number of matches
+	Index         int // Current iteration index
+	Total         int // Total number of elements
+	Quantifier    int // Quantifier for condition (e.g. ForAll, ForAny, ForNone, ForExpression)
+	QuantExpr     int // Target expression count if Quantifier == ForExpression
+	EndIP         int // Instruction pointer to jump to when done
+	StartValue    int64
+	EndValue      int64
 	OffsetMin     int64
 	OffsetMax     int64
-	AtOffset      bool // Filter matches to those at exactly AtOffsetValue
 	AtOffsetValue int64
+	Type          Opcode // The type of iterator (e.g. OpIterStartIntRange)
+	InRange       bool   // Filter matches to those within [OffsetMin..OffsetMax]
+	AtOffset      bool   // Filter matches to those at exactly AtOffsetValue
 }
 
 type compiledRegex struct {
@@ -113,19 +111,18 @@ type MatchContext struct {
 	Data         []byte
 	Blocks       []MemoryBlock
 	Matches      map[string][]Match // Pattern -> list of matches
-	FileSize     int64
-	EntryPoint   int64
 	matchBuffers map[string][]Match
 	spans        map[string][]matchSpan
 	spanBuffers  map[string][]matchSpan
-	compact      bool
 	cancelDone   <-chan struct{}
+	regexBatch   regex.VMBatch
+	FileSize     int64
+	EntryPoint   int64
 	// maxMatchesPerPattern bounds retained occurrences. Zero means unlimited.
 	maxMatchesPerPattern int
 	// maxMatchSpan bounds the maximum byte length of a single regex match. Zero means unlimited.
 	maxMatchSpan int
-
-	regexBatch regex.VMBatch
+	compact      bool
 }
 
 func (mc *MatchContext) dataRange(offset, size int64) ([]byte, bool) {
@@ -161,14 +158,14 @@ type matchSpan struct {
 // Match represents a pattern match
 type Match struct {
 	Pattern              string
-	Offset               int64
-	Length               int
-	Base                 int64 // Base address for match
 	MatchedData          []byte
 	ContextBefore        []byte
 	ContextAfter         []byte
-	MatchedDataTruncated bool
 	Captures             []Capture
+	Offset               int64
+	Length               int
+	Base                 int64 // Base address for match
+	MatchedDataTruncated bool
 }
 
 // AddMatch adds a match to the context
@@ -398,16 +395,22 @@ func (i *Interpreter) GetMatchContext() *MatchContext {
 func (i *Interpreter) SetCurrentRule(ruleName string) {
 	i.currentRule = ruleName
 	if rule, ok := i.ruleMap[ruleName]; ok {
-		i.currentCompiledRule = rule
-		i.stringLiterals = rule.StringLiterals
-		i.stringSets = rule.StringSets
-		i.textStringSets = rule.TextStringSets
-		i.allStrings = rule.IndexToStringID // Pre-built in BuildStringIndex()
-		i.anonymousStrings = rule.AnonymousStrings
-		i.bytecode = rule.Bytecode // Ensure bytecode is updated for the rule
+		i.setCurrentCompiledRule(rule)
 		return
 	}
 	i.currentCompiledRule = nil
+}
+
+func (i *Interpreter) setCurrentCompiledRule(rule *CompiledRule) {
+	i.currentRule = rule.Name
+	i.currentRuleIndex = rule.Index
+	i.currentCompiledRule = rule
+	i.stringLiterals = rule.StringLiterals
+	i.stringSets = rule.StringSets
+	i.textStringSets = rule.TextStringSets
+	i.allStrings = rule.IndexToStringID // Pre-built in BuildStringIndex()
+	i.anonymousStrings = rule.AnonymousStrings
+	i.bytecode = rule.Bytecode // Ensure bytecode is updated for the rule
 }
 
 // GetString resolves a Value to a string (exported version of getString)
@@ -475,16 +478,6 @@ func (i *Interpreter) ruleResultByIndex(idx int, name string) bool {
 	return false
 }
 
-func (i *Interpreter) ruleResult(name string) bool {
-	if i.currentRuleIndex >= 0 && i.currentRuleIndex < len(i.ruleResultsDense) && i.currentRule == name {
-		return i.ruleResultsDense[i.currentRuleIndex]
-	}
-	if i.ruleResults != nil {
-		return i.ruleResults[name]
-	}
-	return false
-}
-
 // GetStack returns a copy of the current stack (for debugging)
 func (i *Interpreter) GetStack() []Value {
 	stackCopy := make([]Value, len(i.stack))
@@ -520,7 +513,9 @@ func (i *Interpreter) Reset() {
 	i.stopped = false
 	i.result = nil
 	if i.ruleResults == nil {
-		i.ruleResults = make(map[string]bool)
+		if i.ruleResultsDense == nil {
+			i.ruleResults = make(map[string]bool)
+		}
 	} else if !i.PreserveRuleResults {
 		clear(i.ruleResults)
 	}
