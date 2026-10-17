@@ -112,7 +112,12 @@ func (s *Scanner) compactPrefilterRejects(ctx context.Context, data []byte) bool
 	if ctx.Err() != nil {
 		return true
 	}
-	ac, state := gate.automaton, int32(0)
+	ac := gate.automaton
+	if len(ac.transitions16) > 0 {
+		return s.compactPrefilterRejects16(data, gate)
+	}
+
+	state := int32(0)
 	if len(data) >= 256 && len(ac.rootLanes) > 0 && len(ac.rootLanes) <= maxSparseRootTransitions {
 		cursor := newRootCandidateCursor(ac.rootLanes)
 		for i := 0; i < len(data); i++ {
@@ -122,7 +127,7 @@ func (s *Scanner) compactPrefilterRejects(ctx context.Context, data []byte) bool
 					return true
 				}
 			}
-			state = ac.states[state].transitions[data[i]]
+			state = ac.findNextState(state, data[i])
 			if gate.accepting[state] {
 				return false
 			}
@@ -137,9 +142,49 @@ func (s *Scanner) compactPrefilterRejects(ctx context.Context, data []byte) bool
 				continue
 			}
 		} else {
-			state = ac.states[state].transitions[b]
+			state = ac.findNextState(state, b)
 		}
 		if gate.accepting[state] {
+			return false
+		}
+	}
+	return true
+}
+
+//nolint:nestif // the sparse-root and general loops are intentionally separate hot paths
+func (s *Scanner) compactPrefilterRejects16(data []byte, gate *compactPrefilter) bool {
+	ac := gate.automaton
+	trans := ac.transitions16
+	rootTransitions := trans[:256]
+	accepting := gate.accepting
+	state := uint16(0)
+
+	if len(data) >= 256 && len(ac.rootLanes) > 0 && len(ac.rootLanes) <= maxSparseRootTransitions {
+		cursor := newRootCandidateCursor(ac.rootLanes)
+		for i := 0; i < len(data); i++ {
+			if state == 0 && len(data)-i >= 256 {
+				i = cursor.next(data, i)
+				if i < 0 {
+					return true
+				}
+			}
+			state = trans[(uint32(state)<<8)|uint32(data[i])]
+			if accepting[state] {
+				return false
+			}
+		}
+		return true
+	}
+	for _, b := range data {
+		if state == 0 {
+			state = rootTransitions[b]
+			if state == 0 {
+				continue
+			}
+		} else {
+			state = trans[(uint32(state)<<8)|uint32(b)]
+		}
+		if accepting[state] {
 			return false
 		}
 	}
