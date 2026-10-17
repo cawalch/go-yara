@@ -53,7 +53,7 @@ func CompileCaptures(ast *AST, groups []int) ([]byte, error) {
 			return nil, fmt.Errorf("regex: capture group %d is out of range", group)
 		}
 		if slot > 255 {
-			return nil, fmt.Errorf("regex: too many capture groups")
+			return nil, errors.New("regex: too many capture groups")
 		}
 		c.captureSlot[group] = byte(slot)
 	}
@@ -306,7 +306,7 @@ const MaxBytecodeSize = 2 * 1024 * 1024 // 2MB
 
 func (c *Compiler) emitNode(n *Node) error { //nolint:maintidx // high complexity is intentional for performance-critical regex compilation
 	if c.cur() > MaxBytecodeSize {
-		return fmt.Errorf("regex too large")
+		return errors.New("regex too large")
 	}
 	switch n.Kind {
 	case NodeGroup:

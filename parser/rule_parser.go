@@ -340,7 +340,7 @@ func (p *RuleParser) parseEvidenceDistance() (int64, error) {
 	typeOf := p.current.Type
 	if typeOf != token.IntegerLit && typeOf != token.HexIntegerLit &&
 		typeOf != token.OctalIntegerLit && typeOf != token.SizeLit {
-		return 0, fmt.Errorf("expected non-negative integer or size after 'within'")
+		return 0, errors.New("expected non-negative integer or size after 'within'")
 	}
 	p.nextToken()
 	if typeOf != token.SizeLit {

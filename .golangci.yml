@@ -17,6 +17,15 @@ linters:
     - revive
     - nestif
     - gocritic
+    - copyloopvar
+    - errorlint
+    - unconvert
+    - perfsprint
+    - nakedret
+    - makezero
+    - durationcheck
+    - reassign
+    - usestdlibvars
 
   settings:
     revive:

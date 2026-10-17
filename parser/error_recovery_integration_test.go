@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"errors"
 	"testing"
 
 	internal "github.com/cawalch/go-yara/internal/lexer"
@@ -49,8 +50,8 @@ rule ValidRule {
 			t.Errorf("Expected PartialParseError in recovery mode, got none")
 		}
 
-		partialErr, ok := err.(*PartialParseError)
-		if !ok {
+		var partialErr *PartialParseError
+		if !errors.As(err, &partialErr) {
 			t.Errorf("Expected PartialParseError, got %T", err)
 		}
 

@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"testing"
@@ -208,7 +209,7 @@ func TestMatchingRulesContextAndNilProgram(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := program.MatchingRulesWithContext(ctx, nil); err != context.Canceled {
+	if _, err := program.MatchingRulesWithContext(ctx, nil); !errors.Is(err, context.Canceled) {
 		t.Fatalf("MatchingRulesWithContext() error = %v, want context.Canceled", err)
 	}
 }

@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 )
@@ -204,7 +205,7 @@ func TestMatchingRulesInBlockValidationAndContext(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := scanner.MatchingRulesInBlockWithContext(ctx, MemoryBlock{}, 0); err != context.Canceled {
+	if _, err := scanner.MatchingRulesInBlockWithContext(ctx, MemoryBlock{}, 0); !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled scan error = %v, want context.Canceled", err)
 	}
 	if got, err := (*Scanner)(nil).MatchingRulesInBlock(MemoryBlock{}, 0); err != nil || got != nil {

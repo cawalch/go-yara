@@ -5,6 +5,7 @@ import (
 	"crypto/sha1" // #nosec G505 -- YARA compatibility requires SHA-1.
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math"
 	"slices"
@@ -312,20 +313,20 @@ func moduleDataRange(ctx ModuleContext, args []ModuleValue) ([]byte, error) {
 	switch len(args) {
 	case 1:
 		if args[0].Type != ModuleString {
-			return nil, fmt.Errorf("expected string or (offset, size)")
+			return nil, errors.New("expected string or (offset, size)")
 		}
 		return []byte(args[0].String), nil
 	case 2:
 		if args[0].Type != ModuleInteger || args[1].Type != ModuleInteger {
-			return nil, fmt.Errorf("expected integer offset and size")
+			return nil, errors.New("expected integer offset and size")
 		}
 		offset, size := args[0].Integer, args[1].Integer
 		if offset < 0 || size < 0 {
-			return nil, fmt.Errorf("data range out of bounds")
+			return nil, errors.New("data range out of bounds")
 		}
 		if ctx.Data != nil {
 			if offset > int64(len(ctx.Data)) || size > int64(len(ctx.Data))-offset {
-				return nil, fmt.Errorf("data range out of bounds")
+				return nil, errors.New("data range out of bounds")
 			}
 			return ctx.Data[offset : offset+size], nil
 		}
@@ -338,9 +339,9 @@ func moduleDataRange(ctx ModuleContext, args []ModuleValue) ([]byte, error) {
 				return block.Data[relative : relative+size], nil
 			}
 		}
-		return nil, fmt.Errorf("data range out of bounds")
+		return nil, errors.New("data range out of bounds")
 	default:
-		return nil, fmt.Errorf("expected string or (offset, size)")
+		return nil, errors.New("expected string or (offset, size)")
 	}
 }
 

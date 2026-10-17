@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -83,7 +84,7 @@ func (sc *stringCompiler) parseHexPattern(hexStr string) (*HexPattern, error) {
 		return nil, err
 	}
 	if len(tokens) == 0 {
-		return nil, fmt.Errorf("empty hex pattern")
+		return nil, errors.New("empty hex pattern")
 	}
 	return &HexPattern{Tokens: tokens}, nil
 }
@@ -147,12 +148,12 @@ func parseHexTokens(hexStr string) ([]HexPatternToken, error) {
 
 func parseHexAtom(hexStr string, pos int) (HexPatternToken, int, error) {
 	if pos >= len(hexStr) {
-		return HexPatternToken{}, pos, fmt.Errorf("unexpected end of hex pattern")
+		return HexPatternToken{}, pos, errors.New("unexpected end of hex pattern")
 	}
 	ch := hexStr[pos]
 	if ch == '?' {
 		if pos+1 >= len(hexStr) {
-			return HexPatternToken{}, pos, fmt.Errorf("incomplete wildcard")
+			return HexPatternToken{}, pos, errors.New("incomplete wildcard")
 		}
 		if hexStr[pos+1] == '?' {
 			return HexPatternToken{Kind: HexTokenWildcard}, pos + 2, nil
@@ -161,11 +162,11 @@ func parseHexAtom(hexStr string, pos int) (HexPatternToken, int, error) {
 			value := hexNibble(hexStr[pos+1])
 			return HexPatternToken{Kind: HexTokenMasked, Value: value, Mask: 0x0F}, pos + 2, nil
 		}
-		return HexPatternToken{}, pos, fmt.Errorf("invalid wildcard token")
+		return HexPatternToken{}, pos, errors.New("invalid wildcard token")
 	}
 	if isHexDigit(ch) {
 		if pos+1 >= len(hexStr) {
-			return HexPatternToken{}, pos, fmt.Errorf("incomplete byte token")
+			return HexPatternToken{}, pos, errors.New("incomplete byte token")
 		}
 		if hexStr[pos+1] == '?' {
 			value := hexNibble(ch) << 4
@@ -200,10 +201,10 @@ func parseHexAlternatives(hexStr string, pos int) ([][]HexPatternToken, int, err
 			return nil, pos, fmt.Errorf("empty alternative in hex group at offset %d", pos)
 		}
 		if tokens[0].Kind == HexTokenJump || tokens[len(tokens)-1].Kind == HexTokenJump {
-			return nil, pos, fmt.Errorf("alternation branch cannot begin or end with a jump")
+			return nil, pos, errors.New("alternation branch cannot begin or end with a jump")
 		}
 		if hasUnboundedJump(tokens) {
-			return nil, pos, fmt.Errorf("unbounded jumps not allowed inside alternation (|)")
+			return nil, pos, errors.New("unbounded jumps not allowed inside alternation (|)")
 		}
 		alts = append(alts, tokens)
 	}

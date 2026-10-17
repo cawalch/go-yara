@@ -2,6 +2,7 @@ package semantic
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -23,7 +24,8 @@ func parseRules(t *testing.T, source string) *ast.Program {
 
 func findSemanticErrorByCode(errs []error, code ErrorCode) *Error {
 	for _, err := range errs {
-		if semErr, ok := err.(*Error); ok && semErr.Code == code {
+		var semErr *Error
+		if errors.As(err, &semErr) && semErr.Code == code {
 			return semErr
 		}
 	}

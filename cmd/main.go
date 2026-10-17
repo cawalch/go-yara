@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -49,7 +50,7 @@ type commandArgs struct {
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
-		if err == flag.ErrHelp {
+		if errors.Is(err, flag.ErrHelp) {
 			return
 		}
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -91,7 +92,7 @@ func parseArgs(rawArgs []string) (*commandArgs, error) {
 
 	if len(rawArgs) == 0 {
 		fs.Usage()
-		return nil, fmt.Errorf("missing YARA file")
+		return nil, errors.New("missing YARA file")
 	}
 	if rawArgs[0] == "-h" || rawArgs[0] == "--help" {
 		return nil, fs.Parse(rawArgs)
@@ -100,13 +101,13 @@ func parseArgs(rawArgs []string) (*commandArgs, error) {
 	// Extract the positional filename (first non-flag argument)
 	filename := rawArgs[0]
 	if filename == "" {
-		return nil, fmt.Errorf("missing YARA file")
+		return nil, errors.New("missing YARA file")
 	}
 	flagArgs := rawArgs[1:]
 	// If the first arg looks like a flag, there's no positional filename
 	if rawArgs[0][0] == '-' {
 		fs.Usage()
-		return nil, fmt.Errorf("YARA file must be the first argument")
+		return nil, errors.New("YARA file must be the first argument")
 	}
 
 	if err := fs.Parse(flagArgs); err != nil {
@@ -126,19 +127,19 @@ func parseArgs(rawArgs []string) (*commandArgs, error) {
 
 	// Validate --data is provided for execute mode
 	if *mode == modeExecute && *dataFile == "" {
-		return nil, fmt.Errorf("--mode=execute requires --data <data-file>")
+		return nil, errors.New("--mode=execute requires --data <data-file>")
 	}
 	if *chunkSize <= 0 {
-		return nil, fmt.Errorf("--chunk-size must be positive")
+		return nil, errors.New("--chunk-size must be positive")
 	}
 	if *matchData < 0 {
-		return nil, fmt.Errorf("--match-data must be non-negative")
+		return nil, errors.New("--match-data must be non-negative")
 	}
 	if *matchContext < 0 {
-		return nil, fmt.Errorf("--match-context must be non-negative")
+		return nil, errors.New("--match-context must be non-negative")
 	}
 	if *maxMatchSpan < 0 {
-		return nil, fmt.Errorf("--max-match-span must be non-negative")
+		return nil, errors.New("--max-match-span must be non-negative")
 	}
 
 	return &commandArgs{
@@ -201,7 +202,7 @@ func runLexerMode(content string) error {
 		for _, err := range lexerErrors {
 			fmt.Printf("  %s\n", err.Error())
 		}
-		return fmt.Errorf("lexer errors detected")
+		return errors.New("lexer errors detected")
 	}
 
 	fmt.Printf("\nSuccessfully lexed with no errors!\n")
@@ -313,7 +314,7 @@ func runCompileMode(content, filename string) error {
 		for _, cerr := range compilationErrors {
 			fmt.Printf("  [%s] %s\n", cerr.Phase, cerr.Message)
 		}
-		return fmt.Errorf("compilation errors detected")
+		return errors.New("compilation errors detected")
 	}
 
 	fmt.Printf("Compilation: Successfully compiled %d rules\n", len(compiledProgram.Rules))
@@ -417,7 +418,7 @@ func compileRules(content, filename string) (*compiler.CompiledProgram, error) {
 		for _, cerr := range compilationErrors {
 			fmt.Printf("  [%s] %s\n", cerr.Phase, cerr.Message)
 		}
-		return nil, fmt.Errorf("compilation errors detected")
+		return nil, errors.New("compilation errors detected")
 	}
 
 	fmt.Printf("Compilation: Successfully compiled %d rules\n\n", len(compiledProgram.Rules))

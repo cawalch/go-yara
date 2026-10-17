@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 
@@ -101,7 +102,8 @@ func TestInterpreterIntegerOnlyMixedDoubleDoesNotPanic(t *testing.T) {
 	if err == nil {
 		t.Fatal("Execute() error = nil, want type mismatch")
 	}
-	if _, ok := err.(*InterpreterError); !ok {
+	var interpErr *InterpreterError
+	if !errors.As(err, &interpErr) {
 		t.Fatalf("Execute() error = %T %v, want *InterpreterError", err, err)
 	}
 }
@@ -116,8 +118,8 @@ func TestInterpreterRejectsBackwardConditionalJump(t *testing.T) {
 		t.Fatal("Execute() error = nil, want invalid bytecode")
 	}
 
-	interpErr, ok := err.(*InterpreterError)
-	if !ok {
+	var interpErr *InterpreterError
+	if !errors.As(err, &interpErr) {
 		t.Fatalf("Execute() error = %T %v, want *InterpreterError", err, err)
 	}
 	if interpErr.Type != ErrorInvalidBytecode {

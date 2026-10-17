@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -281,7 +282,7 @@ func (p *ExpressionParser) parseQuantifierTarget(pos token.Position) (ast.Expres
 	case p.currentTokenIs(token.LPAREN):
 		return p.parseParenthesizedTarget(pos)
 	default:
-		return nil, fmt.Errorf("expected 'them', string pattern, or '(' after 'of'")
+		return nil, errors.New("expected 'them', string pattern, or '(' after 'of'")
 	}
 }
 
@@ -305,13 +306,13 @@ func (p *ExpressionParser) parseParenthesizedTarget(pos token.Position) (ast.Exp
 			list = &ast.BinaryOp{Left: list, Op: token.COMMA, Right: next, Pos: pos}
 		}
 		if !p.currentTokenIs(token.RPAREN) {
-			return nil, fmt.Errorf("expected ')' after target list")
+			return nil, errors.New("expected ')' after target list")
 		}
 		p.nextToken() // consume ')'
 		return list, nil
 	}
 	if !p.currentTokenIs(token.RPAREN) {
-		return nil, fmt.Errorf("expected ')' after target")
+		return nil, errors.New("expected ')' after target")
 	}
 	p.nextToken() // consume ')'
 	return first, nil
@@ -341,7 +342,7 @@ func (p *ExpressionParser) parseOfConstraints(ofExpr *ast.OfExpression) (*ast.Of
 // parseRangeExpression parses a range expression like (min..max)
 func (p *ExpressionParser) parseRangeExpression() (ast.Expression, error) {
 	if !p.currentTokenIs(token.LPAREN) {
-		return nil, fmt.Errorf("expected '(' for range expression")
+		return nil, errors.New("expected '(' for range expression")
 	}
 	p.nextToken() // consume '('
 	minExpr, err := p.ParseExpression()
@@ -349,7 +350,7 @@ func (p *ExpressionParser) parseRangeExpression() (ast.Expression, error) {
 		return nil, err
 	}
 	if !p.currentTokenIs(token.DOT) || !p.peekTokenIs(token.DOT) {
-		return nil, fmt.Errorf("expected '..' in range expression")
+		return nil, errors.New("expected '..' in range expression")
 	}
 	p.nextToken() // consume first '.'
 	p.nextToken() // consume second '.'
@@ -358,7 +359,7 @@ func (p *ExpressionParser) parseRangeExpression() (ast.Expression, error) {
 		return nil, err
 	}
 	if !p.currentTokenIs(token.RPAREN) {
-		return nil, fmt.Errorf("expected ')' after range expression")
+		return nil, errors.New("expected ')' after range expression")
 	}
 	p.nextToken() // consume ')'
 	return &ast.BinaryOp{
@@ -486,7 +487,7 @@ func (p *ExpressionParser) parseDataTypeFunction() (ast.Expression, error) {
 		if p.currentTokenIs(token.COMMA) {
 			p.nextToken()
 		} else if !p.currentTokenIs(token.RPAREN) {
-			return nil, fmt.Errorf("expected ',' or ')' in function arguments")
+			return nil, errors.New("expected ',' or ')' in function arguments")
 		}
 	}
 	p.nextToken() // consume ')'
@@ -597,7 +598,7 @@ func (p *ExpressionParser) parseStringOperation() (ast.Expression, error) {
 			return nil, fmt.Errorf("error parsing string operation index: %w", err)
 		}
 		if !p.currentTokenIs(token.RBRACKET) {
-			return nil, fmt.Errorf("expected ']' after string operation index")
+			return nil, errors.New("expected ']' after string operation index")
 		}
 		p.nextToken()
 	}
@@ -663,7 +664,7 @@ func (p *ExpressionParser) parsePostfix(base ast.Expression) (ast.Expression, er
 		return p.parseFunctionCall(base)
 	}
 	if p.currentTokenIs(token.LBRACKET) {
-		return nil, fmt.Errorf("invalid syntax: array indexing $a[i] is not supported in YARA. Use @a[i] for string offset or #a[i] for string count")
+		return nil, errors.New("invalid syntax: array indexing $a[i] is not supported in YARA. Use @a[i] for string offset or #a[i] for string count")
 	}
 	return base, nil
 }

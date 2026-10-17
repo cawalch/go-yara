@@ -564,14 +564,14 @@ func (rc *ruleCompiler) compileStringPattern(str *ast.String) (*stringCompilatio
 
 func (rc *ruleCompiler) compileTextString(value string, modifiers []ast.StringModifier) (*stringCompilationResult, error) {
 	if hasPositiveCaptureGroup(modifiers) {
-		return nil, fmt.Errorf("positive capture groups are only supported for regex patterns")
+		return nil, errors.New("positive capture groups are only supported for regex patterns")
 	}
 	patterns, err := rc.stringCompiler.EncodeTextPatterns(value, modifiers)
 	if err != nil {
 		return nil, err
 	}
 	if len(patterns) == 0 {
-		return nil, fmt.Errorf("empty text pattern")
+		return nil, errors.New("empty text pattern")
 	}
 
 	optimized := make([]TextPattern, 0, len(patterns))
@@ -615,11 +615,11 @@ func stripWideModifier(modifiers []ast.StringModifier) []ast.StringModifier {
 
 func (rc *ruleCompiler) compileHexString(value string, modifiers []ast.StringModifier) (*stringCompilationResult, error) {
 	if hasPositiveCaptureGroup(modifiers) {
-		return nil, fmt.Errorf("positive capture groups are only supported for regex patterns")
+		return nil, errors.New("positive capture groups are only supported for regex patterns")
 	}
 	if rc.stringCompiler.hasModifier(modifiers, ast.StringModifierBase64) ||
 		rc.stringCompiler.hasModifier(modifiers, ast.StringModifierBase64Wide) {
-		return nil, fmt.Errorf("base64 modifiers are only supported for text strings")
+		return nil, errors.New("base64 modifiers are only supported for text strings")
 	}
 	hexPattern, err := rc.stringCompiler.parseHexPattern(value)
 	if err != nil {
@@ -642,7 +642,7 @@ func (rc *ruleCompiler) compileHexString(value string, modifiers []ast.StringMod
 func (rc *ruleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers []ast.StringModifier) (*stringCompilationResult, error) {
 	if rc.stringCompiler.hasModifier(modifiers, ast.StringModifierBase64) ||
 		rc.stringCompiler.hasModifier(modifiers, ast.StringModifierBase64Wide) {
-		return nil, fmt.Errorf("base64 modifiers are only supported for text strings")
+		return nil, errors.New("base64 modifiers are only supported for text strings")
 	}
 	code, parsed, err := rc.stringCompiler.compileRegexWithAST(pattern.Value, modifiers)
 	if err != nil {
@@ -898,7 +898,7 @@ func (rc *ruleCompiler) allocateExternalSlots(stringOffsets map[string]int) (map
 	slot := interpreterMemorySlotCount - 1
 	for _, name := range rc.externalNames {
 		if slot <= highestStringSlot {
-			return nil, fmt.Errorf("too many strings and external variables share interpreter memory")
+			return nil, errors.New("too many strings and external variables share interpreter memory")
 		}
 		externalSlots[name] = slot
 		slot--
@@ -938,7 +938,7 @@ func (rc *ruleCompiler) allocateGlobalSlots(stringOffsets, externalSlots map[str
 			slot++
 		}
 		if slot >= interpreterMemorySlotCount {
-			return nil, fmt.Errorf("too many strings, external variables, and global variables share interpreter memory")
+			return nil, errors.New("too many strings, external variables, and global variables share interpreter memory")
 		}
 		globalSlots[name] = slot
 		occupied[slot] = true
@@ -975,7 +975,7 @@ type compiledGlobalValue struct {
 func compileGlobalValue(expr ast.Expression) (compiledGlobalValue, error) {
 	lit, ok := expr.(*ast.Literal)
 	if !ok {
-		return compiledGlobalValue{}, fmt.Errorf("initializer must be a literal")
+		return compiledGlobalValue{}, errors.New("initializer must be a literal")
 	}
 
 	switch lit.Type {

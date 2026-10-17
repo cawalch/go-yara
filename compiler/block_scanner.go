@@ -2,7 +2,7 @@ package compiler
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"slices"
 )
 
@@ -53,7 +53,7 @@ func (cp *CompiledProgram) NewBlockScanner(opts ...ScannerOption) *BlockScanner 
 // default it is the highest block end offset.
 func (scanner *BlockScanner) SetFileSize(size int64) error {
 	if size < 0 {
-		return fmt.Errorf("block scanner file size must be non-negative")
+		return errors.New("block scanner file size must be non-negative")
 	}
 	scanner.fileSize = size
 	scanner.fileSizeSet = true
@@ -68,13 +68,13 @@ func (scanner *BlockScanner) Scan(base int64, data []byte) error {
 // ScanWithContext adds and immediately pattern-scans one block.
 func (scanner *BlockScanner) ScanWithContext(ctx context.Context, base int64, data []byte) error {
 	if scanner == nil || scanner.program == nil || scanner.scanner == nil {
-		return fmt.Errorf("block scanner is closed or has no program")
+		return errors.New("block scanner is closed or has no program")
 	}
 	if base < 0 {
-		return fmt.Errorf("block base must be non-negative")
+		return errors.New("block base must be non-negative")
 	}
 	if int64(len(data)) > int64(^uint64(0)>>1)-base {
-		return fmt.Errorf("block end offset overflows int64")
+		return errors.New("block end offset overflows int64")
 	}
 	if err := ctx.Err(); err != nil {
 		return err
@@ -157,7 +157,7 @@ func (scanner *BlockScanner) Finish() (*ScanResult, error) {
 // FinishWithContext evaluates rule conditions against all accumulated blocks.
 func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (*ScanResult, error) {
 	if scanner == nil || scanner.program == nil || scanner.scanner == nil {
-		return nil, fmt.Errorf("block scanner is closed or has no program")
+		return nil, errors.New("block scanner is closed or has no program")
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err

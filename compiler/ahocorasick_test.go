@@ -102,7 +102,7 @@ func TestMustACIndex(t *testing.T) {
 		invalid = append(invalid, int(tooLarge))
 	}
 	for _, value := range invalid {
-		t.Run(fmt.Sprintf("%d", value), func(t *testing.T) {
+		t.Run(strconv.Itoa(value), func(t *testing.T) {
 			defer func() {
 				if recover() == nil {
 					t.Fatalf("mustACIndex(%d) did not panic", value)

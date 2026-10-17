@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 
@@ -11,7 +12,7 @@ const maxCaptureBindings = 32
 
 func validateCaptureAndEvidenceDeclarations(rule *ast.Rule) error {
 	if rule == nil {
-		return fmt.Errorf("cannot compile nil rule")
+		return errors.New("cannot compile nil rule")
 	}
 
 	captureNames := make(map[string]struct{})
@@ -76,7 +77,7 @@ func validateCaptureAndEvidenceDeclarations(rule *ast.Rule) error {
 			continue
 		}
 		if declaration.Name == "" {
-			return fmt.Errorf("evidence declaration has an empty name")
+			return errors.New("evidence declaration has an empty name")
 		}
 		if _, duplicate := evidenceNames[declaration.Name]; duplicate {
 			return fmt.Errorf("evidence declaration %q is duplicated", declaration.Name)
@@ -192,13 +193,13 @@ func ruleDeclaresEvidence(rule *ast.Rule) bool {
 
 func validateCompiledEvidence(rule *CompiledRule) error {
 	if rule == nil {
-		return fmt.Errorf("nil compiled rule")
+		return errors.New("nil compiled rule")
 	}
 	if len(rule.CaptureBindings) == 0 && len(rule.EvidencePlans) == 0 {
 		return nil
 	}
 	if rule.FastScanSafe {
-		return fmt.Errorf("capture or evidence rule cannot be fast-scan safe")
+		return errors.New("capture or evidence rule cannot be fast-scan safe")
 	}
 
 	captureNames := make(map[string]struct{})
