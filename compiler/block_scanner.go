@@ -246,12 +246,13 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (*ScanResult
 		matched := s.interp.ruleResult(rule.Name)
 		materialize := !s.reportedMatchesOnly || matched && !rule.IsPrivate
 		if materialize && len(perRule) > 0 {
-			publicMatches := cloneRuleMatches(perRule)
-			publicMatches = filterPrivateStrings(rule, publicMatches)
-			if err := scanner.populateMatchEvidence(ctx, publicMatches); err != nil {
-				return nil, err
+			publicMatches := clonePublicRuleMatches(rule, perRule)
+			if publicMatches != nil {
+				if err := scanner.populateMatchEvidence(ctx, publicMatches); err != nil {
+					return nil, err
+				}
+				result.Matches[rule.Name] = publicMatches
 			}
-			result.Matches[rule.Name] = publicMatches
 		}
 		result.RuleResults[rule.Name] = matched
 	}
@@ -360,9 +361,18 @@ func normalizedBlockMatches(matches map[string][]Match) map[string][]Match {
 	return result
 }
 
-func cloneRuleMatches(matches map[string][]Match) map[string][]Match {
-	cloned := make(map[string][]Match, len(matches))
+func clonePublicRuleMatches(rule *CompiledRule, matches map[string][]Match) map[string][]Match {
+	if len(matches) == 0 {
+		return nil
+	}
+	var cloned map[string][]Match
 	for id, perString := range matches {
+		if (rule != nil && rule.IsPrivateString(id)) || len(perString) == 0 {
+			continue
+		}
+		if cloned == nil {
+			cloned = make(map[string][]Match, len(matches))
+		}
 		cloned[id] = append([]Match(nil), perString...)
 	}
 	return cloned

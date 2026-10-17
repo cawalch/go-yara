@@ -255,15 +255,9 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 		// The opt-in compact result mode materializes only matching public rules.
 		materialize := !s.reportedMatchesOnly || evaluation.matched && !rule.IsPrivate
 		if materialize && len(s.matchCtx.spans) > 0 {
-			ruleMatches := materializeMatches(s.matchCtx.spans)
-			ruleMatches = filterPrivateStrings(rule, ruleMatches)
-			if err := s.populateMatchEvidence(ctx, data, ruleMatches); err != nil {
+			if err := s.recordRuleMatches(ctx, data, rule, result); err != nil {
 				return nil, err
 			}
-			if result.Matches == nil {
-				result.Matches = make(map[string]map[string][]Match)
-			}
-			result.Matches[rule.Name] = ruleMatches
 		}
 		result.RuleResults[rule.Name] = evaluation.matched
 		if evaluation.matched {
@@ -641,4 +635,25 @@ func (r contextReader) Read(data []byte) (int, error) {
 		return 0, err
 	}
 	return r.reader.Read(data)
+}
+
+//nolint:revive // argument-limit: internal helper
+func (s *Scanner) recordRuleMatches(
+	ctx context.Context,
+	data []byte,
+	rule *CompiledRule,
+	result *ScanResult,
+) error {
+	ruleMatches := materializeRuleMatchesAt(rule, s.matchCtx.spans, 0)
+	if ruleMatches == nil {
+		return nil
+	}
+	if err := s.populateMatchEvidence(ctx, data, ruleMatches); err != nil {
+		return err
+	}
+	if result.Matches == nil {
+		result.Matches = make(map[string]map[string][]Match)
+	}
+	result.Matches[rule.Name] = ruleMatches
+	return nil
 }

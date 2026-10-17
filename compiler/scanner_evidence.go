@@ -17,10 +17,18 @@ func newPublicRuleMatch(
 	matches map[string][]Match,
 	evidence map[string][]EvidenceFinding,
 ) RuleMatch {
+	var tags []string
+	if len(rule.Tags) > 0 {
+		tags = slices.Clone(rule.Tags)
+	}
+	var meta map[string]any
+	if len(rule.Meta) > 0 {
+		meta = maps.Clone(rule.Meta)
+	}
 	return RuleMatch{
 		Rule:     rule.Name,
-		Tags:     slices.Clone(rule.Tags),
-		Meta:     maps.Clone(rule.Meta),
+		Tags:     tags,
+		Meta:     meta,
 		Matches:  matches,
 		Evidence: evidence,
 	}
@@ -68,16 +76,15 @@ func (s *Scanner) materializeMatchingRules(
 
 		var publicMatches map[string][]Match
 		if len(s.matchCtx.spans) > 0 {
-			publicMatches = filterPrivateStrings(
-				rule,
-				materializeMatchesAt(s.matchCtx.spans, matchBase),
-			)
-			if err := s.populateMatchEvidenceFrom(ctx, publicRuleMaterialization{
-				data:    data,
-				matches: publicMatches,
-				base:    matchBase,
-			}); err != nil {
-				return nil, err
+			publicMatches = materializeRuleMatchesAt(rule, s.matchCtx.spans, matchBase)
+			if publicMatches != nil {
+				if err := s.populateMatchEvidenceFrom(ctx, publicRuleMaterialization{
+					data:    data,
+					matches: publicMatches,
+					base:    matchBase,
+				}); err != nil {
+					return nil, err
+				}
 			}
 		}
 		evidence, err := s.populatePublicRuleEvidence(ctx, rule, publicRuleMaterialization{
@@ -197,31 +204,23 @@ func copyBytes(src []byte) []byte {
 	return dst
 }
 
-func materializeMatches(src map[string][]matchSpan) map[string][]Match {
-	return materializeMatchesAt(src, 0)
-}
-
-func materializeMatchesAt(src map[string][]matchSpan, base int64) map[string][]Match {
-	matches := make(map[string][]Match, len(src))
+func materializeRuleMatchesAt(rule *CompiledRule, src map[string][]matchSpan, base int64) map[string][]Match {
+	if len(src) == 0 {
+		return nil
+	}
+	var matches map[string][]Match
 	for id, spans := range src {
-		if len(spans) == 0 {
+		if len(spans) == 0 || (rule != nil && rule.IsPrivateString(id)) {
 			continue
+		}
+		if matches == nil {
+			matches = make(map[string][]Match, len(src))
 		}
 		dst := make([]Match, len(spans))
 		for index, span := range spans {
 			dst[index] = Match{Pattern: id, Offset: span.Offset, Length: span.Length, Base: base}
 		}
 		matches[id] = dst
-	}
-	return matches
-}
-
-// filterPrivateStrings removes private strings from the matches map.
-func filterPrivateStrings(rule *CompiledRule, matches map[string][]Match) map[string][]Match {
-	for id := range matches {
-		if rule.IsPrivateString(id) {
-			delete(matches, id)
-		}
 	}
 	return matches
 }

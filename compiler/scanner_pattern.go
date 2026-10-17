@@ -46,9 +46,9 @@ func (s *Scanner) extractGlobalMatchesInt(
 	// iterator through an interface adds two allocations to clean Matches calls.
 	//nolint:nestif // duplicated hot paths preserve the zero-allocation default
 	if ctx.Done() == nil {
-		for match := range s.program.sharedAutomaton.SearchIter(data) {
+		s.program.sharedAutomaton.Search(data, func(match acMatch) bool {
 			if match.StringIndex < 0 || match.StringIndex >= len(lookup) {
-				continue
+				return true
 			}
 
 			entry := lookup[match.StringIndex]
@@ -60,15 +60,15 @@ func (s *Scanner) extractGlobalMatchesInt(
 					s.prefilterCandidates[match.StringIndex],
 					match.Backtrack,
 				)
-				continue
+				return true
 			}
 			if entry.RuleIndex < 0 || entry.RuleIndex >= len(rules) {
-				continue
+				return true
 			}
 
 			rule := rules[entry.RuleIndex]
 			if entry.StringIdx < 0 || entry.StringIdx >= len(rule.IndexToStringID) {
-				continue
+				return true
 			}
 
 			info := s.program.sharedAutomaton.strings[match.StringIndex]
@@ -83,10 +83,10 @@ func (s *Scanner) extractGlobalMatchesInt(
 			if s.fastScan && rule.FastScanSafe {
 				key, ok := packFastScanKey(entry.RuleIndex, entry.StringIdx)
 				if !ok {
-					continue
+					return true
 				}
 				if fastSeen[key] {
-					continue
+					return true
 				}
 				candidate := Match{
 					Pattern: strID,
@@ -95,7 +95,7 @@ func (s *Scanner) extractGlobalMatchesInt(
 				}
 				if !verifyTextMatch(data, candidate, globalEntry.pattern, globalEntry.isNocase) ||
 					!matchPassesModifiers(data, candidate, rule.StringModifiers[strID], globalEntry.isWide) {
-					continue
+					return true
 				}
 				fastSeen[key] = true
 			}
@@ -104,11 +104,12 @@ func (s *Scanner) extractGlobalMatchesInt(
 			}
 			globalByRule[entry.RuleIndex] = append(globalByRule[entry.RuleIndex], globalEntry)
 			s.markCandidateRule(entry.RuleIndex)
-		}
+			return true
+		})
 	} else {
-		for match := range s.program.sharedAutomaton.searchIterWithCancel(data, ctx.Done()) {
+		s.program.sharedAutomaton.SearchWithCancel(data, ctx.Done(), func(match acMatch) bool {
 			if match.StringIndex < 0 || match.StringIndex >= len(lookup) {
-				continue
+				return true
 			}
 
 			entry := lookup[match.StringIndex]
@@ -120,15 +121,15 @@ func (s *Scanner) extractGlobalMatchesInt(
 					s.prefilterCandidates[match.StringIndex],
 					match.Backtrack,
 				)
-				continue
+				return true
 			}
 			if entry.RuleIndex < 0 || entry.RuleIndex >= len(rules) {
-				continue
+				return true
 			}
 
 			rule := rules[entry.RuleIndex]
 			if entry.StringIdx < 0 || entry.StringIdx >= len(rule.IndexToStringID) {
-				continue
+				return true
 			}
 
 			info := s.program.sharedAutomaton.strings[match.StringIndex]
@@ -143,10 +144,10 @@ func (s *Scanner) extractGlobalMatchesInt(
 			if s.fastScan && rule.FastScanSafe {
 				key, ok := packFastScanKey(entry.RuleIndex, entry.StringIdx)
 				if !ok {
-					continue
+					return true
 				}
 				if fastSeen[key] {
-					continue
+					return true
 				}
 				candidate := Match{
 					Pattern: strID,
@@ -155,7 +156,7 @@ func (s *Scanner) extractGlobalMatchesInt(
 				}
 				if !verifyTextMatch(data, candidate, globalEntry.pattern, globalEntry.isNocase) ||
 					!matchPassesModifiers(data, candidate, rule.StringModifiers[strID], globalEntry.isWide) {
-					continue
+					return true
 				}
 				fastSeen[key] = true
 			}
@@ -164,7 +165,8 @@ func (s *Scanner) extractGlobalMatchesInt(
 			}
 			globalByRule[entry.RuleIndex] = append(globalByRule[entry.RuleIndex], globalEntry)
 			s.markCandidateRule(entry.RuleIndex)
-		}
+			return true
+		})
 	}
 	if err := ctx.Err(); err != nil {
 		return err
@@ -221,13 +223,15 @@ func (s *Scanner) addLocalTextMatches(ctx context.Context, rule *CompiledRule, d
 	//nolint:nestif // separate iterator branches preserve zero-allocation Scan
 	if s.matchCtx.maxMatchesPerPattern <= 0 {
 		if ctx.Done() == nil {
-			for match := range rule.automaton.SearchIter(data) {
+			rule.automaton.Search(data, func(match acMatch) bool {
 				acceptAutomatonMatch(s.matchCtx, rule, data, match)
-			}
+				return true
+			})
 		} else {
-			for match := range rule.automaton.searchIterWithCancel(data, ctx.Done()) {
+			rule.automaton.SearchWithCancel(data, ctx.Done(), func(match acMatch) bool {
 				acceptAutomatonMatch(s.matchCtx, rule, data, match)
-			}
+				return true
+			})
 		}
 		return ctx.Err()
 	}
@@ -235,29 +239,31 @@ func (s *Scanner) addLocalTextMatches(ctx context.Context, rule *CompiledRule, d
 	matched := make(map[string]bool, len(rule.TextPatterns))
 	//nolint:nestif // separate iterator branches preserve zero-allocation Scan
 	if ctx.Done() == nil {
-		for match := range rule.automaton.SearchIter(data) {
+		rule.automaton.Search(data, func(match acMatch) bool {
 			if matched[match.StringID] {
-				continue
+				return true
 			}
 			if acceptAutomatonMatch(s.matchCtx, rule, data, match) {
 				matched[match.StringID] = true
 				if len(matched) == len(rule.TextPatterns) {
-					break
+					return false
 				}
 			}
-		}
+			return true
+		})
 	} else {
-		for match := range rule.automaton.searchIterWithCancel(data, ctx.Done()) {
+		rule.automaton.SearchWithCancel(data, ctx.Done(), func(match acMatch) bool {
 			if matched[match.StringID] {
-				continue
+				return true
 			}
 			if acceptAutomatonMatch(s.matchCtx, rule, data, match) {
 				matched[match.StringID] = true
 				if len(matched) == len(rule.TextPatterns) {
-					break
+					return false
 				}
 			}
-		}
+			return true
+		})
 	}
 	return ctx.Err()
 }

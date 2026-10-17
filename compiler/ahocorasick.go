@@ -642,117 +642,123 @@ func indexSinglePatternWithCancel(data, pattern []byte, noCase bool, done <-chan
 // ordinary iterator remains a separate hot path so Scan pays no cancellation
 // polling cost.
 //
-//nolint:nestif // mirrors SearchIter with bounded cancellation checkpoints
-func (ac *acAutomaton) searchIterWithCancel(data []byte, done <-chan struct{}) iter.Seq[acMatch] {
-	return func(yield func(acMatch) bool) {
-		if !ac.compiled || len(data) == 0 || scanCanceled(done) {
-			return
-		}
-		if len(ac.strings) == 1 {
-			info := ac.strings[0]
-			if len(info.Data) > 0 {
-				noCase := info.Flags&regex.FlagsNoCase != 0
-				if !singlePatternIsDense(data, info.Data, noCase) {
-					ac.searchSinglePatternWithCancel(data, yield, done)
-					return
-				}
+// SearchWithCancel searches for pattern matches while checking done for cancellation.
+//
+//nolint:nestif // mirrors Search with bounded cancellation checkpoints
+func (ac *acAutomaton) SearchWithCancel(data []byte, done <-chan struct{}, yield func(acMatch) bool) {
+	if !ac.compiled || len(data) == 0 || scanCanceled(done) {
+		return
+	}
+	if len(ac.strings) == 1 {
+		info := ac.strings[0]
+		if len(info.Data) > 0 {
+			noCase := info.Flags&regex.FlagsNoCase != 0
+			if !singlePatternIsDense(data, info.Data, noCase) {
+				ac.searchSinglePatternWithCancel(data, yield, done)
+				return
 			}
 		}
+	}
 
-		currentState := int32(0)
-		rootHasNoOutput := ac.states[0].outputStart == ac.states[0].outputEnd
-		if rootHasNoOutput && ac.teddy != nil && len(data) >= 256 {
-			rootTransitions := &ac.states[0].transitions
-			linearUntil := 0
-			for i := 0; i < len(data); i++ {
-				if i&(scanCancellationInterval-1) == 0 && scanCanceled(done) {
-					return
-				}
-				if currentState == 0 && i >= linearUntil && len(data)-i >= 32 {
-					candidate := ac.teddy.findCandidateWithCancel(data, i, done)
-					if candidate < 0 {
-						i = max(i, len(data)-31)
-						if i >= len(data) {
-							return
-						}
-					} else {
-						if candidate-i < 64 {
-							linearUntil = candidate + 256
-						}
-						i = candidate
-					}
-				}
-				if currentState == 0 {
-					currentState = rootTransitions[data[i]]
-					if currentState == 0 {
-						continue
-					}
-				} else {
-					currentState = ac.findNextState(currentState, data[i])
-				}
-				if ac.states[currentState].outputStart != ac.states[currentState].outputEnd &&
-					!ac.yieldMatchesWithCancel(currentState, i, yield, done) {
-					return
-				}
+	currentState := int32(0)
+	rootHasNoOutput := ac.states[0].outputStart == ac.states[0].outputEnd
+	if rootHasNoOutput && ac.teddy != nil && len(data) >= 256 {
+		rootTransitions := &ac.states[0].transitions
+		linearUntil := 0
+		for i := 0; i < len(data); i++ {
+			if i&(scanCancellationInterval-1) == 0 && scanCanceled(done) {
+				return
 			}
-			return
-		}
-
-		if rootHasNoOutput && len(data) >= 256 && len(ac.rootLanes) > 0 && len(ac.rootLanes) <= maxSparseRootTransitions && !ac.rootIsDense(data) {
-			rootCursor := newRootCandidateCursor(ac.rootLanes)
-			rootTransitions := &ac.states[0].transitions
-			linearUntil := 0
-			for i := 0; i < len(data); i++ {
-				if i&(scanCancellationInterval-1) == 0 && scanCanceled(done) {
-					return
-				}
-				if currentState == 0 && i >= linearUntil && len(data)-i >= 256 {
-					candidate := rootCursor.nextWithCancel(data, i, done)
-					if candidate < 0 {
+			if currentState == 0 && i >= linearUntil && len(data)-i >= 32 {
+				candidate := ac.teddy.findCandidateWithCancel(data, i, done)
+				if candidate < 0 {
+					i = max(i, len(data)-31)
+					if i >= len(data) {
 						return
 					}
+				} else {
 					if candidate-i < 64 {
 						linearUntil = candidate + 256
 					}
 					i = candidate
 				}
-				if currentState == 0 {
-					currentState = rootTransitions[data[i]]
-					if currentState == 0 {
-						continue
-					}
-				} else {
-					currentState = ac.findNextState(currentState, data[i])
-				}
-				if ac.states[currentState].outputStart != ac.states[currentState].outputEnd &&
-					!ac.yieldMatchesWithCancel(currentState, i, yield, done) {
-					return
-				}
 			}
-			return
-		}
-
-		rootTransitions := &ac.states[0].transitions
-		for blockStart := 0; blockStart < len(data); blockStart += scanCancellationInterval {
-			if scanCanceled(done) {
+			if currentState == 0 {
+				currentState = rootTransitions[data[i]]
+				if currentState == 0 {
+					continue
+				}
+			} else {
+				currentState = ac.findNextState(currentState, data[i])
+			}
+			if ac.states[currentState].outputStart != ac.states[currentState].outputEnd &&
+				!ac.yieldMatchesWithCancel(currentState, i, yield, done) {
 				return
 			}
-			blockEnd := min(blockStart+scanCancellationInterval, len(data))
-			for relative, b := range data[blockStart:blockEnd] {
-				if currentState == 0 {
-					currentState = rootTransitions[b]
-					if currentState == 0 {
-						continue
-					}
-				} else {
-					currentState = ac.findNextState(currentState, b)
-				}
-				if ac.states[currentState].outputStart != ac.states[currentState].outputEnd &&
-					!ac.yieldMatchesWithCancel(currentState, blockStart+relative, yield, done) {
+		}
+		return
+	}
+
+	if rootHasNoOutput && len(data) >= 256 && len(ac.rootLanes) > 0 && len(ac.rootLanes) <= maxSparseRootTransitions && !ac.rootIsDense(data) {
+		rootCursor := newRootCandidateCursor(ac.rootLanes)
+		rootTransitions := &ac.states[0].transitions
+		linearUntil := 0
+		for i := 0; i < len(data); i++ {
+			if i&(scanCancellationInterval-1) == 0 && scanCanceled(done) {
+				return
+			}
+			if currentState == 0 && i >= linearUntil && len(data)-i >= 256 {
+				candidate := rootCursor.nextWithCancel(data, i, done)
+				if candidate < 0 {
 					return
 				}
+				if candidate-i < 64 {
+					linearUntil = candidate + 256
+				}
+				i = candidate
+			}
+			if currentState == 0 {
+				currentState = rootTransitions[data[i]]
+				if currentState == 0 {
+					continue
+				}
+			} else {
+				currentState = ac.findNextState(currentState, data[i])
+			}
+			if ac.states[currentState].outputStart != ac.states[currentState].outputEnd &&
+				!ac.yieldMatchesWithCancel(currentState, i, yield, done) {
+				return
 			}
 		}
+		return
+	}
+
+	rootTransitions := &ac.states[0].transitions
+	for blockStart := 0; blockStart < len(data); blockStart += scanCancellationInterval {
+		if scanCanceled(done) {
+			return
+		}
+		blockEnd := min(blockStart+scanCancellationInterval, len(data))
+		for relative, b := range data[blockStart:blockEnd] {
+			if currentState == 0 {
+				currentState = rootTransitions[b]
+				if currentState == 0 {
+					continue
+				}
+			} else {
+				currentState = ac.findNextState(currentState, b)
+			}
+			if ac.states[currentState].outputStart != ac.states[currentState].outputEnd &&
+				!ac.yieldMatchesWithCancel(currentState, blockStart+relative, yield, done) {
+				return
+			}
+		}
+	}
+}
+
+func (ac *acAutomaton) searchIterWithCancel(data []byte, done <-chan struct{}) iter.Seq[acMatch] {
+	return func(yield func(acMatch) bool) {
+		ac.SearchWithCancel(data, done, yield)
 	}
 }
 
@@ -786,131 +792,136 @@ func (ac *acAutomaton) yieldMatchesWithCancel(
 	return true
 }
 
-// SearchIter performs optimized pattern matching without allocating a slice, yielding matches via an iterator
+// Search performs optimized pattern matching, directly yielding matches via callback.
 //
 //nolint:nestif // the sparse-root and general loops are intentionally separate hot paths
-func (ac *acAutomaton) SearchIter(data []byte) iter.Seq[acMatch] {
-	return func(yield func(acMatch) bool) {
-		if !ac.compiled {
-			return
-		}
+func (ac *acAutomaton) Search(data []byte, yield func(acMatch) bool) {
+	if !ac.compiled {
+		return
+	}
 
-		if len(data) == 0 {
-			return
-		}
-		if len(ac.strings) == 1 {
-			info := ac.strings[0]
-			if len(info.Data) > 0 {
-				noCase := info.Flags&regex.FlagsNoCase != 0
-				if !singlePatternIsDense(data, info.Data, noCase) {
-					ac.searchSinglePattern(data, yield)
-					return
-				}
+	if len(data) == 0 {
+		return
+	}
+	if len(ac.strings) == 1 {
+		info := ac.strings[0]
+		if len(info.Data) > 0 {
+			noCase := info.Flags&regex.FlagsNoCase != 0
+			if !singlePatternIsDense(data, info.Data, noCase) {
+				ac.searchSinglePattern(data, yield)
+				return
 			}
 		}
+	}
 
-		currentState := int32(0) // Start at root
+	currentState := int32(0) // Start at root
 
-		rootHasNoOutput := ac.states[0].outputStart == ac.states[0].outputEnd
-		if rootHasNoOutput && ac.teddy != nil && len(data) >= 256 {
-			rootTransitions := &ac.states[0].transitions
-			linearUntil := 0
-			for i := 0; i < len(data); i++ {
-				if currentState == 0 && i >= linearUntil && len(data)-i >= 32 {
-					candidate := ac.teddy.findCandidate(data, i)
-					if candidate < 0 {
-						i = max(i, len(data)-31)
-						if i >= len(data) {
-							return
-						}
-					} else {
-						if candidate-i < 64 {
-							linearUntil = candidate + 256
-						}
-						i = candidate
-					}
-				}
-				if currentState == 0 {
-					currentState = rootTransitions[data[i]]
-					if currentState == 0 {
-						continue
-					}
-				} else {
-					currentState = ac.findNextState(currentState, data[i])
-				}
-				if ac.states[currentState].outputStart != ac.states[currentState].outputEnd &&
-					!ac.yieldMatches(currentState, i, yield) {
-					return
-				}
-			}
-			return
-		}
-
-		// When the automaton has only a few root transitions, skip root misses
-		// with the platform byte-search routine. Keep the tight range loop for
-		// small inputs and wider roots where repeated byte searches cost more.
-		if rootHasNoOutput && len(data) >= 256 && len(ac.rootLanes) > 0 && len(ac.rootLanes) <= maxSparseRootTransitions && !ac.rootIsDense(data) {
-			rootCursor := newRootCandidateCursor(ac.rootLanes)
-			rootTransitions := &ac.states[0].transitions
-			linearUntil := 0
-			for i := 0; i < len(data); i++ {
-				if currentState == 0 && i >= linearUntil && len(data)-i >= 256 {
-					candidate := rootCursor.next(data, i)
-					if candidate < 0 {
+	rootHasNoOutput := ac.states[0].outputStart == ac.states[0].outputEnd
+	if rootHasNoOutput && ac.teddy != nil && len(data) >= 256 {
+		rootTransitions := &ac.states[0].transitions
+		linearUntil := 0
+		for i := 0; i < len(data); i++ {
+			if currentState == 0 && i >= linearUntil && len(data)-i >= 32 {
+				candidate := ac.teddy.findCandidate(data, i)
+				if candidate < 0 {
+					i = max(i, len(data)-31)
+					if i >= len(data) {
 						return
 					}
+				} else {
 					if candidate-i < 64 {
 						linearUntil = candidate + 256
 					}
 					i = candidate
 				}
-				if currentState == 0 {
-					currentState = rootTransitions[data[i]]
-					if currentState == 0 {
-						continue
-					}
-				} else {
-					currentState = ac.findNextState(currentState, data[i])
-				}
-				if ac.states[currentState].outputStart != ac.states[currentState].outputEnd &&
-					!ac.yieldMatches(currentState, i, yield) {
-					return
-				}
 			}
-			return
-		}
-
-		rootTransitions := &ac.states[0].transitions
-		for i, b := range data {
 			if currentState == 0 {
-				currentState = rootTransitions[b]
-				// After closeTransitions a root miss reads back as 0 rather than
-				// -1. No real edge can target the root, so 0 still means "no
-				// transition", and skipping the output check below preserves the
-				// original behaviour exactly.
+				currentState = rootTransitions[data[i]]
 				if currentState == 0 {
 					continue
 				}
 			} else {
-				currentState = ac.findNextState(currentState, b)
+				currentState = ac.findNextState(currentState, data[i])
 			}
-			outputStart := ac.states[currentState].outputStart
-			outputEnd := ac.states[currentState].outputEnd
-			for idx := outputStart; idx < outputEnd; idx++ {
-				stringIndex := ac.outputs[idx]
-				if stringIndex < 0 || int(stringIndex) >= len(ac.strings) {
-					continue
-				}
-				stringInfo := ac.strings[stringIndex]
-				if !yield(acMatch{
-					StringIndex: int(stringIndex),
-					StringID:    stringInfo.Identifier,
-					Backtrack:   i + 1 - stringInfo.Length,
-				}) {
-					return
-				}
+			if ac.states[currentState].outputStart != ac.states[currentState].outputEnd &&
+				!ac.yieldMatches(currentState, i, yield) {
+				return
 			}
 		}
+		return
+	}
+
+	// When the automaton has only a few root transitions, skip root misses
+	// with the platform byte-search routine. Keep the tight range loop for
+	// small inputs and wider roots where repeated byte searches cost more.
+	if rootHasNoOutput && len(data) >= 256 && len(ac.rootLanes) > 0 && len(ac.rootLanes) <= maxSparseRootTransitions && !ac.rootIsDense(data) {
+		rootCursor := newRootCandidateCursor(ac.rootLanes)
+		rootTransitions := &ac.states[0].transitions
+		linearUntil := 0
+		for i := 0; i < len(data); i++ {
+			if currentState == 0 && i >= linearUntil && len(data)-i >= 256 {
+				candidate := rootCursor.next(data, i)
+				if candidate < 0 {
+					return
+				}
+				if candidate-i < 64 {
+					linearUntil = candidate + 256
+				}
+				i = candidate
+			}
+			if currentState == 0 {
+				currentState = rootTransitions[data[i]]
+				if currentState == 0 {
+					continue
+				}
+			} else {
+				currentState = ac.findNextState(currentState, data[i])
+			}
+			if ac.states[currentState].outputStart != ac.states[currentState].outputEnd &&
+				!ac.yieldMatches(currentState, i, yield) {
+				return
+			}
+		}
+		return
+	}
+
+	rootTransitions := &ac.states[0].transitions
+	for i, b := range data {
+		if currentState == 0 {
+			currentState = rootTransitions[b]
+			// After closeTransitions a root miss reads back as 0 rather than
+			// -1. No real edge can target the root, so 0 still means "no
+			// transition", and skipping the output check below preserves the
+			// original behaviour exactly.
+			if currentState == 0 {
+				continue
+			}
+		} else {
+			currentState = ac.findNextState(currentState, b)
+		}
+		outputStart := ac.states[currentState].outputStart
+		outputEnd := ac.states[currentState].outputEnd
+		for idx := outputStart; idx < outputEnd; idx++ {
+			stringIndex := ac.outputs[idx]
+			if stringIndex < 0 || int(stringIndex) >= len(ac.strings) {
+				continue
+			}
+			stringInfo := ac.strings[stringIndex]
+			if !yield(acMatch{
+				StringIndex: int(stringIndex),
+				StringID:    stringInfo.Identifier,
+				Backtrack:   i + 1 - stringInfo.Length,
+			}) {
+				return
+			}
+		}
+	}
+}
+
+// SearchIter performs optimized pattern matching yielding matches via an iter.Seq iterator.
+func (ac *acAutomaton) SearchIter(data []byte) iter.Seq[acMatch] {
+	return func(yield func(acMatch) bool) {
+		ac.Search(data, yield)
 	}
 }
 
