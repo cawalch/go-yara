@@ -464,12 +464,16 @@ func (s *Scanner) addLocalNonTextMatches(
 				continue
 			}
 		}
-		for _, m := range findHexMatches(pattern, data, ctx.Done()) {
+		findHexMatchesEach(pattern, data, ctx.Done(), func(m Match) bool {
 			m.Pattern = id
 			if matchPassesModifiers(data, m, rule.StringModifiers[id], false) {
 				s.matchCtx.AddMatch(m)
+				if canShortCircuit && len(s.matchCtx.spans[id]) > 0 && s.isRuleConditionSatisfied(rule) {
+					return false
+				}
 			}
-		}
+			return true
+		})
 		if s.matchCtx.maxMatchesPerPattern <= 0 && pattern != nil && pattern.cacheIndex >= 0 && pattern.cacheIndex < len(cache.matches) {
 			dst := cache.matches[pattern.cacheIndex][:0]
 			dst = append(dst, s.matchCtx.spans[id]...)

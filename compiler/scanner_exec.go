@@ -279,6 +279,9 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 	}
 
 	// Pass 2: build MatchedRules
+	if len(s.matchedRuleIndices) > 0 {
+		result.MatchedRules = make([]RuleMatch, 0, len(s.matchedRuleIndices))
+	}
 	for _, ruleIndex := range s.matchedRuleIndices {
 		rule := s.program.Rules[ruleIndex]
 		if err := ctx.Err(); err != nil {

@@ -288,16 +288,20 @@ func compiledPatternMatchesAtWithCancel(rule *CompiledRule, id string, data []by
 		}
 	case StringKindHex:
 		pattern := rule.HexPatterns[id]
-		for _, match := range findHexMatches(pattern, data[int(offset):], done) {
+		matched := false
+		findHexMatchesEach(pattern, data[int(offset):], done, func(match Match) bool {
 			if match.Offset > 0 {
-				break
+				return false
 			}
 			match.Offset += offset
 			match.Pattern = id
 			if matchPassesModifiers(data, match, rule.StringModifiers[id], false) {
-				return true
+				matched = true
+				return false
 			}
-		}
+			return true
+		})
+		return matched
 	}
 	return false
 }

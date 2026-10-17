@@ -395,8 +395,21 @@ func FindHexMatches(pattern *HexPattern, data []byte) []Match {
 }
 
 func findHexMatches(pattern *HexPattern, data []byte, done <-chan struct{}) []Match {
+	var matches []Match
+	findHexMatchesEach(pattern, data, done, func(m Match) bool {
+		matches = append(matches, m)
+		return true
+	})
+	return matches
+}
+
+// findHexMatchesEach invokes onMatch for every hex pattern match found in data.
+// It stops traversing immediately if onMatch returns false.
+//
+//nolint:revive // cancellation signal remains explicit on the matching hot path
+func findHexMatchesEach(pattern *HexPattern, data []byte, done <-chan struct{}, onMatch func(Match) bool) {
 	if pattern == nil || len(pattern.Tokens) == 0 || len(data) == 0 {
-		return nil
+		return
 	}
 	keys := pattern.XorKeys
 	if len(keys) == 0 && len(pattern.XorRange) > 0 {
@@ -408,35 +421,53 @@ func findHexMatches(pattern *HexPattern, data []byte, done <-chan struct{}) []Ma
 
 	if len(keys) == 0 {
 		if anchor.ok {
-			return findHexMatchesAnchored(pattern.Tokens, data, anchor, done)
+			findHexMatchesAnchoredEach(pattern.Tokens, data, anchor, done, onMatch)
+			return
 		}
-		return findHexMatchesBruteForce(pattern.Tokens, data, done)
+		findHexMatchesBruteForceEach(pattern.Tokens, data, done, onMatch)
+		return
 	}
 
 	// XOR mode: for each key, compute the transformed anchor byte.
 	if anchor.ok {
-		return findHexMatchesXorAnchored(pattern.Tokens, data, keys, anchor, done)
+		findHexMatchesXorAnchoredEach(pattern.Tokens, data, keys, anchor, done, onMatch)
+		return
 	}
-	return findHexMatchesXorBruteForce(pattern.Tokens, data, keys, done)
+	findHexMatchesXorBruteForceEach(pattern.Tokens, data, keys, done, onMatch)
 }
 
-// findHexMatchesAnchored uses bytes.IndexByte to skip non-matching positions.
+func emitScratchMatches(ends []int, candidateStart int, onMatch func(Match) bool) bool {
+	for _, end := range ends {
+		if end <= candidateStart {
+			continue
+		}
+		if !onMatch(Match{
+			Offset: int64(candidateStart),
+			Length: end - candidateStart,
+		}) {
+			return false
+		}
+	}
+	return true
+}
+
+// findHexMatchesAnchoredEach uses bytes.IndexByte to skip non-matching positions.
 //
-//nolint:revive // cancellation signal remains explicit on the matching hot path
-func findHexMatchesAnchored(
+//nolint:revive // argument-limit: internal traversal helper with cancellation
+func findHexMatchesAnchoredEach(
 	tokens []HexPatternToken,
 	data []byte,
 	anchor anchorInfo,
 	done <-chan struct{},
-) []Match {
-	var matches []Match
+	onMatch func(Match) bool,
+) {
 	linear := isLinearHexPattern(tokens)
 	var scratch hexMatchScratch
 	pos := 0
 	checkpoint := 0
 	for {
 		if scanCanceledAt(done, checkpoint) {
-			return matches
+			return
 		}
 		checkpoint++
 		idx := bytes.IndexByte(data[pos:], anchor.byteVal)
@@ -451,60 +482,54 @@ func findHexMatchesAnchored(
 		}
 		if linear {
 			if end, ok := matchLinearHexPattern(tokens, data, candidateStart, nil); ok {
-				matches = append(matches, Match{
+				if !onMatch(Match{
 					Offset: int64(candidateStart),
 					Length: end - candidateStart,
-				})
+				}) {
+					return
+				}
 			}
 			continue
 		}
 		ends := scratch.match(tokens, data, candidateStart, nil)
-		for _, end := range ends {
-			if end <= candidateStart {
-				continue
-			}
-			matches = append(matches, Match{
-				Offset: int64(candidateStart),
-				Length: end - candidateStart,
-			})
+		if !emitScratchMatches(ends, candidateStart, onMatch) {
+			return
 		}
 	}
-	return matches
 }
 
-// findHexMatchesBruteForce is the fallback when no anchor byte exists.
-func findHexMatchesBruteForce(tokens []HexPatternToken, data []byte, done <-chan struct{}) []Match {
-	var matches []Match
+// findHexMatchesBruteForceEach is the fallback when no anchor byte exists.
+//
+//nolint:revive // argument-limit: internal traversal helper with cancellation
+func findHexMatchesBruteForceEach(
+	tokens []HexPatternToken,
+	data []byte,
+	done <-chan struct{},
+	onMatch func(Match) bool,
+) {
 	var scratch hexMatchScratch
 	for start := range data {
 		if scanCanceledAt(done, start) {
-			return matches
+			return
 		}
 		ends := scratch.match(tokens, data, start, nil)
-		for _, end := range ends {
-			if end <= start {
-				continue
-			}
-			matches = append(matches, Match{
-				Offset: int64(start),
-				Length: end - start,
-			})
+		if !emitScratchMatches(ends, start, onMatch) {
+			return
 		}
 	}
-	return matches
 }
 
-// findHexMatchesXorAnchored uses per-key transformed anchor bytes for skip-based matching.
+// findHexMatchesXorAnchoredEach uses per-key transformed anchor bytes for skip-based matching.
 //
-//nolint:revive // argument-limit: internal helper
-func findHexMatchesXorAnchored(
+//nolint:revive // argument-limit: internal traversal helper with cancellation
+func findHexMatchesXorAnchoredEach(
 	tokens []HexPatternToken,
 	data []byte,
 	keys []byte,
 	anchor anchorInfo,
 	done <-chan struct{},
-) []Match {
-	var matches []Match
+	onMatch func(Match) bool,
+) {
 	linear := isLinearHexPattern(tokens)
 	var scratch hexMatchScratch
 	checkpoint := 0
@@ -513,7 +538,7 @@ func findHexMatchesXorAnchored(
 		pos := 0
 		for {
 			if scanCanceledAt(done, checkpoint) {
-				return matches
+				return
 			}
 			checkpoint++
 			idx := bytes.IndexByte(data[pos:], targetByte)
@@ -528,26 +553,45 @@ func findHexMatchesXorAnchored(
 			}
 			if linear {
 				if end, ok := matchLinearHexPattern(tokens, data, candidateStart, &key); ok {
-					matches = append(matches, Match{
+					if !onMatch(Match{
 						Offset: int64(candidateStart),
 						Length: end - candidateStart,
-					})
+					}) {
+						return
+					}
 				}
 				continue
 			}
 			ends := scratch.match(tokens, data, candidateStart, &key)
-			for _, end := range ends {
-				if end <= candidateStart {
-					continue
-				}
-				matches = append(matches, Match{
-					Offset: int64(candidateStart),
-					Length: end - candidateStart,
-				})
+			if !emitScratchMatches(ends, candidateStart, onMatch) {
+				return
 			}
 		}
 	}
-	return matches
+}
+
+// findHexMatchesXorBruteForceEach is the fallback for XOR patterns with no anchor.
+//
+//nolint:revive // argument-limit: internal traversal helper with cancellation
+func findHexMatchesXorBruteForceEach(
+	tokens []HexPatternToken,
+	data []byte,
+	keys []byte,
+	done <-chan struct{},
+	onMatch func(Match) bool,
+) {
+	var scratch hexMatchScratch
+	for start := range data {
+		if scanCanceledAt(done, start) {
+			return
+		}
+		for _, key := range keys {
+			ends := scratch.match(tokens, data, start, &key)
+			if !emitScratchMatches(ends, start, onMatch) {
+				return
+			}
+		}
+	}
 }
 
 func isLinearHexPattern(tokens []HexPatternToken) bool {
@@ -593,37 +637,6 @@ func matchLinearHexPattern(tokens []HexPatternToken, data []byte, pos int, xorKe
 		pos++
 	}
 	return pos, true
-}
-
-// findHexMatchesXorBruteForce is the fallback for XOR patterns with no anchor.
-//
-//nolint:revive // cancellation signal remains explicit on the matching hot path
-func findHexMatchesXorBruteForce(
-	tokens []HexPatternToken,
-	data []byte,
-	keys []byte,
-	done <-chan struct{},
-) []Match {
-	var matches []Match
-	var scratch hexMatchScratch
-	for start := range data {
-		if scanCanceledAt(done, start) {
-			return matches
-		}
-		for _, key := range keys {
-			ends := scratch.match(tokens, data, start, &key)
-			for _, end := range ends {
-				if end <= start {
-					continue
-				}
-				matches = append(matches, Match{
-					Offset: int64(start),
-					Length: end - start,
-				})
-			}
-		}
-	}
-	return matches
 }
 
 func expandXorKeys(ranges []ast.XorRange) []byte {
