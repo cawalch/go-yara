@@ -1,50 +1,53 @@
 # go-yara
 
-`go-yara` is a native Go implementation of YARA rule parsing, compilation, and scanning. It converts YARA source rules into executable bytecode and evaluates them against byte slices, streams, and files through an allocation-conscious scanner API.
+`go-yara` is a high-performance, 100% pure Go implementation of YARA rule parsing, compilation, and scanning. It compiles standard YARA rules into optimized bytecode and evaluates them against in-memory buffers, data streams, and files—without any CGO dependencies or external C libraries.
 
-`go-yara` supports core YARA rule syntax, string modifiers, expressions, metadata, tags, includes, and external variables. It provides high-performance scanning through conservative literal prefiltering, rule pruning, and compiled program serialization.
+Architected for high-concurrency cloud environments and high-throughput security pipelines, `go-yara` combines multi-gigabyte-per-second literal prefiltering (Aho-Corasick and Teddy SIMD), early header-based rule pruning, and a thread-safe, pooled execution engine that achieves zero heap allocations on clean inputs after warm-up.
 
 ## Features
 
-- **AST and parsing**: Parse YARA source into a structured abstract syntax tree (AST).
-- **Semantic analysis**: Validate rule semantics and emit structured diagnostics, machine-readable error codes, and typo suggestions.
-- **Bytecode compilation**: Compile valid rules to executable bytecode.
-- **Resilient compilation**: Optionally compile valid rules from rule sets containing syntax or semantic errors, while collecting omitted-rule diagnostics.
-- **Prefiltering and fast rejection**: Reject clean inputs using a conservative mandatory-literal prefilter before executing rule bytecode, achieving zero heap allocations on clean inputs after warm-up.
-- **Rule pruning**: Prune rules with failing fixed-offset assertions (such as `$magic at 0` or `uint32(0) == 0x464c457f`) before scanning strings.
-- **Optimized scanning modes**:
-  - Reusable scanners with pooled state across repeated evaluations.
+- **Pure Go Architecture**: Zero CGO dependencies, easy cross-compilation, static binary generation, and safe concurrent evaluation across goroutines.
+- **Full Grammar & AST Support**: Strict, recursive-descent parsing into a typed abstract syntax tree (AST) with comprehensive support for text, hex, and regex patterns.
+- **Deep Semantic Analysis**: Compile-time type checking, symbol resolution, machine-readable diagnostic codes, and "did you mean...?" suggestions for misspelled identifiers and functions.
+- **Resilient Compilation**: Optionally compile valid rules from rule sets containing syntax or semantic errors, while collecting detailed omitted-rule diagnostics and dependency cascades.
+- **High-Throughput Prefiltering & Fast Rejection**: Conservative mandatory-literal routing bypasses bytecode execution on non-matching inputs, achieving zero heap allocations on clean inputs after warm-up.
+- **Early Rule Pruning**: Rules with failing fixed-offset assertions (such as `$magic at 0` or `uint32(0) == 0x464c457f`) are pruned before scanning string tables.
+- **Allocation-Conscious Evaluation Modes**:
+  - Reusable scanner instances with pooled internal state.
   - Zero-allocation convenience forwarders on `CompiledProgram` via an internal `sync.Pool`.
-  - Boolean evaluation (`Matches`) for clean-input short-circuiting.
-  - Compact matching (`MatchingRules`) to return matched rules without allocating full per-rule condition tables.
-  - First-occurrence matching (`WithFastScan`) with automatic retention for rules that depend on counts or offsets.
-- **Non-contiguous block scanning**: Incrementally scan sparse or overlapping memory blocks with absolute logical offsets and evaluate full rule conditions.
-- **Extensible modules**: Import built-in `hash` and `math` modules or register typed custom Go modules.
-- **Cache serialization**: Save and load compiled programs using a versioned binary format that preserves prefilter plans and regex state.
-- **Dependency analysis**: Inspect direct rule dependencies, dependents, and full dependency graphs.
-- **Secret extraction**: Extract structured capture spans and correlate credential candidates using the `capture(...)` and `evidence:` syntax extensions.
-- **Experimental SIMD acceleration**: Compile-time opt-in with `GOEXPERIMENT=simd` on Go 1.27+ enables hardware-vectorized (`AVX2`, `AVX-512`, `ARM NEON`) case-folding (`nocase`), character range testing, Teddy multi-literal prefiltering (7–11+ GB/s across 4–64 patterns), and multi-gigabyte/second Aho-Corasick root skips.
-- **Command-line tool**: Lex, parse, compile, or execute rules against data files with optional streaming.
+  - Boolean evaluation (`Matches`) for immediate short-circuiting on clean inputs.
+  - Compact matching (`MatchingRules`) returning matched rules without allocating full condition result maps.
+  - First-occurrence matching (`WithFastScan`) with automatic full-match retention for rules dependent on match counts, offsets, or ranges.
+  - Match span bounds (`WithMaxMatchSpan`) to defend against catastrophic regex backtracking.
+- **Sparse & Non-Contiguous Block Scanning**: Segmented or out-of-order memory scanning (`BlockScanner`) with absolute logical offsets for virtual memory dumps and fragmented files.
+- **Extensible Module System**: Built-in `hash` (MD5, SHA-1, SHA-256) and `math` (entropy, mean, deviation) modules, plus registration of custom typed Go functions.
+- **Versioned Cache Serialization**: Fast binary serialization (`MarshalBinary` / `UnmarshalCompiledProgram`) preserving compiled automata, literal tables, and prefilter plans across processes.
+- **Rule Dependency Graphing**: Inspect direct dependencies, reverse dependents, and full cyclic or acyclic rule dependency graphs.
+- **Structured Evidence & Secret Extraction**: Syntactic extensions (`capture(...)` and `evidence:`) for credential harvesting and DLP workflows with deterministic spatial proximity windows (e.g. `within 4KB of secret`).
+- **Production Observability & Telemetry**: Zero-allocation in-place counters, phase-level latency tracking, cooperative CPU throttling (`WithPollHook`), and streaming match callbacks (`WithMatchHook`).
+- **Experimental SIMD Acceleration (Go 1.27+)**: Compile-time opt-in hardware-vectorized (`AVX2`, `AVX-512`, `ARM NEON`) case-folding, character range testing, Teddy multi-literal matching (7–11+ GB/s across 2–64 patterns), and multi-gigabyte root-miss skipping.
+- **Feature-Rich CLI**: Standalone tool for lexing, parsing, compiling, and scanning files with optional chunked streaming.
 
 ## Compatibility
 
-`go-yara` supports core YARA parsing, validation, compilation, and scanning features:
+`go-yara` provides comprehensive compatibility with standard YARA syntax and semantics:
 
-- Text, hexadecimal, and regular expression pattern strings.
-- String modifiers: `nocase`, `wide`, `ascii`, `fullword`, `xor`, `base64`, `base64wide`, and `private`.
-- Rule metadata, tags, include directives, and external variables.
-- Private rules, global rules, and inter-rule condition references.
-- Arithmetic, bitwise, comparison, logical, and range operators.
-- String count (`#`), length (`!`), offset (`@`), and occurrence (`at`, `in`) operators.
-- For-loop iteration expressions over integer ranges and string sets (`them`, `$*`, `$a*`).
-- Built-in modules:
-  - `hash`: provides `md5`, `sha1`, and `sha256`.
-  - `math`: provides `entropy`, `mean`, and `deviation`.
+- **String Types**: Text strings, hexadecimal byte patterns with wildcards and jumps, and PCRE-compatible regular expressions.
+- **String Modifiers**: `nocase`, `wide`, `ascii`, `fullword`, `xor`, `base64`, `base64wide`, and `private`.
+- **Rule Declarations**: Metadata (`meta:`), tags, file includes (`include "..."`), and external variables (`external`).
+- **Rule Visibility & Ordering**: `private` rules, `global` rules, and inter-rule condition references.
+- **Expressions & Operators**:
+  - Arithmetic, bitwise, comparison, logical, and range (`..`) operators.
+  - String count (`#`), length (`!`), offset (`@`), and occurrence (`at`, `in`) operators.
+  - Quantifiers and set loops: `for ... of them`, `for any of ($a*)`, `for all i in (1..5)`.
+- **Standard Modules**:
+  - `hash`: `md5`, `sha1`, `sha256`.
+  - `math`: `entropy`, `mean`, `deviation`.
 
 > [!NOTE]
-> Structured upstream module object models such as `pe`, `elf`, and `dotnet` are not yet implemented. If your rules require custom functions, you can register typed Go callbacks using the module API.
+> Structured C-based upstream module object models such as `pe`, `elf`, `cuckoo`, and `dotnet` are not currently bundled. If your rules require custom parsing logic, you can register typed Go callback functions using the extensible module API.
 
-## Requirements and installation
+## Requirements and Installation
 
 `go-yara` requires **Go 1.26.0** or later.
 
@@ -55,18 +58,18 @@ go get github.com/cawalch/go-yara/compiler
 ```
 
 > [!IMPORTANT]
-> Import only the public packages (such as `compiler`, `parser`, `ast`, and `token`). Do not import packages under `internal/`, as their APIs are unstable and subject to change without notice.
+> Import only the public packages (`compiler`, `parser`, `ast`, `semantic`, and `token`). Do not import packages under `internal/`, as their internal APIs are subject to change.
 
-### Experimental SIMD acceleration (Go 1.27+)
+### Experimental SIMD Acceleration (Go 1.27+)
 
 When compiled with **Go 1.27** or later using the standard vector experiment flag (`GOEXPERIMENT=simd`), `go-yara` unlocks hardware-vectorized byte scanning loops:
 
-- **ASCII case-folding (`nocase`)**: `indexASCIIFoldByte` broadcasts and case-folds byte comparisons across 16-byte (NEON/SSE), 32-byte (AVX2), or 64-byte (AVX-512) vector lanes, accelerating case-insensitive string matching.
-- **Character range scanning**: `indexByteRange` evaluates character sets (e.g. `[a-z]`, `[0-9]`) using parallel vector subtraction and unsigned span comparisons.
-- **Teddy multi-literal prefiltering**: Vectorized multi-pattern prefilter inspired by Hyperscan's Teddy algorithm. Uses 16-byte parallel nibble lookups (`archsimd.Uint8x16.LookupOrZero` on ARM NEON) or broadcast equality vectors (AVX2/SSE on AMD64) across 1-byte, 2-byte, or 3-byte prefixes (including case-folded variants), scanning clean and sparse data at 7–11+ GB/s across 2–64 patterns before invoking Aho-Corasick state traversal. Runtime support can be verified with `compiler.TeddySIMDSupported()`.
-- **Aho-Corasick root-miss skipping**: Scans input for matching automaton root transitions at up to 30+ GB/s, rapidly skipping clean or non-matching regions before bytecode evaluation.
+- **ASCII Case-Folding (`nocase`)**: `indexASCIIFoldByte` broadcasts and case-folds byte comparisons across 16-byte (NEON/SSE), 32-byte (AVX2), or 64-byte (AVX-512) vector lanes, accelerating case-insensitive string matching.
+- **Character Range Scanning**: `indexByteRange` evaluates character sets (e.g. `[a-z]`, `[0-9]`) using parallel vector subtraction and unsigned span comparisons.
+- **Teddy Multi-Literal Prefiltering**: Vectorized multi-pattern prefilter inspired by Hyperscan's Teddy algorithm. Uses 16-byte parallel nibble lookups (`archsimd.Uint8x16.LookupOrZero` on ARM NEON) or broadcast equality vectors (AVX2/SSE on AMD64) across 1-byte, 2-byte, or 3-byte prefixes (including case-folded variants), scanning clean and sparse data at 7–11+ GB/s across 2–64 patterns before invoking Aho-Corasick state traversal. Runtime support can be verified with `compiler.TeddySIMDSupported()`.
+- **Aho-Corasick Root-Miss Skipping**: Scans input for matching automaton root transitions at up to 30+ GB/s, rapidly skipping clean or non-matching regions before bytecode evaluation.
 
-#### Enabling SIMD at build time
+#### Enabling SIMD at Build Time
 
 Set `GOEXPERIMENT=simd` when building your application or running tests:
 
@@ -82,7 +85,7 @@ make test-simd
 GOEXPERIMENT=simd go test ./compiler -run TestByteSearch -count=1
 ```
 
-#### Runtime vector width controls
+#### Runtime Vector Width Controls
 
 You can inspect, constrain, or disable vectorization at runtime using `GODEBUG=simd`:
 
@@ -94,7 +97,7 @@ GODEBUG=simd=+128 ./my-scanner
 GODEBUG=simd=0 ./my-scanner
 ```
 
-#### Platform support
+#### Platform Support
 
 | Architecture | Vector Extension | Width | Fallback |
 | :--- | :--- | :--- | :--- |
@@ -146,13 +149,13 @@ rule DetectMalware {
 }
 ```
 
-## Library usage
+## Library Usage
 
-The primary entry point for rule compilation and execution is the `compiler` package.
+The primary entry point for rule compilation and execution is the [`compiler`](file:///Users/cawalch/go-yara/compiler) package.
 
-### Compile and scan byte slices
+### Compile and Scan Byte Slices
 
-Use `CompileSourceWithContext` or `CompileSource` to compile rules from an in-memory string:
+Use `CompileSourceWithContext` (or `CompileSource`) to compile rules from an in-memory string:
 
 ```go
 c := compiler.NewCompiler()
@@ -171,9 +174,9 @@ for _, match := range result.MatchedRules {
 }
 ```
 
-### Compile and scan files
+### Compile and Scan Files
 
-Use `CompileFileWithContext` to compile a rule file from disk, resolving any relative `include` directives against the parent directory:
+Use `CompileFileWithContext` to compile a rule file from disk. Relative `include` directives are resolved automatically against the file's parent directory:
 
 ```go
 c := compiler.NewCompiler()
@@ -192,11 +195,11 @@ for _, match := range result.MatchedRules {
 }
 ```
 
-### Reusable scanners and convenience pooling
+### Reusable Scanners and Convenience Pooling
 
-Convenience scanning methods on `CompiledProgram` (`program.Scan`, `program.Matches`, `program.MatchingRules`) automatically manage an internal, thread-safe `sync.Pool` of reusable scanners, achieving zero heap allocations on repeated scans under default options.
+For high-throughput concurrent workloads (such as web services, message consumer workers, or stream processors), convenience scanning methods directly on `CompiledProgram` (`program.Scan`, `program.Matches`, `program.MatchingRules`) manage an internal, thread-safe `sync.Pool` of reusable scanners. They require no manual cleanup and achieve zero heap allocations on repeated scans under default options.
 
-When custom scanning configurations (such as tag filters, match limits, hooks, or fast-scan flags) are required, or when binding per-worker external variables, instantiate an explicit reusable `Scanner` with functional options:
+When custom scanning configurations are required (such as tag filtering, match threshold caps, telemetry, execution hooks, or fast-scan flags), or when binding worker-local external variables, instantiate an explicit reusable `Scanner` with functional options:
 
 ```go
 func scanBatch(program *compiler.CompiledProgram, samples [][]byte) error {
@@ -218,24 +221,25 @@ func scanBatch(program *compiler.CompiledProgram, samples [][]byte) error {
 }
 ```
 
-### Scan result types and evaluation modes
+### Scan Result Types and Evaluation Modes
 
-The `Scan` method returns a `ScanResult` struct containing:
+The `Scan` method returns a `ScanResult` struct containing comprehensive execution details:
 
-- `MatchedRules`: Public rules that matched the input, including tags, metadata, and matched string details.
-- `RuleResults`: A boolean lookup map containing condition evaluation results for all evaluated rules.
-- `Matches`: Per-rule string matches keyed by rule name and string identifier.
-- `PrunedRules`: Names of rules skipped early due to failing fixed-offset checks.
+- `MatchedRules`: Public rules that evaluated to `true`, including their tags, metadata, and matched string details.
+- `RuleResults`: A fast boolean lookup map keyed by rule name containing evaluation outcomes for all evaluated rules.
+- `Matches`: Verified string matches grouped by rule name and string identifier.
+- `PrunedRules`: Names of rules skipped early due to failing fixed-offset assertions.
+- `Evidence`: Structured findings and correlated field tuples extracted when `WithEvidence` is configured.
 
 You can customize scanner evaluation behavior using functional options:
 
-- **Compact matches (`WithReportedMatchesOnly`)**: Omits string match details for non-matching rules, reducing allocation overhead.
-- **Fast scan (`WithFastScan`)**: Halts pattern matching after finding the first occurrence of each string. The compiler automatically disables fast-scan for rules whose conditions depend on match counts, offsets, or ranges, preserving exact condition semantics.
-- **Match span windowing (`WithMaxMatchSpan`)**: Bounds the maximum byte length evaluated for a single regex match forward from candidate starts (e.g. `compiler.WithMaxMatchSpan(1024)`). Defaults to unlimited (0) for strict YARA specification compliance.
+- **Compact matches (`WithReportedMatchesOnly`)**: Omits string match details for non-matching rules, minimizing allocation overhead.
+- **Fast scan (`WithFastScan`)**: Halts pattern matching after finding the first occurrence of each string. The compiler automatically preserves full occurrences for rules whose conditions depend on match counts (`#`), offsets (`@`), or ranges (`in`), ensuring exact condition semantics are never compromised.
+- **Match span windowing (`WithMaxMatchSpan`)**: Bounds the maximum byte length evaluated forward from candidate regex starts (e.g. `compiler.WithMaxMatchSpan(1024)`). Defaults to unlimited (`0`) for strict YARA specification compliance.
 
-#### Boolean-only matching
+#### Boolean-Only Matching
 
-If you only need to determine whether any rule in the program matched, use `scanner.Matches(data)`:
+If you only need to determine whether any rule in the program matches without inspecting rule names or string offsets, use `scanner.Matches(data)`:
 
 ```go
 hasMatch, err := scanner.Matches(data)
@@ -247,11 +251,11 @@ if hasMatch {
 }
 ```
 
-When all evaluated rules require at least one string match and the shared prefilter finds no candidates, `Matches` returns `false` before running any bytecode. After scanner warm-up, this clean-input path performs zero heap allocations.
+When all rules require string matches and the prefilter detects no candidate literals, `Matches` returns `false` before executing any bytecode VM instructions. After scanner warm-up, this clean-input path performs **zero heap allocations**.
 
-#### Matched-rules filtering
+#### Matched-Rules Filtering
 
-If you need details for matching rules without allocating complete condition tables for non-matching rules, use `scanner.MatchingRules(data)`:
+If you need the list of matched rules and tags without paying the memory cost of allocating full condition result maps for non-matching rules, use `scanner.MatchingRules(data)`:
 
 ```go
 matches, err := scanner.MatchingRules(data)
@@ -265,7 +269,7 @@ for _, match := range matches {
 
 `MatchingRules` evaluates rules using the same prefilter candidate path as `Matches`, returning caller-owned `RuleMatch` structs while avoiding `ScanResult.RuleResults` map allocations.
 
-### Configure external variables
+### Configure External Variables
 
 Rules can reference runtime values defined with the `external` keyword:
 
@@ -279,10 +283,10 @@ rule EnvironmentGate {
 }
 ```
 
-You can set external variable values directly on the compiled program or on a reusable scanner:
+External variables can be bound globally on a compiled program or scoped to a reusable scanner:
 
 ```go
-// Set variables on a compiled program:
+// Set variables globally on a compiled program:
 err := program.SetExternalVariables(map[string]any{
 	"is_production":    true,
 	"environment_name": "staging",
@@ -291,7 +295,7 @@ if err != nil {
 	return err
 }
 
-// Or configure them when constructing a reusable scanner:
+// Or configure them locally when constructing a reusable scanner:
 scanner := compiler.NewScanner(
 	program,
 	compiler.WithExternalVariables(map[string]any{
@@ -301,13 +305,13 @@ scanner := compiler.NewScanner(
 )
 defer scanner.Close()
 
-// You can also update external variables between scans:
+// Update external variables between scans on the same scanner:
 err = scanner.SetExternalVariables(map[string]any{
 	"environment_name": "production",
 })
 ```
 
-### Extract structured secret evidence
+### Extract Structured Secret Evidence
 
 `go-yara` extends standard YARA with an opt-in `capture(...)` string modifier and `evidence:` rule section. This extension enables secret detection, credential extraction, and DLP workflows to extract structured submatch fields (such as usernames, API keys, and endpoints) and correlate fields appearing in close spatial proximity, without altering the rule's boolean condition evaluation.
 
@@ -464,7 +468,7 @@ for _, match := range result.Matches["AWSConfigCredentials"]["$access"] {
 - **Fast-scan safety**: When `WithEvidence` is active, patterns with capture bindings automatically retain all occurrences across the input, even if `WithFastScan` is enabled, ensuring proximity correlation is never distorted.
 - **Zero overhead when disabled**: When `WithEvidence` is omitted or set to `<= 0` (the default), capture replay and correlation logic is completely skipped with zero allocations.
 
-### Tolerate invalid rules during compilation
+### Tolerate Invalid Rules During Compilation
 
 By default, compilation fails if any rule contains a syntax or semantic error. For large rule feeds where invalid rules should not prevent valid rules from compiling, enable resilient compilation:
 
@@ -486,9 +490,9 @@ for _, ignored := range c.GetIgnoredRules() {
 > [!NOTE]
 > Rules that reference an omitted rule are transitively omitted. If an omitted rule is declared `global`, all subsequent rules are also omitted to prevent unintended matching behavior.
 
-### Observability, hooks, and telemetry
+### Observability, Hooks, and Telemetry
 
-`go-yara` provides an allocation-conscious hooks and telemetry system for long-running batch scans, large-file inspection, and high-throughput pipelines. When hooks are disabled (the default), internal bitmask dispatching incurs **zero allocations** and unmeasurable CPU overhead (< 0.5%).
+`go-yara` provides an allocation-conscious hooks and telemetry system for long-running batch scans, large-file inspection, and high-throughput pipelines. When hooks are disabled (the default), internal bitmask dispatching incurs **zero allocations** and negligible CPU overhead (< 0.5%).
 
 #### Public Scanner Options
 
@@ -506,7 +510,7 @@ for _, ignored := range c.GetIgnoredRules() {
 | `WithChunkHook(hook ChunkHook)` | Boundary progress callback during streaming and `BlockScanner` execution. | Invoked per block/chunk |
 | `WithHooks(hooks ScanHooks)` | Bundles any combination of the above callbacks plus `OnScanStart` and `OnScanComplete` lifecycle hooks. | Configured once on Scanner |
 
-#### Telemetry and latency measurement
+#### Telemetry and Latency Measurement
 
 Aggregate scanner metrics and reject/prune counters in-place with zero heap allocations:
 
@@ -527,7 +531,7 @@ fmt.Printf("Scans: %d, Prefilter Rejects: %d, Evaluated: %d, Matches: %d (Total 
 	telemetry.TotalMatches, telemetry.TotalScanDurationNs)
 ```
 
-#### Cooperative polling and throttling
+#### Cooperative Polling and Throttling
 
 For background scans or massive files, `WithPollHook` enables cooperative CPU throttling, yielding (`runtime.Gosched()`), and responsive cancellation:
 
@@ -544,9 +548,9 @@ scanner := program.NewScanner(compiler.WithPollHook(func(ctx context.Context, p 
 }, 64*1024))
 ```
 
-#### Rule efficiency profiling (TSDB / metrics ingestion)
+#### Rule Efficiency Profiling (Metrics Ingestion)
 
-Track single-rule performance, pass/reject rates, VM evaluation steps, and candidate false-positive ratios (ideal for emitting to InfluxDB, Prometheus, or Datadog):
+Track single-rule performance, pass/reject rates, VM evaluation steps, and candidate false-positive ratios (ideal for emitting to Prometheus, Datadog, or OpenTelemetry):
 
 ```go
 scanner := program.NewScanner(compiler.WithRuleProfiling(func(p compiler.RuleProfile) {
@@ -563,7 +567,7 @@ scanner := program.NewScanner(compiler.WithRuleProfiling(func(p compiler.RulePro
 }))
 ```
 
-#### Prefilter observability and dynamic rule gating
+#### Prefilter Observability and Dynamic Rule Gating
 
 Inspect prefilter decisions or dynamically bypass rules at runtime without recompiling the ruleset:
 
@@ -581,7 +585,7 @@ scanner := program.NewScanner(
 )
 ```
 
-#### Streaming match alerts and threshold limits
+#### Streaming Match Alerts and Threshold Limits
 
 Stream matches in real time and abort as soon as a target match threshold is reached:
 
@@ -599,7 +603,7 @@ scanner := program.NewScanner(
 )
 ```
 
-#### Bundled configuration via `ScanHooks`
+#### Bundled Configuration via `ScanHooks`
 
 All callbacks can alternatively be passed as a single cohesive [`compiler.ScanHooks`](compiler/hooks.go) bundle:
 
@@ -618,14 +622,30 @@ hooks := compiler.ScanHooks{
 scanner := program.NewScanner(compiler.WithHooks(hooks))
 ```
 
+### Inspect Semantic Diagnostics and Warnings
 
-### Inspect semantic diagnostics and suggestions
+The compiler and semantic analysis layers emit rich diagnostic feedback:
 
-When performing standalone semantic analysis or linting, the `semantic` package emits structured `Error` diagnostics with machine-readable error codes (such as `undefined-identifier`, `type-mismatch`, and `invalid-modifier`), line/column coordinates, and "did you mean...?" suggestions for misspelled identifiers, module functions, and keywords:
+- **Compiler Warnings**: Inspect non-fatal rule issues such as unreferenced strings (`unused-string`), trivial conditions (`trivial-condition`), duplicate patterns (`duplicate-pattern`), or slow patterns (`slow-pattern`):
+
+```go
+c := compiler.NewCompiler()
+program, err := c.CompileSourceWithContext(ctx, source)
+if err != nil {
+	return err
+}
+
+for _, warn := range c.GetWarnings() {
+	fmt.Printf("[%s] Rule %s: %s at %d:%d\n",
+		warn.Code, warn.Rule, warn.Message, warn.Line, warn.Column)
+}
+```
+
+- **Semantic Analysis Errors**: When building standalone linters or rule validators, the `semantic` package emits structured errors with machine-readable codes and "did you mean...?" suggestions for misspelled identifiers and functions:
 
 ```go
 v := semantic.NewValidator()
-errors := v.ValidateProgram(program)
+errors := v.ValidateProgram(astProgram)
 for _, err := range errors {
 	if semErr, ok := err.(*semantic.Error); ok {
 		fmt.Printf("[%s] %s at %d:%d\n",
@@ -637,7 +657,7 @@ for _, err := range errors {
 }
 ```
 
-### Use built-in and custom modules
+### Use Built-in and Custom Modules
 
 Rules can import the built-in `hash` and `math` modules:
 
@@ -652,19 +672,24 @@ rule ModuleDemo {
 }
 ```
 
-To register custom modules, use `compiler.WithModule`:
+To register custom modules, supply a [`compiler.Module`](file:///Users/cawalch/go-yara/compiler/modules.go) definition via `compiler.WithModule`:
 
 ```go
-customModule := compiler.NewModule("custom")
-customModule.RegisterFunction(compiler.ModuleFunction{
-	Name:       "is_authorized",
-	ParamTypes: []compiler.Type{compiler.TypeString},
-	ReturnType: compiler.TypeBool,
-	Evaluate: func(ctx *compiler.ModuleContext, args []any) (any, error) {
-		token, _ := args[0].(string)
-		return token == "valid-auth-token", nil
+customModule := compiler.Module{
+	Name: "auth",
+	Functions: map[string]compiler.ModuleFunction{
+		"is_authorized": {
+			Signatures: []compiler.ModuleSignature{
+				{Arguments: []compiler.ModuleValueType{compiler.ModuleString}},
+			},
+			ReturnType: compiler.ModuleBoolean,
+			Evaluate: func(ctx compiler.ModuleContext, args []compiler.ModuleValue) (compiler.ModuleValue, error) {
+				token := args[0].String
+				return compiler.BooleanValue(token == "valid-auth-token"), nil
+			},
+		},
 	},
-})
+}
 
 c := compiler.NewCompiler(compiler.WithModule(customModule))
 program, err := c.CompileSourceWithContext(ctx, source)
@@ -672,7 +697,7 @@ program, err := c.CompileSourceWithContext(ctx, source)
 
 Module callback functions execute during scan evaluation. Callbacks must be deterministic, bounded, and safe for concurrent execution across multiple scanners.
 
-### Scan non-contiguous memory blocks
+### Scan Non-Contiguous Memory Blocks
 
 Use `BlockScanner` to scan sparse, segmented, or out-of-order memory regions (such as process memory dumps or fragmented files) and evaluate complete rule conditions once all blocks are loaded:
 
@@ -707,9 +732,9 @@ for _, match := range result.MatchedRules {
 > [!IMPORTANT]
 > The caller must supply overlapping bytes if a pattern crosses a block boundary. The scanner does not synthesize bytes across unprovided address gaps.
 
-### Serialize and cache compiled programs
+### Serialize and Cache Compiled Programs
 
-You can serialize compiled programs to disk or storage to eliminate parsing and bytecode generation overhead on startup:
+You can serialize compiled programs to disk or distributed cache to eliminate parsing and bytecode generation overhead on startup:
 
 ```go
 // Serialize the compiled program:
@@ -727,12 +752,12 @@ if err != nil {
 
 For stream-based serialization, use `program.WriteTo(writer)` and `compiler.ReadCompiledProgram(reader)`.
 
-- The binary format uses format version 3 and rejects incompatible or truncated payloads.
+- The binary format uses format version 3 and validates headers, magic numbers, and checksums.
 - Serialized programs preserve compiled regex automatons, hex tables, and prefilter structures.
 - External variable values are not serialized; you must re-apply them on the restored program or scanner.
-- If you use custom modules, provide them to `UnmarshalCompiledProgram` or `ReadCompiledProgram` to rebind function handlers.
+- When restoring programs with custom modules, pass them to `UnmarshalCompiledProgram` or `ReadCompiledProgram` to rebind function handlers.
 
-### Inspect rule dependencies and pruning
+### Inspect Rule Dependencies and Pruning
 
 Inspect rule relationships and dependency graphs directly on the compiled program:
 
@@ -744,7 +769,7 @@ graph := program.DependencyGraph()
 
 Rules with mandatory fixed-offset checks (such as `uint16(0) == 0x5a4d`) are automatically evaluated early against target data. If the assertion fails, the rule is pruned before its strings are scanned. You can inspect pruned rules via `result.PrunedRules`.
 
-### Diagnostic and heuristic metrics
+### Diagnostic and Heuristic Metrics
 
 The compiler provides inspection methods for debugging, static sizing, and testing:
 
@@ -753,13 +778,13 @@ The compiler provides inspection methods for debugging, static sizing, and testi
 - `EstimateComplexity()`: Computes relative condition evaluation complexity.
 - `EstimatePatternComplexity()`: Computes relative string pattern matching complexity.
 
-## Command-line interface
+## Command-Line Interface
 
 The repository includes a command-line interface under `cmd/`.
 
-### Basic CLI usage
+### Basic CLI Usage
 
-The CLI accepts the rule file path as its first argument:
+The CLI accepts a YARA rule file path as its first argument:
 
 ```bash
 # Compile and validate rules (default mode):
@@ -775,9 +800,9 @@ go run ./cmd ./examples/demo_rule.yar --mode=parse
 go run ./cmd ./examples/demo_rule.yar --mode=execute --data ./target_sample.dat
 ```
 
-### Streaming mode
+### Streaming Mode
 
-For large files, you can use streaming execution to scan text patterns in chunks:
+For large files, streaming execution evaluates text patterns in sequential chunks:
 
 ```bash
 go run ./cmd ./examples/demo_rule.yar \
@@ -789,16 +814,16 @@ go run ./cmd ./examples/demo_rule.yar \
 ```
 
 > [!NOTE]
-> Streaming execution reports literal text pattern occurrences only. It does not evaluate regex or hex patterns, and does not evaluate full rule conditions. For complete condition evaluation, use the default execute mode or the `BlockScanner` Go API.
+> Streaming mode reports literal text pattern occurrences only. It does not evaluate regex or hex patterns, and does not evaluate full rule conditions. For full condition evaluation on partitioned or streamed data, use the default execute mode or the `BlockScanner` Go API.
 
-## Repository layout
+## Repository Layout
 
 The project is structured into the following packages:
 
-- [`compiler/`](compiler/): Core compilation pipeline, scanner engine, bytecode interpreter, prefilter indexing, and serialization.
-- [`parser/`](parser/): YARA grammar parser and recursive-descent syntax tree builder.
-- [`semantic/`](semantic/): Semantic analyzer, type checker, and validation rules.
-- [`ast/`](ast/): AST definitions, node types, and visitor patterns.
+- [`compiler/`](compiler/): Core compilation pipeline, scanner engine, bytecode VM, prefilter indexing, and binary serialization.
+- [`parser/`](parser/): Recursive-descent YARA grammar parser and AST builder.
+- [`semantic/`](semantic/): Semantic analyzer, type checker, symbol table, and validation rules.
+- [`ast/`](ast/): AST node definitions, expression interfaces, and visitor patterns.
 - [`regex/`](regex/): Embedded regular expression compiler and matching engine.
 - [`token/`](token/): Token definitions and lexical constants.
 - [`internal/lexer/`](internal/lexer/): Lexer implementation used by the parser and compiler.
@@ -807,15 +832,28 @@ The project is structured into the following packages:
 - [`examples/`](examples/): Example rules and integration demonstrations.
 - [`testdata/`](testdata/): Test suites, benchmarks, and regression fixtures.
 
-## Known limitations
+## Known Limitations
 
-- **Upstream module parity**: Structured module object models such as `pe`, `elf`, `cuckoo`, and `dotnet` are not implemented.
-- **Pattern overlap in block scanning**: When scanning non-contiguous blocks, patterns spanning across block boundaries require overlapping block input from the caller.
-- **Data read edge cases**: Certain boundary conditions in low-level integer read functions (such as reading past buffer bounds) may differ from native C-based YARA behavior.
+- **Upstream Module Parity**: Structured C-based module object models such as `pe`, `elf`, `cuckoo`, and `dotnet` are not implemented. Custom modules can be registered via the Go module API.
+- **Pattern Overlap in Block Scanning**: When scanning non-contiguous blocks, patterns spanning across block boundaries require overlapping block input from the caller.
+- **Data Read Edge Cases**: Boundary conditions in low-level integer read functions (such as reading past buffer bounds) may differ subtly from native C-based `libyara` behavior.
 
-## Testing and development
+## Testing and Development
 
-### Run validation checks
+### Build Binaries
+
+```bash
+# Build the go-yara CLI binary under bin/:
+make build
+
+# Build with experimental SIMD acceleration enabled (Go 1.27+):
+make build-simd
+
+# Clean build outputs, coverage reports, and profiling dumps:
+make clean
+```
+
+### Validation and Test Suites
 
 To run the complete verification suite (formatting, module tidiness, static analysis, linters, and unit tests):
 
@@ -829,35 +867,51 @@ To run individual test stages:
 # Run unit and integration tests:
 make test
 
-# Run unit tests and libyara bugproof differential suite:
+# Run all unit tests plus the libyara 4.5.8 differential bugproof suite:
 make test-all
 
-# Run tests with the race detector enabled:
+# Run the libyara differential proof suite only:
+make test-bugproof
+
+# Run tests with the Go race detector enabled:
 make test-race
 
-# Run custom static analyzers:
+# Run SIMD byte search tests (Go 1.27+):
+make test-simd
+
+# Run repository-specific static analyzers:
 make analyze
 
-# Check code formatting and module tidy state:
-make fmt-check
-make tidy-check
-
-# Automatically format, tidy modules, and apply linter fixes:
-make fix
-
-# Generate test coverage HTML report:
+# Generate HTML test coverage report (coverage.html):
 make coverage
 ```
 
-### Run fuzz testing
+### Code Hygiene and Formatting
 
-Run fuzz targets using the bundled script:
+```bash
+# Format Go source files with gofmt and goimports:
+make fmt
+
+# Verify code formatting and module tidy state:
+make fmt-check
+make tidy-check
+
+# Run linters and apply automatic fixes:
+make lint-fix
+
+# Run fmt, tidy, and lint-fix in one step:
+make fix
+```
+
+### Fuzz Testing
+
+Run continuous fuzzing across all targets:
 
 ```bash
 make fuzz FUZZTIME=30s
 ```
 
-### Run benchmarks and profiling
+### Benchmarks and Profiling
 
 Run performance benchmark suites:
 
@@ -865,7 +919,7 @@ Run performance benchmark suites:
 # Run compiler benchmarks:
 make bench PKG=./compiler
 
-# Run scanner performance benchmarks:
+# Run core scanner throughput benchmarks:
 make bench-scan
 
 # Benchmark experimental SIMD acceleration (Go 1.27+):
@@ -877,6 +931,12 @@ make bench-prefilter-scale
 # Benchmark single rule scaling across input sizes:
 make bench-single-rule-size
 
+# Save benchmark results for differential analysis:
+make bench-save
+
+# Compare benchmark runs using benchstat:
+make benchstat BASE=benchmarks/old.txt NEW=benchmarks/new.txt
+
 # Generate CPU and memory profiles:
 make profile-scan
 
@@ -886,7 +946,7 @@ make trace-scan
 
 Benchmark output and profiling artifacts are generated under the ignored `benchmarks/` and `profiles/` directories.
 
-## Additional documentation
+## Additional Documentation
 
 - [Targeted regression fixture notes](test_regression/README.md)
 - [Performance benchmark test data and inputs](testdata/performance/README.md)
