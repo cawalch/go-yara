@@ -71,6 +71,13 @@ func (s *Scanner) evaluateRuleCondition(
 	if err := s.populateRuleMatchContext(ctx, rule, input); err != nil {
 		return ruleEvaluation{}, err
 	}
+	if !s.prefilterDisabled && input.skipUnmatchedContext && s.hasForbiddenStringMatch(rule, input.usesharedAutomaton) {
+		s.recordRuleResult(rule, false)
+		if s.hookMask&(hookBitTelemetry|hookBitRuleProfile) != 0 {
+			s.recordRuleEvaluatedHooks(rule, false, ruleStart)
+		}
+		return ruleEvaluation{}, nil
+	}
 	if !s.prefilterDisabled && rule.RequiresStringMatch && len(s.matchCtx.spans) == 0 {
 		s.recordRuleResult(rule, false)
 		if s.hookMask&(hookBitTelemetry|hookBitRuleProfile) != 0 {
@@ -189,6 +196,10 @@ func (s *Scanner) populateRuleMatchContext(
 		if err := s.addLocalTextMatches(ctx, rule, input.data); err != nil {
 			return err
 		}
+	}
+
+	if !s.prefilterDisabled && input.skipUnmatchedContext && s.hasForbiddenStringMatch(rule, input.usesharedAutomaton) {
+		return nil
 	}
 
 	canShortCircuit := rule.ConditionMonotonic &&

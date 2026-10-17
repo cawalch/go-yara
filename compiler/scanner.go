@@ -55,6 +55,7 @@ type Scanner struct {
 	// non-text covers produce no exact matches.
 	allEvaluatedRulesRequireSharedPatterns bool
 	sharedNonTextMatched                   bool
+	skipUnmatchedNonText                   bool
 	alwaysEvaluateSharedRules              []int
 	evaluatedGlobalRules                   []int
 	// Candidate rule indices are deduplicated and sorted before sparse exact
@@ -307,6 +308,9 @@ func (s *Scanner) computeAllEvaluatedRulesRequireSharedPatterns() bool {
 func (cp *CompiledProgram) ruleHasCompleteSharedPrefilter(rule *CompiledRule) bool {
 	if !rule.RequiresStringMatch || len(rule.prefilterStrings) == 0 {
 		return false
+	}
+	if bestSharedRequiredStringIndex(rule, cp.sharedNonTextCaches) >= 0 {
+		return true
 	}
 	for _, info := range rule.prefilterStrings {
 		switch info.class {

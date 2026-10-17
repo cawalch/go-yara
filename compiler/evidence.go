@@ -217,8 +217,7 @@ func replayCaptureSpans(
 	}
 	modifiers := rule.StringModifiers[pattern]
 	flagOptions, optionCount := replayFlagOptions(regexPattern.Flags, modifiers)
-	for index := range optionCount {
-		flags := flagOptions[index]
+	for _, flags := range flagOptions[:min(optionCount, len(flagOptions))] {
 		captured, matched := regex.ExecCapturesAtWithScratch(
 			scratch,
 			regexPattern.CaptureCode,

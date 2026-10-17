@@ -2,7 +2,6 @@ package compiler
 
 import (
 	"fmt"
-	"slices"
 
 	"github.com/cawalch/go-yara/ast"
 	"github.com/cawalch/go-yara/regex"
@@ -80,39 +79,66 @@ func sharedNonTextCacheCoverage(size int, lookup []sharedAutomatonEntry) []bool 
 	return covered
 }
 
-func ruleHasSharedRequiredString(rule *CompiledRule, covered []bool) bool {
+func bestSharedRequiredStringIndex(rule *CompiledRule, covered []bool) int {
 	if rule == nil || len(rule.requiredStrings) == 0 {
-		return false
+		return -1
 	}
+	bestIdx := -1
+	bestScore := -1
 	for _, id := range rule.requiredStrings {
 		idx := rule.ResolveStringIndex(id)
 		if idx < 0 || idx >= len(rule.prefilterStrings) {
 			continue
 		}
 		info := rule.prefilterStrings[idx]
+		score := -1
 		switch info.class {
 		case prefilterStringText:
-			return true
+			score = prefilterAtomScore(rule.TextPatterns[id])
 		case prefilterStringNonText:
 			if info.cacheIndex >= 0 && info.cacheIndex < len(covered) && covered[info.cacheIndex] {
-				return true
+				// Non-text caches only mark candidate rules after full regex/hex
+				// verification succeeds, making them strictly more selective than
+				// raw automaton text hits.
+				score = 1_000_000
+				if pattern, ok := rule.RegexPatterns[id]; ok {
+					score += len(pattern.Code)
+				} else if hexPattern, ok := rule.HexPatterns[id]; ok && hexPattern != nil {
+					score += len(hexPattern.Tokens)
+				}
 			}
 		}
+		if score > bestScore {
+			bestScore = score
+			bestIdx = idx
+		}
 	}
-	return false
+	return bestIdx
 }
 
-func ruleStringCanTriggerCandidate(rule *CompiledRule, stringIdx int, hasSharedRequired bool) bool {
-	if !hasSharedRequired || rule == nil || stringIdx < 0 || stringIdx >= len(rule.IndexToStringID) {
-		return true
-	}
-	return slices.Contains(rule.requiredStrings, rule.IndexToStringID[stringIdx])
+func ruleStringCanTriggerCandidate(stringIdx, bestReqIdx int) bool {
+	return bestReqIdx < 0 || stringIdx == bestReqIdx
 }
 
 func markSharedLookupCandidateTriggers(rules []*CompiledRule, lookup []sharedAutomatonEntry, covered []bool) {
-	hasSharedRequired := make([]bool, len(rules))
+	bestReq := make([]int, len(rules))
+	cacheRuleOwner := make([]int, len(covered))
+	for i := range cacheRuleOwner {
+		cacheRuleOwner[i] = -1
+	}
 	for i, rule := range rules {
-		hasSharedRequired[i] = ruleHasSharedRequiredString(rule, covered)
+		bestReq[i] = bestSharedRequiredStringIndex(rule, covered)
+		for _, info := range rule.prefilterStrings {
+			if info.class != prefilterStringNonText || info.cacheIndex < 0 || info.cacheIndex >= len(cacheRuleOwner) {
+				continue
+			}
+			switch cacheRuleOwner[info.cacheIndex] {
+			case -1, i:
+				cacheRuleOwner[info.cacheIndex] = i
+			default:
+				cacheRuleOwner[info.cacheIndex] = -2
+			}
+		}
 	}
 	for i := range lookup {
 		entry := &lookup[i]
@@ -120,25 +146,26 @@ func markSharedLookupCandidateTriggers(rules []*CompiledRule, lookup []sharedAut
 			entry.canTriggerRule = true
 			continue
 		}
-		rule := rules[entry.RuleIndex]
 		entry.canTriggerRule = ruleStringCanTriggerCandidate(
-			rule,
 			entry.StringIdx,
-			hasSharedRequired[entry.RuleIndex],
+			bestReq[entry.RuleIndex],
 		)
+		entry.singleRuleCache = entry.CacheIndex >= 0 &&
+			entry.CacheIndex < len(cacheRuleOwner) &&
+			cacheRuleOwner[entry.CacheIndex] == entry.RuleIndex
 	}
 }
 
 func sharedNonTextCacheRuleLookup(rules []*CompiledRule, covered []bool) [][]int {
 	lookup := make([][]int, len(covered))
 	for ruleIndex, rule := range rules {
-		hasSharedRequired := ruleHasSharedRequiredString(rule, covered)
+		bestReqIdx := bestSharedRequiredStringIndex(rule, covered)
 		for stringIdx, info := range rule.prefilterStrings {
 			if info.class != prefilterStringNonText || info.cacheIndex < 0 ||
 				info.cacheIndex >= len(covered) || !covered[info.cacheIndex] {
 				continue
 			}
-			if !ruleStringCanTriggerCandidate(rule, stringIdx, hasSharedRequired) {
+			if !ruleStringCanTriggerCandidate(stringIdx, bestReqIdx) {
 				continue
 			}
 			ruleIndices := lookup[info.cacheIndex]

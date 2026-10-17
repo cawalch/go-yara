@@ -137,6 +137,8 @@ func (rc *ruleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 		return nil, fmt.Errorf("generating bytecode: %w", err)
 	}
 
+	requiredStrings, forbiddenStrings := deriveStringPresenceBounds(rule.Condition, rule.Strings)
+
 	// Create compiled rule
 	compiledRule := &CompiledRule{
 		Name:                rule.Name,
@@ -170,7 +172,8 @@ func (rc *ruleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 		ModuleFunctions:     maps.Clone(rc.moduleFunctions),
 		ModuleNames:         maps.Clone(rc.moduleNames),
 		HeaderConstraints:   deriveHeaderConstraints(rule.Condition),
-		requiredStrings:     deriveRequiredStrings(rule.Condition, rule.Strings),
+		requiredStrings:     requiredStrings,
+		forbiddenStrings:    forbiddenStrings,
 		booleanPatterns:     booleanRoutingPatterns(rule),
 	}
 
@@ -1222,6 +1225,7 @@ type CompiledRule struct {
 	// across concurrent scanners alongside the rest of the program.
 	prefilterStrings []prefilterStringInfo
 	requiredStrings  []string
+	forbiddenStrings []string
 	booleanPatterns  []*ast.String
 	dependencies     []string // nil means dependency metadata is unavailable
 
@@ -1432,6 +1436,7 @@ type sharedAutomatonEntry struct {
 	forceShared     bool
 	IsWide          bool
 	canTriggerRule  bool
+	singleRuleCache bool
 }
 
 // CompiledProgram represents an immutable, thread-safe collection of compiled YARA rules.
@@ -1485,6 +1490,7 @@ func NewCompiledProgram(rules []*CompiledRule) *CompiledProgram {
 		}
 		copyRule := *rule
 		copyRule.requiredStrings = slices.Clone(rule.requiredStrings)
+		copyRule.forbiddenStrings = slices.Clone(rule.forbiddenStrings)
 		copyRule.RegexPatterns = maps.Clone(rule.RegexPatterns)
 		copyRule.HexPatterns = make(map[string]*HexPattern, len(rule.HexPatterns))
 		for id, pattern := range rule.HexPatterns {

@@ -741,6 +741,14 @@ func (s *Scanner) populateNonTextPrefilterCache(
 				touchedIndex++
 				continue
 			}
+			if s.canSkipSharedNonTextEntry(groupEntry, rule, data) {
+				cache.set(entry.CacheIndex, nil)
+				for touchedIndex < len(s.touchedPrefilterCandidates) &&
+					s.touchedPrefilterCandidates[touchedIndex] < groupEnd {
+					touchedIndex++
+				}
+				continue
+			}
 			strID := rule.IndexToStringID[groupEntry.StringIdx]
 			dst := cache.matches[entry.CacheIndex]
 			matchGroupStart := len(dst)
@@ -779,6 +787,11 @@ func (s *Scanner) populateNonTextPrefilterCache(
 			touchedIndex++
 			continue
 		}
+		if s.canSkipSharedNonTextEntry(entry, rule, data) {
+			cache.set(entry.CacheIndex, nil)
+			touchedIndex++
+			continue
+		}
 		strID := rule.IndexToStringID[entry.StringIdx]
 		candidates := s.prefilterCandidates[lookupIdx]
 
@@ -803,6 +816,14 @@ func (s *Scanner) populateNonTextPrefilterCache(
 		touchedIndex++
 	}
 	return ctx.Err()
+}
+
+func (s *Scanner) canSkipSharedNonTextEntry(entry sharedAutomatonEntry, rule *CompiledRule, data []byte) bool {
+	return !s.prefilterDisabled &&
+		s.skipUnmatchedNonText &&
+		entry.singleRuleCache &&
+		s.hookMask&(hookBitTelemetry|hookBitRuleProfile) == 0 &&
+		s.ruleRejectedBeforeNonText(rule, data)
 }
 
 func sortAndDedupeMatchSpans(matches []matchSpan) []matchSpan {
