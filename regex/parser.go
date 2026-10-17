@@ -182,9 +182,15 @@ func (p *Parser) parseBase() (*Node, error) {
 		p.next()
 		return &Node{Kind: NodeLiteral, Value: '}', Greedy: true}, nil
 	case tLParen:
-		p.groupCount++
-		group := p.groupCount
 		p.next()
+		group := 0
+		if p.cur.kind == tQMark && p.lx.i < p.lx.len && p.lx.s[p.lx.i] == ':' {
+			p.next()
+			p.next()
+		} else {
+			p.groupCount++
+			group = p.groupCount
+		}
 		n, err := p.parseAlternative()
 		if err != nil {
 			return nil, err

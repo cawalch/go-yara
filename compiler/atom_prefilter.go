@@ -839,7 +839,9 @@ func appendRegexPrefilterMatches(
 		return appendRegexFallbackMatches(dst, rule, strID, pattern, data, flags, entry.IsWide, done)
 	}
 	limit := max(1024, len(data)/4)
-	starts, handled := collectRegexCandidateStarts(
+	var startsBuf [32]int
+	starts, handled := collectRegexCandidateStartsInto(
+		startsBuf[:0],
 		candidates,
 		entry.AtomOffset,
 		entry.AtomMaxOffset,

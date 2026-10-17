@@ -278,7 +278,11 @@ func shouldAddSharedNonTextPrefilters(automaton *acAutomaton, specs []sharedPref
 	}
 	for value, nextState := range automaton.states[0].transitions {
 		if nextState != -1 && !addRootByte(byte(value)) {
-			return false
+			// Text patterns alone already exceed the sparse-root threshold, and
+			// text patterns force the shared automaton to run on every scan.
+			// Including non-text prefilter atoms in the same pass avoids running
+			// separate per-rule regex/hex searches on every event.
+			return true
 		}
 	}
 	for _, spec := range specs {

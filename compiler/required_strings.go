@@ -50,12 +50,37 @@ func requiredStringPresence(expr ast.Expression, patterns []*ast.String) ([]stri
 			}
 		}
 		return result, true
-	case *ast.OfExpression:
-		count, ok := e.Count.(*ast.Identifier)
-		if !ok || count.Name != QuantifierAll || e.InRange != nil || e.AtOffset != nil {
+	case *ast.UnaryOp:
+		if e.Op != token.NOT {
 			return nil, false
 		}
-		return requiredStringSet(e.Strings, patterns)
+		_, safe := requiredStringPresence(e.Right, patterns)
+		return nil, safe
+	case *ast.OfExpression:
+		if e.InRange != nil || e.AtOffset != nil {
+			return nil, false
+		}
+		count, ok := e.Count.(*ast.Identifier)
+		if !ok {
+			return nil, false
+		}
+		ids, safe := requiredStringSet(e.Strings, patterns)
+		if !safe {
+			return nil, false
+		}
+		switch count.Name {
+		case QuantifierAll:
+			return ids, true
+		case QuantifierAny:
+			if len(ids) == 1 {
+				return ids, true
+			}
+			return nil, true
+		case QuantifierNone:
+			return nil, true
+		default:
+			return nil, false
+		}
 	default:
 		return nil, false
 	}

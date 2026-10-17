@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"github.com/cawalch/go-yara/internal/wordmatch"
+	"github.com/cawalch/go-yara/regex"
 )
 
 // Scanner provides a reusable, allocation-efficient YARA scanning engine.
@@ -65,6 +66,8 @@ type Scanner struct {
 	matchedRuleIndices []int
 	// Reusable scratch worklist for hex pattern backtracking.
 	hexScratch hexMatchScratch
+	// Reusable scratch buffers for regex capture replay.
+	captureScratch regex.CaptureScratch
 	// Single-block scans reuse this slot to expose absolute addresses to the
 	// interpreter without allocating a []MemoryBlock per event.
 	blockContext  [1]MemoryBlock

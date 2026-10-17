@@ -388,12 +388,16 @@ func runMatch(code, s []byte, flags Flags, start int, done <-chan struct{}, scan
 	}
 
 	if exhausted {
+		st.cur = cur[:0]
+		st.next = next[:0]
 		st.gen = gen
 		putVMState(st)
 		return matched, length
 	}
 
 	// End of input: return the longest match (if any) for this start.
+	st.cur = cur[:0]
+	st.next = next[:0]
 	st.gen = gen
 	putVMState(st)
 	if bestEnd >= 0 {
@@ -524,6 +528,8 @@ func runAtMatchBatchWithCancel(bs *VMBatch, code, s []byte, flags Flags, start i
 	}
 
 	bs.gen = gen + 1
+	st.cur = cur[:0]
+	st.next = next[:0]
 	st.gen = gen
 	if exhausted {
 		return matched, length

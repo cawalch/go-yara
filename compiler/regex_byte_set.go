@@ -328,11 +328,24 @@ func collectRegexCandidateStarts(
 	isWide bool,
 	dataLength, limit int,
 ) ([]int, bool) {
+	return collectRegexCandidateStartsInto(nil, atomStarts, minOffset, maxOffset, isWide, dataLength, limit)
+}
+
+//nolint:revive // argument-limit: shared by local and Aho-Corasick candidate paths
+func collectRegexCandidateStartsInto(
+	dst, atomStarts []int,
+	minOffset, maxOffset int,
+	isWide bool,
+	dataLength, limit int,
+) ([]int, bool) {
 	step := 1
 	if isWide {
 		step = 2
 	}
-	starts := make([]int, 0, min(limit, len(atomStarts)*2))
+	starts := dst[:0]
+	if cap(starts) == 0 {
+		starts = make([]int, 0, min(limit, len(atomStarts)*2))
+	}
 	for _, atomStart := range atomStarts {
 		first := max(0, atomStart-maxOffset)
 		last := min(dataLength, atomStart-minOffset)

@@ -94,12 +94,16 @@ func (s *Scanner) populateRuleEvidence(
 		return nil, nil
 	}
 
-	occurrences := make([]captureOccurrence, 0)
-	patterns := make([]string, 0, len(rule.CaptureBindings))
+	var occurrencesBuf [16]captureOccurrence
+	occurrences := occurrencesBuf[:0]
+	var patternsBuf [8]string
+	patterns := patternsBuf[:0]
 	for pattern := range rule.CaptureBindings {
 		patterns = append(patterns, pattern)
 	}
-	slices.Sort(patterns)
+	if len(patterns) > 1 {
+		slices.Sort(patterns)
+	}
 	for _, pattern := range patterns {
 		bindings := rule.CaptureBindings[pattern]
 		perPattern := matches[pattern]
@@ -112,14 +116,37 @@ func (s *Scanner) populateRuleEvidence(
 			if !ok {
 				return nil, fmt.Errorf("capture source for %s at offset %d is unavailable", pattern, match.Offset)
 			}
-			spans, err := replayCaptureSpans(rule, pattern, bindings, input)
+			captured, groups, err := replayCaptureSpans(&s.captureScratch, rule, pattern, bindings, input)
 			if err != nil {
 				return nil, fmt.Errorf("replaying captures for %s at offset %d: %w", pattern, match.Offset, err)
 			}
+			totalCopyBytes := 0
+			matchedCount := 0
+			for _, binding := range bindings {
+				span := resolveBindingCaptureSpan(binding.Group, input, captured, groups)
+				if !span.Matched {
+					continue
+				}
+				matchedCount++
+				totalCopyBytes += min(span.End-span.Start, s.evidenceMax)
+			}
+			if matchedCount == 0 {
+				continue
+			}
+			var dataSlab []byte
+			if totalCopyBytes > 0 {
+				dataSlab = make([]byte, totalCopyBytes)
+			}
+			if cap(match.Captures) < len(match.Captures)+matchedCount {
+				grown := make([]Capture, len(match.Captures), len(match.Captures)+matchedCount)
+				copy(grown, match.Captures)
+				match.Captures = grown
+			}
+			slabPos := 0
 			parent := captureParent{pattern: pattern, offset: match.Offset, length: match.Length}
 			for _, binding := range bindings {
-				span, exists := spans[binding.Group]
-				if !exists || !span.Matched {
+				span := resolveBindingCaptureSpan(binding.Group, input, captured, groups)
+				if !span.Matched {
 					continue
 				}
 				capture := Capture{
@@ -130,7 +157,13 @@ func (s *Scanner) populateRuleEvidence(
 					Length:  span.End - span.Start,
 				}
 				copyLength := min(capture.Length, s.evidenceMax)
-				capture.Data = copyBytes(input.data[span.Start : span.Start+copyLength])
+				if copyLength > 0 {
+					copy(dataSlab[slabPos:slabPos+copyLength], input.data[span.Start:span.Start+copyLength])
+					capture.Data = dataSlab[slabPos : slabPos+copyLength : slabPos+copyLength]
+					slabPos += copyLength
+				} else {
+					capture.Data = []byte{}
+				}
 				capture.DataTruncated = copyLength < capture.Length
 				match.Captures = append(match.Captures, capture)
 				occurrences = append(occurrences, captureOccurrence{capture: capture, parent: parent})
@@ -139,7 +172,9 @@ func (s *Scanner) populateRuleEvidence(
 		matches[pattern] = perPattern
 	}
 
-	sortCaptureOccurrences(occurrences)
+	if len(occurrences) > 1 {
+		sortCaptureOccurrences(occurrences)
+	}
 	evidence := correlateEvidence(rule.EvidencePlans, occurrences)
 	if len(evidence) == 0 {
 		return nil, nil
@@ -147,31 +182,45 @@ func (s *Scanner) populateRuleEvidence(
 	return evidence, nil
 }
 
+//nolint:revive // helper keeps capture group and outer match span explicit
+func resolveBindingCaptureSpan(
+	group int,
+	input captureInput,
+	captured []regex.CaptureSpan,
+	groups []int,
+) regex.CaptureSpan {
+	if group == 0 {
+		return regex.CaptureSpan{Start: input.start, End: input.end, Matched: true}
+	}
+	for slot, candidateGroup := range groups {
+		if candidateGroup == group && slot < len(captured) {
+			return captured[slot]
+		}
+	}
+	return regex.CaptureSpan{}
+}
+
 //nolint:revive // capture replay keeps the compiled rule and concrete outer match explicit
 func replayCaptureSpans(
+	scratch *regex.CaptureScratch,
 	rule *CompiledRule,
 	pattern string,
 	bindings []ast.CaptureBinding,
 	input captureInput,
-) (map[int]regex.CaptureSpan, error) {
-	spans := make(map[int]regex.CaptureSpan, len(bindings))
-	for _, binding := range bindings {
-		if binding.Group == 0 {
-			spans[0] = regex.CaptureSpan{Start: input.start, End: input.end, Matched: true}
-		}
-	}
-	positive := positiveBindingGroups(bindings)
-	if len(positive) == 0 {
-		return spans, nil
+) ([]regex.CaptureSpan, []int, error) {
+	if !hasPositiveBindingGroups(bindings) {
+		return nil, nil, nil
 	}
 	regexPattern, ok := rule.RegexPatterns[pattern]
 	if !ok || len(regexPattern.CaptureCode) == 0 {
-		return nil, errors.New("compiled capture program is missing")
+		return nil, nil, errors.New("compiled capture program is missing")
 	}
 	modifiers := rule.StringModifiers[pattern]
-	flagOptions := replayFlagOptions(regexPattern.Flags, modifiers)
-	for _, flags := range flagOptions {
-		captured, matched := regex.ExecCapturesAt(
+	flagOptions, optionCount := replayFlagOptions(regexPattern.Flags, modifiers)
+	for index := range optionCount {
+		flags := flagOptions[index]
+		captured, matched := regex.ExecCapturesAtWithScratch(
+			scratch,
 			regexPattern.CaptureCode,
 			input.data,
 			flags,
@@ -182,37 +231,34 @@ func replayCaptureSpans(
 		if !matched {
 			continue
 		}
-		for slot, group := range regexPattern.CaptureGroups {
-			if slot < len(captured) {
-				spans[group] = captured[slot]
-			}
-		}
-		return spans, nil
+		return captured, regexPattern.CaptureGroups, nil
 	}
-	return nil, errors.New("tagged regex did not reproduce the outer match")
+	return nil, nil, errors.New("tagged regex did not reproduce the outer match")
 }
 
-func positiveBindingGroups(bindings []ast.CaptureBinding) []int {
-	var groups []int
+func hasPositiveBindingGroups(bindings []ast.CaptureBinding) bool {
 	for _, binding := range bindings {
-		if binding.Group > 0 && !slices.Contains(groups, binding.Group) {
-			groups = append(groups, binding.Group)
+		if binding.Group > 0 {
+			return true
 		}
 	}
-	return groups
+	return false
 }
 
-func replayFlagOptions(flags regex.Flags, modifiers []ast.StringModifier) []regex.Flags {
+func replayFlagOptions(flags regex.Flags, modifiers []ast.StringModifier) ([2]regex.Flags, int) {
 	hasWide := hasModifier(modifiers, ast.StringModifierWide)
 	hasASCII := hasModifier(modifiers, ast.StringModifierASCII)
-	options := make([]regex.Flags, 0, 2)
+	var options [2]regex.Flags
+	count := 0
 	if hasWide {
-		options = append(options, flags|regex.FlagsWide)
+		options[count] = flags | regex.FlagsWide
+		count++
 	}
 	if !hasWide || hasASCII {
-		options = append(options, flags&^regex.FlagsWide)
+		options[count] = flags &^ regex.FlagsWide
+		count++
 	}
-	return options
+	return options, count
 }
 
 func correlateEvidence(plans []EvidencePlan, occurrences []captureOccurrence) map[string][]EvidenceFinding {
@@ -221,25 +267,38 @@ func correlateEvidence(plans []EvidencePlan, occurrences []captureOccurrence) ma
 	}
 	result := make(map[string][]EvidenceFinding, len(plans))
 	for _, plan := range plans {
-		anchors := occurrencesNamed(occurrences, plan.Anchor)
+		var anchorsBuf [8]captureOccurrence
+		anchors := occurrencesNamedInto(anchorsBuf[:0], occurrences, plan.Anchor)
 		if len(anchors) == 0 {
 			continue
 		}
 		findings := make([]EvidenceFinding, len(anchors))
-		ambiguous := make([]bool, len(anchors))
+		var ambiguousBuf [8]bool
+		var ambiguous []bool
+		if len(anchors) <= len(ambiguousBuf) {
+			ambiguous = ambiguousBuf[:len(anchors)]
+		} else {
+			ambiguous = make([]bool, len(anchors))
+		}
+		captureSlab := make([]Capture, 0, len(occurrences))
 		for index, anchor := range anchors {
 			findings[index] = EvidenceFinding{
 				Anchor: anchor.capture,
 				Fields: make(map[string][]Capture, len(plan.Fields)),
 			}
-			findings[index].Fields[plan.Anchor] = []Capture{anchor.capture}
+			pos := len(captureSlab)
+			captureSlab = append(captureSlab, anchor.capture)
+			findings[index].Fields[plan.Anchor] = captureSlab[pos : pos+1 : pos+1]
 		}
 		for _, field := range plan.Fields {
 			if field == plan.Anchor {
 				continue
 			}
-			for _, candidate := range occurrencesNamed(occurrences, field) {
-				assignCaptureCandidate(findings, ambiguous, anchors, field, candidate, plan.Within)
+			for _, candidate := range occurrences {
+				if candidate.capture.Name != field {
+					continue
+				}
+				assignCaptureCandidate(findings, ambiguous, anchors, field, candidate, plan.Within, &captureSlab)
 			}
 		}
 		for index := range findings {
@@ -258,16 +317,25 @@ func assignCaptureCandidate(
 	field string,
 	candidate captureOccurrence,
 	within int64,
+	captureSlab *[]Capture,
 ) {
 	for index, anchor := range anchors {
 		if candidate.parent == anchor.parent {
-			findings[index].Fields[field] = append(findings[index].Fields[field], candidate.capture)
+			existing := findings[index].Fields[field]
+			if len(existing) == 0 && len(*captureSlab) < cap(*captureSlab) {
+				pos := len(*captureSlab)
+				*captureSlab = append(*captureSlab, candidate.capture)
+				findings[index].Fields[field] = (*captureSlab)[pos : pos+1 : pos+1]
+			} else {
+				findings[index].Fields[field] = append(existing, candidate.capture)
+			}
 			return
 		}
 	}
 
 	minimum := int64(-1)
-	nearest := make([]int, 0, 2)
+	var nearestBuf [4]int
+	nearest := nearestBuf[:0]
 	for index, anchor := range anchors {
 		distance := captureSpanDistance(candidate.capture, anchor.capture)
 		if distance > within {
@@ -282,7 +350,14 @@ func assignCaptureCandidate(
 		}
 	}
 	for _, index := range nearest {
-		findings[index].Fields[field] = append(findings[index].Fields[field], candidate.capture)
+		existing := findings[index].Fields[field]
+		if len(existing) == 0 && len(*captureSlab) < cap(*captureSlab) {
+			pos := len(*captureSlab)
+			*captureSlab = append(*captureSlab, candidate.capture)
+			findings[index].Fields[field] = (*captureSlab)[pos : pos+1 : pos+1]
+		} else {
+			findings[index].Fields[field] = append(existing, candidate.capture)
+		}
 		if len(nearest) > 1 {
 			ambiguous[index] = true
 		}
@@ -322,8 +397,8 @@ func captureSpanDistance(left, right Capture) int64 {
 	}
 }
 
-func occurrencesNamed(occurrences []captureOccurrence, name string) []captureOccurrence {
-	result := make([]captureOccurrence, 0)
+func occurrencesNamedInto(dst, occurrences []captureOccurrence, name string) []captureOccurrence {
+	result := dst
 	for _, occurrence := range occurrences {
 		if occurrence.capture.Name == name {
 			result = append(result, occurrence)
