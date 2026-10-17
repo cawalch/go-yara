@@ -1538,6 +1538,7 @@ func (cp *CompiledProgram) releaseScanner(s *Scanner) {
 		s.matchCtx.Data = nil
 	}
 	s.blockContext[0].Data = nil
+	s.skipUnmatchedNonText = false
 	cp.scannerPool.Put(s)
 }
 

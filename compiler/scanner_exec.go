@@ -186,6 +186,14 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 		for _, ruleIndex := range s.touchedGlobalMatches {
 			s.markCandidateRule(ruleIndex)
 		}
+		for _, rule := range s.program.Rules {
+			if !s.shouldEvaluateRule(rule) || s.candidateRuleSeen[rule.Index] {
+				continue
+			}
+			if !s.program.ruleAllStringsInSharedPrefilter(rule) || s.ruleHasMatchedSharedNonText(rule) {
+				s.markCandidateRule(rule.Index)
+			}
+		}
 	}
 	scanInput := ruleScanInput{data: data, usesharedAutomaton: usesharedAutomaton, skipUnmatchedContext: s.reportedMatchesOnly}
 

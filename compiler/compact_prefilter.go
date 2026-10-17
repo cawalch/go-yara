@@ -45,7 +45,7 @@ func (cp *CompiledProgram) buildCompactPrefilter() *compactPrefilter {
 			return nil
 		}
 		for _, info := range rule.prefilterStrings {
-			if info.class == prefilterStringNonText {
+			if info.class == prefilterStringNonText && info.cacheIndex >= 0 && info.cacheIndex < len(nonText) {
 				nonText[info.cacheIndex] = true
 			}
 		}

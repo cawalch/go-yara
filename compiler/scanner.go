@@ -312,6 +312,13 @@ func (cp *CompiledProgram) ruleHasCompleteSharedPrefilter(rule *CompiledRule) bo
 	if bestSharedRequiredStringIndex(rule, cp.sharedNonTextCaches) >= 0 {
 		return true
 	}
+	return cp.ruleAllStringsInSharedPrefilter(rule)
+}
+
+func (cp *CompiledProgram) ruleAllStringsInSharedPrefilter(rule *CompiledRule) bool {
+	if !rule.RequiresStringMatch || len(rule.prefilterStrings) == 0 {
+		return false
+	}
 	for _, info := range rule.prefilterStrings {
 		switch info.class {
 		case prefilterStringText:
@@ -325,6 +332,20 @@ func (cp *CompiledProgram) ruleHasCompleteSharedPrefilter(rule *CompiledRule) bo
 		}
 	}
 	return true
+}
+
+func (s *Scanner) ruleHasMatchedSharedNonText(rule *CompiledRule) bool {
+	if !s.sharedNonTextMatched || rule == nil {
+		return false
+	}
+	for _, info := range rule.prefilterStrings {
+		if info.class == prefilterStringNonText {
+			if matches, ready := s.nonTextCache.get(info.cacheIndex); ready && len(matches) > 0 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (s *Scanner) resetCandidateRules(size int) {

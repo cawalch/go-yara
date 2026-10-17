@@ -153,6 +153,7 @@ func TestRequiredGateBooleanParity(t *testing.T) {
 		}
 		rule := program.Rules[0]
 		gate := rule.requiredStrings
+		forbiddenGate := rule.forbiddenStrings
 		scanner := program.NewScanner()
 		defer scanner.Close()
 		for mask := 0; mask < 32; mask++ {
@@ -169,8 +170,12 @@ func TestRequiredGateBooleanParity(t *testing.T) {
 					t.Fatal(err)
 				}
 				rule.requiredStrings = nil
+				rule.forbiddenStrings = nil
+				scanner.prefilterDisabled = true
 				want, err := scanner.Matches(data)
+				scanner.prefilterDisabled = false
 				rule.requiredStrings = gate
+				rule.forbiddenStrings = forbiddenGate
 				if err != nil || got != want {
 					t.Fatalf("condition %s input %q: %v != %v error %v", condition, data, got, want, err)
 				}
@@ -218,16 +223,27 @@ rule unprefiltered_raw_secret {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(program.Rules[0].requiredStrings, []string{"$uri"}) {
-		t.Fatalf("requiredStrings = %v, want [$uri]", program.Rules[0].requiredStrings)
+	encoded, err := program.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(program.Rules[0].forbiddenStrings, []string{"$fp_local", "$fp_pass", "$fp_redact"}) {
-		t.Fatalf("forbiddenStrings = %v, want [$fp_local $fp_pass $fp_redact]", program.Rules[0].forbiddenStrings)
+	loaded, err := UnmarshalCompiledProgram(encoded)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(program.Rules[2].forbiddenStrings, []string{"$fp_redact"}) {
-		t.Fatalf("rule[2] forbiddenStrings = %v, want [$fp_redact]", program.Rules[2].forbiddenStrings)
+	for _, candidate := range []*CompiledProgram{program, loaded} {
+		if !reflect.DeepEqual(candidate.Rules[0].requiredStrings, []string{"$uri"}) {
+			t.Fatalf("requiredStrings = %v, want [$uri]", candidate.Rules[0].requiredStrings)
+		}
+		if !reflect.DeepEqual(candidate.Rules[0].forbiddenStrings, []string{"$fp_local", "$fp_pass", "$fp_redact"}) {
+			t.Fatalf("forbiddenStrings = %v, want [$fp_local $fp_pass $fp_redact]", candidate.Rules[0].forbiddenStrings)
+		}
+		if !reflect.DeepEqual(candidate.Rules[2].forbiddenStrings, []string{"$fp_redact"}) {
+			t.Fatalf("rule[2] forbiddenStrings = %v, want [$fp_redact]", candidate.Rules[2].forbiddenStrings)
+		}
 	}
-	scanner := program.NewScanner(WithEvidence(128), WithReportedMatchesOnly(), WithFastScan())
+
+	scanner := loaded.NewScanner(WithEvidence(128), WithReportedMatchesOnly(), WithFastScan())
 	defer scanner.Close()
 	if len(scanner.alwaysEvaluateSharedRules) != 0 {
 		t.Fatalf("alwaysEvaluateSharedRules = %v, want empty (unprefiltered regex gated by $ctx)", scanner.alwaysEvaluateSharedRules)
@@ -242,6 +258,14 @@ rule unprefiltered_raw_secret {
 		if scanErr != nil || len(matches) != 0 {
 			t.Fatalf("MatchingRules(%q) = %+v, %v; want none", benign, matches, scanErr)
 		}
+	}
+
+	// Default Scan() without WithReportedMatchesOnly() preserves partial non-text
+	// matches even when a required sibling string ($ctx) is absent.
+	fullReport, err := loaded.Scan([]byte(`{"blob":"0123456789abcdefghijklmnopqrstuvwxyzABCD"}`))
+	if err != nil || fullReport.RuleResults["unprefiltered_raw_secret"] ||
+		len(fullReport.Matches["unprefiltered_raw_secret"]["$raw"]) != 1 {
+		t.Fatalf("default Scan() partial match = %+v, %v; want $raw recorded on non-matching rule", fullReport, err)
 	}
 
 	leaked := `{"Authorization":"REDACTED","dsn":"postgresql://svc_rw:K9mPv2xQr8Lz@pg.internal/prod"}`

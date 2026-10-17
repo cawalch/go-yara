@@ -55,6 +55,7 @@ type serializedRule struct {
 	ConditionMonotonic  bool
 	RequiresStringMatch bool
 	RequiredStrings     []string
+	ForbiddenStrings    []string
 	ModuleNames         map[uint8]string
 	ModuleSignatures    map[uint8]serializedModuleFunction
 	HeaderConstraints   []HeaderConstraint
@@ -305,6 +306,7 @@ func serializeRule(rule *CompiledRule) (serializedRule, error) {
 		ModuleSignatures:    make(map[uint8]serializedModuleFunction, len(rule.ModuleFunctions)),
 		HeaderConstraints:   slices.Clone(rule.HeaderConstraints),
 		RequiredStrings:     slices.Clone(rule.requiredStrings),
+		ForbiddenStrings:    slices.Clone(rule.forbiddenStrings),
 	}
 	if rule.automaton != nil {
 		serialized.AutomatonStrings = cloneacStringInfos(rule.automaton.strings)
@@ -414,6 +416,7 @@ func deserializeRule(serialized serializedRule, bindings map[string]compiledModu
 		ModuleNames:         make(map[builtinFunction]string, len(serialized.ModuleNames)),
 		HeaderConstraints:   slices.Clone(serialized.HeaderConstraints),
 		requiredStrings:     slices.Clone(serialized.RequiredStrings),
+		forbiddenStrings:    slices.Clone(serialized.ForbiddenStrings),
 	}
 	for identifier, pattern := range serialized.RegexPatterns {
 		rule.RegexPatterns[identifier] = deserializeRegexPattern(pattern)

@@ -242,7 +242,8 @@ func TestCompactPrefilterSharedRegexCover(t *testing.T) {
 		fmt.Fprintf(&source, `rule regex_%d { strings: $a=/alias%02d=[0-9]{4}/ condition: $a }`, i, i)
 	}
 	source.WriteString(`rule alias_copy { strings: $a=/alias00=[0-9]{4}/ condition: $a }
-rule alternate { strings: $a=/(phone|mobile)=[0-9]{4}/ condition: $a }`)
+rule alternate { strings: $a=/(phone|mobile)=[0-9]{4}/ condition: $a }
+rule regex_and_xor_hex { strings: $a=/alias01=[0-9]{4}/ $x={ 41 42 } xor(1) condition: $a and $x }`)
 	program, err := NewCompiler().CompileSource(source.String())
 	if err != nil {
 		t.Fatal(err)
@@ -259,7 +260,7 @@ rule alternate { strings: $a=/(phone|mobile)=[0-9]{4}/ condition: $a }`)
 	if err != nil || len(matches) != 2 {
 		t.Fatalf("alias fanout = %+v,%v", matches, err)
 	}
-	compactPrefilterParity(t, program, [][]byte{nil, []byte("event"), []byte("alias00=1234"), []byte("alias31=1234"), []byte("phone=1234"), []byte("mobile=1234"), []byte("alias00=12xx"), []byte("event rare_two"), nil})
+	compactPrefilterParity(t, program, [][]byte{nil, []byte("event"), []byte("alias00=1234"), []byte("alias01=1234 @C"), []byte("alias31=1234"), []byte("phone=1234"), []byte("mobile=1234"), []byte("alias00=12xx"), []byte("event rare_two"), nil})
 }
 
 func TestCompactPrefilterGlobalPrivateTags(t *testing.T) {
