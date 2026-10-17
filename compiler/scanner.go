@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"github.com/cawalch/go-yara/internal/wordmatch"
+	"github.com/cawalch/go-yara/regex"
 )
 
 // Scanner provides a reusable, allocation-efficient YARA scanning engine.
@@ -54,6 +55,7 @@ type Scanner struct {
 	// non-text covers produce no exact matches.
 	allEvaluatedRulesRequireSharedPatterns bool
 	sharedNonTextMatched                   bool
+	skipUnmatchedNonText                   bool
 	alwaysEvaluateSharedRules              []int
 	evaluatedGlobalRules                   []int
 	// Candidate rule indices are deduplicated and sorted before sparse exact
@@ -65,6 +67,8 @@ type Scanner struct {
 	matchedRuleIndices []int
 	// Reusable scratch worklist for hex pattern backtracking.
 	hexScratch hexMatchScratch
+	// Reusable scratch buffers for regex capture replay.
+	captureScratch regex.CaptureScratch
 	// Single-block scans reuse this slot to expose absolute addresses to the
 	// interpreter without allocating a []MemoryBlock per event.
 	blockContext  [1]MemoryBlock
@@ -304,6 +308,9 @@ func (s *Scanner) computeAllEvaluatedRulesRequireSharedPatterns() bool {
 func (cp *CompiledProgram) ruleHasCompleteSharedPrefilter(rule *CompiledRule) bool {
 	if !rule.RequiresStringMatch || len(rule.prefilterStrings) == 0 {
 		return false
+	}
+	if bestSharedRequiredStringIndex(rule, cp.sharedNonTextCaches) >= 0 {
+		return true
 	}
 	for _, info := range rule.prefilterStrings {
 		switch info.class {

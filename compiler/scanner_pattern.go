@@ -103,7 +103,9 @@ func (s *Scanner) extractGlobalMatchesInt(
 				s.touchedGlobalMatches = append(s.touchedGlobalMatches, entry.RuleIndex)
 			}
 			globalByRule[entry.RuleIndex] = append(globalByRule[entry.RuleIndex], globalEntry)
-			s.markCandidateRule(entry.RuleIndex)
+			if entry.canTriggerRule || s.hookMask&(hookBitTelemetry|hookBitRuleProfile) != 0 {
+				s.markCandidateRule(entry.RuleIndex)
+			}
 			return true
 		})
 	} else {
@@ -164,7 +166,9 @@ func (s *Scanner) extractGlobalMatchesInt(
 				s.touchedGlobalMatches = append(s.touchedGlobalMatches, entry.RuleIndex)
 			}
 			globalByRule[entry.RuleIndex] = append(globalByRule[entry.RuleIndex], globalEntry)
-			s.markCandidateRule(entry.RuleIndex)
+			if entry.canTriggerRule || s.hookMask&(hookBitTelemetry|hookBitRuleProfile) != 0 {
+				s.markCandidateRule(entry.RuleIndex)
+			}
 			return true
 		})
 	}

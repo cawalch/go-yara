@@ -79,12 +79,93 @@ func sharedNonTextCacheCoverage(size int, lookup []sharedAutomatonEntry) []bool 
 	return covered
 }
 
+func bestSharedRequiredStringIndex(rule *CompiledRule, covered []bool) int {
+	if rule == nil || len(rule.requiredStrings) == 0 {
+		return -1
+	}
+	bestIdx := -1
+	bestScore := -1
+	for _, id := range rule.requiredStrings {
+		idx := rule.ResolveStringIndex(id)
+		if idx < 0 || idx >= len(rule.prefilterStrings) {
+			continue
+		}
+		info := rule.prefilterStrings[idx]
+		score := -1
+		switch info.class {
+		case prefilterStringText:
+			score = prefilterAtomScore(rule.TextPatterns[id])
+		case prefilterStringNonText:
+			if info.cacheIndex >= 0 && info.cacheIndex < len(covered) && covered[info.cacheIndex] {
+				// Non-text caches only mark candidate rules after full regex/hex
+				// verification succeeds, making them strictly more selective than
+				// raw automaton text hits.
+				score = 1_000_000
+				if pattern, ok := rule.RegexPatterns[id]; ok {
+					score += len(pattern.Code)
+				} else if hexPattern, ok := rule.HexPatterns[id]; ok && hexPattern != nil {
+					score += len(hexPattern.Tokens)
+				}
+			}
+		}
+		if score > bestScore {
+			bestScore = score
+			bestIdx = idx
+		}
+	}
+	return bestIdx
+}
+
+func ruleStringCanTriggerCandidate(stringIdx, bestReqIdx int) bool {
+	return bestReqIdx < 0 || stringIdx == bestReqIdx
+}
+
+func markSharedLookupCandidateTriggers(rules []*CompiledRule, lookup []sharedAutomatonEntry, covered []bool) {
+	bestReq := make([]int, len(rules))
+	cacheRuleOwner := make([]int, len(covered))
+	for i := range cacheRuleOwner {
+		cacheRuleOwner[i] = -1
+	}
+	for i, rule := range rules {
+		bestReq[i] = bestSharedRequiredStringIndex(rule, covered)
+		for _, info := range rule.prefilterStrings {
+			if info.class != prefilterStringNonText || info.cacheIndex < 0 || info.cacheIndex >= len(cacheRuleOwner) {
+				continue
+			}
+			switch cacheRuleOwner[info.cacheIndex] {
+			case -1, i:
+				cacheRuleOwner[info.cacheIndex] = i
+			default:
+				cacheRuleOwner[info.cacheIndex] = -2
+			}
+		}
+	}
+	for i := range lookup {
+		entry := &lookup[i]
+		if entry.RuleIndex < 0 || entry.RuleIndex >= len(rules) {
+			entry.canTriggerRule = true
+			continue
+		}
+		entry.canTriggerRule = ruleStringCanTriggerCandidate(
+			entry.StringIdx,
+			bestReq[entry.RuleIndex],
+		)
+		entry.singleRuleCache = entry.CacheIndex >= 0 &&
+			entry.CacheIndex < len(cacheRuleOwner) &&
+			cacheRuleOwner[entry.CacheIndex] == entry.RuleIndex
+	}
+}
+
 func sharedNonTextCacheRuleLookup(rules []*CompiledRule, covered []bool) [][]int {
 	lookup := make([][]int, len(covered))
 	for ruleIndex, rule := range rules {
-		for _, info := range rule.prefilterStrings {
+		bestReqIdx := bestSharedRequiredStringIndex(rule, covered)
+		for stringIdx, info := range rule.prefilterStrings {
 			if info.class != prefilterStringNonText || info.cacheIndex < 0 ||
 				info.cacheIndex >= len(covered) || !covered[info.cacheIndex] {
+				continue
+			}
+			if !ruleStringCanTriggerCandidate(stringIdx, bestReqIdx) {
 				continue
 			}
 			ruleIndices := lookup[info.cacheIndex]
@@ -278,7 +359,11 @@ func shouldAddSharedNonTextPrefilters(automaton *acAutomaton, specs []sharedPref
 	}
 	for value, nextState := range automaton.states[0].transitions {
 		if nextState != -1 && !addRootByte(byte(value)) {
-			return false
+			// Text patterns alone already exceed the sparse-root threshold, and
+			// text patterns force the shared automaton to run on every scan.
+			// Including non-text prefilter atoms in the same pass avoids running
+			// separate per-rule regex/hex searches on every event.
+			return true
 		}
 	}
 	for _, spec := range specs {

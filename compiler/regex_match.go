@@ -1,7 +1,7 @@
 package compiler
 
 import (
-	"sort"
+	"slices"
 
 	"github.com/cawalch/go-yara/ast"
 	"github.com/cawalch/go-yara/regex"
@@ -195,7 +195,7 @@ func leadingGapRegexCandidateStarts(
 	if len(starts) < 2 {
 		return starts, true
 	}
-	sort.Ints(starts)
+	slices.Sort(starts)
 	unique := 1
 	for _, start := range starts[1:] {
 		if start == starts[unique-1] {

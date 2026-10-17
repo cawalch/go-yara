@@ -401,3 +401,42 @@ func TestRequiredLiteralAlternationAtomsRejectsIncompleteBranches(t *testing.T) 
 		})
 	}
 }
+
+func TestRequiredLiteralAlternationAtomsExpandsBoundedConcatRuns(t *testing.T) {
+	tests := []struct {
+		pattern string
+		want    []string
+	}{
+		{
+			pattern: `postgres(?:ql)?:\/\/[A-Za-z0-9_.-]+`,
+			want:    []string{"postgres://", "postgresql://"},
+		},
+		{
+			pattern: `gh[pousr]_[A-Za-z0-9]{36}`,
+			want:    []string{"gho_", "ghp_", "ghr_", "ghs_", "ghu_"},
+		},
+		{
+			pattern: `(?:sk|rk)_live_[0-9a-zA-Z]{24}`,
+			want:    []string{"sk_live_", "rk_live_"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.pattern, func(t *testing.T) {
+			parsed, err := NewParser(ParserFlagEnableStrictEscapeSequences).Parse(tt.pattern)
+			if err != nil {
+				t.Fatal(err)
+			}
+			alternatives := RequiredLiteralAlternationAtoms(parsed, 2)
+			if len(alternatives) != len(tt.want) {
+				t.Fatalf("RequiredLiteralAlternationAtoms(%q) len = %d, want %d", tt.pattern, len(alternatives), len(tt.want))
+			}
+			for i, want := range tt.want {
+				if len(alternatives[i]) != 1 || string(alternatives[i][0].Data) != want ||
+					alternatives[i][0].MinOffset != 0 || alternatives[i][0].MaxOffset != 0 {
+					t.Fatalf("group %d = %+v, want %q at [0,0]", i, alternatives[i], want)
+				}
+			}
+		})
+	}
+}

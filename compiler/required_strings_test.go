@@ -178,3 +178,76 @@ func TestRequiredGateBooleanParity(t *testing.T) {
 		}
 	}
 }
+
+func TestRequiredStringsWithNegatedClausesAndNonCapturingGroups(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+rule pg_cred {
+	strings:
+		$uri = /postgres(?:ql)?:\/\/([A-Za-z0-9_.-]+):([^@\s]{8,32})@([A-Za-z0-9.-]+)/ capture(user = 1, secret = 2, host = 3)
+		$fp_local = "@localhost" nocase
+		$fp_pass = ":password@" nocase
+		$fp_redact = ":REDACTED@"
+	evidence:
+		cred = (user, secret, host) within 128 of secret
+	condition:
+		$uri and not any of ($fp_*)
+}
+
+rule token_cred {
+	strings:
+		$hdr = "Authorization"
+		$tok = /gh[pousr]_[A-Za-z0-9]{36}/ capture(token = 0)
+		$fp_redact = "REDACTED"
+	evidence:
+		cred = (token) within 0 of token
+	condition:
+		$hdr and $tok and not any of ($fp_*)
+}
+
+rule unprefiltered_raw_secret {
+	strings:
+		$ctx = "x-raw-secret"
+		$raw = /[A-Za-z0-9\/+=]{40}/ capture(secret = 0)
+		$fp_redact = "REDACTED"
+	evidence:
+		cred = (secret) within 0 of secret
+	condition:
+		$ctx and $raw and none of ($fp_*)
+}
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(program.Rules[0].requiredStrings, []string{"$uri"}) {
+		t.Fatalf("requiredStrings = %v, want [$uri]", program.Rules[0].requiredStrings)
+	}
+	if !reflect.DeepEqual(program.Rules[0].forbiddenStrings, []string{"$fp_local", "$fp_pass", "$fp_redact"}) {
+		t.Fatalf("forbiddenStrings = %v, want [$fp_local $fp_pass $fp_redact]", program.Rules[0].forbiddenStrings)
+	}
+	if !reflect.DeepEqual(program.Rules[2].forbiddenStrings, []string{"$fp_redact"}) {
+		t.Fatalf("rule[2] forbiddenStrings = %v, want [$fp_redact]", program.Rules[2].forbiddenStrings)
+	}
+	scanner := program.NewScanner(WithEvidence(128), WithReportedMatchesOnly(), WithFastScan())
+	defer scanner.Close()
+	if len(scanner.alwaysEvaluateSharedRules) != 0 {
+		t.Fatalf("alwaysEvaluateSharedRules = %v, want empty (unprefiltered regex gated by $ctx)", scanner.alwaysEvaluateSharedRules)
+	}
+
+	for _, benign := range []string{
+		`{"Authorization":"REDACTED","stack":"internal/postgres/repo.go:42"}`,
+		`{"dsn":"postgres://svc:password@localhost/db"}`,
+		`{"x-raw-secret":"REDACTED","blob":"0123456789abcdefghijklmnopqrstuvwxyzABCD"}`,
+	} {
+		matches, scanErr := scanner.MatchingRules([]byte(benign))
+		if scanErr != nil || len(matches) != 0 {
+			t.Fatalf("MatchingRules(%q) = %+v, %v; want none", benign, matches, scanErr)
+		}
+	}
+
+	leaked := `{"Authorization":"REDACTED","dsn":"postgresql://svc_rw:K9mPv2xQr8Lz@pg.internal/prod"}`
+	matches, err := scanner.MatchingRules([]byte(leaked))
+	if err != nil || len(matches) != 1 || len(matches[0].Evidence["cred"]) != 1 ||
+		matches[0].Evidence["cred"][0].Status != EvidenceStatusReady {
+		t.Fatalf("MatchingRules(leaked) = %+v, %v; want ready evidence", matches, err)
+	}
+}

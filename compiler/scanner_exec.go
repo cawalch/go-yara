@@ -177,9 +177,15 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 		return result, nil
 	}
 
+	s.skipUnmatchedNonText = s.reportedMatchesOnly
 	usesharedAutomaton, err := s.preparePatternScan(ctx, data)
 	if err != nil {
 		return nil, err
+	}
+	if !s.reportedMatchesOnly {
+		for _, ruleIndex := range s.touchedGlobalMatches {
+			s.markCandidateRule(ruleIndex)
+		}
 	}
 	scanInput := ruleScanInput{data: data, usesharedAutomaton: usesharedAutomaton, skipUnmatchedContext: s.reportedMatchesOnly}
 
@@ -459,6 +465,7 @@ func (s *Scanner) evaluatePublicRules(
 		}
 		return publicRuleEvaluation{}, ctx.Err()
 	}
+	s.skipUnmatchedNonText = true
 	usesharedAutomaton, err := s.preparePatternScan(ctx, data)
 	if err != nil {
 		return publicRuleEvaluation{}, err
