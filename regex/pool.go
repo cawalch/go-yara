@@ -61,43 +61,53 @@ func putVMState(st *vmState) {
 	vmPool.Put(st)
 }
 
-// vmBatchState holds a vmState pinned for a batch of runAtMatch calls.
-// This avoids sync.Pool Get/Put overhead when runAtMatch is called
-// thousands of times in a tight loop (e.g., addRegexMatches).
-type vmBatchState struct {
+// VMBatch provides reusable VM execution state for repeated anchored attempts.
+// Callers pass it to ExecMatchBatch for repeated anchored attempts.
+type VMBatch struct {
 	st  *vmState
 	gen int64
 }
 
-// VMBatch names the reusable VM state returned by NewVMBatch. Its fields stay
-// private; callers pass it to ExecMatchBatch for repeated anchored attempts.
-type VMBatch = vmBatchState
+// Prepare ensures VMBatch has an allocated vmState and that visited has capacity
+// for at least codeLen instructions.
+func (b *VMBatch) Prepare(codeLen int) {
+	if b.st == nil {
+		b.st = vmPool.Get().(*vmState)
+	}
+	if cap(b.st.visited) < codeLen {
+		b.st.visited = make([]int64, codeLen)
+	}
+	b.st.gen++
+	if b.st.gen <= 0 {
+		clear(b.st.visited[:codeLen])
+		b.st.gen = 1
+	}
+	b.gen = b.st.gen
+}
+
+// Release returns the pinned vmState back to the internal pool.
+func (b *VMBatch) Release() {
+	if b == nil || b.st == nil {
+		return
+	}
+	st := b.st
+	b.st = nil
+	b.gen = 0
+	if cap(st.visited) <= 4096 {
+		st.visited = st.visited[:0]
+		st.cur = st.cur[:0]
+		st.next = st.next[:0]
+		vmPool.Put(st)
+	}
+}
 
 // NewVMBatch acquires a vmState for a batch of runAtMatch calls.
 // Returns a release function to call when the batch is complete.
 // Use when calling runAtMatch thousands of times in a tight loop.
 func NewVMBatch(codeLen int) (*VMBatch, func()) {
-	st := vmPool.Get().(*vmState)
-	if cap(st.visited) < codeLen {
-		st.visited = make([]int64, codeLen)
-	}
-	bs := &vmBatchState{
-		st: st,
-	}
-	st.gen++
-	if st.gen <= 0 {
-		clear(st.visited[:codeLen])
-		st.gen = 1
-	}
-	bs.gen = st.gen
-	return bs, func() {
-		if cap(st.visited) <= 4096 {
-			st.visited = st.visited[:0]
-			st.cur = st.cur[:0]
-			st.next = st.next[:0]
-			vmPool.Put(st)
-		}
-	}
+	b := &VMBatch{}
+	b.Prepare(codeLen)
+	return b, b.Release
 }
 
 // get returns a vmState and generation token for one runAtMatch call.

@@ -735,6 +735,7 @@ func (s *Scanner) populateNonTextPrefilterCache(
 						data,
 						candidates,
 						ctx.Done(),
+						s.matchCtx,
 					)
 				}
 			}
@@ -764,7 +765,7 @@ func (s *Scanner) populateNonTextPrefilterCache(
 		case StringKindRegex:
 			dst := cache.matches[entry.CacheIndex]
 			if len(candidates) > 0 {
-				dst = appendRegexPrefilterMatches(dst, rule, strID, entry, data, candidates, ctx.Done())
+				dst = appendRegexPrefilterMatches(dst, rule, strID, entry, data, candidates, ctx.Done(), s.matchCtx)
 			}
 			cache.set(entry.CacheIndex, dst)
 		case StringKindHex:
@@ -821,6 +822,7 @@ func appendRegexPrefilterMatches(
 	data []byte,
 	candidates []int,
 	done <-chan struct{},
+	matchCtx *MatchContext,
 ) []matchSpan {
 	pattern, ok := rule.RegexPatterns[strID]
 	if !ok || len(pattern.Code) == 0 {
@@ -851,8 +853,7 @@ func appendRegexPrefilterMatches(
 	if len(starts) == 0 {
 		return dst
 	}
-	bs, release := newRegexMatchBatch(pattern)
-	defer releaseRegexMatchBatch(release)
+	bs := newRegexMatchBatch(matchCtx, pattern)
 	for index, start := range starts {
 		if scanCanceledAt(done, index) {
 			return dst
