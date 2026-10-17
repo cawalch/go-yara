@@ -31,8 +31,7 @@ func addRegexMatchesCached(
 	}
 
 	if regexInfo.anchored {
-		bs, release := newRegexMatchBatch(regexInfo)
-		defer releaseRegexMatchBatch(release)
+		bs := newRegexMatchBatch(ctx, regexInfo)
 		addRegexMatchAt(ctx, id, regexInfo, data, modifiers, flags, isWide, bs, 0)
 		return
 	}
@@ -60,8 +59,7 @@ func addRegexMatchesCached(
 			if len(starts) == 0 {
 				return
 			}
-			bs, release := newRegexMatchBatch(regexInfo)
-			defer releaseRegexMatchBatch(release)
+			bs := newRegexMatchBatch(ctx, regexInfo)
 			for index, start := range starts {
 				if scanCanceledAt(ctx.cancelDone, index) {
 					return
@@ -99,8 +97,7 @@ func addRegexMatchesCached(
 			if len(starts) == 0 {
 				return
 			}
-			bs, release := newRegexMatchBatch(regexInfo)
-			defer releaseRegexMatchBatch(release)
+			bs := newRegexMatchBatch(ctx, regexInfo)
 			for index, start := range starts {
 				if scanCanceledAt(ctx.cancelDone, index) {
 					return
@@ -125,8 +122,7 @@ func addRegexMatchesCached(
 			if plan.count == 0 {
 				return
 			}
-			bs, release := newRegexMatchBatch(regexInfo)
-			defer releaseRegexMatchBatch(release)
+			bs := newRegexMatchBatch(ctx, regexInfo)
 			candidates := search.candidateIterator(plan)
 			for index, start, ok := 0, 0, false; ; index++ {
 				start, ok = candidates.next()
@@ -141,8 +137,7 @@ func addRegexMatchesCached(
 		}
 	}
 
-	bs, release := newRegexMatchBatch(regexInfo)
-	defer releaseRegexMatchBatch(release)
+	bs := newRegexMatchBatch(ctx, regexInfo)
 	addRegexMatchesLinear(ctx, id, regexInfo, data, modifiers, flags, isWide, bs)
 }
 
@@ -354,8 +349,7 @@ func addRegexMatchesFromAlternatives(
 		cursors[index].advance()
 	}
 
-	bs, release := newRegexMatchBatch(regexInfo)
-	defer releaseRegexMatchBatch(release)
+	bs := newRegexMatchBatch(ctx, regexInfo)
 	checkpoint := 0
 	for {
 		if scanCanceledAt(ctx.cancelDone, checkpoint) {
@@ -398,8 +392,7 @@ func addRegexMatchesFromPrefix(
 	if candidate < 0 {
 		return
 	}
-	bs, release := newRegexMatchBatch(regexInfo)
-	defer releaseRegexMatchBatch(release)
+	bs := newRegexMatchBatch(ctx, regexInfo)
 	for checkpoint := 0; candidate >= 0; checkpoint++ {
 		if scanCanceledAt(ctx.cancelDone, checkpoint) {
 			return
@@ -468,17 +461,11 @@ func addRegexMatchAt(
 	}
 }
 
-func newRegexMatchBatch(pattern RegexPattern) (*regex.VMBatch, func()) {
+func newRegexMatchBatch(ctx *MatchContext, pattern RegexPattern) *regex.VMBatch {
 	if len(pattern.fixedByteSets) > 0 {
-		return nil, nil
+		return nil
 	}
-	return regex.NewVMBatch(len(pattern.Code))
-}
-
-func releaseRegexMatchBatch(release func()) {
-	if release != nil {
-		release()
-	}
+	return ctx.acquireRegexBatch(len(pattern.Code))
 }
 
 //nolint:revive // cancellation signal accompanies the exact verifier arguments
