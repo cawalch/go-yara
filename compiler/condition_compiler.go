@@ -820,6 +820,8 @@ func (cc *conditionCompiler) compileUnaryOp(unaryOp *ast.UnaryOp) error {
 		return cc.compileBitwiseNotOperator(unaryOp)
 	case token.MINUS:
 		return cc.compileMinusOperator(unaryOp)
+	case token.DEFINED:
+		return cc.compileDefinedOperator(unaryOp)
 	default:
 		return fmt.Errorf("unsupported unary operator: %s", unaryOp.Op)
 	}

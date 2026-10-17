@@ -466,3 +466,56 @@ func TestBug16_BitwiseAndShiftPrecedence(t *testing.T) {
 	assertAgreementOnValues(t, bin, `rule t { strings: $s = "abc" condition: 3 & 1 << 2 == %d and $s }`, []byte("abcabcxx"), []int{0, 4})
 	assertAgreementOnValues(t, bin, `rule t { strings: $s = "abc" condition: 3 | 1 << 2 == %d and $s }`, []byte("abcabcxx"), []int{7, 12})
 }
+
+// assertBothReject proves both libyara and go-yara reject an invalid rule at compile time.
+func assertBothReject(t *testing.T, bin, src string) {
+	t.Helper()
+	_, yerr := libyaraSpans(t, bin, src, []byte("dummy"))
+	if yerr == nil {
+		t.Fatalf("test premise invalid: libyara unexpectedly accepted %q", src)
+	}
+	c := compiler.NewCompiler()
+	if _, err := c.CompileSourceWithContext(context.Background(), src); err == nil {
+		t.Errorf("DIVERGENCE: libyara rejects this invalid rule, but go-yara accepts it\n  rule: %s", src)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// BUG-17: `defined` unary operator in condition.
+// ---------------------------------------------------------------------------
+
+func TestBug17_DefinedOperator(t *testing.T) {
+	bin := requireLibyara(t)
+	assertSameOccurrenceSet(t, bin, `rule t { strings: $a = "foo" condition: defined @a[1] and $a }`, []byte("foobar"))
+	assertSameOccurrenceSet(t, bin, `rule t { strings: $a = "foo" condition: not defined @a[2] and $a }`, []byte("foobar"))
+	assertSameOccurrenceSet(t, bin, `rule t { strings: $a = "foo" condition: defined !a[1] and $a }`, []byte("foobar"))
+	assertSameOccurrenceSet(t, bin, `rule t { strings: $a = "foo" condition: defined #a and $a }`, []byte("foobar"))
+	assertSameOccurrenceSet(t, bin, `rule t { strings: $a = "foo" condition: defined filesize and $a }`, []byte("foobar"))
+}
+
+// ---------------------------------------------------------------------------
+// BUG-18: Hex alternations reject unbounded jumps.
+// ---------------------------------------------------------------------------
+
+func TestBug18_HexAlternationUnboundedJumps(t *testing.T) {
+	bin := requireLibyara(t)
+	assertBothReject(t, bin, `rule t { strings: $a = { 01 ( 02 | 03 [-] 04 ) 05 } condition: $a }`)
+	assertBothReject(t, bin, `rule t { strings: $a = { 01 ( 02 | 03 [1-] 04 ) 05 } condition: $a }`)
+	assertBothReject(t, bin, `rule t { strings: $a = { 01 ( 02 | ( 03 | 04 [-] 05 ) ) 06 } condition: $a }`)
+	// Bounded jumps inside alternation are valid:
+	assertGoAccepts(t, bin, `rule t { strings: $a = { 01 ( 02 | 03 [1-2] 04 ) 05 } condition: $a }`)
+	assertSameOccurrenceSet(t, bin, `rule t { strings: $a = { 01 ( 02 | 03 [1-2] 04 ) 05 } condition: $a }`, []byte("\x01\x03\xaa\x04\x05"))
+}
+
+// ---------------------------------------------------------------------------
+// BUG-19: Division and modulo by constant zero are rejected at compile time.
+// ---------------------------------------------------------------------------
+
+func TestBug19_ConstantDivisionByZeroRejected(t *testing.T) {
+	bin := requireLibyara(t)
+	assertBothReject(t, bin, `rule t { condition: 1 \ 0 == 0 }`)
+	assertBothReject(t, bin, `rule t { condition: 1 % 0 == 0 }`)
+	assertBothReject(t, bin, `rule t { condition: filesize \ 0 == 0 }`)
+	assertBothReject(t, bin, `rule t { condition: filesize % 0 == 0 }`)
+	assertBothReject(t, bin, `rule t { condition: true or (1 \ 0 == 0) }`)
+}

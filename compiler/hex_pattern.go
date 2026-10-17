@@ -199,9 +199,31 @@ func parseHexAlternatives(hexStr string, pos int) ([][]HexPatternToken, int, err
 		if len(tokens) == 0 {
 			return nil, pos, fmt.Errorf("empty alternative in hex group at offset %d", pos)
 		}
+		if tokens[0].Kind == HexTokenJump || tokens[len(tokens)-1].Kind == HexTokenJump {
+			return nil, pos, fmt.Errorf("alternation branch cannot begin or end with a jump")
+		}
+		if hasUnboundedJump(tokens) {
+			return nil, pos, fmt.Errorf("unbounded jumps not allowed inside alternation (|)")
+		}
 		alts = append(alts, tokens)
 	}
 	return alts, end + 1, nil
+}
+
+func hasUnboundedJump(tokens []HexPatternToken) bool {
+	for _, tok := range tokens {
+		if tok.Kind == HexTokenJump && tok.Max < 0 {
+			return true
+		}
+		if tok.Kind == HexTokenAlt {
+			for _, alt := range tok.Alternatives {
+				if hasUnboundedJump(alt) {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 func splitHexAlternatives(content string) []string {
