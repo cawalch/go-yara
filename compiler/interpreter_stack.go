@@ -89,6 +89,9 @@ func (i *Interpreter) executePushRuleRef() error {
 	if ruleIdx >= len(i.compiledRules) {
 		return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: OpPushRuleRef, Message: fmt.Sprintf("rule index %d out of range", ruleIdx)}
 	}
+	if ruleIdx < len(i.ruleResultsDense) {
+		return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(i.ruleResultsDense[ruleIdx])})
+	}
 	ruleName := i.compiledRules[ruleIdx].Name
 	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(i.ruleResults[ruleName])})
 }

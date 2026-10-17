@@ -201,6 +201,9 @@ func (i *Interpreter) executePushRuleOperation() error {
 	if ruleIdx >= len(i.compiledRules) {
 		return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: OpPushRule, Message: fmt.Sprintf("rule index %d out of range", ruleIdx)}
 	}
+	if ruleIdx < len(i.ruleResultsDense) {
+		return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(i.ruleResultsDense[ruleIdx])})
+	}
 	ruleName := i.compiledRules[ruleIdx].Name
 	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(i.ruleResults[ruleName])})
 }
@@ -216,6 +219,7 @@ func (i *Interpreter) executeInitRuleOperation() error {
 		return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: OpInitRule, Message: fmt.Sprintf("rule index %d out of range", ruleIdx)}
 	}
 	i.currentRule = i.compiledRules[ruleIdx].Name
+	i.currentRuleIndex = ruleIdx
 	return i.push(Value{Type: ValueTypeInt, IntVal: 1})
 }
 
@@ -226,9 +230,15 @@ func (i *Interpreter) executeMatchRuleOperation() error {
 	}
 	condition := i.stack[len(i.stack)-1]
 	i.stack = i.stack[:len(i.stack)-1]
-	if i.currentRule == "" {
+	if i.currentRule == "" && i.currentRuleIndex < 0 {
 		return &InterpreterError{Type: ErrorRuntime, Opcode: OpMatchRule, Message: "no current rule context"}
 	}
-	i.ruleResults[i.currentRule] = i.isTruthy(condition)
-	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(i.ruleResults[i.currentRule])})
+	matched := i.isTruthy(condition)
+	if i.currentRuleIndex >= 0 && i.currentRuleIndex < len(i.ruleResultsDense) {
+		i.ruleResultsDense[i.currentRuleIndex] = matched
+	}
+	if i.ruleResults != nil && i.currentRule != "" {
+		i.ruleResults[i.currentRule] = matched
+	}
+	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(matched)})
 }

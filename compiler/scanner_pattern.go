@@ -496,8 +496,10 @@ func (s *Scanner) prepareInterpreter(rule *CompiledRule) {
 	s.interp.stringArena = s.interp.stringArena[:0]
 
 	s.interp.SetCurrentRule(rule.Name)
+	s.interp.currentRuleIndex = rule.Index
 	s.interp.SetMatchContext(s.matchCtx)
 	s.interp.SetRuleResults(s.ruleResults)
+	s.interp.SetRuleResultsDense(s.ruleResultsDense)
 
 	if rule.automaton != nil {
 		for idx, str := range rule.automaton.strings {

@@ -57,7 +57,11 @@ func (s *Scanner) MatchingRulesInBlockWithContext(
 	}
 
 	clear(s.ruleResults)
-	defer clear(s.ruleResults)
+	clear(s.ruleResultsDense)
+	defer func() {
+		clear(s.ruleResults)
+		clear(s.ruleResultsDense)
+	}()
 	s.blockContext[0] = block
 	s.blockFileSize = fileSize
 	s.blockScan = true
