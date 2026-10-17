@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -145,6 +146,8 @@ func TestRequiredGateBooleanParity(t *testing.T) {
 		"$a and $b", "$a or $b", "($a and $b) or ($a and $c)",
 		"all of ($a, $b)", "all of ($prefix*)", "all of ($missing*)", "any of them", "none of them", "2 of them",
 		"not $a", "$a and not $b", "$a or filesize > 0", "$a and #b > 0", "all of them at 0",
+		"not all of ($a, $b)", "not all of ($prefix1)", "not all of ($prefix*)", "any of ($prefix1)", "not any of ($a, $b)",
+		"true and $a", "false or $a", "-1 == -1 and $a",
 	} {
 		source := fmt.Sprintf(`rule example { strings: $a = "alpha" fullword $b = /beta[0-9]+/ $c = { 67 61 6D 6D 61 } $prefix1 = "delta" $prefix2 = "theta" nocase condition: %s }`, condition)
 		program, err := NewCompiler().CompileSource(source)
@@ -154,6 +157,7 @@ func TestRequiredGateBooleanParity(t *testing.T) {
 		rule := program.Rules[0]
 		gate := rule.requiredStrings
 		forbiddenGate := rule.forbiddenStrings
+		assertRequiredGateShape(t, condition, rule)
 		scanner := program.NewScanner()
 		defer scanner.Close()
 		for mask := 0; mask < 32; mask++ {
@@ -184,6 +188,36 @@ func TestRequiredGateBooleanParity(t *testing.T) {
 	}
 }
 
+// assertRequiredGateShape pins the exact prefilter-gate derivation for each
+// condition family. Boolean parity alone cannot distinguish a weaker-but-sound
+// gate (full evaluation fallback) from the correct one, so these invariants
+// kill silent de-optimization mutants in stringPresence/requiredStringSet.
+func assertRequiredGateShape(t *testing.T, condition string, rule *CompiledRule) {
+	t.Helper()
+	eq := func(name string, got, want []string) {
+		if !slices.Equal(got, want) {
+			t.Fatalf("condition %q: %s = %v, want %v", condition, name, got, want)
+		}
+	}
+	switch condition {
+	case "$a and $b":
+		eq("required", rule.requiredStrings, []string{"$a", "$b"})
+		eq("forbidden", rule.forbiddenStrings, nil)
+	case "all of ($prefix*)":
+		eq("required", rule.requiredStrings, []string{"$prefix1", "$prefix2"})
+		eq("forbidden", rule.forbiddenStrings, nil)
+	case "any of ($prefix1)":
+		eq("required", rule.requiredStrings, []string{"$prefix1"})
+	case "not all of ($prefix1)":
+		eq("forbidden", rule.forbiddenStrings, []string{"$prefix1"})
+	case "not all of ($prefix*)":
+		eq("forbidden", rule.forbiddenStrings, nil)
+	case "$a and not $b":
+		eq("required", rule.requiredStrings, []string{"$a"})
+		eq("forbidden", rule.forbiddenStrings, []string{"$b"})
+	}
+}
+
 func TestRequiredStringsWithNegatedClausesAndNonCapturingGroups(t *testing.T) {
 	program, err := NewCompiler().CompileSource(`
 rule pg_cred {
@@ -202,7 +236,7 @@ rule token_cred {
 	strings:
 		$hdr = "Authorization"
 		$tok = /gh[pousr]_[A-Za-z0-9]{36}/ capture(token = 0)
-		$fp_redact = "REDACTED"
+		$fp_redact = "REDACTED" fullword
 	evidence:
 		cred = (token) within 0 of token
 	condition:
@@ -268,8 +302,16 @@ rule unprefiltered_raw_secret {
 		t.Fatalf("default Scan() partial match = %+v, %v; want $raw recorded on non-matching rule", fullReport, err)
 	}
 
+	// Forbidden fullword string ($fp_redact = "REDACTED" fullword) must NOT reject
+	// token_cred when "REDACTED" only appears inside a larger word ("UNREDACTED").
+	unredacted := `{"Authorization":"Bearer ` + "ghp" + `_0123456789abcdefghijklmnopqrstuvwxyz","state":"UNREDACTED"}`
+	matches, err := scanner.MatchingRules([]byte(unredacted))
+	if err != nil || len(matches) != 1 || matches[0].Rule != "token_cred" {
+		t.Fatalf("MatchingRules(unredacted) = %+v, %v; want token_cred match", matches, err)
+	}
+
 	leaked := `{"Authorization":"REDACTED","dsn":"postgresql://svc_rw:K9mPv2xQr8Lz@pg.internal/prod"}`
-	matches, err := scanner.MatchingRules([]byte(leaked))
+	matches, err = scanner.MatchingRules([]byte(leaked))
 	if err != nil || len(matches) != 1 || len(matches[0].Evidence["cred"]) != 1 ||
 		matches[0].Evidence["cred"][0].Status != EvidenceStatusReady {
 		t.Fatalf("MatchingRules(leaked) = %+v, %v; want ready evidence", matches, err)
