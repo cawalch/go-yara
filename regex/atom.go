@@ -288,6 +288,12 @@ func requiredLiteralAlternationCover(node *Node, minimumLength int) (literalAtom
 			prefixMin = addLength(prefixMin, analysis.minLength)
 			prefixMax = addLength(prefixMax, analysis.maxLength)
 		}
+		if expanded, ok := expandBoundedConcatAlternationCover(node.Children, minimumLength); ok {
+			if !found || betterLiteralAtomCover(expanded, best) {
+				best = expanded
+				found = true
+			}
+		}
 		return best, found
 	case NodePlus:
 		return requiredLiteralAlternationCover(firstChild(node), minimumLength)
@@ -297,6 +303,148 @@ func requiredLiteralAlternationCover(node *Node, minimumLength int) (literalAtom
 		}
 	}
 	return literalAtomCoverPlan{}, false
+}
+
+const (
+	maxExpandedConcatBranches   = 16
+	maxExpandedConcatClassBytes = 8
+)
+
+func expandBoundedConcatAlternationCover(children []*Node, minimumLength int) (literalAtomCoverPlan, bool) {
+	prefixMin := 0
+	prefixMax := 0
+	var best literalAtomCoverPlan
+	found := false
+
+	for index := 0; index < len(children); {
+		branches, isMulti, ok := exactConcatChildBranches(children[index])
+		if !ok {
+			analysis := analyzeAtoms(children[index])
+			prefixMin = addLength(prefixMin, analysis.minLength)
+			prefixMax = addLength(prefixMax, analysis.maxLength)
+			index++
+			continue
+		}
+
+		runMinOffset := prefixMin
+		runMaxOffset := prefixMax
+		expanded := [][]byte{nil}
+		seenMulti := false
+		trailingExactBytes := 0
+		validRun := true
+
+		for index < len(children) {
+			childBranches, childMulti, childOK := exactConcatChildBranches(children[index])
+			if !childOK {
+				break
+			}
+			if len(expanded)*len(childBranches) > maxExpandedConcatBranches {
+				validRun = false
+			}
+			if validRun {
+				next := make([][]byte, 0, len(expanded)*len(childBranches))
+				for _, prefix := range expanded {
+					for _, suffix := range childBranches {
+						combined := make([]byte, 0, len(prefix)+len(suffix))
+						combined = append(combined, prefix...)
+						combined = append(combined, suffix...)
+						next = append(next, combined)
+					}
+				}
+				expanded = next
+				if childMulti {
+					seenMulti = true
+					trailingExactBytes = 0
+				} else if seenMulti && len(childBranches) == 1 {
+					trailingExactBytes += len(childBranches[0])
+				}
+			}
+			analysis := analyzeAtoms(children[index])
+			prefixMin = addLength(prefixMin, analysis.minLength)
+			prefixMax = addLength(prefixMax, analysis.maxLength)
+			index++
+		}
+		_ = branches
+		_ = isMulti
+
+		if !validRun || !seenMulti || trailingExactBytes == 0 || len(expanded) < 2 {
+			continue
+		}
+		groups := make([][]LiteralAtom, 0, len(expanded))
+		allLongEnough := true
+		for _, branch := range expanded {
+			if len(branch) < minimumLength {
+				allLongEnough = false
+				break
+			}
+			groups = append(groups, []LiteralAtom{{
+				Data:      branch,
+				MinOffset: runMinOffset,
+				MaxOffset: runMaxOffset,
+			}})
+		}
+		if !allLongEnough {
+			continue
+		}
+		if cover, coverOK := newLiteralAtomCoverPlan(groups); coverOK {
+			if !found || betterLiteralAtomCover(cover, best) {
+				best = cover
+				found = true
+			}
+		}
+	}
+	return best, found
+}
+
+func exactConcatChildBranches(node *Node) ([][]byte, bool, bool) {
+	analysis := analyzeAtoms(node)
+	if analysis.isExact {
+		return [][]byte{analysis.exact}, false, true
+	}
+	unwrapped := unwrapGroups(node)
+	if unwrapped == nil {
+		return nil, false, false
+	}
+	switch unwrapped.Kind {
+	case NodeRange:
+		if unwrapped.Start == 0 && unwrapped.End == 1 {
+			inner := analyzeAtoms(firstChild(unwrapped))
+			if inner.isExact && len(inner.exact) > 0 {
+				return [][]byte{nil, inner.exact}, true, true
+			}
+		}
+	case NodeClass:
+		set := classByteSet(unwrapped.Class)
+		count := set.Count()
+		if count >= 2 && count <= maxExpandedConcatClassBytes {
+			branches := make([][]byte, 0, count)
+			for value := range 256 {
+				if set.Contains(byte(value)) {
+					branches = append(branches, []byte{byte(value)})
+				}
+			}
+			return branches, true, true
+		}
+	case NodeAlt:
+		leaves := make([]*Node, 0, len(unwrapped.Children))
+		if !appendAlternativeLeaves(&leaves, unwrapped) || len(leaves) < 2 || len(leaves) > maxExpandedConcatBranches {
+			return nil, false, false
+		}
+		branches := make([][]byte, 0, len(leaves))
+		maxLeafLen := 0
+		for _, leaf := range leaves {
+			leafAnalysis := analyzeAtoms(leaf)
+			if !leafAnalysis.isExact || len(leafAnalysis.exact) == 0 {
+				return nil, false, false
+			}
+			maxLeafLen = max(maxLeafLen, len(leafAnalysis.exact))
+			branches = append(branches, leafAnalysis.exact)
+		}
+		if maxLeafLen <= 2 {
+			return branches, true, true
+		}
+	}
+	return nil, false, false
 }
 
 // LeadingByteGapAtomCover returns a candidate plan for regexes shaped like

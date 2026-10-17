@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/cawalch/go-yara/ast"
 	"github.com/cawalch/go-yara/regex"
@@ -79,12 +80,65 @@ func sharedNonTextCacheCoverage(size int, lookup []sharedAutomatonEntry) []bool 
 	return covered
 }
 
+func ruleHasSharedRequiredString(rule *CompiledRule, covered []bool) bool {
+	if rule == nil || len(rule.requiredStrings) == 0 {
+		return false
+	}
+	for _, id := range rule.requiredStrings {
+		idx := rule.ResolveStringIndex(id)
+		if idx < 0 || idx >= len(rule.prefilterStrings) {
+			continue
+		}
+		info := rule.prefilterStrings[idx]
+		switch info.class {
+		case prefilterStringText:
+			return true
+		case prefilterStringNonText:
+			if info.cacheIndex >= 0 && info.cacheIndex < len(covered) && covered[info.cacheIndex] {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func ruleStringCanTriggerCandidate(rule *CompiledRule, stringIdx int, hasSharedRequired bool) bool {
+	if !hasSharedRequired || rule == nil || stringIdx < 0 || stringIdx >= len(rule.IndexToStringID) {
+		return true
+	}
+	return slices.Contains(rule.requiredStrings, rule.IndexToStringID[stringIdx])
+}
+
+func markSharedLookupCandidateTriggers(rules []*CompiledRule, lookup []sharedAutomatonEntry, covered []bool) {
+	hasSharedRequired := make([]bool, len(rules))
+	for i, rule := range rules {
+		hasSharedRequired[i] = ruleHasSharedRequiredString(rule, covered)
+	}
+	for i := range lookup {
+		entry := &lookup[i]
+		if entry.RuleIndex < 0 || entry.RuleIndex >= len(rules) {
+			entry.canTriggerRule = true
+			continue
+		}
+		rule := rules[entry.RuleIndex]
+		entry.canTriggerRule = ruleStringCanTriggerCandidate(
+			rule,
+			entry.StringIdx,
+			hasSharedRequired[entry.RuleIndex],
+		)
+	}
+}
+
 func sharedNonTextCacheRuleLookup(rules []*CompiledRule, covered []bool) [][]int {
 	lookup := make([][]int, len(covered))
 	for ruleIndex, rule := range rules {
-		for _, info := range rule.prefilterStrings {
+		hasSharedRequired := ruleHasSharedRequiredString(rule, covered)
+		for stringIdx, info := range rule.prefilterStrings {
 			if info.class != prefilterStringNonText || info.cacheIndex < 0 ||
 				info.cacheIndex >= len(covered) || !covered[info.cacheIndex] {
+				continue
+			}
+			if !ruleStringCanTriggerCandidate(rule, stringIdx, hasSharedRequired) {
 				continue
 			}
 			ruleIndices := lookup[info.cacheIndex]

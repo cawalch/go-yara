@@ -676,3 +676,184 @@ func BenchmarkKafkaCredentialStream(b *testing.B) {
 		b.ReportMetric(float64(b.N)/b.Elapsed().Seconds(), "eps")
 	})
 }
+
+func buildLargeAppLogEvent(targetBytes int, index int, includeLeak bool) []byte {
+	var sb strings.Builder
+	sb.Grow(targetBytes + 512)
+	fmt.Fprintf(&sb, `{"ts":"2026-10-17T16:25:%02d.%03dZ","level":"error","service":"checkout-orchestrator","pod":"checkout-orchestrator-6d8f9b7c4-x92k%d","trace_id":"4bf92f3577b34da6a3ce929d0e0e%04x","AccountState":"ACTIVE_ACCOUNT","SkuBatch":"SKU_BATCH_%d","sanitized_auth":"REDACTED","sample_token":"EXAMPLE",`,
+		index%60, index%1000, index%9, index, index)
+	if !includeLeak && index%20 == 0 {
+		sb.WriteString(`"local_fallback_dsn":"postgres://postgres:password@localhost:5432/checkout_local",`)
+	}
+	sb.WriteString(`"http_request":{"method":"POST","path":"/api/v2/checkout/complete","headers":{"User-Agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36","X-Forwarded-For":"10.42.19.88, 127.0.0.1","Accept-Encoding":"gzip, deflate, br","Authorization":"REDACTED"}},`)
+	sb.WriteString(`"stack_trace":"goroutine 1482 [running]:\n`)
+
+	frames := []string{
+		`github.com/acme-corp/checkout-api/internal/postgres.(*OrderRepository).CommitTx(0x1400048a200, {0x104c8a120, 0x140009123c0}, 0x1400055e180)\n\t/workspace/internal/postgres/order_repository.go:241 +0x3bc\n`,
+		`github.com/acme-corp/checkout-api/internal/redis.(*SessionCache).RefreshLock(0x1400021c080, {0x104c8a120, 0x140009123c0}, {0x1400038e000, 0x24})\n\t/workspace/internal/redis/session_cache.go:118 +0x194\n`,
+		`github.com/acme-corp/checkout-api/internal/mongodb.(*AuditSink).AppendBatch(0x1400019b400, {0x104c8a120, 0x140009123c0}, {0x14000840000, 0x10, 0x10})\n\t/workspace/internal/mongodb/audit_sink.go:89 +0x2d0\n`,
+		`github.com/acme-corp/checkout-api/pkg/payment.(*StripeGateway).AuthorizeCharge(0x1400031a000, {0x104c8a120, 0x140009123c0}, 0x140007c2000)\n\t/workspace/pkg/payment/stripe_gateway.go:175 +0x418\n`,
+		`github.com/acme-corp/checkout-api/pkg/http/middleware.TraceAndRecover.func1({0x104c86ee0, 0x14000604000}, 0x14000518200)\n\t/workspace/pkg/http/middleware/recover.go:64 +0x150\n`,
+	}
+
+	frameIdx := 0
+	for sb.Len()+360 < targetBytes {
+		sb.WriteString(frames[frameIdx%len(frames)])
+		frameIdx++
+	}
+
+	if includeLeak {
+		sb.WriteString(`","error_detail":"unhandled driver panic on failover dsn=postgresql://svc_orders_rw:K9mPv2xQr8Lz4Nw7Bt6Yh1Jc@pg-primary.prod.corp.internal:5432/orders_prod sslmode=verify-full"}`)
+	} else {
+		sb.WriteString(`","error_detail":"context deadline exceeded while awaiting upstream ACK on SK_CHANNEL_04"}`)
+	}
+	return []byte(sb.String())
+}
+
+func buildLargeAppLogCorpus(targetBytes int) [][]byte {
+	const totalEvents = 500
+	corpus := make([][]byte, 0, totalEvents)
+	for i := range totalEvents {
+		corpus = append(corpus, buildLargeAppLogEvent(targetBytes, i, i == 499))
+	}
+	return corpus
+}
+
+func buildRealisticMixedSizeCorpus() [][]byte {
+	// Realistic production application log size distribution (500 events, 99.8% drop rate):
+	// - 70% (350 events): ~1 KB structured JSON microservice logs
+	// - 20% (100 events): ~4 KB error/warn logs with multi-frame stack traces
+	// -  9% ( 45 events): ~16 KB panic/HTTP dump logs
+	// -  1% (  5 events): ~64 KB full state/goroutine dump logs (with 1 true positive at index 499)
+	const totalEvents = 500
+	corpus := make([][]byte, 0, totalEvents)
+	for i := range totalEvents {
+		var targetBytes int
+		switch {
+		case i == 499:
+			targetBytes = 16 * 1024
+		case i%100 == 99:
+			targetBytes = 64 * 1024
+		case i%11 == 10:
+			targetBytes = 16 * 1024
+		case i%5 == 4:
+			targetBytes = 4 * 1024
+		default:
+			targetBytes = 1024
+		}
+		corpus = append(corpus, buildLargeAppLogEvent(targetBytes, i, i == 499))
+	}
+	return corpus
+}
+
+func TestKafkaLargeApplicationLogs(t *testing.T) {
+	program, err := NewCompiler().CompileSource(kafkaCredentialRulesSource)
+	if err != nil {
+		t.Fatalf("CompileSource failed: %v", err)
+	}
+	scanner := program.NewScanner(WithEvidence(256), WithReportedMatchesOnly(), WithFastScan())
+	defer scanner.Close()
+
+	for _, size := range []int{1024, 4 * 1024, 16 * 1024, 64 * 1024} {
+		for _, benignIdx := range []int{0, 1} {
+			benign := buildLargeAppLogEvent(size, benignIdx, false)
+			matches, scanErr := scanner.MatchingRules(benign)
+			if scanErr != nil {
+				t.Fatalf("size %d benign[%d] scan failed: %v", size, benignIdx, scanErr)
+			}
+			if len(matches) != 0 {
+				t.Fatalf("size %d benign[%d] log unexpectedly matched %+v", size, benignIdx, matches)
+			}
+		}
+
+		leaked := buildLargeAppLogEvent(size, 2, true)
+		matches, scanErr := scanner.MatchingRules(leaked)
+		if scanErr != nil {
+			t.Fatalf("size %d leaked scan failed: %v", size, scanErr)
+		}
+		if len(matches) != 1 || matches[0].Rule != "cred_postgres_uri" {
+			t.Fatalf("size %d leaked log matches = %+v, want [cred_postgres_uri]", size, matches)
+		}
+		findings := matches[0].Evidence["credential"]
+		if len(findings) != 1 || findings[0].Status != EvidenceStatusReady {
+			t.Fatalf("size %d leaked log evidence = %+v, want ready finding", size, findings)
+		}
+	}
+}
+
+func BenchmarkKafkaCredentialStreamByEventSize(b *testing.B) {
+	program, err := NewCompiler().CompileSource(kafkaCredentialRulesSource)
+	if err != nil {
+		b.Fatalf("CompileSource failed: %v", err)
+	}
+
+	cases := []struct {
+		name   string
+		corpus [][]byte
+	}{
+		{"1KB_StructuredLog", buildLargeAppLogCorpus(1024)},
+		{"4KB_StackTraceLog", buildLargeAppLogCorpus(4 * 1024)},
+		{"16KB_PanicAndHTTPDump", buildLargeAppLogCorpus(16 * 1024)},
+		{"64KB_FullStateDump", buildLargeAppLogCorpus(64 * 1024)},
+		{"MixedRealisticDistribution_Avg3.6KB", buildRealisticMixedSizeCorpus()},
+	}
+
+	for _, tc := range cases {
+		var totalBytes int64
+		for _, event := range tc.corpus {
+			totalBytes += int64(len(event))
+		}
+		avgBytes := totalBytes / int64(len(tc.corpus))
+
+		b.Run("SingleWorker_"+tc.name, func(b *testing.B) {
+			scanner := program.NewScanner(WithEvidence(256), WithReportedMatchesOnly(), WithFastScan())
+			defer scanner.Close()
+			b.SetBytes(avgBytes)
+			b.ReportAllocs()
+			b.ResetTimer()
+			idx := 0
+			hits := 0
+			for b.Loop() {
+				event := tc.corpus[idx]
+				idx++
+				if idx == len(tc.corpus) {
+					idx = 0
+				}
+				matches, scanErr := scanner.MatchingRules(event)
+				if scanErr != nil {
+					b.Fatal(scanErr)
+				}
+				hits += len(matches)
+			}
+			b.ReportMetric(float64(b.N)/b.Elapsed().Seconds(), "eps")
+			_ = hits
+		})
+
+		b.Run("ParallelWorkers_"+tc.name, func(b *testing.B) {
+			b.SetBytes(avgBytes)
+			b.ReportAllocs()
+			var totalHits atomic.Uint64
+			b.ResetTimer()
+			b.RunParallel(func(pb *testing.PB) {
+				scanner := program.NewScanner(WithEvidence(256), WithReportedMatchesOnly(), WithFastScan())
+				defer scanner.Close()
+				idx := 0
+				localHits := uint64(0)
+				for pb.Next() {
+					event := tc.corpus[idx]
+					idx++
+					if idx == len(tc.corpus) {
+						idx = 0
+					}
+					matches, scanErr := scanner.MatchingRules(event)
+					if scanErr != nil {
+						b.Fatal(scanErr)
+					}
+					localHits += uint64(len(matches))
+				}
+				totalHits.Add(localHits)
+			})
+			b.ReportMetric(float64(b.N)/b.Elapsed().Seconds(), "eps")
+		})
+	}
+}

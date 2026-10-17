@@ -494,8 +494,8 @@ func (rc *ruleCompiler) compileSingleString(str *ast.String) error {
 				pattern.atomASCIINoCase = true
 			}
 		}
-		if len(pattern.prefix) < minPrefilterAtomLength {
-			if atoms, ok := selectAlternativeRegexAtoms(result.regexAlternatives); ok {
+		if atoms, ok := selectAlternativeRegexAtoms(result.regexAlternatives); ok {
+			if len(pattern.prefix) < minPrefilterAtomLength || alternativeAtomsBeatPrefix(atoms, pattern.prefix) {
 				pattern.alternativeAtoms = cloneRegexPrefilterAtoms(atoms)
 				pattern.wideAlternativeAtoms = widenRegexPrefilterAtoms(atoms)
 			}
@@ -1431,6 +1431,7 @@ type sharedAutomatonEntry struct {
 	alternativeAtom bool
 	forceShared     bool
 	IsWide          bool
+	canTriggerRule  bool
 }
 
 // CompiledProgram represents an immutable, thread-safe collection of compiled YARA rules.
@@ -1565,6 +1566,7 @@ func (cp *CompiledProgram) prepare() error {
 		return err
 	}
 	cp.sharedNonTextCaches = sharedNonTextCacheCoverage(cp.nonTextCacheSize, cp.sharedLookup)
+	markSharedLookupCandidateTriggers(cp.Rules, cp.sharedLookup, cp.sharedNonTextCaches)
 	cp.sharedNonTextCacheRules = sharedNonTextCacheRuleLookup(cp.Rules, cp.sharedNonTextCaches)
 	cp.compactPrefilter = cp.buildCompactPrefilter()
 	cp.booleanRouting = sync.OnceValue(cp.buildBooleanRouting)

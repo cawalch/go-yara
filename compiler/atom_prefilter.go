@@ -537,16 +537,30 @@ func betterRegexByteSetPrefilter(candidate, current regexByteSetPrefilter) bool 
 	return true
 }
 
-func selectSharedRegexAtoms(pattern RegexPattern) []regexPrefilterAtom {
-	if atom, ok := selectLiteralAtom(pattern.prefix); ok {
-		return []regexPrefilterAtom{{
-			data:      atom.data,
-			minOffset: atom.offset,
-			maxOffset: atom.offset,
-			score:     atom.score,
-		}}
+func alternativeAtomsBeatPrefix(atoms []regexPrefilterAtom, prefix []byte) bool {
+	if len(atoms) < 2 || hasUnboundedRegexAlternative(atoms) {
+		return false
 	}
-	if pattern.atomASCIINoCase && len(pattern.atom) >= minPrefilterAtomLength {
+	prefixAtom, ok := selectLiteralAtom(prefix)
+	if !ok {
+		return true
+	}
+	current := regexPrefilterAtom{
+		data:      prefixAtom.data,
+		minOffset: prefixAtom.offset,
+		maxOffset: prefixAtom.offset,
+		score:     prefixAtom.score,
+	}
+	for _, atom := range atoms {
+		if !betterRegexPrefilterAtom(atom, current) {
+			return false
+		}
+	}
+	return true
+}
+
+func selectSharedRegexAtoms(pattern RegexPattern) []regexPrefilterAtom {
+	if pattern.atomASCIINoCase && len(pattern.atom) >= minPrefilterAtomLength && len(pattern.prefix) < minPrefilterAtomLength {
 		return []regexPrefilterAtom{{
 			data:        pattern.atom,
 			minOffset:   pattern.atomMinOffset,
@@ -555,14 +569,18 @@ func selectSharedRegexAtoms(pattern RegexPattern) []regexPrefilterAtom {
 			asciiNoCase: true,
 		}}
 	}
-	if len(pattern.alternativeAtoms) > 1 && !hasUnboundedRegexAlternative(pattern.alternativeAtoms) {
-		// Prefer a complete OR-cover to a single common atom. Besides being
-		// more selective, multiple sparse entries let a lone alternation regex
-		// cross the shared-automaton threshold and participate in whole-scan
-		// rejection. Unbounded covers retain the existing single-atom plan,
-		// which avoids expanding sparse root sets without improving candidate
-		// start recovery.
+	if alternativeAtomsBeatPrefix(pattern.alternativeAtoms, pattern.prefix) {
+		// Prefer a complete OR-cover when every branch atom is bounded and more
+		// selective than the common prefix (or when no usable prefix exists).
 		return pattern.alternativeAtoms
+	}
+	if atom, ok := selectLiteralAtom(pattern.prefix); ok {
+		return []regexPrefilterAtom{{
+			data:      atom.data,
+			minOffset: atom.offset,
+			maxOffset: atom.offset,
+			score:     atom.score,
+		}}
 	}
 	if len(pattern.atom) >= minPrefilterAtomLength {
 		return []regexPrefilterAtom{{
@@ -671,6 +689,9 @@ func (s *Scanner) populateNonTextPrefilterCache(
 ) error {
 	if s.program.nonTextCacheSize == 0 || len(s.touchedPrefilterCandidates) == 0 {
 		return ctx.Err()
+	}
+	if s.matchCtx != nil {
+		s.matchCtx.maxMatchSpan = s.maxMatchSpan
 	}
 	slices.Sort(s.touchedPrefilterCandidates)
 	for touchedIndex := 0; touchedIndex < len(s.touchedPrefilterCandidates); {
@@ -836,10 +857,67 @@ func appendRegexPrefilterMatches(
 	// its absence still proves the regex cannot match. If it is present, keep
 	// correctness by delegating to the existing exact matcher.
 	if entry.AtomMaxOffset < 0 {
-		return appendRegexFallbackMatches(dst, rule, strID, pattern, data, flags, entry.IsWide, done)
+		return appendRegexFallbackMatches(dst, rule, strID, pattern, data, flags, entry.IsWide, done, matchCtx)
 	}
 	limit := max(1024, len(data)/4)
-	var startsBuf [32]int
+	modifiers := rule.StringModifiers[strID]
+	hasFixedByteSet := !entry.IsWide && pattern.byteSetCount > 0 &&
+		pattern.byteSetMinOffset >= 0 && pattern.byteSetMinOffset == pattern.byteSetMaxOffset
+	maxMatchSpan := 0
+	if matchCtx != nil {
+		maxMatchSpan = matchCtx.maxMatchSpan
+	}
+	var bs *regex.VMBatch
+
+	verifyCandidateStart := func(start int) {
+		if pattern.anchored && start != 0 {
+			return
+		}
+		if hasFixedByteSet {
+			checkPos := start + pattern.byteSetMinOffset
+			if checkPos >= len(data) || !pattern.byteSet.Contains(data[checkPos]) {
+				return
+			}
+		}
+		if bs == nil {
+			bs = newRegexMatchBatch(matchCtx, pattern)
+		}
+		scanData := data
+		if maxMatchSpan > 0 && start < len(data) {
+			scanData = data[:min(len(data), start+maxMatchSpan)]
+		}
+		matched, startOff, endOff := execRegexMatchAt(bs, pattern, scanData, flags, entry.IsWide, start, done)
+		if !matched {
+			return
+		}
+		absStart := start + startOff
+		absEnd := start + endOff
+		if absEnd < absStart {
+			return
+		}
+		match := Match{Pattern: strID, Offset: int64(absStart), Length: absEnd - absStart}
+		if matchPassesModifiers(data, match, modifiers, entry.IsWide) {
+			dst = append(dst, matchSpan{Offset: match.Offset, Length: match.Length})
+		}
+	}
+
+	if entry.AtomOffset == entry.AtomMaxOffset && len(candidates) <= limit {
+		lastStart := -1
+		for index, atomStart := range candidates {
+			if scanCanceledAt(done, index) {
+				return dst
+			}
+			start := atomStart - entry.AtomOffset
+			if start < 0 || start > len(data) || start <= lastStart {
+				continue
+			}
+			lastStart = start
+			verifyCandidateStart(start)
+		}
+		return dst
+	}
+
+	var startsBuf [64]int
 	starts, handled := collectRegexCandidateStartsInto(
 		startsBuf[:0],
 		candidates,
@@ -850,32 +928,13 @@ func appendRegexPrefilterMatches(
 		limit,
 	)
 	if !handled {
-		return appendRegexFallbackMatches(dst, rule, strID, pattern, data, flags, entry.IsWide, done)
+		return appendRegexFallbackMatches(dst, rule, strID, pattern, data, flags, entry.IsWide, done, matchCtx)
 	}
-	if len(starts) == 0 {
-		return dst
-	}
-	bs := newRegexMatchBatch(matchCtx, pattern)
 	for index, start := range starts {
 		if scanCanceledAt(done, index) {
 			return dst
 		}
-		if pattern.anchored && start != 0 {
-			continue
-		}
-		matched, startOff, endOff := execRegexMatchAt(bs, pattern, data, flags, entry.IsWide, start, done)
-		if !matched {
-			continue
-		}
-		absStart := start + startOff
-		absEnd := start + endOff
-		if absEnd < absStart {
-			continue
-		}
-		match := Match{Pattern: strID, Offset: int64(absStart), Length: absEnd - absStart}
-		if matchPassesModifiers(data, match, rule.StringModifiers[strID], entry.IsWide) {
-			dst = append(dst, matchSpan{Offset: match.Offset, Length: match.Length})
-		}
+		verifyCandidateStart(start)
 	}
 	return dst
 }
@@ -890,11 +949,15 @@ func appendRegexFallbackMatches(
 	flags regex.Flags,
 	isWide bool,
 	done <-chan struct{},
+	matchCtx *MatchContext,
 ) []matchSpan {
 	ctx := matchContextPool.Get().(*MatchContext)
 	ctx.compact = true
 	ctx.Reset(data)
 	ctx.cancelDone = done
+	if matchCtx != nil {
+		ctx.maxMatchSpan = matchCtx.maxMatchSpan
+	}
 	addRegexMatches(ctx, strID, pattern, data, rule.StringModifiers[strID], flags, isWide)
 	dst = append(dst, ctx.spans[strID]...)
 	ctx.Release()
