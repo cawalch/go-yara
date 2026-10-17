@@ -268,12 +268,14 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 }
 
 func (i *Interpreter) storeExecutionResult() {
-	if i.currentRule != "" && len(i.stack) > 0 {
+	if (i.currentRule != "" || i.currentRuleIndex >= 0) && len(i.stack) > 0 {
 		result := i.stack[len(i.stack)-1]
-		if result.Type == ValueTypeInt {
-			i.ruleResults[i.currentRule] = result.IntVal != 0
-		} else {
-			i.ruleResults[i.currentRule] = false
+		matched := result.Type == ValueTypeInt && result.IntVal != 0
+		if i.currentRuleIndex >= 0 && i.currentRuleIndex < len(i.ruleResultsDense) {
+			i.ruleResultsDense[i.currentRuleIndex] = matched
+		}
+		if i.ruleResults != nil && i.currentRule != "" {
+			i.ruleResults[i.currentRule] = matched
 		}
 	}
 }

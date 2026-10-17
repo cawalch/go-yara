@@ -12,12 +12,13 @@ import (
 // A Scanner is safe to reuse across multiple Scan calls but is NOT safe for
 // concurrent use. Use one Scanner per goroutine.
 type Scanner struct {
-	program     *CompiledProgram
-	interp      *Interpreter    // reused across calls
-	matchCtx    *MatchContext   // reused across calls
-	ruleResults map[string]bool // reused across calls
-	tagsFilter  map[string]bool // non-empty means: only report rules with these tags
-	itersmax    int             // max for-loop iterations (0 = unlimited)
+	program          *CompiledProgram
+	interp           *Interpreter    // reused across calls
+	matchCtx         *MatchContext   // reused across calls
+	ruleResults      map[string]bool // reused across calls
+	ruleResultsDense []bool          // direct indexed results vector
+	tagsFilter       map[string]bool // non-empty means: only report rules with these tags
+	itersmax         int             // max for-loop iterations (0 = unlimited)
 
 	matchDataMax        int
 	matchContextBefore  int
@@ -254,11 +255,17 @@ func NewScanner(program *CompiledProgram, opts ...ScannerOption) *Scanner {
 	ctx := matchContextPool.Get().(*MatchContext)
 	ctx.compact = true
 
+	ruleCount := 0
+	if program != nil {
+		ruleCount = len(program.Rules)
+	}
+
 	s := &Scanner{
-		program:     program,
-		interp:      interp,
-		matchCtx:    ctx,
-		ruleResults: make(map[string]bool),
+		program:          program,
+		interp:           interp,
+		matchCtx:         ctx,
+		ruleResults:      make(map[string]bool),
+		ruleResultsDense: make([]bool, ruleCount),
 	}
 	if program != nil {
 		s.externalValues = cloneExternalValues(program.externalValues)

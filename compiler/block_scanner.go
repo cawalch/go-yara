@@ -174,6 +174,7 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (*ScanResult
 		Matches:      make(map[string]map[string][]Match),
 	}
 	clear(s.ruleResults)
+	clear(s.ruleResultsDense)
 	s.interp.ResetIterationCount()
 
 	blocks := append([]MemoryBlock(nil), scanner.blocks...)
@@ -209,6 +210,9 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (*ScanResult
 			}
 		}
 		if !ruleHeaderConstraintsMatchContext(rule, headerContext) {
+			if rule.Index >= 0 && rule.Index < len(s.ruleResultsDense) {
+				s.ruleResultsDense[rule.Index] = false
+			}
 			s.ruleResults[rule.Name] = false
 			result.RuleResults[rule.Name] = false
 			result.PrunedRules = append(result.PrunedRules, rule.Name)
@@ -230,6 +234,9 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (*ScanResult
 			}
 		}
 		if !s.prefilterDisabled && rule.RequiresStringMatch && len(s.matchCtx.spans) == 0 {
+			if rule.Index >= 0 && rule.Index < len(s.ruleResultsDense) {
+				s.ruleResultsDense[rule.Index] = false
+			}
 			s.ruleResults[rule.Name] = false
 			result.RuleResults[rule.Name] = false
 			continue
@@ -313,6 +320,7 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (*ScanResult
 			case MatchActionStopScan:
 				result.MatchedRules = append(result.MatchedRules, ruleMatch)
 				clear(s.ruleResults)
+				clear(s.ruleResultsDense)
 				return result, nil
 			case MatchActionSkipRule:
 				continue
@@ -322,6 +330,7 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (*ScanResult
 		result.MatchedRules = append(result.MatchedRules, ruleMatch)
 	}
 	clear(s.ruleResults)
+	clear(s.ruleResultsDense)
 	return result, nil
 }
 

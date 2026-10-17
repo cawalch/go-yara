@@ -25,6 +25,13 @@ const (
 	rulePrefilterCandidate
 )
 
+func (s *Scanner) recordRuleResult(rule *CompiledRule, matched bool) {
+	if rule.Index >= 0 && rule.Index < len(s.ruleResultsDense) {
+		s.ruleResultsDense[rule.Index] = matched
+	}
+	s.ruleResults[rule.Name] = matched
+}
+
 func (s *Scanner) evaluateRuleCondition(
 	ctx context.Context,
 	rule *CompiledRule,
@@ -39,7 +46,7 @@ func (s *Scanner) evaluateRuleCondition(
 		if err := ctx.Err(); err != nil {
 			return ruleEvaluation{}, err
 		}
-		s.ruleResults[rule.Name] = false
+		s.recordRuleResult(rule, false)
 		if s.hookMask&hookBitRuleProfile != 0 {
 			s.dispatchRuleEvaluated(RuleProfile{
 				RuleName:  rule.Name,
@@ -55,7 +62,7 @@ func (s *Scanner) evaluateRuleCondition(
 	}
 
 	if !s.prefilterDisabled && input.skipUnmatchedContext && input.usesharedAutomaton && s.missingRequiredString(rule) {
-		s.ruleResults[rule.Name] = false
+		s.recordRuleResult(rule, false)
 		if s.hookMask&(hookBitTelemetry|hookBitRuleProfile) != 0 {
 			s.recordRuleEvaluatedHooks(rule, false, ruleStart)
 		}
@@ -66,7 +73,7 @@ func (s *Scanner) evaluateRuleCondition(
 		return ruleEvaluation{}, err
 	}
 	if !s.prefilterDisabled && rule.RequiresStringMatch && len(s.matchCtx.spans) == 0 {
-		s.ruleResults[rule.Name] = false
+		s.recordRuleResult(rule, false)
 		if s.hookMask&(hookBitTelemetry|hookBitRuleProfile) != 0 {
 			s.recordRuleEvaluatedHooks(rule, false, ruleStart)
 		}
@@ -81,8 +88,8 @@ func (s *Scanner) evaluateRuleCondition(
 		}
 		return ruleEvaluation{}, err
 	}
-	matched := s.interp.ruleResult(rule.Name)
-	s.ruleResults[rule.Name] = matched
+	matched := s.interp.ruleResultByIndex(rule.Index, rule.Name)
+	s.recordRuleResult(rule, matched)
 
 	if s.hookMask&(hookBitTelemetry|hookBitRuleProfile) != 0 {
 		s.recordRuleEvaluatedHooks(rule, matched, ruleStart)

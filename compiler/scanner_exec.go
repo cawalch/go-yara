@@ -170,6 +170,7 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 		}
 		scanInput := ruleScanInput{data: data, usesharedAutomaton: false, skipUnmatchedContext: true}
 		clear(s.ruleResults)
+		clear(s.ruleResultsDense)
 		if err := s.recordAllRulesRejected(ctx, result, scanInput); err != nil {
 			return nil, err
 		}
@@ -184,6 +185,7 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 	scanInput := ruleScanInput{data: data, usesharedAutomaton: usesharedAutomaton, skipUnmatchedContext: s.reportedMatchesOnly}
 
 	clear(s.ruleResults)
+	clear(s.ruleResultsDense)
 	allRejected := false
 	if !s.prefilterDisabled {
 		if usesharedAutomaton {
@@ -272,7 +274,12 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 	// Check if all global rules matched
 	allGlobalMatched := true
 	for _, ruleIndex := range s.evaluatedGlobalRules {
-		if !result.RuleResults[s.program.Rules[ruleIndex].Name] {
+		if ruleIndex >= 0 && ruleIndex < len(s.ruleResultsDense) {
+			if !s.ruleResultsDense[ruleIndex] {
+				allGlobalMatched = false
+				break
+			}
+		} else if !result.RuleResults[s.program.Rules[ruleIndex].Name] {
 			allGlobalMatched = false
 			break
 		}
@@ -330,6 +337,7 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 				case MatchActionStopScan:
 					result.MatchedRules = append(result.MatchedRules, ruleMatch)
 					clear(s.ruleResults)
+					clear(s.ruleResultsDense)
 					if s.hookMask&(hookBitScanLifecycle|hookBitTelemetry) != 0 {
 						dur := time.Since(scanStart)
 						s.dispatchScanComplete(ctx, result, dur)
@@ -349,6 +357,7 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 	}
 
 	clear(s.ruleResults)
+	clear(s.ruleResultsDense)
 	if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
 		s.telemetrySink.TotalMatches += uint64(len(result.MatchedRules))
 	}
@@ -383,7 +392,11 @@ func (s *Scanner) MatchesWithContext(ctx context.Context, data []byte) (bool, er
 		return false, err
 	}
 	clear(s.ruleResults)
-	defer clear(s.ruleResults)
+	clear(s.ruleResultsDense)
+	defer func() {
+		clear(s.ruleResults)
+		clear(s.ruleResultsDense)
+	}()
 	if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
 		s.telemetrySink.TotalScans++
 		s.telemetrySink.BytesScanned += int64(len(data))
@@ -427,7 +440,11 @@ func (s *Scanner) MatchingRulesWithContext(ctx context.Context, data []byte) ([]
 	}
 
 	clear(s.ruleResults)
-	defer clear(s.ruleResults)
+	clear(s.ruleResultsDense)
+	defer func() {
+		clear(s.ruleResults)
+		clear(s.ruleResultsDense)
+	}()
 	s.matchedRuleIndices = s.matchedRuleIndices[:0]
 	evaluation, err := s.evaluatePublicRules(ctx, data, &s.matchedRuleIndices)
 	if err != nil {

@@ -60,7 +60,9 @@ type Interpreter struct {
 	result              error
 	matchContext        *MatchContext            // Pattern matching context
 	ruleResults         map[string]bool          // Track execution results of all rules in the program
+	ruleResultsDense    []bool                   // Direct indexed rule execution results
 	currentRule         string                   // Name of the currently executing rule
+	currentRuleIndex    int                      // Index of the currently executing rule (-1 if unset)
 	currentCompiledRule *CompiledRule            // Currently executing rule (for int string ID resolution)
 	compiledRules       []*CompiledRule          // All compiled rules in the program
 	ruleMap             map[string]*CompiledRule // Index for O(1) rule lookup by name
@@ -424,6 +426,11 @@ func (i *Interpreter) SetRuleResults(ruleResults map[string]bool) {
 	i.ruleResults = ruleResults
 }
 
+// SetRuleResultsDense sets the direct-indexed boolean slice for rule results.
+func (i *Interpreter) SetRuleResultsDense(dense []bool) {
+	i.ruleResultsDense = dense
+}
+
 // SetStringLiterals sets an owned snapshot of the string literal pool for
 // OpPushStr.
 func (i *Interpreter) SetStringLiterals(literals []string) {
@@ -458,8 +465,24 @@ func (i *Interpreter) GetRuleResults() map[string]bool {
 	return maps.Clone(i.ruleResults)
 }
 
+func (i *Interpreter) ruleResultByIndex(idx int, name string) bool {
+	if idx >= 0 && idx < len(i.ruleResultsDense) {
+		return i.ruleResultsDense[idx]
+	}
+	if i.ruleResults != nil {
+		return i.ruleResults[name]
+	}
+	return false
+}
+
 func (i *Interpreter) ruleResult(name string) bool {
-	return i.ruleResults[name]
+	if i.currentRuleIndex >= 0 && i.currentRuleIndex < len(i.ruleResultsDense) && i.currentRule == name {
+		return i.ruleResultsDense[i.currentRuleIndex]
+	}
+	if i.ruleResults != nil {
+		return i.ruleResults[name]
+	}
+	return false
 }
 
 // GetStack returns a copy of the current stack (for debugging)
@@ -500,6 +523,9 @@ func (i *Interpreter) Reset() {
 		i.ruleResults = make(map[string]bool)
 	} else if !i.PreserveRuleResults {
 		clear(i.ruleResults)
+	}
+	if i.ruleResultsDense != nil && !i.PreserveRuleResults {
+		clear(i.ruleResultsDense)
 	}
 	i.iterators = i.iterators[:0]
 }
