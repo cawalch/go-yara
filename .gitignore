@@ -1,9 +1,11 @@
 # Build artifacts and test outputs
+bin/
 *.out
 *.test
 .pi
 coverage.out
 coverage.html
+*.jsonl
 
 # Benchmarks and profiling data
 benchmarks/
@@ -37,3 +39,4 @@ testdata/performance/large_*.bin
 # Local tool caches
 tmp/.cache/
 .cache/
+.agent/

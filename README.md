@@ -72,6 +72,8 @@ Set `GOEXPERIMENT=simd` when building your application or running tests:
 
 ```bash
 # Build binary with SIMD acceleration enabled:
+make build-simd
+# or:
 GOEXPERIMENT=simd go build ./cmd
 
 # Run tests with SIMD:
@@ -827,6 +829,9 @@ To run individual test stages:
 # Run unit and integration tests:
 make test
 
+# Run unit tests and libyara bugproof differential suite:
+make test-all
+
 # Run tests with the race detector enabled:
 make test-race
 
@@ -836,6 +841,12 @@ make analyze
 # Check code formatting and module tidy state:
 make fmt-check
 make tidy-check
+
+# Automatically format, tidy modules, and apply linter fixes:
+make fix
+
+# Generate test coverage HTML report:
+make coverage
 ```
 
 ### Run fuzz testing
