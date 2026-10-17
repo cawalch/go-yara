@@ -41,6 +41,15 @@ type acAutomaton struct {
 	rootLanes []rootLane
 	teddy     teddyPrefilter
 
+	// Flattened transition table. If len(states) <= 65536, transitions16 is populated
+	// and transitions32 is nil. If len(states) > 65536, transitions32 is populated.
+	// Both use power-of-two state stride (256): index is (state << 8) | byteVal.
+	transitions16 []uint16
+	transitions32 []int32
+
+	// hasOutput indicates whether a state has any outputs. 1 byte per state.
+	hasOutput []bool
+
 	// Compilation state
 	compiledOnce sync.Once
 	compiled     bool
@@ -204,6 +213,7 @@ func (ac *acAutomaton) Compile() error {
 		}
 		// Fold the failure links into the goto table so the scan never walks them.
 		ac.closeTransitions()
+		ac.buildFlatTransitions()
 		ac.teddy = newTeddyPrefilter(ac.strings)
 		ac.compiled = true
 	})
@@ -309,6 +319,12 @@ func (ac *acAutomaton) buildFailureLinks() error {
 // folded every failure-link hop into the goto table, so this is one load with no
 // loop and no branch.
 func (ac *acAutomaton) findNextState(currentState int32, b byte) int32 {
+	if len(ac.transitions16) > 0 {
+		return int32(ac.transitions16[(uint32(currentState)<<8)|uint32(b)])
+	}
+	if len(ac.transitions32) > 0 {
+		return ac.transitions32[(uint32(currentState)<<8)|uint32(b)]
+	}
 	return ac.states[currentState].transitions[b]
 }
 
@@ -365,6 +381,59 @@ func (ac *acAutomaton) closeTransitions() {
 			}
 		}
 	}
+}
+
+func (ac *acAutomaton) buildFlatTransitions() {
+	numStates := len(ac.states)
+	if numStates == 0 {
+		return
+	}
+	ac.hasOutput = make([]bool, numStates)
+	for i := range ac.states {
+		if ac.states[i].outputStart != ac.states[i].outputEnd {
+			ac.hasOutput[i] = true
+		}
+	}
+
+	if numStates <= 65536 {
+		flat := make([]uint16, numStates*256)
+		for s := range ac.states {
+			base := s << 8
+			transitions := &ac.states[s].transitions
+			for b := range 256 {
+				flat[base|b] = uint16(transitions[b]) //checkednarrow:ignore guarded by numStates <= 65536
+			}
+		}
+		ac.transitions16 = flat
+	} else {
+		flat := make([]int32, numStates*256)
+		for s := range ac.states {
+			base := s << 8
+			transitions := &ac.states[s].transitions
+			for b := range 256 {
+				flat[base|b] = transitions[b]
+			}
+		}
+		ac.transitions32 = flat
+	}
+}
+
+func (ac *acAutomaton) rootIsDense16(data []byte) bool {
+	sample := data
+	if len(sample) > 256 {
+		sample = sample[:256]
+	}
+	rootTransitions := ac.transitions16[:256]
+	hits := 0
+	for _, b := range sample {
+		if rootTransitions[b] != 0 {
+			hits++
+			if hits > 16 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 const (
@@ -644,7 +713,7 @@ func indexSinglePatternWithCancel(data, pattern []byte, noCase bool, done <-chan
 //
 // SearchWithCancel searches for pattern matches while checking done for cancellation.
 //
-//nolint:nestif // mirrors Search with bounded cancellation checkpoints
+// SearchWithCancel searches for pattern matches while checking done for cancellation.
 func (ac *acAutomaton) SearchWithCancel(data []byte, done <-chan struct{}, yield func(acMatch) bool) {
 	if !ac.compiled || len(data) == 0 || scanCanceled(done) {
 		return
@@ -660,10 +729,22 @@ func (ac *acAutomaton) SearchWithCancel(data []byte, done <-chan struct{}, yield
 		}
 	}
 
-	currentState := int32(0)
-	rootHasNoOutput := ac.states[0].outputStart == ac.states[0].outputEnd
+	if len(ac.transitions16) > 0 {
+		ac.searchWithCancel16(data, done, yield)
+		return
+	}
+	ac.searchWithCancel32(data, done, yield)
+}
+
+//nolint:nestif // mirrors Search with bounded cancellation checkpoints
+func (ac *acAutomaton) searchWithCancel16(data []byte, done <-chan struct{}, yield func(acMatch) bool) {
+	trans := ac.transitions16
+	rootTransitions := trans[:256]
+	hasOutput := ac.hasOutput
+	currentState := uint16(0)
+	rootHasNoOutput := !hasOutput[0]
+
 	if rootHasNoOutput && ac.teddy != nil && len(data) >= 256 {
-		rootTransitions := &ac.states[0].transitions
 		linearUntil := 0
 		for i := 0; i < len(data); i++ {
 			if i&(scanCancellationInterval-1) == 0 && scanCanceled(done) {
@@ -689,19 +770,18 @@ func (ac *acAutomaton) SearchWithCancel(data []byte, done <-chan struct{}, yield
 					continue
 				}
 			} else {
-				currentState = ac.findNextState(currentState, data[i])
+				currentState = trans[(uint32(currentState)<<8)|uint32(data[i])]
 			}
-			if ac.states[currentState].outputStart != ac.states[currentState].outputEnd &&
-				!ac.yieldMatchesWithCancel(currentState, i, yield, done) {
+			if hasOutput[currentState] &&
+				!ac.yieldMatchesWithCancel(int32(currentState), i, yield, done) {
 				return
 			}
 		}
 		return
 	}
 
-	if rootHasNoOutput && len(data) >= 256 && len(ac.rootLanes) > 0 && len(ac.rootLanes) <= maxSparseRootTransitions && !ac.rootIsDense(data) {
+	if rootHasNoOutput && len(data) >= 256 && len(ac.rootLanes) > 0 && len(ac.rootLanes) <= maxSparseRootTransitions && !ac.rootIsDense16(data) {
 		rootCursor := newRootCandidateCursor(ac.rootLanes)
-		rootTransitions := &ac.states[0].transitions
 		linearUntil := 0
 		for i := 0; i < len(data); i++ {
 			if i&(scanCancellationInterval-1) == 0 && scanCanceled(done) {
@@ -723,17 +803,16 @@ func (ac *acAutomaton) SearchWithCancel(data []byte, done <-chan struct{}, yield
 					continue
 				}
 			} else {
-				currentState = ac.findNextState(currentState, data[i])
+				currentState = trans[(uint32(currentState)<<8)|uint32(data[i])]
 			}
-			if ac.states[currentState].outputStart != ac.states[currentState].outputEnd &&
-				!ac.yieldMatchesWithCancel(currentState, i, yield, done) {
+			if hasOutput[currentState] &&
+				!ac.yieldMatchesWithCancel(int32(currentState), i, yield, done) {
 				return
 			}
 		}
 		return
 	}
 
-	rootTransitions := &ac.states[0].transitions
 	for blockStart := 0; blockStart < len(data); blockStart += scanCancellationInterval {
 		if scanCanceled(done) {
 			return
@@ -746,9 +825,108 @@ func (ac *acAutomaton) SearchWithCancel(data []byte, done <-chan struct{}, yield
 					continue
 				}
 			} else {
-				currentState = ac.findNextState(currentState, b)
+				currentState = trans[(uint32(currentState)<<8)|uint32(b)]
 			}
-			if ac.states[currentState].outputStart != ac.states[currentState].outputEnd &&
+			if hasOutput[currentState] &&
+				!ac.yieldMatchesWithCancel(int32(currentState), blockStart+relative, yield, done) {
+				return
+			}
+		}
+	}
+}
+
+//nolint:nestif // mirrors Search with bounded cancellation checkpoints
+func (ac *acAutomaton) searchWithCancel32(data []byte, done <-chan struct{}, yield func(acMatch) bool) {
+	trans := ac.transitions32
+	rootTransitions := trans[:256]
+	hasOutput := ac.hasOutput
+	currentState := int32(0)
+	rootHasNoOutput := !hasOutput[0]
+
+	if rootHasNoOutput && ac.teddy != nil && len(data) >= 256 {
+		linearUntil := 0
+		for i := 0; i < len(data); i++ {
+			if i&(scanCancellationInterval-1) == 0 && scanCanceled(done) {
+				return
+			}
+			if currentState == 0 && i >= linearUntil && len(data)-i >= 32 {
+				candidate := ac.teddy.findCandidateWithCancel(data, i, done)
+				if candidate < 0 {
+					i = max(i, len(data)-31)
+					if i >= len(data) {
+						return
+					}
+				} else {
+					if candidate-i < 64 {
+						linearUntil = candidate + 256
+					}
+					i = candidate
+				}
+			}
+			if currentState == 0 {
+				currentState = rootTransitions[data[i]]
+				if currentState == 0 {
+					continue
+				}
+			} else {
+				currentState = trans[(uint32(currentState)<<8)|uint32(data[i])]
+			}
+			if hasOutput[currentState] &&
+				!ac.yieldMatchesWithCancel(currentState, i, yield, done) {
+				return
+			}
+		}
+		return
+	}
+
+	if rootHasNoOutput && len(data) >= 256 && len(ac.rootLanes) > 0 && len(ac.rootLanes) <= maxSparseRootTransitions && !ac.rootIsDense(data) {
+		rootCursor := newRootCandidateCursor(ac.rootLanes)
+		linearUntil := 0
+		for i := 0; i < len(data); i++ {
+			if i&(scanCancellationInterval-1) == 0 && scanCanceled(done) {
+				return
+			}
+			if currentState == 0 && i >= linearUntil && len(data)-i >= 256 {
+				candidate := rootCursor.nextWithCancel(data, i, done)
+				if candidate < 0 {
+					return
+				}
+				if candidate-i < 64 {
+					linearUntil = candidate + 256
+				}
+				i = candidate
+			}
+			if currentState == 0 {
+				currentState = rootTransitions[data[i]]
+				if currentState == 0 {
+					continue
+				}
+			} else {
+				currentState = trans[(uint32(currentState)<<8)|uint32(data[i])]
+			}
+			if hasOutput[currentState] &&
+				!ac.yieldMatchesWithCancel(currentState, i, yield, done) {
+				return
+			}
+		}
+		return
+	}
+
+	for blockStart := 0; blockStart < len(data); blockStart += scanCancellationInterval {
+		if scanCanceled(done) {
+			return
+		}
+		blockEnd := min(blockStart+scanCancellationInterval, len(data))
+		for relative, b := range data[blockStart:blockEnd] {
+			if currentState == 0 {
+				currentState = rootTransitions[b]
+				if currentState == 0 {
+					continue
+				}
+			} else {
+				currentState = trans[(uint32(currentState)<<8)|uint32(b)]
+			}
+			if hasOutput[currentState] &&
 				!ac.yieldMatchesWithCancel(currentState, blockStart+relative, yield, done) {
 				return
 			}
@@ -793,14 +971,8 @@ func (ac *acAutomaton) yieldMatchesWithCancel(
 }
 
 // Search performs optimized pattern matching, directly yielding matches via callback.
-//
-//nolint:nestif // the sparse-root and general loops are intentionally separate hot paths
 func (ac *acAutomaton) Search(data []byte, yield func(acMatch) bool) {
-	if !ac.compiled {
-		return
-	}
-
-	if len(data) == 0 {
+	if !ac.compiled || len(data) == 0 {
 		return
 	}
 	if len(ac.strings) == 1 {
@@ -814,11 +986,22 @@ func (ac *acAutomaton) Search(data []byte, yield func(acMatch) bool) {
 		}
 	}
 
-	currentState := int32(0) // Start at root
+	if len(ac.transitions16) > 0 {
+		ac.search16(data, yield)
+		return
+	}
+	ac.search32(data, yield)
+}
 
-	rootHasNoOutput := ac.states[0].outputStart == ac.states[0].outputEnd
+//nolint:nestif // the sparse-root and general loops are intentionally separate hot paths
+func (ac *acAutomaton) search16(data []byte, yield func(acMatch) bool) {
+	trans := ac.transitions16
+	rootTransitions := trans[:256]
+	hasOutput := ac.hasOutput
+	currentState := uint16(0)
+	rootHasNoOutput := !hasOutput[0]
+
 	if rootHasNoOutput && ac.teddy != nil && len(data) >= 256 {
-		rootTransitions := &ac.states[0].transitions
 		linearUntil := 0
 		for i := 0; i < len(data); i++ {
 			if currentState == 0 && i >= linearUntil && len(data)-i >= 32 {
@@ -841,22 +1024,17 @@ func (ac *acAutomaton) Search(data []byte, yield func(acMatch) bool) {
 					continue
 				}
 			} else {
-				currentState = ac.findNextState(currentState, data[i])
+				currentState = trans[(uint32(currentState)<<8)|uint32(data[i])]
 			}
-			if ac.states[currentState].outputStart != ac.states[currentState].outputEnd &&
-				!ac.yieldMatches(currentState, i, yield) {
+			if hasOutput[currentState] && !ac.yieldMatches(int32(currentState), i, yield) {
 				return
 			}
 		}
 		return
 	}
 
-	// When the automaton has only a few root transitions, skip root misses
-	// with the platform byte-search routine. Keep the tight range loop for
-	// small inputs and wider roots where repeated byte searches cost more.
-	if rootHasNoOutput && len(data) >= 256 && len(ac.rootLanes) > 0 && len(ac.rootLanes) <= maxSparseRootTransitions && !ac.rootIsDense(data) {
+	if rootHasNoOutput && len(data) >= 256 && len(ac.rootLanes) > 0 && len(ac.rootLanes) <= maxSparseRootTransitions && !ac.rootIsDense16(data) {
 		rootCursor := newRootCandidateCursor(ac.rootLanes)
-		rootTransitions := &ac.states[0].transitions
 		linearUntil := 0
 		for i := 0; i < len(data); i++ {
 			if currentState == 0 && i >= linearUntil && len(data)-i >= 256 {
@@ -875,45 +1053,110 @@ func (ac *acAutomaton) Search(data []byte, yield func(acMatch) bool) {
 					continue
 				}
 			} else {
-				currentState = ac.findNextState(currentState, data[i])
+				currentState = trans[(uint32(currentState)<<8)|uint32(data[i])]
 			}
-			if ac.states[currentState].outputStart != ac.states[currentState].outputEnd &&
-				!ac.yieldMatches(currentState, i, yield) {
+			if hasOutput[currentState] && !ac.yieldMatches(int32(currentState), i, yield) {
 				return
 			}
 		}
 		return
 	}
 
-	rootTransitions := &ac.states[0].transitions
 	for i, b := range data {
 		if currentState == 0 {
 			currentState = rootTransitions[b]
-			// After closeTransitions a root miss reads back as 0 rather than
-			// -1. No real edge can target the root, so 0 still means "no
-			// transition", and skipping the output check below preserves the
-			// original behaviour exactly.
 			if currentState == 0 {
 				continue
 			}
 		} else {
-			currentState = ac.findNextState(currentState, b)
+			currentState = trans[(uint32(currentState)<<8)|uint32(b)]
 		}
-		outputStart := ac.states[currentState].outputStart
-		outputEnd := ac.states[currentState].outputEnd
-		for idx := outputStart; idx < outputEnd; idx++ {
-			stringIndex := ac.outputs[idx]
-			if stringIndex < 0 || int(stringIndex) >= len(ac.strings) {
-				continue
+		if hasOutput[currentState] && !ac.yieldMatches(int32(currentState), i, yield) {
+			return
+		}
+	}
+}
+
+//nolint:nestif // the sparse-root and general loops are intentionally separate hot paths
+func (ac *acAutomaton) search32(data []byte, yield func(acMatch) bool) {
+	trans := ac.transitions32
+	rootTransitions := trans[:256]
+	hasOutput := ac.hasOutput
+	currentState := int32(0)
+	rootHasNoOutput := !hasOutput[0]
+
+	if rootHasNoOutput && ac.teddy != nil && len(data) >= 256 {
+		linearUntil := 0
+		for i := 0; i < len(data); i++ {
+			if currentState == 0 && i >= linearUntil && len(data)-i >= 32 {
+				candidate := ac.teddy.findCandidate(data, i)
+				if candidate < 0 {
+					i = max(i, len(data)-31)
+					if i >= len(data) {
+						return
+					}
+				} else {
+					if candidate-i < 64 {
+						linearUntil = candidate + 256
+					}
+					i = candidate
+				}
 			}
-			stringInfo := ac.strings[stringIndex]
-			if !yield(acMatch{
-				StringIndex: int(stringIndex),
-				StringID:    stringInfo.Identifier,
-				Backtrack:   i + 1 - stringInfo.Length,
-			}) {
+			if currentState == 0 {
+				currentState = rootTransitions[data[i]]
+				if currentState == 0 {
+					continue
+				}
+			} else {
+				currentState = trans[(uint32(currentState)<<8)|uint32(data[i])]
+			}
+			if hasOutput[currentState] && !ac.yieldMatches(currentState, i, yield) {
 				return
 			}
+		}
+		return
+	}
+
+	if rootHasNoOutput && len(data) >= 256 && len(ac.rootLanes) > 0 && len(ac.rootLanes) <= maxSparseRootTransitions && !ac.rootIsDense(data) {
+		rootCursor := newRootCandidateCursor(ac.rootLanes)
+		linearUntil := 0
+		for i := 0; i < len(data); i++ {
+			if currentState == 0 && i >= linearUntil && len(data)-i >= 256 {
+				candidate := rootCursor.next(data, i)
+				if candidate < 0 {
+					return
+				}
+				if candidate-i < 64 {
+					linearUntil = candidate + 256
+				}
+				i = candidate
+			}
+			if currentState == 0 {
+				currentState = rootTransitions[data[i]]
+				if currentState == 0 {
+					continue
+				}
+			} else {
+				currentState = trans[(uint32(currentState)<<8)|uint32(data[i])]
+			}
+			if hasOutput[currentState] && !ac.yieldMatches(currentState, i, yield) {
+				return
+			}
+		}
+		return
+	}
+
+	for i, b := range data {
+		if currentState == 0 {
+			currentState = rootTransitions[b]
+			if currentState == 0 {
+				continue
+			}
+		} else {
+			currentState = trans[(uint32(currentState)<<8)|uint32(b)]
+		}
+		if hasOutput[currentState] && !ac.yieldMatches(currentState, i, yield) {
+			return
 		}
 	}
 }
@@ -1004,15 +1247,18 @@ func (ac *acAutomaton) Validate() error {
 func (ac *acAutomaton) Clone() *acAutomaton {
 	internalStrings := cloneacStringInfos(ac.strings)
 	newAC := &acAutomaton{
-		states:      slices.Clone(ac.states),
-		outputs:     slices.Clone(ac.outputs),
-		strings:     internalStrings,
-		rootBytes:   slices.Clone(ac.rootBytes),
-		rootLanes:   slices.Clone(ac.rootLanes),
-		teddy:       ac.teddy,
-		compiled:    ac.compiled,
-		StringCount: len(internalStrings),
-		Strings:     cloneacStringInfos(internalStrings),
+		states:        slices.Clone(ac.states),
+		outputs:       slices.Clone(ac.outputs),
+		strings:       internalStrings,
+		rootBytes:     slices.Clone(ac.rootBytes),
+		rootLanes:     slices.Clone(ac.rootLanes),
+		teddy:         ac.teddy,
+		transitions16: slices.Clone(ac.transitions16),
+		transitions32: slices.Clone(ac.transitions32),
+		hasOutput:     slices.Clone(ac.hasOutput),
+		compiled:      ac.compiled,
+		StringCount:   len(internalStrings),
+		Strings:       cloneacStringInfos(internalStrings),
 	}
 	if ac.compiled {
 		newAC.compiledOnce.Do(func() {})
@@ -1083,6 +1329,12 @@ func (ac *acAutomaton) GetPatternData() map[string][]byte {
 // It is intended for relative sizing and diagnostics, not exact Go heap accounting.
 func (ac *acAutomaton) EstimateMemoryUsage() int {
 	stateMemory := len(ac.states) * (256*4 + 8) // transitions + failure + output indices
+	if len(ac.transitions16) > 0 {
+		stateMemory += len(ac.transitions16) * 2
+	} else if len(ac.transitions32) > 0 {
+		stateMemory += len(ac.transitions32) * 4
+	}
+	stateMemory += len(ac.hasOutput)
 	outputMemory := len(ac.outputs) * 4
 	stringMemory := len(ac.strings) * 64 // Approximate
 
@@ -1108,6 +1360,9 @@ func (ac *acAutomaton) Reset() {
 	ac.teddy = nil
 	ac.StringCount = 0
 	ac.Strings = ac.Strings[:0]
+	ac.transitions16 = nil
+	ac.transitions32 = nil
+	ac.hasOutput = nil
 
 	// Reset compilation state
 	ac.compiledOnce = sync.Once{}
