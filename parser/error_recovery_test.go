@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/cawalch/go-yara/ast"
@@ -122,8 +123,8 @@ rule ValidRule {
 				return
 			}
 
-			partialErr, ok := err.(*PartialParseError)
-			if !ok {
+			var partialErr *PartialParseError
+			if !errors.As(err, &partialErr) {
 				t.Errorf("Expected PartialParseError, got %T", err)
 				return
 			}

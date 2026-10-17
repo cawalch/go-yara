@@ -531,8 +531,8 @@ func (c *Compiler) removeSemanticallyInvalidRules(program *ast.Program, validati
 		ruleErrors := make(map[string]*semantic.Error)
 		var programErrors []error
 		for _, err := range validationErrors {
-			semanticErr, ok := err.(*semantic.Error)
-			if !ok || semanticErr.Rule == "" {
+			var semanticErr *semantic.Error
+			if !errors.As(err, &semanticErr) || semanticErr.Rule == "" {
 				programErrors = append(programErrors, err)
 				continue
 			}
@@ -563,7 +563,7 @@ func (c *Compiler) removeSemanticallyInvalidRules(program *ast.Program, validati
 				Rule:    rule.Name,
 				Phase:   "semantic",
 				Message: semanticErr.Message,
-				Code:    string(semanticErr.Code),
+				Code:    semanticErr.Code,
 				Global:  ruleHasModifier(rule, ast.ModifierGlobal),
 				Line:    semanticErr.Position.Line,
 				Column:  semanticErr.Position.Column,
@@ -677,10 +677,11 @@ func (c *Compiler) compileSemanticWithContext(ctx context.Context, program *ast.
 		for _, err := range errs {
 			line, col := 0, 0
 			code := ""
-			if semErr, ok := err.(*semantic.Error); ok {
+			var semErr *semantic.Error
+			if errors.As(err, &semErr) {
 				line = semErr.Position.Line
 				col = semErr.Position.Column
-				code = string(semErr.Code)
+				code = semErr.Code
 			}
 			c.stats.Errors = append(c.stats.Errors, CompilationError{
 				Code:    code,

@@ -2,7 +2,7 @@ package compiler
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"math"
 )
 
@@ -38,13 +38,13 @@ func (s *Scanner) MatchingRulesInBlockWithContext(
 		ctx = context.Background()
 	}
 	if block.Base < 0 {
-		return nil, fmt.Errorf("block base must be non-negative")
+		return nil, errors.New("block base must be non-negative")
 	}
 	if fileSize < 0 {
-		return nil, fmt.Errorf("block file size must be non-negative")
+		return nil, errors.New("block file size must be non-negative")
 	}
 	if int64(len(block.Data)) > math.MaxInt64-block.Base {
-		return nil, fmt.Errorf("block end offset overflows int64")
+		return nil, errors.New("block end offset overflows int64")
 	}
 	if s == nil || s.program == nil {
 		return nil, nil

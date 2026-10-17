@@ -2,6 +2,7 @@ package semantic
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/cawalch/go-yara/internal/lexer"
@@ -22,8 +23,8 @@ rule good { condition: true }
 		t.Fatal("ValidateProgram() errors is empty")
 	}
 	for _, err := range errs {
-		semanticErr, ok := err.(*Error)
-		if !ok {
+		var semanticErr *Error
+		if !errors.As(err, &semanticErr) {
 			t.Fatalf("ValidateProgram() error type = %T, want *Error", err)
 		}
 		if semanticErr.Rule != "bad" {

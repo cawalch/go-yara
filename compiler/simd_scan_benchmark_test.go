@@ -3,6 +3,7 @@ package compiler
 import (
 	"bytes"
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -57,11 +58,13 @@ func BenchmarkSIMDScan(b *testing.B) {
 
 func BenchmarkSIMDRootScan(b *testing.B) {
 	for _, rootCount := range []int{2, 4} {
-		source := "rule probe { strings: "
+		var source strings.Builder
+		source.WriteString("rule probe { strings: ")
 		for index, lead := range "qvyz"[:rootCount] {
-			source += fmt.Sprintf("$s%d = \"%c_marker\" ", index, lead)
+			fmt.Fprintf(&source, "$s%d = \"%c_marker\" ", index, lead)
 		}
-		program, err := NewCompiler().CompileSource(source + " condition: any of them }")
+		source.WriteString("condition: any of them }")
+		program, err := NewCompiler().CompileSource(source.String())
 		if err != nil {
 			b.Fatal(err)
 		}

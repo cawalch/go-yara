@@ -3,6 +3,7 @@ package integration
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -75,8 +76,8 @@ func scanWithLibyara(t testing.TB, bin, src string, data []byte) (map[string][]s
 	}
 	out, err := exec.Command(bin, "-s", "-L", "--no-warnings", rp, dp).Output()
 	if err != nil {
-		ee, ok := err.(*exec.ExitError)
-		if !ok {
+		var ee *exec.ExitError
+		if !errors.As(err, &ee) {
 			return nil, fmt.Errorf("libyara invocation failed: %w", err)
 		}
 		combined := string(out) + string(ee.Stderr)

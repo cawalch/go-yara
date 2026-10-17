@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/gob"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -168,7 +169,7 @@ const (
 // go-yara format. Runtime external-variable values are deliberately omitted.
 func (cp *CompiledProgram) MarshalBinary() ([]byte, error) {
 	if cp == nil {
-		return nil, fmt.Errorf("cannot serialize a nil compiled program")
+		return nil, errors.New("cannot serialize a nil compiled program")
 	}
 	if err := cp.Validate(); err != nil {
 		return nil, fmt.Errorf("serializing invalid compiled program: %w", err)
@@ -218,7 +219,7 @@ func ReadCompiledProgram(reader io.Reader, modules ...Module) (*CompiledProgram,
 		return nil, fmt.Errorf("reading compiled program header: %w", err)
 	}
 	if string(magic) != compiledProgramMagic {
-		return nil, fmt.Errorf("invalid compiled program magic")
+		return nil, errors.New("invalid compiled program magic")
 	}
 	var version uint16
 	if err := binary.Read(reader, binary.BigEndian, &version); err != nil {
@@ -484,7 +485,7 @@ func moduleBindingsForLoad(modules []Module) (map[string]compiledModuleFunction,
 	registered := defaultModules()
 	for _, module := range modules {
 		if module.Name == "" {
-			return nil, fmt.Errorf("custom module has an empty name")
+			return nil, errors.New("custom module has an empty name")
 		}
 		registered[module.Name] = module
 	}

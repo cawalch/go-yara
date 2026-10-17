@@ -390,18 +390,16 @@ func runMatch(code, s []byte, flags Flags, start int, done <-chan struct{}, scan
 	if exhausted {
 		st.gen = gen
 		putVMState(st)
-		return
+		return matched, length
 	}
 
 	// End of input: return the longest match (if any) for this start.
-	if bestEnd >= 0 {
-		matched, length = true, bestEnd
-	} else {
-		matched, length = false, 0
-	}
 	st.gen = gen
 	putVMState(st)
-	return //nolint:nakedret
+	if bestEnd >= 0 {
+		return true, bestEnd
+	}
+	return false, 0
 }
 
 // runAtMatchBatch is like runAtMatch but uses a pre-pinned vmBatchState
@@ -525,20 +523,16 @@ func runAtMatchBatchWithCancel(bs *vmBatchState, code, s []byte, flags Flags, st
 		}
 	}
 
+	bs.gen = gen + 1
+	st.gen = gen
 	if exhausted {
-		bs.gen = gen + 1
-		st.gen = gen
-		return
+		return matched, length
 	}
 
 	if bestEnd >= 0 {
-		matched, length = true, bestEnd
-	} else {
-		matched, length = false, 0
+		return true, bestEnd
 	}
-	bs.gen = gen + 1
-	st.gen = gen
-	return
+	return false, 0
 }
 
 // addThread computes the epsilon/assertion closure from (pc,pos) and appends

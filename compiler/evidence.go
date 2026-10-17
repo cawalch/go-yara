@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -165,7 +166,7 @@ func replayCaptureSpans(
 	}
 	regexPattern, ok := rule.RegexPatterns[pattern]
 	if !ok || len(regexPattern.CaptureCode) == 0 {
-		return nil, fmt.Errorf("compiled capture program is missing")
+		return nil, errors.New("compiled capture program is missing")
 	}
 	modifiers := rule.StringModifiers[pattern]
 	flagOptions := replayFlagOptions(regexPattern.Flags, modifiers)
@@ -188,7 +189,7 @@ func replayCaptureSpans(
 		}
 		return spans, nil
 	}
-	return nil, fmt.Errorf("tagged regex did not reproduce the outer match")
+	return nil, errors.New("tagged regex did not reproduce the outer match")
 }
 
 func positiveBindingGroups(bindings []ast.CaptureBinding) []int {

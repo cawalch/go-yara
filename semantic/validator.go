@@ -994,7 +994,7 @@ func (v *Validator) validateFunctionCallExpression(funcCall *ast.FunctionCall) (
 	if !isValid {
 		err := &Error{
 			Code:     ErrCodeInvalidFunction,
-			Message:  fmt.Sprintf("unknown function: %s", funcCall.Function),
+			Message:  "unknown function: " + funcCall.Function,
 			Position: funcCall.Pos,
 			Rule:     v.currentRule,
 		}
@@ -1380,7 +1380,8 @@ func (v *Validator) getTypeFromSymbol(symbol *Symbol) *TypeInfo {
 
 // addError adds a semantic error
 func (v *Validator) addError(err error) {
-	if semanticErr, ok := err.(*Error); ok && semanticErr.Rule == "" {
+	var semanticErr *Error
+	if errors.As(err, &semanticErr) && semanticErr.Rule == "" {
 		semanticErr.Rule = v.currentRule
 	}
 	v.errors = append(v.errors, err)

@@ -3,8 +3,8 @@ package wordmatch
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"math"
+	"strconv"
 	"testing"
 )
 
@@ -53,7 +53,7 @@ func routingSet(first, last byte) (set [4]uint64) {
 func TestRoutingSignedContextsAndPhases(t *testing.T) {
 	anchor := []byte("WITNESS_SHARED_0123456789")
 	for _, backwards := range []bool{false, true} {
-		t.Run(fmt.Sprint(backwards), func(t *testing.T) {
+		t.Run(strconv.FormatBool(backwards), func(t *testing.T) {
 			var rules []Rule
 			var inputs [][]byte
 			for i := 0; i < 24; i++ {
@@ -360,7 +360,7 @@ func TestSharedPlanAndScannerReuse(t *testing.T) {
 	rules[0].All[0].Any[0] = nil
 	clear(anchor)
 	for i := 0; i < 8; i++ {
-		t.Run(fmt.Sprint(i), func(t *testing.T) {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			t.Parallel()
 			scanner := p.NewScanner()
 			for _, item := range []struct {

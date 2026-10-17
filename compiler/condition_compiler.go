@@ -552,7 +552,7 @@ func (cc *conditionCompiler) compileCountInRange(binOp *ast.BinaryOp) error {
 	// The right side should be a range expression (min..max)
 	rangeExpr, ok := binOp.Right.(*ast.BinaryOp)
 	if !ok || rangeExpr.Op != token.DOT {
-		return fmt.Errorf("IN operator with count requires a range expression (min..max)")
+		return errors.New("IN operator with count requires a range expression (min..max)")
 	}
 
 	// Compile min (left side of ..)
@@ -901,7 +901,7 @@ func (cc *conditionCompiler) compileBitwiseNotOperator(unaryOp *ast.UnaryOp) err
 func (cc *conditionCompiler) compileLengthOf(lengthOf *ast.LengthOf) error {
 	setIndex, pos := cc.resolveLengthOfTarget(lengthOf)
 	if pos.Line == 0 {
-		return fmt.Errorf("unsupported 'length of' target")
+		return errors.New("unsupported 'length of' target")
 	}
 	cc.emitter.EmitPush(safeInt64ToUint64(int64(setIndex)), lengthOf.Pos.Line, lengthOf.Pos.Column)
 	cc.emitter.EmitOpcode(OpLengthOf, lengthOf.Pos.Line, lengthOf.Pos.Column)
@@ -1259,7 +1259,7 @@ func (cc *conditionCompiler) allocateVariables(vars []string) ([]int, error) {
 			slot++
 		}
 		if slot >= 256 {
-			return nil, fmt.Errorf("too many variables")
+			return nil, errors.New("too many variables")
 		}
 		cc.variableMap[v] = slot
 		used[slot] = true
@@ -1302,7 +1302,7 @@ func (cc *conditionCompiler) compileForLoop(forLoop *ast.ForLoop) error {
 		startExpr = forLoop.Range
 		endExpr = forLoop.Range
 	} else {
-		return fmt.Errorf("unsupported for-loop range type, expected binary range operator")
+		return errors.New("unsupported for-loop range type, expected binary range operator")
 	}
 
 	slots, err := cc.allocateVariables(forLoop.Variables)
@@ -1332,11 +1332,11 @@ func (cc *conditionCompiler) compileForLoopOverTextStrings(forLoop *ast.ForLoop,
 		switch e := elem.(type) {
 		case *ast.Literal:
 			if e.Type != token.StringLit {
-				return fmt.Errorf("text string set elements must be string literals")
+				return errors.New("text string set elements must be string literals")
 			}
 			literals = append(literals, e.Value.(string))
 		default:
-			return fmt.Errorf("text string set elements must be string literals")
+			return errors.New("text string set elements must be string literals")
 		}
 	}
 
@@ -1415,7 +1415,7 @@ func (cc *conditionCompiler) compileForLoopOverStrings(forLoop *ast.ForLoop) err
 	case forLoop.InRange != nil:
 		rangeOp, ok := forLoop.InRange.(*ast.BinaryOp)
 		if !ok || rangeOp.Op != token.DOT {
-			return fmt.Errorf("invalid range expression for 'in' constraint")
+			return errors.New("invalid range expression for 'in' constraint")
 		}
 		if err := cc.compileExpression(rangeOp.Left); err != nil {
 			return fmt.Errorf("compiling range min: %w", err)
@@ -1778,7 +1778,7 @@ func (cc *conditionCompiler) collectStringSet(expr ast.Expression) ([]string, er
 			return cc.collectStringSetFromComma(e)
 		}
 	}
-	return nil, fmt.Errorf("unsupported string set expression")
+	return nil, errors.New("unsupported string set expression")
 }
 
 func (cc *conditionCompiler) uniqueSortedStrings(values []string) []string {
@@ -1849,7 +1849,7 @@ func (cc *conditionCompiler) compileFunctionCall(call *ast.FunctionCall) error {
 	switch call.Function {
 	case "concat":
 		if len(call.Args) < 2 {
-			return fmt.Errorf("concat requires at least 2 arguments")
+			return errors.New("concat requires at least 2 arguments")
 		}
 		cc.emitter.EmitOpcodeWithOperand(OpCall,
 			Operand{Type: OperandImmediate32, Value: encodeBuiltinCall(builtinConcat, len(call.Args))},
@@ -1857,7 +1857,7 @@ func (cc *conditionCompiler) compileFunctionCall(call *ast.FunctionCall) error {
 		return nil
 	case "tostring":
 		if len(call.Args) != 1 {
-			return fmt.Errorf("tostring requires exactly 1 argument")
+			return errors.New("tostring requires exactly 1 argument")
 		}
 		cc.emitter.EmitOpcodeWithOperand(OpCall,
 			Operand{Type: OperandImmediate32, Value: encodeBuiltinCall(builtinToString, len(call.Args))},
@@ -1865,7 +1865,7 @@ func (cc *conditionCompiler) compileFunctionCall(call *ast.FunctionCall) error {
 		return nil
 	case "int":
 		if len(call.Args) != 1 {
-			return fmt.Errorf("int requires exactly 1 argument")
+			return errors.New("int requires exactly 1 argument")
 		}
 		cc.emitter.EmitOpcodeWithOperand(OpCall,
 			Operand{Type: OperandImmediate32, Value: encodeBuiltinCall(builtinInt, len(call.Args))},
@@ -1873,7 +1873,7 @@ func (cc *conditionCompiler) compileFunctionCall(call *ast.FunctionCall) error {
 		return nil
 	case "md5":
 		if len(call.Args) != 1 && len(call.Args) != 2 {
-			return fmt.Errorf("md5 requires 1 or 2 arguments")
+			return errors.New("md5 requires 1 or 2 arguments")
 		}
 		cc.emitter.EmitOpcodeWithOperand(OpCall,
 			Operand{Type: OperandImmediate32, Value: encodeBuiltinCall(builtinMD5, len(call.Args))},
@@ -1881,7 +1881,7 @@ func (cc *conditionCompiler) compileFunctionCall(call *ast.FunctionCall) error {
 		return nil
 	case "sha1":
 		if len(call.Args) != 1 && len(call.Args) != 2 {
-			return fmt.Errorf("sha1 requires 1 or 2 arguments")
+			return errors.New("sha1 requires 1 or 2 arguments")
 		}
 		cc.emitter.EmitOpcodeWithOperand(OpCall,
 			Operand{Type: OperandImmediate32, Value: encodeBuiltinCall(builtinSHA1, len(call.Args))},
@@ -1889,7 +1889,7 @@ func (cc *conditionCompiler) compileFunctionCall(call *ast.FunctionCall) error {
 		return nil
 	case "sha256":
 		if len(call.Args) != 1 && len(call.Args) != 2 {
-			return fmt.Errorf("sha256 requires 1 or 2 arguments")
+			return errors.New("sha256 requires 1 or 2 arguments")
 		}
 		cc.emitter.EmitOpcodeWithOperand(OpCall,
 			Operand{Type: OperandImmediate32, Value: encodeBuiltinCall(builtinSHA256, len(call.Args))},

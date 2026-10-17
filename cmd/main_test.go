@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -272,8 +273,8 @@ func TestCLIExecutionErrorsExitNonZero(t *testing.T) {
 			cmd := exec.Command(os.Args[0], cmdArgs...)
 			cmd.Env = append(os.Environ(), "GO_YARA_CLI_HELPER=1")
 			output, err := cmd.CombinedOutput()
-			exitErr, ok := err.(*exec.ExitError)
-			if !ok || exitErr.ExitCode() != 1 {
+			var exitErr *exec.ExitError
+			if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
 				t.Fatalf("CLI error = %v, output:\n%s", err, output)
 			}
 			if !strings.Contains(string(output), tt.want) {

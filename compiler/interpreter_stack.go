@@ -5,6 +5,7 @@ import (
 	"crypto/sha1" // #nosec G505 -- required for YARA hash compatibility
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
@@ -303,26 +304,26 @@ func (i *Interpreter) extractHashInput(args []Value) ([]byte, error) {
 	switch len(args) {
 	case 1:
 		if args[0].Type != ValueTypeString {
-			return nil, fmt.Errorf("hash functions expect string or (offset,size)")
+			return nil, errors.New("hash functions expect string or (offset,size)")
 		}
 		return []byte(i.getString(args[0])), nil
 	case 2:
 		if args[0].Type != ValueTypeInt || args[1].Type != ValueTypeInt {
-			return nil, fmt.Errorf("hash functions expect integer offset and size")
+			return nil, errors.New("hash functions expect integer offset and size")
 		}
 		if args[0].IntVal < 0 || args[1].IntVal < 0 {
-			return nil, fmt.Errorf("hash range must be non-negative")
+			return nil, errors.New("hash range must be non-negative")
 		}
 		if i.matchContext == nil {
-			return nil, fmt.Errorf("hash functions require data context")
+			return nil, errors.New("hash functions require data context")
 		}
 		data, ok := i.matchContext.dataRange(args[0].IntVal, args[1].IntVal)
 		if !ok {
-			return nil, fmt.Errorf("hash range out of bounds")
+			return nil, errors.New("hash range out of bounds")
 		}
 		return data, nil
 	default:
-		return nil, fmt.Errorf("hash functions expect 1 or 2 arguments")
+		return nil, errors.New("hash functions expect 1 or 2 arguments")
 	}
 }
 
@@ -338,7 +339,7 @@ func (i *Interpreter) valueToString(v Value) (string, error) {
 	case ValueTypeUndefined:
 		return "", nil
 	default:
-		return "", fmt.Errorf("unsupported string conversion")
+		return "", errors.New("unsupported string conversion")
 	}
 }
 
