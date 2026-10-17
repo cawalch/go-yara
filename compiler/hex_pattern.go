@@ -396,7 +396,8 @@ func FindHexMatches(pattern *HexPattern, data []byte) []Match {
 
 func findHexMatches(pattern *HexPattern, data []byte, done <-chan struct{}) []Match {
 	var matches []Match
-	findHexMatchesEach(pattern, data, done, func(m Match) bool {
+	var scratch hexMatchScratch
+	findHexMatchesEach(pattern, data, done, &scratch, func(m Match) bool {
 		matches = append(matches, m)
 		return true
 	})
@@ -407,9 +408,12 @@ func findHexMatches(pattern *HexPattern, data []byte, done <-chan struct{}) []Ma
 // It stops traversing immediately if onMatch returns false.
 //
 //nolint:revive // cancellation signal remains explicit on the matching hot path
-func findHexMatchesEach(pattern *HexPattern, data []byte, done <-chan struct{}, onMatch func(Match) bool) {
+func findHexMatchesEach(pattern *HexPattern, data []byte, done <-chan struct{}, scratch *hexMatchScratch, onMatch func(Match) bool) {
 	if pattern == nil || len(pattern.Tokens) == 0 || len(data) == 0 {
 		return
+	}
+	if scratch == nil {
+		scratch = &hexMatchScratch{}
 	}
 	keys := pattern.XorKeys
 	if len(keys) == 0 && len(pattern.XorRange) > 0 {
@@ -421,34 +425,19 @@ func findHexMatchesEach(pattern *HexPattern, data []byte, done <-chan struct{}, 
 
 	if len(keys) == 0 {
 		if anchor.ok {
-			findHexMatchesAnchoredEach(pattern.Tokens, data, anchor, done, onMatch)
+			findHexMatchesAnchoredEach(pattern.Tokens, data, anchor, done, scratch, onMatch)
 			return
 		}
-		findHexMatchesBruteForceEach(pattern.Tokens, data, done, onMatch)
+		findHexMatchesBruteForceEach(pattern.Tokens, data, done, scratch, onMatch)
 		return
 	}
 
 	// XOR mode: for each key, compute the transformed anchor byte.
 	if anchor.ok {
-		findHexMatchesXorAnchoredEach(pattern.Tokens, data, keys, anchor, done, onMatch)
+		findHexMatchesXorAnchoredEach(pattern.Tokens, data, keys, anchor, done, scratch, onMatch)
 		return
 	}
-	findHexMatchesXorBruteForceEach(pattern.Tokens, data, keys, done, onMatch)
-}
-
-func emitScratchMatches(ends []int, candidateStart int, onMatch func(Match) bool) bool {
-	for _, end := range ends {
-		if end <= candidateStart {
-			continue
-		}
-		if !onMatch(Match{
-			Offset: int64(candidateStart),
-			Length: end - candidateStart,
-		}) {
-			return false
-		}
-	}
-	return true
+	findHexMatchesXorBruteForceEach(pattern.Tokens, data, keys, done, scratch, onMatch)
 }
 
 // findHexMatchesAnchoredEach uses bytes.IndexByte to skip non-matching positions.
@@ -459,10 +448,10 @@ func findHexMatchesAnchoredEach(
 	data []byte,
 	anchor anchorInfo,
 	done <-chan struct{},
+	scratch *hexMatchScratch,
 	onMatch func(Match) bool,
 ) {
 	linear := isLinearHexPattern(tokens)
-	var scratch hexMatchScratch
 	pos := 0
 	checkpoint := 0
 	for {
@@ -491,8 +480,15 @@ func findHexMatchesAnchoredEach(
 			}
 			continue
 		}
-		ends := scratch.match(tokens, data, candidateStart, nil)
-		if !emitScratchMatches(ends, candidateStart, onMatch) {
+		if !scratch.matchEach(tokens, data, candidateStart, nil, func(end int) bool {
+			if end <= candidateStart {
+				return true
+			}
+			return onMatch(Match{
+				Offset: int64(candidateStart),
+				Length: end - candidateStart,
+			})
+		}) {
 			return
 		}
 	}
@@ -505,15 +501,22 @@ func findHexMatchesBruteForceEach(
 	tokens []HexPatternToken,
 	data []byte,
 	done <-chan struct{},
+	scratch *hexMatchScratch,
 	onMatch func(Match) bool,
 ) {
-	var scratch hexMatchScratch
 	for start := range data {
 		if scanCanceledAt(done, start) {
 			return
 		}
-		ends := scratch.match(tokens, data, start, nil)
-		if !emitScratchMatches(ends, start, onMatch) {
+		if !scratch.matchEach(tokens, data, start, nil, func(end int) bool {
+			if end <= start {
+				return true
+			}
+			return onMatch(Match{
+				Offset: int64(start),
+				Length: end - start,
+			})
+		}) {
 			return
 		}
 	}
@@ -528,10 +531,10 @@ func findHexMatchesXorAnchoredEach(
 	keys []byte,
 	anchor anchorInfo,
 	done <-chan struct{},
+	scratch *hexMatchScratch,
 	onMatch func(Match) bool,
 ) {
 	linear := isLinearHexPattern(tokens)
-	var scratch hexMatchScratch
 	checkpoint := 0
 	for _, key := range keys {
 		targetByte := anchor.byteVal ^ key
@@ -562,8 +565,15 @@ func findHexMatchesXorAnchoredEach(
 				}
 				continue
 			}
-			ends := scratch.match(tokens, data, candidateStart, &key)
-			if !emitScratchMatches(ends, candidateStart, onMatch) {
+			if !scratch.matchEach(tokens, data, candidateStart, &key, func(end int) bool {
+				if end <= candidateStart {
+					return true
+				}
+				return onMatch(Match{
+					Offset: int64(candidateStart),
+					Length: end - candidateStart,
+				})
+			}) {
 				return
 			}
 		}
@@ -578,16 +588,23 @@ func findHexMatchesXorBruteForceEach(
 	data []byte,
 	keys []byte,
 	done <-chan struct{},
+	scratch *hexMatchScratch,
 	onMatch func(Match) bool,
 ) {
-	var scratch hexMatchScratch
 	for start := range data {
 		if scanCanceledAt(done, start) {
 			return
 		}
 		for _, key := range keys {
-			ends := scratch.match(tokens, data, start, &key)
-			if !emitScratchMatches(ends, start, onMatch) {
+			if !scratch.matchEach(tokens, data, start, &key, func(end int) bool {
+				if end <= start {
+					return true
+				}
+				return onMatch(Match{
+					Offset: int64(start),
+					Length: end - start,
+				})
+			}) {
 				return
 			}
 		}
@@ -679,9 +696,7 @@ type hexWorkItem struct {
 
 type hexMatchScratch struct {
 	worklist   []hexWorkItem
-	results    []int
 	inlineWork [16]hexWorkItem
-	inlineEnds [8]int
 }
 
 func (scratch *hexMatchScratch) reset() {
@@ -690,18 +705,19 @@ func (scratch *hexMatchScratch) reset() {
 	} else {
 		scratch.worklist = scratch.worklist[:0]
 	}
-	if scratch.results == nil {
-		scratch.results = scratch.inlineEnds[:0]
-	} else {
-		scratch.results = scratch.results[:0]
-	}
 }
 
-// match processes tokens iteratively while retaining branch/result buffers
+// matchEach processes tokens iteratively while retaining branch buffers
 // across anchor candidates in the same scan.
 //
 //nolint:revive // argument-limit: hot path avoids allocating an options struct
-func (scratch *hexMatchScratch) match(tokens []HexPatternToken, data []byte, pos int, xorKey *byte) []int {
+func (scratch *hexMatchScratch) matchEach(
+	tokens []HexPatternToken,
+	data []byte,
+	pos int,
+	xorKey *byte,
+	onEnd func(int) bool,
+) bool {
 	scratch.reset()
 	scratch.worklist = append(scratch.worklist, hexWorkItem{tokens, pos})
 
@@ -715,7 +731,9 @@ func (scratch *hexMatchScratch) match(tokens []HexPatternToken, data []byte, pos
 		// Fast linear path: consume non-branching tokens in a loop.
 		for {
 			if len(toks) == 0 {
-				scratch.results = append(scratch.results, dp)
+				if !onEnd(dp) {
+					return false
+				}
 				goto nextItem
 			}
 			if dp >= len(data) {
@@ -795,6 +813,10 @@ func (scratch *hexMatchScratch) match(tokens []HexPatternToken, data []byte, pos
 			case HexTokenAlt:
 				tail := toks[1:]
 				for _, alt := range head.Alternatives {
+					if len(tail) == 0 {
+						scratch.worklist = append(scratch.worklist, hexWorkItem{alt, dp})
+						continue
+					}
 					// Build combined token slice: alt + tail
 					combined := make([]HexPatternToken, len(alt)+len(tail))
 					copy(combined, alt)
@@ -811,5 +833,5 @@ func (scratch *hexMatchScratch) match(tokens []HexPatternToken, data []byte, pos
 	nextItem:
 	}
 
-	return scratch.results
+	return true
 }

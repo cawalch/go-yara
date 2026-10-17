@@ -288,20 +288,78 @@ func compiledPatternMatchesAtWithCancel(rule *CompiledRule, id string, data []by
 		}
 	case StringKindHex:
 		pattern := rule.HexPatterns[id]
-		matched := false
-		findHexMatchesEach(pattern, data[int(offset):], done, func(match Match) bool {
-			if match.Offset > 0 {
-				return false
+		if pattern == nil || len(pattern.Tokens) == 0 {
+			return false
+		}
+		keys := pattern.XorKeys
+		if len(keys) == 0 && len(pattern.XorRange) > 0 {
+			keys = expandXorKeys(pattern.XorRange)
+		}
+		return hexConstraintCheck{
+			tokens:    pattern.Tokens,
+			keys:      keys,
+			data:      data,
+			subData:   data[int(offset):],
+			modifiers: rule.StringModifiers[id],
+			offset:    offset,
+			id:        id,
+		}.match()
+	}
+	return false
+}
+
+type hexConstraintCheck struct {
+	tokens    []HexPatternToken
+	keys      []byte
+	data      []byte
+	subData   []byte
+	modifiers []ast.StringModifier
+	offset    int64
+	id        string
+}
+
+func (c hexConstraintCheck) match() bool {
+	if isLinearHexPattern(c.tokens) {
+		return c.matchLinear()
+	}
+	return c.matchNonLinear()
+}
+
+func (c hexConstraintCheck) matchLinear() bool {
+	if len(c.keys) == 0 {
+		end, ok := matchLinearHexPattern(c.tokens, c.subData, 0, nil)
+		return ok && matchPassesModifiers(c.data, Match{Pattern: c.id, Offset: c.offset, Length: end}, c.modifiers, false)
+	}
+	for _, k := range c.keys {
+		if end, ok := matchLinearHexPattern(c.tokens, c.subData, 0, &k); ok {
+			if matchPassesModifiers(c.data, Match{Pattern: c.id, Offset: c.offset, Length: end}, c.modifiers, false) {
+				return true
 			}
-			match.Offset += offset
-			match.Pattern = id
-			if matchPassesModifiers(data, match, rule.StringModifiers[id], false) {
+		}
+	}
+	return false
+}
+
+func (c hexConstraintCheck) matchNonLinear() bool {
+	var scratch hexMatchScratch
+	testKey := func(key *byte) bool {
+		matched := false
+		scratch.matchEach(c.tokens, c.subData, 0, key, func(end int) bool {
+			if end > 0 && matchPassesModifiers(c.data, Match{Pattern: c.id, Offset: c.offset, Length: end}, c.modifiers, false) {
 				matched = true
 				return false
 			}
 			return true
 		})
 		return matched
+	}
+	if len(c.keys) == 0 {
+		return testKey(nil)
+	}
+	for _, k := range c.keys {
+		if testKey(&k) {
+			return true
+		}
 	}
 	return false
 }

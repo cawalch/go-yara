@@ -770,7 +770,7 @@ func (s *Scanner) populateNonTextPrefilterCache(
 		case StringKindHex:
 			dst := cache.matches[entry.CacheIndex]
 			if len(candidates) > 0 {
-				dst = appendHexPrefilterMatches(dst, rule, strID, entry, data, candidates, ctx.Done())
+				dst = appendHexPrefilterMatches(dst, rule, strID, entry, data, candidates, ctx.Done(), &s.hexScratch)
 			}
 			cache.set(entry.CacheIndex, dst)
 		}
@@ -907,13 +907,16 @@ func appendHexPrefilterMatches(
 	data []byte,
 	candidates []int,
 	done <-chan struct{},
+	scratch *hexMatchScratch,
 ) []matchSpan {
 	pattern := rule.HexPatterns[strID]
 	if pattern == nil {
 		return dst
 	}
+	if scratch == nil {
+		scratch = &hexMatchScratch{}
+	}
 	linear := isLinearHexPattern(pattern.Tokens)
-	var scratch hexMatchScratch
 	lastStart := -1
 
 	for index, atomStart := range candidates {
@@ -938,15 +941,16 @@ func appendHexPrefilterMatches(
 			continue
 		}
 
-		for _, end := range scratch.match(pattern.Tokens, data, start, nil) {
+		scratch.matchEach(pattern.Tokens, data, start, nil, func(end int) bool {
 			if end <= start {
-				continue
+				return true
 			}
 			match := Match{Pattern: strID, Offset: int64(start), Length: end - start}
 			if matchPassesModifiers(data, match, rule.StringModifiers[strID], false) {
 				dst = append(dst, matchSpan{Offset: match.Offset, Length: match.Length})
 			}
-		}
+			return true
+		})
 	}
 	return dst
 }

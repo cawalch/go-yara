@@ -253,14 +253,14 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 
 		// The default preserves the historical all-evaluated-rules result shape.
 		// The opt-in compact result mode materializes only matching public rules.
-		materialize := !s.reportedMatchesOnly || evaluation.matched && !rule.IsPrivate
+		materialize := !s.reportedMatchesOnly || (evaluation.matched && !rule.IsPrivate && s.hasMatchingTag(rule))
 		if materialize && len(s.matchCtx.spans) > 0 {
 			if err := s.recordRuleMatches(ctx, data, rule, result); err != nil {
 				return nil, err
 			}
 		}
 		result.RuleResults[rule.Name] = evaluation.matched
-		if evaluation.matched {
+		if evaluation.matched && !rule.IsPrivate && s.hasMatchingTag(rule) {
 			s.matchedRuleIndices = append(s.matchedRuleIndices, rule.Index)
 		}
 	}
