@@ -460,3 +460,278 @@ func TestParseBoundWithWhitespace(t *testing.T) {
 		}
 	}
 }
+
+// TestParseMalformedInputsRejected pins the end-of-input guards across the
+// group-modifier, bound, class, POSIX-class and escape parsers. Every input
+// must return an error rather than reading past the pattern buffer.
+func TestParseMalformedInputsRejected(t *testing.T) {
+	p := NewParser(ParserFlagEnableStrictEscapeSequences)
+	patterns := []string{
+		"(?",       // group modifier lookahead at end of input
+		"[a\\",     // trailing backslash inside a class
+		"[[",       // '[' at end (POSIX lookahead)
+		"[[:alpha", // unterminated POSIX class (no ':]')
+		"[[:",      // '[:' at end (negation lookahead)
+		"[[:]",     // unterminated POSIX class
+		"[a-",      // '-' at end (range lookahead)
+		`[\x4`,     // truncated hex escape in a class
+		"[a",       // unterminated class
+		"[]",       // unterminated class
+		`\x4`,      // incomplete top-level hex escape
+		`\`,        // trailing backslash
+		"(",        // missing ')'
+		"(?:",      // missing ')'
+		"(a",       // missing ')'
+	}
+	for _, pattern := range patterns {
+		if _, err := p.Parse(pattern); err == nil {
+			t.Fatalf("Parse(%q) error = nil, want error", pattern)
+		}
+	}
+}
+
+// TestParseUnclosedBoundsFallBackToLiterals pins the bound parser's
+// end-of-input handling: an unclosed or invalid bound is treated as literal
+// characters (YARA-compatible), not rejected, and must not read past the
+// pattern.
+func TestParseUnclosedBoundsFallBackToLiterals(t *testing.T) {
+	p := NewParser(0)
+	for _, pattern := range []string{"a{", "a{1", "a{1,", "a{9"} {
+		if _, err := p.Parse(pattern); err != nil {
+			t.Fatalf("Parse(%q) error = %v, want literal fallback", pattern, err)
+		}
+	}
+}
+
+// TestParseBoundDigitBoundaries pins the '0'/'9' digit comparisons and the
+// inclusive clamp, so exact-digit bounds still form a NodeRange.
+func TestParseBoundDigitBoundaries(t *testing.T) {
+	p := NewParser(0)
+	tests := []struct {
+		pattern string
+		min     uint16
+		max     uint16
+	}{
+		{pattern: "a{0}", min: 0, max: 0},
+		{pattern: "a{9}", min: 9, max: 9},
+		{pattern: "a{99}", min: 99, max: 99},
+		{pattern: "a{65535}", min: 65535, max: 65535},
+		{pattern: "a{99999}", min: 65535, max: 65535},
+		{pattern: "a{0,9}", min: 0, max: 9},
+		{pattern: "a{9,9}", min: 9, max: 9},
+	}
+	for _, tt := range tests {
+		ast, err := p.Parse(tt.pattern)
+		if err != nil {
+			t.Fatalf("Parse(%q) unexpected error: %v", tt.pattern, err)
+		}
+		n := ast.Root
+		if n.Kind != NodeRange || n.Start != tt.min || n.End != tt.max {
+			t.Fatalf("Parse(%q) = {Kind: %v, Start: %d, End: %d}, want {NodeRange, %d, %d}",
+				tt.pattern, n.Kind, n.Start, n.End, tt.min, tt.max)
+		}
+	}
+}
+
+// TestParseClassLiteralEdges pins the leading ']'/'-' literal handling in a
+// character class.
+func TestParseClassLiteralEdges(t *testing.T) {
+	p := NewParser(0)
+	tests := []struct {
+		pattern string
+		present string
+		absent  string
+	}{
+		{pattern: "[]]", present: "]", absent: "["},
+		{pattern: "[-a]", present: "-a", absent: "b"},
+		{pattern: "[a-]", present: "a-", absent: "b"},
+		{pattern: `[a\-]`, present: "a-", absent: "b"},
+	}
+	for _, tt := range tests {
+		ast, err := p.Parse(tt.pattern)
+		if err != nil {
+			t.Fatalf("Parse(%q) unexpected error: %v", tt.pattern, err)
+		}
+		n := ast.Root
+		if n.Kind != NodeClass {
+			t.Fatalf("Parse(%q) kind = %v, want NodeClass", tt.pattern, n.Kind)
+		}
+		for i := range len(tt.present) {
+			if !bitSet(n.Class.Bitmap, tt.present[i]) {
+				t.Fatalf("Parse(%q) missing %q", tt.pattern, tt.present[i])
+			}
+		}
+		for i := range len(tt.absent) {
+			if bitSet(n.Class.Bitmap, tt.absent[i]) {
+				t.Fatalf("Parse(%q) unexpectedly contains %q", tt.pattern, tt.absent[i])
+			}
+		}
+	}
+}
+
+// TestParsePOSIXClassVariants pins the POSIX class negation and terminator
+// scan.
+func TestParsePOSIXClassVariants(t *testing.T) {
+	p := NewParser(0)
+
+	negated, err := p.Parse("[[:^digit:]]")
+	if err != nil {
+		t.Fatalf("negated POSIX parse error: %v", err)
+	}
+	if !bitSet(negated.Root.Class.Bitmap, 'a') || bitSet(negated.Root.Class.Bitmap, '5') {
+		t.Fatal("[[:^digit:]] must contain 'a' and exclude '5'")
+	}
+
+	combined, err := p.Parse("[[:alpha:][:digit:]]")
+	if err != nil {
+		t.Fatalf("combined POSIX parse error: %v", err)
+	}
+	if !bitSet(combined.Root.Class.Bitmap, 'A') || !bitSet(combined.Root.Class.Bitmap, '5') {
+		t.Fatal("[[:alpha:][:digit:]] must contain 'A' and '5'")
+	}
+
+	space, err := p.Parse("[[:space:]]")
+	if err != nil {
+		t.Fatalf("space POSIX parse error: %v", err)
+	}
+	if !bitSet(space.Root.Class.Bitmap, ' ') || bitSet(space.Root.Class.Bitmap, 'a') {
+		t.Fatal("[[:space:]] must contain ' ' and exclude 'a'")
+	}
+}
+
+// TestParseHexEscapeErrorMessages pins the operand indices in the invalid-hex
+// error strings so the reported characters stay aligned with the pattern.
+func TestParseHexEscapeErrorMessages(t *testing.T) {
+	p := NewParser(ParserFlagEnableStrictEscapeSequences)
+	tests := []struct {
+		pattern string
+		want    string
+	}{
+		{pattern: `\xZ1`, want: `invalid hex escape \xZ1`},
+		{pattern: `\x1Z`, want: `invalid hex escape \x1Z`},
+	}
+	for _, tt := range tests {
+		_, err := p.Parse(tt.pattern)
+		if err == nil || !strings.Contains(err.Error(), tt.want) {
+			t.Fatalf("Parse(%q) error = %v, want containing %q", tt.pattern, err, tt.want)
+		}
+	}
+}
+
+// TestIsPrimaryStart pins the token set that continues a concatenation,
+// including the tComma/tRBracket literal tokens.
+func TestIsPrimaryStart(t *testing.T) {
+	tests := []struct {
+		kind tokenKind
+		want bool
+	}{
+		{kind: tChar, want: true},
+		{kind: tLParen, want: true},
+		{kind: tLBracket, want: true},
+		{kind: tComma, want: true},
+		{kind: tRBracket, want: true},
+		{kind: tLBrace, want: true},
+		{kind: tRBrace, want: true},
+		{kind: tDot, want: true},
+		{kind: tCaret, want: true},
+		{kind: tDollar, want: true},
+		{kind: tWord, want: true},
+		{kind: tNonWord, want: true},
+		{kind: tSpace, want: true},
+		{kind: tNonSpace, want: true},
+		{kind: tDigit, want: true},
+		{kind: tNonDigit, want: true},
+		{kind: tWordBoundary, want: true},
+		{kind: tNonWordBoundary, want: true},
+		{kind: tEOF, want: false},
+		{kind: tBar, want: false},
+		{kind: tStar, want: false},
+		{kind: tPlus, want: false},
+		{kind: tQMark, want: false},
+		{kind: tRParen, want: false},
+	}
+	for _, tt := range tests {
+		if got := isPrimaryStart(tt.kind); got != tt.want {
+			t.Fatalf("isPrimaryStart(%v) = %v, want %v", tt.kind, got, tt.want)
+		}
+	}
+}
+
+// TestParseMalformedInputsRejectedNonStrict reaches the lexer/class-level
+// end-of-input guards that strict pre-validation would otherwise catch first.
+func TestParseMalformedInputsRejectedNonStrict(t *testing.T) {
+	p := NewParser(0)
+	for _, pattern := range []string{"[a\\", "[\\", "[[:alpha:"} {
+		if _, err := p.Parse(pattern); err == nil {
+			t.Fatalf("Parse(%q) error = nil, want error", pattern)
+		}
+	}
+}
+
+// TestParseAllPOSIXClasses drives every applyPOSIXClass match function and
+// checks representative members and boundary endpoints.
+func TestParseAllPOSIXClasses(t *testing.T) {
+	p := NewParser(0)
+	tests := []struct {
+		class string
+		has   []byte
+		not   []byte
+	}{
+		{class: "alnum", has: []byte{'a', 'Z', '0', '9'}, not: []byte{' ', '_', '!'}},
+		{class: "alpha", has: []byte{'a', 'z', 'A', 'Z'}, not: []byte{'0', '5', ' '}},
+		{class: "ascii", has: []byte{0x00, 0x7F, 'a'}, not: []byte{0x80, 0xFF}},
+		{class: "blank", has: []byte{' ', '\t'}, not: []byte{'a', '\n'}},
+		{class: "cntrl", has: []byte{0x00, 0x1F, 0x7F}, not: []byte{' ', 'a'}},
+		{class: "digit", has: []byte{'0', '9'}, not: []byte{'a', '/'}},
+		{class: "graph", has: []byte{0x21, 0x7E, 'a'}, not: []byte{' ', 0x7F}},
+		{class: "lower", has: []byte{'a', 'z'}, not: []byte{'A', '0'}},
+		{class: "print", has: []byte{0x20, 0x7E, 'a'}, not: []byte{0x1F, 0x7F}},
+		{class: "punct", has: []byte{0x21, 0x2F, 0x3A, 0x40, 0x5B, 0x60, 0x7B, 0x7E}, not: []byte{'a', '0', ' '}},
+		{class: "space", has: []byte{' ', '\t', '\n'}, not: []byte{'a'}},
+		{class: "upper", has: []byte{'A', 'Z'}, not: []byte{'a', '0'}},
+		{class: "word", has: []byte{'a', 'Z', '0', '_'}, not: []byte{' ', '!'}},
+		{class: "xdigit", has: []byte{'0', '9', 'a', 'f', 'A', 'F'}, not: []byte{'g', 'G', 'z'}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.class, func(t *testing.T) {
+			ast, err := p.Parse("[[:" + tt.class + ":]]")
+			if err != nil {
+				t.Fatalf("Parse(%q) unexpected error: %v", tt.class, err)
+			}
+			if ast.Root.Kind != NodeClass {
+				t.Fatalf("Parse(%q) kind = %v, want NodeClass", tt.class, ast.Root.Kind)
+			}
+			for _, ch := range tt.has {
+				if !bitSet(ast.Root.Class.Bitmap, ch) {
+					t.Fatalf("[[:%s:]] missing %#x", tt.class, ch)
+				}
+			}
+			for _, ch := range tt.not {
+				if bitSet(ast.Root.Class.Bitmap, ch) {
+					t.Fatalf("[[:%s:]] unexpectedly contains %#x", tt.class, ch)
+				}
+			}
+		})
+	}
+}
+
+// Mutation-test classification for regex/parser.go (gremlins v0.6.0,
+// --workers 1):
+//   - isPrimaryStart 208:21 and 242:16 (int(kind) < len(tokenToSimpleNode)):
+//     equivalent-mode. tokenToSimpleNode has len(tNonWordBoundary+1) entries and
+//     no tokenKind reaches that length, so the guard bound is unreachable.
+//   - clampToUint16 338:9 and 340:16: equivalent-mode. readBoundNumber already
+//     clamps to [0,65535] before calling clampToUint16, so both branches assign
+//     the value they already hold.
+//   - readEscaped 592:9 (l.i >= l.len): equivalent-mode. Both call sites
+//     (parseClassContent, parseRange) guarantee l.i < l.len, so the guard is
+//     unreachable defense-in-depth.
+//   - readEscapeSequence 614:20/614:23: equivalent-mode. validateHexEscapes runs
+//     first and rejects every incomplete \x, so the l.i+1 < l.len boundary is
+//     never the deciding term.
+//   - validateStrictEscapes 698:8/698:11: equivalent-mode (dead). validateHexEscapes
+//     always runs first and already rejects incomplete \x escapes, so this hex
+//     branch is unreachable.
+//   - parseAlternative 73:17, parseRange 585:39, readEscapeSequence 612:5,
+//     validateHexEscapes 667:4 and validateStrictEscapes 692:4: non-terminating
+//     mutants (gremlins TIMED OUT) from inverting a loop counter.
