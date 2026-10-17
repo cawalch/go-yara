@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/cawalch/go-yara/ast"
 )
 
 func TestCaptureReplayNestedRepeatedOptionalAndWholeMatch(t *testing.T) {
@@ -499,4 +501,132 @@ func wideBytes(value string) []byte {
 		result = append(result, value[index], 0)
 	}
 	return result
+}
+
+func TestValidateCompiledEvidenceAndSortTieBreakers(t *testing.T) {
+	if err := validateCompiledEvidence(nil); err == nil {
+		t.Fatal("expected error for nil rule")
+	}
+
+	baseProgram, err := NewCompiler().CompileSource(`
+rule valid_evidence {
+	strings:
+		$r = /([a-z]+):([0-9]+)/ wide ascii capture(k = 1, v = 2)
+	evidence:
+		pair = (k, v) within 0 of v
+	condition:
+		$r
+}
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Exercise wide+ascii replayFlagOptions on both ASCII and wide matches, plus >8 anchors (9 anchors).
+	var nineAnchors []byte
+	for i := range 9 {
+		if i%2 == 0 {
+			nineAnchors = append(nineAnchors, []byte(fmt.Sprintf("k:1%d ", i))...)
+		} else {
+			nineAnchors = append(nineAnchors, wideBytes(fmt.Sprintf("w:2%d", i))...)
+			nineAnchors = append(nineAnchors, ' ')
+		}
+	}
+	res := scanEvidence(t, baseProgram, 64, string(nineAnchors))
+	if got := len(res.Evidence["valid_evidence"]["pair"]); got != 9 {
+		t.Fatalf("9-anchor findings = %d, want 9", got)
+	}
+
+	cloneRule := func() *CompiledRule {
+		rebuilt, err := UnmarshalCompiledProgram(mustMarshal(t, baseProgram))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rebuilt.Rules[0]
+	}
+
+	// Valid 32-binding boundary.
+	r32 := cloneRule()
+	bindings32 := make([]ast.CaptureBinding, 32)
+	for i := range bindings32 {
+		bindings32[i] = ast.CaptureBinding{Name: fmt.Sprintf("f%d", i), Group: 0}
+	}
+	r32.CaptureBindings["$r"] = append(bindings32[:30], ast.CaptureBinding{Name: "k", Group: 1}, ast.CaptureBinding{Name: "v", Group: 2})
+	if err := validateCompiledEvidence(r32); err != nil {
+		t.Fatalf("32 bindings must be valid: %v", err)
+	}
+
+	invalidMutations := []struct {
+		name   string
+		mutate func(*CompiledRule)
+	}{
+		{"fast scan safe", func(r *CompiledRule) { r.FastScanSafe = true }},
+		{"undeclared pattern", func(r *CompiledRule) { r.CaptureBindings["$missing"] = []ast.CaptureBinding{{Name: "x", Group: 0}} }},
+		{"empty bindings", func(r *CompiledRule) { r.CaptureBindings["$r"] = nil }},
+		{"33 bindings", func(r *CompiledRule) { r.CaptureBindings["$r"] = make([]ast.CaptureBinding, 33) }},
+		{"private string", func(r *CompiledRule) {
+			r.StringModifiers["$r"] = []ast.StringModifier{{Type: ast.StringModifierPrivate}}
+		}},
+		{"empty binding name", func(r *CompiledRule) { r.CaptureBindings["$r"][0].Name = "" }},
+		{"negative group", func(r *CompiledRule) { r.CaptureBindings["$r"][0].Group = -1 }},
+		{"duplicate binding name", func(r *CompiledRule) { r.CaptureBindings["$r"][1].Name = r.CaptureBindings["$r"][0].Name }},
+		{"missing regex pattern", func(r *CompiledRule) { delete(r.RegexPatterns, "$r") }},
+		{"empty capture code", func(r *CompiledRule) {
+			rp := r.RegexPatterns["$r"]
+			rp.CaptureCode = nil
+			r.RegexPatterns["$r"] = rp
+		}},
+		{"missing group in CaptureGroups", func(r *CompiledRule) {
+			rp := r.RegexPatterns["$r"]
+			rp.CaptureGroups = []int{1}
+			r.RegexPatterns["$r"] = rp
+		}},
+		{"empty plan name", func(r *CompiledRule) { r.EvidencePlans[0].Name = "" }},
+		{"empty plan fields", func(r *CompiledRule) { r.EvidencePlans[0].Fields = nil }},
+		{"empty plan anchor", func(r *CompiledRule) { r.EvidencePlans[0].Anchor = "" }},
+		{"negative plan within", func(r *CompiledRule) { r.EvidencePlans[0].Within = -1 }},
+		{"duplicate plan name", func(r *CompiledRule) { r.EvidencePlans = append(r.EvidencePlans, r.EvidencePlans[0]) }},
+		{"duplicate plan field", func(r *CompiledRule) { r.EvidencePlans[0].Fields = []string{"v", "v"} }},
+		{"unknown plan field", func(r *CompiledRule) { r.EvidencePlans[0].Fields = []string{"v", "unknown"} }},
+		{"anchor not in fields", func(r *CompiledRule) { r.EvidencePlans[0].Fields = []string{"k"} }},
+	}
+	for _, tc := range invalidMutations {
+		r := cloneRule()
+		tc.mutate(r)
+		if err := validateCompiledEvidence(r); err == nil {
+			t.Fatalf("%s: expected validation error", tc.name)
+		}
+	}
+
+	// Exercise sortCaptureOccurrences tie-breakers (Offset -> Pattern -> Group -> Name -> equal).
+	items := []captureOccurrence{
+		{capture: Capture{Offset: 5, Pattern: "$b", Group: 2, Name: "z"}},
+		{capture: Capture{Offset: 5, Pattern: "$b", Group: 2, Name: "a"}},
+		{capture: Capture{Offset: 5, Pattern: "$b", Group: 2, Name: "a"}},
+		{capture: Capture{Offset: 5, Pattern: "$b", Group: 1, Name: "z"}},
+		{capture: Capture{Offset: 5, Pattern: "$a", Group: 9, Name: "z"}},
+		{capture: Capture{Offset: 1, Pattern: "$z", Group: 9, Name: "z"}},
+	}
+	sortCaptureOccurrences(items)
+	wantOrder := []Capture{
+		{Offset: 1, Pattern: "$z", Group: 9, Name: "z"},
+		{Offset: 5, Pattern: "$a", Group: 9, Name: "z"},
+		{Offset: 5, Pattern: "$b", Group: 1, Name: "z"},
+		{Offset: 5, Pattern: "$b", Group: 2, Name: "a"},
+		{Offset: 5, Pattern: "$b", Group: 2, Name: "a"},
+		{Offset: 5, Pattern: "$b", Group: 2, Name: "z"},
+	}
+	for i, want := range wantOrder {
+		if !reflect.DeepEqual(items[i].capture, want) {
+			t.Fatalf("sorted[%d] = %+v, want %+v", i, items[i].capture, want)
+		}
+	}
+}
+
+func mustMarshal(t *testing.T, p *CompiledProgram) []byte {
+	t.Helper()
+	b, err := p.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
 }

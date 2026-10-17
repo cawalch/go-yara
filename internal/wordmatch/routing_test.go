@@ -379,3 +379,89 @@ func TestSharedPlanAndScannerReuse(t *testing.T) {
 		})
 	}
 }
+
+func TestVerifierBoundariesMultiPatternAndSetRange(t *testing.T) {
+	// 1. Compile validation boundaries: empty alternatives, negative Min, Min > Max, empty Set with Max > 0, valid Max == 0, and 64-term boundary.
+	anchor := []byte("BOUNDARY_ANCHOR_0123456789")
+	for _, invalid := range [][]Rule{
+		{{All: []Pattern{{Any: nil}}}},
+		{{All: []Pattern{{Any: []Sequence{{{Literal: anchor}, {Set: routingSet('a', 'z'), Min: -1, Max: 1}}}}}}},
+		{{All: []Pattern{{Any: []Sequence{{{Literal: anchor}, {Set: routingSet('a', 'z'), Min: 2, Max: 1}}}}}}},
+		{{All: []Pattern{{Any: []Sequence{{{Literal: anchor}, {Min: 0, Max: 1}}}}}}},
+	} {
+		if _, err := CompileRouted(invalid); err == nil {
+			t.Fatalf("expected error for invalid rules %+v", invalid)
+		}
+	}
+	seq64 := make(Sequence, 64)
+	for i := range seq64 {
+		seq64[i] = Term{Min: 0, Max: 0}
+	}
+	seq64[0] = Term{Literal: anchor}
+	if _, err := CompileRouted([]Rule{{All: []Pattern{{Any: []Sequence{seq64}}}}}); err != nil {
+		t.Fatalf("64-term sequence must be valid: %v", err)
+	}
+
+	// 2. Multi-pattern rule where:
+	//    - Pattern 0 (trigger) has adjacent forward/backward literals and a multi-word byte-run (spanning >128 bytes for setRange).
+	//    - Pattern 1 (non-trigger) uses NoCase with exact ASCII case boundaries ('@', 'A', 'Z', '[', '`', 'a', 'z', '{')
+	//      and requires advancing past a partial match (start = pos + 1 in verifyPattern).
+	rules := []Rule{{
+		All: []Pattern{
+			{
+				Any: []Sequence{{
+					{Literal: []byte("PRE_@AZ[`az{_"), NoCase: true},
+					{Min: 0, Max: 0},
+					{Literal: anchor},
+					{Set: routingSet(' ', '~'), Min: 1, Max: 200},
+					{Literal: []byte("TAIL_@AZ[`az{"), NoCase: true},
+				}},
+			},
+			{
+				Any: []Sequence{{
+					{Literal: []byte("SECOND_@AZ[`az{"), NoCase: true},
+					{Literal: []byte("!")},
+				}},
+			},
+		},
+	}}
+	for _, dotCount := range []int{10, 70, 150} {
+		dots := bytes.Repeat([]byte{'.'}, dotCount)
+		triggerMatch := append([]byte("pre_@az[`AZ{_"), anchor...)
+		triggerMatch = append(triggerMatch, dots...)
+		triggerMatch = append(triggerMatch, []byte("tail_@az[`AZ{")...)
+		// Trailing dots after TAIL ensure 'TAIL' is matched at an intermediate offset inside the [pos+Min, pos+run] range.
+		triggerMatch = append(triggerMatch, bytes.Repeat([]byte{'.'}, 160-dotCount)...)
+
+		bothMatch := append(bytes.Clone(triggerMatch), []byte(" second_@az[`AZ{x second_@az[`AZ{!")...)
+		triggerOnly := append(bytes.Clone(triggerMatch), []byte(" second_@az[`AZ{?")...)
+		badUpperLo := bytes.ReplaceAll(bytes.Clone(bothMatch), []byte("second_@a"), []byte("second_AA"))
+		badUpperHi := bytes.ReplaceAll(bytes.Clone(bothMatch), []byte("z[`AZ{!"), []byte("z[[AZ{!"))
+		badLowerLo := bytes.ReplaceAll(bytes.Clone(bothMatch), []byte("z[`AZ{!"), []byte("z[aAZ{!"))
+		badLowerHi := bytes.ReplaceAll(bytes.Clone(bothMatch), []byte("z[`AZ{!"), []byte("z[`A{{!"))
+
+		checkRouting(t, rules, [][]byte{
+			bothMatch,
+			triggerOnly,
+			badUpperLo,
+			badUpperHi,
+			badLowerLo,
+			badLowerHi,
+		}, false)
+	}
+
+	// 3. Routed bucket with multi-byte NoCase prefix/suffix literals exercising literalSet and direction=-1 indexing.
+	var routedBoundaryRules []Rule
+	var routedInputs [][]byte
+	for _, pair := range []string{"@A", "AZ", "Z[", "`a", "az", "z{", "09", "19", "29"} {
+		seq := Sequence{
+			{Literal: []byte(pair), NoCase: true},
+			{Literal: anchor},
+		}
+		routedBoundaryRules = append(routedBoundaryRules, Rule{All: []Pattern{{Any: []Sequence{seq}}}})
+	}
+	for _, probe := range []string{"@a", "@A", "`A", "az", "AZ", "z[", "Z{", "`a", "`A", "@a", "z{", "Z["} {
+		routedInputs = append(routedInputs, append([]byte(probe), anchor...))
+	}
+	checkRouting(t, routedBoundaryRules, routedInputs, true)
+}
