@@ -178,3 +178,54 @@ func TestRequiredGateBooleanParity(t *testing.T) {
 		}
 	}
 }
+
+func TestRequiredStringsWithNegatedClausesAndNonCapturingGroups(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+rule pg_cred {
+	strings:
+		$uri = /postgres(?:ql)?:\/\/([A-Za-z0-9_.-]+):([^@\s]{8,32})@([A-Za-z0-9.-]+)/ capture(user = 1, secret = 2, host = 3)
+		$fp_local = "@localhost" nocase
+		$fp_pass = ":password@" nocase
+		$fp_redact = ":REDACTED@"
+	evidence:
+		cred = (user, secret, host) within 128 of secret
+	condition:
+		$uri and not any of ($fp_*)
+}
+
+rule token_cred {
+	strings:
+		$tok = /gh[pousr]_[A-Za-z0-9]{36}/ capture(token = 0)
+		$fp_redact = "REDACTED"
+	evidence:
+		cred = (token) within 0 of token
+	condition:
+		$tok and not any of ($fp_*)
+}
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(program.Rules[0].requiredStrings, []string{"$uri"}) {
+		t.Fatalf("requiredStrings = %v, want [$uri]", program.Rules[0].requiredStrings)
+	}
+	scanner := program.NewScanner(WithEvidence(128), WithReportedMatchesOnly(), WithFastScan())
+	defer scanner.Close()
+
+	for _, benign := range []string{
+		`{"auth":"REDACTED","stack":"internal/postgres/repo.go:42"}`,
+		`{"dsn":"postgres://svc:password@localhost/db"}`,
+	} {
+		matches, scanErr := scanner.MatchingRules([]byte(benign))
+		if scanErr != nil || len(matches) != 0 {
+			t.Fatalf("MatchingRules(%q) = %+v, %v; want none", benign, matches, scanErr)
+		}
+	}
+
+	leaked := `{"auth":"REDACTED","dsn":"postgresql://svc_rw:K9mPv2xQr8Lz@pg.internal/prod"}`
+	matches, err := scanner.MatchingRules([]byte(leaked))
+	if err != nil || len(matches) != 1 || len(matches[0].Evidence["cred"]) != 1 ||
+		matches[0].Evidence["cred"][0].Status != EvidenceStatusReady {
+		t.Fatalf("MatchingRules(leaked) = %+v, %v; want ready evidence", matches, err)
+	}
+}
