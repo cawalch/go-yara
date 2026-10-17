@@ -320,3 +320,114 @@ func TestCompileUnsupportedUnknownNodeKind(t *testing.T) {
 		t.Fatalf("Compile error = %v, want substring %q", err, want)
 	}
 }
+
+// TestToInt16CheckedBounds pins both inclusive int16 bounds. Values exactly at
+// minI16/maxI16 must be accepted; one past either end must be rejected.
+func TestToInt16CheckedBounds(t *testing.T) {
+	tests := []struct {
+		name   string
+		v      int
+		wantOK bool
+	}{
+		{name: "min", v: minI16, wantOK: true},
+		{name: "max", v: maxI16, wantOK: true},
+		{name: "zero", v: 0, wantOK: true},
+		{name: "below min", v: minI16 - 1, wantOK: false},
+		{name: "above max", v: maxI16 + 1, wantOK: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := toInt16Checked(tt.v)
+			if (err == nil) != tt.wantOK {
+				t.Fatalf("toInt16Checked(%d) error = %v, want ok=%v", tt.v, err, tt.wantOK)
+			}
+			if tt.wantOK && int(got) != tt.v {
+				t.Fatalf("toInt16Checked(%d) = %d", tt.v, got)
+			}
+		})
+	}
+}
+
+// TestCompileCapturesGroupBounds pins the capture-group range guard: group 0 and
+// group GroupCount+1 are rejected while the last valid group is accepted.
+func TestCompileCapturesGroupBounds(t *testing.T) {
+	ast, err := NewParser(ParserFlagEnableStrictEscapeSequences).Parse("(a)(b)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ast.GroupCount != 2 {
+		t.Fatalf("GroupCount = %d, want 2", ast.GroupCount)
+	}
+	if _, err := CompileCaptures(ast, []int{0}); err == nil {
+		t.Fatal("CompileCaptures(group 0) succeeded, want error")
+	}
+	if _, err := CompileCaptures(ast, []int{3}); err == nil {
+		t.Fatal("CompileCaptures(group GroupCount+1) succeeded, want error")
+	}
+	if _, err := CompileCaptures(ast, []int{1, 2}); err != nil {
+		t.Fatalf("CompileCaptures(valid groups) error = %v", err)
+	}
+}
+
+// TestCompileCapturesSlotLimit pins the slot > 255 guard: slot 255 (the 256th
+// group) is still valid.
+func TestCompileCapturesSlotLimit(t *testing.T) {
+	ast, err := NewParser(ParserFlagEnableStrictEscapeSequences).Parse(strings.Repeat("(a)", 256))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ast.GroupCount != 256 {
+		t.Fatalf("GroupCount = %d, want 256", ast.GroupCount)
+	}
+	groups := make([]int, 256)
+	for i := range groups {
+		groups[i] = i + 1
+	}
+	if _, err := CompileCaptures(ast, groups); err != nil {
+		t.Fatalf("CompileCaptures(256 groups) error = %v", err)
+	}
+}
+
+// TestCompileCapturesEmitsSaveEnd pins the capture-group emission path: a group
+// with a slot must emit both OpSaveStart and OpSaveEnd, and the trailing literal
+// after the group must still be emitted.
+func TestCompileCapturesEmitsSaveEnd(t *testing.T) {
+	ast, err := NewParser(ParserFlagEnableStrictEscapeSequences).Parse("(ab)c")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, err := CompileCaptures(ast, []int{1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if countOpcode(code, OpSaveStart) == 0 {
+		t.Fatalf("CompileCaptures missing OpSaveStart: %v", code)
+	}
+	if countOpcode(code, OpSaveEnd) == 0 {
+		t.Fatalf("CompileCaptures missing OpSaveEnd: %v", code)
+	}
+	if !hasLiteral(code, 'c') {
+		t.Fatalf("CompileCaptures missing trailing literal 'c': %v", code)
+	}
+}
+
+// TestEmitNodeAtBytecodeSizeLimit pins the strict > comparison at the size cap:
+// a compiler already at exactly MaxBytecodeSize may still emit one more node.
+func TestEmitNodeAtBytecodeSizeLimit(t *testing.T) {
+	c := NewCompiler()
+	c.e.buf = make([]byte, MaxBytecodeSize)
+	if err := c.emitNode(&Node{Kind: NodeLiteral, Value: 'a'}); err != nil {
+		t.Fatalf("emitNode at exactly MaxBytecodeSize error = %v, want nil", err)
+	}
+}
+
+// Mutation-test classification for regex/compile.go (gremlins v0.6.0,
+// --workers 1):
+//   - emitSplit 86:15 (nextSplitID++ -> --): nextSplitID is written into every
+//     split instruction but never read by the VM (addThread and
+//     fastForwardGreedyTerminalLoop both read only the u16 relative offset), so
+//     the counter is dead and its increment direction is unobservable.
+//   - patchI16 97:12 (at+0 -> at-0): adding zero is the identity.
+//   - emitSimpleNode 152/154/156 and the minI16/maxI16/MaxBytecodeSize const
+//     declarations are reported NOT COVERED because Go coverage emits no block
+//     for switch case conditions or constant expressions.

@@ -45,3 +45,31 @@ func TestEmitterSequence(t *testing.T) {
 		}
 	}
 }
+
+// TestLiteralPrefixEdgeCases pins the bounds handling in LiteralPrefix: empty
+// and nil code, a dangling OpLiteral without its operand byte, and anchored
+// prefixes.
+func TestLiteralPrefixEdgeCases(t *testing.T) {
+	tests := []struct {
+		name     string
+		code     []byte
+		prefix   string
+		anchored bool
+	}{
+		{name: "nil code", code: nil},
+		{name: "empty code", code: []byte{}},
+		{name: "dangling literal", code: []byte{OpLiteral}},
+		{name: "two literals", code: []byte{OpLiteral, 'a', OpLiteral, 'b'}, prefix: "ab"},
+		{name: "anchored only", code: []byte{OpMatchAtStart}, anchored: true},
+		{name: "anchored literal", code: []byte{OpMatchAtStart, OpLiteral, 'x'}, prefix: "x", anchored: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			prefix, anchored := LiteralPrefix(tt.code)
+			if string(prefix) != tt.prefix || anchored != tt.anchored {
+				t.Fatalf("LiteralPrefix(%v) = (%q, %v), want (%q, %v)", tt.code, prefix, anchored, tt.prefix, tt.anchored)
+			}
+		})
+	}
+}
