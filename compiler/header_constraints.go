@@ -25,12 +25,12 @@ const (
 // HeaderConstraint is a mandatory fixed-offset predicate derived from a rule
 // condition. The scanner evaluates these before running pattern searches.
 type HeaderConstraint struct {
-	Kind      HeaderConstraintKind
+	String    string
 	Offset    int64
 	Width     int
-	BigEndian bool
 	Value     uint64
-	String    string
+	Kind      HeaderConstraintKind
+	BigEndian bool
 }
 
 func deriveHeaderConstraints(condition ast.Expression) []HeaderConstraint {

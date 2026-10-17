@@ -49,8 +49,8 @@ func NextTokenImpl[T TokenMethods](lexer T) token.Token {
 	return lexer.handleDefaultToken(pos)
 }
 
-// simpleTokenMapping maps characters to their token types
-var simpleTokenMapping = map[byte]token.Type{
+// simpleTokenMapping maps characters to their token types (0 == token.RULE is unused for single-char tokens).
+var simpleTokenMapping = [256]token.Type{
 	'+':  token.PLUS,
 	'-':  token.MINUS,
 	'*':  token.MULTIPLY,
@@ -74,7 +74,7 @@ var simpleTokenMapping = map[byte]token.Type{
 
 // trySimpleToken attempts to create a simple single-character token
 func trySimpleToken[T TokenMethods](ch byte, pos token.Position, lexer T) (token.Token, bool) {
-	if tokenType, exists := simpleTokenMapping[ch]; exists {
+	if tokenType := simpleTokenMapping[ch]; tokenType != 0 {
 		return lexer.makeSimpleToken(tokenType, string(ch), pos), true
 	}
 	return token.Token{}, false

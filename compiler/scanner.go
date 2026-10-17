@@ -15,7 +15,6 @@ type Scanner struct {
 	program          *CompiledProgram
 	interp           *Interpreter    // reused across calls
 	matchCtx         *MatchContext   // reused across calls
-	ruleResults      map[string]bool // reused across calls
 	ruleResultsDense []bool          // direct indexed results vector
 	tagsFilter       map[string]bool // non-empty means: only report rules with these tags
 	itersmax         int             // max for-loop iterations (0 = unlimited)
@@ -264,7 +263,6 @@ func NewScanner(program *CompiledProgram, opts ...ScannerOption) *Scanner {
 		program:          program,
 		interp:           interp,
 		matchCtx:         ctx,
-		ruleResults:      make(map[string]bool),
 		ruleResultsDense: make([]bool, ruleCount),
 	}
 	if program != nil {
@@ -512,10 +510,10 @@ func (cp *CompiledProgram) ScanFileWithContext(ctx context.Context, filename str
 // globalMatchEntry is a match routed by integer indices from the shared automaton.
 type globalMatchEntry struct {
 	strID    string // string identifier (e.g. "$a")
-	span     matchSpan
-	isWide   bool   // whether this concrete automaton pattern is wide-encoded
-	isNocase bool   // whether the originating string is nocase
 	pattern  []byte // stored automaton pattern bytes for re-verification
+	span     matchSpan
+	isWide   bool // whether this concrete automaton pattern is wide-encoded
+	isNocase bool // whether the originating string is nocase
 }
 
 type nonTextMatchCache struct {

@@ -1421,16 +1421,16 @@ func (cr *CompiledRule) PrintDebug() {
 type sharedAutomatonEntry struct {
 	RuleIndex  int // index into CompiledProgram.Rules
 	StringIdx  int // index into CompiledRule.IndexToStringID
-	Kind       StringKind
 	AtomOffset int
 	// AtomMaxOffset is the maximum number of bytes before a regex atom. It is
 	// -1 for an atom after an unbounded prefix and equals AtomOffset for
 	// fixed-offset regex and hex atoms.
 	AtomMaxOffset   int
+	CacheIndex      int
+	Kind            StringKind
 	alternativeAtom bool
 	forceShared     bool
 	IsWide          bool
-	CacheIndex      int
 }
 
 // CompiledProgram represents an immutable, thread-safe collection of compiled YARA rules.

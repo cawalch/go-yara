@@ -199,9 +199,11 @@ func (p *Parser) parseBase() (*Node, error) {
 	}
 
 	// Simple one-token constructs (dot, anchors, shorthands, boundaries)
-	if nk, ok := tokenToSimpleNode[p.cur.kind]; ok {
-		p.next()
-		return &Node{Kind: nk, Greedy: true}, nil
+	if int(p.cur.kind) < len(tokenToSimpleNode) {
+		if nk := tokenToSimpleNode[p.cur.kind]; nk != 0 {
+			p.next()
+			return &Node{Kind: nk, Greedy: true}, nil
+		}
 	}
 
 	// Returning nil, nil is intentional here - it indicates that this token
@@ -211,8 +213,8 @@ func (p *Parser) parseBase() (*Node, error) {
 
 func (p *Parser) next() { p.cur = p.lx.next() }
 
-// tokenToSimpleNode maps lexer tokens that directly translate to simple AST nodes.
-var tokenToSimpleNode = map[tokenKind]NodeKind{
+// tokenToSimpleNode maps lexer tokens that directly translate to simple AST nodes (0 means unmapped).
+var tokenToSimpleNode = [tNonWordBoundary + 1]NodeKind{
 	tDot:             NodeAny,
 	tCaret:           NodeAnchorStart,
 	tDollar:          NodeAnchorEnd,
@@ -231,8 +233,7 @@ func isPrimaryStart(k tokenKind) bool {
 	if k == tChar || k == tLParen || k == tLBracket || k == tComma || k == tRBracket || k == tLBrace || k == tRBrace {
 		return true
 	}
-	_, ok := tokenToSimpleNode[k]
-	return ok
+	return int(k) < len(tokenToSimpleNode) && tokenToSimpleNode[k] != 0
 }
 
 // maybeMakeUngreedy consumes an optional '?' after a quantifier to mark it ungreedy.
@@ -709,7 +710,7 @@ func validateStrictEscapes(pattern string) error {
 }
 
 func isStrictEscape(e byte) bool {
-	if _, exists := escapeTokenMapping[e]; exists {
+	if escapeTokenMapping[e] != tEOF {
 		return true
 	}
 	if _, exists := getStandardEscape(e); exists {

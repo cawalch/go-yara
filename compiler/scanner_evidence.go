@@ -208,19 +208,39 @@ func materializeRuleMatchesAt(rule *CompiledRule, src map[string][]matchSpan, ba
 	if len(src) == 0 {
 		return nil
 	}
-	var matches map[string][]Match
+	if len(src) == 1 {
+		for id, spans := range src {
+			if len(spans) == 0 || (rule != nil && rule.IsPrivateString(id)) {
+				return nil
+			}
+			dst := make([]Match, len(spans))
+			for index, span := range spans {
+				dst[index] = Match{Pattern: id, Offset: span.Offset, Length: span.Length, Base: base}
+			}
+			return map[string][]Match{id: dst}
+		}
+	}
+	totalSpans := 0
+	validIDs := 0
 	for id, spans := range src {
 		if len(spans) == 0 || (rule != nil && rule.IsPrivateString(id)) {
 			continue
 		}
-		if matches == nil {
-			capHint := len(src)
-			if rule != nil && len(rule.IndexToStringID) > 0 && len(rule.IndexToStringID) < capHint {
-				capHint = len(rule.IndexToStringID)
-			}
-			matches = make(map[string][]Match, capHint)
+		totalSpans += len(spans)
+		validIDs++
+	}
+	if totalSpans == 0 {
+		return nil
+	}
+	matches := make(map[string][]Match, validIDs)
+	slab := make([]Match, totalSpans)
+	for id, spans := range src {
+		if len(spans) == 0 || (rule != nil && rule.IsPrivateString(id)) {
+			continue
 		}
-		dst := make([]Match, len(spans))
+		n := len(spans)
+		dst := slab[:n:n]
+		slab = slab[n:]
 		for index, span := range spans {
 			dst[index] = Match{Pattern: id, Offset: span.Offset, Length: span.Length, Base: base}
 		}

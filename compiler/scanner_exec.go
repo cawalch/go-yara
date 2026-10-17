@@ -169,7 +169,6 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 			s.dispatchPrefilter(PrefilterDecision{Stage: PrefilterStageCompactMask, Rejected: true})
 		}
 		scanInput := ruleScanInput{data: data, usesharedAutomaton: false, skipUnmatchedContext: true}
-		clear(s.ruleResults)
 		clear(s.ruleResultsDense)
 		if err := s.recordAllRulesRejected(ctx, result, scanInput); err != nil {
 			return nil, err
@@ -184,7 +183,6 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 	}
 	scanInput := ruleScanInput{data: data, usesharedAutomaton: usesharedAutomaton, skipUnmatchedContext: s.reportedMatchesOnly}
 
-	clear(s.ruleResults)
 	clear(s.ruleResultsDense)
 	allRejected := false
 	if !s.prefilterDisabled {
@@ -336,7 +334,6 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 				switch action {
 				case MatchActionStopScan:
 					result.MatchedRules = append(result.MatchedRules, ruleMatch)
-					clear(s.ruleResults)
 					clear(s.ruleResultsDense)
 					if s.hookMask&(hookBitScanLifecycle|hookBitTelemetry) != 0 {
 						dur := time.Since(scanStart)
@@ -356,7 +353,6 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 		}
 	}
 
-	clear(s.ruleResults)
 	clear(s.ruleResultsDense)
 	if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
 		s.telemetrySink.TotalMatches += uint64(len(result.MatchedRules))
@@ -391,10 +387,8 @@ func (s *Scanner) MatchesWithContext(ctx context.Context, data []byte) (bool, er
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
-	clear(s.ruleResults)
 	clear(s.ruleResultsDense)
 	defer func() {
-		clear(s.ruleResults)
 		clear(s.ruleResultsDense)
 	}()
 	if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
@@ -439,10 +433,8 @@ func (s *Scanner) MatchingRulesWithContext(ctx context.Context, data []byte) ([]
 		return nil, err
 	}
 
-	clear(s.ruleResults)
 	clear(s.ruleResultsDense)
 	defer func() {
-		clear(s.ruleResults)
 		clear(s.ruleResultsDense)
 	}()
 	s.matchedRuleIndices = s.matchedRuleIndices[:0]

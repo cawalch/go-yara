@@ -56,10 +56,8 @@ func (s *Scanner) MatchingRulesInBlockWithContext(
 		return nil, err
 	}
 
-	clear(s.ruleResults)
 	clear(s.ruleResultsDense)
 	defer func() {
-		clear(s.ruleResults)
 		clear(s.ruleResultsDense)
 	}()
 	s.blockContext[0] = block

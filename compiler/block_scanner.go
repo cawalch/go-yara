@@ -173,7 +173,6 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (*ScanResult
 		RuleResults:  make(map[string]bool, len(scanner.program.Rules)),
 		Matches:      make(map[string]map[string][]Match),
 	}
-	clear(s.ruleResults)
 	clear(s.ruleResultsDense)
 	s.interp.ResetIterationCount()
 
@@ -213,7 +212,6 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (*ScanResult
 			if rule.Index >= 0 && rule.Index < len(s.ruleResultsDense) {
 				s.ruleResultsDense[rule.Index] = false
 			}
-			s.ruleResults[rule.Name] = false
 			result.RuleResults[rule.Name] = false
 			result.PrunedRules = append(result.PrunedRules, rule.Name)
 			continue
@@ -237,7 +235,6 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (*ScanResult
 			if rule.Index >= 0 && rule.Index < len(s.ruleResultsDense) {
 				s.ruleResultsDense[rule.Index] = false
 			}
-			s.ruleResults[rule.Name] = false
 			result.RuleResults[rule.Name] = false
 			continue
 		}
@@ -250,7 +247,7 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (*ScanResult
 			}
 			return nil, err
 		}
-		matched := s.interp.ruleResult(rule.Name)
+		matched := s.interp.ruleResultByIndex(rule.Index, rule.Name)
 		materialize := !s.reportedMatchesOnly || matched && !rule.IsPrivate
 		if materialize && len(perRule) > 0 {
 			publicMatches := clonePublicRuleMatches(rule, perRule)
@@ -319,7 +316,6 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (*ScanResult
 			switch action {
 			case MatchActionStopScan:
 				result.MatchedRules = append(result.MatchedRules, ruleMatch)
-				clear(s.ruleResults)
 				clear(s.ruleResultsDense)
 				return result, nil
 			case MatchActionSkipRule:
@@ -329,7 +325,6 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (*ScanResult
 		}
 		result.MatchedRules = append(result.MatchedRules, ruleMatch)
 	}
-	clear(s.ruleResults)
 	clear(s.ruleResultsDense)
 	return result, nil
 }
