@@ -7,6 +7,7 @@ import (
 
 	"github.com/cawalch/go-yara/ast"
 	"github.com/cawalch/go-yara/internal/lexer"
+	"github.com/cawalch/go-yara/token"
 )
 
 // assertRuleParsesWithCondition is a helper function that parses a rule and asserts it has a condition
@@ -1135,5 +1136,37 @@ func TestParseShiftOperators(t *testing.T) {
 				t.Errorf("expected 1 rule, got %d", len(program.Rules))
 			}
 		})
+	}
+}
+
+func TestForLoopParenthesizedBodyScope(t *testing.T) {
+	input := `rule test {
+		strings:
+			$a = "a"
+			$b = "b"
+			$c = "c"
+		condition:
+			for any i in (1..#a) : ( @a[i] > 0 ) or
+			for any i in (1..#b) : ( @b[i] > 0 )
+	}`
+	l := lexer.New(input)
+	p := New(l)
+	prog, err := p.ParseRules()
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+
+	binOp, ok := prog.Rules[0].Condition.(*ast.BinaryOp)
+	if !ok {
+		t.Fatalf("expected condition to be *ast.BinaryOp, got %T", prog.Rules[0].Condition)
+	}
+	if binOp.Op != token.OR {
+		t.Fatalf("expected binary op OR, got %v", binOp.Op)
+	}
+	if _, ok := binOp.Left.(*ast.ForLoop); !ok {
+		t.Fatalf("expected Left to be *ast.ForLoop, got %T", binOp.Left)
+	}
+	if _, ok := binOp.Right.(*ast.ForLoop); !ok {
+		t.Fatalf("expected Right to be *ast.ForLoop, got %T", binOp.Right)
 	}
 }

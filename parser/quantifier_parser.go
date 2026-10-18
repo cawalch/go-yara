@@ -138,7 +138,7 @@ func (p *QuantifierParser) parseForQuantifier(pos token.Position) (ast.Expressio
 		p.nextToken() // consume ':'
 
 		// Parse the expression after colon
-		expr, parseErr := p.exprParser.ParseExpression()
+		expr, parseErr := p.parseForLoopBody()
 		if parseErr != nil {
 			return nil, parseErr
 		}
@@ -182,7 +182,7 @@ func (p *QuantifierParser) parseForLoopWithVariable(pos token.Position, quantifi
 		p.nextToken() // consume ':'
 
 		// Parse the expression after colon
-		expr, parseErr := p.exprParser.ParseExpression()
+		expr, parseErr := p.parseForLoopBody()
 		if parseErr != nil {
 			return nil, parseErr
 		}
@@ -307,7 +307,7 @@ func (p *QuantifierParser) parseStandardQuantifier(pos token.Position) (ast.Expr
 // parseForLoopWithConstraint creates a ForLoop with the given constraint.
 func (p *QuantifierParser) parseForLoopWithConstraint(fields forLoopFields) (*ast.ForLoop, error) {
 	p.nextToken() // consume ':'
-	expr, err := p.exprParser.ParseExpression()
+	expr, err := p.parseForLoopBody()
 	if err != nil {
 		return nil, err
 	}
@@ -323,6 +323,13 @@ func (p *QuantifierParser) parseForLoopWithConstraint(fields forLoopFields) (*as
 		forLoop.AtOffset = fields.constraint
 	}
 	return forLoop, nil
+}
+
+func (p *QuantifierParser) parseForLoopBody() (ast.Expression, error) {
+	if p.CurrentTokenIs(token.LPAREN) {
+		return p.exprParser.parseParenthesizedExpression()
+	}
+	return p.exprParser.ParseExpression()
 }
 
 // parseOfExpressionWithConstraint creates an OfExpression with the given constraint.

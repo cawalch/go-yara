@@ -733,3 +733,33 @@ rule JS_Loader_CharCodeToHost
 		t.Errorf("expected 0 matches on clean data, got %d", len(resultsClean.MatchedRules))
 	}
 }
+
+func TestChainedProximityLoopsOptimization(t *testing.T) {
+	ruleSrc := `
+rule JS_Loader_MultiProximity {
+	strings:
+		$f1 = ".token"
+		$f2 = ".payload"
+		$f3 = ".config"
+		$e1 = "eval("
+	condition:
+		for any i in (1..#f1) : ( for any j in (1..#e1) : ( @e1[j] > @f1[i] and @e1[j] - @f1[i] < 200 ) ) or
+		for any i in (1..#f2) : ( for any j in (1..#e1) : ( @e1[j] > @f2[i] and @e1[j] - @f2[i] < 200 ) ) or
+		for any i in (1..#f3) : ( for any j in (1..#e1) : ( @e1[j] > @f3[i] and @e1[j] - @f3[i] < 200 ) )
+}`
+	compiler := NewCompiler()
+	program, err := compiler.CompileSource(ruleSrc)
+	if err != nil {
+		t.Fatalf("compile error: %v", err)
+	}
+
+	proxCount := bytes.Count(program.Rules[0].Bytecode, []byte{byte(OpProximity)})
+	iterCount := bytes.Count(program.Rules[0].Bytecode, []byte{byte(OpIterStartIntRange)})
+
+	if proxCount != 3 {
+		t.Errorf("expected 3 OpProximity instructions, got %d", proxCount)
+	}
+	if iterCount != 0 {
+		t.Errorf("expected 0 OpIterStartIntRange instructions, got %d", iterCount)
+	}
+}
