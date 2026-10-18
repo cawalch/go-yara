@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"cmp"
 	"fmt"
 	"maps"
 	"math"
@@ -264,6 +265,112 @@ func (mc *MatchContext) anyMatch(id string, predicate func(matchSpan) bool) bool
 		return true
 	})
 	return found
+}
+
+// hasMatchAt returns true if string id has a match at targetOffset in O(log N) time.
+func (mc *MatchContext) hasMatchAt(id string, targetOffset int64) bool {
+	if mc == nil || targetOffset < 0 {
+		return false
+	}
+	if mc.compact {
+		return hasSpanAt(mc.spans[id], targetOffset)
+	}
+	return hasMatchObjAt(mc.Matches[id], targetOffset)
+}
+
+func hasSpanAt(spans []matchSpan, targetOffset int64) bool {
+	n := len(spans)
+	if n == 0 || spans[0].Offset > targetOffset || spans[n-1].Offset < targetOffset {
+		return false
+	}
+	idx, found := slices.BinarySearchFunc(spans, targetOffset, func(span matchSpan, target int64) int {
+		return cmp.Compare(span.Offset, target)
+	})
+	if found && idx < n {
+		return true
+	}
+	if spans[0].Offset > spans[n-1].Offset {
+		for _, span := range spans {
+			if span.Offset == targetOffset {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func hasMatchObjAt(matches []Match, targetOffset int64) bool {
+	n := len(matches)
+	if n == 0 || matches[0].Offset > targetOffset || matches[n-1].Offset < targetOffset {
+		return false
+	}
+	idx, found := slices.BinarySearchFunc(matches, targetOffset, func(m Match, target int64) int {
+		return cmp.Compare(m.Offset, target)
+	})
+	if found && idx < n {
+		return true
+	}
+	if matches[0].Offset > matches[n-1].Offset {
+		for _, m := range matches {
+			if m.Offset == targetOffset {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// hasMatchInRange returns true if string id has at least one match with Offset in [minOffset, maxOffset] in O(log N) time.
+func (mc *MatchContext) hasMatchInRange(id string, minOffset, maxOffset int64) bool {
+	if mc == nil || minOffset > maxOffset || maxOffset < 0 {
+		return false
+	}
+	if mc.compact {
+		return hasSpanInRange(mc.spans[id], minOffset, maxOffset)
+	}
+	return hasMatchObjInRange(mc.Matches[id], minOffset, maxOffset)
+}
+
+func hasSpanInRange(spans []matchSpan, minOffset, maxOffset int64) bool {
+	n := len(spans)
+	if n == 0 || spans[0].Offset > maxOffset || spans[n-1].Offset < minOffset {
+		return false
+	}
+	idx, _ := slices.BinarySearchFunc(spans, minOffset, func(span matchSpan, target int64) int {
+		return cmp.Compare(span.Offset, target)
+	})
+	if idx < n && spans[idx].Offset <= maxOffset {
+		return true
+	}
+	if spans[0].Offset > spans[n-1].Offset {
+		for _, span := range spans {
+			if span.Offset >= minOffset && span.Offset <= maxOffset {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func hasMatchObjInRange(matches []Match, minOffset, maxOffset int64) bool {
+	n := len(matches)
+	if n == 0 || matches[0].Offset > maxOffset || matches[n-1].Offset < minOffset {
+		return false
+	}
+	idx, _ := slices.BinarySearchFunc(matches, minOffset, func(m Match, target int64) int {
+		return cmp.Compare(m.Offset, target)
+	})
+	if idx < n && matches[idx].Offset <= maxOffset {
+		return true
+	}
+	if matches[0].Offset > matches[n-1].Offset {
+		for _, m := range matches {
+			if m.Offset >= minOffset && m.Offset <= maxOffset {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // hasProximity tests whether there exists a pair of matches (matchA, matchB) such that
