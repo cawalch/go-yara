@@ -234,6 +234,37 @@ func (i *Interpreter) executeCountInOf() error {
 	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(result)})
 }
 
+// executeProximityOperation executes OpProximity.
+// Stack layout: [strA, strB, minDist, maxDist] -> OpProximity -> [boolResult]
+func (i *Interpreter) executeProximityOperation() error {
+	if err := i.validateStackUnderflowN(OpProximity, 4); err != nil {
+		return err
+	}
+
+	maxDist := i.stack[len(i.stack)-1]
+	minDist := i.stack[len(i.stack)-2]
+	strB := i.stack[len(i.stack)-3]
+	strA := i.stack[len(i.stack)-4]
+	i.stack = i.stack[:len(i.stack)-4]
+
+	if strA.Type != ValueTypeString || strB.Type != ValueTypeString {
+		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpProximity, Message: "proximity requires string pattern operands"}
+	}
+	if minDist.Type != ValueTypeInt || maxDist.Type != ValueTypeInt {
+		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpProximity, Message: "proximity requires integer distance bounds"}
+	}
+
+	if i.matchContext == nil {
+		return i.push(Value{Type: ValueTypeInt, IntVal: 0})
+	}
+
+	nameA := i.getString(strA)
+	nameB := i.getString(strB)
+
+	matched := i.matchContext.hasProximity(nameA, nameB, minDist.IntVal, maxDist.IntVal)
+	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(matched)})
+}
+
 // executeOffsetOperation executes OpOffset.
 func (i *Interpreter) executeOffsetOperation() error {
 	if err := i.validateStackUnderflowN(OpOffset, 2); err != nil {

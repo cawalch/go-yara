@@ -1,6 +1,9 @@
 package compiler
 
-import "testing"
+import (
+	"bytes"
+	"testing"
+)
 
 func TestForLoopUnrolledAny(t *testing.T) {
 	source := `
@@ -510,4 +513,223 @@ func TestForLoopPlaceholderLength(t *testing.T) {
 		// must COMPILE (the regression is about compilation, not the value).
 		_, _ = evaluateRule(program.Rules[0], program, data)
 	})
+}
+
+func TestProximityLoopOptimization(t *testing.T) {
+	ruleSrc := `
+rule JS_Loader_TokenToEval {
+	strings:
+		$f1 = ".token"
+		$e1 = "eval("
+	condition:
+		for any i in (1..#f1) : ( for any j in (1..#e1) : ( @e1[j] > @f1[i] and @e1[j] - @f1[i] < 200 ) )
+}`
+	compiler := NewCompiler()
+	program, err := compiler.CompileSource(ruleSrc)
+	if err != nil {
+		t.Fatalf("compile error: %v", err)
+	}
+
+	// Verify that the bytecode uses OpProximity and NOT OpIterStartIntRange
+	if !bytes.Contains(program.Rules[0].Bytecode, []byte{byte(OpProximity)}) {
+		t.Errorf("expected OpProximity in compiled bytecode, got none")
+	}
+	if bytes.Contains(program.Rules[0].Bytecode, []byte{byte(OpIterStartIntRange)}) {
+		t.Errorf("expected NO OpIterStartIntRange in compiled bytecode, but found one")
+	}
+
+	// Test 1: Match within 200 bytes (.token at 10, eval( at 50 -> diff = 40)
+	dataMatch := []byte("prefix....token...padding...eval(payload)...")
+	ok, err := evaluateRule(program.Rules[0], program, dataMatch)
+	if err != nil {
+		t.Fatalf("evaluate error: %v", err)
+	}
+	if !ok {
+		t.Errorf("expected match when eval is within 200 bytes after .token")
+	}
+
+	// Test 2: eval occurs BEFORE .token (e.g. eval( at 10, .token at 50)
+	dataBefore := []byte("prefix....eval(...padding....token...payload...")
+	ok, err = evaluateRule(program.Rules[0], program, dataBefore)
+	if err != nil {
+		t.Fatalf("evaluate error: %v", err)
+	}
+	if ok {
+		t.Errorf("expected NO match when eval occurs before .token")
+	}
+
+	// Test 3: eval occurs > 200 bytes after .token
+	padding := make([]byte, 300)
+	for i := range padding {
+		padding[i] = ' '
+	}
+	dataFar := append(append([]byte(".token"), padding...), []byte("eval(")...)
+	ok, err = evaluateRule(program.Rules[0], program, dataFar)
+	if err != nil {
+		t.Fatalf("evaluate error: %v", err)
+	}
+	if ok {
+		t.Errorf("expected NO match when eval is > 200 bytes after .token")
+	}
+
+	// Test 4: First occurrence is too far, but second occurrence is close!
+	dataMulti := append(bytes.Clone(dataFar), append([]byte("....token.short."), []byte("eval(")...)...)
+	ok, err = evaluateRule(program.Rules[0], program, dataMulti)
+	if err != nil {
+		t.Fatalf("evaluate error: %v", err)
+	}
+	if !ok {
+		t.Errorf("expected match when a subsequent pair is within proximity")
+	}
+
+	// Test 5: Neither string present
+	ok, err = evaluateRule(program.Rules[0], program, []byte("clean content without tokens or evals"))
+	if err != nil {
+		t.Fatalf("evaluate error: %v", err)
+	}
+	if ok {
+		t.Errorf("expected NO match on clean data")
+	}
+}
+
+func TestProximityLoopVariations(t *testing.T) {
+	tests := []struct {
+		name      string
+		condition string
+		data      []byte
+		want      bool
+	}{
+		{
+			name:      "swapped-loop-nesting",
+			condition: `for any j in (1..#b) : ( for any i in (1..#a) : ( @b[j] > @a[i] and @b[j] - @a[i] < 100 ) )`,
+			data:      []byte("...a......b..."),
+			want:      true,
+		},
+		{
+			name:      "reversed-ordering-clause",
+			condition: `for any i in (1..#a) : ( for any j in (1..#b) : ( @a[i] < @b[j] and @b[j] - @a[i] <= 10 ) )`,
+			data:      []byte("...a...b..."),
+			want:      true,
+		},
+		{
+			name:      "reversed-ordering-clause-too-far",
+			condition: `for any i in (1..#a) : ( for any j in (1..#b) : ( @a[i] < @b[j] and @b[j] - @a[i] <= 3 ) )`,
+			data:      []byte("...a......b..."),
+			want:      false,
+		},
+		{
+			name:      "single-difference-clause",
+			condition: `for any i in (1..#a) : ( for any j in (1..#b) : ( @b[j] - @a[i] < 50 ) )`,
+			data:      []byte("...a......b..."),
+			want:      true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			src := `rule t { strings: $a = "a" $b = "b" condition: ` + tc.condition + ` }`
+			program, err := NewCompiler().CompileSource(src)
+			if err != nil {
+				t.Fatalf("compile error: %v", err)
+			}
+			if !bytes.Contains(program.Rules[0].Bytecode, []byte{byte(OpProximity)}) {
+				t.Fatalf("expected OpProximity in instruction stream")
+			}
+			got, err := evaluateRule(program.Rules[0], program, tc.data)
+			if err != nil {
+				t.Fatalf("evaluate error: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("evaluate = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestJSLoaderRulesEndToEnd(t *testing.T) {
+	rules := `
+rule JS_Loader_TokenToEval
+{
+    strings:
+        $f1 = ".token"
+        $f2 = ".payload"
+        $f3 = ".config"
+        $e1 = "eval("
+        $e2 = "new Function("
+    condition:
+        any of ($f*) and any of ($e*) and
+        (
+            for any i in (1..#f1) : ( for any j in (1..#e1) : ( @e1[j] > @f1[i] and @e1[j] - @f1[i] < 200 ) ) or
+            for any i in (1..#f2) : ( for any j in (1..#e1) : ( @e1[j] > @f2[i] and @e1[j] - @f2[i] < 200 ) ) or
+            for any i in (1..#f3) : ( for any j in (1..#e1) : ( @e1[j] > @f3[i] and @e1[j] - @f3[i] < 200 ) ) or
+            for any i in (1..#f1) : ( for any j in (1..#e2) : ( @e2[j] > @f1[i] and @e2[j] - @f1[i] < 200 ) ) or
+            for any i in (1..#f2) : ( for any j in (1..#e2) : ( @e2[j] > @f2[i] and @e2[j] - @f2[i] < 200 ) ) or
+            for any i in (1..#f3) : ( for any j in (1..#e2) : ( @e2[j] > @f3[i] and @e2[j] - @f3[i] < 200 ) )
+        )
+}
+
+rule JS_Loader_SessionsToFunction
+{
+    strings:
+        $f1 = ".sessions"
+        $e1 = "new Function("
+        $e2 = "eval("
+    condition:
+        $f1 and any of ($e*) and
+        (
+            for any i in (1..#f1) : ( for any j in (1..#e1) : ( @e1[j] > @f1[i] and @e1[j] - @f1[i] < 300 ) ) or
+            for any i in (1..#f1) : ( for any j in (1..#e2) : ( @e2[j] > @f1[i] and @e2[j] - @f1[i] < 300 ) )
+        )
+}
+
+rule JS_Loader_CharCodeToHost
+{
+    strings:
+        $a1 = "String.fromCharCode"
+        $u1 = "vercel.app"
+        $u2 = "workers.dev"
+    condition:
+        $a1 and any of ($u*) and
+        (
+            for any i in (1..#a1) : ( for any j in (1..#u1) : ( @u1[j] > @a1[i] and @u1[j] - @a1[i] < 300 ) ) or
+            for any i in (1..#a1) : ( for any j in (1..#u2) : ( @u2[j] > @a1[i] and @u2[j] - @a1[i] < 300 ) )
+        )
+}
+`
+	compiler := NewCompiler()
+	program, err := compiler.CompileSource(rules)
+	if err != nil {
+		t.Fatalf("compile error: %v", err)
+	}
+	if len(program.Rules) != 3 {
+		t.Fatalf("expected 3 rules, got %d", len(program.Rules))
+	}
+
+	scanner := NewScanner(program)
+
+	// Test positive sample for JS_Loader_TokenToEval:
+	posData := []byte("const res = await fetch(); const val = res.token; eval(val);")
+	results, err := scanner.Scan(posData)
+	if err != nil {
+		t.Fatalf("scan error: %v", err)
+	}
+	foundTokenToEval := false
+	for _, r := range results.MatchedRules {
+		if r.Rule == "JS_Loader_TokenToEval" {
+			foundTokenToEval = true
+		}
+	}
+	if !foundTokenToEval {
+		t.Errorf("expected JS_Loader_TokenToEval to match positive sample")
+	}
+
+	// Test negative sample (clean code):
+	cleanData := []byte("function add(a, b) { return a + b; }")
+	resultsClean, err := scanner.Scan(cleanData)
+	if err != nil {
+		t.Fatalf("scan error: %v", err)
+	}
+	if len(resultsClean.MatchedRules) != 0 {
+		t.Errorf("expected 0 matches on clean data, got %d", len(resultsClean.MatchedRules))
+	}
 }

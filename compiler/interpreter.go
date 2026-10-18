@@ -266,6 +266,122 @@ func (mc *MatchContext) anyMatch(id string, predicate func(matchSpan) bool) bool
 	return found
 }
 
+// hasProximity tests whether there exists a pair of matches (matchA, matchB) such that
+// minDist <= matchB.Offset - matchA.Offset <= maxDist.
+// Because matches are ordered monotonically by offset, this runs in O(N + M) time
+// via a two-pointer linear scan with zero allocations.
+//
+//nolint:revive // argument-limit: internal helper requires (idA, idB, minDist, maxDist)
+func (mc *MatchContext) hasProximity(idA, idB string, minDist, maxDist int64) bool {
+	if mc == nil || minDist > maxDist {
+		return false
+	}
+	if mc.compact {
+		return hasProximitySpans(mc.spans[idA], mc.spans[idB], minDist, maxDist)
+	}
+	return hasProximityMatches(mc.Matches[idA], mc.Matches[idB], minDist, maxDist)
+}
+
+//nolint:revive // argument-limit: internal helper requires (spansA, spansB, minDist, maxDist)
+func hasProximitySpans(spansA, spansB []matchSpan, minDist, maxDist int64) bool {
+	nA, nB := len(spansA), len(spansB)
+	if nA == 0 || nB == 0 {
+		return false
+	}
+	if !isSortedSpans(spansA) {
+		spansA = cloneAndSortSpans(spansA)
+	}
+	if !isSortedSpans(spansB) {
+		spansB = cloneAndSortSpans(spansB)
+	}
+	i, j := 0, 0
+	for i < nA && j < nB {
+		diff := spansB[j].Offset - spansA[i].Offset
+		switch {
+		case diff < minDist:
+			j++
+		case diff > maxDist:
+			i++
+		default:
+			return true
+		}
+	}
+	return false
+}
+
+//nolint:revive // argument-limit: internal helper requires (matchesA, matchesB, minDist, maxDist)
+func hasProximityMatches(matchesA, matchesB []Match, minDist, maxDist int64) bool {
+	nA, nB := len(matchesA), len(matchesB)
+	if nA == 0 || nB == 0 {
+		return false
+	}
+	if !isSortedMatches(matchesA) {
+		matchesA = cloneAndSortMatches(matchesA)
+	}
+	if !isSortedMatches(matchesB) {
+		matchesB = cloneAndSortMatches(matchesB)
+	}
+	i, j := 0, 0
+	for i < nA && j < nB {
+		diff := matchesB[j].Offset - matchesA[i].Offset
+		switch {
+		case diff < minDist:
+			j++
+		case diff > maxDist:
+			i++
+		default:
+			return true
+		}
+	}
+	return false
+}
+
+func isSortedSpans(spans []matchSpan) bool {
+	for k := 1; k < len(spans); k++ {
+		if spans[k].Offset < spans[k-1].Offset {
+			return false
+		}
+	}
+	return true
+}
+
+func cloneAndSortSpans(spans []matchSpan) []matchSpan {
+	cloned := slices.Clone(spans)
+	slices.SortFunc(cloned, func(a, b matchSpan) int {
+		if a.Offset < b.Offset {
+			return -1
+		}
+		if a.Offset > b.Offset {
+			return 1
+		}
+		return 0
+	})
+	return cloned
+}
+
+func isSortedMatches(matches []Match) bool {
+	for k := 1; k < len(matches); k++ {
+		if matches[k].Offset < matches[k-1].Offset {
+			return false
+		}
+	}
+	return true
+}
+
+func cloneAndSortMatches(matches []Match) []Match {
+	cloned := slices.Clone(matches)
+	slices.SortFunc(cloned, func(a, b Match) int {
+		if a.Offset < b.Offset {
+			return -1
+		}
+		if a.Offset > b.Offset {
+			return 1
+		}
+		return 0
+	})
+	return cloned
+}
+
 func (mc *MatchContext) matchIDs() []string {
 	if mc == nil {
 		return nil

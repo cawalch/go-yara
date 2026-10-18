@@ -111,6 +111,7 @@ const (
 	OpOfPercentIn
 	OpOfPercentAt
 	OpCountInOf
+	OpProximity
 
 	// OpIntBegin begins integer operations (100-110)
 	OpIntBegin = 100
@@ -255,7 +256,7 @@ func isIteratorOpcode(op Opcode) bool {
 // isStringOpcode checks if opcode is a string operation
 func isStringOpcode(op Opcode) bool {
 	return (op >= OpContains && op <= OpOfPercentAt) ||
-		op == OpCountInOf || op == OpConcat || op == OpMatchesValue
+		op == OpCountInOf || op == OpProximity || op == OpConcat || op == OpMatchesValue
 }
 
 // isTypeFuncOpcode checks if opcode is a type function
@@ -385,6 +386,7 @@ var opcodeNames = map[Opcode]string{
 	OpOfPercentIn:            "OF_PERCENT_IN",
 	OpOfPercentAt:            "OF_PERCENT_AT",
 	OpCountInOf:              "COUNT_IN_OF",
+	OpProximity:              "PROXIMITY",
 	OpConcat:                 "CONCAT",
 }
 

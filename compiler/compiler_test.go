@@ -2649,6 +2649,7 @@ func TestOpcodeStringCoverageExtended(t *testing.T) {
 			{OpOfPercent, "OF_PERCENT"},
 			{OpOfFoundIn, "OF_FOUND_IN"},
 			{OpCountIn, "COUNT_IN"},
+			{OpProximity, "PROXIMITY"},
 			{OpIterStartTextStringSet, "ITER_START_TEXT_STRING_SET"},
 		},
 		"FlowControl": {
