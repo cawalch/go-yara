@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.7.1] - 2026-10-18
+
+### Performance
+* **Two-Pointer Proximity Loop Linearization (`OpProximity`)**: Added dedicated `OpProximity` opcode and zero-allocation two-pointer evaluation in `MatchContext.hasProximity`, accelerating string ordering and distance loops (`@b[j] > @a[i] and @b[j] - @a[i] < K`) from $O(N \cdot M)$ nested interpreter loops to $O(N + M)$ time ([#334](https://github.com/cawalch/go-yara/pull/334)).
+* **$O(\log N)$ Binary Search Offset Lookups**: Replaced linear string match offset scans with binary search over sorted match offsets and short-circuited set evaluation, eliminating pathological latency on large match sets ([#335](https://github.com/cawalch/go-yara/pull/335)).
+* **End-to-End Scanning Throughput**: Reduced proximity-heavy condition evaluations across 24,000+ files from >900s timeouts down to ~1.0s (>1,000x speedup), enabling registry-scale corpus sweeps across 59,000+ files (2.7 GB) in 3.6s.
+
+### Fixes
+* **Bounded `for`-Loop Body Parsing**: Bounded parenthesized `for`-loop bodies to terminate at the matching closing parenthesis rather than greedily consuming trailing `or` / `and` binary operators in chained condition expressions ([#336](https://github.com/cawalch/go-yara/pull/336)).
+
+---
+
 ## [v0.7.0] - 2026-10-18
 
 ### Performance
@@ -50,8 +62,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [v0.5.0] - 2026-10-12
 
 ### Fixes & Differential Parity
-* **libyara 4.5.8 Parity**: Resolved 15 differential divergences against C `libyara` 4.5.8 ([#273](https://github.com/cawalch/go-yara/issues/273)-[#287](https://github.com/cawalch/go-yara/issues/287), [#289](https://github.com/cawalch/go-yara/issues/289), [#290](https://github.com/cawalch/go-yara/pull/290)):
-  * Corrected operator precedence to match libyara specification.
+* **YARA Specification Parity**: Resolved 15 differential divergences against standard YARA behavior ([#273](https://github.com/cawalch/go-yara/issues/273)-[#287](https://github.com/cawalch/go-yara/issues/287), [#289](https://github.com/cawalch/go-yara/issues/289), [#290](https://github.com/cawalch/go-yara/pull/290)):
+  * Corrected operator precedence to match specification.
   * Fixed modulo-by-zero handling in arithmetic expressions.
   * Corrected `@a[N]` string offset indexing semantics.
   * Aligned `fullword` word boundary character classifications with `isalnum()`.
