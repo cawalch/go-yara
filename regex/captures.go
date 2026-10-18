@@ -224,11 +224,11 @@ func addCaptureThread(
 		visited[pc] = true
 		switch code[pc] {
 		case OpSplitA, OpSplitB:
-			if pc+3 >= len(code) {
+			if pc+2 >= len(code) {
 				return
 			}
-			rel := int(int16(binary.LittleEndian.Uint16(code[pc+2 : pc+4]))) //checkednarrow:ignore uint16 bits encode a signed relative offset
-			nextPC, altPC := pc+4, pc+rel
+			rel := int(int16(binary.LittleEndian.Uint16(code[pc+1 : pc+3]))) //checkednarrow:ignore uint16 bits encode a signed relative offset
+			nextPC, altPC := pc+3, pc+rel
 			first, second := nextPC, altPC
 			if code[pc] == OpSplitB {
 				first, second = altPC, nextPC

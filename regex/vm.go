@@ -557,14 +557,14 @@ func addThread(code, s []byte, list *[]thread, pc, pos int, visited []int64, gen
 		op := code[pc]
 		switch op {
 		case OpSplitA, OpSplitB:
-			// Layout: [op][id][u16 rel]
-			if pc+3 >= len(code) {
+			// Layout: [op][u16 rel]
+			if pc+2 >= len(code) {
 				return false
 			}
-			u16 := binary.LittleEndian.Uint16(code[pc+2 : pc+4])
+			u16 := binary.LittleEndian.Uint16(code[pc+1 : pc+3])
 			rel := int16(u16) //checkednarrow:ignore uint16 bits encode a signed relative offset
 			// sequential next
-			nextPC := pc + 4
+			nextPC := pc + 3
 			altPC := pc + int(rel)
 			return addSplitThreads(code, s, list, nextPC, altPC, pos, visited, gen, wide, op)
 		case OpJump:
@@ -815,7 +815,7 @@ func fastForwardGreedyTerminalLoop(code []byte, cur *[]thread, s []byte, pos *in
 		return false
 	}
 
-	if splitPC+3 >= len(code) {
+	if splitPC+2 >= len(code) {
 		return false
 	}
 	splitOp := code[splitPC]
@@ -823,10 +823,10 @@ func fastForwardGreedyTerminalLoop(code []byte, cur *[]thread, s []byte, pos *in
 		return false
 	}
 
-	u16 := binary.LittleEndian.Uint16(code[splitPC+2 : splitPC+4])
+	u16 := binary.LittleEndian.Uint16(code[splitPC+1 : splitPC+3])
 	rel := int16(u16) //checkednarrow:ignore uint16 bits encode a signed relative offset
 	altPC := splitPC + int(rel)
-	nextPC := splitPC + 4
+	nextPC := splitPC + 3
 
 	var loopPC, exitPC int
 	switch {

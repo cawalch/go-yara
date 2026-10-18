@@ -423,11 +423,6 @@ func TestEmitNodeAtBytecodeSizeLimit(t *testing.T) {
 
 // Mutation-test classification for regex/compile.go (gremlins v0.6.0,
 // --workers 1):
-//   - emitSplit 86:15 (nextSplitID++ -> --): nextSplitID is written into every
-//     split instruction but never read by the VM (addThread and
-//     fastForwardGreedyTerminalLoop both read only the u16 relative offset), so
-//     the counter is dead and its increment direction is unobservable.
-//   - patchI16 97:12 (at+0 -> at-0): adding zero is the identity.
-//   - emitSimpleNode 152/154/156 and the minI16/maxI16/MaxBytecodeSize const
-//     declarations are reported NOT COVERED because Go coverage emits no block
-//     for switch case conditions or constant expressions.
+//   - emitSimpleNode and the minI16/maxI16/MaxBytecodeSize const declarations
+//     are reported NOT COVERED because Go coverage emits no block for switch
+//     case conditions or constant expressions.
