@@ -243,7 +243,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     needs: [lint, test, simd, security, fuzz]
-    if: always()
+    if: ${{ always() && !cancelled() }}
     steps:
       - name: Check job results
         run: |
