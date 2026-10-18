@@ -344,13 +344,8 @@ func shouldUseSharedPatternAutomaton(data []byte, program *CompiledProgram) bool
 	}
 	// Text strings rely on the shared automaton, and large non-text sets have
 	// already crossed the compile-time threshold where one pass wins broadly.
-	if len(program.sharedLookup) >= minSharedNonTextEntries {
+	if len(program.sharedLookup) >= minSharedNonTextEntries || program.sharedHasTextOrAlternative {
 		return true
-	}
-	for _, entry := range program.sharedLookup {
-		if entry.Kind == StringKindText || entry.alternativeAtom || entry.forceShared {
-			return true
-		}
 	}
 
 	// Small non-text automata are profitable when their root bytes are sparse
