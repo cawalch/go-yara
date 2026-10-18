@@ -187,7 +187,7 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 			s.markCandidateRule(ruleIndex)
 		}
 		for _, rule := range s.program.Rules {
-			if !s.shouldEvaluateRule(rule) || s.candidateRuleSeen[rule.Index] {
+			if !s.shouldEvaluateRule(rule) || s.isCandidateRule(rule.Index) {
 				continue
 			}
 			if !s.program.ruleAllStringsInSharedPrefilter(rule) || s.ruleHasMatchedSharedNonText(rule) {
@@ -250,7 +250,7 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 				return nil, err
 			}
 		}
-		if usesharedAutomaton && !s.prefilterDisabled && !s.candidateRuleSeen[rule.Index] {
+		if usesharedAutomaton && !s.prefilterDisabled && !s.isCandidateRule(rule.Index) {
 			pruned := !s.ruleHeaderConstraintsMatchInput(ctx, rule, scanInput)
 			s.recordSkippedCandidateRule(rule, result, pruned)
 			continue
@@ -524,7 +524,7 @@ func (s *Scanner) evaluateSharedPublicRules(
 	}
 	slices.Sort(s.candidateRuleIndices)
 	for _, ruleIndex := range s.evaluatedGlobalRules {
-		if !s.candidateRuleSeen[ruleIndex] {
+		if !s.isCandidateRule(ruleIndex) {
 			result.allGlobalMatched = false
 			break
 		}
