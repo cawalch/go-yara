@@ -61,7 +61,8 @@ type Scanner struct {
 	// Candidate rule indices are deduplicated and sorted before sparse exact
 	// condition evaluation.
 	candidateRuleIndices []int
-	candidateRuleSeen    []bool
+	candidateRuleGen     []uint32
+	scanEpoch            uint32
 	// Public rules whose conditions matched during the current compact scan.
 	// The indices are retained across calls; returned RuleMatch values are owned.
 	matchedRuleIndices []int
@@ -349,15 +350,15 @@ func (s *Scanner) ruleHasMatchedSharedNonText(rule *CompiledRule) bool {
 }
 
 func (s *Scanner) resetCandidateRules(size int) {
-	if cap(s.candidateRuleSeen) < size {
-		s.candidateRuleSeen = make([]bool, size)
+	s.scanEpoch++
+	if s.scanEpoch == 0 {
+		clear(s.candidateRuleGen)
+		s.scanEpoch = 1
+	}
+	if cap(s.candidateRuleGen) < size {
+		s.candidateRuleGen = make([]uint32, size)
 	} else {
-		for _, index := range s.candidateRuleIndices {
-			if index >= 0 && index < len(s.candidateRuleSeen) {
-				s.candidateRuleSeen[index] = false
-			}
-		}
-		s.candidateRuleSeen = s.candidateRuleSeen[:size]
+		s.candidateRuleGen = s.candidateRuleGen[:size]
 	}
 	s.candidateRuleIndices = s.candidateRuleIndices[:0]
 	for _, index := range s.alwaysEvaluateSharedRules {
@@ -365,11 +366,15 @@ func (s *Scanner) resetCandidateRules(size int) {
 	}
 }
 
+func (s *Scanner) isCandidateRule(index int) bool {
+	return index >= 0 && index < len(s.candidateRuleGen) && s.candidateRuleGen[index] == s.scanEpoch
+}
+
 func (s *Scanner) markCandidateRule(index int) {
-	if index < 0 || index >= len(s.candidateRuleSeen) || s.candidateRuleSeen[index] {
+	if index < 0 || index >= len(s.candidateRuleGen) || s.candidateRuleGen[index] == s.scanEpoch {
 		return
 	}
-	s.candidateRuleSeen[index] = true
+	s.candidateRuleGen[index] = s.scanEpoch
 	s.candidateRuleIndices = append(s.candidateRuleIndices, index)
 }
 

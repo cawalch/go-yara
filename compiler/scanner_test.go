@@ -1575,3 +1575,60 @@ func BenchmarkCompiledProgramMatchingRules(b *testing.B) {
 		}
 	}
 }
+
+func TestScannerCandidateRuleEpochWrapping(t *testing.T) {
+	scanner := &Scanner{}
+
+	// Test bounds check guards on uninitialized scanner
+	if scanner.isCandidateRule(0) {
+		t.Fatal("expected isCandidateRule(0) to be false on empty scanner")
+	}
+	if scanner.isCandidateRule(-1) {
+		t.Fatal("expected isCandidateRule(-1) to be false")
+	}
+	scanner.markCandidateRule(-1)
+	scanner.markCandidateRule(5)
+	if len(scanner.candidateRuleIndices) != 0 {
+		t.Fatalf("expected no candidates marked for out of bounds index, got %d", len(scanner.candidateRuleIndices))
+	}
+
+	// Normal reset
+	scanner.resetCandidateRules(10)
+	if scanner.scanEpoch != 1 {
+		t.Fatalf("expected epoch 1, got %d", scanner.scanEpoch)
+	}
+	if scanner.isCandidateRule(3) {
+		t.Fatal("rule 3 should not be marked initially")
+	}
+	scanner.markCandidateRule(3)
+	if !scanner.isCandidateRule(3) {
+		t.Fatal("rule 3 should be marked")
+	}
+	// Marking again should be idempotent
+	scanner.markCandidateRule(3)
+	if len(scanner.candidateRuleIndices) != 1 {
+		t.Fatalf("expected 1 index in candidateRuleIndices, got %d", len(scanner.candidateRuleIndices))
+	}
+
+	// Advance epoch without clearing slice
+	scanner.resetCandidateRules(10)
+	if scanner.scanEpoch != 2 {
+		t.Fatalf("expected epoch 2, got %d", scanner.scanEpoch)
+	}
+	if scanner.isCandidateRule(3) {
+		t.Fatal("rule 3 should not be marked in new epoch")
+	}
+
+	// Simulate epoch wrap-around near math.MaxUint32
+	scanner.scanEpoch = 0xFFFFFFFF
+	// Next reset should increment to 0, trigger wrapping to 1, and clear candidateRuleGen
+	scanner.candidateRuleGen[3] = 1 // previously marked in epoch 1
+	scanner.resetCandidateRules(10)
+	if scanner.scanEpoch != 1 {
+		t.Fatalf("expected epoch wrapped to 1, got %d", scanner.scanEpoch)
+	}
+	// Rule 3 must NOT be marked in wrapped epoch 1 because clear() was called
+	if scanner.isCandidateRule(3) {
+		t.Fatal("rule 3 must be cleared upon epoch wrap-around")
+	}
+}
