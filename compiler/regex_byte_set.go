@@ -50,11 +50,12 @@ type regexByteSetCacheEntry struct {
 }
 
 type regexByteSetCandidateCache struct {
-	entries map[regexByteSetCacheKey]*regexByteSetCacheEntry
+	entries   map[regexByteSetCacheKey]*regexByteSetCacheEntry
+	entryList []*regexByteSetCacheEntry
 }
 
 func (cache *regexByteSetCandidateCache) reset() {
-	for _, entry := range cache.entries {
+	for _, entry := range cache.entryList {
 		entry.positions = entry.positions[:0]
 		entry.ready = false
 		entry.complete = false
@@ -73,6 +74,7 @@ func (search regexByteSetSearch) cacheEntry() *regexByteSetCacheEntry {
 	if entry == nil {
 		entry = &regexByteSetCacheEntry{}
 		search.cache.entries[key] = entry
+		search.cache.entryList = append(search.cache.entryList, entry)
 	}
 	return entry
 }

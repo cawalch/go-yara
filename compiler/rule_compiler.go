@@ -1473,8 +1473,9 @@ type CompiledProgram struct {
 	booleanRouting          func() *wordmatch.RoutedProgram
 
 	// Streaming support
-	streamingProcessor *StreamingProcessor
-	enableStreaming    bool
+	streamingProcessor         *StreamingProcessor
+	sharedHasTextOrAlternative bool
+	enableStreaming            bool
 
 	scannerPool *sync.Pool
 }
@@ -1577,6 +1578,12 @@ func (cp *CompiledProgram) prepare() error {
 	cp.sharedNonTextCacheRules = sharedNonTextCacheRuleLookup(cp.Rules, cp.sharedNonTextCaches)
 	cp.compactPrefilter = cp.buildCompactPrefilter()
 	cp.booleanRouting = sync.OnceValue(cp.buildBooleanRouting)
+	for _, entry := range cp.sharedLookup {
+		if entry.Kind == StringKindText || entry.alternativeAtom || entry.forceShared {
+			cp.sharedHasTextOrAlternative = true
+			break
+		}
+	}
 	return nil
 }
 
