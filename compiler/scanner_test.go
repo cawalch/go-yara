@@ -1632,4 +1632,3 @@ func TestScannerCandidateRuleEpochWrapping(t *testing.T) {
 		t.Fatal("rule 3 must be cleared upon epoch wrap-around")
 	}
 }
-
