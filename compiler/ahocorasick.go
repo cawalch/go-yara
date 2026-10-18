@@ -1279,12 +1279,12 @@ type acMatch struct {
 
 // acStringInfo contains information about a registered string pattern
 type acStringInfo struct {
+	Data       []byte
 	Identifier string
 	Length     int
+	Flags      regex.Flags
 	IsHex      bool
 	IsRegex    bool
-	Data       []byte
-	Flags      regex.Flags
 }
 
 type stringConfig struct {
