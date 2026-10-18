@@ -58,12 +58,12 @@ type regexByteSetPrefilter struct {
 }
 
 type prefilterDedupKey struct {
-	kind          StringKind
 	cacheKey      string
-	wide          bool
 	atomData      string
 	atomMinOffset int
 	atomMaxOffset int
+	kind          StringKind
+	wide          bool
 	atomNoCase    bool
 }
 

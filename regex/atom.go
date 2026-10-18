@@ -20,19 +20,19 @@ type LiteralAtom struct {
 // A scanner can find the suffix atoms first, walk the repeated gap backwards,
 // and recover exact candidate starts without probing every leading byte.
 type LeadingByteGapPlan struct {
+	AtomGroups [][]LiteralAtom
 	LeadingSet ByteSet
 	GapSet     ByteSet
 	GapMin     int
 	GapMax     int
-	AtomGroups [][]LiteralAtom
 }
 
 type atomAnalysis struct {
-	minLength int
-	maxLength int
 	atoms     []LiteralAtom
 	byteAtoms []ByteSetAtom
 	exact     []byte
+	minLength int
+	maxLength int
 	isExact   bool
 }
 

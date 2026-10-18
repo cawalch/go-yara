@@ -359,8 +359,8 @@ func hexByte(a, b byte) byte {
 
 // anchorInfo describes an anchor byte for skip-based matching.
 type anchorInfo struct {
-	byteVal byte // the definite literal byte value
 	offset  int  // its position in the token sequence
+	byteVal byte // the definite literal byte value
 	ok      bool // true if a usable anchor was found
 }
 
