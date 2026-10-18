@@ -128,6 +128,21 @@ func TestRegexByteSetSearchIndex(t *testing.T) {
 	if got := wide.index(0); got != 2 {
 		t.Fatalf("indexContiguous(wide last) = %d, want 2", got)
 	}
+	// Equal bounds take the single-byte fast path.
+	equal := regexByteSetSearch{
+		data:    []byte{0x10, 0x11},
+		pattern: RegexPattern{byteSetContiguous: true, byteSetLower: 0x11, byteSetUpper: 0x11},
+	}
+	if got := equal.index(0); got != 1 {
+		t.Fatalf("indexContiguous(equal bounds) = %d, want 1", got)
+	}
+	missing := regexByteSetSearch{
+		data:    []byte{0x10, 0x11},
+		pattern: RegexPattern{byteSetContiguous: true, byteSetLower: 0x99, byteSetUpper: 0x99},
+	}
+	if got := missing.index(0); got != -1 {
+		t.Fatalf("indexContiguous(miss) = %d, want -1", got)
+	}
 }
 
 func TestIndexSparseRegexByteSet(t *testing.T) {

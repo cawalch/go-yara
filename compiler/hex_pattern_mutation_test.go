@@ -176,7 +176,7 @@ func TestMatchLinearHexPattern(t *testing.T) {
 	if _, ok := matchLinearHexPattern(tokens, []byte{0xDE, 0xAD}, -1, nil); ok {
 		t.Fatal("negative pos matched")
 	}
-	if _, ok := matchLinearHexPattern(tokens, []byte{1, 2, 3}, 2, nil); ok {
+	if _, ok := matchLinearHexPattern(tokens, []byte{1, 2, 3}, 3, nil); ok {
 		t.Fatal("match past the tail matched")
 	}
 	if _, ok := matchLinearHexPattern([]HexPatternToken{{Kind: HexTokenWildcard}}, []byte{0x00}, 0, nil); !ok {
@@ -207,6 +207,29 @@ func TestFindHexMatchesLinear(t *testing.T) {
 	matches := FindHexMatches(pattern, []byte{0x00, 0xDE, 0xAD, 0x00})
 	if len(matches) != 1 || matches[0].Offset != 1 || matches[0].Length != 2 {
 		t.Fatalf("FindHexMatches = %+v, want one 2-byte match at offset 1", matches)
+	}
+}
+
+func TestFindHexMatchesBruteForce(t *testing.T) {
+	// No definite anchor byte, so the brute-force scan is used.
+	pattern := &HexPattern{Tokens: []HexPatternToken{
+		{Kind: HexTokenByte, Value: 0xDE, Negated: true},
+		{Kind: HexTokenWildcard},
+	}}
+	matches := FindHexMatches(pattern, []byte{0xDE, 0x00, 0x00})
+	if len(matches) != 1 || matches[0].Offset != 1 || matches[0].Length != 2 {
+		t.Fatalf("FindHexMatches(brute force) = %+v, want one 2-byte match at offset 1", matches)
+	}
+}
+
+func TestFindHexMatchesXorRange(t *testing.T) {
+	pattern := &HexPattern{
+		Tokens:   []HexPatternToken{{Kind: HexTokenByte, Value: 0xDE}},
+		XorRange: []ast.XorRange{{Min: 0x11, Max: 0x11}},
+	}
+	matches := FindHexMatches(pattern, []byte{0xDE ^ 0x11})
+	if len(matches) != 1 {
+		t.Fatalf("FindHexMatches(xor range) = %+v, want one match", matches)
 	}
 }
 
