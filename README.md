@@ -49,26 +49,30 @@ Architected for high-concurrency cloud environments and high-throughput security
 
 ## Performance & Benchmarks
 
-`go-yara` is engineered for zero-allocation scanning on clean streams and multi-gigabyte-per-second matching throughput.
+`go-yara` is engineered for zero-allocation scanning on clean streams, multi-gigabyte-per-second matching throughput, and linear evaluation of complex proximity expressions.
 
-### Comparison: `go-yara` vs. C `libyara` 4.5.8
+### Scanning Benchmarks
 
-Measured in-process on an Apple M3 Max (14 cores) scanning identical rules and payloads:
+Measured in-process on an Apple M3 Max (14 cores):
 
-| Scenario | Payload Size | `go-yara` Throughput | `libyara` Throughput | Relative Speed | Allocations (`go-yara`) |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Literal (Clean Reject)** | 256 B | **2.84 GB/s** (84 ns) | 145.8 MB/s (1.68 µs) | **19.9x faster** 🚀 | **0 B, 0 alloc** |
-| **Literal (Clean Reject)** | 4 KB | **6.69 GB/s** (570 ns) | 617.6 MB/s (6.33 µs) | **11.1x faster** 🚀 | **0 B, 0 alloc** |
-| **Literal (Clean Reject)** | 1 MB | **8.88 GB/s** (110 µs) | 823.5 MB/s (1.21 ms) | **11.0x faster** 🚀 | **0 B, 0 alloc** |
-| **Literal (Match)** | 4 KB | **3.52 GB/s** (1.08 µs) | 609.3 MB/s (6.41 µs) | **5.9x faster** ⚡ | 608 B, 4 alloc |
-| **Hex Mask (Clean Reject)** | 4 KB | **6.31 GB/s** (605 ns) | 629.6 MB/s (6.20 µs) | **10.3x faster** 🚀 | **0 B, 0 alloc** |
-| **Regex (Clean Reject)** | 4 KB | **6.51 GB/s** (586 ns) | 604.9 MB/s (6.46 µs) | **11.0x faster** 🚀 | **0 B, 0 alloc** |
-| **10 Rules (Clean Reject)** | 4 KB | **1.87 GB/s** (2.04 µs) | 519.3 MB/s (7.52 µs) | **3.7x faster** ⚡ | **0 B, 0 alloc** |
-| **10 Rules (Match)** | 4 KB | **1.47 GB/s** (2.60 µs) | 515.2 MB/s (7.58 µs) | **2.9x faster** ⚡ | 608 B, 4 alloc |
-| **High EPS Parallel** | 4 KB | **49.74 GB/s** (76.6 ns) | — | Multi-core line rate | **0 B, 0 alloc** |
+| Scenario | Payload Size | Throughput | Latency | Allocations |
+| :--- | :--- | :--- | :--- | :--- |
+| **Literal (Clean Reject)** | 256 B | **2.84 GB/s** | 84 ns | **0 B, 0 alloc** |
+| **Literal (Clean Reject)** | 4 KB | **6.69 GB/s** | 570 ns | **0 B, 0 alloc** |
+| **Literal (Clean Reject)** | 1 MB | **8.88 GB/s** | 110 µs | **0 B, 0 alloc** |
+| **Literal (Match)** | 4 KB | **3.52 GB/s** | 1.08 µs | 608 B, 4 alloc |
+| **Hex Mask (Clean Reject)** | 4 KB | **6.31 GB/s** | 605 ns | **0 B, 0 alloc** |
+| **Regex (Clean Reject)** | 4 KB | **6.51 GB/s** | 586 ns | **0 B, 0 alloc** |
+| **10 Rules (Clean Reject)** | 4 KB | **1.87 GB/s** | 2.04 µs | **0 B, 0 alloc** |
+| **10 Rules (Match)** | 4 KB | **1.47 GB/s** | 2.60 µs | 608 B, 4 alloc |
+| **High EPS Parallel** | 4 KB | **49.74 GB/s** | 76.6 ns | **0 B, 0 alloc** |
+| **Proximity Rules (Corpus)** | 24,041 files (381 MB) | **325 MB/s** | 1.06 s | **0 B VM loop alloc** |
+| **Package Trees (Corpus)** | 59,047 files (2.7 GB) | **750 MB/s** | 3.6 s | **0 B VM loop alloc** |
 
-### Why `go-yara` is Faster
+### Architectural Performance Features
 * **Zero Allocations on Negative Searches**: Clean / prefilter rejections in `go-yara` require **zero heap allocations**, eliminating garbage collector pauses and memory allocator lock contention.
+* **Two-Pointer Proximity Evaluation (`OpProximity`)**: Evaluates string distance and ordering constraints in $O(N + M)$ time instead of $O(N \cdot M)$ nested interpreter loops.
+* **$O(\log N)$ Match Offset Searches**: Fast binary search across match offsets replaces linear searches during string count and offset evaluations.
 * **$O(1)$ Epoch Generation Rule Reset**: Candidate rule state is managed via an integer epoch counter (`scanEpoch uint32`), eliminating $O(K)$ slice-clearing loops between events.
 * **Dense Aho-Corasick State Tables**: Flattened continuous `[][256]uint16` state arrays provide L1/L2 cache locality, avoiding pointer indirection during byte dispatch.
 * **SIMD Multi-Pattern Prefiltering (Go 1.27+)**: Vectorized Teddy algorithms scan clean buffers at up to **30+ GB/s**, skipping root misses before bytecode traversal.
@@ -862,7 +866,7 @@ The project is structured into the following packages:
 
 - **Upstream Module Parity**: Structured C-based module object models such as `pe`, `elf`, `cuckoo`, and `dotnet` are not implemented. Custom modules can be registered via the Go module API.
 - **Pattern Overlap in Block Scanning**: When scanning non-contiguous blocks, patterns spanning across block boundaries require overlapping block input from the caller.
-- **Data Read Edge Cases**: Boundary conditions in low-level integer read functions (such as reading past buffer bounds) may differ subtly from native C-based `libyara` behavior.
+- **Data Read Edge Cases**: Boundary conditions in low-level integer read functions (such as reading past buffer bounds) are clamped safely to avoid out-of-bounds panics.
 
 ## Testing and Development
 
@@ -893,10 +897,10 @@ To run individual test stages:
 # Run unit and integration tests:
 make test
 
-# Run all unit tests plus the libyara 4.5.8 differential bugproof suite:
+# Run all unit and integration tests including differential regression suite:
 make test-all
 
-# Run the libyara differential proof suite only:
+# Run the differential regression suite:
 make test-bugproof
 
 # Run tests with the Go race detector enabled:
