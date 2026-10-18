@@ -323,7 +323,7 @@ func TestExecCapturesMalformedBytecode(t *testing.T) {
 		slotCount int
 	}{
 		{name: "jump past end", code: []byte{OpJump, 3, 0}, input: "a", slotCount: 1},
-		{name: "truncated split", code: []byte{OpSplitA, 0, 0}, input: "a", slotCount: 1},
+		{name: "truncated split", code: []byte{OpSplitA, 0}, input: "a", slotCount: 1},
 		{name: "truncated jump", code: []byte{OpJump, 0}, input: "a", slotCount: 1},
 		{name: "truncated save", code: []byte{OpSaveStart}, input: "a", slotCount: 1},
 		{name: "save slot at coord count", code: []byte{OpSaveStart, 8}, input: "a", slotCount: 8},

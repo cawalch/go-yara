@@ -247,7 +247,7 @@ func TestAddThreadGuards(t *testing.T) {
 	if addThread([]byte{OpMatch}, nil, &list, 1, 0, make([]int64, 1), 1, false) {
 		t.Fatal("addThread(pc == len) matched")
 	}
-	if addThread([]byte{OpSplitA, 0, 0}, nil, &list, 0, 0, make([]int64, 3), 1, false) {
+	if addThread([]byte{OpSplitA, 0}, nil, &list, 0, 0, make([]int64, 2), 1, false) {
 		t.Fatal("addThread(truncated split) matched")
 	}
 	if addThread([]byte{OpJump, 0}, nil, &list, 0, 0, make([]int64, 2), 1, false) {
@@ -280,7 +280,7 @@ func TestFastForwardGreedyTerminalLoopGuards(t *testing.T) {
 		t.Fatal("truncated class fast-forwarded")
 	}
 
-	splitCode := []byte{OpLiteral, 'a', OpSplitA, 0, 0}
+	splitCode := []byte{OpLiteral, 'a', OpSplitA, 0}
 	cur = []thread{{pc: 0}}
 	if fastForwardGreedyTerminalLoop(splitCode, &cur, []byte("a"), &pos, 0, &bestEnd, nil) {
 		t.Fatal("truncated split fast-forwarded")
@@ -333,7 +333,7 @@ func TestAddThreadNonWordBoundary(t *testing.T) {
 }
 
 // classLoopCode builds an OpClass loop whose split branches back to the class
-// op and exits to OpMatch: [OpClass][32-byte bitmap][neg][OpSplitB][id][rel][OpMatch].
+// op and exits to OpMatch: [OpClass][32-byte bitmap][neg][OpSplitB][rel][OpMatch].
 func classLoopCode() []byte {
 	code := make([]byte, 0, 40)
 	code = append(code, OpClass)
@@ -345,13 +345,13 @@ func classLoopCode() []byte {
 	code = append(code, 0) // not negated
 	// Split at pc 34 must jump back to the class op at pc 0: rel = -34.
 	rel := -34
-	code = append(code, OpSplitB, 0, byte(rel&0xff), byte((rel>>8)&0xff))
+	code = append(code, OpSplitB, byte(rel&0xff), byte((rel>>8)&0xff))
 	code = append(code, OpMatch)
 	return code
 }
 
 func TestFastForwardGreedyTerminalLoopSplitAndCancellation(t *testing.T) {
-	plus := []byte{OpLiteral, 'a', OpSplitB, 0, 0xFE, 0xFF, OpMatch}
+	plus := []byte{OpLiteral, 'a', OpSplitB, 0xFE, 0xFF, OpMatch}
 	pos := 0
 	bestEnd := -1
 	cur := []thread{{pc: 0}}
@@ -363,7 +363,7 @@ func TestFastForwardGreedyTerminalLoopSplitAndCancellation(t *testing.T) {
 	}
 
 	// An OpSplitA loop must still be recognised (branch-priority mutation).
-	ungreedy := []byte{OpLiteral, 'a', OpSplitA, 0, 0xFE, 0xFF, OpMatch}
+	ungreedy := []byte{OpLiteral, 'a', OpSplitA, 0xFE, 0xFF, OpMatch}
 	pos = 0
 	bestEnd = -1
 	cur = []thread{{pc: 0}}
@@ -372,7 +372,7 @@ func TestFastForwardGreedyTerminalLoopSplitAndCancellation(t *testing.T) {
 	}
 
 	// An exit past the end of the buffer must be rejected without panicking.
-	noMatch := []byte{OpLiteral, 'a', OpSplitB, 0, 0xFE, 0xFF}
+	noMatch := []byte{OpLiteral, 'a', OpSplitB, 0xFE, 0xFF}
 	pos = 0
 	bestEnd = -1
 	cur = []thread{{pc: 0}}
@@ -450,7 +450,7 @@ func TestRunAtMatchBatchCancellationArithmetic(t *testing.T) {
 }
 
 func TestFastForwardOpAnyAndOpNotLiteral(t *testing.T) {
-	anyLoop := []byte{OpAny, OpSplitB, 0, 0xFF, 0xFF, OpMatch}
+	anyLoop := []byte{OpAny, OpSplitB, 0xFF, 0xFF, OpMatch}
 	pos := 0
 	bestEnd := -1
 	cur := []thread{{pc: 0}}
@@ -461,7 +461,7 @@ func TestFastForwardOpAnyAndOpNotLiteral(t *testing.T) {
 		t.Fatalf("OpAny loop -> pos %d bestEnd %d, want 3,3", pos, bestEnd)
 	}
 
-	notLoop := []byte{OpNotLiteral, 'a', OpSplitB, 0, 0xFE, 0xFF, OpMatch}
+	notLoop := []byte{OpNotLiteral, 'a', OpSplitB, 0xFE, 0xFF, OpMatch}
 	pos = 0
 	bestEnd = -1
 	cur = []thread{{pc: 0}}
@@ -502,7 +502,7 @@ func TestRunAtMatchBatchGreedyLongest(t *testing.T) {
 }
 
 func TestFastForwardOpAnyNewlineStop(t *testing.T) {
-	anyLoop := []byte{OpAny, OpSplitB, 0, 0xFF, 0xFF, OpMatch}
+	anyLoop := []byte{OpAny, OpSplitB, 0xFF, 0xFF, OpMatch}
 	pos := 0
 	bestEnd := -1
 	cur := []thread{{pc: 0}}

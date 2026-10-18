@@ -12,7 +12,6 @@ import (
 // Compiler emits Thompson VM bytecode from a parsed regex AST.
 type Compiler struct {
 	e           *Emitter
-	nextSplitID byte
 	captureSlot map[int]byte
 	root        *Node
 }
@@ -20,8 +19,7 @@ type Compiler struct {
 // NewCompiler constructs a Compiler with a fresh emitter.
 func NewCompiler() *Compiler {
 	return &Compiler{
-		e:           NewEmitter(),
-		nextSplitID: 0, // Initialize split ID counter
+		e: NewEmitter(),
 	}
 }
 
@@ -82,8 +80,6 @@ func toInt16Checked(v int) (int16, error) {
 func (c *Compiler) emitSplit(op byte, rel int16) int {
 	// Returns index where the 16-bit offset was written (for backpatching).
 	c.e.Emit(op)
-	c.e.EmitU8(c.nextSplitID)
-	c.nextSplitID++
 	offIdx := len(c.e.buf)
 	c.e.EmitI16(rel)
 	return offIdx
@@ -94,7 +90,7 @@ func (c *Compiler) patchI16(at int, v int16) {
 	// Safe conversion with explicit truncation
 	// This conversion is intentional - we're reinterpreting signed int16 bits as uint16 for encoding
 	u := uint16(v) // #nosec G115 - intentional reinterpretation of signed bits as unsigned for encoding
-	c.e.buf[at+0] = byte(u & 0xff)
+	c.e.buf[at] = byte(u & 0xff)
 	c.e.buf[at+1] = byte(u >> 8)
 }
 
