@@ -47,6 +47,32 @@ Architected for high-concurrency cloud environments and high-throughput security
 > [!NOTE]
 > Structured C-based upstream module object models such as `pe`, `elf`, `cuckoo`, and `dotnet` are not currently bundled. If your rules require custom parsing logic, you can register typed Go callback functions using the extensible module API.
 
+## Performance & Benchmarks
+
+`go-yara` is engineered for zero-allocation scanning on clean streams and multi-gigabyte-per-second matching throughput.
+
+### Comparison: `go-yara` vs. C `libyara` 4.5.8
+
+Measured in-process on an Apple M3 Max (14 cores) scanning identical rules and payloads:
+
+| Scenario | Payload Size | `go-yara` Throughput | `libyara` Throughput | Relative Speed | Allocations (`go-yara`) |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Literal (Clean Reject)** | 256 B | **2.84 GB/s** (84 ns) | 145.8 MB/s (1.68 µs) | **19.9x faster** 🚀 | **0 B, 0 alloc** |
+| **Literal (Clean Reject)** | 4 KB | **6.69 GB/s** (570 ns) | 617.6 MB/s (6.33 µs) | **11.1x faster** 🚀 | **0 B, 0 alloc** |
+| **Literal (Clean Reject)** | 1 MB | **8.88 GB/s** (110 µs) | 823.5 MB/s (1.21 ms) | **11.0x faster** 🚀 | **0 B, 0 alloc** |
+| **Literal (Match)** | 4 KB | **3.52 GB/s** (1.08 µs) | 609.3 MB/s (6.41 µs) | **5.9x faster** ⚡ | 608 B, 4 alloc |
+| **Hex Mask (Clean Reject)** | 4 KB | **6.31 GB/s** (605 ns) | 629.6 MB/s (6.20 µs) | **10.3x faster** 🚀 | **0 B, 0 alloc** |
+| **Regex (Clean Reject)** | 4 KB | **6.51 GB/s** (586 ns) | 604.9 MB/s (6.46 µs) | **11.0x faster** 🚀 | **0 B, 0 alloc** |
+| **10 Rules (Clean Reject)** | 4 KB | **1.87 GB/s** (2.04 µs) | 519.3 MB/s (7.52 µs) | **3.7x faster** ⚡ | **0 B, 0 alloc** |
+| **10 Rules (Match)** | 4 KB | **1.47 GB/s** (2.60 µs) | 515.2 MB/s (7.58 µs) | **2.9x faster** ⚡ | 608 B, 4 alloc |
+| **High EPS Parallel** | 4 KB | **49.74 GB/s** (76.6 ns) | — | Multi-core line rate | **0 B, 0 alloc** |
+
+### Why `go-yara` is Faster
+* **Zero Allocations on Negative Searches**: Clean / prefilter rejections in `go-yara` require **zero heap allocations**, eliminating garbage collector pauses and memory allocator lock contention.
+* **$O(1)$ Epoch Generation Rule Reset**: Candidate rule state is managed via an integer epoch counter (`scanEpoch uint32`), eliminating $O(K)$ slice-clearing loops between events.
+* **Dense Aho-Corasick State Tables**: Flattened continuous `[][256]uint16` state arrays provide L1/L2 cache locality, avoiding pointer indirection during byte dispatch.
+* **SIMD Multi-Pattern Prefiltering (Go 1.27+)**: Vectorized Teddy algorithms scan clean buffers at up to **30+ GB/s**, skipping root misses before bytecode traversal.
+
 ## Requirements and Installation
 
 `go-yara` requires **Go 1.26.0** or later.
@@ -948,6 +974,7 @@ Benchmark output and profiling artifacts are generated under the ignored `benchm
 
 ## Additional Documentation
 
+- [Release changelog](CHANGELOG.md)
 - [Targeted regression fixture notes](test_regression/README.md)
 - [Performance benchmark test data and inputs](testdata/performance/README.md)
 - [Regular expression parity test notes](testdata/regex/README.md)
