@@ -250,3 +250,37 @@ func TestFindHexMatchesEachNilScratch(t *testing.T) {
 		t.Fatalf("findHexMatchesEach(nil scratch) = %d matches, want 1", count)
 	}
 }
+
+// Residual gremlins survivors for hex_pattern.go (gremlins v0.6.0, workers=1,
+// timeout-coefficient=30), classified per #311:
+//
+// LIVED / equivalent-mode:
+//
+//	106:8,302:31   loop bounds whose extra iteration exits immediately.
+//	131:11,185:9,  err != nil guards on the parser success path.
+//	192:10,258:9,263:9
+//	239:13         depth > 0 boundary: depth is either 0 or >= 1.
+//	420:45         len(XorRange) > 0 at 0 expands an empty key list.
+//	485:11,513:11, end <= start boundaries describe zero-length matches that
+//	570:12,601:12  matchEach never produces.
+//	518:17,562:19, Length arithmetic on paths the brute-force/anchored tests do
+//	575:18         not select; the selected-path variants are killed.
+//	666:10,669:10, XOR clamp boundaries are no-ops at the boundary value.
+//	672:10,675:10,678:10
+//	704:22         scratch.worklist == nil is only true on the first reset.
+//	740:10,750:11, dp >= len(data) boundaries are also guarded per-token.
+//	769:11,789:27
+//	742:19,742:48, matchEach head dispatch guards, shadowed by the per-token
+//	742:70,742:96, checks that follow.
+//	742:124,797:13,804:13,817:19
+//
+// NOT COVERED / unfixable-by-tests:
+//
+//	321:*,323:*,331:*,345:*,347:*,349:*  switch-case conditions in the
+//	               whitespace/comment/nibble scanners.
+//	640:14,643:30,755:20,775:34  XOR branches of matchEach.
+//
+// TIMED OUT / non-terminating:
+//
+//	114:5,163:80,464:*,468:19,549:*,553:20,681:28,809:41  index/jump cursor
+//	arithmetic that walks backwards forever.

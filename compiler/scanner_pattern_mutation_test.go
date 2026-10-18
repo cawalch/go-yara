@@ -121,3 +121,42 @@ func TestShouldUseSharedPatternAutomatonNoRootBytes(t *testing.T) {
 		t.Fatal("empty root bytes selected the shared automaton")
 	}
 }
+
+// Residual gremlins survivors for scanner_pattern.go (gremlins v0.6.0,
+// workers=1, timeout-coefficient=30), classified per #311:
+//
+// LIVED / equivalent-mode:
+//
+//	20:33,20:47,   shared-non-text cache index guards; the invalid-index branch
+//	50:50,65:46,   only skips work that the following bounds checks also skip.
+//	70:46,113:50,128:46,133:46
+//	48:16,229:17,  ctx.Done() == nil is always false for a live MatchContext.
+//	245:16
+//	106:80,169:80  canTriggerRule / hookMask telemetry gates that only affect
+//	               whether a rule is marked, not the matched spans.
+//	142:46,143:48  isWide/isNocase flag extraction; the values are re-derived
+//	               by the matcher.
+//	165:42,252:21  global/text match bookkeeping that is re-checked later.
+//	216:21,216:61  packFastScanKey boundaries are covered by the direct test;
+//	               the remaining variant only rejects at the exact limit.
+//	228:37,449:38, maxMatchesPerPattern <= 0 at 0 is a no-op.
+//	449:67,449:96,481:38,481:54,481:83,481:110
+//	281:14,281:34  populateFixedRegexCache early-outs that leave the cache
+//	               untouched.
+//	291:30,291:33, fixed-regex wide position guards.
+//	306:27,308:19
+//	323:28,324:30  wide-order comparison; both orders produce the same sorted
+//	               cache order.
+//	329:12         comparator sentinel.
+//	347:31,387:15, shared-automaton density gates; both branches fall through to
+//	394:19,394:46, the same automaton.
+//	400:74,409:28,410:12,411:9,415:53,421:23
+//	442:52,454:51, short-circuit checks that only skip already-satisfied rules.
+//	462:14,465:53,475:53,486:51
+//	660:11         normalizeExternalUint boundary; the exact-limit variant is
+//	               covered by the direct test.
+//
+// NOT COVERED / unfixable-by-tests:
+//
+//	326:18         sortAndDedupe switch-case condition.
+//	119:54         prefilterCandidates empty-length guard on an unreached path.

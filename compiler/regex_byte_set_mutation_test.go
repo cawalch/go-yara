@@ -345,3 +345,44 @@ func TestRegexCandidateStartRangesInitialCovered(t *testing.T) {
 		t.Fatalf("wide next(4) first = %d, want 0", first)
 	}
 }
+
+// Residual gremlins survivors for regex_byte_set.go (gremlins v0.6.0,
+// workers=1, timeout-coefficient=30), classified per #311:
+//
+// LIVED / equivalent-mode:
+//
+//	94:37,347:53   capacity arithmetic (limit / make cap) is not observable.
+//	145:49,491:17  loop bounds whose extra final iteration scans an empty range
+//	               and returns -1.
+//	145:80,163:14  checkpoint++ is a no-op when done is nil.
+//	234:23,253:23, (last-first)/step -> *step is identical for step == 1.
+//	358:24
+//	346:17         cap(starts) == 0 -> nil-vs-empty slice, both appendable.
+//	359:12         count <= 0 is unreachable (count >= 1 whenever first <= last).
+//	465:15         resampleAnchor returning false is a no-op.
+//	476:41         pos > len(data) at equality: bytes.Index on an empty tail
+//	               returns -1 either way.
+//	586:46,614:25, guarded bounds where the boundary variant cannot change the
+//	683:10,693:15, selected range.
+//	702:11,702:27
+//	674:14         lastFrom: -1 sentinel; from < lastFrom is false initially.
+//	634:28         uint16 frequency underflow preserves the comparison order.
+//
+// NOT COVERED / unfixable-by-tests:
+//
+//	451:*,453:*,455:*  prefilterByteScore `switch { case ... }` arms; Go emits
+//	                   no coverage block for a case expression.
+//	664:30,665:30      const declarations emit no coverage block.
+//
+// NOT COVERED / not exercised:
+//
+//	103:103,116:11,121:52  unbounded cache-entry hit paths.
+//	246:9,356:9            wide `first++` lane alignment.
+//	524:12,527:122,528:17,530:10  SIMD indexContiguous guards, short-circuited
+//	                       by byteSearchSIMDEnabled on this platform.
+//
+// TIMED OUT / non-terminating:
+//
+//	150:15,166:25,280:32,305:23,482:11,494:11,506:27,508:9,546:9,568:60,
+//	574:9,580:11,687:10  negated loop bounds and `return -1` -> 1 make the scan
+//	cursor walk backwards or never advance.
