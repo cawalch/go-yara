@@ -137,9 +137,7 @@ func (i *Interpreter) executeFoundAtOperation() error {
 		return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(false)})
 	}
 
-	found := i.matchContext.anyMatch(i.getString(pattern), func(match matchSpan) bool {
-		return match.Offset == offset.IntVal
-	})
+	found := i.matchContext.hasMatchAt(i.getString(pattern), offset.IntVal)
 	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(found)})
 }
 
@@ -166,9 +164,7 @@ func (i *Interpreter) executeFoundInOperation() error {
 		return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(false)})
 	}
 
-	found := i.matchContext.anyMatch(i.getString(pattern), func(match matchSpan) bool {
-		return match.Offset >= startOffset.IntVal && match.Offset <= endOffset.IntVal
-	})
+	found := i.matchContext.hasMatchInRange(i.getString(pattern), startOffset.IntVal, endOffset.IntVal)
 	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(found)})
 }
 
@@ -384,16 +380,9 @@ func (i *Interpreter) executeOfFoundIn() error {
 		return err
 	}
 
-	matched := 0
-	for _, id := range set {
-		if i.matchContext.anyMatch(id, func(match matchSpan) bool {
-			return match.Offset >= minVal.IntVal && match.Offset <= maxVal.IntVal
-		}) {
-			matched++
-		}
-	}
-
-	result := i.applyCountLogicWithValue(count, int64(matched), len(set))
+	result := i.evaluateStringSetCount(set, count, func(id string) bool {
+		return i.matchContext.hasMatchInRange(id, minVal.IntVal, maxVal.IntVal)
+	})
 	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(result)})
 }
 
@@ -420,16 +409,9 @@ func (i *Interpreter) executeOfFoundAt() error {
 		return err
 	}
 
-	matched := 0
-	for _, id := range set {
-		if i.matchContext.anyMatch(id, func(match matchSpan) bool {
-			return match.Offset == offsetVal.IntVal
-		}) {
-			matched++
-		}
-	}
-
-	result := i.applyCountLogicWithValue(count, int64(matched), len(set))
+	result := i.evaluateStringSetCount(set, count, func(id string) bool {
+		return i.matchContext.hasMatchAt(id, offsetVal.IntVal)
+	})
 	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(result)})
 }
 
@@ -459,9 +441,7 @@ func (i *Interpreter) executeOfPercentIn() error {
 
 	matched := 0
 	for _, id := range set {
-		if i.matchContext.anyMatch(id, func(match matchSpan) bool {
-			return match.Offset >= minVal.IntVal && match.Offset <= maxVal.IntVal
-		}) {
+		if i.matchContext.hasMatchInRange(id, minVal.IntVal, maxVal.IntVal) {
 			matched++
 		}
 	}
@@ -500,9 +480,7 @@ func (i *Interpreter) executeOfPercentAt() error {
 
 	matched := 0
 	for _, id := range set {
-		if i.matchContext.anyMatch(id, func(match matchSpan) bool {
-			return match.Offset == offsetVal.IntVal
-		}) {
+		if i.matchContext.hasMatchAt(id, offsetVal.IntVal) {
 			matched++
 		}
 	}
@@ -559,42 +537,60 @@ func (i *Interpreter) anonymousStringIdentifiers() []string {
 	return ids
 }
 
+// evaluateStringSetCount counts how many strings in set satisfy predicate, short-circuiting
+// as soon as the outcome is mathematically determined by count.
+func (i *Interpreter) evaluateStringSetCount(set []string, count Value, predicate func(string) bool) bool {
+	if count.Type != ValueTypeInt {
+		return false
+	}
+	total := len(set)
+	if count.IntVal == countAll {
+		if total == 0 {
+			return false
+		}
+		for _, id := range set {
+			if !predicate(id) {
+				return false
+			}
+		}
+		return true
+	}
+	if count.IntVal == 0 {
+		for _, id := range set {
+			if predicate(id) {
+				return false
+			}
+		}
+		return true
+	}
+	if count.IntVal < 0 {
+		return false
+	}
+	matched := 0
+	target := count.IntVal
+	for idx, id := range set {
+		if predicate(id) {
+			matched++
+			if int64(matched) >= target {
+				return true
+			}
+		}
+		remaining := total - 1 - idx
+		if int64(matched+remaining) < target {
+			return false
+		}
+	}
+	return int64(matched) >= target
+}
+
 // applyCountLogic applies count logic to determine if enough strings matched.
 func (i *Interpreter) applyCountLogic(ids []string, count Value) bool {
 	if i.matchContext == nil {
 		return false
 	}
-	total := len(ids)
-	matched := 0
-	for _, id := range ids {
-		if i.matchContext.matchCount(id) > 0 {
-			matched++
-		}
-	}
-	return i.applyCountLogicWithValue(count, int64(matched), total)
-}
-
-// applyCountLogicWithValue applies count logic given a pre-computed matched count.
-// The optional total parameter is used for the "all" (countAll) quantifier check.
-func (i *Interpreter) applyCountLogicWithValue(count Value, matched int64, total ...int) bool {
-	if count.Type != ValueTypeInt {
-		return false
-	}
-	var totalCount int
-	if len(total) > 0 {
-		totalCount = total[0]
-	}
-	switch count.IntVal {
-	case 0:
-		return matched == 0
-	case countAll:
-		return totalCount > 0 && matched == int64(totalCount)
-	default:
-		if count.IntVal < 0 {
-			return false
-		}
-		return matched >= count.IntVal
-	}
+	return i.evaluateStringSetCount(ids, count, func(id string) bool {
+		return i.matchContext.matchCount(id) > 0
+	})
 }
 
 // executeMatchesOperation executes OpMatches.
