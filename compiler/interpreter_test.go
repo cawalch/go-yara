@@ -1552,3 +1552,122 @@ func TestInterpreterCountInOf(t *testing.T) {
 		})
 	}
 }
+
+// TestInterpreterProximity tests OpProximity operation directly
+func TestInterpreterProximity(t *testing.T) {
+	tests := []struct {
+		name     string
+		offsetsA []int64
+		offsetsB []int64
+		minDist  int64
+		maxDist  int64
+		compact  bool
+		expected int64
+	}{
+		{
+			name:     "compact: matches within distance",
+			offsetsA: []int64{100, 300},
+			offsetsB: []int64{150, 400},
+			minDist:  1,
+			maxDist:  60,
+			compact:  true,
+			expected: 1,
+		},
+		{
+			name:     "compact: too far",
+			offsetsA: []int64{100, 300},
+			offsetsB: []int64{200, 500},
+			minDist:  1,
+			maxDist:  60,
+			compact:  true,
+			expected: 0,
+		},
+		{
+			name:     "compact: second pair matches",
+			offsetsA: []int64{100, 450},
+			offsetsB: []int64{300, 480},
+			minDist:  1,
+			maxDist:  50,
+			compact:  true,
+			expected: 1,
+		},
+		{
+			name:     "non-compact: matches within distance",
+			offsetsA: []int64{10, 50},
+			offsetsB: []int64{30, 80},
+			minDist:  1,
+			maxDist:  25,
+			compact:  false,
+			expected: 1,
+		},
+		{
+			name:     "non-compact: wrong order (B before A)",
+			offsetsA: []int64{50},
+			offsetsB: []int64{20},
+			minDist:  1,
+			maxDist:  100,
+			compact:  false,
+			expected: 0,
+		},
+		{
+			name:     "empty matches",
+			offsetsA: []int64{},
+			offsetsB: []int64{20},
+			minDist:  1,
+			maxDist:  100,
+			compact:  true,
+			expected: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			emitter := newEmitter()
+			emitter.EmitPushString("$a", 1, 1)
+			emitter.EmitPushString("$b", 1, 1)
+			emitter.EmitPush(uint64(tt.minDist), 1, 1)
+			emitter.EmitPush(uint64(tt.maxDist), 1, 1)
+			emitter.EmitOpcode(OpProximity, 1, 1)
+			emitter.EmitOpcode(OpHalt, 1, 1)
+
+			bytecode, err := emitter.GetBytecode()
+			if err != nil {
+				t.Fatalf("GetBytecode() error = %v", err)
+			}
+			interp := NewInterpreter(bytecode)
+			interp.stringLiterals = []string{"$a", "$b"}
+
+			mc := &MatchContext{compact: tt.compact}
+			if tt.compact {
+				mc.spans = make(map[string][]matchSpan)
+				for _, o := range tt.offsetsA {
+					mc.spans["$a"] = append(mc.spans["$a"], matchSpan{Offset: o, Length: 1})
+				}
+				for _, o := range tt.offsetsB {
+					mc.spans["$b"] = append(mc.spans["$b"], matchSpan{Offset: o, Length: 1})
+				}
+			} else {
+				mc.Matches = make(map[string][]Match)
+				for _, o := range tt.offsetsA {
+					mc.Matches["$a"] = append(mc.Matches["$a"], Match{Offset: o, Length: 1})
+				}
+				for _, o := range tt.offsetsB {
+					mc.Matches["$b"] = append(mc.Matches["$b"], Match{Offset: o, Length: 1})
+				}
+			}
+			interp.matchContext = mc
+
+			if err := interp.Execute(); err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+
+			stack := interp.GetStack()
+			if len(stack) == 0 {
+				t.Fatalf("stack is empty")
+			}
+			if stack[0].IntVal != tt.expected {
+				t.Errorf("got %d, want %d", stack[0].IntVal, tt.expected)
+			}
+		})
+	}
+}
