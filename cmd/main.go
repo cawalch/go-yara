@@ -28,6 +28,8 @@ const (
 	modeExecute = "execute"
 )
 
+var version = "dev"
+
 // formatToken formats a token for display
 func formatToken(tok token.Token) string {
 	if tok.Type == token.EOF {
@@ -96,6 +98,10 @@ func parseArgs(rawArgs []string) (*commandArgs, error) {
 	}
 	if rawArgs[0] == "-h" || rawArgs[0] == "--help" {
 		return nil, fs.Parse(rawArgs)
+	}
+	if rawArgs[0] == "-v" || rawArgs[0] == "--version" || rawArgs[0] == "-version" {
+		_, _ = fmt.Fprintf(fs.Output(), "go-yara version %s\n", version)
+		return nil, flag.ErrHelp
 	}
 
 	// Extract the positional filename (first non-flag argument)
