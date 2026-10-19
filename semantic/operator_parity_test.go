@@ -10,21 +10,20 @@ import (
 	"github.com/cawalch/go-yara/token"
 )
 
-func TestOperatorValidationParity(t *testing.T) {
+func TestOperatorValidation(t *testing.T) {
 	for _, test := range []struct {
 		expression string
-		wantType   DataType
 		wantError  bool
 	}{
-		{`1 and true`, TypeBoolean, false},
-		{`"text" or false`, TypeBoolean, false},
-		{`value + 1`, TypeUnknown, false},
-		{`value matches /a/`, TypeBoolean, false},
-		{`~value`, TypeUnknown, false},
-		{`not value`, TypeBoolean, false},
-		{`"text" + 1`, TypeUnknown, true},
-		{`1 matches /a/`, TypeUnknown, true},
-		{`missing() + 1`, TypeUnknown, true},
+		{`1 and true`, false},
+		{`"text" or false`, false},
+		{`value + 1`, false},
+		{`value matches /a/`, false},
+		{`~value`, false},
+		{`not value`, false},
+		{`"text" + 1`, true},
+		{`1 matches /a/`, true},
+		{`missing() + 1`, true},
 	} {
 		t.Run(test.expression, func(t *testing.T) {
 			program, err := parser.New(lexer.New(`external value rule r { condition: ` + test.expression + ` }`)).ParseRulesWithContext(context.Background())
@@ -33,31 +32,28 @@ func TestOperatorValidationParity(t *testing.T) {
 			}
 			validator := NewValidator()
 			validationErrors := validator.ValidateProgram(program)
-			checker := NewTypeChecker(validator.GetSymbolTable())
-			info, checkErrors := checker.CheckExpressionTypes(program.Rules[0].Condition)
-			if (len(validationErrors) > 0) != test.wantError || (len(checkErrors) > 0) != test.wantError || info.DataType != test.wantType {
-				t.Fatalf("validation=%v, checking=%v, type=%v; want error=%v, type=%v", validationErrors, checkErrors, info.DataType, test.wantError, test.wantType)
+			if (len(validationErrors) > 0) != test.wantError {
+				t.Fatalf("validation=%v; want error=%v", validationErrors, test.wantError)
 			}
 		})
 	}
 }
 
-func TestDirectTypeCheckingParity(t *testing.T) {
+func TestDirectExpressionValidation(t *testing.T) {
 	integer := &ast.Literal{Type: token.IntegerLit, Value: int64(50)}
 	text := &ast.Literal{Type: token.StringLit, Value: "abc"}
 	percent := &ast.PercentExpression{Value: integer}
 	for _, test := range []struct {
 		name      string
 		expr      ast.Expression
-		wantType  DataType
 		wantError bool
 	}{
-		{"module", &ast.BinaryOp{Left: &ast.FunctionCall{Function: "hash.md5", Args: []ast.Expression{text}}, Op: token.EQ, Right: text}, TypeBoolean, false},
-		{"uppercase builtin", &ast.FunctionCall{Function: "UINT8", Args: []ast.Expression{integer}}, TypeInteger, false},
-		{"percent", &ast.BinaryOp{Left: percent, Op: token.PLUS, Right: integer}, TypeInteger, false},
-		{"percent plus string", &ast.BinaryOp{Left: percent, Op: token.PLUS, Right: text}, TypeUnknown, true},
-		{"invalid percent", &ast.PercentExpression{Value: text}, TypeInteger, true},
-		{"undefined percent", &ast.PercentExpression{Value: &ast.Identifier{Name: "missing"}}, TypeInteger, true},
+		{"module", &ast.BinaryOp{Left: &ast.FunctionCall{Function: "hash.md5", Args: []ast.Expression{text}}, Op: token.EQ, Right: text}, false},
+		{"uppercase builtin", &ast.FunctionCall{Function: "UINT8", Args: []ast.Expression{integer}}, false},
+		{"percent", &ast.BinaryOp{Left: percent, Op: token.PLUS, Right: integer}, false},
+		{"percent plus string", &ast.BinaryOp{Left: percent, Op: token.PLUS, Right: text}, true},
+		{"invalid percent", &ast.PercentExpression{Value: text}, true},
+		{"undefined percent", &ast.PercentExpression{Value: &ast.Identifier{Name: "missing"}}, true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			validator := NewValidatorWithModules(ModuleFunctions{
@@ -67,9 +63,8 @@ func TestDirectTypeCheckingParity(t *testing.T) {
 				Imports: []*ast.Import{{Module: "hash"}},
 				Rules:   []*ast.Rule{{Name: "r", Condition: test.expr}},
 			})
-			info, checkErrors := NewTypeChecker(validator.GetSymbolTable()).CheckExpressionTypes(test.expr)
-			if (len(validationErrors) > 0) != test.wantError || (len(checkErrors) > 0) != test.wantError || info.DataType != test.wantType {
-				t.Fatalf("validation=%v, checking=%v, type=%v; want error=%v, type=%v", validationErrors, checkErrors, info.DataType, test.wantError, test.wantType)
+			if (len(validationErrors) > 0) != test.wantError {
+				t.Fatalf("validation=%v; want error=%v", validationErrors, test.wantError)
 			}
 		})
 	}

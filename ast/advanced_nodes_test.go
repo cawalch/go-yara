@@ -75,7 +75,6 @@ func TestAdvancedBuilderContracts(t *testing.T) {
 			if got := test.node.Position(); got != pos {
 				t.Fatalf("Position() = %v, want %v", got, pos)
 			}
-			assertNodeAcceptance(t, test.node, 1)
 		})
 	}
 

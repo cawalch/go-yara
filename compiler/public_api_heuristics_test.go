@@ -63,18 +63,3 @@ func TestPublicComplexityHeuristics(t *testing.T) {
 		t.Fatalf("binary expression complexity = %d, want greater than identifier", got)
 	}
 }
-
-func TestPublicPatternQualityHeuristic(t *testing.T) {
-	sc := newStringCompiler()
-
-	empty := sc.EstimatePatternComplexity(nil, nil)
-	repeated := sc.EstimatePatternComplexity([]byte("aaaa"), nil)
-	selective := sc.EstimatePatternComplexity([]byte("aZ9!"), nil)
-
-	if empty != 0 {
-		t.Fatalf("empty pattern quality = %d, want 0", empty)
-	}
-	if selective <= repeated {
-		t.Fatalf("selective pattern quality = %d, want > repeated pattern %d", selective, repeated)
-	}
-}

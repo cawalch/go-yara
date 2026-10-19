@@ -11,8 +11,6 @@ type Node interface {
 	node()
 	// Position returns the position of the node in the source
 	Position() token.Position
-	// Accept accepts a visitor
-	Accept(Visitor) any
 }
 
 // Expression is the interface for expression nodes

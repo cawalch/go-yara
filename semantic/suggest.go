@@ -142,16 +142,6 @@ func abs(x int) int {
 	return x
 }
 
-// builtinFunctionNames is a list of known built-in YARA function names.
-var builtinFunctionNames = []string{
-	"filesize", "entrypoint", "offset", "read",
-	"string", "concat", "tostring", "int", "md5", "sha1", "sha256",
-	"uint8", "uint16", "uint32", "uint64",
-	"int8", "int16", "int32", "int64",
-	"uint8be", "uint16be", "uint32be", "uint64be",
-	"int8be", "int16be", "int32be", "int64be",
-}
-
 // bitwiseSuggestion returns a suggestion if a bitwise operator was used with boolean operands.
 func bitwiseSuggestion(op token.Type, left, right *TypeInfo) string {
 	if (op == token.BitwiseAnd || op == token.BitwiseOr) && (left.IsBoolean() || right.IsBoolean()) {
