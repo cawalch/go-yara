@@ -1330,39 +1330,6 @@ func readFileWithLimit(filename string, limit int64) ([]byte, error) {
 	return content, nil
 }
 
-// BatchCompile compiles multiple sources efficiently
-func (c *Compiler) BatchCompile(sources []string) ([]*CompiledProgram, error) {
-	programs := make([]*CompiledProgram, 0, len(sources))
-
-	for i, source := range sources {
-		program, err := c.CompileSourceWithContext(context.Background(), source)
-		if err != nil {
-			return nil, fmt.Errorf("compiling source %d: %w", i, err)
-		}
-		programs = append(programs, program)
-	}
-
-	return programs, nil
-}
-
-// ValidateCompilation validates that the compilation completed successfully
-func (c *Compiler) ValidateCompilation(program *CompiledProgram) error {
-	if program == nil {
-		return errors.New("compiled program is nil")
-	}
-
-	if err := program.Validate(); err != nil {
-		return fmt.Errorf("program validation failed: %w", err)
-	}
-
-	if c.stats.RulesCompiled != program.GetRuleCount() {
-		return fmt.Errorf("rule count mismatch: expected %d, got %d",
-			c.stats.RulesCompiled, program.GetRuleCount())
-	}
-
-	return nil
-}
-
 // GetCompilationReport returns a detailed report of the compilation
 func (c *Compiler) GetCompilationReport() string {
 	report := "Go-YARA Compilation Report\n"

@@ -201,20 +201,6 @@ func (cc *conditionCompiler) emitStringIdentifier(offset int, identifier string,
 	cc.emitter.EmitPushString(identifier, line, column)
 }
 
-// CompileCondition compiles a condition expression to bytecode
-func (cc *conditionCompiler) CompileCondition(condition *ast.Condition) error {
-	if err := cc.compileExpression(condition.Expression); err != nil {
-		return err
-	}
-
-	// Resolve any pending jumps
-	if err := cc.resolveJumps(); err != nil {
-		return fmt.Errorf("failed to resolve jumps: %w", err)
-	}
-
-	return nil
-}
-
 func (cc *conditionCompiler) compileMatchesExpression(expr *ast.BinaryOp) error {
 	op, err := cc.compileMatchesOperand(expr.Left)
 	if err != nil {

@@ -59,3 +59,16 @@ type regexLeadingGapPlan struct {
 	gapMax     int
 	atoms      []regexPrefilterAtom
 }
+
+func cleanRegexPattern(regexStr string) string {
+	if len(regexStr) >= 2 && regexStr[0] == '/' {
+		endIdx := len(regexStr) - 1
+		for endIdx > 0 && regexStr[endIdx] != '/' {
+			endIdx--
+		}
+		if endIdx > 0 {
+			regexStr = regexStr[1:endIdx]
+		}
+	}
+	return regexStr
+}

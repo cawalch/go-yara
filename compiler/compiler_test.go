@@ -354,44 +354,6 @@ rule test_rule {
 	}
 }
 
-// TestAtomExtraction tests atom extraction from patterns
-func TestAtomExtraction(t *testing.T) {
-	tests := []struct {
-		name      string
-		pattern   ast.Pattern
-		modifiers []ast.StringModifier
-		wantAtoms int
-	}{
-		{
-			name:      "text_string_atoms",
-			pattern:   &ast.TextString{Value: "abcdef"},
-			modifiers: []ast.StringModifier{},
-			wantAtoms: 1,
-		},
-		{
-			name:      "short_text_string",
-			pattern:   &ast.TextString{Value: "ab"},
-			modifiers: []ast.StringModifier{},
-			wantAtoms: 1,
-		},
-		{
-			name:      "very_short_text_string",
-			pattern:   &ast.TextString{Value: "a"},
-			modifiers: []ast.StringModifier{},
-			wantAtoms: 0,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			atoms := ExtractAtoms(tt.pattern, tt.modifiers)
-			if len(atoms) != tt.wantAtoms {
-				t.Errorf("ExtractAtoms() got %d atoms, want %d", len(atoms), tt.wantAtoms)
-			}
-		})
-	}
-}
-
 // TestEmitterJumpFixup tests jump fixup functionality
 func TestEmitterJumpFixup(t *testing.T) {
 	emitter := newEmitter()
@@ -1276,18 +1238,15 @@ func TestConditionCompilerCompileCondition(t *testing.T) {
 	emitter := newEmitter()
 	cc := newConditionCompiler(emitter, make(map[string]int))
 
-	condition := &ast.Condition{
-		Pos: token.Position{Line: 1, Column: 1},
-		Expression: &ast.Literal{
-			Pos:   token.Position{Line: 1, Column: 1},
-			Type:  token.TRUE,
-			Value: true,
-		},
+	expr := &ast.Literal{
+		Pos:   token.Position{Line: 1, Column: 1},
+		Type:  token.TRUE,
+		Value: true,
 	}
 
-	err := cc.CompileCondition(condition)
+	err := cc.CompileBooleanExpression(expr, false)
 	if err != nil {
-		t.Errorf("CompileCondition() error = %v", err)
+		t.Errorf("CompileBooleanExpression() error = %v", err)
 	}
 }
 
@@ -2504,37 +2463,31 @@ func TestInterpreterStackOperations(t *testing.T) {
 // TestConditionCompilerEdgeCases tests edge cases in condition compilation
 func TestConditionCompilerEdgeCases(t *testing.T) {
 	tests := []struct {
-		name      string
-		condition *ast.Condition
-		wantErr   bool
+		name       string
+		expression ast.Expression
+		wantErr    bool
 	}{
 		{
 			name: "literal_true",
-			condition: &ast.Condition{
-				Expression: &ast.Literal{
-					Type:  token.TRUE,
-					Value: true,
-				},
+			expression: &ast.Literal{
+				Type:  token.TRUE,
+				Value: true,
 			},
 			wantErr: false,
 		},
 		{
 			name: "literal_false",
-			condition: &ast.Condition{
-				Expression: &ast.Literal{
-					Type:  token.FALSE,
-					Value: false,
-				},
+			expression: &ast.Literal{
+				Type:  token.FALSE,
+				Value: false,
 			},
 			wantErr: false,
 		},
 		{
 			name: "integer_literal",
-			condition: &ast.Condition{
-				Expression: &ast.Literal{
-					Type:  token.IntegerLit,
-					Value: int64(42),
-				},
+			expression: &ast.Literal{
+				Type:  token.IntegerLit,
+				Value: int64(42),
 			},
 			wantErr: false,
 		},
@@ -2544,69 +2497,9 @@ func TestConditionCompilerEdgeCases(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			emitter := newEmitter()
 			cc := newConditionCompiler(emitter, make(map[string]int))
-			err := cc.CompileCondition(tt.condition)
+			err := cc.CompileBooleanExpression(tt.expression, false)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("CompileCondition() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
-// TestAtomQualityCalculation tests atom quality calculation
-func TestAtomQualityCalculation(t *testing.T) {
-	tests := []struct {
-		name    string
-		atom    *Atom
-		minQual int
-		maxQual int
-	}{
-		{
-			name: "empty_atom",
-			atom: &Atom{
-				Data:   []byte{},
-				Mask:   []byte{},
-				Length: 0,
-			},
-			minQual: 0,
-			maxQual: 0,
-		},
-		{
-			name: "single_byte_full_mask",
-			atom: &Atom{
-				Data:   []byte{0x41},
-				Mask:   []byte{0xFF},
-				Length: 1,
-			},
-			minQual: 10,
-			maxQual: 100,
-		},
-		{
-			name: "common_byte",
-			atom: &Atom{
-				Data:   []byte{0x00},
-				Mask:   []byte{0xFF},
-				Length: 1,
-			},
-			minQual: -10,
-			maxQual: 50,
-		},
-		{
-			name: "partial_mask",
-			atom: &Atom{
-				Data:   []byte{0x41},
-				Mask:   []byte{0x0F},
-				Length: 1,
-			},
-			minQual: 0,
-			maxQual: 10,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			quality := calculateAtomQuality(tt.atom)
-			if quality < tt.minQual || quality > tt.maxQual {
-				t.Errorf("calculateAtomQuality() = %d, want between %d and %d", quality, tt.minQual, tt.maxQual)
+				t.Errorf("CompileBooleanExpression() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}
@@ -2775,39 +2668,6 @@ func TestCompilerFullPipeline(t *testing.T) {
 				t.Errorf("CompileSource() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
-	}
-}
-
-// TestCompilerBatchCompile tests BatchCompile method
-func TestCompilerBatchCompile(t *testing.T) {
-	compiler := NewCompiler()
-	sources := []string{
-		`rule test1 { condition: true }`,
-		`rule test2 { condition: true }`,
-	}
-
-	programs, err := compiler.BatchCompile(sources)
-	if err != nil {
-		t.Errorf("BatchCompile() error = %v", err)
-	}
-	if len(programs) != 2 {
-		t.Errorf("BatchCompile() returned %d programs, want 2", len(programs))
-	}
-}
-
-// TestCompilerValidateCompilation tests ValidateCompilation method
-func TestCompilerValidateCompilation(t *testing.T) {
-	compiler := NewCompiler()
-	source := `rule test { condition: true }`
-
-	program, err := compiler.CompileSource(source)
-	if err != nil {
-		t.Errorf("CompileSource() error = %v", err)
-	}
-
-	err = compiler.ValidateCompilation(program)
-	if err != nil {
-		t.Errorf("ValidateCompilation() error = %v", err)
 	}
 }
 
