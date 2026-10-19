@@ -22,11 +22,6 @@ func (p *Program) node() {}
 // Position returns the position of the Program node
 func (p *Program) Position() token.Position { return p.Pos }
 
-// Accept implements the Visitor pattern for Program
-func (p *Program) Accept(v Visitor) any {
-	return v.VisitProgram(p)
-}
-
 // Rule represents a YARA rule
 type Rule struct {
 	Pos       token.Position
@@ -43,11 +38,6 @@ func (r *Rule) node() {}
 
 // Position returns the position of the Rule node
 func (r *Rule) Position() token.Position { return r.Pos }
-
-// Accept implements the Visitor pattern for Rule
-func (r *Rule) Accept(v Visitor) any {
-	return v.VisitRule(r)
-}
 
 // MetaValue represents the value of a meta entry
 // This provides type safety compared to interface{}
@@ -120,11 +110,6 @@ func (m *Meta) node() {}
 // Position returns the position of the Meta node
 func (m *Meta) Position() token.Position { return m.Pos }
 
-// Accept implements the Visitor pattern for Meta
-func (m *Meta) Accept(v Visitor) any {
-	return v.VisitMeta(m)
-}
-
 // String represents a string definition
 type String struct {
 	Pos        token.Position
@@ -137,11 +122,6 @@ func (s *String) node() {}
 
 // Position returns the position of the String node
 func (s *String) Position() token.Position { return s.Pos }
-
-// Accept implements the Visitor pattern for String
-func (s *String) Accept(v Visitor) any {
-	return v.VisitString(s)
-}
 
 // EvidenceDeclaration represents a spatial evidence correlation statement in the evidence: section
 // of a rule (e.g. "credential = (endpoint, username, secret) within 4KB of secret").
@@ -161,16 +141,6 @@ func (e *EvidenceDeclaration) node() {}
 // Position returns the position of the evidence declaration.
 func (e *EvidenceDeclaration) Position() token.Position { return e.Pos }
 
-// Accept visits the evidence declaration when the visitor implements
-// EvidenceVisitor. EvidenceVisitor remains optional for compatibility with
-// visitors written before the evidence extension.
-func (e *EvidenceDeclaration) Accept(v Visitor) any {
-	if visitor, ok := v.(EvidenceVisitor); ok {
-		return visitor.VisitEvidenceDeclaration(e)
-	}
-	return nil
-}
-
 // Condition represents the condition section
 type Condition struct {
 	Pos        token.Position
@@ -181,11 +151,6 @@ func (c *Condition) node() {}
 
 // Position returns the position of the Condition node
 func (c *Condition) Position() token.Position { return c.Pos }
-
-// Accept implements the Visitor pattern for Condition
-func (c *Condition) Accept(v Visitor) any {
-	return v.VisitCondition(c)
-}
 
 // BinaryOp represents a binary operation
 type BinaryOp struct {
@@ -202,11 +167,6 @@ func (b *BinaryOp) Position() token.Position { return b.Pos }
 
 func (b *BinaryOp) expression() {}
 
-// Accept implements the Visitor pattern for BinaryOp
-func (b *BinaryOp) Accept(v Visitor) any {
-	return v.VisitBinaryOp(b)
-}
-
 // UnaryOp represents a unary operation
 type UnaryOp struct {
 	Pos   token.Position
@@ -220,11 +180,6 @@ func (u *UnaryOp) node() {}
 func (u *UnaryOp) Position() token.Position { return u.Pos }
 
 func (u *UnaryOp) expression() {}
-
-// Accept implements the Visitor pattern for UnaryOp
-func (u *UnaryOp) Accept(v Visitor) any {
-	return v.VisitUnaryOp(u)
-}
 
 // Identifier represents an identifier
 type Identifier struct {
@@ -241,11 +196,6 @@ func (i *Identifier) Position() token.Position { return i.Pos }
 
 func (i *Identifier) expression() {}
 
-// Accept implements the Visitor pattern for Identifier
-func (i *Identifier) Accept(v Visitor) any {
-	return v.VisitIdentifier(i)
-}
-
 // Literal represents a literal value
 type Literal struct {
 	Pos   token.Position
@@ -260,11 +210,6 @@ func (l *Literal) Position() token.Position { return l.Pos }
 
 func (l *Literal) expression() {}
 
-// Accept implements the Visitor pattern for Literal
-func (l *Literal) Accept(v Visitor) any {
-	return v.VisitLiteral(l)
-}
-
 // GlobalVariable represents a global variable declaration
 type GlobalVariable struct {
 	Pos   token.Position
@@ -276,11 +221,6 @@ func (g *GlobalVariable) node() {}
 
 // Position returns position of GlobalVariable node
 func (g *GlobalVariable) Position() token.Position { return g.Pos }
-
-// Accept implements the Visitor pattern for GlobalVariable
-func (g *GlobalVariable) Accept(v Visitor) any {
-	return v.VisitGlobalVariable(g)
-}
 
 // ExternalVariable represents an external variable declaration
 type ExternalVariable struct {
@@ -295,11 +235,6 @@ func (e *ExternalVariable) node() {}
 // Position returns position of ExternalVariable node
 func (e *ExternalVariable) Position() token.Position { return e.Pos }
 
-// Accept implements the Visitor pattern for ExternalVariable
-func (e *ExternalVariable) Accept(v Visitor) any {
-	return v.VisitExternalVariable(e)
-}
-
 // Import represents an import statement
 type Import struct {
 	Pos    token.Position
@@ -311,11 +246,6 @@ func (i *Import) node() {}
 // Position returns position of Import node
 func (i *Import) Position() token.Position { return i.Pos }
 
-// Accept implements the Visitor pattern for Import
-func (i *Import) Accept(v Visitor) any {
-	return v.VisitImport(i)
-}
-
 // Include represents an include statement
 type Include struct {
 	Pos  token.Position
@@ -326,11 +256,6 @@ func (i *Include) node() {}
 
 // Position returns position of Include node
 func (i *Include) Position() token.Position { return i.Pos }
-
-// Accept implements the Visitor pattern for Include
-func (i *Include) Accept(v Visitor) any {
-	return v.VisitInclude(i)
-}
 
 // StringLength represents a YARA string length expression using the ! operator
 // This implements the correct YARA syntax: !$a or !$a[i] for string length
@@ -347,11 +272,6 @@ func (s *StringLength) Position() token.Position { return s.Pos }
 
 func (s *StringLength) expression() {}
 
-// Accept implements the Visitor pattern for StringLength
-func (s *StringLength) Accept(v Visitor) any {
-	return v.VisitStringLength(s)
-}
-
 // StringOffset represents a YARA string offset expression using the @ operator
 // This implements the correct YARA syntax: @a or @a[i] for string offset
 type StringOffset struct {
@@ -366,11 +286,6 @@ func (s *StringOffset) node() {}
 func (s *StringOffset) Position() token.Position { return s.Pos }
 
 func (s *StringOffset) expression() {}
-
-// Accept implements the Visitor pattern for StringOffset
-func (s *StringOffset) Accept(v Visitor) any {
-	return v.VisitStringOffset(s)
-}
 
 // StringCount represents a YARA string count expression using the # operator
 // This implements the correct YARA syntax: #a for string count, #a[i] for instance count
@@ -387,11 +302,6 @@ func (s *StringCount) Position() token.Position { return s.Pos }
 
 func (s *StringCount) expression() {}
 
-// Accept implements the Visitor pattern for StringCount
-func (s *StringCount) Accept(v Visitor) any {
-	return v.VisitStringCount(s)
-}
-
 // LengthOf represents a YARA "length of" expression.
 // Syntax: length of ($a), length of them, length of them*, length of them**, length of ($a*)
 type LengthOf struct {
@@ -406,11 +316,6 @@ func (l *LengthOf) node() {}
 func (l *LengthOf) Position() token.Position { return l.Pos }
 
 func (l *LengthOf) expression() {}
-
-// Accept implements the Visitor pattern for LengthOf
-func (l *LengthOf) Accept(v Visitor) any {
-	return v.VisitLengthOf(l)
-}
 
 // ForLoop represents a for loop expression
 type ForLoop struct {
@@ -431,11 +336,6 @@ func (f *ForLoop) Position() token.Position { return f.Pos }
 
 func (f *ForLoop) expression() {}
 
-// Accept implements the Visitor pattern for ForLoop
-func (f *ForLoop) Accept(v Visitor) any {
-	return v.VisitForLoop(f)
-}
-
 // OfExpression represents an "of" expression
 type OfExpression struct {
 	Pos     token.Position
@@ -453,11 +353,6 @@ func (o *OfExpression) Position() token.Position { return o.Pos }
 
 func (o *OfExpression) expression() {}
 
-// Accept implements the Visitor pattern for OfExpression
-func (o *OfExpression) Accept(v Visitor) any {
-	return v.VisitOfExpression(o)
-}
-
 // PercentExpression represents a percentage quantifier (e.g., "50 %")
 type PercentExpression struct {
 	Pos   token.Position
@@ -470,11 +365,6 @@ func (p *PercentExpression) node() {}
 func (p *PercentExpression) Position() token.Position { return p.Pos }
 
 func (p *PercentExpression) expression() {}
-
-// Accept implements the Visitor pattern for PercentExpression.
-func (p *PercentExpression) Accept(v Visitor) any {
-	return v.VisitPercentExpression(p)
-}
 
 // FunctionCall represents a function call expression
 type FunctionCall struct {
@@ -490,11 +380,6 @@ func (f *FunctionCall) Position() token.Position { return f.Pos }
 
 func (f *FunctionCall) expression() {}
 
-// Accept implements the Visitor pattern for FunctionCall
-func (f *FunctionCall) Accept(v Visitor) any {
-	return v.VisitFunctionCall(f)
-}
-
 // StringTuple represents a tuple of expressions, typically strings (e.g., in loops)
 type StringTuple struct {
 	Pos      token.Position
@@ -507,11 +392,3 @@ func (s *StringTuple) node() {}
 func (s *StringTuple) Position() token.Position { return s.Pos }
 
 func (s *StringTuple) expression() {}
-
-// Accept implements the Visitor pattern for StringTuple
-func (s *StringTuple) Accept(v Visitor) any {
-	if stv, ok := v.(interface{ VisitStringTuple(*StringTuple) any }); ok {
-		return stv.VisitStringTuple(s)
-	}
-	return nil
-}

@@ -27,10 +27,12 @@ type Validator struct {
 	importedModules    map[string]bool
 }
 
-// Ensure Validator implements the focused visitor interfaces it needs
-var _ ast.RuleVisitor = (*Validator)(nil)
-var _ ast.ExpressionVisitor = (*Validator)(nil)
-var _ ast.ControlFlowVisitor = (*Validator)(nil)
+// Special identifier keywords
+const (
+	filesizeKeyword   = "filesize"
+	entrypointKeyword = "entrypoint"
+	themKeyword       = "them"
+)
 
 // NewValidator creates a new semantic validator
 func NewValidator() *Validator {
@@ -1408,141 +1410,6 @@ func (v *Validator) GetSymbolTable() *SymbolTable {
 	return v.symbolTable
 }
 
-// ============================================================================
-// Visitor Pattern Implementation - Focused Interface Methods
-// ============================================================================
-
-// RuleVisitor implementations
-
-// VisitGlobalVariable visits a global variable - not used directly in validator
-func (v *Validator) VisitGlobalVariable(node *ast.GlobalVariable) any {
-	return nil
-}
-
-// VisitImport visits an import statement - not used directly in validator but needed for AST visitor
-func (v *Validator) VisitImport(node *ast.Import) any {
-	return nil
-}
-
-// VisitInclude visits an include statement - not used directly in validator but needed for AST visitor
-func (v *Validator) VisitInclude(node *ast.Include) any {
-	return nil
-}
-
-// VisitExternalVariable visits a global variable - not used directly in validator but needed for AST visitor
-func (v *Validator) VisitExternalVariable(node *ast.ExternalVariable) any {
-	return nil
-}
-
-// Ensure Validator implements ast.Visitor completely
-var _ ast.Visitor = (*Validator)(nil)
-
-// VisitProgram visits and validates a program node
-func (v *Validator) VisitProgram(program *ast.Program) any {
-	return v.ValidateProgram(program)
-}
-
-// VisitRule visits and validates a rule node
-func (v *Validator) VisitRule(rule *ast.Rule) any {
-	v.validateRule(rule)
-	return nil
-}
-
-// VisitMeta visits and validates a meta node
-func (v *Validator) VisitMeta(_ *ast.Meta) any {
-	// Meta validation is handled in validateMeta
-	return nil
-}
-
-// VisitTextString visits and validates a text string node
-func (v *Validator) VisitTextString(_ *ast.TextString) any {
-	return nil
-}
-
-// VisitHexString visits and validates a hex string node
-func (v *Validator) VisitHexString(_ *ast.HexString) any {
-	return nil
-}
-
-// VisitRegexPattern visits and validates a regex pattern node
-func (v *Validator) VisitRegexPattern(_ *ast.RegexPattern) any {
-	return nil
-}
-
-// VisitString visits and validates a string node
-func (v *Validator) VisitString(_ *ast.String) any {
-	// String validation is handled in validateStrings
-	return nil
-}
-
-// VisitCondition visits and validates a condition node
-func (v *Validator) VisitCondition(condition *ast.Condition) any {
-	if condition.Expression != nil {
-		v.validateCondition(condition.Expression)
-	}
-	return nil
-}
-
-// ExpressionVisitor implementations
-
-// VisitBinaryOp visits and validates a binary operation node
-func (v *Validator) VisitBinaryOp(_ *ast.BinaryOp) any {
-	// Binary operation validation is handled in validateExpression
-	return nil
-}
-
-// VisitUnaryOp visits and validates a unary operation node
-func (v *Validator) VisitUnaryOp(_ *ast.UnaryOp) any {
-	// Unary operation validation is handled in validateExpression
-	return nil
-}
-
-// VisitIdentifier visits and validates an identifier node
-func (v *Validator) VisitIdentifier(_ *ast.Identifier) any {
-	// Identifier validation is handled in validateExpression
-	return nil
-}
-
-// VisitLiteral visits and validates a literal node
-func (v *Validator) VisitLiteral(_ *ast.Literal) any {
-	// Literal validation is handled in validateExpression
-	return nil
-}
-
-// VisitFunctionCall visits and validates a function call node
-func (v *Validator) VisitFunctionCall(_ *ast.FunctionCall) any {
-	// FunctionCall validation is handled in validateExpression
-	return nil
-}
-
-// VisitStringTuple visits a string tuple node
-func (v *Validator) VisitStringTuple(node *ast.StringTuple) any {
-	for _, expr := range node.Elements {
-		expr.Accept(v)
-	}
-	return nil
-}
-
-// ControlFlowVisitor implementations
-
-// VisitForLoop visits and validates a for loop node
-func (v *Validator) VisitForLoop(_ *ast.ForLoop) any {
-	// ForLoop validation is handled in validateExpression
-	return nil
-}
-
-// VisitOfExpression visits and validates an of expression node
-func (v *Validator) VisitOfExpression(_ *ast.OfExpression) any {
-	// OfExpression validation is handled in validateExpression
-	return nil
-}
-
-// VisitPercentExpression visits and validates a percent expression node
-func (v *Validator) VisitPercentExpression(_ *ast.PercentExpression) any {
-	// PercentExpression validation is handled in compileOfExpression
-	return nil
-}
-
 // validatePercentExpression validates a percent expression ("N %")
 func (v *Validator) validatePercentExpression(expr *ast.PercentExpression) (*TypeInfo, []error) {
 	// The inner value should be an integer (1-100)
@@ -1552,30 +1419,6 @@ func (v *Validator) validatePercentExpression(expr *ast.PercentExpression) (*Typ
 	}
 	// PercentExpression itself is an integer (used as count in OfExpression)
 	return &TypeInfo{DataType: TypeInteger}, errs
-}
-
-// VisitStringLength visits and validates a string length node
-func (v *Validator) VisitStringLength(_ *ast.StringLength) any {
-	// StringLength validation is handled in validateExpression
-	return nil
-}
-
-// VisitStringOffset visits and validates a string offset node
-func (v *Validator) VisitStringOffset(_ *ast.StringOffset) any {
-	// StringOffset validation is handled in validateExpression
-	return nil
-}
-
-// VisitStringCount visits and validates a string count node
-func (v *Validator) VisitStringCount(_ *ast.StringCount) any {
-	// StringCount validation is handled in validateExpression
-	return nil
-}
-
-// VisitLengthOf visits and validates a length of node
-func (v *Validator) VisitLengthOf(_ *ast.LengthOf) any {
-	// LengthOf validation is handled in validateExpression
-	return nil
 }
 
 // validateStringLengthExpression validates string length expressions (!a or !a[i])

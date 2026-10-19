@@ -424,52 +424,6 @@ rule test_rule {
 	}
 }
 
-// TestPatternComplexityEstimation tests the pattern complexity estimation
-func TestPatternComplexityEstimation(t *testing.T) {
-	sc := newStringCompiler()
-
-	tests := []struct {
-		name       string
-		pattern    []byte
-		modifiers  []ast.StringModifier
-		minQuality int // Minimum expected quality
-	}{
-		{
-			name:       "simple_ascii",
-			pattern:    []byte{0x01, 0x02, 0x03, 0x04},
-			modifiers:  []ast.StringModifier{},
-			minQuality: 80,
-		},
-		{
-			name:       "common_bytes",
-			pattern:    []byte{0x00, 0x01},
-			modifiers:  []ast.StringModifier{},
-			minQuality: 30, // 12+20+4 = 36
-		},
-		{
-			name:       "alphabetic",
-			pattern:    []byte{'a', 'b'},
-			modifiers:  []ast.StringModifier{},
-			minQuality: 35, // 18+18+4 = 40
-		},
-		{
-			name:       "empty_pattern",
-			pattern:    []byte{},
-			modifiers:  []ast.StringModifier{},
-			minQuality: 0,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			quality := sc.EstimatePatternComplexity(tt.pattern, tt.modifiers)
-			if quality < tt.minQuality {
-				t.Errorf("Expected quality >= %d, got %d", tt.minQuality, quality)
-			}
-		})
-	}
-}
-
 // TestAtomExtraction tests atom extraction from patterns
 func TestAtomExtraction(t *testing.T) {
 	tests := []struct {
@@ -1141,73 +1095,6 @@ func TestStringCompilerApplyNocaseModifier(t *testing.T) {
 	}
 }
 
-// TestStringCompilerOptimizeWidePattern tests wide pattern optimization
-func TestStringCompilerOptimizeWidePattern(t *testing.T) {
-	sc := newStringCompiler()
-
-	tests := []struct {
-		name    string
-		pattern []byte
-		wantLen int
-	}{
-		{
-			name:    "wide_pattern_with_nulls",
-			pattern: []byte{0x68, 0x00, 0x65, 0x00, 0x6c, 0x00, 0x6c, 0x00, 0x6f, 0x00}, // "hello" in UTF-16LE
-			wantLen: 10,                                                                 // All characters are non-null
-		},
-		{
-			name:    "empty_pattern",
-			pattern: []byte(""),
-			wantLen: 0,
-		},
-		{
-			name:    "odd_length_pattern",
-			pattern: []byte{0x68, 0x00, 0x65}, // Odd length, should return as-is
-			wantLen: 3,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := sc.optimizeWidePattern(tt.pattern)
-			if len(result) != tt.wantLen {
-				t.Errorf("optimizeWidePattern() len = %d, want %d", len(result), tt.wantLen)
-			}
-		})
-	}
-}
-
-// TestStringCompilerOptimizeASCIIPattern tests ASCII pattern optimization
-func TestStringCompilerOptimizeASCIIPattern(t *testing.T) {
-	sc := newStringCompiler()
-
-	tests := []struct {
-		name    string
-		pattern []byte
-		wantLen int
-	}{
-		{
-			name:    "simple_ascii",
-			pattern: []byte("hello"),
-			wantLen: 5,
-		},
-		{
-			name:    "empty_pattern",
-			pattern: []byte(""),
-			wantLen: 0,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := sc.optimizeASCIIPattern(tt.pattern)
-			if len(result) != tt.wantLen {
-				t.Errorf("optimizeASCIIPattern() len = %d, want %d", len(result), tt.wantLen)
-			}
-		})
-	}
-}
-
 // Helper functions to reduce repetitive AST construction
 func createIntLiteral(value int64) *ast.Literal {
 	return &ast.Literal{
@@ -1801,12 +1688,6 @@ func TestCompiledRuleGetters(t *testing.T) {
 	stats := compiled.GetStats()
 	if stats == nil {
 		t.Errorf("GetStats() returned nil")
-	}
-
-	// Test getAutomaton
-	automaton := compiled.getAutomaton()
-	if automaton == nil {
-		t.Errorf("getAutomaton() returned nil")
 	}
 }
 

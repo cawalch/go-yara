@@ -29,13 +29,3 @@ func ReadFile(baseDir, filename string) ([]byte, error) {
 
 	return content, nil
 }
-
-// ReadFileString reads a file and returns its content as a string
-// If baseDir is provided, relative paths are resolved against it
-func ReadFileString(baseDir, filename string) (string, error) {
-	content, err := ReadFile(baseDir, filename)
-	if err != nil {
-		return "", err
-	}
-	return string(content), nil
-}

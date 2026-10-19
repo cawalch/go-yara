@@ -1346,13 +1346,6 @@ func (cr *CompiledRule) GetStats() map[string]any {
 	return cloneStats(cr.Stats)
 }
 
-// getAutomaton returns the rule's live Aho-Corasick automaton. The returned
-// pointer is borrowed and compiled rules should be treated as immutable while
-// scanners are using them.
-func (cr *CompiledRule) getAutomaton() *acAutomaton {
-	return cr.automaton
-}
-
 // Validate validates the compiled rule
 func (cr *CompiledRule) Validate() error {
 	for _, slots := range []map[string]int{cr.ExternalSlots, cr.GlobalSlots} {

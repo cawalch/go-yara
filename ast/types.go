@@ -76,11 +76,6 @@ func (t *TextString) Position() token.Position { return t.Pos }
 
 func (t *TextString) pattern() {}
 
-// Accept implements the Visitor pattern for TextString
-func (t *TextString) Accept(v Visitor) any {
-	return v.VisitTextString(t)
-}
-
 // HexString represents a hex string pattern
 type HexString struct {
 	Pos   token.Position
@@ -94,11 +89,6 @@ func (h *HexString) Position() token.Position { return h.Pos }
 
 func (h *HexString) pattern() {}
 
-// Accept implements the Visitor pattern for HexString
-func (h *HexString) Accept(v Visitor) any {
-	return v.VisitHexString(h)
-}
-
 // RegexPattern represents a regular expression pattern
 type RegexPattern struct {
 	Pos   token.Position
@@ -111,8 +101,3 @@ func (r *RegexPattern) node() {}
 func (r *RegexPattern) Position() token.Position { return r.Pos }
 
 func (r *RegexPattern) pattern() {}
-
-// Accept implements the Visitor pattern for RegexPattern
-func (r *RegexPattern) Accept(v Visitor) any {
-	return v.VisitRegexPattern(r)
-}

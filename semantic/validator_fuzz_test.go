@@ -248,7 +248,7 @@ func FuzzSemanticValidator(f *testing.F) {
 	})
 }
 
-// FuzzTypeChecker tests the type checker with various expressions
+// FuzzTypeChecker tests expression validation with various expressions
 func FuzzTypeChecker(f *testing.F) {
 	// Seed corpus with various expressions
 	f.Add([]byte("true"))
@@ -392,16 +392,6 @@ func FuzzTypeChecker(f *testing.F) {
 		// Whether validation succeeds or fails, we shouldn't panic
 		_ = validateErrors
 
-		// Test direct type checker access if we have a condition
-		if len(program.Rules) > 0 && program.Rules[0].Condition != nil {
-			tc := NewTypeChecker(v.GetSymbolTable())
-			if program.Rules[0].Condition != nil {
-				typeInfo, typeErrors := tc.CheckExpressionTypes(program.Rules[0].Condition)
-				_ = typeInfo
-				_ = typeErrors
-			}
-		}
-
 		// Test with different wrapping contexts
 		contexts := []string{
 			"rule test { condition: %s }",
@@ -422,14 +412,6 @@ func FuzzTypeChecker(f *testing.F) {
 				v2 := NewValidator()
 				validateErrors2 := v2.ValidateProgram(program2)
 				_ = validateErrors2
-
-				// Test type checker
-				tc2 := NewTypeChecker(v2.GetSymbolTable())
-				if program2.Rules[0].Condition != nil {
-					typeInfo2, typeErrors2 := tc2.CheckExpressionTypes(program2.Rules[0].Condition)
-					_ = typeInfo2
-					_ = typeErrors2
-				}
 			}
 		}
 

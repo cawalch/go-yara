@@ -24,10 +24,6 @@ func TestEvidenceASTBuilder(t *testing.T) {
 	if declaration.Position() != position {
 		t.Fatalf("Position() = %#v, want %#v", declaration.Position(), position)
 	}
-	visitor := &evidenceCountingVisitor{}
-	if got := declaration.Accept(visitor); got != "credential" || visitor.count != 1 {
-		t.Fatalf("Accept() = %#v, count = %d", got, visitor.count)
-	}
 	rule := builder.Rule(position, "structured")
 	rule.Evidence = []*EvidenceDeclaration{declaration}
 	rule.Strings = []*String{{
@@ -43,14 +39,4 @@ func TestEvidenceASTBuilder(t *testing.T) {
 	if len(rule.Evidence) != 1 || len(rule.Strings[0].Modifiers) != 1 {
 		t.Fatalf("rule evidence AST = %#v", rule)
 	}
-}
-
-type evidenceCountingVisitor struct {
-	BaseVisitor
-	count int
-}
-
-func (visitor *evidenceCountingVisitor) VisitEvidenceDeclaration(declaration *EvidenceDeclaration) any {
-	visitor.count++
-	return declaration.Name
 }

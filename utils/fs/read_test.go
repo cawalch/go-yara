@@ -36,19 +36,3 @@ func TestReadFile(t *testing.T) {
 		t.Fatal("ReadFile() missing file error = nil")
 	}
 }
-
-func TestReadFileString(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "sample.txt")
-	if err := os.WriteFile(path, []byte("sample"), 0600); err != nil {
-		t.Fatalf("write fixture: %v", err)
-	}
-
-	content, err := ReadFileString(dir, "sample.txt")
-	if err != nil {
-		t.Fatalf("ReadFileString() error = %v", err)
-	}
-	if content != "sample" {
-		t.Fatalf("ReadFileString() = %q, want sample", content)
-	}
-}
