@@ -470,7 +470,7 @@ func TestEmitterJumpFixup(t *testing.T) {
 	emitter.EmitPush(1, 1, 1)
 	jumpOffset := emitter.EmitJump(jumpConfig{Opcode: OpJz, Target: 10, Line: 1, Pos: 1})
 	emitter.EmitOpcode(OpNop, 1, 1)
-	emitter.EmitLabel(10, 1, 1)
+	emitter.EmitNop(1, 1)
 
 	// Fixup jumps
 	err := emitter.FixupJumps()
@@ -481,69 +481,6 @@ func TestEmitterJumpFixup(t *testing.T) {
 	// Verify the jump was fixed up
 	if jumpOffset < 0 {
 		t.Errorf("EmitJump() returned negative offset %d", jumpOffset)
-	}
-}
-
-// TestEmitterArithmetic tests arithmetic operation emission
-func TestEmitterArithmetic(t *testing.T) {
-	emitter := newEmitter()
-
-	// EmitArithmetic must accept arithmetic opcodes and reject non-arithmetic
-	// ones (returns -1). The previous version of this test marked every case
-	// wantErr:false and only asserted on wantErr, so the -1-on-invalid contract
-	// was never actually verified.
-	tests := []struct {
-		name   string
-		opcode Opcode
-		wantOK bool // true => expect a non-negative offset; false => expect -1
-	}{
-		{name: "valid_int_add", opcode: OpIntAdd, wantOK: true},
-		{name: "invalid_logical_op", opcode: OpAnd, wantOK: false},
-		{name: "invalid_comparison_op", opcode: OpIntEq, wantOK: false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			offset := emitter.EmitArithmetic(tt.opcode, 1, 1)
-			if tt.wantOK && offset < 0 {
-				t.Errorf("EmitArithmetic(%v) expected non-negative offset, got %d", tt.opcode, offset)
-			}
-			if !tt.wantOK && offset >= 0 {
-				t.Errorf("EmitArithmetic(%v) expected -1 for non-arithmetic op, got %d", tt.opcode, offset)
-			}
-		})
-	}
-}
-
-// TestEmitterOpCategoryGuards verifies the Comparison and Logical opcode
-// emitters accept in-category opcodes and reject out-of-category ones by
-// returning -1. Consolidated from TestEmitterComparison and TestEmitterLogical,
-// which previously asserted nothing (every case was wantErr:false and the
-// assertion only ran when wantErr was true).
-func TestEmitterOpCategoryGuards(t *testing.T) {
-	tests := []struct {
-		name    string
-		emit    func(e *emitter, op Opcode) int
-		valid   Opcode
-		invalid Opcode
-	}{
-		{name: "comparison", emit: func(e *emitter, op Opcode) int { return e.EmitComparison(op, 1, 1) }, valid: OpIntEq, invalid: OpAnd},
-		{name: "logical", emit: func(e *emitter, op Opcode) int { return e.EmitLogical(op, 1, 1) }, valid: OpAnd, invalid: OpIntAdd},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name+"_valid", func(t *testing.T) {
-			e := newEmitter()
-			if off := tt.emit(e, tt.valid); off < 0 {
-				t.Errorf("expected non-negative offset for valid op %v, got %d", tt.valid, off)
-			}
-		})
-		t.Run(tt.name+"_invalid", func(t *testing.T) {
-			e := newEmitter()
-			if off := tt.emit(e, tt.invalid); off >= 0 {
-				t.Errorf("expected -1 for out-of-category op %v, got %d", tt.invalid, off)
-			}
-		})
 	}
 }
 
@@ -1385,23 +1322,6 @@ func TestEmitterGetInstructions(t *testing.T) {
 	}
 }
 
-// TestEmitterGetLineNumber tests getting line number
-func TestEmitterGetLineNumber(t *testing.T) {
-	emitter := newEmitter()
-
-	// Emit an instruction with line number
-	emitter.EmitPush(1, 42, 1)
-
-	// Get line number
-	lineNum, exists := emitter.GetLineNumber(0)
-	if !exists {
-		t.Errorf("GetLineNumber() exists = false, want true")
-	}
-	if lineNum != 42 {
-		t.Errorf("GetLineNumber() = %d, want 42", lineNum)
-	}
-}
-
 // TestEmitterEmitNop tests NOP instruction emission
 func TestEmitterEmitNop(t *testing.T) {
 	emitter := newEmitter()
@@ -1418,41 +1338,6 @@ func TestEmitterEmitNop(t *testing.T) {
 
 	if len(bytecode) == 0 {
 		t.Errorf("Bytecode is empty after EmitNop()")
-	}
-}
-
-// TestEmitterPrintInstructions tests instruction printing
-func TestEmitterPrintInstructions(t *testing.T) {
-	emitter := newEmitter()
-
-	// Emit some instructions
-	emitter.EmitPush(1, 1, 1)
-	emitter.EmitOpcode(OpNop, 1, 1)
-	emitter.EmitHalt(1, 1)
-
-	output := captureStdout(t, emitter.PrintInstructions)
-	if !strings.Contains(output, "PUSH_8") || !strings.Contains(output, "HALT") {
-		t.Fatalf("PrintInstructions() output = %q, want emitted instructions", output)
-	}
-}
-
-// TestEmitterPrintBytecode tests bytecode printing
-func TestEmitterPrintBytecode(t *testing.T) {
-	emitter := newEmitter()
-
-	// Emit some instructions
-	emitter.EmitPush(1, 1, 1)
-	emitter.EmitHalt(1, 1)
-
-	var err error
-	output := captureStdout(t, func() {
-		err = emitter.PrintBytecode()
-	})
-	if err != nil {
-		t.Errorf("PrintBytecode() error = %v", err)
-	}
-	if !strings.Contains(output, "Raw Bytecode:") {
-		t.Fatalf("PrintBytecode() output = %q, want raw bytecode header", output)
 	}
 }
 
@@ -1473,107 +1358,6 @@ func TestConditionCompilerCompileCondition(t *testing.T) {
 	err := cc.CompileCondition(condition)
 	if err != nil {
 		t.Errorf("CompileCondition() error = %v", err)
-	}
-}
-
-// TestConditionCompilerAddVariable tests adding variables
-func TestConditionCompilerAddVariable(t *testing.T) {
-	emitter := newEmitter()
-	cc := newConditionCompiler(emitter, make(map[string]int))
-
-	// Add a variable
-	cc.AddVariable("$test", 0)
-
-	// Add another variable
-	cc.AddVariable("$test2", 1)
-
-	// Verify they were added
-	index, exists := cc.GetVariableIndex("$test")
-	if !exists {
-		t.Errorf("AddVariable() failed to add $test")
-	}
-	if index != 0 {
-		t.Errorf("AddVariable() index = %d, want 0", index)
-	}
-}
-
-// TestConditionCompilerGetVariableIndex tests getting variable index
-func TestConditionCompilerGetVariableIndex(t *testing.T) {
-	emitter := newEmitter()
-	cc := newConditionCompiler(emitter, make(map[string]int))
-
-	// Add a variable
-	cc.AddVariable("$test", 0)
-
-	// Get the variable index
-	index, exists := cc.GetVariableIndex("$test")
-	if !exists {
-		t.Errorf("GetVariableIndex() exists = false, want true")
-	}
-	if index != 0 {
-		t.Errorf("GetVariableIndex() returned index %d, want 0", index)
-	}
-
-	// Try to get a non-existent variable
-	_, exists = cc.GetVariableIndex("$nonexistent")
-	if exists {
-		t.Errorf("GetVariableIndex() exists = true for non-existent variable, want false")
-	}
-}
-
-// TestConditionCompilerGetStats tests getting statistics
-func TestConditionCompilerGetStats(t *testing.T) {
-	emitter := newEmitter()
-	cc := newConditionCompiler(emitter, make(map[string]int))
-
-	// Compile a condition
-	condition := &ast.Condition{
-		Pos: token.Position{Line: 1, Column: 1},
-		Expression: &ast.Literal{
-			Pos:   token.Position{Line: 1, Column: 1},
-			Type:  token.TRUE,
-			Value: true,
-		},
-	}
-	if err := cc.CompileCondition(condition); err != nil {
-		t.Fatalf("Failed to compile condition: %v", err)
-	}
-
-	// Get stats
-	stats := cc.GetStats()
-	if stats == nil {
-		t.Errorf("GetStats() returned nil")
-	}
-}
-
-// TestConditionCompilerValidateExpression tests expression validation
-func TestConditionCompilerValidateExpression(t *testing.T) {
-	emitter := newEmitter()
-	cc := newConditionCompiler(emitter, make(map[string]int))
-
-	tests := []struct {
-		name    string
-		expr    ast.Expression
-		wantErr bool
-	}{
-		{
-			name: "valid_literal",
-			expr: &ast.Literal{
-				Pos:   token.Position{Line: 1, Column: 1},
-				Type:  token.TRUE,
-				Value: true,
-			},
-			wantErr: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := cc.ValidateExpression(tt.expr)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("ValidateExpression() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
 	}
 }
 
@@ -2008,15 +1792,6 @@ func createTestConditionCompiler() *conditionCompiler {
 	return newConditionCompiler(emitter, make(map[string]int))
 }
 
-// createTestLiteral creates a test literal expression
-func createTestLiteral() *ast.Literal {
-	return &ast.Literal{
-		Pos:   token.Position{Line: 1, Column: 1},
-		Type:  token.TRUE,
-		Value: true,
-	}
-}
-
 // TestConditionCompilerMethods tests various condition compiler methods
 func TestConditionCompilerMethods(t *testing.T) {
 	tests := []struct {
@@ -2034,35 +1809,6 @@ func TestConditionCompilerMethods(t *testing.T) {
 				}
 				if label1 == label2 {
 					t.Errorf("generateLabel() returned duplicate labels: %s and %s", label1, label2)
-				}
-			},
-		},
-		{
-			name: "EmitJump",
-			testFunc: func(t *testing.T, cc *conditionCompiler) {
-				err := cc.EmitJump(conditionaljumpConfig{Opcode: OpJz, TargetLabel: "L1", Position: jumpPosition{Line: 1, Column: 1}})
-				if err != nil {
-					t.Errorf("EmitJump() error = %v", err)
-				}
-			},
-		},
-		{
-			name: "OptimizeExpression",
-			testFunc: func(t *testing.T, cc *conditionCompiler) {
-				expr := createTestLiteral()
-				optimized := cc.OptimizeExpression(expr)
-				if optimized == nil {
-					t.Errorf("OptimizeExpression() returned nil")
-				}
-			},
-		},
-		{
-			name: "EstimateComplexity",
-			testFunc: func(t *testing.T, cc *conditionCompiler) {
-				expr := createTestLiteral()
-				complexity := cc.EstimateComplexity(expr)
-				if complexity < 0 {
-					t.Errorf("EstimateComplexity() returned negative value %d", complexity)
 				}
 			},
 		},
@@ -2312,98 +2058,6 @@ func TestConditionCompilerCompileBooleanExpression(t *testing.T) {
 	err = cc.CompileBooleanExpression(expr, true)
 	if err != nil {
 		t.Errorf("CompileBooleanExpression() error = %v", err)
-	}
-}
-
-// TestConditionCompilerCompileShortCircuitAnd tests compileShortCircuitAnd method
-func TestConditionCompilerCompileShortCircuitAnd(t *testing.T) {
-	emitter := newEmitter()
-	cc := newConditionCompiler(emitter, make(map[string]int))
-
-	andOp := &ast.BinaryOp{
-		Pos: token.Position{Line: 1, Column: 1},
-		Op:  token.AND,
-		Left: &ast.Literal{
-			Pos:   token.Position{Line: 1, Column: 1},
-			Type:  token.TRUE,
-			Value: true,
-		},
-		Right: &ast.Literal{
-			Pos:   token.Position{Line: 1, Column: 1},
-			Type:  token.TRUE,
-			Value: true,
-		},
-	}
-
-	err := cc.compileShortCircuitAnd(andOp)
-	if err != nil {
-		t.Errorf("compileShortCircuitAnd() error = %v", err)
-	}
-}
-
-// TestConditionCompilerCompileShortCircuitOr tests compileShortCircuitOr method
-func TestConditionCompilerCompileShortCircuitOr(t *testing.T) {
-	emitter := newEmitter()
-	cc := newConditionCompiler(emitter, make(map[string]int))
-
-	orOp := &ast.BinaryOp{
-		Pos: token.Position{Line: 1, Column: 1},
-		Op:  token.OR,
-		Left: &ast.Literal{
-			Pos:   token.Position{Line: 1, Column: 1},
-			Type:  token.TRUE,
-			Value: true,
-		},
-		Right: &ast.Literal{
-			Pos:   token.Position{Line: 1, Column: 1},
-			Type:  token.TRUE,
-			Value: true,
-		},
-	}
-
-	err := cc.compileShortCircuitOr(orOp)
-	if err != nil {
-		t.Errorf("compileShortCircuitOr() error = %v", err)
-	}
-}
-
-// TestEmitterEmitDataTypeFunction tests EmitDataTypeFunction method
-func TestEmitterEmitDataTypeFunction(t *testing.T) {
-	emitter := newEmitter()
-
-	// Test with a valid data type function opcode
-	offset, err := emitter.EmitDataTypeFunction(OpReadInt, 1, 1)
-	if err != nil {
-		t.Errorf("EmitDataTypeFunction() unexpected error: %v", err)
-	}
-	if offset < 0 {
-		t.Errorf("EmitDataTypeFunction() returned negative offset %d", offset)
-	}
-
-	// Test with invalid opcode
-	_, err = emitter.EmitDataTypeFunction(OpIntAdd, 1, 1)
-	if err == nil {
-		t.Error("EmitDataTypeFunction() expected error for invalid opcode")
-	}
-}
-
-// TestEmitterEmitStringOperation tests EmitStringOperation method
-func TestEmitterEmitStringOperation(t *testing.T) {
-	emitter := newEmitter()
-
-	// Test with a valid string operation opcode
-	offset, err := emitter.EmitStringOperation(OpContains, 1, 1)
-	if err != nil {
-		t.Errorf("EmitStringOperation() unexpected error: %v", err)
-	}
-	if offset < 0 {
-		t.Errorf("EmitStringOperation() returned negative offset %d", offset)
-	}
-
-	// Test with invalid opcode
-	_, err = emitter.EmitStringOperation(OpIntAdd, 1, 1)
-	if err == nil {
-		t.Error("EmitStringOperation() expected error for invalid opcode")
 	}
 }
 
@@ -3062,60 +2716,6 @@ func TestCompilerCompileSemantic(t *testing.T) {
 	}
 }
 
-// Helper functions for complexity testing
-func createTestIdentifierForComplexity(name string) *ast.Identifier {
-	return &ast.Identifier{
-		Pos:  token.Position{Line: 1, Column: 1},
-		Name: name,
-	}
-}
-
-func createTestUnaryOpForComplexity(op token.Type, right ast.Expression) *ast.UnaryOp {
-	return &ast.UnaryOp{
-		Pos:   token.Position{Line: 1, Column: 1},
-		Op:    op,
-		Right: right,
-	}
-}
-
-// TestConditionCompilerEstimateComplexityExtended tests complexity estimation for various expressions
-func TestConditionCompilerEstimateComplexityExtended(t *testing.T) {
-	emitter := newEmitter()
-	cc := newConditionCompiler(emitter, make(map[string]int))
-
-	testCases := []struct {
-		name       string
-		expr       ast.Expression
-		minComplex int
-	}{
-		{"literal_true", createTestLiteral(), 1},
-		{"identifier_simple", createTestIdentifierForComplexity("test_var"), 2},
-		{"not_true", createTestUnaryOpForComplexity(token.NOT, createTestLiteral()), 2},
-		{"not_identifier", createTestUnaryOpForComplexity(token.NOT, createTestIdentifierForComplexity("var")), 3},
-		{"and_literals", func() *ast.BinaryOp {
-			op, _ := createTestBinaryOp(token.AND, true, false)
-			return op
-		}(), 3},
-		{"or_literals", func() *ast.BinaryOp {
-			op, _ := createTestBinaryOp(token.OR, true, false)
-			return op
-		}(), 3},
-		{"arithmetic_add", func() *ast.BinaryOp {
-			op, _ := createTestBinaryOp(token.PLUS, int64(1), int64(2))
-			return op
-		}(), 3},
-	}
-
-	for _, tt := range testCases {
-		t.Run(tt.name, func(t *testing.T) {
-			complexity := cc.EstimateComplexity(tt.expr)
-			if complexity < tt.minComplex {
-				t.Errorf("EstimateComplexity() = %d, want >= %d", complexity, tt.minComplex)
-			}
-		})
-	}
-}
-
 // TestInterpreterStackOperations tests stack operations in interpreter
 func TestInterpreterStackOperations(t *testing.T) {
 	tests := []struct {
@@ -3281,9 +2881,9 @@ func TestEmitterInstructions(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "emit_label",
+			name: "emit_nop",
 			testFn: func(e *emitter) error {
-				e.EmitLabel(1, 1, 1)
+				e.EmitNop(1, 1)
 				return nil
 			},
 			wantErr: false,

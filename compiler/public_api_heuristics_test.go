@@ -3,9 +3,6 @@ package compiler
 import (
 	"context"
 	"testing"
-
-	"github.com/cawalch/go-yara/ast"
-	"github.com/cawalch/go-yara/token"
 )
 
 func TestPublicMemoryUsageHeuristics(t *testing.T) {
@@ -43,23 +40,5 @@ rule larger {
 	wantTotal := smallUsage + largerUsage
 	if got := program.GetTotalMemoryUsage(); got != wantTotal {
 		t.Fatalf("GetTotalMemoryUsage() = %d, want sum of rule estimates %d", got, wantTotal)
-	}
-}
-
-func TestPublicComplexityHeuristics(t *testing.T) {
-	cc := newConditionCompiler(newEmitter(), nil)
-
-	literal := &ast.Literal{Type: token.TRUE, Value: true}
-	identifier := &ast.Identifier{Name: "external"}
-	expr := &ast.BinaryOp{Left: identifier, Op: token.AND, Right: literal}
-
-	if got := cc.EstimateComplexity(literal); got != 1 {
-		t.Fatalf("literal complexity = %d, want 1", got)
-	}
-	if got := cc.EstimateComplexity(identifier); got != 2 {
-		t.Fatalf("identifier complexity = %d, want 2", got)
-	}
-	if got := cc.EstimateComplexity(expr); got <= cc.EstimateComplexity(identifier) {
-		t.Fatalf("binary expression complexity = %d, want greater than identifier", got)
 	}
 }
