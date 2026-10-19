@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Documentation
+* Streamlined `README.md` following Google developer technical prose guidelines, condensed feature lists, simplified benchmark tables, and removed outdated AST visitor references.
+
+---
+
+## [v0.7.2] - 2026-10-19
+
+### Features
+* **CLI Version Flag**: Added `--version` / `-v` flag to the command-line tool to display build version information ([#344](https://github.com/cawalch/go-yara/pull/344)).
+
+### Refactoring & Code Pruning
+* **Semantic Analysis Consolidation**: Removed orphaned `semantic.TypeChecker` and monolithic `ast.Visitor` hierarchy, standardizing entirely on `semantic.Validator` ([#339](https://github.com/cawalch/go-yara/pull/339)).
+* **Bytecode & Compiler Cleanup**: Pruned dead bytecode emission helpers, condition compiler routines, and regex bytecode methods ([#340](https://github.com/cawalch/go-yara/pull/340), [#341](https://github.com/cawalch/go-yara/pull/341)).
+* **Legacy Atom Engine Removal**: Removed legacy atom extraction structures in favor of unified prefilter indexing ([#342](https://github.com/cawalch/go-yara/pull/342)).
+* **Interpreter Pruning**: Removed vestigial interpreter debug mode, execution plan generation, and unused string helpers ([#343](https://github.com/cawalch/go-yara/pull/343)).
+
+### CI & Release
+* Hardened release workflow artifact packaging and upload steps ([#344](https://github.com/cawalch/go-yara/pull/344)).
+
+---
+
 ## [v0.7.1] - 2026-10-18
 
 ### Performance
