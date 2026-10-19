@@ -805,7 +805,6 @@ The compiler provides inspection methods for debugging, static sizing, and testi
 
 - `GetStats()`: Returns counts of compiled rules, strings, opcodes, and memory usage.
 - `GetMemoryUsage()`: Returns estimated bytecode and metadata footprint.
-- `EstimateComplexity()`: Computes relative condition evaluation complexity.
 
 ## Command-Line Interface
 

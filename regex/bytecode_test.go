@@ -33,7 +33,7 @@ func TestLiteralPrefix(t *testing.T) {
 
 func TestEmitterSequence(t *testing.T) {
 	e := NewEmitter()
-	e.Emit(OpLiteral).EmitU8('A').Emit(OpJump).EmitU16(0x1234).Emit(OpMatch)
+	e.Emit(OpLiteral).EmitU8('A').Emit(OpJump).EmitI16(0x1234).Emit(OpMatch)
 	b := e.Bytes()
 	want := []byte{OpLiteral, 'A', OpJump, 0x34, 0x12, OpMatch}
 	if len(b) != len(want) {

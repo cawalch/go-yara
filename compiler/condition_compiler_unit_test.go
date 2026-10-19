@@ -63,36 +63,17 @@ func TestConditionCompiler_VariableManagement(t *testing.T) {
 	stringOffsets := map[string]int{"$test": 0}
 	cc := newConditionCompiler(emitter, stringOffsets)
 
-	t.Run("SetRuleIndexMap", func(t *testing.T) {
+	t.Run("setRuleIndexMap", func(t *testing.T) {
 		ruleIndexMap := map[string]int{"rule1": 0}
-		cc.SetRuleIndexMap(ruleIndexMap)
+		cc.setRuleIndexMap(ruleIndexMap)
 		if index, ok := cc.ruleIndexMap["rule1"]; !ok || index != 0 {
-			t.Fatalf("SetRuleIndexMap() map = %v, want rule1 at index 0", cc.ruleIndexMap)
+			t.Fatalf("setRuleIndexMap() map = %v, want rule1 at index 0", cc.ruleIndexMap)
 		}
 	})
 
-	t.Run("Variable maps", func(t *testing.T) {
-		cc.AddVariable("test_var", 0)
-
-		varMap := cc.GetVariableMap()
-		if index, ok := varMap["test_var"]; !ok || index != 0 {
-			t.Fatalf("GetVariableMap() = %v, want test_var at index 0", varMap)
-		}
-
-		cc.SetExternalVariables(map[string]int{"external": 1})
-		if index, ok := cc.GetExternalVariables()["external"]; !ok || index != 1 {
-			t.Fatalf("GetExternalVariables() = %v, want external at index 1", cc.GetExternalVariables())
-		}
-
-		cc.SetGlobalVariables(map[string]int{"global": 2})
-		if index, ok := cc.GetGlobalVariables()["global"]; !ok || index != 2 {
-			t.Fatalf("GetGlobalVariables() = %v, want global at index 2", cc.GetGlobalVariables())
-		}
-	})
-
-	t.Run("SetStringOffsets", func(t *testing.T) {
+	t.Run("setStringOffsets", func(t *testing.T) {
 		newOffsets := map[string]int{"$new": 1}
-		cc.SetStringOffsets(newOffsets)
+		cc.setStringOffsets(newOffsets)
 		if offset, ok := cc.findStringOffset("$new"); !ok || offset != 1 {
 			t.Fatalf("findStringOffset($new) = %d, %v, want 1, true", offset, ok)
 		}
@@ -111,19 +92,6 @@ func TestConditionCompiler_BooleanExpressions(t *testing.T) {
 		expr := builder.Literal(pos, token.TRUE, true)
 		if err := cc.CompileBooleanExpression(expr, false); err != nil {
 			t.Fatalf("CompileBooleanExpression() error = %v", err)
-		}
-	})
-
-	t.Run("Short circuit functions", func(t *testing.T) {
-		expr := builder.Literal(pos, token.TRUE, true)
-		andOp := builder.BinaryOp(pos, expr, token.AND, expr)
-		orOp := builder.BinaryOp(pos, expr, token.OR, expr)
-
-		if err := cc.compileShortCircuitAnd(andOp); err != nil {
-			t.Fatalf("compileShortCircuitAnd() error = %v", err)
-		}
-		if err := cc.compileShortCircuitOr(orOp); err != nil {
-			t.Fatalf("compileShortCircuitOr() error = %v", err)
 		}
 	})
 }
@@ -276,7 +244,7 @@ func TestConditionCompiler_RuleReferences(t *testing.T) {
 	})
 
 	t.Run("compileRuleReference operand", func(t *testing.T) {
-		cc.SetRuleIndexMap(map[string]int{"test_rule": 7})
+		cc.setRuleIndexMap(map[string]int{"test_rule": 7})
 		if err := cc.compileRuleReference("test_rule", 1, 1); err != nil {
 			t.Fatalf("compileRuleReference() error = %v", err)
 		}
@@ -290,7 +258,7 @@ func TestConditionCompiler_RuleReferences(t *testing.T) {
 	})
 
 	t.Run("compileRuleReference overflow", func(t *testing.T) {
-		cc.SetRuleIndexMap(map[string]int{"test_rule": 256})
+		cc.setRuleIndexMap(map[string]int{"test_rule": 256})
 		err := cc.compileRuleReference("test_rule", 1, 1)
 		if err == nil || !strings.Contains(err.Error(), "exceeds bytecode capacity") {
 			t.Fatalf("compileRuleReference() error = %v, want capacity error", err)
@@ -337,50 +305,6 @@ func TestConditionCompiler_TypeDetection(t *testing.T) {
 
 }
 
-// TestConditionCompiler_OptimizationAndValidation tests optimization and validation functions
-func TestConditionCompiler_OptimizationAndValidation(t *testing.T) {
-	emitter := newEmitter()
-	stringOffsets := map[string]int{"$test": 0}
-	cc := newConditionCompiler(emitter, stringOffsets)
-	pos := token.Position{Line: 1, Column: 1}
-	builder := ast.NewBuilder()
-
-	expr := builder.Literal(pos, token.IntegerLit, 42)
-
-	t.Run("ValidateExpression", func(t *testing.T) {
-		err := cc.ValidateExpression(expr)
-		if err != nil {
-			t.Errorf("ValidateExpression failed: %v", err)
-		}
-	})
-
-	t.Run("Optimization functions", func(t *testing.T) {
-		// Test optimization
-		optimized := cc.OptimizeExpression(expr)
-		if optimized == nil {
-			t.Error("OptimizeExpression returned nil")
-		}
-
-		// Test stats
-		stats := cc.GetStats()
-		if stats == nil {
-			t.Error("GetStats returned nil")
-		}
-	})
-
-	t.Run("EmitJump", func(t *testing.T) {
-		// Test EmitJump with proper parameters
-		config := conditionaljumpConfig{
-			Opcode:      OpJz,
-			TargetLabel: "test_label",
-			Position:    jumpPosition{Line: 1, Column: 1},
-		}
-		if err := cc.EmitJump(config); err != nil {
-			t.Fatalf("EmitJump() error = %v", err)
-		}
-	})
-}
-
 // TestConditionCompilerEdgeCasesAndErrors tests edge cases and error conditions
 func TestConditionCompilerEdgeCasesAndErrors(t *testing.T) {
 	t.Run("NilAndEmptyInputs", testConditionCompilerNilInputs)
@@ -409,11 +333,11 @@ func testConditionCompilerNilInputs(t *testing.T) {
 			},
 		},
 		{
-			name: "nil_expression_validation",
+			name: "nil_expression_compilation",
 			test: func(t *testing.T, cc *conditionCompiler) {
-				err := cc.ValidateExpression(nil)
+				err := cc.compileExpression(nil)
 				if err == nil || !strings.Contains(err.Error(), "unsupported expression type") {
-					t.Fatalf("ValidateExpression(nil) error = %v, want unsupported expression type", err)
+					t.Fatalf("compileExpression(nil) error = %v, want unsupported expression type", err)
 				}
 			},
 		},

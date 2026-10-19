@@ -121,11 +121,6 @@ func newConditionCompiler(emitter *emitter, stringOffsets map[string]int) *condi
 	}
 }
 
-// SetRuleIndexMap sets the rule index map for the compiler
-func (cc *conditionCompiler) SetRuleIndexMap(ruleIndexMap map[string]int) {
-	cc.setRuleIndexMap(maps.Clone(ruleIndexMap))
-}
-
 func (cc *conditionCompiler) setRuleIndexMap(ruleIndexMap map[string]int) {
 	cc.ruleIndexMap = ruleIndexMap
 }
@@ -136,12 +131,12 @@ func (cc *conditionCompiler) generateLabel() string {
 }
 
 func (cc *conditionCompiler) defineLabel(label string) {
-	cc.labels[label] = cc.emitter.GetLength()
+	cc.labels[label] = cc.emitter.GetSize()
 }
 
 //nolint:revive // argument-limit: internal helper
 func (cc *conditionCompiler) emitJumpWithLabel(opcode Opcode, label string, line, column int) {
-	pos := cc.emitter.GetLength()
+	pos := cc.emitter.GetSize()
 	cc.pendingJumps = append(cc.pendingJumps, pendingJump{
 		Opcode:   opcode,
 		Label:    label,
@@ -1046,17 +1041,6 @@ func (cc *conditionCompiler) compileStringCount(strCount *ast.StringCount) error
 	return nil
 }
 
-// AddVariable adds a variable to the compiler's variable map
-func (cc *conditionCompiler) AddVariable(name string, index int) {
-	cc.variableMap[name] = index
-}
-
-// GetVariableIndex retrieves the index of a variable
-func (cc *conditionCompiler) GetVariableIndex(name string) (int, bool) {
-	index, exists := cc.variableMap[name]
-	return index, exists
-}
-
 // CompileBooleanExpression compiles a boolean expression to bytecode
 func (cc *conditionCompiler) CompileBooleanExpression(expr ast.Expression, shortCircuit bool) error {
 	if !shortCircuit {
@@ -1092,42 +1076,12 @@ func (cc *conditionCompiler) compileShortCircuitBinary(binOp *ast.BinaryOp, jump
 	return nil
 }
 
-// GetVariableMap returns an owned snapshot of the compiler's variable map.
-func (cc *conditionCompiler) GetVariableMap() map[string]int {
-	return maps.Clone(cc.variableMap)
-}
-
-// GetExternalVariables returns an owned snapshot of the external variable map.
-func (cc *conditionCompiler) GetExternalVariables() map[string]int {
-	return maps.Clone(cc.externalVariables)
-}
-
-// SetExternalVariables sets the memory slots for declared external variables.
-func (cc *conditionCompiler) SetExternalVariables(externalVariables map[string]int) {
-	cc.setExternalVariables(maps.Clone(externalVariables))
-}
-
 func (cc *conditionCompiler) setExternalVariables(externalVariables map[string]int) {
 	cc.externalVariables = externalVariables
 }
 
-// SetGlobalVariables sets the memory slots for declared global variables.
-func (cc *conditionCompiler) SetGlobalVariables(globalVariables map[string]int) {
-	cc.setGlobalVariables(maps.Clone(globalVariables))
-}
-
 func (cc *conditionCompiler) setGlobalVariables(globalVariables map[string]int) {
 	cc.globalVariables = globalVariables
-}
-
-// GetGlobalVariables returns an owned snapshot of the global variable map.
-func (cc *conditionCompiler) GetGlobalVariables() map[string]int {
-	return maps.Clone(cc.globalVariables)
-}
-
-// SetStringOffsets sets the string offsets for the compiler
-func (cc *conditionCompiler) SetStringOffsets(offsets map[string]int) {
-	cc.setStringOffsets(maps.Clone(offsets))
 }
 
 func (cc *conditionCompiler) setStringOffsets(offsets map[string]int) {
@@ -1165,81 +1119,8 @@ func (cc *conditionCompiler) ResetForRule() {
 	cc.globalVariables = make(map[string]int)
 }
 
-// SetModuleFunctions configures the available module functions for condition compilation.
-func (cc *conditionCompiler) SetModuleFunctions(functions map[string]compiledModuleFunction) {
-	cc.setModuleFunctions(maps.Clone(functions))
-}
-
 func (cc *conditionCompiler) setModuleFunctions(functions map[string]compiledModuleFunction) {
 	cc.moduleFunctions = functions
-}
-
-// GetStats returns compilation statistics
-func (cc *conditionCompiler) GetStats() map[string]any {
-	return map[string]any{
-		"variables":     len(cc.variableMap),
-		"label_counter": cc.labelCounter,
-	}
-}
-
-// ValidateExpression validates an expression
-func (cc *conditionCompiler) ValidateExpression(expr ast.Expression) error {
-	savedEmitter := cc.emitter
-	cc.emitter = newEmitter()
-	defer func() { cc.emitter = savedEmitter }()
-	return cc.compileExpression(expr)
-}
-
-// OptimizeExpression optimizes an expression
-func (cc *conditionCompiler) OptimizeExpression(expr ast.Expression) ast.Expression {
-	return expr
-}
-
-// EstimateComplexity returns a simple structural complexity score for an expression.
-// Supported nodes contribute fixed weights: literals count as 1, identifiers as
-// 2, and unary or binary operators add 1 plus their operands. Unsupported node
-// types return 0. The score is a heuristic for relative diagnostics, not a
-// runtime cost model.
-func (cc *conditionCompiler) EstimateComplexity(expr ast.Expression) int {
-	switch e := expr.(type) {
-	case *ast.Literal:
-		return 1
-	case *ast.Identifier:
-		return 2
-	case *ast.BinaryOp:
-		return cc.EstimateComplexity(e.Left) + cc.EstimateComplexity(e.Right) + 1
-	case *ast.UnaryOp:
-		return cc.EstimateComplexity(e.Right) + 1
-	default:
-		return 0
-	}
-}
-
-// jumpPosition represents a position for a jump operation
-type jumpPosition struct {
-	Line   int
-	Column int
-}
-
-// conditionaljumpConfig represents configuration for conditional jumps
-type conditionaljumpConfig struct {
-	Opcode      Opcode
-	TargetLabel string
-	Position    jumpPosition
-}
-
-// EmitJump emits a jump operation
-func (cc *conditionCompiler) EmitJump(config conditionaljumpConfig) error {
-	cc.emitJumpWithLabel(config.Opcode, config.TargetLabel, config.Position.Line, config.Position.Column)
-	return nil
-}
-
-func (cc *conditionCompiler) compileShortCircuitAnd(andOp *ast.BinaryOp) error {
-	return cc.compileShortCircuitBinary(andOp, OpJfalse, OpAnd)
-}
-
-func (cc *conditionCompiler) compileShortCircuitOr(orOp *ast.BinaryOp) error {
-	return cc.compileShortCircuitBinary(orOp, OpJtrue, OpOr)
 }
 
 func (cc *conditionCompiler) allocateVariables(vars []string) ([]int, error) {

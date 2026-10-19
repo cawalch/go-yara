@@ -92,32 +92,6 @@ func TestCompilationComponentAccessorsReturnOwnedSnapshots(t *testing.T) {
 		if got, _ := conditionCompiler.findStringOffset("$a"); got != 1 {
 			t.Fatalf("newConditionCompiler() retained caller map: got %d", got)
 		}
-
-		externals := map[string]int{"external": 2}
-		globals := map[string]int{"global": 3}
-		conditionCompiler.SetExternalVariables(externals)
-		conditionCompiler.SetGlobalVariables(globals)
-		externals["external"] = 20
-		globals["global"] = 30
-		if conditionCompiler.GetExternalVariables()["external"] != 2 {
-			t.Fatal("SetExternalVariables() retained caller map")
-		}
-		if conditionCompiler.GetGlobalVariables()["global"] != 3 {
-			t.Fatal("SetGlobalVariables() retained caller map")
-		}
-
-		conditionCompiler.variableMap["local"] = 4
-		variables := conditionCompiler.GetVariableMap()
-		variables["local"] = 40
-		externalSnapshot := conditionCompiler.GetExternalVariables()
-		externalSnapshot["external"] = 200
-		globalSnapshot := conditionCompiler.GetGlobalVariables()
-		globalSnapshot["global"] = 300
-		if conditionCompiler.GetVariableMap()["local"] != 4 ||
-			conditionCompiler.GetExternalVariables()["external"] != 2 ||
-			conditionCompiler.GetGlobalVariables()["global"] != 3 {
-			t.Fatal("condition compiler getter exposed mutable state")
-		}
 	})
 
 	t.Run("string compiler offsets", func(t *testing.T) {

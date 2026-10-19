@@ -174,12 +174,6 @@ func (e *emitter) EmitJump(config jumpConfig) int {
 	return offset
 }
 
-// EmitLabel emits a label (no-op) at the current position
-// This is used as a target for jumps
-func (e *emitter) EmitLabel(_, line, pos int) int {
-	return e.EmitOpcode(OpNop, line, pos)
-}
-
 // FixupJumps resolves all jump targets that were previously emitted
 func (e *emitter) FixupJumps() error {
 	for jumpOffset, targetOffset := range e.fixups {
@@ -187,7 +181,7 @@ func (e *emitter) FixupJumps() error {
 			return err
 		}
 
-		jumpIndex, _ := e.findInstructionIndexByOffset(jumpOffset)
+		jumpIndex, _ := e.FindInstructionIndexByOffset(jumpOffset)
 		inst := &e.instructions[jumpIndex]
 		relativeOffset := e.calculateRelativeOffset(jumpOffset, targetOffset, inst)
 
@@ -200,24 +194,9 @@ func (e *emitter) FixupJumps() error {
 	return nil
 }
 
-// findInstructionIndexByOffset finds the instruction slice index from its byte offset
-func (e *emitter) findInstructionIndexByOffset(offset int) (int, error) {
-	currentOffset := 0
-	for i := range e.instructions {
-		if currentOffset == offset {
-			return i, nil
-		}
-		if currentOffset > offset {
-			break
-		}
-		currentOffset += e.instructions[i].Size()
-	}
-	return -1, fmt.Errorf("instruction not found at byte offset %d", offset)
-}
-
 // validateJumpInstruction validates that a jump instruction exists at the given offset
 func (e *emitter) validateJumpInstruction(jumpOffset int) error {
-	jumpIndex, err := e.findInstructionIndexByOffset(jumpOffset)
+	jumpIndex, err := e.FindInstructionIndexByOffset(jumpOffset)
 	if err != nil {
 		return err
 	}
@@ -302,17 +281,6 @@ func (e *emitter) GetInstructionCount() int {
 	return len(e.instructions)
 }
 
-// GetCurrentIP returns the current instruction pointer (index of next instruction)
-func (e *emitter) GetCurrentIP() int {
-	return len(e.instructions)
-}
-
-// GetLineNumber returns the source line number for a given bytecode offset
-func (e *emitter) GetLineNumber(offset int) (int, bool) {
-	line, exists := e.lineNumbers[offset]
-	return line, exists
-}
-
 // Reset clears all emitted instructions and resets the emitter state
 func (e *emitter) Reset() {
 	e.instructions = e.instructions[:0]
@@ -323,81 +291,6 @@ func (e *emitter) Reset() {
 	clear(e.stringLiteralIndex)
 }
 
-// EmitArithmetic emits arithmetic operation instructions
-// Returns -1 and does not emit if opcode is not arithmetic
-func (e *emitter) EmitArithmetic(op Opcode, line, pos int) int {
-	if !isArithmeticOp(op) {
-		return -1
-	}
-	return e.EmitOpcode(op, line, pos)
-}
-
-// EmitComparison emits comparison operation instructions
-// Returns -1 and does not emit if opcode is not a comparison
-func (e *emitter) EmitComparison(op Opcode, line, pos int) int {
-	if !isComparisonOp(op) {
-		return -1
-	}
-	return e.EmitOpcode(op, line, pos)
-}
-
-// EmitLogical emits logical operation instructions
-// Returns -1 and does not emit if opcode is not logical
-func (e *emitter) EmitLogical(op Opcode, line, pos int) int {
-	if !isLogicalOp(op) {
-		return -1
-	}
-	return e.EmitOpcode(op, line, pos)
-}
-
-// EmitDataTypeFunction emits data type conversion function instructions
-func (e *emitter) EmitDataTypeFunction(op Opcode, line, pos int) (int, error) {
-	if !isDataTypeFunction(op) {
-		return -1, fmt.Errorf("opcode %s is not a data type function", op.String())
-	}
-	return e.EmitOpcode(op, line, pos), nil
-}
-
-// Helper functions for opcode classification
-func isArithmeticOp(op Opcode) bool {
-	return (op >= OpIntAdd && op <= OpIntMinus) ||
-		(op >= OpDblAdd && op <= OpDblMinus) ||
-		op == OpAddM || op == OpIncrM ||
-		op == OpConcat
-}
-
-func isComparisonOp(op Opcode) bool {
-	return (op >= OpIntEq && op <= OpIntGe) ||
-		(op >= OpDblEq && op <= OpDblGe) ||
-		(op >= OpStrEq && op <= OpStrGe) ||
-		op == OpContains || op == OpMatches || op == OpMatchesValue ||
-		op == OpStartswith || op == OpEndswith
-}
-
-func isLogicalOp(op Opcode) bool {
-	return op == OpAnd || op == OpOr || op == OpNot ||
-		op == OpBitwiseAnd || op == OpBitwiseOr || op == OpBitwiseXor ||
-		op == OpBitwiseNot
-}
-
-func isDataTypeFunction(op Opcode) bool {
-	return op >= OpReadInt && op <= OpUint64be
-}
-
-// EmitStringOperation emits string operation instructions
-func (e *emitter) EmitStringOperation(op Opcode, line, pos int) (int, error) {
-	if !isStringOperation(op) {
-		return -1, fmt.Errorf("opcode %s is not a string operation", op.String())
-	}
-	return e.EmitOpcode(op, line, pos), nil
-}
-
-func isStringOperation(op Opcode) bool {
-	return (op >= OpContains && op <= OpIequals) ||
-		(op >= OpFound && op <= OpOfFoundAt) ||
-		op == OpMatches || op == OpMatchesValue
-}
-
 // EmitHalt emits a halt instruction to terminate execution
 func (e *emitter) EmitHalt(line, pos int) int {
 	return e.EmitOpcode(OpHalt, line, pos)
@@ -406,67 +299,6 @@ func (e *emitter) EmitHalt(line, pos int) int {
 // EmitNop emits a no-operation instruction
 func (e *emitter) EmitNop(line, pos int) int {
 	return e.EmitOpcode(OpNop, line, pos)
-}
-
-// Debug printing functions
-
-// PrintInstructions prints all instructions with their offsets
-func (e *emitter) PrintInstructions() {
-	fmt.Println("Bytecode Instructions:")
-	fmt.Printf("%-4s %-8s %-12s %-s\n", "Addr", "Opcode", "Operand", "Disassembly")
-	fmt.Println("─────────────────────────────────────────")
-
-	for i, inst := range e.instructions {
-		offset := 0
-		for j := range i {
-			offset += e.instructions[j].Size()
-		}
-
-		operandStr := ""
-		if inst.Operand.Type != OperandNone {
-			operandStr = fmt.Sprintf("0x%X", inst.Operand.Value)
-		}
-
-		fmt.Printf("%-4X %-8s %-12s %-s\n",
-			offset,
-			inst.Opcode.String(),
-			operandStr,
-			inst.String())
-	}
-}
-
-// PrintBytecode prints the raw bytecode in hex format
-func (e *emitter) PrintBytecode() error {
-	bytecode, err := e.GetBytecode()
-	if err != nil {
-		return err
-	}
-
-	fmt.Println("Raw Bytecode:")
-	for i := 0; i < len(bytecode); i += 16 {
-		end := min(i+16, len(bytecode))
-
-		// Print offset
-		fmt.Printf("%08X: ", i)
-
-		// Print hex bytes
-		for j := i; j < end; j++ {
-			fmt.Printf("%02X ", bytecode[j])
-		}
-
-		// Print ASCII representation
-		fmt.Printf(" |")
-		for j := i; j < end; j++ {
-			if bytecode[j] >= 32 && bytecode[j] <= 126 {
-				fmt.Printf("%c", bytecode[j])
-			} else {
-				fmt.Printf(".")
-			}
-		}
-		fmt.Printf("|\n")
-	}
-
-	return nil
 }
 
 // GetStats returns statistics about the generated bytecode
@@ -491,21 +323,6 @@ func (e *emitter) GetStats() map[string]any {
 	}
 
 	return stats
-}
-
-// GetLength returns the current bytecode length.
-//
-// Deprecated: Use GetSize.
-func (e *emitter) GetLength() int {
-	return e.GetSize()
-}
-
-// UpdateOperand updates an instruction by slice index.
-//
-// Deprecated: Use UpdateOperandByIndex, or FindInstructionIndexByOffset when
-// starting from a bytecode offset.
-func (e *emitter) UpdateOperand(index int, operand Operand) error {
-	return e.UpdateOperandByIndex(index, operand)
 }
 
 // UpdateOperandByIndex updates the operand of an instruction at the given array index
