@@ -4,7 +4,6 @@ package semantic
 import (
 	"errors"
 	"fmt"
-	"math"
 
 	"github.com/cawalch/go-yara/token"
 )
@@ -74,34 +73,6 @@ var (
 	Int32BEType = &IntegerType{Size: 4, Signed: true, BigEndian: true}
 	Int64BEType = &IntegerType{Size: 8, Signed: true, BigEndian: true}
 )
-
-// integerTypeMap maps function names to their corresponding integer types
-var integerTypeMap = map[string]*IntegerType{
-	"uint8": Uint8Type, "u8": Uint8Type,
-	"uint16": Uint16Type, "u16": Uint16Type,
-	"uint32": Uint32Type, "u32": Uint32Type,
-	"uint64": Uint64Type, "u64": Uint64Type,
-	"int8": Int8Type, "i8": Int8Type,
-	"int16": Int16Type, "i16": Int16Type,
-	"int32": Int32Type, "i32": Int32Type,
-	"int64": Int64Type, "i64": Int64Type,
-	"uint8be": Uint8BEType, "u8be": Uint8BEType,
-	"uint16be": Uint16BEType, "u16be": Uint16BEType,
-	"uint32be": Uint32BEType, "u32be": Uint32BEType,
-	"uint64be": Uint64BEType, "u64be": Uint64BEType,
-	"int8be": Int8BEType, "i8be": Int8BEType,
-	"int16be": Int16BEType, "i16be": Int16BEType,
-	"int32be": Int32BEType, "i32be": Int32BEType,
-	"int64be": Int64BEType, "i64be": Int64BEType,
-}
-
-// GetIntegerTypeFromFunction returns the appropriate integer type for a data type function
-func GetIntegerTypeFromFunction(funcName string) (*IntegerType, error) {
-	if intType, exists := integerTypeMap[funcName]; exists {
-		return intType, nil
-	}
-	return nil, fmt.Errorf("unknown integer type function: %s", funcName)
-}
 
 // String returns a string representation of the type
 func (it *IntegerType) String() string {
@@ -221,60 +192,6 @@ func (ti *TypeInfo) CanPerformArithmetic(other *TypeInfo) bool {
 func (ti *TypeInfo) CanPerformBitwise(other *TypeInfo) bool {
 	// Both must be integers
 	return ti.IsInteger() && other.IsInteger()
-}
-
-// CanCastTo returns true if this type can be cast to the target type
-func (ti *TypeInfo) CanCastTo(target *TypeInfo) bool {
-	// Can always cast to same type
-	if ti.DataType == target.DataType {
-		return true
-	}
-
-	// Can cast between numeric types
-	if ti.IsNumeric() && target.IsNumeric() {
-		return true
-	}
-
-	// Can cast integers to boolean
-	if ti.IsInteger() && target.IsBoolean() {
-		return true
-	}
-
-	// Can cast strings to boolean
-	if ti.IsString() && target.IsBoolean() {
-		return true
-	}
-
-	return false
-}
-
-// GetIntegerRange returns the valid range for an integer type
-func (it *IntegerType) GetIntegerRange() (minVal, maxVal int64) {
-	if it.Signed {
-		switch it.Size {
-		case 1:
-			return math.MinInt8, math.MaxInt8
-		case 2:
-			return math.MinInt16, math.MaxInt16
-		case 4:
-			return math.MinInt32, math.MaxInt32
-		case 8:
-			return math.MinInt64, math.MaxInt64
-		}
-	} else {
-		switch it.Size {
-		case 1:
-			return 0, int64(math.MaxUint8)
-		case 2:
-			return 0, int64(math.MaxUint16)
-		case 4:
-			return 0, int64(math.MaxUint32)
-		case 8:
-			// MaxUint64 doesn't fit in int64, so we return MaxInt64 as a practical limit
-			return 0, math.MaxInt64
-		}
-	}
-	return 0, 0
 }
 
 // InferTypeFromLiteral infers type information from a literal token

@@ -197,7 +197,6 @@ func FuzzSemanticValidator(f *testing.F) {
 		symTable := v.GetSymbolTable()
 		_ = symTable
 		_ = symTable.Root
-		_ = symTable.GetErrors()
 
 		// Test that we can iterate through rules without panicking
 		for _, rule := range program.Rules {
@@ -606,27 +605,8 @@ func FuzzSymbolTable(f *testing.F) {
 		st.EnterScope(inputStr)
 		st.ExitScope()
 
-		// Test error handling
-		st.AddError(nil)
-		st.AddError(&Error{
-			Message:  "test error",
-			Position: pos,
-		})
-
-		// Test GetErrors
-		errors := st.GetErrors()
-		_ = errors
-
-		// Test HasErrors
-		hasErrors := st.HasErrors()
-		_ = hasErrors
-
 		// Test Reset
 		st.Reset()
-
-		// Test GetUnusedSymbols
-		unused := st.GetUnusedSymbols()
-		_ = unused
 
 		// Test with multiple definitions
 		st2 := NewSymbolTable()
@@ -669,7 +649,6 @@ func FuzzSymbolTable(f *testing.F) {
 			symTable := v.GetSymbolTable()
 			_ = symTable
 			_ = symTable.Root
-			_ = symTable.GetErrors()
 		}
 
 		// Test with identifier variations

@@ -17,11 +17,6 @@ func (l *Lexer) ch() byte {
 	return l.reader.Current()
 }
 
-// position returns the current position in the input
-func (l *Lexer) position() int {
-	return l.reader.Position()
-}
-
 // isWhitespace returns true if the character is whitespace
 func isWhitespace(ch byte) bool {
 	return ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n'

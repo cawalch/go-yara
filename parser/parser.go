@@ -201,31 +201,6 @@ func (p *Parser) ProgramErrors() []error {
 	return append([]error(nil), p.programErrors...)
 }
 
-// ParseRulesStrict parses a complete YARA rules file without error recovery (original behavior)
-func (p *Parser) ParseRulesStrict() (*ast.Program, error) {
-	// Save current recovery setting
-	oldRecovery := p.errorRecovery
-	// Disable recovery for strict parsing
-	p.errorRecovery = false
-	defer func() {
-		p.errorRecovery = oldRecovery
-	}()
-
-	program := p.builder.Program(make([]*ast.Rule, 0))
-
-	for !p.currentTokenIs(token.EOF) {
-		if err := p.parseProgramElement(context.Background(), program); err != nil {
-			p.addProgramError(err)
-		}
-	}
-
-	if len(p.errors) > 0 {
-		return nil, fmt.Errorf("strict parsing failed with %d errors", len(p.errors))
-	}
-
-	return program, nil
-}
-
 func (p *Parser) parseProgramElement(ctx context.Context, program *ast.Program) error {
 	if err := checkContext(ctx); err != nil {
 		return err

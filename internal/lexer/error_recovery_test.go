@@ -87,8 +87,8 @@ func TestLexer_FastForward(t *testing.T) {
 	l.SetRecoveryMode(RecoverySection)
 
 	// Position at start
-	if l.position() != 0 {
-		t.Fatalf("Expected position 0, got %d", l.position())
+	if l.reader.Position() != 0 {
+		t.Fatalf("Expected position 0, got %d", l.reader.Position())
 	}
 
 	// Fast forward should skip whitespace and stop at first letter

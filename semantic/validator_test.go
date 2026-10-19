@@ -594,7 +594,7 @@ func TestValidatorMetaValidation(t *testing.T) {
 	validator.validateRule(rule)
 
 	// Check that meta keys are defined as variables
-	if validator.GetSymbolTable().HasErrors() {
+	if validator.HasErrors() {
 		t.Error("Should not have errors for valid meta")
 	}
 }

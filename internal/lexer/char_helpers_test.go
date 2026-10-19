@@ -202,16 +202,3 @@ func TestLexer_peekChar(t *testing.T) {
 		t.Errorf("Expected current char still 'h', got %c", l.ch())
 	}
 }
-
-func TestLexer_position(t *testing.T) {
-	l := New("hello")
-	if l.position() != 0 {
-		t.Errorf("Expected position 0, got %d", l.position())
-	}
-
-	// Read one character
-	l.readChar()
-	if l.position() != 1 {
-		t.Errorf("Expected position 1 after readChar, got %d", l.position())
-	}
-}

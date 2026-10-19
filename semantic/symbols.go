@@ -50,7 +50,6 @@ type Scope struct {
 type SymbolTable struct {
 	Root    *Scope
 	Current *Scope
-	Errors  []error
 }
 
 // NewSymbolTable creates a new symbol table
@@ -66,7 +65,6 @@ func NewSymbolTable() *SymbolTable {
 	return &SymbolTable{
 		Root:    root,
 		Current: root,
-		Errors:  make([]error, 0, 8), // Pre-allocate for potential errors
 	}
 }
 
@@ -218,42 +216,7 @@ func (st *SymbolTable) MarkUsed(name string) {
 	}
 }
 
-// GetUnusedSymbols returns all symbols that are defined but never used
-func (st *SymbolTable) GetUnusedSymbols() []*Symbol {
-	var unused []*Symbol
-	st.collectUnusedSymbols(st.Root, &unused)
-	return unused
-}
-
-// collectUnusedSymbols recursively collects unused symbols
-func (st *SymbolTable) collectUnusedSymbols(scope *Scope, unused *[]*Symbol) {
-	for _, symbol := range scope.Symbols {
-		if !symbol.Used {
-			*unused = append(*unused, symbol)
-		}
-	}
-
-	for _, child := range scope.Children {
-		st.collectUnusedSymbols(child, unused)
-	}
-}
-
-// AddError adds a semantic error to the error list
-func (st *SymbolTable) AddError(err error) {
-	st.Errors = append(st.Errors, err)
-}
-
-// GetErrors returns all semantic errors
-func (st *SymbolTable) GetErrors() []error {
-	return st.Errors
-}
-
-// HasErrors returns true if there are semantic errors
-func (st *SymbolTable) HasErrors() bool {
-	return len(st.Errors) > 0
-}
-
-// Reset clears all errors
+// Reset clears all scopes and resets the symbol table
 func (st *SymbolTable) Reset() {
 	root := &Scope{
 		Name:     "global",
@@ -263,5 +226,4 @@ func (st *SymbolTable) Reset() {
 	}
 	st.Root = root
 	st.Current = root
-	st.Errors = st.Errors[:0]
 }

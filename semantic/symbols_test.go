@@ -1,7 +1,6 @@
 package semantic
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/cawalch/go-yara/ast"
@@ -161,81 +160,19 @@ func TestSymbolTableMarkUsed(t *testing.T) {
 	st.MarkUsed("$nonexistent")
 }
 
-func TestSymbolTableGetUnusedSymbols(t *testing.T) {
-	st := NewSymbolTable()
-	st.EnterScope("test")
-	pos := token.Position{Line: 1, Column: 1}
-
-	// Define multiple strings
-	str1 := &ast.String{Identifier: "$s1", Pos: pos}
-	_ = st.DefineString("$s1", pos, str1)
-
-	str2 := &ast.String{Identifier: "$s2", Pos: pos}
-	_ = st.DefineString("$s2", pos, str2)
-
-	str3 := &ast.String{Identifier: "$s3", Pos: pos}
-	_ = st.DefineString("$s3", pos, str3)
-
-	// Mark some as used
-	st.MarkUsed("$s1")
-	st.MarkUsed("$s3")
-
-	// Get unused symbols
-	unused := st.GetUnusedSymbols()
-
-	// Should have one unused symbol ($s2)
-	if len(unused) != 1 {
-		t.Errorf("GetUnusedSymbols() returned %d symbols, want 1", len(unused))
-	}
-
-	if len(unused) > 0 && unused[0].Name != "$s2" {
-		t.Errorf("Unused symbol name = %s, want $s2", unused[0].Name)
-	}
-}
-
-func TestSymbolTableErrors(t *testing.T) {
-	st := NewSymbolTable()
-
-	// Test adding errors
-	if st.HasErrors() {
-		t.Error("HasErrors() should return false initially")
-	}
-
-	st.AddError(errors.New("error 1"))
-	if !st.HasErrors() {
-		t.Error("HasErrors() should return true after adding error")
-	}
-
-	st.AddError(errors.New("error 2"))
-	errs := st.GetErrors()
-	if len(errs) != 2 {
-		t.Errorf("GetErrors() returned %d errors, want 2", len(errs))
-	}
-
-	if errs[0].Error() != "error 1" || errs[1].Error() != "error 2" {
-		t.Errorf("GetErrors() returned %v, want [error 1, error 2]", errs)
-	}
-}
-
 func TestSymbolTableReset(t *testing.T) {
 	st := NewSymbolTable()
 	st.EnterScope("test")
 	pos := token.Position{Line: 1, Column: 1}
 
-	// Define a string and add error
+	// Define a string
 	str := &ast.String{Identifier: "$s1", Pos: pos}
 	_ = st.DefineString("$s1", pos, str)
-	st.AddError(errors.New("test error"))
 
 	// Reset
 	st.Reset()
 
-	// Should have no errors
-	if st.HasErrors() {
-		t.Error("HasErrors() should return false after Reset()")
-	}
-
-	// Should still be able to use symbol table
+	// Should still be able to use symbol table after Reset
 	st.EnterScope("new_test")
 	err := st.DefineString("$s2", pos, str)
 	if err != nil {
