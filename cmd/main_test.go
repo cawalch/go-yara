@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"io"
 	"os"
 	"os/exec"
@@ -130,6 +131,20 @@ func TestParseArgsSuccess(t *testing.T) {
 	}
 	if args.matchDataBytes != 8 || args.matchContextBytes != 4 || args.maxMatchSpan != 1024 {
 		t.Fatalf("parseArgs() match options = %+v", args)
+	}
+}
+
+func TestParseArgsVersion(t *testing.T) {
+	for _, flagArg := range []string{"-v", "--version", "-version"} {
+		t.Run(flagArg, func(t *testing.T) {
+			args, err := parseArgs([]string{flagArg})
+			if args != nil {
+				t.Fatalf("parseArgs(%q) returned non-nil args: %+v", flagArg, args)
+			}
+			if !errors.Is(err, flag.ErrHelp) {
+				t.Fatalf("parseArgs(%q) error = %v, want flag.ErrHelp", flagArg, err)
+			}
+		})
 	}
 }
 
