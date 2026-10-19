@@ -67,27 +67,3 @@ rule ValidRule {
 		}
 	})
 }
-
-func TestParseRulesStrictMethod(t *testing.T) {
-	input := `
-rule TestRule {
-	strings:
-		$test = "test"
-	condition:
-		$test
-}
-`
-
-	l := internal.New(input)
-	p := New(l)
-	p.SetErrorRecovery(true) // Enable recovery mode
-
-	// Test ParseRulesStrict method
-	program, err := p.ParseRulesStrict()
-	if err != nil {
-		t.Errorf("ParseRulesStrict failed on valid input: %v", err)
-	}
-	if program == nil {
-		t.Errorf("ParseRulesStrict returned nil program on valid input")
-	}
-}

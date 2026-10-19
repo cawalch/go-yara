@@ -113,11 +113,6 @@ type Node struct {
 	Children []*Node
 }
 
-// NewNode creates a new Node with Greedy defaulting to true.
-func NewNode(kind NodeKind) *Node {
-	return &Node{Kind: kind, Greedy: true}
-}
-
 // AST is the root of a parsed regex along with flags captured during parse.
 type AST struct {
 	Flags      Flags

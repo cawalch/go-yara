@@ -779,13 +779,6 @@ func (inst *Instruction) appendTypedOperand(buf []byte) []byte {
 	}
 }
 
-// Bytes returns binary representation of instruction
-func (inst *Instruction) Bytes() []byte {
-	buf := make([]byte, 1, 9) // Start with capacity for opcode + 8-byte operand
-	buf[0] = byte(inst.Opcode)
-	return inst.appendOperand(buf)
-}
-
 // AppendBytes appends binary representation of instruction to dst and returns dst
 func (inst *Instruction) AppendBytes(dst []byte) []byte {
 	dst = append(dst, byte(inst.Opcode))
@@ -814,77 +807,4 @@ func (inst *Instruction) Size() int {
 func (inst *Instruction) IsJump() bool {
 	return (inst.Opcode >= OpJundef && inst.Opcode <= OpJzP) ||
 		inst.Opcode == OpIterNext
-}
-
-// IsTypeFunction returns true if this instruction is a data type function
-func (inst *Instruction) IsTypeFunction() bool {
-	return inst.Opcode >= OpReadInt && inst.Opcode <= OpUint64be
-}
-
-// IsStringOperation returns true if this instruction operates on strings
-func (inst *Instruction) IsStringOperation() bool {
-	// String operations - same as GetCategory logic
-	if (inst.Opcode >= OpContains && inst.Opcode <= OpOfPercentAt) || inst.Opcode == OpConcat || inst.Opcode == OpMatchesValue {
-		return true
-	}
-	// STR comparison operations are considered arithmetic by GetCategory,
-	// but they are logically string operations for IsStringOperation
-	return (inst.Opcode >= OpStrBegin && inst.Opcode <= OpStrEnd)
-}
-
-// HasImmediateOperand returns true if this instruction has an immediate operand
-func (inst *Instruction) HasImmediateOperand() bool {
-	return inst.Operand.Type == OperandImmediate8 ||
-		inst.Operand.Type == OperandImmediate16 ||
-		inst.Operand.Type == OperandImmediate32 ||
-		inst.Operand.Type == OperandImmediate64
-}
-
-// HasRelativeOperand returns true if this instruction has a relative operand
-func (inst *Instruction) HasRelativeOperand() bool {
-	return inst.Operand.Type == OperandRelative8 ||
-		inst.Operand.Type == OperandRelative16 ||
-		inst.Operand.Type == OperandRelative32
-}
-
-// HasAbsoluteOperand returns true if this instruction has an absolute operand
-func (inst *Instruction) HasAbsoluteOperand() bool {
-	return inst.Operand.Type == OperandAbsolute32 ||
-		inst.Operand.Type == OperandAbsolute64
-}
-
-// IsIntOp returns true if opcode is an integer operation.
-func IsIntOp(op Opcode) bool { return op >= OpIntBegin && op <= OpIntEnd }
-
-// IsDblOp returns true if opcode is a double operation.
-func IsDblOp(op Opcode) bool { return op >= OpDblBegin && op <= OpDblEnd }
-
-// IsStrOp returns true if opcode is a string operation.
-func IsStrOp(op Opcode) bool { return op >= OpStrBegin && op <= OpStrEnd }
-
-// YRUndefined constant for undefined values
-const YRUndefined uint64 = 0xFFFABADAFABADAFF
-
-// IsUndefined checks if a value is undefined
-func IsUndefined(x uint64) bool {
-	return x == YRUndefined
-}
-
-// Operation performs an operation on two operands (handling undefined values)
-func Operation(operator func(uint64, uint64) uint64, op1, op2 uint64) uint64 {
-	if IsUndefined(op1) || IsUndefined(op2) {
-		return YRUndefined
-	}
-	return operator(op1, op2)
-}
-
-// Comparison performs a comparison on two operands (handling undefined values)
-func Comparison(operator func(uint64, uint64) bool, op1, op2 uint64) int {
-	if IsUndefined(op1) || IsUndefined(op2) {
-		return 0
-	}
-	if operator(op1, op2) {
-		return 1
-	}
-	return 0
 }

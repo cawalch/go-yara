@@ -137,10 +137,10 @@ func TestInstructionCreation(t *testing.T) {
 				t.Errorf("Instruction.Size() = %v, want %v", got, test.size)
 			}
 
-			// Test that Bytes() doesn't panic and returns correct size
-			bytes := test.inst.Bytes()
+			// Test that AppendBytes doesn't panic and returns correct size
+			bytes := test.inst.AppendBytes(nil)
 			if len(bytes) != test.size {
-				t.Errorf("len(Instruction.Bytes()) = %v, want %v", len(bytes), test.size)
+				t.Errorf("len(Instruction.AppendBytes(nil)) = %v, want %v", len(bytes), test.size)
 			}
 		})
 	}
