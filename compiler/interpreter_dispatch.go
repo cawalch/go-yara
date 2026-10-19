@@ -179,10 +179,6 @@ func (i *Interpreter) executeMainLoop() error {
 		opcode := Opcode(i.bytecode[i.ip])
 		i.ip++
 
-		if i.debugMode {
-			i.debugExecution(opcode)
-		}
-
 		handler := opcodeTable[opcode]
 		if handler == nil {
 			err := &InterpreterError{
@@ -196,10 +192,6 @@ func (i *Interpreter) executeMainLoop() error {
 		if err := handler(i); err != nil {
 			i.result = err
 			return err
-		}
-
-		if i.debugMode {
-			i.debugStackState(opcode)
 		}
 	}
 
@@ -220,10 +212,6 @@ func (i *Interpreter) executeMainLoopWithCancel(done <-chan struct{}) error {
 		opcode := Opcode(i.bytecode[i.ip])
 		i.ip++
 
-		if i.debugMode {
-			i.debugExecution(opcode)
-		}
-
 		handler := opcodeTable[opcode]
 		if handler == nil {
 			err := &InterpreterError{
@@ -237,10 +225,6 @@ func (i *Interpreter) executeMainLoopWithCancel(done <-chan struct{}) error {
 		if err := handler(i); err != nil {
 			i.result = err
 			return err
-		}
-
-		if i.debugMode {
-			i.debugStackState(opcode)
 		}
 	}
 

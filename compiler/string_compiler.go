@@ -156,26 +156,6 @@ func (sc *stringCompiler) encodeToWideBytes(text string) []byte {
 	return result
 }
 
-// encodeTextString encodes a text string with modifiers applied
-func (sc *stringCompiler) encodeTextString(text string, modifiers []ast.StringModifier) []byte {
-	// Check for modifiers
-	isWide := sc.hasModifier(modifiers, ast.StringModifierWide)
-	isNocase := sc.hasModifier(modifiers, ast.StringModifierNocase)
-
-	// Encode text with appropriate encoding
-	result := sc.encodeTextBytes(text, isWide)
-
-	// Apply case-insensitive modifier if needed
-	if isNocase {
-		result = sc.applyNocaseModifier(result, isWide)
-	}
-
-	// Apply XOR modifier if present
-	result = sc.applyXorModifier(result, modifiers)
-
-	return result
-}
-
 // TextPattern holds encoded text pattern data with associated matching flags.
 type TextPattern struct {
 	Data  []byte
@@ -801,12 +781,6 @@ func (sc *stringCompiler) parsehexByte(hexStr string) byte {
 // isHexDigit checks if a character is a hex digit
 func isHexDigit(ch byte) bool {
 	return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F')
-}
-
-// compileRegex compiles a regex pattern to internal VM bytecode
-func (sc *stringCompiler) compileRegex(pattern string, _ []ast.StringModifier) ([]byte, error) {
-	code, _, err := sc.compileRegexWithAST(pattern, nil)
-	return code, err
 }
 
 func (sc *stringCompiler) compileRegexWithAST(pattern string, _ []ast.StringModifier) ([]byte, *regex.AST, error) {

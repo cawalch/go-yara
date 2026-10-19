@@ -1392,28 +1392,6 @@ func (cr *CompiledRule) GetMemoryUsage() int {
 	return usage
 }
 
-// PrintDebug prints debug information about the compiled rule
-func (cr *CompiledRule) PrintDebug() {
-	fmt.Printf("Compiled Rule: %s\n", cr.Name)
-	fmt.Printf("  Index: %d\n", cr.Index)
-	fmt.Printf("  Bytecode Size: %d bytes\n", len(cr.Bytecode))
-	fmt.Printf("  String Count: %d\n", cr.StringCount)
-	fmt.Printf("  Memory Usage: ~%d bytes\n", cr.GetMemoryUsage())
-
-	if cr.automaton != nil {
-		fmt.Printf("  Automaton States: %d\n", cr.automaton.GetStateCount())
-	}
-
-	fmt.Printf("  Instructions: %d\n", cr.Stats["instruction_count"])
-
-	// Print bytecode if not too large
-	if len(cr.Bytecode) <= 64 {
-		fmt.Printf("  Bytecode: %X\n", cr.Bytecode)
-	} else {
-		fmt.Printf("  Bytecode: %X... (truncated)\n", cr.Bytecode[:32])
-	}
-}
-
 // sharedAutomatonEntry maps a shared automaton entry to its exact verifier.
 type sharedAutomatonEntry struct {
 	RuleIndex  int // index into CompiledProgram.Rules
@@ -1684,43 +1662,6 @@ func (cp *CompiledProgram) GetRuleByName(name string) (*CompiledRule, bool) {
 	return nil, false
 }
 
-// PrintDebug prints debug information about the compiled program
-func (cp *CompiledProgram) PrintDebug() {
-	fmt.Printf("Compiled Program Debug Information:\n")
-	fmt.Printf("  Rule Count: %d\n", len(cp.Rules))
-	fmt.Printf("  Total Bytecode Size: %d bytes\n", cp.GetTotalBytecodeSize())
-	fmt.Printf("  Total Memory Usage: ~%d bytes\n", cp.GetTotalMemoryUsage())
-
-	fmt.Printf("\nRules:\n")
-	for i, rule := range cp.Rules {
-		fmt.Printf("  [%d] %s: %d bytes, %d strings\n",
-			i, rule.Name, len(rule.Bytecode), rule.StringCount)
-	}
-}
-
-// GetExecutionPlan creates an execution plan for the compiled program
-func (cp *CompiledProgram) GetExecutionPlan() *ExecutionPlan {
-	plan := &ExecutionPlan{
-		RuleCount:         len(cp.Rules),
-		TotalInstructions: cp.totalInstructionCount(),
-		MemoryLayout:      make([]MemoryRegion, 0),
-	}
-
-	// Plan memory layout
-	offset := 0
-	for _, rule := range cp.Rules {
-		size := len(rule.Bytecode)
-		plan.MemoryLayout = append(plan.MemoryLayout, MemoryRegion{
-			RuleIndex: rule.Index,
-			Offset:    offset,
-			Size:      size,
-		})
-		offset += size
-	}
-
-	return plan
-}
-
 func (cp *CompiledProgram) totalInstructionCount() int {
 	total := 0
 	for _, rule := range cp.Rules {
@@ -1729,39 +1670,6 @@ func (cp *CompiledProgram) totalInstructionCount() int {
 		}
 	}
 	return total
-}
-
-// ExecutionPlan represents the execution plan for a compiled program
-type ExecutionPlan struct {
-	RuleCount         int
-	TotalInstructions int
-	MemoryLayout      []MemoryRegion
-}
-
-// MemoryRegion represents a memory region in the execution plan
-type MemoryRegion struct {
-	RuleIndex int
-	Offset    int
-	Size      int
-}
-
-// GetRuleOffset returns the bytecode offset for a rule
-func (ep *ExecutionPlan) GetRuleOffset(ruleIndex int) (int, bool) {
-	for _, region := range ep.MemoryLayout {
-		if region.RuleIndex == ruleIndex {
-			return region.Offset, true
-		}
-	}
-	return 0, false
-}
-
-// GetTotalSize returns the total size of the execution plan
-func (ep *ExecutionPlan) GetTotalSize() int {
-	if len(ep.MemoryLayout) == 0 {
-		return 0
-	}
-	lastRegion := ep.MemoryLayout[len(ep.MemoryLayout)-1]
-	return lastRegion.Offset + lastRegion.Size
 }
 
 // Streaming methods for CompiledProgram.
