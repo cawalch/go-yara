@@ -94,7 +94,7 @@ func TestIntegerLiteralOverflow(t *testing.T) {
 func TestSignedIntegerASTLiteral(t *testing.T) {
 	emitter := newEmitter()
 	cc := newConditionCompiler(emitter, nil)
-	if err := cc.CompileCondition(&ast.Condition{Expression: &ast.Literal{Type: token.IntegerLit, Value: int64(-7)}}); err != nil {
+	if err := cc.CompileBooleanExpression(&ast.Literal{Type: token.IntegerLit, Value: int64(-7)}, false); err != nil {
 		t.Fatal(err)
 	}
 	emitter.EmitHalt(0, 0)
