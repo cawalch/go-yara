@@ -75,7 +75,6 @@ type Interpreter struct {
 	stringArena         []string                 // Arena for dynamic strings
 	regexCache          map[string]compiledRegex
 	PreserveRuleResults bool // If true, Reset() will not clear ruleResults
-	debugMode           bool // Debug mode flag for instruction tracing
 	itersmax            int  // Max total iterations across all for-loops (0 = unlimited)
 	iterations          int  // Current total iteration count
 }

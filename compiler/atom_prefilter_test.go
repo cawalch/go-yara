@@ -678,9 +678,14 @@ func TestIndexRegexLiteralNoCaseUsesEitherASCIICase(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := indexRegexLiteral(tt.data, 0, tt.literal, regex.FlagsNoCase, tt.wide)
+			flags := regex.FlagsNoCase
+			if tt.wide {
+				flags |= regex.FlagsWide
+			}
+			searcher := newRegexLiteralSearcher(tt.data, tt.literal, flags)
+			got := searcher.index(0)
 			if got != tt.want {
-				t.Fatalf("indexRegexLiteral() = %d, want %d", got, tt.want)
+				t.Fatalf("newRegexLiteralSearcher.index() = %d, want %d", got, tt.want)
 			}
 		})
 	}

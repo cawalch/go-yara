@@ -1204,27 +1204,6 @@ func (ac *acAutomaton) BuildFailureLinks() error {
 	return ac.buildFailureLinks()
 }
 
-// PrintDebug prints debug information about the automaton
-func (ac *acAutomaton) PrintDebug() {
-	fmt.Printf("Aho-Corasick Automaton Debug Information:\n")
-	fmt.Printf("States: %d\n", len(ac.states))
-	fmt.Printf("Strings: %d\n", len(ac.strings))
-	fmt.Printf("\nStates:\n")
-	for i := range ac.states {
-		state := &ac.states[i]
-		// Count children
-		childCount := 0
-		for _, transition := range &state.transitions {
-			if transition != -1 {
-				childCount++
-			}
-		}
-
-		fmt.Printf("  State %d: failure=%d, children=%d, output=%d-%d\n",
-			i, state.failure, childCount, state.outputStart, state.outputEnd)
-	}
-}
-
 // Validate checks if the automaton is correctly constructed
 func (ac *acAutomaton) Validate() error {
 	if len(ac.states) == 0 {

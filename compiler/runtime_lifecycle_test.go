@@ -20,7 +20,6 @@ func TestInterpreterPoolReset(t *testing.T) {
 	interp.SetRuleResults(borrowedResults)
 	interp.SetMatchContext(borrowedContext)
 	interp.PreserveRuleResults = true
-	interp.debugMode = true
 	interp.stringArena = []string{"retained"}
 	interp.iterators = []Iterator{{TextStrings: []string{"retained"}}}
 	interp.stringArena = interp.stringArena[:0]
@@ -30,7 +29,7 @@ func TestInterpreterPoolReset(t *testing.T) {
 	// Exercise the release invariant directly; sync.Pool reuse is not guaranteed.
 	interp.resetForPool()
 	if interp.currentCompiledRule != nil || interp.ruleMap != nil || interp.matchContext != nil ||
-		interp.ruleResults != nil || interp.PreserveRuleResults || interp.debugMode || len(interp.regexCache) != 0 {
+		interp.ruleResults != nil || interp.PreserveRuleResults || len(interp.regexCache) != 0 {
 		t.Fatal("interpreter retained execution state")
 	}
 	if interp.stringArena[:1][0] != "" || interp.iterators[:1][0].TextStrings != nil {

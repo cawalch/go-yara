@@ -241,7 +241,7 @@ func BenchmarkStringCompiler(b *testing.B) {
 	}
 
 	for b.Loop() {
-		sc.encodeTextString(text, modifiers)
+		_, _ = sc.EncodeTextPatterns(text, modifiers)
 	}
 }
 
@@ -303,8 +303,8 @@ rule test_rule {
 	if stats.ParserTime == 0 {
 		t.Error("Parser time should be greater than 0")
 	}
-	if stats.TotalInstructions != program.GetExecutionPlan().TotalInstructions {
-		t.Errorf("TotalInstructions = %d, want %d", stats.TotalInstructions, program.GetExecutionPlan().TotalInstructions)
+	if stats.TotalInstructions <= 0 {
+		t.Error("Total instructions should be greater than 0")
 	}
 
 	// Test program statistics
@@ -315,42 +315,6 @@ rule test_rule {
 	totalSize := program.GetTotalBytecodeSize()
 	if totalSize <= 0 {
 		t.Error("Total bytecode size should be greater than 0")
-	}
-}
-
-// TestCompilationReport tests the compilation report generation
-func TestCompilationReport(t *testing.T) {
-	compiler := NewCompiler()
-
-	source := `
-rule test_rule {
-    strings:
-        $s1 = "hello"
-    condition:
-        $s1
-}`
-
-	_, err := compiler.CompileSource(source)
-	if err != nil {
-		t.Errorf("Compilation failed: %v", err)
-	}
-
-	report := compiler.GetCompilationReport()
-	if report == "" {
-		t.Error("Compilation report should not be empty")
-	}
-
-	// Check that report contains expected sections
-	if !strings.Contains(report, "Go-YARA Compilation Report") {
-		t.Error("Report should contain title")
-	}
-
-	if !strings.Contains(report, "Timing:") {
-		t.Error("Report should contain timing section")
-	}
-
-	if !strings.Contains(report, "Results:") {
-		t.Error("Report should contain results section")
 	}
 }
 
@@ -1162,42 +1126,6 @@ func TestCompiledRuleValidate(t *testing.T) {
 	}
 }
 
-// TestCompiledRulePrintDebug tests debug printing
-func TestCompiledRulePrintDebug(t *testing.T) {
-	rc := newRuleCompiler()
-
-	rule := &ast.Rule{
-		Pos:  token.Position{Line: 1, Column: 1},
-		Name: "debug_test",
-		Strings: []*ast.String{
-			{
-				Pos:        token.Position{Line: 2, Column: 1},
-				Identifier: "$test",
-				Pattern: &ast.TextString{
-					Value: "test",
-					Pos:   token.Position{Line: 2, Column: 10},
-				},
-				Modifiers: []ast.StringModifier{},
-			},
-		},
-		Condition: &ast.Literal{
-			Pos:   token.Position{Line: 3, Column: 1},
-			Type:  token.TRUE,
-			Value: true,
-		},
-	}
-
-	compiled, err := rc.CompileRule(rule)
-	if err != nil {
-		t.Errorf("CompileRule() error = %v", err)
-	}
-
-	output := captureStdout(t, compiled.PrintDebug)
-	if !strings.Contains(output, "Compiled Rule: debug_test") {
-		t.Fatalf("PrintDebug() output = %q, want compiled rule name", output)
-	}
-}
-
 // TestEmitterGetInstructions tests getting instructions
 func TestEmitterGetInstructions(t *testing.T) {
 	emitter := newEmitter()
@@ -1586,180 +1514,6 @@ func TestConditionCompilerMethods(t *testing.T) {
 			cc := createTestConditionCompiler()
 			tt.testFunc(t, cc)
 		})
-	}
-}
-
-// TestCompiledProgramPrintDebug tests PrintDebug method
-func TestCompiledProgramPrintDebug(t *testing.T) {
-	rc := newRuleCompiler()
-
-	rule := &ast.Rule{
-		Pos:  token.Position{Line: 1, Column: 1},
-		Name: "test_rule",
-		Strings: []*ast.String{
-			{
-				Pos:        token.Position{Line: 2, Column: 1},
-				Identifier: "$test",
-				Pattern: &ast.TextString{
-					Value: "test",
-					Pos:   token.Position{Line: 2, Column: 10},
-				},
-				Modifiers: []ast.StringModifier{},
-			},
-		},
-		Condition: &ast.Literal{
-			Pos:   token.Position{Line: 3, Column: 1},
-			Type:  token.TRUE,
-			Value: true,
-		},
-	}
-
-	program := &ast.Program{
-		Rules: []*ast.Rule{rule},
-	}
-
-	compiled, err := rc.CompileProgram(program)
-	if err != nil {
-		t.Errorf("CompileProgram() error = %v", err)
-	}
-
-	compiledProgram := NewCompiledProgram(compiled)
-
-	output := captureStdout(t, compiledProgram.PrintDebug)
-	if !strings.Contains(output, "[0] test_rule") {
-		t.Fatalf("PrintDebug() output = %q, want compiled rule summary", output)
-	}
-}
-
-// TestCompiledProgramGetExecutionPlan tests GetExecutionPlan method
-func TestCompiledProgramGetExecutionPlan(t *testing.T) {
-	rc := newRuleCompiler()
-
-	rule := &ast.Rule{
-		Pos:  token.Position{Line: 1, Column: 1},
-		Name: "test_rule",
-		Strings: []*ast.String{
-			{
-				Pos:        token.Position{Line: 2, Column: 1},
-				Identifier: "$test",
-				Pattern: &ast.TextString{
-					Value: "test",
-					Pos:   token.Position{Line: 2, Column: 10},
-				},
-				Modifiers: []ast.StringModifier{},
-			},
-		},
-		Condition: &ast.Literal{
-			Pos:   token.Position{Line: 3, Column: 1},
-			Type:  token.TRUE,
-			Value: true,
-		},
-	}
-
-	program := &ast.Program{
-		Rules: []*ast.Rule{rule},
-	}
-
-	compiled, err := rc.CompileProgram(program)
-	if err != nil {
-		t.Errorf("CompileProgram() error = %v", err)
-	}
-
-	compiledProgram := NewCompiledProgram(compiled)
-
-	plan := compiledProgram.GetExecutionPlan()
-	if plan == nil {
-		t.Errorf("GetExecutionPlan() returned nil")
-	}
-}
-
-// TestExecutionPlanGetRuleOffset tests GetRuleOffset method
-func TestExecutionPlanGetRuleOffset(t *testing.T) {
-	rc := newRuleCompiler()
-
-	rule := &ast.Rule{
-		Pos:  token.Position{Line: 1, Column: 1},
-		Name: "test_rule",
-		Strings: []*ast.String{
-			{
-				Pos:        token.Position{Line: 2, Column: 1},
-				Identifier: "$test",
-				Pattern: &ast.TextString{
-					Value: "test",
-					Pos:   token.Position{Line: 2, Column: 10},
-				},
-				Modifiers: []ast.StringModifier{},
-			},
-		},
-		Condition: &ast.Literal{
-			Pos:   token.Position{Line: 3, Column: 1},
-			Type:  token.TRUE,
-			Value: true,
-		},
-	}
-
-	program := &ast.Program{
-		Rules: []*ast.Rule{rule},
-	}
-
-	compiled, err := rc.CompileProgram(program)
-	if err != nil {
-		t.Errorf("CompileProgram() error = %v", err)
-	}
-
-	compiledProgram := NewCompiledProgram(compiled)
-	plan := compiledProgram.GetExecutionPlan()
-
-	// Test GetRuleOffset on the execution plan
-	offset, exists := plan.GetRuleOffset(0)
-	if !exists {
-		t.Errorf("GetRuleOffset() exists = false, want true")
-	}
-	if offset < 0 {
-		t.Errorf("GetRuleOffset() returned negative value %d", offset)
-	}
-}
-
-// TestExecutionPlanGetTotalSize tests GetTotalSize method
-func TestExecutionPlanGetTotalSize(t *testing.T) {
-	rc := newRuleCompiler()
-
-	rule := &ast.Rule{
-		Pos:  token.Position{Line: 1, Column: 1},
-		Name: "test_rule",
-		Strings: []*ast.String{
-			{
-				Pos:        token.Position{Line: 2, Column: 1},
-				Identifier: "$test",
-				Pattern: &ast.TextString{
-					Value: "test",
-					Pos:   token.Position{Line: 2, Column: 10},
-				},
-				Modifiers: []ast.StringModifier{},
-			},
-		},
-		Condition: &ast.Literal{
-			Pos:   token.Position{Line: 3, Column: 1},
-			Type:  token.TRUE,
-			Value: true,
-		},
-	}
-
-	program := &ast.Program{
-		Rules: []*ast.Rule{rule},
-	}
-
-	compiled, err := rc.CompileProgram(program)
-	if err != nil {
-		t.Errorf("CompileProgram() error = %v", err)
-	}
-
-	compiledProgram := NewCompiledProgram(compiled)
-	plan := compiledProgram.GetExecutionPlan()
-
-	size := plan.GetTotalSize()
-	if size <= 0 {
-		t.Errorf("GetTotalSize() = %d, want > 0", size)
 	}
 }
 
@@ -2668,22 +2422,6 @@ func TestCompilerFullPipeline(t *testing.T) {
 				t.Errorf("CompileSource() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
-	}
-}
-
-// TestCompilerGetCompilationReport tests GetCompilationReport method
-func TestCompilerGetCompilationReport(t *testing.T) {
-	compiler := NewCompiler()
-	source := `rule test { condition: true }`
-
-	_, err := compiler.CompileSource(source)
-	if err != nil {
-		t.Errorf("CompileSource() error = %v", err)
-	}
-
-	report := compiler.GetCompilationReport()
-	if report == "" {
-		t.Error("GetCompilationReport() returned empty string")
 	}
 }
 

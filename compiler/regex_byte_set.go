@@ -392,17 +392,6 @@ func widenRegexPrefix(prefix []byte) []byte {
 	return wide
 }
 
-//nolint:revive // argument-limit: byte-search hot path avoids options indirection
-func indexRegexLiteral(data []byte, pos int, literal []byte, flags regex.Flags, isWide bool) int {
-	if isWide {
-		flags |= regex.FlagsWide
-	} else {
-		flags &^= regex.FlagsWide
-	}
-	searcher := newRegexLiteralSearcher(data, literal, flags)
-	return searcher.index(pos)
-}
-
 type regexLiteralSearcher struct {
 	data          []byte
 	literal       []byte

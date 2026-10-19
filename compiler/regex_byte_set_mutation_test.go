@@ -172,10 +172,12 @@ func TestSelectStaticRegexLiteralAnchor(t *testing.T) {
 }
 
 func TestRegexLiteralSearcherNoCase(t *testing.T) {
-	if got := indexRegexLiteral([]byte("xxABxx"), 0, []byte("ab"), regex.FlagsNoCase, false); got != 2 {
+	searcher1 := newRegexLiteralSearcher([]byte("xxABxx"), []byte("ab"), regex.FlagsNoCase)
+	if got := searcher1.index(0); got != 2 {
 		t.Fatalf("indexRegexLiteral = %d, want 2", got)
 	}
-	if got := indexRegexLiteral([]byte("xxABxx"), 0, nil, regex.FlagsNoCase, false); got != -1 {
+	searcher2 := newRegexLiteralSearcher([]byte("xxABxx"), nil, regex.FlagsNoCase)
+	if got := searcher2.index(0); got != -1 {
 		t.Fatalf("indexRegexLiteral(empty literal) = %d, want -1", got)
 	}
 	searcher := newRegexLiteralSearcher([]byte("zzab"), []byte("ab"), 0)

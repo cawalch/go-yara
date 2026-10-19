@@ -16,9 +16,9 @@ func TestStringCompiler(t *testing.T) {
 		{Type: ast.StringModifierNocase},
 	}
 
-	encoded := sc.encodeTextString(text, modifiers)
-	if len(encoded) == 0 {
-		t.Error("Text string encoding returned empty result")
+	patterns, err := sc.EncodeTextPatterns(text, modifiers)
+	if err != nil || len(patterns) == 0 {
+		t.Fatalf("Text string encoding failed: %v", err)
 	}
 
 	// Test hex string parsing (simplified)
@@ -29,7 +29,7 @@ func TestStringCompiler(t *testing.T) {
 	}
 
 	// Test pattern optimization
-	optimized := sc.OptimizePattern(encoded, modifiers)
+	optimized := sc.OptimizePattern(patterns[0].Data, modifiers)
 	if len(optimized) == 0 {
 		t.Error("Pattern optimization returned empty result")
 	}
