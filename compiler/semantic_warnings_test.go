@@ -245,3 +245,100 @@ func TestWarningDisabled(t *testing.T) {
 		t.Errorf("Expected no warnings when disabled, got %d", len(warnings))
 	}
 }
+
+func TestWildcardAbsorptionWarnings(t *testing.T) {
+	t.Run("habersham_c_wildcard_collision", func(t *testing.T) {
+		c := NewCompiler()
+		_, err := c.CompileSource(`
+rule HabershamFalsePositive {
+    strings:
+        $css1   = "getComputedStyle"
+        $c1     = "getPropertyValue(\"content\")"
+        $exec1  = "eval"
+    condition:
+        $css1 and (1 of ($c*)) and (1 of ($exec*))
+}
+`)
+		if err != nil {
+			t.Fatalf("CompileSource() error = %v", err)
+		}
+		warnings := c.GetWarnings()
+		assertWarning(t, warnings, WarningWildcardAbsorption, "HabershamFalsePositive", "$css1")
+	})
+
+	t.Run("habersham_renamed_to_cnt_no_collision", func(t *testing.T) {
+		c := NewCompiler()
+		_, err := c.CompileSource(`
+rule HabershamFixed {
+    strings:
+        $css1   = "getComputedStyle"
+        $cnt1   = "getPropertyValue(\"content\")"
+        $exec1  = "eval"
+    condition:
+        $css1 and (1 of ($cnt*)) and (1 of ($exec*))
+}
+`)
+		if err != nil {
+			t.Fatalf("CompileSource() error = %v", err)
+		}
+		for _, w := range c.GetWarnings() {
+			if w.Code == WarningWildcardAbsorption {
+				t.Fatalf("unexpected wildcard absorption warning: %+v", w)
+			}
+		}
+	})
+
+	t.Run("f_wildcard_form1_collision", func(t *testing.T) {
+		c := NewCompiler()
+		_, err := c.CompileSource(`
+rule FormPrefixCollision {
+    strings:
+        $f1     = "file_read"
+        $form1  = "input_form"
+    condition:
+        $form1 and (1 of ($f*))
+}
+`)
+		if err != nil {
+			t.Fatalf("CompileSource() error = %v", err)
+		}
+		warnings := c.GetWarnings()
+		assertWarning(t, warnings, WarningWildcardAbsorption, "FormPrefixCollision", "$form1")
+	})
+
+	t.Run("tuple_string_set_redundancy", func(t *testing.T) {
+		c := NewCompiler()
+		_, err := c.CompileSource(`
+rule TupleRedundancy {
+    strings:
+        $css1 = "getComputedStyle"
+        $c1   = "content"
+    condition:
+        1 of ($c*, $css1)
+}
+`)
+		if err != nil {
+			t.Fatalf("CompileSource() error = %v", err)
+		}
+		warnings := c.GetWarnings()
+		assertWarning(t, warnings, WarningWildcardAbsorption, "TupleRedundancy", "$css1")
+	})
+
+	t.Run("loop_range_wildcard_collision", func(t *testing.T) {
+		c := NewCompiler()
+		_, err := c.CompileSource(`
+rule LoopCollision {
+    strings:
+        $css1 = "getComputedStyle"
+        $c1   = "content"
+    condition:
+        $css1 and (for any of ($c*) : ($))
+}
+`)
+		if err != nil {
+			t.Fatalf("CompileSource() error = %v", err)
+		}
+		warnings := c.GetWarnings()
+		assertWarning(t, warnings, WarningWildcardAbsorption, "LoopCollision", "$css1")
+	})
+}
