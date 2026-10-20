@@ -73,7 +73,6 @@ func cloneHexTokens(tokens []HexPatternToken) []HexPatternToken {
 	return out
 }
 
-
 // anchorInfo describes an anchor byte for skip-based matching.
 type anchorInfo struct {
 	offset  int  // its position in the token sequence

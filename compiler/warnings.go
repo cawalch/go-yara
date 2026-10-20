@@ -223,16 +223,12 @@ func (c *Compiler) checkWildcardCollisions(rule *ast.Rule) {
 			if e.Quantifier != "" && !strings.HasSuffix(name, e.Quantifier) {
 				name += e.Quantifier
 			}
-			if inStringSet {
-				if strings.HasPrefix(name, "$") && len(name) > 2 && strings.HasSuffix(name, "*") {
-					wildcards = append(wildcards, wildcardStringRef{name: name, pos: e.Pos})
-				} else if strings.HasPrefix(name, "$") && name != "$" {
-					explicitStrings = append(explicitStrings, wildcardStringRef{name: name, pos: e.Pos})
-				}
-			} else {
-				if strings.HasPrefix(name, "$") && name != "$" && !strings.HasSuffix(name, "*") {
-					explicitStrings = append(explicitStrings, wildcardStringRef{name: name, pos: e.Pos})
-				}
+			isWildcard := strings.HasPrefix(name, "$") && len(name) > 2 && strings.HasSuffix(name, "*")
+			isExplicit := strings.HasPrefix(name, "$") && name != "$" && !strings.HasSuffix(name, "*")
+			if inStringSet && isWildcard {
+				wildcards = append(wildcards, wildcardStringRef{name: name, pos: e.Pos})
+			} else if isExplicit {
+				explicitStrings = append(explicitStrings, wildcardStringRef{name: name, pos: e.Pos})
 			}
 		case *ast.OfExpression:
 			if e.Strings != nil {
