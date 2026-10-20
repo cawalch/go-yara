@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Features
+* **Standard YARA CLI Tooling Parity**: Added standard YARA positional syntax (`go-yara [OPTIONS] RULES_FILE TARGET`), recursive directory scanning (`-r`, `--recursive`) with multi-threaded worker pools (`-p`, `--threads`), match string and offset reporting (`-s`, `--print-strings`), metadata reporting (`-m`, `--print-meta`), tag printing (`-g`, `--print-tags`), match count reporting (`-c`, `--count`), tag/identifier filtering (`-t`, `-i`), unsatisfied rule negation (`-n`, `--negate`), zero-match fast scan (`--fast-scan`, `--no-matches`), and structured JSON output (`--json`) for SIEM/pipeline ingestion.
 * **Integer Enumeration For-Loops**: Added support for integer enumeration iteration in rule conditions (e.g., `for any i in (1, 2, 3) : (...)`), implementing `OpIterStartIntEnum`, semantic tuple type checking, and libyara 4.5.8 differential parity proofs.
 
 ### Performance

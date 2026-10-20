@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"io"
@@ -710,5 +711,337 @@ func TestRunCompileMode(t *testing.T) {
 
 	if !strings.Contains(out, "Compilation: Successfully compiled 1 rules") {
 		t.Fatalf("expected successful compilation in compile mode, got output:\n%s", out)
+	}
+}
+
+func TestStandardScanPositional(t *testing.T) {
+	tmpDir := t.TempDir()
+	ruleFile := filepath.Join(tmpDir, "rules.yar")
+	dataFile := filepath.Join(tmpDir, "sample.bin")
+
+	rule := `rule Alpha { strings: $a = "alpha" condition: $a }`
+	if err := os.WriteFile(ruleFile, []byte(rule), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dataFile, []byte("hello alpha world"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := captureOutputWithError(func() error {
+		return run([]string{ruleFile, dataFile})
+	})
+	if err != nil {
+		t.Fatalf("run failed: %v", err)
+	}
+	want := "Alpha " + dataFile
+	if !strings.Contains(out, want) {
+		t.Fatalf("expected output to contain %q, got:\n%s", want, out)
+	}
+}
+
+func TestStandardScanPrintStrings(t *testing.T) {
+	tmpDir := t.TempDir()
+	ruleFile := filepath.Join(tmpDir, "rules.yar")
+	dataFile := filepath.Join(tmpDir, "sample.bin")
+
+	rule := `rule Alpha { strings: $a = "alpha" condition: $a }`
+	if err := os.WriteFile(ruleFile, []byte(rule), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dataFile, []byte("hello alpha world"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := captureOutputWithError(func() error {
+		return run([]string{ruleFile, "-s", dataFile})
+	})
+	if err != nil {
+		t.Fatalf("run failed: %v", err)
+	}
+	for _, want := range []string{"Alpha", "0x6:$a: alpha"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected output to contain %q, got:\n%s", want, out)
+		}
+	}
+}
+
+func TestStandardScanPrintMetaAndTags(t *testing.T) {
+	tmpDir := t.TempDir()
+	ruleFile := filepath.Join(tmpDir, "rules.yar")
+	dataFile := filepath.Join(tmpDir, "sample.bin")
+
+	rule := `rule FullMeta : sample tag2 {
+		meta:
+			author = "test"
+			version = 2
+		strings:
+			$a = "hello"
+		condition:
+			$a
+	}`
+	if err := os.WriteFile(ruleFile, []byte(rule), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dataFile, []byte("hello world"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := captureOutputWithError(func() error {
+		return run([]string{ruleFile, "-m", "-g", dataFile})
+	})
+	if err != nil {
+		t.Fatalf("run failed: %v", err)
+	}
+	for _, want := range []string{"FullMeta", "[sample,tag2]", `[author="test",version=2]`} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected output to contain %q, got:\n%s", want, out)
+		}
+	}
+}
+
+func TestStandardScanCount(t *testing.T) {
+	tmpDir := t.TempDir()
+	ruleFile := filepath.Join(tmpDir, "rules.yar")
+	dataFile := filepath.Join(tmpDir, "sample.bin")
+
+	rule := `
+		rule R1 { strings: $a = "a" condition: $a }
+		rule R2 { strings: $b = "b" condition: $b }
+		rule R3 { strings: $c = "c" condition: $c }
+	`
+	if err := os.WriteFile(ruleFile, []byte(rule), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dataFile, []byte("a and b here"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := captureOutputWithError(func() error {
+		return run([]string{ruleFile, "-c", dataFile})
+	})
+	if err != nil {
+		t.Fatalf("run failed: %v", err)
+	}
+	if strings.TrimSpace(out) != "2" {
+		t.Fatalf("expected count 2, got:\n%s", out)
+	}
+}
+
+func TestStandardScanFilters(t *testing.T) {
+	tmpDir := t.TempDir()
+	ruleFile := filepath.Join(tmpDir, "rules.yar")
+	dataFile := filepath.Join(tmpDir, "sample.bin")
+
+	rule := `
+		rule R1 : alpha { strings: $a = "match" condition: $a }
+		rule R2 : beta  { strings: $a = "match" condition: $a }
+	`
+	if err := os.WriteFile(ruleFile, []byte(rule), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dataFile, []byte("match"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Filter by tag
+	outTag, err := captureOutputWithError(func() error {
+		return run([]string{ruleFile, "-t", "alpha", dataFile})
+	})
+	if err != nil {
+		t.Fatalf("run with -t failed: %v", err)
+	}
+	if !strings.Contains(outTag, "R1") || strings.Contains(outTag, "R2") {
+		t.Fatalf("expected only R1, got:\n%s", outTag)
+	}
+
+	// Filter by identifier
+	outIdent, err := captureOutputWithError(func() error {
+		return run([]string{ruleFile, "-i", "R2", dataFile})
+	})
+	if err != nil {
+		t.Fatalf("run with -i failed: %v", err)
+	}
+	if !strings.Contains(outIdent, "R2") || strings.Contains(outIdent, "R1") {
+		t.Fatalf("expected only R2, got:\n%s", outIdent)
+	}
+}
+
+func TestStandardScanNegate(t *testing.T) {
+	tmpDir := t.TempDir()
+	ruleFile := filepath.Join(tmpDir, "rules.yar")
+	dataFile := filepath.Join(tmpDir, "sample.bin")
+
+	rule := `
+		rule Matched { strings: $a = "hit" condition: $a }
+		rule Unmatched { strings: $a = "miss" condition: $a }
+	`
+	if err := os.WriteFile(ruleFile, []byte(rule), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dataFile, []byte("hit"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := captureOutputWithError(func() error {
+		return run([]string{ruleFile, "-n", dataFile})
+	})
+	if err != nil {
+		t.Fatalf("run failed: %v", err)
+	}
+	if !strings.Contains(out, "Unmatched") || strings.Contains(out, "Matched") {
+		t.Fatalf("expected only Unmatched with -n, got:\n%s", out)
+	}
+}
+
+func TestStandardScanDirectoryRecursiveAndParallel(t *testing.T) {
+	tmpDir := t.TempDir()
+	ruleFile := filepath.Join(tmpDir, "rules.yar")
+	subDir := filepath.Join(tmpDir, "subdir")
+	if err := os.Mkdir(subDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	file1 := filepath.Join(tmpDir, "f1.bin")
+	file2 := filepath.Join(subDir, "f2.bin")
+	file3 := filepath.Join(subDir, "f3.bin")
+
+	if err := os.WriteFile(file1, []byte("target_pattern"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file2, []byte("no_match"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file3, []byte("target_pattern in sub"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	rule := `rule TargetRule { strings: $a = "target_pattern" condition: $a }`
+	if err := os.WriteFile(ruleFile, []byte(rule), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := captureOutputWithError(func() error {
+		return run([]string{ruleFile, "-r", "-p", "4", tmpDir})
+	})
+	if err != nil {
+		t.Fatalf("run failed: %v", err)
+	}
+
+	if !strings.Contains(out, file1) || !strings.Contains(out, file3) {
+		t.Fatalf("expected matches on f1 and f3, got:\n%s", out)
+	}
+	if strings.Contains(out, file2) {
+		t.Fatalf("unexpected match on f2 in output:\n%s", out)
+	}
+}
+
+func TestStandardScanDirectoryWithoutRecursiveFails(t *testing.T) {
+	tmpDir := t.TempDir()
+	ruleFile := filepath.Join(tmpDir, "rules.yar")
+	rule := `rule R { condition: true }`
+	if err := os.WriteFile(ruleFile, []byte(rule), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	err := run([]string{ruleFile, tmpDir})
+	if err == nil || !strings.Contains(err.Error(), "use -r / --recursive") {
+		t.Fatalf("expected error containing 'use -r / --recursive', got: %v", err)
+	}
+}
+
+func TestStandardScanFastScan(t *testing.T) {
+	tmpDir := t.TempDir()
+	ruleFile := filepath.Join(tmpDir, "rules.yar")
+	dataFile := filepath.Join(tmpDir, "sample.bin")
+
+	rule := `rule Fast { strings: $a = "test" condition: $a }`
+	if err := os.WriteFile(ruleFile, []byte(rule), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dataFile, []byte("test"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := captureOutputWithError(func() error {
+		return run([]string{ruleFile, "--fast-scan", dataFile})
+	})
+	if err != nil {
+		t.Fatalf("run failed: %v", err)
+	}
+	if !strings.Contains(out, "Fast") {
+		t.Fatalf("expected match with --fast-scan, got:\n%s", out)
+	}
+}
+
+func TestStandardScanJSONOutput(t *testing.T) {
+	tmpDir := t.TempDir()
+	ruleFile := filepath.Join(tmpDir, "rules.yar")
+	dataFile := filepath.Join(tmpDir, "sample.bin")
+
+	rule := `rule JSONRule : json_tag {
+		meta:
+			author = "developer"
+		strings:
+			$a = "json_target"
+		condition:
+			$a
+	}`
+	if err := os.WriteFile(ruleFile, []byte(rule), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dataFile, []byte("start json_target end"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := captureOutputWithError(func() error {
+		return run([]string{ruleFile, "--json", dataFile})
+	})
+	if err != nil {
+		t.Fatalf("run failed: %v", err)
+	}
+
+	var rep jsonMatchReport
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &rep); err != nil {
+		t.Fatalf("failed to unmarshal JSON output %q: %v", out, err)
+	}
+
+	if rep.Rule != "JSONRule" || rep.Target != dataFile {
+		t.Fatalf("unexpected JSON fields: %+v", rep)
+	}
+	if len(rep.Tags) != 1 || rep.Tags[0] != "json_tag" {
+		t.Fatalf("unexpected JSON tags: %v", rep.Tags)
+	}
+	if rep.Meta["author"] != "developer" {
+		t.Fatalf("unexpected JSON meta: %v", rep.Meta)
+	}
+	if len(rep.Matches) != 1 || rep.Matches[0].Identifier != "$a" || rep.Matches[0].Offset != 6 || rep.Matches[0].Data != "json_target" {
+		t.Fatalf("unexpected JSON matches: %+v", rep.Matches)
+	}
+}
+
+func TestParseArgsStandardOptions(t *testing.T) {
+	args, err := parseArgs([]string{
+		"rules.yar",
+		"-r",
+		"-p", "8",
+		"-s",
+		"-m",
+		"-g",
+		"-c",
+		"-t", "threat",
+		"-i", "RuleA",
+		"-n",
+		"--fast-scan",
+		"--json",
+		"target_dir",
+	})
+	if err != nil {
+		t.Fatalf("parseArgs failed: %v", err)
+	}
+	if !args.recursive || args.threads != 8 || !args.printStrings || !args.printMeta ||
+		!args.printTags || !args.countOnly || args.tagFilter != "threat" ||
+		args.identFilter != "RuleA" || !args.negate || !args.fastScan || !args.jsonOutput ||
+		args.target != "target_dir" {
+		t.Fatalf("unexpected parsed options: %+v", args)
 	}
 }
