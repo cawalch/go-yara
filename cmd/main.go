@@ -4,13 +4,17 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/cawalch/go-yara/ast"
@@ -40,6 +44,7 @@ func formatToken(tok token.Token) string {
 
 type commandArgs struct {
 	filename          string
+	target            string
 	mode              string
 	dataFile          string
 	enableStreaming   bool
@@ -48,6 +53,41 @@ type commandArgs struct {
 	matchDataBytes    int
 	matchContextBytes int
 	maxMatchSpan      int
+
+	explicitExecute bool
+
+	// Standard YARA parity options
+	recursive    bool
+	threads      int
+	printStrings bool
+	printMeta    bool
+	printTags    bool
+	countOnly    bool
+	tagFilter    string
+	identFilter  string
+	negate       bool
+	fastScan     bool
+	jsonOutput   bool
+}
+
+func (args *commandArgs) isStandardScan() bool {
+	if args.mode == modeLex || args.mode == modeParse || args.mode == modeCompile {
+		return false
+	}
+	if args.enableStreaming {
+		return false
+	}
+	if args.explicitExecute && !args.hasStandardFlags() {
+		return false
+	}
+	return args.target != ""
+}
+
+func (args *commandArgs) hasStandardFlags() bool {
+	return args.recursive || args.threads > 0 || args.printStrings ||
+		args.printMeta || args.printTags || args.countOnly ||
+		args.tagFilter != "" || args.identFilter != "" ||
+		args.negate || args.fastScan || args.jsonOutput
 }
 
 func main() {
@@ -76,7 +116,7 @@ func run(rawArgs []string) error {
 func parseArgs(rawArgs []string) (*commandArgs, error) {
 	fs := flag.NewFlagSet("go-yara", flag.ContinueOnError)
 
-	mode := fs.String("mode", modeCompile, "processing mode: lex, parse, compile, execute")
+	mode := fs.String("mode", "", "processing mode: lex, parse, compile, execute (default: compile or execute if target given)")
 	dataFile := fs.String("data", "", "data file to match against (for --mode=execute)")
 	streaming := fs.Bool("streaming", false, "enable streaming processing for large files")
 	chunkSize := fs.Int("chunk-size", 1024*1024, "chunk size in bytes (default: 1MB)")
@@ -85,8 +125,40 @@ func parseArgs(rawArgs []string) (*commandArgs, error) {
 	matchContext := fs.Int("match-context", 0, "include n bytes before and after each match in execute output")
 	maxMatchSpan := fs.Int("max-match-span", 0, "bound maximum bytes evaluated for a single regex match (default: unlimited)")
 
+	recursive := fs.Bool("recursive", false, "recursively search directories")
+	fs.BoolVar(recursive, "r", false, "recursively search directories (shorthand)")
+
+	threads := fs.Int("threads", 0, "number of worker threads for parallel scanning (default: NumCPU)")
+	fs.IntVar(threads, "p", 0, "number of worker threads for parallel scanning (shorthand)")
+
+	printStrings := fs.Bool("print-strings", false, "print matching strings")
+	fs.BoolVar(printStrings, "s", false, "print matching strings (shorthand)")
+
+	printMeta := fs.Bool("print-meta", false, "print metadata")
+	fs.BoolVar(printMeta, "m", false, "print metadata (shorthand)")
+
+	printTags := fs.Bool("print-tags", false, "print tags")
+	fs.BoolVar(printTags, "g", false, "print tags (shorthand)")
+
+	countOnly := fs.Bool("count", false, "print only number of matches")
+	fs.BoolVar(countOnly, "c", false, "print only number of matches (shorthand)")
+
+	tagFilter := fs.String("tag", "", "print only rules tagged as <tag>")
+	fs.StringVar(tagFilter, "t", "", "print only rules tagged as <tag> (shorthand)")
+
+	identFilter := fs.String("identifier", "", "print only rules with name <ident>")
+	fs.StringVar(identFilter, "i", "", "print only rules with name <ident> (shorthand)")
+
+	negate := fs.Bool("negate", false, "print only not satisfied rules")
+	fs.BoolVar(negate, "n", false, "print only not satisfied rules (shorthand)")
+
+	fastScan := fs.Bool("fast-scan", false, "fast scan mode, skips match offset extraction")
+	noMatches := fs.Bool("no-matches", false, "alias for --fast-scan")
+
+	jsonOutput := fs.Bool("json", false, "emit structured JSON output")
+
 	fs.Usage = func() {
-		_, _ = fmt.Fprintf(fs.Output(), "Usage: go-yara <yara-file> [options]\n\n")
+		_, _ = fmt.Fprintf(fs.Output(), "Usage: go-yara <yara-file> [options] [target]\n\n")
 		_, _ = fmt.Fprintf(fs.Output(), "Options:\n")
 		fs.PrintDefaults()
 		_, _ = fmt.Fprintf(fs.Output(), "\nModes: lex, parse, compile (default), execute\n")
@@ -119,20 +191,44 @@ func parseArgs(rawArgs []string) (*commandArgs, error) {
 	if err := fs.Parse(flagArgs); err != nil {
 		return nil, err
 	}
-	if fs.NArg() != 0 {
-		return nil, fmt.Errorf("unexpected argument %q", fs.Arg(0))
+
+	var target string
+	if fs.NArg() == 1 {
+		target = fs.Arg(0)
+	} else if fs.NArg() > 1 {
+		return nil, fmt.Errorf("unexpected argument %q", fs.Arg(1))
+	}
+
+	if target == "" && *dataFile != "" {
+		target = *dataFile
+	}
+	if *dataFile == "" && target != "" {
+		*dataFile = target
+	}
+
+	explicitExecute := false
+	finalMode := *mode
+	switch finalMode {
+	case "":
+		if target != "" || *streaming {
+			finalMode = modeExecute
+		} else {
+			finalMode = modeCompile
+		}
+	case modeExecute:
+		explicitExecute = true
 	}
 
 	// Validate mode
-	switch *mode {
+	switch finalMode {
 	case modeLex, modeParse, modeCompile, modeExecute:
 		// ok
 	default:
-		return nil, fmt.Errorf("unknown mode %q", *mode)
+		return nil, fmt.Errorf("unknown mode %q", finalMode)
 	}
 
 	// Validate --data is provided for execute mode
-	if *mode == modeExecute && *dataFile == "" {
+	if finalMode == modeExecute && target == "" {
 		return nil, errors.New("--mode=execute requires --data <data-file>")
 	}
 	if *chunkSize <= 0 {
@@ -147,10 +243,14 @@ func parseArgs(rawArgs []string) (*commandArgs, error) {
 	if *maxMatchSpan < 0 {
 		return nil, errors.New("--max-match-span must be non-negative")
 	}
+	if *threads < 0 {
+		return nil, errors.New("--threads must be non-negative")
+	}
 
 	return &commandArgs{
 		filename:          filename,
-		mode:              *mode,
+		target:            target,
+		mode:              finalMode,
 		dataFile:          *dataFile,
 		enableStreaming:   *streaming,
 		chunkSize:         *chunkSize,
@@ -158,6 +258,18 @@ func parseArgs(rawArgs []string) (*commandArgs, error) {
 		matchDataBytes:    *matchData,
 		matchContextBytes: *matchContext,
 		maxMatchSpan:      *maxMatchSpan,
+		explicitExecute:   explicitExecute,
+		recursive:         *recursive,
+		threads:           *threads,
+		printStrings:      *printStrings,
+		printMeta:         *printMeta,
+		printTags:         *printTags,
+		countOnly:         *countOnly,
+		tagFilter:         *tagFilter,
+		identFilter:       *identFilter,
+		negate:            *negate,
+		fastScan:          *fastScan || *noMatches,
+		jsonOutput:        *jsonOutput,
 	}, nil
 }
 
@@ -170,6 +282,10 @@ func readFileContent(filename string) ([]byte, error) {
 }
 
 func runMode(mode string, content []byte, args *commandArgs) error {
+	if args.isStandardScan() {
+		return runStandardScan(string(content), args)
+	}
+
 	fmt.Printf("Processing YARA file: %s (mode: %s)\n", args.filename, mode)
 	fmt.Printf("File content:\n%s\n\n", string(content))
 
@@ -185,6 +301,383 @@ func runMode(mode string, content []byte, args *commandArgs) error {
 	default:
 		return fmt.Errorf("unknown mode %q", mode)
 	}
+}
+
+type jsonMatchEntry struct {
+	Identifier string `json:"identifier"`
+	Offset     int64  `json:"offset"`
+	Length     int    `json:"length"`
+	Data       string `json:"data,omitempty"`
+}
+
+type jsonMatchReport struct {
+	Target  string           `json:"target"`
+	Rule    string           `json:"rule"`
+	Tags    []string         `json:"tags,omitempty"`
+	Meta    map[string]any   `json:"meta,omitempty"`
+	Matches []jsonMatchEntry `json:"matches,omitempty"`
+}
+
+type jsonCountReport struct {
+	Target string `json:"target"`
+	Count  int    `json:"count"`
+}
+
+type fileJob struct {
+	idx  int
+	path string
+}
+
+type fileScanResult struct {
+	target string
+	res    *compiler.ScanResult
+	data   []byte
+}
+
+func compileRulesQuiet(content, filename string) (*compiler.CompiledProgram, error) {
+	comp := compiler.NewCompiler()
+	comp.SetBaseDir(filepath.Dir(filename))
+	compiledProgram, err := comp.CompileSourceWithContext(context.Background(), content)
+	if err != nil {
+		return nil, fmt.Errorf("compiling rules: %w", err)
+	}
+	compilationErrors := comp.GetErrors()
+	if len(compilationErrors) > 0 {
+		return nil, fmt.Errorf("compilation error: %s", compilationErrors[0].Message)
+	}
+	return compiledProgram, nil
+}
+
+func collectTargets(target string, recursive bool) ([]string, error) {
+	info, err := os.Stat(target)
+	if err != nil {
+		return nil, fmt.Errorf("stat target %s: %w", target, err)
+	}
+	if !info.IsDir() {
+		return []string{target}, nil
+	}
+	if !recursive {
+		return nil, fmt.Errorf("target %s is a directory (use -r / --recursive to scan directories)", target)
+	}
+	var files []string
+	err = filepath.WalkDir(target, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() {
+			files = append(files, path)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("scanning directory %s: %w", target, err)
+	}
+	sort.Strings(files)
+	return files, nil
+}
+
+func buildScannerOptions(args *commandArgs) []compiler.ScannerOption {
+	var opts []compiler.ScannerOption
+	if args.tagFilter != "" {
+		opts = append(opts, compiler.WithTagsFilter([]string{args.tagFilter}))
+	}
+	if args.fastScan {
+		opts = append(opts, compiler.WithFastScan(), compiler.WithoutMatches())
+	}
+	if args.maxMatchSpan > 0 {
+		opts = append(opts, compiler.WithMaxMatchSpan(args.maxMatchSpan))
+	}
+	if args.printStrings && !args.fastScan {
+		opts = append(opts, compiler.WithMatchData(1024))
+	}
+	return opts
+}
+
+func runStandardScan(content string, args *commandArgs) error {
+	compiledProgram, err := compileRulesQuiet(content, args.filename)
+	if err != nil {
+		return err
+	}
+	targets, err := collectTargets(args.target, args.recursive)
+	if err != nil {
+		return err
+	}
+	return scanTargets(compiledProgram, targets, args)
+}
+
+func scanTargets(compiledProgram *compiler.CompiledProgram, targets []string, args *commandArgs) error {
+	numWorkers := args.threads
+	if numWorkers <= 0 {
+		numWorkers = runtime.NumCPU()
+	}
+	if numWorkers > len(targets) {
+		numWorkers = len(targets)
+	}
+	if numWorkers <= 0 {
+		numWorkers = 1
+	}
+
+	scannerOptions := buildScannerOptions(args)
+	results := make([]fileScanResult, len(targets))
+
+	jobs := make(chan fileJob, len(targets))
+	for i, t := range targets {
+		jobs <- fileJob{idx: i, path: t}
+	}
+	close(jobs)
+
+	var firstErr error
+	var errMu sync.Mutex
+	var wg sync.WaitGroup
+
+	for w := 0; w < numWorkers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			scanner := compiler.NewScanner(compiledProgram, scannerOptions...)
+			defer scanner.Close()
+
+			for job := range jobs {
+				data, err := os.ReadFile(job.path) // #nosec G304 - user specified target
+				if err != nil {
+					errMu.Lock()
+					if firstErr == nil {
+						firstErr = fmt.Errorf("reading target %s: %w", job.path, err)
+					}
+					errMu.Unlock()
+					continue
+				}
+
+				res, err := scanner.Scan(data)
+				if err != nil {
+					errMu.Lock()
+					if firstErr == nil {
+						firstErr = fmt.Errorf("scanning target %s: %w", job.path, err)
+					}
+					errMu.Unlock()
+					continue
+				}
+
+				results[job.idx] = fileScanResult{target: job.path, res: res, data: data}
+			}
+		}()
+	}
+	wg.Wait()
+
+	if firstErr != nil {
+		return firstErr
+	}
+
+	isMulti := len(targets) > 1
+	for _, r := range results {
+		if r.res != nil {
+			if err := outputFileResult(r, args, isMulti); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func filterNegatedRules(res *compiler.ScanResult, identFilter string) []compiler.RuleMatch {
+	var rules []compiler.RuleMatch
+	for ruleName, matched := range res.RuleResults {
+		if !matched {
+			if identFilter != "" && ruleName != identFilter {
+				continue
+			}
+			rules = append(rules, compiler.RuleMatch{Rule: ruleName})
+		}
+	}
+	return rules
+}
+
+func filterMatchedRules(res *compiler.ScanResult, identFilter string) []compiler.RuleMatch {
+	var rules []compiler.RuleMatch
+	for _, r := range res.MatchedRules {
+		if identFilter != "" && r.Rule != identFilter {
+			continue
+		}
+		rules = append(rules, r)
+	}
+	return rules
+}
+
+func filterScanRules(res *compiler.ScanResult, args *commandArgs) []compiler.RuleMatch {
+	var rules []compiler.RuleMatch
+	if args.negate {
+		rules = filterNegatedRules(res, args.identFilter)
+	} else {
+		rules = filterMatchedRules(res, args.identFilter)
+	}
+	sort.Slice(rules, func(i, j int) bool {
+		return rules[i].Rule < rules[j].Rule
+	})
+	return rules
+}
+
+func outputFileResult(r fileScanResult, args *commandArgs, isMultiTarget bool) error {
+	matchedRules := filterScanRules(r.res, args)
+
+	if args.jsonOutput {
+		return outputJSONResult(r, matchedRules, args)
+	}
+
+	if args.countOnly {
+		if isMultiTarget {
+			fmt.Printf("%s: %d\n", r.target, len(matchedRules))
+		} else {
+			fmt.Printf("%d\n", len(matchedRules))
+		}
+		return nil
+	}
+
+	for _, rule := range matchedRules {
+		tagStr := ""
+		if args.printTags && len(rule.Tags) > 0 {
+			tagStr = fmt.Sprintf(" [%s]", strings.Join(rule.Tags, ","))
+		}
+		metaStr := ""
+		if args.printMeta && len(rule.Meta) > 0 {
+			metaStr = " " + formatMetaBracket(rule.Meta)
+		}
+		fmt.Printf("%s%s%s %s\n", rule.Rule, tagStr, metaStr, r.target)
+
+		if args.printStrings && !args.fastScan {
+			printRuleMatchStrings(rule, r.data)
+		}
+	}
+	return nil
+}
+
+func formatMetaBracket(meta map[string]any) string {
+	keys := make([]string, 0, len(meta))
+	for k := range meta {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		v := meta[k]
+		switch val := v.(type) {
+		case string:
+			parts = append(parts, fmt.Sprintf("%s=%q", k, val))
+		default:
+			parts = append(parts, fmt.Sprintf("%s=%v", k, val))
+		}
+	}
+	return "[" + strings.Join(parts, ",") + "]"
+}
+
+func printRuleMatchStrings(r compiler.RuleMatch, data []byte) {
+	var entries []printEntry
+	for id, matches := range r.Matches {
+		for _, m := range matches {
+			entries = append(entries, printEntry{
+				id:     id,
+				offset: int(m.Offset),
+				length: m.Length,
+			})
+		}
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].offset != entries[j].offset {
+			return entries[i].offset < entries[j].offset
+		}
+		return entries[i].id < entries[j].id
+	})
+	for _, e := range entries {
+		var sVal string
+		if e.offset >= 0 && e.offset+e.length <= len(data) {
+			raw := data[e.offset : e.offset+e.length]
+			if isAllPrintableASCII(raw) {
+				sVal = string(raw)
+			} else {
+				sVal = fmt.Sprintf("%q", raw)
+			}
+		}
+		fmt.Printf("0x%x:%s: %s\n", e.offset, e.id, sVal)
+	}
+}
+
+func isAllPrintableASCII(b []byte) bool {
+	for _, c := range b {
+		if c < 0x20 || c > 0x7e {
+			return false
+		}
+	}
+	return true
+}
+
+func collectJSONMatches(r compiler.RuleMatch, data []byte) []jsonMatchEntry {
+	if len(r.Matches) == 0 {
+		return nil
+	}
+	var entries []printEntry
+	for id, ms := range r.Matches {
+		for _, m := range ms {
+			entries = append(entries, printEntry{
+				id:     id,
+				offset: int(m.Offset),
+				length: m.Length,
+			})
+		}
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].offset != entries[j].offset {
+			return entries[i].offset < entries[j].offset
+		}
+		return entries[i].id < entries[j].id
+	})
+	jsonEntries := make([]jsonMatchEntry, 0, len(entries))
+	for _, e := range entries {
+		var sVal string
+		if e.offset >= 0 && e.offset+e.length <= len(data) {
+			raw := data[e.offset : e.offset+e.length]
+			if isAllPrintableASCII(raw) {
+				sVal = string(raw)
+			} else {
+				sVal = fmt.Sprintf("%q", raw)
+			}
+		}
+		jsonEntries = append(jsonEntries, jsonMatchEntry{
+			Identifier: e.id,
+			Offset:     int64(e.offset),
+			Length:     e.length,
+			Data:       sVal,
+		})
+	}
+	return jsonEntries
+}
+
+func outputJSONResult(r fileScanResult, rules []compiler.RuleMatch, args *commandArgs) error {
+	if args.countOnly {
+		rep := jsonCountReport{Target: r.target, Count: len(rules)}
+		enc, err := json.Marshal(rep)
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(enc))
+		return nil
+	}
+
+	for _, rule := range rules {
+		rep := jsonMatchReport{
+			Target: r.target,
+			Rule:   rule.Rule,
+			Tags:   rule.Tags,
+			Meta:   rule.Meta,
+		}
+		if !args.fastScan {
+			rep.Matches = collectJSONMatches(rule, r.data)
+		}
+		enc, err := json.Marshal(rep)
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(enc))
+	}
+	return nil
 }
 
 func runLexerMode(content string) error {
