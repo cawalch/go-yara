@@ -167,11 +167,19 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (*ScanResult
 	if err := s.scanError(); err != nil {
 		return nil, err
 	}
+	var ruleResults map[string]bool
+	if !s.omitRuleResults {
+		ruleResults = make(map[string]bool, len(scanner.program.Rules))
+	}
+	var matches map[string]map[string][]Match
+	if !s.omitMatches {
+		matches = make(map[string]map[string][]Match)
+	}
 	result := &ScanResult{
 		MatchedRules: make([]RuleMatch, 0),
 		PrunedRules:  make([]string, 0),
-		RuleResults:  make(map[string]bool, len(scanner.program.Rules)),
-		Matches:      make(map[string]map[string][]Match),
+		RuleResults:  ruleResults,
+		Matches:      matches,
 	}
 	clear(s.ruleResultsDense)
 	s.interp.ResetIterationCount()
@@ -248,8 +256,11 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (*ScanResult
 			return nil, err
 		}
 		matched := s.interp.ruleResultByIndex(rule.Index, rule.Name)
-		materialize := !s.reportedMatchesOnly || matched && !rule.IsPrivate
-		if materialize && len(perRule) > 0 {
+		if rule.Index >= 0 && rule.Index < len(s.ruleResultsDense) {
+			s.ruleResultsDense[rule.Index] = matched
+		}
+		materialize := !s.omitMatches && (!s.reportedMatchesOnly || (matched && !rule.IsPrivate))
+		if materialize && len(perRule) > 0 && result.Matches != nil {
 			publicMatches := clonePublicRuleMatches(rule, perRule)
 			if publicMatches != nil {
 				if err := scanner.populateMatchEvidence(ctx, publicMatches); err != nil {
@@ -258,33 +269,55 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (*ScanResult
 				result.Matches[rule.Name] = publicMatches
 			}
 		}
-		result.RuleResults[rule.Name] = matched
+		if result.RuleResults != nil {
+			result.RuleResults[rule.Name] = matched
+		}
 	}
 
 	allGlobalMatched := true
 	for _, rule := range scanner.program.Rules {
-		if rule.IsGlobal && !result.RuleResults[rule.Name] {
-			allGlobalMatched = false
-			break
+		if rule.IsGlobal {
+			globalMatched := false
+			if rule.Index >= 0 && rule.Index < len(s.ruleResultsDense) {
+				globalMatched = s.ruleResultsDense[rule.Index]
+			} else if result.RuleResults != nil {
+				globalMatched = result.RuleResults[rule.Name]
+			}
+			if !globalMatched {
+				allGlobalMatched = false
+				break
+			}
 		}
 	}
 	for _, rule := range scanner.program.Rules {
 		if !rule.IsGlobal && !allGlobalMatched {
-			if s.reportedMatchesOnly {
+			if s.reportedMatchesOnly && !s.omitMatches && result.Matches != nil {
 				delete(result.Matches, rule.Name)
 			}
 			continue
 		}
 		if !s.hasMatchingTag(rule) {
-			if s.reportedMatchesOnly {
+			if s.reportedMatchesOnly && !s.omitMatches && result.Matches != nil {
 				delete(result.Matches, rule.Name)
 			}
 			continue
 		}
-		if rule.IsPrivate || !result.RuleResults[rule.Name] {
+		if rule.IsPrivate {
 			continue
 		}
-		matches := result.Matches[rule.Name]
+		ruleMatched := false
+		if rule.Index >= 0 && rule.Index < len(s.ruleResultsDense) {
+			ruleMatched = s.ruleResultsDense[rule.Index]
+		} else if result.RuleResults != nil {
+			ruleMatched = result.RuleResults[rule.Name]
+		}
+		if !ruleMatched {
+			continue
+		}
+		var matches map[string][]Match
+		if !s.omitMatches && result.Matches != nil {
+			matches = result.Matches[rule.Name]
+		}
 		var evidence map[string][]EvidenceFinding
 		if s.evidenceMax > 0 {
 			var err error
