@@ -30,6 +30,8 @@ type Scanner struct {
 	nonTextCache        nonTextMatchCache
 	regexByteSetCache   regexByteSetCandidateCache
 	reportedMatchesOnly bool
+	omitMatches         bool
+	omitRuleResults     bool
 	fastScan            bool
 	evidenceMax         int
 	evaluatedRules      map[string]bool
@@ -204,6 +206,46 @@ func WithMatchContext(beforeBytes, afterBytes int) ScannerOption {
 func WithReportedMatchesOnly() ScannerOption {
 	return func(scanner *Scanner) {
 		scanner.reportedMatchesOnly = true
+	}
+}
+
+// WithoutMatches disables detailed match slice and pattern map materialization
+// in ScanResult.Matches and RuleMatch.Matches.
+//
+// When disabled, scanning only determines and records whether rules matched,
+// avoiding match slice slab allocations, pattern map creation, and match evidence
+// extraction. This drops per-scan heap allocations dramatically for high-throughput
+// ingestion pipelines and gateways.
+func WithoutMatches() ScannerOption {
+	return func(scanner *Scanner) {
+		scanner.omitMatches = true
+	}
+}
+
+// WithIncludeMatches configures whether detailed match slice and pattern maps
+// are materialized in ScanResult and RuleMatch (default: true).
+func WithIncludeMatches(include bool) ScannerOption {
+	return func(scanner *Scanner) {
+		scanner.omitMatches = !include
+	}
+}
+
+// WithoutRuleResults disables allocating and populating the per-rule boolean
+// result map in ScanResult.RuleResults.
+//
+// Callers that only inspect ScanResult.MatchedRules can avoid allocating the
+// rules-sized map for every scan.
+func WithoutRuleResults() ScannerOption {
+	return func(scanner *Scanner) {
+		scanner.omitRuleResults = true
+	}
+}
+
+// WithIncludeRuleResults configures whether ScanResult.RuleResults map is
+// populated (default: true).
+func WithIncludeRuleResults(include bool) ScannerOption {
+	return func(scanner *Scanner) {
+		scanner.omitRuleResults = !include
 	}
 }
 

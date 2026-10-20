@@ -72,7 +72,9 @@ func (s *Scanner) recordSkippedCandidateRule(
 	result *ScanResult,
 	pruned bool,
 ) {
-	result.RuleResults[rule.Name] = false
+	if result.RuleResults != nil {
+		result.RuleResults[rule.Name] = false
+	}
 	if pruned {
 		result.PrunedRules = append(result.PrunedRules, rule.Name)
 		if s.hookMask&hookBitRuleProfile != 0 {
@@ -96,7 +98,9 @@ func (s *Scanner) recordAllRulesRejected(ctx context.Context, result *ScanResult
 		if !s.shouldEvaluateRule(rule) {
 			continue
 		}
-		result.RuleResults[rule.Name] = false
+		if result.RuleResults != nil {
+			result.RuleResults[rule.Name] = false
+		}
 		if !s.ruleHeaderConstraintsMatchInput(ctx, rule, scanInput) {
 			result.PrunedRules = append(result.PrunedRules, rule.Name)
 		}
@@ -136,12 +140,16 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 	if s != nil && s.program != nil {
 		ruleCount = len(s.program.Rules)
 	}
+	var ruleResults map[string]bool
+	if s == nil || !s.omitRuleResults {
+		ruleResults = make(map[string]bool, ruleCount)
+	}
 	result := &ScanResult{
 		MatchedRules: make([]RuleMatch, 0),
 		PrunedRules:  make([]string, 0),
-		RuleResults:  make(map[string]bool, ruleCount),
+		RuleResults:  ruleResults,
 	}
-	if s == nil || !s.reportedMatchesOnly {
+	if s == nil || (!s.reportedMatchesOnly && !s.omitMatches) {
 		result.Matches = make(map[string]map[string][]Match)
 	}
 	if s == nil || s.program == nil {
@@ -230,7 +238,7 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 	// Pass 1: evaluate candidate rules and retain the full result map.
 	s.matchedRuleIndices = s.matchedRuleIndices[:0]
 	s.interp.ResetIterationCount()
-	for _, rule := range s.program.Rules {
+	for ruleIdx, rule := range s.program.Rules {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -244,7 +252,7 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 				TotalBytes:     int64(len(data)),
 				Phase:          PhaseRuleCondition,
 				CurrentRule:    rule.Name,
-				RulesEvaluated: len(result.RuleResults),
+				RulesEvaluated: ruleIdx,
 				TotalRules:     len(s.program.Rules),
 			}); err != nil {
 				return nil, err
@@ -261,19 +269,23 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 		}
 		if evaluation.pruned {
 			result.PrunedRules = append(result.PrunedRules, rule.Name)
-			result.RuleResults[rule.Name] = false
+			if result.RuleResults != nil {
+				result.RuleResults[rule.Name] = false
+			}
 			continue
 		}
 
 		// The default preserves the historical all-evaluated-rules result shape.
 		// The opt-in compact result mode materializes only matching public rules.
-		materialize := !s.reportedMatchesOnly || (evaluation.matched && !rule.IsPrivate && s.hasMatchingTag(rule))
+		materialize := !s.omitMatches && (!s.reportedMatchesOnly || (evaluation.matched && !rule.IsPrivate && s.hasMatchingTag(rule)))
 		if materialize && len(s.matchCtx.spans) > 0 {
 			if err := s.recordRuleMatches(ctx, data, rule, result); err != nil {
 				return nil, err
 			}
 		}
-		result.RuleResults[rule.Name] = evaluation.matched
+		if result.RuleResults != nil {
+			result.RuleResults[rule.Name] = evaluation.matched
+		}
 		if evaluation.matched && !rule.IsPrivate && s.hasMatchingTag(rule) {
 			s.matchedRuleIndices = append(s.matchedRuleIndices, rule.Index)
 		}
@@ -291,7 +303,7 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 				allGlobalMatched = false
 				break
 			}
-		} else if !result.RuleResults[s.program.Rules[ruleIndex].Name] {
+		} else if result.RuleResults != nil && !result.RuleResults[s.program.Rules[ruleIndex].Name] {
 			allGlobalMatched = false
 			break
 		}
@@ -308,14 +320,14 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 		}
 		// Skip non-global rules if not all global rules matched
 		if !rule.IsGlobal && !allGlobalMatched {
-			if s.reportedMatchesOnly {
+			if s.reportedMatchesOnly && !s.omitMatches && result.Matches != nil {
 				delete(result.Matches, rule.Name)
 			}
 			continue
 		}
 		// Skip rules not matching the tag filter
 		if !s.hasMatchingTag(rule) {
-			if s.reportedMatchesOnly {
+			if s.reportedMatchesOnly && !s.omitMatches && result.Matches != nil {
 				delete(result.Matches, rule.Name)
 			}
 			continue
@@ -327,20 +339,27 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 		// Evidence extraction is deliberately colocated with final public-rule
 		// reporting so private or globally filtered matches cannot expose bytes.
 		//nolint:nestif // the nested gates mirror that security-sensitive result boundary
-		if result.RuleResults[rule.Name] {
-			matches := result.Matches[rule.Name]
-			evidence, err := s.populatePublicRuleEvidence(ctx, rule, publicRuleMaterialization{
-				data:    data,
-				matches: matches,
-			})
-			if err != nil {
-				return nil, err
+		if s.ruleResultsDense[rule.Index] {
+			var matches map[string][]Match
+			if !s.omitMatches && result.Matches != nil {
+				matches = result.Matches[rule.Name]
 			}
-			if len(evidence) != 0 {
-				if result.Evidence == nil {
-					result.Evidence = make(map[string]map[string][]EvidenceFinding)
+			var evidence map[string][]EvidenceFinding
+			if !s.omitMatches {
+				var err error
+				evidence, err = s.populatePublicRuleEvidence(ctx, rule, publicRuleMaterialization{
+					data:    data,
+					matches: matches,
+				})
+				if err != nil {
+					return nil, err
 				}
-				result.Evidence[rule.Name] = evidence
+				if len(evidence) != 0 {
+					if result.Evidence == nil {
+						result.Evidence = make(map[string]map[string][]EvidenceFinding)
+					}
+					result.Evidence[rule.Name] = evidence
+				}
 			}
 			ruleMatch := newPublicRuleMatch(rule, matches, evidence)
 			if s.hookMask&hookBitMatch != 0 && s.matchHook != nil {

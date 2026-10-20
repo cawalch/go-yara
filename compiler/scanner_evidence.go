@@ -68,32 +68,14 @@ func (s *Scanner) materializeMatchingRules(
 		if !rule.IsGlobal && !evaluation.allGlobalMatched {
 			continue
 		}
-		scanInput := evaluation.scanInput
-		scanInput.booleanMatchOnly = false
-		if err := s.populateRuleMatchContext(ctx, rule, scanInput); err != nil {
-			return nil, err
-		}
-
 		var publicMatches map[string][]Match
-		if len(s.matchCtx.spans) > 0 {
-			publicMatches = materializeRuleMatchesAt(rule, s.matchCtx.spans, matchBase)
-			if publicMatches != nil {
-				if err := s.populateMatchEvidenceFrom(ctx, publicRuleMaterialization{
-					data:    data,
-					matches: publicMatches,
-					base:    matchBase,
-				}); err != nil {
-					return nil, err
-				}
+		var evidence map[string][]EvidenceFinding
+		if !s.omitMatches {
+			var err error
+			publicMatches, evidence, err = s.extractPublicMatchesAndEvidence(ctx, rule, data, evaluation.scanInput, matchBase)
+			if err != nil {
+				return nil, err
 			}
-		}
-		evidence, err := s.populatePublicRuleEvidence(ctx, rule, publicRuleMaterialization{
-			data:    data,
-			matches: publicMatches,
-			base:    matchBase,
-		})
-		if err != nil {
-			return nil, err
 		}
 		ruleMatch := newPublicRuleMatch(rule, publicMatches, evidence)
 		if s.hookMask&hookBitMatch != 0 && s.matchHook != nil {
@@ -110,6 +92,43 @@ func (s *Scanner) materializeMatchingRules(
 		result = append(result, ruleMatch)
 	}
 	return result, nil
+}
+
+//nolint:revive // argument-limit: internal helper coordinates rule match extraction
+func (s *Scanner) extractPublicMatchesAndEvidence(
+	ctx context.Context,
+	rule *CompiledRule,
+	data []byte,
+	scanInput ruleScanInput,
+	matchBase int64,
+) (map[string][]Match, map[string][]EvidenceFinding, error) {
+	scanInput.booleanMatchOnly = false
+	if err := s.populateRuleMatchContext(ctx, rule, scanInput); err != nil {
+		return nil, nil, err
+	}
+
+	var publicMatches map[string][]Match
+	if len(s.matchCtx.spans) > 0 {
+		publicMatches = materializeRuleMatchesAt(rule, s.matchCtx.spans, matchBase)
+		if publicMatches != nil {
+			if err := s.populateMatchEvidenceFrom(ctx, publicRuleMaterialization{
+				data:    data,
+				matches: publicMatches,
+				base:    matchBase,
+			}); err != nil {
+				return nil, nil, err
+			}
+		}
+	}
+	evidence, err := s.populatePublicRuleEvidence(ctx, rule, publicRuleMaterialization{
+		data:    data,
+		matches: publicMatches,
+		base:    matchBase,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return publicMatches, evidence, nil
 }
 
 func (s *Scanner) populatePublicRuleEvidence(
