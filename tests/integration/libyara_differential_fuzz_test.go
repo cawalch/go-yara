@@ -44,19 +44,122 @@ type divergence struct {
 	Err  string `json:"err"`
 }
 
-var yaraSpanRE = regexp.MustCompile(`^0x([0-9a-fA-F]+):(\d+):(\$[A-Za-z0-9_]+):`)
+var (
+	yaraSpanRE = regexp.MustCompile(`^0x([0-9a-fA-F]+):(\d+):(\$[A-Za-z0-9_]*):`)
+	anonVarRE  = regexp.MustCompile(`\$([A-Za-z0-9_*]*)`)
+)
 
-// skipSource filters constructs libyara's CLI cannot report on, so the oracle
-// stays honest: anonymous strings are never printed by `yara -s`, and comments
-// or include/import directives make mutation comparison unreliable.
+func replaceIsolatedDollar(s, replacement string) string {
+	return anonVarRE.ReplaceAllStringFunc(s, func(match string) string {
+		if match == "$" {
+			return replacement
+		}
+		return match
+	})
+}
+
+func replaceAnonDecls(s string) (string, int) {
+	var sb strings.Builder
+	inQuote, inHex, inRegex := false, false, false
+	count := 0
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if inQuote {
+			sb.WriteByte(c)
+			if c == '\\' && i+1 < len(s) {
+				i++
+				sb.WriteByte(s[i])
+			} else if c == '"' {
+				inQuote = false
+			}
+			continue
+		}
+		if inHex {
+			sb.WriteByte(c)
+			if c == '}' {
+				inHex = false
+			}
+			continue
+		}
+		if inRegex {
+			sb.WriteByte(c)
+			if c == '\\' && i+1 < len(s) {
+				i++
+				sb.WriteByte(s[i])
+			} else if c == '/' {
+				inRegex = false
+			}
+			continue
+		}
+
+		switch c {
+		case '"':
+			inQuote = true
+			sb.WriteByte(c)
+		case '{':
+			inHex = true
+			sb.WriteByte(c)
+		case '/':
+			inRegex = true
+			sb.WriteByte(c)
+		case '$':
+			// Check if this is an anonymous string: '$' followed by optional whitespace then '='
+			j := i + 1
+			for j < len(s) && (s[j] == ' ' || s[j] == '\t' || s[j] == '\r' || s[j] == '\n') {
+				j++
+			}
+			if j < len(s) && s[j] == '=' && (j+1 >= len(s) || s[j+1] != '=') {
+				count++
+				fmt.Fprintf(&sb, "$_anon_%d", count)
+			} else {
+				sb.WriteByte(c)
+			}
+		default:
+			sb.WriteByte(c)
+		}
+	}
+	return sb.String(), count
+}
+
+// normalizeAnonymousStrings translates anonymous strings ($ = ...) into uniquely named
+// patterns ($_anon_N = ...) and maps condition references ($ -> any of ($_anon_*))
+// so the reference libyara CLI (which skips printing unnamed strings with `yara -s`)
+// reports their occurrence spans consistently for differential comparison.
+func normalizeAnonymousStrings(src string) (string, bool) {
+	strIdx := strings.Index(src, "strings:")
+	if strIdx == -1 {
+		return src, false
+	}
+	condIdx := strings.Index(src[strIdx:], "condition:")
+	if condIdx == -1 {
+		return src, false
+	}
+	condIdx += strIdx
+
+	stringsNorm, count := replaceAnonDecls(src[strIdx:condIdx])
+	if count == 0 {
+		return src, false
+	}
+
+	head := src[:strIdx] + stringsNorm
+	tail := src[condIdx:]
+
+	if count == 1 {
+		tail = replaceIsolatedDollar(tail, "$_anon_1")
+	} else {
+		tail = replaceIsolatedDollar(tail, "any of ($_anon_*)")
+	}
+
+	return head + tail, true
+}
+
+// skipSource filters constructs libyara's CLI cannot report on or parse reliably:
+// comment delimiters and include directives make mutation comparison unreliable.
 func skipSource(src string) bool {
 	if !strings.Contains(src, "rule ") {
 		return true
 	}
-	if regexp.MustCompile(`\$\s*=`).MatchString(src) {
-		return true // anonymous string: libyara -s does not report it
-	}
-	if strings.Contains(src, "include ") || strings.Contains(src, "#") || strings.Contains(src, "//") {
+	if strings.Contains(src, "include ") || strings.Contains(src, "//") || strings.Contains(src, "/*") {
 		return true
 	}
 	return false
@@ -268,14 +371,25 @@ func recordFinding(path string, d divergence) {
 //nolint:revive // argument-limit: oracle binary, findings path, rule and input.
 func compareOnce(t testing.TB, bin, outPath, src string, data []byte) {
 	t.Helper()
-	want, yerr := scanWithLibyara(t, bin, src, data)
+	evalSrc := src
+	if norm, ok := normalizeAnonymousStrings(src); ok {
+		if _, origErr := scanWithGoYara(src, data); origErr != nil {
+			recordFinding(outPath, divergence{
+				Kind: "GO-REJECTS", Src: src, Data: data, Err: origErr.Error(),
+			})
+			return
+		}
+		evalSrc = norm
+	}
+
+	want, yerr := scanWithLibyara(t, bin, evalSrc, data)
 	if yerr != nil {
 		return // libyara cannot compile it: nothing to compare
 	}
-	got, gerr := scanWithGoYara(src, data)
+	got, gerr := scanWithGoYara(evalSrc, data)
 	if gerr != nil {
 		recordFinding(outPath, divergence{
-			Kind: "GO-REJECTS", Src: src, Data: data, Err: gerr.Error(), Want: flatten(want),
+			Kind: "GO-REJECTS", Src: evalSrc, Data: data, Err: gerr.Error(), Want: flatten(want),
 		})
 		return
 	}
@@ -283,7 +397,7 @@ func compareOnce(t testing.TB, bin, outPath, src string, data []byte) {
 	if fmt.Sprint(w) == fmt.Sprint(g) {
 		return
 	}
-	recordFinding(outPath, divergence{Kind: "MATCH", Src: src, Data: data, Want: w, Got: g})
+	recordFinding(outPath, divergence{Kind: "MATCH", Src: evalSrc, Data: data, Want: w, Got: g})
 }
 
 func differentialSeeds() [][2]string {
@@ -316,6 +430,19 @@ func differentialSeeds() [][2]string {
 		{`rule r { condition: int16be(0) == -2 }`, "\xff\xfe"},
 		{`rule r { strings: $a = "foo" condition: "hello123world" matches /[0-9]+/ and $a }`, "foo"},
 		{`rule r { strings: $a = "a" $b = "b" condition: 50% of them }`, "ab"},
+		{`rule r { strings: $a = "abc" condition: for any i in (1, 2, 3) : ( i == 2 ) and $a }`, "abc"},
+		{`rule r { strings: $a = "abc" condition: for all i in (10, 20) : ( i >= 10 ) and $a }`, "abc"},
+		{`rule r { strings: $a = "abc" condition: for none i in (1, 2) : ( i == 5 ) and $a }`, "abc"},
+		{`rule r { strings: $a = "abc" condition: for any i in (0, 3) : ( $a at i ) }`, "abc"},
+		{`rule r { strings: $a = "hello" $b = "world" condition: for any i in (1..#a) : ( for any j in (1..#b) : ( @b[j] > @a[i] and @b[j] - @a[i] < 10 ) ) }`, "hello world"},
+		{`rule r { strings: $a = "abc" condition: (3 | 1 & 2 == 3) and $a }`, "abc"},
+		{`rule r { strings: $a = "abc" condition: (3 & 1 << 2 == 0) and $a }`, "abc"},
+		{`rule r { strings: $a = "abc" condition: (10 \ 3 == 3) and $a }`, "abc"},
+		{`rule r { strings: $a = "abc" condition: for any i in (0) : ( $a at i ) }`, "abc"},
+		{`rule r { strings: $ = "abc" condition: any of them }`, "abc"},
+		{`rule r { strings: $ = "abc" $ = "xyz" condition: 1 of them }`, "abc"},
+		{`rule r { strings: $ = "abc" condition: all of them }`, "abc"},
+		{`rule r { strings: $ = "abc" condition: 1 of ($*) }`, "abc"},
 	}
 }
 
@@ -372,20 +499,28 @@ func TestLibyaraDifferentialCorpus(t *testing.T) {
 		if skipSource(src) {
 			return
 		}
-		want, yerr := scanWithLibyara(t, bin, src, []byte(data))
+		evalSrc := src
+		if norm, ok := normalizeAnonymousStrings(src); ok {
+			if _, origErr := scanWithGoYara(src, []byte(data)); origErr != nil {
+				add(divergence{Kind: "GO-REJECTS", Src: src, Data: []byte(data), Err: origErr.Error()})
+				return
+			}
+			evalSrc = norm
+		}
+		want, yerr := scanWithLibyara(t, bin, evalSrc, []byte(data))
 		if yerr != nil {
 			return
 		}
-		got, gerr := scanWithGoYara(src, []byte(data))
+		got, gerr := scanWithGoYara(evalSrc, []byte(data))
 		if gerr != nil {
-			add(divergence{Kind: "GO-REJECTS", Src: src, Data: []byte(data), Err: gerr.Error(), Want: flatten(want)})
+			add(divergence{Kind: "GO-REJECTS", Src: evalSrc, Data: []byte(data), Err: gerr.Error(), Want: flatten(want)})
 			return
 		}
 		w, g := flatten(want), flatten(got)
 		if fmt.Sprint(w) == fmt.Sprint(g) {
 			return
 		}
-		add(divergence{Kind: "MATCH", Src: src, Data: []byte(data), Want: w, Got: g})
+		add(divergence{Kind: "MATCH", Src: evalSrc, Data: []byte(data), Want: w, Got: g})
 	}
 	for _, s := range differentialSeeds() {
 		evaluate(s[0], s[1])
