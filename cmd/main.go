@@ -349,18 +349,19 @@ func compileRulesQuiet(content, filename string) (*compiler.CompiledProgram, err
 }
 
 func collectTargets(target string, recursive bool) ([]string, error) {
-	info, err := os.Stat(target)
+	cleanTarget := filepath.Clean(target)
+	info, err := os.Stat(cleanTarget) // #nosec G703 - caller intentionally inspects scan target
 	if err != nil {
 		return nil, fmt.Errorf("stat target %s: %w", target, err)
 	}
 	if !info.IsDir() {
-		return []string{target}, nil
+		return []string{cleanTarget}, nil
 	}
 	if !recursive {
 		return nil, fmt.Errorf("target %s is a directory (use -r / --recursive to scan directories)", target)
 	}
 	var files []string
-	err = filepath.WalkDir(target, func(path string, d os.DirEntry, err error) error {
+	err = filepath.WalkDir(cleanTarget, func(path string, d os.DirEntry, err error) error { // #nosec G703 - caller intentionally inspects scan target
 		if err != nil {
 			return err
 		}
@@ -438,7 +439,7 @@ func scanTargets(compiledProgram *compiler.CompiledProgram, targets []string, ar
 			defer scanner.Close()
 
 			for job := range jobs {
-				data, err := os.ReadFile(job.path) // #nosec G304 - user specified target
+				data, err := os.ReadFile(job.path) // #nosec G304,G703 - user specified target
 				if err != nil {
 					errMu.Lock()
 					if firstErr == nil {
