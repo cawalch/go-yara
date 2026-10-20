@@ -185,6 +185,53 @@ func (i *Interpreter) executeIterStartTextStringSet() error {
 	return nil
 }
 
+// executeIterStartIntEnum starts an integer enumeration iterator.
+// Stack layout (bottom to top): [elem_0, elem_1, ..., elem_{N-1}, N]
+func (i *Interpreter) executeIterStartIntEnum() error {
+	if err := i.validateStackUnderflow(OpIterStartIntEnum); err != nil {
+		return err
+	}
+
+	countVal := i.stack[len(i.stack)-1]
+	i.stack = i.stack[:len(i.stack)-1]
+
+	if countVal.Type != ValueTypeInt || countVal.IntVal < 0 {
+		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpIterStartIntEnum, Message: "enumeration count must be a non-negative integer"}
+	}
+
+	count := int(countVal.IntVal)
+	if err := i.validateStackUnderflowN(OpIterStartIntEnum, count); err != nil {
+		return err
+	}
+
+	vals := make([]int64, count)
+	base := len(i.stack) - count
+	for idx := 0; idx < count; idx++ {
+		val := i.stack[base+idx]
+		if val.Type != ValueTypeInt {
+			return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpIterStartIntEnum, Message: "enumeration elements must be integers"}
+		}
+		vals[idx] = val.IntVal
+	}
+	i.stack = i.stack[:base]
+
+	slot1, err := i.readAndValidateMemorySlot(OpIterStartIntEnum)
+	if err != nil {
+		return err
+	}
+
+	iter := Iterator{
+		Type:      OpIterStartIntEnum,
+		Variables: []int{slot1},
+		IntValues: vals,
+		Index:     0,
+		Total:     len(vals),
+	}
+
+	i.iterators = append(i.iterators, iter)
+	return nil
+}
+
 // parseConstraintMarker interprets the constraint marker value and pops
 // the necessary operands from the stack.
 func (i *Interpreter) parseConstraintMarker(
@@ -254,6 +301,8 @@ func (i *Interpreter) executeIterNext() error {
 		switch iter.Type {
 		case OpIterStartIntRange:
 			i.memory[iter.Variables[0]] = Value{Type: ValueTypeInt, IntVal: iter.StartValue + int64(iter.Index)}
+		case OpIterStartIntEnum:
+			i.memory[iter.Variables[0]] = Value{Type: ValueTypeInt, IntVal: iter.IntValues[iter.Index]}
 		case OpIterStartStringSet:
 			id := iter.StringIDs[iter.Index]
 			i.memory[iter.Variables[0]] = Value{Type: ValueTypeString, StringRef: i.resolveStringRef(id)}

@@ -84,7 +84,9 @@ type Iterator struct {
 	Variables []int // Memory slots where loop variables are stored
 	StringIDs []string
 	// Text strings for text-string-set iteration (e.g. for any s in ("a", "b") : ...)
-	TextStrings   []string
+	TextStrings []string
+	// Integer values for integer-enumeration iteration (e.g. for any i in (1, 2, 3) : ...)
+	IntValues     []int64
 	Count         int // Number of matches
 	Index         int // Current iteration index
 	Total         int // Total number of elements

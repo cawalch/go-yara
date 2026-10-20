@@ -1149,8 +1149,14 @@ func (cc *conditionCompiler) compileForLoop(forLoop *ast.ForLoop) error {
 		return cc.compileForLoopOverStrings(forLoop)
 	}
 
-	// Handle text string set iteration: for any s in ("text1", "text2") : (...)
+	// Handle tuple iteration: string set, integer enumeration, or text strings
 	if tuple, ok := forLoop.Range.(*ast.StringTuple); ok {
+		if isStringSetTuple(tuple) {
+			return cc.compileForLoopOverStrings(forLoop)
+		}
+		if isIntegerTuple(tuple) {
+			return cc.compileForLoopOverIntEnum(forLoop, tuple)
+		}
 		return cc.compileForLoopOverTextStrings(forLoop, tuple)
 	}
 	// Handle single string literal: for any s in ("text") : (...)
@@ -1244,6 +1250,72 @@ func (cc *conditionCompiler) GetTextStringSets() [][]string {
 		sets[i] = copied
 	}
 	return sets
+}
+
+// compileForLoopOverIntEnum compiles an integer enumeration loop: for any i in (1, 2, 3) : (...)
+func (cc *conditionCompiler) compileForLoopOverIntEnum(forLoop *ast.ForLoop, tuple *ast.StringTuple) error {
+	if len(tuple.Elements) == 0 {
+		return errors.New("integer enumeration cannot be empty")
+	}
+
+	slots, err := cc.allocateVariables(forLoop.Variables)
+	if err != nil {
+		return err
+	}
+
+	// 1. Evaluate and push each integer expression onto the stack
+	for _, elem := range tuple.Elements {
+		if err := cc.compileExpression(elem); err != nil {
+			return fmt.Errorf("compiling integer enumeration element: %w", err)
+		}
+	}
+
+	// 2. Push total number of elements in the enumeration
+	cc.emitter.EmitPush(uint64(len(tuple.Elements)), forLoop.Pos.Line, forLoop.Pos.Column)
+
+	// 3. Emit OpIterStartIntEnum with the variable slot operand
+	cc.emitter.EmitOpcodeWithOperand(OpIterStartIntEnum, Operand{Type: OperandImmediate32, Value: uint64(slots[0])}, forLoop.Pos.Line, forLoop.Pos.Column)
+
+	// 4. Compile loop body with loopVarSlot = -1 (integer variable, not string variable)
+	return cc.compileForLoopBody(forLoop.Quantifier, forLoop.Condition, forLoop.Pos, -1)
+}
+
+func isStringSetTuple(tuple *ast.StringTuple) bool {
+	if len(tuple.Elements) == 0 {
+		return false
+	}
+	for _, elem := range tuple.Elements {
+		ident, ok := elem.(*ast.Identifier)
+		if !ok || (!strings.HasPrefix(ident.Name, "$") && ident.Name != "them") {
+			return false
+		}
+	}
+	return true
+}
+
+func isIntegerTuple(tuple *ast.StringTuple) bool {
+	if len(tuple.Elements) == 0 {
+		return false
+	}
+	for _, elem := range tuple.Elements {
+		switch e := elem.(type) {
+		case *ast.Literal:
+			if e.Type == token.IntegerLit {
+				return true
+			}
+			if e.Type == token.StringLit {
+				return false
+			}
+		case *ast.Identifier:
+			if strings.HasPrefix(e.Name, "$") || e.Name == "them" {
+				return false
+			}
+			return true
+		default:
+			return true
+		}
+	}
+	return false
 }
 
 func (cc *conditionCompiler) compileForLoopOverStrings(forLoop *ast.ForLoop) error {
@@ -1644,6 +1716,16 @@ func (cc *conditionCompiler) collectStringSet(expr ast.Expression) ([]string, er
 	switch e := expr.(type) {
 	case *ast.Identifier:
 		return cc.expandStringSetIdentifier(e.Name)
+	case *ast.StringTuple:
+		var ids []string
+		for _, elem := range e.Elements {
+			sub, err := cc.collectStringSet(elem)
+			if err != nil {
+				return nil, err
+			}
+			ids = append(ids, sub...)
+		}
+		return cc.uniqueSortedStrings(ids), nil
 	case *ast.BinaryOp:
 		if e.Op == token.COMMA {
 			return cc.collectStringSetFromComma(e)

@@ -519,3 +519,19 @@ func TestBug19_ConstantDivisionByZeroRejected(t *testing.T) {
 	assertBothReject(t, bin, `rule t { condition: filesize % 0 == 0 }`)
 	assertBothReject(t, bin, `rule t { condition: true or (1 \ 0 == 0) }`)
 }
+
+// ---------------------------------------------------------------------------
+// BUG-20: Integer enumeration in for-loop (e.g. for any i in (1, 2, 3)).
+// ---------------------------------------------------------------------------
+
+func TestBug20_IntegerEnumerationInForLoop(t *testing.T) {
+	bin := requireLibyara(t)
+	assertSameOccurrenceSet(t, bin, `rule t { strings: $a = "abc" condition: for any i in (1, 2, 3) : ( i == 2 ) and $a }`, []byte("abc"))
+	assertSameOccurrenceSet(t, bin, `rule t { strings: $a = "abc" condition: for all i in (1, 2, 3) : ( i >= 1 ) and $a }`, []byte("abc"))
+	assertSameOccurrenceSet(t, bin, `rule t { strings: $a = "abc" condition: for none i in (1, 2, 3) : ( i == 9 ) and $a }`, []byte("abc"))
+	assertSameOccurrenceSet(t, bin, `rule t { strings: $a = "abc" condition: for any i in (1, 2, 3) : ( i == 9 ) and $a }`, []byte("abc"))
+	assertSameOccurrenceSet(t, bin, `rule t { strings: $a = "abc" condition: for any i in (1, 2, 3) : ( $a at i ) }`, []byte("xabc"))
+	assertSameOccurrenceSet(t, bin, `rule t { strings: $a = "abc" condition: for 2 i in (1, 2, 3) : ( i <= 2 ) and $a }`, []byte("abc"))
+	// Mixed type tuple is rejected:
+	assertBothReject(t, bin, `rule t { strings: $a = "abc" condition: for any i in (1, "two") : ( $a ) }`)
+}

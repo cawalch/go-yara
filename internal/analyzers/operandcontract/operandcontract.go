@@ -45,6 +45,7 @@ var contractSpecs = map[string]operandSpec{
 	"OpClearM":                 {kind: "OperandImmediate32", bytes: 4},
 	"OpIncrM":                  {kind: "OperandImmediate32", bytes: 4},
 	"OpIterStartIntRange":      {kind: "OperandImmediate32", bytes: 4},
+	"OpIterStartIntEnum":       {kind: "OperandImmediate32", bytes: 4},
 	"OpIterStartStringSet":     {kind: "OperandImmediate32", bytes: 4},
 	"OpIterStartTextStringSet": {kind: "OperandImmediate32", bytes: 4},
 	"OpJz":                     {kind: "OperandRelative32", bytes: 4},
