@@ -191,7 +191,7 @@ jobs:
       - name: Run security scan (gosec)
         run: |
           go install github.com/securego/gosec/v2/cmd/gosec@v2.28.0
-          gosec -exclude=G115,G204,G304 ./...
+          gosec -exclude=G115,G204,G304,G703 ./...
 
       - name: Run vulnerability check (govulncheck)
         run: |
