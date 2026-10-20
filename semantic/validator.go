@@ -1272,6 +1272,69 @@ func isStringSetExpression(expr ast.Expression) bool {
 	}
 }
 
+func (v *Validator) isIntegerTuple(tuple *ast.StringTuple) bool {
+	if len(tuple.Elements) == 0 {
+		return false
+	}
+	for _, elem := range tuple.Elements {
+		switch e := elem.(type) {
+		case *ast.Literal:
+			if e.Type == token.IntegerLit {
+				return true
+			}
+			if e.Type == token.StringLit {
+				return false
+			}
+		case *ast.Identifier:
+			if strings.HasPrefix(e.Name, "$") || e.Name == "them" {
+				return false
+			}
+			if sym, exists := v.symbolTable.Lookup(e.Name); exists {
+				info := v.getTypeFromSymbol(sym)
+				if info.DataType == TypeInteger {
+					return true
+				}
+			}
+		default:
+			info, _ := v.validateExpression(elem)
+			if info != nil && info.DataType == TypeInteger {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (v *Validator) validateTupleElementTypes(tuple *ast.StringTuple, loopVarType string) []error {
+	if isStringSetExpression(tuple) {
+		return nil
+	}
+	var errs []error
+	for _, elem := range tuple.Elements {
+		elemType, elemErrs := v.validateExpression(elem)
+		errs = append(errs, elemErrs...)
+		if elemType == nil || elemType.DataType == TypeUnknown {
+			continue
+		}
+		if loopVarType == "integer" && elemType.DataType != TypeInteger {
+			errs = append(errs, &Error{
+				Code:     ErrCodeTypeMismatch,
+				Message:  "for-loop integer enumeration element must be integer, got " + elemType.String(),
+				Position: elem.Position(),
+				Rule:     v.currentRule,
+			})
+		} else if loopVarType == "string" && elemType.DataType != TypeString {
+			errs = append(errs, &Error{
+				Code:     ErrCodeTypeMismatch,
+				Message:  "for-loop string tuple element must be string, got " + elemType.String(),
+				Position: elem.Position(),
+				Rule:     v.currentRule,
+			})
+		}
+	}
+	return errs
+}
+
 // validateForLoopExpression validates for loop expressions
 func (v *Validator) validateForLoopExpression(forLoop *ast.ForLoop) (*TypeInfo, []error) {
 	outerVariables := v.loopVariables
@@ -1283,10 +1346,20 @@ func (v *Validator) validateForLoopExpression(forLoop *ast.ForLoop) (*TypeInfo, 
 	loopVarType := ""
 	switch r := forLoop.Range.(type) {
 	case *ast.StringTuple:
-		loopVarType = "string"
-	case *ast.Literal:
-		if r.Type == token.StringLit {
+		switch {
+		case isStringSetExpression(r):
 			loopVarType = "string"
+		case v.isIntegerTuple(r):
+			loopVarType = "integer"
+		default:
+			loopVarType = "string"
+		}
+	case *ast.Literal:
+		switch r.Type {
+		case token.StringLit:
+			loopVarType = "string"
+		case token.IntegerLit:
+			loopVarType = "integer"
 		}
 	case *ast.BinaryOp:
 		// Integer range (min..max)
@@ -1295,7 +1368,14 @@ func (v *Validator) validateForLoopExpression(forLoop *ast.ForLoop) (*TypeInfo, 
 		}
 	case *ast.Identifier:
 		// String set iteration: for any s in ($*), for any s in (them)
-		loopVarType = "string"
+		if strings.HasPrefix(r.Name, "$") || r.Name == "them" {
+			loopVarType = "string"
+		} else if sym, exists := v.symbolTable.Lookup(r.Name); exists {
+			info := v.getTypeFromSymbol(sym)
+			if info.DataType == TypeInteger {
+				loopVarType = "integer"
+			}
+		}
 	}
 	if loopVarType == "" && isStringSetExpression(forLoop.Range) {
 		loopVarType = "string"
@@ -1339,6 +1419,10 @@ func (v *Validator) validateForLoopExpression(forLoop *ast.ForLoop) (*TypeInfo, 
 	// Validate the range expression
 	_, rangeErrs := v.validateExpression(forLoop.Range)
 	errors = append(errors, rangeErrs...)
+
+	if tuple, ok := forLoop.Range.(*ast.StringTuple); ok {
+		errors = append(errors, v.validateTupleElementTypes(tuple, loopVarType)...)
+	}
 
 	// Validate the condition expression
 	if loopVarType == "string" {

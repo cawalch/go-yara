@@ -208,7 +208,7 @@ func (p *QuantifierParser) parseParenthesizedRangeExpression() (ast.Expression, 
 	p.nextToken()        // consume '('
 
 	// Handle single expression parenthesized or comma separated tuple
-	left, err := p.exprParser.parsePrimaryExcludingUnary()
+	left, err := p.exprParser.ParseExpression()
 	if err != nil {
 		return nil, err
 	}
@@ -218,7 +218,7 @@ func (p *QuantifierParser) parseParenthesizedRangeExpression() (ast.Expression, 
 		tupleElements := []ast.Expression{left}
 		for p.CurrentTokenIs(token.COMMA) {
 			p.nextToken() // consume ','
-			nextElem, err := p.exprParser.parsePrimaryExcludingUnary()
+			nextElem, err := p.exprParser.ParseExpression()
 			if err != nil {
 				return nil, err
 			}
@@ -261,7 +261,7 @@ func (p *QuantifierParser) parseFullRange(left ast.Expression) (ast.Expression, 
 	p.nextToken() // consume first DOT
 	p.nextToken() // consume second DOT
 
-	right, err := p.exprParser.parsePrimaryExcludingUnary()
+	right, err := p.exprParser.ParseExpression()
 	if err != nil {
 		return nil, err
 	}

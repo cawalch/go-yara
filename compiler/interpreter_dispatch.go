@@ -168,7 +168,7 @@ func init() {
 	opcodeTable[OpIterStartArray] = (*Interpreter).executeIterUnimplemented
 	opcodeTable[OpIterStartDict] = (*Interpreter).executeIterUnimplemented
 	opcodeTable[OpIterStartTextStringSet] = (*Interpreter).executeIterStartTextStringSet
-	opcodeTable[OpIterStartIntEnum] = (*Interpreter).executeIterUnimplemented
+	opcodeTable[OpIterStartIntEnum] = (*Interpreter).executeIterStartIntEnum
 
 	// Variable loading
 	opcodeTable[OpLoadVar] = (*Interpreter).executeLoadVarOperation
