@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Performance
 * **Zero-Allocation & Match-Free Scan Modes (`WithoutMatches`, `WithoutRuleResults`)**: Added `WithoutMatches()` / `WithIncludeMatches(bool)` and `WithoutRuleResults()` / `WithIncludeRuleResults(bool)` scanner options. Skipping detailed match map materialization and rule result allocation drops production scan memory by **91.6%** (9,360 B/op $\to$ 784 B/op) and reduces allocations from 41 down to 2 allocs/op (and 0 allocs on clean rejections).
 
+### Testing & Quality
+* **Differential Fuzzing Expansion & Libyara Oracle Parity**: Expanded `TestLibyaraDifferentialCorpus` and `FuzzLibyaraDifferential` with anonymous string normalization (`$_anon_N` translation enabling libyara CLI match span reporting), string count `#` condition support, and seed corpus coverage for integer enumeration, proximity loops, bitwise operator precedence, integer division, and anonymous string sets.
+
 ### Documentation
 * Streamlined `README.md` following Google developer technical prose guidelines, condensed feature lists, simplified benchmark tables, and removed outdated AST visitor references.
 
