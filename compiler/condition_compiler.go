@@ -488,6 +488,7 @@ func (cc *conditionCompiler) compileAnonymousIdentifier(line, column int) error 
 
 // CompileBooleanExpression compiles a boolean expression to bytecode
 func (cc *conditionCompiler) CompileBooleanExpression(expr ast.Expression, shortCircuit bool) error {
+	expr = FoldConstants(expr)
 	if !shortCircuit {
 		return cc.compileExpression(expr)
 	}

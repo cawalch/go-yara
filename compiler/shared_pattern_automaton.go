@@ -27,13 +27,24 @@ type sharedPatternAutomatonBuilder struct {
 func newSharedPatternAutomatonBuilder(rules []*CompiledRule) *sharedPatternAutomatonBuilder {
 	totalEntries := 0
 	for _, rule := range rules {
+		if rule.IsDead {
+			continue
+		}
 		if rule.automaton != nil {
 			totalEntries += len(rule.automaton.strings)
 		}
-		for _, pattern := range rule.RegexPatterns {
+		for strID, pattern := range rule.RegexPatterns {
+			if rule.IsStringDead(strID) {
+				continue
+			}
 			totalEntries += max(2, len(pattern.alternativeAtoms)*2)
 		}
-		totalEntries += len(rule.HexPatterns)
+		for strID := range rule.HexPatterns {
+			if rule.IsStringDead(strID) {
+				continue
+			}
+			totalEntries++
+		}
 	}
 
 	automaton := newacAutomaton()
@@ -178,6 +189,9 @@ func sharedNonTextCacheRuleLookup(rules []*CompiledRule, covered []bool) [][]int
 }
 
 func (builder *sharedPatternAutomatonBuilder) addRule(ruleIndex int, rule *CompiledRule) error {
+	if rule.IsDead {
+		return nil
+	}
 	if err := builder.addTextPatterns(ruleIndex, rule); err != nil {
 		return err
 	}
@@ -192,7 +206,7 @@ func (builder *sharedPatternAutomatonBuilder) addTextPatterns(ruleIndex int, rul
 	}
 	for _, info := range rule.automaton.strings {
 		strID := info.Identifier
-		if rule.StringKinds[strID] != StringKindText {
+		if rule.IsStringDead(strID) || rule.StringKinds[strID] != StringKindText {
 			continue
 		}
 		globalID := fmt.Sprintf("%s:%s", rule.Name, strID)
@@ -210,6 +224,9 @@ func (builder *sharedPatternAutomatonBuilder) addTextPatterns(ruleIndex int, rul
 
 func (builder *sharedPatternAutomatonBuilder) addRegexPrefilters(ruleIndex int, rule *CompiledRule) {
 	for _, strID := range sortedPatternIDs(rule.RegexPatterns) {
+		if rule.IsStringDead(strID) {
+			continue
+		}
 		pattern := rule.RegexPatterns[strID]
 		atoms := selectSharedRegexAtoms(pattern)
 		if len(atoms) == 0 || pattern.cacheKey == "" {
@@ -290,6 +307,9 @@ func (builder *sharedPatternAutomatonBuilder) addRegexPrefilters(ruleIndex int, 
 
 func (builder *sharedPatternAutomatonBuilder) addHexPrefilters(ruleIndex int, rule *CompiledRule) {
 	for _, strID := range sortedPatternIDs(rule.HexPatterns) {
+		if rule.IsStringDead(strID) {
+			continue
+		}
 		pattern := rule.HexPatterns[strID]
 		if pattern == nil || pattern.cacheKey == "" || len(pattern.XorKeys) > 0 || len(pattern.XorRange) > 0 {
 			continue

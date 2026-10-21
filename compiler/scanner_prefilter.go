@@ -290,8 +290,8 @@ func (s *Scanner) rulePrefilterStatus(rule *CompiledRule, usesharedAutomaton boo
 	for i := range rule.prefilterStrings {
 		info := &rule.prefilterStrings[i]
 		switch info.class {
-		case prefilterStringText:
-			// Text strings are always represented in the shared automaton.
+		case prefilterStringText, prefilterStringDead:
+			// Text strings are represented in shared automaton; dead strings cannot match.
 		case prefilterStringNonText:
 			matches, ready := s.getNonTextMatches(&s.nonTextCache, info.cacheIndex, usesharedAutomaton)
 			if !ready {

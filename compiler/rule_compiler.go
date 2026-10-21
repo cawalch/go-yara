@@ -97,8 +97,13 @@ func (rc *ruleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 
 	anonymousStrings := rc.assignAnonymousStringIdentifiers(rule)
 
+	// Constant-fold condition and detect dead strings before compiling patterns
+	rule.Condition = FoldConstants(rule.Condition)
+	isDeadRule := isConditionStaticallyFalse(rule.Condition)
+	deadStrings := detectDeadStrings(rule, anonymousStrings, isDeadRule)
+
 	// Compile strings first
-	if err := rc.compileStrings(rule); err != nil {
+	if err := rc.compileStrings(rule, deadStrings); err != nil {
 		return nil, fmt.Errorf("compiling strings: %w", err)
 	}
 	externalSlots, err := rc.allocateExternalSlots(rc.stringCompiler.stringOffsets)
@@ -111,10 +116,12 @@ func (rc *ruleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 	}
 
 	// Compile the automaton if we have text strings
+	var ruleAutomaton *acAutomaton
 	if len(rc.textPatterns) > 0 {
 		if err := rc.automaton.Compile(); err != nil {
 			return nil, fmt.Errorf("compiling automaton: %w", err)
 		}
+		ruleAutomaton = rc.automaton
 	}
 
 	// Compile condition
@@ -141,7 +148,7 @@ func (rc *ruleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 		Bytecode:            bytecode,
 		StringCount:         len(rule.Strings),
 		Strings:             rc.copyAllPatterns(),
-		automaton:           rc.automaton,
+		automaton:           ruleAutomaton,
 		StringSets:          rc.conditionCompiler.GetStringSets(),
 		TextStringSets:      rc.conditionCompiler.GetTextStringSets(),
 		AnonymousStrings:    anonymousStrings,
@@ -161,6 +168,8 @@ func (rc *ruleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 		Meta:                rc.compileMeta(rule.Meta),
 		IsGlobal:            rc.hasModifier(rule.Modifiers, ast.ModifierGlobal),
 		IsPrivate:           rc.hasModifier(rule.Modifiers, ast.ModifierPrivate),
+		IsDead:              isDeadRule,
+		DeadStrings:         deadStrings,
 		FastScanSafe:        !conditionObservesMatchOccurrences(rule.Condition) && !ruleDeclaresEvidence(rule),
 		ConditionMonotonic:  !conditionObservesMatchOccurrences(rule.Condition) && !ruleDeclaresEvidence(rule) && conditionIsMonotonicInStrings(rule.Condition),
 		RequiresStringMatch: len(rule.Strings) > 0 && conditionRequiresStringMatch(rule.Condition),

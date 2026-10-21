@@ -364,7 +364,7 @@ func (cp *CompiledProgram) ruleAllStringsInSharedPrefilter(rule *CompiledRule) b
 	}
 	for _, info := range rule.prefilterStrings {
 		switch info.class {
-		case prefilterStringText:
+		case prefilterStringText, prefilterStringDead:
 		case prefilterStringNonText:
 			if info.cacheIndex < 0 || info.cacheIndex >= len(cp.sharedNonTextCaches) ||
 				!cp.sharedNonTextCaches[info.cacheIndex] {

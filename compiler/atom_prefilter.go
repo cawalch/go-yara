@@ -117,6 +117,8 @@ const (
 	// prefilterStringNonText is a regex or hex string whose candidate spans live
 	// in the scanner's non-text cache at cacheIndex.
 	prefilterStringNonText
+	// prefilterStringDead is an unreferenced or dead string omitted from compilation.
+	prefilterStringDead
 )
 
 // prefilterStringInfo is one string's resolved reject-path data.
@@ -148,6 +150,9 @@ func buildPrefilterStrings(rule *CompiledRule) {
 // map-lookup implementation return rulePrefilterUnknown for the whole rule, and
 // still does.
 func resolvePrefilterString(rule *CompiledRule, identifier string) prefilterStringInfo {
+	if rule.IsStringDead(identifier) {
+		return prefilterStringInfo{class: prefilterStringDead}
+	}
 	unresolved := prefilterStringInfo{class: prefilterStringUnresolved}
 
 	kind, exists := rule.StringKinds[identifier]
@@ -178,7 +183,13 @@ func assignNonTextCacheIndices(rules []*CompiledRule) int {
 	indices := make(map[nonTextCacheKey]int)
 	nextIndex := 0
 	for _, rule := range rules {
+		if rule.IsDead {
+			continue
+		}
 		for _, strID := range sortedPatternIDs(rule.RegexPatterns) {
+			if rule.IsStringDead(strID) {
+				continue
+			}
 			pattern := rule.RegexPatterns[strID]
 			pattern.cacheIndex = -1
 			if pattern.cacheKey != "" {
@@ -194,6 +205,9 @@ func assignNonTextCacheIndices(rules []*CompiledRule) int {
 			rule.RegexPatterns[strID] = pattern
 		}
 		for _, strID := range sortedPatternIDs(rule.HexPatterns) {
+			if rule.IsStringDead(strID) {
+				continue
+			}
 			pattern := rule.HexPatterns[strID]
 			if pattern == nil {
 				continue
@@ -225,7 +239,13 @@ func buildFixedRegexDispatch(rules []*CompiledRule) *fixedRegexDispatch {
 	entries := make([]fixedRegexDispatchEntry, 0)
 	seen := make(map[prefilterDedupKey]struct{})
 	for _, rule := range rules {
+		if rule.IsDead {
+			continue
+		}
 		for _, strID := range sortedPatternIDs(rule.RegexPatterns) {
+			if rule.IsStringDead(strID) {
+				continue
+			}
 			pattern := rule.RegexPatterns[strID]
 			if len(pattern.fixedByteSets) == 0 ||
 				len(pattern.prefix) >= minPrefilterAtomLength ||
