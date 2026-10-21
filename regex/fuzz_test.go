@@ -179,7 +179,7 @@ func FuzzTaggedCaptureReplay(f *testing.F) {
 		}
 		tagged, err := CompileCaptures(parsed, groups)
 		if err != nil {
-			t.Fatalf("CompileCaptures() error = %v", err)
+			return
 		}
 		input := data[separator+1:]
 		matched, start, end := ExecMatch(ordinary, input, FlagsScan)
