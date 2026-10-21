@@ -50,7 +50,8 @@ func MandatoryLiteralAtoms(ast *AST) []LiteralAtom {
 	if ast == nil || ast.Root == nil {
 		return nil
 	}
-	return analyzeAtoms(ast.Root).atoms
+	// analyzeAtoms results are memoized on AST nodes; never hand them out.
+	return cloneLiteralAtoms(analyzeAtoms(ast.Root).atoms)
 }
 
 // MandatoryASCIIFoldedLiteralAtoms returns literals formed by required runs of
@@ -61,7 +62,7 @@ func MandatoryASCIIFoldedLiteralAtoms(ast *AST) []LiteralAtom {
 	if ast == nil || ast.Root == nil {
 		return nil
 	}
-	return analyzeASCIIFoldedLiteralAtoms(ast.Root)
+	return cloneLiteralAtoms(analyzeASCIIFoldedLiteralAtoms(ast.Root))
 }
 
 func analyzeASCIIFoldedLiteralAtoms(node *Node) []LiteralAtom {
@@ -236,6 +237,14 @@ func analyzeAtoms(node *Node) atomAnalysis {
 	if node == nil {
 		return atomAnalysis{maxLength: 0, isExact: true}
 	}
+	if node.atoms == nil {
+		computed := analyzeAtomsUncached(node)
+		node.atoms = &computed
+	}
+	return *node.atoms
+}
+
+func analyzeAtomsUncached(node *Node) atomAnalysis {
 
 	switch node.Kind {
 	case NodeGroup:
@@ -523,6 +532,17 @@ func cloneLiteralAtoms(atoms []LiteralAtom) []LiteralAtom {
 			MaxOffset: atom.MaxOffset,
 			MaxSuffix: atom.MaxSuffix,
 		}
+	}
+	return result
+}
+
+func cloneAtomGroups(groups [][]LiteralAtom) [][]LiteralAtom {
+	if groups == nil {
+		return nil
+	}
+	result := make([][]LiteralAtom, len(groups))
+	for i, group := range groups {
+		result[i] = cloneLiteralAtoms(group)
 	}
 	return result
 }

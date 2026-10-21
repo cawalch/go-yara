@@ -72,3 +72,31 @@ func TestNodeMaxLengthMatchesAtomAnalysis(t *testing.T) {
 		}
 	}
 }
+
+func TestAtomAPIsDoNotAliasMemoizedAnalysis(t *testing.T) {
+	parsed, err := NewParser(0).Parse(`(foo|barbaz)[0-9]{4}qux`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := MandatoryLiteralAtoms(parsed)
+	if len(first) == 0 {
+		t.Fatal("expected mandatory atoms")
+	}
+	want := string(first[0].Data)
+	first[0].Data[0] ^= 0xFF
+	first[0].MinOffset = 999
+
+	second := MandatoryLiteralAtoms(parsed)
+	if got := string(second[0].Data); got != want || second[0].MinOffset == 999 {
+		t.Fatalf("memoized analysis leaked a mutation: got %q offset %d, want %q", got, second[0].MinOffset, want)
+	}
+
+	groups := RequiredLiteralAlternationAtoms(parsed, 1)
+	if len(groups) > 0 && len(groups[0]) > 0 {
+		groups[0][0].Data[0] ^= 0xFF
+		again := RequiredLiteralAlternationAtoms(parsed, 1)
+		if again[0][0].Data[0] == groups[0][0].Data[0] {
+			t.Fatal("RequiredLiteralAlternationAtoms aliases memoized data")
+		}
+	}
+}

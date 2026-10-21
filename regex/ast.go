@@ -111,6 +111,9 @@ type Node struct {
 	Class    *Class
 	Group    int // One-based source group number for NodeGroup.
 	Children []*Node
+
+	// atoms memoizes analyzeAtoms for this node; AST nodes are immutable after parsing.
+	atoms *atomAnalysis
 }
 
 // AST is the root of a parsed regex along with flags captured during parse.

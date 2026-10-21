@@ -15,13 +15,13 @@ func LiteralAtomCover(ast *AST, minimumLength int) [][]LiteralAtom {
 	}
 	minimumLength = max(1, minimumLength)
 	if cover, ok := literalAtomCoverFromAlternatives(AlternativeMandatoryLiteralAtoms(ast), minimumLength); ok {
-		return cover.groups
+		return cloneAtomGroups(cover.groups)
 	}
 	cover, ok := literalAtomCover(ast.Root, minimumLength)
 	if !ok {
 		return nil
 	}
-	return cover.groups
+	return cloneAtomGroups(cover.groups)
 }
 
 // RequiredLiteralAlternationAtoms returns one mandatory-literal group for
@@ -38,7 +38,7 @@ func RequiredLiteralAlternationAtoms(ast *AST, minimumLength int) [][]LiteralAto
 	if !ok {
 		return nil
 	}
-	return cover.groups
+	return cloneAtomGroups(cover.groups)
 }
 
 func requiredLiteralAlternationCover(node *Node, minimumLength int) (literalAtomCoverPlan, bool) {
@@ -274,7 +274,7 @@ func LeadingByteGapAtomCover(ast *AST, flags Flags, minimumLength int) (LeadingB
 		GapSet:     gapSet,
 		GapMin:     gapMin,
 		GapMax:     gapMax,
-		AtomGroups: groups,
+		AtomGroups: cloneAtomGroups(groups),
 	}, true
 }
 

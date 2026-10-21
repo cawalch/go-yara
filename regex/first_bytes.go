@@ -216,7 +216,7 @@ func MandatoryByteSetAtoms(ast *AST) []ByteSetAtom {
 	if ast == nil || ast.Root == nil {
 		return nil
 	}
-	return analyzeAtoms(ast.Root).byteAtoms
+	return cloneByteSetAtoms(analyzeAtoms(ast.Root).byteAtoms)
 }
 
 func classByteSet(class *Class) ByteSet {
