@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -83,17 +84,26 @@ func (rc *ruleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 		return nil, err
 	}
 
+	textStringCount := 0
+	expectedStates := 1
+	for _, str := range rule.Strings {
+		if p, ok := str.Pattern.(*ast.TextString); ok {
+			textStringCount++
+			expectedStates += rc.calculateTextStringLength(p.Value, str.Modifiers)
+		}
+	}
+
 	// Reset components for new rule
 	rc.emitter.Reset()
-	rc.automaton = newacAutomaton()
+	rc.automaton = newacAutomatonWithCapacity(expectedStates, textStringCount, expectedStates)
 	rc.conditionCompiler.ResetForRule()
 	rc.stringCompiler.Reset()
-	rc.allPatterns = make(map[string][]byte)
-	rc.textPatterns = make(map[string][]byte)
+	rc.allPatterns = make(map[string][]byte, len(rule.Strings))
+	rc.textPatterns = make(map[string][]byte, textStringCount)
 	rc.regexPatterns = make(map[string]RegexPattern)
 	rc.hexPatterns = make(map[string]*HexPattern)
-	rc.stringKinds = make(map[string]StringKind)
-	rc.stringModifiers = make(map[string][]ast.StringModifier)
+	rc.stringKinds = make(map[string]StringKind, len(rule.Strings))
+	rc.stringModifiers = make(map[string][]ast.StringModifier, len(rule.Strings))
 
 	anonymousStrings := rc.assignAnonymousStringIdentifiers(rule)
 
@@ -140,22 +150,22 @@ func (rc *ruleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 		Index:               rc.ruleIndex,
 		Bytecode:            bytecode,
 		StringCount:         len(rule.Strings),
-		Strings:             rc.copyAllPatterns(),
+		Strings:             rc.allPatterns,
 		automaton:           rc.automaton,
 		StringSets:          rc.conditionCompiler.GetStringSets(),
 		TextStringSets:      rc.conditionCompiler.GetTextStringSets(),
 		AnonymousStrings:    anonymousStrings,
 		StringLiterals:      rc.emitter.GetStringLiterals(),
-		StringKinds:         rc.copyStringKinds(),
-		StringModifiers:     rc.copyStringModifiers(),
+		StringKinds:         rc.stringKinds,
+		StringModifiers:     rc.stringModifiers,
 		CaptureBindings:     captureBindingsByPattern(rule),
 		EvidencePlans:       compileEvidencePlans(rule.Evidence),
-		TextPatterns:        rc.copyTextPatterns(),
-		RegexPatterns:       rc.copyRegexPatterns(),
-		HexPatterns:         rc.copyHexPatterns(),
+		TextPatterns:        rc.textPatterns,
+		RegexPatterns:       rc.regexPatterns,
+		HexPatterns:         rc.hexPatterns,
 		Stats:               rc.snapshotCompilationStats(rule),
-		ExternalSlots:       maps.Clone(externalSlots),
-		GlobalSlots:         maps.Clone(globalSlots),
+		ExternalSlots:       externalSlots,
+		GlobalSlots:         globalSlots,
 		GlobalValues:        rc.copyGlobalValuesForSlots(globalSlots),
 		Tags:                rule.Tags,
 		Meta:                rc.compileMeta(rule.Meta),
@@ -164,8 +174,8 @@ func (rc *ruleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 		FastScanSafe:        !conditionObservesMatchOccurrences(rule.Condition) && !ruleDeclaresEvidence(rule),
 		ConditionMonotonic:  !conditionObservesMatchOccurrences(rule.Condition) && !ruleDeclaresEvidence(rule) && conditionIsMonotonicInStrings(rule.Condition),
 		RequiresStringMatch: len(rule.Strings) > 0 && conditionRequiresStringMatch(rule.Condition),
-		ModuleFunctions:     maps.Clone(rc.moduleFunctions),
-		ModuleNames:         maps.Clone(rc.moduleNames),
+		ModuleFunctions:     rc.moduleFunctions,
+		ModuleNames:         rc.moduleNames,
 		HeaderConstraints:   deriveHeaderConstraints(rule.Condition),
 		requiredStrings:     requiredStrings,
 		forbiddenStrings:    forbiddenStrings,
@@ -337,6 +347,16 @@ func (rc *ruleCompiler) assignAnonymousStringIdentifiers(rule *ast.Rule) []strin
 	if rule == nil || len(rule.Strings) == 0 {
 		return nil
 	}
+	hasAnonymous := false
+	for _, str := range rule.Strings {
+		if str != nil && str.Identifier == "$" {
+			hasAnonymous = true
+			break
+		}
+	}
+	if !hasAnonymous {
+		return nil
+	}
 	used := make(map[string]struct{}, len(rule.Strings))
 	for _, str := range rule.Strings {
 		used[str.Identifier] = struct{}{}
@@ -377,32 +397,17 @@ func (rc *ruleCompiler) calculateTextStringLength(text string, modifiers []ast.S
 	return l
 }
 
-// estimatePatternStates estimates the number of states needed for a pattern
-func (rc *ruleCompiler) estimatePatternLength(str *ast.String) int {
-	switch p := str.Pattern.(type) {
-	case *ast.TextString:
-		return rc.calculateTextStringLength(p.Value, str.Modifiers)
-	case *ast.HexString:
-		// Approximate: two hex digits per byte; ignore comments/whitespace
-		return len(p.Value) / 2
-	case *ast.RegexPattern:
-		// Fallback to pattern length
-		return len(p.Value)
-	default:
-		return 0
-	}
-}
-
 // reserveCompilationResources reserves buffers and automaton capacity
 func (rc *ruleCompiler) reserveCompilationResources(rule *ast.Rule) {
 	// Pre-size buffers to reduce allocations
 	rc.emitter.ReserveInstructions(2*len(rule.Strings) + 32)
 	rc.automaton.ReserveStrings(len(rule.Strings))
 
-	// Rough upper-bound estimate of states: 1 (root) + sum of pattern byte lengths
 	expectedStates := 1
 	for _, str := range rule.Strings {
-		expectedStates += rc.estimatePatternLength(str)
+		if p, ok := str.Pattern.(*ast.TextString); ok {
+			expectedStates += rc.calculateTextStringLength(p.Value, str.Modifiers)
+		}
 	}
 	rc.automaton.ReserveStates(expectedStates)
 }
@@ -482,7 +487,7 @@ func (rc *ruleCompiler) CompileProgram(program *ast.Program) ([]*CompiledRule, e
 		if err != nil {
 			return nil, &RuleCompileError{Rule: rule.Name, Err: err}
 		}
-		compiledRule.dependencies = append([]string{}, dependencies[rule.Name]...)
+		compiledRule.dependencies = slices.Clone(dependencies[rule.Name])
 		compiledRules = append(compiledRules, compiledRule)
 	}
 
@@ -500,10 +505,10 @@ func (rc *ruleCompiler) registerExternalVariable(extVar *ast.ExternalVariable) {
 }
 
 func (rc *ruleCompiler) allocateExternalSlots(stringOffsets map[string]int) (map[string]int, error) {
-	externalSlots := make(map[string]int, len(rc.externalNames))
 	if len(rc.externalNames) == 0 {
-		return externalSlots, nil
+		return nil, nil
 	}
+	externalSlots := make(map[string]int, len(rc.externalNames))
 
 	highestStringSlot := -1
 	for _, slot := range stringOffsets {
@@ -539,10 +544,10 @@ func (rc *ruleCompiler) registerGlobalVariable(globalVar *ast.GlobalVariable) er
 }
 
 func (rc *ruleCompiler) allocateGlobalSlots(stringOffsets, externalSlots map[string]int) (map[string]int, error) {
-	globalSlots := make(map[string]int, len(rc.globalNames))
 	if len(rc.globalNames) == 0 {
-		return globalSlots, nil
+		return nil, nil
 	}
+	globalSlots := make(map[string]int, len(rc.globalNames))
 
 	occupied := make(map[int]bool, len(externalSlots))
 	for _, slot := range externalSlots {
@@ -575,6 +580,9 @@ func highestMemorySlot(slots map[string]int) int {
 }
 
 func (rc *ruleCompiler) copyGlobalValuesForSlots(globalSlots map[string]int) map[string]compiledGlobalValue {
+	if len(globalSlots) == 0 {
+		return nil
+	}
 	values := make(map[string]compiledGlobalValue, len(globalSlots))
 	for name := range globalSlots {
 		values[name] = rc.globalValues[name]
@@ -676,7 +684,7 @@ func globalLiteralBool(lit *ast.Literal) (bool, error) {
 
 // snapshotCompilationStats returns an owned snapshot of rule compilation stats.
 func (rc *ruleCompiler) snapshotCompilationStats(rule *ast.Rule) map[string]any {
-	stats := make(map[string]any)
+	stats := make(map[string]any, 12)
 
 	stats["instruction_count"] = rc.emitter.GetInstructionCount()
 	stats["bytecode_size"] = rc.emitter.GetSize()

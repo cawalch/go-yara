@@ -3,7 +3,6 @@ package compiler
 import (
 	"errors"
 	"fmt"
-	"maps"
 	"slices"
 	"strings"
 
@@ -390,94 +389,4 @@ func (rc *ruleCompiler) ensurePatternMaps() {
 	if rc.stringModifiers == nil {
 		rc.stringModifiers = make(map[string][]ast.StringModifier)
 	}
-}
-
-func (rc *ruleCompiler) copyTextPatterns() map[string][]byte {
-	out := make(map[string][]byte, len(rc.textPatterns))
-	for k, v := range rc.textPatterns {
-		cp := make([]byte, len(v))
-		copy(cp, v)
-		out[k] = cp
-	}
-	return out
-}
-
-func (rc *ruleCompiler) copyAllPatterns() map[string][]byte {
-	out := make(map[string][]byte, len(rc.allPatterns))
-	for k, v := range rc.allPatterns {
-		cp := make([]byte, len(v))
-		copy(cp, v)
-		out[k] = cp
-	}
-	return out
-}
-
-func (rc *ruleCompiler) copyRegexPatterns() map[string]RegexPattern {
-	out := make(map[string]RegexPattern, len(rc.regexPatterns))
-	for k, v := range rc.regexPatterns {
-		cp := make([]byte, len(v.Code))
-		copy(cp, v.Code)
-		out[k] = RegexPattern{
-			Code:                 cp,
-			CaptureCode:          slices.Clone(v.CaptureCode),
-			CaptureGroups:        slices.Clone(v.CaptureGroups),
-			Flags:                v.Flags,
-			prefix:               slices.Clone(v.prefix),
-			widePrefix:           slices.Clone(v.widePrefix),
-			atom:                 slices.Clone(v.atom),
-			wideAtom:             slices.Clone(v.wideAtom),
-			atomMinOffset:        v.atomMinOffset,
-			atomMaxOffset:        v.atomMaxOffset,
-			atomASCIINoCase:      v.atomASCIINoCase,
-			alternativeAtoms:     cloneRegexPrefilterAtoms(v.alternativeAtoms),
-			wideAlternativeAtoms: cloneRegexPrefilterAtoms(v.wideAlternativeAtoms),
-			leadingGap:           cloneLeadingGapRegexPlan(v.leadingGap),
-			byteSet:              v.byteSet,
-			byteSetMinOffset:     v.byteSetMinOffset,
-			byteSetMaxOffset:     v.byteSetMaxOffset,
-			byteSetCount:         v.byteSetCount,
-			byteSetLower:         v.byteSetLower,
-			byteSetUpper:         v.byteSetUpper,
-			byteSetContiguous:    v.byteSetContiguous,
-			byteSetValues:        slices.Clone(v.byteSetValues),
-			fixedByteSets:        slices.Clone(v.fixedByteSets),
-			anchored:             v.anchored,
-			cacheKey:             v.cacheKey,
-			cacheIndex:           v.cacheIndex,
-		}
-	}
-	return out
-}
-
-func (rc *ruleCompiler) copyHexPatterns() map[string]*HexPattern {
-	out := make(map[string]*HexPattern, len(rc.hexPatterns))
-	for k, v := range rc.hexPatterns {
-		if v == nil {
-			continue
-		}
-		out[k] = v.Clone()
-	}
-	return out
-}
-
-func (rc *ruleCompiler) copyStringKinds() map[string]StringKind {
-	return maps.Clone(rc.stringKinds)
-}
-
-func (rc *ruleCompiler) copyStringModifiers() map[string][]ast.StringModifier {
-	out := make(map[string][]ast.StringModifier, len(rc.stringModifiers))
-	for k, mods := range rc.stringModifiers {
-		if len(mods) == 0 {
-			continue
-		}
-		cp := make([]ast.StringModifier, len(mods))
-		for i, modifier := range mods {
-			cp[i] = modifier
-			if bindings, ok := modifier.Value.([]ast.CaptureBinding); ok {
-				cp[i].Value = slices.Clone(bindings)
-			}
-		}
-		out[k] = cp
-	}
-	return out
 }

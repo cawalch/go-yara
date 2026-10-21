@@ -35,6 +35,9 @@ type HeaderConstraint struct {
 
 func deriveHeaderConstraints(condition ast.Expression) []HeaderConstraint {
 	constraints := mandatoryHeaderConstraints(condition)
+	if len(constraints) == 0 {
+		return nil
+	}
 	keys := make([]string, 0, len(constraints))
 	for key := range constraints {
 		keys = append(keys, key)

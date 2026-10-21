@@ -56,11 +56,17 @@ type acAutomaton struct {
 	Strings     []acStringInfo
 }
 
-// NewacAutomaton creates a new Aho-Corasick automaton
+// newacAutomaton creates a new Aho-Corasick automaton with compact initial capacity.
 func newacAutomaton() *acAutomaton {
-	// Start with root state; allocate compact initial capacity so individual rule
-	// automata avoid allocating multi-hundred-kilobyte arrays when rules contain few strings.
-	states := make([]acState, 1, 16)
+	return newacAutomatonWithCapacity(1, 8, 16)
+}
+
+// newacAutomatonWithCapacity creates a new Aho-Corasick automaton with pre-allocated capacities.
+func newacAutomatonWithCapacity(stateCap, stringCap, outputCap int) *acAutomaton {
+	if stateCap < 1 {
+		stateCap = 1
+	}
+	states := make([]acState, 1, stateCap)
 	for i := range states[0].transitions {
 		states[0].transitions[i] = -1 // No transitions initially
 	}
@@ -68,13 +74,20 @@ func newacAutomaton() *acAutomaton {
 	states[0].outputStart = 0
 	states[0].outputEnd = 0
 
+	if outputCap < 16 {
+		outputCap = 16
+	}
+	if stringCap < 8 {
+		stringCap = 8
+	}
+
 	return &acAutomaton{
 		states:      states,
-		outputs:     make([]int32, 0, 16),
-		strings:     make([]acStringInfo, 0, 8),
+		outputs:     make([]int32, 0, outputCap),
+		strings:     make([]acStringInfo, 0, stringCap),
 		compiled:    false,
 		StringCount: 0,
-		Strings:     make([]acStringInfo, 0, 8),
+		Strings:     make([]acStringInfo, 0, stringCap),
 	}
 }
 

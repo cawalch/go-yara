@@ -51,7 +51,7 @@ func NewValidatorWithModules(moduleFunctions ModuleFunctions) *Validator {
 // ValidateProgram performs semantic analysis on a complete program
 func (v *Validator) ValidateProgram(program *ast.Program) []error {
 	v.errors = v.errors[:0] // Clear previous errors
-	v.symbolTable.Reset()
+	v.symbolTable.ResetWithCapacity(len(program.Rules))
 	v.currentRule = ""
 	v.currentRuleStrings = nil
 	v.allRuleNames = v.allRuleNames[:0]
@@ -162,13 +162,9 @@ func (v *Validator) validateRule(rule *ast.Rule) {
 			v.currentRuleStrings = append(v.currentRuleStrings, str.Identifier)
 		}
 	}
-	defer func() {
-		v.currentRule = previousRule
-		v.currentRuleStrings = prevStrings
-	}()
 
 	// Enter rule scope for validation
-	v.symbolTable.EnterScope("rule_" + rule.Name)
+	v.symbolTable.EnterScopeWithCapacity(rule.Name, len(rule.Strings))
 
 	// Re-define strings in the new scope for validation
 	for _, str := range rule.Strings {
@@ -195,6 +191,8 @@ func (v *Validator) validateRule(rule *ast.Rule) {
 
 	// Exit rule scope
 	v.symbolTable.ExitScope()
+	v.currentRule = previousRule
+	v.currentRuleStrings = prevStrings
 }
 
 // validateMeta validates the meta section

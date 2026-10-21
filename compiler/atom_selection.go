@@ -135,19 +135,6 @@ func selectLeadingGapRegexPlan(plan regex.LeadingByteGapPlan) (*regexLeadingGapP
 	}, true
 }
 
-func cloneLeadingGapRegexPlan(plan *regexLeadingGapPlan) *regexLeadingGapPlan {
-	if plan == nil {
-		return nil
-	}
-	return &regexLeadingGapPlan{
-		leadingSet: plan.leadingSet,
-		gapSet:     plan.gapSet,
-		gapMin:     plan.gapMin,
-		gapMax:     plan.gapMax,
-		atoms:      cloneRegexPrefilterAtoms(plan.atoms),
-	}
-}
-
 func cloneRegexPrefilterAtoms(atoms []regexPrefilterAtom) []regexPrefilterAtom {
 	if len(atoms) == 0 {
 		return nil

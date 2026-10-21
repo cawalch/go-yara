@@ -118,6 +118,9 @@ func (cc *conditionCompiler) registerTextStringSet(literals []string) int {
 
 // GetTextStringSets returns the compiled text string sets for this condition.
 func (cc *conditionCompiler) GetTextStringSets() [][]string {
+	if len(cc.textStringSets) == 0 {
+		return nil
+	}
 	sets := make([][]string, len(cc.textStringSets))
 	for i, set := range cc.textStringSets {
 		copied := make([]string, len(set))

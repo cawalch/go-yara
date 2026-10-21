@@ -545,6 +545,9 @@ func (cc *conditionCompiler) SetAnonymousStrings(ids []string) {
 
 // GetStringSets returns the compiled string sets for this condition.
 func (cc *conditionCompiler) GetStringSets() [][]string {
+	if len(cc.stringSets) == 0 {
+		return nil
+	}
 	sets := make([][]string, len(cc.stringSets))
 	for i, set := range cc.stringSets {
 		copied := make([]string, len(set))
@@ -557,11 +560,11 @@ func (cc *conditionCompiler) GetStringSets() [][]string {
 // ResetForRule clears per-rule state while preserving program-level maps.
 func (cc *conditionCompiler) ResetForRule() {
 	cc.labelCounter = 0
-	cc.labels = make(map[string]int)
+	clear(cc.labels)
 	cc.pendingJumps = cc.pendingJumps[:0]
 	cc.stringSets = cc.stringSets[:0]
-	cc.stringSetIndex = make(map[string]int)
-	cc.globalVariables = make(map[string]int)
+	clear(cc.stringSetIndex)
+	clear(cc.globalVariables)
 }
 
 func (cc *conditionCompiler) setModuleFunctions(functions map[string]compiledModuleFunction) {

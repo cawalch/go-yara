@@ -70,12 +70,16 @@ func NewSymbolTable() *SymbolTable {
 
 // EnterScope creates a new scope and makes it current
 func (st *SymbolTable) EnterScope(name string) {
+	st.EnterScopeWithCapacity(name, 0)
+}
+
+// EnterScopeWithCapacity creates a new scope with pre-sized symbol map and makes it current
+func (st *SymbolTable) EnterScopeWithCapacity(name string, symbolCap int) {
 	scope := &Scope{
-		Name:     name,
-		Parent:   st.Current,
-		Symbols:  make(map[string]*Symbol),
-		Children: make([]*Scope, 0),
-		Level:    st.Current.Level + 1,
+		Name:    name,
+		Parent:  st.Current,
+		Symbols: make(map[string]*Symbol, symbolCap),
+		Level:   st.Current.Level + 1,
 	}
 
 	st.Current.Children = append(st.Current.Children, scope)
@@ -218,10 +222,18 @@ func (st *SymbolTable) MarkUsed(name string) {
 
 // Reset clears all scopes and resets the symbol table
 func (st *SymbolTable) Reset() {
+	st.ResetWithCapacity(64)
+}
+
+// ResetWithCapacity clears all scopes and resets the symbol table with expected rule capacity
+func (st *SymbolTable) ResetWithCapacity(ruleCount int) {
+	if ruleCount < 64 {
+		ruleCount = 64
+	}
 	root := &Scope{
 		Name:     "global",
-		Symbols:  make(map[string]*Symbol, 64),
-		Children: make([]*Scope, 0, 8),
+		Symbols:  make(map[string]*Symbol, ruleCount),
+		Children: make([]*Scope, 0, ruleCount),
 		Level:    0,
 	}
 	st.Root = root

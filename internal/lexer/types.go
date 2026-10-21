@@ -43,6 +43,14 @@ func New(input string) *Lexer {
 	}
 }
 
+// InputLength returns the total length of the input in bytes.
+func (l *Lexer) InputLength() int {
+	if l == nil || l.reader == nil {
+		return 0
+	}
+	return len(l.reader.Input())
+}
+
 // sectionMode tracks which rule section the lexer is currently in.
 type sectionMode uint8
 
