@@ -73,6 +73,8 @@ func (rc *ruleCompiler) compileSingleStringWithDead(str *ast.String, isDead bool
 			prefix:           prefix,
 			widePrefix:       widenRegexPrefix(prefix),
 			atomMaxOffset:    -1,
+			atomMaxSuffix:    -1,
+			maxLength:        result.maxLength,
 			byteSetMaxOffset: -1,
 			anchored:         anchored,
 			cacheKey:         result.cacheKey,
@@ -83,12 +85,14 @@ func (rc *ruleCompiler) compileSingleStringWithDead(str *ast.String, isDead bool
 			pattern.wideAtom = widenRegexPrefix(atom.data)
 			pattern.atomMinOffset = atom.minOffset
 			pattern.atomMaxOffset = atom.maxOffset
+			pattern.atomMaxSuffix = atom.maxSuffix
 		}
 		if atom, ok := selectMandatoryASCIIFoldedRegexAtom(result.regexASCIIFoldedAtoms); ok {
 			current := regexPrefilterAtom{
 				data:        pattern.atom,
 				minOffset:   pattern.atomMinOffset,
 				maxOffset:   pattern.atomMaxOffset,
+				maxSuffix:   pattern.atomMaxSuffix,
 				score:       prefilterAtomScore(pattern.atom),
 				asciiNoCase: pattern.atomASCIINoCase,
 			}
@@ -97,7 +101,13 @@ func (rc *ruleCompiler) compileSingleStringWithDead(str *ast.String, isDead bool
 				pattern.wideAtom = widenRegexPrefix(atom.data)
 				pattern.atomMinOffset = atom.minOffset
 				pattern.atomMaxOffset = atom.maxOffset
+				pattern.atomMaxSuffix = atom.maxSuffix
 				pattern.atomASCIINoCase = true
+			}
+		}
+		if len(pattern.atom) == 0 && len(pattern.prefix) > 0 {
+			if pattern.maxLength >= len(pattern.prefix) {
+				pattern.atomMaxSuffix = pattern.maxLength - len(pattern.prefix)
 			}
 		}
 		if atoms, ok := selectAlternativeRegexAtoms(result.regexAlternatives); ok {
@@ -153,6 +163,7 @@ type stringCompilationResult struct {
 	regexFixedByteSets    []regex.ByteSet
 	captureCode           []byte
 	captureGroups         []int
+	maxLength             int
 }
 
 func (rc *ruleCompiler) compileStringPattern(str *ast.String) (*stringCompilationResult, error) {
@@ -282,6 +293,7 @@ func (rc *ruleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers
 		regexFixedByteSets:    fixedByteSets,
 		captureCode:           captureCode,
 		captureGroups:         groups,
+		maxLength:             regex.ASTMaxLength(parsed),
 	}, nil
 }
 

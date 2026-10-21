@@ -90,6 +90,8 @@ type serializedRegexPattern struct {
 	WideAtom             []byte
 	AtomMinOffset        int
 	AtomMaxOffset        int
+	AtomMaxSuffix        int
+	MaxLength            int
 	AtomASCIINoCase      bool
 	AlternativeAtoms     []serializedRegexAtom
 	WideAlternativeAtoms []serializedRegexAtom

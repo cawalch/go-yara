@@ -27,6 +27,35 @@ func regexMatchDensityBody(header string, size int) []byte {
 	return buffer.Bytes()
 }
 
+func BenchmarkUnanchoredAtomWindowing(b *testing.B) {
+	ruleSource := `
+rule candidate_atoms {
+    strings:
+        $re = /token_[a-z]{1,4}_valid\b/
+    condition:
+        $re
+}`
+	program, err := NewCompiler().CompileSource(ruleSource)
+	if err != nil {
+		b.Fatal(err)
+	}
+	// Create a 1MB buffer with candidate atom occurrences.
+	body := bytes.Repeat([]byte("token_xxxx_filler benignFillerCode123 "), 25000)
+	copy(body[10000:], []byte("token_test_valid "))
+
+	scanner := NewScanner(program)
+	defer scanner.Close()
+
+	b.SetBytes(int64(len(body)))
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		if _, scanErr := scanner.Scan(body); scanErr != nil {
+			b.Fatal(scanErr)
+		}
+	}
+}
+
 func BenchmarkRegexMatchDensity(b *testing.B) {
 	benchmarks := []struct {
 		name   string

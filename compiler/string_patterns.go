@@ -26,6 +26,8 @@ type RegexPattern struct {
 	wideAtom             []byte
 	atomMinOffset        int
 	atomMaxOffset        int
+	atomMaxSuffix        int
+	maxLength            int
 	atomASCIINoCase      bool
 	alternativeAtoms     []regexPrefilterAtom
 	wideAlternativeAtoms []regexPrefilterAtom
