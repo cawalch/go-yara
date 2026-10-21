@@ -55,3 +55,20 @@ func TestContainsWideBytes(t *testing.T) {
 		t.Fatal("containsWideBytes false positive")
 	}
 }
+
+func TestNodeMaxLengthMatchesAtomAnalysis(t *testing.T) {
+	patterns := []string{
+		`abc`, `a.c`, `a*`, `a+`, `(ab)+`, `(a|bcd|ef)`, `a{2,5}`, `a{3,}`, `(ab){2,4}x`,
+		`[a-z]{12}`, `\d+\.\d+`, `^start$`, `\bword\b`, `a.{0,32}b`, `x(y|)z`, `(a*)*`,
+		`tok_[0-9a-f]{16,32}`, `a{0}`, `(?:)`, `(a|b|c|d){1,3}e*`, `.{2,}z`,
+	}
+	for _, pattern := range patterns {
+		parsed, err := NewParser(0).Parse(pattern)
+		if err != nil {
+			continue
+		}
+		if got, want := ASTMaxLength(parsed), analyzeAtoms(parsed.Root).maxLength; got != want {
+			t.Errorf("%q: ASTMaxLength = %d, analyzeAtoms = %d", pattern, got, want)
+		}
+	}
+}

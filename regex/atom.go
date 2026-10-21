@@ -317,7 +317,7 @@ func ASTMaxLength(ast *AST) int {
 	if ast == nil || ast.Root == nil {
 		return 0
 	}
-	return analyzeAtoms(ast.Root).maxLength
+	return nodeMaxLength(ast.Root)
 }
 
 func analyzeConcatAtoms(children []*Node) atomAnalysis {
