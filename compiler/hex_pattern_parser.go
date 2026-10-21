@@ -31,7 +31,7 @@ func stripHexBraces(hexStr string) string {
 }
 
 func parseHexTokens(hexStr string) ([]HexPatternToken, error) {
-	var tokens []HexPatternToken
+	tokens := make([]HexPatternToken, 0, max(4, len(hexStr)/3))
 	i := 0
 	for i < len(hexStr) {
 		i = skipHexWhitespaceAndComments(hexStr, i)
@@ -158,7 +158,7 @@ func hasUnboundedJump(tokens []HexPatternToken) bool {
 }
 
 func splitHexAlternatives(content string) []string {
-	var parts []string
+	parts := make([]string, 0, 2)
 	depth := 0
 	last := 0
 	for i := 0; i < len(content); i++ {
@@ -200,16 +200,17 @@ func parseHexJumpRange(content string) (int, int, error) {
 	if content == "" || content == "-" {
 		return 0, -1, nil
 	}
-	if strings.Contains(content, "-") {
-		parts := strings.SplitN(content, "-", 2)
-		minVal, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+	if idx := strings.IndexByte(content, '-'); idx >= 0 {
+		minPart := strings.TrimSpace(content[:idx])
+		minVal, err := strconv.Atoi(minPart)
 		if err != nil {
 			return 0, 0, fmt.Errorf("invalid jump min: %w", err)
 		}
-		if strings.TrimSpace(parts[1]) == "" {
+		maxPart := strings.TrimSpace(content[idx+1:])
+		if maxPart == "" {
 			return minVal, -1, nil
 		}
-		maxVal, err := strconv.Atoi(strings.TrimSpace(parts[1]))
+		maxVal, err := strconv.Atoi(maxPart)
 		if err != nil {
 			return 0, 0, fmt.Errorf("invalid jump max: %w", err)
 		}

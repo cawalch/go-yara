@@ -20,7 +20,7 @@ type compactPrefilter struct {
 
 // The compact pass needs only a necessary pattern cover, not match spans.
 func (cp *CompiledProgram) buildCompactPrefilter() *compactPrefilter {
-	frequencies := make(map[string]int)
+	frequencies := make(map[string]int, len(cp.Rules)*2)
 	for _, rule := range cp.Rules {
 		for _, data := range rule.TextPatterns {
 			frequencies[string(data)]++
@@ -54,8 +54,8 @@ func (cp *CompiledProgram) buildCompactPrefilter() *compactPrefilter {
 		return nil
 	}
 
-	counts := make(map[compactPatternKey]int)
-	selected := make(map[compactPatternKey]bool)
+	counts := make(map[compactPatternKey]int, len(cp.sharedLookup))
+	selected := make(map[compactPatternKey]bool, len(cp.sharedLookup))
 	for i, entry := range cp.sharedLookup {
 		info := cp.sharedAutomaton.strings[i]
 		key := compactPatternKey{string(info.Data), info.Flags}

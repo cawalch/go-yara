@@ -162,7 +162,7 @@ func (p *DeclarationParser) ParseStringsSection() ([]*ast.String, error) {
 
 // parseStringDeclarations parses string declarations in the strings section
 func (p *DeclarationParser) parseStringDeclarations() []*ast.String {
-	parsedStrings := make([]*ast.String, 0)
+	parsedStrings := make([]*ast.String, 0, 4)
 
 	for !p.currentTokenIs(token.EVIDENCE) && !p.currentTokenIs(token.CONDITION) && !p.currentTokenIs(token.RBRACE) {
 		if !p.currentTokenIs(token.StringIdentifier) {

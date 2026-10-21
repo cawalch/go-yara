@@ -24,10 +24,15 @@ func deriveStringPresenceBounds(expr ast.Expression, patterns []*ast.String) ([]
 	if !safe {
 		return nil, nil
 	}
-	slices.Sort(bounds.required)
-	required := slices.Compact(bounds.required)
-	slices.Sort(bounds.forbidden)
-	forbidden := slices.Compact(bounds.forbidden)
+	var required, forbidden []string
+	if len(bounds.required) > 0 {
+		slices.Sort(bounds.required)
+		required = slices.Compact(bounds.required)
+	}
+	if len(bounds.forbidden) > 0 {
+		slices.Sort(bounds.forbidden)
+		forbidden = slices.Compact(bounds.forbidden)
+	}
 	return required, forbidden
 }
 

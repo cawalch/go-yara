@@ -144,23 +144,26 @@ func hasPositiveCaptureGroup(modifiers []ast.StringModifier) bool {
 }
 
 func captureBindingsByPattern(rule *ast.Rule) map[string][]ast.CaptureBinding {
-	bindings := make(map[string][]ast.CaptureBinding)
+	var bindings map[string][]ast.CaptureBinding
 	for _, str := range rule.Strings {
 		if str == nil {
 			continue
 		}
 		declared := captureBindingsFromModifiers(str.Modifiers)
 		if len(declared) != 0 {
+			if bindings == nil {
+				bindings = make(map[string][]ast.CaptureBinding)
+			}
 			bindings[str.Identifier] = slices.Clone(declared)
 		}
-	}
-	if len(bindings) == 0 {
-		return nil
 	}
 	return bindings
 }
 
 func compileEvidencePlans(declarations []*ast.EvidenceDeclaration) []EvidencePlan {
+	if len(declarations) == 0 {
+		return nil
+	}
 	plans := make([]EvidencePlan, 0, len(declarations))
 	for _, declaration := range declarations {
 		if declaration == nil {

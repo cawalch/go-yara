@@ -125,14 +125,12 @@ func (cr *CompiledRule) BuildStringIndex() {
 	// Pre-compute StringRef values for each string identifier.
 	// StringLiterals are stored as negative refs: -1 = StringLiterals[0], -2 = StringLiterals[1], etc.
 	// String identifiers that appear in StringLiterals get a fast O(1) lookup path.
-	cr.StringNameToRef = make(map[string]int64, len(ids))
-	literalMap := make(map[string]int64, len(cr.StringLiterals))
-	for idx, lit := range cr.StringLiterals {
-		literalMap[lit] = int64(-1 - idx)
-	}
-	for _, id := range ids {
-		if ref, ok := literalMap[id]; ok {
-			cr.StringNameToRef[id] = ref
+	if len(cr.StringLiterals) > 0 {
+		cr.StringNameToRef = make(map[string]int64, min(len(ids), len(cr.StringLiterals)))
+		for idx, lit := range cr.StringLiterals {
+			if cr.ResolveStringIndex(lit) >= 0 {
+				cr.StringNameToRef[lit] = int64(-1 - idx)
+			}
 		}
 	}
 }

@@ -97,7 +97,11 @@ func newStringCompiler() *stringCompiler {
 
 // Reset clears per-rule compiler state so offsets and patterns don't leak between rules.
 func (sc *stringCompiler) Reset() {
-	sc.stringOffsets = make(map[string]int)
+	if sc.stringOffsets == nil {
+		sc.stringOffsets = make(map[string]int)
+	} else {
+		clear(sc.stringOffsets)
+	}
 }
 
 // hasModifier checks if a specific modifier type exists in the modifier list

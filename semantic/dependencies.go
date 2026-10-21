@@ -16,13 +16,13 @@ func (v *Validator) validateRuleDependencyCycles(program *ast.Program) {
 
 	deps := make(map[string]map[string]token.Position, len(program.Rules))
 	for _, rule := range program.Rules {
-		refs := make(map[string]token.Position)
 		collector := ruleReferenceCollector{
 			ruleNames: ruleNames,
-			refs:      refs,
 		}
 		collector.collect(rule.Condition, nil)
-		deps[rule.Name] = refs
+		if len(collector.refs) > 0 {
+			deps[rule.Name] = collector.refs
+		}
 	}
 
 	state := make(map[string]int, len(program.Rules))
@@ -32,10 +32,6 @@ func (v *Validator) validateRuleDependencyCycles(program *ast.Program) {
 	visit = func(ruleName string) {
 		state[ruleName] = 1
 		path = append(path, ruleName)
-		defer func() {
-			path = path[:len(path)-1]
-			state[ruleName] = 2
-		}()
 
 		for dep, pos := range deps[ruleName] {
 			switch state[dep] {
@@ -56,6 +52,9 @@ func (v *Validator) validateRuleDependencyCycles(program *ast.Program) {
 				})
 			}
 		}
+
+		path = path[:len(path)-1]
+		state[ruleName] = 2
 	}
 
 	for _, rule := range program.Rules {
@@ -98,23 +97,22 @@ func RuleDependencies(program *ast.Program, additionalRuleNames ...string) map[s
 
 	dependencies := make(map[string][]string, len(program.Rules))
 	for _, rule := range program.Rules {
-		refs := make(map[string]token.Position)
 		collector := ruleReferenceCollector{
 			ruleNames: ruleNames,
-			refs:      refs,
 		}
 		collector.collect(rule.Condition, nil)
 
-		dependencies[rule.Name] = make([]string, 0, len(refs))
-		for name := range refs {
-			dependencies[rule.Name] = append(dependencies[rule.Name], name)
+		ruleDeps := make([]string, 0, len(collector.refs))
+		for name := range collector.refs {
+			ruleDeps = append(ruleDeps, name)
 		}
-		sort.Strings(dependencies[rule.Name])
+		sort.Strings(ruleDeps)
+		dependencies[rule.Name] = ruleDeps
 	}
 	return dependencies
 }
 
-func (c ruleReferenceCollector) collect(expr ast.Expression, scoped map[string]bool) {
+func (c *ruleReferenceCollector) collect(expr ast.Expression, scoped map[string]bool) {
 	switch e := expr.(type) {
 	case nil, *ast.Literal:
 		return
@@ -123,6 +121,9 @@ func (c ruleReferenceCollector) collect(expr ast.Expression, scoped map[string]b
 			return
 		}
 		if _, ok := c.ruleNames[e.Name]; ok {
+			if c.refs == nil {
+				c.refs = make(map[string]token.Position, 2)
+			}
 			c.refs[e.Name] = e.Position()
 		}
 	case *ast.BinaryOp:

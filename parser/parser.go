@@ -132,7 +132,13 @@ func (p *Parser) ParseRules() (*ast.Program, error) {
 
 // ParseRulesWithContext parses a complete YARA rules file with context support
 func (p *Parser) ParseRulesWithContext(ctx context.Context) (*ast.Program, error) {
-	program := p.builder.Program(make([]*ast.Rule, 0))
+	estRules := 16
+	if p.lexer != nil {
+		if est := p.lexer.InputLength() / 250; est > estRules {
+			estRules = est
+		}
+	}
+	program := p.builder.Program(make([]*ast.Rule, 0, estRules))
 
 	for !p.currentTokenIs(token.EOF) {
 		// Check for cancellation before parsing each element

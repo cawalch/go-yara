@@ -213,7 +213,7 @@ func (cc *conditionCompiler) expandStringSetIdentifier(name string) ([]string, e
 }
 
 func (cc *conditionCompiler) matchingStringIdentifiers(prefix string) []string {
-	matches := make([]string, 0)
+	matches := make([]string, 0, len(cc.stringOffsets))
 	for ident := range cc.stringOffsets {
 		if strings.HasPrefix(ident, prefix) {
 			matches = append(matches, ident)

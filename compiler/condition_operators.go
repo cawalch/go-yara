@@ -186,6 +186,37 @@ type opcodeMapping struct {
 	intOp, dblOp Opcode
 }
 
+var binaryOpcodeMap = map[token.Type]opcodeMapping{
+	token.AND:         {OpAnd, OpAnd},
+	token.OR:          {OpOr, OpOr},
+	token.PLUS:        {OpIntAdd, OpDblAdd},
+	token.MINUS:       {OpIntSub, OpDblSub},
+	token.MULTIPLY:    {OpIntMul, OpDblMul},
+	token.DIVIDE:      {OpIntDiv, OpDblDiv},
+	token.IntDivide:   {OpIntDiv, OpDblDiv},
+	token.MODULO:      {OpMod, OpMod},
+	token.BitwiseAnd:  {OpBitwiseAnd, OpBitwiseAnd},
+	token.BitwiseOr:   {OpBitwiseOr, OpBitwiseOr},
+	token.BitwiseXor:  {OpBitwiseXor, OpBitwiseXor},
+	token.LeftShift:   {OpShl, OpShl},
+	token.RightShift:  {OpShr, OpShr},
+	token.EQ:          {OpIntEq, OpDblEq},
+	token.NEQ:         {OpIntNeq, OpDblNeq},
+	token.LT:          {OpIntLt, OpDblLt},
+	token.LE:          {OpIntLe, OpDblLe},
+	token.GT:          {OpIntGt, OpDblGt},
+	token.GE:          {OpIntGe, OpDblGe},
+	token.CONTAINS:    {OpContains, OpContains},
+	token.MATCHES:     {OpMatches, OpMatches},
+	token.STARTSWITH:  {OpStartswith, OpStartswith},
+	token.ENDSWITH:    {OpEndswith, OpEndswith},
+	token.ICONTAINS:   {OpIcontains, OpIcontains},
+	token.ISTARTSWITH: {OpIstartswith, OpIstartswith},
+	token.IENDSWITH:   {OpIendswith, OpIendswith},
+	token.IEQUALS:     {OpIequals, OpIequals},
+	token.OF:          {OpOf, OpOf},
+}
+
 func (cc *conditionCompiler) selectOpcode(binOp *ast.BinaryOp, isFloatOp, isStringCompare bool) (Opcode, error) {
 	if isStringCompare {
 		switch binOp.Op {
@@ -204,38 +235,7 @@ func (cc *conditionCompiler) selectOpcode(binOp *ast.BinaryOp, isFloatOp, isStri
 		}
 	}
 
-	opcodeMap := map[token.Type]opcodeMapping{
-		token.AND:         {OpAnd, OpAnd},
-		token.OR:          {OpOr, OpOr},
-		token.PLUS:        {OpIntAdd, OpDblAdd},
-		token.MINUS:       {OpIntSub, OpDblSub},
-		token.MULTIPLY:    {OpIntMul, OpDblMul},
-		token.DIVIDE:      {OpIntDiv, OpDblDiv},
-		token.IntDivide:   {OpIntDiv, OpDblDiv},
-		token.MODULO:      {OpMod, OpMod},
-		token.BitwiseAnd:  {OpBitwiseAnd, OpBitwiseAnd},
-		token.BitwiseOr:   {OpBitwiseOr, OpBitwiseOr},
-		token.BitwiseXor:  {OpBitwiseXor, OpBitwiseXor},
-		token.LeftShift:   {OpShl, OpShl},
-		token.RightShift:  {OpShr, OpShr},
-		token.EQ:          {OpIntEq, OpDblEq},
-		token.NEQ:         {OpIntNeq, OpDblNeq},
-		token.LT:          {OpIntLt, OpDblLt},
-		token.LE:          {OpIntLe, OpDblLe},
-		token.GT:          {OpIntGt, OpDblGt},
-		token.GE:          {OpIntGe, OpDblGe},
-		token.CONTAINS:    {OpContains, OpContains},
-		token.MATCHES:     {OpMatches, OpMatches},
-		token.STARTSWITH:  {OpStartswith, OpStartswith},
-		token.ENDSWITH:    {OpEndswith, OpEndswith},
-		token.ICONTAINS:   {OpIcontains, OpIcontains},
-		token.ISTARTSWITH: {OpIstartswith, OpIstartswith},
-		token.IENDSWITH:   {OpIendswith, OpIendswith},
-		token.IEQUALS:     {OpIequals, OpIequals},
-		token.OF:          {OpOf, OpOf},
-	}
-
-	mapping, exists := opcodeMap[binOp.Op]
+	mapping, exists := binaryOpcodeMap[binOp.Op]
 	if !exists {
 		return 0, fmt.Errorf("unsupported binary operator: %s", binOp.Op)
 	}

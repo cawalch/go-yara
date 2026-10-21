@@ -36,12 +36,12 @@ func newSharedPatternAutomatonBuilder(rules []*CompiledRule) *sharedPatternAutom
 		totalEntries += len(rule.HexPatterns)
 	}
 
-	automaton := newacAutomaton()
-	automaton.ReserveStrings(totalEntries)
+	expectedStates := min(max(totalEntries*4, 16), 32768)
+	automaton := newacAutomatonWithCapacity(expectedStates, totalEntries, totalEntries)
 	return &sharedPatternAutomatonBuilder{
 		automaton:      automaton,
 		lookup:         make([]sharedAutomatonEntry, 0, totalEntries),
-		seen:           make(map[prefilterDedupKey]struct{}),
+		seen:           make(map[prefilterDedupKey]struct{}, totalEntries),
 		prefilterSpecs: make([]sharedPrefilterSpec, 0, totalEntries),
 	}
 }
