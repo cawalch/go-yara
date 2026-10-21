@@ -50,10 +50,15 @@ func selectRegexAtom(atoms []regex.LiteralAtom, boundedOnly, asciiNoCase bool) (
 		if maxOffset >= 0 {
 			maxOffset += atom.offset
 		}
+		maxSuffix := candidate.MaxSuffix
+		if maxSuffix >= 0 {
+			maxSuffix += len(candidate.Data) - (atom.offset + len(atom.data))
+		}
 		candidateAtom := regexPrefilterAtom{
 			data:        atom.data,
 			minOffset:   minOffset,
 			maxOffset:   maxOffset,
+			maxSuffix:   maxSuffix,
 			score:       atom.score,
 			asciiNoCase: asciiNoCase,
 		}

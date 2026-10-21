@@ -218,17 +218,35 @@ func replayCaptureSpans(
 	modifiers := rule.StringModifiers[pattern]
 	flagOptions, optionCount := replayFlagOptions(regexPattern.Flags, modifiers)
 	for _, flags := range flagOptions[:min(optionCount, len(flagOptions))] {
+		margin := regexWindowMarginASCII
+		isWide := (flags & regex.FlagsWide) != 0
+		if isWide {
+			margin = regexWindowMarginWide
+		}
+		windowStart := max(0, input.start-margin)
+		if isWide && (input.start-windowStart)&1 != 0 {
+			windowStart--
+		}
+		if windowStart < 0 {
+			windowStart = 0
+		}
+		windowEnd := min(len(input.data), input.end+margin)
+		scanData := input.data[windowStart:windowEnd]
 		captured, matched := regex.ExecCapturesAtWithScratch(
 			scratch,
 			regexPattern.CaptureCode,
-			input.data,
+			scanData,
 			flags,
-			input.start,
-			input.end,
+			input.start-windowStart,
+			input.end-windowStart,
 			len(regexPattern.CaptureGroups),
 		)
 		if !matched {
 			continue
+		}
+		for i := range captured {
+			captured[i].Start += windowStart
+			captured[i].End += windowStart
 		}
 		return captured, regexPattern.CaptureGroups, nil
 	}

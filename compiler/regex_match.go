@@ -429,6 +429,81 @@ func addRegexMatchesLinear(
 	}
 }
 
+const (
+	regexWindowMarginASCII = 16
+	regexWindowMarginWide  = 32
+)
+
+//nolint:nestif,revive // argument-limit,nestif: window calculation keeps matching parameters explicit
+func boundedRegexWindow(
+	data []byte,
+	start int,
+	pattern RegexPattern,
+	isWide bool,
+	maxMatchSpan int,
+) ([]byte, int, int) {
+	dataLen := len(data)
+	if dataLen == 0 || start >= dataLen {
+		return data, start, 0
+	}
+
+	margin := regexWindowMarginASCII
+	if isWide {
+		margin = regexWindowMarginWide
+	}
+
+	windowStart := max(0, start-margin)
+	if isWide && (start-windowStart)&1 != 0 {
+		windowStart--
+	}
+	if windowStart < 0 {
+		windowStart = 0
+	}
+
+	windowEnd := dataLen
+	if maxMatchSpan > 0 {
+		spanEnd := start + maxMatchSpan
+		if spanEnd < windowEnd {
+			windowEnd = spanEnd
+		}
+	}
+
+	if pattern.atomMaxOffset >= 0 && pattern.atomMaxSuffix >= 0 {
+		maxOffset := pattern.atomMaxOffset
+		atomLen := len(pattern.atom)
+		if isWide {
+			maxOffset *= 2
+			atomLen = len(pattern.wideAtom)
+		}
+		maxSuffix := pattern.atomMaxSuffix
+		if isWide {
+			maxSuffix *= 2
+		}
+		tightEnd := start + maxOffset + atomLen + maxSuffix + margin
+		if tightEnd < windowEnd {
+			windowEnd = tightEnd
+		}
+	} else if pattern.maxLength >= 0 {
+		maxLen := pattern.maxLength
+		if isWide {
+			maxLen *= 2
+		}
+		tightEnd := start + maxLen + margin
+		if tightEnd < windowEnd {
+			windowEnd = tightEnd
+		}
+	}
+
+	if windowEnd > dataLen {
+		windowEnd = dataLen
+	}
+	if windowEnd < windowStart {
+		windowEnd = windowStart
+	}
+
+	return data[windowStart:windowEnd], start - windowStart, windowStart
+}
+
 //nolint:revive // argument-limit: hot path avoids allocating an options struct
 func addRegexMatchAt(
 	ctx *MatchContext,
@@ -441,17 +516,17 @@ func addRegexMatchAt(
 	bs *regex.VMBatch,
 	start int,
 ) {
-	scanData := data
-	if ctx != nil && ctx.maxMatchSpan > 0 && start < len(data) {
-		endBound := min(len(data), start+ctx.maxMatchSpan)
-		scanData = data[:endBound]
+	maxMatchSpan := 0
+	if ctx != nil {
+		maxMatchSpan = ctx.maxMatchSpan
 	}
-	matched, startOffset, endOffset := execRegexMatchAt(bs, regexInfo, scanData, flags, isWide, start, ctx.cancelDone)
+	scanData, relStart, windowStart := boundedRegexWindow(data, start, regexInfo, isWide, maxMatchSpan)
+	matched, startOffset, endOffset := execRegexMatchAt(bs, regexInfo, scanData, flags, isWide, relStart, ctx.cancelDone)
 	if !matched {
 		return
 	}
-	absStart := start + startOffset
-	absEnd := start + endOffset
+	absStart := windowStart + relStart + startOffset
+	absEnd := windowStart + relStart + endOffset
 	if absEnd < absStart {
 		return
 	}

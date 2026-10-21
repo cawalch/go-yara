@@ -39,6 +39,7 @@ type regexPrefilterAtom struct {
 	data        []byte
 	minOffset   int
 	maxOffset   int
+	maxSuffix   int
 	score       int
 	asciiNoCase bool
 }
@@ -534,16 +535,13 @@ func appendRegexPrefilterMatches(
 		if bs == nil {
 			bs = newRegexMatchBatch(matchCtx, pattern)
 		}
-		scanData := data
-		if maxMatchSpan > 0 && start < len(data) {
-			scanData = data[:min(len(data), start+maxMatchSpan)]
-		}
-		matched, startOff, endOff := execRegexMatchAt(bs, pattern, scanData, flags, entry.IsWide, start, done)
+		scanData, relStart, windowStart := boundedRegexWindow(data, start, pattern, entry.IsWide, maxMatchSpan)
+		matched, startOff, endOff := execRegexMatchAt(bs, pattern, scanData, flags, entry.IsWide, relStart, done)
 		if !matched {
 			return
 		}
-		absStart := start + startOff
-		absEnd := start + endOff
+		absStart := windowStart + relStart + startOff
+		absEnd := windowStart + relStart + endOff
 		if absEnd < absStart {
 			return
 		}
