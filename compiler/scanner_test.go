@@ -481,7 +481,7 @@ func TestScannerReportedMatchesOnly(t *testing.T) {
 		}
 		rule rejected {
 			strings: $rejected = "needle"
-			condition: false
+			condition: $rejected and filesize == 0
 		}
 	`)
 	if err != nil {

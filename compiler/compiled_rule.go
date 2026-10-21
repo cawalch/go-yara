@@ -48,10 +48,12 @@ type CompiledRule struct {
 	dependencies     []string // nil means dependency metadata is unavailable
 
 	// Rule metadata (from AST)
-	Tags      []string       // Rule tags (e.g., {"malware", "trojan"})
-	Meta      map[string]any // Meta key-value pairs
-	IsGlobal  bool           // Rule is marked as global
-	IsPrivate bool           // Rule is marked as private
+	Tags        []string        // Rule tags (e.g., {"malware", "trojan"})
+	Meta        map[string]any  // Meta key-value pairs
+	IsGlobal    bool            // Rule is marked as global
+	IsPrivate   bool            // Rule is marked as private
+	IsDead      bool            // Rule condition statically folded to false
+	DeadStrings map[string]bool // Unreferenced strings pruned from automaton compilation
 	// FastScanSafe is true when the condition only observes whether strings
 	// matched, not occurrence counts, offsets, lengths, or constrained ranges.
 	FastScanSafe bool
@@ -146,6 +148,18 @@ func (cr *CompiledRule) ResolveStringIndex(id string) int {
 // IsPrivateString reports whether a string identifier is marked as private.
 func (cr *CompiledRule) IsPrivateString(identifier string) bool {
 	return hasStringModifier(cr.StringModifiers[identifier], ast.StringModifierPrivate)
+}
+
+// IsStringDead reports whether the string with the given identifier is dead
+// (either because the entire rule is dead or the string is unreferenced in the condition).
+func (cr *CompiledRule) IsStringDead(identifier string) bool {
+	if cr.IsDead {
+		return true
+	}
+	if cr.DeadStrings != nil && cr.DeadStrings[identifier] {
+		return true
+	}
+	return false
 }
 
 func hasStringModifier(modifiers []ast.StringModifier, modifierType ast.StringModifierType) bool {

@@ -11,7 +11,7 @@ import (
 )
 
 // compileStrings compiles all strings in a rule and builds the automaton
-func (rc *ruleCompiler) compileStrings(rule *ast.Rule) error {
+func (rc *ruleCompiler) compileStrings(rule *ast.Rule, deadStrings map[string]bool) error {
 	// First pass: validate and prepare strings
 	if err := rc.validateRuleStrings(rule); err != nil {
 		return err
@@ -22,7 +22,8 @@ func (rc *ruleCompiler) compileStrings(rule *ast.Rule) error {
 
 	// Second pass: compile strings and build automaton
 	for _, str := range rule.Strings {
-		if err := rc.compileSingleString(str); err != nil {
+		isDead := deadStrings != nil && deadStrings[str.Identifier]
+		if err := rc.compileSingleStringWithDead(str, isDead); err != nil {
 			return fmt.Errorf("compiling string %s: %w", str.Identifier, err)
 		}
 	}
@@ -32,6 +33,10 @@ func (rc *ruleCompiler) compileStrings(rule *ast.Rule) error {
 
 // compileSingleString compiles a single string and adds it to the automaton
 func (rc *ruleCompiler) compileSingleString(str *ast.String) error {
+	return rc.compileSingleStringWithDead(str, false)
+}
+
+func (rc *ruleCompiler) compileSingleStringWithDead(str *ast.String, isDead bool) error {
 	rc.ensurePatternMaps()
 	result, err := rc.compileStringPattern(str)
 	if err != nil {
