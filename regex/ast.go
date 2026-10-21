@@ -1,6 +1,9 @@
 package regex
 
-import "fmt"
+import (
+	"fmt"
+	"sync"
+)
 
 // NodeKind mirrors re.h's RE_NODE_* constants for easier auditing.
 // Only a subset is needed initially; we include the full set for parity.
@@ -101,6 +104,8 @@ type Class struct {
 
 // Node represents a parsed regex node. Many fields are optional depending on kind.
 // Greedy defaults to true and is flipped by ungreedy quantifiers.
+// Nodes must not be modified or copied after atom analysis begins. Analysis of
+// an immutable tree may be shared across goroutines.
 type Node struct {
 	Kind     NodeKind
 	Value    byte   // For literal kinds
@@ -113,7 +118,8 @@ type Node struct {
 	Children []*Node
 
 	// atoms memoizes analyzeAtoms for this node; AST nodes are immutable after parsing.
-	atoms *atomAnalysis
+	atomsOnce sync.Once
+	atoms     *atomAnalysis
 }
 
 // AST is the root of a parsed regex along with flags captured during parse.

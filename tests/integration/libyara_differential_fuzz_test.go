@@ -213,6 +213,7 @@ func scanWithLibyara(t testing.TB, bin, src string, data []byte) (map[string][]s
 		parts := strings.Fields(line)
 		if len(parts) >= 2 {
 			lastRule = parts[0]
+			res[lastRule] = nil
 		}
 	}
 	return res, nil
@@ -230,6 +231,7 @@ func scanWithGoYara(src string, data []byte) (map[string][]span, error) {
 	}
 	out := map[string][]span{}
 	for _, rm := range res.MatchedRules {
+		out[rm.Rule] = nil
 		for id, ms := range rm.Matches {
 			for _, m := range ms {
 				out[rm.Rule] = append(out[rm.Rule], span{ID: id, Off: m.Offset, Len: m.Length})

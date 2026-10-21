@@ -237,10 +237,10 @@ func analyzeAtoms(node *Node) atomAnalysis {
 	if node == nil {
 		return atomAnalysis{maxLength: 0, isExact: true}
 	}
-	if node.atoms == nil {
+	node.atomsOnce.Do(func() {
 		computed := analyzeAtomsUncached(node)
 		node.atoms = &computed
-	}
+	})
 	return *node.atoms
 }
 
