@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/cawalch/go-yara/internal/wordmatch"
+	"github.com/cawalch/go-yara/utils/fs"
 )
 
 type publicRuleEvaluation struct {
@@ -649,12 +650,22 @@ func (s *Scanner) ScanFile(filename string) (*ScanResult, error) {
 }
 
 // ScanFileWithContext scans the given file.
+// For regular files >= 128 KB, it attempts to use zero-copy memory mapping via fs.MapFile.
+// If memory mapping fails, file is < 128 KB, or for special files, it falls back to standard file read.
 func (s *Scanner) ScanFileWithContext(ctx context.Context, filename string) (*ScanResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+	info, statErr := os.Stat(filename)
+	if statErr == nil && info.Mode().IsRegular() && info.Size() >= fs.MinMmapFileSize {
+		data, cleanup, err := fs.MapFile(filename)
+		if err == nil {
+			defer cleanup()
+			return s.ScanWithContext(ctx, data)
+		}
 	}
 	if ctx.Done() == nil {
 		data, err := os.ReadFile(filename) // #nosec G304 - caller intentionally scans this path
