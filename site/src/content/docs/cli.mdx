@@ -5,6 +5,7 @@ description: Use the go-yara command-line scanner to validate rules, scan files,
 
 import { Code } from '@astrojs/starlight/components';
 import example from '../../../examples/cli.sh?raw';
+import directoryExample from '../../../examples/cli-directory.sh?raw';
 import help from '../../generated/cli.txt?raw';
 
 The `go-yara` command compiles rules and scans files. Put the rules file first, followed by options and the target path. Binaries and build instructions are on the [installation page](/go-yara/installation/).
@@ -28,6 +29,20 @@ go-yara greeting.yar --mode=compile
 Use `--mode=lex` to inspect tokens or `--mode=parse` to inspect the parsed rule structure. For scan output, `-s` includes matching strings, `-g` includes tags, and `-m` includes metadata. `--json` produces structured records suitable for downstream tools. Place options before a positional target.
 
 For a directory, use `-r` to recurse and `-p` to choose the worker count. Use `-i` to filter by rule name or `-t` to filter by tag.
+
+## Scan a directory and consume JSON
+
+This example creates two sample files, including one in a nested directory. `-r` includes that directory, `-p 2` runs two scan workers, and `-g -m` includes tags and metadata:
+
+<Code code={directoryExample} lang="sh" title="Recursive scan with metadata" />
+
+In this normal scan mode, `--json` writes one JSON object per matching rule and target, each on its own line. The example produces two records named `document`, tagged `inventory`, with `meta.category` equal to `example`. Parse the output line by line rather than as a JSON array. Matched byte data can be included in JSON output; handle it according to the sensitivity of the scanned files.
+
+## Exit status and errors
+
+A successful normal scan returns status `0` whether or not a rule matches. With `--json`, a file with no matching rules produces no records. Operational errors return status `1` and a diagnostic on stderr. Check the exit status before interpreting empty output as no matches; this CLI does not use grep-style exit status to distinguish matches from non-matches.
+
+The directory scanner gathers results before printing them. If a target fails to read or scan, the command returns an error; do not treat the output as a complete inventory of the directory. Use `--json -c` when you need a count record for each successfully scanned target, including zero.
 
 ## Large files and streaming
 

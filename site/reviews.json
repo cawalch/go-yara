@@ -1,6 +1,16 @@
 {
   "v0.8.0": {
-    "pages": ["index", "quickstart", "installation", "scanning", "compatibility", "modules", "performance", "cli", "releases"],
-    "notes": "Initial site reviewed against v0.8.0. Reader buffering, retained sparse blocks, literal-only CLI streaming, structured host data, native module gaps, numeric extensions, module cache scope, and serialization boundaries are stated explicitly. No historical benchmark numbers are promoted to general throughput claims."
+    "pages": [
+      "index",
+      "quickstart",
+      "installation",
+      "scanning",
+      "compatibility",
+      "modules",
+      "performance",
+      "cli",
+      "releases"
+    ],
+    "notes": "Initial site reviewed against v0.8.0. Reader buffering, retained sparse blocks, literal-only CLI streaming, structured host data, native module gaps, numeric extensions, module cache scope, and serialization boundaries are stated explicitly. No historical benchmark numbers are promoted to general throughput claims. Documentation sweep on 2026-10-24 added tested rule patterns, result details, block overlap, external replacement, callback loading, diagnostics, cancellation, and CLI exit behavior. Evidence statuses and validator boundaries are covered by executable fixtures. Diagrams were checked against release source."
   }
 }

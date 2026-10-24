@@ -4,6 +4,8 @@ description: Run YARA rules locally in the browser playground, or compile and sc
 ---
 
 import { Code } from '@astrojs/starlight/components';
+import compilationExample from '../../../examples/compilation/main.go?raw';
+import compilationExampleOutput from '../../../examples/compilation/output.txt?raw';
 import example from '../../../examples/quickstart/main.go?raw';
 import release from '../../generated/release.json';
 import Playground from '../../components/Playground.astro';
@@ -50,3 +52,20 @@ The rule matches because the input contains `Hello`. Changing the input to `Good
 ## Reuse the program
 
 Keep the compiled program when scanning more than one input. Its convenience methods manage pooled scanners, and the program supports concurrent scans. For custom options or repeated scans in one worker, [create a reusable scanner](/go-yara/scanning/#reuse-a-scanner).
+
+## Compile files and inspect rejected rules
+
+Use `CompileFileWithContext(ctx, path)` for a rule file. Relative `include` paths resolve from the containing file's directory. For source strings containing relative includes, set the compiler's base directory with `SetBaseDir` before compilation. `import` makes a registered module namespace available to the rules; `include` loads another rule file.
+
+Compilation normally fails on an invalid rule. For an ingestion workflow that deliberately accepts a reduced rule set, `WithIgnoreInvalidRules(true)` keeps valid rules and reports omissions through `GetIgnoredRules`. Dependencies on rejected rules are omitted too; an invalid global rule can therefore remove otherwise valid rules. Fatal program-level errors still return an error.
+
+<details>
+<summary>Complete Go example: inspect omitted rules and their dependents</summary>
+
+<Code code={compilationExample} lang="go" title="main.go" />
+
+</details>
+
+<Code code={compilationExampleOutput} lang="text" title="Output" />
+
+Inspect each diagnostic's `Phase`, `Message`, `Line`, `Column`, and dependency information before accepting the resulting program. A successful tolerant compile does not mean every submitted rule is active. Keep strict compilation for workflows that require the whole rule set.

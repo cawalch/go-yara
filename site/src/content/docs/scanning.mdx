@@ -4,6 +4,14 @@ description: Scan bytes, files, and memory blocks. Extract credential evidence f
 ---
 
 import { Code } from '@astrojs/starlight/components';
+import resultsExample from '../../../examples/results/main.go?raw';
+import resultsExampleOutput from '../../../examples/results/output.txt?raw';
+import blocksExample from '../../../examples/blocks/main.go?raw';
+import blocksExampleOutput from '../../../examples/blocks/output.txt?raw';
+import externalsExample from '../../../examples/externals/main.go?raw';
+import externalsExampleOutput from '../../../examples/externals/output.txt?raw';
+import cancellationExample from '../../../examples/cancellation/main.go?raw';
+import cancellationExampleOutput from '../../../examples/cancellation/output.txt?raw';
 import reuse from '../../../examples/reuse/main.go?raw';
 import evidence from '../../../examples/evidence/main.go?raw';
 import evidenceOutput from '../../../examples/evidence/output.txt?raw';
@@ -16,6 +24,8 @@ Compile a rule set once and reuse its `CompiledProgram`. Choose the scan API bas
 
 <span id="choose-an-input-api"></span>
 
+Each Go example below is a complete `main.go`. Use the module setup in the [quickstart](/go-yara/quickstart/#create-a-go-module), then run it with `go run .`.
+
 ## Input APIs
 
 | Input | API | Memory and evaluation behavior |
@@ -23,11 +33,31 @@ Compile a rule set once and reuse its `CompiledProgram`. Choose the scan API bas
 | A byte slice | `program.Scan(data)` | Evaluates complete rules against the supplied bytes. |
 | A bounded reader | `program.ScanReader(reader)` | Reads the entire input into memory, then evaluates rules. |
 | A file path | `program.ScanFile(path)` | Opens the file and scans its contents. |
+| One isolated memory block | `scanner.MatchingRulesInBlock(block, fileSize)` | Evaluates one block immediately, using absolute offsets; keeps no blocks between calls. |
 | Sparse memory blocks | `program.NewBlockScanner()` | Accumulates blocks; `Finish()` evaluates complete conditions. |
 
 `ScanReader` is not a constant-memory streaming API. Block scanning also retains supplied block data. For inputs too large to retain, the CLI's [literal streaming mode](/go-yara/cli/#large-files-and-streaming) reports text-pattern matches, but does not evaluate rule conditions.
 
 For sparse scans, provide each block's logical offset and set the logical file size when rules use `filesize`. If a pattern crosses a block boundary, supply overlapping bytes. The scanner does not reconstruct missing bytes between blocks.
+
+## Sparse blocks and boundary matches
+
+Use `BlockScanner` when conditions must combine occurrences from several regions. Each `Scan(base, data)` copies the block and searches its patterns; `Finish()` evaluates conditions using the accumulated occurrences and supplied address space. `filesize` defaults to the highest block end unless you call `SetFileSize`. A gap between blocks does not supply zero-filled bytes.
+
+<ArchitectureDiagram kind="blocks" />
+
+This example first matches a header and a distant payload. It then shows that splitting `needle` into adjacent `nee` and `dle` blocks loses the pattern unless a supplied window contains the whole match. `Reset()` starts another logical input and clears the file-size override too.
+
+<details>
+<summary>Complete Go example: scan sparse regions and supply an overlapping window</summary>
+
+<Code code={blocksExample} lang="go" title="main.go" />
+
+</details>
+
+<Code code={blocksExampleOutput} lang="text" title="Output" />
+
+Keep overlapping bytes consistent. Size the overlap for the patterns you need to match; an unbounded regex has no fixed overlap that guarantees equivalence to a full-input scan. For independent memory events, use `MatchingRulesInBlock` instead: each call evaluates only its own block and cannot satisfy a condition using a previous event.
 
 <span id="choose-the-result-you-need"></span>
 
@@ -35,7 +65,30 @@ For sparse scans, provide each block's logical offset and set the logical file s
 
 `Scan` returns a `ScanResult`. `MatchedRules` contains the rules whose conditions evaluated to true. `RuleResults` records boolean outcomes, while `Matches` records pattern occurrences. Pattern matches alone do not imply that the rule matched: its condition may still be false.
 
-Use `Matches` when you only need to know whether any rule matched. Use `MatchingRules` when you need rule names and tags without the full evaluation map. These paths avoid work that detailed reporting would require.
+The method `scanner.Matches(data)` returns a boolean; the field `result.Matches` holds occurrences. They serve different purposes:
+
+| Call or field | Question it answers |
+| --- | --- |
+| `scanner.Matches(data)` | Did any reportable rule match? |
+| `scanner.MatchingRules(data)` | Which rules matched? Returns rule records without the all-rules outcome map. |
+| `result.MatchedRules` | Which rules matched in this detailed scan? |
+| `result.RuleResults[name]` | What was this evaluated rule's condition result? Use the map's presence check to distinguish absent entries from `false`. |
+| `result.Matches[rule][pattern]` | Where did this pattern occur, even if its rule condition was false? |
+
+Choose one scan method for the output your caller needs. The example calls all three to compare their contracts, so it performs three scans. Both rules find `hello`, but only `present` satisfies its condition. `WithMatchData(2)` copies just `he`; the occurrence's full length remains five bytes.
+
+<details>
+<summary>Complete Go example: read rule outcomes, byte offsets, and copied match data</summary>
+
+<Code code={resultsExample} lang="go" title="main.go" />
+
+</details>
+
+<Code code={resultsExampleOutput} lang="text" title="Output" />
+
+`WithMatchData` and `WithMatchContext` opt into copied matched bytes and surrounding bytes. They can expose sensitive input and increase result size. Their per-match byte limits do not cap the number of occurrences. For structured capture fields, use [evidence extraction](#credential-evidence-and-validation).
+
+An absent rule result is not automatically a clean negative: filters, private rules, pruning, and result-suppression options affect reporting. `PrunedRules` identifies rules rejected by mandatory fixed-offset header checks. A scan error must be handled before consuming a result.
 
 ## Credential evidence and validation
 
@@ -106,9 +159,35 @@ Close a dedicated scanner when its worker finishes. A scanner is for sequential 
 
 Context-aware compilation and scan methods accept a `context.Context`. Cancellation is cooperative. For reader scans, cancelling the context cannot interrupt an underlying `Read` call that is already blocked; the reader or transport must provide its own deadline or close behavior.
 
+<details>
+<summary>Complete Go example: bound a reader and handle cancellation</summary>
+
+<Code code={cancellationExample} lang="go" title="main.go" />
+
+</details>
+
+<Code code={cancellationExampleOutput} lang="text" title="Output" />
+
+The reader example uses `limit + 1` to detect oversize input. Reading exactly the limit and scanning that prefix could miss a pattern or change a `filesize` condition. A `LimitReader` bounds bytes read; it cannot unblock a stalled underlying reader. Give network readers their own transport deadline.
+
 For repetitive inputs, match limits can bound the number of recorded string occurrences. `WithMaxMatches` and `WithMaxMatchSpan` address different costs: occurrence counts and the bytes considered for an individual regex match. Limiting matches can affect conditions that depend on counts or offsets.
 
 <p>See the <a href={`https://pkg.go.dev/github.com/cawalch/go-yara@${release.version}/compiler#Scanner`}>scanner API reference</a> for context-aware methods, hooks, and limit options.</p>
+
+## External variables
+
+Declare scalar external names in rule source, then bind their values on a scanner. This lets workers use different environments or policy settings with the same compiled program. The setter replaces the scanner's external-value map; supply every value needed for the next scan. In this example the third update omits `enabled`, so `defined enabled` is false.
+
+<details>
+<summary>Complete Go example: replace per-scanner external values</summary>
+
+<Code code={externalsExample} lang="go" title="main.go" />
+
+</details>
+
+<Code code={externalsExampleOutput} lang="text" title="Output" />
+
+Supported values include booleans, representable integers, floats, and strings. Undeclared names or unsupported Go values cause binding errors. Check setter errors immediately. With the constructor option `WithExternalVariables`, binding errors surface when scanning. Setters and scans must not run concurrently on the same scanner.
 
 ## Bind application data
 

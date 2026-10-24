@@ -1,0 +1,2 @@
+numeric: text=true hex=true regex=true
+letters: text=true hex=true regex=false

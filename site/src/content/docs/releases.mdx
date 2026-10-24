@@ -6,6 +6,7 @@ description: Upgrade go-yara, check the documented release and Go requirement, a
 import { Code } from '@astrojs/starlight/components';
 import release from '../../generated/release.json';
 import example from '../../../examples/serialization/main.go?raw';
+import ArchitectureDiagram from '../../components/ArchitectureDiagram.astro';
 
 <p>These docs describe <a href={`https://github.com/cawalch/go-yara/releases/tag/${release.version}`}>{release.version}</a>, released on {release.date}. It requires Go {release.goVersion} or later.</p>
 
@@ -30,7 +31,11 @@ This example compiles a rule, serializes it, reloads it, and prints `true` after
 
 <Code code={example} lang="go" title="Serialize and restore a program" />
 
-External variables and custom module handlers must be rebound after loading. Structured schemas are preserved, but each scanner needs its host data bound again. A compiled artifact is specific to go-yara; it is not a libyara compiled-rule file.
+<ArchitectureDiagram kind="serialization" />
+
+Pass compatible custom module handlers to `UnmarshalCompiledProgram(blob, modules...)` when loading; missing or incompatible function signatures cause a load error. Bind external values and host data on the restored scanner. The [custom-module example](/go-yara/modules/#custom-functions-and-caching) exercises this sequence, including the missing-handler failure.
+
+Structured schemas are preserved, but callbacks, external values, scanner options, host data, and previous scan results are not an application-state snapshot. Keep the original rule source and runtime configuration alongside your cache policy. A compiled artifact is specific to go-yara; it is not a libyara compiled-rule file.
 
 <span id="how-the-docs-track-releases"></span>
 

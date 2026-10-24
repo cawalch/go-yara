@@ -35,7 +35,7 @@ def prepare(ref, check_only):
         env = {**os.environ, "GOWORK": "off"}
         outputs = {"quickstart": "greeting\n", "reuse": "false\ntrue\n",
                    "modules": "true\n", "serialization": "true\n"}
-        for name in ["evidence", "evidence-key"]:
+        for name in ['evidence', 'evidence-key', 'results', 'blocks', 'externals', 'custom-module', 'compilation', 'cancellation', 'patterns']:
             outputs[name] = (SITE / "examples" / name / "output.txt").read_text()
         for name, expected in outputs.items():
             output = run(["go", "run", str(SITE / "examples" / name / "main.go")], source, env=env)
@@ -55,7 +55,21 @@ def prepare(ref, check_only):
             raise ValueError(f"Unexpected CLI match: {hit}")
         for mode in ["compile", "lex", "parse"]:
             run([str(binary), "greeting.yar", f"--mode={mode}"], temp, env=cli_env)
-        print(f"{ref}: CLI example passed", flush=True)
+        directory_output = run(["sh", str(SITE / "examples/cli-directory.sh")], temp, env=cli_env)
+        records = [json.loads(line) for line in directory_output.splitlines()]
+        if len(records) != 2 or {r["target"] for r in records} != {"cli-samples/one.txt", "cli-samples/nested/two.txt"}:
+            raise ValueError("Directory scan did not return both files")
+        if any(r["rule"] != "document" or r["tags"] != ["inventory"] or r["meta"]["category"] != "example" for r in records):
+            raise ValueError("Directory scan lost rule metadata")
+        (temp / "clean.txt").write_text("clean")
+        clean = subprocess.run([str(binary), "greeting.yar", "--json", "clean.txt"], cwd=temp, env=cli_env, capture_output=True, text=True)
+        if clean.returncode != 0 or clean.stdout:
+            raise ValueError("No-match CLI contract changed")
+        (temp / "invalid.yar").write_text("rule invalid { condition: }")
+        invalid = subprocess.run([str(binary), "invalid.yar", "clean.txt"], cwd=temp, env=cli_env, capture_output=True, text=True)
+        if invalid.returncode != 1 or not invalid.stderr:
+            raise ValueError("CLI error contract changed")
+        print(f"{ref}: CLI examples and exit-status checks passed", flush=True)
         help_result = subprocess.run([str(binary), "--help"], capture_output=True, text=True, env=env)
         help_text = help_result.stdout + help_result.stderr
         if "Usage: go-yara" not in help_text or "-streaming" not in help_text:

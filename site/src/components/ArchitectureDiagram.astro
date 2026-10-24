@@ -1,5 +1,5 @@
 ---
-interface Props { kind: 'pipeline' | 'scanners' | 'modules' | 'browser' | 'evidence' }
+interface Props { kind: 'pipeline' | 'scanners' | 'modules' | 'browser' | 'evidence' | 'blocks' | 'serialization' }
 const { kind } = Astro.props;
 ---
 
@@ -47,6 +47,33 @@ const { kind } = Astro.props;
     </ol>
     <figcaption>The application produces the data. A schema describes its shape; it does not parse a file or calculate a score.</figcaption>
   </>}
+  {kind === 'blocks' && <>
+    <div class="lane-label">Supplied address space · not to scale</div>
+    <div class="address-map">
+      <div class="owned"><strong>0x0000–0x0001</strong><code>MZ</code><span>Header block</span></div>
+      <div class="gap"><strong>0x0002–0x0fff</strong><span>No supplied bytes</span></div>
+      <div class="owned"><strong>0x1000–0x1005</strong><code>needle</code><span>Payload block</span></div>
+    </div>
+    <div class="lane-label">A pattern crossing a boundary needs a complete window</div>
+    <div class="boundary"><code>nee</code><span>│ block boundary │</span><code>dle</code></div>
+    <div class="shared"><strong>Overlapping window: needle</strong><span>Supply all six bytes together at 0x1000</span></div>
+    <figcaption>Conditions can combine occurrences across regions. Pattern searching does not concatenate separate blocks. SetFileSize(0x2000) supplies a logical size, not missing byte contents.</figcaption>
+  </>}
+  {kind === 'serialization' && <>
+    <div class="lane-label">Persisted artifact</div>
+    <ol class="flow" role="list">
+      <li><strong>Compile rules</strong><span>Rule source and module definitions</span></li>
+      <li><strong>MarshalBinary</strong><span>Versioned bytecode, schemas, and signatures</span></li>
+      <li><strong>Load</strong><span>Check format; supply compatible callbacks</span></li>
+    </ol>
+    <div class="lane-label">Runtime setup after loading</div>
+    <ol class="flow" role="list">
+      <li><strong>New scanner</strong><span>Apply result options and limits</span></li>
+      <li><strong>Bind values</strong><span>External variables and host-module data</span></li>
+      <li><strong>Scan input</strong><span>Produce new results</span></li>
+    </ol>
+    <figcaption>The artifact preserves the compiled rules, not a running scanner. Runtime values and Go callback implementations must come from the loading application.</figcaption>
+  </>}
   {kind === 'evidence' && <>
     <div class="lane-label">Extraction in go-yara</div>
     <ol class="flow" role="list">
@@ -85,6 +112,10 @@ const { kind } = Astro.props;
   strong, span { display: block; }
   strong { color: var(--sl-color-white); font-weight: 600; }
   span { margin-top: .2rem; }
+  .address-map { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.6rem; margin-bottom:1.25rem; }
+  .gap { padding:.7rem; border:1px dashed var(--sl-color-gray-3); }
+  .boundary { display:flex; align-items:center; justify-content:center; flex-wrap:wrap; gap:.6rem; padding:.7rem; }
+  .boundary span { margin:0; font-size:.75rem; }
   .shared { text-align: center; }
   .fork, .workers { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
   .fork { text-align: center; font-size: 1.3rem; }
@@ -93,6 +124,7 @@ const { kind } = Astro.props;
   .sequence { margin: .7rem 0; }
   .architecture figcaption { color: var(--sl-color-gray-2); margin-top: 1rem; }
   @media (max-width: 40rem) {
+    .address-map { grid-template-columns:1fr; }
     .flow { grid-template-columns: 1fr; gap: 1.5rem; }
     .flow li + li::before { content: '↓'; left: 50%; top: -1.45rem; }
     .workers { gap: .5rem; }

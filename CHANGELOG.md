@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+* Expand documentation with executable rule-pattern, result, sparse-block, external-variable, callback-loading, compilation-diagnostic, cancellation, and recursive CLI examples; add block-boundary and serialization diagrams.
 * Add executable credential evidence and offline private-key validation examples, with extraction-status guidance and a validation flow diagram.
 * Add an on-demand browser playground built from the documented release, with rule/input budgets, bounded displayed results, a hard Wasm memory ceiling, and worker timeouts. Gate documentation deployment on Chromium, Firefox, and WebKit checks.
 

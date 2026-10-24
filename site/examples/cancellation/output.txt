@@ -1,0 +1,3 @@
+oversized input rejected: true
+cancelled: true
+next scan matched: true

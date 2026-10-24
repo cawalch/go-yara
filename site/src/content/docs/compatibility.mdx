@@ -3,6 +3,10 @@ title: YARA compatibility and differences
 description: Check go-yara's supported YARA features, missing native modules, numeric behavior, extensions, and streaming limits before migrating a rule set.
 ---
 
+import { Code } from '@astrojs/starlight/components';
+import patterns from '../../../examples/patterns/main.go?raw';
+import patternsOutput from '../../../examples/patterns/output.txt?raw';
+
 `go-yara` implements YARA parsing, compilation, and scanning in Go. Compatibility depends on the rule features and modules you use. Compile your own corpus and compare expected outcomes before replacing libyara.
 
 ## Engine comparison
@@ -32,6 +36,31 @@ Sources: libyara's [atom selection](https://github.com/VirusTotal/yara/blob/v4.5
 Rules can use text strings, hex patterns with wildcards and jumps, regular expressions, string counts and offsets, condition operators, and rule references. The built-in modules are `hash`, `math`, `string`, and `time`. Their [function signatures](/go-yara/modules/#built-in-signatures) are generated from the documented release.
 
 Native `pe` and `elf` parsers are not bundled. A structured host module can expose data supplied by your application, but it does not supply those parsers or make an existing native module interchangeable.
+
+### Text, hex, and regex example
+
+This input puts the same bytes under three kinds of rules. The text rule requires two whole-word occurrences ignoring case; the hex rule requires a fixed three-byte gap after `MZ`; the regex rule requires a two-digit ID in a specific range.
+
+| Byte offsets | Input bytes | Used by |
+| --- | --- | --- |
+| 0–1 | `MZ` | Hex pattern and little-endian `uint16(0)` |
+| 2–4 | Two zero bytes and a space | Hex jump `[3]` |
+| 5–9 | `hello` | First text occurrence and hex suffix |
+| 10 | Space | Word boundary |
+| 11–15 | `HELLO` | Second text occurrence, `@word[2] == 11` |
+| 16 | Space | Separator |
+| 17–21 | `id=42` | Regex occurrence in the selected range |
+
+<details>
+<summary>Complete Go example: compare text, hex, and regex conditions</summary>
+
+<Code code={patterns} lang="go" title="main.go" />
+
+</details>
+
+<Code code={patternsOutput} lang="text" title="Output" />
+
+`#word` counts occurrences, while `@word[2]` selects the second occurrence using a one-based index. Offsets are zero-based byte positions. The second input replaces the digits with letters: the text and hex rules still match, but the regex rule fails. The hex jump `[3]` requires exactly three intervening bytes; it is not a match-count expression.
 
 ## Numeric and string behavior
 

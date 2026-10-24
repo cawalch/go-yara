@@ -69,7 +69,7 @@ Implementation: <a href={source('compiler/assertion_program.go')}>assertion prog
 
 ## Result collection
 
-Use `Matches` for a boolean answer and `MatchingRules` for rule names and tags. Use `Scan` when callers need detailed outcomes and string occurrences. A reusable scanner avoids repeated setup; the [scanner example](/go-yara/scanning/#reuse-a-scanner) shows its lifetime.
+Use the `Matches` method for a boolean answer and `MatchingRules` for rule names and tags. Use `Scan` when callers need detailed outcomes and string occurrences. The [result example](/go-yara/scanning/#scan-results) contrasts these methods with the `ScanResult.Matches` occurrence map. A reusable scanner avoids repeated setup; the [scanner example](/go-yara/scanning/#reuse-a-scanner) shows its lifetime.
 
 `WithFastScan` can stop after the first occurrence of a string when the condition permits it. Rules depending on counts, offsets, or ranges still need the relevant occurrences. Keep result options the same when comparing benchmarks; omitting match details reduces the work performed.
 

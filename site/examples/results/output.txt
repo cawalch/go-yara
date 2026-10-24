@@ -1,0 +1,6 @@
+present: condition=true occurrences=1
+  offset=2 length=5 copied="he" truncated=true
+gated: condition=false occurrences=1
+  offset=2 length=5 copied="he" truncated=true
+any rule matched: true
+matched rule: present

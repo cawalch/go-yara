@@ -1,0 +1,3 @@
+load without callback fails: true
+input="" matched=false
+input="MZ" matched=true

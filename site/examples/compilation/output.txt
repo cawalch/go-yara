@@ -1,0 +1,4 @@
+strict compilation fails: true
+omitted: broken
+omitted: dependent
+matched: good

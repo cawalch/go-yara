@@ -4,6 +4,8 @@ description: Look up go-yara module signatures, understand range arguments and u
 ---
 
 import { Code } from '@astrojs/starlight/components';
+import customExample from '../../../examples/custom-module/main.go?raw';
+import customExampleOutput from '../../../examples/custom-module/output.txt?raw';
 import ModuleTable from '../../components/ModuleTable.astro';
 import example from '../../../examples/modules/main.go?raw';
 import release from '../../generated/release.json';
@@ -49,6 +51,21 @@ Missing fields, missing dictionary keys, and out-of-range array indices evaluate
 
 <p>Register scalar callbacks through <code>Module.Functions</code>. Declare their accepted signatures and return type, and keep callbacks deterministic and safe for concurrent use. The <a href={`https://pkg.go.dev/github.com/cawalch/go-yara@${release.version}/compiler#Module`}>Module API reference</a> describes the callback types.</p>
 
+This byte-lookup callback returns undefined when the offset is outside its input. The example serializes the program, demonstrates the missing-callback load error, reloads with the handler, and binds an external variable on the new scanner.
+
+<details>
+<summary>Complete Go example: register a function and restore it after loading</summary>
+
+<Code code={customExample} lang="go" title="main.go" />
+
+</details>
+
+<Code code={customExampleOutput} lang="text" title="Output" />
+
+`ModuleContext` supplies scan data, blocks, and the current rule name; it is not a `context.Context`. This example operates on ordinary byte-slice scans. A callback intended for sparse block scans must implement the address semantics it needs using the supplied blocks. Keep callbacks bounded and avoid blocking I/O: scanner cancellation cannot preempt Go code that is blocked inside your callback.
+
+Return `ModuleValue{}` for undefined. An undefined argument propagates without invoking the callback; a non-nil callback error fails the scan. For cache opt-in, results must depend only on input data, blocks, and arguments, never the rule name, time, external state, or side effects. String arguments are not eligible for this cache.
+
 Deterministic built-in numeric and range calls share a bounded cache within each scan. String arguments and `time.now()` are not cached. Custom callbacks are uncached unless they opt in with `ModuleFunction.Cacheable` and satisfy its purity contract. A digest calculation can still allocate on a cache miss; see [performance](/go-yara/performance/#module-call-cache).
 
-After loading a serialized program, re-register custom handlers and bind host data again. Schemas survive serialization; runtime data does not.
+Pass custom handlers to `UnmarshalCompiledProgram` while loading, then bind host data again. Schemas survive serialization; runtime data does not.
