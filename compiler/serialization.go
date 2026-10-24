@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"reflect"
 	"slices"
 
 	"github.com/cawalch/go-yara/ast"
@@ -16,8 +17,8 @@ import (
 
 const (
 	compiledProgramMagic = "GOYARA\x00"
-	// Version 5 adds fused condition instructions and assertion operand pools.
-	compiledProgramVersion = uint16(5)
+	// Version 6 adds structured module schemas and access/iteration operands.
+	compiledProgramVersion = uint16(6)
 )
 
 // MarshalBinary serializes a compiled program using the current versioned
@@ -80,7 +81,7 @@ func ReadCompiledProgram(reader io.Reader, modules ...Module) (*CompiledProgram,
 	if err := binary.Read(reader, binary.BigEndian, &version); err != nil {
 		return nil, fmt.Errorf("reading compiled program version: %w", err)
 	}
-	if version != 4 && version != compiledProgramVersion {
+	if version != 4 && version != 5 && version != compiledProgramVersion {
 		return nil, fmt.Errorf("unsupported compiled program version %d; rebuild with format version %d", version, compiledProgramVersion)
 	}
 
@@ -105,8 +106,9 @@ func (reader compiledProgramReader) ReadByte() (byte, error) {
 
 func serializeProgram(cp *CompiledProgram) (serializedProgram, error) {
 	payload := serializedProgram{
-		Rules:        make([]serializedRule, len(cp.Rules)),
-		Dependencies: cp.DependencyGraph(),
+		ModuleSchemas: cp.moduleSchemas,
+		Rules:         make([]serializedRule, len(cp.Rules)),
+		Dependencies:  cp.DependencyGraph(),
 	}
 	for index, rule := range cp.Rules {
 		serialized, err := serializeRule(rule)
@@ -129,6 +131,8 @@ func serializeRule(rule *CompiledRule) (serializedRule, error) {
 	}
 
 	serialized := serializedRule{
+		ModuleAccessNames:   slices.Clone(rule.moduleAccessNames),
+		ModuleIterations:    slices.Clone(rule.moduleIterations),
 		Name:                rule.Name,
 		Index:               rule.Index,
 		Bytecode:            slices.Clone(rule.Bytecode),
@@ -202,6 +206,18 @@ func deserializeProgram(payload serializedProgram, modules []Module) (*CompiledP
 	if err != nil {
 		return nil, err
 	}
+	schemas := make(map[string]*ModuleSchema, len(payload.ModuleSchemas))
+	for name, schema := range payload.ModuleSchemas {
+		if err := validateModuleSchema(schema); err != nil {
+			return nil, fmt.Errorf("loading module %s: %w", name, err)
+		}
+		for _, module := range modules {
+			if module.Name == name && module.Schema != nil && !reflect.DeepEqual(module.Schema, schema) {
+				return nil, fmt.Errorf("module %s has an incompatible schema", name)
+			}
+		}
+		schemas[name] = cloneModuleSchema(schema)
+	}
 	rules := make([]*CompiledRule, len(payload.Rules))
 	for index, serialized := range payload.Rules {
 		rule, err := deserializeRule(serialized, bindings)
@@ -211,6 +227,7 @@ func deserializeProgram(payload serializedProgram, modules []Module) (*CompiledP
 		if dependencies, known := payload.Dependencies[rule.Name]; known {
 			rule.dependencies = append([]string{}, dependencies...)
 		}
+		rule.moduleSchemas = schemas
 		rules[index] = rule
 	}
 
@@ -240,6 +257,8 @@ func deserializeRule(serialized serializedRule, bindings map[string]compiledModu
 	}
 
 	rule := &CompiledRule{
+		moduleAccessNames:   slices.Clone(serialized.ModuleAccessNames),
+		moduleIterations:    slices.Clone(serialized.ModuleIterations),
 		Name:                serialized.Name,
 		Index:               serialized.Index,
 		Bytecode:            slices.Clone(serialized.Bytecode),

@@ -527,7 +527,12 @@ func (c *Compiler) compileSemanticWithContext(ctx context.Context, program *ast.
 	}
 
 	// Create semantic analyzer
-	c.analyzer = semantic.NewValidatorWithModules(semanticModuleFunctions(c.options.Modules))
+	for name, module := range c.options.Modules {
+		if err := validateModuleSchema(module.Schema); err != nil {
+			return fmt.Errorf("module %s: %w", name, err)
+		}
+	}
+	c.analyzer = semantic.NewValidatorWithModuleSchemas(semanticModuleFunctions(c.options.Modules), semanticModuleSchemas(c.options.Modules))
 
 	// Analyze - ValidateProgram returns errors, not error
 	errs := c.analyzer.ValidateProgram(program)

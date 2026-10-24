@@ -131,6 +131,12 @@ func (c *ruleReferenceCollector) collect(expr ast.Expression, scoped map[string]
 		c.collect(e.Right, scoped)
 	case *ast.UnaryOp:
 		c.collect(e.Right, scoped)
+	case *ast.MemberAccess:
+		// Field names are not rule references. Only indexes can reference rules.
+		c.collectModuleIndexes(e.Object, scoped)
+	case *ast.IndexAccess:
+		c.collectModuleIndexes(e.Object, scoped)
+		c.collect(e.Index, scoped)
 	case *ast.FunctionCall:
 		for _, arg := range e.Args {
 			c.collect(arg, scoped)
@@ -169,4 +175,14 @@ func cloneBoolMap(src map[string]bool) map[string]bool {
 		dst[key] = value
 	}
 	return dst
+}
+
+func (c *ruleReferenceCollector) collectModuleIndexes(expr ast.Expression, scoped map[string]bool) {
+	switch e := expr.(type) {
+	case *ast.MemberAccess:
+		c.collectModuleIndexes(e.Object, scoped)
+	case *ast.IndexAccess:
+		c.collectModuleIndexes(e.Object, scoped)
+		c.collect(e.Index, scoped)
+	}
 }

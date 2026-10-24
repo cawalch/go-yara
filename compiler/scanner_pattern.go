@@ -492,6 +492,7 @@ func addCachedMatches(ctx *MatchContext, id string, matches []matchSpan) {
 }
 
 func (s *Scanner) prepareInterpreter(rule *CompiledRule) {
+	s.interp.moduleData = s.moduleData
 	s.interp.stringArena = s.interp.stringArena[:0]
 
 	s.interp.setCurrentCompiledRule(rule)

@@ -11,7 +11,7 @@ The engine is designed for high-throughput scanning pipelines. It uses literal p
 - **High-Throughput Prefiltering**: Aho-Corasick literal indexing and early header-based rule pruning skip non-matching rules before condition evaluation.
 - **Low Memory Overhead**: Reusable scanner instances and internal pooling eliminate heap allocations on clean inputs after warm-up.
 - **Thread Safety**: Immutable compiled programs support safe, concurrent scanning across multiple goroutines.
-- **Extensibility**: Support for custom Go module functions, runtime external variables, binary rule serialization, structured evidence extraction, and a standalone CLI.
+- **Extensibility**: Support for structured host modules, custom Go module functions, runtime external variables, binary rule serialization, structured evidence extraction, and a standalone CLI.
 
 ## Requirements and Installation
 
@@ -270,6 +270,67 @@ program, err := c.CompileSourceWithContext(ctx, source)
 
 Module callback functions must be deterministic and safe for concurrent execution across goroutines.
 
+### Structured Host Modules
+
+Declare nested fields, constants, arrays, and string-keyed dictionaries with
+`Module.Schema`. The compiler checks member names and index types before scanning:
+
+```go
+telemetry := compiler.Module{
+    Name: "telemetry",
+    Schema: &compiler.ModuleSchema{Fields: map[string]compiler.ModuleField{
+        "items": {Kind: compiler.ModuleArray, Element: &compiler.ModuleField{
+            Kind: compiler.ModuleStruct,
+            Struct: &compiler.ModuleStructDef{Fields: map[string]compiler.ModuleField{
+                "metric": {Kind: compiler.ModuleFloat},
+            }},
+        }},
+        "env": {Kind: compiler.ModuleDictionary, Element: &compiler.ModuleField{
+            Kind: compiler.ModuleString,
+        }},
+    }},
+}
+c := compiler.NewCompiler(compiler.WithModule(telemetry))
+program, err := c.CompileSourceWithContext(ctx, `
+import "telemetry"
+rule elevated {
+    condition:
+        telemetry.env["USER"] == "analyst" and
+        for any item in telemetry.items : (item.metric > 0.9)
+}`)
+if err != nil {
+    return err
+}
+scanner := program.NewScanner(compiler.WithModuleData("telemetry", map[string]any{
+    "items": []map[string]any{{"metric": 0.95}},
+    "env": map[string]string{"USER": "analyst"},
+}))
+defer scanner.Close()
+result, err := scanner.Scan(data)
+```
+
+Access arrays with integer indices (`telemetry.items[0].metric`) and dictionaries
+with string keys. Dictionary loops bind a key and value:
+`for any key,value in telemetry.env : (key == "USER" and value == "analyst")`.
+Collection loops stop once `any`, `all`, `none`, or a numeric threshold is decided.
+Missing fields, missing keys, and out-of-range indices evaluate as undefined.
+Missing collections iterate as empty collections; `all` and `none` are true for
+an empty collection, while `any` is false. Use `defined` to require a value.
+
+Binding copies data into a scanner-owned snapshot. It accepts Go structs with
+exported fields (case-insensitive names or exact `yara:"name"` tags), string-keyed
+maps, slices, and arrays. Scalar types must match the schema; integer fields accept
+signed integers and unsigned values through `math.MaxInt64`. Binding errors from
+`WithModuleData` are returned by scan methods. Use `scanner.SetModuleData(name,
+data)` between scans to replace a snapshot and receive errors immediately.
+Setters must not run concurrently with scans. Separate scanners can bind different
+data to the same compiled program.
+
+A scalar field can set `Constant` to a matching `ModuleValue`; direct references
+to constants work without runtime data. Schemas are copied at registration, must
+be finite, and support up to 32 levels. Schema fields can coexist with the existing
+scalar callback API in `Module.Functions`. Native `pe`/`elf` parsers are not bundled.
+
 ### Program Serialization and Caching
 
 To avoid recompiling rules on service startup, serialize compiled programs to binary format:
@@ -288,7 +349,7 @@ if err != nil {
 }
 ```
 
-Stream-based serialization is also supported via `program.WriteTo(w)` and `compiler.ReadCompiledProgram(r)`. Serialized programs preserve compiled automatons, hex tables, and prefilter structures. External variables and custom module handlers must be rebound after deserialization. New artifacts use format version 5; version 4 artifacts remain readable. Older binaries cannot load version 5 artifacts.
+Stream-based serialization is also supported via `program.WriteTo(w)` and `compiler.ReadCompiledProgram(r)`. Serialized programs preserve compiled automatons, hex tables, and prefilter structures. External variables and custom module handlers must be rebound after deserialization. New artifacts use format version 6; versions 4 and 5 remain readable. Older binaries cannot load version 6 artifacts. Structured module schemas are preserved; host data must be rebound on each scanner.
 
 The compiler fuses fixed-offset `uint16`/`uint32` equality, integer filesize bounds, string-at checks, and string-count comparisons. Payload guards share scan-local results across rules. Safe mandatory guards can reject rules before interpretation; default scans still preserve string matches for rules rejected by a filesize condition. External-variable comparisons and callback-bearing conditions retain normal evaluation. When using `Interpreter` directly with compiled bytecode, bind its rules with `SetCompiledRules` and select the rule with `SetCurrentRule` so assertion operands are available.
 
@@ -447,7 +508,7 @@ go-yara rules.yar --mode=execute --data large_sample.bin --streaming --chunk-siz
 
 ### Limitations
 
-- **C-Based Modules**: Upstream C-based module object models (`pe`, `elf`, `cuckoo`, `dotnet`) are not bundled. Applications can implement custom logic by registering Go callback functions with `compiler.WithModule`.
+- **C-Based Modules**: Upstream C-based module object models (`pe`, `elf`, `cuckoo`, `dotnet`) are not bundled. Applications can supply structured schemas and host data or Go callback functions with `compiler.WithModule`.
 - **Block Boundary Spanning**: In `BlockScanner`, patterns crossing segmented block boundaries require overlapping bytes in the caller-provided buffers.
 
 ## Repository Layout

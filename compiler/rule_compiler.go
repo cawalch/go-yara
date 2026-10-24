@@ -55,6 +55,8 @@ func newRuleCompilerWithModules(modules map[string]Module) (*ruleCompiler, error
 	}
 	conditionCompiler := newConditionCompiler(emitter, make(map[string]int))
 	conditionCompiler.setModuleFunctions(bindings)
+	conditionCompiler.moduleSchemas = registeredModuleSchemas(modules)
+	conditionCompiler.moduleTypes = semanticModuleSchemas(modules)
 
 	return &ruleCompiler{
 		emitter:           emitter,
@@ -187,6 +189,9 @@ func (rc *ruleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 		ModuleNames:         rc.moduleNames,
 		HeaderConstraints:   deriveHeaderConstraints(rule.Condition),
 		assertions:          slices.Clone(rc.conditionCompiler.assertions),
+		moduleSchemas:       rc.conditionCompiler.moduleSchemas,
+		moduleAccessNames:   slices.Clone(rc.conditionCompiler.moduleAccessNames),
+		moduleIterations:    slices.Clone(rc.conditionCompiler.moduleIterations),
 		mandatoryAssertions: mandatoryAssertionIndices(rule.Condition, rc.conditionCompiler.assertions),
 		requiredStrings:     requiredStrings,
 		forbiddenStrings:    forbiddenStrings,
@@ -293,6 +298,10 @@ func containsStringReference(expr ast.Expression) bool {
 		return containsStringReference(e.Left) || containsStringReference(e.Right)
 	case *ast.UnaryOp:
 		return containsStringReference(e.Right)
+	case *ast.MemberAccess:
+		return containsStringReference(e.Object)
+	case *ast.IndexAccess:
+		return containsStringReference(e.Object) || containsStringReference(e.Index)
 	case *ast.FunctionCall:
 		for _, arg := range e.Args {
 			if containsStringReference(arg) {

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/cawalch/go-yara/ast"
+	"github.com/cawalch/go-yara/semantic"
 	"github.com/cawalch/go-yara/token"
 )
 
@@ -31,6 +32,10 @@ func safeMax(a, b int64) int64 {
 
 // ConditionCompiler compiles YARA condition expressions to bytecode
 type conditionCompiler struct {
+	moduleSchemas     map[string]*ModuleSchema
+	moduleTypes       map[string]*semantic.TypeInfo
+	moduleAccessNames []string
+	moduleIterations  []moduleIterationPlan
 	emitter           *emitter
 	stringOffsets     map[string]int
 	variableMap       map[string]int
@@ -245,6 +250,10 @@ func (cc *conditionCompiler) compileMatchesOperand(expr ast.Expression) (Opcode,
 // compileBinaryOp compiles a binary operation expression
 func (cc *conditionCompiler) compileExpression(expr ast.Expression) error {
 	switch e := expr.(type) {
+	case *ast.MemberAccess:
+		return cc.compileModuleMember(e)
+	case *ast.IndexAccess:
+		return cc.compileModuleIndex(e)
 	case *ast.Literal:
 		return cc.compileLiteral(e)
 	case *ast.Identifier:
@@ -420,6 +429,10 @@ func (cc *conditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 		return nil
 	}
 
+	if cc.moduleSchemas[ident.Name] != nil {
+		cc.emitModuleName(OpModuleLoad, ident.Name, ident.Pos)
+		return nil
+	}
 	if index, exists := cc.externalVariables[ident.Name]; exists {
 		cc.emitter.EmitOpcodeWithOperand(OpPushM, Operand{Type: OperandImmediate32, Value: uint64(int64(index))}, ident.Pos.Line, ident.Pos.Column) // #nosec G115
 		return nil
@@ -562,6 +575,8 @@ func (cc *conditionCompiler) GetStringSets() [][]string {
 
 // ResetForRule clears per-rule state while preserving program-level maps.
 func (cc *conditionCompiler) ResetForRule() {
+	cc.moduleAccessNames = nil
+	cc.moduleIterations = nil
 	cc.assertions = cc.assertions[:0]
 	cc.labelCounter = 0
 	clear(cc.labels)

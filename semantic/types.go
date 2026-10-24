@@ -24,6 +24,10 @@ const (
 	TypeBoolean
 	// TypeRegexp represents a regular expression type
 	TypeRegexp
+	// TypeStruct, TypeArray and TypeDictionary represent schema-backed module values.
+	TypeStruct
+	TypeArray
+	TypeDictionary
 )
 
 // IntegerType represents different integer types and their properties
@@ -35,6 +39,8 @@ type IntegerType struct {
 
 // TypeInfo contains complete type information for expressions
 type TypeInfo struct {
+	Fields      map[string]*TypeInfo
+	Element     *TypeInfo
 	DataType    DataType
 	IntegerType *IntegerType // Only valid when DataType is TypeInteger
 	StringType  *StringType  // Only valid when DataType is TypeString
@@ -97,6 +103,12 @@ func (it *IntegerType) String() string {
 // String returns a string representation of the type info
 func (ti *TypeInfo) String() string {
 	switch ti.DataType {
+	case TypeStruct:
+		return "structure"
+	case TypeArray:
+		return "array"
+	case TypeDictionary:
+		return "dictionary"
 	case TypeInteger:
 		return ti.formatIntegerType()
 	case TypeFloat:
@@ -164,7 +176,10 @@ func (ti *TypeInfo) CanCompare(other *TypeInfo) bool {
 		return true
 	}
 
-	// Same types can always be compared
+	if ti.isStructured() || other.isStructured() {
+		return false
+	}
+	// Same scalar types can always be compared
 	if ti.DataType == other.DataType {
 		return true
 	}
@@ -363,6 +378,9 @@ func inferComparisonType(left, right *TypeInfo) (*TypeInfo, error) {
 
 // inferLogicalType infers the result type of logical operations
 func inferLogicalType(left, right *TypeInfo) (*TypeInfo, error) {
+	if left.isStructured() || right.isStructured() {
+		return nil, errors.New("logical operators require scalar operands")
+	}
 	// In YARA, logical operators can work with any type (integers, strings, etc.)
 	// They are treated as truthy/falsy values
 	// Both operands must be comparable types, but don't have to be boolean
@@ -483,4 +501,8 @@ func handleUnaryMinusOp(operand *TypeInfo) (*TypeInfo, error) {
 		return nil, errors.New("unary minus requires numeric operand")
 	}
 	return operand, nil
+}
+
+func (ti *TypeInfo) isStructured() bool {
+	return ti.DataType == TypeStruct || ti.DataType == TypeArray || ti.DataType == TypeDictionary
 }

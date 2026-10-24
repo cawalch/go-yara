@@ -20,6 +20,8 @@ type Validator struct {
 	currentRuleStrings []string
 	allRuleNames       []string
 	globalVarNames     []string
+	moduleSchemas      map[string]*TypeInfo
+	moduleVariables    map[string]*TypeInfo
 	moduleFunctions    ModuleFunctions
 	importedModules    map[string]bool
 }
@@ -61,7 +63,7 @@ func (v *Validator) ValidateProgram(program *ast.Program) []error {
 	// First: validate module imports and remember the namespaces available to
 	// dotted calls in rule conditions.
 	for _, importStmt := range program.Imports {
-		if !v.moduleFunctions.hasModule(importStmt.Module) {
+		if !v.moduleFunctions.hasModule(importStmt.Module) && v.moduleSchemas[importStmt.Module] == nil {
 			v.addError(v.unsupportedModuleError(importStmt.Module, importStmt.Pos))
 			continue
 		}
@@ -251,6 +253,25 @@ func (v *Validator) validateCondition(condition ast.Expression) {
 
 // validateExpression validates an expression and returns its type
 func (v *Validator) validateExpression(expr ast.Expression) (*TypeInfo, []error) {
+	switch e := expr.(type) {
+	case *ast.MemberAccess:
+		return v.validateMemberAccess(e)
+	case *ast.IndexAccess:
+		return v.validateIndexAccess(e)
+	case *ast.Identifier:
+		if typ := v.moduleVariables[e.Name]; typ != nil {
+			return typ, nil
+		}
+		if _, loop := v.loopVariables[e.Name]; loop {
+			return v.validateIdentifierExpression(e)
+		}
+		if typ := v.moduleSchemas[e.Name]; typ != nil {
+			if !v.importedModules[e.Name] {
+				return v.moduleAccessError(e, "module must be imported: "+e.Name)
+			}
+			return typ, nil
+		}
+	}
 	switch {
 	case v.isSimpleExpression(expr):
 		return v.validateSimpleExpression(expr)

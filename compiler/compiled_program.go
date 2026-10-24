@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"reflect"
 	"slices"
 	"sync"
 
@@ -39,6 +40,7 @@ type sharedAutomatonEntry struct {
 // (such as tag filters, match limits, hooks, or fast-scan flags) are required, instantiate an
 // explicit Scanner via NewScanner.
 type CompiledProgram struct {
+	moduleSchemas   map[string]*ModuleSchema
 	Rules           []*CompiledRule
 	sharedAutomaton *acAutomaton
 	Stats           map[string]any
@@ -138,6 +140,7 @@ func (cp *CompiledProgram) prepare() error {
 	if err := cp.Validate(); err != nil {
 		return err
 	}
+	cp.moduleSchemas = map[string]*ModuleSchema{}
 	cp.dependencies = make(map[string][]string, len(cp.Rules))
 	names := make(map[string]bool, len(cp.Rules))
 	for index, rule := range cp.Rules {
@@ -151,6 +154,12 @@ func (cp *CompiledProgram) prepare() error {
 			return fmt.Errorf("rule %q index %d does not match position %d", rule.Name, rule.Index, index)
 		}
 		names[rule.Name] = true
+		for name, schema := range rule.moduleSchemas {
+			if prior := cp.moduleSchemas[name]; prior != nil && !reflect.DeepEqual(prior, schema) {
+				return fmt.Errorf("conflicting schema for module %q", name)
+			}
+			cp.moduleSchemas[name] = schema
+		}
 		rule.BuildStringIndex()
 		if rule.dependencies != nil {
 			cp.dependencies[rule.Name] = slices.Clone(rule.dependencies)

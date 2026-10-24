@@ -616,57 +616,51 @@ func (p *ExpressionParser) parseStringOperation() (ast.Expression, error) {
 }
 
 func (p *ExpressionParser) parseIdentifier() (ast.Expression, error) {
-	pos := p.current.Pos
-	name := p.current.Literal
+	base := &ast.Identifier{Name: p.current.Literal, Pos: p.current.Pos}
 	p.nextToken()
-
-	// Handle member access (dot notation) like pe.entry_point
-	if p.currentTokenIs(token.DOT) {
-		result, err := p.parseMemberAccess(pos, name)
-		if err != nil {
-			return nil, err
-		}
-		// Handle postfix operations on the result
-		return p.parsePostfix(result)
-	}
-
-	result := &ast.Identifier{Name: name, Pos: pos}
-	// Handle postfix operations (function calls, array indexing)
-	return p.parsePostfix(result)
+	return p.parsePostfix(base)
 }
 
-func (p *ExpressionParser) parseMemberAccess(pos token.Position, baseName string) (ast.Expression, error) {
-	var left ast.Expression = &ast.Identifier{Name: baseName, Pos: pos}
-
-	for p.currentTokenIs(token.DOT) {
-		p.nextToken() // consume '.'
-		if !p.currentTokenIs(token.IDENTIFIER) && !p.currentTokenIs(token.LENGTH) {
-			return nil, fmt.Errorf("expected identifier after '.' at %v", p.current.Pos)
-		}
-		memberName := p.current.Literal
-		memberPos := p.current.Pos
-		p.nextToken()
-		left = &ast.BinaryOp{
-			Left:  left,
-			Op:    token.DOT,
-			Right: &ast.Identifier{Name: memberName, Pos: memberPos},
-			Pos:   pos,
-		}
-	}
-	return left, nil
-}
-
-// ---------- postfix ----------
-
-// parsePostfix handles postfix operations (function calls).
+// parsePostfix parses chained fields, indexes, and existing dotted calls.
 func (p *ExpressionParser) parsePostfix(base ast.Expression) (ast.Expression, error) {
-	if p.currentTokenIs(token.LPAREN) {
-		return p.parseFunctionCall(base)
+	for links := 0; ; links++ {
+		if p.maxRecursionDepth > 0 && links+p.depth > p.maxRecursionDepth {
+			return nil, errors.New("module access chain exceeds maximum expression depth")
+		}
+		switch {
+		case p.currentTokenIs(token.DOT):
+			pos := p.current.Pos
+			p.nextToken()
+			if !p.currentTokenIs(token.IDENTIFIER) && !p.currentTokenIs(token.LENGTH) {
+				return nil, fmt.Errorf("expected identifier after '.' at %v", p.current.Pos)
+			}
+			base = &ast.MemberAccess{Object: base, Member: p.current.Literal, Pos: pos}
+			p.nextToken()
+		case p.currentTokenIs(token.LBRACKET):
+			if id, ok := base.(*ast.Identifier); ok && strings.HasPrefix(id.Name, "$") {
+				return nil, errors.New("invalid syntax: array indexing $a[i] is not supported in YARA. Use @a[i] for string offset or #a[i] for string count")
+			}
+			pos := p.current.Pos
+			p.nextToken()
+			index, err := p.ParseExpression()
+			if err != nil {
+				return nil, err
+			}
+			if !p.currentTokenIs(token.RBRACKET) {
+				return nil, fmt.Errorf("expected ']' at %v", p.current.Pos)
+			}
+			p.nextToken()
+			base = &ast.IndexAccess{Object: base, Index: index, Pos: pos}
+		case p.currentTokenIs(token.LPAREN):
+			call, err := p.parseFunctionCall(base)
+			if err != nil {
+				return nil, err
+			}
+			base = call
+		default:
+			return base, nil
+		}
 	}
-	if p.currentTokenIs(token.LBRACKET) {
-		return nil, errors.New("invalid syntax: array indexing $a[i] is not supported in YARA. Use @a[i] for string offset or #a[i] for string count")
-	}
-	return base, nil
 }
 
 func (p *ExpressionParser) parseFunctionCall(base ast.Expression) (ast.Expression, error) {
@@ -704,6 +698,9 @@ func extractFunctionName(expr ast.Expression) (string, bool) {
 	switch node := expr.(type) {
 	case *ast.Identifier:
 		return node.Name, true
+	case *ast.MemberAccess:
+		left, ok := extractFunctionName(node.Object)
+		return left + "." + node.Member, ok
 	case *ast.BinaryOp:
 		if node.Op != token.DOT {
 			return "", false

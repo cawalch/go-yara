@@ -204,6 +204,14 @@ const (
 	OpAssertFilesize
 	OpAssertStringAt
 	OpAssertStringCount
+	// OpModuleLoad loads bound structured module data.
+	OpModuleLoad
+	// OpModuleGetField retrieves a declared structure field.
+	OpModuleGetField
+	// OpModuleGetIndex retrieves an array or dictionary element.
+	OpModuleGetIndex
+	// OpIterStartModuleArray starts an array or dictionary iterator.
+	OpIterStartModuleArray
 )
 
 // Opcode categories for classification
@@ -247,7 +255,7 @@ func isStackOpcode(op Opcode) bool {
 
 // isObjectOpcode checks if opcode is an object operation
 func isObjectOpcode(op Opcode) bool {
-	return (op >= OpObjLoad && op <= OpOffset) ||
+	return (op >= OpModuleLoad && op <= OpIterStartModuleArray) || (op >= OpObjLoad && op <= OpOffset) ||
 		(op >= OpOf && op <= OpMatches) ||
 		(op >= OpImport && op <= OpJnundef)
 }
@@ -303,6 +311,10 @@ func (op Opcode) GetCategory() string {
 // opcodeNames maps basic opcodes to their string names.
 // #nosec G101 -- Fixed bytecode mnemonics, not credentials.
 var opcodeNames = map[Opcode]string{
+	OpModuleLoad:             "MODULE_LOAD",
+	OpModuleGetField:         "MODULE_GET_FIELD",
+	OpModuleGetIndex:         "MODULE_GET_INDEX",
+	OpIterStartModuleArray:   "ITER_START_MODULE_ARRAY",
 	OpAssertUint16Eq:         "ASSERT_UINT16_EQ",
 	OpAssertUint32Eq:         "ASSERT_UINT32_EQ",
 	OpAssertFilesize:         "ASSERT_FILESIZE",

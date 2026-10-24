@@ -116,6 +116,11 @@ func collectConditionStringReferences(expr ast.Expression, refs *conditionString
 		collectConditionStringReferences(e.Condition, refs)
 		collectConditionStringReferences(e.InRange, refs)
 		collectConditionStringReferences(e.AtOffset, refs)
+	case *ast.MemberAccess:
+		collectConditionStringReferences(e.Object, refs)
+	case *ast.IndexAccess:
+		collectConditionStringReferences(e.Object, refs)
+		collectConditionStringReferences(e.Index, refs)
 	case *ast.FunctionCall:
 		for _, arg := range e.Args {
 			collectConditionStringReferences(arg, refs)

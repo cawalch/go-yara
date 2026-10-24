@@ -227,6 +227,8 @@ func TestConditionAssertionsSerialization(t *testing.T) {
 		}
 		if !fused {
 			binary.BigEndian.PutUint16(encoded[len(compiledProgramMagic):], 4)
+		} else {
+			binary.BigEndian.PutUint16(encoded[len(compiledProgramMagic):], 5)
 		}
 		loaded, err := UnmarshalCompiledProgram(encoded)
 		if err != nil {

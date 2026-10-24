@@ -17,6 +17,13 @@ func FoldConstants(expr ast.Expression) ast.Expression {
 	}
 
 	switch e := expr.(type) {
+	case *ast.MemberAccess:
+		e.Object = FoldConstants(e.Object)
+		return e
+	case *ast.IndexAccess:
+		e.Object = FoldConstants(e.Object)
+		e.Index = FoldConstants(e.Index)
+		return e
 	case *ast.Literal:
 		return e
 	case *ast.Identifier:

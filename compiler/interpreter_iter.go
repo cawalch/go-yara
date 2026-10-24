@@ -299,6 +299,10 @@ func (i *Interpreter) executeIterNext() error {
 		}
 
 		switch iter.Type {
+		case OpIterStartModuleArray:
+			if err := i.nextModuleElement(iter); err != nil {
+				return err
+			}
 		case OpIterStartIntRange:
 			i.memory[iter.Variables[0]] = Value{Type: ValueTypeInt, IntVal: iter.StartValue + int64(iter.Index)}
 		case OpIterStartIntEnum:
@@ -355,8 +359,12 @@ func (i *Interpreter) executeIterCondition() error {
 	i.stack = i.stack[:len(i.stack)-1]
 
 	iter := &i.iterators[len(i.iterators)-1]
-	if i.isTruthy(condVal) {
+	truth := i.isTruthy(condVal)
+	if truth {
 		iter.Count++
+	}
+	if iter.Type == OpIterStartModuleArray && iter.moduleQuantifierDecided(truth) {
+		iter.Index = iter.Total
 	}
 
 	return nil

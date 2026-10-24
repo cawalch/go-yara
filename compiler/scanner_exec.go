@@ -20,6 +20,9 @@ type publicRuleEvaluation struct {
 }
 
 func (s *Scanner) scanError() error {
+	if s.moduleErr != nil {
+		return s.moduleErr
+	}
 	if s.program.preparationErr != nil {
 		return s.program.preparationErr
 	}

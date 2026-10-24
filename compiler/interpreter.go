@@ -13,6 +13,7 @@ import (
 
 // Value represents a YARA value that can be int, double, or string
 type Value struct {
+	object    *moduleObject
 	Type      ValueType
 	IntVal    int64
 	DoubleVal float64
@@ -35,6 +36,8 @@ const (
 	ValueTypeRuleRef
 	// ValueTypeUndefined represents an undefined value
 	ValueTypeUndefined
+	// ValueTypeObject references immutable structured module data.
+	ValueTypeObject
 )
 
 // String constants for quantifiers
@@ -51,6 +54,7 @@ const (
 
 // Interpreter represents a bytecode interpreter for YARA rules
 type Interpreter struct {
+	moduleData          map[string]ModuleValue
 	bytecode            []byte
 	ip                  int                               // Instruction pointer
 	stack               []Value                           // Execution stack
@@ -80,8 +84,10 @@ type Interpreter struct {
 
 // Iterator defines the state for a runtime for-loop
 type Iterator struct {
-	Variables []int // Memory slots where loop variables are stored
-	StringIDs []string
+	moduleObject *moduleObject
+	modulePlan   moduleIterationPlan
+	Variables    []int // Memory slots where loop variables are stored
+	StringIDs    []string
 	// Text strings for text-string-set iteration (e.g. for any s in ("a", "b") : ...)
 	TextStrings []string
 	// Integer values for integer-enumeration iteration (e.g. for any i in (1, 2, 3) : ...)
@@ -145,6 +151,7 @@ func (i *Interpreter) Release() {
 }
 
 func (i *Interpreter) resetForPool() {
+	clear(i.stack[:cap(i.stack)])
 	clear(i.stringArena[:cap(i.stringArena)])
 	clear(i.iterators[:cap(i.iterators)])
 	clear(i.regexCache)

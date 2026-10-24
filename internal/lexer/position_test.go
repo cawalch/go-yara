@@ -144,3 +144,17 @@ func TestReader_PeekChar(t *testing.T) {
 		t.Errorf("Expected current char 'h', got %c", r.Current())
 	}
 }
+
+func TestReaderSequentialPositionsMatchSetPosition(t *testing.T) {
+	for _, input := range []string{"a\nb", "a\r\nb", "\n\nx\n", "a\t b"} {
+		sequential := NewReaderFast(input)
+		direct := NewReaderFast(input)
+		for offset := 0; offset <= len(input); offset++ {
+			direct.SetPosition(offset)
+			if got, want := sequential.CurrentPosition(), direct.CurrentPosition(); got != want {
+				t.Fatalf("input=%q offset=%d: got %+v, want %+v", input, offset, got, want)
+			}
+			sequential.ReadChar()
+		}
+	}
+}

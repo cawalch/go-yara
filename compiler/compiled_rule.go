@@ -10,27 +10,30 @@ import (
 
 // CompiledRule represents a compiled YARA rule
 type CompiledRule struct {
-	Name             string            // Rule name
-	Index            int               // Rule index in program
-	Bytecode         []byte            // Compiled bytecode
-	StringCount      int               // Number of strings
-	Strings          map[string][]byte // String identifier to pattern data mapping
-	automaton        *acAutomaton      // Aho-Corasick automaton for pattern matching
-	StringSets       [][]string        // String sets for "of" expressions
-	TextStringSets   [][]string        // Text string sets for text-string-set iteration
-	AnonymousStrings []string          // Anonymous string identifiers for "$" expressions
-	StringLiterals   []string          // String literal pool for OpPushStr
-	StringKinds      map[string]StringKind
-	StringModifiers  map[string][]ast.StringModifier
-	CaptureBindings  map[string][]ast.CaptureBinding
-	EvidencePlans    []EvidencePlan
-	TextPatterns     map[string][]byte
-	RegexPatterns    map[string]RegexPattern
-	HexPatterns      map[string]*HexPattern
-	Stats            map[string]any // Compilation statistics (computed at compile time)
-	ExternalSlots    map[string]int // external variable name -> interpreter memory slot
-	GlobalSlots      map[string]int // global variable name -> interpreter memory slot
-	GlobalValues     map[string]compiledGlobalValue
+	moduleSchemas     map[string]*ModuleSchema
+	moduleAccessNames []string
+	moduleIterations  []moduleIterationPlan
+	Name              string            // Rule name
+	Index             int               // Rule index in program
+	Bytecode          []byte            // Compiled bytecode
+	StringCount       int               // Number of strings
+	Strings           map[string][]byte // String identifier to pattern data mapping
+	automaton         *acAutomaton      // Aho-Corasick automaton for pattern matching
+	StringSets        [][]string        // String sets for "of" expressions
+	TextStringSets    [][]string        // Text string sets for text-string-set iteration
+	AnonymousStrings  []string          // Anonymous string identifiers for "$" expressions
+	StringLiterals    []string          // String literal pool for OpPushStr
+	StringKinds       map[string]StringKind
+	StringModifiers   map[string][]ast.StringModifier
+	CaptureBindings   map[string][]ast.CaptureBinding
+	EvidencePlans     []EvidencePlan
+	TextPatterns      map[string][]byte
+	RegexPatterns     map[string]RegexPattern
+	HexPatterns       map[string]*HexPattern
+	Stats             map[string]any // Compilation statistics (computed at compile time)
+	ExternalSlots     map[string]int // external variable name -> interpreter memory slot
+	GlobalSlots       map[string]int // global variable name -> interpreter memory slot
+	GlobalValues      map[string]compiledGlobalValue
 
 	// Integer string ID optimization (built during compilation)
 	StringIDToIndex map[string]int   // string identifier ("$a") -> integer index
@@ -182,6 +185,16 @@ func (cr *CompiledRule) GetStats() map[string]any {
 
 // Validate validates the compiled rule
 func (cr *CompiledRule) Validate() error {
+	for _, schema := range cr.moduleSchemas {
+		if err := validateModuleSchema(schema); err != nil {
+			return err
+		}
+	}
+	for _, plan := range cr.moduleIterations {
+		if err := plan.validate(); err != nil {
+			return err
+		}
+	}
 	for _, assertion := range cr.assertions {
 		if err := assertion.validate(); err != nil {
 			return err

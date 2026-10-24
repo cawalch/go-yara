@@ -138,7 +138,7 @@ func TestWhitespace_Newlines_Position(t *testing.T) {
 			positions: []positionCheck{
 				{tokenIndex: 0, line: 1, column: 1, description: "rule token"},
 				{tokenIndex: 1, line: 1, column: 6, description: "identifier 'r'"},
-				{tokenIndex: 3, line: 2, column: 4, description: "condition token"},
+				{tokenIndex: 3, line: 2, column: 3, description: "condition token"},
 			},
 		},
 		{
@@ -161,8 +161,8 @@ func TestWhitespace_Newlines_Position(t *testing.T) {
 			},
 			positions: []positionCheck{
 				{tokenIndex: 0, line: 1, column: 1, description: "rule token"},
-				{tokenIndex: 3, line: 2, column: 3, description: "strings token"},
-				{tokenIndex: 8, line: 4, column: 3, description: "condition token"},
+				{tokenIndex: 3, line: 2, column: 2, description: "strings token"},
+				{tokenIndex: 8, line: 4, column: 2, description: "condition token"},
 			},
 		},
 	}

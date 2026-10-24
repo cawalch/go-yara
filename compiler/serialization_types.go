@@ -6,11 +6,14 @@ import (
 )
 
 type serializedProgram struct {
-	Rules        []serializedRule
-	Dependencies map[string][]string
+	ModuleSchemas map[string]*ModuleSchema
+	Rules         []serializedRule
+	Dependencies  map[string][]string
 }
 
 type serializedRule struct {
+	ModuleAccessNames   []string
+	ModuleIterations    []moduleIterationPlan
 	Name                string
 	Index               int
 	Bytecode            []byte

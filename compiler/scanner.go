@@ -13,6 +13,8 @@ import (
 // A Scanner is safe to reuse across multiple Scan calls but is NOT safe for
 // concurrent use. Use one Scanner per goroutine.
 type Scanner struct {
+	moduleData       map[string]ModuleValue
+	moduleErr        error
 	program          *CompiledProgram
 	interp           *Interpreter    // reused across calls
 	matchCtx         *MatchContext   // reused across calls

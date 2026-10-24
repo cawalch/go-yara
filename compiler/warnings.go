@@ -88,6 +88,11 @@ func (c *Compiler) collectReferencedStrings(expr ast.Expression, referenced map[
 		c.collectReferencedStrings(e.Right, referenced)
 	case *ast.UnaryOp:
 		c.collectReferencedStrings(e.Right, referenced)
+	case *ast.MemberAccess:
+		c.collectReferencedStrings(e.Object, referenced)
+	case *ast.IndexAccess:
+		c.collectReferencedStrings(e.Object, referenced)
+		c.collectReferencedStrings(e.Index, referenced)
 	case *ast.FunctionCall:
 		// Check arguments for string references
 		for _, arg := range e.Args {
@@ -249,6 +254,11 @@ func (c *Compiler) checkWildcardCollisions(rule *ast.Rule) {
 			walkExpr(e.Right, inStringSet)
 		case *ast.UnaryOp:
 			walkExpr(e.Right, inStringSet)
+		case *ast.MemberAccess:
+			walkExpr(e.Object, inStringSet)
+		case *ast.IndexAccess:
+			walkExpr(e.Object, inStringSet)
+			walkExpr(e.Index, false)
 		case *ast.FunctionCall:
 			for _, arg := range e.Args {
 				walkExpr(arg, inStringSet)

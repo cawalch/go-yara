@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"github.com/cawalch/go-yara/ast"
+	"github.com/cawalch/go-yara/semantic"
 	"github.com/cawalch/go-yara/token"
 )
 
@@ -92,6 +93,9 @@ func (cc *conditionCompiler) compileCommaOperator(binOp *ast.BinaryOp) error {
 }
 
 func (cc *conditionCompiler) isFloatExpression(expr ast.Expression) bool {
+	if typ := semantic.ModuleExpressionType(expr, cc.moduleTypes); typ != nil {
+		return typ.DataType == semantic.TypeFloat
+	}
 	switch e := expr.(type) {
 	case *ast.Identifier:
 		_, loop := cc.variableMap[e.Name]
@@ -115,6 +119,9 @@ func (cc *conditionCompiler) isFloatExpression(expr ast.Expression) bool {
 }
 
 func (cc *conditionCompiler) isStringExpression(expr ast.Expression) bool {
+	if typ := semantic.ModuleExpressionType(expr, cc.moduleTypes); typ != nil {
+		return typ.DataType == semantic.TypeString
+	}
 	switch e := expr.(type) {
 	case *ast.Identifier:
 		if slot, loop := cc.variableMap[e.Name]; loop {

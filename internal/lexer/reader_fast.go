@@ -59,18 +59,21 @@ func (r *ReaderFast) Input() string {
 // ReadChar advances to the next character in the input.
 // Optimized version with reduced branching and better cache locality.
 func (r *ReaderFast) ReadChar() {
+	// Positions describe the current character. Advance the line only after
+	// consuming a newline, so the next character starts at column one.
+	if r.ch == '\n' {
+		r.line++
+		r.column = 0
+	}
 	r.position = r.readPosition
 	if r.readPosition < len(r.input) {
 		r.ch = r.input[r.readPosition]
 		r.readPosition++
-		// Optimized line/column tracking with reduced branching
-		if r.ch != '\n' {
-			r.column++
-		} else {
-			r.line++
-			r.column = 1
-		}
+		r.column++
 	} else {
+		if r.ch != 0 {
+			r.column++
+		}
 		r.ch = 0
 		r.readPosition++
 	}

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/cawalch/go-yara/ast"
+	"github.com/cawalch/go-yara/semantic"
 	"github.com/cawalch/go-yara/token"
 )
 
@@ -20,6 +21,15 @@ func (cc *conditionCompiler) compileForLoop(forLoop *ast.ForLoop) error {
 	cc.variableMap = maps.Clone(outerVariables)
 	defer func() { cc.variableMap, cc.nextVariableSlot = outerVariables, outerSlot }()
 
+	if typ := semantic.ModuleExpressionType(forLoop.Range, cc.moduleTypes); typ != nil && (typ.DataType == semantic.TypeArray || typ.DataType == semantic.TypeDictionary) {
+		return cc.compileModuleLoop(forLoop, typ)
+	}
+	outerTypes := cc.moduleTypes
+	cc.moduleTypes = maps.Clone(outerTypes)
+	defer func() { cc.moduleTypes = outerTypes }()
+	for _, name := range forLoop.Variables {
+		delete(cc.moduleTypes, name)
+	}
 	if len(forLoop.Variables) == 0 {
 		return cc.compileForLoopOverStrings(forLoop)
 	}

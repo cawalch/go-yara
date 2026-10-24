@@ -262,6 +262,8 @@ func normalizeModuleArguments(signatures []ModuleSignature, args []ModuleValue) 
 
 func (i *Interpreter) pushModuleValue(result ModuleValue) error {
 	switch result.Type {
+	case ModuleStruct, ModuleArray, ModuleDictionary:
+		return i.push(Value{Type: ValueTypeObject, object: result.object})
 	case ModuleInteger:
 		return i.push(Value{Type: ValueTypeInt, IntVal: result.Integer})
 	case ModuleFloat:

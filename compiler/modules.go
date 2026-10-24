@@ -23,6 +23,12 @@ const (
 	ModuleString
 	// ModuleBoolean indicates a boolean value.
 	ModuleBoolean
+	// ModuleStruct is a schema-backed structure.
+	ModuleStruct
+	// ModuleArray is an indexed collection.
+	ModuleArray
+	// ModuleDictionary is a string-keyed collection.
+	ModuleDictionary
 )
 
 // ModuleValue is a value passed to or returned from a module function.
@@ -32,6 +38,7 @@ type ModuleValue struct {
 	Float   float64
 	String  string
 	Boolean bool
+	object  *moduleObject
 }
 
 // IntegerValue constructs an integer module value.
@@ -83,6 +90,7 @@ type ModuleFunction struct {
 // Module is a collection of functions available under a dotted namespace.
 // Rules must import Name before calling one of its functions.
 type Module struct {
+	Schema    *ModuleSchema
 	Name      string
 	Functions map[string]ModuleFunction
 }
@@ -107,6 +115,7 @@ func cloneModules(modules map[string]Module) map[string]Module {
 }
 
 func cloneModule(module Module) Module {
+	module.Schema = cloneModuleSchema(module.Schema)
 	functions := make(map[string]ModuleFunction, len(module.Functions))
 	for functionName, function := range module.Functions {
 		signatures := make([]ModuleSignature, len(function.Signatures))
@@ -157,12 +166,22 @@ func compileModuleFunctions(
 		if module.Name == "" || module.Name != moduleName || strings.Contains(module.Name, ".") {
 			return nil, nil, nil, fmt.Errorf("invalid module name %q", module.Name)
 		}
+		if err := validateModuleSchema(module.Schema); err != nil {
+			return nil, nil, nil, fmt.Errorf("module %s: %w", moduleName, err)
+		}
 		for functionName, function := range module.Functions {
 			if functionName == "" || strings.Contains(functionName, ".") {
 				return nil, nil, nil, fmt.Errorf("invalid function name %q in module %q", functionName, moduleName)
 			}
-			if function.Evaluate == nil || len(function.Signatures) == 0 || function.ReturnType == ModuleUndefined {
+			if function.Evaluate == nil || len(function.Signatures) == 0 || (function.ReturnType < ModuleInteger || function.ReturnType > ModuleBoolean) {
 				return nil, nil, nil, fmt.Errorf("invalid module function %s.%s", moduleName, functionName)
+			}
+			for _, signature := range function.Signatures {
+				for _, argument := range signature.Arguments {
+					if argument < ModuleInteger || argument > ModuleBoolean {
+						return nil, nil, nil, fmt.Errorf("invalid argument type in module function %s.%s", moduleName, functionName)
+					}
+				}
 			}
 			qualifiedNames = append(qualifiedNames, moduleName+"."+functionName)
 		}
@@ -196,6 +215,12 @@ func moduleSemanticType(valueType ModuleValueType) semantic.DataType {
 		return semantic.TypeString
 	case ModuleBoolean:
 		return semantic.TypeBoolean
+	case ModuleStruct:
+		return semantic.TypeStruct
+	case ModuleArray:
+		return semantic.TypeArray
+	case ModuleDictionary:
+		return semantic.TypeDictionary
 	default:
 		return semantic.TypeUnknown
 	}

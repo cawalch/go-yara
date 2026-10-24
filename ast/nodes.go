@@ -392,3 +392,25 @@ func (s *StringTuple) node() {}
 func (s *StringTuple) Position() token.Position { return s.Pos }
 
 func (s *StringTuple) expression() {}
+
+// MemberAccess selects a named field from a module structure.
+type MemberAccess struct {
+	Object Expression
+	Member string
+	Pos    token.Position
+}
+
+func (*MemberAccess) node()                      {}
+func (*MemberAccess) expression()                {}
+func (m *MemberAccess) Position() token.Position { return m.Pos }
+
+// IndexAccess selects an array element or dictionary entry.
+type IndexAccess struct {
+	Object Expression
+	Index  Expression
+	Pos    token.Position
+}
+
+func (*IndexAccess) node()                      {}
+func (*IndexAccess) expression()                {}
+func (i *IndexAccess) Position() token.Position { return i.Pos }

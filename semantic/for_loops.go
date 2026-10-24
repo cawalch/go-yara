@@ -48,6 +48,10 @@ func containsAnonymousPlaceholder(expr ast.Expression) bool {
 		return containsAnonymousPlaceholder(e.Left) || containsAnonymousPlaceholder(e.Right)
 	case *ast.UnaryOp:
 		return containsAnonymousPlaceholder(e.Right)
+	case *ast.MemberAccess:
+		return containsAnonymousPlaceholder(e.Object)
+	case *ast.IndexAccess:
+		return containsAnonymousPlaceholder(e.Object) || containsAnonymousPlaceholder(e.Index)
 	case *ast.FunctionCall:
 		for _, arg := range e.Args {
 			if containsAnonymousPlaceholder(arg) {
@@ -168,6 +172,12 @@ func (v *Validator) validateTupleElementTypes(tuple *ast.StringTuple, loopVarTyp
 
 // validateForLoopExpression validates for loop expressions
 func (v *Validator) validateForLoopExpression(forLoop *ast.ForLoop) (*TypeInfo, []error) {
+	if v.isModuleCollectionExpression(forLoop.Range) {
+		return v.validateModuleLoop(forLoop)
+	}
+	outerModuleVariables := v.moduleVariables
+	v.moduleVariables = maps.Clone(outerModuleVariables)
+	defer func() { v.moduleVariables = outerModuleVariables }()
 	outerVariables := v.loopVariables
 	v.loopVariables = maps.Clone(outerVariables)
 	defer func() { v.loopVariables = outerVariables }()
@@ -255,11 +265,19 @@ func (v *Validator) validateForLoopExpression(forLoop *ast.ForLoop) (*TypeInfo, 
 		errors = append(errors, v.validateTupleElementTypes(tuple, loopVarType)...)
 	}
 
+	// Ordinary loop variables shadow structured outer variables in the body.
+	for _, name := range forLoop.Variables {
+		delete(v.moduleVariables, name)
+	}
 	// Validate the condition expression
 	if loopVarType == "string" {
 		v.stringLoopDepth++
 	}
-	_, conditionErrs := v.validateExpression(forLoop.Condition)
+	conditionType, conditionErrs := v.validateExpression(forLoop.Condition)
+	if conditionType != nil && conditionType.isStructured() {
+		_, structuredErrs := v.moduleAccessError(forLoop.Condition, "loop condition requires a scalar value")
+		conditionErrs = append(conditionErrs, structuredErrs...)
+	}
 	if loopVarType == "string" {
 		v.stringLoopDepth--
 	}
