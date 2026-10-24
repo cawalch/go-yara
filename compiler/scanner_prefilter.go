@@ -5,6 +5,16 @@ import (
 	"time"
 )
 
+type ruleProfileState struct {
+	started         time.Time
+	iterations      int
+	populated       bool
+	shared          bool
+	accumulated     bool
+	candidates      int
+	falseCandidates int
+}
+
 type ruleEvaluation struct {
 	matched bool
 	pruned  bool
@@ -36,9 +46,9 @@ func (s *Scanner) evaluateRuleCondition(
 	rule *CompiledRule,
 	input ruleScanInput,
 ) (ruleEvaluation, error) {
-	var ruleStart time.Time
+	state := ruleProfileState{iterations: s.interp.iterations, shared: input.usesharedAutomaton}
 	if s.hookMask&hookBitRuleProfile != 0 {
-		ruleStart = time.Now()
+		state.started = time.Now()
 	}
 
 	if !s.ruleHeaderConstraintsMatchInput(ctx, rule, input) {
@@ -46,24 +56,14 @@ func (s *Scanner) evaluateRuleCondition(
 			return ruleEvaluation{}, err
 		}
 		s.recordRuleResult(rule, false)
-		if s.hookMask&hookBitRuleProfile != 0 {
-			s.dispatchRuleEvaluated(RuleProfile{
-				RuleName:  rule.Name,
-				RuleIndex: rule.Index,
-				Duration:  time.Since(ruleStart),
-				Pruned:    true,
-			})
-		}
-		if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
-			s.telemetrySink.RulesPruned++
-		}
+		s.recordPrunedRule(rule, state)
 		return ruleEvaluation{pruned: true}, nil
 	}
 
 	if !s.prefilterDisabled && input.skipUnmatchedContext && input.usesharedAutomaton && s.missingRequiredString(rule) {
 		s.recordRuleResult(rule, false)
 		if s.hookMask&(hookBitTelemetry|hookBitRuleProfile) != 0 {
-			s.recordRuleEvaluatedHooks(rule, false, ruleStart)
+			s.recordRuleEvaluatedHooks(rule, false, state)
 		}
 		return ruleEvaluation{}, nil
 	}
@@ -71,24 +71,26 @@ func (s *Scanner) evaluateRuleCondition(
 	if err := s.populateRuleMatchContext(ctx, rule, input); err != nil {
 		return ruleEvaluation{}, err
 	}
+	state.populated = true
+	if s.hookMask&hookBitPatternProfile != 0 {
+		s.recordPatternProfiles(rule, input.usesharedAutomaton)
+	}
 	if !s.prefilterDisabled && input.skipUnmatchedContext && s.hasForbiddenStringMatch(rule, input.usesharedAutomaton) {
 		s.recordRuleResult(rule, false)
 		if s.hookMask&(hookBitTelemetry|hookBitRuleProfile) != 0 {
-			s.recordRuleEvaluatedHooks(rule, false, ruleStart)
+			s.recordRuleEvaluatedHooks(rule, false, state)
 		}
 		return ruleEvaluation{}, nil
 	}
 	if !s.prefilterDisabled && rule.RequiresStringMatch && len(s.matchCtx.spans) == 0 {
 		s.recordRuleResult(rule, false)
 		if s.hookMask&(hookBitTelemetry|hookBitRuleProfile) != 0 {
-			s.recordRuleEvaluatedHooks(rule, false, ruleStart)
+			s.recordRuleEvaluatedHooks(rule, false, state)
 		}
 		return ruleEvaluation{}, nil
 	}
 
-	s.prepareInterpreter(rule)
-	s.interp.SetItersmax(s.itersmax)
-	if err := s.interp.Execute(); err != nil {
+	if err := s.executeCondition(rule); err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return ruleEvaluation{}, ctxErr
 		}
@@ -98,7 +100,7 @@ func (s *Scanner) evaluateRuleCondition(
 	s.recordRuleResult(rule, matched)
 
 	if s.hookMask&(hookBitTelemetry|hookBitRuleProfile) != 0 {
-		s.recordRuleEvaluatedHooks(rule, matched, ruleStart)
+		s.recordRuleEvaluatedHooks(rule, matched, state)
 	}
 
 	return ruleEvaluation{matched: matched}, nil
@@ -107,32 +109,36 @@ func (s *Scanner) evaluateRuleCondition(
 func (s *Scanner) recordRuleEvaluatedHooks(
 	rule *CompiledRule,
 	matched bool,
-	ruleStart time.Time,
+	state ruleProfileState,
 ) {
-	candidates := 0
-	if rule.Index < len(s.globalMatches) {
-		candidates = len(s.globalMatches[rule.Index])
+	candidates, matches, falseCandidates := state.candidates, 0, state.falseCandidates
+	if state.populated {
+		for _, id := range rule.IndexToStringID {
+			if rule.IsStringDead(id) {
+				continue
+			}
+			verified := len(s.matchCtx.spans[id])
+			count, known := s.patternCandidateCount(rule, id, state.shared)
+			matches += verified
+			if known && !state.accumulated {
+				candidates += count
+				falseCandidates += max(count-verified, 0)
+			}
+		}
 	}
-	matches := 0
-	for _, spans := range s.matchCtx.spans {
-		matches += len(spans)
-	}
-
-	if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
+	if s.telemetrySink != nil {
 		s.telemetrySink.RulesEvaluated++
 		s.telemetrySink.CandidateHits += uint64(candidates)
 		s.telemetrySink.VerifiedMatches += uint64(matches)
-		if candidates > matches {
-			s.telemetrySink.FalseCandidateHits += uint64(candidates - matches)
-		}
+		s.telemetrySink.FalseCandidateHits += uint64(falseCandidates)
 	}
 
 	if s.hookMask&hookBitRuleProfile != 0 {
 		s.dispatchRuleEvaluated(RuleProfile{
 			RuleName:        rule.Name,
 			RuleIndex:       rule.Index,
-			Duration:        time.Since(ruleStart),
-			ConditionSteps:  s.interp.iterations,
+			Duration:        time.Since(state.started),
+			ConditionSteps:  s.interp.iterations - state.iterations,
 			Matched:         matched,
 			Pruned:          false,
 			CandidateHits:   candidates,
@@ -141,7 +147,19 @@ func (s *Scanner) recordRuleEvaluatedHooks(
 	}
 }
 
-func (s *Scanner) ruleHeaderConstraintsMatchInput(ctx context.Context, rule *CompiledRule, input ruleScanInput) bool {
+func (s *Scanner) ruleHeaderConstraintsMatchInput(ctx context.Context, rule *CompiledRule, input ruleScanInput) (matched bool) {
+	if s.hookMask&hookBitPrefilter != 0 && (len(rule.HeaderConstraints) > 0 || len(rule.mandatoryAssertions) > 0) {
+		started := s.prefilterStart()
+		defer func() {
+			if ctx.Err() == nil {
+				s.finishPrefilter(PrefilterDecision{Stage: PrefilterStageHeaderConstraints, Rejected: !matched}, started)
+			}
+		}()
+	}
+	if s.hookMask&hookBitTelemetryLatency != 0 {
+		previous := s.enterScanPhase(PhasePrefilter)
+		defer s.leaveScanPhase(previous)
+	}
 	pruneFilesize := input.skipUnmatchedContext || s.omitMatches || s.reportedMatchesOnly
 	if !s.blockScan {
 		return s.ruleConstraintsMatchContext(rule, &MatchContext{Data: input.data, FileSize: int64(len(input.data)), cancelDone: ctx.Done()}, pruneFilesize)
@@ -154,6 +172,10 @@ func (s *Scanner) ruleHeaderConstraintsMatchInput(ctx context.Context, rule *Com
 }
 
 func (s *Scanner) preparePatternScan(ctx context.Context, data []byte) (bool, error) {
+	if s.hookMask&hookBitTelemetryLatency != 0 {
+		previous := s.enterScanPhase(PhasePatternSearch)
+		defer s.leaveScanPhase(previous)
+	}
 	s.moduleCache.reset()
 	s.sharedNonTextMatched = false
 	s.nonTextCache.reset(s.program.nonTextCacheSize)
@@ -172,9 +194,14 @@ func (s *Scanner) preparePatternScan(ctx context.Context, data []byte) (bool, er
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
+	started := s.prefilterStart()
 	if err := s.extractGlobalMatchesInt(ctx, data); err != nil {
 		return false, err
 	}
+	if s.hookMask&(hookBitTelemetry|hookBitRuleProfile|hookBitPatternProfile) != 0 {
+		s.collectSharedProfileCandidates()
+	}
+	s.finishPrefilter(PrefilterDecision{Stage: PrefilterStagesharedAutomaton, Rejected: len(s.candidateRuleIndices) == 0, CandidateCount: len(s.candidateRuleIndices)}, started)
 	return true, nil
 }
 
@@ -183,6 +210,13 @@ func (s *Scanner) populateRuleMatchContext(
 	rule *CompiledRule,
 	input ruleScanInput,
 ) error {
+	if s.hookMask&hookBitTelemetryLatency != 0 {
+		previous := s.enterScanPhase(PhasePatternSearch)
+		defer s.leaveScanPhase(previous)
+	}
+	if s.hookMask&(hookBitPatternProfile|hookBitTelemetry|hookBitRuleProfile) != 0 {
+		clear(s.localProfileCandidates)
+	}
 	s.matchCtx.Reset(input.data)
 	s.matchCtx.moduleCache = &s.moduleCache
 	s.matchCtx.assertionResults = s.assertionResults
@@ -245,9 +279,7 @@ func (s *Scanner) populateRuleMatchContext(
 }
 
 func (s *Scanner) isRuleConditionSatisfied(rule *CompiledRule) bool {
-	s.prepareInterpreter(rule)
-	s.interp.SetItersmax(s.itersmax)
-	if err := s.interp.Execute(); err != nil {
+	if err := s.executeCondition(rule); err != nil {
 		return false
 	}
 	return s.interp.ruleResultByIndex(rule.Index, rule.Name)
@@ -328,4 +360,13 @@ func (s *Scanner) resetGlobalMatches(size int) {
 	}
 	s.touchedGlobalMatches = s.touchedGlobalMatches[:0]
 	s.globalMatches = s.globalMatches[:size]
+}
+
+func (s *Scanner) recordPrunedRule(rule *CompiledRule, state ruleProfileState) {
+	if s.telemetrySink != nil {
+		s.telemetrySink.RulesPruned++
+	}
+	if s.hookMask&hookBitRuleProfile != 0 {
+		s.dispatchRuleEvaluated(RuleProfile{RuleName: rule.Name, RuleIndex: rule.Index, Duration: time.Since(state.started), Pruned: true})
+	}
 }

@@ -5,7 +5,6 @@ import (
 	"io"
 	"os"
 	"slices"
-	"time"
 
 	"github.com/cawalch/go-yara/internal/wordmatch"
 	"github.com/cawalch/go-yara/utils/fs"
@@ -106,27 +105,17 @@ func (s *Scanner) recordAllRulesRejected(ctx context.Context, result *ScanResult
 			result.RuleResults[rule.Name] = false
 		}
 		if !s.ruleHeaderConstraintsMatchInput(ctx, rule, scanInput) {
-			result.PrunedRules = append(result.PrunedRules, rule.Name)
+			s.recordSkippedCandidateRule(rule, result, true)
 		}
 	}
 	return ctx.Err()
 }
 
 func (s *Scanner) recordScanRejection(
-	ctx context.Context,
 	result *ScanResult,
-	scanStart time.Time,
 ) {
 	if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
 		s.telemetrySink.PrefilterRejects++
-		s.telemetrySink.RulesPruned += uint64(len(result.PrunedRules))
-	}
-	if s.hookMask&(hookBitScanLifecycle|hookBitTelemetryLatency) != 0 {
-		dur := time.Since(scanStart)
-		s.dispatchScanComplete(ctx, result, dur)
-		if s.hookMask&hookBitTelemetryLatency != 0 && s.telemetrySink != nil {
-			s.telemetrySink.TotalScanDurationNs += uint64(dur.Nanoseconds())
-		}
 	}
 }
 
@@ -136,7 +125,7 @@ func (s *Scanner) Scan(data []byte) (*ScanResult, error) {
 }
 
 // ScanWithContext scans the provided byte slice against the compiled rules.
-func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult, error) {
+func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (result *ScanResult, err error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -148,7 +137,7 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 	if s == nil || !s.omitRuleResults {
 		ruleResults = make(map[string]bool, ruleCount)
 	}
-	result := &ScanResult{
+	result = &ScanResult{
 		MatchedRules: make([]RuleMatch, 0),
 		PrunedRules:  make([]string, 0),
 		RuleResults:  ruleResults,
@@ -166,27 +155,25 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 		return nil, err
 	}
 
-	var scanStart time.Time
-	if s.hookMask&(hookBitScanLifecycle|hookBitTelemetryLatency) != 0 {
-		scanStart = time.Now()
-		s.dispatchScanStart(ctx, int64(len(data)))
-	}
-	if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
-		s.telemetrySink.TotalScans++
-		s.telemetrySink.BytesScanned += int64(len(data))
+	if s.hookMask&(hookBitTelemetry|hookBitScanLifecycle) != 0 {
+		scanStart := s.beginScan(ctx, int64(len(data)))
+		defer func() {
+			matches := 0
+			if result != nil {
+				matches = len(result.MatchedRules)
+			}
+			scanStart.finish(result, matches, err)
+		}()
 	}
 
 	clear(s.assertionResults)
 	if s.reportedMatchesOnly && s.compactPrefilterRejects(ctx, data) {
-		if s.hookMask&hookBitPrefilter != 0 {
-			s.dispatchPrefilter(PrefilterDecision{Stage: PrefilterStageCompactMask, Rejected: true})
-		}
 		scanInput := ruleScanInput{data: data, usesharedAutomaton: false, skipUnmatchedContext: true}
 		clear(s.ruleResultsDense)
 		if err := s.recordAllRulesRejected(ctx, result, scanInput); err != nil {
 			return nil, err
 		}
-		s.recordScanRejection(ctx, result, scanStart)
+		s.recordScanRejection(result)
 		return result, nil
 	}
 
@@ -221,13 +208,10 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 	}
 	//nolint:nestif // cancellation and result materialization share the rejection boundary
 	if allRejected {
-		if s.hookMask&hookBitPrefilter != 0 {
-			s.dispatchPrefilter(PrefilterDecision{Stage: PrefilterStagesharedAutomaton, Rejected: true})
-		}
 		if err := s.recordAllRulesRejected(ctx, result, scanInput); err != nil {
 			return nil, err
 		}
-		s.recordScanRejection(ctx, result, scanStart)
+		s.recordScanRejection(result)
 		return result, nil
 	}
 
@@ -373,14 +357,7 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 				case MatchActionStopScan:
 					result.MatchedRules = append(result.MatchedRules, ruleMatch)
 					clear(s.ruleResultsDense)
-					if s.hookMask&(hookBitScanLifecycle|hookBitTelemetry) != 0 {
-						dur := time.Since(scanStart)
-						s.dispatchScanComplete(ctx, result, dur)
-						if s.telemetrySink != nil {
-							s.telemetrySink.TotalScanDurationNs += uint64(dur.Nanoseconds())
-							s.telemetrySink.TotalMatches += uint64(len(result.MatchedRules))
-						}
-					}
+
 					return result, nil
 				case MatchActionSkipRule:
 					continue
@@ -392,16 +369,6 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 	}
 
 	clear(s.ruleResultsDense)
-	if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
-		s.telemetrySink.TotalMatches += uint64(len(result.MatchedRules))
-	}
-	if s.hookMask&(hookBitScanLifecycle|hookBitTelemetryLatency) != 0 {
-		dur := time.Since(scanStart)
-		s.dispatchScanComplete(ctx, result, dur)
-		if s.hookMask&hookBitTelemetryLatency != 0 && s.telemetrySink != nil {
-			s.telemetrySink.TotalScanDurationNs += uint64(dur.Nanoseconds())
-		}
-	}
 	return result, nil
 }
 
@@ -412,7 +379,7 @@ func (s *Scanner) Matches(data []byte) (bool, error) {
 }
 
 // MatchesWithContext reports whether at least one public rule matches data.
-func (s *Scanner) MatchesWithContext(ctx context.Context, data []byte) (bool, error) {
+func (s *Scanner) MatchesWithContext(ctx context.Context, data []byte) (matched bool, err error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -429,10 +396,17 @@ func (s *Scanner) MatchesWithContext(ctx context.Context, data []byte) (bool, er
 	defer func() {
 		clear(s.ruleResultsDense)
 	}()
-	if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
-		s.telemetrySink.TotalScans++
-		s.telemetrySink.BytesScanned += int64(len(data))
+	if s.hookMask&(hookBitTelemetry|hookBitScanLifecycle) != 0 {
+		start := s.beginScan(ctx, int64(len(data)))
+		defer func() {
+			count := 0
+			if matched {
+				count = 1
+			}
+			start.finish(nil, count, err)
+		}()
 	}
+
 	if matched, handled, err := s.matchBooleanRouting(ctx, data); handled || err != nil {
 		return matched, err
 	}
@@ -442,9 +416,7 @@ func (s *Scanner) MatchesWithContext(ctx context.Context, data []byte) (bool, er
 	}
 	hasMatch := evaluation.matchedPublicGlobal ||
 		evaluation.allGlobalMatched && evaluation.matchedPublicNonGlobal
-	if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil && hasMatch {
-		s.telemetrySink.TotalMatches++
-	}
+
 	return hasMatch, nil
 }
 
@@ -457,7 +429,7 @@ func (s *Scanner) MatchingRules(data []byte) ([]RuleMatch, error) {
 
 // MatchingRulesWithContext returns detailed public rule matches without
 // constructing the all-rules maps in ScanResult.
-func (s *Scanner) MatchingRulesWithContext(ctx context.Context, data []byte) ([]RuleMatch, error) {
+func (s *Scanner) MatchingRulesWithContext(ctx context.Context, data []byte) (matches []RuleMatch, err error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -469,6 +441,11 @@ func (s *Scanner) MatchingRulesWithContext(ctx context.Context, data []byte) ([]
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+
+	if s.hookMask&(hookBitTelemetry|hookBitScanLifecycle) != 0 {
+		start := s.beginScan(ctx, int64(len(data)))
+		defer func() { start.finishRuleList(matches, err) }()
 	}
 
 	clear(s.ruleResultsDense)
@@ -490,9 +467,6 @@ func (s *Scanner) evaluatePublicRules(
 ) (publicRuleEvaluation, error) {
 	clear(s.assertionResults)
 	if s.compactPrefilterRejects(ctx, data) {
-		if s.hookMask&hookBitPrefilter != 0 {
-			s.dispatchPrefilter(PrefilterDecision{Stage: PrefilterStageCompactMask, Rejected: true})
-		}
 		if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
 			s.telemetrySink.PrefilterRejects++
 		}
@@ -518,9 +492,6 @@ func (s *Scanner) evaluatePublicRules(
 		return s.evaluateSharedPublicRules(ctx, result)
 	}
 	if !s.prefilterDisabled && s.allEvaluatedRulesPrefilterRejected(ctx, data, usesharedAutomaton) {
-		if s.hookMask&hookBitPrefilter != 0 {
-			s.dispatchPrefilter(PrefilterDecision{Stage: PrefilterStagesharedAutomaton, Rejected: true})
-		}
 		if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
 			s.telemetrySink.PrefilterRejects++
 		}
@@ -539,9 +510,6 @@ func (s *Scanner) evaluateSharedPublicRules(
 	result publicRuleEvaluation,
 ) (publicRuleEvaluation, error) {
 	if len(s.candidateRuleIndices) == 0 {
-		if s.hookMask&hookBitPrefilter != 0 {
-			s.dispatchPrefilter(PrefilterDecision{Stage: PrefilterStagesharedAutomaton, Rejected: true})
-		}
 		if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
 			s.telemetrySink.PrefilterRejects++
 		}
@@ -601,6 +569,11 @@ func (s *Scanner) matchBooleanRouting(ctx context.Context, data []byte) (bool, b
 	if s.booleanRouting == nil || len(data) > 1024 || s.prefilterDisabled {
 		return false, false, nil
 	}
+	if s.hookMask&hookBitTelemetryLatency != 0 {
+		previous := s.enterScanPhase(PhasePrefilter)
+		defer s.leaveScanPhase(previous)
+	}
+	started := s.prefilterStart()
 	decision := s.booleanRouting.Match(data)
 	if err := ctx.Err(); err != nil {
 		return false, false, err
@@ -608,18 +581,16 @@ func (s *Scanner) matchBooleanRouting(ctx context.Context, data []byte) (bool, b
 	if decision == wordmatch.Unknown {
 		return false, false, nil
 	}
-	if s.hookMask&hookBitPrefilter != 0 {
-		s.dispatchPrefilter(PrefilterDecision{
-			Stage:    PrefilterStageWordRouting,
-			Rejected: decision == wordmatch.NoMatch,
-		})
+	candidates := 0
+	if decision == wordmatch.Match {
+		candidates = 1
 	}
+	s.finishPrefilter(PrefilterDecision{Stage: PrefilterStageWordRouting, Rejected: decision == wordmatch.NoMatch, CandidateCount: candidates}, started)
+
 	matched := decision == wordmatch.Match
 	if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
 		if !matched {
 			s.telemetrySink.PrefilterRejects++
-		} else {
-			s.telemetrySink.TotalMatches++
 		}
 	}
 	return matched, true, nil

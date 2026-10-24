@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+* Populate opt-in scan phase timings and prefilter decision durations; emit per-pattern profiles with an explicit marker for unavailable candidate counts. Account consistently for detailed, boolean, rule-list, single-block, and accumulated-block scans. Finalize telemetry before successful completion hooks, include elapsed time for started scans that fail, and keep counters-only early stops free of timing updates.
+* Report per-rule loop-iteration deltas and avoid attributing stale match-context data to a rule rejected before pattern collection. Pattern profiles describe retained occurrences and logical candidate hits, without input data.
+
+### Release documentation
+
+* Before the next release, update the performance page's v0.8.0 instrumentation-gap table, completion-hook ordering, scan-method counter scope, and block accounting; update the telemetry example and diagram to match the new release. The README and Go API comments describe unreleased behavior explicitly.
+
 ### Documentation
 
 * Add eight selectable playground examples and optional evidence extraction with values redacted inside the worker, bounded findings and field rows, and browser privacy checks. Document hooks, telemetry limitations, and semantic analysis with executable examples and diagrams.

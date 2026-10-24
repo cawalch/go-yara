@@ -19,7 +19,7 @@ import (
 func (s *Scanner) MatchingRulesInBlock(
 	block MemoryBlock,
 	fileSize int64,
-) ([]RuleMatch, error) {
+) (matches []RuleMatch, err error) {
 	return s.MatchingRulesInBlockWithContext(context.Background(), block, fileSize)
 }
 
@@ -33,7 +33,7 @@ func (s *Scanner) MatchingRulesInBlockWithContext(
 	ctx context.Context,
 	block MemoryBlock,
 	fileSize int64,
-) ([]RuleMatch, error) {
+) (matches []RuleMatch, err error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -56,6 +56,11 @@ func (s *Scanner) MatchingRulesInBlockWithContext(
 		return nil, err
 	}
 
+	if s.hookMask&(hookBitTelemetry|hookBitScanLifecycle) != 0 {
+		start := s.beginScan(ctx, int64(len(block.Data)))
+		defer func() { start.finishRuleList(matches, err) }()
+	}
+
 	clear(s.ruleResultsDense)
 	defer func() {
 		clear(s.ruleResultsDense)
@@ -69,7 +74,7 @@ func (s *Scanner) MatchingRulesInBlockWithContext(
 		s.resetBlockScan()
 		return nil, err
 	}
-	matches, err := s.materializeMatchingRules(ctx, block.Data, evaluation)
+	matches, err = s.materializeMatchingRules(ctx, block.Data, evaluation)
 	s.resetBlockScan()
 	return matches, err
 }

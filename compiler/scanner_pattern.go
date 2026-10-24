@@ -103,7 +103,7 @@ func (s *Scanner) extractGlobalMatchesInt(
 				s.touchedGlobalMatches = append(s.touchedGlobalMatches, entry.RuleIndex)
 			}
 			globalByRule[entry.RuleIndex] = append(globalByRule[entry.RuleIndex], globalEntry)
-			if entry.canTriggerRule || s.hookMask&(hookBitTelemetry|hookBitRuleProfile) != 0 {
+			if entry.canTriggerRule || s.hookMask&(hookBitTelemetry|hookBitRuleProfile|hookBitPatternProfile) != 0 {
 				s.markCandidateRule(entry.RuleIndex)
 			}
 			return true
@@ -166,7 +166,7 @@ func (s *Scanner) extractGlobalMatchesInt(
 				s.touchedGlobalMatches = append(s.touchedGlobalMatches, entry.RuleIndex)
 			}
 			globalByRule[entry.RuleIndex] = append(globalByRule[entry.RuleIndex], globalEntry)
-			if entry.canTriggerRule || s.hookMask&(hookBitTelemetry|hookBitRuleProfile) != 0 {
+			if entry.canTriggerRule || s.hookMask&(hookBitTelemetry|hookBitRuleProfile|hookBitPatternProfile) != 0 {
 				s.markCandidateRule(entry.RuleIndex)
 			}
 			return true
@@ -228,11 +228,13 @@ func (s *Scanner) addLocalTextMatches(ctx context.Context, rule *CompiledRule, d
 	if s.matchCtx.maxMatchesPerPattern <= 0 {
 		if ctx.Done() == nil {
 			rule.automaton.Search(data, func(match acMatch) bool {
+				s.recordLocalCandidate(match.StringID)
 				acceptAutomatonMatch(s.matchCtx, rule, data, match)
 				return true
 			})
 		} else {
 			rule.automaton.SearchWithCancel(data, ctx.Done(), func(match acMatch) bool {
+				s.recordLocalCandidate(match.StringID)
 				acceptAutomatonMatch(s.matchCtx, rule, data, match)
 				return true
 			})
@@ -244,6 +246,7 @@ func (s *Scanner) addLocalTextMatches(ctx context.Context, rule *CompiledRule, d
 	//nolint:nestif // separate iterator branches preserve zero-allocation Scan
 	if ctx.Done() == nil {
 		rule.automaton.Search(data, func(match acMatch) bool {
+			s.recordLocalCandidate(match.StringID)
 			if matched[match.StringID] {
 				return true
 			}
@@ -257,6 +260,7 @@ func (s *Scanner) addLocalTextMatches(ctx context.Context, rule *CompiledRule, d
 		})
 	} else {
 		rule.automaton.SearchWithCancel(data, ctx.Done(), func(match acMatch) bool {
+			s.recordLocalCandidate(match.StringID)
 			if matched[match.StringID] {
 				return true
 			}

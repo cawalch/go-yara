@@ -3,6 +3,7 @@ package compiler
 import (
 	"context"
 	"io"
+	"time"
 
 	"github.com/cawalch/go-yara/internal/wordmatch"
 	"github.com/cawalch/go-yara/regex"
@@ -86,16 +87,20 @@ type Scanner struct {
 	prefilterDisabled bool
 
 	// Hooks & Telemetry
-	hookMask              hookMask
-	hooks                 *ScanHooks
-	telemetrySink         *ScanTelemetry
-	trackTelemetryLatency bool
-	ruleGate              RuleGateFunc
-	matchHook             MatchHook
-	pollByteStride        int
-	maxMatchesLimit       int
-	onMaxMatchesExceeded  func(rule string, count int)
-	maxMatchSpan          int
+	timingPhase             ScanPhase
+	timingStart             time.Time
+	localProfileCandidates  map[string]int
+	sharedProfileCandidates []int
+	hookMask                hookMask
+	hooks                   *ScanHooks
+	telemetrySink           *ScanTelemetry
+	trackTelemetryLatency   bool
+	ruleGate                RuleGateFunc
+	matchHook               MatchHook
+	pollByteStride          int
+	maxMatchesLimit         int
+	onMaxMatchesExceeded    func(rule string, count int)
+	maxMatchSpan            int
 }
 
 // ScanResult represents the result of scanning data against compiled rules.

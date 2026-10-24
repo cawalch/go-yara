@@ -475,7 +475,7 @@ func (s *Scanner) canSkipSharedNonTextEntry(entry sharedAutomatonEntry, rule *Co
 	return !s.prefilterDisabled &&
 		s.skipUnmatchedNonText &&
 		entry.singleRuleCache &&
-		s.hookMask&(hookBitTelemetry|hookBitRuleProfile) == 0 &&
+		s.hookMask&(hookBitTelemetry|hookBitRuleProfile|hookBitPatternProfile) == 0 &&
 		s.ruleRejectedBeforeNonText(rule, data)
 }
 

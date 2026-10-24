@@ -103,11 +103,21 @@ func (cp *CompiledProgram) buildCompactPrefilter() *compactPrefilter {
 }
 
 //nolint:nestif // the sparse-root and general loops are intentionally separate hot paths
-func (s *Scanner) compactPrefilterRejects(ctx context.Context, data []byte) bool {
+func (s *Scanner) compactPrefilterRejects(ctx context.Context, data []byte) (rejected bool) {
 	gate := s.program.compactPrefilter
 	// Large positive records would pay for two full passes.
 	if gate == nil || s.prefilterDisabled || len(data) > 1024 || s.program.sharedAutomaton != gate.automaton {
 		return false
+	}
+	started := s.prefilterStart()
+	defer func() {
+		if ctx.Err() == nil {
+			s.finishPrefilter(PrefilterDecision{Stage: PrefilterStageCompactMask, Rejected: rejected}, started)
+		}
+	}()
+	if s.hookMask&hookBitTelemetryLatency != 0 {
+		previous := s.enterScanPhase(PhasePrefilter)
+		defer s.leaveScanPhase(previous)
 	}
 	if ctx.Err() != nil {
 		return true

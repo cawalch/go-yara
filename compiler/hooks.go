@@ -34,20 +34,37 @@ const (
 )
 
 // ScanTelemetry tracks aggregate and phase metrics for scans.
-// It is designed to be mutated in-place with zero heap allocations.
+// Keep one sink per scanner; fields are not atomic. Read/reset between scans.
+// Counters-only mode does not read the clock. Latency mode also accounts for
+// failed attempts after preflight; failures do not increment TotalMatches.
+// Reader/file I/O and caller idle time between block operations are excluded.
 type ScanTelemetry struct {
-	TotalScans   uint64
+	// TotalScans counts calls passing preflight; BlockScanner counts Finish calls.
+	TotalScans uint64
+	// BytesScanned counts supplied bytes, including repeated/overlapping blocks,
+	// not the logical filesize. BlockScanner records their sum at Finish.
 	BytesScanned int64
+	// TotalMatches counts returned public rules; Matches records 1 for true.
 	TotalMatches uint64
 
 	PrefilterRejects uint64
 	RulesPruned      uint64
 	RulesEvaluated   uint64
 
-	CandidateHits      uint64
-	VerifiedMatches    uint64
+	// CandidateHits counts retained automaton hits for evaluated rule contexts.
+	// Shared cache hits are attributed to each consuming rule. Fallback searches
+	// with no exposed candidate stream contribute only to VerifiedMatches.
+	CandidateHits   uint64
+	VerifiedMatches uint64
+	// FalseCandidateHits sums max(candidates - retained occurrences, 0) per
+	// known-candidate pattern. It is not a verifier failure count or probability.
 	FalseCandidateHits uint64
 
+	// Phase durations are exclusive. Prefilter covers compact/word routing and
+	// mandatory header/assertion checks. Pattern search includes shared candidate
+	// generation, verification, and match-context reconstruction. Condition time
+	// includes interpreter setup, module calls, and speculative evaluations.
+	// Result materialization and callbacks can leave total time above their sum.
 	PrefilterDurationNs uint64
 	PatternSearchNs     uint64
 	ConditionEvalNs     uint64
@@ -71,7 +88,7 @@ const (
 	PollYield
 	// PollThrottle pauses scanning for the duration returned by PollHook before resuming.
 	PollThrottle
-	// PollAbort terminates the scanning operation immediately with context.Canceled.
+	// PollAbort terminates the scanning operation at that checkpoint with ErrScanAborted.
 	PollAbort
 )
 
@@ -120,6 +137,8 @@ type PollProgress struct {
 type PollHook func(ctx context.Context, p PollProgress) (PollAction, time.Duration)
 
 // RuleProfile captures performance attributes of an evaluated rule.
+// ConditionSteps counts this rule's loop iterations, including speculative
+// condition checks, not bytecode instructions or previous rules' iterations.
 type RuleProfile struct {
 	RuleName        string
 	RuleIndex       int
@@ -131,14 +150,25 @@ type RuleProfile struct {
 	VerifiedMatches int
 }
 
-// PatternProfile captures candidate verification cost for a specific pattern.
+// PatternProfile describes a live pattern in a completed rule match context.
+// It is emitted once per evaluated rule context (per block for BlockScanner),
+// before condition evaluation, and not again during result materialization.
+// Optimized-away rules/patterns and failed contexts have no profile. Boolean
+// and fast scans may retain only enough occurrences to decide the condition.
+// No captured input bytes are exposed by this callback.
 type PatternProfile struct {
-	RuleName        string
-	StringID        string
-	Kind            StringKind
-	CandidateHits   int
-	VerifiedMatches int
-	Selectivity     float64
+	RuleName      string
+	StringID      string
+	Kind          StringKind
+	CandidateHits int
+	// CandidateHitsKnown is false for fallback regex/hex paths without an
+	// exposed candidate stream. Zero CandidateHits then means unavailable.
+	CandidateHitsKnown bool
+	VerifiedMatches    int
+	// Selectivity is VerifiedMatches / CandidateHits when known and nonzero,
+	// otherwise zero. Atom hits and occurrences need not be one-to-one; this is
+	// a ratio, not a bounded probability or measured verifier success rate.
+	Selectivity float64
 }
 
 // RuleEfficiencyHook receives profiling events after each rule evaluation.
@@ -176,7 +206,12 @@ func (s PrefilterStage) String() string {
 	}
 }
 
-// PrefilterDecision describes the outcome of a prefilter stage.
+// PrefilterDecision describes a completed prefilter stage. DurationNs measures
+// that stage when OnPrefilter is enabled, independently of telemetry latency.
+// The shared-automaton stage includes candidate search and exact verification.
+// CandidateCount is the candidate-rule count there, 0/1 for word routing, and
+// unavailable (zero) for compact-mask and header checks. A stage may run more
+// than once; Rejected describes that decision, not the entire scan result.
 type PrefilterDecision struct {
 	Stage          PrefilterStage
 	Rejected       bool
@@ -197,9 +232,10 @@ type MatchAction uint8
 const (
 	// MatchActionContinue continues evaluating remaining rules normally.
 	MatchActionContinue MatchAction = iota
-	// MatchActionStopScan aborts scanning of all subsequent rules immediately upon match.
+	// MatchActionStopScan stops public match delivery, including this match, with no error.
+	// Conditions may already have been evaluated before delivery begins.
 	MatchActionStopScan
-	// MatchActionSkipRule skips further pattern verification for the current rule.
+	// MatchActionSkipRule omits the current matching rule from returned matches.
 	MatchActionSkipRule
 )
 
@@ -209,7 +245,12 @@ type MatchHook func(rule *CompiledRule, match RuleMatch) MatchAction
 // ChunkHook is called at chunk or block boundaries in streaming scans.
 type ChunkHook func(offset int64, chunkSize int, matchesFound int)
 
-// ScanHooks groups all scanner event callbacks and configuration.
+// ScanHooks groups synchronous scanner callbacks. Callbacks must not mutate or
+// reenter the active scanner. OnScanStart runs after preflight; OnScanComplete
+// runs once on successful return, after final telemetry updates, including an
+// intentional stop-on-match. Errors have no completion callback. For Matches,
+// its result argument is nil; for rule-list methods only MatchedRules is set.
+// BlockScanner emits lifecycle events at Finish; OnChunk observes block input.
 type ScanHooks struct {
 	OnScanStart    func(ctx context.Context, inputLen int64)
 	OnScanComplete func(ctx context.Context, result *ScanResult, duration time.Duration)
@@ -240,7 +281,7 @@ func WithHooks(hooks ScanHooks) ScannerOption {
 	}
 }
 
-// WithTelemetry registers an external telemetry sink updated in-place (counters only, zero latency cost).
+// WithTelemetry registers an external telemetry sink updated in-place (counters only, without duration measurements).
 func WithTelemetry(sink *ScanTelemetry) ScannerOption {
 	return func(s *Scanner) {
 		s.telemetrySink = sink
@@ -249,7 +290,7 @@ func WithTelemetry(sink *ScanTelemetry) ScannerOption {
 	}
 }
 
-// WithTelemetryLatency registers a telemetry sink that also measures scan duration.
+// WithTelemetryLatency registers a sink for counters, exclusive phase durations, and total scan duration.
 func WithTelemetryLatency(sink *ScanTelemetry) ScannerOption {
 	return func(s *Scanner) {
 		s.telemetrySink = sink

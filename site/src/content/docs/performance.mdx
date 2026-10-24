@@ -130,6 +130,8 @@ The optional [SIMD build](/go-yara/installation/#optional-simd-build) changes so
 
 ## Hooks and scan metrics
 
+The development branch now implements the missing phase timers and pattern callbacks, with consistent scan-method accounting. These changes are **not in v0.8.0**. The [development instrumentation notes](https://github.com/cawalch/go-yara#telemetry-and-hooks) describe the new contracts; this section and its example continue to describe the released version.
+
 `WithTelemetry` updates a caller-owned `ScanTelemetry` sink. `WithTelemetryLatency` also measures total scan duration. `WithHooks` installs lifecycle, match, prefilter, and rule-profile callbacks; `WithRuleProfiling` is a convenience option for `OnRuleEvaluated`. These hooks run synchronously on the scanning goroutine. Keep their work bounded, avoid blocking I/O, and do not reenter or mutate the active scanner from a callback.
 
 <ArchitectureDiagram kind="telemetry" />

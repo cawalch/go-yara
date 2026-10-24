@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"time"
 )
 
 // MemoryBlock is a discrete region in a logical address space. Blocks may be
@@ -26,12 +27,13 @@ type MemoryBlock struct {
 //
 // BlockScanner is not safe for concurrent use.
 type BlockScanner struct {
-	program     *CompiledProgram
-	scanner     *Scanner
-	blocks      []MemoryBlock
-	matches     map[string]map[string][]Match
-	fileSize    int64
-	fileSizeSet bool
+	program       *CompiledProgram
+	scanner       *Scanner
+	blocks        []MemoryBlock
+	matches       map[string]map[string][]Match
+	fileSize      int64
+	fileSizeSet   bool
+	profileCounts map[string]blockProfileCounts
 }
 
 // NewBlockScanner creates an incremental scanner for a compiled program.
@@ -83,6 +85,19 @@ func (scanner *BlockScanner) ScanWithContext(ctx context.Context, base int64, da
 		return err
 	}
 
+	var started time.Time
+	if scanner.scanner.hookMask&hookBitTelemetryLatency != 0 {
+		started = time.Now()
+	}
+	defer func() {
+		if !started.IsZero() {
+			scanner.scanner.telemetrySink.TotalScanDurationNs += uint64(time.Since(started).Nanoseconds())
+		}
+	}()
+	if scanner.scanner.hookMask&hookBitTelemetryLatency != 0 {
+		previous := scanner.scanner.enterScanPhase(PhasePatternSearch)
+		defer scanner.scanner.leaveScanPhase(previous)
+	}
 	blockData := append([]byte(nil), data...)
 	block := MemoryBlock{Base: base, Data: blockData}
 	scanner.blocks = append(scanner.blocks, block)
@@ -104,6 +119,9 @@ func (scanner *BlockScanner) ScanWithContext(ctx context.Context, base int64, da
 			continue
 		}
 
+		if s.hookMask&(hookBitPatternProfile|hookBitTelemetry|hookBitRuleProfile) != 0 {
+			clear(s.localProfileCandidates)
+		}
 		s.matchCtx.Reset(blockData)
 		s.matchCtx.cancelDone = ctx.Done()
 		s.matchCtx.maxMatchesPerPattern = 0
@@ -118,6 +136,9 @@ func (scanner *BlockScanner) ScanWithContext(ctx context.Context, base int64, da
 			return err
 		}
 
+		s.matchCtx.normalizeMatches()
+		s.recordPatternProfiles(rule, false)
+		scanner.recordPatternCounts(rule)
 		if len(s.matchCtx.spans) == 0 {
 			continue
 		}
@@ -155,7 +176,7 @@ func (scanner *BlockScanner) Finish() (*ScanResult, error) {
 }
 
 // FinishWithContext evaluates rule conditions against all accumulated blocks.
-func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (*ScanResult, error) {
+func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (result *ScanResult, err error) {
 	if scanner == nil || scanner.program == nil || scanner.scanner == nil {
 		return nil, errors.New("block scanner is closed or has no program")
 	}
@@ -167,6 +188,20 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (*ScanResult
 	if err := s.scanError(); err != nil {
 		return nil, err
 	}
+	var size int64
+	for _, block := range scanner.blocks {
+		size += int64(len(block.Data))
+	}
+	if s.hookMask&(hookBitTelemetry|hookBitScanLifecycle) != 0 {
+		started := s.beginScan(ctx, size)
+		defer func() {
+			count := 0
+			if result != nil {
+				count = len(result.MatchedRules)
+			}
+			started.finish(result, count, err)
+		}()
+	}
 	var ruleResults map[string]bool
 	if !s.omitRuleResults {
 		ruleResults = make(map[string]bool, len(scanner.program.Rules))
@@ -175,7 +210,7 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (*ScanResult
 	if !s.omitMatches {
 		matches = make(map[string]map[string][]Match)
 	}
-	result := &ScanResult{
+	result = &ScanResult{
 		MatchedRules: make([]RuleMatch, 0),
 		PrunedRules:  make([]string, 0),
 		RuleResults:  ruleResults,
@@ -218,7 +253,19 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (*ScanResult
 				return nil, err
 			}
 		}
-		if !s.ruleConstraintsMatchContext(rule, headerContext, s.omitMatches || s.reportedMatchesOnly) {
+		counts := scanner.profileCounts[rule.Name]
+		state := ruleProfileState{iterations: s.interp.iterations, accumulated: true, candidates: counts.candidates, falseCandidates: counts.falseCandidates}
+		if s.hookMask&hookBitRuleProfile != 0 {
+			state.started = time.Now()
+		}
+		headerStart := s.prefilterStart()
+		previous := s.enterScanPhase(PhasePrefilter)
+		headerMatches := s.ruleConstraintsMatchContext(rule, headerContext, s.omitMatches || s.reportedMatchesOnly)
+		s.leaveScanPhase(previous)
+		if ctx.Err() == nil && (len(rule.HeaderConstraints) > 0 || len(rule.mandatoryAssertions) > 0) {
+			s.finishPrefilter(PrefilterDecision{Stage: PrefilterStageHeaderConstraints, Rejected: !headerMatches}, headerStart)
+		}
+		if !headerMatches {
 			if rule.Index >= 0 && rule.Index < len(s.ruleResultsDense) {
 				s.ruleResultsDense[rule.Index] = false
 			}
@@ -226,6 +273,7 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (*ScanResult
 				result.RuleResults[rule.Name] = false
 			}
 			result.PrunedRules = append(result.PrunedRules, rule.Name)
+			s.recordPrunedRule(rule, state)
 			continue
 		}
 
@@ -245,6 +293,7 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (*ScanResult
 				s.matchCtx.addMatchSpan(id, matchSpan{Offset: match.Offset, Length: match.Length})
 			}
 		}
+		state.populated = true
 		if !s.prefilterDisabled && rule.RequiresStringMatch && len(s.matchCtx.spans) == 0 {
 			if rule.Index >= 0 && rule.Index < len(s.ruleResultsDense) {
 				s.ruleResultsDense[rule.Index] = false
@@ -252,18 +301,22 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (*ScanResult
 			if result.RuleResults != nil {
 				result.RuleResults[rule.Name] = false
 			}
+			if s.hookMask&(hookBitTelemetry|hookBitRuleProfile) != 0 {
+				s.recordRuleEvaluatedHooks(rule, false, state)
+			}
 			continue
 		}
 
-		s.prepareInterpreter(rule)
-		s.interp.SetItersmax(s.itersmax)
-		if err := s.interp.Execute(); err != nil {
+		if err := s.executeCondition(rule); err != nil {
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return nil, ctxErr
 			}
 			return nil, err
 		}
 		matched := s.interp.ruleResultByIndex(rule.Index, rule.Name)
+		if s.hookMask&(hookBitTelemetry|hookBitRuleProfile) != 0 {
+			s.recordRuleEvaluatedHooks(rule, matched, state)
+		}
 		if rule.Index >= 0 && rule.Index < len(s.ruleResultsDense) {
 			s.ruleResultsDense[rule.Index] = matched
 		}
@@ -381,6 +434,7 @@ func (scanner *BlockScanner) Reset() {
 		scanner.scanner.matchCtx.Reset(nil)
 	}
 	clear(scanner.matches)
+	clear(scanner.profileCounts)
 	scanner.fileSize = 0
 	scanner.fileSizeSet = false
 }
@@ -469,4 +523,28 @@ func (scanner *BlockScanner) blockForMatch(match Match) *MemoryBlock {
 		}
 	}
 	return nil
+}
+
+type blockProfileCounts struct{ candidates, falseCandidates int }
+
+func (scanner *BlockScanner) recordPatternCounts(rule *CompiledRule) {
+	s := scanner.scanner
+	if s.hookMask&(hookBitTelemetry|hookBitRuleProfile) == 0 {
+		return
+	}
+	if scanner.profileCounts == nil {
+		scanner.profileCounts = make(map[string]blockProfileCounts)
+	}
+	counts := scanner.profileCounts[rule.Name]
+	for _, id := range rule.IndexToStringID {
+		if rule.IsStringDead(id) {
+			continue
+		}
+		candidates, known := s.patternCandidateCount(rule, id, false)
+		if known {
+			counts.candidates += candidates
+			counts.falseCandidates += max(candidates-len(s.matchCtx.spans[id]), 0)
+		}
+	}
+	scanner.profileCounts[rule.Name] = counts
 }

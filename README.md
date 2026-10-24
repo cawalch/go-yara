@@ -443,6 +443,8 @@ When evidence extraction is disabled (the default), capture parsing and correlat
 
 ### Telemetry and Hooks
 
+The phase timers, pattern callbacks, and consistent lifecycle accounting described here are on `main` and are **not in v0.8.0**. The [published metrics guide](https://cawalch.github.io/go-yara/performance/#hooks-and-scan-metrics) describes that release.
+
 You can monitor scanning execution, track latency, or throttle CPU usage in background workers:
 
 | Option | Purpose |
@@ -450,10 +452,10 @@ You can monitor scanning execution, track latency, or throttle CPU usage in back
 | `WithTelemetry(sink *ScanTelemetry)` | Updates counters (scans, rejects, rules evaluated, candidate hits) in-place without heap allocations. |
 | `WithTelemetryLatency(sink *ScanTelemetry)` | Measures execution phase durations and total scan duration. |
 | `WithPollHook(hook PollHook, byteStride int)` | Cooperative callback for progress reporting, CPU yielding (`PollYield`), throttling (`PollThrottle`), or early cancellation (`PollAbort`). |
-| `WithRuleProfiling(hook RuleEfficiencyHook)` | Emits per-rule latency, VM steps, candidate hits, and verification outcomes for metrics pipelines. |
-| `WithMatchHook(hook MatchHook)` | Streaming callback invoked immediately upon rule match; can abort the scan early with `MatchActionStopScan`. |
+| `WithRuleProfiling(hook RuleEfficiencyHook)` | Emits per-rule duration, loop-iteration deltas, candidate hits, and retained occurrence counts. |
+| `WithMatchHook(hook MatchHook)` | Callback during public match delivery; `MatchActionStopScan` returns the current match and stops later delivery without an error. |
 | `WithMaxMatches(limit int, onExceeded func)` | Enforces a safety limit on matched strings per rule to prevent memory exhaustion on repetitive inputs. |
-| `WithHooks(hooks ScanHooks)` | Bundles lifecycle callbacks (`OnScanStart`, `OnScanComplete`, `OnChunk`). |
+| `WithHooks(hooks ScanHooks)` | Bundles lifecycle, prefilter, pattern-profile (`OnPatternProfile`), and chunk callbacks. |
 
 Example:
 
@@ -469,10 +471,23 @@ scanner := program.NewScanner(
 )
 defer scanner.Close()
 
-_, _ = scanner.Scan(sampleData)
+if _, err := scanner.Scan(sampleData); err != nil {
+	return err
+}
 fmt.Printf("Scanned %d bytes in %d ns; prefilter rejected %d scans\n",
 	telemetry.BytesScanned, telemetry.TotalScanDurationNs, telemetry.PrefilterRejects)
 ```
+
+
+Keep one telemetry sink per scanner and export its snapshot after the scan returns. Fields are not atomic. `TotalMatches` counts returned public rules; boolean `Matches` counts a positive result as one. Already-cancelled contexts and invalid bindings fail before counters advance. Later errors contribute elapsed time but no successful matches. `OnScanComplete` runs after final telemetry updates only on successful returns, including deliberate early stops. For boolean scans its result argument is nil; rule-list scans supply only `MatchedRules`.
+
+With latency enabled, phase timers record exclusive time: compact/word routing and mandatory assertions in `PrefilterDurationNs`, candidate generation and verification in `PatternSearchNs`, and interpreter setup/execution in `ConditionEvalNs`. Speculative conditions inside pattern search suspend the pattern timer. Shared automaton search, including regex/hex verification, belongs to pattern time. Result construction and callbacks can leave total time above the phase sum. Counters-only mode leaves all timing fields untouched.
+
+`OnPatternProfile` runs once for each live pattern in an evaluated rule context, without captured values. `VerifiedMatches` counts retained occurrences; boolean and fast scans may stop collecting early. `CandidateHitsKnown` distinguishes available automaton hit counts from fallback searches that do not expose them. `Selectivity` is the occurrence-to-candidate ratio when known and nonzero, and zero otherwise. A shared cached search can contribute to several logical rule profiles, so these counts are not a measure of physical verifier invocations. Skipped rules and failed contexts do not emit pattern profiles. Rule `ConditionSteps` counts that rule's loop iterations, including speculative evaluations.
+
+For `BlockScanner`, pattern profiles and search timing occur during each `Scan`; lifecycle events, scan/byte counters, condition timing, and returned-match counts occur at `Finish`. Bytes count supplied blocks, including overlaps, rather than the logical address-space size. Total time sums active calls and excludes idle time between them. Each `Finish` is another condition-evaluation attempt. Reset the sink between logical block scans, alongside `BlockScanner.Reset`.
+
+`OnPrefilter` provides stage durations even without telemetry latency. Its shared-automaton duration includes exact verification, so it is not interchangeable with `PrefilterDurationNs`. Header checks may occur more than once. Keep callbacks bounded and avoid blocking I/O. The executable [instrumentation example](compiler/example_instrumentation_test.go) shows pattern events and timing without printing input data; the [regression tests](compiler/hooks_instrumentation_test.go) cover all scan result APIs, failures, reuse, block input, and disabled-timer behavior.
 
 ## Performance and Benchmarks
 
