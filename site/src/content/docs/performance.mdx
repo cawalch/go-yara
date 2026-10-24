@@ -1,9 +1,66 @@
 ---
-title: Measure and tune scanning
-description: Reduce unnecessary scan results, reuse compiled rules, understand prefilter and module-cache costs, and benchmark go-yara on representative inputs.
+title: Performance and implementation
+description: How go-yara uses Aho–Corasick matching, regex atoms, SIMD filters, fused conditions, and scan-local caches, with benchmark scope and research references.
 ---
 
-Scan cost depends on pattern selectivity, condition evaluation, input size, and the amount of match data returned. Compile rules once and benchmark repeated scans with representative inputs.
+import release from '../../generated/release.json';
+
+export const source = (path) => `https://github.com/cawalch/go-yara/blob/${release.version}/${path}`;
+
+Scanning has three main costs: locating candidate patterns, verifying occurrences, and evaluating rule conditions. Result collection and file I/O add work around those stages. Which cost dominates depends on the rules and input; a large literal rule set behaves differently from a regex with frequent false candidates or a condition that hashes the whole file.
+
+## Scan pipeline
+
+The compiler parses rules, selects pattern-search strategies, and emits condition bytecode. It builds shared structures where patterns or assertions can be reused across rules. At scan time, necessary-condition checks can reject work early, candidate searches locate possible occurrences, and verifiers check the full pattern before its matches are used in a condition.
+
+An atom hit is only a candidate. For example, a literal fragment from a regex may occur in the input even though the surrounding expression fails. A rule may also contain a matching string while its condition is false. These distinctions matter when interpreting throughput and match counts.
+
+The engine selects different paths for different patterns; every scan does not run every stage. The <a href={source('compiler/scanner_prefilter.go')}>scanner's prefilter and evaluation code</a> shows how these paths join.
+
+## Literal matching
+
+Text patterns and eligible regex or hex atoms share an Aho–Corasick automaton. The algorithm searches multiple literals in one pass, with work proportional to the input length plus reported occurrences. This bound applies to the literal-search stage; pattern verification, condition evaluation, and result construction have separate costs. The original algorithm is described by [Aho and Corasick (1975)](#references).
+
+go-yara resolves missing automaton transitions during compilation. Scanning then uses a direct table lookup instead of walking failure links for each missing edge. Flattened tables use 16-bit state indices when the automaton has at most 65,536 states, and 32-bit indices otherwise. Dense tables reduce transition work but consume memory as the automaton grows; cache locality still matters for large rule sets.
+
+The <a href={source('compiler/ahocorasick.go')}>automaton implementation</a> also skips runs of bytes that cannot begin a pattern when the root has a small set of possible starting bytes. The <a href={source('compiler/shared_pattern_automaton.go')}>shared-pattern builder</a> connects candidates to the rules and verifiers that need them.
+
+## Regex and hex verification
+
+The compiler looks for literal fragments that a matching regex or hex pattern must contain. Atom selection scores candidate fragments and tracks their possible offsets within the pattern. Alternatives require a complete cover: omitting a branch from the prefilter could miss a valid match. When no safe cover exists, the engine retains a more general matching path.
+
+For eligible regexes, first-byte sets, literal suffixes before an atom, and repetition bounds narrow the candidate start positions before verification. Fixed-width byte-set sequences have a specialized verifier. General expressions use a Thompson-style NFA virtual machine, which tracks active states rather than recursively exploring backtracking paths. See [Thompson (1968)](#references) for the algorithmic basis.
+
+That design does not give every full scan a linear-time bound. Many candidate starts, broad verification windows, and large numbers of reported occurrences can still be expensive. A short common atom may save little work on repetitive data.
+
+For eligible XOR hex patterns, adjacent byte differences provide another filter: applying the same XOR key to two bytes leaves their pairwise XOR unchanged. The scanner searches this key-independent sequence, recovers a candidate key, and verifies the full pattern. This avoids a separate full search for every key on that path.
+
+Implementation: <a href={source('compiler/atom_selection.go')}>atom selection</a>, <a href={source('regex/first_bytes.go')}>byte-set and prefix analysis</a>, <a href={source('regex/vm.go')}>regex VM</a>, and <a href={source('compiler/hex_pattern.go')}>hex and XOR matching</a>.
+
+## SIMD filters
+
+The optional Go 1.27 SIMD build accelerates candidate filtering and byte operations. The implementation is architecture-specific:
+
+| Target | Multi-pattern candidate filter |
+| --- | --- |
+| ARM64 | NEON table lookups combine low- and high-nibble masks for up to three prefix bytes. Pattern buckets can collide, so candidates still require verification. The filter accepts 2–64 patterns. |
+| amd64 | Vector byte comparisons find possible first bytes for small pattern sets. This path accepts 2–8 patterns and at most 16 distinct starting bytes. |
+
+These limits apply to an individual automaton, not the total number of rules. Ineligible automata use the regular search path. The ARM64 filter follows the Teddy family of SIMD filtering techniques. Hyperscan author Geoff Langdale's [notes on Teddy and Harry](https://branchfree.org/2024/06/29/hyperscan-papers-harry-and-teddy-simd-literal-matchers/) link the dedicated papers; the [Hyperscan paper](#references) describes the broader architecture. go-yara does not embed Hyperscan or implement its full regex decomposition system.
+
+See the <a href={source('compiler/teddy_simd_arm64.go')}>ARM64 filter</a>, <a href={source('compiler/teddy_simd_amd64.go')}>amd64 filter</a>, and [SIMD build instructions](/go-yara/installation/#optional-simd-build). Compare scalar and SIMD builds on the same CPU with the same rules.
+
+## Condition evaluation
+
+General rule conditions execute in a bytecode interpreter. The compiler also recognizes fixed-offset integer comparisons, filesize bounds, string-at tests, string-count comparisons, and comparisons between external variables and constants. It combines these operations into fused instructions to reduce dispatch and operand-stack work.
+
+When an entire condition consists of supported assertions joined by `and`, `or`, and `not`, it becomes a small dataflow program whose inputs precede their consumers. This path avoids operand-stack pushes and pops. Mixed conditions retain the general interpreter with eligible subexpressions fused. The implementation is an interpreter optimization; it does not generate native machine code.
+
+Repeated payload and external-variable guards can share results within a scan. Early rejection is constrained by observable behavior: default scans preserve string matches even when a filesize or external condition rejects a rule, and expressions with callbacks or potentially observable errors keep normal evaluation.
+
+The compiler also recognizes certain nested occurrence loops expressing a distance between two strings. It replaces them with a two-pointer traversal of sorted offsets. For lists of lengths *m* and *n*, the traversal takes O(*m* + *n*) rather than testing every pair. Unsorted inputs require sorting first; arbitrary nested loops do not receive this optimization.
+
+Implementation: <a href={source('compiler/assertion_program.go')}>assertion programs</a>, <a href={source('compiler/condition_proximity.go')}>proximity recognition</a>, and <a href={source('compiler/match_context_queries.go')}>offset queries</a>.
 
 <span id="start-with-the-result-contract"></span>
 
@@ -17,6 +74,8 @@ Use `Matches` for a boolean answer and `MatchingRules` for rule names and tags. 
 
 Literal prefilters reject inputs that lack required patterns before condition evaluation. Header checks can reject rules whose required bytes are absent at fixed offsets. A warmed-up prefilter rejection can use zero heap allocations. Matches, returned results, and module calculations can still allocate.
 
+Scanners reuse interpreter state, match storage, and scratch buffers. The convenience methods use a scanner pool; a dedicated scanner keeps reusable state within a worker. Allocation measurements should separate initial compilation, scanner warm-up, clean rejects, and positive scans. Reusing buffers can reduce allocation rate while retaining capacity, so low allocations per operation do not establish a low resident-memory footprint.
+
 Measure clean rejects and positive matches separately. A corpus dominated by easy rejects can hide expensive behavior on repetitive data or inputs that pass a prefilter and fail later.
 
 <span id="module-work"></span>
@@ -24,6 +83,8 @@ Measure clean rejects and positive matches separately. A corpus dominated by eas
 ## Module call cache
 
 Repeated deterministic built-in numeric and range calls share a 16-entry cache across rules in one scan. Entries are discarded before the next scan. Once full, additional distinct calls execute normally. String arguments and `time.now()` bypass it.
+
+Keys include the qualified function name, argument types, and exact argument bits, with space for up to three scalar arguments. Float keys preserve distinctions such as signed zero. Custom callbacks must explicitly opt into caching and meet the purity contract. The <a href={source('compiler/module_cache.go')}>cache implementation</a> uses bounded storage so a rule iterating over many different offsets cannot grow it indefinitely.
 
 Cache hits allocate no memory, but a cache miss can allocate for the underlying calculation, such as building a digest string. Rules that request the same digest can reuse the calculation. Different arguments require separate calculations.
 
@@ -37,9 +98,29 @@ Run the scanner benchmarks from the repository root:
 make bench-scan
 ```
 
+The condition and module-cache benchmarks include variants with the optimization enabled and disabled:
+
+```sh
+go test ./compiler -run '^$' \
+  -bench '^(BenchmarkConditionDispatch|BenchmarkConditionAssertions|BenchmarkRepeatedModuleRanges)$' \
+  -benchmem -count=5
+```
+
+The [v0.8.0 release notes](https://github.com/cawalch/go-yara/blob/v0.8.0/CHANGELOG.md) record these development measurements on an Apple M3 Max:
+
+| Workload | Baseline | Optimized | Scope |
+| --- | --- | --- | --- |
+| Condition dispatch | 172.3 ns | 68.7 ns | Median of three paired runs, assertions disabled versus enabled. |
+| Passing scan of 200 assertion-heavy rules | 86.8 µs | 62.4 µs | Median of three paired runs; result details omitted. |
+| 100 rules repeating SHA-256 and entropy over 10 MiB | About 654 ms, 401 allocations | About 6.7 ms, 5 allocations | Cache disabled versus enabled; repeated identical calls. |
+
+These measurements isolate changes within go-yara. They do not compare it with another engine. The release notes do not preserve a complete benchmark environment or raw sample set, so rerun the benchmarks for a current deployment decision. The benchmark sources specify the rules, inputs, and options: <a href={source('compiler/condition_assertions_test.go')}>condition benchmarks</a> and <a href={source('compiler/modules_expanded_test.go')}>module-range benchmark</a>.
+
 Record the commit, Go version, build flags, CPU, rule set, and input sizes with each result. Keep those fixed when comparing changes. Report time per operation, bytes per second where meaningful, bytes allocated, and allocations per operation.
 
 Include small and large inputs, expected matches, clean rejects, repetitive bytes, and your real rule corpus. Measure cold compilation separately from steady-state scanning. For concurrent workloads, keep the worker count fixed and use a scanner per worker.
+
+`WithTelemetry` records scan counters, `WithTelemetryLatency` adds timing, and `WithRuleProfiling` reports per-rule work. Use profiling to locate expensive rules, then measure throughput with the intended production instrumentation; timing and callbacks add their own work. See the <a href={source('compiler/hooks.go')}>hook definitions</a> for counter and callback fields.
 
 The optional [SIMD build](/go-yara/installation/#optional-simd-build) changes some matching paths. Compare it with the scalar build on the same machine. Measure application latency separately to account for file I/O and other processing outside the scanner.
 
@@ -47,4 +128,18 @@ The optional [SIMD build](/go-yara/installation/#optional-simd-build) changes so
 
 ## Input memory use
 
+On Unix platforms, `ScanFile` attempts a read-only memory mapping for regular files of at least 128 KiB. Smaller files, mapping failures, and non-Unix platforms use file reads. Mapping avoids an explicit whole-file heap copy on the supported path, but still incurs page faults, page-cache residency, and I/O. Go heap allocation statistics do not account for all of those costs. See <a href={source('compiler/scanner_exec.go')}>file scanning</a> and the <a href={source('utils/fs/mmap.go')}>mapping wrapper</a>.
+
 `ScanReader` buffers all input, and block scanning retains blocks for later condition evaluation. Account for input storage as well as scanner allocations. The CLI's literal streaming mode changes semantics; use it only when text-pattern occurrences are the output you need.
+
+## Engine comparisons
+
+The [comparison with libyara and YARA-X](/go-yara/compatibility/#engine-comparison) covers execution models, Go integration, and module coverage. Aho–Corasick searching and atom-based filtering are shared techniques; their presence alone does not predict which engine will be faster on a particular corpus.
+
+A cross-engine benchmark needs the same accepted rules, input bytes, requested match details, worker count, timeout policy, and file-cache conditions. Check matched rules and required occurrences first. Record rejected rules and timeouts alongside timings, and separate compilation from repeated scanning. The measurements above do not establish a cross-engine ranking.
+
+## References
+
+- Alfred V. Aho and Margaret J. Corasick. [Efficient String Matching: An Aid to Bibliographic Search](https://cr.yp.to/bib/1975/aho.pdf). *Communications of the ACM* 18(6), 333–340, 1975. The multi-pattern automaton used for literal searching.
+- Ken Thompson. [Regular Expression Search Algorithm](https://www.jmeiners.com/efficient-programming-with-components/papers/regular-expressions.pdf). *Communications of the ACM* 11(6), 419–422, 1968. The basis of the NFA execution approach used by the regex VM.
+- Xiang Wang et al. [Hyperscan: A Fast Multi-pattern Regex Matcher for Modern CPUs](https://www.usenix.org/conference/nsdi19/presentation/wang-xiang). *USENIX NSDI*, 631–648, 2019. Background on combining literal matching, SIMD, and regex decomposition in a different engine.

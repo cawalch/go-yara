@@ -34,7 +34,9 @@ Automated checks cannot establish that every explanatory sentence still matches 
 | CLI flags, output, exit behavior | CLI, installation |
 | Go requirement, packaging, release assets | Installation, releases |
 | Serialization reader or writer | Releases, compatibility |
-| Optimization or benchmark claim | Performance |
+| Optimization or benchmark claim | Performance, including source links, applicability limits, and measurement scope |
+
+The engine comparison records separate versions for libyara and YARA-X. During release review, recheck those pinned sources and the comparison date; do not present them as automatically current. Historical benchmark figures retain their original release attribution and must not be relabeled as measurements of a newer release.
 
 Keep the README as the repository entry point and the site as the task-oriented guide. API details belong in Go doc comments and pkg.go.dev. Avoid adding a second handwritten API signature table.
 

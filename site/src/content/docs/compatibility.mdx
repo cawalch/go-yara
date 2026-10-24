@@ -5,6 +5,26 @@ description: Check go-yara's supported YARA features, missing native modules, nu
 
 `go-yara` implements YARA parsing, compilation, and scanning in Go. Compatibility depends on the rule features and modules you use. Compile your own corpus and compare expected outcomes before replacing libyara.
 
+## Engine comparison
+
+go-yara provides an engine that can be embedded directly in a Go program without a native library. libyara and YARA-X provide other integration paths and a broader set of bundled file-format modules. Which fits an application depends on its rules, deployment constraints, and required output.
+
+This comparison uses go-yara v0.8.0, libyara 4.5.8, and YARA-X 1.22.0, with sources reviewed on 2026-10-24. It describes implementation and integration differences; no cross-engine performance ranking has been measured for this page.
+
+| Area | go-yara | libyara | YARA-X |
+| --- | --- | --- | --- |
+| Implementation and integration | Go library; no CGO or installed native engine. | C library with a C API; Go applications need a binding or another integration layer. | Rust engine with C and Go APIs. Its provided Go binding uses CGO and the YARA-X C library. |
+| Condition execution | Go bytecode interpreter, fused operations, and specialized assertion programs. | Bytecode executed by a stack-based interpreter. | Compiles rule conditions to WebAssembly; native builds execute through Wasmtime. |
+| Pattern searching | Shared Aho–Corasick searches, atom filters, regex/hex verification, and optional SIMD candidate filters. | Aho–Corasick atom searches followed by pattern verification. | Aho–Corasick candidate searches with specialized pattern and regex machinery. |
+| Bundled modules | `hash`, `math`, `string`, and `time`; typed host data and callbacks. Native `pe` and `elf` parsers are not bundled. | Includes `pe`, `elf`, `dotnet`, and other analysis modules; availability can depend on the build. | Includes `pe`, `elf`, `dotnet`, and other analysis modules; availability can depend on build features. |
+| Rule and API compatibility | Supports a YARA subset plus go-yara extensions described below. | Reference behavior for the project's libyara differential tests. | Targets YARA rule compatibility with documented language differences; its APIs differ from libyara's. |
+
+The matching architecture has substantial overlap. Atom selection, verification strategy, condition execution, and result handling can each affect performance. go-yara's lack of a native dependency is a deployment property; it does not establish a scanning-speed advantage. The [performance page](/go-yara/performance/) explains its algorithms, measurements, and benchmark conditions.
+
+For rules that depend on bundled PE or ELF analysis, libyara and YARA-X already provide those parsers. Exposing application-parsed data through a go-yara host module requires an adapter and compatible field semantics. Similarly, a rule accepted by one engine may need changes in another: YARA-X documents differences in regex escapes, base64 patterns, modifiers, and other constructs, while go-yara's differences are listed below.
+
+Sources: libyara's [atom selection](https://github.com/VirusTotal/yara/blob/v4.5.8/libyara/atoms.c), [Aho–Corasick implementation](https://github.com/VirusTotal/yara/blob/v4.5.8/libyara/ahocorasick.c), [condition interpreter](https://github.com/VirusTotal/yara/blob/v4.5.8/libyara/exec.c), and [modules](https://github.com/VirusTotal/yara/tree/v4.5.8/libyara/modules); YARA-X's [compiler](https://github.com/VirusTotal/yara-x/blob/v1.22.0/lib/src/compiler/mod.rs), [scanner](https://github.com/VirusTotal/yara-x/blob/v1.22.0/lib/src/scanner/mod.rs), [Wasm runtime](https://github.com/VirusTotal/yara-x/blob/v1.22.0/lib/src/wasm/runtime/mod.rs), [Go binding](https://github.com/VirusTotal/yara-x/blob/v1.22.0/go/main.go), and [modules](https://github.com/VirusTotal/yara-x/tree/v1.22.0/lib/src/modules). The upstream [API comparison](https://virustotal.github.io/yara-x/docs/intro/yara-x-vs-yara/) and [language differences](https://virustotal.github.io/yara-x/docs/writing_rules/differences-with-yara/) provide migration details.
+
 <span id="supported-building-blocks"></span>
 
 ## Supported rule features

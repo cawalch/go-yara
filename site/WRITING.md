@@ -42,6 +42,10 @@ Avoid “leverage,” “delve,” “seamless,” “robust,” “powerful,”
 
 Use `go-yara` for this project and `libyara` for the native engine. Use exact API names. Distinguish supported behavior, an extension, a known limitation, and a measured result. Never infer full YARA compatibility from a successful example.
 
+For performance explanations, describe the mechanism, when it applies, and its costs. Link implementation details to release-specific source and cite original papers for the algorithms. Distinguish an algorithmic influence from an implementation of an entire published system. Scope complexity claims to the stage they describe.
+
+Compare engines on concrete properties using versioned primary sources: execution model, integration requirements, module coverage, and semantics. State where another engine already provides functionality that go-yara lacks. Avoid rankings without matched measurements, and do not infer speed from implementation language or the absence of CGO. Record the comparison date and versions; review them separately from go-yara's generated version stamp.
+
 ## Review before publishing
 
 1. Can a reader act on the opening paragraph?
