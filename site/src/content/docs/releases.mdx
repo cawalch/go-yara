@@ -7,7 +7,7 @@ import { Code } from '@astrojs/starlight/components';
 import release from '../../generated/release.json';
 import example from '../../../examples/serialization/main.go?raw';
 
-<p>These docs describe <a href={`https://github.com/cawalch/go-yara/releases/tag/${release.version}`}>{release.version}</a>, released on {release.date}. It requires Go {release.goVersion} or later. Each page displays this version so you can compare it with your application's dependency.</p>
+<p>These docs describe <a href={`https://github.com/cawalch/go-yara/releases/tag/${release.version}`}>{release.version}</a>, released on {release.date}. It requires Go {release.goVersion} or later.</p>
 
 ## Upgrade the library
 
@@ -32,7 +32,9 @@ This example compiles a rule, serializes it, reloads it, and prints `true` after
 
 External variables and custom module handlers must be rebound after loading. Structured schemas are preserved, but each scanner needs its host data bound again. A compiled artifact is specific to go-yara; it is not a libyara compiled-rule file.
 
-## How the docs track releases
+<span id="how-the-docs-track-releases"></span>
+
+## Documentation versions
 
 The site rebuilds when a release is published or `main` changes. Version details, module signatures, the serialized format number, and CLI help come from the latest stable release. The displayed Go and CLI examples run against that release and the current source tree before deployment.
 

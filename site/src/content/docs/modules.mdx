@@ -12,11 +12,13 @@ Modules make functions and typed data available to rule conditions. Import a bui
 
 ## Built-in signatures
 
-This table is generated from the release's module registry. Argument names and range behavior are explained below it.
+Signatures from the release's module registry:
 
 <ModuleTable />
 
-## Read the arguments
+<span id="read-the-arguments"></span>
+
+## Function arguments
 
 Hash functions accept either a string or an `(offset, size)` range in the scanned input. They return a digest string, except `crc32` and `checksum32`, which return integers.
 
@@ -44,6 +46,6 @@ Missing fields, missing dictionary keys, and out-of-range array indices evaluate
 
 <p>Register scalar callbacks through <code>Module.Functions</code>. Declare their accepted signatures and return type, and keep callbacks deterministic and safe for concurrent use. The <a href={`https://pkg.go.dev/github.com/cawalch/go-yara@${release.version}/compiler#Module`}>Module API reference</a> describes the callback types.</p>
 
-Deterministic built-in numeric and range calls share a bounded cache within each scan. String arguments and `time.now()` are not cached. Custom callbacks are uncached unless they opt in with `ModuleFunction.Cacheable` and satisfy its purity contract. A digest calculation can still allocate on a cache miss; see [performance](/go-yara/performance/#module-work).
+Deterministic built-in numeric and range calls share a bounded cache within each scan. String arguments and `time.now()` are not cached. Custom callbacks are uncached unless they opt in with `ModuleFunction.Cacheable` and satisfy its purity contract. A digest calculation can still allocate on a cache miss; see [performance](/go-yara/performance/#module-call-cache).
 
 After loading a serialized program, re-register custom handlers and bind host data again. Schemas survive serialization; runtime data does not.

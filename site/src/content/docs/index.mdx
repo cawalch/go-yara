@@ -1,35 +1,41 @@
 ---
 title: YARA scanning in Go, without CGO
-description: Compile YARA rules and scan files or byte slices with go-yara, a pure Go implementation. Start with tested examples and check compatibility before migrating.
+description: A pure Go YARA implementation for scanning byte slices, readers, and files without CGO. Library examples, CLI installation, modules, and compatibility.
 ---
 
 import release from '../../generated/release.json';
 
 `go-yara` compiles YARA rules and scans byte slices, readers, and files in Go. It runs without CGO or an installed copy of libyara, so you can include the engine in a Go service or build a standalone scanner.
 
-[Compile a rule and scan your first input](/go-yara/quickstart/), or [install the CLI](/go-yara/installation/) to work with files.
+[Quickstart](/go-yara/quickstart/) · [Installation](/go-yara/installation/)
 
-## Where it fits
+<span id="where-it-fits"></span>
 
-Use the library when your application already handles the data: a file ingestion service, an artifact scanner, or a tool that applies rules to collected memory blocks. Compile a rule set once and reuse the program across scans. Host modules let your rules inspect application data alongside the input bytes.
+## Library
+
+Compile a rule set once and reuse the program across scans. Host modules expose application data to rules alongside the input bytes.
 
 The engine supports text strings, hex patterns, regular expressions, and the built-in `hash`, `math`, `string`, and `time` modules. It also provides structured host modules and optional evidence extraction.
 
-## Check your rules before migrating
+<span id="check-your-rules-before-migrating"></span>
 
-YARA implementations differ. Native `pe` and `elf` parsers are not bundled, and go-yara has extensions that libyara does not accept. The [compatibility guide](/go-yara/compatibility/) identifies those boundaries. Test your rule corpus and expected matches before replacing another engine.
+## Compatibility
 
-Reader and block APIs have different memory and condition-evaluation behavior. Read [choosing a scan API](/go-yara/scanning/#choose-an-input-api) before using them for large inputs.
+Native `pe` and `elf` parsers are not bundled, and go-yara has extensions that libyara does not accept. The [compatibility guide](/go-yara/compatibility/) identifies those boundaries. Test your rule corpus and expected matches before replacing another engine.
 
-## Find the detail you need
+`ScanReader` buffers the entire input, and block scanning retains supplied blocks. See [input APIs](/go-yara/scanning/#input-apis) for memory use and condition evaluation.
 
-| Task | Start here |
+<span id="find-the-detail-you-need"></span>
+
+## Documentation
+
+| Topic | Guide |
 | --- | --- |
-| Add the library or download a binary | [Installation](/go-yara/installation/) |
-| Choose an input API and manage scanners | [Scanning](/go-yara/scanning/) |
-| Use built-ins or bind application data | [Modules](/go-yara/modules/) |
-| Reduce scan work and measure it | [Performance](/go-yara/performance/) |
-| Scan files from a terminal | [CLI reference](/go-yara/cli/) |
-| Upgrade a dependency or compiled rule cache | [Releases and upgrades](/go-yara/releases/) |
+| Dependencies and binaries | [Installation](/go-yara/installation/) |
+| Input APIs and scanner lifetime | [Scanning](/go-yara/scanning/) |
+| Built-in functions and host data | [Modules](/go-yara/modules/) |
+| Scan costs and benchmarks | [Performance](/go-yara/performance/) |
+| Commands and options | [CLI reference](/go-yara/cli/) |
+| Versions and compiled rule caches | [Releases and upgrades](/go-yara/releases/) |
 
 <p>For exported types and methods, use the <a href={`https://pkg.go.dev/github.com/cawalch/go-yara@${release.version}/compiler`}>Go API reference</a>. Source code, issue reports, and release artifacts are in the <a href="https://github.com/cawalch/go-yara">GitHub repository</a>.</p>

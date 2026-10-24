@@ -5,7 +5,9 @@ description: Check go-yara's supported YARA features, missing native modules, nu
 
 `go-yara` implements YARA parsing, compilation, and scanning in Go. Compatibility depends on the rule features and modules you use. Compile your own corpus and compare expected outcomes before replacing libyara.
 
-## Supported building blocks
+<span id="supported-building-blocks"></span>
+
+## Supported rule features
 
 Rules can use text strings, hex patterns with wildcards and jumps, regular expressions, string counts and offsets, condition operators, and rule references. The built-in modules are `hash`, `math`, `string`, and `time`. Their [function signatures](/go-yara/modules/#built-in-signatures) are generated from the documented release.
 
@@ -13,7 +15,7 @@ Native `pe` and `elf` parsers are not bundled. A structured host module can expo
 
 ## Numeric and string behavior
 
-| Operation | Behavior to account for |
+| Operation | Behavior |
 | --- | --- |
 | Integer `math.min` and `math.max` | Compare integers as unsigned values, matching YARA. |
 | Float or mixed numeric `min` and `max` | A go-yara extension: returns a float and uses signed numeric ordering. |
@@ -38,7 +40,9 @@ The CLI's `--streaming` mode reports literal text-pattern matches without comple
 
 Serialized go-yara programs use a project-specific format. They are not libyara compiled-rule files. Check the [upgrade rules](/go-yara/releases/#compiled-rule-caches) before sharing caches between versions.
 
-## Evaluate a migration
+<span id="evaluate-a-migration"></span>
+
+## Testing a rule set
 
 Compile the full rule set and investigate every rejected rule. Compare matched rule names on known positive and negative inputs, then check counts, offsets, undefined values, and module calls that your rules depend on. Include truncated and malformed files as well as ordinary samples.
 

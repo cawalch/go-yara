@@ -7,7 +7,7 @@ import { Code } from '@astrojs/starlight/components';
 import example from '../../../examples/cli.sh?raw';
 import help from '../../generated/cli.txt?raw';
 
-The `go-yara` command compiles rules and scans files. Put the rules file first, followed by options and the target path. If you need an executable, follow [installation](/go-yara/installation/).
+The `go-yara` command compiles rules and scans files. Put the rules file first, followed by options and the target path. Binaries and build instructions are on the [installation page](/go-yara/installation/).
 
 ## Scan a file
 
@@ -15,7 +15,7 @@ In a shell, create a rule and a sample file, then scan it:
 
 <Code code={example} lang="sh" title="Create and scan a sample" />
 
-The first scan reports the matching rule, `greeting`. The second emits a JSON record with the rule name and string-match details, including an occurrence at offset `0`. Both commands are exercised during documentation builds.
+The first scan reports the matching rule, `greeting`. The second emits a JSON record with the rule name and string-match details, including an occurrence at offset `0`.
 
 ## Validate rules and inspect output
 
@@ -27,7 +27,7 @@ go-yara greeting.yar --mode=compile
 
 Use `--mode=lex` to inspect tokens or `--mode=parse` to inspect the parsed rule structure. For scan output, `-s` includes matching strings, `-g` includes tags, and `-m` includes metadata. `--json` produces structured records suitable for downstream tools. Place options before a positional target.
 
-For a directory, use `-r` to recurse and `-p` to choose the worker count. Rule and tag filters select which results are reported; see the generated help below for their names.
+For a directory, use `-r` to recurse and `-p` to choose the worker count. Use `-i` to filter by rule name or `-t` to filter by tag.
 
 ## Large files and streaming
 

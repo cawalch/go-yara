@@ -9,7 +9,9 @@ import release from '../../generated/release.json';
 
 Compile a rule set once and reuse its `CompiledProgram`. Choose the scan API based on where the bytes live and whether you need complete match details or only a boolean answer.
 
-## Choose an input API
+<span id="choose-an-input-api"></span>
+
+## Input APIs
 
 | Input | API | Memory and evaluation behavior |
 | --- | --- | --- |
@@ -22,7 +24,9 @@ Compile a rule set once and reuse its `CompiledProgram`. Choose the scan API bas
 
 For sparse scans, provide each block's logical offset and set the logical file size when rules use `filesize`. If a pattern crosses a block boundary, supply overlapping bytes. The scanner does not reconstruct missing bytes between blocks.
 
-## Choose the result you need
+<span id="choose-the-result-you-need"></span>
+
+## Scan results
 
 `Scan` returns a `ScanResult`. `MatchedRules` contains the rules whose conditions evaluated to true. `RuleResults` records boolean outcomes, while `Matches` records pattern occurrences. Pattern matches alone do not imply that the rule matched: its condition may still be false.
 
@@ -30,7 +34,7 @@ Use `Matches` when you only need to know whether any rule matched. Use `Matching
 
 ## Reuse a scanner
 
-A dedicated scanner keeps options and reusable state together. This program scans two inputs and prints `false`, then `true`:
+Create a scanner with `program.NewScanner` to reuse its state and options across scans. This example scans two inputs and prints `false`, then `true`:
 
 <Code code={reuse} lang="go" title="Reusable scanner" />
 
@@ -40,7 +44,7 @@ Close a dedicated scanner when its worker finishes. A scanner is for sequential 
 
 Context-aware compilation and scan methods accept a `context.Context`. Cancellation is cooperative. For reader scans, cancelling the context cannot interrupt an underlying `Read` call that is already blocked; the reader or transport must provide its own deadline or close behavior.
 
-For repetitive inputs, match limits can bound the number of recorded string occurrences. `WithMaxMatches` and `WithMaxMatchSpan` address different costs: occurrence counts and the bytes considered for an individual regex match. Choose limits with your rules in mind, because limiting matches can affect conditions that depend on counts or offsets.
+For repetitive inputs, match limits can bound the number of recorded string occurrences. `WithMaxMatches` and `WithMaxMatchSpan` address different costs: occurrence counts and the bytes considered for an individual regex match. Limiting matches can affect conditions that depend on counts or offsets.
 
 <p>See the <a href={`https://pkg.go.dev/github.com/cawalch/go-yara@${release.version}/compiler#Scanner`}>scanner API reference</a> for context-aware methods, hooks, and limit options.</p>
 
