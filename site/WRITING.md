@@ -25,6 +25,8 @@ Use complete examples where setup matters. Put the expected result next to the c
 
 Prefer prose for explanations, numbered steps for a dependent sequence, and tables for choices. Use lists only for parallel items. Skip decorative cards, slogans, emoji, and stock illustrations. The interface should give space to code and reading.
 
+Use diagrams to explain data flow, ownership, or a boundary that prose makes hard to follow. Keep text selectable, provide a caption that states the important constraint, and check both color themes and narrow screens. Diagrams describe the same release as their surrounding prose; a plausible-looking arrow is still a technical claim.
+
 ## Editing examples
 
 | Avoid | Prefer |

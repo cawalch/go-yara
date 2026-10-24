@@ -4,12 +4,15 @@ description: How go-yara uses Aho–Corasick matching, regex atoms, SIMD filters
 ---
 
 import release from '../../generated/release.json';
+import ArchitectureDiagram from '../../components/ArchitectureDiagram.astro';
 
 export const source = (path) => `https://github.com/cawalch/go-yara/blob/${release.version}/${path}`;
 
 Scanning has three main costs: locating candidate patterns, verifying occurrences, and evaluating rule conditions. Result collection and file I/O add work around those stages. Which cost dominates depends on the rules and input; a large literal rule set behaves differently from a regex with frequent false candidates or a condition that hashes the whole file.
 
 ## Scan pipeline
+
+<ArchitectureDiagram kind="pipeline" />
 
 The compiler parses rules, selects pattern-search strategies, and emits condition bytecode. It builds shared structures where patterns or assertions can be reused across rules. At scan time, necessary-condition checks can reject work early, candidate searches locate possible occurrences, and verifiers check the full pattern before its matches are used in a condition.
 

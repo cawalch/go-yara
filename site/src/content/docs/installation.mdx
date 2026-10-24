@@ -5,6 +5,7 @@ description: Add the pure Go YARA library to a Go module, download a prebuilt sc
 
 import { Code } from '@astrojs/starlight/components';
 import release from '../../generated/release.json';
+import ArchitectureDiagram from '../../components/ArchitectureDiagram.astro';
 
 <p>The library requires Go {release.goVersion} or later. It has no CGO or libyara dependency. Prebuilt CLI binaries run without a Go installation.</p>
 
@@ -58,3 +59,15 @@ GOEXPERIMENT=simd go build -o go-yara ./cmd
 ```
 
 Scalar paths remain available on unsupported platforms and when SIMD is disabled with `GODEBUG=simd=0`. Measure your rule set and inputs before choosing a build; [performance guidance](/go-yara/performance/) explains what to compare.
+
+## Browser and embedded runtimes
+
+A [runtime spike](https://github.com/cawalch/go-yara/tree/main/site/spikes/wasm) compiled v0.8.0 with Go 1.27.2 for `js/wasm` and `wasip1/wasm`, without library changes. Browser-worker scans and a WASI reactor passed the small fixture set documented there. This is experimental integration work, not a supported JavaScript package or release artifact.
+
+<ArchitectureDiagram kind="browser" />
+
+The browser build contains the Go runtime and go-yara's compiler and scanner. A rule still compiles to go-yara bytecode inside that engine; it is not compiled into a separate Wasm module. Load the runtime only when a user opens a scanning tool. The spike's binary is about 8.9 MiB before compression, and browser input must be copied into Go memory.
+
+Go's [browser Wasm support](https://go.dev/wiki/WebAssembly) needs a matching `wasm_exec.js`. A [WASI reactor](https://go.dev/blog/wasmexport) instead needs a host that supplies WASI imports and initializes the module before calling its exports. A Go application can embed the library directly without either runtime layer.
+
+The spike checks worker termination and restart, but does not establish production memory limits, arbitrary-rule safety, or support across browsers. It exposes byte-buffer scanning; native file paths and memory mapping are not part of that browser interface. See the spike report for measurements, reproduction commands, and the remaining work.

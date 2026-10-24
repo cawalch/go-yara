@@ -38,6 +38,10 @@ Automated checks cannot establish that every explanatory sentence still matches 
 
 The engine comparison records separate versions for libyara and YARA-X. During release review, recheck those pinned sources and the comparison date; do not present them as automatically current. Historical benchmark figures retain their original release attribution and must not be relabeled as measurements of a newer release.
 
+`src/components/ArchitectureDiagram.astro` contains the pipeline, scanner-ownership, module-binding, and experimental browser diagrams. Review their labels with the adjacent prose when those contracts change. They use HTML text and CSS, reflow on narrow screens, and add no diagram-rendering JavaScript.
+
+The [Wasm spike](spikes/wasm/README.md) is a separate, manually run experiment. Its binaries are built outside the checkout and are not shipped with the site. Astro's type-check scope excludes the spike; its README records its own syntax, fixture, and runtime checks. Browser/WASI support must not be inferred from the ordinary documentation workflow passing.
+
 Keep the README as the repository entry point and the site as the task-oriented guide. API details belong in Go doc comments and pkg.go.dev. Avoid adding a second handwritten API signature table.
 
 ## Release check

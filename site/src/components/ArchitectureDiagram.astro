@@ -1,0 +1,87 @@
+---
+interface Props { kind: 'pipeline' | 'scanners' | 'modules' | 'browser' }
+const { kind } = Astro.props;
+---
+
+<figure class="architecture">
+  {kind === 'pipeline' && <>
+    <div class="lane-label">Compile once</div>
+    <ol class="flow" role="list">
+      <li><strong>Rule source</strong><span>Strings, imports, conditions</span></li>
+      <li><strong>Compiler</strong><span>Parse, type-check, select atoms</span></li>
+      <li><strong>Compiled program</strong><span>Search tables and condition bytecode</span></li>
+    </ol>
+    <div class="lane-label">For each input · paths depend on the patterns and conditions</div>
+    <ol class="flow" role="list">
+      <li><strong>Find candidates</strong><span>Literal searches and prefilters</span></li>
+      <li><strong>Verify patterns</strong><span>Check full strings, regexes, or hex patterns</span></li>
+      <li><strong>Evaluate conditions</strong><span>Use occurrences, input bytes, and module data</span></li>
+    </ol>
+    <figcaption>A candidate can fail verification. A verified string can belong to a rule whose condition is false. Conditions can also use no strings at all.</figcaption>
+  </>}
+  {kind === 'scanners' && <>
+    <div class="shared"><strong>One compiled program</strong><span>Shared search tables and bytecode · configuration held fixed</span></div>
+    <div class="fork" aria-hidden="true"><span>↓</span><span>↓</span></div>
+    <div class="workers">
+      {[1, 2].map(n => <div class="worker">
+        <strong>Worker {n}</strong>
+        <div class="owned">Own scanner<span>Match storage, scratch buffers, bound data</span></div>
+        <div class="sequence">Input A → scan → result<br />Input B → scan → result</div>
+        <span>Close when the worker finishes</span>
+      </div>)}
+    </div>
+    <figcaption>Workers may run concurrently. Each scanner handles one scan at a time; its reusable state stays with that worker.</figcaption>
+  </>}
+  {kind === 'modules' && <>
+    <div class="lane-label">At compilation</div>
+    <ol class="flow" role="list">
+      <li><strong>Module schema</strong><span>telemetry.score: float</span></li>
+      <li><strong>Rule condition</strong><span>telemetry.score &gt; 0.9</span></li>
+      <li><strong>Type check</strong><span>Verify the field and comparison types</span></li>
+    </ol>
+    <div class="lane-label">At scanning</div>
+    <ol class="flow" role="list">
+      <li><strong>Application data</strong><span>score = 0.95</span></li>
+      <li><strong>Scanner binding</strong><span>Validate and copy a data snapshot</span></li>
+      <li><strong>Condition result</strong><span>0.95 &gt; 0.9 → true</span></li>
+    </ol>
+    <figcaption>The application produces the data. A schema describes its shape; it does not parse a file or calculate a score.</figcaption>
+  </>}
+  {kind === 'browser' && <>
+    <div class="lane-label">Experimental browser integration</div>
+    <ol class="flow" role="list">
+      <li><strong>Page</strong><span>Rule editor and input bytes</span></li>
+      <li><strong>Web Worker</strong><span>Go runtime + Wasm compiler and scanner</span></li>
+      <li><strong>Results</strong><span>Rule names and occurrence offsets</span></li>
+    </ol>
+    <figcaption>Messages cross the worker boundary. Input bytes are copied into Go memory. Terminating the worker stops work and discards its compiled rules.</figcaption>
+  </>}
+</figure>
+
+<style>
+  .architecture { margin: 1.5rem 0; padding: 1rem; border: 1px solid var(--sl-color-gray-5); border-radius: .35rem; font-size: .85rem; line-height: 1.5; }
+  .architecture * { margin-top: 0; }
+  .lane-label { color: var(--sl-color-gray-2); margin-bottom: .6rem; font-size: .8rem; }
+  .lane-label:not(:first-child) { margin-top: 1.25rem; }
+  .flow { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.3rem; }
+  .flow li, .shared, .owned { padding: .7rem; background: var(--sl-color-accent-low); border: 1px solid var(--sl-color-accent); border-radius: .2rem; }
+  .flow li { position: relative; }
+  .flow li + li::before { content: '→'; position: absolute; left: -1.15rem; top: 40%; color: var(--sl-color-gray-2); }
+  strong, span { display: block; }
+  strong { color: var(--sl-color-white); font-weight: 600; }
+  span { margin-top: .2rem; }
+  .shared { text-align: center; }
+  .fork, .workers { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  .fork { text-align: center; font-size: 1.3rem; }
+  .worker { border: 1px solid var(--sl-color-gray-4); padding: .7rem; }
+  .owned { margin-top: .5rem; }
+  .sequence { margin: .7rem 0; }
+  .architecture figcaption { color: var(--sl-color-gray-2); margin-top: 1rem; }
+  @media (max-width: 40rem) {
+    .flow { grid-template-columns: 1fr; gap: 1.5rem; }
+    .flow li + li::before { content: '↓'; left: 50%; top: -1.45rem; }
+    .workers { gap: .5rem; }
+    .worker { padding: .5rem; }
+    .sequence { font-size: .75rem; }
+  }
+</style>

@@ -7,6 +7,7 @@ import { Code } from '@astrojs/starlight/components';
 import ModuleTable from '../../components/ModuleTable.astro';
 import example from '../../../examples/modules/main.go?raw';
 import release from '../../generated/release.json';
+import ArchitectureDiagram from '../../components/ArchitectureDiagram.astro';
 
 Modules make functions and typed data available to rule conditions. Import a built-in module by name, or register a host module when creating the compiler.
 
@@ -31,6 +32,8 @@ Invalid ranges also produce undefined. Ranges starting inside the input are trun
 ## Bind structured data
 
 Declare the shape of application data with `Module.Schema`. The compiler checks member names and types; each scanner receives its own data snapshot.
+
+<ArchitectureDiagram kind="modules" />
 
 This example exposes a floating-point score to a rule and prints `true`:
 

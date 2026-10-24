@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>go-yara browser spike</title>
+<style>
+body { font: 16px/1.5 system-ui,sans-serif; max-width: 55rem; margin: 2rem auto; padding: 0 1rem; color: #17313c; background: #f9fbfc; }
+label { display:block; margin-top:1rem; } textarea { box-sizing:border-box; width:100%; font:14px/1.5 monospace; padding:.6rem; }
+button { margin:.8rem .4rem .8rem 0; padding:.5rem .8rem; } pre { white-space:pre-wrap; overflow-wrap:anywhere; background:#e9f0f3; padding:1rem; }
+</style></head><body>
+<h1>go-yara browser spike</h1>
+<p>Local experiment. Rules and bytes are processed in a Web Worker. This prototype accepts up to 32 KiB of rule source and 8 MiB of input, with a three-second operation timeout.</p>
+<label for="rules">YARA rules</label><textarea id="rules" rows="6">rule greeting {
+  strings: $a = "hello" nocase
+  condition: $a
+}</textarea>
+<label for="input">Input text (UTF-8)</label><textarea id="input" rows="3">Hello from the browser</textarea>
+<button id="scan">Compile and scan</button><button id="cancel">Cancel</button><button id="checks">Run fixture and worker checks</button>
+<pre id="output" role="status">Runtime not loaded.</pre>
+<script type="module">
+import { ScannerWorker, runSuite } from './client.mjs';
+const output = document.querySelector('#output');
+let client;
+document.querySelector('#scan').onclick = async () => {
+  client?.stop();
+  const current = client = new ScannerWorker();
+  output.textContent = 'Loading runtime…';
+  try {
+    const startup = await current.ready;
+    const compile = await current.call('compile', document.querySelector('#rules').value);
+    if (compile.error) throw new Error(compile.error);
+    const result = await current.call('scan', new TextEncoder().encode(document.querySelector('#input').value).buffer);
+    output.textContent = JSON.stringify({ startup, compile, result }, null, 2);
+  } catch (error) { if (client === current) output.textContent = error.message; }
+  finally { current.stop(); }
+};
+document.querySelector('#cancel').onclick = () => { client?.stop(); output.textContent = 'Cancelled; compiled rules discarded.'; };
+window.runSuite = runSuite;
+document.querySelector('#checks').onclick = async () => {
+  output.textContent = 'Running checks…';
+  try { window.spikeResults = await runSuite(); output.textContent = JSON.stringify(window.spikeResults, null, 2); }
+  catch (error) { window.spikeResults = { pass:false, error:error.stack }; output.textContent = error.stack; }
+};
+</script></body></html>

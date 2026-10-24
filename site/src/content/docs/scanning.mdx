@@ -6,6 +6,7 @@ description: Choose between byte-slice, reader, file, and sparse-block scanning.
 import { Code } from '@astrojs/starlight/components';
 import reuse from '../../../examples/reuse/main.go?raw';
 import release from '../../generated/release.json';
+import ArchitectureDiagram from '../../components/ArchitectureDiagram.astro';
 
 Compile a rule set once and reuse its `CompiledProgram`. Choose the scan API based on where the bytes live and whether you need complete match details or only a boolean answer.
 
@@ -33,6 +34,8 @@ For sparse scans, provide each block's logical offset and set the logical file s
 Use `Matches` when you only need to know whether any rule matched. Use `MatchingRules` when you need rule names and tags without the full evaluation map. These paths avoid work that detailed reporting would require.
 
 ## Reuse a scanner
+
+<ArchitectureDiagram kind="scanners" />
 
 Create a scanner with `program.NewScanner` to reuse its state and options across scans. This example scans two inputs and prints `false`, then `true`:
 
