@@ -35,6 +35,8 @@ def prepare(ref, check_only):
         env = {**os.environ, "GOWORK": "off"}
         outputs = {"quickstart": "greeting\n", "reuse": "false\ntrue\n",
                    "modules": "true\n", "serialization": "true\n"}
+        for name in ["evidence", "evidence-key"]:
+            outputs[name] = (SITE / "examples" / name / "output.txt").read_text()
         for name, expected in outputs.items():
             output = run(["go", "run", str(SITE / "examples" / name / "main.go")], source, env=env)
             if output != expected:

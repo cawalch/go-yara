@@ -1,10 +1,14 @@
 ---
 title: Scan inputs and manage scanners
-description: Choose between byte-slice, reader, file, and sparse-block scanning. Reuse scanners safely and understand buffering, cancellation, and result costs.
+description: Scan bytes, files, and memory blocks. Extract credential evidence for application validators, parse private-key candidates, and manage scanner limits.
 ---
 
 import { Code } from '@astrojs/starlight/components';
 import reuse from '../../../examples/reuse/main.go?raw';
+import evidence from '../../../examples/evidence/main.go?raw';
+import evidenceOutput from '../../../examples/evidence/output.txt?raw';
+import evidenceKey from '../../../examples/evidence-key/main.go?raw';
+import evidenceKeyOutput from '../../../examples/evidence-key/output.txt?raw';
 import release from '../../generated/release.json';
 import ArchitectureDiagram from '../../components/ArchitectureDiagram.astro';
 
@@ -32,6 +36,61 @@ For sparse scans, provide each block's logical offset and set the logical file s
 `Scan` returns a `ScanResult`. `MatchedRules` contains the rules whose conditions evaluated to true. `RuleResults` records boolean outcomes, while `Matches` records pattern occurrences. Pattern matches alone do not imply that the rule matched: its condition may still be false.
 
 Use `Matches` when you only need to know whether any rule matched. Use `MatchingRules` when you need rule names and tags without the full evaluation map. These paths avoid work that detailed reporting would require.
+
+## Credential evidence and validation
+
+Enable `WithEvidence(maxCaptureBytes)` on a dedicated scanner to extract named values from matched strings. A `capture(...)` modifier maps regex groups to field names; an `evidence:` declaration assembles those fields into findings. The result includes each capture's bytes, source offset, length, and truncation flag, so a downstream validator does not need to repeat the extraction regex.
+
+<ArchitectureDiagram kind="evidence" />
+
+Evidence extraction leaves the rule's boolean condition unchanged. Keep the rule result, extraction status, and validator outcome as separate fields in your report:
+
+| Extraction status | Meaning | Validator handling |
+| --- | --- | --- |
+| `ready` | Every declared field has one unambiguous, untruncated capture. | Check the expected field schema, then pass the values to an application validator. |
+| `partial` | A field is missing or its copied data was truncated. | Keep the finding for review; do not validate a prefix as a complete credential. |
+| `ambiguous` | Fields have competing candidates, or proximity assignment is tied. | Preserve the candidates; do not pick the first combination. |
+
+`ready` describes extraction completeness. A complete credential can still be expired, revoked, synthetic, or rejected by its service. A timeout or unavailable validator leaves validity unknown.
+
+### Assemble credentials from a URI or nearby assignments
+
+This example extracts `endpoint`, `username`, and `secret` from a PostgreSQL-style URI or nearby configuration assignments. It scans each synthetic input separately, checks the rule result, and passes only ready findings to a validator function. The validator is a deterministic test double: its accepted and rejected outcomes demonstrate the handoff without making network requests.
+
+Save this as `main.go` in a module with go-yara installed, then run `go run .`:
+
+<Code code={evidence} lang="go" title="Credential extraction and validator handoff" />
+
+<Code code={evidenceOutput} lang="text" title="Output" />
+
+`capture(username = 1, secret = 2, endpoint = 3)` names the regex's numbered groups; group `0` captures the whole match. Fields from the same outer match are grouped together before proximity assignment. For separate matches, `within 96 of secret` uses the byte gap between capture spans to assign candidates to the nearest eligible secret anchor. Ties and multiple candidates remain ambiguous. This is proximity correlation, not a parser for configuration records: a nearby field can belong to a different record. Scan records separately or narrow the rule when record boundaries matter.
+
+The URI expression is deliberately limited. It is not a general connection-string parser and does not decode percent escapes or cover every PostgreSQL URI form. These fixtures illustrate extraction; they are not a maintained secret-detector corpus.
+
+Replace `fixtureValidator` with an adapter for a service you operate when checking whether credentials are active. Configure the destination independently or require an exact allowlist match; an endpoint extracted from a scanned file must not choose arbitrary network destinations. Have the adapter honor the context deadline and return distinct accepted, rejected, and unknown outcomes. Keep secret bytes and raw authentication errors out of logs. Store the rule, declaration, source identity, capture offsets, extraction status, and validation outcome for traceability.
+
+### Parse a private-key candidate offline
+
+Some validation needs no service connection. This example captures a complete unencrypted PKCS#8 PEM block and passes its bytes through [`pem.Decode`](https://pkg.go.dev/encoding/pem#Decode) and [`x509.ParsePKCS8PrivateKey`](https://pkg.go.dev/crypto/x509#ParsePKCS8PrivateKey). It generates a disposable key in memory, then scans a second PEM block whose body is not a private key. Both are ready findings; only the first parses successfully.
+
+<details>
+<summary>Complete Go example: extract and parse a private key</summary>
+
+<Code code={evidenceKey} lang="go" title="Offline PKCS#8 validation" />
+
+</details>
+
+<Code code={evidenceKeyOutput} lang="text" title="Output" />
+
+Successful parsing establishes that the captured bytes encode a private key supported by the parser. It does not establish ownership, deployment, or whether any service accepts that key. This example only handles `BEGIN PRIVATE KEY` blocks; encrypted keys and other encodings need separate parsing paths.
+
+### Evidence limits and provenance
+
+`WithEvidence(256)` caps **each capture's copied bytes**, not total evidence memory or the number of findings. `Capture.Length` retains the full source span length; `DataTruncated` marks a shortened `Data` copy. Use separate input, time, and workload limits. Capture-bound strings retain all occurrences when evidence is enabled, even with `WithFastScan`, so proximity correlation has the occurrences it needs.
+
+Read findings from `result.Evidence[ruleName][declarationName]`. Each finding has an anchor and a `Fields` map whose values are candidate capture slices. `Capture.Offset` and `Capture.Length` identify source bytes; `Pattern` and `Group` identify the extraction rule. Check `RuleResults` or `MatchedRules` when deciding which rule findings to act on, and treat captured values as sensitive data.
+
+<p>The <a href={`https://pkg.go.dev/github.com/cawalch/go-yara@${release.version}/compiler#EvidenceFinding`}>evidence API reference</a> describes the result types. The repository's <a href={`https://github.com/cawalch/go-yara/blob/${release.version}/examples/structured_secrets.yar`}>synthetic secret rules</a> also cover AWS assignments, service-account JSON, and freeform tokens. These use go-yara's capture/evidence syntax, which other YARA engines may reject.</p>
 
 ## Reuse a scanner
 

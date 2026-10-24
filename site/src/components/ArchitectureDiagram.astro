@@ -1,5 +1,5 @@
 ---
-interface Props { kind: 'pipeline' | 'scanners' | 'modules' | 'browser' }
+interface Props { kind: 'pipeline' | 'scanners' | 'modules' | 'browser' | 'evidence' }
 const { kind } = Astro.props;
 ---
 
@@ -46,6 +46,21 @@ const { kind } = Astro.props;
       <li><strong>Condition result</strong><span>0.95 &gt; 0.9 → true</span></li>
     </ol>
     <figcaption>The application produces the data. A schema describes its shape; it does not parse a file or calculate a score.</figcaption>
+  </>}
+  {kind === 'evidence' && <>
+    <div class="lane-label">Extraction in go-yara</div>
+    <ol class="flow" role="list">
+      <li><strong>Pattern match</strong><span>Capture named fields and source spans</span></li>
+      <li><strong>Correlation</strong><span>Group fields around a secret anchor</span></li>
+      <li><strong>Finding</strong><span>Ready, partial, or ambiguous</span></li>
+    </ol>
+    <div class="lane-label">Validation in the calling application · complete findings only</div>
+    <ol class="flow" role="list">
+      <li><strong>Schema check</strong><span>Expected fields; no truncated values</span></li>
+      <li><strong>Validator</strong><span>Offline parser or configured service adapter</span></li>
+      <li><strong>Validation outcome</strong><span>Record separately from extraction status</span></li>
+    </ol>
+    <figcaption>A ready finding can still fail validation. Partial and ambiguous findings need review before a validator receives their values.</figcaption>
   </>}
   {kind === 'browser' && <>
     <div class="lane-label">Browser playground · runtime loaded on demand</div>

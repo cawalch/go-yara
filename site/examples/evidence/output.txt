@@ -1,0 +1,7 @@
+URI: ready; accepted (fixture)
+assignments: ready; accepted (fixture)
+missing: partial; not checked
+ambiguous: ambiguous; not checked
+truncated: partial; not checked
+rejected: ready; rejected (fixture)
+unknown: ready; unknown

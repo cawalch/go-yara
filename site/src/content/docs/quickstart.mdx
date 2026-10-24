@@ -14,6 +14,8 @@ Compile the rule once, scan a byte slice, and read the matching rule names from 
 
 <Playground />
 
+The playground returns rule names and string offsets; it does not enable evidence extraction or validate credentials. The [credential evidence examples](/go-yara/scanning/#credential-evidence-and-validation) show capture fields, correlation status, and validator handoff in Go.
+
 ## Create a Go module
 
 With Go installed, create an empty directory and add go-yara:

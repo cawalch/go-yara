@@ -430,12 +430,14 @@ for ruleName, decls := range result.Evidence {
 	for declName, findings := range decls {
 		for _, f := range findings {
 			if f.Status == compiler.EvidenceStatusReady {
-				fmt.Printf("Rule %s found %s: %+v\n", ruleName, declName, f.Fields)
+				fmt.Printf("Rule %s found %s at byte %d (ready for validation)\n", ruleName, declName, f.Anchor.Offset)
 			}
 		}
 	}
 }
 ```
+
+A ready finding has complete, unambiguous capture data; it does not prove that a credential is active. The [credential evidence guide](https://cawalch.github.io/go-yara/scanning/#credential-evidence-and-validation) includes executable validator-handoff and offline private-key parsing examples, plus handling for partial and ambiguous findings. Avoid logging captured secret values.
 
 When evidence extraction is disabled (the default), capture parsing and correlation are bypassed with zero runtime overhead.
 

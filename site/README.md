@@ -24,6 +24,8 @@ Open the local URL with `/go-yara/` appended. A production preview uses `npm run
 
 ## Preventing drift
 
+The evidence examples exercise ready, partial, ambiguous, and truncated findings, a fixture validator handoff, and real offline PKCS#8 parsing. Their checked output is imported beside their source on the scanning page. They make no network validation requests.
+
 The deployment workflow resolves the latest stable GitHub release on every build. It runs the displayed Go and CLI examples against that tag, then repeats them against the working tree. Code blocks import those same files; copied Go snippets are rejected. A program compiled against the release exports the module signatures and serialized format version. The release's `go.mod`, changelog, commit, and built CLI supply the version stamp and help output. The playground builder overlays its current bridge onto a temporary copy of that same release, pairs its binary with the compiling toolchain's runtime shim, and writes content-addressed assets. The build validates the embedded version, asset files, and binary hash.
 
 Every page shows its release version and links to that release. The site has one current version; older release notes remain on GitHub. A release publication or completion of the Release workflow rebuilds the site. The latter also covers releases created with `GITHUB_TOKEN`, which do not trigger another release event workflow. Pushes to `main` rebuild it too, so prose fixes do not need a Go release. Internal links, anchors, local assets, canonical URLs, page metadata, and the nine-page sitemap are checked on every build. External links are checked before deployment.
@@ -34,6 +36,7 @@ Automated checks cannot establish that every explanatory sentence still matches 
 | --- | --- |
 | Compiler API, imports, rule syntax | Quickstart, compatibility, modules |
 | Scanner results, readers, blocks, cancellation | Scanning, performance, compatibility |
+| Capture groups, evidence correlation, finding status | Scanning credential examples, compatibility |
 | Module definitions, schemas, binding, cache | Modules, compatibility, performance |
 | CLI flags, output, exit behavior | CLI, installation |
 | Go requirement, packaging, release assets | Installation, releases |
@@ -42,7 +45,7 @@ Automated checks cannot establish that every explanatory sentence still matches 
 
 The engine comparison records separate versions for libyara and YARA-X. During release review, recheck those pinned sources and the comparison date; do not present them as automatically current. Historical benchmark figures retain their original release attribution and must not be relabeled as measurements of a newer release.
 
-`src/components/ArchitectureDiagram.astro` contains the pipeline, scanner-ownership, module-binding, and experimental browser diagrams. Review their labels with the adjacent prose when those contracts change. They use HTML text and CSS, reflow on narrow screens, and add no diagram-rendering JavaScript.
+`src/components/ArchitectureDiagram.astro` contains the pipeline, scanner-ownership, module-binding, evidence-validation, and browser diagrams. Review their labels with the adjacent prose when those contracts change. They use HTML text and CSS, reflow on narrow screens, and add no diagram-rendering JavaScript.
 
 The [browser playground](playground/README.md) has native fixture tests, byte-budget and memory-section tests, and a headed Chromium/Firefox/WebKit suite. All three engines must pass before Pages deploys. Browser binaries and traces are ignored; generated runtime assets are included only in the Pages artifact. Astro checks the UI/client; the worker is syntax-checked and exercised by the browser suite. CI uses Go 1.27.2 to build the runtime; review the memory-section transformation when changing toolchains.
 
