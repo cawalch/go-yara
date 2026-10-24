@@ -25,6 +25,6 @@
       "cli",
       "releases"
     ],
-    "notes": "Reviewed all nine pages against the v0.8.0-to-v0.8.1 library delta. Release-facing performance prose, telemetry example, and diagram must describe populated exclusive phase timers, per-pattern profiles and candidate availability, success-only completion after final counters, per-rule loop iterations, boolean/rule-list accounting, and accumulated-block accounting. Publish those matching changes after the tag is available. The nine-page layout, Go requirement, CLI, format 7 with readers 4\u20137, modules, evidence extraction, semantic checks, memory bounds, and engine comparison contracts remain unchanged. Preserve v0.8.0 attribution on historical benchmarks and the dated Wasm spike. Validate displayed examples and the playground against v0.8.1 and HEAD."
+    "notes": "Reviewed all nine pages against v0.8.1. Updated performance prose, telemetry example, and diagram for exclusive phase timers, per-pattern profiles and candidate availability, success-only completion after final counters, per-rule loop iterations, boolean/rule-list accounting, and accumulated-block accounting. The nine-page layout, Go requirement, CLI, format 7 with readers 4\u20137, modules, evidence extraction, semantic checks, memory bounds, and engine comparison contracts remain unchanged. Historical benchmark figures and the dated Wasm spike retain v0.8.0 attribution. Displayed Go/CLI examples pass against v0.8.1 and HEAD; the playground is built from v0.8.1."
   }
 }

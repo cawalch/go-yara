@@ -9,7 +9,7 @@ Eight selectable examples live in `engine/examples.json`, shared by the UI, nati
 Generate the documentation release first, then build from the repository root:
 
 ```sh
-python3 site/scripts/prepare.py --ref v0.8.0
+python3 site/scripts/prepare.py --ref v0.8.1
 npm ci --prefix site
 npm run build --prefix site
 npm run check --prefix site

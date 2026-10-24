@@ -199,7 +199,7 @@ External variables supply scalar values used by conditions. Structured modules s
 
 ## Stopping scans from hooks
 
-`WithMatchHook` can stop after the first matching public rule. `MatchActionStopScan` includes that rule in the result and returns no error; later rules may not have been evaluated. Track the stop decision in application state so a partial rule result is not mistaken for complete coverage.
+`WithMatchHook` can stop after the first matching public rule. `MatchActionStopScan` includes that rule in the result and returns no error. It stops delivery of later matches; their conditions may already have been evaluated. Track the stop decision in application state so a partial rule result is not mistaken for complete coverage.
 
 A polling callback can instead return `PollAbort`, which makes the scan return `ErrScanAborted`. Check it with `errors.Is`. Context cancellation has its own error and remains useful for deadlines. Polling is cooperative: the byte stride is a checkpoint setting, not a wall-clock deadline. `PollThrottle` sleeps for the requested duration, which can also delay cancellation.
 
@@ -212,4 +212,4 @@ A polling callback can instead return `PollAbort`, which makes the scan return `
 
 <Code code={hookControlOutput} lang="text" title="Output" />
 
-`WithRuleGate` can omit rules before evaluation, and `MatchActionSkipRule` omits the current matching rule from the returned matches. Both change the result contract. Use them only when the application deliberately accepts reduced coverage; gates also require care with rule dependencies. Keep callbacks short and synchronous. See [hooks and scan metrics](/go-yara/performance/#hooks-and-scan-metrics) for observation-only callbacks, counter meanings, and current instrumentation gaps.
+`WithRuleGate` can omit rules before evaluation, and `MatchActionSkipRule` omits the current matching rule from the returned matches. Both change the result contract. Use them only when the application deliberately accepts reduced coverage; gates also require care with rule dependencies. Keep callbacks short and synchronous. See [hooks and scan metrics](/go-yara/performance/#hooks-and-scan-metrics) for observation-only callbacks, counter meanings, and phase timing.

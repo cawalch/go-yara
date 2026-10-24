@@ -24,11 +24,21 @@ rule other { strings: $a = "other" condition: $a }`)
 	}
 	var metrics compiler.ScanTelemetry
 	starts, completions, matches, profiles := 0, 0, 0, 0
+	completionSeesFinal := false
 	scanner := compiler.NewScanner(program,
 		compiler.WithTelemetryLatency(&metrics),
 		compiler.WithHooks(compiler.ScanHooks{
-			OnScanStart:     func(context.Context, int64) { starts++ },
-			OnScanComplete:  func(context.Context, *compiler.ScanResult, time.Duration) { completions++ },
+			OnScanStart: func(context.Context, int64) { starts++ },
+			OnScanComplete: func(context.Context, *compiler.ScanResult, time.Duration) {
+				completions++
+				completionSeesFinal = metrics.TotalScans == 2 && metrics.TotalMatches == 1 && metrics.TotalScanDurationNs > 0
+			},
+			OnPatternProfile: func(p compiler.PatternProfile) {
+				if p.RuleName == "marker" {
+					fmt.Printf("%s/%s: candidates=%d known=%t occurrences=%d\n",
+						p.RuleName, p.StringID, p.CandidateHits, p.CandidateHitsKnown, p.VerifiedMatches)
+				}
+			},
 			OnRuleEvaluated: func(compiler.RuleProfile) { profiles++ },
 			OnMatch: func(*compiler.CompiledRule, compiler.RuleMatch) compiler.MatchAction {
 				matches++
@@ -46,7 +56,9 @@ rule other { strings: $a = "other" condition: $a }`)
 	fmt.Printf("scans=%d bytes=%d matched rules=%d\n", metrics.TotalScans, metrics.BytesScanned, metrics.TotalMatches)
 	fmt.Printf("starts=%d completions=%d match callbacks=%d\n", starts, completions, matches)
 	fmt.Printf("rule profiles received: %t\n", profiles > 0)
-	// TotalScanDurationNs is available here; exact timings vary by machine.
+	fmt.Printf("completion sees final metrics: %t\n", completionSeesFinal)
+	// Export TotalScanDurationNs, PrefilterDurationNs, PatternSearchNs, and
+	// ConditionEvalNs here. Exact timings vary by workload and machine.
 	metrics.Reset()
 	fmt.Printf("after reset: scans=%d bytes=%d matched rules=%d\n", metrics.TotalScans, metrics.BytesScanned, metrics.TotalMatches)
 	return nil

@@ -17,10 +17,10 @@ const { kind } = Astro.props;
     <div class="lane-label">One scanner and telemetry sink per worker</div>
     <ol class="flow" role="list">
       <li><strong>Scan input</strong><span>Update local counters; invoke enabled callbacks</span></li>
-      <li><strong>Scan returns</strong><span>Check the error and any deliberate early stop</span></li>
-      <li><strong>Export snapshot</strong><span>Read counters; merge outside concurrent scan work</span></li>
+      <li><strong>Finalize metrics</strong><span>Update totals; call completion hook on success</span></li>
+      <li><strong>Return and export</strong><span>Check errors; merge snapshots outside concurrent scans</span></li>
     </ol>
-    <figcaption>Callbacks execute inside the scan. The completion hook does not run on every error path; export final metrics after the call returns.</figcaption>
+    <figcaption>Phase timers measure separate work inside the scan. Completion callbacks see final counters on success; export after the call returns to include failed attempts.</figcaption>
   </>}
   {kind === 'pipeline' && <>
     <div class="lane-label">Compile once</div>

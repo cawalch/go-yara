@@ -130,9 +130,9 @@ The optional [SIMD build](/go-yara/installation/#optional-simd-build) changes so
 
 ## Hooks and scan metrics
 
-The development branch now implements the missing phase timers and pattern callbacks, with consistent scan-method accounting. These changes are **not in v0.8.0**. The [development instrumentation notes](https://github.com/cawalch/go-yara#telemetry-and-hooks) describe the new contracts; this section and its example continue to describe the released version.
+`WithTelemetry` updates a caller-owned `ScanTelemetry` sink without reading the clock. `WithTelemetryLatency` also measures total duration and exclusive prefilter, pattern-search, and condition-evaluation time. These phase timings and per-pattern callbacks are populated starting in v0.8.1.
 
-`WithTelemetry` updates a caller-owned `ScanTelemetry` sink. `WithTelemetryLatency` also measures total scan duration. `WithHooks` installs lifecycle, match, prefilter, and rule-profile callbacks; `WithRuleProfiling` is a convenience option for `OnRuleEvaluated`. These hooks run synchronously on the scanning goroutine. Keep their work bounded, avoid blocking I/O, and do not reenter or mutate the active scanner from a callback.
+`WithHooks` installs lifecycle, match, prefilter, rule-profile, and pattern-profile callbacks; `WithRuleProfiling` is a convenience option for `OnRuleEvaluated`. Hooks run synchronously on the scanning goroutine. Keep their work bounded, avoid blocking I/O, and do not reenter or mutate the active scanner from a callback.
 
 <ArchitectureDiagram kind="telemetry" />
 
@@ -145,19 +145,31 @@ The development branch now implements the missing phase timers and pattern callb
 
 <Code code={telemetryOutput} lang="text" title="Output" />
 
-The input contains two occurrences of `marker`, but `TotalMatches` increases by one: it counts matched public rules. Keep one sink per scanner, read it after `Scan` returns, and merge snapshots outside concurrent scan work. The fields are ordinary mutable counters, so sharing a sink across workers requires synchronization. `Reset` clears the sink for the next reporting interval. Reading from `OnScanComplete` is too early for the final total-duration update on the normal scan path.
+The input contains two occurrences of `marker`, but `TotalMatches` increases by one: it counts returned public rules. Keep one sink per scanner, then merge snapshots outside concurrent scan work. The fields are ordinary mutable counters, so sharing a sink across workers requires synchronization. `Reset` clears the sink for the next reporting interval.
+
+`OnScanComplete` sees final telemetry on successful returns, including deliberate early stops. It does not run on errors. Record failures around the scan call and export there when every attempt must be included. Boolean scans pass a nil result to the completion hook; rule-list scans supply only `MatchedRules`.
 
 | Measurement | Interpretation and limits |
 | --- | --- |
-| `TotalScans`, `BytesScanned` | Scans and input bytes recorded after scan preflight. A rejected binding or already-cancelled context can fail before these counters advance. |
-| `TotalMatches` | Matching public rules accumulated across scans; not the number of string occurrences. |
-| `PrefilterRejects`, `RulesPruned`, `RulesEvaluated` | Work recorded by the instrumented prefilter and evaluation paths. Required-string rejection can count as an evaluated rule. |
-| `CandidateHits`, `VerifiedMatches`, `FalseCandidateHits` | Counts from the selected matching path. They do not measure every regex attempt or form a universal false-positive rate. |
-| `TotalScanDurationNs` | Accumulated total duration when latency tracking is enabled. |
-| `PrefilterDurationNs`, `PatternSearchNs`, `ConditionEvalNs` | Declared fields that are not populated in this release. Zero does not establish that a phase was free. |
-| `RuleProfile` | Per-rule duration, match/pruning state, candidate counts, and condition steps on instrumented paths. Optimized conditions may report zero interpreter steps. |
+| `TotalScans`, `BytesScanned` | Calls and supplied bytes recorded after preflight. Rejected bindings and already-cancelled contexts do not advance these counters. |
+| `TotalMatches` | Returned public rules accumulated across scans. Boolean `Matches` contributes one for true and zero for false. String occurrences are counted separately. |
+| `PrefilterRejects`, `RulesPruned`, `RulesEvaluated` | Work recorded by the prefilter and evaluation paths. Required-string rejection can count as an evaluated rule. |
+| `CandidateHits`, `VerifiedMatches`, `FalseCandidateHits` | Logical candidate hits and retained occurrences in evaluated rule contexts. False candidates sum `max(candidates - occurrences, 0)` where candidate counts are available; this is not a verifier failure rate. |
+| `TotalScanDurationNs` | Active scan time, including started attempts that fail. Excludes reader/file I/O and caller idle time between block operations. Failed attempts add no successful matches. |
+| `PrefilterDurationNs` | Compact/word routing and mandatory header/assertion checks. |
+| `PatternSearchNs` | Shared candidate generation, verification, and match-context reconstruction. |
+| `ConditionEvalNs` | Interpreter setup, module calls, and normal or speculative condition evaluation. |
+| `RuleProfile.ConditionSteps` | This rule's loop iterations, including speculative checks. It is not a bytecode instruction count and can be zero for a condition without loops. |
 
-`OnPrefilter` reports decisions for the stages that execute. `OnPatternProfile` is declared in the API but has no dispatch site in this release; do not depend on it for per-pattern events. `OnScanComplete` is not a finalizer: error paths can return without calling it. Record failures around the scan call itself. Configure the hook bundle once; `WithHooks` replaces that bundle, including callbacks installed there by earlier convenience options.
+Phase durations are exclusive: speculative condition evaluation pauses the pattern-search timer. They need not sum to total scan time because result materialization and other work also take time. Enable latency tracking to populate duration fields; clocks and callbacks add work.
+
+`OnPrefilter` reports decisions and their durations for the stages that execute. `OnPatternProfile` runs once for each live pattern in a completed rule match context, before the rule condition. It does not expose captured input bytes. Skipped rules, optimized-away patterns, and failed contexts have no pattern event; result materialization does not emit it again.
+
+A pattern's `CandidateHitsKnown` flag distinguishes an available candidate stream from a fallback regex/hex search that exposes no comparable count. `VerifiedMatches` is the retained occurrence count; boolean and fast scans can stop collecting early. `Selectivity` is the occurrence-to-candidate ratio when the count is known and nonzero, and zero otherwise. It is not a bounded probability. Shared cached searches contribute to each consuming rule's profile, so their candidate counts do not measure physical verifier invocations.
+
+Detailed, boolean, rule-list, and single-block scans use the same accounting contract. With `BlockScanner`, each `Scan` call contributes pattern-search time and pattern profiles for that block. `Finish` records the scan count, bytes, conditions, returned matches, and completion callback. Bytes are the sum of supplied blocks, including overlaps, rather than the logical file size. Total time combines active block calls and `Finish`; each additional `Finish` is another evaluation attempt. `Reset` clears accumulated block state and candidate counts; reset the telemetry sink separately when starting a new reporting interval.
+
+Configure the hook bundle once: `WithHooks` replaces that bundle, including callbacks installed there by earlier convenience options.
 
 Use profiling to locate expensive rules, then measure throughput with the intended production instrumentation; clocks and callbacks add work. See the <a href={source('compiler/hooks.go')}>hook definitions</a> and <a href={source('compiler/scanner_exec.go')}>scan execution paths</a>. Hooks that change coverage are described under [stopping scans from hooks](/go-yara/scanning/#stopping-scans-from-hooks).
 
