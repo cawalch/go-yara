@@ -4,3 +4,6 @@ dist/
 src/generated/
 .cache/
 __pycache__/
+public/playground/
+test-results/
+playwright-report/

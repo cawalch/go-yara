@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "astro dev",
     "check": "astro check && python3 scripts/check.py",
-    "build": "astro build && python3 scripts/links.py",
+    "build": "python3 playground/build.py && astro build && python3 scripts/links.py",
+    "test-playground": "python3 -m unittest discover -s playground/tests -p 'test_*.py' && node --check playground/worker.js && playwright test",
     "preview": "astro preview",
     "prepare-docs": "python3 scripts/prepare.py",
     "check-external": "python3 scripts/links.py --external"
@@ -17,7 +18,10 @@
   },
   "devDependencies": {
     "@astrojs/check": "0.9.12",
+    "@playwright/test": "1.64.1",
     "typescript": "5.9.3"
   },
-  "engines": { "node": ">=22.23.4" }
+  "engines": {
+    "node": ">=22.23.4"
+  }
 }

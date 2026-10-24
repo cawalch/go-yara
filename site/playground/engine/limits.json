@@ -1,0 +1,11 @@
+{
+  "rulesBytes": 16384,
+  "inputBytes": 1048576,
+  "outputBytes": 65536,
+  "occurrences": 200,
+  "rules": 100,
+  "memoryBytes": 134217728,
+  "heapBytes": 67108864,
+  "timeoutMs": 3000,
+  "startupMs": 20000
+}

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+* Add an on-demand browser playground built from the documented release, with rule/input budgets, bounded displayed results, a hard Wasm memory ceiling, and worker timeouts. Gate documentation deployment on Chromium, Firefox, and WebKit checks.
+
 * Publish nine task-oriented documentation pages with Astro Starlight on GitHub Pages. Test displayed Go and CLI examples against the stable release and current source, generate version and API reference details, validate links, and require a prose review before documenting each release.
 * Add diagrams for the scan pipeline, scanner ownership, host-module binding, and experimental browser integration. Include a reproducible browser-worker and WASI spike against v0.8.0; no Wasm binaries or supported JavaScript API are included in the release.
 

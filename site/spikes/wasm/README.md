@@ -1,5 +1,7 @@
 # Browser and WASI spike
 
+The [maintained browser playground](../../playground/README.md) now builds on this experiment with enforced limits and browser checks. This report preserves the original spike's measurements and WASI scope.
+
 **Decision:** a browser playground is feasible as an opt-in tool loaded in a Web Worker. Keep this prototype separate from the default documentation bundle. Use the Go library directly in Go applications; consider WASI when another host needs a Wasm boundary. A supported JavaScript package or a general WASI ABI needs more work.
 
 This experiment builds the **published v0.8.0 module**, without patches, using Go 1.27.2. The browser binary contains the Go runtime, compiler, and scanner. Rules compile to go-yara's bytecode inside that binary. The reactor is a separate `wasip1/wasm` build; it exports a fixed fixture check, not a general compile/scan API.

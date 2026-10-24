@@ -13,7 +13,7 @@ export default defineConfig({
     sidebar: [
       { label: 'Overview', slug: '' },
       { label: 'Get started', items: [
-        { label: 'Quickstart', slug: 'quickstart' },
+        { label: 'Quickstart and playground', slug: 'quickstart' },
         { label: 'Installation', slug: 'installation' },
       ] },
       { label: 'Use go-yara', items: [

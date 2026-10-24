@@ -10,9 +10,13 @@ Use Node 26, Python 3.12 or later, and the Go version required by the repository
 npm ci --prefix site
 python3 site/scripts/prepare.py --ref HEAD --check-only
 python3 site/scripts/prepare.py --ref "$(gh release view --json tagName --jq .tagName)"
-npm run check --prefix site
 npm run build --prefix site
+npm run check --prefix site
 npm run check-external --prefix site
+cd site
+npx playwright install chromium firefox webkit
+npm run test-playground
+cd ..
 npm run dev --prefix site
 ```
 
@@ -20,7 +24,7 @@ Open the local URL with `/go-yara/` appended. A production preview uses `npm run
 
 ## Preventing drift
 
-The deployment workflow resolves the latest stable GitHub release on every build. It runs the displayed Go and CLI examples against that tag, then repeats them against the working tree. Code blocks import those same files; copied Go snippets are rejected. A program compiled against the release exports the module signatures and serialized format version. The release's `go.mod`, changelog, commit, and built CLI supply the version stamp and help output.
+The deployment workflow resolves the latest stable GitHub release on every build. It runs the displayed Go and CLI examples against that tag, then repeats them against the working tree. Code blocks import those same files; copied Go snippets are rejected. A program compiled against the release exports the module signatures and serialized format version. The release's `go.mod`, changelog, commit, and built CLI supply the version stamp and help output. The playground builder overlays its current bridge onto a temporary copy of that same release, pairs its binary with the compiling toolchain's runtime shim, and writes content-addressed assets. The build validates the embedded version, asset files, and binary hash.
 
 Every page shows its release version and links to that release. The site has one current version; older release notes remain on GitHub. A release publication or completion of the Release workflow rebuilds the site. The latter also covers releases created with `GITHUB_TOKEN`, which do not trigger another release event workflow. Pushes to `main` rebuild it too, so prose fixes do not need a Go release. Internal links, anchors, local assets, canonical URLs, page metadata, and the nine-page sitemap are checked on every build. External links are checked before deployment.
 
@@ -40,7 +44,9 @@ The engine comparison records separate versions for libyara and YARA-X. During r
 
 `src/components/ArchitectureDiagram.astro` contains the pipeline, scanner-ownership, module-binding, and experimental browser diagrams. Review their labels with the adjacent prose when those contracts change. They use HTML text and CSS, reflow on narrow screens, and add no diagram-rendering JavaScript.
 
-The [Wasm spike](spikes/wasm/README.md) is a separate, manually run experiment. Its binaries are built outside the checkout and are not shipped with the site. Astro's type-check scope excludes the spike; its README records its own syntax, fixture, and runtime checks. Browser/WASI support must not be inferred from the ordinary documentation workflow passing.
+The [browser playground](playground/README.md) has native fixture tests, byte-budget and memory-section tests, and a headed Chromium/Firefox/WebKit suite. All three engines must pass before Pages deploys. Browser binaries and traces are ignored; generated runtime assets are included only in the Pages artifact. Astro checks the UI/client; the worker is syntax-checked and exercised by the browser suite. CI uses Go 1.27.2 to build the runtime; review the memory-section transformation when changing toolchains.
+
+The [Wasm spike](spikes/wasm/README.md) remains a dated experiment, separate from the maintained playground. Its WASI probe does not establish a supported host ABI.
 
 Keep the README as the repository entry point and the site as the task-oriented guide. API details belong in Go doc comments and pkg.go.dev. Avoid adding a second handwritten API signature table.
 

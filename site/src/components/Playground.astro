@@ -1,0 +1,121 @@
+---
+import config from '../generated/playground.json';
+---
+<section class="playground not-content" data-config={JSON.stringify(config)} aria-label="YARA browser playground">
+  <p>Run go-yara {config.version} locally in your browser. Rules and input bytes are not uploaded. The first scan downloads a {(config.wasmBytes / 1048576).toFixed(1)} MiB runtime.</p>
+  <form>
+    <label for="playground-rules">YARA rules</label>
+    <textarea id="playground-rules" name="rules" rows="7" maxlength={config.limits.rulesBytes} spellcheck="false">{'rule greeting {\n  strings:\n    $text = "hello" nocase\n  condition:\n    $text\n}'}</textarea>
+    <label for="playground-mode">Input</label>
+    <select id="playground-mode" name="mode"><option value="text">Text (UTF-8)</option><option value="file">Local file</option></select>
+    <label for="playground-text" class="sr-only">Input text</label>
+    <textarea id="playground-text" name="text" rows="3" maxlength={config.limits.inputBytes} spellcheck="false">Hello from the browser</textarea>
+    <div class="file-input" hidden><label for="playground-file">Local file (up to 1 MiB)</label><input id="playground-file" name="file" type="file" /></div>
+    <div class="actions"><button type="submit">Compile and scan</button><button type="button" class="cancel" disabled>Cancel</button></div>
+  </form>
+  <p class="status" role="status" aria-live="polite">Scanner not loaded.</p>
+  <div class="results" hidden>
+    <p class="summary"></p><p class="truncation" hidden></p>
+    <h3>Matched rules</h3><ul class="matched-rules"></ul>
+    <h3>String occurrences</h3>
+    <p>Occurrences can belong to rules whose conditions are false. Offsets and lengths are in bytes.</p>
+    <div class="table-scroll" tabindex="0" role="region" aria-label="String occurrences"><table><thead><tr><th>Rule</th><th>String</th><th>Offset</th><th>Length</th></tr></thead><tbody></tbody></table></div>
+  </div>
+  <details><summary>Playground limits</summary>
+    <p>16 KiB of rule source, 1 MiB of input, and three seconds for compilation and scanning. Each scan uses a fresh worker with a hard 128 MiB Wasm linear-memory ceiling and a soft 64 MiB Go runtime memory target. Browser and JavaScript overhead are additional; this is not a total tab-memory limit.</p>
+    <p>Results show at most 100 rule names and 200 occurrences, within 64 KiB of result JSON. Display truncation happens after condition evaluation. If a scan runs out of time or memory, it produces no complete result. Cancellation discards the worker; browser timer delays can affect when it stops.</p>
+  </details>
+  <noscript>JavaScript and WebAssembly are required to run this playground. The Go example below works without a browser runtime.</noscript>
+</section>
+
+<script>
+  import { scan, type Config, type ScanResult } from '../../playground/client';
+  const root = document.querySelector<HTMLElement>('.playground')!;
+  const config: Config = JSON.parse(root.dataset.config!);
+  const form = root.querySelector('form')!;
+  const rules = root.querySelector<HTMLTextAreaElement>('[name=rules]')!;
+  const mode = root.querySelector<HTMLSelectElement>('[name=mode]')!;
+  const text = root.querySelector<HTMLTextAreaElement>('[name=text]')!;
+  const file = root.querySelector<HTMLInputElement>('[name=file]')!;
+  const submit = root.querySelector<HTMLButtonElement>('[type=submit]')!;
+  const cancel = root.querySelector<HTMLButtonElement>('.cancel')!;
+  const status = root.querySelector<HTMLElement>('.status')!;
+  const results = root.querySelector<HTMLElement>('.results')!;
+  let controller: AbortController | undefined;
+  mode.addEventListener('change', () => {
+    text.hidden = mode.value !== 'text';
+    root.querySelector<HTMLElement>('.file-input')!.hidden = mode.value !== 'file';
+  });
+  cancel.addEventListener('click', () => controller?.abort());
+  window.addEventListener('pagehide', () => controller?.abort());
+  function display(result: ScanResult) {
+    if (result.error) throw new Error(result.error);
+    root.querySelector('.summary')!.textContent = `${result.ruleCount} rule${result.ruleCount === 1 ? '' : 's'} matched; ${result.occurrenceCount} string occurrence${result.occurrenceCount === 1 ? '' : 's'}. Compiled in ${result.compileMs.toFixed(1)} ms; scanned in ${result.scanMs.toFixed(1)} ms.`;
+    const truncation = root.querySelector<HTMLElement>('.truncation')!;
+    truncation.hidden = !result.truncated;
+    truncation.textContent = `Display truncated: showing ${result.rules.length} of ${result.ruleCount} matched rules and ${result.occurrences.length} of ${result.occurrenceCount} occurrences. Conditions used the complete scan.`;
+    const names = root.querySelector('.matched-rules')!;
+    names.replaceChildren(...result.rules.map(name => { const item = document.createElement('li'); item.textContent = name; return item; }));
+    if (result.ruleCount === 0) { const item = document.createElement('li'); item.textContent = 'No rules matched.'; names.append(item); }
+    const body = root.querySelector('tbody')!;
+    body.replaceChildren(...result.occurrences.map(match => {
+      const row = document.createElement('tr');
+      for (const value of [match.rule, match.pattern, match.offset, match.length]) { const cell = document.createElement('td'); cell.textContent = String(value); row.append(cell); }
+      return row;
+    }));
+    results.hidden = false;
+  }
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (controller) return;
+    controller = new AbortController();
+    submit.disabled = true; cancel.disabled = false;
+    for (const field of [rules, mode, text, file]) field.disabled = true;
+    results.hidden = true;
+    root.querySelector('tbody')!.replaceChildren();
+    root.querySelector('.matched-rules')!.replaceChildren();
+    status.textContent = 'Loading scanner…';
+    try {
+      let input: ArrayBuffer;
+      if (mode.value === 'file') {
+        const selected = file.files?.[0];
+        if (!selected) throw new Error('Choose a local file.');
+        if (selected.size > config.limits.inputBytes) throw new Error('Input exceeds 1 MiB.');
+        input = await selected.arrayBuffer();
+      } else {
+        if (text.value.length > config.limits.inputBytes) throw new Error('Input exceeds 1 MiB.');
+        input = new TextEncoder().encode(text.value).buffer as ArrayBuffer;
+      }
+      display(await scan(config, rules.value, input, controller.signal, () => { status.textContent = 'Compiling and scanning…'; }));
+      status.textContent = `Scan complete with go-yara ${config.version}.`;
+    } catch (error) { status.textContent = error instanceof Error ? error.message : 'Scan failed.'; }
+    finally {
+      controller = undefined; submit.disabled = false; cancel.disabled = true;
+      for (const field of [rules, mode, text, file]) field.disabled = false;
+    }
+  });
+</script>
+
+<style>
+  .playground { border: 1px solid var(--sl-color-gray-4); border-radius: .3rem; padding: 1rem; margin: 1.5rem 0; }
+  .playground p { margin: .6rem 0 1rem; }
+  label { display:block; margin: .7rem 0 .3rem; font-weight:600; }
+  textarea { display:block; width:100%; box-sizing:border-box; padding:.65rem; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:.85rem; line-height:1.5; resize:vertical; }
+  textarea, select, input { background:var(--sl-color-bg); color:var(--sl-color-text); border:1px solid var(--sl-color-gray-3); border-radius:.2rem; }
+  select { padding:.4rem; margin-bottom:.6rem; }
+  input { max-width:100%; }
+  .actions { display:flex; flex-wrap:wrap; gap:.6rem; margin-top:.8rem; }
+  button { padding:.5rem .9rem; cursor:pointer; border:1px solid var(--sl-color-accent); background:var(--sl-color-accent-low); color:var(--sl-color-white); border-radius:.2rem; font:inherit; }
+  button:disabled { opacity:.5; cursor:default; }
+  :is(button,textarea,select,input):focus-visible { outline:2px solid var(--sl-color-accent); outline-offset:3px; }
+  .status { overflow-wrap:anywhere; }
+  .results h3 { margin:1rem 0 .4rem; font-size:1rem; }
+  .matched-rules { max-height:12rem; overflow:auto; overflow-wrap:anywhere; padding-left:1.4rem; }
+  .table-scroll { max-height:24rem; overflow:auto; }
+  table { width:100%; border-collapse:collapse; font-size:.85rem; }
+  th, td { text-align:left; padding:.4rem; border-bottom:1px solid var(--sl-color-gray-5); overflow-wrap:anywhere; }
+  details { margin-top:1rem; font-size:.9rem; }
+  summary { cursor:pointer; }
+  [hidden] { display:none !important; }
+  .sr-only { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+</style>

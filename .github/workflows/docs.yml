@@ -22,7 +22,7 @@ jobs:
   build:
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -31,7 +31,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: go.mod
+          go-version: '1.27.2'
           cache: true
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
@@ -50,8 +50,14 @@ jobs:
           python3 site/scripts/prepare.py --ref "$DOCS_RELEASE"
       - name: Check and build the nine pages
         run: |
-          npm run check --prefix site
           npm run build --prefix site
+          npm run check --prefix site
+      - name: Install browser engines
+        working-directory: site
+        run: npx playwright install --with-deps chromium firefox webkit
+      - name: Check playground in Chromium, Firefox, and WebKit
+        working-directory: site
+        run: xvfb-run -a npm run test-playground
       - name: Check external links before publication
         if: github.event_name != 'pull_request'
         run: npm run check-external --prefix site

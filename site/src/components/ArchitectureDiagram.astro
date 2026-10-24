@@ -48,7 +48,7 @@ const { kind } = Astro.props;
     <figcaption>The application produces the data. A schema describes its shape; it does not parse a file or calculate a score.</figcaption>
   </>}
   {kind === 'browser' && <>
-    <div class="lane-label">Experimental browser integration</div>
+    <div class="lane-label">Browser playground · runtime loaded on demand</div>
     <ol class="flow" role="list">
       <li><strong>Page</strong><span>Rule editor and input bytes</span></li>
       <li><strong>Web Worker</strong><span>Go runtime + Wasm compiler and scanner</span></li>

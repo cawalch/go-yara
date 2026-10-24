@@ -62,12 +62,14 @@ Scalar paths remain available on unsupported platforms and when SIMD is disabled
 
 ## Browser and embedded runtimes
 
-A [runtime spike](https://github.com/cawalch/go-yara/tree/main/site/spikes/wasm) compiled v0.8.0 with Go 1.27.2 for `js/wasm` and `wasip1/wasm`, without library changes. Browser-worker scans and a WASI reactor passed the small fixture set documented there. This is experimental integration work, not a supported JavaScript package or release artifact.
+The [browser playground](/go-yara/quickstart/#browser-playground) runs the documented release locally in a Web Worker. It downloads its runtime when you start a scan. Rules and input bytes stay in the browser. The build checks the playground in Chromium, Firefox, and WebKit before publication.
 
 <ArchitectureDiagram kind="browser" />
 
-The browser build contains the Go runtime and go-yara's compiler and scanner. A rule still compiles to go-yara bytecode inside that engine; it is not compiled into a separate Wasm module. Load the runtime only when a user opens a scanning tool. The spike's binary is about 8.9 MiB before compression, and browser input must be copied into Go memory.
+The browser build contains the Go runtime and go-yara's compiler and scanner. A rule still compiles to go-yara bytecode inside that engine; it is not compiled into a separate Wasm module. Input bytes are copied into Go memory. The playground accepts 16 KiB of rule source and 1 MiB of input, with a three-second operation deadline and a hard 128 MiB Wasm linear-memory ceiling. Browser overhead is additional.
 
 Go's [browser Wasm support](https://go.dev/wiki/WebAssembly) needs a matching `wasm_exec.js`. A [WASI reactor](https://go.dev/blog/wasmexport) instead needs a host that supplies WASI imports and initializes the module before calling its exports. A Go application can embed the library directly without either runtime layer.
 
-The spike checks worker termination and restart, but does not establish production memory limits, arbitrary-rule safety, or support across browsers. It exposes byte-buffer scanning; native file paths and memory mapping are not part of that browser interface. See the spike report for measurements, reproduction commands, and the remaining work.
+The playground displays at most 100 rule names and 200 occurrences within a 64 KiB response. These are display limits: conditions evaluate against the full scan. A timeout or runtime failure produces no complete result, and the worker is discarded. Native file paths and memory mapping are not part of this byte-buffer interface.
+
+The earlier [runtime spike](https://github.com/cawalch/go-yara/tree/main/site/spikes/wasm) also tested a WASI command and a minimal reactor against v0.8.0. WASI integration remains experimental; there is no supported host ABI or general-purpose JavaScript package. The playground is a documentation tool, with its own small interface and limits.

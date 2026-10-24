@@ -1,13 +1,18 @@
 ---
 title: Compile a rule and scan data
-description: Run a complete Go example that compiles a YARA rule, scans a byte slice, and prints the matching rule with go-yara.
+description: Run YARA rules locally in the browser playground, or compile and scan a byte slice with a complete Go example using go-yara.
 ---
 
 import { Code } from '@astrojs/starlight/components';
 import example from '../../../examples/quickstart/main.go?raw';
 import release from '../../generated/release.json';
+import Playground from '../../components/Playground.astro';
 
 Compile the rule once, scan a byte slice, and read the matching rule names from the result. This example looks for `hello`, ignoring case.
+
+## Browser playground
+
+<Playground />
 
 ## Create a Go module
 
