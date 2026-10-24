@@ -7,17 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.8.1] - 2026-10-24
+
 ### Fixed
 
 * Populate opt-in scan phase timings and prefilter decision durations; emit per-pattern profiles with an explicit marker for unavailable candidate counts. Account consistently for detailed, boolean, rule-list, single-block, and accumulated-block scans. Finalize telemetry before successful completion hooks, include elapsed time for started scans that fail, and keep counters-only early stops free of timing updates.
 * Report per-rule loop-iteration deltas and avoid attributing stale match-context data to a rule rejected before pattern collection. Pattern profiles describe retained occurrences and logical candidate hits, without input data.
 
-### Release documentation
+### Maintenance
 
-* Before the next release, update the performance page's v0.8.0 instrumentation-gap table, completion-hook ordering, scan-method counter scope, and block accounting; update the telemetry example and diagram to match the new release. The README and Go API comments describe unreleased behavior explicitly.
+* Update the pinned CodeQL, Node setup, and GitHub Pages actions (#355–#358). Retain TypeScript 5.9.3 because the TypeScript 7 update is incompatible with the current Astro checker.
 
 ### Documentation
 
+* Document populated phase timers, pattern-profile callbacks, completion ordering, and scan-method counter scope with an executable telemetry example and updated diagram.
 * Add eight selectable playground examples and optional evidence extraction with values redacted inside the worker, bounded findings and field rows, and browser privacy checks. Document hooks, telemetry limitations, and semantic analysis with executable examples and diagrams.
 
 * Expand documentation with executable rule-pattern, result, sparse-block, external-variable, callback-loading, compilation-diagnostic, cancellation, and recursive CLI examples; add block-boundary and serialization diagrams.

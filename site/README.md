@@ -37,7 +37,7 @@ Automated checks cannot establish that every explanatory sentence still matches 
 | Changed code or contract | Pages to review |
 | --- | --- |
 | Compiler API, imports, rule syntax, semantic validation | Quickstart diagnostics, compatibility, modules |
-| Hooks, telemetry, instrumentation paths | Performance metrics, scanning control hooks; remove the v0.8.0 timing/profile gaps and update completion ordering when releasing the current main fixes |
+| Hooks, telemetry, instrumentation paths | Performance metrics, scanning control hooks, telemetry example and diagram; check phase coverage, callback ordering, and per-method accounting |
 | Scanner results, readers, blocks, cancellation | Scanning, performance, compatibility |
 | Capture groups, evidence correlation, finding status | Scanning credential examples, compatibility |
 | Module definitions, schemas, binding, cache | Modules, compatibility, performance |

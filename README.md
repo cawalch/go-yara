@@ -443,7 +443,7 @@ When evidence extraction is disabled (the default), capture parsing and correlat
 
 ### Telemetry and Hooks
 
-The phase timers, pattern callbacks, and consistent lifecycle accounting described here are on `main` and are **not in v0.8.0**. The [published metrics guide](https://cawalch.github.io/go-yara/performance/#hooks-and-scan-metrics) describes that release.
+Phase timings, pattern callbacks, and consistent lifecycle accounting are available starting in **v0.8.1**. See the [metrics guide](https://cawalch.github.io/go-yara/performance/#hooks-and-scan-metrics) for examples and measurement limits.
 
 You can monitor scanning execution, track latency, or throttle CPU usage in background workers:
 

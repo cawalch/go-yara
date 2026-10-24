@@ -12,5 +12,19 @@
       "releases"
     ],
     "notes": "Initial site reviewed against v0.8.0. Reader buffering, retained sparse blocks, literal-only CLI streaming, structured host data, native module gaps, numeric extensions, module cache scope, and serialization boundaries are stated explicitly. No historical benchmark numbers are promoted to general throughput claims. Documentation sweep on 2026-10-24 added tested rule patterns, result details, block overlap, external replacement, callback loading, diagnostics, cancellation, and CLI exit behavior. Evidence statuses and validator boundaries are covered by executable fixtures. Diagrams were checked against release source. Selectable browser examples and redacted evidence were reviewed against the release. Added executable telemetry, hook-control, and semantic-diagnostic examples, including current timing/profile instrumentation gaps and compile-time versus runtime boundaries."
+  },
+  "v0.8.1": {
+    "pages": [
+      "index",
+      "quickstart",
+      "installation",
+      "scanning",
+      "compatibility",
+      "modules",
+      "performance",
+      "cli",
+      "releases"
+    ],
+    "notes": "Reviewed all nine pages against the v0.8.0-to-v0.8.1 library delta. Release-facing performance prose, telemetry example, and diagram must describe populated exclusive phase timers, per-pattern profiles and candidate availability, success-only completion after final counters, per-rule loop iterations, boolean/rule-list accounting, and accumulated-block accounting. Publish those matching changes after the tag is available. The nine-page layout, Go requirement, CLI, format 7 with readers 4\u20137, modules, evidence extraction, semantic checks, memory bounds, and engine comparison contracts remain unchanged. Preserve v0.8.0 attribution on historical benchmarks and the dated Wasm spike. Validate displayed examples and the playground against v0.8.1 and HEAD."
   }
 }
