@@ -2,14 +2,14 @@
 
 `go-yara` is a pure Go implementation of YARA rule parsing, compilation, and scanning. It compiles standard YARA rules into bytecode and executes them against in-memory buffers, data streams, and files without CGO or external C library dependencies.
 
-The engine is designed for high-throughput scanning pipelines. It uses literal prefiltering (Aho-Corasick and SIMD-accelerated multi-pattern search), early header-based rule pruning, and pooled execution state to minimize memory overhead and eliminate heap allocations on non-matching inputs after warm-up.
+The engine is designed for high-throughput scanning pipelines. It uses literal prefiltering (Aho-Corasick and SIMD-accelerated multi-pattern search), early header-based rule pruning, and pooled execution state to minimize memory overhead and avoid heap allocations on prefilter-rejected inputs after warm-up.
 
 ## Key Capabilities
 
 - **Pure Go**: Zero CGO dependencies. Produces static binaries and cross-compiles cleanly to all Go-supported architectures.
 - **YARA Parity**: Strict parser and compiler supporting text strings, hex patterns with wildcards and jumps, regular expressions, condition operators, and built-in `hash`, `math`, `string`, and `time` modules.
 - **High-Throughput Prefiltering**: Aho-Corasick literal indexing and early header-based rule pruning skip non-matching rules before condition evaluation.
-- **Low Memory Overhead**: Reusable scanner instances and internal pooling eliminate heap allocations on clean inputs after warm-up.
+- **Low Memory Overhead**: Reusable scanner instances and internal pooling avoid heap allocations on prefilter-rejected inputs after warm-up. Other scan paths may allocate for results or module computations.
 - **Thread Safety**: Immutable compiled programs support safe, concurrent scanning across multiple goroutines.
 - **Extensibility**: Support for structured host modules, custom Go module functions, runtime external variables, binary rule serialization, structured evidence extraction, and a standalone CLI.
 
@@ -122,12 +122,15 @@ for _, ignored := range c.GetIgnoredRules() {
 // Scan an in-memory byte slice:
 result, err := program.Scan(data)
 
-// Scan an io.Reader stream:
+// Read the entire io.Reader into memory, then scan:
 result, err = program.ScanReader(reader)
 
 // Scan a file directly:
 result, err = program.ScanFile("sample.bin")
 ```
+
+`ScanReader` buffers the entire input before evaluating rules. Use it for bounded
+inputs; it is not a constant-memory streaming API.
 
 The returned `ScanResult` contains:
 - `MatchedRules`: Slice of `RuleMatch` structs for rules evaluating to `true`.
@@ -209,7 +212,7 @@ import "math"
 
 rule CheckPayload {
     condition:
-        hash.sha256("test-input") == "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08" and
+        hash.sha256("test-input") == "ae1608896372720b6ebb58261e0c0092c608324b0804bc99267c1753990faaa8" and
         math.mean(0, filesize) >= 0.0
 }
 ```
@@ -513,7 +516,7 @@ go-yara rules.yar --mode=execute --data sample.bin
 go-yara rules.yar --mode=lex
 go-yara rules.yar --mode=parse
 
-# Scan large files using chunked streaming:
+# Report literal text-pattern matches using chunked I/O (no rule conditions):
 go-yara rules.yar --mode=execute --data large_sample.bin --streaming --chunk-size 1048576
 ```
 
@@ -528,6 +531,7 @@ go-yara rules.yar --mode=execute --data large_sample.bin --streaming --chunk-siz
 ### Limitations
 
 - **C-Based Modules**: Upstream C-based module object models (`pe`, `elf`, `cuckoo`, `dotnet`) are not bundled. Applications can supply structured schemas and host data or Go callback functions with `compiler.WithModule`.
+- **Streaming**: `StreamingProcessor` and CLI `--streaming` report literal text-pattern matches only; regex, hex, and rule conditions are not evaluated. `ScanReader` buffers the full input, and `BlockScanner` retains supplied blocks. A unified bounded-memory scanner with condition evaluation is deferred to [#352](https://github.com/cawalch/go-yara/issues/352).
 - **Block Boundary Spanning**: In `BlockScanner`, patterns crossing segmented block boundaries require overlapping bytes in the caller-provided buffers.
 
 ## Repository Layout
