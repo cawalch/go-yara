@@ -300,6 +300,158 @@ func TestMaskedByteSet(t *testing.T) {
 	}
 }
 
+func TestFirstByteSet(t *testing.T) {
+	tests := []struct {
+		pattern  string
+		flags    Flags
+		wantOK   bool
+		contains []byte
+		rejects  []byte
+		count    int
+	}{
+		{pattern: "foo", wantOK: true, contains: []byte{'f'}, rejects: []byte{'o', 'b'}, count: 1},
+		{pattern: "foo|bar", wantOK: true, contains: []byte{'f', 'b'}, rejects: []byte{'o', 'a'}, count: 2},
+		{pattern: "[0-9]+", wantOK: true, contains: []byte{'0', '5', '9'}, rejects: []byte{'a', 'Z'}, count: 10},
+		{pattern: `\w+`, wantOK: true, contains: []byte{'a', 'Z', '0', '_'}, rejects: []byte{' ', '-', '.'}},
+		{pattern: `\s*abc`, wantOK: true, contains: []byte{' ', '\t', 'a'}, rejects: []byte{'b', 'c', 'z'}},
+		{pattern: "^abc", wantOK: true, contains: []byte{'a'}, rejects: []byte{'b', '^'}, count: 1},
+		{pattern: "abc", flags: FlagsNoCase, wantOK: true, contains: []byte{'a', 'A'}, rejects: []byte{'b', 'B'}, count: 2},
+		{pattern: "a*", wantOK: false},
+		{pattern: "(foo)?", wantOK: false},
+		{pattern: ".*foo", wantOK: false},
+		{pattern: "a{0,2}b", wantOK: true, contains: []byte{'a', 'b'}, rejects: []byte{'c'}, count: 2},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.pattern, func(t *testing.T) {
+			parsed, err := NewParser(ParserFlagEnableStrictEscapeSequences).Parse(tt.pattern)
+			if err != nil {
+				t.Fatal(err)
+			}
+			set, ok := FirstByteSet(parsed, tt.flags)
+			if ok != tt.wantOK {
+				t.Fatalf("FirstByteSet(%q) ok = %v, want %v", tt.pattern, ok, tt.wantOK)
+			}
+			if !tt.wantOK {
+				return
+			}
+			if tt.count > 0 && set.Count() != tt.count {
+				t.Fatalf("FirstByteSet(%q) count = %d, want %d", tt.pattern, set.Count(), tt.count)
+			}
+			for _, b := range tt.contains {
+				if !set.Contains(b) {
+					t.Fatalf("FirstByteSet(%q) missing %#x", tt.pattern, b)
+				}
+			}
+			for _, b := range tt.rejects {
+				if set.Contains(b) {
+					t.Fatalf("FirstByteSet(%q) unexpectedly contains %#x", tt.pattern, b)
+				}
+			}
+		})
+	}
+}
+
+func TestReversePrefixAnalysis(t *testing.T) {
+	parser := NewParser(ParserFlagEnableStrictEscapeSequences)
+
+	t.Run("class repeat directly preceding atom", func(t *testing.T) {
+		parsed, err := parser.Parse("prefix[0-9]{2,10}needle")
+		if err != nil {
+			t.Fatal(err)
+		}
+		info := ReversePrefixAnalysis(parsed, []byte("needle"), 0)
+		if !info.HasPrecedingByteSet || !info.PrecedingByteSet.Contains('5') || info.PrecedingByteSet.Contains('a') {
+			t.Fatalf("PrecedingByteSet = %+v, want [0-9]", info.PrecedingByteSet)
+		}
+		if !info.HasPrefixRepeat || info.PrefixRepeatMin != 2 || info.PrefixRepeatMax != 10 {
+			t.Fatalf("PrefixRepeat = %+v, want min=2 max=10", info)
+		}
+		if len(info.ExactPrefixSuffix) != 0 {
+			t.Fatalf("ExactPrefixSuffix = %q, want empty", info.ExactPrefixSuffix)
+		}
+	})
+
+	t.Run("exact prefix preceding atom", func(t *testing.T) {
+		parsed, err := parser.Parse("prefix_xyz_needle")
+		if err != nil {
+			t.Fatal(err)
+		}
+		info := ReversePrefixAnalysis(parsed, []byte("needle"), 0)
+		if !info.HasPrecedingByteSet || !info.PrecedingByteSet.Contains('_') || info.PrecedingByteSet.Contains('z') {
+			t.Fatalf("PrecedingByteSet = %+v, want '_'", info.PrecedingByteSet)
+		}
+		if string(info.ExactPrefixSuffix) != "prefix_xyz_" {
+			t.Fatalf("ExactPrefixSuffix = %q, want 'prefix_xyz_'", string(info.ExactPrefixSuffix))
+		}
+		if info.HasPrefixRepeat {
+			t.Fatal("unexpected prefix repeat")
+		}
+	})
+
+	t.Run("repeat then exact prefix preceding atom", func(t *testing.T) {
+		parsed, err := parser.Parse("prefix[0-9]{3,8}_test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		info := ReversePrefixAnalysis(parsed, []byte("test"), 0)
+		if !info.HasPrecedingByteSet || !info.PrecedingByteSet.Contains('_') {
+			t.Fatalf("PrecedingByteSet = %+v, want '_'", info.PrecedingByteSet)
+		}
+		if string(info.ExactPrefixSuffix) != "_" {
+			t.Fatalf("ExactPrefixSuffix = %q, want '_'", string(info.ExactPrefixSuffix))
+		}
+		if !info.HasPrefixRepeat || info.PrefixRepeatMin != 3 || info.PrefixRepeatMax != 8 {
+			t.Fatalf("PrefixRepeat = %+v, want min=3 max=8", info)
+		}
+		if !info.PrefixRepeatClass.Contains('7') || info.PrefixRepeatClass.Contains('x') {
+			t.Fatalf("PrefixRepeatClass does not match digits")
+		}
+	})
+
+	t.Run("plus repeat preceding atom", func(t *testing.T) {
+		parsed, err := parser.Parse("[a-z]+needle")
+		if err != nil {
+			t.Fatal(err)
+		}
+		info := ReversePrefixAnalysis(parsed, []byte("needle"), 0)
+		if !info.HasPrecedingByteSet || !info.PrecedingByteSet.Contains('m') {
+			t.Fatalf("PrecedingByteSet = %+v, want [a-z]", info.PrecedingByteSet)
+		}
+		if !info.HasPrefixRepeat || info.PrefixRepeatMin != 1 || info.PrefixRepeatMax != -1 {
+			t.Fatalf("PrefixRepeat = %+v, want min=1 max=-1", info)
+		}
+	})
+
+	t.Run("atom at pattern start has no prefix", func(t *testing.T) {
+		parsed, err := parser.Parse("needle[0-9]+")
+		if err != nil {
+			t.Fatal(err)
+		}
+		info := ReversePrefixAnalysis(parsed, []byte("needle"), 0)
+		if info.HasPrecedingByteSet || info.HasPrefixRepeat || len(info.ExactPrefixSuffix) > 0 {
+			t.Fatalf("info = %+v, want all empty", info)
+		}
+	})
+
+	t.Run("disambiguate repeated atoms with minOffset", func(t *testing.T) {
+		parsed, err := parser.Parse("foo_needle_bar_needle")
+		if err != nil {
+			t.Fatal(err)
+		}
+		// First atom "needle" has minOffset = 4 ("foo_")
+		first := ReversePrefixAnalysisWithOffset(parsed, []byte("needle"), 4, 0)
+		if string(first.ExactPrefixSuffix) != "foo_" {
+			t.Fatalf("first ExactPrefixSuffix = %q, want 'foo_'", string(first.ExactPrefixSuffix))
+		}
+		// Second atom "needle" has minOffset = 15 ("foo_needle_bar_")
+		second := ReversePrefixAnalysisWithOffset(parsed, []byte("needle"), 15, 0)
+		if string(second.ExactPrefixSuffix) != "foo_needle_bar_" {
+			t.Fatalf("second ExactPrefixSuffix = %q, want 'foo_needle_bar_'", string(second.ExactPrefixSuffix))
+		}
+	})
+}
+
 // Mutation-test classification for regex/first_bytes.go (gremlins v0.6.0,
 // --workers 1). After this hardening pass: 63 killed, 9 lived, 2 timed out,
 // 0 not covered (100% mutant coverage).

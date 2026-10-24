@@ -44,6 +44,16 @@ type RegexPattern struct {
 	anchored             bool
 	cacheKey             string
 	cacheIndex           int
+	firstByteSet         regex.ByteSet
+	hasFirstByteSet      bool
+	precedingByteSet     regex.ByteSet
+	hasPrecedingByteSet  bool
+	exactPrefixSuffix    []byte
+	wideExactPrefix      []byte
+	hasPrefixRepeat      bool
+	prefixRepeatClass    regex.ByteSet
+	prefixRepeatMin      int
+	prefixRepeatMax      int
 }
 
 // EvidencePlan is the compiled form of an evidence declaration.

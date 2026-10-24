@@ -1,6 +1,9 @@
 package regex
 
-import "math/bits"
+import (
+	"math"
+	"math/bits"
+)
 
 const maxUsefulByteSetSize = 96
 
@@ -304,4 +307,418 @@ func (set *ByteSet) union(other ByteSet) {
 	for i := range set.words {
 		set.words[i] |= other.words[i]
 	}
+}
+
+// FirstByteSet returns the set of all bytes that can begin a non-empty match of ast.
+// If the regex is nullable (can match the empty string), or if all 256 bytes can match,
+// ok returns false because first-byte pruning is not restrictive.
+func FirstByteSet(ast *AST, flags Flags) (ByteSet, bool) {
+	if ast == nil || ast.Root == nil {
+		return ByteSet{}, false
+	}
+	flags |= ast.Flags
+	set, nullable, ok := nodeFirstByteSet(ast.Root, flags)
+	if !ok || nullable || set.Count() == 0 || set.Count() > maxUsefulByteSetSize {
+		return ByteSet{}, false
+	}
+	return set, true
+}
+
+func nodeFirstByteSet(node *Node, flags Flags) (ByteSet, bool, bool) {
+	node = unwrapGroups(node)
+	if node == nil {
+		return ByteSet{}, false, false
+	}
+
+	switch node.Kind {
+	case NodeGroup:
+		return nodeFirstByteSet(firstChild(node), flags)
+	case NodeEmpty, NodeAnchorStart, NodeAnchorEnd, NodeWordBoundary, NodeNonWordBoundary:
+		return ByteSet{}, true, true
+	case NodeLiteral:
+		set := byteSetOf(node.Value)
+		if flags&FlagsNoCase != 0 {
+			set = set.ASCIIFolded()
+		}
+		return set, false, true
+	case NodeNotLiteral:
+		excluded := byteSetOf(node.Value)
+		if flags&FlagsNoCase != 0 {
+			excluded = excluded.ASCIIFolded()
+		}
+		return complementByteSet(excluded), false, true
+	case NodeMaskedLiteral:
+		return maskedByteSet(node.Value, node.Mask, false), false, true
+	case NodeMaskedNotLiteral:
+		return maskedByteSet(node.Value, node.Mask, true), false, true
+	case NodeClass:
+		if node.Class == nil {
+			return fullByteSet(), false, true
+		}
+		set := positiveClassByteSet(node.Class)
+		if flags&FlagsNoCase != 0 {
+			set = set.ASCIIFolded()
+		}
+		if node.Class.Negated {
+			set = complementByteSet(set)
+		}
+		return set, false, true
+	case NodeWordChar:
+		return predicateByteSet(isWord), false, true
+	case NodeNonWordChar:
+		return predicateByteSet(notWord), false, true
+	case NodeSpace:
+		return predicateByteSet(isSpace), false, true
+	case NodeNonSpace:
+		return predicateByteSet(notSpace), false, true
+	case NodeDigit:
+		return predicateByteSet(isDigit), false, true
+	case NodeNonDigit:
+		return predicateByteSet(notDigit), false, true
+	case NodeAny:
+		set := fullByteSet()
+		if flags&FlagsDotAll == 0 {
+			set.remove('\n')
+		}
+		return set, false, true
+	case NodeRangeAny:
+		set := fullByteSet()
+		if flags&FlagsDotAll == 0 {
+			set.remove('\n')
+		}
+		return set, node.Start == 0, true
+	case NodeStar:
+		if len(node.Children) == 0 {
+			return ByteSet{}, true, true
+		}
+		childSet, _, ok := nodeFirstByteSet(node.Children[0], flags)
+		if !ok {
+			return ByteSet{}, true, false
+		}
+		return childSet, true, true
+	case NodePlus:
+		if len(node.Children) == 0 {
+			return ByteSet{}, false, false
+		}
+		childSet, childNullable, ok := nodeFirstByteSet(node.Children[0], flags)
+		if !ok {
+			return ByteSet{}, true, false
+		}
+		return childSet, childNullable, true
+	case NodeRange:
+		if len(node.Children) == 0 {
+			return ByteSet{}, false, false
+		}
+		childSet, childNullable, ok := nodeFirstByteSet(node.Children[0], flags)
+		if !ok {
+			return ByteSet{}, true, false
+		}
+		return childSet, childNullable || node.Start == 0, true
+	case NodeConcat:
+		var totalSet ByteSet
+		nullable := true
+		for _, child := range node.Children {
+			childSet, childNullable, ok := nodeFirstByteSet(child, flags)
+			if !ok {
+				if nullable {
+					return ByteSet{}, true, false
+				}
+				break
+			}
+			totalSet.union(childSet)
+			if !childNullable {
+				nullable = false
+				break
+			}
+		}
+		return totalSet, nullable, true
+	case NodeAlt:
+		if len(node.Children) == 0 {
+			return ByteSet{}, true, true
+		}
+		var totalSet ByteSet
+		nullable := false
+		for _, child := range node.Children {
+			childSet, childNullable, ok := nodeFirstByteSet(child, flags)
+			if !ok {
+				return ByteSet{}, true, false
+			}
+			totalSet.union(childSet)
+			if childNullable {
+				nullable = true
+			}
+		}
+		return totalSet, nullable, true
+	default:
+		return ByteSet{}, true, false
+	}
+}
+
+// ReversePrefixInfo describes constraints on bytes preceding a mandatory atom.
+type ReversePrefixInfo struct {
+	HasPrecedingByteSet bool
+	PrecedingByteSet    ByteSet
+	ExactPrefixSuffix   []byte
+	HasPrefixRepeat     bool
+	PrefixRepeatClass   ByteSet
+	PrefixRepeatMin     int
+	PrefixRepeatMax     int
+}
+
+// ReversePrefixAnalysis returns preceding byte and repeat constraints for atom in ast.
+func ReversePrefixAnalysis(ast *AST, atom []byte, flags Flags) ReversePrefixInfo {
+	return ReversePrefixAnalysisWithOffset(ast, atom, -1, flags)
+}
+
+//nolint:revive // argument-limit: explicit parameters avoid query struct allocation in hot paths
+func ReversePrefixAnalysisWithOffset(ast *AST, atom []byte, minOffset int, flags Flags) ReversePrefixInfo {
+	if ast == nil || ast.Root == nil || len(atom) == 0 {
+		return ReversePrefixInfo{}
+	}
+	flags |= ast.Flags
+	nodes := flattenConcatNodes(ast.Root)
+	if len(nodes) < len(atom) {
+		return ReversePrefixInfo{}
+	}
+
+	atomLen := len(atom)
+	for i := 0; i <= len(nodes)-atomLen; i++ {
+		matches := true
+		for k := 0; k < atomLen; k++ {
+			if !nodeMatchesAtomByte(nodes[i+k], atom[k], flags) {
+				matches = false
+				break
+			}
+		}
+		if !matches {
+			continue
+		}
+
+		if minOffset >= 0 {
+			curMinOffset := 0
+			for idx := 0; idx < i; idx++ {
+				curMinOffset = addLength(curMinOffset, analyzeAtoms(nodes[idx]).minLength)
+			}
+			if curMinOffset != minOffset {
+				continue
+			}
+		}
+
+		var info ReversePrefixInfo
+		var exactPrefixRev []byte
+		curr := i - 1
+		for curr >= 0 {
+			currNode := unwrapGroups(nodes[curr])
+			if currNode == nil {
+				curr--
+				continue
+			}
+			if currNode.Kind != NodeLiteral {
+				break
+			}
+			val := currNode.Value
+			if flags&FlagsNoCase != 0 {
+				val = toLowerASCII(val)
+			}
+			exactPrefixRev = append(exactPrefixRev, val)
+			curr--
+		}
+
+		if len(exactPrefixRev) > 0 {
+			exactPrefix := make([]byte, len(exactPrefixRev))
+			for idx := range exactPrefixRev {
+				exactPrefix[idx] = exactPrefixRev[len(exactPrefixRev)-1-idx]
+			}
+			info.ExactPrefixSuffix = exactPrefix
+			info.HasPrecedingByteSet = true
+			lastByte := exactPrefix[len(exactPrefix)-1]
+			info.PrecedingByteSet = byteSetOf(lastByte)
+			if flags&FlagsNoCase != 0 {
+				info.PrecedingByteSet = info.PrecedingByteSet.ASCIIFolded()
+			}
+		}
+
+		if curr >= 0 {
+			extractPrefixRepeatOrClass(nodes[curr], flags, &info)
+		}
+
+		return info
+	}
+
+	return ReversePrefixInfo{}
+}
+
+func extractPrefixRepeatOrClass(node *Node, flags Flags, info *ReversePrefixInfo) {
+	hasExactPrefix := len(info.ExactPrefixSuffix) > 0
+	if repClass, minC, maxC, ok := nodeRepeatInfo(node, flags); ok {
+		info.HasPrefixRepeat = true
+		info.PrefixRepeatClass = repClass
+		info.PrefixRepeatMin = minC
+		info.PrefixRepeatMax = maxC
+		if !hasExactPrefix && minC > 0 {
+			info.HasPrecedingByteSet = true
+			info.PrecedingByteSet = repClass
+		}
+		return
+	}
+	if !hasExactPrefix {
+		if set, ok := nodeByteSet(node, flags); ok {
+			info.HasPrecedingByteSet = true
+			info.PrecedingByteSet = set
+		}
+	}
+}
+
+func flattenConcatNodes(node *Node) []*Node {
+	node = unwrapGroups(node)
+	if node == nil {
+		return nil
+	}
+	if node.Kind != NodeConcat {
+		return []*Node{node}
+	}
+	var list []*Node
+	for _, child := range node.Children {
+		child = unwrapGroups(child)
+		if child == nil {
+			continue
+		}
+		if child.Kind == NodeConcat {
+			list = append(list, flattenConcatNodes(child)...)
+		} else {
+			list = append(list, child)
+		}
+	}
+	return list
+}
+
+func nodeByteSet(node *Node, flags Flags) (ByteSet, bool) {
+	node = unwrapGroups(node)
+	if node == nil {
+		return ByteSet{}, false
+	}
+	noCase := flags&FlagsNoCase != 0
+	switch node.Kind {
+	case NodeLiteral:
+		set := byteSetOf(node.Value)
+		if noCase {
+			set = set.ASCIIFolded()
+		}
+		return set, true
+	case NodeNotLiteral:
+		excluded := byteSetOf(node.Value)
+		if noCase {
+			excluded = excluded.ASCIIFolded()
+		}
+		return complementByteSet(excluded), true
+	case NodeMaskedLiteral:
+		return maskedByteSet(node.Value, node.Mask, false), true
+	case NodeMaskedNotLiteral:
+		return maskedByteSet(node.Value, node.Mask, true), true
+	case NodeClass:
+		if node.Class == nil {
+			return fullByteSet(), true
+		}
+		set := positiveClassByteSet(node.Class)
+		if noCase {
+			set = set.ASCIIFolded()
+		}
+		if node.Class.Negated {
+			set = complementByteSet(set)
+		}
+		return set, true
+	case NodeWordChar:
+		return predicateByteSet(isWord), true
+	case NodeNonWordChar:
+		return predicateByteSet(notWord), true
+	case NodeSpace:
+		return predicateByteSet(isSpace), true
+	case NodeNonSpace:
+		return predicateByteSet(notSpace), true
+	case NodeDigit:
+		return predicateByteSet(isDigit), true
+	case NodeNonDigit:
+		return predicateByteSet(notDigit), true
+	case NodeAny:
+		set := fullByteSet()
+		if flags&FlagsDotAll == 0 {
+			set.remove('\n')
+		}
+		return set, true
+	default:
+		return ByteSet{}, false
+	}
+}
+
+func nodeRepeatInfo(node *Node, flags Flags) (class ByteSet, minCount, maxCount int, ok bool) {
+	node = unwrapGroups(node)
+	if node == nil {
+		return ByteSet{}, 0, 0, false
+	}
+	switch node.Kind {
+	case NodePlus:
+		if len(node.Children) != 1 {
+			return ByteSet{}, 0, 0, false
+		}
+		set, ok := nodeByteSet(node.Children[0], flags)
+		if !ok {
+			return ByteSet{}, 0, 0, false
+		}
+		return set, 1, -1, true
+	case NodeStar:
+		if len(node.Children) != 1 {
+			return ByteSet{}, 0, 0, false
+		}
+		set, ok := nodeByteSet(node.Children[0], flags)
+		if !ok {
+			return ByteSet{}, 0, 0, false
+		}
+		return set, 0, -1, true
+	case NodeRange:
+		if len(node.Children) != 1 {
+			return ByteSet{}, 0, 0, false
+		}
+		set, ok := nodeByteSet(node.Children[0], flags)
+		if !ok {
+			return ByteSet{}, 0, 0, false
+		}
+		maxC := int(node.End)
+		if node.End == math.MaxUint16 {
+			maxC = -1
+		}
+		return set, int(node.Start), maxC, true
+	case NodeRangeAny:
+		set := fullByteSet()
+		if flags&FlagsDotAll == 0 {
+			set.remove('\n')
+		}
+		maxC := int(node.End)
+		if node.End == math.MaxUint16 {
+			maxC = -1
+		}
+		return set, int(node.Start), maxC, true
+	default:
+		return ByteSet{}, 0, 0, false
+	}
+}
+
+func nodeMatchesAtomByte(node *Node, b byte, flags Flags) bool {
+	node = unwrapGroups(node)
+	if node == nil {
+		return false
+	}
+	if node.Kind == NodeLiteral {
+		if flags&FlagsNoCase != 0 {
+			return toLowerASCII(node.Value) == toLowerASCII(b)
+		}
+		return node.Value == b
+	}
+	if node.Kind == NodeClass && node.Class != nil {
+		set := classByteSet(node.Class)
+		if flags&FlagsNoCase != 0 {
+			set = set.ASCIIFolded()
+		}
+		return set.Contains(b)
+	}
+	return false
 }

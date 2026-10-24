@@ -79,6 +79,8 @@ func (rc *ruleCompiler) compileSingleStringWithDead(str *ast.String, isDead bool
 			anchored:         anchored,
 			cacheKey:         result.cacheKey,
 			cacheIndex:       -1,
+			firstByteSet:     result.regexFirstByteSet,
+			hasFirstByteSet:  result.hasFirstByteSet,
 		}
 		if atom, ok := selectMandatoryRegexAtom(result.regexAtoms); ok {
 			pattern.atom = append([]byte(nil), atom.data...)
@@ -104,6 +106,23 @@ func (rc *ruleCompiler) compileSingleStringWithDead(str *ast.String, isDead bool
 				pattern.atomMaxSuffix = atom.maxSuffix
 				pattern.atomASCIINoCase = true
 			}
+		}
+		if len(pattern.atom) > 0 && result.parsedAST != nil {
+			analysisFlags := result.flags
+			if pattern.atomASCIINoCase {
+				analysisFlags |= regex.FlagsNoCase
+			}
+			revInfo := regex.ReversePrefixAnalysisWithOffset(result.parsedAST, pattern.atom, pattern.atomMinOffset, analysisFlags)
+			pattern.hasPrecedingByteSet = revInfo.HasPrecedingByteSet
+			pattern.precedingByteSet = revInfo.PrecedingByteSet
+			pattern.exactPrefixSuffix = revInfo.ExactPrefixSuffix
+			if len(revInfo.ExactPrefixSuffix) > 0 {
+				pattern.wideExactPrefix = widenRegexPrefix(revInfo.ExactPrefixSuffix)
+			}
+			pattern.hasPrefixRepeat = revInfo.HasPrefixRepeat
+			pattern.prefixRepeatClass = revInfo.PrefixRepeatClass
+			pattern.prefixRepeatMin = revInfo.PrefixRepeatMin
+			pattern.prefixRepeatMax = revInfo.PrefixRepeatMax
 		}
 		if len(pattern.atom) == 0 && len(pattern.prefix) > 0 {
 			if pattern.maxLength >= len(pattern.prefix) {
@@ -161,6 +180,9 @@ type stringCompilationResult struct {
 	regexLeadingGap       regex.LeadingByteGapPlan
 	regexByteSetAtoms     []regex.ByteSetAtom
 	regexFixedByteSets    []regex.ByteSet
+	regexFirstByteSet     regex.ByteSet
+	hasFirstByteSet       bool
+	parsedAST             *regex.AST
 	captureCode           []byte
 	captureGroups         []int
 	maxLength             int
@@ -280,6 +302,7 @@ func (rc *ruleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers
 	}
 	fixedByteSets, _ := regex.FixedByteSets(parsed, flags)
 	leadingGap, _ := regex.LeadingByteGapAtomCover(parsed, flags, minPrefilterAtomLength)
+	firstByteSet, hasFirstByteSet := regex.FirstByteSet(parsed, flags)
 	return &stringCompilationResult{
 		patternData:           code, // VM bytecode
 		kind:                  StringKindRegex,
@@ -291,9 +314,12 @@ func (rc *ruleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers
 		regexLeadingGap:       leadingGap,
 		regexByteSetAtoms:     regex.MandatoryByteSetAtoms(parsed),
 		regexFixedByteSets:    fixedByteSets,
+		regexFirstByteSet:     firstByteSet,
+		hasFirstByteSet:       hasFirstByteSet,
 		captureCode:           captureCode,
 		captureGroups:         groups,
 		maxLength:             regex.ASTMaxLength(parsed),
+		parsedAST:             parsed,
 	}, nil
 }
 

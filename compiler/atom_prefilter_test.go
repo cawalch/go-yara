@@ -13,18 +13,20 @@ import (
 
 func TestSelectHexAtomUsesOnlyFixedOffsets(t *testing.T) {
 	tests := []struct {
-		name       string
-		pattern    string
-		want       []byte
-		wantOffset int
-		wantOK     bool
+		name          string
+		pattern       string
+		want          []byte
+		wantOffset    int
+		wantMaxOffset int
+		wantOK        bool
 	}{
-		{name: "literal", pattern: "DE AD BE EF", want: []byte{0xDE, 0xAD, 0xBE, 0xEF}, wantOK: true},
-		{name: "leading wildcard", pattern: "?? 11 22 33", want: []byte{0x11, 0x22, 0x33}, wantOffset: 1, wantOK: true},
-		{name: "fixed jump", pattern: "44 [2] 55 66 77", want: []byte{0x55, 0x66, 0x77}, wantOffset: 3, wantOK: true},
-		{name: "before variable jump", pattern: "AA BB [1-3] CC DD", want: []byte{0xAA, 0xBB}, wantOK: true},
-		{name: "after variable jump", pattern: "?? [1-3] CC DD", wantOK: false},
-		{name: "after alternative", pattern: "AA (BB | CC) DD EE", wantOK: false},
+		{name: "literal", pattern: "DE AD BE EF", want: []byte{0xDE, 0xAD, 0xBE, 0xEF}, wantOffset: 0, wantMaxOffset: 0, wantOK: true},
+		{name: "leading wildcard", pattern: "?? 11 22 33", want: []byte{0x11, 0x22, 0x33}, wantOffset: 1, wantMaxOffset: 1, wantOK: true},
+		{name: "fixed jump", pattern: "44 [2] 55 66 77", want: []byte{0x55, 0x66, 0x77}, wantOffset: 3, wantMaxOffset: 3, wantOK: true},
+		{name: "before variable jump", pattern: "AA BB [1-3] CC DD", want: []byte{0xAA, 0xBB}, wantOffset: 0, wantMaxOffset: 0, wantOK: true},
+		{name: "after variable jump", pattern: "?? [1-3] CC DD", want: []byte{0xCC, 0xDD}, wantOffset: 2, wantMaxOffset: 4, wantOK: true},
+		{name: "after alternative", pattern: "AA (BB | CC) DD EE", want: []byte{0xDD, 0xEE}, wantOffset: 2, wantMaxOffset: 2, wantOK: true},
+		{name: "unbounded jump", pattern: "[-] 11 22 33", want: []byte{0x11, 0x22, 0x33}, wantOffset: 0, wantMaxOffset: -1, wantOK: true},
 	}
 
 	for _, tt := range tests {
@@ -40,8 +42,8 @@ func TestSelectHexAtomUsesOnlyFixedOffsets(t *testing.T) {
 			if !ok {
 				return
 			}
-			if !bytes.Equal(atom.data, tt.want) || atom.offset != tt.wantOffset {
-				t.Fatalf("selectHexAtom = (% X, %d), want (% X, %d)", atom.data, atom.offset, tt.want, tt.wantOffset)
+			if !bytes.Equal(atom.data, tt.want) || atom.offset != tt.wantOffset || atom.maxOffset != tt.wantMaxOffset {
+				t.Fatalf("selectHexAtom = (% X, min=%d, max=%d), want (% X, min=%d, max=%d)", atom.data, atom.offset, atom.maxOffset, tt.want, tt.wantOffset, tt.wantMaxOffset)
 			}
 		})
 	}
@@ -1421,5 +1423,76 @@ func BenchmarkSharedNonTextPrefilterScale(b *testing.B) {
 				}
 			}
 		})
+	}
+}
+
+func TestHexPrefilterJumpsAndXorIntegration(t *testing.T) {
+	source := `
+rule hex_with_jump {
+	strings:
+		$h = { [0-10] 4D 5A 90 00 }
+	condition:
+		$h
+}
+
+rule hex_with_alt {
+	strings:
+		$h = { ( AA | BB ) 11 22 33 44 }
+	condition:
+		$h
+}
+
+rule hex_with_single_xor {
+	strings:
+		$h = { 41 42 43 44 } xor(0x01)
+	condition:
+		$h
+}
+`
+	program, err := NewCompiler().CompileSource(source)
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+
+	cleanData := bytes.Repeat([]byte{0x00}, 1024)
+	res, err := program.Scan(cleanData)
+	if err != nil {
+		t.Fatalf("scan clean: %v", err)
+	}
+	if len(res.MatchedRules) != 0 {
+		t.Fatalf("expected 0 matches on clean data, got %d", len(res.MatchedRules))
+	}
+
+	// Test hex_with_jump match:
+	jumpData := append([]byte{0x00, 0x00, 0x00}, []byte{0x4D, 0x5A, 0x90, 0x00}...)
+	jumpData = append(jumpData, make([]byte, 100)...)
+	res, err = program.Scan(jumpData)
+	if err != nil {
+		t.Fatalf("scan jump: %v", err)
+	}
+	if len(res.MatchedRules) != 1 || res.MatchedRules[0].Rule != "hex_with_jump" {
+		t.Fatalf("expected hex_with_jump match, got %v", res.MatchedRules)
+	}
+
+	// Test hex_with_alt match:
+	altData := append([]byte{0xBB}, []byte{0x11, 0x22, 0x33, 0x44}...)
+	altData = append(altData, make([]byte, 100)...)
+	res, err = program.Scan(altData)
+	if err != nil {
+		t.Fatalf("scan alt: %v", err)
+	}
+	if len(res.MatchedRules) != 1 || res.MatchedRules[0].Rule != "hex_with_alt" {
+		t.Fatalf("expected hex_with_alt match, got %v", res.MatchedRules)
+	}
+
+	// Test hex_with_single_xor match:
+	xorData := []byte{0x41 ^ 0x01, 0x42 ^ 0x01, 0x43 ^ 0x01, 0x44 ^ 0x01}
+	xorData = append(xorData, make([]byte, 100)...)
+	res, err = program.Scan(xorData)
+	if err != nil {
+		t.Fatalf("scan xor: %v", err)
+	}
+	if len(res.MatchedRules) != 1 || res.MatchedRules[0].Rule != "hex_with_single_xor" {
+		t.Fatalf("expected hex_with_single_xor match, got %v", res.MatchedRules)
 	}
 }

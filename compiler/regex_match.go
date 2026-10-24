@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"bytes"
 	"slices"
 
 	"github.com/cawalch/go-yara/ast"
@@ -504,6 +505,102 @@ func boundedRegexWindow(
 	return data[windowStart:windowEnd], start - windowStart, windowStart
 }
 
+func (pattern RegexPattern) startMatchesFirstByte(data []byte, start int, isWide bool) bool {
+	if !pattern.hasFirstByteSet {
+		return true
+	}
+	if isWide {
+		return start < len(data) && pattern.firstByteSet.Contains(data[start]) && start+1 < len(data) && data[start+1] == 0
+	}
+	return start < len(data) && pattern.firstByteSet.Contains(data[start])
+}
+
+//nolint:revive // argument-limit: prefix verification keeps hot-path arguments explicit
+func matchExactPrefix(data []byte, atomStart int, prefix []byte, noCase bool) bool {
+	if len(prefix) == 0 {
+		return true
+	}
+	if atomStart < len(prefix) {
+		return false
+	}
+	if noCase {
+		return bytes.EqualFold(data[atomStart-len(prefix):atomStart], prefix)
+	}
+	return bytes.Equal(data[atomStart-len(prefix):atomStart], prefix)
+}
+
+//nolint:revive // argument-limit: backward scanning avoids allocating a scan parameter struct
+func countBackwardMatches(data []byte, from, step int, set regex.ByteSet, maxCount int) int {
+	count := 0
+	for pos := from; pos >= 0; pos -= step {
+		if step == 2 && data[pos+1] != 0 {
+			break
+		}
+		if !set.Contains(data[pos]) {
+			break
+		}
+		count++
+		if maxCount >= 0 && count >= maxCount {
+			break
+		}
+	}
+	return count
+}
+
+func (pattern RegexPattern) atomOccurrenceValidASCII(data []byte, atomStart int, noCase bool) (int, bool) {
+	if !matchExactPrefix(data, atomStart, pattern.exactPrefixSuffix, noCase) {
+		return 0, false
+	}
+	if pattern.hasPrecedingByteSet && pattern.atomMinOffset > 0 {
+		if atomStart < 1 || !pattern.precedingByteSet.Contains(data[atomStart-1]) {
+			return 0, false
+		}
+	}
+	effMaxOffset := pattern.atomMaxOffset
+	if pattern.hasPrefixRepeat {
+		from := atomStart - len(pattern.exactPrefixSuffix) - 1
+		count := countBackwardMatches(data, from, 1, pattern.prefixRepeatClass, pattern.prefixRepeatMax)
+		if count < pattern.prefixRepeatMin {
+			return 0, false
+		}
+		if pattern.prefixRepeatMax >= 0 && count < pattern.prefixRepeatMax {
+			effMaxOffset = max(pattern.atomMinOffset, pattern.atomMaxOffset-(pattern.prefixRepeatMax-count))
+		}
+	}
+	return effMaxOffset, true
+}
+
+func (pattern RegexPattern) atomOccurrenceValidWide(data []byte, atomStart int, noCase bool) (int, bool) {
+	if !matchExactPrefix(data, atomStart, pattern.wideExactPrefix, noCase) {
+		return 0, false
+	}
+	if pattern.hasPrecedingByteSet && pattern.atomMinOffset > 0 {
+		if atomStart < 2 || data[atomStart-1] != 0 || !pattern.precedingByteSet.Contains(data[atomStart-2]) {
+			return 0, false
+		}
+	}
+	effMaxOffset := pattern.atomMaxOffset * 2
+	if pattern.hasPrefixRepeat {
+		from := atomStart - len(pattern.wideExactPrefix) - 2
+		count := countBackwardMatches(data, from, 2, pattern.prefixRepeatClass, pattern.prefixRepeatMax)
+		if count < pattern.prefixRepeatMin {
+			return 0, false
+		}
+		if pattern.prefixRepeatMax >= 0 && count < pattern.prefixRepeatMax {
+			effMaxOffset = max(pattern.atomMinOffset*2, pattern.atomMaxOffset*2-(pattern.prefixRepeatMax-count)*2)
+		}
+	}
+	return effMaxOffset, true
+}
+
+func (pattern RegexPattern) atomOccurrenceValid(data []byte, atomStart int, isWide bool) (int, bool) {
+	noCase := pattern.atomASCIINoCase || pattern.Flags&regex.FlagsNoCase != 0
+	if isWide {
+		return pattern.atomOccurrenceValidWide(data, atomStart, noCase)
+	}
+	return pattern.atomOccurrenceValidASCII(data, atomStart, noCase)
+}
+
 //nolint:revive // argument-limit: hot path avoids allocating an options struct
 func addRegexMatchAt(
 	ctx *MatchContext,
@@ -516,6 +613,9 @@ func addRegexMatchAt(
 	bs *regex.VMBatch,
 	start int,
 ) {
+	if !regexInfo.startMatchesFirstByte(data, start, isWide) {
+		return
+	}
 	maxMatchSpan := 0
 	if ctx != nil {
 		maxMatchSpan = ctx.maxMatchSpan
@@ -618,10 +718,50 @@ func regexAtomCandidateStarts(
 	}
 
 	minOffset := pattern.atomMinOffset
-	maxOffset := pattern.atomMaxOffset
+	step := 1
 	if isWide {
 		minOffset *= 2
-		maxOffset *= 2
+		step = 2
 	}
-	return collectRegexCandidateStarts(atomStarts, minOffset, maxOffset, isWide, len(data), limit)
+
+	starts := make([]int, 0, min(limit, len(atomStarts)*2))
+	for _, atomStart := range atomStarts {
+		effMaxOffset, ok := pattern.atomOccurrenceValid(data, atomStart, isWide)
+		if !ok {
+			continue
+		}
+
+		first := max(0, atomStart-effMaxOffset)
+		last := min(len(data), atomStart-minOffset)
+		if first > last {
+			continue
+		}
+		if isWide && first&1 != atomStart&1 {
+			first++
+		}
+		count := (last-first)/step + 1
+		if count <= 0 || len(starts) > limit-count {
+			return nil, false
+		}
+		for start := first; start <= last; start += step {
+			if !pattern.startMatchesFirstByte(data, start, isWide) {
+				continue
+			}
+			starts = append(starts, start)
+		}
+	}
+
+	if len(starts) < 2 {
+		return starts, true
+	}
+	slices.Sort(starts)
+	unique := 1
+	for _, start := range starts[1:] {
+		if start == starts[unique-1] {
+			continue
+		}
+		starts[unique] = start
+		unique++
+	}
+	return starts[:unique], true
 }

@@ -244,6 +244,47 @@ func TestFindHexMatchesAdditional(t *testing.T) {
 			expect:  1,
 		},
 		{
+			name:    "xor_multi_key_match",
+			pattern: "{ 41 42 43 }",
+			xorKeys: []byte{0x10, 0x20, 0x30},
+			data:    []byte{0x00, 0x41 ^ 0x20, 0x42 ^ 0x20, 0x43 ^ 0x20, 0x00},
+			expect:  1,
+		},
+		{
+			name:    "xor_multi_key_with_wildcard",
+			pattern: "{ 41 42 ?? 44 45 }",
+			xorKeys: []byte{0x01, 0x02, 0x03},
+			data:    []byte{0x41 ^ 0x02, 0x42 ^ 0x02, 0x99, 0x44 ^ 0x02, 0x45 ^ 0x02},
+			expect:  1,
+		},
+		{
+			name:    "xor_multi_key_with_jump",
+			pattern: "{ 41 42 [1-2] 44 45 }",
+			xorKeys: []byte{0x05, 0x0A},
+			data:    []byte{0x41 ^ 0x0A, 0x42 ^ 0x0A, 0x00, 0x44 ^ 0x0A, 0x45 ^ 0x0A},
+			expect:  1,
+		},
+		{
+			name:    "xor_diff_coincidence_key_rejected",
+			pattern: "{ 41 42 43 }",
+			xorKeys: []byte{0x10},                                  // only key 0x10 allowed
+			data:    []byte{0x41 ^ 0x20, 0x42 ^ 0x20, 0x43 ^ 0x20}, // diff matches, but key is 0x20
+			expect:  0,
+		},
+		{
+			name:    "xor_all_keys_256",
+			pattern: "{ DE AD BE EF }",
+			xorKeys: func() []byte {
+				keys := make([]byte, 256)
+				for i := range keys {
+					keys[i] = byte(i)
+				}
+				return keys
+			}(),
+			data:   []byte{0x00, 0xDE ^ 0x7A, 0xAD ^ 0x7A, 0xBE ^ 0x7A, 0xEF ^ 0x7A, 0x00},
+			expect: 1,
+		},
+		{
 			name:    "xor_no_match",
 			pattern: "{ DE AD }",
 			xorKeys: []byte{0x42},

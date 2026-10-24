@@ -130,6 +130,12 @@ func canonicalizeRegexPlan(pattern *RegexPattern) {
 	if len(pattern.fixedByteSets) == 0 {
 		pattern.fixedByteSets = nil
 	}
+	if len(pattern.exactPrefixSuffix) == 0 {
+		pattern.exactPrefixSuffix = nil
+	}
+	if len(pattern.wideExactPrefix) == 0 {
+		pattern.wideExactPrefix = nil
+	}
 }
 
 func TestCompiledProgramWriteToAndRead(t *testing.T) {

@@ -311,14 +311,28 @@ func (builder *sharedPatternAutomatonBuilder) addHexPrefilters(ruleIndex int, ru
 			continue
 		}
 		pattern := rule.HexPatterns[strID]
-		if pattern == nil || pattern.cacheKey == "" || len(pattern.XorKeys) > 0 || len(pattern.XorRange) > 0 {
+		if pattern == nil || pattern.cacheKey == "" || len(pattern.XorKeys) > 1 || len(pattern.XorRange) > 0 {
 			continue
 		}
 		atom, ok := selectHexAtom(pattern.Tokens)
 		if !ok {
 			continue
 		}
-		key := prefilterDedupKey{kind: StringKindHex, cacheKey: pattern.cacheKey}
+		atomData := atom.data
+		if len(pattern.XorKeys) == 1 {
+			k := pattern.XorKeys[0]
+			atomData = make([]byte, len(atom.data))
+			for i := range atomData {
+				atomData[i] = atom.data[i] ^ k
+			}
+		}
+		key := prefilterDedupKey{
+			kind:          StringKindHex,
+			cacheKey:      pattern.cacheKey,
+			atomData:      string(atomData),
+			atomMinOffset: atom.offset,
+			atomMaxOffset: atom.maxOffset,
+		}
 		if _, exists := builder.seen[key]; exists {
 			continue
 		}
@@ -326,14 +340,14 @@ func (builder *sharedPatternAutomatonBuilder) addHexPrefilters(ruleIndex int, ru
 
 		builder.prefilterSpecs = append(builder.prefilterSpecs, sharedPrefilterSpec{
 			identifier: fmt.Sprintf("%s:%s:hex", rule.Name, strID),
-			data:       atom.data,
+			data:       atomData,
 			isHex:      true,
 			entry: sharedAutomatonEntry{
 				RuleIndex:     ruleIndex,
 				StringIdx:     rule.ResolveStringIndex(strID),
 				Kind:          StringKindHex,
 				AtomOffset:    atom.offset,
-				AtomMaxOffset: atom.offset,
+				AtomMaxOffset: atom.maxOffset,
 				CacheIndex:    pattern.cacheIndex,
 			},
 		})

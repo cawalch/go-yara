@@ -56,6 +56,34 @@ rule candidate_atoms {
 	}
 }
 
+func BenchmarkReversePrefixPruningWindowing(b *testing.B) {
+	ruleSource := `
+rule reverse_pruning {
+    strings:
+        $re = /[0-9]{2,10}_target_atom\b/
+    condition:
+        $re
+}`
+	program, err := NewCompiler().CompileSource(ruleSource)
+	if err != nil {
+		b.Fatal(err)
+	}
+	body := bytes.Repeat([]byte("xx_target_atom benignFillerCode123 "), 25000)
+	copy(body[10000:], []byte("12345_target_atom "))
+
+	scanner := NewScanner(program)
+	defer scanner.Close()
+
+	b.SetBytes(int64(len(body)))
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		if _, scanErr := scanner.Scan(body); scanErr != nil {
+			b.Fatal(scanErr)
+		}
+	}
+}
+
 func BenchmarkRegexMatchDensity(b *testing.B) {
 	benchmarks := []struct {
 		name   string

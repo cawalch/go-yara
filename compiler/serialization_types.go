@@ -107,6 +107,16 @@ type serializedRegexPattern struct {
 	FixedByteSets        [][]byte
 	Anchored             bool
 	CacheKey             string
+	FirstByteSet         []byte
+	HasFirstByteSet      bool
+	PrecedingByteSet     []byte
+	HasPrecedingByteSet  bool
+	ExactPrefixSuffix    []byte
+	WideExactPrefix      []byte
+	HasPrefixRepeat      bool
+	PrefixRepeatClass    []byte
+	PrefixRepeatMin      int
+	PrefixRepeatMax      int
 }
 
 type serializedRegexAtom struct {

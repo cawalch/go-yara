@@ -400,6 +400,16 @@ func serializeRegexPattern(pattern RegexPattern) serializedRegexPattern {
 		FixedByteSets:        make([][]byte, len(pattern.fixedByteSets)),
 		Anchored:             pattern.anchored,
 		CacheKey:             pattern.cacheKey,
+		FirstByteSet:         pattern.firstByteSet.Values(),
+		HasFirstByteSet:      pattern.hasFirstByteSet,
+		PrecedingByteSet:     pattern.precedingByteSet.Values(),
+		HasPrecedingByteSet:  pattern.hasPrecedingByteSet,
+		ExactPrefixSuffix:    slices.Clone(pattern.exactPrefixSuffix),
+		WideExactPrefix:      slices.Clone(pattern.wideExactPrefix),
+		HasPrefixRepeat:      pattern.hasPrefixRepeat,
+		PrefixRepeatClass:    pattern.prefixRepeatClass.Values(),
+		PrefixRepeatMin:      pattern.prefixRepeatMin,
+		PrefixRepeatMax:      pattern.prefixRepeatMax,
 	}
 	for index, set := range pattern.fixedByteSets {
 		serialized.FixedByteSets[index] = set.Values()
@@ -445,6 +455,16 @@ func deserializeRegexPattern(serialized serializedRegexPattern) RegexPattern {
 		anchored:             serialized.Anchored,
 		cacheKey:             serialized.CacheKey,
 		cacheIndex:           -1,
+		firstByteSet:         regex.NewByteSet(serialized.FirstByteSet),
+		hasFirstByteSet:      serialized.HasFirstByteSet,
+		precedingByteSet:     regex.NewByteSet(serialized.PrecedingByteSet),
+		hasPrecedingByteSet:  serialized.HasPrecedingByteSet,
+		exactPrefixSuffix:    slices.Clone(serialized.ExactPrefixSuffix),
+		wideExactPrefix:      slices.Clone(serialized.WideExactPrefix),
+		hasPrefixRepeat:      serialized.HasPrefixRepeat,
+		prefixRepeatClass:    regex.NewByteSet(serialized.PrefixRepeatClass),
+		prefixRepeatMin:      serialized.PrefixRepeatMin,
+		prefixRepeatMax:      serialized.PrefixRepeatMax,
 	}
 	for index, values := range serialized.FixedByteSets {
 		pattern.fixedByteSets[index] = regex.NewByteSet(values)

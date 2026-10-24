@@ -30,9 +30,10 @@ const (
 )
 
 type prefilterAtom struct {
-	data   []byte
-	offset int
-	score  int
+	data      []byte
+	offset    int
+	maxOffset int
+	score     int
 }
 
 type regexPrefilterAtom struct {
@@ -546,6 +547,9 @@ func appendRegexPrefilterMatches(
 		if pattern.anchored && start != 0 {
 			return
 		}
+		if !pattern.startMatchesFirstByte(data, start, entry.IsWide) {
+			return
+		}
 		if hasFixedByteSet {
 			checkPos := start + pattern.byteSetMinOffset
 			if checkPos >= len(data) || !pattern.byteSet.Contains(data[checkPos]) {
@@ -569,6 +573,16 @@ func appendRegexPrefilterMatches(
 		if matchPassesModifiers(data, match, modifiers, entry.IsWide) {
 			dst = append(dst, matchSpan{Offset: match.Offset, Length: match.Length})
 		}
+	}
+
+	if entry.AtomOffset == pattern.atomMinOffset && entry.AtomMaxOffset == pattern.atomMaxOffset {
+		validCandidates := candidates[:0]
+		for _, atomStart := range candidates {
+			if _, ok := pattern.atomOccurrenceValid(data, atomStart, entry.IsWide); ok {
+				validCandidates = append(validCandidates, atomStart)
+			}
+		}
+		candidates = validCandidates
 	}
 
 	if entry.AtomOffset == entry.AtomMaxOffset && len(candidates) <= limit {
@@ -652,32 +666,27 @@ func appendHexPrefilterMatches(
 	if scratch == nil {
 		scratch = &hexMatchScratch{}
 	}
+	var xorKey *byte
+	if len(pattern.XorKeys) == 1 {
+		xorKey = &pattern.XorKeys[0]
+	}
 	linear := isLinearHexPattern(pattern.Tokens)
 	lastStart := -1
 
-	for index, atomStart := range candidates {
-		if scanCanceledAt(done, index) {
-			return dst
-		}
-		start := atomStart - entry.AtomOffset
-		if start < 0 || start >= len(data) || start == lastStart {
-			continue
-		}
-		lastStart = start
-
+	verifyCandidateStart := func(start int) {
 		if linear {
-			end, ok := matchLinearHexPattern(pattern.Tokens, data, start, nil)
+			end, ok := matchLinearHexPattern(pattern.Tokens, data, start, xorKey)
 			if !ok || end <= start {
-				continue
+				return
 			}
 			match := Match{Pattern: strID, Offset: int64(start), Length: end - start}
 			if matchPassesModifiers(data, match, rule.StringModifiers[strID], false) {
 				dst = append(dst, matchSpan{Offset: match.Offset, Length: match.Length})
 			}
-			continue
+			return
 		}
 
-		scratch.matchEach(pattern.Tokens, data, start, nil, func(end int) bool {
+		scratch.matchEach(pattern.Tokens, data, start, xorKey, func(end int) bool {
 			if end <= start {
 				return true
 			}
@@ -688,5 +697,51 @@ func appendHexPrefilterMatches(
 			return true
 		})
 	}
+
+	limit := max(1024, len(data)/4)
+	if entry.AtomOffset == entry.AtomMaxOffset && len(candidates) <= limit {
+		for index, atomStart := range candidates {
+			if scanCanceledAt(done, index) {
+				return dst
+			}
+			start := atomStart - entry.AtomOffset
+			if start < 0 || start >= len(data) || start == lastStart {
+				continue
+			}
+			lastStart = start
+			verifyCandidateStart(start)
+		}
+		return dst
+	}
+
+	if entry.AtomMaxOffset >= 0 {
+		var startsBuf [64]int
+		starts, handled := collectRegexCandidateStartsInto(
+			startsBuf[:0],
+			candidates,
+			entry.AtomOffset,
+			entry.AtomMaxOffset,
+			false,
+			len(data),
+			limit,
+		)
+		if handled {
+			for index, start := range starts {
+				if scanCanceledAt(done, index) {
+					return dst
+				}
+				verifyCandidateStart(start)
+			}
+			return dst
+		}
+	}
+
+	findHexMatchesEach(pattern, data, done, scratch, func(m Match) bool {
+		m.Pattern = strID
+		if matchPassesModifiers(data, m, rule.StringModifiers[strID], false) {
+			dst = append(dst, matchSpan{Offset: m.Offset, Length: m.Length})
+		}
+		return true
+	})
 	return dst
 }

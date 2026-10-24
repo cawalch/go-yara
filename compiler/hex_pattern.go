@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"bytes"
+	"encoding/binary"
 	"slices"
 
 	"github.com/cawalch/go-yara/ast"
@@ -75,35 +76,151 @@ func cloneHexTokens(tokens []HexPatternToken) []HexPatternToken {
 
 // anchorInfo describes an anchor byte for skip-based matching.
 type anchorInfo struct {
-	offset  int  // its position in the token sequence
-	byteVal byte // the definite literal byte value
-	ok      bool // true if a usable anchor was found
+	offset    int  // min offset in bytes
+	maxOffset int  // max offset in bytes
+	byteVal   byte // the definite literal byte value
+	ok        bool // true if a usable anchor was found
 }
 
 // findAnchorByte scans the token list for the first definite, non-negated
 // literal byte that can serve as an anchor for position skipping.
 func findAnchorByte(tokens []HexPatternToken) anchorInfo {
-	for i, tok := range tokens {
+	minOffset := 0
+	maxOffset := 0
+	for _, tok := range tokens {
 		switch tok.Kind {
 		case HexTokenByte:
 			if !tok.Negated {
-				return anchorInfo{byteVal: tok.Value, offset: i, ok: true}
+				return anchorInfo{byteVal: tok.Value, offset: minOffset, maxOffset: maxOffset, ok: true}
+			}
+			minOffset++
+			if maxOffset >= 0 {
+				maxOffset++
 			}
 		case HexTokenMasked:
 			// A masked byte is only a definite anchor when the mask is 0xFF
 			// (i.e. it's equivalent to a plain byte).
 			if !tok.Negated && tok.Mask == 0xFF {
-				return anchorInfo{byteVal: tok.Value, offset: i, ok: true}
+				return anchorInfo{byteVal: tok.Value, offset: minOffset, maxOffset: maxOffset, ok: true}
+			}
+			minOffset++
+			if maxOffset >= 0 {
+				maxOffset++
 			}
 		case HexTokenWildcard:
-			// Skip — no definite value
+			minOffset++
+			if maxOffset >= 0 {
+				maxOffset++
+			}
 		case HexTokenJump:
-			// Skip — variable length, but continue looking past it
+			if tok.Min > 0 {
+				minOffset += tok.Min
+			}
+			if tok.Max < 0 || maxOffset < 0 {
+				maxOffset = -1
+			} else {
+				maxOffset += tok.Max
+			}
 		case HexTokenAlt:
-			// Skip — alternatives are ambiguous, continue looking past them
+			altMin, altMax := hexTokensAlternativesLengthRange(tok.Alternatives)
+			minOffset += altMin
+			if altMax < 0 || maxOffset < 0 {
+				maxOffset = -1
+			} else {
+				maxOffset += altMax
+			}
 		}
 	}
 	return anchorInfo{}
+}
+
+// xorDiffAnchor describes an XOR-invariant adjacent differential sequence for skip-based matching.
+type xorDiffAnchor struct {
+	offset   int
+	byteVal0 byte
+	diff     []byte
+	ok       bool
+}
+
+// findXorDiffAnchor searches for the longest contiguous run of definite, non-negated literal bytes.
+func findXorDiffAnchor(tokens []HexPatternToken) xorDiffAnchor {
+	bestOffset := -1
+	bestLen := 0
+	currOffset := -1
+	currLen := 0
+
+	for i, tok := range tokens {
+		isDefinite := (tok.Kind == HexTokenByte && !tok.Negated) ||
+			(tok.Kind == HexTokenMasked && tok.Mask == 0xFF && !tok.Negated)
+		if isDefinite {
+			if currLen == 0 {
+				currOffset = i
+			}
+			currLen++
+			if currLen > bestLen {
+				bestLen = currLen
+				bestOffset = currOffset
+			}
+		} else {
+			currLen = 0
+			currOffset = -1
+		}
+	}
+
+	if bestLen < 2 {
+		return xorDiffAnchor{}
+	}
+
+	diff := make([]byte, bestLen-1)
+	for j := 0; j < bestLen-1; j++ {
+		b0 := tokens[bestOffset+j].Value
+		b1 := tokens[bestOffset+j+1].Value
+		diff[j] = b0 ^ b1
+	}
+
+	return xorDiffAnchor{
+		offset:   bestOffset,
+		byteVal0: tokens[bestOffset].Value,
+		diff:     diff,
+		ok:       true,
+	}
+}
+
+type xorKeyMask [4]uint64
+
+func makeXorKeyMask(keys []byte) xorKeyMask {
+	var m xorKeyMask
+	for _, k := range keys {
+		m[k/64] |= uint64(1) << (k % 64)
+	}
+	return m
+}
+
+func (m *xorKeyMask) contains(k byte) bool {
+	return (m[k/64] & (uint64(1) << (k % 64))) != 0
+}
+
+func (scratch *hexMatchScratch) ensureDiffData(data []byte) []byte {
+	n := len(data) - 1
+	if n <= 0 {
+		return nil
+	}
+	if cap(scratch.diffBuf) < n {
+		scratch.diffBuf = make([]byte, n)
+	} else {
+		scratch.diffBuf = scratch.diffBuf[:n]
+	}
+	diff := scratch.diffBuf
+	i := 0
+	for ; i+8 <= n; i += 8 {
+		v0 := binary.LittleEndian.Uint64(data[i:])
+		v1 := binary.LittleEndian.Uint64(data[i+1:])
+		binary.LittleEndian.PutUint64(diff[i:], v0^v1)
+	}
+	for ; i < n; i++ {
+		diff[i] = data[i] ^ data[i+1]
+	}
+	return diff
 }
 
 // FindHexMatches returns all matches of the hex pattern in data.
@@ -141,7 +258,7 @@ func findHexMatchesEach(pattern *HexPattern, data []byte, done <-chan struct{}, 
 	anchor := findAnchorByte(pattern.Tokens)
 
 	if len(keys) == 0 {
-		if anchor.ok {
+		if anchor.ok && anchor.maxOffset >= 0 {
 			findHexMatchesAnchoredEach(pattern.Tokens, data, anchor, done, scratch, onMatch)
 			return
 		}
@@ -149,12 +266,104 @@ func findHexMatchesEach(pattern *HexPattern, data []byte, done <-chan struct{}, 
 		return
 	}
 
-	// XOR mode: for each key, compute the transformed anchor byte.
-	if anchor.ok {
+	if len(keys) == 1 {
+		if anchor.ok && anchor.maxOffset >= 0 {
+			findHexMatchesXorAnchoredEach(pattern.Tokens, data, keys, anchor, done, scratch, onMatch)
+			return
+		}
+		findHexMatchesXorBruteForceEach(pattern.Tokens, data, keys, done, scratch, onMatch)
+		return
+	}
+
+	// Multi-key XOR: use XOR-invariant differential anchor if a 2+ byte run exists.
+	diffAnchor := findXorDiffAnchor(pattern.Tokens)
+	if diffAnchor.ok {
+		findHexMatchesXorDiffEach(pattern.Tokens, data, keys, diffAnchor, done, scratch, onMatch)
+		return
+	}
+
+	if anchor.ok && anchor.maxOffset >= 0 {
 		findHexMatchesXorAnchoredEach(pattern.Tokens, data, keys, anchor, done, scratch, onMatch)
 		return
 	}
 	findHexMatchesXorBruteForceEach(pattern.Tokens, data, keys, done, scratch, onMatch)
+}
+
+// findHexMatchesXorDiffEach uses XOR 1st-order differential skipping for multi-key matching.
+//
+//nolint:revive // argument-limit: internal traversal helper with cancellation
+func findHexMatchesXorDiffEach(
+	tokens []HexPatternToken,
+	data []byte,
+	keys []byte,
+	anchor xorDiffAnchor,
+	done <-chan struct{},
+	scratch *hexMatchScratch,
+	onMatch func(Match) bool,
+) {
+	diffData := scratch.ensureDiffData(data)
+	if len(diffData) < len(anchor.diff) {
+		return
+	}
+	mask := makeXorKeyMask(keys)
+	linear := isLinearHexPattern(tokens)
+	checkpoint := 0
+	pos := 0
+	singleByteDiff := len(anchor.diff) == 1
+	targetByte := anchor.diff[0]
+
+	for {
+		if scanCanceledAt(done, checkpoint) {
+			return
+		}
+		checkpoint++
+
+		var idx int
+		if singleByteDiff {
+			idx = bytes.IndexByte(diffData[pos:], targetByte)
+		} else {
+			idx = bytes.Index(diffData[pos:], anchor.diff)
+		}
+		if idx == -1 {
+			break
+		}
+		diffPos := pos + idx
+		candidateStart := diffPos - anchor.offset
+		pos = diffPos + 1
+
+		if candidateStart < 0 || candidateStart >= len(data) {
+			continue
+		}
+
+		candidateKey := data[diffPos] ^ anchor.byteVal0
+		if !mask.contains(candidateKey) {
+			continue
+		}
+
+		if linear {
+			if end, ok := matchLinearHexPattern(tokens, data, candidateStart, &candidateKey); ok {
+				if !onMatch(Match{
+					Offset: int64(candidateStart),
+					Length: end - candidateStart,
+				}) {
+					return
+				}
+			}
+			continue
+		}
+
+		if !scratch.matchEach(tokens, data, candidateStart, &candidateKey, func(end int) bool {
+			if end <= candidateStart {
+				return true
+			}
+			return onMatch(Match{
+				Offset: int64(candidateStart),
+				Length: end - candidateStart,
+			})
+		}) {
+			return
+		}
+	}
 }
 
 // findHexMatchesAnchoredEach uses bytes.IndexByte to skip non-matching positions.
@@ -180,33 +389,34 @@ func findHexMatchesAnchoredEach(
 		if idx == -1 {
 			break
 		}
-		candidateStart := pos + idx - anchor.offset
-		pos = pos + idx + 1
+		matchPos := pos + idx
+		pos = matchPos + 1
 
-		if candidateStart < 0 {
-			continue
-		}
-		if linear {
-			if end, ok := matchLinearHexPattern(tokens, data, candidateStart, nil); ok {
-				if !onMatch(Match{
+		first := max(0, matchPos-anchor.maxOffset)
+		last := min(len(data), matchPos-anchor.offset)
+		for candidateStart := first; candidateStart <= last; candidateStart++ {
+			if linear {
+				if end, ok := matchLinearHexPattern(tokens, data, candidateStart, nil); ok {
+					if !onMatch(Match{
+						Offset: int64(candidateStart),
+						Length: end - candidateStart,
+					}) {
+						return
+					}
+				}
+				continue
+			}
+			if !scratch.matchEach(tokens, data, candidateStart, nil, func(end int) bool {
+				if end <= candidateStart {
+					return true
+				}
+				return onMatch(Match{
 					Offset: int64(candidateStart),
 					Length: end - candidateStart,
-				}) {
-					return
-				}
+				})
+			}) {
+				return
 			}
-			continue
-		}
-		if !scratch.matchEach(tokens, data, candidateStart, nil, func(end int) bool {
-			if end <= candidateStart {
-				return true
-			}
-			return onMatch(Match{
-				Offset: int64(candidateStart),
-				Length: end - candidateStart,
-			})
-		}) {
-			return
 		}
 	}
 }
@@ -265,33 +475,34 @@ func findHexMatchesXorAnchoredEach(
 			if idx == -1 {
 				break
 			}
-			candidateStart := pos + idx - anchor.offset
-			pos = pos + idx + 1
+			matchPos := pos + idx
+			pos = matchPos + 1
 
-			if candidateStart < 0 {
-				continue
-			}
-			if linear {
-				if end, ok := matchLinearHexPattern(tokens, data, candidateStart, &key); ok {
-					if !onMatch(Match{
+			first := max(0, matchPos-anchor.maxOffset)
+			last := min(len(data), matchPos-anchor.offset)
+			for candidateStart := first; candidateStart <= last; candidateStart++ {
+				if linear {
+					if end, ok := matchLinearHexPattern(tokens, data, candidateStart, &key); ok {
+						if !onMatch(Match{
+							Offset: int64(candidateStart),
+							Length: end - candidateStart,
+						}) {
+							return
+						}
+					}
+					continue
+				}
+				if !scratch.matchEach(tokens, data, candidateStart, &key, func(end int) bool {
+					if end <= candidateStart {
+						return true
+					}
+					return onMatch(Match{
 						Offset: int64(candidateStart),
 						Length: end - candidateStart,
-					}) {
-						return
-					}
+					})
+				}) {
+					return
 				}
-				continue
-			}
-			if !scratch.matchEach(tokens, data, candidateStart, &key, func(end int) bool {
-				if end <= candidateStart {
-					return true
-				}
-				return onMatch(Match{
-					Offset: int64(candidateStart),
-					Length: end - candidateStart,
-				})
-			}) {
-				return
 			}
 		}
 	}
@@ -413,6 +624,7 @@ type hexWorkItem struct {
 
 type hexMatchScratch struct {
 	worklist   []hexWorkItem
+	diffBuf    []byte
 	inlineWork [16]hexWorkItem
 }
 

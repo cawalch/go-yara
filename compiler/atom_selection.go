@@ -12,12 +12,12 @@ func selectLiteralAtom(literal []byte) (prefilterAtom, bool) {
 		return prefilterAtom{}, false
 	}
 	width := min(len(literal), maxPrefilterAtomLength)
-	best := prefilterAtom{score: -1}
+	best := prefilterAtom{score: -1, maxOffset: -1}
 	for offset := 0; offset+width <= len(literal); offset++ {
 		data := literal[offset : offset+width]
 		score := prefilterAtomScore(data)
 		if score >= best.score {
-			best = prefilterAtom{data: data, offset: offset, score: score}
+			best = prefilterAtom{data: data, offset: offset, maxOffset: offset, score: score}
 		}
 	}
 	return best, true
@@ -314,21 +314,121 @@ func prefilterAtomScore(atom []byte) int {
 	return score
 }
 
-// selectHexAtom chooses the best literal run whose byte offset from the start
-// is statically known. Variable jumps and alternatives end the safe region;
-// patterns without a useful atom remain on the existing matcher path.
+// betterHexPrefilterAtom ranks candidate hex prefilter atoms.
+// Bounded literal runs are preferred over unbounded ones, longer runs win over
+// shorter ones, higher information scores win, and narrower offset windows win.
+func betterHexPrefilterAtom(candidate, current prefilterAtom) bool {
+	if len(current.data) == 0 {
+		return true
+	}
+	if len(candidate.data) != len(current.data) {
+		return len(candidate.data) > len(current.data)
+	}
+	candidateBounded := candidate.maxOffset >= 0
+	currentBounded := current.maxOffset >= 0
+	if candidateBounded != currentBounded {
+		return candidateBounded
+	}
+	if candidate.score != current.score {
+		return candidate.score > current.score
+	}
+	if candidateBounded {
+		candidateWidth := candidate.maxOffset - candidate.offset
+		currentWidth := current.maxOffset - current.offset
+		if candidateWidth != currentWidth {
+			return candidateWidth < currentWidth
+		}
+	}
+	return true
+}
+
+func hexTokensAlternativesLengthRange(alts [][]HexPatternToken) (int, int) {
+	if len(alts) == 0 {
+		return 0, 0
+	}
+	minLen := -1
+	maxLen := 0
+	for _, alt := range alts {
+		altMin, altMax := hexTokensLengthRange(alt)
+		if minLen == -1 || altMin < minLen {
+			minLen = altMin
+		}
+		if altMax < 0 || maxLen < 0 {
+			maxLen = -1
+		} else if altMax > maxLen {
+			maxLen = altMax
+		}
+	}
+	if minLen < 0 {
+		minLen = 0
+	}
+	return minLen, maxLen
+}
+
+func hexTokensLengthRange(tokens []HexPatternToken) (int, int) {
+	totalMin := 0
+	totalMax := 0
+	for _, tok := range tokens {
+		switch tok.Kind {
+		case HexTokenByte, HexTokenMasked, HexTokenWildcard:
+			totalMin++
+			if totalMax >= 0 {
+				totalMax++
+			}
+		case HexTokenJump:
+			if tok.Min > 0 {
+				totalMin += tok.Min
+			}
+			if tok.Max < 0 || totalMax < 0 {
+				totalMax = -1
+			} else {
+				totalMax += tok.Max
+			}
+		case HexTokenAlt:
+			altMin, altMax := hexTokensAlternativesLengthRange(tok.Alternatives)
+			totalMin += altMin
+			if altMax < 0 || totalMax < 0 {
+				totalMax = -1
+			} else {
+				totalMax += altMax
+			}
+		}
+	}
+	return totalMin, totalMax
+}
+
+// selectHexAtom chooses the best literal run from a hex pattern.
+// It tracks min and max byte offsets across wildcards, variable jumps, and alternatives.
+// Bounded literal runs are preferred over unbounded ones, and longer/higher-information
+// runs win over shorter ones.
 func selectHexAtom(tokens []HexPatternToken) (prefilterAtom, bool) {
-	best := prefilterAtom{score: -1}
-	fixedOffset := 0
-	runOffset := 0
+	best := prefilterAtom{score: -1, maxOffset: -1}
+	currMinOffset := 0
+	currMaxOffset := 0
+	runMinOffset := 0
+	runMaxOffset := 0
 	var run []byte
 
 	considerRun := func() {
+		if len(run) < minPrefilterAtomLength {
+			run = nil
+			return
+		}
 		atom, ok := selectLiteralAtom(run)
 		if ok {
-			atom.offset += runOffset
-			if len(atom.data) > len(best.data) || (len(atom.data) == len(best.data) && atom.score >= best.score) {
-				best = atom
+			atomMin := runMinOffset + atom.offset
+			atomMax := -1
+			if runMaxOffset >= 0 {
+				atomMax = runMaxOffset + atom.offset
+			}
+			candidate := prefilterAtom{
+				data:      atom.data,
+				offset:    atomMin,
+				maxOffset: atomMax,
+				score:     atom.score,
+			}
+			if betterHexPrefilterAtom(candidate, best) {
+				best = candidate
 			}
 		}
 		run = nil
@@ -341,24 +441,41 @@ func selectHexAtom(tokens []HexPatternToken) (prefilterAtom, bool) {
 		}
 		if exact {
 			if len(run) == 0 {
-				runOffset = fixedOffset
+				runMinOffset = currMinOffset
+				runMaxOffset = currMaxOffset
 			}
 			run = append(run, token.Value)
-			fixedOffset++
+			currMinOffset++
+			if currMaxOffset >= 0 {
+				currMaxOffset++
+			}
 			continue
 		}
 
 		considerRun()
 		switch token.Kind {
 		case HexTokenByte, HexTokenMasked, HexTokenWildcard:
-			fixedOffset++
-		case HexTokenJump:
-			if token.Min < 0 || token.Min != token.Max {
-				return best, len(best.data) >= minPrefilterAtomLength
+			currMinOffset++
+			if currMaxOffset >= 0 {
+				currMaxOffset++
 			}
-			fixedOffset += token.Min
+		case HexTokenJump:
+			if token.Min > 0 {
+				currMinOffset += token.Min
+			}
+			if token.Max < 0 || currMaxOffset < 0 {
+				currMaxOffset = -1
+			} else {
+				currMaxOffset += token.Max
+			}
 		case HexTokenAlt:
-			return best, len(best.data) >= minPrefilterAtomLength
+			minLen, maxLen := hexTokensAlternativesLengthRange(token.Alternatives)
+			currMinOffset += minLen
+			if maxLen < 0 || currMaxOffset < 0 {
+				currMaxOffset = -1
+			} else {
+				currMaxOffset += maxLen
+			}
 		}
 	}
 	considerRun()
