@@ -1,5 +1,21 @@
 version: 2
 updates:
+  - package-ecosystem: "npm"
+    directory: "/site"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+      timezone: "America/Chicago"
+    open-pull-requests-limit: 3
+    groups:
+      documentation:
+        patterns: ["*"]
+    commit-message:
+      prefix: "chore(docs-deps)"
+    labels:
+      - "dependencies"
+
   - package-ecosystem: "gomod"
     directory: "/"
     schedule:

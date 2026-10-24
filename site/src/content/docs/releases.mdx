@@ -1,0 +1,39 @@
+---
+title: Releases and upgrades
+description: Upgrade go-yara, check the documented release and Go requirement, and handle compiled-rule cache compatibility and module rebinding.
+---
+
+import { Code } from '@astrojs/starlight/components';
+import release from '../../generated/release.json';
+import example from '../../../examples/serialization/main.go?raw';
+
+<p>These docs describe <a href={`https://github.com/cawalch/go-yara/releases/tag/${release.version}`}>{release.version}</a>, released on {release.date}. It requires Go {release.goVersion} or later. Each page displays this version so you can compare it with your application's dependency.</p>
+
+## Upgrade the library
+
+In your application's Go module:
+
+<Code code={`go get github.com/cawalch/go-yara/compiler@${release.version}
+go test ./...`} lang="sh" />
+
+Run your rule corpus against known positive and negative samples as well as your Go tests. Review [compatibility differences](/go-yara/compatibility/) if you depend on native module behavior or move rules between engines.
+
+<p>The <a href={`https://github.com/cawalch/go-yara/blob/${release.version}/CHANGELOG.md`}>changelog at this release</a> records behavior changes. Prebuilt binaries are listed on the <a href="/go-yara/installation/#download-the-cli">installation page</a>.</p>
+
+## Compiled rule caches
+
+<p>New serialized programs use format {release.format}. This release reads formats {release.readableFormats.join(', ')}. A binary whose reader does not support format {release.format} cannot load new artifacts. Rebuild caches from rule source when the consuming binary cannot read their format.</p>
+
+Keep the library version with a stored cache and retain the original rule source. When rolling out multiple versions of a service, avoid overwriting a shared cache with an artifact that older instances cannot read.
+
+This example compiles a rule, serializes it, reloads it, and prints `true` after scanning:
+
+<Code code={example} lang="go" title="Serialize and restore a program" />
+
+External variables and custom module handlers must be rebound after loading. Structured schemas are preserved, but each scanner needs its host data bound again. A compiled artifact is specific to go-yara; it is not a libyara compiled-rule file.
+
+## How the docs track releases
+
+The site rebuilds when a release is published or `main` changes. Version details, module signatures, the serialized format number, and CLI help come from the latest stable release. The displayed Go and CLI examples run against that release and the current source tree before deployment.
+
+Behavioral explanations still need review when code changes. Deployment waits for a recorded prose review of each release. The repository's [documentation maintenance guide](https://github.com/cawalch/go-yara/blob/main/site/README.md) maps code changes to pages, and its [writing guide](https://github.com/cawalch/go-yara/blob/main/site/WRITING.md) records the editorial standard.

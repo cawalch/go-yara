@@ -1,0 +1,45 @@
+# Documentation site
+
+The nine public pages use Astro Starlight and deploy to [GitHub Pages](https://cawalch.github.io/go-yara/). Read [WRITING.md](WRITING.md) before editing. Sources live in `src/content/docs/`; generated files and build output are ignored.
+
+## Local checks
+
+Use Node 26, Python 3.12 or later, and the Go version required by the repository. From the repository root:
+
+```sh
+npm ci --prefix site
+python3 site/scripts/prepare.py --ref HEAD --check-only
+python3 site/scripts/prepare.py --ref "$(gh release view --json tagName --jq .tagName)"
+npm run check --prefix site
+npm run build --prefix site
+npm run check-external --prefix site
+npm run dev --prefix site
+```
+
+Open the local URL with `/go-yara/` appended. A production preview uses `npm run preview --prefix site`.
+
+## Preventing drift
+
+The deployment workflow resolves the latest stable GitHub release on every build. It runs the displayed Go and CLI examples against that tag, then repeats them against the working tree. Code blocks import those same files; copied Go snippets are rejected. A program compiled against the release exports the module signatures and serialized format version. The release's `go.mod`, changelog, commit, and built CLI supply the version stamp and help output.
+
+Every page shows its release version and links to that release. The site has one current version; older release notes remain on GitHub. A release publication or completion of the Release workflow rebuilds the site. The latter also covers releases created with `GITHUB_TOKEN`, which do not trigger another release event workflow. Pushes to `main` rebuild it too, so prose fixes do not need a Go release. Internal links, anchors, local assets, canonical URLs, page metadata, and the nine-page sitemap are checked on every build. External links are checked before deployment.
+
+Automated checks cannot establish that every explanatory sentence still matches the implementation. Use this table during code review. For an unreleased behavior change, add a documentation task to the changelog and finish the corresponding prose change before publishing the release. Do not update a page to promise unreleased behavior.
+
+| Changed code or contract | Pages to review |
+| --- | --- |
+| Compiler API, imports, rule syntax | Quickstart, compatibility, modules |
+| Scanner results, readers, blocks, cancellation | Scanning, performance, compatibility |
+| Module definitions, schemas, binding, cache | Modules, compatibility, performance |
+| CLI flags, output, exit behavior | CLI, installation |
+| Go requirement, packaging, release assets | Installation, releases |
+| Serialization reader or writer | Releases, compatibility |
+| Optimization or benchmark claim | Performance |
+
+Keep the README as the repository entry point and the site as the task-oriented guide. API details belong in Go doc comments and pkg.go.dev. Avoid adding a second handwritten API signature table.
+
+## Release check
+
+Before tagging, review prose for behavior changes since the previous tag. Record the release, all nine page names, and the review scope in `reviews.json`. Keep older entries so a pre-release build can still validate the current stable version. If prose must change for the new release, publish the matching docs change once that tag is available. The build refuses to deploy a release absent from the review record. This deliberate gate prevents generated version labels from making unreviewed prose look current.
+
+After publishing, run the checks above and confirm the Pages workflow passed and the live release stamp, download links, navigation, and search match the new release. The generated reference refuses an untagged version; a missing or malformed release fails the build instead of silently publishing `main` documentation.

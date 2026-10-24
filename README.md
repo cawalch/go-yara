@@ -1,5 +1,7 @@
 # go-yara
 
+[Documentation](https://cawalch.github.io/go-yara/) · [Quickstart](https://cawalch.github.io/go-yara/quickstart/) · [YARA compatibility](https://cawalch.github.io/go-yara/compatibility/) · [Go API](https://pkg.go.dev/github.com/cawalch/go-yara/compiler)
+
 `go-yara` is a pure Go implementation of YARA rule parsing, compilation, and scanning. It compiles standard YARA rules into bytecode and executes them against in-memory buffers, data streams, and files without CGO or external C library dependencies.
 
 The engine is designed for high-throughput scanning pipelines. It uses literal prefiltering (Aho-Corasick and SIMD-accelerated multi-pattern search), early header-based rule pruning, and pooled execution state to minimize memory overhead and avoid heap allocations on prefilter-rejected inputs after warm-up.

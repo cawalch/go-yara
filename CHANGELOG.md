@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+* Publish nine task-oriented documentation pages with Astro Starlight on GitHub Pages. Test displayed Go and CLI examples against the stable release and current source, generate version and API reference details, validate links, and require a prose review before documenting each release.
+
 ## [v0.8.0] - 2026-10-24
 
 ### Compatibility

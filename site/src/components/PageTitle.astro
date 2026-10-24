@@ -1,0 +1,6 @@
+---
+import Default from '@astrojs/starlight/components/PageTitle.astro';
+import release from '../generated/release.json';
+---
+<Default><slot /></Default>
+<p class="release-stamp">Docs for <a href={`https://github.com/cawalch/go-yara/releases/tag/${release.version}`}>{release.version}</a> · Go {release.goVersion}+ · <a href="https://pkg.go.dev/github.com/cawalch/go-yara/compiler">Go API</a></p>

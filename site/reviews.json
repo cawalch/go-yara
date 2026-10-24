@@ -1,0 +1,6 @@
+{
+  "v0.8.0": {
+    "pages": ["index", "quickstart", "installation", "scanning", "compatibility", "modules", "performance", "cli", "releases"],
+    "notes": "Initial site reviewed against v0.8.0. Reader buffering, retained sparse blocks, literal-only CLI streaming, structured host data, native module gaps, numeric extensions, module cache scope, and serialization boundaries are stated explicitly. No historical benchmark numbers are promoted to general throughput claims."
+  }
+}

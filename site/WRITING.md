@@ -1,0 +1,47 @@
+# Writing the go-yara docs
+
+Write for a Go developer who has a rule set and needs to make a decision or finish a task. Lead with the answer, show working code, then explain the constraints that affect its use.
+
+## Sources and decisions
+
+This guide draws on these sources, reviewed on 2026-10-24:
+
+- [Google developer documentation style: tone](https://developers.google.com/style/tone): be conversational, direct, and respectful. Avoid promotional language, filler, and claims that a task is easy.
+- [Google style highlights](https://developers.google.com/style/highlights): use active voice, descriptive links, sentence case, and conditions before instructions.
+- [Microsoft: scannable content](https://learn.microsoft.com/en-us/style-guide/scannable-content/): put useful information first; keep paragraphs focused; use tables when readers need to compare.
+- [Diátaxis](https://diataxis.fr/): distinguish a guided first success, instructions for a task, reference facts, and explanations of tradeoffs.
+
+These are editorial choices, not a recipe for making every sentence sound alike. Read the finished page aloud. Vary sentence length when the thought calls for it. A short sentence can state a limit; the next paragraph can explain why it matters.
+
+## Page contract
+
+Each page answers one reader question. Its first paragraph gives a useful answer without announcing what the page will cover. Headings describe tasks or concepts. Paragraphs develop one idea, usually in two to four sentences; do not split every sentence into a separate paragraph.
+
+Use complete examples where setup matters. Put the expected result next to the command. Explain a constraint before the reader encounters it: memory use, unsupported modules, result ownership, or a serialization boundary.
+
+Prefer prose for explanations, numbered steps for a dependent sequence, and tables for choices. Use lists only for parallel items. Skip decorative cards, slogans, emoji, and stock illustrations. The interface should give space to code and reading.
+
+## Editing examples
+
+| Avoid | Prefer |
+| --- | --- |
+| “Unlock seamless, blazing-fast YARA scanning.” | “Compile YARA rules and scan byte slices in Go, without CGO.” |
+| “Simply use ScanReader for streaming.” | “ScanReader reads the entire input into memory before evaluating rules.” |
+| “In this comprehensive guide, we'll explore…” | Start with the instruction or answer. |
+| “Production-ready YARA compatibility.” | Name the supported features and link to the differences. |
+| “Zero allocations.” | State the scan path, warm-up requirement, and measurement. |
+
+Avoid “leverage,” “delve,” “seamless,” “robust,” “powerful,” “effortlessly,” “it's worth noting,” and “let's dive in.” Do not replace them mechanically with synonyms. Remove the empty claim. Avoid repetitive “X, not Y” contrasts and artificial question-and-answer headings.
+
+Use `go-yara` for this project and `libyara` for the native engine. Use exact API names. Distinguish supported behavior, an extension, a known limitation, and a measured result. Never infer full YARA compatibility from a successful example.
+
+## Review before publishing
+
+1. Can a reader act on the opening paragraph?
+2. Does each claim have a code, test, or release source? Are performance claims scoped to their measurement?
+3. Are limitations next to the relevant operation?
+4. Does each paragraph earn its space? Does the page sound natural when read aloud?
+5. Do the displayed examples run, and do links and anchors resolve?
+6. Does the page describe the published release? If `main` changes behavior, record the required prose update in the same change and complete it before release.
+
+The small phrase check catches accidental filler. It cannot judge accuracy, cadence, or whether prose sounds machine-written. Those remain review responsibilities.

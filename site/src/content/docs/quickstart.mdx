@@ -1,0 +1,47 @@
+---
+title: Compile a rule and scan data
+description: Run a complete Go example that compiles a YARA rule, scans a byte slice, and prints the matching rule with go-yara.
+---
+
+import { Code } from '@astrojs/starlight/components';
+import example from '../../../examples/quickstart/main.go?raw';
+import release from '../../generated/release.json';
+
+Compile the rule once, scan a byte slice, and read the matching rule names from the result. This example looks for `hello`, ignoring case.
+
+## Create a Go module
+
+With Go installed, create an empty directory and add go-yara:
+
+<Code code={`mkdir yara-example
+cd yara-example
+go mod init example.com/yara-example
+go get github.com/cawalch/go-yara/compiler@${release.version}`} lang="sh" />
+
+See [installation](/go-yara/installation/) for the required Go version and CLI downloads.
+
+## Compile and scan
+
+Save this as `main.go`:
+
+<Code code={example} lang="go" title="main.go" />
+
+Run it:
+
+```sh
+go run .
+```
+
+The output is:
+
+```text
+greeting
+```
+
+The rule matches because the input contains `Hello`. Changing the input to `Goodbye` produces no output. Compilation and scanning return separate errors; handle both in application code.
+
+## Reuse the program
+
+Keep the compiled program when scanning more than one input. Its convenience methods manage pooled scanners, and the program supports concurrent scans. For custom options or repeated scans in one worker, [create a reusable scanner](/go-yara/scanning/#reuse-a-scanner).
+
+This page's Go source is also an executable test. Documentation builds run it against both the published release and the current source tree.

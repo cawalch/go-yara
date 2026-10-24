@@ -1,0 +1,42 @@
+---
+title: Scan files with the CLI
+description: Use the go-yara command-line scanner to validate rules, scan files, emit JSON matches, and understand the limits of literal streaming mode.
+---
+
+import { Code } from '@astrojs/starlight/components';
+import example from '../../../examples/cli.sh?raw';
+import help from '../../generated/cli.txt?raw';
+
+The `go-yara` command compiles rules and scans files. Put the rules file first, followed by options and the target path. If you need an executable, follow [installation](/go-yara/installation/).
+
+## Scan a file
+
+In a shell, create a rule and a sample file, then scan it:
+
+<Code code={example} lang="sh" title="Create and scan a sample" />
+
+The first scan reports the matching rule, `greeting`. The second emits a JSON record with the rule name and string-match details, including an occurrence at offset `0`. Both commands are exercised during documentation builds.
+
+## Validate rules and inspect output
+
+To compile without scanning a target:
+
+```sh
+go-yara greeting.yar --mode=compile
+```
+
+Use `--mode=lex` to inspect tokens or `--mode=parse` to inspect the parsed rule structure. For scan output, `-s` includes matching strings, `-g` includes tags, and `-m` includes metadata. `--json` produces structured records suitable for downstream tools. Place options before a positional target.
+
+For a directory, use `-r` to recurse and `-p` to choose the worker count. Rule and tag filters select which results are reported; see the generated help below for their names.
+
+## Large files and streaming
+
+`--streaming` is a literal text-pattern reporting mode. It does not evaluate complete rule conditions. It is not equivalent to a normal scan with lower memory use, and it does not provide regex or hex-pattern rule evaluation.
+
+Use it only when literal occurrences are sufficient. `--chunk-size` controls chunked I/O; it does not add full-condition semantics. For normal rule evaluation, plan for the input memory required by the scan API.
+
+## Command help
+
+This output comes from the CLI built at the release shown at the top of the page. The `--streaming` description in the help is brief; the limitation above applies whenever that flag is used.
+
+<Code code={help} lang="text" title="go-yara --help" />

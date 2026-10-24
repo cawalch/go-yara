@@ -1,0 +1,45 @@
+---
+title: YARA compatibility and differences
+description: Check go-yara's supported YARA features, missing native modules, numeric behavior, extensions, and streaming limits before migrating a rule set.
+---
+
+`go-yara` implements YARA parsing, compilation, and scanning in Go. Compatibility depends on the rule features and modules you use. Compile your own corpus and compare expected outcomes before replacing libyara.
+
+## Supported building blocks
+
+Rules can use text strings, hex patterns with wildcards and jumps, regular expressions, string counts and offsets, condition operators, and rule references. The built-in modules are `hash`, `math`, `string`, and `time`. Their [function signatures](/go-yara/modules/#built-in-signatures) are generated from the documented release.
+
+Native `pe` and `elf` parsers are not bundled. A structured host module can expose data supplied by your application, but it does not supply those parsers or make an existing native module interchangeable.
+
+## Numeric and string behavior
+
+| Operation | Behavior to account for |
+| --- | --- |
+| Integer `math.min` and `math.max` | Compare integers as unsigned values, matching YARA. |
+| Float or mixed numeric `min` and `max` | A go-yara extension: returns a float and uses signed numeric ordering. |
+| `string.to_int` without a base | Autodetects decimal, octal, and hexadecimal consistently across platforms. `"0b10"` is undefined; use `string.to_int("10", 2)`. |
+| String statistics on high bytes | Treats bytes as signed characters. Native results can differ where C `char` is unsigned. |
+| Range statistics | Treats bytes as unsigned values. |
+| Invalid ranges or conversions | Produces YARA's undefined value. A valid range beginning inside the input is truncated at EOF. |
+
+For `min` and `max`, untyped external arguments retain the declared integer result contract unless a float argument is statically known. Use a float literal or a typed module field to select a float overload.
+
+Native `string.to_int` behavior for a binary prefix can vary with the host C library and build. A native result on one machine is not a portable rule contract.
+
+## go-yara extensions
+
+`hash.sha512` and float overloads of `math.min` and `math.max` extend the libyara 4.5.x function set. The two-argument `math.deviation(offset, size)` computes standard deviation. YARA-compatible mean absolute deviation uses `math.deviation(offset, size, mean)` or `math.deviation(string, mean)`, with a floating-point mean.
+
+Structured host modules, the `external` declaration syntax, and evidence extraction also need review when moving rules between engines. The `capture(...)` modifier and `evidence:` section add extraction behavior; other YARA implementations may reject that syntax.
+
+## Streaming and compiled artifacts
+
+The CLI's `--streaming` mode reports literal text-pattern matches without complete condition evaluation. Library `ScanReader` buffers the input, and sparse block scanning retains blocks. These APIs do not provide a single bounded-memory replacement for normal full-rule scanning.
+
+Serialized go-yara programs use a project-specific format. They are not libyara compiled-rule files. Check the [upgrade rules](/go-yara/releases/#compiled-rule-caches) before sharing caches between versions.
+
+## Evaluate a migration
+
+Compile the full rule set and investigate every rejected rule. Compare matched rule names on known positive and negative inputs, then check counts, offsets, undefined values, and module calls that your rules depend on. Include truncated and malformed files as well as ordinary samples.
+
+If you find a difference, report a minimal rule, the input bytes or a small reproducer, both engine versions, and the observed results in a [GitHub issue](https://github.com/cawalch/go-yara/issues).

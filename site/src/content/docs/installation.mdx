@@ -1,0 +1,60 @@
+---
+title: Install go-yara
+description: Add the pure Go YARA library to a Go module, download a prebuilt scanner for Linux, macOS, or Windows, or build the CLI from source.
+---
+
+import { Code } from '@astrojs/starlight/components';
+import release from '../../generated/release.json';
+
+<p>The library requires Go {release.goVersion} or later. It has no CGO or libyara dependency. Prebuilt CLI binaries run without a Go installation.</p>
+
+## Add the library
+
+In an existing Go module, pin the documented release:
+
+<Code code={`go get github.com/cawalch/go-yara/compiler@${release.version}`} lang="sh" />
+
+Then follow the [complete Go example](/go-yara/quickstart/). The public entry point is the `compiler` package.
+
+## Download the CLI
+
+Choose an archive for your operating system and CPU. Extract it and place the `go-yara` executable on your `PATH`. On Windows, the executable is `go-yara.exe`.
+
+<table>
+<thead><tr><th>System</th><th>CPU</th><th>Archive</th></tr></thead>
+<tbody>
+{[
+  ['Linux', 'x86-64', 'linux_amd64.tar.gz'],
+  ['Linux', 'ARM64', 'linux_arm64.tar.gz'],
+  ['macOS', 'Intel', 'darwin_amd64.tar.gz'],
+  ['macOS', 'Apple silicon', 'darwin_arm64.tar.gz'],
+  ['Windows', 'x86-64', 'windows_amd64.zip'],
+].map(([system, cpu, suffix]) => <tr><td>{system}</td><td>{cpu}</td><td><a href={`https://github.com/cawalch/go-yara/releases/download/${release.version}/go-yara_${release.version}_${suffix}`}>{suffix}</a></td></tr>)}
+</tbody>
+</table>
+
+<p>Compare the archive's SHA-256 digest with <a href={`https://github.com/cawalch/go-yara/releases/tag/${release.version}`}>the checksums attached to the release</a>. The release also includes the checksum signature and certificate.</p>
+
+Run `go-yara --help` to confirm the executable is available, then [scan a file](/go-yara/cli/#scan-a-file).
+
+## Build from source
+
+With Git and a supported Go toolchain installed:
+
+<Code code={`git clone https://github.com/cawalch/go-yara.git
+cd go-yara
+git checkout ${release.version}
+go build -o go-yara ./cmd
+./go-yara --help`} lang="sh" />
+
+Building with `-o go-yara` gives the executable the name used throughout these docs. On Windows, use `-o go-yara.exe`.
+
+## Optional SIMD build
+
+With Go 1.27 or later, the experimental SIMD build can accelerate parts of literal matching and case folding:
+
+```sh
+GOEXPERIMENT=simd go build -o go-yara ./cmd
+```
+
+Scalar paths remain available on unsupported platforms and when SIMD is disabled with `GODEBUG=simd=0`. Measure your rule set and inputs before choosing a build; [performance guidance](/go-yara/performance/) explains what to compare.

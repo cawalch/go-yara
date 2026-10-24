@@ -1,0 +1,42 @@
+---
+title: Measure and tune scanning
+description: Reduce unnecessary scan results, reuse compiled rules, understand prefilter and module-cache costs, and benchmark go-yara on representative inputs.
+---
+
+Compile once, request only the results you need, and measure with your own rules and inputs. Scan cost depends on pattern selectivity, condition work, input size, and the amount of match data returned.
+
+## Start with the result contract
+
+Use `Matches` for a boolean answer and `MatchingRules` for rule names and tags. Use `Scan` when callers need detailed outcomes and string occurrences. A reusable scanner avoids repeated setup; the [scanner example](/go-yara/scanning/#reuse-a-scanner) shows its lifetime.
+
+`WithFastScan` can stop after the first occurrence of a string when the condition permits it. Rules depending on counts, offsets, or ranges still need the relevant occurrences. Benchmark the same result contract in both versions of an application; omitting results changes the work being measured.
+
+## Prefiltering and allocations
+
+Literal prefilters reject inputs that lack required patterns before condition evaluation. Header checks can reject rules whose required bytes are absent at fixed offsets. A warmed-up prefilter rejection can use zero heap allocations. That claim does not cover every scan path: matches, returned results, and module calculations can allocate.
+
+Measure clean rejects and positive matches separately. A corpus dominated by easy rejects can hide expensive behavior on repetitive data or inputs that pass a prefilter and fail later.
+
+## Module work
+
+Repeated deterministic built-in numeric and range calls share a 16-entry cache across rules in one scan. Entries are discarded before the next scan. Once full, additional distinct calls execute normally. String arguments and `time.now()` bypass it.
+
+Cache hits allocate no memory, but a cache miss can allocate for the underlying calculation, such as building a digest string. Repeating one digest across many rules can reuse that calculation; it does not make unrelated digest operations free.
+
+## Run a useful comparison
+
+The repository's scan benchmarks provide a starting point:
+
+```sh
+make bench-scan
+```
+
+Record the commit, Go version, build flags, CPU, rule set, and input sizes with each result. Keep those fixed when comparing changes. Report time per operation, bytes per second where meaningful, bytes allocated, and allocations per operation.
+
+Include small and large inputs, expected matches, clean rejects, repetitive bytes, and your real rule corpus. Measure cold compilation separately from steady-state scanning. For concurrent workloads, keep the worker count fixed and use a scanner per worker.
+
+The optional [SIMD build](/go-yara/installation/#optional-simd-build) changes some matching paths. Compare it with the scalar build on the same machine. A synthetic throughput result does not establish end-to-end application performance.
+
+## Memory before throughput
+
+`ScanReader` buffers all input, and block scanning retains blocks for later condition evaluation. Account for input storage as well as scanner allocations. The CLI's literal streaming mode changes semantics; use it only when text-pattern occurrences are the output you need.

@@ -1,0 +1,12 @@
+---
+import release from '../generated/release.json';
+---
+<table>
+  <thead><tr><th>Function</th><th>Accepted arguments → result</th></tr></thead>
+  <tbody>
+    {release.modules.map((entry) => <tr>
+      <td><code>{entry.name}</code></td>
+      <td>{entry.signatures.map((signature) => <div><code>{signature}</code></div>)}</td>
+    </tr>)}
+  </tbody>
+</table>
