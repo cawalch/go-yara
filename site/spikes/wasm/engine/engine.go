@@ -2,6 +2,7 @@
 package engine
 
 import (
+	"context"
 	_ "embed"
 	"encoding/hex"
 	"encoding/json"
@@ -32,7 +33,7 @@ func (s *Session) Compile(rules string) Reply {
 	if len(rules) > MaxRules {
 		return Reply{Error: "rules exceed 32 KiB"}
 	}
-	p, err := compiler.NewCompiler().CompileSource(rules)
+	p, err := compiler.NewCompiler().CompileSourceWithContext(context.Background(), rules)
 	if err != nil {
 		return Reply{Error: err.Error()}
 	}

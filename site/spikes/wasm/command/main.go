@@ -2,8 +2,9 @@ package main
 
 import (
 	"fmt"
-	"github.com/cawalch/go-yara/site/spikes/wasm/engine"
 	"log"
+
+	"github.com/cawalch/go-yara/site/spikes/wasm/engine"
 )
 
 func main() {

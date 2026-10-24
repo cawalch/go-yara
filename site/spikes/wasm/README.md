@@ -25,9 +25,9 @@ Environment: Apple M3 Max, macOS, Go 1.27.2, Node 26.12.0, Chrome 155. Browser f
 
 | Build | Uncompressed bytes | Gzip bytes (measured locally) |
 | --- | ---: | ---: |
-| Browser worker | 9,284,415 | 2,413,298 |
-| WASI command | 9,260,334 | 2,410,534 |
-| WASI reactor | 9,223,990 | 2,402,666 |
+| Browser worker | 9,284,369 | 2,413,140 |
+| WASI command | 9,260,227 | 2,410,430 |
+| WASI reactor | 9,223,880 | 2,401,515 |
 
 Both targets use `-trimpath -ldflags='-s -w'`, with `GOEXPERIMENT` unset. The reactor additionally uses `-buildmode=c-shared`. No TinyGo, Binaryen, or custom runtime was evaluated. The gzip column does not imply that a particular hosting service serves this encoding.
 
@@ -35,10 +35,10 @@ Both targets use `-trimpath -ldflags='-s -w'`, with `GOEXPERIMENT` unset. The re
 | --- | --- |
 | Native, browser worker, WASI command | All 12 fixtures passed; three scans for each valid compiled rule set. |
 | WASI reactor | Initialized once and called three times; each call passed the fixture suite. |
-| Browser startup | 64.8 ms to worker-ready in the recorded final run; 20.1 ms for restart. Earlier local run: 93.1 ms and 23.6 ms. |
-| One literal at the end of a 1 MiB buffer | Six scans: 0.50–4.00 ms inside the scan/result-flattening function; 1.20–22.20 ms for the worker round trip. This small smoke workload is not a throughput benchmark. |
-| Wasm linear memory | 6 MiB at startup; grew to 13,434,880 bytes during the fixture/1 MiB sequence. Stayed at that size through 50 additional 1 MiB clean rejects. This excludes JavaScript memory, browser overhead, and compiled Wasm code. |
-| Cancel during an 8 MiB `/a.*b/` scan | Worker terminated, pending promise rejected, page timer continued, and a fresh worker scanned successfully. Final observed cancellation round trip: about 105 ms with a requested 50 ms delay. |
+| Browser startup | 97.4 ms to worker-ready in the recorded final run; 19.4 ms for restart. Earlier local runs observed 64.8–93.1 ms and 20.1–23.6 ms. |
+| One literal at the end of a 1 MiB buffer | Six scans: 0.40–4.00 ms inside the scan/result-flattening function; 0.80–16.20 ms for the worker round trip. This small smoke workload is not a throughput benchmark. |
+| Wasm linear memory | 6 MiB at startup; grew to 13,369,344 bytes during the fixture/1 MiB sequence, then peaked at 13,434,880 bytes through 50 additional 1 MiB clean rejects. This excludes JavaScript memory, browser overhead, and compiled Wasm code. |
+| Cancel during an 8 MiB `/a.*b/` scan | Worker terminated, pending promise rejected, page timer continued, and a fresh worker scanned successfully. Final observed cancellation round trip: about 72 ms with a requested 50 ms delay. |
 | Automatic timeout | A separate active scan hit the 100 ms test deadline and terminated its worker. Browser timers are not real-time guarantees. |
 | API edge cases | Scan before compile, failed-compile stale-state clearing, and oversized source/input checks passed. |
 
@@ -53,6 +53,9 @@ GOOS=js GOARCH=wasm go test \
 node --check site/spikes/wasm/client.mjs
 node --check site/spikes/wasm/worker.js
 node --check site/spikes/wasm/wasi.mjs
+golangci-lint run ./site/spikes/wasm/...
+GOOS=js GOARCH=wasm golangci-lint run ./site/spikes/wasm/browser ./site/spikes/wasm/engine
+GOOS=wasip1 GOARCH=wasm golangci-lint run ./site/spikes/wasm/reactor ./site/spikes/wasm/engine
 ```
 
 ## Before a public playground

@@ -4,8 +4,9 @@ package main
 
 import (
 	"encoding/json"
-	"github.com/cawalch/go-yara/site/spikes/wasm/engine"
 	"syscall/js"
+
+	"github.com/cawalch/go-yara/site/spikes/wasm/engine"
 )
 
 func main() {
