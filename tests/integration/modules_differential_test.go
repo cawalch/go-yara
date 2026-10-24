@@ -1,8 +1,11 @@
 package integration
 
 import (
+	"context"
 	"fmt"
 	"testing"
+
+	"github.com/cawalch/go-yara/compiler"
 )
 
 func TestLibyaraExpandedModules(t *testing.T) {
@@ -41,7 +44,7 @@ func TestLibyaraExpandedModules(t *testing.T) {
 		{"parse_trailing_space", `defined string.to_int("42 ")`, nil},
 		{"parse_trailing_garbage", `defined string.to_int("42xyz")`, nil},
 		{"parse_underscore", `defined string.to_int("1_000")`, nil},
-		{"parse_binary", `defined string.to_int("0b10")`, nil},
+		{"parse_binary_explicit", `string.to_int("10", 2) == 2 and string.to_int("-10", 2) == -2`, nil},
 		{"parse_overflow", `defined string.to_int("9223372036854775808")`, nil},
 		{"parse_invalid_base", `defined string.to_int("1", 1)`, nil},
 		{"undefined_and_true", `not (string.to_int("bad") == 0 and filesize == 0)`, nil},
@@ -77,4 +80,32 @@ rule inverse { condition: not (%s) }`, tc.condition, tc.condition)
 			checkReleaseScanPaths(t, source, tc.data)
 		})
 	}
+}
+
+// YARA delegates to strtoll: Ubuntu 24.04's build accepts binary prefixes,
+// while macOS's build rejects them. Keep this known oracle variation separate
+// from portable parity checks, and enforce go-yara's deterministic contract.
+func TestLibyaraBinaryPrefixCompatibility(t *testing.T) {
+	const source = `import "string"
+rule binary_value { condition: string.to_int("0b10") == 2 }
+rule binary_undefined { condition: not defined string.to_int("0b10") }`
+	oracle, err := scanWithLibyara(t, libyaraOracle(t), source, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, accepts := oracle["binary_value"]
+	_, rejects := oracle["binary_undefined"]
+	if len(oracle) != 1 || accepts == rejects {
+		t.Fatalf("unexpected libyara binary-prefix result: %v", oracle)
+	}
+	t.Logf("libyara binary-prefix support: %t; go-yara uses portable decimal/octal/hex autodetection", accepts)
+	program, err := compiler.NewCompiler().CompileSourceWithContext(context.Background(), source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := program.Scan(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertReleaseScanResult(t, map[string][]span{"binary_undefined": nil}, result)
 }

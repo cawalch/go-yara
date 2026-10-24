@@ -22,8 +22,9 @@ func stringModule() Module {
 					return ModuleValue{}, nil
 				}
 				// strtoll accepts leading C whitespace and stops at a NUL, but requires
-				// all other input to be consumed. Go's binary and underscore extensions
-				// are deliberately excluded.
+				// all other input to be consumed. Keep decimal/octal/hex autodetection
+				// portable: libc builds differ on binary prefixes. Binary prefixes and
+				// Go's underscore extension are deliberately excluded.
 				str, _, _ := strings.Cut(args[0].String, "\x00")
 				str = strings.TrimLeft(str, " \t\n\r\v\f")
 				sign := ""

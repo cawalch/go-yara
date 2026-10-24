@@ -300,7 +300,8 @@ func (op Opcode) GetCategory() string {
 	return "unknown"
 }
 
-// opcodeNames maps basic opcodes to their string names
+// opcodeNames maps basic opcodes to their string names.
+// #nosec G101 -- Fixed bytecode mnemonics, not credentials.
 var opcodeNames = map[Opcode]string{
 	OpAssertUint16Eq:         "ASSERT_UINT16_EQ",
 	OpAssertUint32Eq:         "ASSERT_UINT32_EQ",

@@ -227,6 +227,10 @@ range, and `mode` accepts an optional range. Invalid ranges and conversions yiel
 YARA's undefined value. Ranges beginning inside the input are truncated at EOF.
 `math.min` and `math.max` compare integers as unsigned values, as YARA does.
 `math.in_range` takes three floats. `math.to_string` supports bases 8, 10, and 16.
+`string.to_int` autodetects decimal, octal, and hexadecimal consistently on all
+platforms. Binary prefixes such as `"0b10"` are undefined; use
+`string.to_int("10", 2)` for binary input. Native libyara may accept binary
+prefixes depending on its host C library and build.
 
 `hash.sha512` is a go-yara extension, not a libyara 4.5.x function. The original
 `math.deviation(offset, size)` standard-deviation extension remains supported.
