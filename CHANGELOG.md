@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+* Ignore root release build and archive directories so later cross-platform builds do not acquire `vcs.modified=true` from earlier generated outputs. The v0.8.1 binaries retain that metadata on four targets; all five binaries were reproduced byte-for-byte from the tag.
+
 ## [v0.8.1] - 2026-10-24
 
 ### Fixed
