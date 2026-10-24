@@ -105,6 +105,8 @@ func init() {
 	opcodeTable[OpModuleGetField] = (*Interpreter).executeModuleGetField
 	opcodeTable[OpModuleGetIndex] = (*Interpreter).executeModuleGetIndex
 	opcodeTable[OpIterStartModuleArray] = (*Interpreter).executeIterStartModuleArray
+	opcodeTable[OpAssertExternal] = (*Interpreter).executeAssertExternal
+	opcodeTable[OpEvalAssertions] = (*Interpreter).executeEvalAssertions
 	opcodeTable[OpAssertUint16Eq] = (*Interpreter).executeAssertUint16Eq
 	opcodeTable[OpAssertUint32Eq] = (*Interpreter).executeAssertUint32Eq
 	opcodeTable[OpAssertFilesize] = (*Interpreter).executeAssertFilesize
@@ -262,9 +264,12 @@ func (i *Interpreter) executeOpcode(opcode Opcode) error {
 }
 
 func (i *Interpreter) storeExecutionResult() {
-	if (i.currentRule != "" || i.currentRuleIndex >= 0) && len(i.stack) > 0 {
-		result := i.stack[len(i.stack)-1]
-		matched := result.Type == ValueTypeInt && result.IntVal != 0
+	if (i.currentRule != "" || i.currentRuleIndex >= 0) && (i.directCondition || len(i.stack) > 0) {
+		matched := i.directResult == assertionTrue
+		if !i.directCondition {
+			result := i.stack[len(i.stack)-1]
+			matched = result.Type == ValueTypeInt && result.IntVal != 0
+		}
 		if i.currentRuleIndex >= 0 && i.currentRuleIndex < len(i.ruleResultsDense) {
 			i.ruleResultsDense[i.currentRuleIndex] = matched
 		}

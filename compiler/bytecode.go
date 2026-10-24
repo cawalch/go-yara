@@ -212,6 +212,10 @@ const (
 	OpModuleGetIndex
 	// OpIterStartModuleArray starts an array or dictionary iterator.
 	OpIterStartModuleArray
+	// OpAssertExternal compares a runtime external with a constant.
+	OpAssertExternal
+	// OpEvalAssertions evaluates a complete boolean assertion program without stack traffic.
+	OpEvalAssertions
 )
 
 // Opcode categories for classification
@@ -234,7 +238,7 @@ func isControlOpcode(op Opcode) bool {
 
 // isLogicalOpcode checks if opcode is a logical operation
 func isLogicalOpcode(op Opcode) bool {
-	return (op >= OpAssertUint16Eq && op <= OpAssertStringCount) || (op >= OpAnd && op <= OpBitwiseXor) ||
+	return op == OpAssertExternal || op == OpEvalAssertions || (op >= OpAssertUint16Eq && op <= OpAssertStringCount) || (op >= OpAnd && op <= OpBitwiseXor) ||
 		op == OpIntToDbl || op == OpStrToBool
 }
 
@@ -311,6 +315,8 @@ func (op Opcode) GetCategory() string {
 // opcodeNames maps basic opcodes to their string names.
 // #nosec G101 -- Fixed bytecode mnemonics, not credentials.
 var opcodeNames = map[Opcode]string{
+	OpAssertExternal:         "ASSERT_EXTERNAL",
+	OpEvalAssertions:         "EVAL_ASSERTIONS",
 	OpModuleLoad:             "MODULE_LOAD",
 	OpModuleGetField:         "MODULE_GET_FIELD",
 	OpModuleGetIndex:         "MODULE_GET_INDEX",

@@ -168,7 +168,8 @@ func (v *Validator) validateModuleFunctionCall(
 	}
 
 	matchedArity := false
-	for _, signature := range function.Signatures {
+	matchedReturn := TypeUnknown
+	for signatureIndex, signature := range function.Signatures {
 		if len(signature) != len(argTypes) {
 			continue
 		}
@@ -182,8 +183,19 @@ func (v *Validator) validateModuleFunctionCall(
 			}
 		}
 		if matches {
-			return &TypeInfo{DataType: function.ReturnType}, errors
+			result := function.ReturnType
+			if signatureIndex < len(function.ReturnTypes) && function.ReturnTypes[signatureIndex] != TypeUnknown {
+				result = function.ReturnTypes[signatureIndex]
+			}
+			if matchedReturn != TypeUnknown && matchedReturn != result {
+				// Preserve the declared result contract for untyped external arguments.
+				return &TypeInfo{DataType: function.ReturnType}, errors
+			}
+			matchedReturn = result
 		}
+	}
+	if matchedReturn != TypeUnknown {
+		return &TypeInfo{DataType: matchedReturn}, errors
 	}
 
 	message := fmt.Sprintf("module function %q does not accept the supplied argument types", funcCall.Function)

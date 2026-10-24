@@ -30,7 +30,12 @@ func mathModule() Module {
 		function := ModuleFunction{ReturnType: ModuleInteger}
 		switch name {
 		case "min", "max":
-			function.Signatures = []ModuleSignature{{Arguments: integers(2)}}
+			function.Signatures = []ModuleSignature{
+				{Arguments: integers(2)},
+				{Arguments: []ModuleValueType{ModuleFloat, ModuleFloat}, ReturnType: ModuleFloat},
+				{Arguments: []ModuleValueType{ModuleInteger, ModuleFloat}, ReturnType: ModuleFloat},
+				{Arguments: []ModuleValueType{ModuleFloat, ModuleInteger}, ReturnType: ModuleFloat},
+			}
 		case "abs":
 			function.Signatures = []ModuleSignature{{Arguments: integers(1)}}
 		case "to_number":
@@ -82,6 +87,13 @@ func moduleMathScalar(name string, args []ModuleValue) ModuleValue {
 	value := args[0].Integer
 	switch name {
 	case "min", "max":
+		if args[0].Type == ModuleFloat || args[1].Type == ModuleFloat {
+			a, b := moduleNumber(args[0]), moduleNumber(args[1])
+			if name == "min" {
+				return FloatValue(math.Min(a, b))
+			}
+			return FloatValue(math.Max(a, b))
+		}
 		other := args[1].Integer
 		// YARA compares unsigned values but returns the selected signed bit pattern.
 		if (name == "min" && uint64(other) < uint64(value)) || (name == "max" && uint64(other) > uint64(value)) {
@@ -248,8 +260,8 @@ func moduleMonteCarloPi(data []byte, signed bool) ModuleValue {
 	return FloatValue(math.Abs((estimate - math.Pi) / math.Pi))
 }
 
-// libyara 4.5.x's string statistics read C signed chars, whereas data-range
-// statistics read unsigned bytes. Preserve that distinction for parity.
+// libyara string statistics depend on C char signedness. Use the signed-char
+// convention consistently across Go targets; range statistics use unsigned bytes.
 func statisticalByte(b byte, signed bool) float64 {
 	if signed && b >= 128 {
 		return float64(int(b) - 256)

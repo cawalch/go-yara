@@ -112,7 +112,7 @@ func (cc *conditionCompiler) isFloatExpression(expr ast.Expression) bool {
 		return e.Op == token.MINUS && cc.isFloatExpression(e.Right)
 	case *ast.FunctionCall:
 		function, ok := cc.moduleFunctions[e.Function]
-		return ok && function.function.ReturnType == ModuleFloat
+		return ok && cc.moduleCallResultType(e, function.function) == ModuleFloat
 	default:
 		return false
 	}
@@ -556,4 +556,24 @@ func (cc *conditionCompiler) compileStringCount(strCount *ast.StringCount) error
 
 	cc.emitter.EmitOpcode(OpCount, strCount.Pos.Line, strCount.Pos.Column)
 	return nil
+}
+
+func (cc *conditionCompiler) moduleCallResultType(call *ast.FunctionCall, function ModuleFunction) ModuleValueType {
+	for _, signature := range function.Signatures {
+		if len(signature.Arguments) != len(call.Args) {
+			continue
+		}
+		matches := true
+		for index, arg := range call.Args {
+			expected := signature.Arguments[index]
+			if cc.isFloatExpression(arg) != (expected == ModuleFloat) || cc.isStringExpression(arg) != (expected == ModuleString) {
+				matches = false
+				break
+			}
+		}
+		if matches {
+			return signature.resultType(function.ReturnType)
+		}
+	}
+	return function.ReturnType
 }

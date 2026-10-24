@@ -103,6 +103,7 @@ func sortAndDedupeMatches(matches []Match) []Match {
 func (ctx *MatchContext) Reset(data []byte) {
 	ctx.moduleCache = nil
 	ctx.assertionResults = nil
+	ctx.externalValues = nil
 	ctx.Data = data
 	ctx.Blocks = nil
 	ctx.cancelDone = nil

@@ -52,6 +52,7 @@ type conditionCompiler struct {
 	textStringSets    [][]string
 	moduleFunctions   map[string]compiledModuleFunction
 	assertions        []conditionAssertion
+	assertionProgram  []assertionInstruction
 	disableAssertions bool // Test-only baseline for differential and performance checks.
 
 	// loopVarSlots tracks the memory slot for the loop variable of each
@@ -578,6 +579,7 @@ func (cc *conditionCompiler) ResetForRule() {
 	cc.moduleAccessNames = nil
 	cc.moduleIterations = nil
 	cc.assertions = cc.assertions[:0]
+	cc.assertionProgram = nil
 	cc.labelCounter = 0
 	clear(cc.labels)
 	cc.pendingJumps = cc.pendingJumps[:0]

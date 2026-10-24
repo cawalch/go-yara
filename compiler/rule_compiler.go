@@ -189,6 +189,7 @@ func (rc *ruleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 		ModuleNames:         rc.moduleNames,
 		HeaderConstraints:   deriveHeaderConstraints(rule.Condition),
 		assertions:          slices.Clone(rc.conditionCompiler.assertions),
+		assertionProgram:    slices.Clone(rc.conditionCompiler.assertionProgram),
 		moduleSchemas:       rc.conditionCompiler.moduleSchemas,
 		moduleAccessNames:   slices.Clone(rc.conditionCompiler.moduleAccessNames),
 		moduleIterations:    slices.Clone(rc.conditionCompiler.moduleIterations),
@@ -441,8 +442,10 @@ func (rc *ruleCompiler) compileCondition(rule *ast.Rule) error {
 	// Compile the condition expression using CompileBooleanExpression.
 	// Short-circuit evaluation is disabled until the short-circuit code path properly
 	// manages stack state (see compileShortCircuitBinary for details).
-	if err := rc.conditionCompiler.CompileBooleanExpression(rule.Condition, false); err != nil {
-		return fmt.Errorf("compiling condition: %w", err)
+	if !rc.conditionCompiler.compileAssertionProgram(rule.Condition) {
+		if err := rc.conditionCompiler.CompileBooleanExpression(rule.Condition, false); err != nil {
+			return fmt.Errorf("compiling condition: %w", err)
+		}
 	}
 
 	// Emit final halt instruction (use a default position)

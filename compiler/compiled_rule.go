@@ -70,6 +70,7 @@ type CompiledRule struct {
 	ModuleNames           map[builtinFunction]string
 	HeaderConstraints     []HeaderConstraint
 	assertions            []conditionAssertion
+	assertionProgram      []assertionInstruction
 	mandatoryAssertions   []int
 	assertionCacheIndices []int
 	headerCacheIndices    []int
@@ -185,6 +186,9 @@ func (cr *CompiledRule) GetStats() map[string]any {
 
 // Validate validates the compiled rule
 func (cr *CompiledRule) Validate() error {
+	if err := validateAssertionProgram(cr.assertionProgram, cr.assertions); err != nil {
+		return err
+	}
 	for _, schema := range cr.moduleSchemas {
 		if err := validateModuleSchema(schema); err != nil {
 			return err
@@ -201,7 +205,7 @@ func (cr *CompiledRule) Validate() error {
 		}
 	}
 	for _, index := range cr.mandatoryAssertions {
-		if index < 0 || index >= len(cr.assertions) || cr.assertions[index].Opcode != OpAssertFilesize {
+		if index < 0 || index >= len(cr.assertions) || (cr.assertions[index].Opcode != OpAssertFilesize && cr.assertions[index].Opcode != OpAssertExternal) {
 			return errors.New("invalid mandatory assertion index")
 		}
 	}

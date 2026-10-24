@@ -1,6 +1,6 @@
 package compiler
 
-// assignSharedAssertions interns only payload predicates. String occurrences
+// assignSharedAssertions interns payload and external predicates. String occurrences
 // belong to individual rules and must never be shared merely by identifier.
 func (cp *CompiledProgram) assignSharedAssertions() {
 	cp.sharedAssertions = nil
@@ -19,7 +19,7 @@ func (cp *CompiledProgram) assignSharedAssertions() {
 		for index, assertion := range rule.assertions {
 			rule.assertionCacheIndices[index] = -1
 			switch assertion.Opcode {
-			case OpAssertUint16Eq, OpAssertUint32Eq, OpAssertFilesize:
+			case OpAssertUint16Eq, OpAssertUint32Eq, OpAssertFilesize, OpAssertExternal:
 				rule.assertionCacheIndices[index] = intern(assertion)
 			}
 		}
@@ -58,6 +58,7 @@ func assertionFromHeader(header HeaderConstraint) (conditionAssertion, bool) {
 
 func (s *Scanner) ruleConstraintsMatchContext(rule *CompiledRule, ctx *MatchContext, pruneFilesize bool) bool {
 	ctx.assertionResults = s.assertionResults
+	ctx.externalValues = s.externalValues
 	for index, constraint := range rule.HeaderConstraints {
 		if index < len(rule.headerCacheIndices) && rule.headerCacheIndices[index] >= 0 {
 			sharedIndex := rule.headerCacheIndices[index]
@@ -79,6 +80,12 @@ func (s *Scanner) ruleConstraintsMatchContext(rule *CompiledRule, ctx *MatchCont
 	}
 	if !pruneFilesize {
 		return true
+	}
+	// Never let a false guard hide a dynamic type error elsewhere in the rule.
+	for index, assertion := range rule.assertions {
+		if assertion.Opcode == OpAssertExternal && cachedInputAssertion(&rule.assertions[index], ctx, rule.assertionCacheIndices[index]) == assertionTypeMismatch {
+			return true
+		}
 	}
 	for _, index := range rule.mandatoryAssertions {
 		if cachedInputAssertion(&rule.assertions[index], ctx, rule.assertionCacheIndices[index]) != assertionTrue {

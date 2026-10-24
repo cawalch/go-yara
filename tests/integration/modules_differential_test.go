@@ -57,10 +57,6 @@ func TestLibyaraExpandedModules(t *testing.T) {
 		{"mean_string", `math.mean("abc") == 98.0`, nil},
 		{"deviation_string", `math.deviation("abc", 98.0) > 0.66 and math.deviation("abc", 98.0) < 0.67`, nil},
 		{"deviation_range", `math.deviation(0, 99, 98.0) > 0.66 and math.deviation(0, 99, 98.0) < 0.67`, []byte("abc")},
-		{"mean_high_bytes", `math.mean("\xff\x80") == -64.5`, nil},
-		{"deviation_high_bytes", `math.deviation("\xff\x80", 0.0) == 64.5`, nil},
-		{"serial_high_bytes", `math.serial_correlation("\xff\x80a\x05") != math.serial_correlation(0, filesize)`, []byte{255, 128, 97, 5}},
-		{"monte_carlo_signed_byte", `math.monte_carlo_pi("\x80\x00\x00\x00\x00\x00") == 1.0`, nil},
 		{"monte_carlo_high_bytes", `math.monte_carlo_pi("\xff\xff\xff\xff\xff\xff") == 1.0`, nil},
 		{"mean_zero", `defined math.mean(0, 0) and math.mean(0, 0) != 0.0`, []byte("abc")},
 		{"undefined_range", `defined math.mode(-1, 3) or defined math.percentage(97, 0, -1)`, []byte("abc")},
@@ -108,4 +104,41 @@ rule binary_undefined { condition: not defined string.to_int("0b10") }`
 		t.Fatal(err)
 	}
 	assertReleaseScanResult(t, map[string][]span{"binary_undefined": nil}, result)
+}
+
+// C char signedness is a libyara build property. Require exactly one known
+// native result, and independently enforce go-yara's stable signed-string API.
+func TestLibyaraStringStatisticsCompatibility(t *testing.T) {
+	for _, tc := range []struct {
+		name, signed, unsigned string
+		data                   []byte
+	}{
+		{"mean", `math.mean("\xff\x80") == -64.5`, `math.mean("\xff\x80") == 191.5`, nil},
+		{"deviation", `math.deviation("\xff\x80", 0.0) == 64.5`, `math.deviation("\xff\x80", 0.0) == 191.5`, nil},
+		{"serial", `math.serial_correlation("\xff\x80a\x05") != math.serial_correlation(0, filesize)`, `math.serial_correlation("\xff\x80a\x05") == math.serial_correlation(0, filesize)`, []byte{255, 128, 97, 5}},
+		{"monte_carlo", `math.monte_carlo_pi("\x80\x00\x00\x00\x00\x00") == 1.0`, `math.monte_carlo_pi("\x80\x00\x00\x00\x00\x00") > 0.27 and math.monte_carlo_pi("\x80\x00\x00\x00\x00\x00") < 0.28`, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			source := fmt.Sprintf(`import "math" rule signed_chars {condition:%s} rule unsigned_chars {condition:%s}`, tc.signed, tc.unsigned)
+			oracle, err := scanWithLibyara(t, libyaraOracle(t), source, tc.data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, signed := oracle["signed_chars"]
+			_, unsigned := oracle["unsigned_chars"]
+			if len(oracle) != 1 || signed == unsigned {
+				t.Fatalf("unknown native char behavior: %v", oracle)
+			}
+			t.Logf("libyara signed string statistics: %t", signed)
+			program, err := compiler.NewCompiler().CompileSourceWithContext(context.Background(), source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := program.Scan(tc.data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertReleaseScanResult(t, map[string][]span{"signed_chars": nil}, result)
+		})
+	}
 }

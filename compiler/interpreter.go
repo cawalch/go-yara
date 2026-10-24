@@ -54,6 +54,9 @@ const (
 
 // Interpreter represents a bytecode interpreter for YARA rules
 type Interpreter struct {
+	assertionRegisters  []assertionResult
+	directCondition     bool
+	directResult        assertionResult
 	moduleData          map[string]ModuleValue
 	bytecode            []byte
 	ip                  int                               // Instruction pointer
@@ -156,10 +159,11 @@ func (i *Interpreter) resetForPool() {
 	clear(i.iterators[:cap(i.iterators)])
 	clear(i.regexCache)
 	*i = Interpreter{
-		stack:       i.stack[:0],
-		stringArena: i.stringArena[:0],
-		iterators:   i.iterators[:0],
-		regexCache:  i.regexCache,
+		assertionRegisters: i.assertionRegisters[:0],
+		stack:              i.stack[:0],
+		stringArena:        i.stringArena[:0],
+		iterators:          i.iterators[:0],
+		regexCache:         i.regexCache,
 	}
 }
 
@@ -310,6 +314,12 @@ func (i *Interpreter) ruleResultByIndex(idx int, name string) bool {
 
 // GetStack returns a copy of the current stack (for debugging)
 func (i *Interpreter) GetStack() []Value {
+	if i.directCondition {
+		if i.directResult == assertionUndefined {
+			return []Value{{Type: ValueTypeUndefined}}
+		}
+		return []Value{{Type: ValueTypeInt, IntVal: boolToInt(i.directResult == assertionTrue)}}
+	}
 	stackCopy := make([]Value, len(i.stack))
 	copy(stackCopy, i.stack)
 	return stackCopy
@@ -331,6 +341,8 @@ func (i *Interpreter) GetMemoryAt(address int) Value {
 // Reset resets the interpreter state for new execution
 func (i *Interpreter) Reset() {
 	i.ip = 0
+	i.directCondition = false
+	i.directResult = assertionUnknown
 	i.stack = i.stack[:0]
 	// Memory is cleared by prepareInterpreter before Execute().
 	// This method is also called standalone (e.g., in tests), so clear

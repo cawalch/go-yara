@@ -48,12 +48,14 @@ type serializedRule struct {
 	ModuleSignatures    map[uint8]serializedModuleFunction
 	HeaderConstraints   []HeaderConstraint
 	Assertions          []conditionAssertion
+	AssertionProgram    []assertionInstruction
 	MandatoryAssertions []int
 }
 
 type serializedModuleFunction struct {
-	Signatures [][]ModuleValueType
-	ReturnType ModuleValueType
+	Signatures  [][]ModuleValueType
+	ReturnTypes []ModuleValueType
+	ReturnType  ModuleValueType
 }
 
 type serializedStringModifier struct {

@@ -222,7 +222,7 @@ func (i *Interpreter) executeModuleCall(id builtinFunction, function ModuleFunct
 	if err != nil {
 		return &InterpreterError{Type: ErrorRuntime, Opcode: OpCall, Message: err.Error()}
 	}
-	if result.Type != ModuleUndefined && result.Type != function.ReturnType {
+	if result.Type != ModuleUndefined && result.Type != moduleResultType(function, moduleArgs) {
 		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpCall, Message: "module returned an unexpected value type"}
 	}
 	if cache != nil {
@@ -496,4 +496,23 @@ func (i *Interpreter) executeIncrementMemory() error {
 		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpIncrM, Message: "memory slot contains non-integer value"}
 	}
 	return nil
+}
+
+func moduleResultType(function ModuleFunction, args []ModuleValue) ModuleValueType {
+	for _, signature := range function.Signatures {
+		if len(signature.Arguments) != len(args) {
+			continue
+		}
+		matches := true
+		for index, expected := range signature.Arguments {
+			if args[index].Type != expected {
+				matches = false
+				break
+			}
+		}
+		if matches {
+			return signature.resultType(function.ReturnType)
+		}
+	}
+	return function.ReturnType
 }

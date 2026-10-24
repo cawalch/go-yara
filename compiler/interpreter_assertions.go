@@ -9,6 +9,8 @@ const (
 	assertionFalse
 	assertionTrue
 	assertionInvalidRead
+	assertionUndefined
+	assertionTypeMismatch
 )
 
 func compareAssertion(left, right int64, comparison Opcode) bool {
@@ -33,6 +35,11 @@ func compareAssertion(left, right int64, comparison Opcode) bool {
 func evaluateInputAssertion(assertion *conditionAssertion, ctx *MatchContext) assertionResult {
 	var value int64
 	switch assertion.Opcode {
+	case OpAssertExternal:
+		if ctx == nil {
+			return assertionUndefined
+		}
+		return evaluateExternalAssertion(assertion, ctx.externalValues)
 	case OpAssertFilesize:
 		if ctx != nil {
 			value = ctx.FileSize
@@ -70,6 +77,8 @@ func cachedInputAssertion(assertion *conditionAssertion, ctx *MatchContext, inde
 	return result
 }
 
+func (i *Interpreter) executeAssertExternal() error { return i.executeAssertion(OpAssertExternal) }
+
 func (i *Interpreter) executeAssertUint16Eq() error { return i.executeAssertion(OpAssertUint16Eq) }
 func (i *Interpreter) executeAssertUint32Eq() error { return i.executeAssertion(OpAssertUint32Eq) }
 func (i *Interpreter) executeAssertFilesize() error { return i.executeAssertion(OpAssertFilesize) }
@@ -88,9 +97,22 @@ func (i *Interpreter) executeAssertion(opcode Opcode) error {
 	if rule == nil || index >= uint64(len(rule.assertions)) || rule.assertions[index].Opcode != opcode {
 		return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: opcode, Message: "invalid condition assertion index"}
 	}
+
+	result, err := i.evaluateAssertion(int(index))
+	if err != nil {
+		return err
+	}
+	if result == assertionUndefined {
+		return i.push(Value{Type: ValueTypeUndefined})
+	}
+	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(result == assertionTrue)})
+}
+
+func (i *Interpreter) evaluateAssertion(index int) (assertionResult, error) {
+	rule := i.currentCompiledRule
 	assertion := &rule.assertions[index]
 	var matched bool
-	switch opcode {
+	switch assertion.Opcode {
 	case OpAssertStringAt:
 		matched = i.matchContext != nil && i.matchContext.hasMatchAt(assertion.String, assertion.Offset)
 	case OpAssertStringCount:
@@ -99,24 +121,29 @@ func (i *Interpreter) executeAssertion(opcode Opcode) error {
 			count = int64(i.matchContext.matchCount(assertion.String))
 		}
 		matched = compareAssertion(count, assertion.Value, assertion.Comparison)
-	default:
+	case OpAssertExternal, OpAssertUint16Eq, OpAssertUint32Eq, OpAssertFilesize:
 		cacheIndex := -1
-		if index < uint64(len(rule.assertionCacheIndices)) {
+		if index < len(rule.assertionCacheIndices) {
 			cacheIndex = rule.assertionCacheIndices[index]
 		}
 		result := cachedInputAssertion(assertion, i.matchContext, cacheIndex)
 		if result == assertionInvalidRead {
-			// Preserve the unfused interpreter's error type/message. Header pruning
-			// treats unreadable data as a rejection, but optional reads still error.
 			width := 2
-			if opcode == OpAssertUint32Eq {
+			if assertion.Opcode == OpAssertUint32Eq {
 				width = 4
 			}
 			_, err := i.executeReadInt(assertion.Offset, width, false)
-			return err
+			return result, err
 		}
-		matched = result == assertionTrue
+		if result == assertionTypeMismatch {
+			return result, i.externalAssertionError(assertion)
+		}
+		return result, nil
+	default:
+		return assertionUnknown, &InterpreterError{Type: ErrorInvalidBytecode, Opcode: assertion.Opcode, Message: "invalid assertion opcode"}
 	}
-	// The expression result is the sole stack write; no temporary operands.
-	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(matched)})
+	if matched {
+		return assertionTrue, nil
+	}
+	return assertionFalse, nil
 }

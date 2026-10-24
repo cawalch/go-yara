@@ -5,8 +5,9 @@ import "strings"
 // ModuleFunction describes the type signatures accepted by one dotted module
 // function. Each inner slice in Signatures is one accepted argument list.
 type ModuleFunction struct {
-	Signatures [][]DataType
-	ReturnType DataType
+	Signatures  [][]DataType
+	ReturnTypes []DataType // Optional per-signature overrides; TypeUnknown inherits ReturnType.
+	ReturnType  DataType
 }
 
 // ModuleFunctions maps fully qualified names (for example, "hash.md5") to

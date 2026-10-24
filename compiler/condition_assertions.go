@@ -13,11 +13,15 @@ import (
 // conditionAssertion is an immutable operand-pool entry. Keeping full-width
 // constants here avoids narrowing offsets and thresholds in fused bytecode.
 type conditionAssertion struct {
-	Opcode     Opcode
-	Comparison Opcode
-	Offset     int64
-	Value      int64
-	String     string
+	External      string
+	ExternalType  ValueType
+	Text          string
+	ExternalRight bool
+	Opcode        Opcode
+	Comparison    Opcode
+	Offset        int64
+	Value         int64
+	String        string
 }
 
 func assertionInteger(expr ast.Expression) (int64, bool) {
@@ -141,7 +145,7 @@ func (cc *conditionCompiler) compileAssertion(bin *ast.BinaryOp) bool {
 	if cc.disableAssertions {
 		return false
 	}
-	assertion, ok := assertionFromExpression(bin)
+	assertion, ok := cc.assertionForExpression(bin)
 	if !ok {
 		return false
 	}
@@ -150,20 +154,19 @@ func (cc *conditionCompiler) compileAssertion(bin *ast.BinaryOp) bool {
 			return false
 		}
 	}
-	index := slices.Index(cc.assertions, assertion)
-	if index < 0 {
-		index = len(cc.assertions)
-		cc.assertions = append(cc.assertions, assertion)
-	}
+	index := cc.internAssertion(assertion)
 	cc.emitter.EmitOpcodeWithOperand(assertion.Opcode, Operand{Type: OperandImmediate32, Value: uint64(index)}, bin.Pos.Line, bin.Pos.Column)
 	return true
 }
 
-// Only hoist filesize guards in conditions whose other operations cannot
+// Hoist filesize/external guards only when other operations cannot
 // produce errors or invoke callbacks. Mandatory integer reads are already
 // checked by the existing header constraints. Optional reads, loops, arithmetic,
 // and module calls stay in the interpreter to preserve observable failures.
-func assertionPruningSafe(expr ast.Expression, headers []HeaderConstraint) bool {
+func assertionPruningSafeWithExternals(expr ast.Expression, headers []HeaderConstraint, externals map[string]int) bool {
+	if _, ok := externalAssertion(expr, externals, nil); ok {
+		return true
+	}
 	if assertion, ok := assertionFromExpression(expr); ok {
 		if assertion.Opcode != OpAssertUint16Eq && assertion.Opcode != OpAssertUint32Eq {
 			return true
@@ -173,9 +176,9 @@ func assertionPruningSafe(expr ast.Expression, headers []HeaderConstraint) bool 
 	}
 	switch expr := expr.(type) {
 	case *ast.BinaryOp:
-		return (expr.Op == token.AND || expr.Op == token.OR) && assertionPruningSafe(expr.Left, headers) && assertionPruningSafe(expr.Right, headers)
+		return (expr.Op == token.AND || expr.Op == token.OR) && assertionPruningSafeWithExternals(expr.Left, headers, externals) && assertionPruningSafeWithExternals(expr.Right, headers, externals)
 	case *ast.UnaryOp:
-		return expr.Op == token.NOT && assertionPruningSafe(expr.Right, headers)
+		return expr.Op == token.NOT && assertionPruningSafeWithExternals(expr.Right, headers, externals)
 	case *ast.Literal:
 		return expr.Type == token.TRUE || expr.Type == token.FALSE
 	case *ast.Identifier:
@@ -186,13 +189,23 @@ func assertionPruningSafe(expr ast.Expression, headers []HeaderConstraint) bool 
 }
 
 func mandatoryAssertionIndices(expr ast.Expression, assertions []conditionAssertion) []int {
-	if !assertionPruningSafe(expr, deriveHeaderConstraints(expr)) {
+	externals := map[string]int{}
+	for _, assertion := range assertions {
+		if assertion.External != "" {
+			externals[assertion.External] = 0
+		}
+	}
+	if !assertionPruningSafeWithExternals(expr, deriveHeaderConstraints(expr), externals) {
 		return nil
 	}
 	var indices []int
 	var visit func(ast.Expression)
 	visit = func(expr ast.Expression) {
-		if assertion, ok := assertionFromExpression(expr); ok && assertion.Opcode == OpAssertFilesize {
+		assertion, ok := assertionFromExpression(expr)
+		if !ok {
+			assertion, ok = externalAssertion(expr, externals, nil)
+		}
+		if ok && (assertion.Opcode == OpAssertFilesize || assertion.Opcode == OpAssertExternal) {
 			if index := slices.Index(assertions, assertion); index >= 0 && !slices.Contains(indices, index) {
 				indices = append(indices, index)
 			}
@@ -209,6 +222,10 @@ func mandatoryAssertionIndices(expr ast.Expression, assertions []conditionAssert
 
 func (assertion conditionAssertion) validate() error {
 	switch assertion.Opcode {
+	case OpAssertExternal:
+		if assertion.External == "" || assertion.Comparison < OpIntEq || assertion.Comparison > OpIntGe || (assertion.ExternalType != ValueTypeInt && assertion.ExternalType != ValueTypeString) {
+			return errors.New("invalid external assertion")
+		}
 	case OpAssertUint16Eq, OpAssertUint32Eq:
 		if assertion.Comparison != OpIntEq || assertion.String != "" {
 			return errors.New("invalid integer assertion")

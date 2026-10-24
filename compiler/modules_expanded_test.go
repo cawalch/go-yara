@@ -34,10 +34,13 @@ func TestExpandedModuleSmoke(t *testing.T) {
 }
 
 func TestModuleRangeCacheAcrossRulesAndScans(t *testing.T) {
+	first := bytes.Repeat([]byte("A"), 10*1024*1024)
+	second := bytes.Repeat([]byte("B"), len(first))
+	digest := fmt.Sprintf("%x", sha256.Sum256(first))
 	var source strings.Builder
 	source.WriteString(`import "hash" import "math" `)
 	for index := 0; index < 100; index++ {
-		fmt.Fprintf(&source, `rule r%d { condition: hash.sha256(0, filesize) == "%s" and math.entropy(0, filesize) == 0.0 } `, index, fmt.Sprintf("%x", sha256.Sum256([]byte("AAAA"))))
+		fmt.Fprintf(&source, `rule r%d { condition: hash.sha256(0, filesize) == "%s" and math.entropy(0, filesize) == 0.0 } `, index, digest)
 	}
 	program, err := NewCompiler().CompileSource(source.String())
 	if err != nil {
@@ -57,7 +60,7 @@ func TestModuleRangeCacheAcrossRulesAndScans(t *testing.T) {
 	}
 	scanner := program.NewScanner()
 	defer scanner.Close()
-	for _, data := range [][]byte{[]byte("AAAA"), []byte("AAAA"), []byte("BBBB")} {
+	for _, data := range [][]byte{first, first, second} {
 		clear(calls)
 		result, err := scanner.Scan(data)
 		if err != nil {
@@ -249,7 +252,7 @@ func BenchmarkRepeatedModuleRanges(b *testing.B) {
 func TestExpandedModuleArgumentValidation(t *testing.T) {
 	for _, condition := range []string{
 		`time.now(1) > 0`, `string.length(1) > 0`, `string.to_int("1", 2.0) > 0`,
-		`math.min(1.0, 2.0) > 0`, `math.in_range(1, 0, 2)`, `math.to_number(1) == 1`,
+		`math.min("x", 2.0) > 0`, `math.in_range(1, 0, 2)`, `math.to_number(1) == 1`,
 		`math.count() > 0`, `hash.crc32() > 0`,
 	} {
 		t.Run(condition, func(t *testing.T) {

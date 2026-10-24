@@ -17,8 +17,8 @@ import (
 
 const (
 	compiledProgramMagic = "GOYARA\x00"
-	// Version 6 adds structured module schemas and access/iteration operands.
-	compiledProgramVersion = uint16(6)
+	// Version 7 adds assertion programs, external guards, and numeric overload returns.
+	compiledProgramVersion = uint16(7)
 )
 
 // MarshalBinary serializes a compiled program using the current versioned
@@ -81,7 +81,7 @@ func ReadCompiledProgram(reader io.Reader, modules ...Module) (*CompiledProgram,
 	if err := binary.Read(reader, binary.BigEndian, &version); err != nil {
 		return nil, fmt.Errorf("reading compiled program version: %w", err)
 	}
-	if version != 4 && version != 5 && version != compiledProgramVersion {
+	if version != 4 && version != 5 && version != 6 && version != compiledProgramVersion {
 		return nil, fmt.Errorf("unsupported compiled program version %d; rebuild with format version %d", version, compiledProgramVersion)
 	}
 
@@ -164,6 +164,7 @@ func serializeRule(rule *CompiledRule) (serializedRule, error) {
 		ModuleSignatures:    make(map[uint8]serializedModuleFunction, len(rule.ModuleFunctions)),
 		HeaderConstraints:   slices.Clone(rule.HeaderConstraints),
 		Assertions:          slices.Clone(rule.assertions),
+		AssertionProgram:    slices.Clone(rule.assertionProgram),
 		MandatoryAssertions: slices.Clone(rule.mandatoryAssertions),
 		RequiredStrings:     slices.Clone(rule.requiredStrings),
 		ForbiddenStrings:    slices.Clone(rule.forbiddenStrings),
@@ -291,6 +292,7 @@ func deserializeRule(serialized serializedRule, bindings map[string]compiledModu
 		ModuleNames:         make(map[builtinFunction]string, len(serialized.ModuleNames)),
 		HeaderConstraints:   slices.Clone(serialized.HeaderConstraints),
 		assertions:          slices.Clone(serialized.Assertions),
+		assertionProgram:    slices.Clone(serialized.AssertionProgram),
 		mandatoryAssertions: slices.Clone(serialized.MandatoryAssertions),
 		requiredStrings:     slices.Clone(serialized.RequiredStrings),
 		forbiddenStrings:    slices.Clone(serialized.ForbiddenStrings),
@@ -336,20 +338,26 @@ func deserializeRule(serialized serializedRule, bindings map[string]compiledModu
 
 func serializeModuleFunction(function ModuleFunction) serializedModuleFunction {
 	signatures := make([][]ModuleValueType, len(function.Signatures))
+	returns := make([]ModuleValueType, len(function.Signatures))
 	for index, signature := range function.Signatures {
 		signatures[index] = slices.Clone(signature.Arguments)
+		returns[index] = signature.resultType(function.ReturnType)
 	}
-	return serializedModuleFunction{Signatures: signatures, ReturnType: function.ReturnType}
+	return serializedModuleFunction{Signatures: signatures, ReturnTypes: returns, ReturnType: function.ReturnType}
 }
 
 func moduleFunctionCompatible(function ModuleFunction, serialized serializedModuleFunction) bool {
 	if function.ReturnType != serialized.ReturnType {
 		return false
 	}
-	for _, required := range serialized.Signatures {
+	for index, required := range serialized.Signatures {
+		resultType := serialized.ReturnType
+		if index < len(serialized.ReturnTypes) && serialized.ReturnTypes[index] != ModuleUndefined {
+			resultType = serialized.ReturnTypes[index]
+		}
 		found := false
 		for _, candidate := range function.Signatures {
-			if slices.Equal(candidate.Arguments, required) {
+			if slices.Equal(candidate.Arguments, required) && candidate.resultType(function.ReturnType) == resultType {
 				found = true
 				break
 			}

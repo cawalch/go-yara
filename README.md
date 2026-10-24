@@ -226,6 +226,10 @@ strings or ranges; `count` and `percentage` accept a byte value with an optional
 range, and `mode` accepts an optional range. Invalid ranges and conversions yield
 YARA's undefined value. Ranges beginning inside the input are truncated at EOF.
 `math.min` and `math.max` compare integers as unsigned values, as YARA does.
+Float and mixed integer/float overloads are go-yara extensions: they return a
+float and use signed numeric ordering. Calls with untyped external arguments
+retain the declared integer result contract unless a float argument is statically
+known; supply a float literal or typed module field to select the float overload.
 `math.in_range` takes three floats. `math.to_string` supports bases 8, 10, and 16.
 `string.to_int` autodetects decimal, octal, and hexadecimal consistently on all
 platforms. Binary prefixes such as `"0b10"` are undefined; use
@@ -236,11 +240,18 @@ prefixes depending on its host C library and build.
 `math.deviation(offset, size)` standard-deviation extension remains supported.
 YARA-compatible mean absolute deviation uses `math.deviation(offset, size, mean)`
 or `math.deviation(string, mean)`, with a floating-point mean.
+String statistics consistently interpret high bytes as signed characters;
+range statistics use unsigned bytes. Native libyara string results can differ
+on targets where C `char` is unsigned. Differential tests classify these known
+native variants separately from strict portable parity.
 
 Deterministic built-in numeric/range calls share a bounded 16-entry cache across
 rules in each scan. Entries are discarded before the next scan, including block
 scans. Once the cache is full, additional distinct calls execute normally;
 string arguments and `time.now()` are not cached. Cache hits allocate no memory.
+The cache adds no per-scan allocations after warm-up; a cache miss may still
+allocate for the underlying operation, such as constructing a digest string.
+Repeating the same digest across 100 rules incurs the same allocations as one rule.
 Custom callbacks are uncached unless they explicitly set `ModuleFunction.Cacheable`
 and meet its purity contract. Custom modules supplied when loading a serialized
 program determine their own caching policy.
@@ -349,9 +360,17 @@ if err != nil {
 }
 ```
 
-Stream-based serialization is also supported via `program.WriteTo(w)` and `compiler.ReadCompiledProgram(r)`. Serialized programs preserve compiled automatons, hex tables, and prefilter structures. External variables and custom module handlers must be rebound after deserialization. New artifacts use format version 6; versions 4 and 5 remain readable. Older binaries cannot load version 6 artifacts. Structured module schemas are preserved; host data must be rebound on each scanner.
+Stream-based serialization is also supported via `program.WriteTo(w)` and `compiler.ReadCompiledProgram(r)`. Serialized programs preserve compiled automatons, hex tables, and prefilter structures. External variables and custom module handlers must be rebound after deserialization. New artifacts use format version 7; versions 4, 5, and 6 remain readable. Older binaries cannot load version 7 artifacts. Structured module schemas are preserved; host data must be rebound on each scanner.
 
-The compiler fuses fixed-offset `uint16`/`uint32` equality, integer filesize bounds, string-at checks, and string-count comparisons. Payload guards share scan-local results across rules. Safe mandatory guards can reject rules before interpretation; default scans still preserve string matches for rules rejected by a filesize condition. External-variable comparisons and callback-bearing conditions retain normal evaluation. When using `Interpreter` directly with compiled bytecode, bind its rules with `SetCompiledRules` and select the rule with `SetCurrentRule` so assertion operands are available.
+The compiler fuses fixed-offset `uint16`/`uint32` equality, integer filesize bounds,
+string-at checks, string-count comparisons, and external comparisons with integer,
+boolean, or string constants. A complete condition composed of these predicates
+and `and`/`or`/`not` runs as a dataflow program with no operand-stack pushes or
+pops. Mixed conditions retain the stack-based fused instructions. Payload and
+external guards share scan-local results across rules. Safe mandatory guards can
+reject rules before interpretation; default scans still preserve string matches
+for rules rejected by a filesize or external condition. Conditions with callbacks
+or potentially observable errors retain normal evaluation. When using `Interpreter` directly with compiled bytecode, bind its rules with `SetCompiledRules` and select the rule with `SetCurrentRule` so assertion operands are available.
 
 ### Sparse Block Scanning
 

@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"slices"
@@ -70,7 +71,10 @@ type ModuleContext struct {
 
 // ModuleSignature describes one accepted argument list for a module function.
 type ModuleSignature struct {
-	Arguments []ModuleValueType
+	// ReturnType may specialize an integer function to a float result for numeric overloads.
+	// ModuleUndefined inherits ModuleFunction.ReturnType.
+	ReturnType ModuleValueType
+	Arguments  []ModuleValueType
 }
 
 // ModuleFunction is a typed function exposed by a module.
@@ -135,15 +139,18 @@ func semanticModuleFunctions(registered map[string]Module) semantic.ModuleFuncti
 	for moduleName, module := range registered {
 		for functionName, function := range module.Functions {
 			signatures := make([][]semantic.DataType, len(function.Signatures))
+			returns := make([]semantic.DataType, len(function.Signatures))
 			for signatureIndex, signature := range function.Signatures {
+				returns[signatureIndex] = moduleSemanticType(signature.resultType(function.ReturnType))
 				signatures[signatureIndex] = make([]semantic.DataType, len(signature.Arguments))
 				for argumentIndex, argument := range signature.Arguments {
 					signatures[signatureIndex][argumentIndex] = moduleSemanticType(argument)
 				}
 			}
 			functions[moduleName+"."+functionName] = semantic.ModuleFunction{
-				Signatures: signatures,
-				ReturnType: moduleSemanticType(function.ReturnType),
+				Signatures:  signatures,
+				ReturnTypes: returns,
+				ReturnType:  moduleSemanticType(function.ReturnType),
 			}
 		}
 	}
@@ -177,6 +184,12 @@ func compileModuleFunctions(
 				return nil, nil, nil, fmt.Errorf("invalid module function %s.%s", moduleName, functionName)
 			}
 			for _, signature := range function.Signatures {
+				if typ := signature.resultType(function.ReturnType); typ < ModuleInteger || typ > ModuleBoolean {
+					return nil, nil, nil, fmt.Errorf("invalid overload result in module function %s.%s", moduleName, functionName)
+				}
+				if err := signature.validateResult(function.ReturnType); err != nil {
+					return nil, nil, nil, fmt.Errorf("module function %s.%s: %w", moduleName, functionName, err)
+				}
 				for _, argument := range signature.Arguments {
 					if argument < ModuleInteger || argument > ModuleBoolean {
 						return nil, nil, nil, fmt.Errorf("invalid argument type in module function %s.%s", moduleName, functionName)
@@ -243,4 +256,31 @@ func shannonEntropy(data []byte) float64 {
 		entropy -= probability * math.Log2(probability)
 	}
 	return entropy
+}
+
+func (signature ModuleSignature) resultType(fallback ModuleValueType) ModuleValueType {
+	if signature.ReturnType != ModuleUndefined {
+		return signature.ReturnType
+	}
+	return fallback
+}
+
+func (signature ModuleSignature) validateResult(fallback ModuleValueType) error {
+	if signature.ReturnType == ModuleUndefined || signature.ReturnType == fallback {
+		return nil
+	}
+	if fallback != ModuleInteger || signature.ReturnType != ModuleFloat {
+		return errors.New("only integer-to-float result overloads are supported")
+	}
+	hasFloat := false
+	for _, argument := range signature.Arguments {
+		if argument != ModuleInteger && argument != ModuleFloat {
+			return errors.New("float result overload requires numeric arguments")
+		}
+		hasFloat = hasFloat || argument == ModuleFloat
+	}
+	if !hasFloat {
+		return errors.New("float result overload requires a float argument")
+	}
+	return nil
 }

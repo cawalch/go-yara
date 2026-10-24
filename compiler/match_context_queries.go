@@ -19,6 +19,7 @@ type MatchContext struct {
 	regexBatch       regex.VMBatch
 	moduleCache      *moduleCallCache
 	assertionResults []assertionResult
+	externalValues   map[string]externalValue
 	FileSize         int64
 	EntryPoint       int64
 	// maxMatchesPerPattern bounds retained occurrences. Zero means unlimited.
