@@ -6,6 +6,7 @@ description: Look up go-yara module signatures, understand range arguments and u
 import { Code } from '@astrojs/starlight/components';
 import ModuleTable from '../../components/ModuleTable.astro';
 import example from '../../../examples/modules/main.go?raw';
+import release from '../../generated/release.json';
 
 Modules make functions and typed data available to rule conditions. Import a built-in module by name, or register a host module when creating the compiler.
 
@@ -41,7 +42,7 @@ Missing fields, missing dictionary keys, and out-of-range array indices evaluate
 
 ## Custom functions and caching
 
-Register scalar callbacks through `Module.Functions`. Declare their accepted signatures and return type, and keep callbacks deterministic and safe for concurrent use. The [Module API reference](https://pkg.go.dev/github.com/cawalch/go-yara/compiler#Module) describes the callback types.
+<p>Register scalar callbacks through <code>Module.Functions</code>. Declare their accepted signatures and return type, and keep callbacks deterministic and safe for concurrent use. The <a href={`https://pkg.go.dev/github.com/cawalch/go-yara@${release.version}/compiler#Module`}>Module API reference</a> describes the callback types.</p>
 
 Deterministic built-in numeric and range calls share a bounded cache within each scan. String arguments and `time.now()` are not cached. Custom callbacks are uncached unless they opt in with `ModuleFunction.Cacheable` and satisfy its purity contract. A digest calculation can still allocate on a cache miss; see [performance](/go-yara/performance/#module-work).
 

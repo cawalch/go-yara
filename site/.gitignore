@@ -3,3 +3,4 @@ dist/
 .astro/
 src/generated/
 .cache/
+__pycache__/

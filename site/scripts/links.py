@@ -42,7 +42,7 @@ class Document(HTMLParser):
             self.description.append(attrs.get("content"))
         for attr in ("href", "src"):
             if attrs.get(attr):
-                # Starlight emits a canonical route for its non-indexed 404 page.
+                # The default 404 canonical is not a navigable content route.
                 if self.path.name == "404.html" and tag == "link" and attrs.get("rel") == "canonical":
                     continue
                 self.links.append(attrs[attr])

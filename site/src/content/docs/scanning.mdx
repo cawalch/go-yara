@@ -5,6 +5,7 @@ description: Choose between byte-slice, reader, file, and sparse-block scanning.
 
 import { Code } from '@astrojs/starlight/components';
 import reuse from '../../../examples/reuse/main.go?raw';
+import release from '../../generated/release.json';
 
 Compile a rule set once and reuse its `CompiledProgram`. Choose the scan API based on where the bytes live and whether you need complete match details or only a boolean answer.
 
@@ -41,7 +42,7 @@ Context-aware compilation and scan methods accept a `context.Context`. Cancellat
 
 For repetitive inputs, match limits can bound the number of recorded string occurrences. `WithMaxMatches` and `WithMaxMatchSpan` address different costs: occurrence counts and the bytes considered for an individual regex match. Choose limits with your rules in mind, because limiting matches can affect conditions that depend on counts or offsets.
 
-See the [scanner API reference](https://pkg.go.dev/github.com/cawalch/go-yara/compiler#Scanner) for context-aware methods, hooks, and limit options.
+<p>See the <a href={`https://pkg.go.dev/github.com/cawalch/go-yara@${release.version}/compiler#Scanner`}>scanner API reference</a> for context-aware methods, hooks, and limit options.</p>
 
 ## Bind application data
 
