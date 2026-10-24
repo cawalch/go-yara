@@ -271,6 +271,9 @@ func (cc *conditionCompiler) handleSpecialOperators(binOp *ast.BinaryOp) (bool, 
 }
 
 func (cc *conditionCompiler) compileBinaryOp(binOp *ast.BinaryOp) error {
+	if cc.compileAssertion(binOp) {
+		return nil
+	}
 	handled, err := cc.handleSpecialOperators(binOp)
 	if err != nil {
 		return err

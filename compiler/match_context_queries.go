@@ -9,17 +9,18 @@ import (
 
 // MatchContext holds pattern matching state
 type MatchContext struct {
-	Data         []byte
-	Blocks       []MemoryBlock
-	Matches      map[string][]Match // Pattern -> list of matches
-	matchBuffers map[string][]Match
-	spans        map[string][]matchSpan
-	spanBuffers  map[string][]matchSpan
-	cancelDone   <-chan struct{}
-	regexBatch   regex.VMBatch
-	moduleCache  *moduleCallCache
-	FileSize     int64
-	EntryPoint   int64
+	Data             []byte
+	Blocks           []MemoryBlock
+	Matches          map[string][]Match // Pattern -> list of matches
+	matchBuffers     map[string][]Match
+	spans            map[string][]matchSpan
+	spanBuffers      map[string][]matchSpan
+	cancelDone       <-chan struct{}
+	regexBatch       regex.VMBatch
+	moduleCache      *moduleCallCache
+	assertionResults []assertionResult
+	FileSize         int64
+	EntryPoint       int64
 	// maxMatchesPerPattern bounds retained occurrences. Zero means unlimited.
 	maxMatchesPerPattern int
 	// maxMatchSpan bounds the maximum byte length of a single regex match. Zero means unlimited.

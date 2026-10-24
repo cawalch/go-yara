@@ -177,22 +177,6 @@ func headerConstraintKey(constraint HeaderConstraint) string {
 		constraint.BigEndian, constraint.Value, constraint.String)
 }
 
-func ruleHeaderConstraintsMatchContext(rule *CompiledRule, ctx *MatchContext) bool {
-	for _, constraint := range rule.HeaderConstraints {
-		switch constraint.Kind {
-		case HeaderIntegerEquals:
-			if !headerIntegerEquals(ctx, constraint) {
-				return false
-			}
-		case HeaderStringAt:
-			if !compiledPatternMatchesAtContext(rule, constraint.String, ctx, constraint.Offset) {
-				return false
-			}
-		}
-	}
-	return true
-}
-
 func headerIntegerEquals(ctx *MatchContext, constraint HeaderConstraint) bool {
 	if constraint.Width <= 0 {
 		return false

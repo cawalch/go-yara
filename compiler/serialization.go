@@ -16,8 +16,8 @@ import (
 
 const (
 	compiledProgramMagic = "GOYARA\x00"
-	// Version 4 distinguishes string-value MATCHES from pattern MATCHES.
-	compiledProgramVersion = uint16(4)
+	// Version 5 adds fused condition instructions and assertion operand pools.
+	compiledProgramVersion = uint16(5)
 )
 
 // MarshalBinary serializes a compiled program using the current versioned
@@ -80,7 +80,7 @@ func ReadCompiledProgram(reader io.Reader, modules ...Module) (*CompiledProgram,
 	if err := binary.Read(reader, binary.BigEndian, &version); err != nil {
 		return nil, fmt.Errorf("reading compiled program version: %w", err)
 	}
-	if version != compiledProgramVersion {
+	if version != 4 && version != compiledProgramVersion {
 		return nil, fmt.Errorf("unsupported compiled program version %d; rebuild with format version %d", version, compiledProgramVersion)
 	}
 
@@ -159,6 +159,8 @@ func serializeRule(rule *CompiledRule) (serializedRule, error) {
 		ModuleNames:         make(map[uint8]string, len(rule.ModuleNames)),
 		ModuleSignatures:    make(map[uint8]serializedModuleFunction, len(rule.ModuleFunctions)),
 		HeaderConstraints:   slices.Clone(rule.HeaderConstraints),
+		Assertions:          slices.Clone(rule.assertions),
+		MandatoryAssertions: slices.Clone(rule.mandatoryAssertions),
 		RequiredStrings:     slices.Clone(rule.requiredStrings),
 		ForbiddenStrings:    slices.Clone(rule.forbiddenStrings),
 	}
@@ -269,6 +271,8 @@ func deserializeRule(serialized serializedRule, bindings map[string]compiledModu
 		ModuleFunctions:     make(map[builtinFunction]ModuleFunction, len(serialized.ModuleNames)),
 		ModuleNames:         make(map[builtinFunction]string, len(serialized.ModuleNames)),
 		HeaderConstraints:   slices.Clone(serialized.HeaderConstraints),
+		assertions:          slices.Clone(serialized.Assertions),
+		mandatoryAssertions: slices.Clone(serialized.MandatoryAssertions),
 		requiredStrings:     slices.Clone(serialized.RequiredStrings),
 		forbiddenStrings:    slices.Clone(serialized.ForbiddenStrings),
 	}

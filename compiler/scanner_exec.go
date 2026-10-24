@@ -173,6 +173,7 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (*ScanResult
 		s.telemetrySink.BytesScanned += int64(len(data))
 	}
 
+	clear(s.assertionResults)
 	if s.reportedMatchesOnly && s.compactPrefilterRejects(ctx, data) {
 		if s.hookMask&hookBitPrefilter != 0 {
 			s.dispatchPrefilter(PrefilterDecision{Stage: PrefilterStageCompactMask, Rejected: true})
@@ -484,6 +485,7 @@ func (s *Scanner) evaluatePublicRules(
 	data []byte,
 	matchedRuleIndices *[]int,
 ) (publicRuleEvaluation, error) {
+	clear(s.assertionResults)
 	if s.compactPrefilterRejects(ctx, data) {
 		if s.hookMask&hookBitPrefilter != 0 {
 			s.dispatchPrefilter(PrefilterDecision{Stage: PrefilterStageCompactMask, Rejected: true})

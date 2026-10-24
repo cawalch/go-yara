@@ -142,14 +142,15 @@ func (s *Scanner) recordRuleEvaluatedHooks(
 }
 
 func (s *Scanner) ruleHeaderConstraintsMatchInput(ctx context.Context, rule *CompiledRule, input ruleScanInput) bool {
+	pruneFilesize := input.skipUnmatchedContext || s.omitMatches || s.reportedMatchesOnly
 	if !s.blockScan {
-		return ruleHeaderConstraintsMatchContext(rule, &MatchContext{Data: input.data, cancelDone: ctx.Done()})
+		return s.ruleConstraintsMatchContext(rule, &MatchContext{Data: input.data, FileSize: int64(len(input.data)), cancelDone: ctx.Done()}, pruneFilesize)
 	}
-	return ruleHeaderConstraintsMatchContext(rule, &MatchContext{
+	return s.ruleConstraintsMatchContext(rule, &MatchContext{
 		cancelDone: ctx.Done(),
 		Blocks:     s.blockContext[:],
 		FileSize:   s.blockFileSize,
-	})
+	}, pruneFilesize)
 }
 
 func (s *Scanner) preparePatternScan(ctx context.Context, data []byte) (bool, error) {
@@ -184,6 +185,7 @@ func (s *Scanner) populateRuleMatchContext(
 ) error {
 	s.matchCtx.Reset(input.data)
 	s.matchCtx.moduleCache = &s.moduleCache
+	s.matchCtx.assertionResults = s.assertionResults
 	s.matchCtx.cancelDone = ctx.Done()
 	s.matchCtx.maxMatchesPerPattern = 0
 	if s.fastScan && rule.FastScanSafe {

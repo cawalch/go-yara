@@ -196,6 +196,16 @@ const OpPush64 Opcode = 93
 // OpMatchesValue matches a string value without interpreting it as a pattern identifier.
 const OpMatchesValue Opcode = 94
 
+// Fused condition instructions index the rule's immutable assertion pool.
+// Existing opcode values are preserved for serialized-program compatibility.
+const (
+	OpAssertUint16Eq Opcode = 160 + iota
+	OpAssertUint32Eq
+	OpAssertFilesize
+	OpAssertStringAt
+	OpAssertStringCount
+)
+
 // Opcode categories for classification
 const (
 	OpCategoryControl    = "control"
@@ -216,7 +226,7 @@ func isControlOpcode(op Opcode) bool {
 
 // isLogicalOpcode checks if opcode is a logical operation
 func isLogicalOpcode(op Opcode) bool {
-	return (op >= OpAnd && op <= OpBitwiseXor) ||
+	return (op >= OpAssertUint16Eq && op <= OpAssertStringCount) || (op >= OpAnd && op <= OpBitwiseXor) ||
 		op == OpIntToDbl || op == OpStrToBool
 }
 
@@ -292,6 +302,11 @@ func (op Opcode) GetCategory() string {
 
 // opcodeNames maps basic opcodes to their string names
 var opcodeNames = map[Opcode]string{
+	OpAssertUint16Eq:         "ASSERT_UINT16_EQ",
+	OpAssertUint32Eq:         "ASSERT_UINT32_EQ",
+	OpAssertFilesize:         "ASSERT_FILESIZE",
+	OpAssertStringAt:         "ASSERT_STRING_AT",
+	OpAssertStringCount:      "ASSERT_STRING_COUNT",
 	OpError:                  "ERROR",
 	OpHalt:                   "HALT",
 	OpNop:                    "NOP",

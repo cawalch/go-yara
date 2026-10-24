@@ -1,0 +1,46 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/cawalch/go-yara/compiler
+cpu: Apple M3 Max
+BenchmarkConditionAssertions/fused=false/pass-14    	   15811	     75584 ns/op	   13650 B/op	       2 allocs/op
+BenchmarkConditionAssertions/fused=false/pass-14    	   16089	     74598 ns/op	   13650 B/op	       2 allocs/op
+BenchmarkConditionAssertions/fused=false/pass-14    	   15938	     75615 ns/op	   13650 B/op	       2 allocs/op
+BenchmarkConditionAssertions/fused=false/pass-14    	   15408	     77015 ns/op	   13650 B/op	       2 allocs/op
+BenchmarkConditionAssertions/fused=false/pass-14    	   16040	     74661 ns/op	   13650 B/op	       2 allocs/op
+BenchmarkConditionAssertions/fused=false/header_reject-14         	  211126	      5680 ns/op	    9408 B/op	      10 allocs/op
+BenchmarkConditionAssertions/fused=false/header_reject-14         	  214585	      5678 ns/op	    9408 B/op	      10 allocs/op
+BenchmarkConditionAssertions/fused=false/header_reject-14         	  211891	      5502 ns/op	    9408 B/op	      10 allocs/op
+BenchmarkConditionAssertions/fused=false/header_reject-14         	  224433	      5409 ns/op	    9408 B/op	      10 allocs/op
+BenchmarkConditionAssertions/fused=false/header_reject-14         	  225321	      6299 ns/op	    9408 B/op	      10 allocs/op
+BenchmarkConditionAssertions/fused=false/size_reject-14           	   14888	     80091 ns/op	       2 B/op	       0 allocs/op
+BenchmarkConditionAssertions/fused=false/size_reject-14           	   14692	     80687 ns/op	       2 B/op	       0 allocs/op
+BenchmarkConditionAssertions/fused=false/size_reject-14           	   15036	     80175 ns/op	       2 B/op	       0 allocs/op
+BenchmarkConditionAssertions/fused=false/size_reject-14           	   15070	     79258 ns/op	       2 B/op	       0 allocs/op
+BenchmarkConditionAssertions/fused=false/size_reject-14           	   15417	     77806 ns/op	       2 B/op	       0 allocs/op
+BenchmarkConditionAssertions/fused=true/pass-14                   	   18988	     63216 ns/op	   13649 B/op	       2 allocs/op
+BenchmarkConditionAssertions/fused=true/pass-14                   	   18877	     63847 ns/op	   13649 B/op	       2 allocs/op
+BenchmarkConditionAssertions/fused=true/pass-14                   	   18086	     65736 ns/op	   13650 B/op	       2 allocs/op
+BenchmarkConditionAssertions/fused=true/pass-14                   	   18202	     65423 ns/op	   13650 B/op	       2 allocs/op
+BenchmarkConditionAssertions/fused=true/pass-14                   	   18849	     63868 ns/op	   13650 B/op	       2 allocs/op
+BenchmarkConditionAssertions/fused=true/header_reject-14          	  222903	      5487 ns/op	    9408 B/op	      10 allocs/op
+BenchmarkConditionAssertions/fused=true/header_reject-14          	  239552	      5343 ns/op	    9408 B/op	      10 allocs/op
+BenchmarkConditionAssertions/fused=true/header_reject-14          	  222898	      5272 ns/op	    9408 B/op	      10 allocs/op
+BenchmarkConditionAssertions/fused=true/header_reject-14          	  234372	      5137 ns/op	    9408 B/op	      10 allocs/op
+BenchmarkConditionAssertions/fused=true/header_reject-14          	  228571	      5396 ns/op	    9408 B/op	      10 allocs/op
+BenchmarkConditionAssertions/fused=true/size_reject-14            	  101923	     11970 ns/op	       0 B/op	       0 allocs/op
+BenchmarkConditionAssertions/fused=true/size_reject-14            	  101235	     11950 ns/op	       0 B/op	       0 allocs/op
+BenchmarkConditionAssertions/fused=true/size_reject-14            	  101857	     11837 ns/op	       0 B/op	       0 allocs/op
+BenchmarkConditionAssertions/fused=true/size_reject-14            	  102099	     11809 ns/op	       0 B/op	       0 allocs/op
+BenchmarkConditionAssertions/fused=true/size_reject-14            	  100693	     11847 ns/op	       0 B/op	       0 allocs/op
+BenchmarkConditionDispatch/fused=false-14                         	 9135933	       133.4 ns/op	       0 B/op	       0 allocs/op
+BenchmarkConditionDispatch/fused=false-14                         	 9210634	       131.2 ns/op	       0 B/op	       0 allocs/op
+BenchmarkConditionDispatch/fused=false-14                         	 9239576	       130.4 ns/op	       0 B/op	       0 allocs/op
+BenchmarkConditionDispatch/fused=false-14                         	 9001260	       134.8 ns/op	       0 B/op	       0 allocs/op
+BenchmarkConditionDispatch/fused=false-14                         	 9092001	       131.5 ns/op	       0 B/op	       0 allocs/op
+BenchmarkConditionDispatch/fused=true-14                          	14953627	        79.78 ns/op	       0 B/op	       0 allocs/op
+BenchmarkConditionDispatch/fused=true-14                          	14146946	        79.85 ns/op	       0 B/op	       0 allocs/op
+BenchmarkConditionDispatch/fused=true-14                          	15148837	        80.15 ns/op	       0 B/op	       0 allocs/op
+BenchmarkConditionDispatch/fused=true-14                          	11749764	        85.47 ns/op	       0 B/op	       0 allocs/op
+BenchmarkConditionDispatch/fused=true-14                          	14705468	        84.80 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/cawalch/go-yara/compiler	48.325s

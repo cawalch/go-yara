@@ -50,6 +50,7 @@ type CompiledProgram struct {
 
 	// Number of compile-time integer slots used to cache regex/hex matches.
 	nonTextCacheSize int
+	sharedAssertions []conditionAssertion
 	// sharedNonTextCaches marks cache slots whose mandatory atom cover is fully
 	// represented in sharedAutomaton.
 	sharedNonTextCaches []bool
@@ -156,6 +157,7 @@ func (cp *CompiledProgram) prepare() error {
 			slices.Sort(cp.dependencies[rule.Name])
 		}
 	}
+	cp.assignSharedAssertions()
 	cp.nonTextCacheSize = assignNonTextCacheIndices(cp.Rules)
 	cp.fixedRegexScan = buildFixedRegexDispatch(cp.Rules)
 	var err error

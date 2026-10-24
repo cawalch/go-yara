@@ -101,6 +101,11 @@ func init() {
 	// File operations
 	opcodeTable[OpEntrypoint] = (*Interpreter).executeEntrypoint
 	opcodeTable[OpFilesize] = (*Interpreter).executeFilesize
+	opcodeTable[OpAssertUint16Eq] = (*Interpreter).executeAssertUint16Eq
+	opcodeTable[OpAssertUint32Eq] = (*Interpreter).executeAssertUint32Eq
+	opcodeTable[OpAssertFilesize] = (*Interpreter).executeAssertFilesize
+	opcodeTable[OpAssertStringAt] = (*Interpreter).executeAssertStringAt
+	opcodeTable[OpAssertStringCount] = (*Interpreter).executeAssertStringCount
 
 	// Integer read operations (little-endian)
 	opcodeTable[OpInt8] = (*Interpreter).executeReadInt8

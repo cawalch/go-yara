@@ -186,6 +186,8 @@ func (rc *ruleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 		ModuleFunctions:     rc.moduleFunctions,
 		ModuleNames:         rc.moduleNames,
 		HeaderConstraints:   deriveHeaderConstraints(rule.Condition),
+		assertions:          slices.Clone(rc.conditionCompiler.assertions),
+		mandatoryAssertions: mandatoryAssertionIndices(rule.Condition, rc.conditionCompiler.assertions),
 		requiredStrings:     requiredStrings,
 		forbiddenStrings:    forbiddenStrings,
 		booleanPatterns:     booleanRoutingPatterns(rule),

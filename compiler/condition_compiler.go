@@ -46,6 +46,8 @@ type conditionCompiler struct {
 	anonymousStrings  []string
 	textStringSets    [][]string
 	moduleFunctions   map[string]compiledModuleFunction
+	assertions        []conditionAssertion
+	disableAssertions bool // Test-only baseline for differential and performance checks.
 
 	// loopVarSlots tracks the memory slot for the loop variable of each
 	// enclosing for-loop. For "for any of them : ($)" the slot holds the
@@ -560,6 +562,7 @@ func (cc *conditionCompiler) GetStringSets() [][]string {
 
 // ResetForRule clears per-rule state while preserving program-level maps.
 func (cc *conditionCompiler) ResetForRule() {
+	cc.assertions = cc.assertions[:0]
 	cc.labelCounter = 0
 	clear(cc.labels)
 	cc.pendingJumps = cc.pendingJumps[:0]

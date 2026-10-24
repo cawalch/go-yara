@@ -14,7 +14,7 @@ func (i *Interpreter) executeReadIntOp(size int, signed bool) error {
 	}
 
 	offset := offsetVal.IntVal
-	val, err := i.executeReadInt(offset, size, signed)
+	val, err := i.executeReadInt(offset, size, !signed)
 	if err != nil {
 		return err
 	}

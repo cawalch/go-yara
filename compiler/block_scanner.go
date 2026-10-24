@@ -184,6 +184,7 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (*ScanResult
 	clear(s.ruleResultsDense)
 	s.interp.ResetIterationCount()
 	s.moduleCache.reset()
+	clear(s.assertionResults)
 
 	blocks := append([]MemoryBlock(nil), scanner.blocks...)
 	slices.SortStableFunc(blocks, func(left, right MemoryBlock) int {
@@ -217,11 +218,13 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (*ScanResult
 				return nil, err
 			}
 		}
-		if !ruleHeaderConstraintsMatchContext(rule, headerContext) {
+		if !s.ruleConstraintsMatchContext(rule, headerContext, s.omitMatches || s.reportedMatchesOnly) {
 			if rule.Index >= 0 && rule.Index < len(s.ruleResultsDense) {
 				s.ruleResultsDense[rule.Index] = false
 			}
-			result.RuleResults[rule.Name] = false
+			if result.RuleResults != nil {
+				result.RuleResults[rule.Name] = false
+			}
 			result.PrunedRules = append(result.PrunedRules, rule.Name)
 			continue
 		}
@@ -229,6 +232,7 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (*ScanResult
 		perRule := normalizedBlockMatches(scanner.matches[rule.Name])
 		s.matchCtx.Reset(nil)
 		s.matchCtx.moduleCache = &s.moduleCache
+		s.matchCtx.assertionResults = s.assertionResults
 		s.matchCtx.cancelDone = ctx.Done()
 		s.matchCtx.maxMatchesPerPattern = 0
 		if s.fastScan && rule.FastScanSafe {
@@ -245,7 +249,9 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (*ScanResult
 			if rule.Index >= 0 && rule.Index < len(s.ruleResultsDense) {
 				s.ruleResultsDense[rule.Index] = false
 			}
-			result.RuleResults[rule.Name] = false
+			if result.RuleResults != nil {
+				result.RuleResults[rule.Name] = false
+			}
 			continue
 		}
 

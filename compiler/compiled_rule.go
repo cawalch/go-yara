@@ -62,10 +62,14 @@ type CompiledRule struct {
 	ConditionMonotonic bool
 	// RequiresStringMatch is true only when the condition is proven false if
 	// none of this rule's strings match.
-	RequiresStringMatch bool
-	ModuleFunctions     map[builtinFunction]ModuleFunction
-	ModuleNames         map[builtinFunction]string
-	HeaderConstraints   []HeaderConstraint
+	RequiresStringMatch   bool
+	ModuleFunctions       map[builtinFunction]ModuleFunction
+	ModuleNames           map[builtinFunction]string
+	HeaderConstraints     []HeaderConstraint
+	assertions            []conditionAssertion
+	mandatoryAssertions   []int
+	assertionCacheIndices []int
+	headerCacheIndices    []int
 }
 
 // GetName returns the rule name
@@ -178,6 +182,16 @@ func (cr *CompiledRule) GetStats() map[string]any {
 
 // Validate validates the compiled rule
 func (cr *CompiledRule) Validate() error {
+	for _, assertion := range cr.assertions {
+		if err := assertion.validate(); err != nil {
+			return err
+		}
+	}
+	for _, index := range cr.mandatoryAssertions {
+		if index < 0 || index >= len(cr.assertions) || cr.assertions[index].Opcode != OpAssertFilesize {
+			return errors.New("invalid mandatory assertion index")
+		}
+	}
 	for _, slots := range []map[string]int{cr.ExternalSlots, cr.GlobalSlots} {
 		for name, slot := range slots {
 			if slot < 0 || slot >= interpreterMemorySlotCount {

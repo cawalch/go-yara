@@ -44,6 +44,8 @@ type serializedRule struct {
 	ModuleNames         map[uint8]string
 	ModuleSignatures    map[uint8]serializedModuleFunction
 	HeaderConstraints   []HeaderConstraint
+	Assertions          []conditionAssertion
+	MandatoryAssertions []int
 }
 
 type serializedModuleFunction struct {

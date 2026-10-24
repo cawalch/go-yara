@@ -29,6 +29,7 @@ type operandSpec struct {
 }
 
 var contractSpecs = map[string]operandSpec{
+	"OpAssertUint16Eq": {kind: "OperandImmediate32", bytes: 4}, "OpAssertUint32Eq": {kind: "OperandImmediate32", bytes: 4}, "OpAssertFilesize": {kind: "OperandImmediate32", bytes: 4}, "OpAssertStringAt": {kind: "OperandImmediate32", bytes: 4}, "OpAssertStringCount": {kind: "OperandImmediate32", bytes: 4},
 	"OpCall":                   {kind: "OperandImmediate32", bytes: 4},
 	"OpPush8":                  {kind: "OperandImmediate8", bytes: 1},
 	"OpPush16":                 {kind: "OperandImmediate16", bytes: 2},

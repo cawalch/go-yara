@@ -284,7 +284,9 @@ if err != nil {
 }
 ```
 
-Stream-based serialization is also supported via `program.WriteTo(w)` and `compiler.ReadCompiledProgram(r)`. Serialized programs preserve compiled automatons, hex tables, and prefilter structures. External variables and custom module handlers must be rebound after deserialization.
+Stream-based serialization is also supported via `program.WriteTo(w)` and `compiler.ReadCompiledProgram(r)`. Serialized programs preserve compiled automatons, hex tables, and prefilter structures. External variables and custom module handlers must be rebound after deserialization. New artifacts use format version 5; version 4 artifacts remain readable. Older binaries cannot load version 5 artifacts.
+
+The compiler fuses fixed-offset `uint16`/`uint32` equality, integer filesize bounds, string-at checks, and string-count comparisons. Payload guards share scan-local results across rules. Safe mandatory guards can reject rules before interpretation; default scans still preserve string matches for rules rejected by a filesize condition. External-variable comparisons and callback-bearing conditions retain normal evaluation. When using `Interpreter` directly with compiled bytecode, bind its rules with `SetCompiledRules` and select the rule with `SetCurrentRule` so assertion operands are available.
 
 ### Sparse Block Scanning
 

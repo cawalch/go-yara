@@ -29,6 +29,7 @@ type Scanner struct {
 	externalErr         error
 	nonTextCache        nonTextMatchCache
 	moduleCache         moduleCallCache
+	assertionResults    []assertionResult
 	regexByteSetCache   regexByteSetCandidateCache
 	reportedMatchesOnly bool
 	omitMatches         bool
@@ -314,6 +315,7 @@ func NewScanner(program *CompiledProgram, opts ...ScannerOption) *Scanner {
 		ruleResultsDense: make([]bool, ruleCount),
 	}
 	if program != nil {
+		s.assertionResults = make([]assertionResult, len(program.sharedAssertions))
 		s.externalValues = cloneExternalValues(program.externalValues)
 	}
 	for _, opt := range opts {
