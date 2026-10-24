@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"fmt"
+	"math"
 	"strings"
 )
 
@@ -72,7 +73,8 @@ func (i *Interpreter) compareIntegers(a, b Value, opcode Opcode) (bool, error) {
 	}
 }
 
-// compareDoubles compares two double values.
+// compareDoubles uses YARA's DBL_EPSILON equality rule, including false
+// equality and inequality comparisons when either operand is NaN.
 func (i *Interpreter) compareDoubles(a, b Value, opcode Opcode) (bool, error) {
 	if b.Type != ValueTypeDouble {
 		return false, &InterpreterError{Type: ErrorTypeMismatch, Message: "double operands required"}
@@ -80,9 +82,9 @@ func (i *Interpreter) compareDoubles(a, b Value, opcode Opcode) (bool, error) {
 
 	switch opcode {
 	case OpIntEq, OpDblEq:
-		return a.DoubleVal == b.DoubleVal, nil
+		return math.Abs(a.DoubleVal-b.DoubleVal) < 0x1p-52, nil
 	case OpIntNeq, OpDblNeq:
-		return a.DoubleVal != b.DoubleVal, nil
+		return math.Abs(a.DoubleVal-b.DoubleVal) >= 0x1p-52, nil
 	case OpIntLt, OpDblLt:
 		return a.DoubleVal < b.DoubleVal, nil
 	case OpIntLe, OpDblLe:

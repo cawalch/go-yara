@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -133,14 +134,20 @@ func (i *Interpreter) executeCall() error {
 	i.ip += 4
 
 	fn, argc := decodeBuiltinCall(encoded)
-	if argc <= 0 {
+	if argc == 0 && fn < firstModuleFunctionID {
 		return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: OpCall, Message: "invalid argument count"}
 	}
 	if err := i.validateStackUnderflowN(OpCall, argc); err != nil {
 		return err
 	}
 
-	args := make([]Value, argc)
+	var argBuffer [4]Value
+	args := argBuffer[:]
+	if argc <= len(argBuffer) {
+		args = args[:argc]
+	} else {
+		args = make([]Value, argc)
+	}
 	for idx := argc - 1; idx >= 0; idx-- {
 		args[idx] = i.stack[len(i.stack)-1]
 		i.stack = i.stack[:len(i.stack)-1]
@@ -162,15 +169,22 @@ func (i *Interpreter) executeCall() error {
 	default:
 		if i.currentCompiledRule != nil {
 			if moduleFunction, ok := i.currentCompiledRule.ModuleFunctions[fn]; ok {
-				return i.executeModuleFunction(moduleFunction, args)
+				return i.executeModuleCall(fn, moduleFunction, args)
 			}
 		}
 		return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: OpCall, Message: "unknown builtin"}
 	}
 }
 
-func (i *Interpreter) executeModuleFunction(function ModuleFunction, args []Value) error {
-	moduleArgs := make([]ModuleValue, len(args))
+func (i *Interpreter) executeModuleCall(id builtinFunction, function ModuleFunction, args []Value) error {
+	// Cache hits need no callback argument allocation.
+	var buffer [3]ModuleValue
+	moduleArgs := buffer[:]
+	if len(args) <= len(buffer) {
+		moduleArgs = moduleArgs[:len(args)]
+	} else {
+		moduleArgs = make([]ModuleValue, len(args))
+	}
 	for index, arg := range args {
 		switch arg.Type {
 		case ValueTypeInt:
@@ -180,25 +194,73 @@ func (i *Interpreter) executeModuleFunction(function ModuleFunction, args []Valu
 		case ValueTypeString:
 			moduleArgs[index] = StringValue(i.getString(arg))
 		case ValueTypeUndefined:
-			moduleArgs[index] = ModuleValue{Type: ModuleUndefined}
+			return i.push(Value{Type: ValueTypeUndefined})
 		default:
 			return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpCall, Message: "unsupported module argument type"}
 		}
 	}
 
+	if !normalizeModuleArguments(function.Signatures, moduleArgs) {
+		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpCall, Message: "invalid module arguments"}
+	}
+	var cache *moduleCallCache
+	var key moduleCallCacheEntry
+	if function.Cacheable && i.matchContext != nil && i.matchContext.moduleCache != nil {
+		if candidate, ok := moduleCallKey(i.currentCompiledRule.ModuleNames[id], moduleArgs); ok {
+			cache, key = i.matchContext.moduleCache, candidate
+			if result, hit := cache.lookup(key); hit {
+				return i.pushModuleValue(result)
+			}
+		}
+	}
 	ctx := ModuleContext{RuleName: i.currentRule}
 	if i.matchContext != nil {
 		ctx.Data = i.matchContext.Data
 		ctx.Blocks = i.matchContext.Blocks
 	}
-	result, err := function.Evaluate(ctx, moduleArgs)
+	result, err := function.Evaluate(ctx, slices.Clone(moduleArgs))
 	if err != nil {
 		return &InterpreterError{Type: ErrorRuntime, Opcode: OpCall, Message: err.Error()}
 	}
-	if result.Type != function.ReturnType {
+	if result.Type != ModuleUndefined && result.Type != function.ReturnType {
 		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpCall, Message: "module returned an unexpected value type"}
 	}
+	if cache != nil {
+		cache.put(key, result)
+	}
+	return i.pushModuleValue(result)
+}
 
+func normalizeModuleArguments(signatures []ModuleSignature, args []ModuleValue) bool {
+	for _, signature := range signatures {
+		if len(signature.Arguments) != len(args) {
+			continue
+		}
+		matches := true
+		for index, expected := range signature.Arguments {
+			actual := args[index].Type
+			if actual != expected && (actual != ModuleInteger || (expected != ModuleFloat && expected != ModuleBoolean)) {
+				matches = false
+				break
+			}
+		}
+		if !matches {
+			continue
+		}
+		for index, expected := range signature.Arguments {
+			if args[index].Type == ModuleInteger && expected == ModuleFloat {
+				args[index] = FloatValue(float64(args[index].Integer))
+			}
+			if args[index].Type == ModuleInteger && expected == ModuleBoolean {
+				args[index] = BooleanValue(args[index].Integer != 0)
+			}
+		}
+		return true
+	}
+	return false
+}
+
+func (i *Interpreter) pushModuleValue(result ModuleValue) error {
 	switch result.Type {
 	case ModuleInteger:
 		return i.push(Value{Type: ValueTypeInt, IntVal: result.Integer})

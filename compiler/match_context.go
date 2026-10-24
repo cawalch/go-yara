@@ -101,6 +101,7 @@ func sortAndDedupeMatches(matches []Match) []Match {
 
 // Reset clears the match context for reuse
 func (ctx *MatchContext) Reset(data []byte) {
+	ctx.moduleCache = nil
 	ctx.Data = data
 	ctx.Blocks = nil
 	ctx.cancelDone = nil

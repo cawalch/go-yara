@@ -1,11 +1,6 @@
 package compiler
 
 import (
-	"crypto/md5"  // #nosec G501 -- YARA compatibility requires MD5.
-	"crypto/sha1" // #nosec G505 -- YARA compatibility requires SHA-1.
-	"crypto/sha256"
-	"encoding/hex"
-	"errors"
 	"fmt"
 	"math"
 	"slices"
@@ -75,7 +70,14 @@ type ModuleSignature struct {
 type ModuleFunction struct {
 	Signatures []ModuleSignature
 	ReturnType ModuleValueType
-	Evaluate   func(ModuleContext, []ModuleValue) (ModuleValue, error)
+	// Cacheable opts into bounded per-scan memoization of calls with up to three
+	// numeric arguments. Evaluate must depend only on Data, Blocks and arguments,
+	// never RuleName, time, external state, or side effects. Custom functions are
+	// not cached by default. This hint is not persisted for custom modules.
+	Cacheable bool
+	// Evaluate may return ModuleUndefined for any declared return type. An
+	// undefined argument propagates without invoking the callback.
+	Evaluate func(ModuleContext, []ModuleValue) (ModuleValue, error)
 }
 
 // Module is a collection of functions available under a dotted namespace.
@@ -87,7 +89,7 @@ type Module struct {
 
 func defaultModules() map[string]Module {
 	modules := map[string]Module{}
-	for _, module := range []Module{hashModule(), mathModule()} {
+	for _, module := range []Module{hashModule(), mathModule(), stringModule(), timeModule()} {
 		modules[module.Name] = module
 	}
 	return modules
@@ -196,152 +198,6 @@ func moduleSemanticType(valueType ModuleValueType) semantic.DataType {
 		return semantic.TypeBoolean
 	default:
 		return semantic.TypeUnknown
-	}
-}
-
-func hashModule() Module {
-	hashSignatures := []ModuleSignature{
-		{Arguments: []ModuleValueType{ModuleString}},
-		{Arguments: []ModuleValueType{ModuleInteger, ModuleInteger}},
-	}
-	return Module{
-		Name: "hash",
-		Functions: map[string]ModuleFunction{
-			"md5": {
-				Signatures: hashSignatures,
-				ReturnType: ModuleString,
-				Evaluate: func(ctx ModuleContext, args []ModuleValue) (ModuleValue, error) {
-					data, err := moduleDataRange(ctx, args)
-					if err != nil {
-						return ModuleValue{}, err
-					}
-					sum := md5.Sum(data) // #nosec G401 -- YARA compatibility requires MD5.
-					return StringValue(hex.EncodeToString(sum[:])), nil
-				},
-			},
-			"sha1": {
-				Signatures: hashSignatures,
-				ReturnType: ModuleString,
-				Evaluate: func(ctx ModuleContext, args []ModuleValue) (ModuleValue, error) {
-					data, err := moduleDataRange(ctx, args)
-					if err != nil {
-						return ModuleValue{}, err
-					}
-					sum := sha1.Sum(data) // #nosec G401 -- YARA compatibility requires SHA-1.
-					return StringValue(hex.EncodeToString(sum[:])), nil
-				},
-			},
-			"sha256": {
-				Signatures: hashSignatures,
-				ReturnType: ModuleString,
-				Evaluate: func(ctx ModuleContext, args []ModuleValue) (ModuleValue, error) {
-					data, err := moduleDataRange(ctx, args)
-					if err != nil {
-						return ModuleValue{}, err
-					}
-					sum := sha256.Sum256(data)
-					return StringValue(hex.EncodeToString(sum[:])), nil
-				},
-			},
-		},
-	}
-}
-
-func mathModule() Module {
-	rangeSignature := []ModuleSignature{{Arguments: []ModuleValueType{ModuleInteger, ModuleInteger}}}
-	return Module{
-		Name: "math",
-		Functions: map[string]ModuleFunction{
-			"entropy": {
-				Signatures: rangeSignature,
-				ReturnType: ModuleFloat,
-				Evaluate: func(ctx ModuleContext, args []ModuleValue) (ModuleValue, error) {
-					data, err := moduleDataRange(ctx, args)
-					if err != nil {
-						return ModuleValue{}, err
-					}
-					return FloatValue(shannonEntropy(data)), nil
-				},
-			},
-			"mean": {
-				Signatures: rangeSignature,
-				ReturnType: ModuleFloat,
-				Evaluate: func(ctx ModuleContext, args []ModuleValue) (ModuleValue, error) {
-					data, err := moduleDataRange(ctx, args)
-					if err != nil {
-						return ModuleValue{}, err
-					}
-					if len(data) == 0 {
-						return FloatValue(0), nil
-					}
-					total := uint64(0)
-					for _, value := range data {
-						total += uint64(value)
-					}
-					return FloatValue(float64(total) / float64(len(data))), nil
-				},
-			},
-			"deviation": {
-				Signatures: rangeSignature,
-				ReturnType: ModuleFloat,
-				Evaluate: func(ctx ModuleContext, args []ModuleValue) (ModuleValue, error) {
-					data, err := moduleDataRange(ctx, args)
-					if err != nil {
-						return ModuleValue{}, err
-					}
-					if len(data) == 0 {
-						return FloatValue(0), nil
-					}
-					mean := 0.0
-					for _, value := range data {
-						mean += float64(value)
-					}
-					mean /= float64(len(data))
-					variance := 0.0
-					for _, value := range data {
-						delta := float64(value) - mean
-						variance += delta * delta
-					}
-					return FloatValue(math.Sqrt(variance / float64(len(data)))), nil
-				},
-			},
-		},
-	}
-}
-
-func moduleDataRange(ctx ModuleContext, args []ModuleValue) ([]byte, error) {
-	switch len(args) {
-	case 1:
-		if args[0].Type != ModuleString {
-			return nil, errors.New("expected string or (offset, size)")
-		}
-		return []byte(args[0].String), nil
-	case 2:
-		if args[0].Type != ModuleInteger || args[1].Type != ModuleInteger {
-			return nil, errors.New("expected integer offset and size")
-		}
-		offset, size := args[0].Integer, args[1].Integer
-		if offset < 0 || size < 0 {
-			return nil, errors.New("data range out of bounds")
-		}
-		if ctx.Data != nil {
-			if offset > int64(len(ctx.Data)) || size > int64(len(ctx.Data))-offset {
-				return nil, errors.New("data range out of bounds")
-			}
-			return ctx.Data[offset : offset+size], nil
-		}
-		for _, block := range ctx.Blocks {
-			if offset < block.Base {
-				continue
-			}
-			relative := offset - block.Base
-			if relative <= int64(len(block.Data)) && size <= int64(len(block.Data))-relative {
-				return block.Data[relative : relative+size], nil
-			}
-		}
-		return nil, errors.New("data range out of bounds")
-	default:
-		return nil, errors.New("expected string or (offset, size)")
 	}
 }
 

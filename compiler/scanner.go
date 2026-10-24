@@ -28,6 +28,7 @@ type Scanner struct {
 	externalValues      map[string]externalValue
 	externalErr         error
 	nonTextCache        nonTextMatchCache
+	moduleCache         moduleCallCache
 	regexByteSetCache   regexByteSetCandidateCache
 	reportedMatchesOnly bool
 	omitMatches         bool

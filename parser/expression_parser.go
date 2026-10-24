@@ -640,7 +640,7 @@ func (p *ExpressionParser) parseMemberAccess(pos token.Position, baseName string
 
 	for p.currentTokenIs(token.DOT) {
 		p.nextToken() // consume '.'
-		if !p.currentTokenIs(token.IDENTIFIER) {
+		if !p.currentTokenIs(token.IDENTIFIER) && !p.currentTokenIs(token.LENGTH) {
 			return nil, fmt.Errorf("expected identifier after '.' at %v", p.current.Pos)
 		}
 		memberName := p.current.Literal

@@ -153,6 +153,7 @@ func (s *Scanner) ruleHeaderConstraintsMatchInput(ctx context.Context, rule *Com
 }
 
 func (s *Scanner) preparePatternScan(ctx context.Context, data []byte) (bool, error) {
+	s.moduleCache.reset()
 	s.sharedNonTextMatched = false
 	s.nonTextCache.reset(s.program.nonTextCacheSize)
 	if err := s.populateFixedRegexCache(ctx, data, &s.nonTextCache); err != nil {
@@ -182,6 +183,7 @@ func (s *Scanner) populateRuleMatchContext(
 	input ruleScanInput,
 ) error {
 	s.matchCtx.Reset(input.data)
+	s.matchCtx.moduleCache = &s.moduleCache
 	s.matchCtx.cancelDone = ctx.Done()
 	s.matchCtx.maxMatchesPerPattern = 0
 	if s.fastScan && rule.FastScanSafe {

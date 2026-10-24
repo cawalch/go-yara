@@ -183,6 +183,7 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (*ScanResult
 	}
 	clear(s.ruleResultsDense)
 	s.interp.ResetIterationCount()
+	s.moduleCache.reset()
 
 	blocks := append([]MemoryBlock(nil), scanner.blocks...)
 	slices.SortStableFunc(blocks, func(left, right MemoryBlock) int {
@@ -227,6 +228,7 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (*ScanResult
 
 		perRule := normalizedBlockMatches(scanner.matches[rule.Name])
 		s.matchCtx.Reset(nil)
+		s.matchCtx.moduleCache = &s.moduleCache
 		s.matchCtx.cancelDone = ctx.Done()
 		s.matchCtx.maxMatchesPerPattern = 0
 		if s.fastScan && rule.FastScanSafe {

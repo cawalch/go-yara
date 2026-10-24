@@ -7,7 +7,7 @@ The engine is designed for high-throughput scanning pipelines. It uses literal p
 ## Key Capabilities
 
 - **Pure Go**: Zero CGO dependencies. Produces static binaries and cross-compiles cleanly to all Go-supported architectures.
-- **YARA Parity**: Strict parser and compiler supporting text strings, hex patterns with wildcards and jumps, regular expressions, condition operators, and built-in `hash` and `math` modules.
+- **YARA Parity**: Strict parser and compiler supporting text strings, hex patterns with wildcards and jumps, regular expressions, condition operators, and built-in `hash`, `math`, `string`, and `time` modules.
 - **High-Throughput Prefiltering**: Aho-Corasick literal indexing and early header-based rule pruning skip non-matching rules before condition evaluation.
 - **Low Memory Overhead**: Reusable scanner instances and internal pooling eliminate heap allocations on clean inputs after warm-up.
 - **Thread Safety**: Immutable compiled programs support safe, concurrent scanning across multiple goroutines.
@@ -201,7 +201,7 @@ defer scanner.Close()
 
 ### Built-in and Custom Modules
 
-Rules can import the built-in `hash` and `math` modules:
+Rules can import the built-in `hash`, `math`, `string`, and `time` modules:
 
 ```yara
 import "hash"
@@ -213,6 +213,33 @@ rule CheckPayload {
         math.mean(0, filesize) >= 0.0
 }
 ```
+
+| Module | Functions |
+| --- | --- |
+| `hash` | `md5`, `sha1`, `sha256`, `crc32`, `checksum32`, `sha512` |
+| `math` | `entropy`, `mean`, `deviation`, `in_range`, `min`, `max`, `abs`, `count`, `percentage`, `mode`, `serial_correlation`, `monte_carlo_pi`, `to_number`, `to_string` |
+| `string` | `to_int`, `length` |
+| `time` | `now` |
+
+Hash functions accept a string or `(offset, size)`. Statistical functions accept
+strings or ranges; `count` and `percentage` accept a byte value with an optional
+range, and `mode` accepts an optional range. Invalid ranges and conversions yield
+YARA's undefined value. Ranges beginning inside the input are truncated at EOF.
+`math.min` and `math.max` compare integers as unsigned values, as YARA does.
+`math.in_range` takes three floats. `math.to_string` supports bases 8, 10, and 16.
+
+`hash.sha512` is a go-yara extension, not a libyara 4.5.x function. The original
+`math.deviation(offset, size)` standard-deviation extension remains supported.
+YARA-compatible mean absolute deviation uses `math.deviation(offset, size, mean)`
+or `math.deviation(string, mean)`, with a floating-point mean.
+
+Deterministic built-in numeric/range calls share a bounded 16-entry cache across
+rules in each scan. Entries are discarded before the next scan, including block
+scans. Once the cache is full, additional distinct calls execute normally;
+string arguments and `time.now()` are not cached. Cache hits allocate no memory.
+Custom callbacks are uncached unless they explicitly set `ModuleFunction.Cacheable`
+and meet its purity contract. Custom modules supplied when loading a serialized
+program determine their own caching policy.
 
 You can register custom modules with Go callback functions:
 
@@ -410,7 +437,7 @@ go-yara rules.yar --mode=execute --data large_sample.bin --streaming --chunk-siz
 - **Strings**: Text, hex byte sequences (with wildcards `??`, `?F`, and jumps `[1-4]`), and regular expressions.
 - **Modifiers**: `nocase`, `wide`, `ascii`, `fullword`, `xor`, `base64`, `base64wide`, and `private`.
 - **Expressions**: Arithmetic, bitwise, comparison, logical, range, string count (`#`), length (`!`), offset (`@`), occurrence (`at`, `in`), and quantifiers (`for ... of them`).
-- **Modules**: Built-in `hash` (md5, sha1, sha256) and `math` (entropy, mean, deviation).
+- **Modules**: Built-in `hash`, `math`, `string`, and `time` functions (see the module table above).
 
 ### Limitations
 

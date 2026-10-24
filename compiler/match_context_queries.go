@@ -17,6 +17,7 @@ type MatchContext struct {
 	spanBuffers  map[string][]matchSpan
 	cancelDone   <-chan struct{}
 	regexBatch   regex.VMBatch
+	moduleCache  *moduleCallCache
 	FileSize     int64
 	EntryPoint   int64
 	// maxMatchesPerPattern bounds retained occurrences. Zero means unlimited.
