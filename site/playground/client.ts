@@ -1,10 +1,12 @@
-export interface Limits { rulesBytes: number; inputBytes: number; outputBytes: number; occurrences: number; rules: number; memoryBytes: number; heapBytes: number; timeoutMs: number; startupMs: number }
+export interface Limits { evidenceFindings:number; evidenceRows:number; captureBytes:number; rulesBytes: number; inputBytes: number; outputBytes: number; occurrences: number; rules: number; memoryBytes: number; heapBytes: number; timeoutMs: number; startupMs: number }
 export interface Config { workerURL: string; version: string; limits: Limits }
-export interface ScanResult { error?: string; rules: string[]; ruleCount: number; occurrences: {rule:string; pattern:string; offset:number; length:number}[]; occurrenceCount:number; truncated:boolean; compileMs:number; scanMs:number }
+export interface EvidenceField { name:string; pattern:string; offset:number; length:number; dataTruncated:boolean; missing:boolean }
+export interface Finding { rule:string; declaration:string; status:string; anchorOffset:number; fieldRowCount:number; fields:EvidenceField[] }
+export interface ScanResult { evidenceEnabled:boolean; evidence:Finding[]; evidenceCount:number; evidenceRowCount:number; error?: string; rules: string[]; ruleCount: number; occurrences: {rule:string; pattern:string; offset:number; length:number}[]; occurrenceCount:number; truncated:boolean; compileMs:number; scanMs:number }
 
 // Each operation gets a fresh worker. Cancellation and completion release its
 // Go heap, compiled program, input, and results; no stale rules survive a failure.
-export function scan(config: Config, rules: string, input: ArrayBuffer, signal: AbortSignal, onReady: () => void = () => {}): Promise<ScanResult> {
+export function scan(config: Config, rules: string, input: ArrayBuffer, signal: AbortSignal, onReady: () => void = () => {}, extractEvidence = false): Promise<ScanResult> {
   if (rules.length > config.limits.rulesBytes || new TextEncoder().encode(rules).length > config.limits.rulesBytes) return Promise.reject(new Error('Rule source exceeds 16 KiB.'));
   if (input.byteLength > config.limits.inputBytes) return Promise.reject(new Error('Input exceeds 1 MiB.'));
   if (signal.aborted) return Promise.reject(new Error('Scan cancelled.'));
@@ -33,7 +35,7 @@ export function scan(config: Config, rules: string, input: ArrayBuffer, signal: 
         onReady();
         clearTimeout(timer);
         timer = setTimeout(() => finish(new Error('The three-second scan limit was reached. No complete result is available.')), config.limits.timeoutMs);
-        worker.postMessage({rules, input}, [input]);
+        worker.postMessage({rules, input, evidence:extractEvidence}, [input]);
       } else if (data.result) {
         if (data.version !== config.version || data.memoryBytes > config.limits.memoryBytes || new TextEncoder().encode(JSON.stringify(data.result)).length > config.limits.outputBytes) { finish(new Error('Scanner result exceeded its limits.')); return; }
         finish(undefined, data.result);

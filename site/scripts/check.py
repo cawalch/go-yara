@@ -31,7 +31,7 @@ for page in pages:
     for phrase in ["delve", "seamless", "effortlessly", "blazing-fast", "let's dive in", "it's worth noting"]:
         if re.search(r"\b" + re.escape(phrase) + r"\b", source, re.I):
             raise SystemExit(f"{page.name}: edit filler phrase {phrase!r}; see WRITING.md")
-for name in ["quickstart", "reuse", "modules", "serialization", "evidence", "evidence-key", "results", "blocks", "externals", "custom-module", "compilation", "cancellation", "patterns"]:
+for name in ["quickstart", "reuse", "modules", "serialization", "evidence", "evidence-key", "results", "blocks", "externals", "custom-module", "compilation", "cancellation", "patterns", "telemetry", "hook-control", "semantic"]:
     if f"examples/{name}/main.go?raw" not in all_text:
         raise SystemExit(f"The checked {name} example is not displayed")
 if any(f"examples/{name}?raw" not in all_text for name in ["cli.sh", "cli-directory.sh"]):

@@ -3,6 +3,9 @@ title: Performance and implementation
 description: How go-yara uses Aho–Corasick matching, regex atoms, SIMD filters, fused conditions, and scan-local caches, with benchmark scope and research references.
 ---
 
+import { Code } from '@astrojs/starlight/components';
+import telemetryExample from '../../../examples/telemetry/main.go?raw';
+import telemetryOutput from '../../../examples/telemetry/output.txt?raw';
 import release from '../../generated/release.json';
 import ArchitectureDiagram from '../../components/ArchitectureDiagram.astro';
 
@@ -123,9 +126,38 @@ Record the commit, Go version, build flags, CPU, rule set, and input sizes with 
 
 Include small and large inputs, expected matches, clean rejects, repetitive bytes, and your real rule corpus. Measure cold compilation separately from steady-state scanning. For concurrent workloads, keep the worker count fixed and use a scanner per worker.
 
-`WithTelemetry` records scan counters, `WithTelemetryLatency` adds timing, and `WithRuleProfiling` reports per-rule work. Use profiling to locate expensive rules, then measure throughput with the intended production instrumentation; timing and callbacks add their own work. See the <a href={source('compiler/hooks.go')}>hook definitions</a> for counter and callback fields.
-
 The optional [SIMD build](/go-yara/installation/#optional-simd-build) changes some matching paths. Compare it with the scalar build on the same machine. Measure application latency separately to account for file I/O and other processing outside the scanner.
+
+## Hooks and scan metrics
+
+`WithTelemetry` updates a caller-owned `ScanTelemetry` sink. `WithTelemetryLatency` also measures total scan duration. `WithHooks` installs lifecycle, match, prefilter, and rule-profile callbacks; `WithRuleProfiling` is a convenience option for `OnRuleEvaluated`. These hooks run synchronously on the scanning goroutine. Keep their work bounded, avoid blocking I/O, and do not reenter or mutate the active scanner from a callback.
+
+<ArchitectureDiagram kind="telemetry" />
+
+<details>
+<summary>Complete Go example: collect scan metrics and hook events</summary>
+
+<Code code={telemetryExample} lang="go" title="main.go" />
+
+</details>
+
+<Code code={telemetryOutput} lang="text" title="Output" />
+
+The input contains two occurrences of `marker`, but `TotalMatches` increases by one: it counts matched public rules. Keep one sink per scanner, read it after `Scan` returns, and merge snapshots outside concurrent scan work. The fields are ordinary mutable counters, so sharing a sink across workers requires synchronization. `Reset` clears the sink for the next reporting interval. Reading from `OnScanComplete` is too early for the final total-duration update on the normal scan path.
+
+| Measurement | Interpretation and limits |
+| --- | --- |
+| `TotalScans`, `BytesScanned` | Scans and input bytes recorded after scan preflight. A rejected binding or already-cancelled context can fail before these counters advance. |
+| `TotalMatches` | Matching public rules accumulated across scans; not the number of string occurrences. |
+| `PrefilterRejects`, `RulesPruned`, `RulesEvaluated` | Work recorded by the instrumented prefilter and evaluation paths. Required-string rejection can count as an evaluated rule. |
+| `CandidateHits`, `VerifiedMatches`, `FalseCandidateHits` | Counts from the selected matching path. They do not measure every regex attempt or form a universal false-positive rate. |
+| `TotalScanDurationNs` | Accumulated total duration when latency tracking is enabled. |
+| `PrefilterDurationNs`, `PatternSearchNs`, `ConditionEvalNs` | Declared fields that are not populated in this release. Zero does not establish that a phase was free. |
+| `RuleProfile` | Per-rule duration, match/pruning state, candidate counts, and condition steps on instrumented paths. Optimized conditions may report zero interpreter steps. |
+
+`OnPrefilter` reports decisions for the stages that execute. `OnPatternProfile` is declared in the API but has no dispatch site in this release; do not depend on it for per-pattern events. `OnScanComplete` is not a finalizer: error paths can return without calling it. Record failures around the scan call itself. Configure the hook bundle once; `WithHooks` replaces that bundle, including callbacks installed there by earlier convenience options.
+
+Use profiling to locate expensive rules, then measure throughput with the intended production instrumentation; clocks and callbacks add work. See the <a href={source('compiler/hooks.go')}>hook definitions</a> and <a href={source('compiler/scanner_exec.go')}>scan execution paths</a>. Hooks that change coverage are described under [stopping scans from hooks](/go-yara/scanning/#stopping-scans-from-hooks).
 
 <span id="memory-before-throughput"></span>
 

@@ -3,6 +3,8 @@ title: Scan inputs and manage scanners
 description: Scan bytes, files, and memory blocks. Extract credential evidence for application validators, parse private-key candidates, and manage scanner limits.
 ---
 
+import hookControl from '../../../examples/hook-control/main.go?raw';
+import hookControlOutput from '../../../examples/hook-control/output.txt?raw';
 import { Code } from '@astrojs/starlight/components';
 import resultsExample from '../../../examples/results/main.go?raw';
 import resultsExampleOutput from '../../../examples/results/output.txt?raw';
@@ -91,6 +93,8 @@ Choose one scan method for the output your caller needs. The example calls all t
 An absent rule result is not automatically a clean negative: filters, private rules, pruning, and result-suppression options affect reporting. `PrunedRules` identifies rules rejected by mandatory fixed-offset header checks. A scan error must be handled before consuming a result.
 
 ## Credential evidence and validation
+
+The [browser playground](/go-yara/quickstart/#browser-playground) includes local evidence examples with redacted results. The Go examples below retain capture data for explicit validator handoff.
 
 Enable `WithEvidence(maxCaptureBytes)` on a dedicated scanner to extract named values from matched strings. A `capture(...)` modifier maps regex groups to field names; an `evidence:` declaration assembles those fields into findings. The result includes each capture's bytes, source offset, length, and truncation flag, so a downstream validator does not need to repeat the extraction regex.
 
@@ -192,3 +196,20 @@ Supported values include booleans, representable integers, floats, and strings. 
 ## Bind application data
 
 External variables supply scalar values used by conditions. Structured modules supply typed fields, arrays, and dictionaries. Bind per-worker data on the scanner when concurrent scans need different values. The [modules guide](/go-yara/modules/#bind-structured-data) shows a complete binding example and explains missing values.
+
+## Stopping scans from hooks
+
+`WithMatchHook` can stop after the first matching public rule. `MatchActionStopScan` includes that rule in the result and returns no error; later rules may not have been evaluated. Track the stop decision in application state so a partial rule result is not mistaken for complete coverage.
+
+A polling callback can instead return `PollAbort`, which makes the scan return `ErrScanAborted`. Check it with `errors.Is`. Context cancellation has its own error and remains useful for deadlines. Polling is cooperative: the byte stride is a checkpoint setting, not a wall-clock deadline. `PollThrottle` sleeps for the requested duration, which can also delay cancellation.
+
+<details>
+<summary>Complete Go example: distinguish stop-on-match from a poll abort</summary>
+
+<Code code={hookControl} lang="go" title="main.go" />
+
+</details>
+
+<Code code={hookControlOutput} lang="text" title="Output" />
+
+`WithRuleGate` can omit rules before evaluation, and `MatchActionSkipRule` omits the current matching rule from the returned matches. Both change the result contract. Use them only when the application deliberately accepts reduced coverage; gates also require care with rule dependencies. Keep callbacks short and synchronous. See [hooks and scan metrics](/go-yara/performance/#hooks-and-scan-metrics) for observation-only callbacks, counter meanings, and current instrumentation gaps.

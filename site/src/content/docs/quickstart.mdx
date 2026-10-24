@@ -8,6 +8,9 @@ import compilationExample from '../../../examples/compilation/main.go?raw';
 import compilationExampleOutput from '../../../examples/compilation/output.txt?raw';
 import example from '../../../examples/quickstart/main.go?raw';
 import release from '../../generated/release.json';
+import semanticExample from '../../../examples/semantic/main.go?raw';
+import semanticOutput from '../../../examples/semantic/output.txt?raw';
+import ArchitectureDiagram from '../../components/ArchitectureDiagram.astro';
 import Playground from '../../components/Playground.astro';
 
 Compile the rule once, scan a byte slice, and read the matching rule names from the result. This example looks for `hello`, ignoring case.
@@ -16,7 +19,9 @@ Compile the rule once, scan a byte slice, and read the matching rule names from 
 
 <Playground />
 
-The playground returns rule names and string offsets; it does not enable evidence extraction or validate credentials. The [credential evidence examples](/go-yara/scanning/#credential-evidence-and-validation) show capture fields, correlation status, and validator handoff in Go.
+Select an example for text, hex, occurrence counts, a false condition, or credential evidence. Selection fills the editors; **Compile and scan** starts the local worker. The evidence examples show ready, partial, ambiguous, and truncated captures. Captured values are redacted before leaving the worker; field names, byte spans, and extraction status remain visible. The input editor still contains the original text.
+
+The playground does not validate credentials or contact services. The [credential evidence examples](/go-yara/scanning/#credential-evidence-and-validation) show how a Go application can pass complete findings to a separate validator.
 
 ## Create a Go module
 
@@ -69,3 +74,26 @@ Compilation normally fails on an invalid rule. For an ingestion workflow that de
 <Code code={compilationExampleOutput} lang="text" title="Output" />
 
 Inspect each diagnostic's `Phase`, `Message`, `Line`, `Column`, and dependency information before accepting the resulting program. A successful tolerant compile does not mean every submitted rule is active. Keep strict compilation for workflows that require the whole rule set.
+
+## Semantic analysis and diagnostics
+
+Compilation checks the meaning of a parsed rule before producing an executable program. The semantic layer resolves identifiers and rule references, checks operator and function argument types, validates module fields against registered schemas, and rejects circular rule dependencies. Capture-group references and evidence declarations are checked here too.
+
+<ArchitectureDiagram kind="semantic" />
+
+Forward references to other rules are allowed; dependency cycles are rejected. A well-typed rule can still encounter undefined values when it runs. For example, `string.to_int("oops")` is a valid function call whose result is undefined. Use `defined` when the condition needs to distinguish that case. Semantic analysis does not inspect future input bytes or establish whether an extracted credential works.
+
+<details>
+<summary>Complete Go example: inspect semantic diagnostics and runtime undefined values</summary>
+
+<Code code={semanticExample} lang="go" title="main.go" />
+
+</details>
+
+<Code code={semanticOutput} lang="text" title="Output" />
+
+`Compiler.GetErrors()` exposes compiler diagnostics with `Phase`, `Code`, `Message`, `Line`, and `Column`. For semantic failures, the returned error wraps the first `semantic.Error`; `errors.As` retrieves its code, position, rule, and optional suggestion. Use structured codes for classification and the message for display. Parsing and later compilation failures do not necessarily wrap a semantic error.
+
+Most applications should compile through `compiler`, which resolves includes and supplies the registered module signatures and schemas to the validator. The exported `semantic.Validator` also accepts an AST for tooling that already owns one. A standalone validator needs the applicable module definitions; `semantic.NewValidator()` does not populate the compiler's built-in module registry.
+
+<p>See the <a href={`https://pkg.go.dev/github.com/cawalch/go-yara@${release.version}/semantic#Error`}>semantic error reference</a> and <a href={`https://pkg.go.dev/github.com/cawalch/go-yara@${release.version}/compiler#CompilationError`}>compiler diagnostic reference</a>. Custom field types and function signatures are described under <a href="/go-yara/modules/">modules and host data</a>.</p>

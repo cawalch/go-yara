@@ -1,16 +1,25 @@
 ---
 import config from '../generated/playground.json';
+import examples from '../../playground/engine/examples.json';
 ---
 <section class="playground not-content" data-config={JSON.stringify(config)} aria-label="YARA browser playground">
   <p>Run go-yara {config.version} locally in your browser. Rules and input bytes are not uploaded. The first scan downloads a {(config.wasmBytes / 1048576).toFixed(1)} MiB runtime.</p>
   <form>
+    <label for="playground-example">Example</label>
+    <select id="playground-example" name="example" aria-describedby="example-help">
+      {examples.map(example => <option value={example.id} selected={example.id === 'greeting'}>{example.title}</option>)}
+      <option value="custom">Custom input</option>
+    </select>
+    <p id="example-help">Selecting an example replaces the rules and input without starting a scan.</p>
+    <p class="example-description">{examples[0].description}</p>
     <label for="playground-rules">YARA rules</label>
-    <textarea id="playground-rules" name="rules" rows="7" maxlength={config.limits.rulesBytes} spellcheck="false">{'rule greeting {\n  strings:\n    $text = "hello" nocase\n  condition:\n    $text\n}'}</textarea>
+    <textarea id="playground-rules" name="rules" rows="7" maxlength={config.limits.rulesBytes} spellcheck="false">{examples[0].rules}</textarea>
     <label for="playground-mode">Input</label>
     <select id="playground-mode" name="mode"><option value="text">Text (UTF-8)</option><option value="file">Local file</option></select>
     <label for="playground-text" class="sr-only">Input text</label>
-    <textarea id="playground-text" name="text" rows="3" maxlength={config.limits.inputBytes} spellcheck="false">Hello from the browser</textarea>
+    <textarea id="playground-text" name="text" rows="3" maxlength={config.limits.inputBytes} spellcheck="false">{examples[0].input}</textarea>
     <div class="file-input" hidden><label for="playground-file">Local file (up to 1 MiB)</label><input id="playground-file" name="file" type="file" /></div>
+    <label class="check-label" for="playground-evidence"><input id="playground-evidence" name="evidence" type="checkbox" /> Extract evidence (redacted results)</label>
     <div class="actions"><button type="submit">Compile and scan</button><button type="button" class="cancel" disabled>Cancel</button></div>
   </form>
   <p class="status" role="status" aria-live="polite">Scanner not loaded.</p>
@@ -19,21 +28,31 @@ import config from '../generated/playground.json';
     <h3>Matched rules</h3><ul class="matched-rules"></ul>
     <h3>String occurrences</h3>
     <p>Occurrences can belong to rules whose conditions are false. Offsets and lengths are in bytes.</p>
-    <div class="table-scroll" tabindex="0" role="region" aria-label="String occurrences"><table><thead><tr><th>Rule</th><th>String</th><th>Offset</th><th>Length</th></tr></thead><tbody></tbody></table></div>
+    <div class="table-scroll occurrences" tabindex="0" role="region" aria-label="String occurrences"><table><thead><tr><th>Rule</th><th>String</th><th>Offset</th><th>Length</th></tr></thead><tbody></tbody></table></div>
+    <section class="evidence-results" hidden aria-label="Redacted evidence">
+      <h3>Evidence findings</h3>
+      <p>All captured values are omitted before results leave the worker. Field names, offsets, and lengths remain visible. Redaction applies to results; the input editor still shows the source.</p>
+      <p>A ready finding has complete extraction data. It does not establish that a credential is valid. No credential checks or network requests are made by the scanner.</p>
+      <p class="evidence-counts"></p>
+      <div class="evidence-findings"></div>
+    </section>
   </div>
   <details><summary>Playground limits</summary>
     <p>16 KiB of rule source, 1 MiB of input, and three seconds for compilation and scanning. Each scan uses a fresh worker with a hard 128 MiB Wasm linear-memory ceiling and a soft 64 MiB Go runtime memory target. Browser and JavaScript overhead are additional; this is not a total tab-memory limit.</p>
-    <p>Results show at most 100 rule names and 200 occurrences, within 64 KiB of result JSON. Display truncation happens after condition evaluation. If a scan runs out of time or memory, it produces no complete result. Cancellation discards the worker; browser timer delays can affect when it stops.</p>
+    <p>Results show at most 100 rule names and 200 occurrences, within 64 KiB of result JSON. Evidence copies at most {config.limits.captureBytes} bytes per capture inside the worker and displays at most {config.limits.evidenceFindings} findings and {config.limits.evidenceRows} field rows. These share the same result JSON budget. Display truncation happens after condition evaluation and correlation. If a scan runs out of time or memory, it produces no complete result. Cancellation discards the worker; browser timer delays can affect when it stops.</p>
   </details>
   <noscript>JavaScript and WebAssembly are required to run this playground. The Go example below works without a browser runtime.</noscript>
 </section>
 
 <script>
+  import examples from '../../playground/engine/examples.json';
   import { scan, type Config, type ScanResult } from '../../playground/client';
   const root = document.querySelector<HTMLElement>('.playground')!;
   const config: Config = JSON.parse(root.dataset.config!);
   const form = root.querySelector('form')!;
   const rules = root.querySelector<HTMLTextAreaElement>('[name=rules]')!;
+  const example = root.querySelector<HTMLSelectElement>('[name=example]')!;
+  const evidence = root.querySelector<HTMLInputElement>('[name=evidence]')!;
   const mode = root.querySelector<HTMLSelectElement>('[name=mode]')!;
   const text = root.querySelector<HTMLTextAreaElement>('[name=text]')!;
   const file = root.querySelector<HTMLInputElement>('[name=file]')!;
@@ -42,27 +61,77 @@ import config from '../generated/playground.json';
   const status = root.querySelector<HTMLElement>('.status')!;
   const results = root.querySelector<HTMLElement>('.results')!;
   let controller: AbortController | undefined;
-  mode.addEventListener('change', () => {
+  const updateMode = () => {
     text.hidden = mode.value !== 'text';
     root.querySelector<HTMLElement>('.file-input')!.hidden = mode.value !== 'file';
-  });
+  };
+  mode.addEventListener('change', updateMode);
   cancel.addEventListener('click', () => controller?.abort());
   window.addEventListener('pagehide', () => controller?.abort());
+  function clearResults() {
+    results.hidden = true;
+    root.querySelector('.occurrences tbody')!.replaceChildren();
+    root.querySelector('.matched-rules')!.replaceChildren();
+    root.querySelector('.evidence-findings')!.replaceChildren();
+  }
+  example.addEventListener('change', () => {
+    const selected = examples.find(item => item.id === example.value);
+    if (!selected) return;
+    rules.value = selected.rules; text.value = selected.input; evidence.checked = selected.evidence;
+    file.value = ''; mode.value = 'text'; updateMode(); clearResults();
+    root.querySelector('.example-description')!.textContent = selected.description;
+    status.textContent = 'Example loaded. Compile and scan to see results.';
+  });
+  for (const field of [rules, text, file, mode, evidence]) field.addEventListener('input', () => {
+    example.value = 'custom'; clearResults();
+    root.querySelector('.example-description')!.textContent = 'Custom rules and input. Evidence extraction is optional.';
+    status.textContent = 'Inputs changed. Compile and scan to see results.';
+  });
+  function displayEvidence(result: ScanResult) {
+    const section = root.querySelector<HTMLElement>('.evidence-results')!;
+    section.hidden = !result.evidenceEnabled;
+    const container = root.querySelector('.evidence-findings')!;
+    container.replaceChildren();
+    if (!result.evidenceEnabled) return;
+    const rows = result.evidence.reduce((count, finding) => count + finding.fields.length, 0);
+    root.querySelector('.evidence-counts')!.textContent = `Showing ${result.evidence.length} of ${result.evidenceCount} findings and ${rows} of ${result.evidenceRowCount} field rows. Evidence is reported for matching public rules with evidence declarations.`;
+    for (const finding of result.evidence) {
+      const article = document.createElement('article'); article.className = 'finding';
+      const heading = document.createElement('h4');
+      heading.textContent = `${finding.rule} / ${finding.declaration}: ${finding.status}`;
+      const anchor = document.createElement('p'); anchor.textContent = `Anchor offset: ${finding.anchorOffset} bytes. Values redacted. Showing ${finding.fields.length} of ${finding.fieldRowCount} field rows.`;
+      const scroll = document.createElement('div'); scroll.className = 'table-scroll'; scroll.tabIndex = 0;
+      scroll.setAttribute('role', 'region'); scroll.setAttribute('aria-label', 'Evidence field offsets');
+      const table = document.createElement('table'); const header = table.createTHead().insertRow();
+      for (const title of ['Field', 'Pattern', 'Offset', 'Length', 'Capture', 'Value']) {
+        const cell = document.createElement('th'); cell.textContent = title; header.append(cell);
+      }
+      const body = table.createTBody();
+      for (const field of finding.fields) {
+        const row = body.insertRow();
+        for (const value of [field.name, field.missing ? '—' : field.pattern, field.missing ? '—' : field.offset, field.missing ? '—' : field.length, field.missing ? 'missing' : field.dataTruncated ? 'truncated' : 'complete', field.missing ? '—' : '[redacted]']) {
+          row.insertCell().textContent = String(value);
+        }
+      }
+      scroll.append(table); article.append(heading, anchor, scroll); container.append(article);
+    }
+  }
   function display(result: ScanResult) {
     if (result.error) throw new Error(result.error);
     root.querySelector('.summary')!.textContent = `${result.ruleCount} rule${result.ruleCount === 1 ? '' : 's'} matched; ${result.occurrenceCount} string occurrence${result.occurrenceCount === 1 ? '' : 's'}. Compiled in ${result.compileMs.toFixed(1)} ms; scanned in ${result.scanMs.toFixed(1)} ms.`;
     const truncation = root.querySelector<HTMLElement>('.truncation')!;
     truncation.hidden = !result.truncated;
-    truncation.textContent = `Display truncated: showing ${result.rules.length} of ${result.ruleCount} matched rules and ${result.occurrences.length} of ${result.occurrenceCount} occurrences. Conditions used the complete scan.`;
+    truncation.textContent = `Display truncated: showing ${result.rules.length} of ${result.ruleCount} matched rules and ${result.occurrences.length} of ${result.occurrenceCount} occurrences. Conditions and evidence correlation used the complete scan; ${result.evidenceEnabled ? 'Evidence display counts are below.' : ''}`;
     const names = root.querySelector('.matched-rules')!;
     names.replaceChildren(...result.rules.map(name => { const item = document.createElement('li'); item.textContent = name; return item; }));
     if (result.ruleCount === 0) { const item = document.createElement('li'); item.textContent = 'No rules matched.'; names.append(item); }
-    const body = root.querySelector('tbody')!;
+    const body = root.querySelector('.occurrences tbody')!;
     body.replaceChildren(...result.occurrences.map(match => {
       const row = document.createElement('tr');
       for (const value of [match.rule, match.pattern, match.offset, match.length]) { const cell = document.createElement('td'); cell.textContent = String(value); row.append(cell); }
       return row;
     }));
+    displayEvidence(result);
     results.hidden = false;
   }
   form.addEventListener('submit', async event => {
@@ -70,10 +139,8 @@ import config from '../generated/playground.json';
     if (controller) return;
     controller = new AbortController();
     submit.disabled = true; cancel.disabled = false;
-    for (const field of [rules, mode, text, file]) field.disabled = true;
-    results.hidden = true;
-    root.querySelector('tbody')!.replaceChildren();
-    root.querySelector('.matched-rules')!.replaceChildren();
+    for (const field of [rules, mode, text, file, example, evidence]) field.disabled = true;
+    clearResults();
     status.textContent = 'Loading scanner…';
     try {
       let input: ArrayBuffer;
@@ -86,12 +153,12 @@ import config from '../generated/playground.json';
         if (text.value.length > config.limits.inputBytes) throw new Error('Input exceeds 1 MiB.');
         input = new TextEncoder().encode(text.value).buffer as ArrayBuffer;
       }
-      display(await scan(config, rules.value, input, controller.signal, () => { status.textContent = 'Compiling and scanning…'; }));
+      display(await scan(config, rules.value, input, controller.signal, () => { status.textContent = 'Compiling and scanning…'; }, evidence.checked));
       status.textContent = `Scan complete with go-yara ${config.version}.`;
     } catch (error) { status.textContent = error instanceof Error ? error.message : 'Scan failed.'; }
     finally {
       controller = undefined; submit.disabled = false; cancel.disabled = true;
-      for (const field of [rules, mode, text, file]) field.disabled = false;
+      for (const field of [rules, mode, text, file, example, evidence]) field.disabled = false;
     }
   });
 </script>
@@ -102,13 +169,21 @@ import config from '../generated/playground.json';
   label { display:block; margin: .7rem 0 .3rem; font-weight:600; }
   textarea { display:block; width:100%; box-sizing:border-box; padding:.65rem; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:.85rem; line-height:1.5; resize:vertical; }
   textarea, select, input { background:var(--sl-color-bg); color:var(--sl-color-text); border:1px solid var(--sl-color-gray-3); border-radius:.2rem; }
-  select { padding:.4rem; margin-bottom:.6rem; }
+  select { max-width:100%; padding:.4rem; margin-bottom:.6rem; }
   input { max-width:100%; }
+  .check-label { display:flex; align-items:center; gap:.5rem; }
+  .example-description, #example-help { font-size:.9rem; }
   .actions { display:flex; flex-wrap:wrap; gap:.6rem; margin-top:.8rem; }
   button { padding:.5rem .9rem; cursor:pointer; border:1px solid var(--sl-color-accent); background:var(--sl-color-accent-low); color:var(--sl-color-white); border-radius:.2rem; font:inherit; }
   button:disabled { opacity:.5; cursor:default; }
   :is(button,textarea,select,input):focus-visible { outline:2px solid var(--sl-color-accent); outline-offset:3px; }
-  .status { overflow-wrap:anywhere; }
+  .status, .evidence-findings { overflow-wrap:anywhere; }
+  .evidence-findings :global(.finding) { margin:1rem 0; }
+  .evidence-findings :global(h4) { font-size:.95rem; margin:.5rem 0; }
+  .evidence-findings :global(.table-scroll) { max-height:18rem; overflow:auto; }
+  .evidence-findings :global(table) { width:100%; min-width:32rem; border-collapse:collapse; font-size:.8rem; }
+  .evidence-findings :global(th) { white-space:nowrap; }
+  .evidence-findings :global(th), .evidence-findings :global(td) { text-align:left; padding:.4rem; border-bottom:1px solid var(--sl-color-gray-5); }
   .results h3 { margin:1rem 0 .4rem; font-size:1rem; }
   .matched-rules { max-height:12rem; overflow:auto; overflow-wrap:anywhere; padding-left:1.4rem; }
   .table-scroll { max-height:24rem; overflow:auto; }

@@ -26,12 +26,12 @@ self.onmessage = async ({ data }) => {
   if (busy) return;
   busy = true;
   await ready;
-  if (typeof data.rules !== 'string' || !(data.input instanceof ArrayBuffer) ||
+  if (typeof data.evidence !== 'boolean' || typeof data.rules !== 'string' || !(data.input instanceof ArrayBuffer) ||
       data.rules.length > config.limits.rulesBytes || new TextEncoder().encode(data.rules).length > config.limits.rulesBytes || data.input.byteLength > config.limits.inputBytes) {
     postMessage({ error: 'Rule source or input exceeds the playground limit.' }); return;
   }
   try {
-    const encoded = self.goYaraRun(data.rules, new Uint8Array(data.input));
+    const encoded = self.goYaraRun(data.rules, new Uint8Array(data.input), data.evidence);
     if (new TextEncoder().encode(encoded).length > config.limits.outputBytes) throw new Error('output budget');
     postMessage({ result: JSON.parse(encoded), version: config.version, memoryBytes: instance.exports.mem.buffer.byteLength });
   } catch { fatal(); }

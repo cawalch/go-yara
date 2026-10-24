@@ -1,0 +1,104 @@
+[
+  {
+    "id": "greeting",
+    "title": "Case-insensitive text",
+    "description": "The greeting rule finds hello regardless of case.",
+    "rules": "rule greeting {\n strings: $text = \"hello\" nocase\n condition: $text\n}",
+    "input": "Hello from the browser",
+    "evidence": false,
+    "expectedRules": [
+      "greeting"
+    ],
+    "expectedStatuses": []
+  },
+  {
+    "id": "hex",
+    "title": "Hex pattern with a gap",
+    "description": "The hex rule finds MZ, two intervening bytes, and hello at byte 0.",
+    "rules": "rule header {\n strings: $header = { 4D 5A [2] 68 65 6C 6C 6F }\n condition: $header at 0\n}",
+    "input": "MZxxhello",
+    "evidence": false,
+    "expectedRules": [
+      "header"
+    ],
+    "expectedStatuses": []
+  },
+  {
+    "id": "counts",
+    "title": "Regex counts and offsets",
+    "description": "Two numeric IDs occur; the second starts at byte 6.",
+    "rules": "rule ids {\n strings: $id = /id=[0-9]{2}/\n condition: #id == 2 and @id[2] == 6\n}",
+    "input": "id=42 id=17",
+    "evidence": false,
+    "expectedRules": [
+      "ids"
+    ],
+    "expectedStatuses": []
+  },
+  {
+    "id": "condition",
+    "title": "Occurrence with a false condition",
+    "description": "hello occurs, but the input is shorter than the condition requires.",
+    "rules": "rule gated {\n strings: $word = \"hello\"\n condition: $word and filesize > 100\n}",
+    "input": "hello",
+    "evidence": false,
+    "expectedRules": [],
+    "expectedStatuses": []
+  },
+  {
+    "id": "evidence-ready",
+    "title": "Evidence: complete credential",
+    "description": "One endpoint, username, and secret form a ready finding. No credential validation is performed.",
+    "rules": "rule credential {\n strings:\n  $user = /username=([^ \\r\\n]+)/ capture(username = 1)\n  $host = /endpoint=([^ \\r\\n]+)/ capture(endpoint = 1)\n  $pass = /password=([^ \\r\\n]+)/ capture(secret = 1)\n evidence:\n  account = (endpoint, username, secret) within 96 of secret\n condition:\n  $pass\n}",
+    "input": "endpoint=db.example.test\nusername=alice\npassword=demo-only",
+    "evidence": true,
+    "expectedRules": [
+      "credential"
+    ],
+    "expectedStatuses": [
+      "ready"
+    ]
+  },
+  {
+    "id": "evidence-partial",
+    "title": "Evidence: missing field",
+    "description": "The missing username makes this finding partial.",
+    "rules": "rule credential {\n strings:\n  $user = /username=([^ \\r\\n]+)/ capture(username = 1)\n  $host = /endpoint=([^ \\r\\n]+)/ capture(endpoint = 1)\n  $pass = /password=([^ \\r\\n]+)/ capture(secret = 1)\n evidence:\n  account = (endpoint, username, secret) within 96 of secret\n condition:\n  $pass\n}",
+    "input": "endpoint=db.example.test\npassword=demo-only",
+    "evidence": true,
+    "expectedRules": [
+      "credential"
+    ],
+    "expectedStatuses": [
+      "partial"
+    ]
+  },
+  {
+    "id": "evidence-ambiguous",
+    "title": "Evidence: competing usernames",
+    "description": "Both nearby usernames are retained; the finding is ambiguous.",
+    "rules": "rule credential {\n strings:\n  $user = /username=([^ \\r\\n]+)/ capture(username = 1)\n  $host = /endpoint=([^ \\r\\n]+)/ capture(endpoint = 1)\n  $pass = /password=([^ \\r\\n]+)/ capture(secret = 1)\n evidence:\n  account = (endpoint, username, secret) within 96 of secret\n condition:\n  $pass\n}",
+    "input": "endpoint=db.example.test\nusername=alice\nusername=bob\npassword=demo-only",
+    "evidence": true,
+    "expectedRules": [
+      "credential"
+    ],
+    "expectedStatuses": [
+      "ambiguous"
+    ]
+  },
+  {
+    "id": "evidence-truncated",
+    "title": "Evidence: capture byte limit",
+    "description": "The secret exceeds the 256-byte capture limit, so this finding is partial.",
+    "rules": "rule credential {\n strings:\n  $user = /username=([^ \\r\\n]+)/ capture(username = 1)\n  $host = /endpoint=([^ \\r\\n]+)/ capture(endpoint = 1)\n  $pass = /password=([^ \\r\\n]+)/ capture(secret = 1)\n evidence:\n  account = (endpoint, username, secret) within 96 of secret\n condition:\n  $pass\n}",
+    "input": "endpoint=db.example.test\nusername=alice\npassword=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "evidence": true,
+    "expectedRules": [
+      "credential"
+    ],
+    "expectedStatuses": [
+      "partial"
+    ]
+  }
+]

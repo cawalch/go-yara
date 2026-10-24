@@ -12,7 +12,7 @@ import (
 func main() {
 	debug.SetMemoryLimit(engine.Limits.HeapBytes)
 	call := js.FuncOf(func(_ js.Value, args []js.Value) any {
-		if len(args) != 2 {
+		if len(args) != 3 || args[2].Type() != js.TypeBoolean {
 			return engine.Encode(engine.Reply{Error: "Invalid scan request."})
 		}
 		rules := args[0].String()
@@ -25,7 +25,7 @@ func main() {
 		}
 		data := make([]byte, n)
 		js.CopyBytesToGo(data, args[1])
-		return engine.Encode(engine.Run(rules, data))
+		return engine.Encode(engine.Scan(rules, data, args[2].Bool()))
 	})
 	js.Global().Set("goYaraRun", call)
 	js.Global().Call("goYaraReady")

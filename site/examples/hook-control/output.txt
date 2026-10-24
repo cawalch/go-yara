@@ -1,0 +1,2 @@
+stop on match: rules=1 stopped=true error=false
+poll abort: ErrScanAborted=true

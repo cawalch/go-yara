@@ -7,5 +7,8 @@
   "memoryBytes": 134217728,
   "heapBytes": 67108864,
   "timeoutMs": 3000,
-  "startupMs": 20000
+  "startupMs": 20000,
+  "evidenceFindings": 20,
+  "evidenceRows": 80,
+  "captureBytes": 256
 }

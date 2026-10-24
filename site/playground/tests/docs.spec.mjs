@@ -12,6 +12,9 @@ for (const layout of [
       {path:'quickstart', summary:'inspect omitted rules and their dependents', code:'GetIgnoredRules'},
       {path:'compatibility', summary:'compare text, hex, and regex conditions', code:'text_count'},
       {path:'releases', diagram:'Persisted artifact'},
+      {path:'quickstart', summary:'inspect semantic diagnostics and runtime undefined values', code:'semantic.Error', diagram:'Compile-time checks'},
+      {path:'performance', summary:'collect scan metrics and hook events', code:'ScanTelemetry', diagram:'One scanner and telemetry sink'},
+      {path:'scanning', summary:'distinguish stop-on-match from a poll abort', code:'ErrScanAborted'},
     ]) {
       await page.goto(`/go-yara/${sample.path}/`);
       await page.evaluate(theme=>document.documentElement.dataset.theme=theme, layout.theme);

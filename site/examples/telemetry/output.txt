@@ -1,0 +1,4 @@
+scans=2 bytes=18 matched rules=1
+starts=2 completions=2 match callbacks=1
+rule profiles received: true
+after reset: scans=0 bytes=0 matched rules=0

@@ -1,9 +1,27 @@
 ---
-interface Props { kind: 'pipeline' | 'scanners' | 'modules' | 'browser' | 'evidence' | 'blocks' | 'serialization' }
+interface Props { kind: 'pipeline' | 'scanners' | 'modules' | 'browser' | 'evidence' | 'blocks' | 'serialization' | 'semantic' | 'telemetry' }
 const { kind } = Astro.props;
 ---
 
 <figure class="architecture">
+  {kind === 'semantic' && <>
+    <div class="lane-label">Compile-time checks</div>
+    <ol class="flow" role="list">
+      <li><strong>Parse source</strong><span>Build an AST; resolve includes and imports</span></li>
+      <li><strong>Validate meaning</strong><span>Names, types, module signatures, dependencies, evidence</span></li>
+      <li><strong>Compile program</strong><span>Search plans and condition bytecode</span></li>
+    </ol>
+    <figcaption>Accepted types do not guarantee defined values for every input. Runtime conditions still evaluate bytes, occurrences, and bound module data.</figcaption>
+  </>}
+  {kind === 'telemetry' && <>
+    <div class="lane-label">One scanner and telemetry sink per worker</div>
+    <ol class="flow" role="list">
+      <li><strong>Scan input</strong><span>Update local counters; invoke enabled callbacks</span></li>
+      <li><strong>Scan returns</strong><span>Check the error and any deliberate early stop</span></li>
+      <li><strong>Export snapshot</strong><span>Read counters; merge outside concurrent scan work</span></li>
+    </ol>
+    <figcaption>Callbacks execute inside the scan. The completion hook does not run on every error path; export final metrics after the call returns.</figcaption>
+  </>}
   {kind === 'pipeline' && <>
     <div class="lane-label">Compile once</div>
     <ol class="flow" role="list">
@@ -94,7 +112,7 @@ const { kind } = Astro.props;
     <ol class="flow" role="list">
       <li><strong>Page</strong><span>Rule editor and input bytes</span></li>
       <li><strong>Web Worker</strong><span>Go runtime + Wasm compiler and scanner</span></li>
-      <li><strong>Results</strong><span>Rule names and occurrence offsets</span></li>
+      <li><strong>Results</strong><span>Rule names, occurrence offsets, redacted evidence</span></li>
     </ol>
     <figcaption>Messages cross the worker boundary. Input bytes are copied into Go memory. Terminating the worker stops work and discards its compiled rules.</figcaption>
   </>}
