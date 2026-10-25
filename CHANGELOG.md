@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Refactoring & Maintenance
+
+* **Sub-800 Line Rule Decomposition**: Partitioned the public API facade from internal rule evaluation in `compiler/scanner_exec.go`, introducing `compiler/scanner_api.go` (200 LOC) and reducing `compiler/scanner_exec.go` to 522 LOC (< 700 LOC across all scanner files for streamlined AI-assisted and human review) ([#364](https://github.com/cawalch/go-yara/pull/364)).
+* **Parameter Object Pattern (`streamAccumulator`)**: Replaced loose multi-map argument passing in streaming condition evaluation with a cohesive `streamAccumulator` parameter object and extracted evidence helper, eliminating `revive` and `nestif` linter suppressions ([#364](https://github.com/cawalch/go-yara/pull/364)).
+* **Streaming Allocation Deduplication**: Updated `StreamingProcessor.processFileChunks` to reuse the preallocated sliding-window buffer technique from `Scanner.scanReaderStream`, eliminating per-chunk heap allocations during file streaming ([#364](https://github.com/cawalch/go-yara/pull/364)).
+
 ## [v0.8.2] - 2026-10-25
 
 ### Fixed
