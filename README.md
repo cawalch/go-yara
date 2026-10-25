@@ -124,15 +124,17 @@ for _, ignored := range c.GetIgnoredRules() {
 // Scan an in-memory byte slice:
 result, err := program.Scan(data)
 
-// Read the entire io.Reader into memory, then scan:
+// Scan an io.Reader sequentially with constant bounded memory:
 result, err = program.ScanReader(reader)
+
+// Check if an io.Reader matches any rule with early termination:
+matched, err := program.MatchesReader(reader)
 
 // Scan a file directly:
 result, err = program.ScanFile("sample.bin")
 ```
 
-`ScanReader` buffers the entire input before evaluating rules. Use it for bounded
-inputs; it is not a constant-memory streaming API.
+`ScanReader` scans sequentially using a constant-memory sliding-window buffer ($C + W$, default 1 MB + automatic rule overlap), evaluating text, regex, and hex patterns without buffering the full stream. `MatchesReader` performs early-exit boolean match checks as soon as a monotonic rule condition is satisfied.
 
 The returned `ScanResult` contains:
 - `MatchedRules`: Slice of `RuleMatch` structs for rules evaluating to `true`.
@@ -550,7 +552,7 @@ go-yara rules.yar --mode=execute --data large_sample.bin --streaming --chunk-siz
 ### Limitations
 
 - **C-Based Modules**: Upstream C-based module object models (`pe`, `elf`, `cuckoo`, `dotnet`) are not bundled. Applications can supply structured schemas and host data or Go callback functions with `compiler.WithModule`.
-- **Streaming**: `StreamingProcessor` and CLI `--streaming` report literal text-pattern matches only; regex, hex, and rule conditions are not evaluated. `ScanReader` buffers the full input, and `BlockScanner` retains supplied blocks. A unified bounded-memory scanner with condition evaluation is deferred to [#352](https://github.com/cawalch/go-yara/issues/352).
+- **Streaming**: Full rule conditions, regex, and hex patterns are evaluated with constant-memory streaming via `ScanReader` and `MatchesReader` (#352). The legacy `StreamingProcessor` and CLI `--streaming` utility remain available for literal text-pattern occurrences.
 - **Block Boundary Spanning**: In `BlockScanner`, patterns crossing segmented block boundaries require overlapping bytes in the caller-provided buffers.
 
 ## Repository Layout

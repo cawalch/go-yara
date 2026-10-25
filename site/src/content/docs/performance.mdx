@@ -179,7 +179,7 @@ Use profiling to locate expensive rules, then measure throughput with the intend
 
 On Unix platforms, `ScanFile` attempts a read-only memory mapping for regular files of at least 128 KiB. Smaller files, mapping failures, and non-Unix platforms use file reads. Mapping avoids an explicit whole-file heap copy on the supported path, but still incurs page faults, page-cache residency, and I/O. Go heap allocation statistics do not account for all of those costs. See <a href={source('compiler/scanner_exec.go')}>file scanning</a> and the <a href={source('utils/fs/mmap.go')}>mapping wrapper</a>.
 
-`ScanReader` buffers all input, and block scanning retains blocks for later condition evaluation. Account for input storage as well as scanner allocations. The CLI's literal streaming mode changes semantics; use it only when text-pattern occurrences are the output you need.
+`ScanReader` operates in constant memory ($C+W$), while block scanning retains blocks for later condition evaluation. Account for input storage as well as scanner allocations. The CLI's literal streaming mode changes semantics; use it only when text-pattern occurrences are the output you need.
 
 ## Engine comparisons
 
