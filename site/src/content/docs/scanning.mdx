@@ -33,12 +33,12 @@ Each Go example below is a complete `main.go`. Use the module setup in the [quic
 | Input | API | Memory and evaluation behavior |
 | --- | --- | --- |
 | A byte slice | `program.Scan(data)` | Evaluates complete rules against the supplied bytes. |
-| A bounded reader | `program.ScanReader(reader)` | Reads the entire input into memory, then evaluates rules. |
+| An io.Reader stream | `program.ScanReader(reader)` | Scans sequentially with constant bounded memory ($C+W$), evaluating complete rule conditions. |
 | A file path | `program.ScanFile(path)` | Opens the file and scans its contents. |
 | One isolated memory block | `scanner.MatchingRulesInBlock(block, fileSize)` | Evaluates one block immediately, using absolute offsets; keeps no blocks between calls. |
 | Sparse memory blocks | `program.NewBlockScanner()` | Accumulates blocks; `Finish()` evaluates complete conditions. |
 
-`ScanReader` is not a constant-memory streaming API. Block scanning also retains supplied block data. For inputs too large to retain, the CLI's [literal streaming mode](/go-yara/cli/#large-files-and-streaming) reports text-pattern matches, but does not evaluate rule conditions.
+`ScanReader` and `MatchesReader` stream through inputs of arbitrary size in constant memory ($C + W$) using preallocated sliding window buffers and mathematical match deduplication (#352). Block scanning retains supplied block data. For raw pattern searches without condition evaluation, the CLI's [literal streaming mode](/go-yara/cli/#large-files-and-streaming) remains available.
 
 For sparse scans, provide each block's logical offset and set the logical file size when rules use `filesize`. If a pattern crosses a block boundary, supply overlapping bytes. The scanner does not reconstruct missing bytes between blocks.
 

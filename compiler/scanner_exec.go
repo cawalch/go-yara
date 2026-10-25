@@ -378,6 +378,37 @@ func (s *Scanner) Matches(data []byte) (bool, error) {
 	return s.MatchesWithContext(context.Background(), data)
 }
 
+// MatchesReader reports whether at least one public rule matches r.
+func (s *Scanner) MatchesReader(r io.Reader) (bool, error) {
+	return s.MatchesReaderWithContext(context.Background(), r)
+}
+
+// MatchesReaderWithContext reports whether at least one public rule matches r using constant-memory streaming.
+func (s *Scanner) MatchesReaderWithContext(ctx context.Context, r io.Reader) (bool, error) {
+	prevOmitMatches := s.omitMatches
+	prevOmitRuleResults := s.omitRuleResults
+	prevReportedMatchesOnly := s.reportedMatchesOnly
+	prevEarly := s.streamEarlyTermination
+
+	s.omitMatches = true
+	s.omitRuleResults = true
+	s.reportedMatchesOnly = true
+	s.streamEarlyTermination = true
+
+	defer func() {
+		s.omitMatches = prevOmitMatches
+		s.omitRuleResults = prevOmitRuleResults
+		s.reportedMatchesOnly = prevReportedMatchesOnly
+		s.streamEarlyTermination = prevEarly
+	}()
+
+	result, err := s.ScanReaderWithContext(ctx, r)
+	if err != nil {
+		return false, err
+	}
+	return len(result.MatchedRules) > 0, nil
+}
+
 // MatchesWithContext reports whether at least one public rule matches data.
 func (s *Scanner) MatchesWithContext(ctx context.Context, data []byte) (matched bool, err error) {
 	if ctx == nil {
@@ -601,8 +632,8 @@ func (s *Scanner) ScanReader(r io.Reader) (*ScanResult, error) {
 	return s.ScanReaderWithContext(context.Background(), r)
 }
 
-// ScanReaderWithContext reads from the reader and scans the data.
-// Cancellation is checked between reads; it cannot interrupt a blocked Read.
+// ScanReaderWithContext reads from the reader and scans the data using constant-memory streaming.
+// Cancellation is checked between chunk reads and pattern evaluation.
 func (s *Scanner) ScanReaderWithContext(ctx context.Context, r io.Reader) (*ScanResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -610,14 +641,7 @@ func (s *Scanner) ScanReaderWithContext(ctx context.Context, r io.Reader) (*Scan
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	data, err := io.ReadAll(contextReader{ctx, r})
-	if err != nil {
-		return nil, err
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	return s.ScanWithContext(ctx, data)
+	return s.scanReaderStream(ctx, r)
 }
 
 // ScanFile scans the given file.

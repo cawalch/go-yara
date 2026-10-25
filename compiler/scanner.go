@@ -101,6 +101,10 @@ type Scanner struct {
 	maxMatchesLimit         int
 	onMaxMatchesExceeded    func(rule string, count int)
 	maxMatchSpan            int
+
+	streamChunkSize        int
+	streamOverlapSize      int
+	streamEarlyTermination bool
 }
 
 // ScanResult represents the result of scanning data against compiled rules.
@@ -284,6 +288,31 @@ func WithMaxMatchSpan(maxBytes int) ScannerOption {
 		if scanner.matchCtx != nil {
 			scanner.matchCtx.maxMatchSpan = maxBytes
 		}
+	}
+}
+
+// WithStreamChunkSize configures the chunk buffer size for streaming reader scans (default: 1 MB).
+func WithStreamChunkSize(size int) ScannerOption {
+	return func(scanner *Scanner) {
+		if size > 0 {
+			scanner.streamChunkSize = size
+		}
+	}
+}
+
+// WithStreamOverlapSize configures the overlap buffer size for streaming reader scans (default: auto).
+func WithStreamOverlapSize(size int) ScannerOption {
+	return func(scanner *Scanner) {
+		if size > 0 {
+			scanner.streamOverlapSize = size
+		}
+	}
+}
+
+// WithStreamEarlyTermination configures whether streaming stops immediately on confirmed rule matches.
+func WithStreamEarlyTermination(early bool) ScannerOption {
+	return func(scanner *Scanner) {
+		scanner.streamEarlyTermination = early
 	}
 }
 
@@ -572,6 +601,18 @@ func (cp *CompiledProgram) ScanReaderWithContext(ctx context.Context, r io.Reade
 	scanner := cp.acquireScanner()
 	defer cp.releaseScanner(scanner)
 	return scanner.ScanReaderWithContext(ctx, r)
+}
+
+// MatchesReader reports whether this compiled program has at least one public rule match against r.
+func (cp *CompiledProgram) MatchesReader(r io.Reader) (bool, error) {
+	return cp.MatchesReaderWithContext(context.Background(), r)
+}
+
+// MatchesReaderWithContext reports whether this compiled program has at least one public rule match against r.
+func (cp *CompiledProgram) MatchesReaderWithContext(ctx context.Context, r io.Reader) (bool, error) {
+	scanner := cp.acquireScanner()
+	defer cp.releaseScanner(scanner)
+	return scanner.MatchesReaderWithContext(ctx, r)
 }
 
 // ScanFile reads filename and evaluates all rules in this compiled program.
