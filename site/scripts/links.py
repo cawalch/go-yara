@@ -63,15 +63,32 @@ class Document(HTMLParser):
 
 def external_check(url):
     # GET is more reliable than HEAD across package docs and GitHub endpoints.
-    for attempt in range(3):
+    for attempt in range(5):
         try:
             request = Request(url, headers={"User-Agent": "go-yara-docs-link-check/1.0"})
             with urlopen(request, timeout=30) as response:
                 if response.status != 200:
                     return f"{url}: HTTP {response.status}"
             return None
-        except (HTTPError, URLError, TimeoutError) as error:
-            if attempt == 2:
+        except HTTPError as error:
+            # pkg.go.dev returns 404 for newly published tags until a fetch request is made
+            if error.code == 404 and "pkg.go.dev" in url and attempt == 0:
+                try:
+                    fetch_path = url.removeprefix("https://pkg.go.dev/").split("#")[0]
+                    fetch_req = Request(
+                        f"https://pkg.go.dev/fetch/{fetch_path}",
+                        data=b"",
+                        headers={"User-Agent": "go-yara-docs-link-check/1.0"},
+                    )
+                    with urlopen(fetch_req, timeout=30):
+                        pass
+                except Exception:
+                    pass
+            if attempt == 4:
+                return f"{url}: {error}"
+            time.sleep(2 + attempt * 2)
+        except (URLError, TimeoutError) as error:
+            if attempt == 4:
                 return f"{url}: {error}"
             time.sleep(1 + attempt)
 
