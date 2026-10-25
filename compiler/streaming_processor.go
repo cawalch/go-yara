@@ -184,9 +184,18 @@ func (sp *StreamingProcessor) processFileChunks(
 		return nil, err
 	}
 
+	bufSize := chunkSize
+	if fileInfo.Mode().IsRegular() && fileInfo.Size() < int64(bufSize) {
+		bufSize = int(fileInfo.Size())
+	}
+	if bufSize > math.MaxInt-overlapCapacity-streamingBoundaryContext {
+		return nil, errors.New("streaming chunk size is too large")
+	}
+
+	buf := make([]byte, overlapCapacity+bufSize+streamingBoundaryContext)
 	var (
 		allMatches          []StreamingMatch
-		overlap             []byte
+		overlapLen          int
 		currentStreamOffset int64
 	)
 
@@ -195,7 +204,7 @@ func (sp *StreamingProcessor) processFileChunks(
 			return nil, fmt.Errorf("stream file: %w", err)
 		}
 
-		readSize := chunkSize
+		readSize := bufSize
 		if fileInfo.Mode().IsRegular() {
 			remaining := fileInfo.Size() - currentStreamOffset
 			if remaining <= 0 {
@@ -206,14 +215,8 @@ func (sp *StreamingProcessor) processFileChunks(
 			}
 		}
 
-		overlapSize := min(overlapCapacity, len(overlap))
-		if readSize > math.MaxInt-overlapSize-streamingBoundaryContext {
-			return nil, errors.New("streaming chunk size is too large")
-		}
-		chunk := make([]byte, overlapSize+readSize, overlapSize+readSize+streamingBoundaryContext)
-		copy(chunk, overlap[len(overlap)-overlapSize:])
-
-		n, readErr := io.ReadFull(reader, chunk[overlapSize:])
+		targetSlice := buf[overlapLen : overlapLen+readSize]
+		n, readErr := io.ReadFull(reader, targetSlice)
 		if readErr != nil && readErr != io.EOF && readErr != io.ErrUnexpectedEOF {
 			return nil, fmt.Errorf("read streaming input: %w", readErr)
 		}
@@ -221,16 +224,19 @@ func (sp *StreamingProcessor) processFileChunks(
 			break
 		}
 
-		chunk = chunk[:overlapSize+n]
-		if lookahead, _ := reader.Peek(streamingBoundaryContext); len(lookahead) > 0 {
-			chunk = append(chunk, lookahead...)
-		}
-
 		primaryStart := currentStreamOffset
 		primaryEnd := primaryStart + int64(n)
-		chunkOffset := primaryStart - int64(overlapSize)
+		chunkOffset := primaryStart - int64(overlapLen)
+		windowLen := overlapLen + n
+
+		if lookahead, _ := reader.Peek(streamingBoundaryContext); len(lookahead) > 0 {
+			copy(buf[windowLen:], lookahead)
+			windowLen += len(lookahead)
+		}
+		windowData := buf[:windowLen]
+
 		matches, err := sp.chunkProcessor.processChunk(ctx, streamingWindow{
-			data:          chunk,
+			data:          windowData,
 			offset:        chunkOffset,
 			primaryStart:  primaryStart,
 			primaryEnd:    primaryEnd,
@@ -249,9 +255,9 @@ func (sp *StreamingProcessor) processFileChunks(
 			break
 		}
 
-		withoutLookahead := chunk[:overlapSize+n]
-		nextOverlapSize := min(overlapCapacity, len(withoutLookahead))
-		overlap = append(overlap[:0], withoutLookahead[len(withoutLookahead)-nextOverlapSize:]...)
+		nextOverlap := min(overlapCapacity, overlapLen+n)
+		copy(buf[:nextOverlap], buf[overlapLen+n-nextOverlap:overlapLen+n])
+		overlapLen = nextOverlap
 		currentStreamOffset = primaryEnd
 
 		if readErr == io.EOF || readErr == io.ErrUnexpectedEOF {
