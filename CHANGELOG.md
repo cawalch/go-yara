@@ -7,9 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.8.2] - 2026-10-25
+
 ### Fixed
 
-* Ignore root release build and archive directories so later cross-platform builds do not acquire `vcs.modified=true` from earlier generated outputs. The v0.8.1 binaries retain that metadata on four targets; all five binaries were reproduced byte-for-byte from the tag.
+* **Constant-Memory Streaming**: Replaced `io.ReadAll` inside `Scanner.ScanReader` and `ScanReaderWithContext` with sequential sliding-window streaming ($C + W$ memory), eliminating buffer slurping and OOM crashes on unbounded/large streams ([#352](https://github.com/cawalch/go-yara/issues/352), [#360](https://github.com/cawalch/go-yara/pull/360)).
+* **Exact Boundary Deduplication**: Invariant claims matches uniquely by the chunk containing their terminal byte offset (`absEnd > primaryStart && absEnd <= primaryEnd`), guaranteeing zero duplicates and zero missed boundary patterns across chunk seams. Preserved `fullword` boundary context using non-consuming 2-byte lookahead.
+* **Stream Condition Evaluation**: Evaluates complete rule condition ASTs at EOF, supporting exact stream `filesize`, fixed header inspections (`uint16(0)` via 64 KB block retention), counts (`#a`), offsets (`@a`), lengths (`!a`), boolean logic (`$a and $b`, `not $c`), global rules, and evidence extraction.
+* **Build Metadata**: Ignore root release build and archive directories so later cross-platform builds do not acquire `vcs.modified=true` from earlier generated outputs.
+
+### Added
+
+* **Fast Early-Exit Boolean Scan**: Added `MatchesReader` and `MatchesReaderWithContext` on `Scanner` and `CompiledProgram`, plus `WithStreamEarlyTermination(true)` option. Halts stream reading on chunk 0 once monotonic rule conditions are satisfied (54.7 µs latency, 191 GB/s effective throughput).
+* **Stream Tuning Options**: Added `WithStreamChunkSize` (default 1 MB) and `WithStreamOverlapSize` (default: auto ruleset maximum pattern span).
+
+### Documentation
+
+* Updated README, input scanning guides, compatibility, and performance documentation to reflect constant-memory streaming semantics ($C + W$) for `ScanReader`.
+* Added architectural RFC for native pure-Go PE parsing and Authenticode inspection ([#359](https://github.com/cawalch/go-yara/issues/359)).
 
 ## [v0.8.1] - 2026-10-24
 

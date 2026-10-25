@@ -10,6 +10,10 @@ import ArchitectureDiagram from '../../components/ArchitectureDiagram.astro';
 
 <p>These docs describe <a href={`https://github.com/cawalch/go-yara/releases/tag/${release.version}`}>{release.version}</a>, released on {release.date}. It requires Go {release.goVersion} or later.</p>
 
+## Changes in v0.8.2
+
+v0.8.2 upgrades `ScanReader` and `ScanReaderWithContext` to use constant-memory streaming ($C + W$) with full rule condition evaluation, eliminating unbounded buffer slurping (`io.ReadAll`) on large streams ([#352](https://github.com/cawalch/go-yara/issues/352)). It introduces `MatchesReader` for early-exit boolean matching and maintains deterministic $O(1)$ resident memory across inputs of arbitrary size.
+
 ## Changes in v0.8.1
 
 v0.8.1 fills the scan phase timers and dispatches per-pattern profiles. Completion hooks now see final telemetry, and detailed, boolean, rule-list, and block scans use consistent accounting. `PatternProfile.CandidateHitsKnown` distinguishes unavailable candidate counts from zero hits. If you export these fields, review the [metric definitions](/go-yara/performance/#hooks-and-scan-metrics): loop steps count per-rule iterations, and candidate counts describe logical rule contexts rather than physical verifier calls.
