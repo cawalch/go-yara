@@ -101,9 +101,9 @@ func foldBinaryOp(b *ast.BinaryOp) ast.Expression {
 
 	switch b.Op {
 	case token.AND:
-		return foldLogicalAnd(b, left, right)
+		return foldLogicalAnd(b, foldBooleanConstant(left), foldBooleanConstant(right))
 	case token.OR:
-		return foldLogicalOr(b, left, right)
+		return foldLogicalOr(b, foldBooleanConstant(left), foldBooleanConstant(right))
 	case token.EQ, token.NEQ, token.LT, token.LE, token.GT, token.GE:
 		if folded, ok := foldComparison(b, left, right); ok {
 			return folded
@@ -128,10 +128,10 @@ func foldLogicalAnd(b *ast.BinaryOp, left, right ast.Expression) ast.Expression 
 	if isConstantFalse(left) || isConstantFalse(right) {
 		return boolLiteral(false, b.Pos)
 	}
-	if isConstantTrue(left) {
+	if isConstantTrue(left) && isDefinedBoolean(right) {
 		return right
 	}
-	if isConstantTrue(right) {
+	if isConstantTrue(right) && isDefinedBoolean(left) {
 		return left
 	}
 	return &ast.BinaryOp{Pos: b.Pos, Left: left, Op: token.AND, Right: right}
@@ -141,13 +141,45 @@ func foldLogicalOr(b *ast.BinaryOp, left, right ast.Expression) ast.Expression {
 	if isConstantTrue(left) || isConstantTrue(right) {
 		return boolLiteral(true, b.Pos)
 	}
-	if isConstantFalse(left) {
+	if isConstantFalse(left) && isDefinedBoolean(right) {
 		return right
 	}
-	if isConstantFalse(right) {
+	if isConstantFalse(right) && isDefinedBoolean(left) {
 		return left
 	}
 	return &ast.BinaryOp{Pos: b.Pos, Left: left, Op: token.OR, Right: right}
+}
+
+// Normalize scalar constants only in Boolean operand positions.
+func foldBooleanConstant(expr ast.Expression) ast.Expression {
+	if value, ok := evaluateConstantInt(expr); ok {
+		return boolLiteral(value != 0, expr.Position())
+	}
+	if value, ok := evaluateConstantFloat(expr); ok {
+		return boolLiteral(value != 0, expr.Position())
+	}
+	if value, ok := evaluateConstantString(expr); ok {
+		return boolLiteral(value != "", expr.Position())
+	}
+	return expr
+}
+
+// Boolean identities can discard AND/OR only when the other operand already
+// produces a defined Boolean. Otherwise the operator coerces undefined to false
+// and normalizes numeric truth values; NOT and DEFINED can observe that coercion.
+func isDefinedBoolean(expr ast.Expression) bool {
+	switch e := expr.(type) {
+	case *ast.Literal:
+		return e.Type == token.TRUE || e.Type == token.FALSE
+	case *ast.Identifier:
+		return strings.HasPrefix(e.Name, "$")
+	case *ast.UnaryOp:
+		return e.Op == token.DEFINED || (e.Op == token.NOT && isDefinedBoolean(e.Right))
+	case *ast.BinaryOp:
+		return e.Op == token.AND || e.Op == token.OR
+	default:
+		return false
+	}
 }
 
 func foldComparison(b *ast.BinaryOp, left, right ast.Expression) (ast.Expression, bool) {

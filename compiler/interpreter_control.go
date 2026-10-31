@@ -19,15 +19,8 @@ func (i *Interpreter) executeAndOperation() error {
 	if err != nil {
 		return err
 	}
-	// YARA treats undefined operands as false for binary boolean operators.
-	if a.Type == ValueTypeUndefined {
-		a = Value{Type: ValueTypeInt}
-	}
-	if b.Type == ValueTypeUndefined {
-		b = Value{Type: ValueTypeInt}
-	}
 	if a.Type != ValueTypeInt || b.Type != ValueTypeInt {
-		return i.handleNonIntegerOperands(a, b, "binary operation requires numeric operands")
+		return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(i.isTruthy(a) && i.isTruthy(b))})
 	}
 	if a.IntVal != 0 && b.IntVal != 0 {
 		return i.push(Value{Type: ValueTypeInt, IntVal: 1})
@@ -41,14 +34,8 @@ func (i *Interpreter) executeOrOperation() error {
 	if err != nil {
 		return err
 	}
-	if a.Type == ValueTypeUndefined {
-		a = Value{Type: ValueTypeInt}
-	}
-	if b.Type == ValueTypeUndefined {
-		b = Value{Type: ValueTypeInt}
-	}
 	if a.Type != ValueTypeInt || b.Type != ValueTypeInt {
-		return i.handleNonIntegerOperands(a, b, "binary operation requires numeric operands")
+		return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(i.isTruthy(a) || i.isTruthy(b))})
 	}
 	if a.IntVal != 0 || b.IntVal != 0 {
 		return i.push(Value{Type: ValueTypeInt, IntVal: 1})
