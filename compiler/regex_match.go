@@ -638,7 +638,7 @@ func addRegexMatchAt(
 		return
 	}
 	match := Match{Pattern: id, Offset: int64(absStart), Length: absEnd - absStart}
-	if matchPassesModifiers(data, match, modifiers, isWide) {
+	if matchPassesModifiers(data, match, modifiers, isWide && flags&regexASCIIWordBoundary == 0) {
 		ctx.AddMatch(match)
 	}
 }
