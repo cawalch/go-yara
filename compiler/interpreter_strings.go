@@ -130,6 +130,9 @@ func (i *Interpreter) executeFoundAtOperation() error {
 	}
 
 	if offset.Type != ValueTypeInt {
+		if offset.Type == ValueTypeUndefined {
+			return i.push(Value{Type: ValueTypeUndefined})
+		}
 		return &InterpreterError{Type: ErrorTypeMismatch, Message: "integer offset operand required"}
 	}
 
@@ -157,6 +160,10 @@ func (i *Interpreter) executeFoundInOperation() error {
 	}
 
 	if startOffset.Type != ValueTypeInt || endOffset.Type != ValueTypeInt {
+		if (startOffset.Type == ValueTypeInt || startOffset.Type == ValueTypeUndefined) &&
+			(endOffset.Type == ValueTypeInt || endOffset.Type == ValueTypeUndefined) {
+			return i.push(Value{Type: ValueTypeUndefined})
+		}
 		return &InterpreterError{Type: ErrorTypeMismatch, Message: "integer offset operands required"}
 	}
 
@@ -372,6 +379,10 @@ func (i *Interpreter) executeOfFoundIn() error {
 	i.stack = i.stack[:len(i.stack)-4]
 
 	if minVal.Type != ValueTypeInt || maxVal.Type != ValueTypeInt {
+		if (minVal.Type == ValueTypeInt || minVal.Type == ValueTypeUndefined) &&
+			(maxVal.Type == ValueTypeInt || maxVal.Type == ValueTypeUndefined) {
+			return i.push(Value{Type: ValueTypeUndefined})
+		}
 		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpOfFoundIn, Message: "range bounds must be integers"}
 	}
 
@@ -401,6 +412,9 @@ func (i *Interpreter) executeOfFoundAt() error {
 	i.stack = i.stack[:len(i.stack)-3]
 
 	if offsetVal.Type != ValueTypeInt {
+		if offsetVal.Type == ValueTypeUndefined {
+			return i.push(Value{Type: ValueTypeUndefined})
+		}
 		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpOfFoundAt, Message: "offset must be integer"}
 	}
 
