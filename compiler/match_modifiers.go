@@ -139,8 +139,13 @@ func hasModifier(modifiers []ast.StringModifier, mod ast.StringModifierType) boo
 
 //nolint:revive // argument-limit: internal helper
 func isFullwordMatch(data []byte, offset, length int, isWide bool) bool {
-	if offset < 0 || length <= 0 {
+	if offset < 0 || length < 0 {
 		return false
+	}
+	// Libyara verifies zero-length occurrences through its atomless forward
+	// callback, which applies ASCII fullword boundaries even in wide mode.
+	if length == 0 {
+		isWide = false
 	}
 	if !isWide {
 		if offset > 0 && isWordChar(data[offset-1]) {

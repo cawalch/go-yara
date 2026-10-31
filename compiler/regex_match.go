@@ -24,7 +24,8 @@ func addRegexMatchesCached(
 	isWide bool,
 	byteSetCache *regexByteSetCandidateCache,
 ) {
-	if len(regexInfo.Code) == 0 {
+	// Libyara only verifies candidates that start inside a nonempty buffer.
+	if len(regexInfo.Code) == 0 || len(data) == 0 {
 		return
 	}
 	if scanCanceled(ctx.cancelDone) {
@@ -418,11 +419,7 @@ func addRegexMatchesLinear(
 	isWide bool,
 	bs *regex.VMBatch,
 ) {
-	limit := len(data)
-	if limit == 0 {
-		limit = 1
-	}
-	for pos := 0; pos < limit; pos++ {
+	for pos := 0; pos < len(data); pos++ {
 		if scanCanceledAt(ctx.cancelDone, pos) {
 			return
 		}
