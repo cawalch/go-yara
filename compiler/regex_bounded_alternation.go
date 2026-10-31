@@ -25,6 +25,9 @@ func compileBoundedAlternation(parsed *regex.AST, fullword, dual bool) (*regexBo
 		return nil, nil
 	}
 	node := ungroupRegexNode(parsed.Root)
+	if node.Kind == regex.NodeConcat {
+		return compileLiteralAffixes(node, fullword, dual)
+	}
 	if isLiteralRegexAlternation(node) {
 		// Keep the original pattern flags: bare alternatives retain the first
 		// accepted atom, including runtime wide/nocase candidate order.
@@ -45,6 +48,12 @@ func compileBoundedAlternation(parsed *regex.AST, fullword, dual bool) (*regexBo
 	if err != nil {
 		return nil, err
 	}
+	plan.Tail = code
+	plan.prepareEncodingOrder(dual)
+	return plan, nil
+}
+
+func (plan *regexBoundedAlternation) prepareEncodingOrder(dual bool) {
 	// Without a literal NUL, an ASCII match that also matches wide can only
 	// contribute a one-byte atom, which precedes the corresponding wide atom.
 	if dual {
@@ -52,9 +61,7 @@ func compileBoundedAlternation(parsed *regex.AST, fullword, dual bool) (*regexBo
 			plan.CheckEncodingOrder = plan.CheckEncodingOrder || slices.Contains(branch.Literal, 0)
 		}
 	}
-	plan.Tail = code
 	plan.prepareOrder()
-	return plan, nil
 }
 
 func (plan *regexBoundedAlternation) appendPrefixes(node *regex.Node) error {
