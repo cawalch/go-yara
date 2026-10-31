@@ -33,6 +33,16 @@ func compileLiteralAffixes(root *regex.Node, fullword, dual bool) (*regexBounded
 		return nil, err
 	}
 	selected := selectLiteralAtomPart(parts)
+	part := parts[selected]
+	if part.quality < 0 {
+		return nil, nil
+	}
+	// An unbounded repetition's own atoms require verification across every
+	// copy. Only a winning prefix atom can use this finite-prefix plan.
+	if part.node.Kind != regex.NodeAlt && part.alternative &&
+		(part.node.Kind != regex.NodeRange || part.node.End == 65535) {
+		return nil, nil
+	}
 	prefixes, ok := expandLiteralAtomPrefixes(parts[:selected])
 	if !ok {
 		return nil, nil
@@ -44,6 +54,12 @@ func compileLiteralAffixes(root *regex.Node, fullword, dual bool) (*regexBounded
 	// Only the prefix is enumerated. Alternatives after the selected atom must
 	// retain forward priority, even when another endpoint would pass fullword.
 	tail := &regex.Node{Kind: regex.NodeConcat}
+	if part.node.Kind == regex.NodeRange {
+		tail.Children = append(tail.Children, &regex.Node{
+			Kind: regex.NodeRange, Start: part.node.Start - 1, End: part.node.End - 1,
+			Greedy: part.node.Greedy, Children: part.node.Children,
+		})
+	}
 	for _, part := range parts[selected+1:] {
 		tail.Children = append(tail.Children, part.node)
 	}
@@ -61,10 +77,20 @@ func literalAtomParts(nodes []*regex.Node) ([]literalAtomPart, bool, error) {
 	overlap := false
 	for i := 0; i < len(nodes); {
 		node := nodes[i]
-		part := literalAtomPart{node: node, alternative: node.Kind == regex.NodeAlt}
+		alt := literalAtomAlternation(node)
+		part := literalAtomPart{node: node, alternative: alt != nil}
 		if part.alternative {
+			if !isLiteralRegexAlternation(alt) {
+				// An atomless alternative can follow a selected prefix, but
+				// cannot supply an atom or an enumerated backward prefix.
+				part.quality = -1
+				parts = append(parts, part)
+				overlap = true
+				i++
+				continue
+			}
 			scratch := &regexBoundedAlternation{}
-			if err := scratch.appendPrefixes(node); err != nil {
+			if err := scratch.appendPrefixes(alt); err != nil {
 				return nil, false, err
 			}
 			part.branches = scratch.Branches
@@ -83,6 +109,9 @@ func literalAtomParts(nodes []*regex.Node) ([]literalAtomPart, bool, error) {
 		part.quality = bestLiteralAtomQuality(part.branches[0].Literal)
 		for _, branch := range part.branches {
 			part.quality = min(part.quality, bestLiteralAtomQuality(branch.Literal))
+		}
+		if node.Kind == regex.NodeStar || node.Kind == regex.NodeRange && node.Start == 0 {
+			part.quality = -1 // Optional copies cannot provide a required atom.
 		}
 		parts = append(parts, part)
 	}
@@ -114,26 +143,68 @@ func selectLiteralAtomPart(parts []literalAtomPart) int {
 func expandLiteralAtomPrefixes(parts []literalAtomPart) ([][]byte, bool) {
 	prefixes := [][]byte{nil}
 	for _, part := range parts {
-		var next [][]byte
-		seen := map[string]bool{}
-		total := 0
-		for _, prefix := range prefixes {
-			for _, branch := range part.branches {
-				literal := append(slices.Clone(prefix), branch.Literal...)
-				if seen[string(literal)] {
-					continue
-				}
-				total += len(literal)
-				if len(next) == maxLiteralAffixPrefixes || total > maxLiteralAffixBytes {
-					return nil, false
-				}
-				seen[string(literal)] = true
-				next = append(next, literal)
-			}
+		if len(part.branches) == 0 || part.node.Kind == regex.NodePlus || part.node.Kind == regex.NodeStar ||
+			part.node.Kind == regex.NodeRange && part.node.End == 65535 {
+			return nil, false
 		}
-		prefixes = next
+		minCopies, maxCopies := 1, 1
+		if part.node.Kind == regex.NodeRange {
+			minCopies, maxCopies = int(part.node.Start), int(part.node.End)
+		}
+		shortest := len(part.branches[0].Literal)
+		for _, branch := range part.branches {
+			shortest = min(shortest, len(branch.Literal))
+		}
+		if minCopies > maxLiteralAffixBytes/shortest {
+			return nil, false
+		}
+		var accepted literalPrefixSet
+		for count := 0; ; count++ {
+			if count >= minCopies {
+				for _, prefix := range prefixes {
+					if !accepted.add(prefix) {
+						return nil, false
+					}
+				}
+			}
+			if count == maxCopies {
+				break
+			}
+			var next literalPrefixSet
+			for _, prefix := range prefixes {
+				for _, branch := range part.branches {
+					if !next.add(append(slices.Clone(prefix), branch.Literal...)) {
+						return nil, false
+					}
+				}
+			}
+			prefixes = next.values
+		}
+		prefixes = accepted.values
 	}
 	return prefixes, true
+}
+
+type literalPrefixSet struct {
+	values [][]byte
+	seen   map[string]bool
+	bytes  int
+}
+
+func (set *literalPrefixSet) add(literal []byte) bool {
+	if set.seen[string(literal)] {
+		return true
+	}
+	if len(set.values) == maxLiteralAffixPrefixes || set.bytes+len(literal) > maxLiteralAffixBytes {
+		return false
+	}
+	if set.seen == nil {
+		set.seen = make(map[string]bool)
+	}
+	set.seen[string(literal)] = true
+	set.bytes += len(literal)
+	set.values = append(set.values, literal)
+	return true
 }
 
 func (plan *regexBoundedAlternation) appendAffixedBranches(prefixes [][]byte, branches []boundedRegexBranch) bool {
@@ -165,8 +236,26 @@ func literalAffixNodes(nodes []*regex.Node, node *regex.Node) ([]*regex.Node, bo
 		}
 		return nodes, true
 	}
-	if node.Kind == regex.NodeLiteral || isLiteralRegexAlternation(node) {
+	if node.Kind == regex.NodeLiteral || literalAtomAlternation(node) != nil {
 		return append(nodes, node), true
 	}
 	return nil, false
+}
+
+func literalAtomAlternation(node *regex.Node) *regex.Node {
+	switch node.Kind {
+	case regex.NodePlus, regex.NodeStar, regex.NodeRange:
+		if len(node.Children) != 1 {
+			return nil
+		}
+		body := ungroupRegexNode(node.Children[0])
+		if body.Kind == regex.NodeAlt && !regexHasLiteralAtom(node) {
+			return body
+		}
+		node = body
+	}
+	if isLiteralRegexAlternation(node) {
+		return node
+	}
+	return nil
 }
