@@ -244,24 +244,10 @@ func (s *Scanner) populateRuleMatchContext(
 		input.booleanMatchOnly &&
 		(len(rule.RegexPatterns) > 0 || len(rule.HexPatterns) > 0)
 
-	if canShortCircuit && len(s.matchCtx.spans) > 0 && s.isRuleConditionSatisfied(rule) {
-		s.matchCtx.normalizeMatches()
-		if s.blockScan {
-			base := s.blockContext[0].Base
-			for _, spans := range s.matchCtx.spans {
-				for index := range spans {
-					spans[index].Offset += base
-				}
-			}
-			s.matchCtx.Data = nil
-			s.matchCtx.Blocks = s.blockContext[:]
-			s.matchCtx.FileSize = s.blockFileSize
+	if !canShortCircuit || len(s.matchCtx.spans) == 0 || !s.isRuleConditionSatisfied(rule) {
+		if err := s.addLocalNonTextMatches(ctx, rule, input.data, &s.nonTextCache, input.usesharedAutomaton, canShortCircuit); err != nil {
+			return err
 		}
-		return nil
-	}
-
-	if err := s.addLocalNonTextMatches(ctx, rule, input.data, &s.nonTextCache, input.usesharedAutomaton, canShortCircuit); err != nil {
-		return err
 	}
 	s.matchCtx.normalizeMatches()
 	if s.blockScan {
