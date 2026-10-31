@@ -16,6 +16,7 @@ type regexBoundedAlternation struct {
 	asciiOrder, wideOrder []int
 	Branches              []boundedRegexBranch
 	Tail                  []byte
+	Prefix                []byte
 	Repeat                *regexRepeatPlan
 	Fullword              bool
 	CheckEncodingOrder    bool
@@ -57,6 +58,9 @@ func compileBoundedAlternation(parsed *regex.AST, fullword, dual bool) (*regexBo
 func (plan *regexBoundedAlternation) prepareEncodingOrder(dual bool) {
 	// Without a literal NUL, an ASCII match that also matches wide can only
 	// contribute a one-byte atom, which precedes the corresponding wide atom.
+	if dual && plan.Prefix != nil {
+		plan.CheckEncodingOrder = true
+	}
 	if dual && plan.Repeat != nil {
 		plan.CheckEncodingOrder = slices.Contains(plan.Repeat.Prefix, 0)
 		for _, branch := range plan.Repeat.Branches {
@@ -99,7 +103,7 @@ func cloneBoundedAlternation(plan *regexBoundedAlternation) *regexBoundedAlterna
 	if plan == nil {
 		return nil
 	}
-	cloned := &regexBoundedAlternation{CheckEncodingOrder: plan.CheckEncodingOrder, Fullword: plan.Fullword, Repeat: cloneRepeatPlan(plan.Repeat), Tail: slices.Clone(plan.Tail), Branches: slices.Clone(plan.Branches)}
+	cloned := &regexBoundedAlternation{CheckEncodingOrder: plan.CheckEncodingOrder, Fullword: plan.Fullword, Repeat: cloneRepeatPlan(plan.Repeat), Tail: slices.Clone(plan.Tail), Prefix: slices.Clone(plan.Prefix), Branches: slices.Clone(plan.Branches)}
 	for i := range cloned.Branches {
 		cloned.Branches[i].Literal = slices.Clone(plan.Branches[i].Literal)
 	}
@@ -138,6 +142,14 @@ func (plan *regexBoundedAlternation) execEncoding(bs *regex.VMBatch, data []byte
 	if plan.Repeat != nil {
 		return plan.execRepeat(data, flags, start, done)
 	}
+	if plan.Prefix != nil {
+		return plan.execPrefix(bs, data, flags, start, done)
+	}
+	return plan.execBranches(bs, data, flags, start, start, done)
+}
+
+//nolint:revive // whole-match start and atom start differ for symbolic prefixes
+func (plan *regexBoundedAlternation) execBranches(bs *regex.VMBatch, data []byte, flags regex.Flags, start, atomStart int, done <-chan struct{}) (int, boundedAtomOrder) {
 	bestEnd := -1
 	var bestOrder boundedAtomOrder
 	wide := flags&regex.FlagsWide != 0
@@ -154,19 +166,23 @@ func (plan *regexBoundedAlternation) execEncoding(bs *regex.VMBatch, data []byte
 		if scanCanceled(done) {
 			return -1, boundedAtomOrder{}
 		}
-		next, ok := boundedLiteralEnd(data, start, branch.Literal, flags)
+		next, ok := boundedLiteralEnd(data, atomStart, branch.Literal, flags)
 		if !ok {
 			continue
 		}
-		order := branch.order(data, start, i, wide)
+		order := branch.order(data, atomStart, i, wide)
+		order.end += atomStart - start
 		if bestEnd >= 0 && (flags&regex.FlagsGreedy != 0) == order.before(bestOrder) {
 			continue
 		}
-		matched, _, end, _ := regex.ExecMatchBatchWithCancel(bs, plan.Tail, data, flags|regex.FlagsGreedy, next, done)
-		if !matched {
-			continue
+		end := next
+		if len(plan.Tail) != 1 || plan.Tail[0] != regex.OpMatch || flags&regex.FlagsFullwordEnd != 0 {
+			matched, _, tailEnd, _ := regex.ExecMatchBatchWithCancel(bs, plan.Tail, data, flags|regex.FlagsGreedy, next, done)
+			if !matched {
+				continue
+			}
+			end += tailEnd
 		}
-		end += next
 		if !plan.Fullword || isFullwordMatch(data, start, end-start, wide) {
 			bestEnd, bestOrder = end, order
 			// Without case variants, the prepared order is exact.

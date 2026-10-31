@@ -15,7 +15,7 @@ func TestAffixedRepeatPlanSelection(t *testing.T) {
 		`x(ab|a)+?`: false, `x(ab|a)+?xyz`: false, `(ab|a)+?xyz`: false,
 		`x(a|ab){1,2}b`: true, `x(a|ab){1,2}?b`: true,
 		`x(a|ab){0,2}xyz`: true, `hello(a|ab){0,0}b`: true,
-		`(a|ab){9,9}xyz`: false, `x(a|[b]){1,2}b`: true,
+		`(a|ab){9,9}xyz`: true, `x(a|[b]){1,2}b`: true,
 		`hello(ab|[a])+?`: true, `(a|[b]){1,2}xyz`: false,
 		`([a]|[b]){1,2}([c]|[d]){1,2}`: false,
 	} {
