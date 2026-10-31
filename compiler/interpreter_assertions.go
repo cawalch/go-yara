@@ -45,13 +45,16 @@ func evaluateInputAssertion(assertion *conditionAssertion, ctx *MatchContext) as
 			value = ctx.FileSize
 		}
 	case OpAssertUint16Eq, OpAssertUint32Eq:
+		if ctx == nil {
+			return assertionInvalidRead
+		}
 		width := int64(2)
 		if assertion.Opcode == OpAssertUint32Eq {
 			width = 4
 		}
 		data, ok := ctx.dataRange(assertion.Offset, width)
 		if !ok {
-			return assertionInvalidRead
+			return assertionUndefined
 		}
 		if width == 2 {
 			value = int64(binary.LittleEndian.Uint16(data))
