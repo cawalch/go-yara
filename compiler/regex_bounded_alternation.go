@@ -9,7 +9,8 @@ import (
 // Libyara's bounded-repeat atoms point into the first mandatory copy. Each
 // literal branch verifies independently, then follows priority through the
 // remaining copies. Greedy strings retain the last accepted atom candidate;
-// lazy strings keep the first.
+// lazy strings keep the first. Bare literal alternatives use the same plan
+// with one mandatory copy and an empty continuation.
 // Exported fields are persisted as part of the compiled-program format.
 type regexBoundedAlternation struct {
 	asciiOrder, wideOrder []int
@@ -24,6 +25,11 @@ func compileBoundedAlternation(parsed *regex.AST, fullword, dual bool) (*regexBo
 		return nil, nil
 	}
 	node := ungroupRegexNode(parsed.Root)
+	if isLiteralRegexAlternation(node) {
+		// Keep the original pattern flags: bare alternatives retain the first
+		// accepted atom, including runtime wide/nocase candidate order.
+		node = &regex.Node{Kind: regex.NodeRange, Start: 1, End: 1, Children: []*regex.Node{node}}
+	}
 	if node.Kind != regex.NodeRange || node.Start == 0 || node.End == 65535 || !isLiteralRegexAlternation(node.Children[0]) {
 		return nil, nil
 	}
