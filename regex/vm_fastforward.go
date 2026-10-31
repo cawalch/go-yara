@@ -12,7 +12,8 @@ import (
 //
 //nolint:revive,cyclop,gocognit,funlen // performance-critical VM hot-path fast-forward
 func fastForwardGreedyTerminalLoop(code []byte, cur *[]thread, s []byte, pos *int, flags Flags, bestEnd *int, done <-chan struct{}) bool {
-	if len(*cur) != 1 {
+	// Endpoint filtering must run through the acceptance closure.
+	if flags&FlagsFullwordEnd != 0 || len(*cur) != 1 {
 		return false
 	}
 	pc := (*cur)[0].pc

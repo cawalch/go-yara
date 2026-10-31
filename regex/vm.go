@@ -613,7 +613,7 @@ func addThread(code, s []byte, list *[]thread, pc, pos int, visited []int64, gen
 			pc++
 			continue
 		case OpMatch:
-			return true
+			return flags&FlagsFullwordEnd == 0 || fullwordEnd(s, pos, wide)
 		default:
 			// A consuming op: add to list and stop closure expansion
 			*list = append(*list, thread{pc: pc})
@@ -719,4 +719,16 @@ func addSplitThreads(code, s []byte, list *[]thread, nextPC, altPC, pos int, vis
 	}
 	alternativeMatched := addThread(code, s, list, altPC, pos, visited, gen, flags)
 	return matched || alternativeMatched
+}
+
+// fullword uses alphanumeric bytes, unlike \b, which also treats '_' as a word byte.
+func fullwordEnd(input []byte, end int, wide bool) bool {
+	if end >= len(input) {
+		return true
+	}
+	if wide && (end+1 >= len(input) || input[end+1] != 0) {
+		return true
+	}
+	b := input[end]
+	return !isWord(b) || b == '_'
 }

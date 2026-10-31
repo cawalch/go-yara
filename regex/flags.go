@@ -1,7 +1,7 @@
 // Package regex provides YARA-compatible regular expression core types.
 package regex
 
-// Flags mirror libyara's re.h flags for parity and easier cross-checking.
+// Core flags mirror libyara's re.h flags for parity and easier cross-checking.
 // Keeping the values identical allows comparing encoded artifacts in tests.
 // See: yara/libyara/include/yara/re.h
 
@@ -25,6 +25,12 @@ const (
 	// FlagsUngreedy - Parser-stage defaults/overrides captured as flags during parse.
 	FlagsUngreedy Flags = 0x800
 )
+
+// FlagsFullwordEnd is a go-yara execution extension. Reject an accepting
+// endpoint followed by an alphanumeric character (a wide pair with FlagsWide).
+// The caller checks the left boundary and chooses which patterns require this
+// behavior; libyara's atom selection does not retry endpoints for every regex.
+const FlagsFullwordEnd Flags = 0x10000
 
 // ParserFlags control parser behavior; names mirror libyara for traceability.
 type ParserFlags uint32
