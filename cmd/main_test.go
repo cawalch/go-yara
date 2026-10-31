@@ -529,7 +529,7 @@ func TestExecuteMode_RegexInlineFlagsS(t *testing.T) {
 	}
 }
 
-// TestExecuteMode_RegexEmptyMatch_Scan verifies empty matches are reported under scan mode
+// TestExecuteMode_RegexEmptyMatch_Scan requires a candidate byte, as libyara does.
 func TestExecuteMode_RegexEmptyMatch_Scan(t *testing.T) {
 	rule := `rule TestRegexEmpty {
   strings:
@@ -538,9 +538,12 @@ func TestExecuteMode_RegexEmptyMatch_Scan(t *testing.T) {
     $a
 }`
 	out := executeModeOutput(t, rule, nil)
-
+	if !strings.Contains(out, "Total matches found: 0") || strings.Contains(out, "- $a at offset") {
+		t.Fatalf("expected no occurrence on empty input, got output:\n%s", out)
+	}
+	out = executeModeOutput(t, rule, []byte("!"))
 	if !strings.Contains(out, "Pattern matches: 1") {
-		t.Fatalf("expected one pattern match for empty input, got output:\n%s", out)
+		t.Fatalf("expected one zero-length match before the punctuation, got output:\n%s", out)
 	}
 	if !strings.Contains(out, "- $a at offset 0 (length: 0)") {
 		t.Fatalf("expected empty match at offset 0 length 0, got output:\n%s", out)
