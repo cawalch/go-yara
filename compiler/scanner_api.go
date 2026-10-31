@@ -20,11 +20,13 @@ func (s *Scanner) Matches(data []byte) (bool, error) {
 }
 
 // MatchesReader reports whether at least one public rule matches r.
+// Integer reads have the same retained-header limit as ScanReaderWithContext.
 func (s *Scanner) MatchesReader(r io.Reader) (bool, error) {
 	return s.MatchesReaderWithContext(context.Background(), r)
 }
 
 // MatchesReaderWithContext reports whether at least one public rule matches r using constant-memory streaming.
+// Integer reads have the same retained-header limit as ScanReaderWithContext.
 func (s *Scanner) MatchesReaderWithContext(ctx context.Context, r io.Reader) (bool, error) {
 	prevOmitMatches := s.omitMatches
 	prevOmitRuleResults := s.omitRuleResults
@@ -133,12 +135,15 @@ func (s *Scanner) MatchingRulesWithContext(ctx context.Context, data []byte) (ma
 }
 
 // ScanReader reads from the reader and scans the data.
+// Integer reads have the same retained-header limit as ScanReaderWithContext.
 func (s *Scanner) ScanReader(r io.Reader) (*ScanResult, error) {
 	return s.ScanReaderWithContext(context.Background(), r)
 }
 
 // ScanReaderWithContext reads from the reader and scans the data using constant-memory streaming.
 // Cancellation is checked between chunk reads and pattern evaluation.
+// Integer reads in conditions must lie entirely within the first 64 KiB of input;
+// reads outside that retained header are undefined, even for longer streams.
 func (s *Scanner) ScanReaderWithContext(ctx context.Context, r io.Reader) (*ScanResult, error) {
 	if ctx == nil {
 		ctx = context.Background()

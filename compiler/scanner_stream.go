@@ -12,6 +12,7 @@ import (
 const (
 	defaultStreamChunkSize    = 1024 * 1024 // 1 MB default streaming chunk
 	streamingLookaheadContext = 2
+	streamingHeaderSize       = 64 * 1024
 )
 
 // maxStreamingOverlap calculates the maximum pattern length across all rules
@@ -93,6 +94,24 @@ type streamAccumulator struct {
 	accumulatedMatches map[string]map[string][]Match
 }
 
+// retainHeader appends only the unseen prefix bytes from a contiguous scan window.
+// Both overlap and lookahead can already be present in the retained header.
+func (acc *streamAccumulator) retainHeader(window []byte, offset int64) {
+	if len(acc.headerBlock) == streamingHeaderSize {
+		return
+	}
+	data := window[int64(len(acc.headerBlock))-offset:]
+	data = data[:min(len(data), streamingHeaderSize-len(acc.headerBlock))]
+	needed := len(acc.headerBlock) + len(data)
+	if needed > cap(acc.headerBlock) {
+		capacity := min(streamingHeaderSize, max(needed, 2*cap(acc.headerBlock)))
+		header := make([]byte, len(acc.headerBlock), capacity)
+		copy(header, acc.headerBlock)
+		acc.headerBlock = header
+	}
+	acc.headerBlock = append(acc.headerBlock, data...)
+}
+
 // scanReaderStream scans an io.Reader sequentially using a preallocated sliding
 // buffer of size (chunkSize + overlapCapacity) to ensure constant, bounded resident memory.
 func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *ScanResult, err error) {
@@ -163,10 +182,13 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 		}
 		windowData := buf[:windowLen]
 
-		// Retain initial header block (up to 64KB) for fixed-offset operations (e.g. uint16(0))
-		if currentStreamOffset == 0 {
-			hLen := min(len(windowData), 64*1024)
-			acc.headerBlock = append([]byte(nil), windowData[:hLen]...)
+		// Integer reads use the retained prefix, regardless of chunk boundaries.
+		if len(acc.headerBlock) < streamingHeaderSize {
+			acc.retainHeader(windowData, chunkOffset)
+			if s.streamEarlyTermination {
+				// An assertion that was undefined may now have all its input bytes.
+				clear(s.assertionResults)
+			}
 		}
 
 		// Reset per-chunk scratch caches
