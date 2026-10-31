@@ -291,6 +291,10 @@ func (rc *ruleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers
 	flags := rc.deriveRegexFlags(pattern.Value, modifiers)
 	if parsed != nil {
 		flags |= parsed.Flags
+		// Fullword needs modifier-aware endpoint selection (see #369).
+		if !rc.stringCompiler.hasModifier(modifiers, ast.StringModifierFullword) && greedyLiteralAlternation(parsed) {
+			flags |= regex.FlagsExhaustive
+		}
 	}
 	groups := positiveCaptureGroups(modifiers)
 	var captureCode []byte

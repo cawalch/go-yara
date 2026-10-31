@@ -119,7 +119,7 @@ type thread struct {
 // handleLiteralOp handles OpLiteral and OpNotLiteral opcodes
 //
 //nolint:revive // argument-limit: performance-critical VM hot path; struct would add indirection overhead
-func handleLiteralOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance int, noCase bool, negated bool, wide bool, bestEnd *int, visited []int64, gen int64) bool {
+func handleLiteralOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance int, noCase bool, negated bool, flags Flags, bestEnd *int, visited []int64, gen int64) bool {
 	if pc+1 >= len(code) {
 		return false
 	}
@@ -138,7 +138,7 @@ func handleLiteralOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advan
 	}
 
 	if ok {
-		if addThread(code, s, next, pc+2, pos+advance, visited, gen, wide) {
+		if addThread(code, s, next, pc+2, pos+advance, visited, gen, flags) {
 			if pos+advance > *bestEnd {
 				*bestEnd = pos + advance
 			}
@@ -151,7 +151,7 @@ func handleLiteralOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advan
 // handleMaskedLiteralOp handles OpMaskedLiteral and OpMaskedNotLiteral opcodes
 //
 //nolint:revive // argument-limit: performance-critical VM hot path
-func handleMaskedLiteralOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance int, negated bool, wide bool, bestEnd *int, visited []int64, gen int64) bool {
+func handleMaskedLiteralOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance int, negated bool, flags Flags, bestEnd *int, visited []int64, gen int64) bool {
 	if pc+2 >= len(code) {
 		return false
 	}
@@ -164,7 +164,7 @@ func handleMaskedLiteralOp(code, s []byte, next *[]thread, pc int, ch byte, pos,
 	}
 
 	if matches {
-		if addThread(code, s, next, pc+3, pos+advance, visited, gen, wide) {
+		if addThread(code, s, next, pc+3, pos+advance, visited, gen, flags) {
 			if pos+advance > *bestEnd {
 				*bestEnd = pos + advance
 			}
@@ -202,11 +202,11 @@ func checkBitmapMembership(code []byte, bmStart int, ch byte, noCase bool) bool 
 // handleAnyOp handles the OpAny opcode (matches any character)
 //
 //nolint:revive // argument-limit: performance-critical VM hot path
-func handleAnyOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance int, dotAll bool, wide bool, bestEnd *int, visited []int64, gen int64) bool {
+func handleAnyOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance int, dotAll bool, flags Flags, bestEnd *int, visited []int64, gen int64) bool {
 	if !dotAll && ch == '\n' {
 		return false
 	}
-	if addThread(code, s, next, pc+1, pos+advance, visited, gen, wide) {
+	if addThread(code, s, next, pc+1, pos+advance, visited, gen, flags) {
 		if pos+advance > *bestEnd {
 			*bestEnd = pos + advance
 		}
@@ -218,7 +218,7 @@ func handleAnyOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance i
 // handleClassOp handles OpClass opcode
 //
 //nolint:revive // argument-limit: performance-critical VM hot path
-func handleClassOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance int, noCase bool, wide bool, bestEnd *int, visited []int64, gen int64) bool {
+func handleClassOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance int, noCase bool, flags Flags, bestEnd *int, visited []int64, gen int64) bool {
 	// Layout: [op][32-byte bitmap][1-byte neg]
 	bmStart := pc + 1
 	negIdx := bmStart + 32
@@ -234,7 +234,7 @@ func handleClassOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance
 	}
 
 	if inSet {
-		if addThread(code, s, next, negIdx+1, pos+advance, visited, gen, wide) {
+		if addThread(code, s, next, negIdx+1, pos+advance, visited, gen, flags) {
 			if pos+advance > *bestEnd {
 				*bestEnd = pos + advance
 			}
@@ -247,9 +247,9 @@ func handleClassOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance
 // handleCharClassOp handles character class opcodes (OpDigit, OpSpace, etc.)
 //
 //nolint:revive // argument-limit: performance-critical VM hot path
-func handleCharClassOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance int, charClassFunc func(byte) bool, wide bool, bestEnd *int, visited []int64, gen int64) bool {
+func handleCharClassOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance int, charClassFunc func(byte) bool, flags Flags, bestEnd *int, visited []int64, gen int64) bool {
 	if charClassFunc(ch) {
-		if addThread(code, s, next, pc+1, pos+advance, visited, gen, wide) {
+		if addThread(code, s, next, pc+1, pos+advance, visited, gen, flags) {
 			if pos+advance > *bestEnd {
 				*bestEnd = pos + advance
 			}
@@ -275,11 +275,11 @@ func runMatch(code, s []byte, flags Flags, start int, done <-chan struct{}, scan
 	cur := st.cur
 	next := st.next
 
-	// Track leftmost-longest end for this start position.
+	// Track the accepting endpoint while surviving continuations run.
 	bestEnd := -1
 
 	// Epsilon/assertion closure at the start position.
-	if addThread(code, s, &cur, 0, start, visited, gen, wide) {
+	if addThread(code, s, &cur, 0, start, visited, gen, flags) {
 		// MATCH reachable without consuming; end at current position.
 		bestEnd = start
 	}
@@ -298,31 +298,31 @@ func runMatch(code, s []byte, flags Flags, start int, done <-chan struct{}, scan
 			var m bool
 			switch code[pc] {
 			case OpLiteral:
-				m = handleLiteralOp(code, s, &next, pc, ch, pos, advance, noCase, false, wide, &bestEnd, visited, gen)
+				m = handleLiteralOp(code, s, &next, pc, ch, pos, advance, noCase, false, flags, &bestEnd, visited, gen)
 			case OpNotLiteral:
-				m = handleLiteralOp(code, s, &next, pc, ch, pos, advance, noCase, true, wide, &bestEnd, visited, gen)
+				m = handleLiteralOp(code, s, &next, pc, ch, pos, advance, noCase, true, flags, &bestEnd, visited, gen)
 			case OpMaskedLiteral:
-				m = handleMaskedLiteralOp(code, s, &next, pc, ch, pos, advance, false, wide, &bestEnd, visited, gen)
+				m = handleMaskedLiteralOp(code, s, &next, pc, ch, pos, advance, false, flags, &bestEnd, visited, gen)
 			case OpMaskedNotLiteral:
-				m = handleMaskedLiteralOp(code, s, &next, pc, ch, pos, advance, true, wide, &bestEnd, visited, gen)
+				m = handleMaskedLiteralOp(code, s, &next, pc, ch, pos, advance, true, flags, &bestEnd, visited, gen)
 			case OpAny:
-				m = handleAnyOp(code, s, &next, pc, ch, pos, advance, dotAll, wide, &bestEnd, visited, gen)
+				m = handleAnyOp(code, s, &next, pc, ch, pos, advance, dotAll, flags, &bestEnd, visited, gen)
 			case OpClass:
-				m = handleClassOp(code, s, &next, pc, ch, pos, advance, noCase, wide, &bestEnd, visited, gen)
+				m = handleClassOp(code, s, &next, pc, ch, pos, advance, noCase, flags, &bestEnd, visited, gen)
 			case OpWordChar:
-				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, isWord, wide, &bestEnd, visited, gen)
+				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, isWord, flags, &bestEnd, visited, gen)
 			case OpNonWordChar:
-				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, notWord, wide, &bestEnd, visited, gen)
+				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, notWord, flags, &bestEnd, visited, gen)
 			case OpSpace:
-				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, isSpace, wide, &bestEnd, visited, gen)
+				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, isSpace, flags, &bestEnd, visited, gen)
 			case OpNonSpace:
-				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, notSpace, wide, &bestEnd, visited, gen)
+				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, notSpace, flags, &bestEnd, visited, gen)
 			case OpDigit:
-				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, isDigit, wide, &bestEnd, visited, gen)
+				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, isDigit, flags, &bestEnd, visited, gen)
 			case OpNonDigit:
-				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, notDigit, wide, &bestEnd, visited, gen)
+				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, notDigit, flags, &bestEnd, visited, gen)
 			}
-			if m {
+			if m && flags&FlagsExhaustive == 0 {
 				break
 			}
 		}
@@ -340,7 +340,7 @@ func runMatch(code, s []byte, flags Flags, start int, done <-chan struct{}, scan
 			break
 		}
 		// Merge new starts into the current closure: each state runs once per position.
-		if scan && addThread(code, s, &cur, 0, pos, visited, gen, wide) {
+		if scan && addThread(code, s, &cur, 0, pos, visited, gen, flags) {
 			bestEnd = pos
 		}
 		if (scan && bestEnd >= 0) || pos+advance > len(s) {
@@ -381,7 +381,7 @@ func runMatch(code, s []byte, flags Flags, start int, done <-chan struct{}, scan
 	}
 
 	if !exhausted && scan && bestEnd < 0 && pos == len(s) {
-		if addThread(code, s, &cur, 0, pos, visited, gen, wide) {
+		if addThread(code, s, &cur, 0, pos, visited, gen, flags) {
 			bestEnd = pos
 		}
 	}
@@ -394,7 +394,7 @@ func runMatch(code, s []byte, flags Flags, start int, done <-chan struct{}, scan
 		return matched, length
 	}
 
-	// End of input: return the longest match (if any) for this start.
+	// End of input: return the selected match (if any) for this start.
 	st.cur = cur[:0]
 	st.next = next[:0]
 	st.gen = gen
@@ -428,7 +428,7 @@ func runAtMatchBatchWithCancel(bs *VMBatch, code, s []byte, flags Flags, start i
 
 	bestEnd := -1
 
-	if addThread(code, s, &cur, 0, start, visited, gen, wide) {
+	if addThread(code, s, &cur, 0, start, visited, gen, flags) {
 		bestEnd = start
 	}
 
@@ -443,31 +443,31 @@ func runAtMatchBatchWithCancel(bs *VMBatch, code, s []byte, flags Flags, start i
 			var m bool
 			switch code[pc] {
 			case OpLiteral:
-				m = handleLiteralOp(code, s, &next, pc, ch, pos, advance, noCase, false, wide, &bestEnd, visited, gen)
+				m = handleLiteralOp(code, s, &next, pc, ch, pos, advance, noCase, false, flags, &bestEnd, visited, gen)
 			case OpNotLiteral:
-				m = handleLiteralOp(code, s, &next, pc, ch, pos, advance, noCase, true, wide, &bestEnd, visited, gen)
+				m = handleLiteralOp(code, s, &next, pc, ch, pos, advance, noCase, true, flags, &bestEnd, visited, gen)
 			case OpMaskedLiteral:
-				m = handleMaskedLiteralOp(code, s, &next, pc, ch, pos, advance, false, wide, &bestEnd, visited, gen)
+				m = handleMaskedLiteralOp(code, s, &next, pc, ch, pos, advance, false, flags, &bestEnd, visited, gen)
 			case OpMaskedNotLiteral:
-				m = handleMaskedLiteralOp(code, s, &next, pc, ch, pos, advance, true, wide, &bestEnd, visited, gen)
+				m = handleMaskedLiteralOp(code, s, &next, pc, ch, pos, advance, true, flags, &bestEnd, visited, gen)
 			case OpAny:
-				m = handleAnyOp(code, s, &next, pc, ch, pos, advance, dotAll, wide, &bestEnd, visited, gen)
+				m = handleAnyOp(code, s, &next, pc, ch, pos, advance, dotAll, flags, &bestEnd, visited, gen)
 			case OpClass:
-				m = handleClassOp(code, s, &next, pc, ch, pos, advance, noCase, wide, &bestEnd, visited, gen)
+				m = handleClassOp(code, s, &next, pc, ch, pos, advance, noCase, flags, &bestEnd, visited, gen)
 			case OpWordChar:
-				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, isWord, wide, &bestEnd, visited, gen)
+				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, isWord, flags, &bestEnd, visited, gen)
 			case OpNonWordChar:
-				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, notWord, wide, &bestEnd, visited, gen)
+				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, notWord, flags, &bestEnd, visited, gen)
 			case OpSpace:
-				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, isSpace, wide, &bestEnd, visited, gen)
+				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, isSpace, flags, &bestEnd, visited, gen)
 			case OpNonSpace:
-				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, notSpace, wide, &bestEnd, visited, gen)
+				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, notSpace, flags, &bestEnd, visited, gen)
 			case OpDigit:
-				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, isDigit, wide, &bestEnd, visited, gen)
+				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, isDigit, flags, &bestEnd, visited, gen)
 			case OpNonDigit:
-				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, notDigit, wide, &bestEnd, visited, gen)
+				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, notDigit, flags, &bestEnd, visited, gen)
 			}
-			if m {
+			if m && flags&FlagsExhaustive == 0 {
 				break
 			}
 		}
@@ -544,7 +544,8 @@ func runAtMatchBatchWithCancel(bs *VMBatch, code, s []byte, flags Flags, start i
 // consuming states into list. Returns true if OpMatch is reachable in the
 // closure at the given position.
 // visited is a generation-counter []int; gen is the current generation token.
-func addThread(code, s []byte, list *[]thread, pc, pos int, visited []int64, gen int64, wide bool) bool { //nolint:revive,cyclop // argument-limit and complexity are explicit for VM closure clarity
+func addThread(code, s []byte, list *[]thread, pc, pos int, visited []int64, gen int64, flags Flags) bool { //nolint:revive,cyclop // argument-limit and complexity are explicit for VM closure clarity
+	wide := flags&FlagsWide != 0
 	for {
 		if pc < 0 || pc >= len(code) {
 			return false
@@ -565,7 +566,7 @@ func addThread(code, s []byte, list *[]thread, pc, pos int, visited []int64, gen
 			// sequential next
 			nextPC := pc + 3
 			altPC := pc + int(rel)
-			return addSplitThreads(code, s, list, nextPC, altPC, pos, visited, gen, wide, op)
+			return addSplitThreads(code, s, list, nextPC, altPC, pos, visited, gen, flags, op)
 		case OpJump:
 			// Layout: [op][u16 rel]
 			if pc+2 >= len(code) {
@@ -705,21 +706,17 @@ func checkAndReturnIfExhausted(cur []thread, matched *bool, length *int, bestEnd
 	return false
 }
 
-// addSplitThreads adds threads for split operations based on the operation type
-// addSplitThreads adds threads for OpSplitA/OpSplitN opcodes.
+// addSplitThreads preserves split priority unless exhaustive verification is requested.
 //
 //nolint:revive // argument-limit: performance-critical VM hot path
-func addSplitThreads(code, s []byte, list *[]thread, nextPC, altPC, pos int, visited []int64, gen int64, wide bool, op uint8) bool {
-	if op == OpSplitA {
-		if addThread(code, s, list, nextPC, pos, visited, gen, wide) {
-			return true
-		}
-		return addThread(code, s, list, altPC, pos, visited, gen, wide)
+func addSplitThreads(code, s []byte, list *[]thread, nextPC, altPC, pos int, visited []int64, gen int64, flags Flags, op uint8) bool {
+	if op == OpSplitB {
+		nextPC, altPC = altPC, nextPC
 	}
-
-	// OpSplitN - add alternative thread first, then next
-	if addThread(code, s, list, altPC, pos, visited, gen, wide) {
+	matched := addThread(code, s, list, nextPC, pos, visited, gen, flags)
+	if matched && flags&FlagsExhaustive == 0 {
 		return true
 	}
-	return addThread(code, s, list, nextPC, pos, visited, gen, wide)
+	alternativeMatched := addThread(code, s, list, altPC, pos, visited, gen, flags)
+	return matched || alternativeMatched
 }
