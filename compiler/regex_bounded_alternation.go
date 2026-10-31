@@ -12,10 +12,11 @@ import (
 // lazy strings keep the first.
 // Exported fields are persisted as part of the compiled-program format.
 type regexBoundedAlternation struct {
-	Branches           []boundedRegexBranch
-	Tail               []byte
-	Fullword           bool
-	CheckEncodingOrder bool
+	asciiOrder, wideOrder []int
+	Branches              []boundedRegexBranch
+	Tail                  []byte
+	Fullword              bool
+	CheckEncodingOrder    bool
 }
 
 func compileBoundedAlternation(parsed *regex.AST, fullword, dual bool) (*regexBoundedAlternation, error) {
@@ -46,6 +47,7 @@ func compileBoundedAlternation(parsed *regex.AST, fullword, dual bool) (*regexBo
 		}
 	}
 	plan.Tail = code
+	plan.prepareOrder()
 	return plan, nil
 }
 
@@ -81,6 +83,7 @@ func cloneBoundedAlternation(plan *regexBoundedAlternation) *regexBoundedAlterna
 	for i := range cloned.Branches {
 		cloned.Branches[i].Literal = slices.Clone(plan.Branches[i].Literal)
 	}
+	cloned.prepareOrder()
 	return cloned
 }
 
@@ -115,7 +118,16 @@ func (plan *regexBoundedAlternation) execEncoding(bs *regex.VMBatch, data []byte
 	bestEnd := -1
 	var bestOrder boundedAtomOrder
 	wide := flags&regex.FlagsWide != 0
-	for i, branch := range plan.Branches {
+	indices := plan.asciiOrder
+	if wide {
+		indices = plan.wideOrder
+	}
+	for position := range indices {
+		if flags&regex.FlagsGreedy != 0 {
+			position = len(indices) - 1 - position
+		}
+		i := indices[position]
+		branch := plan.Branches[i]
 		if scanCanceled(done) {
 			return -1, boundedAtomOrder{}
 		}
@@ -134,6 +146,10 @@ func (plan *regexBoundedAlternation) execEncoding(bs *regex.VMBatch, data []byte
 		end += next
 		if !plan.Fullword || isFullwordMatch(data, start, end-start, wide) {
 			bestEnd, bestOrder = end, order
+			// Without case variants, the prepared order is exact.
+			if flags&regex.FlagsNoCase == 0 {
+				return bestEnd, bestOrder
+			}
 		}
 	}
 	return bestEnd, bestOrder
@@ -148,22 +164,57 @@ type boundedAtomOrder struct {
 	wide               bool
 }
 
+// prepareOrder prioritizes the likely winning candidate before running the
+// continuation. Runtime rank comparisons still account for case variants.
+func (plan *regexBoundedAlternation) prepareOrder() {
+	for _, wide := range []bool{false, true} {
+		indices := make([]int, len(plan.Branches))
+		for i := range indices {
+			indices[i] = i
+		}
+		slices.SortFunc(indices, func(i, j int) int {
+			a, b := plan.Branches[i].baseOrder(i, wide), plan.Branches[j].baseOrder(j, wide)
+			if a.before(b) {
+				return -1
+			}
+			if b.before(a) {
+				return 1
+			}
+			return 0
+		})
+		if wide {
+			plan.wideOrder = indices
+		} else {
+			plan.asciiOrder = indices
+		}
+	}
+}
+
+func (branch boundedRegexBranch) baseOrder(index int, wide bool) boundedAtomOrder {
+	step := 1
+	if wide {
+		step = 2
+		index = -index
+	}
+	length := min(len(branch.Literal)-branch.AtomOffset, 4/step) * step
+	return boundedAtomOrder{end: branch.AtomOffset*step + length, length: length, index: index, wide: wide}
+}
+
 //nolint:revive // candidate order needs the source position and encoding
 func (branch boundedRegexBranch) order(data []byte, start, index int, wide bool) boundedAtomOrder {
+	order := branch.baseOrder(index, wide)
 	step := 1
 	if wide {
 		step = 2
 	}
-	length := min(len(branch.Literal)-branch.AtomOffset, 4/step)
-	order := boundedAtomOrder{end: branch.AtomOffset*step + length*step, length: length * step, index: index, wide: wide}
-	for i := 0; i < length; i++ {
+	for i := 0; i < order.length/step; i++ {
 		offset := branch.AtomOffset + i
 		if data[start+offset*step] != branch.Literal[offset] {
 			order.variant = true
 		}
 	}
-	if wide != order.variant {
-		order.index = -index
+	if order.variant {
+		order.index = -order.index
 	}
 	return order
 }
