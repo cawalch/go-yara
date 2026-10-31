@@ -88,7 +88,7 @@ func (s *repeatScratch) has(index int) bool {
 	return index >= 0 && index/64 < len(s.reachable) && s.reachable[index/64]&(uint64(1)<<uint(index%64)) != 0
 }
 func (s *repeatScratch) release() {
-	clear(s.reachable)
+	// mark zeroes every word as it restores the slice length.
 	s.reachable = s.reachable[:0]
 	if cap(s.reachable) > 1<<16 {
 		s.reachable = nil
