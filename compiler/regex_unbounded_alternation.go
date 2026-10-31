@@ -122,24 +122,45 @@ func (plan *regexBoundedAlternation) execRepeat(data []byte, flags regex.Flags, 
 	defer scratch.release()
 	scratch.mark(0)
 	frontier := 0
-	// With an empty lazy continuation, the first copy always accepts. Every
-	// later copy has a later atom end, so it cannot replace that first event.
-	firstCopy := !rp.Greedy && !plan.Fullword && len(rp.Suffix) == 0
-	for pos := 0; !firstCopy && pos <= frontier; pos++ {
+	bestEnd := -1
+	var bestOrder boundedAtomOrder
+	// An empty lazy tail ends at its selected copy. Without fullword, the
+	// last greedy atom also has no continuation: another matching copy would
+	// supply a later atom. These cases need only the reachability pass.
+	terminal := rp.AtomInRepeat && len(rp.Suffix) == 0 && (!rp.Greedy || !plan.Fullword && flags&regex.FlagsGreedy != 0)
+	firstCopy := terminal && !plan.Fullword && flags&regex.FlagsGreedy == 0
+	for pos := 0; pos <= frontier; pos++ {
 		if scanCanceled(done) {
 			return -1, boundedAtomOrder{}
+		}
+		absolute := base + pos*step
+		if terminal && bestEnd >= 0 && flags&regex.FlagsGreedy == 0 && absolute-start >= bestOrder.end {
+			break // Every remaining atom ends after the accepted lazy event.
 		}
 		if !scratch.has(pos) {
 			continue
 		}
-		for _, branch := range rp.Branches {
-			end, matched := boundedLiteralEnd(data, base+pos*step, branch.Literal, flags)
-			if matched {
+		for i, branch := range rp.Branches {
+			end, matched := boundedLiteralEnd(data, absolute, branch.Literal, flags)
+			if !matched {
+				continue
+			}
+			if !firstCopy {
 				next := (end - base) / step
 				scratch.mark(next)
 				frontier = max(frontier, next)
 			}
+			if terminal && (!plan.Fullword || isFullwordMatch(data, start, end-start, wide)) {
+				order := branch.order(data, absolute, i, wide)
+				order.end += absolute - start
+				if bestEnd < 0 || (flags&regex.FlagsGreedy != 0) == bestOrder.before(order) {
+					bestEnd, bestOrder = end, order
+				}
+			}
 		}
+	}
+	if terminal {
+		return bestEnd, bestOrder
 	}
 	size := min(rp.maxLength, frontier) + 1
 	if cap(scratch.ends) < size {
@@ -150,8 +171,6 @@ func (plan *regexBoundedAlternation) execRepeat(data []byte, flags regex.Flags, 
 	for i := range scratch.ends {
 		scratch.ends[i] = -1
 	}
-	bestEnd := -1
-	var bestOrder boundedAtomOrder
 	for pos := frontier; pos >= 0; pos-- {
 		if scanCanceled(done) {
 			return -1, boundedAtomOrder{}
@@ -174,7 +193,7 @@ func (plan *regexBoundedAlternation) execRepeat(data []byte, flags regex.Flags, 
 				continue
 			}
 			end := next
-			if rp.AtomInRepeat && !firstCopy {
+			if rp.AtomInRepeat {
 				unit := (next - base) / step
 				if unit > frontier || !scratch.has(unit) {
 					continue
