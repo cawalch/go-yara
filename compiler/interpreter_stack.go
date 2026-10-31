@@ -267,6 +267,10 @@ func (i *Interpreter) pushModuleValue(result ModuleValue) error {
 	case ModuleInteger:
 		return i.push(Value{Type: ValueTypeInt, IntVal: result.Integer})
 	case ModuleFloat:
+		// Libyara converts NaN module values to undefined when loading them.
+		if math.IsNaN(result.Float) {
+			return i.push(Value{Type: ValueTypeUndefined})
+		}
 		return i.push(Value{Type: ValueTypeDouble, DoubleVal: result.Float})
 	case ModuleString:
 		return i.pushString(result.String)

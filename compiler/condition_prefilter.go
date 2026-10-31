@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -160,7 +161,7 @@ func scalarTruth(value any) noStringTruth {
 		}
 		return noStringFalse
 	case float64:
-		if typed != 0 {
+		if math.Float64bits(typed) != 0 {
 			return noStringTrue
 		}
 		return noStringFalse

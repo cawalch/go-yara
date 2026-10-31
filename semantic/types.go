@@ -475,8 +475,8 @@ func handleLogicalNotOp(operand *TypeInfo) (*TypeInfo, error) {
 	if operand.DataType == TypeUnknown {
 		return &TypeInfo{DataType: TypeBoolean}, nil
 	}
-	if operand.DataType != TypeBoolean && operand.DataType != TypeInteger {
-		return nil, errors.New("logical not requires boolean or integer operand")
+	if operand.DataType != TypeBoolean && operand.DataType != TypeInteger && operand.DataType != TypeFloat && operand.DataType != TypeString {
+		return nil, errors.New("logical not requires boolean, integer, float, or string operand")
 	}
 	return &TypeInfo{DataType: TypeBoolean}, nil
 }

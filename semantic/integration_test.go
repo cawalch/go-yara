@@ -105,6 +105,14 @@ func TestInferTypeFromUnaryOpAllOperators(t *testing.T) {
 		wantErr  bool
 	}{
 		{"not", token.NOT, boolType, TypeBoolean, false},
+		{"not_integer", token.NOT, intType, TypeBoolean, false},
+		{"not_float", token.NOT, &TypeInfo{DataType: TypeFloat}, TypeBoolean, false},
+		{"not_string", token.NOT, &TypeInfo{DataType: TypeString}, TypeBoolean, false},
+		{"not_unknown", token.NOT, &TypeInfo{DataType: TypeUnknown}, TypeBoolean, false},
+		{"not_regexp", token.NOT, &TypeInfo{DataType: TypeRegexp}, TypeUnknown, true},
+		{"not_struct", token.NOT, &TypeInfo{DataType: TypeStruct}, TypeUnknown, true},
+		{"not_array", token.NOT, &TypeInfo{DataType: TypeArray}, TypeUnknown, true},
+		{"not_dictionary", token.NOT, &TypeInfo{DataType: TypeDictionary}, TypeUnknown, true},
 		{"bitwise_not", token.BitwiseNot, intType, TypeInteger, false},
 		{"minus", token.MINUS, intType, TypeInteger, false},
 		{"defined", token.DEFINED, intType, TypeBoolean, false},
