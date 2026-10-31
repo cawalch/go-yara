@@ -7,6 +7,8 @@ import (
 	"io"
 	"math"
 	"time"
+
+	"github.com/cawalch/go-yara/regex"
 )
 
 const (
@@ -30,6 +32,9 @@ func (cp *CompiledProgram) maxStreamingOverlap() int {
 				}
 			}
 		}
+		for _, pattern := range rule.RegexPatterns {
+			maxLen = max(maxLen, streamingRegexLength(pattern))
+		}
 		for _, p := range rule.HexPatterns {
 			if p != nil && len(p.Tokens) > maxLen {
 				maxLen = len(p.Tokens)
@@ -37,7 +42,49 @@ func (cp *CompiledProgram) maxStreamingOverlap() int {
 		}
 	}
 	// Add 4096 context margin for lookahead, fullword boundaries, and bounded regex spans.
+	if maxLen > math.MaxInt-4096 {
+		return math.MaxInt
+	}
 	return maxLen + 4096
+}
+
+// streamingRegexLength is the maximum byte length across the enabled encodings.
+// A negative length denotes an unbounded regex.
+func streamingRegexLength(pattern RegexPattern) int {
+	length := pattern.maxLength
+	if length >= 0 && pattern.Flags&regex.FlagsWide != 0 {
+		if length > math.MaxInt/2 {
+			return math.MaxInt
+		}
+		length *= 2
+	}
+	return length
+}
+
+// streamMatchWindow assigns each settled start to exactly one window.
+// Two retained bytes preserve the left boundary for wide/fullword assertions.
+type streamMatchWindow struct {
+	offset, primaryStart, primaryEnd int64
+	overlapCapacity                  int
+	final                            bool
+}
+
+func (window streamMatchWindow) owns(span matchSpan, horizon int) bool {
+	start := window.offset + span.Offset
+	if horizon >= 0 && horizon <= window.overlapCapacity-streamingLookaheadContext {
+		first := max(int64(0), window.primaryStart-int64(horizon))
+		limit := max(int64(0), window.primaryEnd-int64(horizon))
+		if window.final {
+			limit = window.primaryEnd
+		}
+		return start >= first && start < limit
+	}
+	// Unbounded patterns and undersized explicit overlap retain end ownership.
+	if span.Length == 0 {
+		return start >= window.primaryStart && start < window.primaryEnd
+	}
+	end := start + int64(span.Length)
+	return end > window.primaryStart && end <= window.primaryEnd
 }
 
 func (s *Scanner) effectiveStreamChunkSize() int {
@@ -112,8 +159,8 @@ func (acc *streamAccumulator) retainHeader(window []byte, offset int64) {
 	acc.headerBlock = append(acc.headerBlock, data...)
 }
 
-// scanReaderStream scans an io.Reader sequentially using a preallocated sliding
-// buffer of size (chunkSize + overlapCapacity) to ensure constant, bounded resident memory.
+// scanReaderStream reuses a sliding input buffer bounded by chunk size,
+// overlap capacity, and lookahead. Retained matches are accumulated separately.
 func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *ScanResult, err error) {
 	if s == nil || s.program == nil {
 		return &ScanResult{
@@ -151,6 +198,19 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 		recordMatches = !s.omitMatches
 	)
 
+	var window streamMatchWindow
+	var currentRule *CompiledRule
+	var fastFilter func(string, matchSpan) bool
+	if s.fastScan {
+		fastFilter = func(id string, span matchSpan) bool {
+			horizon := -1
+			if pattern, ok := currentRule.RegexPatterns[id]; ok {
+				horizon = streamingRegexLength(pattern)
+			}
+			return window.owns(span, horizon)
+		}
+	}
+
 	for {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -181,6 +241,11 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 			windowLen += len(lookahead)
 		}
 		windowData := buf[:windowLen]
+		window = streamMatchWindow{
+			offset: chunkOffset, primaryStart: primaryStart, primaryEnd: primaryEnd,
+			overlapCapacity: overlapCapacity,
+			final:           readErr != nil || peekErr == io.EOF && len(lookahead) == 0,
+		}
 
 		// Integer reads use the retained prefix, regardless of chunk boundaries.
 		if len(acc.headerBlock) < streamingHeaderSize {
@@ -217,6 +282,12 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 			if err := s.addLocalTextMatches(ctx, rule, windowData); err != nil {
 				return nil, err
 			}
+			if s.fastScan && rule.FastScanSafe {
+				// Filter non-text candidates before clipping: the first local
+				// occurrence may be provisional or belong to an earlier window.
+				currentRule = rule
+				s.matchCtx.matchFilter = fastFilter
+			}
 			if err := s.addLocalNonTextMatches(ctx, rule, windowData, &s.nonTextCache, false, false); err != nil {
 				return nil, err
 			}
@@ -227,22 +298,19 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 			}
 
 			for strID, spans := range s.matchCtx.spans {
+				horizon := -1
+				if pattern, ok := rule.RegexPatterns[strID]; ok {
+					horizon = streamingRegexLength(pattern)
+				}
 				for _, sp := range spans {
-					absStart := chunkOffset + sp.Offset
-					absEnd := absStart + int64(sp.Length)
-
-					// Deduplication invariant: a match belongs uniquely to the chunk
-					// that covers its end offset.
-					if sp.Length == 0 {
-						if absStart < primaryStart || absStart >= primaryEnd {
-							continue
-						}
-					} else {
-						if absEnd <= primaryStart || absEnd > primaryEnd {
-							continue
-						}
+					if !window.owns(sp, horizon) {
+						continue
 					}
+					absStart := chunkOffset + sp.Offset
 
+					if s.fastScan && rule.FastScanSafe && len(acc.accumulatedSpans[rule.Name][strID]) > 0 {
+						continue
+					}
 					if acc.accumulatedSpans[rule.Name] == nil {
 						acc.accumulatedSpans[rule.Name] = make(map[string][]matchSpan)
 					}

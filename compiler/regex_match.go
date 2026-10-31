@@ -400,6 +400,11 @@ func addRegexMatchesFromPrefix(
 			return
 		}
 		addRegexMatchAt(ctx, id, regexInfo, data, modifiers, flags, isWide, bs, candidate)
+		// Fast scan can stop only after the context accepts an occurrence;
+		// a streaming ownership filter may reject earlier candidates.
+		if ctx.maxMatchesPerPattern > 0 && ctx.matchCount(id) >= ctx.maxMatchesPerPattern {
+			return
+		}
 		searchFrom := candidate + 1
 		if searchFrom > len(data) {
 			return

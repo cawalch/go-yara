@@ -24,6 +24,8 @@ type MatchContext struct {
 	EntryPoint       int64
 	// maxMatchesPerPattern bounds retained occurrences. Zero means unlimited.
 	maxMatchesPerPattern int
+	// matchFilter rejects provisional streaming occurrences before retention.
+	matchFilter func(string, matchSpan) bool
 	// maxMatchSpan bounds the maximum byte length of a single regex match. Zero means unlimited.
 	maxMatchSpan int
 	compact      bool
@@ -84,6 +86,9 @@ func (mc *MatchContext) AddMatch(m Match) {
 		mc.addMatchSpan(m.Pattern, matchSpan{Offset: m.Offset, Length: m.Length})
 		return
 	}
+	if mc.matchFilter != nil && !mc.matchFilter(m.Pattern, matchSpan{Offset: m.Offset, Length: m.Length}) {
+		return
+	}
 	if mc.Matches == nil {
 		mc.Matches = make(map[string][]Match)
 	}
@@ -99,6 +104,9 @@ func (mc *MatchContext) addMatchSpan(id string, span matchSpan) {
 		return
 	}
 	if mc.maxMatchesPerPattern > 0 && mc.matchCount(id) >= mc.maxMatchesPerPattern {
+		return
+	}
+	if mc.matchFilter != nil && !mc.matchFilter(id, span) {
 		return
 	}
 	if mc.spans == nil {
