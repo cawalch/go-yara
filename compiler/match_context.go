@@ -37,8 +37,8 @@ func PopulateMatchContext(ctx *MatchContext, rule *CompiledRule, data []byte) {
 		return
 	}
 
-	if len(rule.fixedTextOffsets) != 0 {
-		defer ctx.filterFixedOffsets(rule.fixedTextOffsets, 0)
+	if len(rule.fixedOffsets) != 0 {
+		defer ctx.filterFixedOffsets(rule.fixedOffsets, 0)
 	}
 
 	if len(data) == 0 {

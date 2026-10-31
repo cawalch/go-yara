@@ -17,8 +17,8 @@ import (
 
 const (
 	compiledProgramMagic = "GOYARA\x00"
-	// Version 8 adds per-string fixed-offset literal occurrence restrictions.
-	compiledProgramVersion = uint16(8)
+	// Version 9 generalizes fixed-offset restrictions to literal regex/hex patterns.
+	compiledProgramVersion = uint16(9)
 )
 
 // MarshalBinary serializes a compiled program using the current versioned
@@ -81,7 +81,7 @@ func ReadCompiledProgram(reader io.Reader, modules ...Module) (*CompiledProgram,
 	if err := binary.Read(reader, binary.BigEndian, &version); err != nil {
 		return nil, fmt.Errorf("reading compiled program version: %w", err)
 	}
-	if version != 4 && version != 5 && version != 6 && version != 7 && version != compiledProgramVersion {
+	if version != 4 && version != 5 && version != 6 && version != 7 && version != 8 && version != compiledProgramVersion {
 		return nil, fmt.Errorf("unsupported compiled program version %d; rebuild with format version %d", version, compiledProgramVersion)
 	}
 
@@ -163,7 +163,7 @@ func serializeRule(rule *CompiledRule) (serializedRule, error) {
 		ModuleNames:         make(map[uint8]string, len(rule.ModuleNames)),
 		ModuleSignatures:    make(map[uint8]serializedModuleFunction, len(rule.ModuleFunctions)),
 		HeaderConstraints:   slices.Clone(rule.HeaderConstraints),
-		FixedTextOffsets:    maps.Clone(rule.fixedTextOffsets),
+		FixedOffsets:        maps.Clone(rule.fixedOffsets),
 		Assertions:          slices.Clone(rule.assertions),
 		AssertionProgram:    slices.Clone(rule.assertionProgram),
 		MandatoryAssertions: slices.Clone(rule.mandatoryAssertions),
@@ -258,6 +258,11 @@ func deserializeRule(serialized serializedRule, bindings map[string]compiledModu
 		return nil, fmt.Errorf("loading metadata: %w", err)
 	}
 
+	fixedOffsets := serialized.FixedOffsets
+	if fixedOffsets == nil {
+		fixedOffsets = serialized.FixedTextOffsets
+	}
+
 	rule := &CompiledRule{
 		moduleAccessNames:   slices.Clone(serialized.ModuleAccessNames),
 		moduleIterations:    slices.Clone(serialized.ModuleIterations),
@@ -292,7 +297,7 @@ func deserializeRule(serialized serializedRule, bindings map[string]compiledModu
 		ModuleFunctions:     make(map[builtinFunction]ModuleFunction, len(serialized.ModuleNames)),
 		ModuleNames:         make(map[builtinFunction]string, len(serialized.ModuleNames)),
 		HeaderConstraints:   slices.Clone(serialized.HeaderConstraints),
-		fixedTextOffsets:    maps.Clone(serialized.FixedTextOffsets),
+		fixedOffsets:        maps.Clone(fixedOffsets),
 		assertions:          slices.Clone(serialized.Assertions),
 		assertionProgram:    slices.Clone(serialized.AssertionProgram),
 		mandatoryAssertions: slices.Clone(serialized.MandatoryAssertions),

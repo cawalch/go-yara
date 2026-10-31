@@ -367,7 +367,7 @@ if err != nil {
 }
 ```
 
-Stream-based serialization is also supported via `program.WriteTo(w)` and `compiler.ReadCompiledProgram(r)`. Serialized programs preserve compiled automatons, hex tables, and prefilter structures. External variables and custom module handlers must be rebound after deserialization. New artifacts use format version 8, including fixed-offset literal occurrence restrictions; versions 4–7 remain readable. Recompile older artifacts to apply these restrictions. Older binaries cannot load version 8 artifacts. Structured module schemas are preserved; host data must be rebound on each scanner.
+Stream-based serialization is also supported via `program.WriteTo(w)` and `compiler.ReadCompiledProgram(r)`. Serialized programs preserve compiled automatons, hex tables, and prefilter structures. External variables and custom module handlers must be rebound after deserialization. New artifacts use format version 9, including fixed-offset literal restrictions for text, regex, and hex declarations; versions 4–8 remain readable. Format 8 preserves text-only restrictions; recompile older artifacts to apply the expanded restrictions. Older binaries cannot load version 9 artifacts. Structured module schemas are preserved; host data must be rebound on each scanner.
 
 The compiler fuses fixed-offset `uint16`/`uint32` equality, integer filesize bounds,
 string-at checks, string-count comparisons, and external comparisons with integer,

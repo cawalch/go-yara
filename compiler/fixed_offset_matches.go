@@ -4,12 +4,13 @@ import (
 	"slices"
 
 	"github.com/cawalch/go-yara/ast"
+	"github.com/cawalch/go-yara/regex"
 	"github.com/cawalch/go-yara/token"
 )
 
 // Derive before constant folding: even unreachable occurrence observations
 // disable libyara's fixed-offset optimization for that string.
-func deriveFixedTextOffsets(rule *ast.Rule) map[string]int64 {
+func deriveFixedOffsets(rule *ast.Rule) map[string]int64 {
 	if ruleDeclaresEvidence(rule) {
 		return nil
 	}
@@ -20,11 +21,10 @@ func deriveFixedTextOffsets(rule *ast.Rule) map[string]int64 {
 	}
 	collectConditionStringReferences(rule.Condition, refs)
 	for _, str := range rule.Strings {
-		_, text := str.Pattern.(*ast.TextString)
 		encoded := slices.ContainsFunc(str.Modifiers, func(modifier ast.StringModifier) bool {
 			return modifier.Type == ast.StringModifierBase64 || modifier.Type == ast.StringModifierBase64Wide
 		})
-		if !text || encoded || isStringReferenced(str.Identifier, str.Identifier == "$", refs) {
+		if encoded || isStringReferenced(str.Identifier, str.Identifier == "$", refs) {
 			delete(refs.fixedOffsets, str.Identifier)
 		}
 	}
@@ -86,4 +86,45 @@ func (ctx *MatchContext) filterFixedOffsets(offsets map[string]int64, base int64
 			}
 		}
 	}
+}
+
+// Match libyara's literal AST extraction, not fixed-width matching. In
+// particular, regex groups/classes/repetitions still use regex semantics.
+func (result *stringCompilationResult) isFixedOffsetLiteral() bool {
+	switch result.kind {
+	case StringKindText:
+		return true
+	case StringKindRegex:
+		if result.parsedAST == nil || result.parsedAST.Root == nil {
+			return false
+		}
+		root := result.parsedAST.Root
+		return root.Kind == regex.NodeLiteral || (root.Kind == regex.NodeConcat && len(root.Children) > 0 &&
+			!slices.ContainsFunc(root.Children, func(child *regex.Node) bool { return child.Kind != regex.NodeLiteral }))
+	case StringKindHex:
+		return result.hexPattern != nil && fixedOffsetHexLiteral(result.hexPattern.Tokens)
+	default:
+		return false
+	}
+}
+
+func fixedOffsetHexLiteral(tokens []HexPatternToken) bool {
+	if len(tokens) == 0 {
+		return false
+	}
+	for _, token := range tokens {
+		if token.Negated {
+			return false
+		}
+		switch token.Kind {
+		case HexTokenByte:
+		case HexTokenAlt:
+			if len(token.Alternatives) != 1 || !fixedOffsetHexLiteral(token.Alternatives[0]) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
 }

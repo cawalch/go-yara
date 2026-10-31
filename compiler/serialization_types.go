@@ -47,7 +47,8 @@ type serializedRule struct {
 	ModuleNames         map[uint8]string
 	ModuleSignatures    map[uint8]serializedModuleFunction
 	HeaderConstraints   []HeaderConstraint
-	FixedTextOffsets    map[string]int64
+	FixedTextOffsets    map[string]int64 // Legacy format 8.
+	FixedOffsets        map[string]int64
 	Assertions          []conditionAssertion
 	AssertionProgram    []assertionInstruction
 	MandatoryAssertions []int
