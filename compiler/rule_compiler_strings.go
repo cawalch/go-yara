@@ -291,9 +291,17 @@ func (rc *ruleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers
 	flags := rc.deriveRegexFlags(pattern.Value, modifiers)
 	if parsed != nil {
 		flags |= parsed.Flags
-		// Fullword needs modifier-aware endpoint selection (see #369).
-		if !rc.stringCompiler.hasModifier(modifiers, ast.StringModifierFullword) && greedyLiteralAlternation(parsed) {
+		repeatedAlternation := greedyLiteralAlternation(parsed)
+		if repeatedAlternation {
 			flags |= regex.FlagsExhaustive
+		}
+		// Literal alternatives supply independent libyara atom candidates. A
+		// rejected fullword endpoint must not hide a later valid alternative.
+		// Do not extend this to arbitrary regexes: atom-selected forward
+		// verification can intentionally reject the whole greedy occurrence.
+		if rc.stringCompiler.hasModifier(modifiers, ast.StringModifierFullword) &&
+			(isLiteralRegexAlternation(parsed.Root) || repeatedAlternation) {
+			flags |= regex.FlagsFullwordEnd
 		}
 	}
 	groups := positiveCaptureGroups(modifiers)
