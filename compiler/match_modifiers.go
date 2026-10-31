@@ -155,25 +155,21 @@ func isFullwordMatch(data []byte, offset, length int, isWide bool) bool {
 	if length == 0 {
 		isWide = false
 	}
-	if !isWide {
-		if offset > 0 && isWordChar(data[offset-1]) {
-			return false
-		}
-		end := offset + length
-		if end < len(data) && isWordChar(data[end]) {
-			return false
-		}
-		return true
-	}
-
-	if offset >= 2 && isWideWordChar(data, offset-2) {
+	if !isFullwordStart(data, offset, isWide) {
 		return false
 	}
 	end := offset + length
-	if end+1 < len(data) && isWideWordChar(data, end) {
-		return false
+	if isWide {
+		return end+1 >= len(data) || !isWideWordChar(data, end)
 	}
-	return true
+	return end >= len(data) || !isWordChar(data[end])
+}
+
+func isFullwordStart(data []byte, offset int, isWide bool) bool {
+	if isWide {
+		return offset < 2 || !isWideWordChar(data, offset-2)
+	}
+	return offset == 0 || !isWordChar(data[offset-1])
 }
 
 func isWordChar(b byte) bool {

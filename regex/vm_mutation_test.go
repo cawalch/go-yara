@@ -362,13 +362,16 @@ func TestFastForwardGreedyTerminalLoopSplitAndCancellation(t *testing.T) {
 		t.Fatalf("plus loop -> pos %d bestEnd %d, want 3,3", pos, bestEnd)
 	}
 
-	// An OpSplitA loop must still be recognised (branch-priority mutation).
+	// An exit-first split is lazy and must not consume the whole run.
 	ungreedy := []byte{OpLiteral, 'a', OpSplitA, 0xFE, 0xFF, OpMatch}
 	pos = 0
 	bestEnd = -1
 	cur = []thread{{pc: 0}}
-	if !fastForwardGreedyTerminalLoop(ungreedy, &cur, []byte("aaa"), &pos, 0, &bestEnd, nil) {
-		t.Fatal("OpSplitA loop should fast-forward")
+	if fastForwardGreedyTerminalLoop(ungreedy, &cur, []byte("aaa"), &pos, 0, &bestEnd, nil) {
+		t.Fatal("lazy loop must use ordinary VM match selection")
+	}
+	if pos != 0 || bestEnd != -1 || len(cur) != 1 || cur[0].pc != 0 {
+		t.Fatal("rejected shortcut changed VM state")
 	}
 
 	// An exit past the end of the buffer must be rejected without panicking.

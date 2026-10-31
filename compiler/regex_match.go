@@ -618,6 +618,11 @@ func addRegexMatchAt(
 	if !regexInfo.startMatchesFirstByte(data, start, isWide) {
 		return
 	}
+	// Endpoint-filtered patterns are nonempty. Reject their left boundary
+	// before running the VM; a later endpoint cannot make it valid.
+	if flags&regex.FlagsFullwordEnd != 0 && !isFullwordStart(data, start, isWide) {
+		return
+	}
 	maxMatchSpan := 0
 	if ctx != nil {
 		maxMatchSpan = ctx.maxMatchSpan
