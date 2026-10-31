@@ -114,8 +114,27 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
-      - name: Install libyara
-        run: sudo apt-get update && sudo apt-get install -y yara
+      # Ubuntu 24.04 ships 4.5.0, which predates the zero-length regex fixes
+      # required by our 4.5.8 differential oracle contract.
+      - name: Build libyara 4.5.8 oracle
+        env:
+          YARA_COMMIT: 84b0e3cc0e42f8f8e6b84d19c97ec3ac6ff8aee8 # v4.5.8
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential autoconf automake libtool pkg-config libssl-dev flex bison
+          git init "$RUNNER_TEMP/yara-source"
+          git -C "$RUNNER_TEMP/yara-source" remote add origin https://github.com/VirusTotal/yara.git
+          git -C "$RUNNER_TEMP/yara-source" fetch --depth=1 origin "$YARA_COMMIT"
+          git -C "$RUNNER_TEMP/yara-source" checkout --detach FETCH_HEAD
+          cd "$RUNNER_TEMP/yara-source"
+          ./bootstrap.sh
+          ./configure --disable-shared --prefix="$RUNNER_TEMP/yara-oracle"
+          make -j2
+          make install
+          oracle_version=$("$RUNNER_TEMP/yara-oracle/bin/yara" --version)
+          echo "libyara oracle: $oracle_version"
+          test "$oracle_version" = "4.5.8"
+          echo "$RUNNER_TEMP/yara-oracle/bin" >> "$GITHUB_PATH"
 
       - name: Run race tests
         run: go test -race ./...
