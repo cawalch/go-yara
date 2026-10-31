@@ -92,6 +92,7 @@ type fixedRegexDispatch struct {
 type fixedRegexCacheOrder struct {
 	cacheIndex int
 	wideLength int
+	preferWide bool
 }
 
 func sortedPatternIDs[V any](patterns map[string]V) []string {
@@ -264,7 +265,8 @@ func buildFixedRegexDispatch(rules []*CompiledRule) *fixedRegexDispatch {
 			encodings := []bool{false}
 			switch {
 			case hasWide && hasASCII:
-				encodings = []bool{true, false}
+				wideFirst := pattern.Flags&regex.FlagsGreedy != 0
+				encodings = []bool{wideFirst, !wideFirst}
 			case hasWide:
 				encodings = []bool{true}
 			}
@@ -315,6 +317,7 @@ func buildFixedRegexDispatch(rules []*CompiledRule) *fixedRegexDispatch {
 		dispatch.cacheOrder = append(dispatch.cacheOrder, fixedRegexCacheOrder{
 			cacheIndex: entry.cacheIndex,
 			wideLength: len(entry.pattern.fixedByteSets) * 2,
+			preferWide: entry.pattern.Flags&regex.FlagsGreedy != 0,
 		})
 	}
 	return dispatch

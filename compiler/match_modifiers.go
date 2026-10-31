@@ -25,8 +25,17 @@ func addRegexMatchesWithModifiersCached(
 
 	switch {
 	case hasWide && hasASCII:
-		addRegexMatchesCached(ctx, id, regexInfo, data, modifiers, baseFlags|regex.FlagsWide, true, byteSetCache)
-		addRegexMatchesCached(ctx, id, regexInfo, data, modifiers, baseFlags&^regex.FlagsWide, false, byteSetCache)
+		// Libyara verifies ASCII then wide and replaces an existing occurrence
+		// for greedy regexes. Append the winning encoding first for deduplication.
+		wideFirst := baseFlags&regex.FlagsGreedy != 0
+		for _, wide := range []bool{wideFirst, !wideFirst} {
+			flags := baseFlags &^ regex.FlagsWide
+			if wide {
+				flags |= regex.FlagsWide
+			}
+			addRegexMatchesCached(ctx, id, regexInfo, data, modifiers, flags, wide, byteSetCache)
+		}
+		ctx.normalizeRegexEncodingMatches(id)
 	case hasWide:
 		addRegexMatchesCached(ctx, id, regexInfo, data, modifiers, baseFlags|regex.FlagsWide, true, byteSetCache)
 	default:

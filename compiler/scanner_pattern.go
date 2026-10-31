@@ -6,6 +6,7 @@ import (
 	"math"
 	"slices"
 
+	"github.com/cawalch/go-yara/ast"
 	"github.com/cawalch/go-yara/regex"
 )
 
@@ -324,12 +325,12 @@ func (s *Scanner) populateFixedRegexCache(
 	for _, order := range dispatch.cacheOrder {
 		matches := cache.matches[order.cacheIndex]
 		slices.SortStableFunc(matches, func(left, right matchSpan) int {
-			leftWide := left.Length == order.wideLength
-			rightWide := right.Length == order.wideLength
+			leftPreferred := (left.Length == order.wideLength) == order.preferWide
+			rightPreferred := (right.Length == order.wideLength) == order.preferWide
 			switch {
-			case leftWide == rightWide:
+			case leftPreferred == rightPreferred:
 				return 0
-			case leftWide:
+			case leftPreferred:
 				return -1
 			default:
 				return 1
@@ -436,14 +437,17 @@ func (s *Scanner) addLocalNonTextMatches(
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		modifiers := rule.StringModifiers[id]
 		if matches, ok := s.getNonTextMatches(cache, regexInfo.cacheIndex, usesharedAutomaton); ok {
 			addCachedMatches(s.matchCtx, id, matches)
+			if hasModifier(modifiers, ast.StringModifierWide) && hasModifier(modifiers, ast.StringModifierASCII) {
+				s.matchCtx.normalizeRegexEncodingMatches(id)
+			}
 			if canShortCircuit && len(s.matchCtx.spans[id]) > 0 && s.isRuleConditionSatisfied(rule) {
 				return nil
 			}
 			continue
 		}
-		modifiers := rule.StringModifiers[id]
 		addRegexMatchesWithModifiersCached(s.matchCtx, id, regexInfo, data, modifiers, &s.regexByteSetCache)
 		if s.matchCtx.maxMatchesPerPattern <= 0 && regexInfo.cacheIndex >= 0 && regexInfo.cacheIndex < len(cache.matches) {
 			dst := cache.matches[regexInfo.cacheIndex][:0]
