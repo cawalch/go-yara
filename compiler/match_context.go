@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"cmp"
 	"slices"
 	"sync"
 
@@ -71,6 +72,20 @@ func (ctx *MatchContext) normalizeMatches() {
 	}
 	for id, matches := range ctx.Matches {
 		ctx.Matches[id] = sortAndDedupeMatches(matches)
+	}
+}
+
+// normalizeRegexEncodingMatches resolves ASCII/wide collisions before general
+// normalization. Producers append the preferred encoding first; retain that
+// occurrence even if the other encoding has a shorter (or longer) span.
+func (ctx *MatchContext) normalizeRegexEncodingMatches(id string) {
+	if spans := ctx.spans[id]; len(spans) > 1 {
+		slices.SortStableFunc(spans, func(a, b matchSpan) int { return cmp.Compare(a.Offset, b.Offset) })
+		ctx.spans[id] = slices.CompactFunc(spans, func(a, b matchSpan) bool { return a.Offset == b.Offset })
+	}
+	if matches := ctx.Matches[id]; len(matches) > 1 {
+		slices.SortStableFunc(matches, func(a, b Match) int { return cmp.Compare(a.Offset, b.Offset) })
+		ctx.Matches[id] = slices.CompactFunc(matches, func(a, b Match) bool { return a.Offset == b.Offset })
 	}
 }
 

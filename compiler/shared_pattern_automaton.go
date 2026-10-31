@@ -239,8 +239,8 @@ func (builder *sharedPatternAutomatonBuilder) addRegexPrefilters(ruleIndex int, 
 		encodings := []bool{false}
 		switch {
 		case hasWide && hasASCII:
-			// Preserve the existing matcher order: wide, then ASCII.
-			encodings = []bool{true, false}
+			wideFirst := pattern.Flags&regex.FlagsGreedy != 0
+			encodings = []bool{wideFirst, !wideFirst}
 		case hasWide:
 			encodings = []bool{true}
 		}
