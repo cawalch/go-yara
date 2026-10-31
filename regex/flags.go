@@ -12,6 +12,8 @@ type Flags uint32
 const (
 	FlagsFastRegexp Flags = 0x02
 	FlagsBackwards  Flags = 0x04
+	// FlagsExhaustive keeps alternative continuations after acceptance.
+	// Combined with FlagsGreedy, endpoint selection retains the longest match.
 	FlagsExhaustive Flags = 0x08
 	FlagsWide       Flags = 0x10
 	FlagsNoCase     Flags = 0x20
