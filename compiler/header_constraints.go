@@ -269,7 +269,7 @@ func compiledPatternMatchesAtWithCancel(rule *CompiledRule, id string, data []by
 			if matched && start == 0 && matchPassesModifiers(data, candidate, modifiers, useWide) {
 				return true
 			}
-			if !wide || ascii {
+			if !wide || !ascii {
 				break
 			}
 		}

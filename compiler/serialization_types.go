@@ -89,6 +89,7 @@ const (
 )
 
 type serializedRegexPattern struct {
+	BoundedAlternation   *regexBoundedAlternation
 	Code                 []byte
 	CaptureCode          []byte
 	CaptureGroups        []int

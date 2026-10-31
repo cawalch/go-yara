@@ -16,6 +16,7 @@ const (
 
 // RegexPattern holds compiled regex bytecode and flags.
 type RegexPattern struct {
+	boundedAlternation   *regexBoundedAlternation
 	Code                 []byte
 	CaptureCode          []byte
 	CaptureGroups        []int

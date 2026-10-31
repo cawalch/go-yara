@@ -656,6 +656,9 @@ func execRegexMatchAt(bs *regex.VMBatch, pattern RegexPattern, data []byte, flag
 		return false, -1, -1
 	}
 
+	if pattern.boundedAlternation != nil {
+		return execBoundedAlternation(bs, pattern.boundedAlternation, data, flags, start, done)
+	}
 	if len(pattern.fixedByteSets) > 0 {
 		length, ok := fixedRegexMatchAt(pattern.fixedByteSets, data, isWide, start)
 		if !ok {

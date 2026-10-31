@@ -70,21 +70,22 @@ func (rc *ruleCompiler) compileSingleStringWithDead(str *ast.String, isDead bool
 	case StringKindRegex:
 		prefix, anchored := regex.LiteralPrefix(result.patternData)
 		pattern := RegexPattern{
-			Code:             result.patternData,
-			CaptureCode:      result.captureCode,
-			CaptureGroups:    slices.Clone(result.captureGroups),
-			Flags:            result.flags,
-			prefix:           prefix,
-			widePrefix:       widenRegexPrefix(prefix),
-			atomMaxOffset:    -1,
-			atomMaxSuffix:    -1,
-			maxLength:        result.maxLength,
-			byteSetMaxOffset: -1,
-			anchored:         anchored,
-			cacheKey:         result.cacheKey,
-			cacheIndex:       -1,
-			firstByteSet:     result.regexFirstByteSet,
-			hasFirstByteSet:  result.hasFirstByteSet,
+			boundedAlternation: result.boundedAlternation,
+			Code:               result.patternData,
+			CaptureCode:        result.captureCode,
+			CaptureGroups:      slices.Clone(result.captureGroups),
+			Flags:              result.flags,
+			prefix:             prefix,
+			widePrefix:         widenRegexPrefix(prefix),
+			atomMaxOffset:      -1,
+			atomMaxSuffix:      -1,
+			maxLength:          result.maxLength,
+			byteSetMaxOffset:   -1,
+			anchored:           anchored,
+			cacheKey:           result.cacheKey,
+			cacheIndex:         -1,
+			firstByteSet:       result.regexFirstByteSet,
+			hasFirstByteSet:    result.hasFirstByteSet,
 		}
 		if atom, ok := selectMandatoryRegexAtom(result.regexAtoms); ok {
 			pattern.atom = append([]byte(nil), atom.data...)
@@ -170,6 +171,7 @@ func (rc *ruleCompiler) compileSingleStringWithDead(str *ast.String, isDead bool
 }
 
 type stringCompilationResult struct {
+	boundedAlternation    *regexBoundedAlternation
 	patternData           []byte
 	kind                  StringKind
 	flags                 regex.Flags
@@ -315,6 +317,10 @@ func (rc *ruleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers
 			flags |= regexASCIIWordBoundary
 		}
 	}
+	boundedAlternation, err := compileBoundedAlternation(parsed, hasModifier(modifiers, ast.StringModifierFullword), hasModifier(modifiers, ast.StringModifierWide) && hasModifier(modifiers, ast.StringModifierASCII))
+	if err != nil {
+		return nil, err
+	}
 	groups := positiveCaptureGroups(modifiers)
 	var captureCode []byte
 	if len(groups) > 0 {
@@ -327,6 +333,7 @@ func (rc *ruleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers
 	leadingGap, _ := regex.LeadingByteGapAtomCover(parsed, flags, minPrefilterAtomLength)
 	firstByteSet, hasFirstByteSet := regex.FirstByteSet(parsed, flags)
 	return &stringCompilationResult{
+		boundedAlternation:    boundedAlternation,
 		patternData:           code, // VM bytecode
 		kind:                  StringKindRegex,
 		flags:                 flags,
