@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/cawalch/go-yara/ast"
@@ -313,5 +314,87 @@ func TestConstantFoldingRuleDeadFlag(t *testing.T) {
 				t.Fatalf("IsDead = %v, want %v", rule.IsDead, tt.wantDead)
 			}
 		})
+	}
+}
+
+func TestConstantFoldingBooleanIdentities(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		operand ast.Expression
+		fold    bool
+	}{
+		{"presence", &ast.Identifier{Name: "$a"}, true},
+		{"variable", &ast.Identifier{Name: "value"}, false},
+		{"read", &ast.FunctionCall{Function: "uint8", Args: []ast.Expression{intLiteral(0, token.Position{})}}, false},
+		{"comparison", &ast.BinaryOp{Left: &ast.Identifier{Name: "value"}, Op: token.EQ, Right: intLiteral(1, token.Position{})}, false},
+		{"defined", &ast.UnaryOp{Op: token.DEFINED, Right: &ast.Identifier{Name: "value"}}, true},
+		{"not_presence", &ast.UnaryOp{Op: token.NOT, Right: &ast.Identifier{Name: "$a"}}, true},
+		{"not_variable", &ast.UnaryOp{Op: token.NOT, Right: &ast.Identifier{Name: "value"}}, false},
+		{"and", &ast.BinaryOp{Left: &ast.Identifier{Name: "value"}, Op: token.AND, Right: &ast.Identifier{Name: "$a"}}, true},
+		{"or", &ast.BinaryOp{Left: &ast.Identifier{Name: "value"}, Op: token.OR, Right: &ast.Identifier{Name: "$a"}}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, op := range []token.Type{token.AND, token.OR} {
+				for _, identityOnLeft := range []bool{false, true} {
+					identity := boolLiteral(op == token.AND, token.Position{})
+					left, right := tc.operand, ast.Expression(identity)
+					if identityOnLeft {
+						left, right = right, left
+					}
+					got := FoldConstants(&ast.BinaryOp{Left: left, Op: op, Right: right})
+					if tc.fold {
+						if !reflect.DeepEqual(got, FoldConstants(tc.operand)) {
+							t.Fatalf("op=%v identityOnLeft=%v: safe identity not folded: %#v", op, identityOnLeft, got)
+						}
+					} else if bin, ok := got.(*ast.BinaryOp); !ok || bin.Op != op {
+						t.Fatalf("op=%v identityOnLeft=%v: lost Boolean coercion: %#v", op, identityOnLeft, got)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestBooleanIdentityAssertions(t *testing.T) {
+	for _, condition := range []string{
+		`not ((uint16(0) == 1) and true)`,
+		`defined (false or uint8(0))`,
+		`not (true and ($a at @a[2]))`,
+		`defined (($a in (0..@a[2])) or false)`,
+	} {
+		t.Run(condition, func(t *testing.T) {
+			source := `rule query { strings: $a = "a" condition: #a >= 0 and (` + condition + `) }`
+			pair := [2]*CompiledProgram{compileAssertionVariant(t, source, false), compileAssertionVariant(t, source, true)}
+			for _, input := range [][]byte{nil, {0}, {1}, []byte("a"), []byte("aa")} {
+				assertEquivalentAssertionScan(t, pair, input)
+			}
+		})
+	}
+}
+
+func TestConstantFoldingBooleanScalarConstants(t *testing.T) {
+	for _, tc := range []struct {
+		operand ast.Expression
+		truth   bool
+	}{
+		{intLiteral(0, token.Position{}), false},
+		{intLiteral(2, token.Position{}), true},
+		{floatLiteral(0, token.Position{}), false},
+		{floatLiteral(0.5, token.Position{}), true},
+		{&ast.Literal{Type: token.StringLit, Value: ""}, false},
+		{&ast.Literal{Type: token.StringLit, Value: "a"}, true},
+	} {
+		for _, op := range []token.Type{token.AND, token.OR} {
+			for _, leftIdentity := range []bool{false, true} {
+				left, right := tc.operand, ast.Expression(boolLiteral(op == token.AND, token.Position{}))
+				if leftIdentity {
+					left, right = right, left
+				}
+				got := FoldConstants(&ast.BinaryOp{Left: left, Op: op, Right: right})
+				if value, ok := evaluateConstantBool(got); !ok || value != tc.truth {
+					t.Fatalf("operand=%#v op=%v: got %#v, want Boolean %v", tc.operand, op, got, tc.truth)
+				}
+			}
+		}
 	}
 }

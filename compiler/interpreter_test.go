@@ -1671,3 +1671,34 @@ func TestInterpreterProximity(t *testing.T) {
 		})
 	}
 }
+
+func TestInterpreterBooleanScalarOperands(t *testing.T) {
+	for _, opcode := range []Opcode{OpAnd, OpOr} {
+		for left := range 7 {
+			for right := range 7 {
+				interp := NewInterpreter(nil)
+				if err := interp.PushString(""); err != nil {
+					t.Fatal(err)
+				}
+				if err := interp.PushString("a"); err != nil {
+					t.Fatal(err)
+				}
+				values := []Value{{Type: ValueTypeInt}, {Type: ValueTypeInt, IntVal: 2},
+					{Type: ValueTypeDouble}, {Type: ValueTypeDouble, DoubleVal: 0.5},
+					interp.stack[0], interp.stack[1], {Type: ValueTypeUndefined}}
+				truths := []bool{false, true, false, true, false, true, false}
+				interp.stack = []Value{values[left], values[right]}
+				want := truths[left] && truths[right]
+				if opcode == OpOr {
+					want = truths[left] || truths[right]
+				}
+				if err := interp.executeOpcode(opcode); err != nil {
+					t.Fatal(err)
+				}
+				if len(interp.stack) != 1 || interp.stack[0].Type != ValueTypeInt || interp.stack[0].IntVal != boolToInt(want) {
+					t.Fatalf("%v operands %v/%v: stack=%v, want %v", opcode, left, right, interp.stack, want)
+				}
+			}
+		}
+	}
+}
