@@ -219,14 +219,14 @@ func TestConditionAssertionsBlockOffsets(t *testing.T) {
 }
 
 func TestConditionAssertionsSerialization(t *testing.T) {
-	for _, version := range []uint16{4, 5, 6, compiledProgramVersion} {
+	for _, version := range []uint16{4, 5, 6, 7, compiledProgramVersion} {
 		source := conditionAssertionRules(2)
 		if version == 5 || version == 6 {
 			// A standalone string predicate retains the legacy stack-based fused form.
 			source = strings.ReplaceAll(source, "$a at 0 }", "$a at 0 and $a }")
 		}
 		original := compileAssertionVariant(t, source, version != 4)
-		if version < compiledProgramVersion && len(original.Rules[0].assertionProgram) != 0 {
+		if version < 7 && len(original.Rules[0].assertionProgram) != 0 {
 			t.Fatal("legacy fixture contains a new assertion program")
 		}
 		encoded, err := original.MarshalBinary()

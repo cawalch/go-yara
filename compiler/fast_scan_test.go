@@ -138,6 +138,10 @@ rule at_offset {
     condition:
         $a at 3
 }
+rule observed_offset {
+    strings: $a = "abc"
+    condition: #a >= 0 and $a at 3
+}
 rule in_range {
     strings:
         $a = "abc"
@@ -148,7 +152,7 @@ rule in_range {
 	if err != nil {
 		t.Fatalf("CompileSourceWithContext() error = %v", err)
 	}
-	for _, name := range []string{"at_offset", "in_range"} {
+	for _, name := range []string{"at_offset", "observed_offset", "in_range"} {
 		rule, _ := program.GetRuleByName(name)
 		if rule.FastScanSafe {
 			t.Fatalf("offset-constrained rule %s is marked FastScanSafe", name)
@@ -161,12 +165,19 @@ rule in_range {
 	if err != nil {
 		t.Fatalf("Scan() error = %v", err)
 	}
-	for _, name := range []string{"at_offset", "in_range"} {
+	for _, name := range []string{"at_offset", "observed_offset", "in_range"} {
 		if !result.RuleResults[name] {
 			t.Errorf("fast scan changed %s rule result", name)
 		}
-		if got := len(result.Matches[name]["$a"]); got != 2 {
-			t.Errorf("%s match count = %d, want 2", name, got)
+		want := 2
+		if name == "at_offset" {
+			want = 1
+		} // libyara retains only the constrained occurrence.
+		if got := len(result.Matches[name]["$a"]); got != want {
+			t.Errorf("%s match count = %d, want %d", name, got, want)
+		}
+		if name == "at_offset" && len(result.Matches[name]["$a"]) == 1 && result.Matches[name]["$a"][0].Offset != 3 {
+			t.Error("fast scan retained the first occurrence instead of the constrained one")
 		}
 	}
 }

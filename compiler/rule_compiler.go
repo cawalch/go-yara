@@ -109,10 +109,17 @@ func (rc *ruleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 
 	anonymousStrings := rc.assignAnonymousStringIdentifiers(rule)
 
+	fixedTextOffsets := deriveFixedTextOffsets(rule)
+
 	// Constant-fold condition and detect dead strings before compiling patterns
 	rule.Condition = FoldConstants(rule.Condition)
 	isDeadRule := isConditionStaticallyFalse(rule.Condition)
 	deadStrings := detectDeadStrings(rule, anonymousStrings, isDeadRule)
+	for id := range fixedTextOffsets {
+		if deadStrings[id] {
+			delete(fixedTextOffsets, id)
+		}
+	}
 
 	// Compile strings first
 	if err := rc.compileStrings(rule, deadStrings); err != nil {
@@ -188,6 +195,7 @@ func (rc *ruleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 		ModuleFunctions:     rc.moduleFunctions,
 		ModuleNames:         rc.moduleNames,
 		HeaderConstraints:   deriveHeaderConstraints(rule.Condition),
+		fixedTextOffsets:    fixedTextOffsets,
 		assertions:          slices.Clone(rc.conditionCompiler.assertions),
 		assertionProgram:    slices.Clone(rc.conditionCompiler.assertionProgram),
 		moduleSchemas:       rc.conditionCompiler.moduleSchemas,

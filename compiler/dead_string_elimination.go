@@ -9,10 +9,12 @@ import (
 )
 
 type conditionStringReferences struct {
-	them      bool
-	anonymous bool
-	exact     map[string]struct{}
-	prefixes  []string
+	fixedOffsets map[string]int64 // optional: collect constant at references separately
+	fixedStrings []string
+	them         bool
+	anonymous    bool
+	exact        map[string]struct{}
+	prefixes     []string
 }
 
 func newConditionStringReferences() *conditionStringReferences {
@@ -81,6 +83,9 @@ func collectConditionStringReferences(expr ast.Expression, refs *conditionString
 
 	switch e := expr.(type) {
 	case *ast.Identifier:
+		if refs.fixedOffsets != nil && e.Name != "them" && !strings.HasPrefix(e.Name, "$") {
+			return // Rule, external, and loop identifiers do not observe strings.
+		}
 		handleIdentifierRef(e, refs)
 	case *ast.StringCount:
 		recordExpressionStringRef(e.String, refs)
@@ -104,6 +109,9 @@ func collectConditionStringReferences(expr ast.Expression, refs *conditionString
 			collectConditionStringReferences(e.Right, refs)
 		}
 	case *ast.BinaryOp:
+		if refs.fixedOffsets != nil && collectFixedOffsetReference(e, refs) {
+			return
+		}
 		collectConditionStringReferences(e.Left, refs)
 		collectConditionStringReferences(e.Right, refs)
 	case *ast.OfExpression:
@@ -141,6 +149,9 @@ func handleIdentifierRef(id *ast.Identifier, refs *conditionStringReferences) {
 		return
 	}
 	if name == "$" {
+		if refs.fixedOffsets != nil {
+			refs.them = true
+		}
 		refs.anonymous = true
 		return
 	}
