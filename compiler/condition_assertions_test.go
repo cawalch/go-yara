@@ -219,7 +219,7 @@ func TestConditionAssertionsBlockOffsets(t *testing.T) {
 }
 
 func TestConditionAssertionsSerialization(t *testing.T) {
-	for _, version := range []uint16{4, 5, 6, 7, 8, 9, compiledProgramVersion} {
+	for _, version := range []uint16{4, 5, 6, 7, 8, 9, 10, compiledProgramVersion} {
 		source := conditionAssertionRules(2)
 		if version == 5 || version == 6 {
 			// A standalone string predicate retains the legacy stack-based fused form.

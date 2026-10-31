@@ -309,8 +309,11 @@ func (rc *ruleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers
 			flags |= regex.FlagsFullwordEnd
 		}
 	}
-	if parsed != nil && rc.stringCompiler.hasModifier(modifiers, ast.StringModifierFullword) && !regexHasLiteralAtom(parsed.Root) {
-		flags |= regexASCIIWordBoundary
+	if parsed != nil && !regexHasLiteralAtom(parsed.Root) {
+		flags |= regexForwardPriority
+		if rc.stringCompiler.hasModifier(modifiers, ast.StringModifierFullword) {
+			flags |= regexASCIIWordBoundary
+		}
 	}
 	groups := positiveCaptureGroups(modifiers)
 	var captureCode []byte
