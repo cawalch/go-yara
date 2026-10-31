@@ -17,11 +17,11 @@ func TestFixedOffsetMatchContextsAndOwnership(t *testing.T) {
 		for _, offset := range []int64{0, 1, 2} {
 			ctx.AddMatch(Match{Pattern: "$a", Offset: offset, Length: 1})
 		}
-		ctx.filterFixedOffsets(program.Rules[0].fixedTextOffsets, 100)
+		ctx.filterFixedOffsets(program.Rules[0].fixedOffsets, 100)
 		if ctx.matchCount("$a") != 1 || !ctx.hasMatchAt("$a", 1) {
 			t.Fatalf("compact=%v: wrong local offsets", compact)
 		}
-		ctx.filterFixedOffsets(program.Rules[0].fixedTextOffsets, 102)
+		ctx.filterFixedOffsets(program.Rules[0].fixedOffsets, 102)
 		if ctx.matchCount("$a") != 0 {
 			t.Fatal("offset before block retained")
 		}
@@ -69,7 +69,7 @@ func TestFixedOffsetLegacySerialization(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload.Rules[0].FixedTextOffsets = nil // Format 7 did not store this analysis.
+	payload.Rules[0].FixedOffsets = nil // Format 7 did not store this analysis.
 	var encoded bytes.Buffer
 	encoded.WriteString(compiledProgramMagic)
 	if err := binary.Write(&encoded, binary.BigEndian, uint16(7)); err != nil {
@@ -86,7 +86,7 @@ func TestFixedOffsetLegacySerialization(t *testing.T) {
 	if err != nil || len(result.Matches["r"]["$a"]) != 3 {
 		t.Fatalf("legacy result=%v, err=%v", result, err)
 	}
-	program.Rules[0].fixedTextOffsets["$missing"] = 1
+	program.Rules[0].fixedOffsets["$missing"] = 1
 	if _, err := program.MarshalBinary(); err == nil {
 		t.Fatal("invalid fixed-offset string accepted")
 	}
@@ -99,7 +99,7 @@ condition: $a at 1 }`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(program.Rules[0].fixedTextOffsets) != 0 {
+	if len(program.Rules[0].fixedOffsets) != 0 {
 		t.Fatal("capture occurrences were restricted")
 	}
 	scanner := program.NewScanner(WithEvidence(16))
