@@ -335,52 +335,6 @@ func nodeFirstByteSet(node *Node, flags Flags) (ByteSet, bool, bool) {
 		return nodeFirstByteSet(firstChild(node), flags)
 	case NodeEmpty, NodeAnchorStart, NodeAnchorEnd, NodeWordBoundary, NodeNonWordBoundary:
 		return ByteSet{}, true, true
-	case NodeLiteral:
-		set := byteSetOf(node.Value)
-		if flags&FlagsNoCase != 0 {
-			set = set.ASCIIFolded()
-		}
-		return set, false, true
-	case NodeNotLiteral:
-		excluded := byteSetOf(node.Value)
-		if flags&FlagsNoCase != 0 {
-			excluded = excluded.ASCIIFolded()
-		}
-		return complementByteSet(excluded), false, true
-	case NodeMaskedLiteral:
-		return maskedByteSet(node.Value, node.Mask, false), false, true
-	case NodeMaskedNotLiteral:
-		return maskedByteSet(node.Value, node.Mask, true), false, true
-	case NodeClass:
-		if node.Class == nil {
-			return fullByteSet(), false, true
-		}
-		set := positiveClassByteSet(node.Class)
-		if flags&FlagsNoCase != 0 {
-			set = set.ASCIIFolded()
-		}
-		if node.Class.Negated {
-			set = complementByteSet(set)
-		}
-		return set, false, true
-	case NodeWordChar:
-		return predicateByteSet(isWord), false, true
-	case NodeNonWordChar:
-		return predicateByteSet(notWord), false, true
-	case NodeSpace:
-		return predicateByteSet(isSpace), false, true
-	case NodeNonSpace:
-		return predicateByteSet(notSpace), false, true
-	case NodeDigit:
-		return predicateByteSet(isDigit), false, true
-	case NodeNonDigit:
-		return predicateByteSet(notDigit), false, true
-	case NodeAny:
-		set := fullByteSet()
-		if flags&FlagsDotAll == 0 {
-			set.remove('\n')
-		}
-		return set, false, true
 	case NodeRangeAny:
 		set := fullByteSet()
 		if flags&FlagsDotAll == 0 {
@@ -450,6 +404,9 @@ func nodeFirstByteSet(node *Node, flags Flags) (ByteSet, bool, bool) {
 		}
 		return totalSet, nullable, true
 	default:
+		if set, ok := nodeByteSet(node, flags); ok {
+			return set, false, true
+		}
 		return ByteSet{}, true, false
 	}
 }
@@ -597,57 +554,12 @@ func nodeByteSet(node *Node, flags Flags) (ByteSet, bool) {
 	if node == nil {
 		return ByteSet{}, false
 	}
-	noCase := flags&FlagsNoCase != 0
-	switch node.Kind {
-	case NodeLiteral:
-		set := byteSetOf(node.Value)
-		if noCase {
-			set = set.ASCIIFolded()
-		}
-		return set, true
-	case NodeNotLiteral:
-		excluded := byteSetOf(node.Value)
-		if noCase {
-			excluded = excluded.ASCIIFolded()
-		}
-		return complementByteSet(excluded), true
-	case NodeMaskedLiteral:
-		return maskedByteSet(node.Value, node.Mask, false), true
-	case NodeMaskedNotLiteral:
-		return maskedByteSet(node.Value, node.Mask, true), true
-	case NodeClass:
-		if node.Class == nil {
-			return fullByteSet(), true
-		}
-		set := positiveClassByteSet(node.Class)
-		if noCase {
-			set = set.ASCIIFolded()
-		}
-		if node.Class.Negated {
-			set = complementByteSet(set)
-		}
-		return set, true
-	case NodeWordChar:
-		return predicateByteSet(isWord), true
-	case NodeNonWordChar:
-		return predicateByteSet(notWord), true
-	case NodeSpace:
-		return predicateByteSet(isSpace), true
-	case NodeNonSpace:
-		return predicateByteSet(notSpace), true
-	case NodeDigit:
-		return predicateByteSet(isDigit), true
-	case NodeNonDigit:
-		return predicateByteSet(notDigit), true
-	case NodeAny:
-		set := fullByteSet()
-		if flags&FlagsDotAll == 0 {
-			set.remove('\n')
-		}
-		return set, true
-	default:
-		return ByteSet{}, false
+	// Prefix filters may conservatively accept any byte when the class is
+	// unknown; fixed-width specialization must still reject it.
+	if node.Kind == NodeClass && node.Class == nil {
+		return fullByteSet(), true
 	}
+	return fixedConsumingByteSet(node, flags)
 }
 
 func nodeRepeatInfo(node *Node, flags Flags) (class ByteSet, minCount, maxCount int, ok bool) {

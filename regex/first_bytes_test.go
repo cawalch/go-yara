@@ -472,3 +472,21 @@ func TestReversePrefixAnalysis(t *testing.T) {
 // Non-terminating mutants (gremlins TIMED OUT, not test gaps, not defects):
 //   - predicateByteSet 264:36 and maskedByteSet 253:48 (value++ -> value--):
 //     the loop counter runs negative forever.
+
+func TestByteSetAnalysisMissingClass(t *testing.T) {
+	for _, flags := range []Flags{0, FlagsNoCase, FlagsDotAll, FlagsNoCase | FlagsDotAll} {
+		node := &Node{Kind: NodeClass}
+		for range 2 {
+			if sets, ok := FixedByteSets(&AST{Root: node}, flags); ok || sets != nil {
+				t.Fatalf("missing class must not produce an exact sequence: %v, %v", sets, ok)
+			}
+			if set, nullable, ok := nodeFirstByteSet(node, flags); !ok || nullable || set.Count() != 256 {
+				t.Fatalf("missing class must retain a conservative first-byte set: count=%d nullable=%v ok=%v", set.Count(), nullable, ok)
+			}
+			if set, ok := nodeByteSet(node, flags); !ok || set.Count() != 256 {
+				t.Fatalf("missing class must retain a conservative prefix set: count=%d ok=%v", set.Count(), ok)
+			}
+			node = &Node{Kind: NodeGroup, Children: []*Node{node}}
+		}
+	}
+}
