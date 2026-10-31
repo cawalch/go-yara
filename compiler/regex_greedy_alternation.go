@@ -2,20 +2,28 @@ package compiler
 
 import "github.com/cawalch/go-yara/regex"
 
-// greedyLiteralAlternation recognizes a repeated literal alternation followed
-// by an optional literal suffix, with no preceding input. Libyara can verify
-// an atom in the last repetition (or suffix), then enumerate preceding repeats
-// backwards. Its greedy occurrence list keeps the longest match at each start.
-// A forward-only verifier must retain alternative continuations to find it.
+// greedyLiteralAlternation recognizes a repeated literal alternation with
+// optional literal affixes, when its selected atoms permit exhaustive endpoints.
+// Libyara can verify an atom in the last repetition (or suffix), then enumerate
+// preceding repeats backwards. A forward-only verifier must retain alternative
+// continuations to reach the same endpoint.
 //
 // Do not generalize this to arbitrary greedy expressions: a preceding literal
 // can become the selected atom, leaving branch priority to the forward VM.
-func greedyLiteralAlternation(parsed *regex.AST) bool {
+func greedyLiteralAlternation(parsed *regex.AST, flags regex.Flags, fullword bool) bool {
 	node := ungroupRegexNode(parsed.Root)
-	var suffix []*regex.Node
+	var prefix, suffix []*regex.Node
 	if node.Kind == regex.NodeConcat {
-		suffix = node.Children[1:]
-		node = ungroupRegexNode(node.Children[0])
+		children := node.Children
+		i := 0
+		for i < len(children) && isLiteralRegexNode(children[i]) {
+			i++
+		}
+		if i == len(children) {
+			return false
+		}
+		prefix, suffix = children[:i], children[i+1:]
+		node = ungroupRegexNode(children[i])
 	}
 	if !node.Greedy || len(node.Children) != 1 {
 		return false
@@ -37,9 +45,12 @@ func greedyLiteralAlternation(parsed *regex.AST) bool {
 	if !isLiteralRegexAlternation(node.Children[0]) {
 		return false
 	}
+	alternatives := regex.LiteralAlternatives(&regex.AST{Root: node.Children[0]})
+	if len(prefix) > 0 && !repeatAtomPermitsExhaustive(node, prefix, suffix, alternatives, flags, fullword) {
+		return false
+	}
 	// Prefix-free branches already reach the same endpoint with priority
 	// execution. Fold ASCII here so nocase patterns get the same protection.
-	alternatives := regex.LiteralAlternatives(&regex.AST{Root: node.Children[0]})
 	for _, shorter := range alternatives {
 		for _, longer := range alternatives {
 			if len(shorter.Data) < len(longer.Data) && equalRegexPrefixFold(longer.Data, shorter.Data, false) {
@@ -92,4 +103,66 @@ func isLiteralRegexNode(node *regex.Node) bool {
 func lazyLiteralPlus(parsed *regex.AST) bool {
 	node := ungroupRegexNode(parsed.Root)
 	return node.Kind == regex.NodePlus && !node.Greedy && len(node.Children) == 1 && isLiteralRegexNode(node.Children[0])
+}
+
+// A suffix atom permits exhaustive backward verification. A repetition atom
+// also does so when it covers each branch: its end then orders candidates
+// by their accepted endpoint. Fullword additionally requires word-only branches.
+// Longer branches can end after a later atom and must retain the existing
+// policy until atom-specific verification is available.
+//
+//nolint:revive // atom selection compares both affixes, branches, and encoding
+func repeatAtomPermitsExhaustive(node *regex.Node, prefix, suffix []*regex.Node, alternatives []regex.LiteralAtom, flags regex.Flags, fullword bool) bool {
+	prefixQuality := literalSequenceQuality(prefix)
+	suffixQuality := literalSequenceQuality(suffix)
+	altQuality, atomCoversBranches := -1, true
+	if node.Kind == regex.NodePlus && len(alternatives) > 0 {
+		altQuality = bestLiteralAtomQuality(alternatives[0].Data)
+		width := 4
+		if flags&regex.FlagsWide != 0 {
+			width = 2
+		}
+		for _, branch := range alternatives {
+			altQuality = min(altQuality, bestLiteralAtomQuality(branch.Data))
+			atomCoversBranches = atomCoversBranches && len(branch.Data) <= width
+			// Word-only branches cannot expose an earlier fullword boundary
+			// inside a continuation that the forward VM would greedily reject.
+			for _, b := range branch.Data {
+				atomCoversBranches = atomCoversBranches && (!fullword || isWordChar(b))
+			}
+		}
+	}
+	// The alternative atom set is visited before the pending prefix leaf, so
+	// it wins equal-quality ties. The suffix follows both and needs higher quality.
+	if suffixQuality > max(prefixQuality, altQuality) {
+		return true
+	}
+	return altQuality >= prefixQuality && atomCoversBranches
+}
+
+func literalSequenceQuality(nodes []*regex.Node) int {
+	var data []byte
+	for _, node := range nodes {
+		data = appendLiteralRegexBytes(data, node)
+	}
+	return bestLiteralAtomQuality(data)
+}
+
+func appendLiteralRegexBytes(data []byte, node *regex.Node) []byte {
+	node = ungroupRegexNode(node)
+	if node.Kind == regex.NodeLiteral {
+		return append(data, node.Value)
+	}
+	for _, child := range node.Children {
+		data = appendLiteralRegexBytes(data, child)
+	}
+	return data
+}
+
+func bestLiteralAtomQuality(data []byte) int {
+	if len(data) == 0 {
+		return -1
+	}
+	offset := regexLiteralAtomOffset(data)
+	return regexLiteralAtomQuality(data[offset : offset+min(4, len(data))])
 }

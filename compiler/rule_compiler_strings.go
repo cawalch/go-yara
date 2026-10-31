@@ -297,7 +297,8 @@ func (rc *ruleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers
 	flags := rc.deriveRegexFlags(pattern.Value, modifiers)
 	if parsed != nil {
 		flags |= parsed.Flags
-		repeatedAlternation := greedyLiteralAlternation(parsed)
+		fullword := rc.stringCompiler.hasModifier(modifiers, ast.StringModifierFullword)
+		repeatedAlternation := greedyLiteralAlternation(parsed, flags, fullword)
 		if repeatedAlternation {
 			flags |= regex.FlagsExhaustive
 		}
@@ -306,7 +307,7 @@ func (rc *ruleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers
 		// a later valid occurrence.
 		// Do not extend this to arbitrary regexes: atom-selected forward
 		// verification can intentionally reject the whole greedy occurrence.
-		if rc.stringCompiler.hasModifier(modifiers, ast.StringModifierFullword) &&
+		if fullword &&
 			(isLiteralRegexAlternation(parsed.Root) || repeatedAlternation || lazyLiteralPlus(parsed)) {
 			flags |= regex.FlagsFullwordEnd
 		}
