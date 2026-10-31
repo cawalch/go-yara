@@ -7,6 +7,10 @@ import "github.com/cawalch/go-yara/regex"
 // compiler policy bit is ignored by the VM; matching still uses wide encoding.
 const regexASCIIWordBoundary regex.Flags = 1 << 17
 
+// Atomless regexes use forward branch priority. Keep this separate from the
+// parsed greedy flag, which also controls ASCII/wide occurrence preference.
+const regexForwardPriority regex.Flags = 1 << 18
+
 // Match libyara's atom eligibility, not our broader prefilter analysis:
 // character classes (even singleton classes) do not provide literal atoms.
 func regexHasLiteralAtom(node *regex.Node) bool {

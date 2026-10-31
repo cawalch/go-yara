@@ -663,6 +663,11 @@ func execRegexMatchAt(bs *regex.VMBatch, pattern RegexPattern, data []byte, flag
 		}
 		return true, 0, length
 	}
+	// Retain higher-priority continuations after a shorter branch accepts.
+	// This VM-only flag must not change the pattern's encoding preference.
+	if flags&regexForwardPriority != 0 {
+		flags |= regex.FlagsGreedy
+	}
 	matched, startOffset, endOffset, _ = regex.ExecMatchBatchWithCancel(bs, pattern.Code, data, flags, start, done)
 	return
 }
