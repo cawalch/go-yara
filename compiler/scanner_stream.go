@@ -151,7 +151,13 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 		chunkOffset := primaryStart - int64(overlapLen)
 		windowLen := overlapLen + n
 
-		if lookahead, _ := bufReader.Peek(streamingLookaheadContext); len(lookahead) > 0 {
+		lookahead, peekErr := bufReader.Peek(streamingLookaheadContext)
+		// Peek can consume a pending reader error, even when it returns bytes.
+		// Propagate it before evaluating matches or allowing early termination.
+		if peekErr != nil && peekErr != io.EOF {
+			return nil, peekErr
+		}
+		if len(lookahead) > 0 {
 			copy(buf[windowLen:], lookahead)
 			windowLen += len(lookahead)
 		}
