@@ -309,6 +309,9 @@ func (rc *ruleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers
 			flags |= regex.FlagsFullwordEnd
 		}
 	}
+	if parsed != nil && rc.stringCompiler.hasModifier(modifiers, ast.StringModifierFullword) && !regexHasLiteralAtom(parsed.Root) {
+		flags |= regexASCIIWordBoundary
+	}
 	groups := positiveCaptureGroups(modifiers)
 	var captureCode []byte
 	if len(groups) > 0 {
