@@ -37,7 +37,9 @@ func PopulateMatchContext(ctx *MatchContext, rule *CompiledRule, data []byte) {
 		return
 	}
 
-	defer ctx.filterFixedOffsets(rule.fixedTextOffsets, 0)
+	if len(rule.fixedTextOffsets) != 0 {
+		defer ctx.filterFixedOffsets(rule.fixedTextOffsets, 0)
+	}
 
 	if len(data) == 0 {
 		for id, regexInfo := range rule.RegexPatterns {
