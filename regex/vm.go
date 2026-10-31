@@ -259,14 +259,63 @@ func handleCharClassOp(code, s []byte, next *[]thread, pc int, ch byte, pos, adv
 	return false
 }
 
+// newVMStep shares consuming transitions while the drivers retain their local
+// thread buffers and state lifetimes. It is inlined at both call sites.
+//
+//nolint:revive // the once-per-attempt factory binds the VM's existing buffers
+func newVMStep(code, s []byte, flags Flags, visited []int64, cur, next *[]thread, gen *int64, bestEnd *int) func(int, byte, int) {
+	dotAll := flags&FlagsDotAll != 0
+	noCase := flags&FlagsNoCase != 0
+	return func(pos int, ch byte, advance int) {
+		*next = (*next)[:0]
+		// One generation identifies the full closure for this input position,
+		// deduplicating paths reached from different threads.
+		(*gen)++
+		for _, t := range *cur {
+			pc := t.pc
+			if pc < 0 || pc >= len(code) {
+				continue
+			}
+			var m bool
+			switch code[pc] {
+			case OpLiteral:
+				m = handleLiteralOp(code, s, next, pc, ch, pos, advance, noCase, false, flags, bestEnd, visited, *gen)
+			case OpNotLiteral:
+				m = handleLiteralOp(code, s, next, pc, ch, pos, advance, noCase, true, flags, bestEnd, visited, *gen)
+			case OpMaskedLiteral:
+				m = handleMaskedLiteralOp(code, s, next, pc, ch, pos, advance, false, flags, bestEnd, visited, *gen)
+			case OpMaskedNotLiteral:
+				m = handleMaskedLiteralOp(code, s, next, pc, ch, pos, advance, true, flags, bestEnd, visited, *gen)
+			case OpAny:
+				m = handleAnyOp(code, s, next, pc, ch, pos, advance, dotAll, flags, bestEnd, visited, *gen)
+			case OpClass:
+				m = handleClassOp(code, s, next, pc, ch, pos, advance, noCase, flags, bestEnd, visited, *gen)
+			case OpWordChar:
+				m = handleCharClassOp(code, s, next, pc, ch, pos, advance, isWord, flags, bestEnd, visited, *gen)
+			case OpNonWordChar:
+				m = handleCharClassOp(code, s, next, pc, ch, pos, advance, notWord, flags, bestEnd, visited, *gen)
+			case OpSpace:
+				m = handleCharClassOp(code, s, next, pc, ch, pos, advance, isSpace, flags, bestEnd, visited, *gen)
+			case OpNonSpace:
+				m = handleCharClassOp(code, s, next, pc, ch, pos, advance, notSpace, flags, bestEnd, visited, *gen)
+			case OpDigit:
+				m = handleCharClassOp(code, s, next, pc, ch, pos, advance, isDigit, flags, bestEnd, visited, *gen)
+			case OpNonDigit:
+				m = handleCharClassOp(code, s, next, pc, ch, pos, advance, notDigit, flags, bestEnd, visited, *gen)
+			}
+			if m && flags&FlagsExhaustive == 0 {
+				break
+			}
+		}
+	}
+}
+
 //nolint:revive // VM arguments shared with the batch entry point
 func runAtMatch(code, s []byte, flags Flags, start int, done <-chan struct{}) (bool, int) {
 	return runMatch(code, s, flags, start, done, false)
 }
 
 func runMatch(code, s []byte, flags Flags, start int, done <-chan struct{}, scan bool) (matched bool, length int) { //nolint:cyclop,revive,maintidx,nakedret // performance-critical VM dispatch
-	dotAll := (flags & FlagsDotAll) != 0
-	noCase := (flags & FlagsNoCase) != 0
 	wide := (flags & FlagsWide) != 0
 
 	// Get pooled buffers: visited (generation counter), cur, next thread slices.
@@ -284,49 +333,7 @@ func runMatch(code, s []byte, flags Flags, start int, done <-chan struct{}, scan
 		bestEnd = start
 	}
 
-	step := func(pos int, ch byte, advance int) {
-		// Step all current threads consuming one "character" (1 or 2 bytes)
-		next = next[:0]
-		// One generation identifies the full epsilon closure for this input
-		// position, deduplicating paths reached from different threads.
-		gen++
-		for _, t := range cur {
-			pc := t.pc
-			if pc < 0 || pc >= len(code) {
-				continue
-			}
-			var m bool
-			switch code[pc] {
-			case OpLiteral:
-				m = handleLiteralOp(code, s, &next, pc, ch, pos, advance, noCase, false, flags, &bestEnd, visited, gen)
-			case OpNotLiteral:
-				m = handleLiteralOp(code, s, &next, pc, ch, pos, advance, noCase, true, flags, &bestEnd, visited, gen)
-			case OpMaskedLiteral:
-				m = handleMaskedLiteralOp(code, s, &next, pc, ch, pos, advance, false, flags, &bestEnd, visited, gen)
-			case OpMaskedNotLiteral:
-				m = handleMaskedLiteralOp(code, s, &next, pc, ch, pos, advance, true, flags, &bestEnd, visited, gen)
-			case OpAny:
-				m = handleAnyOp(code, s, &next, pc, ch, pos, advance, dotAll, flags, &bestEnd, visited, gen)
-			case OpClass:
-				m = handleClassOp(code, s, &next, pc, ch, pos, advance, noCase, flags, &bestEnd, visited, gen)
-			case OpWordChar:
-				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, isWord, flags, &bestEnd, visited, gen)
-			case OpNonWordChar:
-				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, notWord, flags, &bestEnd, visited, gen)
-			case OpSpace:
-				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, isSpace, flags, &bestEnd, visited, gen)
-			case OpNonSpace:
-				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, notSpace, flags, &bestEnd, visited, gen)
-			case OpDigit:
-				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, isDigit, flags, &bestEnd, visited, gen)
-			case OpNonDigit:
-				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, notDigit, flags, &bestEnd, visited, gen)
-			}
-			if m && flags&FlagsExhaustive == 0 {
-				break
-			}
-		}
-	}
+	step := newVMStep(code, s, flags, visited, &cur, &next, &gen, &bestEnd)
 
 	advance := 1
 	if wide {
@@ -386,19 +393,14 @@ func runMatch(code, s []byte, flags Flags, start int, done <-chan struct{}, scan
 		}
 	}
 
-	if exhausted {
-		st.cur = cur[:0]
-		st.next = next[:0]
-		st.gen = gen
-		putVMState(st)
-		return matched, length
-	}
-
-	// End of input: return the selected match (if any) for this start.
+	// Restore pooled buffers on both exhaustion and end of input.
 	st.cur = cur[:0]
 	st.next = next[:0]
 	st.gen = gen
 	putVMState(st)
+	if exhausted {
+		return matched, length
+	}
 	if bestEnd >= 0 {
 		return true, bestEnd
 	}
@@ -409,8 +411,6 @@ func runMatch(code, s []byte, flags Flags, start int, done <-chan struct{}, scan
 // to avoid sync.Pool Get/Put overhead. Use when calling runAtMatch
 // thousands of times in a tight loop (e.g., addRegexMatches).
 func runAtMatchBatchWithCancel(bs *VMBatch, code, s []byte, flags Flags, start int, done <-chan struct{}) (matched bool, length int) { //nolint:nestif,revive // argument-limit: performance-critical VM hot path; nested wide/ascii loops are intentional for VM dispatch
-	dotAll := (flags & FlagsDotAll) != 0
-	noCase := (flags & FlagsNoCase) != 0
 	wide := (flags & FlagsWide) != 0
 
 	st := bs.st
@@ -432,46 +432,7 @@ func runAtMatchBatchWithCancel(bs *VMBatch, code, s []byte, flags Flags, start i
 		bestEnd = start
 	}
 
-	stepFn := func(pos int, ch byte, advance int) {
-		next = next[:0]
-		gen++
-		for _, t := range cur {
-			pc := t.pc
-			if pc < 0 || pc >= len(code) {
-				continue
-			}
-			var m bool
-			switch code[pc] {
-			case OpLiteral:
-				m = handleLiteralOp(code, s, &next, pc, ch, pos, advance, noCase, false, flags, &bestEnd, visited, gen)
-			case OpNotLiteral:
-				m = handleLiteralOp(code, s, &next, pc, ch, pos, advance, noCase, true, flags, &bestEnd, visited, gen)
-			case OpMaskedLiteral:
-				m = handleMaskedLiteralOp(code, s, &next, pc, ch, pos, advance, false, flags, &bestEnd, visited, gen)
-			case OpMaskedNotLiteral:
-				m = handleMaskedLiteralOp(code, s, &next, pc, ch, pos, advance, true, flags, &bestEnd, visited, gen)
-			case OpAny:
-				m = handleAnyOp(code, s, &next, pc, ch, pos, advance, dotAll, flags, &bestEnd, visited, gen)
-			case OpClass:
-				m = handleClassOp(code, s, &next, pc, ch, pos, advance, noCase, flags, &bestEnd, visited, gen)
-			case OpWordChar:
-				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, isWord, flags, &bestEnd, visited, gen)
-			case OpNonWordChar:
-				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, notWord, flags, &bestEnd, visited, gen)
-			case OpSpace:
-				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, isSpace, flags, &bestEnd, visited, gen)
-			case OpNonSpace:
-				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, notSpace, flags, &bestEnd, visited, gen)
-			case OpDigit:
-				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, isDigit, flags, &bestEnd, visited, gen)
-			case OpNonDigit:
-				m = handleCharClassOp(code, s, &next, pc, ch, pos, advance, notDigit, flags, &bestEnd, visited, gen)
-			}
-			if m && flags&FlagsExhaustive == 0 {
-				break
-			}
-		}
-	}
+	stepFn := newVMStep(code, s, flags, visited, &cur, &next, &gen, &bestEnd)
 
 	var exhausted bool
 	if wide { //nolint:nestif // wide/ascii loop dispatch is intentional for VM
