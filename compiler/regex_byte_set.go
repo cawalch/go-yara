@@ -499,14 +499,14 @@ func (searcher *regexLiteralSearcher) index(pos int) int {
 	return -1
 }
 
-func (search regexByteSetSearch) index(pos int) int {
+func (search *regexByteSetSearch) index(pos int) int {
 	if search.pattern.byteSetContiguous {
 		return search.indexContiguous(pos)
 	}
 	return search.indexGeneral(pos)
 }
 
-func (search regexByteSetSearch) indexContiguous(pos int) int {
+func (search *regexByteSetSearch) indexContiguous(pos int) int {
 	start := max(0, pos)
 	if search.pattern.byteSetLower == search.pattern.byteSetUpper && !search.wide {
 		return indexRegexByte(search.data, start, search.pattern.byteSetLower)
@@ -545,7 +545,7 @@ func indexRegexByte(data []byte, pos int, value byte) int {
 	return pos + index
 }
 
-func (search regexByteSetSearch) indexGeneral(pos int) int {
+func (search *regexByteSetSearch) indexGeneral(pos int) int {
 	if search.useSparseValues {
 		return indexSparseRegexByteSet(search.data, pos, search.pattern.byteSetValues)
 	}
