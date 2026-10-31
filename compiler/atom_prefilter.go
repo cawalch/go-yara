@@ -260,18 +260,9 @@ func buildFixedRegexDispatch(rules []*CompiledRule) *fixedRegexDispatch {
 			}
 
 			modifiers := rule.StringModifiers[strID]
-			hasWide := hasModifier(modifiers, ast.StringModifierWide)
-			hasASCII := hasModifier(modifiers, ast.StringModifierASCII)
-			encodings := []bool{false}
-			switch {
-			case hasWide && hasASCII:
-				wideFirst := pattern.Flags&regex.FlagsGreedy != 0
-				encodings = []bool{wideFirst, !wideFirst}
-			case hasWide:
-				encodings = []bool{true}
-			}
+			encodings, count := regexEncodingOrder(pattern.Flags, hasModifier(modifiers, ast.StringModifierWide), hasModifier(modifiers, ast.StringModifierASCII))
 
-			for _, wide := range encodings {
+			for _, wide := range encodings[:count] {
 				key := prefilterDedupKey{kind: StringKindRegex, cacheKey: pattern.cacheKey, wide: wide}
 				if _, exists := seen[key]; exists {
 					continue
@@ -314,10 +305,11 @@ func buildFixedRegexDispatch(rules []*CompiledRule) *fixedRegexDispatch {
 		if !entry.wide || cacheEntryCounts[entry.cacheIndex] < 2 {
 			continue
 		}
+		encodings, _ := regexEncodingOrder(entry.pattern.Flags, true, true)
 		dispatch.cacheOrder = append(dispatch.cacheOrder, fixedRegexCacheOrder{
 			cacheIndex: entry.cacheIndex,
 			wideLength: len(entry.pattern.fixedByteSets) * 2,
-			preferWide: entry.pattern.Flags&regex.FlagsGreedy != 0,
+			preferWide: encodings[0],
 		})
 	}
 	return dispatch

@@ -234,23 +234,14 @@ func (builder *sharedPatternAutomatonBuilder) addRegexPrefilters(ruleIndex int, 
 		}
 
 		modifiers := rule.StringModifiers[strID]
-		hasWide := hasModifier(modifiers, ast.StringModifierWide)
-		hasASCII := hasModifier(modifiers, ast.StringModifierASCII)
-		encodings := []bool{false}
-		switch {
-		case hasWide && hasASCII:
-			wideFirst := pattern.Flags&regex.FlagsGreedy != 0
-			encodings = []bool{wideFirst, !wideFirst}
-		case hasWide:
-			encodings = []bool{true}
-		}
+		encodings, count := regexEncodingOrder(pattern.Flags, hasModifier(modifiers, ast.StringModifierWide), hasModifier(modifiers, ast.StringModifierASCII))
 
 		// A bounded alternative cover is all-or-nothing: omitting even one
 		// member would make the prefilter unsound. Keep the complete cover in
 		// the shared automaton even when its root fanout crosses the normal
 		// density threshold.
 		forceAlternativeCover := len(atoms) > 1
-		for _, wide := range encodings {
+		for _, wide := range encodings[:count] {
 			for atomIndex, atom := range atoms {
 				forceShared := atom.asciiNoCase || forceAlternativeCover
 				key := prefilterDedupKey{

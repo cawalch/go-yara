@@ -25,10 +25,8 @@ func addRegexMatchesWithModifiersCached(
 
 	switch {
 	case hasWide && hasASCII:
-		// Libyara verifies ASCII then wide and replaces an existing occurrence
-		// for greedy regexes. Append the winning encoding first for deduplication.
-		wideFirst := baseFlags&regex.FlagsGreedy != 0
-		for _, wide := range []bool{wideFirst, !wideFirst} {
+		encodings, _ := regexEncodingOrder(baseFlags, true, true)
+		for _, wide := range encodings {
 			flags := baseFlags &^ regex.FlagsWide
 			if wide {
 				flags |= regex.FlagsWide
@@ -41,6 +39,16 @@ func addRegexMatchesWithModifiersCached(
 	default:
 		addRegexMatchesCached(ctx, id, regexInfo, data, modifiers, baseFlags&^regex.FlagsWide, false, byteSetCache)
 	}
+}
+
+// regexEncodingOrder puts the preferred occurrence first. Libyara verifies
+// ASCII then wide, replacing an ASCII occurrence for greedy regexes only.
+func regexEncodingOrder(flags regex.Flags, wide, ascii bool) ([2]bool, int) {
+	if wide && ascii {
+		wideFirst := flags&regex.FlagsGreedy != 0
+		return [2]bool{wideFirst, !wideFirst}, 2
+	}
+	return [2]bool{wide}, 1
 }
 
 // verifyTextMatch confirms the data region at m.Offset matches the stored
