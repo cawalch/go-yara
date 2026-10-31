@@ -321,6 +321,12 @@ func (rc *ruleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers
 	if err != nil {
 		return nil, err
 	}
+	if boundedAlternation == nil {
+		boundedAlternation, err = compileUnboundedAlternation(parsed, hasModifier(modifiers, ast.StringModifierFullword), hasModifier(modifiers, ast.StringModifierWide) && hasModifier(modifiers, ast.StringModifierASCII))
+		if err != nil {
+			return nil, err
+		}
+	}
 	groups := positiveCaptureGroups(modifiers)
 	var captureCode []byte
 	if len(groups) > 0 {
