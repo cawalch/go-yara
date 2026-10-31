@@ -6,8 +6,9 @@ import (
 	"github.com/cawalch/go-yara/regex"
 )
 
-// Bound static prefix expansion, like the regex atom-cover analysis. Unsupported
-// trees and over-budget prefixes retain their existing compiled policy.
+// Bound static prefix expansion, like the regex atom-cover analysis. Large
+// finite prefix languages use symbolic verification; unsupported trees retain
+// their existing policy.
 const (
 	maxLiteralAffixPrefixes = 256
 	maxLiteralAffixBytes    = 16 << 10
@@ -44,14 +45,23 @@ func compileLiteralAffixes(root *regex.Node, fullword, dual bool) (*regexBounded
 		return nil, nil
 	}
 	prefixes, ok := expandLiteralAtomPrefixes(parts[:selected])
-	if !ok {
-		return nil, nil
-	}
 	plan := &regexBoundedAlternation{Fullword: fullword}
-	if !plan.appendAffixedBranches(prefixes, parts[selected].branches) {
-		return nil, nil
+	if !ok || !plan.appendAffixedBranches(prefixes, parts[selected].branches) {
+		prefix := &regex.Node{Kind: regex.NodeConcat}
+		for _, part := range parts[:selected] {
+			if len(part.branches) == 0 || part.node.Kind == regex.NodePlus || part.node.Kind == regex.NodeStar ||
+				part.node.Kind == regex.NodeRange && part.node.End == 65535 {
+				return nil, nil
+			}
+			prefix.Children = append(prefix.Children, part.node)
+		}
+		plan.Prefix, err = regex.Compile(&regex.AST{Root: prefix})
+		if err != nil {
+			return nil, err
+		}
+		plan.Branches = parts[selected].branches
 	}
-	// Only the prefix is enumerated. Alternatives after the selected atom must
+	// Prefix paths may be enumerated or symbolic. Alternatives after the atom must
 	// retain forward priority, even when another endpoint would pass fullword.
 	tail := &regex.Node{Kind: regex.NodeConcat}
 	if part.node.Kind == regex.NodeRange {

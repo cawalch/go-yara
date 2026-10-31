@@ -15,6 +15,7 @@ type vmState struct {
 	cur     []thread
 	next    []thread
 	gen     int64
+	ends    []int
 }
 
 // vmPool is a sync.Pool for vmState instances.
@@ -51,6 +52,11 @@ func getVMState(codeLen int) (*vmState, int64) {
 // If visited is very large (> 4KB) we don't return it to avoid keeping
 // huge slices in the pool for one-off large regexes.
 func putVMState(st *vmState) {
+	if cap(st.ends) > 4096 {
+		st.ends = nil
+	} else {
+		st.ends = st.ends[:0]
+	}
 	if cap(st.visited) > 4096 {
 		// Too large to pool; let GC handle it.
 		return
@@ -93,12 +99,7 @@ func (b *VMBatch) Release() {
 	st := b.st
 	b.st = nil
 	b.gen = 0
-	if cap(st.visited) <= 4096 {
-		st.visited = st.visited[:0]
-		st.cur = st.cur[:0]
-		st.next = st.next[:0]
-		vmPool.Put(st)
-	}
+	putVMState(st)
 }
 
 // NewVMBatch acquires a vmState for a batch of runAtMatch calls.
