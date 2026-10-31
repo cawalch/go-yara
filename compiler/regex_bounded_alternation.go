@@ -16,6 +16,7 @@ type regexBoundedAlternation struct {
 	asciiOrder, wideOrder []int
 	Branches              []boundedRegexBranch
 	Tail                  []byte
+	Repeat                *regexRepeatPlan
 	Fullword              bool
 	CheckEncodingOrder    bool
 }
@@ -56,6 +57,12 @@ func compileBoundedAlternation(parsed *regex.AST, fullword, dual bool) (*regexBo
 func (plan *regexBoundedAlternation) prepareEncodingOrder(dual bool) {
 	// Without a literal NUL, an ASCII match that also matches wide can only
 	// contribute a one-byte atom, which precedes the corresponding wide atom.
+	if dual && plan.Repeat != nil {
+		plan.CheckEncodingOrder = slices.Contains(plan.Repeat.Prefix, 0)
+		for _, branch := range plan.Repeat.Branches {
+			plan.CheckEncodingOrder = plan.CheckEncodingOrder || slices.Contains(branch.Literal, 0)
+		}
+	}
 	if dual {
 		for _, branch := range plan.Branches {
 			plan.CheckEncodingOrder = plan.CheckEncodingOrder || slices.Contains(branch.Literal, 0)
@@ -92,7 +99,7 @@ func cloneBoundedAlternation(plan *regexBoundedAlternation) *regexBoundedAlterna
 	if plan == nil {
 		return nil
 	}
-	cloned := &regexBoundedAlternation{CheckEncodingOrder: plan.CheckEncodingOrder, Fullword: plan.Fullword, Tail: slices.Clone(plan.Tail), Branches: slices.Clone(plan.Branches)}
+	cloned := &regexBoundedAlternation{CheckEncodingOrder: plan.CheckEncodingOrder, Fullword: plan.Fullword, Repeat: cloneRepeatPlan(plan.Repeat), Tail: slices.Clone(plan.Tail), Branches: slices.Clone(plan.Branches)}
 	for i := range cloned.Branches {
 		cloned.Branches[i].Literal = slices.Clone(plan.Branches[i].Literal)
 	}
@@ -128,6 +135,9 @@ func execBoundedAlternation(bs *regex.VMBatch, plan *regexBoundedAlternation, da
 
 //nolint:revive // shared verifier arguments stay explicit
 func (plan *regexBoundedAlternation) execEncoding(bs *regex.VMBatch, data []byte, flags regex.Flags, start int, done <-chan struct{}) (int, boundedAtomOrder) {
+	if plan.Repeat != nil {
+		return plan.execRepeat(data, flags, start, done)
+	}
 	bestEnd := -1
 	var bestOrder boundedAtomOrder
 	wide := flags&regex.FlagsWide != 0
@@ -180,6 +190,12 @@ type boundedAtomOrder struct {
 // prepareOrder prioritizes the likely winning candidate before running the
 // continuation. Runtime rank comparisons still account for case variants.
 func (plan *regexBoundedAlternation) prepareOrder() {
+	if plan.Repeat != nil {
+		for _, branch := range plan.Repeat.Branches {
+			plan.Repeat.maxLength = max(plan.Repeat.maxLength, len(branch.Literal))
+		}
+		return // Repeated candidates are ranked at their runtime positions.
+	}
 	for _, wide := range []bool{false, true} {
 		indices := make([]int, len(plan.Branches))
 		for i := range indices {

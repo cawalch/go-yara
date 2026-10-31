@@ -92,6 +92,7 @@ func TestLazyFullwordPlusFormat12Policy(t *testing.T) {
 		t.Fatal("missing fullword retry policy")
 	}
 	pattern.Flags &^= regex.FlagsFullwordEnd
+	pattern.BoundedAlternation = nil
 	payload.Rules[0].RegexPatterns["$a"] = pattern
 	var legacy bytes.Buffer
 	legacy.WriteString(compiledProgramMagic)
