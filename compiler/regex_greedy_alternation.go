@@ -97,12 +97,29 @@ func isLiteralRegexNode(node *regex.Node) bool {
 	return true
 }
 
-// A bare lazy literal plus has an atom in each repetition. Libyara can
-// enumerate earlier repetitions backwards until a fullword endpoint passes.
-// Classes, ranges, and prefixed repeats do not share this atom behavior.
-func lazyLiteralPlus(parsed *regex.AST) bool {
+// Bare lazy literal pluses supply an atom in each repetition. Word-only
+// alternatives can also retry: every intermediate endpoint is followed by a
+// word character, so at most one endpoint per start can pass fullword. Branch
+// length and atom order cannot change that accepted endpoint. Nonword branches
+// can expose several boundaries and still need atom-specific verification.
+func lazyFullwordPlus(parsed *regex.AST) bool {
 	node := ungroupRegexNode(parsed.Root)
-	return node.Kind == regex.NodePlus && !node.Greedy && len(node.Children) == 1 && isLiteralRegexNode(node.Children[0])
+	if node.Kind != regex.NodePlus || node.Greedy || len(node.Children) != 1 {
+		return false
+	}
+	if isLiteralRegexNode(node.Children[0]) {
+		return true
+	}
+	if !isLiteralRegexAlternation(node.Children[0]) {
+		return false
+	}
+	// Inspect all literal leaves without depending on atom-extraction budgets.
+	for _, b := range appendLiteralRegexBytes(nil, node.Children[0]) {
+		if !isWordChar(b) {
+			return false
+		}
+	}
+	return true
 }
 
 // A suffix atom permits exhaustive backward verification. A repetition atom
