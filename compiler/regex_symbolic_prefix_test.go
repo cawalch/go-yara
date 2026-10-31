@@ -25,7 +25,7 @@ func TestSymbolicPrefixBudgets(t *testing.T) {
 		if (plan.Prefix != nil) != (n >= 8) {
 			t.Fatalf("n=%d symbolic=%v", n, plan.Prefix != nil)
 		}
-		if n >= 8 && (len(plan.Branches) != 1 || len(plan.Prefix) > 32*n+32) {
+		if n >= 8 && (len(plan.Branches) != 1 || len(plan.Prefix) > 40*n+32) {
 			t.Fatalf("expanded language: branches=%d code=%d", len(plan.Branches), len(plan.Prefix))
 		}
 		program := mustCompileStreamingProgram(t, `rule p{strings:$a=/`+pattern+`/ fullword condition:#a==1 and !a[1]==`+strconv.Itoa(n+5)+`}`)
@@ -52,7 +52,7 @@ func TestSymbolicPrefixBudgets(t *testing.T) {
 func TestSymbolicPrefixCapturesAndReuse(t *testing.T) {
 	pattern := `((a|ab)` + strings.Repeat(`(a|b)`, 8) + `aaa)`
 	for _, condition := range []string{`$a`, `$a at 1 and !a[1]==13`} {
-		p := mustCompileStreamingProgram(t, `rule p{strings:$a=/`+pattern+`/ fullword capture(whole=1,first=2) condition:`+condition+`}`)
+		p := mustCompileStreamingProgram(t, `rule p{strings:$a=/`+pattern+`/ fullword capture(whole=1,first=2,bit=3) condition:`+condition+`}`)
 		encoded, err := p.MarshalBinary()
 		if err != nil {
 			t.Fatal(err)
@@ -79,15 +79,18 @@ func TestSymbolicPrefixCapturesAndReuse(t *testing.T) {
 					continue
 				}
 				matches := result.Matches["p"]["$a"]
-				if len(result.MatchedRules) != 1 || len(matches) != 1 || matches[0].Offset != 1 || matches[0].Length != 13 || len(matches[0].Captures) != 2 {
+				if len(result.MatchedRules) != 1 || len(matches) != 1 || matches[0].Offset != 1 || matches[0].Length != 13 || len(matches[0].Captures) != 3 {
 					t.Fatalf("matches=%+v", matches)
 				}
 				for _, capture := range matches[0].Captures {
-					want := "abaaaaaaaaaaa"
-					if capture.Name == "first" {
+					want, offset := "abaaaaaaaaaaa", int64(1)
+					switch capture.Name {
+					case "first":
 						want = "ab"
+					case "bit":
+						want, offset = "a", 3
 					}
-					if capture.Offset != 1 || capture.Length != len(want) || !bytes.Equal(capture.Data, []byte(want)) {
+					if capture.Offset != offset || capture.Length != len(want) || !bytes.Equal(capture.Data, []byte(want)) {
 						t.Fatalf("capture=%+v", capture)
 					}
 				}

@@ -47,16 +47,8 @@ func compileLiteralAffixes(root *regex.Node, fullword, dual bool) (*regexBounded
 	prefixes, ok := expandLiteralAtomPrefixes(parts[:selected])
 	plan := &regexBoundedAlternation{Fullword: fullword}
 	if !ok || !plan.appendAffixedBranches(prefixes, parts[selected].branches) {
-		prefix := &regex.Node{Kind: regex.NodeConcat}
-		for _, part := range parts[:selected] {
-			if len(part.branches) == 0 || part.node.Kind == regex.NodePlus || part.node.Kind == regex.NodeStar ||
-				part.node.Kind == regex.NodeRange && part.node.End == 65535 {
-				return nil, nil
-			}
-			prefix.Children = append(prefix.Children, part.node)
-		}
-		plan.Prefix, err = regex.Compile(&regex.AST{Root: prefix})
-		if err != nil {
+		plan.Prefix, err = compileSymbolicPrefix(parts[:selected])
+		if err != nil || plan.Prefix == nil {
 			return nil, err
 		}
 		plan.Branches = parts[selected].branches
