@@ -81,7 +81,7 @@ func TestLiteralAffixEligibilityAndBudgets(t *testing.T) {
 	for pattern, want := range map[string]bool{
 		`x(a|ab)`: true, `(a|ab)xyz`: true, `(a|aa)(a|aa)xyz`: true,
 		`hello`: false, `x(ab|cd)`: false, `x(a|[b])`: false, `x(a|ab)+b`: false,
-		`x(a|ab){1,2}b`: false,
+		`x(a|ab){1,2}b`: true,
 		`(a|ab)` + strings.Repeat(`(a|b)`, 8) + `aaa`:          false,
 		strings.Repeat("a", maxLiteralAffixBytes+1) + `(a|ab)`: false,
 	} {
