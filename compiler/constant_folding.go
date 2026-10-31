@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"math"
 	"strings"
 
 	"github.com/cawalch/go-yara/ast"
@@ -156,7 +157,7 @@ func foldBooleanConstant(expr ast.Expression) ast.Expression {
 		return boolLiteral(value != 0, expr.Position())
 	}
 	if value, ok := evaluateConstantFloat(expr); ok {
-		return boolLiteral(value != 0, expr.Position())
+		return boolLiteral(math.Float64bits(value) != 0, expr.Position())
 	}
 	if value, ok := evaluateConstantString(expr); ok {
 		return boolLiteral(value != "", expr.Position())

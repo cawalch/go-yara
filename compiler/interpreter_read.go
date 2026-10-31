@@ -1,6 +1,9 @@
 package compiler
 
-import "fmt"
+import (
+	"fmt"
+	"math"
+)
 
 // executeReadIntOp executes integer reading operations (little-endian).
 // Unavailable bytes and undefined offsets propagate as YARA undefined values.
@@ -290,7 +293,8 @@ func (i *Interpreter) isTruthy(v Value) bool {
 	case ValueTypeInt:
 		return v.IntVal != 0
 	case ValueTypeDouble:
-		return v.DoubleVal != 0
+		// Libyara tests scalar bits in Boolean operations, including negative zero.
+		return math.Float64bits(v.DoubleVal) != 0
 	case ValueTypeString:
 		return i.getString(v) != ""
 	default:
