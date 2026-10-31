@@ -302,13 +302,12 @@ func (rc *ruleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers
 		if repeatedAlternation {
 			flags |= regex.FlagsExhaustive
 		}
-		// Literal alternatives and bare lazy literal pluses supply independent
-		// libyara atom candidates. Rejected fullword endpoints must not hide
-		// a later valid occurrence.
+		// Atom-backed alternatives and eligible bare lazy pluses can reach
+		// another candidate when an earlier endpoint fails fullword.
 		// Do not extend this to arbitrary regexes: atom-selected forward
 		// verification can intentionally reject the whole greedy occurrence.
 		if fullword &&
-			(isLiteralRegexAlternation(parsed.Root) || repeatedAlternation || lazyLiteralPlus(parsed)) {
+			(isLiteralRegexAlternation(parsed.Root) || repeatedAlternation || lazyFullwordPlus(parsed)) {
 			flags |= regex.FlagsFullwordEnd
 		}
 	}
