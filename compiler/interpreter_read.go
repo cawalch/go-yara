@@ -3,14 +3,27 @@ package compiler
 import "fmt"
 
 // executeReadIntOp executes integer reading operations (little-endian).
+// Unavailable bytes and undefined offsets propagate as YARA undefined values.
 func (i *Interpreter) executeReadIntOp(size int, signed bool) error {
 	if err := i.validateStackUnderflow(OpInt8); err != nil {
 		return err
 	}
 
+	if i.matchContext == nil {
+		return &InterpreterError{Type: ErrorInvalidMemoryAccess, Message: "no match context available for reading data"}
+	}
+
 	offsetVal := i.stack[len(i.stack)-1]
+	if offsetVal.Type == ValueTypeUndefined {
+		return nil
+	}
 	if offsetVal.Type != ValueTypeInt {
 		return &InterpreterError{Type: ErrorTypeMismatch, Message: "integer offset required"}
+	}
+
+	if _, ok := i.matchContext.dataRange(offsetVal.IntVal, int64(size)); !ok {
+		i.stack[len(i.stack)-1] = Value{Type: ValueTypeUndefined}
+		return nil
 	}
 
 	offset := offsetVal.IntVal
@@ -29,19 +42,23 @@ func (i *Interpreter) executeReadIntOpBE(size int, signed bool) error {
 		return err
 	}
 
-	offsetVal := i.stack[len(i.stack)-1]
-	if offsetVal.Type != ValueTypeInt {
-		return &InterpreterError{Type: ErrorTypeMismatch, Message: "integer offset required"}
-	}
-
 	if i.matchContext == nil {
 		return &InterpreterError{Type: ErrorRuntime, Message: "no match context available"}
+	}
+
+	offsetVal := i.stack[len(i.stack)-1]
+	if offsetVal.Type == ValueTypeUndefined {
+		return nil
+	}
+	if offsetVal.Type != ValueTypeInt {
+		return &InterpreterError{Type: ErrorTypeMismatch, Message: "integer offset required"}
 	}
 
 	offset := offsetVal.IntVal
 	data, ok := i.matchContext.dataRange(offset, int64(size))
 	if !ok {
-		return &InterpreterError{Type: ErrorInvalidMemoryAccess, Message: "integer read extends beyond available data"}
+		i.stack[len(i.stack)-1] = Value{Type: ValueTypeUndefined}
+		return nil
 	}
 
 	if err := i.validateReadIntAccess(offset); err != nil {
