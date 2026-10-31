@@ -69,6 +69,7 @@ type CompiledRule struct {
 	ModuleFunctions       map[builtinFunction]ModuleFunction
 	ModuleNames           map[builtinFunction]string
 	HeaderConstraints     []HeaderConstraint
+	fixedTextOffsets      map[string]int64
 	assertions            []conditionAssertion
 	assertionProgram      []assertionInstruction
 	mandatoryAssertions   []int
@@ -227,6 +228,11 @@ func (cr *CompiledRule) Validate() error {
 	if cr.automaton != nil {
 		if err := cr.automaton.Validate(); err != nil {
 			return fmt.Errorf("invalid automaton: %w", err)
+		}
+	}
+	for id := range cr.fixedTextOffsets {
+		if kind, exists := cr.StringKinds[id]; !exists || kind != StringKindText {
+			return fmt.Errorf("fixed offset refers to non-text string %q", id)
 		}
 	}
 	if err := validateCompiledEvidence(cr); err != nil {

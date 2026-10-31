@@ -136,6 +136,7 @@ func (scanner *BlockScanner) ScanWithContext(ctx context.Context, base int64, da
 			return err
 		}
 
+		s.matchCtx.filterFixedOffsets(rule.fixedTextOffsets, base)
 		s.matchCtx.normalizeMatches()
 		s.recordPatternProfiles(rule, false)
 		scanner.recordPatternCounts(rule)

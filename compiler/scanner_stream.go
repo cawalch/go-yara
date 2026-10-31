@@ -291,6 +291,7 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 			if err := s.addLocalNonTextMatches(ctx, rule, windowData, &s.nonTextCache, false, false); err != nil {
 				return nil, err
 			}
+			s.matchCtx.filterFixedOffsets(rule.fixedTextOffsets, chunkOffset)
 			s.matchCtx.normalizeMatches()
 
 			if len(s.matchCtx.spans) == 0 {

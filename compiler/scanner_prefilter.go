@@ -249,6 +249,11 @@ func (s *Scanner) populateRuleMatchContext(
 			return err
 		}
 	}
+	base := int64(0)
+	if s.blockScan {
+		base = s.blockContext[0].Base
+	}
+	s.matchCtx.filterFixedOffsets(rule.fixedTextOffsets, base)
 	s.matchCtx.normalizeMatches()
 	if s.blockScan {
 		base := s.blockContext[0].Base
