@@ -106,7 +106,7 @@ func TestBoundedAlternationFormat11Compatibility(t *testing.T) {
 // equal-quality windows and the penalty for repeated common bytes.
 func TestBoundedAlternationAtomWindows(t *testing.T) {
 	for literal, want := range map[string]int{"abcda": 0, "aaaa!": 1, "\x00\x00\x00\x00a": 1, "\x90\x90\x90\x90!": 1} {
-		if got := boundedAtomOffset([]byte(literal)); got != want {
+		if got := regexLiteralAtomOffset([]byte(literal)); got != want {
 			t.Errorf("%x: offset %d, want %d", literal, got, want)
 		}
 	}
