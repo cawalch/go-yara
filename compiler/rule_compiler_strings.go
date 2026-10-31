@@ -299,12 +299,13 @@ func (rc *ruleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers
 		if repeatedAlternation {
 			flags |= regex.FlagsExhaustive
 		}
-		// Literal alternatives supply independent libyara atom candidates. A
-		// rejected fullword endpoint must not hide a later valid alternative.
+		// Literal alternatives and bare lazy literal pluses supply independent
+		// libyara atom candidates. Rejected fullword endpoints must not hide
+		// a later valid occurrence.
 		// Do not extend this to arbitrary regexes: atom-selected forward
 		// verification can intentionally reject the whole greedy occurrence.
 		if rc.stringCompiler.hasModifier(modifiers, ast.StringModifierFullword) &&
-			(isLiteralRegexAlternation(parsed.Root) || repeatedAlternation) {
+			(isLiteralRegexAlternation(parsed.Root) || repeatedAlternation || lazyLiteralPlus(parsed)) {
 			flags |= regex.FlagsFullwordEnd
 		}
 	}

@@ -99,34 +99,18 @@ func fastForwardGreedyTerminalLoop(code []byte, cur *[]thread, s []byte, pos *in
 	if splitPC+2 >= len(code) {
 		return false
 	}
-	splitOp := code[splitPC]
-	if splitOp != OpSplitA && splitOp != OpSplitB {
+	// Only a loop-first split can consume the entire run. An exit-first
+	// (lazy) split must return through the VM's ordinary match selection.
+	if code[splitPC] != OpSplitB {
 		return false
 	}
 
 	u16 := binary.LittleEndian.Uint16(code[splitPC+1 : splitPC+3])
 	rel := int16(u16) //checkednarrow:ignore uint16 bits encode a signed relative offset
-	altPC := splitPC + int(rel)
-	nextPC := splitPC + 3
-
-	var loopPC, exitPC int
-	switch {
-	case splitOp == OpSplitB:
-		loopPC = altPC
-		exitPC = nextPC
-	case altPC == pc:
-		loopPC = altPC
-		exitPC = nextPC
-	case nextPC == pc:
-		loopPC = nextPC
-		exitPC = altPC
-	default:
+	if splitPC+int(rel) != pc {
 		return false
 	}
-
-	if loopPC != pc {
-		return false
-	}
+	exitPC := splitPC + 3
 	if exitPC < 0 || exitPC >= len(code) {
 		return false
 	}

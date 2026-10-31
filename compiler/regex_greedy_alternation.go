@@ -85,3 +85,11 @@ func isLiteralRegexNode(node *regex.Node) bool {
 	}
 	return true
 }
+
+// A bare lazy literal plus has an atom in each repetition. Libyara can
+// enumerate earlier repetitions backwards until a fullword endpoint passes.
+// Classes, ranges, and prefixed repeats do not share this atom behavior.
+func lazyLiteralPlus(parsed *regex.AST) bool {
+	node := ungroupRegexNode(parsed.Root)
+	return node.Kind == regex.NodePlus && !node.Greedy && len(node.Children) == 1 && isLiteralRegexNode(node.Children[0])
+}
