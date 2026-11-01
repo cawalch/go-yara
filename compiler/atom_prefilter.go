@@ -570,7 +570,14 @@ func appendRegexPrefilterMatches(
 		}
 	}
 
-	if entry.AtomOffset == pattern.atomMinOffset && entry.AtomMaxOffset == pattern.atomMaxOffset {
+	atomMinOffset, atomMaxOffset := pattern.atomMinOffset, pattern.atomMaxOffset
+	if entry.IsWide {
+		atomMinOffset *= 2
+		if atomMaxOffset >= 0 {
+			atomMaxOffset *= 2
+		}
+	}
+	if entry.AtomOffset == atomMinOffset && entry.AtomMaxOffset == atomMaxOffset {
 		validCandidates := candidates[:0]
 		for _, atomStart := range candidates {
 			if _, ok := pattern.atomOccurrenceValid(data, atomStart, entry.IsWide); ok {
