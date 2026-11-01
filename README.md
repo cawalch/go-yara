@@ -373,6 +373,8 @@ Stream-based serialization is also supported via `program.WriteTo(w)` and `compi
 
 Format 18 independently verifies affected alternative atoms at the match start, preserving atom order as well as forward repeat entries. Anchored programs retain their assertions. Recompile existing programs to apply them; loading or reserializing an older artifact preserves its original occurrence behavior.
 
+The [regex verification design](docs/design/regex_verification.md) documents occurrence ordering, directional budgets, and bounded reuse of failed verification work, with measured costs and limits.
+
 The compiler fuses fixed-offset `uint16`/`uint32` equality, integer filesize bounds,
 string-at checks, string-count comparisons, and external comparisons with integer,
 boolean, or string constants. A complete condition composed of these predicates

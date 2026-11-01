@@ -11,11 +11,12 @@ import "sync"
 // calling clear() on every step/thread iteration. Each pooled state advances its
 // own generation while it is exclusively owned by a VM attempt or batch.
 type vmState struct {
-	visited []int64 // generation counter per bytecode position
-	cur     []thread
-	next    []thread
-	gen     int64
-	ends    []int
+	visited      []int64 // generation counter per bytecode position
+	cur          []thread
+	next         []thread
+	gen          int64
+	ends         []int
+	failureMasks []uint64
 }
 
 // vmPool is a sync.Pool for vmState instances.
@@ -70,13 +71,15 @@ func putVMState(st *vmState) {
 // VMBatch provides reusable VM execution state for repeated anchored attempts.
 // Callers pass it to ExecMatchBatch for repeated anchored attempts.
 type VMBatch struct {
-	st  *vmState
-	gen int64
+	st      *vmState
+	gen     int64
+	failure failureReuse
 }
 
 // Prepare ensures VMBatch has an allocated vmState and that visited has capacity
 // for at least codeLen instructions.
 func (b *VMBatch) Prepare(codeLen int) {
+	b.failure = failureReuse{}
 	if b.st == nil {
 		b.st = vmPool.Get().(*vmState)
 	}
@@ -97,6 +100,7 @@ func (b *VMBatch) Release() {
 		return
 	}
 	st := b.st
+	b.failure = failureReuse{}
 	b.st = nil
 	b.gen = 0
 	putVMState(st)
