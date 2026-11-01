@@ -24,8 +24,12 @@ func countBoundedClass(data []byte, class *boundedClassSet) int {
 		indices := v.ReshapeToUint16s().ShiftAllRight(4).ReshapeToUint8s().And(nibble).BitsToInt8()
 		valid := lo.Or(hi).And(bitsTable.PermuteOrZeroGrouped(indices))
 		if invalid := valid.Equal(archsimd.BroadcastUint8x32(0)).ToBits(); invalid != 0 {
+			archsimd.ClearAVXUpperBits()
 			return pos + bits.TrailingZeros32(invalid)
 		}
 	}
+	// Go's SIMD compiler does not yet insert this transition before scalar
+	// code, whose copies can use legacy SSE instructions.
+	archsimd.ClearAVXUpperBits()
 	return pos + countBoundedClassScalar(data[pos:], class)
 }
