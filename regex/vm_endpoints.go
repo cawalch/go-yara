@@ -14,6 +14,22 @@ import (
 //
 //nolint:revive // endpoint storage accompanies the existing VM arguments
 func ExecMatchEndsBatchWithCancel(bs *VMBatch, code, input []byte, flags Flags, start int, done <-chan struct{}) ([]int, error) {
+	return execMatchEnds(bs, code, input, flags, start, len(input), false, done)
+}
+
+// ExecVerifyBatchWithCancel verifies from an atom boundary with a byte budget.
+// Forward verification returns the priority endpoint; backwards verification
+// returns all starts, using bytecode compiled from the reversed prefix. Input
+// remains intact so assertions see physical boundaries, not the budget edge.
+// Results have the same ownership as ExecMatchEndsBatchWithCancel.
+//
+//nolint:revive // explicit VM arguments and verification distance
+func ExecVerifyBatchWithCancel(bs *VMBatch, code, input []byte, flags Flags, start, distance int, done <-chan struct{}) ([]int, error) {
+	return execMatchEnds(bs, code, input, flags, start, distance, true, done)
+}
+
+//nolint:revive // shared directional endpoint driver
+func execMatchEnds(bs *VMBatch, code, input []byte, flags Flags, start, distance int, verify bool, done <-chan struct{}) ([]int, error) {
 	if vmCanceled(done) {
 		return nil, context.Canceled
 	}
@@ -23,7 +39,7 @@ func ExecMatchEndsBatchWithCancel(bs *VMBatch, code, input []byte, flags Flags, 
 	if bs == nil {
 		bs = &VMBatch{}
 		defer bs.Release()
-		ends, err := ExecMatchEndsBatchWithCancel(bs, code, input, flags, start, done)
+		ends, err := execMatchEnds(bs, code, input, flags, start, distance, verify, done)
 		return slices.Clone(ends), err
 	}
 	if bs.st == nil {
@@ -43,7 +59,14 @@ func ExecMatchEndsBatchWithCancel(bs *VMBatch, code, input []byte, flags Flags, 
 		st.cur, st.next = cur[:0], next[:0]
 		st.ends = ends[:0]
 	}()
+	backwards := verify && flags&FlagsBackwards != 0
+	if verify {
+		flags &^= FlagsFullwordEnd
+	}
 	flags |= FlagsGreedy | FlagsExhaustive
+	if verify && !backwards {
+		flags &^= FlagsExhaustive
+	}
 	bestEnd := -1
 	if addThread(code, input, &cur, 0, start, visited, gen, flags) {
 		bestEnd = start
@@ -53,21 +76,53 @@ func ExecMatchEndsBatchWithCancel(bs *VMBatch, code, input []byte, flags Flags, 
 	if flags&FlagsWide != 0 {
 		step = 2
 	}
+
 	advance := newVMStep(code, input, flags, visited, &cur, &next, &gen, &bestEnd)
-	for pos := start; pos+step <= len(input) && len(cur) > 0; pos += step {
-		if done != nil && (pos-start)&(vmCancellationInterval-1) == 0 && vmCanceled(done) {
-			return nil, context.Canceled
+	if backwards { //nolint:nestif // separate directional loops preserve the ordinary endpoint hot path
+		limit := max(0, start-distance)
+		for pos := start; pos-step >= limit && len(cur) > 0; pos -= step {
+			if done != nil && (start-pos)&(vmCancellationInterval-1) == 0 && vmCanceled(done) {
+				return nil, context.Canceled
+			}
+			if step == 2 && !isWidePair(input, pos-step) {
+				break
+			}
+			advance(pos, input[pos-step], -step)
+			cur, next = next, cur
+			if visited[len(code)-1] == gen {
+				ends = append(ends, pos-step)
+			}
 		}
-		if step == 2 && !isWidePair(input, pos) {
-			break
-		}
-		previous := bestEnd
-		advance(pos, input[pos], step)
-		cur, next = next, cur
-		if bestEnd > previous {
-			ends = append(ends, bestEnd)
+	} else {
+		limit := start + min(distance, len(input)-start)
+		for pos := start; pos+step <= limit && len(cur) > 0; pos += step {
+			if done != nil && (pos-start)&(vmCancellationInterval-1) == 0 && vmCanceled(done) {
+				return nil, context.Canceled
+			}
+			if step == 2 && !isWidePair(input, pos) {
+				break
+			}
+			previous := bestEnd
+			// This shortcut accepts only terminal consuming loops, with no
+			// assertions. Its input can therefore stop at the byte budget.
+			if verify && step == 1 && len(cur) == 1 && fastForwardGreedyTerminalLoop(code, &cur, input[:limit], &pos, flags, &bestEnd, done) {
+				if bestEnd > previous {
+					ends = append(ends[:0], bestEnd)
+				}
+				break
+			}
+			advance(pos, input[pos], step)
+			cur, next = next, cur
+			if bestEnd > previous {
+				if verify {
+					ends = append(ends[:0], bestEnd)
+				} else {
+					ends = append(ends, bestEnd)
+				}
+			}
 		}
 	}
+
 	if vmCanceled(done) {
 		return nil, context.Canceled
 	}

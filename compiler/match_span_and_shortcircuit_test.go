@@ -20,9 +20,9 @@ rule long_match {
 	}
 
 	input := []byte("https://example.com/" + strings.Repeat("a", 5000))
-	expectedFullLen := len(input)
+	expectedFullLen := 4096 // libyara limits forward verification from the http atom.
 
-	t.Run("DefaultUnbounded", func(t *testing.T) {
+	t.Run("DefaultVerificationDistance", func(t *testing.T) {
 		s := NewScanner(program)
 		defer s.Close()
 		res, err := s.Scan(input)
@@ -54,7 +54,7 @@ rule long_match {
 		}
 	})
 
-	t.Run("ZeroAndNegativeDefaultToUnbounded", func(t *testing.T) {
+	t.Run("ZeroAndNegativeUseDefaultDistance", func(t *testing.T) {
 		for _, span := range []int{0, -1, -100} {
 			s := NewScanner(program, WithMaxMatchSpan(span))
 			defer s.Close()

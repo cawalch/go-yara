@@ -278,7 +278,8 @@ func WithFastScan() ScannerOption {
 
 // WithMaxMatchSpan bounds the maximum byte length of a single regex match.
 // When maxBytes > 0, regex scanning evaluates at most maxBytes ahead from each
-// candidate start. Non-positive values mean unlimited match length (the default).
+// candidate start. Non-positive values disable this additional cap (the default);
+// libyara's atom-relative verification distance limits still apply.
 func WithMaxMatchSpan(maxBytes int) ScannerOption {
 	if maxBytes < 0 {
 		maxBytes = 0

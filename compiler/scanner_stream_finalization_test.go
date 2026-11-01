@@ -40,8 +40,16 @@ func TestStreamBoundedRegexAutomaticOverlap(t *testing.T) {
 		if wide {
 			modifier = "wide"
 		}
-		p := mustCompileStreamingProgram(t, `rule p {strings:$a=/a.{5000}b/ `+modifier+` condition:#a==1}`)
-		data := append([]byte("a"), bytes.Repeat([]byte("x"), 5000)...)
+		// Keep the match above the default overlap, with each side of the
+		// selected XYZ atom inside libyara's 4096-byte verification limit.
+		gap := 2500
+		if wide {
+			gap = 1500
+		}
+		p := mustCompileStreamingProgram(t, `rule p {strings:$a=/a.{`+strconv.Itoa(gap)+`}XYZ.{`+strconv.Itoa(gap)+`}b/ `+modifier+` condition:#a==1}`)
+		data := append([]byte("a"), bytes.Repeat([]byte("x"), gap)...)
+		data = append(data, []byte("XYZ")...)
+		data = append(data, bytes.Repeat([]byte("x"), gap)...)
 		data = append(data, 'b')
 		if wide {
 			expanded := make([]byte, len(data)*2)

@@ -71,6 +71,7 @@ func (rc *ruleCompiler) compileSingleStringWithDead(str *ast.String, isDead bool
 		prefix, anchored := regex.LiteralPrefix(result.patternData)
 		pattern := RegexPattern{
 			boundedAlternation: result.boundedAlternation,
+			verification:       result.verification,
 			Code:               result.patternData,
 			CaptureCode:        result.captureCode,
 			CaptureGroups:      slices.Clone(result.captureGroups),
@@ -172,6 +173,7 @@ func (rc *ruleCompiler) compileSingleStringWithDead(str *ast.String, isDead bool
 
 type stringCompilationResult struct {
 	boundedAlternation    *regexBoundedAlternation
+	verification          *regexVerificationPlan
 	patternData           []byte
 	kind                  StringKind
 	flags                 regex.Flags
@@ -327,6 +329,10 @@ func (rc *ruleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers
 			return nil, err
 		}
 	}
+	verification, err := compileVerificationPlan(parsed, flags, hasModifier(modifiers, ast.StringModifierWide))
+	if err != nil {
+		return nil, err
+	}
 	groups := positiveCaptureGroups(modifiers)
 	var captureCode []byte
 	if len(groups) > 0 {
@@ -340,6 +346,7 @@ func (rc *ruleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers
 	firstByteSet, hasFirstByteSet := regex.FirstByteSet(parsed, flags)
 	return &stringCompilationResult{
 		boundedAlternation:    boundedAlternation,
+		verification:          verification,
 		patternData:           code, // VM bytecode
 		kind:                  StringKindRegex,
 		flags:                 flags,
