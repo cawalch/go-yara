@@ -1,5 +1,72 @@
 package compiler
 
+// corpusSharedAtoms also considers the verifier's proven mandatory literal
+// after a prefix. Keep fixed offsets and at least the existing atom quality;
+// only trade the prefix when the internal candidate's frequency across eligible
+// verifiers is at most half that of the existing prefilter candidate.
+func corpusSharedAtoms(rules []*CompiledRule) map[string]regexPrefilterAtom {
+	selected := corpusPrefixAtoms(rules)
+	type choice struct{ current, internal regexPrefilterAtom }
+	choices := make(map[string]choice)
+	for _, rule := range rules {
+		if rule.IsDead {
+			continue
+		}
+		for id, pattern := range rule.RegexPatterns {
+			if rule.IsStringDead(id) || pattern.cacheKey == "" || len(pattern.prefix) < minPrefilterAtomLength ||
+				pattern.atomMinOffset < len(pattern.prefix) || pattern.atomMinOffset != pattern.atomMaxOffset {
+				continue
+			}
+			atoms := selectSharedRegexAtoms(pattern)
+			if len(atoms) != 1 {
+				continue
+			}
+			current := atoms[0]
+			if atom, ok := selected[pattern.cacheKey]; ok {
+				current = atom
+			}
+			internal := regexPrefilterAtom{
+				data:        pattern.atom,
+				minOffset:   pattern.atomMinOffset,
+				maxOffset:   pattern.atomMaxOffset,
+				score:       prefilterAtomScore(pattern.atom),
+				asciiNoCase: pattern.atomASCIINoCase,
+			}
+			if current.minOffset != current.maxOffset || len(internal.data) < len(current.data) || internal.score < current.score {
+				continue
+			}
+			choices[pattern.cacheKey] = choice{current, internal}
+		}
+	}
+	// Below this threshold, new root bytes could disable the shared pass.
+	if len(choices) < minSharedNonTextEntries {
+		return selected
+	}
+	// Length distinguishes short prefixes from eight-byte atoms padded with NULs.
+	type atomKey struct {
+		data [maxPrefilterAtomLength]byte
+		size int
+	}
+	keyFor := func(data []byte) atomKey { return atomKey{corpusAtomKey(data), len(data)} }
+	counts := make(map[atomKey]int)
+	for _, choice := range choices {
+		current, internal := keyFor(choice.current.data), keyFor(choice.internal.data)
+		counts[current]++
+		if internal != current {
+			counts[internal]++
+		}
+	}
+	for key, choice := range choices {
+		if counts[keyFor(choice.internal.data)] <= counts[keyFor(choice.current.data)]/2 {
+			if selected == nil {
+				selected = make(map[string]regexPrefilterAtom)
+			}
+			selected[key] = choice.internal
+		}
+	}
+	return selected
+}
+
 // corpusPrefixAtoms breaks equal-quality prefix-window ties using the number
 // of distinct eligible regex prefixes containing each window. Only the shared
 // prefilter changes; verification atoms and match-selection policies stay intact.

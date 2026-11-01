@@ -22,7 +22,7 @@ type sharedPatternAutomatonBuilder struct {
 	lookup         []sharedAutomatonEntry
 	seen           map[prefilterDedupKey]struct{}
 	prefilterSpecs []sharedPrefilterSpec
-	prefixAtoms    map[string]regexPrefilterAtom
+	corpusAtoms    map[string]regexPrefilterAtom
 }
 
 func newSharedPatternAutomatonBuilder(rules []*CompiledRule) *sharedPatternAutomatonBuilder {
@@ -55,7 +55,7 @@ func newSharedPatternAutomatonBuilder(rules []*CompiledRule) *sharedPatternAutom
 		lookup:         make([]sharedAutomatonEntry, 0, totalEntries),
 		seen:           make(map[prefilterDedupKey]struct{}, totalEntries),
 		prefilterSpecs: make([]sharedPrefilterSpec, 0, totalEntries),
-		prefixAtoms:    corpusPrefixAtoms(rules),
+		corpusAtoms:    corpusSharedAtoms(rules),
 	}
 }
 
@@ -231,7 +231,7 @@ func (builder *sharedPatternAutomatonBuilder) addRegexPrefilters(ruleIndex int, 
 		}
 		pattern := rule.RegexPatterns[strID]
 		atoms := selectSharedRegexAtoms(pattern)
-		if atom, ok := builder.prefixAtoms[pattern.cacheKey]; ok {
+		if atom, ok := builder.corpusAtoms[pattern.cacheKey]; ok {
 			atoms = []regexPrefilterAtom{atom}
 		}
 		if len(atoms) == 0 || pattern.cacheKey == "" {
