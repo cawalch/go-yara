@@ -3,6 +3,7 @@ package compiler
 import (
 	"context"
 	"encoding/binary"
+	"slices"
 
 	"github.com/cawalch/go-yara/ast"
 	"github.com/cawalch/go-yara/regex"
@@ -55,11 +56,11 @@ type combinedRegexClassKey struct {
 type combinedRegexDecoder struct {
 	classes      map[combinedRegexClassKey]regex.ByteSet
 	instructions []combinedRegexInstruction
-	offsets      map[int]int
+	offsets      []uint16
 }
 
 type combinedRegexBuilder struct {
-	seen                       map[combinedRegexPosition]bool
+	seen                       map[uint64]bool
 	stack                      []combinedRegexPosition
 	path                       []int
 	nfa                        combinedRegexNFA
@@ -84,13 +85,12 @@ func (decoder *combinedRegexDecoder) decode(pattern RegexPattern) ([]combinedReg
 		return nil, false
 	}
 	instructions := decoder.instructions[:0]
-	if decoder.offsets == nil {
-		decoder.offsets = make(map[int]int)
-	}
+	decoder.offsets = slices.Grow(decoder.offsets[:0], len(code))[:len(code)]
 	offsets := decoder.offsets
 	clear(offsets)
 	for pc := 0; pc < len(code); {
-		offsets[pc] = len(instructions)
+		// Zero marks operand bytes; instruction indices are stored plus one.
+		offsets[pc] = uint16(len(instructions) + 1) //checkednarrow:ignore bytecode is capped at 16384 bytes
 		in := combinedRegexInstruction{op: code[pc], alternate: -1}
 		size := 1
 		switch in.op {
@@ -142,18 +142,17 @@ func (decoder *combinedRegexDecoder) decode(pattern RegexPattern) ([]combinedReg
 		if in.op == regex.OpMatch {
 			continue
 		}
-		var ok bool
 		if in.op != regex.OpJump {
-			in.next, ok = offsets[in.next]
-			if !ok {
+			if in.next >= len(offsets) || offsets[in.next] == 0 {
 				return nil, false
 			}
+			in.next = int(offsets[in.next]) - 1
 		}
 		if in.alternate >= 0 {
-			in.alternate, ok = offsets[in.alternate]
-			if !ok {
+			if in.alternate >= len(offsets) || offsets[in.alternate] == 0 {
 				return nil, false
 			}
+			in.alternate = int(offsets[in.alternate]) - 1
 		}
 	}
 	return instructions, true
@@ -165,7 +164,7 @@ func (b *combinedRegexBuilder) add(instructions []combinedRegexInstruction, entr
 	b.stack = append(b.stack[:0], combinedRegexPosition{0, 0})
 	stack := b.stack
 	if b.seen == nil {
-		b.seen = make(map[combinedRegexPosition]bool)
+		b.seen = make(map[uint64]bool)
 	}
 	seen := b.seen
 	clear(seen)
@@ -173,10 +172,12 @@ func (b *combinedRegexBuilder) add(instructions []combinedRegexInstruction, entr
 	for len(stack) > 0 {
 		pos := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
-		if seen[pos] {
+		// Both indices are bounded well below 2^32 by the bytecode/state caps.
+		key := uint64(pos.pc)<<32 | uint64(pos.state)
+		if seen[key] {
 			continue
 		}
-		seen[pos] = true
+		seen[key] = true
 		b.work++
 		if b.work > maxCombinedRegexWork {
 			return false
@@ -255,6 +256,11 @@ func combinedOptionalRun(code []combinedRegexInstruction, pc int) (int, int, reg
 
 func (b *combinedRegexBuilder) child(parent int, set regex.ByteSet) (int, bool) {
 	b.transitions++
+	// Shared prefixes usually continue through their first edge. Avoid hashing
+	// the byte set on that path; the map still bounds lookup at branch points.
+	if children := b.nfa.states[parent].children; len(children) > 0 && b.nfa.states[children[0]].set == set {
+		return children[0], true
+	}
 	key := combinedRegexEdge{parent, set}
 	if child, ok := b.edges[key]; ok {
 		return child, true

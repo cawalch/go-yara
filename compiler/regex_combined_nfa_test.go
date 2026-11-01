@@ -107,6 +107,33 @@ func TestCombinedRegexEligibility(t *testing.T) {
 	}
 }
 
+func TestCombinedRegexDecoderReuse(t *testing.T) {
+	var decoder combinedRegexDecoder
+	for range 3 {
+		// A previous instruction boundary must not make an operand byte a valid
+		// jump destination when a later pattern reuses the offset table.
+		valid := []byte{regex.OpDigit, regex.OpDigit, regex.OpDigit, regex.OpDigit, regex.OpDigit, regex.OpMatch}
+		if _, ok := decoder.decode(RegexPattern{Code: valid}); !ok {
+			t.Fatal("rejected valid instructions")
+		}
+		invalid := []byte{regex.OpJump, 4, 0, regex.OpLiteral, 'a', regex.OpMatch}
+		if _, ok := decoder.decode(RegexPattern{Code: invalid}); ok {
+			t.Fatal("accepted jump into an operand")
+		}
+		for _, code := range [][]byte{
+			{regex.OpLiteral, 'a', regex.OpMatch},
+			{regex.OpSplitA, 5, 0, regex.OpLiteral, 'a', regex.OpMatch},
+			bytes.Repeat([]byte{regex.OpDigit}, 16384), // no terminal match
+		} {
+			want, wantOK := decodeCombinedRegex(RegexPattern{Code: code})
+			got, gotOK := decoder.decode(RegexPattern{Code: code})
+			if gotOK != wantOK || !reflect.DeepEqual(got, want) {
+				t.Fatal("reused decoder differs from a fresh decoder")
+			}
+		}
+	}
+}
+
 func TestCombinedRegexCaps(t *testing.T) {
 	p := mustCompileStreamingProgram(t, `rule r {strings:$a=/key=[a-z]{16,32}!/ condition:$a}`)
 	instructions, ok := decodeCombinedRegex(p.Rules[0].RegexPatterns["$a"])

@@ -37,3 +37,18 @@ func BenchmarkCombinedNFACompile(b *testing.B) {
 		})
 	}
 }
+
+func BenchmarkCombinedNFAPrepare(b *testing.B) {
+	for _, count := range []int{64, 256} {
+		p := mustCompileBenchmarkProgram(b, combinedNFASource(count, "!"))
+		b.Run(strconv.Itoa(count), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				for i := range p.sharedLookup {
+					p.sharedLookup[i].combined = nil
+				}
+				p.prepareCombinedRegex()
+			}
+		})
+	}
+}
