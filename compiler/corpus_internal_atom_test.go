@@ -102,17 +102,19 @@ func TestCorpusInternalAtomEligibility(t *testing.T) {
 }
 
 func TestCorpusInternalSmallCorpusKeepsSharedPass(t *testing.T) {
-	var source strings.Builder
-	for i := range 5 {
-		fmt.Fprintf(&source, "rule small%d {strings:$a=/key=[a-z]{4}%cabcdefg/ condition:$a}\n", i, 'v'+i)
-	}
-	p := mustCompileStreamingProgram(t, source.String())
-	if len(corpusSharedAtoms(p.Rules)) != 0 || len(p.sharedLookup) != 5 {
-		t.Fatal("new atom roots disabled the small shared pass")
-	}
-	for _, info := range p.sharedAutomaton.strings {
-		if string(info.Data) != "key=" {
-			t.Fatal("small corpus changed prefix")
+	for _, count := range []int{2, 5} {
+		var source strings.Builder
+		for i := range count {
+			fmt.Fprintf(&source, "rule small%d {strings:$a=/key=[a-z]{4}%cabcdefg/ condition:$a}\n", i, 'v'+i)
+		}
+		p := mustCompileStreamingProgram(t, source.String())
+		if len(corpusSharedAtoms(p.Rules)) != 0 || len(p.sharedLookup) != count {
+			t.Fatal("small corpus changed its shared pass")
+		}
+		for _, info := range p.sharedAutomaton.strings {
+			if string(info.Data) != "key=" {
+				t.Fatal("small corpus changed prefix")
+			}
 		}
 	}
 }
