@@ -38,6 +38,7 @@ type acAutomaton struct {
 	rootBytes []byte
 	rootLanes []rootLane
 	teddy     teddyPrefilter
+	teddyGate *corpusTeddyPrefilter
 
 	// Flattened transition table. If len(states) <= 65536, transitions16 is populated
 	// and transitions32 is nil. If len(states) > 65536, transitions32 is populated.
@@ -225,7 +226,12 @@ func (ac *acAutomaton) Compile() error {
 		// Fold the failure links into the goto table so the scan never walks them.
 		ac.closeTransitions()
 		ac.buildFlatTransitions()
-		ac.teddy = newTeddyPrefilter(ac.strings)
+		filter := newTeddyPrefilter(ac.strings)
+		if gate, ok := filter.(*corpusTeddyPrefilter); ok {
+			ac.teddyGate = gate
+		} else {
+			ac.teddy = filter
+		}
 		ac.compiled = true
 	})
 
@@ -489,6 +495,7 @@ func (ac *acAutomaton) Clone() *acAutomaton {
 		rootBytes:     slices.Clone(ac.rootBytes),
 		rootLanes:     slices.Clone(ac.rootLanes),
 		teddy:         ac.teddy,
+		teddyGate:     ac.teddyGate,
 		transitions16: slices.Clone(ac.transitions16),
 		transitions32: slices.Clone(ac.transitions32),
 		hasOutput:     slices.Clone(ac.hasOutput),
@@ -594,6 +601,7 @@ func (ac *acAutomaton) Reset() {
 	ac.rootBytes = ac.rootBytes[:0]
 	ac.rootLanes = ac.rootLanes[:0]
 	ac.teddy = nil
+	ac.teddyGate = nil
 	ac.StringCount = 0
 	ac.Strings = ac.Strings[:0]
 	ac.transitions16 = nil

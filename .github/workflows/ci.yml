@@ -157,8 +157,16 @@ jobs:
           fi
 
   simd:
-    name: Experimental SIMD
-    runs-on: ubuntu-24.04
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            name: Experimental SIMD
+          - runner: ubuntu-24.04-arm
+            name: Experimental SIMD (ARM64)
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
     env:
       GOEXPERIMENT: simd
@@ -176,6 +184,10 @@ jobs:
 
       - name: Run race tests
         run: go test -race ./...
+
+      - name: Fuzz ARM64 corpus prefilter
+        if: runner.arch == 'ARM64'
+        run: go test ./compiler -run '^$' -fuzz '^FuzzTeddyCorpus$' -fuzztime=10s -parallel=2
 
       - name: Test 128-bit SIMD searches
         run: GODEBUG=simd=+128 go test ./compiler -run TestByteSearch -count=1

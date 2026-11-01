@@ -301,6 +301,10 @@ func (ac *acAutomaton) SearchWithCancel(data []byte, done <-chan struct{}, yield
 	if !ac.compiled || len(data) == 0 || scanCanceled(done) {
 		return
 	}
+	if teddySIMDEnabled && ac.teddyGate != nil && len(data) >= 256 && !ac.teddyGate.mayMatch(data, done) {
+		return
+	}
+
 	if len(ac.strings) == 1 {
 		info := ac.strings[0]
 		if len(info.Data) > 0 {
@@ -558,6 +562,10 @@ func (ac *acAutomaton) Search(data []byte, yield func(acMatch) bool) {
 	if !ac.compiled || len(data) == 0 {
 		return
 	}
+	if teddySIMDEnabled && ac.teddyGate != nil && len(data) >= 256 && !ac.teddyGate.mayMatch(data, nil) {
+		return
+	}
+
 	if len(ac.strings) == 1 {
 		info := ac.strings[0]
 		if len(info.Data) > 0 {
