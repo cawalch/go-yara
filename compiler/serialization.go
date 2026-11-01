@@ -513,6 +513,9 @@ func deserializeRegexPattern(serialized serializedRegexPattern) RegexPattern {
 	for index, values := range serialized.FixedByteSets {
 		pattern.fixedByteSets[index] = regex.NewByteSet(values)
 	}
+	if len(pattern.CaptureCode) == 0 {
+		pattern.boundedClass = compileBoundedClass(pattern.Code, pattern.Flags)
+	}
 	if serialized.LeadingGap != nil {
 		pattern.leadingGap = &regexLeadingGapPlan{
 			leadingSet: regex.NewByteSet(serialized.LeadingGap.LeadingSet),

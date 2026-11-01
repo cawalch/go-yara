@@ -674,6 +674,14 @@ func execRegexMatchAt(bs *regex.VMBatch, pattern RegexPattern, data []byte, flag
 	if pattern.boundedAlternation != nil {
 		return execBoundedAlternation(bs, pattern.boundedAlternation, data, flags, start, done)
 	}
+	if pattern.boundedClass != nil && !isWide && flags&(regex.FlagsWide|regex.FlagsFullwordEnd|regex.FlagsExhaustive|regex.FlagsBackwards|regex.FlagsScan) == 0 &&
+		(flags&regex.FlagsNoCase != 0) == pattern.boundedClass.noCase {
+		length, ok := pattern.boundedClass.match(data, start, flags&(regex.FlagsGreedy|regexForwardPriority) != 0, done)
+		if !ok {
+			return false, -1, -1
+		}
+		return true, 0, length
+	}
 	if len(pattern.fixedByteSets) > 0 {
 		length, ok := fixedRegexMatchAt(pattern.fixedByteSets, data, isWide, start)
 		if !ok {
@@ -687,7 +695,7 @@ func execRegexMatchAt(bs *regex.VMBatch, pattern RegexPattern, data []byte, flag
 		flags |= regex.FlagsGreedy
 	}
 	matched, startOffset, endOffset, _ = regex.ExecMatchBatchWithCancel(bs, pattern.Code, data, flags, start, done)
-	return
+	return matched, startOffset, endOffset
 }
 
 //nolint:revive // argument-limit: fixed-width hot path avoids options indirection

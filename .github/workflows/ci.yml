@@ -189,15 +189,20 @@ jobs:
       - name: Fuzz corpus prefilter
         run: go test ./compiler -run '^$' -fuzz '^FuzzTeddyCorpus$' -fuzztime=10s -parallel=2
 
+      - name: Fuzz bounded character classes
+        run: |
+          go test ./compiler -run '^$' -fuzz '^FuzzBoundedClass$' -fuzztime=10s -parallel=2
+          go test ./compiler -run '^$' -fuzz '^FuzzBoundedClassVM$' -fuzztime=10s -parallel=2
+
       - name: Test 128-bit SIMD searches
         run: GODEBUG=simd=+128 go test ./compiler -run TestByteSearch -count=1
 
       - name: Test scalar emulation fallback
-        run: GODEBUG=simd=0 go test ./compiler -run 'TestByteSearch|TestTeddy' -count=1
+        run: GODEBUG=simd=0 go test ./compiler -run 'TestByteSearch|TestTeddy|TestBoundedClass' -count=1
 
       - name: Test AMD64 without AVX2
         if: runner.arch == 'X64'
-        run: GODEBUG=cpu.avx2=off go test ./compiler -run 'TestByteSearch|TestTeddy' -count=1
+        run: GODEBUG=cpu.avx2=off go test ./compiler -run 'TestByteSearch|TestTeddy|TestBoundedClass' -count=1
 
   security:
     name: Security Scan

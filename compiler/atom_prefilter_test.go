@@ -1222,6 +1222,7 @@ func buildLinearRegexContext(rule *CompiledRule, data []byte) *MatchContext {
 		pattern.wideAlternativeAtoms = nil
 		pattern.byteSetCount = 0
 		pattern.fixedByteSets = nil
+		pattern.boundedClass = nil
 		modifiers := rule.StringModifiers[id]
 		addRegexMatchesWithModifiers(ctx, id, pattern, data, modifiers)
 	}
