@@ -69,6 +69,12 @@ func addBoundedRegexVerifications(ctx *MatchContext, id string, pattern RegexPat
 				if !ok {
 					continue
 				}
+				// A lower-priority atom cannot replace an already accepted start.
+				if greedy && pattern.Flags&regexStartAtomEntries != 0 {
+					if previous, exists := best[at]; exists && order.before(previous.order) {
+						continue
+					}
+				}
 				// New match-start plans have only assertions behind the atom.
 				// Check them before a potentially long forward attempt; a failed
 				// anchor must not rescan the suffix at every later atom hit.

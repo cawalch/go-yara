@@ -101,7 +101,10 @@ func ExecMatchBatchWithCancel(bs *VMBatch, code, input []byte, flags Flags, star
 	if bs == nil {
 		matched, end = runAtMatch(code, input, flags, start, done)
 	} else {
+		bs.prepareFailureReuse(code, input, flags)
+		gen := bs.gen
 		matched, end = runAtMatchBatchWithCancel(bs, code, input, flags, start, done)
+		bs.finishFailureReuse(matched, vmCanceled(done), bs.gen-gen)
 	}
 	if vmCanceled(done) {
 		return false, -1, -1, context.Canceled
@@ -412,6 +415,10 @@ func runMatch(code, s []byte, flags Flags, start int, done <-chan struct{}, scan
 // thousands of times in a tight loop (e.g., addRegexMatches).
 func runAtMatchBatchWithCancel(bs *VMBatch, code, s []byte, flags Flags, start int, done <-chan struct{}) (matched bool, length int) { //nolint:nestif,revive // argument-limit: performance-critical VM hot path; nested wide/ascii loops are intentional for VM dispatch
 	wide := (flags & FlagsWide) != 0
+	var reuse *failureReuse
+	if bs.failure.learning || bs.failure.ready {
+		reuse = &bs.failure
+	}
 
 	st := bs.st
 	codeLen := len(code)
@@ -441,6 +448,11 @@ func runAtMatchBatchWithCancel(bs *VMBatch, code, s []byte, flags Flags, start i
 				exhausted = true
 				break
 			}
+			if reuse != nil && reuse.rejects(cur, pos) {
+				cur = cur[:0]
+				exhausted = checkAndReturnIfExhausted(cur, &matched, &length, bestEnd)
+				break
+			}
 			if !isWidePair(s, pos) {
 				cur = cur[:0]
 				exhausted = checkAndReturnIfExhausted(cur, &matched, &length, bestEnd)
@@ -462,6 +474,11 @@ func runAtMatchBatchWithCancel(bs *VMBatch, code, s []byte, flags Flags, start i
 		for pos := start; pos < len(s); pos++ {
 			if done != nil && (pos-start)&(vmCancellationInterval-1) == 0 && vmCanceled(done) {
 				exhausted = true
+				break
+			}
+			if reuse != nil && reuse.rejects(cur, pos) {
+				cur = cur[:0]
+				exhausted = checkAndReturnIfExhausted(cur, &matched, &length, bestEnd)
 				break
 			}
 			if len(cur) == 1 {

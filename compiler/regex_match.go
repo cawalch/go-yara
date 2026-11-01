@@ -651,7 +651,11 @@ func newRegexMatchBatch(ctx *MatchContext, pattern RegexPattern) *regex.VMBatch 
 	if len(pattern.fixedByteSets) > 0 {
 		return nil
 	}
-	return ctx.acquireRegexBatch(len(pattern.Code))
+	bs := ctx.acquireRegexBatch(len(pattern.Code))
+	if pattern.maxLength < 0 && pattern.boundedAlternation == nil && len(pattern.Code) <= 64 && (ctx == nil || ctx.maxMatchSpan == 0) {
+		bs.EnableFailureReuse()
+	}
+	return bs
 }
 
 //nolint:revive // cancellation signal accompanies the exact verifier arguments
