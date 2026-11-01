@@ -88,6 +88,11 @@ func (rc *ruleCompiler) compileSingleStringWithDead(str *ast.String, isDead bool
 			firstByteSet:       result.regexFirstByteSet,
 			hasFirstByteSet:    result.hasFirstByteSet,
 		}
+		if pattern.maxLength < 0 && pattern.verification == nil {
+			// compileVerificationPlan only elides an unbounded expression when
+			// its terminal lazy repeat has a proven finite priority bound.
+			pattern.streamingHorizon = regexVerificationDistance
+		}
 		if atom, ok := selectMandatoryRegexAtom(result.regexAtoms); ok {
 			pattern.atom = append([]byte(nil), atom.data...)
 			pattern.wideAtom = widenRegexPrefix(atom.data)

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"time"
@@ -49,16 +50,42 @@ func (cp *CompiledProgram) maxStreamingOverlap() int {
 }
 
 // streamingRegexLength is the maximum byte length across the enabled encodings.
-// A negative length denotes an unbounded regex.
+// Unbounded expressions use their verifier's finite decision horizon.
+// A negative length denotes legacy analysis with no proven horizon.
 func streamingRegexLength(pattern RegexPattern) int {
 	length := pattern.maxLength
-	if length >= 0 && pattern.Flags&regex.FlagsWide != 0 {
-		if length > math.MaxInt/2 {
-			return math.MaxInt
+	if length >= 0 {
+		if pattern.Flags&regex.FlagsWide != 0 {
+			if length > math.MaxInt/2 {
+				return math.MaxInt
+			}
+			length *= 2
 		}
-		length *= 2
+		return length
 	}
-	return length
+	if pattern.verification != nil {
+		if pattern.verification.ForwardOnly {
+			return regexVerificationDistance
+		}
+		return 2 * regexVerificationDistance
+	}
+	if pattern.streamingHorizon > 0 {
+		return pattern.streamingHorizon
+	}
+	return -1
+}
+
+// Small explicit caps bypass atom-relative verification, so the complete
+// expression is decided inside the caller's start-relative window. Larger caps
+// still need the verifier's whole horizon, even when the returned span is short.
+func (s *Scanner) streamRegexHorizon(pattern RegexPattern) int {
+	horizon := streamingRegexLength(pattern)
+	if s.maxMatchSpan > 0 && (pattern.verification == nil || s.maxMatchSpan <= regexVerificationDistance) {
+		if horizon < 0 || s.maxMatchSpan < horizon {
+			horizon = s.maxMatchSpan
+		}
+	}
+	return horizon
 }
 
 // streamMatchWindow assigns each settled start to exactly one window.
@@ -79,7 +106,7 @@ func (window streamMatchWindow) owns(span matchSpan, horizon int) bool {
 		}
 		return start >= first && start < limit
 	}
-	// Unbounded patterns and undersized explicit overlap retain end ownership.
+	// Undersized explicit overlap for bounded patterns retains end ownership.
 	if span.Length == 0 {
 		return start >= window.primaryStart && start < window.primaryEnd
 	}
@@ -94,14 +121,30 @@ func (s *Scanner) effectiveStreamChunkSize() int {
 	return defaultStreamChunkSize
 }
 
-func (s *Scanner) effectiveStreamOverlapSize() int {
-	if s != nil && s.streamOverlapSize > 0 {
-		return s.streamOverlapSize
+func (s *Scanner) effectiveStreamOverlapSize() (int, error) {
+	overlap := s.streamOverlapSize
+	if overlap <= 0 {
+		overlap = s.program.maxStreamingOverlap()
 	}
-	if s != nil && s.program != nil {
-		return s.program.maxStreamingOverlap()
+	for _, rule := range s.program.Rules {
+		if !s.shouldEvaluateRule(rule) {
+			continue
+		}
+		for id, pattern := range rule.RegexPatterns {
+			if pattern.maxLength >= 0 {
+				continue
+			}
+			horizon := s.streamRegexHorizon(pattern)
+			if horizon < 0 {
+				return 0, fmt.Errorf("streaming regex %s.%s has no finite verification horizon; recompile the program or use WithMaxMatchSpan", rule.Name, id)
+			}
+			if horizon > math.MaxInt-streamingLookaheadContext {
+				return 0, errors.New("streaming overlap size is too large")
+			}
+			overlap = max(overlap, horizon+streamingLookaheadContext)
+		}
 	}
-	return 4096
+	return overlap, nil
 }
 
 func ruleObservesFilesize(rule *CompiledRule) bool {
@@ -177,7 +220,10 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 
 	reader := contextReader{ctx: ctx, reader: r}
 	chunkSize := s.effectiveStreamChunkSize()
-	overlapCapacity := s.effectiveStreamOverlapSize()
+	overlapCapacity, err := s.effectiveStreamOverlapSize()
+	if err != nil {
+		return nil, err
+	}
 
 	if chunkSize <= 0 || chunkSize > math.MaxInt-overlapCapacity-streamingLookaheadContext {
 		return nil, errors.New("streaming chunk size is invalid")
@@ -205,7 +251,7 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 		fastFilter = func(id string, span matchSpan) bool {
 			horizon := -1
 			if pattern, ok := currentRule.RegexPatterns[id]; ok {
-				horizon = streamingRegexLength(pattern)
+				horizon = s.streamRegexHorizon(pattern)
 			}
 			return window.owns(span, horizon)
 		}
@@ -303,7 +349,7 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 			for strID, spans := range s.matchCtx.spans {
 				horizon := -1
 				if pattern, ok := rule.RegexPatterns[strID]; ok {
-					horizon = streamingRegexLength(pattern)
+					horizon = s.streamRegexHorizon(pattern)
 				}
 				for _, sp := range spans {
 					if !window.owns(sp, horizon) {

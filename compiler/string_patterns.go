@@ -30,6 +30,7 @@ type RegexPattern struct {
 	atomMaxOffset        int
 	atomMaxSuffix        int
 	maxLength            int
+	streamingHorizon     int
 	atomASCIINoCase      bool
 	alternativeAtoms     []regexPrefilterAtom
 	wideAlternativeAtoms []regexPrefilterAtom
