@@ -11,9 +11,10 @@ import (
 
 // Compiler emits Thompson VM bytecode from a parsed regex AST.
 type Compiler struct {
-	e           *Emitter
-	captureSlot map[int]byte
-	root        *Node
+	e             *Emitter
+	captureSlot   map[int]byte
+	root          *Node
+	repeatEntries bool
 }
 
 // NewCompiler constructs a Compiler with a fresh emitter.
@@ -25,7 +26,19 @@ func NewCompiler() *Compiler {
 
 // Compile compiles the AST to bytecode and appends an OpMatch at the end.
 func Compile(ast *AST) ([]byte, error) {
+	return compile(ast, false)
+}
+
+// CompileForward emits libyara's effective repeat entries for forward-only
+// verification. Atom-backed matching can also verify backwards and must choose
+// its own entry policy; Compile preserves the ordinary Thompson loop layout.
+func CompileForward(ast *AST) ([]byte, error) {
+	return compile(ast, true)
+}
+
+func compile(ast *AST, repeatEntries bool) ([]byte, error) {
 	c := NewCompiler()
+	c.repeatEntries = repeatEntries
 	if ast == nil || ast.Root == nil {
 		return nil, errors.New("regex: empty AST")
 	}
@@ -40,7 +53,17 @@ func Compile(ast *AST) ([]byte, error) {
 // CompileCaptures emits a replay-only regex program with save instructions for
 // selected one-based source groups. The returned slot order matches groups.
 func CompileCaptures(ast *AST, groups []int) ([]byte, error) {
+	return compileCaptures(ast, groups, false)
+}
+
+// CompileForwardCaptures replays captures with CompileForward's repeat policy.
+func CompileForwardCaptures(ast *AST, groups []int) ([]byte, error) {
+	return compileCaptures(ast, groups, true)
+}
+
+func compileCaptures(ast *AST, groups []int, repeatEntries bool) ([]byte, error) {
 	c := NewCompiler()
+	c.repeatEntries = repeatEntries
 	if ast == nil || ast.Root == nil {
 		return nil, errors.New("regex: empty AST")
 	}
@@ -238,6 +261,13 @@ func (c *Compiler) emitPlusNode(n *Node) error {
 	start := c.cur()
 	if err := c.emitNode(n.Children[0]); err != nil {
 		return err
+	}
+	if c.repeatEntries {
+		var saves []byte
+		start, saves = c.plusEntry(n.Children[0], start)
+		if len(saves) > 0 {
+			return c.emitCaptureRepeat(start, saves, n.Greedy)
+		}
 	}
 	rel, err := toInt16Checked(start - c.cur())
 	if err != nil {

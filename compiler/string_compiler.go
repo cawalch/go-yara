@@ -434,7 +434,11 @@ func (sc *stringCompiler) compileRegexWithAST(pattern string, _ []ast.StringModi
 	if err != nil {
 		return nil, nil, fmt.Errorf("parsing regex pattern: %w", err)
 	}
-	code, err := regex.Compile(astRe)
+	compile := regex.Compile
+	if !regexHasLiteralAtom(astRe.Root) {
+		compile = regex.CompileForward
+	}
+	code, err := compile(astRe)
 	if err != nil {
 		return nil, nil, fmt.Errorf("compiling regex: %w", err)
 	}

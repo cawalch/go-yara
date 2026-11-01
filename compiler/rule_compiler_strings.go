@@ -341,7 +341,11 @@ func (rc *ruleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers
 	groups := positiveCaptureGroups(modifiers)
 	var captureCode []byte
 	if len(groups) > 0 {
-		captureCode, err = regex.CompileCaptures(parsed, groups)
+		compileCaptures := regex.CompileCaptures
+		if flags&regexForwardPriority != 0 {
+			compileCaptures = regex.CompileForwardCaptures
+		}
+		captureCode, err = compileCaptures(parsed, groups)
 		if err != nil {
 			return nil, fmt.Errorf("compile regex captures: %w", err)
 		}
