@@ -447,7 +447,7 @@ for ruleName, decls := range result.Evidence {
 
 A ready finding has complete, unambiguous capture data; it does not prove that a credential is active. The [credential evidence guide](https://cawalch.github.io/go-yara/scanning/#credential-evidence-and-validation) includes executable validator-handoff and offline private-key parsing examples, plus handling for partial and ambiguous findings. Avoid logging captured secret values.
 
-Capture bytes and returned containers remain valid after input mutation, scanner reuse, or `Close`. The [evidence ownership design](docs/design/evidence_ownership.md) describes result storage, bounded scratch reuse, and measured allocation costs.
+Capture bytes and returned containers remain valid after input mutation, scanner reuse, or `Close`.
 
 When evidence extraction is disabled (the default), capture parsing and correlation are bypassed with zero runtime overhead.
 
