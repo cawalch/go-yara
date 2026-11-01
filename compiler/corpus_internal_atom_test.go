@@ -141,6 +141,16 @@ func TestCorpusInternalPreservesSparseRoots(t *testing.T) {
 			t.Fatal("unchanged roots ignored")
 		}
 	}
+	// Four folded lanes are still sparse even though they cover eight bytes.
+	var folded strings.Builder
+	for i := range 40 {
+		fmt.Fprintf(&folded, "rule folded%d {strings:$a=/key=[0-9]{2}%cabcdefg[0-9]{%d}/ nocase condition:$a}\n", i, 'v'+i%5, i+1)
+	}
+	folded.WriteString(`rule roots {strings:$A="A_" $a="a_" $B="B_" $b="b_" $C="C_" $c="c_" condition:any of them}`)
+	foldedProgram := mustCompileStreamingProgram(t, folded.String())
+	if len(corpusSharedAtoms(foldedProgram.Rules)) != 0 || len(foldedProgram.sharedAutomaton.rootLanes) != 4 {
+		t.Fatal("case pairs were counted as separate root lanes")
+	}
 	// If root scanning is already dense, no sparse path is being lost.
 	source := corpusInternalSource(40) + `
 rule dense {strings:$a="A_" $b="B_" $c="C_" $d="D_" $e="E_" condition:any of them}`

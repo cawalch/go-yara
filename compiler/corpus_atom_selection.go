@@ -1,7 +1,5 @@
 package compiler
 
-import "github.com/cawalch/go-yara/regex"
-
 // corpusSharedAtoms also considers the verifier's proven mandatory literal
 // after a prefix. Keep fixed offsets and at least the existing atom quality;
 // only trade the prefix when the internal candidate's frequency across eligible
@@ -77,24 +75,21 @@ func corpusSharedAtoms(rules []*CompiledRule) map[string]regexPrefilterAtom {
 }
 
 // More selective atoms must not turn a sparse-root byte search into a full
-// DFA walk. Count the actual first bytes, including unchanged text/hex entries
-// and ASCII case variants. The eligible corpus already guarantees shared scans.
+// DFA walk. Include unchanged text/hex entries and count ASCII case pairs as
+// one lane, just as collectRootBytes does. Eligible corpora guarantee shared scans.
 func corpusAtomsLoseSparseRoots(rules []*CompiledRule, selected, updates map[string]regexPrefilterAtom) bool {
 	var before, after [256]bool
 	oldCount, newCount := 0, 0
-	add := func(roots *[256]bool, count *int, value byte, noCase bool) {
+	add := func(roots *[256]bool, count *int, value byte) {
+		value = toLowerTable[value]
 		if !roots[value] {
 			roots[value] = true
 			*count++
 		}
-		if other := flipASCIICase(value); noCase && !roots[other] {
-			roots[other] = true
-			*count++
-		}
 	}
-	addBoth := func(value byte, noCase bool) {
-		add(&before, &oldCount, value, noCase)
-		add(&after, &newCount, value, noCase)
+	addBoth := func(value byte) {
+		add(&before, &oldCount, value)
+		add(&after, &newCount, value)
 	}
 	for _, rule := range rules {
 		if rule.IsDead {
@@ -103,7 +98,7 @@ func corpusAtomsLoseSparseRoots(rules []*CompiledRule, selected, updates map[str
 		if rule.automaton != nil {
 			for _, info := range rule.automaton.strings {
 				if !rule.IsStringDead(info.Identifier) && rule.StringKinds[info.Identifier] == StringKindText && len(info.Data) > 0 {
-					addBoth(info.Data[0], info.Flags&regex.FlagsNoCase != 0)
+					addBoth(info.Data[0])
 				}
 			}
 		}
@@ -116,13 +111,13 @@ func corpusAtomsLoseSparseRoots(rules []*CompiledRule, selected, updates map[str
 				atoms = []regexPrefilterAtom{atom}
 			}
 			for _, atom := range atoms {
-				add(&before, &oldCount, atom.data[0], atom.asciiNoCase || pattern.Flags&regex.FlagsNoCase != 0)
+				add(&before, &oldCount, atom.data[0])
 			}
 			if atom, ok := updates[pattern.cacheKey]; ok {
 				atoms = []regexPrefilterAtom{atom}
 			}
 			for _, atom := range atoms {
-				add(&after, &newCount, atom.data[0], atom.asciiNoCase || pattern.Flags&regex.FlagsNoCase != 0)
+				add(&after, &newCount, atom.data[0])
 			}
 		}
 		for id, pattern := range rule.HexPatterns {
@@ -134,7 +129,7 @@ func corpusAtomsLoseSparseRoots(rules []*CompiledRule, selected, updates map[str
 				if len(pattern.XorKeys) == 1 {
 					root ^= pattern.XorKeys[0]
 				}
-				addBoth(root, false)
+				addBoth(root)
 			}
 		}
 		if oldCount > maxSparseRootTransitions {
