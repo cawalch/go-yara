@@ -46,12 +46,17 @@ func addBoundedRegexVerifications(ctx *MatchContext, id string, pattern RegexPat
 				size += step
 			}
 			searcher := newRegexLiteralSearcher(data, literal[:size], flags)
+			anchoredStart := pattern.Flags&regexStartAtomEntries != 0 && slices.Contains(atom.Backward, regex.OpMatchAtStart)
+			limit := len(data)
+			if anchoredStart {
+				limit = min(limit, 1)
+			}
 
-			for at := 0; at < len(data); at++ {
+			for at := 0; at < limit; at++ {
 				if scanCanceled(ctx.cancelDone) {
 					return
 				}
-				if width > 0 {
+				if width > 0 && !anchoredStart {
 					at = searcher.index(at)
 					if at < 0 {
 						break
@@ -63,6 +68,18 @@ func addBoundedRegexVerifications(ctx *MatchContext, id string, pattern RegexPat
 				order, ok := verificationAtomOrder(atom, data, at, index, step, flags)
 				if !ok {
 					continue
+				}
+				// New match-start plans have only assertions behind the atom.
+				// Check them before a potentially long forward attempt; a failed
+				// anchor must not rescan the suffix at every later atom hit.
+				if pattern.Flags&regexStartAtomEntries != 0 && len(atom.Backward) > 1 {
+					starts, err := regex.ExecVerifyBatchWithCancel(bs, atom.Backward, data, flags|regex.FlagsBackwards, at, 0, ctx.cancelDone)
+					if err != nil {
+						return
+					}
+					if len(starts) == 0 {
+						continue
+					}
 				}
 				ends, err := regex.ExecVerifyBatchWithCancel(bs, atom.Forward, data, flags, at, regexVerificationDistance, ctx.cancelDone)
 				if err != nil {
@@ -76,7 +93,7 @@ func addBoundedRegexVerifications(ctx *MatchContext, id string, pattern RegexPat
 					continue
 				}
 				starts := []int{at}
-				if len(atom.Backward) > 1 {
+				if len(atom.Backward) > 1 && pattern.Flags&regexStartAtomEntries == 0 {
 					starts, err = regex.ExecVerifyBatchWithCancel(bs, atom.Backward, data, flags|regex.FlagsBackwards, at, regexVerificationDistance, ctx.cancelDone)
 					if err != nil {
 						return
@@ -158,6 +175,9 @@ func verificationAtomOrder(atom regexVerificationAtom, data []byte, at, index, s
 
 func needsBoundedRegexVerification(pattern RegexPattern, data []byte, maxSpan int) bool {
 	plan := pattern.verification
+	if plan != nil && pattern.Flags&regexStartAtomEntries != 0 {
+		return true
+	}
 	if plan == nil || plan.ForwardOnly || len(data) <= regexVerificationDistance || maxSpan > 0 && maxSpan <= regexVerificationDistance {
 		return false
 	}

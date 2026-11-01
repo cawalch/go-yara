@@ -56,21 +56,15 @@ func compileVerificationPlan(parsed *regex.AST, flags regex.Flags, wide bool) (*
 		plan.ForwardOnly = true
 		return plan, nil
 	}
+	var forwardRoots []*regex.Node
 	for _, selected := range choices.atoms {
 		before, after, _ := splitVerificationNode(parsed.Root, selected[0])
 		backward, err := compileVerificationPrefix(before)
 		if err != nil {
 			return nil, err
 		}
-		compileForward := regex.Compile
-		if len(choices.atoms) == 1 && len(backward) == 1 {
-			compileForward = regex.CompileForward
-		}
-		forward, err := compileForward(&regex.AST{Root: after})
-		if err != nil {
-			return nil, err
-		}
-		atom := regexVerificationAtom{Forward: forward, Backward: backward}
+		atom := regexVerificationAtom{Backward: backward}
+		forwardRoots = append(forwardRoots, after)
 		for _, node := range selected {
 			atom.Bytes = append(atom.Bytes, node.Value)
 			mask := byte(255)
@@ -84,6 +78,17 @@ func compileVerificationPlan(parsed *regex.AST, flags regex.Flags, wide bool) (*
 		}
 		plan.Atoms = append(plan.Atoms, atom)
 	}
+	compileForward := regex.Compile
+	if verificationStartsAtMatch(plan) {
+		compileForward = regex.CompileForward
+	}
+	for i, root := range forwardRoots {
+		code, err := compileForward(&regex.AST{Root: root})
+		if err != nil {
+			return nil, err
+		}
+		plan.Atoms[i].Forward = code
+	}
 	plan.ForwardOnly = len(plan.Atoms) == 1 && len(plan.Atoms[0].Backward) == 1
 	if plan.ForwardOnly {
 		if length := verificationTerminalMax(parsed.Root); length >= 0 && length <= regexVerificationDistance/step {
@@ -91,6 +96,24 @@ func compileVerificationPlan(parsed *regex.AST, flags regex.Flags, wide bool) (*
 		}
 	}
 	return plan, nil
+}
+
+// Match-start atoms may have backward assertions, but cannot consume a prefix.
+// This compilation proof does not change ForwardOnly's runtime dispatch contract.
+func verificationStartsAtMatch(plan *regexVerificationPlan) bool {
+	if plan == nil || len(plan.Atoms) == 0 {
+		return false
+	}
+	for _, atom := range plan.Atoms {
+		for _, op := range atom.Backward {
+			switch op {
+			case regex.OpMatch, regex.OpMatchAtStart, regex.OpMatchAtEnd, regex.OpWordBoundary, regex.OpNonWordBoundary:
+			default:
+				return false
+			}
+		}
+	}
+	return true
 }
 
 type verificationAtomChoice struct {
