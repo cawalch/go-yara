@@ -10,6 +10,10 @@ import (
 
 //nolint:revive // argument-limit: API surface function; reducing params would require struct indirection
 func addRegexMatches(ctx *MatchContext, id string, regexInfo RegexPattern, data []byte, modifiers []ast.StringModifier, flags regex.Flags, isWide bool) {
+	if needsBoundedRegexVerification(regexInfo, data, ctx.maxMatchSpan) {
+		addBoundedRegexVerifications(ctx, id, regexInfo, data, modifiers)
+		return
+	}
 	addRegexMatchesCached(ctx, id, regexInfo, data, modifiers, flags, isWide, nil)
 }
 
@@ -656,6 +660,13 @@ func execRegexMatchAt(bs *regex.VMBatch, pattern RegexPattern, data []byte, flag
 		return false, -1, -1
 	}
 
+	if pattern.verification != nil && pattern.verification.ForwardOnly && len(data)-start > regexVerificationDistance {
+		ends, err := regex.ExecVerifyBatchWithCancel(bs, pattern.verification.Atoms[0].Forward, data, flags, start, regexVerificationDistance, done)
+		if err != nil || len(ends) == 0 {
+			return false, -1, -1
+		}
+		return true, 0, ends[0] - start
+	}
 	if pattern.boundedAlternation != nil {
 		return execBoundedAlternation(bs, pattern.boundedAlternation, data, flags, start, done)
 	}

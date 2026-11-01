@@ -57,7 +57,7 @@ func TestSymbolicPrefixCapturesAndReuse(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if version := binary.BigEndian.Uint16(encoded[len(compiledProgramMagic):]); version != 14 {
+		if version := binary.BigEndian.Uint16(encoded[len(compiledProgramMagic):]); version != compiledProgramVersion {
 			t.Fatalf("version=%d", version)
 		}
 		restored, err := UnmarshalCompiledProgram(encoded)

@@ -250,7 +250,7 @@ func buildFixedRegexDispatch(rules []*CompiledRule) *fixedRegexDispatch {
 				continue
 			}
 			pattern := rule.RegexPatterns[strID]
-			if len(pattern.fixedByteSets) == 0 ||
+			if pattern.verification != nil || len(pattern.fixedByteSets) == 0 ||
 				len(pattern.prefix) >= minPrefilterAtomLength ||
 				len(pattern.atom) >= minPrefilterAtomLength ||
 				pattern.byteSetCount == 0 ||
@@ -525,17 +525,17 @@ func appendRegexPrefilterMatches(
 	// An atom after an unbounded prefix cannot identify candidate starts, but
 	// its absence still proves the regex cannot match. If it is present, keep
 	// correctness by delegating to the existing exact matcher.
-	if entry.AtomMaxOffset < 0 {
+	maxMatchSpan := 0
+	if matchCtx != nil {
+		maxMatchSpan = matchCtx.maxMatchSpan
+	}
+	if entry.AtomMaxOffset < 0 || needsBoundedRegexVerification(pattern, data, maxMatchSpan) {
 		return appendRegexFallbackMatches(dst, rule, strID, pattern, data, flags, entry.IsWide, done, matchCtx)
 	}
 	limit := max(1024, len(data)/4)
 	modifiers := rule.StringModifiers[strID]
 	hasFixedByteSet := !entry.IsWide && pattern.byteSetCount > 0 &&
 		pattern.byteSetMinOffset >= 0 && pattern.byteSetMinOffset == pattern.byteSetMaxOffset
-	maxMatchSpan := 0
-	if matchCtx != nil {
-		maxMatchSpan = matchCtx.maxMatchSpan
-	}
 	var bs *regex.VMBatch
 
 	verifyCandidateStart := func(start int) {

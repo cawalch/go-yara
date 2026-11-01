@@ -19,6 +19,10 @@ func addRegexMatchesWithModifiersCached(
 	modifiers []ast.StringModifier,
 	byteSetCache *regexByteSetCandidateCache,
 ) {
+	if needsBoundedRegexVerification(regexInfo, data, ctx.maxMatchSpan) {
+		addBoundedRegexVerifications(ctx, id, regexInfo, data, modifiers)
+		return
+	}
 	hasWide := hasModifier(modifiers, ast.StringModifierWide)
 	hasASCII := hasModifier(modifiers, ast.StringModifierASCII)
 	baseFlags := regexInfo.Flags
