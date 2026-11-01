@@ -29,7 +29,7 @@ func TestRegexVerificationDistance(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if binary.BigEndian.Uint16(encoded[len(compiledProgramMagic):]) != 15 {
+			if binary.BigEndian.Uint16(encoded[len(compiledProgramMagic):]) != compiledProgramVersion {
 				t.Fatal("missing verification policy format version")
 			}
 			restored, err := UnmarshalCompiledProgram(encoded)

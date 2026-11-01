@@ -63,14 +63,15 @@ func requiredLiteralAlternationCover(node *Node, minimumLength int) (literalAtom
 		}
 		return newLiteralAtomCoverPlan(groups)
 	case NodeConcat:
+		suffixMax := literalSuffixLengths(node.Children)
 		prefixMin := 0
 		prefixMax := 0
 		var best literalAtomCoverPlan
 		found := false
-		for _, child := range node.Children {
+		for i, child := range node.Children {
 			cover, ok := requiredLiteralAlternationCover(child, minimumLength)
 			if ok {
-				cover = shiftLiteralAtomCover(cover, prefixMin, prefixMax)
+				cover = shiftLiteralAtomCover(cover, prefixMin, prefixMax, suffixMax[i+1])
 				if !found || betterLiteralAtomCover(cover, best) {
 					best = cover
 					found = true
@@ -88,10 +89,12 @@ func requiredLiteralAlternationCover(node *Node, minimumLength int) (literalAtom
 		}
 		return best, found
 	case NodePlus:
-		return requiredLiteralAlternationCover(firstChild(node), minimumLength)
+		cover, ok := requiredLiteralAlternationCover(firstChild(node), minimumLength)
+		return shiftLiteralAtomCover(cover, 0, 0, repeatTailLength(node, 1)), ok
 	case NodeRange:
 		if node.Start > 0 {
-			return requiredLiteralAlternationCover(firstChild(node), minimumLength)
+			cover, ok := requiredLiteralAlternationCover(firstChild(node), minimumLength)
+			return shiftLiteralAtomCover(cover, 0, 0, repeatTailLength(node, 1)), ok
 		}
 	}
 	return literalAtomCoverPlan{}, false
@@ -103,6 +106,7 @@ const (
 )
 
 func expandBoundedConcatAlternationCover(children []*Node, minimumLength int) (literalAtomCoverPlan, bool) {
+	suffixMax := literalSuffixLengths(children)
 	prefixMin := 0
 	prefixMax := 0
 	var best literalAtomCoverPlan
@@ -173,6 +177,7 @@ func expandBoundedConcatAlternationCover(children []*Node, minimumLength int) (l
 				Data:      branch,
 				MinOffset: runMinOffset,
 				MaxOffset: runMaxOffset,
+				MaxSuffix: suffixMax[index],
 			}})
 		}
 		if !allLongEnough {
@@ -372,10 +377,12 @@ func literalAtomCover(node *Node, minimumLength int) (literalAtomCoverPlan, bool
 	case NodeAlt:
 		return literalAlternativeAtomCover(node.Children, minimumLength)
 	case NodePlus:
-		return literalAtomCover(firstChild(node), minimumLength)
+		cover, ok := literalAtomCover(firstChild(node), minimumLength)
+		return shiftLiteralAtomCover(cover, 0, 0, repeatTailLength(node, 1)), ok
 	case NodeRange:
 		if node.Start > 0 {
-			return literalAtomCover(firstChild(node), minimumLength)
+			cover, ok := literalAtomCover(firstChild(node), minimumLength)
+			return shiftLiteralAtomCover(cover, 0, 0, repeatTailLength(node, 1)), ok
 		}
 	}
 	return literalAtomCoverPlan{}, false
@@ -401,14 +408,15 @@ func literalAtomCoverFromMandatory(atoms []LiteralAtom, minimumLength int) (lite
 }
 
 func literalConcatAtomCover(children []*Node, minimumLength int) (literalAtomCoverPlan, bool) {
+	suffixMax := literalSuffixLengths(children)
 	prefixMin := 0
 	prefixMax := 0
 	var best literalAtomCoverPlan
 	found := false
-	for _, child := range children {
+	for i, child := range children {
 		cover, ok := literalAtomCover(child, minimumLength)
 		if ok {
-			cover = shiftLiteralAtomCover(cover, prefixMin, prefixMax)
+			cover = shiftLiteralAtomCover(cover, prefixMin, prefixMax, suffixMax[i+1])
 			if !found || betterLiteralAtomCover(cover, best) {
 				best = cover
 				found = true
@@ -457,9 +465,12 @@ func newLiteralAtomCoverPlan(groups [][]LiteralAtom) (literalAtomCoverPlan, bool
 	return cover, len(groups) > 0
 }
 
-func shiftLiteralAtomCover(cover literalAtomCoverPlan, minOffset, maxOffset int) literalAtomCoverPlan {
+//nolint:revive // Offsets and suffix describe the surrounding expression.
+func shiftLiteralAtomCover(cover literalAtomCoverPlan, minOffset, maxOffset, maxSuffix int) literalAtomCoverPlan {
 	for groupIndex := range cover.groups {
 		for atomIndex := range cover.groups[groupIndex] {
+			atom := &cover.groups[groupIndex][atomIndex]
+			atom.MaxSuffix = addLength(atom.MaxSuffix, maxSuffix)
 			cover.groups[groupIndex][atomIndex] = shiftLiteralAtom(
 				cover.groups[groupIndex][atomIndex], minOffset, maxOffset,
 			)

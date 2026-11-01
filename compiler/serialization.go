@@ -17,8 +17,8 @@ import (
 
 const (
 	compiledProgramMagic = "GOYARA\x00"
-	// Version 15 records atom-relative verification distance programs.
-	compiledProgramVersion = uint16(15)
+	// Version 16 preserves suffix bounds for alternative prefilter atoms.
+	compiledProgramVersion = uint16(16)
 )
 
 // MarshalBinary serializes a compiled program using the current versioned
@@ -81,7 +81,7 @@ func ReadCompiledProgram(reader io.Reader, modules ...Module) (*CompiledProgram,
 	if err := binary.Read(reader, binary.BigEndian, &version); err != nil {
 		return nil, fmt.Errorf("reading compiled program version: %w", err)
 	}
-	if version != 4 && version != 5 && version != 6 && version != 7 && version != 8 && version != 9 && version != 10 && version != 11 && version != 12 && version != 13 && version != 14 && version != compiledProgramVersion {
+	if version != 4 && version != 5 && version != 6 && version != 7 && version != 8 && version != 9 && version != 10 && version != 11 && version != 12 && version != 13 && version != 14 && version != 15 && version != compiledProgramVersion {
 		return nil, fmt.Errorf("unsupported compiled program version %d; rebuild with format version %d", version, compiledProgramVersion)
 	}
 
@@ -528,7 +528,7 @@ func serializeRegexAtoms(atoms []regexPrefilterAtom) []serializedRegexAtom {
 	for index, atom := range atoms {
 		serialized[index] = serializedRegexAtom{
 			Data: slices.Clone(atom.data), MinOffset: atom.minOffset, MaxOffset: atom.maxOffset,
-			Score: atom.score, ASCIINoCase: atom.asciiNoCase,
+			MaxSuffix: atom.maxSuffix, Score: atom.score, ASCIINoCase: atom.asciiNoCase,
 		}
 	}
 	return serialized
@@ -539,7 +539,7 @@ func deserializeRegexAtoms(atoms []serializedRegexAtom) []regexPrefilterAtom {
 	for index, atom := range atoms {
 		result[index] = regexPrefilterAtom{
 			data: slices.Clone(atom.Data), minOffset: atom.MinOffset, maxOffset: atom.MaxOffset,
-			score: atom.Score, asciiNoCase: atom.ASCIINoCase,
+			maxSuffix: atom.MaxSuffix, score: atom.Score, asciiNoCase: atom.ASCIINoCase,
 		}
 	}
 	return result
