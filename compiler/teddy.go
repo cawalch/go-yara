@@ -38,13 +38,13 @@ func (t *corpusTeddyPrefilter) windowMayMatch(data []byte) bool {
 	// Concrete kernels keep their padded tail on the stack. Passing that
 	// temporary through findCandidate's interface would allocate per scan.
 	if tail, ok := t.teddyPrefilter.(interface{ tailMayMatch([]byte) bool }); ok {
-		return tail.tailMayMatch(data[max(0, len(data)-31):])
+		return tail.tailMayMatch(data)
 	}
 	return true
 }
 
 const (
-	// Bound the legacy pattern count and the ARM64 large-corpus prefix cover.
+	// Bound the legacy pattern count and the large-corpus prefix cover.
 	maxTeddyPatterns = 64
 	minTeddyPatterns = 2
 )

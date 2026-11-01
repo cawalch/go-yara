@@ -22,6 +22,7 @@ func BenchmarkTeddyCorpus(b *testing.B) {
 		for _, size := range []int{64, 1024, 65536} {
 			clean := bytes.Repeat([]byte("request completed status=200 normal activity "), size/40+2)[:size]
 			near := bytes.Repeat([]byte("request completed status=200 key=value normal activity "), size/50+2)[:size]
+			nearGram := bytes.Repeat([]byte("apX keX seX toX "), size/16+2)[:size]
 			dense := bytes.Repeat([]byte("api api api key key key sec sec sec tok tok tok "), size/40+2)[:size]
 			lateDense := bytes.Clone(dense)
 			copy(lateDense[:min(128, size)], clean)
@@ -30,7 +31,7 @@ func BenchmarkTeddyCorpus(b *testing.B) {
 			for _, input := range []struct {
 				name string
 				data []byte
-			}{{"clean", clean}, {"near_prefix", near}, {"dense", dense}, {"late_dense", lateDense}, {"tail_hit", hit}} {
+			}{{"clean", clean}, {"near_gram", nearGram}, {"near_prefix", near}, {"dense", dense}, {"late_dense", lateDense}, {"tail_hit", hit}} {
 				b.Run(fmt.Sprintf("rules=%d/bytes=%d/%s", count, size, input.name), func(b *testing.B) { benchmarkScannerMatches(b, p, input.data) })
 			}
 		}

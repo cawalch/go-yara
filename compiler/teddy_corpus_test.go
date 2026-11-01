@@ -179,7 +179,7 @@ func FuzzTeddyCorpus(f *testing.F) {
 	f.Add(bytes.Repeat([]byte("SeC_token_79 "), 40), uint16(255))
 	ac := corpusTeddyAutomaton(f, 0)
 	if ac.teddyGate == nil {
-		f.Skip("requires the ARM64 SIMD corpus gate")
+		f.Skip("requires a hardware SIMD corpus gate")
 	}
 	scalar := ac.Clone()
 	scalar.teddy = nil
