@@ -17,8 +17,8 @@ import (
 
 const (
 	compiledProgramMagic = "GOYARA\x00"
-	// Version 17 preserves finite priority horizons for streaming lazy regexes.
-	compiledProgramVersion = uint16(17)
+	// Version 18 preserves match-start atom dispatch for forward repeat entries.
+	compiledProgramVersion = uint16(18)
 )
 
 // MarshalBinary serializes a compiled program using the current versioned
@@ -81,7 +81,7 @@ func ReadCompiledProgram(reader io.Reader, modules ...Module) (*CompiledProgram,
 	if err := binary.Read(reader, binary.BigEndian, &version); err != nil {
 		return nil, fmt.Errorf("reading compiled program version: %w", err)
 	}
-	if version != 4 && version != 5 && version != 6 && version != 7 && version != 8 && version != 9 && version != 10 && version != 11 && version != 12 && version != 13 && version != 14 && version != 15 && version != 16 && version != compiledProgramVersion {
+	if version != 4 && version != 5 && version != 6 && version != 7 && version != 8 && version != 9 && version != 10 && version != 11 && version != 12 && version != 13 && version != 14 && version != 15 && version != 16 && version != 17 && version != compiledProgramVersion {
 		return nil, fmt.Errorf("unsupported compiled program version %d; rebuild with format version %d", version, compiledProgramVersion)
 	}
 

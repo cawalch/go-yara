@@ -338,17 +338,27 @@ func (rc *ruleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers
 	if err != nil {
 		return nil, err
 	}
+	forwardEntries := verificationStartsAtMatch(verification)
 	forwardOnly := verification != nil && verification.ForwardOnly
 	if forwardOnly {
 		// With no backward program, the single canonical atom starts at the
 		// whole match. Keep short-input and distance-limited loop entries equal.
 		code = verification.Atoms[0].Forward
+	} else if forwardEntries {
+		forwardCode, err := regex.CompileForward(parsed)
+		if err != nil {
+			return nil, err
+		}
+		if len(verification.Atoms) > 1 && !slices.Equal(code, forwardCode) {
+			flags |= regexStartAtomEntries
+		}
+		code = forwardCode
 	}
 	groups := positiveCaptureGroups(modifiers)
 	var captureCode []byte
 	if len(groups) > 0 {
 		compileCaptures := regex.CompileCaptures
-		if flags&regexForwardPriority != 0 || forwardOnly {
+		if flags&regexForwardPriority != 0 || forwardEntries {
 			compileCaptures = regex.CompileForwardCaptures
 		}
 		captureCode, err = compileCaptures(parsed, groups)

@@ -23,3 +23,17 @@ On `!b!b`, its historical occurrences are `(0,4), (2,2)` and the first
 occurrence's capture starts at offset 3. The prefix-atom correction produces
 `(0,2), (2,2)`, with the first capture at offset 1. The fixture preserves both
 ordinary and distance-limited bytecode, plus capture replay, before that fix.
+
+`format17-start-atoms.goyara` was emitted from the source tree merged as
+`61f1818` (PR #431), using Go 1.27.3:
+
+```yara
+rule anchored {strings:$a=/^!(a?.)+/ condition:#a>0}
+rule alternatives {strings:$a=/(x|xy)(a?.)+/ condition:#a>0}
+```
+
+The historical first occurrence has length 4 for `anchored` on `!b!b` and
+`alternatives` on `xy!!`. Newly compiled format-18 programs report lengths 2
+and 3 respectively. Reading and reserializing this fixture must preserve both
+historical behaviors. Format 18 adds an atom-dispatch policy bit; format-17
+readers must reject new artifacts rather than silently ignore that policy.
