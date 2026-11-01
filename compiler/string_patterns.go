@@ -31,6 +31,7 @@ type RegexPattern struct {
 	atomMaxSuffix        int
 	maxLength            int
 	atomASCIINoCase      bool
+	streamPriorityBound  bool
 	alternativeAtoms     []regexPrefilterAtom
 	wideAlternativeAtoms []regexPrefilterAtom
 	leadingGap           *regexLeadingGapPlan

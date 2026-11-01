@@ -302,8 +302,9 @@ func WithStreamChunkSize(size int) ScannerOption {
 }
 
 // WithStreamOverlapSize configures the overlap buffer size for streaming reader scans (default: auto).
-// Bounded regex finalization requires the maximum encoded match length plus two
-// boundary bytes. Smaller explicit windows retain window-local matching behavior.
+// Unbounded regexes raise this size to their finite verification horizon plus
+// two boundary bytes. Bounded regex finalization requires the maximum encoded
+// match length plus two bytes; smaller explicit windows remain window-local.
 func WithStreamOverlapSize(size int) ScannerOption {
 	return func(scanner *Scanner) {
 		if size > 0 {

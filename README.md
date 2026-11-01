@@ -134,7 +134,9 @@ matched, err := program.MatchesReader(reader)
 result, err = program.ScanFile("sample.bin")
 ```
 
-`ScanReader` scans sequentially using a constant-memory sliding-window buffer ($C + W$, default 1 MB + automatic rule overlap), evaluating text, regex, and hex patterns without buffering the full stream. `MatchesReader` performs early-exit boolean match checks as soon as a monotonic rule condition is satisfied.
+`ScanReader` scans sequentially with a bounded sliding input buffer ($C + W$, default 1 MB + automatic rule overlap). Regex occurrences are finalized only after their decision horizon and boundary context are available, or at EOF. For unbounded expressions, libyara's verification limits give a horizon of 4,096 bytes for forward-only verification or 8,192 bytes for verification in both directions. This preserves greedy/lazy selection without retaining provisional occurrences. An explicitly smaller overlap is raised to this horizon plus two boundary bytes. `WithMaxMatchSpan` remains an additional, caller-selected cap; larger caps do not remove the verification limits.
+
+`MatchesReader` can exit once a monotonic condition is satisfied by finalized occurrences. Input buffering is bounded independently of stream length; accumulated occurrence spans, returned match data, and evidence grow with the number and size of matches. Legacy compiled unbounded expressions without a finite verification horizon require recompilation or an explicit `WithMaxMatchSpan` before reader scanning; otherwise the scan returns an error before reading input.
 
 The returned `ScanResult` contains:
 - `MatchedRules`: Slice of `RuleMatch` structs for rules evaluating to `true`.
@@ -367,7 +369,7 @@ if err != nil {
 }
 ```
 
-Stream-based serialization is also supported via `program.WriteTo(w)` and `compiler.ReadCompiledProgram(r)`. Serialized programs preserve compiled automatons, hex tables, and prefilter structures. External variables and custom module handlers must be rebound after deserialization. New artifacts use format version 16, including repeated-atom suffix bounds, atom-relative verification distance limits, symbolic finite-prefix verification, unbounded atom-verification plans, bounded-alternation verification plans, atomless-regex forward branch priority, the fullword boundary policy, and fixed-offset literal restrictions for text, regex, and hex declarations; versions 4–15 remain readable. Format 8 preserves text-only fixed-offset restrictions. Older artifacts retain their compiled match policies; recompile them to apply these corrections. Older binaries cannot load version 16 artifacts. Structured module schemas are preserved; host data must be rebound on each scanner.
+Stream-based serialization is also supported via `program.WriteTo(w)` and `compiler.ReadCompiledProgram(r)`. Serialized programs preserve compiled automatons, hex tables, and prefilter structures. External variables and custom module handlers must be rebound after deserialization. New artifacts use format version 17, including streaming priority horizons, repeated-atom suffix bounds, atom-relative verification distance limits, symbolic finite-prefix verification, unbounded atom-verification plans, bounded-alternation verification plans, atomless-regex forward branch priority, the fullword boundary policy, and fixed-offset literal restrictions for text, regex, and hex declarations; versions 4–16 remain readable. Format 8 preserves text-only fixed-offset restrictions. Older artifacts retain their compiled match policies; recompile them to apply these corrections. Older binaries cannot load version 17 artifacts. Structured module schemas are preserved; host data must be rebound on each scanner.
 
 The compiler fuses fixed-offset `uint16`/`uint32` equality, integer filesize bounds,
 string-at checks, string-count comparisons, and external comparisons with integer,
