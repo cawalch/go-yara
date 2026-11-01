@@ -371,6 +371,8 @@ if err != nil {
 
 Stream-based serialization is also supported via `program.WriteTo(w)` and `compiler.ReadCompiledProgram(r)`. Serialized programs preserve compiled automatons, hex tables, and prefilter structures. External variables and custom module handlers must be rebound after deserialization. New artifacts use format version 17, including streaming priority horizons, repeated-atom suffix bounds, atom-relative verification distance limits, symbolic finite-prefix verification, unbounded atom-verification plans, bounded-alternation verification plans, atomless-regex forward branch priority, the fullword boundary policy, and fixed-offset literal restrictions for text, regex, and hex declarations; versions 4–16 remain readable. Format 8 preserves text-only fixed-offset restrictions. Older artifacts retain their compiled match policies; recompile them to apply these corrections. Older binaries cannot load version 17 artifacts. Structured module schemas are preserved; host data must be rebound on each scanner.
 
+Atomless optional-repeat corrections are encoded in regex jump targets without changing format 17. Recompile existing programs to apply them; loading or reserializing an older artifact preserves its original occurrence behavior.
+
 The compiler fuses fixed-offset `uint16`/`uint32` equality, integer filesize bounds,
 string-at checks, string-count comparisons, and external comparisons with integer,
 boolean, or string constants. A complete condition composed of these predicates

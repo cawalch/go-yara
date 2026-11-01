@@ -48,7 +48,7 @@ func compileVerificationPlan(parsed *regex.AST, flags regex.Flags, wide bool) (*
 		plan.Allowed[0] = true
 	}
 	if len(choices.atoms) == 0 {
-		code, err := regex.Compile(parsed)
+		code, err := regex.CompileForward(parsed)
 		if err != nil {
 			return nil, err
 		}
