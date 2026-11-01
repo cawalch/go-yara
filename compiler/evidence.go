@@ -24,6 +24,8 @@ type Capture struct {
 	// Length is the total byte length of the captured span in the scanned input.
 	Length int
 	// Data contains the copied bytes of the capture span, bounded by WithEvidence(maxCaptureBytes).
+	// The result owns these bytes independently of the input and scanner lifetime.
+	// Captures and findings in the same result can reference the same bytes.
 	Data []byte
 	// DataTruncated indicates whether Length exceeded the scanner's configured byte limit,
 	// causing Data to contain only the initial prefix of the match.
@@ -95,7 +97,18 @@ func (s *Scanner) populateRuleEvidence(
 	}
 
 	var occurrencesBuf [16]captureOccurrence
-	occurrences := occurrencesBuf[:0]
+	occurrences := s.evidenceOccurrences
+	if occurrences == nil {
+		occurrences = occurrencesBuf[:0]
+	}
+	overflowed := false
+	defer func() {
+		clear(occurrences)
+		if overflowed {
+			clear(s.evidenceOccurrences[:cap(s.evidenceOccurrences)])
+		}
+	}()
+	var storage captureStorage
 	var patternsBuf [8]string
 	patterns := patternsBuf[:0]
 	for pattern := range rule.CaptureBindings {
@@ -133,12 +146,9 @@ func (s *Scanner) populateRuleEvidence(
 			if matchedCount == 0 {
 				continue
 			}
-			var dataSlab []byte
-			if totalCopyBytes > 0 {
-				dataSlab = make([]byte, totalCopyBytes)
-			}
+			dataSlab := storage.bytes(totalCopyBytes, len(perPattern)-index)
 			if cap(match.Captures) < len(match.Captures)+matchedCount {
-				grown := make([]Capture, len(match.Captures), len(match.Captures)+matchedCount)
+				grown := storage.capturesFor(len(match.Captures)+matchedCount, len(perPattern)-index)[:len(match.Captures)]
 				copy(grown, match.Captures)
 				match.Captures = grown
 			}
@@ -166,6 +176,21 @@ func (s *Scanner) populateRuleEvidence(
 				}
 				capture.DataTruncated = copyLength < capture.Length
 				match.Captures = append(match.Captures, capture)
+				if len(rule.EvidencePlans) == 0 {
+					continue
+				}
+				if len(occurrences) == cap(occurrences) {
+					if len(occurrences) >= 1024 {
+						// Keep the bounded prefix scratch, discard overflow on return.
+						occurrences = slices.Grow(occurrences, len(occurrences))
+						overflowed = true
+					} else {
+						// The small local buffer never escapes into the scanner.
+						s.evidenceOccurrences = make([]captureOccurrence, 0, 2*len(occurrences))
+						copy(s.evidenceOccurrences[:len(occurrences)], occurrences)
+						occurrences = s.evidenceOccurrences[:len(occurrences)]
+					}
+				}
 				occurrences = append(occurrences, captureOccurrence{capture: capture, parent: parent})
 			}
 		}
@@ -284,8 +309,8 @@ func correlateEvidence(plans []EvidencePlan, occurrences []captureOccurrence) ma
 	}
 	result := make(map[string][]EvidenceFinding, len(plans))
 	for _, plan := range plans {
-		var anchorsBuf [8]captureOccurrence
-		anchors := occurrencesNamedInto(anchorsBuf[:0], occurrences, plan.Anchor)
+		var anchorsBuf [8]int
+		anchors := occurrenceIndicesNamedInto(anchorsBuf[:0], occurrences, plan.Anchor)
 		if len(anchors) == 0 {
 			continue
 		}
@@ -298,7 +323,8 @@ func correlateEvidence(plans []EvidencePlan, occurrences []captureOccurrence) ma
 			ambiguous = make([]bool, len(anchors))
 		}
 		captureSlab := make([]Capture, 0, len(occurrences))
-		for index, anchor := range anchors {
+		for index, at := range anchors {
+			anchor := occurrences[at]
 			findings[index] = EvidenceFinding{
 				Anchor: anchor.capture,
 				Fields: make(map[string][]Capture, len(plan.Fields)),
@@ -315,7 +341,7 @@ func correlateEvidence(plans []EvidencePlan, occurrences []captureOccurrence) ma
 				if candidate.capture.Name != field {
 					continue
 				}
-				assignCaptureCandidate(findings, ambiguous, anchors, field, candidate, plan.Within, &captureSlab)
+				assignCaptureCandidate(findings, ambiguous, anchors, occurrences, field, candidate, plan.Within, &captureSlab)
 			}
 		}
 		for index := range findings {
@@ -330,13 +356,15 @@ func correlateEvidence(plans []EvidencePlan, occurrences []captureOccurrence) ma
 func assignCaptureCandidate(
 	findings []EvidenceFinding,
 	ambiguous []bool,
-	anchors []captureOccurrence,
+	anchors []int,
+	occurrences []captureOccurrence,
 	field string,
 	candidate captureOccurrence,
 	within int64,
 	captureSlab *[]Capture,
 ) {
-	for index, anchor := range anchors {
+	for index, at := range anchors {
+		anchor := occurrences[at]
 		if candidate.parent == anchor.parent {
 			existing := findings[index].Fields[field]
 			if len(existing) == 0 && len(*captureSlab) < cap(*captureSlab) {
@@ -353,7 +381,8 @@ func assignCaptureCandidate(
 	minimum := int64(-1)
 	var nearestBuf [4]int
 	nearest := nearestBuf[:0]
-	for index, anchor := range anchors {
+	for index, at := range anchors {
+		anchor := occurrences[at]
 		distance := captureSpanDistance(candidate.capture, anchor.capture)
 		if distance > within {
 			continue
@@ -414,11 +443,17 @@ func captureSpanDistance(left, right Capture) int64 {
 	}
 }
 
-func occurrencesNamedInto(dst, occurrences []captureOccurrence, name string) []captureOccurrence {
-	result := dst
+func occurrenceIndicesNamedInto(dst []int, occurrences []captureOccurrence, name string) []int {
+	count := 0
 	for _, occurrence := range occurrences {
 		if occurrence.capture.Name == name {
-			result = append(result, occurrence)
+			count++
+		}
+	}
+	result := slices.Grow(dst, count)
+	for index, occurrence := range occurrences {
+		if occurrence.capture.Name == name {
+			result = append(result, index)
 		}
 	}
 	return result

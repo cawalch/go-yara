@@ -76,7 +76,8 @@ type Scanner struct {
 	// Reusable scratch worklist for hex pattern backtracking.
 	hexScratch hexMatchScratch
 	// Reusable scratch buffers for regex capture replay.
-	captureScratch regex.CaptureScratch
+	captureScratch      regex.CaptureScratch
+	evidenceOccurrences []captureOccurrence
 	// Single-block scans reuse this slot to expose absolute addresses to the
 	// interpreter without allocating a []MemoryBlock per event.
 	blockContext  [1]MemoryBlock
