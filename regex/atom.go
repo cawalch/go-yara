@@ -81,10 +81,10 @@ func analyzeASCIIFoldedLiteralAtoms(node *Node) []LiteralAtom {
 		}
 		return intersectMandatoryAtoms(analyses)
 	case NodePlus:
-		return cloneLiteralAtoms(analyzeASCIIFoldedLiteralAtoms(firstChild(node)))
+		return literalAtomsWithSuffix(analyzeASCIIFoldedLiteralAtoms(firstChild(node)), repeatTailLength(node, 1))
 	case NodeRange:
 		if node.Start > 0 {
-			return cloneLiteralAtoms(analyzeASCIIFoldedLiteralAtoms(firstChild(node)))
+			return literalAtomsWithSuffix(analyzeASCIIFoldedLiteralAtoms(firstChild(node)), repeatTailLength(node, 1))
 		}
 	}
 	return nil
@@ -95,16 +95,7 @@ func analyzeConcatASCIIFoldedLiteralAtoms(children []*Node) []LiteralAtom {
 	prefixMin := 0
 	prefixMax := 0
 
-	suffixMax := make([]int, len(children)+1)
-	suffixMax[len(children)] = 0
-	for i := len(children) - 1; i >= 0; i-- {
-		analysis := analyzeAtoms(children[i])
-		if suffixMax[i+1] < 0 || analysis.maxLength < 0 {
-			suffixMax[i] = -1
-		} else {
-			suffixMax[i] = addLength(suffixMax[i+1], analysis.maxLength)
-		}
-	}
+	suffixMax := literalSuffixLengths(children)
 
 	for index := 0; index < len(children); {
 		if isClassNode(children[index]) {
@@ -340,15 +331,7 @@ func analyzeConcatAtoms(children []*Node) atomAnalysis {
 		analyses[i] = analyzeAtoms(child)
 	}
 
-	suffixMax := make([]int, len(children)+1)
-	suffixMax[len(children)] = 0
-	for i := len(children) - 1; i >= 0; i-- {
-		if suffixMax[i+1] < 0 || analyses[i].maxLength < 0 {
-			suffixMax[i] = -1
-		} else {
-			suffixMax[i] = addLength(suffixMax[i+1], analyses[i].maxLength)
-		}
-	}
+	suffixMax := literalSuffixLengths(children)
 
 	runMinOffset := 0
 	runMaxOffset := 0
@@ -457,7 +440,7 @@ func analyzePlusAtoms(node *Node) atomAnalysis {
 	result := atomAnalysis{
 		minLength: child.minLength,
 		maxLength: -1,
-		atoms:     cloneLiteralAtoms(child.atoms),
+		atoms:     literalAtomsWithSuffix(child.atoms, repeatTailLength(node, 1)),
 		byteAtoms: cloneByteSetAtoms(child.byteAtoms),
 	}
 	if child.maxLength == 0 {
@@ -466,7 +449,7 @@ func analyzePlusAtoms(node *Node) atomAnalysis {
 		result.isExact = child.isExact
 	}
 	if child.isExact && len(child.exact) > 0 {
-		result.atoms = append(result.atoms, LiteralAtom{Data: append([]byte(nil), child.exact...), MaxOffset: 0})
+		result.atoms = append(result.atoms, LiteralAtom{Data: append([]byte(nil), child.exact...), MaxSuffix: repeatTailLength(node, 1)})
 	}
 	return result
 }
@@ -483,12 +466,12 @@ func analyzeRangeAtoms(node *Node) atomAnalysis {
 		result.maxLength = -1
 	}
 	if minimum > 0 {
-		result.atoms = cloneLiteralAtoms(child.atoms)
+		result.atoms = literalAtomsWithSuffix(child.atoms, repeatTailLength(node, 1))
 		result.byteAtoms = cloneByteSetAtoms(child.byteAtoms)
 		if child.isExact && len(child.exact) > 0 {
 			result.atoms = append(result.atoms, LiteralAtom{
 				Data:      repeatLiteral(child.exact, minimum),
-				MaxOffset: 0,
+				MaxSuffix: repeatTailLength(node, minimum),
 			})
 		}
 	}
@@ -497,6 +480,37 @@ func analyzeRangeAtoms(node *Node) atomAnalysis {
 		result.isExact = true
 	}
 	return result
+}
+
+// repeatTailLength bounds the copies following an atom in the required prefix.
+func repeatTailLength(node *Node, copies int) int {
+	childMax := firstChildAnalysis(node).maxLength
+	if childMax == 0 {
+		return 0
+	}
+	if node.Kind == NodePlus || (node.End == math.MaxUint16 && node.Start != node.End) {
+		return -1
+	}
+	if int(node.End) <= copies {
+		return 0
+	}
+	return multiplyLength(childMax, int(node.End)-copies)
+}
+
+func literalAtomsWithSuffix(atoms []LiteralAtom, suffix int) []LiteralAtom {
+	result := cloneLiteralAtoms(atoms)
+	for i := range result {
+		result[i].MaxSuffix = addLength(result[i].MaxSuffix, suffix)
+	}
+	return result
+}
+
+func literalSuffixLengths(children []*Node) []int {
+	suffix := make([]int, len(children)+1)
+	for i := len(children) - 1; i >= 0; i-- {
+		suffix[i] = addLength(analyzeAtoms(children[i]).maxLength, suffix[i+1])
+	}
+	return suffix
 }
 
 func firstChildAnalysis(node *Node) atomAnalysis {

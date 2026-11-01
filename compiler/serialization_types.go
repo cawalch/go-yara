@@ -134,6 +134,7 @@ type serializedRegexAtom struct {
 	Data        []byte
 	MinOffset   int
 	MaxOffset   int
+	MaxSuffix   int
 	Score       int
 	ASCIINoCase bool
 }
