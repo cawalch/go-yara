@@ -102,7 +102,7 @@ type serializedRegexPattern struct {
 	AtomMinOffset        int
 	AtomMaxOffset        int
 	AtomMaxSuffix        int
-	StreamingHorizon     int
+	StreamPriorityBound  bool
 	MaxLength            int
 	AtomASCIINoCase      bool
 	AlternativeAtoms     []serializedRegexAtom

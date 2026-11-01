@@ -91,7 +91,7 @@ func (rc *ruleCompiler) compileSingleStringWithDead(str *ast.String, isDead bool
 		if pattern.maxLength < 0 && pattern.verification == nil {
 			// compileVerificationPlan only elides an unbounded expression when
 			// its terminal lazy repeat has a proven finite priority bound.
-			pattern.streamingHorizon = regexVerificationDistance
+			pattern.streamPriorityBound = true
 		}
 		if atom, ok := selectMandatoryRegexAtom(result.regexAtoms); ok {
 			pattern.atom = append([]byte(nil), atom.data...)

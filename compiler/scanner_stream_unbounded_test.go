@@ -106,10 +106,10 @@ func TestStreamUnboundedRegexLegacyHorizon(t *testing.T) {
 		t.Fatal(err)
 	}
 	pattern := payload.Rules[0].RegexPatterns["$a"]
-	if pattern.Verification != nil || pattern.StreamingHorizon == 0 {
+	if pattern.Verification != nil || !pattern.StreamPriorityBound {
 		t.Fatal("fixture must use finite priority proof")
 	}
-	pattern.StreamingHorizon = 0
+	pattern.StreamPriorityBound = false
 	payload.Rules[0].RegexPatterns["$a"] = pattern
 	var legacy bytes.Buffer
 	legacy.WriteString(compiledProgramMagic)

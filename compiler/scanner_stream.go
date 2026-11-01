@@ -69,8 +69,8 @@ func streamingRegexLength(pattern RegexPattern) int {
 		}
 		return 2 * regexVerificationDistance
 	}
-	if pattern.streamingHorizon > 0 {
-		return pattern.streamingHorizon
+	if pattern.streamPriorityBound {
+		return regexVerificationDistance
 	}
 	return -1
 }
