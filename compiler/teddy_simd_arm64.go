@@ -46,7 +46,27 @@ type teddyNeon2Bank struct {
 	prefixLen int
 }
 
+// Padding can create extra candidates, but cannot suppress a real tail hit.
+func (t *teddyNeon1Bank) tailMayMatch(data []byte) bool {
+	var tail [64]byte
+	copy(tail[:], data)
+	return t.findCandidate(tail[:], 0) >= 0
+}
+
+func (t *teddyNeon2Bank) tailMayMatch(data []byte) bool {
+	var tail [64]byte
+	copy(tail[:], data)
+	return t.findCandidate(tail[:], 0) >= 0
+}
+
 func newTeddyPlatform(strings []acStringInfo) teddyPrefilter {
+	large := len(strings) > maxTeddyPatterns
+	if large {
+		strings = teddyPrefixCover(strings)
+		if len(strings) == 0 {
+			return nil
+		}
+	}
 	minLen := math.MaxInt
 	for _, s := range strings {
 		if len(s.Data) < minLen {
@@ -58,10 +78,16 @@ func newTeddyPlatform(strings []acStringInfo) teddyPrefilter {
 		return nil
 	}
 
+	var filter teddyPrefilter
 	if len(strings) <= 8 {
-		return newTeddyNeon1Bank(strings, prefixLen)
+		filter = newTeddyNeon1Bank(strings, prefixLen)
+	} else {
+		filter = newTeddyNeon2Bank(strings, prefixLen)
 	}
-	return newTeddyNeon2Bank(strings, prefixLen)
+	if large {
+		return &corpusTeddyPrefilter{filter}
+	}
+	return filter
 }
 
 func newTeddyNeon1Bank(strings []acStringInfo, prefixLen int) *teddyNeon1Bank {
