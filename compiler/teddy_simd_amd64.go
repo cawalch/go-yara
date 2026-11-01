@@ -13,6 +13,9 @@ type teddyAMD64Prefilter struct {
 }
 
 func newTeddyPlatform(strings []acStringInfo) teddyPrefilter {
+	if len(strings) > maxTeddyPatterns {
+		return newTeddyAVX2Corpus(strings)
+	}
 	if len(strings) > 8 {
 		return nil
 	}

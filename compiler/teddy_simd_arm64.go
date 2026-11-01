@@ -49,13 +49,13 @@ type teddyNeon2Bank struct {
 // Padding can create extra candidates, but cannot suppress a real tail hit.
 func (t *teddyNeon1Bank) tailMayMatch(data []byte) bool {
 	var tail [64]byte
-	copy(tail[:], data)
+	copy(tail[:], data[max(0, len(data)-31):])
 	return t.findCandidate(tail[:], 0) >= 0
 }
 
 func (t *teddyNeon2Bank) tailMayMatch(data []byte) bool {
 	var tail [64]byte
-	copy(tail[:], data)
+	copy(tail[:], data[max(0, len(data)-31):])
 	return t.findCandidate(tail[:], 0) >= 0
 }
 
