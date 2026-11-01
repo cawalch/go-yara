@@ -25,13 +25,13 @@ func TestLibyaraCorpusInternalAtoms(t *testing.T) {
 	var folded strings.Builder
 	folded.WriteString(`
 rule a {strings:$a=/^key=[0-9]{2}[aA][bB][cC][dD][eE][fF][gG][hH]/ condition:$a}
-rule b {strings:$a=/^key=[0-9]{2}[qQ][rR][sS][tT][uU][vV][wW][xX]/ condition:$a}`)
+rule b {strings:$a=/^key=[0-9]{2}[aA][rR][sS][tT][uU][vV][wW][xX]/ condition:$a}`)
 	for i := range 30 {
 		fmt.Fprintf(&folded, "rule extra%d {strings:$a=/key=[0-9]{2}TOKEN_%08d/ condition:$a}\n", i, i)
 	}
 	checkLibyaraScanMatrix(t, differentialScanCase{
 		source:       folded.String(),
 		readerChunks: []int{1, 7},
-		inputs:       [][]byte{[]byte("key=12aBcDeFgH"), []byte("key=12QrStUvWx"), []byte("KEY=12aBcDeFgH"), []byte("!key=12QrStUvWx"), nil},
+		inputs:       [][]byte{[]byte("key=12aBcDeFgH"), []byte("key=12ArStUvWx"), []byte("KEY=12aBcDeFgH"), []byte("!key=12ArStUvWx"), nil},
 	})
 }

@@ -1,5 +1,7 @@
 package compiler
 
+import "github.com/cawalch/go-yara/regex"
+
 // corpusSharedAtoms also considers the verifier's proven mandatory literal
 // after a prefix. Keep fixed offsets and at least the existing atom quality;
 // only trade the prefix when the internal candidate's frequency across eligible
@@ -56,15 +58,90 @@ func corpusSharedAtoms(rules []*CompiledRule) map[string]regexPrefilterAtom {
 			counts[internal]++
 		}
 	}
+	updates := make(map[string]regexPrefilterAtom)
 	for key, choice := range choices {
 		if counts[keyFor(choice.internal.data)] <= counts[keyFor(choice.current.data)]/2 {
-			if selected == nil {
-				selected = make(map[string]regexPrefilterAtom)
-			}
-			selected[key] = choice.internal
+			updates[key] = choice.internal
 		}
 	}
+	if len(updates) == 0 || corpusAtomsLoseSparseRoots(rules, selected, updates) {
+		return selected
+	}
+	if selected == nil {
+		return updates
+	}
+	for key, atom := range updates {
+		selected[key] = atom
+	}
 	return selected
+}
+
+// More selective atoms must not turn a sparse-root byte search into a full
+// DFA walk. Count the actual first bytes, including unchanged text/hex entries
+// and ASCII case variants. The eligible corpus already guarantees shared scans.
+func corpusAtomsLoseSparseRoots(rules []*CompiledRule, selected, updates map[string]regexPrefilterAtom) bool {
+	var before, after [256]bool
+	oldCount, newCount := 0, 0
+	add := func(roots *[256]bool, count *int, value byte, noCase bool) {
+		if !roots[value] {
+			roots[value] = true
+			*count++
+		}
+		if other := flipASCIICase(value); noCase && !roots[other] {
+			roots[other] = true
+			*count++
+		}
+	}
+	addBoth := func(value byte, noCase bool) {
+		add(&before, &oldCount, value, noCase)
+		add(&after, &newCount, value, noCase)
+	}
+	for _, rule := range rules {
+		if rule.IsDead {
+			continue
+		}
+		if rule.automaton != nil {
+			for _, info := range rule.automaton.strings {
+				if !rule.IsStringDead(info.Identifier) && rule.StringKinds[info.Identifier] == StringKindText && len(info.Data) > 0 {
+					addBoth(info.Data[0], info.Flags&regex.FlagsNoCase != 0)
+				}
+			}
+		}
+		for id, pattern := range rule.RegexPatterns {
+			if rule.IsStringDead(id) || pattern.cacheKey == "" {
+				continue
+			}
+			atoms := selectSharedRegexAtoms(pattern)
+			if atom, ok := selected[pattern.cacheKey]; ok {
+				atoms = []regexPrefilterAtom{atom}
+			}
+			for _, atom := range atoms {
+				add(&before, &oldCount, atom.data[0], atom.asciiNoCase || pattern.Flags&regex.FlagsNoCase != 0)
+			}
+			if atom, ok := updates[pattern.cacheKey]; ok {
+				atoms = []regexPrefilterAtom{atom}
+			}
+			for _, atom := range atoms {
+				add(&after, &newCount, atom.data[0], atom.asciiNoCase || pattern.Flags&regex.FlagsNoCase != 0)
+			}
+		}
+		for id, pattern := range rule.HexPatterns {
+			if rule.IsStringDead(id) || pattern == nil || pattern.cacheKey == "" || len(pattern.XorKeys) > 1 || len(pattern.XorRange) > 0 {
+				continue
+			}
+			if atom, ok := selectHexAtom(pattern.Tokens); ok {
+				root := atom.data[0]
+				if len(pattern.XorKeys) == 1 {
+					root ^= pattern.XorKeys[0]
+				}
+				addBoth(root, false)
+			}
+		}
+		if oldCount > maxSparseRootTransitions {
+			return false
+		}
+	}
+	return newCount > maxSparseRootTransitions
 }
 
 // corpusPrefixAtoms breaks equal-quality prefix-window ties using the number

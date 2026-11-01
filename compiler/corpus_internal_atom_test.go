@@ -117,6 +117,37 @@ func TestCorpusInternalSmallCorpusKeepsSharedPass(t *testing.T) {
 	}
 }
 
+func TestCorpusInternalPreservesSparseRoots(t *testing.T) {
+	for _, modifier := range []string{"", "nocase"} {
+		var source strings.Builder
+		for i := range 40 {
+			fmt.Fprintf(&source, "rule diverse%d {strings:$a=/key=[0-9]{2}%cabcdefg[0-9]{%d}/ %s condition:$a}\n", i, 'v'+i%5, i+1, modifier)
+		}
+		p := mustCompileStreamingProgram(t, source.String())
+		if len(corpusSharedAtoms(p.Rules)) != 0 || len(p.sharedAutomaton.rootBytes) > maxSparseRootTransitions {
+			t.Fatal("internal atoms disabled sparse-root skipping")
+		}
+	}
+	// Unchanged text/hex roots contribute to the global root budget too.
+	for _, extra := range []string{`$b="Z_"`, `$b={5A 5F}`} {
+		var source strings.Builder
+		for i := range 40 {
+			fmt.Fprintf(&source, "rule mixed%d {strings:$a=/key=[0-9]{2}%cabcdefg[0-9]{%d}/ %s condition:$a or $b}\n", i, 'v'+i%4, i+1, extra)
+		}
+		p := mustCompileStreamingProgram(t, source.String())
+		if len(corpusSharedAtoms(p.Rules)) != 0 {
+			t.Fatal("unchanged roots ignored")
+		}
+	}
+	// If root scanning is already dense, no sparse path is being lost.
+	source := corpusInternalSource(40) + `
+rule dense {strings:$a="A_" $b="B_" $c="C_" $d="D_" $e="E_" condition:any of them}`
+	p := mustCompileStreamingProgram(t, source)
+	if len(corpusSharedAtoms(p.Rules)) != 40 {
+		t.Fatal("existing dense roots prevented internal selection")
+	}
+}
+
 func TestCorpusInternalLargeCorpusMatches(t *testing.T) {
 	p := mustCompileStreamingProgram(t, corpusInternalSource(10000))
 	s := p.NewScanner()
@@ -202,7 +233,7 @@ func TestCorpusInternalASCIIFoldedAtom(t *testing.T) {
 	var source strings.Builder
 	source.WriteString(`
 rule a {strings:$a=/key=[0-9]{2}[aA][bB][cC][dD][eE][fF][gG][hH]/ condition:$a}
-rule b {strings:$a=/key=[0-9]{2}[qQ][rR][sS][tT][uU][vV][wW][xX]/ condition:$a}`)
+rule b {strings:$a=/key=[0-9]{2}[aA][rR][sS][tT][uU][vV][wW][xX]/ condition:$a}`)
 	for i := range minSharedNonTextEntries - 2 {
 		fmt.Fprintf(&source, "rule extra%d {strings:$a=/key=[0-9]{2}TOKEN_%08d/ condition:$a}\n", i, i)
 	}
@@ -216,7 +247,7 @@ rule b {strings:$a=/key=[0-9]{2}[qQ][rR][sS][tT][uU][vV][wW][xX]/ condition:$a}`
 			t.Fatal("folded flag lost")
 		}
 	}
-	for _, data := range []string{"key=12aBcDeFgH", "key=12QrStUvWx"} {
+	for _, data := range []string{"key=12aBcDeFgH", "key=12ArStUvWx"} {
 		result, err := p.Scan([]byte(data))
 		if err != nil || len(result.MatchedRules) != 1 {
 			t.Fatalf("folded match: %+v, %v", result, err)

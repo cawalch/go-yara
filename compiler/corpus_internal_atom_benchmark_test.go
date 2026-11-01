@@ -58,3 +58,24 @@ func BenchmarkCorpusInternalRecords(b *testing.B) {
 		}
 	}
 }
+
+func corpusDiverseInternalSource(count int) string {
+	var source strings.Builder
+	for i := range count {
+		fmt.Fprintf(&source, "rule diverse%d {strings:$a=/key=[a-z]{4}%c%07x[0-9]{2}/ condition:$a}\n", i, 'a'+i%26, i)
+	}
+	return source.String()
+}
+
+func BenchmarkCorpusInternalDiverse(b *testing.B) {
+	for _, count := range []int{512, 10000} {
+		p := mustCompileBenchmarkProgram(b, corpusDiverseInternalSource(count))
+		for _, input := range []struct{ name, data string }{
+			{"clean", strings.Repeat("level=info request completed status=200 ", 1681)},
+			{"shared_prefix", "key=abcdnot_a_token"},
+			{"match", fmt.Sprintf("key=abcd%c%07x42", 'a'+(count-1)%26, count-1)},
+		} {
+			b.Run(fmt.Sprintf("rules=%d/%s", count, input.name), func(b *testing.B) { benchmarkScannerMatches(b, p, []byte(input.data)) })
+		}
+	}
+}
