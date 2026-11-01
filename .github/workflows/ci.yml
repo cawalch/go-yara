@@ -137,7 +137,8 @@ jobs:
           echo "$RUNNER_TEMP/yara-oracle/bin" >> "$GITHUB_PATH"
 
       - name: Run race tests
-        run: go test -race ./...
+        # The libyara-backed integration package can exceed Go's 10m default.
+        run: go test -race -timeout=15m ./...
 
       - name: Run libyara differential oracle tests
         run: go test -tags bugproof -race ./tests/integration/ -run TestBug
