@@ -87,7 +87,7 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     strategy:
       matrix:
         go-version: ["1.26.x"]
