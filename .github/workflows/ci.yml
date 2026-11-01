@@ -194,6 +194,9 @@ jobs:
           go test ./compiler -run '^$' -fuzz '^FuzzBoundedClass$' -fuzztime=10s -parallel=2
           go test ./compiler -run '^$' -fuzz '^FuzzBoundedClassVM$' -fuzztime=10s -parallel=2
 
+      - name: Fuzz combined regex NFA
+        run: go test ./compiler -run '^$' -fuzz '^FuzzCombinedRegex$' -fuzztime=10s -parallel=2
+
       - name: Test 128-bit SIMD searches
         run: GODEBUG=simd=+128 go test ./compiler -run TestByteSearch -count=1
 

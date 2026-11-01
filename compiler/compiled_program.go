@@ -14,6 +14,7 @@ import (
 
 // sharedAutomatonEntry maps a shared automaton entry to its exact verifier.
 type sharedAutomatonEntry struct {
+	combined   *combinedRegexNFA
 	RuleIndex  int // index into CompiledProgram.Rules
 	StringIdx  int // index into CompiledRule.IndexToStringID
 	AtomOffset int
@@ -177,6 +178,7 @@ func (cp *CompiledProgram) prepare() error {
 	cp.sharedNonTextCaches = sharedNonTextCacheCoverage(cp.nonTextCacheSize, cp.sharedLookup)
 	markSharedLookupCandidateTriggers(cp.Rules, cp.sharedLookup, cp.sharedNonTextCaches)
 	cp.sharedNonTextCacheRules = sharedNonTextCacheRuleLookup(cp.Rules, cp.sharedNonTextCaches)
+	cp.prepareCombinedRegex()
 	cp.compactPrefilter = cp.buildCompactPrefilter()
 	cp.booleanRouting = sync.OnceValue(cp.buildBooleanRouting)
 	for _, entry := range cp.sharedLookup {

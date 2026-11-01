@@ -49,6 +49,13 @@ func (s *Scanner) extractGlobalMatchesInt(
 		}
 
 		entry := lookup[match.StringIndex]
+		if entry.combined != nil {
+			match.StringIndex = entry.combined.leader
+			previous := s.prefilterCandidates[match.StringIndex]
+			if len(previous) > 0 && previous[len(previous)-1] == match.Backtrack {
+				return true
+			}
+		}
 		if entry.Kind == StringKindRegex || entry.Kind == StringKindHex {
 			if len(s.prefilterCandidates[match.StringIndex]) == 0 {
 				s.touchedPrefilterCandidates = append(s.touchedPrefilterCandidates, match.StringIndex)
