@@ -165,6 +165,9 @@ func (rc *ruleCompiler) compileSingleStringWithDead(str *ast.String, isDead bool
 			}
 		}
 		pattern.fixedByteSets = slices.Clone(result.regexFixedByteSets)
+		if len(pattern.CaptureCode) == 0 {
+			pattern.boundedClass = compileBoundedClass(pattern.Code, pattern.Flags)
+		}
 		rc.regexPatterns[str.Identifier] = pattern
 	case StringKindHex:
 		rc.hexPatterns[str.Identifier] = result.hexPattern
