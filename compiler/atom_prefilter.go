@@ -360,6 +360,11 @@ func (s *Scanner) populateNonTextPrefilterCache(
 			touchedIndex++
 			continue
 		}
+		if entry.combined != nil {
+			s.populateCombinedRegex(ctx, data, cache, entry.combined, s.prefilterCandidates[lookupIdx])
+			touchedIndex++
+			continue
+		}
 		//nolint:nestif // a touched alternative must expand and deduplicate its complete atom cover
 		if entry.Kind == StringKindRegex && entry.alternativeAtom {
 			lookupGroupStart := lookupIdx

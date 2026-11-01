@@ -106,6 +106,7 @@ type Scanner struct {
 	streamChunkSize        int
 	streamOverlapSize      int
 	streamEarlyTermination bool
+	combinedRegexScratch   combinedRegexScratch
 }
 
 // ScanResult represents the result of scanning data against compiled rules.
