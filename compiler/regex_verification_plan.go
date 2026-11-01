@@ -58,11 +58,15 @@ func compileVerificationPlan(parsed *regex.AST, flags regex.Flags, wide bool) (*
 	}
 	for _, selected := range choices.atoms {
 		before, after, _ := splitVerificationNode(parsed.Root, selected[0])
-		forward, err := regex.Compile(&regex.AST{Root: after})
+		backward, err := compileVerificationPrefix(before)
 		if err != nil {
 			return nil, err
 		}
-		backward, err := compileVerificationPrefix(before)
+		compileForward := regex.Compile
+		if len(choices.atoms) == 1 && len(backward) == 1 {
+			compileForward = regex.CompileForward
+		}
+		forward, err := compileForward(&regex.AST{Root: after})
 		if err != nil {
 			return nil, err
 		}
