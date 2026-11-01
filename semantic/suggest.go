@@ -3,56 +3,62 @@ package semantic
 import (
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/cawalch/go-yara/token"
 )
 
-// damerauLevenshteinDistance computes the Damerau-Levenshtein distance between two strings,
-// case-insensitively, accounting for insertions, deletions, substitutions, and adjacent transpositions.
-func damerauLevenshteinDistance(s1, s2 string) int {
-	s1 = strings.ToLower(s1)
-	s2 = strings.ToLower(s2)
+// identifierDistance retains three rows of the existing adjacent-transposition
+// recurrence. Only distances within limit matter for suggestions; other results
+// are represented by limit+1. Rows are reused within one suggestion search.
+type identifierDistance struct {
+	rows []int
+}
 
-	r1 := []rune(s1)
-	r2 := []rune(s2)
-
-	len1 := len(r1)
-	len2 := len(r2)
-
-	if len1 == 0 {
-		return len2
+func (d *identifierDistance) bounded(a, b []rune, limit int) int {
+	n, m := len(a), len(b)
+	if abs(n-m) > limit {
+		return limit + 1
 	}
-	if len2 == 0 {
-		return len1
+	if n == 0 {
+		return m
 	}
-
-	d := make([][]int, len1+1)
-	for i := range d {
-		d[i] = make([]int, len2+1)
-		d[i][0] = i
+	if m == 0 {
+		return n
 	}
-	for j := 0; j <= len2; j++ {
-		d[0][j] = j
+	width := m + 1
+	if cap(d.rows) < 3*width {
+		d.rows = make([]int, 3*width)
 	}
-
-	for i := 1; i <= len1; i++ {
-		for j := 1; j <= len2; j++ {
+	rows := d.rows[:3*width]
+	older, previous, current := rows[:width], rows[width:2*width], rows[2*width:]
+	for j := range previous {
+		previous[j] = min(j, limit+1)
+	}
+	for i := 1; i <= n; i++ {
+		first, last := max(1, i-limit), min(m, i+limit)
+		current[0] = min(i, limit+1)
+		// Guard the band so recycled cells outside it cannot become edit paths.
+		if first > 1 {
+			current[first-1] = limit + 1
+		}
+		if last < m {
+			current[last+1] = limit + 1
+		}
+		for j := first; j <= last; j++ {
 			cost := 0
-			if r1[i-1] != r2[j-1] {
+			if a[i-1] != b[j-1] {
 				cost = 1
 			}
-			d[i][j] = min(
-				d[i-1][j]+1,      // deletion
-				d[i][j-1]+1,      // insertion
-				d[i-1][j-1]+cost, // substitution
-			)
-			if i > 1 && j > 1 && r1[i-1] == r2[j-2] && r1[i-2] == r2[j-1] {
-				d[i][j] = min(d[i][j], d[i-2][j-2]+1) // transposition
+			value := min(previous[j]+1, current[j-1]+1, previous[j-1]+cost)
+			if i > 1 && j > 1 && a[i-1] == b[j-2] && a[i-2] == b[j-1] {
+				value = min(value, older[j-2]+1)
 			}
+			current[j] = min(value, limit+1)
 		}
+		older, previous, current = previous, current, older
 	}
-
-	return d[len1][len2]
+	return previous[m]
 }
 
 // findSimilarIdentifier finds the closest candidate for target among the given candidates.
@@ -90,7 +96,10 @@ func findSimilarIdentifier(target string, candidates []string) (string, bool) {
 	var matches []match
 
 	targetLower := strings.ToLower(target)
-	targetLen := len([]rune(targetLower))
+	targetRunes := []rune(targetLower)
+	targetLen := len(targetRunes)
+	targetPrefix := strings.HasPrefix(targetLower, "$")
+	var distance identifierDistance
 
 	maxAllowed := 1
 	if targetLen > 3 && targetLen <= 7 {
@@ -100,15 +109,25 @@ func findSimilarIdentifier(target string, candidates []string) (string, bool) {
 	}
 
 	for _, c := range candidates {
-		cLower := strings.ToLower(c)
-		d := damerauLevenshteinDistance(targetLower, cLower)
-		if strings.HasPrefix(cLower, "$") && !strings.HasPrefix(targetLower, "$") {
-			dWithoutPrefix := damerauLevenshteinDistance(targetLower, cLower[1:])
+		candidatePrefix := strings.HasPrefix(c, "$")
+		lengthLimit := maxAllowed
+		if candidatePrefix != targetPrefix {
+			lengthLimit++
+		}
+		// Lowercasing preserves rune count. Allow one extra rune for the '$'
+		// comparison before allocating or lowercasing an impossible candidate.
+		if abs(utf8.RuneCountInString(c)-targetLen) > lengthLimit {
+			continue
+		}
+		candidateRunes := []rune(strings.ToLower(c))
+		d := distance.bounded(targetRunes, candidateRunes, maxAllowed)
+		if candidatePrefix && !targetPrefix {
+			dWithoutPrefix := distance.bounded(targetRunes, candidateRunes[1:], maxAllowed)
 			if dWithoutPrefix < d {
 				d = dWithoutPrefix
 			}
-		} else if strings.HasPrefix(targetLower, "$") && !strings.HasPrefix(cLower, "$") {
-			dWithoutPrefix := damerauLevenshteinDistance(targetLower[1:], cLower)
+		} else if targetPrefix && !candidatePrefix {
+			dWithoutPrefix := distance.bounded(targetRunes[1:], candidateRunes, maxAllowed)
 			if dWithoutPrefix < d {
 				d = dWithoutPrefix
 			}
