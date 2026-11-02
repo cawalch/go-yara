@@ -10,9 +10,21 @@ import ArchitectureDiagram from '../../components/ArchitectureDiagram.astro';
 
 <p>These docs describe <a href={`https://github.com/cawalch/go-yara/releases/tag/${release.version}`}>{release.version}</a>, released on {release.date}. It requires Go {release.goVersion} or later.</p>
 
+## v0.9.0 upgrade preparation
+
+{release.format < 18 && <p><strong>Not yet released.</strong> These notes describe the planned v0.9.0 release. The installation commands and playground still use the published {release.version} release.</p>}
+
+v0.9.0 focuses on regex occurrence correctness, streaming boundaries and read errors, lower evidence allocation, and faster compilation. Regex fixes cover greedy/lazy repetition, alternatives, anchors, wide/fullword matching, and verification bounds. Compare counts, offsets, lengths, and final rule outcomes when upgrading; a boolean-only check can miss a changed occurrence.
+
+New compiled artifacts use format **18**, compared with format **7** in v0.8.2. The new reader accepts formats 4–18, but v0.8.2 cannot read format 18. Recompile rules from source to obtain the corrected bytecode and verification metadata. Preserve separate caches for the old and new binaries during rollout and rollback. Custom module handlers, external variables, and host data still need rebinding after loading.
+
+Legacy unbounded regex artifacts without a finite verification horizon need recompilation or an explicit `WithMaxMatchSpan` for reader scans. The Go requirement stays at 1.26.0. Prebuilt CLI binaries use the default build; optional SIMD acceleration requires Go 1.27+ and `GOEXPERIMENT=simd`.
+
+The [performance changes](/go-yara/performance/#v090-performance-changes) have specific eligibility limits. Native PE/ELF parsing, general cyclic combined-NFA execution, and borrowed evidence remain outside this release. The proposed follow-up for `filesize` candidate pruning is not included.
+
 ## Changes in v0.8.2
 
-v0.8.2 upgrades `ScanReader` and `ScanReaderWithContext` to use constant-memory streaming ($C + W$) with full rule condition evaluation, eliminating unbounded buffer slurping (`io.ReadAll`) on large streams ([#352](https://github.com/cawalch/go-yara/issues/352)). It introduces `MatchesReader` for early-exit boolean matching and maintains deterministic $O(1)$ resident memory across inputs of arbitrary size.
+v0.8.2 upgrades `ScanReader` and `ScanReaderWithContext` to use constant-memory streaming ($C + W$) with full rule condition evaluation, eliminating unbounded buffer slurping (`io.ReadAll`) on large streams ([#352](https://github.com/cawalch/go-yara/issues/352)). It introduces `MatchesReader` for early-exit boolean matching. The input window is bounded independently of stream length; retained occurrences, result data, and evidence can still grow with matches.
 
 ## Changes in v0.8.1
 

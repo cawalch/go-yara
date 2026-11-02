@@ -7,11 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Refactoring & Maintenance
+Planned release: **v0.9.0**. The changes below are not included in v0.8.2.
 
-* **Sub-800 Line Rule Decomposition**: Partitioned the public API facade from internal rule evaluation in `compiler/scanner_exec.go`, introducing `compiler/scanner_api.go` (200 LOC) and reducing `compiler/scanner_exec.go` to 522 LOC (< 700 LOC across all scanner files for streamlined AI-assisted and human review) ([#364](https://github.com/cawalch/go-yara/pull/364)).
-* **Parameter Object Pattern (`streamAccumulator`)**: Replaced loose multi-map argument passing in streaming condition evaluation with a cohesive `streamAccumulator` parameter object and extracted evidence helper, eliminating `revive` and `nestif` linter suppressions ([#364](https://github.com/cawalch/go-yara/pull/364)).
-* **Streaming Allocation Deduplication**: Updated `StreamingProcessor.processFileChunks` to reuse the preallocated sliding-window buffer technique from `Scanner.scanReaderStream`, eliminating per-chunk heap allocations during file streaming ([#364](https://github.com/cawalch/go-yara/pull/364)).
+### Upgrade notes
+
+* **Compiled caches:** New programs use format **18**; the reader accepts formats **4–18**. v0.8.2 writes format 7 and cannot read format 18. Recompile rules from source to pick up corrected match-selection and verification metadata; accepting an older artifact does not regenerate its bytecode. Keep versioned caches during mixed-version deployments and rollback.
+* **Reader scans:** Legacy unbounded regex artifacts without a finite verification horizon require recompilation or an explicit `WithMaxMatchSpan` before reader scanning. Otherwise, the scan fails before reading input. Input buffering is bounded independently of stream length; accumulated occurrences, returned bytes, and evidence can still grow.
+* The Go requirement remains **1.26.0**. Experimental SIMD paths require a separate **Go 1.27+ / `GOEXPERIMENT=simd`** build; release CLI binaries use the default build. Built-in module coverage is unchanged: native PE/ELF modules are not added.
+
+### Fixed
+
+* **Regex occurrence selection:** Preserve greedy/lazy endpoints and branch priority across literal alternatives, bounded and unbounded repetitions, optional entries, literal affixes, anchors, and atomless matching. Correct ASCII/wide selection, zero-length fullword occurrences, and fullword endpoint retries. These fixes affect counts, offsets, lengths, and conditions as well as boolean matches ([#379](https://github.com/cawalch/go-yara/pull/379)–[#432](https://github.com/cawalch/go-yara/pull/432)).
+* **Verification bounds:** Preserve atom ordering and suffix bounds, handle oversized finite prefixes symbolically, and apply verification limits relative to selected atoms ([#421](https://github.com/cawalch/go-yara/pull/421), [#423](https://github.com/cawalch/go-yara/pull/423), [#424](https://github.com/cawalch/go-yara/pull/424), [#426](https://github.com/cawalch/go-yara/pull/426), [#427](https://github.com/cawalch/go-yara/pull/427)).
+* **Streaming:** Retain header bytes across chunks, propagate lookahead read errors, and finalize bounded/unbounded regex occurrences only when their decision horizon and boundary context are available or EOF is reached ([#374](https://github.com/cawalch/go-yara/pull/374), [#375](https://github.com/cawalch/go-yara/pull/375), [#387](https://github.com/cawalch/go-yara/pull/387), [#428](https://github.com/cawalch/go-yara/pull/428)).
+* **Conditions and fixed offsets:** Propagate undefined integer reads and match-query offsets, preserve scalar coercion in Boolean identity folds, support scalar operands of logical `not`, and retain only eligible fixed-offset text/regex/hex matches ([#373](https://github.com/cawalch/go-yara/pull/373), [#398](https://github.com/cawalch/go-yara/pull/398), [#400](https://github.com/cawalch/go-yara/pull/400), [#402](https://github.com/cawalch/go-yara/pull/402)–[#404](https://github.com/cawalch/go-yara/pull/404)).
+
+### Performance
+
+* **Regex verification:** Reuse failed verification work, accelerate eligible terminal bounded character classes, and share consuming transitions across groups of 4–64 compatible bounded acyclic regexes. Unsupported patterns retain the existing verifier; general cyclic combined-NFA execution is not added ([#433](https://github.com/cawalch/go-yara/pull/433), [#439](https://github.com/cawalch/go-yara/pull/439)–[#441](https://github.com/cawalch/go-yara/pull/441)).
+* **Large-corpus prefiltering:** Diversify shared prefix atoms and select rarer fixed-offset mandatory atoms. Experimental SIMD adds ARM64/AVX2 rejection for inputs of at least 256 bytes when a complete cover fits at most 64 distinct prefix sets. Candidate inputs fall through to exact scanning and can pay for both passes ([#435](https://github.com/cawalch/go-yara/pull/435)–[#438](https://github.com/cawalch/go-yara/pull/438)).
+* **Evidence ownership:** Reduce capture/correlation allocation using result-owned chunks and bounded reusable scratch. Returned evidence remains independent of input mutation, scanner reuse, and closure. The original match-heavy benchmark drops from 701 to 449 KB and 2,075 to 1,053 allocations per scan; borrowed evidence is not introduced ([#434](https://github.com/cawalch/go-yara/pull/434)).
+* **Compilation:** Bound identifier-suggestion edit-distance work while preserving diagnostics, reduce bounded-NFA preparation overhead, and avoid repeated dense automaton growth copies ([#441](https://github.com/cawalch/go-yara/pull/441)–[#443](https://github.com/cawalch/go-yara/pull/443)).
+
+Measurements compare individual changes with their preceding commits, not v0.8.2 with the complete release. On the qualified diagnostic-heavy Signature-Base subset, #442 improves resilient loading 3.87× on native AMD64 and 5.20× on ARM64; #443 adds a further 4.8%/2.4% improvement and reduces allocated bytes by 9.4%. Synthetic shared-prefix regex cases improve substantially, but none of the three representative corpora in #441 activated the new combined-NFA or bounded-class plans. Smaller compile controls in #443 slowed by up to 3.7%; SIMD tail hits can cost more. See the linked PRs for eligibility, hardware, methodology, and tradeoffs.
+
+### Maintenance and validation
+
+* Consolidate scanner execution, streaming accumulation, match-context finalization, regex byte-set analysis, and differential scan coverage; reuse range searches for exact occurrence queries ([#364](https://github.com/cawalch/go-yara/pull/364), [#388](https://github.com/cawalch/go-yara/pull/388)–[#396](https://github.com/cawalch/go-yara/pull/396)).
+* Extend libyara differential regressions across scan modes, serialization, scanner reuse, and chunk boundaries. CI includes native AMD64/ARM64 SIMD jobs and 53 fuzz targets; the final implementation commit passed all applicable checks with 83.9% statement coverage.
 
 ## [v0.8.2] - 2026-10-25
 

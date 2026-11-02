@@ -85,9 +85,9 @@ Structured host modules, the `external` declaration syntax, and evidence extract
 
 ## Streaming and compiled artifacts
 
-The CLI's `--streaming` mode reports literal text-pattern matches without complete condition evaluation. Full rule conditions, regex, and hex patterns on stream inputs are evaluated with constant-memory streaming via `ScanReader` and `MatchesReader` (#352). Sparse block scanning retains supplied blocks.
+The CLI's `--streaming` mode reports literal text-pattern matches without complete condition evaluation. `ScanReader` and `MatchesReader` evaluate full rule conditions, regex, and hex patterns using bounded input windows. Retained occurrences and result data can grow with matches. Sparse block scanning retains supplied blocks.
 
-Serialized go-yara programs use a project-specific format. They are not libyara compiled-rule files. Check the [upgrade rules](/go-yara/releases/#compiled-rule-caches) before sharing caches between versions.
+Serialized go-yara programs use a project-specific format. They are not libyara compiled-rule files. Check the [upgrade rules](/go-yara/releases/#compiled-rule-caches) before sharing caches between versions, including the [planned format-18 migration](/go-yara/releases/#v090-upgrade-preparation) for v0.9.0.
 
 <span id="evaluate-a-migration"></span>
 
