@@ -15,9 +15,9 @@ The engine is designed for high-throughput scanning pipelines. It uses literal p
 - **Thread Safety**: Immutable compiled programs support safe, concurrent scanning across multiple goroutines.
 - **Extensibility**: Support for structured host modules, custom Go module functions, runtime external variables, binary rule serialization, structured evidence extraction, and a standalone CLI.
 
-## Next release: v0.9.0
+## v0.9.0
 
-The next release focuses on regex and streaming correctness, lower evidence and compilation allocations, and bounded regex/prefilter acceleration. It is being prepared; `@latest` still resolves to the published release. See the [unreleased changelog](CHANGELOG.md#unreleased) for scope and measured tradeoffs.
+v0.9.0 focuses on regex and streaming correctness, lower evidence and compilation allocations, and bounded regex/prefilter acceleration. See the [release changelog](CHANGELOG.md#v090---2026-11-02) for scope and measured tradeoffs.
 
 Plan to rebuild compiled caches from rule source: the new writer uses format 18, while v0.8.2 uses format 7 and cannot read the new artifacts. Keep separate caches for rollback. The Go requirement remains 1.26.0; optional SIMD paths require a Go 1.27+ experimental build.
 

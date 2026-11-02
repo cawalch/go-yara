@@ -48,7 +48,7 @@ For sparse scans, provide each block's logical offset and set the logical file s
 
 Regex occurrences are finalized only after their decision horizon and boundary context are available, or at EOF. Unbounded expressions use libyara-compatible verification limits: 4,096 bytes for forward-only verification and 8,192 bytes for verification in both directions. Reader overlap is raised to the required horizon plus two boundary bytes when necessary. `WithMaxMatchSpan` remains an additional caller-selected cap; increasing it does not remove verification limits.
 
-Recompile legacy unbounded regex artifacts that lack a finite horizon, or set an explicit `WithMaxMatchSpan`; otherwise reader scanning fails before consuming input. Treat any reader error as a failed scan, including an error returned while obtaining boundary lookahead. See [upgrade preparation](/go-yara/releases/#v090-upgrade-preparation) before reusing compiled caches.
+Recompile legacy unbounded regex artifacts that lack a finite horizon, or set an explicit `WithMaxMatchSpan`; otherwise reader scanning fails before consuming input. Treat any reader error as a failed scan, including an error returned while obtaining boundary lookahead. See [upgrade guidance](/go-yara/releases/#upgrade-to-v090) before reusing compiled caches.
 
 ## Sparse blocks and boundary matches
 
