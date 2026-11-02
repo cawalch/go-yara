@@ -177,6 +177,14 @@ func (ac *acAutomaton) addStringToAutomaton(config stringConfig) error {
 			for i := range newState.transitions {
 				newState.transitions[i] = -1
 			}
+			// Dense rows exceed 1 KiB each. Once the trie is large, doubling
+			// avoids repeatedly copying them at the slice runtime's smaller
+			// growth factor. Compile releases the unused capacity.
+			if len(ac.states) == cap(ac.states) && len(ac.states) >= 1024 {
+				states := make([]acState, len(ac.states), len(ac.states)*2)
+				copy(states, ac.states)
+				ac.states = states
+			}
 			ac.states = append(ac.states, newState)
 			nextState = mustACIndex(len(ac.states) - 1)
 		}
@@ -215,6 +223,13 @@ func (ac *acAutomaton) Compile() error {
 		if ac.compiled {
 			compileErr = errors.New("already compiled")
 			return
+		}
+		// Compact large construction buffers before allocating the flat scan
+		// table. Keep small buffers reusable without another allocation.
+		if len(ac.states) >= 1024 && cap(ac.states) > len(ac.states) {
+			states := make([]acState, len(ac.states))
+			copy(states, ac.states)
+			ac.states = states
 		}
 		ac.collectRootBytes()
 
