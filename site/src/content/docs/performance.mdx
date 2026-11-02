@@ -56,6 +56,26 @@ These limits apply to an individual automaton, not the total number of rules. In
 
 See the <a href={source('compiler/teddy_simd_arm64.go')}>ARM64 filter</a>, <a href={source('compiler/teddy_simd_amd64.go')}>amd64 filter</a>, and [SIMD build instructions](/go-yara/installation/#optional-simd-build). Compare scalar and SIMD builds on the same CPU with the same rules.
 
+<span id="v090-performance-changes"></span>
+
+## v0.9.0 performance changes
+
+{release.format < 18 && <p><strong>Release preparation:</strong> the following optimizations are on main for v0.9.0 and are not included in the documented {release.version} release.</p>}
+
+The compiler can choose less-shared regex prefix windows and rarer fixed-offset mandatory atoms. Eligible terminal bounded classes use direct byte counting; compatible groups of 4–64 bounded acyclic regexes share consuming transitions. Captures, assertions, cycles, wide/fullword matching, and over-budget groups retain the existing verifier where these plans do not support them. These optimizations preserve match selection rather than changing rule semantics.
+
+The experimental SIMD build adds a large-corpus rejection pass on ARM64 and AVX2-capable AMD64. It requires inputs of at least 256 bytes and a complete cover of at most 64 distinct prefix byte sets. A possible hit falls through to exact scanning, so positive or near-match inputs can cost more. Arbitrary corpora do not necessarily qualify. SIMD also accelerates eligible bounded-class counters; the default build retains scalar acceleration and combined-NFA sharing.
+
+Evidence extraction uses result-owned chunks and bounded scanner scratch. Captures remain valid after input mutation, scanner reuse, or closure. Identifier suggestions reuse bounded edit-distance rows, and large automaton construction avoids repeated dense-row copies. These reduce allocation work without making the entire scan or compilation allocation-free.
+
+| Area | Measured change | Scope |
+| --- | --- | --- |
+| Evidence | 701 → 449 KB; 2,075 → 1,053 allocations/scan | Original match-heavy benchmark, Apple M3 Max; [#434](https://github.com/cawalch/go-yara/pull/434). |
+| Identifier suggestions | 3.87× AMD64 / 5.20× ARM64 faster resilient loading | Diagnostic-heavy supported Signature-Base subset; [#442](https://github.com/cawalch/go-yara/pull/442). |
+| Automaton construction | Further 4.8% AMD64 / 2.4% ARM64 faster loading; 9.4% fewer allocated bytes | Same supported subset after #442; [#443](https://github.com/cawalch/go-yara/pull/443). |
+
+These are per-change comparisons against preceding commits, not a v0.8.2-to-v0.9.0 benchmark. The threat subset retains 2,995 rules from 544 accepted files and omits another 756 rules during resilient loading. Neither it nor the two local corpora qualified in [#441](https://github.com/cawalch/go-yara/pull/441) activated the new regex plans. The large synthetic gains in [#439](https://github.com/cawalch/go-yara/pull/439) and [#440](https://github.com/cawalch/go-yara/pull/440) therefore do not establish representative whole-corpus gains. Some smaller compile controls slowed by up to 3.7%; measure your own rules, scan modes, and inputs.
+
 ## Condition evaluation
 
 General rule conditions execute in a bytecode interpreter. The compiler also recognizes fixed-offset integer comparisons, filesize bounds, string-at tests, string-count comparisons, and comparisons between external variables and constants. It combines these operations into fused instructions to reduce dispatch and operand-stack work.
@@ -179,7 +199,7 @@ Use profiling to locate expensive rules, then measure throughput with the intend
 
 On Unix platforms, `ScanFile` attempts a read-only memory mapping for regular files of at least 128 KiB. Smaller files, mapping failures, and non-Unix platforms use file reads. Mapping avoids an explicit whole-file heap copy on the supported path, but still incurs page faults, page-cache residency, and I/O. Go heap allocation statistics do not account for all of those costs. See <a href={source('compiler/scanner_exec.go')}>file scanning</a> and the <a href={source('utils/fs/mmap.go')}>mapping wrapper</a>.
 
-`ScanReader` operates in constant memory ($C+W$), while block scanning retains blocks for later condition evaluation. Account for input storage as well as scanner allocations. The CLI's literal streaming mode changes semantics; use it only when text-pattern occurrences are the output you need.
+`ScanReader` uses a bounded sliding input window ($C+W$), while block scanning retains blocks for later condition evaluation. Accumulated occurrences, returned bytes, and evidence have separate memory costs that can grow with matches. Account for input storage as well as scanner allocations. The CLI's literal streaming mode changes semantics; use it only when text-pattern occurrences are the output you need.
 
 ## Engine comparisons
 

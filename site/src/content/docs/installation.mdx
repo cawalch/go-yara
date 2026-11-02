@@ -19,7 +19,7 @@ Then follow the [complete Go example](/go-yara/quickstart/). The public entry po
 
 ## Download the CLI
 
-Choose an archive for your operating system and CPU. Extract it and place the `go-yara` executable on your `PATH`. On Windows, the executable is `go-yara.exe`.
+Published CLI archives use the default Go build; experimental SIMD requires a separate source build. Choose an archive for your operating system and CPU. Extract it and place the `go-yara` executable on your `PATH`. On Windows, the executable is `go-yara.exe`.
 
 <table>
 <thead><tr><th>System</th><th>CPU</th><th>Archive</th></tr></thead>
@@ -34,7 +34,7 @@ Choose an archive for your operating system and CPU. Extract it and place the `g
 </tbody>
 </table>
 
-<p>Compare the archive's SHA-256 digest with <a href={`https://github.com/cawalch/go-yara/releases/tag/${release.version}`}>the checksums attached to the release</a>. The release also includes the checksum signature and certificate.</p>
+<p>Compare the archive's SHA-256 digest with <a href={`https://github.com/cawalch/go-yara/releases/tag/${release.version}`}>the checksums attached to the release</a>. The release also includes a Cosign verification bundle for the checksums.</p>
 
 Run `go-yara --help` to confirm the executable is available, then [scan a file](/go-yara/cli/#scan-a-file).
 

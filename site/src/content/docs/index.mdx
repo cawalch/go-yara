@@ -23,7 +23,7 @@ The engine supports text strings, hex patterns, regular expressions, and the bui
 
 Native `pe` and `elf` parsers are not bundled, and go-yara has extensions that libyara does not accept. The [compatibility guide](/go-yara/compatibility/) identifies those boundaries. Test your rule corpus and expected matches before replacing another engine.
 
-`ScanReader` scans reader streams using constant bounded memory, and block scanning retains supplied blocks. See [input APIs](/go-yara/scanning/#input-apis) for memory use and condition evaluation.
+`ScanReader` uses a bounded sliding input window, while retained occurrences and result data can grow with matches. Block scanning retains supplied blocks. See [input APIs](/go-yara/scanning/#input-apis) for memory use and condition evaluation.
 
 <span id="find-the-detail-you-need"></span>
 

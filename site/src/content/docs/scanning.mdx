@@ -33,14 +33,22 @@ Each Go example below is a complete `main.go`. Use the module setup in the [quic
 | Input | API | Memory and evaluation behavior |
 | --- | --- | --- |
 | A byte slice | `program.Scan(data)` | Evaluates complete rules against the supplied bytes. |
-| An io.Reader stream | `program.ScanReader(reader)` | Scans sequentially with constant bounded memory ($C+W$), evaluating complete rule conditions. |
+| An io.Reader stream | `program.ScanReader(reader)` | Uses a bounded sliding input window ($C+W$) and evaluates complete rule conditions. |
 | A file path | `program.ScanFile(path)` | Opens the file and scans its contents. |
 | One isolated memory block | `scanner.MatchingRulesInBlock(block, fileSize)` | Evaluates one block immediately, using absolute offsets; keeps no blocks between calls. |
 | Sparse memory blocks | `program.NewBlockScanner()` | Accumulates blocks; `Finish()` evaluates complete conditions. |
 
-`ScanReader` and `MatchesReader` stream through inputs of arbitrary size in constant memory ($C + W$) using preallocated sliding window buffers and mathematical match deduplication (#352). Block scanning retains supplied block data. For raw pattern searches without condition evaluation, the CLI's [literal streaming mode](/go-yara/cli/#large-files-and-streaming) remains available.
+`ScanReader` and `MatchesReader` use bounded sliding input buffers ($C + W$). Accumulated occurrence spans, copied match bytes, and evidence are separate: total memory can grow with the number and size of matches. Block scanning retains supplied block data. For raw pattern searches without condition evaluation, the CLI's [literal streaming mode](/go-yara/cli/#large-files-and-streaming) remains available.
 
 For sparse scans, provide each block's logical offset and set the logical file size when rules use `filesize`. If a pattern crosses a block boundary, supply overlapping bytes. The scanner does not reconstruct missing bytes between blocks.
+
+## Reader verification in v0.9.0
+
+{release.format < 18 && <p><strong>Release preparation:</strong> these verification and boundary fixes are planned for v0.9.0; the documented release is still {release.version}.</p>}
+
+Regex occurrences are finalized only after their decision horizon and boundary context are available, or at EOF. Unbounded expressions use libyara-compatible verification limits: 4,096 bytes for forward-only verification and 8,192 bytes for verification in both directions. Reader overlap is raised to the required horizon plus two boundary bytes when necessary. `WithMaxMatchSpan` remains an additional caller-selected cap; increasing it does not remove verification limits.
+
+Recompile legacy unbounded regex artifacts that lack a finite horizon, or set an explicit `WithMaxMatchSpan`; otherwise reader scanning fails before consuming input. Treat any reader error as a failed scan, including an error returned while obtaining boundary lookahead. See [upgrade preparation](/go-yara/releases/#v090-upgrade-preparation) before reusing compiled caches.
 
 ## Sparse blocks and boundary matches
 
@@ -144,6 +152,8 @@ Successful parsing establishes that the captured bytes encode a private key supp
 ### Evidence limits and provenance
 
 `WithEvidence(256)` caps **each capture's copied bytes**, not total evidence memory or the number of findings. `Capture.Length` retains the full source span length; `DataTruncated` marks a shortened `Data` copy. Use separate input, time, and workload limits. Capture-bound strings retain all occurrences when evidence is enabled, even with `WithFastScan`, so proximity correlation has the occurrences it needs.
+
+Capture bytes and finding containers belong to the returned result. They remain valid after the input is changed or the scanner is reused or closed; retain results only as long as needed.
 
 Read findings from `result.Evidence[ruleName][declarationName]`. Each finding has an anchor and a `Fields` map whose values are candidate capture slices. `Capture.Offset` and `Capture.Length` identify source bytes; `Pattern` and `Group` identify the extraction rule. Check `RuleResults` or `MatchedRules` when deciding which rule findings to act on, and treat captured values as sensitive data.
 
