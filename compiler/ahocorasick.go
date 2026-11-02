@@ -49,8 +49,9 @@ type acAutomaton struct {
 	hasOutput []bool
 
 	// Compilation state
-	compiledOnce sync.Once
-	compiled     bool
+	compiledOnce  sync.Once
+	compiled      bool
+	compactStates bool
 
 	// Exported metadata retained for compatibility with existing callers.
 	StringCount int
@@ -177,6 +178,15 @@ func (ac *acAutomaton) addStringToAutomaton(config stringConfig) error {
 			for i := range newState.transitions {
 				newState.transitions[i] = -1
 			}
+			// Dense rows exceed 1 KiB each. Above 32 MiB, double capacity
+			// to avoid repeated copies at the slice runtime's smaller growth
+			// factor. Compile releases the unused capacity.
+			if len(ac.states) == cap(ac.states) && len(ac.states) >= 32768 {
+				states := make([]acState, len(ac.states), len(ac.states)*2)
+				copy(states, ac.states)
+				ac.states = states
+				ac.compactStates = true
+			}
 			ac.states = append(ac.states, newState)
 			nextState = mustACIndex(len(ac.states) - 1)
 		}
@@ -216,6 +226,14 @@ func (ac *acAutomaton) Compile() error {
 			compileErr = errors.New("already compiled")
 			return
 		}
+		// Compact doubled construction buffers before allocating the flat scan
+		// table. Keep small buffers reusable without another allocation.
+		if ac.compactStates && cap(ac.states) > len(ac.states) {
+			states := make([]acState, len(ac.states))
+			copy(states, ac.states)
+			ac.states = states
+		}
+		ac.compactStates = false
 		ac.collectRootBytes()
 
 		// Build failure links using BFS
@@ -586,6 +604,7 @@ func (ac *acAutomaton) EstimateMemoryUsage() int {
 
 // Reset clears the automaton for reuse
 func (ac *acAutomaton) Reset() {
+	ac.compactStates = false
 	// Clear states but keep capacity
 	ac.states = ac.states[:1] // Keep root state
 	for i := range ac.states[0].transitions {
