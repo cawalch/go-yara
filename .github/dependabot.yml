@@ -8,6 +8,11 @@ updates:
       time: "04:00"
       timezone: "America/Chicago"
     open-pull-requests-limit: 3
+    ignore:
+      # @astrojs/check pulls @astrojs/language-server, which needs typescript <7.
+      # A TS 7 bump makes `npm ci --prefix site` fail with ERESOLVE in the docs workflow.
+      - dependency-name: "typescript"
+        versions: [">= 7.0.0"]
     groups:
       documentation:
         patterns: ["*"]

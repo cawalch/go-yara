@@ -20,6 +20,8 @@ cd ..
 npm run dev --prefix site
 ```
 
+`typescript` stays on the 6.x line: `astro check` depends on `@astrojs/language-server`, which requires `typescript <7`, so a 7.x pin makes `npm ci` fail with `ERESOLVE`. Dependabot ignores TS 7 for this directory; revisit the pin when `@astrojs/check` widens its peer range.
+
 Open the local URL with `/go-yara/` appended. A production preview uses `npm run preview --prefix site`.
 
 ## Preventing drift
