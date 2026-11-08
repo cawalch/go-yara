@@ -13,23 +13,33 @@ func BenchmarkEvidenceOwnership(b *testing.B) {
 	for _, tc := range []struct {
 		name, source, input, path string
 		limit                     int
+		borrowed                  bool
 	}{
-		{"clean", source, strings.Repeat("clean record\n", 512), "buffer", 64},
-		{"sparse_optional", `rule r {strings:$a=/(a)?x/ capture(value=1) condition:#a>0}`, "ax" + strings.Repeat("x", 511), "buffer", 64},
-		{"single", source, "token=name:secret!", "buffer", 64},
-		{"dense", source, strings.Repeat("token=name:secret!", 512), "buffer", 64},
-		{"captures_only", captureOnly, strings.Repeat("token=name:secret!", 512), "buffer", 64},
-		{"truncated", source, strings.Repeat("token=name:secret!", 512), "buffer", 2},
-		{"empty", source, strings.Repeat("token=name:!", 512), "buffer", 64},
-		{"large_capture", source, "token=name:" + strings.Repeat("s", 8192) + "!", "buffer", 16384},
-		{"reader", source, strings.Repeat("token=name:secret!", 128), "reader", 64},
-		{"block", source, strings.Repeat("token=name:secret!", 128), "block", 64},
+		{"clean", source, strings.Repeat("clean record\n", 512), "buffer", 64, false},
+		{"sparse_optional", `rule r {strings:$a=/(a)?x/ capture(value=1) condition:#a>0}`, "ax" + strings.Repeat("x", 511), "buffer", 64, false},
+		{"single", source, "token=name:secret!", "buffer", 64, false},
+		{"dense", source, strings.Repeat("token=name:secret!", 512), "buffer", 64, false},
+		{"dense_borrowed", source, strings.Repeat("token=name:secret!", 512), "buffer", 64, true},
+		{"captures_only", captureOnly, strings.Repeat("token=name:secret!", 512), "buffer", 64, false},
+		{"truncated", source, strings.Repeat("token=name:secret!", 512), "buffer", 2, false},
+		{"empty", source, strings.Repeat("token=name:!", 512), "buffer", 64, false},
+		{"large_capture", source, "token=name:" + strings.Repeat("s", 8192) + "!", "buffer", 16384, false},
+		{"reader", source, strings.Repeat("token=name:secret!", 128), "reader", 64, false},
+		{"block", source, strings.Repeat("token=name:secret!", 128), "block", 64, false},
 	} {
 		b.Run(tc.name, func(b *testing.B) {
 			p := mustCompileBenchmarkProgram(b, tc.source)
-			s := p.NewScanner(WithEvidence(tc.limit), WithStreamChunkSize(127), WithStreamEarlyTermination(false))
+			opts := []ScannerOption{WithEvidence(tc.limit), WithStreamChunkSize(127), WithStreamEarlyTermination(false)}
+			if tc.borrowed {
+				opts = append(opts, WithBorrowedEvidence(true))
+			}
+			s := p.NewScanner(opts...)
 			defer s.Close()
-			blocks := p.NewBlockScanner(WithEvidence(tc.limit))
+			blockOpts := []ScannerOption{WithEvidence(tc.limit)}
+			if tc.borrowed {
+				blockOpts = append(blockOpts, WithBorrowedEvidence(true))
+			}
+			blocks := p.NewBlockScanner(blockOpts...)
 			defer blocks.Close()
 			data := []byte(tc.input)
 			scan := func() {

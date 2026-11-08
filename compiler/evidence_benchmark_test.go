@@ -34,6 +34,7 @@ rule tokens {
 		{"normal", normal, nil},
 		{"capture_declared_evidence_disabled", declared, nil},
 		{"match_heavy_evidence_enabled", declared, []ScannerOption{WithEvidence(64)}},
+		{"match_heavy_borrowed_evidence_enabled", declared, []ScannerOption{WithEvidence(64), WithBorrowedEvidence(true)}},
 	}
 	for _, benchmark := range benchmarks {
 		b.Run(benchmark.name, func(b *testing.B) {

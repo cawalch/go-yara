@@ -146,7 +146,10 @@ func (s *Scanner) populateRuleEvidence(
 			if matchedCount == 0 {
 				continue
 			}
-			dataSlab := storage.bytes(totalCopyBytes, len(perPattern)-index)
+			var dataSlab []byte
+			if !s.evidenceBorrowed {
+				dataSlab = storage.bytes(totalCopyBytes, len(perPattern)-index)
+			}
 			if cap(match.Captures) < len(match.Captures)+matchedCount {
 				grown := storage.capturesFor(len(match.Captures)+matchedCount, len(perPattern)-index)[:len(match.Captures)]
 				copy(grown, match.Captures)
@@ -167,11 +170,16 @@ func (s *Scanner) populateRuleEvidence(
 					Length:  span.End - span.Start,
 				}
 				copyLength := min(capture.Length, s.evidenceMax)
-				if copyLength > 0 {
+				switch {
+				case s.evidenceBorrowed && copyLength > 0:
+					capture.Data = input.data[span.Start : span.Start+copyLength : span.Start+copyLength]
+				case s.evidenceBorrowed:
+					capture.Data = []byte{}
+				case copyLength > 0:
 					copy(dataSlab[slabPos:slabPos+copyLength], input.data[span.Start:span.Start+copyLength])
 					capture.Data = dataSlab[slabPos : slabPos+copyLength : slabPos+copyLength]
 					slabPos += copyLength
-				} else {
+				default:
 					capture.Data = []byte{}
 				}
 				capture.DataTruncated = copyLength < capture.Length
@@ -180,13 +188,13 @@ func (s *Scanner) populateRuleEvidence(
 					continue
 				}
 				if len(occurrences) == cap(occurrences) {
-					if len(occurrences) >= 1024 {
+					if len(occurrences) >= 1024 && !s.evidenceBorrowed {
 						// Keep the bounded prefix scratch, discard overflow on return.
 						occurrences = slices.Grow(occurrences, len(occurrences))
 						overflowed = true
 					} else {
 						// The small local buffer never escapes into the scanner.
-						s.evidenceOccurrences = make([]captureOccurrence, 0, 2*len(occurrences))
+						s.evidenceOccurrences = make([]captureOccurrence, 0, max(32, 2*len(occurrences)))
 						copy(s.evidenceOccurrences[:len(occurrences)], occurrences)
 						occurrences = s.evidenceOccurrences[:len(occurrences)]
 					}
@@ -200,7 +208,7 @@ func (s *Scanner) populateRuleEvidence(
 	if len(occurrences) > 1 {
 		sortCaptureOccurrences(occurrences)
 	}
-	evidence := correlateEvidence(rule.EvidencePlans, occurrences)
+	evidence := s.correlateEvidence(rule.EvidencePlans, occurrences)
 	if len(evidence) == 0 {
 		return nil, nil
 	}
@@ -303,18 +311,73 @@ func replayFlagOptions(flags regex.Flags, modifiers []ast.StringModifier) ([2]re
 	return options, count
 }
 
+func (s *Scanner) getBorrowedFieldsMap(capHint int) map[string][]Capture {
+	if s.borrowedFieldsMapIdx < len(s.borrowedFieldsMaps) {
+		m := s.borrowedFieldsMaps[s.borrowedFieldsMapIdx]
+		clear(m)
+		s.borrowedFieldsMapIdx++
+		return m
+	}
+	m := make(map[string][]Capture, capHint)
+	s.borrowedFieldsMaps = append(s.borrowedFieldsMaps, m)
+	s.borrowedFieldsMapIdx++
+	return m
+}
+
+func (s *Scanner) getBorrowedFindings(count int) []EvidenceFinding {
+	if s.borrowedFindingsIdx+count <= len(s.borrowedFindings) {
+		start := s.borrowedFindingsIdx
+		s.borrowedFindingsIdx += count
+		return s.borrowedFindings[start : start+count : start+count]
+	}
+	needed := max(s.borrowedFindingsIdx+count, max(64, len(s.borrowedFindings)*2))
+	expanded := make([]EvidenceFinding, needed)
+	copy(expanded, s.borrowedFindings[:s.borrowedFindingsIdx])
+	s.borrowedFindings = expanded
+	start := s.borrowedFindingsIdx
+	s.borrowedFindingsIdx += count
+	return s.borrowedFindings[start : start+count : start+count]
+}
+
+func (s *Scanner) getBorrowedPlanResults(capHint int) map[string][]EvidenceFinding {
+	if s.borrowedPlanMapIdx < len(s.borrowedPlanMaps) {
+		m := s.borrowedPlanMaps[s.borrowedPlanMapIdx]
+		clear(m)
+		s.borrowedPlanMapIdx++
+		return m
+	}
+	m := make(map[string][]EvidenceFinding, capHint)
+	s.borrowedPlanMaps = append(s.borrowedPlanMaps, m)
+	s.borrowedPlanMapIdx++
+	return m
+}
+
 func correlateEvidence(plans []EvidencePlan, occurrences []captureOccurrence) map[string][]EvidenceFinding {
+	return (*Scanner)(nil).correlateEvidence(plans, occurrences)
+}
+
+func (s *Scanner) correlateEvidence(plans []EvidencePlan, occurrences []captureOccurrence) map[string][]EvidenceFinding {
 	if len(plans) == 0 {
 		return nil
 	}
-	result := make(map[string][]EvidenceFinding, len(plans))
+	var result map[string][]EvidenceFinding
+	if s != nil && s.evidenceBorrowed {
+		result = s.getBorrowedPlanResults(len(plans))
+	} else {
+		result = make(map[string][]EvidenceFinding, len(plans))
+	}
 	for _, plan := range plans {
 		var anchorsBuf [8]int
 		anchors := occurrenceIndicesNamedInto(anchorsBuf[:0], occurrences, plan.Anchor)
 		if len(anchors) == 0 {
 			continue
 		}
-		findings := make([]EvidenceFinding, len(anchors))
+		var findings []EvidenceFinding
+		if s != nil && s.evidenceBorrowed {
+			findings = s.getBorrowedFindings(len(anchors))
+		} else {
+			findings = make([]EvidenceFinding, len(anchors))
+		}
 		var ambiguousBuf [8]bool
 		var ambiguous []bool
 		if len(anchors) <= len(ambiguousBuf) {
@@ -322,12 +385,26 @@ func correlateEvidence(plans []EvidencePlan, occurrences []captureOccurrence) ma
 		} else {
 			ambiguous = make([]bool, len(anchors))
 		}
-		captureSlab := make([]Capture, 0, len(occurrences))
+		var captureSlab []Capture
+		if s != nil && s.evidenceBorrowed {
+			if cap(s.borrowedCaptureSlab) < len(occurrences) {
+				s.borrowedCaptureSlab = make([]Capture, 0, max(len(occurrences), 2*cap(s.borrowedCaptureSlab)))
+			}
+			captureSlab = s.borrowedCaptureSlab[:0]
+		} else {
+			captureSlab = make([]Capture, 0, len(occurrences))
+		}
 		for index, at := range anchors {
 			anchor := occurrences[at]
+			var fieldsMap map[string][]Capture
+			if s != nil && s.evidenceBorrowed {
+				fieldsMap = s.getBorrowedFieldsMap(len(plan.Fields))
+			} else {
+				fieldsMap = make(map[string][]Capture, len(plan.Fields))
+			}
 			findings[index] = EvidenceFinding{
 				Anchor: anchor.capture,
-				Fields: make(map[string][]Capture, len(plan.Fields)),
+				Fields: fieldsMap,
 			}
 			pos := len(captureSlab)
 			captureSlab = append(captureSlab, anchor.capture)
@@ -343,6 +420,9 @@ func correlateEvidence(plans []EvidencePlan, occurrences []captureOccurrence) ma
 				}
 				assignCaptureCandidate(findings, ambiguous, anchors, occurrences, field, candidate, plan.Within, &captureSlab)
 			}
+		}
+		if s != nil && s.evidenceBorrowed {
+			s.borrowedCaptureSlab = captureSlab
 		}
 		for index := range findings {
 			findings[index].Status = evidenceFindingStatus(findings[index].Fields, plan.Fields, ambiguous[index])
