@@ -159,6 +159,11 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (result *Sca
 	}
 
 	clear(s.assertionResults)
+	if s.evidenceBorrowed {
+		s.borrowedFieldsMapIdx = 0
+		s.borrowedFindingsIdx = 0
+		s.borrowedPlanMapIdx = 0
+	}
 	if s.reportedMatchesOnly && s.compactPrefilterRejects(ctx, data) {
 		scanInput := ruleScanInput{data: data, usesharedAutomaton: false, skipUnmatchedContext: true}
 		clear(s.ruleResultsDense)
@@ -337,7 +342,16 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (result *Sca
 				}
 				if len(evidence) != 0 {
 					if result.Evidence == nil {
-						result.Evidence = make(map[string]map[string][]EvidenceFinding)
+						switch {
+						case s.evidenceBorrowed && s.borrowedEvidenceRuleMap != nil:
+							result.Evidence = s.borrowedEvidenceRuleMap
+							clear(result.Evidence)
+						case s.evidenceBorrowed:
+							s.borrowedEvidenceRuleMap = make(map[string]map[string][]EvidenceFinding)
+							result.Evidence = s.borrowedEvidenceRuleMap
+						default:
+							result.Evidence = make(map[string]map[string][]EvidenceFinding)
+						}
 					}
 					result.Evidence[rule.Name] = evidence
 				}
@@ -370,6 +384,11 @@ func (s *Scanner) evaluatePublicRules(
 	matchedRuleIndices *[]int,
 ) (publicRuleEvaluation, error) {
 	clear(s.assertionResults)
+	if s.evidenceBorrowed {
+		s.borrowedFieldsMapIdx = 0
+		s.borrowedFindingsIdx = 0
+		s.borrowedPlanMapIdx = 0
+	}
 	if s.compactPrefilterRejects(ctx, data) {
 		if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
 			s.telemetrySink.PrefilterRejects++

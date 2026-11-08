@@ -39,6 +39,7 @@ type Scanner struct {
 	omitRuleResults     bool
 	fastScan            bool
 	evidenceMax         int
+	evidenceBorrowed    bool
 	evaluatedRules      map[string]bool
 
 	booleanRoutingEnabled bool
@@ -78,6 +79,16 @@ type Scanner struct {
 	// Reusable scratch buffers for regex capture replay.
 	captureScratch      regex.CaptureScratch
 	evidenceOccurrences []captureOccurrence
+
+	// Reusable pooled buffers for WithBorrowedEvidence
+	borrowedFieldsMaps      []map[string][]Capture
+	borrowedFieldsMapIdx    int
+	borrowedFindings        []EvidenceFinding
+	borrowedFindingsIdx     int
+	borrowedCaptureSlab     []Capture
+	borrowedPlanMaps        []map[string][]EvidenceFinding
+	borrowedPlanMapIdx      int
+	borrowedEvidenceRuleMap map[string]map[string][]EvidenceFinding
 	// Single-block scans reuse this slot to expose absolute addresses to the
 	// interpreter without allocating a []MemoryBlock per event.
 	blockContext  [1]MemoryBlock
@@ -192,6 +203,23 @@ func WithEvidence(maxCaptureBytes int) ScannerOption {
 	}
 	return func(scanner *Scanner) {
 		scanner.evidenceMax = maxCaptureBytes
+	}
+}
+
+// WithBorrowedEvidence configures whether extracted evidence captures and findings
+// alias the scanned input directly (zero-copy) and reuse internal correlation buffers
+// across scans on the same Scanner.
+//
+// When enabled, Capture.Data references the underlying input bytes without copying,
+// and spatial evidence correlation structures (including findings and field maps) are
+// pooled. This eliminates heap churn and GC pauses in high-throughput event processing
+// pipelines where findings are inspected or serialized immediately.
+//
+// Callers must not mutate the scanned input buffer or access returned borrowed evidence
+// after initiating subsequent scans on the same Scanner or after closing the Scanner.
+func WithBorrowedEvidence(borrowed bool) ScannerOption {
+	return func(scanner *Scanner) {
+		scanner.evidenceBorrowed = borrowed
 	}
 }
 
