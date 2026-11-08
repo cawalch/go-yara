@@ -1,5 +1,9 @@
 package compiler
 
+import (
+	"math/bits"
+)
+
 // corpusSharedAtoms also considers the verifier's proven mandatory literal
 // after a prefix. Keep fixed offsets and at least the existing atom quality;
 // only trade the prefix when the internal candidate's frequency across eligible
@@ -191,15 +195,30 @@ func corpusPrefixAtoms(rules []*CompiledRule) map[string]regexPrefilterAtom {
 		best := choice.atom
 		frequency := counts[corpusAtomKey(best.data)].count
 		target := frequency / 2
-		// Prefer later windows and stop after halving fanout. Chasing unique
-		// windows can inflate the automaton for little additional scan benefit.
-		for offset := len(choice.prefix) - maxPrefilterAtomLength; offset >= 0 && frequency > max(1, target); offset-- {
-			window := choice.prefix[offset : offset+maxPrefilterAtomLength]
-			if prefilterAtomScore(window) != best.score {
-				continue
+		largeCorpus := len(choices) > minSharedNonTextEntries
+		// Prefer later windows and stop after halving fanout for small corpora.
+		// For large corpora, find the minimum-frequency, highest-entropy atom.
+		for offset := len(choice.prefix) - maxPrefilterAtomLength; offset >= 0; offset-- {
+			if !largeCorpus && frequency <= max(1, target) {
+				break
 			}
-			if count := counts[corpusAtomKey(window)].count; count < frequency {
-				best.data, best.minOffset, best.maxOffset = window, offset, offset
+			window := choice.prefix[offset : offset+maxPrefilterAtomLength]
+			score := prefilterAtomScore(window)
+			if !largeCorpus {
+				if score != best.score {
+					continue
+				}
+			} else {
+				if score < 20 || score < best.score-4 {
+					continue
+				}
+			}
+			count := counts[corpusAtomKey(window)].count
+			entropy := atomEntropy(window)
+			bestEntropy := atomEntropy(best.data)
+			better := count < frequency || (count == frequency && (score > best.score || (score == best.score && entropy > bestEntropy)))
+			if better {
+				best.data, best.minOffset, best.maxOffset, best.score = window, offset, offset, score
 				frequency = count
 			}
 		}
@@ -219,4 +238,50 @@ func corpusAtomKey(data []byte) (key [maxPrefilterAtomLength]byte) {
 		}
 	}
 	return key
+}
+
+// atomEntropy computes an integer Shannon entropy and character diversity score
+// for a candidate atom window. Higher scores indicate richer information content,
+// mixed character classes (e.g. uppercase, lowercase, digits, symbols), and lower
+// repetition, making the atom less likely to collide with common text in logs.
+func atomEntropy(atom []byte) int {
+	if len(atom) == 0 {
+		return 0
+	}
+	var counts [256]uint8
+	distinct := 0
+	var classes uint8 // bit 0: lower, bit 1: upper, bit 2: digit, bit 3: punct, bit 4: non-ascii/zero
+	for _, b := range atom {
+		if counts[b] == 0 {
+			distinct++
+			switch {
+			case b == 0 || b >= 0x80:
+				classes |= 1 << 4
+			case b >= '0' && b <= '9':
+				classes |= 1 << 2
+			case b >= 'A' && b <= 'Z':
+				classes |= 1 << 1
+			case b >= 'a' && b <= 'z':
+				classes |= 1 << 0
+			default:
+				classes |= 1 << 3
+			}
+		}
+		counts[b]++
+	}
+	var cLogCTable = [...]int{0, 0, 16, 38, 64, 93, 124, 157, 192}
+	n := len(atom)
+	nLogN := n * 24
+	sumCLogC := 0
+	for _, c := range counts {
+		if c > 0 && int(c) < len(cLogCTable) {
+			sumCLogC += cLogCTable[c]
+		}
+	}
+	entropy := nLogN - sumCLogC
+	if entropy < 0 {
+		entropy = 0
+	}
+	classCount := bits.OnesCount8(classes)
+	return (entropy >> 3) + distinct*2 + classCount*4
 }
