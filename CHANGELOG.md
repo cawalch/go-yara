@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+* **Borrowed evidence and zero-copy captures:** Added `WithBorrowedEvidence(true)` scanner option allowing `Capture.Data` to alias scanned input byte slices directly with 3-index capacity clipping, eliminating byte copying during evidence extraction ([#361](https://github.com/cawalch/go-yara/issues/361)).
+* **Direct streaming JSON serialization:** Added `AppendEvidenceJSON` and `WriteEvidenceJSON` (plus `(*EvidenceFinding).AppendJSON` and `(*Capture).AppendJSON`) for reflection-free, deterministic streaming JSON encoding of evidence findings at 1.6+ GB/s ([#361](https://github.com/cawalch/go-yara/issues/361)).
+
+### Performance
+
+* **Evidence pooling:** Replaced per-finding field map allocations and occurrence tracking with scanner-managed pooled buffers in borrowed mode, reducing heap allocations on match-heavy workloads by >96% (from 1,053 to 20 allocs/op) and reducing GC churn ([#361](https://github.com/cawalch/go-yara/issues/361)).
+
 ## [v0.9.0] - 2026-11-02
 
 ### Upgrade notes
