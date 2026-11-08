@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+* **Entropy-weighted atom selection:** Introduced Shannon entropy, character class diversity, and corpus-wide inverse document frequency (IDF) scoring in prefix atom selection, automatically hoisting rare, high-information literals over common saturated tokens. Eliminates false-positive candidate trigger avalanches on shared prefix tokens, accelerating 10,000-rule saturated atom scans by 310× (from 121.9 µs to 393 ns) and match scans by 169× (from 114.7 µs to 678 ns) ([#363](https://github.com/cawalch/go-yara/issues/363)).
+* **Two-tier prefilter rejection gating:** Extended compact prefilter rejection gating to large non-text rule corpora with complete shared prefilters, evaluating root transitions directly to reject clean inputs before full pattern preparation or state slice resetting. Clean log rejection latency on 10,000 rules drops from 181.4 ns to 46.8 ns (-74.2%), satisfying the ≤70 ns clean log prefilter SLA ([#363](https://github.com/cawalch/go-yara/issues/363)).
 * **Evidence pooling:** Replaced per-finding field map allocations and occurrence tracking with scanner-managed pooled buffers in borrowed mode, reducing heap allocations on match-heavy workloads by >96% (from 1,053 to 20 allocs/op) and reducing GC churn ([#361](https://github.com/cawalch/go-yara/issues/361)).
 
 ## [v0.9.0] - 2026-11-02

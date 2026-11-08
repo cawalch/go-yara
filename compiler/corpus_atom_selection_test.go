@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"reflect"
 	"slices"
@@ -192,5 +193,99 @@ func TestCorpusPrefixWideAtomOffsetUnits(t *testing.T) {
 	matches := result.Matches["shifted"]["$a"]
 	if len(matches) != 1 || matches[0].Offset != 0 || matches[0].Length != len(data) {
 		t.Fatalf("wide match lost: %+v", matches)
+	}
+}
+
+func TestAtomEntropy(t *testing.T) {
+	repetitive := atomEntropy([]byte("AAAAAAAA"))
+	underscores := atomEntropy([]byte("________"))
+	token := atomEntropy([]byte("password"))
+	highEntropy := atomEntropy([]byte("xoxb-987"))
+	mixedKey := atomEntropy([]byte("AKIA1234"))
+	githubToken := atomEntropy([]byte("ghp_1234"))
+
+	if repetitive >= highEntropy {
+		t.Fatalf("repetitive atom score %d >= high entropy score %d", repetitive, highEntropy)
+	}
+	if underscores >= highEntropy {
+		t.Fatalf("underscores score %d >= high entropy score %d", underscores, highEntropy)
+	}
+	if token >= highEntropy {
+		t.Fatalf("common word score %d >= high entropy score %d", token, highEntropy)
+	}
+	if mixedKey <= repetitive {
+		t.Fatalf("mixed key score %d <= repetitive score %d", mixedKey, repetitive)
+	}
+	if githubToken <= token {
+		t.Fatalf("github token score %d <= common token score %d", githubToken, token)
+	}
+}
+
+func TestCorpusPrefixEntropyWeightedHoisting(t *testing.T) {
+	// A corpus where rules share saturated tokens but each has a unique high-entropy token
+	count := 64
+	p := mustCompileStreamingProgram(t, corpusAtomSource(count))
+	choices := corpusPrefixAtoms(p.Rules)
+	if len(choices) == 0 {
+		t.Fatal("corpus prefix atom selection produced no choices")
+	}
+
+	// Verify that the selected atom is NOT the saturated "=api_key=" suffix
+	for _, rule := range p.Rules {
+		pattern := rule.RegexPatterns["$a"]
+		atom, ok := choices[pattern.cacheKey]
+		if !ok {
+			t.Fatalf("rule %s had no selected prefix atom", rule.Name)
+		}
+		if string(atom.data) == "api_key=" || string(atom.data) == "=api_key" {
+			t.Fatalf("rule %s chose saturated atom %q", rule.Name, atom.data)
+		}
+	}
+
+	// Scanning clean data must reject quickly
+	s := p.NewScanner()
+	defer s.Close()
+	clean := []byte("level=info request completed status=200")
+	matched, err := s.Matches(clean)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if matched {
+		t.Fatal("clean log matched rules unexpectedly")
+	}
+
+	// Shared token with non-matching identifier must not match any rule
+	nonMatchingToken := []byte("provider_none=api_key=abcdefghijklmnop")
+	matched, err = s.Matches(nonMatchingToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if matched {
+		t.Fatal("non-matching token matched rules unexpectedly")
+	}
+
+	// Authentic match must match exactly
+	targetRuleIndex := count - 1
+	matchingToken := []byte(corpusAtomPrefix(targetRuleIndex) + "abcdefghijklmnop")
+	matched, err = s.Matches(matchingToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !matched {
+		t.Fatalf("authentic rule %d input failed to match", targetRuleIndex)
+	}
+}
+
+func TestLargeCorpusCompactPrefilterRejection(t *testing.T) {
+	p := mustCompileStreamingProgram(t, corpusAtomSource(128))
+	if p.compactPrefilter == nil {
+		t.Fatal("large regex corpus must activate compact prefilter gate")
+	}
+	s := p.NewScanner()
+	defer s.Close()
+
+	clean := []byte("level=info request completed status=200")
+	if !s.compactPrefilterRejects(context.Background(), clean) {
+		t.Fatal("clean log was not rejected by compact prefilter gate")
 	}
 }

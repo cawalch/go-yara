@@ -66,6 +66,16 @@ func (s *Scanner) MatchesWithContext(ctx context.Context, data []byte) (matched 
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
+	if s.compactPrefilterRejects(ctx, data) {
+		if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
+			s.telemetrySink.PrefilterRejects++
+		}
+		if s.hookMask&hookBitScanLifecycle != 0 {
+			start := s.beginScan(ctx, int64(len(data)))
+			start.finish(nil, 0, nil)
+		}
+		return false, nil
+	}
 	clear(s.ruleResultsDense)
 	defer func() {
 		clear(s.ruleResultsDense)

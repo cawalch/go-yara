@@ -50,7 +50,7 @@ func (cp *CompiledProgram) buildCompactPrefilter() *compactPrefilter {
 			}
 		}
 	}
-	if !hasAnchor {
+	if !hasAnchor && len(cp.Rules) < minSharedNonTextEntries {
 		return nil
 	}
 
@@ -75,6 +75,9 @@ func (cp *CompiledProgram) buildCompactPrefilter() *compactPrefilter {
 		if count >= minCompactFanout && !selected[key] {
 			useful = true
 		}
+	}
+	if !useful && len(cp.Rules) >= minSharedNonTextEntries && len(selected) > 0 {
+		useful = true
 	}
 	if !useful || len(selected) == 0 {
 		return nil
