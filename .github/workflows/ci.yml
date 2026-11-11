@@ -120,8 +120,15 @@ jobs:
         env:
           YARA_COMMIT: 84b0e3cc0e42f8f8e6b84d19c97ec3ac6ff8aee8 # v4.5.8
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential autoconf automake libtool pkg-config libssl-dev flex bison
+          # Hosted runners often already provide the full build toolchain.
+          needs_build_deps=0
+          for build_tool in cc make autoconf automake libtoolize pkg-config flex bison; do
+            command -v "$build_tool" >/dev/null || needs_build_deps=1
+          done
+          if [ "$needs_build_deps" -ne 0 ] || ! pkg-config --exists openssl; then
+            sudo apt-get update
+            sudo apt-get install -y build-essential autoconf automake libtool pkg-config libssl-dev flex bison
+          fi
           git init "$RUNNER_TEMP/yara-source"
           git -C "$RUNNER_TEMP/yara-source" remote add origin https://github.com/VirusTotal/yara.git
           git -C "$RUNNER_TEMP/yara-source" fetch --depth=1 origin "$YARA_COMMIT"
