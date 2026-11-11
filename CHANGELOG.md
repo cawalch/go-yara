@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-* Empty module collections and integer ranges now evaluate to false for `any`, `all`, and `none`, matching libyara. Undefined integer range bounds produce a false loop result instead of a scan error.
+* Empty module collections and integer ranges now evaluate to false for `any`, `all`, and `none`, matching libyara. Undefined integer range bounds produce a false loop result instead of a scan error. The numeric `0` loop quantifier now uses `none` semantics; recompile affected rules to update this check.
 
 ### Performance
 

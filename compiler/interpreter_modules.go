@@ -110,9 +110,6 @@ func (i *Interpreter) executeIterStartModuleArray() error {
 			iter.Total = len(value.object.keys)
 		}
 	}
-	if plan.Quantifier != QuantifierAny && plan.Quantifier != QuantifierAll && plan.Quantifier != QuantifierNone && plan.Target == 0 {
-		iter.Total = 0
-	}
 	i.iterators = append(i.iterators, iter)
 	return nil
 }
@@ -145,6 +142,9 @@ func (iter *Iterator) moduleQuantifierDecided(truth bool) bool {
 	case QuantifierAll:
 		return !truth
 	default:
+		if iter.modulePlan.Target == 0 {
+			return truth
+		}
 		return int64(iter.Count) >= iter.modulePlan.Target
 	}
 }

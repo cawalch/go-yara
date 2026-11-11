@@ -70,7 +70,8 @@ implemented.
 
 For unrecognized or rejected input, `is_pe` is `0` and the other runtime fields
 are undefined. Empty section loops and integer ranges evaluate to false for
-`any`, `all`, and `none`. Undefined integer range bounds also produce a false
+`any`, `all`, and `none`. The numeric `0` quantifier is an alias for `none`.
+Undefined integer range bounds also produce a false
 loop result instead of a scan error.
 
 The adapter inherits go-pe's validation and resource limits. In particular, it

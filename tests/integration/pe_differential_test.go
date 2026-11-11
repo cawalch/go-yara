@@ -66,6 +66,10 @@ func TestLibyaraPEHeadersAndSections(t *testing.T) {
 		`for all s in pe.sections : (s.virtual_size > 0)`,
 		`for none s in pe.sections : (s.virtual_size == 0)`,
 		`for none i in (0..pe.number_of_sections-1) : (pe.sections[i].virtual_size == 0)`,
+		`for 0 s in pe.sections : (s.virtual_size == 0)`,
+		`for 0 s in pe.sections : (s.virtual_size > 0)`,
+		`for 0 i in (0..pe.number_of_sections-1) : (pe.sections[i].virtual_size == 0)`,
+		`for 0 i in (0..pe.number_of_sections-1) : (pe.sections[i].virtual_size > 0)`,
 	}
 	for name, data := range map[string][]byte{"pe32": pefixture.New(false), "pe64": pefixture.New(true), "non_pe": []byte("ordinary"), "empty": nil, "mz_only": []byte("MZ")} {
 		t.Run(name, func(t *testing.T) { checkPEPaths(t, peProbeSource(predicates), data) })

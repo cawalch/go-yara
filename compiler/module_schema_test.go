@@ -154,7 +154,7 @@ func TestStructuredModuleShortCircuit(t *testing.T) {
 		{`for all item in telemetry.items : (item.val < 10)`, false},
 		{`for none item in telemetry.items : (item.val > 10)`, false},
 		{`for 1 item in telemetry.items : (item.val > 10)`, true},
-		{`for 0 item in telemetry.items : (item.val > 10)`, true},
+		{`for 0 item in telemetry.items : (item.val > 10)`, false},
 	} {
 		t.Run(tc.condition, func(t *testing.T) {
 			scanner := compileTelemetry(t, tc.condition).NewScanner(WithModuleData("telemetry", telemetryData()), WithItersmax(1))
