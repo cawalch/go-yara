@@ -213,20 +213,17 @@ func (i *Interpreter) executeModuleCall(id builtinFunction, function ModuleFunct
 			}
 		}
 	}
-	var result ModuleValue
-	if function.Evaluate == nil && function.peImports {
-		result = i.peImports(moduleArgs)
-	} else {
-		ctx := ModuleContext{RuleName: i.currentRule}
-		if i.matchContext != nil {
-			ctx.Data = i.matchContext.Data
-			ctx.Blocks = i.matchContext.Blocks
-		}
-		var err error
-		result, err = function.Evaluate(ctx, slices.Clone(moduleArgs))
-		if err != nil {
-			return &InterpreterError{Type: ErrorRuntime, Opcode: OpCall, Message: err.Error()}
-		}
+	if function.Evaluate == nil {
+		return i.pushModuleValue(i.peImports(moduleArgs))
+	}
+	ctx := ModuleContext{RuleName: i.currentRule}
+	if i.matchContext != nil {
+		ctx.Data = i.matchContext.Data
+		ctx.Blocks = i.matchContext.Blocks
+	}
+	result, err := function.Evaluate(ctx, slices.Clone(moduleArgs))
+	if err != nil {
+		return &InterpreterError{Type: ErrorRuntime, Opcode: OpCall, Message: err.Error()}
 	}
 	if result.Type != ModuleUndefined && result.Type != moduleResultType(function, moduleArgs) {
 		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpCall, Message: "module returned an unexpected value type"}

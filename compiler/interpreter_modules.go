@@ -23,7 +23,7 @@ func (i *Interpreter) executeModuleLoad() error {
 	if supplied || name != "pe" || !i.currentCompiledRule.nativePE {
 		return i.pushModuleValue(value)
 	}
-	return i.push(Value{Type: ValueTypeObject, object: cachedPE(i.matchContext).object})
+	return i.push(Value{Type: ValueTypeObject, object: loadPE(i.matchContext).object})
 }
 
 func (i *Interpreter) executeModuleGetField() error {

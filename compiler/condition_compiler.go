@@ -650,7 +650,7 @@ func (cc *conditionCompiler) compileFunctionCall(call *ast.FunctionCall) error {
 	if isModuleFunction {
 		// A query-only PE rule still needs its schema for WithModuleData and
 		// serialization, even though it emits no field-load opcode.
-		if moduleFunction.function.peImports && moduleFunction.function.Evaluate == nil && !slices.Contains(cc.moduleAccessNames, "pe") {
+		if moduleFunction.function.Evaluate == nil && !slices.Contains(cc.moduleAccessNames, "pe") {
 			cc.moduleAccessNames = append(cc.moduleAccessNames, "pe")
 		}
 		cc.emitter.EmitOpcodeWithOperand(

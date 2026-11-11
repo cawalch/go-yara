@@ -3,8 +3,13 @@ package compiler
 import "strings"
 
 func (i *Interpreter) peImports(args []ModuleValue) ModuleValue {
-	// A caller can copy a built-in registration and change its signatures.
+	// Guard the indexes even if a caller modifies a compiled function table.
 	if len(args) != 2 || args[0].Type != ModuleString || (args[1].Type != ModuleString && args[1].Type != ModuleInteger) {
+		return ModuleValue{}
+	}
+	// A serialized custom module must not fall back to native parsing when
+	// loaded without its callback, even if the function signatures match.
+	if i.currentCompiledRule == nil || !i.currentCompiledRule.nativePE {
 		return ModuleValue{}
 	}
 	// Normalize each query once, not once per imported function. The argument
@@ -16,7 +21,7 @@ func (i *Interpreter) peImports(args []ModuleValue) ModuleValue {
 	if data, supplied := i.moduleData["pe"]; supplied {
 		return peHostImports(data, args)
 	}
-	image := cachedPE(i.matchContext)
+	image := loadPE(i.matchContext)
 	if image.file == nil {
 		return ModuleValue{}
 	}
@@ -57,6 +62,7 @@ func peHostImports(data ModuleValue, args []ModuleValue) ModuleValue {
 		}
 		name := library.object.fields["library_name"]
 		functions := library.object.fields["functions"]
+		name.String, _, _ = strings.Cut(name.String, "\x00")
 		if name.Type != ModuleString || !peImportNameEqual(name.String, args[0].String) || functions.object == nil {
 			continue
 		}
@@ -71,6 +77,7 @@ func peHostImports(data ModuleValue, args []ModuleValue) ModuleValue {
 				}
 			} else {
 				name := symbol.object.fields["name"]
+				name.String, _, _ = strings.Cut(name.String, "\x00")
 				if name.Type == ModuleString && peImportNameEqual(name.String, args[1].String) {
 					return IntegerValue(1)
 				}
@@ -80,10 +87,10 @@ func peHostImports(data ModuleValue, args []ModuleValue) ModuleValue {
 	return IntegerValue(0)
 }
 
-// Match libyara's strcasecmp in the C locale. Query b is already NUL-trimmed.
+// Match libyara's strcasecmp in the C locale. Both strings are NUL-trimmed:
+// file imports by the parser, and queries and host data by the caller.
 // Unicode folding would incorrectly match names such as the Kelvin sign to K.
 func peImportNameEqual(a, b string) bool {
-	a, _, _ = strings.Cut(a, "\x00")
 	if len(a) != len(b) {
 		return false
 	}

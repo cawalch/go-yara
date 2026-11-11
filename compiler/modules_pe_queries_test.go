@@ -90,6 +90,9 @@ rule absent {condition: not defined pe.imports("host.dll", "hostfn")}`)
 		{map[string]any{"import_details": []any{nil, map[string]any{
 			"library_name": "Host.DLL", "functions": []any{nil, map[string]any{"name": "HostFn"}, map[string]any{"ordinal": 0}},
 		}}}, "host"},
+		{map[string]any{"import_details": []any{map[string]any{
+			"library_name": "Host.DLL\x00suffix", "functions": []any{map[string]any{"name": "HostFn\x00suffix"}, map[string]any{"ordinal": 0}},
+		}}}, "host"},
 		{nil, "absent"},
 		{map[string]any{}, "absent"},
 		{map[string]any{"import_details": []any{}}, ""},
@@ -146,6 +149,64 @@ func TestPEImportQueriesCallbackOverride(t *testing.T) {
 		p, err = UnmarshalCompiledProgram(blob, module)
 		if err != nil {
 			t.Fatal(err)
+		}
+	}
+}
+
+func TestPEImportQueryRegistration(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		change func(*Module)
+	}{
+		{"module_name", func(m *Module) { m.Name = "other" }},
+		{"function_name", func(m *Module) {
+			m.Functions["other"] = m.Functions["imports"]
+			delete(m.Functions, "imports")
+		}},
+		{"schema", func(m *Module) { m.Schema = nil }},
+		{"result", func(m *Module) {
+			f := m.Functions["imports"]
+			f.ReturnType = ModuleBoolean
+			m.Functions["imports"] = f
+		}},
+		{"arguments", func(m *Module) {
+			m.Functions["imports"].Signatures[0].Arguments[0] = ModuleInteger
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			module := NewCompiler().GetOptions().Modules["pe"]
+			tc.change(&module)
+			if _, err := NewCompiler(WithModule(module)).CompileSource(`rule unused {condition: true}`); err == nil {
+				t.Fatal("modified built-in without a callback was accepted")
+			}
+		})
+	}
+}
+
+func TestPEImportQueryCustomSchema(t *testing.T) {
+	module := NewCompiler().GetOptions().Modules["pe"]
+	module.Schema = &ModuleSchema{Fields: map[string]ModuleField{"label": {Kind: ModuleString}}}
+	f := module.Functions["imports"]
+	f.Evaluate = func(ModuleContext, []ModuleValue) (ModuleValue, error) { return IntegerValue(1), nil }
+	module.Functions["imports"] = f
+	p, err := NewCompiler(WithModule(module)).CompileSource(`import "pe" rule query {condition: pe.imports("example.dll", "NamedFunction")}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob, err := p.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, modules := range [][]Module{nil, {module}} {
+		p, err := UnmarshalCompiledProgram(blob, modules...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := p.NewScanner()
+		defer s.Close()
+		r, err := s.Scan(pefixture.Imports(false, 3))
+		if err != nil || r.RuleResults["query"] != (len(modules) != 0) || s.moduleCache.pe != nil {
+			t.Fatalf("custom schema fell back to native parsing: %v %v", r, err)
 		}
 	}
 }

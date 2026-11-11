@@ -185,6 +185,10 @@ different schema retain their host-data behavior. An explicit
 Queries use that snapshot's `import_details`: a missing array gives an undefined
 result, and an empty array gives `0`. Custom `ModuleFunction.Evaluate` callbacks
 take precedence over built-in query dispatch, including on copied registrations.
+Only the unmodified built-in `pe.imports` registration can omit that callback.
+Changing its name, schema, or signature requires a custom implementation.
+Rebind custom callbacks when loading a compiled program. Native query dispatch
+uses the same schema check as automatic field loading.
 
 ## Validation
 

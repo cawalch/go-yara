@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/cawalch/go-yara/internal/pefixture"
@@ -31,6 +32,8 @@ func TestLibyaraPEImportQueries(t *testing.T) {
 		`defined pe.imports("Example.DLL", uint16(filesize))`,
 		`pe.imports("kernel32.dll", "KELVIN") == 1`,
 		`pe.imports("Kernel32.dll", "Kelvin") == 0`, `pe.imports("kernel32.dll", "Kelvin") == 0`,
+		fmt.Sprintf(`pe.imports("Example.DLL", "%s") == 1`, strings.Repeat("N", 512)),
+		fmt.Sprintf(`pe.imports("Example.DLL", "%s") == 1`, strings.Repeat("N", 513)),
 		`for any d in pe.import_details : (for any f in d.functions : (defined f.ordinal and pe.imports(d.library_name, f.ordinal)))`,
 	}
 	for _, is64 := range []bool{false, true} {
@@ -44,6 +47,8 @@ func TestLibyaraPEImportQueries(t *testing.T) {
 			{"ordinal_max", func(d []byte) { pefixture.ImportOrdinal(d, 1, 65535) }},
 			{"iat_fallback", func(d []byte) { binary.LittleEndian.PutUint32(d[0x400:], 0) }},
 			{"filtered_name", func(d []byte) { pefixture.ImportName(d, "bad-name") }},
+			{"name_limit", func(d []byte) { pefixture.ImportName(d, strings.Repeat("N", 512)) }},
+			{"truncated_name", func(d []byte) { pefixture.ImportName(d, strings.Repeat("N", 513)) }},
 			{"unicode_queries", func(d []byte) { copy(d[0x428:], "kernel32.dll\x00"); pefixture.ImportName(d, "Kelvin") }},
 			{"second_duplicate_dll", func(d []byte) {
 				copy(d[0x414:0x428], d[0x400:0x414])

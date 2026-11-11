@@ -28,9 +28,15 @@ func peModule() Module {
 				{Arguments: []ModuleValueType{ModuleString, ModuleInteger}},
 			},
 			ReturnType: ModuleInteger,
-			peImports:  true,
 		},
 	}}
+}
+
+// Nil callbacks are reserved for the unmodified built-in registration.
+func isPEImportsFunction(module Module, name string, function ModuleFunction) bool {
+	return module.Name == "pe" && name == "imports" &&
+		reflect.DeepEqual(module.Schema, peSchema) &&
+		reflect.DeepEqual(function, peModule().Functions["imports"])
 }
 
 // Preserve loading of header-only programs emitted before import support.
@@ -92,11 +98,7 @@ func peVersion(major, minor uint16) ModuleValue {
 // loadPE uses file offsets even for block scans. Only the block at file offset
 // zero can contain the headers; disjoint blocks are not concatenated. Reader
 // scans supply their retained header and the actual file size separately.
-func loadPE(ctx *MatchContext) ModuleValue {
-	return ModuleValue{Type: ModuleStruct, object: cachedPE(ctx).object}
-}
-
-func cachedPE(ctx *MatchContext) *peImage {
+func loadPE(ctx *MatchContext) *peImage {
 	if ctx != nil && ctx.moduleCache != nil {
 		if ctx.moduleCache.pe == nil {
 			ctx.moduleCache.pe = parsePE(ctx)

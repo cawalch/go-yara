@@ -246,7 +246,7 @@ func TestPEImportsConcurrentScans(t *testing.T) {
 
 func BenchmarkPEImports(b *testing.B) {
 	for _, symbols := range []int{16, 256} {
-		for _, field := range []string{"counts", "details", "name", "ordinal", "missing"} {
+		for _, field := range []string{"counts", "details", "name", "ordinal", "missing", "missing_long"} {
 			data := pefixture.Imports(true, symbols)
 			condition := fmt.Sprintf("pe.number_of_imported_functions == %d", symbols)
 			switch field {
@@ -257,8 +257,11 @@ func BenchmarkPEImports(b *testing.B) {
 			case "ordinal":
 				pefixture.ImportOrdinal(data, symbols-1, 7)
 				condition = `pe.imports("example.dll", 7)`
-			case "missing":
+			case "missing", "missing_long":
 				condition = `not pe.imports("example.dll", "absent")`
+				if field == "missing_long" {
+					pefixture.ImportName(data, strings.Repeat("N", 512))
+				}
 			}
 			for _, rules := range []int{1, 100} {
 				var source strings.Builder
