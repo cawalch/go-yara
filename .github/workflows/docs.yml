@@ -52,20 +52,15 @@ jobs:
         run: |
           npm run build --prefix site
           npm run check --prefix site
-      - name: Select available Ubuntu package mirrors
-        run: |
-          mirrors=/etc/apt/apt-mirrors.txt
-          if [ -f "$mirrors" ] && ! getent hosts azure.archive.ubuntu.com >/dev/null; then
-            # Keep the runner's upstream mirrors when the Azure mirror is unavailable.
-            grep -Eq 'https?://(archive|security)\.ubuntu\.com/ubuntu' "$mirrors"
-            sudo sed -i '/azure\.archive\.ubuntu\.com/d' "$mirrors"
-          fi
-      - name: Install browser engines
-        working-directory: site
-        run: npx playwright install --with-deps chromium firefox webkit
       - name: Check playground in Chromium, Firefox, and WebKit
         working-directory: site
-        run: xvfb-run -a npm run test-playground
+        run: |
+          # Match the preinstalled browsers to the locked Playwright package.
+          playwright_version=$(node -p "require('./node_modules/playwright/package.json').version")
+          docker run --rm --init --ipc=host --env CI=true \
+            --volume "$PWD:/work" --workdir /work \
+            "mcr.microsoft.com/playwright:v${playwright_version}-noble" \
+            xvfb-run -a npm run test-playground
       - name: Check external links before publication
         if: github.event_name != 'pull_request'
         run: npm run check-external --prefix site
