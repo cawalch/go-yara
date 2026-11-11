@@ -7,6 +7,7 @@ import "math"
 // Keys use qualified names, since deserialized rules can assign different IDs
 // to the same function. String arguments are deliberately not retained.
 type moduleCallCache struct {
+	pe      *moduleObject
 	entries [16]moduleCallCacheEntry
 	count   int
 }
@@ -25,6 +26,7 @@ type moduleCacheArgument struct {
 func (cache *moduleCallCache) reset() {
 	clear(cache.entries[:cache.count])
 	cache.count = 0
+	cache.pe = nil
 }
 
 func moduleCallKey(name string, args []ModuleValue) (moduleCallCacheEntry, bool) {

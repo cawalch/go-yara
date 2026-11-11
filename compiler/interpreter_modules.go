@@ -19,7 +19,18 @@ func (i *Interpreter) executeModuleLoad() error {
 	if err != nil {
 		return err
 	}
-	return i.pushModuleValue(i.moduleData[name])
+	value, supplied := i.moduleData[name]
+	if supplied || name != "pe" || !i.currentCompiledRule.nativePE {
+		return i.pushModuleValue(value)
+	}
+	ctx := i.matchContext
+	if ctx == nil || ctx.moduleCache == nil {
+		return i.pushModuleValue(loadPE(ctx))
+	}
+	if ctx.moduleCache.pe == nil {
+		ctx.moduleCache.pe = loadPE(ctx).object
+	}
+	return i.push(Value{Type: ValueTypeObject, object: ctx.moduleCache.pe})
 }
 
 func (i *Interpreter) executeModuleGetField() error {
@@ -37,6 +48,9 @@ func (i *Interpreter) executeModuleGetField() error {
 	}
 	if value.Type != ValueTypeObject || value.object == nil || value.object.kind != ModuleStruct {
 		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpModuleGetField, Message: "module field requires a structure"}
+	}
+	if value.object.field != nil {
+		return i.pushModuleValue(value.object.field(name))
 	}
 	return i.pushModuleValue(value.object.fields[name])
 }
@@ -96,9 +110,6 @@ func (i *Interpreter) executeIterStartModuleArray() error {
 			iter.Total = len(value.object.keys)
 		}
 	}
-	if plan.Quantifier != QuantifierAny && plan.Quantifier != QuantifierAll && plan.Quantifier != QuantifierNone && plan.Target == 0 {
-		iter.Total = 0
-	}
 	i.iterators = append(i.iterators, iter)
 	return nil
 }
@@ -131,6 +142,9 @@ func (iter *Iterator) moduleQuantifierDecided(truth bool) bool {
 	case QuantifierAll:
 		return !truth
 	default:
+		if iter.modulePlan.Target == 0 {
+			return truth
+		}
 		return int64(iter.Count) >= iter.modulePlan.Target
 	}
 }

@@ -101,7 +101,7 @@ type Module struct {
 
 func defaultModules() map[string]Module {
 	modules := map[string]Module{}
-	for _, module := range []Module{hashModule(), mathModule(), stringModule(), timeModule()} {
+	for _, module := range []Module{hashModule(), mathModule(), stringModule(), timeModule(), peModule()} {
 		modules[module.Name] = module
 	}
 	return modules

@@ -338,7 +338,12 @@ func (cc *conditionCompiler) compileForLoopBody(quantifier string, condition ast
 			return fmt.Errorf("unsupported for-loop quantifier: %s", quantifier)
 		}
 		cc.emitter.EmitPush(uint64(count), pos.Line, pos.Column) // #nosec G115
-		cc.emitter.EmitOpcode(OpIntGe, pos.Line, pos.Column)
+		if count == 0 {
+			// YARA's numeric zero quantifier means none.
+			cc.emitter.EmitOpcode(OpIntEq, pos.Line, pos.Column)
+		} else {
+			cc.emitter.EmitOpcode(OpIntGe, pos.Line, pos.Column)
+		}
 	}
 
 	return nil

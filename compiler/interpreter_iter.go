@@ -12,6 +12,12 @@ func (i *Interpreter) executeIterStartIntRange() error {
 	startVal := i.stack[len(i.stack)-2]
 	i.stack = i.stack[:len(i.stack)-2]
 
+	// Undefined bounds produce an empty range, as in libyara. This is common
+	// when a PE rule indexes sections on a non-PE input.
+	if startVal.Type == ValueTypeUndefined || endVal.Type == ValueTypeUndefined {
+		startVal = Value{Type: ValueTypeInt, IntVal: 0}
+		endVal = Value{Type: ValueTypeInt, IntVal: -1}
+	}
 	if startVal.Type != ValueTypeInt || endVal.Type != ValueTypeInt {
 		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpIterStartIntRange, Message: "range bounds must be integers"}
 	}
@@ -389,6 +395,11 @@ func (i *Interpreter) executeIterEnd() error {
 	iter := i.iterators[len(i.iterators)-1]
 	i.iterators = i.iterators[:len(i.iterators)-1]
 
+	// libyara makes an empty range or collection false for every quantifier.
+	// A negative count fails each of the compiler's quantifier comparisons.
+	if iter.Total == 0 && (iter.Type == OpIterStartIntRange || iter.Type == OpIterStartModuleArray) {
+		return i.push(Value{Type: ValueTypeInt, IntVal: -1})
+	}
 	return i.push(Value{Type: ValueTypeInt, IntVal: int64(iter.Count)})
 }
 

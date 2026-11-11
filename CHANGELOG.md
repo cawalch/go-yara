@@ -9,8 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+* Added a pure-Go `pe` adapter for headers, sections, and related constants, backed by the independent go-pe library. See [PE module coverage and limits](docs/pe-module.md). This is the first part of [#359](https://github.com/cawalch/go-yara/issues/359).
+
 * **Borrowed evidence and zero-copy captures:** Added `WithBorrowedEvidence(true)` scanner option allowing `Capture.Data` to alias scanned input byte slices directly with 3-index capacity clipping, eliminating byte copying during evidence extraction ([#361](https://github.com/cawalch/go-yara/issues/361)).
 * **Direct streaming JSON serialization:** Added `AppendEvidenceJSON` and `WriteEvidenceJSON` (plus `(*EvidenceFinding).AppendJSON` and `(*Capture).AppendJSON`) for reflection-free, deterministic streaming JSON encoding of evidence findings at 1.6+ GB/s ([#361](https://github.com/cawalch/go-yara/issues/361)).
+
+### Fixed
+
+* Empty module collections and integer ranges now evaluate to false for `any`, `all`, and `none`, matching libyara. Undefined integer range bounds produce a false loop result instead of a scan error. The numeric `0` loop quantifier now uses `none` semantics; recompile affected rules to update this check.
 
 ### Performance
 
