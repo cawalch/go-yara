@@ -108,6 +108,16 @@ func loadPE(ctx *MatchContext) ModuleValue {
 	return peFields(file, data, ctx.FileSize)
 }
 
+// peImage owns one scan's parsed metadata and lazily constructed module values.
+type peImage struct {
+	file        *pe.File
+	names       []string
+	entryPoint  int64
+	sections    ModuleValue
+	directories ModuleValue
+	versions    [4]ModuleValue
+}
+
 func peFields(file *pe.File, data []byte, fileSize int64) ModuleValue {
 	// Keep the snapshot independent of the caller's buffer. Section names in
 	// YARA preserve embedded NULs, unlike go-pe's normalized Name field.
@@ -115,129 +125,134 @@ func peFields(file *pe.File, data []byte, fileSize int64) ModuleValue {
 	sectionStart := uint64(file.DOSHeader.AddressOfNewEXEHeader) + 24 + uint64(file.FileHeader.SizeOfOptionalHeader)
 	for i := range names {
 		start := sectionStart + uint64(i)*40
-		names[i] = string(bytes.TrimRight(data[start:start+8], "\x00"))
-	}
-	entryPoint := peEntryPoint(file, fileSize)
-	var sections, directories ModuleValue
-	var versions [4]ModuleValue
-	return peLazyStruct(func(name string) ModuleValue {
-		coff, opt := file.FileHeader, file.OptionalHeader
-		switch name {
-		case "is_pe":
-			return IntegerValue(1)
-		case "machine":
-			return IntegerValue(int64(coff.Machine))
-		case "number_of_sections":
-			return IntegerValue(int64(coff.NumberOfSections))
-		case "timestamp":
-			return IntegerValue(int64(coff.TimeDateStamp))
-		case "pointer_to_symbol_table":
-			return IntegerValue(int64(coff.PointerToSymbolTable))
-		case "number_of_symbols":
-			return IntegerValue(int64(coff.NumberOfSymbols))
-		case "size_of_optional_header":
-			return IntegerValue(int64(coff.SizeOfOptionalHeader))
-		case "characteristics":
-			return IntegerValue(int64(coff.Characteristics))
-		case "entry_point":
-			return IntegerValue(entryPoint)
-		case "entry_point_raw":
-			return IntegerValue(int64(opt.AddressOfEntryPoint))
-		case "image_base":
-			return peInteger(opt.ImageBase)
-		case "number_of_rva_and_sizes":
-			return IntegerValue(int64(opt.NumberOfRvaAndSizes))
-		case "opthdr_magic":
-			return IntegerValue(int64(opt.Magic))
-		case "size_of_code":
-			return IntegerValue(int64(opt.SizeOfCode))
-		case "size_of_initialized_data":
-			return IntegerValue(int64(opt.SizeOfInitializedData))
-		case "size_of_uninitialized_data":
-			return IntegerValue(int64(opt.SizeOfUninitializedData))
-		case "base_of_code":
-			return IntegerValue(int64(opt.BaseOfCode))
-		case "section_alignment":
-			return IntegerValue(int64(opt.SectionAlignment))
-		case "file_alignment":
-			return IntegerValue(int64(opt.FileAlignment))
-		case "linker_version":
-			if versions[0].Type == ModuleUndefined {
-				versions[0] = peVersion(uint16(opt.MajorLinkerVersion), uint16(opt.MinorLinkerVersion))
-			}
-			return versions[0]
-		case "os_version":
-			if versions[1].Type == ModuleUndefined {
-				versions[1] = peVersion(opt.MajorOperatingSystemVersion, opt.MinorOperatingSystemVersion)
-			}
-			return versions[1]
-		case "image_version":
-			if versions[2].Type == ModuleUndefined {
-				versions[2] = peVersion(opt.MajorImageVersion, opt.MinorImageVersion)
-			}
-			return versions[2]
-		case "subsystem_version":
-			if versions[3].Type == ModuleUndefined {
-				versions[3] = peVersion(opt.MajorSubsystemVersion, opt.MinorSubsystemVersion)
-			}
-			return versions[3]
-		case "win32_version_value":
-			return IntegerValue(int64(opt.Win32VersionValue))
-		case "size_of_image":
-			return IntegerValue(int64(opt.SizeOfImage))
-		case "size_of_headers":
-			return IntegerValue(int64(opt.SizeOfHeaders))
-		case "checksum":
-			return IntegerValue(int64(opt.CheckSum))
-		case "subsystem":
-			return IntegerValue(int64(opt.Subsystem))
-		case "dll_characteristics":
-			return IntegerValue(int64(opt.DllCharacteristics))
-		case "size_of_stack_reserve":
-			return peInteger(opt.SizeOfStackReserve)
-		case "size_of_stack_commit":
-			return peInteger(opt.SizeOfStackCommit)
-		case "size_of_heap_reserve":
-			return peInteger(opt.SizeOfHeapReserve)
-		case "size_of_heap_commit":
-			return peInteger(opt.SizeOfHeapCommit)
-		case "loader_flags":
-			return IntegerValue(int64(opt.LoaderFlags))
-		case "base_of_data":
-			if file.Is32Bit() {
-				return IntegerValue(int64(opt.BaseOfData))
-			}
-		case "sections":
-			if sections.Type == ModuleUndefined {
-				values := make([]ModuleValue, len(file.Sections))
-				for i, section := range file.Sections {
-					values[i] = peSectionFields(section, names[i], coff.PointerToSymbolTable != 0)
-				}
-				sections = peArray(values)
-			}
-			return sections
-		case "data_directories":
-			if directories.Type == ModuleUndefined {
-				values := make([]ModuleValue, min(opt.NumberOfRvaAndSizes, pe.NumberOfDataDirectories))
-				for i := range values {
-					d := opt.DataDirectories[i]
-					values[i] = peStruct(map[string]ModuleValue{
-						"virtual_address": IntegerValue(int64(d.VirtualAddress)), "size": IntegerValue(int64(d.Size)),
-					})
-				}
-				directories = peArray(values)
-			}
-			return directories
+		raw := bytes.TrimRight(data[start:start+8], "\x00")
+		names[i] = file.Sections[i].Name
+		if string(raw) != names[i] {
+			names[i] = string(raw)
 		}
-		return ModuleValue{}
-	})
+	}
+	image := &peImage{file: file, names: names, entryPoint: peEntryPoint(file, fileSize)}
+	return peLazyStruct(image.field)
+}
+
+func (image *peImage) field(name string) ModuleValue {
+	file := image.file
+	coff, opt := &file.FileHeader, &file.OptionalHeader
+	switch name {
+	case "is_pe":
+		return IntegerValue(1)
+	case "machine":
+		return IntegerValue(int64(coff.Machine))
+	case "number_of_sections":
+		return IntegerValue(int64(coff.NumberOfSections))
+	case "timestamp":
+		return IntegerValue(int64(coff.TimeDateStamp))
+	case "pointer_to_symbol_table":
+		return IntegerValue(int64(coff.PointerToSymbolTable))
+	case "number_of_symbols":
+		return IntegerValue(int64(coff.NumberOfSymbols))
+	case "size_of_optional_header":
+		return IntegerValue(int64(coff.SizeOfOptionalHeader))
+	case "characteristics":
+		return IntegerValue(int64(coff.Characteristics))
+	case "entry_point":
+		return IntegerValue(image.entryPoint)
+	case "entry_point_raw":
+		return IntegerValue(int64(opt.AddressOfEntryPoint))
+	case "image_base":
+		return peInteger(opt.ImageBase)
+	case "number_of_rva_and_sizes":
+		return IntegerValue(int64(opt.NumberOfRvaAndSizes))
+	case "opthdr_magic":
+		return IntegerValue(int64(opt.Magic))
+	case "size_of_code":
+		return IntegerValue(int64(opt.SizeOfCode))
+	case "size_of_initialized_data":
+		return IntegerValue(int64(opt.SizeOfInitializedData))
+	case "size_of_uninitialized_data":
+		return IntegerValue(int64(opt.SizeOfUninitializedData))
+	case "base_of_code":
+		return IntegerValue(int64(opt.BaseOfCode))
+	case "section_alignment":
+		return IntegerValue(int64(opt.SectionAlignment))
+	case "file_alignment":
+		return IntegerValue(int64(opt.FileAlignment))
+	case "linker_version":
+		if image.versions[0].Type == ModuleUndefined {
+			image.versions[0] = peVersion(uint16(opt.MajorLinkerVersion), uint16(opt.MinorLinkerVersion))
+		}
+		return image.versions[0]
+	case "os_version":
+		if image.versions[1].Type == ModuleUndefined {
+			image.versions[1] = peVersion(opt.MajorOperatingSystemVersion, opt.MinorOperatingSystemVersion)
+		}
+		return image.versions[1]
+	case "image_version":
+		if image.versions[2].Type == ModuleUndefined {
+			image.versions[2] = peVersion(opt.MajorImageVersion, opt.MinorImageVersion)
+		}
+		return image.versions[2]
+	case "subsystem_version":
+		if image.versions[3].Type == ModuleUndefined {
+			image.versions[3] = peVersion(opt.MajorSubsystemVersion, opt.MinorSubsystemVersion)
+		}
+		return image.versions[3]
+	case "win32_version_value":
+		return IntegerValue(int64(opt.Win32VersionValue))
+	case "size_of_image":
+		return IntegerValue(int64(opt.SizeOfImage))
+	case "size_of_headers":
+		return IntegerValue(int64(opt.SizeOfHeaders))
+	case "checksum":
+		return IntegerValue(int64(opt.CheckSum))
+	case "subsystem":
+		return IntegerValue(int64(opt.Subsystem))
+	case "dll_characteristics":
+		return IntegerValue(int64(opt.DllCharacteristics))
+	case "size_of_stack_reserve":
+		return peInteger(opt.SizeOfStackReserve)
+	case "size_of_stack_commit":
+		return peInteger(opt.SizeOfStackCommit)
+	case "size_of_heap_reserve":
+		return peInteger(opt.SizeOfHeapReserve)
+	case "size_of_heap_commit":
+		return peInteger(opt.SizeOfHeapCommit)
+	case "loader_flags":
+		return IntegerValue(int64(opt.LoaderFlags))
+	case "base_of_data":
+		if file.Is32Bit() {
+			return IntegerValue(int64(opt.BaseOfData))
+		}
+	case "sections":
+		if image.sections.Type == ModuleUndefined {
+			values := make([]ModuleValue, len(file.Sections))
+			for i := range file.Sections {
+				values[i] = peSectionFields(&file.Sections[i], image.names[i], coff.PointerToSymbolTable != 0)
+			}
+			image.sections = peArray(values)
+		}
+		return image.sections
+	case "data_directories":
+		if image.directories.Type == ModuleUndefined {
+			values := make([]ModuleValue, min(opt.NumberOfRvaAndSizes, pe.NumberOfDataDirectories))
+			for i := range values {
+				d := opt.DataDirectories[i]
+				values[i] = peStruct(map[string]ModuleValue{
+					"virtual_address": IntegerValue(int64(d.VirtualAddress)), "size": IntegerValue(int64(d.Size)),
+				})
+			}
+			image.directories = peArray(values)
+		}
+		return image.directories
+	}
+	return ModuleValue{}
 }
 
 func peLazyStruct(field func(string) ModuleValue) ModuleValue {
 	return ModuleValue{Type: ModuleStruct, object: &moduleObject{kind: ModuleStruct, field: field}}
 }
 
-func peSectionFields(s pe.Section, name string, hasSymbols bool) ModuleValue {
+func peSectionFields(s *pe.Section, name string, hasSymbols bool) ModuleValue {
 	fullName := StringValue(name)
 	if hasSymbols && strings.HasPrefix(name, "/") {
 		fullName = StringValue(s.Name)

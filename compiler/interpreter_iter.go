@@ -397,9 +397,7 @@ func (i *Interpreter) executeIterEnd() error {
 
 	// libyara makes an empty range or collection false for every quantifier.
 	// A negative count fails each of the compiler's quantifier comparisons.
-	emptyCollection := iter.Type == OpIterStartModuleArray && (iter.moduleObject == nil ||
-		len(iter.moduleObject.elements) == 0 && len(iter.moduleObject.keys) == 0)
-	if iter.Type == OpIterStartIntRange && iter.Total == 0 || emptyCollection {
+	if iter.Total == 0 && (iter.Type == OpIterStartIntRange || iter.Type == OpIterStartModuleArray) {
 		return i.push(Value{Type: ValueTypeInt, IntVal: -1})
 	}
 	return i.push(Value{Type: ValueTypeInt, IntVal: int64(iter.Count)})

@@ -74,7 +74,7 @@ func TestPELazyLoading(t *testing.T) {
 		if _, err := s.Scan(pefixture.New(false)); err != nil {
 			t.Fatal(err)
 		}
-		if s.moduleCache.pe.Type != ModuleUndefined {
+		if s.moduleCache.pe != nil {
 			t.Fatal("unused PE module was loaded")
 		}
 	}
@@ -87,17 +87,17 @@ func TestPELazyLoading(t *testing.T) {
 	if _, err := s.Scan(pefixture.New(false)); err != nil {
 		t.Fatal(err)
 	}
-	cached := s.moduleCache.pe.object
+	cached := s.moduleCache.pe
 	// Re-evaluating another rule must use the scan snapshot even if the input
 	// scratch reference changes; a new scan must discard the old snapshot.
 	s.matchCtx.Data = nil
-	if !s.isRuleConditionSatisfied(p.Rules[1]) || s.moduleCache.pe.object != cached {
+	if !s.isRuleConditionSatisfied(p.Rules[1]) || s.moduleCache.pe != cached {
 		t.Fatal("PE snapshot not reused")
 	}
 	if _, err := s.Scan(nil); err != nil {
 		t.Fatal(err)
 	}
-	if s.moduleCache.pe.object != notPE.object {
+	if s.moduleCache.pe != notPE.object {
 		t.Fatal("stale PE snapshot")
 	}
 }
@@ -119,7 +119,7 @@ func TestPECustomData(t *testing.T) {
 	s := p.NewScanner(WithModuleData("pe", map[string]any{"label": "host"}))
 	defer s.Close()
 	r, err := s.Scan(pefixture.New(false))
-	if err != nil || !r.RuleResults["custom"] || s.moduleCache.pe.Type != ModuleUndefined {
+	if err != nil || !r.RuleResults["custom"] || s.moduleCache.pe != nil {
 		t.Fatalf("custom module: %v %v", r, err)
 	}
 }
@@ -257,16 +257,35 @@ func TestPEUnusedSchema(t *testing.T) {
 }
 
 func TestPESnapshotOwnsNames(t *testing.T) {
-	data := pefixture.New(false)
-	copy(data[0x178:], "a\x00bc\x00\x00\x00\x00")
-	value := loadPE(&MatchContext{Data: data, FileSize: int64(len(data))})
-	clear(data)
-	sections := value.object.field("sections")
-	if got := sections.object.elements[0].object.field("name").String; got != "a\x00bc" {
-		t.Fatalf("borrowed section name: %q", got)
-	}
-	if got := value.object.field("machine").Integer; got != 0x14c {
-		t.Fatalf("borrowed header: %x", got)
+	for _, tc := range []struct {
+		name, raw, full string
+	}{
+		{"short", ".text", ".text"},
+		{"embedded_nul", "a\x00bc", "a\x00bc"},
+		{"coff", "/4", ".long_section_name"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			data := pefixture.New(false)
+			clear(data[0x178:0x180])
+			copy(data[0x178:], tc.raw)
+			if tc.name == "coff" {
+				binary.LittleEndian.PutUint32(data[0x8c:], 0x600)
+				binary.LittleEndian.PutUint32(data[0x600:], 32)
+				copy(data[0x604:], tc.full+"\x00")
+			}
+			value := loadPE(&MatchContext{Data: data, FileSize: int64(len(data))})
+			clear(data)
+			section := value.object.field("sections").object.elements[0].object
+			if got := section.field("name").String; got != tc.raw {
+				t.Fatalf("borrowed section name: %q", got)
+			}
+			if got := section.field("full_name").String; got != tc.full {
+				t.Fatalf("borrowed full section name: %q", got)
+			}
+			if got := value.object.field("machine").Integer; got != 0x14c {
+				t.Fatalf("borrowed header: %x", got)
+			}
+		})
 	}
 }
 
@@ -321,7 +340,7 @@ func TestPEHostDataOverride(t *testing.T) {
 	if matched, err := s.Matches(pefixture.New(false)); err != nil || !matched {
 		t.Fatalf("host data: %t %v", matched, err)
 	}
-	if s.moduleCache.pe.Type != ModuleUndefined {
+	if s.moduleCache.pe != nil {
 		t.Fatal("host data triggered automatic parsing")
 	}
 }

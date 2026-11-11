@@ -161,11 +161,18 @@ func (cp *CompiledProgram) prepare() error {
 			}
 			cp.moduleSchemas[name] = schema
 		}
-		rule.nativePE = reflect.DeepEqual(rule.moduleSchemas["pe"], peSchema)
+		rule.nativePE = false
 		rule.BuildStringIndex()
 		if rule.dependencies != nil {
 			cp.dependencies[rule.Name] = slices.Clone(rule.dependencies)
 			slices.Sort(cp.dependencies[rule.Name])
+		}
+	}
+	// Schemas agree across rules. Compare the built-in schema once, including
+	// when deserialization has reconstructed it at a different address.
+	if reflect.DeepEqual(cp.moduleSchemas["pe"], peSchema) {
+		for _, rule := range cp.Rules {
+			rule.nativePE = rule.moduleSchemas["pe"] != nil
 		}
 	}
 	cp.assignSharedAssertions()

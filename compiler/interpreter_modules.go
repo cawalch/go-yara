@@ -27,10 +27,10 @@ func (i *Interpreter) executeModuleLoad() error {
 	if ctx == nil || ctx.moduleCache == nil {
 		return i.pushModuleValue(loadPE(ctx))
 	}
-	if ctx.moduleCache.pe.Type == ModuleUndefined {
-		ctx.moduleCache.pe = loadPE(ctx)
+	if ctx.moduleCache.pe == nil {
+		ctx.moduleCache.pe = loadPE(ctx).object
 	}
-	return i.pushModuleValue(ctx.moduleCache.pe)
+	return i.push(Value{Type: ValueTypeObject, object: ctx.moduleCache.pe})
 }
 
 func (i *Interpreter) executeModuleGetField() error {
