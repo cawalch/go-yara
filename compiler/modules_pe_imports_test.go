@@ -159,6 +159,36 @@ func TestPEImportsReaderLimit(t *testing.T) {
 	}
 }
 
+func TestPEImportsTruncation(t *testing.T) {
+	p, err := NewCompiler().CompileSource(`import "pe"
+ rule headers {condition: pe.is_pe}
+ rule imports {condition: pe.number_of_imports == 1 and pe.number_of_imported_functions == 3 and pe.import_details[0].functions[2].name == "NamedFunction"}
+ rule unavailable {condition: pe.is_pe and not defined pe.number_of_imports and not defined pe.number_of_imported_functions and not defined pe.import_details}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := p.NewScanner()
+	defer s.Close()
+	for _, is64 := range []bool{false, true} {
+		data := pefixture.Imports(is64, 3)
+		headerEnd := 0x98 + int(binary.LittleEndian.Uint16(data[0x94:])) + 2*40
+		nameEnd := int(binary.LittleEndian.Uint32(data[0x440:])) - 0x2000 + 0x400 + 2 + len("NamedFunction") + 1
+		// Descending prefixes exercise successful-to-failed cache transitions
+		// and every byte boundary in descriptors, thunks, hints, and names.
+		for end := len(data); end >= 0; end-- {
+			r, err := s.Scan(data[:end])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if r.RuleResults["headers"] != (end >= headerEnd) ||
+				r.RuleResults["imports"] != (end >= nameEnd) ||
+				r.RuleResults["unavailable"] != (end >= headerEnd && end < nameEnd) {
+				t.Fatalf("64=%t prefix=%#x: %v", is64, end, r.RuleResults)
+			}
+		}
+	}
+}
+
 func TestPEImportsHostData(t *testing.T) {
 	p, err := NewCompiler().CompileSource(`import "pe" rule host {condition: pe.number_of_imports == 1 and pe.import_details[0].functions[0].ordinal == 7}`)
 	if err != nil {

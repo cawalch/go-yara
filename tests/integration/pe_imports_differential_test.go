@@ -1,19 +1,18 @@
 package integration
 
 import (
-	"context"
 	"encoding/binary"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
 
 	gope "github.com/cawalch/go-pe"
 
-	"github.com/cawalch/go-yara/compiler"
 	"github.com/cawalch/go-yara/internal/pefixture"
 )
 
@@ -22,7 +21,8 @@ func TestLibyaraPEStandardImports(t *testing.T) {
 	predicates := []string{
 		`pe.is_pe`, `defined pe.number_of_imports`, `defined pe.number_of_imported_functions`,
 		`pe.number_of_imports == 0`, `pe.number_of_imports == 1`, `pe.number_of_imports == 2`,
-		`pe.number_of_imported_functions == 0`, `pe.number_of_imported_functions == 3`, `pe.number_of_imported_functions == 6`,
+		`pe.number_of_imported_functions == 0`, `pe.number_of_imported_functions == 2`, `pe.number_of_imported_functions == 3`, `pe.number_of_imported_functions == 6`,
+		`pe.import_details[0].functions[1].ordinal == 9`,
 		`pe.import_details[0].library_name == "Example.DLL"`, `pe.import_details[0].number_of_functions == 3`,
 		`pe.import_details[0].functions[0].name == "NamedFunction"`,
 		`defined pe.import_details[0].functions[0].ordinal`, `pe.import_details[0].functions[1].ordinal == 7`,
@@ -70,6 +70,15 @@ func TestLibyaraPEStandardImports(t *testing.T) {
 			}},
 			{"empty_library", func(d []byte) { clear(d[0x440:0x448]) }},
 			{"invalid_function", func(d []byte) { pefixture.ImportName(d, "bad-name") }},
+			{"filtered_between_valid_functions", func(d []byte) {
+				copy(d[0x300:], "\x00\x00bad-name\x00")
+				if is64 {
+					binary.LittleEndian.PutUint64(d[0x448:], 0x1100)
+				} else {
+					binary.LittleEndian.PutUint32(d[0x444:], 0x1100)
+				}
+				pefixture.ImportOrdinal(d, 2, 9)
+			}},
 			{"decorated_function", func(d []byte) { pefixture.ImportName(d, "?Decorated@@YAHH@Z") }},
 			{"dll_path", func(d []byte) { copy(d[0x428:], "a/b:c.dll\x00") }},
 			{"invalid_dll", func(d []byte) { copy(d[0x428:], "bad?.dll\x00") }},
@@ -165,21 +174,16 @@ func TestLibyaraPEStrictImportCompatibility(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(want) != 1 {
+			if !reflect.DeepEqual(want, map[string][]span{"oracle": nil}) {
 				t.Fatalf("oracle changed: %v", want)
 			}
-			if _, ok := want["oracle"]; !ok {
-				t.Fatalf("oracle changed: %v", want)
-			}
-			p, err := compiler.NewCompiler().CompileSourceWithContext(context.Background(), source)
+			got, err := scanWithGoYara(source, data)
 			if err != nil {
 				t.Fatal(err)
 			}
-			r, err := p.Scan(data)
-			if err != nil {
-				t.Fatal(err)
+			if !reflect.DeepEqual(got, map[string][]span{"local": nil}) {
+				t.Fatalf("local changed: %v", got)
 			}
-			assertReleaseScanResult(t, map[string][]span{"local": nil}, r)
 		})
 	}
 }
@@ -200,23 +204,16 @@ rule local {condition: not defined pe.import_details[0].functions[0].name}`, tc.
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(want) != 2 {
+			if !reflect.DeepEqual(want, map[string][]span{"ordinal": nil, "oracle": nil}) {
 				t.Fatalf("oracle changed: %v", want)
 			}
-			for _, name := range []string{"ordinal", "oracle"} {
-				if _, ok := want[name]; !ok {
-					t.Fatalf("oracle changed: %v", want)
-				}
-			}
-			p, err := compiler.NewCompiler().CompileSourceWithContext(context.Background(), source)
+			got, err := scanWithGoYara(source, data)
 			if err != nil {
 				t.Fatal(err)
 			}
-			r, err := p.Scan(data)
-			if err != nil {
-				t.Fatal(err)
+			if !reflect.DeepEqual(got, map[string][]span{"ordinal": nil, "local": nil}) {
+				t.Fatalf("local changed: %v", got)
 			}
-			assertReleaseScanResult(t, map[string][]span{"ordinal": nil, "local": nil}, r)
 		})
 	}
 }
