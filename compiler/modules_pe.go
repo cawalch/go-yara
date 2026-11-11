@@ -3,6 +3,7 @@ package compiler
 import (
 	"bytes"
 	"math"
+	"reflect"
 	"strings"
 
 	pe "github.com/cawalch/go-pe"
@@ -10,7 +11,8 @@ import (
 
 // The schema is immutable. Runtime values are owned by one scan, not by go-pe
 // or the compiled program. Constants are folded by the condition compiler.
-var peSchema = newPESchema()
+var peHeaderSchema = newPESchema()
+var peSchema = newPEImportsSchema()
 
 // The semantic validator only reads this type tree. Reuse it so rules that
 // don't import PE don't pay to reconstruct the built-in schema.
@@ -19,6 +21,12 @@ var peSemanticType = moduleFieldType(ModuleField{Kind: ModuleStruct, Struct: peS
 var notPE = peStruct(map[string]ModuleValue{"is_pe": IntegerValue(0)})
 
 func peModule() Module { return Module{Name: "pe", Schema: peSchema} }
+
+// Preserve loading of header-only programs emitted before import support.
+// Match complete schemas so unrelated host modules named pe remain custom.
+func isNativePESchema(schema *ModuleSchema) bool {
+	return schema != nil && (reflect.DeepEqual(schema, peSchema) || reflect.DeepEqual(schema, peHeaderSchema))
+}
 
 func newPESchema() *ModuleSchema {
 	fields := map[string]ModuleField{}
@@ -77,15 +85,7 @@ func loadPE(ctx *MatchContext) ModuleValue {
 	if ctx == nil {
 		return notPE
 	}
-	data := ctx.Data
-	if data == nil {
-		for _, block := range ctx.Blocks {
-			if block.Base == 0 {
-				data = block.Data
-				break
-			}
-		}
-	}
+	data := peScanData(ctx)
 	if len(data) < 64 || data[0] != 'M' || data[1] != 'Z' {
 		return notPE
 	}
@@ -105,12 +105,26 @@ func loadPE(ctx *MatchContext) ModuleValue {
 	// libyara exposes and maps at most 96 sections, while go-pe validates up
 	// to 256. Keep the declared number_of_sections unchanged.
 	file.Sections = file.Sections[:min(len(file.Sections), 96)]
-	return peFields(file, data, ctx.FileSize)
+	return peFields(file, data, ctx)
+}
+
+func peScanData(ctx *MatchContext) []byte {
+	if ctx.Data != nil {
+		return ctx.Data
+	}
+	for _, block := range ctx.Blocks {
+		if block.Base == 0 {
+			return block.Data
+		}
+	}
+	return nil
 }
 
 // peImage owns one scan's parsed metadata and lazily constructed module values.
 type peImage struct {
 	file        *pe.File
+	context     *MatchContext
+	imports     *peImportData
 	names       []string
 	entryPoint  int64
 	sections    ModuleValue
@@ -118,7 +132,7 @@ type peImage struct {
 	versions    [4]ModuleValue
 }
 
-func peFields(file *pe.File, data []byte, fileSize int64) ModuleValue {
+func peFields(file *pe.File, data []byte, ctx *MatchContext) ModuleValue {
 	// Keep the snapshot independent of the caller's buffer. Section names in
 	// YARA preserve embedded NULs, unlike go-pe's normalized Name field.
 	names := make([]string, len(file.Sections))
@@ -131,7 +145,7 @@ func peFields(file *pe.File, data []byte, fileSize int64) ModuleValue {
 			names[i] = string(raw)
 		}
 	}
-	image := &peImage{file: file, names: names, entryPoint: peEntryPoint(file, fileSize)}
+	image := &peImage{file: file, context: ctx, names: names, entryPoint: peEntryPoint(file, ctx.FileSize)}
 	return peLazyStruct(image.field)
 }
 
@@ -139,6 +153,8 @@ func (image *peImage) field(name string) ModuleValue {
 	file := image.file
 	coff, opt := &file.FileHeader, &file.OptionalHeader
 	switch name {
+	case "number_of_imports", "number_of_imported_functions", "import_details":
+		return image.importField(name)
 	case "is_pe":
 		return IntegerValue(1)
 	case "machine":

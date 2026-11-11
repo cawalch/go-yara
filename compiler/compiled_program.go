@@ -170,7 +170,7 @@ func (cp *CompiledProgram) prepare() error {
 	}
 	// Schemas agree across rules. Compare the built-in schema once, including
 	// when deserialization has reconstructed it at a different address.
-	if reflect.DeepEqual(cp.moduleSchemas["pe"], peSchema) {
+	if isNativePESchema(cp.moduleSchemas["pe"]) {
 		for _, rule := range cp.Rules {
 			rule.nativePE = rule.moduleSchemas["pe"] != nil
 		}
