@@ -1,0 +1,173 @@
+package compiler
+
+import (
+	"encoding/binary"
+	"os"
+	"testing"
+
+	"github.com/cawalch/go-yara/internal/pefixture"
+)
+
+func TestPEImportQueriesCache(t *testing.T) {
+	query := `rule query {condition: pe.imports("example.dll", "namedfunction") and pe.imports("EXAMPLE.DLL", 7)}`
+	count := `rule count {condition: pe.number_of_imported_functions == 3}`
+	for _, source := range []string{query + count, count + query} {
+		p, err := NewCompiler().CompileSource(`import "pe" ` + source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		blob, err := p.MarshalBinary()
+		if err != nil {
+			t.Fatal(err)
+		}
+		restored, err := UnmarshalCompiledProgram(blob)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, program := range []*CompiledProgram{p, restored} {
+			s := program.NewScanner()
+			defer s.Close()
+			for _, is64 := range []bool{false, true} {
+				data := pefixture.Imports(is64, 3)
+				pefixture.ImportOrdinal(data, 1, 7)
+				r, err := s.Scan(data)
+				if err != nil || len(r.MatchedRules) != 2 {
+					t.Fatalf("initial: %v %v", r, err)
+				}
+				image := s.moduleCache.pe
+				if image.imports.details.Type != ModuleUndefined {
+					t.Fatal("queries constructed detail objects")
+				}
+				for _, base := range []int64{0, 4096} {
+					b := program.NewBlockScanner()
+					if err := b.Scan(base, data); err != nil {
+						t.Fatal(err)
+					}
+					r, err := b.Finish()
+					b.Close()
+					if err != nil || r.RuleResults["query"] != (base == 0) {
+						t.Fatalf("block base=%d: %v %v", base, r, err)
+					}
+				}
+				// Both rule orders must share the same parse, even after the
+				// original bytes no longer describe a valid lookup table.
+				binary.LittleEndian.PutUint32(data[0x400:], 0xffffffff)
+				for _, rule := range program.Rules {
+					if !s.isRuleConditionSatisfied(rule) || s.moduleCache.pe != image {
+						t.Fatal("query and fields did not share the snapshot")
+					}
+				}
+				for _, input := range [][]byte{data, nil, pefixture.New(is64)} {
+					if ok, err := s.Matches(input); err != nil || ok {
+						t.Fatalf("stale imports: %t %v", ok, err)
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestPEImportQueriesHostData(t *testing.T) {
+	p, err := NewCompiler().CompileSource(`import "pe"
+rule host {condition: pe.imports("HOST.dll", "hostfn") and pe.imports("host.dll", 0) and not pe.imports("host.dll", "")}
+rule file {condition: pe.imports("example.dll", "NamedFunction")}
+rule absent {condition: not defined pe.imports("host.dll", "hostfn")}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob, err := p.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err = UnmarshalCompiledProgram(blob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		data any
+		want string
+	}{
+		{map[string]any{"import_details": []any{nil, map[string]any{
+			"library_name": "Host.DLL", "functions": []any{nil, map[string]any{"name": "HostFn"}, map[string]any{"ordinal": 0}},
+		}}}, "host"},
+		{nil, "absent"},
+		{map[string]any{}, "absent"},
+		{map[string]any{"import_details": []any{}}, ""},
+	} {
+		s := p.NewScanner(WithModuleData("pe", tc.data))
+		defer s.Close()
+		r, err := s.Scan(pefixture.Imports(false, 3))
+		if err != nil || s.moduleCache.pe != nil {
+			t.Fatalf("host data parsed file: %v %v", r, err)
+		}
+		wantCount := 0
+		if tc.want != "" {
+			wantCount = 1
+		}
+		if len(r.MatchedRules) != wantCount || tc.want != "" && !r.RuleResults[tc.want] {
+			t.Fatalf("want %q: %v", tc.want, r.RuleResults)
+		}
+	}
+}
+
+func TestPEImportQueriesNonPEAllocations(t *testing.T) {
+	p, err := NewCompiler().CompileSource(`import "pe" rule query {condition: pe.imports("Example.DLL", "NamedFunction") or pe.imports("Example.DLL", 7)}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := p.NewScanner(WithoutMatches(), WithoutRuleResults())
+	defer s.Close()
+	if n := testing.AllocsPerRun(100, func() {
+		if _, err := s.MatchingRules(nil); err != nil {
+			t.Fatal(err)
+		}
+	}); n != 0 {
+		t.Fatalf("non-PE queries allocate %g times", n)
+	}
+}
+
+func TestPEImportQueriesCallbackOverride(t *testing.T) {
+	module := NewCompiler().GetOptions().Modules["pe"]
+	function := module.Functions["imports"]
+	function.Evaluate = func(ModuleContext, []ModuleValue) (ModuleValue, error) { return IntegerValue(42), nil }
+	module.Functions["imports"] = function
+	p, err := NewCompiler(WithModule(module)).CompileSource(`import "pe" rule custom {condition: pe.imports("anything", 7) == 42}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if ok, err := p.Matches(nil); err != nil || !ok {
+			t.Fatalf("callback override: %t %v", ok, err)
+		}
+		blob, err := p.MarshalBinary()
+		if err != nil {
+			t.Fatal(err)
+		}
+		p, err = UnmarshalCompiledProgram(blob, module)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestPELegacyImportSchema(t *testing.T) {
+	blob, err := os.ReadFile("testdata/serialization/format18-pe-import-details.goyara")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := pefixture.Imports(false, 3)
+	pefixture.ImportOrdinal(data, 1, 7)
+	for range 2 {
+		p, err := UnmarshalCompiledProgram(blob)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ok, err := p.Matches(data); err != nil || !ok {
+			t.Fatalf("historical function IDs: %t %v", ok, err)
+		}
+		blob, err = p.MarshalBinary()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}

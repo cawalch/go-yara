@@ -6,6 +6,7 @@ import (
 	"maps"
 	"math"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -647,6 +648,11 @@ func (cc *conditionCompiler) compileFunctionCall(call *ast.FunctionCall) error {
 		return nil
 	}
 	if isModuleFunction {
+		// A query-only PE rule still needs its schema for WithModuleData and
+		// serialization, even though it emits no field-load opcode.
+		if moduleFunction.function.peImports && moduleFunction.function.Evaluate == nil && !slices.Contains(cc.moduleAccessNames, "pe") {
+			cc.moduleAccessNames = append(cc.moduleAccessNames, "pe")
+		}
 		cc.emitter.EmitOpcodeWithOperand(
 			OpCall,
 			Operand{Type: OperandImmediate32, Value: encodeBuiltinCall(moduleFunction.id, len(call.Args))},

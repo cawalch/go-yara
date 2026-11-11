@@ -19,10 +19,11 @@ rule WritableExecutableSection {
 ```
 
 This implements headers, sections, and standard import metadata under
-[#359](https://github.com/cawalch/go-yara/issues/359). The module exposes fields
-and constants. `pe.imports(...)` calls, delayed imports, import hashes, exports,
-resources, Rich headers, computed checksums, and Authenticode signatures remain
-unsupported and fail compilation.
+[#359](https://github.com/cawalch/go-yara/issues/359). The module exposes fields,
+constants, and queries by name or ordinal for standard imports. Regex import
+queries, delayed imports, import hashes, exports, resources, Rich headers,
+computed checksums, and Authenticode signatures remain unsupported and fail
+compilation.
 
 ## Supported fields
 
@@ -59,32 +60,41 @@ available even when the input isn't a PE image.
 
 ## Standard imports
 
-Use collection loops to query the imported DLLs and functions:
+Use `pe.imports` to check for a named function or numeric ordinal:
 
 ```yara
 import "pe"
 
 rule ImportsVirtualAlloc {
     condition:
-        for any library in pe.import_details : (
-            library.library_name == "KERNEL32.dll" and
-            for any function in library.functions : (
-                function.name == "VirtualAlloc"
-            )
-        )
+        pe.imports("kernel32.dll", "VirtualAlloc")
 }
 ```
 
-Names preserve their spelling; the string comparisons in this example are
-case-sensitive. `number_of_imports` counts descriptors with accepted functions,
+The two supported signatures are `pe.imports(dll, function_name)` and
+`pe.imports(dll, ordinal)`. They return integer `1` for a match and `0` otherwise.
+For example, `pe.imports("ws2_32.dll", 1)` checks for ordinal 1. Named imports
+don't match their hint as an ordinal, and values outside 0 through 65,535 don't
+match file imports. DLL and function-name comparisons fold ASCII case and stop
+at the first NUL byte, matching libyara 4.5.8's C-locale behavior. They don't use
+Unicode case folding.
+
+Queries are undefined for non-PE input, rejected import metadata, or undefined
+arguments. Only standard imports are searched. The single-DLL, regex, and
+flagged overloads are not implemented and fail compilation.
+
+Use `import_details` and collection loops to inspect records directly. Names
+preserve their spelling; ordinary string equality remains case-sensitive.
+`number_of_imports` counts descriptors with accepted functions,
 including duplicate DLL descriptors. `number_of_imported_functions` counts
 functions across those descriptors. Empty or filtered libraries are omitted.
 
 For an import by name, `name` is defined and `ordinal` is undefined. For an
 import by ordinal, `ordinal` is defined and `name` is undefined, including for
 ordinal zero. Unlike libyara, this adapter doesn't synthesize `ordN` names or
-resolve DLL-specific ordinal aliases. Query the ordinal directly. Import
-address-table RVAs (`functions[j].rva`) aren't implemented and fail compilation.
+resolve DLL-specific ordinal aliases. Name queries don't resolve those aliases
+either; query the ordinal directly. Import address-table RVAs
+(`functions[j].rva`) aren't implemented and fail compilation.
 
 The adapter follows libyara 4.5.8's name filtering: DLL names must have fewer
 than 256 bytes and contain printable ASCII other than `"*<>?|`. Function names
@@ -95,8 +105,8 @@ go-pe preserves the underlying names and has its own parsing limits.
 
 A valid PE image with no import directory has zero import counts and an empty
 `import_details` array. If go-pe rejects import metadata, all three import
-fields are undefined; the header and section fields remain available. Failures
-are cached for the scan, with no partial import results.
+fields and import queries are undefined; the header and section fields remain
+available. Failures are cached for the scan, with no partial import results.
 
 Import parsing inherits go-pe's bounds checks, required terminators, directory
 size checks, and resource limits. It uses the lookup table when present and
@@ -151,12 +161,14 @@ application and call `ScanWithContext`.
 
 ## Runtime behavior
 
-The first field access parses the headers and sections. Subsequent rules share
-that scan's snapshot. Version objects, directory descriptors, and section
-objects are constructed on demand. The first import-field access parses and
-filters imports once. Counts don't construct detail objects; each library
-constructs its function objects only when accessed. Constants and unused module
-imports don't invoke the parser. Starting another scan invalidates the snapshot.
+The first field access or import query parses the headers and sections.
+Subsequent rules share that scan's snapshot. Version objects, directory
+descriptors, and section objects are constructed on demand. The first import
+query or import-field access parses and filters imports once. Queries and fields
+share this cache. Counts and queries don't construct detail objects; each
+library constructs its function objects only when accessed. Constants and unused
+module imports don't invoke the parser. Starting another scan invalidates the
+snapshot.
 
 Headers and parsed import records own their names. Deferred import parsing
 reads from the active scan context without holding another reference to the
@@ -170,14 +182,17 @@ read by this version of go-yara. Previously serialized header-only PE schemas
 still load automatically. Existing custom modules named `pe` with a
 different schema retain their host-data behavior. An explicit
 `WithModuleData("pe", data)` snapshot takes precedence over automatic loading.
+Queries use that snapshot's `import_details`: a missing array gives an undefined
+result, and an empty array gives `0`. Custom `ModuleFunction.Evaluate` callbacks
+take precedence over built-in query dispatch, including on copied registrations.
 
 ## Validation
 
 The differential suite uses libyara 4.5.8 in CI. It covers PE32 and PE32+
-headers, constants, section names, standard import counts and details, undefined
-fields, entry-point mappings, real Go-toolchain PE fixtures, scanner reuse,
-compiled-program round trips,
-compact scans, and reader scans within the retention limit.
+headers, constants, section names, standard import counts, details, and queries,
+undefined fields, entry-point mappings, real Go-toolchain PE fixtures, scanner
+reuse, compiled-program round trips, compact scans, and reader scans within the
+retention limit.
 
 To run the focused tests, install the `yara` CLI on `PATH`, then run:
 

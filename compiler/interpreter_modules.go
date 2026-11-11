@@ -23,14 +23,7 @@ func (i *Interpreter) executeModuleLoad() error {
 	if supplied || name != "pe" || !i.currentCompiledRule.nativePE {
 		return i.pushModuleValue(value)
 	}
-	ctx := i.matchContext
-	if ctx == nil || ctx.moduleCache == nil {
-		return i.pushModuleValue(loadPE(ctx))
-	}
-	if ctx.moduleCache.pe == nil {
-		ctx.moduleCache.pe = loadPE(ctx).object
-	}
-	return i.push(Value{Type: ValueTypeObject, object: ctx.moduleCache.pe})
+	return i.push(Value{Type: ValueTypeObject, object: cachedPE(i.matchContext).object})
 }
 
 func (i *Interpreter) executeModuleGetField() error {

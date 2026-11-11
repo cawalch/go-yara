@@ -7,7 +7,7 @@ import "math"
 // Keys use qualified names, since deserialized rules can assign different IDs
 // to the same function. String arguments are deliberately not retained.
 type moduleCallCache struct {
-	pe      *moduleObject
+	pe      *peImage
 	entries [16]moduleCallCacheEntry
 	count   int
 }

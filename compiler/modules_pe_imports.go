@@ -34,7 +34,7 @@ type peImportData struct {
 	valid     bool
 }
 
-func (image *peImage) importField(name string) ModuleValue {
+func (image *peImage) loadImports() *peImportData {
 	if image.imports == nil {
 		image.imports = &peImportData{}
 		libraries, err := image.file.Imports(peScanData(image.context))
@@ -44,7 +44,11 @@ func (image *peImage) importField(name string) ModuleValue {
 			image.imports.valid = true
 		}
 	}
-	imports := image.imports
+	return image.imports
+}
+
+func (image *peImage) importField(name string) ModuleValue {
+	imports := image.loadImports()
 	if !imports.valid {
 		return ModuleValue{}
 	}
