@@ -37,3 +37,17 @@ The historical first occurrence has length 4 for `anchored` on `!b!b` and
 and 3 respectively. Reading and reserializing this fixture must preserve both
 historical behaviors. Format 18 adds an atom-dispatch policy bit; format-17
 readers must reject new artifacts rather than silently ignore that policy.
+
+`format18-pe-headers.goyara` was emitted from `03727d7141e5f73a260455d3a7f2490a03af4354`
+(PR #452), using Go 1.27.3, before adding standard import fields:
+
+```yara
+import "pe"
+rule headers {
+    condition:
+        pe.is_pe and pe.number_of_sections == 2 and pe.sections[0].name == ".text"
+}
+```
+
+It preserves the original built-in PE schema. Reading and reserializing this
+artifact must retain automatic PE loading even after the schema gains fields.

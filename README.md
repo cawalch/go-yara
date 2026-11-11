@@ -9,7 +9,7 @@ The engine is designed for high-throughput scanning pipelines. It uses literal p
 ## Key Capabilities
 
 - **Pure Go**: Zero CGO dependencies. Produces static binaries and cross-compiles cleanly to all Go-supported architectures.
-- **YARA Parity**: Strict parser and compiler supporting text strings, hex patterns with wildcards and jumps, regular expressions, condition operators, and built-in `hash`, `math`, `string`, and `time` modules. The `pe` module supports [headers and sections](docs/pe-module.md).
+- **YARA Parity**: Strict parser and compiler supporting text strings, hex patterns with wildcards and jumps, regular expressions, condition operators, and built-in `hash`, `math`, `string`, and `time` modules. The `pe` module supports [headers, sections, and standard imports](docs/pe-module.md).
 - **High-Throughput Prefiltering**: Aho-Corasick literal indexing and early header-based rule pruning skip non-matching rules before condition evaluation.
 - **Low Memory Overhead**: Reusable scanner instances and internal pooling avoid heap allocations on prefilter-rejected inputs after warm-up. Other scan paths may allocate for results or module computations.
 - **Thread Safety**: Immutable compiled programs support safe, concurrent scanning across multiple goroutines.
@@ -236,9 +236,9 @@ rule CheckPayload {
 | `string` | `to_int`, `length` |
 | `time` | `now` |
 
-The built-in `pe` module exposes PE32 and PE32+ header fields, section metadata,
-and related constants. See [PE headers and sections](docs/pe-module.md) for an
-example, supported fields, and malformed-input and streaming limits. Imports,
+The built-in `pe` module exposes PE32 and PE32+ headers, sections, standard
+import counts and details, and related constants. See [PE metadata](docs/pe-module.md)
+for examples and compatibility limits. Import functions, delayed imports,
 exports, and signatures are not implemented.
 
 Hash functions accept a string or `(offset, size)`. Statistical functions accept
@@ -361,7 +361,8 @@ data to the same compiled program.
 A scalar field can set `Constant` to a matching `ModuleValue`; direct references
 to constants work without runtime data. Schemas are copied at registration, must
 be finite, and support up to 32 levels. Schema fields can coexist with the existing
-scalar callback API in `Module.Functions`. Native `pe`/`elf` parsers are not bundled.
+scalar callback API in `Module.Functions`. The built-in `pe` adapter uses the
+independent go-pe parser; native ELF parsing is not implemented.
 
 ### Program Serialization and Caching
 

@@ -1,23 +1,25 @@
 # Native PE module
 
-Status: headers and sections implemented; further work tracked in
+Status: headers, sections, and standard import metadata implemented. Follow-up
+work is tracked in
 [#359](https://github.com/cawalch/go-yara/issues/359).
 
 The PE module lets pure-Go applications evaluate binary metadata conditions
-without linking libyara. The first implementation covers headers, sections,
-and related constants. See [PE headers and sections](../pe-module.md) for the
-supported fields and compatibility limits.
+without linking libyara. The implementation covers headers, sections, standard
+import counts and details, and related constants. See [PE metadata](../pe-module.md)
+for the supported fields and compatibility limits.
 
 ## Library boundary
 
 [go-pe](https://github.com/cawalch/go-pe) owns bounded parsing of DOS, COFF, and
-optional headers, section tables, and COFF section names. It remains a standalone
-library. It doesn't import go-yara, expose YARA values, or implement scanner
-lifecycle hooks.
+optional headers, section tables, COFF section names, and standard imports. It
+remains a standalone library. It doesn't import go-yara, expose YARA values, or
+implement scanner lifecycle hooks.
 
 go-yara owns the module schema, YARA constant names, undefined values,
-entry-point mapping policy, and scan-local caching. The dependency is pinned
-to a go-pe revision. Parser improvements must make sense for independent
+entry-point mapping policy, import name filtering and exposure limits, and
+scan-local caching. The dependency is pinned to a go-pe revision. Parser
+improvements must make sense for independent
 clients; YARA-specific compatibility belongs in the adapter.
 
 Existing libraries remain useful comparison points. Go's `debug/pe` provides
@@ -58,7 +60,8 @@ there is no blanket zero-allocation guarantee.
 
 ## Follow-up work
 
-Imports, exports, import hashes, resources, Rich headers, Authenticode, and
+Import functions, delayed imports, ordinal aliases, import address-table RVAs,
+exports, import hashes, resources, Rich headers, Authenticode, and
 process-memory behavior remain outside this phase. Each addition needs a
 bounded parsing design, differential coverage, and performance measurements.
 The Authenticode work also needs explicit certificate and signature-verification
