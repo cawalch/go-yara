@@ -52,6 +52,14 @@ jobs:
         run: |
           npm run build --prefix site
           npm run check --prefix site
+      - name: Select available Ubuntu package mirrors
+        run: |
+          mirrors=/etc/apt/apt-mirrors.txt
+          if [ -f "$mirrors" ] && ! getent hosts azure.archive.ubuntu.com >/dev/null; then
+            # Keep the runner's upstream mirrors when the Azure mirror is unavailable.
+            grep -Eq 'https?://(archive|security)\.ubuntu\.com/ubuntu' "$mirrors"
+            sudo sed -i '/azure\.archive\.ubuntu\.com/d' "$mirrors"
+          fi
       - name: Install browser engines
         working-directory: site
         run: npx playwright install --with-deps chromium firefox webkit
