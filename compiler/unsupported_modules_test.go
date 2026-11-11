@@ -12,14 +12,14 @@ func TestCompileUnsupportedModules(t *testing.T) {
 		wantError string
 	}{
 		{
-			name: "import_pe",
-			source: `import "pe"
+			name: "import_elf",
+			source: `import "elf"
 
 rule test {
 	condition:
 		true
 }`,
-			wantError: "unsupported module: pe",
+			wantError: "unsupported module: elf",
 		},
 		{
 			name: "pe_member_access",
@@ -27,7 +27,7 @@ rule test {
 	condition:
 		pe.is_pe
 }`,
-			wantError: "unsupported module: pe",
+			wantError: "module must be imported: pe",
 		},
 		{
 			name: "pe_function_call",

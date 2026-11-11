@@ -26,8 +26,10 @@ type ModuleField struct {
 }
 
 type moduleObject struct {
-	kind     ModuleValueType
-	fields   map[string]ModuleValue
+	kind   ModuleValueType
+	fields map[string]ModuleValue
+	// field supplies scan-owned built-in fields on demand. Host data uses fields.
+	field    func(string) ModuleValue
 	elements []ModuleValue
 	keys     []string
 }
@@ -73,7 +75,9 @@ func cloneModuleSchema(schema *ModuleSchema) *ModuleSchema {
 }
 
 func validateModuleSchema(schema *ModuleSchema) error {
-	if schema == nil {
+	// The built-in schema is immutable and valid by construction. Custom
+	// schemas, including copies returned by GetOptions, still need validation.
+	if schema == nil || schema == peSchema {
 		return nil
 	}
 	return validateModuleField(ModuleField{Kind: ModuleStruct, Struct: schema}, 0)
@@ -133,6 +137,10 @@ func moduleFieldType(field ModuleField) *semantic.TypeInfo {
 func semanticModuleSchemas(modules map[string]Module) map[string]*semantic.TypeInfo {
 	out := map[string]*semantic.TypeInfo{}
 	for name, module := range modules {
+		if module.Schema == peSchema {
+			out[name] = peSemanticType
+			continue
+		}
 		if module.Schema != nil && validateModuleSchema(module.Schema) == nil {
 			out[name] = moduleFieldType(ModuleField{Kind: ModuleStruct, Struct: module.Schema})
 		}

@@ -316,8 +316,8 @@ func TestStructuredModuleIndexedStringReferences(t *testing.T) {
 func TestStructuredModuleEmptyCollections(t *testing.T) {
 	for _, condition := range []string{
 		`not (for any item in telemetry.items : (item.val > 0))`,
-		`for all item in telemetry.items : (item.val > 0)`,
-		`for none item in telemetry.items : (item.val > 0)`,
+		`not (for all item in telemetry.items : (item.val > 0))`,
+		`not (for none item in telemetry.items : (item.val > 0))`,
 		`not (for 1 item in telemetry.items : (item.val > 0))`,
 	} {
 		scanner := compileTelemetry(t, condition).NewScanner(WithModuleData("telemetry", map[string]any{"items": []any{}}))

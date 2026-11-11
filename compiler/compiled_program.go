@@ -161,6 +161,7 @@ func (cp *CompiledProgram) prepare() error {
 			}
 			cp.moduleSchemas[name] = schema
 		}
+		rule.nativePE = reflect.DeepEqual(rule.moduleSchemas["pe"], peSchema)
 		rule.BuildStringIndex()
 		if rule.dependencies != nil {
 			cp.dependencies[rule.Name] = slices.Clone(rule.dependencies)

@@ -19,7 +19,18 @@ func (i *Interpreter) executeModuleLoad() error {
 	if err != nil {
 		return err
 	}
-	return i.pushModuleValue(i.moduleData[name])
+	value, supplied := i.moduleData[name]
+	if supplied || name != "pe" || !i.currentCompiledRule.nativePE {
+		return i.pushModuleValue(value)
+	}
+	ctx := i.matchContext
+	if ctx == nil || ctx.moduleCache == nil {
+		return i.pushModuleValue(loadPE(ctx))
+	}
+	if ctx.moduleCache.pe.Type == ModuleUndefined {
+		ctx.moduleCache.pe = loadPE(ctx)
+	}
+	return i.pushModuleValue(ctx.moduleCache.pe)
 }
 
 func (i *Interpreter) executeModuleGetField() error {
@@ -37,6 +48,9 @@ func (i *Interpreter) executeModuleGetField() error {
 	}
 	if value.Type != ValueTypeObject || value.object == nil || value.object.kind != ModuleStruct {
 		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpModuleGetField, Message: "module field requires a structure"}
+	}
+	if value.object.field != nil {
+		return i.pushModuleValue(value.object.field(name))
 	}
 	return i.pushModuleValue(value.object.fields[name])
 }

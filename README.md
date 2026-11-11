@@ -9,7 +9,7 @@ The engine is designed for high-throughput scanning pipelines. It uses literal p
 ## Key Capabilities
 
 - **Pure Go**: Zero CGO dependencies. Produces static binaries and cross-compiles cleanly to all Go-supported architectures.
-- **YARA Parity**: Strict parser and compiler supporting text strings, hex patterns with wildcards and jumps, regular expressions, condition operators, and built-in `hash`, `math`, `string`, and `time` modules.
+- **YARA Parity**: Strict parser and compiler supporting text strings, hex patterns with wildcards and jumps, regular expressions, condition operators, and built-in `hash`, `math`, `string`, and `time` modules. The `pe` module supports [headers and sections](docs/pe-module.md).
 - **High-Throughput Prefiltering**: Aho-Corasick literal indexing and early header-based rule pruning skip non-matching rules before condition evaluation.
 - **Low Memory Overhead**: Reusable scanner instances and internal pooling avoid heap allocations on prefilter-rejected inputs after warm-up. Other scan paths may allocate for results or module computations.
 - **Thread Safety**: Immutable compiled programs support safe, concurrent scanning across multiple goroutines.
@@ -236,6 +236,11 @@ rule CheckPayload {
 | `string` | `to_int`, `length` |
 | `time` | `now` |
 
+The built-in `pe` module exposes PE32 and PE32+ header fields, section metadata,
+and related constants. See [PE headers and sections](docs/pe-module.md) for an
+example, supported fields, and malformed-input and streaming limits. Imports,
+exports, and signatures are not implemented.
+
 Hash functions accept a string or `(offset, size)`. Statistical functions accept
 strings or ranges; `count` and `percentage` accept a byte value with an optional
 range, and `mode` accepts an optional range. Invalid ranges and conversions yield
@@ -340,8 +345,9 @@ with string keys. Dictionary loops bind a key and value:
 `for any key,value in telemetry.env : (key == "USER" and value == "analyst")`.
 Collection loops stop once `any`, `all`, `none`, or a numeric threshold is decided.
 Missing fields, missing keys, and out-of-range indices evaluate as undefined.
-Missing collections iterate as empty collections; `all` and `none` are true for
-an empty collection, while `any` is false. Use `defined` to require a value.
+Missing collections iterate as empty collections. Empty collections evaluate to
+false for `any`, `all`, and `none`, matching libyara. Use `defined` to require a
+scalar value.
 
 Binding copies data into a scanner-owned snapshot. It accepts Go structs with
 exported fields (case-insensitive names or exact `yara:"name"` tags), string-keyed
@@ -561,11 +567,11 @@ go-yara rules.yar --mode=execute --data large_sample.bin --streaming --chunk-siz
 - **Strings**: Text, hex byte sequences (with wildcards `??`, `?F`, and jumps `[1-4]`), and regular expressions.
 - **Modifiers**: `nocase`, `wide`, `ascii`, `fullword`, `xor`, `base64`, `base64wide`, and `private`.
 - **Expressions**: Arithmetic, bitwise, comparison, logical, range, string count (`#`), length (`!`), offset (`@`), occurrence (`at`, `in`), and quantifiers (`for ... of them`).
-- **Modules**: Built-in `hash`, `math`, `string`, and `time` functions (see the module table above).
+- **Modules**: Built-in `hash`, `math`, `string`, and `time` functions, plus PE headers and sections (see the module documentation above).
 
 ### Limitations
 
-- **C-Based Modules**: Upstream C-based module object models (`pe`, `elf`, `cuckoo`, `dotnet`) are not bundled. Applications can supply structured schemas and host data or Go callback functions with `compiler.WithModule`.
+- **Other module features**: PE imports, exports, signatures, and other directory contents are not implemented. The `elf`, `cuckoo`, and `dotnet` modules are not bundled. Applications can supply structured schemas and host data or Go callback functions with `compiler.WithModule`.
 - **Streaming**: Full rule conditions, regex, and hex patterns are evaluated with constant-memory streaming via `ScanReader` and `MatchesReader` (#352). The legacy `StreamingProcessor` and CLI `--streaming` utility remain available for literal text-pattern occurrences.
 - **Block Boundary Spanning**: In `BlockScanner`, patterns crossing segmented block boundaries require overlapping bytes in the caller-provided buffers.
 

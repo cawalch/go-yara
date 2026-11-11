@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -201,7 +202,7 @@ func (rc *ruleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 		fixedOffsets:        fixedOffsets,
 		assertions:          slices.Clone(rc.conditionCompiler.assertions),
 		assertionProgram:    slices.Clone(rc.conditionCompiler.assertionProgram),
-		moduleSchemas:       rc.conditionCompiler.moduleSchemas,
+		moduleSchemas:       rc.ruleModuleSchemas(),
 		moduleAccessNames:   slices.Clone(rc.conditionCompiler.moduleAccessNames),
 		moduleIterations:    slices.Clone(rc.conditionCompiler.moduleIterations),
 		mandatoryAssertions: mandatoryAssertionIndices(rule.Condition, rc.conditionCompiler.assertions),
@@ -754,4 +755,16 @@ func cloneStatsValue(value any) any {
 	default:
 		return v
 	}
+}
+
+func (rc *ruleCompiler) ruleModuleSchemas() map[string]*ModuleSchema {
+	schemas := rc.conditionCompiler.moduleSchemas
+	if !slices.Contains(rc.conditionCompiler.moduleAccessNames, "pe") && reflect.DeepEqual(schemas["pe"], peSchema) {
+		if len(schemas) == 1 {
+			return nil
+		}
+		schemas = maps.Clone(schemas)
+		delete(schemas, "pe")
+	}
+	return schemas
 }
