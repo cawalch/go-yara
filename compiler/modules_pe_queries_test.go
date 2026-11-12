@@ -165,7 +165,7 @@ func TestPEImportQueriesCallbackOverride(t *testing.T) {
 }
 
 func TestPEQueryRegistration(t *testing.T) {
-	for _, query := range []string{"imports", "exports"} {
+	for _, query := range []string{"imports", "exports", "exports_index"} {
 		for _, tc := range []struct {
 			name   string
 			change func(*Module)
@@ -200,6 +200,7 @@ func TestPEImportQueryCustomSchema(t *testing.T) {
 	module := NewCompiler().GetOptions().Modules["pe"]
 	module.Schema = &ModuleSchema{Fields: map[string]ModuleField{"label": {Kind: ModuleString}}}
 	delete(module.Functions, "exports")
+	delete(module.Functions, "exports_index")
 	f := module.Functions["imports"]
 	f.Evaluate = func(ModuleContext, []ModuleValue) (ModuleValue, error) { return IntegerValue(1), nil }
 	module.Functions["imports"] = f

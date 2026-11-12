@@ -169,7 +169,7 @@ func TestPEBlocks(t *testing.T) {
 }
 
 func TestPEUnsupportedFeatures(t *testing.T) {
-	for _, condition := range []string{`pe.imphash() == ""`, `pe.exports()`, `pe.exports(true)`, `pe.exports(1.5)`, `pe.exports("a", 1)`, `pe.exports(/name/)`, `pe.exports_index(7) >= 0`, `pe.dll_name == "x"`, `pe.export_timestamp == 0`, `pe.number_of_signatures > 0`, `pe.rich_signature.key == 0`, `pe.imports()`, `pe.imports(1)`, `pe.imports(true)`, `pe.imports("a", "b", "c")`, `pe.imports(/a/, /b/)`, `pe.imports(1, "a.dll", "b")`, `pe.import_details[0].functions[0].rva == 0`, `pe.delayed_import_details[0].library_name == "a"`} {
+	for _, condition := range []string{`pe.imphash() == ""`, `pe.exports()`, `pe.exports(true)`, `pe.exports(1.5)`, `pe.exports("a", 1)`, `pe.exports(/name/)`, `pe.exports_index()`, `pe.exports_index(true)`, `pe.exports_index(1.5)`, `pe.exports_index("a", 1)`, `pe.exports_index(/name/)`, `pe.dll_name == "x"`, `pe.export_timestamp == 0`, `pe.number_of_signatures > 0`, `pe.rich_signature.key == 0`, `pe.imports()`, `pe.imports(1)`, `pe.imports(true)`, `pe.imports("a", "b", "c")`, `pe.imports(/a/, /b/)`, `pe.imports(1, "a.dll", "b")`, `pe.import_details[0].functions[0].rva == 0`, `pe.delayed_import_details[0].library_name == "a"`} {
 		if _, err := NewCompiler().CompileSource(`import "pe" rule unsupported { condition: ` + condition + ` }`); err == nil {
 			t.Fatalf("unsupported feature compiled: %s", condition)
 		}
@@ -312,6 +312,8 @@ rule dll_count { condition: pe.imports("Example.DLL") > 0 }
 rule exports { condition: pe.number_of_exports > 0 and for any e in pe.export_details : (e.name == "Function00000" or e.ordinal == 7 or defined e.forward_name or e.offset == 0x220) }
 rule export_name_query { condition: pe.exports("Function00000") }
 rule export_ordinal_query { condition: pe.exports(uint16(0)) or pe.exports(1) }
+rule export_name_index { condition: defined pe.exports_index("Function00000") }
+rule export_ordinal_index { condition: defined pe.exports_index(uint16(0)) or defined pe.exports_index(1) }
 rule queries { condition: pe.imports("Example.DLL", "NamedFunction") or pe.imports("Example.DLL", uint16(0)) }`)
 	if err != nil {
 		f.Fatal(err)

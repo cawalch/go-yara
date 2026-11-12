@@ -104,3 +104,20 @@ rule exports {
 It preserves the historical module function IDs before `pe.exports` changed
 their sort order. Loading and reserializing it must retain the `pe.imports`
 and `string.to_int` bindings.
+
+`format18-pe-export-queries.goyara` was emitted from
+`e0ced5989e9858fee67fb58e4caa14c07ece9b12` (PR #457), using Go 1.27.3,
+before adding export index queries:
+
+```yara
+import "pe"
+import "string"
+rule exports {
+    condition:
+        pe.exports("Function00000") and not pe.exports(7) and
+        pe.imports("Example.DLL") == 3 and string.to_int("7") == 7
+}
+```
+
+Loading and reserializing this artifact must preserve boolean export queries
+and the shifted `pe.imports` and `string.to_int` bindings.

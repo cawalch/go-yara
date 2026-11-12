@@ -13,7 +13,8 @@ import (
 func TestPEExportQueriesCache(t *testing.T) {
 	query := `rule query {condition: pe.exports("function00000") and pe.exports(1) and not pe.exports(0) and not pe.exports(4)}`
 	count := `rule count {condition: pe.number_of_exports == 3 and pe.imports("Example.DLL") == 3}`
-	for _, source := range []string{query + count, count + query} {
+	index := `rule index {condition: pe.exports_index("FUNCTION00000") == 0 and pe.exports_index(1) == 0 and pe.exports_index("Function00002") == 2 and pe.exports_index(3) == 2 and not defined pe.exports_index(0) and not defined pe.exports_index(4) and not defined pe.exports_index("missing")}`
+	for _, source := range []string{query + count + index, count + index + query, index + query + count} {
 		p, err := NewCompiler().CompileSource(`import "pe" ` + source)
 		if err != nil {
 			t.Fatal(err)
@@ -24,7 +25,7 @@ func TestPEExportQueriesCache(t *testing.T) {
 				data := pefixture.Exports(is64, 3)
 				binary.LittleEndian.PutUint32(data[0x810:], 1)
 				r, err := s.Scan(data)
-				if err != nil || len(r.MatchedRules) != 2 {
+				if err != nil || len(r.MatchedRules) != 3 {
 					t.Fatalf("initial: %v %v", r, err)
 				}
 				image := s.moduleCache.pe
@@ -40,7 +41,7 @@ func TestPEExportQueriesCache(t *testing.T) {
 					b.Close()
 					want := 0
 					if base == 0 {
-						want = 2
+						want = 3
 					}
 					if err != nil || len(r.MatchedRules) != want {
 						t.Fatalf("block base=%d: %v %v", base, r, err)
@@ -77,9 +78,10 @@ func TestPEExportQueriesCache(t *testing.T) {
 
 func TestPEExportQueriesHostData(t *testing.T) {
 	p, err := NewCompiler().CompileSource(`import "pe"
-rule host {condition: pe.exports("HOSTfn") and pe.exports("HostFn\x00suffix") and pe.exports(2) and not pe.exports(0) and not pe.exports(99) and not pe.exports("HostFn\x00other") and not pe.exports("")}
+rule host {condition: pe.exports("HOSTfn") and pe.exports("HostFn\x00suffix") and pe.exports(2) and not pe.exports(0) and not pe.exports(99) and not pe.exports("HostFn\x00other") and not pe.exports("") and pe.exports_index("HOSTfn") == 1 and pe.exports_index(2) == 1 and pe.exports_index("HostFn\x00suffix") == 2 and not defined pe.exports_index(0) and not defined pe.exports_index(99) and not defined pe.exports_index("missing")}
 rule file {condition: pe.exports("Function00000")}
-rule absent {condition: not defined pe.exports("HostFn") and not defined pe.exports(2)}`)
+rule empty {condition: pe.exports("HostFn") == 0 and pe.exports(2) == 0 and not defined pe.exports_index("HostFn") and not defined pe.exports_index(2)}
+rule absent {condition: not defined pe.exports("HostFn") and not defined pe.exports(2) and not defined pe.exports_index("HostFn") and not defined pe.exports_index(2)}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,10 +93,12 @@ rule absent {condition: not defined pe.exports("HostFn") and not defined pe.expo
 			{map[string]any{"number_of_exports": 99, "export_details": []any{nil,
 				map[string]any{"name": "HostFn", "ordinal": 2},
 				map[string]any{"name": "HostFn\x00suffix", "ordinal": 99},
+				map[string]any{"name": "HOSTFN", "ordinal": 2},
 			}}, "host"},
 			{nil, "absent"},
 			{map[string]any{}, "absent"},
-			{map[string]any{"export_details": []any{}}, ""},
+			{map[string]any{"export_details": []any{}}, "empty"},
+			{map[string]any{"export_details": []any{nil, map[string]any{}}}, "empty"},
 		} {
 			s := p.NewScanner(WithModuleData("pe", tc.data))
 			r, err := s.Scan(pefixture.Exports(false, 3))
@@ -102,11 +106,7 @@ rule absent {condition: not defined pe.exports("HostFn") and not defined pe.expo
 				t.Fatalf("host data parsed file: %v %v", r, err)
 			}
 			s.Close()
-			wantCount := 0
-			if tc.want != "" {
-				wantCount = 1
-			}
-			if len(r.MatchedRules) != wantCount || tc.want != "" && !r.RuleResults[tc.want] {
+			if len(r.MatchedRules) != 1 || !r.RuleResults[tc.want] {
 				t.Fatalf("want %q: %v", tc.want, r.RuleResults)
 			}
 		}
@@ -122,70 +122,74 @@ rule absent {condition: not defined pe.exports("HostFn") and not defined pe.expo
 }
 
 func TestPEExportQueriesCustomModule(t *testing.T) {
-	for _, customSchema := range []bool{false, true} {
-		module := NewCompiler().GetOptions().Modules["pe"]
-		if customSchema {
-			module.Schema = &ModuleSchema{Fields: map[string]ModuleField{"label": {Kind: ModuleString}}}
-			delete(module.Functions, "imports")
-		}
-		function := module.Functions["exports"]
-		function.Evaluate = func(ModuleContext, []ModuleValue) (ModuleValue, error) { return IntegerValue(42), nil }
-		module.Functions["exports"] = function
-		p, err := NewCompiler(WithModule(module)).CompileSource(`import "pe" rule custom {condition: pe.exports("anything") == 42 and pe.exports(1) == 42}`)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for range 2 {
-			if ok, err := p.Matches(nil); err != nil || !ok {
-				t.Fatalf("callback override: %t %v", ok, err)
+	for _, query := range []string{"exports", "exports_index"} {
+		for _, customSchema := range []bool{false, true} {
+			module := NewCompiler().GetOptions().Modules["pe"]
+			if customSchema {
+				module.Schema = &ModuleSchema{Fields: map[string]ModuleField{"label": {Kind: ModuleString}}}
+				module.Functions = map[string]ModuleFunction{query: module.Functions[query]}
 			}
-			blob, err := p.MarshalBinary()
+			function := module.Functions[query]
+			function.Evaluate = func(ModuleContext, []ModuleValue) (ModuleValue, error) { return IntegerValue(42), nil }
+			module.Functions[query] = function
+			p, err := NewCompiler(WithModule(module)).CompileSource(fmt.Sprintf(`import "pe" rule custom {condition: pe.%s("anything") == 42 and pe.%s(1) == 42}`, query, query))
 			if err != nil {
 				t.Fatal(err)
 			}
-			if customSchema {
-				unbound, err := UnmarshalCompiledProgram(blob)
+			for range 2 {
+				if ok, err := p.Matches(nil); err != nil || !ok {
+					t.Fatalf("callback override: %t %v", ok, err)
+				}
+				blob, err := p.MarshalBinary()
 				if err != nil {
 					t.Fatal(err)
 				}
-				s := unbound.NewScanner()
-				ok, err := s.Matches(pefixture.Exports(false, 3))
-				if err != nil || ok || s.moduleCache.pe != nil {
-					t.Fatalf("custom schema fell back to native parsing: %t %v", ok, err)
+				if customSchema {
+					unbound, err := UnmarshalCompiledProgram(blob)
+					if err != nil {
+						t.Fatal(err)
+					}
+					s := unbound.NewScanner()
+					ok, err := s.Matches(pefixture.Exports(false, 3))
+					if err != nil || ok || s.moduleCache.pe != nil {
+						t.Fatalf("custom schema fell back to native parsing: %t %v", ok, err)
+					}
+					s.Close()
 				}
-				s.Close()
-			}
-			p, err = UnmarshalCompiledProgram(blob, module)
-			if err != nil {
-				t.Fatal(err)
+				p, err = UnmarshalCompiledProgram(blob, module)
+				if err != nil {
+					t.Fatal(err)
+				}
 			}
 		}
 	}
 }
 
 func TestPELegacyExportSchema(t *testing.T) {
-	// Written by main at 06a011e, before exports changed sorted function IDs.
-	blob, err := os.ReadFile("testdata/serialization/format18-pe-export-details.goyara")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for range 2 {
-		p, err := UnmarshalCompiledProgram(blob)
+	// Preserve bindings across each addition to the sorted function table.
+	for _, fixture := range []string{"format18-pe-export-details.goyara", "format18-pe-export-queries.goyara"} {
+		blob, err := os.ReadFile("testdata/serialization/" + fixture)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if ok, err := p.Matches(pefixture.Exports(false, 3)); err != nil || !ok {
-			t.Fatalf("historical function IDs: %t %v", ok, err)
-		}
-		blob, err = p.MarshalBinary()
-		if err != nil {
-			t.Fatal(err)
+		for range 2 {
+			p, err := UnmarshalCompiledProgram(blob)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if ok, err := p.Matches(pefixture.Exports(false, 3)); err != nil || !ok {
+				t.Fatalf("historical function IDs: %t %v", ok, err)
+			}
+			blob, err = p.MarshalBinary()
+			if err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 }
 
 func TestPEExportQueriesNonPEAllocations(t *testing.T) {
-	p, err := NewCompiler().CompileSource(`import "pe" rule query {condition: pe.exports("Function00000") or pe.exports(1)}`)
+	p, err := NewCompiler().CompileSource(`import "pe" rule query {condition: pe.exports("Function00000") or pe.exports(1) or defined pe.exports_index("Function00000") or defined pe.exports_index(1)}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,6 +211,10 @@ func BenchmarkPEExportQueries(b *testing.B) {
 			{"ordinal_hit", `pe.exports(7)`},
 			{"name_miss", `not pe.exports("missing")`},
 			{"ordinal_miss", `not pe.exports(1)`},
+			{"name_index_hit", `pe.exports_index("function00000") == 0`},
+			{"ordinal_index_hit", `pe.exports_index(7) == 0`},
+			{"name_index_miss", `not defined pe.exports_index("missing")`},
+			{"ordinal_index_miss", `not defined pe.exports_index(1)`},
 		} {
 			for _, rules := range []int{1, 100} {
 				var source strings.Builder
