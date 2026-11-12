@@ -625,6 +625,9 @@ func (i *Interpreter) executeRegexMatch(op Opcode) error {
 	value := i.stack[len(i.stack)-2]
 	i.stack = i.stack[:len(i.stack)-2]
 
+	if regexVal.Type == ValueTypeUndefined || value.Type == ValueTypeUndefined {
+		return i.push(Value{Type: ValueTypeUndefined})
+	}
 	if regexVal.Type != ValueTypeString || value.Type != ValueTypeString {
 		return &InterpreterError{Type: ErrorTypeMismatch, Message: "string operands required"}
 	}
@@ -749,6 +752,9 @@ func (i *Interpreter) executeStringBinaryOp(op Opcode, fn func(string, string) b
 	right := i.stack[len(i.stack)-1]
 	left := i.stack[len(i.stack)-2]
 	i.stack = i.stack[:len(i.stack)-2]
+	if left.Type == ValueTypeUndefined || right.Type == ValueTypeUndefined {
+		return i.push(Value{Type: ValueTypeUndefined})
+	}
 	if left.Type != ValueTypeString || right.Type != ValueTypeString {
 		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: op, Message: "string operands required"}
 	}

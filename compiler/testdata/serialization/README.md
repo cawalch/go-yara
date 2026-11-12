@@ -138,3 +138,21 @@ rule exports { condition:
 
 Loading and reserializing it must preserve native export fields, boolean and
 index queries, and unrelated module bindings with the historical schema.
+
+
+`format18-pe-export-timestamp.goyara` was emitted from
+`f79ea3e1c8a60087aa0e4a0e765bd64b410626db` (PR #459), using Go 1.27.3,
+before adding `dll_name` to the PE schema:
+
+```yara
+import "pe"
+import "string"
+rule exports { condition:
+ pe.export_timestamp == 0 and pe.number_of_exports == 3 and
+ pe.exports("Function00000") and pe.exports_index("Function00000") == 0 and
+ pe.imports("Example.DLL") == 3 and string.to_int("7") == 7
+}
+```
+
+Loading and reserializing it must preserve the timestamp schema, native export
+and import queries, and unrelated module bindings.

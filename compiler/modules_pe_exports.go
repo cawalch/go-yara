@@ -24,30 +24,46 @@ func newPEExportTimestampSchema() *ModuleSchema {
 	return &ModuleSchema{Fields: fields}
 }
 
+func newPEDLLNameSchema() *ModuleSchema {
+	fields := maps.Clone(peExportTimestampSchema.Fields)
+	fields["dll_name"] = ModuleField{Kind: ModuleString}
+	return &ModuleSchema{Fields: fields}
+}
+
 // A non-nil cache records success or failure independently of import parsing.
 // go-pe owns parsing limits; the adapter limits exposure to libyara's 16,384 slots.
 type peExportData struct {
-	symbols   []pe.ExportSymbol
-	details   ModuleValue
-	fileSize  int64
-	timestamp uint32
-	valid     bool
-	present   bool // A missing directory has no timestamp; zero is a valid timestamp.
+	symbols    []pe.ExportSymbol
+	dllName    string
+	details    ModuleValue
+	fileSize   int64
+	timestamp  uint32
+	valid      bool
+	hasDLLName bool
+	present    bool // A missing directory has no timestamp; zero is a valid timestamp.
 }
 
 func (image *peImage) loadExports() *peExportData {
-	if image.exports == nil {
-		image.exports = &peExportData{fileSize: image.context.FileSize}
-		directory, err := image.file.Exports(peScanData(image.context))
-		if err == nil {
-			image.exports.valid = true
-			if directory != nil {
-				image.exports.present = true
-				image.exports.timestamp = directory.TimeDateStamp
-				image.exports.symbols = directory.Symbols[:min(len(directory.Symbols), 16384)]
-			}
-		}
+	if image.exports != nil {
+		return image.exports
 	}
+	image.exports = &peExportData{fileSize: image.context.FileSize}
+	directory, err := image.file.Exports(peScanData(image.context))
+	if err != nil {
+		return image.exports
+	}
+	image.exports.valid = true
+	if directory == nil {
+		return image.exports
+	}
+	image.exports.present = true
+	image.exports.timestamp = directory.TimeDateStamp
+	if directory.DLLNameRVA != 0 {
+		offset, ok := image.file.RVAToOffset(directory.DLLNameRVA)
+		image.exports.hasDLLName = ok && offset > 0
+		image.exports.dllName = directory.DLL
+	}
+	image.exports.symbols = directory.Symbols[:min(len(directory.Symbols), 16384)]
 	return image.exports
 }
 
@@ -58,6 +74,12 @@ func (image *peImage) exportField(name string) ModuleValue {
 	}
 	if name == "number_of_exports" {
 		return IntegerValue(int64(len(exports.symbols)))
+	}
+	if name == "dll_name" {
+		if exports.hasDLLName {
+			return StringValue(exports.dllName)
+		}
+		return ModuleValue{}
 	}
 	if name == "export_timestamp" {
 		if exports.present {

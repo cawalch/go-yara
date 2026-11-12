@@ -167,7 +167,7 @@ func TestPEExportQueriesCustomModule(t *testing.T) {
 
 func TestPELegacyExportSchema(t *testing.T) {
 	// Preserve bindings across each addition to the sorted function table.
-	for _, fixture := range []string{"format18-pe-export-details.goyara", "format18-pe-export-queries.goyara", "format18-pe-export-index.goyara"} {
+	for _, fixture := range []string{"format18-pe-export-details.goyara", "format18-pe-export-queries.goyara", "format18-pe-export-index.goyara", "format18-pe-export-timestamp.goyara"} {
 		blob, err := os.ReadFile("testdata/serialization/" + fixture)
 		if err != nil {
 			t.Fatal(err)
@@ -189,7 +189,7 @@ func TestPELegacyExportSchema(t *testing.T) {
 }
 
 func TestPEExportQueriesNonPEAllocations(t *testing.T) {
-	p, err := NewCompiler().CompileSource(`import "pe" rule query {condition: pe.exports("Function00000") or pe.exports(1) or defined pe.exports_index("Function00000") or defined pe.exports_index(1) or defined pe.export_timestamp}`)
+	p, err := NewCompiler().CompileSource(`import "pe" rule query {condition: pe.exports("Function00000") or pe.exports(1) or defined pe.exports_index("Function00000") or defined pe.exports_index(1) or defined pe.export_timestamp or defined pe.dll_name}`)
 	if err != nil {
 		t.Fatal(err)
 	}
