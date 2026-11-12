@@ -238,9 +238,14 @@ rule CheckPayload {
 
 The built-in `pe` module exposes PE32 and PE32+ headers, sections, standard
 import counts and details, `pe.imports` DLL counts and queries by name or ordinal,
-export counts and details, and related constants. See [PE metadata](docs/pe-module.md)
-for examples and compatibility limits. Regex import queries, delayed imports, export queries, and
-signatures are not implemented.
+export counts and details, `pe.exports` queries by name or ordinal, and related
+constants. See [PE metadata](docs/pe-module.md) for examples and compatibility
+limits. Regex import and export queries, delayed imports, and signatures are
+not implemented.
+
+The compiler includes [go-pe](https://github.com/cawalch/go-pe) as a pure-Go
+build dependency. Go fetches it automatically; no separate checkout or CGO is
+required. Rules that do not use PE metadata do not invoke the PE parser.
 
 Hash functions accept a string or `(offset, size)`. Statistical functions accept
 strings or ranges; `count` and `percentage` accept a byte value with an optional
@@ -569,11 +574,11 @@ go-yara rules.yar --mode=execute --data large_sample.bin --streaming --chunk-siz
 - **Strings**: Text, hex byte sequences (with wildcards `??`, `?F`, and jumps `[1-4]`), and regular expressions.
 - **Modifiers**: `nocase`, `wide`, `ascii`, `fullword`, `xor`, `base64`, `base64wide`, and `private`.
 - **Expressions**: Arithmetic, bitwise, comparison, logical, range, string count (`#`), length (`!`), offset (`@`), occurrence (`at`, `in`), and quantifiers (`for ... of them`).
-- **Modules**: Built-in `hash`, `math`, `string`, and `time` functions, plus PE headers, sections, standard imports, and export metadata (see the module documentation above).
+- **Modules**: Built-in `hash`, `math`, `string`, and `time` functions, plus PE headers, sections, standard imports and exports (see the module documentation above).
 
 ### Limitations
 
-- **Other module features**: Delayed imports, export queries, signatures, and other unsupported PE directory contents are not implemented. The `elf`, `cuckoo`, and `dotnet` modules are not bundled. Applications can supply structured schemas and host data or Go callback functions with `compiler.WithModule`.
+- **Other module features**: Delayed imports, regex export queries, signatures, and other unsupported PE directory contents are not implemented. The `elf`, `cuckoo`, and `dotnet` modules are not bundled. Applications can supply structured schemas and host data or Go callback functions with `compiler.WithModule`.
 - **Streaming**: Full rule conditions, regex, and hex patterns are evaluated with constant-memory streaming via `ScanReader` and `MatchesReader` (#352). The legacy `StreamingProcessor` and CLI `--streaming` utility remain available for literal text-pattern occurrences.
 - **Block Boundary Spanning**: In `BlockScanner`, patterns crossing segmented block boundaries require overlapping bytes in the caller-provided buffers.
 

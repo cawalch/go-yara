@@ -86,8 +86,8 @@ type ModuleFunction struct {
 	// never RuleName, time, external state, or side effects. Custom functions are
 	// not cached by default. This hint is not persisted for custom modules.
 	Cacheable bool
-	// Evaluate implements a custom function. Only the built-in pe.imports
-	// registration may leave it nil to select scan-owned evaluation.
+	// Evaluate implements a custom function. Only the built-in pe.imports and
+	// pe.exports registrations may leave it nil to select scan-owned evaluation.
 	// Evaluate may return ModuleUndefined for any declared return type. An
 	// undefined argument propagates without invoking the callback.
 	Evaluate func(ModuleContext, []ModuleValue) (ModuleValue, error)
@@ -182,7 +182,7 @@ func compileModuleFunctions(
 			if functionName == "" || strings.Contains(functionName, ".") {
 				return nil, nil, nil, fmt.Errorf("invalid function name %q in module %q", functionName, moduleName)
 			}
-			if (function.Evaluate == nil && !isPEImportsFunction(module, functionName, function)) || len(function.Signatures) == 0 || (function.ReturnType < ModuleInteger || function.ReturnType > ModuleBoolean) {
+			if (function.Evaluate == nil && !isNativePEFunction(module, functionName, function)) || len(function.Signatures) == 0 || (function.ReturnType < ModuleInteger || function.ReturnType > ModuleBoolean) {
 				return nil, nil, nil, fmt.Errorf("invalid module function %s.%s", moduleName, functionName)
 			}
 			for _, signature := range function.Signatures {

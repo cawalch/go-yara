@@ -214,7 +214,14 @@ func (i *Interpreter) executeModuleCall(id builtinFunction, function ModuleFunct
 		}
 	}
 	if function.Evaluate == nil {
-		return i.pushModuleValue(i.peImports(moduleArgs))
+		switch i.currentCompiledRule.ModuleNames[id] {
+		case "pe.imports":
+			return i.pushModuleValue(i.peImports(moduleArgs))
+		case "pe.exports":
+			return i.pushModuleValue(i.peExports(moduleArgs))
+		default:
+			return i.pushModuleValue(ModuleValue{})
+		}
 	}
 	ctx := ModuleContext{RuleName: i.currentRule}
 	if i.matchContext != nil {

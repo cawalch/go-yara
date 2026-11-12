@@ -19,9 +19,9 @@ rule WritableExecutableSection {
 ```
 
 The module implements headers, sections, standard import and export metadata,
-and import queries by name or ordinal under
+and import and export queries by name or ordinal under
 [#359](https://github.com/cawalch/go-yara/issues/359). Regex import queries,
-delayed imports, import hashes, export queries, resources, Rich headers,
+delayed imports, import hashes, regex export queries, resources, Rich headers,
 computed checksums, and Authenticode signatures remain unsupported and fail
 compilation.
 
@@ -126,23 +126,42 @@ that go-pe rejects. The adapter doesn't reproduce that recovery behavior.
 
 ## Standard exports
 
-Use `number_of_exports` and `export_details` to inspect standard exports:
+Use `pe.exports` to check for a named export or numeric ordinal:
 
 ```yara
 import "pe"
 
 rule NamedExport {
     condition:
-        for any e in pe.export_details : (e.name == "ExampleFunction")
+        pe.exports("ExampleFunction")
 }
 ```
 
+`pe.exports(name)` and `pe.exports(ordinal)` return integer `1` for a match and
+`0` otherwise. Queries are undefined for non-PE input, rejected export metadata,
+or undefined arguments. They use the existing export cache without constructing
+`export_details` objects.
+
+Name queries fold ASCII case and compare the complete query string. Embedded
+NUL bytes are significant, and Unicode case folding is not applied. Queries
+search the same first alias and 512-byte name projection exposed by
+`export_details`; they do not search additional aliases or forwarder targets.
+
+Ordinal queries compare the base-adjusted ordinal, including slots with a zero
+RVA. To match libyara 4.5.8, they return `0` for ordinal zero or an ordinal above
+`number_of_exports`, even if that ordinal appears in the details. For example,
+a directory with base 7 and three slots exposes ordinals 7, 8, and 9, but none
+matches an ordinal query. Use a collection loop over `export_details` to test
+those ordinals directly.
+
+Use `number_of_exports` and `export_details` to inspect individual records.
 The array follows export address table order, including unused slots with a
 zero RVA. `number_of_exports` counts those slots, up to 16,384. `ordinal` includes
 the directory's ordinal base, and `rva` preserves the table value. `name` is the
 first alias in name-pointer order, limited to 512 bytes. It is undefined for an
-unnamed slot; an empty name remains a defined empty string. Comparisons preserve
-case and bytes. Additional aliases remain available through go-pe's own API.
+unnamed slot; an empty name remains a defined empty string. Field values preserve
+case and bytes; ordinary YARA string equality is case-sensitive. Additional
+aliases remain available through go-pe's own API.
 
 For a forwarder, `forward_name` contains up to 512 bytes of the raw target
 string, and `offset` is undefined. For an ordinary target, `offset` uses the same
@@ -165,8 +184,8 @@ Aliases beyond that window can therefore produce different names. Strict
 rejection also differs from libyara's partial recovery on malformed tables.
 Tests record these differences separately from parity cases.
 
-`pe.exports`, `pe.exports_index`, `dll_name`, and `export_timestamp` remain
-unsupported and fail compilation.
+Regex `pe.exports` overloads, `pe.exports_index`, `dll_name`, and
+`export_timestamp` remain unsupported and fail compilation.
 
 ## Address mapping
 
@@ -216,14 +235,20 @@ application and call `ScanWithContext`.
 
 ## Runtime behavior
 
-The first field access or import query parses the headers and sections.
+The compiler imports go-pe directly, so Go downloads it during builds even
+when an application uses no PE rules. Applications do not need a separate
+checkout. The parser uses only the standard library and requires no CGO. PE
+support is built in; it is not a separately installed plugin.
+
+The first field access or PE query parses the headers and sections.
 Subsequent rules share that scan's snapshot. Version objects, directory
 descriptors, and section objects are constructed on demand. The first import
 query or import-field access parses and filters imports once. Queries and fields
 share this cache. Counts and queries don't construct detail objects; each
 library constructs its function objects only when accessed. Constants and unused
-module imports don't invoke the parser. Export counts and details share a
-separate lazy cache in the same snapshot; counts don't construct detail objects.
+module imports don't invoke the parser. Export counts, details, and queries share
+a separate lazy cache in the same snapshot; counts and queries don't construct
+detail objects.
 Import and export parsing can run in either order. Starting another scan
 invalidates the snapshot.
 
@@ -239,13 +264,17 @@ read by this version of go-yara. Previously serialized header-only and
 import-only PE schemas still load automatically. Existing custom modules named
 `pe` with a different schema retain their host-data behavior. An explicit
 `WithModuleData("pe", data)` snapshot takes precedence over automatic loading.
-Queries use that snapshot's `import_details`: a missing array gives an undefined
-result, and an empty array gives `0`. DLL counts include non-null function
+Import queries use that snapshot's `import_details`: a missing array gives an
+undefined result, and an empty array gives `0`. DLL counts include non-null function
 records in matching libraries and ignore the supplied `number_of_functions`
-field. Custom `ModuleFunction.Evaluate` callbacks take precedence over built-in
-query dispatch, including on copied registrations.
-Only the unmodified built-in `pe.imports` registration can omit that callback.
-Changing its name, schema, or signature requires a custom implementation.
+field. Export queries use the snapshot's `export_details`, with the same
+missing-array and empty-array behavior. Their ordinal guard uses the array
+length, ignoring a separately supplied `number_of_exports`. Names are compared
+as supplied, including embedded NULs. Custom `ModuleFunction.Evaluate` callbacks
+take precedence over built-in query dispatch, including on copied registrations.
+Only the unmodified built-in `pe.imports` and `pe.exports` registrations can
+omit that callback. Changing a name, schema, or signature requires a custom
+implementation.
 Rebind custom callbacks when loading a compiled program. Native query dispatch
 uses the same schema check as automatic field loading.
 
@@ -253,16 +282,15 @@ uses the same schema check as automatic field loading.
 
 The differential suite uses libyara 4.5.8 in CI. It covers PE32 and PE32+
 headers, constants, section names, standard import counts, details, and queries,
-export metadata, undefined fields, entry-point mappings, real Go-toolchain PE
-fixtures, scanner reuse, compiled-program round trips, compact scans, and
-reader scans within the
-retention limit.
+export metadata and queries, undefined fields, entry-point mappings, real
+Go-toolchain PE fixtures, scanner reuse, compiled-program round trips, compact
+scans, and reader scans within the retention limit.
 
 To run the focused tests, install the `yara` CLI on `PATH`, then run:
 
 ```sh
 go test ./compiler ./tests/integration -run 'TestPE|TestLibyaraPE' -count=1
-go test ./compiler -run '^$' -bench 'BenchmarkPE(Module|Scanner|Imports|Exports)$' -benchmem
+go test ./compiler -run '^$' -bench 'BenchmarkPE(Module|Scanner|Imports|Exports|ExportQueries)$' -benchmem
 ```
 
 The oracle tests skip if the CLI is absent. CI installs and checks the pinned

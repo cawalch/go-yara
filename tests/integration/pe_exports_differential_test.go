@@ -23,6 +23,21 @@ func TestLibyaraPEStandardExports(t *testing.T) {
 		`for any e in pe.export_details : (e.name == "Function00000" and e.ordinal == 7)`,
 		`for all e in pe.export_details : (e.rva == 0x1020)`,
 		`defined pe.export_details[-1].ordinal`, `defined pe.export_details[3].ordinal`,
+		`defined pe.exports("Function00000")`, `defined pe.exports(1)`,
+		`pe.exports("Function00000") == 1`, `pe.exports("fUNCTION00000") == 1`,
+		`pe.exports("Function00001") == 1`, `pe.exports("missing") == 0`,
+		`pe.exports("") == 1`, `pe.exports("Function00000\x00suffix") == 0`,
+		`pe.exports("\x00") == 0`, `pe.exports("odd-name") == 1`,
+		`pe.exports("Kelvin") == 1`, `pe.exports("Kelvin") == 0`,
+		`pe.exports("\xffname") == 1`, `pe.exports("other.Target") == 0`,
+		`defined pe.exports(pe.export_details[3].name)`, `defined pe.exports(uint16(filesize))`,
+		`pe.exports(pe.export_details[0].name) == 1`,
+		`for any e in pe.export_details : (pe.exports(e.ordinal))`,
+		fmt.Sprintf(`pe.exports("%s") == 1`, strings.Repeat("N", 512)),
+		fmt.Sprintf(`pe.exports("%s") == 0`, strings.Repeat("N", 513)),
+	}
+	for _, ordinal := range []string{"-1", "0", "1", "2", "3", "7", "9", "0xfffffffe", "0x100000001", "0x7fffffffffffffff"} {
+		predicates = append(predicates, fmt.Sprintf("pe.exports(%s) == 1", ordinal))
 	}
 	for i := range 3 {
 		for _, field := range []string{"name", "ordinal", "rva", "offset", "forward_name"} {
@@ -47,9 +62,14 @@ func TestLibyaraPEStandardExports(t *testing.T) {
 			change func([]byte)
 		}{
 			{"named", func([]byte) {}},
+			{"base_zero", func(d []byte) { binary.LittleEndian.PutUint32(d[0x810:], 0) }},
+			{"base_one", func(d []byte) { binary.LittleEndian.PutUint32(d[0x810:], 1) }},
+			{"base_high", func(d []byte) { binary.LittleEndian.PutUint32(d[0x810:], 0xfffffffc) }},
+			{"unicode_query", func(d []byte) { copy(d[exportTable(d, 36)+6:], "Kelvin\x00") }},
+			{"high_byte_name", func(d []byte) { copy(d[exportTable(d, 36)+6:], "\xffName\x00") }},
 			{"ordinal_only", func(d []byte) { binary.LittleEndian.PutUint32(d[0x818:], 0) }},
 			{"empty", func(d []byte) { clear(d[0x814:0x81c]) }},
-			{"hole", func(d []byte) { clear(d[0x82c:0x830]) }},
+			{"hole", func(d []byte) { clear(d[0x82c:0x830]); binary.LittleEndian.PutUint32(d[0x810:], 1) }},
 			{"aliases", func(d []byte) { binary.LittleEndian.PutUint16(d[exportTable(d, 36)+2:], 0) }},
 			{"empty_name", func(d []byte) { d[exportTable(d, 36)+6] = 0 }},
 			{"raw_name", func(d []byte) { copy(d[exportTable(d, 36)+6:], "odd-name\x00") }},
@@ -111,7 +131,7 @@ func TestLibyaraPEExportCompatibilityLimits(t *testing.T) {
 	}{
 		{"short_directory", func(d []byte) { binary.LittleEndian.PutUint32(d[0xfc:], 39) }, `pe.number_of_exports == 3`, `not defined pe.number_of_exports`},
 		{"bad_name_ordinal", func(d []byte) { binary.LittleEndian.PutUint16(d[exportTable(d, 36):], 3) }, `pe.number_of_exports == 3`, `not defined pe.number_of_exports`},
-		{"bad_table", func(d []byte) { binary.LittleEndian.PutUint32(d[0x81c:], 0xffffffff) }, `pe.number_of_exports == 0`, `not defined pe.number_of_exports`},
+		{"bad_table", func(d []byte) { binary.LittleEndian.PutUint32(d[0x81c:], 0xffffffff) }, `pe.number_of_exports == 0 and pe.exports(1) == 0 and pe.exports("Function00000") == 0`, `not defined pe.number_of_exports and not defined pe.exports(1) and not defined pe.exports("Function00000")`},
 		{"directory_start_forwarder", func(d []byte) { binary.LittleEndian.PutUint32(d[0x828:], 0x2400) }, `pe.export_details[0].offset == 0x800 and not defined pe.export_details[0].forward_name`, `pe.export_details[0].forward_name == "" and not defined pe.export_details[0].offset`},
 		{"alias_beyond_name_window", func(d []byte) {
 			binary.LittleEndian.PutUint32(d[0x814:], 2)
@@ -119,7 +139,7 @@ func TestLibyaraPEExportCompatibilityLimits(t *testing.T) {
 			for i, index := range []uint16{1, 1, 0} {
 				binary.LittleEndian.PutUint16(d[ordinals+i*2:], index)
 			}
-		}, `not defined pe.export_details[0].name`, `pe.export_details[0].name == "Function00002"`},
+		}, `not defined pe.export_details[0].name and pe.exports("Function00002") == 0`, `pe.export_details[0].name == "Function00002" and pe.exports("Function00002") == 1`},
 		{"name_beyond_address_count", func(d []byte) {
 			binary.LittleEndian.PutUint32(d[0x814:], 1)
 			clear(d[exportTable(d, 36) : exportTable(d, 36)+6])
@@ -140,6 +160,19 @@ func TestLibyaraPEExportCompatibilityLimits(t *testing.T) {
 			if err != nil || !reflect.DeepEqual(got, map[string][]span{"local": nil}) {
 				t.Fatalf("local changed: %v %v", got, err)
 			}
+		})
+	}
+}
+
+func TestLibyaraPEExportQueryLimit(t *testing.T) {
+	for _, count := range []int{16384, 16385} {
+		t.Run(strconv.Itoa(count), func(t *testing.T) {
+			data := pefixture.Exports(true, count)
+			binary.LittleEndian.PutUint32(data[0x810:], 1)
+			checkReleaseScanPaths(t, peProbeSource([]string{
+				`pe.exports("Function16383") == 1`, `pe.exports("Function16384") == 0`,
+				`pe.exports(16384) == 1`, `pe.exports(16385) == 0`,
+			}), data)
 		})
 	}
 }

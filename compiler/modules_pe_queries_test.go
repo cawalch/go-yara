@@ -164,39 +164,42 @@ func TestPEImportQueriesCallbackOverride(t *testing.T) {
 	}
 }
 
-func TestPEImportQueryRegistration(t *testing.T) {
-	for _, tc := range []struct {
-		name   string
-		change func(*Module)
-	}{
-		{"module_name", func(m *Module) { m.Name = "other" }},
-		{"function_name", func(m *Module) {
-			m.Functions["other"] = m.Functions["imports"]
-			delete(m.Functions, "imports")
-		}},
-		{"schema", func(m *Module) { m.Schema = nil }},
-		{"result", func(m *Module) {
-			f := m.Functions["imports"]
-			f.ReturnType = ModuleBoolean
-			m.Functions["imports"] = f
-		}},
-		{"arguments", func(m *Module) {
-			m.Functions["imports"].Signatures[0].Arguments[0] = ModuleInteger
-		}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			module := NewCompiler().GetOptions().Modules["pe"]
-			tc.change(&module)
-			if _, err := NewCompiler(WithModule(module)).CompileSource(`rule unused {condition: true}`); err == nil {
-				t.Fatal("modified built-in without a callback was accepted")
-			}
-		})
+func TestPEQueryRegistration(t *testing.T) {
+	for _, query := range []string{"imports", "exports"} {
+		for _, tc := range []struct {
+			name   string
+			change func(*Module)
+		}{
+			{"module_name", func(m *Module) { m.Name = "other" }},
+			{"function_name", func(m *Module) {
+				m.Functions["other"] = m.Functions[query]
+				delete(m.Functions, query)
+			}},
+			{"schema", func(m *Module) { m.Schema = nil }},
+			{"result", func(m *Module) {
+				f := m.Functions[query]
+				f.ReturnType = ModuleBoolean
+				m.Functions[query] = f
+			}},
+			{"arguments", func(m *Module) {
+				m.Functions[query].Signatures[0].Arguments[0] = ModuleInteger
+			}},
+		} {
+			t.Run(query+"/"+tc.name, func(t *testing.T) {
+				module := NewCompiler().GetOptions().Modules["pe"]
+				tc.change(&module)
+				if _, err := NewCompiler(WithModule(module)).CompileSource(`rule unused {condition: true}`); err == nil {
+					t.Fatal("modified built-in without a callback was accepted")
+				}
+			})
+		}
 	}
 }
 
 func TestPEImportQueryCustomSchema(t *testing.T) {
 	module := NewCompiler().GetOptions().Modules["pe"]
 	module.Schema = &ModuleSchema{Fields: map[string]ModuleField{"label": {Kind: ModuleString}}}
+	delete(module.Functions, "exports")
 	f := module.Functions["imports"]
 	f.Evaluate = func(ModuleContext, []ModuleValue) (ModuleValue, error) { return IntegerValue(1), nil }
 	module.Functions["imports"] = f
