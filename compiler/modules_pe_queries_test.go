@@ -194,7 +194,6 @@ func TestPEQueryRegistration(t *testing.T) {
 			})
 		}
 	}
-
 }
 
 func TestPEImportQueryCustomSchema(t *testing.T) {

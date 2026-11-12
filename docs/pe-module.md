@@ -159,8 +159,9 @@ The array follows export address table order, including unused slots with a
 zero RVA. `number_of_exports` counts those slots, up to 16,384. `ordinal` includes
 the directory's ordinal base, and `rva` preserves the table value. `name` is the
 first alias in name-pointer order, limited to 512 bytes. It is undefined for an
-unnamed slot; an empty name remains a defined empty string. Comparisons preserve
-case and bytes. Additional aliases remain available through go-pe's own API.
+unnamed slot; an empty name remains a defined empty string. Field values preserve
+case and bytes; ordinary YARA string equality is case-sensitive. Additional
+aliases remain available through go-pe's own API.
 
 For a forwarder, `forward_name` contains up to 512 bytes of the raw target
 string, and `offset` is undefined. For an ordinary target, `offset` uses the same
