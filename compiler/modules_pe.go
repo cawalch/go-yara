@@ -19,6 +19,9 @@ var peSchema = newPEExportsSchema()
 // don't import PE don't pay to reconstruct the built-in schema.
 var peSemanticType = moduleFieldType(ModuleField{Kind: ModuleStruct, Struct: peSchema})
 
+// Validate against immutable signatures without rebuilding them per compilation.
+var peNativeFunctions = peModule().Functions
+
 var notPE = &peImage{object: peStruct(map[string]ModuleValue{"is_pe": IntegerValue(0)}).object}
 
 func peModule() Module {
@@ -43,7 +46,7 @@ func peModule() Module {
 
 // Nil callbacks are reserved for the unmodified built-in registration.
 func isNativePEFunction(module Module, name string, function ModuleFunction) bool {
-	builtin, ok := peModule().Functions[name]
+	builtin, ok := peNativeFunctions[name]
 	return ok && module.Name == "pe" &&
 		reflect.DeepEqual(module.Schema, peSchema) &&
 		reflect.DeepEqual(function, builtin)
