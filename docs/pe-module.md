@@ -35,7 +35,7 @@ at most 96 entries; `number_of_sections` preserves the declared count.
 | --- | --- |
 | `pe` | `is_pe`, `machine`, `number_of_sections`, `timestamp`, `pointer_to_symbol_table`, `number_of_symbols`, `size_of_optional_header`, `characteristics` |
 | `pe` optional header | `entry_point`, `entry_point_raw`, `image_base`, `number_of_rva_and_sizes`, `opthdr_magic`, `size_of_code`, `size_of_initialized_data`, `size_of_uninitialized_data`, `base_of_code`, `base_of_data`, `section_alignment`, `file_alignment`, `win32_version_value`, `size_of_image`, `size_of_headers`, `checksum`, `subsystem`, `dll_characteristics`, `size_of_stack_reserve`, `size_of_stack_commit`, `size_of_heap_reserve`, `size_of_heap_commit`, `loader_flags` |
-| `pe` standard exports | `number_of_exports`, `export_timestamp` |
+| `pe` standard exports | `number_of_exports`, `export_timestamp`, `dll_name` |
 | `pe.export_details[i]` | `ordinal`, `rva`, `offset`, `name`, `forward_name` |
 | `pe` standard imports | `number_of_imports`, `number_of_imported_functions` |
 | `pe.import_details[i]` | `library_name`, `number_of_functions`, `functions` |
@@ -183,6 +183,19 @@ validates the complete directory without constructing detail objects. On malform
 tables, libyara can expose the timestamp from the directory header even when it
 cannot parse the exports; this adapter leaves it undefined.
 
+`pe.dll_name` exposes the export directory's DLL name, preserving case and raw
+bytes. A present empty name is a defined empty string. The field is undefined
+for non-PE input, an absent directory or name RVA, a name mapped to file offset
+zero, or metadata rejected by go-pe. It shares the export cache and doesn't
+construct detail objects.
+
+Unlike export symbol names, DLL names aren't truncated to 512 bytes. They must
+fit within go-pe's 4,096-byte string limit, including the terminator, and its
+mapping and file bounds. Libyara can expose an unterminated name or one that
+crosses a raw section boundary; this adapter rejects those cases. It also leaves
+`dll_name` undefined when malformed export tables prevent a complete snapshot,
+even if libyara recovers the name from the directory header.
+
 Use `number_of_exports` and `export_details` to inspect individual records.
 The array follows export address table order, including unused slots with a
 zero RVA. `number_of_exports` counts those slots, up to 16,384. `ordinal` includes
@@ -213,7 +226,7 @@ Aliases beyond that window can therefore produce different names. Strict
 rejection also differs from libyara's partial recovery on malformed tables.
 Tests record these differences separately from parity cases.
 
-Regex `pe.exports` and `pe.exports_index` overloads and `dll_name` remain
+Regex `pe.exports` and `pe.exports_index` overloads remain
 unsupported and fail compilation.
 
 ## Address mapping

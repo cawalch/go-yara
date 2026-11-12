@@ -18,6 +18,7 @@ func exportTable(data []byte, field int) int {
 func TestLibyaraPEStandardExports(t *testing.T) {
 	libyaraOracle(t)
 	predicates := []string{
+		`defined pe.dll_name`, `pe.dll_name == "Example.DLL"`,
 		`defined pe.export_timestamp`, `pe.export_timestamp == 0`, `pe.export_timestamp == 1`,
 		`pe.export_timestamp == 0x80000000`, `pe.export_timestamp == 0xffffffff`,
 		`pe.export_timestamp >= 0`, `pe.export_timestamp == pe.timestamp`,
@@ -156,9 +157,17 @@ func TestLibyaraPEExportCompatibilityLimits(t *testing.T) {
 		change        func([]byte)
 		oracle, local string
 	}{
+		{"unterminated_dll", func(d []byte) {
+			d[len(d)-1] = 'X'
+			binary.LittleEndian.PutUint32(d[0x80c:], uint32(len(d)-1+0x1c00)) //checkednarrow:ignore bounded fixture offset
+		}, `pe.dll_name == "X"`, `not defined pe.dll_name`},
+		{"dll_section_bound", func(d []byte) {
+			d[0x3ff], d[0x400] = 'X', 0 // The NUL belongs to the next raw section.
+			binary.LittleEndian.PutUint32(d[0x80c:], 0x11ff)
+		}, `pe.dll_name == "X"`, `not defined pe.dll_name`},
 		{"short_directory", func(d []byte) { binary.LittleEndian.PutUint32(d[0xfc:], 39) }, `pe.number_of_exports == 3 and pe.export_timestamp == 0`, `not defined pe.number_of_exports and not defined pe.export_timestamp`},
 		{"bad_name_ordinal", func(d []byte) { binary.LittleEndian.PutUint16(d[exportTable(d, 36):], 3) }, `pe.number_of_exports == 3 and pe.export_timestamp == 0`, `not defined pe.number_of_exports and not defined pe.export_timestamp`},
-		{"bad_table", func(d []byte) { binary.LittleEndian.PutUint32(d[0x81c:], 0xffffffff) }, `pe.export_timestamp == 0 and pe.number_of_exports == 0 and pe.exports(1) == 0 and pe.exports("Function00000") == 0 and not defined pe.exports_index(1) and not defined pe.exports_index("Function00000")`, `not defined pe.export_timestamp and not defined pe.number_of_exports and not defined pe.exports(1) and not defined pe.exports("Function00000") and not defined pe.exports_index(1) and not defined pe.exports_index("Function00000")`},
+		{"bad_table", func(d []byte) { binary.LittleEndian.PutUint32(d[0x81c:], 0xffffffff) }, `pe.dll_name == "Example.DLL" and pe.export_timestamp == 0 and pe.number_of_exports == 0 and pe.exports(1) == 0 and pe.exports("Function00000") == 0 and not defined pe.exports_index(1) and not defined pe.exports_index("Function00000")`, `not defined pe.dll_name and not defined pe.export_timestamp and not defined pe.number_of_exports and not defined pe.exports(1) and not defined pe.exports("Function00000") and not defined pe.exports_index(1) and not defined pe.exports_index("Function00000")`},
 		{"directory_start_forwarder", func(d []byte) { binary.LittleEndian.PutUint32(d[0x828:], 0x2400) }, `pe.export_details[0].offset == 0x800 and not defined pe.export_details[0].forward_name`, `pe.export_details[0].forward_name == "" and not defined pe.export_details[0].offset`},
 		{"alias_beyond_name_window", func(d []byte) {
 			binary.LittleEndian.PutUint32(d[0x814:], 2)
