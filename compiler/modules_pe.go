@@ -26,6 +26,7 @@ func peModule() Module {
 			Signatures: []ModuleSignature{
 				{Arguments: []ModuleValueType{ModuleString, ModuleString}},
 				{Arguments: []ModuleValueType{ModuleString, ModuleInteger}},
+				{Arguments: []ModuleValueType{ModuleString}},
 			},
 			ReturnType: ModuleInteger,
 		},

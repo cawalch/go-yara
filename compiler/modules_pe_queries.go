@@ -4,7 +4,8 @@ import "strings"
 
 func (i *Interpreter) peImports(args []ModuleValue) ModuleValue {
 	// Guard the indexes even if a caller modifies a compiled function table.
-	if len(args) != 2 || args[0].Type != ModuleString || (args[1].Type != ModuleString && args[1].Type != ModuleInteger) {
+	if len(args) < 1 || len(args) > 2 || args[0].Type != ModuleString ||
+		(len(args) == 2 && args[1].Type != ModuleString && args[1].Type != ModuleInteger) {
 		return ModuleValue{}
 	}
 	// A serialized custom module must not fall back to native parsing when
@@ -15,7 +16,7 @@ func (i *Interpreter) peImports(args []ModuleValue) ModuleValue {
 	// Normalize each query once, not once per imported function. The argument
 	// values belong to this call; their strings remain immutable.
 	args[0].String, _, _ = strings.Cut(args[0].String, "\x00")
-	if args[1].Type == ModuleString {
+	if len(args) == 2 && args[1].Type == ModuleString {
 		args[1].String, _, _ = strings.Cut(args[1].String, "\x00")
 	}
 	if data, supplied := i.moduleData["pe"]; supplied {
@@ -29,8 +30,13 @@ func (i *Interpreter) peImports(args []ModuleValue) ModuleValue {
 	if !imports.valid {
 		return ModuleValue{}
 	}
+	var count int64
 	for _, library := range imports.libraries {
 		if !peImportNameEqual(library.DLL, args[0].String) {
+			continue
+		}
+		if len(args) == 1 {
+			count += int64(len(library.Symbols))
 			continue
 		}
 		for _, symbol := range library.Symbols {
@@ -43,7 +49,7 @@ func (i *Interpreter) peImports(args []ModuleValue) ModuleValue {
 			}
 		}
 	}
-	return IntegerValue(0)
+	return IntegerValue(count)
 }
 
 // Host snapshots take precedence over file parsing, including absent fields.
@@ -56,6 +62,7 @@ func peHostImports(data ModuleValue, args []ModuleValue) ModuleValue {
 	if details.object == nil {
 		return ModuleValue{}
 	}
+	var count int64
 	for _, library := range details.object.elements {
 		if library.object == nil {
 			continue
@@ -68,6 +75,10 @@ func peHostImports(data ModuleValue, args []ModuleValue) ModuleValue {
 		}
 		for _, symbol := range functions.object.elements {
 			if symbol.object == nil {
+				continue
+			}
+			if len(args) == 1 {
+				count++
 				continue
 			}
 			if args[1].Type == ModuleInteger {
@@ -84,7 +95,7 @@ func peHostImports(data ModuleValue, args []ModuleValue) ModuleValue {
 			}
 		}
 	}
-	return IntegerValue(0)
+	return IntegerValue(count)
 }
 
 // Match libyara's strcasecmp in the C locale. Both strings are NUL-trimmed:

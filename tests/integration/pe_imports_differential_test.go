@@ -19,6 +19,8 @@ import (
 func TestLibyaraPEStandardImports(t *testing.T) {
 	libyaraOracle(t)
 	predicates := []string{
+		`pe.imports("Example.DLL") == 0`, `pe.imports("Example.DLL") == 2`,
+		`pe.imports("Example.DLL") == 3`, `pe.imports("Example.DLL") == 6`,
 		`pe.is_pe`, `defined pe.number_of_imports`, `defined pe.number_of_imported_functions`,
 		`pe.number_of_imports == 0`, `pe.number_of_imports == 1`, `pe.number_of_imports == 2`,
 		`pe.number_of_imported_functions == 0`, `pe.number_of_imported_functions == 2`, `pe.number_of_imported_functions == 3`, `pe.number_of_imported_functions == 6`,

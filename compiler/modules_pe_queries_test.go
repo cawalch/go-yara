@@ -9,8 +9,8 @@ import (
 )
 
 func TestPEImportQueriesCache(t *testing.T) {
-	query := `rule query {condition: pe.imports("example.dll", "namedfunction") and pe.imports("EXAMPLE.DLL", 7)}`
-	count := `rule count {condition: pe.number_of_imported_functions == 3}`
+	query := `rule query {condition: pe.imports("example.dll", "namedfunction") and pe.imports("EXAMPLE.DLL", 7) and pe.imports("example.dll") == 3}`
+	count := `rule count {condition: pe.imports("example.dll") == 3 and pe.number_of_imported_functions == 3}`
 	for _, source := range []string{query + count, count + query} {
 		p, err := NewCompiler().CompileSource(`import "pe" ` + source)
 		if err != nil {
@@ -69,9 +69,9 @@ func TestPEImportQueriesCache(t *testing.T) {
 
 func TestPEImportQueriesHostData(t *testing.T) {
 	p, err := NewCompiler().CompileSource(`import "pe"
-rule host {condition: pe.imports("HOST.dll", "hostfn") and pe.imports("host.dll", 0) and not pe.imports("host.dll", "")}
+rule host {condition: pe.imports("HOST.dll", "hostfn") and pe.imports("host.dll", 0) and not pe.imports("host.dll", "") and pe.imports("HOST.dll\x00suffix") == 2 and pe.imports("missing.dll") == 0}
 rule file {condition: pe.imports("example.dll", "NamedFunction")}
-rule absent {condition: not defined pe.imports("host.dll", "hostfn")}`)
+rule absent {condition: not defined pe.imports("host.dll", "hostfn") and not defined pe.imports("host.dll")}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,6 +93,12 @@ rule absent {condition: not defined pe.imports("host.dll", "hostfn")}`)
 		{map[string]any{"import_details": []any{map[string]any{
 			"library_name": "Host.DLL\x00suffix", "functions": []any{map[string]any{"name": "HostFn\x00suffix"}, map[string]any{"ordinal": 0}},
 		}}}, "host"},
+		{map[string]any{"import_details": []any{
+			map[string]any{"library_name": "Host.DLL", "number_of_functions": 99, "functions": []any{map[string]any{"name": "HostFn"}}},
+			map[string]any{"library_name": "host.dll", "functions": []any{map[string]any{"ordinal": 0}}},
+			map[string]any{"library_name": "host.dll"},
+			map[string]any{"functions": []any{map[string]any{"name": "ignored"}}},
+		}}, "host"},
 		{nil, "absent"},
 		{map[string]any{}, "absent"},
 		{map[string]any{"import_details": []any{}}, ""},
@@ -114,7 +120,7 @@ rule absent {condition: not defined pe.imports("host.dll", "hostfn")}`)
 }
 
 func TestPEImportQueriesNonPEAllocations(t *testing.T) {
-	p, err := NewCompiler().CompileSource(`import "pe" rule query {condition: pe.imports("Example.DLL", "NamedFunction") or pe.imports("Example.DLL", 7)}`)
+	p, err := NewCompiler().CompileSource(`import "pe" rule query {condition: pe.imports("Example.DLL", "NamedFunction") or pe.imports("Example.DLL", 7) or pe.imports("Example.DLL")}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +140,7 @@ func TestPEImportQueriesCallbackOverride(t *testing.T) {
 	function := module.Functions["imports"]
 	function.Evaluate = func(ModuleContext, []ModuleValue) (ModuleValue, error) { return IntegerValue(42), nil }
 	module.Functions["imports"] = function
-	p, err := NewCompiler(WithModule(module)).CompileSource(`import "pe" rule custom {condition: pe.imports("anything", 7) == 42}`)
+	p, err := NewCompiler(WithModule(module)).CompileSource(`import "pe" rule custom {condition: pe.imports("anything", 7) == 42 and pe.imports("anything") == 42}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +195,7 @@ func TestPEImportQueryCustomSchema(t *testing.T) {
 	f := module.Functions["imports"]
 	f.Evaluate = func(ModuleContext, []ModuleValue) (ModuleValue, error) { return IntegerValue(1), nil }
 	module.Functions["imports"] = f
-	p, err := NewCompiler(WithModule(module)).CompileSource(`import "pe" rule query {condition: pe.imports("example.dll", "NamedFunction")}`)
+	p, err := NewCompiler(WithModule(module)).CompileSource(`import "pe" rule query {condition: pe.imports("example.dll", "NamedFunction") and pe.imports("example.dll")}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,23 +218,27 @@ func TestPEImportQueryCustomSchema(t *testing.T) {
 }
 
 func TestPELegacyImportSchema(t *testing.T) {
-	blob, err := os.ReadFile("testdata/serialization/format18-pe-import-details.goyara")
-	if err != nil {
-		t.Fatal(err)
-	}
-	data := pefixture.Imports(false, 3)
-	pefixture.ImportOrdinal(data, 1, 7)
-	for range 2 {
-		p, err := UnmarshalCompiledProgram(blob)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if ok, err := p.Matches(data); err != nil || !ok {
-			t.Fatalf("historical function IDs: %t %v", ok, err)
-		}
-		blob, err = p.MarshalBinary()
-		if err != nil {
-			t.Fatal(err)
-		}
+	for _, name := range []string{"format18-pe-import-details.goyara", "format18-pe-import-queries.goyara"} {
+		t.Run(name, func(t *testing.T) {
+			blob, err := os.ReadFile("testdata/serialization/" + name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			data := pefixture.Imports(false, 3)
+			pefixture.ImportOrdinal(data, 1, 7)
+			for range 2 {
+				p, err := UnmarshalCompiledProgram(blob)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if ok, err := p.Matches(data); err != nil || !ok {
+					t.Fatalf("historical function IDs: %t %v", ok, err)
+				}
+				blob, err = p.MarshalBinary()
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+		})
 	}
 }

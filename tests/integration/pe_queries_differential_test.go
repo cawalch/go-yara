@@ -13,6 +13,16 @@ import (
 
 func TestLibyaraPEImportQueries(t *testing.T) {
 	predicates := []string{
+		`defined pe.imports("Example.DLL")`,
+		`pe.imports("Example.DLL") == 0`, `pe.imports("Example.DLL") == 2`,
+		`pe.imports("Example.DLL") == 3`, `pe.imports("Example.DLL") == 4`,
+		`pe.imports("EXAMPLE.dll\x00suffix") == pe.imports("Example.DLL")`,
+		`pe.imports("Other.DLL") == 3`,
+		`pe.imports("missing.dll") == 0`, `pe.imports("") == 0`,
+		`pe.imports("\x00Example.DLL") == 0`,
+		`pe.imports("kernel32.dll") == 3`, `pe.imports("Kernel32.dll") == 0`,
+		`pe.imports(pe.import_details[0].library_name) == pe.number_of_imported_functions`,
+		`defined pe.imports(pe.sections[99].name)`,
 		`defined pe.imports("Example.DLL", "NamedFunction")`,
 		`pe.imports("Example.DLL", "NamedFunction") == 1`,
 		`pe.imports("EXAMPLE.dll", "namedFUNCTION") == 1`,
@@ -50,6 +60,19 @@ func TestLibyaraPEImportQueries(t *testing.T) {
 			{"name_limit", func(d []byte) { pefixture.ImportName(d, strings.Repeat("N", 512)) }},
 			{"truncated_name", func(d []byte) { pefixture.ImportName(d, strings.Repeat("N", 513)) }},
 			{"unicode_queries", func(d []byte) { copy(d[0x428:], "kernel32.dll\x00"); pefixture.ImportName(d, "Kelvin") }},
+			{"different_dlls", func(d []byte) {
+				copy(d[0x414:0x428], d[0x400:0x414])
+				clear(d[0x428:0x43c])
+				copy(d[0x1d0:], "Example.DLL\x00")
+				copy(d[0x1e0:], "Other.DLL\x00")
+				binary.LittleEndian.PutUint32(d[0x40c:], 0x1d0)
+				binary.LittleEndian.PutUint32(d[0x420:], 0x1e0)
+				directory := 0x100
+				if is64 {
+					directory = 0x110
+				}
+				binary.LittleEndian.PutUint32(d[directory+4:], 60)
+			}},
 			{"second_duplicate_dll", func(d []byte) {
 				copy(d[0x414:0x428], d[0x400:0x414])
 				clear(d[0x428:0x43c])
@@ -86,6 +109,7 @@ func TestLibyaraPEImportQueryCompatibility(t *testing.T) {
 		query  string
 		local  string
 	}{
+		{"malformed_count", func(d []byte) { binary.LittleEndian.PutUint32(d[0x444:], 0x7fffffff) }, `pe.imports("Example.DLL")`, `not defined`},
 		{"malformed", func(d []byte) { binary.LittleEndian.PutUint32(d[0x444:], 0x7fffffff) }, `pe.imports("Example.DLL", "NamedFunction")`, `not defined`},
 		{"synthetic_ordinal_name", func(d []byte) { pefixture.ImportOrdinal(d, 1, 7) }, `pe.imports("Example.DLL", "ord7")`, `not`},
 		{"ordinal_alias", func(d []byte) {
@@ -116,6 +140,7 @@ func TestLibyaraPEImportQueryLimit(t *testing.T) {
 			pefixture.ImportOrdinal(data, count-1, 9)
 			checkReleaseScanPaths(t, peProbeSource([]string{
 				`pe.number_of_imported_functions == 16384`,
+				`pe.imports("Example.DLL") == 16384`,
 				`pe.imports("Example.DLL", "NamedFunction") == 1`,
 				`pe.imports("Example.DLL", 9) == 1`,
 			}), data)
