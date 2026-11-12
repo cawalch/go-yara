@@ -9,9 +9,10 @@ import (
 )
 
 func TestPEImportQueriesCache(t *testing.T) {
-	query := `rule query {condition: pe.imports("example.dll", "namedfunction") and pe.imports("EXAMPLE.DLL", 7) and pe.imports("example.dll") == 3}`
-	count := `rule count {condition: pe.imports("example.dll") == 3 and pe.number_of_imported_functions == 3}`
-	for _, source := range []string{query + count, count + query} {
+	query := `rule query {condition: pe.imports("example.dll", "namedfunction") and pe.imports("EXAMPLE.DLL", 7)}`
+	count := `rule count {condition: pe.imports("example.dll") == 3}`
+	field := `rule field {condition: pe.number_of_imported_functions == 3}`
+	for _, source := range []string{query + count + field, count + field + query, field + query + count} {
 		p, err := NewCompiler().CompileSource(`import "pe" ` + source)
 		if err != nil {
 			t.Fatal(err)
@@ -31,7 +32,7 @@ func TestPEImportQueriesCache(t *testing.T) {
 				data := pefixture.Imports(is64, 3)
 				pefixture.ImportOrdinal(data, 1, 7)
 				r, err := s.Scan(data)
-				if err != nil || len(r.MatchedRules) != 2 {
+				if err != nil || len(r.MatchedRules) != 3 {
 					t.Fatalf("initial: %v %v", r, err)
 				}
 				image := s.moduleCache.pe
@@ -45,11 +46,15 @@ func TestPEImportQueriesCache(t *testing.T) {
 					}
 					r, err := b.Finish()
 					b.Close()
-					if err != nil || r.RuleResults["query"] != (base == 0) {
+					want := 0
+					if base == 0 {
+						want = 3
+					}
+					if err != nil || len(r.MatchedRules) != want {
 						t.Fatalf("block base=%d: %v %v", base, r, err)
 					}
 				}
-				// Both rule orders must share the same parse, even after the
+				// All rule orders must share the same parse, even after the
 				// original bytes no longer describe a valid lookup table.
 				binary.LittleEndian.PutUint32(data[0x400:], 0xffffffff)
 				for _, rule := range program.Rules {
@@ -70,7 +75,7 @@ func TestPEImportQueriesCache(t *testing.T) {
 func TestPEImportQueriesHostData(t *testing.T) {
 	p, err := NewCompiler().CompileSource(`import "pe"
 rule host {condition: pe.imports("HOST.dll", "hostfn") and pe.imports("host.dll", 0) and not pe.imports("host.dll", "") and pe.imports("HOST.dll\x00suffix") == 2 and pe.imports("missing.dll") == 0}
-rule file {condition: pe.imports("example.dll", "NamedFunction")}
+rule file {condition: pe.imports("example.dll", "NamedFunction") or pe.imports("example.dll")}
 rule absent {condition: not defined pe.imports("host.dll", "hostfn") and not defined pe.imports("host.dll")}`)
 	if err != nil {
 		t.Fatal(err)
@@ -195,7 +200,9 @@ func TestPEImportQueryCustomSchema(t *testing.T) {
 	f := module.Functions["imports"]
 	f.Evaluate = func(ModuleContext, []ModuleValue) (ModuleValue, error) { return IntegerValue(1), nil }
 	module.Functions["imports"] = f
-	p, err := NewCompiler(WithModule(module)).CompileSource(`import "pe" rule query {condition: pe.imports("example.dll", "NamedFunction") and pe.imports("example.dll")}`)
+	p, err := NewCompiler(WithModule(module)).CompileSource(`import "pe"
+rule query {condition: defined pe.imports("example.dll", "NamedFunction")}
+rule count {condition: defined pe.imports("example.dll")}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +218,8 @@ func TestPEImportQueryCustomSchema(t *testing.T) {
 		s := p.NewScanner()
 		defer s.Close()
 		r, err := s.Scan(pefixture.Imports(false, 3))
-		if err != nil || r.RuleResults["query"] != (len(modules) != 0) || s.moduleCache.pe != nil {
+		if err != nil || r.RuleResults["query"] != (len(modules) != 0) ||
+			r.RuleResults["count"] != (len(modules) != 0) || s.moduleCache.pe != nil {
 			t.Fatalf("custom schema fell back to native parsing: %v %v", r, err)
 		}
 	}

@@ -88,7 +88,8 @@ queries. It reads the cached import records without constructing
 `import_details` objects.
 
 Queries are undefined for non-PE input, rejected import metadata, or undefined
-arguments. Only standard imports are searched. The regex and flagged overloads are not implemented and fail compilation.
+arguments. Only standard imports are searched. The regex and flagged overloads
+are not implemented and fail compilation.
 
 Use `import_details` and collection loops to inspect records directly. Names
 preserve their spelling; ordinary string equality remains case-sensitive.
@@ -192,7 +193,8 @@ different schema retain their host-data behavior. An explicit
 Queries use that snapshot's `import_details`: a missing array gives an undefined
 result, and an empty array gives `0`. DLL counts include non-null function
 records in matching libraries and ignore the supplied `number_of_functions`
-field. Custom `ModuleFunction.Evaluate` callbacks take precedence over built-in query dispatch, including on copied registrations.
+field. Custom `ModuleFunction.Evaluate` callbacks take precedence over built-in
+query dispatch, including on copied registrations.
 Only the unmodified built-in `pe.imports` registration can omit that callback.
 Changing its name, schema, or signature requires a custom implementation.
 Rebind custom callbacks when loading a compiled program. Native query dispatch
