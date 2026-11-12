@@ -31,6 +31,7 @@ func TestLibyaraPEStandardExports(t *testing.T) {
 		for _, pair := range []struct{ field, value string }{
 			{"ordinal", strconv.Itoa(7 + i)}, {"rva", "0x1020"}, {"rva", "0"}, {"rva", "0xffffffff"},
 			{"offset", "0x220"}, {"offset", "0"}, {"offset", "0x40"}, {"offset", "0x700"},
+			{"offset", "0x200"}, {"offset", "filesize - 1"}, {"offset", "filesize"},
 			{"name", fmt.Sprintf("%q", fmt.Sprintf("Function%05d", i))}, {"name", `""`},
 			{"name", `"odd-name"`}, {"name", fmt.Sprintf("%q", strings.Repeat("N", 512))},
 			{"forward_name", `"other.Target"`}, {"forward_name", `""`},
@@ -73,6 +74,13 @@ func TestLibyaraPEStandardExports(t *testing.T) {
 			{"unmapped_target", func(d []byte) { binary.LittleEndian.PutUint32(d[0x828:], 0xffffffff) }},
 			{"header_target", func(d []byte) { binary.LittleEndian.PutUint32(d[0x828:], 0x40) }},
 			{"before_first_section", func(d []byte) { binary.LittleEndian.PutUint32(d[0x828:], 0x700) }},
+			{"zero_rva_section", func(d []byte) {
+				section := 0x98 + int(binary.LittleEndian.Uint16(d[0x94:]))
+				binary.LittleEndian.PutUint32(d[section+12:], 0)
+				binary.LittleEndian.PutUint32(d[0x828:], 0)
+			}},
+			{"last_file_byte", func(d []byte) { binary.LittleEndian.PutUint32(d[0x828:], uint32(len(d)-1+0x1c00)) }}, //checkednarrow:ignore fixture offset
+			{"past_file_end", func(d []byte) { binary.LittleEndian.PutUint32(d[0x828:], uint32(len(d)+0x1c00)) }},    //checkednarrow:ignore fixture offset
 			{"aligned_target_offset", func(d []byte) {
 				section := 0x98 + int(binary.LittleEndian.Uint16(d[0x94:]))
 				binary.LittleEndian.PutUint32(d[section+20:], 0x2ff)

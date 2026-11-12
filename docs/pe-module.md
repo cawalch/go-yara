@@ -147,8 +147,9 @@ case and bytes. Additional aliases remain available through go-pe's own API.
 For a forwarder, `forward_name` contains up to 512 bytes of the raw target
 string, and `offset` is undefined. For an ordinary target, `offset` uses the same
 file mapping policy as `entry_point` and is undefined when the RVA cannot map to
-a file byte. `forward_name` is undefined for ordinary targets. A zero-RVA slot
-maps to offset zero. The adapter doesn't validate or resolve forwarder syntax.
+a file byte. `forward_name` is undefined for ordinary targets. Zero-RVA slots
+use the same mapping rules; they don't necessarily map to offset zero. The
+adapter doesn't validate or resolve forwarder syntax.
 
 A missing directory gives a zero count and an empty array. If go-pe rejects any
 export metadata, both fields are undefined; headers and imports remain usable.

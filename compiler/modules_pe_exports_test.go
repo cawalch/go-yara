@@ -70,6 +70,9 @@ func TestPEExportsLazySnapshot(t *testing.T) {
 	for _, exportsFirst := range []bool{false, true} {
 		for _, invalid := range []string{"", "imports", "exports"} {
 			data := pefixture.Exports(true, 3)
+			const forwarder = 0x828 + 3*10 + 3*16
+			copy(data[forwarder:], "other.Target\x00")
+			binary.LittleEndian.PutUint32(data[0x82c:], forwarder+0x1c00)
 			switch invalid {
 			case "imports":
 				binary.LittleEndian.PutUint32(data[0x400:], 0xffffffff)
@@ -104,6 +107,10 @@ func TestPEExportsLazySnapshot(t *testing.T) {
 				symbol := root.field("export_details").object.elements[0].object
 				if symbol.field("name").String != "Function00000" || symbol.field("offset").Integer != 0x220 {
 					t.Fatal("exports retained mutable input or scan size")
+				}
+				forward := root.field("export_details").object.elements[1].object
+				if forward.field("forward_name").String != "other.Target" || forward.field("offset").Type != ModuleUndefined {
+					t.Fatal("forwarder retained mutable input or exposed an offset")
 				}
 			}
 		}
