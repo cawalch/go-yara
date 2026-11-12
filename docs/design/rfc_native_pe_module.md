@@ -1,7 +1,7 @@
 # Native PE module
 
-Status: headers, sections, standard import metadata, and import queries by name
-or ordinal implemented. Follow-up work is tracked in
+Status: headers, sections, standard import metadata, DLL counts, and import
+queries by name or ordinal implemented. Follow-up work is tracked in
 [#359](https://github.com/cawalch/go-yara/issues/359).
 
 The PE module lets pure-Go applications evaluate binary metadata conditions

@@ -69,3 +69,20 @@ rule before_queries {
 It preserves the import-details schema and historical module function IDs.
 Adding `pe.imports` must not change the binding of `string.length` when this
 artifact is read and reserialized.
+
+`format18-pe-import-queries.goyara` was emitted from `b60531b94679e2a9cb33727861d669fab23b1e9c`
+(PR #454), using Go 1.27.3, before adding the DLL-count overload:
+
+```yara
+import "pe"
+import "string"
+rule before_dll_count {
+    condition:
+        pe.imports("Example.DLL", "NamedFunction") and
+        pe.imports("Example.DLL", 7) and string.length("abc") == 3
+}
+```
+
+It preserves the two-argument `pe.imports` signatures and module function IDs.
+Reading and reserializing it must retain both import queries and the unrelated
+`string.length` binding after an overload is added.

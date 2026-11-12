@@ -169,7 +169,7 @@ func TestPEBlocks(t *testing.T) {
 }
 
 func TestPEUnsupportedFeatures(t *testing.T) {
-	for _, condition := range []string{`pe.imphash() == ""`, `pe.number_of_signatures > 0`, `pe.rich_signature.key == 0`, `pe.imports("a.dll")`, `pe.imports(/a/, /b/)`, `pe.imports(1, "a.dll", "b")`, `pe.import_details[0].functions[0].rva == 0`, `pe.delayed_import_details[0].library_name == "a"`} {
+	for _, condition := range []string{`pe.imphash() == ""`, `pe.number_of_signatures > 0`, `pe.rich_signature.key == 0`, `pe.imports()`, `pe.imports(1)`, `pe.imports(true)`, `pe.imports("a", "b", "c")`, `pe.imports(/a/, /b/)`, `pe.imports(1, "a.dll", "b")`, `pe.import_details[0].functions[0].rva == 0`, `pe.delayed_import_details[0].library_name == "a"`} {
 		if _, err := NewCompiler().CompileSource(`import "pe" rule unsupported { condition: ` + condition + ` }`); err == nil {
 			t.Fatalf("unsupported feature compiled: %s", condition)
 		}
@@ -303,6 +303,7 @@ rule headers { condition: pe.is_pe and pe.entry_point >= 0 and pe.machine == pe.
 rule sections { condition: for any s in pe.sections : (s.name == ".text" or s.full_name contains "debug") }
 rule directories { condition: for all d in pe.data_directories : (d.size >= 0) }
 rule imports { condition: pe.number_of_imports > 0 and pe.number_of_imported_functions > 0 and for any d in pe.import_details : (for any f in d.functions : (f.name == "NamedFunction" or f.ordinal == 7)) }
+rule dll_count { condition: pe.imports("Example.DLL") > 0 }
 rule queries { condition: pe.imports("Example.DLL", "NamedFunction") or pe.imports("Example.DLL", uint16(0)) }`)
 	if err != nil {
 		f.Fatal(err)

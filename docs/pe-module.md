@@ -71,17 +71,25 @@ rule ImportsVirtualAlloc {
 }
 ```
 
-The two supported signatures are `pe.imports(dll, function_name)` and
-`pe.imports(dll, ordinal)`. They return integer `1` for a match and `0` otherwise.
+`pe.imports(dll, function_name)` and `pe.imports(dll, ordinal)` return integer
+`1` for a match and `0` otherwise.
 For example, `pe.imports("ws2_32.dll", 1)` checks for ordinal 1. Named imports
 don't match their hint as an ordinal, and values outside 0 through 65,535 don't
 match file imports. DLL and function-name comparisons fold ASCII case and stop
 at the first NUL byte, matching libyara 4.5.8's C-locale behavior. They don't use
 Unicode case folding.
 
+Use `pe.imports(dll)` to count imported functions from a DLL. For example,
+`pe.imports("kernel32.dll") > 5` matches images that import more than five
+functions from that DLL. The count includes named and ordinal imports across
+all matching descriptors, including duplicates. It returns `0` when no
+functions match and uses the same DLL-name comparison as the two-argument
+queries. It reads the cached import records without constructing
+`import_details` objects.
+
 Queries are undefined for non-PE input, rejected import metadata, or undefined
-arguments. Only standard imports are searched. The single-DLL, regex, and
-flagged overloads are not implemented and fail compilation.
+arguments. Only standard imports are searched. The regex and flagged overloads
+are not implemented and fail compilation.
 
 Use `import_details` and collection loops to inspect records directly. Names
 preserve their spelling; ordinary string equality remains case-sensitive.
@@ -183,8 +191,10 @@ still load automatically. Existing custom modules named `pe` with a
 different schema retain their host-data behavior. An explicit
 `WithModuleData("pe", data)` snapshot takes precedence over automatic loading.
 Queries use that snapshot's `import_details`: a missing array gives an undefined
-result, and an empty array gives `0`. Custom `ModuleFunction.Evaluate` callbacks
-take precedence over built-in query dispatch, including on copied registrations.
+result, and an empty array gives `0`. DLL counts include non-null function
+records in matching libraries and ignore the supplied `number_of_functions`
+field. Custom `ModuleFunction.Evaluate` callbacks take precedence over built-in
+query dispatch, including on copied registrations.
 Only the unmodified built-in `pe.imports` registration can omit that callback.
 Changing its name, schema, or signature requires a custom implementation.
 Rebind custom callbacks when loading a compiled program. Native query dispatch

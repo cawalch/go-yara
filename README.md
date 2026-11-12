@@ -237,10 +237,10 @@ rule CheckPayload {
 | `time` | `now` |
 
 The built-in `pe` module exposes PE32 and PE32+ headers, sections, standard
-import counts and details, `pe.imports` queries by name or ordinal, and related
-constants. See [PE metadata](docs/pe-module.md) for examples and compatibility
-limits. Regex import queries, delayed imports, exports, and signatures are not
-implemented.
+import counts and details, `pe.imports` DLL counts and queries by name or ordinal,
+and related constants. See [PE metadata](docs/pe-module.md) for examples and
+compatibility limits. Regex import queries, delayed imports, exports, and
+signatures are not implemented.
 
 Hash functions accept a string or `(offset, size)`. Statistical functions accept
 strings or ranges; `count` and `percentage` accept a byte value with an optional
