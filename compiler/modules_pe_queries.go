@@ -32,7 +32,7 @@ func (i *Interpreter) peImports(args []ModuleValue) ModuleValue {
 	}
 	var count int64
 	for _, library := range imports.libraries {
-		if !peImportNameEqual(library.DLL, args[0].String) {
+		if !peNameEqual(library.DLL, args[0].String) {
 			continue
 		}
 		if len(args) == 1 {
@@ -44,7 +44,7 @@ func (i *Interpreter) peImports(args []ModuleValue) ModuleValue {
 				if symbol.ByOrdinal && int64(symbol.Ordinal) == args[1].Integer {
 					return IntegerValue(1)
 				}
-			} else if !symbol.ByOrdinal && peImportNameEqual(symbol.Name, args[1].String) {
+			} else if !symbol.ByOrdinal && peNameEqual(symbol.Name, args[1].String) {
 				return IntegerValue(1)
 			}
 		}
@@ -70,7 +70,7 @@ func peHostImports(data ModuleValue, args []ModuleValue) ModuleValue {
 		name := library.object.fields["library_name"]
 		functions := library.object.fields["functions"]
 		name.String, _, _ = strings.Cut(name.String, "\x00")
-		if name.Type != ModuleString || !peImportNameEqual(name.String, args[0].String) || functions.object == nil {
+		if name.Type != ModuleString || !peNameEqual(name.String, args[0].String) || functions.object == nil {
 			continue
 		}
 		for _, symbol := range functions.object.elements {
@@ -89,7 +89,7 @@ func peHostImports(data ModuleValue, args []ModuleValue) ModuleValue {
 			} else {
 				name := symbol.object.fields["name"]
 				name.String, _, _ = strings.Cut(name.String, "\x00")
-				if name.Type == ModuleString && peImportNameEqual(name.String, args[1].String) {
+				if name.Type == ModuleString && peNameEqual(name.String, args[1].String) {
 					return IntegerValue(1)
 				}
 			}
@@ -98,10 +98,10 @@ func peHostImports(data ModuleValue, args []ModuleValue) ModuleValue {
 	return IntegerValue(count)
 }
 
-// Match libyara's strcasecmp in the C locale. Both strings are NUL-trimmed:
-// file imports by the parser, and queries and host data by the caller.
+// Compare bytes with ASCII case folding, as libyara does in the C locale.
+// Import callers trim NUL suffixes; export comparisons preserve the full length.
 // Unicode folding would incorrectly match names such as the Kelvin sign to K.
-func peImportNameEqual(a, b string) bool {
+func peNameEqual(a, b string) bool {
 	if len(a) != len(b) {
 		return false
 	}

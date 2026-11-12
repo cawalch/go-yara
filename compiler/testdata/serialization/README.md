@@ -86,3 +86,21 @@ rule before_dll_count {
 It preserves the two-argument `pe.imports` signatures and module function IDs.
 Reading and reserializing it must retain both import queries and the unrelated
 `string.length` binding after an overload is added.
+
+`format18-pe-export-details.goyara` was emitted from
+`06a011ed3c4de9e7fde049b705c0b70f2519ce5c` (PR #456), using Go 1.27.3,
+before adding export queries:
+
+```yara
+import "pe"
+import "string"
+rule exports {
+    condition:
+        pe.number_of_exports == 3 and pe.export_details[0].ordinal == 7 and
+        pe.imports("Example.DLL") == 3 and string.to_int("7") == 7
+}
+```
+
+It preserves the historical module function IDs before `pe.exports` changed
+their sort order. Loading and reserializing it must retain the `pe.imports`
+and `string.to_int` bindings.

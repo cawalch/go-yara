@@ -14,13 +14,14 @@ const peExportCondition = `pe.number_of_exports == 3 and
  pe.export_details[0].ordinal == 7 and pe.export_details[0].rva == 0x1020 and
  pe.export_details[0].offset == 0x220 and pe.export_details[0].name == "Function00000" and
  not defined pe.export_details[0].forward_name and pe.export_details[2].name == "Function00002" and
- not defined pe.export_details[3].ordinal and not defined pe.export_details[-1].name`
+ not defined pe.export_details[3].ordinal and not defined pe.export_details[-1].name and
+ pe.exports("function00000") and not pe.exports(7)`
 
 func TestPEExportsScanPaths(t *testing.T) {
 	p, err := NewCompiler().CompileSource(`import "pe"
 rule exports {condition: ` + peExportCondition + ` and pe.imports("Example.DLL") == 3}
 rule empty {condition: pe.is_pe and pe.number_of_exports == 0}
-rule not_pe {condition: not pe.is_pe and not defined pe.number_of_exports}`)
+rule not_pe {condition: not pe.is_pe and not defined pe.number_of_exports and not defined pe.exports("Function00000") and not defined pe.exports(1)}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +129,7 @@ func TestPEExportsTruncation(t *testing.T) {
 	p, err := NewCompiler().CompileSource(`import "pe"
 rule headers {condition: pe.is_pe}
 rule exports {condition: ` + peExportCondition + `}
-rule unavailable {condition: pe.is_pe and not defined pe.number_of_exports and not defined pe.export_details}`)
+rule unavailable {condition: pe.is_pe and not defined pe.number_of_exports and not defined pe.export_details and not defined pe.exports("Function00000") and not defined pe.exports(1)}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,8 +154,8 @@ rule unavailable {condition: pe.is_pe and not defined pe.number_of_exports and n
 
 func TestPEExportsReaderAndExposureLimits(t *testing.T) {
 	p, err := NewCompiler().CompileSource(`import "pe"
-rule exports {condition: pe.number_of_exports == 16384 and pe.export_details[16383].ordinal == 16390 and not defined pe.export_details[16384].ordinal}
-rule limited {condition: pe.is_pe and pe.number_of_imports == 1 and not defined pe.number_of_exports}`)
+rule exports {condition: pe.number_of_exports == 16384 and pe.export_details[16383].ordinal == 16390 and not defined pe.export_details[16384].ordinal and pe.exports("Function16383") and not pe.exports("Function16384") and pe.exports(16384) and not pe.exports(16385)}
+rule limited {condition: pe.is_pe and pe.number_of_imports == 1 and not defined pe.number_of_exports and not defined pe.exports("Function00000") and not defined pe.exports(1)}`)
 	if err != nil {
 		t.Fatal(err)
 	}
