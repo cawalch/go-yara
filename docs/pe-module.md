@@ -154,6 +154,24 @@ a directory with base 7 and three slots exposes ordinals 7, 8, and 9, but none
 matches an ordinal query. Use a collection loop over `export_details` to test
 those ordinals directly.
 
+Use `pe.exports_index(name)` or `pe.exports_index(ordinal)` to get the zero-based
+index of the first matching entry in `export_details`. These overloads use the
+same comparisons, ordinal guard, and scan cache as `pe.exports`. They return
+undefined for a miss or unavailable metadata. Index zero is valid: use `defined`
+to check for a match instead of treating the index as a boolean.
+
+```yara
+import "pe"
+
+rule ExportAtFileOffset {
+    condition:
+        pe.export_details[pe.exports_index("ExampleFunction")].offset == 0x200
+}
+```
+
+An undefined index produces an undefined field value. Index lookups do not
+construct detail objects until a rule accesses the details themselves.
+
 Use `number_of_exports` and `export_details` to inspect individual records.
 The array follows export address table order, including unused slots with a
 zero RVA. `number_of_exports` counts those slots, up to 16,384. `ordinal` includes
@@ -184,7 +202,7 @@ Aliases beyond that window can therefore produce different names. Strict
 rejection also differs from libyara's partial recovery on malformed tables.
 Tests record these differences separately from parity cases.
 
-Regex `pe.exports` overloads, `pe.exports_index`, `dll_name`, and
+Regex `pe.exports` and `pe.exports_index` overloads, `dll_name`, and
 `export_timestamp` remain unsupported and fail compilation.
 
 ## Address mapping
@@ -265,18 +283,20 @@ import-only PE schemas still load automatically. Existing custom modules named
 `pe` with a different schema retain their host-data behavior. An explicit
 `WithModuleData("pe", data)` snapshot takes precedence over automatic loading.
 Import queries use that snapshot's `import_details`: a missing array gives an
-undefined result, and an empty array gives `0`. DLL counts include non-null function
-records in matching libraries and ignore the supplied `number_of_functions`
-field. Export queries use the snapshot's `export_details`, with the same
-missing-array and empty-array behavior. Their ordinal guard uses the array
-length, ignoring a separately supplied `number_of_exports`. Names are compared
-as supplied, including embedded NULs. Custom `ModuleFunction.Evaluate` callbacks
+undefined result, and an empty array gives `0`. DLL counts include non-null
+function records in matching libraries and ignore the supplied
+`number_of_functions` field. Export queries use the snapshot's `export_details`, with the same
+missing-array and empty-array behavior. Index queries return undefined for
+both an absent array and a miss, and preserve array positions when entries are
+undefined. Their ordinal guard uses the array length, ignoring a separately
+supplied `number_of_exports`. Names are compared as supplied, including embedded
+NULs. Custom `ModuleFunction.Evaluate` callbacks
 take precedence over built-in query dispatch, including on copied registrations.
-Only the unmodified built-in `pe.imports` and `pe.exports` registrations can
-omit that callback. Changing a name, schema, or signature requires a custom
-implementation.
-Rebind custom callbacks when loading a compiled program. Native query dispatch
-uses the same schema check as automatic field loading.
+Only the unmodified built-in `pe.imports`, `pe.exports`, and `pe.exports_index`
+registrations can omit that callback. Changing a name, schema, or signature
+requires a custom implementation. Rebind custom callbacks when loading a compiled
+program. Native query dispatch uses the same schema check as automatic field
+loading.
 
 ## Validation
 

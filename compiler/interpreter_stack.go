@@ -214,11 +214,12 @@ func (i *Interpreter) executeModuleCall(id builtinFunction, function ModuleFunct
 		}
 	}
 	if function.Evaluate == nil {
-		switch i.currentCompiledRule.ModuleNames[id] {
+		name := i.currentCompiledRule.ModuleNames[id]
+		switch name {
 		case "pe.imports":
 			return i.pushModuleValue(i.peImports(moduleArgs))
-		case "pe.exports":
-			return i.pushModuleValue(i.peExports(moduleArgs))
+		case "pe.exports", "pe.exports_index":
+			return i.pushModuleValue(i.peExports(moduleArgs, name == "pe.exports_index"))
 		default:
 			return i.pushModuleValue(ModuleValue{})
 		}

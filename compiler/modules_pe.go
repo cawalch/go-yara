@@ -33,6 +33,13 @@ func peModule() Module {
 			},
 			ReturnType: ModuleInteger,
 		},
+		"exports_index": {
+			Signatures: []ModuleSignature{
+				{Arguments: []ModuleValueType{ModuleString}},
+				{Arguments: []ModuleValueType{ModuleInteger}},
+			},
+			ReturnType: ModuleInteger,
+		},
 		"imports": {
 			Signatures: []ModuleSignature{
 				{Arguments: []ModuleValueType{ModuleString, ModuleString}},
