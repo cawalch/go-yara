@@ -12,7 +12,8 @@ import (
 // The schema is immutable. Runtime values are owned by one scan, not by go-pe
 // or the compiled program. Constants are folded by the condition compiler.
 var peHeaderSchema = newPESchema()
-var peSchema = newPEImportsSchema()
+var peImportsSchema = newPEImportsSchema()
+var peSchema = newPEExportsSchema()
 
 // The semantic validator only reads this type tree. Reuse it so rules that
 // don't import PE don't pay to reconstruct the built-in schema.
@@ -40,10 +41,10 @@ func isPEImportsFunction(module Module, name string, function ModuleFunction) bo
 		reflect.DeepEqual(function, peModule().Functions["imports"])
 }
 
-// Preserve loading of header-only programs emitted before import support.
+// Preserve loading of programs emitted before import or export support.
 // Match complete schemas so unrelated host modules named pe remain custom.
 func isNativePESchema(schema *ModuleSchema) bool {
-	return schema != nil && (reflect.DeepEqual(schema, peSchema) || reflect.DeepEqual(schema, peHeaderSchema))
+	return schema != nil && (reflect.DeepEqual(schema, peSchema) || reflect.DeepEqual(schema, peImportsSchema) || reflect.DeepEqual(schema, peHeaderSchema))
 }
 
 func newPESchema() *ModuleSchema {
@@ -149,11 +150,14 @@ func peScanData(ctx *MatchContext) []byte {
 }
 
 // peImage owns one scan's parsed metadata and lazily constructed module values.
+// Imports and exports load independently through the context. Clearing that
+// context also releases input that has not been parsed.
 type peImage struct {
 	object      *moduleObject
 	file        *pe.File
 	context     *MatchContext
 	imports     *peImportData
+	exports     *peExportData
 	names       []string
 	entryPoint  int64
 	sections    ModuleValue
@@ -174,7 +178,7 @@ func peFields(file *pe.File, data []byte, ctx *MatchContext) *peImage {
 			names[i] = string(raw)
 		}
 	}
-	image := &peImage{file: file, context: ctx, names: names, entryPoint: peEntryPoint(file, ctx.FileSize)}
+	image := &peImage{file: file, context: ctx, names: names, entryPoint: peRVAToOffset(file, file.OptionalHeader.AddressOfEntryPoint, ctx.FileSize)}
 	image.object = peLazyStruct(image.field).object
 	return image
 }
@@ -185,6 +189,8 @@ func (image *peImage) field(name string) ModuleValue {
 	switch name {
 	case "number_of_imports", "number_of_imported_functions", "import_details":
 		return image.importField(name)
+	case "number_of_exports", "export_details":
+		return image.exportField(name)
 	case "is_pe":
 		return IntegerValue(1)
 	case "machine":
@@ -338,12 +344,12 @@ func peSectionFields(s *pe.Section, name string, hasSymbols bool) ModuleValue {
 	})
 }
 
-// peEntryPoint implements libyara's file mapping policy. It deliberately does
+// peRVAToOffset implements libyara's file mapping policy. It deliberately does
 // not use go-pe's RVA mapper: YARA aligns raw offsets down, chooses the highest
 // covering section RVA (the last on ties), and maps bytes before the first
-// section directly. An unmapped entry point is -1, not undefined.
-func peEntryPoint(file *pe.File, fileSize int64) int64 {
-	rva := uint64(file.OptionalHeader.AddressOfEntryPoint)
+// section directly. An unmapped RVA returns -1.
+func peRVAToOffset(file *pe.File, addressRVA uint32, fileSize int64) int64 {
+	rva := uint64(addressRVA)
 	lowest := uint64(math.MaxUint32)
 	var address, offset, size uint64
 	for _, s := range file.Sections {

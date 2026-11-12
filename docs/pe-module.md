@@ -1,7 +1,7 @@
-# PE headers, sections, and standard imports
+# PE headers, sections, imports, and exports
 
-Import `pe` to inspect PE32 and PE32+ headers, sections, and standard imports.
-This module uses
+Import `pe` to inspect PE32 and PE32+ headers, sections, standard imports, and
+export metadata. This module uses
 [go-pe](https://github.com/cawalch/go-pe) for parsing. go-pe is an independent
 library; it has no dependency on go-yara or its module interfaces.
 
@@ -18,10 +18,10 @@ rule WritableExecutableSection {
 }
 ```
 
-This implements headers, sections, and standard import metadata under
-[#359](https://github.com/cawalch/go-yara/issues/359). The module exposes fields,
-constants, and queries by name or ordinal for standard imports. Regex import
-queries, delayed imports, import hashes, exports, resources, Rich headers,
+The module implements headers, sections, standard import and export metadata,
+and import queries by name or ordinal under
+[#359](https://github.com/cawalch/go-yara/issues/359). Regex import queries,
+delayed imports, import hashes, export queries, resources, Rich headers,
 computed checksums, and Authenticode signatures remain unsupported and fail
 compilation.
 
@@ -35,6 +35,8 @@ at most 96 entries; `number_of_sections` preserves the declared count.
 | --- | --- |
 | `pe` | `is_pe`, `machine`, `number_of_sections`, `timestamp`, `pointer_to_symbol_table`, `number_of_symbols`, `size_of_optional_header`, `characteristics` |
 | `pe` optional header | `entry_point`, `entry_point_raw`, `image_base`, `number_of_rva_and_sizes`, `opthdr_magic`, `size_of_code`, `size_of_initialized_data`, `size_of_uninitialized_data`, `base_of_code`, `base_of_data`, `section_alignment`, `file_alignment`, `win32_version_value`, `size_of_image`, `size_of_headers`, `checksum`, `subsystem`, `dll_characteristics`, `size_of_stack_reserve`, `size_of_stack_commit`, `size_of_heap_reserve`, `size_of_heap_commit`, `loader_flags` |
+| `pe` standard exports | `number_of_exports` |
+| `pe.export_details[i]` | `ordinal`, `rva`, `offset`, `name`, `forward_name` |
 | `pe` standard imports | `number_of_imports`, `number_of_imported_functions` |
 | `pe.import_details[i]` | `library_name`, `number_of_functions`, `functions` |
 | `pe.import_details[i].functions[j]` | `name`, `ordinal` |
@@ -44,8 +46,8 @@ at most 96 entries; `number_of_sections` preserves the declared count.
 
 `base_of_data` is undefined for PE32+. `checksum` contains the stored header
 value; it doesn't verify the file. Data directory entries describe locations
-and sizes. The adapter parses standard imports on demand. It exposes at most the
-first 16 entries, limited by `number_of_rva_and_sizes`.
+and sizes. The array exposes at most the first 16 entries, limited by
+`number_of_rva_and_sizes`. The adapter parses imports and exports on demand.
 
 `name` contains the eight-byte section name with trailing NUL bytes removed.
 Embedded NUL bytes remain. `full_name` resolves a COFF string-table reference
@@ -122,14 +124,58 @@ falls back to the import address table only for an unbound descriptor with a
 zero lookup-table RVA. libyara can expose partial imports from malformed files
 that go-pe rejects. The adapter doesn't reproduce that recovery behavior.
 
+## Standard exports
+
+Use `number_of_exports` and `export_details` to inspect standard exports:
+
+```yara
+import "pe"
+
+rule NamedExport {
+    condition:
+        for any e in pe.export_details : (e.name == "ExampleFunction")
+}
+```
+
+The array follows export address table order, including unused slots with a
+zero RVA. `number_of_exports` counts those slots, up to 16,384. `ordinal` includes
+the directory's ordinal base, and `rva` preserves the table value. `name` is the
+first alias in name-pointer order, limited to 512 bytes. It is undefined for an
+unnamed slot; an empty name remains a defined empty string. Comparisons preserve
+case and bytes. Additional aliases remain available through go-pe's own API.
+
+For a forwarder, `forward_name` contains up to 512 bytes of the raw target
+string, and `offset` is undefined. For an ordinary target, `offset` uses the same
+file mapping policy as `entry_point` and is undefined when the RVA cannot map to
+a file byte. `forward_name` is undefined for ordinary targets. Zero-RVA slots
+use the same mapping rules; they don't necessarily map to offset zero. The
+adapter doesn't validate or resolve forwarder syntax.
+
+A missing directory gives a zero count and an empty array. If go-pe rejects any
+export metadata, both fields are undefined; headers and imports remain usable.
+The parser validates the complete directory before the adapter applies its
+exposure limit. It retains go-pe's bounds, terminator, and resource checks.
+
+The adapter follows go-pe's RVA range when identifying forwarders. libyara
+4.5.8 instead tests mapped file offsets and excludes the directory's first
+byte. Those policies can differ at that boundary or with unusual mappings.
+The adapter selects the first alias from the complete validated name table;
+libyara examines only the initial name pointers up to its exposed address count.
+Aliases beyond that window can therefore produce different names. Strict
+rejection also differs from libyara's partial recovery on malformed tables.
+Tests record these differences separately from parity cases.
+
+`pe.exports`, `pe.exports_index`, `dll_name`, and `export_timestamp` remain
+unsupported and fail compilation.
+
 ## Address mapping
 
 `entry_point_raw` is the entry-point RVA from the optional header.
 `entry_point` is its file offset, or `-1` if it doesn't map to a file byte.
 The latter follows libyara 4.5.8's file-scan policy, including alignment rounding
 and selection of overlapping sections. This policy belongs to the adapter;
-go-pe retains its own RVA mapping contract. Standard imports use go-pe's
-mapping, including first-section precedence, unrounded raw offsets, and strict
+go-pe retains its own RVA mapping contract. Import and export metadata use
+go-pe's mapping, including first-section precedence, unrounded raw offsets, and strict
 raw-data bounds. These policies can differ from libyara on unusual layouts.
 
 All scan APIs use file semantics. Block offsets are file offsets, not process
@@ -158,13 +204,14 @@ intentional differences separately from differential parity checks.
 `ScanReader` retains only the first 64 KiB, as it does for integer reads. PE
 headers, section tables, and COFF names must fit in that prefix for the image to
 be recognized. Import descriptors, lookup tables, and names must also fit there
-for import fields to be defined. Entry-point bounds use the full stream length.
+for import fields to be defined. Export tables and names must fit there for
+export fields to be defined. Target offset bounds use the full stream length.
 
 `ScanFileWithContext` uses the same bounded reader fallback when its context is
 cancellable and the file isn't memory-mapped. It attempts mapping for regular
 files of at least 128 KiB. A file below that threshold can therefore expose
-headers but have undefined import fields if import metadata extends beyond
-64 KiB. For complete metadata with cancellation, acquire the file bytes in your
+headers but have undefined import or export fields if their metadata extends
+beyond 64 KiB. For complete metadata with cancellation, acquire the file bytes in your
 application and call `ScanWithContext`.
 
 ## Runtime behavior
@@ -175,10 +222,12 @@ descriptors, and section objects are constructed on demand. The first import
 query or import-field access parses and filters imports once. Queries and fields
 share this cache. Counts and queries don't construct detail objects; each
 library constructs its function objects only when accessed. Constants and unused
-module imports don't invoke the parser. Starting another scan invalidates the
-snapshot.
+module imports don't invoke the parser. Export counts and details share a
+separate lazy cache in the same snapshot; counts don't construct detail objects.
+Import and export parsing can run in either order. Starting another scan
+invalidates the snapshot.
 
-Headers and parsed import records own their names. Deferred import parsing
+Headers and parsed import and export records own their names. Deferred parsing
 reads from the active scan context without holding another reference to the
 input buffer. Clearing that context releases the deferred input too.
 Parsing failures become module values rather than scan errors. The fast
@@ -186,9 +235,9 @@ non-PE guard allocates no memory; complete scan cost still includes rule
 interpretation and result construction.
 
 Compiled programs preserve the schema and restore built-in PE loading when
-read by this version of go-yara. Previously serialized header-only PE schemas
-still load automatically. Existing custom modules named `pe` with a
-different schema retain their host-data behavior. An explicit
+read by this version of go-yara. Previously serialized header-only and
+import-only PE schemas still load automatically. Existing custom modules named
+`pe` with a different schema retain their host-data behavior. An explicit
 `WithModuleData("pe", data)` snapshot takes precedence over automatic loading.
 Queries use that snapshot's `import_details`: a missing array gives an undefined
 result, and an empty array gives `0`. DLL counts include non-null function
@@ -204,18 +253,19 @@ uses the same schema check as automatic field loading.
 
 The differential suite uses libyara 4.5.8 in CI. It covers PE32 and PE32+
 headers, constants, section names, standard import counts, details, and queries,
-undefined fields, entry-point mappings, real Go-toolchain PE fixtures, scanner
-reuse, compiled-program round trips, compact scans, and reader scans within the
+export metadata, undefined fields, entry-point mappings, real Go-toolchain PE
+fixtures, scanner reuse, compiled-program round trips, compact scans, and
+reader scans within the
 retention limit.
 
 To run the focused tests, install the `yara` CLI on `PATH`, then run:
 
 ```sh
 go test ./compiler ./tests/integration -run 'TestPE|TestLibyaraPE' -count=1
-go test ./compiler -run '^$' -bench 'BenchmarkPE(Module|Scanner|Imports)$' -benchmem
+go test ./compiler -run '^$' -bench 'BenchmarkPE(Module|Scanner|Imports|Exports)$' -benchmem
 ```
 
 The oracle tests skip if the CLI is absent. CI installs and checks the pinned
 oracle before running the suite. `FuzzPEAdapter` exercises the adapter with
-arbitrary input, including PE32/PE32+ imports and ordinals. Separate tests record
-strict import rejection and ordinal-name differences from libyara.
+arbitrary input, including PE32/PE32+ imports, ordinals, and exports. Separate
+tests record strict rejection and name or forwarder differences from libyara.

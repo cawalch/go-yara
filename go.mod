@@ -3,7 +3,7 @@ module github.com/cawalch/go-yara
 go 1.26.0
 
 require (
-	github.com/cawalch/go-pe v0.0.0-20261111184053-2007a24b76d2
+	github.com/cawalch/go-pe v0.0.0-20261112153949-7fe1d61c8e2a
 	github.com/stretchr/testify v1.12.1
 	golang.org/x/tools v0.52.0
 )

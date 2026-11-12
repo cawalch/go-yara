@@ -1,24 +1,24 @@
 # Native PE module
 
-Status: headers, sections, standard import metadata, DLL counts, and import
-queries by name or ordinal implemented. Follow-up work is tracked in
+Status: headers, sections, standard import metadata and queries, and export
+counts and details implemented. Follow-up work is tracked in
 [#359](https://github.com/cawalch/go-yara/issues/359).
 
 The PE module lets pure-Go applications evaluate binary metadata conditions
 without linking libyara. The implementation covers headers, sections, standard
-import counts, details, and queries, and related constants. See
+import counts, details, and queries, export metadata, and related constants. See
 [PE metadata](../pe-module.md) for the supported fields and compatibility limits.
 
 ## Library boundary
 
 [go-pe](https://github.com/cawalch/go-pe) owns bounded parsing of DOS, COFF, and
-optional headers, section tables, COFF section names, and standard imports. It
-remains a standalone library. It doesn't import go-yara, expose YARA values, or
+optional headers, section tables, COFF section names, standard imports, and
+exports. It remains a standalone library. It doesn't import go-yara, expose YARA values, or
 implement scanner lifecycle hooks.
 
 go-yara owns the module schema, YARA constant names, undefined values,
-entry-point mapping policy, import name filtering and exposure limits, and
-scan-local caching. The dependency is pinned to a go-pe revision. Parser
+target offset mapping, import name filtering, export field selection, exposure
+limits, and scan-local caching. The dependency is pinned to a go-pe revision. Parser
 improvements must make sense for independent
 clients; YARA-specific compatibility belongs in the adapter.
 
@@ -61,8 +61,8 @@ there is no blanket zero-allocation guarantee.
 ## Follow-up work
 
 Additional import overloads, delayed imports, ordinal aliases, import
-address-table RVAs, exports, import hashes, resources, Rich headers, Authenticode, and
-process-memory behavior remain outside this phase. Each addition needs a
+address-table RVAs, export queries and directory fields, import hashes,
+resources, Rich headers, Authenticode, and process-memory behavior remain outside this phase. Each addition needs a
 bounded parsing design, differential coverage, and performance measurements.
 The Authenticode work also needs explicit certificate and signature-verification
 semantics; exposing a certificate alone must not imply a verified signature.

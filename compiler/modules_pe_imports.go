@@ -38,7 +38,6 @@ func (image *peImage) loadImports() *peImportData {
 	if image.imports == nil {
 		image.imports = &peImportData{}
 		libraries, err := image.file.Imports(peScanData(image.context))
-		image.context = nil // Parsed records own their names.
 		if err == nil {
 			image.imports.libraries, image.imports.functions = peFilterImports(libraries)
 			image.imports.valid = true
