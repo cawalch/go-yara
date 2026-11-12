@@ -56,8 +56,8 @@ func peModule() Module {
 
 // peIsDLL reads the cached header or the supplied host snapshot. It doesn't
 // need import or export metadata. Libyara returns the masked flag value (0 or 0x2000).
-func (i *Interpreter) peIsDLL(args []ModuleValue) ModuleValue {
-	if len(args) != 0 || i.currentCompiledRule == nil || !i.currentCompiledRule.nativePE {
+func (i *Interpreter) peIsDLL() ModuleValue {
+	if i.currentCompiledRule == nil || !i.currentCompiledRule.nativePE {
 		return ModuleValue{}
 	}
 	var characteristics ModuleValue

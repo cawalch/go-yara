@@ -59,24 +59,29 @@ func TestPEIsDLL(t *testing.T) {
 				}
 			}
 		}
-		s.Close()
 		for _, tc := range []struct {
 			data any
 			want string
 		}{
 			{nil, "absent"}, {map[string]any{}, "absent"}, {map[string]any{"is_pe": 1}, "absent"},
+			{map[string]any{"characteristics": ModuleValue{}}, "absent"},
 			{map[string]any{"characteristics": 0}, "exe"},
 			{map[string]any{"characteristics": 0x2000, "is_pe": 0}, "dll"},
 			{map[string]any{"characteristics": int64(-1)}, "dll"},
 			{map[string]any{"characteristics": int64(1) << 32}, "exe"},
 		} {
-			s := p.NewScanner(WithModuleData("pe", tc.data))
+			if err := s.SetModuleData("pe", tc.data); err != nil {
+				t.Fatal(err)
+			}
+			if fields, ok := tc.data.(map[string]any); ok {
+				clear(fields) // The scanner must own its snapshot.
+			}
 			r, err := s.Scan(pefixture.New(false))
 			if err != nil || len(r.MatchedRules) != 1 || !r.RuleResults[tc.want] || s.moduleCache.pe != nil {
 				t.Fatalf("host want=%s: %v %v", tc.want, r, err)
 			}
-			s.Close()
 		}
+		s.Close()
 		blob, err := p.MarshalBinary()
 		if err != nil {
 			t.Fatal(err)
@@ -92,7 +97,7 @@ func TestPEIsDLLHeaderCache(t *testing.T) {
 	data := pefixture.Exports(true, 3)
 	ctx := &MatchContext{Data: data, FileSize: int64(len(data)), moduleCache: &moduleCallCache{}}
 	i := &Interpreter{matchContext: ctx, currentCompiledRule: &CompiledRule{nativePE: true}}
-	if got := i.peIsDLL(nil); got.Type != ModuleInteger || got.Integer != 0x2000 {
+	if got := i.peIsDLL(); got.Type != ModuleInteger || got.Integer != 0x2000 {
 		t.Fatalf("DLL flag: %+v", got)
 	}
 	image := loadPE(ctx)
@@ -101,14 +106,11 @@ func TestPEIsDLLHeaderCache(t *testing.T) {
 	}
 	clear(data)
 	ctx.Data, ctx.FileSize = nil, 0
-	if got := i.peIsDLL(nil); got.Type != ModuleInteger || got.Integer != 0x2000 {
+	if got := i.peIsDLL(); got.Type != ModuleInteger || got.Integer != 0x2000 {
 		t.Fatalf("header snapshot: %+v", got)
 	}
-	if got := i.peIsDLL([]ModuleValue{IntegerValue(1)}); got.Type != ModuleUndefined {
-		t.Fatal("accepted an argument")
-	}
 	i.currentCompiledRule.nativePE = false
-	if got := i.peIsDLL(nil); got.Type != ModuleUndefined {
+	if got := i.peIsDLL(); got.Type != ModuleUndefined {
 		t.Fatal("custom module fell back to native headers")
 	}
 }
