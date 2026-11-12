@@ -229,6 +229,18 @@ Tests record these differences separately from parity cases.
 Regex `pe.exports` and `pe.exports_index` overloads remain
 unsupported and fail compilation.
 
+## DLL classification
+
+`pe.is_dll()` takes no arguments and returns `pe.characteristics & pe.DLL`.
+The result is `0x2000` when the DLL flag is set and `0` when it is clear. Use
+it directly as a condition or compare it with `pe.DLL`; comparing it with `1`
+doesn't test whether the file is a DLL.
+
+The function returns undefined when header metadata is unavailable. It reuses
+the header cache without parsing imports or exports. If you supply PE module
+data with `WithModuleData`, it uses the supplied `characteristics` field;
+a missing field stays undefined and doesn't trigger file parsing.
+
 ## Address mapping
 
 `entry_point_raw` is the entry-point RVA from the optional header.

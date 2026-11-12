@@ -121,8 +121,13 @@ rule absent {condition: not defined pe.exports("HostFn") and not defined pe.expo
 	}
 }
 
-func TestPEExportQueriesCustomModule(t *testing.T) {
-	for _, query := range []string{"exports", "exports_index"} {
+func TestPEFunctionCustomModule(t *testing.T) {
+	for _, tc := range []struct{ name, condition string }{
+		{"exports", `pe.exports("anything") == 42 and pe.exports(1) == 42`},
+		{"exports_index", `pe.exports_index("anything") == 42 and pe.exports_index(1) == 42`},
+		{"is_dll", `pe.is_dll() == 42`},
+	} {
+		query := tc.name
 		for _, customSchema := range []bool{false, true} {
 			module := NewCompiler().GetOptions().Modules["pe"]
 			if customSchema {
@@ -132,7 +137,7 @@ func TestPEExportQueriesCustomModule(t *testing.T) {
 			function := module.Functions[query]
 			function.Evaluate = func(ModuleContext, []ModuleValue) (ModuleValue, error) { return IntegerValue(42), nil }
 			module.Functions[query] = function
-			p, err := NewCompiler(WithModule(module)).CompileSource(fmt.Sprintf(`import "pe" rule custom {condition: pe.%s("anything") == 42 and pe.%s(1) == 42}`, query, query))
+			p, err := NewCompiler(WithModule(module)).CompileSource(`import "pe" rule custom {condition: ` + tc.condition + `}`)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -167,7 +172,7 @@ func TestPEExportQueriesCustomModule(t *testing.T) {
 
 func TestPELegacyExportSchema(t *testing.T) {
 	// Preserve bindings across each addition to the sorted function table.
-	for _, fixture := range []string{"format18-pe-export-details.goyara", "format18-pe-export-queries.goyara", "format18-pe-export-index.goyara", "format18-pe-export-timestamp.goyara"} {
+	for _, fixture := range []string{"format18-pe-export-details.goyara", "format18-pe-export-queries.goyara", "format18-pe-export-index.goyara", "format18-pe-export-timestamp.goyara", "format18-pe-dll-name.goyara"} {
 		blob, err := os.ReadFile("testdata/serialization/" + fixture)
 		if err != nil {
 			t.Fatal(err)
@@ -189,7 +194,7 @@ func TestPELegacyExportSchema(t *testing.T) {
 }
 
 func TestPEExportQueriesNonPEAllocations(t *testing.T) {
-	p, err := NewCompiler().CompileSource(`import "pe" rule query {condition: pe.exports("Function00000") or pe.exports(1) or defined pe.exports_index("Function00000") or defined pe.exports_index(1) or defined pe.export_timestamp or defined pe.dll_name}`)
+	p, err := NewCompiler().CompileSource(`import "pe" rule query {condition: pe.exports("Function00000") or pe.exports(1) or defined pe.exports_index("Function00000") or defined pe.exports_index(1) or defined pe.export_timestamp or defined pe.dll_name or defined pe.is_dll()}`)
 	if err != nil {
 		t.Fatal(err)
 	}
