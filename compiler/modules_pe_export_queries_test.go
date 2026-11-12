@@ -80,6 +80,7 @@ func TestPEExportQueriesHostData(t *testing.T) {
 	p, err := NewCompiler().CompileSource(`import "pe"
 rule host {condition: pe.exports("HOSTfn") and pe.exports("HostFn\x00suffix") and pe.exports(2) and not pe.exports(0) and not pe.exports(99) and not pe.exports("HostFn\x00other") and not pe.exports("") and pe.exports_index("HOSTfn") == 1 and pe.exports_index(2) == 1 and pe.exports_index("HostFn\x00suffix") == 2 and not defined pe.exports_index(0) and not defined pe.exports_index(99) and not defined pe.exports_index("missing")}
 rule file {condition: pe.exports("Function00000")}
+rule empty {condition: pe.exports("HostFn") == 0 and pe.exports(2) == 0 and not defined pe.exports_index("HostFn") and not defined pe.exports_index(2)}
 rule absent {condition: not defined pe.exports("HostFn") and not defined pe.exports(2) and not defined pe.exports_index("HostFn") and not defined pe.exports_index(2)}`)
 	if err != nil {
 		t.Fatal(err)
@@ -96,7 +97,8 @@ rule absent {condition: not defined pe.exports("HostFn") and not defined pe.expo
 			}}, "host"},
 			{nil, "absent"},
 			{map[string]any{}, "absent"},
-			{map[string]any{"export_details": []any{}}, ""},
+			{map[string]any{"export_details": []any{}}, "empty"},
+			{map[string]any{"export_details": []any{nil, map[string]any{}}}, "empty"},
 		} {
 			s := p.NewScanner(WithModuleData("pe", tc.data))
 			r, err := s.Scan(pefixture.Exports(false, 3))
@@ -104,11 +106,7 @@ rule absent {condition: not defined pe.exports("HostFn") and not defined pe.expo
 				t.Fatalf("host data parsed file: %v %v", r, err)
 			}
 			s.Close()
-			wantCount := 0
-			if tc.want != "" {
-				wantCount = 1
-			}
-			if len(r.MatchedRules) != wantCount || tc.want != "" && !r.RuleResults[tc.want] {
+			if len(r.MatchedRules) != 1 || !r.RuleResults[tc.want] {
 				t.Fatalf("want %q: %v", tc.want, r.RuleResults)
 			}
 		}
