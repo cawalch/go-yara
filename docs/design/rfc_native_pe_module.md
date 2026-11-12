@@ -1,8 +1,8 @@
 # Native PE module
 
 Status: headers, sections, standard import metadata and queries, and export
-counts, details, name/ordinal queries, and index lookups implemented. Follow-up
-work is tracked in [#359](https://github.com/cawalch/go-yara/issues/359).
+counts, details, timestamps, name/ordinal queries, and index lookups implemented.
+Follow-up work is tracked in [#359](https://github.com/cawalch/go-yara/issues/359).
 
 The PE module lets pure-Go applications evaluate binary metadata conditions
 without linking libyara. The implementation covers headers, sections, standard
@@ -61,7 +61,7 @@ there is no blanket zero-allocation guarantee.
 ## Follow-up work
 
 Additional import overloads, delayed imports, ordinal aliases, import
-address-table RVAs, regex export queries, export directory fields, import hashes,
+address-table RVAs, regex export queries, the export DLL name, import hashes,
 resources, Rich headers, Authenticode, and process-memory behavior remain outside
 this phase. Each addition needs a bounded parsing design, differential coverage,
 and performance measurements.

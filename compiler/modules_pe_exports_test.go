@@ -10,7 +10,7 @@ import (
 	"github.com/cawalch/go-yara/internal/pefixture"
 )
 
-const peExportCondition = `pe.number_of_exports == 3 and
+const peExportCondition = `pe.number_of_exports == 3 and pe.export_timestamp == 0 and
  pe.export_details[0].ordinal == 7 and pe.export_details[0].rva == 0x1020 and
  pe.export_details[0].offset == 0x220 and pe.export_details[0].name == "Function00000" and
  not defined pe.export_details[0].forward_name and pe.export_details[2].name == "Function00002" and
@@ -22,8 +22,8 @@ const peExportCondition = `pe.number_of_exports == 3 and
 func TestPEExportsScanPaths(t *testing.T) {
 	p, err := NewCompiler().CompileSource(`import "pe"
 rule exports {condition: ` + peExportCondition + ` and pe.imports("Example.DLL") == 3}
-rule empty {condition: pe.is_pe and pe.number_of_exports == 0}
-rule not_pe {condition: not pe.is_pe and not defined pe.number_of_exports and not defined pe.exports("Function00000") and not defined pe.exports(1) and not defined pe.exports_index("Function00000") and not defined pe.exports_index(1)}`)
+rule empty {condition: pe.is_pe and pe.number_of_exports == 0 and not defined pe.export_timestamp}
+rule not_pe {condition: not pe.is_pe and not defined pe.export_timestamp and not defined pe.number_of_exports and not defined pe.exports("Function00000") and not defined pe.exports(1) and not defined pe.exports_index("Function00000") and not defined pe.exports_index(1)}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,6 +73,7 @@ func TestPEExportsLazySnapshot(t *testing.T) {
 	for _, exportsFirst := range []bool{false, true} {
 		for _, invalid := range []string{"", "imports", "exports"} {
 			data := pefixture.Exports(true, 3)
+			binary.LittleEndian.PutUint32(data[0x804:], 0x80000000)
 			const forwarder = 0x828 + 3*10 + 3*16
 			copy(data[forwarder:], "other.Target\x00")
 			binary.LittleEndian.PutUint32(data[0x82c:], forwarder+0x1c00)
@@ -87,18 +88,18 @@ func TestPEExportsLazySnapshot(t *testing.T) {
 			if root.imports != nil || root.exports != nil {
 				t.Fatal("header access parsed directories")
 			}
-			fields := []string{"number_of_imports", "number_of_exports"}
+			fields := []string{"number_of_imports", "number_of_exports", "export_timestamp"}
 			if exportsFirst {
-				fields[0], fields[1] = fields[1], fields[0]
+				fields[0], fields[2] = fields[2], fields[0]
 			}
 			for _, name := range fields {
 				value := root.field(name)
-				if (value.Type == ModuleUndefined) != (name == "number_of_"+invalid) {
+				if (value.Type == ModuleUndefined) != (name == "number_of_"+invalid || invalid == "exports" && name == "export_timestamp") {
 					t.Fatalf("order=%v invalid=%s field=%s: %+v", fields, invalid, name, value)
 				}
 			}
 			if root.exports.details.Type != ModuleUndefined || root.imports.details.Type != ModuleUndefined {
-				t.Fatal("counts constructed detail objects")
+				t.Fatal("counts or timestamp constructed detail objects")
 			}
 			copy(data, pefixture.Exports(true, 3))
 			if invalid != "" && root.field("number_of_"+invalid).Type != ModuleUndefined {
@@ -107,6 +108,9 @@ func TestPEExportsLazySnapshot(t *testing.T) {
 			clear(data)
 			ctx.Data, ctx.FileSize = nil, 0
 			if invalid != "exports" {
+				if stamp := root.field("export_timestamp"); stamp.Type != ModuleInteger || stamp.Integer != 0x80000000 {
+					t.Fatalf("timestamp did not retain the export snapshot: %+v", stamp)
+				}
 				symbol := root.field("export_details").object.elements[0].object
 				if symbol.field("name").String != "Function00000" || symbol.field("offset").Integer != 0x220 {
 					t.Fatal("exports retained mutable input or scan size")
@@ -131,7 +135,7 @@ func TestPEExportsTruncation(t *testing.T) {
 	p, err := NewCompiler().CompileSource(`import "pe"
 rule headers {condition: pe.is_pe}
 rule exports {condition: ` + peExportCondition + `}
-rule unavailable {condition: pe.is_pe and not defined pe.number_of_exports and not defined pe.export_details and not defined pe.exports("Function00000") and not defined pe.exports(1) and not defined pe.exports_index("Function00000") and not defined pe.exports_index(1)}`)
+rule unavailable {condition: pe.is_pe and not defined pe.export_timestamp and not defined pe.number_of_exports and not defined pe.export_details and not defined pe.exports("Function00000") and not defined pe.exports(1) and not defined pe.exports_index("Function00000") and not defined pe.exports_index(1)}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +161,7 @@ rule unavailable {condition: pe.is_pe and not defined pe.number_of_exports and n
 func TestPEExportsReaderAndExposureLimits(t *testing.T) {
 	p, err := NewCompiler().CompileSource(`import "pe"
 rule exports {condition: pe.number_of_exports == 16384 and pe.export_details[16383].ordinal == 16390 and not defined pe.export_details[16384].ordinal and pe.exports("Function16383") and not pe.exports("Function16384") and pe.exports(16384) and not pe.exports(16385) and pe.exports_index("Function16383") == 16383 and not defined pe.exports_index("Function16384") and pe.exports_index(16384) == 16377 and not defined pe.exports_index(16385)}
-rule limited {condition: pe.is_pe and pe.number_of_imports == 1 and not defined pe.number_of_exports and not defined pe.exports("Function00000") and not defined pe.exports(1) and not defined pe.exports_index("Function00000") and not defined pe.exports_index(1)}`)
+rule limited {condition: pe.is_pe and pe.number_of_imports == 1 and not defined pe.export_timestamp and not defined pe.number_of_exports and not defined pe.exports("Function00000") and not defined pe.exports(1) and not defined pe.exports_index("Function00000") and not defined pe.exports_index(1)}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,25 +204,79 @@ func TestPEExportsHostData(t *testing.T) {
 	}
 }
 
+func TestPEExportTimestamp(t *testing.T) {
+	p, err := NewCompiler().CompileSource(`import "pe"
+rule absent {condition: not defined pe.export_timestamp}
+rule zero {condition: defined pe.export_timestamp and pe.export_timestamp == 0}
+rule high {condition: pe.export_timestamp == 0xffffffff}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		s := p.NewScanner()
+		for _, is64 := range []bool{false, true} {
+			for _, count := range []int{0, 3} {
+				data := pefixture.Exports(is64, count)
+				for _, tc := range []struct {
+					data []byte
+					want string
+				}{{data, "zero"}, {pefixture.New(is64), "absent"}, {nil, "absent"}, {data, "zero"}} {
+					r, err := s.Scan(tc.data)
+					if err != nil || len(r.MatchedRules) != 1 || !r.RuleResults[tc.want] {
+						t.Fatalf("PE64=%t count=%d want=%s: %v %v", is64, count, tc.want, r, err)
+					}
+				}
+				binary.LittleEndian.PutUint32(data[0x804:], 0xffffffff)
+				r, err := s.Scan(data)
+				if err != nil || len(r.MatchedRules) != 1 || !r.RuleResults["high"] {
+					t.Fatalf("unsigned timestamp: %v %v", r, err)
+				}
+			}
+		}
+		s.Close()
+		for _, tc := range []struct {
+			data any
+			want string
+		}{{nil, "absent"}, {map[string]any{}, "absent"},
+			{map[string]any{"export_timestamp": 0}, "zero"},
+			{map[string]any{"export_timestamp": uint32(0xffffffff)}, "high"}} {
+			s := p.NewScanner(WithModuleData("pe", tc.data))
+			r, err := s.Scan(pefixture.Exports(false, 3))
+			if err != nil || len(r.MatchedRules) != 1 || !r.RuleResults[tc.want] || s.moduleCache.pe != nil {
+				t.Fatalf("host want=%s: %v %v", tc.want, r, err)
+			}
+			s.Close()
+		}
+		blob, err := p.MarshalBinary()
+		if err != nil {
+			t.Fatal(err)
+		}
+		p, err = UnmarshalCompiledProgram(blob)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func BenchmarkPEExports(b *testing.B) {
 	for _, symbols := range []int{16, 256} {
-		for _, details := range []bool{false, true} {
+		for _, field := range []struct{ name, condition string }{
+			{"details=false", fmt.Sprintf("pe.number_of_exports == %d", symbols)},
+			{"details=true", `for any e in pe.export_details : (e.name == "Function00000" and e.offset == 0x220)`},
+			{"timestamp", `pe.export_timestamp == 0`},
+		} {
 			for _, rules := range []int{1, 100} {
 				var source strings.Builder
 				source.WriteString("import \"pe\"\n")
-				condition := fmt.Sprintf("pe.number_of_exports == %d", symbols)
-				if details {
-					condition = `for any e in pe.export_details : (e.name == "Function00000" and e.offset == 0x220)`
-				}
 				for i := range rules {
-					fmt.Fprintf(&source, "rule r%d {condition: %s}\n", i, condition)
+					fmt.Fprintf(&source, "rule r%d {condition: %s}\n", i, field.condition)
 				}
 				p, err := NewCompiler().CompileSource(source.String())
 				if err != nil {
 					b.Fatal(err)
 				}
 				data := pefixture.Exports(true, symbols)
-				b.Run(fmt.Sprintf("symbols=%d/details=%t/rules=%d", symbols, details, rules), func(b *testing.B) {
+				b.Run(fmt.Sprintf("symbols=%d/%s/rules=%d", symbols, field.name, rules), func(b *testing.B) {
 					s := p.NewScanner(WithoutMatches(), WithoutRuleResults())
 					defer s.Close()
 					b.ReportAllocs()

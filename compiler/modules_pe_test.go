@@ -169,7 +169,7 @@ func TestPEBlocks(t *testing.T) {
 }
 
 func TestPEUnsupportedFeatures(t *testing.T) {
-	for _, condition := range []string{`pe.imphash() == ""`, `pe.exports()`, `pe.exports(true)`, `pe.exports(1.5)`, `pe.exports("a", 1)`, `pe.exports(/name/)`, `pe.exports_index()`, `pe.exports_index(true)`, `pe.exports_index(1.5)`, `pe.exports_index("a", 1)`, `pe.exports_index(/name/)`, `pe.dll_name == "x"`, `pe.export_timestamp == 0`, `pe.number_of_signatures > 0`, `pe.rich_signature.key == 0`, `pe.imports()`, `pe.imports(1)`, `pe.imports(true)`, `pe.imports("a", "b", "c")`, `pe.imports(/a/, /b/)`, `pe.imports(1, "a.dll", "b")`, `pe.import_details[0].functions[0].rva == 0`, `pe.delayed_import_details[0].library_name == "a"`} {
+	for _, condition := range []string{`pe.imphash() == ""`, `pe.exports()`, `pe.exports(true)`, `pe.exports(1.5)`, `pe.exports("a", 1)`, `pe.exports(/name/)`, `pe.exports_index()`, `pe.exports_index(true)`, `pe.exports_index(1.5)`, `pe.exports_index("a", 1)`, `pe.exports_index(/name/)`, `pe.dll_name == "x"`, `pe.number_of_signatures > 0`, `pe.rich_signature.key == 0`, `pe.imports()`, `pe.imports(1)`, `pe.imports(true)`, `pe.imports("a", "b", "c")`, `pe.imports(/a/, /b/)`, `pe.imports(1, "a.dll", "b")`, `pe.import_details[0].functions[0].rva == 0`, `pe.delayed_import_details[0].library_name == "a"`} {
 		if _, err := NewCompiler().CompileSource(`import "pe" rule unsupported { condition: ` + condition + ` }`); err == nil {
 			t.Fatalf("unsupported feature compiled: %s", condition)
 		}
@@ -310,6 +310,7 @@ rule directories { condition: for all d in pe.data_directories : (d.size >= 0) }
 rule imports { condition: pe.number_of_imports > 0 and pe.number_of_imported_functions > 0 and for any d in pe.import_details : (for any f in d.functions : (f.name == "NamedFunction" or f.ordinal == 7)) }
 rule dll_count { condition: pe.imports("Example.DLL") > 0 }
 rule exports { condition: pe.number_of_exports > 0 and for any e in pe.export_details : (e.name == "Function00000" or e.ordinal == 7 or defined e.forward_name or e.offset == 0x220) }
+rule export_timestamp { condition: defined pe.export_timestamp and pe.export_timestamp >= 0 }
 rule export_name_query { condition: pe.exports("Function00000") }
 rule export_ordinal_query { condition: pe.exports(uint16(0)) or pe.exports(1) }
 rule export_name_index { condition: defined pe.exports_index("Function00000") }
