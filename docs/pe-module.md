@@ -35,7 +35,7 @@ at most 96 entries; `number_of_sections` preserves the declared count.
 | --- | --- |
 | `pe` | `is_pe`, `machine`, `number_of_sections`, `timestamp`, `pointer_to_symbol_table`, `number_of_symbols`, `size_of_optional_header`, `characteristics` |
 | `pe` optional header | `entry_point`, `entry_point_raw`, `image_base`, `number_of_rva_and_sizes`, `opthdr_magic`, `size_of_code`, `size_of_initialized_data`, `size_of_uninitialized_data`, `base_of_code`, `base_of_data`, `section_alignment`, `file_alignment`, `win32_version_value`, `size_of_image`, `size_of_headers`, `checksum`, `subsystem`, `dll_characteristics`, `size_of_stack_reserve`, `size_of_stack_commit`, `size_of_heap_reserve`, `size_of_heap_commit`, `loader_flags` |
-| `pe` standard exports | `number_of_exports` |
+| `pe` standard exports | `number_of_exports`, `export_timestamp` |
 | `pe.export_details[i]` | `ordinal`, `rva`, `offset`, `name`, `forward_name` |
 | `pe` standard imports | `number_of_imports`, `number_of_imported_functions` |
 | `pe.import_details[i]` | `library_name`, `number_of_functions`, `functions` |
@@ -172,6 +172,17 @@ rule ExportAtFileOffset {
 An undefined index produces an undefined field value. Index lookups do not
 construct detail objects until a rule accesses the details themselves.
 
+`pe.export_timestamp` exposes the export directory's unsigned 32-bit timestamp
+as a YARA integer. It is separate from `pe.timestamp`, which comes from the COFF
+header. Zero is a defined value, including in a valid directory with no exports.
+Use `defined pe.export_timestamp` to test availability. The field is undefined
+for non-PE input, a missing directory, or export metadata rejected by go-pe.
+
+Timestamp access shares the export cache with counts, details, and queries. It
+validates the complete directory without constructing detail objects. On malformed
+tables, libyara can expose the timestamp from the directory header even when it
+cannot parse the exports; this adapter leaves it undefined.
+
 Use `number_of_exports` and `export_details` to inspect individual records.
 The array follows export address table order, including unused slots with a
 zero RVA. `number_of_exports` counts those slots, up to 16,384. `ordinal` includes
@@ -202,8 +213,8 @@ Aliases beyond that window can therefore produce different names. Strict
 rejection also differs from libyara's partial recovery on malformed tables.
 Tests record these differences separately from parity cases.
 
-Regex `pe.exports` and `pe.exports_index` overloads, `dll_name`, and
-`export_timestamp` remain unsupported and fail compilation.
+Regex `pe.exports` and `pe.exports_index` overloads and `dll_name` remain
+unsupported and fail compilation.
 
 ## Address mapping
 

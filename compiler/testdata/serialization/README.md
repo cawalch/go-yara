@@ -121,3 +121,20 @@ rule exports {
 
 Loading and reserializing this artifact must preserve boolean export queries
 and the shifted `pe.imports` and `string.to_int` bindings.
+
+`format18-pe-export-index.goyara` was emitted from
+`be1e1cb1fd6b2e368802923fb4dd4efbced35dab` (PR #458), using Go 1.27.3,
+before adding `export_timestamp` to the PE schema:
+
+```yara
+import "pe"
+import "string"
+rule exports { condition:
+ pe.number_of_exports == 3 and pe.export_details[0].ordinal == 7 and
+ pe.exports("Function00000") and pe.exports_index("Function00000") == 0 and
+ not defined pe.exports_index(7) and pe.imports("Example.DLL") == 3 and string.to_int("7") == 7
+}
+```
+
+Loading and reserializing it must preserve native export fields, boolean and
+index queries, and unrelated module bindings with the historical schema.

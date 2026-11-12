@@ -13,7 +13,8 @@ import (
 // or the compiled program. Constants are folded by the condition compiler.
 var peHeaderSchema = newPESchema()
 var peImportsSchema = newPEImportsSchema()
-var peSchema = newPEExportsSchema()
+var peExportsSchema = newPEExportsSchema()
+var peSchema = newPEExportTimestampSchema()
 
 // The semantic validator only reads this type tree. Reuse it so rules that
 // don't import PE don't pay to reconstruct the built-in schema.
@@ -59,10 +60,10 @@ func isNativePEFunction(module Module, name string, function ModuleFunction) boo
 		reflect.DeepEqual(function, builtin)
 }
 
-// Preserve loading of programs emitted before import or export support.
+// Preserve loading of programs emitted with earlier native PE schemas.
 // Match complete schemas so unrelated host modules named pe remain custom.
 func isNativePESchema(schema *ModuleSchema) bool {
-	return schema != nil && (reflect.DeepEqual(schema, peSchema) || reflect.DeepEqual(schema, peImportsSchema) || reflect.DeepEqual(schema, peHeaderSchema))
+	return schema != nil && (reflect.DeepEqual(schema, peSchema) || reflect.DeepEqual(schema, peExportsSchema) || reflect.DeepEqual(schema, peImportsSchema) || reflect.DeepEqual(schema, peHeaderSchema))
 }
 
 func newPESchema() *ModuleSchema {
@@ -207,7 +208,7 @@ func (image *peImage) field(name string) ModuleValue {
 	switch name {
 	case "number_of_imports", "number_of_imported_functions", "import_details":
 		return image.importField(name)
-	case "number_of_exports", "export_details":
+	case "number_of_exports", "export_details", "export_timestamp":
 		return image.exportField(name)
 	case "is_pe":
 		return IntegerValue(1)

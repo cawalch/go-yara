@@ -18,6 +18,9 @@ func exportTable(data []byte, field int) int {
 func TestLibyaraPEStandardExports(t *testing.T) {
 	libyaraOracle(t)
 	predicates := []string{
+		`defined pe.export_timestamp`, `pe.export_timestamp == 0`, `pe.export_timestamp == 1`,
+		`pe.export_timestamp == 0x80000000`, `pe.export_timestamp == 0xffffffff`,
+		`pe.export_timestamp >= 0`, `pe.export_timestamp == pe.timestamp`,
 		`pe.is_pe`, `pe.number_of_exports == 0`, `pe.number_of_exports == 3`, `defined pe.number_of_exports`,
 		`pe.number_of_imports == 1`, `pe.imports("example.dll") == 3`,
 		`for any e in pe.export_details : (e.name == "Function00000" and e.ordinal == 7)`,
@@ -78,6 +81,13 @@ func TestLibyaraPEStandardExports(t *testing.T) {
 			change func([]byte)
 		}{
 			{"named", func([]byte) {}},
+			{"timestamp_one", func(d []byte) { binary.LittleEndian.PutUint32(d[0x804:], 1) }},
+			{"timestamp_high", func(d []byte) { binary.LittleEndian.PutUint32(d[0x804:], 0x80000000) }},
+			{"timestamp_max", func(d []byte) { binary.LittleEndian.PutUint32(d[0x804:], 0xffffffff) }},
+			{"empty_timestamp_max", func(d []byte) {
+				clear(d[0x814:0x81c])
+				binary.LittleEndian.PutUint32(d[0x804:], 0xffffffff)
+			}},
 			{"duplicate_names", func(d []byte) { copy(d[exportTable(d, 36)+6+16:], "FUNCTION00000\x00") }},
 			{"base_zero", func(d []byte) { binary.LittleEndian.PutUint32(d[0x810:], 0) }},
 			{"base_one", func(d []byte) { binary.LittleEndian.PutUint32(d[0x810:], 1) }},
@@ -146,9 +156,9 @@ func TestLibyaraPEExportCompatibilityLimits(t *testing.T) {
 		change        func([]byte)
 		oracle, local string
 	}{
-		{"short_directory", func(d []byte) { binary.LittleEndian.PutUint32(d[0xfc:], 39) }, `pe.number_of_exports == 3`, `not defined pe.number_of_exports`},
-		{"bad_name_ordinal", func(d []byte) { binary.LittleEndian.PutUint16(d[exportTable(d, 36):], 3) }, `pe.number_of_exports == 3`, `not defined pe.number_of_exports`},
-		{"bad_table", func(d []byte) { binary.LittleEndian.PutUint32(d[0x81c:], 0xffffffff) }, `pe.number_of_exports == 0 and pe.exports(1) == 0 and pe.exports("Function00000") == 0 and not defined pe.exports_index(1) and not defined pe.exports_index("Function00000")`, `not defined pe.number_of_exports and not defined pe.exports(1) and not defined pe.exports("Function00000") and not defined pe.exports_index(1) and not defined pe.exports_index("Function00000")`},
+		{"short_directory", func(d []byte) { binary.LittleEndian.PutUint32(d[0xfc:], 39) }, `pe.number_of_exports == 3 and pe.export_timestamp == 0`, `not defined pe.number_of_exports and not defined pe.export_timestamp`},
+		{"bad_name_ordinal", func(d []byte) { binary.LittleEndian.PutUint16(d[exportTable(d, 36):], 3) }, `pe.number_of_exports == 3 and pe.export_timestamp == 0`, `not defined pe.number_of_exports and not defined pe.export_timestamp`},
+		{"bad_table", func(d []byte) { binary.LittleEndian.PutUint32(d[0x81c:], 0xffffffff) }, `pe.export_timestamp == 0 and pe.number_of_exports == 0 and pe.exports(1) == 0 and pe.exports("Function00000") == 0 and not defined pe.exports_index(1) and not defined pe.exports_index("Function00000")`, `not defined pe.export_timestamp and not defined pe.number_of_exports and not defined pe.exports(1) and not defined pe.exports("Function00000") and not defined pe.exports_index(1) and not defined pe.exports_index("Function00000")`},
 		{"directory_start_forwarder", func(d []byte) { binary.LittleEndian.PutUint32(d[0x828:], 0x2400) }, `pe.export_details[0].offset == 0x800 and not defined pe.export_details[0].forward_name`, `pe.export_details[0].forward_name == "" and not defined pe.export_details[0].offset`},
 		{"alias_beyond_name_window", func(d []byte) {
 			binary.LittleEndian.PutUint32(d[0x814:], 2)
@@ -163,7 +173,7 @@ func TestLibyaraPEExportCompatibilityLimits(t *testing.T) {
 			// Put the third name at an invalid RVA: go-pe validates every alias,
 			// including the third, which libyara does not examine.
 			binary.LittleEndian.PutUint32(d[exportTable(d, 32)+8:], 0xffffffff)
-		}, `pe.export_details[0].name == "Function00000"`, `not defined pe.number_of_exports`},
+		}, `pe.export_details[0].name == "Function00000" and pe.export_timestamp == 0`, `not defined pe.number_of_exports and not defined pe.export_timestamp`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			data := pefixture.Exports(false, 3)
@@ -187,7 +197,7 @@ func TestLibyaraPEExportQueryLimit(t *testing.T) {
 			data := pefixture.Exports(true, count)
 			binary.LittleEndian.PutUint32(data[0x810:], 1)
 			checkReleaseScanPaths(t, peProbeSource([]string{
-				`pe.exports("Function16383") == 1`, `pe.exports("Function16384") == 0`,
+				`pe.export_timestamp == 0`, `pe.exports("Function16383") == 1`, `pe.exports("Function16384") == 0`,
 				`pe.exports(16384) == 1`, `pe.exports(16385) == 0`,
 				`pe.exports_index("Function16383") == 16383`, `not defined pe.exports_index("Function16384")`,
 				`pe.exports_index(16384) == 16383`, `not defined pe.exports_index(16385)`,

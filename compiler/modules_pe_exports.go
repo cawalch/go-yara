@@ -18,13 +18,21 @@ func newPEExportsSchema() *ModuleSchema {
 	return &ModuleSchema{Fields: fields}
 }
 
+func newPEExportTimestampSchema() *ModuleSchema {
+	fields := maps.Clone(peExportsSchema.Fields)
+	fields["export_timestamp"] = ModuleField{Kind: ModuleInteger}
+	return &ModuleSchema{Fields: fields}
+}
+
 // A non-nil cache records success or failure independently of import parsing.
 // go-pe owns parsing limits; the adapter limits exposure to libyara's 16,384 slots.
 type peExportData struct {
-	symbols  []pe.ExportSymbol
-	details  ModuleValue
-	fileSize int64
-	valid    bool
+	symbols   []pe.ExportSymbol
+	details   ModuleValue
+	fileSize  int64
+	timestamp uint32
+	valid     bool
+	present   bool // A missing directory has no timestamp; zero is a valid timestamp.
 }
 
 func (image *peImage) loadExports() *peExportData {
@@ -34,6 +42,8 @@ func (image *peImage) loadExports() *peExportData {
 		if err == nil {
 			image.exports.valid = true
 			if directory != nil {
+				image.exports.present = true
+				image.exports.timestamp = directory.TimeDateStamp
 				image.exports.symbols = directory.Symbols[:min(len(directory.Symbols), 16384)]
 			}
 		}
@@ -48,6 +58,12 @@ func (image *peImage) exportField(name string) ModuleValue {
 	}
 	if name == "number_of_exports" {
 		return IntegerValue(int64(len(exports.symbols)))
+	}
+	if name == "export_timestamp" {
+		if exports.present {
+			return IntegerValue(int64(exports.timestamp))
+		}
+		return ModuleValue{}
 	}
 	if exports.details.Type == ModuleUndefined {
 		values := make([]ModuleValue, len(exports.symbols))

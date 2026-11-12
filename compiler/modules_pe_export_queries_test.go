@@ -12,7 +12,7 @@ import (
 
 func TestPEExportQueriesCache(t *testing.T) {
 	query := `rule query {condition: pe.exports("function00000") and pe.exports(1) and not pe.exports(0) and not pe.exports(4)}`
-	count := `rule count {condition: pe.number_of_exports == 3 and pe.imports("Example.DLL") == 3}`
+	count := `rule count {condition: pe.number_of_exports == 3 and pe.export_timestamp == 0 and pe.imports("Example.DLL") == 3}`
 	index := `rule index {condition: pe.exports_index("FUNCTION00000") == 0 and pe.exports_index(1) == 0 and pe.exports_index("Function00002") == 2 and pe.exports_index(3) == 2 and not defined pe.exports_index(0) and not defined pe.exports_index(4) and not defined pe.exports_index("missing")}`
 	for _, source := range []string{query + count + index, count + index + query, index + query + count} {
 		p, err := NewCompiler().CompileSource(`import "pe" ` + source)
@@ -167,7 +167,7 @@ func TestPEExportQueriesCustomModule(t *testing.T) {
 
 func TestPELegacyExportSchema(t *testing.T) {
 	// Preserve bindings across each addition to the sorted function table.
-	for _, fixture := range []string{"format18-pe-export-details.goyara", "format18-pe-export-queries.goyara"} {
+	for _, fixture := range []string{"format18-pe-export-details.goyara", "format18-pe-export-queries.goyara", "format18-pe-export-index.goyara"} {
 		blob, err := os.ReadFile("testdata/serialization/" + fixture)
 		if err != nil {
 			t.Fatal(err)
@@ -189,7 +189,7 @@ func TestPELegacyExportSchema(t *testing.T) {
 }
 
 func TestPEExportQueriesNonPEAllocations(t *testing.T) {
-	p, err := NewCompiler().CompileSource(`import "pe" rule query {condition: pe.exports("Function00000") or pe.exports(1) or defined pe.exports_index("Function00000") or defined pe.exports_index(1)}`)
+	p, err := NewCompiler().CompileSource(`import "pe" rule query {condition: pe.exports("Function00000") or pe.exports(1) or defined pe.exports_index("Function00000") or defined pe.exports_index(1) or defined pe.export_timestamp}`)
 	if err != nil {
 		t.Fatal(err)
 	}

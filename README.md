@@ -238,10 +238,10 @@ rule CheckPayload {
 
 The built-in `pe` module exposes PE32 and PE32+ headers, sections, standard
 import counts and details, `pe.imports` DLL counts and queries by name or ordinal,
-export counts and details, `pe.exports` and `pe.exports_index` queries by name
-or ordinal, and related constants. See [PE metadata](docs/pe-module.md) for examples
-and compatibility limits. Regex import and export queries, delayed imports, and signatures are
-not implemented.
+export counts, details, and timestamps, `pe.exports` and `pe.exports_index` queries
+by name or ordinal, and related constants. See [PE metadata](docs/pe-module.md) for examples
+and compatibility limits. Regex import and export queries, delayed imports, and
+signatures are not implemented.
 
 The compiler includes [go-pe](https://github.com/cawalch/go-pe) as a pure-Go
 build dependency. Go fetches it automatically; no separate checkout or CGO is
