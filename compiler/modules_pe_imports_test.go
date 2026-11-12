@@ -125,8 +125,8 @@ func TestPEImportsLazySnapshot(t *testing.T) {
 func TestPEImportsReaderLimit(t *testing.T) {
 	p, err := NewCompiler().CompileSource(`import "pe"
  rule headers {condition: pe.is_pe and pe.number_of_sections == 2}
- rule imports {condition: pe.number_of_imported_functions == 16384}
- rule unavailable {condition: not defined pe.number_of_imports}`)
+ rule imports {condition: pe.number_of_imported_functions == 16384 and pe.imports("Example.DLL", "NamedFunction")}
+ rule unavailable {condition: not defined pe.number_of_imports and not defined pe.imports("Example.DLL", "NamedFunction")}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,8 +162,8 @@ func TestPEImportsReaderLimit(t *testing.T) {
 func TestPEImportsTruncation(t *testing.T) {
 	p, err := NewCompiler().CompileSource(`import "pe"
  rule headers {condition: pe.is_pe}
- rule imports {condition: pe.number_of_imports == 1 and pe.number_of_imported_functions == 3 and pe.import_details[0].functions[2].name == "NamedFunction"}
- rule unavailable {condition: pe.is_pe and not defined pe.number_of_imports and not defined pe.number_of_imported_functions and not defined pe.import_details}`)
+ rule imports {condition: pe.imports("Example.DLL", "NamedFunction") and pe.number_of_imports == 1 and pe.number_of_imported_functions == 3 and pe.import_details[0].functions[2].name == "NamedFunction"}
+ rule unavailable {condition: pe.is_pe and not defined pe.number_of_imports and not defined pe.number_of_imported_functions and not defined pe.import_details and not defined pe.imports("Example.DLL", "NamedFunction")}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,7 +227,7 @@ func TestPELegacyHeaderSchema(t *testing.T) {
 }
 
 func TestPEImportsConcurrentScans(t *testing.T) {
-	p, err := NewCompiler().CompileSource(`import "pe" rule imports {condition: pe.number_of_imports == 1 and for any d in pe.import_details : (for any f in d.functions : (f.name == "NamedFunction"))}`)
+	p, err := NewCompiler().CompileSource(`import "pe" rule imports {condition: pe.imports("Example.DLL", "NamedFunction") and pe.number_of_imports == 1 and for any d in pe.import_details : (for any f in d.functions : (f.name == "NamedFunction"))}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,11 +246,22 @@ func TestPEImportsConcurrentScans(t *testing.T) {
 
 func BenchmarkPEImports(b *testing.B) {
 	for _, symbols := range []int{16, 256} {
-		data := pefixture.Imports(true, symbols)
-		for _, field := range []string{"counts", "details"} {
+		for _, field := range []string{"counts", "details", "name", "ordinal", "missing", "missing_long"} {
+			data := pefixture.Imports(true, symbols)
 			condition := fmt.Sprintf("pe.number_of_imported_functions == %d", symbols)
-			if field == "details" {
+			switch field {
+			case "details":
 				condition = `for any d in pe.import_details : (for any f in d.functions : (f.name == "NamedFunction"))`
+			case "name":
+				condition = `pe.imports("example.dll", "namedfunction")`
+			case "ordinal":
+				pefixture.ImportOrdinal(data, symbols-1, 7)
+				condition = `pe.imports("example.dll", 7)`
+			case "missing", "missing_long":
+				condition = `not pe.imports("example.dll", "absent")`
+				if field == "missing_long" {
+					pefixture.ImportName(data, strings.Repeat("N", 512))
+				}
 			}
 			for _, rules := range []int{1, 100} {
 				var source strings.Builder

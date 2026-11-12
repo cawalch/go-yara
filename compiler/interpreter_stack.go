@@ -213,6 +213,9 @@ func (i *Interpreter) executeModuleCall(id builtinFunction, function ModuleFunct
 			}
 		}
 	}
+	if function.Evaluate == nil {
+		return i.pushModuleValue(i.peImports(moduleArgs))
+	}
 	ctx := ModuleContext{RuleName: i.currentRule}
 	if i.matchContext != nil {
 		ctx.Data = i.matchContext.Data

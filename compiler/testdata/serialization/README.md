@@ -51,3 +51,21 @@ rule headers {
 
 It preserves the original built-in PE schema. Reading and reserializing this
 artifact must retain automatic PE loading even after the schema gains fields.
+
+`format18-pe-import-details.goyara` was emitted from `5729d6bb1cfdbf7ec51077e7e6c899f43d8840bf`
+(PR #453), using Go 1.27.3, before adding import queries:
+
+```yara
+import "pe"
+import "string"
+rule before_queries {
+    condition:
+        pe.number_of_imported_functions == 3 and
+        pe.import_details[0].functions[1].ordinal == 7 and
+        string.length("abc") == 3
+}
+```
+
+It preserves the import-details schema and historical module function IDs.
+Adding `pe.imports` must not change the binding of `string.length` when this
+artifact is read and reserialized.

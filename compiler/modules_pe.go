@@ -18,9 +18,26 @@ var peSchema = newPEImportsSchema()
 // don't import PE don't pay to reconstruct the built-in schema.
 var peSemanticType = moduleFieldType(ModuleField{Kind: ModuleStruct, Struct: peSchema})
 
-var notPE = peStruct(map[string]ModuleValue{"is_pe": IntegerValue(0)})
+var notPE = &peImage{object: peStruct(map[string]ModuleValue{"is_pe": IntegerValue(0)}).object}
 
-func peModule() Module { return Module{Name: "pe", Schema: peSchema} }
+func peModule() Module {
+	return Module{Name: "pe", Schema: peSchema, Functions: map[string]ModuleFunction{
+		"imports": {
+			Signatures: []ModuleSignature{
+				{Arguments: []ModuleValueType{ModuleString, ModuleString}},
+				{Arguments: []ModuleValueType{ModuleString, ModuleInteger}},
+			},
+			ReturnType: ModuleInteger,
+		},
+	}}
+}
+
+// Nil callbacks are reserved for the unmodified built-in registration.
+func isPEImportsFunction(module Module, name string, function ModuleFunction) bool {
+	return module.Name == "pe" && name == "imports" &&
+		reflect.DeepEqual(module.Schema, peSchema) &&
+		reflect.DeepEqual(function, peModule().Functions["imports"])
+}
 
 // Preserve loading of header-only programs emitted before import support.
 // Match complete schemas so unrelated host modules named pe remain custom.
@@ -81,7 +98,17 @@ func peVersion(major, minor uint16) ModuleValue {
 // loadPE uses file offsets even for block scans. Only the block at file offset
 // zero can contain the headers; disjoint blocks are not concatenated. Reader
 // scans supply their retained header and the actual file size separately.
-func loadPE(ctx *MatchContext) ModuleValue {
+func loadPE(ctx *MatchContext) *peImage {
+	if ctx != nil && ctx.moduleCache != nil {
+		if ctx.moduleCache.pe == nil {
+			ctx.moduleCache.pe = parsePE(ctx)
+		}
+		return ctx.moduleCache.pe
+	}
+	return parsePE(ctx)
+}
+
+func parsePE(ctx *MatchContext) *peImage {
 	if ctx == nil {
 		return notPE
 	}
@@ -122,6 +149,7 @@ func peScanData(ctx *MatchContext) []byte {
 
 // peImage owns one scan's parsed metadata and lazily constructed module values.
 type peImage struct {
+	object      *moduleObject
 	file        *pe.File
 	context     *MatchContext
 	imports     *peImportData
@@ -132,7 +160,7 @@ type peImage struct {
 	versions    [4]ModuleValue
 }
 
-func peFields(file *pe.File, data []byte, ctx *MatchContext) ModuleValue {
+func peFields(file *pe.File, data []byte, ctx *MatchContext) *peImage {
 	// Keep the snapshot independent of the caller's buffer. Section names in
 	// YARA preserve embedded NULs, unlike go-pe's normalized Name field.
 	names := make([]string, len(file.Sections))
@@ -146,7 +174,8 @@ func peFields(file *pe.File, data []byte, ctx *MatchContext) ModuleValue {
 		}
 	}
 	image := &peImage{file: file, context: ctx, names: names, entryPoint: peEntryPoint(file, ctx.FileSize)}
-	return peLazyStruct(image.field)
+	image.object = peLazyStruct(image.field).object
+	return image
 }
 
 func (image *peImage) field(name string) ModuleValue {
