@@ -35,7 +35,7 @@ rule test {
 	condition:
 		pe.imphash() == ""
 }`,
-			wantError: "unsupported module: pe",
+			wantError: `module "pe" must be imported before calling pe.imphash`,
 		},
 		{
 			name: "hash_function_call_without_import",

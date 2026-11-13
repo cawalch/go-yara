@@ -50,6 +50,7 @@ func peModule() Module {
 			},
 			ReturnType: ModuleInteger,
 		},
+		"imphash":  {Signatures: []ModuleSignature{{}}, ReturnType: ModuleString, Cacheable: true},
 		"is_32bit": {Signatures: []ModuleSignature{{}}, ReturnType: ModuleInteger},
 		"is_64bit": {Signatures: []ModuleSignature{{}}, ReturnType: ModuleInteger},
 		"is_dll":   {Signatures: []ModuleSignature{{}}, ReturnType: ModuleInteger},

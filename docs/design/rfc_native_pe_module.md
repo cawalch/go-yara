@@ -62,8 +62,8 @@ there is no blanket zero-allocation guarantee.
 ## Follow-up work
 
 Additional import overloads, delayed imports, ordinal aliases, import
-address-table RVAs, regex export queries, import hashes,
-resources, Rich headers, Authenticode, and process-memory behavior remain outside
+address-table RVAs, regex export queries, resources, Rich headers, Authenticode,
+and process-memory behavior remain outside
 this phase. Each addition needs a bounded parsing design, differential coverage,
 and performance measurements.
 The Authenticode work also needs explicit certificate and signature-verification

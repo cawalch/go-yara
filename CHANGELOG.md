@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+* Added `pe.imphash()` for libyara-compatible standard import hashes, using the existing lazy import cache and frozen ordinal aliases for `ws2_32.dll`, `wsock32.dll`, and `oleaut32.dll`. Host `import_details` snapshots are supported; delayed imports and non-standard alias resolution are not ([#470](https://github.com/cawalch/go-yara/issues/470)).
+
 * Added a pure-Go `pe` adapter for headers, sections, and related constants, backed by the independent go-pe library. See [PE module coverage and limits](docs/pe-module.md). This is the first part of [#359](https://github.com/cawalch/go-yara/issues/359).
 
 * **Borrowed evidence and zero-copy captures:** Added `WithBorrowedEvidence(true)` scanner option allowing `Capture.Data` to alias scanned input byte slices directly with 3-index capacity clipping, eliminating byte copying during evidence extraction ([#361](https://github.com/cawalch/go-yara/issues/361)).

@@ -19,9 +19,9 @@ rule WritableExecutableSection {
 ```
 
 The module implements headers, sections, standard import and export metadata,
-and import and export queries by name or ordinal under
-[#359](https://github.com/cawalch/go-yara/issues/359). Regex import queries,
-delayed imports, import hashes, regex export queries, resources, Rich headers,
+import and export queries by name or ordinal, and the standard import hash
+under [#359](https://github.com/cawalch/go-yara/issues/359). Regex import
+queries, delayed imports, regex export queries, resources, Rich headers,
 computed checksums, and Authenticode signatures remain unsupported and fail
 compilation.
 
@@ -115,14 +115,49 @@ go-pe preserves the underlying names and has its own parsing limits.
 
 A valid PE image with no import directory has zero import counts and an empty
 `import_details` array. If go-pe rejects import metadata, all three import
-fields and import queries are undefined; the header and section fields remain
-available. Failures are cached for the scan, with no partial import results.
+fields, import queries, and `pe.imphash()` are undefined; the header and section
+fields remain available. Failures are cached for the scan, with no partial
+import results.
 
 Import parsing inherits go-pe's bounds checks, required terminators, directory
 size checks, and resource limits. It uses the lookup table when present and
 falls back to the import address table only for an unbound descriptor with a
 zero lookup-table RVA. libyara can expose partial imports from malformed files
 that go-pe rejects. The adapter doesn't reproduce that recovery behavior.
+
+### Import hash
+
+`pe.imphash()` returns libyara's standard import hash as a lowercase MD5 hex
+string. It hashes the cached standard imports once per scan in descriptor order,
+including duplicates:
+
+```yara
+import "pe"
+
+rule KnownImportHash {
+    condition:
+        pe.imphash() == "52ee6f8c06f82c1a4906c4287b38a731"
+}
+```
+
+For each import, the adapter appends `library.function`, separated by commas,
+then lowercases the complete sequence with ASCII rules. It removes `.ocx`,
+`.sys`, and `.dll` suffixes using libyara's four-byte suffix comparison. Named
+imports keep their spelling. Ordinal imports use frozen `ws2_32.dll`,
+`wsock32.dll`, and `oleaut32.dll` alias tables from libyara 4.5.8, falling back
+to `ordN`; ordinary import/display-name synthesis is not used for the hash.
+
+A valid PE with no imports hashes the empty sequence
+(`d41d8cd98f00b204e9800998ecf8427e`). Non-PE input, rejected import metadata, or
+an unavailable host snapshot leaves the value undefined. With `WithModuleData`,
+the supplied `import_details` array is hashed in the same way; a missing array
+is undefined, while an empty array hashes the empty sequence. Delayed imports
+are excluded. Imphash is a clustering feature, not a cryptographic trust or
+unique-identity claim.
+
+libyara can return the empty-sequence hash when its permissive parser skips a
+malformed import directory. go-pe rejects that metadata, so this adapter returns
+undefined instead, matching the existing strict import boundary.
 
 ## Standard exports
 
@@ -317,12 +352,12 @@ support is built in; it is not a separately installed plugin.
 The first field access or PE query parses the headers and sections.
 Subsequent rules share that scan's snapshot. Version objects, directory
 descriptors, and section objects are constructed on demand. The first import
-query or import-field access parses and filters imports once. Queries and fields
-share this cache. Counts and queries don't construct detail objects; each
-library constructs its function objects only when accessed. Constants and unused
-module imports don't invoke the parser. Export counts, details, and queries share
-a separate lazy cache in the same snapshot; counts and queries don't construct
-detail objects.
+query, import-field access, or `pe.imphash()` call parses and filters imports
+once. Queries, fields, and the hash share this cache. Counts and queries don't
+construct detail objects; each library constructs its function objects only
+when accessed. Constants and unused module imports don't invoke the parser.
+Export counts, details, and queries share a separate lazy cache in the same
+snapshot; counts and queries don't construct detail objects.
 Import and export parsing can run in either order. Starting another scan
 invalidates the snapshot.
 
@@ -339,12 +374,14 @@ import-only PE schemas still load automatically. Existing custom modules named
 `pe` with a different schema retain their host-data behavior. An explicit
 `WithModuleData("pe", data)` snapshot takes precedence over automatic loading.
 Import queries use that snapshot's `import_details`: a missing array gives an
-undefined result, and an empty array gives `0`. DLL counts include non-null
-function records in matching libraries and ignore the supplied
-`number_of_functions` field. Export queries use the snapshot's `export_details`, with the same
-missing-array and empty-array behavior. Index queries return undefined for
-both an absent array and a miss, and preserve array positions when entries are
-undefined. Their ordinal guard uses the array length, ignoring a separately
+undefined result, and an empty array gives `0`. `pe.imphash()` uses the same
+array; a missing array is undefined and an empty array hashes the empty
+sequence. DLL counts include non-null function records in matching libraries
+and ignore the supplied `number_of_functions` field. Export queries use the
+snapshot's `export_details`, with the same missing-array and empty-array
+behavior. Index queries return undefined for both an absent array and a miss,
+and preserve array positions when entries are undefined. Their ordinal guard
+uses the array length, ignoring a separately
 supplied `number_of_exports`. Names are compared as supplied, including embedded
 NULs. Custom `ModuleFunction.Evaluate` callbacks
 take precedence over built-in query dispatch, including on copied registrations.
