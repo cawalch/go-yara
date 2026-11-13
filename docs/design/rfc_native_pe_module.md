@@ -1,14 +1,16 @@
 # Native PE module
 
-Status: headers, sections, standard import metadata and queries, and export
-counts, details, timestamps, DLL names, name/ordinal queries, and index lookups
-implemented. DLL and bitness classification helpers reuse the header cache.
-Follow-up work is tracked in [#359](https://github.com/cawalch/go-yara/issues/359).
+Status: headers, sections, standard import metadata and queries, standard import
+hash, and export counts, details, timestamps, DLL names, name/ordinal queries,
+and index lookups implemented. DLL and bitness classification helpers reuse the
+header cache. Follow-up work is tracked in
+[#359](https://github.com/cawalch/go-yara/issues/359).
 
 The PE module lets pure-Go applications evaluate binary metadata conditions
 without linking libyara. The implementation covers headers, sections, standard
-import counts, details, and queries, export metadata and queries, and related constants. See
-[PE metadata](../pe-module.md) for the supported fields and compatibility limits.
+import counts, details, queries, and imphash, export metadata and queries, and
+related constants. See [PE metadata](../pe-module.md) for the supported fields
+and compatibility limits.
 
 ## Library boundary
 
