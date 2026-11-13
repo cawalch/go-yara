@@ -216,6 +216,8 @@ func (i *Interpreter) executeModuleCall(id builtinFunction, function ModuleFunct
 	if function.Evaluate == nil {
 		name := i.currentCompiledRule.ModuleNames[id]
 		switch name {
+		case "pe.is_32bit", "pe.is_64bit":
+			return i.pushModuleValue(i.peIsBitness(name == "pe.is_64bit"))
 		case "pe.is_dll":
 			return i.pushModuleValue(i.peIsDLL())
 		case "pe.imports":

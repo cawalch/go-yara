@@ -31,6 +31,7 @@ func peProbeSource(predicates []string) string {
 func TestLibyaraPEHeadersAndSections(t *testing.T) {
 	libyaraOracle(t)
 	predicates := []string{
+		`defined pe.is_32bit()`, `defined pe.is_64bit()`, `pe.is_32bit() == 1`, `pe.is_64bit() == 1`,
 		`defined pe.is_dll()`, `pe.is_dll() == 0`, `pe.is_dll() == 1`, `pe.is_dll() == 0x2000`,
 		`pe.is_pe == 1`, `pe.machine == pe.MACHINE_I386`, `pe.machine == pe.MACHINE_AMD64`,
 		`pe.number_of_sections == 2`, `pe.timestamp == 0xf1234567`, `pe.pointer_to_symbol_table == 0`,
@@ -223,7 +224,7 @@ func TestLibyaraPEStrictHeaderCompatibility(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			data := tc.change(pefixture.New(false))
-			const source = `import "pe" rule recognized { condition: pe.is_pe == 1 } rule rejected { condition: pe.is_pe == 0 and not defined pe.machine and not defined pe.sections[0].name }`
+			const source = `import "pe" rule recognized { condition: pe.is_pe == 1 and pe.is_32bit() == 1 and pe.is_64bit() == 0 } rule rejected { condition: pe.is_pe == 0 and not defined pe.is_32bit() and not defined pe.is_64bit() and not defined pe.machine and not defined pe.sections[0].name }`
 			want, err := scanWithLibyara(t, libyaraOracle(t), source, data)
 			if err != nil {
 				t.Fatal(err)
@@ -343,12 +344,17 @@ func TestLibyaraPESectionLimit(t *testing.T) {
 	}
 }
 
-func TestLibyaraPEIsDLL(t *testing.T) {
+func TestLibyaraPEHeaderFunctions(t *testing.T) {
 	libyaraOracle(t)
 	source := peProbeSource([]string{
 		`defined pe.is_dll()`, `pe.is_dll()`, `pe.is_dll() == 0`,
 		`pe.is_dll() == 1`, `pe.is_dll() == 0x2000`,
 		`pe.is_dll() == (pe.characteristics & pe.DLL)`,
+		`defined pe.is_32bit()`, `defined pe.is_64bit()`, `pe.is_32bit()`, `pe.is_64bit()`,
+		`pe.is_32bit() == 0`, `pe.is_32bit() == 1`, `pe.is_64bit() == 0`, `pe.is_64bit() == 1`,
+		`pe.is_32bit() + pe.is_64bit() == 1`,
+		`pe.is_32bit() == 1 and pe.opthdr_magic == pe.IMAGE_NT_OPTIONAL_HDR32_MAGIC`,
+		`pe.is_64bit() == 1 and pe.opthdr_magic == pe.IMAGE_NT_OPTIONAL_HDR64_MAGIC`,
 	})
 	for _, is64 := range []bool{false, true} {
 		data := pefixture.New(is64)
@@ -365,6 +371,14 @@ func TestLibyaraPEIsDLL(t *testing.T) {
 			binary.LittleEndian.PutUint32(data[0x3c:], 0xffffffff)
 			checkPEPaths(t, source, data)
 		})
+		for _, machine := range []uint16{0, 0x14c, 0x8664} {
+			t.Run(fmt.Sprintf("machine/PE64=%t/machine=%#x", is64, machine), func(t *testing.T) {
+				data := pefixture.New(is64)
+				binary.LittleEndian.PutUint16(data[0x84:], machine)
+				checkPEPaths(t, source, data)
+			})
+		}
+
 		for _, flags := range []uint16{0, 0x22, 0x2000, 0xffff} {
 			t.Run(fmt.Sprintf("PE64=%t/flags=%#x", is64, flags), func(t *testing.T) {
 				data := pefixture.New(is64)
