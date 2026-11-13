@@ -199,8 +199,7 @@ func TestPEQueryRegistration(t *testing.T) {
 func TestPEImportQueryCustomSchema(t *testing.T) {
 	module := NewCompiler().GetOptions().Modules["pe"]
 	module.Schema = &ModuleSchema{Fields: map[string]ModuleField{"label": {Kind: ModuleString}}}
-	delete(module.Functions, "exports")
-	delete(module.Functions, "exports_index")
+	module.Functions = map[string]ModuleFunction{"imports": module.Functions["imports"]}
 	f := module.Functions["imports"]
 	f.Evaluate = func(ModuleContext, []ModuleValue) (ModuleValue, error) { return IntegerValue(1), nil }
 	module.Functions["imports"] = f

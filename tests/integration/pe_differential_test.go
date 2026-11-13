@@ -31,6 +31,7 @@ func peProbeSource(predicates []string) string {
 func TestLibyaraPEHeadersAndSections(t *testing.T) {
 	libyaraOracle(t)
 	predicates := []string{
+		`defined pe.is_dll()`, `pe.is_dll() == 0`, `pe.is_dll() == 1`, `pe.is_dll() == 0x2000`,
 		`pe.is_pe == 1`, `pe.machine == pe.MACHINE_I386`, `pe.machine == pe.MACHINE_AMD64`,
 		`pe.number_of_sections == 2`, `pe.timestamp == 0xf1234567`, `pe.pointer_to_symbol_table == 0`,
 		`pe.number_of_symbols == 0`, `pe.size_of_optional_header == 224`, `pe.size_of_optional_header == 240`,
@@ -338,6 +339,44 @@ func TestLibyaraPESectionLimit(t *testing.T) {
 				`for all s in pe.sections : (s.name == ".text")`,
 				`for none s in pe.sections : (s.name != ".text")`,
 			}), data)
+		})
+	}
+}
+
+func TestLibyaraPEIsDLL(t *testing.T) {
+	libyaraOracle(t)
+	source := peProbeSource([]string{
+		`defined pe.is_dll()`, `pe.is_dll()`, `pe.is_dll() == 0`,
+		`pe.is_dll() == 1`, `pe.is_dll() == 0x2000`,
+		`pe.is_dll() == (pe.characteristics & pe.DLL)`,
+	})
+	for _, is64 := range []bool{false, true} {
+		data := pefixture.New(is64)
+		optionalEnd := 0x178
+		if is64 {
+			optionalEnd = 0x188
+		}
+		for _, end := range []int{0x97, optionalEnd - 1} {
+			t.Run(fmt.Sprintf("truncated/PE64=%t/end=%#x", is64, end), func(t *testing.T) {
+				checkPEPaths(t, source, data[:end])
+			})
+		}
+		t.Run(fmt.Sprintf("invalid_header_offset/PE64=%t", is64), func(t *testing.T) {
+			binary.LittleEndian.PutUint32(data[0x3c:], 0xffffffff)
+			checkPEPaths(t, source, data)
+		})
+		for _, flags := range []uint16{0, 0x22, 0x2000, 0xffff} {
+			t.Run(fmt.Sprintf("PE64=%t/flags=%#x", is64, flags), func(t *testing.T) {
+				data := pefixture.New(is64)
+				binary.LittleEndian.PutUint16(data[0x96:], flags)
+				checkPEPaths(t, source, data)
+			})
+		}
+		t.Run(fmt.Sprintf("bad_directories/PE64=%t", is64), func(t *testing.T) {
+			data := pefixture.Exports(is64, 3)
+			binary.LittleEndian.PutUint32(data[0x400:], 0xffffffff)
+			binary.LittleEndian.PutUint32(data[0x81c:], 0xffffffff)
+			checkPEPaths(t, source, data)
 		})
 	}
 }

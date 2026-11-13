@@ -50,7 +50,33 @@ func peModule() Module {
 			},
 			ReturnType: ModuleInteger,
 		},
+		"is_dll": {Signatures: []ModuleSignature{{}}, ReturnType: ModuleInteger},
 	}}
+}
+
+// peIsDLL reads the cached header or the supplied host snapshot. It doesn't
+// need import or export metadata. Libyara returns the masked flag value (0 or 0x2000).
+func (i *Interpreter) peIsDLL() ModuleValue {
+	if i.currentCompiledRule == nil || !i.currentCompiledRule.nativePE {
+		return ModuleValue{}
+	}
+	var characteristics ModuleValue
+	if data, supplied := i.moduleData["pe"]; supplied {
+		if data.object == nil {
+			return ModuleValue{}
+		}
+		characteristics = data.object.fields["characteristics"]
+	} else {
+		image := loadPE(i.matchContext)
+		if image.file == nil {
+			return ModuleValue{}
+		}
+		characteristics = IntegerValue(int64(image.file.FileHeader.Characteristics))
+	}
+	if characteristics.Type != ModuleInteger {
+		return ModuleValue{}
+	}
+	return IntegerValue(characteristics.Integer & int64(pe.CharacteristicsDLL))
 }
 
 // Nil callbacks are reserved for the unmodified built-in registration.

@@ -216,6 +216,8 @@ func (i *Interpreter) executeModuleCall(id builtinFunction, function ModuleFunct
 	if function.Evaluate == nil {
 		name := i.currentCompiledRule.ModuleNames[id]
 		switch name {
+		case "pe.is_dll":
+			return i.pushModuleValue(i.peIsDLL())
 		case "pe.imports":
 			return i.pushModuleValue(i.peImports(moduleArgs))
 		case "pe.exports", "pe.exports_index":

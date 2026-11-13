@@ -14,10 +14,10 @@ import (
 
 func TestPEScanLifecycle(t *testing.T) {
 	const source = `import "pe"
-rule image { condition: pe.is_pe == 1 and pe.entry_point == 0x220 and
+rule image { condition: pe.is_pe == 1 and pe.is_dll() == 0x2000 and pe.entry_point == 0x220 and
     pe.sections[0].name == ".text" and pe.sections[1].characteristics & pe.SECTION_MEM_WRITE != 0 }
 rule again { condition: image and pe.number_of_sections == 2 }
-rule not_image { condition: pe.is_pe == 0 and not defined pe.machine and not defined pe.sections[0].name }
+rule not_image { condition: pe.is_pe == 0 and not defined pe.is_dll() and not defined pe.machine and not defined pe.sections[0].name }
 rule constants { condition: pe.MACHINE_AMD64 == 0x8664 and pe.DLL == 0x2000 }`
 	program, err := NewCompiler().CompileSource(source)
 	if err != nil {
@@ -169,7 +169,7 @@ func TestPEBlocks(t *testing.T) {
 }
 
 func TestPEUnsupportedFeatures(t *testing.T) {
-	for _, condition := range []string{`pe.imphash() == ""`, `pe.exports()`, `pe.exports(true)`, `pe.exports(1.5)`, `pe.exports("a", 1)`, `pe.exports(/name/)`, `pe.exports_index()`, `pe.exports_index(true)`, `pe.exports_index(1.5)`, `pe.exports_index("a", 1)`, `pe.exports_index(/name/)`, `pe.number_of_signatures > 0`, `pe.rich_signature.key == 0`, `pe.imports()`, `pe.imports(1)`, `pe.imports(true)`, `pe.imports("a", "b", "c")`, `pe.imports(/a/, /b/)`, `pe.imports(1, "a.dll", "b")`, `pe.import_details[0].functions[0].rva == 0`, `pe.delayed_import_details[0].library_name == "a"`} {
+	for _, condition := range []string{`pe.imphash() == ""`, `pe.is_dll(1)`, `pe.is_dll("x")`, `pe.is_dll(/x/)`, `pe.exports()`, `pe.exports(true)`, `pe.exports(1.5)`, `pe.exports("a", 1)`, `pe.exports(/name/)`, `pe.exports_index()`, `pe.exports_index(true)`, `pe.exports_index(1.5)`, `pe.exports_index("a", 1)`, `pe.exports_index(/name/)`, `pe.number_of_signatures > 0`, `pe.rich_signature.key == 0`, `pe.imports()`, `pe.imports(1)`, `pe.imports(true)`, `pe.imports("a", "b", "c")`, `pe.imports(/a/, /b/)`, `pe.imports(1, "a.dll", "b")`, `pe.import_details[0].functions[0].rva == 0`, `pe.delayed_import_details[0].library_name == "a"`} {
 		if _, err := NewCompiler().CompileSource(`import "pe" rule unsupported { condition: ` + condition + ` }`); err == nil {
 			t.Fatalf("unsupported feature compiled: %s", condition)
 		}
@@ -310,6 +310,7 @@ rule directories { condition: for all d in pe.data_directories : (d.size >= 0) }
 rule imports { condition: pe.number_of_imports > 0 and pe.number_of_imported_functions > 0 and for any d in pe.import_details : (for any f in d.functions : (f.name == "NamedFunction" or f.ordinal == 7)) }
 rule dll_count { condition: pe.imports("Example.DLL") > 0 }
 rule exports { condition: pe.number_of_exports > 0 and for any e in pe.export_details : (e.name == "Function00000" or e.ordinal == 7 or defined e.forward_name or e.offset == 0x220) }
+rule is_dll { condition: pe.is_dll() == 0x2000 }
 rule dll_name { condition: defined pe.dll_name and pe.dll_name contains "DLL" }
 rule export_timestamp { condition: defined pe.export_timestamp and pe.export_timestamp >= 0 }
 rule export_name_query { condition: pe.exports("Function00000") }
@@ -328,7 +329,7 @@ rule queries { condition: pe.imports("Example.DLL", "NamedFunction") or pe.impor
 }
 
 func TestPEConcurrentScans(t *testing.T) {
-	const source = `import "pe" rule image { condition: pe.is_pe and pe.sections[0].name == ".text" }`
+	const source = `import "pe" rule image { condition: pe.is_pe and pe.is_dll() == 0x2000 and pe.sections[0].name == ".text" }`
 	p, err := NewCompiler().CompileSource(source)
 	if err != nil {
 		t.Fatal(err)

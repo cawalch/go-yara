@@ -156,3 +156,21 @@ rule exports { condition:
 
 Loading and reserializing it must preserve the timestamp schema, native export
 and import queries, and unrelated module bindings.
+
+
+`format18-pe-dll-name.goyara` was emitted from
+`d07062ee64c87f7e4695593b85a5dfccbf22cc8a` (PR #460), using Go 1.27.3,
+before adding `pe.is_dll()`:
+
+```yara
+import "pe"
+import "string"
+rule before_is_dll { condition:
+ pe.dll_name == "Example.DLL" and pe.export_timestamp == 0 and
+ pe.exports("Function00000") and pe.exports_index("Function00000") == 0 and
+ pe.imports("Example.DLL") == 3 and string.to_int("7") == 7
+}
+```
+
+Loading and reserializing it must preserve the existing PE fields and queries
+and the `string.to_int` binding after the sorted function table grows.
