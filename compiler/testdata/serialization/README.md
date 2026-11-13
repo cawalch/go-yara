@@ -174,3 +174,21 @@ rule before_is_dll { condition:
 
 Loading and reserializing it must preserve the existing PE fields and queries
 and the `string.to_int` binding after the sorted function table grows.
+
+`format18-pe-is-dll.goyara` was emitted from
+`3bb20ccf37e4007d396a0a62d1b95633de63f359` (PR #461), using Go 1.27.3,
+before adding the bitness functions:
+
+```yara
+import "pe"
+import "string"
+rule before_bitness { condition:
+ pe.is_dll() == 0x2000 and pe.dll_name == "Example.DLL" and
+ pe.export_timestamp == 0 and pe.exports("Function00000") and
+ pe.exports_index("Function00000") == 0 and pe.imports("Example.DLL") == 3 and
+ string.to_int("7") == 7
+}
+```
+
+Loading and reserializing it must preserve `pe.is_dll()` and `string.to_int`
+bindings when the bitness functions shift their sorted registration IDs.

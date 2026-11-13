@@ -116,11 +116,15 @@ func TestPEIsDLLHeaderCache(t *testing.T) {
 }
 
 func BenchmarkPEIsDLL(b *testing.B) {
+	benchmarkPEHeaderQuery(b, "pe.is_dll() == 0x2000")
+}
+
+func benchmarkPEHeaderQuery(b *testing.B, condition string) {
 	for _, rules := range []int{1, 100} {
 		var source strings.Builder
 		source.WriteString("import \"pe\"\n")
 		for n := range rules {
-			fmt.Fprintf(&source, "rule r%d {condition: pe.is_dll() == 0x2000}\n", n)
+			fmt.Fprintf(&source, "rule r%d {condition: %s}\n", n, condition)
 		}
 		p, err := NewCompiler().CompileSource(source.String())
 		if err != nil {

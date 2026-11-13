@@ -86,9 +86,8 @@ type ModuleFunction struct {
 	// never RuleName, time, external state, or side effects. Custom functions are
 	// not cached by default. This hint is not persisted for custom modules.
 	Cacheable bool
-	// Evaluate implements a custom function. Only the built-in pe.imports,
-	// pe.exports, and pe.exports_index registrations may leave it nil to select
-	// scan-owned evaluation.
+	// Evaluate implements a custom function. Only unmodified built-in PE
+	// function registrations may leave it nil to select scan-owned evaluation.
 	// Evaluate may return ModuleUndefined for any declared return type. An
 	// undefined argument propagates without invoking the callback.
 	Evaluate func(ModuleContext, []ModuleValue) (ModuleValue, error)
@@ -137,8 +136,16 @@ func cloneModule(module Module) Module {
 	return module
 }
 
+func moduleFunctionCount(registered map[string]Module) int {
+	count := 0
+	for _, module := range registered {
+		count += len(module.Functions)
+	}
+	return count
+}
+
 func semanticModuleFunctions(registered map[string]Module) semantic.ModuleFunctions {
-	functions := make(semantic.ModuleFunctions)
+	functions := make(semantic.ModuleFunctions, moduleFunctionCount(registered))
 	for moduleName, module := range registered {
 		for functionName, function := range module.Functions {
 			signatures := make([][]semantic.DataType, len(function.Signatures))
@@ -171,7 +178,7 @@ type compiledModuleFunction struct {
 func compileModuleFunctions(
 	registered map[string]Module,
 ) (map[string]compiledModuleFunction, map[builtinFunction]ModuleFunction, map[builtinFunction]string, error) {
-	qualifiedNames := make([]string, 0)
+	qualifiedNames := make([]string, 0, moduleFunctionCount(registered))
 	for moduleName, module := range registered {
 		if module.Name == "" || module.Name != moduleName || strings.Contains(module.Name, ".") {
 			return nil, nil, nil, fmt.Errorf("invalid module name %q", module.Name)

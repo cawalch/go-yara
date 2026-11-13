@@ -126,6 +126,8 @@ func TestPEFunctionCustomModule(t *testing.T) {
 		{"exports", `pe.exports("anything") == 42 and pe.exports(1) == 42`},
 		{"exports_index", `pe.exports_index("anything") == 42 and pe.exports_index(1) == 42`},
 		{"is_dll", `pe.is_dll() == 42`},
+		{"is_32bit", `pe.is_32bit() == 42`},
+		{"is_64bit", `pe.is_64bit() == 42`},
 	} {
 		query := tc.name
 		for _, customSchema := range []bool{false, true} {
@@ -172,7 +174,7 @@ func TestPEFunctionCustomModule(t *testing.T) {
 
 func TestPELegacyExportSchema(t *testing.T) {
 	// Preserve bindings across each addition to the sorted function table.
-	for _, fixture := range []string{"format18-pe-export-details.goyara", "format18-pe-export-queries.goyara", "format18-pe-export-index.goyara", "format18-pe-export-timestamp.goyara", "format18-pe-dll-name.goyara"} {
+	for _, fixture := range []string{"format18-pe-export-details.goyara", "format18-pe-export-queries.goyara", "format18-pe-export-index.goyara", "format18-pe-export-timestamp.goyara", "format18-pe-dll-name.goyara", "format18-pe-is-dll.goyara"} {
 		blob, err := os.ReadFile("testdata/serialization/" + fixture)
 		if err != nil {
 			t.Fatal(err)
@@ -194,7 +196,7 @@ func TestPELegacyExportSchema(t *testing.T) {
 }
 
 func TestPEExportQueriesNonPEAllocations(t *testing.T) {
-	p, err := NewCompiler().CompileSource(`import "pe" rule query {condition: pe.exports("Function00000") or pe.exports(1) or defined pe.exports_index("Function00000") or defined pe.exports_index(1) or defined pe.export_timestamp or defined pe.dll_name or defined pe.is_dll()}`)
+	p, err := NewCompiler().CompileSource(`import "pe" rule query {condition: pe.exports("Function00000") or pe.exports(1) or defined pe.exports_index("Function00000") or defined pe.exports_index(1) or defined pe.export_timestamp or defined pe.dll_name or defined pe.is_dll() or defined pe.is_32bit() or defined pe.is_64bit()}`)
 	if err != nil {
 		t.Fatal(err)
 	}

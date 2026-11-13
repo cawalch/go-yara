@@ -50,7 +50,9 @@ func peModule() Module {
 			},
 			ReturnType: ModuleInteger,
 		},
-		"is_dll": {Signatures: []ModuleSignature{{}}, ReturnType: ModuleInteger},
+		"is_32bit": {Signatures: []ModuleSignature{{}}, ReturnType: ModuleInteger},
+		"is_64bit": {Signatures: []ModuleSignature{{}}, ReturnType: ModuleInteger},
+		"is_dll":   {Signatures: []ModuleSignature{{}}, ReturnType: ModuleInteger},
 	}}
 }
 
@@ -77,6 +79,34 @@ func (i *Interpreter) peIsDLL() ModuleValue {
 		return ModuleValue{}
 	}
 	return IntegerValue(characteristics.Integer & int64(pe.CharacteristicsDLL))
+}
+
+// peIsBitness classifies the optional-header format, independently of the
+// machine type and COFF flags. Host snapshots must supply a recognized magic.
+func (i *Interpreter) peIsBitness(want64 bool) ModuleValue {
+	if i.currentCompiledRule == nil || !i.currentCompiledRule.nativePE {
+		return ModuleValue{}
+	}
+	var magic ModuleValue
+	if data, supplied := i.moduleData["pe"]; supplied {
+		if data.object == nil {
+			return ModuleValue{}
+		}
+		magic = data.object.fields["opthdr_magic"]
+	} else {
+		image := loadPE(i.matchContext)
+		if image.file == nil {
+			return ModuleValue{}
+		}
+		magic = IntegerValue(int64(image.file.OptionalHeader.Magic))
+	}
+	if magic.Type != ModuleInteger || (magic.Integer != int64(pe.OptionalHeaderMagicPE32) && magic.Integer != int64(pe.OptionalHeaderMagicPE32P)) {
+		return ModuleValue{}
+	}
+	if (magic.Integer == int64(pe.OptionalHeaderMagicPE32P)) == want64 {
+		return IntegerValue(1)
+	}
+	return IntegerValue(0)
 }
 
 // Nil callbacks are reserved for the unmodified built-in registration.

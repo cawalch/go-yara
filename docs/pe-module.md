@@ -241,6 +241,26 @@ the header cache without parsing imports or exports. If you supply PE module
 data with `WithModuleData`, it uses the supplied `characteristics` field;
 a missing field stays undefined and doesn't trigger file parsing.
 
+## Bitness
+
+`pe.is_32bit()` returns `1` for a PE32 image and `0` for a PE32+ image.
+`pe.is_64bit()` returns the opposite result. Both take no arguments and return
+undefined when header metadata is unavailable.
+
+The functions classify the optional-header format and reuse the header cache
+without parsing imports or exports. The machine field and COFF flags do not
+change the result.
+
+If you supply PE module data with `WithModuleData`, its `opthdr_magic` controls
+both functions. `IMAGE_NT_OPTIONAL_HDR32_MAGIC` selects PE32, and
+`IMAGE_NT_OPTIONAL_HDR64_MAGIC` selects PE32+. A missing or unrecognized magic
+leaves both functions undefined, even if the scanned file has valid headers.
+Other host fields, including `is_pe` and `machine`, do not affect classification.
+
+Libyara accepts some images with unrecognized optional-header magic and reports
+them as 32-bit. go-pe rejects those images, so both functions remain undefined.
+This preserves the adapter's existing strict-header compatibility boundary.
+
 ## Address mapping
 
 `entry_point_raw` is the entry-point RVA from the optional header.
