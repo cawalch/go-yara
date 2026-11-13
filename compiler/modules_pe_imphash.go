@@ -99,21 +99,22 @@ func peImphashLibraries(libraries []pe.ImportLibrary) string {
 }
 
 type peImphashBuilder struct {
-	digest hash.Hash
-	first  bool
+	digest  hash.Hash
+	scratch [256]byte
+	first   bool
 }
 
 func newPEImphashBuilder() *peImphashBuilder {
-	return &peImphashBuilder{digest: md5.New(), first: true}
+	return &peImphashBuilder{digest: md5.New(), first: true} // #nosec G401 -- YARA compatibility requires MD5.
 }
 
 func (builder *peImphashBuilder) add(library, function string) {
 	if !builder.first {
-		_, _ = builder.digest.Write([]byte{','})
+		builder.writeByte(',')
 	}
-	writePEImphashLower(builder.digest, library)
-	_, _ = builder.digest.Write([]byte{'.'})
-	writePEImphashLower(builder.digest, function)
+	builder.writeLower(library)
+	builder.writeByte('.')
+	builder.writeLower(function)
 	builder.first = false
 }
 
@@ -121,20 +122,25 @@ func (builder *peImphashBuilder) sum() string {
 	return hex.EncodeToString(builder.digest.Sum(nil))
 }
 
-// writePEImphashLower streams ASCII lowercase bytes without allocating a
-// joined import string. libyara lowercases with C-locale tolower.
-func writePEImphashLower(digest hash.Hash, value string) {
-	var buffer [256]byte
+func (builder *peImphashBuilder) writeByte(character byte) {
+	builder.scratch[0] = character
+	_, _ = builder.digest.Write(builder.scratch[:1])
+}
+
+// writeLower streams ASCII lowercase bytes through builder-owned scratch
+// storage without allocating a joined import string. libyara lowercases with
+// C-locale tolower.
+func (builder *peImphashBuilder) writeLower(value string) {
 	for len(value) > 0 {
-		n := min(len(value), len(buffer))
+		n := min(len(value), len(builder.scratch))
 		for i := 0; i < n; i++ {
 			character := value[i]
 			if character >= 'A' && character <= 'Z' {
 				character += 'a' - 'A'
 			}
-			buffer[i] = character
+			builder.scratch[i] = character
 		}
-		_, _ = digest.Write(buffer[:n])
+		_, _ = builder.digest.Write(builder.scratch[:n])
 		value = value[n:]
 	}
 }

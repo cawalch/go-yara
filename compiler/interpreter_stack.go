@@ -214,21 +214,24 @@ func (i *Interpreter) executeModuleCall(id builtinFunction, function ModuleFunct
 		}
 	}
 	if function.Evaluate == nil {
+		var result ModuleValue
 		name := i.currentCompiledRule.ModuleNames[id]
 		switch name {
 		case "pe.is_32bit", "pe.is_64bit":
-			return i.pushModuleValue(i.peIsBitness(name == "pe.is_64bit"))
+			result = i.peIsBitness(name == "pe.is_64bit")
 		case "pe.is_dll":
-			return i.pushModuleValue(i.peIsDLL())
+			result = i.peIsDLL()
 		case "pe.imphash":
-			return i.pushModuleValue(i.peImphash())
+			result = i.peImphash()
 		case "pe.imports":
-			return i.pushModuleValue(i.peImports(moduleArgs))
+			result = i.peImports(moduleArgs)
 		case "pe.exports", "pe.exports_index":
-			return i.pushModuleValue(i.peExports(moduleArgs, name == "pe.exports_index"))
-		default:
-			return i.pushModuleValue(ModuleValue{})
+			result = i.peExports(moduleArgs, name == "pe.exports_index")
 		}
+		if cache != nil {
+			cache.put(key, result)
+		}
+		return i.pushModuleValue(result)
 	}
 	ctx := ModuleContext{RuleName: i.currentRule}
 	if i.matchContext != nil {

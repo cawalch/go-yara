@@ -3,6 +3,8 @@ package compiler
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/cawalch/go-yara/internal/pefixture"
@@ -171,6 +173,43 @@ rule absent { condition: not defined pe.imphash() }`)
 	}
 }
 
+func TestPEImphashCacheReuseAndReset(t *testing.T) {
+	condition := repeatedImphashCondition(16)
+	program, err := NewCompiler().CompileSource(`import "pe"
+rule many { condition: ` + condition + ` }
+rule other { condition: pe.imphash() == "` + peImphashNamed3 + `" }`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := program.NewScanner()
+	defer s.Close()
+	key := moduleCallCacheEntry{name: "pe.imphash"}
+
+	named := pefixture.Imports(false, 3)
+	result, err := s.Scan(named)
+	if err != nil || !result.RuleResults["many"] || !result.RuleResults["other"] {
+		t.Fatalf("named scan: %v %v", result, err)
+	}
+	if s.moduleCache.count != 1 {
+		t.Fatalf("imphash calls cached %d entries, want 1", s.moduleCache.count)
+	}
+	cached, hit := s.moduleCache.lookup(key)
+	if !hit || cached.Type != ModuleString || cached.String != peImphashNamed3 {
+		t.Fatalf("cached result = %+v, hit=%t", cached, hit)
+	}
+
+	ordinal := pefixture.Imports(false, 3)
+	pefixture.ImportOrdinal(ordinal, 1, 7)
+	result, err = s.Scan(ordinal)
+	if err != nil || result.RuleResults["many"] || result.RuleResults["other"] {
+		t.Fatalf("ordinal scan reused stale cache: %v %v", result, err)
+	}
+	cached, hit = s.moduleCache.lookup(key)
+	if !hit || cached.Type != ModuleString || cached.String != peImphashNamedOrd7 {
+		t.Fatalf("reset result = %+v, hit=%t", cached, hit)
+	}
+}
+
 func TestPEImphashCustomModule(t *testing.T) {
 	module := NewCompiler().GetOptions().Modules["pe"]
 	function := module.Functions["imphash"]
@@ -195,6 +234,11 @@ func TestPEImphashCustomModule(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+}
+
+func repeatedImphashCondition(calls int) string {
+	condition := strings.TrimSpace(strings.Repeat(`pe.imphash() == "`+peImphashNamed3+`" and `, calls))
+	return strings.TrimSuffix(condition, " and")
 }
 
 func quote(value string) string {
@@ -228,5 +272,36 @@ func BenchmarkPEImphash(b *testing.B) {
 		if matched, err := program.Matches(data); err != nil || !matched {
 			b.Fatalf("%t %v", matched, err)
 		}
+	}
+}
+
+func BenchmarkPEImphashCalls(b *testing.B) {
+	data := pefixture.Imports(false, 3)
+	for _, calls := range []int{1, 16} {
+		program, err := NewCompiler().CompileSource(`import "pe" rule imphash { condition: ` + repeatedImphashCondition(calls) + ` }`)
+		if err != nil {
+			b.Fatal(err)
+		}
+		b.Run(fmt.Sprintf("calls=%d", calls), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				if matched, err := program.Matches(data); err != nil || !matched {
+					b.Fatalf("%t %v", matched, err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkPEImphashLargeImports(b *testing.B) {
+	data := pefixture.Imports(false, 16384)
+	ctx := &MatchContext{Data: data, FileSize: int64(len(data)), moduleCache: &moduleCallCache{}}
+	imports := loadPE(ctx).loadImports()
+	if !imports.valid || len(imports.libraries) != 1 || len(imports.libraries[0].Symbols) != 16384 {
+		b.Fatal("large import fixture was not parsed")
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = peImphashLibraries(imports.libraries)
 	}
 }
