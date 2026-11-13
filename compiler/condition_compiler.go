@@ -52,6 +52,7 @@ type conditionCompiler struct {
 	anonymousStrings  []string
 	textStringSets    [][]string
 	moduleFunctions   map[string]compiledModuleFunction
+	usedModuleFuncs   map[builtinFunction]compiledModuleFunction
 	assertions        []conditionAssertion
 	assertionProgram  []assertionInstruction
 	disableAssertions bool // Test-only baseline for differential and performance checks.
@@ -579,6 +580,7 @@ func (cc *conditionCompiler) GetStringSets() [][]string {
 func (cc *conditionCompiler) ResetForRule() {
 	cc.moduleAccessNames = nil
 	cc.moduleIterations = nil
+	clear(cc.usedModuleFuncs)
 	cc.assertions = cc.assertions[:0]
 	cc.assertionProgram = nil
 	cc.labelCounter = 0
@@ -591,6 +593,28 @@ func (cc *conditionCompiler) ResetForRule() {
 
 func (cc *conditionCompiler) setModuleFunctions(functions map[string]compiledModuleFunction) {
 	cc.moduleFunctions = functions
+}
+
+func (cc *conditionCompiler) recordUsedModuleFunction(function compiledModuleFunction) {
+	if cc.usedModuleFuncs == nil {
+		cc.usedModuleFuncs = make(map[builtinFunction]compiledModuleFunction, 4)
+	}
+	cc.usedModuleFuncs[function.id] = function
+}
+
+// moduleFunctionsForRule returns the minimal runtime and serialization tables
+// for module calls emitted by the current rule.
+func (cc *conditionCompiler) moduleFunctionsForRule() (map[builtinFunction]ModuleFunction, map[builtinFunction]string) {
+	if len(cc.usedModuleFuncs) == 0 {
+		return nil, nil
+	}
+	functions := make(map[builtinFunction]ModuleFunction, len(cc.usedModuleFuncs))
+	names := make(map[builtinFunction]string, len(cc.usedModuleFuncs))
+	for id, binding := range cc.usedModuleFuncs {
+		functions[id] = binding.function
+		names[id] = binding.name
+	}
+	return functions, names
 }
 
 func (cc *conditionCompiler) allocateVariables(vars []string) ([]int, error) {
@@ -653,6 +677,7 @@ func (cc *conditionCompiler) compileFunctionCall(call *ast.FunctionCall) error {
 		if moduleFunction.function.Evaluate == nil && !slices.Contains(cc.moduleAccessNames, "pe") {
 			cc.moduleAccessNames = append(cc.moduleAccessNames, "pe")
 		}
+		cc.recordUsedModuleFunction(moduleFunction)
 		cc.emitter.EmitOpcodeWithOperand(
 			OpCall,
 			Operand{Type: OperandImmediate32, Value: encodeBuiltinCall(moduleFunction.id, len(call.Args))},

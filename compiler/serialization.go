@@ -160,8 +160,6 @@ func serializeRule(rule *CompiledRule) (serializedRule, error) {
 		FastScanSafe:        rule.FastScanSafe,
 		ConditionMonotonic:  rule.ConditionMonotonic,
 		RequiresStringMatch: rule.RequiresStringMatch,
-		ModuleNames:         make(map[uint8]string, len(rule.ModuleNames)),
-		ModuleSignatures:    make(map[uint8]serializedModuleFunction, len(rule.ModuleFunctions)),
 		HeaderConstraints:   slices.Clone(rule.HeaderConstraints),
 		FixedOffsets:        maps.Clone(rule.fixedOffsets),
 		Assertions:          slices.Clone(rule.assertions),
@@ -194,10 +192,14 @@ func serializeRule(rule *CompiledRule) (serializedRule, error) {
 			Type: value.valueType, Int: value.intVal, Double: value.doubleVal, String: value.stringVal,
 		}
 	}
-	for id, name := range rule.ModuleNames {
-		serialized.ModuleNames[uint8(id)] = name
-		if function, exists := rule.ModuleFunctions[id]; exists {
-			serialized.ModuleSignatures[uint8(id)] = serializeModuleFunction(function)
+	if len(rule.ModuleNames) > 0 {
+		serialized.ModuleNames = make(map[uint8]string, len(rule.ModuleNames))
+		serialized.ModuleSignatures = make(map[uint8]serializedModuleFunction, len(rule.ModuleFunctions))
+		for id, name := range rule.ModuleNames {
+			serialized.ModuleNames[uint8(id)] = name
+			if function, exists := rule.ModuleFunctions[id]; exists {
+				serialized.ModuleSignatures[uint8(id)] = serializeModuleFunction(function)
+			}
 		}
 	}
 	return serialized, nil
@@ -263,6 +265,13 @@ func deserializeRule(serialized serializedRule, bindings map[string]compiledModu
 		fixedOffsets = serialized.FixedTextOffsets
 	}
 
+	var moduleFunctions map[builtinFunction]ModuleFunction
+	var moduleNames map[builtinFunction]string
+	if len(serialized.ModuleNames) > 0 {
+		moduleFunctions = make(map[builtinFunction]ModuleFunction, len(serialized.ModuleNames))
+		moduleNames = make(map[builtinFunction]string, len(serialized.ModuleNames))
+	}
+
 	rule := &CompiledRule{
 		moduleAccessNames:   slices.Clone(serialized.ModuleAccessNames),
 		moduleIterations:    slices.Clone(serialized.ModuleIterations),
@@ -294,8 +303,8 @@ func deserializeRule(serialized serializedRule, bindings map[string]compiledModu
 		FastScanSafe:        serialized.FastScanSafe,
 		ConditionMonotonic:  serialized.ConditionMonotonic,
 		RequiresStringMatch: serialized.RequiresStringMatch,
-		ModuleFunctions:     make(map[builtinFunction]ModuleFunction, len(serialized.ModuleNames)),
-		ModuleNames:         make(map[builtinFunction]string, len(serialized.ModuleNames)),
+		ModuleFunctions:     moduleFunctions,
+		ModuleNames:         moduleNames,
 		HeaderConstraints:   slices.Clone(serialized.HeaderConstraints),
 		fixedOffsets:        maps.Clone(fixedOffsets),
 		assertions:          slices.Clone(serialized.Assertions),
@@ -384,7 +393,7 @@ func moduleBindingsForLoad(modules []Module) (map[string]compiledModuleFunction,
 		}
 		registered[module.Name] = module
 	}
-	bindings, _, _, err := compileModuleFunctions(registered)
+	bindings, err := compileModuleFunctions(registered)
 	if err != nil {
 		return nil, fmt.Errorf("configuring modules for compiled program: %w", err)
 	}
