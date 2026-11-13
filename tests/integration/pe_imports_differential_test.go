@@ -167,6 +167,10 @@ func TestLibyaraPEStrictImportCompatibility(t *testing.T) {
 			return d
 		}, `pe.number_of_imported_functions == 3`, `not defined pe.number_of_imports`},
 		{"empty_function_name", func(d []byte) []byte { pefixture.ImportName(d, ""); return d }, `pe.number_of_imports == 0`, `not defined pe.number_of_imports`},
+		{"imphash_bad_directory", func(d []byte) []byte {
+			binary.LittleEndian.PutUint32(d[0x100:], 0xffffffff)
+			return d
+		}, `pe.imphash() == "d41d8cd98f00b204e9800998ecf8427e"`, `not defined pe.imphash()`},
 		{"unaligned_raw_offset", func(d []byte) []byte { binary.LittleEndian.PutUint32(d[0x1b4:], 0x4ff); return d }, `pe.number_of_imported_functions == 3`, `pe.number_of_imports == 0`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

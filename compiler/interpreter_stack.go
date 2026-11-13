@@ -220,6 +220,8 @@ func (i *Interpreter) executeModuleCall(id builtinFunction, function ModuleFunct
 			return i.pushModuleValue(i.peIsBitness(name == "pe.is_64bit"))
 		case "pe.is_dll":
 			return i.pushModuleValue(i.peIsDLL())
+		case "pe.imphash":
+			return i.pushModuleValue(i.peImphash())
 		case "pe.imports":
 			return i.pushModuleValue(i.peImports(moduleArgs))
 		case "pe.exports", "pe.exports_index":
