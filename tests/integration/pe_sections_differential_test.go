@@ -3,6 +3,7 @@ package integration
 import (
 	"encoding/binary"
 	"fmt"
+	"strconv"
 	"testing"
 
 	"github.com/cawalch/go-yara/internal/pefixture"
@@ -69,7 +70,7 @@ func TestLibyaraPESectionIndex(t *testing.T) {
 
 func TestLibyaraPESectionIndexLimit(t *testing.T) {
 	for _, count := range []uint16{0, 96, 97} {
-		t.Run(fmt.Sprint(count), func(t *testing.T) {
+		t.Run(strconv.FormatUint(uint64(count), 10), func(t *testing.T) {
 			data := make([]byte, 0x10000)
 			copy(data, pefixture.New(false))
 			binary.LittleEndian.PutUint16(data[0x86:], count)
