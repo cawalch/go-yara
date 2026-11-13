@@ -164,8 +164,8 @@ func TestPEImportQueriesCallbackOverride(t *testing.T) {
 	}
 }
 
-func TestPEQueryRegistration(t *testing.T) {
-	for _, query := range []string{"imports", "exports", "exports_index"} {
+func TestPENativeFunctionRegistration(t *testing.T) {
+	for query := range peNativeFunctions {
 		for _, tc := range []struct {
 			name   string
 			change func(*Module)
@@ -182,7 +182,7 @@ func TestPEQueryRegistration(t *testing.T) {
 				m.Functions[query] = f
 			}},
 			{"arguments", func(m *Module) {
-				m.Functions[query].Signatures[0].Arguments[0] = ModuleInteger
+				m.Functions[query].Signatures[0].Arguments = []ModuleValueType{ModuleBoolean}
 			}},
 		} {
 			t.Run(query+"/"+tc.name, func(t *testing.T) {
