@@ -1,6 +1,9 @@
 package compiler
 
-import "time"
+import (
+	"reflect"
+	"time"
+)
 
 // CompilationOptions configures the compilation process.
 //
@@ -85,9 +88,35 @@ type IgnoredRule struct {
 // Option represents a functional option for configuring a Compiler
 type Option func(*CompilationOptions)
 
+// libraryModuleSafeOptions never write through module function maps or
+// signature slices. WithModule clones its argument and only replaces an entry
+// in the detached outer map. Custom option callbacks are treated as unsafe.
+//
+// These constructors are deliberately marked //go:noinline below: some
+// toolchains generate call-site-specific closure code when they are inlined,
+// which would make this code-pointer identity check unreliable.
+var libraryModuleSafeOptions = map[uintptr]struct{}{
+	reflect.ValueOf(WithWarnings(true)).Pointer():           {},
+	reflect.ValueOf(WithIgnoreInvalidRules(true)).Pointer(): {},
+	reflect.ValueOf(WithModule(Module{})).Pointer():         {},
+	reflect.ValueOf(WithMaxInputSize(0)).Pointer():          {},
+	reflect.ValueOf(WithMaxIncludeSize(0)).Pointer():        {},
+	reflect.ValueOf(WithMaxRecursionDepth(0)).Pointer():     {},
+}
+
+func optionMayMutateModules(opt Option) bool {
+	if opt == nil {
+		return true
+	}
+	_, safe := libraryModuleSafeOptions[reflect.ValueOf(opt).Pointer()]
+	return !safe
+}
+
 // ===== Functional Options =====
 
 // WithWarnings enables or disables warning collection
+//
+//go:noinline
 func WithWarnings(enabled bool) Option {
 	return func(opts *CompilationOptions) {
 		opts.EnableWarnings = enabled
@@ -98,6 +127,8 @@ func WithWarnings(enabled bool) Option {
 // validation while reporting omitted rules through GetIgnoredRules. Rules that
 // depend on an omitted rule are omitted as well. Strict compilation remains
 // the default.
+//
+//go:noinline
 func WithIgnoreInvalidRules(enabled bool) Option {
 	return func(opts *CompilationOptions) {
 		opts.IgnoreInvalidRules = enabled
@@ -106,6 +137,8 @@ func WithIgnoreInvalidRules(enabled bool) Option {
 
 // WithModule registers or replaces a pluggable module. The module name is the
 // namespace used by import statements and dotted function calls.
+//
+//go:noinline
 func WithModule(module Module) Option {
 	return func(opts *CompilationOptions) {
 		if opts.Modules == nil {
@@ -116,6 +149,8 @@ func WithModule(module Module) Option {
 }
 
 // WithMaxInputSize sets the maximum input file size limit (0 = no limit)
+//
+//go:noinline
 func WithMaxInputSize(size int64) Option {
 	return func(opts *CompilationOptions) {
 		opts.MaxInputSize = size
@@ -123,6 +158,8 @@ func WithMaxInputSize(size int64) Option {
 }
 
 // WithMaxIncludeSize sets the maximum included file size limit (0 = no limit).
+//
+//go:noinline
 func WithMaxIncludeSize(size int64) Option {
 	return func(opts *CompilationOptions) {
 		opts.MaxIncludeSize = size
@@ -130,6 +167,8 @@ func WithMaxIncludeSize(size int64) Option {
 }
 
 // WithMaxRecursionDepth sets the parser recursion limit (0 = no limit).
+//
+//go:noinline
 func WithMaxRecursionDepth(depth int) Option {
 	return func(opts *CompilationOptions) {
 		opts.MaxRecursionDepth = depth

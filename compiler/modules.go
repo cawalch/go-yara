@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -101,12 +102,42 @@ type Module struct {
 	Functions map[string]ModuleFunction
 }
 
-func defaultModules() map[string]Module {
-	modules := map[string]Module{}
+// builtinModules is initialized once. Module values and their function tables
+// are immutable by convention: copies returned by defaultModules share them,
+// while public option accessors still clone before returning.
+var builtinModules = buildBuiltinModules()
+
+func buildBuiltinModules() map[string]Module {
+	modules := make(map[string]Module, 5)
 	for _, module := range []Module{hashModule(), mathModule(), stringModule(), timeModule(), peModule()} {
 		modules[module.Name] = module
 	}
 	return modules
+}
+
+func defaultModules() map[string]Module {
+	modules := make(map[string]Module, len(builtinModules))
+	for name, module := range builtinModules {
+		modules[name] = module
+	}
+	return modules
+}
+
+// isBuiltinModuleRegistry reports whether modules is the unmodified built-in
+// registry. Copies made by defaultModules keep the same function-table and
+// schema identities; public copies are cloned and therefore fail this check.
+func isBuiltinModuleRegistry(modules map[string]Module) bool {
+	if len(modules) != len(builtinModules) {
+		return false
+	}
+	for name, builtin := range builtinModules {
+		module, ok := modules[name]
+		if !ok || module.Name != builtin.Name || module.Schema != builtin.Schema ||
+			reflect.ValueOf(module.Functions).Pointer() != reflect.ValueOf(builtin.Functions).Pointer() {
+			return false
+		}
+	}
+	return true
 }
 
 func cloneModules(modules map[string]Module) map[string]Module {
@@ -124,16 +155,20 @@ func cloneModule(module Module) Module {
 	module.Schema = cloneModuleSchema(module.Schema)
 	functions := make(map[string]ModuleFunction, len(module.Functions))
 	for functionName, function := range module.Functions {
-		signatures := make([]ModuleSignature, len(function.Signatures))
-		for index, signature := range function.Signatures {
-			signatures[index] = signature
-			signatures[index].Arguments = slices.Clone(signature.Arguments)
-		}
-		function.Signatures = signatures
-		functions[functionName] = function
+		functions[functionName] = cloneModuleFunction(function)
 	}
 	module.Functions = functions
 	return module
+}
+
+func cloneModuleFunction(function ModuleFunction) ModuleFunction {
+	signatures := make([]ModuleSignature, len(function.Signatures))
+	for index, signature := range function.Signatures {
+		signatures[index] = signature
+		signatures[index].Arguments = slices.Clone(signature.Arguments)
+	}
+	function.Signatures = signatures
+	return function
 }
 
 func moduleFunctionCount(registered map[string]Module) int {
@@ -145,6 +180,15 @@ func moduleFunctionCount(registered map[string]Module) int {
 }
 
 func semanticModuleFunctions(registered map[string]Module) semantic.ModuleFunctions {
+	if isBuiltinModuleRegistry(registered) {
+		return builtinSemanticModuleFunctions
+	}
+	return buildSemanticModuleFunctions(registered)
+}
+
+var builtinSemanticModuleFunctions = buildSemanticModuleFunctions(builtinModules)
+
+func buildSemanticModuleFunctions(registered map[string]Module) semantic.ModuleFunctions {
 	functions := make(semantic.ModuleFunctions, moduleFunctionCount(registered))
 	for moduleName, module := range registered {
 		for functionName, function := range module.Functions {
@@ -175,34 +219,55 @@ type compiledModuleFunction struct {
 	function ModuleFunction
 }
 
-func compileModuleFunctions(
-	registered map[string]Module,
-) (map[string]compiledModuleFunction, map[builtinFunction]ModuleFunction, map[builtinFunction]string, error) {
+func compileModuleFunctions(registered map[string]Module) (map[string]compiledModuleFunction, error) {
+	if len(registered) == 0 {
+		return nil, nil
+	}
+	if isBuiltinModuleRegistry(registered) {
+		return builtinModuleBindings, nil
+	}
+	return buildModuleBindings(registered)
+}
+
+var builtinModuleBindings = mustBuildModuleBindings(builtinModules)
+
+func mustBuildModuleBindings(registered map[string]Module) map[string]compiledModuleFunction {
+	bindings, err := buildModuleBindings(registered)
+	if err != nil {
+		panic("invalid built-in module registry: " + err.Error())
+	}
+	return bindings
+}
+
+// buildModuleBindings validates every registered function, including functions
+// that no rule uses, then assigns stable IDs from the sorted qualified names.
+// Per-rule metadata only retains the subset referenced by its condition.
+func buildModuleBindings(registered map[string]Module) (map[string]compiledModuleFunction, error) {
 	qualifiedNames := make([]string, 0, moduleFunctionCount(registered))
 	for moduleName, module := range registered {
 		if module.Name == "" || module.Name != moduleName || strings.Contains(module.Name, ".") {
-			return nil, nil, nil, fmt.Errorf("invalid module name %q", module.Name)
+			return nil, fmt.Errorf("invalid module name %q", module.Name)
 		}
 		if err := validateModuleSchema(module.Schema); err != nil {
-			return nil, nil, nil, fmt.Errorf("module %s: %w", moduleName, err)
+			return nil, fmt.Errorf("module %s: %w", moduleName, err)
 		}
 		for functionName, function := range module.Functions {
 			if functionName == "" || strings.Contains(functionName, ".") {
-				return nil, nil, nil, fmt.Errorf("invalid function name %q in module %q", functionName, moduleName)
+				return nil, fmt.Errorf("invalid function name %q in module %q", functionName, moduleName)
 			}
 			if (function.Evaluate == nil && !isNativePEFunction(module, functionName, function)) || len(function.Signatures) == 0 || (function.ReturnType < ModuleInteger || function.ReturnType > ModuleBoolean) {
-				return nil, nil, nil, fmt.Errorf("invalid module function %s.%s", moduleName, functionName)
+				return nil, fmt.Errorf("invalid module function %s.%s", moduleName, functionName)
 			}
 			for _, signature := range function.Signatures {
 				if typ := signature.resultType(function.ReturnType); typ < ModuleInteger || typ > ModuleBoolean {
-					return nil, nil, nil, fmt.Errorf("invalid overload result in module function %s.%s", moduleName, functionName)
+					return nil, fmt.Errorf("invalid overload result in module function %s.%s", moduleName, functionName)
 				}
 				if err := signature.validateResult(function.ReturnType); err != nil {
-					return nil, nil, nil, fmt.Errorf("module function %s.%s: %w", moduleName, functionName, err)
+					return nil, fmt.Errorf("module function %s.%s: %w", moduleName, functionName, err)
 				}
 				for _, argument := range signature.Arguments {
 					if argument < ModuleInteger || argument > ModuleBoolean {
-						return nil, nil, nil, fmt.Errorf("invalid argument type in module function %s.%s", moduleName, functionName)
+						return nil, fmt.Errorf("invalid argument type in module function %s.%s", moduleName, functionName)
 					}
 				}
 			}
@@ -211,21 +276,17 @@ func compileModuleFunctions(
 	}
 	slices.Sort(qualifiedNames)
 	if len(qualifiedNames) > int(^builtinFunction(0)-firstModuleFunctionID)+1 {
-		return nil, nil, nil, fmt.Errorf("too many module functions: %d", len(qualifiedNames))
+		return nil, fmt.Errorf("too many module functions: %d", len(qualifiedNames))
 	}
 
 	bindings := make(map[string]compiledModuleFunction, len(qualifiedNames))
-	functions := make(map[builtinFunction]ModuleFunction, len(qualifiedNames))
-	names := make(map[builtinFunction]string, len(qualifiedNames))
 	for index, qualifiedName := range qualifiedNames {
 		moduleName, functionName, _ := strings.Cut(qualifiedName, ".")
 		function := registered[moduleName].Functions[functionName]
 		id := firstModuleFunctionID + builtinFunction(index) // #nosec G115 -- checkednarrow:ignore qualifiedNames length is bounded above
 		bindings[qualifiedName] = compiledModuleFunction{id: id, name: qualifiedName, function: function}
-		functions[id] = function
-		names[id] = qualifiedName
 	}
-	return bindings, functions, names, nil
+	return bindings, nil
 }
 
 func moduleSemanticType(valueType ModuleValueType) semantic.DataType {

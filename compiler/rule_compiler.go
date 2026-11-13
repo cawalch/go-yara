@@ -31,9 +31,6 @@ type ruleCompiler struct {
 	externalNames     []string
 	globalNames       []string
 	globalValues      map[string]compiledGlobalValue
-	moduleBindings    map[string]compiledModuleFunction
-	moduleFunctions   map[builtinFunction]ModuleFunction
-	moduleNames       map[builtinFunction]string
 }
 
 // newRuleCompiler creates a new rule compiler
@@ -50,7 +47,7 @@ func newRuleCompiler() *ruleCompiler {
 func newRuleCompilerWithModules(modules map[string]Module) (*ruleCompiler, error) {
 	emitter := newEmitter()
 	automaton := newacAutomaton()
-	bindings, functions, names, err := compileModuleFunctions(modules)
+	bindings, err := compileModuleFunctions(modules)
 	if err != nil {
 		return nil, err
 	}
@@ -74,9 +71,6 @@ func newRuleCompilerWithModules(modules map[string]Module) (*ruleCompiler, error
 		externalNames:     make([]string, 0),
 		globalNames:       make([]string, 0),
 		globalValues:      make(map[string]compiledGlobalValue),
-		moduleBindings:    bindings,
-		moduleFunctions:   functions,
-		moduleNames:       names,
 	}, nil
 }
 
@@ -163,6 +157,7 @@ func (rc *ruleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 	}
 
 	requiredStrings, forbiddenStrings := deriveStringPresenceBounds(rule.Condition, rule.Strings)
+	moduleFunctions, moduleNames := rc.conditionCompiler.moduleFunctionsForRule()
 
 	// Create compiled rule
 	compiledRule := &CompiledRule{
@@ -196,8 +191,8 @@ func (rc *ruleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 		FastScanSafe:        !conditionObservesMatchOccurrences(rule.Condition) && !ruleDeclaresEvidence(rule),
 		ConditionMonotonic:  !conditionObservesMatchOccurrences(rule.Condition) && !ruleDeclaresEvidence(rule) && conditionIsMonotonicInStrings(rule.Condition),
 		RequiresStringMatch: len(rule.Strings) > 0 && conditionRequiresStringMatch(rule.Condition),
-		ModuleFunctions:     rc.moduleFunctions,
-		ModuleNames:         rc.moduleNames,
+		ModuleFunctions:     moduleFunctions,
+		ModuleNames:         moduleNames,
 		HeaderConstraints:   deriveHeaderConstraints(rule.Condition),
 		fixedOffsets:        fixedOffsets,
 		assertions:          slices.Clone(rc.conditionCompiler.assertions),

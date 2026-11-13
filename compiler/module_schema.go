@@ -135,7 +135,16 @@ func moduleFieldType(field ModuleField) *semantic.TypeInfo {
 }
 
 func semanticModuleSchemas(modules map[string]Module) map[string]*semantic.TypeInfo {
-	out := map[string]*semantic.TypeInfo{}
+	if isBuiltinModuleRegistry(modules) {
+		return builtinSemanticModuleSchemas
+	}
+	return buildSemanticModuleSchemas(modules)
+}
+
+var builtinSemanticModuleSchemas = buildSemanticModuleSchemas(builtinModules)
+
+func buildSemanticModuleSchemas(modules map[string]Module) map[string]*semantic.TypeInfo {
+	out := make(map[string]*semantic.TypeInfo, len(modules))
 	for name, module := range modules {
 		if module.Schema == peSchema {
 			out[name] = peSemanticType
