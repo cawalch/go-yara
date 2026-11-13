@@ -138,7 +138,11 @@ func cloneModule(module Module) Module {
 }
 
 func semanticModuleFunctions(registered map[string]Module) semantic.ModuleFunctions {
-	functions := make(semantic.ModuleFunctions)
+	functionCount := 0
+	for _, module := range registered {
+		functionCount += len(module.Functions)
+	}
+	functions := make(semantic.ModuleFunctions, functionCount)
 	for moduleName, module := range registered {
 		for functionName, function := range module.Functions {
 			signatures := make([][]semantic.DataType, len(function.Signatures))
