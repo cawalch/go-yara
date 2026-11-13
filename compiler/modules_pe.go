@@ -50,7 +50,14 @@ func peModule() Module {
 			},
 			ReturnType: ModuleInteger,
 		},
-		"imphash":  {Signatures: []ModuleSignature{{}}, ReturnType: ModuleString, Cacheable: true},
+		"imphash": {Signatures: []ModuleSignature{{}}, ReturnType: ModuleString, Cacheable: true},
+		"section_index": {
+			Signatures: []ModuleSignature{
+				{Arguments: []ModuleValueType{ModuleString}},
+				{Arguments: []ModuleValueType{ModuleInteger}},
+			},
+			ReturnType: ModuleInteger,
+		},
 		"is_32bit": {Signatures: []ModuleSignature{{}}, ReturnType: ModuleInteger},
 		"is_64bit": {Signatures: []ModuleSignature{{}}, ReturnType: ModuleInteger},
 		"is_dll":   {Signatures: []ModuleSignature{{}}, ReturnType: ModuleInteger},
@@ -210,7 +217,7 @@ func parsePE(ctx *MatchContext) *peImage {
 	}
 	// libyara exposes and maps at most 96 sections, while go-pe validates up
 	// to 256. Keep the declared number_of_sections unchanged.
-	file.Sections = file.Sections[:min(len(file.Sections), 96)]
+	file.Sections = file.Sections[:min(len(file.Sections), peSectionExposureLimit)]
 	return peFields(file, data, ctx)
 }
 

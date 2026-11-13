@@ -198,7 +198,11 @@ func TestLibyaraPESectionNames(t *testing.T) {
 				binary.LittleEndian.PutUint32(data[0x600:], 32)
 				copy(data[0x604:], ".long_section_name\x00")
 			}
-			checkPEPaths(t, peProbeSource([]string{`pe.is_pe`, `pe.sections[0].name == "abcdefgh"`, `pe.sections[0].name == "a\x00bc"`, `pe.sections[0].full_name == "a\x00bc"`, `pe.sections[0].name == "\xff\x80name"`, `pe.sections[0].name == ""`, `pe.sections[0].name == "/4"`, `pe.sections[0].full_name == ".long_section_name"`}), data)
+			predicates := []string{`pe.is_pe`, `pe.sections[0].name == "abcdefgh"`, `pe.sections[0].name == "a\x00bc"`, `pe.sections[0].full_name == "a\x00bc"`, `pe.sections[0].name == "\xff\x80name"`, `pe.sections[0].name == ""`, `pe.sections[0].name == "/4"`, `pe.sections[0].full_name == ".long_section_name"`, fmt.Sprintf("pe.section_index(%q) == 0", name)}
+			if name == "/4" {
+				predicates = append(predicates, `not defined pe.section_index(".long_section_name")`)
+			}
+			checkPEPaths(t, peProbeSource(predicates), data)
 		})
 	}
 }
