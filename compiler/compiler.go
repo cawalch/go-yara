@@ -98,12 +98,15 @@ func NewCompiler(opts ...Option) *Compiler {
 	options := defaultCompilationOptions()
 
 	// Functional options are public callbacks and may mutate module maps or
-	// signatures in place. Detach the cached built-in registry before invoking
-	// them so one compiler cannot corrupt another or bypass validation.
-	if len(opts) > 0 {
-		options.Modules = cloneModules(options.Modules)
-	}
+	// signatures in place. Detach the cached built-in registry only before an
+	// unknown callback runs; library options that only change scalar settings
+	// keep using the immutable registry.
+	detached := false
 	for _, opt := range opts {
+		if !detached && optionMayMutateModules(opt) {
+			options.Modules = cloneModules(options.Modules)
+			detached = true
+		}
 		opt(&options)
 	}
 

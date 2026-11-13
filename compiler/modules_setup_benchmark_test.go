@@ -8,16 +8,19 @@ func BenchmarkModuleRegistryCompile(b *testing.B) {
 	for _, tc := range []struct {
 		name   string
 		source string
+		opts   []Option
 	}{
-		{"TextOnly", moduleSetupTextSource},
-		{"ImportUnusedPE", `import "pe" rule text { condition: true }`},
-		{"UsedMath", `import "math" rule math { condition: math.mean(0, filesize) > 0 }`},
-		{"UsedPEQuery", `import "pe" rule pe { condition: pe.is_pe }`},
+		{"TextOnly", moduleSetupTextSource, nil},
+		{"TextOnlyWithWarnings", moduleSetupTextSource, []Option{WithWarnings(true)}},
+		{"TextOnlyWithMaxInputSize", moduleSetupTextSource, []Option{WithMaxInputSize(50 * 1024 * 1024)}},
+		{"ImportUnusedPE", `import "pe" rule text { condition: true }`, nil},
+		{"UsedMath", `import "math" rule math { condition: math.mean(0, filesize) > 0 }`, nil},
+		{"UsedPEQuery", `import "pe" rule pe { condition: pe.is_pe }`, nil},
 	} {
 		b.Run(tc.name, func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
-				if _, err := NewCompiler().CompileSource(tc.source); err != nil {
+				if _, err := NewCompiler(tc.opts...).CompileSource(tc.source); err != nil {
 					b.Fatal(err)
 				}
 			}

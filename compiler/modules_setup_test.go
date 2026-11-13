@@ -114,6 +114,40 @@ func TestModuleRegistryValidatesUnusedCustomFunctions(t *testing.T) {
 	}
 }
 
+func TestLibraryCompilerOptionsReuseBuiltinRegistry(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		opt  Option
+	}{
+		{"warnings", WithWarnings(false)},
+		{"ignore-invalid", WithIgnoreInvalidRules(true)},
+		{"max-input", WithMaxInputSize(1024)},
+		{"max-include", WithMaxIncludeSize(1024)},
+		{"max-depth", WithMaxRecursionDepth(10)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if optionMayMutateModules(tc.opt) {
+				t.Fatal("library option classified as module-mutating")
+			}
+			compiler := NewCompiler(tc.opt)
+			if !isBuiltinModuleRegistry(compiler.options.Modules) {
+				t.Fatal("library option detached the built-in registry")
+			}
+		})
+	}
+}
+
+func TestCustomCompilerOptionsReceiveDetachedRegistry(t *testing.T) {
+	option := func(*CompilationOptions) {}
+	if !optionMayMutateModules(option) {
+		t.Fatal("custom option classified as module-safe")
+	}
+	compiler := NewCompiler(option)
+	if isBuiltinModuleRegistry(compiler.options.Modules) {
+		t.Fatal("custom option received the shared built-in registry")
+	}
+}
+
 func TestModuleOptionsCannotMutateBuiltinRegistry(t *testing.T) {
 	override := func(options *CompilationOptions) {
 		module := options.Modules["math"]
