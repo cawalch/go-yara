@@ -611,7 +611,7 @@ func (cc *conditionCompiler) moduleFunctionsForRule() (map[builtinFunction]Modul
 	functions := make(map[builtinFunction]ModuleFunction, len(cc.usedModuleFuncs))
 	names := make(map[builtinFunction]string, len(cc.usedModuleFuncs))
 	for id, binding := range cc.usedModuleFuncs {
-		functions[id] = binding.function
+		functions[id] = cloneModuleFunction(binding.function)
 		names[id] = binding.name
 	}
 	return functions, names

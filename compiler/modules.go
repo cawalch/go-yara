@@ -155,16 +155,20 @@ func cloneModule(module Module) Module {
 	module.Schema = cloneModuleSchema(module.Schema)
 	functions := make(map[string]ModuleFunction, len(module.Functions))
 	for functionName, function := range module.Functions {
-		signatures := make([]ModuleSignature, len(function.Signatures))
-		for index, signature := range function.Signatures {
-			signatures[index] = signature
-			signatures[index].Arguments = slices.Clone(signature.Arguments)
-		}
-		function.Signatures = signatures
-		functions[functionName] = function
+		functions[functionName] = cloneModuleFunction(function)
 	}
 	module.Functions = functions
 	return module
+}
+
+func cloneModuleFunction(function ModuleFunction) ModuleFunction {
+	signatures := make([]ModuleSignature, len(function.Signatures))
+	for index, signature := range function.Signatures {
+		signatures[index] = signature
+		signatures[index].Arguments = slices.Clone(signature.Arguments)
+	}
+	function.Signatures = signatures
+	return function
 }
 
 func moduleFunctionCount(registered map[string]Module) int {

@@ -114,6 +114,112 @@ func TestModuleRegistryValidatesUnusedCustomFunctions(t *testing.T) {
 	}
 }
 
+func TestModuleOptionsCannotMutateBuiltinRegistry(t *testing.T) {
+	override := func(options *CompilationOptions) {
+		module := options.Modules["math"]
+		mean := module.Functions["mean"]
+		mean.Evaluate = func(ModuleContext, []ModuleValue) (ModuleValue, error) {
+			return FloatValue(42), nil
+		}
+		module.Functions["mean"] = mean
+	}
+	const source = `import "math" rule mean { condition: math.mean(0, filesize) == 42.0 }`
+
+	overridden, err := NewCompiler(override).CompileSource(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if matched, err := overridden.Matches([]byte{1, 2, 3, 4}); err != nil || !matched {
+		t.Fatalf("overridden callback scan: %t %v", matched, err)
+	}
+
+	// The option mutated only its own detached registry. A compiler created
+	// afterwards must still use the real mean callback.
+	fresh, err := NewCompiler().CompileSource(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if matched, err := fresh.Matches([]byte{1, 2, 3, 4}); err != nil || matched {
+		t.Fatalf("built-in registry leaked override: %t %v", matched, err)
+	}
+}
+
+func TestModuleOptionsCannotBypassUnusedValidation(t *testing.T) {
+	inject := func(options *CompilationOptions) {
+		module := options.Modules["math"]
+		module.Functions["broken"] = ModuleFunction{ReturnType: ModuleInteger}
+		options.Modules["math"] = module
+	}
+	if _, err := NewCompiler(inject).CompileSource(`rule unused { condition: true }`); err == nil ||
+		!strings.Contains(err.Error(), "invalid module function math.broken") {
+		t.Fatalf("invalid function injected through an option was accepted: %v", err)
+	}
+
+	// The mutation must not survive into later compilers, including ones that
+	// rebuild the full registry for a custom module.
+	custom := Module{
+		Name: "demo",
+		Functions: map[string]ModuleFunction{
+			"accept": {
+				Signatures: []ModuleSignature{{}},
+				ReturnType: ModuleBoolean,
+				Evaluate: func(ModuleContext, []ModuleValue) (ModuleValue, error) {
+					return BooleanValue(true), nil
+				},
+			},
+		},
+	}
+	if _, err := NewCompiler(WithModule(custom)).CompileSource(`import "demo" rule accepted { condition: demo.accept() }`); err != nil {
+		t.Fatalf("later compiler saw the mutated built-in registry: %v", err)
+	}
+}
+
+func TestCompiledModuleFunctionMetadataIsPrivate(t *testing.T) {
+	const source = `import "math" rule mean { condition: math.mean("AAA") == 65 }`
+	mutateMeanSignature := func(t *testing.T, program *CompiledProgram) {
+		t.Helper()
+		for id, name := range program.Rules[0].ModuleNames {
+			if name != "math.mean" {
+				continue
+			}
+			function := program.Rules[0].ModuleFunctions[id]
+			if len(function.Signatures) == 0 || len(function.Signatures[0].Arguments) == 0 {
+				t.Fatal("math.mean has no serialized signature")
+			}
+			function.Signatures[0].Arguments[0] = ModuleBoolean
+			return
+		}
+		t.Fatal("math.mean binding not found")
+	}
+
+	program, err := NewCompiler().CompileSource(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob := mustMarshal(t, program)
+	mutateMeanSignature(t, program)
+	fresh, err := NewCompiler().CompileSource(source)
+	if err != nil {
+		t.Fatalf("metadata mutation leaked into compilation: %v", err)
+	}
+	if matched, err := fresh.Matches(nil); err != nil || !matched {
+		t.Fatalf("fresh compiler after metadata mutation: %t %v", matched, err)
+	}
+
+	loaded, err := UnmarshalCompiledProgram(blob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutateMeanSignature(t, loaded)
+	reloaded, err := UnmarshalCompiledProgram(blob)
+	if err != nil {
+		t.Fatalf("metadata mutation leaked into loading: %v", err)
+	}
+	if matched, err := reloaded.Matches(nil); err != nil || !matched {
+		t.Fatalf("reloaded program after metadata mutation: %t %v", matched, err)
+	}
+}
+
 func TestModuleRegistryCustomRebindingUsesOnlyReferencedFunctions(t *testing.T) {
 	accept := ModuleFunction{
 		Signatures: []ModuleSignature{{Arguments: []ModuleValueType{ModuleInteger}}},

@@ -346,7 +346,7 @@ func deserializeRule(serialized serializedRule, bindings map[string]compiledModu
 			return nil, fmt.Errorf("module function %q has an incompatible signature", name)
 		}
 		id := builtinFunction(rawID)
-		rule.ModuleFunctions[id] = binding.function
+		rule.ModuleFunctions[id] = cloneModuleFunction(binding.function)
 		rule.ModuleNames[id] = name
 	}
 	return rule, nil

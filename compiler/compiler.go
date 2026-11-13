@@ -95,7 +95,23 @@ type Compiler struct {
 //		compiler.WithMaxInputSize(50*1024*1024), // 50MB
 //	)
 func NewCompiler(opts ...Option) *Compiler {
-	options := CompilationOptions{
+	options := defaultCompilationOptions()
+
+	// Functional options are public callbacks and may mutate module maps or
+	// signatures in place. Detach the cached built-in registry before invoking
+	// them so one compiler cannot corrupt another or bypass validation.
+	if len(opts) > 0 {
+		options.Modules = cloneModules(options.Modules)
+	}
+	for _, opt := range opts {
+		opt(&options)
+	}
+
+	return newCompiler(options)
+}
+
+func defaultCompilationOptions() CompilationOptions {
+	return CompilationOptions{
 		EnableWarnings:     true,
 		IgnoreInvalidRules: false,
 		Modules:            defaultModules(),
@@ -103,12 +119,9 @@ func NewCompiler(opts ...Option) *Compiler {
 		MaxIncludeSize:     10 * 1024 * 1024,  // 10MB default
 		MaxRecursionDepth:  1000,              // 1000 levels default
 	}
+}
 
-	// Apply functional options
-	for _, opt := range opts {
-		opt(&options)
-	}
-
+func newCompiler(options CompilationOptions) *Compiler {
 	return &Compiler{
 		options: options,
 		stats: CompilationStats{
@@ -133,10 +146,8 @@ func NewCompiler(opts ...Option) *Compiler {
 //		compiler.WithWarnings(true),
 //	)
 func NewCompilerWithOptions(options CompilationOptions) *Compiler {
-	return NewCompiler(func(opts *CompilationOptions) {
-		*opts = options
-		opts.Modules = cloneModules(options.Modules)
-	})
+	options.Modules = cloneModules(options.Modules)
+	return newCompiler(options)
 }
 
 // CompileSource compiles YARA source code to bytecode.
