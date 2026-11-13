@@ -385,25 +385,24 @@ uses the array length, ignoring a separately
 supplied `number_of_exports`. Names are compared as supplied, including embedded
 NULs. Custom `ModuleFunction.Evaluate` callbacks
 take precedence over built-in query dispatch, including on copied registrations.
-Only the unmodified built-in `pe.imports`, `pe.exports`, and `pe.exports_index`
-registrations can omit that callback. Changing a name, schema, or signature
-requires a custom implementation. Rebind custom callbacks when loading a compiled
-program. Native query dispatch uses the same schema check as automatic field
-loading.
+Only unmodified built-in PE function registrations can omit that callback.
+Changing a name, schema, or signature requires a custom implementation.
+Rebind custom callbacks when loading a compiled program. Native function
+dispatch uses the same schema check as automatic field loading.
 
 ## Validation
 
 The differential suite uses libyara 4.5.8 in CI. It covers PE32 and PE32+
-headers, constants, section names, standard import counts, details, and queries,
-export metadata and queries, undefined fields, entry-point mappings, real
-Go-toolchain PE fixtures, scanner reuse, compiled-program round trips, compact
-scans, and reader scans within the retention limit.
+headers, constants, section names, standard import counts, details, queries,
+and imphash, export metadata and queries, undefined fields, entry-point
+mappings, real Go-toolchain PE fixtures, scanner reuse, compiled-program round
+trips, compact scans, and reader scans within the retention limit.
 
 To run the focused tests, install the `yara` CLI on `PATH`, then run:
 
 ```sh
 go test ./compiler ./tests/integration -run 'TestPE|TestLibyaraPE' -count=1
-go test ./compiler -run '^$' -bench 'BenchmarkPE(Module|Scanner|Imports|Exports|ExportQueries)$' -benchmem
+go test ./compiler -run '^$' -bench 'BenchmarkPE(Module|Scanner|Imports|Imphash|Exports|ExportQueries)$' -benchmem
 ```
 
 The oracle tests skip if the CLI is absent. CI installs and checks the pinned

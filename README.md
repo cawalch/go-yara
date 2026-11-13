@@ -574,7 +574,7 @@ go-yara rules.yar --mode=execute --data large_sample.bin --streaming --chunk-siz
 - **Strings**: Text, hex byte sequences (with wildcards `??`, `?F`, and jumps `[1-4]`), and regular expressions.
 - **Modifiers**: `nocase`, `wide`, `ascii`, `fullword`, `xor`, `base64`, `base64wide`, and `private`.
 - **Expressions**: Arithmetic, bitwise, comparison, logical, range, string count (`#`), length (`!`), offset (`@`), occurrence (`at`, `in`), and quantifiers (`for ... of them`).
-- **Modules**: Built-in `hash`, `math`, `string`, and `time` functions, plus PE headers, sections, standard imports and exports (see the module documentation above).
+- **Modules**: Built-in `hash`, `math`, `string`, and `time` functions, plus PE headers, sections, standard imports, imphash, and exports (see the module documentation above).
 
 ### Limitations
 
