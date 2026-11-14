@@ -85,9 +85,9 @@ incomplete snapshot returns undefined and never falls back to file parsing.
 the same libyara-compatible policy as `pe.entry_point` and export offsets. It
 accounts for the larger of virtual and raw section sizes, overlapping sections,
 file-alignment rounding, page-aligned raw offsets, headers before the first
-section, virtual tails without raw data, and out-of-file targets. Unmapped,
-negative, and wider-than-32-bit values are undefined. Process-memory virtual
-addresses are not supported.
+section, virtual tails without raw data, and out-of-file targets. Unmapped and
+negative values are undefined; 64-bit arguments are not narrowed to 32-bit.
+Process-memory virtual addresses are not supported.
 
 The mapper uses the scan's input length. With `WithModuleData`, it requires the
 host `number_of_sections`, exposed `sections`, `file_alignment`, and

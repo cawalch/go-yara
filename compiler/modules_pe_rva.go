@@ -24,7 +24,7 @@ func (i *Interpreter) peRVAToOffsetQuery(args []ModuleValue) ModuleValue {
 	if image.file == nil {
 		return ModuleValue{}
 	}
-	return peOffsetValue(peRVAToOffset64(image.file, uint64(rva), image.context.FileSize))
+	return peOffsetValue(peRVAToOffset64(image.file, uint64(rva), image.fileSize))
 }
 
 func peOffsetValue(offset int64) ModuleValue {

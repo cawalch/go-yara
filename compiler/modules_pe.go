@@ -247,6 +247,7 @@ type peImage struct {
 	imports     *peImportData
 	exports     *peExportData
 	names       []string
+	fileSize    int64
 	entryPoint  int64
 	sections    ModuleValue
 	directories ModuleValue
@@ -266,7 +267,7 @@ func peFields(file *pe.File, data []byte, ctx *MatchContext) *peImage {
 			names[i] = string(raw)
 		}
 	}
-	image := &peImage{file: file, context: ctx, names: names, entryPoint: peRVAToOffset(file, file.OptionalHeader.AddressOfEntryPoint, ctx.FileSize)}
+	image := &peImage{file: file, context: ctx, names: names, fileSize: ctx.FileSize, entryPoint: peRVAToOffset(file, file.OptionalHeader.AddressOfEntryPoint, ctx.FileSize)}
 	image.object = peLazyStruct(image.field).object
 	return image
 }
@@ -476,6 +477,9 @@ type peRVAMapping struct {
 // snapshots. A false section record means the host metadata is incomplete and
 // makes the mapping undefined rather than falling back to file parsing.
 func peRVAToOffsetExtents(mapping peRVAMapping) int64 {
+	if mapping.fileSize <= 0 {
+		return -1
+	}
 	lowest := uint64(math.MaxUint32)
 	var address, offset, size uint64
 	for index := 0; index < mapping.count; index++ {
