@@ -50,7 +50,7 @@ func peHostImphash(data ModuleValue) ModuleValue {
 		if libraryName.Type != ModuleString {
 			continue
 		}
-		dll := peImphashCString(libraryName.String)
+		dll := peCString(libraryName.String)
 		hashName := peImphashLibraryName(dll)
 		functions := library.object.fields["functions"]
 		if functions.object == nil {
@@ -72,7 +72,7 @@ func peHostImphash(data ModuleValue) ModuleValue {
 				if name.Type != ModuleString {
 					continue
 				}
-				functionName = peImphashCString(name.String)
+				functionName = peCString(name.String)
 			}
 			builder.add(hashName, functionName)
 		}
@@ -84,11 +84,11 @@ func peImphashLibraries(libraries []pe.ImportLibrary) string {
 	builder := newPEImphashBuilder()
 	for i := range libraries {
 		library := &libraries[i]
-		dll := peImphashCString(library.DLL)
+		dll := peCString(library.DLL)
 		libraryName := peImphashLibraryName(dll)
 		for j := range library.Symbols {
 			symbol := &library.Symbols[j]
-			functionName := peImphashCString(symbol.Name)
+			functionName := peCString(symbol.Name)
 			if symbol.ByOrdinal {
 				functionName = peImphashOrdinalName(dll, symbol.Ordinal)
 			}
@@ -145,7 +145,7 @@ func (builder *peImphashBuilder) writeLower(value string) {
 	}
 }
 
-func peImphashCString(value string) string {
+func peCString(value string) string {
 	if index := strings.IndexByte(value, 0); index >= 0 {
 		return value[:index]
 	}

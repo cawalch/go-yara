@@ -125,6 +125,7 @@ func TestPEFunctionCustomModule(t *testing.T) {
 	for _, tc := range []struct{ name, condition string }{
 		{"exports", `pe.exports("anything") == 42 and pe.exports(1) == 42`},
 		{"exports_index", `pe.exports_index("anything") == 42 and pe.exports_index(1) == 42`},
+		{"section_index", `pe.section_index("anything") == 42 and pe.section_index(1) == 42`},
 		{"is_dll", `pe.is_dll() == 42`},
 		{"is_32bit", `pe.is_32bit() == 42`},
 		{"is_64bit", `pe.is_64bit() == 42`},

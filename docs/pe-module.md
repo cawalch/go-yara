@@ -18,10 +18,10 @@ rule WritableExecutableSection {
 }
 ```
 
-The module implements headers, sections, standard import and export metadata,
-import and export queries by name or ordinal, and the standard import hash
-under [#359](https://github.com/cawalch/go-yara/issues/359). Regex import
-queries, delayed imports, regex export queries, resources, Rich headers,
+The module implements headers, sections, section lookup, standard import and
+export metadata, import and export queries by name or ordinal, and the standard
+import hash under [#359](https://github.com/cawalch/go-yara/issues/359). Regex
+import queries, delayed imports, regex export queries, resources, Rich headers,
 computed checksums, and Authenticode signatures remain unsupported and fail
 compilation.
 
@@ -59,6 +59,25 @@ characteristics, directory-index, optional-header magic, and section-flag
 constants. For the complete list, see
 [`modules_pe_constants.go`](../compiler/modules_pe_constants.go). Constants are
 available even when the input isn't a PE image.
+
+## Section lookup
+
+`pe.section_index(name)` returns the zero-based index of the first exposed
+section whose raw `name` matches. Matching is case-sensitive and uses C-string
+semantics: both values stop at the first NUL byte. It searches the same
+96-section exposure limit as `pe.sections`.
+
+`pe.section_index(file_offset)` returns the first exposed section containing the
+file offset, where `raw_data_offset <= file_offset < raw_data_offset +
+raw_data_size`. The end is exclusive, empty sections never match, and negative
+or out-of-range offsets are undefined. Process-memory virtual-address semantics
+are not implemented. Overlapping sections return the first match.
+
+Both overloads return undefined for non-PE input, rejected headers, an undefined
+`number_of_sections`, or no match. They read the cached raw section records and
+names without constructing `pe.sections` objects. With `WithModuleData`, the
+supplied `number_of_sections` and `sections` array are authoritative; an
+incomplete snapshot returns undefined and never falls back to file parsing.
 
 ## Standard imports
 
@@ -351,7 +370,9 @@ support is built in; it is not a separately installed plugin.
 
 The first field access or PE query parses the headers and sections.
 Subsequent rules share that scan's snapshot. Version objects, directory
-descriptors, and section objects are constructed on demand. The first import
+descriptors, and section objects are constructed on demand. `pe.section_index`
+answers from the cached raw section records without constructing section
+objects. The first import
 query, import-field access, or `pe.imphash()` call parses and filters imports
 once. Queries, fields, and the hash share this cache. Counts and queries don't
 construct detail objects; each library constructs its function objects only
@@ -393,16 +414,17 @@ dispatch uses the same schema check as automatic field loading.
 ## Validation
 
 The differential suite uses libyara 4.5.8 in CI. It covers PE32 and PE32+
-headers, constants, section names, standard import counts, details, queries,
-and imphash, export metadata and queries, undefined fields, entry-point
-mappings, real Go-toolchain PE fixtures, scanner reuse, compiled-program round
-trips, compact scans, and reader scans within the retention limit.
+headers, constants, section names, section lookup, standard import counts,
+details, queries, and imphash, export metadata and queries, undefined fields,
+entry-point mappings, real Go-toolchain PE fixtures, scanner reuse,
+compiled-program round trips, compact scans, and reader scans within the
+retention limit.
 
 To run the focused tests, install the `yara` CLI on `PATH`, then run:
 
 ```sh
 go test ./compiler ./tests/integration -run 'TestPE|TestLibyaraPE' -count=1
-go test ./compiler -run '^$' -bench 'BenchmarkPE(Module|Scanner|Imports|Imphash|Exports|ExportQueries)$' -benchmem
+go test ./compiler -run '^$' -bench 'BenchmarkPE(Module|Scanner|Sections|Imports|Imphash|Exports|ExportQueries)$' -benchmem
 ```
 
 The oracle tests skip if the CLI is absent. CI installs and checks the pinned

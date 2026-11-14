@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+* Added `pe.section_index(name)` and `pe.section_index(file_offset)` overloads using the cached raw section records. Name matching is case-sensitive and stops at NUL; offset lookup uses exclusive file-offset end bounds, first-match behavior, and the 96-section exposure limit. Host `number_of_sections`/`sections` snapshots remain authoritative ([#465](https://github.com/cawalch/go-yara/issues/465)).
+
 * Added `pe.imphash()` for libyara-compatible standard import hashes, using the existing lazy import cache and frozen ordinal aliases for `ws2_32.dll`, `wsock32.dll`, and `oleaut32.dll`. Host `import_details` snapshots are supported; delayed imports and non-standard alias resolution are not ([#470](https://github.com/cawalch/go-yara/issues/470)).
 
 * Added a pure-Go `pe` adapter for headers, sections, and related constants, backed by the independent go-pe library. See [PE module coverage and limits](docs/pe-module.md). This is the first part of [#359](https://github.com/cawalch/go-yara/issues/359).

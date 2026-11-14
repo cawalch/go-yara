@@ -223,6 +223,8 @@ func (i *Interpreter) executeModuleCall(id builtinFunction, function ModuleFunct
 			result = i.peIsDLL()
 		case "pe.imphash":
 			result = i.peImphash()
+		case "pe.section_index":
+			result = i.peSectionIndex(moduleArgs)
 		case "pe.imports":
 			result = i.peImports(moduleArgs)
 		case "pe.exports", "pe.exports_index":
