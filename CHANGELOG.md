@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+* Added `pe.exports(regex)` and `pe.exports_index(regex)` overloads sharing the existing lazy export snapshot cache, 512-byte first-alias name projection, 16,384-slot limit, host `WithModuleData` snapshot semantics, cooperative cancellation polling, and zero non-PE allocation overhead ([#468](https://github.com/cawalch/go-yara/issues/468)).
+
 * Added `ModuleRegex`, `CompiledRegex`, `RegexValue`, `CompileModuleRegex`, and `ModuleContext.Done()` alongside lexer function-argument regex literal support (`(` / `,` contexts), `OpPushRegex`, and version 19 serialization so module functions accept precompiled, rule-owned regex arguments without per-file recompilation or raw serialized pointers ([#468](https://github.com/cawalch/go-yara/issues/468)).
 
 * Added `pe.calculate_checksum()` for libyara-compatible whole-file PE checksum calculation, computed lazily at most once per scan in bounded 64 KiB chunks with cancellation polling and explicit `undefined` behavior on partial reader prefixes, segmented blocks, non-PE inputs, and host snapshots ([#480](https://github.com/cawalch/go-yara/issues/480)).

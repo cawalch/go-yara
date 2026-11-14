@@ -1,7 +1,9 @@
 package compiler
 
 import (
+	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -11,9 +13,9 @@ import (
 )
 
 func TestPEExportQueriesCache(t *testing.T) {
-	query := `rule query {condition: pe.exports("function00000") and pe.exports(1) and not pe.exports(0) and not pe.exports(4)}`
+	query := `rule query {condition: pe.exports("function00000") and pe.exports(/function00000/i) and not pe.exports(/function00000/) and pe.exports(1) and not pe.exports(0) and not pe.exports(4)}`
 	count := `rule count {condition: pe.number_of_exports == 3 and pe.export_timestamp == 0 and pe.imports("Example.DLL") == 3}`
-	index := `rule index {condition: pe.exports_index("FUNCTION00000") == 0 and pe.exports_index(1) == 0 and pe.exports_index("Function00002") == 2 and pe.exports_index(3) == 2 and not defined pe.exports_index(0) and not defined pe.exports_index(4) and not defined pe.exports_index("missing")}`
+	index := `rule index {condition: pe.exports_index("FUNCTION00000") == 0 and pe.exports_index(/function00000/i) == 0 and pe.exports_index(1) == 0 and pe.exports_index("Function00002") == 2 and pe.exports_index(/^Function00002$/) == 2 and pe.exports_index(3) == 2 and not defined pe.exports_index(0) and not defined pe.exports_index(4) and not defined pe.exports_index("missing") and not defined pe.exports_index(/^missing$/)}`
 	for _, source := range []string{query + count + index, count + index + query, index + query + count} {
 		p, err := NewCompiler().CompileSource(`import "pe" ` + source)
 		if err != nil {
@@ -78,10 +80,11 @@ func TestPEExportQueriesCache(t *testing.T) {
 
 func TestPEExportQueriesHostData(t *testing.T) {
 	p, err := NewCompiler().CompileSource(`import "pe"
-rule host {condition: pe.exports("HOSTfn") and pe.exports("HostFn\x00suffix") and pe.exports(2) and not pe.exports(0) and not pe.exports(99) and not pe.exports("HostFn\x00other") and not pe.exports("") and pe.exports_index("HOSTfn") == 1 and pe.exports_index(2) == 1 and pe.exports_index("HostFn\x00suffix") == 2 and not defined pe.exports_index(0) and not defined pe.exports_index(99) and not defined pe.exports_index("missing")}
-rule file {condition: pe.exports("Function00000")}
-rule empty {condition: pe.exports("HostFn") == 0 and pe.exports(2) == 0 and not defined pe.exports_index("HostFn") and not defined pe.exports_index(2)}
-rule absent {condition: not defined pe.exports("HostFn") and not defined pe.exports(2) and not defined pe.exports_index("HostFn") and not defined pe.exports_index(2)}`)
+rule host {condition: pe.exports("HOSTfn") and pe.exports(/hostfn/i) and not pe.exports(/^hostfn$/) and pe.exports(/^HostFn$/) and pe.exports(/HostFn\x00suffix/) and not pe.exports(/^HostFn\x00other$/) and pe.exports("HostFn\x00suffix") and pe.exports(2) and not pe.exports(0) and not pe.exports(99) and not pe.exports("HostFn\x00other") and not pe.exports("") and not pe.exports(/^$/) and pe.exports_index("HOSTfn") == 1 and pe.exports_index(/hostfn/i) == 1 and pe.exports_index(2) == 1 and pe.exports_index("HostFn\x00suffix") == 2 and pe.exports_index(/HostFn\x00suffix/) == 2 and not defined pe.exports_index(0) and not defined pe.exports_index(99) and not defined pe.exports_index("missing") and not defined pe.exports_index(/^missing$/)}
+rule file {condition: pe.exports("Function00000") or pe.exports(/^Function00000$/)}
+rule empty {condition: pe.exports("HostFn") == 0 and pe.exports(/HostFn/) == 0 and pe.exports(/^$/) == 0 and pe.exports(2) == 0 and not defined pe.exports_index("HostFn") and not defined pe.exports_index(/HostFn/) and not defined pe.exports_index(/^$/) and not defined pe.exports_index(2)}
+rule empty_name {condition: pe.exports(/^$/) == 1 and not pe.exports(/./s) and pe.exports_index(/^$/) == 1 and not defined pe.exports_index(/./s)}
+rule absent {condition: not defined pe.exports("HostFn") and not defined pe.exports(/HostFn/) and not defined pe.exports(2) and not defined pe.exports_index("HostFn") and not defined pe.exports_index(/HostFn/) and not defined pe.exports_index(2)}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,6 +102,7 @@ rule absent {condition: not defined pe.exports("HostFn") and not defined pe.expo
 			{map[string]any{}, "absent"},
 			{map[string]any{"export_details": []any{}}, "empty"},
 			{map[string]any{"export_details": []any{nil, map[string]any{}}}, "empty"},
+			{map[string]any{"export_details": []any{nil, map[string]any{"name": ""}}}, "empty_name"},
 		} {
 			s := p.NewScanner(WithModuleData("pe", tc.data))
 			r, err := s.Scan(pefixture.Exports(false, 3))
@@ -123,8 +127,8 @@ rule absent {condition: not defined pe.exports("HostFn") and not defined pe.expo
 
 func TestPEFunctionCustomModule(t *testing.T) {
 	for _, tc := range []struct{ name, condition string }{
-		{"exports", `pe.exports("anything") == 42 and pe.exports(1) == 42`},
-		{"exports_index", `pe.exports_index("anything") == 42 and pe.exports_index(1) == 42`},
+		{"exports", `pe.exports("anything") == 42 and pe.exports(/anything/i) == 42 and pe.exports(1) == 42`},
+		{"exports_index", `pe.exports_index("anything") == 42 and pe.exports_index(/anything/i) == 42 and pe.exports_index(1) == 42`},
 		{"section_index", `pe.section_index("anything") == 42 and pe.section_index(1) == 42`},
 		{"rva_to_offset", `pe.rva_to_offset(1) == 42`},
 		{"is_dll", `pe.is_dll() == 42`},
@@ -198,7 +202,7 @@ func TestPELegacyExportSchema(t *testing.T) {
 }
 
 func TestPEExportQueriesNonPEAllocations(t *testing.T) {
-	p, err := NewCompiler().CompileSource(`import "pe" rule query {condition: pe.exports("Function00000") or pe.exports(1) or defined pe.exports_index("Function00000") or defined pe.exports_index(1) or defined pe.export_timestamp or defined pe.dll_name or defined pe.is_dll() or defined pe.is_32bit() or defined pe.is_64bit()}`)
+	p, err := NewCompiler().CompileSource(`import "pe" rule query {condition: pe.exports("Function00000") or pe.exports(/Function00000/) or pe.exports(1) or defined pe.exports_index("Function00000") or defined pe.exports_index(/Function00000/) or defined pe.exports_index(1) or defined pe.export_timestamp or defined pe.dll_name or defined pe.is_dll() or defined pe.is_32bit() or defined pe.is_64bit()}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,6 +217,104 @@ func TestPEExportQueriesNonPEAllocations(t *testing.T) {
 	}
 }
 
+func TestPEExportRegexQueriesEdgeCases(t *testing.T) {
+	p, err := NewCompiler().CompileSource(fmt.Sprintf(`import "pe"
+rule empty_export_name {condition: pe.exports(/^$/) and pe.exports(/.*/) and not pe.exports(/^Function00000$/) and pe.exports_index(/^$/) == 0}
+rule unnamed_only {condition: pe.exports(/./s) == 0 and pe.exports(/^$/) == 0 and not defined pe.exports_index(/./s) and not defined pe.exports_index(/^$/)}
+rule high_byte_dotall {condition: pe.exports(/^\xffName$/) and pe.exports(/^.Name$/) and not pe.exports(/^.Other$/)}
+rule newline_dotall {condition: pe.exports(/^\nName$/) and pe.exports(/^.Name$/s) and not pe.exports(/^.Name$/)}
+rule truncated_512 {condition: pe.exports(/^%s$/) and not pe.exports(/^%s$/)}
+rule dup_first_index {condition: pe.exports_index(/FUNCTION00000/i) == 0}`, strings.Repeat("N", 512), strings.Repeat("N", 513)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		// 1. Empty export name string ("") matches /^$/ and /.*/.
+		dEmpty := pefixture.Exports(true, 3)
+		nameOff := int(binary.LittleEndian.Uint32(dEmpty[0x800+36:])) - 0x1c00 + 6
+		dEmpty[nameOff] = 0
+		if r, err := p.Scan(dEmpty); err != nil || !r.RuleResults["empty_export_name"] {
+			t.Fatalf("empty_export_name: %v %v", r.RuleResults, err)
+		}
+
+		// 2. Ordinal-only exports (NumberOfNames == 0) never match regex queries, including /^$/.
+		dOrdinal := pefixture.Exports(false, 3)
+		binary.LittleEndian.PutUint32(dOrdinal[0x818:], 0)
+		if r, err := p.Scan(dOrdinal); err != nil || !r.RuleResults["unnamed_only"] {
+			t.Fatalf("unnamed_only: %v %v", r.RuleResults, err)
+		}
+
+		// 3. Raw high-byte name matches bytewise and without /s.
+		dHigh := pefixture.Exports(true, 3)
+		copy(dHigh[int(binary.LittleEndian.Uint32(dHigh[0x800+36:]))-0x1c00+6:], "\xffName\x00")
+		if r, err := p.Scan(dHigh); err != nil || !r.RuleResults["high_byte_dotall"] {
+			t.Fatalf("high_byte_dotall: %v %v", r.RuleResults, err)
+		}
+
+		// 4. Newline byte in raw export name requires /s to match '.'.
+		dNewline := pefixture.Exports(true, 3)
+		copy(dNewline[int(binary.LittleEndian.Uint32(dNewline[0x800+36:]))-0x1c00+6:], "\nName\x00")
+		if r, err := p.Scan(dNewline); err != nil || !r.RuleResults["newline_dotall"] {
+			t.Fatalf("newline_dotall: %v %v", r.RuleResults, err)
+		}
+
+		// 5. 512-byte projection cap applies to regex matching.
+		dLong := pefixture.Exports(false, 3)
+		off := len(dLong) - 600
+		copy(dLong[off:], strings.Repeat("N", 513)+"\x00")
+		nameTableOff := int(binary.LittleEndian.Uint32(dLong[0x800+32:])) - 0x1c00
+		binary.LittleEndian.PutUint32(dLong[nameTableOff:], uint32(off+0x1c00)) //checkednarrow:ignore fixture offset
+		if r, err := p.Scan(dLong); err != nil || !r.RuleResults["truncated_512"] {
+			t.Fatalf("truncated_512: %v %v", r.RuleResults, err)
+		}
+
+		// 6. Duplicate case-folded names return first index 0.
+		dDup := pefixture.Exports(true, 3)
+		copy(dDup[int(binary.LittleEndian.Uint32(dDup[0x800+36:]))-0x1c00+6+16:], "FUNCTION00000\x00")
+		if r, err := p.Scan(dDup); err != nil || !r.RuleResults["dup_first_index"] {
+			t.Fatalf("dup_first_index: %v %v", r.RuleResults, err)
+		}
+
+		blob, err := p.MarshalBinary()
+		if err != nil {
+			t.Fatal(err)
+		}
+		p, err = UnmarshalCompiledProgram(blob)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestPEExportRegexQueriesCancel(t *testing.T) {
+	largeExports := pefixture.Exports(true, 16384)
+	p, err := NewCompiler().CompileSource(`import "pe" rule e { condition: pe.exports(/^Function16383$/) and pe.exports_index(/^Function16383$/) == 16383 }`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	close(done)
+	interp := NewInterpreter(p.Rules[0].Bytecode)
+	defer interp.Release()
+	interp.setCurrentCompiledRule(p.Rules[0])
+	interp.SetMatchContext(&MatchContext{Data: largeExports, FileSize: int64(len(largeExports)), cancelDone: done})
+	if err := interp.Execute(); !errors.Is(err, context.Canceled) {
+		t.Fatalf("interpreter PE export regex with closed cancelDone = %v, want context.Canceled", err)
+	}
+
+	// Canceled public scan returns context.Canceled and scanner remains reusable.
+	s := p.NewScanner()
+	defer s.Close()
+	canceledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := s.MatchesWithContext(canceledCtx, largeExports); !errors.Is(err, context.Canceled) {
+		t.Fatalf("MatchesWithContext canceled = %v, want context.Canceled", err)
+	}
+	if ok, err := s.Matches(largeExports); err != nil || !ok {
+		t.Fatalf("scanner reuse after cancel = (%t, %v), want (true, nil)", ok, err)
+	}
+}
+
 func BenchmarkPEExportQueries(b *testing.B) {
 	for _, symbols := range []int{16, 256} {
 		for _, query := range []struct{ name, condition string }{
@@ -220,10 +322,14 @@ func BenchmarkPEExportQueries(b *testing.B) {
 			{"ordinal_hit", `pe.exports(7)`},
 			{"name_miss", `not pe.exports("missing")`},
 			{"ordinal_miss", `not pe.exports(1)`},
+			{"regex_hit", `pe.exports(/^Function00000$/)`},
+			{"regex_miss", `not pe.exports(/^missing$/)`},
 			{"name_index_hit", `pe.exports_index("function00000") == 0`},
 			{"ordinal_index_hit", `pe.exports_index(7) == 0`},
+			{"regex_index_hit", `pe.exports_index(/^Function00000$/) == 0`},
 			{"name_index_miss", `not defined pe.exports_index("missing")`},
 			{"ordinal_index_miss", `not defined pe.exports_index(1)`},
+			{"regex_index_miss", `not defined pe.exports_index(/^missing$/)`},
 		} {
 			for _, rules := range []int{1, 100} {
 				var source strings.Builder
