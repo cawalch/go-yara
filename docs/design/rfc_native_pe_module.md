@@ -1,17 +1,18 @@
 # Native PE module
 
 Status: headers, sections, section lookup, RVA-to-file-offset mapping, overlay
-metadata, standard import metadata and queries, standard import hash, and export
-counts, details, timestamps, DLL names, name/ordinal queries, and index lookups
-implemented. DLL and bitness classification helpers reuse the header cache.
-Follow-up work is tracked in [#359](https://github.com/cawalch/go-yara/issues/359).
+metadata, standard import metadata, ordinal display aliases, queries, and
+import hash, and export counts, details, timestamps, DLL names, name/ordinal
+queries, and index lookups implemented. DLL and bitness classification helpers
+reuse the header cache. Follow-up work is tracked in
+[#359](https://github.com/cawalch/go-yara/issues/359).
 
 The PE module lets pure-Go applications evaluate binary metadata conditions
 without linking libyara. The implementation covers headers, sections, section
-lookup, RVA mapping, overlay metadata, standard import counts, details, queries,
-and imphash, export metadata and queries, and related constants. See
-[PE metadata](../pe-module.md) for the supported fields and compatibility
-limits.
+lookup, RVA mapping, overlay metadata, standard import counts, details, ordinal
+aliases, queries, and imphash, export metadata and queries, and related
+constants. See [PE metadata](../pe-module.md) for the supported fields and
+compatibility limits.
 
 ## Library boundary
 
@@ -64,10 +65,9 @@ there is no blanket zero-allocation guarantee.
 
 ## Follow-up work
 
-Additional import overloads, delayed imports, ordinal aliases, import
-address-table RVAs, regex export queries, resources, Rich headers, Authenticode,
-and process-memory behavior remain outside
-this phase. Each addition needs a bounded parsing design, differential coverage,
-and performance measurements.
+Additional import overloads, delayed imports, import address-table RVAs, regex
+export queries, resources, Rich headers, Authenticode, and process-memory
+behavior remain outside this phase. Each addition needs a bounded parsing
+design, differential coverage, and performance measurements.
 The Authenticode work also needs explicit certificate and signature-verification
 semantics; exposing a certificate alone must not imply a verified signature.

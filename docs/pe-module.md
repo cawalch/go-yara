@@ -156,11 +156,14 @@ including duplicate DLL descriptors. `number_of_imported_functions` counts
 functions across those descriptors. Empty or filtered libraries are omitted.
 
 For an import by name, `name` is defined and `ordinal` is undefined. For an
-import by ordinal, `ordinal` is defined and `name` is undefined, including for
-ordinal zero. Unlike libyara, this adapter doesn't synthesize `ordN` names or
-resolve DLL-specific ordinal aliases. Name queries don't resolve those aliases
-either; query the ordinal directly. Import address-table RVAs
-(`functions[j].rva`) aren't implemented and fail compilation.
+import by ordinal, both `ordinal` and `name` are defined, including for
+ordinal zero. Following libyara 4.5.8, the adapter resolves ordinal aliases for
+`ws2_32.dll`, `wsock32.dll`, and `oleaut32.dll` using ASCII case-insensitive DLL
+prefix matching and falls back to `ordN` without modifying go-pe's underlying
+records or touching `pe.imphash()`'s separate frozen tables. `pe.imports(dll,
+function_name)` resolves those same aliases directly without constructing
+`import_details` objects. Import address-table RVAs (`functions[j].rva`) aren't
+implemented and fail compilation.
 
 The adapter follows libyara 4.5.8's name filtering: DLL names must have fewer
 than 256 bytes and contain printable ASCII other than `"*<>?|`. Function names
@@ -431,7 +434,9 @@ import-only PE schemas still load automatically. Existing custom modules named
 `pe` with a different schema retain their host-data behavior. An explicit
 `WithModuleData("pe", data)` snapshot takes precedence over automatic loading.
 Import queries use that snapshot's `import_details`: a missing array gives an
-undefined result, and an empty array gives `0`. `pe.imphash()` uses the same
+undefined result, and an empty array gives `0`. Name queries check an explicit
+function `name` first and fall back to resolving a supplied `ordinal` (`0`
+through `65,535`) when `name` is absent. `pe.imphash()` uses the same
 array; a missing array is undefined and an empty array hashes the empty
 sequence. DLL counts include non-null function records in matching libraries
 and ignore the supplied `number_of_functions` field. Export queries use the
@@ -451,7 +456,8 @@ dispatch uses the same schema check as automatic field loading.
 
 The differential suite uses libyara 4.5.8 in CI. It covers PE32 and PE32+
 headers, constants, section names, section lookup, RVA mapping, overlay
-metadata, standard import counts, details, queries, and imphash, export metadata
+metadata, standard import counts, details, ordinal aliases, queries, and
+imphash, export metadata
 and queries, undefined fields, entry-point mappings, real Go-toolchain PE
 fixtures, scanner reuse, compiled-program round trips, compact scans, and
 reader scans within the retention limit.

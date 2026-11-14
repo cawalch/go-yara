@@ -45,6 +45,10 @@ func TestLibyaraPEImportQueries(t *testing.T) {
 		fmt.Sprintf(`pe.imports("Example.DLL", "%s") == 1`, strings.Repeat("N", 512)),
 		fmt.Sprintf(`pe.imports("Example.DLL", "%s") == 1`, strings.Repeat("N", 513)),
 		`for any d in pe.import_details : (for any f in d.functions : (defined f.ordinal and pe.imports(d.library_name, f.ordinal)))`,
+		`pe.imports("Example.DLL", "ord7") == 1`,
+		`pe.imports("Example.DLL", "ORD7") == 1`,
+		`pe.imports("Example.DLL", "ord0") == 1`,
+		`pe.imports("Example.DLL", "ord65535") == 1`,
 	}
 	for _, is64 := range []bool{false, true} {
 		for _, tc := range []struct {
@@ -111,11 +115,6 @@ func TestLibyaraPEImportQueryCompatibility(t *testing.T) {
 	}{
 		{"malformed_count", func(d []byte) { binary.LittleEndian.PutUint32(d[0x444:], 0x7fffffff) }, `pe.imports("Example.DLL")`, `not defined`},
 		{"malformed", func(d []byte) { binary.LittleEndian.PutUint32(d[0x444:], 0x7fffffff) }, `pe.imports("Example.DLL", "NamedFunction")`, `not defined`},
-		{"synthetic_ordinal_name", func(d []byte) { pefixture.ImportOrdinal(d, 1, 7) }, `pe.imports("Example.DLL", "ord7")`, `not`},
-		{"ordinal_alias", func(d []byte) {
-			copy(d[0x428:], "ws2_32.dll\x00")
-			pefixture.ImportOrdinal(d, 1, 1)
-		}, `pe.imports("ws2_32.dll", "accept")`, `not`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			data := pefixture.Imports(false, 3)
@@ -130,6 +129,53 @@ func TestLibyaraPEImportQueryCompatibility(t *testing.T) {
 				t.Fatalf("local: %v %v", local, err)
 			}
 		})
+	}
+}
+
+func TestLibyaraPEImportOrdinalQueryAliases(t *testing.T) {
+	libyaraOracle(t)
+	predicates := []string{
+		`pe.imports("ws2_32.dll", "accept") == 1`,
+		`pe.imports("WS2_32.DLL", "ACCEPT") == 1`,
+		`pe.imports("ws2_32.dll", "ord1") == 1`,
+		`pe.imports("ws2_32.dll", 1) == 1`,
+		`pe.imports("ws2_32.dll", "WEP") == 1`,
+		`pe.imports("ws2_32.dll", "ord501") == 1`,
+		`pe.imports("wsock32.dll", "WSAStartup") == 1`,
+		`pe.imports("oleaut32.dll", "SysAllocString") == 1`,
+		`pe.imports("oleaut32.dll", "UnRegisterTypeLibForUser") == 1`,
+		`pe.imports("ws2_32.dllx", "accept") == 1`,
+		`pe.imports("ws2_32.ocx", "accept") == 1`,
+		`pe.imports("ws2_32.ocx", "ord1") == 1`,
+		`pe.imports("ws2_32", "accept") == 1`,
+		`pe.imports("ws2_32", "ord1") == 1`,
+		`pe.imports("ws2_32.dll\x00suffix", "accept\x00suffix") == 1`,
+		`pe.imports("Kws2_32.dll", "accept") == 0`,
+	}
+	source := peProbeSource(predicates)
+	for _, is64 := range []bool{false, true} {
+		for _, tc := range []struct {
+			name    string
+			dll     string
+			ordinal uint16
+		}{
+			{"ws2_accept", "ws2_32.dll", 1},
+			{"ws2_wep", "WS2_32.DLL", 500},
+			{"ws2_fallback", "ws2_32.dll", 501},
+			{"wsock_startup", "wsock32.dll", 115},
+			{"oleaut_first", "OLEAUT32.DLL", 2},
+			{"oleaut_last", "oleaut32.dll", 443},
+			{"ws2_dll_ext", "ws2_32.dllx", 1},
+			{"ws2_ocx_ext", "ws2_32.ocx", 1},
+			{"ws2_no_ext", "ws2_32", 1},
+		} {
+			t.Run(fmt.Sprintf("64=%t/%s", is64, tc.name), func(t *testing.T) {
+				data := pefixture.Imports(is64, 1)
+				pefixture.ImportOrdinal(data, 0, tc.ordinal)
+				copy(data[0x428:], tc.dll+"\x00")
+				checkPEPaths(t, source, data)
+			})
+		}
 	}
 }
 

@@ -194,32 +194,93 @@ func TestLibyaraPEStrictImportCompatibility(t *testing.T) {
 	}
 }
 
-func TestLibyaraPEOrdinalNamesCompatibility(t *testing.T) {
-	for _, tc := range []struct {
-		dll, name string
-		ordinal   uint16
-	}{{"Example.DLL", "ord7", 7}, {"ws2_32.dll", "accept", 1}, {"Example.DLL", "ord0", 0}, {"Example.DLL", "ord65535", 65535}} {
-		t.Run(tc.name, func(t *testing.T) {
-			data := pefixture.Imports(false, 1)
-			pefixture.ImportOrdinal(data, 0, tc.ordinal)
-			copy(data[0x428:], tc.dll+"\x00")
-			source := fmt.Sprintf(`import "pe" rule ordinal {condition: pe.import_details[0].functions[0].ordinal == %d}
-rule oracle {condition: pe.import_details[0].functions[0].name == %q}
-rule local {condition: not defined pe.import_details[0].functions[0].name}`, tc.ordinal, tc.name)
-			want, err := scanWithLibyara(t, libyaraOracle(t), source, data)
-			if err != nil {
-				t.Fatal(err)
+func TestLibyaraPEOrdinalAliases(t *testing.T) {
+	libyaraOracle(t)
+	predicates := []string{
+		`defined pe.import_details[0].functions[0].name`,
+		`defined pe.import_details[0].functions[0].ordinal`,
+		`pe.import_details[0].functions[0].ordinal == 0`,
+		`pe.import_details[0].functions[0].ordinal == 1`,
+		`pe.import_details[0].functions[0].ordinal == 2`,
+		`pe.import_details[0].functions[0].ordinal == 7`,
+		`pe.import_details[0].functions[0].ordinal == 23`,
+		`pe.import_details[0].functions[0].ordinal == 115`,
+		`pe.import_details[0].functions[0].ordinal == 151`,
+		`pe.import_details[0].functions[0].ordinal == 443`,
+		`pe.import_details[0].functions[0].ordinal == 500`,
+		`pe.import_details[0].functions[0].ordinal == 501`,
+		`pe.import_details[0].functions[0].ordinal == 65535`,
+		`pe.import_details[0].functions[0].name == "ord0"`,
+		`pe.import_details[0].functions[0].name == "ord1"`,
+		`pe.import_details[0].functions[0].name == "ord2"`,
+		`pe.import_details[0].functions[0].name == "ord7"`,
+		`pe.import_details[0].functions[0].name == "ord100"`,
+		`pe.import_details[0].functions[0].name == "ord444"`,
+		`pe.import_details[0].functions[0].name == "ord501"`,
+		`pe.import_details[0].functions[0].name == "ord65535"`,
+		`pe.import_details[0].functions[0].name == "accept"`,
+		`pe.import_details[0].functions[0].name == "socket"`,
+		`pe.import_details[0].functions[0].name == "WSAStartup"`,
+		`pe.import_details[0].functions[0].name == "__WSAFDIsSet"`,
+		`pe.import_details[0].functions[0].name == "WEP"`,
+		`pe.import_details[0].functions[0].name == "SysAllocString"`,
+		`pe.import_details[0].functions[0].name == "UnRegisterTypeLibForUser"`,
+		`pe.import_details[1].functions[0].name == "ord501"`,
+		`pe.import_details[1].functions[0].ordinal == 501`,
+	}
+	source := peProbeSource(predicates)
+	for _, is64 := range []bool{false, true} {
+		for _, tc := range []struct {
+			name    string
+			dll     string
+			ordinal uint16
+		}{
+			{"generic_ord7", "Example.DLL", 7},
+			{"generic_ord0", "Example.DLL", 0},
+			{"generic_ord65535", "Example.DLL", 65535},
+			{"ws2_accept", "ws2_32.dll", 1},
+			{"ws2_upper_wsafd", "WS2_32.DLL", 151},
+			{"ws2_wep", "ws2_32.dll", 500},
+			{"ws2_fallback", "ws2_32.dll", 501},
+			{"wsock_socket", "wsock32.dll", 23},
+			{"wsock_upper_startup", "WSOCK32.DLL", 115},
+			{"wsock_missing", "wsock32.dll", 100},
+			{"oleaut_sysalloc", "oleaut32.dll", 2},
+			{"oleaut_upper_last", "OLEAUT32.DLL", 443},
+			{"oleaut_missing_low", "oleaut32.dll", 1},
+			{"oleaut_missing_high", "oleaut32.dll", 444},
+			{"ws2_dll_prefix_ext", "ws2_32.dllx", 1},
+			{"ws2_dll_mui_ext", "WS2_32.DLL.mui", 1},
+			{"ws2_ocx_ext", "ws2_32.ocx", 1},
+			{"ws2_no_ext", "ws2_32", 1},
+			{"oleaut_ocx_ext", "oleaut32.ocx", 2},
+		} {
+			t.Run(fmt.Sprintf("64=%t/%s", is64, tc.name), func(t *testing.T) {
+				data := pefixture.Imports(is64, 1)
+				pefixture.ImportOrdinal(data, 0, tc.ordinal)
+				copy(data[0x428:], tc.dll+"\x00")
+				checkPEPaths(t, source, data)
+			})
+		}
+		t.Run(fmt.Sprintf("64=%t/duplicate_ws2_descriptors", is64), func(t *testing.T) {
+			data := pefixture.Imports(is64, 1)
+			pefixture.ImportOrdinal(data, 0, 1)
+			copy(data[0x428:], "ws2_32.dll\x00")
+			copy(data[0x414:0x428], data[0x400:0x414])
+			clear(data[0x428:0x43c])
+			copy(data[0x1f0:], "WS2_32.DLL\x00")
+			binary.LittleEndian.PutUint32(data[0x40c:], 0x1f0)
+			binary.LittleEndian.PutUint32(data[0x420:], 0x1f0)
+			binary.LittleEndian.PutUint32(data[0x414:], 0x1100)
+			clear(data[0x300:0x310])
+			if is64 {
+				binary.LittleEndian.PutUint32(data[0x114:], 60)
+				binary.LittleEndian.PutUint64(data[0x300:], 1<<63|501)
+			} else {
+				binary.LittleEndian.PutUint32(data[0x104:], 60)
+				binary.LittleEndian.PutUint32(data[0x300:], 1<<31|501)
 			}
-			if !reflect.DeepEqual(want, map[string][]span{"ordinal": nil, "oracle": nil}) {
-				t.Fatalf("oracle changed: %v", want)
-			}
-			got, err := scanWithGoYara(source, data)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !reflect.DeepEqual(got, map[string][]span{"ordinal": nil, "local": nil}) {
-				t.Fatalf("local changed: %v", got)
-			}
+			checkPEPaths(t, source, data)
 		})
 	}
 }
