@@ -17,8 +17,12 @@ func (i *Interpreter) peImphash() ModuleValue {
 	if i.currentCompiledRule == nil || !i.currentCompiledRule.nativePE {
 		return ModuleValue{}
 	}
+	done := peCancelDone(i.matchContext)
+	if scanCanceled(done) {
+		return ModuleValue{}
+	}
 	if data, supplied := i.moduleData["pe"]; supplied {
-		return peHostImphash(data)
+		return peHostImphash(data, done)
 	}
 	image := loadPE(i.matchContext)
 	if image.file == nil {
@@ -28,12 +32,16 @@ func (i *Interpreter) peImphash() ModuleValue {
 	if !imports.valid {
 		return ModuleValue{}
 	}
-	return StringValue(peImphashLibraries(imports.libraries))
+	hash, ok := peImphashLibrariesWithCancel(imports.libraries, done)
+	if !ok {
+		return ModuleValue{}
+	}
+	return StringValue(hash)
 }
 
 // Host snapshots take precedence over file parsing. An absent import_details
 // array leaves the hash undefined; an empty array hashes as an empty sequence.
-func peHostImphash(data ModuleValue) ModuleValue {
+func peHostImphash(data ModuleValue, done <-chan struct{}) ModuleValue {
 	if data.object == nil {
 		return ModuleValue{}
 	}
@@ -42,6 +50,7 @@ func peHostImphash(data ModuleValue) ModuleValue {
 		return ModuleValue{}
 	}
 	builder := newPEImphashBuilder()
+	seen := 0
 	for _, library := range details.object.elements {
 		if library.object == nil {
 			continue
@@ -57,6 +66,10 @@ func peHostImphash(data ModuleValue) ModuleValue {
 			continue
 		}
 		for _, symbol := range functions.object.elements {
+			if scanCanceledAt(done, seen) {
+				return ModuleValue{}
+			}
+			seen++
 			if symbol.object == nil {
 				continue
 			}
@@ -81,12 +94,22 @@ func peHostImphash(data ModuleValue) ModuleValue {
 }
 
 func peImphashLibraries(libraries []pe.ImportLibrary) string {
+	sum, _ := peImphashLibrariesWithCancel(libraries, nil)
+	return sum
+}
+
+func peImphashLibrariesWithCancel(libraries []pe.ImportLibrary, done <-chan struct{}) (string, bool) {
 	builder := newPEImphashBuilder()
+	seen := 0
 	for i := range libraries {
 		library := &libraries[i]
 		dll := peCString(library.DLL)
 		libraryName := peImphashLibraryName(dll)
 		for j := range library.Symbols {
+			if scanCanceledAt(done, seen) {
+				return "", false
+			}
+			seen++
 			symbol := &library.Symbols[j]
 			functionName := peCString(symbol.Name)
 			if symbol.ByOrdinal {
@@ -95,7 +118,7 @@ func peImphashLibraries(libraries []pe.ImportLibrary) string {
 			builder.add(libraryName, functionName)
 		}
 	}
-	return builder.sum()
+	return builder.sum(), true
 }
 
 type peImphashBuilder struct {

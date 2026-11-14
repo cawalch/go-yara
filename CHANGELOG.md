@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+* Documented the native PE input-availability, file-offset vs. process-memory separation, and cooperative cancellation contract in [native PE RFC](docs/design/rfc_native_pe_module.md) and [PE module docs](docs/pe-module.md), added `peFullScanData` to guard future whole-file operations against partial stream/block inputs, and added bounded-loop cancellation polling in PE import/export/imphash paths ([#479](https://github.com/cawalch/go-yara/issues/479)).
+
 * Added libyara 4.5.8 ordinal display-name resolution for `pe.import_details` and `pe.imports(dll, function_name)`, resolving `ws2_32.dll`, `wsock32.dll`, and `oleaut32.dll` aliases with C-locale prefix matching and `ordN` fallback while leaving underlying `go-pe` records unmodified and keeping the tables separate from `pe.imphash()` ([#469](https://github.com/cawalch/go-yara/issues/469)).
 
 * Added `pe.overlay.offset` and `pe.overlay.size` computed lazily from cached exposed section extents (up to 96 sections) and the known input size, matching libyara's handling of empty overlays, zero-size sections, overflowed raw extents, and certificate directory placement without copying overlay bytes ([#467](https://github.com/cawalch/go-yara/issues/467)).

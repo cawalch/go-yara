@@ -36,11 +36,23 @@ type peImportData struct {
 
 func (image *peImage) loadImports() *peImportData {
 	if image.imports == nil {
-		image.imports = &peImportData{}
+		done := peCancelDone(image.context)
+		if scanCanceled(done) {
+			return &peImportData{}
+		}
 		libraries, err := image.file.Imports(peScanData(image.context))
-		if err == nil {
-			image.imports.libraries, image.imports.functions = peFilterImports(libraries)
-			image.imports.valid = true
+		if err != nil {
+			image.imports = &peImportData{}
+			return image.imports
+		}
+		filtered, functions, canceled := peFilterImportsWithCancel(libraries, done)
+		if canceled {
+			return &peImportData{}
+		}
+		image.imports = &peImportData{
+			libraries: filtered,
+			functions: functions,
+			valid:     true,
 		}
 	}
 	return image.imports
@@ -70,7 +82,7 @@ func (image *peImage) importField(name string) ModuleValue {
 
 // Apply libyara 4.5.8's name filters and 16,384-function limit here, not in
 // go-pe. Empty libraries are omitted; duplicate descriptors remain separate.
-func peFilterImports(libraries []pe.ImportLibrary) ([]pe.ImportLibrary, int) {
+func peFilterImportsWithCancel(libraries []pe.ImportLibrary, done <-chan struct{}) ([]pe.ImportLibrary, int, bool) {
 	kept, total := 0, 0
 	for _, library := range libraries {
 		if total == 16384 {
@@ -84,6 +96,9 @@ func peFilterImports(libraries []pe.ImportLibrary) ([]pe.ImportLibrary, int) {
 		}
 		symbols := library.Symbols[:0]
 		for _, symbol := range library.Symbols[:min(len(library.Symbols), 16384)] {
+			if scanCanceledAt(done, total) {
+				return nil, 0, true
+			}
 			if total == 16384 {
 				break
 			}
@@ -109,7 +124,7 @@ func peFilterImports(libraries []pe.ImportLibrary) ([]pe.ImportLibrary, int) {
 		}
 	}
 	clear(libraries[kept:])
-	return libraries[:kept], total
+	return libraries[:kept], total, false
 }
 
 func peImportLibraryFields(library *pe.ImportLibrary) ModuleValue {

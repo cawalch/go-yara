@@ -63,11 +63,66 @@ and scans that don't use PE. Performance claims must identify the workload and
 separate parser cost from complete scan cost. Valid PE parsing allocates;
 there is no blanket zero-allocation guarantee.
 
+## Input availability, block boundaries, and cancellation
+
+Native PE metadata falls into three availability tiers, governed by
+`peScanData` (contiguous offset-0 bytes) and `peFullScanData` (complete input
+where `FileSize > 0` and `int64(len(data)) == FileSize`):
+
+1. **Bounded prefix (`<= 64 KiB`)**: Headers, sections, COFF long names,
+   directories, imports, exports, and section/RVA lookups use `peScanData` plus
+   full stream `FileSize` for offset bounds and `overlay` extents. Metadata past
+   the retained prefix stays `undefined` instead of triggering whole-stream
+   buffering.
+2. **Whole-input operations (`peFullScanData`)**: Full-file checksums (`#480`)
+   and Authenticode digests (`#481`) require a complete contiguous offset-0
+   slice covering `FileSize`. Partial stream prefixes and segmented/incomplete
+   blocks leave these operations `undefined` rather than returning partial
+   checksums or digests.
+3. **Explicitly deferred random access and process memory**: Standalone
+   `io.ReaderAt` support (`go-pe#16`) and VA-mapped process-memory PE parsing are
+   out of scope. Existing callers needing complete metadata alongside
+   cancellation acquire bytes explicitly and pass them to `ScanWithContext`.
+
+| Entry point | Retained PE bytes (`peScanData`) | Full-file ops (`peFullScanData`) | Domain & limits |
+| --- | --- | --- | --- |
+| `Scan*`, `Matches*`, `MatchingRules*` | Complete buffer | Available (`len == FileSize`) | File offsets |
+| `ScanFile`, `ScanFileWithContext` (`ctx.Done() == nil`) | Full file (`MapFile` `>= 128 KiB`, else `os.ReadFile`) | Available (`len == FileSize`) | File offsets |
+| `ScanFileWithContext` (cancellable, regular `>= 128 KiB`) | Complete file via `fs.MapFile` | Available (`len == FileSize`) | File offsets |
+| `ScanFileWithContext` (cancellable, `< 128 KiB` or non-regular / mmap fallback) | Streamed via `ScanReaderWithContext` (`<= 64 KiB` prefix) | Available only when `FileSize <= 64 KiB`; otherwise `undefined` | File offsets |
+| `ScanReader*`, `MatchesReader*` | First `64 KiB` (`streamingHeaderSize`) + full `FileSize` | Available only when `FileSize <= 64 KiB`; otherwise `undefined` | File offsets; `MatchesReader*` may early-exit once a rule matches |
+| `MatchingRulesInBlock*` (`base == 0`) | Single block `Data` + `FileSize` (`filesize >= 0` else `len(Data)`) | Available only when `int64(len(Data)) == FileSize` | File offsets; **not** process VAs |
+| `BlockScanner` (`Base == 0` present) | First `Base == 0` block verbatim + aggregate/configured `FileSize` | Available only when that `Base == 0` block covers full `FileSize` | File offsets; multi-block ranges are not concatenated |
+| `MatchingRulesInBlock*` (`base != 0`) / `BlockScanner` (no `Base == 0`) | None (`is_pe == 0`) | `undefined` | File offsets; non-zero bases are never treated as VAs |
+| `WithModuleData("pe", ...)` | Host snapshot (bypasses `loadPE`) | Snapshot-defined (`undefined` if absent) | Host-controlled |
+
+### Cancellation and scan isolation
+
+`go-pe` remains a synchronous `[]byte` parser with no dependency on
+`context.Context` or scanner lifecycles, keeping non-PE and non-cancellable
+scans at zero overhead (`executeMainLoop` does not poll `cancelDone`). On
+cancellable scans (`cancelDone != nil`):
+
+- Reader scans poll `ctx.Err()` on every `Read()` via `contextReader`.
+- Rule loops poll `ctx.Err()` between rules, and `executeMainLoopWithCancel`
+  polls `scanCanceled(done)` every `scanCancellationInterval` (4096) VM steps
+  (covering condition loops such as `for any e in pe.export_details`) and at
+  rule exit.
+- Bounded PE loops up to 16,384 entries (import filtering, `imphash`, import/export
+  queries, export detail materialization) poll `scanCanceledAt(done, n)` every
+  4096 items and skip caching incomplete results on cancellation.
+- Multi-megabyte whole-file operations (`calculate_checksum`, Authenticode
+  digests) must process `peFullScanData` in bounded chunks and poll
+  `scanCanceled(done)` between chunks.
+
 ## Follow-up work
 
 Additional import overloads, delayed imports, import address-table RVAs, regex
-export queries, resources, Rich headers, Authenticode, and process-memory
-behavior remain outside this phase. Each addition needs a bounded parsing
-design, differential coverage, and performance measurements.
+export queries, resources, Rich headers, whole-file checksums (`#480`),
+Authenticode (`#481`), standalone `ReaderAt` (`go-pe#16`), and opt-in
+process-memory VA behavior remain outside this phase. Each addition needs a
+bounded parsing design, differential coverage, and performance measurements.
 The Authenticode work also needs explicit certificate and signature-verification
 semantics; exposing a certificate alone must not imply a verified signature.
+Process-memory PE support requires an explicit virtual-address mode rather than
+interpreting `MemoryBlock` file offsets as virtual addresses.

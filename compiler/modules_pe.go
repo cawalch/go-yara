@@ -227,6 +227,9 @@ func parsePE(ctx *MatchContext) *peImage {
 }
 
 func peScanData(ctx *MatchContext) []byte {
+	if ctx == nil {
+		return nil
+	}
 	if ctx.Data != nil {
 		return ctx.Data
 	}
@@ -236,6 +239,28 @@ func peScanData(ctx *MatchContext) []byte {
 		}
 	}
 	return nil
+}
+
+// peFullScanData returns the full contiguous offset-0 scan bytes only when
+// they cover the complete known input length. Whole-file PE hashes and
+// checksums require this contract instead of hashing a bounded stream prefix
+// or a segmented block subset.
+func peFullScanData(ctx *MatchContext) ([]byte, bool) {
+	if ctx == nil || ctx.FileSize <= 0 {
+		return nil, false
+	}
+	data := peScanData(ctx)
+	if int64(len(data)) != ctx.FileSize {
+		return nil, false
+	}
+	return data, true
+}
+
+func peCancelDone(ctx *MatchContext) <-chan struct{} {
+	if ctx == nil {
+		return nil
+	}
+	return ctx.cancelDone
 }
 
 // peImage owns one scan's parsed metadata and lazily constructed module values.
