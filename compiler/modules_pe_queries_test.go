@@ -1,15 +1,20 @@
 package compiler
 
 import (
+	"context"
 	"encoding/binary"
+	"errors"
+	"fmt"
 	"os"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/cawalch/go-yara/internal/pefixture"
 )
 
 func TestPEImportQueriesCache(t *testing.T) {
-	query := `rule query {condition: pe.imports("example.dll", "namedfunction") and pe.imports("EXAMPLE.DLL", 7)}`
+	query := `rule query {condition: pe.imports("example.dll", "namedfunction") and pe.imports(/example\.dll/i, /^NamedFunction$/) == 2 and pe.imports("EXAMPLE.DLL", 7)}`
 	count := `rule count {condition: pe.imports("example.dll") == 3}`
 	field := `rule field {condition: pe.number_of_imported_functions == 3}`
 	for _, source := range []string{query + count + field, count + field + query, field + query + count} {
@@ -74,10 +79,10 @@ func TestPEImportQueriesCache(t *testing.T) {
 
 func TestPEImportQueriesHostData(t *testing.T) {
 	p, err := NewCompiler().CompileSource(`import "pe"
-rule host {condition: pe.imports("HOST.dll", "hostfn") and pe.imports("host.dll", 0) and pe.imports("host.dll", "ORD0") and not pe.imports("host.dll", "") and pe.imports("HOST.dll\x00suffix") == 2 and pe.imports("missing.dll") == 0}
-rule ws2 {condition: pe.imports("WS2_32.DLL", "accept") and not pe.imports("ws2_32.dll", "ord1") and pe.imports("ws2_32.dll", 1)}
-rule file {condition: pe.imports("example.dll", "NamedFunction") or pe.imports("example.dll")}
-rule absent {condition: not defined pe.imports("host.dll", "hostfn") and not defined pe.imports("host.dll")}`)
+rule host {condition: pe.imports("HOST.dll", "hostfn") and pe.imports(/^HOST\.dll$/i, /^HostFn$/) == 1 and pe.imports(/^host\.dll$/i, /^ord0$/) == 1 and pe.imports(/HOST\.dll/i, /hostfn|ord0/i) >= 2 and pe.imports("host.dll", 0) and pe.imports("host.dll", "ORD0") and not pe.imports("host.dll", "") and not pe.imports(/host\.dll/i, /^$/) and pe.imports("HOST.dll\x00suffix") == 2 and pe.imports("missing.dll") == 0 and pe.imports(/missing\.dll/, /.*/) == 0}
+rule ws2 {condition: pe.imports("WS2_32.DLL", "accept") and pe.imports(/^ws2_32\.dll$/i, /^accept$/) == 1 and pe.imports(/^ws2_32\.dll$/i, /ord1/) == 0 and not pe.imports("ws2_32.dll", "ord1") and pe.imports("ws2_32.dll", 1)}
+rule file {condition: pe.imports("example.dll", "NamedFunction") or pe.imports(/example/i, /Named/) or pe.imports("example.dll")}
+rule absent {condition: not defined pe.imports("host.dll", "hostfn") and not defined pe.imports(/host/i, /hostfn/i) and not defined pe.imports("host.dll")}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +137,7 @@ rule absent {condition: not defined pe.imports("host.dll", "hostfn") and not def
 }
 
 func TestPEImportQueriesNonPEAllocations(t *testing.T) {
-	p, err := NewCompiler().CompileSource(`import "pe" rule query {condition: pe.imports("Example.DLL", "NamedFunction") or pe.imports("Example.DLL", 7) or pe.imports("Example.DLL")}`)
+	p, err := NewCompiler().CompileSource(`import "pe" rule query {condition: pe.imports("Example.DLL", "NamedFunction") or pe.imports(/Example\.DLL/, /NamedFunction/) or pe.imports("Example.DLL", 7) or pe.imports("Example.DLL")}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +155,9 @@ func TestPEImportQueriesNonPEAllocations(t *testing.T) {
 func TestPEOrdinalQueryNoDetailMaterialization(t *testing.T) {
 	p, err := NewCompiler().CompileSource(`import "pe"
 rule alias { condition: pe.imports("ws2_32.dll", "accept") and not pe.imports("ws2_32.dll", "ord1") }
-rule fallback { condition: pe.imports("ws2_32.dll", "ord501") }`)
+rule fallback { condition: pe.imports("ws2_32.dll", "ord501") }
+rule alias_regex { condition: pe.imports(/^ws2_32\.dll$/i, /^accept$/) == 1 and pe.imports(/ws2_32/i, /ord1/) == 0 }
+rule fallback_regex { condition: pe.imports(/ws2_32/i, /^ord501$/) == 1 }`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +168,7 @@ rule fallback { condition: pe.imports("ws2_32.dll", "ord501") }`)
 	s := p.NewScanner(WithoutMatches(), WithoutRuleResults())
 	defer s.Close()
 	r, err := s.Scan(data)
-	if err != nil || len(r.MatchedRules) != 2 {
+	if err != nil || len(r.MatchedRules) != 4 {
 		t.Fatalf("ordinal queries: %v %v", r, err)
 	}
 	if s.moduleCache.pe.imports.details.Type != ModuleUndefined {
@@ -184,7 +191,7 @@ func TestPEImportQueriesCallbackOverride(t *testing.T) {
 	function := module.Functions["imports"]
 	function.Evaluate = func(ModuleContext, []ModuleValue) (ModuleValue, error) { return IntegerValue(42), nil }
 	module.Functions["imports"] = function
-	p, err := NewCompiler(WithModule(module)).CompileSource(`import "pe" rule custom {condition: pe.imports("anything", 7) == 42 and pe.imports("anything") == 42}`)
+	p, err := NewCompiler(WithModule(module)).CompileSource(`import "pe" rule custom {condition: pe.imports("anything", 7) == 42 and pe.imports("anything") == 42 and pe.imports(/anything/, /anything/) == 42}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,5 +297,72 @@ func TestPELegacyImportSchema(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestPEImportRegexQueriesCancel(t *testing.T) {
+	largeImports := pefixture.Imports(true, 16384)
+	p, err := NewCompiler().CompileSource(`import "pe" rule i { condition: pe.imports(/^Example\.DLL$/, /^NamedFunction$/) == 16384 }`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	close(done)
+	interp := NewInterpreter(p.Rules[0].Bytecode)
+	defer interp.Release()
+	interp.setCurrentCompiledRule(p.Rules[0])
+	interp.SetMatchContext(&MatchContext{Data: largeImports, FileSize: int64(len(largeImports)), cancelDone: done})
+	if err := interp.Execute(); !errors.Is(err, context.Canceled) {
+		t.Fatalf("interpreter PE import regex with closed cancelDone = %v, want context.Canceled", err)
+	}
+
+	s := p.NewScanner()
+	defer s.Close()
+	canceledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := s.MatchesWithContext(canceledCtx, largeImports); !errors.Is(err, context.Canceled) {
+		t.Fatalf("MatchesWithContext canceled = %v, want context.Canceled", err)
+	}
+	if ok, err := s.Matches(largeImports); err != nil || !ok {
+		t.Fatalf("scanner reuse after cancel = (%t, %v), want (true, nil)", ok, err)
+	}
+}
+
+func BenchmarkPEImportQueries(b *testing.B) {
+	for _, symbols := range []int{16, 256} {
+		for _, query := range []struct{ name, condition string }{
+			{"dll_count", `pe.imports("example.dll") == ` + strconv.Itoa(symbols)},
+			{"fn_hit", `pe.imports("example.dll", "namedfunction")`},
+			{"fn_miss", `not pe.imports("example.dll", "missing")`},
+			{"ordinal_hit", `pe.imports("example.dll", 7)`},
+			{"ordinal_miss", `not pe.imports("example.dll", 99)`},
+			{"regex_hit", `pe.imports(/^Example\.DLL$/, /^NamedFunction$/) == ` + strconv.Itoa(symbols-1)},
+			{"regex_miss", `pe.imports(/^Example\.DLL$/, /^missing$/) == 0`},
+		} {
+			for _, rules := range []int{1, 100} {
+				var source strings.Builder
+				source.WriteString("import \"pe\"\n")
+				for i := range rules {
+					fmt.Fprintf(&source, "rule r%d {condition: %s}\n", i, query.condition)
+				}
+				p, err := NewCompiler().CompileSource(source.String())
+				if err != nil {
+					b.Fatal(err)
+				}
+				data := pefixture.Imports(true, symbols)
+				pefixture.ImportOrdinal(data, symbols-1, 7)
+				b.Run(fmt.Sprintf("symbols=%d/%s/rules=%d", symbols, query.name, rules), func(b *testing.B) {
+					s := p.NewScanner(WithoutMatches(), WithoutRuleResults())
+					defer s.Close()
+					b.ReportAllocs()
+					for b.Loop() {
+						matches, err := s.MatchingRules(data)
+						if err != nil || len(matches) != rules {
+							b.Fatalf("matches=%d: %v", len(matches), err)
+						}
+					}
+				})
+			}
+		}
 	}
 }
