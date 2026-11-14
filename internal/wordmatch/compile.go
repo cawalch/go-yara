@@ -110,7 +110,7 @@ func compile(rules []Rule) (*program, error) {
 				return nil, fmt.Errorf("%w: short witness", ErrIneligible)
 			}
 			window := len(literal) - 15
-			for phase := 0; phase < 8; phase++ {
+			for phase := range 8 {
 				offset := window + phase
 				word := readWord(literal[offset:])
 				pending[word] = append(pending[word], posting{rule: ri, alternative: ai, offset: offset})

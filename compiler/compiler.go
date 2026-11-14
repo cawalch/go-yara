@@ -293,8 +293,8 @@ func (c *Compiler) compileParseWithContext(ctx context.Context, source string) (
 	// Parse with context support
 	program, err := c.parser.ParseRulesWithContext(ctx)
 	if err != nil {
-		var partialErr *parser.PartialParseError
-		if !c.options.IgnoreInvalidRules || !errors.As(err, &partialErr) || len(c.parser.ProgramErrors()) != 0 {
+		partialErr, ok := errors.AsType[*parser.PartialParseError](err)
+		if !c.options.IgnoreInvalidRules || !ok || len(c.parser.ProgramErrors()) != 0 {
 			c.recordParserDiagnostics(err)
 			return nil, fmt.Errorf("parsing rules: %w", err)
 		}
@@ -344,8 +344,7 @@ func (c *Compiler) recordParserDiagnostics(fallback error) {
 	}
 	for _, parseErr := range parserErrors {
 		line, column := 0, 0
-		var lexicalErr *lexer.Error
-		if errors.As(parseErr, &lexicalErr) {
+		if lexicalErr, ok := errors.AsType[*lexer.Error](parseErr); ok {
 			line = lexicalErr.Position.Line
 			column = lexicalErr.Position.Column
 		}
@@ -409,8 +408,8 @@ func (c *Compiler) removeSemanticallyInvalidRules(program *ast.Program, validati
 		ruleErrors := make(map[string]*semantic.Error)
 		var programErrors []error
 		for _, err := range validationErrors {
-			var semanticErr *semantic.Error
-			if !errors.As(err, &semanticErr) || semanticErr.Rule == "" {
+			semanticErr, ok := errors.AsType[*semantic.Error](err)
+			if !ok || semanticErr.Rule == "" {
 				programErrors = append(programErrors, err)
 				continue
 			}
@@ -521,12 +520,7 @@ func ruleHasModifier(rule *ast.Rule, modifier ast.Modifier) bool {
 	if rule == nil {
 		return false
 	}
-	for _, candidate := range rule.Modifiers {
-		if candidate == modifier {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(rule.Modifiers, modifier)
 }
 
 // compileSemanticWithContext performs semantic analysis with context support
@@ -560,8 +554,7 @@ func (c *Compiler) compileSemanticWithContext(ctx context.Context, program *ast.
 		for _, err := range errs {
 			line, col := 0, 0
 			code := ""
-			var semErr *semantic.Error
-			if errors.As(err, &semErr) {
+			if semErr, ok := errors.AsType[*semantic.Error](err); ok {
 				line = semErr.Position.Line
 				col = semErr.Position.Column
 				code = semErr.Code
@@ -617,8 +610,7 @@ func (c *Compiler) compileCodeGenWithContext(ctx context.Context, program *ast.P
 			break
 		}
 
-		var ruleErr *RuleCompileError
-		if c.options.IgnoreInvalidRules && errors.As(err, &ruleErr) {
+		if ruleErr, ok := errors.AsType[*RuleCompileError](err); c.options.IgnoreInvalidRules && ok {
 			rule := findRule(program.Rules, ruleErr.Rule)
 			if rule == nil {
 				return nil, fmt.Errorf("code generation identified unknown rule %q: %w", ruleErr.Rule, err)

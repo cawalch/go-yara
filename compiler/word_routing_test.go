@@ -15,7 +15,7 @@ import (
 
 func booleanRoutingSource() string {
 	var source strings.Builder
-	for i := 0; i < 16; i++ {
+	for i := range 16 {
 		fmt.Fprintf(&source, `rule route%d { strings: $a="code%02d_SHARED_0123456789ABCDE" $b="event" condition: all of them }`+"\n", i, i)
 	}
 	return source.String()
@@ -202,13 +202,13 @@ func TestBooleanRoutingPreparationAndConcurrentScanners(t *testing.T) {
 		})
 	}
 	var wg sync.WaitGroup
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
 			scanner := NewScanner(program, WithBooleanRouting())
 			defer scanner.Close()
-			for j := 0; j < 10; j++ {
+			for range 10 {
 				data := []byte(fmt.Sprintf("event code%02d_SHARED_0123456789ABCDE", i))
 				if got, err := scanner.Matches(data); !got || err != nil {
 					t.Errorf("concurrent positive = %v,%v", got, err)

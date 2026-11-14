@@ -78,7 +78,7 @@ func (s *Scanner) ruleConstraintsMatchContext(rule *CompiledRule, ctx *MatchCont
 			}
 		}
 	}
-	if !pruneFilesize {
+	if !pruneFilesize || len(rule.mandatoryAssertions) == 0 {
 		return true
 	}
 	// Never let a false guard hide a dynamic type error elsewhere in the rule.

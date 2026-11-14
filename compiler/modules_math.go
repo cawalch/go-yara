@@ -247,7 +247,7 @@ func moduleMonteCarloPi(data []byte, signed bool) ModuleValue {
 	}
 	for index := 0; index < count*6; index += 6 {
 		var x, y float64
-		for j := 0; j < 3; j++ {
+		for j := range 3 {
 			x = x*256 + monteCarloByte(data[index+j], signed)
 			y = y*256 + monteCarloByte(data[index+j+3], signed)
 		}

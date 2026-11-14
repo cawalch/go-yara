@@ -428,7 +428,7 @@ func addRegexMatchesLinear(
 	isWide bool,
 	bs *regex.VMBatch,
 ) {
-	for pos := 0; pos < len(data); pos++ {
+	for pos := range data {
 		if scanCanceledAt(ctx.cancelDone, pos) {
 			return
 		}

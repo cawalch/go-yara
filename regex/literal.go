@@ -1,9 +1,9 @@
 package regex
 
 import (
-	"bytes"
 	"encoding/binary"
 	"math"
+	"slices"
 )
 
 // LiteralSuffix returns the required trailing literal bytes that every match
@@ -47,10 +47,8 @@ func LiteralSuffix(code []byte) []byte {
 		}
 	}
 
-	for _, target := range targets {
-		if target == matchPC {
-			return nil
-		}
+	if slices.Contains(targets, matchPC) {
+		return nil
 	}
 
 	var suffix []byte
@@ -58,78 +56,18 @@ func LiteralSuffix(code []byte) []byte {
 	for cur >= 2 && code[cur-2] == OpLiteral {
 		litPC := cur - 2
 		// If any branch targets inside (litPC, matchPC], suffix is broken.
-		hasBranchInside := false
-		for _, target := range targets {
-			if target > litPC && target <= matchPC {
-				hasBranchInside = true
-				break
-			}
-		}
-		if hasBranchInside {
+		if slices.ContainsFunc(targets, func(target int) bool { return target > litPC && target <= matchPC }) {
 			break
 		}
 		suffix = append([]byte{code[litPC+1]}, suffix...)
 		// If litPC itself is targeted, we cannot extend further back.
-		isTarget := false
-		for _, target := range targets {
-			if target == litPC {
-				isTarget = true
-				break
-			}
-		}
-		if isTarget {
+		if slices.Contains(targets, litPC) {
 			break
 		}
 		cur = litPC
 	}
 
 	return suffix
-}
-
-func indexASCIIFold(input, target []byte) int {
-	if len(target) == 0 {
-		return 0
-	}
-	if len(input) < len(target) {
-		return -1
-	}
-	firstLower := toLowerASCII(target[0])
-	firstUpper := toUpperASCII(target[0])
-	maxStart := len(input) - len(target)
-	for i := 0; i <= maxStart; i++ {
-		b := input[i]
-		if b == firstLower || b == firstUpper {
-			match := true
-			for j := 1; j < len(target); j++ {
-				if toLowerASCII(input[i+j]) != toLowerASCII(target[j]) {
-					match = false
-					break
-				}
-			}
-			if match {
-				return i
-			}
-		}
-	}
-	return -1
-}
-
-func containsWideBytes(input, target []byte) bool {
-	if len(target) == 0 {
-		return true
-	}
-	var inline [32]byte
-	var wideTarget []byte
-	if len(target)*2 <= len(inline) {
-		wideTarget = inline[:len(target)*2]
-	} else {
-		wideTarget = make([]byte, len(target)*2)
-	}
-	for i, ch := range target {
-		wideTarget[i*2] = ch
-		wideTarget[i*2+1] = 0
-	}
-	return bytes.Contains(input, wideTarget)
 }
 
 // nodeMaxLength computes the maximum match length of node (-1 if unbounded)

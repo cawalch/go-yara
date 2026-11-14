@@ -226,12 +226,7 @@ func conditionObservesMatchOccurrences(expr ast.Expression) bool {
 	case *ast.UnaryOp:
 		return conditionObservesMatchOccurrences(e.Right)
 	case *ast.FunctionCall:
-		for _, arg := range e.Args {
-			if conditionObservesMatchOccurrences(arg) {
-				return true
-			}
-		}
-		return false
+		return slices.ContainsFunc(e.Args, conditionObservesMatchOccurrences)
 	case *ast.ForLoop:
 		if e.InRange != nil || e.AtOffset != nil {
 			return true
@@ -245,12 +240,7 @@ func conditionObservesMatchOccurrences(expr ast.Expression) bool {
 	case *ast.PercentExpression:
 		return conditionObservesMatchOccurrences(e.Value)
 	case *ast.StringTuple:
-		for _, element := range e.Elements {
-			if conditionObservesMatchOccurrences(element) {
-				return true
-			}
-		}
-		return false
+		return slices.ContainsFunc(e.Elements, conditionObservesMatchOccurrences)
 	default:
 		return true
 	}
@@ -311,12 +301,7 @@ func containsStringReference(expr ast.Expression) bool {
 	case *ast.IndexAccess:
 		return containsStringReference(e.Object) || containsStringReference(e.Index)
 	case *ast.FunctionCall:
-		for _, arg := range e.Args {
-			if containsStringReference(arg) {
-				return true
-			}
-		}
-		return false
+		return slices.ContainsFunc(e.Args, containsStringReference)
 	case *ast.ForLoop:
 		return containsStringReference(e.Range) || containsStringReference(e.Condition) || containsStringReference(e.InRange) || containsStringReference(e.AtOffset)
 	case *ast.OfExpression:
@@ -324,12 +309,7 @@ func containsStringReference(expr ast.Expression) bool {
 	case *ast.PercentExpression:
 		return containsStringReference(e.Value)
 	case *ast.StringTuple:
-		for _, el := range e.Elements {
-			if containsStringReference(el) {
-				return true
-			}
-		}
-		return false
+		return slices.ContainsFunc(e.Elements, containsStringReference)
 	default:
 		return false
 	}
@@ -337,12 +317,7 @@ func containsStringReference(expr ast.Expression) bool {
 
 // hasModifier checks if the rule has a specific modifier
 func (rc *ruleCompiler) hasModifier(modifiers []ast.Modifier, m ast.Modifier) bool {
-	for _, mod := range modifiers {
-		if mod == m {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(modifiers, m)
 }
 
 // compileMeta converts AST metadata entries into a flat map[string]any
@@ -526,10 +501,8 @@ func (rc *ruleCompiler) CompileProgram(program *ast.Program) ([]*CompiledRule, e
 
 // registerExternalVariable registers an external variable with the condition compiler
 func (rc *ruleCompiler) registerExternalVariable(extVar *ast.ExternalVariable) {
-	for _, name := range rc.externalNames {
-		if name == extVar.Name {
-			return
-		}
+	if slices.Contains(rc.externalNames, extVar.Name) {
+		return
 	}
 	rc.externalNames = append(rc.externalNames, extVar.Name)
 }
@@ -559,10 +532,8 @@ func (rc *ruleCompiler) allocateExternalSlots(stringOffsets map[string]int) (map
 }
 
 func (rc *ruleCompiler) registerGlobalVariable(globalVar *ast.GlobalVariable) error {
-	for _, name := range rc.globalNames {
-		if name == globalVar.Name {
-			return fmt.Errorf("global variable %q already defined", globalVar.Name)
-		}
+	if slices.Contains(rc.globalNames, globalVar.Name) {
+		return fmt.Errorf("global variable %q already defined", globalVar.Name)
 	}
 	value, err := compileGlobalValue(globalVar.Value)
 	if err != nil {

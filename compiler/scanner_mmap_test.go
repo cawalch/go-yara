@@ -208,10 +208,8 @@ rule ConcurrentMmap {
 	var wg sync.WaitGroup
 	errCh := make(chan error, 10)
 
-	for i := 0; i < 8; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 8 {
+		wg.Go(func() {
 			s := program.NewScanner()
 			defer s.Close()
 
@@ -223,7 +221,7 @@ rule ConcurrentMmap {
 			if len(res.MatchedRules) != 1 || res.MatchedRules[0].Rule != "ConcurrentMmap" {
 				errCh <- errors.New("rule mismatch in concurrent scan")
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	close(errCh)

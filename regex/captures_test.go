@@ -238,7 +238,7 @@ func TestExecCapturesHeapUnmatchedSlot(t *testing.T) {
 	input := "abcdefgh"
 
 	want := make([]CaptureSpan, 9)
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		want[i] = CaptureSpan{Start: i, End: i + 1, Matched: true}
 	}
 	captures, matched := ExecCapturesAtWithScratch(nil, code, []byte(input), 0, 0, len(input), len(groups))
@@ -299,7 +299,7 @@ func TestExecCapturesHeapBranchClone(t *testing.T) {
 	input := "abcdefghi"
 
 	want := make([]CaptureSpan, 10)
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		want[i] = CaptureSpan{Start: i, End: i + 1, Matched: true}
 	}
 	want[8] = CaptureSpan{Start: 8, End: 9, Matched: true}

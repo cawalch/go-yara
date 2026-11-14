@@ -1,7 +1,6 @@
 package compiler
 
 import (
-	"context"
 	"testing"
 )
 
@@ -12,8 +11,7 @@ func TestFindHexMatchesCancelableXorWithoutAnchor(t *testing.T) {
 		t.Fatalf("parseHexPattern() error = %v", err)
 	}
 	pattern.XorKeys = []byte{0x42}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	matches := findHexMatches(pattern, []byte{1, 2, 3, 4}, ctx.Done())
 	if len(matches) != 3 {

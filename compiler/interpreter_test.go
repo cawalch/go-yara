@@ -102,8 +102,7 @@ func TestInterpreterIntegerOnlyMixedDoubleDoesNotPanic(t *testing.T) {
 	if err == nil {
 		t.Fatal("Execute() error = nil, want type mismatch")
 	}
-	var interpErr *InterpreterError
-	if !errors.As(err, &interpErr) {
+	if _, ok := errors.AsType[*InterpreterError](err); !ok {
 		t.Fatalf("Execute() error = %T %v, want *InterpreterError", err, err)
 	}
 }

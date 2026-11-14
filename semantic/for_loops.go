@@ -2,6 +2,7 @@ package semantic
 
 import (
 	"maps"
+	"slices"
 	"strings"
 
 	"github.com/cawalch/go-yara/ast"
@@ -39,10 +40,8 @@ func containsAnonymousPlaceholder(expr ast.Expression) bool {
 	case *ast.Identifier:
 		return e.Name == "$"
 	case *ast.StringTuple:
-		for _, element := range e.Elements {
-			if containsAnonymousPlaceholder(element) {
-				return true
-			}
+		if slices.ContainsFunc(e.Elements, containsAnonymousPlaceholder) {
+			return true
 		}
 	case *ast.BinaryOp:
 		return containsAnonymousPlaceholder(e.Left) || containsAnonymousPlaceholder(e.Right)
@@ -53,10 +52,8 @@ func containsAnonymousPlaceholder(expr ast.Expression) bool {
 	case *ast.IndexAccess:
 		return containsAnonymousPlaceholder(e.Object) || containsAnonymousPlaceholder(e.Index)
 	case *ast.FunctionCall:
-		for _, arg := range e.Args {
-			if containsAnonymousPlaceholder(arg) {
-				return true
-			}
+		if slices.ContainsFunc(e.Args, containsAnonymousPlaceholder) {
+			return true
 		}
 	case *ast.ForLoop:
 		return containsAnonymousPlaceholder(e.Range) ||

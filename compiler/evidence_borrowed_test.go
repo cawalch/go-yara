@@ -107,7 +107,7 @@ func TestBorrowedEvidence_ScannerReuseFluctuatingFindings(t *testing.T) {
 	counts := []int{50, 0, 1000, 5, 200, 0, 500}
 	for _, count := range counts {
 		var input strings.Builder
-		for i := 0; i < count; i++ {
+		for i := range count {
 			fmt.Fprintf(&input, "id=%04d\n", i)
 		}
 		res, err := scanner.Scan([]byte(input.String()))
@@ -151,13 +151,13 @@ func TestBorrowedEvidence_ConcurrentScanners(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(goroutines)
 
-	for g := 0; g < goroutines; g++ {
+	for g := range goroutines {
 		go func(id int) {
 			defer wg.Done()
 			s := p.NewScanner(WithEvidence(64), WithBorrowedEvidence(true))
 			defer s.Close()
 
-			for it := 0; it < iterations; it++ {
+			for it := range iterations {
 				text := fmt.Sprintf("val=thread%diter%d\n", id, it)
 				res, err := s.Scan([]byte(text))
 				if err != nil {

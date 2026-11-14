@@ -61,11 +61,7 @@ func (s *Scanner) evaluateRuleCondition(
 	}
 
 	if !s.prefilterDisabled && input.skipUnmatchedContext && input.usesharedAutomaton && s.missingRequiredString(rule) {
-		s.recordRuleResult(rule, false)
-		if s.hookMask&(hookBitTelemetry|hookBitRuleProfile) != 0 {
-			s.recordRuleEvaluatedHooks(rule, false, state)
-		}
-		return ruleEvaluation{}, nil
+		return s.finishRuleEvaluation(rule, false, state)
 	}
 
 	if err := s.populateRuleMatchContext(ctx, rule, input); err != nil {
@@ -76,18 +72,10 @@ func (s *Scanner) evaluateRuleCondition(
 		s.recordPatternProfiles(rule, input.usesharedAutomaton)
 	}
 	if !s.prefilterDisabled && input.skipUnmatchedContext && s.hasForbiddenStringMatch(rule, input.usesharedAutomaton) {
-		s.recordRuleResult(rule, false)
-		if s.hookMask&(hookBitTelemetry|hookBitRuleProfile) != 0 {
-			s.recordRuleEvaluatedHooks(rule, false, state)
-		}
-		return ruleEvaluation{}, nil
+		return s.finishRuleEvaluation(rule, false, state)
 	}
 	if !s.prefilterDisabled && rule.RequiresStringMatch && len(s.matchCtx.spans) == 0 {
-		s.recordRuleResult(rule, false)
-		if s.hookMask&(hookBitTelemetry|hookBitRuleProfile) != 0 {
-			s.recordRuleEvaluatedHooks(rule, false, state)
-		}
-		return ruleEvaluation{}, nil
+		return s.finishRuleEvaluation(rule, false, state)
 	}
 
 	if err := s.executeCondition(rule); err != nil {
@@ -97,12 +85,18 @@ func (s *Scanner) evaluateRuleCondition(
 		return ruleEvaluation{}, err
 	}
 	matched := s.interp.ruleResultByIndex(rule.Index, rule.Name)
-	s.recordRuleResult(rule, matched)
+	return s.finishRuleEvaluation(rule, matched, state)
+}
 
+func (s *Scanner) finishRuleEvaluation(
+	rule *CompiledRule,
+	matched bool,
+	state ruleProfileState,
+) (ruleEvaluation, error) {
+	s.recordRuleResult(rule, matched)
 	if s.hookMask&(hookBitTelemetry|hookBitRuleProfile) != 0 {
 		s.recordRuleEvaluatedHooks(rule, matched, state)
 	}
-
 	return ruleEvaluation{matched: matched}, nil
 }
 
@@ -161,6 +155,9 @@ func (s *Scanner) ruleHeaderConstraintsMatchInput(ctx context.Context, rule *Com
 		defer s.leaveScanPhase(previous)
 	}
 	pruneFilesize := input.skipUnmatchedContext || s.omitMatches || s.reportedMatchesOnly
+	if len(rule.HeaderConstraints) == 0 && (!pruneFilesize || len(rule.mandatoryAssertions) == 0) {
+		return true
+	}
 	if !s.blockScan {
 		return s.ruleConstraintsMatchContext(rule, &MatchContext{Data: input.data, FileSize: int64(len(input.data)), cancelDone: ctx.Done()}, pruneFilesize)
 	}

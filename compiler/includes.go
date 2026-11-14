@@ -108,9 +108,9 @@ func (traversal *includeTraversal) processInclude(program *ast.Program, baseDir 
 	}
 	includedProgram, parseErr := includedParser.ParseRulesWithContext(traversal.ctx)
 	if parseErr != nil {
-		var partialErr *parser.PartialParseError
+		partialErr, ok := errors.AsType[*parser.PartialParseError](parseErr)
 		if !traversal.compiler.options.IgnoreInvalidRules ||
-			!errors.As(parseErr, &partialErr) ||
+			!ok ||
 			len(includedParser.ProgramErrors()) != 0 {
 			return fmt.Errorf("failed to parse include file %s: %w", include.File, parseErr)
 		}

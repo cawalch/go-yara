@@ -91,7 +91,7 @@ func TestLibyaraPERVAToOffset(t *testing.T) {
 		data := make([]byte, 0x10000)
 		copy(data, pefixture.New(false))
 		binary.LittleEndian.PutUint16(data[0x86:], 97)
-		for i := 0; i < 97; i++ {
+		for i := range 97 {
 			section := data[0x178+i*40:]
 			copy(section, ".text\x00\x00\x00")
 			binary.LittleEndian.PutUint32(section[8:], 0x200)

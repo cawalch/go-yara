@@ -51,7 +51,7 @@ func peHostSectionIndex(data ModuleValue, arg ModuleValue) ModuleValue {
 	if limit <= 0 || sections.object == nil {
 		return ModuleValue{}
 	}
-	for index := int64(0); index < limit; index++ {
+	for index := range limit {
 		if index >= int64(len(sections.object.elements)) {
 			continue
 		}

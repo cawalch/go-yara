@@ -37,25 +37,6 @@ func TestLiteralSuffix(t *testing.T) {
 	}
 }
 
-func TestIndexASCIIFold(t *testing.T) {
-	if got := indexASCIIFold([]byte("abcDef"), []byte("dEf")); got != 3 {
-		t.Fatalf("indexASCIIFold = %d, want 3", got)
-	}
-	if got := indexASCIIFold([]byte("abcDef"), []byte("xyz")); got != -1 {
-		t.Fatalf("indexASCIIFold = %d, want -1", got)
-	}
-}
-
-func TestContainsWideBytes(t *testing.T) {
-	data := []byte{'h', 0, 'e', 0, 'l', 0, 'l', 0, 'o', 0}
-	if !containsWideBytes(data, []byte("ell")) {
-		t.Fatal("containsWideBytes failed")
-	}
-	if containsWideBytes(data, []byte("world")) {
-		t.Fatal("containsWideBytes false positive")
-	}
-}
-
 func TestNodeMaxLengthMatchesAtomAnalysis(t *testing.T) {
 	patterns := []string{
 		`abc`, `a.c`, `a*`, `a+`, `(ab)+`, `(a|bcd|ef)`, `a{2,5}`, `a{3,}`, `(ab){2,4}x`,

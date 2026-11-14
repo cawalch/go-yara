@@ -235,7 +235,7 @@ func classByteSet(class *Class) ByteSet {
 
 func positiveClassByteSet(class *Class) ByteSet {
 	var set ByteSet
-	for value := 0; value < 256; value++ {
+	for value := range 256 {
 		member := class.Bitmap[value/8]&(byte(1)<<uint(value%8)) != 0
 		if member {
 			set.add(byte(value))
@@ -253,7 +253,7 @@ func complementByteSet(set ByteSet) ByteSet {
 
 func maskedByteSet(value, mask byte, negated bool) ByteSet {
 	var set ByteSet
-	for candidate := 0; candidate < 256; candidate++ {
+	for candidate := range 256 {
 		matches := byte(candidate)&mask == value&mask
 		if matches != negated {
 			set.add(byte(candidate))
@@ -264,7 +264,7 @@ func maskedByteSet(value, mask byte, negated bool) ByteSet {
 
 func predicateByteSet(predicate func(byte) bool) ByteSet {
 	var set ByteSet
-	for value := 0; value < 256; value++ {
+	for value := range 256 {
 		if predicate(byte(value)) {
 			set.add(byte(value))
 		}
@@ -441,7 +441,7 @@ func ReversePrefixAnalysisWithOffset(ast *AST, atom []byte, minOffset int, flags
 	atomLen := len(atom)
 	for i := 0; i <= len(nodes)-atomLen; i++ {
 		matches := true
-		for k := 0; k < atomLen; k++ {
+		for k := range atomLen {
 			if !nodeMatchesAtomByte(nodes[i+k], atom[k], flags) {
 				matches = false
 				break

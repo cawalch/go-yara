@@ -13,7 +13,7 @@ import (
 
 func conditionAssertionRules(count int) string {
 	var source strings.Builder
-	for index := 0; index < count; index++ {
+	for index := range count {
 		fmt.Fprintf(&source, `rule r%d { strings: $a = "MZ" condition: uint16(0) == 0x5a4d and uint32(2) == 0x04030201 and filesize < 20MB and #a > 0 and $a at 0 } `, index)
 	}
 	return source.String()

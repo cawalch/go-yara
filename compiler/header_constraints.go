@@ -3,6 +3,7 @@ package compiler
 import (
 	"encoding/binary"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -63,12 +64,8 @@ func mandatoryHeaderConstraints(expr ast.Expression) map[string]HeaderConstraint
 	switch binaryExpr.Op {
 	case token.AND:
 		combined := make(map[string]HeaderConstraint, len(left)+len(right))
-		for key, constraint := range left {
-			combined[key] = constraint
-		}
-		for key, constraint := range right {
-			combined[key] = constraint
-		}
+		maps.Copy(combined, left)
+		maps.Copy(combined, right)
 		return combined
 	case token.OR:
 		common := make(map[string]HeaderConstraint)

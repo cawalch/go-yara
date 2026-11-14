@@ -290,7 +290,7 @@ func buildFixedRegexDispatch(rules []*CompiledRule) *fixedRegexDispatch {
 	cacheSeen := make(map[int]struct{}, len(entries))
 	cacheEntryCounts := make(map[int]int, len(entries))
 	for entryIndex, entry := range entries {
-		for value := 0; value < 256; value++ {
+		for value := range 256 {
 			if entry.pattern.byteSet.Contains(byte(value)) {
 				dispatch.buckets[value] = append(dispatch.buckets[value], entryIndex)
 			}

@@ -110,7 +110,7 @@ func Check() (int, error) {
 		if err != nil {
 			return i, err
 		}
-		for repeat := 0; repeat < 3; repeat++ {
+		for range 3 {
 			r = s.Scan(data)
 			if r.Error != "" || !reflect.DeepEqual(r.Matches, f.Want) {
 				return i, fmt.Errorf("%s: got %+v, want %v", f.Name, r, f.Want)

@@ -80,7 +80,13 @@ func indexByteRangeSIMD(data []byte, lower, upper byte) int {
 // implementations use small archsimd bridges; this handles emulated vectors.
 func firstMatchingByteEmulated(mask simd.Mask8s) int {
 	value := mask.ToInt8s()
-	lanes := make([]int8, value.Len())
+	var stackLanes [64]int8
+	lanes := stackLanes[:0]
+	if n := value.Len(); n <= len(stackLanes) {
+		lanes = stackLanes[:n]
+	} else {
+		lanes = make([]int8, n)
+	}
 	value.Store(lanes)
 	for index, lane := range lanes {
 		if lane != 0 {

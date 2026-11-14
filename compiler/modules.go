@@ -3,6 +3,7 @@ package compiler
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"reflect"
 	"slices"
@@ -117,9 +118,7 @@ func buildBuiltinModules() map[string]Module {
 
 func defaultModules() map[string]Module {
 	modules := make(map[string]Module, len(builtinModules))
-	for name, module := range builtinModules {
-		modules[name] = module
-	}
+	maps.Copy(modules, builtinModules)
 	return modules
 }
 

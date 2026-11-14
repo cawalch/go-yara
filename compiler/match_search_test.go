@@ -82,7 +82,7 @@ func BenchmarkMatchOffsetSearch(b *testing.B) {
 	// 5,000 matches distributed across 1 MB
 	const numMatches = 5000
 	mc := &MatchContext{compact: true, spans: make(map[string][]matchSpan)}
-	for i := 0; i < numMatches; i++ {
+	for i := range numMatches {
 		mc.spans["$a"] = append(mc.spans["$a"], matchSpan{Offset: int64(i * 200), Length: 5})
 	}
 

@@ -133,8 +133,7 @@ rule active_context {
 	if err != nil {
 		t.Fatalf("CompileSource() error = %v", err)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	data := []byte("alpha bravo")
 
 	scanner := NewScanner(program)
@@ -189,8 +188,7 @@ rule active_nontext {
 	if err != nil {
 		t.Fatalf("CompileSource() error = %v", err)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	scanner := NewScanner(program)
 	defer scanner.Close()
 
@@ -224,8 +222,7 @@ rule cancellation_benchmark {
 		b.Fatalf("CompileSource() error = %v", err)
 	}
 	data := []byte(strings.Repeat("0123456789", 100_000))
-	cancelable, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	cancelable := b.Context()
 
 	benchmarks := []struct {
 		name string
@@ -258,8 +255,7 @@ rule condition_loop_benchmark {
 	if err != nil {
 		b.Fatalf("CompileSource() error = %v", err)
 	}
-	cancelable, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	cancelable := b.Context()
 
 	benchmarks := []struct {
 		name string
@@ -1545,11 +1541,11 @@ func TestCompiledProgramConcurrentPooledScanning(t *testing.T) {
 	const iterations = 50
 	var wg sync.WaitGroup
 
-	for i := 0; i < workers; i++ {
+	for i := range workers {
 		wg.Add(1)
 		go func(workerID int) {
 			defer wg.Done()
-			for j := 0; j < iterations; j++ {
+			for j := range iterations {
 				var data []byte
 				switch (workerID + j) % 3 {
 				case 0:
