@@ -721,10 +721,7 @@ func (scratch *hexMatchScratch) matchEach(
 				dp++
 
 			case HexTokenJump:
-				minJ := head.Min
-				if minJ < 0 {
-					minJ = 0
-				}
+				minJ := max(head.Min, 0)
 				maxJ := head.Max
 				if maxJ < 0 {
 					maxJ = len(data) - dp

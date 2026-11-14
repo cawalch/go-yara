@@ -1,6 +1,6 @@
 module github.com/cawalch/go-yara
 
-go 1.26.0
+go 1.27.0
 
 require (
 	github.com/cawalch/go-pe v0.0.0-20261112204814-1fd2b3174895

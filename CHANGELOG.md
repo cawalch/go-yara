@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+* Updated the minimum supported Go toolchain version to Go 1.27.0 across module metadata, CI workflows, and documentation, adopted Go 1.27 standard library idioms across compiler/regex/semantic/CLI packages, removed dead regex literal helpers, and streamlined scanner prefilter/cancellation fast paths.
+
 ### Added
 
 * Added `pe.calculate_checksum()` for libyara-compatible whole-file PE checksum calculation, computed lazily at most once per scan in bounded 64 KiB chunks with cancellation polling and explicit `undefined` behavior on partial reader prefixes, segmented blocks, non-PE inputs, and host snapshots ([#480](https://github.com/cawalch/go-yara/issues/480)).

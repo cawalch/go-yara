@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/cawalch/go-yara/regex"
@@ -570,12 +571,7 @@ func (i *Interpreter) evaluateStringSetCount(set []string, count Value, predicat
 		return true
 	}
 	if count.IntVal == 0 {
-		for _, id := range set {
-			if predicate(id) {
-				return false
-			}
-		}
-		return true
+		return !slices.ContainsFunc(set, predicate)
 	}
 	if count.IntVal < 0 {
 		return false

@@ -91,9 +91,10 @@ func (s *Scanner) recordSkippedCandidateRule(
 }
 
 func (s *Scanner) recordAllRulesRejected(ctx context.Context, result *ScanResult, scanInput ruleScanInput) error {
+	done := ctx.Done()
 	for _, rule := range s.program.Rules {
-		if err := ctx.Err(); err != nil {
-			return err
+		if scanCanceled(done) {
+			return ctx.Err()
 		}
 		if !s.shouldEvaluateRule(rule) {
 			continue
@@ -105,7 +106,28 @@ func (s *Scanner) recordAllRulesRejected(ctx context.Context, result *ScanResult
 			s.recordSkippedCandidateRule(rule, result, true)
 		}
 	}
-	return ctx.Err()
+	if scanCanceled(done) {
+		return ctx.Err()
+	}
+	return nil
+}
+
+func (s *Scanner) rejectAllRules(ctx context.Context, result *ScanResult, scanInput ruleScanInput) error {
+	clear(s.ruleResultsDense)
+	if err := s.recordAllRulesRejected(ctx, result, scanInput); err != nil {
+		return err
+	}
+	s.recordScanRejection(result)
+	return nil
+}
+
+func (s *Scanner) resetScanState() {
+	clear(s.assertionResults)
+	if s.evidenceBorrowed {
+		s.borrowedFieldsMapIdx = 0
+		s.borrowedFindingsIdx = 0
+		s.borrowedPlanMapIdx = 0
+	}
 }
 
 func (s *Scanner) recordScanRejection(
@@ -158,19 +180,12 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (result *Sca
 		}()
 	}
 
-	clear(s.assertionResults)
-	if s.evidenceBorrowed {
-		s.borrowedFieldsMapIdx = 0
-		s.borrowedFindingsIdx = 0
-		s.borrowedPlanMapIdx = 0
-	}
+	s.resetScanState()
 	if s.reportedMatchesOnly && s.compactPrefilterRejects(ctx, data) {
 		scanInput := ruleScanInput{data: data, usesharedAutomaton: false, skipUnmatchedContext: true}
-		clear(s.ruleResultsDense)
-		if err := s.recordAllRulesRejected(ctx, result, scanInput); err != nil {
+		if err := s.rejectAllRules(ctx, result, scanInput); err != nil {
 			return nil, err
 		}
-		s.recordScanRejection(result)
 		return result, nil
 	}
 
@@ -194,7 +209,6 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (result *Sca
 	}
 	scanInput := ruleScanInput{data: data, usesharedAutomaton: usesharedAutomaton, skipUnmatchedContext: s.reportedMatchesOnly}
 
-	clear(s.ruleResultsDense)
 	allRejected := false
 	if !s.prefilterDisabled {
 		if usesharedAutomaton {
@@ -203,14 +217,13 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (result *Sca
 			allRejected = s.allEvaluatedRulesPrefilterRejected(ctx, data, false)
 		}
 	}
-	//nolint:nestif // cancellation and result materialization share the rejection boundary
 	if allRejected {
-		if err := s.recordAllRulesRejected(ctx, result, scanInput); err != nil {
+		if err := s.rejectAllRules(ctx, result, scanInput); err != nil {
 			return nil, err
 		}
-		s.recordScanRejection(result)
 		return result, nil
 	}
+	clear(s.ruleResultsDense)
 
 	// YARA spec: global rules are evaluated first and ALL must match
 	// before non-global rules are evaluated.
@@ -221,12 +234,13 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (result *Sca
 	// 1. Evaluate all rules to populate match context and rule results.
 	// 2. Build MatchedRules, skipping non-global rules if any global rule failed.
 
+	done := ctx.Done()
 	// Pass 1: evaluate candidate rules and retain the full result map.
 	s.matchedRuleIndices = s.matchedRuleIndices[:0]
 	s.interp.ResetIterationCount()
 	for ruleIdx, rule := range s.program.Rules {
-		if err := ctx.Err(); err != nil {
-			return nil, err
+		if scanCanceled(done) {
+			return nil, ctx.Err()
 		}
 		// Evaluation includes dependencies of selected and global rules.
 		if !s.shouldEvaluateRule(rule) {
@@ -277,8 +291,8 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (result *Sca
 		}
 	}
 
-	if err := ctx.Err(); err != nil {
-		return nil, err
+	if scanCanceled(done) {
+		return nil, ctx.Err()
 	}
 
 	// Check if all global rules matched
@@ -301,8 +315,8 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (result *Sca
 	}
 	for _, ruleIndex := range s.matchedRuleIndices {
 		rule := s.program.Rules[ruleIndex]
-		if err := ctx.Err(); err != nil {
-			return nil, err
+		if scanCanceled(done) {
+			return nil, ctx.Err()
 		}
 		// Skip non-global rules if not all global rules matched
 		if !rule.IsGlobal && !allGlobalMatched {
@@ -383,17 +397,16 @@ func (s *Scanner) evaluatePublicRules(
 	data []byte,
 	matchedRuleIndices *[]int,
 ) (publicRuleEvaluation, error) {
-	clear(s.assertionResults)
-	if s.evidenceBorrowed {
-		s.borrowedFieldsMapIdx = 0
-		s.borrowedFindingsIdx = 0
-		s.borrowedPlanMapIdx = 0
-	}
+	done := ctx.Done()
+	s.resetScanState()
 	if s.compactPrefilterRejects(ctx, data) {
 		if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
 			s.telemetrySink.PrefilterRejects++
 		}
-		return publicRuleEvaluation{}, ctx.Err()
+		if scanCanceled(done) {
+			return publicRuleEvaluation{}, ctx.Err()
+		}
+		return publicRuleEvaluation{}, nil
 	}
 	s.skipUnmatchedNonText = true
 	usesharedAutomaton, err := s.preparePatternScan(ctx, data)
@@ -418,14 +431,20 @@ func (s *Scanner) evaluatePublicRules(
 		if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
 			s.telemetrySink.PrefilterRejects++
 		}
-		return result, ctx.Err()
+		if scanCanceled(done) {
+			return result, ctx.Err()
+		}
+		return result, nil
 	}
 	for _, rule := range s.program.Rules {
 		if err := s.evaluatePublicRule(ctx, rule, &result); err != nil {
 			return publicRuleEvaluation{}, err
 		}
 	}
-	return result, ctx.Err()
+	if scanCanceled(done) {
+		return result, ctx.Err()
+	}
+	return result, nil
 }
 
 func (s *Scanner) evaluateSharedPublicRules(
@@ -461,8 +480,8 @@ func (s *Scanner) evaluatePublicRule(
 	rule *CompiledRule,
 	result *publicRuleEvaluation,
 ) error {
-	if err := ctx.Err(); err != nil {
-		return err
+	if scanCanceled(ctx.Done()) {
+		return ctx.Err()
 	}
 	if !s.shouldEvaluateRule(rule) {
 		return nil

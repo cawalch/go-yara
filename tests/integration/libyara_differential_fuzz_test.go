@@ -191,7 +191,7 @@ func scanWithLibyara(t testing.TB, bin, src string, data []byte) (map[string][]s
 	}
 	res := map[string][]span{}
 	var lastRule string
-	for _, line := range strings.Split(string(out), "\n") {
+	for line := range strings.SplitSeq(string(out), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
@@ -528,7 +528,7 @@ func TestLibyaraDifferentialCorpus(t *testing.T) {
 		evaluate(s[0], s[1])
 	}
 	if raw, err := os.ReadFile(out); err == nil {
-		for _, line := range strings.Split(string(raw), "\n") {
+		for line := range strings.SplitSeq(string(raw), "\n") {
 			if strings.TrimSpace(line) == "" {
 				continue
 			}

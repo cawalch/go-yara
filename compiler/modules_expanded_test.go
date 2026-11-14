@@ -39,7 +39,7 @@ func TestModuleRangeCacheAcrossRulesAndScans(t *testing.T) {
 	digest := fmt.Sprintf("%x", sha256.Sum256(first))
 	var source strings.Builder
 	source.WriteString(`import "hash" import "math" `)
-	for index := 0; index < 100; index++ {
+	for index := range 100 {
 		fmt.Fprintf(&source, `rule r%d { condition: hash.sha256(0, filesize) == "%s" and math.entropy(0, filesize) == 0.0 } `, index, digest)
 	}
 	program, err := NewCompiler().CompileSource(source.String())
@@ -127,7 +127,7 @@ func TestModuleCacheHitAllocations(t *testing.T) {
 
 func TestModuleCacheBoundedAndReset(t *testing.T) {
 	var cache moduleCallCache
-	for offset := int64(0); offset < 100; offset++ {
+	for offset := range int64(100) {
 		key, _ := moduleCallKey("hash.crc32", []ModuleValue{IntegerValue(offset), IntegerValue(1)})
 		cache.put(key, IntegerValue(offset))
 	}
@@ -220,7 +220,7 @@ func BenchmarkRepeatedModuleRanges(b *testing.B) {
 		b.Run(fmt.Sprintf("cache=%t", cached), func(b *testing.B) {
 			var source strings.Builder
 			source.WriteString(`import "hash" import "math" `)
-			for index := 0; index < 100; index++ {
+			for index := range 100 {
 				fmt.Fprintf(&source, `rule r%d { condition: hash.sha256(0, filesize) == "never" or math.entropy(0, filesize) > 8.0 } `, index)
 			}
 			program, err := NewCompiler().CompileSource(source.String())
@@ -271,12 +271,12 @@ func TestModuleCacheConcurrentScanners(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for index := 0; index < 8; index++ {
+	for index := range 8 {
 		t.Run(strconv.Itoa(index), func(t *testing.T) {
 			t.Parallel()
 			scanner := program.NewScanner()
 			defer scanner.Close()
-			for count := 0; count < 20; count++ {
+			for count := range 20 {
 				data, want := []byte("abc"), 2
 				if (count+index)%2 == 0 {
 					data, want = []byte("xyz"), 0

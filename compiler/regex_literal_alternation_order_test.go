@@ -49,7 +49,7 @@ func TestLiteralAlternationAtomOrderCapturesAndReuse(t *testing.T) {
 
 func TestLiteralAlternationAtomOrderManyBranches(t *testing.T) {
 	alternatives := []string{"abc", "ab"}
-	for i := 0; i < 257; i++ {
+	for i := range 257 {
 		alternatives = append(alternatives, fmt.Sprintf("x%03d", i))
 	}
 	p := mustCompileStreamingProgram(t, `rule p {strings:$a=/(`+strings.Join(alternatives, "|")+`)/ wide nocase condition:!a[1]==6}`)

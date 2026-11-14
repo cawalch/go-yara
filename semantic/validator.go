@@ -646,8 +646,7 @@ func (v *Validator) getTypeFromSymbol(symbol *Symbol) *TypeInfo {
 
 // addError adds a semantic error
 func (v *Validator) addError(err error) {
-	var semanticErr *Error
-	if errors.As(err, &semanticErr) && semanticErr.Rule == "" {
+	if semanticErr, ok := errors.AsType[*Error](err); ok && semanticErr.Rule == "" {
 		semanticErr.Rule = v.currentRule
 	}
 	v.errors = append(v.errors, err)

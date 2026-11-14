@@ -121,7 +121,7 @@ func TestPEOverlay(t *testing.T) {
 					copy(data, pefixture.New(is64))
 					binary.LittleEndian.PutUint16(data[0x86:], 97)
 					start := peSectionOffset(data, 0)
-					for i := 0; i < 97; i++ {
+					for i := range 97 {
 						s := data[start+i*40:]
 						copy(s, ".text\x00\x00\x00")
 						binary.LittleEndian.PutUint32(s[8:], 0x200)

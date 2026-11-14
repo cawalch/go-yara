@@ -118,8 +118,7 @@ func TestLibyaraPECalculateChecksum(t *testing.T) {
 			assertReleaseScanResult(t, want, rFile)
 
 			if len(data) >= fs.MinMmapFileSize {
-				ctx, cancel := context.WithCancel(context.Background())
-				defer cancel()
+				ctx := t.Context()
 				rCtx, err := s.ScanFileWithContext(ctx, path)
 				if err != nil {
 					t.Fatal(err)

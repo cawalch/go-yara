@@ -133,7 +133,7 @@ func union(a, b byteSet) byteSet {
 var bitTests = func() []byteSet {
 	tests := make([]byteSet, 8)
 	for bit := range tests {
-		for b := 0; b < 256; b++ {
+		for b := range 256 {
 			if b&(1<<bit) != 0 {
 				tests[bit][b/64] |= uint64(1) << (b % 64)
 			}

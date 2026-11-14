@@ -25,7 +25,7 @@ func TestCombinedRegexPriority(t *testing.T) {
 			t.Fatal(expression, "build")
 		}
 		scratch := combinedRegexScratch{}
-		for n := 0; n < 40; n++ {
+		for n := range 40 {
 			for _, prefix := range []string{"key=", "key=ab", "key=b"} {
 				data := []byte(prefix + strings.Repeat("a", n) + "!")
 				b.nfa.match(data, &scratch, nil)

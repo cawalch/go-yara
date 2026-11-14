@@ -490,9 +490,10 @@ func (s *Scanner) evaluateStreamMatches(
 	}
 	headerContext := &MatchContext{Blocks: blocks, FileSize: acc.fileSize, cancelDone: ctx.Done()}
 
+	done := ctx.Done()
 	for _, rule := range s.program.Rules {
-		if err := ctx.Err(); err != nil {
-			return nil, err
+		if scanCanceled(done) {
+			return nil, ctx.Err()
 		}
 		if !s.shouldEvaluateRule(rule) {
 			continue
@@ -506,9 +507,7 @@ func (s *Scanner) evaluateStreamMatches(
 
 		// Check fixed-offset header constraints
 		if !s.ruleConstraintsMatchContext(rule, headerContext, s.omitMatches || s.reportedMatchesOnly) {
-			if rule.Index >= 0 && rule.Index < len(s.ruleResultsDense) {
-				s.ruleResultsDense[rule.Index] = false
-			}
+			s.recordRuleResult(rule, false)
 			if result.RuleResults != nil {
 				result.RuleResults[rule.Name] = false
 			}
@@ -520,7 +519,7 @@ func (s *Scanner) evaluateStreamMatches(
 		s.matchCtx.Reset(nil)
 		s.matchCtx.moduleCache = &s.moduleCache
 		s.matchCtx.assertionResults = s.assertionResults
-		s.matchCtx.cancelDone = ctx.Done()
+		s.matchCtx.cancelDone = done
 		s.matchCtx.maxMatchesPerPattern = 0
 		if s.fastScan && rule.FastScanSafe {
 			s.matchCtx.maxMatchesPerPattern = 1
@@ -537,9 +536,7 @@ func (s *Scanner) evaluateStreamMatches(
 
 		state.populated = true
 		if !s.prefilterDisabled && rule.RequiresStringMatch && len(s.matchCtx.spans) == 0 {
-			if rule.Index >= 0 && rule.Index < len(s.ruleResultsDense) {
-				s.ruleResultsDense[rule.Index] = false
-			}
+			s.recordRuleResult(rule, false)
 			if result.RuleResults != nil {
 				result.RuleResults[rule.Name] = false
 			}

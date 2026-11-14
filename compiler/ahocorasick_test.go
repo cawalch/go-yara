@@ -54,8 +54,7 @@ func TestSearchIterWithCancelPreservesSparseBoundaryMatches(t *testing.T) {
 	data := []byte(strings.Repeat("x", 2*cancelableSearchWindow))
 	start := cancelableSearchWindow - len(pattern)/2
 	copy(data[start:], pattern)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	want := slices.Collect(automaton.SearchIter(data))
 	got := slices.Collect(automaton.searchIterWithCancel(data, ctx.Done()))
@@ -81,8 +80,7 @@ func TestSearchIterWithCancelPreservesSparseRootMatches(t *testing.T) {
 	data := []byte(strings.Repeat("x", 2*cancelableSearchWindow))
 	copy(data[cancelableSearchWindow-4:], "alpha-pattern")
 	copy(data[len(data)-32:], "bravo-pattern")
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	want := slices.Collect(automaton.SearchIter(data))
 	got := slices.Collect(automaton.searchIterWithCancel(data, ctx.Done()))

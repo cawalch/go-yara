@@ -71,7 +71,7 @@ func TestDuplicateHashRulesDoNotAddScanAllocations(t *testing.T) {
 	allocations := func(count int) float64 {
 		var source strings.Builder
 		source.WriteString(`import "hash" `)
-		for index := 0; index < count; index++ {
+		for index := range count {
 			fmt.Fprintf(&source, `rule r%d {condition:hash.sha256(0,filesize)=="never"} `, index)
 		}
 		program, err := NewCompiler().CompileSourceWithContext(context.Background(), source.String())

@@ -106,8 +106,8 @@ func TestWordRoutingRegexByteParity(t *testing.T) {
 				t.Fatal(err)
 			}
 			flags := (&ruleCompiler{}).deriveRegexFlags(source, nil) | regex.FlagsScan
-			for b := 0; b < 256; b++ {
-				for phase := 0; phase < 8; phase++ {
+			for b := range 256 {
+				for phase := range 8 {
 					text := anchor
 					if phase%2 != 0 {
 						text = strings.ToUpper(text)

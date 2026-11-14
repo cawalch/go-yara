@@ -24,7 +24,7 @@ func TestGetVMStateResetsOverflowedGeneration(t *testing.T) {
 		cur:     make([]thread, 0, 4),
 		next:    make([]thread, 0, 4),
 	}
-	for attempt := 0; attempt < 1000; attempt++ {
+	for range 1000 {
 		st.gen = -1
 		_ = vmPool.Get()
 		vmPool.Put(st)

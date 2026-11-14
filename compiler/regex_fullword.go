@@ -1,6 +1,10 @@
 package compiler
 
-import "github.com/cawalch/go-yara/regex"
+import (
+	"slices"
+
+	"github.com/cawalch/go-yara/regex"
+)
 
 // Regex patterns without libyara atoms use its forward-only match callback,
 // which omits the wide flag when checking fullword boundaries. This serialized
@@ -26,10 +30,8 @@ func regexHasLiteralAtom(node *regex.Node) bool {
 	case regex.NodeLiteral:
 		return true
 	case regex.NodeConcat:
-		for _, child := range node.Children {
-			if regexHasLiteralAtom(child) {
-				return true
-			}
+		if slices.ContainsFunc(node.Children, regexHasLiteralAtom) {
+			return true
 		}
 	case regex.NodeAlt:
 		if len(node.Children) == 0 {

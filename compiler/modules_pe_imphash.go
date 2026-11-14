@@ -156,7 +156,7 @@ func (builder *peImphashBuilder) writeByte(character byte) {
 func (builder *peImphashBuilder) writeLower(value string) {
 	for len(value) > 0 {
 		n := min(len(value), len(builder.scratch))
-		for i := 0; i < n; i++ {
+		for i := range n {
 			character := value[i]
 			if character >= 'A' && character <= 'Z' {
 				character += 'a' - 'A'
@@ -169,8 +169,8 @@ func (builder *peImphashBuilder) writeLower(value string) {
 }
 
 func peCString(value string) string {
-	if index := strings.IndexByte(value, 0); index >= 0 {
-		return value[:index]
+	if before, _, ok := strings.Cut(value, "\x00"); ok {
+		return before
 	}
 	return value
 }

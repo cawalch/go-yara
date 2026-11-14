@@ -391,9 +391,7 @@ func scanTargets(compiledProgram *compiler.CompiledProgram, targets []string, ar
 	var wg sync.WaitGroup
 
 	for w := 0; w < numWorkers; w++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			scanner := compiler.NewScanner(compiledProgram, scannerOptions...)
 			defer scanner.Close()
 
@@ -441,7 +439,7 @@ func scanTargets(compiledProgram *compiler.CompiledProgram, targets []string, ar
 
 				results[job.idx] = fileScanResult{target: job.path, res: res, data: data, cleanup: cleanup}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 

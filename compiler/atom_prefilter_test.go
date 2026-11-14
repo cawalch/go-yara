@@ -695,7 +695,7 @@ func TestIndexRegexLiteralNoCaseUsesEitherASCIICase(t *testing.T) {
 
 func TestIndexASCIIFoldByteMatchesScalarSearch(t *testing.T) {
 	for length := 0; length <= 40; length++ {
-		for alignment := 0; alignment < 8; alignment++ {
+		for alignment := range 8 {
 			data := make([]byte, alignment+length)
 			for index := range data {
 				data[index] = byte(index*37 + length*11)

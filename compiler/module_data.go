@@ -68,7 +68,7 @@ func bindModuleValue(field ModuleField, data reflect.Value, depth int) (ModuleVa
 		return ModuleValue{}, nil
 	}
 	if data.CanInterface() {
-		if value, ok := data.Interface().(ModuleValue); ok && (value.Type == ModuleUndefined || value.Type == field.Kind && field.Kind <= ModuleBoolean) {
+		if value, ok := reflect.TypeAssert[ModuleValue](data); ok && (value.Type == ModuleUndefined || value.Type == field.Kind && field.Kind <= ModuleBoolean) {
 			return value, nil
 		}
 	}

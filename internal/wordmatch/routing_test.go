@@ -56,7 +56,7 @@ func TestRoutingSignedContextsAndPhases(t *testing.T) {
 		t.Run(strconv.FormatBool(backwards), func(t *testing.T) {
 			var rules []Rule
 			var inputs [][]byte
-			for i := 0; i < 24; i++ {
+			for i := range 24 {
 				guard := Term{Set: routingSet(byte('A'+i), byte('A'+i)), Min: 1, Max: 1}
 				sequence := Sequence{{Literal: anchor}, guard}
 				if backwards {
@@ -64,8 +64,8 @@ func TestRoutingSignedContextsAndPhases(t *testing.T) {
 				}
 				rules = append(rules, Rule{All: []Pattern{{Any: []Sequence{sequence}}}})
 			}
-			for offset := 0; offset < 32; offset++ {
-				for tail := 0; tail < 8; tail++ {
+			for offset := range 32 {
+				for tail := range 8 {
 					body := append(bytes.Clone(anchor), byte('A'+offset%24))
 					if backwards {
 						body = append([]byte{byte('A' + offset%24)}, anchor...)
@@ -93,9 +93,9 @@ func TestRoutingVariableClassesAndAlternatives(t *testing.T) {
 	anchor := []byte("VARIABLE_SHARED_0123456789")
 	var rules []Rule
 	var inputs [][]byte
-	for i := 0; i < 16; i++ {
+	for i := range 16 {
 		var alternatives []Sequence
-		for shift := 0; shift < 2; shift++ {
+		for shift := range 2 {
 			first := byte(32 + 8*i + 4*shift)
 			set := routingSet(first, first+4)
 			alternatives = append(alternatives, Sequence{{Literal: []byte("!")}, {Set: set, Min: 1, Max: 3}, {Literal: anchor}, {Set: routingSet('0', '9'), Max: 2}})
@@ -145,7 +145,7 @@ func TestRoutingDeclinesAndCompileBounds(t *testing.T) {
 		t.Fatalf("short alternative: %v", err)
 	}
 	var unresolved []Rule
-	for i := 0; i < 32; i++ {
+	for i := range 32 {
 		unresolved = append(unresolved, Rule{All: []Pattern{{Any: []Sequence{{{Literal: bytes.Repeat([]byte{'a'}, 128)}}}}, {Any: []Sequence{{{Literal: []byte{byte(i)}}}}}}})
 	}
 	if program, err := CompileRouted(unresolved); !errors.Is(err, ErrIneligible) || program != nil {
@@ -163,7 +163,7 @@ func TestRoutingDeclinesAndCompileBounds(t *testing.T) {
 func TestRoutingOwnershipBudgetAndUnconstrainedEdges(t *testing.T) {
 	anchor := []byte("OWNED_SHARED_0123456789")
 	var rules []Rule
-	for i := 0; i < 16; i++ {
+	for i := range 16 {
 		rules = append(rules, Rule{All: []Pattern{{Any: []Sequence{{{Set: routingSet(byte(i), byte(i)), Min: 1, Max: 1}, {Literal: anchor}}}}}})
 	}
 	positive := append([]byte{0}, anchor...)
@@ -229,7 +229,7 @@ func TestRoutingDeepCorrelatedContexts(t *testing.T) {
 	scanner.exact.budgetLimit = 1 << 20
 	for i := range rules {
 		a, b := byte(i>>8), byte(i)
-		for alignment := 0; alignment < 8; alignment++ {
+		for alignment := range 8 {
 			data := append(bytes.Repeat([]byte{0xff}, alignment), anchor...)
 			data = append(data, a, b, a+b)
 			if got := scanner.Match(data); got != Match {
@@ -257,7 +257,7 @@ func FuzzRoutingParity(f *testing.F) {
 		}
 		anchor := append(append([]byte("routed_"), middle...), []byte("_0123456789ABCDE")...)
 		var rules []Rule
-		for i := 0; i < 9; i++ {
+		for i := range 9 {
 			rules = append(rules, Rule{All: []Pattern{{Any: []Sequence{{
 				{Literal: []byte("!")}, {Set: routingSet(byte(128+i), byte(128+i)), Min: 1, Max: 2},
 				{Literal: anchor, NoCase: i%2 == 0}, {Set: [4]uint64{math.MaxUint64, math.MaxUint64, math.MaxUint64, math.MaxUint64}, Max: 2},
@@ -359,7 +359,7 @@ func TestSharedPlanAndScannerReuse(t *testing.T) {
 	}
 	rules[0].All[0].Any[0] = nil
 	clear(anchor)
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			t.Parallel()
 			scanner := p.NewScanner()

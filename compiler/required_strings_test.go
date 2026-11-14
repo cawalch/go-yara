@@ -95,7 +95,7 @@ func TestRequiredStringsPreserveErrors(t *testing.T) {
 
 func TestRequiredStringsSharedRegexParity(t *testing.T) {
 	var source strings.Builder
-	for i := 0; i < 40; i++ {
+	for i := range 40 {
 		fmt.Fprintf(&source, `rule r%d { strings: $source="event" $indicator=/denied_%02d=[0-9]{4}/ condition: $source and $indicator }`, i, i)
 	}
 	program, err := NewCompiler().CompileSource(source.String())
@@ -160,7 +160,7 @@ func TestRequiredGateBooleanParity(t *testing.T) {
 		assertRequiredGateShape(t, condition, rule)
 		scanner := program.NewScanner()
 		defer scanner.Close()
-		for mask := 0; mask < 32; mask++ {
+		for mask := range 32 {
 			var pieces []string
 			for bit, text := range []string{"alpha", "beta12", "gamma", "delta", "THETA"} {
 				if mask&(1<<bit) != 0 {

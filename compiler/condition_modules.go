@@ -62,11 +62,11 @@ func (cc *conditionCompiler) moduleConstant(expr ast.Expression) *ModuleValue {
 				return nil
 			}
 			schema := cc.moduleSchemas[e.Name]
-			for index := len(path) - 1; index >= 0; index-- {
+			for index, p := range slices.Backward(path) {
 				if schema == nil {
 					return nil
 				}
-				field, ok := schema.Fields[path[index]]
+				field, ok := schema.Fields[p]
 				if !ok {
 					return nil
 				}

@@ -3,6 +3,7 @@ package compiler
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -147,10 +148,8 @@ func hasUnboundedJump(tokens []HexPatternToken) bool {
 			return true
 		}
 		if tok.Kind == HexTokenAlt {
-			for _, alt := range tok.Alternatives {
-				if hasUnboundedJump(alt) {
-					return true
-				}
+			if slices.ContainsFunc(tok.Alternatives, hasUnboundedJump) {
+				return true
 			}
 		}
 	}
@@ -200,13 +199,13 @@ func parseHexJumpRange(content string) (int, int, error) {
 	if content == "" || content == "-" {
 		return 0, -1, nil
 	}
-	if idx := strings.IndexByte(content, '-'); idx >= 0 {
-		minPart := strings.TrimSpace(content[:idx])
+	if before, after, ok := strings.Cut(content, "-"); ok {
+		minPart := strings.TrimSpace(before)
 		minVal, err := strconv.Atoi(minPart)
 		if err != nil {
 			return 0, 0, fmt.Errorf("invalid jump min: %w", err)
 		}
-		maxPart := strings.TrimSpace(content[idx+1:])
+		maxPart := strings.TrimSpace(after)
 		if maxPart == "" {
 			return minVal, -1, nil
 		}

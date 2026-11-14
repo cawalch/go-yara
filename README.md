@@ -23,7 +23,7 @@ Plan to rebuild compiled caches from rule source: the new writer uses format 18,
 
 ## Requirements and Installation
 
-`go-yara` requires **Go 1.26.0** or later.
+`go-yara` requires **Go 1.27.0** or later.
 
 Install the compiler package:
 

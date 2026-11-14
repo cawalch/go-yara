@@ -1,6 +1,7 @@
 package semantic
 
 import (
+	"maps"
 	"sort"
 	"strings"
 
@@ -171,9 +172,7 @@ func (c *ruleReferenceCollector) collect(expr ast.Expression, scoped map[string]
 
 func cloneBoolMap(src map[string]bool) map[string]bool {
 	dst := make(map[string]bool, len(src)+1)
-	for key, value := range src {
-		dst[key] = value
-	}
+	maps.Copy(dst, src)
 	return dst
 }
 

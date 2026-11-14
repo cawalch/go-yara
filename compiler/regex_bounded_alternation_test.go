@@ -38,7 +38,7 @@ func TestBoundedAlternationCapturesAndFixedOffset(t *testing.T) {
 
 func TestBoundedAlternationFastReuseAndLargeAlternation(t *testing.T) {
 	alternatives := []string{"a", "ab"}
-	for i := 0; i < 257; i++ {
+	for i := range 257 {
 		alternatives = append(alternatives, fmt.Sprintf("x%03d", i))
 	}
 	for _, pattern := range []string{`(a|ab){1,2}`, `(` + strings.Join(alternatives, "|") + `){1,2}`} {

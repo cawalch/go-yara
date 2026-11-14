@@ -195,7 +195,7 @@ func BenchmarkPEScanner(b *testing.B) {
 			if enabled {
 				source.WriteString(`import "pe"` + "\n")
 			}
-			for i := 0; i < count; i++ {
+			for i := range count {
 				condition := `uint16(0) == 0x5a4d`
 				if enabled {
 					condition = `pe.is_pe and pe.number_of_sections == 2 and pe.sections[0].name == ".text"`

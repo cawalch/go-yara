@@ -212,7 +212,7 @@ func (i *Interpreter) executeIterStartIntEnum() error {
 
 	vals := make([]int64, count)
 	base := len(i.stack) - count
-	for idx := 0; idx < count; idx++ {
+	for idx := range count {
 		val := i.stack[base+idx]
 		if val.Type != ValueTypeInt {
 			return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpIterStartIntEnum, Message: "enumeration elements must be integers"}

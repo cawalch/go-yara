@@ -112,17 +112,19 @@ func (s *Scanner) compactPrefilterRejects(ctx context.Context, data []byte) (rej
 	if gate == nil || s.prefilterDisabled || len(data) > 1024 || s.program.sharedAutomaton != gate.automaton {
 		return false
 	}
-	started := s.prefilterStart()
-	defer func() {
-		if ctx.Err() == nil {
-			s.finishPrefilter(PrefilterDecision{Stage: PrefilterStageCompactMask, Rejected: rejected}, started)
-		}
-	}()
+	if s.hookMask&hookBitPrefilter != 0 {
+		started := s.prefilterStart()
+		defer func() {
+			if ctx.Err() == nil {
+				s.finishPrefilter(PrefilterDecision{Stage: PrefilterStageCompactMask, Rejected: rejected}, started)
+			}
+		}()
+	}
 	if s.hookMask&hookBitTelemetryLatency != 0 {
 		previous := s.enterScanPhase(PhasePrefilter)
 		defer s.leaveScanPhase(previous)
 	}
-	if ctx.Err() != nil {
+	if scanCanceled(ctx.Done()) {
 		return true
 	}
 	ac := gate.automaton

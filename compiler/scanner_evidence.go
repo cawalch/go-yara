@@ -204,14 +204,8 @@ func (s *Scanner) populateSingleMatchEvidenceAt(data []byte, base int64, match *
 		match.MatchedData = copyBytes(data[start : start+copyLength])
 	}
 	if s.matchContextEnabled {
-		beforeStart := start - s.matchContextBefore
-		if beforeStart < 0 {
-			beforeStart = 0
-		}
-		afterEnd := end + s.matchContextAfter
-		if afterEnd > len(data) {
-			afterEnd = len(data)
-		}
+		beforeStart := max(start-s.matchContextBefore, 0)
+		afterEnd := min(end+s.matchContextAfter, len(data))
 		match.ContextBefore = copyBytes(data[beforeStart:start])
 		match.ContextAfter = copyBytes(data[end:afterEnd])
 	}

@@ -212,7 +212,7 @@ func wordRoutingLiteral(term wordmatch.Term) wordmatch.Term {
 		return term
 	}
 	var values []byte
-	for b := 0; b < 256; b++ {
+	for b := range 256 {
 		if term.Set[b/64]&(uint64(1)<<uint(b%64)) != 0 {
 			values = append(values, byte(b))
 			if len(values) > 2 {

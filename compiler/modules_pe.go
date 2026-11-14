@@ -139,7 +139,7 @@ func isNativePESchema(schema *ModuleSchema) bool {
 
 func newPESchema() *ModuleSchema {
 	fields := map[string]ModuleField{}
-	for _, name := range strings.Fields(`is_pe machine number_of_sections timestamp
+	for name := range strings.FieldsSeq(`is_pe machine number_of_sections timestamp
 		pointer_to_symbol_table number_of_symbols size_of_optional_header characteristics
 		entry_point entry_point_raw image_base number_of_rva_and_sizes opthdr_magic
 		size_of_code size_of_initialized_data size_of_uninitialized_data base_of_code base_of_data
@@ -157,7 +157,7 @@ func newPESchema() *ModuleSchema {
 	section := &ModuleSchema{Fields: map[string]ModuleField{
 		"name": {Kind: ModuleString}, "full_name": {Kind: ModuleString},
 	}}
-	for _, name := range strings.Fields(`characteristics virtual_address virtual_size
+	for name := range strings.FieldsSeq(`characteristics virtual_address virtual_size
 		raw_data_offset raw_data_size pointer_to_relocations pointer_to_line_numbers
 		number_of_relocations number_of_line_numbers`) {
 		section.Fields[name] = ModuleField{Kind: ModuleInteger}

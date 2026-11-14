@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"maps"
 	"math/bits"
 )
 
@@ -72,9 +73,7 @@ func corpusSharedAtoms(rules []*CompiledRule) map[string]regexPrefilterAtom {
 	if selected == nil {
 		return updates
 	}
-	for key, atom := range updates {
-		selected[key] = atom
-	}
+	maps.Copy(selected, updates)
 	return selected
 }
 
@@ -278,10 +277,7 @@ func atomEntropy(atom []byte) int {
 			sumCLogC += cLogCTable[c]
 		}
 	}
-	entropy := nLogN - sumCLogC
-	if entropy < 0 {
-		entropy = 0
-	}
+	entropy := max(nLogN-sumCLogC, 0)
 	classCount := bits.OnesCount8(classes)
 	return (entropy >> 3) + distinct*2 + classCount*4
 }

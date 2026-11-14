@@ -3,6 +3,7 @@ package compiler
 import (
 	"context"
 	"fmt"
+	"maps"
 	"math"
 	"slices"
 
@@ -114,13 +115,14 @@ func (s *Scanner) extractGlobalMatchesInt(
 	}
 	// Keep concrete search entry points so background scans avoid cancellation
 	// polling while both paths share the same candidate-routing callback.
-	if ctx.Done() == nil {
+	done := ctx.Done()
+	if done == nil {
 		s.program.sharedAutomaton.Search(data, yield)
 	} else {
-		s.program.sharedAutomaton.SearchWithCancel(data, ctx.Done(), yield)
+		s.program.sharedAutomaton.SearchWithCancel(data, done, yield)
 	}
-	if err := ctx.Err(); err != nil {
-		return err
+	if scanCanceled(done) {
+		return ctx.Err()
 	}
 	return s.populateNonTextPrefilterCache(ctx, data, &s.nonTextCache)
 }
@@ -155,7 +157,10 @@ func (s *Scanner) addStaticMatchesInt(
 			s.matchCtx.AddMatch(m)
 		}
 	}
-	return ctx.Err()
+	if scanCanceled(done) {
+		return ctx.Err()
+	}
+	return nil
 }
 
 func packFastScanKey(ruleIndex, stringIndex int) (uint64, bool) {
@@ -168,8 +173,12 @@ func packFastScanKey(ruleIndex, stringIndex int) (uint64, bool) {
 }
 
 func (s *Scanner) addLocalTextMatches(ctx context.Context, rule *CompiledRule, data []byte) error {
+	done := ctx.Done()
 	if rule == nil || rule.automaton == nil || len(data) == 0 {
-		return ctx.Err()
+		if scanCanceled(done) {
+			return ctx.Err()
+		}
+		return nil
 	}
 	if s.matchCtx.maxMatchesPerPattern <= 0 {
 		yield := func(match acMatch) bool {
@@ -177,12 +186,15 @@ func (s *Scanner) addLocalTextMatches(ctx context.Context, rule *CompiledRule, d
 			acceptAutomatonMatch(s.matchCtx, rule, data, match)
 			return true
 		}
-		if ctx.Done() == nil {
+		if done == nil {
 			rule.automaton.Search(data, yield)
 		} else {
-			rule.automaton.SearchWithCancel(data, ctx.Done(), yield)
+			rule.automaton.SearchWithCancel(data, done, yield)
 		}
-		return ctx.Err()
+		if scanCanceled(done) {
+			return ctx.Err()
+		}
+		return nil
 	}
 
 	matched := make(map[string]bool, len(rule.TextPatterns))
@@ -360,12 +372,16 @@ func (s *Scanner) addLocalNonTextMatches(
 	usesharedAutomaton bool,
 	canShortCircuit bool,
 ) error {
+	done := ctx.Done()
 	if rule == nil {
-		return ctx.Err()
+		if scanCanceled(done) {
+			return ctx.Err()
+		}
+		return nil
 	}
 	for id, regexInfo := range rule.RegexPatterns {
-		if err := ctx.Err(); err != nil {
-			return err
+		if scanCanceled(done) {
+			return ctx.Err()
 		}
 		modifiers := rule.StringModifiers[id]
 		if matches, ok := s.getNonTextMatches(cache, regexInfo.cacheIndex, usesharedAutomaton); ok {
@@ -379,18 +395,14 @@ func (s *Scanner) addLocalNonTextMatches(
 			continue
 		}
 		addRegexMatchesWithModifiersCached(s.matchCtx, id, regexInfo, data, modifiers, &s.regexByteSetCache)
-		if s.matchCtx.maxMatchesPerPattern <= 0 && regexInfo.cacheIndex >= 0 && regexInfo.cacheIndex < len(cache.matches) {
-			dst := cache.matches[regexInfo.cacheIndex][:0]
-			dst = append(dst, s.matchCtx.spans[id]...)
-			cache.set(regexInfo.cacheIndex, dst)
-		}
+		s.storeNonTextCache(cache, regexInfo.cacheIndex, id)
 		if canShortCircuit && len(s.matchCtx.spans[id]) > 0 && s.isRuleConditionSatisfied(rule) {
 			return nil
 		}
 	}
 	for id, pattern := range rule.HexPatterns {
-		if err := ctx.Err(); err != nil {
-			return err
+		if scanCanceled(done) {
+			return ctx.Err()
 		}
 		if pattern != nil {
 			if matches, ok := s.getNonTextMatches(cache, pattern.cacheIndex, usesharedAutomaton); ok {
@@ -401,7 +413,7 @@ func (s *Scanner) addLocalNonTextMatches(
 				continue
 			}
 		}
-		findHexMatchesEach(pattern, data, ctx.Done(), &s.hexScratch, func(m Match) bool {
+		findHexMatchesEach(pattern, data, done, &s.hexScratch, func(m Match) bool {
 			m.Pattern = id
 			if matchPassesModifiers(data, m, rule.StringModifiers[id], false) {
 				s.matchCtx.AddMatch(m)
@@ -411,16 +423,25 @@ func (s *Scanner) addLocalNonTextMatches(
 			}
 			return true
 		})
-		if s.matchCtx.maxMatchesPerPattern <= 0 && pattern != nil && pattern.cacheIndex >= 0 && pattern.cacheIndex < len(cache.matches) {
-			dst := cache.matches[pattern.cacheIndex][:0]
-			dst = append(dst, s.matchCtx.spans[id]...)
-			cache.set(pattern.cacheIndex, dst)
+		if pattern != nil {
+			s.storeNonTextCache(cache, pattern.cacheIndex, id)
 		}
 		if canShortCircuit && len(s.matchCtx.spans[id]) > 0 && s.isRuleConditionSatisfied(rule) {
 			return nil
 		}
 	}
-	return ctx.Err()
+	if scanCanceled(done) {
+		return ctx.Err()
+	}
+	return nil
+}
+
+func (s *Scanner) storeNonTextCache(cache *nonTextMatchCache, cacheIndex int, id string) {
+	if s.matchCtx.maxMatchesPerPattern <= 0 && cacheIndex >= 0 && cacheIndex < len(cache.matches) {
+		dst := cache.matches[cacheIndex][:0]
+		dst = append(dst, s.matchCtx.spans[id]...)
+		cache.set(cacheIndex, dst)
+	}
 }
 
 func addCachedMatches(ctx *MatchContext, id string, matches []matchSpan) {
@@ -603,8 +624,6 @@ func cloneExternalValues(values map[string]externalValue) map[string]externalVal
 		return nil
 	}
 	cloned := make(map[string]externalValue, len(values))
-	for name, value := range values {
-		cloned[name] = value
-	}
+	maps.Copy(cloned, values)
 	return cloned
 }

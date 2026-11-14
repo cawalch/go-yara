@@ -23,7 +23,7 @@ rule JS_Loader_TokenToEval {
 	// Create synthetic ~500 KB bundle with 1,000 occurrences of .token and eval(
 	// Separated by 250 bytes so proximity (<200) is never satisfied (worst-case full negative search!)
 	var buf bytes.Buffer
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		buf.WriteString(".token")
 		buf.Write(bytes.Repeat([]byte("x"), 250))
 		buf.WriteString("eval(")

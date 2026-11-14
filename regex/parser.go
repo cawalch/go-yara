@@ -3,6 +3,7 @@ package regex
 import (
 	"errors"
 	"fmt"
+	"slices"
 )
 
 // Parser provides a hand-written lexer+parser pipeline (incremental).
@@ -56,12 +57,7 @@ func hasGreedyQuantifier(n *Node) bool {
 	if (n.Kind == NodeStar || n.Kind == NodePlus || n.Kind == NodeRange) && n.Greedy {
 		return true
 	}
-	for _, child := range n.Children {
-		if hasGreedyQuantifier(child) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(n.Children, hasGreedyQuantifier)
 }
 
 // alternative := concatenation ( '|' concatenation )*

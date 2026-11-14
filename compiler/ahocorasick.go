@@ -400,10 +400,7 @@ func (ac *acAutomaton) closeTransitions() {
 	}
 	for head := 0; head < len(queue); head++ {
 		state := queue[head]
-		failure := ac.states[state].failure
-		if failure < 0 {
-			failure = 0
-		}
+		failure := max(ac.states[state].failure, 0)
 		for b := range ac.states[state].transitions {
 			next := ac.states[state].transitions[b]
 			if next == -1 {

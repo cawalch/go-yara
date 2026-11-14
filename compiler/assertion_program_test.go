@@ -98,7 +98,7 @@ func TestExternalAssertionsEquivalent(t *testing.T) {
 func TestSharedExternalGuards(t *testing.T) {
 	var source strings.Builder
 	source.WriteString(`external gate `)
-	for index := 0; index < 120; index++ {
+	for index := range 120 {
 		fmt.Fprintf(&source, `rule r%d {condition: gate==1 and filesize<10} `, index)
 	}
 	program, err := NewCompiler().CompileSourceWithContext(context.Background(), source.String())

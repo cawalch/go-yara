@@ -48,7 +48,7 @@ func TestFailureReuseBoundsAndReset(t *testing.T) {
 		b.Prepare(len(code))
 		b.EnableFailureReuse()
 		input := bytes.Repeat([]byte("a"), size)
-		for start := 0; start < 3; start++ {
+		for start := range 3 {
 			if got, _, _ := ExecMatchBatch(b, code, input, FlagsGreedy, start); got {
 				t.Fatal("unexpected match")
 			}
@@ -94,7 +94,7 @@ func TestFailureReuseIdentityAndCancellation(t *testing.T) {
 	} {
 		b.Prepare(len(code))
 		b.EnableFailureReuse()
-		for start := 0; start < 3; start++ {
+		for start := range 3 {
 			ExecMatchBatch(b, code, input, FlagsGreedy, start)
 		}
 		if got, _, _ := ExecMatchBatch(b, tc.code, tc.input, tc.flags, 0); !got {
@@ -105,7 +105,7 @@ func TestFailureReuseIdentityAndCancellation(t *testing.T) {
 	input = append(bytes.Repeat([]byte("a"), 256), 'b', '!')
 	b.Prepare(len(code))
 	b.EnableFailureReuse()
-	for start := 0; start < 3; start++ {
+	for start := range 3 {
 		ExecMatchBatch(b, code, input, FlagsGreedy, start)
 	}
 	if got, _, _ := ExecMatchBatch(b, code, input[:len(input)-1], FlagsGreedy, 0); !got {
@@ -150,14 +150,14 @@ func TestFailureReuseDoesNotRetainUnvisitedPositions(t *testing.T) {
 	b, release := NewVMBatch(len(code))
 	defer release()
 	b.EnableFailureReuse()
-	for start := 0; start < 3; start++ {
+	for start := range 3 {
 		ExecMatchBatch(b, code, input, FlagsGreedy, start)
 	}
 	input[256] = '\n'
 	input[511] = 'b'
 	b.Prepare(len(code))
 	b.EnableFailureReuse()
-	for start := 0; start < 3; start++ {
+	for start := range 3 {
 		ExecMatchBatch(b, code, input, FlagsGreedy, start)
 	}
 	if got, _, end := ExecMatchBatch(b, code, input, FlagsGreedy, 300); !got || end != 212 {
@@ -174,7 +174,7 @@ func TestFailureReuseLargeProgramFallback(t *testing.T) {
 	b, release := NewVMBatch(len(code))
 	defer release()
 	b.EnableFailureReuse()
-	for start := 0; start < 3; start++ {
+	for start := range 3 {
 		if got, _, _ := ExecMatchBatch(b, code, input, FlagsGreedy, start); got {
 			t.Fatal("unexpected match")
 		}
