@@ -18,12 +18,12 @@ rule WritableExecutableSection {
 }
 ```
 
-The module implements headers, sections, section lookup, standard import and
-export metadata, import and export queries by name or ordinal, and the standard
-import hash under [#359](https://github.com/cawalch/go-yara/issues/359). Regex
-import queries, delayed imports, regex export queries, resources, Rich headers,
-computed checksums, and Authenticode signatures remain unsupported and fail
-compilation.
+The module implements headers, sections, section lookup, RVA-to-file-offset
+mapping, standard import and export metadata, import and export queries by name
+or ordinal, and the standard import hash under
+[#359](https://github.com/cawalch/go-yara/issues/359). Regex import queries,
+delayed imports, regex export queries, resources, Rich headers, computed
+checksums, and Authenticode signatures remain unsupported and fail compilation.
 
 ## Supported fields
 
@@ -78,6 +78,22 @@ Both overloads return undefined for non-PE input, rejected headers, an undefined
 names without constructing `pe.sections` objects. With `WithModuleData`, the
 supplied `number_of_sections` and `sections` array are authoritative; an
 incomplete snapshot returns undefined and never falls back to file parsing.
+
+## RVA mapping
+
+`pe.rva_to_offset(rva)` maps a relative virtual address to a file offset using
+the same libyara-compatible policy as `pe.entry_point` and export offsets. It
+accounts for the larger of virtual and raw section sizes, overlapping sections,
+file-alignment rounding, page-aligned raw offsets, headers before the first
+section, virtual tails without raw data, and out-of-file targets. Unmapped and
+negative values are undefined; 64-bit arguments are not narrowed to 32-bit.
+Process-memory virtual addresses are not supported.
+
+The mapper uses the scan's input length. With `WithModuleData`, it requires the
+host `number_of_sections`, exposed `sections`, `file_alignment`, and
+`section_alignment` fields; incomplete or out-of-range host metadata is
+undefined and never falls back to file parsing. The supplied host fields remain
+owned by the scanner snapshot.
 
 ## Standard imports
 
@@ -371,8 +387,8 @@ support is built in; it is not a separately installed plugin.
 The first field access or PE query parses the headers and sections.
 Subsequent rules share that scan's snapshot. Version objects, directory
 descriptors, and section objects are constructed on demand. `pe.section_index`
-answers from the cached raw section records without constructing section
-objects. The first import
+and `pe.rva_to_offset` answer from the cached raw section records without
+constructing section objects. The first import
 query, import-field access, or `pe.imphash()` call parses and filters imports
 once. Queries, fields, and the hash share this cache. Counts and queries don't
 construct detail objects; each library constructs its function objects only
@@ -414,9 +430,9 @@ dispatch uses the same schema check as automatic field loading.
 ## Validation
 
 The differential suite uses libyara 4.5.8 in CI. It covers PE32 and PE32+
-headers, constants, section names, section lookup, standard import counts,
-details, queries, and imphash, export metadata and queries, undefined fields,
-entry-point mappings, real Go-toolchain PE fixtures, scanner reuse,
+headers, constants, section names, section lookup, RVA mapping, standard import
+counts, details, queries, and imphash, export metadata and queries, undefined
+fields, entry-point mappings, real Go-toolchain PE fixtures, scanner reuse,
 compiled-program round trips, compact scans, and reader scans within the
 retention limit.
 
@@ -424,7 +440,7 @@ To run the focused tests, install the `yara` CLI on `PATH`, then run:
 
 ```sh
 go test ./compiler ./tests/integration -run 'TestPE|TestLibyaraPE' -count=1
-go test ./compiler -run '^$' -bench 'BenchmarkPE(Module|Scanner|Sections|Imports|Imphash|Exports|ExportQueries)$' -benchmem
+go test ./compiler -run '^$' -bench 'BenchmarkPE(Module|Scanner|Sections|RVA|Imports|Imphash|Exports|ExportQueries)$' -benchmem
 ```
 
 The oracle tests skip if the CLI is absent. CI installs and checks the pinned

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+* Added `pe.rva_to_offset(rva)` using the same libyara-compatible mapping policy as entry points and export offsets, including section overlaps, virtual tails, alignment, headers, and file-size bounds. Host snapshots require complete section and alignment metadata; unmapped and negative values are undefined, and 64-bit arguments are not narrowed to 32-bit ([#466](https://github.com/cawalch/go-yara/issues/466)).
+
 * Added `pe.section_index(name)` and `pe.section_index(file_offset)` overloads using the cached raw section records. Name matching is case-sensitive and stops at NUL; offset lookup uses exclusive file-offset end bounds, first-match behavior, and the 96-section exposure limit. Host `number_of_sections`/`sections` snapshots remain authoritative ([#465](https://github.com/cawalch/go-yara/issues/465)).
 
 * Added `pe.imphash()` for libyara-compatible standard import hashes, using the existing lazy import cache and frozen ordinal aliases for `ws2_32.dll`, `wsock32.dll`, and `oleaut32.dll`. Host `import_details` snapshots are supported; delayed imports and non-standard alias resolution are not ([#470](https://github.com/cawalch/go-yara/issues/470)).

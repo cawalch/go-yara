@@ -225,6 +225,8 @@ func (i *Interpreter) executeModuleCall(id builtinFunction, function ModuleFunct
 			result = i.peImphash()
 		case "pe.section_index":
 			result = i.peSectionIndex(moduleArgs)
+		case "pe.rva_to_offset":
+			result = i.peRVAToOffsetQuery(moduleArgs)
 		case "pe.imports":
 			result = i.peImports(moduleArgs)
 		case "pe.exports", "pe.exports_index":
