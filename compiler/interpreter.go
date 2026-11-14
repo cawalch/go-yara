@@ -38,6 +38,8 @@ const (
 	ValueTypeUndefined
 	// ValueTypeObject references immutable structured module data.
 	ValueTypeObject
+	// ValueTypeRegex references a precompiled module regex argument by index.
+	ValueTypeRegex
 )
 
 // String constants for quantifiers
@@ -74,6 +76,7 @@ type Interpreter struct {
 	compiledRules       []*CompiledRule          // All compiled rules in the program
 	ruleMap             map[string]*CompiledRule // Index for O(1) rule lookup by name
 	stringLiterals      []string                 // String literal pool for OpPushStr
+	moduleRegexes       []*compiledModuleRegex   // Precompiled module regex pool for OpPushRegex
 	stringSets          [][]string               // String sets for OpOf
 	textStringSets      [][]string               // Text string sets for text-string-set iteration
 	allStrings          []string                 // All string identifiers for current rule
@@ -240,6 +243,7 @@ func (i *Interpreter) setCurrentCompiledRule(rule *CompiledRule) {
 	i.currentRuleIndex = rule.Index
 	i.currentCompiledRule = rule
 	i.stringLiterals = rule.StringLiterals
+	i.moduleRegexes = rule.moduleRegexes
 	i.stringSets = rule.StringSets
 	i.textStringSets = rule.TextStringSets
 	i.allStrings = rule.IndexToStringID // Pre-built in BuildStringIndex()

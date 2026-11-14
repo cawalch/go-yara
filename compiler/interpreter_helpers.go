@@ -5,6 +5,7 @@ type InterpreterError struct {
 	Type    InterpreterErrorType
 	Opcode  Opcode
 	Message string
+	cause   error
 }
 
 // InterpreterErrorType represents the type of interpreter error
@@ -33,6 +34,11 @@ const (
 
 func (e *InterpreterError) Error() string {
 	return e.Message
+}
+
+// Unwrap returns the underlying cause wrapped by this interpreter error, if any.
+func (e *InterpreterError) Unwrap() error {
+	return e.cause
 }
 
 // push pushes a value onto the stack with overflow checking

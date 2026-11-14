@@ -42,6 +42,7 @@ var contractSpecs = map[string]operandSpec{
 	"OpModuleGetField":         {kind: "OperandImmediate32", bytes: 4},
 	"OpIterStartModuleArray":   {kind: "OperandImmediate32", bytes: 4},
 	"OpPushStr":                {kind: "OperandImmediate32", bytes: 4},
+	"OpPushRegex":              {kind: "OperandImmediate32", bytes: 4},
 	"OpLoadVar":                {kind: "OperandImmediate32", bytes: 4},
 	"OpPushRule":               {kind: "OperandImmediate8", bytes: 1},
 	"OpInitRule":               {kind: "OperandImmediate8", bytes: 1},

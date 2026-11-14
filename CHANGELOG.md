@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+* Added `ModuleRegex`, `CompiledRegex`, `RegexValue`, `CompileModuleRegex`, and `ModuleContext.Done()` alongside lexer function-argument regex literal support (`(` / `,` contexts), `OpPushRegex`, and version 19 serialization so module functions accept precompiled, rule-owned regex arguments without per-file recompilation or raw serialized pointers ([#468](https://github.com/cawalch/go-yara/issues/468)).
+
 * Added `pe.calculate_checksum()` for libyara-compatible whole-file PE checksum calculation, computed lazily at most once per scan in bounded 64 KiB chunks with cancellation polling and explicit `undefined` behavior on partial reader prefixes, segmented blocks, non-PE inputs, and host snapshots ([#480](https://github.com/cawalch/go-yara/issues/480)).
 
 * Documented the native PE input-availability, file-offset vs. process-memory separation, and cooperative cancellation contract in [native PE RFC](docs/design/rfc_native_pe_module.md) and [PE module docs](docs/pe-module.md), added `peFullScanData` to guard future whole-file operations against partial stream/block inputs, and added bounded-loop cancellation polling in PE import/export/imphash paths ([#479](https://github.com/cawalch/go-yara/issues/479)).

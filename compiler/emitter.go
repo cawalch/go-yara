@@ -4,7 +4,14 @@ import (
 	"fmt"
 	"math"
 	"slices"
+
+	"github.com/cawalch/go-yara/regex"
 )
+
+type moduleRegexKey struct {
+	code  string
+	flags regex.Flags
+}
 
 // Emitter manages bytecode generation and instruction emission
 type emitter struct {
@@ -17,6 +24,9 @@ type emitter struct {
 	// String literal pool for OpPushStr
 	stringLiterals     []string
 	stringLiteralIndex map[string]int
+	// Compiled module regex pool for OpPushRegex
+	moduleRegexes    []*compiledModuleRegex
+	moduleRegexIndex map[moduleRegexKey]int
 }
 
 // NewEmitter creates a new bytecode emitter
@@ -28,6 +38,7 @@ func newEmitter() *emitter {
 		lineNumbers:        make(map[int]int),
 		stringLiterals:     make([]string, 0, 16),
 		stringLiteralIndex: make(map[string]int),
+		moduleRegexIndex:   make(map[moduleRegexKey]int),
 	}
 }
 
@@ -135,6 +146,49 @@ func (e *emitter) internStringLiteral(value string) int {
 	e.stringLiterals = append(e.stringLiterals, value)
 	e.stringLiteralIndex[value] = idx
 	return idx
+}
+
+// EmitPushRegex emits a push instruction for a precompiled module regex.
+func (e *emitter) EmitPushRegex(re *compiledModuleRegex, line, pos int) int {
+	index := e.internModuleRegex(re)
+	return e.EmitOpcodeWithOperand(
+		OpPushRegex,
+		Operand{Type: OperandImmediate32, Value: uint64(index)}, // #nosec G115 -- index is slice length >= 0
+		line,
+		pos,
+	)
+}
+
+func (e *emitter) internModuleRegex(re *compiledModuleRegex) int {
+	key := moduleRegexKey{code: string(re.code), flags: re.flags}
+	if idx, ok := e.moduleRegexIndex[key]; ok {
+		return idx
+	}
+	if e.moduleRegexIndex == nil {
+		e.moduleRegexIndex = make(map[moduleRegexKey]int)
+	}
+	idx := len(e.moduleRegexes)
+	e.moduleRegexes = append(e.moduleRegexes, &compiledModuleRegex{
+		code:  slices.Clone(re.code),
+		flags: re.flags,
+	})
+	e.moduleRegexIndex[key] = idx
+	return idx
+}
+
+// GetModuleRegexes returns a copy of the rule's precompiled module regex pool.
+func (e *emitter) GetModuleRegexes() []*compiledModuleRegex {
+	if len(e.moduleRegexes) == 0 {
+		return nil
+	}
+	out := make([]*compiledModuleRegex, len(e.moduleRegexes))
+	for idx, entry := range e.moduleRegexes {
+		out[idx] = &compiledModuleRegex{
+			code:  slices.Clone(entry.code),
+			flags: entry.flags,
+		}
+	}
+	return out
 }
 
 // GetStringLiterals returns a copy of the current string literal pool.
@@ -292,6 +346,9 @@ func (e *emitter) Reset() {
 	clear(e.lineNumbers)
 	e.stringLiterals = e.stringLiterals[:0]
 	clear(e.stringLiteralIndex)
+	clear(e.moduleRegexes)
+	e.moduleRegexes = e.moduleRegexes[:0]
+	clear(e.moduleRegexIndex)
 }
 
 // EmitHalt emits a halt instruction to terminate execution

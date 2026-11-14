@@ -196,6 +196,9 @@ const OpPush64 Opcode = 93
 // OpMatchesValue matches a string value without interpreting it as a pattern identifier.
 const OpMatchesValue Opcode = 94
 
+// OpPushRegex pushes a precompiled module regex reference by index into the rule regex pool.
+const OpPushRegex Opcode = 95
+
 // Fused condition instructions index the rule's immutable assertion pool.
 // Existing opcode values are preserved for serialized-program compatibility.
 const (
@@ -254,7 +257,7 @@ func isArithmeticOpcode(op Opcode) bool {
 func isStackOpcode(op Opcode) bool {
 	return (op >= OpPush && op <= OpCall) ||
 		(op >= OpPush8 && op <= OpPushRuleRef) ||
-		op == OpPushStr || op == OpLoadVar || op == OpPush64
+		op == OpPushStr || op == OpPushRegex || op == OpLoadVar || op == OpPush64
 }
 
 // isObjectOpcode checks if opcode is an object operation
@@ -360,6 +363,7 @@ var opcodeNames = map[Opcode]string{
 	OpInitRule:               "INIT_RULE",
 	OpMatchRule:              "MATCH_RULE",
 	OpPushStr:                "PUSH_STR",
+	OpPushRegex:              "PUSH_REGEX",
 	OpLoadVar:                "LOAD_VAR",
 	OpIterPushTotal:          "ITER_PUSH_TOTAL",
 	OpIncrM:                  "INCR_M",

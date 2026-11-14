@@ -18,7 +18,11 @@ func (l *Lexer) handleSlashToken(pos token.Position) token.Token {
 		}
 
 		// In strings section or after MATCHES, treat slash as regex literal.
-		if l.section == sectionStrings || l.looksLikeRegex() {
+		if l.section == sectionStrings ||
+			l.lastTokenType == token.MATCHES ||
+			l.lastTokenType == token.LPAREN ||
+			l.lastTokenType == token.COMMA ||
+			l.looksLikeRegex() {
 			return l.makeRegexToken(pos)
 		}
 	}

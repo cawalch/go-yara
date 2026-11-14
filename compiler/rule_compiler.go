@@ -171,6 +171,7 @@ func (rc *ruleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 		TextStringSets:      rc.conditionCompiler.GetTextStringSets(),
 		AnonymousStrings:    anonymousStrings,
 		StringLiterals:      rc.emitter.GetStringLiterals(),
+		moduleRegexes:       rc.emitter.GetModuleRegexes(),
 		StringKinds:         rc.stringKinds,
 		StringModifiers:     rc.stringModifiers,
 		CaptureBindings:     captureBindingsByPattern(rule),

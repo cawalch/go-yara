@@ -24,6 +24,7 @@ type serializedRule struct {
 	TextStringSets      [][]string
 	AnonymousStrings    []string
 	StringLiterals      []string
+	ModuleRegexes       []serializedModuleRegex
 	StringKinds         map[string]StringKind
 	StringModifiers     map[string][]serializedStringModifier
 	CaptureBindings     map[string][]serializedCaptureBinding
@@ -58,6 +59,11 @@ type serializedModuleFunction struct {
 	Signatures  [][]ModuleValueType
 	ReturnTypes []ModuleValueType
 	ReturnType  ModuleValueType
+}
+
+type serializedModuleRegex struct {
+	Code  []byte
+	Flags regex.Flags
 }
 
 type serializedStringModifier struct {
