@@ -68,7 +68,7 @@ tidy:
 fix: fmt tidy lint-fix
 
 vulncheck:
-	go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+	go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 
 fmt-check:
 	@files="$$(gofmt -s -l .)"; \
