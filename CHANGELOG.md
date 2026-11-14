@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+* Added `pe.overlay.offset` and `pe.overlay.size` computed lazily from cached exposed section extents (up to 96 sections) and the known input size, matching libyara's handling of empty overlays, zero-size sections, overflowed raw extents, and certificate directory placement without copying overlay bytes ([#467](https://github.com/cawalch/go-yara/issues/467)).
+
 * Added `pe.rva_to_offset(rva)` using the same libyara-compatible mapping policy as entry points and export offsets, including section overlaps, virtual tails, alignment, headers, and file-size bounds. Host snapshots require complete section and alignment metadata; unmapped and negative values are undefined, and 64-bit arguments are not narrowed to 32-bit ([#466](https://github.com/cawalch/go-yara/issues/466)).
 
 * Added `pe.section_index(name)` and `pe.section_index(file_offset)` overloads using the cached raw section records. Name matching is case-sensitive and stops at NUL; offset lookup uses exclusive file-offset end bounds, first-match behavior, and the 96-section exposure limit. Host `number_of_sections`/`sections` snapshots remain authoritative ([#465](https://github.com/cawalch/go-yara/issues/465)).

@@ -311,6 +311,7 @@ rule imports { condition: pe.number_of_imports > 0 and pe.number_of_imported_fun
 rule dll_count { condition: pe.imports("Example.DLL") > 0 }
 rule exports { condition: pe.number_of_exports > 0 and for any e in pe.export_details : (e.name == "Function00000" or e.ordinal == 7 or defined e.forward_name or e.offset == 0x220) }
 rule bitness { condition: pe.is_32bit() + pe.is_64bit() == 1 }
+rule overlay { condition: pe.overlay.offset >= 0 and pe.overlay.size >= 0 }
 rule is_dll { condition: pe.is_dll() == 0x2000 }
 rule dll_name { condition: defined pe.dll_name and pe.dll_name contains "DLL" }
 rule export_timestamp { condition: defined pe.export_timestamp and pe.export_timestamp >= 0 }
