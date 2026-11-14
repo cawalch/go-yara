@@ -24,6 +24,7 @@ type CompiledRule struct {
 	TextStringSets    [][]string        // Text string sets for text-string-set iteration
 	AnonymousStrings  []string          // Anonymous string identifiers for "$" expressions
 	StringLiterals    []string          // String literal pool for OpPushStr
+	moduleRegexes     []*compiledModuleRegex
 	StringKinds       map[string]StringKind
 	StringModifiers   map[string][]ast.StringModifier
 	CaptureBindings   map[string][]ast.CaptureBinding
@@ -198,6 +199,11 @@ func (cr *CompiledRule) Validate() error {
 	}
 	for _, plan := range cr.moduleIterations {
 		if err := plan.validate(); err != nil {
+			return err
+		}
+	}
+	for _, entry := range cr.moduleRegexes {
+		if err := validateCompiledModuleRegex(entry); err != nil {
 			return err
 		}
 	}

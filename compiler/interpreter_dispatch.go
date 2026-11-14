@@ -28,6 +28,7 @@ func init() {
 	opcodeTable[OpPushDbl] = (*Interpreter).executePushDouble
 	opcodeTable[OpPushRuleRef] = (*Interpreter).executePushRuleRef
 	opcodeTable[OpPushStr] = (*Interpreter).executePushString
+	opcodeTable[OpPushRegex] = (*Interpreter).executePushRegex
 	opcodeTable[OpPop] = (*Interpreter).executePop
 	opcodeTable[OpCall] = (*Interpreter).executeCall
 

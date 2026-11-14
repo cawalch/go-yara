@@ -69,7 +69,9 @@ func (l *Lexer) isRegexAllowed() bool {
 	if l.section == sectionNone {
 		return true
 	}
-	return l.lastTokenType == token.MATCHES
+	return l.lastTokenType == token.MATCHES ||
+		l.lastTokenType == token.LPAREN ||
+		l.lastTokenType == token.COMMA
 }
 
 // updateSectionState updates section tracking based on recently emitted tokens.

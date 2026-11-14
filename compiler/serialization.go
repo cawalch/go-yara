@@ -17,8 +17,8 @@ import (
 
 const (
 	compiledProgramMagic = "GOYARA\x00"
-	// Version 18 preserves match-start atom dispatch for forward repeat entries.
-	compiledProgramVersion = uint16(18)
+	// Version 19 persists precompiled module regex arguments alongside rule pools.
+	compiledProgramVersion = uint16(19)
 )
 
 // MarshalBinary serializes a compiled program using the current versioned
@@ -81,7 +81,7 @@ func ReadCompiledProgram(reader io.Reader, modules ...Module) (*CompiledProgram,
 	if err := binary.Read(reader, binary.BigEndian, &version); err != nil {
 		return nil, fmt.Errorf("reading compiled program version: %w", err)
 	}
-	if version != 4 && version != 5 && version != 6 && version != 7 && version != 8 && version != 9 && version != 10 && version != 11 && version != 12 && version != 13 && version != 14 && version != 15 && version != 16 && version != 17 && version != compiledProgramVersion {
+	if version < 4 || version > compiledProgramVersion {
 		return nil, fmt.Errorf("unsupported compiled program version %d; rebuild with format version %d", version, compiledProgramVersion)
 	}
 
@@ -142,6 +142,7 @@ func serializeRule(rule *CompiledRule) (serializedRule, error) {
 		TextStringSets:      cloneStringSlices(rule.TextStringSets),
 		AnonymousStrings:    slices.Clone(rule.AnonymousStrings),
 		StringLiterals:      slices.Clone(rule.StringLiterals),
+		ModuleRegexes:       serializeModuleRegexes(rule.moduleRegexes),
 		StringKinds:         maps.Clone(rule.StringKinds),
 		StringModifiers:     modifiers,
 		CaptureBindings:     serializeCaptureBindings(rule.CaptureBindings),
@@ -260,6 +261,10 @@ func deserializeRule(serialized serializedRule, bindings map[string]compiledModu
 		return nil, fmt.Errorf("loading metadata: %w", err)
 	}
 
+	moduleRegexes, err := deserializeModuleRegexes(serialized.ModuleRegexes)
+	if err != nil {
+		return nil, fmt.Errorf("loading module regexes: %w", err)
+	}
 	fixedOffsets := serialized.FixedOffsets
 	if fixedOffsets == nil {
 		fixedOffsets = serialized.FixedTextOffsets
@@ -285,6 +290,7 @@ func deserializeRule(serialized serializedRule, bindings map[string]compiledModu
 		TextStringSets:      cloneStringSlices(serialized.TextStringSets),
 		AnonymousStrings:    slices.Clone(serialized.AnonymousStrings),
 		StringLiterals:      slices.Clone(serialized.StringLiterals),
+		moduleRegexes:       moduleRegexes,
 		StringKinds:         maps.Clone(serialized.StringKinds),
 		StringModifiers:     modifiers,
 		CaptureBindings:     deserializeCaptureBindings(serialized.CaptureBindings),
@@ -360,6 +366,41 @@ func serializeModuleFunction(function ModuleFunction) serializedModuleFunction {
 		returns[index] = signature.resultType(function.ReturnType)
 	}
 	return serializedModuleFunction{Signatures: signatures, ReturnTypes: returns, ReturnType: function.ReturnType}
+}
+
+func serializeModuleRegexes(regexes []*compiledModuleRegex) []serializedModuleRegex {
+	if len(regexes) == 0 {
+		return nil
+	}
+	out := make([]serializedModuleRegex, len(regexes))
+	for index, entry := range regexes {
+		if entry == nil {
+			continue
+		}
+		out[index] = serializedModuleRegex{
+			Code:  slices.Clone(entry.code),
+			Flags: entry.flags,
+		}
+	}
+	return out
+}
+
+func deserializeModuleRegexes(serialized []serializedModuleRegex) ([]*compiledModuleRegex, error) {
+	if len(serialized) == 0 {
+		return nil, nil
+	}
+	out := make([]*compiledModuleRegex, len(serialized))
+	for index, item := range serialized {
+		entry := &compiledModuleRegex{
+			code:  slices.Clone(item.Code),
+			flags: item.Flags,
+		}
+		if err := validateCompiledModuleRegex(entry); err != nil {
+			return nil, fmt.Errorf("module regex %d: %w", index, err)
+		}
+		out[index] = entry
+	}
+	return out, nil
 }
 
 func moduleFunctionCompatible(function ModuleFunction, serialized serializedModuleFunction) bool {

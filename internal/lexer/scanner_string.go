@@ -71,7 +71,7 @@ func (l *Lexer) isAtRegexEnd() bool {
 	return l.reader.Current() == '/' || l.reader.Current() == 0 || l.reader.Current() == '\n'
 }
 
-// readRegexFlags reads regex flags (i, s, m, etc.)
+// readRegexFlags reads regex flags (i, s)
 func (l *Lexer) readRegexFlags() {
 	for l.isRegexFlag(l.reader.Current()) {
 		l.reader.ReadChar()
@@ -80,7 +80,7 @@ func (l *Lexer) readRegexFlags() {
 
 // isRegexFlag checks if character is a valid regex flag
 func (l *Lexer) isRegexFlag(ch byte) bool {
-	return ch == 'i' || ch == 's' || ch == 'm'
+	return ch == 'i' || ch == 's'
 }
 
 // isEmptyRegex checks if the current position starts an empty regex pattern
@@ -160,7 +160,7 @@ func hasDoubleSlash(r regexReader) bool {
 	return r.GetCurrent() == '/'
 }
 
-// skipRegexFlags skips regex flags (i, s, m)
+// skipRegexFlags skips regex flags (i, s)
 func skipRegexFlags(r regexReader) {
 	r.ReadChar() // skip second '/'
 	for isRegexFlag(r) {
@@ -171,7 +171,7 @@ func skipRegexFlags(r regexReader) {
 // isRegexFlag checks if current char is a regex flag
 func isRegexFlag(r regexReader) bool {
 	ch := r.GetCurrent()
-	return ch == 'i' || ch == 's' || ch == 'm'
+	return ch == 'i' || ch == 's'
 }
 
 // isEmptyRegexEnd checks if we're at valid end of empty regex

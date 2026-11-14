@@ -113,6 +113,33 @@ func (i *Interpreter) executePushString() error {
 	return i.push(Value{Type: ValueTypeString, StringRef: int64(-1 - idx)})
 }
 
+// executePushRegex pushes a precompiled module regex reference onto the stack.
+func (i *Interpreter) executePushRegex() error {
+	if err := i.validateBytecodeBounds(OpPushRegex, 4); err != nil {
+		return err
+	}
+	idx := uint32(i.bytecode[i.ip]) |
+		uint32(i.bytecode[i.ip+1])<<8 |
+		uint32(i.bytecode[i.ip+2])<<16 |
+		uint32(i.bytecode[i.ip+3])<<24
+	i.ip += 4
+	if i.moduleRegex(int64(idx)) == nil {
+		return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: OpPushRegex, Message: "invalid module regex index"}
+	}
+	return i.push(Value{Type: ValueTypeRegex, IntVal: int64(idx)})
+}
+
+func (i *Interpreter) moduleRegex(index int64) *compiledModuleRegex {
+	if index < 0 || index >= int64(len(i.moduleRegexes)) {
+		return nil
+	}
+	entry := i.moduleRegexes[index]
+	if entry == nil || len(entry.code) == 0 {
+		return nil
+	}
+	return entry
+}
+
 // executePop removes the top value from the stack.
 func (i *Interpreter) executePop() error {
 	if err := i.validateStackUnderflow(OpPop); err != nil {
@@ -185,6 +212,10 @@ func (i *Interpreter) executeModuleCall(id builtinFunction, function ModuleFunct
 	} else {
 		moduleArgs = make([]ModuleValue, len(args))
 	}
+	var done <-chan struct{}
+	if i.matchContext != nil {
+		done = i.matchContext.cancelDone
+	}
 	for index, arg := range args {
 		switch arg.Type {
 		case ValueTypeInt:
@@ -193,6 +224,12 @@ func (i *Interpreter) executeModuleCall(id builtinFunction, function ModuleFunct
 			moduleArgs[index] = FloatValue(arg.DoubleVal)
 		case ValueTypeString:
 			moduleArgs[index] = StringValue(i.getString(arg))
+		case ValueTypeRegex:
+			re := i.moduleRegex(arg.IntVal)
+			if re == nil {
+				return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: OpCall, Message: "invalid module regex index"}
+			}
+			moduleArgs[index] = RegexValue(CompiledRegex{program: re, cancelDone: done})
 		case ValueTypeUndefined:
 			return i.push(Value{Type: ValueTypeUndefined})
 		default:
@@ -239,14 +276,14 @@ func (i *Interpreter) executeModuleCall(id builtinFunction, function ModuleFunct
 		}
 		return i.pushModuleValue(result)
 	}
-	ctx := ModuleContext{RuleName: i.currentRule}
+	ctx := ModuleContext{RuleName: i.currentRule, cancelDone: done}
 	if i.matchContext != nil {
 		ctx.Data = i.matchContext.Data
 		ctx.Blocks = i.matchContext.Blocks
 	}
 	result, err := function.Evaluate(ctx, slices.Clone(moduleArgs))
 	if err != nil {
-		return &InterpreterError{Type: ErrorRuntime, Opcode: OpCall, Message: err.Error()}
+		return &InterpreterError{Type: ErrorRuntime, Opcode: OpCall, Message: err.Error(), cause: err}
 	}
 	if result.Type != ModuleUndefined && result.Type != moduleResultType(function, moduleArgs) {
 		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpCall, Message: "module returned an unexpected value type"}
@@ -264,8 +301,15 @@ func normalizeModuleArguments(signatures []ModuleSignature, args []ModuleValue) 
 		}
 		matches := true
 		for index, expected := range signature.Arguments {
-			actual := args[index].Type
-			if actual != expected && (actual != ModuleInteger || (expected != ModuleFloat && expected != ModuleBoolean)) {
+			actual := args[index]
+			if expected == ModuleRegex {
+				if actual.Type != ModuleRegex || actual.regex.program == nil {
+					matches = false
+					break
+				}
+				continue
+			}
+			if actual.Type != expected && (actual.Type != ModuleInteger || (expected != ModuleFloat && expected != ModuleBoolean)) {
 				matches = false
 				break
 			}

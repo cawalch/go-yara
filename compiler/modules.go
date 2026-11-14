@@ -32,6 +32,8 @@ const (
 	ModuleArray
 	// ModuleDictionary is a string-keyed collection.
 	ModuleDictionary
+	// ModuleRegex is a precompiled regular expression passed as an argument.
+	ModuleRegex
 )
 
 // ModuleValue is a value passed to or returned from a module function.
@@ -41,6 +43,7 @@ type ModuleValue struct {
 	Float   float64
 	String  string
 	Boolean bool
+	regex   CompiledRegex
 	object  *moduleObject
 }
 
@@ -64,11 +67,31 @@ func BooleanValue(value bool) ModuleValue {
 	return ModuleValue{Type: ModuleBoolean, Boolean: value}
 }
 
+// RegexValue constructs a compiled regular expression module value.
+func RegexValue(value CompiledRegex) ModuleValue {
+	return ModuleValue{Type: ModuleRegex, regex: value}
+}
+
+// CompiledRegex returns the compiled regular expression carried by v when v is
+// an initialized ModuleRegex value.
+func (v ModuleValue) CompiledRegex() (CompiledRegex, bool) {
+	if v.Type != ModuleRegex || v.regex.program == nil {
+		return CompiledRegex{}, false
+	}
+	return v.regex, true
+}
+
 // ModuleContext is the immutable scan context visible to module functions.
 type ModuleContext struct {
-	Data     []byte
-	Blocks   []MemoryBlock
-	RuleName string
+	Data       []byte
+	Blocks     []MemoryBlock
+	RuleName   string
+	cancelDone <-chan struct{}
+}
+
+// Done returns a channel that is closed when the active scan is canceled, or nil.
+func (c ModuleContext) Done() <-chan struct{} {
+	return c.cancelDone
 }
 
 // ModuleSignature describes one accepted argument list for a module function.
@@ -265,7 +288,7 @@ func buildModuleBindings(registered map[string]Module) (map[string]compiledModul
 					return nil, fmt.Errorf("module function %s.%s: %w", moduleName, functionName, err)
 				}
 				for _, argument := range signature.Arguments {
-					if argument < ModuleInteger || argument > ModuleBoolean {
+					if !validModuleArgumentType(argument) {
 						return nil, fmt.Errorf("invalid argument type in module function %s.%s", moduleName, functionName)
 					}
 				}
@@ -288,6 +311,10 @@ func buildModuleBindings(registered map[string]Module) (map[string]compiledModul
 	return bindings, nil
 }
 
+func validModuleArgumentType(valueType ModuleValueType) bool {
+	return (valueType >= ModuleInteger && valueType <= ModuleBoolean) || valueType == ModuleRegex
+}
+
 func moduleSemanticType(valueType ModuleValueType) semantic.DataType {
 	switch valueType {
 	case ModuleInteger:
@@ -298,6 +325,8 @@ func moduleSemanticType(valueType ModuleValueType) semantic.DataType {
 		return semantic.TypeString
 	case ModuleBoolean:
 		return semantic.TypeBoolean
+	case ModuleRegex:
+		return semantic.TypeRegexp
 	case ModuleStruct:
 		return semantic.TypeStruct
 	case ModuleArray:

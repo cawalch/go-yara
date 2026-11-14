@@ -135,3 +135,62 @@ func TestRegexLiterals_VsComments_AndInYARARule(t *testing.T) {
 		t.Errorf("Expected 3 regex literal tokens, got %d", regexCount)
 	}
 }
+
+func TestRegexLiterals_FunctionArgumentContexts(t *testing.T) {
+	helper := lexer.NewTestHelper(t)
+
+	t.Run("regex arguments with commas comments and division", func(t *testing.T) {
+		tokens := helper.CollectTokens(`
+import "pe"
+import "math"
+rule call_regexes {
+    condition:
+        pe.exports(/foo/i) and
+        pe.imports( /* c1 */ /kernel32\.dll/is, // c2
+            /CreateFile[AW]/ ) and
+        pe.exports(/-dash/) and
+        pe.exports(/ foo/) and
+        math.abs(8 / 2) == 4 and
+        math.abs(-4) / 2 == 2
+}
+`)
+		var regexes []string
+		var divisions int
+		for _, tok := range tokens {
+			switch tok.Type {
+			case token.RegexLit:
+				regexes = append(regexes, tok.Literal)
+			case token.DIVIDE:
+				divisions++
+			}
+		}
+		want := []string{`/foo/i`, `/kernel32\.dll/is`, `/CreateFile[AW]/`, `/-dash/`, `/ foo/`}
+		if len(regexes) != len(want) {
+			t.Fatalf("regexes = %v, want %v (tokens=%v)", regexes, want, tokens)
+		}
+		for i := range want {
+			if regexes[i] != want[i] {
+				t.Fatalf("regex[%d] = %q, want %q", i, regexes[i], want[i])
+			}
+		}
+		if divisions != 2 {
+			t.Fatalf("division count = %d, want 2", divisions)
+		}
+	})
+
+	t.Run("unsupported flag m splits into trailing identifier", func(t *testing.T) {
+		tokens := helper.CollectTokens(`rule bad_flag { condition: pe.exports(/foo/m) }`)
+		var sawRegex, sawIdentM bool
+		for _, tok := range tokens {
+			if tok.Type == token.RegexLit && tok.Literal == "/foo/" {
+				sawRegex = true
+			}
+			if tok.Type == token.IDENTIFIER && tok.Literal == "m" {
+				sawIdentM = true
+			}
+		}
+		if !sawRegex || !sawIdentM {
+			t.Fatalf("expected /foo/ + identifier m, got %v", tokens)
+		}
+	})
+}

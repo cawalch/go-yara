@@ -382,6 +382,19 @@ func (cc *conditionCompiler) compileRegexLiteral(lit *ast.Literal) {
 	}
 }
 
+func (cc *conditionCompiler) compileModuleRegexArg(lit *ast.Literal) error {
+	literal, ok := lit.Value.(string)
+	if !ok {
+		return fmt.Errorf("regex literal has invalid value type %T", lit.Value)
+	}
+	compiled, err := compileModuleRegexLiteral(literal)
+	if err != nil {
+		return err
+	}
+	cc.emitter.EmitPushRegex(compiled, lit.Pos.Line, lit.Pos.Column)
+	return nil
+}
+
 // compileBooleanLiteral compiles boolean literals
 func (cc *conditionCompiler) compileBooleanLiteral(lit *ast.Literal) {
 	if lit.Type == token.TRUE {
@@ -650,8 +663,16 @@ func (cc *conditionCompiler) compileFunctionCall(call *ast.FunctionCall) error {
 		return unsupportedModuleError(moduleName)
 	}
 
-	for i := 0; i < len(call.Args); i++ {
-		if err := cc.compileExpression(call.Args[i]); err != nil {
+	for i, arg := range call.Args {
+		if isModuleFunction {
+			if lit, ok := arg.(*ast.Literal); ok && lit.Type == token.RegexLit {
+				if err := cc.compileModuleRegexArg(lit); err != nil {
+					return fmt.Errorf("compiling function argument %d: %w", i, err)
+				}
+				continue
+			}
+		}
+		if err := cc.compileExpression(arg); err != nil {
 			return fmt.Errorf("compiling function argument %d: %w", i, err)
 		}
 	}
