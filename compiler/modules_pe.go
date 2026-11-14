@@ -50,6 +50,7 @@ func peModule() Module {
 				{Arguments: []ModuleValueType{ModuleString, ModuleString}},
 				{Arguments: []ModuleValueType{ModuleString, ModuleInteger}},
 				{Arguments: []ModuleValueType{ModuleString}},
+				{Arguments: []ModuleValueType{ModuleRegex, ModuleRegex}},
 			},
 			ReturnType: ModuleInteger,
 		},

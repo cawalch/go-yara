@@ -49,6 +49,27 @@ func TestLibyaraPEImportQueries(t *testing.T) {
 		`pe.imports("Example.DLL", "ORD7") == 1`,
 		`pe.imports("Example.DLL", "ord0") == 1`,
 		`pe.imports("Example.DLL", "ord65535") == 1`,
+		`defined pe.imports(/Example\.DLL/, /NamedFunction/)`,
+		`pe.imports(/Example\.DLL/, /NamedFunction/) == 0`,
+		`pe.imports(/Example\.DLL/, /NamedFunction/) == 2`,
+		`pe.imports(/Example\.DLL/, /NamedFunction/) == 3`,
+		`pe.imports(/\.DLL$/i, /^NamedFunction$/) == 3`,
+		`pe.imports(/\.DLL$/i, /^NamedFunction$/) == 6`,
+		`pe.imports(/example\.dll/, /NamedFunction/) == 0`,
+		`pe.imports(/example\.dll/i, /namedfunction/i) == 3`,
+		`pe.imports(/Example\.DLL/, /missing/) == 0`,
+		`pe.imports(/missing\.dll/, /.*/) == 0`,
+		`pe.imports(/Example\.DLL/, /^$/) == 0`,
+		`pe.imports(/^$/, /NamedFunction/) == 0`,
+		`pe.imports(/.*/, /.*/) == pe.number_of_imported_functions`,
+		`pe.imports(/kernel32/i, /kelvin/i) == 1`,
+		`pe.imports(/Kernel32/i, /Kelvin/) == 0`, `pe.imports(/kernel32/i, /Kelvin/i) == 0`,
+		`pe.imports(/^Example\.DLL$/, /^ord7$/) == 1`,
+		`pe.imports(/^Example\.DLL$/, /^ord0$/) == 1`,
+		`pe.imports(/^Example\.DLL$/, /^ord65535$/) == 1`,
+		`pe.imports(/^Example\.DLL$/, /^ord9$/) == 1`,
+		fmt.Sprintf(`pe.imports(/Example\.DLL/, /^%s$/) == 3`, strings.Repeat("N", 512)),
+		fmt.Sprintf(`pe.imports(/Example\.DLL/, /^%s$/) == 0`, strings.Repeat("N", 513)),
 	}
 	for _, is64 := range []bool{false, true} {
 		for _, tc := range []struct {
@@ -115,6 +136,7 @@ func TestLibyaraPEImportQueryCompatibility(t *testing.T) {
 	}{
 		{"malformed_count", func(d []byte) { binary.LittleEndian.PutUint32(d[0x444:], 0x7fffffff) }, `pe.imports("Example.DLL")`, `not defined`},
 		{"malformed", func(d []byte) { binary.LittleEndian.PutUint32(d[0x444:], 0x7fffffff) }, `pe.imports("Example.DLL", "NamedFunction")`, `not defined`},
+		{"malformed_regex", func(d []byte) { binary.LittleEndian.PutUint32(d[0x444:], 0x7fffffff) }, `pe.imports(/Example\.DLL/, /NamedFunction/)`, `not defined`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			data := pefixture.Imports(false, 3)
@@ -151,6 +173,13 @@ func TestLibyaraPEImportOrdinalQueryAliases(t *testing.T) {
 		`pe.imports("ws2_32", "ord1") == 1`,
 		`pe.imports("ws2_32.dll\x00suffix", "accept\x00suffix") == 1`,
 		`pe.imports("Kws2_32.dll", "accept") == 0`,
+		`pe.imports(/ws2_32/i, /^accept$/) == 1`,
+		`pe.imports(/ws2_32/i, /^ord1$/) == 0`,
+		`pe.imports(/ws2_32/i, /^WEP$/) == 1`,
+		`pe.imports(/ws2_32/i, /^ord501$/) == 1`,
+		`pe.imports(/wsock32\.dll/i, /^WSAStartup$/) == 1`,
+		`pe.imports(/oleaut32\.dll/i, /^SysAllocString$/) == 1`,
+		`pe.imports(/oleaut32\.dll/i, /^UnRegisterTypeLibForUser$/) == 1`,
 	}
 	source := peProbeSource(predicates)
 	for _, is64 := range []bool{false, true} {
@@ -189,6 +218,8 @@ func TestLibyaraPEImportQueryLimit(t *testing.T) {
 				`pe.imports("Example.DLL") == 16384`,
 				`pe.imports("Example.DLL", "NamedFunction") == 1`,
 				`pe.imports("Example.DLL", 9) == 1`,
+				`pe.imports(/^Example\.DLL$/, /^NamedFunction$/) == 16383`,
+				`pe.imports(/^Example\.DLL$/, /^ord9$/) == 1`,
 			}), data)
 		})
 	}

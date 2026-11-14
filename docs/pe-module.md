@@ -20,11 +20,11 @@ rule WritableExecutableSection {
 
 The module implements headers, sections, section lookup, RVA-to-file-offset
 mapping, overlay metadata, full-file PE checksum calculation, standard import
-and export metadata, import queries by name or ordinal, export queries by name,
-ordinal, or regex, and the standard import hash under
-[#359](https://github.com/cawalch/go-yara/issues/359). Regex import queries,
-delayed imports, resources, Rich headers, and Authenticode signatures remain
-unsupported and fail compilation.
+and export metadata, import and export queries by name, ordinal, or regex, and
+the standard import hash under
+[#359](https://github.com/cawalch/go-yara/issues/359). Delayed imports,
+flagged import queries, resources, Rich headers, and Authenticode signatures
+remain unsupported and fail compilation.
 
 ## Supported fields
 
@@ -163,9 +163,17 @@ functions match and uses the same DLL-name comparison as the two-argument
 queries. It reads the cached import records without constructing
 `import_details` objects.
 
+Use `pe.imports(dll_regex, function_regex)` to count standard imported functions
+whose library name matches `dll_regex` and whose function name (or resolved
+ordinal alias / `ordN` fallback) matches `function_regex`, across all matching
+descriptors including duplicates. Like libyara, `pe.imports(dll_regex,
+function_regex)` returns the match count rather than a boolean `1`/`0`, while
+single-argument regex `pe.imports(dll_regex)` and mixed string/regex overloads
+remain unsupported and fail compilation.
+
 Queries are undefined for non-PE input, rejected import metadata, or undefined
-arguments. Only standard imports are searched. The regex and flagged overloads
-are not implemented and fail compilation.
+arguments. Only standard imports are searched. Flagged delayed import
+overloads remain unimplemented and fail compilation.
 
 Use `import_details` and collection loops to inspect records directly. Names
 preserve their spelling; ordinary string equality remains case-sensitive.

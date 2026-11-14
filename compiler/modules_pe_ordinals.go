@@ -67,6 +67,15 @@ func peOrdinalNameMatches(kind peOrdinalDLLKind, ordinal uint16, query string) b
 	return peNameEqualOrdinalFallback(query, ordinal)
 }
 
+func peOrdinalRegexMatches(kind peOrdinalDLLKind, ordinal uint16, re CompiledRegex) (bool, error) {
+	if alias, ok := peImportOrdinalAlias(kind, ordinal); ok {
+		return re.MatchString(alias)
+	}
+	var buf [8]byte
+	buf[0], buf[1], buf[2] = 'o', 'r', 'd'
+	return re.Match(strconv.AppendUint(buf[:3], uint64(ordinal), 10))
+}
+
 func peNameEqualOrdinalFallback(query string, ordinal uint16) bool {
 	var buf [8]byte
 	buf[0], buf[1], buf[2] = 'o', 'r', 'd'

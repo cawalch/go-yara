@@ -7,14 +7,16 @@ import (
 )
 
 func (i *Interpreter) peImports(args []ModuleValue) ModuleValue {
-	// Guard the indexes even if a caller modifies a compiled function table.
-	if len(args) < 1 || len(args) > 2 || args[0].Type != ModuleString ||
-		(len(args) == 2 && args[1].Type != ModuleString && args[1].Type != ModuleInteger) {
-		return ModuleValue{}
-	}
 	// A serialized custom module must not fall back to native parsing when
 	// loaded without its callback, even if the function signatures match.
-	if i.currentCompiledRule == nil || !i.currentCompiledRule.nativePE {
+	if len(args) < 1 || len(args) > 2 || i.currentCompiledRule == nil || !i.currentCompiledRule.nativePE {
+		return ModuleValue{}
+	}
+	if args[0].Type == ModuleRegex {
+		return i.peImportsRegex(args)
+	}
+	// Guard the indexes even if a caller modifies a compiled function table.
+	if args[0].Type != ModuleString || (len(args) == 2 && args[1].Type != ModuleString && args[1].Type != ModuleInteger) {
 		return ModuleValue{}
 	}
 	// Normalize each query once, not once per imported function. The argument
@@ -60,6 +62,79 @@ func (i *Interpreter) peImports(args []ModuleValue) ModuleValue {
 		}
 	}
 	return IntegerValue(count)
+}
+
+type peImportRegexQuery struct {
+	dll, fn CompiledRegex
+}
+
+// peImportsRegex matches DLL and function regexes across all exposed standard
+// imports and preserves libyara's total match count return value.
+func (i *Interpreter) peImportsRegex(args []ModuleValue) ModuleValue {
+	if len(args) != 2 || args[0].Type != ModuleRegex || args[1].Type != ModuleRegex {
+		return ModuleValue{}
+	}
+	dllRegex, ok := args[0].CompiledRegex()
+	if !ok {
+		return ModuleValue{}
+	}
+	fnRegex, ok := args[1].CompiledRegex()
+	if !ok {
+		return ModuleValue{}
+	}
+	done := peCancelDone(i.matchContext)
+	if scanCanceled(done) {
+		return ModuleValue{}
+	}
+	query := peImportRegexQuery{dll: dllRegex, fn: fnRegex}
+	if data, supplied := i.moduleData["pe"]; supplied {
+		return peHostImportsRegex(data, query, done)
+	}
+	image := loadPE(i.matchContext)
+	if image.file == nil {
+		return ModuleValue{}
+	}
+	imports := image.loadImports()
+	if !imports.valid {
+		return ModuleValue{}
+	}
+	var count int64
+	seen := 0
+	for _, library := range imports.libraries {
+		if scanCanceledAt(done, seen) {
+			return ModuleValue{}
+		}
+		seen++
+		dllMatched, err := query.dll.MatchString(library.DLL)
+		if err != nil {
+			return ModuleValue{}
+		}
+		if !dllMatched {
+			continue
+		}
+		kind := peMatchOrdinalDLL(library.DLL)
+		for _, symbol := range library.Symbols {
+			if scanCanceledAt(done, seen) {
+				return ModuleValue{}
+			}
+			seen++
+			matched, err := peImportSymbolRegexMatches(kind, symbol, query.fn)
+			if err != nil {
+				return ModuleValue{}
+			}
+			if matched {
+				count++
+			}
+		}
+	}
+	return IntegerValue(count)
+}
+
+func peImportSymbolRegexMatches(kind peOrdinalDLLKind, symbol pe.ImportSymbol, query CompiledRegex) (bool, error) {
+	if !symbol.ByOrdinal {
+		return query.MatchString(symbol.Name)
+	}
+	return peOrdinalRegexMatches(kind, symbol.Ordinal, query)
 }
 
 func peImportSymbolMatches(kind peOrdinalDLLKind, symbol pe.ImportSymbol, query ModuleValue) bool {
@@ -130,6 +205,71 @@ func peHostImportSymbolMatches(kind peOrdinalDLLKind, symbol, query ModuleValue)
 		return false
 	}
 	return peOrdinalNameMatches(kind, uint16(ordinal.Integer), query.String) //checkednarrow:ignore range checked above
+}
+
+func peHostImportsRegex(data ModuleValue, query peImportRegexQuery, done <-chan struct{}) ModuleValue {
+	if data.object == nil {
+		return ModuleValue{}
+	}
+	details := data.object.fields["import_details"]
+	if details.object == nil {
+		return ModuleValue{}
+	}
+	var count int64
+	seen := 0
+	for _, library := range details.object.elements {
+		if scanCanceledAt(done, seen) {
+			return ModuleValue{}
+		}
+		seen++
+		if library.object == nil {
+			continue
+		}
+		name := library.object.fields["library_name"]
+		functions := library.object.fields["functions"]
+		if name.Type != ModuleString || functions.object == nil {
+			continue
+		}
+		name.String, _, _ = strings.Cut(name.String, "\x00")
+		dllMatched, err := query.dll.MatchString(name.String)
+		if err != nil {
+			return ModuleValue{}
+		}
+		if !dllMatched {
+			continue
+		}
+		kind := peMatchOrdinalDLL(name.String)
+		for _, symbol := range functions.object.elements {
+			if scanCanceledAt(done, seen) {
+				return ModuleValue{}
+			}
+			seen++
+			if symbol.object == nil {
+				continue
+			}
+			matched, err := peHostImportSymbolRegexMatches(kind, symbol, query.fn)
+			if err != nil {
+				return ModuleValue{}
+			}
+			if matched {
+				count++
+			}
+		}
+	}
+	return IntegerValue(count)
+}
+
+func peHostImportSymbolRegexMatches(kind peOrdinalDLLKind, symbol ModuleValue, query CompiledRegex) (bool, error) {
+	fnName := symbol.object.fields["name"]
+	if fnName.Type == ModuleString {
+		fnName.String, _, _ = strings.Cut(fnName.String, "\x00")
+		return query.MatchString(fnName.String)
+	}
+	ordinal := symbol.object.fields["ordinal"]
+	if ordinal.Type != ModuleInteger || ordinal.Integer < 0 || ordinal.Integer > 65535 {
+		return false, nil
+	}
+	return peOrdinalRegexMatches(kind, uint16(ordinal.Integer), query) //checkednarrow:ignore range checked above
 }
 
 // Compare bytes with ASCII case folding, as libyara does in the C locale.
