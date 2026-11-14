@@ -1,6 +1,10 @@
 package compiler
 
-import "strings"
+import (
+	"strings"
+
+	pe "github.com/cawalch/go-pe"
+)
 
 func (i *Interpreter) peImports(args []ModuleValue) ModuleValue {
 	// Guard the indexes even if a caller modifies a compiled function table.
@@ -39,17 +43,24 @@ func (i *Interpreter) peImports(args []ModuleValue) ModuleValue {
 			count += int64(len(library.Symbols))
 			continue
 		}
+		kind := peMatchOrdinalDLL(library.DLL)
 		for _, symbol := range library.Symbols {
-			if args[1].Type == ModuleInteger {
-				if symbol.ByOrdinal && int64(symbol.Ordinal) == args[1].Integer {
-					return IntegerValue(1)
-				}
-			} else if !symbol.ByOrdinal && peNameEqual(symbol.Name, args[1].String) {
+			if peImportSymbolMatches(kind, symbol, args[1]) {
 				return IntegerValue(1)
 			}
 		}
 	}
 	return IntegerValue(count)
+}
+
+func peImportSymbolMatches(kind peOrdinalDLLKind, symbol pe.ImportSymbol, query ModuleValue) bool {
+	if query.Type == ModuleInteger {
+		return symbol.ByOrdinal && int64(symbol.Ordinal) == query.Integer
+	}
+	if !symbol.ByOrdinal {
+		return peNameEqual(symbol.Name, query.String)
+	}
+	return peOrdinalNameMatches(kind, symbol.Ordinal, query.String)
 }
 
 // Host snapshots take precedence over file parsing, including absent fields.
@@ -73,6 +84,7 @@ func peHostImports(data ModuleValue, args []ModuleValue) ModuleValue {
 		if name.Type != ModuleString || !peNameEqual(name.String, args[0].String) || functions.object == nil {
 			continue
 		}
+		kind := peMatchOrdinalDLL(name.String)
 		for _, symbol := range functions.object.elements {
 			if symbol.object == nil {
 				continue
@@ -81,21 +93,29 @@ func peHostImports(data ModuleValue, args []ModuleValue) ModuleValue {
 				count++
 				continue
 			}
-			if args[1].Type == ModuleInteger {
-				ordinal := symbol.object.fields["ordinal"]
-				if ordinal.Type == ModuleInteger && ordinal.Integer == args[1].Integer {
-					return IntegerValue(1)
-				}
-			} else {
-				name := symbol.object.fields["name"]
-				name.String, _, _ = strings.Cut(name.String, "\x00")
-				if name.Type == ModuleString && peNameEqual(name.String, args[1].String) {
-					return IntegerValue(1)
-				}
+			if peHostImportSymbolMatches(kind, symbol, args[1]) {
+				return IntegerValue(1)
 			}
 		}
 	}
 	return IntegerValue(count)
+}
+
+func peHostImportSymbolMatches(kind peOrdinalDLLKind, symbol, query ModuleValue) bool {
+	if query.Type == ModuleInteger {
+		ordinal := symbol.object.fields["ordinal"]
+		return ordinal.Type == ModuleInteger && ordinal.Integer == query.Integer
+	}
+	fnName := symbol.object.fields["name"]
+	if fnName.Type == ModuleString {
+		fnName.String, _, _ = strings.Cut(fnName.String, "\x00")
+		return peNameEqual(fnName.String, query.String)
+	}
+	ordinal := symbol.object.fields["ordinal"]
+	if ordinal.Type != ModuleInteger || ordinal.Integer < 0 || ordinal.Integer > 65535 {
+		return false
+	}
+	return peOrdinalNameMatches(kind, uint16(ordinal.Integer), query.String) //checkednarrow:ignore range checked above
 }
 
 // Compare bytes with ASCII case folding, as libyara does in the C locale.

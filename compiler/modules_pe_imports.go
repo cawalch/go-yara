@@ -114,6 +114,7 @@ func peFilterImports(libraries []pe.ImportLibrary) ([]pe.ImportLibrary, int) {
 
 func peImportLibraryFields(library *pe.ImportLibrary) ModuleValue {
 	var functions ModuleValue
+	kind := peMatchOrdinalDLL(library.DLL)
 	return peLazyStruct(func(name string) ModuleValue {
 		switch name {
 		case "library_name":
@@ -124,20 +125,30 @@ func peImportLibraryFields(library *pe.ImportLibrary) ModuleValue {
 			if functions.Type == ModuleUndefined {
 				values := make([]ModuleValue, len(library.Symbols))
 				for i := range values {
-					symbol := &library.Symbols[i]
-					values[i] = peLazyStruct(func(name string) ModuleValue {
-						if name == "name" && !symbol.ByOrdinal {
-							return StringValue(symbol.Name)
-						}
-						if name == "ordinal" && symbol.ByOrdinal {
-							return IntegerValue(int64(symbol.Ordinal))
-						}
-						return ModuleValue{}
-					})
+					values[i] = peImportFunctionFields(kind, &library.Symbols[i])
 				}
 				functions = peArray(values)
 			}
 			return functions
+		}
+		return ModuleValue{}
+	})
+}
+
+func peImportFunctionFields(kind peOrdinalDLLKind, symbol *pe.ImportSymbol) ModuleValue {
+	var ordinalName string
+	return peLazyStruct(func(name string) ModuleValue {
+		if name == "name" {
+			if !symbol.ByOrdinal {
+				return StringValue(symbol.Name)
+			}
+			if ordinalName == "" {
+				ordinalName = peImportOrdinalName(kind, symbol.Ordinal)
+			}
+			return StringValue(ordinalName)
+		}
+		if name == "ordinal" && symbol.ByOrdinal {
+			return IntegerValue(int64(symbol.Ordinal))
 		}
 		return ModuleValue{}
 	})

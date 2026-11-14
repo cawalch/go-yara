@@ -19,7 +19,7 @@ const peImportCondition = `pe.number_of_imports == 1 and pe.number_of_imported_f
  pe.import_details[0].functions[0].name == "NamedFunction" and
  not defined pe.import_details[0].functions[0].ordinal and
  pe.import_details[0].functions[1].ordinal == 7 and
- not defined pe.import_details[0].functions[1].name and
+ pe.import_details[0].functions[1].name == "ord7" and
  not defined pe.import_details[1].library_name and
  not defined pe.import_details[0].functions[3].name`
 
@@ -246,7 +246,7 @@ func TestPEImportsConcurrentScans(t *testing.T) {
 
 func BenchmarkPEImports(b *testing.B) {
 	for _, symbols := range []int{16, 256} {
-		for _, field := range []string{"counts", "dll_count", "details", "name", "ordinal", "missing", "missing_long"} {
+		for _, field := range []string{"counts", "dll_count", "details", "name", "ordinal", "ordinal_alias", "ordinal_fallback", "missing", "missing_long"} {
 			data := pefixture.Imports(true, symbols)
 			condition := fmt.Sprintf("pe.number_of_imported_functions == %d", symbols)
 			switch field {
@@ -259,6 +259,13 @@ func BenchmarkPEImports(b *testing.B) {
 			case "ordinal":
 				pefixture.ImportOrdinal(data, symbols-1, 7)
 				condition = `pe.imports("example.dll", 7)`
+			case "ordinal_alias":
+				copy(data[0x428:], "ws2_32.dll\x00")
+				pefixture.ImportOrdinal(data, symbols-1, 1)
+				condition = `pe.imports("ws2_32.dll", "accept")`
+			case "ordinal_fallback":
+				pefixture.ImportOrdinal(data, symbols-1, 7)
+				condition = `pe.imports("example.dll", "ord7")`
 			case "missing", "missing_long":
 				condition = `not pe.imports("example.dll", "absent")`
 				if field == "missing_long" {
@@ -285,6 +292,77 @@ func BenchmarkPEImports(b *testing.B) {
 						}
 					}
 				})
+			}
+		}
+	}
+}
+
+func TestPEOrdinalAliases(t *testing.T) {
+	p, err := NewCompiler().CompileSource(`import "pe"
+rule ws2 { condition: pe.imports("WS2_32.DLL", "ACCEPT") and not pe.imports("ws2_32.dll", "ord1") and pe.imports("ws2_32.dll", 1) and pe.import_details[0].functions[0].name == "accept" and pe.import_details[0].functions[0].ordinal == 1 }
+rule ws2_wep { condition: pe.imports("ws2_32.dll", "WEP") and pe.import_details[0].functions[0].name == "WEP" and pe.import_details[0].functions[0].ordinal == 500 }
+rule ws2_fallback { condition: pe.imports("ws2_32.dll", "ORD501") and pe.import_details[0].functions[0].name == "ord501" and pe.import_details[0].functions[0].ordinal == 501 }
+rule wsock { condition: pe.imports("wsock32.dll", "WSAStartup") and pe.import_details[0].functions[0].name == "WSAStartup" and pe.import_details[0].functions[0].ordinal == 115 }
+rule oleaut { condition: pe.imports("OLEAUT32.DLL", "SysAllocString") and pe.import_details[0].functions[0].name == "SysAllocString" and pe.import_details[0].functions[0].ordinal == 2 }
+rule generic_zero { condition: pe.imports("Example.DLL", "ORD0") and pe.import_details[0].functions[0].name == "ord0" and pe.import_details[0].functions[0].ordinal == 0 }
+rule generic_max { condition: pe.imports("Example.DLL", "ord65535") and pe.import_details[0].functions[0].name == "ord65535" and pe.import_details[0].functions[0].ordinal == 65535 }
+rule prefix_ext { condition: pe.imports("ws2_32.dllx", "accept") and pe.import_details[0].functions[0].name == "accept" }
+rule other_ext { condition: pe.imports("ws2_32.ocx", "ord1") and not pe.imports("ws2_32.ocx", "accept") and pe.import_details[0].functions[0].name == "ord1" }
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob, err := p.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored, err := UnmarshalCompiledProgram(blob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name    string
+		dll     string
+		ordinal uint16
+		want    string
+	}{
+		{"ws2", "ws2_32.dll", 1, "ws2"},
+		{"ws2_wep", "WS2_32.DLL", 500, "ws2_wep"},
+		{"ws2_fallback", "ws2_32.dll", 501, "ws2_fallback"},
+		{"wsock", "wsock32.dll", 115, "wsock"},
+		{"oleaut", "oleaut32.dll", 2, "oleaut"},
+		{"zero", "Example.DLL", 0, "generic_zero"},
+		{"max", "Example.DLL", 65535, "generic_max"},
+		{"prefix_ext", "ws2_32.dllx", 1, "prefix_ext"},
+		{"other_ext", "ws2_32.ocx", 1, "other_ext"},
+	}
+	for _, program := range []*CompiledProgram{p, restored} {
+		s := program.NewScanner(WithFastScan())
+		defer s.Close()
+		for _, is64 := range []bool{false, true} {
+			for _, tc := range cases {
+				data := pefixture.Imports(is64, 1)
+				pefixture.ImportOrdinal(data, 0, tc.ordinal)
+				copy(data[0x428:], tc.dll+"\x00")
+				for _, reader := range []bool{false, true} {
+					var (
+						r   *ScanResult
+						err error
+					)
+					if reader {
+						r, err = s.ScanReader(bytes.NewReader(data))
+					} else {
+						r, err = s.Scan(data)
+					}
+					if err != nil || len(r.MatchedRules) != 1 || !r.RuleResults[tc.want] {
+						t.Fatalf("64=%t %s reader=%t: matched=%v err=%v", is64, tc.name, reader, r.MatchedRules, err)
+					}
+					// Underlying go-pe records must remain unmodified (ByOrdinal=true, Name="").
+					sym := s.moduleCache.pe.imports.libraries[0].Symbols[0]
+					if !sym.ByOrdinal || sym.Name != "" || sym.Ordinal != tc.ordinal {
+						t.Fatalf("raw go-pe record mutated: %+v", sym)
+					}
+				}
 			}
 		}
 	}

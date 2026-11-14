@@ -74,7 +74,8 @@ func TestPEImportQueriesCache(t *testing.T) {
 
 func TestPEImportQueriesHostData(t *testing.T) {
 	p, err := NewCompiler().CompileSource(`import "pe"
-rule host {condition: pe.imports("HOST.dll", "hostfn") and pe.imports("host.dll", 0) and not pe.imports("host.dll", "") and pe.imports("HOST.dll\x00suffix") == 2 and pe.imports("missing.dll") == 0}
+rule host {condition: pe.imports("HOST.dll", "hostfn") and pe.imports("host.dll", 0) and pe.imports("host.dll", "ORD0") and not pe.imports("host.dll", "") and pe.imports("HOST.dll\x00suffix") == 2 and pe.imports("missing.dll") == 0}
+rule ws2 {condition: pe.imports("WS2_32.DLL", "accept") and not pe.imports("ws2_32.dll", "ord1") and pe.imports("ws2_32.dll", 1)}
 rule file {condition: pe.imports("example.dll", "NamedFunction") or pe.imports("example.dll")}
 rule absent {condition: not defined pe.imports("host.dll", "hostfn") and not defined pe.imports("host.dll")}`)
 	if err != nil {
@@ -104,6 +105,12 @@ rule absent {condition: not defined pe.imports("host.dll", "hostfn") and not def
 			map[string]any{"library_name": "host.dll"},
 			map[string]any{"functions": []any{map[string]any{"name": "ignored"}}},
 		}}, "host"},
+		{map[string]any{"import_details": []any{
+			map[string]any{"library_name": "ws2_32.dll", "functions": []any{map[string]any{"ordinal": 1}}},
+		}}, "ws2"},
+		{map[string]any{"import_details": []any{
+			map[string]any{"library_name": "ws2_32.dll", "functions": []any{map[string]any{"ordinal": 1, "name": "accept"}}},
+		}}, "ws2"},
 		{nil, "absent"},
 		{map[string]any{}, "absent"},
 		{map[string]any{"import_details": []any{}}, ""},
@@ -137,6 +144,38 @@ func TestPEImportQueriesNonPEAllocations(t *testing.T) {
 		}
 	}); n != 0 {
 		t.Fatalf("non-PE queries allocate %g times", n)
+	}
+}
+
+func TestPEOrdinalQueryNoDetailMaterialization(t *testing.T) {
+	p, err := NewCompiler().CompileSource(`import "pe"
+rule alias { condition: pe.imports("ws2_32.dll", "accept") and not pe.imports("ws2_32.dll", "ord1") }
+rule fallback { condition: pe.imports("ws2_32.dll", "ord501") }`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := pefixture.Imports(false, 2)
+	copy(data[0x428:], "ws2_32.dll\x00")
+	pefixture.ImportOrdinal(data, 0, 1)
+	pefixture.ImportOrdinal(data, 1, 501)
+	s := p.NewScanner(WithoutMatches(), WithoutRuleResults())
+	defer s.Close()
+	r, err := s.Scan(data)
+	if err != nil || len(r.MatchedRules) != 2 {
+		t.Fatalf("ordinal queries: %v %v", r, err)
+	}
+	if s.moduleCache.pe.imports.details.Type != ModuleUndefined {
+		t.Fatal("ordinal queries constructed import_details")
+	}
+	image := s.moduleCache.pe
+	aliasRule := p.Rules[0]
+	fallbackRule := p.Rules[1]
+	if n := testing.AllocsPerRun(100, func() {
+		if !s.isRuleConditionSatisfied(aliasRule) || !s.isRuleConditionSatisfied(fallbackRule) || s.moduleCache.pe != image {
+			t.Fatal("cached ordinal query failed")
+		}
+	}); n != 0 {
+		t.Fatalf("cached ordinal query allocated %g times", n)
 	}
 }
 
