@@ -19,11 +19,11 @@ rule WritableExecutableSection {
 ```
 
 The module implements headers, sections, section lookup, RVA-to-file-offset
-mapping, overlay metadata, standard import and export metadata, import and
-export queries by name or ordinal, and the standard import hash under
-[#359](https://github.com/cawalch/go-yara/issues/359). Regex import queries,
-delayed imports, regex export queries, resources, Rich headers, computed
-checksums, and Authenticode signatures remain unsupported and fail compilation.
+mapping, overlay metadata, full-file PE checksum calculation, standard import
+and export metadata, import and export queries by name or ordinal, and the
+standard import hash under [#359](https://github.com/cawalch/go-yara/issues/359).
+Regex import queries, delayed imports, regex export queries, resources, Rich
+headers, and Authenticode signatures remain unsupported and fail compilation.
 
 ## Supported fields
 
@@ -46,9 +46,26 @@ at most 96 entries; `number_of_sections` preserves the declared count.
 | `pe.sections[i]` | `name`, `full_name`, `characteristics`, `virtual_address`, `virtual_size`, `raw_data_offset`, `raw_data_size`, `pointer_to_relocations`, `pointer_to_line_numbers`, `number_of_relocations`, `number_of_line_numbers` |
 
 `base_of_data` is undefined for PE32+. `checksum` contains the stored header
-value; it doesn't verify the file. Data directory entries describe locations
-and sizes. The array exposes at most the first 16 entries, limited by
-`number_of_rva_and_sizes`. The adapter parses imports and exports on demand.
+value; it doesn't verify the file. Use `pe.calculate_checksum()` to compute the
+PE image checksum across the complete file bytes (excluding the aligned
+optional-header `CheckSum` slot, matching libyara) and compare against
+`pe.checksum`. Data directory entries describe locations and sizes. The array
+exposes at most the first 16 entries, limited by `number_of_rva_and_sizes`. The
+adapter parses imports and exports on demand.
+
+## Checksum calculation
+
+`pe.calculate_checksum()` lazily computes the Windows PE header checksum once
+per scan over the complete contiguous input (`peFullScanData`, where
+`len(data) == filesize`). Unlike stored `pe.checksum`, it examines all file
+bytes in bounded 64 KiB chunks and polls cancellation between chunks. It leaves
+the checksum `undefined` (never a partial-prefix checksum) on:
+
+- Non-PE or rejected headers (`pe.is_pe == 0`)
+- Reader streams (`ScanReader*`, `MatchesReader*`) longer than 64 KiB
+- Non-mmapped `ScanFileWithContext` fallbacks (`< 128 KiB` with cancellable `ctx`) longer than 64 KiB
+- Segmented or partial `BlockScanner` / `MatchingRulesInBlock*` scans (`base != 0` or `len(data) != filesize`)
+- Host snapshots (`WithModuleData("pe", ...)`) and deserialized legacy rules without custom callbacks
 
 `name` contains the eight-byte section name with trailing NUL bytes removed.
 Embedded NUL bytes remain. `full_name` resolves a COFF string-table reference

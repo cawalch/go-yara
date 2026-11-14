@@ -63,9 +63,10 @@ func peModule() Module {
 			Signatures: []ModuleSignature{{Arguments: []ModuleValueType{ModuleInteger}}},
 			ReturnType: ModuleInteger,
 		},
-		"is_32bit": {Signatures: []ModuleSignature{{}}, ReturnType: ModuleInteger},
-		"is_64bit": {Signatures: []ModuleSignature{{}}, ReturnType: ModuleInteger},
-		"is_dll":   {Signatures: []ModuleSignature{{}}, ReturnType: ModuleInteger},
+		"calculate_checksum": {Signatures: []ModuleSignature{{}}, ReturnType: ModuleInteger, Cacheable: true},
+		"is_32bit":           {Signatures: []ModuleSignature{{}}, ReturnType: ModuleInteger},
+		"is_64bit":           {Signatures: []ModuleSignature{{}}, ReturnType: ModuleInteger},
+		"is_dll":             {Signatures: []ModuleSignature{{}}, ReturnType: ModuleInteger},
 	}}
 }
 
@@ -267,18 +268,20 @@ func peCancelDone(ctx *MatchContext) <-chan struct{} {
 // Imports and exports load independently through the context. Clearing that
 // context also releases input that has not been parsed.
 type peImage struct {
-	object      *moduleObject
-	file        *pe.File
-	context     *MatchContext
-	imports     *peImportData
-	exports     *peExportData
-	names       []string
-	fileSize    int64
-	entryPoint  int64
-	overlay     ModuleValue
-	sections    ModuleValue
-	directories ModuleValue
-	versions    [4]ModuleValue
+	object                *moduleObject
+	file                  *pe.File
+	context               *MatchContext
+	imports               *peImportData
+	exports               *peExportData
+	names                 []string
+	fileSize              int64
+	entryPoint            int64
+	overlay               ModuleValue
+	sections              ModuleValue
+	directories           ModuleValue
+	versions              [4]ModuleValue
+	calculatedChecksum    ModuleValue
+	calculatedChecksumSet bool
 }
 
 func peFields(file *pe.File, data []byte, ctx *MatchContext) *peImage {
