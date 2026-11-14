@@ -33,6 +33,7 @@ func peModule() Module {
 			Signatures: []ModuleSignature{
 				{Arguments: []ModuleValueType{ModuleString}},
 				{Arguments: []ModuleValueType{ModuleInteger}},
+				{Arguments: []ModuleValueType{ModuleRegex}},
 			},
 			ReturnType: ModuleInteger,
 		},
@@ -40,6 +41,7 @@ func peModule() Module {
 			Signatures: []ModuleSignature{
 				{Arguments: []ModuleValueType{ModuleString}},
 				{Arguments: []ModuleValueType{ModuleInteger}},
+				{Arguments: []ModuleValueType{ModuleRegex}},
 			},
 			ReturnType: ModuleInteger,
 		},

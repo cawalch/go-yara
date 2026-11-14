@@ -14,19 +14,34 @@ func (i *Interpreter) peExports(args []ModuleValue, wantIndex bool) ModuleValue 
 	return IntegerValue(0)
 }
 
+type peExportQuery struct {
+	value ModuleValue
+	regex CompiledRegex
+}
+
 // A valid lookup returns -1 for no match. Invalid metadata stays distinct so
 // exports can return zero for a miss while both overload families propagate
 // undefined input. Index zero is a match.
 func (i *Interpreter) peExportLookup(args []ModuleValue) (index int, valid bool) {
-	if len(args) != 1 || (args[0].Type != ModuleString && args[0].Type != ModuleInteger) ||
-		i.currentCompiledRule == nil || !i.currentCompiledRule.nativePE {
+	if len(args) != 1 || i.currentCompiledRule == nil || !i.currentCompiledRule.nativePE {
+		return -1, false
+	}
+	query := peExportQuery{value: args[0]}
+	switch query.value.Type {
+	case ModuleString, ModuleInteger:
+	case ModuleRegex:
+		var ok bool
+		query.regex, ok = query.value.CompiledRegex()
+		if !ok {
+			return -1, false
+		}
+	default:
 		return -1, false
 	}
 	done := peCancelDone(i.matchContext)
 	if scanCanceled(done) {
 		return -1, false
 	}
-	query := args[0]
 	if data, supplied := i.moduleData["pe"]; supplied {
 		return peHostExportLookup(data, query, done)
 	}
@@ -40,7 +55,7 @@ func (i *Interpreter) peExportLookup(args []ModuleValue) (index int, valid bool)
 	}
 	// libyara rejects zero and ordinals above the exposed slot count, even
 	// when the directory's ordinal base puts an exported ordinal above it.
-	if query.Type == ModuleInteger && (query.Integer == 0 || query.Integer > int64(len(exports.symbols))) {
+	if query.value.Type == ModuleInteger && (query.value.Integer == 0 || query.value.Integer > int64(len(exports.symbols))) {
 		return -1, true
 	}
 	for index := range exports.symbols {
@@ -48,15 +63,22 @@ func (i *Interpreter) peExportLookup(args []ModuleValue) (index int, valid bool)
 			return -1, false
 		}
 		symbol := &exports.symbols[index]
-		if query.Type == ModuleInteger {
-			if query.Integer == int64(symbol.Ordinal) {
+		if query.value.Type == ModuleInteger {
+			if query.value.Integer == int64(symbol.Ordinal) {
 				return index, true
 			}
-		} else if len(symbol.Names) != 0 {
-			name := symbol.Names[0]
-			if peNameEqual(name[:min(len(name), 512)], query.String) {
-				return index, true
-			}
+			continue
+		}
+		if len(symbol.Names) == 0 {
+			continue
+		}
+		name := symbol.Names[0]
+		matched, err := peExportNameMatches(query, name[:min(len(name), 512)])
+		if err != nil {
+			return -1, false
+		}
+		if matched {
+			return index, true
 		}
 	}
 	return -1, true
@@ -64,7 +86,7 @@ func (i *Interpreter) peExportLookup(args []ModuleValue) (index int, valid bool)
 
 // Host snapshots use their detail array, including its length, instead of
 // parsing the file. Missing arrays are undefined; empty arrays don't match.
-func peHostExportLookup(data, query ModuleValue, done <-chan struct{}) (index int, valid bool) {
+func peHostExportLookup(data ModuleValue, query peExportQuery, done <-chan struct{}) (index int, valid bool) {
 	if data.object == nil {
 		return -1, false
 	}
@@ -72,7 +94,7 @@ func peHostExportLookup(data, query ModuleValue, done <-chan struct{}) (index in
 	if details.object == nil {
 		return -1, false
 	}
-	if query.Type == ModuleInteger && (query.Integer == 0 || query.Integer > int64(len(details.object.elements))) {
+	if query.value.Type == ModuleInteger && (query.value.Integer == 0 || query.value.Integer > int64(len(details.object.elements))) {
 		return -1, true
 	}
 	for index, symbol := range details.object.elements {
@@ -82,17 +104,31 @@ func peHostExportLookup(data, query ModuleValue, done <-chan struct{}) (index in
 		if symbol.object == nil {
 			continue
 		}
-		if query.Type == ModuleInteger {
+		if query.value.Type == ModuleInteger {
 			ordinal := symbol.object.fields["ordinal"]
-			if ordinal.Type == ModuleInteger && ordinal.Integer == query.Integer {
+			if ordinal.Type == ModuleInteger && ordinal.Integer == query.value.Integer {
 				return index, true
 			}
-		} else {
-			name := symbol.object.fields["name"]
-			if name.Type == ModuleString && peNameEqual(name.String, query.String) {
-				return index, true
-			}
+			continue
+		}
+		name := symbol.object.fields["name"]
+		if name.Type != ModuleString {
+			continue
+		}
+		matched, err := peExportNameMatches(query, name.String)
+		if err != nil {
+			return -1, false
+		}
+		if matched {
+			return index, true
 		}
 	}
 	return -1, true
+}
+
+func peExportNameMatches(query peExportQuery, candidate string) (bool, error) {
+	if query.value.Type == ModuleRegex {
+		return query.regex.MatchString(candidate)
+	}
+	return peNameEqual(candidate, query.value.String), nil
 }

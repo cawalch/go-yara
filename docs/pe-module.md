@@ -20,10 +20,11 @@ rule WritableExecutableSection {
 
 The module implements headers, sections, section lookup, RVA-to-file-offset
 mapping, overlay metadata, full-file PE checksum calculation, standard import
-and export metadata, import and export queries by name or ordinal, and the
-standard import hash under [#359](https://github.com/cawalch/go-yara/issues/359).
-Regex import queries, delayed imports, regex export queries, resources, Rich
-headers, and Authenticode signatures remain unsupported and fail compilation.
+and export metadata, import queries by name or ordinal, export queries by name,
+ordinal, or regex, and the standard import hash under
+[#359](https://github.com/cawalch/go-yara/issues/359). Regex import queries,
+delayed imports, resources, Rich headers, and Authenticode signatures remain
+unsupported and fail compilation.
 
 ## Supported fields
 
@@ -237,26 +238,29 @@ undefined instead, matching the existing strict import boundary.
 
 ## Standard exports
 
-Use `pe.exports` to check for a named export or numeric ordinal:
+Use `pe.exports` to check for a named export, numeric ordinal, or regex pattern:
 
 ```yara
 import "pe"
 
 rule NamedExport {
     condition:
-        pe.exports("ExampleFunction")
+        pe.exports("ExampleFunction") or
+        pe.exports(/^Example/i)
 }
 ```
 
-`pe.exports(name)` and `pe.exports(ordinal)` return integer `1` for a match and
-`0` otherwise. Queries are undefined for non-PE input, rejected export metadata,
-or undefined arguments. They use the existing export cache without constructing
-`export_details` objects.
+`pe.exports(name)`, `pe.exports(ordinal)`, and `pe.exports(regex)` return
+integer `1` for a match and `0` otherwise. Queries are undefined for non-PE
+input, rejected export metadata, or undefined arguments. They use the existing
+export cache without constructing `export_details` objects.
 
-Name queries fold ASCII case and compare the complete query string. Embedded
-NUL bytes are significant, and Unicode case folding is not applied. Queries
-search the same first alias and 512-byte name projection exposed by
-`export_details`; they do not search additional aliases or forwarder targets.
+Name queries fold ASCII case and compare the complete query string. Regex
+queries match against the export name using the compiled regex literal (including
+flags such as `/i` and `/s`), and skip unnamed ordinal-only slots (while empty
+string `""` names still match `/^$/` or `/.*/`). Queries search the same first
+alias and 512-byte name projection exposed by `export_details`; they do not
+search additional aliases or forwarder targets.
 
 Ordinal queries compare the base-adjusted ordinal, including slots with a zero
 RVA. To match libyara 4.5.8, they return `0` for ordinal zero or an ordinal above
@@ -265,11 +269,12 @@ a directory with base 7 and three slots exposes ordinals 7, 8, and 9, but none
 matches an ordinal query. Use a collection loop over `export_details` to test
 those ordinals directly.
 
-Use `pe.exports_index(name)` or `pe.exports_index(ordinal)` to get the zero-based
-index of the first matching entry in `export_details`. These overloads use the
-same comparisons, ordinal guard, and scan cache as `pe.exports`. They return
-undefined for a miss or unavailable metadata. Index zero is valid: use `defined`
-to check for a match instead of treating the index as a boolean.
+Use `pe.exports_index(name)`, `pe.exports_index(ordinal)`, or
+`pe.exports_index(regex)` to get the zero-based index of the first matching
+entry in `export_details`. These overloads use the same comparisons, ordinal
+guard, and scan cache as `pe.exports`. They return undefined for a miss or
+unavailable metadata. Index zero is valid: use `defined` to check for a match
+instead of treating the index as a boolean.
 
 ```yara
 import "pe"
@@ -336,9 +341,6 @@ libyara examines only the initial name pointers up to its exposed address count.
 Aliases beyond that window can therefore produce different names. Strict
 rejection also differs from libyara's partial recovery on malformed tables.
 Tests record these differences separately from parity cases.
-
-Regex `pe.exports` and `pe.exports_index` overloads remain
-unsupported and fail compilation.
 
 ## DLL classification
 
