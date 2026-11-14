@@ -58,6 +58,10 @@ func peModule() Module {
 			},
 			ReturnType: ModuleInteger,
 		},
+		"rva_to_offset": {
+			Signatures: []ModuleSignature{{Arguments: []ModuleValueType{ModuleInteger}}},
+			ReturnType: ModuleInteger,
+		},
 		"is_32bit": {Signatures: []ModuleSignature{{}}, ReturnType: ModuleInteger},
 		"is_64bit": {Signatures: []ModuleSignature{{}}, ReturnType: ModuleInteger},
 		"is_dll":   {Signatures: []ModuleSignature{{}}, ReturnType: ModuleInteger},
@@ -433,30 +437,72 @@ func peSectionFields(s *pe.Section, name string, hasSymbols bool) ModuleValue {
 // covering section RVA (the last on ties), and maps bytes before the first
 // section directly. An unmapped RVA returns -1.
 func peRVAToOffset(file *pe.File, addressRVA uint32, fileSize int64) int64 {
-	rva := uint64(addressRVA)
+	return peRVAToOffset64(file, uint64(addressRVA), fileSize)
+}
+
+func peRVAToOffset64(file *pe.File, addressRVA uint64, fileSize int64) int64 {
+	return peRVAToOffsetExtents(peRVAMapping{
+		count: len(file.Sections), fileAlignment: file.OptionalHeader.FileAlignment,
+		sectionAlignment: file.OptionalHeader.SectionAlignment, fileSize: fileSize, rva: addressRVA,
+		section: func(index int) (peSectionExtent, bool) {
+			section := &file.Sections[index]
+			return peSectionExtent{
+				virtualAddress: section.VirtualAddress,
+				virtualSize:    section.VirtualSize,
+				rawDataOffset:  section.PointerToRawData,
+				rawDataSize:    section.SizeOfRawData,
+			}, true
+		},
+	})
+}
+
+type peSectionExtent struct {
+	virtualAddress uint32
+	virtualSize    uint32
+	rawDataOffset  uint32
+	rawDataSize    uint32
+}
+
+type peRVAMapping struct {
+	section          func(int) (peSectionExtent, bool)
+	count            int
+	fileAlignment    uint32
+	sectionAlignment uint32
+	fileSize         int64
+	rva              uint64
+}
+
+// peRVAToOffsetExtents is the shared mapping policy for parsed files and host
+// snapshots. A false section record means the host metadata is incomplete and
+// makes the mapping undefined rather than falling back to file parsing.
+func peRVAToOffsetExtents(mapping peRVAMapping) int64 {
 	lowest := uint64(math.MaxUint32)
 	var address, offset, size uint64
-	for _, s := range file.Sections {
-		va := uint64(s.VirtualAddress)
+	for index := 0; index < mapping.count; index++ {
+		current, ok := mapping.section(index)
+		if !ok {
+			return -1
+		}
+		va := uint64(current.virtualAddress)
 		lowest = min(lowest, va)
-		if rva < va || rva-va >= uint64(max(s.VirtualSize, s.SizeOfRawData)) || va < address {
+		if mapping.rva < va || mapping.rva-va >= uint64(max(current.virtualSize, current.rawDataSize)) || va < address {
 			continue
 		}
-		address, offset, size = va, uint64(s.PointerToRawData), uint64(s.SizeOfRawData)
-		if alignment := uint64(min(file.OptionalHeader.FileAlignment, 0x200)); alignment != 0 {
+		address, offset, size = va, uint64(current.rawDataOffset), uint64(current.rawDataSize)
+		if alignment := uint64(min(mapping.fileAlignment, 0x200)); alignment != 0 {
 			offset -= offset % alignment
 		}
-		if file.OptionalHeader.SectionAlignment >= 0x1000 {
+		if mapping.sectionAlignment >= 0x1000 {
 			offset &^= 0x1ff
 		}
 	}
-	if rva < lowest {
-		address, offset, size = 0, 0, uint64(fileSize) //checkednarrow:ignore scan sizes are nonnegative
+	if mapping.rva < lowest {
+		address, offset, size = 0, 0, uint64(mapping.fileSize) //checkednarrow:ignore scan sizes are nonnegative
 	}
-	if rva < address || rva-address >= size || offset+rva-address >= uint64(fileSize) {
+	if mapping.rva < address || mapping.rva-address >= size || offset+mapping.rva-address >= uint64(mapping.fileSize) {
 		return -1
 	}
-	return int64(offset + rva - address) //checkednarrow:ignore bounded by nonnegative fileSize
+	return int64(offset + mapping.rva - address) //checkednarrow:ignore bounded by nonnegative fileSize
 }
 
 // peInteger preserves unsigned header bits, including libyara's reserved
