@@ -22,9 +22,13 @@ func (i *Interpreter) peExportLookup(args []ModuleValue) (index int, valid bool)
 		i.currentCompiledRule == nil || !i.currentCompiledRule.nativePE {
 		return -1, false
 	}
+	done := peCancelDone(i.matchContext)
+	if scanCanceled(done) {
+		return -1, false
+	}
 	query := args[0]
 	if data, supplied := i.moduleData["pe"]; supplied {
-		return peHostExportLookup(data, query)
+		return peHostExportLookup(data, query, done)
 	}
 	image := loadPE(i.matchContext)
 	if image.file == nil {
@@ -40,6 +44,9 @@ func (i *Interpreter) peExportLookup(args []ModuleValue) (index int, valid bool)
 		return -1, true
 	}
 	for index := range exports.symbols {
+		if scanCanceledAt(done, index) {
+			return -1, false
+		}
 		symbol := &exports.symbols[index]
 		if query.Type == ModuleInteger {
 			if query.Integer == int64(symbol.Ordinal) {
@@ -57,7 +64,7 @@ func (i *Interpreter) peExportLookup(args []ModuleValue) (index int, valid bool)
 
 // Host snapshots use their detail array, including its length, instead of
 // parsing the file. Missing arrays are undefined; empty arrays don't match.
-func peHostExportLookup(data, query ModuleValue) (index int, valid bool) {
+func peHostExportLookup(data, query ModuleValue, done <-chan struct{}) (index int, valid bool) {
 	if data.object == nil {
 		return -1, false
 	}
@@ -69,6 +76,9 @@ func peHostExportLookup(data, query ModuleValue) (index int, valid bool) {
 		return -1, true
 	}
 	for index, symbol := range details.object.elements {
+		if scanCanceledAt(done, index) {
+			return -1, false
+		}
 		if symbol.object == nil {
 			continue
 		}

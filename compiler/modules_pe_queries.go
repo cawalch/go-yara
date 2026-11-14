@@ -23,8 +23,12 @@ func (i *Interpreter) peImports(args []ModuleValue) ModuleValue {
 	if len(args) == 2 && args[1].Type == ModuleString {
 		args[1].String, _, _ = strings.Cut(args[1].String, "\x00")
 	}
+	done := peCancelDone(i.matchContext)
+	if scanCanceled(done) {
+		return ModuleValue{}
+	}
 	if data, supplied := i.moduleData["pe"]; supplied {
-		return peHostImports(data, args)
+		return peHostImports(data, args, done)
 	}
 	image := loadPE(i.matchContext)
 	if image.file == nil {
@@ -35,6 +39,7 @@ func (i *Interpreter) peImports(args []ModuleValue) ModuleValue {
 		return ModuleValue{}
 	}
 	var count int64
+	seen := 0
 	for _, library := range imports.libraries {
 		if !peNameEqual(library.DLL, args[0].String) {
 			continue
@@ -45,6 +50,10 @@ func (i *Interpreter) peImports(args []ModuleValue) ModuleValue {
 		}
 		kind := peMatchOrdinalDLL(library.DLL)
 		for _, symbol := range library.Symbols {
+			if scanCanceledAt(done, seen) {
+				return ModuleValue{}
+			}
+			seen++
 			if peImportSymbolMatches(kind, symbol, args[1]) {
 				return IntegerValue(1)
 			}
@@ -65,7 +74,7 @@ func peImportSymbolMatches(kind peOrdinalDLLKind, symbol pe.ImportSymbol, query 
 
 // Host snapshots take precedence over file parsing, including absent fields.
 // They are already schema-checked and own their values.
-func peHostImports(data ModuleValue, args []ModuleValue) ModuleValue {
+func peHostImports(data ModuleValue, args []ModuleValue, done <-chan struct{}) ModuleValue {
 	if data.object == nil {
 		return ModuleValue{}
 	}
@@ -74,6 +83,7 @@ func peHostImports(data ModuleValue, args []ModuleValue) ModuleValue {
 		return ModuleValue{}
 	}
 	var count int64
+	seen := 0
 	for _, library := range details.object.elements {
 		if library.object == nil {
 			continue
@@ -86,6 +96,10 @@ func peHostImports(data ModuleValue, args []ModuleValue) ModuleValue {
 		}
 		kind := peMatchOrdinalDLL(name.String)
 		for _, symbol := range functions.object.elements {
+			if scanCanceledAt(done, seen) {
+				return ModuleValue{}
+			}
+			seen++
 			if symbol.object == nil {
 				continue
 			}

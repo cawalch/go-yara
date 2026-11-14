@@ -47,6 +47,10 @@ func (image *peImage) loadExports() *peExportData {
 	if image.exports != nil {
 		return image.exports
 	}
+	done := peCancelDone(image.context)
+	if scanCanceled(done) {
+		return &peExportData{}
+	}
 	image.exports = &peExportData{fileSize: image.context.FileSize}
 	directory, err := image.file.Exports(peScanData(image.context))
 	if err != nil {
@@ -88,8 +92,12 @@ func (image *peImage) exportField(name string) ModuleValue {
 		return ModuleValue{}
 	}
 	if exports.details.Type == ModuleUndefined {
+		done := peCancelDone(image.context)
 		values := make([]ModuleValue, len(exports.symbols))
 		for i := range values {
+			if scanCanceledAt(done, i) {
+				return ModuleValue{}
+			}
 			values[i] = peExportFields(&exports.symbols[i], image.file, exports.fileSize)
 		}
 		exports.details = peArray(values)

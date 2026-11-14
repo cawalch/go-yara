@@ -388,18 +388,31 @@ This implementation does not claim parity for them. Tests record these
 intentional differences separately from differential parity checks.
 
 `Scan`, `ScanWithContext`, and `ScanFile` make the complete input available.
-`ScanReader` retains only the first 64 KiB, as it does for integer reads. PE
-headers, section tables, and COFF names must fit in that prefix for the image to
-be recognized. Import descriptors, lookup tables, and names must also fit there
-for import fields to be defined. Export tables and names must fit there for
-export fields to be defined. Target offset bounds use the full stream length.
+`ScanReader`, `ScanReaderWithContext`, `MatchesReader`, and
+`MatchesReaderWithContext` retain only the first 64 KiB, as they do for integer
+reads. PE headers, section tables, and COFF names must fit in that prefix for
+the image to be recognized. Import descriptors, lookup tables, and names must
+also fit there for import fields to be defined. Export tables and names must fit
+there for export fields to be defined. Target offset bounds and overlay extents
+use the full stream length.
 
 `ScanFileWithContext` uses the same bounded reader fallback when its context is
-cancellable and the file isn't memory-mapped. It attempts mapping for regular
-files of at least 128 KiB. A file below that threshold can therefore expose
-headers but have undefined import or export fields if their metadata extends
-beyond 64 KiB. For complete metadata with cancellation, acquire the file bytes in your
-application and call `ScanWithContext`.
+cancellable (`ctx.Done() != nil`) and the file isn't memory-mapped. It attempts
+mapping for regular files of at least 128 KiB (`fs.MinMmapFileSize`). A file
+below that threshold can therefore expose headers while leaving import or
+export fields `undefined` if their metadata extends beyond 64 KiB. Whole-file
+operations require the entire contiguous input (`len(data) == filesize`) and
+return `undefined` rather than partial results on streams or partial blocks over
+64 KiB. For complete metadata alongside cancellation on files below 128 KiB,
+acquire the file bytes in your application and call `ScanWithContext`.
+
+`BlockScanner` and `MatchingRulesInBlock*` operate strictly on **file offsets**,
+not process virtual addresses. Only a block with `Base == 0` can expose PE
+metadata; non-zero bases leave `is_pe == 0`, multi-block streams are not
+concatenated for metadata parsing, and partial/incomplete `Base == 0` blocks
+leave whole-file operations `undefined`. See the
+[native PE input availability matrix](design/rfc_native_pe_module.md#input-availability-block-boundaries-and-cancellation)
+for the complete per-API decision table and cancellation checkpoints.
 
 ## Runtime behavior
 
