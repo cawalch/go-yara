@@ -15,7 +15,8 @@ var peHeaderSchema = newPESchema()
 var peImportsSchema = newPEImportsSchema()
 var peExportsSchema = newPEExportsSchema()
 var peExportTimestampSchema = newPEExportTimestampSchema()
-var peSchema = newPEDLLNameSchema()
+var peDLLNameSchema = newPEDLLNameSchema()
+var peSchema = newPEOverlaySchema()
 
 // The semantic validator only reads this type tree. Reuse it so rules that
 // don't import PE don't pay to reconstruct the built-in schema.
@@ -132,7 +133,7 @@ func isNativePEFunction(module Module, name string, function ModuleFunction) boo
 // Preserve loading of programs emitted with earlier native PE schemas.
 // Match complete schemas so unrelated host modules named pe remain custom.
 func isNativePESchema(schema *ModuleSchema) bool {
-	return schema != nil && (reflect.DeepEqual(schema, peSchema) || reflect.DeepEqual(schema, peExportTimestampSchema) || reflect.DeepEqual(schema, peExportsSchema) || reflect.DeepEqual(schema, peImportsSchema) || reflect.DeepEqual(schema, peHeaderSchema))
+	return schema != nil && (reflect.DeepEqual(schema, peSchema) || reflect.DeepEqual(schema, peDLLNameSchema) || reflect.DeepEqual(schema, peExportTimestampSchema) || reflect.DeepEqual(schema, peExportsSchema) || reflect.DeepEqual(schema, peImportsSchema) || reflect.DeepEqual(schema, peHeaderSchema))
 }
 
 func newPESchema() *ModuleSchema {
@@ -249,6 +250,7 @@ type peImage struct {
 	names       []string
 	fileSize    int64
 	entryPoint  int64
+	overlay     ModuleValue
 	sections    ModuleValue
 	directories ModuleValue
 	versions    [4]ModuleValue
@@ -364,6 +366,11 @@ func (image *peImage) field(name string) ModuleValue {
 		if file.Is32Bit() {
 			return IntegerValue(int64(opt.BaseOfData))
 		}
+	case "overlay":
+		if image.overlay.Type == ModuleUndefined {
+			image.overlay = image.overlayValue()
+		}
+		return image.overlay
 	case "sections":
 		if image.sections.Type == ModuleUndefined {
 			values := make([]ModuleValue, len(file.Sections))

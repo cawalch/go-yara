@@ -19,8 +19,8 @@ rule WritableExecutableSection {
 ```
 
 The module implements headers, sections, section lookup, RVA-to-file-offset
-mapping, standard import and export metadata, import and export queries by name
-or ordinal, and the standard import hash under
+mapping, overlay metadata, standard import and export metadata, import and
+export queries by name or ordinal, and the standard import hash under
 [#359](https://github.com/cawalch/go-yara/issues/359). Regex import queries,
 delayed imports, regex export queries, resources, Rich headers, computed
 checksums, and Authenticode signatures remain unsupported and fail compilation.
@@ -41,6 +41,7 @@ at most 96 entries; `number_of_sections` preserves the declared count.
 | `pe.import_details[i]` | `library_name`, `number_of_functions`, `functions` |
 | `pe.import_details[i].functions[j]` | `name`, `ordinal` |
 | `pe.linker_version`, `pe.os_version`, `pe.image_version`, `pe.subsystem_version` | `major`, `minor` |
+| `pe.overlay` | `offset`, `size` |
 | `pe.data_directories[i]` | `virtual_address`, `size` |
 | `pe.sections[i]` | `name`, `full_name`, `characteristics`, `virtual_address`, `virtual_size`, `raw_data_offset`, `raw_data_size`, `pointer_to_relocations`, `pointer_to_line_numbers`, `number_of_relocations`, `number_of_line_numbers` |
 
@@ -94,6 +95,26 @@ host `number_of_sections`, exposed `sections`, `file_alignment`, and
 `section_alignment` fields; incomplete or out-of-range host metadata is
 undefined and never falls back to file parsing. The supplied host fields remain
 owned by the scanner snapshot.
+
+## Overlay
+
+`pe.overlay.offset` and `pe.overlay.size` report appended data past the highest
+raw section extent (`raw_data_offset + raw_data_size`) across the up to 96
+exposed sections, matching libyara 4.5.8. Offsets are summed as 64-bit integers
+without alignment rounding and without consulting the certificate directory or
+`size_of_headers`. Zero-size raw sections still contribute their
+`raw_data_offset` to the maximum extent.
+
+For a valid PE with no overlay — including zero sections, all-zero section raw
+extents, or a section extent reaching or exceeding the input size — both
+`offset` and `size` are defined and `0`. Both fields are undefined for non-PE
+input or headers rejected by go-pe.
+
+Overlay fields are computed lazily from the cached raw section records and the
+known input size (full stream length for `ScanReader`, or configured length for
+`BlockScanner`) without constructing `pe.sections` objects or copying overlay
+bytes. With `WithModuleData("pe", data)`, supplied `overlay` fields are read
+directly and absent fields remain undefined without falling back to file parsing.
 
 ## Standard imports
 
@@ -385,10 +406,9 @@ checkout. The parser uses only the standard library and requires no CGO. PE
 support is built in; it is not a separately installed plugin.
 
 The first field access or PE query parses the headers and sections.
-Subsequent rules share that scan's snapshot. Version objects, directory
-descriptors, and section objects are constructed on demand. `pe.section_index`
-and `pe.rva_to_offset` answer from the cached raw section records without
-constructing section objects. The first import
+Subsequent rules share that scan's snapshot. Version objects, overlay metadata, directory descriptors, and section objects are
+constructed on demand. `pe.section_index`, `pe.rva_to_offset`, and `pe.overlay`
+answer from the cached raw section records without constructing section objects. The first import
 query, import-field access, or `pe.imphash()` call parses and filters imports
 once. Queries, fields, and the hash share this cache. Counts and queries don't
 construct detail objects; each library constructs its function objects only
@@ -430,17 +450,17 @@ dispatch uses the same schema check as automatic field loading.
 ## Validation
 
 The differential suite uses libyara 4.5.8 in CI. It covers PE32 and PE32+
-headers, constants, section names, section lookup, RVA mapping, standard import
-counts, details, queries, and imphash, export metadata and queries, undefined
-fields, entry-point mappings, real Go-toolchain PE fixtures, scanner reuse,
-compiled-program round trips, compact scans, and reader scans within the
-retention limit.
+headers, constants, section names, section lookup, RVA mapping, overlay
+metadata, standard import counts, details, queries, and imphash, export metadata
+and queries, undefined fields, entry-point mappings, real Go-toolchain PE
+fixtures, scanner reuse, compiled-program round trips, compact scans, and
+reader scans within the retention limit.
 
 To run the focused tests, install the `yara` CLI on `PATH`, then run:
 
 ```sh
 go test ./compiler ./tests/integration -run 'TestPE|TestLibyaraPE' -count=1
-go test ./compiler -run '^$' -bench 'BenchmarkPE(Module|Scanner|Sections|RVA|Imports|Imphash|Exports|ExportQueries)$' -benchmem
+go test ./compiler -run '^$' -bench 'BenchmarkPE(Module|Scanner|Sections|RVA|Overlay|Imports|Imphash|Exports|ExportQueries)$' -benchmem
 ```
 
 The oracle tests skip if the CLI is absent. CI installs and checks the pinned
