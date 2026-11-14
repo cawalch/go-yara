@@ -513,3 +513,6 @@ The oracle tests skip if the CLI is absent. CI installs and checks the pinned
 oracle before running the suite. `FuzzPEAdapter` exercises the adapter with
 arbitrary input, including PE32/PE32+ imports, ordinals, and exports. Separate
 tests record strict rejection and name or forwarder differences from libyara.
+See [PE capability report (YARA Forge 20261108)](pe-capability-report.md) and
+[`tests/integration/pe_capability_matrix_test.go`](../tests/integration/pe_capability_matrix_test.go)
+for the external corpus audit, non-PE blocker triage, and slice benefit matrix.

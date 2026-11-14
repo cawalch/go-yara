@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+* Added the pinned YARA Forge `20261108` PE capability report ([docs/pe-capability-report.md](docs/pe-capability-report.md), linked from [PE module docs](docs/pe-module.md)) and behavioral PE fixture matrix integration suite ([tests/integration/pe_capability_matrix_test.go](tests/integration/pe_capability_matrix_test.go)) auditing all 11,866 rules (2,018 PE rules), isolating non-PE syntax/duplicate-meta blockers, deduplicating rule families, and quantifying per-slice PE unlock benefit ([#463](https://github.com/cawalch/go-yara/issues/463)).
+
 * Added `pe.imports(dll_regex, function_regex)` preserving libyara's count return value across matching descriptors and resolved ordinal aliases/`ordN` names while sharing the cached standard import snapshot, host `WithModuleData` snapshots, cooperative cancellation polling, and zero non-PE allocation overhead ([#468](https://github.com/cawalch/go-yara/issues/468)).
 
 * Added `pe.exports(regex)` and `pe.exports_index(regex)` overloads sharing the existing lazy export snapshot cache, 512-byte first-alias name projection, 16,384-slot limit, host `WithModuleData` snapshot semantics, cooperative cancellation polling, and zero non-PE allocation overhead ([#468](https://github.com/cawalch/go-yara/issues/468)).
