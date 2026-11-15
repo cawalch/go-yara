@@ -129,6 +129,17 @@ rule cap_resources_and_locales {
 			res.offset > 0
 		)
 }
+
+rule cap_version_info {
+	condition:
+		pe_gate_private and
+		pe.number_of_version_infos == 2 and
+		pe.version_info["CompanyName"] == "Example Corp" and
+		pe.version_info["FileVersion"] == "1.0.0.0" and
+		pe.version_info_list[0].key == "CompanyName" and
+		pe.version_info_list[1].value == "1.0.0.0" and
+		for any k, v in pe.version_info : (k == "CompanyName" and v == "Example Corp")
+}
 `
 
 	ordinal64 := pefixture.Imports(true, 3)
@@ -143,6 +154,16 @@ rule cap_resources_and_locales {
 		RFC3161At: time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC),
 	})
 
+	versionSpec := pefixture.VersionInfoSpec{
+		StringTables: []pefixture.VersionStringTableSpec{{
+			Key: "040904b0",
+			Entries: []pefixture.VersionStringEntry{
+				{Key: "CompanyName", Value: "Example Corp"},
+				{Key: "FileVersion", Value: "1.0.0.0"},
+			},
+		}},
+	}
+
 	fixtures := []struct {
 		name string
 		data []byte
@@ -155,6 +176,8 @@ rule cap_resources_and_locales {
 		{name: "pe32_verified", data: verified32},
 		{name: "pe32_resources", data: pefixture.Resources(false, 2)},
 		{name: "pe64_resources", data: pefixture.Resources(true, 2)},
+		{name: "pe32_version_info", data: pefixture.VersionInfoPE(false, versionSpec)},
+		{name: "pe64_version_info", data: pefixture.VersionInfoPE(true, versionSpec)},
 		{name: "non_pe", data: []byte("not a portable executable payload")},
 		{name: "empty", data: nil},
 	}
@@ -181,11 +204,6 @@ func TestPECapabilityMatrixUnsupportedAndStrict(t *testing.T) {
 			slice:   "#476_rich_signature",
 			rule:    `import "pe" rule r { condition: pe.rich_signature.toolid(1, 2) > 0 }`,
 			errText: "rich_signature",
-		},
-		{
-			slice:   "#475_version_info",
-			rule:    `import "pe" rule r { condition: pe.version_info["CompanyName"] == "Example" }`,
-			errText: "version_info",
 		},
 		{
 			slice:   "#477_pdb_path",
