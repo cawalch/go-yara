@@ -9,19 +9,21 @@ import (
 
 // MatchContext holds pattern matching state
 type MatchContext struct {
-	Data             []byte
-	Blocks           []MemoryBlock
-	Matches          map[string][]Match // Pattern -> list of matches
-	matchBuffers     map[string][]Match
-	spans            map[string][]matchSpan
-	spanBuffers      map[string][]matchSpan
-	cancelDone       <-chan struct{}
-	regexBatch       regex.VMBatch
-	moduleCache      *moduleCallCache
-	assertionResults []assertionResult
-	externalValues   map[string]externalValue
-	FileSize         int64
-	EntryPoint       int64
+	Data              []byte
+	Blocks            []MemoryBlock
+	Matches           map[string][]Match // Pattern -> list of matches
+	matchBuffers      map[string][]Match
+	spans             map[string][]matchSpan
+	spanBuffers       map[string][]matchSpan
+	cancelDone        <-chan struct{}
+	regexBatch        regex.VMBatch
+	moduleCache       *moduleCallCache
+	assertionResults  []assertionResult
+	externalValues    map[string]externalValue
+	FileSize          int64
+	EntryPoint        int64
+	HasEntryPoint     bool
+	entryPointChecked bool
 	// maxMatchesPerPattern bounds retained occurrences. Zero means unlimited.
 	maxMatchesPerPattern int
 	// matchFilter rejects provisional streaming occurrences before retention.

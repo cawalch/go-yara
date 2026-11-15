@@ -134,6 +134,8 @@ func (ctx *MatchContext) Reset(data []byte) {
 	}
 	ctx.FileSize = int64(len(data))
 	ctx.EntryPoint = 0
+	ctx.HasEntryPoint = false
+	ctx.entryPointChecked = false
 }
 
 func (ctx *MatchContext) resetCompactStorage() {
