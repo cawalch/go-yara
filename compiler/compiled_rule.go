@@ -245,8 +245,7 @@ func (cr *CompiledRule) Validate() error {
 	if err := validateCompiledEvidence(cr); err != nil {
 		return fmt.Errorf("invalid evidence plan: %w", err)
 	}
-
-	return nil
+	return validateRuleCrossReferences(cr)
 }
 
 // GetMemoryUsage returns a deterministic heuristic byte estimate for the rule.

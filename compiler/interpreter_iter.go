@@ -2,6 +2,21 @@ package compiler
 
 import "fmt"
 
+const maxIteratorDepth = 64
+
+func (i *Interpreter) pushIterator(opcode Opcode, iter Iterator) error {
+	if len(i.iterators) >= maxIteratorDepth {
+		return &InterpreterError{
+			Type:    ErrorRuntime,
+			Opcode:  opcode,
+			Message: fmt.Sprintf("iterator nesting limit exceeded (%d)", maxIteratorDepth),
+		}
+	}
+	iter.StartIP = i.ip
+	i.iterators = append(i.iterators, iter)
+	return nil
+}
+
 // executeIterStartIntRange starts an integer range iterator.
 func (i *Interpreter) executeIterStartIntRange() error {
 	if err := i.validateStackUnderflowN(OpIterStartIntRange, 2); err != nil {
@@ -40,8 +55,7 @@ func (i *Interpreter) executeIterStartIntRange() error {
 		iter.Total = 0
 	}
 
-	i.iterators = append(i.iterators, iter)
-	return nil
+	return i.pushIterator(OpIterStartIntRange, iter)
 }
 
 // executeIterStartStringSet starts a string set iterator.
@@ -121,8 +135,7 @@ func (i *Interpreter) executeIterStartStringSet() error {
 		Total:     len(ids),
 	}
 
-	i.iterators = append(i.iterators, iter)
-	return nil
+	return i.pushIterator(OpIterStartStringSet, iter)
 }
 
 // executeIterStartTextStringSet starts iterating over a set of literal text strings.
@@ -187,8 +200,7 @@ func (i *Interpreter) executeIterStartTextStringSet() error {
 		Total:       len(textStrings),
 	}
 
-	i.iterators = append(i.iterators, iter)
-	return nil
+	return i.pushIterator(OpIterStartTextStringSet, iter)
 }
 
 // executeIterStartIntEnum starts an integer enumeration iterator.
@@ -234,8 +246,7 @@ func (i *Interpreter) executeIterStartIntEnum() error {
 		Total:     len(vals),
 	}
 
-	i.iterators = append(i.iterators, iter)
-	return nil
+	return i.pushIterator(OpIterStartIntEnum, iter)
 }
 
 // parseConstraintMarker interprets the constraint marker value and pops
@@ -294,8 +305,19 @@ func (i *Interpreter) executeIterNext() error {
 	}
 	targetIPVal := i.stack[len(i.stack)-1]
 	i.stack = i.stack[:len(i.stack)-1]
+	if targetIPVal.Type != ValueTypeInt {
+		return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: OpIterNext, Message: "iterator jump target must be an integer"}
+	}
 
 	iter := &i.iterators[len(i.iterators)-1]
+	targetIP := int(targetIPVal.IntVal)
+	if targetIPVal.IntVal < int64(iter.StartIP) || targetIPVal.IntVal >= int64(len(i.bytecode)) {
+		return &InterpreterError{
+			Type:    ErrorInvalidBytecode,
+			Opcode:  OpIterNext,
+			Message: fmt.Sprintf("iterator jump target %d out of bounds [%d, %d)", targetIP, iter.StartIP, len(i.bytecode)),
+		}
+	}
 
 	if iter.Index < iter.Total {
 		// Check iteration limit (itersmax)
@@ -323,7 +345,7 @@ func (i *Interpreter) executeIterNext() error {
 		}
 
 		iter.Index++
-		i.ip = int(targetIPVal.IntVal)
+		i.ip = targetIP
 		return nil
 	}
 

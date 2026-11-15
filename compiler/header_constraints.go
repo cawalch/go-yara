@@ -234,8 +234,15 @@ func compiledPatternMatchesAtWithCancel(rule *CompiledRule, id string, data []by
 	if offset < 0 || offset > int64(len(data)) {
 		return false
 	}
-	switch rule.StringKinds[id] {
+	kind, exists := rule.StringKinds[id]
+	if !exists {
+		return false
+	}
+	switch kind {
 	case StringKindText:
+		if rule.automaton == nil {
+			return false
+		}
 		for _, info := range rule.automaton.strings {
 			if info.Identifier != id {
 				continue
@@ -249,7 +256,10 @@ func compiledPatternMatchesAtWithCancel(rule *CompiledRule, id string, data []by
 			}
 		}
 	case StringKindRegex:
-		pattern := rule.RegexPatterns[id]
+		pattern, exists := rule.RegexPatterns[id]
+		if !exists {
+			return false
+		}
 		modifiers := rule.StringModifiers[id]
 		wide := hasModifier(modifiers, ast.StringModifierWide)
 		ascii := hasModifier(modifiers, ast.StringModifierASCII)

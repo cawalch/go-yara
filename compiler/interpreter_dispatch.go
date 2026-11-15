@@ -186,8 +186,18 @@ func init() {
 	opcodeTable[OpLoadVar] = (*Interpreter).executeLoadVarOperation
 }
 
+const defaultMaxBytecodeSteps = 10_000_000
+
 func (i *Interpreter) executeMainLoop() error {
-	for !i.stopped && i.ip < len(i.bytecode) {
+	for steps := 0; !i.stopped && i.ip < len(i.bytecode); steps++ {
+		if steps >= defaultMaxBytecodeSteps {
+			err := &InterpreterError{
+				Type:    ErrorRuntime,
+				Message: fmt.Sprintf("bytecode step limit exceeded (%d)", defaultMaxBytecodeSteps),
+			}
+			i.result = err
+			return err
+		}
 		opcode := Opcode(i.bytecode[i.ip])
 		i.ip++
 
@@ -217,6 +227,14 @@ func (i *Interpreter) executeMainLoop() error {
 // interpreter dispatch path.
 func (i *Interpreter) executeMainLoopWithCancel(done <-chan struct{}) error {
 	for steps := 0; !i.stopped && i.ip < len(i.bytecode); steps++ {
+		if steps >= defaultMaxBytecodeSteps {
+			err := &InterpreterError{
+				Type:    ErrorRuntime,
+				Message: fmt.Sprintf("bytecode step limit exceeded (%d)", defaultMaxBytecodeSteps),
+			}
+			i.result = err
+			return err
+		}
 		if steps&(scanCancellationInterval-1) == 0 && scanCanceled(done) {
 			i.result = context.Canceled
 			return i.result

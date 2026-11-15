@@ -103,8 +103,7 @@ func (i *Interpreter) executeIterStartModuleArray() error {
 			iter.Total = len(value.object.keys)
 		}
 	}
-	i.iterators = append(i.iterators, iter)
-	return nil
+	return i.pushIterator(OpIterStartModuleArray, iter)
 }
 
 func (i *Interpreter) nextModuleElement(iter *Iterator) error {

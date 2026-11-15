@@ -21,6 +21,10 @@ const (
 	compiledProgramVersion = uint16(19)
 )
 
+// ErrCorruptProgram indicates a malformed, truncated, incompatible-version, or
+// internally inconsistent serialized CompiledProgram artifact.
+var ErrCorruptProgram = errors.New("corrupt compiled program")
+
 // MarshalBinary serializes a compiled program using the current versioned
 // go-yara format. Runtime external-variable values are deliberately omitted.
 func (cp *CompiledProgram) MarshalBinary() ([]byte, error) {
@@ -72,17 +76,17 @@ func UnmarshalCompiledProgram(data []byte, modules ...Module) (*CompiledProgram,
 func ReadCompiledProgram(reader io.Reader, modules ...Module) (*CompiledProgram, error) {
 	magic := make([]byte, len(compiledProgramMagic))
 	if _, err := io.ReadFull(reader, magic); err != nil {
-		return nil, fmt.Errorf("reading compiled program header: %w", err)
+		return nil, fmt.Errorf("%w: reading compiled program header: %w", ErrCorruptProgram, err)
 	}
 	if string(magic) != compiledProgramMagic {
-		return nil, errors.New("invalid compiled program magic")
+		return nil, fmt.Errorf("%w: invalid compiled program magic", ErrCorruptProgram)
 	}
 	var version uint16
 	if err := binary.Read(reader, binary.BigEndian, &version); err != nil {
-		return nil, fmt.Errorf("reading compiled program version: %w", err)
+		return nil, fmt.Errorf("%w: reading compiled program version: %w", ErrCorruptProgram, err)
 	}
 	if version < 4 || version > compiledProgramVersion {
-		return nil, fmt.Errorf("unsupported compiled program version %d; rebuild with format version %d", version, compiledProgramVersion)
+		return nil, fmt.Errorf("%w: unsupported compiled program version %d; rebuild with format version %d", ErrCorruptProgram, version, compiledProgramVersion)
 	}
 
 	if _, ok := reader.(io.ByteReader); !ok {
@@ -90,7 +94,7 @@ func ReadCompiledProgram(reader io.Reader, modules ...Module) (*CompiledProgram,
 	}
 	var payload serializedProgram
 	if err := gob.NewDecoder(reader).Decode(&payload); err != nil {
-		return nil, fmt.Errorf("decoding compiled program: %w", err)
+		return nil, fmt.Errorf("%w: decoding compiled program: %w", ErrCorruptProgram, err)
 	}
 	return deserializeProgram(payload, modules)
 }
@@ -214,7 +218,7 @@ func deserializeProgram(payload serializedProgram, modules []Module) (*CompiledP
 	schemas := make(map[string]*ModuleSchema, len(payload.ModuleSchemas))
 	for name, schema := range payload.ModuleSchemas {
 		if err := validateModuleSchema(schema); err != nil {
-			return nil, fmt.Errorf("loading module %s: %w", name, err)
+			return nil, fmt.Errorf("%w: loading module %s: %w", ErrCorruptProgram, name, err)
 		}
 		for _, module := range modules {
 			if module.Name == name && module.Schema != nil && !reflect.DeepEqual(module.Schema, schema) {
@@ -242,7 +246,7 @@ func deserializeProgram(payload serializedProgram, modules []Module) (*CompiledP
 		"total_bytecode_size": program.GetTotalBytecodeSize(),
 	}
 	if err := program.preparationErr; err != nil {
-		return nil, fmt.Errorf("validating loaded compiled program: %w", err)
+		return nil, fmt.Errorf("%w: validating loaded compiled program: %w", ErrCorruptProgram, err)
 	}
 	return program, nil
 }
@@ -250,20 +254,20 @@ func deserializeProgram(payload serializedProgram, modules []Module) (*CompiledP
 func deserializeRule(serialized serializedRule, bindings map[string]compiledModuleFunction) (*CompiledRule, error) {
 	automaton, err := deserializeAutomaton(serialized.AutomatonStrings)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", ErrCorruptProgram, err)
 	}
 	modifiers, err := deserializeStringModifiers(serialized.StringModifiers)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", ErrCorruptProgram, err)
 	}
 	meta, err := deserializeScalars(serialized.Meta)
 	if err != nil {
-		return nil, fmt.Errorf("loading metadata: %w", err)
+		return nil, fmt.Errorf("%w: loading metadata: %w", ErrCorruptProgram, err)
 	}
 
 	moduleRegexes, err := deserializeModuleRegexes(serialized.ModuleRegexes)
 	if err != nil {
-		return nil, fmt.Errorf("loading module regexes: %w", err)
+		return nil, fmt.Errorf("%w: loading module regexes: %w", ErrCorruptProgram, err)
 	}
 	fixedOffsets := serialized.FixedOffsets
 	if fixedOffsets == nil {
@@ -338,15 +342,18 @@ func deserializeRule(serialized serializedRule, bindings map[string]compiledModu
 	}
 	for rawID, name := range serialized.ModuleNames {
 		if builtinFunction(rawID) < firstModuleFunctionID {
-			return nil, fmt.Errorf("module function %q has reserved function ID %d", name, rawID)
+			return nil, fmt.Errorf("%w: module function %q has reserved function ID %d", ErrCorruptProgram, name, rawID)
+		}
+		signature, exists := serialized.ModuleSignatures[rawID]
+		if !exists {
+			return nil, fmt.Errorf("%w: module function %q has no serialized signature", ErrCorruptProgram, name)
+		}
+		if err := validateSerializedModuleFunction(name, signature); err != nil {
+			return nil, err
 		}
 		binding, exists := bindings[name]
 		if !exists {
 			return nil, fmt.Errorf("module function %q is not registered", name)
-		}
-		signature, exists := serialized.ModuleSignatures[rawID]
-		if !exists {
-			return nil, fmt.Errorf("module function %q has no serialized signature", name)
 		}
 		if !moduleFunctionCompatible(binding.function, signature) {
 			return nil, fmt.Errorf("module function %q has an incompatible signature", name)
@@ -366,6 +373,25 @@ func serializeModuleFunction(function ModuleFunction) serializedModuleFunction {
 		returns[index] = signature.resultType(function.ReturnType)
 	}
 	return serializedModuleFunction{Signatures: signatures, ReturnTypes: returns, ReturnType: function.ReturnType}
+}
+
+func validateSerializedModuleFunction(name string, signature serializedModuleFunction) error {
+	if signature.ReturnType == ModuleUndefined || signature.ReturnType > ModuleRegex || len(signature.Signatures) == 0 {
+		return fmt.Errorf("%w: module function %q has invalid serialized signature", ErrCorruptProgram, name)
+	}
+	for _, args := range signature.Signatures {
+		for _, arg := range args {
+			if arg == ModuleUndefined || arg > ModuleRegex {
+				return fmt.Errorf("%w: module function %q has invalid serialized argument type %d", ErrCorruptProgram, name, arg)
+			}
+		}
+	}
+	for _, ret := range signature.ReturnTypes {
+		if ret > ModuleRegex {
+			return fmt.Errorf("%w: module function %q has invalid serialized return type %d", ErrCorruptProgram, name, ret)
+		}
+	}
+	return nil
 }
 
 func serializeModuleRegexes(regexes []*compiledModuleRegex) []serializedModuleRegex {
