@@ -241,9 +241,12 @@ func findHexMatches(pattern *HexPattern, data []byte, done <-chan struct{}) []Ma
 // findHexMatchesEach invokes onMatch for every hex pattern match found in data.
 // It stops traversing immediately if onMatch returns false.
 //
-//nolint:revive // cancellation signal remains explicit on the matching hot path
+// nolint:revive // cancellation signal remains explicit on the matching hot path
 func findHexMatchesEach(pattern *HexPattern, data []byte, done <-chan struct{}, scratch *hexMatchScratch, onMatch func(Match) bool) {
 	if pattern == nil || len(pattern.Tokens) == 0 || len(data) == 0 {
+		return
+	}
+	if hexTokensMinLengthCapped(pattern.Tokens, len(data)+1) > len(data) {
 		return
 	}
 	if scratch == nil {
@@ -253,6 +256,14 @@ func findHexMatchesEach(pattern *HexPattern, data []byte, done <-chan struct{}, 
 	if len(keys) == 0 && len(pattern.XorRange) > 0 {
 		keys = expandXorKeys(pattern.XorRange)
 	}
+	if len(keys) == 0 && !hasAllMandatoryHexBytes(pattern.Tokens, data, nil) {
+		return
+	}
+	if len(keys) == 1 && !hasAllMandatoryHexBytes(pattern.Tokens, data, &keys[0]) {
+		return
+	}
+	scratch.beginJumpScan(nil)
+	defer scratch.endJumpScan()
 
 	// Try anchor-based skipping for the common case.
 	anchor := findAnchorByte(pattern.Tokens)
@@ -622,10 +633,34 @@ type hexWorkItem struct {
 	dataPos int
 }
 
+type jumpByteCacheEntry struct {
+	byteVal      byte
+	keyTag       int16
+	primary      bool
+	cacheStart   int
+	nextHit      int
+	scannedUntil int
+}
+
 type hexMatchScratch struct {
-	worklist   []hexWorkItem
-	diffBuf    []byte
-	inlineWork [16]hexWorkItem
+	worklist      []hexWorkItem
+	diffBuf       []byte
+	inlineWork    [16]hexWorkItem
+	jumpScanOn    bool
+	jumpCache     [8]jumpByteCacheEntry
+	jumpCacheNext int
+}
+
+func (scratch *hexMatchScratch) beginJumpScan(_ *byte) {
+	scratch.jumpScanOn = true
+	scratch.jumpCacheNext = 0
+	for i := range scratch.jumpCache {
+		scratch.jumpCache[i].keyTag = -2
+	}
+}
+
+func (scratch *hexMatchScratch) endJumpScan() {
+	scratch.jumpScanOn = false
 }
 
 func (scratch *hexMatchScratch) reset() {
@@ -634,6 +669,215 @@ func (scratch *hexMatchScratch) reset() {
 	} else {
 		scratch.worklist = scratch.worklist[:0]
 	}
+}
+
+func hexXORKeyTag(xorKey *byte) int16 {
+	if xorKey == nil {
+		return -1
+	}
+	return int16(*xorKey)
+}
+
+func definiteHexByte(tok HexPatternToken, xorKey *byte) (byte, bool) {
+	if tok.Negated {
+		return 0, false
+	}
+	if tok.Kind != HexTokenByte && (tok.Kind != HexTokenMasked || tok.Mask != 0xFF) {
+		return 0, false
+	}
+	b := tok.Value
+	if xorKey != nil {
+		b ^= *xorKey
+	}
+	return b, true
+}
+
+func hasAllMandatoryHexBytes(tokens []HexPatternToken, data []byte, xorKey *byte) bool {
+	for _, tok := range tokens {
+		if b, ok := definiteHexByte(tok, xorKey); ok {
+			if bytes.IndexByte(data, b) == -1 {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func hexTokensMinLengthCapped(tokens []HexPatternToken, limit int) int {
+	total := 0
+	for _, tok := range tokens {
+		switch tok.Kind {
+		case HexTokenByte, HexTokenMasked, HexTokenWildcard:
+			total++
+		case HexTokenJump:
+			if tok.Min > 0 {
+				if tok.Min >= limit-total {
+					return limit
+				}
+				total += tok.Min
+			}
+		case HexTokenAlt:
+			best := -1
+			for _, alt := range tok.Alternatives {
+				altMin := hexTokensMinLengthCapped(alt, limit-total)
+				if best == -1 || altMin < best {
+					best = altMin
+				}
+			}
+			if best > 0 {
+				total += best
+			}
+		}
+		if total >= limit {
+			return limit
+		}
+	}
+	return total
+}
+
+//nolint:revive // argument-limit: hot path helper keeps state explicit
+func (scratch *hexMatchScratch) lookupJumpCache(b byte, keyTag int16, lo, hi int, primary bool) (searchFrom, reuseIdx, cachedHit int, done bool) {
+	searchFrom = lo
+	reuseIdx = -1
+	for idx := range scratch.jumpCache {
+		e := &scratch.jumpCache[idx]
+		if e.keyTag != keyTag || e.byteVal != b {
+			continue
+		}
+		if e.primary == primary && (e.nextHit == -1 || e.nextHit < lo) {
+			reuseIdx = idx
+		}
+		if lo < e.cacheStart {
+			continue
+		}
+		if e.nextHit >= lo {
+			if e.nextHit < hi {
+				return 0, 0, e.nextHit, true
+			}
+			return 0, 0, -1, true
+		}
+		if lo < e.scannedUntil {
+			if hi <= e.scannedUntil {
+				return 0, 0, -1, true
+			}
+			searchFrom = max(searchFrom, e.scannedUntil)
+		}
+	}
+	return searchFrom, reuseIdx, 0, false
+}
+
+//nolint:revive // argument-limit: hot path helper keeps state explicit
+func (scratch *hexMatchScratch) findNextByte(data []byte, b byte, keyTag int16, lo, hi int, primary bool) int {
+	if lo >= hi || lo >= len(data) {
+		return -1
+	}
+	hi = min(hi, len(data))
+	searchFrom := lo
+	reuseIdx := -1
+
+	if scratch.jumpScanOn {
+		var cachedHit int
+		var done bool
+		searchFrom, reuseIdx, cachedHit, done = scratch.lookupJumpCache(b, keyTag, lo, hi, primary)
+		if done {
+			return cachedHit
+		}
+	}
+
+	idx := bytes.IndexByte(data[searchFrom:hi], b)
+	hit := -1
+	if idx >= 0 {
+		hit = searchFrom + idx
+	}
+	if scratch.jumpScanOn {
+		if reuseIdx == -1 {
+			reuseIdx = scratch.jumpCacheNext
+			scratch.jumpCacheNext = (scratch.jumpCacheNext + 1) % len(scratch.jumpCache)
+		}
+		// bytes.IndexByte stops at the first match, so only [lo, hit+1) is known
+		// when hit >= 0; the full [lo, hi) window is scanned only on a miss.
+		scannedUntil := hi
+		if hit >= 0 {
+			scannedUntil = hit + 1
+		}
+		scratch.jumpCache[reuseIdx] = jumpByteCacheEntry{
+			byteVal:      b,
+			keyTag:       keyTag,
+			primary:      primary,
+			cacheStart:   lo,
+			nextHit:      hit,
+			scannedUntil: scannedUntil,
+		}
+	}
+	return hit
+}
+
+//nolint:revive // argument-limit: hot path helper
+func (scratch *hexMatchScratch) tailAnchorCanReach(
+	tail []HexPatternToken,
+	data []byte,
+	minPos, maxPos int,
+	xorKey *byte,
+) bool {
+	anchor := findAnchorByte(tail)
+	if !anchor.ok {
+		return true
+	}
+	lo := minPos + anchor.offset
+	if lo >= len(data) {
+		return false
+	}
+	hi := len(data)
+	if anchor.maxOffset >= 0 {
+		hi = min(hi, maxPos+anchor.maxOffset+1)
+	}
+	b := anchor.byteVal
+	if xorKey != nil {
+		b ^= *xorKey
+	}
+	return scratch.findNextByte(data, b, hexXORKeyTag(xorKey), lo, hi, true) >= 0
+}
+
+//nolint:revive // argument-limit: hot path helper
+func (scratch *hexMatchScratch) tailCanReachWindow(
+	tail []HexPatternToken,
+	data []byte,
+	minPos, maxPos int,
+	xorKey *byte,
+) bool {
+	keyTag := hexXORKeyTag(xorKey)
+	for offset, tok := range tail {
+		if tok.Kind == HexTokenJump || tok.Kind == HexTokenAlt {
+			return scratch.tailAnchorCanReach(tail[offset:], data, minPos+offset, maxPos+offset, xorKey)
+		}
+		b, ok := definiteHexByte(tok, xorKey)
+		if !ok {
+			continue
+		}
+		lo := minPos + offset
+		hi := min(len(data), maxPos+offset+1)
+		if scratch.findNextByte(data, b, keyTag, lo, hi, true) < 0 {
+			return false
+		}
+	}
+	return true
+}
+
+//nolint:revive // argument-limit: hot path helper
+func (scratch *hexMatchScratch) pushJumpByteMatches(
+	nextTail []HexPatternToken,
+	data []byte,
+	lo, hi int,
+	targetByte byte,
+	keyTag int16,
+) {
+	base := len(scratch.worklist)
+	pos := scratch.findNextByte(data, targetByte, keyTag, lo, hi, true)
+	for pos >= 0 {
+		scratch.worklist = append(scratch.worklist, hexWorkItem{nextTail, pos + 1})
+		pos = scratch.findNextByte(data, targetByte, keyTag, pos+1, hi, false)
+	}
+	slices.Reverse(scratch.worklist[base:])
 }
 
 // matchEach processes tokens iteratively while retaining branch buffers
@@ -722,14 +966,24 @@ func (scratch *hexMatchScratch) matchEach(
 
 			case HexTokenJump:
 				minJ := max(head.Min, 0)
-				maxJ := head.Max
-				if maxJ < 0 {
-					maxJ = len(data) - dp
+				tail := toks[1:]
+				tailMinLen := hexTokensMinLengthCapped(tail, len(data)-dp+1)
+				maxJ := len(data) - dp - tailMinLen
+				if head.Max >= 0 && head.Max < maxJ {
+					maxJ = head.Max
 				}
 				if maxJ < minJ {
 					goto nextItem
 				}
-				tail := toks[1:]
+				if len(tail) > 0 {
+					if !scratch.tailCanReachWindow(tail, data, dp+minJ, dp+maxJ, xorKey) {
+						goto nextItem
+					}
+					if targetByte, hasByte := definiteHexByte(tail[0], xorKey); hasByte {
+						scratch.pushJumpByteMatches(tail[1:], data, dp+minJ, dp+maxJ+1, targetByte, hexXORKeyTag(xorKey))
+						goto nextItem
+					}
+				}
 				// Push branches in reverse order so smallest jump is processed first.
 				for jump := maxJ; jump >= minJ; jump-- {
 					scratch.worklist = append(scratch.worklist, hexWorkItem{tail, dp + jump})
