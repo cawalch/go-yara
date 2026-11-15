@@ -272,6 +272,8 @@ func (i *Interpreter) executeModuleCall(id builtinFunction, function ModuleFunct
 			result = i.peExports(moduleArgs, name == "pe.exports_index")
 		case "pe.locale", "pe.language":
 			result = i.peLocaleQuery(moduleArgs, name == "pe.language")
+		case "pe.rich_signature.version", "pe.rich_signature.toolid":
+			result = i.peRichQuery(moduleArgs, name == "pe.rich_signature.toolid")
 		}
 		if cache != nil {
 			cache.put(key, result)

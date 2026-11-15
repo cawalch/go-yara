@@ -274,7 +274,7 @@ func buildModuleBindings(registered map[string]Module) (map[string]compiledModul
 			return nil, fmt.Errorf("module %s: %w", moduleName, err)
 		}
 		for functionName, function := range module.Functions {
-			if functionName == "" || strings.Contains(functionName, ".") {
+			if !validModuleFunctionName(module.Schema, functionName) {
 				return nil, fmt.Errorf("invalid function name %q in module %q", functionName, moduleName)
 			}
 			if (function.Evaluate == nil && !isNativePEFunction(module, functionName, function)) || len(function.Signatures) == 0 || (function.ReturnType < ModuleInteger || function.ReturnType > ModuleBoolean) {
@@ -313,6 +313,36 @@ func buildModuleBindings(registered map[string]Module) (map[string]compiledModul
 
 func validModuleArgumentType(valueType ModuleValueType) bool {
 	return (valueType >= ModuleInteger && valueType <= ModuleBoolean) || valueType == ModuleRegex
+}
+
+func validModuleFunctionName(schema *ModuleSchema, name string) bool {
+	if name == "" {
+		return false
+	}
+	if !strings.Contains(name, ".") {
+		return true
+	}
+	if schema == nil {
+		return false
+	}
+	parts := strings.Split(name, ".")
+	cur := schema
+	for _, seg := range parts[:len(parts)-1] {
+		if seg == "" || cur == nil {
+			return false
+		}
+		field, ok := cur.Fields[seg]
+		if !ok || field.Kind != ModuleStruct || field.Struct == nil {
+			return false
+		}
+		cur = field.Struct
+	}
+	method := parts[len(parts)-1]
+	if method == "" || cur == nil {
+		return false
+	}
+	_, collides := cur.Fields[method]
+	return !collides
 }
 
 func moduleSemanticType(valueType ModuleValueType) semantic.DataType {
