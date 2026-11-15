@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/binary"
 	"encoding/gob"
 	"errors"
@@ -17,8 +18,8 @@ import (
 
 const (
 	compiledProgramMagic = "GOYARA\x00"
-	// Version 19 persists precompiled module regex arguments alongside rule pools.
-	compiledProgramVersion = uint16(19)
+	// Version 20 replaces map wire fields with sorted entry slices for byte-deterministic output.
+	compiledProgramVersion = uint16(20)
 )
 
 // ErrCorruptProgram indicates a malformed, truncated, incompatible-version, or
@@ -27,6 +28,7 @@ var ErrCorruptProgram = errors.New("corrupt compiled program")
 
 // MarshalBinary serializes a compiled program using the current versioned
 // go-yara format. Runtime external-variable values are deliberately omitted.
+// Output is byte-identical for equal compilation inputs.
 func (cp *CompiledProgram) MarshalBinary() ([]byte, error) {
 	if cp == nil {
 		return nil, errors.New("cannot serialize a nil compiled program")
@@ -35,7 +37,7 @@ func (cp *CompiledProgram) MarshalBinary() ([]byte, error) {
 		return nil, fmt.Errorf("serializing invalid compiled program: %w", err)
 	}
 
-	payload, err := serializeProgram(cp)
+	payload, err := serializeDeterministicProgram(cp)
 	if err != nil {
 		return nil, err
 	}
@@ -53,6 +55,7 @@ func (cp *CompiledProgram) MarshalBinary() ([]byte, error) {
 }
 
 // WriteTo writes the versioned compiled-program representation to writer.
+// Output is byte-identical for equal compilation inputs.
 func (cp *CompiledProgram) WriteTo(writer io.Writer) (int64, error) {
 	data, err := cp.MarshalBinary()
 	if err != nil {
@@ -108,11 +111,227 @@ func (reader compiledProgramReader) ReadByte() (byte, error) {
 	return data[0], err
 }
 
-func serializeProgram(cp *CompiledProgram) (serializedProgram, error) {
+func sortedMapEntries[K cmp.Ordered, V, E any](values map[K]V, build func(K, V) E) []E {
+	if len(values) == 0 {
+		return nil
+	}
+	keys := slices.Sorted(maps.Keys(values))
+	out := make([]E, len(keys))
+	for index, key := range keys {
+		out[index] = build(key, values[key])
+	}
+	return out
+}
+
+func sortedMapEntriesErr[K cmp.Ordered, V, E any](values map[K]V, build func(K, V) (E, error)) ([]E, error) {
+	if len(values) == 0 {
+		return nil, nil
+	}
+	keys := slices.Sorted(maps.Keys(values))
+	out := make([]E, len(keys))
+	for index, key := range keys {
+		entry, err := build(key, values[key])
+		if err != nil {
+			return nil, err
+		}
+		out[index] = entry
+	}
+	return out, nil
+}
+
+type entryMapSpec[K comparable, S, V, E any] struct {
+	allocateEmpty bool
+	unpack        func(E) (K, V, error)
+	fromLegacy    func(K, S) (V, error)
+}
+
+func decodeEntryMap[K comparable, S, V, E any](
+	entries []E,
+	legacy map[K]S,
+	spec entryMapSpec[K, S, V, E],
+) (map[K]V, error) {
+	if len(entries) > 0 {
+		out := make(map[K]V, len(entries))
+		for _, entry := range entries {
+			key, value, err := spec.unpack(entry)
+			if err != nil {
+				return nil, err
+			}
+			if _, dup := out[key]; dup {
+				return nil, fmt.Errorf("%w: duplicate serialized map key %v", ErrCorruptProgram, key)
+			}
+			out[key] = value
+		}
+		return out, nil
+	}
+	if legacy == nil && !spec.allocateEmpty {
+		return nil, nil
+	}
+	out := make(map[K]V, len(legacy))
+	for key, raw := range legacy {
+		value, err := spec.fromLegacy(key, raw)
+		if err != nil {
+			return nil, err
+		}
+		out[key] = value
+	}
+	return out, nil
+}
+
+func decodeScalarEntryMap[K comparable, V, E any](
+	entries []E,
+	legacy map[K]V,
+	unpack func(E) (K, V),
+) (map[K]V, error) {
+	return decodeEntryMap(entries, legacy, entryMapSpec[K, V, V, E]{
+		unpack:     func(e E) (K, V, error) { k, v := unpack(e); return k, v, nil },
+		fromLegacy: func(_ K, v V) (V, error) { return v, nil },
+	})
+}
+
+type convertedMapSpec[K comparable, S, V, E any] struct {
+	allocateEmpty bool
+	unpack        func(E) (K, S)
+	convert       func(K, S) (V, error)
+}
+
+func decodeConvertedMap[K comparable, S, V, E any](
+	entries []E,
+	legacy map[K]S,
+	spec convertedMapSpec[K, S, V, E],
+) (map[K]V, error) {
+	return decodeEntryMap(entries, legacy, entryMapSpec[K, S, V, E]{
+		allocateEmpty: spec.allocateEmpty,
+		unpack: func(entry E) (K, V, error) {
+			key, raw := spec.unpack(entry)
+			val, err := spec.convert(key, raw)
+			return key, val, err
+		},
+		fromLegacy: spec.convert,
+	})
+}
+
+func serializeModuleSchema(schema *ModuleSchema, depth int) (*serializedModuleSchema, error) {
+	if schema == nil {
+		return nil, nil
+	}
+	if depth > 32 {
+		return nil, errors.New("module schema is recursive or exceeds 32 levels")
+	}
+	fields, err := sortedMapEntriesErr(schema.Fields, func(name string, field ModuleField) (serializedModuleFieldEntry, error) {
+		sf, err := serializeModuleField(field, depth+1)
+		if err != nil {
+			return serializedModuleFieldEntry{}, err
+		}
+		return serializedModuleFieldEntry{Key: name, Value: sf}, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &serializedModuleSchema{Fields: fields}, nil
+}
+
+func serializeModuleField(field ModuleField, depth int) (serializedModuleField, error) {
+	if depth > 32 {
+		return serializedModuleField{}, errors.New("module schema is recursive or exceeds 32 levels")
+	}
+	nested, err := serializeModuleSchema(field.Struct, depth)
+	if err != nil {
+		return serializedModuleField{}, err
+	}
+	var elem *serializedModuleField
+	if field.Element != nil {
+		encodedElem, err := serializeModuleField(*field.Element, depth+1)
+		if err != nil {
+			return serializedModuleField{}, err
+		}
+		elem = &encodedElem
+	}
+	var constant *ModuleValue
+	if field.Constant != nil {
+		copyVal := *field.Constant
+		constant = &copyVal
+	}
+	return serializedModuleField{
+		Kind:     field.Kind,
+		Struct:   nested,
+		Element:  elem,
+		Constant: constant,
+	}, nil
+}
+
+func deserializeModuleSchema(serialized *serializedModuleSchema, depth int) (*ModuleSchema, error) {
+	if serialized == nil {
+		return nil, nil
+	}
+	if depth > 32 {
+		return nil, fmt.Errorf("%w: module schema exceeds maximum nesting depth", ErrCorruptProgram)
+	}
+	fields, err := decodeEntryMap(serialized.Fields, nil, entryMapSpec[string, ModuleField, ModuleField, serializedModuleFieldEntry]{
+		allocateEmpty: true,
+		unpack: func(entry serializedModuleFieldEntry) (string, ModuleField, error) {
+			field, err := deserializeModuleField(entry.Value, depth+1)
+			return entry.Key, field, err
+		},
+		fromLegacy: func(_ string, v ModuleField) (ModuleField, error) { return v, nil },
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &ModuleSchema{Fields: fields}, nil
+}
+
+func deserializeModuleField(serialized serializedModuleField, depth int) (ModuleField, error) {
+	if depth > 32 {
+		return ModuleField{}, fmt.Errorf("%w: module schema exceeds maximum nesting depth", ErrCorruptProgram)
+	}
+	nested, err := deserializeModuleSchema(serialized.Struct, depth)
+	if err != nil {
+		return ModuleField{}, err
+	}
+	var elem *ModuleField
+	if serialized.Element != nil {
+		decodedElem, err := deserializeModuleField(*serialized.Element, depth+1)
+		if err != nil {
+			return ModuleField{}, err
+		}
+		elem = &decodedElem
+	}
+	var constant *ModuleValue
+	if serialized.Constant != nil {
+		copyVal := *serialized.Constant
+		constant = &copyVal
+	}
+	return ModuleField{
+		Kind:     serialized.Kind,
+		Struct:   nested,
+		Element:  elem,
+		Constant: constant,
+	}, nil
+}
+
+func serializeDeterministicProgram(cp *CompiledProgram) (serializedProgram, error) {
+	schemaEntries, err := sortedMapEntriesErr(cp.moduleSchemas, func(name string, schema *ModuleSchema) (serializedModuleSchemaEntry, error) {
+		encoded, err := serializeModuleSchema(schema, 0)
+		if err != nil {
+			return serializedModuleSchemaEntry{}, fmt.Errorf("serializing module schema %q: %w", name, err)
+		}
+		return serializedModuleSchemaEntry{Key: name, Value: encoded}, nil
+	})
+	if err != nil {
+		return serializedProgram{}, err
+	}
+
+	dependencyEntries := sortedMapEntries(cp.DependencyGraph(), func(ruleName string, deps []string) serializedStringSliceEntry {
+		cloned := slices.Clone(deps)
+		slices.Sort(cloned)
+		return serializedStringSliceEntry{Key: ruleName, Value: cloned}
+	})
+
 	payload := serializedProgram{
-		ModuleSchemas: cp.moduleSchemas,
-		Rules:         make([]serializedRule, len(cp.Rules)),
-		Dependencies:  cp.DependencyGraph(),
+		ModuleSchemaEntries: schemaEntries,
+		Rules:               make([]serializedRule, len(cp.Rules)),
+		DependencyEntries:   dependencyEntries,
 	}
 	for index, rule := range cp.Rules {
 		serialized, err := serializeRule(rule)
@@ -124,49 +343,141 @@ func serializeProgram(cp *CompiledProgram) (serializedProgram, error) {
 	return payload, nil
 }
 
+// serializeProgram returns a legacy map-populated serializedProgram for white-box
+// format-compatibility tests that mutate legacy map fields before encoding.
+func serializeProgram(cp *CompiledProgram) (serializedProgram, error) {
+	payload, err := serializeDeterministicProgram(cp)
+	if err != nil {
+		return serializedProgram{}, err
+	}
+	schemas := make(map[string]*ModuleSchema, len(payload.ModuleSchemaEntries))
+	for _, entry := range payload.ModuleSchemaEntries {
+		schema, err := deserializeModuleSchema(entry.Value, 0)
+		if err != nil {
+			return serializedProgram{}, err
+		}
+		schemas[entry.Key] = schema
+	}
+	payload.ModuleSchemas = schemas
+	payload.Dependencies = entriesToMap(payload.DependencyEntries, false, func(e serializedStringSliceEntry) (string, []string) { return e.Key, e.Value })
+	payload.ModuleSchemaEntries = nil
+	payload.DependencyEntries = nil
+	for index := range payload.Rules {
+		ruleToLegacyMaps(&payload.Rules[index])
+	}
+	return payload, nil
+}
+
+func entriesToMap[K comparable, V, E any](entries []E, allocateEmpty bool, unpack func(E) (K, V)) map[K]V {
+	if len(entries) == 0 && !allocateEmpty {
+		return nil
+	}
+	out := make(map[K]V, len(entries))
+	for _, entry := range entries {
+		key, val := unpack(entry)
+		out[key] = val
+	}
+	return out
+}
+
+func ruleToLegacyMaps(rule *serializedRule) {
+	rule.Strings = entriesToMap(rule.StringEntries, true, func(e serializedByteEntry) (string, []byte) { return e.Key, e.Value })
+	rule.StringKinds = entriesToMap(rule.StringKindEntries, false, func(e serializedStringKindEntry) (string, StringKind) { return e.Key, e.Value })
+	rule.StringModifiers = entriesToMap(rule.StringModifierEntries, true, func(e serializedStringModifierEntry) (string, []serializedStringModifier) {
+		return e.Key, e.Value
+	})
+	rule.CaptureBindings = entriesToMap(rule.CaptureBindingEntries, true, func(e serializedCaptureBindingEntry) (string, []serializedCaptureBinding) {
+		return e.Key, e.Value
+	})
+	rule.TextPatterns = entriesToMap(rule.TextPatternEntries, true, func(e serializedByteEntry) (string, []byte) { return e.Key, e.Value })
+	rule.RegexPatterns = entriesToMap(rule.RegexPatternEntries, true, func(e serializedRegexPatternEntry) (string, serializedRegexPattern) {
+		return e.Key, e.Value
+	})
+	rule.HexPatterns = entriesToMap(rule.HexPatternEntries, true, func(e serializedHexPatternEntry) (string, serializedHexPattern) {
+		return e.Key, e.Value
+	})
+	rule.Stats = entriesToMap(rule.StatEntries, true, func(e serializedIntEntry) (string, int) { return e.Key, e.Value })
+	rule.ExternalSlots = entriesToMap(rule.ExternalSlotEntries, false, func(e serializedIntEntry) (string, int) { return e.Key, e.Value })
+	rule.GlobalSlots = entriesToMap(rule.GlobalSlotEntries, false, func(e serializedIntEntry) (string, int) { return e.Key, e.Value })
+	rule.GlobalValues = entriesToMap(rule.GlobalValueEntries, true, func(e serializedGlobalValueEntry) (string, serializedGlobalValue) {
+		return e.Key, e.Value
+	})
+	rule.Meta = entriesToMap(rule.MetaEntries, true, func(e serializedScalarEntry) (string, serializedScalar) { return e.Key, e.Value })
+	rule.FixedOffsets = entriesToMap(rule.FixedOffsetEntries, false, func(e serializedInt64Entry) (string, int64) { return e.Key, e.Value })
+	rule.ModuleNames = entriesToMap(rule.ModuleNameEntries, false, func(e serializedModuleNameEntry) (uint8, string) { return e.Key, e.Value })
+	rule.ModuleSignatures = entriesToMap(rule.ModuleSignatureEntries, false, func(e serializedModuleSignatureEntry) (uint8, serializedModuleFunction) {
+		return e.Key, e.Value
+	})
+	rule.StringEntries = nil
+	rule.StringKindEntries = nil
+	rule.StringModifierEntries = nil
+	rule.CaptureBindingEntries = nil
+	rule.TextPatternEntries = nil
+	rule.RegexPatternEntries = nil
+	rule.HexPatternEntries = nil
+	rule.StatEntries = nil
+	rule.ExternalSlotEntries = nil
+	rule.GlobalSlotEntries = nil
+	rule.GlobalValueEntries = nil
+	rule.MetaEntries = nil
+	rule.FixedOffsetEntries = nil
+	rule.ModuleNameEntries = nil
+	rule.ModuleSignatureEntries = nil
+}
+
 func serializeRule(rule *CompiledRule) (serializedRule, error) {
-	modifiers, err := serializeStringModifiers(rule.StringModifiers)
+	modifierEntries, err := serializeStringModifierEntries(rule.StringModifiers)
 	if err != nil {
 		return serializedRule{}, err
 	}
-	meta, err := serializeScalars(rule.Meta)
+	metaEntries, err := serializeScalarEntries(rule.Meta)
 	if err != nil {
 		return serializedRule{}, fmt.Errorf("serializing metadata: %w", err)
 	}
 
 	serialized := serializedRule{
-		ModuleAccessNames:   slices.Clone(rule.moduleAccessNames),
-		ModuleIterations:    slices.Clone(rule.moduleIterations),
-		Name:                rule.Name,
-		Index:               rule.Index,
-		Bytecode:            slices.Clone(rule.Bytecode),
-		StringCount:         rule.StringCount,
-		Strings:             cloneByteMap(rule.Strings),
-		StringSets:          cloneStringSlices(rule.StringSets),
-		TextStringSets:      cloneStringSlices(rule.TextStringSets),
-		AnonymousStrings:    slices.Clone(rule.AnonymousStrings),
-		StringLiterals:      slices.Clone(rule.StringLiterals),
-		ModuleRegexes:       serializeModuleRegexes(rule.moduleRegexes),
-		StringKinds:         maps.Clone(rule.StringKinds),
-		StringModifiers:     modifiers,
-		CaptureBindings:     serializeCaptureBindings(rule.CaptureBindings),
-		EvidencePlans:       serializeEvidencePlans(rule.EvidencePlans),
-		TextPatterns:        cloneByteMap(rule.TextPatterns),
-		RegexPatterns:       make(map[string]serializedRegexPattern, len(rule.RegexPatterns)),
-		HexPatterns:         make(map[string]serializedHexPattern, len(rule.HexPatterns)),
-		Stats:               serializeIntegerStats(rule.Stats),
-		ExternalSlots:       maps.Clone(rule.ExternalSlots),
-		GlobalSlots:         maps.Clone(rule.GlobalSlots),
-		GlobalValues:        make(map[string]serializedGlobalValue, len(rule.GlobalValues)),
+		ModuleAccessNames: slices.Clone(rule.moduleAccessNames),
+		ModuleIterations:  slices.Clone(rule.moduleIterations),
+		Name:              rule.Name,
+		Index:             rule.Index,
+		Bytecode:          slices.Clone(rule.Bytecode),
+		StringCount:       rule.StringCount,
+		StringEntries: sortedMapEntries(rule.Strings, func(id string, data []byte) serializedByteEntry {
+			return serializedByteEntry{Key: id, Value: slices.Clone(data)}
+		}),
+		StringSets:       cloneStringSlices(rule.StringSets),
+		TextStringSets:   cloneStringSlices(rule.TextStringSets),
+		AnonymousStrings: slices.Clone(rule.AnonymousStrings),
+		StringLiterals:   slices.Clone(rule.StringLiterals),
+		ModuleRegexes:    serializeModuleRegexes(rule.moduleRegexes),
+		StringKindEntries: sortedMapEntries(rule.StringKinds, func(id string, kind StringKind) serializedStringKindEntry {
+			return serializedStringKindEntry{Key: id, Value: kind}
+		}),
+		StringModifierEntries: modifierEntries,
+		CaptureBindingEntries: serializeCaptureBindingEntries(rule.CaptureBindings),
+		EvidencePlans:         serializeEvidencePlans(rule.EvidencePlans),
+		TextPatternEntries: sortedMapEntries(rule.TextPatterns, func(id string, data []byte) serializedByteEntry {
+			return serializedByteEntry{Key: id, Value: slices.Clone(data)}
+		}),
+		RegexPatternEntries: sortedMapEntries(rule.RegexPatterns, func(id string, pat RegexPattern) serializedRegexPatternEntry {
+			return serializedRegexPatternEntry{Key: id, Value: serializeRegexPattern(pat)}
+		}),
+		HexPatternEntries:   sortedMapEntries(rule.HexPatterns, serializeHexPatternEntry),
+		StatEntries:         serializeIntegerStatEntries(rule.Stats),
+		ExternalSlotEntries: sortedMapEntries(rule.ExternalSlots, func(name string, slot int) serializedIntEntry { return serializedIntEntry{Key: name, Value: slot} }),
+		GlobalSlotEntries:   sortedMapEntries(rule.GlobalSlots, func(name string, slot int) serializedIntEntry { return serializedIntEntry{Key: name, Value: slot} }),
+		GlobalValueEntries:  sortedMapEntries(rule.GlobalValues, serializeGlobalValueEntry),
 		Tags:                slices.Clone(rule.Tags),
-		Meta:                meta,
+		MetaEntries:         metaEntries,
 		IsGlobal:            rule.IsGlobal,
 		IsPrivate:           rule.IsPrivate,
 		FastScanSafe:        rule.FastScanSafe,
 		ConditionMonotonic:  rule.ConditionMonotonic,
 		RequiresStringMatch: rule.RequiresStringMatch,
 		HeaderConstraints:   slices.Clone(rule.HeaderConstraints),
-		FixedOffsets:        maps.Clone(rule.fixedOffsets),
+		FixedOffsetEntries: sortedMapEntries(rule.fixedOffsets, func(id string, offset int64) serializedInt64Entry {
+			return serializedInt64Entry{Key: id, Value: offset}
+		}),
 		Assertions:          slices.Clone(rule.assertions),
 		AssertionProgram:    slices.Clone(rule.assertionProgram),
 		MandatoryAssertions: slices.Clone(rule.mandatoryAssertions),
@@ -176,38 +487,47 @@ func serializeRule(rule *CompiledRule) (serializedRule, error) {
 	if rule.automaton != nil {
 		serialized.AutomatonStrings = cloneacStringInfos(rule.automaton.strings)
 	}
-	for identifier, pattern := range rule.RegexPatterns {
-		serialized.RegexPatterns[identifier] = serializeRegexPattern(pattern)
-	}
-	for identifier, pattern := range rule.HexPatterns {
-		if pattern == nil {
-			serialized.HexPatterns[identifier] = serializedHexPattern{}
-			continue
+	if len(rule.ModuleNames) > 0 {
+		ids := slices.Sorted(maps.Keys(rule.ModuleNames))
+		serialized.ModuleNameEntries = make([]serializedModuleNameEntry, len(ids))
+		serialized.ModuleSignatureEntries = make([]serializedModuleSignatureEntry, 0, len(ids))
+		for index, id := range ids {
+			rawID := uint8(id)
+			serialized.ModuleNameEntries[index] = serializedModuleNameEntry{Key: rawID, Value: rule.ModuleNames[id]}
+			if function, exists := rule.ModuleFunctions[id]; exists {
+				serialized.ModuleSignatureEntries = append(serialized.ModuleSignatureEntries, serializedModuleSignatureEntry{
+					Key:   rawID,
+					Value: serializeModuleFunction(function),
+				})
+			}
 		}
-		serialized.HexPatterns[identifier] = serializedHexPattern{
+	}
+	return serialized, nil
+}
+
+func serializeHexPatternEntry(identifier string, pattern *HexPattern) serializedHexPatternEntry {
+	if pattern == nil {
+		return serializedHexPatternEntry{Key: identifier}
+	}
+	return serializedHexPatternEntry{
+		Key: identifier,
+		Value: serializedHexPattern{
 			Present:  true,
 			Tokens:   cloneHexTokens(pattern.Tokens),
 			XorKeys:  slices.Clone(pattern.XorKeys),
 			XorRange: slices.Clone(pattern.XorRange),
 			CacheKey: pattern.cacheKey,
-		}
+		},
 	}
-	for name, value := range rule.GlobalValues {
-		serialized.GlobalValues[name] = serializedGlobalValue{
+}
+
+func serializeGlobalValueEntry(name string, value compiledGlobalValue) serializedGlobalValueEntry {
+	return serializedGlobalValueEntry{
+		Key: name,
+		Value: serializedGlobalValue{
 			Type: value.valueType, Int: value.intVal, Double: value.doubleVal, String: value.stringVal,
-		}
+		},
 	}
-	if len(rule.ModuleNames) > 0 {
-		serialized.ModuleNames = make(map[uint8]string, len(rule.ModuleNames))
-		serialized.ModuleSignatures = make(map[uint8]serializedModuleFunction, len(rule.ModuleFunctions))
-		for id, name := range rule.ModuleNames {
-			serialized.ModuleNames[uint8(id)] = name
-			if function, exists := rule.ModuleFunctions[id]; exists {
-				serialized.ModuleSignatures[uint8(id)] = serializeModuleFunction(function)
-			}
-		}
-	}
-	return serialized, nil
 }
 
 func deserializeProgram(payload serializedProgram, modules []Module) (*CompiledProgram, error) {
@@ -215,8 +535,26 @@ func deserializeProgram(payload serializedProgram, modules []Module) (*CompiledP
 	if err != nil {
 		return nil, err
 	}
-	schemas := make(map[string]*ModuleSchema, len(payload.ModuleSchemas))
-	for name, schema := range payload.ModuleSchemas {
+	rawSchemas, err := decodeEntryMap(
+		payload.ModuleSchemaEntries,
+		payload.ModuleSchemas,
+		entryMapSpec[string, *ModuleSchema, *ModuleSchema, serializedModuleSchemaEntry]{
+			allocateEmpty: true,
+			unpack: func(entry serializedModuleSchemaEntry) (string, *ModuleSchema, error) {
+				schema, err := deserializeModuleSchema(entry.Value, 0)
+				return entry.Key, schema, err
+			},
+			fromLegacy: func(_ string, schema *ModuleSchema) (*ModuleSchema, error) {
+				return cloneModuleSchema(schema), nil
+			},
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	schemas := make(map[string]*ModuleSchema, len(rawSchemas))
+	for _, name := range slices.Sorted(maps.Keys(rawSchemas)) {
+		schema := rawSchemas[name]
 		if err := validateModuleSchema(schema); err != nil {
 			return nil, fmt.Errorf("%w: loading module %s: %w", ErrCorruptProgram, name, err)
 		}
@@ -227,13 +565,28 @@ func deserializeProgram(payload serializedProgram, modules []Module) (*CompiledP
 		}
 		schemas[name] = cloneModuleSchema(schema)
 	}
+	dependenciesMap, err := decodeEntryMap(
+		payload.DependencyEntries,
+		payload.Dependencies,
+		entryMapSpec[string, []string, []string, serializedStringSliceEntry]{
+			unpack: func(entry serializedStringSliceEntry) (string, []string, error) {
+				return entry.Key, slices.Clone(entry.Value), nil
+			},
+			fromLegacy: func(_ string, deps []string) ([]string, error) {
+				return slices.Clone(deps), nil
+			},
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
 	rules := make([]*CompiledRule, len(payload.Rules))
 	for index, serialized := range payload.Rules {
 		rule, err := deserializeRule(serialized, bindings)
 		if err != nil {
 			return nil, fmt.Errorf("loading rule %q: %w", serialized.Name, err)
 		}
-		if dependencies, known := payload.Dependencies[rule.Name]; known {
+		if dependencies, known := dependenciesMap[rule.Name]; known {
 			rule.dependencies = append([]string{}, dependencies...)
 		}
 		rule.moduleSchemas = schemas
@@ -256,29 +609,92 @@ func deserializeRule(serialized serializedRule, bindings map[string]compiledModu
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrCorruptProgram, err)
 	}
-	modifiers, err := deserializeStringModifiers(serialized.StringModifiers)
+	modifiers, err := deserializeStringModifiers(serialized.StringModifierEntries, serialized.StringModifiers)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrCorruptProgram, err)
 	}
-	meta, err := deserializeScalars(serialized.Meta)
+	meta, err := deserializeScalars(serialized.MetaEntries, serialized.Meta)
 	if err != nil {
 		return nil, fmt.Errorf("%w: loading metadata: %w", ErrCorruptProgram, err)
 	}
-
 	moduleRegexes, err := deserializeModuleRegexes(serialized.ModuleRegexes)
 	if err != nil {
 		return nil, fmt.Errorf("%w: loading module regexes: %w", ErrCorruptProgram, err)
 	}
-	fixedOffsets := serialized.FixedOffsets
-	if fixedOffsets == nil {
-		fixedOffsets = serialized.FixedTextOffsets
+
+	stringsMap, err := decodeByteMap(serialized.StringEntries, serialized.Strings)
+	if err != nil {
+		return nil, err
+	}
+	textPatternsMap, err := decodeByteMap(serialized.TextPatternEntries, serialized.TextPatterns)
+	if err != nil {
+		return nil, err
+	}
+	stringKindsMap, err := decodeScalarEntryMap(serialized.StringKindEntries, serialized.StringKinds, func(e serializedStringKindEntry) (string, StringKind) { return e.Key, e.Value })
+	if err != nil {
+		return nil, err
+	}
+	captureBindingsMap, err := deserializeCaptureBindings(serialized.CaptureBindingEntries, serialized.CaptureBindings)
+	if err != nil {
+		return nil, err
+	}
+	regexPatternsMap, err := decodeConvertedMap(
+		serialized.RegexPatternEntries,
+		serialized.RegexPatterns,
+		convertedMapSpec[string, serializedRegexPattern, RegexPattern, serializedRegexPatternEntry]{
+			allocateEmpty: true,
+			unpack:        func(e serializedRegexPatternEntry) (string, serializedRegexPattern) { return e.Key, e.Value },
+			convert:       func(_ string, p serializedRegexPattern) (RegexPattern, error) { return deserializeRegexPattern(p), nil },
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	hexPatternsMap, err := deserializeHexPatterns(serialized.HexPatternEntries, serialized.HexPatterns)
+	if err != nil {
+		return nil, err
+	}
+	statsMap, err := deserializeIntegerStats(serialized.StatEntries, serialized.Stats)
+	if err != nil {
+		return nil, err
+	}
+	externalSlotsMap, err := decodeIntMap(serialized.ExternalSlotEntries, serialized.ExternalSlots)
+	if err != nil {
+		return nil, err
+	}
+	globalSlotsMap, err := decodeIntMap(serialized.GlobalSlotEntries, serialized.GlobalSlots)
+	if err != nil {
+		return nil, err
+	}
+	globalValuesMap, err := deserializeGlobalValues(serialized.GlobalValueEntries, serialized.GlobalValues)
+	if err != nil {
+		return nil, err
+	}
+	legacyFixedOffsets := serialized.FixedOffsets
+	if legacyFixedOffsets == nil {
+		legacyFixedOffsets = serialized.FixedTextOffsets
+	}
+	fixedOffsetsMap, err := decodeScalarEntryMap(serialized.FixedOffsetEntries, legacyFixedOffsets, func(e serializedInt64Entry) (string, int64) { return e.Key, e.Value })
+	if err != nil {
+		return nil, err
+	}
+
+	rawModuleNames, err := decodeScalarEntryMap(serialized.ModuleNameEntries, serialized.ModuleNames, func(e serializedModuleNameEntry) (uint8, string) { return e.Key, e.Value })
+	if err != nil {
+		return nil, err
+	}
+	rawModuleSignatures, err := decodeScalarEntryMap(serialized.ModuleSignatureEntries, serialized.ModuleSignatures, func(e serializedModuleSignatureEntry) (uint8, serializedModuleFunction) {
+		return e.Key, e.Value
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	var moduleFunctions map[builtinFunction]ModuleFunction
 	var moduleNames map[builtinFunction]string
-	if len(serialized.ModuleNames) > 0 {
-		moduleFunctions = make(map[builtinFunction]ModuleFunction, len(serialized.ModuleNames))
-		moduleNames = make(map[builtinFunction]string, len(serialized.ModuleNames))
+	if len(rawModuleNames) > 0 {
+		moduleFunctions = make(map[builtinFunction]ModuleFunction, len(rawModuleNames))
+		moduleNames = make(map[builtinFunction]string, len(rawModuleNames))
 	}
 
 	rule := &CompiledRule{
@@ -288,24 +704,24 @@ func deserializeRule(serialized serializedRule, bindings map[string]compiledModu
 		Index:               serialized.Index,
 		Bytecode:            slices.Clone(serialized.Bytecode),
 		StringCount:         serialized.StringCount,
-		Strings:             cloneByteMap(serialized.Strings),
+		Strings:             stringsMap,
 		automaton:           automaton,
 		StringSets:          cloneStringSlices(serialized.StringSets),
 		TextStringSets:      cloneStringSlices(serialized.TextStringSets),
 		AnonymousStrings:    slices.Clone(serialized.AnonymousStrings),
 		StringLiterals:      slices.Clone(serialized.StringLiterals),
 		moduleRegexes:       moduleRegexes,
-		StringKinds:         maps.Clone(serialized.StringKinds),
+		StringKinds:         stringKindsMap,
 		StringModifiers:     modifiers,
-		CaptureBindings:     deserializeCaptureBindings(serialized.CaptureBindings),
+		CaptureBindings:     captureBindingsMap,
 		EvidencePlans:       deserializeEvidencePlans(serialized.EvidencePlans),
-		TextPatterns:        cloneByteMap(serialized.TextPatterns),
-		RegexPatterns:       make(map[string]RegexPattern, len(serialized.RegexPatterns)),
-		HexPatterns:         make(map[string]*HexPattern, len(serialized.HexPatterns)),
-		Stats:               deserializeIntegerStats(serialized.Stats),
-		ExternalSlots:       maps.Clone(serialized.ExternalSlots),
-		GlobalSlots:         maps.Clone(serialized.GlobalSlots),
-		GlobalValues:        make(map[string]compiledGlobalValue, len(serialized.GlobalValues)),
+		TextPatterns:        textPatternsMap,
+		RegexPatterns:       regexPatternsMap,
+		HexPatterns:         hexPatternsMap,
+		Stats:               statsMap,
+		ExternalSlots:       externalSlotsMap,
+		GlobalSlots:         globalSlotsMap,
+		GlobalValues:        globalValuesMap,
 		Tags:                append([]string{}, serialized.Tags...),
 		Meta:                meta,
 		IsGlobal:            serialized.IsGlobal,
@@ -316,35 +732,19 @@ func deserializeRule(serialized serializedRule, bindings map[string]compiledModu
 		ModuleFunctions:     moduleFunctions,
 		ModuleNames:         moduleNames,
 		HeaderConstraints:   slices.Clone(serialized.HeaderConstraints),
-		fixedOffsets:        maps.Clone(fixedOffsets),
+		fixedOffsets:        fixedOffsetsMap,
 		assertions:          slices.Clone(serialized.Assertions),
 		assertionProgram:    slices.Clone(serialized.AssertionProgram),
 		mandatoryAssertions: slices.Clone(serialized.MandatoryAssertions),
 		requiredStrings:     slices.Clone(serialized.RequiredStrings),
 		forbiddenStrings:    slices.Clone(serialized.ForbiddenStrings),
 	}
-	for identifier, pattern := range serialized.RegexPatterns {
-		rule.RegexPatterns[identifier] = deserializeRegexPattern(pattern)
-	}
-	for identifier, pattern := range serialized.HexPatterns {
-		if !pattern.Present {
-			continue
-		}
-		rule.HexPatterns[identifier] = &HexPattern{
-			Tokens: cloneHexTokens(pattern.Tokens), XorKeys: slices.Clone(pattern.XorKeys),
-			XorRange: slices.Clone(pattern.XorRange), cacheKey: pattern.CacheKey, cacheIndex: -1,
-		}
-	}
-	for name, value := range serialized.GlobalValues {
-		rule.GlobalValues[name] = compiledGlobalValue{
-			valueType: value.Type, intVal: value.Int, doubleVal: value.Double, stringVal: value.String,
-		}
-	}
-	for rawID, name := range serialized.ModuleNames {
+	for _, rawID := range slices.Sorted(maps.Keys(rawModuleNames)) {
+		name := rawModuleNames[rawID]
 		if builtinFunction(rawID) < firstModuleFunctionID {
 			return nil, fmt.Errorf("%w: module function %q has reserved function ID %d", ErrCorruptProgram, name, rawID)
 		}
-		signature, exists := serialized.ModuleSignatures[rawID]
+		signature, exists := rawModuleSignatures[rawID]
 		if !exists {
 			return nil, fmt.Errorf("%w: module function %q has no serialized signature", ErrCorruptProgram, name)
 		}
@@ -363,6 +763,63 @@ func deserializeRule(serialized serializedRule, bindings map[string]compiledModu
 		rule.ModuleNames[id] = name
 	}
 	return rule, nil
+}
+
+func decodeByteMap(entries []serializedByteEntry, legacy map[string][]byte) (map[string][]byte, error) {
+	return decodeConvertedMap(entries, legacy, convertedMapSpec[string, []byte, []byte, serializedByteEntry]{
+		allocateEmpty: true,
+		unpack:        func(e serializedByteEntry) (string, []byte) { return e.Key, e.Value },
+		convert:       func(_ string, b []byte) ([]byte, error) { return slices.Clone(b), nil },
+	})
+}
+
+func decodeIntMap(entries []serializedIntEntry, legacy map[string]int) (map[string]int, error) {
+	return decodeScalarEntryMap(entries, legacy, func(e serializedIntEntry) (string, int) { return e.Key, e.Value })
+}
+
+func deserializeHexPatterns(entries []serializedHexPatternEntry, legacy map[string]serializedHexPattern) (map[string]*HexPattern, error) {
+	if len(entries) > 0 {
+		out := make(map[string]*HexPattern, len(entries))
+		seen := make(map[string]struct{}, len(entries))
+		for _, entry := range entries {
+			if _, dup := seen[entry.Key]; dup {
+				return nil, fmt.Errorf("%w: duplicate serialized map key %v", ErrCorruptProgram, entry.Key)
+			}
+			seen[entry.Key] = struct{}{}
+			if !entry.Value.Present {
+				continue
+			}
+			out[entry.Key] = buildHexPatternFromSerialized(entry.Value)
+		}
+		return out, nil
+	}
+	out := make(map[string]*HexPattern, len(legacy))
+	for identifier, pattern := range legacy {
+		if !pattern.Present {
+			continue
+		}
+		out[identifier] = buildHexPatternFromSerialized(pattern)
+	}
+	return out, nil
+}
+
+func buildHexPatternFromSerialized(pattern serializedHexPattern) *HexPattern {
+	return &HexPattern{
+		Tokens: cloneHexTokens(pattern.Tokens), XorKeys: slices.Clone(pattern.XorKeys),
+		XorRange: slices.Clone(pattern.XorRange), cacheKey: pattern.CacheKey, cacheIndex: -1,
+	}
+}
+
+func deserializeGlobalValues(entries []serializedGlobalValueEntry, legacy map[string]serializedGlobalValue) (map[string]compiledGlobalValue, error) {
+	return decodeConvertedMap(entries, legacy, convertedMapSpec[string, serializedGlobalValue, compiledGlobalValue, serializedGlobalValueEntry]{
+		allocateEmpty: true,
+		unpack:        func(e serializedGlobalValueEntry) (string, serializedGlobalValue) { return e.Key, e.Value },
+		convert: func(_ string, value serializedGlobalValue) (compiledGlobalValue, error) {
+			return compiledGlobalValue{
+				valueType: value.Type, intVal: value.Int, doubleVal: value.Double, stringVal: value.String,
+			}, nil
+		},
+	})
 }
 
 func serializeModuleFunction(function ModuleFunction) serializedModuleFunction {
@@ -626,12 +1083,11 @@ func deserializeRegexAtoms(atoms []serializedRegexAtom) []regexPrefilterAtom {
 	return result
 }
 
-func serializeStringModifiers(
+func serializeStringModifierEntries(
 	all map[string][]ast.StringModifier,
-) (map[string][]serializedStringModifier, error) {
-	result := make(map[string][]serializedStringModifier, len(all))
-	for identifier, modifiers := range all {
-		result[identifier] = make([]serializedStringModifier, len(modifiers))
+) ([]serializedStringModifierEntry, error) {
+	return sortedMapEntriesErr(all, func(identifier string, modifiers []ast.StringModifier) (serializedStringModifierEntry, error) {
+		encoded := make([]serializedStringModifier, len(modifiers))
 		for index, modifier := range modifiers {
 			serialized := serializedStringModifier{Type: modifier.Type}
 			switch value := modifier.Value.(type) {
@@ -648,53 +1104,60 @@ func serializeStringModifiers(
 				serialized.ValueKind = serializedModifierCapture
 				serialized.Captures = serializeCaptureBindingSlice(value)
 			default:
-				return nil, fmt.Errorf("unsupported value type %T for string modifier", modifier.Value)
+				return serializedStringModifierEntry{}, fmt.Errorf("unsupported value type %T for string modifier", modifier.Value)
 			}
-			result[identifier][index] = serialized
+			encoded[index] = serialized
 		}
-	}
-	return result, nil
+		return serializedStringModifierEntry{Key: identifier, Value: encoded}, nil
+	})
 }
 
 func deserializeStringModifiers(
-	all map[string][]serializedStringModifier,
+	entries []serializedStringModifierEntry,
+	legacy map[string][]serializedStringModifier,
 ) (map[string][]ast.StringModifier, error) {
-	result := make(map[string][]ast.StringModifier, len(all))
-	for identifier, modifiers := range all {
-		result[identifier] = make([]ast.StringModifier, len(modifiers))
-		for index, serialized := range modifiers {
-			modifier := ast.StringModifier{Type: serialized.Type}
-			switch serialized.ValueKind {
-			case serializedModifierNone:
-			case serializedModifierString:
-				modifier.Value = serialized.String
-			case serializedModifierXorRange:
-				modifier.Value = ast.XorRange{Min: serialized.XorMinimum, Max: serialized.XorMaximum}
-			case serializedModifierCapture:
-				modifier.Value = deserializeCaptureBindingSlice(serialized.Captures)
-			default:
-				return nil, fmt.Errorf("unknown serialized string modifier value kind %d", serialized.ValueKind)
+	return decodeConvertedMap(entries, legacy, convertedMapSpec[string, []serializedStringModifier, []ast.StringModifier, serializedStringModifierEntry]{
+		allocateEmpty: true,
+		unpack:        func(e serializedStringModifierEntry) (string, []serializedStringModifier) { return e.Key, e.Value },
+		convert: func(_ string, modifiers []serializedStringModifier) ([]ast.StringModifier, error) {
+			decoded := make([]ast.StringModifier, len(modifiers))
+			for index, serialized := range modifiers {
+				modifier := ast.StringModifier{Type: serialized.Type}
+				switch serialized.ValueKind {
+				case serializedModifierNone:
+				case serializedModifierString:
+					modifier.Value = serialized.String
+				case serializedModifierXorRange:
+					modifier.Value = ast.XorRange{Min: serialized.XorMinimum, Max: serialized.XorMaximum}
+				case serializedModifierCapture:
+					modifier.Value = deserializeCaptureBindingSlice(serialized.Captures)
+				default:
+					return nil, fmt.Errorf("unknown serialized string modifier value kind %d", serialized.ValueKind)
+				}
+				decoded[index] = modifier
 			}
-			result[identifier][index] = modifier
-		}
-	}
-	return result, nil
+			return decoded, nil
+		},
+	})
 }
 
-func serializeCaptureBindings(all map[string][]ast.CaptureBinding) map[string][]serializedCaptureBinding {
-	result := make(map[string][]serializedCaptureBinding, len(all))
-	for pattern, bindings := range all {
-		result[pattern] = serializeCaptureBindingSlice(bindings)
-	}
-	return result
+func serializeCaptureBindingEntries(all map[string][]ast.CaptureBinding) []serializedCaptureBindingEntry {
+	return sortedMapEntries(all, func(pattern string, bindings []ast.CaptureBinding) serializedCaptureBindingEntry {
+		return serializedCaptureBindingEntry{Key: pattern, Value: serializeCaptureBindingSlice(bindings)}
+	})
 }
 
-func deserializeCaptureBindings(all map[string][]serializedCaptureBinding) map[string][]ast.CaptureBinding {
-	result := make(map[string][]ast.CaptureBinding, len(all))
-	for pattern, bindings := range all {
-		result[pattern] = deserializeCaptureBindingSlice(bindings)
-	}
-	return result
+func deserializeCaptureBindings(
+	entries []serializedCaptureBindingEntry,
+	legacy map[string][]serializedCaptureBinding,
+) (map[string][]ast.CaptureBinding, error) {
+	return decodeConvertedMap(entries, legacy, convertedMapSpec[string, []serializedCaptureBinding, []ast.CaptureBinding, serializedCaptureBindingEntry]{
+		allocateEmpty: true,
+		unpack:        func(e serializedCaptureBindingEntry) (string, []serializedCaptureBinding) { return e.Key, e.Value },
+		convert: func(_ string, bindings []serializedCaptureBinding) ([]ast.CaptureBinding, error) {
+			return deserializeCaptureBindingSlice(bindings), nil
+		},
+	})
 }
 
 func serializeCaptureBindingSlice(bindings []ast.CaptureBinding) []serializedCaptureBinding {
@@ -733,56 +1196,58 @@ func deserializeEvidencePlans(plans []serializedEvidencePlan) []EvidencePlan {
 	return result
 }
 
-func serializeScalars(values map[string]any) (map[string]serializedScalar, error) {
-	result := make(map[string]serializedScalar, len(values))
-	for name, raw := range values {
+func serializeScalarEntries(values map[string]any) ([]serializedScalarEntry, error) {
+	return sortedMapEntriesErr(values, func(name string, raw any) (serializedScalarEntry, error) {
 		switch value := raw.(type) {
 		case string:
-			result[name] = serializedScalar{Kind: serializedScalarString, String: value}
+			return serializedScalarEntry{Key: name, Value: serializedScalar{Kind: serializedScalarString, String: value}}, nil
 		case int64:
-			result[name] = serializedScalar{Kind: serializedScalarInt, Int: value}
+			return serializedScalarEntry{Key: name, Value: serializedScalar{Kind: serializedScalarInt, Int: value}}, nil
 		case bool:
-			result[name] = serializedScalar{Kind: serializedScalarBool, Bool: value}
+			return serializedScalarEntry{Key: name, Value: serializedScalar{Kind: serializedScalarBool, Bool: value}}, nil
 		default:
-			return nil, fmt.Errorf("unsupported scalar value type %T for %q", raw, name)
+			return serializedScalarEntry{}, fmt.Errorf("unsupported scalar value type %T for %q", raw, name)
 		}
-	}
-	return result, nil
+	})
 }
 
-func deserializeScalars(values map[string]serializedScalar) (map[string]any, error) {
-	result := make(map[string]any, len(values))
-	for name, value := range values {
-		switch value.Kind {
-		case serializedScalarString:
-			result[name] = value.String
-		case serializedScalarInt:
-			result[name] = value.Int
-		case serializedScalarBool:
-			result[name] = value.Bool
-		default:
-			return nil, fmt.Errorf("unknown serialized scalar kind %d for %q", value.Kind, name)
-		}
-	}
-	return result, nil
+func deserializeScalars(entries []serializedScalarEntry, legacy map[string]serializedScalar) (map[string]any, error) {
+	return decodeConvertedMap(entries, legacy, convertedMapSpec[string, serializedScalar, any, serializedScalarEntry]{
+		allocateEmpty: true,
+		unpack:        func(e serializedScalarEntry) (string, serializedScalar) { return e.Key, e.Value },
+		convert: func(name string, value serializedScalar) (any, error) {
+			switch value.Kind {
+			case serializedScalarString:
+				return value.String, nil
+			case serializedScalarInt:
+				return value.Int, nil
+			case serializedScalarBool:
+				return value.Bool, nil
+			default:
+				return nil, fmt.Errorf("unknown serialized scalar kind %d for %q", value.Kind, name)
+			}
+		},
+	})
 }
 
-func serializeIntegerStats(stats map[string]any) map[string]int {
-	result := make(map[string]int)
+func serializeIntegerStatEntries(stats map[string]any) []serializedIntEntry {
+	intStats := make(map[string]int, len(stats))
 	for name, raw := range stats {
 		if value, ok := raw.(int); ok {
-			result[name] = value
+			intStats[name] = value
 		}
 	}
-	return result
+	return sortedMapEntries(intStats, func(name string, value int) serializedIntEntry {
+		return serializedIntEntry{Key: name, Value: value}
+	})
 }
 
-func deserializeIntegerStats(stats map[string]int) map[string]any {
-	result := make(map[string]any, len(stats))
-	for name, value := range stats {
-		result[name] = value
-	}
-	return result
+func deserializeIntegerStats(entries []serializedIntEntry, legacy map[string]int) (map[string]any, error) {
+	return decodeConvertedMap(entries, legacy, convertedMapSpec[string, int, any, serializedIntEntry]{
+		allocateEmpty: true,
+		unpack:        func(e serializedIntEntry) (string, int) { return e.Key, e.Value },
+		convert:       func(_ string, value int) (any, error) { return value, nil },
+	})
 }
 
 func cloneByteMap(values map[string][]byte) map[string][]byte {

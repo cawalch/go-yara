@@ -6,6 +6,9 @@ import (
 	"encoding/gob"
 	"fmt"
 	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -337,6 +340,161 @@ func TestReadCompiledProgramPreservesReaderPosition(t *testing.T) {
 		}
 		if encoded.String() != "sentinel" {
 			t.Fatalf("trailing bytes = %q, want sentinel", encoded.String())
+		}
+	}
+}
+
+func deterministicTestCustomModule() Module {
+	return Module{
+		Name: "custom",
+		Schema: &ModuleSchema{
+			Fields: map[string]ModuleField{
+				"nested": {
+					Kind: ModuleStruct,
+					Struct: &ModuleSchema{
+						Fields: map[string]ModuleField{
+							"count": {Kind: ModuleInteger},
+							"flag":  {Kind: ModuleBoolean, Constant: func() *ModuleValue { v := BooleanValue(true); return &v }()},
+						},
+					},
+				},
+				"dict": {
+					Kind:    ModuleDictionary,
+					Element: &ModuleField{Kind: ModuleString},
+				},
+				"items": {
+					Kind:    ModuleArray,
+					Element: &ModuleField{Kind: ModuleInteger},
+				},
+			},
+		},
+		Functions: map[string]ModuleFunction{
+			"score": {
+				Signatures: []ModuleSignature{{Arguments: []ModuleValueType{ModuleInteger, ModuleString}}},
+				ReturnType: ModuleInteger,
+				Evaluate: func(_ ModuleContext, _ []ModuleValue) (ModuleValue, error) {
+					return IntegerValue(1), nil
+				},
+			},
+		},
+	}
+}
+
+func compileDeterministicFixture() (*CompiledProgram, error) {
+	const src = `
+import "pe"
+import "math"
+import "hash"
+import "custom"
+
+external gate
+external limit
+global weight = 42
+
+rule base_rule : tag_b tag_a {
+	meta:
+		author = "test"
+		severity = 5
+		enabled = true
+	strings:
+		$hex = { 4d 5a ?? 00 }
+		$txt = "payload" nocase wide ascii
+		$rx = /item_[0-9]{2,4}(alpha|beta)/
+		$cap = /key=([a-z0-9]+)/ capture(val = 1)
+	condition:
+		$hex at 0 and
+		2 of ($txt, $rx, $cap) and
+		for any of ($txt, $rx) : ($ in (0..128)) and
+		gate and limit > 0 and weight == 42 and
+		custom.score(custom.nested.count, custom.dict["alpha"]) > 0 and
+		pe.number_of_sections >= 0 and
+		math.min(1, 2) == 1 and
+		hash.md5(0, 2) != ""
+}
+
+rule dependent_rule {
+	strings:
+		$s1 = "one"
+		$s2 = "two"
+	condition:
+		base_rule and 1 of ($s*)
+}
+`
+	return NewCompiler(WithModule(deterministicTestCustomModule())).CompileSource(src)
+}
+
+func TestCompiledProgramMarshalBinaryDeterministic(t *testing.T) {
+	if outPath := os.Getenv("GO_YARA_DETERMINISTIC_OUT"); outPath != "" {
+		prog, err := compileDeterministicFixture()
+		if err != nil {
+			t.Fatalf("helper CompileSource() error = %v", err)
+		}
+		data, err := prog.MarshalBinary()
+		if err != nil {
+			t.Fatalf("helper MarshalBinary() error = %v", err)
+		}
+		if err := os.WriteFile(outPath, data, 0o600); err != nil {
+			t.Fatalf("helper WriteFile() error = %v", err)
+		}
+		return
+	}
+	var baseline []byte
+	for round := range 20 {
+		prog, err := compileDeterministicFixture()
+		if err != nil {
+			t.Fatalf("round %d CompileSource() error = %v", round, err)
+		}
+		data, err := prog.MarshalBinary()
+		if err != nil {
+			t.Fatalf("round %d MarshalBinary() error = %v", round, err)
+		}
+		var buf bytes.Buffer
+		written, err := prog.WriteTo(&buf)
+		if err != nil {
+			t.Fatalf("round %d WriteTo() error = %v", round, err)
+		}
+		if written != int64(len(data)) || !bytes.Equal(buf.Bytes(), data) {
+			t.Fatalf("round %d WriteTo() output differs from MarshalBinary()", round)
+		}
+		if round == 0 {
+			baseline = data
+			continue
+		}
+		if !bytes.Equal(data, baseline) {
+			t.Fatalf("round %d MarshalBinary() produced non-deterministic bytes (len=%d vs %d)", round, len(data), len(baseline))
+		}
+	}
+
+	loaded, err := UnmarshalCompiledProgram(baseline, deterministicTestCustomModule())
+	if err != nil {
+		t.Fatalf("UnmarshalCompiledProgram() error = %v", err)
+	}
+	reEncoded, err := loaded.MarshalBinary()
+	if err != nil {
+		t.Fatalf("loaded MarshalBinary() error = %v", err)
+	}
+	if !bytes.Equal(reEncoded, baseline) {
+		t.Fatalf("round-tripped MarshalBinary() differs from original")
+	}
+
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable() error = %v", err)
+	}
+	tempDir := t.TempDir()
+	for proc := range 3 {
+		outPath := filepath.Join(tempDir, fmt.Sprintf("prog-%d.goyara", proc))
+		cmd := exec.Command(exe, "-test.run=^TestCompiledProgramMarshalBinaryDeterministic$") // #nosec G204 -- re-executing current test binary
+		cmd.Env = append(os.Environ(), "GO_YARA_DETERMINISTIC_OUT="+outPath)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("subprocess %d failed: %v\n%s", proc, err, output)
+		}
+		procBytes, err := os.ReadFile(outPath) // #nosec G304 -- temp file created in t.TempDir()
+		if err != nil {
+			t.Fatalf("ReadFile(%s) error = %v", outPath, err)
+		}
+		if !bytes.Equal(procBytes, baseline) {
+			t.Fatalf("subprocess %d MarshalBinary() differs from baseline (len=%d vs %d)", proc, len(procBytes), len(baseline))
 		}
 	}
 }
