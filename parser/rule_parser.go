@@ -14,15 +14,16 @@ import (
 
 // RuleParser handles parsing of rules in YARA rule files
 type RuleParser struct {
-	lexer      *internal.Lexer
-	current    token.Token
-	peek       token.Token
-	errors     []error
-	builder    *ast.Builder
-	nextToken  func()
-	addError   func(error)
-	exprParser *ExpressionParser
-	declParser *DeclarationParser
+	lexer       *internal.Lexer
+	current     token.Token
+	peek        token.Token
+	errors      []error
+	builder     *ast.Builder
+	nextToken   func()
+	addError    func(error)
+	exprParser  *ExpressionParser
+	declParser  *DeclarationParser
+	currentRule string
 }
 
 // ruleFields groups the components of a parsed rule before assembly.
@@ -84,33 +85,37 @@ func (p *RuleParser) SetCurrentTokens(current, peek token.Token) {
 //
 // Modifiers (private, global) come before the RULE keyword
 func (p *RuleParser) ParseRule() (*ast.Rule, error) {
+	p.currentRule = ""
+	defer func() { p.currentRule = "" }()
+
 	modifiers, err := p.parseRuleModifiers()
 	if err != nil {
 		return nil, err
 	}
 
-	if err := p.expectTokenWithMessage(token.RULE, "expected 'rule' keyword"); err != nil {
-		return nil, err
+	if !p.expectToken(token.RULE) {
+		return nil, expectedTokenError(token.RULE, p.current)
 	}
 
 	ruleName, err := p.expectIdentifier()
 	if err != nil {
-		return nil, fmt.Errorf("expected rule name, %w", err)
+		return nil, newSyntaxError(p.current.Pos, "expected rule name, got %s", p.current.Display())
 	}
+	p.currentRule = ruleName
 
 	tags := p.declParser.ParseTagList()
 
 	if !p.expectToken(token.LBRACE) {
-		return nil, errors.New("expected '{' after rule declaration")
+		return nil, withRuleContext(ruleName, p.current.Pos, newSyntaxError(p.current.Pos, "expected '{' after rule declaration, got %s", p.current.Display()))
 	}
 
 	meta, strings, evidence, condition, err := p.parseRuleBody()
 	if err != nil {
-		return nil, err
+		return nil, withRuleContext(ruleName, p.current.Pos, err)
 	}
 
 	if !p.expectToken(token.RBRACE) {
-		return nil, errors.New("expected '}' at end of rule")
+		return nil, withRuleContext(ruleName, p.current.Pos, newSyntaxError(p.current.Pos, "expected '}' at end of rule, got %s", p.current.Display()))
 	}
 
 	return p.buildRule(ruleFields{modifiers, ruleName, tags, meta, strings, evidence, condition}), nil
@@ -118,11 +123,14 @@ func (p *RuleParser) ParseRule() (*ast.Rule, error) {
 
 // ParseRulePartial parses a rule with error recovery, returning partial results
 func (p *RuleParser) ParseRulePartial() (*ast.Rule, []error) {
-	var errors []error
+	p.currentRule = ""
+	defer func() { p.currentRule = "" }()
+
+	var errs []error
 
 	modifiers, err := p.parseRuleModifiers()
 	if err != nil {
-		errors = append(errors, fmt.Errorf("rule modifiers error: %w", err))
+		errs = append(errs, newSyntaxError(p.current.Pos, "rule modifiers error: %v", err))
 		// Try to continue with empty modifiers
 		modifiers = []ast.Modifier{}
 	}
@@ -135,9 +143,10 @@ func (p *RuleParser) ParseRulePartial() (*ast.Rule, []error) {
 	ruleName := "invalid_rule"
 	if p.currentTokenIs(token.IDENTIFIER) {
 		ruleName = p.current.Literal
+		p.currentRule = ruleName
 		p.nextToken() // consume identifier
 	} else {
-		errors = append(errors, fmt.Errorf("expected rule name at %v", p.current.Pos))
+		errs = append(errs, newSyntaxError(p.current.Pos, "expected rule name, got %s", p.current.Display()))
 		// Try to synchronize
 		p.synchronizeToSection()
 	}
@@ -145,13 +154,13 @@ func (p *RuleParser) ParseRulePartial() (*ast.Rule, []error) {
 	tags := p.declParser.ParseTagList()
 
 	if !p.expectToken(token.LBRACE) {
-		errors = append(errors, fmt.Errorf("expected '{' after rule declaration at %v", p.current.Pos))
+		errs = append(errs, withRuleContext(p.currentRule, p.current.Pos, newSyntaxError(p.current.Pos, "expected '{' after rule declaration, got %s", p.current.Display())))
 		// Try to find next opening brace
 		for !p.currentTokenIs(token.EOF) && !p.currentTokenIs(token.LBRACE) {
 			if p.currentTokenIs(token.RULE) || p.currentTokenIs(token.IMPORT) ||
 				p.currentTokenIs(token.GLOBAL) || p.currentTokenIs(token.INCLUDE) {
 				// Give up on this rule and let upper level handle synchronization
-				return p.buildRule(ruleFields{modifiers, ruleName, tags, nil, nil, nil, p.createMinimalCondition()}), errors
+				return p.buildRule(ruleFields{modifiers, ruleName, tags, nil, nil, nil, p.createMinimalCondition()}), errs
 			}
 			p.nextToken()
 		}
@@ -162,11 +171,11 @@ func (p *RuleParser) ParseRulePartial() (*ast.Rule, []error) {
 
 	// Parse rule body with error recovery
 	meta, strings, evidence, condition, sectionErrors := p.parseRuleBodyPartial()
-	errors = append(errors, sectionErrors...)
+	errs = append(errs, sectionErrors...)
 
 	// Try to consume closing brace
 	if !p.expectToken(token.RBRACE) {
-		errors = append(errors, fmt.Errorf("expected '}' at end of rule at %v", p.current.Pos))
+		errs = append(errs, withRuleContext(p.currentRule, p.current.Pos, newSyntaxError(p.current.Pos, "expected '}' at end of rule, got %s", p.current.Display())))
 		// Try to find the closing brace or next rule
 		for !p.currentTokenIs(token.EOF) {
 			if p.currentTokenIs(token.RBRACE) {
@@ -182,7 +191,7 @@ func (p *RuleParser) ParseRulePartial() (*ast.Rule, []error) {
 		}
 	}
 
-	return p.buildRule(ruleFields{modifiers, ruleName, tags, meta, strings, evidence, condition}), errors
+	return p.buildRule(ruleFields{modifiers, ruleName, tags, meta, strings, evidence, condition}), errs
 }
 
 // parseRuleModifiers parses rule modifiers (private, global)
@@ -225,7 +234,7 @@ func (p *RuleParser) parseRuleBody() ([]*ast.Meta, []*ast.String, []*ast.Evidenc
 
 // parseRuleBodyPartial parses rule sections with error recovery
 func (p *RuleParser) parseRuleBodyPartial() ([]*ast.Meta, []*ast.String, []*ast.EvidenceDeclaration, ast.Expression, []error) {
-	var errors []error
+	var errs []error
 	var meta []*ast.Meta
 	var strings []*ast.String
 	var evidence []*ast.EvidenceDeclaration
@@ -234,7 +243,7 @@ func (p *RuleParser) parseRuleBodyPartial() ([]*ast.Meta, []*ast.String, []*ast.
 	// Try to parse meta section
 	sectionMeta, err := p.declParser.ParseMetaSection()
 	if err != nil {
-		errors = append(errors, fmt.Errorf("meta section error: %w", err))
+		errs = append(errs, p.wrapSectionError("meta", err))
 		// Try to synchronize to next section
 		p.synchronizeToSection()
 	} else {
@@ -244,7 +253,7 @@ func (p *RuleParser) parseRuleBodyPartial() ([]*ast.Meta, []*ast.String, []*ast.
 	// Try to parse strings section
 	sectionStrings, err := p.declParser.ParseStringsSection()
 	if err != nil {
-		errors = append(errors, fmt.Errorf("strings section error: %w", err))
+		errs = append(errs, p.wrapSectionError("strings", err))
 		// Try to synchronize to next section
 		p.synchronizeToSection()
 	} else {
@@ -253,7 +262,7 @@ func (p *RuleParser) parseRuleBodyPartial() ([]*ast.Meta, []*ast.String, []*ast.
 
 	sectionEvidence, err := p.parseEvidenceSection()
 	if err != nil {
-		errors = append(errors, fmt.Errorf("evidence section error: %w", err))
+		errs = append(errs, p.wrapSectionError("evidence", err))
 		p.synchronizeToSection()
 	} else {
 		evidence = sectionEvidence
@@ -262,14 +271,14 @@ func (p *RuleParser) parseRuleBodyPartial() ([]*ast.Meta, []*ast.String, []*ast.
 	// Try to parse condition section (required)
 	sectionCondition, err := p.parseConditionSection()
 	if err != nil {
-		errors = append(errors, fmt.Errorf("condition section error: %w", err))
+		errs = append(errs, p.wrapSectionError("condition", err))
 		// Try to create a minimal condition for recovery
 		condition = p.createMinimalCondition()
 	} else {
 		condition = sectionCondition
 	}
 
-	return meta, strings, evidence, condition, errors
+	return meta, strings, evidence, condition, errs
 }
 
 // synchronizeToSection synchronizes to the next rule section
@@ -375,10 +384,10 @@ func (p *RuleParser) createMinimalCondition() ast.Expression {
 // parseConditionSection parses the required condition section
 func (p *RuleParser) parseConditionSection() (ast.Expression, error) {
 	if !p.expectToken(token.CONDITION) {
-		return nil, errors.New("expected condition section")
+		return nil, newSyntaxError(p.current.Pos, "expected 'condition' section, got %s", p.current.Display())
 	}
 	if !p.expectToken(token.COLON) {
-		return nil, errors.New("expected ':' after condition")
+		return nil, newSyntaxError(p.current.Pos, "expected ':' after condition, got %s", p.current.Display())
 	}
 
 	return p.exprParser.ParseExpression()
@@ -399,20 +408,12 @@ func (p *RuleParser) buildRule(fields ruleFields) *ast.Rule {
 // expectIdentifier expects and returns an identifier token
 func (p *RuleParser) expectIdentifier() (string, error) {
 	if !p.currentTokenIs(token.IDENTIFIER) {
-		return "", fmt.Errorf("expected identifier, got %s at %v", p.current.Type, p.current.Pos)
+		return "", newSyntaxError(p.current.Pos, "expected identifier, got %s", p.current.Display())
 	}
 
 	value := p.current.Literal
 	p.nextToken()
 	return value, nil
-}
-
-// expectTokenWithMessage checks for expected token and advances if matched, returns error message
-func (p *RuleParser) expectTokenWithMessage(tokenType token.Type, message string) error {
-	if !p.expectToken(tokenType) {
-		return fmt.Errorf("%s", message)
-	}
-	return nil
 }
 
 // Helper methods
@@ -425,9 +426,6 @@ func (p *RuleParser) expectToken(t token.Type) bool {
 		p.nextToken()
 		return true
 	}
-	p.errors = append(
-		p.errors,
-		fmt.Errorf("expected %s, got %s at %v", t, p.current.Type, p.current.Pos),
-	)
+	p.errors = append(p.errors, expectedTokenError(t, p.current))
 	return false
 }

@@ -347,6 +347,9 @@ func (c *Compiler) recordParserDiagnostics(fallback error) {
 		if lexicalErr, ok := errors.AsType[*lexer.Error](parseErr); ok {
 			line = lexicalErr.Position.Line
 			column = lexicalErr.Position.Column
+		} else if syntaxErr, ok := errors.AsType[*parser.SyntaxError](parseErr); ok {
+			line = syntaxErr.Position.Line
+			column = syntaxErr.Position.Column
 		}
 		c.stats.Errors = append(c.stats.Errors, CompilationError{
 			Phase:   "parsing",
@@ -370,6 +373,13 @@ func (c *Compiler) recordParseInvalidRule(invalid parser.InvalidRule) {
 	}
 	if len(invalid.Errors) > 0 {
 		ignored.Message = invalid.Errors[0].Error()
+		if syntaxErr, ok := errors.AsType[*parser.SyntaxError](invalid.Errors[0]); ok && syntaxErr.Position.Line > 0 {
+			ignored.Line = syntaxErr.Position.Line
+			ignored.Column = syntaxErr.Position.Column
+		} else if lexicalErr, ok := errors.AsType[*lexer.Error](invalid.Errors[0]); ok && lexicalErr.Position.Line > 0 {
+			ignored.Line = lexicalErr.Position.Line
+			ignored.Column = lexicalErr.Position.Column
+		}
 	}
 	c.recordIgnoredRule(ignored)
 }
