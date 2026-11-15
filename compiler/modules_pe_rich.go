@@ -108,6 +108,47 @@ func peRichVersionData(header *pe.RichHeader) string {
 	return string(buf)
 }
 
+type peRichFilter struct {
+	primary      int64
+	secondary    int64
+	hasSecondary bool
+	byToolID     bool
+}
+
+func parseRichFilter(args []ModuleValue, byToolID bool) (peRichFilter, bool) {
+	filter := peRichFilter{
+		primary:  args[0].Integer,
+		byToolID: byToolID,
+	}
+	if filter.primary < 0 || filter.primary > math.MaxUint16 {
+		return filter, false
+	}
+	if len(args) == 2 {
+		filter.secondary = args[1].Integer
+		if filter.secondary < 0 || filter.secondary > math.MaxUint16 {
+			return filter, false
+		}
+		filter.hasSecondary = true
+	}
+	return filter, true
+}
+
+func (f peRichFilter) addCount(total *int64, entry pe.RichEntry) bool {
+	lhs, rhs := int64(entry.Version), int64(entry.ToolID)
+	if f.byToolID {
+		lhs, rhs = rhs, lhs
+	}
+	if lhs != f.primary || (f.hasSecondary && rhs != f.secondary) {
+		return true
+	}
+	cnt := int64(entry.Count)
+	if cnt > math.MaxInt64-*total {
+		return false
+	}
+	*total += cnt
+	return true
+}
+
 func (i *Interpreter) peRichQuery(args []ModuleValue, byToolID bool) ModuleValue {
 	if len(args) < 1 || len(args) > 2 || i.currentCompiledRule == nil || !i.currentCompiledRule.nativePE {
 		return ModuleValue{}
@@ -120,7 +161,7 @@ func (i *Interpreter) peRichQuery(args []ModuleValue, byToolID bool) ModuleValue
 		return ModuleValue{}
 	}
 	if data, supplied := i.moduleData["pe"]; supplied {
-		return peHostRichQuery(data, args, byToolID, done)
+		return i.peHostRichQuery(data, args, byToolID)
 	}
 	image := loadPE(i.matchContext)
 	if image.file == nil {
@@ -130,32 +171,18 @@ func (i *Interpreter) peRichQuery(args []ModuleValue, byToolID bool) ModuleValue
 	if !rich.valid {
 		return ModuleValue{}
 	}
-	primary := args[0].Integer
-	if primary < 0 || primary > math.MaxUint16 {
+	filter, ok := parseRichFilter(args, byToolID)
+	if !ok {
 		return IntegerValue(0)
-	}
-	var hasSecondary bool
-	var secondary int64
-	if len(args) == 2 {
-		secondary = args[1].Integer
-		if secondary < 0 || secondary > math.MaxUint16 {
-			return IntegerValue(0)
-		}
-		hasSecondary = true
 	}
 	var count int64
 	for idx, entry := range rich.header.Entries {
 		if scanCanceledAt(done, idx) {
 			return ModuleValue{}
 		}
-		lhs, rhs := int64(entry.Version), int64(entry.ToolID)
-		if byToolID {
-			lhs, rhs = rhs, lhs
+		if !filter.addCount(&count, entry) {
+			return ModuleValue{}
 		}
-		if lhs != primary || (hasSecondary && rhs != secondary) {
-			continue
-		}
-		count += int64(entry.Count)
 	}
 	return IntegerValue(count)
 }
@@ -163,7 +190,7 @@ func (i *Interpreter) peRichQuery(args []ModuleValue, byToolID bool) ModuleValue
 // Host snapshots take precedence over file parsing. Missing rich_signature or
 // clear_data fields leave aggregate Rich queries undefined without falling back
 // to raw input decoding.
-func peHostRichQuery(data ModuleValue, args []ModuleValue, byToolID bool, done <-chan struct{}) ModuleValue {
+func (i *Interpreter) peHostRichQuery(data ModuleValue, args []ModuleValue, byToolID bool) ModuleValue {
 	if data.object == nil {
 		return ModuleValue{}
 	}
@@ -179,38 +206,24 @@ func peHostRichQuery(data ModuleValue, args []ModuleValue, byToolID bool, done <
 	if len(clearData) < 16 || (len(clearData)-16)%8 != 0 {
 		return ModuleValue{}
 	}
-	primary := args[0].Integer
-	if primary < 0 || primary > math.MaxUint16 {
+	filter, ok := parseRichFilter(args, byToolID)
+	if !ok {
 		return IntegerValue(0)
 	}
-	var hasSecondary bool
-	var secondary int64
-	if len(args) == 2 {
-		secondary = args[1].Integer
-		if secondary < 0 || secondary > math.MaxUint16 {
-			return IntegerValue(0)
-		}
-		hasSecondary = true
-	}
+	done := peCancelDone(i.matchContext)
 	var count int64
 	for pos := 16; pos+8 <= len(clearData); pos += 8 {
 		if scanCanceledAt(done, pos) {
 			return ModuleValue{}
 		}
-		ver := int64(binary.LittleEndian.Uint16([]byte(clearData[pos : pos+2])))
-		tid := int64(binary.LittleEndian.Uint16([]byte(clearData[pos+2 : pos+4])))
-		cnt := int64(binary.LittleEndian.Uint32([]byte(clearData[pos+4 : pos+8])))
-		lhs, rhs := ver, tid
-		if byToolID {
-			lhs, rhs = rhs, lhs
+		entry := pe.RichEntry{
+			Version: binary.LittleEndian.Uint16([]byte(clearData[pos : pos+2])),
+			ToolID:  binary.LittleEndian.Uint16([]byte(clearData[pos+2 : pos+4])),
+			Count:   binary.LittleEndian.Uint32([]byte(clearData[pos+4 : pos+8])),
 		}
-		if lhs != primary || (hasSecondary && rhs != secondary) {
-			continue
-		}
-		if cnt > math.MaxInt64-count {
+		if !filter.addCount(&count, entry) {
 			return ModuleValue{}
 		}
-		count += cnt
 	}
 	return IntegerValue(count)
 }
