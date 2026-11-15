@@ -88,9 +88,9 @@ func (rc *ruleCompiler) compileSingleStringWithDead(str *ast.String, isDead bool
 			firstByteSet:       result.regexFirstByteSet,
 			hasFirstByteSet:    result.hasFirstByteSet,
 		}
-		if pattern.maxLength < 0 && pattern.verification == nil {
-			// compileVerificationPlan only elides an unbounded expression when
-			// its terminal lazy repeat has a proven finite priority bound.
+		if pattern.maxLength < 0 && pattern.verification == nil && result.streamPriorityBound {
+			// A terminal lazy repeat has a proven finite priority bound for
+			// streaming horizon truncation; chained lazy dot ranges stay unbounded.
 			pattern.streamPriorityBound = true
 		}
 		if atom, ok := selectMandatoryRegexAtom(result.regexAtoms); ok {
@@ -202,6 +202,7 @@ type stringCompilationResult struct {
 	captureCode           []byte
 	captureGroups         []int
 	maxLength             int
+	streamPriorityBound   bool
 }
 
 func (rc *ruleCompiler) compileStringPattern(str *ast.String) (*stringCompilationResult, error) {
@@ -341,6 +342,12 @@ func (rc *ruleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers
 	if err != nil {
 		return nil, err
 	}
+	step := 1
+	if hasModifier(modifiers, ast.StringModifierWide) {
+		step = 2
+	}
+	maxLength := regex.ASTMaxLength(parsed)
+	streamPriorityBound := maxLength < 0 && verification == nil && !hasUnboundedOrLongChainedLazyDot(parsed.Root, step)
 	forwardEntries := verificationStartsAtMatch(verification)
 	forwardOnly := verification != nil && verification.ForwardOnly
 	if forwardOnly {
@@ -389,7 +396,8 @@ func (rc *ruleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers
 		hasFirstByteSet:       hasFirstByteSet,
 		captureCode:           captureCode,
 		captureGroups:         groups,
-		maxLength:             regex.ASTMaxLength(parsed),
+		maxLength:             maxLength,
+		streamPriorityBound:   streamPriorityBound,
 		parsedAST:             parsed,
 	}, nil
 }

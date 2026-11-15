@@ -136,6 +136,7 @@ func (ctx *MatchContext) Reset(data []byte) {
 	ctx.EntryPoint = 0
 	ctx.HasEntryPoint = false
 	ctx.entryPointChecked = false
+	ctx.verificationBudgetRejects = 0
 }
 
 func (ctx *MatchContext) resetCompactStorage() {

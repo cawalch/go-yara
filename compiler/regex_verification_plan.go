@@ -42,6 +42,9 @@ func compileVerificationPlan(parsed *regex.AST, flags regex.Flags, wide bool) (*
 	if isLiteralRegexNode(parsed.Root) || length >= 0 && length <= regexVerificationDistance/step {
 		return nil, nil
 	}
+	if hasUnboundedOrLongChainedLazyDot(parsed.Root, step) {
+		return nil, nil
+	}
 	choices := verificationAtoms(parsed.Root)
 	plan := &regexVerificationPlan{Allowed: verificationAlphabet(parsed.Root, flags)}
 	if wide {
@@ -343,4 +346,50 @@ func verificationTerminalMax(node *regex.Node) int {
 		}
 	}
 	return regex.ASTMaxLength(&regex.AST{Root: node})
+}
+
+// Chained non-greedy dot-range repeats (.{m,n}? / .{m,}?) split across
+// chaining points in libyara without an atom-relative 4,096-byte cap.
+func hasUnboundedOrLongChainedLazyDot(node *regex.Node, step int) bool {
+	return walkChainedLazyDot(node, false, step)
+}
+
+func walkChainedLazyDot(node *regex.Node, hasFollower bool, step int) bool {
+	if node == nil {
+		return false
+	}
+	node = ungroupRegexNode(node)
+	switch node.Kind {
+	case regex.NodeConcat:
+		tailFollows := hasFollower
+		for i := len(node.Children) - 1; i >= 0; i-- {
+			child := node.Children[i]
+			if walkChainedLazyDot(child, tailFollows, step) {
+				return true
+			}
+			if !tailFollows && regex.ASTMaxLength(&regex.AST{Root: child}) != 0 {
+				tailFollows = true
+			}
+		}
+		return false
+	case regex.NodeAlt:
+		for _, child := range node.Children {
+			if walkChainedLazyDot(child, hasFollower, step) {
+				return true
+			}
+		}
+		return false
+	case regex.NodeRange:
+		if hasFollower && !node.Greedy && len(node.Children) > 0 && ungroupRegexNode(node.Children[0]).Kind == regex.NodeAny {
+			return int(node.End) > regexVerificationDistance/step
+		}
+		if len(node.Children) > 0 {
+			return walkChainedLazyDot(node.Children[0], hasFollower, step)
+		}
+		return false
+	case regex.NodeRangeAny:
+		return hasFollower && !node.Greedy && int(node.End) > regexVerificationDistance/step
+	default:
+		return false
+	}
 }

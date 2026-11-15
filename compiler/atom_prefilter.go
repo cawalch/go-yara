@@ -562,6 +562,9 @@ func appendRegexPrefilterMatches(
 		scanData, relStart, windowStart := boundedRegexWindow(data, start, pattern, entry.IsWide, maxMatchSpan)
 		matched, startOff, endOff := execRegexMatchAt(bs, pattern, scanData, flags, entry.IsWide, relStart, done)
 		if !matched {
+			if matchCtx != nil && bs.BudgetExceeded() {
+				matchCtx.verificationBudgetRejects++
+			}
 			return
 		}
 		absStart := windowStart + relStart + startOff
@@ -651,6 +654,9 @@ func appendRegexFallbackMatches(
 	}
 	addRegexMatches(ctx, strID, pattern, data, rule.StringModifiers[strID], flags, isWide)
 	dst = append(dst, ctx.spans[strID]...)
+	if matchCtx != nil {
+		matchCtx.verificationBudgetRejects += ctx.verificationBudgetRejects
+	}
 	ctx.Release()
 	return dst
 }

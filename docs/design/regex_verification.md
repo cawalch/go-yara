@@ -17,8 +17,13 @@ work, but cannot replace canonical atom identity or event order.
   Fullword and explicit span caps are applied before an occurrence can win.
 - `ExecVerifyBatchWithCancel` has a 4,096-byte directional budget measured from
   the atom. Assertions still see physical input boundaries. Backward verification
-  collects starts; forward verification selects its priority endpoint. This is
-  not a universal whole-match or streaming-retention bound.
+  collects starts; forward verification selects its priority endpoint. Because
+  this caps atom-relative expansion, occurrences whose required prefix or suffix
+  extends more than 4,096 bytes from the selected atom are rejected (and counted
+  in `ScanTelemetry.VerificationBudgetRejects`). Chained non-greedy dot-range
+  expressions (`.{m,n}?` / `.{m,}?` beyond `4096/step` followed by another
+  sub-pattern) elide atom-relative verification to match libyara's chaining-point
+  splitting without an artificial whole-match bound or streaming-horizon cutoff.
 - Format 18 persists match-start alternative dispatch. Historical artifacts keep
   their compiled entries and policy flags. The reuse changes below do not alter
   bytecode, serialized policy, streaming horizons or historical results.
