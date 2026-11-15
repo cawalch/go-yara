@@ -60,6 +60,39 @@ func hasGreedyQuantifier(n *Node) bool {
 	return slices.ContainsFunc(n.Children, hasGreedyQuantifier)
 }
 
+// HasMixedQuantifierGreediness reports whether the regex mixes greedy and
+// ungreedy quantifiers anywhere in its AST.
+func (a *AST) HasMixedQuantifierGreediness() bool {
+	if a == nil || a.Root == nil {
+		return false
+	}
+	greedy, ungreedy := walkQuantifierGreediness(a.Root)
+	return greedy && ungreedy
+}
+
+func walkQuantifierGreediness(n *Node) (greedy, ungreedy bool) {
+	if n == nil {
+		return false, false
+	}
+	switch n.Kind {
+	case NodeStar, NodePlus, NodeRange, NodeRangeAny:
+		if n.Greedy {
+			greedy = true
+		} else {
+			ungreedy = true
+		}
+	}
+	for _, child := range n.Children {
+		cg, cu := walkQuantifierGreediness(child)
+		greedy = greedy || cg
+		ungreedy = ungreedy || cu
+		if greedy && ungreedy {
+			return true, true
+		}
+	}
+	return greedy, ungreedy
+}
+
 // alternative := concatenation ( '|' concatenation )*
 func (p *Parser) parseAlternative() (*Node, error) {
 	left, err := p.parseConcat()

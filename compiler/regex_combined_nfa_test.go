@@ -231,7 +231,7 @@ rule forbidden {strings:$gate="forbidden" $a=/key=[a-z0-9]{16,35}!/ condition:$a
 }
 
 func FuzzCombinedRegex(f *testing.F) {
-	expressions := []string{`key=[a-z]{16,32}!`, `key=[a-z]{16,32}?!`, `key=[a-z]{16,32}a`, `key=[a-z]{16,32}?a`, `key=(ab|a)[a-z]{1,24}`, `key=(a|ab)[a-z]{1,24}`, `key=(a?|ab)[a-z]{1,24}`, `key=[^a-z]{1,32}!`, `key=[\x00\x80-\xff]{1,32}!`, `key=a?a??a?b`}
+	expressions := []string{`key=[a-z]{16,32}!`, `key=[a-z]{16,32}?!`, `key=[a-z]{16,32}a`, `key=[a-z]{16,32}?a`, `key=(ab|a)[a-z]{1,24}`, `key=(a|ab)[a-z]{1,24}`, `key=(a?|ab)[a-z]{1,24}`, `key=[^a-z]{1,32}!`, `key=[\x00\x80-\xff]{1,32}!`, `key=a??a??a??b`}
 	b := combinedRegexBuilder{nfa: combinedRegexNFA{states: []combinedRegexState{{}}}, edges: make(map[combinedRegexEdge]int)}
 	var patterns []RegexPattern
 	var decoder combinedRegexDecoder
