@@ -63,6 +63,7 @@ at most 96 entries; `number_of_sections` preserves the declared count.
 | `pe` version info | `number_of_version_infos`, `version_info` (`dictionary` of strings) |
 | `pe.version_info_list[i]` | `key`, `value` |
 | `pe.rich_signature` | `offset`, `length`, `key`, `raw_data`, `clear_data`, `version_data` |
+| `pe` debug metadata | `pdb_path` |
 
 `base_of_data` is undefined for PE32+. `checksum` contains the stored header
 value; it doesn't verify the file. Use `pe.calculate_checksum()` to compute the
@@ -530,6 +531,33 @@ non-4-byte-aligned header spans, nonzero 12-byte header padding after unmasked
 `"DanS"`, or headers exceeding resource limits (`1 MiB` stub search window,
 `64 KiB` header length, `4096` entries), leaving `pe.rich_signature` fields and
 queries `undefined` rather than decoding malformed headers.
+
+## Debug metadata (`pdb_path`)
+
+`pe.pdb_path` exposes the PDB path string from the first recognized CodeView
+(`IMAGE_DEBUG_TYPE_CODEVIEW`, type `2`) record with signature `"RSDS"` (PDB 7.0)
+or `"NB10"` (PDB 2.0) in the PE debug directory table:
+
+- Non-CodeView debug directory entries and CodeView entries with unrecognized
+  signatures are skipped cleanly.
+- Raw path bytes before the first NUL terminator are preserved verbatim without
+  UTF-8 re-encoding.
+- Both explicit empty NUL-terminated strings (`""`) and header-only CodeView
+  records with no trailing path bytes evaluate to a defined empty string `""`.
+- When the input is not a PE image, lacks a debug directory, or contains no
+  recognized CodeView record, `pe.pdb_path` evaluates to `undefined`.
+
+Debug directory entries are loaded once per scan into a lazy scan-local cache
+only when `pe.pdb_path` is evaluated, and `WithModuleData("pe", ...)`
+snapshots supply `pe.pdb_path` directly without parsing the input bytes.
+
+Intentional differences from libyara: `go-pe` validates debug directory tables
+and CodeView payloads strictly and leaves `pe.pdb_path` `undefined` on
+unterminated non-empty CodeView path strings, conflicting non-zero
+`PointerToRawData` vs `AddressOfRawData` pointers, truncated payloads or
+out-of-prefix `ScanReader` inputs, and tables or payloads exceeding resource
+limits (`MaxDebugEntries = 256`, `MaxDebugPayloadBytes = 64 KiB`,
+`MaxCodeViewPathBytes = 4096`, `MaxDebugTotalBytes = 1 MiB`).
 
 ## DLL classification
 

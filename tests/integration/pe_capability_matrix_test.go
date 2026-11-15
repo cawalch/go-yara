@@ -152,6 +152,12 @@ rule cap_rich_signature {
 		pe.rich_signature.toolid(259) == 17 and
 		pe.rich_signature.toolid(257, 29500) == 3
 }
+
+rule cap_pdb_path {
+	condition:
+		pe_gate_private and
+		pe.pdb_path == "C:\\projects\\app.pdb"
+}
 `
 
 	ordinal64 := pefixture.Imports(true, 3)
@@ -183,6 +189,10 @@ rule cap_rich_signature {
 			{ToolID: 259, Version: 29500, Count: 5},
 		},
 	}
+	pdbSpec := pefixture.DebugEntrySpec{
+		Type:    2,
+		Payload: pefixture.RSDSPayload([]byte("C:\\projects\\app.pdb\x00")),
+	}
 
 	fixtures := []struct {
 		name string
@@ -200,6 +210,8 @@ rule cap_rich_signature {
 		{name: "pe64_version_info", data: pefixture.VersionInfoPE(true, versionSpec)},
 		{name: "pe32_rich", data: pefixture.RichPE(false, richOpts)},
 		{name: "pe64_rich", data: pefixture.RichPE(true, richOpts)},
+		{name: "pe32_pdb", data: pefixture.DebugPE(false, pdbSpec)},
+		{name: "pe64_pdb", data: pefixture.DebugPE(true, pdbSpec)},
 		{name: "non_pe", data: []byte("not a portable executable payload")},
 		{name: "empty", data: nil},
 	}
@@ -223,9 +235,14 @@ func TestPECapabilityMatrixUnsupportedAndStrict(t *testing.T) {
 		errText string
 	}{
 		{
-			slice:   "#477_pdb_path",
-			rule:    `import "pe" rule r { condition: pe.pdb_path == "example.pdb" }`,
-			errText: "pdb_path",
+			slice:   "#471_import_rva",
+			rule:    `import "pe" rule r { condition: pe.import_rva("kernel32.dll", "ExitProcess") > 0 }`,
+			errText: "import_rva",
+		},
+		{
+			slice:   "#472_delayed_imports",
+			rule:    `import "pe" rule r { condition: pe.delayed_import_details[0].library_name == "a" }`,
+			errText: "delayed_import_details",
 		},
 	}
 
