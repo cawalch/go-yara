@@ -139,12 +139,24 @@ func (i *Interpreter) executeConditionalJump(opcode Opcode) error {
 	return nil
 }
 
-// executeEntrypoint pushes the file entry point onto the stack.
+// executeEntrypoint pushes the file entry point onto the stack, or undefined
+// when the scanned input has no captured entry point.
 func (i *Interpreter) executeEntrypoint() error {
-	if i.matchContext != nil {
-		return i.push(Value{Type: ValueTypeInt, IntVal: i.matchContext.EntryPoint})
+	ctx := i.matchContext
+	if ctx == nil {
+		return i.push(Value{Type: ValueTypeUndefined})
 	}
-	return i.push(Value{Type: ValueTypeInt, IntVal: 0})
+	if !ctx.HasEntryPoint && !ctx.entryPointChecked {
+		ctx.entryPointChecked = true
+		if img := loadPE(ctx); img != nil && img != notPE {
+			ctx.EntryPoint = img.entryPoint
+			ctx.HasEntryPoint = true
+		}
+	}
+	if ctx.HasEntryPoint {
+		return i.push(Value{Type: ValueTypeInt, IntVal: ctx.EntryPoint})
+	}
+	return i.push(Value{Type: ValueTypeUndefined})
 }
 
 // executeFilesize pushes the file size onto the stack.
