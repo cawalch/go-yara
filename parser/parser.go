@@ -4,7 +4,6 @@ package parser
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/cawalch/go-yara/ast"
 	"github.com/cawalch/go-yara/internal/lexer"
@@ -36,14 +35,7 @@ func (ppe *PartialParseError) Error() string {
 	if len(ppe.Errors) == 0 {
 		return "no errors"
 	}
-	if len(ppe.Errors) == 1 {
-		return fmt.Sprintf("parsing completed with 1 error: %v", ppe.Errors[0])
-	}
-	return fmt.Sprintf(
-		"parsing completed with %d errors, first error: %v",
-		len(ppe.Errors),
-		ppe.Errors[0],
-	)
+	return formatErrorSummary("parsing completed", ppe.Errors)
 }
 
 // Unwrap returns the underlying errors
@@ -163,8 +155,8 @@ func (p *Parser) ParseRulesWithContext(ctx context.Context) (*ast.Program, error
 				Errors:  p.errors,
 			}
 		}
-		// Traditional strict parsing - fail completely
-		return nil, fmt.Errorf("parsing failed with %d errors", len(p.errors))
+		// Traditional strict parsing - fail completely with full error details
+		return nil, &ParseError{Errors: append([]error(nil), p.errors...)}
 	}
 
 	return program, nil
@@ -257,7 +249,7 @@ func (p *Parser) parseProgramElement(ctx context.Context, program *ast.Program) 
 		}
 		return err
 	default:
-		return fmt.Errorf("unexpected token %s at %v", p.current.Type, p.current.Pos)
+		return unexpectedTokenError(p.current)
 	}
 }
 
@@ -378,7 +370,11 @@ func (p *Parser) addProgramError(err error) {
 
 func (p *Parser) recordError(err error) {
 	if err != nil {
-		p.errors = append(p.errors, err)
+		var activeRule string
+		if p.ruleParser != nil {
+			activeRule = p.ruleParser.currentRule
+		}
+		p.errors = append(p.errors, withRuleContext(activeRule, p.current.Pos, err))
 	}
 }
 

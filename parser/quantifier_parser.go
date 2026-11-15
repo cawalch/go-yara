@@ -556,7 +556,6 @@ func (p *QuantifierParser) expectToken(t token.Type) bool {
 		p.nextToken()
 		return true
 	}
-	p.addError(fmt.Errorf("expected token %s, got %s at line %d, col %d",
-		t, p.current.Type, p.current.Pos.Line, p.current.Pos.Column))
+	p.addError(expectedTokenError(t, p.current))
 	return false
 }

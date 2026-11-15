@@ -252,7 +252,7 @@ func (p *ExpressionParser) parsePrimary() (ast.Expression, error) {
 		return ident, nil
 	}
 
-	return nil, fmt.Errorf("unexpected token %s at %v", p.current.Type, pos)
+	return nil, unexpectedTokenError(p.current)
 }
 
 func (p *ExpressionParser) isQuantifierExpression() bool {
@@ -418,7 +418,7 @@ func (p *ExpressionParser) parseParenthesizedExpression() (ast.Expression, error
 	}
 
 	if !p.currentTokenIs(token.RPAREN) {
-		return nil, fmt.Errorf("expected ')' at %v", p.current.Pos)
+		return nil, expectedTokenError(token.RPAREN, p.current)
 	}
 	p.nextToken() // consume ')'
 	return expr, nil
@@ -640,7 +640,7 @@ func (p *ExpressionParser) parsePostfix(base ast.Expression) (ast.Expression, er
 			pos := p.current.Pos
 			p.nextToken()
 			if !p.currentTokenIs(token.IDENTIFIER) && !p.currentTokenIs(token.LENGTH) {
-				return nil, fmt.Errorf("expected identifier after '.' at %v", p.current.Pos)
+				return nil, newSyntaxError(p.current.Pos, "expected identifier after '.', got %s", p.current.Display())
 			}
 			base = &ast.MemberAccess{Object: base, Member: p.current.Literal, Pos: pos}
 			p.nextToken()
@@ -655,7 +655,7 @@ func (p *ExpressionParser) parsePostfix(base ast.Expression) (ast.Expression, er
 				return nil, err
 			}
 			if !p.currentTokenIs(token.RBRACKET) {
-				return nil, fmt.Errorf("expected ']' at %v", p.current.Pos)
+				return nil, expectedTokenError(token.RBRACKET, p.current)
 			}
 			p.nextToken()
 			base = &ast.IndexAccess{Object: base, Index: index, Pos: pos}
@@ -674,7 +674,7 @@ func (p *ExpressionParser) parsePostfix(base ast.Expression) (ast.Expression, er
 func (p *ExpressionParser) parseFunctionCall(base ast.Expression) (ast.Expression, error) {
 	functionName, ok := extractFunctionName(base)
 	if !ok {
-		return nil, fmt.Errorf("cannot call non-identifier at %v", base.Position())
+		return nil, newSyntaxError(base.Position(), "cannot call non-identifier")
 	}
 	p.nextToken() // consume '('
 
@@ -682,14 +682,14 @@ func (p *ExpressionParser) parseFunctionCall(base ast.Expression) (ast.Expressio
 	for !p.currentTokenIs(token.RPAREN) {
 		arg, err := p.ParseExpression()
 		if err != nil {
-			return nil, fmt.Errorf("error parsing function argument: %w", err)
+			return nil, err
 		}
 		args = append(args, arg)
 
 		if p.currentTokenIs(token.COMMA) {
 			p.nextToken()
 		} else if !p.currentTokenIs(token.RPAREN) {
-			return nil, fmt.Errorf("expected ',' or ')' in function arguments at %v", p.current.Pos)
+			return nil, newSyntaxError(p.current.Pos, "expected ',' or ')' in function arguments, got %s", p.current.Display())
 		}
 	}
 	p.nextToken() // consume ')'
@@ -815,7 +815,7 @@ func (p *ExpressionParser) parsePrimaryExcludingUnary() (ast.Expression, error) 
 		return ident, nil
 	}
 
-	return nil, fmt.Errorf("unexpected token %s at %v", p.current.Type, pos)
+	return nil, unexpectedTokenError(p.current)
 }
 
 // SetTokenHandler sets the token handling functions for compatibility.
@@ -928,7 +928,7 @@ func (p *ExpressionParser) parseLengthOf() (ast.Expression, error) {
 			}
 		}
 	default:
-		return nil, fmt.Errorf("expected '(' or 'them' in 'length of' expression at %v", pos)
+		return nil, newSyntaxError(pos, "expected '(' or 'them' in 'length of' expression, got %s", p.current.Display())
 	}
 
 	return &ast.LengthOf{

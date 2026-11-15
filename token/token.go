@@ -11,6 +11,17 @@ type Position struct {
 	Column   int    // Column is the 1-based column number.
 }
 
+// String formats the position as filename:line:column or line L, column C.
+func (p Position) String() string {
+	if p.Filename != "" {
+		return fmt.Sprintf("%s:%d:%d", p.Filename, p.Line, p.Column)
+	}
+	if p.Line > 0 || p.Column > 0 {
+		return fmt.Sprintf("line %d, column %d", p.Line, p.Column)
+	}
+	return "0:0"
+}
+
 // Type represents the type of a lexical token.
 type Type int
 
@@ -246,6 +257,113 @@ var tokenTypeNames = map[Type]string{
 	EOF:              "EOF",
 }
 
+var tokenDisplayNames = map[Type]string{
+	RULE:             "'rule'",
+	META:             "'meta'",
+	STRINGS:          "'strings'",
+	EVIDENCE:         "'evidence'",
+	CONDITION:        "'condition'",
+	AND:              "'and'",
+	OR:               "'or'",
+	NOT:              "'not'",
+	ALL:              "'all'",
+	ANY:              "'any'",
+	NONE:             "'none'",
+	OF:               "'of'",
+	TRUE:             "'true'",
+	FALSE:            "'false'",
+	NOCASE:           "'nocase'",
+	WIDE:             "'wide'",
+	ASCII:            "'ascii'",
+	FULLWORD:         "'fullword'",
+	PRIVATE:          "'private'",
+	XOR:              "'xor'",
+	BASE64:           "'base64'",
+	BASE64WIDE:       "'base64wide'",
+	CAPTURE:          "'capture'",
+	BitwiseAnd:       "'&'",
+	BitwiseOr:        "'|'",
+	BitwiseXor:       "'^'",
+	BitwiseNot:       "'~'",
+	LeftShift:        "'<<'",
+	RightShift:       "'>>'",
+	INT8:             "'int8'",
+	INT16:            "'int16'",
+	INT32:            "'int32'",
+	UINT8:            "'uint8'",
+	UINT16:           "'uint16'",
+	UINT32:           "'uint32'",
+	INT8BE:           "'int8be'",
+	INT16BE:          "'int16be'",
+	INT32BE:          "'int32be'",
+	UINT8BE:          "'uint8be'",
+	UINT16BE:         "'uint16be'",
+	UINT32BE:         "'uint32be'",
+	INT64:            "'int64'",
+	UINT64:           "'uint64'",
+	INT64BE:          "'int64be'",
+	UINT64BE:         "'uint64be'",
+	FILESIZE:         "'filesize'",
+	ENTRYPOINT:       "'entrypoint'",
+	StringCount:      "'#'",
+	StringLength:     "'!'",
+	FOR:              "'for'",
+	IN:               "'in'",
+	AT:               "'at'",
+	WITHIN:           "'within'",
+	THEM:             "'them'",
+	DEFINED:          "'defined'",
+	GLOBAL:           "'global'",
+	EXTERNAL:         "'external'",
+	IMPORT:           "'import'",
+	INCLUDE:          "'include'",
+	CONTAINS:         "'contains'",
+	ICONTAINS:        "'icontains'",
+	STARTSWITH:       "'startswith'",
+	ISTARTSWITH:      "'istartswith'",
+	ENDSWITH:         "'endswith'",
+	IENDSWITH:        "'iendswith'",
+	IEQUALS:          "'iequals'",
+	MATCHES:          "'matches'",
+	HASH:             "'hash'",
+	LENGTH:           "'length'",
+	PLUS:             "'+'",
+	MINUS:            "'-'",
+	MULTIPLY:         "'*'",
+	DIVIDE:           "'/'",
+	MODULO:           "'%'",
+	PERCENT:          "'%'",
+	IntDivide:        "'\\'",
+	ASSIGN:           "'='",
+	EQ:               "'=='",
+	NEQ:              "'!='",
+	LT:               "'<'",
+	LE:               "'<='",
+	GT:               "'>'",
+	GE:               "'>='",
+	COLON:            "':'",
+	COMMA:            "','",
+	DOT:              "'.'",
+	IDENTIFIER:       "identifier",
+	StringIdentifier: "string identifier",
+	IntegerLit:       "integer",
+	HexIntegerLit:    "hex integer",
+	OctalIntegerLit:  "octal integer",
+	FloatLit:         "float",
+	SizeLit:          "size literal",
+	StringLit:        "string literal",
+	HexStringLit:     "hex string",
+	RegexLit:         "regex literal",
+	LBRACE:           "'{'",
+	RBRACE:           "'}'",
+	LPAREN:           "'('",
+	RPAREN:           "')'",
+	LBRACKET:         "'['",
+	RBRACKET:         "']'",
+	ILLEGAL:          "illegal token",
+	EOF:              "end of file",
+}
+
 // String returns a string representation of the token type.
 func (tt Type) String() string {
 	if name, ok := tokenTypeNames[tt]; ok {
@@ -254,7 +372,34 @@ func (tt Type) String() string {
 	return fmt.Sprintf("UNKNOWN(%d)", int(tt))
 }
 
+// Display returns a human-readable source form of the token type for diagnostics.
+func (tt Type) Display() string {
+	if name, ok := tokenDisplayNames[tt]; ok {
+		return name
+	}
+	return tt.String()
+}
+
 // String returns a string representation of the token for debugging.
 func (t Token) String() string {
 	return fmt.Sprintf("{%v %q @ %d:%d}", t.Type, t.Literal, t.Pos.Line, t.Pos.Column)
+}
+
+// Display returns a user-facing description of the token for error messages.
+func (t Token) Display() string {
+	switch t.Type {
+	case IDENTIFIER:
+		if t.Literal != "" {
+			return fmt.Sprintf("identifier %q", t.Literal)
+		}
+	case StringIdentifier:
+		if t.Literal != "" {
+			return "string identifier " + t.Literal
+		}
+	case ILLEGAL:
+		if t.Literal != "" {
+			return fmt.Sprintf("illegal token %q", t.Literal)
+		}
+	}
+	return t.Type.Display()
 }

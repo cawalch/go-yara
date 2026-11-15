@@ -89,10 +89,10 @@ func (p *DeclarationParser) parseMetaDeclarations() []*ast.Meta {
 func (p *DeclarationParser) parseMetaEntry() (*ast.Meta, error) {
 	// Meta keys can be identifiers or keywords that can also serve as identifiers
 	if !p.currentTokenIs(token.IDENTIFIER) && !p.isIdentifierKeyword(p.current.Type) {
-		return nil, fmt.Errorf(
-			"expected identifier for meta key at %v, got %s",
+		return nil, newSyntaxError(
 			p.current.Pos,
-			p.current.Type,
+			"expected identifier for meta key, got %s",
+			p.current.Display(),
 		)
 	}
 
@@ -100,13 +100,13 @@ func (p *DeclarationParser) parseMetaEntry() (*ast.Meta, error) {
 	pos := p.current.Pos
 	p.nextToken()
 
-	if err := p.expectTokenWithMessage(token.ASSIGN, "expected '=' after meta key"); err != nil {
-		return nil, err
+	if !p.expectToken(token.ASSIGN) {
+		return nil, newSyntaxError(p.current.Pos, "expected '=' after meta key %q, got %s", key, p.current.Display())
 	}
 
 	value := p.parseMetaValue()
 	if value == nil {
-		return nil, fmt.Errorf("failed to parse meta value for key '%s'", key)
+		return nil, newSyntaxError(pos, "failed to parse meta value for key '%s'", key)
 	}
 
 	return p.builder.Meta(pos, key, value), nil
@@ -124,19 +124,19 @@ func (p *DeclarationParser) parseMetaValue() ast.MetaValue {
 	case p.currentTokenIs(token.MINUS):
 		p.nextToken()
 		if !p.currentTokenIs(token.IntegerLit) {
-			p.addError(fmt.Errorf("expected integer after '-' at %v", pos))
+			p.addError(newSyntaxError(pos, "expected integer after '-'"))
 			return nil
 		}
 		value, err := strconv.ParseInt("-"+p.current.Literal, 10, 64)
 		if err != nil {
-			p.addError(fmt.Errorf("invalid integer literal '-%s' at %v", p.current.Literal, pos))
+			p.addError(newSyntaxError(pos, "invalid integer literal '-%s'", p.current.Literal))
 		}
 		p.nextToken()
 		return ast.MetaInt(value)
 	case p.currentTokenIs(token.IntegerLit):
 		value := p.parseIntegerLiteral()
 		if value == 0 && p.current.Literal != "0" {
-			p.addError(fmt.Errorf("invalid integer literal '%s' at %v", p.current.Literal, pos))
+			p.addError(newSyntaxError(pos, "invalid integer literal '%s'", p.current.Literal))
 		}
 		p.nextToken()
 		return ast.MetaInt(value)
@@ -148,10 +148,10 @@ func (p *DeclarationParser) parseMetaValue() ast.MetaValue {
 		return ast.MetaBool(false)
 	default:
 		p.addError(
-			fmt.Errorf(
-				"invalid meta value type '%s' at %v - expected string, integer, or boolean",
-				p.current.Type,
+			newSyntaxError(
 				pos,
+				"invalid meta value type %s - expected string, integer, or boolean",
+				p.current.Display(),
 			),
 		)
 		return nil
@@ -223,10 +223,10 @@ func (p *DeclarationParser) parseStringDeclaration() (*ast.String, error) {
 // parseStringIdentifier parses a string identifier and returns its components
 func (p *DeclarationParser) parseStringIdentifier() (string, token.Position, error) {
 	if !p.currentTokenIs(token.StringIdentifier) {
-		return "", token.Position{}, fmt.Errorf(
-			"expected string identifier (e.g. $a) at %v, got %s",
+		return "", token.Position{}, newSyntaxError(
 			p.current.Pos,
-			p.current.Type,
+			"expected string identifier (e.g. $a), got %s",
+			p.current.Display(),
 		)
 	}
 
@@ -256,10 +256,10 @@ func (p *DeclarationParser) parseStringPattern(pos token.Position) (ast.Pattern,
 		p.nextToken()
 		return p.builder.RegexPattern(pos, patternValue), nil
 	default:
-		return nil, fmt.Errorf(
-			"expected string, hex, or regex literal at %v, got %s",
+		return nil, newSyntaxError(
 			p.current.Pos,
-			p.current.Type,
+			"expected string, hex, or regex literal, got %s",
+			p.current.Display(),
 		)
 	}
 }
@@ -585,20 +585,20 @@ func (p *DeclarationParser) ParseGlobalVariable() (*ast.GlobalVariable, error) {
 
 	// Parse variable name (GLOBAL token was already consumed)
 	if !p.currentTokenIs(token.IDENTIFIER) {
-		return nil, errors.New("expected variable name after 'global'")
+		return nil, newSyntaxError(p.current.Pos, "expected variable name after 'global', got %s", p.current.Display())
 	}
 	name := p.current.Literal
 	p.nextToken()
 
 	// Expect assignment operator
 	if !p.expectToken(token.ASSIGN) {
-		return nil, errors.New("expected '=' after variable name")
+		return nil, newSyntaxError(p.current.Pos, "expected '=' after variable name %q, got %s", name, p.current.Display())
 	}
 
 	// Parse variable value
 	value, err := p.parseExpression()
 	if err != nil {
-		return nil, errors.New("expected expression after '='")
+		return nil, err
 	}
 
 	return p.builder.GlobalVariable(pos, name, value), nil
@@ -610,7 +610,7 @@ func (p *DeclarationParser) ParseExternalVariable() (*ast.ExternalVariable, erro
 
 	// Parse variable name
 	if !p.currentTokenIs(token.IDENTIFIER) {
-		return nil, errors.New("expected variable name after 'external'")
+		return nil, newSyntaxError(p.current.Pos, "expected variable name after 'external', got %s", p.current.Display())
 	}
 	name := p.current.Literal
 	p.nextToken()
@@ -621,7 +621,7 @@ func (p *DeclarationParser) ParseExternalVariable() (*ast.ExternalVariable, erro
 	if p.currentTokenIs(token.COLON) {
 		p.nextToken() // consume ':'
 		if !p.currentTokenIs(token.IDENTIFIER) {
-			return nil, errors.New("expected type hint after ':'")
+			return nil, newSyntaxError(p.current.Pos, "expected type hint after ':', got %s", p.current.Display())
 		}
 		typeHint = p.current.Literal
 		p.nextToken()
@@ -636,7 +636,7 @@ func (p *DeclarationParser) ParseImport() (*ast.Import, error) {
 
 	// Expect string literal for module name
 	if !p.currentTokenIs(token.StringLit) {
-		return nil, errors.New("expected string literal after 'import'")
+		return nil, newSyntaxError(p.current.Pos, "expected string literal after 'import', got %s", p.current.Display())
 	}
 	module := p.current.Literal
 	p.nextToken()
@@ -650,7 +650,7 @@ func (p *DeclarationParser) ParseInclude() (*ast.Include, error) {
 
 	// Expect string literal for file name
 	if !p.currentTokenIs(token.StringLit) {
-		return nil, errors.New("expected string literal after 'include'")
+		return nil, newSyntaxError(p.current.Pos, "expected string literal after 'include', got %s", p.current.Display())
 	}
 	file := p.current.Literal
 	p.nextToken()
