@@ -84,6 +84,8 @@ type serializedModuleSchemaEntry struct {
 	Value *serializedModuleSchema
 }
 
+func (e serializedModuleSchemaEntry) entryKey() string { return e.Key }
+
 type serializedModuleSchema struct {
 	Fields []serializedModuleFieldEntry
 }
@@ -92,6 +94,8 @@ type serializedModuleFieldEntry struct {
 	Key   string
 	Value serializedModuleField
 }
+
+func (e serializedModuleFieldEntry) entryKey() string { return e.Key }
 
 type serializedModuleField struct {
 	Kind     ModuleValueType
@@ -105,65 +109,91 @@ type serializedStringSliceEntry struct {
 	Value []string
 }
 
+func (e serializedStringSliceEntry) entryKey() string { return e.Key }
+
 type serializedByteEntry struct {
 	Key   string
 	Value []byte
 }
+
+func (e serializedByteEntry) entryKey() string { return e.Key }
 
 type serializedStringKindEntry struct {
 	Key   string
 	Value StringKind
 }
 
+func (e serializedStringKindEntry) entryKey() string { return e.Key }
+
 type serializedStringModifierEntry struct {
 	Key   string
 	Value []serializedStringModifier
 }
+
+func (e serializedStringModifierEntry) entryKey() string { return e.Key }
 
 type serializedCaptureBindingEntry struct {
 	Key   string
 	Value []serializedCaptureBinding
 }
 
+func (e serializedCaptureBindingEntry) entryKey() string { return e.Key }
+
 type serializedRegexPatternEntry struct {
 	Key   string
 	Value serializedRegexPattern
 }
+
+func (e serializedRegexPatternEntry) entryKey() string { return e.Key }
 
 type serializedHexPatternEntry struct {
 	Key   string
 	Value serializedHexPattern
 }
 
+func (e serializedHexPatternEntry) entryKey() string { return e.Key }
+
 type serializedIntEntry struct {
 	Key   string
 	Value int
 }
+
+func (e serializedIntEntry) entryKey() string { return e.Key }
 
 type serializedGlobalValueEntry struct {
 	Key   string
 	Value serializedGlobalValue
 }
 
+func (e serializedGlobalValueEntry) entryKey() string { return e.Key }
+
 type serializedScalarEntry struct {
 	Key   string
 	Value serializedScalar
 }
+
+func (e serializedScalarEntry) entryKey() string { return e.Key }
 
 type serializedModuleNameEntry struct {
 	Key   uint8
 	Value string
 }
 
+func (e serializedModuleNameEntry) entryKey() uint8 { return e.Key }
+
 type serializedModuleSignatureEntry struct {
 	Key   uint8
 	Value serializedModuleFunction
 }
 
+func (e serializedModuleSignatureEntry) entryKey() uint8 { return e.Key }
+
 type serializedInt64Entry struct {
 	Key   string
 	Value int64
 }
+
+func (e serializedInt64Entry) entryKey() string { return e.Key }
 
 type serializedModuleFunction struct {
 	Signatures  [][]ModuleValueType

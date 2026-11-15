@@ -9,29 +9,29 @@ import (
 
 // MatchContext holds pattern matching state
 type MatchContext struct {
-	Data              []byte
-	Blocks            []MemoryBlock
-	Matches           map[string][]Match // Pattern -> list of matches
-	matchBuffers      map[string][]Match
-	spans             map[string][]matchSpan
-	spanBuffers       map[string][]matchSpan
-	cancelDone        <-chan struct{}
-	regexBatch        regex.VMBatch
-	moduleCache       *moduleCallCache
-	assertionResults  []assertionResult
-	externalValues    map[string]externalValue
-	FileSize          int64
-	EntryPoint        int64
-	HasEntryPoint     bool
-	entryPointChecked bool
+	Data                      []byte
+	Blocks                    []MemoryBlock
+	Matches                   map[string][]Match // Pattern -> list of matches
+	matchBuffers              map[string][]Match
+	spans                     map[string][]matchSpan
+	spanBuffers               map[string][]matchSpan
+	cancelDone                <-chan struct{}
+	regexBatch                regex.VMBatch
+	moduleCache               *moduleCallCache
+	assertionResults          []assertionResult
+	externalValues            map[string]externalValue
+	FileSize                  int64
+	EntryPoint                int64
+	HasEntryPoint             bool
+	entryPointChecked         bool
+	compact                   bool
+	verificationBudgetRejects uint32
 	// maxMatchesPerPattern bounds retained occurrences. Zero means unlimited.
 	maxMatchesPerPattern int
 	// matchFilter rejects provisional streaming occurrences before retention.
 	matchFilter func(string, matchSpan) bool
 	// maxMatchSpan bounds the maximum byte length of a single regex match. Zero means unlimited.
-	maxMatchSpan              int
-	verificationBudgetRejects uint64
-	compact                   bool
+	maxMatchSpan int
 }
 
 func (mc *MatchContext) dataRange(offset, size int64) ([]byte, bool) {
