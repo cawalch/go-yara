@@ -45,6 +45,7 @@ func execMatchEnds(bs *VMBatch, code, input []byte, flags Flags, start, distance
 	if bs.st == nil {
 		bs.Prepare(len(code))
 	}
+	bs.budgetExceeded = false
 	st := bs.st
 	if cap(st.visited) < len(code) {
 		st.visited = make([]int64, len(code))
@@ -80,11 +81,13 @@ func execMatchEnds(bs *VMBatch, code, input []byte, flags Flags, start, distance
 	advance := newVMStep(code, input, flags, visited, &cur, &next, &gen, &bestEnd)
 	if backwards { //nolint:nestif // separate directional loops preserve the ordinary endpoint hot path
 		limit := max(0, start-distance)
+		brokeEarly := false
 		for pos := start; pos-step >= limit && len(cur) > 0; pos -= step {
 			if done != nil && (start-pos)&(vmCancellationInterval-1) == 0 && vmCanceled(done) {
 				return nil, context.Canceled
 			}
 			if step == 2 && !isWidePair(input, pos-step) {
+				brokeEarly = true
 				break
 			}
 			advance(pos, input[pos-step], -step)
@@ -93,13 +96,18 @@ func execMatchEnds(bs *VMBatch, code, input []byte, flags Flags, start, distance
 				ends = append(ends, pos-step)
 			}
 		}
+		if verify && !brokeEarly && limit > 0 && len(cur) > 0 {
+			bs.budgetExceeded = true
+		}
 	} else {
 		limit := start + min(distance, len(input)-start)
+		brokeEarly := false
 		for pos := start; pos+step <= limit && len(cur) > 0; pos += step {
 			if done != nil && (pos-start)&(vmCancellationInterval-1) == 0 && vmCanceled(done) {
 				return nil, context.Canceled
 			}
 			if step == 2 && !isWidePair(input, pos) {
+				brokeEarly = true
 				break
 			}
 			previous := bestEnd
@@ -109,6 +117,7 @@ func execMatchEnds(bs *VMBatch, code, input []byte, flags Flags, start, distance
 				if bestEnd > previous {
 					ends = append(ends[:0], bestEnd)
 				}
+				brokeEarly = true
 				break
 			}
 			advance(pos, input[pos], step)
@@ -120,6 +129,9 @@ func execMatchEnds(bs *VMBatch, code, input []byte, flags Flags, start, distance
 					ends = append(ends, bestEnd)
 				}
 			}
+		}
+		if verify && !brokeEarly && start+distance < len(input) && len(cur) > 0 {
+			bs.budgetExceeded = true
 		}
 	}
 

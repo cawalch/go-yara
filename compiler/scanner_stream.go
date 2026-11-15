@@ -341,6 +341,10 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 				s.matchCtx.filterFixedOffsets(rule.fixedOffsets, chunkOffset)
 			}
 			s.matchCtx.normalizeMatches()
+			if s.telemetrySink != nil {
+				s.telemetrySink.VerificationBudgetRejects += s.matchCtx.verificationBudgetRejects
+				s.matchCtx.verificationBudgetRejects = 0
+			}
 
 			if len(s.matchCtx.spans) == 0 {
 				continue

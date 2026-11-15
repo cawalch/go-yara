@@ -71,15 +71,23 @@ func putVMState(st *vmState) {
 // VMBatch provides reusable VM execution state for repeated anchored attempts.
 // Callers pass it to ExecMatchBatch for repeated anchored attempts.
 type VMBatch struct {
-	st      *vmState
-	gen     int64
-	failure failureReuse
+	st             *vmState
+	gen            int64
+	failure        failureReuse
+	budgetExceeded bool
+}
+
+// BudgetExceeded reports whether the most recent verification call stopped at
+// its byte budget while NFA threads remained active.
+func (b *VMBatch) BudgetExceeded() bool {
+	return b != nil && b.budgetExceeded
 }
 
 // Prepare ensures VMBatch has an allocated vmState and that visited has capacity
 // for at least codeLen instructions.
 func (b *VMBatch) Prepare(codeLen int) {
 	b.failure = failureReuse{}
+	b.budgetExceeded = false
 	if b.st == nil {
 		b.st = vmPool.Get().(*vmState)
 	}
@@ -101,6 +109,7 @@ func (b *VMBatch) Release() {
 	}
 	st := b.st
 	b.failure = failureReuse{}
+	b.budgetExceeded = false
 	b.st = nil
 	b.gen = 0
 	putVMState(st)

@@ -59,6 +59,9 @@ type ScanTelemetry struct {
 	// FalseCandidateHits sums max(candidates - retained occurrences, 0) per
 	// known-candidate pattern. It is not a verifier failure count or probability.
 	FalseCandidateHits uint64
+	// VerificationBudgetRejects counts candidate verifications dropped because
+	// an atom-relative NFA traversal reached the 4096-byte verification budget.
+	VerificationBudgetRejects uint64
 
 	// Phase durations are exclusive. Prefilter covers compact/word routing and
 	// mandatory header/assertion checks. Pattern search includes shared candidate

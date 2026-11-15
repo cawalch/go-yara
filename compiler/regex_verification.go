@@ -63,6 +63,9 @@ func addBoundedRegexVerifications(ctx *MatchContext, id string, pattern RegexPat
 					}
 				}
 				if !guard.allows(data, at, ctx.cancelDone) {
+					if !scanCanceled(ctx.cancelDone) {
+						ctx.verificationBudgetRejects++
+					}
 					continue
 				}
 				order, ok := verificationAtomOrder(atom, data, at, index, step, flags)
@@ -92,6 +95,9 @@ func addBoundedRegexVerifications(ctx *MatchContext, id string, pattern RegexPat
 					return
 				}
 				if len(ends) == 0 {
+					if bs.BudgetExceeded() {
+						ctx.verificationBudgetRejects++
+					}
 					continue
 				}
 				end := ends[0]
@@ -99,12 +105,15 @@ func addBoundedRegexVerifications(ctx *MatchContext, id string, pattern RegexPat
 					continue
 				}
 				starts := []int{at}
+				backwardExceeded := false
 				if len(atom.Backward) > 1 && pattern.Flags&regexStartAtomEntries == 0 {
 					starts, err = regex.ExecVerifyBatchWithCancel(bs, atom.Backward, data, flags|regex.FlagsBackwards, at, regexVerificationDistance, ctx.cancelDone)
 					if err != nil {
 						return
 					}
+					backwardExceeded = bs.BudgetExceeded()
 				}
+				kept := 0
 				for _, start := range starts {
 					candidateEnd := end
 					if ctx.maxMatchSpan > 0 && candidateEnd-start > ctx.maxMatchSpan {
@@ -125,10 +134,14 @@ func addBoundedRegexVerifications(ctx *MatchContext, id string, pattern RegexPat
 					if !matchPassesModifiers(data, match, modifiers, isWide && flags&regexASCIIWordBoundary == 0) {
 						continue
 					}
+					kept++
 					previous, exists := best[start]
 					if !exists || greedy != order.before(previous.order) {
 						best[start] = regexVerifiedSpan{candidateEnd, order}
 					}
+				}
+				if kept == 0 && backwardExceeded {
+					ctx.verificationBudgetRejects++
 				}
 			}
 		}

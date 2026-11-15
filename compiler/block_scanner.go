@@ -142,6 +142,10 @@ func (scanner *BlockScanner) ScanWithContext(ctx context.Context, base int64, da
 		s.matchCtx.normalizeMatches()
 		s.recordPatternProfiles(rule, false)
 		scanner.recordPatternCounts(rule)
+		if s.telemetrySink != nil {
+			s.telemetrySink.VerificationBudgetRejects += s.matchCtx.verificationBudgetRejects
+			s.matchCtx.verificationBudgetRejects = 0
+		}
 		if len(s.matchCtx.spans) == 0 {
 			continue
 		}

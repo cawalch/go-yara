@@ -29,8 +29,9 @@ type MatchContext struct {
 	// matchFilter rejects provisional streaming occurrences before retention.
 	matchFilter func(string, matchSpan) bool
 	// maxMatchSpan bounds the maximum byte length of a single regex match. Zero means unlimited.
-	maxMatchSpan int
-	compact      bool
+	maxMatchSpan              int
+	verificationBudgetRejects uint64
+	compact                   bool
 }
 
 func (mc *MatchContext) dataRange(offset, size int64) ([]byte, bool) {

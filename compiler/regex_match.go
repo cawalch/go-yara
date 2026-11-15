@@ -74,6 +74,10 @@ func addRegexMatchesCached(
 			}
 			return
 		}
+		if len(prefix) > 0 {
+			addRegexMatchesFromPrefix(ctx, id, regexInfo, data, modifiers, flags, isWide, prefix)
+			return
+		}
 		atomRequiresLinearFallback = true
 	}
 	alternativeAtoms := regexInfo.alternativeAtoms
@@ -634,6 +638,9 @@ func addRegexMatchAt(
 	scanData, relStart, windowStart := boundedRegexWindow(data, start, regexInfo, isWide, maxMatchSpan)
 	matched, startOffset, endOffset := execRegexMatchAt(bs, regexInfo, scanData, flags, isWide, relStart, ctx.cancelDone)
 	if !matched {
+		if ctx != nil && bs.BudgetExceeded() {
+			ctx.verificationBudgetRejects++
+		}
 		return
 	}
 	absStart := windowStart + relStart + startOffset
