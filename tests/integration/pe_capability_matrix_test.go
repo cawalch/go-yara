@@ -87,12 +87,27 @@ rule cap_64bit_variant {
 		not pe.is_32bit() and
 		pe.machine == pe.MACHINE_AMD64
 }
+
+rule cap_signatures_metadata {
+	condition:
+		pe_gate_private and
+		pe.number_of_signatures > 0 and
+		for any sig in pe.signatures : (
+			sig.serial != "" and
+			sig.subject != "" and
+			sig.issuer != "" and
+			sig.thumbprint != "" and
+			sig.not_before < sig.not_after
+		)
+}
 `
 
 	ordinal64 := pefixture.Imports(true, 3)
 	pefixture.ImportOrdinal(ordinal64, 1, 99)
 
 	exportsOverlay32 := append(pefixture.Exports(false, 4), []byte("OVERLAY_PAYLOAD")...)
+	sigBlob, _ := pefixture.AuthenticodeBlob(pefixture.AuthenticodeOptions{IncludeChain: true})
+	signed32 := pefixture.WithCertificates(pefixture.New(false), pefixture.CertificateRecord{Type: 2, Payload: sigBlob})
 
 	fixtures := []struct {
 		name string
@@ -102,6 +117,7 @@ rule cap_64bit_variant {
 		{name: "pe64_imports_ordinal", data: ordinal64},
 		{name: "pe32_exports_overlay", data: exportsOverlay32},
 		{name: "pe64_exports", data: pefixture.Exports(true, 4)},
+		{name: "pe32_signed", data: signed32},
 		{name: "non_pe", data: []byte("not a portable executable payload")},
 		{name: "empty", data: nil},
 	}
@@ -125,9 +141,9 @@ func TestPECapabilityMatrixUnsupportedAndStrict(t *testing.T) {
 		errText string
 	}{
 		{
-			slice:   "#478_signatures_metadata",
-			rule:    `import "pe" rule r { condition: pe.number_of_signatures > 0 and pe.signatures[0].serial == "01" }`,
-			errText: "number_of_signatures",
+			slice:   "#481_signatures_verified",
+			rule:    `import "pe" rule r { condition: pe.is_signed == 1 or pe.signatures[0].verified == 1 }`,
+			errText: "is_signed",
 		},
 		{
 			slice:   "#474_resources",
