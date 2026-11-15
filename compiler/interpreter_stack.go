@@ -270,6 +270,8 @@ func (i *Interpreter) executeModuleCall(id builtinFunction, function ModuleFunct
 			result = i.peImports(moduleArgs)
 		case "pe.exports", "pe.exports_index":
 			result = i.peExports(moduleArgs, name == "pe.exports_index")
+		case "pe.locale", "pe.language":
+			result = i.peLocaleQuery(moduleArgs, name == "pe.language")
 		}
 		if cache != nil {
 			cache.put(key, result)
