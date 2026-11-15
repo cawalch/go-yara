@@ -232,7 +232,9 @@ func conditionObservesMatchOccurrences(expr ast.Expression) bool {
 		if e.InRange != nil || e.AtOffset != nil {
 			return true
 		}
-		return conditionObservesMatchOccurrences(e.Range) || conditionObservesMatchOccurrences(e.Condition)
+		return conditionObservesMatchOccurrences(e.QuantifierExpr) ||
+			conditionObservesMatchOccurrences(e.Range) ||
+			conditionObservesMatchOccurrences(e.Condition)
 	case *ast.OfExpression:
 		if e.InRange != nil || e.AtOffset != nil {
 			return true
@@ -267,12 +269,21 @@ func conditionIsMonotonicInStrings(expr ast.Expression) bool {
 		if e.InRange != nil || e.AtOffset != nil {
 			return false
 		}
-		if lit, ok := e.Count.(*ast.Literal); ok {
-			if s, ok := lit.Value.(string); ok && strings.EqualFold(s, "none") {
-				return false
+		if ident, ok := e.Count.(*ast.Identifier); ok {
+			return ident.Name == QuantifierAny || ident.Name == QuantifierAll
+		}
+		if containsStringReference(e.Count) {
+			return false
+		}
+		if val, ok := evaluateConstantInt(FoldConstants(e.Count)); ok {
+			return val > 0
+		}
+		if pct, ok := e.Count.(*ast.PercentExpression); ok {
+			if val, ok := evaluateConstantInt(FoldConstants(pct.Value)); ok {
+				return val > 0
 			}
 		}
-		return true
+		return false
 	case *ast.StringTuple:
 		for _, el := range e.Elements {
 			if !conditionIsMonotonicInStrings(el) {
@@ -304,7 +315,7 @@ func containsStringReference(expr ast.Expression) bool {
 	case *ast.FunctionCall:
 		return slices.ContainsFunc(e.Args, containsStringReference)
 	case *ast.ForLoop:
-		return containsStringReference(e.Range) || containsStringReference(e.Condition) || containsStringReference(e.InRange) || containsStringReference(e.AtOffset)
+		return containsStringReference(e.QuantifierExpr) || containsStringReference(e.Range) || containsStringReference(e.Condition) || containsStringReference(e.InRange) || containsStringReference(e.AtOffset)
 	case *ast.OfExpression:
 		return true
 	case *ast.PercentExpression:

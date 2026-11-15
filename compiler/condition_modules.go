@@ -111,13 +111,17 @@ func (cc *conditionCompiler) compileModuleLoop(loop *ast.ForLoop, collection *se
 		plan.KeySlot = slots[0]
 		plan.Kind = ModuleDictionary
 	}
-	switch loop.Quantifier {
-	case QuantifierAny, QuantifierAll, QuantifierNone:
-	default:
-		var ok bool
-		plan.Target, ok = parseNumericQuantifier(loop.Quantifier)
-		if !ok || plan.Target < 0 {
-			return fmt.Errorf("invalid collection quantifier %q", loop.Quantifier)
+	if loop.QuantifierExpr != nil {
+		plan.Quantifier = quantifierExpr
+	} else {
+		switch loop.Quantifier {
+		case QuantifierAny, QuantifierAll, QuantifierNone:
+		default:
+			var ok bool
+			plan.Target, ok = parseNumericQuantifier(loop.Quantifier)
+			if !ok || plan.Target < 0 {
+				return fmt.Errorf("invalid collection quantifier %q", loop.Quantifier)
+			}
 		}
 	}
 	index := len(cc.moduleIterations)
@@ -132,7 +136,7 @@ func (cc *conditionCompiler) compileModuleLoop(loop *ast.ForLoop, collection *se
 			cc.moduleTypes[name] = &semantic.TypeInfo{DataType: semantic.TypeString}
 		}
 	}
-	return cc.compileForLoopBody(loop.Quantifier, loop.Condition, loop.Pos, -1)
+	return cc.compileForLoopBody(loop.Quantifier, loop.QuantifierExpr, loop.Condition, loop.Pos, -1)
 }
 
 func (plan moduleIterationPlan) validate() error {
@@ -152,7 +156,7 @@ func (plan moduleIterationPlan) validate() error {
 		return errors.New("invalid module collection kind")
 	}
 	switch plan.Quantifier {
-	case QuantifierAny, QuantifierAll, QuantifierNone:
+	case QuantifierAny, QuantifierAll, QuantifierNone, quantifierExpr:
 		return nil
 	default:
 		target, ok := parseNumericQuantifier(plan.Quantifier)

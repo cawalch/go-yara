@@ -1,6 +1,7 @@
 package semantic
 
 import (
+	"fmt"
 	"maps"
 	"slices"
 	"strings"
@@ -11,11 +12,7 @@ import (
 
 // validateOfExpression validates of expressions
 func (v *Validator) validateOfExpression(ofExpr *ast.OfExpression) (*TypeInfo, []error) {
-	var errors []error
-
-	// Validate the count expression
-	_, countErrs := v.validateExpression(ofExpr.Count)
-	errors = append(errors, countErrs...)
+	errors := v.validateQuantifierExpr(ofExpr.Count, true)
 
 	// Validate the strings expression
 	_, stringsErrs := v.validateExpression(ofExpr.Strings)
@@ -56,7 +53,8 @@ func containsAnonymousPlaceholder(expr ast.Expression) bool {
 			return true
 		}
 	case *ast.ForLoop:
-		return containsAnonymousPlaceholder(e.Range) ||
+		return containsAnonymousPlaceholder(e.QuantifierExpr) ||
+			containsAnonymousPlaceholder(e.Range) ||
 			containsAnonymousPlaceholder(e.Condition) ||
 			containsAnonymousPlaceholder(e.InRange) ||
 			containsAnonymousPlaceholder(e.AtOffset)
@@ -172,13 +170,13 @@ func (v *Validator) validateForLoopExpression(forLoop *ast.ForLoop) (*TypeInfo, 
 	if v.isModuleCollectionExpression(forLoop.Range) {
 		return v.validateModuleLoop(forLoop)
 	}
+	errors := v.validateQuantifierExpr(forLoop.QuantifierExpr, false)
 	outerModuleVariables := v.moduleVariables
 	v.moduleVariables = maps.Clone(outerModuleVariables)
 	defer func() { v.moduleVariables = outerModuleVariables }()
 	outerVariables := v.loopVariables
 	v.loopVariables = maps.Clone(outerVariables)
 	defer func() { v.loopVariables = outerVariables }()
-	var errors []error
 
 	// Determine loop variable type from range expression
 	loopVarType := ""
@@ -284,4 +282,37 @@ func (v *Validator) validateForLoopExpression(forLoop *ast.ForLoop) (*TypeInfo, 
 
 	// For loops always return boolean
 	return &TypeInfo{DataType: TypeBoolean}, errors
+}
+
+// validateQuantifierExpr validates an expression-form quantifier for `of` and
+// `for` expressions, allowing quantifier keywords when allowKeywords is true.
+func (v *Validator) validateQuantifierExpr(expr ast.Expression, allowKeywords bool) []error {
+	if expr == nil {
+		return nil
+	}
+	if allowKeywords {
+		if ident, ok := expr.(*ast.Identifier); ok {
+			switch ident.Name {
+			case "all", "any", "none":
+				return nil
+			}
+		}
+	}
+	typ, errs := v.validateExpression(expr)
+	if typ != nil && typ.DataType != TypeInteger && typ.DataType != TypeUnknown {
+		errs = append(errs, &Error{
+			Code:     ErrCodeTypeMismatch,
+			Message:  "quantifier expression must evaluate to an integer, got " + typ.String(),
+			Position: expr.Position(),
+			Rule:     v.currentRule,
+		})
+	} else if val, ok := evalConstantInt(expr); ok && val < 0 {
+		errs = append(errs, &Error{
+			Code:     ErrCodeInvalidOperation,
+			Message:  fmt.Sprintf("invalid value in condition: \"%d\"", val),
+			Position: expr.Position(),
+			Rule:     v.currentRule,
+		})
+	}
+	return errs
 }

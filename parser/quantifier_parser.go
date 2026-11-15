@@ -24,12 +24,13 @@ type QuantifierParser struct {
 
 // forLoopFields groups the components of a for-loop quantifier.
 type forLoopFields struct {
-	pos           token.Position
-	quantifierStr string
-	variables     []string
-	target        ast.Expression
-	constraint    ast.Expression
-	isRange       bool
+	pos            token.Position
+	quantifierStr  string
+	quantifierExpr ast.Expression
+	variables      []string
+	target         ast.Expression
+	constraint     ast.Expression
+	isRange        bool
 }
 
 // NewQuantifierParser creates a new quantifier parser instance
@@ -80,9 +81,10 @@ func (p *QuantifierParser) ParseQuantifier(pos token.Position) (ast.Expression, 
 // parseForQuantifier parses "for" quantifier expressions with optional variables and ranges
 func (p *QuantifierParser) parseForQuantifier(pos token.Position) (ast.Expression, error) {
 	var quantifierExpr ast.Expression
+	var forQuantifierExpr ast.Expression
 	var quantifierStr string
 
-	// Parse the quantifier after 'for' - could be keyword (all/any/none) or numeric
+	// Parse the quantifier after 'for' - keyword (all/any/none) or integer expression
 	switch {
 	case p.CurrentTokenIs(token.ALL) || p.CurrentTokenIs(token.ANY) ||
 		p.CurrentTokenIs(token.NONE):
@@ -90,24 +92,29 @@ func (p *QuantifierParser) parseForQuantifier(pos token.Position) (ast.Expressio
 		quantifierStr = p.current.Literal
 		quantifierExpr = p.builder.Identifier(pos, quantifierStr)
 		p.nextToken()
-	case p.isNumericLiteral():
-		// Numeric quantifier like "for 2 of them" or "for 2 i in (1..3)".
-		quantifierStr = p.current.Literal
-		if parsed, err := strconv.ParseInt(quantifierStr, 0, 64); err == nil {
-			quantifierStr = strconv.FormatInt(parsed, 10)
-		}
-		numericExpr, err := p.exprParser.parsePrimaryExcludingUnary()
-		if err != nil {
-			return nil, fmt.Errorf("error parsing numeric quantifier: %w", err)
-		}
-		quantifierExpr = numericExpr
 	default:
-		return nil, errors.New("expected quantifier (all/any/none) or number after 'for'")
+		// Parse above OF/IN precedence so "for 1+1 of" and "for (1) i in" stop at OF or the loop variable.
+		expr, err := p.exprParser.parseBinaryExpressionWithPrecedence(5)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing for quantifier: %w", err)
+		}
+		if _, isOf := expr.(*ast.OfExpression); isOf {
+			return nil, errors.New("expected 'of' after quantifier")
+		}
+		quantifierExpr = expr
+		forQuantifierExpr = expr
+		if lit, ok := expr.(*ast.Literal); ok && lit.Type == token.IntegerLit {
+			quantifierStr = fmt.Sprint(lit.Value)
+			if parsed, parseErr := strconv.ParseInt(quantifierStr, 0, 64); parseErr == nil && parsed >= 0 {
+				quantifierStr = strconv.FormatInt(parsed, 10)
+				forQuantifierExpr = nil
+			}
+		}
 	}
 
-	// A variable after either a keyword or numeric quantifier starts a range loop.
+	// A variable after either a keyword or numeric/expression quantifier starts a range loop.
 	if p.CurrentTokenIs(token.IDENTIFIER) {
-		return p.parseForLoopWithVariable(pos, quantifierStr)
+		return p.parseForLoopWithVariable(pos, quantifierStr, forQuantifierExpr)
 	}
 
 	// Standard string-set quantifiers use "of".
@@ -128,7 +135,7 @@ func (p *QuantifierParser) parseForQuantifier(pos token.Position) (ast.Expressio
 	}
 	if constraint != nil {
 		if p.CurrentTokenIs(token.COLON) {
-			return p.parseForLoopWithConstraint(forLoopFields{pos, quantifierStr, nil, target, constraint, isRange})
+			return p.parseForLoopWithConstraint(forLoopFields{pos, quantifierStr, forQuantifierExpr, nil, target, constraint, isRange})
 		}
 		return p.parseOfExpressionWithConstraint(pos, quantifierExpr, target, constraint, isRange), nil
 	}
@@ -144,14 +151,16 @@ func (p *QuantifierParser) parseForQuantifier(pos token.Position) (ast.Expressio
 		}
 
 		// Create a ForLoop node for "for" quantifiers with colon
-		return p.builder.ForLoop(pos, quantifierStr, "", target, expr), nil
+		loop := p.builder.ForLoop(pos, quantifierStr, "", target, expr)
+		loop.QuantifierExpr = forQuantifierExpr
+		return loop, nil
 	}
 
 	return p.builder.OfExpression(pos, quantifierExpr, target), nil
 }
 
 // parseForLoopWithVariable parses for loops with variables like "for all i in (0..9) : ..." or "for any k,v in dict : ..."
-func (p *QuantifierParser) parseForLoopWithVariable(pos token.Position, quantifier string) (ast.Expression, error) {
+func (p *QuantifierParser) parseForLoopWithVariable(pos token.Position, quantifier string, quantifierExpr ast.Expression) (ast.Expression, error) {
 	var variables []string
 
 	for {
@@ -188,7 +197,9 @@ func (p *QuantifierParser) parseForLoopWithVariable(pos token.Position, quantifi
 		}
 
 		// Create a ForLoopMultiVar node for "for" quantifiers with colon
-		return p.builder.ForLoopMultiVar(pos, quantifier, variables, rangeExpr, expr), nil
+		loop := p.builder.ForLoopMultiVar(pos, quantifier, variables, rangeExpr, expr)
+		loop.QuantifierExpr = quantifierExpr
+		return loop, nil
 	}
 
 	return nil, errors.New("expected ':' after for loop range")
@@ -317,6 +328,7 @@ func (p *QuantifierParser) parseForLoopWithConstraint(fields forLoopFields) (*as
 	} else {
 		forLoop = p.builder.ForLoop(fields.pos, fields.quantifierStr, "", fields.target, expr)
 	}
+	forLoop.QuantifierExpr = fields.quantifierExpr
 	if fields.isRange {
 		forLoop.InRange = fields.constraint
 	} else {
@@ -390,13 +402,6 @@ func (p *QuantifierParser) isNumericQuantifier() bool {
 		p.CurrentTokenIs(token.HexIntegerLit) ||
 		p.CurrentTokenIs(token.OctalIntegerLit)
 	return isNumber && p.PeekTokenIs(token.OF)
-}
-
-// isNumericLiteral checks if current token is a numeric literal
-func (p *QuantifierParser) isNumericLiteral() bool {
-	return p.CurrentTokenIs(token.IntegerLit) ||
-		p.CurrentTokenIs(token.HexIntegerLit) ||
-		p.CurrentTokenIs(token.OctalIntegerLit)
 }
 
 // isKeywordQuantifier checks if current token is a keyword quantifier

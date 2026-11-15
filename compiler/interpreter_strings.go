@@ -552,29 +552,38 @@ func (i *Interpreter) anonymousStringIdentifiers() []string {
 	return ids
 }
 
+func allStringsMatch(set []string, predicate func(string) bool) bool {
+	if len(set) == 0 {
+		return false
+	}
+	for _, id := range set {
+		if !predicate(id) {
+			return false
+		}
+	}
+	return true
+}
+
 // evaluateStringSetCount counts how many strings in set satisfy predicate, short-circuiting
 // as soon as the outcome is mathematically determined by count.
 func (i *Interpreter) evaluateStringSetCount(set []string, count Value, predicate func(string) bool) bool {
+	if count.Type == ValueTypeUndefined {
+		// libyara encodes "all" as YR_UNDEFINED, so an undefined count expression
+		// requires every string in a non-empty set to match.
+		return allStringsMatch(set, predicate)
+	}
 	if count.Type != ValueTypeInt {
 		return false
 	}
 	total := len(set)
 	if count.IntVal == countAll {
-		if total == 0 {
-			return false
-		}
-		for _, id := range set {
-			if !predicate(id) {
-				return false
-			}
-		}
-		return true
+		return allStringsMatch(set, predicate)
 	}
 	if count.IntVal == 0 {
 		return !slices.ContainsFunc(set, predicate)
 	}
 	if count.IntVal < 0 {
-		return false
+		return true
 	}
 	matched := 0
 	target := count.IntVal

@@ -83,7 +83,7 @@ func (cc *conditionCompiler) compileForLoop(forLoop *ast.ForLoop) error {
 	// 2. Start Iterator
 	cc.emitter.EmitOpcodeWithOperand(OpIterStartIntRange, Operand{Type: OperandImmediate32, Value: uint64(slots[0])}, forLoop.Pos.Line, forLoop.Pos.Column)
 
-	return cc.compileForLoopBody(forLoop.Quantifier, forLoop.Condition, forLoop.Pos, -1)
+	return cc.compileForLoopBody(forLoop.Quantifier, forLoop.QuantifierExpr, forLoop.Condition, forLoop.Pos, -1)
 }
 
 // compileForLoopOverTextStrings compiles: for any s in ("text1", "text2") : (...)
@@ -117,7 +117,7 @@ func (cc *conditionCompiler) compileForLoopOverTextStrings(forLoop *ast.ForLoop,
 	// Start iterator with the variable slot
 	cc.emitter.EmitOpcodeWithOperand(OpIterStartTextStringSet, Operand{Type: OperandImmediate32, Value: uint64(slots[0])}, forLoop.Pos.Line, forLoop.Pos.Column)
 
-	return cc.compileForLoopBody(forLoop.Quantifier, forLoop.Condition, forLoop.Pos, slots[0])
+	return cc.compileForLoopBody(forLoop.Quantifier, forLoop.QuantifierExpr, forLoop.Condition, forLoop.Pos, slots[0])
 }
 
 // registerTextStringSet registers a text string set and returns its index.
@@ -165,7 +165,7 @@ func (cc *conditionCompiler) compileForLoopOverIntEnum(forLoop *ast.ForLoop, tup
 	cc.emitter.EmitOpcodeWithOperand(OpIterStartIntEnum, Operand{Type: OperandImmediate32, Value: uint64(slots[0])}, forLoop.Pos.Line, forLoop.Pos.Column)
 
 	// 4. Compile loop body with loopVarSlot = -1 (integer variable, not string variable)
-	return cc.compileForLoopBody(forLoop.Quantifier, forLoop.Condition, forLoop.Pos, -1)
+	return cc.compileForLoopBody(forLoop.Quantifier, forLoop.QuantifierExpr, forLoop.Condition, forLoop.Pos, -1)
 }
 
 func isStringSetTuple(tuple *ast.StringTuple) bool {
@@ -267,7 +267,7 @@ func (cc *conditionCompiler) compileForLoopOverStrings(forLoop *ast.ForLoop) err
 	cc.emitter.EmitPush(constraintMarker, forLoop.Pos.Line, forLoop.Pos.Column)
 	cc.emitter.EmitOpcodeWithOperand(OpIterStartStringSet, Operand{Type: OperandImmediate32, Value: uint64(slots[0])}, forLoop.Pos.Line, forLoop.Pos.Column)
 
-	return cc.compileForLoopBody(forLoop.Quantifier, forLoop.Condition, forLoop.Pos, slots[0])
+	return cc.compileForLoopBody(forLoop.Quantifier, forLoop.QuantifierExpr, forLoop.Condition, forLoop.Pos, slots[0])
 }
 
 // compileForLoopBody emits the shared loop body and quantifier check used by
@@ -276,7 +276,7 @@ func (cc *conditionCompiler) compileForLoopOverStrings(forLoop *ast.ForLoop) err
 // loops), in which case "$" in the body is invalid.
 //
 //nolint:revive // argument-limit: internal helper
-func (cc *conditionCompiler) compileForLoopBody(quantifier string, condition ast.Expression, pos token.Position, loopVarSlot int) error {
+func (cc *conditionCompiler) compileForLoopBody(quantifier string, quantifierExpr ast.Expression, condition ast.Expression, pos token.Position, loopVarSlot int) error {
 	// 1. Check if iterator is empty using OpIterPushTotal + OpJzP
 	cc.emitter.EmitOpcode(OpIterPushTotal, pos.Line, pos.Column)
 	jumpToEnd := cc.emitter.EmitJump(jumpConfig{Opcode: OpJzP, Line: pos.Line, Pos: pos.Column})
@@ -316,6 +316,10 @@ func (cc *conditionCompiler) compileForLoopBody(quantifier string, condition ast
 	endLoopIP := cc.emitter.GetSize()
 	cc.emitter.SetFixup(jumpToEnd, endLoopIP)
 
+	if quantifierExpr != nil {
+		return cc.compileDynamicForQuantifier(quantifierExpr, pos)
+	}
+
 	if quantifier == QuantifierAll {
 		cc.emitter.EmitOpcode(OpIterPushTotal, pos.Line, pos.Column)
 	}
@@ -346,6 +350,75 @@ func (cc *conditionCompiler) compileForLoopBody(quantifier string, condition ast
 		}
 	}
 
+	return nil
+}
+
+func (cc *conditionCompiler) compileDynamicForQuantifier(quantifierExpr ast.Expression, pos token.Position) error {
+	slots, err := cc.allocateTempSlots(3)
+	if err != nil {
+		return err
+	}
+	totalSlot, matchedSlot, targetSlot := slots[0], slots[1], slots[2]
+
+	emitMemOp := func(op Opcode, slot int) {
+		cc.emitter.EmitOpcodeWithOperand(op, Operand{Type: OperandImmediate32, Value: uint64(slot)}, pos.Line, pos.Column)
+	}
+	emitUncondJump := func() int {
+		cc.emitter.EmitPush(0, pos.Line, pos.Column)
+		return cc.emitter.EmitJump(jumpConfig{Opcode: OpJzP, Line: pos.Line, Pos: pos.Column})
+	}
+
+	cc.emitter.EmitOpcode(OpIterPushTotal, pos.Line, pos.Column)
+	emitMemOp(OpPopM, totalSlot)
+	cc.emitter.EmitOpcode(OpIterEnd, pos.Line, pos.Column)
+	emitMemOp(OpPopM, matchedSlot)
+
+	if err := cc.compileExpression(quantifierExpr); err != nil {
+		return fmt.Errorf("compiling for-loop quantifier: %w", err)
+	}
+	emitMemOp(OpPopM, targetSlot)
+
+	// libyara treats an undefined quantifier expression as "all".
+	emitMemOp(OpPushM, targetSlot)
+	cc.emitter.EmitOpcode(OpDefined, pos.Line, pos.Column)
+	jumpUndef := cc.emitter.EmitJump(jumpConfig{Opcode: OpJzP, Line: pos.Line, Pos: pos.Column})
+
+	// Numeric 0 requires matched == 0 (never matching empty -1 iterators).
+	emitMemOp(OpPushM, targetSlot)
+	cc.emitter.EmitPush(0, pos.Line, pos.Column)
+	cc.emitter.EmitOpcode(OpIntEq, pos.Line, pos.Column)
+	jumpNotZero := cc.emitter.EmitJump(jumpConfig{Opcode: OpJzP, Line: pos.Line, Pos: pos.Column})
+
+	emitMemOp(OpPushM, matchedSlot)
+	cc.emitter.EmitPush(0, pos.Line, pos.Column)
+	cc.emitter.EmitOpcode(OpIntEq, pos.Line, pos.Column)
+	jumpDoneZero := emitUncondJump()
+
+	cc.emitter.SetFixup(jumpNotZero, cc.emitter.GetSize())
+	// Empty range/collection iterators yield matched == -1, which must evaluate false even for negative target counts.
+	emitMemOp(OpPushM, matchedSlot)
+	cc.emitter.EmitPush(0, pos.Line, pos.Column)
+	cc.emitter.EmitOpcode(OpIntLt, pos.Line, pos.Column)
+	jumpCheckGe := cc.emitter.EmitJump(jumpConfig{Opcode: OpJzP, Line: pos.Line, Pos: pos.Column})
+
+	cc.emitter.EmitPush(0, pos.Line, pos.Column)
+	jumpDoneEmpty := emitUncondJump()
+
+	cc.emitter.SetFixup(jumpCheckGe, cc.emitter.GetSize())
+	emitMemOp(OpPushM, matchedSlot)
+	emitMemOp(OpPushM, targetSlot)
+	cc.emitter.EmitOpcode(OpIntGe, pos.Line, pos.Column)
+	jumpDoneGe := emitUncondJump()
+
+	cc.emitter.SetFixup(jumpUndef, cc.emitter.GetSize())
+	emitMemOp(OpPushM, matchedSlot)
+	emitMemOp(OpPushM, totalSlot)
+	cc.emitter.EmitOpcode(OpIntEq, pos.Line, pos.Column)
+
+	endIP := cc.emitter.GetSize()
+	cc.emitter.SetFixup(jumpDoneZero, endIP)
+	cc.emitter.SetFixup(jumpDoneEmpty, endIP)
+	cc.emitter.SetFixup(jumpDoneGe, endIP)
 	return nil
 }
 

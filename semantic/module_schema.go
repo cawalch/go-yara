@@ -69,7 +69,9 @@ func (v *Validator) isModuleCollectionExpression(expr ast.Expression) bool {
 }
 
 func (v *Validator) validateModuleLoop(loop *ast.ForLoop) (*TypeInfo, []error) {
+	quantifierErrs := v.validateQuantifierExpr(loop.QuantifierExpr, false)
 	collection, errs := v.validateExpression(loop.Range)
+	errs = append(quantifierErrs, errs...)
 	if len(errs) > 0 {
 		return &TypeInfo{DataType: TypeBoolean}, errs
 	}

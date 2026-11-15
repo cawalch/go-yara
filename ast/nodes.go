@@ -319,11 +319,12 @@ func (l *LengthOf) expression() {}
 
 // ForLoop represents a for loop expression
 type ForLoop struct {
-	Pos        token.Position
-	Quantifier string     // "all", "any", "none" or numeric count
-	Variables  []string   // e.g. ["i"] or ["k", "v"]
-	Range      Expression // The iterable (Identifier, BinaryOp range, StringTuple)
-	Condition  Expression
+	Pos            token.Position
+	Quantifier     string     // "all", "any", "none" or numeric count
+	QuantifierExpr Expression // Optional expression quantifier (e.g. (1+1), #a, uint8(0))
+	Variables      []string   // e.g. ["i"] or ["k", "v"]
+	Range          Expression // The iterable (Identifier, BinaryOp range, StringTuple)
+	Condition      Expression
 	// Optional constraints on string set iteration (for..of with in/at)
 	InRange  Expression // nil unless "for ... of ($x*) in (min..max) : ..."
 	AtOffset Expression // nil unless "for ... of ($x*) at offset : ..."

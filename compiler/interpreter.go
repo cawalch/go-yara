@@ -52,6 +52,7 @@ const (
 	QuantifierThem = "them"
 	// QuantifierNone represents the "none" quantifier
 	QuantifierNone = "none"
+	quantifierExpr = "expr"
 )
 
 // Interpreter represents a bytecode interpreter for YARA rules
