@@ -127,19 +127,22 @@ func semanticRegexGroupCount(pattern ast.Pattern) (int, bool) {
 	if !ok {
 		return 0, false
 	}
-	literal := regexPattern.Value
+	parsed, err := regexengine.NewParser(0).Parse(cleanSemanticRegexPattern(regexPattern.Value))
+	if err != nil {
+		return int(^uint(0) >> 1), true
+	}
+	return parsed.GroupCount, true
+}
+
+func cleanSemanticRegexPattern(literal string) string {
 	if len(literal) >= 2 && literal[0] == '/' {
 		end := len(literal) - 1
 		for end > 0 && literal[end] != '/' {
 			end--
 		}
 		if end > 0 {
-			literal = literal[1:end]
+			return literal[1:end]
 		}
 	}
-	parsed, err := regexengine.NewParser(0).Parse(literal)
-	if err != nil {
-		return int(^uint(0) >> 1), true
-	}
-	return parsed.GroupCount, true
+	return literal
 }

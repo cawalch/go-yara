@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/cawalch/go-yara/ast"
+	regexengine "github.com/cawalch/go-yara/regex"
 	"github.com/cawalch/go-yara/token"
 )
 
@@ -23,7 +24,7 @@ func (v *Validator) validateStringModifiers(rule *ast.Rule) {
 		hasNocase := false
 		hasFullword := false
 
-		_, isRegex := str.Pattern.(*ast.RegexPattern)
+		regexPat, isRegex := str.Pattern.(*ast.RegexPattern)
 		_, isHex := str.Pattern.(*ast.HexString)
 
 		for _, mod := range str.Modifiers {
@@ -160,6 +161,16 @@ func (v *Validator) validateStringModifiers(rule *ast.Rule) {
 				Position: str.Pos,
 				Rule:     rule.Name,
 			})
+		}
+		if isRegex {
+			if parsed, err := regexengine.NewParser(0).Parse(cleanSemanticRegexPattern(regexPat.Value)); err == nil && parsed.HasMixedQuantifierGreediness() {
+				v.addError(&Error{
+					Code:     ErrCodeInvalidModifier,
+					Message:  "greedy and ungreedy quantifiers can't be mixed in a regular expression",
+					Position: str.Pos,
+					Rule:     rule.Name,
+				})
+			}
 		}
 	}
 }
