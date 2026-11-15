@@ -1,5 +1,7 @@
 package compiler
 
+import "github.com/cawalch/go-yara/internal/int64ops"
+
 // executeBitwiseAnd handles OpBitwiseAnd opcode.
 func (i *Interpreter) executeBitwiseAnd() error {
 	return i.executeBinaryOp(func(a, b int64) int64 { return a & b })
@@ -35,28 +37,30 @@ func (i *Interpreter) executeBitwiseNot() error {
 
 // executeShiftLeft handles OpShl opcode.
 func (i *Interpreter) executeShiftLeft() error {
-	return i.executeBinaryOp(func(a, b int64) int64 {
-		if b < 0 {
-			return a << 0
-		}
-		if b > 63 {
-			b = 63
-		}
-		return a << uint64(b) // #nosec G115 - safe conversion with bounds check above
-	})
+	return i.executeCheckedBinaryIntOp(int64ops.ShiftLeft)
 }
 
 // executeShiftRight handles OpShr opcode.
 func (i *Interpreter) executeShiftRight() error {
-	return i.executeBinaryOp(func(a, b int64) int64 {
-		if b < 0 {
-			return a >> 0
-		}
-		if b > 63 {
-			b = 63
-		}
-		return a >> uint64(b) // #nosec G115 - safe conversion with bounds check above
-	})
+	return i.executeCheckedBinaryIntOp(int64ops.ShiftRight)
+}
+
+func (i *Interpreter) executeCheckedBinaryIntOp(op func(a, b int64) (int64, bool)) error {
+	a, b, err := i.popTwo()
+	if err != nil {
+		return err
+	}
+	if a.Type == ValueTypeUndefined || b.Type == ValueTypeUndefined {
+		return i.push(Value{Type: ValueTypeUndefined})
+	}
+	if a.Type != ValueTypeInt || b.Type != ValueTypeInt {
+		return i.handleNonIntegerOperands(a, b, "integer-only operation requires integer operands")
+	}
+	val, ok := op(a.IntVal, b.IntVal)
+	if !ok {
+		return i.push(Value{Type: ValueTypeUndefined})
+	}
+	return i.push(Value{Type: ValueTypeInt, IntVal: val})
 }
 
 // --- Individual integer arithmetic handlers ---
@@ -74,37 +78,17 @@ func (i *Interpreter) executeIntMul() error {
 }
 
 func (i *Interpreter) executeIntDiv() error {
-	a, b, err := i.popTwo()
-	if err != nil {
-		return err
-	}
-	if a.Type == ValueTypeUndefined || b.Type == ValueTypeUndefined {
-		return i.push(Value{Type: ValueTypeUndefined})
-	}
-	if a.Type != ValueTypeInt || b.Type != ValueTypeInt {
-		return i.handleNonIntegerOperands(a, b, "integer-only operation requires integer operands")
-	}
-	if b.IntVal == 0 {
-		return i.push(Value{Type: ValueTypeUndefined})
-	}
-	return i.push(Value{Type: ValueTypeInt, IntVal: a.IntVal / b.IntVal})
+	return i.executeCheckedBinaryIntOp(func(a, b int64) (int64, bool) {
+		val, status := int64ops.Div(a, b)
+		return val, status == int64ops.DivOK
+	})
 }
 
 func (i *Interpreter) executeMod() error {
-	a, b, err := i.popTwo()
-	if err != nil {
-		return err
-	}
-	if a.Type == ValueTypeUndefined || b.Type == ValueTypeUndefined {
-		return i.push(Value{Type: ValueTypeUndefined})
-	}
-	if a.Type != ValueTypeInt || b.Type != ValueTypeInt {
-		return i.handleNonIntegerOperands(a, b, "integer-only operation requires integer operands")
-	}
-	if b.IntVal == 0 {
-		return i.push(Value{Type: ValueTypeUndefined})
-	}
-	return i.push(Value{Type: ValueTypeInt, IntVal: a.IntVal % b.IntVal})
+	return i.executeCheckedBinaryIntOp(func(a, b int64) (int64, bool) {
+		val, status := int64ops.Mod(a, b)
+		return val, status == int64ops.DivOK
+	})
 }
 
 func (i *Interpreter) executeIntMinus() error {

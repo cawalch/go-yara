@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/cawalch/go-yara/ast"
+	"github.com/cawalch/go-yara/internal/int64ops"
 	"github.com/cawalch/go-yara/token"
 )
 
@@ -80,6 +81,11 @@ func foldUnaryOp(u *ast.UnaryOp) ast.Expression {
 			return intLiteral(^val, u.Pos)
 		}
 	case token.MINUS:
+		if lit, ok := right.(*ast.Literal); ok && lit.Type == token.IntegerLit {
+			if text, ok := lit.Value.(string); ok && text == "9223372036854775808" {
+				return intLiteral(math.MinInt64, u.Pos)
+			}
+		}
 		if val, ok := evaluateConstantInt(right); ok {
 			return intLiteral(-val, u.Pos)
 		}
@@ -113,7 +119,7 @@ func foldBinaryOp(b *ast.BinaryOp) ast.Expression {
 		if folded, ok := foldStringOp(b, left, right); ok {
 			return folded
 		}
-	case token.PLUS, token.MINUS, token.MULTIPLY, token.DIVIDE, token.MODULO,
+	case token.PLUS, token.MINUS, token.MULTIPLY, token.DIVIDE, token.IntDivide, token.MODULO,
 		token.BitwiseAnd, token.BitwiseOr, token.BitwiseXor, token.LeftShift, token.RightShift:
 		if folded, ok := foldIntegerArithmetic(b, left, right); ok {
 			return folded
@@ -289,18 +295,24 @@ func foldIntegerArithmetic(b *ast.BinaryOp, left, right ast.Expression) (ast.Exp
 
 	switch op {
 	case token.PLUS:
-		return intLiteral(valL+valR, pos), true
+		if sum, ok := int64ops.Add(valL, valR); ok {
+			return intLiteral(sum, pos), true
+		}
 	case token.MINUS:
-		return intLiteral(valL-valR, pos), true
+		if diff, ok := int64ops.Sub(valL, valR); ok {
+			return intLiteral(diff, pos), true
+		}
 	case token.MULTIPLY:
-		return intLiteral(valL*valR, pos), true
-	case token.DIVIDE:
-		if valR != 0 {
-			return intLiteral(valL/valR, pos), true
+		if prod, ok := int64ops.Mul(valL, valR); ok {
+			return intLiteral(prod, pos), true
+		}
+	case token.DIVIDE, token.IntDivide:
+		if quot, status := int64ops.Div(valL, valR); status == int64ops.DivOK {
+			return intLiteral(quot, pos), true
 		}
 	case token.MODULO:
-		if valR != 0 {
-			return intLiteral(valL%valR, pos), true
+		if rem, status := int64ops.Mod(valL, valR); status == int64ops.DivOK {
+			return intLiteral(rem, pos), true
 		}
 	case token.BitwiseAnd:
 		return intLiteral(valL&valR, pos), true
@@ -309,12 +321,12 @@ func foldIntegerArithmetic(b *ast.BinaryOp, left, right ast.Expression) (ast.Exp
 	case token.BitwiseXor:
 		return intLiteral(valL^valR, pos), true
 	case token.LeftShift:
-		if valR >= 0 && valR < 64 {
-			return intLiteral(valL<<valR, pos), true
+		if shifted, ok := int64ops.ShiftLeft(valL, valR); ok {
+			return intLiteral(shifted, pos), true
 		}
 	case token.RightShift:
-		if valR >= 0 && valR < 64 {
-			return intLiteral(valL>>valR, pos), true
+		if shifted, ok := int64ops.ShiftRight(valL, valR); ok {
+			return intLiteral(shifted, pos), true
 		}
 	}
 	return nil, false
