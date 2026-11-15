@@ -18,7 +18,8 @@ var peExportTimestampSchema = newPEExportTimestampSchema()
 var peDLLNameSchema = newPEDLLNameSchema()
 var peOverlaySchema = newPEOverlaySchema()
 var peSignaturesSchema = newPESignaturesSchema()
-var peSchema = newPESignatureVerifySchema()
+var peSignatureVerifySchema = newPESignatureVerifySchema()
+var peSchema = newPEResourcesSchema()
 
 // The semantic validator only reads this type tree. Reuse it so rules that
 // don't import PE don't pay to reconstruct the built-in schema.
@@ -72,6 +73,8 @@ func peModule() Module {
 		"is_32bit":           {Signatures: []ModuleSignature{{}}, ReturnType: ModuleInteger},
 		"is_64bit":           {Signatures: []ModuleSignature{{}}, ReturnType: ModuleInteger},
 		"is_dll":             {Signatures: []ModuleSignature{{}}, ReturnType: ModuleInteger},
+		"locale":             {Signatures: []ModuleSignature{{Arguments: []ModuleValueType{ModuleInteger}}}, ReturnType: ModuleInteger},
+		"language":           {Signatures: []ModuleSignature{{Arguments: []ModuleValueType{ModuleInteger}}}, ReturnType: ModuleInteger},
 	}}
 }
 
@@ -139,7 +142,7 @@ func isNativePEFunction(module Module, name string, function ModuleFunction) boo
 // Preserve loading of programs emitted with earlier native PE schemas.
 // Match complete schemas so unrelated host modules named pe remain custom.
 func isNativePESchema(schema *ModuleSchema) bool {
-	return schema != nil && (reflect.DeepEqual(schema, peSchema) || reflect.DeepEqual(schema, peSignaturesSchema) || reflect.DeepEqual(schema, peOverlaySchema) || reflect.DeepEqual(schema, peDLLNameSchema) || reflect.DeepEqual(schema, peExportTimestampSchema) || reflect.DeepEqual(schema, peExportsSchema) || reflect.DeepEqual(schema, peImportsSchema) || reflect.DeepEqual(schema, peHeaderSchema))
+	return schema != nil && (reflect.DeepEqual(schema, peSchema) || reflect.DeepEqual(schema, peSignatureVerifySchema) || reflect.DeepEqual(schema, peSignaturesSchema) || reflect.DeepEqual(schema, peOverlaySchema) || reflect.DeepEqual(schema, peDLLNameSchema) || reflect.DeepEqual(schema, peExportTimestampSchema) || reflect.DeepEqual(schema, peExportsSchema) || reflect.DeepEqual(schema, peImportsSchema) || reflect.DeepEqual(schema, peHeaderSchema))
 }
 
 func newPESchema() *ModuleSchema {
@@ -278,6 +281,7 @@ type peImage struct {
 	context               *MatchContext
 	imports               *peImportData
 	exports               *peExportData
+	resources             *peResourceData
 	signatures            *peSignatureData
 	names                 []string
 	fileSize              int64
@@ -318,6 +322,8 @@ func (image *peImage) field(name string) ModuleValue {
 		return image.exportField(name)
 	case "is_signed", "number_of_signatures", "signatures":
 		return image.signatureField(name)
+	case "resource_timestamp", "resource_version", "number_of_resources", "resources":
+		return image.resourceField(name)
 	case "is_pe":
 		return IntegerValue(1)
 	case "machine":

@@ -113,6 +113,22 @@ rule cap_signatures_verified {
 			)
 		)
 }
+
+rule cap_resources_and_locales {
+	condition:
+		pe_gate_private and
+		pe.resource_timestamp == 0x12345678 and
+		pe.resource_version.major == 2 and
+		pe.resource_version.minor == 5 and
+		pe.number_of_resources == 2 and
+		pe.locale(1033) == 1 and
+		pe.language(9) == 1 and
+		for any res in pe.resources : (
+			res.type == pe.RESOURCE_TYPE_RCDATA and
+			res.length > 0 and
+			res.offset > 0
+		)
+}
 `
 
 	ordinal64 := pefixture.Imports(true, 3)
@@ -137,6 +153,8 @@ rule cap_signatures_verified {
 		{name: "pe64_exports", data: pefixture.Exports(true, 4)},
 		{name: "pe32_signed", data: signed32},
 		{name: "pe32_verified", data: verified32},
+		{name: "pe32_resources", data: pefixture.Resources(false, 2)},
+		{name: "pe64_resources", data: pefixture.Resources(true, 2)},
 		{name: "non_pe", data: []byte("not a portable executable payload")},
 		{name: "empty", data: nil},
 	}
@@ -159,11 +177,6 @@ func TestPECapabilityMatrixUnsupportedAndStrict(t *testing.T) {
 		rule    string
 		errText string
 	}{
-		{
-			slice:   "#474_resources",
-			rule:    `import "pe" rule r { condition: pe.number_of_resources > 0 and pe.resources[0].type == pe.RESOURCE_TYPE_RCDATA }`,
-			errText: "number_of_resources",
-		},
 		{
 			slice:   "#476_rich_signature",
 			rule:    `import "pe" rule r { condition: pe.rich_signature.toolid(1, 2) > 0 }`,

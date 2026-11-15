@@ -22,11 +22,12 @@ The module implements headers, sections, section lookup, RVA-to-file-offset
 mapping, overlay metadata, full-file PE checksum calculation, standard import
 and export metadata, import and export queries by name, ordinal, or regex, the
 standard import hash under
-[#359](https://github.com/cawalch/go-yara/issues/359), Authenticode
-signature metadata under [#478](https://github.com/cawalch/go-yara/issues/478),
-and offline Authenticode integrity verification under
-[#481](https://github.com/cawalch/go-yara/issues/481).
-Delayed imports, flagged import queries, resources, Rich headers, PDB paths,
+[#359](https://github.com/cawalch/go-yara/issues/359), resource metadata and
+locale queries under [#474](https://github.com/cawalch/go-yara/issues/474),
+Authenticode signature metadata under
+[#478](https://github.com/cawalch/go-yara/issues/478), and offline Authenticode
+integrity verification under [#481](https://github.com/cawalch/go-yara/issues/481).
+Delayed imports, flagged import queries, Rich headers, PDB paths,
 `valid_on(timestamp)`, and `file_digest` remain unsupported and fail
 compilation.
 
@@ -54,6 +55,9 @@ at most 96 entries; `number_of_sections` preserves the declared count.
 | `pe.signatures[i].certificates[j]` | `issuer`, `subject`, `version`, `algorithm`, `algorithm_oid`, `serial`, `thumbprint`, `not_before`, `not_after` |
 | `pe.signatures[i].signer_info` | `program_name`, `digest`, `digest_alg`, `length_of_chain`, `chain` |
 | `pe.signatures[i].countersignatures[j]` | `verified`, `digest`, `digest_alg`, `sign_time`, `length_of_chain`, `chain` |
+| `pe` resources | `resource_timestamp`, `number_of_resources` |
+| `pe.resource_version` | `major`, `minor` |
+| `pe.resources[i]` | `offset`, `rva`, `length`, `type`, `id`, `language`, `type_string`, `name_string`, `language_string` |
 
 `base_of_data` is undefined for PE32+. `checksum` contains the stored header
 value; it doesn't verify the file. Use `pe.calculate_checksum()` to compute the
@@ -83,8 +87,8 @@ when present. A resolved name with nonprintable bytes is undefined, following
 the libyara oracle's C-locale behavior.
 
 The module provides libyara's machine, subsystem, COFF characteristics, DLL
-characteristics, directory-index, optional-header magic, and section-flag
-constants. For the complete list, see
+characteristics, directory-index, optional-header magic, section-flag, and
+`RESOURCE_TYPE_*` resource-type constants. For the complete list, see
 [`modules_pe_constants.go`](../compiler/modules_pe_constants.go). Constants are
 available even when the input isn't a PE image.
 
@@ -414,6 +418,38 @@ Aliases beyond that window can therefore produce different names. Strict
 rejection also differs from libyara's partial recovery on malformed tables.
 Tests record these differences separately from parity cases.
 
+## Resources
+
+`resource_timestamp`, `resource_version` (`major`, `minor`),
+`number_of_resources`, and `resources[i]` expose the PE resource directory
+metadata parsed by go-pe without copying resource payloads. Resources load lazily
+into a per-scan cache only when a resource field, `pe.locale(id)`, or
+`pe.language(id)` is evaluated, and scalar or query accesses don't allocate
+`resources[i]` element structs.
+
+Each leaf exposes `rva`, `length`, and `offset` (mapped using the same file
+offset policy as `entry_point`, so `offset` resolves from section headers even
+when a payload lives past a stream scan's retained prefix, and stays undefined
+when unmapped). Numeric path steps set `type`, `id`, and `language`, while named
+steps set `type_string`, `name_string`, and `language_string` as raw
+little-endian UTF-16 byte strings, matching libyara. Standard resource types use
+`pe.RESOURCE_TYPE_*` constants.
+
+`pe.locale(locale)` returns `1` when any resource has exact numeric
+`language == locale` and `0` otherwise; `pe.language(lang)` compares
+`(language & 0xff) == lang`. Both return `0` for a valid PE without a resource
+directory and undefined for non-PE input or rejected resource metadata. With
+`WithModuleData("pe", data)`, `locale` and `language` query the supplied
+`resources` array directly.
+
+Intentional differences from libyara: go-pe rejects cyclic, truncated,
+out-of-directory, or over-limit resource trees (`MaxResource*` bounds), leaving
+all resource fields and queries undefined rather than returning partial
+records; named components decode via UTF-16LE with unpaired surrogates replaced
+by `U+FFFD` (`\xfd\xff`); incomplete trees with fewer than three levels leave
+missing components undefined without leaking stale prior-sibling values; and
+leaves deeper than three levels are excluded from `pe.resources`.
+
 ## DLL classification
 
 `pe.is_dll()` takes no arguments and returns `pe.characteristics & pe.DLL`.
@@ -561,8 +597,8 @@ dispatch uses the same schema check as automatic field loading.
 The differential suite uses libyara 4.5.8 in CI. It covers PE32 and PE32+
 headers, constants, section names, section lookup, RVA mapping, overlay
 metadata, standard import counts, details, ordinal aliases, queries, and
-imphash, export metadata
-and queries, undefined fields, entry-point mappings, real Go-toolchain PE
+imphash, export metadata and queries, resource metadata, locales, and constants,
+undefined fields, entry-point mappings, real Go-toolchain PE
 fixtures, scanner reuse, compiled-program round trips, compact scans, and
 reader scans within the retention limit.
 
@@ -570,7 +606,7 @@ To run the focused tests, install the `yara` CLI on `PATH`, then run:
 
 ```sh
 go test ./compiler ./tests/integration -run 'TestPE|TestLibyaraPE' -count=1
-go test ./compiler -run '^$' -bench 'BenchmarkPE(Module|Scanner|Sections|RVA|Overlay|Imports|Imphash|Exports|ExportQueries|Signatures)$' -benchmem
+go test ./compiler -run '^$' -bench 'BenchmarkPE(Module|Scanner|Sections|RVA|Overlay|Imports|Imphash|Exports|ExportQueries|Resources|Signatures)$' -benchmem
 ```
 
 The oracle tests skip if the CLI is absent. CI installs and checks the pinned
