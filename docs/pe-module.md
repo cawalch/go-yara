@@ -24,9 +24,11 @@ and export metadata, import and export queries by name, ordinal, or regex, the
 standard import hash under
 [#359](https://github.com/cawalch/go-yara/issues/359), resource metadata and
 locale queries under [#474](https://github.com/cawalch/go-yara/issues/474),
-Authenticode signature metadata under
-[#478](https://github.com/cawalch/go-yara/issues/478), and offline Authenticode
-integrity verification under [#481](https://github.com/cawalch/go-yara/issues/481).
+version-information resources under
+[#475](https://github.com/cawalch/go-yara/issues/475), Authenticode signature
+metadata under [#478](https://github.com/cawalch/go-yara/issues/478), and
+offline Authenticode integrity verification under
+[#481](https://github.com/cawalch/go-yara/issues/481).
 Delayed imports, flagged import queries, Rich headers, PDB paths,
 `valid_on(timestamp)`, and `file_digest` remain unsupported and fail
 compilation.
@@ -58,6 +60,8 @@ at most 96 entries; `number_of_sections` preserves the declared count.
 | `pe` resources | `resource_timestamp`, `number_of_resources` |
 | `pe.resource_version` | `major`, `minor` |
 | `pe.resources[i]` | `offset`, `rva`, `length`, `type`, `id`, `language`, `type_string`, `name_string`, `language_string` |
+| `pe` version info | `number_of_version_infos`, `version_info` (`dictionary` of strings) |
+| `pe.version_info_list[i]` | `key`, `value` |
 
 `base_of_data` is undefined for PE32+. `checksum` contains the stored header
 value; it doesn't verify the file. Use `pe.calculate_checksum()` to compute the
@@ -450,6 +454,43 @@ by `U+FFFD` (`\xfd\xff`); incomplete trees with fewer than three levels leave
 missing components undefined without leaking stale prior-sibling values; and
 leaves deeper than three levels are excluded from `pe.resources`.
 
+## Version information
+
+`pe.version_info`, `pe.version_info_list`, and `pe.number_of_version_infos` expose
+`StringFileInfo` entries from every `RT_VERSION` (`pe.RESOURCE_TYPE_VERSION`,
+type `16`) resource leaf in tree traversal order without emitting
+`VarFileInfo` translations:
+
+- `pe.number_of_version_infos` is an integer count of extracted entries (`0`
+  for valid PE images with no resource directory or no `RT_VERSION` leaves, and
+  undefined on non-PE input, malformed resources, or truncated `RT_VERSION`
+  payloads).
+- `pe.version_info_list` preserves every entry in order as `{key, value}` structs
+  (even when keys repeat across `StringTable` blocks or multiple `RT_VERSION`
+  leaves, and when keys or values are `""`).
+- `pe.version_info` maps each key to its string value; duplicate keys overwrite
+  so the last entry wins, matching libyara. Both index lookups
+  (`pe.version_info["CompanyName"]`) and dictionary iteration
+  (`for any k, v in pe.version_info`) are supported.
+
+Version-info parsing reuses the scan's cached `resources` metadata regardless of
+whether resource fields or version-info fields are accessed first, without
+constructing `pe.resources` wrapper objects, and keeps `version_info`
+dictionary maps and `version_info_list` element wrappers unallocated until each
+field is queried. Keys and values use libyara's bounded low-byte UTF-16LE
+projection (capping keys at `63` bytes and values at `255` bytes, stopping at
+the first code unit whose low byte is `0`). With `WithModuleData("pe", data)`,
+rules read caller-supplied `number_of_version_infos`, `version_info`, and
+`version_info_list` snapshots directly without invoking file parsing.
+
+Intentional differences from libyara: the adapter requires complete
+`RT_VERSION` payloads within the available scan input (`ScanReader*` past the
+64 KiB retained prefix or truncated leaves leave version-info fields undefined)
+and fails strictly on malformed or oversized (`> 16 MiB` /
+`pe.MaxVersionPayloadBytes`) `VS_VERSION_INFO` structures instead of returning
+partial results; go-pe also replaces unpaired UTF-16 surrogates with `U+FFFD`
+so low-byte projection emits `0xfd` instead of stopping at `0xd800`.
+
 ## DLL classification
 
 `pe.is_dll()` takes no arguments and returns `pe.characteristics & pe.DLL`.
@@ -598,6 +639,7 @@ The differential suite uses libyara 4.5.8 in CI. It covers PE32 and PE32+
 headers, constants, section names, section lookup, RVA mapping, overlay
 metadata, standard import counts, details, ordinal aliases, queries, and
 imphash, export metadata and queries, resource metadata, locales, and constants,
+version-information dictionaries and ordered entries,
 undefined fields, entry-point mappings, real Go-toolchain PE
 fixtures, scanner reuse, compiled-program round trips, compact scans, and
 reader scans within the retention limit.
@@ -606,7 +648,7 @@ To run the focused tests, install the `yara` CLI on `PATH`, then run:
 
 ```sh
 go test ./compiler ./tests/integration -run 'TestPE|TestLibyaraPE' -count=1
-go test ./compiler -run '^$' -bench 'BenchmarkPE(Module|Scanner|Sections|RVA|Overlay|Imports|Imphash|Exports|ExportQueries|Resources|Signatures)$' -benchmem
+go test ./compiler -run '^$' -bench 'BenchmarkPE(Module|Scanner|Sections|RVA|Overlay|Imports|Imphash|Exports|ExportQueries|Resources|VersionInfo|Signatures)$' -benchmem
 ```
 
 The oracle tests skip if the CLI is absent. CI installs and checks the pinned
