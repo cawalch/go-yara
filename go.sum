@@ -1,5 +1,5 @@
-github.com/cawalch/go-pe v0.0.0-20261115010118-875779c68045 h1:6tG4QRbbVml/oaNfR87BLh0cuwwiOwVsPjZV4OjSgFY=
-github.com/cawalch/go-pe v0.0.0-20261115010118-875779c68045/go.mod h1:EoVGEYn1l0W480qiRMsr++ZaaqHabaHBEeMwu1BH3MU=
+github.com/cawalch/go-pe v0.0.0-20261115043643-7469d0db1096 h1:797yhf/7S2IaX+9eIRGkfplY09D5d6RpT9l6+VrPxRU=
+github.com/cawalch/go-pe v0.0.0-20261115043643-7469d0db1096/go.mod h1:EoVGEYn1l0W480qiRMsr++ZaaqHabaHBEeMwu1BH3MU=
 github.com/google/go-cmp v0.6.0 h1:ofyhxvXcZhMsU5ulbFiLKl/XBFqE1GSq7atu8tAmTRI=
 github.com/google/go-cmp v0.6.0/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
 github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWDWE=

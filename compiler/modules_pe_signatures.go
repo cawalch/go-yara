@@ -77,13 +77,29 @@ func newPESignaturesSchema() *ModuleSchema {
 	return &ModuleSchema{Fields: fields}
 }
 
+// newPESignatureVerifySchema extends peSignaturesSchema without mutating it so
+// old serialized programs compiled against peSignaturesSchema still match
+// isNativePESchema.
+func newPESignatureVerifySchema() *ModuleSchema {
+	schema := cloneModuleSchema(peSignaturesSchema)
+	schema.Fields["is_signed"] = ModuleField{Kind: ModuleInteger}
+	sigStruct := schema.Fields["signatures"].Element.Struct
+	sigStruct.Fields["verified"] = ModuleField{Kind: ModuleInteger}
+	csStruct := sigStruct.Fields["countersignatures"].Element.Struct
+	csStruct.Fields["verified"] = ModuleField{Kind: ModuleInteger}
+	return schema
+}
+
 // Signature parsing errors leave header fields intact and signature metadata
 // undefined. A non-nil cache records both success and failure so repeated rule
-// references within the same scan never re-parse CMS blobs.
+// references within the same scan never re-parse CMS blobs or re-run crypto.
 type peSignatureData struct {
-	signatures []pe.AuthenticodeSignature
-	details    ModuleValue
-	valid      bool
+	signatures        []pe.AuthenticodeSignature
+	details           ModuleValue
+	valid             bool
+	verification      pe.AuthenticodeVerification
+	verificationDone  bool
+	verificationValid bool
 }
 
 func (image *peImage) loadSignatures() *peSignatureData {
@@ -108,7 +124,52 @@ func (image *peImage) loadSignatures() *peSignatureData {
 	return image.signatures
 }
 
+func (image *peImage) loadSignatureVerification() (*peSignatureData, bool) {
+	done := peCancelDone(image.context)
+	if scanCanceled(done) {
+		return nil, false
+	}
+	if image.signatures != nil && image.signatures.verificationDone {
+		return image.signatures, image.signatures.verificationValid
+	}
+	fullData, ok := peFullScanData(image.context)
+	if !ok {
+		return nil, false
+	}
+	sigs := image.loadSignatures()
+	if !sigs.valid {
+		return sigs, false
+	}
+	if len(sigs.signatures) == 0 {
+		sigs.verificationDone = true
+		sigs.verificationValid = true
+		return sigs, true
+	}
+	res, err := image.file.VerifyAuthenticodeSignatures(fullData, sigs.signatures, pe.AuthenticodeVerifyOptions{})
+	if scanCanceled(done) {
+		return sigs, false
+	}
+	sigs.verificationDone = true
+	if err == nil {
+		sigs.verificationValid = true
+		sigs.verification = res
+	}
+	return sigs, sigs.verificationValid
+}
+
 func (image *peImage) signatureField(name string) ModuleValue {
+	if name == "is_signed" {
+		sigs, ok := image.loadSignatureVerification()
+		if !ok {
+			return ModuleValue{}
+		}
+		for i := range sigs.verification.Signatures {
+			if peIsSignatureVerified(sigs.verification.Signatures[i]) {
+				return IntegerValue(1)
+			}
+		}
+		return IntegerValue(0)
+	}
 	data := image.loadSignatures()
 	if !data.valid {
 		return ModuleValue{}
@@ -120,7 +181,7 @@ func (image *peImage) signatureField(name string) ModuleValue {
 		if data.details.Type == ModuleUndefined {
 			values := make([]ModuleValue, len(data.signatures))
 			for i := range data.signatures {
-				values[i] = peSignatureValue(data.signatures[i])
+				values[i] = peSignatureValue(image, i, data.signatures[i])
 			}
 			data.details = peArray(values)
 		}
@@ -129,7 +190,24 @@ func (image *peImage) signatureField(name string) ModuleValue {
 	return ModuleValue{}
 }
 
-func peSignatureValue(sig pe.AuthenticodeSignature) ModuleValue {
+func peIsSignatureVerified(sv pe.AuthenticodeSignatureVerification) bool {
+	if sv.Digest.Status != pe.AuthenticodeStatusValid {
+		return false
+	}
+	for i := range sv.Signers {
+		s := sv.Signers[i]
+		if s.Binding.Status == pe.AuthenticodeStatusValid && s.CMS.Status == pe.AuthenticodeStatusValid {
+			return true
+		}
+	}
+	return false
+}
+
+func peIsCountersignatureVerified(tsv pe.AuthenticodeTimestampVerification) bool {
+	return tsv.Imprint.Status == pe.AuthenticodeStatusValid && tsv.CMS.Status == pe.AuthenticodeStatusValid
+}
+
+func peSignatureValue(image *peImage, sigIdx int, sig pe.AuthenticodeSignature) ModuleValue {
 	var signer *pe.AuthenticodeSigner
 	if len(sig.Signers) > 0 {
 		signer = &sig.Signers[0]
@@ -198,6 +276,15 @@ func peSignatureValue(sig pe.AuthenticodeSignature) ModuleValue {
 				signerInfoVal = peSignerInfoValue(signer, sig.Certificates)
 			}
 			return signerInfoVal
+		case "verified":
+			sigs, ok := image.loadSignatureVerification()
+			if !ok || sigIdx >= len(sigs.verification.Signatures) {
+				return ModuleValue{}
+			}
+			if peIsSignatureVerified(sigs.verification.Signatures[sigIdx]) {
+				return IntegerValue(1)
+			}
+			return IntegerValue(0)
 		case "number_of_countersignatures":
 			if signer == nil {
 				return IntegerValue(0)
@@ -210,7 +297,7 @@ func peSignatureValue(sig pe.AuthenticodeSignature) ModuleValue {
 				} else {
 					elements := make([]ModuleValue, len(signer.Timestamps))
 					for i := range signer.Timestamps {
-						elements[i] = peCountersignatureValue(signer.Timestamps[i], sig.Certificates)
+						elements[i] = peCountersignatureValue(image, sigIdx, i)
 					}
 					countersignaturesVal = peArray(elements)
 				}
@@ -262,7 +349,10 @@ func peSignerInfoValue(signer *pe.AuthenticodeSigner, pool []*x509.Certificate) 
 	})
 }
 
-func peCountersignatureValue(ts pe.AuthenticodeTimestamp, outerCerts []*x509.Certificate) ModuleValue {
+func peCountersignatureValue(image *peImage, sigIdx, tsIdx int) ModuleValue {
+	sig := image.loadSignatures().signatures[sigIdx]
+	ts := sig.Signers[0].Timestamps[tsIdx]
+	outerCerts := sig.Certificates
 	var tsSigner *pe.AuthenticodeSigner
 	if len(ts.Signers) > 0 {
 		tsSigner = &ts.Signers[0]
@@ -312,6 +402,19 @@ func peCountersignatureValue(ts pe.AuthenticodeTimestamp, outerCerts []*x509.Cer
 				chainArray = peCertificateArray(resolveChain())
 			}
 			return chainArray
+		case "verified":
+			sigs, ok := image.loadSignatureVerification()
+			if !ok || sigIdx >= len(sigs.verification.Signatures) {
+				return ModuleValue{}
+			}
+			sv := sigs.verification.Signatures[sigIdx]
+			if len(sv.Signers) == 0 || tsIdx >= len(sv.Signers[0].Timestamps) {
+				return ModuleValue{}
+			}
+			if peIsCountersignatureVerified(sv.Signers[0].Timestamps[tsIdx]) {
+				return IntegerValue(1)
+			}
+			return IntegerValue(0)
 		}
 		return ModuleValue{}
 	})

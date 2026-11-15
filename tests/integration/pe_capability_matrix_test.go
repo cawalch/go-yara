@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cawalch/go-yara/compiler"
 	"github.com/cawalch/go-yara/internal/pefixture"
@@ -100,6 +101,18 @@ rule cap_signatures_metadata {
 			sig.not_before < sig.not_after
 		)
 }
+
+rule cap_signatures_verified {
+	condition:
+		pe_gate_private and
+		pe.is_signed == 1 and
+		for any sig in pe.signatures : (
+			sig.verified == 1 and
+			for any cs in sig.countersignatures : (
+				cs.verified == 1
+			)
+		)
+}
 `
 
 	ordinal64 := pefixture.Imports(true, 3)
@@ -108,6 +121,11 @@ rule cap_signatures_metadata {
 	exportsOverlay32 := append(pefixture.Exports(false, 4), []byte("OVERLAY_PAYLOAD")...)
 	sigBlob, _ := pefixture.AuthenticodeBlob(pefixture.AuthenticodeOptions{IncludeChain: true})
 	signed32 := pefixture.WithCertificates(pefixture.New(false), pefixture.CertificateRecord{Type: 2, Payload: sigBlob})
+	verified32, _ := pefixture.SignedAuthenticodePE(false, nil, pefixture.SignedAuthenticodeOptions{
+		UseRSA:    true,
+		PKCS9At:   time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC),
+		RFC3161At: time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC),
+	})
 
 	fixtures := []struct {
 		name string
@@ -118,6 +136,7 @@ rule cap_signatures_metadata {
 		{name: "pe32_exports_overlay", data: exportsOverlay32},
 		{name: "pe64_exports", data: pefixture.Exports(true, 4)},
 		{name: "pe32_signed", data: signed32},
+		{name: "pe32_verified", data: verified32},
 		{name: "non_pe", data: []byte("not a portable executable payload")},
 		{name: "empty", data: nil},
 	}
@@ -140,11 +159,6 @@ func TestPECapabilityMatrixUnsupportedAndStrict(t *testing.T) {
 		rule    string
 		errText string
 	}{
-		{
-			slice:   "#481_signatures_verified",
-			rule:    `import "pe" rule r { condition: pe.is_signed == 1 or pe.signatures[0].verified == 1 }`,
-			errText: "is_signed",
-		},
 		{
 			slice:   "#474_resources",
 			rule:    `import "pe" rule r { condition: pe.number_of_resources > 0 and pe.resources[0].type == pe.RESOURCE_TYPE_RCDATA }`,
