@@ -51,7 +51,7 @@ All nine minimized non-PE reproducers below pass `yarac 4.6.0` (`exit 0`) and fa
 | `$xor` identifier / `@1 [ 1 ]` spacing | 3 | 0 | 0 | `#xor > 0` (`$xor = "a"`) tokenizes `xor` keyword instead of string identifier (`2` rules); `@1 [ 1 ] < @2 [ 1 ]` with space before `[` fails rule end (`1` rule) -> `expected '}' at end of rule` |
 | Unsupported non-PE modules | 29 | 2 | 2 | `dotnet` (`16` total, `1` PE), `elf` (`11` total, `0` PE), `console` (`2` total, `1` PE) — note `pe`, `hash`, `math`, and `string` are already supported |
 
-*PE-subset unlock insight*: Resolving only the non-PE syntax/lexer/parser/duplicate-meta bugs (with **zero** new PE module work) immediately unlocks **118 PE rules** (`232 -> 350`) and **~3,100+ non-PE rules** across the full corpus.
+*PE-subset unlock insight (resolved in follow-up)*: Fixing the six non-`base64` lexer, parser, and duplicate-`meta:` issues above raises total compiling corpus rules from **7,102 (59.9%) to 10,154 (85.6%)** (+3,052 rules) and PE rules from **232 (212 families) to 350 (316 families, 21 repos)**, leaving zero non-PE syntax/meta blockers across all 2,018 PE rules (`1,666` PE-only, `2` non-PE module imports, `0` combined). The remaining non-PE corpus blockers are `1,667` unimplemented PE slice errors (`#474`–`#478`), `30` unsupported non-PE module imports (`dotnet`, `elf`, `console`), and `15` `base64` modifier combinations.
 
 ## PE-Subset Partition (`2,018` Rules Using `pe`)
 

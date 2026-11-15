@@ -1,7 +1,10 @@
 package lexer
 
 import (
+	"strings"
 	"testing"
+
+	"github.com/cawalch/go-yara/token"
 )
 
 // identifierTestCase represents a test case for identifier operations
@@ -302,4 +305,23 @@ func TestSkipWhitespaceInRange(t *testing.T) {
 	runIdentifierTests(t, tests, func(l *Lexer, input string, start, end int) int {
 		return l.skipWhitespaceInRange(input, start, end)
 	})
+}
+
+func TestLongHexStringFollowedBySecondHex(t *testing.T) {
+	pad := strings.Repeat("41 ", 200)
+	input := "rule long_hex {\n\tstrings:\n\t\t$pad = { " + pad + "50 72 }\n\t\t$b = { 4D 5A }\n\tcondition:\n\t\t$pad and $b\n}"
+	l := New(input)
+	var hexTokens int
+	for {
+		tok := l.NextToken()
+		if tok.Type == token.HexStringLit {
+			hexTokens++
+		}
+		if tok.Type == token.EOF {
+			break
+		}
+	}
+	if hexTokens != 2 {
+		t.Fatalf("expected 2 HexStringLit tokens beyond 500-byte strings section, got %d", hexTokens)
+	}
 }

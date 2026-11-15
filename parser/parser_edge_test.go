@@ -1170,3 +1170,81 @@ func TestForLoopParenthesizedBodyScope(t *testing.T) {
 		t.Fatalf("expected Right to be *ast.ForLoop, got %T", binOp.Right)
 	}
 }
+
+func TestYARAForgeSyntaxCompatibility(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		check func(*testing.T, *ast.Program)
+	}{
+		{
+			name: "negative_meta_integers",
+			input: `rule neg_meta {
+				meta:
+					score = -10
+					min_i64 = -9223372036854775808
+				condition:
+					true
+			}`,
+			check: func(t *testing.T, prog *ast.Program) {
+				metas := prog.Rules[0].Meta
+				if len(metas) != 2 {
+					t.Fatalf("got %d meta entries, want 2", len(metas))
+				}
+				if got, ok := metas[0].Value.(ast.MetaInt); !ok || got != -10 {
+					t.Fatalf("score meta = %v (%T), want MetaInt(-10)", metas[0].Value, metas[0].Value)
+				}
+				if got, ok := metas[1].Value.(ast.MetaInt); !ok || got != -9223372036854775808 {
+					t.Fatalf("min_i64 meta = %v (%T), want MinInt64", metas[1].Value, metas[1].Value)
+				}
+			},
+		},
+		{
+			name: "range_arithmetic_and_loop_index",
+			input: `rule range_arith {
+				strings:
+					$a = "aa"
+					$b = "bb"
+				condition:
+					$b in (@a .. @a + 100) and for any i in (1..#a) : ($b in (@a[i] .. @a[i] + 10))
+			}`,
+		},
+		{
+			name: "dotdot_without_whitespace_after_member",
+			input: `import "pe"
+			rule dotdot_nospace {
+				strings:
+					$mz = "MZ"
+				condition:
+					pe.number_of_sections > 0 and for any s in pe.sections : ($mz in (s.raw_data_offset..s.raw_data_offset + s.raw_data_size))
+			}`,
+		},
+		{
+			name: "string_op_keyword_and_numeric_identifiers",
+			input: `rule str_op_names {
+				strings:
+					$xor = "a"
+					$1 = "b"
+					$2 = "c"
+				condition:
+					#xor > 0 and @1 [ 1 ] < @2 [ 1 ]
+			}`,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := New(lexer.New(tc.input))
+			prog, err := p.ParseRules()
+			if err != nil {
+				t.Fatalf("unexpected parse error: %v", err)
+			}
+			if len(prog.Rules) != 1 {
+				t.Fatalf("expected 1 rule, got %d", len(prog.Rules))
+			}
+			if tc.check != nil {
+				tc.check(t, prog)
+			}
+		})
+	}
+}

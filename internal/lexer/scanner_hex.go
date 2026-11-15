@@ -42,6 +42,10 @@ func (l *Lexer) isHexStringStart() bool {
 	l.reader.ReadChar()
 	l.reader.SkipWhitespace()
 
+	if l.section == sectionStrings {
+		return true
+	}
+
 	if l.isEmptyHexString() {
 		return true
 	}
@@ -202,6 +206,13 @@ func (l *Lexer) isQuickClosingBrace() bool {
 
 // isInStringsSection checks if the current context appears to be in a strings section
 func (l *Lexer) isInStringsSection() bool {
+	if l.section == sectionStrings {
+		return true
+	}
+	if l.section == sectionCondition || l.section == sectionMeta || l.section == sectionEvidence {
+		return false
+	}
+
 	input := l.reader.Input()
 	currentPos := l.reader.Position()
 
