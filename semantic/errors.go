@@ -22,6 +22,7 @@ const (
 	ErrCodeUnsupportedModule    ErrorCode = "unsupported-module"
 	ErrCodeInvalidCondition     ErrorCode = "invalid-condition"
 	ErrCodeDivisionByZero       ErrorCode = "division-by-zero"
+	ErrCodeIntegerOverflow      ErrorCode = "integer-overflow"
 	ErrCodeInvalidFunction      ErrorCode = "invalid-function"
 	ErrCodeInvalidArgumentCount ErrorCode = "invalid-argument-count"
 	ErrCodeInvalidArgumentType  ErrorCode = "invalid-argument-type"
