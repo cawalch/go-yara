@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"math"
+	"strconv"
 	"strings"
 
 	"github.com/cawalch/go-yara/ast"
@@ -341,6 +342,13 @@ func foldOfExpression(o *ast.OfExpression) ast.Expression {
 }
 
 func foldForLoop(f *ast.ForLoop) ast.Expression {
+	if f.QuantifierExpr != nil {
+		f.QuantifierExpr = FoldConstants(f.QuantifierExpr)
+		if val, ok := evaluateConstantInt(f.QuantifierExpr); ok && val >= 0 {
+			f.Quantifier = strconv.FormatInt(val, 10)
+			f.QuantifierExpr = nil
+		}
+	}
 	f.Range = FoldConstants(f.Range)
 	f.Condition = FoldConstants(f.Condition)
 	f.InRange = FoldConstants(f.InRange)

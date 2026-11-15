@@ -120,6 +120,7 @@ func collectConditionStringReferences(expr ast.Expression, refs *conditionString
 		collectConditionStringReferences(e.InRange, refs)
 		collectConditionStringReferences(e.AtOffset, refs)
 	case *ast.ForLoop:
+		collectConditionStringReferences(e.QuantifierExpr, refs)
 		collectConditionStringReferences(e.Range, refs)
 		collectConditionStringReferences(e.Condition, refs)
 		collectConditionStringReferences(e.InRange, refs)

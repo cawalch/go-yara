@@ -630,7 +630,7 @@ func (cc *conditionCompiler) moduleFunctionsForRule() (map[builtinFunction]Modul
 	return functions, names
 }
 
-func (cc *conditionCompiler) allocateVariables(vars []string) ([]int, error) {
+func (cc *conditionCompiler) nextFreeVariableSlots(count int) ([]int, map[int]bool, error) {
 	if cc.variableMap == nil {
 		cc.variableMap = make(map[string]int)
 	}
@@ -640,19 +640,34 @@ func (cc *conditionCompiler) allocateVariables(vars []string) ([]int, error) {
 			used[slot] = true
 		}
 	}
-	slots := make([]int, len(vars))
-	for i, v := range vars {
+	slots := make([]int, count)
+	for i := range count {
 		slot := cc.nextVariableSlot
 		for used[slot] {
 			slot++
 		}
-		if slot >= 256 {
-			return nil, errors.New("too many variables")
+		if slot >= interpreterMemorySlotCount {
+			return nil, nil, errors.New("too many variables")
 		}
-		cc.variableMap[v] = slot
 		used[slot] = true
 		cc.nextVariableSlot = slot + 1
 		slots[i] = slot
+	}
+	return slots, used, nil
+}
+
+func (cc *conditionCompiler) allocateTempSlots(count int) ([]int, error) {
+	slots, _, err := cc.nextFreeVariableSlots(count)
+	return slots, err
+}
+
+func (cc *conditionCompiler) allocateVariables(vars []string) ([]int, error) {
+	slots, _, err := cc.nextFreeVariableSlots(len(vars))
+	if err != nil {
+		return nil, err
+	}
+	for i, v := range vars {
+		cc.variableMap[v] = slots[i]
 	}
 	return slots, nil
 }

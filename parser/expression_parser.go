@@ -58,7 +58,7 @@ func (p *ExpressionParser) ParseExpression() (ast.Expression, error) {
 
 func isBinaryOperator(tok token.Type) bool {
 	switch tok {
-	case token.AND, token.OR:
+	case token.AND, token.OR, token.OF:
 		return true
 	case token.EQ, token.NEQ, token.LT, token.LE, token.GT, token.GE,
 		token.CONTAINS, token.ICONTAINS, token.STARTSWITH, token.ISTARTSWITH,
@@ -142,6 +142,14 @@ func (p *ExpressionParser) parseBinaryExpressionWithPrecedence(minPrecedence int
 			return nil, err
 		} else if pctOf != nil {
 			left = pctOf
+			continue
+		}
+
+		// General expression quantifier: "<expr> of <target>"
+		if exprOf, err := p.tryParseExprOf(left, op); err != nil {
+			return nil, err
+		} else if exprOf != nil {
+			left = exprOf
 			continue
 		}
 
@@ -256,9 +264,6 @@ func (p *ExpressionParser) parsePrimary() (ast.Expression, error) {
 }
 
 func (p *ExpressionParser) isQuantifierExpression() bool {
-	if (p.currentTokenIs(token.IntegerLit) || p.currentTokenIs(token.HexIntegerLit) || p.currentTokenIs(token.OctalIntegerLit)) && p.peekTokenIs(token.OF) {
-		return true
-	}
 	if (p.currentTokenIs(token.ANY) || p.currentTokenIs(token.ALL) || p.currentTokenIs(token.NONE)) && p.peekTokenIs(token.OF) {
 		return true
 	}
@@ -974,4 +979,52 @@ func (p *ExpressionParser) tryParseCountInOf(left ast.Expression) (*ast.OfExpres
 		return nil, err
 	}
 	return ofExpr, nil
+}
+
+// tryParseExprOf parses "<expr> of <target>" when op is OF.
+func (p *ExpressionParser) tryParseExprOf(left ast.Expression, op token.Type) (*ast.OfExpression, error) {
+	if left == nil || op != token.OF {
+		return nil, nil
+	}
+	if !isValidOfCountExpr(left) {
+		return nil, newSyntaxError(p.current.Pos, "syntax error, unexpected %s", p.current.Display())
+	}
+
+	pos := left.Position()
+	p.nextToken() // consume 'of'
+	target, err := p.parseQuantifierTarget(pos)
+	if err != nil {
+		return nil, err
+	}
+
+	ofExpr := &ast.OfExpression{
+		Pos:     pos,
+		Count:   left,
+		Strings: target,
+	}
+	return p.parseOfConstraints(ofExpr)
+}
+
+func isValidOfCountExpr(expr ast.Expression) bool {
+	switch e := expr.(type) {
+	case nil:
+		return false
+	case *ast.Literal:
+		return e.Type != token.TRUE && e.Type != token.FALSE
+	case *ast.BinaryOp:
+		switch e.Op {
+		case token.PLUS, token.MINUS, token.MULTIPLY, token.DIVIDE, token.IntDivide,
+			token.MODULO, token.PERCENT, token.BitwiseAnd, token.BitwiseOr,
+			token.BitwiseXor, token.LeftShift, token.RightShift:
+			return true
+		default:
+			return false
+		}
+	case *ast.UnaryOp:
+		return e.Op == token.MINUS || e.Op == token.BitwiseNot
+	case *ast.OfExpression, *ast.ForLoop, *ast.PercentExpression:
+		return false
+	default:
+		return true
+	}
 }

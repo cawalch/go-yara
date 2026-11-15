@@ -143,6 +143,7 @@ func (c *ruleReferenceCollector) collect(expr ast.Expression, scoped map[string]
 			c.collect(arg, scoped)
 		}
 	case *ast.ForLoop:
+		c.collect(e.QuantifierExpr, scoped)
 		c.collect(e.Range, scoped)
 		innerScoped := cloneBoolMap(scoped)
 		for _, variable := range e.Variables {

@@ -110,6 +110,7 @@ func (c *Compiler) collectReferencedStrings(expr ast.Expression, referenced map[
 	case *ast.LengthOf:
 		c.collectReferencedStrings(e.Target, referenced)
 	case *ast.ForLoop:
+		c.collectReferencedStrings(e.QuantifierExpr, referenced)
 		c.collectReferencedStrings(e.Range, referenced)
 		c.collectReferencedStrings(e.Condition, referenced)
 		c.collectReferencedStrings(e.InRange, referenced)
@@ -246,6 +247,7 @@ func (c *Compiler) checkWildcardCollisions(rule *ast.Rule) {
 			if e.Range != nil {
 				walkExpr(e.Range, true)
 			}
+			walkExpr(e.QuantifierExpr, false)
 			walkExpr(e.Condition, false)
 			walkExpr(e.InRange, false)
 			walkExpr(e.AtOffset, false)

@@ -590,7 +590,7 @@ rule TestRule {
 	strings:
 		$a = "test"
 	condition:
-		abc of them
+		true of them
 }`,
 			expectError: true,
 		},

@@ -133,6 +133,8 @@ func (iter *Iterator) moduleQuantifierDecided(truth bool) bool {
 		return truth
 	case QuantifierAll:
 		return !truth
+	case quantifierExpr:
+		return false
 	default:
 		if iter.modulePlan.Target == 0 {
 			return truth
