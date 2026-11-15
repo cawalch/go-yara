@@ -3,10 +3,13 @@ package compiler
 import (
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
 )
+
+const maxHexJumpBound = math.MaxInt32
 
 func (sc *stringCompiler) parseHexPattern(hexStr string) (*HexPattern, error) {
 	content := stripHexBraces(hexStr)
@@ -199,27 +202,47 @@ func parseHexJumpRange(content string) (int, int, error) {
 	if content == "" || content == "-" {
 		return 0, -1, nil
 	}
-	if before, after, ok := strings.Cut(content, "-"); ok {
-		minPart := strings.TrimSpace(before)
-		minVal, err := strconv.Atoi(minPart)
+	before, after, ok := strings.Cut(content, "-")
+	if !ok {
+		val, err := parseHexJumpBound(content, "invalid jump value")
 		if err != nil {
-			return 0, 0, fmt.Errorf("invalid jump min: %w", err)
+			return 0, 0, err
 		}
-		maxPart := strings.TrimSpace(after)
-		if maxPart == "" {
-			return minVal, -1, nil
-		}
-		maxVal, err := strconv.Atoi(maxPart)
-		if err != nil {
-			return 0, 0, fmt.Errorf("invalid jump max: %w", err)
-		}
-		return minVal, maxVal, nil
+		return val, val, nil
 	}
-	val, err := strconv.Atoi(content)
+	minVal, err := parseHexJumpBound(strings.TrimSpace(before), "invalid jump min")
 	if err != nil {
-		return 0, 0, fmt.Errorf("invalid jump value: %w", err)
+		return 0, 0, err
 	}
-	return val, val, nil
+	maxPart := strings.TrimSpace(after)
+	if maxPart == "" {
+		return minVal, -1, nil
+	}
+	maxVal, err := parseHexJumpBound(maxPart, "invalid jump max")
+	if err != nil {
+		return 0, 0, err
+	}
+	if minVal > maxVal {
+		return 0, 0, errors.New("invalid jump range")
+	}
+	return minVal, maxVal, nil
+}
+
+func parseHexJumpBound(raw, invalidPrefix string) (int, error) {
+	val, err := strconv.Atoi(raw)
+	if errors.Is(err, strconv.ErrRange) {
+		return 0, errors.New("jump length too large")
+	}
+	if err != nil {
+		return 0, fmt.Errorf("%s: %w", invalidPrefix, err)
+	}
+	if val < 0 {
+		return 0, errors.New("invalid jump range")
+	}
+	if val > maxHexJumpBound {
+		return 0, errors.New("jump length too large")
+	}
+	return val, nil
 }
 
 //nolint:revive // argument-limit: internal helper

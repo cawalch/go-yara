@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math"
 )
 
 type bytecodeJumpCheck struct {
@@ -21,7 +22,46 @@ func validateRuleCrossReferences(cr *CompiledRule) error {
 	if err := validateRuleStringLists(cr); err != nil {
 		return err
 	}
+	if err := validateRuleHexPatterns(cr); err != nil {
+		return err
+	}
 	return validateRuleBytecode(cr)
+}
+
+func validateRuleHexPatterns(cr *CompiledRule) error {
+	for id, pattern := range cr.HexPatterns {
+		if pattern == nil {
+			continue
+		}
+		if err := validateHexPatternTokens(pattern.Tokens); err != nil {
+			return fmt.Errorf("hex string %q: %w", id, err)
+		}
+	}
+	return nil
+}
+
+func validateHexPatternTokens(tokens []HexPatternToken) error {
+	for _, tok := range tokens {
+		switch tok.Kind {
+		case HexTokenJump:
+			if tok.Min < 0 || tok.Min > math.MaxInt32 {
+				return errors.New("jump length too large")
+			}
+			if tok.Max < -1 || tok.Max > math.MaxInt32 {
+				return errors.New("jump length too large")
+			}
+			if tok.Max >= 0 && tok.Min > tok.Max {
+				return errors.New("invalid jump range")
+			}
+		case HexTokenAlt:
+			for _, alt := range tok.Alternatives {
+				if err := validateHexPatternTokens(alt); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func validateRuleStringKinds(cr *CompiledRule) error {

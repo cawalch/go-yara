@@ -382,12 +382,33 @@ func slowPatternReason(rule *CompiledRule, id string) string {
 		if pattern == nil {
 			return ""
 		}
+		if hasLargeHexJump(pattern.Tokens, 65536) {
+			return "has a wide jump range"
+		}
 		atom, ok := selectHexAtom(pattern.Tokens)
 		if !ok || len(atom.data) < 2 {
 			return "has no selective two-byte atom"
 		}
 	}
 	return ""
+}
+
+func hasLargeHexJump(tokens []HexPatternToken, limit int) bool {
+	for _, tok := range tokens {
+		switch tok.Kind {
+		case HexTokenJump:
+			if tok.Max > limit {
+				return true
+			}
+		case HexTokenAlt:
+			for _, alt := range tok.Alternatives {
+				if hasLargeHexJump(alt, limit) {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 func findASTString(strings []*ast.String, id string) *ast.String {
