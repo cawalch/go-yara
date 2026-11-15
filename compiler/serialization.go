@@ -42,6 +42,7 @@ func (cp *CompiledProgram) MarshalBinary() ([]byte, error) {
 		return nil, err
 	}
 	var output bytes.Buffer
+	output.Grow(8192 + len(cp.Rules)*1024 + len(cp.moduleSchemas)*10240)
 	if _, err := output.WriteString(compiledProgramMagic); err != nil {
 		return nil, err
 	}
@@ -111,30 +112,42 @@ func (reader compiledProgramReader) ReadByte() (byte, error) {
 	return data[0], err
 }
 
-func sortedMapEntries[K cmp.Ordered, V, E any](values map[K]V, build func(K, V) E) []E {
+type keyedEntry[K cmp.Ordered] interface {
+	entryKey() K
+}
+
+func compareKeyedEntries[K cmp.Ordered, E keyedEntry[K]](a, b E) int {
+	return cmp.Compare(a.entryKey(), b.entryKey())
+}
+
+func sortedMapEntries[K cmp.Ordered, V any, E keyedEntry[K]](values map[K]V, build func(K, V) E) []E {
 	if len(values) == 0 {
 		return nil
 	}
-	keys := slices.Sorted(maps.Keys(values))
-	out := make([]E, len(keys))
-	for index, key := range keys {
-		out[index] = build(key, values[key])
+	out := make([]E, 0, len(values))
+	for key, val := range values {
+		out = append(out, build(key, val))
+	}
+	if len(out) > 1 {
+		slices.SortFunc(out, compareKeyedEntries[K, E])
 	}
 	return out
 }
 
-func sortedMapEntriesErr[K cmp.Ordered, V, E any](values map[K]V, build func(K, V) (E, error)) ([]E, error) {
+func sortedMapEntriesErr[K cmp.Ordered, V any, E keyedEntry[K]](values map[K]V, build func(K, V) (E, error)) ([]E, error) {
 	if len(values) == 0 {
 		return nil, nil
 	}
-	keys := slices.Sorted(maps.Keys(values))
-	out := make([]E, len(keys))
-	for index, key := range keys {
-		entry, err := build(key, values[key])
+	out := make([]E, 0, len(values))
+	for key, val := range values {
+		entry, err := build(key, val)
 		if err != nil {
 			return nil, err
 		}
-		out[index] = entry
+		out = append(out, entry)
+	}
+	if len(out) > 1 {
+		slices.SortFunc(out, compareKeyedEntries[K, E])
 	}
 	return out, nil
 }
@@ -247,16 +260,11 @@ func serializeModuleField(field ModuleField, depth int) (serializedModuleField, 
 		}
 		elem = &encodedElem
 	}
-	var constant *ModuleValue
-	if field.Constant != nil {
-		copyVal := *field.Constant
-		constant = &copyVal
-	}
 	return serializedModuleField{
 		Kind:     field.Kind,
 		Struct:   nested,
 		Element:  elem,
-		Constant: constant,
+		Constant: field.Constant,
 	}, nil
 }
 
@@ -487,22 +495,39 @@ func serializeRule(rule *CompiledRule) (serializedRule, error) {
 	if rule.automaton != nil {
 		serialized.AutomatonStrings = cloneacStringInfos(rule.automaton.strings)
 	}
-	if len(rule.ModuleNames) > 0 {
-		ids := slices.Sorted(maps.Keys(rule.ModuleNames))
-		serialized.ModuleNameEntries = make([]serializedModuleNameEntry, len(ids))
-		serialized.ModuleSignatureEntries = make([]serializedModuleSignatureEntry, 0, len(ids))
-		for index, id := range ids {
-			rawID := uint8(id)
-			serialized.ModuleNameEntries[index] = serializedModuleNameEntry{Key: rawID, Value: rule.ModuleNames[id]}
-			if function, exists := rule.ModuleFunctions[id]; exists {
-				serialized.ModuleSignatureEntries = append(serialized.ModuleSignatureEntries, serializedModuleSignatureEntry{
-					Key:   rawID,
-					Value: serializeModuleFunction(function),
-				})
-			}
+	serialized.ModuleNameEntries, serialized.ModuleSignatureEntries = serializeRuleModules(rule.ModuleNames, rule.ModuleFunctions)
+	return serialized, nil
+}
+
+func serializeRuleModules(
+	moduleNames map[builtinFunction]string,
+	moduleFunctions map[builtinFunction]ModuleFunction,
+) ([]serializedModuleNameEntry, []serializedModuleSignatureEntry) {
+	if len(moduleNames) == 0 {
+		return nil, nil
+	}
+	nameEntries := make([]serializedModuleNameEntry, 0, len(moduleNames))
+	var sigEntries []serializedModuleSignatureEntry
+	if len(moduleFunctions) > 0 {
+		sigEntries = make([]serializedModuleSignatureEntry, 0, len(moduleFunctions))
+	}
+	for id, name := range moduleNames {
+		rawID := uint8(id)
+		nameEntries = append(nameEntries, serializedModuleNameEntry{Key: rawID, Value: name})
+		if function, exists := moduleFunctions[id]; exists {
+			sigEntries = append(sigEntries, serializedModuleSignatureEntry{
+				Key:   rawID,
+				Value: serializeModuleFunction(function),
+			})
 		}
 	}
-	return serialized, nil
+	if len(nameEntries) > 1 {
+		slices.SortFunc(nameEntries, compareKeyedEntries[uint8, serializedModuleNameEntry])
+	}
+	if len(sigEntries) > 1 {
+		slices.SortFunc(sigEntries, compareKeyedEntries[uint8, serializedModuleSignatureEntry])
+	}
+	return nameEntries, sigEntries
 }
 
 func serializeHexPatternEntry(identifier string, pattern *HexPattern) serializedHexPatternEntry {
@@ -1231,15 +1256,22 @@ func deserializeScalars(entries []serializedScalarEntry, legacy map[string]seria
 }
 
 func serializeIntegerStatEntries(stats map[string]any) []serializedIntEntry {
-	intStats := make(map[string]int, len(stats))
+	if len(stats) == 0 {
+		return nil
+	}
+	var out []serializedIntEntry
 	for name, raw := range stats {
 		if value, ok := raw.(int); ok {
-			intStats[name] = value
+			if out == nil {
+				out = make([]serializedIntEntry, 0, len(stats))
+			}
+			out = append(out, serializedIntEntry{Key: name, Value: value})
 		}
 	}
-	return sortedMapEntries(intStats, func(name string, value int) serializedIntEntry {
-		return serializedIntEntry{Key: name, Value: value}
-	})
+	if len(out) > 1 {
+		slices.SortFunc(out, compareKeyedEntries[string, serializedIntEntry])
+	}
+	return out
 }
 
 func deserializeIntegerStats(entries []serializedIntEntry, legacy map[string]int) (map[string]any, error) {

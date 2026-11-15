@@ -143,7 +143,7 @@ func (scanner *BlockScanner) ScanWithContext(ctx context.Context, base int64, da
 		s.recordPatternProfiles(rule, false)
 		scanner.recordPatternCounts(rule)
 		if s.telemetrySink != nil {
-			s.telemetrySink.VerificationBudgetRejects += s.matchCtx.verificationBudgetRejects
+			s.telemetrySink.VerificationBudgetRejects += uint64(s.matchCtx.verificationBudgetRejects)
 			s.matchCtx.verificationBudgetRejects = 0
 		}
 		if len(s.matchCtx.spans) == 0 {

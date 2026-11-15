@@ -125,7 +125,7 @@ func (s *Scanner) recordRuleEvaluatedHooks(
 		s.telemetrySink.CandidateHits += uint64(candidates)
 		s.telemetrySink.VerifiedMatches += uint64(matches)
 		s.telemetrySink.FalseCandidateHits += uint64(falseCandidates)
-		s.telemetrySink.VerificationBudgetRejects += s.matchCtx.verificationBudgetRejects
+		s.telemetrySink.VerificationBudgetRejects += uint64(s.matchCtx.verificationBudgetRejects)
 		s.matchCtx.verificationBudgetRejects = 0
 	}
 

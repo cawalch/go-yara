@@ -342,7 +342,7 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 			}
 			s.matchCtx.normalizeMatches()
 			if s.telemetrySink != nil {
-				s.telemetrySink.VerificationBudgetRejects += s.matchCtx.verificationBudgetRejects
+				s.telemetrySink.VerificationBudgetRejects += uint64(s.matchCtx.verificationBudgetRejects)
 				s.matchCtx.verificationBudgetRejects = 0
 			}
 
