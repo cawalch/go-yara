@@ -140,6 +140,18 @@ rule cap_version_info {
 		pe.version_info_list[1].value == "1.0.0.0" and
 		for any k, v in pe.version_info : (k == "CompanyName" and v == "Example Corp")
 }
+
+rule cap_rich_signature {
+	condition:
+		pe_gate_private and
+		pe.rich_signature.offset == 128 and
+		pe.rich_signature.length == 40 and
+		pe.rich_signature.key == 0x11223344 and
+		pe.rich_signature.version(29500) == 20 and
+		pe.rich_signature.version(29500, 259) == 17 and
+		pe.rich_signature.toolid(259) == 17 and
+		pe.rich_signature.toolid(257, 29500) == 3
+}
 `
 
 	ordinal64 := pefixture.Imports(true, 3)
@@ -163,6 +175,14 @@ rule cap_version_info {
 			},
 		}},
 	}
+	richOpts := pefixture.RichOptions{
+		Key: 0x11223344,
+		Entries: []pefixture.RichEntry{
+			{ToolID: 259, Version: 29500, Count: 12},
+			{ToolID: 257, Version: 29500, Count: 3},
+			{ToolID: 259, Version: 29500, Count: 5},
+		},
+	}
 
 	fixtures := []struct {
 		name string
@@ -178,6 +198,8 @@ rule cap_version_info {
 		{name: "pe64_resources", data: pefixture.Resources(true, 2)},
 		{name: "pe32_version_info", data: pefixture.VersionInfoPE(false, versionSpec)},
 		{name: "pe64_version_info", data: pefixture.VersionInfoPE(true, versionSpec)},
+		{name: "pe32_rich", data: pefixture.RichPE(false, richOpts)},
+		{name: "pe64_rich", data: pefixture.RichPE(true, richOpts)},
 		{name: "non_pe", data: []byte("not a portable executable payload")},
 		{name: "empty", data: nil},
 	}
@@ -200,11 +222,6 @@ func TestPECapabilityMatrixUnsupportedAndStrict(t *testing.T) {
 		rule    string
 		errText string
 	}{
-		{
-			slice:   "#476_rich_signature",
-			rule:    `import "pe" rule r { condition: pe.rich_signature.toolid(1, 2) > 0 }`,
-			errText: "rich_signature",
-		},
 		{
 			slice:   "#477_pdb_path",
 			rule:    `import "pe" rule r { condition: pe.pdb_path == "example.pdb" }`,

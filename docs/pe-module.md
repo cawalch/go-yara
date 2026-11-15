@@ -62,6 +62,7 @@ at most 96 entries; `number_of_sections` preserves the declared count.
 | `pe.resources[i]` | `offset`, `rva`, `length`, `type`, `id`, `language`, `type_string`, `name_string`, `language_string` |
 | `pe` version info | `number_of_version_infos`, `version_info` (`dictionary` of strings) |
 | `pe.version_info_list[i]` | `key`, `value` |
+| `pe.rich_signature` | `offset`, `length`, `key`, `raw_data`, `clear_data`, `version_data` |
 
 `base_of_data` is undefined for PE32+. `checksum` contains the stored header
 value; it doesn't verify the file. Use `pe.calculate_checksum()` to compute the
@@ -490,6 +491,45 @@ and fails strictly on malformed or oversized (`> 16 MiB` /
 `pe.MaxVersionPayloadBytes`) `VS_VERSION_INFO` structures instead of returning
 partial results; go-pe also replaces unpaired UTF-16 surrogates with `U+FFFD`
 so low-byte projection emits `0xfd` instead of stopping at `0xd800`.
+
+## Rich signature
+
+`pe.rich_signature` exposes DOS-stub MSVC Rich header metadata along with
+aggregate tool version and tool ID queries:
+
+- `offset`: byte offset where the Rich header (`DanS`) begins in the DOS stub.
+- `length`: byte length of the XOR-encoded header between `offset` and the
+  `Rich` end marker (excluding the 8-byte `"Rich" + key` trailer).
+- `key`: decoded 32-bit XOR key used to unmask the header.
+- `raw_data`: raw XOR-encoded header bytes (`[offset : offset+length]`).
+- `clear_data`: unmasked header bytes (`"DanS"` + 12 header bytes + 8-byte
+  `(version, toolid, count)` entries).
+- `version_data`: 4-byte packed `(version, toolid)` pairs extracted from each
+  entry (`""` when a valid Rich header has zero entries).
+- `pe.rich_signature.version(version[, toolid])`: sums `count` across entries
+  matching the 16-bit `version` (and optional 16-bit `toolid`).
+- `pe.rich_signature.toolid(toolid[, version])`: sums `count` across entries
+  matching the 16-bit `toolid` (and optional 16-bit `version`).
+
+When a valid Rich header is present, `version(...)` and `toolid(...)` return
+`int64` totals (including `0` for unmatched IDs or out-of-range uint16 arguments
+such as negative integers or values above `65535`). When the scan input is not a
+PE image, lacks a Rich header, or fails validation, all `pe.rich_signature`
+fields and queries evaluate to `undefined`.
+
+Both `pe.rich_signature` field reads and `version`/`toolid` queries share a
+single scan-local lazy Rich parse without allocating `raw_data`, `clear_data`,
+or `version_data` byte-string wrappers until those specific fields are accessed.
+With `WithModuleData("pe", data)`, rules read caller-supplied `rich_signature`
+fields directly, and `version`/`toolid` aggregate queries sum entries from the
+supplied `rich_signature.clear_data` buffer without falling back to file parsing.
+
+Intentional differences from libyara: `go-pe` locates `"Rich"` scanning backward
+from `e_lfanew` and strictly rejects Rich headers with a `0` XOR key,
+non-4-byte-aligned header spans, nonzero 12-byte header padding after unmasked
+`"DanS"`, or headers exceeding resource limits (`1 MiB` stub search window,
+`64 KiB` header length, `4096` entries), leaving `pe.rich_signature` fields and
+queries `undefined` rather than decoding malformed headers.
 
 ## DLL classification
 
