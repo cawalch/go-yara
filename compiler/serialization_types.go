@@ -6,9 +6,14 @@ import (
 )
 
 type serializedProgram struct {
+	// Legacy format 4-19 map fields (decoded for backward compatibility; nil in format 20+).
 	ModuleSchemas map[string]*ModuleSchema
 	Rules         []serializedRule
 	Dependencies  map[string][]string
+
+	// Deterministic format 20+ sorted entry slices.
+	ModuleSchemaEntries []serializedModuleSchemaEntry
+	DependencyEntries   []serializedStringSliceEntry
 }
 
 type serializedRule struct {
@@ -18,26 +23,14 @@ type serializedRule struct {
 	Index               int
 	Bytecode            []byte
 	StringCount         int
-	Strings             map[string][]byte
 	AutomatonStrings    []acStringInfo
 	StringSets          [][]string
 	TextStringSets      [][]string
 	AnonymousStrings    []string
 	StringLiterals      []string
 	ModuleRegexes       []serializedModuleRegex
-	StringKinds         map[string]StringKind
-	StringModifiers     map[string][]serializedStringModifier
-	CaptureBindings     map[string][]serializedCaptureBinding
 	EvidencePlans       []serializedEvidencePlan
-	TextPatterns        map[string][]byte
-	RegexPatterns       map[string]serializedRegexPattern
-	HexPatterns         map[string]serializedHexPattern
-	Stats               map[string]int
-	ExternalSlots       map[string]int
-	GlobalSlots         map[string]int
-	GlobalValues        map[string]serializedGlobalValue
 	Tags                []string
-	Meta                map[string]serializedScalar
 	IsGlobal            bool
 	IsPrivate           bool
 	FastScanSafe        bool
@@ -45,14 +38,131 @@ type serializedRule struct {
 	RequiresStringMatch bool
 	RequiredStrings     []string
 	ForbiddenStrings    []string
-	ModuleNames         map[uint8]string
-	ModuleSignatures    map[uint8]serializedModuleFunction
 	HeaderConstraints   []HeaderConstraint
-	FixedTextOffsets    map[string]int64 // Legacy format 8.
-	FixedOffsets        map[string]int64
 	Assertions          []conditionAssertion
 	AssertionProgram    []assertionInstruction
 	MandatoryAssertions []int
+
+	// Legacy format 4-19 map fields (decoded for backward compatibility; nil in format 20+).
+	Strings          map[string][]byte
+	StringKinds      map[string]StringKind
+	StringModifiers  map[string][]serializedStringModifier
+	CaptureBindings  map[string][]serializedCaptureBinding
+	TextPatterns     map[string][]byte
+	RegexPatterns    map[string]serializedRegexPattern
+	HexPatterns      map[string]serializedHexPattern
+	Stats            map[string]int
+	ExternalSlots    map[string]int
+	GlobalSlots      map[string]int
+	GlobalValues     map[string]serializedGlobalValue
+	Meta             map[string]serializedScalar
+	ModuleNames      map[uint8]string
+	ModuleSignatures map[uint8]serializedModuleFunction
+	FixedTextOffsets map[string]int64 // Legacy format 8.
+	FixedOffsets     map[string]int64
+
+	// Deterministic format 20+ sorted entry slices.
+	StringEntries          []serializedByteEntry
+	StringKindEntries      []serializedStringKindEntry
+	StringModifierEntries  []serializedStringModifierEntry
+	CaptureBindingEntries  []serializedCaptureBindingEntry
+	TextPatternEntries     []serializedByteEntry
+	RegexPatternEntries    []serializedRegexPatternEntry
+	HexPatternEntries      []serializedHexPatternEntry
+	StatEntries            []serializedIntEntry
+	ExternalSlotEntries    []serializedIntEntry
+	GlobalSlotEntries      []serializedIntEntry
+	GlobalValueEntries     []serializedGlobalValueEntry
+	MetaEntries            []serializedScalarEntry
+	ModuleNameEntries      []serializedModuleNameEntry
+	ModuleSignatureEntries []serializedModuleSignatureEntry
+	FixedOffsetEntries     []serializedInt64Entry
+}
+
+type serializedModuleSchemaEntry struct {
+	Key   string
+	Value *serializedModuleSchema
+}
+
+type serializedModuleSchema struct {
+	Fields []serializedModuleFieldEntry
+}
+
+type serializedModuleFieldEntry struct {
+	Key   string
+	Value serializedModuleField
+}
+
+type serializedModuleField struct {
+	Kind     ModuleValueType
+	Struct   *serializedModuleSchema
+	Element  *serializedModuleField
+	Constant *ModuleValue
+}
+
+type serializedStringSliceEntry struct {
+	Key   string
+	Value []string
+}
+
+type serializedByteEntry struct {
+	Key   string
+	Value []byte
+}
+
+type serializedStringKindEntry struct {
+	Key   string
+	Value StringKind
+}
+
+type serializedStringModifierEntry struct {
+	Key   string
+	Value []serializedStringModifier
+}
+
+type serializedCaptureBindingEntry struct {
+	Key   string
+	Value []serializedCaptureBinding
+}
+
+type serializedRegexPatternEntry struct {
+	Key   string
+	Value serializedRegexPattern
+}
+
+type serializedHexPatternEntry struct {
+	Key   string
+	Value serializedHexPattern
+}
+
+type serializedIntEntry struct {
+	Key   string
+	Value int
+}
+
+type serializedGlobalValueEntry struct {
+	Key   string
+	Value serializedGlobalValue
+}
+
+type serializedScalarEntry struct {
+	Key   string
+	Value serializedScalar
+}
+
+type serializedModuleNameEntry struct {
+	Key   uint8
+	Value string
+}
+
+type serializedModuleSignatureEntry struct {
+	Key   uint8
+	Value serializedModuleFunction
+}
+
+type serializedInt64Entry struct {
+	Key   string
+	Value int64
 }
 
 type serializedModuleFunction struct {
