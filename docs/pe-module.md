@@ -20,10 +20,12 @@ rule WritableExecutableSection {
 
 The module implements headers, sections, section lookup, RVA-to-file-offset
 mapping, overlay metadata, full-file PE checksum calculation, standard import
-and export metadata, import and export queries by name, ordinal, or regex, and
-the standard import hash under
-[#359](https://github.com/cawalch/go-yara/issues/359). Delayed imports,
-flagged import queries, resources, Rich headers, and Authenticode signatures
+and export metadata, import and export queries by name, ordinal, or regex, the
+standard import hash under
+[#359](https://github.com/cawalch/go-yara/issues/359), and Authenticode
+signature metadata under [#478](https://github.com/cawalch/go-yara/issues/478).
+Delayed imports, flagged import queries, resources, Rich headers, PDB paths,
+and signature verification predicates (`is_signed`, `verified`, `valid_on`)
 remain unsupported and fail compilation.
 
 ## Supported fields
@@ -45,6 +47,11 @@ at most 96 entries; `number_of_sections` preserves the declared count.
 | `pe.overlay` | `offset`, `size` |
 | `pe.data_directories[i]` | `virtual_address`, `size` |
 | `pe.sections[i]` | `name`, `full_name`, `characteristics`, `virtual_address`, `virtual_size`, `raw_data_offset`, `raw_data_size`, `pointer_to_relocations`, `pointer_to_line_numbers`, `number_of_relocations`, `number_of_line_numbers` |
+| `pe` signatures | `number_of_signatures` |
+| `pe.signatures[i]` | `issuer`, `subject`, `version`, `algorithm`, `algorithm_oid`, `serial`, `thumbprint`, `not_before`, `not_after`, `digest`, `digest_alg`, `number_of_certificates`, `certificates`, `signer_info`, `number_of_countersignatures`, `countersignatures` |
+| `pe.signatures[i].certificates[j]` | `issuer`, `subject`, `version`, `algorithm`, `algorithm_oid`, `serial`, `thumbprint`, `not_before`, `not_after` |
+| `pe.signatures[i].signer_info` | `program_name`, `digest`, `digest_alg`, `length_of_chain`, `chain` |
+| `pe.signatures[i].countersignatures[j]` | `digest`, `digest_alg`, `sign_time`, `length_of_chain`, `chain` |
 
 `base_of_data` is undefined for PE32+. `checksum` contains the stored header
 value; it doesn't verify the file. Use `pe.calculate_checksum()` to compute the
@@ -133,6 +140,32 @@ known input size (full stream length for `ScanReader`, or configured length for
 `BlockScanner`) without constructing `pe.sections` objects or copying overlay
 bytes. With `WithModuleData("pe", data)`, supplied `overlay` fields are read
 directly and absent fields remain undefined without falling back to file parsing.
+
+## Signatures
+
+`pe.number_of_signatures` and `pe.signatures` expose bounded Authenticode CMS
+metadata parsed by go-pe without implying cryptographic verification or trust.
+Trust predicates (`pe.is_signed`, `pe.signatures[i].verified`,
+`pe.signatures[i].countersignatures[j].verified`, and
+`pe.signatures[i].valid_on(timestamp)`) remain unimplemented and fail compilation.
+
+Certificate fields (`issuer`, `subject`, `version`, `algorithm`,
+`algorithm_oid`, `serial`, `thumbprint`, `not_before`, `not_after`) follow
+libyara's OpenSSL formatting: DNs use slash-delimited `X509_NAME_oneline` short
+names with non-ASCII/control bytes escaped as `\xHH`, serials preserve ASN.1 DER
+octets as lowercase colon-separated hex (including a leading `00` for high-bit
+serials), thumbprints are lowercase SHA-1 hex without colons, validity times are
+signed Unix epoch seconds, and unknown digest or signature algorithm OIDs map to
+`"undefined"`. `signatures[i]` orders top-level PKCS#7 `WIN_CERTIFICATE` entries
+followed depth-first by nested signatures (`1.3.6.1.4.1.311.2.4.1`).
+
+Intentional strict-parser differences from libyara: go-pe rejects malformed CMS
+payloads or truncated security directories (leaving `number_of_signatures` and
+`signatures` undefined instead of `0`), parses all `WIN_CERTIFICATE` PKCS#7
+entries (skipping non-PKCS7 records rather than halting after the first record),
+preserves unknown `algorithm_oid` strings, and exposes zero-certificate or
+SubjectKeyIdentifier signers cleanly. Reader streams whose security directory lies
+past the 64 KiB retained header prefix leave signature fields undefined.
 
 ## Standard imports
 
@@ -506,7 +539,7 @@ To run the focused tests, install the `yara` CLI on `PATH`, then run:
 
 ```sh
 go test ./compiler ./tests/integration -run 'TestPE|TestLibyaraPE' -count=1
-go test ./compiler -run '^$' -bench 'BenchmarkPE(Module|Scanner|Sections|RVA|Overlay|Imports|Imphash|Exports|ExportQueries)$' -benchmem
+go test ./compiler -run '^$' -bench 'BenchmarkPE(Module|Scanner|Sections|RVA|Overlay|Imports|Imphash|Exports|ExportQueries|Signatures)$' -benchmem
 ```
 
 The oracle tests skip if the CLI is absent. CI installs and checks the pinned

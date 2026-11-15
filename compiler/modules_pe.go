@@ -16,7 +16,8 @@ var peImportsSchema = newPEImportsSchema()
 var peExportsSchema = newPEExportsSchema()
 var peExportTimestampSchema = newPEExportTimestampSchema()
 var peDLLNameSchema = newPEDLLNameSchema()
-var peSchema = newPEOverlaySchema()
+var peOverlaySchema = newPEOverlaySchema()
+var peSchema = newPESignaturesSchema()
 
 // The semantic validator only reads this type tree. Reuse it so rules that
 // don't import PE don't pay to reconstruct the built-in schema.
@@ -137,7 +138,7 @@ func isNativePEFunction(module Module, name string, function ModuleFunction) boo
 // Preserve loading of programs emitted with earlier native PE schemas.
 // Match complete schemas so unrelated host modules named pe remain custom.
 func isNativePESchema(schema *ModuleSchema) bool {
-	return schema != nil && (reflect.DeepEqual(schema, peSchema) || reflect.DeepEqual(schema, peDLLNameSchema) || reflect.DeepEqual(schema, peExportTimestampSchema) || reflect.DeepEqual(schema, peExportsSchema) || reflect.DeepEqual(schema, peImportsSchema) || reflect.DeepEqual(schema, peHeaderSchema))
+	return schema != nil && (reflect.DeepEqual(schema, peSchema) || reflect.DeepEqual(schema, peOverlaySchema) || reflect.DeepEqual(schema, peDLLNameSchema) || reflect.DeepEqual(schema, peExportTimestampSchema) || reflect.DeepEqual(schema, peExportsSchema) || reflect.DeepEqual(schema, peImportsSchema) || reflect.DeepEqual(schema, peHeaderSchema))
 }
 
 func newPESchema() *ModuleSchema {
@@ -276,6 +277,7 @@ type peImage struct {
 	context               *MatchContext
 	imports               *peImportData
 	exports               *peExportData
+	signatures            *peSignatureData
 	names                 []string
 	fileSize              int64
 	entryPoint            int64
@@ -313,6 +315,8 @@ func (image *peImage) field(name string) ModuleValue {
 		return image.importField(name)
 	case "number_of_exports", "export_details", "export_timestamp", "dll_name":
 		return image.exportField(name)
+	case "number_of_signatures", "signatures":
+		return image.signatureField(name)
 	case "is_pe":
 		return IntegerValue(1)
 	case "machine":
