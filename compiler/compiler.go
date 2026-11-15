@@ -551,9 +551,22 @@ func (c *Compiler) compileSemanticWithContext(ctx context.Context, program *ast.
 		}
 	}
 	c.analyzer = semantic.NewValidatorWithModuleSchemas(semanticModuleFunctions(c.options.Modules), semanticModuleSchemas(c.options.Modules))
+	c.analyzer.SetStrictLibyaraCompatibility(c.options.StrictLibyaraCompatibility)
 
 	// Analyze - ValidateProgram returns errors, not error
 	errs := c.analyzer.ValidateProgram(program)
+	if c.options.StrictLibyaraCompatibility {
+		for _, rule := range program.Rules {
+			for _, str := range c.unusedStrings(rule) {
+				errs = append(errs, &semantic.Error{
+					Code:     semantic.ErrCodeInvalidOperation,
+					Message:  fmt.Sprintf("unreferenced string %q", str.Identifier),
+					Position: str.Pos,
+					Rule:     rule.Name,
+				})
+			}
+		}
+	}
 	if len(errs) > 0 && c.options.IgnoreInvalidRules {
 		if err := c.removeSemanticallyInvalidRules(program, errs); err != nil {
 			return err

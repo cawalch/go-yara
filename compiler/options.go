@@ -10,9 +10,10 @@ import (
 // These options control compiler behavior, modules, and security limits.
 // Prefer NewCompiler with functional options for custom settings.
 type CompilationOptions struct {
-	EnableWarnings     bool // Collect and report compilation warnings (default: true)
-	IgnoreInvalidRules bool // Compile valid rules while reporting invalid rules (default: false)
-	Modules            map[string]Module
+	EnableWarnings             bool // Collect and report compilation warnings (default: true)
+	IgnoreInvalidRules         bool // Compile valid rules while reporting invalid rules (default: false)
+	StrictLibyaraCompatibility bool // Reproduce stricter libyara compile-time rejections (default: false)
+	Modules                    map[string]Module
 
 	// Security limits to prevent resource exhaustion attacks
 	MaxInputSize      int64 // Maximum input file size in bytes (0 = no limit, default: 100MB)
@@ -96,12 +97,13 @@ type Option func(*CompilationOptions)
 // toolchains generate call-site-specific closure code when they are inlined,
 // which would make this code-pointer identity check unreliable.
 var libraryModuleSafeOptions = map[uintptr]struct{}{
-	reflect.ValueOf(WithWarnings(true)).Pointer():           {},
-	reflect.ValueOf(WithIgnoreInvalidRules(true)).Pointer(): {},
-	reflect.ValueOf(WithModule(Module{})).Pointer():         {},
-	reflect.ValueOf(WithMaxInputSize(0)).Pointer():          {},
-	reflect.ValueOf(WithMaxIncludeSize(0)).Pointer():        {},
-	reflect.ValueOf(WithMaxRecursionDepth(0)).Pointer():     {},
+	reflect.ValueOf(WithWarnings(true)).Pointer():                   {},
+	reflect.ValueOf(WithIgnoreInvalidRules(true)).Pointer():         {},
+	reflect.ValueOf(WithStrictLibyaraCompatibility(true)).Pointer(): {},
+	reflect.ValueOf(WithModule(Module{})).Pointer():                 {},
+	reflect.ValueOf(WithMaxInputSize(0)).Pointer():                  {},
+	reflect.ValueOf(WithMaxIncludeSize(0)).Pointer():                {},
+	reflect.ValueOf(WithMaxRecursionDepth(0)).Pointer():             {},
 }
 
 func optionMayMutateModules(opt Option) bool {
@@ -132,6 +134,17 @@ func WithWarnings(enabled bool) Option {
 func WithIgnoreInvalidRules(enabled bool) Option {
 	return func(opts *CompilationOptions) {
 		opts.IgnoreInvalidRules = enabled
+	}
+}
+
+// WithStrictLibyaraCompatibility enables strict libyara compile-time rejections
+// for constructs where go-yara defaults to warnings or permissive sets (such as
+// unreferenced strings or empty wildcard string sets).
+//
+//go:noinline
+func WithStrictLibyaraCompatibility(enabled bool) Option {
+	return func(opts *CompilationOptions) {
+		opts.StrictLibyaraCompatibility = enabled
 	}
 }
 

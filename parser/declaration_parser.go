@@ -232,6 +232,12 @@ func (p *DeclarationParser) parseStringIdentifier() (string, token.Position, err
 
 	identifier := p.current.Literal
 	pos := p.current.Pos
+	if strings.HasSuffix(identifier, "*") {
+		return "", token.Position{}, newSyntaxError(
+			pos,
+			"syntax error, unexpected string identifier with wildcard, expecting string identifier",
+		)
+	}
 	p.nextToken()
 
 	return identifier, pos, nil

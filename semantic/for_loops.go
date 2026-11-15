@@ -17,6 +17,24 @@ func (v *Validator) validateOfExpression(ofExpr *ast.OfExpression) (*TypeInfo, [
 	// Validate the strings expression
 	_, stringsErrs := v.validateExpression(ofExpr.Strings)
 	errors = append(errors, stringsErrs...)
+	if v.strictLibyaraCompatibility && len(v.currentRuleStrings) == 0 {
+		if ident, ok := ofExpr.Strings.(*ast.Identifier); ok && ident.Name == themKeyword {
+			errors = append(errors, &Error{
+				Code:     ErrCodeUndefinedIdentifier,
+				Message:  `undefined string "$*"`,
+				Position: ofExpr.Strings.Position(),
+				Rule:     v.currentRule,
+			})
+		}
+	}
+	if ofExpr.InRange != nil {
+		_, inErrs := v.validateExpression(ofExpr.InRange)
+		errors = append(errors, inErrs...)
+	}
+	if ofExpr.AtOffset != nil {
+		_, atErrs := v.validateExpression(ofExpr.AtOffset)
+		errors = append(errors, atErrs...)
+	}
 	if containsAnonymousPlaceholder(ofExpr.Strings) {
 		errors = append(errors, &Error{
 			Code:     ErrCodeInvalidLoop,
@@ -255,6 +273,24 @@ func (v *Validator) validateForLoopExpression(forLoop *ast.ForLoop) (*TypeInfo, 
 	// Validate the range expression
 	_, rangeErrs := v.validateExpression(forLoop.Range)
 	errors = append(errors, rangeErrs...)
+	if v.strictLibyaraCompatibility && len(v.currentRuleStrings) == 0 {
+		if ident, ok := forLoop.Range.(*ast.Identifier); ok && ident.Name == themKeyword {
+			errors = append(errors, &Error{
+				Code:     ErrCodeUndefinedIdentifier,
+				Message:  `undefined string "$*"`,
+				Position: forLoop.Range.Position(),
+				Rule:     v.currentRule,
+			})
+		}
+	}
+	if forLoop.InRange != nil {
+		_, inErrs := v.validateExpression(forLoop.InRange)
+		errors = append(errors, inErrs...)
+	}
+	if forLoop.AtOffset != nil {
+		_, atErrs := v.validateExpression(forLoop.AtOffset)
+		errors = append(errors, atErrs...)
+	}
 
 	if tuple, ok := forLoop.Range.(*ast.StringTuple); ok {
 		errors = append(errors, v.validateTupleElementTypes(tuple, loopVarType)...)
