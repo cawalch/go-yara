@@ -288,7 +288,7 @@ func (cp *CompiledProgram) Validate() error {
 			return fmt.Errorf("validating rule %d (%s): %w", i, rule.Name, err)
 		}
 	}
-	return nil
+	return validateProgramBytecodeRuleRefs(cp)
 }
 
 // GetRuleByName finds a rule by name. The returned pointer is borrowed from the

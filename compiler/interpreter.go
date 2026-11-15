@@ -103,6 +103,7 @@ type Iterator struct {
 	Total         int // Total number of elements
 	Quantifier    int // Quantifier for condition (e.g. ForAll, ForAny, ForNone, ForExpression)
 	QuantExpr     int // Target expression count if Quantifier == ForExpression
+	StartIP       int // Instruction pointer immediately following OpIterStart*
 	EndIP         int // Instruction pointer to jump to when done
 	StartValue    int64
 	EndValue      int64
