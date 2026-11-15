@@ -11,18 +11,19 @@ import (
 
 // Validator performs semantic analysis on YARA rules
 type Validator struct {
-	symbolTable        *SymbolTable
-	errors             []error
-	loopVariables      map[string]string // loop variable name -> "string" or "integer"
-	stringLoopDepth    int
-	currentRule        string
-	currentRuleStrings []string
-	allRuleNames       []string
-	globalVarNames     []string
-	moduleSchemas      map[string]*TypeInfo
-	moduleVariables    map[string]*TypeInfo
-	moduleFunctions    ModuleFunctions
-	importedModules    map[string]bool
+	symbolTable                *SymbolTable
+	errors                     []error
+	loopVariables              map[string]string // loop variable name -> "string" or "integer"
+	stringLoopDepth            int
+	currentRule                string
+	currentRuleStrings         []string
+	allRuleNames               []string
+	globalVarNames             []string
+	moduleSchemas              map[string]*TypeInfo
+	moduleVariables            map[string]*TypeInfo
+	moduleFunctions            ModuleFunctions
+	importedModules            map[string]bool
+	strictLibyaraCompatibility bool
 }
 
 // Special identifier keywords
@@ -47,6 +48,12 @@ func NewValidatorWithModules(moduleFunctions ModuleFunctions) *Validator {
 		moduleFunctions: moduleFunctions,
 		importedModules: make(map[string]bool),
 	}
+}
+
+// SetStrictLibyaraCompatibility enables or disables strict libyara compatibility
+// rejections (such as rejecting empty wildcard string sets and empty `them`).
+func (v *Validator) SetStrictLibyaraCompatibility(enabled bool) {
+	v.strictLibyaraCompatibility = enabled
 }
 
 // ValidateProgram performs semantic analysis on a complete program
@@ -434,6 +441,15 @@ func (v *Validator) tryAlternativeIdentifierLookups(ident *ast.Identifier, error
 	// These are valid in quantifier expressions like "any of ($a*)" or "#a in (1..3) of ($a*)"
 	// The compiler handles expansion at compile time; we just need to allow the identifier.
 	if strings.HasPrefix(ident.Name, "$") && strings.HasSuffix(ident.Name, "*") {
+		if v.strictLibyaraCompatibility && !v.wildcardMatchesAnyRuleString(ident.Name) {
+			errors = append(errors, &Error{
+				Code:     ErrCodeUndefinedIdentifier,
+				Message:  fmt.Sprintf("undefined string %q", ident.Name),
+				Position: ident.Position(),
+				Rule:     v.currentRule,
+			})
+			return &TypeInfo{DataType: TypeBoolean}, errors
+		}
 		return &TypeInfo{DataType: TypeBoolean}, nil
 	}
 	// Check if this might be a string reference without the $ prefix
@@ -510,7 +526,46 @@ func (v *Validator) validateBinaryOpExpression(binOp *ast.BinaryOp) (*TypeInfo, 
 		errors = append(errors, semErr)
 		return &TypeInfo{DataType: TypeUnknown}, errors
 	}
+	if binOp.Op == token.DOT {
+		if rangeErr := v.validateConstantRangeBounds(binOp); rangeErr != nil {
+			errors = append(errors, rangeErr)
+			return &TypeInfo{DataType: TypeUnknown}, errors
+		}
+	}
 	return resultType, errors
+}
+
+func (v *Validator) validateConstantRangeBounds(binOp *ast.BinaryOp) *Error {
+	low, okLow := evalConstantInt(binOp.Left)
+	high, okHigh := evalConstantInt(binOp.Right)
+	if !okLow || !okHigh {
+		return nil
+	}
+	var msg string
+	switch {
+	case low > high:
+		msg = "range lower bound must be less than upper bound"
+	case low < 0:
+		msg = "range lower bound can not be negative"
+	default:
+		return nil
+	}
+	return &Error{
+		Code:     ErrCodeInvalidOperation,
+		Message:  msg,
+		Position: binOp.Position(),
+		Rule:     v.currentRule,
+	}
+}
+
+func (v *Validator) wildcardMatchesAnyRuleString(pattern string) bool {
+	prefix := strings.TrimSuffix(pattern, "*")
+	for _, id := range v.currentRuleStrings {
+		if strings.HasPrefix(id, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // validateUnaryOpExpression validates unary operation expressions

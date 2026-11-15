@@ -37,28 +37,34 @@ func (c *Compiler) collectRuleWarnings(rule *ast.Rule) {
 
 // checkUnusedStrings warns about strings that are defined but never used
 func (c *Compiler) checkUnusedStrings(rule *ast.Rule) {
+	for _, str := range c.unusedStrings(rule) {
+		c.addRuleWarning(CompilationWarning{
+			Code: WarningUnusedString, Phase: "semantic",
+			Message: fmt.Sprintf("String '%s' is defined but never used in condition", str.Identifier),
+			Rule:    rule.Name, String: str.Identifier, Line: str.Pos.Line, Column: str.Pos.Column,
+		})
+	}
+}
+
+func (c *Compiler) unusedStrings(rule *ast.Rule) []*ast.String {
 	if len(rule.Strings) == 0 {
-		return // No strings to check
+		return nil
 	}
 
-	// Track which strings are referenced in the condition
 	referenced := make(map[string]bool)
 	c.collectReferencedStrings(rule.Condition, referenced)
 
-	// Check for unused strings
+	var unused []*ast.String
 	for _, str := range rule.Strings {
 		if !stringIsReferenced(str.Identifier, referenced) {
 			// YARA spec: strings prefixed with $_ suppress the unreferenced warning
-			if len(str.Identifier) >= 2 && str.Identifier[:2] == "$_" {
+			if strings.HasPrefix(str.Identifier, "$_") {
 				continue
 			}
-			c.addRuleWarning(CompilationWarning{
-				Code: WarningUnusedString, Phase: "semantic",
-				Message: fmt.Sprintf("String '%s' is defined but never used in condition", str.Identifier),
-				Rule:    rule.Name, String: str.Identifier, Line: str.Pos.Line, Column: str.Pos.Column,
-			})
+			unused = append(unused, str)
 		}
 	}
+	return unused
 }
 
 // collectReferencedStrings recursively collects string references from an expression

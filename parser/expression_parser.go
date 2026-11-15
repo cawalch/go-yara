@@ -589,7 +589,11 @@ func (p *ExpressionParser) parseStringOperation() (ast.Expression, error) {
 		p.nextToken()
 	}
 
-	// Handle optional index [i]
+	if op == token.HASH && p.currentTokenIs(token.LBRACKET) {
+		return nil, newSyntaxError(p.current.Pos, "syntax error, unexpected '['")
+	}
+
+	// Handle optional index [i] (@a[i] and !a[i] only; #a does not accept an index)
 	var index ast.Expression
 	if p.currentTokenIs(token.LBRACKET) {
 		p.nextToken()
@@ -651,7 +655,7 @@ func (p *ExpressionParser) parsePostfix(base ast.Expression) (ast.Expression, er
 			p.nextToken()
 		case p.currentTokenIs(token.LBRACKET):
 			if id, ok := base.(*ast.Identifier); ok && strings.HasPrefix(id.Name, "$") {
-				return nil, errors.New("invalid syntax: array indexing $a[i] is not supported in YARA. Use @a[i] for string offset or #a[i] for string count")
+				return nil, errors.New("invalid syntax: array indexing $a[i] is not supported in YARA. Use @a[i] for string offset or !a[i] for string length")
 			}
 			pos := p.current.Pos
 			p.nextToken()
