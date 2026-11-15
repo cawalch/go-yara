@@ -854,28 +854,24 @@ func (p *ExpressionParser) SetQuantifierParser(qp *QuantifierParser) {
 	p.quantifierParser = qp
 }
 
-// tryParsePercentOf attempts to parse "N % of (strings)" or "N percent of (strings)" when op is MODULO/PERCENT and next token is OF.
+// tryParsePercentOf attempts to parse "<expr> % of (strings)" or "<expr> percent of (strings)" when op is MODULO/PERCENT and next token is OF.
 // Returns the parsed *ast.OfExpression on success, (nil, nil) if it's not a percent-of expression.
 func (p *ExpressionParser) tryParsePercentOf(left ast.Expression, op token.Type) (*ast.OfExpression, error) {
-	if (op != token.MODULO && op != token.PERCENT) || !p.peekTokenIs(token.OF) {
+	if left == nil || (op != token.MODULO && op != token.PERCENT) || !p.peekTokenIs(token.OF) {
 		return nil, nil
 	}
 
-	intLit, ok := left.(*ast.Literal)
-	if !ok || intLit.Type != token.IntegerLit {
-		return nil, nil
-	}
-
+	pos := left.Position()
 	p.nextToken() // consume '%' or 'percent'
 	p.nextToken() // consume 'of'
-	target, err := p.parseQuantifierTarget(intLit.Pos)
+	target, err := p.parseQuantifierTarget(pos)
 	if err != nil {
 		return nil, err
 	}
 
 	ofExpr := &ast.OfExpression{
-		Pos:     intLit.Pos,
-		Count:   &ast.PercentExpression{Pos: intLit.Pos, Value: intLit},
+		Pos:     pos,
+		Count:   &ast.PercentExpression{Pos: pos, Value: left},
 		Strings: target,
 	}
 	ofExpr, err = p.parseOfConstraints(ofExpr)

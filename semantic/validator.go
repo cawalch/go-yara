@@ -620,10 +620,17 @@ func (v *Validator) GetSymbolTable() *SymbolTable {
 
 // validatePercentExpression validates a percent expression ("N %")
 func (v *Validator) validatePercentExpression(expr *ast.PercentExpression) (*TypeInfo, []error) {
-	// The inner value should be an integer (1-100)
+	// The inner value must be an integer, and compile-time constants must be within 1-100.
 	valType, errs := v.validateExpression(expr.Value)
 	if valType.DataType != TypeInteger {
 		errs = append(errs, fmt.Errorf("percentage must be an integer, got %v", valType.DataType))
+	} else if val, ok := evalConstantInt(expr.Value); ok && (val < 1 || val > 100) {
+		errs = append(errs, &Error{
+			Code:     ErrCodeInvalidOperation,
+			Message:  "percentage must be between 1 and 100 (inclusive)",
+			Position: expr.Position(),
+			Rule:     v.currentRule,
+		})
 	}
 	// PercentExpression itself is an integer (used as count in OfExpression)
 	return &TypeInfo{DataType: TypeInteger}, errs
