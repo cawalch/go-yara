@@ -328,6 +328,11 @@ func peFields(file *pe.File, data []byte, ctx *MatchContext) *peImage {
 		}
 	}
 	image := &peImage{file: file, context: ctx, names: names, fileSize: ctx.FileSize, entryPoint: peRVAToOffset(file, file.OptionalHeader.AddressOfEntryPoint, ctx.FileSize)}
+	if ctx != nil {
+		ctx.EntryPoint = image.entryPoint
+		ctx.HasEntryPoint = true
+		ctx.entryPointChecked = true
+	}
 	image.object = peLazyStruct(image.field).object
 	return image
 }
