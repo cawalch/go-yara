@@ -2,7 +2,7 @@ package compiler
 
 import (
 	"bytes"
-	"crypto/sha1"
+	"crypto/sha1" // #nosec G505 -- YARA compatibility requires SHA-1 certificate thumbprints.
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
@@ -364,7 +364,7 @@ func peCertificateField(cert *x509.Certificate, field string) ModuleValue {
 		if len(cert.Raw) == 0 {
 			return ModuleValue{}
 		}
-		sum := sha1.Sum(cert.Raw)
+		sum := sha1.Sum(cert.Raw) // #nosec G401 -- YARA compatibility requires SHA-1 certificate thumbprints.
 		return StringValue(hex.EncodeToString(sum[:]))
 	case "not_before":
 		return IntegerValue(cert.NotBefore.Unix())
@@ -379,26 +379,30 @@ func peMatchSignerCert(signer *pe.AuthenticodeSigner, pool []*x509.Certificate) 
 		return nil
 	}
 	if len(signer.IssuerRaw) > 0 || signer.SerialNumber != nil || len(signer.SerialBytes) > 0 {
-		for _, cert := range pool {
-			if cert == nil || !bytes.Equal(cert.RawIssuer, signer.IssuerRaw) {
-				continue
-			}
-			if len(signer.SerialBytes) > 0 {
-				if certSerial, err := pe.CertificateSerialBytes(cert); err == nil && bytes.Equal(certSerial, signer.SerialBytes) {
-					return cert
-				}
-			}
-			if signer.SerialNumber != nil && cert.SerialNumber != nil && cert.SerialNumber.Cmp(signer.SerialNumber) == 0 {
-				return cert
-			}
-		}
-		return nil
+		return peMatchCertByIssuerAndSerial(signer, pool)
 	}
 	if len(signer.SubjectKeyID) > 0 {
 		for _, cert := range pool {
 			if cert != nil && bytes.Equal(cert.SubjectKeyId, signer.SubjectKeyID) {
 				return cert
 			}
+		}
+	}
+	return nil
+}
+
+func peMatchCertByIssuerAndSerial(signer *pe.AuthenticodeSigner, pool []*x509.Certificate) *x509.Certificate {
+	for _, cert := range pool {
+		if cert == nil || !bytes.Equal(cert.RawIssuer, signer.IssuerRaw) {
+			continue
+		}
+		if len(signer.SerialBytes) > 0 {
+			if certSerial, err := pe.CertificateSerialBytes(cert); err == nil && bytes.Equal(certSerial, signer.SerialBytes) {
+				return cert
+			}
+		}
+		if signer.SerialNumber != nil && cert.SerialNumber != nil && cert.SerialNumber.Cmp(signer.SerialNumber) == 0 {
+			return cert
 		}
 	}
 	return nil

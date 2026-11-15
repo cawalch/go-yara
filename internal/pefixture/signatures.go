@@ -182,20 +182,27 @@ func AuthenticodeBlob(opts AuthenticodeOptions) ([]byte, *x509.Certificate) {
 	var leafCert *x509.Certificate
 	var sigOID asn1.ObjectIdentifier
 
+	spec := certSetSpec{
+		subject:      subject,
+		serial:       serial,
+		notBefore:    notBefore,
+		notAfter:     notAfter,
+		includeChain: opts.IncludeChain,
+	}
 	if opts.UseRSA {
 		rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
 		if err != nil {
 			panic(err)
 		}
 		sigOID = oidRSAWithSHA256
-		rootDER, caDER, leafDER, leafCert = createCertSet(rsaKey, &rsaKey.PublicKey, subject, serial, notBefore, notAfter, opts.IncludeChain)
+		rootDER, caDER, leafDER, leafCert = createCertSet(rsaKey, &rsaKey.PublicKey, spec)
 	} else {
 		ecKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 		if err != nil {
 			panic(err)
 		}
 		sigOID = oidECDSAWithSHA256
-		rootDER, caDER, leafDER, leafCert = createCertSet(ecKey, &ecKey.PublicKey, subject, serial, notBefore, notAfter, opts.IncludeChain)
+		rootDER, caDER, leafDER, leafCert = createCertSet(ecKey, &ecKey.PublicKey, spec)
 	}
 
 	if len(opts.UnknownCertSigOID) > 0 {
@@ -245,7 +252,12 @@ func AuthenticodeBlob(opts AuthenticodeOptions) ([]byte, *x509.Certificate) {
 
 	var signerInfosBytes []byte
 	if !opts.OmitSignerInfos {
-		signerInfosBytes = buildAuthSignerInfo(leafCert, digestOID, sigOID, opts, &certsBytes)
+		signerInfosBytes = buildAuthSignerInfo(signerInfoSpec{
+			leafCert:  leafCert,
+			digestOID: digestOID,
+			sigOID:    sigOID,
+			opts:      opts,
+		}, &certsBytes)
 	}
 
 	sd := authSignedData{
@@ -273,17 +285,44 @@ func AuthenticodeBlob(opts AuthenticodeOptions) ([]byte, *x509.Certificate) {
 	return ciDER, leafCert
 }
 
-func createCertSet(signer any, pub any, subject pkix.Name, serial *big.Int, notBefore, notAfter time.Time, includeChain bool) (rootDER, caDER, leafDER []byte, leafCert *x509.Certificate) {
+type certSetSpec struct {
+	subject      pkix.Name
+	serial       *big.Int
+	notBefore    time.Time
+	notAfter     time.Time
+	includeChain bool
+}
+
+type signerInfoSpec struct {
+	leafCert  *x509.Certificate
+	digestOID asn1.ObjectIdentifier
+	sigOID    asn1.ObjectIdentifier
+	opts      AuthenticodeOptions
+}
+
+func mustIssuerAndSerialSID(cert *x509.Certificate) asn1.RawValue {
+	var issuerRaw asn1.RawValue
+	if _, err := asn1.Unmarshal(cert.RawIssuer, &issuerRaw); err != nil {
+		panic(err)
+	}
+	sidDER, err := asn1.Marshal(authIssuerAndSerial{Issuer: issuerRaw, Serial: cert.SerialNumber})
+	if err != nil {
+		panic(err)
+	}
+	return asn1.RawValue{FullBytes: sidDER}
+}
+
+func createCertSet(signer any, pub any, spec certSetSpec) (rootDER, caDER, leafDER []byte, leafCert *x509.Certificate) {
 	leafTmpl := &x509.Certificate{
-		SerialNumber: serial,
-		Subject:      subject,
-		NotBefore:    notBefore,
-		NotAfter:     notAfter,
+		SerialNumber: spec.serial,
+		Subject:      spec.subject,
+		NotBefore:    spec.notBefore,
+		NotAfter:     spec.notAfter,
 		SubjectKeyId: []byte{0x10, 0x20, 0x30, 0x40},
 		KeyUsage:     x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageCodeSigning},
 	}
-	if !includeChain {
+	if !spec.includeChain {
 		var err error
 		leafDER, err = x509.CreateCertificate(rand.Reader, leafTmpl, leafTmpl, pub, signer)
 		if err != nil {
@@ -310,7 +349,10 @@ func createCertSet(signer any, pub any, subject pkix.Name, serial *big.Int, notB
 	if err != nil {
 		panic(err)
 	}
-	rootCert, _ := x509.ParseCertificate(rootDER)
+	rootCert, err := x509.ParseCertificate(rootDER)
+	if err != nil {
+		panic(err)
+	}
 
 	caTmpl := &x509.Certificate{
 		SerialNumber:          big.NewInt(2),
@@ -325,7 +367,10 @@ func createCertSet(signer any, pub any, subject pkix.Name, serial *big.Int, notB
 	if err != nil {
 		panic(err)
 	}
-	caCert, _ := x509.ParseCertificate(caDER)
+	caCert, err := x509.ParseCertificate(caDER)
+	if err != nil {
+		panic(err)
+	}
 
 	leafDER, err = x509.CreateCertificate(rand.Reader, leafTmpl, caCert, pub, signer)
 	if err != nil {
@@ -338,7 +383,12 @@ func createCertSet(signer any, pub any, subject pkix.Name, serial *big.Int, notB
 	return rootDER, caDER, leafDER, leafCert
 }
 
-func buildAuthSignerInfo(leafCert *x509.Certificate, digestOID, sigOID asn1.ObjectIdentifier, opts AuthenticodeOptions, outerCertsBytes *[]byte) []byte {
+func buildAuthSignerInfo(spec signerInfoSpec, outerCertsBytes *[]byte) []byte {
+	leafCert := spec.leafCert
+	digestOID := spec.digestOID
+	sigOID := spec.sigOID
+	opts := spec.opts
+
 	oidContentType := asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 3}
 	oidMessageDigest := asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 4}
 	oidSigningTime := asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 5}
@@ -355,10 +405,7 @@ func buildAuthSignerInfo(leafCert *x509.Certificate, digestOID, sigOID asn1.Obje
 		version = 3
 		sid = asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: 0, Bytes: leafCert.SubjectKeyId}
 	} else {
-		var issuerRaw asn1.RawValue
-		asn1.Unmarshal(leafCert.RawIssuer, &issuerRaw)
-		sidDER, _ := asn1.Marshal(authIssuerAndSerial{Issuer: issuerRaw, Serial: leafCert.SerialNumber})
-		sid = asn1.RawValue{FullBytes: sidDER}
+		sid = mustIssuerAndSerialSID(leafCert)
 	}
 
 	var authAttrs []byte
@@ -402,9 +449,7 @@ func buildAuthSignerInfo(leafCert *x509.Certificate, digestOID, sigOID asn1.Obje
 		if !opts.OmitCertificates {
 			*outerCertsBytes = append(*outerCertsBytes, tsDER...)
 		}
-		var tsIssuer asn1.RawValue
-		asn1.Unmarshal(tsCert.RawIssuer, &tsIssuer)
-		tsSID, _ := asn1.Marshal(authIssuerAndSerial{Issuer: tsIssuer, Serial: tsCert.SerialNumber})
+		tsSID := mustIssuerAndSerialSID(tsCert)
 		tsTimeDER, _ := asn1.Marshal(opts.PKCS9CountersignAt.UTC())
 		tsAuth := authAttr(oidSigningTime, tsTimeDER)
 		if len(opts.CountersignDigest) > 0 {
@@ -417,7 +462,7 @@ func buildAuthSignerInfo(leafCert *x509.Certificate, digestOID, sigOID asn1.Obje
 		}
 		tsSI := authSignerInfo{
 			Version:            1,
-			SID:                asn1.RawValue{FullBytes: tsSID},
+			SID:                tsSID,
 			DigestAlgorithm:    pkix.AlgorithmIdentifier{Algorithm: csAlgOID},
 			SignedAttrs:        authTag0(tsAuth),
 			SignatureAlgorithm: pkix.AlgorithmIdentifier{Algorithm: sigOID},
@@ -437,9 +482,7 @@ func buildAuthSignerInfo(leafCert *x509.Certificate, digestOID, sigOID asn1.Obje
 		}
 		tsDER, _ := x509.CreateCertificate(rand.Reader, tsTmpl, tsTmpl, &tsKey.PublicKey, tsKey)
 		tsCert, _ := x509.ParseCertificate(tsDER)
-		var tsIssuer asn1.RawValue
-		asn1.Unmarshal(tsCert.RawIssuer, &tsIssuer)
-		tsSID, _ := asn1.Marshal(authIssuerAndSerial{Issuer: tsIssuer, Serial: tsCert.SerialNumber})
+		tsSID := mustIssuerAndSerialSID(tsCert)
 		tst := authTSTInfo{
 			Version:      1,
 			Policy:       asn1.ObjectIdentifier{1, 2, 3, 4},
@@ -456,7 +499,7 @@ func buildAuthSignerInfo(leafCert *x509.Certificate, digestOID, sigOID asn1.Obje
 		tstOct, _ := asn1.Marshal(tstDER)
 		tsSI := authSignerInfo{
 			Version:            1,
-			SID:                asn1.RawValue{FullBytes: tsSID},
+			SID:                tsSID,
 			DigestAlgorithm:    pkix.AlgorithmIdentifier{Algorithm: digestOID},
 			SignatureAlgorithm: pkix.AlgorithmIdentifier{Algorithm: sigOID},
 			Signature:          []byte{4, 5, 6},
