@@ -22,11 +22,13 @@ The module implements headers, sections, section lookup, RVA-to-file-offset
 mapping, overlay metadata, full-file PE checksum calculation, standard import
 and export metadata, import and export queries by name, ordinal, or regex, the
 standard import hash under
-[#359](https://github.com/cawalch/go-yara/issues/359), and Authenticode
-signature metadata under [#478](https://github.com/cawalch/go-yara/issues/478).
+[#359](https://github.com/cawalch/go-yara/issues/359), Authenticode
+signature metadata under [#478](https://github.com/cawalch/go-yara/issues/478),
+and offline Authenticode integrity verification under
+[#481](https://github.com/cawalch/go-yara/issues/481).
 Delayed imports, flagged import queries, resources, Rich headers, PDB paths,
-and signature verification predicates (`is_signed`, `verified`, `valid_on`)
-remain unsupported and fail compilation.
+`valid_on(timestamp)`, and `file_digest` remain unsupported and fail
+compilation.
 
 ## Supported fields
 
@@ -47,11 +49,11 @@ at most 96 entries; `number_of_sections` preserves the declared count.
 | `pe.overlay` | `offset`, `size` |
 | `pe.data_directories[i]` | `virtual_address`, `size` |
 | `pe.sections[i]` | `name`, `full_name`, `characteristics`, `virtual_address`, `virtual_size`, `raw_data_offset`, `raw_data_size`, `pointer_to_relocations`, `pointer_to_line_numbers`, `number_of_relocations`, `number_of_line_numbers` |
-| `pe` signatures | `number_of_signatures` |
-| `pe.signatures[i]` | `issuer`, `subject`, `version`, `algorithm`, `algorithm_oid`, `serial`, `thumbprint`, `not_before`, `not_after`, `digest`, `digest_alg`, `number_of_certificates`, `certificates`, `signer_info`, `number_of_countersignatures`, `countersignatures` |
+| `pe` signatures | `is_signed`, `number_of_signatures` |
+| `pe.signatures[i]` | `verified`, `issuer`, `subject`, `version`, `algorithm`, `algorithm_oid`, `serial`, `thumbprint`, `not_before`, `not_after`, `digest`, `digest_alg`, `number_of_certificates`, `certificates`, `signer_info`, `number_of_countersignatures`, `countersignatures` |
 | `pe.signatures[i].certificates[j]` | `issuer`, `subject`, `version`, `algorithm`, `algorithm_oid`, `serial`, `thumbprint`, `not_before`, `not_after` |
 | `pe.signatures[i].signer_info` | `program_name`, `digest`, `digest_alg`, `length_of_chain`, `chain` |
-| `pe.signatures[i].countersignatures[j]` | `digest`, `digest_alg`, `sign_time`, `length_of_chain`, `chain` |
+| `pe.signatures[i].countersignatures[j]` | `verified`, `digest`, `digest_alg`, `sign_time`, `length_of_chain`, `chain` |
 
 `base_of_data` is undefined for PE32+. `checksum` contains the stored header
 value; it doesn't verify the file. Use `pe.calculate_checksum()` to compute the
@@ -144,10 +146,36 @@ directly and absent fields remain undefined without falling back to file parsing
 ## Signatures
 
 `pe.number_of_signatures` and `pe.signatures` expose bounded Authenticode CMS
-metadata parsed by go-pe without implying cryptographic verification or trust.
-Trust predicates (`pe.is_signed`, `pe.signatures[i].verified`,
-`pe.signatures[i].countersignatures[j].verified`, and
-`pe.signatures[i].valid_on(timestamp)`) remain unimplemented and fail compilation.
+metadata parsed by go-pe, while `pe.is_signed`, `pe.signatures[i].verified`, and
+`pe.signatures[i].countersignatures[j].verified` expose offline cryptographic
+integrity verification (`1` when verified, `0` when unverified, or `undefined`).
+`pe.signatures[i].valid_on(timestamp)` and `pe.signatures[i].file_digest` remain
+unimplemented and fail compilation.
+
+Verification semantics are intentionally explicit and offline:
+
+- `pe.signatures[i].verified` returns `1` when the computed PE Authenticode
+  image digest matches the `SpcIndirectDataContent` digest and at least one
+  `SignerInfo` binds that content digest via a valid CMS signature under its
+  embedded signer certificate. It does **not** consult ambient OS trust stores,
+  enforce wall-clock validity bounds (`not_before`/`not_after`), check CRL/OCSP
+  revocation, or perform network AIA fetches.
+- `pe.is_signed` returns `1` if any `pe.signatures[i].verified == 1`, and `0`
+  when all signatures fail verification or an accessible complete PE image has
+  `number_of_signatures == 0`. Accessing `pe.is_signed` evaluates verification
+  lazily without materializing detail structs unless rules inspect `pe.signatures`.
+- `pe.signatures[i].countersignatures[j].verified` checks the countersignature
+  token or `SignerInfo` digest imprint against its parent signature bytes and
+  verifies the timestamp CMS signature offline; a tampered PE image leaves
+  `signatures[i].verified == 0` while valid countersignatures over the
+  parent signature remain `1`.
+- Because verifying the PE image digest hashes the full image, `pe.is_signed`,
+  `signatures[i].verified`, and `countersignatures[j].verified` require complete
+  contiguous offset-0 scan bytes and non-canceled execution. Bounded reader
+  streams exceeding the 64 KiB retained header prefix (`ScanReader`), segmented
+  or non-zero-base `BlockScanner` inputs, non-PE files, and canceled scans
+  leave verification fields `undefined`. Host snapshots passed through
+  `WithModuleData("pe", ...)` supply static values without hashing input bytes.
 
 Certificate fields (`issuer`, `subject`, `version`, `algorithm`,
 `algorithm_oid`, `serial`, `thumbprint`, `not_before`, `not_after`) follow
@@ -160,12 +188,15 @@ signed Unix epoch seconds, and unknown digest or signature algorithm OIDs map to
 followed depth-first by nested signatures (`1.3.6.1.4.1.311.2.4.1`).
 
 Intentional strict-parser differences from libyara: go-pe rejects malformed CMS
-payloads or truncated security directories (leaving `number_of_signatures` and
-`signatures` undefined instead of `0`), parses all `WIN_CERTIFICATE` PKCS#7
-entries (skipping non-PKCS7 records rather than halting after the first record),
-preserves unknown `algorithm_oid` strings, and exposes zero-certificate or
-SubjectKeyIdentifier signers cleanly. Reader streams whose security directory lies
-past the 64 KiB retained header prefix leave signature fields undefined.
+payloads or truncated security directories (leaving `number_of_signatures`,
+`signatures`, and `is_signed` `undefined` instead of `0`), parses all
+`WIN_CERTIFICATE` PKCS#7 entries (skipping non-PKCS7 records rather than halting
+after the first record), retains `SignerInfo` metadata when the signer
+certificate is omitted (`verified == 0`), rejects duplicate signed attributes
+(`messageDigest` / `signingTime`), and verifies RFC 8419 Ed25519 CMS signatures
+as well as ECDSA PKCS#9 countersignatures offline. Reader streams whose security
+directory lies past the 64 KiB retained header prefix leave signature fields
+`undefined`.
 
 ## Standard imports
 
