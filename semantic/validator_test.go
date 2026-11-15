@@ -759,6 +759,43 @@ func TestValidatorValidateMeta(t *testing.T) {
 	}
 }
 
+func TestValidatorAllowsDuplicateMetaKeysWithoutVariablePollution(t *testing.T) {
+	validator := NewValidator()
+	pos := token.Position{Line: 1, Column: 1}
+	rule := &ast.Rule{
+		Pos:  pos,
+		Name: "dup_meta_and_loop",
+		Meta: []*ast.Meta{
+			{Pos: pos, Key: "hash", Value: ast.MetaString("aaa")},
+			{Pos: pos, Key: "hash", Value: ast.MetaString("bbb")},
+			{Pos: pos, Key: "id", Value: ast.MetaString("rule-id")},
+		},
+		Condition: &ast.ForLoop{
+			Pos:        pos,
+			Quantifier: "any",
+			Variables:  []string{"id"},
+			Range: &ast.BinaryOp{
+				Pos:   pos,
+				Op:    token.DOT,
+				Left:  &ast.Literal{Pos: pos, Type: token.IntegerLit, Value: "0"},
+				Right: &ast.Literal{Pos: pos, Type: token.IntegerLit, Value: "1"},
+			},
+			Condition: &ast.BinaryOp{
+				Pos:   pos,
+				Op:    token.EQ,
+				Left:  &ast.Identifier{Pos: pos, Name: "id"},
+				Right: &ast.Literal{Pos: pos, Type: token.IntegerLit, Value: "0"},
+			},
+		},
+	}
+
+	validator.collectSymbols(rule)
+	validator.validateRule(rule)
+	if validator.HasErrors() {
+		t.Fatalf("expected duplicate meta keys and loop variable 'id' to validate cleanly, got %v", validator.GetErrors())
+	}
+}
+
 // TestValidatorValidateStrings tests validateStrings method
 func TestValidatorValidateStrings(t *testing.T) {
 	validator := NewValidator()

@@ -121,6 +121,18 @@ func (p *DeclarationParser) parseMetaValue() ast.MetaValue {
 		value := p.current.Literal
 		p.nextToken()
 		return ast.MetaString(value)
+	case p.currentTokenIs(token.MINUS):
+		p.nextToken()
+		if !p.currentTokenIs(token.IntegerLit) {
+			p.addError(fmt.Errorf("expected integer after '-' at %v", pos))
+			return nil
+		}
+		value, err := strconv.ParseInt("-"+p.current.Literal, 10, 64)
+		if err != nil {
+			p.addError(fmt.Errorf("invalid integer literal '-%s' at %v", p.current.Literal, pos))
+		}
+		p.nextToken()
+		return ast.MetaInt(value)
 	case p.currentTokenIs(token.IntegerLit):
 		value := p.parseIntegerLiteral()
 		if value == 0 && p.current.Literal != "0" {

@@ -398,13 +398,13 @@ func (p *ExpressionParser) parseParenthesizedExpression() (ast.Expression, error
 		return nil, fmt.Errorf("error in parenthesized expression: %w", err)
 	}
 
-	// Support range expressions like (0..10)
+	// Support range expressions like (0..10) or (@a..@a + 100)
 	if p.currentTokenIs(token.DOT) && p.peekTokenIs(token.DOT) {
 		dotPos := p.current.Pos
 		p.nextToken() // consume first '.'
 		p.nextToken() // consume second '.'
 
-		right, err := p.parsePrimaryExcludingUnary()
+		right, err := p.ParseExpression()
 		if err != nil {
 			return nil, fmt.Errorf("error parsing range expression: %w", err)
 		}
@@ -570,15 +570,11 @@ func (p *ExpressionParser) parseStringOperation() (ast.Expression, error) {
 	// Represent it as the "$" identifier so downstream stages resolve it
 	// via the loop-variable slot, exactly like the bare "$" placeholder.
 	var stringIdent *ast.Identifier
-	if !p.currentTokenIs(token.StringIdentifier) && !p.currentTokenIs(token.IDENTIFIER) {
+	if !p.isStringOperationTarget() {
 		stringIdent = &ast.Identifier{Name: "$", Pos: pos}
 	} else {
 		name := p.current.Literal
-		// String operations are always keyed by the $-prefixed identifier.
-		// The lexer emits StringLength for "!a" (matching upstream YARA's
-		// `!({letter}|{digit}|_)*` rule), so normalize "a" -> "$a" here. The
-		// explicit "$a" form is already prefixed and passes through unchanged.
-		if op == token.StringLength && !strings.HasPrefix(name, "$") {
+		if !strings.HasPrefix(name, "$") {
 			name = "$" + name
 		}
 		stringIdent = &ast.Identifier{
@@ -615,6 +611,18 @@ func (p *ExpressionParser) parseStringOperation() (ast.Expression, error) {
 	}
 }
 
+func (p *ExpressionParser) isStringOperationTarget() bool {
+	switch p.current.Type {
+	case token.StringIdentifier, token.IDENTIFIER, token.IntegerLit,
+		token.XOR, token.NOCASE, token.WIDE, token.ASCII, token.FULLWORD,
+		token.PRIVATE, token.BASE64, token.BASE64WIDE, token.CAPTURE,
+		token.LENGTH, token.HASH, token.FILESIZE, token.ENTRYPOINT:
+		return true
+	default:
+		return false
+	}
+}
+
 func (p *ExpressionParser) parseIdentifier() (ast.Expression, error) {
 	base := &ast.Identifier{Name: p.current.Literal, Pos: p.current.Pos}
 	p.nextToken()
@@ -628,7 +636,7 @@ func (p *ExpressionParser) parsePostfix(base ast.Expression) (ast.Expression, er
 			return nil, errors.New("module access chain exceeds maximum expression depth")
 		}
 		switch {
-		case p.currentTokenIs(token.DOT):
+		case p.currentTokenIs(token.DOT) && !p.peekTokenIs(token.DOT):
 			pos := p.current.Pos
 			p.nextToken()
 			if !p.currentTokenIs(token.IDENTIFIER) && !p.currentTokenIs(token.LENGTH) {

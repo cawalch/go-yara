@@ -197,31 +197,10 @@ func (v *Validator) validateRule(rule *ast.Rule) {
 	v.currentRuleStrings = prevStrings
 }
 
-// validateMeta validates the meta section
-func (v *Validator) validateMeta(meta []*ast.Meta) {
-	for _, m := range meta {
-		// Check for duplicate meta keys (already handled by parser, but double-check)
-		if existing, exists := v.symbolTable.LookupInCurrentScope(m.Key); exists {
-			if existing.Type == SymbolVariable {
-				v.addError(&Error{
-					Code:     ErrCodeDuplicateMeta,
-					Message:  "duplicate meta key: " + m.Key,
-					Position: m.Pos,
-					Rule:     v.currentRule,
-				})
-			}
-		}
-
-		// Define meta as variable for potential use in conditions
-		if err := v.symbolTable.DefineVariable(m.Key, m.Pos, SymbolVariable); err != nil {
-			v.addError(&Error{
-				Code:     ErrCodeDuplicateMeta,
-				Message:  err.Error(),
-				Position: m.Pos,
-				Rule:     v.currentRule,
-			})
-		}
-	}
+// validateMeta validates the meta section.
+// Duplicate meta keys are permitted (matching libyara), and meta keys do not
+// introduce condition-scope variables.
+func (v *Validator) validateMeta(_ []*ast.Meta) {
 }
 
 // validateStrings validates the strings section

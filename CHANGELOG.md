@@ -42,6 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+* Fixed six YARA Forge `20261108` compiler compatibility gaps (unlocking +3,052 rules across the 11,866-rule corpus and +118 PE rules): honored tracked `strings:` section state in [`internal/lexer/scanner_hex.go`](internal/lexer/scanner_hex.go) instead of stopping at a 500-byte lookback window for hex literals, permitted duplicate `meta:` keys in [`semantic/validator.go`](semantic/validator.go) without binding meta keys into condition variable scope, supported negative integer literals in `meta:`, parsed full arithmetic expressions as parenthesized range upper bounds, stopped postfix `.` chaining before `..`, and recognized numeric/keyword string identifiers (`@1`, `#xor`) on `!`/`@`/`#` string operations.
+
 * Empty module collections and integer ranges now evaluate to false for `any`, `all`, and `none`, matching libyara. Undefined integer range bounds produce a false loop result instead of a scan error. The numeric `0` loop quantifier now uses `none` semantics; recompile affected rules to update this check.
 
 ### Performance
