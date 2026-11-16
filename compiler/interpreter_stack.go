@@ -258,6 +258,8 @@ func (i *Interpreter) executeModuleCall(id builtinFunction, function ModuleFunct
 			result = i.peIsBitness(name == "pe.is_64bit")
 		case "pe.is_dll":
 			result = i.peIsDLL()
+		case "pe.is_dotnet":
+			result = i.peIsDotNet()
 		case "pe.imphash":
 			result = i.peImphash()
 		case "pe.section_index":

@@ -41,7 +41,7 @@ at most 96 entries; `number_of_sections` preserves the declared count.
 
 | Object | Fields |
 | --- | --- |
-| `pe` | `is_pe`, `machine`, `number_of_sections`, `timestamp`, `pointer_to_symbol_table`, `number_of_symbols`, `size_of_optional_header`, `characteristics` |
+| `pe` | `is_pe`, `machine`, `number_of_sections`, `timestamp`, `pointer_to_symbol_table`, `number_of_symbols`, `size_of_optional_header`, `characteristics`, `declared_extent`, `input_truncated` |
 | `pe` optional header | `entry_point`, `entry_point_raw`, `image_base`, `number_of_rva_and_sizes`, `opthdr_magic`, `size_of_code`, `size_of_initialized_data`, `size_of_uninitialized_data`, `base_of_code`, `base_of_data`, `section_alignment`, `file_alignment`, `win32_version_value`, `size_of_image`, `size_of_headers`, `checksum`, `subsystem`, `dll_characteristics`, `size_of_stack_reserve`, `size_of_stack_commit`, `size_of_heap_reserve`, `size_of_heap_commit`, `loader_flags` |
 | `pe` standard exports | `number_of_exports`, `export_timestamp`, `dll_name` |
 | `pe.export_details[i]` | `ordinal`, `rva`, `offset`, `name`, `forward_name` |
@@ -593,13 +593,52 @@ This preserves the adapter's existing strict-header compatibility boundary.
 
 ## Address mapping
 
-`entry_point_raw` is the entry-point RVA from the optional header.
-`entry_point` is its file offset, or `-1` if it doesn't map to a file byte.
-The latter follows libyara 4.5.8's file-scan policy, including alignment rounding
+**Field naming (`entry_point` vs `entry_point_raw`)**: `entry_point` is the
+mapped **file offset** (`-1` if unmapped or past `filesize`), whereas
+`entry_point_raw` is the raw **RVA** (`AddressOfEntryPoint`) from the optional
+header — matching libyara's runtime behavior even though callers sometimes expect
+the reverse from the word `raw`.
+
+`entry_point` follows libyara 4.5.8's file-scan policy, including alignment rounding
 and selection of overlapping sections. This policy belongs to the adapter;
 go-pe retains its own RVA mapping contract. Import and export metadata use
 go-pe's mapping, including first-section precedence, unrounded raw offsets, and strict
 raw-data bounds. These policies can differ from libyara on unusual layouts.
+
+### Managed (.NET / CLR) images and native entry-point rules
+
+`pe.is_dotnet()` returns `1` when the optional header declares a non-empty CLR
+runtime directory (`data_directories[pe.IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR]`
+has both non-zero `virtual_address` and non-zero `size`), `0` for non-CLR PE
+images, and `undefined` for non-PE or rejected inputs. With `WithModuleData`,
+it reads `data_directories[14]` and returns `undefined` if `data_directories` is
+absent or malformed.
+
+CLR/.NET assemblies commonly set `AddressOfEntryPoint` (`pe.entry_point_raw`)
+to `0` because execution transfers through the CLR runtime stub. Because RVA `0`
+maps directly to file offset `0` in `SizeOfHeaders`, both libyara and `go-yara`
+report `pe.entry_point == 0`. A naive "entry point outside all sections" rule
+that only guards `pe.entry_point != -1` will therefore fire on every managed
+DLL. Combine `not pe.input_truncated` and `not pe.is_dotnet()` (or check
+`pe.data_directories[pe.IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR].size == 0` when
+writing cross-engine rules for libyara):
+
+```yara
+import "pe"
+
+rule NativeEntryPointOutsideSections {
+    condition:
+        pe.is_pe and
+        not pe.input_truncated and
+        not pe.is_dotnet() and
+        pe.entry_point_raw != 0 and
+        pe.entry_point != -1 and
+        for all s in pe.sections : (
+            pe.entry_point < s.raw_data_offset or
+            pe.entry_point >= s.raw_data_offset + s.raw_data_size
+        )
+}
+```
 
 All scan APIs use file semantics. Block offsets are file offsets, not process
 virtual addresses. The adapter reads headers from the block at offset zero
@@ -623,14 +662,28 @@ libyara accepts some of these malformed layouts and can expose partial results.
 This implementation does not claim parity for them. Tests record these
 intentional differences separately from differential parity checks.
 
-`Scan`, `ScanWithContext`, and `ScanFile` make the complete input available.
+`Scan`, `ScanWithContext`, and `ScanFile` make the entire supplied byte buffer
+available. If you intentionally call `Scan(prefix)` with a truncated prefix
+(such as the first 64 KiB of a larger binary), `filesize` equals `len(prefix)`,
+section headers keep their declared `raw_data_offset` / `raw_data_size`, and
+RVAs targeting bytes past `len(prefix)` map `pe.entry_point` to `-1`. Without a
+truncation guard, rules testing `pe.entry_point < s.raw_data_offset` or section
+extent bounds can invert on clean binaries. Check `not pe.input_truncated`
+(`pe.declared_extent <= filesize`) before trusting entry-point containment or
+declared section extents (`pe.declared_extent` reports the highest byte offset
+declared across headers, `size_of_headers`, exposed section raw ranges, and the
+certificate directory; `pe.input_truncated` is `1` when `filesize <
+pe.declared_extent` and `0` otherwise, or `undefined` for non-PE inputs).
 `ScanReader`, `ScanReaderWithContext`, `MatchesReader`, and
 `MatchesReaderWithContext` retain only the first 64 KiB, as they do for integer
 reads. PE headers, section tables, and COFF names must fit in that prefix for
-the image to be recognized. Import descriptors, lookup tables, and names must
-also fit there for import fields to be defined. Export tables and names must fit
-there for export fields to be defined. Target offset bounds and overlay extents
-use the full stream length.
+the image to be recognized, import descriptors and names must fit there for
+import fields to be defined, and export tables and names must fit there for
+export fields to be defined. Target offset bounds, overlay extents, and
+`filesize` still use the full stream length, so `pe.input_truncated` stays `0`
+on complete streams whose headers fit in 64 KiB. For cross-engine libyara rules
+without `pe.input_truncated`, require
+`for all s in pe.sections : (s.raw_data_offset + s.raw_data_size <= filesize)`.
 
 `ScanFileWithContext` uses the same bounded reader fallback when its context is
 cancellable (`ctx.Done() != nil`) and the file isn't memory-mapped. It attempts
