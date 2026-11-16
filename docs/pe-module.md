@@ -19,19 +19,23 @@ rule WritableExecutableSection {
 ```
 
 The module implements headers, sections, section lookup, RVA-to-file-offset
-mapping, overlay metadata, full-file PE checksum calculation, standard import
-and export metadata, import and export queries by name, ordinal, or regex, the
-standard import hash under
+mapping, overlay metadata, `declared_extent` / `input_truncated` bounds under
+[#501](https://github.com/cawalch/go-yara/issues/501), `is_dotnet()` under
+[#502](https://github.com/cawalch/go-yara/issues/502), full-file PE checksum
+calculation, standard import and export metadata, import and export queries by
+name, ordinal, or regex, the standard import hash under
 [#359](https://github.com/cawalch/go-yara/issues/359), resource metadata and
 locale queries under [#474](https://github.com/cawalch/go-yara/issues/474),
 version-information resources under
-[#475](https://github.com/cawalch/go-yara/issues/475), Authenticode signature
+[#475](https://github.com/cawalch/go-yara/issues/475), Rich headers under
+[#508](https://github.com/cawalch/go-yara/pull/508), CodeView `pdb_path` under
+[#509](https://github.com/cawalch/go-yara/pull/509), Authenticode signature
 metadata under [#478](https://github.com/cawalch/go-yara/issues/478), and
 offline Authenticode integrity verification under
 [#481](https://github.com/cawalch/go-yara/issues/481).
-Delayed imports, flagged import queries, Rich headers, PDB paths,
-`valid_on(timestamp)`, and `file_digest` remain unsupported and fail
-compilation.
+Delayed imports, flagged import queries, single-argument/mixed regex
+`pe.imports`, `signatures[i].valid_on(timestamp)`, and
+`signatures[i].file_digest` remain unsupported and fail compilation.
 
 ## Supported fields
 
@@ -295,6 +299,7 @@ import "pe"
 
 rule KnownImportHash {
     condition:
+        pe.number_of_imports > 0 and
         pe.imphash() == "52ee6f8c06f82c1a4906c4287b38a731"
 }
 ```
@@ -306,8 +311,13 @@ imports keep their spelling. Ordinal imports use frozen `ws2_32.dll`,
 `wsock32.dll`, and `oleaut32.dll` alias tables from libyara 4.5.8, falling back
 to `ordN`; ordinary import/display-name synthesis is not used for the hash.
 
-A valid PE with no imports hashes the empty sequence
-(`d41d8cd98f00b204e9800998ecf8427e`). Non-PE input, rejected import metadata, or
+A valid PE with no standard imports hashes the empty sequence and returns
+`md5("")` (`d41d8cd98f00b204e9800998ecf8427e`), matching libyara. Guard rules
+with `pe.number_of_imports > 0` when matching against an allowlist or checking
+unknown import hashes so import-less, resource-only, .NET, or packed images do
+not unintentionally match on the empty-sequence hash
+([#504](https://github.com/cawalch/go-yara/issues/504)). Non-PE input, rejected
+import metadata, or
 an unavailable host snapshot leaves the value undefined. With `WithModuleData`,
 the supplied `import_details` array is hashed in the same way; a missing array
 is undefined, while an empty array hashes the empty sequence. Delayed imports

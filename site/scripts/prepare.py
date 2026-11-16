@@ -87,10 +87,14 @@ def prepare(ref, check_only):
         if not release_section:
             raise ValueError(f"No dated changelog section for {version}")
         serialization = (source / "compiler/serialization.go").read_text()
-        reader_guard = re.search(r"if (version != .*?) \{", serialization)
-        if not reader_guard or "compiledProgramVersion" not in reader_guard[1]:
-            raise ValueError("Serialization reader changed; update the reference extraction after review")
-        readable_formats = sorted({catalog["format"], *map(int, re.findall(r"version != (\d+)", reader_guard[1]))})
+        range_guard = re.search(r"if version < (\d+) \|\| version > compiledProgramVersion \{", serialization)
+        if range_guard:
+            readable_formats = list(range(int(range_guard[1]), catalog["format"] + 1))
+        else:
+            reader_guard = re.search(r"if (version != .*?) \{", serialization)
+            if not reader_guard or "compiledProgramVersion" not in reader_guard[1]:
+                raise ValueError("Serialization reader changed; update the reference extraction after review")
+            readable_formats = sorted({catalog["format"], *map(int, re.findall(r"version != (\d+)", reader_guard[1]))})
         generated = SITE / "src/generated"
         generated.mkdir(parents=True, exist_ok=True)
         metadata = {"version": version, "goVersion": go_version,

@@ -15,13 +15,13 @@ import release from '../../generated/release.json';
 
 Compile a rule set once and reuse the program across scans. Host modules expose application data to rules alongside the input bytes.
 
-The engine supports text strings, hex patterns, regular expressions, and the built-in `hash`, `math`, `string`, and `time` modules. It also provides structured host modules and [optional evidence extraction](/go-yara/scanning/#credential-evidence-and-validation) for credential-scanning workflows.
+The engine supports text strings, hex patterns, regular expressions, and the built-in `hash`, `math`, `string`, `time`, and pure-Go `pe` modules (`pe` added in v0.10.0; see [PE module coverage](https://github.com/cawalch/go-yara/blob/main/docs/pe-module.md)). It also provides structured host modules and [optional evidence extraction](/go-yara/scanning/#credential-evidence-and-validation) for credential-scanning workflows.
 
 <span id="check-your-rules-before-migrating"></span>
 
 ## Compatibility
 
-Native `pe` and `elf` parsers are not bundled, and go-yara has extensions that libyara does not accept. The [compatibility guide](/go-yara/compatibility/) identifies those boundaries. Test your rule corpus and expected matches before replacing another engine.
+Native `elf`, `cuckoo`, and `dotnet` modules are not bundled, and go-yara has extensions that libyara does not accept. The [compatibility guide](/go-yara/compatibility/) identifies those boundaries. Test your rule corpus and expected matches before replacing another engine.
 
 `ScanReader` uses a bounded sliding input window, while retained occurrences and result data can grow with matches. Block scanning retains supplied blocks. See [input APIs](/go-yara/scanning/#input-apis) for memory use and condition evaluation.
 
