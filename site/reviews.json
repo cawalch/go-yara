@@ -53,6 +53,20 @@
       "cli",
       "releases"
     ],
-    "notes": "Release prose review against f338a4f (#443), finalized for v0.9.0 on 2026-11-02. Reviewed all nine pages: format 18/readers 4\u201318, source recompilation and rollback caches, regex/undefined/fixed-offset correctness, reader horizons and error handling, bounded input versus growing results, result-owned evidence, bounded regex and SIMD eligibility, and per-change benchmark limits. Go 1.26.0, default CLI packaging, module/API coverage, and CLI streaming scope remain unchanged. New behavior is explicitly marked as release preparation while the generated release is v0.8.2. The dated external-engine comparison remains attributed to its original versions and review date; no new comparison is claimed. The dated changelog and README upgrade guidance are finalized; the conditional preparation notices disappear when generated reference data moves to format 18."
+    "notes": "Release prose review against f338a4f (#443), finalized for v0.9.0 on 2026-11-02. Reviewed all nine pages: format 18/readers 4–18, source recompilation and rollback caches, regex/undefined/fixed-offset correctness, reader horizons and error handling, bounded input versus growing results, result-owned evidence, bounded regex and SIMD eligibility, and per-change benchmark limits. Go 1.26.0, default CLI packaging, module/API coverage, and CLI streaming scope remain unchanged. New behavior is explicitly marked as release preparation while the generated release is v0.8.2. The dated external-engine comparison remains attributed to its original versions and review date; no new comparison is claimed. The dated changelog and README upgrade guidance are finalized; the conditional preparation notices disappear when generated reference data moves to format 18."
+  },
+  "v0.10.0": {
+    "pages": [
+      "index",
+      "quickstart",
+      "installation",
+      "scanning",
+      "compatibility",
+      "modules",
+      "performance",
+      "cli",
+      "releases"
+    ],
+    "notes": "Release prose review against main (#532 + release doc sync) on 2026-11-15 for v0.10.0. Reviewed all nine pages: Go 1.27.0 requirement, format 20 / readers 4–20, byte-deterministic serialization and corrupt-artifact validation, pure-Go pe module backed by go-pe (with pe.number_of_imports > 0 imphash guard and remaining unsupported ELF/Cuckoo/.NET/delayed-import/valid_on/file_digest boundaries), WithBorrowedEvidence aliasing lifetime and streaming JSON encoders, WithStrictLibyaraCompatibility, and scoped v0.10.0 performance changes (#449, #450, #482, #531). Updated release notes and conditional release-preparation banners for release.format < 20 so site builds cleanly before and after tagging v0.10.0."
   }
 }

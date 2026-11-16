@@ -56,11 +56,22 @@ These limits apply to an individual automaton, not the total number of rules. In
 
 See the <a href={source('compiler/teddy_simd_arm64.go')}>ARM64 filter</a>, <a href={source('compiler/teddy_simd_amd64.go')}>amd64 filter</a>, and [SIMD build instructions](/go-yara/installation/#optional-simd-build). Compare scalar and SIMD builds on the same CPU with the same rules.
 
+<span id="v0100-performance-changes"></span>
+
+## v0.10.0 performance changes
+
+{release.format < 20 && <p><strong>Release preparation:</strong> the following optimizations are on main for v0.10.0 and are not included in the documented {release.version} release.</p>}
+
+- **Unused module setup:** The compiler caches the immutable built-in registry, semantic signatures, schemas, and function-ID bindings, and serializes only module functions referenced by each rule ([#482](https://github.com/cawalch/go-yara/pull/482)). Text-only compilation drops from 88.47 KiB / 507 allocations to 62.57 KiB / 195 allocations on Go 1.26.9 and 1.27.3, and non-PE scans keep zero PE parser or heap overhead.
+- **Entropy-weighted atom selection and two-tier prefilter gating:** Prefix selection weights Shannon entropy, character-class diversity, and corpus-wide inverse document frequency, and large non-text corpora with complete shared prefilters evaluate root transitions directly before resetting pattern state ([#450](https://github.com/cawalch/go-yara/pull/450)). In that 10,000-rule synthetic benchmark suite, saturated-atom rejection improves from 121.9 µs to 393 ns, match scans from 114.7 µs to 678 ns, and clean log prefilter rejection from 181.4 ns to 46.8 ns.
+- **Borrowed evidence and streaming JSON:** `WithBorrowedEvidence(true)` aliases `Capture.Data` into input slices and reuses pooled evidence containers, cutting the match-heavy evidence benchmark from 1,053 to 20 allocations/op; `AppendEvidenceJSON` and `WriteEvidenceJSON` encode findings without reflection ([#449](https://github.com/cawalch/go-yara/pull/449)).
+- **Verification, jump-scan, and serialization hotpaths:** Unreachable hex jumps skip the fallback full-buffer scan, verification reuses pooled size-classed `MatchContext` buffers, and deterministic `MarshalBinary` encoding eliminates intermediate sort/map regressions ([#531](https://github.com/cawalch/go-yara/pull/531)).
+
+Measure these changes on your own rule corpus and input distribution; synthetic microbenchmarks do not establish uniform whole-corpus gains.
+
 <span id="v090-performance-changes"></span>
 
 ## v0.9.0 performance changes
-
-{release.format < 18 && <p><strong>Release preparation:</strong> the following optimizations are on main for v0.9.0 and are not included in the documented {release.version} release.</p>}
 
 The compiler can choose less-shared regex prefix windows and rarer fixed-offset mandatory atoms. Eligible terminal bounded classes use direct byte counting; compatible groups of 4–64 bounded acyclic regexes share consuming transitions. Captures, assertions, cycles, wide/fullword matching, and over-budget groups retain the existing verifier where these plans do not support them. These optimizations preserve match selection rather than changing rule semantics.
 

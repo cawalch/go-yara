@@ -15,9 +15,11 @@ Modules make functions and typed data available to rule conditions. Import a bui
 
 ## Built-in signatures
 
-Signatures from the release's module registry:
+Signatures from the release's `hash`, `math`, `string`, and `time` module registry:
 
 <ModuleTable />
+
+Starting in v0.10.0, the built-in pure-Go `pe` module adds PE32/PE32+ header, section, RVA/overlay, `declared_extent`/`input_truncated`, `is_dotnet()`, `is_dll()`, `is_32bit()`/`is_64bit()`, full-file checksum, standard import/export and regex query, `imphash()`, resource, `version_info`, Rich header, CodeView `pdb_path`, and Authenticode metadata/offline verification fields without CGO; non-PE rules incur zero PE allocation or parse overhead. See [PE module coverage and limits](https://github.com/cawalch/go-yara/blob/main/docs/pe-module.md) for all signatures, host snapshot rules, and the `pe.number_of_imports > 0` guard recommended with `pe.imphash()`.
 
 <span id="read-the-arguments"></span>
 

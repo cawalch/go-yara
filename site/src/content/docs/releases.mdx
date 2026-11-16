@@ -10,17 +10,21 @@ import ArchitectureDiagram from '../../components/ArchitectureDiagram.astro';
 
 <p>These docs describe <a href={`https://github.com/cawalch/go-yara/releases/tag/${release.version}`}>{release.version}</a>, released on {release.date}. It requires Go {release.goVersion} or later.</p>
 
-## Upgrade to v0.9.0
+## Upgrade to v0.10.0
 
-{release.format < 18 && <p><strong>Not yet released.</strong> These notes describe the planned v0.9.0 release. The installation commands and playground still use the published {release.version} release.</p>}
+{release.format < 20 && <p><strong>Not yet released.</strong> These notes describe the planned v0.10.0 release. The installation commands and playground still use the published {release.version} release.</p>}
+
+v0.10.0 raises the minimum toolchain requirement to **Go 1.27.0**, adds a pure-Go `pe` module backed by `go-pe`, introduces borrowed evidence (`WithBorrowedEvidence`) and reflection-free streaming JSON encoders, adds `WithStrictLibyaraCompatibility(true)` and `of`/`for` expression quantifiers, makes `MarshalBinary` / `WriteTo` byte-deterministic, and adds compiled-artifact validation (`ErrCorruptProgram`) alongside prefilter and verification hotpath optimizations.
+
+New compiled artifacts use **format 20** (adding `ModuleRegex` / `OpPushRegex` in format 19 and deterministic sorted map encodings in format 20). The reader accepts formats **4–20**, while `v0.9.0` writes format **18** and cannot read format **20** artifacts. Recompile rules from source to gain deterministic serialization digests and artifact integrity checks, and keep separate caches during rollout and rollback.
+
+Native `elf`, `cuckoo`, and `dotnet` modules and general cyclic combined-NFA execution remain outside this release. Rules matching `pe.imphash()` should guard with `pe.number_of_imports > 0` when import-less binaries must not match on `md5("")`. See the [v0.10.0 performance notes](/go-yara/performance/#v0100-performance-changes) for scope and tradeoffs.
+
+## Changes in v0.9.0
 
 v0.9.0 focuses on regex occurrence correctness, streaming boundaries and read errors, lower evidence allocation, and faster compilation. Regex fixes cover greedy/lazy repetition, alternatives, anchors, wide/fullword matching, and verification bounds. Compare counts, offsets, lengths, and final rule outcomes when upgrading; a boolean-only check can miss a changed occurrence.
 
-New compiled artifacts use format **18**, compared with format **7** in v0.8.2. The new reader accepts formats 4–18, but v0.8.2 cannot read format 18. Recompile rules from source to obtain the corrected bytecode and verification metadata. Preserve separate caches for the old and new binaries during rollout and rollback. Custom module handlers, external variables, and host data still need rebinding after loading.
-
-Legacy unbounded regex artifacts without a finite verification horizon need recompilation or an explicit `WithMaxMatchSpan` for reader scans. The Go requirement stays at 1.26.0. Prebuilt CLI binaries use the default build; optional SIMD acceleration requires Go 1.27+ and `GOEXPERIMENT=simd`.
-
-The [performance changes](/go-yara/performance/#v090-performance-changes) have specific eligibility limits. Native PE/ELF parsing, general cyclic combined-NFA execution, and borrowed evidence remain outside this release. The proposed follow-up for `filesize` candidate pruning is not included.
+v0.9.0 compiled artifacts use format **18**, compared with format **7** in v0.8.2; legacy unbounded regex artifacts without a finite verification horizon need recompilation or an explicit `WithMaxMatchSpan` for reader scans. Prebuilt CLI binaries use the default build; optional SIMD acceleration uses `GOEXPERIMENT=simd`. See the [v0.9.0 performance changes](/go-yara/performance/#v090-performance-changes) for eligibility limits.
 
 ## Changes in v0.8.2
 
