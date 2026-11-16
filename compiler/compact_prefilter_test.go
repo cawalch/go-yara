@@ -386,7 +386,8 @@ func TestCompactPrefilterFanoutAndSinglePass(t *testing.T) {
 		t.Fatalf("compact mask calls on match = %d, want 1", compactCalls)
 	}
 
-	// Non-fanout mixed corpus must skip the redundant compact mask pass during Matches/MatchingRules.
+	// Non-fanout mixed corpus must skip the redundant compact mask pass on >=256B
+	// events during Matches/MatchingRules.
 	mixedProgram, err := NewCompiler().CompileSource(highEPSRuleSource("mixed", 64))
 	if err != nil {
 		t.Fatal(err)
@@ -397,8 +398,8 @@ func TestCompactPrefilterFanoutAndSinglePass(t *testing.T) {
 	mixedScanner := mixedProgram.NewScanner(WithHooks(hooks))
 	defer mixedScanner.Close()
 	for _, input := range [][]byte{
-		[]byte(`{"msg":"clean event"}`),
-		[]byte(`{"msg":"sig_00001=AB123456"}`),
+		highEPSJSONEvent(256, 1, ""),
+		highEPSJSONEvent(256, 1, " sig_00001=AB123456"),
 	} {
 		compactCalls = 0
 		if _, err := mixedScanner.Matches(input); err != nil {

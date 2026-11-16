@@ -113,7 +113,13 @@ func (cp *CompiledProgram) buildCompactPrefilter() *compactPrefilter {
 
 func (s *Scanner) compactPrefilterFanoutRejects(ctx context.Context, data []byte) bool {
 	gate := s.program.compactPrefilter
-	if gate == nil || !gate.fanoutUseful {
+	if gate == nil {
+		return false
+	}
+	// Non-fanout gates only amortize preparePatternScan setup on short (<256B)
+	// inputs with 16-bit tables; >=256B inputs go straight to sharedAutomaton
+	// where Teddy SIMD and single-pass candidate routing apply.
+	if !gate.fanoutUseful && (len(data) >= 256 || len(gate.automaton.transitions16) == 0) {
 		return false
 	}
 	return s.compactPrefilterRejects(ctx, data)
