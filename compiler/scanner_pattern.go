@@ -40,7 +40,7 @@ func (s *Scanner) extractGlobalMatchesInt(
 		if fastSeen == nil {
 			fastSeen = make(map[uint64]bool)
 			s.fastSeen = fastSeen
-		} else {
+		} else if len(fastSeen) > 0 {
 			clear(fastSeen)
 		}
 	}

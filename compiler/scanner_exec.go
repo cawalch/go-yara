@@ -113,8 +113,9 @@ func (s *Scanner) recordAllRulesRejected(ctx context.Context, result *ScanResult
 }
 
 func (s *Scanner) rejectAllRules(ctx context.Context, result *ScanResult, scanInput ruleScanInput) error {
-	clear(s.ruleResultsDense)
+	s.clearRuleResultsIfDirty()
 	if err := s.recordAllRulesRejected(ctx, result, scanInput); err != nil {
+		s.clearRuleResultsIfDirty()
 		return err
 	}
 	s.recordScanRejection(result)
@@ -181,7 +182,7 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (result *Sca
 	}
 
 	s.resetScanState()
-	if s.reportedMatchesOnly && s.compactPrefilterRejects(ctx, data) {
+	if s.reportedMatchesOnly && s.compactPrefilterFanoutRejects(ctx, data) {
 		scanInput := ruleScanInput{data: data, usesharedAutomaton: false, skipUnmatchedContext: true}
 		if err := s.rejectAllRules(ctx, result, scanInput); err != nil {
 			return nil, err
@@ -223,7 +224,8 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (result *Sca
 		}
 		return result, nil
 	}
-	clear(s.ruleResultsDense)
+	s.clearRuleResultsIfDirty()
+	defer s.clearRuleResultsIfDirty()
 
 	// YARA spec: global rules are evaluated first and ALL must match
 	// before non-global rules are evaluated.
@@ -376,7 +378,7 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (result *Sca
 				switch action {
 				case MatchActionStopScan:
 					result.MatchedRules = append(result.MatchedRules, ruleMatch)
-					clear(s.ruleResultsDense)
+					s.clearRuleResultsIfDirty()
 
 					return result, nil
 				case MatchActionSkipRule:
@@ -388,7 +390,7 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (result *Sca
 		}
 	}
 
-	clear(s.ruleResultsDense)
+	s.clearRuleResultsIfDirty()
 	return result, nil
 }
 
@@ -397,17 +399,25 @@ func (s *Scanner) evaluatePublicRules(
 	data []byte,
 	matchedRuleIndices *[]int,
 ) (publicRuleEvaluation, error) {
-	done := ctx.Done()
-	s.resetScanState()
-	if s.compactPrefilterRejects(ctx, data) {
+	if s.compactPrefilterFanoutRejects(ctx, data) {
 		if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
 			s.telemetrySink.PrefilterRejects++
 		}
-		if scanCanceled(done) {
+		if scanCanceled(ctx.Done()) {
 			return publicRuleEvaluation{}, ctx.Err()
 		}
 		return publicRuleEvaluation{}, nil
 	}
+	return s.evaluatePublicRulesAfterCompact(ctx, data, matchedRuleIndices)
+}
+
+func (s *Scanner) evaluatePublicRulesAfterCompact(
+	ctx context.Context,
+	data []byte,
+	matchedRuleIndices *[]int,
+) (publicRuleEvaluation, error) {
+	done := ctx.Done()
+	s.resetScanState()
 	s.skipUnmatchedNonText = true
 	usesharedAutomaton, err := s.preparePatternScan(ctx, data)
 	if err != nil {

@@ -97,6 +97,7 @@ func (s *Scanner) executeCondition(rule *CompiledRule) error {
 		previous := s.enterScanPhase(PhaseRuleCondition)
 		defer s.leaveScanPhase(previous)
 	}
+	s.ruleResultsDirty = true
 	s.prepareInterpreter(rule)
 	s.interp.SetItersmax(s.itersmax)
 	return s.interp.Execute()

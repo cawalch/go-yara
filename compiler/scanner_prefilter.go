@@ -37,7 +37,12 @@ const (
 
 func (s *Scanner) recordRuleResult(rule *CompiledRule, matched bool) {
 	if rule.Index >= 0 && rule.Index < len(s.ruleResultsDense) {
-		s.ruleResultsDense[rule.Index] = matched
+		if matched {
+			s.ruleResultsDense[rule.Index] = true
+			s.ruleResultsDirty = true
+		} else if s.ruleResultsDirty {
+			s.ruleResultsDense[rule.Index] = false
+		}
 	}
 }
 
@@ -172,9 +177,18 @@ func (s *Scanner) ruleHeaderConstraintsMatchInput(ctx context.Context, rule *Com
 
 func (s *Scanner) preparePatternScan(ctx context.Context, data []byte) (bool, error) {
 	if s.hookMask&hookBitTelemetryLatency != 0 {
-		previous := s.enterScanPhase(PhasePatternSearch)
-		defer s.leaveScanPhase(previous)
+		return s.preparePatternScanWithLatency(ctx, data)
 	}
+	return s.preparePatternScanCore(ctx, data)
+}
+
+func (s *Scanner) preparePatternScanWithLatency(ctx context.Context, data []byte) (bool, error) {
+	previous := s.enterScanPhase(PhasePatternSearch)
+	defer s.leaveScanPhase(previous)
+	return s.preparePatternScanCore(ctx, data)
+}
+
+func (s *Scanner) preparePatternScanCore(ctx context.Context, data []byte) (bool, error) {
 	s.moduleCache.reset()
 	s.sharedNonTextMatched = false
 	s.nonTextCache.reset(s.program.nonTextCacheSize)
@@ -193,14 +207,19 @@ func (s *Scanner) preparePatternScan(ctx context.Context, data []byte) (bool, er
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
-	started := s.prefilterStart()
+	var started time.Time
+	if s.hookMask&hookBitPrefilter != 0 {
+		started = s.prefilterStart()
+	}
 	if err := s.extractGlobalMatchesInt(ctx, data); err != nil {
 		return false, err
 	}
 	if s.hookMask&(hookBitTelemetry|hookBitRuleProfile|hookBitPatternProfile) != 0 {
 		s.collectSharedProfileCandidates()
 	}
-	s.finishPrefilter(PrefilterDecision{Stage: PrefilterStagesharedAutomaton, Rejected: len(s.candidateRuleIndices) == 0, CandidateCount: len(s.candidateRuleIndices)}, started)
+	if s.hookMask&hookBitPrefilter != 0 {
+		s.finishPrefilter(PrefilterDecision{Stage: PrefilterStagesharedAutomaton, Rejected: len(s.candidateRuleIndices) == 0, CandidateCount: len(s.candidateRuleIndices)}, started)
+	}
 	return true, nil
 }
 

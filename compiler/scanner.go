@@ -64,6 +64,7 @@ type Scanner struct {
 	allEvaluatedRulesRequireSharedPatterns bool
 	sharedNonTextMatched                   bool
 	skipUnmatchedNonText                   bool
+	ruleResultsDirty                       bool
 	alwaysEvaluateSharedRules              []int
 	evaluatedGlobalRules                   []int
 	// Candidate rule indices are deduplicated and sorted before sparse exact
@@ -478,6 +479,13 @@ func (s *Scanner) resetCandidateRules(size int) {
 	s.candidateRuleIndices = s.candidateRuleIndices[:0]
 	for _, index := range s.alwaysEvaluateSharedRules {
 		s.markCandidateRule(index)
+	}
+}
+
+func (s *Scanner) clearRuleResultsIfDirty() {
+	if s.ruleResultsDirty {
+		clear(s.ruleResultsDense)
+		s.ruleResultsDirty = false
 	}
 }
 

@@ -66,7 +66,7 @@ func (s *Scanner) MatchesWithContext(ctx context.Context, data []byte) (matched 
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
-	if s.compactPrefilterRejects(ctx, data) {
+	if s.compactPrefilterFanoutRejects(ctx, data) {
 		if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
 			s.telemetrySink.PrefilterRejects++
 		}
@@ -76,25 +76,32 @@ func (s *Scanner) MatchesWithContext(ctx context.Context, data []byte) (matched 
 		}
 		return false, nil
 	}
-	clear(s.ruleResultsDense)
-	defer func() {
-		clear(s.ruleResultsDense)
-	}()
+	s.clearRuleResultsIfDirty()
 	if s.hookMask&(hookBitTelemetry|hookBitScanLifecycle) != 0 {
-		start := s.beginScan(ctx, int64(len(data)))
-		defer func() {
-			count := 0
-			if matched {
-				count = 1
-			}
-			start.finish(nil, count, err)
-		}()
+		return s.matchesWithObservedLifecycle(ctx, data)
 	}
+	return s.matchesUnobserved(ctx, data)
+}
 
+func (s *Scanner) matchesWithObservedLifecycle(ctx context.Context, data []byte) (matched bool, err error) {
+	start := s.beginScan(ctx, int64(len(data)))
+	defer func() {
+		count := 0
+		if matched {
+			count = 1
+		}
+		start.finish(nil, count, err)
+	}()
+	return s.matchesUnobserved(ctx, data)
+}
+
+func (s *Scanner) matchesUnobserved(ctx context.Context, data []byte) (bool, error) {
 	if matched, handled, err := s.matchBooleanRouting(ctx, data); handled || err != nil {
+		s.clearRuleResultsIfDirty()
 		return matched, err
 	}
-	evaluation, err := s.evaluatePublicRules(ctx, data, nil)
+	evaluation, err := s.evaluatePublicRulesAfterCompact(ctx, data, nil)
+	s.clearRuleResultsIfDirty()
 	if err != nil {
 		return false, err
 	}
@@ -132,16 +139,16 @@ func (s *Scanner) MatchingRulesWithContext(ctx context.Context, data []byte) (ma
 		defer func() { start.finishRuleList(matches, err) }()
 	}
 
-	clear(s.ruleResultsDense)
-	defer func() {
-		clear(s.ruleResultsDense)
-	}()
+	s.clearRuleResultsIfDirty()
 	s.matchedRuleIndices = s.matchedRuleIndices[:0]
 	evaluation, err := s.evaluatePublicRules(ctx, data, &s.matchedRuleIndices)
 	if err != nil {
+		s.clearRuleResultsIfDirty()
 		return nil, err
 	}
-	return s.materializeMatchingRules(ctx, data, evaluation)
+	matches, err = s.materializeMatchingRules(ctx, data, evaluation)
+	s.clearRuleResultsIfDirty()
+	return matches, err
 }
 
 // ScanReader reads from the reader and scans the data.

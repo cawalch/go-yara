@@ -482,7 +482,7 @@ func (s *Scanner) evaluateStreamMatches(
 		Matches:      matches,
 	}
 
-	clear(s.ruleResultsDense)
+	s.clearRuleResultsIfDirty()
 	s.matchedRuleIndices = s.matchedRuleIndices[:0]
 	s.interp.ResetIterationCount()
 	s.moduleCache.reset()
@@ -616,7 +616,7 @@ func (s *Scanner) evaluateStreamMatches(
 			switch action {
 			case MatchActionStopScan:
 				result.MatchedRules = append(result.MatchedRules, ruleMatch)
-				clear(s.ruleResultsDense)
+				s.clearRuleResultsIfDirty()
 				return result, nil
 			case MatchActionSkipRule:
 				continue
@@ -629,13 +629,13 @@ func (s *Scanner) evaluateStreamMatches(
 			result.Matches[rule.Name] = ruleMatches
 		}
 		if s.streamEarlyTermination {
-			clear(s.ruleResultsDense)
+			s.clearRuleResultsIfDirty()
 			s.matchCtx.Reset(nil)
 			return result, nil
 		}
 	}
 
-	clear(s.ruleResultsDense)
+	s.clearRuleResultsIfDirty()
 	s.matchCtx.Reset(nil)
 	return result, nil
 }

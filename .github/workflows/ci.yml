@@ -16,34 +16,143 @@ env:
   GO_VERSION: "1.27.x"
 
 jobs:
-  lint:
-    name: Lint
+  changes:
+    name: Detect Changes
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 5
+    outputs:
+      go: ${{ steps.filter.outputs.go }}
+      engine: ${{ steps.filter.outputs.engine }}
+      fuzz: ${{ steps.filter.outputs.fuzz }}
+      fuzz_packages: ${{ steps.filter.outputs.fuzz_packages }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+
+      - name: Classify changed files
+        id: filter
+        run: |
+          set -euo pipefail
+          CHANGED=""
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+            CHANGED=$(git diff --name-only "${BASE_SHA}...${{ github.sha }}" || true)
+          elif [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
+            CHANGED=$(git diff --name-only "${{ github.event.before }}...${{ github.sha }}" || true)
+          else
+            CHANGED=$(git diff-tree --no-commit-id --name-only -r "${{ github.sha }}" || true)
+          fi
+
+          if [ -z "$CHANGED" ]; then
+            echo "go=true" >> "$GITHUB_OUTPUT"
+            echo "engine=true" >> "$GITHUB_OUTPUT"
+            echo "fuzz=true" >> "$GITHUB_OUTPUT"
+            echo "fuzz_packages=all" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Changed files:"
+          echo "$CHANGED"
+
+          GO_CHANGED=false
+          ENGINE_CHANGED=false
+          FUZZ_CHANGED=false
+          ALL_FUZZ=false
+          FUZZ_PKGS=""
+
+          add_fuzz_pkg() {
+            case ",$FUZZ_PKGS," in
+              *",$1,"*) ;;
+              *) FUZZ_PKGS="${FUZZ_PKGS:+$FUZZ_PKGS,}$1" ;;
+            esac
+          }
+
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            case "$file" in
+              *.go|go.mod|go.sum|Makefile|.golangci.yml|.github/workflows/ci.yml|scripts/*)
+                GO_CHANGED=true
+                ;;
+            esac
+            case "$file" in
+              compiler/*|regex/*|internal/*|go.mod|go.sum|.github/workflows/ci.yml|scripts/perf_gate.sh)
+                ENGINE_CHANGED=true
+                ;;
+            esac
+            case "$file" in
+              go.mod|go.sum|.github/workflows/ci.yml|scripts/fuzz_all.sh)
+                FUZZ_CHANGED=true
+                ALL_FUZZ=true
+                ;;
+              compiler/*)
+                FUZZ_CHANGED=true
+                add_fuzz_pkg "./compiler"
+                add_fuzz_pkg "./tests/integration"
+                ;;
+              regex/*)
+                FUZZ_CHANGED=true
+                add_fuzz_pkg "./regex"
+                add_fuzz_pkg "./compiler"
+                ;;
+              parser/*)
+                FUZZ_CHANGED=true
+                add_fuzz_pkg "./parser"
+                add_fuzz_pkg "./tests/integration"
+                ;;
+              semantic/*)
+                FUZZ_CHANGED=true
+                add_fuzz_pkg "./semantic"
+                add_fuzz_pkg "./compiler"
+                add_fuzz_pkg "./tests/integration"
+                ;;
+              ast/*|token/*)
+                FUZZ_CHANGED=true
+                add_fuzz_pkg "./parser"
+                add_fuzz_pkg "./semantic"
+                add_fuzz_pkg "./compiler"
+                ;;
+              internal/*)
+                FUZZ_CHANGED=true
+                add_fuzz_pkg "./compiler"
+                ;;
+              tests/*)
+                FUZZ_CHANGED=true
+                add_fuzz_pkg "./tests/integration"
+                ;;
+            esac
+          done <<< "$CHANGED"
+
+          if [ "${{ github.event_name }}" = "push" ] || [ "$ALL_FUZZ" = "true" ]; then
+            FUZZ_PKGS="all"
+          fi
+
+          echo "go=$GO_CHANGED" >> "$GITHUB_OUTPUT"
+          echo "engine=$ENGINE_CHANGED" >> "$GITHUB_OUTPUT"
+          echo "fuzz=$FUZZ_CHANGED" >> "$GITHUB_OUTPUT"
+          echo "fuzz_packages=${FUZZ_PKGS:-all}" >> "$GITHUB_OUTPUT"
+
+  lint:
+    name: Lint
+    needs: changes
+    if: ${{ needs.changes.outputs.go == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
           check-latest: true
-          cache: false
+          cache: true
 
-      - name: Cache Go modules
+      - name: Cache lint tools
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.mod', '**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
-
-      - name: Download dependencies
-        run: go mod download
+          path: ~/go/bin
+          key: ${{ runner.os }}-lint-tools-v2.15.0-v0.52.0
 
       - name: Run go vet
         run: go vet ./...
@@ -51,24 +160,23 @@ jobs:
       - name: Run repository analyzers
         run: make analyze
 
-      - name: Install golangci-lint
-        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
+      - name: Install lint tools
+        run: |
+          export PATH="$(go env GOPATH)/bin:$PATH"
+          command -v golangci-lint >/dev/null || go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
+          command -v goimports >/dev/null || go install golang.org/x/tools/cmd/goimports@v0.52.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Run golangci-lint
-        run: |
-          golangci-lint run
+        run: golangci-lint run
 
-      - name: Check formatting
+      - name: Check formatting and imports
         run: |
           if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
             echo "The following files are not formatted:"
             gofmt -s -l .
             exit 1
           fi
-
-      - name: Check imports
-        run: |
-          go install golang.org/x/tools/cmd/goimports@v0.52.0
           if [ "$(goimports -l . | wc -l)" -gt 0 ]; then
             echo "The following files have import issues:"
             goimports -l .
@@ -86,41 +194,34 @@ jobs:
 
   test:
     name: Test
+    needs: changes
+    if: ${{ needs.changes.outputs.go == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    strategy:
-      matrix:
-        go-version: ["1.27.x"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: ${{ matrix.go-version }}
+          go-version: ${{ env.GO_VERSION }}
           check-latest: true
-          cache: false
-
-      - name: Cache Go modules
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ matrix.go-version }}-${{ hashFiles('**/go.mod', '**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-${{ matrix.go-version }}-
-
-      - name: Download dependencies
-        run: go mod download
+          cache: true
 
       # Ubuntu 24.04 ships 4.5.0, which predates the zero-length regex fixes
       # required by our 4.5.8 differential oracle contract.
+      - name: Cache libyara 4.5.8 oracle
+        id: yara-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/yara-oracle
+          key: ${{ runner.os }}-${{ runner.arch }}-libyara-4.5.8-84b0e3cc
+
       - name: Build libyara 4.5.8 oracle
+        if: ${{ steps.yara-cache.outputs.cache-hit != 'true' }}
         env:
           YARA_COMMIT: 84b0e3cc0e42f8f8e6b84d19c97ec3ac6ff8aee8 # v4.5.8
         run: |
-          # Hosted runners often already provide the full build toolchain.
           needs_build_deps=0
           for build_tool in cc make autoconf automake libtoolize pkg-config flex bison; do
             command -v "$build_tool" >/dev/null || needs_build_deps=1
@@ -135,37 +236,37 @@ jobs:
           git -C "$RUNNER_TEMP/yara-source" checkout --detach FETCH_HEAD
           cd "$RUNNER_TEMP/yara-source"
           ./bootstrap.sh
-          ./configure --disable-shared --prefix="$RUNNER_TEMP/yara-oracle"
-          make -j2
+          ./configure --disable-shared --prefix="$HOME/.cache/yara-oracle"
+          make -j"$(nproc)"
           make install
-          oracle_version=$("$RUNNER_TEMP/yara-oracle/bin/yara" --version)
+
+      - name: Configure libyara oracle PATH
+        run: |
+          oracle_version=$("$HOME/.cache/yara-oracle/bin/yara" --version)
           echo "libyara oracle: $oracle_version"
           test "$oracle_version" = "4.5.8"
-          echo "$RUNNER_TEMP/yara-oracle/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.cache/yara-oracle/bin" >> "$GITHUB_PATH"
 
-      - name: Run race tests
+      - name: Run race tests and coverage
         # The libyara-backed integration package can exceed Go's 10m default.
-        run: go test -race -timeout=15m ./...
-
-      - name: Run libyara differential oracle tests
-        run: go test -tags bugproof -race ./tests/integration/ -run TestBug
-
-      - name: Run coverage
-        run: go test -coverprofile=coverage.out ./...
+        run: go test -race -coverprofile=coverage.out -timeout=15m ./...
 
       - name: Check test coverage
         run: |
           TOTAL_COVERAGE=$(go tool cover -func=coverage.out | awk '/^total:/ {gsub("%", "", $3); print $3}')
-
           echo "Total statement coverage: ${TOTAL_COVERAGE}%"
-
           if awk "BEGIN {exit !($TOTAL_COVERAGE < 79)}"; then
             echo "Total statement coverage is below 79%"
             exit 1
           fi
 
+      - name: Run libyara differential oracle tests
+        run: go test -tags bugproof -race ./tests/integration/ -run TestBug
+
   simd:
     name: ${{ matrix.name }}
+    needs: changes
+    if: ${{ needs.changes.outputs.engine == 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -193,29 +294,66 @@ jobs:
       - name: Run race tests
         run: go test -race ./...
 
-      - name: Fuzz corpus prefilter
-        run: go test ./compiler -run '^$' -fuzz '^FuzzTeddyCorpus$' -fuzztime=10s -parallel=2
-
-      - name: Fuzz bounded character classes
+      - name: Fuzz corpus prefilter and regex SIMD plans
         run: |
+          go test ./compiler -run '^$' -fuzz '^FuzzTeddyCorpus$' -fuzztime=10s -parallel=2
           go test ./compiler -run '^$' -fuzz '^FuzzBoundedClass$' -fuzztime=10s -parallel=2
           go test ./compiler -run '^$' -fuzz '^FuzzBoundedClassVM$' -fuzztime=10s -parallel=2
+          go test ./compiler -run '^$' -fuzz '^FuzzCombinedRegex$' -fuzztime=10s -parallel=2
 
-      - name: Fuzz combined regex NFA
-        run: go test ./compiler -run '^$' -fuzz '^FuzzCombinedRegex$' -fuzztime=10s -parallel=2
-
-      - name: Test 128-bit SIMD searches
-        run: GODEBUG=simd=+128 go test ./compiler -run TestByteSearch -count=1
-
-      - name: Test scalar emulation fallback
-        run: GODEBUG=simd=0 go test ./compiler -run 'TestByteSearch|TestTeddy|TestBoundedClass' -count=1
+      - name: Test 128-bit SIMD and scalar fallbacks
+        run: |
+          GODEBUG=simd=+128 go test ./compiler -run TestByteSearch -count=1
+          GODEBUG=simd=0 go test ./compiler -run 'TestByteSearch|TestTeddy|TestBoundedClass' -count=1
 
       - name: Test AMD64 without AVX2
         if: runner.arch == 'X64'
         run: GODEBUG=cpu.avx2=off go test ./compiler -run 'TestByteSearch|TestTeddy|TestBoundedClass' -count=1
 
+  perf:
+    name: Performance Gate
+    needs: changes
+    if: ${{ needs.changes.outputs.engine == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache: true
+
+      - name: Cache benchstat
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/go/bin
+          key: ${{ runner.os }}-perf-tools-v1
+
+      - name: Install benchstat
+        run: |
+          export PATH="$(go env GOPATH)/bin:$PATH"
+          command -v benchstat >/dev/null || go install golang.org/x/perf/cmd/benchstat@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Run performance regression gate
+        run: |
+          BASE_SHA=""
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          elif [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
+            BASE_SHA="${{ github.event.before }}"
+          fi
+          ./scripts/perf_gate.sh ${BASE_SHA:+--base "$BASE_SHA"} --benchtime 100ms --count 6
+
   security:
     name: Security Scan
+    needs: changes
+    if: ${{ needs.changes.outputs.go == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -226,30 +364,31 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           check-latest: true
-          cache: false
+          cache: true
 
-      - name: Cache Go modules
+      - name: Cache security tools
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-security-${{ hashFiles('**/go.mod', '**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-security-
+          path: ~/go/bin
+          key: ${{ runner.os }}-security-tools-v2.30.0-v1.9.0
+
+      - name: Install security tools
+        run: |
+          export PATH="$(go env GOPATH)/bin:$PATH"
+          command -v gosec >/dev/null || go install github.com/securego/gosec/v2/cmd/gosec@v2.30.0
+          command -v govulncheck >/dev/null || go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Run security scan (gosec)
-        run: |
-          go install github.com/securego/gosec/v2/cmd/gosec@v2.30.0
-          gosec -exclude=G115,G204,G304,G703 ./...
+        run: gosec -exclude=G115,G204,G304,G703 ./...
 
       - name: Run vulnerability check (govulncheck)
-        run: |
-          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
-          govulncheck ./...
+        run: govulncheck ./...
 
   fuzz:
     name: Fuzz
+    needs: changes
+    if: ${{ needs.changes.outputs.fuzz == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -260,23 +399,10 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           check-latest: true
-          cache: false
-
-      - name: Cache Go modules
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-fuzz-${{ hashFiles('**/go.mod', '**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-fuzz-
-
-      - name: Download dependencies
-        run: go mod download
+          cache: true
 
       - name: Run fuzz gate
-        run: make fuzz FUZZTIME=10s
+        run: ./scripts/fuzz_all.sh --time 10s --packages "${{ needs.changes.outputs.fuzz_packages }}"
 
       - name: Upload fuzz artifacts
         if: failure()
@@ -292,34 +418,30 @@ jobs:
     name: Quality Gate
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    needs: [lint, test, simd, security, fuzz]
+    needs: [changes, lint, test, simd, security, fuzz, perf]
     if: ${{ always() && !cancelled() }}
     steps:
       - name: Check job results
         run: |
-          if [ "${{ needs.lint.result }}" != "success" ]; then
-            echo "❌ Lint job failed"
+          if [ "${{ needs.changes.result }}" != "success" ]; then
+            echo "❌ Change detection job failed"
             exit 1
           fi
 
-          if [ "${{ needs.test.result }}" != "success" ]; then
-            echo "❌ Test job failed"
-            exit 1
-          fi
+          check_job() {
+            local name="$1"
+            local result="$2"
+            if [ "$result" != "success" ] && [ "$result" != "skipped" ]; then
+              echo "❌ $name job failed (status: $result)"
+              exit 1
+            fi
+          }
 
-          if [ "${{ needs.security.result }}" != "success" ]; then
-            echo "❌ Security job failed"
-            exit 1
-          fi
+          check_job "Lint" "${{ needs.lint.result }}"
+          check_job "Test" "${{ needs.test.result }}"
+          check_job "Security" "${{ needs.security.result }}"
+          check_job "Experimental SIMD" "${{ needs.simd.result }}"
+          check_job "Performance Gate" "${{ needs.perf.result }}"
+          check_job "Fuzz" "${{ needs.fuzz.result }}"
 
-          if [ "${{ needs.simd.result }}" != "success" ]; then
-            echo "❌ Experimental SIMD job failed"
-            exit 1
-          fi
-
-          if [ "${{ needs.fuzz.result }}" != "success" ]; then
-            echo "❌ Fuzz job failed"
-            exit 1
-          fi
-
-          echo "✅ All quality checks passed!"
+          echo "✅ All applicable quality checks passed!"

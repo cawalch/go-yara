@@ -2,7 +2,8 @@
 set -euo pipefail
 
 # Default values
-FUZZTIME="30s"
+FUZZTIME="${FUZZTIME:-30s}"
+PACKAGES="${FUZZ_PACKAGES:-}"
 VERBOSE=false
 TOTAL_TARGETS=0
 FAILED_COUNT=0
@@ -14,12 +15,13 @@ while [[ "$#" -gt 0 ]]; do
     case $1 in
         -v|--verbose) VERBOSE=true ;;
         -t|--time) FUZZTIME="$2"; shift ;;
-        *) echo "usage: $0 [--time duration] [--verbose]" >&2; exit 2 ;;
+        -p|--packages) PACKAGES="$2"; shift ;;
+        *) echo "usage: $0 [--time duration] [--packages pkg1,pkg2] [--verbose]" >&2; exit 2 ;;
     esac
     shift
 done
 
-echo "🔍 Finding all fuzz targets in the repository..."
+echo "🔍 Finding fuzz targets in the repository..."
 
 # Find all packages with Fuzz functions
 PACKAGE_FILE="$LOG_DIR/packages.txt"
@@ -36,13 +38,28 @@ is_fuzz_deadline_race() {
         grep -Eq '^[[:space:]]+context deadline exceeded$' "$log_file"
 }
 
-while IFS= read -r -d '' file; do
-    if grep -q "func Fuzz" "$file"; then
-        dirname "$file"
-    fi
-done < <(find . -name "*_test.go" -not -path "*/.*" -print0) | sort -u > "$PACKAGE_FILE"
+if [ -n "$PACKAGES" ] && [ "$PACKAGES" != "all" ]; then
+    : > "$PACKAGE_FILE"
+    for pkg in ${PACKAGES//,/ }; do
+        pkg="${pkg#./}"
+        if [ -d "$pkg" ] && grep -rq "func Fuzz" "$pkg"/*_test.go 2>/dev/null; then
+            echo "./$pkg" >> "$PACKAGE_FILE"
+        fi
+    done
+    sort -u -o "$PACKAGE_FILE" "$PACKAGE_FILE"
+else
+    while IFS= read -r -d '' file; do
+        if grep -q "func Fuzz" "$file"; then
+            dirname "$file"
+        fi
+    done < <(find . -name "*_test.go" -not -path "*/.*" -print0) | sort -u > "$PACKAGE_FILE"
+fi
 
 if [ ! -s "$PACKAGE_FILE" ]; then
+    if [ -n "$PACKAGES" ] && [ "$PACKAGES" != "all" ]; then
+        echo "ℹ️  No fuzz targets in requested packages ($PACKAGES); skipping."
+        exit 0
+    fi
     echo "❌ No fuzz targets found."
     exit 1
 fi
