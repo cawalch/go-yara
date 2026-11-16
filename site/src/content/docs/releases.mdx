@@ -10,6 +10,10 @@ import ArchitectureDiagram from '../../components/ArchitectureDiagram.astro';
 
 <p>These docs describe <a href={`https://github.com/cawalch/go-yara/releases/tag/${release.version}`}>{release.version}</a>, released on {release.date}. It requires Go {release.goVersion} or later.</p>
 
+## Changes in v0.10.1
+
+v0.10.1 fixes `v0.10.0` high-EPS compact-prefilter, `ruleResultsDense` clear, and hot-path `defer` regressions on mixed literal/regex/hex corpora (see [v0.10.1 performance changes](/go-yara/performance/#v0101-performance-changes)), adds zero-allocation contracts and a CI `benchstat` regression gate (`scripts/perf_gate.sh`) ([#536](https://github.com/cawalch/go-yara/pull/536)), and updates the module catalog generator probe for built-in functions ([#534](https://github.com/cawalch/go-yara/pull/534)). Compiled artifact **format 20** and the **Go 1.27.0** minimum toolchain requirement are unchanged from `v0.10.0`.
+
 ## Upgrade to v0.10.0
 
 {release.format < 20 && <p><strong>Not yet released.</strong> These notes describe the planned v0.10.0 release. The installation commands and playground still use the published {release.version} release.</p>}

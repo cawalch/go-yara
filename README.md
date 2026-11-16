@@ -17,7 +17,7 @@ The engine is designed for high-throughput scanning pipelines. It uses literal p
 
 ## v0.10.0
 
-v0.10.0 introduces the pure-Go `pe` module backed by `go-pe` (headers, sections, standard imports/exports and regex queries, `imphash`, resources, `version_info`, Rich header, `pdb_path`, Authenticode metadata and offline verification, `declared_extent`/`input_truncated`, `is_dotnet`, and `calculate_checksum`), borrowed evidence captures and streaming JSON output, entropy-weighted prefiltering, byte-deterministic format 20 serialization, and YARA Forge / libyara parity fixes. See the [release changelog](CHANGELOG.md#v0100---2026-11-15) for scope and upgrade details.
+v0.10.0 introduces the pure-Go `pe` module backed by `go-pe` (headers, sections, standard imports/exports and regex queries, `imphash`, resources, `version_info`, Rich header, `pdb_path`, Authenticode metadata and offline verification, `declared_extent`/`input_truncated`, `is_dotnet`, and `calculate_checksum`), borrowed evidence captures and streaming JSON output, entropy-weighted prefiltering, byte-deterministic format 20 serialization, and YARA Forge / libyara parity fixes. Patch release [v0.10.1](CHANGELOG.md#v0101---2026-11-16) fixes `v0.10.0` high-EPS compact-prefilter regressions and adds CI `benchstat` performance gating. See the [release changelog](CHANGELOG.md#v0100---2026-11-15) for scope and upgrade details.
 
 The minimum toolchain requirement is **Go 1.27.0**. Compiled caches use **format 20** (`v0.9.0` uses format 18 and cannot read format 20 artifacts; readers accept formats 4–20). Keep separate caches for mixed-version deployments and rollback.
 

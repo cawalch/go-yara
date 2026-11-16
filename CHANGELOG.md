@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.10.1] - 2026-11-16
+
+### Fixed
+
+* **High-EPS compact prefilter and hot-path regressions:** Eliminated redundant double/triple-pass compact prefilter scans on non-fanout `>=256 B` corpora while preserving Teddy SIMD gating under `GOEXPERIMENT=simd`, tracked dirty `ruleResultsDense` slots via `clearRuleResultsIfDirty()` instead of unconditional dense clears, guarded non-empty `fastSeen` clears and prefilter hook timing, skipped redundant 256-byte `rootIsDense`/`rootCandidateCursor` probes in `search16`/`search32`, and moved hook `defer` wrappers out of `MatchesWithContext`, `compactPrefilterRejects`, and `preparePatternScan` ([#536](https://github.com/cawalch/go-yara/pull/536)).
+* **Documentation build probe:** Referenced built-in functions directly in the module catalog generator probe ([#534](https://github.com/cawalch/go-yara/pull/534)).
+
+### Performance & CI
+
+* **Measured benchmark gains (`Intel Xeon 6975P-C`, CI scalar suite vs. `main`):** `HighEPSSelectivity/mixed` improved by 62.6%–80.4% (`clean` 574.1 → 182.9 ns, `sparse` 588.8 → 191.4 ns, `dense` 2,329 → 870.8 ns, `near_miss` 1,833.5 → 359.2 ns), `HighEPSParallel10K/mixed/sparse` improved by 51.7% (173.7 → 83.96 ns), and overall scalar geomean across the 27-benchmark gate improved by 45.5% ([#536](https://github.com/cawalch/go-yara/pull/536)).
+* **Performance regression gate & CI efficiency:** Added `TestHighEPSZeroAllocationContracts` and `scripts/perf_gate.sh` (`make perf-gate`) comparing scalar and `GOEXPERIMENT=simd` runs with `benchstat`, path-filtered CI change detection, combined `-race` + coverage test execution, package-scoped fuzzing (`scripts/fuzz_all.sh --packages`), and Go/libyara oracle caching ([#536](https://github.com/cawalch/go-yara/pull/536)).
+
 ## [v0.10.0] - 2026-11-15
 
 ### Upgrade notes

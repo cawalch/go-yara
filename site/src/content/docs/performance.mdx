@@ -56,6 +56,13 @@ These limits apply to an individual automaton, not the total number of rules. In
 
 See the <a href={source('compiler/teddy_simd_arm64.go')}>ARM64 filter</a>, <a href={source('compiler/teddy_simd_amd64.go')}>amd64 filter</a>, and [SIMD build instructions](/go-yara/installation/#optional-simd-build). Compare scalar and SIMD builds on the same CPU with the same rules.
 
+<span id="v0101-performance-changes"></span>
+
+## v0.10.1 performance changes
+
+- **Compact prefilter fanout gating and hot-path cleanup:** Non-fanout compact prefilters no longer pay a second full-automaton scan on `>=256 B` inputs (preserving Teddy SIMD rejection under `GOEXPERIMENT=simd`), `ruleResultsDense` clears track dirty evaluations via `clearRuleResultsIfDirty()`, `fastSeen` and prefilter hook timing skip unnecessary work, 256-byte inputs bypass redundant `rootIsDense`/`rootCandidateCursor` probes in `search16`/`search32`, and hook `defer` wrappers move out of `MatchesWithContext`, `compactPrefilterRejects`, and `preparePatternScan` ([#536](https://github.com/cawalch/go-yara/pull/536)).
+- **Measured CI scalar results (`Intel(R) Xeon(R) 6975P-C` vs. pre-fix `main`):** `HighEPSSelectivity/mixed` improves by 62.6%–80.4% (`clean` 574.1 → 182.9 ns, `sparse` 588.8 → 191.4 ns, `dense` 2,329 → 870.8 ns, `near_miss` 1,833.5 → 359.2 ns), `HighEPSParallel10K/mixed/sparse` improves by 51.7% (173.7 → 83.96 ns), and the 27-benchmark gate scalar geomean improves by 45.5%, guarded going forward by `TestHighEPSZeroAllocationContracts` and `scripts/perf_gate.sh` ([#536](https://github.com/cawalch/go-yara/pull/536)).
+
 <span id="v0100-performance-changes"></span>
 
 ## v0.10.0 performance changes

@@ -68,5 +68,19 @@
       "releases"
     ],
     "notes": "Release prose review against main (#532 + release doc sync) on 2026-11-15 for v0.10.0. Reviewed all nine pages: Go 1.27.0 requirement, format 20 / readers 4–20, byte-deterministic serialization and corrupt-artifact validation, pure-Go pe module backed by go-pe (with pe.number_of_imports > 0 imphash guard and remaining unsupported ELF/Cuckoo/.NET/delayed-import/valid_on/file_digest boundaries), WithBorrowedEvidence aliasing lifetime and streaming JSON encoders, WithStrictLibyaraCompatibility, and scoped v0.10.0 performance changes (#449, #450, #482, #531). Updated release notes and conditional release-preparation banners for release.format < 20 so site builds cleanly before and after tagging v0.10.0."
+  },
+  "v0.10.1": {
+    "pages": [
+      "index",
+      "quickstart",
+      "installation",
+      "scanning",
+      "compatibility",
+      "modules",
+      "performance",
+      "cli",
+      "releases"
+    ],
+    "notes": "Release prose review against main (#536 + release doc sync) on 2026-11-16 for v0.10.1. Reviewed all nine pages: patch release retains Go 1.27.0 requirement and format 20 serialization from v0.10.0, documents high-EPS compact-prefilter/hot-path fixes and CI benchstat regression gate (#536) in releases.mdx, performance.mdx, CHANGELOG.md, and README.md, plus module catalog probe fix (#534)."
   }
 }
