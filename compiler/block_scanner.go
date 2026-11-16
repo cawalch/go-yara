@@ -223,7 +223,7 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (result *Sca
 		RuleResults:  ruleResults,
 		Matches:      matches,
 	}
-	clear(s.ruleResultsDense)
+	s.clearRuleResultsIfDirty()
 	s.interp.ResetIterationCount()
 	s.moduleCache.reset()
 	clear(s.assertionResults)
@@ -417,7 +417,7 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (result *Sca
 			switch action {
 			case MatchActionStopScan:
 				result.MatchedRules = append(result.MatchedRules, ruleMatch)
-				clear(s.ruleResultsDense)
+				s.clearRuleResultsIfDirty()
 				return result, nil
 			case MatchActionSkipRule:
 				continue
@@ -426,7 +426,7 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (result *Sca
 		}
 		result.MatchedRules = append(result.MatchedRules, ruleMatch)
 	}
-	clear(s.ruleResultsDense)
+	s.clearRuleResultsIfDirty()
 	return result, nil
 }
 

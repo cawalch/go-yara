@@ -1,7 +1,7 @@
 .PHONY: build build-simd clean check test test-all test-race test-simd test-bugproof coverage \
 	vet analyze lint lint-fix fmt fmt-check tidy tidy-check fix fuzz \
 	bench bench-save benchstat bench-scan bench-simd bench-prefilter-scale \
-	bench-single-rule-size profile-scan trace-scan help
+	bench-single-rule-size perf-gate profile-scan trace-scan help
 
 PKG ?= ./compiler
 BENCH ?= .
@@ -137,6 +137,9 @@ bench-prefilter-scale:
 bench-single-rule-size:
 	go test ./compiler -run '^$$' -bench '^BenchmarkSingleRuleScanSize$$' \
 		-benchmem -count=5
+
+perf-gate:
+	./scripts/perf_gate.sh $(if $(BASE),--base $(BASE),)
 
 profile-scan:
 	@mkdir -p profiles

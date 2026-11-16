@@ -14,8 +14,9 @@ type compactPatternKey struct {
 }
 
 type compactPrefilter struct {
-	automaton *acAutomaton
-	accepting []bool
+	automaton    *acAutomaton
+	accepting    []bool
+	fanoutUseful bool
 }
 
 // The compact pass needs only a necessary pattern cover, not match spans.
@@ -69,13 +70,14 @@ func (cp *CompiledProgram) buildCompactPrefilter() *compactPrefilter {
 			selected[key] = true
 		}
 	}
-	useful := false
+	fanoutUseful := false
 	for key, count := range counts {
 		// The extra pass needs enough avoided fanout to amortize its cost.
 		if count >= minCompactFanout && !selected[key] {
-			useful = true
+			fanoutUseful = true
 		}
 	}
+	useful := fanoutUseful
 	if !useful && len(cp.Rules) >= minSharedNonTextEntries && len(selected) > 0 {
 		useful = true
 	}
@@ -92,7 +94,11 @@ func (cp *CompiledProgram) buildCompactPrefilter() *compactPrefilter {
 			patterns[i] = true
 		}
 	}
-	gate := &compactPrefilter{automaton: ac, accepting: make([]bool, len(ac.states))}
+	gate := &compactPrefilter{
+		automaton:    ac,
+		accepting:    make([]bool, len(ac.states)),
+		fanoutUseful: fanoutUseful,
+	}
 	for i := range ac.states {
 		state := &ac.states[i]
 		for _, pattern := range ac.outputs[state.outputStart:state.outputEnd] {
@@ -103,6 +109,14 @@ func (cp *CompiledProgram) buildCompactPrefilter() *compactPrefilter {
 		}
 	}
 	return gate
+}
+
+func (s *Scanner) compactPrefilterFanoutRejects(ctx context.Context, data []byte) bool {
+	gate := s.program.compactPrefilter
+	if gate == nil || !gate.fanoutUseful {
+		return false
+	}
+	return s.compactPrefilterRejects(ctx, data)
 }
 
 //nolint:nestif // the sparse-root and general loops are intentionally separate hot paths
@@ -128,27 +142,17 @@ func (s *Scanner) compactPrefilterRejects(ctx context.Context, data []byte) (rej
 		return true
 	}
 	ac := gate.automaton
+	if teddySIMDEnabled && ac.teddyGate != nil && len(data) >= 256 && !ac.teddyGate.mayMatch(data, nil) {
+		return true
+	}
 	if len(ac.transitions16) > 0 {
-		return s.compactPrefilterRejects16(data, gate)
+		return compactPrefilterRejectsTable(data, gate, ac.transitions16)
+	}
+	if len(ac.transitions32) > 0 {
+		return compactPrefilterRejectsTable(data, gate, ac.transitions32)
 	}
 
 	state := int32(0)
-	if len(data) >= 256 && len(ac.rootLanes) > 0 && len(ac.rootLanes) <= maxSparseRootTransitions {
-		cursor := newRootCandidateCursor(ac.rootLanes)
-		for i := 0; i < len(data); i++ {
-			if state == 0 && len(data)-i >= 256 {
-				i = cursor.next(data, i)
-				if i < 0 {
-					return true
-				}
-			}
-			state = ac.findNextState(state, data[i])
-			if gate.accepting[state] {
-				return false
-			}
-		}
-		return true
-	}
 	rootTransitions := &ac.states[0].transitions
 	for _, b := range data {
 		if state == 0 {
@@ -167,12 +171,11 @@ func (s *Scanner) compactPrefilterRejects(ctx context.Context, data []byte) (rej
 }
 
 //nolint:nestif // the sparse-root and general loops are intentionally separate hot paths
-func (s *Scanner) compactPrefilterRejects16(data []byte, gate *compactPrefilter) bool {
+func compactPrefilterRejectsTable[S ~uint16 | ~int32](data []byte, gate *compactPrefilter, trans [][256]S) bool {
 	ac := gate.automaton
-	trans := ac.transitions16
-	rootTransitions := &trans[0]
 	accepting := gate.accepting
-	state := uint16(0)
+	rootTransitions := &trans[0]
+	var state S
 
 	if len(data) >= 256 && len(ac.rootLanes) > 0 && len(ac.rootLanes) <= maxSparseRootTransitions {
 		cursor := newRootCandidateCursor(ac.rootLanes)

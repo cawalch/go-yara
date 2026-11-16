@@ -345,3 +345,120 @@ func TestCompactPrefilterSmallFanout(t *testing.T) {
 		compactPrefilterParity(t, program, [][]byte{[]byte("event"), []byte("event rare0"), []byte("rare1"), nil})
 	}
 }
+
+func TestCompactPrefilterFanoutAndSinglePass(t *testing.T) {
+	fanoutProgram, err := NewCompiler().CompileSource(compactPrefilterRules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fanoutProgram.compactPrefilter == nil || !fanoutProgram.compactPrefilter.fanoutUseful {
+		t.Fatal("fanout corpus must mark compact prefilter fanoutUseful=true")
+	}
+
+	var compactCalls int
+	hooks := ScanHooks{
+		OnPrefilter: func(decision PrefilterDecision) {
+			if decision.Stage == PrefilterStageCompactMask {
+				compactCalls++
+			}
+		},
+	}
+	fanoutScanner := fanoutProgram.NewScanner(WithHooks(hooks))
+	defer fanoutScanner.Close()
+
+	// Rejected input fires compact mask once.
+	compactCalls = 0
+	matched, err := fanoutScanner.Matches([]byte("event"))
+	if err != nil || matched {
+		t.Fatalf("Matches(event) = (%v, %v), want (false, nil)", matched, err)
+	}
+	if compactCalls != 1 {
+		t.Fatalf("compact mask calls on reject = %d, want 1", compactCalls)
+	}
+
+	// Candidate pass-through must not re-run compact mask inside evaluatePublicRules.
+	compactCalls = 0
+	matched, err = fanoutScanner.Matches([]byte("event rare_one"))
+	if err != nil || !matched {
+		t.Fatalf("Matches(event rare_one) = (%v, %v), want (true, nil)", matched, err)
+	}
+	if compactCalls != 1 {
+		t.Fatalf("compact mask calls on match = %d, want 1", compactCalls)
+	}
+
+	// Non-fanout mixed corpus must skip the redundant compact mask pass during Matches/MatchingRules.
+	mixedProgram, err := NewCompiler().CompileSource(highEPSRuleSource("mixed", 64))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mixedProgram.compactPrefilter != nil && mixedProgram.compactPrefilter.fanoutUseful {
+		t.Fatal("unique-pattern mixed corpus must not mark fanoutUseful=true")
+	}
+	mixedScanner := mixedProgram.NewScanner(WithHooks(hooks))
+	defer mixedScanner.Close()
+	for _, input := range [][]byte{
+		[]byte(`{"msg":"clean event"}`),
+		[]byte(`{"msg":"sig_00001=AB123456"}`),
+	} {
+		compactCalls = 0
+		if _, err := mixedScanner.Matches(input); err != nil {
+			t.Fatal(err)
+		}
+		if compactCalls != 0 {
+			t.Fatalf("Matches(%q) invoked compact mask %d times, want 0", input, compactCalls)
+		}
+		compactCalls = 0
+		if _, err := mixedScanner.MatchingRules(input); err != nil {
+			t.Fatal(err)
+		}
+		if compactCalls != 0 {
+			t.Fatalf("MatchingRules(%q) invoked compact mask %d times, want 0", input, compactCalls)
+		}
+	}
+}
+
+func TestScannerDirtyRuleResultsReset(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+rule producer {
+    strings:
+        $a = "trigger_token"
+    condition:
+        $a
+}
+
+rule consumer {
+    condition:
+        producer
+}
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scanner := program.NewScanner()
+	defer scanner.Close()
+
+	// Match -> clean reject -> match must never leak stale ruleResultsDense state.
+	for i, step := range []struct {
+		data []byte
+		want bool
+	}{
+		{[]byte("trigger_token"), true},
+		{[]byte("clean payload"), false},
+		{[]byte("clean payload"), false},
+		{[]byte("trigger_token"), true},
+		{[]byte("other clean payload"), false},
+	} {
+		got, err := scanner.Matches(step.data)
+		if err != nil || got != step.want {
+			t.Fatalf("step %d Matches(%q) = (%v, %v), want (%v, nil)", i, step.data, got, err, step.want)
+		}
+		rules, err := scanner.MatchingRules(step.data)
+		if err != nil || (len(rules) > 0) != step.want {
+			t.Fatalf("step %d MatchingRules(%q) = (%v, %v), want match=%v", i, step.data, rules, err, step.want)
+		}
+		res, err := scanner.Scan(step.data)
+		if err != nil || (len(res.MatchedRules) > 0) != step.want {
+			t.Fatalf("step %d Scan(%q) = (%v, %v), want match=%v", i, step.data, res.MatchedRules, err, step.want)
+		}
+	}
+}
