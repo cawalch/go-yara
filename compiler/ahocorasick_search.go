@@ -367,7 +367,7 @@ func (ac *acAutomaton) searchWithCancel16(data []byte, done <-chan struct{}, yie
 		return
 	}
 
-	if rootHasNoOutput && len(data) >= 256 && len(ac.rootLanes) > 0 && len(ac.rootLanes) <= maxSparseRootTransitions && !ac.rootIsDense16(data) {
+	if rootHasNoOutput && len(data) > 256 && len(ac.rootLanes) > 0 && len(ac.rootLanes) <= maxSparseRootTransitions && !ac.rootIsDense16(data) {
 		rootCursor := newRootCandidateCursor(ac.rootLanes)
 		linearUntil := 0
 		for i := 0; i < len(data); i++ {
@@ -466,7 +466,7 @@ func (ac *acAutomaton) searchWithCancel32(data []byte, done <-chan struct{}, yie
 		return
 	}
 
-	if rootHasNoOutput && len(data) >= 256 && len(ac.rootLanes) > 0 && len(ac.rootLanes) <= maxSparseRootTransitions && !ac.rootIsDense(data) {
+	if rootHasNoOutput && len(data) > 256 && len(ac.rootLanes) > 0 && len(ac.rootLanes) <= maxSparseRootTransitions && !ac.rootIsDense(data) {
 		rootCursor := newRootCandidateCursor(ac.rootLanes)
 		linearUntil := 0
 		for i := 0; i < len(data); i++ {
@@ -624,7 +624,7 @@ func (ac *acAutomaton) search16(data []byte, yield func(acMatch) bool) {
 		return
 	}
 
-	if rootHasNoOutput && len(data) >= 256 && len(ac.rootLanes) > 0 && len(ac.rootLanes) <= maxSparseRootTransitions && !ac.rootIsDense16(data) {
+	if rootHasNoOutput && len(data) > 256 && len(ac.rootLanes) > 0 && len(ac.rootLanes) <= maxSparseRootTransitions && !ac.rootIsDense16(data) {
 		rootCursor := newRootCandidateCursor(ac.rootLanes)
 		linearUntil := 0
 		for i := 0; i < len(data); i++ {
@@ -708,7 +708,7 @@ func (ac *acAutomaton) search32(data []byte, yield func(acMatch) bool) {
 		return
 	}
 
-	if rootHasNoOutput && len(data) >= 256 && len(ac.rootLanes) > 0 && len(ac.rootLanes) <= maxSparseRootTransitions && !ac.rootIsDense(data) {
+	if rootHasNoOutput && len(data) > 256 && len(ac.rootLanes) > 0 && len(ac.rootLanes) <= maxSparseRootTransitions && !ac.rootIsDense(data) {
 		rootCursor := newRootCandidateCursor(ac.rootLanes)
 		linearUntil := 0
 		for i := 0; i < len(data); i++ {

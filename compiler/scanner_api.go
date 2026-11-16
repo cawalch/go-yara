@@ -78,16 +78,24 @@ func (s *Scanner) MatchesWithContext(ctx context.Context, data []byte) (matched 
 	}
 	s.clearRuleResultsIfDirty()
 	if s.hookMask&(hookBitTelemetry|hookBitScanLifecycle) != 0 {
-		start := s.beginScan(ctx, int64(len(data)))
-		defer func() {
-			count := 0
-			if matched {
-				count = 1
-			}
-			start.finish(nil, count, err)
-		}()
+		return s.matchesWithObservedLifecycle(ctx, data)
 	}
+	return s.matchesUnobserved(ctx, data)
+}
 
+func (s *Scanner) matchesWithObservedLifecycle(ctx context.Context, data []byte) (matched bool, err error) {
+	start := s.beginScan(ctx, int64(len(data)))
+	defer func() {
+		count := 0
+		if matched {
+			count = 1
+		}
+		start.finish(nil, count, err)
+	}()
+	return s.matchesUnobserved(ctx, data)
+}
+
+func (s *Scanner) matchesUnobserved(ctx context.Context, data []byte) (bool, error) {
 	if matched, handled, err := s.matchBooleanRouting(ctx, data); handled || err != nil {
 		s.clearRuleResultsIfDirty()
 		return matched, err

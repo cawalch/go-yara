@@ -113,13 +113,10 @@ func (cp *CompiledProgram) buildCompactPrefilter() *compactPrefilter {
 
 func (s *Scanner) compactPrefilterFanoutRejects(ctx context.Context, data []byte) bool {
 	gate := s.program.compactPrefilter
-	if gate == nil {
-		return false
-	}
 	// Non-fanout gates only amortize preparePatternScan setup on short (<256B)
 	// inputs with 16-bit tables; >=256B inputs go straight to sharedAutomaton
 	// where Teddy SIMD and single-pass candidate routing apply.
-	if !gate.fanoutUseful && (len(data) >= 256 || len(gate.automaton.transitions16) == 0) {
+	if gate == nil || (!gate.fanoutUseful && (len(data) >= 256 || len(gate.automaton.transitions16) == 0)) {
 		return false
 	}
 	return s.compactPrefilterRejects(ctx, data)
@@ -218,7 +215,7 @@ func compactPrefilterRejectsTable[S ~uint16 | ~int32](data []byte, gate *compact
 	rootTransitions := &trans[0]
 	var state S
 
-	if len(data) >= 256 && len(ac.rootLanes) > 0 && len(ac.rootLanes) <= maxSparseRootTransitions {
+	if len(data) > 256 && len(ac.rootLanes) > 0 && len(ac.rootLanes) <= maxSparseRootTransitions {
 		cursor := newRootCandidateCursor(ac.rootLanes)
 		for i := 0; i < len(data); i++ {
 			if state == 0 && len(data)-i >= 256 {
@@ -227,7 +224,14 @@ func compactPrefilterRejectsTable[S ~uint16 | ~int32](data []byte, gate *compact
 					return true
 				}
 			}
-			state = trans[state][data[i]]
+			if state == 0 {
+				state = rootTransitions[data[i]]
+				if state == 0 {
+					continue
+				}
+			} else {
+				state = trans[state][data[i]]
+			}
 			if accepting[state] {
 				return false
 			}

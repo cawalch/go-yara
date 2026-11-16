@@ -177,9 +177,18 @@ func (s *Scanner) ruleHeaderConstraintsMatchInput(ctx context.Context, rule *Com
 
 func (s *Scanner) preparePatternScan(ctx context.Context, data []byte) (bool, error) {
 	if s.hookMask&hookBitTelemetryLatency != 0 {
-		previous := s.enterScanPhase(PhasePatternSearch)
-		defer s.leaveScanPhase(previous)
+		return s.preparePatternScanWithLatency(ctx, data)
 	}
+	return s.preparePatternScanCore(ctx, data)
+}
+
+func (s *Scanner) preparePatternScanWithLatency(ctx context.Context, data []byte) (bool, error) {
+	previous := s.enterScanPhase(PhasePatternSearch)
+	defer s.leaveScanPhase(previous)
+	return s.preparePatternScanCore(ctx, data)
+}
+
+func (s *Scanner) preparePatternScanCore(ctx context.Context, data []byte) (bool, error) {
 	s.moduleCache.reset()
 	s.sharedNonTextMatched = false
 	s.nonTextCache.reset(s.program.nonTextCacheSize)
