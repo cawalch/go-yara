@@ -125,13 +125,22 @@ func (s *Scanner) compactPrefilterFanoutRejects(ctx context.Context, data []byte
 	return s.compactPrefilterRejects(ctx, data)
 }
 
-//nolint:nestif // the sparse-root and general loops are intentionally separate hot paths
-func (s *Scanner) compactPrefilterRejects(ctx context.Context, data []byte) (rejected bool) {
+func (s *Scanner) compactPrefilterRejects(ctx context.Context, data []byte) bool {
 	gate := s.program.compactPrefilter
 	// Large positive records would pay for two full passes.
 	if gate == nil || s.prefilterDisabled || len(data) > 1024 || s.program.sharedAutomaton != gate.automaton {
 		return false
 	}
+	if s.hookMask&(hookBitPrefilter|hookBitTelemetryLatency) != 0 {
+		return s.compactPrefilterRejectsWithHooks(ctx, data, gate)
+	}
+	if scanCanceled(ctx.Done()) {
+		return true
+	}
+	return compactPrefilterMatchesAbsent(data, gate)
+}
+
+func (s *Scanner) compactPrefilterRejectsWithHooks(ctx context.Context, data []byte, gate *compactPrefilter) (rejected bool) {
 	if s.hookMask&hookBitPrefilter != 0 {
 		started := s.prefilterStart()
 		defer func() {
@@ -147,11 +156,18 @@ func (s *Scanner) compactPrefilterRejects(ctx context.Context, data []byte) (rej
 	if scanCanceled(ctx.Done()) {
 		return true
 	}
+	return compactPrefilterMatchesAbsent(data, gate)
+}
+
+func compactPrefilterMatchesAbsent(data []byte, gate *compactPrefilter) bool {
 	ac := gate.automaton
 	if teddySIMDEnabled && ac.teddyGate != nil && len(data) >= 256 && !ac.teddyGate.mayMatch(data, nil) {
 		return true
 	}
 	if len(ac.transitions16) > 0 {
+		if len(data) < 256 {
+			return compactPrefilterRejectsShort16(data, ac.transitions16, gate.accepting)
+		}
 		return compactPrefilterRejectsTable(data, gate, ac.transitions16)
 	}
 	if len(ac.transitions32) > 0 {
@@ -170,6 +186,25 @@ func (s *Scanner) compactPrefilterRejects(ctx context.Context, data []byte) (rej
 			state = ac.findNextState(state, b)
 		}
 		if gate.accepting[state] {
+			return false
+		}
+	}
+	return true
+}
+
+func compactPrefilterRejectsShort16(data []byte, trans [][256]uint16, accepting []bool) bool {
+	rootTransitions := &trans[0]
+	var state uint16
+	for _, b := range data {
+		if state == 0 {
+			state = rootTransitions[b]
+			if state == 0 {
+				continue
+			}
+		} else {
+			state = trans[state][b]
+		}
+		if accepting[state] {
 			return false
 		}
 	}
