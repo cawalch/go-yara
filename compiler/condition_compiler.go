@@ -500,15 +500,18 @@ func (cc *conditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 		return nil
 	}
 
-	specialIdentifiers := map[string]func(){
-		"filesize":   func() { cc.emitter.EmitOpcode(OpFilesize, ident.Pos.Line, ident.Pos.Column) },
-		"entrypoint": func() { cc.emitter.EmitOpcode(OpEntrypoint, ident.Pos.Line, ident.Pos.Column) },
-		"them":       func() { cc.emitter.EmitPush(stringSetAll, ident.Pos.Line, ident.Pos.Column) },
-		"flags":      func() { cc.emitter.EmitPush(0, ident.Pos.Line, ident.Pos.Column) },
-	}
-
-	if handler, exists := specialIdentifiers[ident.Name]; exists {
-		handler()
+	switch ident.Name {
+	case "filesize":
+		cc.emitter.EmitOpcode(OpFilesize, ident.Pos.Line, ident.Pos.Column)
+		return nil
+	case "entrypoint":
+		cc.emitter.EmitOpcode(OpEntrypoint, ident.Pos.Line, ident.Pos.Column)
+		return nil
+	case "them":
+		cc.emitter.EmitPush(stringSetAll, ident.Pos.Line, ident.Pos.Column)
+		return nil
+	case "flags":
+		cc.emitter.EmitPush(0, ident.Pos.Line, ident.Pos.Column)
 		return nil
 	}
 
@@ -700,6 +703,18 @@ func (cc *conditionCompiler) allocateVariables(vars []string) ([]int, error) {
 	return slots, nil
 }
 
+// Shared read-only opcode table for built-in integer reads and defined.
+var builtinFunctionOpcodes = map[string]Opcode{
+	// Integer-reading functions
+	"uint8": OpUint8, "uint16": OpUint16, "uint32": OpUint32, "uint64": OpUint64,
+	"uint8be": OpUint8be, "uint16be": OpUint16be, "uint32be": OpUint32be, "uint64be": OpUint64be,
+	"int8": OpInt8, "int16": OpInt16, "int32": OpInt32, "int64": OpInt64,
+	"int8be": OpInt8be, "int16be": OpInt16be, "int32be": OpInt32be, "int64be": OpInt64be,
+
+	// Defined-value check
+	"defined": OpDefined,
+}
+
 func (cc *conditionCompiler) compileFunctionCall(call *ast.FunctionCall) error {
 	moduleFunction, isModuleFunction := cc.moduleFunctions[call.Function]
 	if moduleName, dotted := moduleNameFromDottedName(call.Function); dotted && !isModuleFunction {
@@ -720,18 +735,7 @@ func (cc *conditionCompiler) compileFunctionCall(call *ast.FunctionCall) error {
 		}
 	}
 
-	functionOpcodes := map[string]Opcode{
-		// Data type conversion functions
-		"uint8": OpUint8, "uint16": OpUint16, "uint32": OpUint32, "uint64": OpUint64,
-		"uint8be": OpUint8be, "uint16be": OpUint16be, "uint32be": OpUint32be, "uint64be": OpUint64be,
-		"int8": OpInt8, "int16": OpInt16, "int32": OpInt32, "int64": OpInt64,
-		"int8be": OpInt8be, "int16be": OpInt16be, "int32be": OpInt32be, "int64be": OpInt64be,
-
-		// Logical/text functions backed by opcodes
-		"defined": OpDefined,
-	}
-
-	if opcode, exists := functionOpcodes[call.Function]; exists {
+	if opcode, exists := builtinFunctionOpcodes[call.Function]; exists {
 		cc.emitter.EmitOpcode(opcode, call.Pos.Line, call.Pos.Column)
 		return nil
 	}

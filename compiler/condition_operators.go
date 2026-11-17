@@ -11,11 +11,17 @@ import (
 )
 
 func (cc *conditionCompiler) compileStringOffsetOperator(binOp *ast.BinaryOp) error {
+	var opcode Opcode
+	var name string
+	switch binOp.Op {
+	case token.AT:
+		opcode, name = OpFoundAt, "AT"
+	case token.IN:
+		opcode, name = OpFoundIn, "IN"
+	}
 	id, ok := binOp.Left.(*ast.Identifier)
 	if !ok {
-		return fmt.Errorf("%s operator requires string identifier as left operand", map[token.Type]string{
-			token.AT: "AT", token.IN: "IN",
-		}[binOp.Op])
+		return fmt.Errorf("%s operator requires string identifier as left operand", name)
 	}
 
 	// "$" as the left operand is the for-loop placeholder: it refers to the
@@ -39,8 +45,7 @@ func (cc *conditionCompiler) compileStringOffsetOperator(binOp *ast.BinaryOp) er
 		return err
 	}
 
-	opcodes := map[token.Type]Opcode{token.AT: OpFoundAt, token.IN: OpFoundIn}
-	cc.emitter.EmitOpcode(opcodes[binOp.Op], binOp.Pos.Line, binOp.Pos.Column)
+	cc.emitter.EmitOpcode(opcode, binOp.Pos.Line, binOp.Pos.Column)
 	return nil
 }
 
@@ -150,12 +155,15 @@ func (cc *conditionCompiler) isStringFunction(name string) bool {
 }
 
 func (cc *conditionCompiler) isComparisonOperator(op token.Type) bool {
-	return slices.Contains([]token.Type{
-		token.EQ, token.NEQ, token.LT, token.LE, token.GT, token.GE,
+	switch op {
+	case token.EQ, token.NEQ, token.LT, token.LE, token.GT, token.GE,
 		token.LeftShift, token.RightShift, token.MODULO,
 		token.CONTAINS, token.ICONTAINS, token.STARTSWITH, token.ISTARTSWITH,
-		token.ENDSWITH, token.IENDSWITH, token.IEQUALS, token.MATCHES,
-	}, op)
+		token.ENDSWITH, token.IENDSWITH, token.IEQUALS, token.MATCHES:
+		return true
+	default:
+		return false
+	}
 }
 
 func (cc *conditionCompiler) isStringComparisonOperator(op token.Type) bool {
