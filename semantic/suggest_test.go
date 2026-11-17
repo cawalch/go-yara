@@ -60,6 +60,19 @@ func TestIdentifierSuggestionParity(t *testing.T) {
 			candidates []string
 		}{target, candidates})
 	}
+	// Cross the reusable buffer boundary and then shrink again, including
+	// Unicode case conversion and a '$' candidate with an extra rune.
+	for _, size := range []int{31, 32, 63, 64, 65, 128} {
+		cases = append(cases, struct {
+			target     string
+			candidates []string
+		}{strings.Repeat("a", size) + "éx", []string{
+			strings.Repeat("A", size+2) + "Éy",
+			strings.Repeat("A", size-2) + "Éy",
+			"$" + strings.Repeat("A", size) + "Éy",
+			strings.Repeat("A", size) + "Éz",
+		}})
+	}
 	for _, tc := range cases {
 		got, gotOK := findSimilarIdentifier(tc.target, tc.candidates)
 		want, wantOK := referenceSimilarIdentifier(tc.target, tc.candidates)
@@ -75,6 +88,7 @@ func FuzzIdentifierSuggestions(f *testing.F) {
 	f.Add("KſİΣ", "ksiσ\x00kſİς\x00Kſİσ")
 	f.Add("\xffa", "\xfea\x00�a\x00a")
 	f.Add("abcdefgh", "abcdxfgh\x00abcxefgh\x00abcdefg\x00$abcdefghx")
+	f.Add(strings.Repeat("a", 64)+"x", strings.Repeat("A", 66)+"y\x00"+strings.Repeat("A", 62)+"z")
 	f.Fuzz(func(t *testing.T, target, blob string) {
 		if len(target) > 128 || len(blob) > 1024 {
 			return

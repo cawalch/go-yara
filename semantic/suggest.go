@@ -3,6 +3,7 @@ package semantic
 import (
 	"slices"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/cawalch/go-yara/token"
@@ -100,6 +101,9 @@ func findSimilarIdentifier(target string, candidates []string) (string, bool) {
 	targetLen := len(targetRunes)
 	targetPrefix := strings.HasPrefix(targetLower, "$")
 	var distance identifierDistance
+	// Reuse candidate storage; ordinary identifiers fit in the stack buffer.
+	var inlineCandidate [64]rune
+	candidateRunes := inlineCandidate[:0]
 
 	maxAllowed := 1
 	if targetLen > 3 && targetLen <= 7 {
@@ -115,11 +119,14 @@ func findSimilarIdentifier(target string, candidates []string) (string, bool) {
 			lengthLimit++
 		}
 		// Lowercasing preserves rune count. Allow one extra rune for the '$'
-		// comparison before allocating or lowercasing an impossible candidate.
+		// comparison before lowercasing an impossible candidate.
 		if abs(utf8.RuneCountInString(c)-targetLen) > lengthLimit {
 			continue
 		}
-		candidateRunes := []rune(strings.ToLower(c))
+		candidateRunes = candidateRunes[:0]
+		for _, r := range c {
+			candidateRunes = append(candidateRunes, unicode.ToLower(r))
+		}
 		d := distance.bounded(targetRunes, candidateRunes, maxAllowed)
 		if candidatePrefix && !targetPrefix {
 			dWithoutPrefix := distance.bounded(targetRunes, candidateRunes[1:], maxAllowed)
