@@ -189,6 +189,11 @@ func compactPrefilterMatchesAbsent(data []byte, gate *compactPrefilter) bool {
 	return true
 }
 
+// Keep the short-input kernel separate from the mixed-width dispatcher.
+// Inlining made AMD64 reject throughput sensitive to unrelated binary layout
+// changes; a standalone kernel preserves the tight root-miss loop.
+//
+//go:noinline
 func compactPrefilterRejectsShort16(data []byte, trans [][256]uint16, accepting []bool) bool {
 	rootTransitions := &trans[0]
 	var state uint16
