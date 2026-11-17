@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	pe "github.com/cawalch/go-pe"
+
 	"github.com/cawalch/go-yara/internal/pefixture"
 )
 
@@ -303,5 +305,31 @@ func BenchmarkPEImphashLargeImports(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		_ = peImphashLibraries(imports.libraries)
+	}
+}
+
+// Freeze historical imphashes over the entire uint16 ordinal domain. These
+// expected values were independently computed from the original libyara 4.5.8
+// tables before sharing lookup storage with import display/query aliases.
+func TestPEImphashOrdinalCompatibility(t *testing.T) {
+	symbols := make([]pe.ImportSymbol, 1<<16)
+	for ordinal := range symbols {
+		symbols[ordinal] = pe.ImportSymbol{ByOrdinal: true, Ordinal: uint16(ordinal)} //checkednarrow:ignore bounded by uint16 domain
+	}
+	for _, tc := range []struct{ dll, want string }{
+		{"WS2_32.DLL", "d982b153ed5b21204ff6abc59ecdd086"},
+		{"wsock32.dll", "9e5dbe62d3ceb9aee2c7e0b322bf2d17"},
+		{"OLEAUT32.DLL", "e081ff2e430dabbbdfbfa210e8c553f4"},
+		{"example.dll", "c21ffe9820c8cbcfccfa147c8aeb1212"},
+		{"Ws2_32.DlL.extra", "533f28183bfd142e91b133bd7e6f2c69"},
+		{"ws2_32.dl", "5b4e99b9a69dada7e5fcee6ab6843911"},
+		{"WS2_32.DLL\x00ignored", "d982b153ed5b21204ff6abc59ecdd086"},
+	} {
+		t.Run(tc.dll, func(t *testing.T) {
+			got := peImphashLibraries([]pe.ImportLibrary{{DLL: tc.dll, Symbols: symbols}})
+			if got != tc.want {
+				t.Fatalf("ordinal imphash = %s, want %s", got, tc.want)
+			}
+		})
 	}
 }
