@@ -653,14 +653,21 @@ func (ac *acAutomaton) search16(data []byte, yield func(acMatch) bool) {
 		return
 	}
 
-	for i, b := range data {
+	for i := 0; i < len(data); i++ {
 		if currentState == 0 {
-			currentState = rootTransitions[b]
-			if currentState == 0 {
-				continue
+			// Stay in the root-miss loop until a transition consumes a prefix.
+			for {
+				currentState = rootTransitions[data[i]]
+				if currentState != 0 {
+					break
+				}
+				i++
+				if i == len(data) {
+					return
+				}
 			}
 		} else {
-			currentState = trans[currentState][b]
+			currentState = trans[currentState][data[i]]
 		}
 		if hasOutput[currentState] && !ac.yieldMatches(int32(currentState), i, yield) {
 			return

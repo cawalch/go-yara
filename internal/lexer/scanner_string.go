@@ -137,10 +137,10 @@ type regexReader interface {
 	slice(int) string
 }
 
-// isEmptyRegexImpl is a shared implementation for checking empty regex patterns
-func isEmptyRegexImpl(r regexReader) bool {
-	savedPos := r.GetPosition()
-	defer r.SetPosition(savedPos)
+// isEmptyRegexImpl checks empty regex patterns without consuming input.
+func isEmptyRegexImpl(r *Lexer) bool {
+	snapshot := r.reader.SavePosition()
+	defer r.reader.RestorePosition(snapshot)
 
 	if !hasDoubleSlash(r) {
 		return false
