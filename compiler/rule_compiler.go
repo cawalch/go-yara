@@ -108,7 +108,7 @@ func (rc *ruleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 
 	// Constant-fold condition and detect dead strings before compiling patterns
 	rule.Condition = FoldConstants(rule.Condition)
-	isDeadRule := isConditionStaticallyFalse(rule.Condition)
+	isDeadRule := isConstantFalse(rule.Condition)
 	deadStrings := detectDeadStrings(rule, anonymousStrings, isDeadRule)
 	for id := range fixedOffsets {
 		if deadStrings[id] {
@@ -158,6 +158,8 @@ func (rc *ruleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 
 	requiredStrings, forbiddenStrings := deriveStringPresenceBounds(rule.Condition, rule.Strings)
 	moduleFunctions, moduleNames := rc.conditionCompiler.moduleFunctionsForRule()
+	fastScanSafe := !conditionObservesMatchOccurrences(rule.Condition) && !ruleDeclaresEvidence(rule)
+	headerConstraints := deriveHeaderConstraints(rule.Condition)
 
 	// Create compiled rule
 	compiledRule := &CompiledRule{
@@ -189,19 +191,19 @@ func (rc *ruleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 		IsPrivate:           rc.hasModifier(rule.Modifiers, ast.ModifierPrivate),
 		IsDead:              isDeadRule,
 		DeadStrings:         deadStrings,
-		FastScanSafe:        !conditionObservesMatchOccurrences(rule.Condition) && !ruleDeclaresEvidence(rule),
-		ConditionMonotonic:  !conditionObservesMatchOccurrences(rule.Condition) && !ruleDeclaresEvidence(rule) && conditionIsMonotonicInStrings(rule.Condition),
+		FastScanSafe:        fastScanSafe,
+		ConditionMonotonic:  fastScanSafe && conditionIsMonotonicInStrings(rule.Condition),
 		RequiresStringMatch: len(rule.Strings) > 0 && conditionRequiresStringMatch(rule.Condition),
 		ModuleFunctions:     moduleFunctions,
 		ModuleNames:         moduleNames,
-		HeaderConstraints:   deriveHeaderConstraints(rule.Condition),
+		HeaderConstraints:   headerConstraints,
 		fixedOffsets:        fixedOffsets,
 		assertions:          slices.Clone(rc.conditionCompiler.assertions),
 		assertionProgram:    slices.Clone(rc.conditionCompiler.assertionProgram),
 		moduleSchemas:       rc.ruleModuleSchemas(),
 		moduleAccessNames:   slices.Clone(rc.conditionCompiler.moduleAccessNames),
 		moduleIterations:    slices.Clone(rc.conditionCompiler.moduleIterations),
-		mandatoryAssertions: mandatoryAssertionIndices(rule.Condition, rc.conditionCompiler.assertions),
+		mandatoryAssertions: mandatoryAssertionIndices(rule.Condition, headerConstraints, rc.conditionCompiler.assertions),
 		requiredStrings:     requiredStrings,
 		forbiddenStrings:    forbiddenStrings,
 		booleanPatterns:     booleanRoutingPatterns(rule),
@@ -427,17 +429,17 @@ func (rc *ruleCompiler) reserveCompilationResources(rule *ast.Rule) {
 	rc.automaton.ReserveStates(expectedStates)
 }
 
-// compileCondition compiles the rule condition
+// compileCondition compiles the already constant-folded rule condition
 func (rc *ruleCompiler) compileCondition(rule *ast.Rule) error {
 	// Set up string offsets for condition compiler
 	stringOffsets := rc.stringCompiler.stringOffsets
 	rc.conditionCompiler.setStringOffsets(stringOffsets)
 
-	// Compile the condition expression using CompileBooleanExpression.
+	// CompileRule has already folded the condition for dead-string detection.
 	// Short-circuit evaluation is disabled until the short-circuit code path properly
 	// manages stack state (see compileShortCircuitBinary for details).
 	if !rc.conditionCompiler.compileAssertionProgram(rule.Condition) {
-		if err := rc.conditionCompiler.CompileBooleanExpression(rule.Condition, false); err != nil {
+		if err := rc.conditionCompiler.compileExpression(rule.Condition); err != nil {
 			return fmt.Errorf("compiling condition: %w", err)
 		}
 	}

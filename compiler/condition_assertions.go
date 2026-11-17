@@ -188,14 +188,14 @@ func assertionPruningSafeWithExternals(expr ast.Expression, headers []HeaderCons
 	}
 }
 
-func mandatoryAssertionIndices(expr ast.Expression, assertions []conditionAssertion) []int {
+func mandatoryAssertionIndices(expr ast.Expression, headers []HeaderConstraint, assertions []conditionAssertion) []int {
 	externals := map[string]int{}
 	for _, assertion := range assertions {
 		if assertion.External != "" {
 			externals[assertion.External] = 0
 		}
 	}
-	if !assertionPruningSafeWithExternals(expr, deriveHeaderConstraints(expr), externals) {
+	if !assertionPruningSafeWithExternals(expr, headers, externals) {
 		return nil
 	}
 	var indices []int

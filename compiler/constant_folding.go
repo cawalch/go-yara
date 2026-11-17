@@ -393,14 +393,6 @@ func isConstant(expr ast.Expression) bool {
 	return false
 }
 
-func isConditionStaticallyFalse(expr ast.Expression) bool {
-	if expr == nil {
-		return false
-	}
-	folded := FoldConstants(expr)
-	return isConstantFalse(folded)
-}
-
 func evaluateConstantInt(expr ast.Expression) (int64, bool) {
 	lit, ok := expr.(*ast.Literal)
 	if !ok {
