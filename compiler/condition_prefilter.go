@@ -23,8 +23,30 @@ const (
 // conservative: an expression that cannot be proven false remains eligible for
 // normal evaluation.
 func conditionRequiresStringMatch(expr ast.Expression) bool {
-	return truthWithoutStringMatches(expr)&noStringTrue == 0 &&
-		evaluationSafeWithoutStringMatches(expr)
+	truth, safe := analyzeNoStringBoolean(expr)
+	return truth&noStringTrue == 0 && safe
+}
+
+// analyzeNoStringBoolean carries truth and evaluation safety together through
+// boolean chains, avoiding repeated traversals of left-deep AND/OR trees.
+// Other expressions retain the existing conservative atomic analyses.
+func analyzeNoStringBoolean(expr ast.Expression) (noStringTruth, bool) {
+	switch e := expr.(type) {
+	case *ast.UnaryOp:
+		if e.Op == token.NOT {
+			truth, safe := analyzeNoStringBoolean(e.Right)
+			return invertTruth(truth), safe
+		}
+	case *ast.BinaryOp:
+		if e.Op == token.AND || e.Op == token.OR {
+			left, leftSafe := analyzeNoStringBoolean(e.Left)
+			right, rightSafe := analyzeNoStringBoolean(e.Right)
+			shortCircuit := e.Op == token.AND && left&noStringTrue == 0 ||
+				e.Op == token.OR && left&noStringFalse == 0
+			return logicalNoStringTruth(e.Op, left, right), leftSafe && (shortCircuit || rightSafe)
+		}
+	}
+	return truthWithoutStringMatches(expr), evaluationSafeWithoutStringMatches(expr)
 }
 
 func evaluationSafeWithoutStringMatches(expr ast.Expression) bool {
@@ -40,11 +62,10 @@ func evaluationSafeWithoutStringMatches(expr ast.Expression) bool {
 	case *ast.UnaryOp:
 		return e.Op == token.NOT && evaluationSafeWithoutStringMatches(e.Right)
 	case *ast.BinaryOp:
-		leftSafe := evaluationSafeWithoutStringMatches(e.Left)
+		leftTruth, leftSafe := analyzeNoStringBoolean(e.Left)
 		if !leftSafe {
 			return false
 		}
-		leftTruth := truthWithoutStringMatches(e.Left)
 		switch e.Op {
 		case token.AND:
 			if leftTruth&noStringTrue == 0 {
@@ -175,28 +196,18 @@ func scalarTruth(value any) noStringTruth {
 	}
 }
 
+// logicalNoStringTruth combines the possible outcomes of boolean operands.
+func logicalNoStringTruth(op token.Type, left, right noStringTruth) noStringTruth {
+	if op == token.AND {
+		return (left|right)&noStringFalse | (left&right)&noStringTrue
+	}
+	return (left&right)&noStringFalse | (left|right)&noStringTrue
+}
+
 func binaryTruthWithoutStringMatches(expr *ast.BinaryOp) noStringTruth {
-	left := truthWithoutStringMatches(expr.Left)
-	right := truthWithoutStringMatches(expr.Right)
 	switch expr.Op {
-	case token.AND:
-		var result noStringTruth
-		if left&noStringTrue != 0 && right&noStringTrue != 0 {
-			result |= noStringTrue
-		}
-		if left&noStringFalse != 0 || right&noStringFalse != 0 {
-			result |= noStringFalse
-		}
-		return result
-	case token.OR:
-		var result noStringTruth
-		if left&noStringTrue != 0 || right&noStringTrue != 0 {
-			result |= noStringTrue
-		}
-		if left&noStringFalse != 0 && right&noStringFalse != 0 {
-			result |= noStringFalse
-		}
-		return result
+	case token.AND, token.OR:
+		return logicalNoStringTruth(expr.Op, truthWithoutStringMatches(expr.Left), truthWithoutStringMatches(expr.Right))
 	case token.AT, token.IN:
 		if isStringPresenceExpression(expr.Left) && staticStringConstraint(expr.Op, expr.Right) {
 			return noStringFalse
