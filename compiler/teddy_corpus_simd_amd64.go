@@ -88,9 +88,5 @@ func (t *teddyAVX2Corpus) tailMayMatch(data []byte) bool {
 }
 
 func (t *teddyAVX2Corpus) findCandidateWithCancel(data []byte, from int, done <-chan struct{}) int {
-	// The corpus wrapper owns cancellation checkpoints and exact scanning.
-	if scanCanceled(done) {
-		return -1
-	}
-	return t.findCandidate(data, from)
+	return (teddyCandidateSearch{prefilter: t, overlap: 32 + t.prefixLen - 2}).findCandidateWithCancel(data, from, done)
 }

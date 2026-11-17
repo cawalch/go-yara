@@ -73,18 +73,8 @@ func (t *teddyAMD64Prefilter) findCandidate(data []byte, from int) int {
 }
 
 func (t *teddyAMD64Prefilter) findCandidateWithCancel(data []byte, from int, done <-chan struct{}) int {
-	for pos := from; pos < len(data); pos += cancelableSearchWindow {
-		if scanCanceled(done) {
-			return -1
-		}
-		candidate := t.findCandidate(data, pos)
-		if candidate < 0 {
-			return -1
-		}
-		if candidate < pos+cancelableSearchWindow {
-			return candidate
-		}
-		pos = candidate - (candidate % cancelableSearchWindow)
+	if len(t.targets) == 0 {
+		return -1
 	}
-	return -1
+	return (teddyCandidateSearch{prefilter: t, overlap: t.targets[0].Len() - 1}).findCandidateWithCancel(data, from, done)
 }

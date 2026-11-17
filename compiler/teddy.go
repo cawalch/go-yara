@@ -103,3 +103,26 @@ func teddyPrefixCover(strings []acStringInfo) []acStringInfo {
 	}
 	return cover
 }
+
+type teddyCandidateSearch struct {
+	prefilter teddyPrefilter
+	overlap   int
+}
+
+// findCandidateWithCancel bounds each kernel invocation, retaining enough
+// overlap for a complete SIMD block and prefix at every window boundary. Kernels
+// may leave the final partial block to the caller's scalar tail scan.
+func (s teddyCandidateSearch) findCandidateWithCancel(data []byte, from int, done <-chan struct{}) int {
+	for start := from; start < len(data); {
+		if scanCanceled(done) {
+			return -1
+		}
+		end := start + min(cancelableSearchWindow, len(data)-start)
+		windowEnd := end + min(s.overlap, len(data)-end)
+		if candidate := s.prefilter.findCandidate(data[:windowEnd], start); candidate >= 0 {
+			return candidate
+		}
+		start = end
+	}
+	return -1
+}

@@ -224,20 +224,7 @@ func (t *teddyNeon1Bank) findCandidate(data []byte, from int) int {
 }
 
 func (t *teddyNeon1Bank) findCandidateWithCancel(data []byte, from int, done <-chan struct{}) int {
-	for pos := from; pos < len(data); pos += cancelableSearchWindow {
-		if scanCanceled(done) {
-			return -1
-		}
-		candidate := t.findCandidate(data, pos)
-		if candidate < 0 {
-			return -1
-		}
-		if candidate < pos+cancelableSearchWindow {
-			return candidate
-		}
-		pos = candidate - (candidate % cancelableSearchWindow)
-	}
-	return -1
+	return (teddyCandidateSearch{prefilter: t, overlap: 16 + t.prefixLen - 2}).findCandidateWithCancel(data, from, done)
 }
 
 func newTeddyNeon2Bank(strings []acStringInfo, prefixLen int) *teddyNeon2Bank {
@@ -417,18 +404,5 @@ func (t *teddyNeon2Bank) findCandidate(data []byte, from int) int {
 }
 
 func (t *teddyNeon2Bank) findCandidateWithCancel(data []byte, from int, done <-chan struct{}) int {
-	for pos := from; pos < len(data); pos += cancelableSearchWindow {
-		if scanCanceled(done) {
-			return -1
-		}
-		candidate := t.findCandidate(data, pos)
-		if candidate < 0 {
-			return -1
-		}
-		if candidate < pos+cancelableSearchWindow {
-			return candidate
-		}
-		pos = candidate - (candidate % cancelableSearchWindow)
-	}
-	return -1
+	return (teddyCandidateSearch{prefilter: t, overlap: 16 + t.prefixLen - 2}).findCandidateWithCancel(data, from, done)
 }
