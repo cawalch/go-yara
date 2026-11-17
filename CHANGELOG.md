@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
-* Reject ineligible regex terminal-loop fast paths before constructing byte predicates, reducing setup work for ordinary consuming instructions (part of [#545](https://github.com/cawalch/go-yara/issues/545)).
+* Reject ineligible regex terminal-loop fast paths before constructing byte predicates, reducing setup work for ordinary consuming instructions; simplify consecutive compact-prefilter root misses to avoid repeated state checks (part of [#545](https://github.com/cawalch/go-yara/issues/545)).
 
 * Reused the frozen PE ordinal lookup tables for `pe.imphash()` and resolved DLL kinds once per import library, removing two duplicate package-level maps while preserving historical hashes (part of [#544](https://github.com/cawalch/go-yara/issues/544)). Kept the short-input compact prefilter kernel out of dispatch inlining to avoid the AMD64 throughput regression exposed by this cleanup.
 
