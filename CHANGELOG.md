@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+* Reuse regex atom-hit storage for fixed-offset candidate starts and skip redundant sorting, reducing scan allocations while preserving candidate filtering and fallback limits (part of [#542](https://github.com/cawalch/go-yara/issues/542)).
+
 * Return unescaped string literals directly from the lexer scan, avoiding repeated escape scans and global interner locking; retain existing decoding and diagnostics for escaped strings (part of [#543](https://github.com/cawalch/go-yara/issues/543)).
 
 * Synchronize each specialized parser once per token instead of repeatedly updating shared children, reducing token-pair copies while preserving public setter propagation (part of [#543](https://github.com/cawalch/go-yara/issues/543)).
