@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+* Synchronize each specialized parser once per token instead of repeatedly updating shared children, reducing token-pair copies while preserving public setter propagation (part of [#543](https://github.com/cawalch/go-yara/issues/543)).
+
 * Reuse built-in function opcode mappings and use direct dispatch for special identifiers and condition operators, avoiding per-expression lookup-table setup and allocations (part of [#543](https://github.com/cawalch/go-yara/issues/543)).
 
 * Use fixed-size tracking for string-modifier duplicates and custom Base64 alphabet bytes, eliminating Base64 validation allocations while preserving diagnostics and caller-built AST handling (part of [#543](https://github.com/cawalch/go-yara/issues/543)).
