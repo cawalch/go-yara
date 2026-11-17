@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"maps"
 	"math"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -70,37 +69,66 @@ type conditionCompiler struct {
 }
 
 func parseSizeLiteral(literal string) (int64, error) {
-	re := regexp.MustCompile(`^(0x[0-9a-fA-F]+|\d+)(KB|MB|GB|TB)$`)
-	matches := re.FindStringSubmatch(strings.TrimSpace(literal))
-	if matches == nil {
+	trimmed := strings.TrimSpace(literal)
+	if len(trimmed) < 3 {
 		return 0, fmt.Errorf("invalid size literal format: %s", literal)
 	}
-
-	var num int64
-	var err error
-	if strings.HasPrefix(matches[1], "0x") {
-		num, err = strconv.ParseInt(matches[1], 0, 64)
-	} else {
-		num, err = strconv.ParseInt(matches[1], 10, 64)
+	var multiplier int64
+	switch trimmed[len(trimmed)-2:] {
+	case "KB":
+		multiplier = 1 << 10
+	case "MB":
+		multiplier = 1 << 20
+	case "GB":
+		multiplier = 1 << 30
+	case "TB":
+		multiplier = 1 << 40
+	default:
+		return 0, fmt.Errorf("invalid size literal format: %s", literal)
 	}
+	number := trimmed[:len(trimmed)-2]
+	base := sizeLiteralNumberBase(number)
+	if base == 0 {
+		return 0, fmt.Errorf("invalid size literal format: %s", literal)
+	}
+	// Validate the original grammar before ParseInt, which also accepts signs
+	// and (with base 0) underscores and other radix prefixes.
+	digits := number
+	if base == 16 {
+		digits = digits[2:]
+	}
+	num, err := strconv.ParseInt(digits, base, 64)
 	if err != nil {
-		return 0, fmt.Errorf("invalid number in size literal: %s", matches[1])
+		return 0, fmt.Errorf("invalid number in size literal: %s", number)
 	}
-
-	sizeMultipliers := map[string]int64{
-		"KB": 1024,
-		"MB": 1024 * 1024,
-		"GB": 1024 * 1024 * 1024,
-		"TB": 1024 * 1024 * 1024 * 1024,
+	if num > math.MaxInt64/multiplier {
+		return 0, fmt.Errorf("size literal exceeds int64 range: %s", literal)
 	}
+	return num * multiplier, nil
+}
 
-	if multiplier, exists := sizeMultipliers[strings.ToUpper(matches[2])]; exists {
-		if num > math.MaxInt64/multiplier {
-			return 0, fmt.Errorf("size literal exceeds int64 range: %s", literal)
+// sizeLiteralNumberBase accepts only decimal digits or a lowercase 0x prefix
+// followed by hexadecimal digits. Leading zeroes remain decimal.
+func sizeLiteralNumberBase(number string) int {
+	base := 10
+	if strings.HasPrefix(number, "0x") {
+		base = 16
+		number = number[2:]
+	}
+	if len(number) == 0 {
+		return 0
+	}
+	for i := range number {
+		b := number[i]
+		if b >= '0' && b <= '9' {
+			continue
 		}
-		return num * multiplier, nil
+		if base == 16 && b|0x20 >= 'a' && b|0x20 <= 'f' {
+			continue
+		}
+		return 0
 	}
-	return 0, fmt.Errorf("unsupported size unit: %s", matches[2])
+	return base
 }
 
 // pendingJump represents a pending jump operation in bytecode generation
