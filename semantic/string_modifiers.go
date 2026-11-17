@@ -6,7 +6,6 @@ import (
 
 	"github.com/cawalch/go-yara/ast"
 	regexengine "github.com/cawalch/go-yara/regex"
-	"github.com/cawalch/go-yara/token"
 )
 
 func (v *Validator) validateStringModifiers(rule *ast.Rule) {
@@ -15,7 +14,8 @@ func (v *Validator) validateStringModifiers(rule *ast.Rule) {
 			continue
 		}
 
-		seenModifiers := make(map[ast.StringModifierType]token.Position)
+		var seenModifiers [ast.StringModifierCapture + 1]bool
+		var unknownModifiers map[ast.StringModifierType]bool
 		hasWide := false
 		hasASCII := false
 		hasBase64 := false
@@ -28,16 +28,30 @@ func (v *Validator) validateStringModifiers(rule *ast.Rule) {
 		_, isHex := str.Pattern.(*ast.HexString)
 
 		for _, mod := range str.Modifiers {
-			if mod.Type != ast.StringModifierCapture {
-				if prevPos, exists := seenModifiers[mod.Type]; exists {
-					v.addError(&Error{
-						Code:     ErrCodeInvalidModifier,
-						Message:  fmt.Sprintf("string %s declares duplicate modifier '%s' (previously at %v)", str.Identifier, modifierTypeName(mod.Type), prevPos),
-						Position: str.Pos,
-						Rule:     rule.Name,
-					})
+			// Capture modifiers are validated separately by validateEvidence.
+			if mod.Type == ast.StringModifierCapture {
+				continue
+			}
+			duplicate := false
+			if mod.Type >= 0 && int(mod.Type) < len(seenModifiers) {
+				duplicate = seenModifiers[mod.Type]
+				seenModifiers[mod.Type] = true
+			} else {
+				// Preserve duplicate diagnostics for unknown modifier values in
+				// caller-built ASTs without indexing outside the fixed table.
+				if unknownModifiers == nil {
+					unknownModifiers = make(map[ast.StringModifierType]bool)
 				}
-				seenModifiers[mod.Type] = str.Pos
+				duplicate = unknownModifiers[mod.Type]
+				unknownModifiers[mod.Type] = true
+			}
+			if duplicate {
+				v.addError(&Error{
+					Code:     ErrCodeInvalidModifier,
+					Message:  fmt.Sprintf("string %s declares duplicate modifier '%s' (previously at %v)", str.Identifier, modifierTypeName(mod.Type), str.Pos),
+					Position: str.Pos,
+					Rule:     rule.Name,
+				})
 			}
 
 			switch mod.Type {
@@ -183,16 +197,16 @@ func validateSemanticBase64Alphabet(value any) error {
 	if len(alphabet) != 64 {
 		return fmt.Errorf("invalid base64 alphabet length: expected 64, got %d", len(alphabet))
 	}
-	seen := make(map[byte]struct{}, 64)
+	var seen [256]bool
 	for i := 0; i < len(alphabet); i++ {
 		ch := alphabet[i]
 		if ch == '=' {
 			return errors.New("invalid base64 alphabet: '=' is not allowed")
 		}
-		if _, exists := seen[ch]; exists {
+		if seen[ch] {
 			return errors.New("invalid base64 alphabet: duplicate characters")
 		}
-		seen[ch] = struct{}{}
+		seen[ch] = true
 	}
 	return nil
 }

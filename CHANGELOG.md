@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+* Use fixed-size tracking for string-modifier duplicates and custom Base64 alphabet bytes, eliminating Base64 validation allocations while preserving diagnostics and caller-built AST handling (part of [#543](https://github.com/cawalch/go-yara/issues/543)).
+
 * Reuse the folded rule condition, scan-safety result, and header constraints during compilation, eliminating redundant AST traversals and allocations (part of [#543](https://github.com/cawalch/go-yara/issues/543)).
 
 * Analyze truth and evaluation safety together across boolean condition chains, avoiding quadratic subtree traversal while preserving short-circuit and runtime-error behavior (part of [#543](https://github.com/cawalch/go-yara/issues/543)).
