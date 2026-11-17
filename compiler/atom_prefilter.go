@@ -679,6 +679,7 @@ func appendHexPrefilterMatches(
 	if scratch == nil {
 		scratch = &hexMatchScratch{}
 	}
+	scratch.prepareHex(pattern.Tokens)
 	var xorKey *byte
 	if len(pattern.XorKeys) == 1 {
 		xorKey = &pattern.XorKeys[0]

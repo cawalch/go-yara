@@ -1,0 +1,150 @@
+package compiler
+
+// A continuation names the shared tail after an alternative. Index zero means
+// no tail; nonzero indices remain stable even if the backing slice grows.
+type hexContinuation struct {
+	tokens []HexPatternToken
+	next   int
+}
+
+type hexFailureState struct {
+	first        *HexPatternToken
+	length       int
+	dataPos      int
+	continuation int
+}
+
+func (item hexWorkItem) failureState() hexFailureState {
+	state := hexFailureState{length: len(item.tokens), dataPos: item.dataPos, continuation: item.continuation}
+	if len(item.tokens) > 0 {
+		state.first = &item.tokens[0]
+	}
+	return state
+}
+
+func (scratch *hexMatchScratch) resetContinuations() {
+	if scratch.continuations == nil {
+		scratch.continuations = scratch.inlineContinuations[:0]
+	} else {
+		scratch.continuations = scratch.continuations[:0]
+	}
+}
+
+func (scratch *hexMatchScratch) internContinuation(tokens []HexPatternToken, next int) int {
+	if len(tokens) == 0 {
+		return next
+	}
+	// Canonical indices let converging branches share failure-cache entries.
+	for i, tail := range scratch.continuations {
+		if tail.next == next && len(tail.tokens) == len(tokens) && &tail.tokens[0] == &tokens[0] {
+			return i + 1
+		}
+	}
+	scratch.continuations = append(scratch.continuations, hexContinuation{tokens: tokens, next: next})
+	return len(scratch.continuations)
+}
+
+// A single branch cannot revisit a suffix through multiple branch decisions.
+// Avoid failure-cache overhead unless at least two branching tokens occur.
+func hexBranchCount(tokens []HexPatternToken, limit int) int {
+	count := 0
+	for _, tok := range tokens {
+		switch tok.Kind {
+		case HexTokenJump:
+			if tok.Max < 0 || tok.Max > max(tok.Min, 0) {
+				count++
+			}
+		case HexTokenAlt:
+			if len(tok.Alternatives) > 1 {
+				count++
+			}
+			for _, alt := range tok.Alternatives {
+				count += hexBranchCount(alt, limit-count)
+				if count >= limit {
+					return count
+				}
+			}
+		}
+		if count >= limit {
+			return count
+		}
+	}
+	return count
+}
+
+// A frame closes when all work pushed by its state has completed. Only failed
+// states are cached: replaying successful states preserves callback multiplicity.
+type hexFailureFrame struct {
+	state    hexFailureState
+	depth    int
+	endCount uint64
+}
+
+func (scratch *hexMatchScratch) finishFailures(depth int, endCount uint64) {
+	for len(scratch.failureFrames) > 0 {
+		last := len(scratch.failureFrames) - 1
+		frame := scratch.failureFrames[last]
+		if frame.depth != depth {
+			return
+		}
+		scratch.failureFrames = scratch.failureFrames[:last]
+		if frame.endCount == endCount {
+			if scratch.failed == nil {
+				scratch.failed = make(map[hexFailureState]struct{})
+			}
+			scratch.failed[frame.state] = struct{}{}
+		}
+	}
+}
+
+// Keep ordinary single-gap patterns out of continuation/failure bookkeeping.
+//
+//nolint:revive // matching callback and XOR key remain explicit
+func (scratch *hexMatchScratch) matchSingleJump(tokens []HexPatternToken, data []byte, pos int, xorKey *byte, onEnd func(int) bool) bool {
+	head, tail := tokens[0], tokens[1:]
+	if pos > len(data) || pos == len(data) && head.Min > 0 {
+		return true
+	}
+	minJump := max(head.Min, 0)
+	if head.Max < 0 || head.Max-minJump > hexLargeJumpSpan {
+		scratch.reset()
+		scratch.pushLargeJumpBranches(tail, 0, data, pos, minJump, head.Max, xorKey)
+		for len(scratch.worklist) > 0 {
+			last := len(scratch.worklist) - 1
+			item := scratch.worklist[last]
+			scratch.worklist = scratch.worklist[:last]
+			if end, ok := matchLinearHexPattern(item.tokens, data, item.dataPos, xorKey); ok && !onEnd(end) {
+				return false
+			}
+		}
+		return true
+	}
+	for jump := minJump; jump <= head.Max; jump++ {
+		// Caller-built patterns can end in a jump. Preserve the original
+		// small-jump endpoint behavior even beyond the end of the input.
+		if len(tail) == 0 {
+			if !onEnd(pos + jump) {
+				return false
+			}
+		} else if end, ok := matchLinearHexPattern(tail, data, pos+jump, xorKey); ok && !onEnd(end) {
+			return false
+		}
+		if jump == head.Max {
+			break // Caller-built bounds may reach the platform's maximum int.
+		}
+	}
+	return true
+}
+
+// Refresh the token classification at every scan boundary; caller-built public
+// HexPatterns may be edited between scans. Anchor candidates reuse this plan.
+func (scratch *hexMatchScratch) prepareHex(tokens []HexPatternToken) {
+	scratch.planTokens = tokens
+	prefix := 0
+	for prefix < len(tokens) && tokens[prefix].Kind != HexTokenJump && tokens[prefix].Kind != HexTokenAlt {
+		prefix++
+	}
+	scratch.planPrefix = prefix
+	scratch.planSingleJump = prefix < len(tokens) && tokens[prefix].Kind == HexTokenJump && isLinearHexPattern(tokens[prefix+1:])
+	scratch.planMemoize = !scratch.planSingleJump && hexBranchCount(tokens, 2) >= 2
+}

@@ -9,9 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+* Memoize failed hex matching states across converging jumps and alternatives to prevent exponential re-exploration of nonmatching tails, preserving successful endpoint order and callback behavior (part of [#542](https://github.com/cawalch/go-yara/issues/542)).
+
 * Cancellable SIMD Teddy scans no longer skip candidates at or beyond the 1 MiB cancellation window. Kernel searches are bounded between cancellation checks and retain overlap for prefixes crossing window boundaries (part of [#540](https://github.com/cawalch/go-yara/issues/540)).
 
 ### Performance
+
+* Replace per-branch hex token concatenation with shared tail continuations and avoid scratch allocation for linear anchored scans; reuse branch classification within each scan (part of [#542](https://github.com/cawalch/go-yara/issues/542)).
 
 * Reuse regex atom-hit storage for fixed-offset candidate starts and skip redundant sorting, reducing scan allocations while preserving candidate filtering and fallback limits (part of [#542](https://github.com/cawalch/go-yara/issues/542)).
 

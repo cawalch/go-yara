@@ -230,8 +230,7 @@ func FindHexMatches(pattern *HexPattern, data []byte) []Match {
 
 func findHexMatches(pattern *HexPattern, data []byte, done <-chan struct{}) []Match {
 	var matches []Match
-	var scratch hexMatchScratch
-	findHexMatchesEach(pattern, data, done, &scratch, func(m Match) bool {
+	findHexMatchesEach(pattern, data, done, nil, func(m Match) bool {
 		matches = append(matches, m)
 		return true
 	})
@@ -249,9 +248,6 @@ func findHexMatchesEach(pattern *HexPattern, data []byte, done <-chan struct{}, 
 	if hexTokensMinLengthCapped(pattern.Tokens, len(data)+1) > len(data) {
 		return
 	}
-	if scratch == nil {
-		scratch = &hexMatchScratch{}
-	}
 	keys := pattern.XorKeys
 	if len(keys) == 0 && len(pattern.XorRange) > 0 {
 		keys = expandXorKeys(pattern.XorRange)
@@ -264,10 +260,24 @@ func findHexMatchesEach(pattern *HexPattern, data []byte, done <-chan struct{}, 
 			return
 		}
 	}
-	defer scratch.endJumpScan()
-
-	// Try anchor-based skipping for the common case.
+	// Linear anchored scans do not need branch scratch at all.
 	anchor := findAnchorByte(pattern.Tokens)
+	if anchor.ok && anchor.maxOffset >= 0 && len(keys) <= 1 && isLinearHexPattern(pattern.Tokens) {
+		if scratch != nil {
+			scratch.endJumpScan()
+		}
+		if len(keys) == 0 {
+			findHexMatchesAnchoredEach(pattern.Tokens, data, anchor, done, nil, onMatch)
+		} else {
+			findHexMatchesXorAnchoredEach(pattern.Tokens, data, keys, anchor, done, nil, onMatch)
+		}
+		return
+	}
+	if scratch == nil {
+		scratch = &hexMatchScratch{}
+	}
+	scratch.prepareHex(pattern.Tokens)
+	defer scratch.endJumpScan()
 
 	if len(keys) == 0 {
 		if anchor.ok && anchor.maxOffset >= 0 {
@@ -630,8 +640,9 @@ func expandXorKeys(ranges []ast.XorRange) []byte {
 }
 
 type hexWorkItem struct {
-	tokens  []HexPatternToken
-	dataPos int
+	tokens       []HexPatternToken
+	dataPos      int
+	continuation int
 }
 
 type jumpByteCacheEntry struct {
@@ -650,10 +661,18 @@ type hexJumpCache struct {
 }
 
 type hexMatchScratch struct {
-	worklist   []hexWorkItem
-	diffBuf    []byte
-	inlineWork [16]hexWorkItem
-	jumpCache  *hexJumpCache
+	worklist            []hexWorkItem
+	diffBuf             []byte
+	inlineWork          [16]hexWorkItem
+	jumpCache           *hexJumpCache
+	continuations       []hexContinuation
+	inlineContinuations [8]hexContinuation
+	failed              map[hexFailureState]struct{}
+	failureFrames       []hexFailureFrame
+	planTokens          []HexPatternToken
+	planPrefix          int
+	planSingleJump      bool
+	planMemoize         bool
 }
 
 // hexLargeJumpSpan is the jump-range threshold below which direct branch pushes
@@ -690,6 +709,7 @@ func (scratch *hexMatchScratch) beginJumpScan(_ *byte) {
 }
 
 func (scratch *hexMatchScratch) endJumpScan() {
+	scratch.planTokens = nil
 	if scratch.jumpCache != nil {
 		scratch.jumpCache.active = false
 	}
@@ -899,6 +919,7 @@ func (scratch *hexMatchScratch) tailCanReachWindow(
 //nolint:revive // argument-limit: hot path helper
 func (scratch *hexMatchScratch) pushJumpByteMatches(
 	nextTail []HexPatternToken,
+	continuation int,
 	data []byte,
 	lo, hi int,
 	targetByte byte,
@@ -907,7 +928,7 @@ func (scratch *hexMatchScratch) pushJumpByteMatches(
 	base := len(scratch.worklist)
 	pos := scratch.findNextByte(data, targetByte, keyTag, lo, hi, true)
 	for pos >= 0 {
-		scratch.worklist = append(scratch.worklist, hexWorkItem{nextTail, pos + 1})
+		scratch.worklist = append(scratch.worklist, hexWorkItem{tokens: nextTail, dataPos: pos + 1, continuation: continuation})
 		pos = scratch.findNextByte(data, targetByte, keyTag, pos+1, hi, false)
 	}
 	slices.Reverse(scratch.worklist[base:])
@@ -917,6 +938,7 @@ func (scratch *hexMatchScratch) pushJumpByteMatches(
 //nolint:revive // argument-limit: cold large-jump fallback kept out of matchEach inline budget
 func (scratch *hexMatchScratch) pushLargeJumpBranches(
 	tail []HexPatternToken,
+	continuation int,
 	data []byte,
 	dp, minJ, headMax int,
 	xorKey *byte,
@@ -937,12 +959,12 @@ func (scratch *hexMatchScratch) pushLargeJumpBranches(
 			return
 		}
 		if targetByte, hasByte := definiteHexByte(tail[0], xorKey); hasByte {
-			scratch.pushJumpByteMatches(tail[1:], data, dp+minJ, dp+maxJ+1, targetByte, hexXORKeyTag(xorKey))
+			scratch.pushJumpByteMatches(tail[1:], continuation, data, dp+minJ, dp+maxJ+1, targetByte, hexXORKeyTag(xorKey))
 			return
 		}
 	}
 	for jump := maxJ; jump >= minJ; jump-- {
-		scratch.worklist = append(scratch.worklist, hexWorkItem{tail, dp + jump})
+		scratch.worklist = append(scratch.worklist, hexWorkItem{tokens: tail, dataPos: dp + jump, continuation: continuation})
 	}
 }
 
@@ -957,19 +979,67 @@ func (scratch *hexMatchScratch) matchEach(
 	xorKey *byte,
 	onEnd func(int) bool,
 ) bool {
+	if len(tokens) == 0 {
+		return onEnd(pos)
+	}
+	if len(scratch.planTokens) != len(tokens) || &scratch.planTokens[0] != &tokens[0] {
+		scratch.prepareHex(tokens)
+	}
+	// Reject the common prefix before preparing per-candidate branch state.
+	if scratch.planPrefix > 0 {
+		end, ok := matchLinearHexPattern(tokens[:scratch.planPrefix], data, pos, xorKey)
+		if !ok {
+			return true
+		}
+		tokens, pos = tokens[scratch.planPrefix:], end
+	}
+	if len(tokens) == 0 {
+		return onEnd(pos)
+	}
+	if scratch.planSingleJump {
+		return scratch.matchSingleJump(tokens, data, pos, xorKey, onEnd)
+	}
 	scratch.reset()
-	scratch.worklist = append(scratch.worklist, hexWorkItem{tokens, pos})
+	scratch.resetContinuations()
+	memoize := scratch.planMemoize
+	if memoize {
+		clear(scratch.failed)
+	}
+	scratch.failureFrames = scratch.failureFrames[:0]
+	var endCount uint64
+	scratch.worklist = append(scratch.worklist, hexWorkItem{tokens: tokens, dataPos: pos})
 
-	for len(scratch.worklist) > 0 {
+	for {
+		if memoize {
+			scratch.finishFailures(len(scratch.worklist), endCount)
+		}
+		if len(scratch.worklist) == 0 {
+			break
+		}
 		item := scratch.worklist[len(scratch.worklist)-1]
 		scratch.worklist = scratch.worklist[:len(scratch.worklist)-1]
 
+		if memoize {
+			state := item.failureState()
+			if _, failed := scratch.failed[state]; failed {
+				continue
+			}
+			scratch.failureFrames = append(scratch.failureFrames, hexFailureFrame{state: state, depth: len(scratch.worklist), endCount: endCount})
+		}
+
 		toks := item.tokens
 		dp := item.dataPos
+		continuation := item.continuation
 
 		// Fast linear path: consume non-branching tokens in a loop.
 		for {
 			if len(toks) == 0 {
+				if continuation != 0 {
+					tail := scratch.continuations[continuation-1]
+					scratch.worklist = append(scratch.worklist, hexWorkItem{tokens: tail.tokens, dataPos: dp, continuation: tail.next})
+					goto nextItem
+				}
+				endCount++
 				if !onEnd(dp) {
 					return false
 				}
@@ -1035,7 +1105,7 @@ func (scratch *hexMatchScratch) matchEach(
 				maxJ := head.Max
 				tail := toks[1:]
 				if maxJ < 0 || maxJ-minJ > hexLargeJumpSpan {
-					scratch.pushLargeJumpBranches(tail, data, dp, minJ, maxJ, xorKey)
+					scratch.pushLargeJumpBranches(tail, continuation, data, dp, minJ, maxJ, xorKey)
 					goto nextItem
 				}
 				if maxJ < minJ {
@@ -1043,22 +1113,14 @@ func (scratch *hexMatchScratch) matchEach(
 				}
 				// Push branches in reverse order so smallest jump is processed first.
 				for jump := maxJ; jump >= minJ; jump-- {
-					scratch.worklist = append(scratch.worklist, hexWorkItem{tail, dp + jump})
+					scratch.worklist = append(scratch.worklist, hexWorkItem{tokens: tail, dataPos: dp + jump, continuation: continuation})
 				}
 				goto nextItem
 
 			case HexTokenAlt:
-				tail := toks[1:]
+				continuation = scratch.internContinuation(toks[1:], continuation)
 				for _, alt := range head.Alternatives {
-					if len(tail) == 0 {
-						scratch.worklist = append(scratch.worklist, hexWorkItem{alt, dp})
-						continue
-					}
-					// Build combined token slice: alt + tail
-					combined := make([]HexPatternToken, len(alt)+len(tail))
-					copy(combined, alt)
-					copy(combined[len(alt):], tail)
-					scratch.worklist = append(scratch.worklist, hexWorkItem{combined, dp})
+					scratch.worklist = append(scratch.worklist, hexWorkItem{tokens: alt, dataPos: dp, continuation: continuation})
 				}
 				goto nextItem
 
