@@ -22,80 +22,18 @@ func fastForwardGreedyTerminalLoop(code []byte, cur *[]thread, s []byte, pos *in
 	}
 	op := code[pc]
 	var splitPC int
-	var pred func(byte) bool
-
-	noCase := (flags & FlagsNoCase) != 0
-	dotAll := (flags & FlagsDotAll) != 0
-
 	switch op {
 	case OpClass:
-		bmStart := pc + 1
-		negIdx := bmStart + 32
-		if negIdx >= len(code) {
-			return false
-		}
-		neg := code[negIdx] != 0
-		splitPC = negIdx + 1
-		if !noCase {
-			pred = func(b byte) bool {
-				return ((code[bmStart+int(b>>3)] & (1 << (b & 7))) != 0) != neg
-			}
-		} else {
-			pred = func(b byte) bool {
-				return checkBitmapMembership(code, bmStart, b, true) != neg
-			}
-		}
-	case OpAny:
-		splitPC = pc + 1
-		if dotAll {
-			pred = func(b byte) bool { return true }
-		} else {
-			pred = func(b byte) bool { return b != '\n' }
-		}
-	case OpNotLiteral:
-		if pc+1 >= len(code) {
-			return false
-		}
-		target := code[pc+1]
+		splitPC = pc + 34
+	case OpLiteral, OpNotLiteral:
 		splitPC = pc + 2
-		if noCase {
-			pred = func(b byte) bool { return !equalNoCase(b, target) }
-		} else {
-			pred = func(b byte) bool { return b != target }
-		}
-	case OpLiteral:
-		if pc+1 >= len(code) {
-			return false
-		}
-		target := code[pc+1]
-		splitPC = pc + 2
-		if noCase {
-			pred = func(b byte) bool { return equalNoCase(b, target) }
-		} else {
-			pred = func(b byte) bool { return b == target }
-		}
-	case OpSpace:
+	case OpAny, OpSpace, OpNonSpace, OpDigit, OpNonDigit, OpWordChar, OpNonWordChar:
 		splitPC = pc + 1
-		pred = isSpace
-	case OpNonSpace:
-		splitPC = pc + 1
-		pred = notSpace
-	case OpDigit:
-		splitPC = pc + 1
-		pred = isDigit
-	case OpNonDigit:
-		splitPC = pc + 1
-		pred = notDigit
-	case OpWordChar:
-		splitPC = pc + 1
-		pred = isWord
-	case OpNonWordChar:
-		splitPC = pc + 1
-		pred = notWord
 	default:
 		return false
 	}
 
+	// Reject ordinary consuming instructions before constructing a predicate.
 	if splitPC+2 >= len(code) {
 		return false
 	}
@@ -118,6 +56,61 @@ func fastForwardGreedyTerminalLoop(code []byte, cur *[]thread, s []byte, pos *in
 		exitPC += 2
 	}
 	if exitPC >= len(code) || code[exitPC] != OpMatch {
+		return false
+	}
+
+	var pred func(byte) bool
+
+	noCase := (flags & FlagsNoCase) != 0
+	dotAll := (flags & FlagsDotAll) != 0
+
+	switch op {
+	case OpClass:
+		bmStart := pc + 1
+		negIdx := bmStart + 32
+		neg := code[negIdx] != 0
+		if !noCase {
+			pred = func(b byte) bool {
+				return ((code[bmStart+int(b>>3)] & (1 << (b & 7))) != 0) != neg
+			}
+		} else {
+			pred = func(b byte) bool {
+				return checkBitmapMembership(code, bmStart, b, true) != neg
+			}
+		}
+	case OpAny:
+		if dotAll {
+			pred = func(b byte) bool { return true }
+		} else {
+			pred = func(b byte) bool { return b != '\n' }
+		}
+	case OpNotLiteral:
+		target := code[pc+1]
+		if noCase {
+			pred = func(b byte) bool { return !equalNoCase(b, target) }
+		} else {
+			pred = func(b byte) bool { return b != target }
+		}
+	case OpLiteral:
+		target := code[pc+1]
+		if noCase {
+			pred = func(b byte) bool { return equalNoCase(b, target) }
+		} else {
+			pred = func(b byte) bool { return b == target }
+		}
+	case OpSpace:
+		pred = isSpace
+	case OpNonSpace:
+		pred = notSpace
+	case OpDigit:
+		pred = isDigit
+	case OpNonDigit:
+		pred = notDigit
+	case OpWordChar:
+		pred = isWord
+	case OpNonWordChar:
+		pred = notWord
+	default:
 		return false
 	}
 
