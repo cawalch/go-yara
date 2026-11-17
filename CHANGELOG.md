@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+* Reuse the folded rule condition, scan-safety result, and header constraints during compilation, eliminating redundant AST traversals and allocations (part of [#543](https://github.com/cawalch/go-yara/issues/543)).
+
 * Analyze truth and evaluation safety together across boolean condition chains, avoiding quadratic subtree traversal while preserving short-circuit and runtime-error behavior (part of [#543](https://github.com/cawalch/go-yara/issues/543)).
 
 * Reuse lowercase rune storage across identifier-suggestion candidates, eliminating per-candidate string and rune-slice allocations while preserving Unicode matching and tie-breaking (part of [#543](https://github.com/cawalch/go-yara/issues/543)).
