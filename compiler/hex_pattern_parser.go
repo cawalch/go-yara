@@ -309,3 +309,7 @@ func hexNibble(ch byte) byte {
 func hexByte(a, b byte) byte {
 	return (hexNibble(a) << 4) | hexNibble(b)
 }
+
+func isHexDigit(ch byte) bool {
+	return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F')
+}

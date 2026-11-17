@@ -9,11 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+* Preserve complete nested first alternatives in the hex byte representation exposed by `CompiledRule.Strings`; matching continues to use the full typed pattern (part of [#542](https://github.com/cawalch/go-yara/issues/542)).
+
 * Memoize failed hex matching states across converging jumps and alternatives to prevent exponential re-exploration of nonmatching tails, preserving successful endpoint order and callback behavior (part of [#542](https://github.com/cawalch/go-yara/issues/542)).
 
 * Cancellable SIMD Teddy scans no longer skip candidates at or beyond the 1 MiB cancellation window. Kernel searches are bounded between cancellation checks and retain overlap for prefixes crossing window boundaries (part of [#540](https://github.com/cawalch/go-yara/issues/540)).
 
 ### Performance
+
+* Derive hex byte representations from parsed tokens instead of parsing twice, remove the legacy parser, and share plain/XOR scan loops while preserving match order (part of [#542](https://github.com/cawalch/go-yara/issues/542)).
 
 * Replace per-branch hex token concatenation with shared tail continuations and avoid scratch allocation for linear anchored scans; reuse branch classification within each scan (part of [#542](https://github.com/cawalch/go-yara/issues/542)).
 

@@ -286,7 +286,7 @@ func (rc *ruleCompiler) compileHexString(value string, modifiers []ast.StringMod
 	}
 	hexPattern.cacheKey = patternCacheKey("hex", value, modifiers)
 	hexPattern.cacheIndex = -1
-	encodedPattern := rc.stringCompiler.parseHexString(value)
+	encodedPattern := encodeHexPatternBytes(hexPattern.Tokens)
 	encodedPattern = rc.stringCompiler.applyXorModifier(encodedPattern, modifiers)
 	return &stringCompilationResult{
 		patternData: encodedPattern,
