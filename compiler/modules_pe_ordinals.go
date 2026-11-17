@@ -2,14 +2,15 @@ package compiler
 
 import "strconv"
 
-// Ordinal display/query alias resolution matching libyara 4.5.8's ord_lookup
+// Ordinal aliases shared by import display/query resolution and imphash,
+// matching libyara 4.5.8's ord_lookup
 // (VirusTotal/yara commit 84b0e3cc0e42f8f8e6b84d19c97ec3ac6ff8aee8,
 // libyara/modules/pe/pe_utils.c; BSD-3-Clause, Copyright (c) 2014-2015
 // The YARA Authors).
 //
-// Keep these compatibility tables strictly separate from
-// compiler/modules_pe_imphash.go so future display-name changes cannot
-// silently alter historical imphash values.
+// These compatibility tables also define historical imphash values. Display-only
+// aliases must be added separately; TestPEImphashOrdinalCompatibility freezes
+// the hash behavior across the entire uint16 ordinal domain.
 
 type peOrdinalDLLKind uint8
 

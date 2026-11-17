@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * Cancellable SIMD Teddy scans no longer skip candidates at or beyond the 1 MiB cancellation window. Kernel searches are bounded between cancellation checks and retain overlap for prefixes crossing window boundaries (part of [#540](https://github.com/cawalch/go-yara/issues/540)).
 
+### Performance
+
+* Reused the frozen PE ordinal lookup tables for `pe.imphash()` and resolved DLL kinds once per import library, removing two duplicate package-level maps while preserving historical hashes (part of [#544](https://github.com/cawalch/go-yara/issues/544)). Kept the short-input compact prefilter kernel out of dispatch inlining to avoid the AMD64 throughput regression exposed by this cleanup.
+
 ## [v0.10.1] - 2026-11-16
 
 ### Fixed
