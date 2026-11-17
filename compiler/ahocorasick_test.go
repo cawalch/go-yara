@@ -432,3 +432,42 @@ func TestACAutomatonEdgeCases(t *testing.T) {
 		})
 	}
 }
+
+func TestSearch16RootRunParity(t *testing.T) {
+	ac := newacAutomaton()
+	for _, pattern := range []string{"a", "ab", "aba", "bc"} {
+		if err := ac.AddString(pattern, []byte(pattern), false, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := ac.Compile(); err != nil {
+		t.Fatal(err)
+	}
+	// Compare the ordinary 16-bit loop against the unchanged 32-bit loop.
+	ac.teddy, ac.rootLanes = nil, nil
+	ac.transitions32 = make([][256]int32, len(ac.transitions16))
+	for state, row := range ac.transitions16 {
+		for b, next := range row {
+			ac.transitions32[state][b] = int32(next)
+		}
+	}
+	for padding := 0; padding <= 257; padding++ {
+		for _, tail := range []string{"", "a", "ab", "abx bc", "ababa", "b ", "bc   "} {
+			data := []byte(strings.Repeat(" ", padding) + tail)
+			for _, limit := range []int{1, 100} {
+				var got, want []acMatch
+				ac.search16(data, func(m acMatch) bool {
+					got = append(got, m)
+					return len(got) < limit
+				})
+				ac.search32(data, func(m acMatch) bool {
+					want = append(want, m)
+					return len(want) < limit
+				})
+				if !slices.Equal(got, want) {
+					t.Fatalf("padding=%d tail=%q limit=%d: matches=%v, want %v", padding, tail, limit, got, want)
+				}
+			}
+		}
+	}
+}
