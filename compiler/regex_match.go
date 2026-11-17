@@ -769,7 +769,15 @@ func regexAtomCandidateStarts(
 		step = 2
 	}
 
-	starts := make([]int, 0, min(limit, len(atomStarts)*2))
+	fixedOffset := pattern.atomMinOffset == pattern.atomMaxOffset && !pattern.hasPrefixRepeat
+	var starts []int
+	if fixedOffset {
+		// Each ordered atom hit yields at most one start at the same offset.
+		// Filtering in place cannot overwrite an unread hit.
+		starts = atomStarts[:0]
+	} else {
+		starts = make([]int, 0, min(limit, len(atomStarts)*2))
+	}
 	for _, atomStart := range atomStarts {
 		effMaxOffset, ok := pattern.atomOccurrenceValid(data, atomStart, isWide)
 		if !ok {
@@ -796,7 +804,7 @@ func regexAtomCandidateStarts(
 		}
 	}
 
-	if len(starts) < 2 {
+	if fixedOffset || len(starts) < 2 {
 		return starts, true
 	}
 	slices.Sort(starts)
