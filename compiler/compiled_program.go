@@ -161,6 +161,11 @@ func (cp *CompiledProgram) prepare() error {
 			}
 			cp.moduleSchemas[name] = schema
 		}
+		for _, pattern := range rule.HexPatterns {
+			if pattern != nil {
+				pattern.scanMetadata = prepareHexScanMetadata(pattern)
+			}
+		}
 		rule.nativePE = false
 		rule.BuildStringIndex()
 		if rule.dependencies != nil {

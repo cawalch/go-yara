@@ -679,12 +679,16 @@ func appendHexPrefilterMatches(
 	if scratch == nil {
 		scratch = &hexMatchScratch{}
 	}
-	scratch.prepareHex(pattern.Tokens)
+	if pattern.scanMetadata != nil {
+		scratch.prepareHexMetadata(pattern.Tokens, pattern.scanMetadata)
+	} else {
+		scratch.prepareHex(pattern.Tokens)
+	}
 	var xorKey *byte
 	if len(pattern.XorKeys) == 1 {
 		xorKey = &pattern.XorKeys[0]
 	}
-	linear := isLinearHexPattern(pattern.Tokens)
+	linear := scratch.planPrefix == len(pattern.Tokens)
 	lastStart := -1
 
 	verifyCandidateStart := func(start int) {
@@ -750,7 +754,7 @@ func appendHexPrefilterMatches(
 		}
 	}
 
-	findHexMatchesEach(pattern, data, done, scratch, func(m Match) bool {
+	findPreparedHexMatchesEach(pattern, data, done, scratch, func(m Match) bool {
 		m.Pattern = strID
 		if matchPassesModifiers(data, m, rule.StringModifiers[strID], false) {
 			dst = append(dst, matchSpan{Offset: m.Offset, Length: m.Length})
