@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+* Restore empty-regex lookahead with reader snapshots instead of rescanning the source prefix, preserving token positions while avoiding offset-dependent lexer work (part of [#543](https://github.com/cawalch/go-yara/issues/543)).
+
 * Parse size literals directly without compiling a regular expression per call, eliminating successful-parse allocations while preserving syntax and overflow errors (part of [#543](https://github.com/cawalch/go-yara/issues/543)).
 
 * Reject ineligible regex terminal-loop fast paths before constructing byte predicates, reducing setup work for ordinary consuming instructions; simplify consecutive compact-prefilter root misses to avoid repeated state checks (part of [#545](https://github.com/cawalch/go-yara/issues/545)).
