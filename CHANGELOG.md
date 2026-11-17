@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+* Reuse lowercase rune storage across identifier-suggestion candidates, eliminating per-candidate string and rune-slice allocations while preserving Unicode matching and tie-breaking (part of [#543](https://github.com/cawalch/go-yara/issues/543)).
+
 * Share the read-only built-in function signature table across semantic validators instead of rebuilding it for every function call, reducing validation allocations while preserving per-call return types and diagnostics (part of [#543](https://github.com/cawalch/go-yara/issues/543)).
 
 * Reuse the exact built-in PE schema when loading compiled programs and bypass reflection for identical schema pointers, avoiding repeated per-rule schema validation while preserving custom and legacy schemas (part of [#543](https://github.com/cawalch/go-yara/issues/543)).
