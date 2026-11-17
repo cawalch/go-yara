@@ -174,3 +174,68 @@ func TestTeddyMultiPatternRuleIntegration(t *testing.T) {
 		t.Fatalf("unexpected match detail: %+v", matches)
 	}
 }
+
+func TestTeddyCancelableWindowCandidates(t *testing.T) {
+	if !TeddySIMDSupported() {
+		t.Skip("requires SIMD Teddy")
+	}
+	for _, count := range []int{2, 16} {
+		patterns := make([]acStringInfo, count)
+		for i := range patterns {
+			patterns[i].Data = []byte{byte('a' + i), 'b', 'c'}
+		}
+		prefilter := newTeddyPrefilter(patterns)
+		if prefilter == nil {
+			continue // Not every architecture supports both bank counts.
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		for _, from := range []int{0, 7} {
+			for _, offset := range []int{cancelableSearchWindow - 2, cancelableSearchWindow - 1, cancelableSearchWindow, cancelableSearchWindow + 1, 3 * cancelableSearchWindow / 2} {
+				data := make([]byte, 2*cancelableSearchWindow+64)
+				copy(data[from+offset:], patterns[0].Data)
+				if got := prefilter.findCandidateWithCancel(data, from, ctx.Done()); got != from+offset {
+					t.Fatalf("patterns=%d from=%d offset=%d: got %d, want %d", count, from, offset, got, from+offset)
+				}
+			}
+		}
+	}
+}
+
+type cancelingTeddyPrefilter struct {
+	t     *testing.T
+	done  chan struct{}
+	calls int
+}
+
+func (p *cancelingTeddyPrefilter) findCandidate(data []byte, from int) int {
+	p.calls++
+	if len(data)-from > cancelableSearchWindow+33 {
+		p.t.Fatalf("unbounded kernel input: %d bytes", len(data)-from)
+	}
+	close(p.done)
+	return -1
+}
+
+func (p *cancelingTeddyPrefilter) findCandidateWithCancel(data []byte, from int, done <-chan struct{}) int {
+	return teddyFindCandidateWithCancel(p, data, from, done, 33)
+}
+
+func TestTeddyCancellationBetweenWindows(t *testing.T) {
+	for _, canceled := range []bool{false, true} {
+		p := &cancelingTeddyPrefilter{t: t, done: make(chan struct{})}
+		if canceled {
+			close(p.done)
+		}
+		if got := p.findCandidateWithCancel(make([]byte, 3*cancelableSearchWindow), 7, p.done); got != -1 {
+			t.Fatalf("got candidate %d after cancellation", got)
+		}
+		wantCalls := 1
+		if canceled {
+			wantCalls = 0
+		}
+		if p.calls != wantCalls {
+			t.Fatalf("kernel calls = %d, want %d", p.calls, wantCalls)
+		}
+	}
+}
