@@ -342,17 +342,15 @@ func findHexMatchesXorDiffEach(
 		}
 
 		if linear {
-			if end, ok := matchLinearHexPattern(tokens, data, candidateStart, &candidateKey); ok {
-				if !onMatch(Match{
-					Offset: int64(candidateStart),
-					Length: end - candidateStart,
-				}) {
-					return
-				}
+			end, ok := matchLinearHexPattern(tokens, data, candidateStart, &candidateKey)
+			if !ok {
+				continue
+			}
+			if !onMatch(Match{Offset: int64(candidateStart), Length: end - candidateStart}) {
+				return
 			}
 			continue
 		}
-
 		if !scratch.matchEach(tokens, data, candidateStart, &candidateKey, func(end int) bool {
 			if end <= candidateStart {
 				return true
@@ -383,49 +381,62 @@ func findHexMatchesAnchoredEach(
 	checkpoint := 0
 	for keyIndex := range max(1, len(keys)) {
 		var key *byte
-		targetByte := anchor.byteVal
 		if len(keys) > 0 {
 			key = &keys[keyIndex]
-			targetByte ^= *key
 		}
-		pos := 0
-		for {
-			if scanCanceledAt(done, checkpoint) {
-				return
-			}
-			checkpoint++
-			idx := bytes.IndexByte(data[pos:], targetByte)
-			if idx == -1 {
-				break
-			}
-			matchPos := pos + idx
-			pos = matchPos + 1
+		if !scanHexAnchorKey(tokens, data, anchor, key, linear, done, &checkpoint, scratch, onMatch) {
+			return
+		}
+	}
+}
 
-			first := max(0, matchPos-anchor.maxOffset)
-			last := min(len(data), matchPos-anchor.offset)
-			for candidateStart := first; candidateStart <= last; candidateStart++ {
-				if linear {
-					if end, ok := matchLinearHexPattern(tokens, data, candidateStart, key); ok {
-						if !onMatch(Match{
-							Offset: int64(candidateStart),
-							Length: end - candidateStart,
-						}) {
-							return
-						}
-					}
+// scanHexAnchorKey discovers and verifies candidates for one key. Keeping the
+// linear verification here avoids a helper call for every candidate.
+//
+//nolint:revive // argument-limit: hot traversal keeps callback escape analysis precise
+func scanHexAnchorKey(tokens []HexPatternToken, data []byte, anchor anchorInfo, key *byte,
+	linear bool, done <-chan struct{}, checkpoint *int, scratch *hexMatchScratch, onMatch func(Match) bool,
+) bool {
+	targetByte := anchor.byteVal
+	if key != nil {
+		targetByte ^= *key
+	}
+	pos := 0
+	for {
+		if scanCanceledAt(done, *checkpoint) {
+			return false
+		}
+		(*checkpoint)++
+		idx := bytes.IndexByte(data[pos:], targetByte)
+		if idx == -1 {
+			return true
+		}
+		matchPos := pos + idx
+		pos = matchPos + 1
+
+		first := max(0, matchPos-anchor.maxOffset)
+		last := min(len(data), matchPos-anchor.offset)
+		for candidateStart := first; candidateStart <= last; candidateStart++ {
+			if linear {
+				end, ok := matchLinearHexPattern(tokens, data, candidateStart, key)
+				if !ok {
 					continue
 				}
-				if !scratch.matchEach(tokens, data, candidateStart, key, func(end int) bool {
-					if end <= candidateStart {
-						return true
-					}
-					return onMatch(Match{
-						Offset: int64(candidateStart),
-						Length: end - candidateStart,
-					})
-				}) {
-					return
+				if !onMatch(Match{Offset: int64(candidateStart), Length: end - candidateStart}) {
+					return false
 				}
+				continue
+			}
+			if !scratch.matchEach(tokens, data, candidateStart, key, func(end int) bool {
+				if end <= candidateStart {
+					return true
+				}
+				return onMatch(Match{
+					Offset: int64(candidateStart),
+					Length: end - candidateStart,
+				})
+			}) {
+				return false
 			}
 		}
 	}
