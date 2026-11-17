@@ -286,10 +286,13 @@ func compiledPatternMatchesAtWithCancel(rule *CompiledRule, id string, data []by
 			return false
 		}
 		keys := pattern.XorKeys
-		if len(keys) == 0 && len(pattern.XorRange) > 0 {
+		if pattern.scanMetadata != nil {
+			keys = pattern.scanMetadata.keys
+		} else if len(keys) == 0 && len(pattern.XorRange) > 0 {
 			keys = expandXorKeys(pattern.XorRange)
 		}
 		return hexConstraintCheck{
+			metadata:  pattern.scanMetadata,
 			tokens:    pattern.Tokens,
 			keys:      keys,
 			data:      data,
@@ -303,6 +306,7 @@ func compiledPatternMatchesAtWithCancel(rule *CompiledRule, id string, data []by
 }
 
 type hexConstraintCheck struct {
+	metadata  *hexScanMetadata
 	tokens    []HexPatternToken
 	keys      []byte
 	data      []byte
@@ -313,7 +317,13 @@ type hexConstraintCheck struct {
 }
 
 func (c hexConstraintCheck) match() bool {
-	if isLinearHexPattern(c.tokens) {
+	linear := false
+	if c.metadata != nil {
+		linear = c.metadata.linear
+	} else {
+		linear = isLinearHexPattern(c.tokens)
+	}
+	if linear {
 		return c.matchLinear()
 	}
 	return c.matchNonLinear()
@@ -336,7 +346,11 @@ func (c hexConstraintCheck) matchLinear() bool {
 
 func (c hexConstraintCheck) matchNonLinear() bool {
 	var scratch hexMatchScratch
-	scratch.prepareHex(c.tokens)
+	if c.metadata != nil {
+		scratch.prepareHexMetadata(c.tokens, c.metadata)
+	} else {
+		scratch.prepareHex(c.tokens)
+	}
 	testKey := func(key *byte) bool {
 		matched := false
 		scratch.matchEach(c.tokens, c.subData, 0, key, func(end int) bool {

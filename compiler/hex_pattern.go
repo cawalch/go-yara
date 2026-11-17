@@ -38,11 +38,12 @@ type HexPatternToken struct {
 // HexPattern represents a compiled hexadecimal pattern, consisting of an ordered sequence
 // of tokens and optional XOR transformation configurations.
 type HexPattern struct {
-	Tokens     []HexPatternToken
-	XorKeys    []byte
-	XorRange   []ast.XorRange
-	cacheKey   string
-	cacheIndex int
+	Tokens       []HexPatternToken
+	XorKeys      []byte
+	XorRange     []ast.XorRange
+	cacheKey     string
+	cacheIndex   int
+	scanMetadata *hexScanMetadata
 }
 
 // Clone creates a deep copy of the HexPattern and its token sequences.
@@ -242,17 +243,27 @@ func findHexMatches(pattern *HexPattern, data []byte, done <-chan struct{}) []Ma
 //
 // nolint:revive // cancellation signal remains explicit on the matching hot path
 func findHexMatchesEach(pattern *HexPattern, data []byte, done <-chan struct{}, scratch *hexMatchScratch, onMatch func(Match) bool) {
+	findHexMatchesWithMetadata(pattern, data, done, scratch, onMatch, nil)
+}
+
+//nolint:revive // argument-limit: scan state and immutable metadata stay explicit
+func findHexMatchesWithMetadata(pattern *HexPattern, data []byte, done <-chan struct{}, scratch *hexMatchScratch, onMatch func(Match) bool, metadata *hexScanMetadata) {
 	if pattern == nil || len(pattern.Tokens) == 0 || len(data) == 0 {
 		return
 	}
-	if hexTokensMinLengthCapped(pattern.Tokens, len(data)+1) > len(data) {
+	if metadata == nil {
+		minLength := hexTokensMinLengthCapped(pattern.Tokens, len(data)+1)
+		if minLength > len(data) {
+			return
+		}
+		dynamic := buildHexScanMetadata(pattern, minLength)
+		metadata = &dynamic
+	}
+	if metadata.minLength > len(data) {
 		return
 	}
-	keys := pattern.XorKeys
-	if len(keys) == 0 && len(pattern.XorRange) > 0 {
-		keys = expandXorKeys(pattern.XorRange)
-	}
-	if hexTokensHasLargeJump(pattern.Tokens, hexLargeJumpSpan) {
+	keys := metadata.keys
+	if metadata.hasLargeJump {
 		if len(keys) == 0 && !hasAllMandatoryHexBytes(pattern.Tokens, data, nil) {
 			return
 		}
@@ -261,30 +272,30 @@ func findHexMatchesEach(pattern *HexPattern, data []byte, done <-chan struct{}, 
 		}
 	}
 	// Linear anchored scans do not need branch scratch at all.
-	anchor := findAnchorByte(pattern.Tokens)
-	if anchor.ok && anchor.maxOffset >= 0 && len(keys) <= 1 && isLinearHexPattern(pattern.Tokens) {
+	anchor := metadata.anchor
+	if anchor.ok && anchor.maxOffset >= 0 && len(keys) <= 1 && metadata.linear {
 		if scratch != nil {
 			scratch.endJumpScan()
 		}
-		findHexMatchesAnchoredEach(pattern.Tokens, data, keys, anchor, done, nil, onMatch)
+		findHexMatchesAnchoredEach(pattern.Tokens, data, keys, metadata, done, nil, onMatch)
 		return
 	}
 	if scratch == nil {
 		scratch = &hexMatchScratch{}
 	}
-	scratch.prepareHex(pattern.Tokens)
+	scratch.prepareHexMetadata(pattern.Tokens, metadata)
 	defer scratch.endJumpScan()
 
 	// Multi-key XOR can use an invariant differential anchor for 2+ byte runs.
 	if len(keys) > 1 {
-		diffAnchor := findXorDiffAnchor(pattern.Tokens)
+		diffAnchor := metadata.diffAnchor
 		if diffAnchor.ok {
-			findHexMatchesXorDiffEach(pattern.Tokens, data, keys, diffAnchor, done, scratch, onMatch)
+			findHexMatchesXorDiffEach(pattern.Tokens, data, metadata, done, scratch, onMatch)
 			return
 		}
 	}
 	if anchor.ok && anchor.maxOffset >= 0 {
-		findHexMatchesAnchoredEach(pattern.Tokens, data, keys, anchor, done, scratch, onMatch)
+		findHexMatchesAnchoredEach(pattern.Tokens, data, keys, metadata, done, scratch, onMatch)
 		return
 	}
 	findHexMatchesBruteForceEach(pattern.Tokens, data, keys, done, scratch, onMatch)
@@ -296,18 +307,18 @@ func findHexMatchesEach(pattern *HexPattern, data []byte, done <-chan struct{}, 
 func findHexMatchesXorDiffEach(
 	tokens []HexPatternToken,
 	data []byte,
-	keys []byte,
-	anchor xorDiffAnchor,
+	metadata *hexScanMetadata,
 	done <-chan struct{},
 	scratch *hexMatchScratch,
 	onMatch func(Match) bool,
 ) {
+	anchor := metadata.diffAnchor
 	diffData := scratch.ensureDiffData(data)
 	if len(diffData) < len(anchor.diff) {
 		return
 	}
-	mask := makeXorKeyMask(keys)
-	linear := isLinearHexPattern(tokens)
+	mask := metadata.keyMask
+	linear := metadata.linear
 	checkpoint := 0
 	pos := 0
 	singleByteDiff := len(anchor.diff) == 1
@@ -372,12 +383,13 @@ func findHexMatchesAnchoredEach(
 	tokens []HexPatternToken,
 	data []byte,
 	keys []byte,
-	anchor anchorInfo,
+	metadata *hexScanMetadata,
 	done <-chan struct{},
 	scratch *hexMatchScratch,
 	onMatch func(Match) bool,
 ) {
-	linear := isLinearHexPattern(tokens)
+	linear := metadata.linear
+	anchor := metadata.anchor
 	checkpoint := 0
 	for keyIndex := range max(1, len(keys)) {
 		var key *byte
@@ -524,7 +536,7 @@ func matchLinearHexPattern(tokens []HexPatternToken, data []byte, pos int, xorKe
 
 func expandXorKeys(ranges []ast.XorRange) []byte {
 	keys := make([]byte, 0, 256)
-	seen := make(map[byte]struct{})
+	var seen [256]bool
 	for _, r := range ranges {
 		min := int(r.Min)
 		max := int(r.Max)
@@ -545,10 +557,10 @@ func expandXorKeys(ranges []ast.XorRange) []byte {
 		}
 		for k := min; k <= max; k++ {
 			b := byte(k)
-			if _, ok := seen[b]; ok {
+			if seen[b] {
 				continue
 			}
-			seen[b] = struct{}{}
+			seen[b] = true
 			keys = append(keys, b)
 		}
 	}

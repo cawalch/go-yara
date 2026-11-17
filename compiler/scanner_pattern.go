@@ -413,7 +413,7 @@ func (s *Scanner) addLocalNonTextMatches(
 				continue
 			}
 		}
-		findHexMatchesEach(pattern, data, done, &s.hexScratch, func(m Match) bool {
+		findPreparedHexMatchesEach(pattern, data, done, &s.hexScratch, func(m Match) bool {
 			m.Pattern = id
 			if matchPassesModifiers(data, m, rule.StringModifiers[id], false) {
 				s.matchCtx.AddMatch(m)

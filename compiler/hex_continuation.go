@@ -140,11 +140,17 @@ func (scratch *hexMatchScratch) matchSingleJump(tokens []HexPatternToken, data [
 // HexPatterns may be edited between scans. Anchor candidates reuse this plan.
 func (scratch *hexMatchScratch) prepareHex(tokens []HexPatternToken) {
 	scratch.planTokens = tokens
-	prefix := 0
+	scratch.planPrefix, scratch.planSingleJump, scratch.planMemoize = classifyHexTokens(tokens)
+}
+
+func classifyHexTokens(tokens []HexPatternToken) (prefix int, singleJump, memoize bool) {
 	for prefix < len(tokens) && tokens[prefix].Kind != HexTokenJump && tokens[prefix].Kind != HexTokenAlt {
 		prefix++
 	}
-	scratch.planPrefix = prefix
-	scratch.planSingleJump = prefix < len(tokens) && tokens[prefix].Kind == HexTokenJump && isLinearHexPattern(tokens[prefix+1:])
-	scratch.planMemoize = !scratch.planSingleJump && hexBranchCount(tokens, 2) >= 2
+	if prefix == len(tokens) {
+		return prefix, false, false
+	}
+	singleJump = prefix < len(tokens) && tokens[prefix].Kind == HexTokenJump && isLinearHexPattern(tokens[prefix+1:])
+	memoize = !singleJump && hexBranchCount(tokens, 2) >= 2
+	return prefix, singleJump, memoize
 }
