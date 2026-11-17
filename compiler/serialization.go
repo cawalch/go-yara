@@ -588,7 +588,13 @@ func deserializeProgram(payload serializedProgram, modules []Module) (*CompiledP
 				return nil, fmt.Errorf("module %s has an incompatible schema", name)
 			}
 		}
-		schemas[name] = cloneModuleSchema(schema)
+		// Reuse only the exact current built-in schema after validation and
+		// host compatibility checks. Older and custom schemas remain owned copies.
+		if name == "pe" && reflect.DeepEqual(schema, peSchema) {
+			schemas[name] = peSchema
+		} else {
+			schemas[name] = cloneModuleSchema(schema)
+		}
 	}
 	dependenciesMap, err := decodeEntryMap(
 		payload.DependencyEntries,

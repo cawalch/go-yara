@@ -737,7 +737,7 @@ func cloneStatsValue(value any) any {
 
 func (rc *ruleCompiler) ruleModuleSchemas() map[string]*ModuleSchema {
 	schemas := rc.conditionCompiler.moduleSchemas
-	if !slices.Contains(rc.conditionCompiler.moduleAccessNames, "pe") && reflect.DeepEqual(schemas["pe"], peSchema) {
+	if !slices.Contains(rc.conditionCompiler.moduleAccessNames, "pe") && (schemas["pe"] == peSchema || reflect.DeepEqual(schemas["pe"], peSchema)) {
 		if len(schemas) == 1 {
 			return nil
 		}
