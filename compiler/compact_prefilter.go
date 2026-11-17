@@ -198,14 +198,22 @@ func compactPrefilterRejectsShort16(data []byte, trans [][256]uint16, accepting 
 	rootTransitions := &trans[0]
 	// Keep state arithmetic in a full register; the transition table stays 16-bit.
 	var state uint32
-	for _, b := range data {
+	for i := 0; i < len(data); i++ {
 		if state == 0 {
-			state = uint32(rootTransitions[b])
-			if state == 0 {
-				continue
+			// Consecutive root misses need neither a state branch nor an
+			// accepting-state lookup for each byte.
+			for {
+				state = uint32(rootTransitions[data[i]])
+				if state != 0 {
+					break
+				}
+				i++
+				if i == len(data) {
+					return true
+				}
 			}
 		} else {
-			state = uint32(trans[state][b])
+			state = uint32(trans[state][data[i]])
 		}
 		if accepting[state] {
 			return false

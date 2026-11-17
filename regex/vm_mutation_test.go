@@ -559,3 +559,26 @@ func TestRunAtMatchBatchGreedyAlternation(t *testing.T) {
 // are predicate closures superseded by the specialised OpClass/OpAny/OpNotLiteral
 // fast-forward loops, and 833/836/839/863/878/889 are switch case conditions,
 // for which Go coverage emits no block.
+
+func TestFastForwardTruncatedTerminalLoops(t *testing.T) {
+	for _, pattern := range []string{`a+`, `[^a]+`, `[a-z]+`, `.+`, `\s+`, `\S+`, `\d+`, `\D+`, `\w+`, `\W+`} {
+		t.Run(pattern, func(t *testing.T) {
+			code := mustCompile(t, pattern)
+			var initial []thread
+			addThread(code, nil, &initial, 0, 0, make([]int64, len(code)), 1, 0)
+			if len(initial) != 1 {
+				t.Fatalf("expected one consuming state, got %v", initial)
+			}
+			for n := 0; n < len(code); n++ {
+				cur := append([]thread(nil), initial...)
+				pos, end := 0, -1
+				if fastForwardGreedyTerminalLoop(code[:n], &cur, []byte("aaa"), &pos, 0, &end, nil) {
+					t.Fatalf("fast-forwarded truncated program of length %d", n)
+				}
+				if pos != 0 || end != -1 || len(cur) != 1 || cur[0] != initial[0] {
+					t.Fatalf("rejected program of length %d changed VM state", n)
+				}
+			}
+		})
+	}
+}

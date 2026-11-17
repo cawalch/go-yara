@@ -463,3 +463,27 @@ rule consumer {
 		}
 	}
 }
+
+func TestCompactPrefilterShortRootRuns(t *testing.T) {
+	program, err := NewCompiler().CompileSource(compactPrefilterRules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gate := program.compactPrefilter
+	if gate == nil || len(gate.automaton.transitions16) == 0 {
+		t.Fatal("missing 16-bit compact prefilter")
+	}
+	trans := gate.automaton.transitions16
+	// Exercise runs ending at EOF, entering an accepting state, and returning
+	// to the root after a partial match, including every short-input boundary.
+	for padding := 0; padding <= 256; padding++ {
+		for _, tail := range []string{"", "r", "rare_", "rare_one", "rare_x rare_two", "rare_x "} {
+			data := []byte(strings.Repeat(" ", padding) + tail)
+			got := compactPrefilterRejectsShort16(data, trans, gate.accepting)
+			want := compactPrefilterRejectsTable(data, gate, trans)
+			if got != want {
+				t.Fatalf("padding=%d tail=%q: rejected=%v, want %v", padding, tail, got, want)
+			}
+		}
+	}
+}
