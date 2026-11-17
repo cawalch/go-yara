@@ -156,7 +156,7 @@ func (cp *CompiledProgram) prepare() error {
 		}
 		names[rule.Name] = true
 		for name, schema := range rule.moduleSchemas {
-			if prior := cp.moduleSchemas[name]; prior != nil && !reflect.DeepEqual(prior, schema) {
+			if prior := cp.moduleSchemas[name]; prior != nil && prior != schema && !reflect.DeepEqual(prior, schema) {
 				return fmt.Errorf("conflicting schema for module %q", name)
 			}
 			cp.moduleSchemas[name] = schema

@@ -154,14 +154,14 @@ func (i *Interpreter) peIsBitness(want64 bool) ModuleValue {
 func isNativePEFunction(module Module, name string, function ModuleFunction) bool {
 	builtin, ok := peNativeFunctions[name]
 	return ok && module.Name == "pe" &&
-		reflect.DeepEqual(module.Schema, peSchema) &&
+		(module.Schema == peSchema || reflect.DeepEqual(module.Schema, peSchema)) &&
 		reflect.DeepEqual(function, builtin)
 }
 
 // Preserve loading of programs emitted with earlier native PE schemas.
 // Match complete schemas so unrelated host modules named pe remain custom.
 func isNativePESchema(schema *ModuleSchema) bool {
-	return schema != nil && (reflect.DeepEqual(schema, peSchema) || reflect.DeepEqual(schema, peDebugSchema) || reflect.DeepEqual(schema, peRichSignatureSchema) || reflect.DeepEqual(schema, peVersionInfoSchema) || reflect.DeepEqual(schema, peResourcesSchema) || reflect.DeepEqual(schema, peSignatureVerifySchema) || reflect.DeepEqual(schema, peSignaturesSchema) || reflect.DeepEqual(schema, peOverlaySchema) || reflect.DeepEqual(schema, peDLLNameSchema) || reflect.DeepEqual(schema, peExportTimestampSchema) || reflect.DeepEqual(schema, peExportsSchema) || reflect.DeepEqual(schema, peImportsSchema) || reflect.DeepEqual(schema, peHeaderSchema))
+	return schema != nil && (schema == peSchema || reflect.DeepEqual(schema, peSchema) || reflect.DeepEqual(schema, peDebugSchema) || reflect.DeepEqual(schema, peRichSignatureSchema) || reflect.DeepEqual(schema, peVersionInfoSchema) || reflect.DeepEqual(schema, peResourcesSchema) || reflect.DeepEqual(schema, peSignatureVerifySchema) || reflect.DeepEqual(schema, peSignaturesSchema) || reflect.DeepEqual(schema, peOverlaySchema) || reflect.DeepEqual(schema, peDLLNameSchema) || reflect.DeepEqual(schema, peExportTimestampSchema) || reflect.DeepEqual(schema, peExportsSchema) || reflect.DeepEqual(schema, peImportsSchema) || reflect.DeepEqual(schema, peHeaderSchema))
 }
 
 func newPESchema() *ModuleSchema {
