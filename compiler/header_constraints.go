@@ -336,6 +336,7 @@ func (c hexConstraintCheck) matchLinear() bool {
 
 func (c hexConstraintCheck) matchNonLinear() bool {
 	var scratch hexMatchScratch
+	scratch.prepareHex(c.tokens)
 	testKey := func(key *byte) bool {
 		matched := false
 		scratch.matchEach(c.tokens, c.subData, 0, key, func(end int) bool {
