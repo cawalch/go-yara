@@ -19,6 +19,11 @@ func processEscapeSequencesOptimized(s string) string {
 		return globalInterner.internString(s)
 	}
 
+	return processEscapedString(s)
+}
+
+// processEscapedString decodes a literal already known to contain a backslash.
+func processEscapedString(s string) string {
 	// Get a string builder from the pool
 	builderPtr, ok := stringBuilderPool.Get().(*strings.Builder)
 	if !ok {
