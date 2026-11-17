@@ -414,8 +414,11 @@ func (p *Parser) synchronize() {
 
 // updateParserTokens updates the current tokens for all specialized parsers
 func (p *Parser) updateParserTokens() {
+	// These parsers share the same expression and declaration parsers. The
+	// public quantifier/rule setters also update those children, so using
+	// them here would copy the same token pair into shared children again.
 	p.exprParser.SetCurrentTokens(p.current, p.peek)
-	p.quantParser.SetCurrentTokens(p.current, p.peek)
 	p.declParser.SetCurrentTokens(p.current, p.peek)
-	p.ruleParser.SetCurrentTokens(p.current, p.peek)
+	p.quantParser.current, p.quantParser.peek = p.current, p.peek
+	p.ruleParser.current, p.ruleParser.peek = p.current, p.peek
 }
