@@ -2,7 +2,6 @@ package compiler
 
 import (
 	"bytes"
-	"slices"
 
 	"github.com/cawalch/go-yara/ast"
 	"github.com/cawalch/go-yara/regex"
@@ -60,7 +59,8 @@ func addRegexMatchesCached(
 	atomRequiresLinearFallback := false
 	//nolint:nestif // candidate verification keeps cancellation local to hot loops
 	if len(atom) > 0 {
-		starts, handled := regexAtomCandidateStarts(data, atom, regexInfo, flags, isWide, ctx.cancelDone)
+		starts, handled := regexAtomCandidateStartsInto(ctx, data, atom, regexInfo, flags, isWide, ctx.cancelDone)
+		ctx.retainRegexCandidates(starts)
 		if handled {
 			if len(starts) == 0 {
 				return
@@ -102,7 +102,8 @@ func addRegexMatchesCached(
 	}
 	//nolint:nestif // candidate verification keeps cancellation local to hot loops
 	if !isWide && regexInfo.leadingGap != nil && !useSparseByteSet {
-		starts, handled := leadingGapRegexCandidateStarts(data, regexInfo.leadingGap, flags, ctx.cancelDone)
+		starts, handled := leadingGapRegexCandidateStartsInto(ctx.regexCandidates, data, regexInfo.leadingGap, flags, ctx.cancelDone)
+		ctx.retainRegexCandidates(starts)
 		if handled {
 			if len(starts) == 0 {
 				return
@@ -151,18 +152,13 @@ func addRegexMatchesCached(
 	addRegexMatchesLinear(ctx, id, regexInfo, data, modifiers, flags, isWide, bs)
 }
 
-//nolint:revive // cancellation signal stays explicit in the candidate hot path
-func leadingGapRegexCandidateStarts(
-	data []byte,
-	plan *regexLeadingGapPlan,
-	flags regex.Flags,
-	done <-chan struct{},
-) ([]int, bool) {
+//nolint:revive // caller-owned candidate storage remains explicit
+func leadingGapRegexCandidateStartsInto(dst []int, data []byte, plan *regexLeadingGapPlan, flags regex.Flags, done <-chan struct{}) ([]int, bool) {
 	if plan == nil || len(plan.atoms) == 0 {
 		return nil, false
 	}
 	limit := max(1024, len(data)/4)
-	starts := make([]int, 0, min(limit, 64))
+	starts := dst[:0]
 	checkpoint := 0
 	for _, atom := range plan.atoms {
 		searcher := newRegexLiteralSearcher(data, atom.data, flags)
@@ -202,19 +198,7 @@ func leadingGapRegexCandidateStarts(
 			}
 		}
 	}
-	if len(starts) < 2 {
-		return starts, true
-	}
-	slices.Sort(starts)
-	unique := 1
-	for _, start := range starts[1:] {
-		if start == starts[unique-1] {
-			continue
-		}
-		starts[unique] = start
-		unique++
-	}
-	return starts[:unique], true
+	return sortedUniqueRegexStarts(starts), true
 }
 
 type regexAlternativeCursor struct {
@@ -724,8 +708,9 @@ func fixedRegexMatchAt(sets []regex.ByteSet, data []byte, wide bool, start int) 
 	return length, true
 }
 
-//nolint:revive // argument-limit: hot path avoids allocating an options struct
-func regexAtomCandidateStarts(
+//nolint:revive // reusable context and cancellation remain explicit
+func regexAtomCandidateStartsInto(
+	ctx *MatchContext,
 	data, atom []byte,
 	pattern RegexPattern,
 	flags regex.Flags,
@@ -738,14 +723,21 @@ func regexAtomCandidateStarts(
 	searcher := newRegexLiteralSearcher(data, atom, flags)
 	first := searcher.index(0)
 	if first < 0 {
-		return nil, true
+		return ctx.regexCandidates[:0], true
 	}
 	if pattern.atomMaxOffset < 0 {
 		return nil, false
 	}
 
 	limit := max(1024, len(data)/4)
-	atomStarts := make([]int, 0, min(limit, 64))
+	fixedOffset := pattern.atomMinOffset == pattern.atomMaxOffset && !pattern.hasPrefixRepeat
+	atomStarts := ctx.regexAtomHits[:0]
+	if fixedOffset {
+		atomStarts = ctx.regexCandidates[:0]
+	}
+	if cap(atomStarts) == 0 {
+		atomStarts = make([]int, 0, min(limit, 64))
+	}
 	atomStarts = append(atomStarts, first)
 	for checkpoint, searchFrom := 0, first+1; searchFrom <= len(data); checkpoint++ {
 		if scanCanceledAt(done, checkpoint) {
@@ -757,11 +749,15 @@ func regexAtomCandidateStarts(
 		}
 		atomStarts = append(atomStarts, next)
 		if len(atomStarts) > limit {
+			ctx.regexAtomHits = retainedRegexCandidates(atomStarts)
 			return nil, false
 		}
 		searchFrom = next + 1
 	}
 
+	if !fixedOffset {
+		ctx.regexAtomHits = retainedRegexCandidates(atomStarts)
+	}
 	minOffset := pattern.atomMinOffset
 	step := 1
 	if isWide {
@@ -769,14 +765,16 @@ func regexAtomCandidateStarts(
 		step = 2
 	}
 
-	fixedOffset := pattern.atomMinOffset == pattern.atomMaxOffset && !pattern.hasPrefixRepeat
 	var starts []int
 	if fixedOffset {
 		// Each ordered atom hit yields at most one start at the same offset.
 		// Filtering in place cannot overwrite an unread hit.
 		starts = atomStarts[:0]
 	} else {
-		starts = make([]int, 0, min(limit, len(atomStarts)*2))
+		starts = ctx.regexCandidates[:0]
+		if cap(starts) == 0 {
+			starts = make([]int, 0, min(limit, len(atomStarts)*2))
+		}
 	}
 	for _, atomStart := range atomStarts {
 		effMaxOffset, ok := pattern.atomOccurrenceValid(data, atomStart, isWide)
@@ -784,16 +782,11 @@ func regexAtomCandidateStarts(
 			continue
 		}
 
-		first := max(0, atomStart-effMaxOffset)
-		last := min(len(data), atomStart-minOffset)
-		if first > last {
+		first, last, count := regexCandidateRange(atomStart, minOffset, effMaxOffset, len(data), step)
+		if count == 0 {
 			continue
 		}
-		if isWide && first&1 != atomStart&1 {
-			first++
-		}
-		count := (last-first)/step + 1
-		if count <= 0 || len(starts) > limit-count {
+		if count < 0 || len(starts) > limit-count {
 			return nil, false
 		}
 		for start := first; start <= last; start += step {
@@ -804,17 +797,8 @@ func regexAtomCandidateStarts(
 		}
 	}
 
-	if fixedOffset || len(starts) < 2 {
+	if fixedOffset {
 		return starts, true
 	}
-	slices.Sort(starts)
-	unique := 1
-	for _, start := range starts[1:] {
-		if start == starts[unique-1] {
-			continue
-		}
-		starts[unique] = start
-		unique++
-	}
-	return starts[:unique], true
+	return sortedUniqueRegexStarts(starts), true
 }

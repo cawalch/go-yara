@@ -16,6 +16,8 @@ type MatchContext struct {
 	spans                     map[string][]matchSpan
 	spanBuffers               map[string][]matchSpan
 	cancelDone                <-chan struct{}
+	regexAtomHits             []int
+	regexCandidates           []int
 	regexBatch                regex.VMBatch
 	moduleCache               *moduleCallCache
 	assertionResults          []assertionResult

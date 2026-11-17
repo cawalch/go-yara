@@ -19,7 +19,7 @@ type regexVerifiedSpan struct {
 //
 //nolint:revive // scanner context and pattern metadata stay explicit
 func addBoundedRegexVerifications(ctx *MatchContext, id string, pattern RegexPattern, data []byte, modifiers []ast.StringModifier) {
-	best := make(map[int]regexVerifiedSpan)
+	var best map[int]regexVerifiedSpan
 	bs := ctx.acquireRegexBatch(len(pattern.Code))
 	wide := hasModifier(modifiers, ast.StringModifierWide)
 	ascii := hasModifier(modifiers, ast.StringModifierASCII)
@@ -137,6 +137,9 @@ func addBoundedRegexVerifications(ctx *MatchContext, id string, pattern RegexPat
 					kept++
 					previous, exists := best[start]
 					if !exists || greedy != order.before(previous.order) {
+						if best == nil {
+							best = make(map[int]regexVerifiedSpan)
+						}
 						best[start] = regexVerifiedSpan{candidateEnd, order}
 					}
 				}
@@ -146,10 +149,11 @@ func addBoundedRegexVerifications(ctx *MatchContext, id string, pattern RegexPat
 			}
 		}
 	}
-	starts := make([]int, 0, len(best))
+	starts := ctx.regexCandidates[:0]
 	for start := range best {
 		starts = append(starts, start)
 	}
+	ctx.retainRegexCandidates(starts)
 	slices.Sort(starts)
 	for _, start := range starts {
 		ctx.AddMatch(Match{Pattern: id, Offset: int64(start), Length: best[start].end - start})
