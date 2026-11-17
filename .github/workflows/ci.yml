@@ -337,7 +337,7 @@ jobs:
       - name: Install benchstat
         run: |
           export PATH="$(go env GOPATH)/bin:$PATH"
-          command -v benchstat >/dev/null || go install golang.org/x/perf/cmd/benchstat@latest
+          command -v benchstat >/dev/null || go install golang.org/x/perf/cmd/benchstat@v0.0.0-20261117185222-4febdb082b2c
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Run performance regression gate

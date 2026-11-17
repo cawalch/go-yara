@@ -51,7 +51,7 @@ ensure_benchstat() {
         return 0
     fi
     echo "Installing benchstat..."
-    go install golang.org/x/perf/cmd/benchstat@latest
+    go install golang.org/x/perf/cmd/benchstat@v0.0.0-20261117185222-4febdb082b2c
     export PATH="$(go env GOPATH)/bin:$PATH"
 }
 
