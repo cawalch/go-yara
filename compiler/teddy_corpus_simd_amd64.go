@@ -88,5 +88,5 @@ func (t *teddyAVX2Corpus) tailMayMatch(data []byte) bool {
 }
 
 func (t *teddyAVX2Corpus) findCandidateWithCancel(data []byte, from int, done <-chan struct{}) int {
-	return teddyFindCandidateWithCancel(t, data, from, done, 32+t.prefixLen-2)
+	return (teddyCandidateSearch{prefilter: t, overlap: 32 + t.prefixLen - 2}).findCandidateWithCancel(data, from, done)
 }

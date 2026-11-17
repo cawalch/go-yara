@@ -76,5 +76,5 @@ func (t *teddyAMD64Prefilter) findCandidateWithCancel(data []byte, from int, don
 	if len(t.targets) == 0 {
 		return -1
 	}
-	return teddyFindCandidateWithCancel(t, data, from, done, t.targets[0].Len()-1)
+	return (teddyCandidateSearch{prefilter: t, overlap: t.targets[0].Len() - 1}).findCandidateWithCancel(data, from, done)
 }

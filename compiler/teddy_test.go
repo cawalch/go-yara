@@ -218,7 +218,7 @@ func (p *cancelingTeddyPrefilter) findCandidate(data []byte, from int) int {
 }
 
 func (p *cancelingTeddyPrefilter) findCandidateWithCancel(data []byte, from int, done <-chan struct{}) int {
-	return teddyFindCandidateWithCancel(p, data, from, done, 33)
+	return (teddyCandidateSearch{prefilter: p, overlap: 33}).findCandidateWithCancel(data, from, done)
 }
 
 func TestTeddyCancellationBetweenWindows(t *testing.T) {
