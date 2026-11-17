@@ -23,7 +23,11 @@ func TestStringCompiler(t *testing.T) {
 
 	// Test hex string parsing (simplified)
 	hexStr := "48656c6c6f"
-	hexData := sc.parseHexString(hexStr)
+	pattern, err := sc.parseHexPattern(hexStr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hexData := encodeHexPatternBytes(pattern.Tokens)
 	if len(hexData) == 0 {
 		t.Error("Hex string parsing returned empty result")
 	}
