@@ -8,58 +8,59 @@ import (
 	"github.com/cawalch/go-yara/token"
 )
 
+// builtinFunctions is shared read-only across validators. Per-call return types
+// and diagnostics are still constructed independently.
+var builtinFunctions = map[string]struct {
+	minArgs  int
+	maxArgs  int
+	dataType DataType
+	retType  *IntegerType
+}{
+	"UINT8":    {1, 1, TypeInteger, Uint8Type},
+	"UINT16":   {1, 1, TypeInteger, Uint16Type},
+	"UINT32":   {1, 1, TypeInteger, Uint32Type},
+	"UINT8BE":  {1, 1, TypeInteger, Uint8Type},
+	"UINT16BE": {1, 1, TypeInteger, Uint16Type},
+	"UINT32BE": {1, 1, TypeInteger, Uint32Type},
+	"INT8":     {1, 1, TypeInteger, Int8Type},
+	"INT16":    {1, 1, TypeInteger, Int16Type},
+	"INT32":    {1, 1, TypeInteger, Int32Type},
+	"INT8BE":   {1, 1, TypeInteger, Int8Type},
+	"INT16BE":  {1, 1, TypeInteger, Int16Type},
+	"INT32BE":  {1, 1, TypeInteger, Int32Type},
+	"INT64BE":  {1, 1, TypeInteger, Int64BEType},
+	// Lowercase function names (from parser mapping)
+	"uint8":    {1, 1, TypeInteger, Uint8Type},
+	"uint16":   {1, 1, TypeInteger, Uint16Type},
+	"uint32":   {1, 1, TypeInteger, Uint32Type},
+	"uint64":   {1, 1, TypeInteger, Uint64Type},
+	"uint8be":  {1, 1, TypeInteger, Uint8BEType},
+	"uint16be": {1, 1, TypeInteger, Uint16BEType},
+	"uint32be": {1, 1, TypeInteger, Uint32BEType},
+	"uint64be": {1, 1, TypeInteger, Uint64BEType},
+	"int8":     {1, 1, TypeInteger, Int8Type},
+	"int16":    {1, 1, TypeInteger, Int16Type},
+	"int32":    {1, 1, TypeInteger, Int32Type},
+	"int64":    {1, 1, TypeInteger, Int64Type},
+	"int8be":   {1, 1, TypeInteger, Int8BEType},
+	"int16be":  {1, 1, TypeInteger, Int16BEType},
+	"int32be":  {1, 1, TypeInteger, Int32BEType},
+	"int64be":  {1, 1, TypeInteger, Int64BEType},
+	// Text/hash functions
+	"concat":   {2, 255, TypeString, nil},
+	"tostring": {1, 1, TypeString, nil},
+	"int":      {1, 1, TypeInteger, Int64Type},
+	"md5":      {1, 2, TypeString, nil},
+	"sha1":     {1, 2, TypeString, nil},
+	"sha256":   {1, 2, TypeString, nil},
+}
+
 func (v *Validator) validateFunctionCallExpression(funcCall *ast.FunctionCall) (*TypeInfo, []error) {
 	if moduleName, ok := moduleNameFromDottedName(funcCall.Function); ok {
 		return v.validateDottedFunctionCall(funcCall, moduleName)
 	}
 
 	var errors []error
-
-	// Check if this is a valid YARA function call
-	validFunctions := map[string]struct {
-		minArgs  int
-		maxArgs  int
-		dataType DataType
-		retType  *IntegerType
-	}{
-		"UINT8":    {1, 1, TypeInteger, Uint8Type},
-		"UINT16":   {1, 1, TypeInteger, Uint16Type},
-		"UINT32":   {1, 1, TypeInteger, Uint32Type},
-		"UINT8BE":  {1, 1, TypeInteger, Uint8Type},
-		"UINT16BE": {1, 1, TypeInteger, Uint16Type},
-		"UINT32BE": {1, 1, TypeInteger, Uint32Type},
-		"INT8":     {1, 1, TypeInteger, Int8Type},
-		"INT16":    {1, 1, TypeInteger, Int16Type},
-		"INT32":    {1, 1, TypeInteger, Int32Type},
-		"INT8BE":   {1, 1, TypeInteger, Int8Type},
-		"INT16BE":  {1, 1, TypeInteger, Int16Type},
-		"INT32BE":  {1, 1, TypeInteger, Int32Type},
-		"INT64BE":  {1, 1, TypeInteger, Int64BEType},
-		// Lowercase function names (from parser mapping)
-		"uint8":    {1, 1, TypeInteger, Uint8Type},
-		"uint16":   {1, 1, TypeInteger, Uint16Type},
-		"uint32":   {1, 1, TypeInteger, Uint32Type},
-		"uint64":   {1, 1, TypeInteger, Uint64Type},
-		"uint8be":  {1, 1, TypeInteger, Uint8BEType},
-		"uint16be": {1, 1, TypeInteger, Uint16BEType},
-		"uint32be": {1, 1, TypeInteger, Uint32BEType},
-		"uint64be": {1, 1, TypeInteger, Uint64BEType},
-		"int8":     {1, 1, TypeInteger, Int8Type},
-		"int16":    {1, 1, TypeInteger, Int16Type},
-		"int32":    {1, 1, TypeInteger, Int32Type},
-		"int64":    {1, 1, TypeInteger, Int64Type},
-		"int8be":   {1, 1, TypeInteger, Int8BEType},
-		"int16be":  {1, 1, TypeInteger, Int16BEType},
-		"int32be":  {1, 1, TypeInteger, Int32BEType},
-		"int64be":  {1, 1, TypeInteger, Int64BEType},
-		// Text/hash functions
-		"concat":   {2, 255, TypeString, nil},
-		"tostring": {1, 1, TypeString, nil},
-		"int":      {1, 1, TypeInteger, Int64Type},
-		"md5":      {1, 2, TypeString, nil},
-		"sha1":     {1, 2, TypeString, nil},
-		"sha256":   {1, 2, TypeString, nil},
-	}
 
 	// Reject keywords that should not be function calls
 	if funcCall.Function == "FILESIZE" || funcCall.Function == "ENTRYPOINT" {
@@ -73,7 +74,7 @@ func (v *Validator) validateFunctionCallExpression(funcCall *ast.FunctionCall) (
 	}
 
 	// Check if function is valid
-	funcInfo, isValid := validFunctions[funcCall.Function]
+	funcInfo, isValid := builtinFunctions[funcCall.Function]
 	if !isValid {
 		err := &Error{
 			Code:     ErrCodeInvalidFunction,
@@ -82,7 +83,7 @@ func (v *Validator) validateFunctionCallExpression(funcCall *ast.FunctionCall) (
 			Rule:     v.currentRule,
 		}
 		var fnNames []string
-		for name := range validFunctions {
+		for name := range builtinFunctions {
 			fnNames = append(fnNames, name)
 		}
 		if sugg, ok := findSimilarIdentifier(funcCall.Function, fnNames); ok {
