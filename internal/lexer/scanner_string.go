@@ -85,14 +85,7 @@ func (l *Lexer) isRegexFlag(ch byte) bool {
 
 // isEmptyRegex checks if the current position starts an empty regex pattern
 func (l *Lexer) isEmptyRegex() bool {
-	snapshot := l.reader.SavePosition()
-	defer l.reader.RestorePosition(snapshot)
-
-	if !hasDoubleSlash(l) {
-		return false
-	}
-	skipRegexFlags(l)
-	return isEmptyRegexEnd(l)
+	return isEmptyRegexImpl(l)
 }
 
 // GetPosition implements regexReader interface for Lexer
@@ -100,7 +93,7 @@ func (l *Lexer) GetPosition() int {
 	return l.reader.Position()
 }
 
-// SetPosition sets the lexer input position.
+// SetPosition implements regexReader interface for Lexer
 func (l *Lexer) SetPosition(pos int) {
 	l.reader.SetPosition(pos)
 }
@@ -138,9 +131,24 @@ func (l *Lexer) looksLikeRegex() bool {
 // regexReader provides the interface needed for regex pattern checking
 type regexReader interface {
 	GetPosition() int
+	SetPosition(int)
 	GetCurrent() byte
 	ReadChar()
 	slice(int) string
+}
+
+// isEmptyRegexImpl checks empty regex patterns without consuming input.
+func isEmptyRegexImpl(r *Lexer) bool {
+	snapshot := r.reader.SavePosition()
+	defer r.reader.RestorePosition(snapshot)
+
+	if !hasDoubleSlash(r) {
+		return false
+	}
+
+	skipRegexFlags(r)
+
+	return isEmptyRegexEnd(r)
 }
 
 // hasDoubleSlash checks if reader has "//" pattern
