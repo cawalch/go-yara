@@ -1,6 +1,8 @@
 package lexer
 
 import (
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/cawalch/go-yara/token"
@@ -42,11 +44,7 @@ func FuzzStringScanner(f *testing.F) {
 
 		// If we start with a quote, try to parse as string
 		if l.ch() == '"' {
-			content, closed := l.readString()
-
-			// The string content should never be nil
-			_ = content
-			_ = closed
+			assertStringTokenParity(t, l, input)
 		}
 
 		// Also test by directly creating a lexer and processing all tokens
@@ -60,6 +58,31 @@ func FuzzStringScanner(f *testing.F) {
 			_ = tok.Literal
 		}
 	})
+}
+
+func assertStringTokenParity(t *testing.T, l *Lexer, input []byte) {
+	t.Helper()
+	pos := l.getCurrentPosition()
+	content, closed, escaped := l.readString()
+	if closed && escaped != strings.Contains(content, "\\") {
+		t.Fatalf("escape flag %v does not match raw content %q", escaped, content)
+	}
+
+	// Compare the fast path against the previous unconditional validation
+	// and decoding path, including malformed-string diagnostics.
+	var want token.Token
+	if !closed {
+		want = l.makeErrorToken(pos, content, "unterminated string literal")
+	} else {
+		for _, err := range ValidateStringEscapes(content, pos) {
+			l.addError(err.Position, err.Message)
+		}
+		want = l.makeToken(token.StringLit, processEscapeSequences(content), pos)
+	}
+	actual := New(string(input))
+	if got := actual.NextToken(); got != want || !slices.Equal(actual.Errors(), l.Errors()) {
+		t.Fatalf("token/diagnostic mismatch: got %v %v, want %v %v", got, actual.Errors(), want, l.Errors())
+	}
 }
 
 // FuzzRegexScanner tests the regex scanner with malformed patterns

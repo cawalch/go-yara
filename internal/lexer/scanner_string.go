@@ -4,8 +4,9 @@ package lexer
 // This module handles parsing of quoted string literals and regular expression patterns,
 // including complex disambiguation between regex patterns and comments.
 
-// readString reads a string literal and returns content and whether it was properly closed
-func (l *Lexer) readString() (string, bool) {
+// readString returns the raw content, whether the literal closed, and whether
+// a backslash was encountered while scanning it.
+func (l *Lexer) readString() (raw string, closed, escaped bool) {
 	// current l.ch() is '"'
 	start := l.reader.Position()
 	l.reader.ReadChar() // skip opening quote
@@ -13,9 +14,10 @@ func (l *Lexer) readString() (string, bool) {
 	for l.reader.Current() != '"' && l.reader.Current() != 0 {
 		if l.reader.Current() == '\n' || l.reader.Current() == '\r' {
 			// Unterminated string before line end; stop to allow recovery.
-			return l.reader.Slice(start), false
+			return l.reader.Slice(start), false, escaped
 		}
 		if l.reader.Current() == '\\' {
+			escaped = true
 			l.reader.ReadChar() // skip backslash
 			if l.reader.Current() != 0 {
 				l.reader.ReadChar() // skip escaped character
@@ -27,14 +29,14 @@ func (l *Lexer) readString() (string, bool) {
 
 	if l.reader.Current() == 0 {
 		// Unterminated string - return the entire sequence including the opening quote
-		return l.reader.Slice(start), false
+		return l.reader.Slice(start), false, escaped
 	}
 
 	// Extract raw content between quotes (excluding the quotes themselves)
 	content := l.reader.Slice(start + 1) // +1 to skip opening quote
 	l.reader.ReadChar()                  // skip closing quote
 
-	return content, true
+	return content, true, escaped
 }
 
 // readRegex reads a regular expression literal

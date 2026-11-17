@@ -31,10 +31,14 @@ func (l *Lexer) makeErrorToken(pos token.Position, literal, message string) toke
 
 // makeStringToken creates a string literal token with validation
 func (l *Lexer) makeStringToken(pos token.Position) token.Token {
-	raw, closed := l.readString()
+	raw, closed, escaped := l.readString()
 	if !closed {
 		// Unterminated string - emit ILLEGAL token and add error
 		return l.makeErrorToken(pos, raw, "unterminated string literal")
+	}
+
+	if !escaped {
+		return l.makeToken(token.StringLit, raw, pos)
 	}
 
 	// Validate escape sequences and collect any errors
@@ -43,7 +47,7 @@ func (l *Lexer) makeStringToken(pos token.Position) token.Token {
 		l.addError(err.Position, err.Message)
 	}
 
-	lit := processEscapeSequences(raw)
+	lit := processEscapedString(raw)
 	return l.makeToken(token.StringLit, lit, pos)
 }
 
