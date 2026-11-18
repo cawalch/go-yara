@@ -309,12 +309,16 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 		}
 		s.regexByteSetCache.reset()
 
-		usesharedAutomaton, prepErr := s.preparePatternScan(ctx, windowData)
-		if prepErr != nil {
-			return nil, prepErr
-		}
-		if usesharedAutomaton {
-			s.markChunkCandidateRules()
+		usesharedAutomaton := false
+		if len(s.program.Rules) > 1 {
+			var prepErr error
+			usesharedAutomaton, prepErr = s.preparePatternScan(ctx, windowData)
+			if prepErr != nil {
+				return nil, prepErr
+			}
+			if usesharedAutomaton {
+				s.markChunkCandidateRules()
+			}
 		}
 
 		evalCount := len(s.program.Rules)

@@ -111,12 +111,16 @@ func (scanner *BlockScanner) ScanWithContext(ctx context.Context, base int64, da
 		return err
 	}
 	s.regexByteSetCache.reset()
-	usesharedAutomaton, err := s.preparePatternScan(ctx, blockData)
-	if err != nil {
-		return err
-	}
-	if usesharedAutomaton {
-		s.markChunkCandidateRules()
+	usesharedAutomaton := false
+	if len(scanner.program.Rules) > 1 {
+		var err error
+		usesharedAutomaton, err = s.preparePatternScan(ctx, blockData)
+		if err != nil {
+			return err
+		}
+		if usesharedAutomaton {
+			s.markChunkCandidateRules()
+		}
 	}
 
 	evalCount := len(scanner.program.Rules)
