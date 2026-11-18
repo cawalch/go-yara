@@ -92,8 +92,15 @@ func (s *Scanner) recordSkippedCandidateRule(
 
 func (s *Scanner) recordAllRulesRejected(ctx context.Context, result *ScanResult, scanInput ruleScanInput) error {
 	done := ctx.Done()
-	for _, rule := range s.program.Rules {
-		if scanCanceled(done) {
+	if scanCanceled(done) {
+		return ctx.Err()
+	}
+	if s.omitRuleResults && !s.program.hasHeaderOrMandatoryAssertions {
+		return nil
+	}
+	checkHeaders := s.program.hasHeaderOrMandatoryAssertions
+	for i, rule := range s.program.Rules {
+		if i&63 == 63 && scanCanceled(done) {
 			return ctx.Err()
 		}
 		if !s.shouldEvaluateRule(rule) {
@@ -102,7 +109,7 @@ func (s *Scanner) recordAllRulesRejected(ctx context.Context, result *ScanResult
 		if result.RuleResults != nil {
 			result.RuleResults[rule.Name] = false
 		}
-		if !s.ruleHeaderConstraintsMatchInput(ctx, rule, scanInput) {
+		if checkHeaders && !s.ruleHeaderConstraintsMatchInput(ctx, rule, scanInput) {
 			s.recordSkippedCandidateRule(rule, result, true)
 		}
 	}
@@ -141,15 +148,13 @@ func (s *Scanner) recordScanRejection(
 
 // ScanWithContext scans the provided byte slice against the compiled rules.
 func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (result *ScanResult, err error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	ruleCount := 0
-	if s != nil && s.program != nil {
-		ruleCount = len(s.program.Rules)
-	}
+	ctx, ready, err := s.prepareScanCall(ctx)
 	var ruleResults map[string]bool
 	if s == nil || !s.omitRuleResults {
+		ruleCount := 0
+		if s != nil && s.program != nil {
+			ruleCount = len(s.program.Rules)
+		}
 		ruleResults = make(map[string]bool, ruleCount)
 	}
 	result = &ScanResult{
@@ -160,14 +165,11 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (result *Sca
 	if s == nil || (!s.reportedMatchesOnly && !s.omitMatches) {
 		result.Matches = make(map[string]map[string][]Match)
 	}
-	if s == nil || s.program == nil {
+	if !ready || err != nil {
+		if err != nil {
+			return nil, err
+		}
 		return result, nil
-	}
-	if err := s.scanError(); err != nil {
-		return nil, err
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
 	}
 
 	if s.hookMask&(hookBitTelemetry|hookBitScanLifecycle) != 0 {
@@ -182,7 +184,7 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (result *Sca
 	}
 
 	s.resetScanState()
-	if s.reportedMatchesOnly && s.compactPrefilterFanoutRejects(ctx, data) {
+	if (s.reportedMatchesOnly || s.omitMatches) && s.compactPrefilterFanoutRejects(ctx, data) {
 		scanInput := ruleScanInput{data: data, usesharedAutomaton: false, skipUnmatchedContext: true}
 		if err := s.rejectAllRules(ctx, result, scanInput); err != nil {
 			return nil, err
