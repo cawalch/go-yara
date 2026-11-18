@@ -12,19 +12,17 @@ func TestFixedOffsetMatchContextsAndOwnership(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, compact := range []bool{false, true} {
-		ctx := &MatchContext{compact: compact}
-		for _, offset := range []int64{0, 1, 2} {
-			ctx.AddMatch(Match{Pattern: "$a", Offset: offset, Length: 1})
-		}
-		ctx.filterFixedOffsets(program.Rules[0].fixedOffsets, 100)
-		if ctx.matchCount("$a") != 1 || !ctx.hasMatchAt("$a", 1) {
-			t.Fatalf("compact=%v: wrong local offsets", compact)
-		}
-		ctx.filterFixedOffsets(program.Rules[0].fixedOffsets, 102)
-		if ctx.matchCount("$a") != 0 {
-			t.Fatal("offset before block retained")
-		}
+	ctx := &MatchContext{}
+	for _, offset := range []int64{0, 1, 2} {
+		ctx.AddMatch(Match{Pattern: "$a", Offset: offset, Length: 1})
+	}
+	ctx.filterFixedOffsets(program.Rules[0].fixedOffsets, 100)
+	if ctx.matchCount("$a") != 1 || !ctx.hasMatchAt("$a", 1) {
+		t.Fatal("wrong local offsets")
+	}
+	ctx.filterFixedOffsets(program.Rules[0].fixedOffsets, 102)
+	if ctx.matchCount("$a") != 0 {
+		t.Fatal("offset before block retained")
 	}
 	single, err := program.MatchingRulesInBlock(MemoryBlock{Base: 100, Data: []byte("aaa")}, 103)
 	if err != nil || len(single) != 1 || len(single[0].Matches["$a"]) != 1 || single[0].Matches["$a"][0].Offset != 101 {
@@ -53,7 +51,7 @@ func TestFixedOffsetMatchContextsAndOwnership(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := BuildMatchContext(program.Rules[0], []byte("aaa"))
+	ctx = BuildMatchContext(program.Rules[0], []byte("aaa"))
 	defer ctx.Release()
 	if ctx.matchCount("$a") != 1 || !ctx.hasMatchAt("$a", 1) {
 		t.Fatal("public match context retained unrestricted occurrences")

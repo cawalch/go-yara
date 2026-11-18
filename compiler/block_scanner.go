@@ -497,6 +497,31 @@ func normalizedBlockMatches(matches map[string][]Match) map[string][]Match {
 	return result
 }
 
+func sortAndDedupeMatches(matches []Match) []Match {
+	slices.SortStableFunc(matches, func(left, right Match) int {
+		switch {
+		case left.Offset < right.Offset:
+			return -1
+		case left.Offset > right.Offset:
+			return 1
+		case left.Length < right.Length:
+			return -1
+		case left.Length > right.Length:
+			return 1
+		default:
+			return 0
+		}
+	})
+	unique := matches[:0]
+	for _, match := range matches {
+		if len(unique) > 0 && unique[len(unique)-1].Offset == match.Offset {
+			continue
+		}
+		unique = append(unique, match)
+	}
+	return unique
+}
+
 func clonePublicRuleMatches(rule *CompiledRule, matches map[string][]Match) map[string][]Match {
 	if len(matches) == 0 {
 		return nil

@@ -1227,6 +1227,7 @@ func buildLinearRegexContext(rule *CompiledRule, data []byte) *MatchContext {
 		addRegexMatchesWithModifiers(ctx, id, pattern, data, modifiers)
 	}
 	ctx.normalizeMatches()
+	ctx.materializePublicMatches()
 	return ctx
 }
 

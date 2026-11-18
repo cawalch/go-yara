@@ -11,8 +11,7 @@ import (
 type MatchContext struct {
 	Data                      []byte
 	Blocks                    []MemoryBlock
-	Matches                   map[string][]Match // Pattern -> list of matches
-	matchBuffers              map[string][]Match
+	Matches                   map[string][]Match // Pattern -> list of matches (populated by BuildMatchContext/PopulateMatchContext)
 	spans                     map[string][]matchSpan
 	spanBuffers               map[string][]matchSpan
 	cancelDone                <-chan struct{}
@@ -26,7 +25,6 @@ type MatchContext struct {
 	EntryPoint                int64
 	HasEntryPoint             bool
 	entryPointChecked         bool
-	compact                   bool
 	verificationBudgetRejects uint32
 	// maxMatchesPerPattern bounds retained occurrences. Zero means unlimited.
 	maxMatchesPerPattern int
@@ -84,24 +82,7 @@ func (mc *MatchContext) AddMatch(m Match) {
 	if m.Pattern == "" {
 		return
 	}
-	if mc.maxMatchesPerPattern > 0 && mc.matchCount(m.Pattern) >= mc.maxMatchesPerPattern {
-		return
-	}
-	if mc.compact {
-		mc.addMatchSpan(m.Pattern, matchSpan{Offset: m.Offset, Length: m.Length})
-		return
-	}
-	if mc.matchFilter != nil && !mc.matchFilter(m.Pattern, matchSpan{Offset: m.Offset, Length: m.Length}) {
-		return
-	}
-	if mc.Matches == nil {
-		mc.Matches = make(map[string][]Match)
-	}
-	matches, exists := mc.Matches[m.Pattern]
-	if !exists && mc.matchBuffers != nil {
-		matches = mc.matchBuffers[m.Pattern]
-	}
-	mc.Matches[m.Pattern] = append(matches, m)
+	mc.addMatchSpan(m.Pattern, matchSpan{Offset: m.Offset, Length: m.Length})
 }
 
 func (mc *MatchContext) addMatchSpan(id string, span matchSpan) {
@@ -128,44 +109,44 @@ func (mc *MatchContext) matchCount(id string) int {
 	if mc == nil {
 		return 0
 	}
-	if mc.compact {
-		return len(mc.spans[id])
+	if len(mc.spans) == 0 && len(mc.Matches) > 0 {
+		return len(mc.Matches[id])
 	}
-	return len(mc.Matches[id])
+	return len(mc.spans[id])
 }
 
 func (mc *MatchContext) matchAt(id string, index int) (matchSpan, bool) {
 	if mc == nil || index < 0 {
 		return matchSpan{}, false
 	}
-	if mc.compact {
-		spans := mc.spans[id]
-		if index >= len(spans) {
+	if len(mc.spans) == 0 && len(mc.Matches) > 0 {
+		matches := mc.Matches[id]
+		if index >= len(matches) {
 			return matchSpan{}, false
 		}
-		return spans[index], true
+		return matchSpan{Offset: matches[index].Offset, Length: matches[index].Length}, true
 	}
-	matches := mc.Matches[id]
-	if index >= len(matches) {
+	spans := mc.spans[id]
+	if index >= len(spans) {
 		return matchSpan{}, false
 	}
-	return matchSpan{Offset: matches[index].Offset, Length: matches[index].Length}, true
+	return spans[index], true
 }
 
 func (mc *MatchContext) eachMatch(id string, visit func(matchSpan) bool) {
 	if mc == nil || visit == nil {
 		return
 	}
-	if mc.compact {
-		for _, span := range mc.spans[id] {
-			if !visit(span) {
+	if len(mc.spans) == 0 && len(mc.Matches) > 0 {
+		for _, match := range mc.Matches[id] {
+			if !visit(matchSpan{Offset: match.Offset, Length: match.Length}) {
 				return
 			}
 		}
 		return
 	}
-	for _, match := range mc.Matches[id] {
-		if !visit(matchSpan{Offset: match.Offset, Length: match.Length}) {
+	for _, span := range mc.spans[id] {
+		if !visit(span) {
 			return
 		}
 	}
@@ -193,10 +174,15 @@ func (mc *MatchContext) hasMatchInRange(id string, minOffset, maxOffset int64) b
 	if mc == nil || minOffset > maxOffset || maxOffset < 0 {
 		return false
 	}
-	if mc.compact {
-		return hasSpanInRange(mc.spans[id], minOffset, maxOffset)
+	if len(mc.spans) == 0 && len(mc.Matches) > 0 {
+		for _, m := range mc.Matches[id] {
+			if m.Offset >= minOffset && m.Offset <= maxOffset {
+				return true
+			}
+		}
+		return false
 	}
-	return hasMatchObjInRange(mc.Matches[id], minOffset, maxOffset)
+	return hasSpanInRange(mc.spans[id], minOffset, maxOffset)
 }
 
 func hasSpanInRange(spans []matchSpan, minOffset, maxOffset int64) bool {
@@ -220,27 +206,6 @@ func hasSpanInRange(spans []matchSpan, minOffset, maxOffset int64) bool {
 	return false
 }
 
-func hasMatchObjInRange(matches []Match, minOffset, maxOffset int64) bool {
-	n := len(matches)
-	if n == 0 || matches[0].Offset > maxOffset || matches[n-1].Offset < minOffset {
-		return false
-	}
-	idx, _ := slices.BinarySearchFunc(matches, minOffset, func(m Match, target int64) int {
-		return cmp.Compare(m.Offset, target)
-	})
-	if idx < n && matches[idx].Offset <= maxOffset {
-		return true
-	}
-	if matches[0].Offset > matches[n-1].Offset {
-		for _, m := range matches {
-			if m.Offset >= minOffset && m.Offset <= maxOffset {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 // hasProximity tests whether there exists a pair of matches (matchA, matchB) such that
 // minDist <= matchB.Offset - matchA.Offset <= maxDist.
 // Because matches are ordered monotonically by offset, this runs in O(N + M) time
@@ -251,10 +216,21 @@ func (mc *MatchContext) hasProximity(idA, idB string, minDist, maxDist int64) bo
 	if mc == nil || minDist > maxDist {
 		return false
 	}
-	if mc.compact {
-		return hasProximitySpans(mc.spans[idA], mc.spans[idB], minDist, maxDist)
+	if len(mc.spans) == 0 && len(mc.Matches) > 0 {
+		return hasProximitySpans(matchesToSpans(mc.Matches[idA]), matchesToSpans(mc.Matches[idB]), minDist, maxDist)
 	}
-	return hasProximityMatches(mc.Matches[idA], mc.Matches[idB], minDist, maxDist)
+	return hasProximitySpans(mc.spans[idA], mc.spans[idB], minDist, maxDist)
+}
+
+func matchesToSpans(matches []Match) []matchSpan {
+	if len(matches) == 0 {
+		return nil
+	}
+	spans := make([]matchSpan, len(matches))
+	for i, m := range matches {
+		spans[i] = matchSpan{Offset: m.Offset, Length: m.Length}
+	}
+	return spans
 }
 
 //nolint:revive // argument-limit: internal helper requires (spansA, spansB, minDist, maxDist)
@@ -272,33 +248,6 @@ func hasProximitySpans(spansA, spansB []matchSpan, minDist, maxDist int64) bool 
 	i, j := 0, 0
 	for i < nA && j < nB {
 		diff := spansB[j].Offset - spansA[i].Offset
-		switch {
-		case diff < minDist:
-			j++
-		case diff > maxDist:
-			i++
-		default:
-			return true
-		}
-	}
-	return false
-}
-
-//nolint:revive // argument-limit: internal helper requires (matchesA, matchesB, minDist, maxDist)
-func hasProximityMatches(matchesA, matchesB []Match, minDist, maxDist int64) bool {
-	nA, nB := len(matchesA), len(matchesB)
-	if nA == 0 || nB == 0 {
-		return false
-	}
-	if !isSortedMatches(matchesA) {
-		matchesA = cloneAndSortMatches(matchesA)
-	}
-	if !isSortedMatches(matchesB) {
-		matchesB = cloneAndSortMatches(matchesB)
-	}
-	i, j := 0, 0
-	for i < nA && j < nB {
-		diff := matchesB[j].Offset - matchesA[i].Offset
 		switch {
 		case diff < minDist:
 			j++
@@ -334,42 +283,19 @@ func cloneAndSortSpans(spans []matchSpan) []matchSpan {
 	return cloned
 }
 
-func isSortedMatches(matches []Match) bool {
-	for k := 1; k < len(matches); k++ {
-		if matches[k].Offset < matches[k-1].Offset {
-			return false
-		}
-	}
-	return true
-}
-
-func cloneAndSortMatches(matches []Match) []Match {
-	cloned := slices.Clone(matches)
-	slices.SortFunc(cloned, func(a, b Match) int {
-		if a.Offset < b.Offset {
-			return -1
-		}
-		if a.Offset > b.Offset {
-			return 1
-		}
-		return 0
-	})
-	return cloned
-}
-
 func (mc *MatchContext) matchIDs() []string {
 	if mc == nil {
 		return nil
 	}
-	if mc.compact {
-		ids := make([]string, 0, len(mc.spans))
-		for id := range mc.spans {
+	if len(mc.spans) == 0 && len(mc.Matches) > 0 {
+		ids := make([]string, 0, len(mc.Matches))
+		for id := range mc.Matches {
 			ids = append(ids, id)
 		}
 		return ids
 	}
-	ids := make([]string, 0, len(mc.Matches))
-	for id := range mc.Matches {
+	ids := make([]string, 0, len(mc.spans))
+	for id := range mc.spans {
 		ids = append(ids, id)
 	}
 	return ids

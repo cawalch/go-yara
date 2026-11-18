@@ -374,7 +374,6 @@ func NewScanner(program *CompiledProgram, opts ...ScannerOption) *Scanner {
 	}
 
 	ctx := matchContextPool.Get().(*MatchContext)
-	ctx.compact = true
 
 	ruleCount := 0
 	if program != nil {

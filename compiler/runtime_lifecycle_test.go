@@ -102,13 +102,12 @@ func TestMatchContextPoolReset(t *testing.T) {
 	ctx.AddMatch(Match{Pattern: "$a", MatchedData: ctx.Data})
 	ctx.Reset(nil)
 	ctx.AddMatch(Match{Pattern: "$b", MatchedData: []byte("other")})
-	ctx.compact = true
 	ctx.AddMatch(Match{Pattern: "$c", Length: 1})
 	ctx.Reset(nil)
 	ctx.AddMatch(Match{Pattern: "$d", Length: 1})
 	ctx.resetForPool()
-	if len(ctx.Matches)+len(ctx.matchBuffers)+len(ctx.spans)+len(ctx.spanBuffers) != 0 ||
-		ctx.Data != nil || ctx.compact || ctx.maxMatchesPerPattern != 0 {
+	if len(ctx.Matches)+len(ctx.spans)+len(ctx.spanBuffers) != 0 ||
+		ctx.Data != nil || ctx.maxMatchesPerPattern != 0 {
 		t.Fatal("match context retained previous scan state")
 	}
 }

@@ -646,7 +646,6 @@ func appendRegexFallbackMatches(
 	matchCtx *MatchContext,
 ) []matchSpan {
 	ctx := matchContextPool.Get().(*MatchContext)
-	ctx.compact = true
 	ctx.Reset(data)
 	ctx.cancelDone = done
 	if matchCtx != nil {

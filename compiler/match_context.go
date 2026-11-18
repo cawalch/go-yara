@@ -11,10 +11,9 @@ import (
 var matchContextPool = sync.Pool{
 	New: func() any {
 		return &MatchContext{
-			Matches:      make(map[string][]Match),
-			matchBuffers: make(map[string][]Match),
-			spans:        make(map[string][]matchSpan),
-			spanBuffers:  make(map[string][]matchSpan),
+			Matches:     make(map[string][]Match),
+			spans:       make(map[string][]matchSpan),
+			spanBuffers: make(map[string][]matchSpan),
 		}
 	},
 }
@@ -22,16 +21,17 @@ var matchContextPool = sync.Pool{
 // BuildMatchContext scans data for all patterns in the rule and returns a populated match context.
 func BuildMatchContext(rule *CompiledRule, data []byte) *MatchContext {
 	ctx := matchContextPool.Get().(*MatchContext)
-	ctx.compact = false
 	PopulateMatchContext(ctx, rule, data)
 	return ctx
 }
 
 // PopulateMatchContext populates an existing match context (reused) with matches from data
 func PopulateMatchContext(ctx *MatchContext, rule *CompiledRule, data []byte) {
-	ctx.compact = false
 	ctx.Reset(data)
-	defer ctx.normalizeMatches()
+	defer func() {
+		ctx.normalizeMatches()
+		ctx.materializePublicMatches()
+	}()
 
 	if rule == nil {
 		return
@@ -74,8 +74,25 @@ func (ctx *MatchContext) normalizeMatches() {
 	for id, spans := range ctx.spans {
 		ctx.spans[id] = sortAndDedupeMatchSpans(spans)
 	}
-	for id, matches := range ctx.Matches {
-		ctx.Matches[id] = sortAndDedupeMatches(matches)
+}
+
+func (ctx *MatchContext) materializePublicMatches() {
+	if len(ctx.spans) == 0 {
+		return
+	}
+	if ctx.Matches == nil {
+		ctx.Matches = make(map[string][]Match, len(ctx.spans))
+	}
+	for id, spans := range ctx.spans {
+		ms := make([]Match, len(spans))
+		for i, sp := range spans {
+			ms[i] = Match{
+				Pattern: id,
+				Offset:  sp.Offset,
+				Length:  sp.Length,
+			}
+		}
+		ctx.Matches[id] = ms
 	}
 }
 
@@ -87,35 +104,6 @@ func (ctx *MatchContext) normalizeRegexEncodingMatches(id string) {
 		slices.SortStableFunc(spans, func(a, b matchSpan) int { return cmp.Compare(a.Offset, b.Offset) })
 		ctx.spans[id] = slices.CompactFunc(spans, func(a, b matchSpan) bool { return a.Offset == b.Offset })
 	}
-	if matches := ctx.Matches[id]; len(matches) > 1 {
-		slices.SortStableFunc(matches, func(a, b Match) int { return cmp.Compare(a.Offset, b.Offset) })
-		ctx.Matches[id] = slices.CompactFunc(matches, func(a, b Match) bool { return a.Offset == b.Offset })
-	}
-}
-
-func sortAndDedupeMatches(matches []Match) []Match {
-	slices.SortStableFunc(matches, func(left, right Match) int {
-		switch {
-		case left.Offset < right.Offset:
-			return -1
-		case left.Offset > right.Offset:
-			return 1
-		case left.Length < right.Length:
-			return -1
-		case left.Length > right.Length:
-			return 1
-		default:
-			return 0
-		}
-	})
-	unique := matches[:0]
-	for _, match := range matches {
-		if len(unique) > 0 && unique[len(unique)-1].Offset == match.Offset {
-			continue
-		}
-		unique = append(unique, match)
-	}
-	return unique
 }
 
 // Reset clears the match context for reuse
@@ -127,11 +115,7 @@ func (ctx *MatchContext) Reset(data []byte) {
 	ctx.Data = data
 	ctx.Blocks = nil
 	ctx.cancelDone = nil
-	if ctx.compact {
-		ctx.resetCompactStorage()
-	} else {
-		ctx.resetPublicStorage()
-	}
+	ctx.resetCompactStorage()
 	ctx.FileSize = int64(len(data))
 	ctx.EntryPoint = 0
 	ctx.HasEntryPoint = false
@@ -150,19 +134,6 @@ func (ctx *MatchContext) resetCompactStorage() {
 	}
 	clear(ctx.spans)
 	clear(ctx.Matches)
-}
-
-func (ctx *MatchContext) resetPublicStorage() {
-	if ctx.matchBuffers == nil {
-		ctx.matchBuffers = make(map[string][]Match, len(ctx.Matches))
-	}
-	for id, matches := range ctx.Matches {
-		if cap(matches) > cap(ctx.matchBuffers[id]) {
-			ctx.matchBuffers[id] = matches[:0]
-		}
-	}
-	clear(ctx.Matches)
-	clear(ctx.spans)
 }
 
 func (ctx *MatchContext) acquireRegexBatch(codeLen int) *regex.VMBatch {
@@ -184,13 +155,11 @@ func (ctx *MatchContext) Release() {
 
 func (ctx *MatchContext) resetForPool() {
 	clear(ctx.Matches)
-	clear(ctx.matchBuffers)
 	clear(ctx.spans)
 	clear(ctx.spanBuffers)
 	*ctx = MatchContext{
-		Matches:      ctx.Matches,
-		matchBuffers: ctx.matchBuffers,
-		spans:        ctx.spans,
-		spanBuffers:  ctx.spanBuffers,
+		Matches:     ctx.Matches,
+		spans:       ctx.spans,
+		spanBuffers: ctx.spanBuffers,
 	}
 }
