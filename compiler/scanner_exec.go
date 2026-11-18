@@ -130,6 +130,7 @@ func (s *Scanner) rejectAllRules(ctx context.Context, result *ScanResult, scanIn
 }
 
 func (s *Scanner) resetScanState() {
+	s.populatedMatchCtxRuleIndex = -1
 	clear(s.assertionResults)
 	if s.evidenceBorrowed {
 		s.borrowedFieldsMapIdx = 0

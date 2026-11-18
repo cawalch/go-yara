@@ -133,9 +133,11 @@ func (s *Scanner) patternCandidateCount(rule *CompiledRule, id string, shared bo
 	}
 	if rule.StringKinds[id] == StringKindText {
 		count := 0
-		for _, match := range s.globalMatches[rule.Index] {
-			if match.strID == id {
-				count++
+		if strIdx, ok := rule.StringIDToIndex[id]; ok {
+			for _, match := range s.globalMatches[rule.Index] {
+				if int(match.ruleStringIdx) == strIdx {
+					count++
+				}
 			}
 		}
 		return count, true

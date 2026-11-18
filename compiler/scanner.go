@@ -55,7 +55,8 @@ type Scanner struct {
 	globalMatches [][]globalMatchEntry
 	// Non-empty rule slots from the previous scan. High-cardinality rulesets
 	// commonly touch no rules for an event, so a full rules-sized reset is waste.
-	touchedGlobalMatches []int
+	touchedGlobalMatches       []int
+	populatedMatchCtxRuleIndex int
 	// Fast-scan candidate keys retained across scans.
 	fastSeen map[uint64]bool
 
@@ -683,11 +684,9 @@ func (cp *CompiledProgram) ScanFileWithContext(ctx context.Context, filename str
 
 // globalMatchEntry is a match routed by integer indices from the shared automaton.
 type globalMatchEntry struct {
-	strID    string // string identifier (e.g. "$a")
-	pattern  []byte // stored automaton pattern bytes for re-verification
-	span     matchSpan
-	isWide   bool // whether this concrete automaton pattern is wide-encoded
-	isNocase bool // whether the originating string is nocase
+	offset        int64
+	sharedString  int32
+	ruleStringIdx int32
 }
 
 type nonTextMatchCache struct {
