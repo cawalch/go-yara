@@ -78,31 +78,39 @@ func (s *Scanner) extractGlobalMatchesInt(
 
 		info := s.program.sharedAutomaton.strings[match.StringIndex]
 		strID := rule.IndexToStringID[entry.StringIdx]
-		globalEntry := globalMatchEntry{
-			strID:    strID,
-			span:     matchSpan{Offset: int64(match.Backtrack), Length: info.Length},
-			isWide:   (info.Flags & regex.FlagsWide) != 0,
-			isNocase: (info.Flags & regex.FlagsNoCase) != 0,
-			pattern:  info.Data,
-		}
-		if s.fastScan && rule.FastScanSafe {
-			key, ok := packFastScanKey(entry.RuleIndex, entry.StringIdx)
+		offset := int64(match.Backtrack)
+		isWide := (info.Flags & regex.FlagsWide) != 0
+		isNocase := (info.Flags & regex.FlagsNoCase) != 0
+		fastDedup := s.fastScan && rule.FastScanSafe
+		var fastKey uint64
+		if fastDedup {
+			var ok bool
+			fastKey, ok = packFastScanKey(entry.RuleIndex, entry.StringIdx)
 			if !ok {
 				return true
 			}
-			if fastSeen[key] {
+			if fastSeen[fastKey] {
 				return true
 			}
+		}
+		if fastDedup || s.hookMask&hookBitPatternProfile == 0 {
 			candidate := Match{
 				Pattern: strID,
-				Offset:  globalEntry.span.Offset,
-				Length:  globalEntry.span.Length,
+				Offset:  offset,
+				Length:  info.Length,
 			}
-			if !verifyTextMatch(data, candidate, globalEntry.pattern, globalEntry.isNocase) ||
-				!matchPassesModifiers(data, candidate, rule.StringModifiers[strID], globalEntry.isWide) {
+			if !verifyTextMatch(data, candidate, info.Data, isNocase) ||
+				!matchPassesModifiers(data, candidate, rule.StringModifiers[strID], isWide) {
 				return true
 			}
-			fastSeen[key] = true
+			if fastDedup {
+				fastSeen[fastKey] = true
+			}
+		}
+		globalEntry := globalMatchEntry{
+			offset:        offset,
+			sharedString:  mustACIndex(match.StringIndex),
+			ruleStringIdx: mustACIndex(entry.StringIdx),
 		}
 		if len(globalByRule[entry.RuleIndex]) == 0 {
 			s.touchedGlobalMatches = append(s.touchedGlobalMatches, entry.RuleIndex)
@@ -139,25 +147,27 @@ func (s *Scanner) addStaticMatchesInt(
 	entries []globalMatchEntry,
 ) error {
 	done := ctx.Done()
+	sharedStrings := s.program.sharedAutomaton.strings
+	verifyInAdd := s.hookMask&hookBitPatternProfile != 0
 	for index, e := range entries {
 		if scanCanceledAt(done, index) {
 			return ctx.Err()
 		}
-		if s.matchCtx.maxMatchesPerPattern > 0 && s.matchCtx.matchCount(e.strID) > 0 {
+		strID := rule.IndexToStringID[e.ruleStringIdx]
+		if s.matchCtx.maxMatchesPerPattern > 0 && s.matchCtx.matchCount(strID) > 0 {
 			continue
 		}
-		m := Match{Pattern: e.strID, Offset: e.span.Offset, Length: e.span.Length}
-		// Re-verify the candidate bytes against the stored pattern. The shared
-		// automaton registers both ASCII cases for nocase strings, so a
-		// case-sensitive string whose output state lies on a nocase path could
-		// fire on the wrong case; reject those false candidates here.
-		if !verifyTextMatch(data, m, e.pattern, e.isNocase) {
-			continue
+		info := sharedStrings[e.sharedString]
+		m := Match{Pattern: strID, Offset: e.offset, Length: info.Length}
+		if verifyInAdd {
+			isWide := (info.Flags & regex.FlagsWide) != 0
+			isNocase := (info.Flags & regex.FlagsNoCase) != 0
+			if !verifyTextMatch(data, m, info.Data, isNocase) ||
+				!matchPassesModifiers(data, m, rule.StringModifiers[strID], isWide) {
+				continue
+			}
 		}
-		modifiers := rule.StringModifiers[m.Pattern]
-		if matchPassesModifiers(data, m, modifiers, e.isWide) {
-			s.matchCtx.AddMatch(m)
-		}
+		s.matchCtx.AddMatch(m)
 	}
 	if scanCanceled(done) {
 		return ctx.Err()

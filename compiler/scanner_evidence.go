@@ -102,9 +102,11 @@ func (s *Scanner) extractPublicMatchesAndEvidence(
 	scanInput ruleScanInput,
 	matchBase int64,
 ) (map[string][]Match, map[string][]EvidenceFinding, error) {
-	scanInput.booleanMatchOnly = false
-	if err := s.populateRuleMatchContext(ctx, rule, scanInput); err != nil {
-		return nil, nil, err
+	if s.populatedMatchCtxRuleIndex != rule.Index {
+		scanInput.booleanMatchOnly = false
+		if err := s.populateRuleMatchContext(ctx, rule, scanInput); err != nil {
+			return nil, nil, err
+		}
 	}
 
 	var publicMatches map[string][]Match

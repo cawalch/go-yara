@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/cawalch/go-yara/ast"
+	"github.com/cawalch/go-yara/regex"
 	"github.com/cawalch/go-yara/token"
 )
 
@@ -191,7 +192,7 @@ func (s *Scanner) missingRequiredString(rule *CompiledRule) bool {
 					return false
 				}
 				budget--
-				if match.strID == id {
+				if int(match.ruleStringIdx) == index {
 					found = true
 					break
 				}
@@ -255,7 +256,7 @@ func (s *Scanner) ruleRejectedBeforeNonText(rule *CompiledRule, data []byte) boo
 					return false
 				}
 				budget--
-				if match.strID == id {
+				if int(match.ruleStringIdx) == index {
 					found = true
 					break
 				}
@@ -273,17 +274,25 @@ func (s *Scanner) ruleRejectedBeforeNonText(rule *CompiledRule, data []byte) boo
 		return false
 	}
 	for _, id := range rule.forbiddenStrings {
+		strIdx, ok := rule.StringIDToIndex[id]
+		if !ok {
+			continue
+		}
 		for _, e := range entries {
 			if budget == 0 {
 				return false
 			}
 			budget--
-			if e.strID != id {
+			if int(e.ruleStringIdx) != strIdx {
 				continue
 			}
-			m := Match{Pattern: id, Offset: e.span.Offset, Length: e.span.Length}
-			if verifyTextMatch(data, m, e.pattern, e.isNocase) &&
-				matchPassesModifiers(data, m, rule.StringModifiers[id], e.isWide) {
+			if s.hookMask&hookBitPatternProfile == 0 {
+				return true
+			}
+			info := s.program.sharedAutomaton.strings[e.sharedString]
+			m := Match{Pattern: id, Offset: e.offset, Length: info.Length}
+			if verifyTextMatch(data, m, info.Data, (info.Flags&regex.FlagsNoCase) != 0) &&
+				matchPassesModifiers(data, m, rule.StringModifiers[id], (info.Flags&regex.FlagsWide) != 0) {
 				return true
 			}
 		}

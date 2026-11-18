@@ -235,6 +235,7 @@ func (s *Scanner) populateRuleMatchContext(
 	if s.hookMask&(hookBitPatternProfile|hookBitTelemetry|hookBitRuleProfile) != 0 {
 		clear(s.localProfileCandidates)
 	}
+	s.populatedMatchCtxRuleIndex = -1
 	s.matchCtx.Reset(input.data)
 	s.matchCtx.moduleCache = &s.moduleCache
 	s.matchCtx.assertionResults = s.assertionResults
@@ -285,6 +286,8 @@ func (s *Scanner) populateRuleMatchContext(
 		s.matchCtx.Data = nil
 		s.matchCtx.Blocks = s.blockContext[:]
 		s.matchCtx.FileSize = s.blockFileSize
+	} else if !input.booleanMatchOnly && s.hookMask&hookBitPatternProfile == 0 {
+		s.populatedMatchCtxRuleIndex = rule.Index
 	}
 	return nil
 }
