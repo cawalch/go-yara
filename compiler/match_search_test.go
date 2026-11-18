@@ -7,14 +7,9 @@ import (
 func TestMatchContextBinarySearch(t *testing.T) {
 	offsets := []int64{10, 50, 100, 200, 500, 1000}
 
-	mcCompact := &MatchContext{compact: true, spans: make(map[string][]matchSpan)}
+	mcCompact := &MatchContext{spans: make(map[string][]matchSpan)}
 	for _, o := range offsets {
 		mcCompact.spans["$a"] = append(mcCompact.spans["$a"], matchSpan{Offset: o, Length: 4})
-	}
-
-	mcNonCompact := &MatchContext{compact: false, Matches: make(map[string][]Match)}
-	for _, o := range offsets {
-		mcNonCompact.Matches["$a"] = append(mcNonCompact.Matches["$a"], Match{Offset: o, Length: 4})
 	}
 
 	contexts := []struct {
@@ -22,7 +17,6 @@ func TestMatchContextBinarySearch(t *testing.T) {
 		mc   *MatchContext
 	}{
 		{"compact", mcCompact},
-		{"non-compact", mcNonCompact},
 	}
 
 	for _, tc := range contexts {
@@ -81,7 +75,7 @@ func TestMatchContextBinarySearch(t *testing.T) {
 func BenchmarkMatchOffsetSearch(b *testing.B) {
 	// 5,000 matches distributed across 1 MB
 	const numMatches = 5000
-	mc := &MatchContext{compact: true, spans: make(map[string][]matchSpan)}
+	mc := &MatchContext{spans: make(map[string][]matchSpan)}
 	for i := range numMatches {
 		mc.spans["$a"] = append(mc.spans["$a"], matchSpan{Offset: int64(i * 200), Length: 5})
 	}

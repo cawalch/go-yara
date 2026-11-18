@@ -1560,7 +1560,6 @@ func TestInterpreterProximity(t *testing.T) {
 		offsetsB []int64
 		minDist  int64
 		maxDist  int64
-		compact  bool
 		expected int64
 	}{
 		{
@@ -1569,7 +1568,6 @@ func TestInterpreterProximity(t *testing.T) {
 			offsetsB: []int64{150, 400},
 			minDist:  1,
 			maxDist:  60,
-			compact:  true,
 			expected: 1,
 		},
 		{
@@ -1578,7 +1576,6 @@ func TestInterpreterProximity(t *testing.T) {
 			offsetsB: []int64{200, 500},
 			minDist:  1,
 			maxDist:  60,
-			compact:  true,
 			expected: 0,
 		},
 		{
@@ -1587,7 +1584,6 @@ func TestInterpreterProximity(t *testing.T) {
 			offsetsB: []int64{300, 480},
 			minDist:  1,
 			maxDist:  50,
-			compact:  true,
 			expected: 1,
 		},
 		{
@@ -1596,7 +1592,6 @@ func TestInterpreterProximity(t *testing.T) {
 			offsetsB: []int64{30, 80},
 			minDist:  1,
 			maxDist:  25,
-			compact:  false,
 			expected: 1,
 		},
 		{
@@ -1605,7 +1600,6 @@ func TestInterpreterProximity(t *testing.T) {
 			offsetsB: []int64{20},
 			minDist:  1,
 			maxDist:  100,
-			compact:  false,
 			expected: 0,
 		},
 		{
@@ -1614,7 +1608,6 @@ func TestInterpreterProximity(t *testing.T) {
 			offsetsB: []int64{20},
 			minDist:  1,
 			maxDist:  100,
-			compact:  true,
 			expected: 0,
 		},
 	}
@@ -1636,23 +1629,12 @@ func TestInterpreterProximity(t *testing.T) {
 			interp := NewInterpreter(bytecode)
 			interp.stringLiterals = []string{"$a", "$b"}
 
-			mc := &MatchContext{compact: tt.compact}
-			if tt.compact {
-				mc.spans = make(map[string][]matchSpan)
-				for _, o := range tt.offsetsA {
-					mc.spans["$a"] = append(mc.spans["$a"], matchSpan{Offset: o, Length: 1})
-				}
-				for _, o := range tt.offsetsB {
-					mc.spans["$b"] = append(mc.spans["$b"], matchSpan{Offset: o, Length: 1})
-				}
-			} else {
-				mc.Matches = make(map[string][]Match)
-				for _, o := range tt.offsetsA {
-					mc.Matches["$a"] = append(mc.Matches["$a"], Match{Offset: o, Length: 1})
-				}
-				for _, o := range tt.offsetsB {
-					mc.Matches["$b"] = append(mc.Matches["$b"], Match{Offset: o, Length: 1})
-				}
+			mc := &MatchContext{spans: make(map[string][]matchSpan)}
+			for _, o := range tt.offsetsA {
+				mc.spans["$a"] = append(mc.spans["$a"], matchSpan{Offset: o, Length: 1})
+			}
+			for _, o := range tt.offsetsB {
+				mc.spans["$b"] = append(mc.spans["$b"], matchSpan{Offset: o, Length: 1})
 			}
 			interp.matchContext = mc
 

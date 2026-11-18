@@ -75,16 +75,6 @@ func (ctx *MatchContext) filterFixedOffsets(offsets map[string]int64, base int64
 				ctx.spans[id] = spans
 			}
 		}
-		if matches, ok := ctx.Matches[id]; ok {
-			matches = slices.DeleteFunc(matches, func(match Match) bool {
-				return offset < base || match.Offset != offset-base
-			})
-			if len(matches) == 0 {
-				delete(ctx.Matches, id)
-			} else {
-				ctx.Matches[id] = matches
-			}
-		}
 	}
 }
 
