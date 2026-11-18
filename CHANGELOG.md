@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+* Cache formatted certificate fields per certificate within each PE scan, sharing results across signature, certificate-array, and chain views while preserving undefined results and scan isolation (part of [#544](https://github.com/cawalch/go-yara/issues/544)).
+
 * Reuse regex atom-hit and candidate buffers across scans, share range and sort/deduplication helpers, and defer bounded-verification maps until an accepted match. Bound retained candidate scratch while preserving fallback limits and match ordering (completes [#542](https://github.com/cawalch/go-yara/issues/542)).
 
 * Prepare hex scan metadata once per immutable compiled program, including after deserialization, avoiding repeated token analysis, XOR range expansion, and differential-anchor allocation; standalone `FindHexMatches` continues to observe caller edits (part of [#542](https://github.com/cawalch/go-yara/issues/542)).

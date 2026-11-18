@@ -94,6 +94,7 @@ func newPESignatureVerifySchema() *ModuleSchema {
 // undefined. A non-nil cache records both success and failure so repeated rule
 // references within the same scan never re-parse CMS blobs or re-run crypto.
 type peSignatureData struct {
+	certificateFields map[*x509.Certificate]*peCertificateFields
 	signatures        []pe.AuthenticodeSignature
 	details           ModuleValue
 	valid             bool
@@ -246,7 +247,7 @@ func peSignatureValue(image *peImage, sigIdx int, sig pe.AuthenticodeSignature) 
 		switch field {
 		case "issuer", "subject", "version", "algorithm", "algorithm_oid",
 			"serial", "thumbprint", "not_before", "not_after":
-			return peCertificateField(resolveLeaf(), field)
+			return image.certificateField(resolveLeaf(), field)
 		case "digest":
 			if sig.IndirectData != nil && len(sig.IndirectData.Digest) > 0 {
 				return StringValue(hex.EncodeToString(sig.IndirectData.Digest))
@@ -268,12 +269,12 @@ func peSignatureValue(image *peImage, sigIdx int, sig pe.AuthenticodeSignature) 
 						}
 					}
 				}
-				certsArray = peCertificateArray(certs)
+				certsArray = image.certificateArray(certs)
 			}
 			return certsArray
 		case "signer_info":
 			if signerInfoVal.Type == ModuleUndefined {
-				signerInfoVal = peSignerInfoValue(signer, sig.Certificates)
+				signerInfoVal = peSignerInfoValue(image, signer, sig.Certificates)
 			}
 			return signerInfoVal
 		case "verified":
@@ -308,7 +309,7 @@ func peSignatureValue(image *peImage, sigIdx int, sig pe.AuthenticodeSignature) 
 	})
 }
 
-func peSignerInfoValue(signer *pe.AuthenticodeSigner, pool []*x509.Certificate) ModuleValue {
+func peSignerInfoValue(image *peImage, signer *pe.AuthenticodeSigner, pool []*x509.Certificate) ModuleValue {
 	var (
 		chainLoaded bool
 		chain       []*x509.Certificate
@@ -341,7 +342,7 @@ func peSignerInfoValue(signer *pe.AuthenticodeSigner, pool []*x509.Certificate) 
 			return IntegerValue(int64(len(resolveChain())))
 		case "chain":
 			if chainArray.Type == ModuleUndefined {
-				chainArray = peCertificateArray(resolveChain())
+				chainArray = image.certificateArray(resolveChain())
 			}
 			return chainArray
 		}
@@ -399,7 +400,7 @@ func peCountersignatureValue(image *peImage, sigIdx, tsIdx int) ModuleValue {
 			return IntegerValue(int64(len(resolveChain())))
 		case "chain":
 			if chainArray.Type == ModuleUndefined {
-				chainArray = peCertificateArray(resolveChain())
+				chainArray = image.certificateArray(resolveChain())
 			}
 			return chainArray
 		case "verified":
@@ -420,7 +421,7 @@ func peCountersignatureValue(image *peImage, sigIdx, tsIdx int) ModuleValue {
 	})
 }
 
-func peCertificateArray(certs []*x509.Certificate) ModuleValue {
+func (image *peImage) certificateArray(certs []*x509.Certificate) ModuleValue {
 	if len(certs) == 0 {
 		return peArray(nil)
 	}
@@ -428,7 +429,7 @@ func peCertificateArray(certs []*x509.Certificate) ModuleValue {
 	for i, cert := range certs {
 		c := cert
 		elements[i] = peLazyStruct(func(field string) ModuleValue {
-			return peCertificateField(c, field)
+			return image.certificateField(c, field)
 		})
 	}
 	return peArray(elements)
