@@ -509,17 +509,12 @@ func (i *Interpreter) readAndValidateMemorySlot(opcode Opcode) (int, error) {
 	return slot, nil
 }
 
-// executeLoadSlot loads a value from a memory slot for OpLoadVar / OpPushM.
-func (i *Interpreter) executeLoadSlot(op Opcode) error {
-	slot, err := i.readAndValidateMemorySlot(op)
+func (i *Interpreter) executeLoadVarOperation() error {
+	slot, err := i.readAndValidateMemorySlot(OpLoadVar)
 	if err != nil {
 		return err
 	}
 	return i.push(i.memory[slot])
-}
-
-func (i *Interpreter) executeLoadVarOperation() error {
-	return i.executeLoadSlot(OpLoadVar)
 }
 
 // executeSwapUndefined handles SWAPUNDEF operation
@@ -538,7 +533,11 @@ func (i *Interpreter) executeSwapUndefined() error {
 
 // executePushMemory handles PUSH_M operation
 func (i *Interpreter) executePushMemory() error {
-	return i.executeLoadSlot(OpPushM)
+	slot, err := i.readAndValidateMemorySlot(OpPushM)
+	if err != nil {
+		return err
+	}
+	return i.push(i.memory[slot])
 }
 
 // executePopMemory handles POP_M operation
