@@ -279,6 +279,10 @@ func TestPESnapshotOwnsNames(t *testing.T) {
 			if got := section.field("name").String; got != tc.raw {
 				t.Fatalf("borrowed section name: %q", got)
 			}
+			other := value.object.field("sections").object.elements[1].object
+			if got := other.field("name").String; got != ".data" {
+				t.Fatalf("ordinary name next to special name changed: %q", got)
+			}
 			if got := section.field("full_name").String; got != tc.full {
 				t.Fatalf("borrowed full section name: %q", got)
 			}
