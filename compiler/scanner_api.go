@@ -65,6 +65,7 @@ func (s *Scanner) prepareScanCall(ctx context.Context) (context.Context, bool, e
 	if err := ctx.Err(); err != nil {
 		return ctx, false, err
 	}
+	s.skipSharedTeddyGate = false
 	return ctx, true, nil
 }
 

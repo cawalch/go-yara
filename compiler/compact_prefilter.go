@@ -123,18 +123,25 @@ func (s *Scanner) compactPrefilterFanoutRejects(ctx context.Context, data []byte
 }
 
 func (s *Scanner) compactPrefilterRejects(ctx context.Context, data []byte) bool {
+	s.skipSharedTeddyGate = false
 	gate := s.program.compactPrefilter
 	// Large positive records would pay for two full passes.
 	if gate == nil || s.prefilterDisabled || len(data) > 1024 || s.program.sharedAutomaton != gate.automaton {
 		return false
 	}
+	var rejected bool
 	if s.hookMask&(hookBitPrefilter|hookBitTelemetryLatency) != 0 {
-		return s.compactPrefilterRejectsWithHooks(ctx, data, gate)
+		rejected = s.compactPrefilterRejectsWithHooks(ctx, data, gate)
+	} else {
+		if scanCanceled(ctx.Done()) {
+			return true
+		}
+		rejected = compactPrefilterMatchesAbsent(data, gate)
 	}
-	if scanCanceled(ctx.Done()) {
-		return true
+	if !rejected && teddySIMDEnabled && gate.automaton.teddyGate != nil && len(data) >= 256 {
+		s.skipSharedTeddyGate = true
 	}
-	return compactPrefilterMatchesAbsent(data, gate)
+	return rejected
 }
 
 func (s *Scanner) compactPrefilterRejectsWithHooks(ctx context.Context, data []byte, gate *compactPrefilter) (rejected bool) {
@@ -212,6 +219,38 @@ func compactPrefilterRejectsTable[S ~uint16 | ~int32](data []byte, gate *compact
 	accepting := gate.accepting
 	rootTransitions := &trans[0]
 	var state S
+
+	if !accepting[0] && ac.teddy != nil && len(data) >= 256 {
+		linearUntil := 0
+		for i := 0; i < len(data); i++ {
+			if state == 0 && i >= linearUntil && len(data)-i >= 32 {
+				candidate := ac.teddy.findCandidate(data, i)
+				if candidate < 0 {
+					i = max(i, len(data)-31)
+					if i >= len(data) {
+						return true
+					}
+				} else {
+					if candidate-i < 64 {
+						linearUntil = candidate + 256
+					}
+					i = candidate
+				}
+			}
+			if state == 0 {
+				state = rootTransitions[data[i]]
+				if state == 0 {
+					continue
+				}
+			} else {
+				state = trans[state][data[i]]
+			}
+			if accepting[state] {
+				return false
+			}
+		}
+		return true
+	}
 
 	if len(data) > 256 && len(ac.rootLanes) > 0 && len(ac.rootLanes) <= maxSparseRootTransitions {
 		cursor := newRootCandidateCursor(ac.rootLanes)

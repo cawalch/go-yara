@@ -38,6 +38,7 @@ type Scanner struct {
 	omitMatches         bool
 	omitRuleResults     bool
 	fastScan            bool
+	skipSharedTeddyGate bool
 	evidenceMax         int
 	evidenceBorrowed    bool
 	evaluatedRules      map[string]bool
