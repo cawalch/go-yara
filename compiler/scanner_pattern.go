@@ -154,12 +154,9 @@ func (s *Scanner) addStaticMatchesInt(
 			return ctx.Err()
 		}
 		strID := rule.IndexToStringID[e.ruleStringIdx]
-		if s.matchCtx.maxMatchesPerPattern > 0 && s.matchCtx.matchCount(strID) > 0 {
-			continue
-		}
 		info := sharedStrings[e.sharedString]
-		m := Match{Pattern: strID, Offset: e.offset, Length: info.Length}
 		if verifyInAdd {
+			m := Match{Pattern: strID, Offset: e.offset, Length: info.Length}
 			isWide := (info.Flags & regex.FlagsWide) != 0
 			isNocase := (info.Flags & regex.FlagsNoCase) != 0
 			if !verifyTextMatch(data, m, info.Data, isNocase) ||
@@ -167,7 +164,7 @@ func (s *Scanner) addStaticMatchesInt(
 				continue
 			}
 		}
-		s.matchCtx.AddMatch(m)
+		s.matchCtx.addMatchSpanSlot(int(e.ruleStringIdx), strID, matchSpan{Offset: e.offset, Length: info.Length})
 	}
 	if scanCanceled(done) {
 		return ctx.Err()
@@ -402,14 +399,14 @@ func (s *Scanner) addLocalNonTextMatches(
 			if hasModifier(modifiers, ast.StringModifierWide) && hasModifier(modifiers, ast.StringModifierASCII) {
 				s.matchCtx.normalizeRegexEncodingMatches(id)
 			}
-			if canShortCircuit && len(s.matchCtx.spans[id]) > 0 && s.isRuleConditionSatisfied(rule) {
+			if canShortCircuit && len(s.matchCtx.spansFor(id)) > 0 && s.isRuleConditionSatisfied(rule) {
 				return nil
 			}
 			continue
 		}
 		addRegexMatchesWithModifiersCached(s.matchCtx, id, regexInfo, data, modifiers, &s.regexByteSetCache)
 		s.storeNonTextCache(cache, regexInfo.cacheIndex, id)
-		if canShortCircuit && len(s.matchCtx.spans[id]) > 0 && s.isRuleConditionSatisfied(rule) {
+		if canShortCircuit && len(s.matchCtx.spansFor(id)) > 0 && s.isRuleConditionSatisfied(rule) {
 			return nil
 		}
 	}
@@ -420,7 +417,7 @@ func (s *Scanner) addLocalNonTextMatches(
 		if pattern != nil {
 			if matches, ok := s.getNonTextMatches(cache, pattern.cacheIndex, usesharedAutomaton); ok {
 				addCachedMatches(s.matchCtx, id, matches)
-				if canShortCircuit && len(s.matchCtx.spans[id]) > 0 && s.isRuleConditionSatisfied(rule) {
+				if canShortCircuit && len(s.matchCtx.spansFor(id)) > 0 && s.isRuleConditionSatisfied(rule) {
 					return nil
 				}
 				continue
@@ -430,7 +427,7 @@ func (s *Scanner) addLocalNonTextMatches(
 			m.Pattern = id
 			if matchPassesModifiers(data, m, rule.StringModifiers[id], false) {
 				s.matchCtx.AddMatch(m)
-				if canShortCircuit && len(s.matchCtx.spans[id]) > 0 && s.isRuleConditionSatisfied(rule) {
+				if canShortCircuit && len(s.matchCtx.spansFor(id)) > 0 && s.isRuleConditionSatisfied(rule) {
 					return false
 				}
 			}
@@ -439,7 +436,7 @@ func (s *Scanner) addLocalNonTextMatches(
 		if pattern != nil {
 			s.storeNonTextCache(cache, pattern.cacheIndex, id)
 		}
-		if canShortCircuit && len(s.matchCtx.spans[id]) > 0 && s.isRuleConditionSatisfied(rule) {
+		if canShortCircuit && len(s.matchCtx.spansFor(id)) > 0 && s.isRuleConditionSatisfied(rule) {
 			return nil
 		}
 	}
@@ -452,7 +449,7 @@ func (s *Scanner) addLocalNonTextMatches(
 func (s *Scanner) storeNonTextCache(cache *nonTextMatchCache, cacheIndex int, id string) {
 	if s.matchCtx.maxMatchesPerPattern <= 0 && cacheIndex >= 0 && cacheIndex < len(cache.matches) {
 		dst := cache.matches[cacheIndex][:0]
-		dst = append(dst, s.matchCtx.spans[id]...)
+		dst = append(dst, s.matchCtx.spansFor(id)...)
 		cache.set(cacheIndex, dst)
 	}
 }

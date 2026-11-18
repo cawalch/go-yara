@@ -652,7 +652,7 @@ func appendRegexFallbackMatches(
 		ctx.maxMatchSpan = matchCtx.maxMatchSpan
 	}
 	addRegexMatches(ctx, strID, pattern, data, rule.StringModifiers[strID], flags, isWide)
-	dst = append(dst, ctx.spans[strID]...)
+	dst = append(dst, ctx.spansFor(strID)...)
 	if matchCtx != nil {
 		matchCtx.verificationBudgetRejects += ctx.verificationBudgetRejects
 	}

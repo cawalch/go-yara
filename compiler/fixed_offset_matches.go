@@ -64,6 +64,18 @@ func collectFixedOffsetReference(expr *ast.BinaryOp, refs *conditionStringRefere
 // Filter owned per-rule scratch storage, never shared automaton/cache results.
 // base converts reader windows and memory blocks to absolute scan offsets.
 func (ctx *MatchContext) filterFixedOffsets(offsets map[string]int64, base int64) {
+	if ctx.slotRule != nil {
+		for id, offset := range offsets {
+			slot, ok := ctx.slotRule.StringIDToIndex[id]
+			if !ok || slot < 0 || slot >= len(ctx.spansByIndex) || len(ctx.spansByIndex[slot]) == 0 {
+				continue
+			}
+			ctx.spansByIndex[slot] = slices.DeleteFunc(ctx.spansByIndex[slot], func(span matchSpan) bool {
+				return offset < base || span.Offset != offset-base
+			})
+		}
+		return
+	}
 	for id, offset := range offsets {
 		if spans, ok := ctx.spans[id]; ok {
 			spans = slices.DeleteFunc(spans, func(span matchSpan) bool {

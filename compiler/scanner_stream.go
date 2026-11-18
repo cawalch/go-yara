@@ -343,7 +343,7 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 				continue
 			}
 
-			s.matchCtx.Reset(windowData)
+			s.matchCtx.ResetForRule(rule, windowData)
 			s.matchCtx.cancelDone = ctx.Done()
 			s.matchCtx.maxMatchesPerPattern = 0
 			if s.fastScan && rule.FastScanSafe {
@@ -376,11 +376,11 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 				s.matchCtx.verificationBudgetRejects = 0
 			}
 
-			if len(s.matchCtx.spans) == 0 {
+			if !s.matchCtx.hasSpans() {
 				continue
 			}
 
-			for strID, spans := range s.matchCtx.spans {
+			s.matchCtx.forEachSpanSlice(func(strID string, spans []matchSpan) {
 				horizon := -1
 				if pattern, ok := rule.RegexPatterns[strID]; ok {
 					horizon = s.streamRegexHorizon(pattern)
@@ -425,7 +425,7 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 						})
 					}
 				}
-			}
+			})
 		}
 
 		if s.checkStreamEarlyTermination(ctx, acc, currentStreamOffset) {
@@ -473,7 +473,7 @@ func (s *Scanner) checkStreamEarlyTermination(
 		if len(rule.HeaderConstraints) > 0 && !s.ruleConstraintsMatchContext(rule, headerCtx, false) {
 			continue
 		}
-		s.matchCtx.Reset(nil)
+		s.matchCtx.ResetForRule(rule, nil)
 		s.matchCtx.cancelDone = ctx.Done()
 		s.matchCtx.Blocks = blocks
 		s.matchCtx.FileSize = currentStreamOffset
@@ -560,7 +560,7 @@ func (s *Scanner) evaluateStreamMatches(
 			continue
 		}
 
-		s.matchCtx.Reset(nil)
+		s.matchCtx.ResetForRule(rule, nil)
 		s.matchCtx.moduleCache = &s.moduleCache
 		s.matchCtx.assertionResults = s.assertionResults
 		s.matchCtx.cancelDone = done
@@ -579,7 +579,7 @@ func (s *Scanner) evaluateStreamMatches(
 		s.matchCtx.normalizeMatches()
 
 		state.populated = true
-		if !s.prefilterDisabled && rule.RequiresStringMatch && len(s.matchCtx.spans) == 0 {
+		if !s.prefilterDisabled && rule.RequiresStringMatch && !s.matchCtx.hasSpans() {
 			s.recordRuleResult(rule, false)
 			if result.RuleResults != nil {
 				result.RuleResults[rule.Name] = false
@@ -676,7 +676,7 @@ func (s *Scanner) evaluateStreamMatches(
 		}
 		if s.streamEarlyTermination {
 			s.clearRuleResultsIfDirty()
-			s.matchCtx.Reset(nil)
+			s.matchCtx.ResetForRule(rule, nil)
 			return result, nil
 		}
 	}

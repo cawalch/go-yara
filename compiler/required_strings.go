@@ -212,7 +212,7 @@ func (s *Scanner) missingRequiredString(rule *CompiledRule) bool {
 
 func (s *Scanner) hasForbiddenStringMatch(rule *CompiledRule, usesharedAutomaton bool) bool {
 	for _, id := range rule.forbiddenStrings {
-		if len(s.matchCtx.spans[id]) > 0 {
+		if len(s.matchCtx.spansFor(id)) > 0 {
 			return true
 		}
 		index, ok := rule.StringIDToIndex[id]

@@ -79,7 +79,7 @@ func (s *Scanner) evaluateRuleCondition(
 	if !s.prefilterDisabled && input.skipUnmatchedContext && s.hasForbiddenStringMatch(rule, input.usesharedAutomaton) {
 		return s.finishRuleEvaluation(rule, false, state)
 	}
-	if !s.prefilterDisabled && rule.RequiresStringMatch && len(s.matchCtx.spans) == 0 {
+	if !s.prefilterDisabled && rule.RequiresStringMatch && !s.matchCtx.hasSpans() {
 		return s.finishRuleEvaluation(rule, false, state)
 	}
 
@@ -116,7 +116,7 @@ func (s *Scanner) recordRuleEvaluatedHooks(
 			if rule.IsStringDead(id) {
 				continue
 			}
-			verified := len(s.matchCtx.spans[id])
+			verified := len(s.matchCtx.spansFor(id))
 			count, known := s.patternCandidateCount(rule, id, state.shared)
 			matches += verified
 			if known && !state.accumulated {
@@ -236,7 +236,7 @@ func (s *Scanner) populateRuleMatchContext(
 		clear(s.localProfileCandidates)
 	}
 	s.populatedMatchCtxRuleIndex = -1
-	s.matchCtx.Reset(input.data)
+	s.matchCtx.ResetForRule(rule, input.data)
 	s.matchCtx.moduleCache = &s.moduleCache
 	s.matchCtx.assertionResults = s.assertionResults
 	s.matchCtx.cancelDone = ctx.Done()
@@ -263,7 +263,7 @@ func (s *Scanner) populateRuleMatchContext(
 		input.booleanMatchOnly &&
 		(len(rule.RegexPatterns) > 0 || len(rule.HexPatterns) > 0)
 
-	if !canShortCircuit || len(s.matchCtx.spans) == 0 || !s.isRuleConditionSatisfied(rule) {
+	if !canShortCircuit || !s.matchCtx.hasSpans() || !s.isRuleConditionSatisfied(rule) {
 		if err := s.addLocalNonTextMatches(ctx, rule, input.data, &s.nonTextCache, input.usesharedAutomaton, canShortCircuit); err != nil {
 			return err
 		}
@@ -278,11 +278,11 @@ func (s *Scanner) populateRuleMatchContext(
 	s.matchCtx.normalizeMatches()
 	if s.blockScan {
 		base := s.blockContext[0].Base
-		for _, spans := range s.matchCtx.spans {
+		s.matchCtx.forEachSpanSlice(func(_ string, spans []matchSpan) {
 			for index := range spans {
 				spans[index].Offset += base
 			}
-		}
+		})
 		s.matchCtx.Data = nil
 		s.matchCtx.Blocks = s.blockContext[:]
 		s.matchCtx.FileSize = s.blockFileSize

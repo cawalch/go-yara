@@ -165,7 +165,7 @@ func (s *Scanner) recordPatternProfiles(rule *CompiledRule, shared bool) {
 			continue
 		}
 		candidates, known := s.patternCandidateCount(rule, id, shared)
-		verified := len(s.matchCtx.spans[id])
+		verified := len(s.matchCtx.spansFor(id))
 		selectivity := 0.0
 		if known && candidates > 0 {
 			selectivity = float64(verified) / float64(candidates)
