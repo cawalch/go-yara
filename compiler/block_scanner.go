@@ -111,9 +111,35 @@ func (scanner *BlockScanner) ScanWithContext(ctx context.Context, base int64, da
 		return err
 	}
 	s.regexByteSetCache.reset()
-	for _, rule := range scanner.program.Rules {
+	usesharedAutomaton := false
+	if len(scanner.program.Rules) > 1 {
+		var err error
+		usesharedAutomaton, err = s.preparePatternScan(ctx, blockData)
+		if err != nil {
+			return err
+		}
+		if usesharedAutomaton {
+			s.markChunkCandidateRules()
+		}
+	}
+
+	evalCount := len(scanner.program.Rules)
+	if usesharedAutomaton {
+		evalCount = len(s.candidateRuleIndices)
+	}
+	for idx := 0; idx < evalCount; idx++ {
 		if err := ctx.Err(); err != nil {
 			return err
+		}
+		var rule *CompiledRule
+		if usesharedAutomaton {
+			ruleIndex := s.candidateRuleIndices[idx]
+			if ruleIndex < 0 || ruleIndex >= len(scanner.program.Rules) {
+				continue
+			}
+			rule = scanner.program.Rules[ruleIndex]
+		} else {
+			rule = scanner.program.Rules[idx]
 		}
 		if !s.shouldEvaluateRule(rule) {
 			continue
@@ -129,10 +155,14 @@ func (scanner *BlockScanner) ScanWithContext(ctx context.Context, base int64, da
 			s.matchCtx.maxMatchesPerPattern = 1
 		}
 		s.matchCtx.maxMatchSpan = s.maxMatchSpan
-		if err := s.addLocalTextMatches(ctx, rule, blockData); err != nil {
+		if usesharedAutomaton {
+			if err := s.addStaticMatchesInt(ctx, rule, blockData, s.globalMatches[rule.Index]); err != nil {
+				return err
+			}
+		} else if err := s.addLocalTextMatches(ctx, rule, blockData); err != nil {
 			return err
 		}
-		if err := s.addLocalNonTextMatches(ctx, rule, blockData, &s.nonTextCache, false, false); err != nil {
+		if err := s.addLocalNonTextMatches(ctx, rule, blockData, &s.nonTextCache, usesharedAutomaton, false); err != nil {
 			return err
 		}
 
@@ -140,7 +170,7 @@ func (scanner *BlockScanner) ScanWithContext(ctx context.Context, base int64, da
 			s.matchCtx.filterFixedOffsets(rule.fixedOffsets, base)
 		}
 		s.matchCtx.normalizeMatches()
-		s.recordPatternProfiles(rule, false)
+		s.recordPatternProfiles(rule, usesharedAutomaton)
 		scanner.recordPatternCounts(rule)
 		if s.telemetrySink != nil {
 			s.telemetrySink.VerificationBudgetRejects += uint64(s.matchCtx.verificationBudgetRejects)

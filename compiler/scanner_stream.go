@@ -309,9 +309,35 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 		}
 		s.regexByteSetCache.reset()
 
-		for _, rule := range s.program.Rules {
+		usesharedAutomaton := false
+		if len(s.program.Rules) > 1 {
+			var prepErr error
+			usesharedAutomaton, prepErr = s.preparePatternScan(ctx, windowData)
+			if prepErr != nil {
+				return nil, prepErr
+			}
+			if usesharedAutomaton {
+				s.markChunkCandidateRules()
+			}
+		}
+
+		evalCount := len(s.program.Rules)
+		if usesharedAutomaton {
+			evalCount = len(s.candidateRuleIndices)
+		}
+		for idx := 0; idx < evalCount; idx++ {
 			if err := ctx.Err(); err != nil {
 				return nil, err
+			}
+			var rule *CompiledRule
+			if usesharedAutomaton {
+				ruleIndex := s.candidateRuleIndices[idx]
+				if ruleIndex < 0 || ruleIndex >= len(s.program.Rules) {
+					continue
+				}
+				rule = s.program.Rules[ruleIndex]
+			} else {
+				rule = s.program.Rules[idx]
 			}
 			if !s.shouldEvaluateRule(rule) {
 				continue
@@ -325,7 +351,11 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 			}
 			s.matchCtx.maxMatchSpan = s.maxMatchSpan
 
-			if err := s.addLocalTextMatches(ctx, rule, windowData); err != nil {
+			if usesharedAutomaton {
+				if err := s.addStaticMatchesInt(ctx, rule, windowData, s.globalMatches[rule.Index]); err != nil {
+					return nil, err
+				}
+			} else if err := s.addLocalTextMatches(ctx, rule, windowData); err != nil {
 				return nil, err
 			}
 			if s.fastScan && rule.FastScanSafe {
@@ -334,7 +364,7 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 				currentRule = rule
 				s.matchCtx.matchFilter = fastFilter
 			}
-			if err := s.addLocalNonTextMatches(ctx, rule, windowData, &s.nonTextCache, false, false); err != nil {
+			if err := s.addLocalNonTextMatches(ctx, rule, windowData, &s.nonTextCache, usesharedAutomaton, false); err != nil {
 				return nil, err
 			}
 			if len(rule.fixedOffsets) != 0 {
@@ -355,6 +385,8 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 				if pattern, ok := rule.RegexPatterns[strID]; ok {
 					horizon = s.streamRegexHorizon(pattern)
 				}
+				needsEvidenceData := s.evidenceMax > 0 && len(rule.CaptureBindings[strID]) > 0
+				copyMatchData := recordMatches
 				for _, sp := range spans {
 					if !window.owns(sp, horizon) {
 						continue
@@ -372,16 +404,24 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 						Length: sp.Length,
 					})
 
-					if recordMatches {
+					if copyMatchData {
 						if acc.accumulatedMatches[rule.Name] == nil {
 							acc.accumulatedMatches[rule.Name] = make(map[string][]Match)
 						}
-						mBytes := copyBytes(windowData[sp.Offset : sp.Offset+int64(sp.Length)])
+						raw := windowData[sp.Offset : sp.Offset+int64(sp.Length)]
+						copyLen := len(raw)
+						truncated := false
+						if !needsEvidenceData && s.matchDataMax > 0 && copyLen > s.matchDataMax {
+							copyLen = s.matchDataMax
+							truncated = true
+						}
+						mBytes := copyBytes(raw[:copyLen])
 						acc.accumulatedMatches[rule.Name][strID] = append(acc.accumulatedMatches[rule.Name][strID], Match{
-							Pattern:     strID,
-							Offset:      absStart,
-							Length:      sp.Length,
-							MatchedData: mBytes,
+							Pattern:              strID,
+							Offset:               absStart,
+							Length:               sp.Length,
+							MatchedData:          mBytes,
+							MatchedDataTruncated: truncated,
 						})
 					}
 				}
@@ -564,6 +604,12 @@ func (s *Scanner) evaluateStreamMatches(
 		if matched && !rule.IsPrivate && s.hasMatchingTag(rule) {
 			s.matchedRuleIndices = append(s.matchedRuleIndices, rule.Index)
 		}
+		s.recordRuleEvaluatedHooks(rule, matched, state)
+		if !s.omitMatches && !s.reportedMatchesOnly && result.Matches != nil {
+			if ruleMatches := materializeStreamRuleMatches(acc, rule); ruleMatches != nil {
+				result.Matches[rule.Name] = ruleMatches
+			}
+		}
 	}
 
 	// YARA spec: all evaluated global rules must match
@@ -595,7 +641,7 @@ func (s *Scanner) evaluateStreamMatches(
 
 		var ruleMatches map[string][]Match
 		if !s.omitMatches {
-			ruleMatches = acc.accumulatedMatches[rule.Name]
+			ruleMatches = materializeStreamRuleMatches(acc, rule)
 		}
 
 		evidence, evErr := s.populateStreamRuleEvidence(ctx, rule, ruleMatches)
@@ -638,6 +684,35 @@ func (s *Scanner) evaluateStreamMatches(
 	s.clearRuleResultsIfDirty()
 	s.matchCtx.Reset(nil)
 	return result, nil
+}
+
+func materializeStreamRuleMatches(acc *streamAccumulator, rule *CompiledRule) map[string][]Match {
+	if existing := acc.accumulatedMatches[rule.Name]; existing != nil {
+		return existing
+	}
+	spansByPattern := acc.accumulatedSpans[rule.Name]
+	if len(spansByPattern) == 0 {
+		return nil
+	}
+	out := make(map[string][]Match, len(spansByPattern))
+	for strID, spans := range spansByPattern {
+		if rule.IsPrivateString(strID) || len(spans) == 0 {
+			continue
+		}
+		ms := make([]Match, len(spans))
+		for i, sp := range spans {
+			ms[i] = Match{
+				Pattern: strID,
+				Offset:  sp.Offset,
+				Length:  sp.Length,
+			}
+		}
+		out[strID] = ms
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func (s *Scanner) populateStreamRuleEvidence(

@@ -457,10 +457,11 @@ func TestCloneDeferredAutomatonUnbuilt(t *testing.T) {
 	}
 }
 
-// TestStreamedScanBuildsPerRuleAutomaton covers the streaming path, which
-// bypasses the shared automaton and therefore materializes deferred tables.
+// TestStreamedScanKeepsPerRuleAutomatonDeferred verifies that streaming scans
+// route through the program's shared automaton and leave per-rule automatons
+// unbuilt.
 func TestStreamedScanBuildsPerRuleAutomaton(t *testing.T) {
-	program, err := NewCompiler().CompileSource(deferredProgramSource)
+	program, err := NewCompiler().CompileSource(deferredProgramSource + "\nrule deferred_other { strings: $b = \"OTHER_TOKEN\" condition: $b }")
 	if err != nil {
 		t.Fatalf("CompileSource(): %v", err)
 	}
@@ -478,10 +479,10 @@ func TestStreamedScanBuildsPerRuleAutomaton(t *testing.T) {
 	if len(result.MatchedRules) == 0 {
 		t.Fatal("streaming scan did not match")
 	}
-	if !rule.automaton.compiled {
-		t.Fatal("streaming scan left the per-rule automaton unbuilt")
+	if rule.automaton.compiled {
+		t.Fatal("streaming scan unnecessarily compiled the per-rule automaton")
 	}
 	if rule.automaton.states != nil {
-		t.Fatal("streaming scan retained construction states")
+		t.Fatal("streaming scan allocated construction states")
 	}
 }
