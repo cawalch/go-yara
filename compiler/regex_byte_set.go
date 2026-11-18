@@ -2,7 +2,6 @@ package compiler
 
 import (
 	"bytes"
-	"slices"
 
 	"github.com/cawalch/go-yara/regex"
 )
@@ -324,16 +323,6 @@ func (iterator *regexByteSetCandidateIterator) next() (int, bool) {
 }
 
 //nolint:revive // argument-limit: shared by local and Aho-Corasick candidate paths
-func collectRegexCandidateStarts(
-	atomStarts []int,
-	minOffset, maxOffset int,
-	isWide bool,
-	dataLength, limit int,
-) ([]int, bool) {
-	return collectRegexCandidateStartsInto(nil, atomStarts, minOffset, maxOffset, isWide, dataLength, limit)
-}
-
-//nolint:revive // argument-limit: shared by local and Aho-Corasick candidate paths
 func collectRegexCandidateStartsInto(
 	dst, atomStarts []int,
 	minOffset, maxOffset int,
@@ -349,36 +338,18 @@ func collectRegexCandidateStartsInto(
 		starts = make([]int, 0, min(limit, len(atomStarts)*2))
 	}
 	for _, atomStart := range atomStarts {
-		first := max(0, atomStart-maxOffset)
-		last := min(dataLength, atomStart-minOffset)
-		if first > last {
+		first, last, count := regexCandidateRange(atomStart, minOffset, maxOffset, dataLength, step)
+		if count == 0 {
 			continue
 		}
-		if isWide && first&1 != atomStart&1 {
-			first++
-		}
-		count := (last-first)/step + 1
-		if count <= 0 || len(starts) > limit-count {
+		if count < 0 || len(starts) > limit-count {
 			return nil, false
 		}
 		for start := first; start <= last; start += step {
 			starts = append(starts, start)
 		}
 	}
-	if len(starts) < 2 {
-		return starts, true
-	}
-
-	slices.Sort(starts)
-	unique := 1
-	for _, start := range starts[1:] {
-		if start == starts[unique-1] {
-			continue
-		}
-		starts[unique] = start
-		unique++
-	}
-	return starts[:unique], true
+	return sortedUniqueRegexStarts(starts), true
 }
 
 func widenRegexPrefix(prefix []byte) []byte {

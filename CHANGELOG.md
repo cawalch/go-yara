@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+* Reuse regex atom-hit and candidate buffers across scans, share range and sort/deduplication helpers, and defer bounded-verification maps until an accepted match. Bound retained candidate scratch while preserving fallback limits and match ordering (completes [#542](https://github.com/cawalch/go-yara/issues/542)).
+
 * Prepare hex scan metadata once per immutable compiled program, including after deserialization, avoiding repeated token analysis, XOR range expansion, and differential-anchor allocation; standalone `FindHexMatches` continues to observe caller edits (part of [#542](https://github.com/cawalch/go-yara/issues/542)).
 
 * Derive hex byte representations from parsed tokens instead of parsing twice, remove the legacy parser, and share plain/XOR scan loops while preserving match order (part of [#542](https://github.com/cawalch/go-yara/issues/542)).
