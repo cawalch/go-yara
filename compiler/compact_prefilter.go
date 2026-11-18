@@ -170,23 +170,7 @@ func compactPrefilterMatchesAbsent(data []byte, gate *compactPrefilter) bool {
 	if len(ac.transitions32) > 0 {
 		return compactPrefilterRejectsTable(data, gate, ac.transitions32)
 	}
-
-	state := int32(0)
-	rootTransitions := &ac.states[0].transitions
-	for _, b := range data {
-		if state == 0 {
-			state = rootTransitions[b]
-			if state == 0 {
-				continue
-			}
-		} else {
-			state = ac.findNextState(state, b)
-		}
-		if gate.accepting[state] {
-			return false
-		}
-	}
-	return true
+	return false
 }
 
 // Keep the short-input kernel separate from the mixed-width dispatcher.

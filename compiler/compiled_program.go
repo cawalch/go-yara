@@ -67,9 +67,10 @@ type CompiledProgram struct {
 	booleanRouting          func() *wordmatch.RoutedProgram
 
 	// Streaming support
-	streamingProcessor         *StreamingProcessor
-	sharedHasTextOrAlternative bool
-	enableStreaming            bool
+	streamingProcessor             *StreamingProcessor
+	sharedHasTextOrAlternative     bool
+	hasHeaderOrMandatoryAssertions bool
+	enableStreaming                bool
 
 	scannerPool *sync.Pool
 }
@@ -168,6 +169,9 @@ func (cp *CompiledProgram) prepare() error {
 		}
 		rule.nativePE = false
 		rule.BuildStringIndex()
+		if len(rule.HeaderConstraints) > 0 || len(rule.mandatoryAssertions) > 0 {
+			cp.hasHeaderOrMandatoryAssertions = true
+		}
 		if rule.dependencies != nil {
 			cp.dependencies[rule.Name] = slices.Clone(rule.dependencies)
 			slices.Sort(cp.dependencies[rule.Name])

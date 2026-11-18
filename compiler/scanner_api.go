@@ -52,18 +52,26 @@ func (s *Scanner) MatchesReaderWithContext(ctx context.Context, r io.Reader) (bo
 	return len(result.MatchedRules) > 0, nil
 }
 
-// MatchesWithContext reports whether at least one public rule matches data.
-func (s *Scanner) MatchesWithContext(ctx context.Context, data []byte) (matched bool, err error) {
+func (s *Scanner) prepareScanCall(ctx context.Context) (context.Context, bool, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if s == nil || s.program == nil {
-		return false, nil
+		return ctx, false, nil
 	}
 	if err := s.scanError(); err != nil {
-		return false, err
+		return ctx, false, err
 	}
 	if err := ctx.Err(); err != nil {
+		return ctx, false, err
+	}
+	return ctx, true, nil
+}
+
+// MatchesWithContext reports whether at least one public rule matches data.
+func (s *Scanner) MatchesWithContext(ctx context.Context, data []byte) (matched bool, err error) {
+	ctx, ready, err := s.prepareScanCall(ctx)
+	if !ready || err != nil {
 		return false, err
 	}
 	if s.compactPrefilterFanoutRejects(ctx, data) {
@@ -121,16 +129,8 @@ func (s *Scanner) MatchingRules(data []byte) ([]RuleMatch, error) {
 // MatchingRulesWithContext returns detailed public rule matches without
 // constructing the all-rules maps in ScanResult.
 func (s *Scanner) MatchingRulesWithContext(ctx context.Context, data []byte) (matches []RuleMatch, err error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	if s == nil || s.program == nil {
-		return nil, nil
-	}
-	if err := s.scanError(); err != nil {
-		return nil, err
-	}
-	if err := ctx.Err(); err != nil {
+	ctx, ready, err := s.prepareScanCall(ctx)
+	if !ready || err != nil {
 		return nil, err
 	}
 
