@@ -17,12 +17,17 @@ func TestReserveCapacityHelpers(t *testing.T) {
 	// Start from a zero-capacity automaton so the grow branches are reachable.
 	ac := &acAutomaton{}
 	ac.ReserveStrings(4)
-	if cap(ac.strings) < 4 || cap(ac.Strings) < 4 {
-		t.Fatalf("ReserveStrings(4) caps = %d/%d, want >= 4", cap(ac.strings), cap(ac.Strings))
+	if cap(ac.strings) < 4 {
+		t.Fatalf("ReserveStrings(4) cap = %d, want >= 4", cap(ac.strings))
 	}
 	ac.ReserveStates(8)
 	if cap(ac.states) < 8 {
 		t.Fatalf("ReserveStates(8) cap = %d, want >= 8", cap(ac.states))
+	}
+	deferred := newDeferredAutomaton(1)
+	deferred.ReserveStates(64)
+	if deferred.stateHint != 64 || deferred.states != nil {
+		t.Fatalf("ReserveStates(deferred) hint = %d, states = %v, want hint 64 and no states", deferred.stateHint, deferred.states)
 	}
 }
 
@@ -32,21 +37,22 @@ func TestEstimateMemoryUsage(t *testing.T) {
 	ac.hasOutput = make([]bool, 3)
 	ac.outputs = make([]int32, 5)
 	ac.strings = make([]acStringInfo, 2)
+	ac.outputRanges = make([][2]int32, 3)
 
-	want := 3*(256*4+8) + 3 + 5*4 + 2*64
+	want := 3*(256*4+8) + 3 + 3*8 + 5*4 + 2*64
 	if got := ac.EstimateMemoryUsage(); got != want {
 		t.Fatalf("EstimateMemoryUsage = %d, want %d", got, want)
 	}
 
 	ac.transitions16 = make([][256]uint16, 3)
-	want16 := 3*(256*4+8) + 3*256*2 + 3 + 5*4 + 2*64
+	want16 := 3*(256*4+8) + 3*256*2 + 3 + 3*8 + 5*4 + 2*64
 	if got := ac.EstimateMemoryUsage(); got != want16 {
 		t.Fatalf("EstimateMemoryUsage(16) = %d, want %d", got, want16)
 	}
 
 	ac.transitions16 = nil
 	ac.transitions32 = make([][256]int32, 3)
-	want32 := 3*(256*4+8) + 3*256*4 + 3 + 5*4 + 2*64
+	want32 := 3*(256*4+8) + 3*256*4 + 3 + 3*8 + 5*4 + 2*64
 	if got := ac.EstimateMemoryUsage(); got != want32 {
 		t.Fatalf("EstimateMemoryUsage(32) = %d, want %d", got, want32)
 	}
@@ -213,7 +219,8 @@ func TestIndexASCIIFoldByteWithCancel(t *testing.T) {
 
 func TestYieldMatchesSkipsOutOfRangeStringIndex(t *testing.T) {
 	ac := newacAutomaton()
-	ac.states = append(ac.states, acState{outputStart: 0, outputEnd: 1})
+	// Mirror the pre-release state layout: a root entry plus the mutated state.
+	ac.outputRanges = append(ac.outputRanges, [2]int32{}, [2]int32{0, 1})
 	ac.outputs = []int32{0}
 	ac.strings = nil
 	called := false
@@ -350,7 +357,8 @@ func TestSearchWithCancelHonorsCancellation(t *testing.T) {
 // arithmetic so the checkpoint index depends on outputStart.
 func TestYieldMatchesWithCancelOffsetCheckpoint(t *testing.T) {
 	ac := newacAutomaton()
-	ac.states = append(ac.states, acState{outputStart: 1, outputEnd: scanCancellationInterval})
+	// Mirror the pre-release state layout: a root entry plus the mutated state.
+	ac.outputRanges = append(ac.outputRanges, [2]int32{}, [2]int32{1, scanCancellationInterval})
 	ac.outputs = make([]int32, scanCancellationInterval)
 	ac.strings = []acStringInfo{{Identifier: "$a", Length: 1}}
 	if !ac.yieldMatchesWithCancel(1, 0, func(acMatch) bool { return true }, closedDone()) {
@@ -362,7 +370,8 @@ func TestYieldMatchesWithCancelOffsetCheckpoint(t *testing.T) {
 // canceled() guard at relative == scanCancellationInterval.
 func TestYieldMatchesWithCancelCheckpointMask(t *testing.T) {
 	ac := newacAutomaton()
-	ac.states = append(ac.states, acState{outputStart: 0, outputEnd: scanCancellationInterval + 1})
+	// Mirror the pre-release state layout: a root entry plus the mutated state.
+	ac.outputRanges = append(ac.outputRanges, [2]int32{}, [2]int32{0, scanCancellationInterval + 1})
 	ac.outputs = make([]int32, scanCancellationInterval+1)
 	ac.strings = []acStringInfo{{Identifier: "$a", Length: 1}}
 	if ac.yieldMatchesWithCancel(1, 0, func(acMatch) bool { return true }, closedDone()) {
@@ -391,7 +400,8 @@ func TestSearchWithCancelSingleNoCase(t *testing.T) {
 
 func TestYieldMatchesWithCancelStringIndexBounds(t *testing.T) {
 	ac := newacAutomaton()
-	ac.states = append(ac.states, acState{outputStart: 0, outputEnd: 2})
+	// Mirror the pre-release state layout: a root entry plus the mutated state.
+	ac.outputRanges = append(ac.outputRanges, [2]int32{}, [2]int32{0, 2})
 	ac.outputs = []int32{0, 1}
 	ac.strings = []acStringInfo{{Identifier: "$a", Length: 1}}
 	count := 0

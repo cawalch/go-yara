@@ -7,12 +7,15 @@ import (
 	"github.com/cawalch/go-yara/regex"
 )
 
-func (ac *acAutomaton) rootIsDense16(data []byte) bool {
+// rootRowIsDense reports whether a root goto row is dense enough that a
+// sparse-root candidate cursor would add more cursor overhead than it saves.
+// It samples the first 256 input bytes and counts root hits. Rows come from
+// compiled flat tables, where a closed miss reads back as 0.
+func rootRowIsDense[S ~uint16 | ~int32](rootTransitions *[256]S, data []byte) bool {
 	sample := data
 	if len(sample) > 256 {
 		sample = sample[:256]
 	}
-	rootTransitions := &ac.transitions16[0]
 	hits := 0
 	for _, b := range sample {
 		if rootTransitions[b] != 0 {
@@ -21,6 +24,22 @@ func (ac *acAutomaton) rootIsDense16(data []byte) bool {
 				return true
 			}
 		}
+	}
+	return false
+}
+
+// rootHasEdge reports whether the automaton's closed root goto table has a
+// transition for byte b. Misses read back as 0 after closure, so 0 means "no
+// root edge"; an automaton without any built table reports no edges.
+func (ac *acAutomaton) rootHasEdge(b byte) bool {
+	if len(ac.transitions16) > 0 {
+		return ac.transitions16[0][b] != 0
+	}
+	if len(ac.transitions32) > 0 {
+		return ac.transitions32[0][b] != 0
+	}
+	if len(ac.states) > 0 {
+		return ac.states[0].transitions[b] != 0
 	}
 	return false
 }
@@ -138,8 +157,9 @@ func indexASCIIFoldByteWithCancel(data []byte, from int, value byte, done <-chan
 }
 
 func (ac *acAutomaton) yieldMatches(state int32, offset int, yield func(acMatch) bool) bool {
-	outputStart := ac.states[state].outputStart
-	outputEnd := ac.states[state].outputEnd
+	outputRange := ac.outputRanges[state]
+	outputStart := outputRange[0]
+	outputEnd := outputRange[1]
 	for idx := outputStart; idx < outputEnd; idx++ {
 		stringIndex := ac.outputs[idx]
 		if stringIndex < 0 || int(stringIndex) >= len(ac.strings) {
@@ -211,20 +231,24 @@ func singlePatternIsDense(data []byte, pattern []byte, noCase bool) bool {
 	return false
 }
 
-func (ac *acAutomaton) rootIsDense(data []byte) bool {
-	sample := data
-	if len(sample) > 256 {
-		sample = sample[:256]
+// rootIsDense and rootIsDense16 sample the root goto row through whichever
+// table is populated: the 32-bit kernel calls rootIsDense, the 16-bit kernel
+// rootIsDense16, and tests may probe either on any width.
+func (ac *acAutomaton) rootIsDense16(data []byte) bool {
+	if len(ac.transitions16) == 0 {
+		return false
 	}
-	rootTransitions := &ac.states[0].transitions
-	hits := 0
-	for _, b := range sample {
-		if rootTransitions[b] != 0 {
-			hits++
-			if hits > 16 {
-				return true
-			}
-		}
+	return rootRowIsDense(&ac.transitions16[0], data)
+}
+
+func (ac *acAutomaton) rootIsDense(data []byte) bool {
+	switch {
+	case len(ac.transitions32) > 0:
+		return rootRowIsDense(&ac.transitions32[0], data)
+	case len(ac.transitions16) > 0:
+		return rootRowIsDense(&ac.transitions16[0], data)
+	case len(ac.states) > 0:
+		return rootRowIsDense(&ac.states[0].transitions, data)
 	}
 	return false
 }
@@ -298,6 +322,7 @@ func indexSinglePatternWithCancel(data, pattern []byte, noCase bool, done <-chan
 
 // SearchWithCancel searches for pattern matches while checking done for cancellation.
 func (ac *acAutomaton) SearchWithCancel(data []byte, done <-chan struct{}, yield func(acMatch) bool) {
+	ac.ensureCompiled()
 	if !ac.compiled || len(data) == 0 || scanCanceled(done) {
 		return
 	}
@@ -534,8 +559,9 @@ func (ac *acAutomaton) yieldMatchesWithCancel(
 	yield func(acMatch) bool,
 	done <-chan struct{},
 ) bool {
-	outputStart := ac.states[state].outputStart
-	outputEnd := ac.states[state].outputEnd
+	outputRange := ac.outputRanges[state]
+	outputStart := outputRange[0]
+	outputEnd := outputRange[1]
 	for idx := outputStart; idx < outputEnd; idx++ {
 		relative := int(idx - outputStart)
 		if relative > 0 && relative&(scanCancellationInterval-1) == 0 && scanCanceled(done) {
@@ -559,6 +585,7 @@ func (ac *acAutomaton) yieldMatchesWithCancel(
 
 // Search performs optimized pattern matching, directly yielding matches via callback.
 func (ac *acAutomaton) Search(data []byte, yield func(acMatch) bool) {
+	ac.ensureCompiled()
 	if !ac.compiled || len(data) == 0 {
 		return
 	}

@@ -24,7 +24,9 @@ type acState struct {
 
 // acAutomaton represents the high-performance Aho-Corasick automaton
 type acAutomaton struct {
-	// States with cache-friendly layout
+	// Trie construction states (1 KiB each). Only needed while the goto table
+	// is being built; Compile releases them once the flat transition table and
+	// the per-state output ranges below are authoritative.
 	states []acState
 
 	// Output storage (flattened)
@@ -48,14 +50,30 @@ type acAutomaton struct {
 	// hasOutput indicates whether a state has any outputs. 1 byte per state.
 	hasOutput []bool
 
+	// outputRanges retains each state's [start, end) window into outputs after
+	// the construction states are released (8 bytes per state).
+	outputRanges [][2]int32
+
+	// stateCount preserves len(states) across the release; stateHint carries
+	// the construction-time capacity estimate for deferred automatons that
+	// have not built their trie yet.
+	stateCount int
+	stateHint  int
+
 	// Compilation state
 	compiledOnce  sync.Once
 	compiled      bool
 	compactStates bool
 
+	// deferred marks per-rule automatons whose trie and transition tables are
+	// materialized lazily on the first local search. buildOnce guards that
+	// construction so concurrent scanners sharing a program build it once.
+	deferred  bool
+	buildOnce sync.Once
+	buildErr  error
+
 	// Exported metadata retained for compatibility with existing callers.
 	StringCount int
-	Strings     []acStringInfo
 }
 
 // newacAutomaton creates a new Aho-Corasick automaton with compact initial capacity.
@@ -89,7 +107,24 @@ func newacAutomatonWithCapacity(stateCap, stringCap, outputCap int) *acAutomaton
 		strings:     make([]acStringInfo, 0, stringCap),
 		compiled:    false,
 		StringCount: 0,
-		Strings:     make([]acStringInfo, 0, stringCap),
+	}
+}
+
+// newDeferredAutomaton creates a per-rule automaton that stores pattern
+// metadata eagerly but defers all trie construction, failure-link closure,
+// and flat-table allocation until the first local search. Normal scans run
+// through the program's shared automaton, so deferred per-rule tables are
+// typically never built at all.
+func newDeferredAutomaton(stringCap int) *acAutomaton {
+	if stringCap < 8 {
+		stringCap = 8
+	}
+	return &acAutomaton{
+		outputs:   make([]int32, 0, max(16, stringCap)),
+		strings:   make([]acStringInfo, 0, stringCap),
+		deferred:  true,
+		compiled:  false,
+		stateHint: 1,
 	}
 }
 
@@ -113,30 +148,38 @@ func (ac *acAutomaton) addStringToAutomaton(config stringConfig) error {
 		return errors.New("cannot add strings to compiled automaton")
 	}
 
-	// Keep private and compatibility metadata in disjoint slices while using a
-	// single allocation. Restrict each slice's capacity so an append cannot
-	// cross into the other copy.
+	// Own the pattern bytes exactly once; the trie, if constructed, works
+	// from this stored copy.
 	patternLength := len(config.Data)
-	patternCopies := make([]byte, patternLength*2)
-	copy(patternCopies[:patternLength], config.Data)
-	copy(patternCopies[patternLength:], config.Data)
+	patternData := make([]byte, patternLength)
+	copy(patternData, config.Data)
 	stringInfo := acStringInfo{
 		Identifier: config.Identifier,
 		Length:     patternLength,
 		IsHex:      config.IsHex,
 		IsRegex:    config.IsRegex,
-		Data:       patternCopies[:patternLength:patternLength],
+		Data:       patternData,
 		Flags:      config.Flags,
 	}
-	compatibilityInfo := stringInfo
-	compatibilityInfo.Data = patternCopies[patternLength : patternLength*2 : patternLength*2]
 
 	// Add string to collection
 	ac.strings = append(ac.strings, stringInfo)
 	ac.StringCount = len(ac.strings)
-	ac.Strings = append(ac.Strings, compatibilityInfo)
 	stringIndex := mustACIndex(len(ac.strings) - 1)
 
+	// Deferred automatons retain pattern metadata only; the trie is built by
+	// buildDeferred on the first local search.
+	if ac.deferred {
+		return nil
+	}
+	ac.insertPatternEdges(config, stringIndex)
+	return nil
+}
+
+// insertPatternEdges walks a pattern from the root, creating or reusing trie
+// states, and registers the pattern's output on the terminal state. It runs
+// before failure links are built, for both eager and deferred construction.
+func (ac *acAutomaton) insertPatternEdges(config stringConfig, stringIndex int32) {
 	// Build trie for pattern matching
 	currentState := int32(0) // Start at root
 	noCase := config.Flags&regex.FlagsNoCase != 0
@@ -213,15 +256,22 @@ func (ac *acAutomaton) addStringToAutomaton(config stringConfig) error {
 	}
 	ac.outputs = append(ac.outputs, stringIndex)
 	ac.states[currentState].outputEnd = mustACIndex(len(ac.outputs))
-
-	return nil
 }
 
-// Compile compiles the optimized automaton
+// Compile compiles the optimized automaton. For deferred automatons it is
+// idempotent: it materializes the trie and tables immediately if a search has
+// not already done so.
 func (ac *acAutomaton) Compile() error {
 	var compileErr error
 
 	ac.compiledOnce.Do(func() {
+		if ac.deferred {
+			// Search entry points use buildOnce directly, so a search that ran
+			// first leaves nothing to do here.
+			ac.buildOnce.Do(ac.buildDeferred)
+			compileErr = ac.buildErr
+			return
+		}
 		if ac.compiled {
 			compileErr = errors.New("already compiled")
 			return
@@ -243,6 +293,8 @@ func (ac *acAutomaton) Compile() error {
 		}
 		// Fold the failure links into the goto table so the scan never walks them.
 		ac.closeTransitions()
+		// buildFlatTransitions extracts the retained output ranges and releases
+		// the construction states.
 		ac.buildFlatTransitions()
 		filter := newTeddyPrefilter(ac.strings)
 		if gate, ok := filter.(*corpusTeddyPrefilter); ok {
@@ -254,6 +306,65 @@ func (ac *acAutomaton) Compile() error {
 	})
 
 	return compileErr
+}
+
+// ensureCompiled materializes a deferred automaton's trie and transition
+// tables before a search. sync.Once makes the build safe for concurrent
+// scanners sharing one compiled program: the completed fast path is a single
+// atomic load, and a build failure leaves the automaton uncompiled so
+// searches yield no matches rather than fail the scan. ac.compiled is only
+// read after the Once, which supplies the necessary happens-before edge.
+func (ac *acAutomaton) ensureCompiled() {
+	if !ac.deferred {
+		return
+	}
+	ac.buildOnce.Do(ac.buildDeferred)
+}
+
+// buildDeferred constructs the trie from the stored pattern metadata and then
+// runs the same compile pipeline as the eager path. It always executes inside
+// buildOnce, mirroring the original AddString insertion order so the resulting
+// automaton is identical to an eagerly built one.
+func (ac *acAutomaton) buildDeferred() {
+	// Trie states are bounded by the total pattern length (plus the root).
+	capacity := 1
+	for _, info := range ac.strings {
+		capacity += len(info.Data)
+	}
+	capacity = max(capacity, ac.stateHint)
+	states := make([]acState, 1, capacity)
+	for i := range states[0].transitions {
+		states[0].transitions[i] = -1
+	}
+	states[0].failure = -1
+	ac.states = states
+	ac.compactStates = false
+
+	for i := range ac.strings {
+		info := ac.strings[i]
+		ac.insertPatternEdges(stringConfig{
+			Identifier: info.Identifier,
+			Data:       info.Data,
+			IsHex:      info.IsHex,
+			IsRegex:    info.IsRegex,
+			Flags:      info.Flags,
+		}, mustACIndex(i))
+	}
+
+	ac.collectRootBytes()
+	if err := ac.buildFailureLinks(); err != nil {
+		ac.buildErr = fmt.Errorf("building failure links: %w", err)
+		return
+	}
+	ac.closeTransitions()
+	ac.buildFlatTransitions()
+	filter := newTeddyPrefilter(ac.strings)
+	if gate, ok := filter.(*corpusTeddyPrefilter); ok {
+		ac.teddyGate = gate
+	} else {
+		ac.teddy = filter
+	}
+	ac.compiled = true
 }
 
 func (ac *acAutomaton) collectRootBytes() {
@@ -402,16 +513,25 @@ func (ac *acAutomaton) closeTransitions() {
 	}
 }
 
+// buildFlatTransitions allocates the flat scan table, extracts the per-state
+// output ranges, and releases the construction states. After this call the
+// flat table, outputRanges, and hasOutput are authoritative: releasing the
+// 1,036-byte construction states cuts retained automaton memory by roughly
+// two thirds for 16-bit tables (1,548 -> 521 bytes per state) while the
+// search kernels keep their single indexed load per byte.
 func (ac *acAutomaton) buildFlatTransitions() {
 	numStates := len(ac.states)
 	if numStates == 0 {
 		return
 	}
 	ac.hasOutput = make([]bool, numStates)
+	ac.outputRanges = make([][2]int32, numStates)
 	for i := range ac.states {
-		if ac.states[i].outputStart != ac.states[i].outputEnd {
+		start, end := ac.states[i].outputStart, ac.states[i].outputEnd
+		if start != end {
 			ac.hasOutput[i] = true
 		}
+		ac.outputRanges[i] = [2]int32{start, end}
 	}
 
 	if numStates <= 65536 {
@@ -431,6 +551,9 @@ func (ac *acAutomaton) buildFlatTransitions() {
 		}
 		ac.transitions32 = flat
 	}
+
+	ac.stateCount = numStates
+	ac.states = nil
 }
 
 // AddStringWithFlags adds a string and records regex VM flags alongside metadata
@@ -457,13 +580,18 @@ func (ac *acAutomaton) ReserveStrings(n int) {
 	if n > 0 && cap(ac.strings) < n {
 		ac.strings = slices.Grow(ac.strings, n-len(ac.strings))
 	}
-	if n > 0 && cap(ac.Strings) < n {
-		ac.Strings = slices.Grow(ac.Strings, n-len(ac.Strings))
-	}
 }
 
-// ReserveStates ensures capacity for at least n states to avoid slice growth
+// ReserveStates ensures capacity for at least n states to avoid slice growth.
+// Deferred automatons only record the estimate; their states are allocated
+// when the trie is materialized.
 func (ac *acAutomaton) ReserveStates(n int) {
+	if ac.deferred {
+		if n > ac.stateHint {
+			ac.stateHint = n
+		}
+		return
+	}
 	if n > 0 && cap(ac.states) < n {
 		ac.states = slices.Grow(ac.states, n-len(ac.states))
 	}
@@ -476,11 +604,15 @@ func (ac *acAutomaton) BuildFailureLinks() error {
 
 // Validate checks if the automaton is correctly constructed
 func (ac *acAutomaton) Validate() error {
-	if len(ac.states) == 0 {
+	hasFlatTable := len(ac.transitions16) > 0 || len(ac.transitions32) > 0
+	// Deferred automatons hold pattern metadata before their first local
+	// search; released construction states are equally valid once a flat
+	// table exists.
+	if len(ac.states) == 0 && !hasFlatTable && !ac.deferred {
 		return errors.New("automaton has no states")
 	}
 
-	if len(ac.states) > 0 && len(ac.strings) == 0 && ac.compiled {
+	if (len(ac.states) > 0 || hasFlatTable) && len(ac.strings) == 0 && ac.compiled {
 		return errors.New("inconsistent automaton state")
 	}
 
@@ -501,12 +633,16 @@ func (ac *acAutomaton) Clone() *acAutomaton {
 		transitions16: slices.Clone(ac.transitions16),
 		transitions32: slices.Clone(ac.transitions32),
 		hasOutput:     slices.Clone(ac.hasOutput),
+		outputRanges:  slices.Clone(ac.outputRanges),
+		stateCount:    ac.stateCount,
+		stateHint:     ac.stateHint,
+		deferred:      ac.deferred,
 		compiled:      ac.compiled,
 		StringCount:   len(internalStrings),
-		Strings:       cloneacStringInfos(internalStrings),
 	}
 	if ac.compiled {
 		newAC.compiledOnce.Do(func() {})
+		newAC.buildOnce.Do(func() {})
 	}
 
 	return newAC
@@ -545,9 +681,17 @@ type stringConfig struct {
 	Flags      regex.Flags
 }
 
-// GetStateCount returns the number of states in the automaton
+// GetStateCount returns the number of states in the automaton. Construction
+// states are released after Compile, so the count is served from stateCount;
+// deferred automatons that have not built a trie yet report their estimate.
 func (ac *acAutomaton) GetStateCount() int {
-	return len(ac.states)
+	if len(ac.states) > 0 {
+		return len(ac.states)
+	}
+	if ac.stateCount > 0 {
+		return ac.stateCount
+	}
+	return ac.stateHint
 }
 
 // GetStringCount returns the number of strings in the automaton
@@ -572,6 +716,8 @@ func (ac *acAutomaton) GetPatternData() map[string][]byte {
 
 // EstimateMemoryUsage returns a deterministic heuristic byte estimate for the automaton.
 // It is intended for relative sizing and diagnostics, not exact Go heap accounting.
+// Released construction states contribute nothing; the retained flat table,
+// output ranges, and outputs are what scans actually read.
 func (ac *acAutomaton) EstimateMemoryUsage() int {
 	stateMemory := len(ac.states) * (256*4 + 8) // transitions + failure + output indices
 	if len(ac.transitions16) > 0 {
@@ -580,6 +726,7 @@ func (ac *acAutomaton) EstimateMemoryUsage() int {
 		stateMemory += len(ac.transitions32) * 256 * 4
 	}
 	stateMemory += len(ac.hasOutput)
+	stateMemory += len(ac.outputRanges) * 8
 	outputMemory := len(ac.outputs) * 4
 	stringMemory := len(ac.strings) * 64 // Approximate
 
@@ -589,14 +736,24 @@ func (ac *acAutomaton) EstimateMemoryUsage() int {
 // Reset clears the automaton for reuse
 func (ac *acAutomaton) Reset() {
 	ac.compactStates = false
-	// Clear states but keep capacity
-	ac.states = ac.states[:1] // Keep root state
-	for i := range ac.states[0].transitions {
-		ac.states[0].transitions[i] = -1
+	// Restore the root state. Compile releases the construction slice, so a
+	// compiled automaton starts from a fresh allocation; a deferred automaton
+	// keeps deferring (no trie states) after reset.
+	if ac.deferred {
+		ac.states = nil
+	} else {
+		if len(ac.states) == 0 {
+			ac.states = make([]acState, 1)
+		} else {
+			ac.states = ac.states[:1] // Keep root state
+		}
+		for i := range ac.states[0].transitions {
+			ac.states[0].transitions[i] = -1
+		}
+		ac.states[0].failure = -1
+		ac.states[0].outputStart = 0
+		ac.states[0].outputEnd = 0
 	}
-	ac.states[0].failure = -1
-	ac.states[0].outputStart = 0
-	ac.states[0].outputEnd = 0
 
 	// Clear outputs and strings
 	ac.outputs = ac.outputs[:0]
@@ -606,14 +763,18 @@ func (ac *acAutomaton) Reset() {
 	ac.teddy = nil
 	ac.teddyGate = nil
 	ac.StringCount = 0
-	ac.Strings = ac.Strings[:0]
 	ac.transitions16 = nil
 	ac.transitions32 = nil
 	ac.hasOutput = nil
+	ac.outputRanges = nil
+	ac.stateCount = 0
+	ac.stateHint = 1
 
 	// Reset compilation state
 	ac.compiledOnce = sync.Once{}
 	ac.compiled = false
+	ac.buildOnce = sync.Once{}
+	ac.buildErr = nil
 }
 
 // flipASCIICase returns the opposite-ASCII-case equivalent of b for letters,

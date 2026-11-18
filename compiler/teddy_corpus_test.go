@@ -94,11 +94,16 @@ func TestTeddyCorpusScanPaths(t *testing.T) {
 			reference := scalar.Clone()
 			if wideState {
 				for _, machine := range []*acAutomaton{active, reference} {
-					machine.transitions16 = nil
-					machine.transitions32 = make([][256]int32, len(machine.states))
-					for i, state := range machine.states {
-						machine.transitions32[i] = state.transitions
+					// Compile releases construction states, so upcast the
+					// retained 16-bit flat table into a synthetic 32-bit one
+					// to exercise the wide-state search kernels.
+					machine.transitions32 = make([][256]int32, len(machine.transitions16))
+					for i, row := range machine.transitions16 {
+						for b, v := range row {
+							machine.transitions32[i][b] = int32(v)
+						}
 					}
+					machine.transitions16 = nil
 				}
 			}
 			for _, offset := range []int{0, 1, 15, 16, 17, 31, 32, 63, 64, 127, 255, 256, 495, 496, 497, 500, 511} {

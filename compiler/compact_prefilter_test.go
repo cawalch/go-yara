@@ -487,3 +487,15 @@ func TestCompactPrefilterShortRootRuns(t *testing.T) {
 		}
 	}
 }
+
+// TestCompactPrefilterMatchesAbsentWithoutTables pins the released-states
+// fallback: with no flat table and no construction states the compact
+// prefilter must never reject (a rejection could hide real matches). The
+// scalar root walk below the guard only ever served closed goto rows, which
+// post-Compile automatons always expose through a flat table instead.
+func TestCompactPrefilterMatchesAbsentWithoutTables(t *testing.T) {
+	empty := &compactPrefilter{automaton: &acAutomaton{}}
+	if compactPrefilterMatchesAbsent([]byte("anything"), empty) {
+		t.Fatal("gate without tables rejected input")
+	}
+}
