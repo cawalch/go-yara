@@ -94,39 +94,48 @@ func (image *peImage) exportField(name string) ModuleValue {
 	if exports.details.Type == ModuleUndefined {
 		done := peCancelDone(image.context)
 		values := make([]ModuleValue, len(exports.symbols))
+		views := make([]peExportView, len(values))
 		for i := range values {
 			if scanCanceledAt(done, i) {
 				return ModuleValue{}
 			}
-			values[i] = peExportFields(&exports.symbols[i], image.file, exports.fileSize)
+			view := &views[i]
+			view.symbol, view.image = &exports.symbols[i], image
+			view.object = moduleObject{kind: ModuleStruct, field: view.field}
+			values[i] = ModuleValue{Type: ModuleStruct, object: &view.object}
 		}
 		exports.details = peArray(values)
 	}
 	return exports.details
 }
 
-func peExportFields(symbol *pe.ExportSymbol, file *pe.File, fileSize int64) ModuleValue {
-	return peLazyStruct(func(name string) ModuleValue {
-		switch name {
-		case "ordinal":
-			return IntegerValue(int64(symbol.Ordinal))
-		case "rva":
-			return IntegerValue(int64(symbol.RVA))
-		case "name":
-			if len(symbol.Names) != 0 {
-				return StringValue(symbol.Names[0][:min(len(symbol.Names[0]), 512)])
-			}
-		case "forward_name":
-			if symbol.Forwarded {
-				return StringValue(symbol.Forwarder[:min(len(symbol.Forwarder), 512)])
-			}
-		case "offset":
-			if !symbol.Forwarded {
-				if offset := peRVAToOffset(file, symbol.RVA, fileSize); offset >= 0 {
-					return IntegerValue(offset)
-				}
+type peExportView struct {
+	object moduleObject
+	symbol *pe.ExportSymbol
+	image  *peImage
+}
+
+func (view *peExportView) field(name string) ModuleValue {
+	symbol := view.symbol
+	switch name {
+	case "ordinal":
+		return IntegerValue(int64(symbol.Ordinal))
+	case "rva":
+		return IntegerValue(int64(symbol.RVA))
+	case "name":
+		if len(symbol.Names) != 0 {
+			return StringValue(symbol.Names[0][:min(len(symbol.Names[0]), 512)])
+		}
+	case "forward_name":
+		if symbol.Forwarded {
+			return StringValue(symbol.Forwarder[:min(len(symbol.Forwarder), 512)])
+		}
+	case "offset":
+		if !symbol.Forwarded {
+			if offset := peRVAToOffset(view.image.file, symbol.RVA, view.image.exports.fileSize); offset >= 0 {
+				return IntegerValue(offset)
 			}
 		}
-		return ModuleValue{}
-	})
+	}
+	return ModuleValue{}
 }

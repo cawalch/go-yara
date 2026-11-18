@@ -23,7 +23,7 @@ func (i *Interpreter) peSectionIndex(args []ModuleValue) ModuleValue {
 	if args[0].Type == ModuleString {
 		query := peCString(args[0].String)
 		for index := range image.file.Sections {
-			if peCString(image.names[index]) == query {
+			if peCString(image.sectionName(index)) == query {
 				return IntegerValue(int64(index))
 			}
 		}
@@ -83,4 +83,11 @@ func peSectionContainsOffset(address, offset, size int64) bool {
 		return false
 	}
 	return address-offset < size
+}
+
+func (image *peImage) sectionName(index int) string {
+	if image.names != nil {
+		return image.names[index]
+	}
+	return image.file.Sections[index].Name
 }

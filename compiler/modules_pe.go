@@ -319,15 +319,21 @@ type peImage struct {
 func peFields(file *pe.File, data []byte, ctx *MatchContext) *peImage {
 	// Keep the snapshot independent of the caller's buffer. Section names in
 	// YARA preserve embedded NULs, unlike go-pe's normalized Name field.
-	names := make([]string, len(file.Sections))
+	var names []string
 	sectionStart := uint64(file.DOSHeader.AddressOfNewEXEHeader) + 24 + uint64(file.FileHeader.SizeOfOptionalHeader)
-	for i := range names {
+	for i := range file.Sections {
 		start := sectionStart + uint64(i)*40
 		raw := bytes.TrimRight(data[start:start+8], "\x00")
-		names[i] = file.Sections[i].Name
-		if string(raw) != names[i] {
-			names[i] = string(raw)
+		if string(raw) == file.Sections[i].Name {
+			continue
 		}
+		if names == nil {
+			names = make([]string, len(file.Sections))
+			for j := range names {
+				names[j] = file.Sections[j].Name
+			}
+		}
+		names[i] = string(raw)
 	}
 	image := &peImage{file: file, context: ctx, names: names, fileSize: ctx.FileSize, entryPoint: peRVAToOffset(file, file.OptionalHeader.AddressOfEntryPoint, ctx.FileSize)}
 	if ctx != nil {
@@ -452,7 +458,7 @@ func (image *peImage) field(name string) ModuleValue {
 		if image.sections.Type == ModuleUndefined {
 			values := make([]ModuleValue, len(file.Sections))
 			for i := range file.Sections {
-				values[i] = peSectionFields(&file.Sections[i], image.names[i], coff.PointerToSymbolTable != 0)
+				values[i] = peSectionFields(&file.Sections[i], image.sectionName(i), coff.PointerToSymbolTable != 0)
 			}
 			image.sections = peArray(values)
 		}

@@ -139,8 +139,12 @@ func peImportLibraryFields(library *pe.ImportLibrary) ModuleValue {
 		case "functions":
 			if functions.Type == ModuleUndefined {
 				values := make([]ModuleValue, len(library.Symbols))
-				for i := range values {
-					values[i] = peImportFunctionFields(kind, &library.Symbols[i])
+				views := make([]peImportFunctionView, len(values))
+				for i := range views {
+					view := &views[i]
+					view.kind, view.symbol = kind, &library.Symbols[i]
+					view.object = moduleObject{kind: ModuleStruct, field: view.field}
+					values[i] = ModuleValue{Type: ModuleStruct, object: &view.object}
 				}
 				functions = peArray(values)
 			}
@@ -150,21 +154,27 @@ func peImportLibraryFields(library *pe.ImportLibrary) ModuleValue {
 	})
 }
 
-func peImportFunctionFields(kind peOrdinalDLLKind, symbol *pe.ImportSymbol) ModuleValue {
-	var ordinalName string
-	return peLazyStruct(func(name string) ModuleValue {
-		if name == "name" {
-			if !symbol.ByOrdinal {
-				return StringValue(symbol.Name)
-			}
-			if ordinalName == "" {
-				ordinalName = peImportOrdinalName(kind, symbol.Ordinal)
-			}
-			return StringValue(ordinalName)
+// Batch storage keeps each lazy field callback's state and module object
+// together, instead of allocating an object and ordinal-name cell per symbol.
+type peImportFunctionView struct {
+	object      moduleObject
+	symbol      *pe.ImportSymbol
+	ordinalName string
+	kind        peOrdinalDLLKind
+}
+
+func (view *peImportFunctionView) field(name string) ModuleValue {
+	if name == "name" {
+		if !view.symbol.ByOrdinal {
+			return StringValue(view.symbol.Name)
 		}
-		if name == "ordinal" && symbol.ByOrdinal {
-			return IntegerValue(int64(symbol.Ordinal))
+		if view.ordinalName == "" {
+			view.ordinalName = peImportOrdinalName(view.kind, view.symbol.Ordinal)
 		}
-		return ModuleValue{}
-	})
+		return StringValue(view.ordinalName)
+	}
+	if name == "ordinal" && view.symbol.ByOrdinal {
+		return IntegerValue(int64(view.symbol.Ordinal))
+	}
+	return ModuleValue{}
 }
