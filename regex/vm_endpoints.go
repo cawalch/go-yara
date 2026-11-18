@@ -48,7 +48,7 @@ func execMatchEnds(bs *VMBatch, code, input []byte, flags Flags, start, distance
 	bs.budgetExceeded = false
 	st := bs.st
 	if cap(st.visited) < len(code) {
-		st.visited = make([]int64, len(code))
+		st.visited = make([]uint32, len(code))
 	}
 	ends := st.ends[:0]
 	visited := st.visited[:len(code)]

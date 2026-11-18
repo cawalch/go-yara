@@ -104,7 +104,7 @@ func ExecMatchBatchWithCancel(bs *VMBatch, code, input []byte, flags Flags, star
 		bs.prepareFailureReuse(code, input, flags)
 		gen := bs.gen
 		matched, end = runAtMatchBatchWithCancel(bs, code, input, flags, start, done)
-		bs.finishFailureReuse(matched, vmCanceled(done), bs.gen-gen)
+		bs.finishFailureReuse(matched, vmCanceled(done), int64(bs.gen-gen))
 	}
 	if vmCanceled(done) {
 		return false, -1, -1, context.Canceled
@@ -115,6 +115,38 @@ func ExecMatchBatchWithCancel(bs *VMBatch, code, input []byte, flags Flags, star
 	return false, -1, -1, nil
 }
 
+const (
+	charBitWord uint8 = 1 << iota
+	charBitSpace
+	charBitDigit
+)
+
+var charClassTable = func() [256]uint8 {
+	var table [256]uint8
+	for i := range 256 {
+		b := byte(i)
+		if isWord(b) {
+			table[i] |= charBitWord
+		}
+		if isSpace(b) {
+			table[i] |= charBitSpace
+		}
+		if isDigit(b) {
+			table[i] |= charBitDigit
+		}
+	}
+	return table
+}()
+
+func advanceGeneration(visited []uint32, gen uint32) uint32 {
+	gen++
+	if gen == 0 {
+		clear(visited)
+		return 1
+	}
+	return gen
+}
+
 type thread struct {
 	pc int
 }
@@ -122,7 +154,7 @@ type thread struct {
 // handleLiteralOp handles OpLiteral and OpNotLiteral opcodes
 //
 //nolint:revive // argument-limit: performance-critical VM hot path; struct would add indirection overhead
-func handleLiteralOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance int, noCase bool, negated bool, flags Flags, bestEnd *int, visited []int64, gen int64) bool {
+func handleLiteralOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance int, noCase bool, negated bool, flags Flags, bestEnd *int, visited []uint32, gen uint32) bool {
 	if pc+1 >= len(code) {
 		return false
 	}
@@ -154,7 +186,7 @@ func handleLiteralOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advan
 // handleMaskedLiteralOp handles OpMaskedLiteral and OpMaskedNotLiteral opcodes
 //
 //nolint:revive // argument-limit: performance-critical VM hot path
-func handleMaskedLiteralOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance int, negated bool, flags Flags, bestEnd *int, visited []int64, gen int64) bool {
+func handleMaskedLiteralOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance int, negated bool, flags Flags, bestEnd *int, visited []uint32, gen uint32) bool {
 	if pc+2 >= len(code) {
 		return false
 	}
@@ -205,7 +237,7 @@ func checkBitmapMembership(code []byte, bmStart int, ch byte, noCase bool) bool 
 // handleAnyOp handles the OpAny opcode (matches any character)
 //
 //nolint:revive // argument-limit: performance-critical VM hot path
-func handleAnyOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance int, dotAll bool, flags Flags, bestEnd *int, visited []int64, gen int64) bool {
+func handleAnyOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance int, dotAll bool, flags Flags, bestEnd *int, visited []uint32, gen uint32) bool {
 	if !dotAll && ch == '\n' {
 		return false
 	}
@@ -221,7 +253,7 @@ func handleAnyOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance i
 // handleClassOp handles OpClass opcode
 //
 //nolint:revive // argument-limit: performance-critical VM hot path
-func handleClassOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance int, noCase bool, flags Flags, bestEnd *int, visited []int64, gen int64) bool {
+func handleClassOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance int, noCase bool, flags Flags, bestEnd *int, visited []uint32, gen uint32) bool {
 	// Layout: [op][32-byte bitmap][1-byte neg]
 	bmStart := pc + 1
 	negIdx := bmStart + 32
@@ -250,8 +282,8 @@ func handleClassOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance
 // handleCharClassOp handles character class opcodes (OpDigit, OpSpace, etc.)
 //
 //nolint:revive // argument-limit: performance-critical VM hot path
-func handleCharClassOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance int, charClassFunc func(byte) bool, flags Flags, bestEnd *int, visited []int64, gen int64) bool {
-	if charClassFunc(ch) {
+func handleCharClassOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance int, classMask uint8, wantMatch bool, flags Flags, bestEnd *int, visited []uint32, gen uint32) bool {
+	if (charClassTable[ch]&classMask != 0) == wantMatch {
 		if addThread(code, s, next, pc+1, pos+advance, visited, gen, flags) {
 			if pos+advance > *bestEnd {
 				*bestEnd = pos + advance
@@ -266,7 +298,7 @@ func handleCharClassOp(code, s []byte, next *[]thread, pc int, ch byte, pos, adv
 // thread buffers and state lifetimes. It is inlined at both call sites.
 //
 //nolint:revive // the once-per-attempt factory binds the VM's existing buffers
-func newVMStep(code, s []byte, flags Flags, visited []int64, cur, next *[]thread, gen *int64, bestEnd *int) func(int, byte, int) {
+func newVMStep(code, s []byte, flags Flags, visited []uint32, cur, next *[]thread, gen *uint32, bestEnd *int) func(int, byte, int) {
 	dotAll := flags&FlagsDotAll != 0
 	noCase := flags&FlagsNoCase != 0
 	return func(pos int, ch byte, advance int) {
@@ -274,6 +306,10 @@ func newVMStep(code, s []byte, flags Flags, visited []int64, cur, next *[]thread
 		// One generation identifies the full closure for this input position,
 		// deduplicating paths reached from different threads.
 		(*gen)++
+		if *gen == 0 {
+			clear(visited)
+			*gen = 1
+		}
 		for _, t := range *cur {
 			pc := t.pc
 			if pc < 0 || pc >= len(code) {
@@ -294,17 +330,17 @@ func newVMStep(code, s []byte, flags Flags, visited []int64, cur, next *[]thread
 			case OpClass:
 				m = handleClassOp(code, s, next, pc, ch, pos, advance, noCase, flags, bestEnd, visited, *gen)
 			case OpWordChar:
-				m = handleCharClassOp(code, s, next, pc, ch, pos, advance, isWord, flags, bestEnd, visited, *gen)
+				m = handleCharClassOp(code, s, next, pc, ch, pos, advance, charBitWord, true, flags, bestEnd, visited, *gen)
 			case OpNonWordChar:
-				m = handleCharClassOp(code, s, next, pc, ch, pos, advance, notWord, flags, bestEnd, visited, *gen)
+				m = handleCharClassOp(code, s, next, pc, ch, pos, advance, charBitWord, false, flags, bestEnd, visited, *gen)
 			case OpSpace:
-				m = handleCharClassOp(code, s, next, pc, ch, pos, advance, isSpace, flags, bestEnd, visited, *gen)
+				m = handleCharClassOp(code, s, next, pc, ch, pos, advance, charBitSpace, true, flags, bestEnd, visited, *gen)
 			case OpNonSpace:
-				m = handleCharClassOp(code, s, next, pc, ch, pos, advance, notSpace, flags, bestEnd, visited, *gen)
+				m = handleCharClassOp(code, s, next, pc, ch, pos, advance, charBitSpace, false, flags, bestEnd, visited, *gen)
 			case OpDigit:
-				m = handleCharClassOp(code, s, next, pc, ch, pos, advance, isDigit, flags, bestEnd, visited, *gen)
+				m = handleCharClassOp(code, s, next, pc, ch, pos, advance, charBitDigit, true, flags, bestEnd, visited, *gen)
 			case OpNonDigit:
-				m = handleCharClassOp(code, s, next, pc, ch, pos, advance, notDigit, flags, bestEnd, visited, *gen)
+				m = handleCharClassOp(code, s, next, pc, ch, pos, advance, charBitDigit, false, flags, bestEnd, visited, *gen)
 			}
 			if m && flags&FlagsExhaustive == 0 {
 				break
@@ -359,7 +395,7 @@ func runMatch(code, s []byte, flags Flags, start int, done <-chan struct{}, scan
 		if wide && !isWidePair(s, pos) {
 			cur = cur[:0]
 			if scan {
-				gen++
+				gen = advanceGeneration(visited, gen)
 				continue
 			}
 			if checkAndReturnIfExhausted(cur, &matched, &length, bestEnd) {
@@ -423,7 +459,7 @@ func runAtMatchBatchWithCancel(bs *VMBatch, code, s []byte, flags Flags, start i
 	st := bs.st
 	codeLen := len(code)
 	if cap(st.visited) < codeLen {
-		st.visited = make([]int64, codeLen)
+		st.visited = make([]uint32, codeLen)
 	}
 	st.visited = st.visited[:codeLen]
 	st.cur = st.cur[:0]
@@ -505,6 +541,10 @@ func runAtMatchBatchWithCancel(bs *VMBatch, code, s []byte, flags Flags, start i
 	}
 
 	bs.gen = gen + 1
+	if bs.gen == 0 {
+		clear(st.visited)
+		bs.gen = 1
+	}
 	st.cur = cur[:0]
 	st.next = next[:0]
 	st.gen = gen
@@ -522,7 +562,7 @@ func runAtMatchBatchWithCancel(bs *VMBatch, code, s []byte, flags Flags, start i
 // consuming states into list. Returns true if OpMatch is reachable in the
 // closure at the given position.
 // visited is a generation-counter []int; gen is the current generation token.
-func addThread(code, s []byte, list *[]thread, pc, pos int, visited []int64, gen int64, flags Flags) bool { //nolint:revive,cyclop // argument-limit and complexity are explicit for VM closure clarity
+func addThread(code, s []byte, list *[]thread, pc, pos int, visited []uint32, gen uint32, flags Flags) bool { //nolint:revive,cyclop // argument-limit and complexity are explicit for VM closure clarity
 	wide := flags&FlagsWide != 0
 	for {
 		if pc < 0 || pc >= len(code) {
@@ -687,7 +727,7 @@ func checkAndReturnIfExhausted(cur []thread, matched *bool, length *int, bestEnd
 // addSplitThreads preserves split priority unless exhaustive verification is requested.
 //
 //nolint:revive // argument-limit: performance-critical VM hot path
-func addSplitThreads(code, s []byte, list *[]thread, nextPC, altPC, pos int, visited []int64, gen int64, flags Flags, op uint8) bool {
+func addSplitThreads(code, s []byte, list *[]thread, nextPC, altPC, pos int, visited []uint32, gen uint32, flags Flags, op uint8) bool {
 	if op == OpSplitB {
 		nextPC, altPC = altPC, nextPC
 	}
