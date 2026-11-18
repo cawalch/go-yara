@@ -115,11 +115,13 @@ func (s *Scanner) extractGlobalMatchesInt(
 	}
 	// Keep concrete search entry points so background scans avoid cancellation
 	// polling while both paths share the same candidate-routing callback.
+	skipGate := s.skipSharedTeddyGate
+	s.skipSharedTeddyGate = false
 	done := ctx.Done()
 	if done == nil {
-		s.program.sharedAutomaton.Search(data, yield)
+		s.program.sharedAutomaton.search(data, skipGate, yield)
 	} else {
-		s.program.sharedAutomaton.SearchWithCancel(data, done, yield)
+		s.program.sharedAutomaton.searchWithCancel(data, done, skipGate, yield)
 	}
 	if scanCanceled(done) {
 		return ctx.Err()

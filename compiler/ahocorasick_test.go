@@ -459,11 +459,11 @@ func TestSearch16RootRunParity(t *testing.T) {
 			data := []byte(strings.Repeat(" ", padding) + tail)
 			for _, limit := range []int{1, 100} {
 				var got, want []acMatch
-				ac.search16(data, func(m acMatch) bool {
+				searchTable(ac, ac.transitions16, data, func(m acMatch) bool {
 					got = append(got, m)
 					return len(got) < limit
 				})
-				ac.search32(data, func(m acMatch) bool {
+				searchTable(ac, ac.transitions32, data, func(m acMatch) bool {
 					want = append(want, m)
 					return len(want) < limit
 				})
