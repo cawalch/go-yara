@@ -129,6 +129,20 @@ func (s *Scanner) rejectAllRules(ctx context.Context, result *ScanResult, scanIn
 	return nil
 }
 
+func (s *Scanner) markChunkCandidateRules() {
+	for _, ruleIndex := range s.touchedGlobalMatches {
+		s.markCandidateRule(ruleIndex)
+	}
+	for _, rule := range s.program.Rules {
+		if !s.shouldEvaluateRule(rule) || s.isCandidateRule(rule.Index) {
+			continue
+		}
+		if !s.program.ruleAllStringsInSharedPrefilter(rule) || s.ruleHasMatchedSharedNonText(rule) {
+			s.markCandidateRule(rule.Index)
+		}
+	}
+}
+
 func (s *Scanner) resetScanState() {
 	s.populatedMatchCtxRuleIndex = -1
 	clear(s.assertionResults)
@@ -199,17 +213,7 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (result *Sca
 		return nil, err
 	}
 	if !s.reportedMatchesOnly {
-		for _, ruleIndex := range s.touchedGlobalMatches {
-			s.markCandidateRule(ruleIndex)
-		}
-		for _, rule := range s.program.Rules {
-			if !s.shouldEvaluateRule(rule) || s.isCandidateRule(rule.Index) {
-				continue
-			}
-			if !s.program.ruleAllStringsInSharedPrefilter(rule) || s.ruleHasMatchedSharedNonText(rule) {
-				s.markCandidateRule(rule.Index)
-			}
-		}
+		s.markChunkCandidateRules()
 	}
 	scanInput := ruleScanInput{data: data, usesharedAutomaton: usesharedAutomaton, skipUnmatchedContext: s.reportedMatchesOnly}
 

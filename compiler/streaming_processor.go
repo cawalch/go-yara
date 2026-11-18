@@ -41,7 +41,7 @@ type StreamingProcessor struct {
 }
 
 type streamingChunkProcessor struct {
-	rules []*CompiledRule
+	program *CompiledProgram
 }
 
 type streamingWindow struct {
@@ -139,12 +139,8 @@ func streamingContext(ctx context.Context) context.Context {
 }
 
 func (sp *StreamingProcessor) prepareScan() {
-	var rules []*CompiledRule
-	if sp.compiledProgram != nil {
-		rules = sp.compiledProgram.Rules
-	}
 	sp.chunkProcessor = &streamingChunkProcessor{
-		rules: rules,
+		program: sp.compiledProgram,
 	}
 }
 
@@ -328,87 +324,115 @@ func (sp *StreamingProcessor) processDataChunks(ctx context.Context, data []byte
 }
 
 func (cp *streamingChunkProcessor) processChunk(ctx context.Context, window streamingWindow) ([]StreamingMatch, error) {
+	if cp.program == nil || len(window.data) == 0 {
+		return nil, ctx.Err()
+	}
 	var matches []StreamingMatch
-	for _, rule := range cp.rules {
-		if rule == nil || rule.automaton == nil {
+	hasShared := cp.program.sharedAutomaton != nil && len(cp.program.sharedLookup) > 0
+	if hasShared {
+		matches = cp.processChunkShared(ctx, window, matches)
+	}
+	// Dead rules (e.g. condition: false) are excluded from sharedAutomaton, so
+	// scan them locally if present so StreamingProcessor still reports their text hits.
+	for _, rule := range cp.program.Rules {
+		if rule == nil || rule.automaton == nil || (!rule.IsDead && hasShared) {
 			continue
 		}
-		ruleMatches, err := cp.processRule(ctx, window, rule)
-		if err != nil {
+		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		matches = append(matches, ruleMatches...)
-	}
-	return matches, ctx.Err()
-}
-
-func (cp *streamingChunkProcessor) processRule(ctx context.Context, window streamingWindow, rule *CompiledRule) ([]StreamingMatch, error) {
-	var matches []StreamingMatch
-	iterator := rule.automaton.SearchIter(window.data)
-	if done := ctx.Done(); done != nil {
-		iterator = rule.automaton.searchIterWithCancel(window.data, done)
-	}
-	for match := range iterator {
-		ruleMatch, ok := cp.createRuleMatch(window, rule, match)
-		if !ok {
-			continue
+		yield := func(match acMatch) bool {
+			if match.StringIndex < 0 || match.StringIndex >= len(rule.automaton.strings) {
+				return true
+			}
+			matches = appendStreamingMatch(matches, window, rule, match.StringID, rule.automaton.strings[match.StringIndex], match.Backtrack)
+			return true
 		}
-		matches = append(matches, ruleMatch)
+		if done := ctx.Done(); done != nil {
+			rule.automaton.SearchWithCancel(window.data, done, yield)
+		} else {
+			rule.automaton.Search(window.data, yield)
+		}
 	}
 	return matches, ctx.Err()
 }
 
-func (cp *streamingChunkProcessor) createRuleMatch(
+func (cp *streamingChunkProcessor) processChunkShared(
+	ctx context.Context,
+	window streamingWindow,
+	matches []StreamingMatch,
+) []StreamingMatch {
+	shared := cp.program.sharedAutomaton
+	lookup := cp.program.sharedLookup
+	rules := cp.program.Rules
+	yield := func(match acMatch) bool {
+		if match.StringIndex < 0 || match.StringIndex >= len(lookup) {
+			return true
+		}
+		entry := lookup[match.StringIndex]
+		if entry.Kind != StringKindText || entry.RuleIndex < 0 || entry.RuleIndex >= len(rules) {
+			return true
+		}
+		rule := rules[entry.RuleIndex]
+		if rule == nil || entry.StringIdx < 0 || entry.StringIdx >= len(rule.IndexToStringID) {
+			return true
+		}
+		matches = appendStreamingMatch(matches, window, rule, rule.IndexToStringID[entry.StringIdx], shared.strings[match.StringIndex], match.Backtrack)
+		return true
+	}
+	if done := ctx.Done(); done != nil {
+		shared.SearchWithCancel(window.data, done, yield)
+	} else {
+		shared.Search(window.data, yield)
+	}
+	return matches
+}
+
+//nolint:revive // argument-limit: hot streaming match helper avoids struct allocation
+func appendStreamingMatch(
+	matches []StreamingMatch,
 	window streamingWindow,
 	rule *CompiledRule,
-	match acMatch,
-) (StreamingMatch, bool) {
-	if rule == nil || rule.automaton == nil || rule.IsPrivateString(match.StringID) {
-		return StreamingMatch{}, false
+	strID string,
+	info acStringInfo,
+	position int,
+) []StreamingMatch {
+	if rule.IsPrivateString(strID) {
+		return matches
 	}
-	if rule.StringKinds != nil && rule.StringKinds[match.StringID] != StringKindText {
-		return StreamingMatch{}, false
+	if rule.StringKinds != nil && rule.StringKinds[strID] != StringKindText {
+		return matches
 	}
-	if match.StringIndex < 0 || match.StringIndex >= len(rule.automaton.strings) {
-		return StreamingMatch{}, false
-	}
-
-	info := rule.automaton.strings[match.StringIndex]
-	position := match.Backtrack
 	if position < 0 || info.Length <= 0 || position+info.Length > len(window.data) {
-		return StreamingMatch{}, false
+		return matches
 	}
-
 	absoluteStart := window.offset + int64(position)
 	absoluteEnd := absoluteStart + int64(info.Length)
 	if absoluteEnd <= window.primaryStart || absoluteEnd > window.primaryEnd {
-		return StreamingMatch{}, false
+		return matches
 	}
-
 	candidate := Match{
-		Pattern: match.StringID,
+		Pattern: strID,
 		Offset:  int64(position),
 		Length:  info.Length,
 	}
 	isNocase := (info.Flags & regex.FlagsNoCase) != 0
 	isWide := (info.Flags & regex.FlagsWide) != 0
 	if !verifyTextMatch(window.data, candidate, info.Data, isNocase) ||
-		!matchPassesModifiers(window.data, candidate, rule.StringModifiers[match.StringID], isWide) {
-		return StreamingMatch{}, false
+		!matchPassesModifiers(window.data, candidate, rule.StringModifiers[strID], isWide) {
+		return matches
 	}
-
 	matchData := window.data[position : position+info.Length]
 	if window.copyMatchData {
 		matchData = copyBytes(matchData)
 	}
-
-	return StreamingMatch{
+	return append(matches, StreamingMatch{
 		Rule:    rule.Name,
-		Pattern: match.StringID,
+		Pattern: strID,
 		Offset:  absoluteStart,
 		Length:  info.Length,
 		Data:    matchData,
-	}, true
+	})
 }
 
 func (sp *StreamingProcessor) resetProgress(totalBytes int64) {
