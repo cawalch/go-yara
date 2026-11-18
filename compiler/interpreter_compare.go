@@ -195,19 +195,7 @@ func (i *Interpreter) executeStringToBool() error {
 
 // executePushRuleOperation handles OpPushRule opcode.
 func (i *Interpreter) executePushRuleOperation() error {
-	if err := i.validateBytecodeBounds(OpPushRule, 1); err != nil {
-		return err
-	}
-	ruleIdx := int(i.bytecode[i.ip])
-	i.ip++
-	if ruleIdx >= len(i.compiledRules) {
-		return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: OpPushRule, Message: fmt.Sprintf("rule index %d out of range", ruleIdx)}
-	}
-	if ruleIdx < len(i.ruleResultsDense) {
-		return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(i.ruleResultsDense[ruleIdx])})
-	}
-	ruleName := i.compiledRules[ruleIdx].Name
-	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(i.ruleResults[ruleName])})
+	return i.executePushRule(OpPushRule)
 }
 
 // executeInitRuleOperation handles OpInitRule opcode.

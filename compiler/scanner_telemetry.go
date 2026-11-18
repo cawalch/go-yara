@@ -98,6 +98,21 @@ func (s *Scanner) executeCondition(rule *CompiledRule) error {
 		defer s.leaveScanPhase(previous)
 	}
 	s.ruleResultsDirty = true
+	if len(rule.assertionProgram) > 0 && len(rule.Bytecode) > 0 && rule.Bytecode[0] == byte(OpEvalAssertions) {
+		s.matchCtx.externalValues = s.externalValues
+		s.interp.currentRule = rule.Name
+		s.interp.currentRuleIndex = rule.Index
+		s.interp.currentCompiledRule = rule
+		s.interp.matchContext = s.matchCtx
+		s.interp.ruleResultsDense = s.ruleResultsDense
+		s.interp.directCondition = false
+		s.interp.directResult = assertionUnknown
+		if err := s.interp.executeEvalAssertions(); err != nil {
+			return err
+		}
+		s.interp.storeExecutionResult()
+		return nil
+	}
 	s.prepareInterpreter(rule)
 	s.interp.SetItersmax(s.itersmax)
 	return s.interp.Execute()

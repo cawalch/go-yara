@@ -735,13 +735,13 @@ func (i *Interpreter) executeIcontainsOperation() error {
 
 func (i *Interpreter) executeIstartswithOperation() error {
 	return i.executeStringBinaryOp(OpIstartswith, func(a, b string) bool {
-		return strings.HasPrefix(strings.ToLower(a), strings.ToLower(b))
+		return len(a) >= len(b) && strings.EqualFold(a[:len(b)], b)
 	})
 }
 
 func (i *Interpreter) executeIendswithOperation() error {
 	return i.executeStringBinaryOp(OpIendswith, func(a, b string) bool {
-		return strings.HasSuffix(strings.ToLower(a), strings.ToLower(b))
+		return len(a) >= len(b) && strings.EqualFold(a[len(a)-len(b):], b)
 	})
 }
 
