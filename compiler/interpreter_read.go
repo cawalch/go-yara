@@ -5,48 +5,18 @@ import (
 	"math"
 )
 
-// executeReadIntOp executes integer reading operations (little-endian).
+// executeReadIntCommon executes little- or big-endian integer reading operations.
 // Unavailable bytes and undefined offsets propagate as YARA undefined values.
-func (i *Interpreter) executeReadIntOp(size int, signed bool) error {
-	if err := i.validateStackUnderflow(OpInt8); err != nil {
+func (i *Interpreter) executeReadIntCommon(size int, signed, bigEndian bool) error {
+	var op Opcode = OpInt8
+	if bigEndian {
+		op = OpInt8be
+	}
+	if err := i.validateStackUnderflow(op); err != nil {
 		return err
 	}
-
 	if i.matchContext == nil {
 		return &InterpreterError{Type: ErrorInvalidMemoryAccess, Message: "no match context available for reading data"}
-	}
-
-	offsetVal := i.stack[len(i.stack)-1]
-	if offsetVal.Type == ValueTypeUndefined {
-		return nil
-	}
-	if offsetVal.Type != ValueTypeInt {
-		return &InterpreterError{Type: ErrorTypeMismatch, Message: "integer offset required"}
-	}
-
-	if _, ok := i.matchContext.dataRange(offsetVal.IntVal, int64(size)); !ok {
-		i.stack[len(i.stack)-1] = Value{Type: ValueTypeUndefined}
-		return nil
-	}
-
-	offset := offsetVal.IntVal
-	val, err := i.executeReadInt(offset, size, !signed)
-	if err != nil {
-		return err
-	}
-
-	i.stack[len(i.stack)-1] = Value{Type: ValueTypeInt, IntVal: val}
-	return nil
-}
-
-// executeReadIntOpBE executes integer reading operations (big-endian).
-func (i *Interpreter) executeReadIntOpBE(size int, signed bool) error {
-	if err := i.validateStackUnderflow(OpInt8be); err != nil {
-		return err
-	}
-
-	if i.matchContext == nil {
-		return &InterpreterError{Type: ErrorRuntime, Message: "no match context available"}
 	}
 
 	offsetVal := i.stack[len(i.stack)-1]
@@ -64,17 +34,29 @@ func (i *Interpreter) executeReadIntOpBE(size int, signed bool) error {
 		return nil
 	}
 
-	if err := i.validateReadIntAccess(offset); err != nil {
-		return err
+	var val int64
+	var err error
+	if bigEndian {
+		if err = i.validateReadIntAccess(offset); err == nil {
+			val, err = i.readIntBE(data, 0, size, signed)
+		}
+	} else {
+		val, err = i.executeReadInt(offset, size, !signed)
 	}
-
-	val, err := i.readIntBE(data, 0, size, signed)
 	if err != nil {
 		return err
 	}
 
 	i.stack[len(i.stack)-1] = Value{Type: ValueTypeInt, IntVal: val}
 	return nil
+}
+
+func (i *Interpreter) executeReadIntOp(size int, signed bool) error {
+	return i.executeReadIntCommon(size, signed, false)
+}
+
+func (i *Interpreter) executeReadIntOpBE(size int, signed bool) error {
+	return i.executeReadIntCommon(size, signed, true)
 }
 
 // readIntBE reads an integer in big-endian byte order.

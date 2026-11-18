@@ -461,12 +461,6 @@ func (s *Scanner) prepareInterpreter(rule *CompiledRule) {
 	s.interp.setCurrentCompiledRule(rule)
 	s.interp.SetMatchContext(s.matchCtx)
 	s.interp.SetRuleResultsDense(s.ruleResultsDense)
-
-	if rule.automaton != nil {
-		for idx, str := range rule.automaton.strings {
-			s.interp.SetMemoryString(idx, str.Identifier)
-		}
-	}
 	s.setExternalVariables(rule)
 	s.setGlobalVariables(rule)
 }

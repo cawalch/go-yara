@@ -43,12 +43,12 @@ func (i *Interpreter) executeIterStartIntRange() error {
 	}
 
 	iter := Iterator{
-		Type:       OpIterStartIntRange,
-		Variables:  []int{slot1},
-		StartValue: startVal.IntVal,
-		EndValue:   endVal.IntVal,
-		Index:      0,
-		Total:      int(endVal.IntVal - startVal.IntVal + 1),
+		Type:         OpIterStartIntRange,
+		VariableSlot: slot1,
+		StartValue:   startVal.IntVal,
+		EndValue:     endVal.IntVal,
+		Index:        0,
+		Total:        int(endVal.IntVal - startVal.IntVal + 1),
 	}
 
 	if iter.Total <= 0 {
@@ -128,11 +128,11 @@ func (i *Interpreter) executeIterStartStringSet() error {
 	}
 
 	iter := Iterator{
-		Type:      OpIterStartStringSet,
-		Variables: []int{slot1},
-		StringIDs: ids,
-		Index:     0,
-		Total:     len(ids),
+		Type:         OpIterStartStringSet,
+		VariableSlot: slot1,
+		StringIDs:    ids,
+		Index:        0,
+		Total:        len(ids),
 	}
 
 	return i.pushIterator(OpIterStartStringSet, iter)
@@ -193,11 +193,11 @@ func (i *Interpreter) executeIterStartTextStringSet() error {
 	}
 
 	iter := Iterator{
-		Type:        OpIterStartTextStringSet,
-		Variables:   []int{slot1},
-		TextStrings: textStrings,
-		Index:       0,
-		Total:       len(textStrings),
+		Type:         OpIterStartTextStringSet,
+		VariableSlot: slot1,
+		TextStrings:  textStrings,
+		Index:        0,
+		Total:        len(textStrings),
 	}
 
 	return i.pushIterator(OpIterStartTextStringSet, iter)
@@ -239,11 +239,11 @@ func (i *Interpreter) executeIterStartIntEnum() error {
 	}
 
 	iter := Iterator{
-		Type:      OpIterStartIntEnum,
-		Variables: []int{slot1},
-		IntValues: vals,
-		Index:     0,
-		Total:     len(vals),
+		Type:         OpIterStartIntEnum,
+		VariableSlot: slot1,
+		IntValues:    vals,
+		Index:        0,
+		Total:        len(vals),
 	}
 
 	return i.pushIterator(OpIterStartIntEnum, iter)
@@ -332,15 +332,15 @@ func (i *Interpreter) executeIterNext() error {
 				return err
 			}
 		case OpIterStartIntRange:
-			i.memory[iter.Variables[0]] = Value{Type: ValueTypeInt, IntVal: iter.StartValue + int64(iter.Index)}
+			i.memory[iter.VariableSlot] = Value{Type: ValueTypeInt, IntVal: iter.StartValue + int64(iter.Index)}
 		case OpIterStartIntEnum:
-			i.memory[iter.Variables[0]] = Value{Type: ValueTypeInt, IntVal: iter.IntValues[iter.Index]}
+			i.memory[iter.VariableSlot] = Value{Type: ValueTypeInt, IntVal: iter.IntValues[iter.Index]}
 		case OpIterStartStringSet:
 			id := iter.StringIDs[iter.Index]
-			i.memory[iter.Variables[0]] = Value{Type: ValueTypeString, StringRef: i.resolveStringRef(id)}
+			i.memory[iter.VariableSlot] = Value{Type: ValueTypeString, StringRef: i.resolveStringRef(id)}
 		case OpIterStartTextStringSet:
 			text := iter.TextStrings[iter.Index]
-			i.memory[iter.Variables[0]] = Value{Type: ValueTypeString, StringRef: int64(len(i.stringArena))}
+			i.memory[iter.VariableSlot] = Value{Type: ValueTypeString, StringRef: int64(len(i.stringArena))}
 			i.stringArena = append(i.stringArena, text)
 		}
 

@@ -80,21 +80,25 @@ func (i *Interpreter) executePushDouble() error {
 	return i.push(Value{Type: ValueTypeDouble, DoubleVal: val})
 }
 
-// executePushRuleRef pushes a rule reference value.
-func (i *Interpreter) executePushRuleRef() error {
-	if err := i.validateBytecodeBounds(OpPushRuleRef, 1); err != nil {
+// executePushRule pushes a rule reference value for OpPushRuleRef / OpPushRule.
+func (i *Interpreter) executePushRule(op Opcode) error {
+	if err := i.validateBytecodeBounds(op, 1); err != nil {
 		return err
 	}
 	ruleIdx := int(i.bytecode[i.ip])
 	i.ip++
 	if ruleIdx >= len(i.compiledRules) {
-		return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: OpPushRuleRef, Message: fmt.Sprintf("rule index %d out of range", ruleIdx)}
+		return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: op, Message: fmt.Sprintf("rule index %d out of range", ruleIdx)}
 	}
 	if ruleIdx < len(i.ruleResultsDense) {
 		return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(i.ruleResultsDense[ruleIdx])})
 	}
 	ruleName := i.compiledRules[ruleIdx].Name
 	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(i.ruleResults[ruleName])})
+}
+
+func (i *Interpreter) executePushRuleRef() error {
+	return i.executePushRule(OpPushRuleRef)
 }
 
 // executePushString pushes a string literal reference.
@@ -505,7 +509,6 @@ func (i *Interpreter) readAndValidateMemorySlot(opcode Opcode) (int, error) {
 	return slot, nil
 }
 
-// executeLoadVarOperation loads a value from a memory slot.
 func (i *Interpreter) executeLoadVarOperation() error {
 	slot, err := i.readAndValidateMemorySlot(OpLoadVar)
 	if err != nil {

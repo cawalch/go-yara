@@ -93,7 +93,7 @@ type Interpreter struct {
 type Iterator struct {
 	moduleObject *moduleObject
 	modulePlan   moduleIterationPlan
-	Variables    []int // Memory slots where loop variables are stored
+	VariableSlot int // Memory slot where loop variable is stored
 	StringIDs    []string
 	// Text strings for text-string-set iteration (e.g. for any s in ("a", "b") : ...)
 	TextStrings []string
