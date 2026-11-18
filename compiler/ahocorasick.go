@@ -350,19 +350,6 @@ func (ac *acAutomaton) buildFailureLinks() error {
 	return nil
 }
 
-// findNextState returns the next state for b. closeTransitions has already
-// folded every failure-link hop into the goto table, so this is one load with no
-// loop and no branch.
-func (ac *acAutomaton) findNextState(currentState int32, b byte) int32 {
-	if len(ac.transitions16) > 0 {
-		return int32(ac.transitions16[currentState][b])
-	}
-	if len(ac.transitions32) > 0 {
-		return ac.transitions32[currentState][b]
-	}
-	return ac.states[currentState].transitions[b]
-}
-
 // closeTransitions converts the goto table from the sparse Aho-Corasick form,
 // where a missing edge is -1 and the scan follows failure links at run time, to
 // the full deterministic form, where every (state, byte) pair has an explicit
