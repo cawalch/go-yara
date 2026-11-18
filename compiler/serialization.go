@@ -955,22 +955,26 @@ func moduleBindingsForLoad(modules []Module) (map[string]compiledModuleFunction,
 	return bindings, nil
 }
 
+// deserializeAutomaton rebuilds a rule's automaton from its serialized
+// pattern metadata. Construction stays deferred: the trie, failure links, and
+// flat tables are materialized lazily on the first local per-rule search, so
+// unmarshaling a program no longer pays for per-rule transition tables that
+// normal shared-automaton scans never read.
 func deserializeAutomaton(infos []acStringInfo) (*acAutomaton, error) {
 	if len(infos) == 0 {
 		return nil, nil
 	}
-	automaton := newacAutomaton()
-	automaton.ReserveStrings(len(infos))
+	automaton := newDeferredAutomaton(len(infos))
+	stateHint := 1
 	for _, info := range infos {
 		if err := automaton.AddStringWithFlags(
 			info.Identifier, info.Data, info.IsHex, info.IsRegex, info.Flags,
 		); err != nil {
 			return nil, fmt.Errorf("rebuilding rule automaton: %w", err)
 		}
+		stateHint += len(info.Data)
 	}
-	if err := automaton.Compile(); err != nil {
-		return nil, fmt.Errorf("compiling rebuilt rule automaton: %w", err)
-	}
+	automaton.ReserveStates(stateHint)
 	return automaton, nil
 }
 

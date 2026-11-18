@@ -82,17 +82,19 @@ func (rc *ruleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 	}
 
 	textStringCount := 0
-	expectedStates := 1
 	for _, str := range rule.Strings {
-		if p, ok := str.Pattern.(*ast.TextString); ok {
+		if _, ok := str.Pattern.(*ast.TextString); ok {
 			textStringCount++
-			expectedStates += rc.calculateTextStringLength(p.Value, str.Modifiers)
 		}
 	}
 
 	// Reset components for new rule
 	rc.emitter.Reset()
-	rc.automaton = newacAutomatonWithCapacity(expectedStates, textStringCount, expectedStates)
+	// Per-rule automatons store pattern metadata only; their trie and flat
+	// tables are materialized lazily on the first local search (normal scans
+	// run through the program's shared automaton). ReserveStates below seeds
+	// the construction estimate.
+	rc.automaton = newDeferredAutomaton(textStringCount)
 	rc.conditionCompiler.ResetForRule()
 	rc.stringCompiler.Reset()
 	rc.allPatterns = make(map[string][]byte, len(rule.Strings))
@@ -132,12 +134,10 @@ func (rc *ruleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 		return nil, err
 	}
 
-	// Compile the automaton if we have text strings
+	// Attach the automaton if we have text strings; it stays deferred until a
+	// local per-rule search needs it.
 	var ruleAutomaton *acAutomaton
 	if len(rc.textPatterns) > 0 {
-		if err := rc.automaton.Compile(); err != nil {
-			return nil, fmt.Errorf("compiling automaton: %w", err)
-		}
 		ruleAutomaton = rc.automaton
 	}
 

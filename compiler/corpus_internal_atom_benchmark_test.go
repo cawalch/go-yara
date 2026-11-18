@@ -36,7 +36,7 @@ func BenchmarkCorpusInternalCompile(b *testing.B) {
 	for b.Loop() {
 		p = mustCompileBenchmarkProgram(b, source)
 	}
-	b.ReportMetric(float64(len(p.sharedAutomaton.states)), "ac_states")
+	b.ReportMetric(float64(p.sharedAutomaton.GetStateCount()), "ac_states")
 }
 
 func BenchmarkCorpusInternalRecords(b *testing.B) {

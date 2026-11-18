@@ -149,7 +149,7 @@ rule owned {
 	}
 
 	for _, automaton := range []*acAutomaton{rule.automaton, program.sharedAutomaton} {
-		if automaton == nil || len(automaton.Strings) == 0 {
+		if automaton == nil || len(automaton.strings) == 0 {
 			continue
 		}
 		metadata := automaton.GetStrings()
@@ -161,8 +161,6 @@ rule owned {
 			break
 		}
 
-		automaton.Strings[0].Identifier = "$changed"
-		automaton.Strings[0].Data[0] = 'X'
 		automaton.StringCount = 0
 		if automaton.GetStringCount() != 1 {
 			t.Fatal("GetStringCount() trusted mutable compatibility metadata")

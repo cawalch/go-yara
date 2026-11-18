@@ -363,8 +363,11 @@ func TestACAutomatonClone(t *testing.T) {
 		t.Errorf("Clone() StringCount = %d, want %d", cloned.StringCount, ac.StringCount)
 	}
 
-	if len(cloned.Strings) != len(ac.Strings) {
-		t.Errorf("Clone() Strings length = %d, want %d", len(cloned.Strings), len(ac.Strings))
+	if len(cloned.strings) != len(ac.strings) || cloned.GetStateCount() != ac.GetStateCount() {
+		t.Errorf(
+			"Clone() strings/states = %d/%d, want %d/%d",
+			len(cloned.strings), cloned.GetStateCount(), len(ac.strings), ac.GetStateCount(),
+		)
 	}
 
 	matches := slices.Collect(cloned.SearchIter([]byte("test")))
@@ -372,9 +375,9 @@ func TestACAutomatonClone(t *testing.T) {
 		t.Fatalf("Clone().SearchIter() matches = %+v, want one test match", matches)
 	}
 
-	cloned.Strings[0].Data[0] = 'X'
-	if string(ac.Strings[0].Data) != "test" {
-		t.Fatal("Clone() shares exported pattern data with the original")
+	cloned.strings[0].Data[0] = 'X'
+	if string(ac.strings[0].Data) != "test" {
+		t.Fatal("Clone() shares internal pattern data with the original")
 	}
 }
 

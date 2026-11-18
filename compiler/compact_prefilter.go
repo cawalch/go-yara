@@ -96,12 +96,12 @@ func (cp *CompiledProgram) buildCompactPrefilter() *compactPrefilter {
 	}
 	gate := &compactPrefilter{
 		automaton:    ac,
-		accepting:    make([]bool, len(ac.states)),
+		accepting:    make([]bool, len(ac.outputRanges)),
 		fanoutUseful: fanoutUseful,
 	}
-	for i := range ac.states {
-		state := &ac.states[i]
-		for _, pattern := range ac.outputs[state.outputStart:state.outputEnd] {
+	for i := range ac.outputRanges {
+		outputRange := ac.outputRanges[i]
+		for _, pattern := range ac.outputs[outputRange[0]:outputRange[1]] {
 			if patterns[pattern] {
 				gate.accepting[i] = true
 				break

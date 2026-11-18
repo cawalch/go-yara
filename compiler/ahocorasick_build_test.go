@@ -39,8 +39,16 @@ func TestACConstructionGrowth(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				if !reflect.DeepEqual(grown.states, reserved.states) || !reflect.DeepEqual(grown.outputs, reserved.outputs) || !reflect.DeepEqual(grown.transitions16, reserved.transitions16) || !reflect.DeepEqual(grown.transitions32, reserved.transitions32) {
+				if !reflect.DeepEqual(grown.states, reserved.states) || !reflect.DeepEqual(grown.outputs, reserved.outputs) || !reflect.DeepEqual(grown.transitions16, reserved.transitions16) || !reflect.DeepEqual(grown.transitions32, reserved.transitions32) || !reflect.DeepEqual(grown.outputRanges, reserved.outputRanges) || !reflect.DeepEqual(grown.hasOutput, reserved.hasOutput) {
 					t.Fatal("growth changed compiled states or outputs")
+				}
+				// Compile releases the construction states; every retained scan
+				// structure must still agree on the state count.
+				if grown.states != nil || reserved.states != nil {
+					t.Fatal("Compile retained construction states")
+				}
+				if grown.GetStateCount() == 0 || grown.GetStateCount() != reserved.GetStateCount() {
+					t.Fatalf("released state counts disagree: %d vs %d", grown.GetStateCount(), reserved.GetStateCount())
 				}
 				if grew && cap(grown.states) != len(grown.states) {
 					t.Fatalf("retained spare state capacity: %d/%d", len(grown.states), cap(grown.states))

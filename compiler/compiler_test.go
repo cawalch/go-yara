@@ -700,12 +700,12 @@ func TestAhoCorasickReset(t *testing.T) {
 	if ac.GetStateCount() != 1 {
 		t.Errorf("After Reset(), state count = %d, want 1", ac.GetStateCount())
 	}
-	if ac.GetStringCount() != 0 || ac.StringCount != 0 || len(ac.Strings) != 0 {
+	if ac.GetStringCount() != 0 || ac.StringCount != 0 || len(ac.strings) != 0 {
 		t.Fatalf(
 			"After Reset(), string counts = internal:%d exported:%d metadata:%d, want all zero",
 			ac.GetStringCount(),
 			ac.StringCount,
-			len(ac.Strings),
+			len(ac.strings),
 		)
 	}
 

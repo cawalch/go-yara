@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * Cache formatted certificate fields per certificate within each PE scan, sharing results across signature, certificate-array, and chain views while preserving undefined results and scan isolation (part of [#544](https://github.com/cawalch/go-yara/issues/544)).
 
+* Release Aho-Corasick construction states after the flat transition table is built, retaining only per-state output ranges; compiled automaton state memory drops ~66% for 16-bit tables and ~50% for 32-bit tables (part of [#538](https://github.com/cawalch/go-yara/issues/538)).
+
+* Defer per-rule automaton construction to the first local per-rule search: `CompileRule` and `UnmarshalCompiledProgram` store pattern metadata only, and normal shared-automaton scans never materialize per-rule tries. Unmarshaling a 2,000-rule program drops from 126.7 ms / 537 MiB to 30.9 ms / 78.6 MiB per operation and compiling from source roughly halves (part of [#538](https://github.com/cawalch/go-yara/issues/538)).
+
+* Stop duplicating every automaton pattern buffer at insertion time and drop the redundant exported `acAutomaton.Strings` compatibility slice; `GetStrings` and `GetPatternData` remain the owned accessors (part of [#538](https://github.com/cawalch/go-yara/issues/538)).
+
 * Reuse regex atom-hit and candidate buffers across scans, share range and sort/deduplication helpers, and defer bounded-verification maps until an accepted match. Bound retained candidate scratch while preserving fallback limits and match ordering (completes [#542](https://github.com/cawalch/go-yara/issues/542)).
 
 * Prepare hex scan metadata once per immutable compiled program, including after deserialization, avoiding repeated token analysis, XOR range expansion, and differential-anchor allocation; standalone `FindHexMatches` continues to observe caller edits (part of [#542](https://github.com/cawalch/go-yara/issues/542)).
