@@ -20,12 +20,12 @@ func TestGetVMStateGrowsVisited(t *testing.T) {
 // few attempts and fails loudly under the mutation, which leaves gen at 0.
 func TestGetVMStateResetsOverflowedGeneration(t *testing.T) {
 	st := &vmState{
-		visited: make([]int64, 4),
+		visited: make([]uint32, 4),
 		cur:     make([]thread, 0, 4),
 		next:    make([]thread, 0, 4),
 	}
 	for range 1000 {
-		st.gen = -1
+		st.gen = ^uint32(0)
 		_ = vmPool.Get()
 		vmPool.Put(st)
 		got, gen := getVMState(4)
@@ -43,10 +43,10 @@ func TestGetVMStateResetsOverflowedGeneration(t *testing.T) {
 
 // TestVMBatchPrepareReusesExactCapacity pins Prepare's cap < codeLen guard.
 func TestVMBatchPrepareReusesExactCapacity(t *testing.T) {
-	b := &VMBatch{st: &vmState{visited: make([]int64, 8)}}
+	b := &VMBatch{st: &vmState{visited: make([]uint32, 8)}}
 	base := &b.st.visited[0]
 	b.Prepare(8)
-	if b.st == nil || b.gen <= 0 {
+	if b.st == nil || b.gen == 0 {
 		t.Fatal("Prepare did not initialize the batch")
 	}
 	if &b.st.visited[0] != base {
@@ -55,9 +55,9 @@ func TestVMBatchPrepareReusesExactCapacity(t *testing.T) {
 	b.Release()
 }
 
-// TestVMBatchPrepareResetsOverflowedGeneration pins Prepare's gen <= 0 recovery.
+// TestVMBatchPrepareResetsOverflowedGeneration pins Prepare's gen == 0 recovery.
 func TestVMBatchPrepareResetsOverflowedGeneration(t *testing.T) {
-	b := &VMBatch{st: &vmState{visited: make([]int64, 4), gen: -1}}
+	b := &VMBatch{st: &vmState{visited: make([]uint32, 4), gen: ^uint32(0)}}
 	b.Prepare(4)
 	if b.gen != 1 {
 		t.Fatalf("Prepare gen = %d, want 1 after overflow", b.gen)

@@ -7,14 +7,14 @@ import "sync"
 // every call to runAtMatch previously allocated visited ([]int64 generation counter),
 // cur, and next ([]thread).
 //
-// The visited array uses a generation counter (int64) instead of []bool to avoid
-// calling clear() on every step/thread iteration. Each pooled state advances its
-// own generation while it is exclusively owned by a VM attempt or batch.
+// The visited array uses a generation counter (uint32) instead of []bool to avoid
+// calling clear() on every step/thread iteration while halving cache footprint vs int64.
+// Each pooled state advances its own generation while it is exclusively owned by a VM attempt or batch.
 type vmState struct {
-	visited      []int64 // generation counter per bytecode position
+	visited      []uint32 // generation counter per bytecode position
 	cur          []thread
 	next         []thread
-	gen          int64
+	gen          uint32
 	ends         []int
 	failureMasks []uint64
 }
@@ -23,7 +23,7 @@ type vmState struct {
 var vmPool = sync.Pool{
 	New: func() any {
 		return &vmState{
-			visited: make([]int64, 256),
+			visited: make([]uint32, 256),
 			cur:     make([]thread, 0, 32),
 			next:    make([]thread, 0, 32),
 		}
@@ -33,16 +33,16 @@ var vmPool = sync.Pool{
 // getVMState retrieves a vmState from the pool, growing visited if needed.
 // Returns a generation value unique within this state. A vmState is exclusively
 // owned between getVMState and putVMState, so it needs no global atomic.
-func getVMState(codeLen int) (*vmState, int64) {
+func getVMState(codeLen int) (*vmState, uint32) {
 	st := vmPool.Get().(*vmState)
 	if cap(st.visited) < codeLen {
-		st.visited = make([]int64, codeLen)
+		st.visited = make([]uint32, codeLen)
 	}
 	st.visited = st.visited[:codeLen]
 	st.cur = st.cur[:0]
 	st.next = st.next[:0]
 	st.gen++
-	if st.gen <= 0 {
+	if st.gen == 0 {
 		clear(st.visited)
 		st.gen = 1
 	}
@@ -72,7 +72,7 @@ func putVMState(st *vmState) {
 // Callers pass it to ExecMatchBatch for repeated anchored attempts.
 type VMBatch struct {
 	st             *vmState
-	gen            int64
+	gen            uint32
 	failure        failureReuse
 	budgetExceeded bool
 }
@@ -92,10 +92,10 @@ func (b *VMBatch) Prepare(codeLen int) {
 		b.st = vmPool.Get().(*vmState)
 	}
 	if cap(b.st.visited) < codeLen {
-		b.st.visited = make([]int64, codeLen)
+		b.st.visited = make([]uint32, codeLen)
 	}
 	b.st.gen++
-	if b.st.gen <= 0 {
+	if b.st.gen == 0 {
 		clear(b.st.visited[:codeLen])
 		b.st.gen = 1
 	}
