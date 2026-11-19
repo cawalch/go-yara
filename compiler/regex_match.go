@@ -610,9 +610,10 @@ func addRegexMatchAt(
 	if !regexInfo.startMatchesFirstByte(data, start, isWide) {
 		return
 	}
-	// Endpoint-filtered patterns are nonempty. Reject their left boundary
-	// before running the VM; a later endpoint cannot make it valid.
-	if flags&regex.FlagsFullwordEnd != 0 && !isFullwordStart(data, start, isWide) {
+	// Non-empty fullword patterns (endpoint-filtered or requiring a first byte)
+	// cannot match when the left boundary is a word character.
+	if (flags&regex.FlagsFullwordEnd != 0 || (regexInfo.hasFirstByteSet && hasModifier(modifiers, ast.StringModifierFullword))) &&
+		!isFullwordStart(data, start, isWide && flags&regexASCIIWordBoundary == 0) {
 		return
 	}
 	maxMatchSpan := 0
