@@ -349,7 +349,7 @@ func (ac *acAutomaton) searchWithCancel(data []byte, done <-chan struct{}, skipG
 	if !ac.compiled || len(data) == 0 || scanCanceled(done) {
 		return
 	}
-	if !skipGate && teddySIMDEnabled && ac.teddyGate != nil && len(data) >= 256 && !ac.teddyGate.mayMatch(data, done) {
+	if !skipGate && teddySIMDEnabled && ac.teddyGate != nil && len(data) >= 256 && len(data) <= 512 && !ac.teddyGate.mayMatch(data, done) {
 		return
 	}
 
@@ -629,7 +629,7 @@ func (ac *acAutomaton) search(data []byte, skipGate bool, yield func(acMatch) bo
 	if !ac.compiled || len(data) == 0 {
 		return
 	}
-	if !skipGate && teddySIMDEnabled && ac.teddyGate != nil && len(data) >= 256 && !ac.teddyGate.mayMatch(data, nil) {
+	if !skipGate && teddySIMDEnabled && ac.teddyGate != nil && len(data) >= 256 && len(data) <= 512 && !ac.teddyGate.mayMatch(data, nil) {
 		return
 	}
 
@@ -771,24 +771,43 @@ func searchTable[S ~uint16 | ~int32](ac *acAutomaton, trans [][256]S, data []byt
 
 	if rootHasNoOutput && ac.teddy != nil && len(data) >= 256 {
 		linearUntil := 0
+		denseWindow := 256
 		for i := 0; i < len(data); i++ {
-			if currentState == 0 && i >= linearUntil && len(data)-i >= 32 {
-				candidate := ac.teddy.findCandidate(data, i)
-				if candidate < 0 {
-					i = max(i, len(data)-31)
-					if i >= len(data) {
+			if currentState == 0 {
+				if i >= linearUntil && len(data)-i >= 32 {
+					candidate := ac.teddy.findCandidate(data, i)
+					if candidate < 0 {
+						i = max(i, len(data)-31)
+						if i >= len(data) {
+							return
+						}
+					} else {
+						if candidate-i < 64 {
+							linearUntil = candidate + denseWindow
+							if denseWindow < 8192 {
+								denseWindow <<= 1
+							}
+						} else {
+							denseWindow = 256
+						}
+						i = candidate
+					}
+				}
+				for {
+					currentState = rootTransitions[data[i]]
+					if currentState != 0 {
+						break
+					}
+					i++
+					if i == len(data) {
 						return
 					}
-				} else {
-					if candidate-i < 64 {
-						linearUntil = candidate + 256
+					if i >= linearUntil && len(data)-i >= 32 {
+						break
 					}
-					i = candidate
 				}
-			}
-			if currentState == 0 {
-				currentState = rootTransitions[data[i]]
 				if currentState == 0 {
+					i--
 					continue
 				}
 			} else {
@@ -830,6 +849,45 @@ func searchTable[S ~uint16 | ~int32](ac *acAutomaton, trans [][256]S, data []byt
 		return
 	}
 
+	if rootHasNoOutput && !rootTransitionsAreDense(rootTransitions, data) {
+		for i := 0; i < len(data); i++ {
+			if currentState == 0 {
+				for i+8 <= len(data) {
+					if rootTransitions[data[i]] != 0 ||
+						rootTransitions[data[i+1]] != 0 ||
+						rootTransitions[data[i+2]] != 0 ||
+						rootTransitions[data[i+3]] != 0 ||
+						rootTransitions[data[i+4]] != 0 ||
+						rootTransitions[data[i+5]] != 0 ||
+						rootTransitions[data[i+6]] != 0 ||
+						rootTransitions[data[i+7]] != 0 {
+						break
+					}
+					i += 8
+				}
+				if i == len(data) {
+					return
+				}
+				for {
+					currentState = rootTransitions[data[i]]
+					if currentState != 0 {
+						break
+					}
+					i++
+					if i == len(data) {
+						return
+					}
+				}
+			} else {
+				currentState = trans[currentState][data[i]]
+			}
+			if hasOutput[currentState] && !ac.yieldMatches(int32(currentState), i, yield) {
+				return
+			}
+		}
+		return
+	}
+
 	for i := 0; i < len(data); i++ {
 		if currentState == 0 {
 			// Stay in the root-miss loop until a transition consumes a prefix.
@@ -850,6 +908,20 @@ func searchTable[S ~uint16 | ~int32](ac *acAutomaton, trans [][256]S, data []byt
 			return
 		}
 	}
+}
+
+func rootTransitionsAreDense[S ~uint16 | ~int32](root *[256]S, data []byte) bool {
+	if len(data) >= 512 {
+		return rootRowIsDense(root, data)
+	}
+	sampleEnd := min(len(data), 32)
+	hits := 0
+	for i := 0; i < sampleEnd; i++ {
+		if root[data[i]] != 0 {
+			hits++
+		}
+	}
+	return hits > 2
 }
 
 // SearchIter performs optimized pattern matching yielding matches via an iter.Seq iterator.

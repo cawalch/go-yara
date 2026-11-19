@@ -16,13 +16,17 @@ func newTeddyPlatform(strings []acStringInfo) teddyPrefilter {
 	if len(strings) > maxTeddyPatterns {
 		return newTeddyAVX2Corpus(strings)
 	}
-	if len(strings) > 8 {
+	cover := teddyPrefixCover(strings)
+	if len(cover) == 0 {
 		return nil
+	}
+	if len(cover) > 8 {
+		return newTeddyAVX2Corpus(strings)
 	}
 
 	var rootBytes []byte
 	var seen [256]bool
-	for _, s := range strings {
+	for _, s := range cover {
 		prefix := extractPrefixInfo(s)
 		if !seen[prefix.b0Lo] {
 			seen[prefix.b0Lo] = true

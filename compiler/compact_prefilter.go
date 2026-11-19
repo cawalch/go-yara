@@ -169,7 +169,7 @@ func (s *Scanner) compactPrefilterRejectsWithHooks(ctx context.Context, data []b
 
 func compactPrefilterMatchesAbsent(data []byte, gate *compactPrefilter) bool {
 	ac := gate.automaton
-	if teddySIMDEnabled && ac.teddyGate != nil && len(data) >= 256 && !ac.teddyGate.mayMatch(data, nil) {
+	if teddySIMDEnabled && ac.teddyGate != nil && len(data) >= 256 && len(data) <= 512 && !ac.teddyGate.mayMatch(data, nil) {
 		return true
 	}
 	if len(ac.transitions16) > 0 {

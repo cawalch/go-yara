@@ -61,11 +61,9 @@ func (t *teddyNeon2Bank) tailMayMatch(data []byte) bool {
 
 func newTeddyPlatform(strings []acStringInfo) teddyPrefilter {
 	large := len(strings) > maxTeddyPatterns
-	if large {
-		strings = teddyPrefixCover(strings)
-		if len(strings) == 0 {
-			return nil
-		}
+	strings = teddyPrefixCover(strings)
+	if len(strings) == 0 {
+		return nil
 	}
 	minLen := math.MaxInt
 	for _, s := range strings {
