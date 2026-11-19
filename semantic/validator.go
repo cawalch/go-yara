@@ -256,78 +256,13 @@ func (v *Validator) validateExpression(expr ast.Expression) (*TypeInfo, []error)
 			}
 			return typ, nil
 		}
-	}
-	switch {
-	case v.isSimpleExpression(expr):
-		return v.validateSimpleExpression(expr)
-	case v.isOperationExpression(expr):
-		return v.validateOperationExpression(expr)
-	case v.isSpecialExpression(expr):
-		return v.validateSpecialExpression(expr)
-	default:
-		return v.validateUnknownExpression()
-	}
-}
-
-// isSimpleExpression checks if expression is a simple type (literal, identifier)
-func (v *Validator) isSimpleExpression(expr ast.Expression) bool {
-	switch expr.(type) {
-	case *ast.Literal, *ast.Identifier:
-		return true
-	default:
-		return false
-	}
-}
-
-// isOperationExpression checks if expression is an operation (binary, unary)
-func (v *Validator) isOperationExpression(expr ast.Expression) bool {
-	switch expr.(type) {
-	case *ast.BinaryOp, *ast.UnaryOp:
-		return true
-	default:
-		return false
-	}
-}
-
-// isSpecialExpression checks if expression is a special type (function call, for loop, etc.)
-func (v *Validator) isSpecialExpression(expr ast.Expression) bool {
-	switch expr.(type) {
-	case *ast.OfExpression, *ast.FunctionCall, *ast.ForLoop, *ast.PercentExpression:
-		return true
-	case *ast.StringLength, *ast.StringOffset, *ast.StringCount, *ast.LengthOf:
-		return true
-	default:
-		return false
-	}
-}
-
-// validateSimpleExpression validates simple expressions (literals, identifiers)
-func (v *Validator) validateSimpleExpression(expr ast.Expression) (*TypeInfo, []error) {
-	switch e := expr.(type) {
+		return v.validateIdentifierExpression(e)
 	case *ast.Literal:
 		return v.validateLiteralExpression(e)
-	case *ast.Identifier:
-		return v.validateIdentifierExpression(e)
-	default:
-		return v.validateUnknownExpression()
-	}
-}
-
-// validateOperationExpression validates operation expressions (binary, unary)
-func (v *Validator) validateOperationExpression(expr ast.Expression) (*TypeInfo, []error) {
-	switch e := expr.(type) {
 	case *ast.BinaryOp:
 		return v.validateBinaryOpExpression(e)
 	case *ast.UnaryOp:
 		return v.validateUnaryOpExpression(e)
-	default:
-		return v.validateUnknownExpression()
-	}
-}
-
-// validateSpecialExpression validates special expressions (function calls, for loops, etc.)
-func (v *Validator) validateSpecialExpression(expr ast.Expression) (*TypeInfo, []error) {
-	switch e := expr.(type) {
 	case *ast.OfExpression:
 		return v.validateOfExpression(e)
 	case *ast.FunctionCall:
