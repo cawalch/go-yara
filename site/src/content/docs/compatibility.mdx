@@ -13,7 +13,7 @@ import patternsOutput from '../../../examples/patterns/output.txt?raw';
 
 go-yara provides an engine that can be embedded directly in a Go program without a native library. libyara and YARA-X provide other integration paths and a broader set of bundled file-format modules. Which fits an application depends on its rules, deployment constraints, and required output.
 
-This comparison uses go-yara v0.11.0, libyara 4.5.8, and YARA-X 1.22.0, with sources reviewed on 2026-11-19. It describes implementation, feature, and deployment differences; no cross-engine performance ranking is claimed.
+This comparison uses go-yara v0.11.0, libyara 4.6.0 / 4.5.8, and YARA-X 1.23.0 / 1.22.0, with sources and CLI measurements reviewed on 2026-11-19.
 
 | Area | go-yara | libyara | YARA-X |
 | --- | --- | --- | --- |
@@ -28,6 +28,19 @@ This comparison uses go-yara v0.11.0, libyara 4.5.8, and YARA-X 1.22.0, with sou
 - **Choose `go-yara` when** you need a pure-Go dependency (no CGO, static cross-compiled binaries, Wasm playground builds), direct Go host-module callbacks and zero-reflection `WithBorrowedEvidence(true)` JSON streaming, deterministic binary rule caches (`MarshalBinary`), or `WithStrictLibyaraCompatibility(true)` without shipping `libyara` shared libraries.
 - **Choose `libyara` when** you need maximum legacy rule/module parity (`elf`, `dotnet`, `cuckoo`, full delayed-import/Authenticode `valid_on` surface) or existing C/Python tooling already built around libyara.
 - **Choose `YARA-X` when** you want VirusTotal's next-generation Rust engine with bundled `elf`/`dotnet` parsers, WebAssembly-compiled conditions, and strict/modernized YARA-X rule diagnostics, and CGO/Rust native libraries fit your deployment model.
+
+### Measured CLI comparison (2,000 mixed rules)
+
+Measured on Apple M3 Max (`-p 4`, median of 3 cold CLI runs via `/usr/bin/time -l`) across 2,000 generated rules (1,000 literal, 500 regex, 500 hex) scanning 1 KB (compile + startup baseline), 128 MB clean (`16 × 8 MB`), and 64 MB match-heavy (`16 × 4 MB`, 3 matching rules per 4 KB):
+
+| Engine | Compile + 1 KB (wall / peak RSS) | 128 MB clean (wall / peak RSS) | 64 MB match (wall / peak RSS) |
+| --- | --- | --- | --- |
+| `go-yara v0.11.0` (scalar) | `28.6 ms` / `37.3 MiB` | `31.7 ms` / `71.3 MiB` | `35.2 ms` / `60.3 MiB` |
+| `go-yara v0.11.0` (`GOEXPERIMENT=simd`) | `27.9 ms` / `37.2 MiB` | `34.0 ms` / `70.8 MiB` | `35.2 ms` / `59.8 MiB` |
+| `libyara 4.6.0` | `24.2 ms` / `12.5 MiB` | `85.0 ms` / `44.9 MiB` | `53.0 ms` / `30.2 MiB` |
+| `YARA-X 1.23.0` | `152.0 ms` / `36.3 MiB` | `204.1 ms` / `101.0 MiB` | `170.5 ms` / `69.8 MiB` |
+
+On this synthetic 2,000-rule workload, `libyara 4.6.0` has the lowest peak RSS (`12.5–44.9 MiB`) and fastest cold compile (`24.2 ms`), `go-yara v0.11.0` has the lowest total wall time on both 128 MB clean (`31.7 ms`) and 64 MB match-heavy (`35.2 ms`) scans, and `YARA-X 1.23.0` pays higher Wasm compilation startup (`152.0 ms`) and peak RSS (`101.0 MiB` on 128 MB clean). Different rule corpora, PE/ELF module workloads, or long-lived in-process scanners will shift these ratios.
 
 The matching architecture has substantial overlap. Atom selection, verification strategy, condition execution, and result handling can each affect performance. go-yara's lack of a native dependency is a deployment property; it does not establish a scanning-speed advantage. The [performance page](/go-yara/performance/) explains its algorithms, measurements, and benchmark conditions.
 
