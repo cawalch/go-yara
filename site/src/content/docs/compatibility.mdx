@@ -29,18 +29,18 @@ This comparison uses go-yara v0.11.0, libyara 4.6.0 / 4.5.8, and YARA-X 1.23.0 /
 - **Choose `libyara` when** you need maximum legacy rule/module parity (`elf`, `dotnet`, `cuckoo`, full delayed-import/Authenticode `valid_on` surface) or existing C/Python tooling already built around libyara.
 - **Choose `YARA-X` when** you want VirusTotal's next-generation Rust engine with bundled `elf`/`dotnet` parsers, WebAssembly-compiled conditions, and strict/modernized YARA-X rule diagnostics, and CGO/Rust native libraries fit your deployment model.
 
-### Measured CLI comparison (2,000 mixed rules)
+### Measured CLI comparison (2,000 mixed rules & 50 PE rules)
 
-Measured on Apple M3 Max (`-p 4`, median of 3 cold CLI runs via `/usr/bin/time -l`) across 2,000 generated rules (1,000 literal, 500 regex, 500 hex) scanning 1 KB (compile + startup baseline), 128 MB clean (`16 × 8 MB`), and 64 MB match-heavy (`16 × 4 MB`, 3 matching rules per 4 KB):
+Measured on Apple M3 Max (median of 3 cold CLI runs via `/usr/bin/time -l`). Scan throughput (`MB/s` / `GB/s`) is computed from `(workload_wall - compile_1KB_wall)` on 512 MB clean (`16 × 32 MB`), 256 MB near-miss (`16 × 16 MB`, packed with shared prefix-atom hits that fail full regex/hex verification), and 280 real PE files (`40×` copies of the 7 `testdata/performance` PE fixtures under 50 `pe` rules):
 
-| Engine | Compile + 1 KB (wall / peak RSS) | 128 MB clean (wall / peak RSS) | 64 MB match (wall / peak RSS) |
-| --- | --- | --- | --- |
-| `go-yara v0.11.0` (scalar) | `28.6 ms` / `37.3 MiB` | `31.7 ms` / `71.3 MiB` | `35.2 ms` / `60.3 MiB` |
-| `go-yara v0.11.0` (`GOEXPERIMENT=simd`) | `27.9 ms` / `37.2 MiB` | `34.0 ms` / `70.8 MiB` | `35.2 ms` / `59.8 MiB` |
-| `libyara 4.6.0` | `24.2 ms` / `12.5 MiB` | `85.0 ms` / `44.9 MiB` | `53.0 ms` / `30.2 MiB` |
-| `YARA-X 1.23.0` | `152.0 ms` / `36.3 MiB` | `204.1 ms` / `101.0 MiB` | `170.5 ms` / `69.8 MiB` |
+| Engine | Compile + 1 KB (`-p 1`) | 512 MB clean (`-p 1`) | 512 MB clean (`-p 4`) | 256 MB near-miss (`-p 4`) | 280 PE files, 50 PE rules (`-p 4`) |
+| --- | --- | --- | --- | --- | --- |
+| `go-yara v0.11.0` (scalar) | `26.3 ms` / `37.4 MiB` | `82.4 ms` (`9.1 GB/s`, `70.9 MiB`) | `51.7 ms` (`20.2 GB/s`, `167.4 MiB`) | `160.3 ms` (`1.9 GB/s`, `121.6 MiB`) | `13.8 ms` / `18.8 MiB` |
+| `go-yara v0.11.0` (`GOEXPERIMENT=simd`) | `28.0 ms` / `37.2 MiB` | `99.4 ms` (`7.2 GB/s`, `70.6 MiB`) | `49.7 ms` (`23.7 GB/s`, `166.5 MiB`) | `144.8 ms` (`2.2 GB/s`, `121.8 MiB`) | `14.5 ms` / `18.7 MiB` |
+| `libyara 4.6.0` | `25.5 ms` / `12.5 MiB` | `947.9 ms` (`555 MB/s`, `44.6 MiB`) | `267.2 ms` (`2.1 GB/s`, `140.9 MiB`) | `616.8 ms` (`433 MB/s`, `76.9 MiB`) | `27.4 ms` / `10.2 MiB` |
+| `YARA-X 1.23.0` | `151.7 ms` / `37.2 MiB` | `915.6 ms` (`670 MB/s`, `68.8 MiB`) | `352.2 ms` (`2.6 GB/s`, `164.9 MiB`) | `493.8 ms` (`748 MB/s`, `164.6 MiB`) | `20.6 ms` / `31.8 MiB` |
 
-On this synthetic 2,000-rule workload, `libyara 4.6.0` has the lowest peak RSS (`12.5–44.9 MiB`) and fastest cold compile (`24.2 ms`), `go-yara v0.11.0` has the lowest total wall time on both 128 MB clean (`31.7 ms`) and 64 MB match-heavy (`35.2 ms`) scans, and `YARA-X 1.23.0` pays higher Wasm compilation startup (`152.0 ms`) and peak RSS (`101.0 MiB` on 128 MB clean). Different rule corpora, PE/ELF module workloads, or long-lived in-process scanners will shift these ratios.
+**Takeaways:** `libyara 4.6.0` has the lowest peak RSS (`10.2–44.6 MiB` except 512 MB `-p 4`) and matches `go-yara` on cold 2,000-rule compile (`25.5 ms` vs `26.3 ms`). `go-yara v0.11.0` leads in clean scan throughput (`9.1 GB/s` single-thread, `20.2–23.7 GB/s` 4-thread), near-miss verification (`1.9–2.2 GB/s` vs `748 MB/s` YARA-X and `433 MB/s` libyara), and the 280-file PE scan (`13.8 ms` vs `20.6 ms` YARA-X and `27.4 ms` libyara). `YARA-X 1.23.0` pays higher cold Wasm compilation latency (`151.7 ms`), which amortizes over larger corpora. Different rule sets (e.g., complex condition expressions or ELF/.NET workloads) will shift these ratios.
 
 The matching architecture has substantial overlap. Atom selection, verification strategy, condition execution, and result handling can each affect performance. go-yara's lack of a native dependency is a deployment property; it does not establish a scanning-speed advantage. The [performance page](/go-yara/performance/) explains its algorithms, measurements, and benchmark conditions.
 
