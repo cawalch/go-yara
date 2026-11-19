@@ -15,10 +15,10 @@ The engine is designed for high-throughput scanning pipelines. It uses literal p
 - **Thread Safety**: Immutable compiled programs support safe, concurrent scanning across multiple goroutines.
 - **Extensibility**: Support for structured host modules, custom Go module functions, runtime external variables, binary rule serialization, structured evidence extraction, and a standalone CLI.
 
-## Latest Release (v0.11.0)
+## Latest Release (v0.11.1)
 
-- **Pure-Go `pe` & features:** `pe.overlay.data_offset`, `pe.overlay.data_size`, and `pe.overlay.certificate_size` ([#595](https://github.com/cawalch/go-yara/pull/595)), `go-pe` `v0.1.0` ([#574](https://github.com/cawalch/go-yara/pull/574)), `WithBorrowedEvidence(true)` + zero-reflection JSON streaming, `WithStrictLibyaraCompatibility(true)`, and byte-deterministic **format 20** serialization (readers accept formats 4–20). Minimum toolchain: **Go 1.27.0**.
-- **Measured `v0.10.1` → `v0.11.0` speedups (`Apple M3 Max`, `benchstat` `n=6`):** 2,000-rule compile `-72.2%` time / `-88.9%` memory; `Unmarshal` `-81.0%` time / `-91.7%` memory; `Marshal` `-62.5%` allocations; 10K-rule High-EPS dense scan latency `-35%` to `-43.9%` (`-15.4%` geomean). See [CHANGELOG.md](CHANGELOG.md#v0110---2026-11-19).
+- **Dense-root & heavy-regex prefilter speedups (`v0.11.1`):** Streaming sorted candidate ranges ([#618](https://github.com/cawalch/go-yara/pull/618)), pre-VM `fullword` regex rejection ([#619](https://github.com/cawalch/go-yara/pull/619)), shared hex-atom deduplication ([#620](https://github.com/cawalch/go-yara/pull/620)), and atom-adjacent / 1-byte fanout discrimination ([#622](https://github.com/cawalch/go-yara/pull/622)) improve 256 MB dense-root scanning from `28 → 144–145 MB/s` (`-83%` RSS) and 100 MB Bitcoin/JWT regex scanning from `41–42 → 107–113 MB/s` on Apple M3 Max (`-p 4`). See [CHANGELOG.md](CHANGELOG.md#v0111---2026-11-19).
+- **Pure-Go `pe` & `v0.11.0` highlights:** `pe.overlay.data_offset`, `pe.overlay.data_size`, and `pe.overlay.certificate_size` ([#595](https://github.com/cawalch/go-yara/pull/595)), `go-pe` `v0.1.0` ([#574](https://github.com/cawalch/go-yara/pull/574)), `WithBorrowedEvidence(true)` + zero-reflection JSON streaming, `WithStrictLibyaraCompatibility(true)`, and byte-deterministic **format 20** serialization (readers accept formats 4–20; minimum toolchain **Go 1.27.0**). See [CHANGELOG.md](CHANGELOG.md#v0110---2026-11-19).
 
 ## Comparing go-yara, libyara, and YARA-X
 

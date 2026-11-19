@@ -96,5 +96,19 @@
       "releases"
     ],
     "notes": "Release prose review against main (#546–#615) on 2026-11-19 for v0.11.0. Documents pe.overlay.* fields (#595), go-pe v0.1.0 (#574), and measured v0.10.1 -> v0.11.0 benchstat gains across 2,000-rule compilation, serialization, and 10K-rule High-EPS scanning in CHANGELOG.md, README.md, releases.mdx, and performance.mdx. Retains Go 1.27.0 and format 20."
+  },
+  "v0.11.1": {
+    "pages": [
+      "index",
+      "quickstart",
+      "installation",
+      "scanning",
+      "compatibility",
+      "modules",
+      "performance",
+      "cli",
+      "releases"
+    ],
+    "notes": "Release prose review against main (#618–#623) on 2026-11-19 for v0.11.1. Documents dense-root and heavy-regex prefiltering improvements (#618–#622) and refreshed cross-engine comparison numbers in CHANGELOG.md, README.md, releases.mdx, performance.mdx, and compatibility.mdx. Retains Go 1.27.0 and format 20."
   }
 }
