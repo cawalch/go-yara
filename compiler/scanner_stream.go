@@ -612,77 +612,22 @@ func (s *Scanner) evaluateStreamMatches(
 		}
 	}
 
-	// YARA spec: all evaluated global rules must match
-	allGlobalMatched := true
-	for _, ruleIndex := range s.evaluatedGlobalRules {
-		if ruleIndex >= 0 && ruleIndex < len(s.ruleResultsDense) {
-			if !s.ruleResultsDense[ruleIndex] {
-				allGlobalMatched = false
-				break
-			}
-		} else if result.RuleResults != nil && !result.RuleResults[s.program.Rules[ruleIndex].Name] {
-			allGlobalMatched = false
-			break
-		}
-	}
-
-	// Build final MatchedRules
-	if len(s.matchedRuleIndices) > 0 {
-		result.MatchedRules = make([]RuleMatch, 0, len(s.matchedRuleIndices))
-	}
-	for _, ruleIndex := range s.matchedRuleIndices {
-		rule := s.program.Rules[ruleIndex]
-		if !rule.IsGlobal && !allGlobalMatched {
-			continue
-		}
-		if !s.hasMatchingTag(rule) || rule.IsPrivate {
-			continue
-		}
-
+	err = s.finalizeMatchedRules(ctx, result, func(rule *CompiledRule) (map[string][]Match, map[string][]EvidenceFinding, error) {
 		var ruleMatches map[string][]Match
 		if !s.omitMatches {
 			ruleMatches = materializeStreamRuleMatches(acc, rule)
+			if result.Matches != nil && ruleMatches != nil {
+				result.Matches[rule.Name] = ruleMatches
+			}
 		}
-
 		evidence, evErr := s.populateStreamRuleEvidence(ctx, rule, ruleMatches)
-		if evErr != nil {
-			return nil, evErr
-		}
-		if len(evidence) != 0 {
-			if result.Evidence == nil {
-				result.Evidence = make(map[string]map[string][]EvidenceFinding)
-			}
-			result.Evidence[rule.Name] = evidence
-		}
-
-		ruleMatch := newPublicRuleMatch(rule, ruleMatches, evidence)
-
-		if s.hookMask&hookBitMatch != 0 && s.matchHook != nil {
-			action := s.matchHook(rule, ruleMatch)
-			switch action {
-			case MatchActionStopScan:
-				result.MatchedRules = append(result.MatchedRules, ruleMatch)
-				s.clearRuleResultsIfDirty()
-				return result, nil
-			case MatchActionSkipRule:
-				continue
-			case MatchActionContinue:
-			}
-		}
-
-		result.MatchedRules = append(result.MatchedRules, ruleMatch)
-		if result.Matches != nil && ruleMatches != nil {
-			result.Matches[rule.Name] = ruleMatches
-		}
-		if s.streamEarlyTermination {
-			s.clearRuleResultsIfDirty()
-			s.matchCtx.ResetForRule(rule, nil)
-			return result, nil
-		}
-	}
-
+		return ruleMatches, evidence, evErr
+	})
 	s.clearRuleResultsIfDirty()
 	s.matchCtx.Reset(nil)
+	if err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 

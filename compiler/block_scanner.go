@@ -254,6 +254,7 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (result *Sca
 		Matches:      matches,
 	}
 	s.clearRuleResultsIfDirty()
+	s.matchedRuleIndices = s.matchedRuleIndices[:0]
 	s.interp.ResetIterationCount()
 	s.moduleCache.reset()
 	clear(s.assertionResults)
@@ -370,93 +371,37 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (result *Sca
 		if result.RuleResults != nil {
 			result.RuleResults[rule.Name] = matched
 		}
+		if matched && !rule.IsPrivate && s.hasMatchingTag(rule) {
+			s.matchedRuleIndices = append(s.matchedRuleIndices, rule.Index)
+		}
 	}
 
-	allGlobalMatched := true
-	for _, rule := range scanner.program.Rules {
-		if rule.IsGlobal {
-			globalMatched := false
-			if rule.Index >= 0 && rule.Index < len(s.ruleResultsDense) {
-				globalMatched = s.ruleResultsDense[rule.Index]
-			} else if result.RuleResults != nil {
-				globalMatched = result.RuleResults[rule.Name]
-			}
-			if !globalMatched {
-				allGlobalMatched = false
-				break
-			}
-		}
-	}
-	for _, rule := range scanner.program.Rules {
-		if !rule.IsGlobal && !allGlobalMatched {
-			if s.reportedMatchesOnly && !s.omitMatches && result.Matches != nil {
-				delete(result.Matches, rule.Name)
-			}
-			continue
-		}
-		if !s.hasMatchingTag(rule) {
-			if s.reportedMatchesOnly && !s.omitMatches && result.Matches != nil {
-				delete(result.Matches, rule.Name)
-			}
-			continue
-		}
-		if rule.IsPrivate {
-			continue
-		}
-		ruleMatched := false
-		if rule.Index >= 0 && rule.Index < len(s.ruleResultsDense) {
-			ruleMatched = s.ruleResultsDense[rule.Index]
-		} else if result.RuleResults != nil {
-			ruleMatched = result.RuleResults[rule.Name]
-		}
-		if !ruleMatched {
-			continue
-		}
+	err = s.finalizeMatchedRules(ctx, result, func(rule *CompiledRule) (map[string][]Match, map[string][]EvidenceFinding, error) {
 		var matches map[string][]Match
 		if !s.omitMatches && result.Matches != nil {
 			matches = result.Matches[rule.Name]
 		}
-		var evidence map[string][]EvidenceFinding
-		if s.evidenceMax > 0 {
-			var err error
-			evidence, err = s.populateRuleEvidence(ctx, rule, matches, func(match Match) (captureInput, bool) {
-				block := scanner.blockForMatch(match)
-				if block == nil {
-					return captureInput{}, false
-				}
-				start := int(match.Offset - block.Base)
-				end := start + match.Length
-				if start < 0 || end < start || end > len(block.Data) {
-					return captureInput{}, false
-				}
-				return captureInput{data: block.Data, start: start, end: end, base: block.Base}, true
-			})
-			if err != nil {
-				return nil, err
-			}
+		if s.evidenceMax <= 0 {
+			return matches, nil, nil
 		}
-		if len(evidence) != 0 {
-			if result.Evidence == nil {
-				result.Evidence = make(map[string]map[string][]EvidenceFinding)
+		evidence, evErr := s.populateRuleEvidence(ctx, rule, matches, func(match Match) (captureInput, bool) {
+			block := scanner.blockForMatch(match)
+			if block == nil {
+				return captureInput{}, false
 			}
-			result.Evidence[rule.Name] = evidence
-		}
-		ruleMatch := newPublicRuleMatch(rule, matches, evidence)
-		if s.hookMask&hookBitMatch != 0 && s.matchHook != nil {
-			action := s.matchHook(rule, ruleMatch)
-			switch action {
-			case MatchActionStopScan:
-				result.MatchedRules = append(result.MatchedRules, ruleMatch)
-				s.clearRuleResultsIfDirty()
-				return result, nil
-			case MatchActionSkipRule:
-				continue
-			case MatchActionContinue:
+			start := int(match.Offset - block.Base)
+			end := start + match.Length
+			if start < 0 || end < start || end > len(block.Data) {
+				return captureInput{}, false
 			}
-		}
-		result.MatchedRules = append(result.MatchedRules, ruleMatch)
-	}
+			return captureInput{data: block.Data, start: start, end: end, base: block.Base}, true
+		})
+		return matches, evidence, evErr
+	})
 	s.clearRuleResultsIfDirty()
+	if err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 
