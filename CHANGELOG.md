@@ -28,6 +28,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+* **Measured release gains (`v0.10.1` → `v0.11.0`, Apple M3 Max, `benchstat` `n=6` `p=0.002`):**
+  * **2,000-rule compilation (`LargeCorpusCompile/rules=2000`):** `143.64 ms → 39.92 ms` (`-72.2%`), `390.16 MiB → 43.48 MiB` (`-88.9%`), `762.3k → 342.4k` allocs (`-55.1%`).
+  * **2,000-rule serialization (`LargeCorpusSerialization`):** `Marshal` `15.73 ms → 13.26 ms` (`-15.7%`), `41.89 MiB → 35.38 MiB` (`-15.5%`), `66.68k → 24.98k` allocs (`-62.5%`); `Unmarshal` `125.06 ms → 23.74 ms` (`-81.0%`), `536.88 MiB → 44.40 MiB` (`-91.7%`), `452.1k → 386.3k` allocs (`-14.6%`).
+  * **10K-rule High-EPS scanning (`HighEPSSelectivity` / `HighEPSParallel10K`):** `literal/dense` `-43.9%` (`637.8 → 357.9 ns`), `mixed/dense` `-41.9%` (`700.2 → 406.8 ns`), `regex/dense` `-39.7%` (`707.0 → 426.5 ns`), `regex/near_miss` `-35.2%` (`514.3 → 333.1 ns`), `HighEPSParallel10K/*/dense` `-35.4%` to `-36.1%`, and `-15.4%` geomean (`+18.2%` throughput) across the 19-benchmark High-EPS suite.
+
 * Batch PE import/export detail objects and their lazy field state, reducing per-symbol allocations; reuse parser-owned section names when they already match YARA semantics while preserving special-name snapshots (part of [#544](https://github.com/cawalch/go-yara/issues/544)).
 
 * Cache formatted certificate fields per certificate within each PE scan, sharing results across signature, certificate-array, and chain views while preserving undefined results and scan isolation (part of [#544](https://github.com/cawalch/go-yara/issues/544)).
