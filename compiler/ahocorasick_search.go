@@ -772,7 +772,7 @@ func searchTable[S ~uint16 | ~int32](ac *acAutomaton, trans [][256]S, data []byt
 	if rootHasNoOutput && ac.teddy != nil && len(data) >= 256 {
 		linearUntil := 0
 		denseWindow := 256
-		for i := 0; i < len(data); i++ {
+		for i := 0; i < len(data); {
 			if currentState == 0 {
 				if i >= linearUntil && len(data)-i >= 32 {
 					candidate := ac.teddy.findCandidate(data, i)
@@ -807,7 +807,6 @@ func searchTable[S ~uint16 | ~int32](ac *acAutomaton, trans [][256]S, data []byt
 					}
 				}
 				if currentState == 0 {
-					i--
 					continue
 				}
 			} else {
@@ -816,6 +815,7 @@ func searchTable[S ~uint16 | ~int32](ac *acAutomaton, trans [][256]S, data []byt
 			if hasOutput[currentState] && !ac.yieldMatches(int32(currentState), i, yield) {
 				return
 			}
+			i++
 		}
 		return
 	}
