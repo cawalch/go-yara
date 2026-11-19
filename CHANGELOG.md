@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.11.0] - 2026-11-19
+
+### Added
+
+* **PE overlay fields:** Expose `pe.overlay.data_offset`, `pe.overlay.data_size`, and `pe.overlay.certificate_size` ([#595](https://github.com/cawalch/go-yara/pull/595)).
+
+### Changed
+
+* Updated `github.com/cawalch/go-pe` dependency to `v0.1.0` ([#574](https://github.com/cawalch/go-yara/pull/574)).
+* Unified rule finalization across contiguous, streaming, and block scanners ([#578](https://github.com/cawalch/go-yara/pull/578)), removed non-compact `MatchContext` duplication ([#576](https://github.com/cawalch/go-yara/pull/576)), consolidated `peSchema` construction ([#583](https://github.com/cawalch/go-yara/pull/583)), and replaced 15 `serialized*Entry` structs with generic `serializedEntry[K, V]` ([#584](https://github.com/cawalch/go-yara/pull/584)).
+
 ### Fixed
 
 * Preserve complete nested first alternatives in the hex byte representation exposed by `CompiledRule.Strings`; matching continues to use the full typed pattern (part of [#542](https://github.com/cawalch/go-yara/issues/542)).
@@ -64,6 +75,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Reject ineligible regex terminal-loop fast paths before constructing byte predicates, reducing setup work for ordinary consuming instructions; simplify consecutive compact-prefilter root misses to avoid repeated state checks (part of [#545](https://github.com/cawalch/go-yara/issues/545)).
 
 * Reused the frozen PE ordinal lookup tables for `pe.imphash()` and resolved DLL kinds once per import library, removing two duplicate package-level maps while preserving historical hashes (part of [#544](https://github.com/cawalch/go-yara/issues/544)). Kept the short-input compact prefilter kernel out of dispatch inlining to avoid the AMD64 throughput regression exposed by this cleanup.
+
+* **Aho–Corasick & Teddy prefiltering:** Build sparse tries with single-pass BFS failure-link closure and byte-class compressed transition tables ([#604](https://github.com/cawalch/go-yara/pull/604)); deduplicate prefixes before Teddy bank selection (supporting up to 256 3-byte corpus prefix groups), eliminate tail-hit scalar rescans, and unroll sparse scalar roots by 8 bytes ([#611](https://github.com/cawalch/go-yara/pull/611)); reuse Teddy gates in compact prefiltering and unify 16/32-bit search ([#570](https://github.com/cawalch/go-yara/pull/570)).
+
+* **Scanner & VM hot paths:** Fast-path rejected `Scan` calls ([#568](https://github.com/cawalch/go-yara/pull/568)), fast-path `assertionProgram` conditions and lean out `Interpreter` ([#571](https://github.com/cawalch/go-yara/pull/571)), shrink `globalMatchEntry` to 16 B with early verification ([#572](https://github.com/cawalch/go-yara/pull/572)), use dense integer-indexed `MatchContext` spans ([#577](https://github.com/cawalch/go-yara/pull/577)), slot-index local non-text match lookups ([#581](https://github.com/cawalch/go-yara/pull/581)), eliminate conditional defers in `MatchingRules` ([#586](https://github.com/cawalch/go-yara/pull/586)), use `sharedAutomaton` across `ScanReader`, `BlockScanner`, and `StreamingProcessor` ([#573](https://github.com/cawalch/go-yara/pull/573)), reuse streaming buffers and skip unused `accumulatedMatches` maps ([#606](https://github.com/cawalch/go-yara/pull/606)), and lower standalone `$id` conditions with pre-resolved assertion slots ([#607](https://github.com/cawalch/go-yara/pull/607)).
+
+* **Regex & hex engines:** Halve `vmState.visited` footprint and use bitmask character classes ([#575](https://github.com/cawalch/go-yara/pull/575)); reuse `regex.VMBatch` ([#610](https://github.com/cawalch/go-yara/pull/610)); merge escape validation and eliminate per-character atom allocations ([#582](https://github.com/cawalch/go-yara/pull/582)), add zero-allocation leaf AST paths in `analyzeAtoms` ([#587](https://github.com/cawalch/go-yara/pull/587)), lazily expand concat alternation covers ([#589](https://github.com/cawalch/go-yara/pull/589)), and eliminate intermediate `fixedByteSets` / `literalAffixNodes` allocations ([#591](https://github.com/cawalch/go-yara/pull/591)); scan large single-jump hex patterns directly without scratch reset or worklist reversal ([#609](https://github.com/cawalch/go-yara/pull/609)); cache compiled regex/hex patterns across rules in `stringCompiler` ([#608](https://github.com/cawalch/go-yara/pull/608)) and reuse `regex.Parser` with embedded lexer and scratch `concatBuf` ([#614](https://github.com/cawalch/go-yara/pull/614)).
+
+* **PE module:** Lazily index import/export queries and eliminate per-symbol view closures ([#610](https://github.com/cawalch/go-yara/pull/610)).
+
+* **Semantic & serialization:** Reuse rule scopes, slab-allocate symbols, track rule dependency cycles by dense rule index, and share read-only internal `TypeInfo` singletons ([#613](https://github.com/cawalch/go-yara/pull/613)); remove redundant `MarshalBinary`/`UnmarshalCompiledProgram` defensive slice cloning, pre-size output buffers, and replace eager `seen` map allocation in `deserializeHexPatterns` with sorted-key checking ([#612](https://github.com/cawalch/go-yara/pull/612)).
 
 ## [v0.10.1] - 2026-11-16
 
