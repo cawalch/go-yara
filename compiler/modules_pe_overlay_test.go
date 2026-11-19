@@ -112,7 +112,32 @@ func TestPEOverlay(t *testing.T) {
 					binary.LittleEndian.PutUint32(d[dir+4:], 0x200)
 					return d
 				},
-				condition: `pe.overlay.offset == 0x600 and pe.overlay.size == 0x200`,
+				condition: `pe.overlay.offset == 0x600 and pe.overlay.size == 0x200 and pe.overlay.data_offset == 0 and pe.overlay.data_size == 0 and pe.overlay.certificate_size == 0x200`,
+			},
+			{
+				name: "cert-plus-trailing-overlay",
+				change: func(d []byte) []byte {
+					dir := peSecurityDirOffset(is64)
+					binary.LittleEndian.PutUint32(d[dir:], 0x600)
+					binary.LittleEndian.PutUint32(d[dir+4:], 0x100)
+					return d
+				},
+				condition: `pe.overlay.offset == 0x600 and pe.overlay.size == 0x200 and pe.overlay.data_offset == 0x700 and pe.overlay.data_size == 0x100 and pe.overlay.certificate_size == 0x100`,
+			},
+			{
+				name: "overlay-before-cert",
+				change: func(d []byte) []byte {
+					dir := peSecurityDirOffset(is64)
+					binary.LittleEndian.PutUint32(d[dir:], 0x700)
+					binary.LittleEndian.PutUint32(d[dir+4:], 0x100)
+					return d
+				},
+				condition: `pe.overlay.offset == 0x600 and pe.overlay.size == 0x200 and pe.overlay.data_offset == 0x600 and pe.overlay.data_size == 0x100 and pe.overlay.certificate_size == 0x100`,
+			},
+			{
+				name:      "unsigned-overlay-data",
+				change:    func(d []byte) []byte { return d },
+				condition: `pe.overlay.offset == 0x600 and pe.overlay.size == 0x200 and pe.overlay.data_offset == 0x600 and pe.overlay.data_size == 0x200 and pe.overlay.certificate_size == 0`,
 			},
 			{
 				name: "section-limit",
