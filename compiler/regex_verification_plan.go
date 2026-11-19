@@ -22,17 +22,6 @@ type regexVerificationAtom struct {
 	Bytes, Mask, Forward, Backward []byte
 }
 
-func cloneVerificationPlan(plan *regexVerificationPlan) *regexVerificationPlan {
-	if plan == nil {
-		return nil
-	}
-	copyPlan := &regexVerificationPlan{Atoms: slices.Clone(plan.Atoms), ForwardOnly: plan.ForwardOnly, Allowed: plan.Allowed}
-	for i, atom := range copyPlan.Atoms {
-		copyPlan.Atoms[i] = regexVerificationAtom{slices.Clone(atom.Bytes), slices.Clone(atom.Mask), slices.Clone(atom.Forward), slices.Clone(atom.Backward)}
-	}
-	return copyPlan
-}
-
 func compileVerificationPlan(parsed *regex.AST, flags regex.Flags, wide bool) (*regexVerificationPlan, error) {
 	step := 1
 	if wide {

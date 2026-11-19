@@ -42,7 +42,7 @@ func (cp *CompiledProgram) MarshalBinary() ([]byte, error) {
 		return nil, err
 	}
 	var output bytes.Buffer
-	output.Grow(8192 + len(cp.Rules)*1024 + len(cp.moduleSchemas)*10240)
+	output.Grow(8192 + len(cp.Rules)*2560 + len(cp.moduleSchemas)*10240)
 	if _, err := output.WriteString(compiledProgramMagic); err != nil {
 		return nil, err
 	}
@@ -421,27 +421,23 @@ func serializeRule(rule *CompiledRule) (serializedRule, error) {
 	}
 
 	serialized := serializedRule{
-		ModuleAccessNames: slices.Clone(rule.moduleAccessNames),
-		ModuleIterations:  slices.Clone(rule.moduleIterations),
-		Name:              rule.Name,
-		Index:             rule.Index,
-		Bytecode:          slices.Clone(rule.Bytecode),
-		StringCount:       rule.StringCount,
-		StringEntries: sortedMapEntries(rule.Strings, func(_ string, data []byte) []byte {
-			return slices.Clone(data)
-		}),
-		StringSets:            cloneStringSlices(rule.StringSets),
-		TextStringSets:        cloneStringSlices(rule.TextStringSets),
-		AnonymousStrings:      slices.Clone(rule.AnonymousStrings),
-		StringLiterals:        slices.Clone(rule.StringLiterals),
+		ModuleAccessNames:     rule.moduleAccessNames,
+		ModuleIterations:      rule.moduleIterations,
+		Name:                  rule.Name,
+		Index:                 rule.Index,
+		Bytecode:              rule.Bytecode,
+		StringCount:           rule.StringCount,
+		StringEntries:         sortedMapEntriesIdentity(rule.Strings),
+		StringSets:            rule.StringSets,
+		TextStringSets:        rule.TextStringSets,
+		AnonymousStrings:      rule.AnonymousStrings,
+		StringLiterals:        rule.StringLiterals,
 		ModuleRegexes:         serializeModuleRegexes(rule.moduleRegexes),
 		StringKindEntries:     sortedMapEntriesIdentity(rule.StringKinds),
 		StringModifierEntries: modifierEntries,
 		CaptureBindingEntries: serializeCaptureBindingEntries(rule.CaptureBindings),
 		EvidencePlans:         serializeEvidencePlans(rule.EvidencePlans),
-		TextPatternEntries: sortedMapEntries(rule.TextPatterns, func(_ string, data []byte) []byte {
-			return slices.Clone(data)
-		}),
+		TextPatternEntries:    sortedMapEntriesIdentity(rule.TextPatterns),
 		RegexPatternEntries: sortedMapEntries(rule.RegexPatterns, func(_ string, pat RegexPattern) serializedRegexPattern {
 			return serializeRegexPattern(pat)
 		}),
@@ -450,23 +446,23 @@ func serializeRule(rule *CompiledRule) (serializedRule, error) {
 		ExternalSlotEntries: sortedMapEntriesIdentity(rule.ExternalSlots),
 		GlobalSlotEntries:   sortedMapEntriesIdentity(rule.GlobalSlots),
 		GlobalValueEntries:  sortedMapEntries(rule.GlobalValues, serializeGlobalValueEntry),
-		Tags:                slices.Clone(rule.Tags),
+		Tags:                rule.Tags,
 		MetaEntries:         metaEntries,
 		IsGlobal:            rule.IsGlobal,
 		IsPrivate:           rule.IsPrivate,
 		FastScanSafe:        rule.FastScanSafe,
 		ConditionMonotonic:  rule.ConditionMonotonic,
 		RequiresStringMatch: rule.RequiresStringMatch,
-		HeaderConstraints:   slices.Clone(rule.HeaderConstraints),
+		HeaderConstraints:   rule.HeaderConstraints,
 		FixedOffsetEntries:  sortedMapEntriesIdentity(rule.fixedOffsets),
-		Assertions:          slices.Clone(rule.assertions),
-		AssertionProgram:    slices.Clone(rule.assertionProgram),
-		MandatoryAssertions: slices.Clone(rule.mandatoryAssertions),
-		RequiredStrings:     slices.Clone(rule.requiredStrings),
-		ForbiddenStrings:    slices.Clone(rule.forbiddenStrings),
+		Assertions:          rule.assertions,
+		AssertionProgram:    rule.assertionProgram,
+		MandatoryAssertions: rule.mandatoryAssertions,
+		RequiredStrings:     rule.requiredStrings,
+		ForbiddenStrings:    rule.forbiddenStrings,
 	}
 	if rule.automaton != nil {
-		serialized.AutomatonStrings = cloneacStringInfos(rule.automaton.strings)
+		serialized.AutomatonStrings = rule.automaton.strings
 	}
 	serialized.ModuleNameEntries, serialized.ModuleSignatureEntries = serializeRuleModules(rule.ModuleNames, rule.ModuleFunctions)
 	return serialized, nil
@@ -509,9 +505,9 @@ func serializeHexPatternEntry(_ string, pattern *HexPattern) serializedHexPatter
 	}
 	return serializedHexPattern{
 		Present:  true,
-		Tokens:   cloneHexTokens(pattern.Tokens),
-		XorKeys:  slices.Clone(pattern.XorKeys),
-		XorRange: slices.Clone(pattern.XorRange),
+		Tokens:   pattern.Tokens,
+		XorKeys:  pattern.XorKeys,
+		XorRange: pattern.XorRange,
 		CacheKey: pattern.cacheKey,
 	}
 }
@@ -685,18 +681,18 @@ func deserializeRule(serialized serializedRule, bindings map[string]compiledModu
 	}
 
 	rule := &CompiledRule{
-		moduleAccessNames:   slices.Clone(serialized.ModuleAccessNames),
-		moduleIterations:    slices.Clone(serialized.ModuleIterations),
+		moduleAccessNames:   serialized.ModuleAccessNames,
+		moduleIterations:    serialized.ModuleIterations,
 		Name:                serialized.Name,
 		Index:               serialized.Index,
-		Bytecode:            slices.Clone(serialized.Bytecode),
+		Bytecode:            serialized.Bytecode,
 		StringCount:         serialized.StringCount,
 		Strings:             stringsMap,
 		automaton:           automaton,
-		StringSets:          cloneStringSlices(serialized.StringSets),
-		TextStringSets:      cloneStringSlices(serialized.TextStringSets),
-		AnonymousStrings:    slices.Clone(serialized.AnonymousStrings),
-		StringLiterals:      slices.Clone(serialized.StringLiterals),
+		StringSets:          serialized.StringSets,
+		TextStringSets:      serialized.TextStringSets,
+		AnonymousStrings:    serialized.AnonymousStrings,
+		StringLiterals:      serialized.StringLiterals,
 		moduleRegexes:       moduleRegexes,
 		StringKinds:         stringKindsMap,
 		StringModifiers:     modifiers,
@@ -709,7 +705,7 @@ func deserializeRule(serialized serializedRule, bindings map[string]compiledModu
 		ExternalSlots:       externalSlotsMap,
 		GlobalSlots:         globalSlotsMap,
 		GlobalValues:        globalValuesMap,
-		Tags:                append([]string{}, serialized.Tags...),
+		Tags:                serialized.Tags,
 		Meta:                meta,
 		IsGlobal:            serialized.IsGlobal,
 		IsPrivate:           serialized.IsPrivate,
@@ -718,13 +714,13 @@ func deserializeRule(serialized serializedRule, bindings map[string]compiledModu
 		RequiresStringMatch: serialized.RequiresStringMatch,
 		ModuleFunctions:     moduleFunctions,
 		ModuleNames:         moduleNames,
-		HeaderConstraints:   slices.Clone(serialized.HeaderConstraints),
+		HeaderConstraints:   serialized.HeaderConstraints,
 		fixedOffsets:        fixedOffsetsMap,
-		assertions:          slices.Clone(serialized.Assertions),
-		assertionProgram:    slices.Clone(serialized.AssertionProgram),
-		mandatoryAssertions: slices.Clone(serialized.MandatoryAssertions),
-		requiredStrings:     slices.Clone(serialized.RequiredStrings),
-		forbiddenStrings:    slices.Clone(serialized.ForbiddenStrings),
+		assertions:          serialized.Assertions,
+		assertionProgram:    serialized.AssertionProgram,
+		mandatoryAssertions: serialized.MandatoryAssertions,
+		requiredStrings:     serialized.RequiredStrings,
+		forbiddenStrings:    serialized.ForbiddenStrings,
 	}
 	rule.resolveAssertionStringSlots()
 	for _, rawID := range slices.Sorted(maps.Keys(rawModuleNames)) {
@@ -754,24 +750,12 @@ func deserializeRule(serialized serializedRule, bindings map[string]compiledModu
 }
 
 func decodeByteMap(entries []serializedEntry[string, []byte], legacy map[string][]byte) (map[string][]byte, error) {
-	return decodeConvertedMap(entries, legacy, func(_ string, b []byte) ([]byte, error) { return slices.Clone(b), nil })
+	return decodeConvertedMap(entries, legacy, func(_ string, b []byte) ([]byte, error) { return b, nil })
 }
 
 func deserializeHexPatterns(entries []serializedEntry[string, serializedHexPattern], legacy map[string]serializedHexPattern) (map[string]*HexPattern, error) {
 	if len(entries) > 0 {
-		out := make(map[string]*HexPattern, len(entries))
-		seen := make(map[string]struct{}, len(entries))
-		for _, entry := range entries {
-			if _, dup := seen[entry.Key]; dup {
-				return nil, fmt.Errorf("%w: duplicate serialized map key %v", ErrCorruptProgram, entry.Key)
-			}
-			seen[entry.Key] = struct{}{}
-			if !entry.Value.Present {
-				continue
-			}
-			out[entry.Key] = buildHexPatternFromSerialized(entry.Value)
-		}
-		return out, nil
+		return deserializeHexPatternEntries(entries)
 	}
 	out := make(map[string]*HexPattern, len(legacy))
 	for identifier, pattern := range legacy {
@@ -783,10 +767,50 @@ func deserializeHexPatterns(entries []serializedEntry[string, serializedHexPatte
 	return out, nil
 }
 
+func deserializeHexPatternEntries(entries []serializedEntry[string, serializedHexPattern]) (map[string]*HexPattern, error) {
+	out := make(map[string]*HexPattern, len(entries))
+	var seen map[string]struct{}
+	for i, entry := range entries {
+		var err error
+		seen, err = checkUniqueSerializedKey(entries, i, seen)
+		if err != nil {
+			return nil, err
+		}
+		if !entry.Value.Present {
+			continue
+		}
+		out[entry.Key] = buildHexPatternFromSerialized(entry.Value)
+	}
+	return out, nil
+}
+
+func checkUniqueSerializedKey[V any](entries []serializedEntry[string, V], i int, seen map[string]struct{}) (map[string]struct{}, error) {
+	key := entries[i].Key
+	if seen != nil {
+		if _, dup := seen[key]; dup {
+			return nil, fmt.Errorf("%w: duplicate serialized map key %v", ErrCorruptProgram, key)
+		}
+		seen[key] = struct{}{}
+		return seen, nil
+	}
+	if i == 0 || key > entries[i-1].Key {
+		return nil, nil
+	}
+	if key == entries[i-1].Key {
+		return nil, fmt.Errorf("%w: duplicate serialized map key %v", ErrCorruptProgram, key)
+	}
+	seen = make(map[string]struct{}, len(entries))
+	for _, prev := range entries[:i] {
+		seen[prev.Key] = struct{}{}
+	}
+	seen[key] = struct{}{}
+	return seen, nil
+}
+
 func buildHexPatternFromSerialized(pattern serializedHexPattern) *HexPattern {
 	return &HexPattern{
-		Tokens: cloneHexTokens(pattern.Tokens), XorKeys: slices.Clone(pattern.XorKeys),
-		XorRange: slices.Clone(pattern.XorRange), cacheKey: pattern.CacheKey, cacheIndex: -1,
+		Tokens: pattern.Tokens, XorKeys: pattern.XorKeys,
+		XorRange: pattern.XorRange, cacheKey: pattern.CacheKey, cacheIndex: -1,
 	}
 }
 
@@ -837,7 +861,7 @@ func serializeModuleRegexes(regexes []*compiledModuleRegex) []serializedModuleRe
 			continue
 		}
 		out[index] = serializedModuleRegex{
-			Code:  slices.Clone(entry.code),
+			Code:  entry.code,
 			Flags: entry.flags,
 		}
 	}
@@ -851,7 +875,7 @@ func deserializeModuleRegexes(serialized []serializedModuleRegex) ([]*compiledMo
 	out := make([]*compiledModuleRegex, len(serialized))
 	for index, item := range serialized {
 		entry := &compiledModuleRegex{
-			code:  slices.Clone(item.Code),
+			code:  item.Code,
 			flags: item.Flags,
 		}
 		if err := validateCompiledModuleRegex(entry); err != nil {
@@ -909,32 +933,34 @@ func deserializeAutomaton(infos []acStringInfo) (*acAutomaton, error) {
 	if len(infos) == 0 {
 		return nil, nil
 	}
-	automaton := newDeferredAutomaton(len(infos))
+	_ = mustACIndex(len(infos) - 1)
 	stateHint := 1
-	for _, info := range infos {
-		if err := automaton.AddStringWithFlags(
-			info.Identifier, info.Data, info.IsHex, info.IsRegex, info.Flags,
-		); err != nil {
-			return nil, fmt.Errorf("rebuilding rule automaton: %w", err)
-		}
-		stateHint += len(info.Data)
+	for i := range infos {
+		infos[i].Length = len(infos[i].Data)
+		stateHint += infos[i].Length
 	}
-	automaton.ReserveStates(stateHint)
+	automaton := &acAutomaton{
+		outputs:     make([]int32, 0, max(16, len(infos))),
+		strings:     infos,
+		StringCount: len(infos),
+		deferred:    true,
+		stateHint:   stateHint,
+	}
 	return automaton, nil
 }
 
 func serializeRegexPattern(pattern RegexPattern) serializedRegexPattern {
 	serialized := serializedRegexPattern{
-		BoundedAlternation:   cloneBoundedAlternation(pattern.boundedAlternation),
-		Verification:         cloneVerificationPlan(pattern.verification),
-		Code:                 slices.Clone(pattern.Code),
-		CaptureCode:          slices.Clone(pattern.CaptureCode),
-		CaptureGroups:        slices.Clone(pattern.CaptureGroups),
+		BoundedAlternation:   pattern.boundedAlternation,
+		Verification:         pattern.verification,
+		Code:                 pattern.Code,
+		CaptureCode:          pattern.CaptureCode,
+		CaptureGroups:        pattern.CaptureGroups,
 		Flags:                pattern.Flags,
-		Prefix:               slices.Clone(pattern.prefix),
-		WidePrefix:           slices.Clone(pattern.widePrefix),
-		Atom:                 slices.Clone(pattern.atom),
-		WideAtom:             slices.Clone(pattern.wideAtom),
+		Prefix:               pattern.prefix,
+		WidePrefix:           pattern.widePrefix,
+		Atom:                 pattern.atom,
+		WideAtom:             pattern.wideAtom,
 		AtomMinOffset:        pattern.atomMinOffset,
 		AtomMaxOffset:        pattern.atomMaxOffset,
 		AtomMaxSuffix:        pattern.atomMaxSuffix,
@@ -950,7 +976,7 @@ func serializeRegexPattern(pattern RegexPattern) serializedRegexPattern {
 		ByteSetLower:         pattern.byteSetLower,
 		ByteSetUpper:         pattern.byteSetUpper,
 		ByteSetContiguous:    pattern.byteSetContiguous,
-		ByteSetValues:        slices.Clone(pattern.byteSetValues),
+		ByteSetValues:        pattern.byteSetValues,
 		FixedByteSets:        make([][]byte, len(pattern.fixedByteSets)),
 		Anchored:             pattern.anchored,
 		CacheKey:             pattern.cacheKey,
@@ -958,8 +984,8 @@ func serializeRegexPattern(pattern RegexPattern) serializedRegexPattern {
 		HasFirstByteSet:      pattern.hasFirstByteSet,
 		PrecedingByteSet:     pattern.precedingByteSet.Values(),
 		HasPrecedingByteSet:  pattern.hasPrecedingByteSet,
-		ExactPrefixSuffix:    slices.Clone(pattern.exactPrefixSuffix),
-		WideExactPrefix:      slices.Clone(pattern.wideExactPrefix),
+		ExactPrefixSuffix:    pattern.exactPrefixSuffix,
+		WideExactPrefix:      pattern.wideExactPrefix,
 		HasPrefixRepeat:      pattern.hasPrefixRepeat,
 		PrefixRepeatClass:    pattern.prefixRepeatClass.Values(),
 		PrefixRepeatMin:      pattern.prefixRepeatMin,
@@ -982,16 +1008,16 @@ func serializeRegexPattern(pattern RegexPattern) serializedRegexPattern {
 
 func deserializeRegexPattern(serialized serializedRegexPattern) RegexPattern {
 	pattern := RegexPattern{
-		boundedAlternation:   cloneBoundedAlternation(serialized.BoundedAlternation),
-		verification:         cloneVerificationPlan(serialized.Verification),
-		Code:                 slices.Clone(serialized.Code),
-		CaptureCode:          slices.Clone(serialized.CaptureCode),
-		CaptureGroups:        slices.Clone(serialized.CaptureGroups),
+		boundedAlternation:   serialized.BoundedAlternation,
+		verification:         serialized.Verification,
+		Code:                 serialized.Code,
+		CaptureCode:          serialized.CaptureCode,
+		CaptureGroups:        serialized.CaptureGroups,
 		Flags:                serialized.Flags,
-		prefix:               slices.Clone(serialized.Prefix),
-		widePrefix:           slices.Clone(serialized.WidePrefix),
-		atom:                 slices.Clone(serialized.Atom),
-		wideAtom:             slices.Clone(serialized.WideAtom),
+		prefix:               serialized.Prefix,
+		widePrefix:           serialized.WidePrefix,
+		atom:                 serialized.Atom,
+		wideAtom:             serialized.WideAtom,
 		atomMinOffset:        serialized.AtomMinOffset,
 		atomMaxOffset:        serialized.AtomMaxOffset,
 		atomMaxSuffix:        serialized.AtomMaxSuffix,
@@ -1007,7 +1033,7 @@ func deserializeRegexPattern(serialized serializedRegexPattern) RegexPattern {
 		byteSetLower:         serialized.ByteSetLower,
 		byteSetUpper:         serialized.ByteSetUpper,
 		byteSetContiguous:    serialized.ByteSetContiguous,
-		byteSetValues:        slices.Clone(serialized.ByteSetValues),
+		byteSetValues:        serialized.ByteSetValues,
 		fixedByteSets:        make([]regex.ByteSet, len(serialized.FixedByteSets)),
 		anchored:             serialized.Anchored,
 		cacheKey:             serialized.CacheKey,
@@ -1016,12 +1042,15 @@ func deserializeRegexPattern(serialized serializedRegexPattern) RegexPattern {
 		hasFirstByteSet:      serialized.HasFirstByteSet,
 		precedingByteSet:     regex.NewByteSet(serialized.PrecedingByteSet),
 		hasPrecedingByteSet:  serialized.HasPrecedingByteSet,
-		exactPrefixSuffix:    slices.Clone(serialized.ExactPrefixSuffix),
-		wideExactPrefix:      slices.Clone(serialized.WideExactPrefix),
+		exactPrefixSuffix:    serialized.ExactPrefixSuffix,
+		wideExactPrefix:      serialized.WideExactPrefix,
 		hasPrefixRepeat:      serialized.HasPrefixRepeat,
 		prefixRepeatClass:    regex.NewByteSet(serialized.PrefixRepeatClass),
 		prefixRepeatMin:      serialized.PrefixRepeatMin,
 		prefixRepeatMax:      serialized.PrefixRepeatMax,
+	}
+	if pattern.boundedAlternation != nil {
+		pattern.boundedAlternation.prepareOrder()
 	}
 	for index, values := range serialized.FixedByteSets {
 		pattern.fixedByteSets[index] = regex.NewByteSet(values)
@@ -1045,7 +1074,7 @@ func serializeRegexAtoms(atoms []regexPrefilterAtom) []serializedRegexAtom {
 	serialized := make([]serializedRegexAtom, len(atoms))
 	for index, atom := range atoms {
 		serialized[index] = serializedRegexAtom{
-			Data: slices.Clone(atom.data), MinOffset: atom.minOffset, MaxOffset: atom.maxOffset,
+			Data: atom.data, MinOffset: atom.minOffset, MaxOffset: atom.maxOffset,
 			MaxSuffix: atom.maxSuffix, Score: atom.score, ASCIINoCase: atom.asciiNoCase,
 		}
 	}
@@ -1056,7 +1085,7 @@ func deserializeRegexAtoms(atoms []serializedRegexAtom) []regexPrefilterAtom {
 	result := make([]regexPrefilterAtom, len(atoms))
 	for index, atom := range atoms {
 		result[index] = regexPrefilterAtom{
-			data: slices.Clone(atom.Data), minOffset: atom.MinOffset, maxOffset: atom.MaxOffset,
+			data: atom.Data, minOffset: atom.MinOffset, maxOffset: atom.MaxOffset,
 			maxSuffix: atom.MaxSuffix, score: atom.Score, asciiNoCase: atom.ASCIINoCase,
 		}
 	}
@@ -1151,9 +1180,7 @@ func deserializeCaptureBindingSlice(bindings []serializedCaptureBinding) []ast.C
 func serializeEvidencePlans(plans []EvidencePlan) []serializedEvidencePlan {
 	result := make([]serializedEvidencePlan, len(plans))
 	for index, plan := range plans {
-		result[index] = serializedEvidencePlan{
-			Name: plan.Name, Fields: slices.Clone(plan.Fields), Anchor: plan.Anchor, Within: plan.Within,
-		}
+		result[index] = serializedEvidencePlan(plan)
 	}
 	return result
 }
@@ -1161,9 +1188,7 @@ func serializeEvidencePlans(plans []EvidencePlan) []serializedEvidencePlan {
 func deserializeEvidencePlans(plans []serializedEvidencePlan) []EvidencePlan {
 	result := make([]EvidencePlan, len(plans))
 	for index, plan := range plans {
-		result[index] = EvidencePlan{
-			Name: plan.Name, Fields: slices.Clone(plan.Fields), Anchor: plan.Anchor, Within: plan.Within,
-		}
+		result[index] = EvidencePlan(plan)
 	}
 	return result
 }
