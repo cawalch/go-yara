@@ -217,8 +217,12 @@ func (p *cancelingTeddyPrefilter) findCandidate(data []byte, from int) int {
 	return -1
 }
 
+func (p *cancelingTeddyPrefilter) tailBytes() int {
+	return 33
+}
+
 func (p *cancelingTeddyPrefilter) findCandidateWithCancel(data []byte, from int, done <-chan struct{}) int {
-	return (teddyCandidateSearch{prefilter: p, overlap: 33}).findCandidateWithCancel(data, from, done)
+	return (teddyCandidateSearch{prefilter: p, overlap: p.tailBytes()}).findCandidateWithCancel(data, from, done)
 }
 
 func TestTeddyCancellationBetweenWindows(t *testing.T) {

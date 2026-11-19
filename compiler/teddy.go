@@ -7,6 +7,7 @@ import "github.com/cawalch/go-yara/regex"
 type teddyPrefilter interface {
 	findCandidate(data []byte, from int) int
 	findCandidateWithCancel(data []byte, from int, done <-chan struct{}) int
+	tailBytes() int
 }
 
 type corpusTeddyPrefilter struct{ teddyPrefilter }

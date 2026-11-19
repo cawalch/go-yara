@@ -388,15 +388,16 @@ func searchClassTableWithCancel[S ~uint16 | ~int32](ac *acAutomaton, rootTransit
 	rootHasNoOutput := !hasOutput[0]
 
 	if rootHasNoOutput && ac.teddy != nil && len(data) >= 256 {
+		tailBytes := ac.teddy.tailBytes()
 		linearUntil := 0
 		for i := 0; i < len(data); i++ {
 			if i&(scanCancellationInterval-1) == 0 && scanCanceled(done) {
 				return
 			}
-			if currentState == 0 && i >= linearUntil && len(data)-i >= 32 {
+			if currentState == 0 && i >= linearUntil && len(data)-i > tailBytes {
 				candidate := ac.teddy.findCandidateWithCancel(data, i, done)
 				if candidate < 0 {
-					i = max(i, len(data)-33)
+					i = max(i, len(data)-tailBytes)
 					if i >= len(data) {
 						return
 					}
@@ -492,15 +493,16 @@ func searchTableWithCancel[S ~uint16 | ~int32](ac *acAutomaton, trans [][256]S, 
 	rootHasNoOutput := !hasOutput[0]
 
 	if rootHasNoOutput && ac.teddy != nil && len(data) >= 256 {
+		tailBytes := ac.teddy.tailBytes()
 		linearUntil := 0
 		for i := 0; i < len(data); i++ {
 			if i&(scanCancellationInterval-1) == 0 && scanCanceled(done) {
 				return
 			}
-			if currentState == 0 && i >= linearUntil && len(data)-i >= 32 {
+			if currentState == 0 && i >= linearUntil && len(data)-i > tailBytes {
 				candidate := ac.teddy.findCandidateWithCancel(data, i, done)
 				if candidate < 0 {
-					i = max(i, len(data)-33)
+					i = max(i, len(data)-tailBytes)
 					if i >= len(data) {
 						return
 					}
@@ -668,12 +670,13 @@ func searchClassTable[S ~uint16 | ~int32](ac *acAutomaton, rootTransitions *[256
 	rootHasNoOutput := !hasOutput[0]
 
 	if rootHasNoOutput && ac.teddy != nil && len(data) >= 256 {
+		tailBytes := ac.teddy.tailBytes()
 		linearUntil := 0
 		for i := 0; i < len(data); i++ {
-			if currentState == 0 && i >= linearUntil && len(data)-i >= 32 {
+			if currentState == 0 && i >= linearUntil && len(data)-i > tailBytes {
 				candidate := ac.teddy.findCandidate(data, i)
 				if candidate < 0 {
-					i = max(i, len(data)-33)
+					i = max(i, len(data)-tailBytes)
 					if i >= len(data) {
 						return
 					}
@@ -778,7 +781,7 @@ func searchTable[S ~uint16 | ~int32](ac *acAutomaton, trans [][256]S, data []byt
 		return
 	}
 
-	if rootHasNoOutput && !rootTransitionsAreDense(rootTransitions, data) {
+	if rootHasNoOutput && len(data) >= 512 && !rootRowIsDense(rootTransitions, data) {
 		searchTableSparseScalar(ac, trans, data, yield)
 		return
 	}
@@ -810,6 +813,7 @@ func searchTable[S ~uint16 | ~int32](ac *acAutomaton, trans [][256]S, data []byt
 func searchTableTeddy[S ~uint16 | ~int32](ac *acAutomaton, trans [][256]S, data []byte, yield func(acMatch) bool) {
 	rootTransitions := &trans[0]
 	hasOutput := ac.hasOutput
+	tailBytes := ac.teddy.tailBytes()
 	var currentState S
 	linearUntil := 0
 	denseWindow := 256
@@ -822,8 +826,8 @@ func searchTableTeddy[S ~uint16 | ~int32](ac *acAutomaton, trans [][256]S, data 
 			i++
 			continue
 		}
-		if i >= linearUntil && len(data)-i >= 32 {
-			i = advanceTeddyCandidate(ac.teddy, data, i, &linearUntil, &denseWindow)
+		if i >= linearUntil && len(data)-i > tailBytes {
+			i = advanceTeddyCandidate(ac.teddy, data, i, tailBytes, &linearUntil, &denseWindow)
 			if i >= len(data) {
 				return
 			}
@@ -837,7 +841,7 @@ func searchTableTeddy[S ~uint16 | ~int32](ac *acAutomaton, trans [][256]S, data 
 			if i == len(data) {
 				return
 			}
-			if i >= linearUntil && len(data)-i >= 32 {
+			if i >= linearUntil && len(data)-i > tailBytes {
 				break
 			}
 		}
@@ -852,10 +856,10 @@ func searchTableTeddy[S ~uint16 | ~int32](ac *acAutomaton, trans [][256]S, data 
 }
 
 //nolint:revive // argument-limit: hot path avoids struct allocation
-func advanceTeddyCandidate(teddy teddyPrefilter, data []byte, i int, linearUntil, denseWindow *int) int {
+func advanceTeddyCandidate(teddy teddyPrefilter, data []byte, i, tailBytes int, linearUntil, denseWindow *int) int {
 	candidate := teddy.findCandidate(data, i)
 	if candidate < 0 {
-		return max(i, len(data)-33)
+		return max(i, len(data)-tailBytes)
 	}
 	if candidate-i < 64 {
 		*linearUntil = candidate + *denseWindow
@@ -943,20 +947,6 @@ func skipSparseRoot8[S ~uint16 | ~int32](root *[256]S, data []byte, i int) int {
 		i += 8
 	}
 	return i
-}
-
-func rootTransitionsAreDense[S ~uint16 | ~int32](root *[256]S, data []byte) bool {
-	if len(data) >= 512 {
-		return rootRowIsDense(root, data)
-	}
-	sampleEnd := min(len(data), 32)
-	hits := 0
-	for i := 0; i < sampleEnd; i++ {
-		if root[data[i]] != 0 {
-			hits++
-		}
-	}
-	return hits > 2
 }
 
 // SearchIter performs optimized pattern matching yielding matches via an iter.Seq iterator.
