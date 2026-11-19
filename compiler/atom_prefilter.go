@@ -627,9 +627,33 @@ func appendRegexPrefilterMatches(
 		candidates = validCandidates
 	}
 
+	if !entry.IsWide {
+		handled, canceled := verifySortedCandidateStarts(
+			candidates,
+			entry.AtomOffset,
+			entry.AtomMaxOffset,
+			len(data),
+			limit,
+			done,
+			func(start int) {
+				dst, verifier.bs = verifier.verifyStart(dst, &pattern, start)
+			},
+		)
+		if canceled {
+			return dst
+		}
+		if handled {
+			return dst
+		}
+	}
+
 	var startsBuf [64]int
+	startsIn := startsBuf[:0]
+	if matchCtx != nil && cap(matchCtx.regexCandidates) > 0 {
+		startsIn = matchCtx.regexCandidates[:0]
+	}
 	starts, handled := collectRegexCandidateStartsInto(
-		startsBuf[:0],
+		startsIn,
 		candidates,
 		entry.AtomOffset,
 		entry.AtomMaxOffset,
@@ -637,6 +661,9 @@ func appendRegexPrefilterMatches(
 		len(data),
 		limit,
 	)
+	if matchCtx != nil && starts != nil {
+		matchCtx.retainRegexCandidates(starts)
+	}
 	if !handled {
 		return appendRegexFallbackMatches(dst, rule, strID, pattern, data, flags, entry.IsWide, done, matchCtx)
 	}
@@ -814,23 +841,7 @@ func appendHexPrefilterMatches(
 	}
 
 	if entry.AtomMaxOffset >= 0 {
-		var startsBuf [64]int
-		starts, handled := collectRegexCandidateStartsInto(
-			startsBuf[:0],
-			candidates,
-			entry.AtomOffset,
-			entry.AtomMaxOffset,
-			false,
-			len(data),
-			limit,
-		)
-		if handled {
-			for index, start := range starts {
-				if scanCanceledAt(done, index) {
-					return dst
-				}
-				verifyCandidateStart(start)
-			}
+		if verifyHexRangeCandidates(candidates, entry, len(data), limit, done, verifyCandidateStart) {
 			return dst
 		}
 	}
@@ -843,4 +854,46 @@ func appendHexPrefilterMatches(
 		return true
 	})
 	return dst
+}
+
+//nolint:revive // argument-limit: hot-path helper avoids closure allocation
+func verifyHexRangeCandidates(
+	candidates []int,
+	entry sharedAutomatonEntry,
+	dataLen, limit int,
+	done <-chan struct{},
+	verifyCandidateStart func(int),
+) bool {
+	handled, canceled := verifySortedCandidateStarts(
+		candidates,
+		entry.AtomOffset,
+		entry.AtomMaxOffset,
+		dataLen,
+		limit,
+		done,
+		verifyCandidateStart,
+	)
+	if canceled || handled {
+		return true
+	}
+	var startsBuf [64]int
+	starts, collectHandled := collectRegexCandidateStartsInto(
+		startsBuf[:0],
+		candidates,
+		entry.AtomOffset,
+		entry.AtomMaxOffset,
+		false,
+		dataLen,
+		limit,
+	)
+	if !collectHandled {
+		return false
+	}
+	for index, start := range starts {
+		if scanCanceledAt(done, index) {
+			return true
+		}
+		verifyCandidateStart(start)
+	}
+	return true
 }

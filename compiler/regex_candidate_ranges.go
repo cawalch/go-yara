@@ -35,3 +35,49 @@ func retainedRegexCandidates(starts []int) []int {
 func (ctx *MatchContext) retainRegexCandidates(starts []int) {
 	ctx.regexCandidates = retainedRegexCandidates(starts)
 }
+
+// verifySortedCandidateStarts streams deduplicated step-1 candidate starts
+// without materializing an intermediate slice. Returns (false, false) if
+// candidates are unsorted or exceed limit.
+//
+//nolint:revive // argument-limit: hot-path avoids slice allocation
+func verifySortedCandidateStarts(
+	candidates []int,
+	minOffset, maxOffset, dataLength, limit int,
+	done <-chan struct{},
+	verify func(start int),
+) (handled, canceled bool) {
+	prev := -1
+	totalCount := 0
+	for _, atomStart := range candidates {
+		if atomStart < prev {
+			return false, false
+		}
+		prev = atomStart
+		_, _, count := regexCandidateRange(atomStart, minOffset, maxOffset, dataLength, 1)
+		if count < 0 || totalCount > limit-count {
+			return false, false
+		}
+		totalCount += count
+	}
+	nextMin := 0
+	verified := 0
+	for _, atomStart := range candidates {
+		first, last, count := regexCandidateRange(atomStart, minOffset, maxOffset, dataLength, 1)
+		if count == 0 {
+			continue
+		}
+		start := max(first, nextMin)
+		for ; start <= last; start++ {
+			if scanCanceledAt(done, verified) {
+				return true, true
+			}
+			verify(start)
+			verified++
+		}
+		if last+1 > nextMin {
+			nextMin = last + 1
+		}
+	}
+	return true, false
+}
