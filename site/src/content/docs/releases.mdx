@@ -10,6 +10,10 @@ import ArchitectureDiagram from '../../components/ArchitectureDiagram.astro';
 
 <p>These docs describe <a href={`https://github.com/cawalch/go-yara/releases/tag/${release.version}`}>{release.version}</a>, released on {release.date}. It requires Go {release.goVersion} or later.</p>
 
+## Changes in v0.11.0
+
+v0.11.0 exposes `pe.overlay.data_offset`, `pe.overlay.data_size`, and `pe.overlay.certificate_size` ([#595](https://github.com/cawalch/go-yara/pull/595)), updates `go-pe` to `v0.1.0` ([#574](https://github.com/cawalch/go-yara/pull/574)), and ships major compilation, deserialization, Aho–Corasick/Teddy, regex, hex, and PE performance improvements (see [v0.11.0 performance changes](/go-yara/performance/#v0110-performance-changes)). Compiled artifact **format 20** and the **Go 1.27.0** minimum toolchain requirement are unchanged from `v0.10.0`.
+
 ## Changes in v0.10.1
 
 v0.10.1 fixes `v0.10.0` high-EPS compact-prefilter, `ruleResultsDense` clear, and hot-path `defer` regressions on mixed literal/regex/hex corpora (see [v0.10.1 performance changes](/go-yara/performance/#v0101-performance-changes)), adds zero-allocation contracts and a CI `benchstat` regression gate (`scripts/perf_gate.sh`) ([#536](https://github.com/cawalch/go-yara/pull/536)), and updates the module catalog generator probe for built-in functions ([#534](https://github.com/cawalch/go-yara/pull/534)). Compiled artifact **format 20** and the **Go 1.27.0** minimum toolchain requirement are unchanged from `v0.10.0`.

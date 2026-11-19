@@ -82,5 +82,19 @@
       "releases"
     ],
     "notes": "Release prose review against main (#536 + release doc sync) on 2026-11-16 for v0.10.1. Reviewed all nine pages: patch release retains Go 1.27.0 requirement and format 20 serialization from v0.10.0, documents high-EPS compact-prefilter/hot-path fixes and CI benchstat regression gate (#536) in releases.mdx, performance.mdx, CHANGELOG.md, and README.md, plus module catalog probe fix (#534)."
+  },
+  "v0.11.0": {
+    "pages": [
+      "index",
+      "quickstart",
+      "installation",
+      "scanning",
+      "compatibility",
+      "modules",
+      "performance",
+      "cli",
+      "releases"
+    ],
+    "notes": "Release prose review against main (#546–#615) on 2026-11-19 for v0.11.0. Documents pe.overlay.* fields (#595), go-pe v0.1.0 (#574), and measured v0.10.1 -> v0.11.0 benchstat gains across 2,000-rule compilation, serialization, and 10K-rule High-EPS scanning in CHANGELOG.md, README.md, releases.mdx, and performance.mdx. Retains Go 1.27.0 and format 20."
   }
 }
