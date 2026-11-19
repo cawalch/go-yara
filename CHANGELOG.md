@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+* **Dense-root & heavy-regex prefilter verification:** Stream sorted step-1 prefilter candidate ranges in $O(1)$ memory without intermediate slice growth ([#618](https://github.com/cawalch/go-yara/pull/618)); reject non-empty `fullword` regex candidates before Thompson VM execution ([#619](https://github.com/cawalch/go-yara/pull/619)); deduplicate identical `StringKindHex` atoms in `sharedAutomaton` with fanout ([#620](https://github.com/cawalch/go-yara/pull/620)); and pre-filter hex candidates using atom-adjacent definite bytes, `Tokens[0]`, and a 1-byte fanout discriminator (`hexFanoutDiscriminator`) ([#622](https://github.com/cawalch/go-yara/pull/622)). On Apple M3 Max (`-p 4`), 256 MB dense-root scanning improved from `28 MB/s` (`1.82 GiB` RSS) in `v0.11.0` to `144–145 MB/s` (`305–307 MiB` RSS), and 100 MB Bitcoin/JWT regex scanning improved from `41–42 MB/s` to `107–113 MB/s`.
+
 ## [v0.11.0] - 2026-11-19
 
 ### Added

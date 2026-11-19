@@ -33,18 +33,18 @@ This comparison uses go-yara v0.11.0, libyara 4.6.0 / 4.5.8, and YARA-X 1.23.0 /
 
 Measured on Apple M3 Max (`-p 4`, median of 3 CLI runs via `/usr/bin/time -l`). To separate steady-state scanning from compilation, `libyara` and `YARA-X` use pre-compiled rule binaries (`-C`) in the dense-root and heavy-regex workloads, and scan throughput is computed from `(workload_wall - 1KB_baseline_wall)`:
 
-| Workload | `go-yara v0.11.0` (scalar / SIMD) | `libyara 4.6.0` | `YARA-X 1.23.0` |
+| Workload | `go-yara` (`main` post-`v0.11.0`, scalar / SIMD) | `libyara 4.6.0` | `YARA-X 1.23.0` |
 | --- | --- | --- | --- |
-| **Compile 2,000 rules** (`1 KB`, `-p 1`, source) | `26.3 ms` (`37.4 MiB`) / `28.0 ms` (`37.2 MiB`) | `25.5 ms` (`12.5 MiB`) | `151.7 ms` (`37.2 MiB`) |
-| **512 MB clean, 2,000 distinct-prefix rules** (`-p 4`, source) | `20.2 GB/s` (`167 MiB`) / `23.7 GB/s` (`167 MiB`) | `2.1 GB/s` (`141 MiB`) | `2.6 GB/s` (`165 MiB`) |
-| **256 MB dense-root, 2,000 overlapping rules** (`nocase`/`wide`/`fullword`, `-p 4`, `-C` for C/Rust) | `28 MB/s` (`1.82 GiB`) / `28 MB/s` (`1.82 GiB`) | `92 MB/s` (`84.3 MiB`) | **`221 MB/s`** (`155 MiB`) |
-| **100 MB heavy regex** (Bitcoin + JWT, `-p 4`, `-C` for C/Rust) | `41 MB/s` (`125 MiB`) / `42 MB/s` (`125 MiB`) | `59 MB/s` (`64.4 MiB`) | **`91 MB/s`** (`81.8 MiB`) |
+| **Compile 2,000 rules** (`1 KB`, `-p 1`, source) | `31.6 ms` (`37.3 MiB`) / `31.3 ms` (`37.3 MiB`) | `25.5 ms` (`12.5 MiB`) | `151.7 ms` (`37.2 MiB`) |
+| **512 MB clean, 2,000 distinct-prefix rules** (`-p 4`, source) | **`23.8 GB/s`** (`167 MiB`) / **`25.0 GB/s`** (`168 MiB`) | `2.1 GB/s` (`141 MiB`) | `2.6 GB/s` (`165 MiB`) |
+| **256 MB dense-root, 2,000 overlapping rules** (`nocase`/`wide`/`fullword`, `-p 4`, `-C` for C/Rust) | `144 MB/s` (`307 MiB`) / `145 MB/s` (`305 MiB`) | `92 MB/s` (`84.3 MiB`) | **`221 MB/s`** (`155 MiB`) |
+| **100 MB heavy regex** (Bitcoin + JWT, `-p 4`, `-C` for C/Rust) | **`113 MB/s`** (`126 MiB`) / **`107 MB/s`** (`125 MiB`) | `59 MB/s` (`64.4 MiB`) | `91 MB/s` (`81.8 MiB`) |
 
 **Honest takeaways:**
 
-- **`go-yara` wins on high-selectivity prefiltering and zero-CGO Go integration:** When rules have distinct 3+ byte prefixes and clean traffic dominates, sparse/byte-class Aho–Corasick and Teddy prefiltering reach **20–24 GB/s** (`~8–11×` faster than `libyara`/`YARA-X` on that workload) with fast Go-native compilation (`26.3 ms`).
-- **`YARA-X` wins on dense-root overlapping rules and heavy regexes:** When short/common prefixes (`http://`, `MZ`, `bc1`, `1`, `3`) trigger frequent verification across hundreds of rules, `YARA-X` (`91–221 MB/s`) is `~2–8×` faster than `go-yara` (`28–42 MB/s`) and avoids `go-yara`'s high verification RSS (`1.82 GiB` on the 256 MB dense-root stress corpus). Compiling from source without `-C` is slower in `YARA-X` (`151.7 ms` vs `26 ms`), so pre-compile in CLI pipelines.
-- **`libyara` wins on peak memory footprint:** Across dense-root (`84.3 MiB`), heavy-regex (`64.4 MiB`), and cold-compile (`12.5 MiB`) runs, `libyara 4.6.0` uses the least RAM while staying competitive on dense verification (`92 MB/s`).
+- **`go-yara` wins on high-selectivity prefiltering, heavy `fullword` regexes, and zero-CGO Go integration:** When rules have distinct 3+ byte prefixes and clean traffic dominates, sparse/byte-class Aho–Corasick and Teddy prefiltering reach **24–25 GB/s** (`~9–12×` faster than `libyara`/`YARA-X` on that workload). With the pre-VM `fullword` guard (`#619`), `go-yara` also leads on the 100 MB Bitcoin/JWT regex stress test (**107–113 MB/s** vs `91 MB/s` `YARA-X` and `59 MB/s` `libyara`).
+- **`YARA-X` wins on dense-root overlapping rules:** When short/common prefixes (`http://`, `MZ`) trigger frequent verification across hundreds of rules, `YARA-X` (**221 MB/s**, `155 MiB` RSS) remains `~1.5×` faster than `go-yara` (**144–145 MB/s**, `305–307 MiB` RSS, improved from `28 MB/s` / `1.82 GiB` in `v0.11.0` via `#618`/`#620`/`#622`). Compiling from source without `-C` is slower in `YARA-X` (`151.7 ms` vs `31 ms`), so pre-compile in CLI pipelines.
+- **`libyara` wins on peak memory footprint:** Across dense-root (`84.3 MiB`), heavy-regex (`64.4 MiB`), and cold-compile (`12.5 MiB`) runs, `libyara 4.6.0` uses the least RAM while compiling 2,000 rules in `25.5 ms`.
 
 The matching architecture has substantial overlap. Atom selection, verification strategy, condition execution, and result handling can each affect performance. go-yara's lack of a native dependency is a deployment property; it does not establish a scanning-speed advantage. The [performance page](/go-yara/performance/) explains its algorithms, measurements, and benchmark conditions.
 
