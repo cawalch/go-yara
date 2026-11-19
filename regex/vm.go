@@ -151,65 +151,61 @@ type thread struct {
 	pc int
 }
 
-// handleLiteralOp handles OpLiteral and OpNotLiteral opcodes
+// consumeInstruction evaluates a single consuming VM opcode at pc against ch.
+// Returns the next pc and whether the instruction matched.
 //
-//nolint:revive // argument-limit: performance-critical VM hot path; struct would add indirection overhead
-func handleLiteralOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance int, noCase bool, negated bool, flags Flags, bestEnd *int, visited []uint32, gen uint32) bool {
-	if pc+1 >= len(code) {
-		return false
-	}
-	want := code[pc+1]
-	var ok bool
-	if negated {
-		ok = ch != want
-		if noCase {
-			ok = toLowerASCII(ch) != toLowerASCII(want)
+//nolint:revive // VM hot path keeps instruction inputs explicit
+func consumeInstruction(code []byte, pc int, ch byte, dotAll, noCase bool) (int, bool) {
+	switch code[pc] {
+	case OpLiteral, OpNotLiteral:
+		if pc+1 >= len(code) {
+			return 0, false
 		}
-	} else {
-		ok = ch == want
-		if !ok && noCase {
-			ok = equalNoCase(ch, want)
+		match := ch == code[pc+1]
+		if !match && noCase {
+			match = equalNoCase(ch, code[pc+1])
 		}
-	}
-
-	if ok {
-		if addThread(code, s, next, pc+2, pos+advance, visited, gen, flags) {
-			if pos+advance > *bestEnd {
-				*bestEnd = pos + advance
-			}
-			return true
+		if code[pc] == OpNotLiteral {
+			match = !match
 		}
+		return pc + 2, match
+	case OpMaskedLiteral, OpMaskedNotLiteral:
+		if pc+2 >= len(code) {
+			return 0, false
+		}
+		match := ch&code[pc+2] == code[pc+1]&code[pc+2]
+		if code[pc] == OpMaskedNotLiteral {
+			match = !match
+		}
+		return pc + 3, match
+	case OpAny:
+		return pc + 1, dotAll || ch != '\n'
+	case OpClass:
+		if pc+33 >= len(code) {
+			return 0, false
+		}
+		match := checkBitmapMembership(code, pc+1, ch, noCase)
+		if code[pc+33] != 0 {
+			match = !match
+		}
+		return pc + 34, match
+	case OpWordChar:
+		return pc + 1, charClassTable[ch]&charBitWord != 0
+	case OpNonWordChar:
+		return pc + 1, charClassTable[ch]&charBitWord == 0
+	case OpSpace:
+		return pc + 1, charClassTable[ch]&charBitSpace != 0
+	case OpNonSpace:
+		return pc + 1, charClassTable[ch]&charBitSpace == 0
+	case OpDigit:
+		return pc + 1, charClassTable[ch]&charBitDigit != 0
+	case OpNonDigit:
+		return pc + 1, charClassTable[ch]&charBitDigit == 0
+	default:
+		return 0, false
 	}
-	return false
 }
 
-// handleMaskedLiteralOp handles OpMaskedLiteral and OpMaskedNotLiteral opcodes
-//
-//nolint:revive // argument-limit: performance-critical VM hot path
-func handleMaskedLiteralOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance int, negated bool, flags Flags, bestEnd *int, visited []uint32, gen uint32) bool {
-	if pc+2 >= len(code) {
-		return false
-	}
-	val := code[pc+1]
-	mask := code[pc+2]
-	matches := (ch & mask) == (val & mask)
-
-	if negated {
-		matches = !matches
-	}
-
-	if matches {
-		if addThread(code, s, next, pc+3, pos+advance, visited, gen, flags) {
-			if pos+advance > *bestEnd {
-				*bestEnd = pos + advance
-			}
-			return true
-		}
-	}
-	return false
-}
-
-// handleAnyOp handles OpAny opcode
 // checkBitmapMembership checks if a byte is in the bitmap, with optional case-insensitive matching
 //
 //nolint:revive // argument-limit: performance-critical VM hot path
@@ -234,66 +230,6 @@ func checkBitmapMembership(code []byte, bmStart int, ch byte, noCase bool) bool 
 	return inSet
 }
 
-// handleAnyOp handles the OpAny opcode (matches any character)
-//
-//nolint:revive // argument-limit: performance-critical VM hot path
-func handleAnyOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance int, dotAll bool, flags Flags, bestEnd *int, visited []uint32, gen uint32) bool {
-	if !dotAll && ch == '\n' {
-		return false
-	}
-	if addThread(code, s, next, pc+1, pos+advance, visited, gen, flags) {
-		if pos+advance > *bestEnd {
-			*bestEnd = pos + advance
-		}
-		return true
-	}
-	return false
-}
-
-// handleClassOp handles OpClass opcode
-//
-//nolint:revive // argument-limit: performance-critical VM hot path
-func handleClassOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance int, noCase bool, flags Flags, bestEnd *int, visited []uint32, gen uint32) bool {
-	// Layout: [op][32-byte bitmap][1-byte neg]
-	bmStart := pc + 1
-	negIdx := bmStart + 32
-	if negIdx >= len(code) {
-		return false
-	}
-
-	neg := code[negIdx] != 0
-	inSet := checkBitmapMembership(code, bmStart, ch, noCase)
-
-	if neg {
-		inSet = !inSet
-	}
-
-	if inSet {
-		if addThread(code, s, next, negIdx+1, pos+advance, visited, gen, flags) {
-			if pos+advance > *bestEnd {
-				*bestEnd = pos + advance
-			}
-			return true
-		}
-	}
-	return false
-}
-
-// handleCharClassOp handles character class opcodes (OpDigit, OpSpace, etc.)
-//
-//nolint:revive // argument-limit: performance-critical VM hot path
-func handleCharClassOp(code, s []byte, next *[]thread, pc int, ch byte, pos, advance int, classMask uint8, wantMatch bool, flags Flags, bestEnd *int, visited []uint32, gen uint32) bool {
-	if (charClassTable[ch]&classMask != 0) == wantMatch {
-		if addThread(code, s, next, pc+1, pos+advance, visited, gen, flags) {
-			if pos+advance > *bestEnd {
-				*bestEnd = pos + advance
-			}
-			return true
-		}
-	}
-	return false
-}
-
 // newVMStep shares consuming transitions while the drivers retain their local
 // thread buffers and state lifetimes. It is inlined at both call sites.
 //
@@ -315,35 +251,17 @@ func newVMStep(code, s []byte, flags Flags, visited []uint32, cur, next *[]threa
 			if pc < 0 || pc >= len(code) {
 				continue
 			}
-			var m bool
-			switch code[pc] {
-			case OpLiteral:
-				m = handleLiteralOp(code, s, next, pc, ch, pos, advance, noCase, false, flags, bestEnd, visited, *gen)
-			case OpNotLiteral:
-				m = handleLiteralOp(code, s, next, pc, ch, pos, advance, noCase, true, flags, bestEnd, visited, *gen)
-			case OpMaskedLiteral:
-				m = handleMaskedLiteralOp(code, s, next, pc, ch, pos, advance, false, flags, bestEnd, visited, *gen)
-			case OpMaskedNotLiteral:
-				m = handleMaskedLiteralOp(code, s, next, pc, ch, pos, advance, true, flags, bestEnd, visited, *gen)
-			case OpAny:
-				m = handleAnyOp(code, s, next, pc, ch, pos, advance, dotAll, flags, bestEnd, visited, *gen)
-			case OpClass:
-				m = handleClassOp(code, s, next, pc, ch, pos, advance, noCase, flags, bestEnd, visited, *gen)
-			case OpWordChar:
-				m = handleCharClassOp(code, s, next, pc, ch, pos, advance, charBitWord, true, flags, bestEnd, visited, *gen)
-			case OpNonWordChar:
-				m = handleCharClassOp(code, s, next, pc, ch, pos, advance, charBitWord, false, flags, bestEnd, visited, *gen)
-			case OpSpace:
-				m = handleCharClassOp(code, s, next, pc, ch, pos, advance, charBitSpace, true, flags, bestEnd, visited, *gen)
-			case OpNonSpace:
-				m = handleCharClassOp(code, s, next, pc, ch, pos, advance, charBitSpace, false, flags, bestEnd, visited, *gen)
-			case OpDigit:
-				m = handleCharClassOp(code, s, next, pc, ch, pos, advance, charBitDigit, true, flags, bestEnd, visited, *gen)
-			case OpNonDigit:
-				m = handleCharClassOp(code, s, next, pc, ch, pos, advance, charBitDigit, false, flags, bestEnd, visited, *gen)
+			nextPC, ok := consumeInstruction(code, pc, ch, dotAll, noCase)
+			if !ok {
+				continue
 			}
-			if m && flags&FlagsExhaustive == 0 {
-				break
+			if addThread(code, s, next, nextPC, pos+advance, visited, *gen, flags) {
+				if pos+advance > *bestEnd {
+					*bestEnd = pos + advance
+				}
+				if flags&FlagsExhaustive == 0 {
+					break
+				}
 			}
 		}
 	}
