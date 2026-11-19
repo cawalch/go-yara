@@ -112,7 +112,7 @@ if [ ! -s "$TARGET_FILE" ]; then
 fi
 
 # Stable round-robin partition of the selected inventory, including small sets.
-sort -u -o "$TARGET_FILE" "$TARGET_FILE"
+LC_ALL=C sort -u -o "$TARGET_FILE" "$TARGET_FILE"
 SELECTED_COUNT=$(wc -l < "$TARGET_FILE" | xargs)
 SHARD_FILE="$LOG_DIR/shard.txt"
 awk -v shard="$SHARD_INDEX" -v count="$SHARD_COUNT" '(NR - 1) % count == shard' "$TARGET_FILE" > "$SHARD_FILE"
