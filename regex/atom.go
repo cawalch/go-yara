@@ -224,8 +224,38 @@ func AlternativeMandatoryLiteralAtoms(ast *AST) [][]LiteralAtom {
 	return alternatives
 }
 
+var (
+	singleByteLiterals     [256][1]byte
+	singleByteLiteralAtoms [256][1]LiteralAtom
+	singleByteSetAtoms     [256][1]ByteSetAtom
+)
+
+func init() {
+	for i := range singleByteLiterals {
+		b := byte(i)
+		singleByteLiterals[i][0] = b
+		singleByteLiteralAtoms[i][0] = LiteralAtom{Data: singleByteLiterals[i][:], MaxOffset: 0}
+		singleByteSetAtoms[i][0] = ByteSetAtom{Set: byteSetOf(b)}
+	}
+}
+
 func analyzeAtoms(node *Node) atomAnalysis {
 	if node == nil {
+		return atomAnalysis{maxLength: 0, isExact: true}
+	}
+	switch node.Kind {
+	case NodeGroup:
+		return analyzeAtoms(firstChild(node))
+	case NodeLiteral:
+		return atomAnalysis{
+			minLength: 1,
+			maxLength: 1,
+			atoms:     singleByteLiteralAtoms[node.Value][:],
+			byteAtoms: singleByteSetAtoms[node.Value][:],
+			exact:     singleByteLiterals[node.Value][:],
+			isExact:   true,
+		}
+	case NodeEmpty, NodeAnchorStart, NodeAnchorEnd, NodeWordBoundary, NodeNonWordBoundary:
 		return atomAnalysis{maxLength: 0, isExact: true}
 	}
 	node.atomsOnce.Do(func() {
@@ -236,20 +266,7 @@ func analyzeAtoms(node *Node) atomAnalysis {
 }
 
 func analyzeAtomsUncached(node *Node) atomAnalysis {
-
 	switch node.Kind {
-	case NodeGroup:
-		return analyzeAtoms(firstChild(node))
-	case NodeLiteral:
-		data := []byte{node.Value}
-		return atomAnalysis{
-			minLength: 1,
-			maxLength: 1,
-			atoms:     []LiteralAtom{{Data: data, MaxOffset: 0}},
-			byteAtoms: usefulByteSetAtom(byteSetOf(node.Value)),
-			exact:     data,
-			isExact:   true,
-		}
 	case NodeConcat:
 		return analyzeConcatAtoms(node.Children)
 	case NodeAlt:
@@ -260,8 +277,6 @@ func analyzeAtomsUncached(node *Node) atomAnalysis {
 		return analyzePlusAtoms(node)
 	case NodeRange:
 		return analyzeRangeAtoms(node)
-	case NodeEmpty, NodeAnchorStart, NodeAnchorEnd, NodeWordBoundary, NodeNonWordBoundary:
-		return atomAnalysis{maxLength: 0, isExact: true}
 	case NodeMaskedLiteral:
 		return singleByteAtomAnalysis(maskedByteSet(node.Value, node.Mask, false))
 	case NodeMaskedNotLiteral:
