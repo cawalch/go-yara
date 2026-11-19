@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"bufio"
 	"context"
 	"io"
 	"time"
@@ -120,6 +121,9 @@ type Scanner struct {
 	streamChunkSize        int
 	streamOverlapSize      int
 	streamEarlyTermination bool
+	streamBufReader        *bufio.Reader
+	streamBuf              []byte
+	streamHeaderBuf        []byte
 	combinedRegexScratch   combinedRegexScratch
 }
 
