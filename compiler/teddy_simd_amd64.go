@@ -16,13 +16,17 @@ func newTeddyPlatform(strings []acStringInfo) teddyPrefilter {
 	if len(strings) > maxTeddyPatterns {
 		return newTeddyAVX2Corpus(strings)
 	}
-	if len(strings) > 8 {
+	cover := teddyPrefixCover(strings)
+	if len(cover) == 0 {
 		return nil
+	}
+	if len(cover) > 8 {
+		return newTeddyAVX2Corpus(strings)
 	}
 
 	var rootBytes []byte
 	var seen [256]bool
-	for _, s := range strings {
+	for _, s := range cover {
 		prefix := extractPrefixInfo(s)
 		if !seen[prefix.b0Lo] {
 			seen[prefix.b0Lo] = true
@@ -72,9 +76,16 @@ func (t *teddyAMD64Prefilter) findCandidate(data []byte, from int) int {
 	return -1
 }
 
+func (t *teddyAMD64Prefilter) tailBytes() int {
+	if len(t.targets) == 0 {
+		return 0
+	}
+	return t.targets[0].Len() - 1
+}
+
 func (t *teddyAMD64Prefilter) findCandidateWithCancel(data []byte, from int, done <-chan struct{}) int {
 	if len(t.targets) == 0 {
 		return -1
 	}
-	return (teddyCandidateSearch{prefilter: t, overlap: t.targets[0].Len() - 1}).findCandidateWithCancel(data, from, done)
+	return (teddyCandidateSearch{prefilter: t, overlap: t.tailBytes()}).findCandidateWithCancel(data, from, done)
 }

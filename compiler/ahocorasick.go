@@ -409,6 +409,7 @@ func (ac *acAutomaton) Compile() error {
 		filter := newTeddyPrefilter(ac.strings)
 		if gate, ok := filter.(*corpusTeddyPrefilter); ok {
 			ac.teddyGate = gate
+			ac.teddy = gate.teddyPrefilter
 		} else {
 			ac.teddy = filter
 		}
@@ -474,6 +475,7 @@ func (ac *acAutomaton) buildDeferred() {
 	filter := newTeddyPrefilter(ac.strings)
 	if gate, ok := filter.(*corpusTeddyPrefilter); ok {
 		ac.teddyGate = gate
+		ac.teddy = gate.teddyPrefilter
 	} else {
 		ac.teddy = filter
 	}

@@ -7,6 +7,7 @@ import "github.com/cawalch/go-yara/regex"
 type teddyPrefilter interface {
 	findCandidate(data []byte, from int) int
 	findCandidateWithCancel(data []byte, from int, done <-chan struct{}) int
+	tailBytes() int
 }
 
 type corpusTeddyPrefilter struct{ teddyPrefilter }
@@ -68,6 +69,8 @@ func newTeddyPrefilter(strings []acStringInfo) teddyPrefilter {
 	return newTeddyPlatform(strings)
 }
 
+const maxTeddyPrefixCover3 = 256
+
 // teddyPrefixCover keeps a representative for every distinct prefix byte set.
 // All prefixes use the shortest pattern's width, so a short pattern can never
 // be lost behind a longer representative. Case variants of a nocase prefix
@@ -80,8 +83,12 @@ func teddyPrefixCover(strings []acStringInfo) []acStringInfo {
 	if width == 0 {
 		return nil
 	}
-	seen := make(map[[6]byte]struct{}, min(len(strings), maxTeddyPatterns))
-	cover := make([]acStringInfo, 0, min(len(strings), maxTeddyPatterns))
+	limit := maxTeddyPatterns
+	if width == 3 {
+		limit = maxTeddyPrefixCover3
+	}
+	seen := make(map[[6]byte]struct{}, min(len(strings), limit))
+	cover := make([]acStringInfo, 0, min(len(strings), limit))
 	for _, info := range strings {
 		var key [6]byte
 		for i, b := range info.Data[:width] {
@@ -94,7 +101,7 @@ func teddyPrefixCover(strings []acStringInfo) []acStringInfo {
 		if _, exists := seen[key]; exists {
 			continue
 		}
-		if len(cover) == maxTeddyPatterns {
+		if len(cover) == limit {
 			return nil // An incomplete cover could hide a valid match.
 		}
 		seen[key] = struct{}{}

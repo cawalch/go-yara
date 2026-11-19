@@ -304,11 +304,11 @@ func TestSearchWithCancelMatchesSearchIter(t *testing.T) {
 }
 
 // TestSearchWithCancelSparseRootLanes exercises the sparse root-lane path,
-// which needs more than maxTeddyPatterns distinct prefixes and <=4 root bytes.
+// which needs more than maxTeddyPrefixCover3 distinct 3-byte prefixes and <=4 root bytes.
 func TestSearchWithCancelSparseRootLanes(t *testing.T) {
 	ac := newacAutomaton()
-	for i := range maxTeddyPatterns + 1 {
-		pattern := fmt.Sprintf("a%02x_", i)
+	for i := range maxTeddyPrefixCover3 + 1 {
+		pattern := fmt.Sprintf("a%c%c_", 'A'+i/26, 'A'+i%26)
 		if err := ac.AddString(fmt.Sprintf("$%03d", i), []byte(pattern), false, false); err != nil {
 			t.Fatal(err)
 		}
@@ -317,10 +317,10 @@ func TestSearchWithCancelSparseRootLanes(t *testing.T) {
 		t.Fatal(err)
 	}
 	if ac.teddy != nil || ac.teddyGate != nil {
-		t.Fatal("teddy prefilter unexpectedly enabled for >maxTeddyPatterns prefixes")
+		t.Fatal("teddy prefilter unexpectedly enabled for >maxTeddyPrefixCover3 prefixes")
 	}
 	data := bytes.Repeat([]byte("x"), 1024)
-	copy(data[500:], "a2a_")
+	copy(data[500:], "aBK_")
 	want := slices.Collect(ac.SearchIter(data))
 	if got := collectSearchWithCancel(t, ac, data); !slices.Equal(got, want) {
 		t.Fatalf("SearchWithCancel(sparse roots) = %+v, want %+v", got, want)

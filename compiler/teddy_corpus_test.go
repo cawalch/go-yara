@@ -26,9 +26,9 @@ func TestTeddyPrefixCover(t *testing.T) {
 	if string(folded[0].Data) != "AbC_first" {
 		t.Fatal("cover changed source patterns")
 	}
-	many := make([]acStringInfo, 0, maxTeddyPatterns+3)
-	for i := range maxTeddyPatterns + 1 {
-		many = append(many, acStringInfo{Data: []byte{'a', byte(i), 0xff}})
+	many := make([]acStringInfo, 0, maxTeddyPrefixCover3+3)
+	for i := range maxTeddyPrefixCover3 + 1 {
+		many = append(many, acStringInfo{Data: []byte{'a', byte(i >> 8), byte(i)}})
 	}
 	if got := teddyPrefixCover(many); got != nil {
 		t.Fatal("accepted an incomplete prefix cover")
@@ -282,18 +282,18 @@ func TestTeddyCorpusWideBinaryAndReset(t *testing.T) {
 }
 
 func TestTeddyCorpusTailBanks(t *testing.T) {
-	for _, groups := range []int{8, 9, 16, 64, 65} {
+	for _, groups := range []int{8, 9, 16, 64, 65, maxTeddyPrefixCover3 + 1} {
 		ac := newacAutomaton()
-		for i := range 128 {
-			g := byte(i % groups)
-			if err := ac.AddString(fmt.Sprintf("$p%d", i), []byte{0x80 + g, 0x40 + g, 0x7f, byte(i)}, false, false); err != nil {
+		for i := range max(128, groups) {
+			g := i % groups
+			if err := ac.AddString(fmt.Sprintf("$p%d", i), []byte{0x80 + byte(g%64), 0x40 + byte(g/64), 0x7f, byte(i)}, false, false); err != nil {
 				t.Fatal(err)
 			}
 		}
 		if err := ac.Compile(); err != nil {
 			t.Fatal(err)
 		}
-		if TeddySIMDSupported() && runtime.GOARCH == "arm64" && (ac.teddyGate != nil) != (groups <= maxTeddyPatterns) {
+		if TeddySIMDSupported() && runtime.GOARCH == "arm64" && (ac.teddyGate != nil) != (groups <= maxTeddyPrefixCover3) {
 			t.Fatalf("wrong gate eligibility for %d prefixes", groups)
 		}
 		scalar := ac.Clone()
