@@ -107,20 +107,32 @@ func (ctx *MatchContext) materializePublicMatches() {
 // normalizeRegexEncodingMatches resolves ASCII/wide collisions before general
 // normalization. Producers append the preferred encoding first; retain that
 // occurrence even if the other encoding has a shorter (or longer) span.
-func (ctx *MatchContext) normalizeRegexEncodingMatches(id string) {
+func compactMatchSpans(spans []matchSpan) []matchSpan {
+	if len(spans) <= 1 {
+		return spans
+	}
+	slices.SortStableFunc(spans, func(a, b matchSpan) int { return cmp.Compare(a.Offset, b.Offset) })
+	return slices.CompactFunc(spans, func(a, b matchSpan) bool { return a.Offset == b.Offset })
+}
+
+func (ctx *MatchContext) normalizeRegexEncodingMatchesSlot(slot int, id string) {
 	if ctx.slotRule != nil {
-		if slot, ok := ctx.slotRule.StringIDToIndex[id]; ok && slot >= 0 && slot < len(ctx.spansByIndex) {
-			if spans := ctx.spansByIndex[slot]; len(spans) > 1 {
-				slices.SortStableFunc(spans, func(a, b matchSpan) int { return cmp.Compare(a.Offset, b.Offset) })
-				ctx.spansByIndex[slot] = slices.CompactFunc(spans, func(a, b matchSpan) bool { return a.Offset == b.Offset })
-			}
+		if slot >= 0 && slot < len(ctx.spansByIndex) {
+			ctx.spansByIndex[slot] = compactMatchSpans(ctx.spansByIndex[slot])
 		}
 		return
 	}
-	if spans := ctx.spans[id]; len(spans) > 1 {
-		slices.SortStableFunc(spans, func(a, b matchSpan) int { return cmp.Compare(a.Offset, b.Offset) })
-		ctx.spans[id] = slices.CompactFunc(spans, func(a, b matchSpan) bool { return a.Offset == b.Offset })
+	ctx.spans[id] = compactMatchSpans(ctx.spans[id])
+}
+
+func (ctx *MatchContext) normalizeRegexEncodingMatches(id string) {
+	if ctx.slotRule != nil {
+		if slot, ok := ctx.slotRule.StringIDToIndex[id]; ok && slot >= 0 && slot < len(ctx.spansByIndex) {
+			ctx.spansByIndex[slot] = compactMatchSpans(ctx.spansByIndex[slot])
+		}
+		return
 	}
+	ctx.spans[id] = compactMatchSpans(ctx.spans[id])
 }
 
 // ResetForRule clears the match context and binds dense integer span storage
