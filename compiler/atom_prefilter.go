@@ -701,6 +701,10 @@ func (v regexPrefilterVerifier) verifyStart(dst []matchSpan, pattern *RegexPatte
 	if !pattern.startMatchesFirstByte(v.data, start, v.isWide) {
 		return dst, v.bs
 	}
+	if (v.flags&regex.FlagsFullwordEnd != 0 || (pattern.hasFirstByteSet && hasModifier(v.modifiers, ast.StringModifierFullword))) &&
+		!isFullwordStart(v.data, start, v.isWide && v.flags&regexASCIIWordBoundary == 0) {
+		return dst, v.bs
+	}
 	if v.hasFixedByteSet {
 		checkPos := start + pattern.byteSetMinOffset
 		if checkPos >= len(v.data) || !pattern.byteSet.Contains(v.data[checkPos]) {
