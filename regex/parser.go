@@ -25,13 +25,8 @@ func NewParser(flags ParserFlags) *Parser {
 
 // Parse parses the provided pattern into an AST (minimal subset: alt, concat, primary).
 func (p *Parser) Parse(pattern string) (*AST, error) {
-	if err := validateHexEscapes(pattern); err != nil {
+	if err := validateEscapes(pattern, p.strictEscape); err != nil {
 		return nil, err
-	}
-	if p.strictEscape {
-		if err := validateStrictEscapes(pattern); err != nil {
-			return nil, err
-		}
 	}
 	p.lx = newLexer(pattern)
 	p.cur = p.lx.next()
@@ -688,39 +683,17 @@ func handleUnknownEscape(e byte, strict bool) (byte, error) {
 	return e, nil
 }
 
-func validateHexEscapes(pattern string) error {
+func validateEscapes(pattern string, strict bool) error {
 	for i := 0; i < len(pattern); i++ {
 		if pattern[i] != '\\' {
 			continue
 		}
 		i++
 		if i >= len(pattern) {
+			if strict {
+				return errors.New("trailing backslash in escape")
+			}
 			continue
-		}
-		if pattern[i] == 'x' {
-			if i+2 >= len(pattern) {
-				return errors.New("incomplete hex escape")
-			}
-			if _, ok := parseHexDigit(pattern[i+1]); !ok {
-				return fmt.Errorf("invalid hex escape \\x%c%c", pattern[i+1], pattern[i+2])
-			}
-			if _, ok := parseHexDigit(pattern[i+2]); !ok {
-				return fmt.Errorf("invalid hex escape \\x%c%c", pattern[i+1], pattern[i+2])
-			}
-			i += 2
-		}
-	}
-	return nil
-}
-
-func validateStrictEscapes(pattern string) error {
-	for i := 0; i < len(pattern); i++ {
-		if pattern[i] != '\\' {
-			continue
-		}
-		i++
-		if i >= len(pattern) {
-			return errors.New("trailing backslash in escape")
 		}
 		e := pattern[i]
 		if e == 'x' {
@@ -736,10 +709,9 @@ func validateStrictEscapes(pattern string) error {
 			i += 2
 			continue
 		}
-		if isStrictEscape(e) {
-			continue
+		if strict && !isStrictEscape(e) {
+			return fmt.Errorf("unknown escape \\%c", e)
 		}
-		return fmt.Errorf("unknown escape \\%c", e)
 	}
 	return nil
 }

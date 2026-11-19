@@ -326,11 +326,6 @@ func analyzeConcatAtoms(children []*Node) atomAnalysis {
 		return result
 	}
 
-	analyses := make([]atomAnalysis, len(children))
-	for i, child := range children {
-		analyses[i] = analyzeAtoms(child)
-	}
-
 	suffixMax := literalSuffixLengths(children)
 
 	runMinOffset := 0
@@ -355,7 +350,31 @@ func analyzeConcatAtoms(children []*Node) atomAnalysis {
 		runActive = false
 	}
 
-	for i, analysis := range analyses {
+	for i, child := range children {
+		if child.Kind == NodeLiteral {
+			var set ByteSet
+			set.add(child.Value)
+			result.byteAtoms = append(result.byteAtoms, ByteSetAtom{
+				Set:       set,
+				MinOffset: result.minLength,
+				MaxOffset: result.maxLength,
+			})
+			if !runActive {
+				runMinOffset = result.minLength
+				runMaxOffset = result.maxLength
+				runActive = true
+			}
+			run = append(run, child.Value)
+			runEndChildIdx = i + 1
+			result.minLength = addLength(result.minLength, 1)
+			result.maxLength = addLength(result.maxLength, 1)
+			if result.isExact {
+				result.exact = append(result.exact, child.Value)
+			}
+			continue
+		}
+
+		analysis := analyzeAtoms(child)
 		for _, atom := range analysis.atoms {
 			shifted := shiftLiteralAtom(atom, result.minLength, result.maxLength)
 			if suffixMax[i+1] < 0 || atom.MaxSuffix < 0 {
@@ -498,7 +517,7 @@ func repeatTailLength(node *Node, copies int) int {
 }
 
 func literalAtomsWithSuffix(atoms []LiteralAtom, suffix int) []LiteralAtom {
-	result := cloneLiteralAtoms(atoms)
+	result := append([]LiteralAtom(nil), atoms...)
 	for i := range result {
 		result[i].MaxSuffix = addLength(result[i].MaxSuffix, suffix)
 	}
@@ -508,7 +527,11 @@ func literalAtomsWithSuffix(atoms []LiteralAtom, suffix int) []LiteralAtom {
 func literalSuffixLengths(children []*Node) []int {
 	suffix := make([]int, len(children)+1)
 	for i := len(children) - 1; i >= 0; i-- {
-		suffix[i] = addLength(analyzeAtoms(children[i]).maxLength, suffix[i+1])
+		childMax := 1
+		if children[i].Kind != NodeLiteral {
+			childMax = analyzeAtoms(children[i]).maxLength
+		}
+		suffix[i] = addLength(childMax, suffix[i+1])
 	}
 	return suffix
 }
@@ -522,7 +545,7 @@ func firstChildAnalysis(node *Node) atomAnalysis {
 
 func shiftLiteralAtom(atom LiteralAtom, minOffset, maxOffset int) LiteralAtom {
 	return LiteralAtom{
-		Data:      append([]byte(nil), atom.Data...),
+		Data:      atom.Data,
 		MinOffset: addLength(minOffset, atom.MinOffset),
 		MaxOffset: addLength(maxOffset, atom.MaxOffset),
 		MaxSuffix: atom.MaxSuffix,
