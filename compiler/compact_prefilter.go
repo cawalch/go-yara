@@ -174,7 +174,7 @@ func compactPrefilterMatchesAbsent(data []byte, gate *compactPrefilter) bool {
 	}
 	if len(ac.flatClass16) > 0 {
 		if len(data) < 256 {
-			return compactPrefilterRejectsShortClass16(data, ac.classRoot16, ac.flatClass16, &ac.classMap, ac.classShift, gate.accepting)
+			return compactPrefilterRejectsShortClass16(data, ac, gate.accepting)
 		}
 		return compactPrefilterRejectsClassTable(data, gate, ac.classRoot16, ac.flatClass16)
 	}
@@ -194,7 +194,11 @@ func compactPrefilterMatchesAbsent(data []byte, gate *compactPrefilter) bool {
 }
 
 //go:noinline
-func compactPrefilterRejectsShortClass16(data []byte, rootTransitions *[256]uint16, flat []uint16, classMap *[256]byte, shift uint8, accepting []bool) bool {
+func compactPrefilterRejectsShortClass16(data []byte, ac *acAutomaton, accepting []bool) bool {
+	rootTransitions := ac.classRoot16
+	flat := ac.flatClass16
+	classMap := &ac.classMap
+	shift := ac.classShift
 	var state uint32
 	for i := 0; i < len(data); i++ {
 		if state == 0 {
@@ -218,7 +222,7 @@ func compactPrefilterRejectsShortClass16(data []byte, rootTransitions *[256]uint
 	return true
 }
 
-//nolint:nestif // mirrors compactPrefilterRejectsTable for byte-class compressed tables
+//nolint:nestif,revive // mirrors compactPrefilterRejectsTable for byte-class compressed tables
 func compactPrefilterRejectsClassTable[S ~uint16 | ~int32](data []byte, gate *compactPrefilter, rootTransitions *[256]S, flat []S) bool {
 	ac := gate.automaton
 	accepting := gate.accepting

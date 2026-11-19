@@ -481,7 +481,7 @@ func TestCompactPrefilterShortRootRuns(t *testing.T) {
 			data := []byte(strings.Repeat(" ", padding) + tail)
 			var got, want bool
 			if len(ac.flatClass16) > 0 {
-				got = compactPrefilterRejectsShortClass16(data, ac.classRoot16, ac.flatClass16, &ac.classMap, ac.classShift, gate.accepting)
+				got = compactPrefilterRejectsShortClass16(data, ac, gate.accepting)
 				want = compactPrefilterRejectsClassTable(data, gate, ac.classRoot16, ac.flatClass16)
 			} else {
 				got = compactPrefilterRejectsShort16(data, ac.transitions16, gate.accepting)

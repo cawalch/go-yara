@@ -255,20 +255,7 @@ func (ac *acAutomaton) insertPatternEdges(config stringConfig, stringIndex int32
 			ac.trieStates = append(ac.trieStates, acTrieState{firstEdge: -1})
 		}
 
-		if currentState == 0 {
-			for k := 0; k < n; k++ {
-				if root[variants[k]] == -1 {
-					root[variants[k]] = nextState
-				}
-			}
-		} else {
-			if n == 1 {
-				ac.addSparseEdge(currentState, variants[0], nextState)
-			} else {
-				ac.addSparseEdge(currentState, variants[0], nextState)
-				ac.addSparseEdge(currentState, variants[1], nextState)
-			}
-		}
+		ac.bindSparseVariants(currentState, nextState, variants[:n])
 		currentState = nextState
 	}
 
@@ -276,6 +263,21 @@ func (ac *acAutomaton) insertPatternEdges(config stringConfig, stringIndex int32
 	ac.trieOutputs = appendACOutput(ac.trieOutputs, &st.ownOutputStart, &st.ownOutputEnd, stringIndex)
 }
 
+func (ac *acAutomaton) bindSparseVariants(state, nextState int32, variants []byte) {
+	if state == 0 {
+		for _, b := range variants {
+			if ac.trieRoot[b] == -1 {
+				ac.trieRoot[b] = nextState
+			}
+		}
+		return
+	}
+	for _, b := range variants {
+		ac.addSparseEdge(state, b, nextState)
+	}
+}
+
+//nolint:revive // argument-limit: internal output-range helper
 func appendACOutput(outputs []int32, start, end *int32, stringIndex int32) []int32 {
 	existingStart, existingEnd := *start, *end
 	switch {
@@ -399,26 +401,10 @@ func (ac *acAutomaton) Compile() error {
 				return
 			}
 		} else {
-			// Compact doubled construction buffers before allocating the flat scan
-			// table. Keep small buffers reusable without another allocation.
-			if ac.compactStates && cap(ac.states) > len(ac.states) {
-				states := make([]acState, len(ac.states))
-				copy(states, ac.states)
-				ac.states = states
-			}
-			ac.compactStates = false
-			ac.collectRootBytes()
-
-			// Build failure links using BFS
-			if err := ac.buildFailureLinks(); err != nil {
-				compileErr = fmt.Errorf("building failure links: %w", err)
+			if err := ac.compileDense(); err != nil {
+				compileErr = err
 				return
 			}
-			// Fold the failure links into the goto table so the scan never walks them.
-			ac.closeTransitions()
-			// buildFlatTransitions extracts the retained output ranges and releases
-			// the construction states.
-			ac.buildFlatTransitions()
 		}
 		filter := newTeddyPrefilter(ac.strings)
 		if gate, ok := filter.(*corpusTeddyPrefilter); ok {
@@ -492,6 +478,25 @@ func (ac *acAutomaton) buildDeferred() {
 		ac.teddy = filter
 	}
 	ac.compiled = true
+}
+
+func (ac *acAutomaton) compileDense() error {
+	// Compact doubled construction buffers before allocating the flat scan
+	// table. Keep small buffers reusable without another allocation.
+	if ac.compactStates && cap(ac.states) > len(ac.states) {
+		states := make([]acState, len(ac.states))
+		copy(states, ac.states)
+		ac.states = states
+	}
+	ac.compactStates = false
+	ac.collectRootBytes()
+
+	if err := ac.buildFailureLinks(); err != nil {
+		return fmt.Errorf("building failure links: %w", err)
+	}
+	ac.closeTransitions()
+	ac.buildFlatTransitions()
+	return nil
 }
 
 func (ac *acAutomaton) collectRootBytes() {
@@ -572,9 +577,13 @@ func (ac *acAutomaton) compileSparseTrie() error {
 	ac.collectRootBytesFromRow(ac.trieRoot)
 	classMap, classRep, numClasses := computeByteClassesSparse(ac.trieStates, ac.trieEdges, ac.trieRoot)
 
-	hasOutput := make([]bool, numStates)
-	outputRanges := make([][2]int32, numStates)
-	retainedOutputs := make([]int32, 0, len(ac.trieOutputs))
+	b := &sparseBuildState{
+		ac:              ac,
+		numStates:       numStates,
+		hasOutput:       make([]bool, numStates),
+		outputRanges:    make([][2]int32, numStates),
+		retainedOutputs: make([]int32, 0, len(ac.trieOutputs)),
+	}
 
 	ac.transitions16 = nil
 	ac.transitions32 = nil
@@ -585,42 +594,11 @@ func (ac *acAutomaton) compileSparseTrie() error {
 	ac.classShift = 0
 	ac.classCount = 0
 
-	if numClasses <= 128 {
-		stride := 1
-		var shift uint8
-		for stride < numClasses {
-			stride <<= 1
-			shift++
-		}
-		ac.classMap = classMap
-		ac.classShift = shift
-		ac.classCount = numClasses
-		if numStates <= 65536 {
-			flat, rootRow, outputs := buildSparseClassTable[uint16](ac, numStates, numClasses, stride, classMap, classRep, hasOutput, outputRanges, retainedOutputs)
-			ac.flatClass16 = flat
-			ac.classRoot16 = rootRow
-			retainedOutputs = outputs
-		} else {
-			flat, rootRow, outputs := buildSparseClassTable[int32](ac, numStates, numClasses, stride, classMap, classRep, hasOutput, outputRanges, retainedOutputs)
-			ac.flatClass32 = flat
-			ac.classRoot32 = rootRow
-			retainedOutputs = outputs
-		}
-	} else {
-		if numStates <= 65536 {
-			table, outputs := buildSparseFlatTable[uint16](ac, numStates, hasOutput, outputRanges, retainedOutputs)
-			ac.transitions16 = table
-			retainedOutputs = outputs
-		} else {
-			table, outputs := buildSparseFlatTable[int32](ac, numStates, hasOutput, outputRanges, retainedOutputs)
-			ac.transitions32 = table
-			retainedOutputs = outputs
-		}
-	}
+	ac.emitSparseTables(b, classMap, classRep, numClasses)
 
-	ac.outputs = retainedOutputs
-	ac.hasOutput = hasOutput
-	ac.outputRanges = outputRanges
+	ac.outputs = b.retainedOutputs
+	ac.hasOutput = b.hasOutput
+	ac.outputRanges = b.outputRanges
 	ac.stateCount = numStates
 	ac.trieStates = nil
 	ac.trieEdges = nil
@@ -629,29 +607,68 @@ func (ac *acAutomaton) compileSparseTrie() error {
 	return nil
 }
 
-func buildSparseClassTable[S ~uint16 | ~int32](
-	ac *acAutomaton,
-	numStates int,
-	numClasses int,
-	stride int,
-	classMap [256]byte,
-	classRep [256]byte,
-	hasOutput []bool,
-	outputRanges [][2]int32,
-	retainedOutputs []int32,
-) ([]S, *[256]S, []int32) {
-	flat := make([]S, numStates*stride)
+type sparseBuildState struct {
+	ac              *acAutomaton
+	numStates       int
+	hasOutput       []bool
+	outputRanges    [][2]int32
+	retainedOutputs []int32
+}
+
+type sparseClassSpec struct {
+	numClasses int
+	stride     int
+	classMap   [256]byte
+	classRep   [256]byte
+}
+
+//nolint:revive // argument-limit: internal builder helper
+func (ac *acAutomaton) emitSparseTables(b *sparseBuildState, classMap [256]byte, classRep [256]byte, numClasses int) {
+	if numClasses > 128 {
+		if b.numStates <= 65536 {
+			ac.transitions16 = buildSparseFlatTable[uint16](b)
+		} else {
+			ac.transitions32 = buildSparseFlatTable[int32](b)
+		}
+		return
+	}
+	stride := 1
+	var shift uint8
+	for stride < numClasses {
+		stride <<= 1
+		shift++
+	}
+	ac.classMap = classMap
+	ac.classShift = shift
+	ac.classCount = numClasses
+	spec := sparseClassSpec{
+		numClasses: numClasses,
+		stride:     stride,
+		classMap:   classMap,
+		classRep:   classRep,
+	}
+	if b.numStates <= 65536 {
+		ac.flatClass16, ac.classRoot16 = buildSparseClassTable[uint16](b, spec)
+	} else {
+		ac.flatClass32, ac.classRoot32 = buildSparseClassTable[int32](b, spec)
+	}
+}
+
+func buildSparseClassTable[S ~uint16 | ~int32](b *sparseBuildState, spec sparseClassSpec) ([]S, *[256]S) {
+	ac := b.ac
+	numStates := b.numStates
+	flat := make([]S, numStates*spec.stride)
 	rootRow := new([256]S)
-	for b := 0; b < 256; b++ {
-		target := ac.trieRoot[b]
+	for byteVal := 0; byteVal < 256; byteVal++ {
+		target := ac.trieRoot[byteVal]
 		if target < 0 {
 			target = 0
 		}
 		//checkednarrow:ignore target is in [0, numStates) and S is uint16 only when numStates <= 65536
-		rootRow[b] = S(target)
+		rootRow[byteVal] = S(target)
 	}
-	for c := 0; c < numClasses; c++ {
-		target := ac.trieRoot[classRep[c]]
+	for c := 0; c < spec.numClasses; c++ {
+		target := ac.trieRoot[spec.classRep[c]]
 		if target < 0 {
 			target = 0
 		}
@@ -665,7 +682,7 @@ func buildSparseClassTable[S ~uint16 | ~int32](
 	seen := make([]bool, numStates)
 	seen[0] = true
 
-	retainedOutputs = initSparseRootOutput(ac.trieStates[0], ac.trieOutputs, hasOutput, outputRanges, retainedOutputs)
+	b.initRootOutput()
 
 	for _, nextState := range ac.trieRoot {
 		if nextState != -1 && !seen[nextState] {
@@ -680,16 +697,16 @@ func buildSparseClassTable[S ~uint16 | ~int32](
 		fail := failures[cur]
 		st := ac.trieStates[cur]
 
-		retainedOutputs = mergeSparseNodeOutputs(cur, fail, st, ac.trieOutputs, hasOutput, outputRanges, retainedOutputs)
+		b.mergeNodeOutputs(cur, fail, st)
 
-		curOff := int(cur) * stride
-		failOff := int(fail) * stride
-		copy(flat[curOff:curOff+numClasses], flat[failOff:failOff+numClasses])
+		curOff := int(cur) * spec.stride
+		failOff := int(fail) * spec.stride
+		copy(flat[curOff:curOff+spec.numClasses], flat[failOff:failOff+spec.numClasses])
 
 		for e := st.firstEdge; e != -1; e = ac.trieEdges[e].next {
 			edge := ac.trieEdges[e]
 			next := edge.to
-			cls := int(classMap[edge.b])
+			cls := int(spec.classMap[edge.b])
 			failures[next] = int32(flat[failOff+cls])
 			//checkednarrow:ignore next is in [0, numStates) and S is uint16 only when numStates <= 65536
 			flat[curOff+cls] = S(next)
@@ -700,24 +717,20 @@ func buildSparseClassTable[S ~uint16 | ~int32](
 		}
 	}
 
-	return flat, rootRow, retainedOutputs
+	return flat, rootRow
 }
 
-func buildSparseFlatTable[S ~uint16 | ~int32](
-	ac *acAutomaton,
-	numStates int,
-	hasOutput []bool,
-	outputRanges [][2]int32,
-	retainedOutputs []int32,
-) ([][256]S, []int32) {
+func buildSparseFlatTable[S ~uint16 | ~int32](b *sparseBuildState) [][256]S {
+	ac := b.ac
+	numStates := b.numStates
 	table := make([][256]S, numStates)
-	for b := 0; b < 256; b++ {
-		target := ac.trieRoot[b]
+	for byteVal := 0; byteVal < 256; byteVal++ {
+		target := ac.trieRoot[byteVal]
 		if target < 0 {
 			target = 0
 		}
 		//checkednarrow:ignore target is in [0, numStates) and S is uint16 only when numStates <= 65536
-		table[0][b] = S(target)
+		table[0][byteVal] = S(target)
 	}
 
 	failures := make([]int32, numStates)
@@ -726,7 +739,7 @@ func buildSparseFlatTable[S ~uint16 | ~int32](
 	seen := make([]bool, numStates)
 	seen[0] = true
 
-	retainedOutputs = initSparseRootOutput(ac.trieStates[0], ac.trieOutputs, hasOutput, outputRanges, retainedOutputs)
+	b.initRootOutput()
 
 	for _, nextState := range ac.trieRoot {
 		if nextState != -1 && !seen[nextState] {
@@ -741,7 +754,7 @@ func buildSparseFlatTable[S ~uint16 | ~int32](
 		fail := failures[cur]
 		st := ac.trieStates[cur]
 
-		retainedOutputs = mergeSparseNodeOutputs(cur, fail, st, ac.trieOutputs, hasOutput, outputRanges, retainedOutputs)
+		b.mergeNodeOutputs(cur, fail, st)
 
 		table[cur] = table[fail]
 		for e := st.firstEdge; e != -1; e = ac.trieEdges[e].next {
@@ -757,46 +770,32 @@ func buildSparseFlatTable[S ~uint16 | ~int32](
 		}
 	}
 
-	return table, retainedOutputs
+	return table
 }
 
-func initSparseRootOutput(
-	st0 acTrieState,
-	trieOutputs []int32,
-	hasOutput []bool,
-	outputRanges [][2]int32,
-	retainedOutputs []int32,
-) []int32 {
+func (b *sparseBuildState) initRootOutput() {
+	st0 := b.ac.trieStates[0]
 	if st0.ownOutputEnd > st0.ownOutputStart {
-		retainedOutputs = append(retainedOutputs, trieOutputs[st0.ownOutputStart:st0.ownOutputEnd]...)
-		outputRanges[0] = [2]int32{0, mustACIndex(len(retainedOutputs))}
-		hasOutput[0] = true
+		b.retainedOutputs = append(b.retainedOutputs, b.ac.trieOutputs[st0.ownOutputStart:st0.ownOutputEnd]...)
+		b.outputRanges[0] = [2]int32{0, mustACIndex(len(b.retainedOutputs))}
+		b.hasOutput[0] = true
 	}
-	return retainedOutputs
 }
 
-func mergeSparseNodeOutputs(
-	cur, fail int32,
-	st acTrieState,
-	trieOutputs []int32,
-	hasOutput []bool,
-	outputRanges [][2]int32,
-	retainedOutputs []int32,
-) []int32 {
-	failRange := outputRanges[fail]
+func (b *sparseBuildState) mergeNodeOutputs(cur, fail int32, st acTrieState) {
+	failRange := b.outputRanges[fail]
 	if st.ownOutputEnd == st.ownOutputStart {
-		outputRanges[cur] = failRange
-		hasOutput[cur] = hasOutput[fail]
-		return retainedOutputs
+		b.outputRanges[cur] = failRange
+		b.hasOutput[cur] = b.hasOutput[fail]
+		return
 	}
-	start := mustACIndex(len(retainedOutputs))
-	retainedOutputs = append(retainedOutputs, trieOutputs[st.ownOutputStart:st.ownOutputEnd]...)
+	start := mustACIndex(len(b.retainedOutputs))
+	b.retainedOutputs = append(b.retainedOutputs, b.ac.trieOutputs[st.ownOutputStart:st.ownOutputEnd]...)
 	if failRange[1] > failRange[0] {
-		retainedOutputs = append(retainedOutputs, retainedOutputs[failRange[0]:failRange[1]]...)
+		b.retainedOutputs = append(b.retainedOutputs, b.retainedOutputs[failRange[0]:failRange[1]]...)
 	}
-	outputRanges[cur] = [2]int32{start, mustACIndex(len(retainedOutputs))}
-	hasOutput[cur] = true
-	return retainedOutputs
+	b.outputRanges[cur] = [2]int32{start, mustACIndex(len(b.retainedOutputs))}
+	b.hasOutput[cur] = true
 }
 
 // computeByteClassesSparse partitions the 256 byte values into equivalence
@@ -869,6 +868,7 @@ func computeByteClassesSparse(trieStates []acTrieState, trieEdges []acTrieEdge, 
 	return classMap, classRep, numClasses
 }
 
+//nolint:revive // argument-limit: internal byte-equivalence check
 func bytesHaveSameEdgesSparse(a, b byte, trieStates []acTrieState, trieEdges []acTrieEdge, trieRoot *[256]int32) bool {
 	if trieRoot[a] != trieRoot[b] {
 		return false
@@ -878,9 +878,10 @@ func bytesHaveSameEdgesSparse(a, b byte, trieStates []acTrieState, trieEdges []a
 		toB := int32(-1)
 		for e := trieStates[s].firstEdge; e != -1; e = trieEdges[e].next {
 			edge := trieEdges[e]
-			if edge.b == a {
+			switch edge.b {
+			case a:
 				toA = edge.to
-			} else if edge.b == b {
+			case b:
 				toB = edge.to
 			}
 		}
@@ -1234,13 +1235,14 @@ func (ac *acAutomaton) EstimateMemoryUsage() int {
 	if ac.trieRoot != nil {
 		stateMemory += 256 * 4
 	}
-	if len(ac.flatClass16) > 0 {
+	switch {
+	case len(ac.flatClass16) > 0:
 		stateMemory += len(ac.flatClass16)*2 + 256*2
-	} else if len(ac.flatClass32) > 0 {
+	case len(ac.flatClass32) > 0:
 		stateMemory += len(ac.flatClass32)*4 + 256*4
-	} else if len(ac.transitions16) > 0 {
+	case len(ac.transitions16) > 0:
 		stateMemory += len(ac.transitions16) * 256 * 2
-	} else if len(ac.transitions32) > 0 {
+	case len(ac.transitions32) > 0:
 		stateMemory += len(ac.transitions32) * 256 * 4
 	}
 	stateMemory += len(ac.hasOutput)
@@ -1257,13 +1259,14 @@ func (ac *acAutomaton) Reset() {
 	// Restore the root state. Compile releases the construction slice, so a
 	// compiled automaton starts from a fresh allocation; a deferred automaton
 	// keeps deferring (no trie states) after reset.
-	if ac.deferred {
+	switch {
+	case ac.deferred:
 		ac.states = nil
 		ac.trieStates = nil
 		ac.trieEdges = nil
 		ac.trieRoot = nil
 		ac.trieOutputs = nil
-	} else if ac.states != nil && ac.trieRoot == nil {
+	case ac.states != nil && ac.trieRoot == nil:
 		ac.states = ac.states[:1] // Keep root state
 		for i := range ac.states[0].transitions {
 			ac.states[0].transitions[i] = -1
@@ -1271,7 +1274,7 @@ func (ac *acAutomaton) Reset() {
 		ac.states[0].failure = -1
 		ac.states[0].outputStart = 0
 		ac.states[0].outputEnd = 0
-	} else {
+	default:
 		ac.states = nil
 		if len(ac.trieStates) == 0 {
 			ac.trieStates = make([]acTrieState, 1)
