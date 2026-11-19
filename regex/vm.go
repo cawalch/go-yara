@@ -48,6 +48,7 @@ func execBatchWithCancel(bs *VMBatch, code, input []byte, flags Flags, done <-ch
 			bs.Prepare(len(code))
 			var nextGen uint32
 			matched, _, nextGen = runMatchWithState(bs.st, bs.gen, code, input, flags, start, done, scan)
+			bs.st.gen = nextGen
 			bs.gen = nextGen
 		} else {
 			matched, _ = runMatch(code, input, flags, start, done, scan)
