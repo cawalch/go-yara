@@ -107,17 +107,7 @@ func (scratch *hexMatchScratch) matchSingleJump(tokens []HexPatternToken, data [
 	}
 	minJump := max(head.Min, 0)
 	if head.Max < 0 || head.Max-minJump > hexLargeJumpSpan {
-		scratch.reset()
-		scratch.pushLargeJumpBranches(tail, 0, data, pos, minJump, head.Max, xorKey)
-		for len(scratch.worklist) > 0 {
-			last := len(scratch.worklist) - 1
-			item := scratch.worklist[last]
-			scratch.worklist = scratch.worklist[:last]
-			if end, ok := matchLinearHexPattern(item.tokens, data, item.dataPos, xorKey); ok && !onEnd(end) {
-				return false
-			}
-		}
-		return true
+		return scratch.matchLargeSingleJump(head, tail, data, pos, minJump, xorKey, onEnd)
 	}
 	for jump := minJump; jump <= head.Max; jump++ {
 		// Caller-built patterns can end in a jump. Preserve the original
@@ -132,6 +122,65 @@ func (scratch *hexMatchScratch) matchSingleJump(tokens []HexPatternToken, data [
 		if jump == head.Max {
 			break // Caller-built bounds may reach the platform's maximum int.
 		}
+	}
+	return true
+}
+
+//nolint:revive // argument-limit: direct large-jump helper avoids heap allocation
+func (scratch *hexMatchScratch) matchLargeSingleJump(
+	head HexPatternToken,
+	tail []HexPatternToken,
+	data []byte,
+	pos, minJump int,
+	xorKey *byte,
+	onEnd func(int) bool,
+) bool {
+	if len(tail) > 0 {
+		if targetByte, hasByte := definiteHexByte(tail[0], xorKey); hasByte {
+			return scratch.matchLargeJumpAnchored(head, tail, data, pos, minJump, targetByte, xorKey, onEnd)
+		}
+	}
+	scratch.reset()
+	scratch.pushLargeJumpBranches(tail, 0, data, pos, minJump, head.Max, xorKey)
+	for len(scratch.worklist) > 0 {
+		last := len(scratch.worklist) - 1
+		item := scratch.worklist[last]
+		scratch.worklist = scratch.worklist[:last]
+		if end, ok := matchLinearHexPattern(item.tokens, data, item.dataPos, xorKey); ok && !onEnd(end) {
+			return false
+		}
+	}
+	return true
+}
+
+//nolint:revive // argument-limit: direct large-jump helper avoids heap allocation
+func (scratch *hexMatchScratch) matchLargeJumpAnchored(
+	head HexPatternToken,
+	tail []HexPatternToken,
+	data []byte,
+	pos, minJump int,
+	targetByte byte,
+	xorKey *byte,
+	onEnd func(int) bool,
+) bool {
+	if scratch.jumpCache == nil || !scratch.jumpCache.active {
+		scratch.beginJumpScan(nil)
+	}
+	maxJ := len(data) - pos - len(tail)
+	if head.Max >= 0 && head.Max < maxJ {
+		maxJ = head.Max
+	}
+	if maxJ < minJump {
+		return true
+	}
+	lo, hi := pos+minJump, pos+maxJ+1
+	keyTag := hexXORKeyTag(xorKey)
+	p := scratch.findNextByte(data, targetByte, keyTag, lo, hi, true)
+	for p >= 0 {
+		if end, ok := matchLinearHexPattern(tail[1:], data, p+1, xorKey); ok && !onEnd(end) {
+			return false
+		}
+		p = scratch.findNextByte(data, targetByte, keyTag, p+1, hi, false)
 	}
 	return true
 }
