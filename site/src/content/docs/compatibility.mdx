@@ -33,7 +33,7 @@ This comparison uses go-yara v0.11.0, libyara 4.6.0 / 4.5.8, and YARA-X 1.23.0 /
 
 Measured on Apple M3 Max (`-p 4`, median of 3 CLI runs via `/usr/bin/time -l`). To separate steady-state scanning from compilation, `libyara` and `YARA-X` use pre-compiled rule binaries (`-C`) in the dense-root and heavy-regex workloads, and scan throughput is computed from `(workload_wall - 1KB_baseline_wall)`:
 
-| Workload | `go-yara` (`main` post-`v0.11.0`, scalar / SIMD) | `libyara 4.6.0` | `YARA-X 1.23.0` |
+| Workload | `go-yara v0.11.1` (scalar / SIMD) | `libyara 4.6.0` | `YARA-X 1.23.0` |
 | --- | --- | --- | --- |
 | **Compile 2,000 rules** (`1 KB`, `-p 1`, source) | `31.6 ms` (`37.3 MiB`) / `31.3 ms` (`37.3 MiB`) | `25.5 ms` (`12.5 MiB`) | `151.7 ms` (`37.2 MiB`) |
 | **512 MB clean, 2,000 distinct-prefix rules** (`-p 4`, source) | **`23.8 GB/s`** (`167 MiB`) / **`25.0 GB/s`** (`168 MiB`) | `2.1 GB/s` (`141 MiB`) | `2.6 GB/s` (`165 MiB`) |

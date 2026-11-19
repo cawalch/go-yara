@@ -10,6 +10,10 @@ import ArchitectureDiagram from '../../components/ArchitectureDiagram.astro';
 
 <p>These docs describe <a href={`https://github.com/cawalch/go-yara/releases/tag/${release.version}`}>{release.version}</a>, released on {release.date}. It requires Go {release.goVersion} or later.</p>
 
+## Changes in v0.11.1
+
+v0.11.1 eliminates candidate-slice growth (`#618`), rejects non-empty `fullword` regex candidates before VM execution (`#619`), deduplicates shared hex atoms (`#620`), and adds atom-adjacent / 1-byte fanout discrimination (`#622`), raising 256 MB dense-root throughput from `28 → 144–145 MB/s` (`-83%` peak RSS) and 100 MB Bitcoin/JWT regex throughput from `41–42 → 107–113 MB/s` (see [v0.11.1 performance changes](/go-yara/performance/#v0111-performance-changes)). Compiled artifact **format 20** and the **Go 1.27.0** minimum toolchain requirement are unchanged.
+
 ## Changes in v0.11.0
 
 v0.11.0 exposes `pe.overlay.data_offset`, `pe.overlay.data_size`, and `pe.overlay.certificate_size` ([#595](https://github.com/cawalch/go-yara/pull/595)), updates `go-pe` to `v0.1.0` ([#574](https://github.com/cawalch/go-yara/pull/574)), and ships major compilation, deserialization, Aho–Corasick/Teddy, regex, hex, and PE performance improvements (see [v0.11.0 performance changes](/go-yara/performance/#v0110-performance-changes)). Compiled artifact **format 20** and the **Go 1.27.0** minimum toolchain requirement are unchanged from `v0.10.0`.

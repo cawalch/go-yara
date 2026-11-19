@@ -56,6 +56,13 @@ These limits apply to an individual automaton, not the total number of rules. In
 
 See the <a href={source('compiler/teddy_simd_arm64.go')}>ARM64 filter</a>, <a href={source('compiler/teddy_simd_amd64.go')}>amd64 filter</a>, and [SIMD build instructions](/go-yara/installation/#optional-simd-build). Compare scalar and SIMD builds on the same CPU with the same rules.
 
+<span id="v0111-performance-changes"></span>
+
+## v0.11.1 performance changes
+
+- **Dense-root & heavy-regex prefiltering (`#618`–`#622`):** Stream sorted step-1 prefilter candidate ranges in $O(1)$ memory (`#618`), reject non-empty `fullword` regex candidates before Thompson VM execution (`#619`), deduplicate identical `StringKindHex` atoms in `sharedAutomaton` with fanout (`#620`), and pre-filter hex candidates using atom-adjacent definite bytes, `Tokens[0]`, and `hexFanoutDiscriminator` (`#622`).
+- **Measured `v0.11.0` → `v0.11.1` CLI results (`Apple M3 Max`, `-p 4`):** 256 MB dense-root (`2,000` overlapping rules) improved from `28 MB/s` (`1.82 GiB` RSS) to `144–145 MB/s` (`305–307 MiB` RSS); 100 MB heavy regex (`btc_addr` + `jwt_like`) improved from `41–42 MB/s` to `107–113 MB/s`.
+
 <span id="v0110-performance-changes"></span>
 
 ## v0.11.0 performance changes
