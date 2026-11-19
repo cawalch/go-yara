@@ -38,12 +38,16 @@ func (rc *ruleCompiler) compileSingleString(str *ast.String) error {
 
 func (rc *ruleCompiler) compileSingleStringWithDead(str *ast.String, isDead bool, fixedOffsets map[string]int64) error {
 	rc.ensurePatternMaps()
+	if rc.tryApplyCachedStringPattern(str, fixedOffsets) {
+		return nil
+	}
 	result, err := rc.compileStringPattern(str)
 	if err != nil {
 		return err
 	}
 
-	if _, constrained := fixedOffsets[str.Identifier]; constrained && !result.isFixedOffsetLiteral() {
+	fixedOffsetLiteral := result.isFixedOffsetLiteral()
+	if _, constrained := fixedOffsets[str.Identifier]; constrained && !fixedOffsetLiteral {
 		delete(fixedOffsets, str.Identifier)
 	}
 
@@ -168,8 +172,30 @@ func (rc *ruleCompiler) compileSingleStringWithDead(str *ast.String, isDead bool
 		if len(pattern.CaptureCode) == 0 {
 			pattern.boundedClass = compileBoundedClass(pattern.Code, pattern.Flags)
 		}
+		if regexPat, ok := str.Pattern.(*ast.RegexPattern); ok {
+			if rc.stringCompiler.regexCache == nil {
+				rc.stringCompiler.regexCache = make(map[string]cachedRegexPattern)
+			}
+			rc.stringCompiler.regexCache[regexFullCompileKey(regexPat.Value, str.Modifiers)] = cachedRegexPattern{
+				pattern:            pattern,
+				patternData:        result.patternData,
+				fixedOffsetLiteral: fixedOffsetLiteral,
+			}
+		}
 		rc.regexPatterns[str.Identifier] = pattern
 	case StringKindHex:
+		if _, ok := str.Pattern.(*ast.HexString); ok && result.hexPattern != nil {
+			if rc.stringCompiler.hexCache == nil {
+				rc.stringCompiler.hexCache = make(map[string]cachedHexPattern)
+			}
+			rc.stringCompiler.hexCache[result.hexPattern.cacheKey] = cachedHexPattern{
+				tokens:             result.hexPattern.Tokens,
+				xorKeys:            result.hexPattern.XorKeys,
+				encodedPattern:     result.patternData,
+				cacheKey:           result.hexPattern.cacheKey,
+				fixedOffsetLiteral: fixedOffsetLiteral,
+			}
+		}
 		rc.hexPatterns[str.Identifier] = result.hexPattern
 	default:
 		return fmt.Errorf("unsupported string kind for %s", str.Identifier)
@@ -177,6 +203,70 @@ func (rc *ruleCompiler) compileSingleStringWithDead(str *ast.String, isDead bool
 	rc.recordStringModifiers(str.Identifier, str.Modifiers)
 	rc.stringKinds[str.Identifier] = result.kind
 	return nil
+}
+
+func (rc *ruleCompiler) tryApplyCachedStringPattern(str *ast.String, fixedOffsets map[string]int64) bool {
+	switch p := str.Pattern.(type) {
+	case *ast.RegexPattern:
+		if len(rc.stringCompiler.regexCache) == 0 {
+			return false
+		}
+		key := regexFullCompileKey(p.Value, str.Modifiers)
+		cached, ok := rc.stringCompiler.regexCache[key]
+		if !ok {
+			return false
+		}
+		if _, constrained := fixedOffsets[str.Identifier]; constrained && !cached.fixedOffsetLiteral {
+			delete(fixedOffsets, str.Identifier)
+		}
+		rc.recordStringOffset(str.Identifier)
+		rc.recordPatternData(str.Identifier, cached.patternData)
+		rc.regexPatterns[str.Identifier] = cached.pattern
+		rc.recordStringModifiers(str.Identifier, str.Modifiers)
+		rc.stringKinds[str.Identifier] = StringKindRegex
+		return true
+	case *ast.HexString:
+		if len(rc.stringCompiler.hexCache) == 0 {
+			return false
+		}
+		key := patternCacheKey("hex", p.Value, str.Modifiers)
+		cached, ok := rc.stringCompiler.hexCache[key]
+		if !ok {
+			return false
+		}
+		if _, constrained := fixedOffsets[str.Identifier]; constrained && !cached.fixedOffsetLiteral {
+			delete(fixedOffsets, str.Identifier)
+		}
+		rc.recordStringOffset(str.Identifier)
+		rc.recordPatternData(str.Identifier, cached.encodedPattern)
+		rc.hexPatterns[str.Identifier] = &HexPattern{
+			Tokens:     cached.tokens,
+			XorKeys:    cached.xorKeys,
+			cacheKey:   cached.cacheKey,
+			cacheIndex: -1,
+		}
+		rc.recordStringModifiers(str.Identifier, str.Modifiers)
+		rc.stringKinds[str.Identifier] = StringKindHex
+		return true
+	default:
+		return false
+	}
+}
+
+func regexFullCompileKey(value string, modifiers []ast.StringModifier) string {
+	base := patternCacheKey("regex", value, modifiers)
+	if !hasPositiveCaptureGroup(modifiers) {
+		return base
+	}
+	var key strings.Builder
+	key.Grow(len(base) + len(modifiers)*4 + 8)
+	key.WriteString(base)
+	for _, modifier := range modifiers {
+		if modifier.Type == ast.StringModifierCapture {
+			fmt.Fprintf(&key, "\x00cap=%v", modifier.Value)
+		}
+	}
+	return key.String()
 }
 
 type stringCompilationResult struct {
