@@ -106,65 +106,83 @@ const (
 )
 
 func expandBoundedConcatAlternationCover(children []*Node, minimumLength int) (literalAtomCoverPlan, bool) {
-	suffixMax := literalSuffixLengths(children)
+	var suffixMax []int
 	prefixMin := 0
 	prefixMax := 0
 	var best literalAtomCoverPlan
 	found := false
 
 	for index := 0; index < len(children); {
-		branches, isMulti, ok := exactConcatChildBranches(children[index])
-		if !ok {
-			analysis := analyzeAtoms(children[index])
-			prefixMin = addLength(prefixMin, analysis.minLength)
-			prefixMax = addLength(prefixMax, analysis.maxLength)
-			index++
-			continue
-		}
-
+		runStart := index
 		runMinOffset := prefixMin
 		runMaxOffset := prefixMax
-		expanded := [][]byte{nil}
+		var expanded [][]byte
 		seenMulti := false
 		trailingExactBytes := 0
 		validRun := true
 
 		for index < len(children) {
-			childBranches, childMulti, childOK := exactConcatChildBranches(children[index])
+			child := children[index]
+			if child.Kind == NodeLiteral {
+				if seenMulti && validRun {
+					trailingExactBytes++
+					for k := range expanded {
+						expanded[k] = append(expanded[k], child.Value)
+					}
+				}
+				prefixMin = addLength(prefixMin, 1)
+				prefixMax = addLength(prefixMax, 1)
+				index++
+				continue
+			}
+
+			branches, childMulti, childOK := exactConcatChildBranches(child)
 			if !childOK {
+				if index == runStart {
+					analysis := analyzeAtoms(child)
+					prefixMin = addLength(prefixMin, analysis.minLength)
+					prefixMax = addLength(prefixMax, analysis.maxLength)
+					index++
+				}
 				break
 			}
-			if len(expanded)*len(childBranches) > maxExpandedConcatBranches {
+
+			if !childMulti && len(branches) == 1 {
+				if seenMulti && validRun {
+					trailingExactBytes += len(branches[0])
+					for k := range expanded {
+						expanded[k] = append(expanded[k], branches[0]...)
+					}
+				}
+				analysis := analyzeAtoms(child)
+				prefixMin = addLength(prefixMin, analysis.minLength)
+				prefixMax = addLength(prefixMax, analysis.maxLength)
+				index++
+				continue
+			}
+			if !seenMulti {
+				expanded = [][]byte{exactConcatRunPrefix(children[runStart:index])}
+				seenMulti = true
+			}
+			if len(expanded)*len(branches) > maxExpandedConcatBranches {
 				validRun = false
 			}
 			if validRun {
-				next := make([][]byte, 0, len(expanded)*len(childBranches))
-				for _, prefix := range expanded {
-					for _, suffix := range childBranches {
-						combined := make([]byte, 0, len(prefix)+len(suffix))
-						combined = append(combined, prefix...)
-						combined = append(combined, suffix...)
-						next = append(next, combined)
-					}
-				}
-				expanded = next
-				if childMulti {
-					seenMulti = true
-					trailingExactBytes = 0
-				} else if seenMulti && len(childBranches) == 1 {
-					trailingExactBytes += len(childBranches[0])
-				}
+				expanded = expandConcatBranches(expanded, branches)
+				trailingExactBytes = 0
 			}
-			analysis := analyzeAtoms(children[index])
+
+			analysis := analyzeAtoms(child)
 			prefixMin = addLength(prefixMin, analysis.minLength)
 			prefixMax = addLength(prefixMax, analysis.maxLength)
 			index++
 		}
-		_ = branches
-		_ = isMulti
 
 		if !validRun || !seenMulti || trailingExactBytes == 0 || len(expanded) < 2 {
 			continue
+		}
+		if suffixMax == nil {
+			suffixMax = literalSuffixLengths(children)
 		}
 		groups := make([][]LiteralAtom, 0, len(expanded))
 		allLongEnough := true
@@ -193,6 +211,31 @@ func expandBoundedConcatAlternationCover(children []*Node, minimumLength int) (l
 	return best, found
 }
 
+func exactConcatRunPrefix(children []*Node) []byte {
+	var prefix []byte
+	for _, child := range children {
+		if child.Kind == NodeLiteral {
+			prefix = append(prefix, child.Value)
+		} else {
+			prefix = append(prefix, analyzeAtoms(child).exact...)
+		}
+	}
+	return prefix
+}
+
+func expandConcatBranches(expanded, branches [][]byte) [][]byte {
+	next := make([][]byte, 0, len(expanded)*len(branches))
+	for _, prefix := range expanded {
+		for _, suffix := range branches {
+			combined := make([]byte, 0, len(prefix)+len(suffix))
+			combined = append(combined, prefix...)
+			combined = append(combined, suffix...)
+			next = append(next, combined)
+		}
+	}
+	return next
+}
+
 func exactConcatChildBranches(node *Node) ([][]byte, bool, bool) {
 	analysis := analyzeAtoms(node)
 	if analysis.isExact {
@@ -217,7 +260,7 @@ func exactConcatChildBranches(node *Node) ([][]byte, bool, bool) {
 			branches := make([][]byte, 0, count)
 			for value := range 256 {
 				if set.Contains(byte(value)) {
-					branches = append(branches, []byte{byte(value)})
+					branches = append(branches, singleByteLiterals[byte(value)][:])
 				}
 			}
 			return branches, true, true
