@@ -304,101 +304,100 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (result *Sca
 		return nil, ctx.Err()
 	}
 
-	// Check if all global rules matched
-	allGlobalMatched := true
+	if err := s.finalizeMatchedRules(ctx, result, func(rule *CompiledRule) (map[string][]Match, map[string][]EvidenceFinding, error) {
+		var matches map[string][]Match
+		if !s.omitMatches && result.Matches != nil {
+			matches = result.Matches[rule.Name]
+		}
+		if s.omitMatches {
+			return matches, nil, nil
+		}
+		evidence, err := s.populatePublicRuleEvidence(ctx, rule, publicRuleMaterialization{
+			data:    data,
+			matches: matches,
+		})
+		return matches, evidence, err
+	}); err != nil {
+		return nil, err
+	}
+	s.clearRuleResultsIfDirty()
+	return result, nil
+}
+
+func (s *Scanner) allEvaluatedGlobalsMatched(ruleResults map[string]bool) bool {
 	for _, ruleIndex := range s.evaluatedGlobalRules {
 		if ruleIndex >= 0 && ruleIndex < len(s.ruleResultsDense) {
 			if !s.ruleResultsDense[ruleIndex] {
-				allGlobalMatched = false
-				break
+				return false
 			}
-		} else if result.RuleResults != nil && !result.RuleResults[s.program.Rules[ruleIndex].Name] {
-			allGlobalMatched = false
-			break
+		} else if ruleResults != nil && !ruleResults[s.program.Rules[ruleIndex].Name] {
+			return false
 		}
 	}
+	return true
+}
 
-	// Pass 2: build MatchedRules
+//nolint:nestif // security-sensitive result boundary mirrors private/global filtering
+func (s *Scanner) finalizeMatchedRules(
+	ctx context.Context,
+	result *ScanResult,
+	extract func(*CompiledRule) (map[string][]Match, map[string][]EvidenceFinding, error),
+) error {
+	done := ctx.Done()
+	allGlobalMatched := s.allEvaluatedGlobalsMatched(result.RuleResults)
 	if len(s.matchedRuleIndices) > 0 {
 		result.MatchedRules = make([]RuleMatch, 0, len(s.matchedRuleIndices))
 	}
 	for _, ruleIndex := range s.matchedRuleIndices {
 		rule := s.program.Rules[ruleIndex]
 		if scanCanceled(done) {
-			return nil, ctx.Err()
+			return ctx.Err()
 		}
-		// Skip non-global rules if not all global rules matched
-		if !rule.IsGlobal && !allGlobalMatched {
+		if (!rule.IsGlobal && !allGlobalMatched) || !s.hasMatchingTag(rule) {
 			if s.reportedMatchesOnly && !s.omitMatches && result.Matches != nil {
 				delete(result.Matches, rule.Name)
 			}
 			continue
 		}
-		// Skip rules not matching the tag filter
-		if !s.hasMatchingTag(rule) {
-			if s.reportedMatchesOnly && !s.omitMatches && result.Matches != nil {
-				delete(result.Matches, rule.Name)
-			}
-			continue
-		}
-		// Private rules are not reported in results
 		if rule.IsPrivate {
 			continue
 		}
-		// Evidence extraction is deliberately colocated with final public-rule
-		// reporting so private or globally filtered matches cannot expose bytes.
-		//nolint:nestif // the nested gates mirror that security-sensitive result boundary
-		if s.ruleResultsDense[rule.Index] {
-			var matches map[string][]Match
-			if !s.omitMatches && result.Matches != nil {
-				matches = result.Matches[rule.Name]
-			}
-			var evidence map[string][]EvidenceFinding
-			if !s.omitMatches {
-				var err error
-				evidence, err = s.populatePublicRuleEvidence(ctx, rule, publicRuleMaterialization{
-					data:    data,
-					matches: matches,
-				})
-				if err != nil {
-					return nil, err
-				}
-				if len(evidence) != 0 {
-					if result.Evidence == nil {
-						switch {
-						case s.evidenceBorrowed && s.borrowedEvidenceRuleMap != nil:
-							result.Evidence = s.borrowedEvidenceRuleMap
-							clear(result.Evidence)
-						case s.evidenceBorrowed:
-							s.borrowedEvidenceRuleMap = make(map[string]map[string][]EvidenceFinding)
-							result.Evidence = s.borrowedEvidenceRuleMap
-						default:
-							result.Evidence = make(map[string]map[string][]EvidenceFinding)
-						}
-					}
-					result.Evidence[rule.Name] = evidence
+		matches, evidence, err := extract(rule)
+		if err != nil {
+			return err
+		}
+		if len(evidence) != 0 {
+			if result.Evidence == nil {
+				switch {
+				case s.evidenceBorrowed && s.borrowedEvidenceRuleMap != nil:
+					result.Evidence = s.borrowedEvidenceRuleMap
+					clear(result.Evidence)
+				case s.evidenceBorrowed:
+					s.borrowedEvidenceRuleMap = make(map[string]map[string][]EvidenceFinding)
+					result.Evidence = s.borrowedEvidenceRuleMap
+				default:
+					result.Evidence = make(map[string]map[string][]EvidenceFinding)
 				}
 			}
-			ruleMatch := newPublicRuleMatch(rule, matches, evidence)
-			if s.hookMask&hookBitMatch != 0 && s.matchHook != nil {
-				action := s.matchHook(rule, ruleMatch)
-				switch action {
-				case MatchActionStopScan:
-					result.MatchedRules = append(result.MatchedRules, ruleMatch)
-					s.clearRuleResultsIfDirty()
-
-					return result, nil
-				case MatchActionSkipRule:
-					continue
-				case MatchActionContinue:
-				}
+			result.Evidence[rule.Name] = evidence
+		}
+		ruleMatch := newPublicRuleMatch(rule, matches, evidence)
+		if s.hookMask&hookBitMatch != 0 && s.matchHook != nil {
+			switch s.matchHook(rule, ruleMatch) {
+			case MatchActionStopScan:
+				result.MatchedRules = append(result.MatchedRules, ruleMatch)
+				return nil
+			case MatchActionSkipRule:
+				continue
+			case MatchActionContinue:
 			}
-			result.MatchedRules = append(result.MatchedRules, ruleMatch)
+		}
+		result.MatchedRules = append(result.MatchedRules, ruleMatch)
+		if s.streamEarlyTermination {
+			return nil
 		}
 	}
-
-	s.clearRuleResultsIfDirty()
-	return result, nil
+	return nil
 }
 
 func (s *Scanner) evaluatePublicRules(
