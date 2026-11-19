@@ -1,8 +1,6 @@
 package compiler
 
 import (
-	"strings"
-
 	pe "github.com/cawalch/go-pe"
 )
 
@@ -26,10 +24,28 @@ func addPEImportsSchemaFields(schema *ModuleSchema) {
 // Import errors leave header fields intact and all import fields undefined.
 // A non-nil cache records both success and failure, so rules never retry parsing.
 type peImportData struct {
-	libraries []pe.ImportLibrary
-	functions int
-	details   ModuleValue
-	valid     bool
+	libraries      []pe.ImportLibrary
+	functions      int
+	details        ModuleValue
+	dllCounts      map[string]int64
+	scannedSymbols int
+	index          *peImportIndex
+	valid          bool
+}
+
+type peImportIndex struct {
+	fnHits  map[peImportFnKey]struct{}
+	ordHits map[peImportOrdKey]struct{}
+}
+
+type peImportFnKey struct {
+	dllLower string
+	fnLower  string
+}
+
+type peImportOrdKey struct {
+	dllLower string
+	ordinal  int64
 }
 
 func (image *peImage) loadImports() *peImportData {
@@ -78,6 +94,49 @@ func (image *peImage) importField(name string) ModuleValue {
 	}
 }
 
+var peValidImportSymbolByte = func() [256]bool {
+	var table [256]bool
+	for c := byte('a'); c <= 'z'; c++ {
+		table[c] = true
+	}
+	for c := byte('A'); c <= 'Z'; c++ {
+		table[c] = true
+	}
+	for c := byte('0'); c <= '9'; c++ {
+		table[c] = true
+	}
+	for _, c := range []byte("._?@$()<>") {
+		table[c] = true
+	}
+	return table
+}()
+
+func peValidImportDLL(dll string) bool {
+	if len(dll) >= 256 {
+		return false
+	}
+	for i := 0; i < len(dll); i++ {
+		b := dll[i]
+		if b < 0x20 || b > 0x7e {
+			return false
+		}
+		switch b {
+		case '"', '*', '<', '>', '?', '|':
+			return false
+		}
+	}
+	return true
+}
+
+func peValidImportSymbolName(name string) bool {
+	for i := 0; i < len(name); i++ {
+		if !peValidImportSymbolByte[name[i]] {
+			return false
+		}
+	}
+	return true
+}
+
 // Apply libyara 4.5.8's name filters and 16,384-function limit here, not in
 // go-pe. Empty libraries are omitted; duplicate descriptors remain separate.
 func peFilterImportsWithCancel(libraries []pe.ImportLibrary, done <-chan struct{}) ([]pe.ImportLibrary, int, bool) {
@@ -86,10 +145,7 @@ func peFilterImportsWithCancel(libraries []pe.ImportLibrary, done <-chan struct{
 		if total == 16384 {
 			break
 		}
-		if len(library.DLL) >= 256 || strings.ContainsAny(library.DLL, `"*<>?|`) {
-			continue
-		}
-		if strings.IndexFunc(library.DLL, func(r rune) bool { return r < 0x20 || r > 0x7e }) >= 0 {
+		if !peValidImportDLL(library.DLL) {
 			continue
 		}
 		symbols := library.Symbols[:0]
@@ -102,12 +158,7 @@ func peFilterImportsWithCancel(libraries []pe.ImportLibrary, done <-chan struct{
 			}
 			if !symbol.ByOrdinal {
 				symbol.Name = symbol.Name[:min(len(symbol.Name), 512)]
-				if strings.IndexFunc(symbol.Name, func(r rune) bool {
-					if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' {
-						return false
-					}
-					return !strings.ContainsRune("._?@$()<>", r)
-				}) >= 0 {
+				if !peValidImportSymbolName(symbol.Name) {
 					continue
 				}
 			}
@@ -141,7 +192,7 @@ func peImportLibraryFields(library *pe.ImportLibrary) ModuleValue {
 				for i := range views {
 					view := &views[i]
 					view.kind, view.symbol = kind, &library.Symbols[i]
-					view.object = moduleObject{kind: ModuleStruct, field: view.field}
+					view.object = moduleObject{kind: ModuleStruct, getter: view}
 					values[i] = ModuleValue{Type: ModuleStruct, object: &view.object}
 				}
 				functions = peArray(values)

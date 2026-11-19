@@ -1,5 +1,11 @@
 package compiler
 
+import (
+	pe "github.com/cawalch/go-pe"
+
+	"github.com/cawalch/go-yara/regex"
+)
+
 func (i *Interpreter) peExports(args []ModuleValue, wantIndex bool) ModuleValue {
 	index, valid := i.peExportLookup(args)
 	if !valid || (wantIndex && index < 0) {
@@ -58,6 +64,14 @@ func (i *Interpreter) peExportLookup(args []ModuleValue) (index int, valid bool)
 	if query.value.Type == ModuleInteger && (query.value.Integer == 0 || query.value.Integer > int64(len(exports.symbols))) {
 		return -1, true
 	}
+	exports.queries++
+	if idx, ok := lookupPEExportIndex(exports, query); ok {
+		return idx, true
+	}
+	var batch *regex.VMBatch
+	if query.value.Type == ModuleRegex && i.matchContext != nil {
+		batch = &i.matchContext.regexBatch
+	}
 	for index := range exports.symbols {
 		if scanCanceledAt(done, index) {
 			return -1, false
@@ -73,7 +87,7 @@ func (i *Interpreter) peExportLookup(args []ModuleValue) (index int, valid bool)
 			continue
 		}
 		name := symbol.Names[0]
-		matched, err := peExportNameMatches(query, name[:min(len(name), 512)])
+		matched, err := peExportNameMatchesBatch(query, name[:min(len(name), 512)], batch)
 		if err != nil {
 			return -1, false
 		}
@@ -127,8 +141,78 @@ func peHostExportLookup(data ModuleValue, query peExportQuery, done <-chan struc
 }
 
 func peExportNameMatches(query peExportQuery, candidate string) (bool, error) {
+	return peExportNameMatchesBatch(query, candidate, nil)
+}
+
+func peExportNameMatchesBatch(query peExportQuery, candidate string, batch *regex.VMBatch) (bool, error) {
 	if query.value.Type == ModuleRegex {
-		return query.regex.MatchString(candidate)
+		return query.regex.matchStringBatch(candidate, batch)
 	}
 	return peNameEqual(candidate, query.value.String), nil
+}
+
+func buildPEExportIndex(symbols []pe.ExportSymbol) *peExportIndex {
+	byName := make(map[string]int, len(symbols))
+	byOrdinal := make(map[int64]int, len(symbols))
+	for index := range symbols {
+		symbol := &symbols[index]
+		if _, exists := byOrdinal[int64(symbol.Ordinal)]; !exists {
+			byOrdinal[int64(symbol.Ordinal)] = index
+		}
+		if len(symbol.Names) == 0 {
+			continue
+		}
+		name := symbol.Names[0]
+		name = peLowerASCII(name[:min(len(name), 512)])
+		if _, exists := byName[name]; !exists {
+			byName[name] = index
+		}
+	}
+	return &peExportIndex{
+		byName:    byName,
+		byOrdinal: byOrdinal,
+	}
+}
+
+func lookupPEExportIndex(exports *peExportData, query peExportQuery) (int, bool) {
+	if query.value.Type == ModuleRegex {
+		return -1, false
+	}
+	if exports.index == nil && exports.queries > 1 && len(exports.symbols) >= 16 {
+		exports.index = buildPEExportIndex(exports.symbols)
+	}
+	if exports.index == nil {
+		return -1, false
+	}
+	if query.value.Type == ModuleInteger {
+		if idx, ok := exports.index.byOrdinal[query.value.Integer]; ok {
+			return idx, true
+		}
+		return -1, true
+	}
+	if idx, ok := exports.index.byName[peLowerASCII(query.value.String)]; ok {
+		return idx, true
+	}
+	return -1, true
+}
+
+func peLowerASCII(s string) string {
+	for i := 0; i < len(s); i++ {
+		b := s[i]
+		if b < 'A' || b > 'Z' {
+			continue
+		}
+		buf := make([]byte, len(s))
+		copy(buf, s[:i])
+		buf[i] = b + ('a' - 'A')
+		for j := i + 1; j < len(s); j++ {
+			c := s[j]
+			if c >= 'A' && c <= 'Z' {
+				c += 'a' - 'A'
+			}
+			buf[j] = c
+		}
+		return string(buf)
+	}
+	return s
 }

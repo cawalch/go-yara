@@ -117,11 +117,11 @@ func TestPEExportsLazySnapshot(t *testing.T) {
 				t.Fatalf("timestamp did not retain the export snapshot: %+v", stamp)
 			}
 			symbol := root.field("export_details").object.elements[0].object
-			if symbol.field("name").String != "Function00000" || symbol.field("offset").Integer != 0x220 {
+			if symbol.resolveField("name").String != "Function00000" || symbol.resolveField("offset").Integer != 0x220 {
 				t.Fatal("exports retained mutable input or scan size")
 			}
 			forward := root.field("export_details").object.elements[1].object
-			if forward.field("forward_name").String != "other.Target" || forward.field("offset").Type != ModuleUndefined {
+			if forward.resolveField("forward_name").String != "other.Target" || forward.resolveField("offset").Type != ModuleUndefined {
 				t.Fatal("forwarder retained mutable input or exposed an offset")
 			}
 		}

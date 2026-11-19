@@ -37,6 +37,10 @@ func CompileModuleRegex(literal string) (CompiledRegex, error) {
 
 // Match reports whether data matches the compiled regular expression.
 func (r CompiledRegex) Match(data []byte) (bool, error) {
+	return r.matchBatch(data, nil)
+}
+
+func (r CompiledRegex) matchBatch(data []byte, batch *regex.VMBatch) (bool, error) {
 	if r.cancelDone != nil {
 		select {
 		case <-r.cancelDone:
@@ -47,12 +51,34 @@ func (r CompiledRegex) Match(data []byte) (bool, error) {
 	if r.program == nil {
 		return false, errors.New("uninitialized compiled regex")
 	}
-	return regex.ExecWithCancel(r.program.code, data, r.program.flags|regex.FlagsScan, r.cancelDone)
+	return regex.ExecBatchWithCancel(batch, r.program.code, data, r.program.flags|regex.FlagsScan, r.cancelDone)
 }
 
 // MatchString reports whether s matches the compiled regular expression.
 func (r CompiledRegex) MatchString(s string) (bool, error) {
-	return r.Match([]byte(s))
+	return r.matchStringBatch(s, nil)
+}
+
+func (r CompiledRegex) matchStringBatch(s string, batch *regex.VMBatch) (bool, error) {
+	if r.cancelDone != nil {
+		select {
+		case <-r.cancelDone:
+			return false, context.Canceled
+		default:
+		}
+	}
+	if r.program == nil {
+		return false, errors.New("uninitialized compiled regex")
+	}
+	var stack [512]byte
+	var data []byte
+	if len(s) <= len(stack) {
+		n := copy(stack[:], s)
+		data = stack[:n]
+	} else {
+		data = []byte(s)
+	}
+	return regex.ExecBatchWithCancel(batch, r.program.code, data, r.program.flags|regex.FlagsScan, r.cancelDone)
 }
 
 func compileModuleRegexLiteral(literal string) (*compiledModuleRegex, error) {
