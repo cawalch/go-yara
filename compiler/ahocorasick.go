@@ -273,16 +273,21 @@ func (ac *acAutomaton) insertPatternEdges(config stringConfig, stringIndex int32
 	}
 
 	st := &ac.trieStates[currentState]
-	existingStart, existingEnd := st.ownOutputStart, st.ownOutputEnd
+	ac.trieOutputs = appendACOutput(ac.trieOutputs, &st.ownOutputStart, &st.ownOutputEnd, stringIndex)
+}
+
+func appendACOutput(outputs []int32, start, end *int32, stringIndex int32) []int32 {
+	existingStart, existingEnd := *start, *end
 	switch {
 	case existingStart == existingEnd:
-		st.ownOutputStart = mustACIndex(len(ac.trieOutputs))
-	case int(existingEnd) != len(ac.trieOutputs):
-		st.ownOutputStart = mustACIndex(len(ac.trieOutputs))
-		ac.trieOutputs = append(ac.trieOutputs, ac.trieOutputs[existingStart:existingEnd]...)
+		*start = mustACIndex(len(outputs))
+	case int(existingEnd) != len(outputs):
+		*start = mustACIndex(len(outputs))
+		outputs = append(outputs, outputs[existingStart:existingEnd]...)
 	}
-	ac.trieOutputs = append(ac.trieOutputs, stringIndex)
-	st.ownOutputEnd = mustACIndex(len(ac.trieOutputs))
+	outputs = append(outputs, stringIndex)
+	*end = mustACIndex(len(outputs))
+	return outputs
 }
 
 func (ac *acAutomaton) addSparseEdge(state int32, b byte, nextState int32) {
@@ -366,17 +371,8 @@ func (ac *acAutomaton) insertPatternEdgesDense(config stringConfig, stringIndex 
 	// Add output for the final state. Multiple patterns can share the same
 	// terminal state (for example, identical strings in different rules).
 	// Preserve the existing range by copying it to a new contiguous range.
-	existingStart := ac.states[currentState].outputStart
-	existingEnd := ac.states[currentState].outputEnd
-	switch {
-	case existingStart == existingEnd:
-		ac.states[currentState].outputStart = mustACIndex(len(ac.outputs))
-	case int(existingEnd) != len(ac.outputs):
-		ac.states[currentState].outputStart = mustACIndex(len(ac.outputs))
-		ac.outputs = append(ac.outputs, ac.outputs[existingStart:existingEnd]...)
-	}
-	ac.outputs = append(ac.outputs, stringIndex)
-	ac.states[currentState].outputEnd = mustACIndex(len(ac.outputs))
+	st := &ac.states[currentState]
+	ac.outputs = appendACOutput(ac.outputs, &st.outputStart, &st.outputEnd, stringIndex)
 }
 
 // Compile compiles the optimized automaton. For deferred automatons it is
@@ -669,12 +665,7 @@ func buildSparseClassTable[S ~uint16 | ~int32](
 	seen := make([]bool, numStates)
 	seen[0] = true
 
-	st0 := ac.trieStates[0]
-	if st0.ownOutputEnd > st0.ownOutputStart {
-		retainedOutputs = append(retainedOutputs, ac.trieOutputs[st0.ownOutputStart:st0.ownOutputEnd]...)
-		outputRanges[0] = [2]int32{0, mustACIndex(len(retainedOutputs))}
-		hasOutput[0] = true
-	}
+	retainedOutputs = initSparseRootOutput(ac.trieStates[0], ac.trieOutputs, hasOutput, outputRanges, retainedOutputs)
 
 	for _, nextState := range ac.trieRoot {
 		if nextState != -1 && !seen[nextState] {
@@ -689,19 +680,7 @@ func buildSparseClassTable[S ~uint16 | ~int32](
 		fail := failures[cur]
 		st := ac.trieStates[cur]
 
-		failRange := outputRanges[fail]
-		if st.ownOutputEnd == st.ownOutputStart {
-			outputRanges[cur] = failRange
-			hasOutput[cur] = hasOutput[fail]
-		} else {
-			start := mustACIndex(len(retainedOutputs))
-			retainedOutputs = append(retainedOutputs, ac.trieOutputs[st.ownOutputStart:st.ownOutputEnd]...)
-			if failRange[1] > failRange[0] {
-				retainedOutputs = append(retainedOutputs, retainedOutputs[failRange[0]:failRange[1]]...)
-			}
-			outputRanges[cur] = [2]int32{start, mustACIndex(len(retainedOutputs))}
-			hasOutput[cur] = true
-		}
+		retainedOutputs = mergeSparseNodeOutputs(cur, fail, st, ac.trieOutputs, hasOutput, outputRanges, retainedOutputs)
 
 		curOff := int(cur) * stride
 		failOff := int(fail) * stride
@@ -747,12 +726,7 @@ func buildSparseFlatTable[S ~uint16 | ~int32](
 	seen := make([]bool, numStates)
 	seen[0] = true
 
-	st0 := ac.trieStates[0]
-	if st0.ownOutputEnd > st0.ownOutputStart {
-		retainedOutputs = append(retainedOutputs, ac.trieOutputs[st0.ownOutputStart:st0.ownOutputEnd]...)
-		outputRanges[0] = [2]int32{0, mustACIndex(len(retainedOutputs))}
-		hasOutput[0] = true
-	}
+	retainedOutputs = initSparseRootOutput(ac.trieStates[0], ac.trieOutputs, hasOutput, outputRanges, retainedOutputs)
 
 	for _, nextState := range ac.trieRoot {
 		if nextState != -1 && !seen[nextState] {
@@ -767,19 +741,7 @@ func buildSparseFlatTable[S ~uint16 | ~int32](
 		fail := failures[cur]
 		st := ac.trieStates[cur]
 
-		failRange := outputRanges[fail]
-		if st.ownOutputEnd == st.ownOutputStart {
-			outputRanges[cur] = failRange
-			hasOutput[cur] = hasOutput[fail]
-		} else {
-			start := mustACIndex(len(retainedOutputs))
-			retainedOutputs = append(retainedOutputs, ac.trieOutputs[st.ownOutputStart:st.ownOutputEnd]...)
-			if failRange[1] > failRange[0] {
-				retainedOutputs = append(retainedOutputs, retainedOutputs[failRange[0]:failRange[1]]...)
-			}
-			outputRanges[cur] = [2]int32{start, mustACIndex(len(retainedOutputs))}
-			hasOutput[cur] = true
-		}
+		retainedOutputs = mergeSparseNodeOutputs(cur, fail, st, ac.trieOutputs, hasOutput, outputRanges, retainedOutputs)
 
 		table[cur] = table[fail]
 		for e := st.firstEdge; e != -1; e = ac.trieEdges[e].next {
@@ -796,6 +758,45 @@ func buildSparseFlatTable[S ~uint16 | ~int32](
 	}
 
 	return table, retainedOutputs
+}
+
+func initSparseRootOutput(
+	st0 acTrieState,
+	trieOutputs []int32,
+	hasOutput []bool,
+	outputRanges [][2]int32,
+	retainedOutputs []int32,
+) []int32 {
+	if st0.ownOutputEnd > st0.ownOutputStart {
+		retainedOutputs = append(retainedOutputs, trieOutputs[st0.ownOutputStart:st0.ownOutputEnd]...)
+		outputRanges[0] = [2]int32{0, mustACIndex(len(retainedOutputs))}
+		hasOutput[0] = true
+	}
+	return retainedOutputs
+}
+
+func mergeSparseNodeOutputs(
+	cur, fail int32,
+	st acTrieState,
+	trieOutputs []int32,
+	hasOutput []bool,
+	outputRanges [][2]int32,
+	retainedOutputs []int32,
+) []int32 {
+	failRange := outputRanges[fail]
+	if st.ownOutputEnd == st.ownOutputStart {
+		outputRanges[cur] = failRange
+		hasOutput[cur] = hasOutput[fail]
+		return retainedOutputs
+	}
+	start := mustACIndex(len(retainedOutputs))
+	retainedOutputs = append(retainedOutputs, trieOutputs[st.ownOutputStart:st.ownOutputEnd]...)
+	if failRange[1] > failRange[0] {
+		retainedOutputs = append(retainedOutputs, retainedOutputs[failRange[0]:failRange[1]]...)
+	}
+	outputRanges[cur] = [2]int32{start, mustACIndex(len(retainedOutputs))}
+	hasOutput[cur] = true
+	return retainedOutputs
 }
 
 // computeByteClassesSparse partitions the 256 byte values into equivalence
