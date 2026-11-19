@@ -25,7 +25,7 @@ func compileLiteralAffixes(root *regex.Node, fullword, dual bool) (*regexBounded
 	if isLiteralRegexNode(root) {
 		return nil, nil
 	}
-	nodes, ok := literalAffixNodes(nil, root)
+	nodes, ok := collectLiteralAffixNodes(root)
 	if !ok {
 		return nil, nil
 	}
@@ -224,6 +224,36 @@ func (plan *regexBoundedAlternation) appendAffixedBranches(prefixes [][]byte, br
 		}
 	}
 	return true
+}
+
+func collectLiteralAffixNodes(root *regex.Node) ([]*regex.Node, bool) {
+	count, hasAlt, ok := countLiteralAffixNodes(root)
+	if !ok || !hasAlt {
+		return nil, false
+	}
+	return literalAffixNodes(make([]*regex.Node, 0, count), root)
+}
+
+func countLiteralAffixNodes(node *regex.Node) (count int, hasAlt, ok bool) {
+	node = ungroupRegexNode(node)
+	if node.Kind == regex.NodeConcat {
+		for _, child := range node.Children {
+			childCount, childAlt, childOK := countLiteralAffixNodes(child)
+			if !childOK {
+				return 0, false, false
+			}
+			count += childCount
+			hasAlt = hasAlt || childAlt
+		}
+		return count, hasAlt, true
+	}
+	if node.Kind == regex.NodeLiteral {
+		return 1, false, true
+	}
+	if literalAtomAlternation(node) != nil {
+		return 1, true, true
+	}
+	return 0, false, false
 }
 
 func literalAffixNodes(nodes []*regex.Node, node *regex.Node) ([]*regex.Node, bool) {
