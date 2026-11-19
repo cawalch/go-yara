@@ -88,19 +88,7 @@ Measure these changes on your own rule corpus and input distribution; synthetic 
 
 ## v0.9.0 performance changes
 
-The compiler can choose less-shared regex prefix windows and rarer fixed-offset mandatory atoms. Eligible terminal bounded classes use direct byte counting; compatible groups of 4–64 bounded acyclic regexes share consuming transitions. Captures, assertions, cycles, wide/fullword matching, and over-budget groups retain the existing verifier where these plans do not support them. These optimizations preserve match selection rather than changing rule semantics.
-
-The experimental SIMD build adds a large-corpus rejection pass on ARM64 and AVX2-capable AMD64. It requires inputs of at least 256 bytes and a complete cover of at most 64 distinct prefix byte sets. A possible hit falls through to exact scanning, so positive or near-match inputs can cost more. Arbitrary corpora do not necessarily qualify. SIMD also accelerates eligible bounded-class counters; the default build retains scalar acceleration and combined-NFA sharing.
-
-Evidence extraction uses result-owned chunks and bounded scanner scratch. Captures remain valid after input mutation, scanner reuse, or closure. Identifier suggestions reuse bounded edit-distance rows, and large automaton construction avoids repeated dense-row copies. These reduce allocation work without making the entire scan or compilation allocation-free.
-
-| Area | Measured change | Scope |
-| --- | --- | --- |
-| Evidence | 701 → 449 KB; 2,075 → 1,053 allocations/scan | Original match-heavy benchmark, Apple M3 Max; [#434](https://github.com/cawalch/go-yara/pull/434). |
-| Identifier suggestions | 3.87× AMD64 / 5.20× ARM64 faster resilient loading | Diagnostic-heavy supported Signature-Base subset; [#442](https://github.com/cawalch/go-yara/pull/442). |
-| Automaton construction | Further 4.8% AMD64 / 2.4% ARM64 faster loading; 9.4% fewer allocated bytes | Same supported subset after #442; [#443](https://github.com/cawalch/go-yara/pull/443). |
-
-These are per-change comparisons against preceding commits, not a v0.8.2-to-v0.9.0 benchmark. The threat subset retains 2,995 rules from 544 accepted files and omits another 756 rules during resilient loading. Neither it nor the two local corpora qualified in [#441](https://github.com/cawalch/go-yara/pull/441) activated the new regex plans. The large synthetic gains in [#439](https://github.com/cawalch/go-yara/pull/439) and [#440](https://github.com/cawalch/go-yara/pull/440) therefore do not establish representative whole-corpus gains. Some smaller compile controls slowed by up to 3.7%; measure your own rules, scan modes, and inputs.
+v0.9.0 introduced entropy-aware regex prefix/atom selection, bounded-class direct byte counting, experimental `GOEXPERIMENT=simd` prefiltering/bounded-class kernels, bounded edit-distance identifier suggestions (`3.87×` AMD64 / `5.20×` ARM64 resilient loading), and chunked evidence storage (`2,075 → 1,053` allocations/scan). See the [v0.9.0 changelog](https://github.com/cawalch/go-yara/blob/main/CHANGELOG.md#v090---2026-11-11) for full scope and caveats.
 
 ## Condition evaluation
 

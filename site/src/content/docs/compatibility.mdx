@@ -13,15 +13,38 @@ import patternsOutput from '../../../examples/patterns/output.txt?raw';
 
 go-yara provides an engine that can be embedded directly in a Go program without a native library. libyara and YARA-X provide other integration paths and a broader set of bundled file-format modules. Which fits an application depends on its rules, deployment constraints, and required output.
 
-This comparison uses go-yara v0.8.1, libyara 4.5.8, and YARA-X 1.22.0, with sources reviewed on 2026-10-24. It describes implementation and integration differences; no cross-engine performance ranking has been measured for this page.
+This comparison uses go-yara v0.11.0, libyara 4.6.0 / 4.5.8, and YARA-X 1.23.0 / 1.22.0, with sources and CLI measurements reviewed on 2026-11-19.
 
 | Area | go-yara | libyara | YARA-X |
 | --- | --- | --- | --- |
-| Implementation and integration | Go library; no CGO or installed native engine. | C library with a C API; Go applications need a binding or another integration layer. | Rust engine with C and Go APIs. Its provided Go binding uses CGO and the YARA-X C library. |
-| Condition execution | Go bytecode interpreter, fused operations, and specialized assertion programs. | Bytecode executed by a stack-based interpreter. | Compiles rule conditions to WebAssembly; native builds execute through Wasmtime. |
-| Pattern searching | Shared Aho–Corasick searches, atom filters, regex/hex verification, and optional SIMD candidate filters. | Aho–Corasick atom searches followed by pattern verification. | Aho–Corasick candidate searches with specialized pattern and regex machinery. |
-| Bundled modules | `hash`, `math`, `string`, `time`, and pure-Go `pe` (v0.10.0+); typed host data and callbacks. Native `elf`, `cuckoo`, and `dotnet` parsers are not bundled. | Includes `pe`, `elf`, `dotnet`, and other analysis modules; availability can depend on the build. | Includes `pe`, `elf`, `dotnet`, and other analysis modules; availability can depend on build features. |
-| Rule and API compatibility | Supports a YARA subset plus go-yara extensions described below. | Reference behavior for the project's libyara differential tests. | Targets YARA rule compatibility with documented language differences; its APIs differ from libyara's. |
+| Implementation and integration | Pure Go library; zero CGO, static binaries, and native Go cross-compilation. | C library with a C API; Go callers require CGO or an external wrapper. | Rust engine with C and Go APIs; the official Go binding wraps the native library via CGO. |
+| Condition execution | Go bytecode interpreter with fused assertions, `assertionProgram` dataflow, and proximity two-pointer joins. | Stack-based C bytecode interpreter. | Compiles rule conditions to WebAssembly (executed via Wasmtime in native builds). |
+| Pattern searching | Shared Aho–Corasick (byte-class tables), entropy-weighted atom selection, optional `GOEXPERIMENT=simd` Teddy/bounded-class kernels, and specialized hex/regex verifiers. | Aho–Corasick atom searches followed by pattern verification. | Aho–Corasick candidate searches with specialized pattern and regex machinery. |
+| Bundled modules | `hash`, `math`, `string`, `time`, and pure-Go `pe` (`v0.10.0+`, `pe.overlay.*` in `v0.11.0`); typed Go host modules and callbacks. Native `elf`, `cuckoo`, and `dotnet` parsers are not bundled. | Includes `pe`, `elf`, `dotnet`, `cuckoo`, and other analysis modules depending on build flags. | Includes `pe`, `elf`, `dotnet`, and other analysis modules depending on build features. |
+| Rule and API compatibility | Supports standard YARA rules plus Go-oriented extensions (`capture(...)`/`evidence:`, `external`, float `min`/`max`, `hash.sha512`); `WithStrictLibyaraCompatibility(true)` enforces libyara compile-time rejections. | Reference behavior for the project's libyara differential tests. | Targets YARA rule compatibility with documented syntax/regex differences and newer Rust APIs. |
+
+### Strengths and trade-offs
+
+- **Choose `go-yara` when** you need a pure-Go dependency (no CGO, static cross-compiled binaries, Wasm playground builds), direct Go host-module callbacks and zero-reflection `WithBorrowedEvidence(true)` JSON streaming, deterministic binary rule caches (`MarshalBinary`), or `WithStrictLibyaraCompatibility(true)` without shipping `libyara` shared libraries.
+- **Choose `libyara` when** you need maximum legacy rule/module parity (`elf`, `dotnet`, `cuckoo`, full delayed-import/Authenticode `valid_on` surface) or existing C/Python tooling already built around libyara.
+- **Choose `YARA-X` when** you want VirusTotal's next-generation Rust engine with bundled `elf`/`dotnet` parsers, WebAssembly-compiled conditions, and strict/modernized YARA-X rule diagnostics, and CGO/Rust native libraries fit your deployment model.
+
+### Measured CLI comparison (clean prefilter vs dense-root vs heavy regex)
+
+Measured on Apple M3 Max (`-p 4`, median of 3 CLI runs via `/usr/bin/time -l`). To separate steady-state scanning from compilation, `libyara` and `YARA-X` use pre-compiled rule binaries (`-C`) in the dense-root and heavy-regex workloads, and scan throughput is computed from `(workload_wall - 1KB_baseline_wall)`:
+
+| Workload | `go-yara v0.11.0` (scalar / SIMD) | `libyara 4.6.0` | `YARA-X 1.23.0` |
+| --- | --- | --- | --- |
+| **Compile 2,000 rules** (`1 KB`, `-p 1`, source) | `26.3 ms` (`37.4 MiB`) / `28.0 ms` (`37.2 MiB`) | `25.5 ms` (`12.5 MiB`) | `151.7 ms` (`37.2 MiB`) |
+| **512 MB clean, 2,000 distinct-prefix rules** (`-p 4`, source) | `20.2 GB/s` (`167 MiB`) / `23.7 GB/s` (`167 MiB`) | `2.1 GB/s` (`141 MiB`) | `2.6 GB/s` (`165 MiB`) |
+| **256 MB dense-root, 2,000 overlapping rules** (`nocase`/`wide`/`fullword`, `-p 4`, `-C` for C/Rust) | `28 MB/s` (`1.82 GiB`) / `28 MB/s` (`1.82 GiB`) | `92 MB/s` (`84.3 MiB`) | **`221 MB/s`** (`155 MiB`) |
+| **100 MB heavy regex** (Bitcoin + JWT, `-p 4`, `-C` for C/Rust) | `41 MB/s` (`125 MiB`) / `42 MB/s` (`125 MiB`) | `59 MB/s` (`64.4 MiB`) | **`91 MB/s`** (`81.8 MiB`) |
+
+**Honest takeaways:**
+
+- **`go-yara` wins on high-selectivity prefiltering and zero-CGO Go integration:** When rules have distinct 3+ byte prefixes and clean traffic dominates, sparse/byte-class Aho–Corasick and Teddy prefiltering reach **20–24 GB/s** (`~8–11×` faster than `libyara`/`YARA-X` on that workload) with fast Go-native compilation (`26.3 ms`).
+- **`YARA-X` wins on dense-root overlapping rules and heavy regexes:** When short/common prefixes (`http://`, `MZ`, `bc1`, `1`, `3`) trigger frequent verification across hundreds of rules, `YARA-X` (`91–221 MB/s`) is `~2–8×` faster than `go-yara` (`28–42 MB/s`) and avoids `go-yara`'s high verification RSS (`1.82 GiB` on the 256 MB dense-root stress corpus). Compiling from source without `-C` is slower in `YARA-X` (`151.7 ms` vs `26 ms`), so pre-compile in CLI pipelines.
+- **`libyara` wins on peak memory footprint:** Across dense-root (`84.3 MiB`), heavy-regex (`64.4 MiB`), and cold-compile (`12.5 MiB`) runs, `libyara 4.6.0` uses the least RAM while staying competitive on dense verification (`92 MB/s`).
 
 The matching architecture has substantial overlap. Atom selection, verification strategy, condition execution, and result handling can each affect performance. go-yara's lack of a native dependency is a deployment property; it does not establish a scanning-speed advantage. The [performance page](/go-yara/performance/) explains its algorithms, measurements, and benchmark conditions.
 
@@ -33,7 +56,7 @@ Sources: libyara's [atom selection](https://github.com/VirusTotal/yara/blob/v4.5
 
 ## Supported rule features
 
-Rules can use text strings, hex patterns with wildcards and jumps, regular expressions, string counts and offsets, condition operators, and rule references. The built-in scalar/range modules are `hash`, `math`, `string`, and `time`; their [function signatures](/go-yara/modules/#built-in-signatures) are generated from the documented release. Starting in v0.10.0, go-yara also bundles a pure-Go `pe` module backed by `go-pe` (headers, sections, standard imports/exports and regex queries, `imphash`, resources, `version_info`, Rich headers, `pdb_path`, Authenticode metadata and offline integrity verification, `declared_extent`/`input_truncated`, and `is_dotnet()`; see [PE module coverage](https://github.com/cawalch/go-yara/blob/main/docs/pe-module.md)).
+Rules can use text strings, hex patterns with wildcards and jumps, regular expressions, string counts and offsets, condition operators, and rule references. The built-in scalar/range modules are `hash`, `math`, `string`, and `time`; their [function signatures](/go-yara/modules/#built-in-signatures) are generated from the documented release. Starting in v0.10.0, go-yara also bundles a pure-Go `pe` module backed by `go-pe` (headers, sections, standard imports/exports and regex queries, `imphash`, resources, `version_info`, Rich headers, `pdb_path`, Authenticode metadata and offline integrity verification, `declared_extent`/`input_truncated`, `is_dotnet()`, and `pe.overlay.data_offset`/`data_size`/`certificate_size` in v0.11.0; see [PE module coverage](https://github.com/cawalch/go-yara/blob/main/docs/pe-module.md)).
 
 Native `elf`, `cuckoo`, and `dotnet` parsers are not bundled, and delayed PE imports, flagged import queries, single-argument/mixed regex `pe.imports`, `signatures[i].valid_on(timestamp)`, and `signatures[i].file_digest` remain unsupported. A structured host module can expose data supplied by your application, but it does not supply those parsers or make an existing native module interchangeable.
 
