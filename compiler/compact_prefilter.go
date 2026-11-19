@@ -172,6 +172,12 @@ func compactPrefilterMatchesAbsent(data []byte, gate *compactPrefilter) bool {
 	if teddySIMDEnabled && ac.teddyGate != nil && len(data) >= 256 && !ac.teddyGate.mayMatch(data, nil) {
 		return true
 	}
+	if len(ac.transitions16) > 0 {
+		if len(data) < 256 {
+			return compactPrefilterRejectsShort16(data, ac.transitions16, gate.accepting)
+		}
+		return compactPrefilterRejectsTable(data, gate, ac.transitions16)
+	}
 	if len(ac.flatClass16) > 0 {
 		if len(data) < 256 {
 			return compactPrefilterRejectsShortClass16(data, ac, gate.accepting)
@@ -180,12 +186,6 @@ func compactPrefilterMatchesAbsent(data []byte, gate *compactPrefilter) bool {
 	}
 	if len(ac.flatClass32) > 0 {
 		return compactPrefilterRejectsClassTable(data, gate, ac.classRoot32, ac.flatClass32)
-	}
-	if len(ac.transitions16) > 0 {
-		if len(data) < 256 {
-			return compactPrefilterRejectsShort16(data, ac.transitions16, gate.accepting)
-		}
-		return compactPrefilterRejectsTable(data, gate, ac.transitions16)
 	}
 	if len(ac.transitions32) > 0 {
 		return compactPrefilterRejectsTable(data, gate, ac.transitions32)

@@ -32,17 +32,17 @@ func rootRowIsDense[S ~uint16 | ~int32](rootTransitions *[256]S, data []byte) bo
 // transition for byte b. Misses read back as 0 after closure, so 0 means "no
 // root edge"; an automaton without any built table reports no edges.
 func (ac *acAutomaton) rootHasEdge(b byte) bool {
-	if ac.classRoot16 != nil {
-		return ac.classRoot16[b] != 0
-	}
-	if ac.classRoot32 != nil {
-		return ac.classRoot32[b] != 0
-	}
 	if len(ac.transitions16) > 0 {
 		return ac.transitions16[0][b] != 0
 	}
 	if len(ac.transitions32) > 0 {
 		return ac.transitions32[0][b] != 0
+	}
+	if ac.classRoot16 != nil {
+		return ac.classRoot16[b] != 0
+	}
+	if ac.classRoot32 != nil {
+		return ac.classRoot32[b] != 0
 	}
 	if ac.trieRoot != nil {
 		return ac.trieRoot[b] != -1
@@ -244,25 +244,25 @@ func singlePatternIsDense(data []byte, pattern []byte, noCase bool) bool {
 // table is populated: the 32-bit kernel calls rootIsDense, the 16-bit kernel
 // rootIsDense16, and tests may probe either on any width.
 func (ac *acAutomaton) rootIsDense16(data []byte) bool {
+	if len(ac.transitions16) > 0 {
+		return rootRowIsDense(&ac.transitions16[0], data)
+	}
 	if ac.classRoot16 != nil {
 		return rootRowIsDense(ac.classRoot16, data)
 	}
-	if len(ac.transitions16) == 0 {
-		return false
-	}
-	return rootRowIsDense(&ac.transitions16[0], data)
+	return false
 }
 
 func (ac *acAutomaton) rootIsDense(data []byte) bool {
 	switch {
-	case ac.classRoot32 != nil:
-		return rootRowIsDense(ac.classRoot32, data)
-	case ac.classRoot16 != nil:
-		return rootRowIsDense(ac.classRoot16, data)
 	case len(ac.transitions32) > 0:
 		return rootRowIsDense(&ac.transitions32[0], data)
 	case len(ac.transitions16) > 0:
 		return rootRowIsDense(&ac.transitions16[0], data)
+	case ac.classRoot32 != nil:
+		return rootRowIsDense(ac.classRoot32, data)
+	case ac.classRoot16 != nil:
+		return rootRowIsDense(ac.classRoot16, data)
 	case ac.trieRoot != nil:
 		return rootRowIsDense(ac.trieRoot, data)
 	case len(ac.states) > 0:
@@ -364,16 +364,16 @@ func (ac *acAutomaton) searchWithCancel(data []byte, done <-chan struct{}, skipG
 		}
 	}
 
+	if len(ac.transitions16) > 0 {
+		searchTableWithCancel(ac, ac.transitions16, data, done, yield)
+		return
+	}
 	if len(ac.flatClass16) > 0 {
 		searchClassTableWithCancel(ac, ac.classRoot16, ac.flatClass16, data, done, yield)
 		return
 	}
 	if len(ac.flatClass32) > 0 {
 		searchClassTableWithCancel(ac, ac.classRoot32, ac.flatClass32, data, done, yield)
-		return
-	}
-	if len(ac.transitions16) > 0 {
-		searchTableWithCancel(ac, ac.transitions16, data, done, yield)
 		return
 	}
 	searchTableWithCancel(ac, ac.transitions32, data, done, yield)
@@ -644,16 +644,16 @@ func (ac *acAutomaton) search(data []byte, skipGate bool, yield func(acMatch) bo
 		}
 	}
 
+	if len(ac.transitions16) > 0 {
+		searchTable(ac, ac.transitions16, data, yield)
+		return
+	}
 	if len(ac.flatClass16) > 0 {
 		searchClassTable(ac, ac.classRoot16, ac.flatClass16, data, yield)
 		return
 	}
 	if len(ac.flatClass32) > 0 {
 		searchClassTable(ac, ac.classRoot32, ac.flatClass32, data, yield)
-		return
-	}
-	if len(ac.transitions16) > 0 {
-		searchTable(ac, ac.transitions16, data, yield)
 		return
 	}
 	searchTable(ac, ac.transitions32, data, yield)
