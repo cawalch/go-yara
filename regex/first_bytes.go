@@ -3,6 +3,7 @@ package regex
 import (
 	"math"
 	"math/bits"
+	"slices"
 )
 
 const maxUsefulByteSetSize = 96
@@ -104,56 +105,61 @@ func FixedByteSets(ast *AST, flags Flags) ([]ByteSet, bool) {
 	if ast == nil || ast.Root == nil {
 		return nil, false
 	}
-	sets, ok := fixedByteSets(ast.Root, flags, maxFixedByteSetSequenceLength)
+	var scratch [32]ByteSet
+	sets, ok := appendFixedByteSets(scratch[:0], ast.Root, flags)
 	if !ok || len(sets) == 0 {
 		return nil, false
 	}
-	return sets, true
+	return slices.Clone(sets), true
 }
 
-func fixedByteSets(node *Node, flags Flags, remaining int) ([]ByteSet, bool) {
-	if node == nil || remaining < 0 {
+func appendFixedByteSets(dst []ByteSet, node *Node, flags Flags) ([]ByteSet, bool) {
+	if node == nil || len(dst) > maxFixedByteSetSequenceLength {
 		return nil, false
 	}
 
 	switch node.Kind {
 	case NodeGroup:
-		return fixedByteSets(firstChild(node), flags, remaining)
+		return appendFixedByteSets(dst, firstChild(node), flags)
 	case NodeEmpty:
-		return []ByteSet{}, true
+		return dst, true
 	case NodeConcat:
-		sets := make([]ByteSet, 0, min(len(node.Children), remaining))
 		for _, child := range node.Children {
-			childSets, ok := fixedByteSets(child, flags, remaining-len(sets))
-			if !ok || len(childSets) > remaining-len(sets) {
+			var ok bool
+			dst, ok = appendFixedByteSets(dst, child, flags)
+			if !ok {
 				return nil, false
 			}
-			sets = append(sets, childSets...)
 		}
-		return sets, true
+		return dst, true
 	case NodeRange:
 		if node.Start != node.End || len(node.Children) != 1 {
 			return nil, false
 		}
-		childSets, ok := fixedByteSets(node.Children[0], flags, remaining)
+		start := len(dst)
+		var ok bool
+		dst, ok = appendFixedByteSets(dst, node.Children[0], flags)
 		if !ok {
 			return nil, false
 		}
+		unitLen := len(dst) - start
 		count := int(node.Start)
-		if len(childSets) != 0 && count > remaining/len(childSets) {
+		if count == 0 {
+			return dst[:start], true
+		}
+		if unitLen != 0 && count > (maxFixedByteSetSequenceLength-start)/unitLen {
 			return nil, false
 		}
-		sets := make([]ByteSet, 0, len(childSets)*count)
-		for range count {
-			sets = append(sets, childSets...)
+		for range count - 1 {
+			dst = append(dst, dst[start:start+unitLen]...)
 		}
-		return sets, true
+		return dst, true
 	default:
 		set, ok := fixedConsumingByteSet(node, flags)
-		if !ok || remaining == 0 {
+		if !ok || len(dst) >= maxFixedByteSetSequenceLength {
 			return nil, false
 		}
-		return []ByteSet{set}, true
+		return append(dst, set), true
 	}
 }
 

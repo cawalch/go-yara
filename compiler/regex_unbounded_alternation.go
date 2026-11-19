@@ -20,7 +20,7 @@ func compileUnboundedAlternation(parsed *regex.AST, fullword, dual bool) (*regex
 	if parsed == nil {
 		return nil, nil
 	}
-	nodes, ok := literalAffixNodes(nil, parsed.Root)
+	nodes, ok := collectLiteralAffixNodes(parsed.Root)
 	if !ok {
 		return nil, nil
 	}
