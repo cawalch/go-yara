@@ -192,8 +192,43 @@ jobs:
             exit 1
           fi
 
-  test:
-    name: Test
+  test-unit:
+    name: Unit and Compiler Tests
+    needs: changes
+    if: ${{ needs.changes.outputs.go == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache: true
+
+      - name: Run race tests and coverage
+        run: |
+          mkdir -p coverage/unit
+          go list ./... > coverage/unit/all.txt
+          sort -o coverage/unit/all.txt coverage/unit/all.txt
+          integration_package=$(go list ./tests/integration)
+          awk -v prefix="$integration_package" '$0 != prefix && index($0, prefix "/") != 1' coverage/unit/all.txt > coverage/unit/packages.txt
+          mapfile -t packages < coverage/unit/packages.txt
+          test "${#packages[@]}" -gt 0
+          go test -race -coverprofile=coverage/unit/coverage.out -timeout=15m "${packages[@]}"
+
+      - name: Upload coverage and package inventory
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-unit
+          path: coverage/unit/
+          if-no-files-found: error
+          retention-days: 7
+
+  test-integration:
+    name: Integration Tests
     needs: changes
     if: ${{ needs.changes.outputs.go == 'true' }}
     runs-on: ubuntu-24.04
@@ -248,8 +283,68 @@ jobs:
           echo "$HOME/.cache/yara-oracle/bin" >> "$GITHUB_PATH"
 
       - name: Run race tests and coverage
-        # The libyara-backed integration package can exceed Go's 10m default.
-        run: go test -race -coverprofile=coverage.out -timeout=15m ./...
+        run: |
+          mkdir -p coverage/integration
+          go list ./... > coverage/integration/all.txt
+          sort -o coverage/integration/all.txt coverage/integration/all.txt
+          go list ./tests/integration/... > coverage/integration/packages.txt
+          sort -o coverage/integration/packages.txt coverage/integration/packages.txt
+          mapfile -t packages < coverage/integration/packages.txt
+          test "${#packages[@]}" -gt 0
+          go test -race -coverprofile=coverage/integration/coverage.out -timeout=15m "${packages[@]}"
+
+      - name: Upload coverage and package inventory
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-integration
+          path: coverage/integration/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Run libyara differential oracle tests
+        run: go test -tags bugproof -race ./tests/integration/ -run TestBug
+
+  test-coverage:
+    name: Test Coverage
+    needs: [changes, test-unit, test-integration]
+    if: ${{ needs.changes.outputs.go == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache: true
+
+      - name: Download unit coverage
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: coverage-unit
+          path: coverage/unit
+
+      - name: Download integration coverage
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: coverage-integration
+          path: coverage/integration
+
+      - name: Verify package inventory and integration coverage
+        run: |
+          cmp coverage/unit/all.txt coverage/integration/all.txt
+          cat coverage/unit/packages.txt coverage/integration/packages.txt | sort > coverage/combined.txt
+          # Comparing the sorted lists also rejects duplicates and overlaps.
+          cmp coverage/unit/all.txt coverage/combined.txt
+          # Default per-package coverage currently gives integration no blocks.
+          # Fail closed if that changes: new blocks must join the aggregate gate.
+          if ! printf 'mode: atomic\n' | cmp -s - coverage/integration/coverage.out; then
+            echo "Integration gained coverage blocks; merge them before applying the 79% gate."
+            exit 1
+          fi
+          cp coverage/unit/coverage.out coverage.out
 
       - name: Check test coverage
         run: |
@@ -259,9 +354,6 @@ jobs:
             echo "Total statement coverage is below 79%"
             exit 1
           fi
-
-      - name: Run libyara differential oracle tests
-        run: go test -tags bugproof -race ./tests/integration/ -run TestBug
 
   simd:
     name: ${{ matrix.name }}
@@ -418,7 +510,7 @@ jobs:
     name: Quality Gate
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    needs: [changes, lint, test, simd, security, fuzz, perf]
+    needs: [changes, lint, test-unit, test-integration, test-coverage, simd, security, fuzz, perf]
     if: ${{ always() && !cancelled() }}
     steps:
       - name: Check job results
@@ -438,7 +530,18 @@ jobs:
           }
 
           check_job "Lint" "${{ needs.lint.result }}"
-          check_job "Test" "${{ needs.test.result }}"
+          # These lanes may skip only when Go checks were intentionally omitted.
+          case "${{ needs.changes.outputs.go }}" in
+            true) expected_test_result=success ;;
+            false) expected_test_result=skipped ;;
+            *) echo "Invalid Go change classification"; exit 1 ;;
+          esac
+          for result in "${{ needs.test-unit.result }}" "${{ needs.test-integration.result }}" "${{ needs.test-coverage.result }}"; do
+            if [ "$result" != "$expected_test_result" ]; then
+              echo "Test lanes and coverage must be $expected_test_result; got $result"
+              exit 1
+            fi
+          done
           check_job "Security" "${{ needs.security.result }}"
           check_job "Experimental SIMD" "${{ needs.simd.result }}"
           check_job "Performance Gate" "${{ needs.perf.result }}"
