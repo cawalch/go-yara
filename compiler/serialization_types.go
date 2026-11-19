@@ -1,9 +1,16 @@
 package compiler
 
 import (
+	"cmp"
+
 	"github.com/cawalch/go-yara/ast"
 	"github.com/cawalch/go-yara/regex"
 )
+
+type serializedEntry[K cmp.Ordered, V any] struct {
+	Key   K
+	Value V
+}
 
 type serializedProgram struct {
 	// Legacy format 4-19 map fields (decoded for backward compatibility; nil in format 20+).
@@ -12,8 +19,8 @@ type serializedProgram struct {
 	Dependencies  map[string][]string
 
 	// Deterministic format 20+ sorted entry slices.
-	ModuleSchemaEntries []serializedModuleSchemaEntry
-	DependencyEntries   []serializedStringSliceEntry
+	ModuleSchemaEntries []serializedEntry[string, *serializedModuleSchema]
+	DependencyEntries   []serializedEntry[string, []string]
 }
 
 type serializedRule struct {
@@ -62,40 +69,26 @@ type serializedRule struct {
 	FixedOffsets     map[string]int64
 
 	// Deterministic format 20+ sorted entry slices.
-	StringEntries          []serializedByteEntry
-	StringKindEntries      []serializedStringKindEntry
-	StringModifierEntries  []serializedStringModifierEntry
-	CaptureBindingEntries  []serializedCaptureBindingEntry
-	TextPatternEntries     []serializedByteEntry
-	RegexPatternEntries    []serializedRegexPatternEntry
-	HexPatternEntries      []serializedHexPatternEntry
-	StatEntries            []serializedIntEntry
-	ExternalSlotEntries    []serializedIntEntry
-	GlobalSlotEntries      []serializedIntEntry
-	GlobalValueEntries     []serializedGlobalValueEntry
-	MetaEntries            []serializedScalarEntry
-	ModuleNameEntries      []serializedModuleNameEntry
-	ModuleSignatureEntries []serializedModuleSignatureEntry
-	FixedOffsetEntries     []serializedInt64Entry
+	StringEntries          []serializedEntry[string, []byte]
+	StringKindEntries      []serializedEntry[string, StringKind]
+	StringModifierEntries  []serializedEntry[string, []serializedStringModifier]
+	CaptureBindingEntries  []serializedEntry[string, []serializedCaptureBinding]
+	TextPatternEntries     []serializedEntry[string, []byte]
+	RegexPatternEntries    []serializedEntry[string, serializedRegexPattern]
+	HexPatternEntries      []serializedEntry[string, serializedHexPattern]
+	StatEntries            []serializedEntry[string, int]
+	ExternalSlotEntries    []serializedEntry[string, int]
+	GlobalSlotEntries      []serializedEntry[string, int]
+	GlobalValueEntries     []serializedEntry[string, serializedGlobalValue]
+	MetaEntries            []serializedEntry[string, serializedScalar]
+	ModuleNameEntries      []serializedEntry[uint8, string]
+	ModuleSignatureEntries []serializedEntry[uint8, serializedModuleFunction]
+	FixedOffsetEntries     []serializedEntry[string, int64]
 }
-
-type serializedModuleSchemaEntry struct {
-	Key   string
-	Value *serializedModuleSchema
-}
-
-func (e serializedModuleSchemaEntry) entryKey() string { return e.Key }
 
 type serializedModuleSchema struct {
-	Fields []serializedModuleFieldEntry
+	Fields []serializedEntry[string, serializedModuleField]
 }
-
-type serializedModuleFieldEntry struct {
-	Key   string
-	Value serializedModuleField
-}
-
-func (e serializedModuleFieldEntry) entryKey() string { return e.Key }
 
 type serializedModuleField struct {
 	Kind     ModuleValueType
@@ -103,97 +96,6 @@ type serializedModuleField struct {
 	Element  *serializedModuleField
 	Constant *ModuleValue
 }
-
-type serializedStringSliceEntry struct {
-	Key   string
-	Value []string
-}
-
-func (e serializedStringSliceEntry) entryKey() string { return e.Key }
-
-type serializedByteEntry struct {
-	Key   string
-	Value []byte
-}
-
-func (e serializedByteEntry) entryKey() string { return e.Key }
-
-type serializedStringKindEntry struct {
-	Key   string
-	Value StringKind
-}
-
-func (e serializedStringKindEntry) entryKey() string { return e.Key }
-
-type serializedStringModifierEntry struct {
-	Key   string
-	Value []serializedStringModifier
-}
-
-func (e serializedStringModifierEntry) entryKey() string { return e.Key }
-
-type serializedCaptureBindingEntry struct {
-	Key   string
-	Value []serializedCaptureBinding
-}
-
-func (e serializedCaptureBindingEntry) entryKey() string { return e.Key }
-
-type serializedRegexPatternEntry struct {
-	Key   string
-	Value serializedRegexPattern
-}
-
-func (e serializedRegexPatternEntry) entryKey() string { return e.Key }
-
-type serializedHexPatternEntry struct {
-	Key   string
-	Value serializedHexPattern
-}
-
-func (e serializedHexPatternEntry) entryKey() string { return e.Key }
-
-type serializedIntEntry struct {
-	Key   string
-	Value int
-}
-
-func (e serializedIntEntry) entryKey() string { return e.Key }
-
-type serializedGlobalValueEntry struct {
-	Key   string
-	Value serializedGlobalValue
-}
-
-func (e serializedGlobalValueEntry) entryKey() string { return e.Key }
-
-type serializedScalarEntry struct {
-	Key   string
-	Value serializedScalar
-}
-
-func (e serializedScalarEntry) entryKey() string { return e.Key }
-
-type serializedModuleNameEntry struct {
-	Key   uint8
-	Value string
-}
-
-func (e serializedModuleNameEntry) entryKey() uint8 { return e.Key }
-
-type serializedModuleSignatureEntry struct {
-	Key   uint8
-	Value serializedModuleFunction
-}
-
-func (e serializedModuleSignatureEntry) entryKey() uint8 { return e.Key }
-
-type serializedInt64Entry struct {
-	Key   string
-	Value int64
-}
-
-func (e serializedInt64Entry) entryKey() string { return e.Key }
 
 type serializedModuleFunction struct {
 	Signatures  [][]ModuleValueType
