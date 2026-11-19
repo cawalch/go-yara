@@ -14,14 +14,15 @@ import (
 
 func TestTeddyAVX2Corpus(t *testing.T) {
 	available := archsimd.X86.AVX2() && byteSIMDHardwareAvailable(simd.BroadcastUint8s(0))
-	for _, groups := range []int{1, 8, 9, 16, 64, 65} {
+	for _, groups := range []int{1, 8, 9, 16, 64, 65, maxTeddyPrefixCover3 + 1} {
 		t.Run(strconv.Itoa(groups), func(t *testing.T) {
-			patterns := make([]acStringInfo, 128)
+			patterns := make([]acStringInfo, max(128, groups))
 			for i := range patterns {
-				patterns[i] = acStringInfo{Data: []byte{0x80 + byte(i%groups), 'A', 'z', byte(i)}, Flags: regex.FlagsNoCase}
+				g := i % groups
+				patterns[i] = acStringInfo{Data: []byte{0x80 + byte(g%64), byte('A' + g/64), 'z', byte(i)}, Flags: regex.FlagsNoCase}
 			}
 			filter := newTeddyPrefilter(patterns)
-			if !available || groups > maxTeddyPatterns {
+			if !available || groups > maxTeddyPrefixCover3 {
 				if filter != nil {
 					t.Fatal("ineligible corpus enabled SIMD")
 				}
@@ -38,7 +39,7 @@ func TestTeddyAVX2Corpus(t *testing.T) {
 				}
 				for i := range groups {
 					for pos := 0; pos+3 <= size; pos++ {
-						copy(data[pos:], []byte{0x80 + byte(i), 'a', 'Z'})
+						copy(data[pos:], []byte{0x80 + byte(i%64), byte('a' + i/64), 'Z'})
 						if !gate.mayMatch(data, nil) {
 							t.Fatalf("lost prefix %d at %d of %d", i, pos, size)
 						}

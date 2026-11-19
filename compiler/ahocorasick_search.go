@@ -396,7 +396,7 @@ func searchClassTableWithCancel[S ~uint16 | ~int32](ac *acAutomaton, rootTransit
 			if currentState == 0 && i >= linearUntil && len(data)-i >= 32 {
 				candidate := ac.teddy.findCandidateWithCancel(data, i, done)
 				if candidate < 0 {
-					i = max(i, len(data)-31)
+					i = max(i, len(data)-33)
 					if i >= len(data) {
 						return
 					}
@@ -500,7 +500,7 @@ func searchTableWithCancel[S ~uint16 | ~int32](ac *acAutomaton, trans [][256]S, 
 			if currentState == 0 && i >= linearUntil && len(data)-i >= 32 {
 				candidate := ac.teddy.findCandidateWithCancel(data, i, done)
 				if candidate < 0 {
-					i = max(i, len(data)-31)
+					i = max(i, len(data)-33)
 					if i >= len(data) {
 						return
 					}
@@ -673,7 +673,7 @@ func searchClassTable[S ~uint16 | ~int32](ac *acAutomaton, rootTransitions *[256
 			if currentState == 0 && i >= linearUntil && len(data)-i >= 32 {
 				candidate := ac.teddy.findCandidate(data, i)
 				if candidate < 0 {
-					i = max(i, len(data)-31)
+					i = max(i, len(data)-33)
 					if i >= len(data) {
 						return
 					}
@@ -855,7 +855,7 @@ func searchTableTeddy[S ~uint16 | ~int32](ac *acAutomaton, trans [][256]S, data 
 func advanceTeddyCandidate(teddy teddyPrefilter, data []byte, i int, linearUntil, denseWindow *int) int {
 	candidate := teddy.findCandidate(data, i)
 	if candidate < 0 {
-		return max(i, len(data)-31)
+		return max(i, len(data)-33)
 	}
 	if candidate-i < 64 {
 		*linearUntil = candidate + *denseWindow
