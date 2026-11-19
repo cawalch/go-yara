@@ -208,11 +208,16 @@ jobs:
           check-latest: true
           cache: true
 
-      - name: Test coverage aggregation
-        run: python3 -m unittest discover -s scripts -p 'test_ci_coverage.py'
-
       - name: Run race tests and coverage
-        run: python3 scripts/ci_coverage.py run unit coverage/unit
+        run: |
+          mkdir -p coverage/unit
+          go list ./... > coverage/unit/all.txt
+          sort -o coverage/unit/all.txt coverage/unit/all.txt
+          integration_package=$(go list ./tests/integration)
+          awk -v prefix="$integration_package" '$0 != prefix && index($0, prefix "/") != 1' coverage/unit/all.txt > coverage/unit/packages.txt
+          mapfile -t packages < coverage/unit/packages.txt
+          test "${#packages[@]}" -gt 0
+          go test -race -coverprofile=coverage/unit/coverage.out -timeout=15m "${packages[@]}"
 
       - name: Upload coverage and package inventory
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -278,7 +283,15 @@ jobs:
           echo "$HOME/.cache/yara-oracle/bin" >> "$GITHUB_PATH"
 
       - name: Run race tests and coverage
-        run: python3 scripts/ci_coverage.py run integration coverage/integration
+        run: |
+          mkdir -p coverage/integration
+          go list ./... > coverage/integration/all.txt
+          sort -o coverage/integration/all.txt coverage/integration/all.txt
+          go list ./tests/integration/... > coverage/integration/packages.txt
+          sort -o coverage/integration/packages.txt coverage/integration/packages.txt
+          mapfile -t packages < coverage/integration/packages.txt
+          test "${#packages[@]}" -gt 0
+          go test -race -coverprofile=coverage/integration/coverage.out -timeout=15m "${packages[@]}"
 
       - name: Upload coverage and package inventory
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -319,8 +332,19 @@ jobs:
           name: coverage-integration
           path: coverage/integration
 
-      - name: Verify inventories and merge coverage
-        run: python3 scripts/ci_coverage.py merge coverage/unit coverage/integration coverage.out
+      - name: Verify package inventory and integration coverage
+        run: |
+          cmp coverage/unit/all.txt coverage/integration/all.txt
+          cat coverage/unit/packages.txt coverage/integration/packages.txt | sort > coverage/combined.txt
+          # Comparing the sorted lists also rejects duplicates and overlaps.
+          cmp coverage/unit/all.txt coverage/combined.txt
+          # Default per-package coverage currently gives integration no blocks.
+          # Fail closed if that changes: new blocks must join the aggregate gate.
+          if ! printf 'mode: atomic\n' | cmp -s - coverage/integration/coverage.out; then
+            echo "Integration gained coverage blocks; merge them before applying the 79% gate."
+            exit 1
+          fi
+          cp coverage/unit/coverage.out coverage.out
 
       - name: Check test coverage
         run: |
