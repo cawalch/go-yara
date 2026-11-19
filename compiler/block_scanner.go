@@ -148,7 +148,7 @@ func (scanner *BlockScanner) ScanWithContext(ctx context.Context, base int64, da
 		if s.hookMask&(hookBitPatternProfile|hookBitTelemetry|hookBitRuleProfile) != 0 {
 			clear(s.localProfileCandidates)
 		}
-		s.matchCtx.Reset(blockData)
+		s.matchCtx.ResetForRule(rule, blockData)
 		s.matchCtx.cancelDone = ctx.Done()
 		s.matchCtx.maxMatchesPerPattern = 0
 		if s.fastScan && rule.FastScanSafe {
@@ -176,7 +176,7 @@ func (scanner *BlockScanner) ScanWithContext(ctx context.Context, base int64, da
 			s.telemetrySink.VerificationBudgetRejects += uint64(s.matchCtx.verificationBudgetRejects)
 			s.matchCtx.verificationBudgetRejects = 0
 		}
-		if len(s.matchCtx.spans) == 0 {
+		if !s.matchCtx.hasSpans() {
 			continue
 		}
 		perRule := scanner.matches[rule.Name]
@@ -184,9 +184,9 @@ func (scanner *BlockScanner) ScanWithContext(ctx context.Context, base int64, da
 			perRule = make(map[string][]Match)
 			scanner.matches[rule.Name] = perRule
 		}
-		for id, spans := range s.matchCtx.spans {
+		s.matchCtx.forEachSpanSlice(func(id string, spans []matchSpan) {
 			if s.fastScan && rule.FastScanSafe && len(perRule[id]) > 0 {
-				continue
+				return
 			}
 			for _, span := range spans {
 				perRule[id] = append(perRule[id], Match{
@@ -199,7 +199,7 @@ func (scanner *BlockScanner) ScanWithContext(ctx context.Context, base int64, da
 					break
 				}
 			}
-		}
+		})
 	}
 	if s.hookMask&hookBitChunkBoundary != 0 {
 		s.dispatchChunk(base, len(data), len(scanner.matches))
@@ -331,7 +331,7 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (result *Sca
 			}
 		}
 		state.populated = true
-		if !s.prefilterDisabled && rule.RequiresStringMatch && len(s.matchCtx.spans) == 0 {
+		if !s.prefilterDisabled && rule.RequiresStringMatch && !s.matchCtx.hasSpans() {
 			if rule.Index >= 0 && rule.Index < len(s.ruleResultsDense) {
 				s.ruleResultsDense[rule.Index] = false
 			}
@@ -605,7 +605,7 @@ func (scanner *BlockScanner) recordPatternCounts(rule *CompiledRule) {
 		candidates, known := s.patternCandidateCount(rule, id, false)
 		if known {
 			counts.candidates += candidates
-			counts.falseCandidates += max(candidates-len(s.matchCtx.spans[id]), 0)
+			counts.falseCandidates += max(candidates-len(s.matchCtx.spansFor(id)), 0)
 		}
 	}
 	scanner.profileCounts[rule.Name] = counts

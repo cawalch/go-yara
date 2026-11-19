@@ -71,19 +71,27 @@ func PopulateMatchContext(ctx *MatchContext, rule *CompiledRule, data []byte) {
 }
 
 func (ctx *MatchContext) normalizeMatches() {
+	if ctx.slotRule != nil {
+		for _, slot := range ctx.touchedSlots {
+			if slot >= 0 && slot < len(ctx.spansByIndex) && len(ctx.spansByIndex[slot]) > 0 {
+				ctx.spansByIndex[slot] = sortAndDedupeMatchSpans(ctx.spansByIndex[slot])
+			}
+		}
+		return
+	}
 	for id, spans := range ctx.spans {
 		ctx.spans[id] = sortAndDedupeMatchSpans(spans)
 	}
 }
 
 func (ctx *MatchContext) materializePublicMatches() {
-	if len(ctx.spans) == 0 {
+	if !ctx.hasSpans() {
 		return
 	}
 	if ctx.Matches == nil {
-		ctx.Matches = make(map[string][]Match, len(ctx.spans))
+		ctx.Matches = make(map[string][]Match)
 	}
-	for id, spans := range ctx.spans {
+	ctx.forEachSpanSlice(func(id string, spans []matchSpan) {
 		ms := make([]Match, len(spans))
 		for i, sp := range spans {
 			ms[i] = Match{
@@ -93,17 +101,42 @@ func (ctx *MatchContext) materializePublicMatches() {
 			}
 		}
 		ctx.Matches[id] = ms
-	}
+	})
 }
 
 // normalizeRegexEncodingMatches resolves ASCII/wide collisions before general
 // normalization. Producers append the preferred encoding first; retain that
 // occurrence even if the other encoding has a shorter (or longer) span.
 func (ctx *MatchContext) normalizeRegexEncodingMatches(id string) {
+	if ctx.slotRule != nil {
+		if slot, ok := ctx.slotRule.StringIDToIndex[id]; ok && slot >= 0 && slot < len(ctx.spansByIndex) {
+			if spans := ctx.spansByIndex[slot]; len(spans) > 1 {
+				slices.SortStableFunc(spans, func(a, b matchSpan) int { return cmp.Compare(a.Offset, b.Offset) })
+				ctx.spansByIndex[slot] = slices.CompactFunc(spans, func(a, b matchSpan) bool { return a.Offset == b.Offset })
+			}
+		}
+		return
+	}
 	if spans := ctx.spans[id]; len(spans) > 1 {
 		slices.SortStableFunc(spans, func(a, b matchSpan) int { return cmp.Compare(a.Offset, b.Offset) })
 		ctx.spans[id] = slices.CompactFunc(spans, func(a, b matchSpan) bool { return a.Offset == b.Offset })
 	}
+}
+
+// ResetForRule clears the match context and binds dense integer span storage
+// to rule.IndexToStringID so scanning avoids string-map hashing.
+func (ctx *MatchContext) ResetForRule(rule *CompiledRule, data []byte) {
+	ctx.Reset(data)
+	if rule == nil || len(rule.IndexToStringID) == 0 {
+		return
+	}
+	n := len(rule.IndexToStringID)
+	if cap(ctx.spansByIndex) < n {
+		ctx.spansByIndex = make([][]matchSpan, n)
+	} else {
+		ctx.spansByIndex = ctx.spansByIndex[:n]
+	}
+	ctx.slotRule = rule
 }
 
 // Reset clears the match context for reuse
@@ -124,16 +157,27 @@ func (ctx *MatchContext) Reset(data []byte) {
 }
 
 func (ctx *MatchContext) resetCompactStorage() {
-	if ctx.spanBuffers == nil {
-		ctx.spanBuffers = make(map[string][]matchSpan, len(ctx.spans))
-	}
-	for id, spans := range ctx.spans {
-		if cap(spans) > cap(ctx.spanBuffers[id]) {
-			ctx.spanBuffers[id] = spans[:0]
+	for _, slot := range ctx.touchedSlots {
+		if slot >= 0 && slot < len(ctx.spansByIndex) {
+			ctx.spansByIndex[slot] = ctx.spansByIndex[slot][:0]
 		}
 	}
-	clear(ctx.spans)
-	clear(ctx.Matches)
+	ctx.touchedSlots = ctx.touchedSlots[:0]
+	ctx.slotRule = nil
+	if len(ctx.spans) > 0 {
+		if ctx.spanBuffers == nil {
+			ctx.spanBuffers = make(map[string][]matchSpan, len(ctx.spans))
+		}
+		for id, spans := range ctx.spans {
+			if cap(spans) > cap(ctx.spanBuffers[id]) {
+				ctx.spanBuffers[id] = spans[:0]
+			}
+		}
+		clear(ctx.spans)
+	}
+	if len(ctx.Matches) > 0 {
+		clear(ctx.Matches)
+	}
 }
 
 func (ctx *MatchContext) acquireRegexBatch(codeLen int) *regex.VMBatch {
@@ -154,12 +198,20 @@ func (ctx *MatchContext) Release() {
 }
 
 func (ctx *MatchContext) resetForPool() {
+	for _, slot := range ctx.touchedSlots {
+		if slot >= 0 && slot < len(ctx.spansByIndex) {
+			ctx.spansByIndex[slot] = ctx.spansByIndex[slot][:0]
+		}
+	}
+	ctx.touchedSlots = ctx.touchedSlots[:0]
 	clear(ctx.Matches)
 	clear(ctx.spans)
 	clear(ctx.spanBuffers)
 	*ctx = MatchContext{
-		Matches:     ctx.Matches,
-		spans:       ctx.spans,
-		spanBuffers: ctx.spanBuffers,
+		Matches:      ctx.Matches,
+		spansByIndex: ctx.spansByIndex,
+		touchedSlots: ctx.touchedSlots,
+		spans:        ctx.spans,
+		spanBuffers:  ctx.spanBuffers,
 	}
 }

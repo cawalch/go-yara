@@ -110,8 +110,8 @@ func (s *Scanner) extractPublicMatchesAndEvidence(
 	}
 
 	var publicMatches map[string][]Match
-	if len(s.matchCtx.spans) > 0 {
-		publicMatches = materializeRuleMatchesAt(rule, s.matchCtx.spans, matchBase)
+	if s.matchCtx.hasSpans() {
+		publicMatches = materializeRuleMatchesAt(rule, s.matchCtx, matchBase)
 		if publicMatches != nil {
 			if err := s.populateMatchEvidenceFrom(ctx, publicRuleMaterialization{
 				data:    data,
@@ -219,39 +219,27 @@ func copyBytes(src []byte) []byte {
 	return dst
 }
 
-func materializeRuleMatchesAt(rule *CompiledRule, src map[string][]matchSpan, base int64) map[string][]Match {
-	if len(src) == 0 {
+func materializeRuleMatchesAt(rule *CompiledRule, ctx *MatchContext, base int64) map[string][]Match {
+	if !ctx.hasSpans() {
 		return nil
-	}
-	if len(src) == 1 {
-		for id, spans := range src {
-			if len(spans) == 0 || (rule != nil && rule.IsPrivateString(id)) {
-				return nil
-			}
-			dst := make([]Match, len(spans))
-			for index, span := range spans {
-				dst[index] = Match{Pattern: id, Offset: span.Offset, Length: span.Length, Base: base}
-			}
-			return map[string][]Match{id: dst}
-		}
 	}
 	totalSpans := 0
 	validIDs := 0
-	for id, spans := range src {
-		if len(spans) == 0 || (rule != nil && rule.IsPrivateString(id)) {
-			continue
+	ctx.forEachSpanSlice(func(id string, spans []matchSpan) {
+		if rule != nil && rule.IsPrivateString(id) {
+			return
 		}
 		totalSpans += len(spans)
 		validIDs++
-	}
+	})
 	if totalSpans == 0 {
 		return nil
 	}
 	matches := make(map[string][]Match, validIDs)
 	slab := make([]Match, totalSpans)
-	for id, spans := range src {
-		if len(spans) == 0 || (rule != nil && rule.IsPrivateString(id)) {
-			continue
+	ctx.forEachSpanSlice(func(id string, spans []matchSpan) {
+		if rule != nil && rule.IsPrivateString(id) {
+			return
 		}
 		n := len(spans)
 		dst := slab[:n:n]
@@ -260,6 +248,6 @@ func materializeRuleMatchesAt(rule *CompiledRule, src map[string][]matchSpan, ba
 			dst[index] = Match{Pattern: id, Offset: span.Offset, Length: span.Length, Base: base}
 		}
 		matches[id] = dst
-	}
+	})
 	return matches
 }
