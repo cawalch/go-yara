@@ -2,6 +2,8 @@ package compiler
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/cawalch/go-yara/ast"
@@ -198,5 +200,38 @@ func TestAppendHexPrefilterMatchesLinearEmptyEnd(t *testing.T) {
 	data := []byte{0x00, 0xAA}
 	if got := appendHexPrefilterMatches(nil, rule, "$h", entry, data, []int{1}, nil, nil); len(got) != 0 {
 		t.Fatalf("appendHexPrefilterMatches(linear zero-length) = %v, want no matches", got)
+	}
+}
+
+func TestHexAtomAdjacentAndFanoutDiscriminator(t *testing.T) {
+	var src strings.Builder
+	for i := range 10 {
+		fmt.Fprintf(&src, "rule h%d { strings: $a = { 4D 5A [1-3] %02X ?? 50 45 00 00 } condition: $a }\n", i, i+1)
+	}
+	src.WriteString("rule hw0 { strings: $a = { 4D 5A [1-3] ?? ?? 50 45 00 00 } condition: $a }\n")
+	program, err := NewCompiler().CompileSource(src.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	hasDisc := false
+	for _, entry := range program.sharedLookup {
+		if entry.hexDisc != nil {
+			hasDisc = true
+			break
+		}
+	}
+	if !hasDisc {
+		t.Fatal("expected hexDisc to be built for shared PE\\0\\0 fanout group")
+	}
+
+	input := []byte("xxMZ\x90\x90\x05\xAA\x50\x45\x00\x00yy")
+	sc := NewScanner(program)
+	defer sc.Close()
+	rules, err := sc.MatchingRules(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rules) != 2 || rules[0].Rule != "h4" || rules[1].Rule != "hw0" {
+		t.Fatalf("MatchingRules = %v, want [h4 hw0]", rules)
 	}
 }

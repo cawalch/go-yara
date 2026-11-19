@@ -598,6 +598,9 @@ type hexMatchScratch struct {
 	failed              map[hexFailureState]struct{}
 	failureFrames       []hexFailureFrame
 	planTokens          []HexPatternToken
+	candidateStarts     []int
+	fanoutCandidates    [][]int
+	fanoutTouched       []int
 	planPrefix          int
 	planSingleJump      bool
 	planMemoize         bool
