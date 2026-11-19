@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"math/bits"
 	"slices"
 	"strings"
 
@@ -15,11 +16,32 @@ type stringPresenceBounds struct {
 	sufficient []string
 }
 
+type stringPresenceMaskBounds struct {
+	required   uint64
+	forbidden  uint64
+	sufficient uint64
+}
+
+const (
+	maskUnsafe uint8 = iota
+	maskSafe
+	maskFallback
+)
+
 // deriveStringPresenceBounds accepts only pure string-presence Boolean conditions.
 // Skipping other expressions preserves runtime errors and evaluation order.
 func deriveStringPresenceBounds(expr ast.Expression, patterns []*ast.String) ([]string, []string) {
 	if len(patterns) < 2 {
 		return nil, nil
+	}
+	if len(patterns) <= 64 {
+		bounds, status := stringPresenceMask(expr, patterns)
+		switch status {
+		case maskUnsafe:
+			return nil, nil
+		case maskSafe:
+			return maskToSortedNames(bounds.required, patterns), maskToSortedNames(bounds.forbidden, patterns)
+		}
 	}
 	bounds, safe := stringPresence(expr, patterns)
 	if !safe {
@@ -35,6 +57,145 @@ func deriveStringPresenceBounds(expr ast.Expression, patterns []*ast.String) ([]
 		forbidden = slices.Compact(bounds.forbidden)
 	}
 	return required, forbidden
+}
+
+func maskToSortedNames(mask uint64, patterns []*ast.String) []string {
+	if mask == 0 {
+		return nil
+	}
+	names := make([]string, 0, bits.OnesCount64(mask))
+	for mask != 0 {
+		idx := bits.TrailingZeros64(mask)
+		names = append(names, patterns[idx].Identifier)
+		mask &= mask - 1
+	}
+	slices.Sort(names)
+	return slices.Compact(names)
+}
+
+func stringPresenceMask(expr ast.Expression, patterns []*ast.String) (stringPresenceMaskBounds, uint8) {
+	switch e := expr.(type) {
+	case *ast.Identifier:
+		if strings.HasPrefix(e.Name, "$") && !strings.Contains(e.Name, "*") && e.Name != "$" {
+			for i, pattern := range patterns {
+				if pattern.Identifier == e.Name {
+					bit := uint64(1) << i
+					return stringPresenceMaskBounds{required: bit, sufficient: bit}, maskSafe
+				}
+			}
+			return stringPresenceMaskBounds{}, maskFallback
+		}
+		return stringPresenceMaskBounds{}, maskUnsafe
+	case *ast.Literal:
+		if e.Type == token.TRUE || e.Type == token.FALSE {
+			return stringPresenceMaskBounds{}, maskSafe
+		}
+		return stringPresenceMaskBounds{}, maskUnsafe
+	case *ast.BinaryOp:
+		return binaryStringPresenceMask(e, patterns)
+	case *ast.UnaryOp:
+		if e.Op != token.NOT {
+			return stringPresenceMaskBounds{}, maskUnsafe
+		}
+		inner, status := stringPresenceMask(e.Right, patterns)
+		if status != maskSafe {
+			return stringPresenceMaskBounds{}, status
+		}
+		return stringPresenceMaskBounds{
+			forbidden:  inner.sufficient,
+			sufficient: inner.forbidden,
+		}, maskSafe
+	case *ast.OfExpression:
+		return ofExpressionStringPresenceMask(e, patterns)
+	default:
+		return stringPresenceMaskBounds{}, maskUnsafe
+	}
+}
+
+func binaryStringPresenceMask(e *ast.BinaryOp, patterns []*ast.String) (stringPresenceMaskBounds, uint8) {
+	if e.Op != token.AND && e.Op != token.OR {
+		return stringPresenceMaskBounds{}, maskUnsafe
+	}
+	left, leftStatus := stringPresenceMask(e.Left, patterns)
+	if leftStatus != maskSafe {
+		return stringPresenceMaskBounds{}, leftStatus
+	}
+	right, rightStatus := stringPresenceMask(e.Right, patterns)
+	if rightStatus != maskSafe {
+		return stringPresenceMaskBounds{}, rightStatus
+	}
+	if e.Op == token.AND {
+		return stringPresenceMaskBounds{
+			required:   left.required | right.required,
+			forbidden:  left.forbidden | right.forbidden,
+			sufficient: left.sufficient & right.sufficient,
+		}, maskSafe
+	}
+	return stringPresenceMaskBounds{
+		required:   left.required & right.required,
+		forbidden:  left.forbidden & right.forbidden,
+		sufficient: left.sufficient | right.sufficient,
+	}, maskSafe
+}
+
+func ofExpressionStringPresenceMask(e *ast.OfExpression, patterns []*ast.String) (stringPresenceMaskBounds, uint8) {
+	if e.InRange != nil || e.AtOffset != nil {
+		return stringPresenceMaskBounds{}, maskUnsafe
+	}
+	count, ok := e.Count.(*ast.Identifier)
+	if !ok {
+		return stringPresenceMaskBounds{}, maskUnsafe
+	}
+	ids, safe := requiredStringSetMask(e.Strings, patterns)
+	if !safe {
+		return stringPresenceMaskBounds{}, maskUnsafe
+	}
+	if ids == 0 {
+		return stringPresenceMaskBounds{}, maskSafe
+	}
+	switch count.Name {
+	case QuantifierAll:
+		var suff uint64
+		if bits.OnesCount64(ids) == 1 {
+			suff = ids
+		}
+		return stringPresenceMaskBounds{required: ids, sufficient: suff}, maskSafe
+	case QuantifierAny:
+		var req uint64
+		if bits.OnesCount64(ids) == 1 {
+			req = ids
+		}
+		return stringPresenceMaskBounds{required: req, sufficient: ids}, maskSafe
+	case QuantifierNone:
+		return stringPresenceMaskBounds{forbidden: ids}, maskSafe
+	default:
+		return stringPresenceMaskBounds{}, maskUnsafe
+	}
+}
+
+func requiredStringSetMask(expr ast.Expression, patterns []*ast.String) (uint64, bool) {
+	switch e := expr.(type) {
+	case *ast.Identifier:
+		var mask uint64
+		for i, pattern := range patterns {
+			if e.Name == "them" || e.Name == pattern.Identifier || strings.HasSuffix(e.Name, "*") && strings.HasPrefix(pattern.Identifier, strings.TrimSuffix(e.Name, "*")) {
+				mask |= uint64(1) << i
+			}
+		}
+		return mask, true
+	case *ast.StringTuple:
+		var mask uint64
+		for _, element := range e.Elements {
+			elemMask, ok := requiredStringSetMask(element, patterns)
+			if !ok {
+				return 0, false
+			}
+			mask |= elemMask
+		}
+		return mask, true
+	default:
+		return 0, false
+	}
 }
 
 func stringPresence(expr ast.Expression, patterns []*ast.String) (stringPresenceBounds, bool) {
