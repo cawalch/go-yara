@@ -474,40 +474,57 @@ func (s *Scanner) populateNonTextPrefilterCache(
 			continue
 		}
 
-		rule := s.program.Rules[entry.RuleIndex]
-		if entry.StringIdx < 0 || entry.StringIdx >= len(rule.IndexToStringID) {
-			touchedIndex++
-			continue
+		var candidates []int
+		if lookupIdx < len(s.prefilterCandidates) {
+			candidates = s.prefilterCandidates[lookupIdx]
 		}
-		if s.canSkipSharedNonTextEntry(entry, rule, data) {
-			cache.set(entry.CacheIndex, nil)
-			touchedIndex++
-			continue
-		}
-		strID := rule.IndexToStringID[entry.StringIdx]
-		candidates := s.prefilterCandidates[lookupIdx]
-
-		switch entry.Kind {
-		case StringKindRegex:
-			dst := cache.matches[entry.CacheIndex]
-			if len(candidates) > 0 {
-				dst = appendRegexPrefilterMatches(dst, rule, strID, entry, data, candidates, ctx.Done(), s.matchCtx)
+		if len(candidates) > 0 {
+			s.verifySharedNonTextEntry(ctx, entry, data, candidates, cache)
+			for _, extra := range entry.fanout {
+				s.verifySharedNonTextEntry(ctx, extra, data, candidates, cache)
 			}
-			cache.set(entry.CacheIndex, dst)
-		case StringKindHex:
-			dst := cache.matches[entry.CacheIndex]
-			if len(candidates) > 0 {
-				dst = appendHexPrefilterMatches(dst, rule, strID, entry, data, candidates, ctx.Done(), &s.hexScratch)
-			}
-			cache.set(entry.CacheIndex, dst)
-		}
-		if len(cache.matches[entry.CacheIndex]) > 0 {
-			s.sharedNonTextMatched = true
-			s.markNonTextCacheRules(entry.CacheIndex)
 		}
 		touchedIndex++
 	}
 	return ctx.Err()
+}
+
+//nolint:revive // argument-limit: hot-path helper avoids struct allocation
+func (s *Scanner) verifySharedNonTextEntry(
+	ctx context.Context,
+	entry sharedAutomatonEntry,
+	data []byte,
+	candidates []int,
+	cache *nonTextMatchCache,
+) {
+	rule := s.program.Rules[entry.RuleIndex]
+	if entry.StringIdx < 0 || entry.StringIdx >= len(rule.IndexToStringID) {
+		return
+	}
+	if s.canSkipSharedNonTextEntry(entry, rule, data) {
+		cache.set(entry.CacheIndex, nil)
+		return
+	}
+	strID := rule.IndexToStringID[entry.StringIdx]
+
+	switch entry.Kind {
+	case StringKindRegex:
+		dst := cache.matches[entry.CacheIndex]
+		if len(candidates) > 0 {
+			dst = appendRegexPrefilterMatches(dst, rule, strID, entry, data, candidates, ctx.Done(), s.matchCtx)
+		}
+		cache.set(entry.CacheIndex, dst)
+	case StringKindHex:
+		dst := cache.matches[entry.CacheIndex]
+		if len(candidates) > 0 {
+			dst = appendHexPrefilterMatches(dst, rule, strID, entry, data, candidates, ctx.Done(), &s.hexScratch)
+		}
+		cache.set(entry.CacheIndex, dst)
+	}
+	if len(cache.matches[entry.CacheIndex]) > 0 {
+		s.sharedNonTextMatched = true
+		s.markNonTextCacheRules(entry.CacheIndex)
+	}
 }
 
 func (s *Scanner) canSkipSharedNonTextEntry(entry sharedAutomatonEntry, rule *CompiledRule, data []byte) bool {

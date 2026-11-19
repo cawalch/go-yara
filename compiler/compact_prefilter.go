@@ -60,13 +60,13 @@ func (cp *CompiledProgram) buildCompactPrefilter() *compactPrefilter {
 	for i, entry := range cp.sharedLookup {
 		info := cp.sharedAutomaton.strings[i]
 		key := compactPatternKey{string(info.Data), info.Flags}
-		counts[key]++
+		counts[key] += 1 + len(entry.fanout)
 		anchor := anchors[entry.RuleIndex]
 		if entry.Kind == StringKindText {
 			if anchor == "" || cp.Rules[entry.RuleIndex].IndexToStringID[entry.StringIdx] == anchor {
 				selected[key] = true
 			}
-		} else if nonText[entry.CacheIndex] {
+		} else if compactEntryUsesNonTextCache(entry, nonText) {
 			selected[key] = true
 		}
 	}
@@ -109,6 +109,18 @@ func (cp *CompiledProgram) buildCompactPrefilter() *compactPrefilter {
 		}
 	}
 	return gate
+}
+
+func compactEntryUsesNonTextCache(entry sharedAutomatonEntry, nonText []bool) bool {
+	if nonText[entry.CacheIndex] {
+		return true
+	}
+	for _, extra := range entry.fanout {
+		if nonText[extra.CacheIndex] {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Scanner) compactPrefilterFanoutRejects(ctx context.Context, data []byte) bool {
