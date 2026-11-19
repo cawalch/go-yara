@@ -20,6 +20,14 @@ func (cc *conditionCompiler) assertionForExpression(expr ast.Expression) (condit
 	if assertion, ok := assertionFromExpression(expr); ok {
 		return assertion, true
 	}
+	if ident, ok := expr.(*ast.Identifier); ok && len(ident.Name) > 1 && ident.Name[0] == '$' {
+		return conditionAssertion{
+			Opcode:     OpAssertStringCount,
+			Comparison: OpIntGt,
+			Value:      0,
+			String:     ident.Name,
+		}, true
+	}
 	return externalAssertion(expr, cc.externalVariables, cc.variableMap)
 }
 

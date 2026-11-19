@@ -223,6 +223,16 @@ func (mc *MatchContext) matchCount(id string) int {
 	return len(mc.spansFor(id))
 }
 
+func (mc *MatchContext) matchCountSlot(slot int, id string) int {
+	if mc == nil {
+		return 0
+	}
+	if mc.slotRule != nil && slot >= 0 && slot < len(mc.spansByIndex) {
+		return len(mc.spansByIndex[slot])
+	}
+	return mc.matchCount(id)
+}
+
 func (mc *MatchContext) matchAt(id string, index int) (matchSpan, bool) {
 	if mc == nil || index < 0 {
 		return matchSpan{}, false
@@ -275,6 +285,16 @@ func (mc *MatchContext) anyMatch(id string, predicate func(matchSpan) bool) bool
 // hasMatchAt returns true if string id has a match at targetOffset in O(log N) time.
 func (mc *MatchContext) hasMatchAt(id string, targetOffset int64) bool {
 	return mc.hasMatchInRange(id, targetOffset, targetOffset)
+}
+
+func (mc *MatchContext) hasMatchAtSlot(slot int, id string, targetOffset int64) bool {
+	if mc == nil || targetOffset < 0 {
+		return false
+	}
+	if mc.slotRule != nil && slot >= 0 && slot < len(mc.spansByIndex) {
+		return hasSpanInRange(mc.spansByIndex[slot], targetOffset, targetOffset)
+	}
+	return mc.hasMatchAt(id, targetOffset)
 }
 
 // hasMatchInRange returns true if string id has at least one match with Offset in [minOffset, maxOffset] in O(log N) time.

@@ -222,8 +222,8 @@ func TestConditionAssertionsSerialization(t *testing.T) {
 	for _, version := range []uint16{4, 5, 6, 7, 8, 9, 10, 11, 12, 13, compiledProgramVersion} {
 		source := conditionAssertionRules(2)
 		if version == 5 || version == 6 {
-			// A standalone string predicate retains the legacy stack-based fused form.
-			source = strings.ReplaceAll(source, "$a at 0 }", "$a at 0 and $a }")
+			// A range-bounded string predicate retains the legacy stack-based fused form.
+			source = strings.ReplaceAll(source, "$a at 0 }", "$a at 0 and $a in (0..10) }")
 		}
 		original := compileAssertionVariant(t, source, version != 4)
 		if version < 7 && len(original.Rules[0].assertionProgram) != 0 {

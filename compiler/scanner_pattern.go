@@ -446,7 +446,7 @@ func (s *Scanner) addLocalNonTextMatches(
 		findPreparedHexMatchesEach(entry.pattern, data, done, &s.hexScratch, func(m Match) bool {
 			m.Pattern = entry.id
 			if matchPassesModifiers(data, m, entry.modifiers, false) {
-				s.matchCtx.AddMatch(m)
+				s.matchCtx.addMatchSpanSlot(entry.slot, entry.id, matchSpan{Offset: m.Offset, Length: m.Length})
 				if canShortCircuit && len(s.matchCtx.spansForSlot(entry.slot, entry.id)) > 0 && s.isRuleConditionSatisfied(rule) {
 					return false
 				}
@@ -565,6 +565,9 @@ func (s *Scanner) prepareInterpreter(rule *CompiledRule) {
 }
 
 func (s *Scanner) setExternalVariables(rule *CompiledRule) {
+	if len(rule.ExternalSlots) == 0 {
+		return
+	}
 	for name, slot := range rule.ExternalSlots {
 		value, ok := s.externalValues[name]
 		if !ok {
@@ -576,6 +579,9 @@ func (s *Scanner) setExternalVariables(rule *CompiledRule) {
 }
 
 func (s *Scanner) setGlobalVariables(rule *CompiledRule) {
+	if len(rule.GlobalSlots) == 0 {
+		return
+	}
 	for name, slot := range rule.GlobalSlots {
 		value, ok := rule.GlobalValues[name]
 		if !ok {

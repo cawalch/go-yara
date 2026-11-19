@@ -726,6 +726,7 @@ func deserializeRule(serialized serializedRule, bindings map[string]compiledModu
 		requiredStrings:     slices.Clone(serialized.RequiredStrings),
 		forbiddenStrings:    slices.Clone(serialized.ForbiddenStrings),
 	}
+	rule.resolveAssertionStringSlots()
 	for _, rawID := range slices.Sorted(maps.Keys(rawModuleNames)) {
 		name := rawModuleNames[rawID]
 		if builtinFunction(rawID) < firstModuleFunctionID {

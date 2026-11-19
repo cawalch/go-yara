@@ -22,6 +22,7 @@ type conditionAssertion struct {
 	Offset        int64
 	Value         int64
 	String        string
+	stringSlot    int
 }
 
 func assertionInteger(expr ast.Expression) (int64, bool) {
