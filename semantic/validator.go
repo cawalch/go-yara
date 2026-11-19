@@ -163,13 +163,19 @@ func (v *Validator) collectExternalVariable(extVar *ast.ExternalVariable) {
 func (v *Validator) validateRule(rule *ast.Rule) {
 	previousRule := v.currentRule
 	v.currentRule = rule.Name
-	prevStrings := v.currentRuleStrings
-	v.currentRuleStrings = make([]string, 0, len(rule.Strings))
+	prevLen := len(v.currentRuleStrings)
+	if cap(v.currentRuleStrings) < prevLen+len(rule.Strings) {
+		grown := make([]string, prevLen, prevLen+len(rule.Strings))
+		copy(grown, v.currentRuleStrings)
+		v.currentRuleStrings = grown
+	}
 	for _, str := range rule.Strings {
 		if str != nil {
 			v.currentRuleStrings = append(v.currentRuleStrings, str.Identifier)
 		}
 	}
+	savedRuleStrings := v.currentRuleStrings[:prevLen]
+	v.currentRuleStrings = v.currentRuleStrings[prevLen:]
 
 	// Enter rule scope for validation
 	v.symbolTable.EnterScopeWithCapacity(rule.Name, len(rule.Strings))
@@ -200,7 +206,7 @@ func (v *Validator) validateRule(rule *ast.Rule) {
 	// Exit rule scope
 	v.symbolTable.ExitScope()
 	v.currentRule = previousRule
-	v.currentRuleStrings = prevStrings
+	v.currentRuleStrings = savedRuleStrings[:prevLen]
 }
 
 // validateMeta validates the meta section.
@@ -292,7 +298,7 @@ func (v *Validator) validateUnknownExpression() (*TypeInfo, []error) {
 
 // validateLiteralExpression validates literal expressions
 func (v *Validator) validateLiteralExpression(lit *ast.Literal) (*TypeInfo, []error) {
-	return InferTypeFromLiteral(lit.Type, lit.Value), nil
+	return inferTypeFromLiteral(lit.Type, lit.Value), nil
 }
 
 // validateIdentifierExpression validates identifier expressions
@@ -449,7 +455,7 @@ func (v *Validator) validateBinaryOpExpression(binOp *ast.BinaryOp) (*TypeInfo, 
 		return &TypeInfo{DataType: TypeUnknown}, errors
 	}
 
-	resultType, err := InferTypeFromBinaryOp(leftType, binOp.Op, rightType)
+	resultType, err := inferTypeFromBinaryOp(leftType, binOp.Op, rightType)
 	if err != nil {
 		semErr := &Error{
 			Code:       ErrCodeTypeMismatch,
@@ -519,7 +525,7 @@ func (v *Validator) validateUnaryOpExpression(unaryOp *ast.UnaryOp) (*TypeInfo, 
 	errors = append(errors, operandErrs...)
 
 	if operandType != nil {
-		resultType, err := InferTypeFromUnaryOp(unaryOp.Op, operandType)
+		resultType, err := inferTypeFromUnaryOp(unaryOp.Op, operandType)
 		if err != nil {
 			errors = append(errors, &Error{
 				Code:     ErrCodeTypeMismatch,
@@ -559,23 +565,23 @@ func (v *Validator) handleStringOperators(unaryOp *ast.UnaryOp, _ []error) (*Typ
 func (v *Validator) getTypeFromSymbol(symbol *Symbol) *TypeInfo {
 	switch symbol.Type {
 	case SymbolRule:
-		return &TypeInfo{DataType: TypeBoolean}
+		return singletonBooleanType
 	case SymbolString:
 		// String identifiers in conditions evaluate to boolean (whether the string is found)
-		return &TypeInfo{DataType: TypeBoolean}
+		return singletonBooleanType
 	case SymbolVariable:
 		// Variables without explicit type metadata default to int64.
-		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
+		return singletonInt64Type
 	case SymbolExternal:
 		// Runtime external variables are dynamically typed by the caller.
-		return &TypeInfo{DataType: TypeUnknown}
+		return singletonUnknownType
 	case SymbolGlobal:
 		if symbol.TypeInfo != nil {
 			return symbol.TypeInfo
 		}
-		return &TypeInfo{DataType: TypeUnknown}
+		return singletonUnknownType
 	default:
-		return &TypeInfo{DataType: TypeUnknown}
+		return singletonUnknownType
 	}
 }
 

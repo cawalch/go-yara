@@ -39,27 +39,27 @@ type Symbol struct {
 
 // Scope represents a scope in the symbol table (global, rule, etc.)
 type Scope struct {
-	Name     string
-	Parent   *Scope
-	Symbols  map[string]*Symbol
-	Children []*Scope
-	Level    int // Nesting level (0 = global)
+	Name       string
+	Parent     *Scope
+	Symbols    map[string]*Symbol
+	symbolSlab []Symbol
+	Level      int // Nesting level (0 = global)
 }
 
 // SymbolTable manages all symbols across different scopes
 type SymbolTable struct {
-	Root    *Scope
-	Current *Scope
+	Root      *Scope
+	Current   *Scope
+	freeScope *Scope
 }
 
 // NewSymbolTable creates a new symbol table
 func NewSymbolTable() *SymbolTable {
 	root := &Scope{
-		Name:     "global",
-		Parent:   nil,
-		Symbols:  make(map[string]*Symbol, 64), // Pre-allocate for typical symbol count
-		Children: make([]*Scope, 0, 8),         // Pre-allocate for child scopes
-		Level:    0,
+		Name:    "global",
+		Parent:  nil,
+		Symbols: make(map[string]*Symbol, 64), // Pre-allocate for typical symbol count
+		Level:   0,
 	}
 
 	return &SymbolTable{
@@ -75,21 +75,44 @@ func (st *SymbolTable) EnterScope(name string) {
 
 // EnterScopeWithCapacity creates a new scope with pre-sized symbol map and makes it current
 func (st *SymbolTable) EnterScopeWithCapacity(name string, symbolCap int) {
-	scope := &Scope{
-		Name:    name,
-		Parent:  st.Current,
-		Symbols: make(map[string]*Symbol, symbolCap),
-		Level:   st.Current.Level + 1,
+	var scope *Scope
+	if st.freeScope != nil {
+		scope = st.freeScope
+		st.freeScope = nil
+		scope.Name = name
+		scope.Parent = st.Current
+		scope.Level = st.Current.Level + 1
+		if cap(scope.symbolSlab) < symbolCap {
+			scope.symbolSlab = make([]Symbol, 0, symbolCap)
+		}
+	} else {
+		var slab []Symbol
+		if symbolCap > 0 {
+			slab = make([]Symbol, 0, symbolCap)
+		}
+		scope = &Scope{
+			Name:       name,
+			Parent:     st.Current,
+			Symbols:    make(map[string]*Symbol, symbolCap),
+			symbolSlab: slab,
+			Level:      st.Current.Level + 1,
+		}
 	}
 
-	st.Current.Children = append(st.Current.Children, scope)
 	st.Current = scope
 }
 
 // ExitScope exits the current scope and returns to parent
 func (st *SymbolTable) ExitScope() {
 	if st.Current.Parent != nil {
-		st.Current = st.Current.Parent
+		exited := st.Current
+		st.Current = exited.Parent
+		if st.freeScope == nil {
+			clear(exited.Symbols)
+			exited.Parent = nil
+			exited.symbolSlab = exited.symbolSlab[:0]
+			st.freeScope = exited
+		}
 	}
 }
 
@@ -124,7 +147,7 @@ func (st *SymbolTable) DefineString(name string, pos token.Position, str *ast.St
 			name, pos, existing.Position)
 	}
 
-	symbol := &Symbol{
+	symbol := st.Current.allocSymbol(Symbol{
 		Name:     name,
 		Type:     SymbolString,
 		Position: pos,
@@ -132,7 +155,7 @@ func (st *SymbolTable) DefineString(name string, pos token.Position, str *ast.St
 		Scope:    st.Current,
 		IsGlobal: st.Current.Level == 0,
 		Used:     false,
-	}
+	})
 
 	st.Current.Symbols[name] = symbol
 	return nil
@@ -145,7 +168,7 @@ func (st *SymbolTable) DefineVariable(name string, pos token.Position, varType S
 			name, pos, existing.Position)
 	}
 
-	symbol := &Symbol{
+	symbol := st.Current.allocSymbol(Symbol{
 		Name:     name,
 		Type:     varType,
 		Position: pos,
@@ -153,10 +176,19 @@ func (st *SymbolTable) DefineVariable(name string, pos token.Position, varType S
 		Scope:    st.Current,
 		IsGlobal: st.Current.Level == 0,
 		Used:     false,
-	}
+	})
 
 	st.Current.Symbols[name] = symbol
 	return nil
+}
+
+func (s *Scope) allocSymbol(sym Symbol) *Symbol {
+	if s.Level == 0 {
+		return &sym
+	}
+	idx := len(s.symbolSlab)
+	s.symbolSlab = append(s.symbolSlab, sym)
+	return &s.symbolSlab[idx]
 }
 
 type globalVariableDefinition struct {
@@ -231,11 +263,11 @@ func (st *SymbolTable) ResetWithCapacity(ruleCount int) {
 		ruleCount = 64
 	}
 	root := &Scope{
-		Name:     "global",
-		Symbols:  make(map[string]*Symbol, ruleCount),
-		Children: make([]*Scope, 0, ruleCount),
-		Level:    0,
+		Name:    "global",
+		Symbols: make(map[string]*Symbol, ruleCount),
+		Level:   0,
 	}
 	st.Root = root
 	st.Current = root
+	st.freeScope = nil
 }
