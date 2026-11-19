@@ -129,7 +129,7 @@ func (s *Scanner) MatchingRules(data []byte) ([]RuleMatch, error) {
 
 // MatchingRulesWithContext returns detailed public rule matches without
 // constructing the all-rules maps in ScanResult.
-func (s *Scanner) MatchingRulesWithContext(ctx context.Context, data []byte) (matches []RuleMatch, err error) {
+func (s *Scanner) MatchingRulesWithContext(ctx context.Context, data []byte) ([]RuleMatch, error) {
 	ctx, ready, err := s.prepareScanCall(ctx)
 	if !ready || err != nil {
 		return nil, err
@@ -137,9 +137,14 @@ func (s *Scanner) MatchingRulesWithContext(ctx context.Context, data []byte) (ma
 
 	if s.hookMask&(hookBitTelemetry|hookBitScanLifecycle) != 0 {
 		start := s.beginScan(ctx, int64(len(data)))
-		defer func() { start.finishRuleList(matches, err) }()
+		matches, err := s.matchingRulesWithContextCore(ctx, data)
+		start.finishRuleList(matches, err)
+		return matches, err
 	}
+	return s.matchingRulesWithContextCore(ctx, data)
+}
 
+func (s *Scanner) matchingRulesWithContextCore(ctx context.Context, data []byte) ([]RuleMatch, error) {
 	s.clearRuleResultsIfDirty()
 	s.matchedRuleIndices = s.matchedRuleIndices[:0]
 	evaluation, err := s.evaluatePublicRules(ctx, data, &s.matchedRuleIndices)
@@ -147,7 +152,7 @@ func (s *Scanner) MatchingRulesWithContext(ctx context.Context, data []byte) (ma
 		s.clearRuleResultsIfDirty()
 		return nil, err
 	}
-	matches, err = s.materializeMatchingRules(ctx, data, evaluation)
+	matches, err := s.materializeMatchingRules(ctx, data, evaluation)
 	s.clearRuleResultsIfDirty()
 	return matches, err
 }

@@ -33,7 +33,7 @@ func (s *Scanner) MatchingRulesInBlockWithContext(
 	ctx context.Context,
 	block MemoryBlock,
 	fileSize int64,
-) (matches []RuleMatch, err error) {
+) ([]RuleMatch, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -58,11 +58,19 @@ func (s *Scanner) MatchingRulesInBlockWithContext(
 
 	if s.hookMask&(hookBitTelemetry|hookBitScanLifecycle) != 0 {
 		start := s.beginScan(ctx, int64(len(block.Data)))
-		defer func() { start.finishRuleList(matches, err) }()
+		matches, err := s.matchingRulesInBlockCore(ctx, block, fileSize)
+		start.finishRuleList(matches, err)
+		return matches, err
 	}
+	return s.matchingRulesInBlockCore(ctx, block, fileSize)
+}
 
+func (s *Scanner) matchingRulesInBlockCore(
+	ctx context.Context,
+	block MemoryBlock,
+	fileSize int64,
+) ([]RuleMatch, error) {
 	s.clearRuleResultsIfDirty()
-	defer s.clearRuleResultsIfDirty()
 	s.blockContext[0] = block
 	s.blockFileSize = fileSize
 	s.blockScan = true
@@ -70,10 +78,12 @@ func (s *Scanner) MatchingRulesInBlockWithContext(
 	evaluation, err := s.evaluatePublicRules(ctx, block.Data, &s.matchedRuleIndices)
 	if err != nil {
 		s.resetBlockScan()
+		s.clearRuleResultsIfDirty()
 		return nil, err
 	}
-	matches, err = s.materializeMatchingRules(ctx, block.Data, evaluation)
+	matches, err := s.materializeMatchingRules(ctx, block.Data, evaluation)
 	s.resetBlockScan()
+	s.clearRuleResultsIfDirty()
 	return matches, err
 }
 
