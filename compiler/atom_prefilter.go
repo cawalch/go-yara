@@ -145,6 +145,45 @@ func buildPrefilterStrings(rule *CompiledRule) {
 		infos[i] = resolvePrefilterString(rule, identifier)
 	}
 	rule.prefilterStrings = infos
+	buildLocalNonTextEntries(rule)
+}
+
+func buildLocalNonTextEntries(rule *CompiledRule) {
+	if len(rule.RegexPatterns) > 0 {
+		regexes := make([]localRegexEntry, 0, len(rule.RegexPatterns))
+		for _, id := range sortedPatternIDs(rule.RegexPatterns) {
+			slot, ok := rule.StringIDToIndex[id]
+			if !ok {
+				slot = -1
+			}
+			modifiers := rule.StringModifiers[id]
+			regexes = append(regexes, localRegexEntry{
+				id:           id,
+				slot:         slot,
+				pattern:      rule.RegexPatterns[id],
+				modifiers:    modifiers,
+				wideAndASCII: hasModifier(modifiers, ast.StringModifierWide) && hasModifier(modifiers, ast.StringModifierASCII),
+			})
+		}
+		rule.localRegexes = regexes
+	}
+	if len(rule.HexPatterns) > 0 {
+		hexes := make([]localHexEntry, 0, len(rule.HexPatterns))
+		for _, id := range sortedPatternIDs(rule.HexPatterns) {
+			slot, ok := rule.StringIDToIndex[id]
+			if !ok {
+				slot = -1
+			}
+			hexes = append(hexes, localHexEntry{
+				id:        id,
+				slot:      slot,
+				pattern:   rule.HexPatterns[id],
+				modifiers: rule.StringModifiers[id],
+			})
+		}
+		rule.localHexes = hexes
+	}
+	rule.localNonTextBuilt = true
 }
 
 // resolvePrefilterString resolves one string to the class and cache index the

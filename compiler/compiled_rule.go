@@ -46,11 +46,14 @@ type CompiledRule struct {
 	// resolved at compile time and parallel to IndexToStringID. Built by
 	// assignNonTextCacheIndices, immutable afterwards, so it is safe to share
 	// across concurrent scanners alongside the rest of the program.
-	prefilterStrings []prefilterStringInfo
-	requiredStrings  []string
-	forbiddenStrings []string
-	booleanPatterns  []*ast.String
-	dependencies     []string // nil means dependency metadata is unavailable
+	prefilterStrings  []prefilterStringInfo
+	localNonTextBuilt bool
+	localRegexes      []localRegexEntry
+	localHexes        []localHexEntry
+	requiredStrings   []string
+	forbiddenStrings  []string
+	booleanPatterns   []*ast.String
+	dependencies      []string // nil means dependency metadata is unavailable
 
 	// Rule metadata (from AST)
 	Tags        []string        // Rule tags (e.g., {"malware", "trojan"})

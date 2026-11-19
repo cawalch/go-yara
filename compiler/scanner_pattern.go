@@ -374,6 +374,22 @@ func shouldUseFixedRegexDispatch(data []byte, dispatch *fixedRegexDispatch) bool
 }
 
 //nolint:revive // cache and cancellation state stay explicit on the matching hot path
+type localRegexEntry struct {
+	id           string
+	slot         int
+	pattern      RegexPattern
+	modifiers    []ast.StringModifier
+	wideAndASCII bool
+}
+
+type localHexEntry struct {
+	id        string
+	slot      int
+	pattern   *HexPattern
+	modifiers []ast.StringModifier
+}
+
+//nolint:revive // argument-limit: hot-path non-text matcher
 func (s *Scanner) addLocalNonTextMatches(
 	ctx context.Context,
 	rule *CompiledRule,
@@ -389,6 +405,77 @@ func (s *Scanner) addLocalNonTextMatches(
 		}
 		return nil
 	}
+	if !rule.localNonTextBuilt {
+		return s.addLocalNonTextMatchesFromMaps(ctx, rule, data, cache, usesharedAutomaton, canShortCircuit)
+	}
+	for i := range rule.localRegexes {
+		if scanCanceled(done) {
+			return ctx.Err()
+		}
+		entry := &rule.localRegexes[i]
+		if matches, ok := s.getNonTextMatches(cache, entry.pattern.cacheIndex, usesharedAutomaton); ok {
+			s.matchCtx.addMatchSpansSlot(entry.slot, entry.id, matches)
+			if entry.wideAndASCII {
+				s.matchCtx.normalizeRegexEncodingMatchesSlot(entry.slot, entry.id)
+			}
+			if canShortCircuit && len(s.matchCtx.spansForSlot(entry.slot, entry.id)) > 0 && s.isRuleConditionSatisfied(rule) {
+				return nil
+			}
+			continue
+		}
+		addRegexMatchesWithModifiersCached(s.matchCtx, entry.id, entry.pattern, data, entry.modifiers, &s.regexByteSetCache)
+		s.storeNonTextCacheSlot(cache, entry.pattern.cacheIndex, entry.slot, entry.id)
+		if canShortCircuit && len(s.matchCtx.spansForSlot(entry.slot, entry.id)) > 0 && s.isRuleConditionSatisfied(rule) {
+			return nil
+		}
+	}
+	for i := range rule.localHexes {
+		if scanCanceled(done) {
+			return ctx.Err()
+		}
+		entry := &rule.localHexes[i]
+		if entry.pattern != nil {
+			if matches, ok := s.getNonTextMatches(cache, entry.pattern.cacheIndex, usesharedAutomaton); ok {
+				s.matchCtx.addMatchSpansSlot(entry.slot, entry.id, matches)
+				if canShortCircuit && len(s.matchCtx.spansForSlot(entry.slot, entry.id)) > 0 && s.isRuleConditionSatisfied(rule) {
+					return nil
+				}
+				continue
+			}
+		}
+		findPreparedHexMatchesEach(entry.pattern, data, done, &s.hexScratch, func(m Match) bool {
+			m.Pattern = entry.id
+			if matchPassesModifiers(data, m, entry.modifiers, false) {
+				s.matchCtx.AddMatch(m)
+				if canShortCircuit && len(s.matchCtx.spansForSlot(entry.slot, entry.id)) > 0 && s.isRuleConditionSatisfied(rule) {
+					return false
+				}
+			}
+			return true
+		})
+		if entry.pattern != nil {
+			s.storeNonTextCacheSlot(cache, entry.pattern.cacheIndex, entry.slot, entry.id)
+		}
+		if canShortCircuit && len(s.matchCtx.spansForSlot(entry.slot, entry.id)) > 0 && s.isRuleConditionSatisfied(rule) {
+			return nil
+		}
+	}
+	if scanCanceled(done) {
+		return ctx.Err()
+	}
+	return nil
+}
+
+//nolint:revive // argument-limit: fallback map-based non-text matcher
+func (s *Scanner) addLocalNonTextMatchesFromMaps(
+	ctx context.Context,
+	rule *CompiledRule,
+	data []byte,
+	cache *nonTextMatchCache,
+	usesharedAutomaton bool,
+	canShortCircuit bool,
+) error {
+	done := ctx.Done()
 	for id, regexInfo := range rule.RegexPatterns {
 		if scanCanceled(done) {
 			return ctx.Err()
@@ -405,7 +492,7 @@ func (s *Scanner) addLocalNonTextMatches(
 			continue
 		}
 		addRegexMatchesWithModifiersCached(s.matchCtx, id, regexInfo, data, modifiers, &s.regexByteSetCache)
-		s.storeNonTextCache(cache, regexInfo.cacheIndex, id)
+		s.storeNonTextCacheSlot(cache, regexInfo.cacheIndex, -1, id)
 		if canShortCircuit && len(s.matchCtx.spansFor(id)) > 0 && s.isRuleConditionSatisfied(rule) {
 			return nil
 		}
@@ -434,7 +521,7 @@ func (s *Scanner) addLocalNonTextMatches(
 			return true
 		})
 		if pattern != nil {
-			s.storeNonTextCache(cache, pattern.cacheIndex, id)
+			s.storeNonTextCacheSlot(cache, pattern.cacheIndex, -1, id)
 		}
 		if canShortCircuit && len(s.matchCtx.spansFor(id)) > 0 && s.isRuleConditionSatisfied(rule) {
 			return nil
@@ -446,10 +533,15 @@ func (s *Scanner) addLocalNonTextMatches(
 	return nil
 }
 
-func (s *Scanner) storeNonTextCache(cache *nonTextMatchCache, cacheIndex int, id string) {
+//nolint:revive // argument-limit: hot-path helper avoids string-keyed map lookup
+func (s *Scanner) storeNonTextCacheSlot(cache *nonTextMatchCache, cacheIndex, slot int, id string) {
 	if s.matchCtx.maxMatchesPerPattern <= 0 && cacheIndex >= 0 && cacheIndex < len(cache.matches) {
 		dst := cache.matches[cacheIndex][:0]
-		dst = append(dst, s.matchCtx.spansFor(id)...)
+		if slot >= 0 {
+			dst = append(dst, s.matchCtx.spansForSlot(slot, id)...)
+		} else {
+			dst = append(dst, s.matchCtx.spansFor(id)...)
+		}
 		cache.set(cacheIndex, dst)
 	}
 }

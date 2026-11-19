@@ -103,6 +103,19 @@ func (mc *MatchContext) hasSpans() bool {
 	return len(mc.spans) > 0
 }
 
+func (mc *MatchContext) spansForSlot(slot int, id string) []matchSpan {
+	if mc == nil {
+		return nil
+	}
+	if mc.slotRule != nil {
+		if slot >= 0 && slot < len(mc.spansByIndex) {
+			return mc.spansByIndex[slot]
+		}
+		return nil
+	}
+	return mc.spans[id]
+}
+
 func (mc *MatchContext) spansFor(id string) []matchSpan {
 	if mc == nil {
 		return nil
@@ -132,6 +145,28 @@ func (mc *MatchContext) forEachSpanSlice(fn func(id string, spans []matchSpan)) 
 		if len(spans) > 0 {
 			fn(id, spans)
 		}
+	}
+}
+
+func (mc *MatchContext) addMatchSpansSlot(slot int, id string, matches []matchSpan) {
+	if len(matches) == 0 {
+		return
+	}
+	if mc.slotRule != nil && slot >= 0 && slot < len(mc.spansByIndex) {
+		if mc.maxMatchesPerPattern <= 0 && mc.matchFilter == nil {
+			if len(mc.spansByIndex[slot]) == 0 {
+				mc.touchedSlots = append(mc.touchedSlots, slot)
+			}
+			mc.spansByIndex[slot] = append(mc.spansByIndex[slot], matches...)
+			return
+		}
+		for _, match := range matches {
+			mc.addMatchSpanSlot(slot, id, match)
+		}
+		return
+	}
+	for _, match := range matches {
+		mc.addMatchSpan(id, match)
 	}
 }
 
