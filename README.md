@@ -15,6 +15,10 @@ The engine is designed for high-throughput scanning pipelines. It uses literal p
 - **Thread Safety**: Immutable compiled programs support safe, concurrent scanning across multiple goroutines.
 - **Extensibility**: Support for structured host modules, custom Go module functions, runtime external variables, binary rule serialization, structured evidence extraction, and a standalone CLI.
 
+## v0.11.0
+
+[v0.11.0](CHANGELOG.md#v0110---2026-11-19) adds `pe.overlay.data_offset`, `pe.overlay.data_size`, and `pe.overlay.certificate_size` ([#595](https://github.com/cawalch/go-yara/pull/595)), updates `go-pe` to `v0.1.0` ([#574](https://github.com/cawalch/go-yara/pull/574)), and delivers major compilation, scanning, PE, regex, hex, and serialization speedups (2,000-rule compile `-72.2%` time / `-88.9%` memory, `Unmarshal` `-81.0%` time / `-91.7%` memory, and up to `-43.9%` dense High-EPS scan latency). See the [release changelog](CHANGELOG.md#v0110---2026-11-19) for details.
+
 ## v0.10.0
 
 v0.10.0 introduces the pure-Go `pe` module backed by `go-pe` (headers, sections, standard imports/exports and regex queries, `imphash`, resources, `version_info`, Rich header, `pdb_path`, Authenticode metadata and offline verification, `declared_extent`/`input_truncated`, `is_dotnet`, and `calculate_checksum`), borrowed evidence captures and streaming JSON output, entropy-weighted prefiltering, byte-deterministic format 20 serialization, and YARA Forge / libyara parity fixes. Patch release [v0.10.1](CHANGELOG.md#v0101---2026-11-16) fixes `v0.10.0` high-EPS compact-prefilter regressions and adds CI `benchstat` performance gating. See the [release changelog](CHANGELOG.md#v0100---2026-11-15) for scope and upgrade details.

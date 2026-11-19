@@ -56,6 +56,14 @@ These limits apply to an individual automaton, not the total number of rules. In
 
 See the <a href={source('compiler/teddy_simd_arm64.go')}>ARM64 filter</a>, <a href={source('compiler/teddy_simd_amd64.go')}>amd64 filter</a>, and [SIMD build instructions](/go-yara/installation/#optional-simd-build). Compare scalar and SIMD builds on the same CPU with the same rules.
 
+<span id="v0110-performance-changes"></span>
+
+## v0.11.0 performance changes
+
+- **Compilation, automaton, and serialization (`#546`–`#614`):** Deferred per-rule Aho–Corasick construction (`CompileRule` / `UnmarshalCompiledProgram`), sparse trie construction with byte-class compressed tables (`#604`), cross-rule regex/hex pattern caching (`#608`), `semantic` rule-scope/symbol-slab reuse (`#613`), `regex.Parser` reuse (`#614`), and zero-copy `MarshalBinary`/`UnmarshalCompiledProgram` slice handling (`#612`).
+- **Scanning, regex, hex, and PE:** Deduplicated Teddy prefix covers (up to 256 3-byte corpus groups) and 8-byte unrolled sparse scalar roots (`#611`), standalone `$id` condition lowering (`#607`), streaming buffer reuse (`#606`), `regex.VMBatch` reuse and lazy PE import/export indexing (`#610`), and direct single-jump hex scanning (`#609`).
+- **Measured `v0.10.1` → `v0.11.0` results (`Apple M3 Max`, `benchstat` `n=6`, `p=0.002`):** `LargeCorpusCompile/rules=2000` improved by `-72.2%` time (`143.64 → 39.92 ms`) and `-88.9%` memory (`390.16 → 43.48 MiB`); `LargeCorpusSerialization/Marshal/rules=2000` improved by `-15.7%` time and `-62.5%` allocs; `LargeCorpusSerialization/Unmarshal/rules=2000` improved by `-81.0%` time (`125.06 → 23.74 ms`) and `-91.7%` memory (`536.88 → 44.40 MiB`); 19-benchmark High-EPS scan geomean improved by `-15.4%` latency (`+18.2%` throughput), with dense/near-miss cases improving by `26.6%`–`43.9%`.
+
 <span id="v0101-performance-changes"></span>
 
 ## v0.10.1 performance changes
