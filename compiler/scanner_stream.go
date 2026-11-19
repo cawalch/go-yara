@@ -229,20 +229,38 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 		return nil, errors.New("streaming chunk size is invalid")
 	}
 
-	bufReader := bufio.NewReaderSize(reader, 64*1024)
+	if s.streamBufReader == nil {
+		s.streamBufReader = bufio.NewReaderSize(reader, 64*1024)
+	} else {
+		s.streamBufReader.Reset(reader)
+	}
+	bufReader := s.streamBufReader
+	defer bufReader.Reset(nil)
 
-	// Preallocate a single contiguous buffer for sliding window reuse.
-	buf := make([]byte, overlapCapacity+chunkSize+streamingLookaheadContext)
+	// Reuse a single contiguous buffer for sliding window scans.
+	neededBuf := overlapCapacity + chunkSize + streamingLookaheadContext
+	if cap(s.streamBuf) < neededBuf {
+		s.streamBuf = make([]byte, neededBuf)
+	}
+	buf := s.streamBuf[:neededBuf]
 
+	recordMatches := !s.omitMatches
+	var accumulatedMatches map[string]map[string][]Match
+	if recordMatches {
+		accumulatedMatches = make(map[string]map[string][]Match)
+	}
 	var (
 		currentStreamOffset int64
 		overlapLen          int
 		acc                 = &streamAccumulator{
+			headerBlock:        s.streamHeaderBuf[:0],
 			accumulatedSpans:   make(map[string]map[string][]matchSpan),
-			accumulatedMatches: make(map[string]map[string][]Match),
+			accumulatedMatches: accumulatedMatches,
 		}
-		recordMatches = !s.omitMatches
 	)
+	defer func() {
+		s.streamHeaderBuf = acc.headerBlock[:0]
+	}()
 
 	var window streamMatchWindow
 	var currentRule *CompiledRule
