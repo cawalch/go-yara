@@ -9,6 +9,7 @@ MAX_SEC_REGRESSION_PCT="${MAX_SEC_REGRESSION_PCT:-25}"
 MAX_ALLOC_PCT="${MAX_ALLOC_PCT:-15}"
 
 SCALAR_PATTERNS=(
+    '^BenchmarkHexJumpLargeRange$'
     '^BenchmarkHighEPSSelectivity$/^(literal|regex|mixed)$/^((clean|sparse|dense|near_miss))$'
     '^BenchmarkHighEPSMatchingRulesSelectivity$/^mixed$/^(sparse|dense)$'
     '^BenchmarkHighEPSParallel10K$/^mixed$/^(sparse|dense)$'
@@ -68,6 +69,27 @@ run_benches() {
         for pat in "${SCALAR_PATTERNS[@]}"; do
             "$bin_scalar" -test.run '^$' -test.bench "$pat" -test.benchmem -test.benchtime="$BENCHTIME" -test.count="$COUNT" >> "$out_scalar"
         done
+        # A new or renamed benchmark must not silently disappear on either side
+        # of the comparison (benchstat otherwise accepts unmatched rows).
+        python3 - "$out_scalar" "$COUNT" <<'PY'
+import collections
+import re
+import sys
+
+expected = {
+    "max_int32_no_match", "wildcard_then_missing_no_match",
+    "repeated_prefix_then_missing_no_match", "unbounded_no_match",
+    "max_int32_match_at_end",
+}
+samples = collections.Counter()
+with open(sys.argv[1]) as source:
+    for line in source:
+        match = re.match(r'^BenchmarkHexJumpLargeRange/([^\s]+)-\d+\s+\d+\s+[\d.]+\s+ns/op\b', line)
+        if match:
+            samples[match[1]] += 1
+if set(samples) != expected or any(n != int(sys.argv[2]) for n in samples.values()):
+    sys.exit(f"Incomplete hex-jump benchmark samples in {sys.argv[1]}: {dict(samples)}")
+PY
         if [[ "$RUN_SIMD" = "1" ]]; then
             GOEXPERIMENT=simd go test -c -o "$bin_simd" ./compiler
             : > "$out_simd"
@@ -213,6 +235,10 @@ fi
 echo "Comparing HEAD against base $RESOLVED_BASE..."
 BASE_WT="$TMP_DIR/base_wt"
 git -C "$REPO_ROOT" worktree add --detach "$BASE_WT" "$RESOLVED_BASE" >/dev/null
+
+# Measure identical synthetic inputs even when the base predates this benchmark.
+# Only the test harness is copied; the baseline scanner implementation is intact.
+cp "$REPO_ROOT/compiler/hex_jump_bench_test.go" "$BASE_WT/compiler/hex_jump_bench_test.go"
 
 run_benches "$BASE_WT" "$TMP_DIR/base_scalar.txt" "$TMP_DIR/base_simd.txt"
 run_benches "$REPO_ROOT" "$TMP_DIR/head_scalar.txt" "$TMP_DIR/head_simd.txt"
