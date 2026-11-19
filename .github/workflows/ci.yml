@@ -192,8 +192,38 @@ jobs:
             exit 1
           fi
 
-  test:
-    name: Test
+  test-unit:
+    name: Unit and Compiler Tests
+    needs: changes
+    if: ${{ needs.changes.outputs.go == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache: true
+
+      - name: Test coverage aggregation
+        run: python3 -m unittest discover -s scripts -p 'test_ci_coverage.py'
+
+      - name: Run race tests and coverage
+        run: python3 scripts/ci_coverage.py run unit coverage/unit
+
+      - name: Upload coverage and package inventory
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-unit
+          path: coverage/unit/
+          if-no-files-found: error
+          retention-days: 7
+
+  test-integration:
+    name: Integration Tests
     needs: changes
     if: ${{ needs.changes.outputs.go == 'true' }}
     runs-on: ubuntu-24.04
@@ -248,8 +278,49 @@ jobs:
           echo "$HOME/.cache/yara-oracle/bin" >> "$GITHUB_PATH"
 
       - name: Run race tests and coverage
-        # The libyara-backed integration package can exceed Go's 10m default.
-        run: go test -race -coverprofile=coverage.out -timeout=15m ./...
+        run: python3 scripts/ci_coverage.py run integration coverage/integration
+
+      - name: Upload coverage and package inventory
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-integration
+          path: coverage/integration/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Run libyara differential oracle tests
+        run: go test -tags bugproof -race ./tests/integration/ -run TestBug
+
+  test-coverage:
+    name: Test Coverage
+    needs: [changes, test-unit, test-integration]
+    if: ${{ needs.changes.outputs.go == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache: true
+
+      - name: Download unit coverage
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: coverage-unit
+          path: coverage/unit
+
+      - name: Download integration coverage
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: coverage-integration
+          path: coverage/integration
+
+      - name: Verify inventories and merge coverage
+        run: python3 scripts/ci_coverage.py merge coverage/unit coverage/integration coverage.out
 
       - name: Check test coverage
         run: |
@@ -259,9 +330,6 @@ jobs:
             echo "Total statement coverage is below 79%"
             exit 1
           fi
-
-      - name: Run libyara differential oracle tests
-        run: go test -tags bugproof -race ./tests/integration/ -run TestBug
 
   simd:
     name: ${{ matrix.name }}
@@ -418,7 +486,7 @@ jobs:
     name: Quality Gate
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    needs: [changes, lint, test, simd, security, fuzz, perf]
+    needs: [changes, lint, test-unit, test-integration, test-coverage, simd, security, fuzz, perf]
     if: ${{ always() && !cancelled() }}
     steps:
       - name: Check job results
@@ -438,7 +506,18 @@ jobs:
           }
 
           check_job "Lint" "${{ needs.lint.result }}"
-          check_job "Test" "${{ needs.test.result }}"
+          # These lanes may skip only when Go checks were intentionally omitted.
+          case "${{ needs.changes.outputs.go }}" in
+            true) expected_test_result=success ;;
+            false) expected_test_result=skipped ;;
+            *) echo "Invalid Go change classification"; exit 1 ;;
+          esac
+          for result in "${{ needs.test-unit.result }}" "${{ needs.test-integration.result }}" "${{ needs.test-coverage.result }}"; do
+            if [ "$result" != "$expected_test_result" ]; then
+              echo "Test lanes and coverage must be $expected_test_result; got $result"
+              exit 1
+            fi
+          done
           check_job "Security" "${{ needs.security.result }}"
           check_job "Experimental SIMD" "${{ needs.simd.result }}"
           check_job "Performance Gate" "${{ needs.perf.result }}"
