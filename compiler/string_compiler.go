@@ -86,6 +86,22 @@ func fastNeedsConversion(data []byte) bool {
 type stringCompiler struct {
 	// Maps for string identifiers to automaton indices
 	stringOffsets map[string]int
+	regexCache    map[string]cachedRegexPattern
+	hexCache      map[string]cachedHexPattern
+}
+
+type cachedRegexPattern struct {
+	pattern            RegexPattern
+	patternData        []byte
+	fixedOffsetLiteral bool
+}
+
+type cachedHexPattern struct {
+	tokens             []HexPatternToken
+	xorKeys            []byte
+	encodedPattern     []byte
+	cacheKey           string
+	fixedOffsetLiteral bool
 }
 
 // NewStringCompiler creates a string compiler.
