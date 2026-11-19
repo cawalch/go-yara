@@ -707,11 +707,8 @@ func (rc *ruleCompiler) snapshotCompilationStats(rule *ast.Rule) map[string]any 
 	stats["automaton_states"] = rc.automaton.GetStateCount()
 	stats["variables"] = len(rc.conditionCompiler.variableMap)
 
-	// Add emitter stats
-	emitterStats := rc.emitter.GetStats()
-	for k, v := range emitterStats {
-		stats["emitter_"+k] = v
-	}
+	// Add emitter stats directly without an intermediate map or dynamic string keys.
+	rc.emitter.writePrefixedStats(stats)
 
 	return stats
 }
