@@ -209,23 +209,51 @@ func (ti *TypeInfo) CanPerformBitwise(other *TypeInfo) bool {
 	return ti.IsInteger() && other.IsInteger()
 }
 
+var (
+	singletonBooleanType = &TypeInfo{DataType: TypeBoolean}
+	singletonInt64Type   = &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
+	singletonUint64Type  = &TypeInfo{DataType: TypeInteger, IntegerType: Uint64Type}
+	singletonFloatType   = &TypeInfo{DataType: TypeFloat}
+	singletonUnknownType = &TypeInfo{DataType: TypeUnknown}
+	singletonASCIIString = &TypeInfo{DataType: TypeString, StringType: &StringType{IsASCII: true}}
+	singletonHexString   = &TypeInfo{DataType: TypeString, StringType: &StringType{IsHex: true}}
+	singletonRegexString = &TypeInfo{DataType: TypeRegexp, StringType: &StringType{IsRegex: true}}
+	singletonEmptyString = &TypeInfo{DataType: TypeString, StringType: &StringType{}}
+)
+
+func cloneTypeInfo(ti *TypeInfo) *TypeInfo {
+	if ti == nil {
+		return nil
+	}
+	copyTI := *ti
+	if ti.StringType != nil {
+		st := *ti.StringType
+		copyTI.StringType = &st
+	}
+	return &copyTI
+}
+
 // InferTypeFromLiteral infers type information from a literal token
-func InferTypeFromLiteral(tokenType token.Type, _ any) *TypeInfo {
+func InferTypeFromLiteral(tokenType token.Type, value any) *TypeInfo {
+	return cloneTypeInfo(inferTypeFromLiteral(tokenType, value))
+}
+
+func inferTypeFromLiteral(tokenType token.Type, _ any) *TypeInfo {
 	switch {
 	case isBooleanLiteral(tokenType):
-		return &TypeInfo{DataType: TypeBoolean}
+		return singletonBooleanType
 	case isIntegerLiteral(tokenType):
 		return inferIntegerType(tokenType)
 	case isStringLiteral(tokenType):
 		return inferStringType(tokenType)
 	case tokenType == token.FloatLit:
-		return &TypeInfo{DataType: TypeFloat}
+		return singletonFloatType
 	case tokenType == token.FILESIZE, tokenType == token.ENTRYPOINT:
-		return &TypeInfo{DataType: TypeInteger, IntegerType: Uint64Type}
+		return singletonUint64Type
 	case tokenType == token.DEFINED:
-		return &TypeInfo{DataType: TypeBoolean}
+		return singletonBooleanType
 	default:
-		return &TypeInfo{DataType: TypeUnknown}
+		return singletonUnknownType
 	}
 }
 
@@ -253,45 +281,38 @@ func isStringLiteral(tokenType token.Type) bool {
 func inferIntegerType(tokenType token.Type) *TypeInfo {
 	switch tokenType {
 	case token.IntegerLit, token.OctalIntegerLit:
-		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
+		return singletonInt64Type
 	case token.HexIntegerLit, token.SizeLit:
-		return &TypeInfo{DataType: TypeInteger, IntegerType: Uint64Type}
+		return singletonUint64Type
 	default:
-		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}
+		return singletonInt64Type
 	}
 }
 
 // inferStringType infers type for string literals
 func inferStringType(tokenType token.Type) *TypeInfo {
-	stringType := &StringType{
-		IsWide:  false,
-		IsASCII: false,
-		IsHex:   false,
-		IsRegex: false,
-	}
-
 	switch tokenType {
 	case token.StringLit:
-		stringType.IsASCII = true
+		return singletonASCIIString
 	case token.HexStringLit:
-		stringType.IsHex = true
+		return singletonHexString
 	case token.RegexLit:
-		stringType.IsRegex = true
-	}
-
-	dataType := TypeString
-	if tokenType == token.RegexLit {
-		dataType = TypeRegexp
-	}
-
-	return &TypeInfo{
-		DataType:   dataType,
-		StringType: stringType,
+		return singletonRegexString
+	default:
+		return singletonEmptyString
 	}
 }
 
 // InferTypeFromBinaryOp infers the result type of a binary operation
 func InferTypeFromBinaryOp(left *TypeInfo, op token.Type, right *TypeInfo) (*TypeInfo, error) {
+	ti, err := inferTypeFromBinaryOp(left, op, right)
+	if err != nil {
+		return nil, err
+	}
+	return cloneTypeInfo(ti), nil
+}
+
+func inferTypeFromBinaryOp(left *TypeInfo, op token.Type, right *TypeInfo) (*TypeInfo, error) {
 	if handler, exists := binaryOpHandlers[op]; exists {
 		return handler(left, right)
 	}
@@ -381,13 +402,7 @@ func inferLogicalType(left, right *TypeInfo) (*TypeInfo, error) {
 	if left.isStructured() || right.isStructured() {
 		return nil, errors.New("logical operators require scalar operands")
 	}
-	// In YARA, logical operators can work with any type (integers, strings, etc.)
-	// They are treated as truthy/falsy values
-	// Both operands must be comparable types, but don't have to be boolean
-	if left.DataType == TypeUnknown || right.DataType == TypeUnknown {
-		return &TypeInfo{DataType: TypeBoolean}, nil
-	}
-	return &TypeInfo{DataType: TypeBoolean}, nil
+	return singletonBooleanType, nil
 }
 
 // inferStringOperationType infers the result type of string operations
@@ -447,6 +462,14 @@ func inferDotOperatorType(left, right *TypeInfo) (*TypeInfo, error) {
 
 // InferTypeFromUnaryOp infers the result type of a unary operation
 func InferTypeFromUnaryOp(op token.Type, operand *TypeInfo) (*TypeInfo, error) {
+	ti, err := inferTypeFromUnaryOp(op, operand)
+	if err != nil {
+		return nil, err
+	}
+	return cloneTypeInfo(ti), nil
+}
+
+func inferTypeFromUnaryOp(op token.Type, operand *TypeInfo) (*TypeInfo, error) {
 	if handler, exists := unaryOpHandlers[op]; exists {
 		return handler(operand)
 	}
@@ -458,15 +481,15 @@ var unaryOpHandlers = map[token.Type]func(*TypeInfo) (*TypeInfo, error){
 	token.NOT:        handleLogicalNotOp,
 	token.BitwiseNot: handleBitwiseNotOp,
 	token.MINUS:      handleUnaryMinusOp,
-	token.DEFINED:    func(*TypeInfo) (*TypeInfo, error) { return &TypeInfo{DataType: TypeBoolean}, nil },
+	token.DEFINED:    func(*TypeInfo) (*TypeInfo, error) { return singletonBooleanType, nil },
 	token.HASH: func(*TypeInfo) (*TypeInfo, error) {
-		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}, nil
+		return singletonInt64Type, nil
 	},
 	token.AT: func(*TypeInfo) (*TypeInfo, error) {
-		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}, nil
+		return singletonInt64Type, nil
 	},
 	token.StringLength: func(*TypeInfo) (*TypeInfo, error) {
-		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}, nil
+		return singletonInt64Type, nil
 	},
 }
 

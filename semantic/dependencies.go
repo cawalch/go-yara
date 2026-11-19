@@ -10,34 +10,42 @@ import (
 )
 
 func (v *Validator) validateRuleDependencyCycles(program *ast.Program) {
-	ruleNames := make(map[string]token.Position, len(program.Rules))
-	for _, rule := range program.Rules {
-		ruleNames[rule.Name] = rule.Pos
+	ruleIndex := make(map[string]int, len(program.Rules))
+	for i, rule := range program.Rules {
+		ruleIndex[rule.Name] = i
 	}
 
-	deps := make(map[string]map[string]token.Position, len(program.Rules))
-	for _, rule := range program.Rules {
+	var deps map[int]map[string]token.Position
+	for i, rule := range program.Rules {
 		collector := ruleReferenceCollector{
-			ruleNames: ruleNames,
+			ruleNames: ruleIndex,
 		}
 		collector.collect(rule.Condition, nil)
 		if len(collector.refs) > 0 {
-			deps[rule.Name] = collector.refs
+			if deps == nil {
+				deps = make(map[int]map[string]token.Position)
+			}
+			deps[i] = collector.refs
 		}
 	}
+	if len(deps) == 0 {
+		return
+	}
 
-	state := make(map[string]int, len(program.Rules))
+	state := make([]uint8, len(program.Rules))
 	reported := make(map[string]bool)
 	var path []string
-	var visit func(string)
-	visit = func(ruleName string) {
-		state[ruleName] = 1
+	var visit func(int)
+	visit = func(idx int) {
+		ruleName := program.Rules[idx].Name
+		state[idx] = 1
 		path = append(path, ruleName)
 
-		for dep, pos := range deps[ruleName] {
-			switch state[dep] {
+		for dep, pos := range deps[idx] {
+			depIdx := ruleIndex[dep]
+			switch state[depIdx] {
 			case 0:
-				visit(dep)
+				visit(depIdx)
 			case 1:
 				cycle := appendCyclePath(path, dep)
 				key := strings.Join(cycle, " -> ")
@@ -55,12 +63,12 @@ func (v *Validator) validateRuleDependencyCycles(program *ast.Program) {
 		}
 
 		path = path[:len(path)-1]
-		state[ruleName] = 2
+		state[idx] = 2
 	}
 
-	for _, rule := range program.Rules {
-		if state[rule.Name] == 0 {
-			visit(rule.Name)
+	for i := range program.Rules {
+		if state[i] == 0 && len(deps[i]) > 0 {
+			visit(i)
 		}
 	}
 }
@@ -78,7 +86,7 @@ func appendCyclePath(path []string, dep string) []string {
 }
 
 type ruleReferenceCollector struct {
-	ruleNames map[string]token.Position
+	ruleNames map[string]int
 	refs      map[string]token.Position
 }
 
@@ -86,23 +94,28 @@ type ruleReferenceCollector struct {
 // additionalRuleNames can be used to recognize references to rules that were
 // removed from the AST, such as rules skipped during error recovery.
 func RuleDependencies(program *ast.Program, additionalRuleNames ...string) map[string][]string {
-	ruleNames := make(map[string]token.Position, len(program.Rules)+len(additionalRuleNames))
-	for _, rule := range program.Rules {
-		ruleNames[rule.Name] = rule.Pos
+	ruleNames := make(map[string]int, len(program.Rules)+len(additionalRuleNames))
+	for i, rule := range program.Rules {
+		ruleNames[rule.Name] = i
 	}
 	for _, name := range additionalRuleNames {
 		if _, exists := ruleNames[name]; !exists {
-			ruleNames[name] = token.Position{}
+			ruleNames[name] = -1
 		}
 	}
 
 	dependencies := make(map[string][]string, len(program.Rules))
+	collector := ruleReferenceCollector{
+		ruleNames: ruleNames,
+	}
 	for _, rule := range program.Rules {
-		collector := ruleReferenceCollector{
-			ruleNames: ruleNames,
-		}
+		clear(collector.refs)
 		collector.collect(rule.Condition, nil)
 
+		if len(collector.refs) == 0 {
+			dependencies[rule.Name] = []string{}
+			continue
+		}
 		ruleDeps := make([]string, 0, len(collector.refs))
 		for name := range collector.refs {
 			ruleDeps = append(ruleDeps, name)
