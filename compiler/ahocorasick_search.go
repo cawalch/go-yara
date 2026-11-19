@@ -728,18 +728,31 @@ func searchClassTable[S ~uint16 | ~int32](ac *acAutomaton, rootTransitions *[256
 		return
 	}
 
-	for i := 0; i < len(data); i++ {
-		if currentState == 0 {
-			for {
-				currentState = rootTransitions[data[i]]
-				if currentState != 0 {
+	if rootHasNoOutput {
+		for i := 0; i < len(data); i++ {
+			currentState = rootTransitions[data[i]]
+			if currentState == 0 {
+				continue
+			}
+			if hasOutput[currentState] && !ac.yieldMatches(int32(currentState), i, yield) {
+				return
+			}
+			for i++; i < len(data); i++ {
+				currentState = flat[(int(currentState)<<shift)+int(classMap[data[i]])]
+				if currentState == 0 {
 					break
 				}
-				i++
-				if i == len(data) {
+				if hasOutput[currentState] && !ac.yieldMatches(int32(currentState), i, yield) {
 					return
 				}
 			}
+		}
+		return
+	}
+
+	for i := 0; i < len(data); i++ {
+		if currentState == 0 {
+			currentState = rootTransitions[data[i]]
 		} else {
 			currentState = flat[(int(currentState)<<shift)+int(classMap[data[i]])]
 		}

@@ -196,27 +196,25 @@ func compactPrefilterMatchesAbsent(data []byte, gate *compactPrefilter) bool {
 //go:noinline
 func compactPrefilterRejectsShortClass16(data []byte, ac *acAutomaton, accepting []bool) bool {
 	rootTransitions := ac.classRoot16
-	flat := ac.flatClass16
-	classMap := &ac.classMap
-	shift := ac.classShift
-	var state uint32
 	for i := 0; i < len(data); i++ {
+		state := uint32(rootTransitions[data[i]])
 		if state == 0 {
-			for {
-				state = uint32(rootTransitions[data[i]])
-				if state != 0 {
-					break
-				}
-				i++
-				if i == len(data) {
-					return true
-				}
-			}
-		} else {
-			state = uint32(flat[(int(state)<<shift)+int(classMap[data[i]])])
+			continue
 		}
 		if accepting[state] {
 			return false
+		}
+		flat := ac.flatClass16
+		classMap := &ac.classMap
+		shift := ac.classShift
+		for i++; i < len(data); i++ {
+			state = uint32(flat[(int(state)<<shift)+int(classMap[data[i]])])
+			if state == 0 {
+				break
+			}
+			if accepting[state] {
+				return false
+			}
 		}
 	}
 	return true
