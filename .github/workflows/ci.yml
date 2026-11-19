@@ -478,11 +478,15 @@ jobs:
         run: govulncheck ./...
 
   fuzz:
-    name: Fuzz
+    name: Fuzz (${{ matrix.shard }})
     needs: changes
     if: ${{ needs.changes.outputs.fuzz == 'true' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -493,16 +497,58 @@ jobs:
           check-latest: true
           cache: true
 
+      # Ubuntu 24.04 ships 4.5.0, which predates the zero-length regex fixes
+      # required by our 4.5.8 differential oracle contract.
+      - name: Cache libyara 4.5.8 oracle
+        id: yara-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/yara-oracle
+          key: ${{ runner.os }}-${{ runner.arch }}-libyara-4.5.8-84b0e3cc
+
+      - name: Build libyara 4.5.8 oracle
+        if: ${{ steps.yara-cache.outputs.cache-hit != 'true' }}
+        env:
+          YARA_COMMIT: 84b0e3cc0e42f8f8e6b84d19c97ec3ac6ff8aee8 # v4.5.8
+        run: |
+          needs_build_deps=0
+          for build_tool in cc make autoconf automake libtoolize pkg-config flex bison; do
+            command -v "$build_tool" >/dev/null || needs_build_deps=1
+          done
+          if [ "$needs_build_deps" -ne 0 ] || ! pkg-config --exists openssl; then
+            sudo apt-get update
+            sudo apt-get install -y build-essential autoconf automake libtool pkg-config libssl-dev flex bison
+          fi
+          git init "$RUNNER_TEMP/yara-source"
+          git -C "$RUNNER_TEMP/yara-source" remote add origin https://github.com/VirusTotal/yara.git
+          git -C "$RUNNER_TEMP/yara-source" fetch --depth=1 origin "$YARA_COMMIT"
+          git -C "$RUNNER_TEMP/yara-source" checkout --detach FETCH_HEAD
+          cd "$RUNNER_TEMP/yara-source"
+          ./bootstrap.sh
+          ./configure --disable-shared --prefix="$HOME/.cache/yara-oracle"
+          make -j"$(nproc)"
+          make install
+
+      - name: Configure libyara oracle PATH
+        run: |
+          oracle_version=$("$HOME/.cache/yara-oracle/bin/yara" --version)
+          echo "libyara oracle: $oracle_version"
+          test "$oracle_version" = "4.5.8"
+          echo "$HOME/.cache/yara-oracle/bin" >> "$GITHUB_PATH"
+
       - name: Run fuzz gate
-        run: ./scripts/fuzz_all.sh --time 10s --packages "${{ needs.changes.outputs.fuzz_packages }}"
+        env:
+          FUZZ_LOG_DIR: ${{ runner.temp }}/fuzz-logs-${{ matrix.shard }}
+        run: ./scripts/fuzz_all.sh --time 10s --packages "${{ needs.changes.outputs.fuzz_packages }}" --shard-index "${{ matrix.shard }}" --shard-count 2 --require-oracle --verbose
 
       - name: Upload fuzz artifacts
-        if: failure()
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ci-fuzz-crash-logs
+          name: ci-fuzz-crash-logs-${{ matrix.shard }}
           path: |
             **/testdata/fuzz/
+            ${{ runner.temp }}/fuzz-logs-${{ matrix.shard }}/
           if-no-files-found: ignore
           retention-days: 30
 
@@ -545,6 +591,10 @@ jobs:
           check_job "Security" "${{ needs.security.result }}"
           check_job "Experimental SIMD" "${{ needs.simd.result }}"
           check_job "Performance Gate" "${{ needs.perf.result }}"
-          check_job "Fuzz" "${{ needs.fuzz.result }}"
+          case "${{ needs.changes.outputs.fuzz }}" in
+            true) test "${{ needs.fuzz.result }}" = success ;;
+            false) test "${{ needs.fuzz.result }}" = skipped ;;
+            *) echo "Invalid fuzz change classification"; exit 1 ;;
+          esac
 
           echo "✅ All applicable quality checks passed!"
