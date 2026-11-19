@@ -88,6 +88,7 @@ type stringCompiler struct {
 	stringOffsets map[string]int
 	regexCache    map[string]cachedRegexPattern
 	hexCache      map[string]cachedHexPattern
+	regexParser   regex.Parser
 }
 
 type cachedRegexPattern struct {
@@ -445,8 +446,7 @@ func (sc *stringCompiler) compileRegexWithAST(pattern string, _ []ast.StringModi
 	// Remove delimiters and any inline flags; runtime flags (i/s) are propagated separately
 	cleaned := cleanRegexPattern(pattern)
 
-	p := regex.NewParser(0)
-	astRe, err := p.Parse(cleaned)
+	astRe, err := sc.regexParser.Parse(cleaned)
 	if err != nil {
 		return nil, nil, fmt.Errorf("parsing regex pattern: %w", err)
 	}

@@ -8,10 +8,11 @@ import (
 
 // Parser provides a hand-written lexer+parser pipeline (incremental).
 type Parser struct {
-	lx           *lexer
+	lx           lexer
 	cur          token
 	strictEscape bool // validate escape sequences strictly (ParserFlagEnableStrictEscapeSequences)
 	groupCount   int
+	concatBuf    []*Node
 }
 
 // NewParser constructs a parser with the requested validation flags.
@@ -23,14 +24,31 @@ func NewParser(flags ParserFlags) *Parser {
 	return p
 }
 
+func (p *Parser) allocNode(kind NodeKind) *Node {
+	return &Node{Kind: kind, Greedy: true}
+}
+
+func (p *Parser) allocChild1(a *Node) []*Node {
+	return []*Node{a}
+}
+
+func (p *Parser) allocChild2(a, b *Node) []*Node {
+	return []*Node{a, b}
+}
+
+func (p *Parser) allocChildren(nodes []*Node) []*Node {
+	return slices.Clone(nodes)
+}
+
 // Parse parses the provided pattern into an AST (minimal subset: alt, concat, primary).
 func (p *Parser) Parse(pattern string) (*AST, error) {
 	if err := validateEscapes(pattern, p.strictEscape); err != nil {
 		return nil, err
 	}
-	p.lx = newLexer(pattern)
+	p.lx = lexer{s: pattern, len: len(pattern)}
 	p.cur = p.lx.next()
 	p.groupCount = 0
+	p.concatBuf = p.concatBuf[:0]
 	root, err := p.parseAlternative()
 	if err != nil {
 		return nil, err
@@ -101,36 +119,45 @@ func (p *Parser) parseAlternative() (*Node, error) {
 		if err != nil {
 			return nil, err
 		}
-		left = &Node{Kind: NodeAlt, Children: []*Node{left, right}, Greedy: true}
+		alt := p.allocNode(NodeAlt)
+		alt.Children = p.allocChild2(left, right)
+		left = alt
 	}
 	return left, nil
 }
 
 // concatenation := primary+
 func (p *Parser) parseConcat() (*Node, error) {
-	var nodes []*Node
+	start := len(p.concatBuf)
 	for {
 		n, err := p.parsePrimary()
 		if err != nil {
+			p.concatBuf = p.concatBuf[:start]
 			return nil, err
 		}
 		if n == nil {
 			break
 		}
-		nodes = append(nodes, n)
+		p.concatBuf = append(p.concatBuf, n)
 		// Continue while next token starts a primary
 		if !isPrimaryStart(p.cur.kind) {
 			break
 		}
 	}
-	if len(nodes) == 0 {
+	nodes := p.concatBuf[start:]
+	var result *Node
+	switch len(nodes) {
+	case 0:
 		// empty concatenation is allowed in some alternation positions; represent as empty
-		return &Node{Kind: NodeEmpty, Greedy: true}, nil
+		result = p.allocNode(NodeEmpty)
+	case 1:
+		result = nodes[0]
+	default:
+		result = p.allocNode(NodeConcat)
+		result.Children = p.allocChildren(nodes)
 	}
-	if len(nodes) == 1 {
-		return nodes[0], nil
-	}
-	return &Node{Kind: NodeConcat, Children: nodes, Greedy: true}, nil
+	p.concatBuf = p.concatBuf[:start]
+	return result, nil
 }
 
 func isQuantifier(k tokenKind) bool {
@@ -146,18 +173,23 @@ func (p *Parser) parsePrimary() (*Node, error) {
 	switch p.cur.kind {
 	case tStar:
 		p.next()
-		n := &Node{Kind: NodeStar, Children: []*Node{base}, Greedy: true}
+		n := p.allocNode(NodeStar)
+		n.Children = p.allocChild1(base)
 		p.maybeMakeUngreedy(n)
 		base = n
 	case tPlus:
 		p.next()
-		n := &Node{Kind: NodePlus, Children: []*Node{base}, Greedy: true}
+		n := p.allocNode(NodePlus)
+		n.Children = p.allocChild1(base)
 		p.maybeMakeUngreedy(n)
 		base = n
 	case tQMark:
 		// '?' quantifier (0 or 1)
 		p.next()
-		n := &Node{Kind: NodeRange, Children: []*Node{base}, Start: 0, End: 1, Greedy: true}
+		n := p.allocNode(NodeRange)
+		n.Children = p.allocChild1(base)
+		n.Start = 0
+		n.End = 1
 		p.maybeMakeUngreedy(n)
 		base = n
 	case tLBrace:
@@ -172,7 +204,10 @@ func (p *Parser) parsePrimary() (*Node, error) {
 			p.cur = savedCur
 			return base, nil
 		}
-		n := &Node{Kind: NodeRange, Children: []*Node{base}, Start: minVal, End: maxVal, Greedy: true}
+		n := p.allocNode(NodeRange)
+		n.Children = p.allocChild1(base)
+		n.Start = minVal
+		n.End = maxVal
 		p.maybeMakeUngreedy(n)
 		base = n
 	default:
@@ -192,19 +227,29 @@ func (p *Parser) parseBase() (*Node, error) {
 	case tChar:
 		ch := p.cur.ch
 		p.next()
-		return &Node{Kind: NodeLiteral, Value: ch, Greedy: true}, nil
+		n := p.allocNode(NodeLiteral)
+		n.Value = ch
+		return n, nil
 	case tComma:
 		p.next()
-		return &Node{Kind: NodeLiteral, Value: ',', Greedy: true}, nil
+		n := p.allocNode(NodeLiteral)
+		n.Value = ','
+		return n, nil
 	case tRBracket:
 		p.next()
-		return &Node{Kind: NodeLiteral, Value: ']', Greedy: true}, nil
+		n := p.allocNode(NodeLiteral)
+		n.Value = ']'
+		return n, nil
 	case tLBrace:
 		p.next()
-		return &Node{Kind: NodeLiteral, Value: '{', Greedy: true}, nil
+		n := p.allocNode(NodeLiteral)
+		n.Value = '{'
+		return n, nil
 	case tRBrace:
 		p.next()
-		return &Node{Kind: NodeLiteral, Value: '}', Greedy: true}, nil
+		n := p.allocNode(NodeLiteral)
+		n.Value = '}'
+		return n, nil
 	case tLParen:
 		p.next()
 		group := 0
@@ -223,7 +268,10 @@ func (p *Parser) parseBase() (*Node, error) {
 			return nil, errors.New("missing ')' in group")
 		}
 		p.next()
-		return &Node{Kind: NodeGroup, Group: group, Children: []*Node{n}, Greedy: true}, nil
+		g := p.allocNode(NodeGroup)
+		g.Group = group
+		g.Children = p.allocChild1(n)
+		return g, nil
 	case tLBracket:
 		return p.parseClass()
 	}
@@ -232,7 +280,7 @@ func (p *Parser) parseBase() (*Node, error) {
 	if int(p.cur.kind) < len(tokenToSimpleNode) {
 		if nk := tokenToSimpleNode[p.cur.kind]; nk != 0 {
 			p.next()
-			return &Node{Kind: nk, Greedy: true}, nil
+			return p.allocNode(nk), nil
 		}
 	}
 
@@ -282,7 +330,7 @@ func skipSpaces(l *lexer) {
 
 // parseBound parses {m}, {m,}, {m,n}, or {,m}. After '}', it advances p.cur to the next meaningful token.
 func (p *Parser) parseBound() (minVal, maxVal uint16, err error) {
-	l := p.lx // current index is just after '{'
+	l := &p.lx // current index is just after '{'
 	skipSpaces(l)
 
 	if l.i < l.len && l.s[l.i] == ',' {
@@ -371,7 +419,7 @@ func (p *Parser) clampToUint16(val int) uint16 {
 // parseClass consumes a character class from the underlying lexer state.
 // Supports: negation ^, ranges a-z, escaped metachars (\\, \-, \]).
 func (p *Parser) parseClass() (*Node, error) {
-	l := p.lx
+	l := &p.lx
 	cls := &Class{}
 	neg := p.parseClassNegation(l)
 	p.parseInitialLiteral(l, cls)
@@ -382,7 +430,9 @@ func (p *Parser) parseClass() (*Node, error) {
 
 	cls.Negated = neg
 	p.cur = p.lx.next()
-	return &Node{Kind: NodeClass, Class: cls, Greedy: true}, nil
+	n := p.allocNode(NodeClass)
+	n.Class = cls
+	return n, nil
 }
 
 // parseClassNegation handles negation ^ at the start of a character class

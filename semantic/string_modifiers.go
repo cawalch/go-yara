@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/cawalch/go-yara/ast"
-	regexengine "github.com/cawalch/go-yara/regex"
 )
 
 func (v *Validator) validateStringModifiers(rule *ast.Rule) {
@@ -177,7 +176,7 @@ func (v *Validator) validateStringModifiers(rule *ast.Rule) {
 			})
 		}
 		if isRegex {
-			if parsed, err := regexengine.NewParser(0).Parse(cleanSemanticRegexPattern(regexPat.Value)); err == nil && parsed.HasMixedQuantifierGreediness() {
+			if parsed, err := v.regexParser.Parse(cleanSemanticRegexPattern(regexPat.Value)); err == nil && parsed.HasMixedQuantifierGreediness() {
 				v.addError(&Error{
 					Code:     ErrCodeInvalidModifier,
 					Message:  "greedy and ungreedy quantifiers can't be mixed in a regular expression",
