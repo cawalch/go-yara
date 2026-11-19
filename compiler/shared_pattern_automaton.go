@@ -88,6 +88,11 @@ func sharedNonTextCacheCoverage(size int, lookup []sharedAutomatonEntry) []bool 
 			continue
 		}
 		covered[entry.CacheIndex] = true
+		for _, extra := range entry.fanout {
+			if extra.CacheIndex >= 0 && extra.CacheIndex < size {
+				covered[extra.CacheIndex] = true
+			}
+		}
 	}
 	return covered
 }
@@ -154,19 +159,26 @@ func markSharedLookupCandidateTriggers(rules []*CompiledRule, lookup []sharedAut
 		}
 	}
 	for i := range lookup {
-		entry := &lookup[i]
-		if entry.RuleIndex < 0 || entry.RuleIndex >= len(rules) {
-			entry.canTriggerRule = true
-			continue
+		markSharedEntryTrigger(&lookup[i], rules, bestReq, cacheRuleOwner)
+		for j := range lookup[i].fanout {
+			markSharedEntryTrigger(&lookup[i].fanout[j], rules, bestReq, cacheRuleOwner)
 		}
-		entry.canTriggerRule = ruleStringCanTriggerCandidate(
-			entry.StringIdx,
-			bestReq[entry.RuleIndex],
-		)
-		entry.singleRuleCache = entry.CacheIndex >= 0 &&
-			entry.CacheIndex < len(cacheRuleOwner) &&
-			cacheRuleOwner[entry.CacheIndex] == entry.RuleIndex
 	}
+}
+
+//nolint:revive // argument-limit: internal setup helper
+func markSharedEntryTrigger(entry *sharedAutomatonEntry, rules []*CompiledRule, bestReq, cacheRuleOwner []int) {
+	if entry.RuleIndex < 0 || entry.RuleIndex >= len(rules) {
+		entry.canTriggerRule = true
+		return
+	}
+	entry.canTriggerRule = ruleStringCanTriggerCandidate(
+		entry.StringIdx,
+		bestReq[entry.RuleIndex],
+	)
+	entry.singleRuleCache = entry.CacheIndex >= 0 &&
+		entry.CacheIndex < len(cacheRuleOwner) &&
+		cacheRuleOwner[entry.CacheIndex] == entry.RuleIndex
 }
 
 func sharedNonTextCacheRuleLookup(rules []*CompiledRule, covered []bool) [][]int {
@@ -350,11 +362,28 @@ func (builder *sharedPatternAutomatonBuilder) addHexPrefilters(ruleIndex int, ru
 	}
 }
 
+type sharedAtomLeaderKey struct {
+	data  string
+	flags regex.Flags
+}
+
 func (builder *sharedPatternAutomatonBuilder) addDeferredPrefilters() error {
 	addAll := shouldAddSharedNonTextPrefilters(builder.automaton, builder.prefilterSpecs)
+	var hexLeaders map[sharedAtomLeaderKey]int
 	for _, spec := range builder.prefilterSpecs {
 		if !addAll && !spec.forceShared {
 			continue
+		}
+		if spec.isHex {
+			key := sharedAtomLeaderKey{data: string(spec.data), flags: spec.flags}
+			if leaderIdx, exists := hexLeaders[key]; exists {
+				builder.lookup[leaderIdx].fanout = append(builder.lookup[leaderIdx].fanout, spec.entry)
+				continue
+			}
+			if hexLeaders == nil {
+				hexLeaders = make(map[sharedAtomLeaderKey]int)
+			}
+			hexLeaders[key] = len(builder.lookup)
 		}
 		if err := builder.automaton.AddStringWithFlags(
 			spec.identifier,

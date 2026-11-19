@@ -15,6 +15,7 @@ import (
 // sharedAutomatonEntry maps a shared automaton entry to its exact verifier.
 type sharedAutomatonEntry struct {
 	combined   *combinedRegexNFA
+	fanout     []sharedAutomatonEntry
 	RuleIndex  int // index into CompiledProgram.Rules
 	StringIdx  int // index into CompiledRule.IndexToStringID
 	AtomOffset int
