@@ -599,6 +599,8 @@ type hexMatchScratch struct {
 	failureFrames       []hexFailureFrame
 	planTokens          []HexPatternToken
 	candidateStarts     []int
+	fanoutCandidates    [][]int
+	fanoutTouched       []int
 	planPrefix          int
 	planSingleJump      bool
 	planMemoize         bool

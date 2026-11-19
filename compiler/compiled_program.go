@@ -16,6 +16,7 @@ import (
 type sharedAutomatonEntry struct {
 	combined   *combinedRegexNFA
 	fanout     []sharedAutomatonEntry
+	hexDisc    *hexFanoutDiscriminator
 	RuleIndex  int // index into CompiledProgram.Rules
 	StringIdx  int // index into CompiledRule.IndexToStringID
 	AtomOffset int
@@ -197,6 +198,7 @@ func (cp *CompiledProgram) prepare() error {
 	markSharedLookupCandidateTriggers(cp.Rules, cp.sharedLookup, cp.sharedNonTextCaches)
 	cp.sharedNonTextCacheRules = sharedNonTextCacheRuleLookup(cp.Rules, cp.sharedNonTextCaches)
 	cp.prepareCombinedRegex()
+	buildHexFanoutDiscriminators(cp.Rules, cp.sharedLookup)
 	cp.compactPrefilter = cp.buildCompactPrefilter()
 	cp.booleanRouting = sync.OnceValue(cp.buildBooleanRouting)
 	for _, entry := range cp.sharedLookup {

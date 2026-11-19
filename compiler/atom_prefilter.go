@@ -479,9 +479,13 @@ func (s *Scanner) populateNonTextPrefilterCache(
 			candidates = s.prefilterCandidates[lookupIdx]
 		}
 		if len(candidates) > 0 {
-			s.verifySharedNonTextEntry(ctx, entry, data, candidates, cache)
-			for _, extra := range entry.fanout {
-				s.verifySharedNonTextEntry(ctx, extra, data, candidates, cache)
+			if entry.hexDisc != nil {
+				s.verifyHexFanoutDiscriminated(ctx, entry, data, candidates, cache)
+			} else {
+				s.verifySharedNonTextEntry(ctx, entry, data, candidates, cache)
+				for _, extra := range entry.fanout {
+					s.verifySharedNonTextEntry(ctx, extra, data, candidates, cache)
+				}
 			}
 		}
 		touchedIndex++
@@ -1020,4 +1024,155 @@ func filterHexCandidatesByAdjacent(dst, candidates []int, data []byte, checks []
 		}
 	}
 	return out
+}
+
+type hexFanoutDiscriminator struct {
+	relOffset int
+	buckets   [256][]int
+	wildcard  []int
+}
+
+func buildHexFanoutDiscriminators(rules []*CompiledRule, lookup []sharedAutomatonEntry) {
+	for i := range lookup {
+		entry := &lookup[i]
+		if entry.Kind != StringKindHex || len(entry.fanout) < 8 {
+			continue
+		}
+		entry.hexDisc = buildHexFanoutDiscriminator(rules, *entry)
+	}
+}
+
+func buildHexFanoutDiscriminator(rules []*CompiledRule, leader sharedAutomatonEntry) *hexFanoutDiscriminator {
+	groupSize := 1 + len(leader.fanout)
+	allChecks := make([][4]hexAtomAdjCheck, groupSize)
+	allCounts := make([]int, groupSize)
+	offsetStats := make(map[int][256]bool)
+	offsetHits := make(map[int]int)
+
+	for idx := range groupSize {
+		e := leader
+		if idx > 0 {
+			e = leader.fanout[idx-1]
+		}
+		if e.RuleIndex < 0 || e.RuleIndex >= len(rules) {
+			continue
+		}
+		rule := rules[e.RuleIndex]
+		if e.StringIdx < 0 || e.StringIdx >= len(rule.IndexToStringID) {
+			continue
+		}
+		pat := rule.HexPatterns[rule.IndexToStringID[e.StringIdx]]
+		if pat == nil || len(pat.XorKeys) > 1 {
+			continue
+		}
+		var xorKey *byte
+		if len(pat.XorKeys) == 1 {
+			xorKey = &pat.XorKeys[0]
+		}
+		n := collectHexAtomAdjacentChecks(pat.Tokens, e.AtomOffset, e.AtomMaxOffset, xorKey, &allChecks[idx])
+		allCounts[idx] = n
+		for j := range n {
+			c := allChecks[idx][j]
+			seen := offsetStats[c.relOffset]
+			seen[c.want] = true
+			offsetStats[c.relOffset] = seen
+			offsetHits[c.relOffset]++
+		}
+	}
+
+	bestOffset := 0
+	bestScore := -1
+	bestDistinct := 0
+	for relOffset, hits := range offsetHits {
+		if hits < groupSize/2 {
+			continue
+		}
+		distinct := 0
+		for _, ok := range offsetStats[relOffset] {
+			if ok {
+				distinct++
+			}
+		}
+		if distinct < 2 {
+			continue
+		}
+		score := distinct*1024 + hits
+		if score > bestScore {
+			bestScore = score
+			bestOffset = relOffset
+			bestDistinct = distinct
+		}
+	}
+	if bestScore < 0 || bestDistinct < 2 {
+		return nil
+	}
+
+	disc := &hexFanoutDiscriminator{relOffset: bestOffset}
+	for idx := range groupSize {
+		matched := false
+		for j := range allCounts[idx] {
+			if allChecks[idx][j].relOffset == bestOffset {
+				b := allChecks[idx][j].want
+				disc.buckets[b] = append(disc.buckets[b], idx)
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			disc.wildcard = append(disc.wildcard, idx)
+		}
+	}
+	return disc
+}
+
+//nolint:revive // argument-limit: hot-path helper avoids struct allocation
+func (s *Scanner) verifyHexFanoutDiscriminated(
+	ctx context.Context,
+	leader sharedAutomatonEntry,
+	data []byte,
+	candidates []int,
+	cache *nonTextMatchCache,
+) {
+	disc := leader.hexDisc
+	groupSize := 1 + len(leader.fanout)
+	if cap(s.hexScratch.fanoutCandidates) < groupSize {
+		s.hexScratch.fanoutCandidates = make([][]int, groupSize)
+	} else {
+		s.hexScratch.fanoutCandidates = s.hexScratch.fanoutCandidates[:groupSize]
+	}
+	fanout := s.hexScratch.fanoutCandidates
+	touched := s.hexScratch.fanoutTouched[:0]
+
+	relOffset := disc.relOffset
+	for _, atomStart := range candidates {
+		pos := atomStart + relOffset
+		if pos < 0 || pos >= len(data) {
+			continue
+		}
+		targets := disc.buckets[data[pos]]
+		for _, target := range targets {
+			if len(fanout[target]) == 0 {
+				touched = append(touched, target)
+			}
+			fanout[target] = append(fanout[target], atomStart)
+		}
+	}
+
+	for _, target := range touched {
+		entry := leader
+		if target > 0 {
+			entry = leader.fanout[target-1]
+		}
+		s.verifySharedNonTextEntry(ctx, entry, data, fanout[target], cache)
+		fanout[target] = fanout[target][:0]
+	}
+	s.hexScratch.fanoutTouched = touched[:0]
+
+	for _, target := range disc.wildcard {
+		entry := leader
+		if target > 0 {
+			entry = leader.fanout[target-1]
+		}
+		s.verifySharedNonTextEntry(ctx, entry, data, candidates, cache)
+	}
 }
