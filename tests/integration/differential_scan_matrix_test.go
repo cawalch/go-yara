@@ -20,9 +20,13 @@ type differentialScanCase struct {
 
 // checkLibyaraScanMatrix reuses each scanner across inputs, including repeated
 // and empty inputs, to cover state reset as well as scan-result parity.
+// Each case owns its programs, scanners, and files, so cases run in parallel
+// (bounded by go test -parallel). Scans within a case remain sequential to
+// preserve the state-reset and scanner-reuse assertions.
 func checkLibyaraScanMatrix(t *testing.T, tc differentialScanCase) {
 	t.Helper()
 	bin := libyaraOracle(t)
+	t.Parallel()
 	program, err := compiler.NewCompiler().CompileSourceWithContext(context.Background(), tc.source)
 	if err != nil {
 		t.Fatal(err)
