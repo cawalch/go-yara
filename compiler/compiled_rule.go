@@ -149,6 +149,16 @@ func (cr *CompiledRule) BuildStringIndex() {
 			}
 		}
 	}
+	cr.resolveAssertionStringSlots()
+}
+
+func (cr *CompiledRule) resolveAssertionStringSlots() {
+	for idx := range cr.assertions {
+		a := &cr.assertions[idx]
+		if a.String != "" {
+			a.stringSlot = cr.ResolveStringIndex(a.String)
+		}
+	}
 }
 
 // ResolveStringIndex returns the integer index for a string identifier.

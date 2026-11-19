@@ -117,11 +117,11 @@ func (i *Interpreter) evaluateAssertion(index int) (assertionResult, error) {
 	var matched bool
 	switch assertion.Opcode {
 	case OpAssertStringAt:
-		matched = i.matchContext != nil && i.matchContext.hasMatchAt(assertion.String, assertion.Offset)
+		matched = i.matchContext != nil && i.matchContext.hasMatchAtSlot(assertion.stringSlot, assertion.String, assertion.Offset)
 	case OpAssertStringCount:
 		count := int64(0)
 		if i.matchContext != nil {
-			count = int64(i.matchContext.matchCount(assertion.String))
+			count = int64(i.matchContext.matchCountSlot(assertion.stringSlot, assertion.String))
 		}
 		matched = compareAssertion(count, assertion.Value, assertion.Comparison)
 	case OpAssertExternal, OpAssertUint16Eq, OpAssertUint32Eq, OpAssertFilesize:
