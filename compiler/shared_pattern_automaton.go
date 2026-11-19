@@ -387,7 +387,13 @@ func shouldAddSharedNonTextPrefilters(automaton *acAutomaton, specs []sharedPref
 		}
 		return rootCount <= maxSparseRootTransitions
 	}
-	for value, nextState := range automaton.states[0].transitions {
+	var rootTransitions *[256]int32
+	if automaton.trieRoot != nil {
+		rootTransitions = automaton.trieRoot
+	} else {
+		rootTransitions = &automaton.states[0].transitions
+	}
+	for value, nextState := range rootTransitions {
 		if nextState != -1 && !addRootByte(byte(value)) {
 			// Text patterns alone already exceed the sparse-root threshold, and
 			// text patterns force the shared automaton to run on every scan.

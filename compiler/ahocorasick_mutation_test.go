@@ -32,7 +32,7 @@ func TestReserveCapacityHelpers(t *testing.T) {
 }
 
 func TestEstimateMemoryUsage(t *testing.T) {
-	ac := newacAutomaton()
+	ac := &acAutomaton{}
 	ac.states = make([]acState, 3)
 	ac.hasOutput = make([]bool, 3)
 	ac.outputs = make([]int32, 5)
@@ -69,19 +69,19 @@ func TestValidateInconsistentState(t *testing.T) {
 
 func TestRootFailureSentinel(t *testing.T) {
 	ac := newacAutomaton()
-	if ac.states[0].failure != -1 {
-		t.Fatalf("newacAutomaton root failure = %d, want -1", ac.states[0].failure)
+	if ac.trieRoot == nil || ac.trieRoot['a'] != -1 {
+		t.Fatalf("newacAutomaton root transition = %v, want -1 sentinel", ac.trieRoot)
 	}
 	if err := ac.AddString("$a", []byte("ab"), false, false); err != nil {
 		t.Fatal(err)
 	}
-	if ac.states[1].failure != -1 {
-		t.Fatalf("new state failure = %d, want -1", ac.states[1].failure)
+	if ac.trieRoot['a'] != 1 {
+		t.Fatalf("trieRoot['a'] = %d, want 1", ac.trieRoot['a'])
 	}
-	ac.states[0].failure = 7
+	ac.trieRoot[0] = 7
 	ac.Reset()
-	if ac.states[0].failure != -1 {
-		t.Fatalf("Reset root failure = %d, want -1", ac.states[0].failure)
+	if ac.trieRoot[0] != -1 {
+		t.Fatalf("Reset root sentinel = %d, want -1", ac.trieRoot[0])
 	}
 }
 
