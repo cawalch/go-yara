@@ -130,7 +130,7 @@ func ExecCapturesAtWithScratch(
 			if pc < 0 || pc >= len(code) {
 				continue
 			}
-			nextPC, matches := captureInstructionMatches(code, pc, ch, dotAll, noCase)
+			nextPC, matches := consumeInstruction(code, pc, ch, dotAll, noCase)
 			if !matches {
 				continue
 			}
@@ -300,58 +300,6 @@ func addCaptureThread(
 			*list = append(*list, thread)
 			return
 		}
-	}
-}
-
-//nolint:revive // tagged-VM hot path keeps instruction inputs explicit
-func captureInstructionMatches(code []byte, pc int, ch byte, dotAll, noCase bool) (int, bool) {
-	switch code[pc] {
-	case OpLiteral, OpNotLiteral:
-		if pc+1 >= len(code) {
-			return 0, false
-		}
-		match := ch == code[pc+1]
-		if noCase {
-			match = equalNoCase(ch, code[pc+1])
-		}
-		if code[pc] == OpNotLiteral {
-			match = !match
-		}
-		return pc + 2, match
-	case OpMaskedLiteral, OpMaskedNotLiteral:
-		if pc+2 >= len(code) {
-			return 0, false
-		}
-		match := ch&code[pc+2] == code[pc+1]&code[pc+2]
-		if code[pc] == OpMaskedNotLiteral {
-			match = !match
-		}
-		return pc + 3, match
-	case OpAny:
-		return pc + 1, dotAll || ch != '\n'
-	case OpClass:
-		if pc+33 >= len(code) {
-			return 0, false
-		}
-		match := checkBitmapMembership(code, pc+1, ch, noCase)
-		if code[pc+33] != 0 {
-			match = !match
-		}
-		return pc + 34, match
-	case OpWordChar:
-		return pc + 1, isWord(ch)
-	case OpNonWordChar:
-		return pc + 1, !isWord(ch)
-	case OpSpace:
-		return pc + 1, isSpace(ch)
-	case OpNonSpace:
-		return pc + 1, !isSpace(ch)
-	case OpDigit:
-		return pc + 1, isDigit(ch)
-	case OpNonDigit:
-		return pc + 1, !isDigit(ch)
-	default:
-		return 0, false
 	}
 }
 
