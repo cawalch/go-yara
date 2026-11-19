@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/cawalch/go-yara/ast"
+	regexengine "github.com/cawalch/go-yara/regex"
 	"github.com/cawalch/go-yara/token"
 )
 
@@ -24,6 +25,7 @@ type Validator struct {
 	moduleFunctions            ModuleFunctions
 	importedModules            map[string]bool
 	strictLibyaraCompatibility bool
+	regexParser                regexengine.Parser
 }
 
 // Special identifier keywords
