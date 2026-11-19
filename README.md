@@ -28,7 +28,7 @@ The engine is designed for high-throughput scanning pipelines. It uses literal p
 | **libyara** | Reference YARA implementation with full `pe`, `elf`, `dotnet`, and `cuckoo` modules and broad ecosystem compatibility. | C library requiring CGO or native bindings in Go; single-engine C API. |
 | **YARA-X** | Rust engine with bundled `pe`/`elf`/`dotnet`, WebAssembly-compiled conditions, and strict modernized rule diagnostics. | Official Go binding requires CGO + native Rust/C library; documented syntax/regex differences from libyara. |
 
-See the [YARA compatibility guide](https://cawalch.github.io/go-yara/compatibility/) for full details and measured 2,000-rule (`512 MB` clean / `256 MB` near-miss) and `280`-file PE CLI comparisons (`go-yara v0.11.0` vs `libyara 4.6.0` vs `YARA-X 1.23.0`).
+See the [YARA compatibility guide](https://cawalch.github.io/go-yara/compatibility/) for full details and measured CLI comparisons (`go-yara v0.11.0` vs `libyara 4.6.0` vs `YARA-X 1.23.0`) across clean prefilter (`512 MB`), dense-root overlapping (`256 MB`), and heavy-regex (`100 MB`) workloads.
 
 ## Requirements and Installation
 
