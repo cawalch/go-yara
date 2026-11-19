@@ -196,7 +196,7 @@ func verificationAtomOrder(atom regexVerificationAtom, data []byte, at, index, s
 	return order, true
 }
 
-func needsBoundedRegexVerification(pattern RegexPattern, data []byte, maxSpan int) bool {
+func needsBoundedRegexVerification(pattern *RegexPattern, data []byte, maxSpan int) bool {
 	plan := pattern.verification
 	if plan != nil && pattern.Flags&regexStartAtomEntries != 0 {
 		return true

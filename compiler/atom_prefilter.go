@@ -534,7 +534,7 @@ func appendRegexPrefilterMatches(
 	if matchCtx != nil {
 		maxMatchSpan = matchCtx.maxMatchSpan
 	}
-	if entry.AtomMaxOffset < 0 || needsBoundedRegexVerification(pattern, data, maxMatchSpan) {
+	if entry.AtomMaxOffset < 0 || (pattern.verification != nil && needsBoundedRegexVerification(&pattern, data, maxMatchSpan)) {
 		return appendRegexFallbackMatches(dst, rule, strID, pattern, data, flags, entry.IsWide, done, matchCtx)
 	}
 	limit := max(1024, len(data)/4)
@@ -543,41 +543,6 @@ func appendRegexPrefilterMatches(
 		pattern.byteSetMinOffset >= 0 && pattern.byteSetMinOffset == pattern.byteSetMaxOffset
 	var bs *regex.VMBatch
 
-	verifyCandidateStart := func(start int) {
-		if pattern.anchored && start != 0 {
-			return
-		}
-		if !pattern.startMatchesFirstByte(data, start, entry.IsWide) {
-			return
-		}
-		if hasFixedByteSet {
-			checkPos := start + pattern.byteSetMinOffset
-			if checkPos >= len(data) || !pattern.byteSet.Contains(data[checkPos]) {
-				return
-			}
-		}
-		if bs == nil {
-			bs = newRegexMatchBatch(matchCtx, pattern)
-		}
-		scanData, relStart, windowStart := boundedRegexWindow(data, start, pattern, entry.IsWide, maxMatchSpan)
-		matched, startOff, endOff := execRegexMatchAt(bs, pattern, scanData, flags, entry.IsWide, relStart, done)
-		if !matched {
-			if matchCtx != nil && bs.BudgetExceeded() {
-				matchCtx.verificationBudgetRejects++
-			}
-			return
-		}
-		absStart := windowStart + relStart + startOff
-		absEnd := windowStart + relStart + endOff
-		if absEnd < absStart {
-			return
-		}
-		match := Match{Pattern: strID, Offset: int64(absStart), Length: absEnd - absStart}
-		if matchPassesModifiers(data, match, modifiers, entry.IsWide) {
-			dst = append(dst, matchSpan{Offset: match.Offset, Length: match.Length})
-		}
-	}
-
 	atomMinOffset, atomMaxOffset := pattern.atomMinOffset, pattern.atomMaxOffset
 	if entry.IsWide {
 		atomMinOffset *= 2
@@ -585,7 +550,16 @@ func appendRegexPrefilterMatches(
 			atomMaxOffset *= 2
 		}
 	}
-	if entry.AtomOffset == atomMinOffset && entry.AtomMaxOffset == atomMaxOffset {
+	checkAtomValid := entry.AtomOffset == atomMinOffset && entry.AtomMaxOffset == atomMaxOffset
+
+	if entry.AtomOffset == entry.AtomMaxOffset && len(candidates) <= limit {
+		return appendFixedOffsetRegexPrefilterMatches(
+			dst, &pattern, strID, entry, modifiers, data, flags,
+			hasFixedByteSet, checkAtomValid, maxMatchSpan, candidates, done, matchCtx,
+		)
+	}
+
+	if checkAtomValid {
 		validCandidates := candidates[:0]
 		for _, atomStart := range candidates {
 			if _, ok := pattern.atomOccurrenceValid(data, atomStart, entry.IsWide); ok {
@@ -593,22 +567,6 @@ func appendRegexPrefilterMatches(
 			}
 		}
 		candidates = validCandidates
-	}
-
-	if entry.AtomOffset == entry.AtomMaxOffset && len(candidates) <= limit {
-		lastStart := -1
-		for index, atomStart := range candidates {
-			if scanCanceledAt(done, index) {
-				return dst
-			}
-			start := atomStart - entry.AtomOffset
-			if start < 0 || start > len(data) || start <= lastStart {
-				continue
-			}
-			lastStart = start
-			verifyCandidateStart(start)
-		}
-		return dst
 	}
 
 	var startsBuf [64]int
@@ -628,9 +586,114 @@ func appendRegexPrefilterMatches(
 		if scanCanceledAt(done, index) {
 			return dst
 		}
-		verifyCandidateStart(start)
+		dst, bs = verifyRegexCandidateStart(
+			dst, bs, &pattern, strID, modifiers, data, flags, entry.IsWide,
+			hasFixedByteSet, maxMatchSpan, start, done, matchCtx,
+		)
 	}
 	return dst
+}
+
+//nolint:revive // argument-limit: hot-path helper avoids closure captures and RegexPattern copies
+func appendFixedOffsetRegexPrefilterMatches(
+	dst []matchSpan,
+	pattern *RegexPattern,
+	strID string,
+	entry sharedAutomatonEntry,
+	modifiers []ast.StringModifier,
+	data []byte,
+	flags regex.Flags,
+	hasFixedByteSet bool,
+	checkAtomValid bool,
+	maxMatchSpan int,
+	candidates []int,
+	done <-chan struct{},
+	matchCtx *MatchContext,
+) []matchSpan {
+	var bs *regex.VMBatch
+	lastStart := -1
+	for index, atomStart := range candidates {
+		if scanCanceledAt(done, index) {
+			return dst
+		}
+		if checkAtomValid {
+			if _, ok := pattern.atomOccurrenceValid(data, atomStart, entry.IsWide); !ok {
+				continue
+			}
+		}
+		start := atomStart - entry.AtomOffset
+		if start < 0 || start > len(data) || start <= lastStart {
+			continue
+		}
+		lastStart = start
+		dst, bs = verifyRegexCandidateStart(
+			dst, bs, pattern, strID, modifiers, data, flags, entry.IsWide,
+			hasFixedByteSet, maxMatchSpan, start, done, matchCtx,
+		)
+	}
+	return dst
+}
+
+//nolint:revive // argument-limit: hot-path helper avoids closure captures and RegexPattern copies
+func verifyRegexCandidateStart(
+	dst []matchSpan,
+	bs *regex.VMBatch,
+	pattern *RegexPattern,
+	strID string,
+	modifiers []ast.StringModifier,
+	data []byte,
+	flags regex.Flags,
+	isWide bool,
+	hasFixedByteSet bool,
+	maxMatchSpan int,
+	start int,
+	done <-chan struct{},
+	matchCtx *MatchContext,
+) ([]matchSpan, *regex.VMBatch) {
+	if pattern.anchored && start != 0 {
+		return dst, bs
+	}
+	if !pattern.startMatchesFirstByte(data, start, isWide) {
+		return dst, bs
+	}
+	if hasFixedByteSet {
+		checkPos := start + pattern.byteSetMinOffset
+		if checkPos >= len(data) || !pattern.byteSet.Contains(data[checkPos]) {
+			return dst, bs
+		}
+	}
+	if len(pattern.fixedByteSets) > 0 {
+		endOff, matched := fixedRegexMatchAt(pattern.fixedByteSets, data, isWide, start)
+		if !matched {
+			return dst, bs
+		}
+		match := Match{Pattern: strID, Offset: int64(start), Length: endOff}
+		if matchPassesModifiers(data, match, modifiers, isWide) {
+			dst = append(dst, matchSpan{Offset: match.Offset, Length: match.Length})
+		}
+		return dst, bs
+	}
+	if bs == nil {
+		bs = newRegexMatchBatch(matchCtx, pattern)
+	}
+	scanData, relStart, windowStart := boundedRegexWindow(data, start, pattern, isWide, maxMatchSpan)
+	matched, startOff, endOff := execRegexMatchAt(bs, pattern, scanData, flags, isWide, relStart, done)
+	if !matched {
+		if matchCtx != nil && bs.BudgetExceeded() {
+			matchCtx.verificationBudgetRejects++
+		}
+		return dst, bs
+	}
+	absStart := windowStart + relStart + startOff
+	absEnd := windowStart + relStart + endOff
+	if absEnd < absStart {
+		return dst, bs
+	}
+	match := Match{Pattern: strID, Offset: int64(absStart), Length: absEnd - absStart}
+	if matchPassesModifiers(data, match, modifiers, isWide) {
+		dst = append(dst, matchSpan{Offset: match.Offset, Length: match.Length})
+	}
+	return dst, bs
 }
 
 //nolint:revive // argument-limit: rare fallback keeps hot-path state explicit
