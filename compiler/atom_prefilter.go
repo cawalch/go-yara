@@ -644,9 +644,33 @@ func appendRegexPrefilterMatches(
 		candidates = validCandidates
 	}
 
+	if !entry.IsWide {
+		handled, canceled := verifySortedCandidateStarts(
+			candidates,
+			entry.AtomOffset,
+			entry.AtomMaxOffset,
+			len(data),
+			limit,
+			done,
+			func(start int) {
+				dst, verifier.bs = verifier.verifyStart(dst, &pattern, start)
+			},
+		)
+		if canceled {
+			return dst
+		}
+		if handled {
+			return dst
+		}
+	}
+
 	var startsBuf [64]int
+	startsIn := startsBuf[:0]
+	if matchCtx != nil && cap(matchCtx.regexCandidates) > 0 {
+		startsIn = matchCtx.regexCandidates[:0]
+	}
 	starts, handled := collectRegexCandidateStartsInto(
-		startsBuf[:0],
+		startsIn,
 		candidates,
 		entry.AtomOffset,
 		entry.AtomMaxOffset,
@@ -654,6 +678,9 @@ func appendRegexPrefilterMatches(
 		len(data),
 		limit,
 	)
+	if matchCtx != nil && starts != nil {
+		matchCtx.retainRegexCandidates(starts)
+	}
 	if !handled {
 		return appendRegexFallbackMatches(dst, rule, strID, pattern, data, flags, entry.IsWide, done, matchCtx)
 	}
@@ -789,7 +816,15 @@ func appendHexPrefilterMatches(
 	linear := scratch.planPrefix == len(pattern.Tokens)
 	lastStart := -1
 
+	var firstByte byte
+	var hasFirstByte bool
+	if len(pattern.Tokens) > 0 {
+		firstByte, hasFirstByte = definiteHexByte(pattern.Tokens[0], xorKey)
+	}
 	verifyCandidateStart := func(start int) {
+		if hasFirstByte && (start >= len(data) || data[start] != firstByte) {
+			return
+		}
 		if linear {
 			end, ok := matchLinearHexPattern(pattern.Tokens, data, start, xorKey)
 			if !ok || end <= start {
@@ -815,6 +850,16 @@ func appendHexPrefilterMatches(
 	}
 
 	limit := max(1024, len(data)/4)
+	if entry.AtomMaxOffset >= 0 {
+		var adj [4]hexAtomAdjCheck
+		if nAdj := collectHexAtomAdjacentChecks(pattern.Tokens, entry.AtomOffset, entry.AtomMaxOffset, xorKey, &adj); nAdj > 0 {
+			candidates = filterHexCandidatesByAdjacent(scratch.candidateStarts[:0], candidates, data, adj[:nAdj])
+			scratch.candidateStarts = candidates[:0]
+			if len(candidates) == 0 {
+				return dst
+			}
+		}
+	}
 	if entry.AtomOffset == entry.AtomMaxOffset && len(candidates) <= limit {
 		for index, atomStart := range candidates {
 			if scanCanceledAt(done, index) {
@@ -831,23 +876,7 @@ func appendHexPrefilterMatches(
 	}
 
 	if entry.AtomMaxOffset >= 0 {
-		var startsBuf [64]int
-		starts, handled := collectRegexCandidateStartsInto(
-			startsBuf[:0],
-			candidates,
-			entry.AtomOffset,
-			entry.AtomMaxOffset,
-			false,
-			len(data),
-			limit,
-		)
-		if handled {
-			for index, start := range starts {
-				if scanCanceledAt(done, index) {
-					return dst
-				}
-				verifyCandidateStart(start)
-			}
+		if verifyHexRangeCandidates(candidates, entry, len(data), limit, done, verifyCandidateStart) {
 			return dst
 		}
 	}
@@ -860,4 +889,135 @@ func appendHexPrefilterMatches(
 		return true
 	})
 	return dst
+}
+
+//nolint:revive // argument-limit: hot-path helper avoids closure allocation
+func verifyHexRangeCandidates(
+	candidates []int,
+	entry sharedAutomatonEntry,
+	dataLen, limit int,
+	done <-chan struct{},
+	verifyCandidateStart func(int),
+) bool {
+	handled, canceled := verifySortedCandidateStarts(
+		candidates,
+		entry.AtomOffset,
+		entry.AtomMaxOffset,
+		dataLen,
+		limit,
+		done,
+		verifyCandidateStart,
+	)
+	if canceled || handled {
+		return true
+	}
+	var startsBuf [64]int
+	starts, collectHandled := collectRegexCandidateStartsInto(
+		startsBuf[:0],
+		candidates,
+		entry.AtomOffset,
+		entry.AtomMaxOffset,
+		false,
+		dataLen,
+		limit,
+	)
+	if !collectHandled {
+		return false
+	}
+	for index, start := range starts {
+		if scanCanceledAt(done, index) {
+			return true
+		}
+		verifyCandidateStart(start)
+	}
+	return true
+}
+
+type hexAtomAdjCheck struct {
+	relOffset int
+	want      byte
+}
+
+//nolint:revive // argument-limit: hot-path helper avoids struct allocation
+func collectHexAtomAdjacentChecks(
+	tokens []HexPatternToken,
+	atomOffset, atomMaxOffset int,
+	xorKey *byte,
+	out *[4]hexAtomAdjCheck,
+) int {
+	if atomMaxOffset < 0 {
+		return 0
+	}
+	currMin, currMax := 0, 0
+	runStartTok := 0
+	runMin, runMax := 0, 0
+	flushRun := func(runEndTok int) int {
+		if runEndTok <= runStartTok {
+			return 0
+		}
+		offsetInRun := atomOffset - runMin
+		runLen := runEndTok - runStartTok
+		if offsetInRun < 0 || offsetInRun >= runLen || atomMaxOffset-runMax != offsetInRun {
+			return 0
+		}
+		n := 0
+		for i := runStartTok; i < runEndTok && n < len(out); i++ {
+			if i-runStartTok == offsetInRun {
+				continue
+			}
+			if b, ok := definiteHexByte(tokens[i], xorKey); ok {
+				out[n] = hexAtomAdjCheck{relOffset: (i - runStartTok) - offsetInRun, want: b}
+				n++
+			}
+		}
+		return n
+	}
+	for i, tok := range tokens {
+		switch tok.Kind {
+		case HexTokenByte, HexTokenMasked, HexTokenWildcard:
+			currMin++
+			if currMax >= 0 {
+				currMax++
+			}
+		default:
+			if n := flushRun(i); n > 0 {
+				return n
+			}
+			switch tok.Kind {
+			case HexTokenJump:
+				if tok.Min > 0 {
+					currMin += tok.Min
+				}
+				if tok.Max < 0 {
+					currMax = -1
+				} else if currMax >= 0 {
+					currMax += tok.Max
+				}
+			case HexTokenAlt:
+				return 0
+			}
+			runStartTok = i + 1
+			runMin, runMax = currMin, currMax
+		}
+	}
+	return flushRun(len(tokens))
+}
+
+//nolint:revive // argument-limit: hot-path helper avoids struct allocation
+func filterHexCandidatesByAdjacent(dst, candidates []int, data []byte, checks []hexAtomAdjCheck) []int {
+	out := dst[:0]
+	for _, atomStart := range candidates {
+		ok := true
+		for _, c := range checks {
+			pos := atomStart + c.relOffset
+			if pos < 0 || pos >= len(data) || data[pos] != c.want {
+				ok = false
+				break
+			}
+		}
+		if ok {
+			out = append(out, atomStart)
+		}
+	}
+	return out
 }
