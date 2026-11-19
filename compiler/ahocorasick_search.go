@@ -762,132 +762,28 @@ func searchClassTable[S ~uint16 | ~int32](ac *acAutomaton, rootTransitions *[256
 	}
 }
 
-//nolint:nestif,revive // the sparse-root and general loops are intentionally separate hot paths
+//nolint:revive // argument-limit: hot path avoids struct allocation
 func searchTable[S ~uint16 | ~int32](ac *acAutomaton, trans [][256]S, data []byte, yield func(acMatch) bool) {
 	rootTransitions := &trans[0]
 	hasOutput := ac.hasOutput
-	var currentState S
 	rootHasNoOutput := !hasOutput[0]
 
 	if rootHasNoOutput && ac.teddy != nil && len(data) >= 256 {
-		linearUntil := 0
-		denseWindow := 256
-		for i := 0; i < len(data); {
-			if currentState == 0 {
-				if i >= linearUntil && len(data)-i >= 32 {
-					candidate := ac.teddy.findCandidate(data, i)
-					if candidate < 0 {
-						i = max(i, len(data)-31)
-						if i >= len(data) {
-							return
-						}
-					} else {
-						if candidate-i < 64 {
-							linearUntil = candidate + denseWindow
-							if denseWindow < 8192 {
-								denseWindow <<= 1
-							}
-						} else {
-							denseWindow = 256
-						}
-						i = candidate
-					}
-				}
-				for {
-					currentState = rootTransitions[data[i]]
-					if currentState != 0 {
-						break
-					}
-					i++
-					if i == len(data) {
-						return
-					}
-					if i >= linearUntil && len(data)-i >= 32 {
-						break
-					}
-				}
-				if currentState == 0 {
-					continue
-				}
-			} else {
-				currentState = trans[currentState][data[i]]
-			}
-			if hasOutput[currentState] && !ac.yieldMatches(int32(currentState), i, yield) {
-				return
-			}
-			i++
-		}
+		searchTableTeddy(ac, trans, data, yield)
 		return
 	}
 
 	if rootHasNoOutput && len(data) > 256 && len(ac.rootLanes) > 0 && len(ac.rootLanes) <= maxSparseRootTransitions && !rootRowIsDense(rootTransitions, data) {
-		rootCursor := newRootCandidateCursor(ac.rootLanes)
-		linearUntil := 0
-		for i := 0; i < len(data); i++ {
-			if currentState == 0 && i >= linearUntil && len(data)-i >= 256 {
-				candidate := rootCursor.next(data, i)
-				if candidate < 0 {
-					return
-				}
-				if candidate-i < 64 {
-					linearUntil = candidate + 256
-				}
-				i = candidate
-			}
-			if currentState == 0 {
-				currentState = rootTransitions[data[i]]
-				if currentState == 0 {
-					continue
-				}
-			} else {
-				currentState = trans[currentState][data[i]]
-			}
-			if hasOutput[currentState] && !ac.yieldMatches(int32(currentState), i, yield) {
-				return
-			}
-		}
+		searchTableRootLanes(ac, trans, data, yield)
 		return
 	}
 
 	if rootHasNoOutput && !rootTransitionsAreDense(rootTransitions, data) {
-		for i := 0; i < len(data); i++ {
-			if currentState == 0 {
-				for i+8 <= len(data) {
-					if rootTransitions[data[i]] != 0 ||
-						rootTransitions[data[i+1]] != 0 ||
-						rootTransitions[data[i+2]] != 0 ||
-						rootTransitions[data[i+3]] != 0 ||
-						rootTransitions[data[i+4]] != 0 ||
-						rootTransitions[data[i+5]] != 0 ||
-						rootTransitions[data[i+6]] != 0 ||
-						rootTransitions[data[i+7]] != 0 {
-						break
-					}
-					i += 8
-				}
-				if i == len(data) {
-					return
-				}
-				for {
-					currentState = rootTransitions[data[i]]
-					if currentState != 0 {
-						break
-					}
-					i++
-					if i == len(data) {
-						return
-					}
-				}
-			} else {
-				currentState = trans[currentState][data[i]]
-			}
-			if hasOutput[currentState] && !ac.yieldMatches(int32(currentState), i, yield) {
-				return
-			}
-		}
+		searchTableSparseScalar(ac, trans, data, yield)
 		return
 	}
 
+	var currentState S
 	for i := 0; i < len(data); i++ {
 		if currentState == 0 {
 			// Stay in the root-miss loop until a transition consumes a prefix.
@@ -908,6 +804,145 @@ func searchTable[S ~uint16 | ~int32](ac *acAutomaton, trans [][256]S, data []byt
 			return
 		}
 	}
+}
+
+//nolint:revive // argument-limit: hot path avoids struct allocation
+func searchTableTeddy[S ~uint16 | ~int32](ac *acAutomaton, trans [][256]S, data []byte, yield func(acMatch) bool) {
+	rootTransitions := &trans[0]
+	hasOutput := ac.hasOutput
+	var currentState S
+	linearUntil := 0
+	denseWindow := 256
+	for i := 0; i < len(data); {
+		if currentState != 0 {
+			currentState = trans[currentState][data[i]]
+			if hasOutput[currentState] && !ac.yieldMatches(int32(currentState), i, yield) {
+				return
+			}
+			i++
+			continue
+		}
+		if i >= linearUntil && len(data)-i >= 32 {
+			i = advanceTeddyCandidate(ac.teddy, data, i, &linearUntil, &denseWindow)
+			if i >= len(data) {
+				return
+			}
+		}
+		for {
+			currentState = rootTransitions[data[i]]
+			if currentState != 0 {
+				break
+			}
+			i++
+			if i == len(data) {
+				return
+			}
+			if i >= linearUntil && len(data)-i >= 32 {
+				break
+			}
+		}
+		if currentState == 0 {
+			continue
+		}
+		if hasOutput[currentState] && !ac.yieldMatches(int32(currentState), i, yield) {
+			return
+		}
+		i++
+	}
+}
+
+//nolint:revive // argument-limit: hot path avoids struct allocation
+func advanceTeddyCandidate(teddy teddyPrefilter, data []byte, i int, linearUntil, denseWindow *int) int {
+	candidate := teddy.findCandidate(data, i)
+	if candidate < 0 {
+		return max(i, len(data)-31)
+	}
+	if candidate-i < 64 {
+		*linearUntil = candidate + *denseWindow
+		if *denseWindow < 8192 {
+			*denseWindow <<= 1
+		}
+	} else {
+		*denseWindow = 256
+	}
+	return candidate
+}
+
+//nolint:revive // argument-limit: hot path avoids struct allocation
+func searchTableRootLanes[S ~uint16 | ~int32](ac *acAutomaton, trans [][256]S, data []byte, yield func(acMatch) bool) {
+	rootTransitions := &trans[0]
+	hasOutput := ac.hasOutput
+	var currentState S
+	rootCursor := newRootCandidateCursor(ac.rootLanes)
+	linearUntil := 0
+	for i := 0; i < len(data); i++ {
+		if currentState == 0 && i >= linearUntil && len(data)-i >= 256 {
+			candidate := rootCursor.next(data, i)
+			if candidate < 0 {
+				return
+			}
+			if candidate-i < 64 {
+				linearUntil = candidate + 256
+			}
+			i = candidate
+		}
+		if currentState == 0 {
+			currentState = rootTransitions[data[i]]
+			if currentState == 0 {
+				continue
+			}
+		} else {
+			currentState = trans[currentState][data[i]]
+		}
+		if hasOutput[currentState] && !ac.yieldMatches(int32(currentState), i, yield) {
+			return
+		}
+	}
+}
+
+//nolint:revive // argument-limit: hot path avoids struct allocation
+func searchTableSparseScalar[S ~uint16 | ~int32](ac *acAutomaton, trans [][256]S, data []byte, yield func(acMatch) bool) {
+	rootTransitions := &trans[0]
+	hasOutput := ac.hasOutput
+	var currentState S
+	for i := 0; i < len(data); i++ {
+		if currentState != 0 {
+			currentState = trans[currentState][data[i]]
+			if hasOutput[currentState] && !ac.yieldMatches(int32(currentState), i, yield) {
+				return
+			}
+			continue
+		}
+		i = skipSparseRoot8(rootTransitions, data, i)
+		if i == len(data) {
+			return
+		}
+		for {
+			currentState = rootTransitions[data[i]]
+			if currentState != 0 {
+				break
+			}
+			i++
+			if i == len(data) {
+				return
+			}
+		}
+		if hasOutput[currentState] && !ac.yieldMatches(int32(currentState), i, yield) {
+			return
+		}
+	}
+}
+
+func skipSparseRoot8[S ~uint16 | ~int32](root *[256]S, data []byte, i int) int {
+	for i+8 <= len(data) {
+		w := data[i : i+8]
+		if root[w[0]]|root[w[1]]|root[w[2]]|root[w[3]]|
+			root[w[4]]|root[w[5]]|root[w[6]]|root[w[7]] != 0 {
+			break
+		}
+		i += 8
+	}
+	return i
 }
 
 func rootTransitionsAreDense[S ~uint16 | ~int32](root *[256]S, data []byte) bool {
