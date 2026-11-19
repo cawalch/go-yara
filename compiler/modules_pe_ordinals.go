@@ -1,6 +1,10 @@
 package compiler
 
-import "strconv"
+import (
+	"strconv"
+
+	"github.com/cawalch/go-yara/regex"
+)
 
 // Ordinal aliases shared by import display/query resolution and imphash,
 // matching libyara 4.5.8's ord_lookup
@@ -69,12 +73,17 @@ func peOrdinalNameMatches(kind peOrdinalDLLKind, ordinal uint16, query string) b
 }
 
 func peOrdinalRegexMatches(kind peOrdinalDLLKind, ordinal uint16, re CompiledRegex) (bool, error) {
+	return peOrdinalRegexMatchesBatch(kind, ordinal, re, nil)
+}
+
+//nolint:revive // argument-limit: internal batch matcher
+func peOrdinalRegexMatchesBatch(kind peOrdinalDLLKind, ordinal uint16, re CompiledRegex, batch *regex.VMBatch) (bool, error) {
 	if alias, ok := peImportOrdinalAlias(kind, ordinal); ok {
-		return re.MatchString(alias)
+		return re.matchStringBatch(alias, batch)
 	}
 	var buf [8]byte
 	buf[0], buf[1], buf[2] = 'o', 'r', 'd'
-	return re.Match(strconv.AppendUint(buf[:3], uint64(ordinal), 10))
+	return re.matchBatch(strconv.AppendUint(buf[:3], uint64(ordinal), 10), batch)
 }
 
 func peNameEqualOrdinalFallback(query string, ordinal uint16) bool {

@@ -25,13 +25,28 @@ type ModuleField struct {
 	Constant *ModuleValue
 }
 
+type moduleFieldGetter interface {
+	field(string) ModuleValue
+}
+
 type moduleObject struct {
 	kind   ModuleValueType
 	fields map[string]ModuleValue
-	// field supplies scan-owned built-in fields on demand. Host data uses fields.
+	// field/getter supply scan-owned built-in fields on demand. Host data uses fields.
 	field    func(string) ModuleValue
+	getter   moduleFieldGetter
 	elements []ModuleValue
 	keys     []string
+}
+
+func (o *moduleObject) resolveField(name string) ModuleValue {
+	if o.getter != nil {
+		return o.getter.field(name)
+	}
+	if o.field != nil {
+		return o.field(name)
+	}
+	return o.fields[name]
 }
 
 // Clone with memoization so invalid recursive input can be diagnosed later.

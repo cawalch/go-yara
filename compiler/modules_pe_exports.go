@@ -29,11 +29,18 @@ type peExportData struct {
 	symbols    []pe.ExportSymbol
 	dllName    string
 	details    ModuleValue
+	index      *peExportIndex
+	queries    int
 	fileSize   int64
 	timestamp  uint32
 	valid      bool
 	hasDLLName bool
 	present    bool // A missing directory has no timestamp; zero is a valid timestamp.
+}
+
+type peExportIndex struct {
+	byName    map[string]int
+	byOrdinal map[int64]int
 }
 
 func (image *peImage) loadExports() *peExportData {
@@ -94,7 +101,7 @@ func (image *peImage) exportField(name string) ModuleValue {
 			}
 			view := &views[i]
 			view.symbol, view.image = &exports.symbols[i], image
-			view.object = moduleObject{kind: ModuleStruct, field: view.field}
+			view.object = moduleObject{kind: ModuleStruct, getter: view}
 			values[i] = ModuleValue{Type: ModuleStruct, object: &view.object}
 		}
 		exports.details = peArray(values)

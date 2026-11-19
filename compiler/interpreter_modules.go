@@ -42,10 +42,7 @@ func (i *Interpreter) executeModuleGetField() error {
 	if value.Type != ValueTypeObject || value.object == nil || value.object.kind != ModuleStruct {
 		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpModuleGetField, Message: "module field requires a structure"}
 	}
-	if value.object.field != nil {
-		return i.pushModuleValue(value.object.field(name))
-	}
-	return i.pushModuleValue(value.object.fields[name])
+	return i.pushModuleValue(value.object.resolveField(name))
 }
 
 func (i *Interpreter) executeModuleGetIndex() error {

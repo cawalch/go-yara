@@ -18,6 +18,19 @@ func Exec(code, input []byte, flags Flags) bool {
 //
 //nolint:revive // cancellation signal accompanies the existing VM arguments
 func ExecWithCancel(code, input []byte, flags Flags, done <-chan struct{}) (bool, error) {
+	return execBatchWithCancel(nil, code, input, flags, done)
+}
+
+// ExecBatchWithCancel executes code against input using bs (when non-nil) to
+// avoid sync.Pool VM state lookups across repeated calls.
+//
+//nolint:revive // argument-limit: cancellation signal accompanies the existing VM arguments
+func ExecBatchWithCancel(bs *VMBatch, code, input []byte, flags Flags, done <-chan struct{}) (bool, error) {
+	return execBatchWithCancel(bs, code, input, flags, done)
+}
+
+//nolint:revive // argument-limit: shared VM entry point
+func execBatchWithCancel(bs *VMBatch, code, input []byte, flags Flags, done <-chan struct{}) (bool, error) {
 	if vmCanceled(done) {
 		return false, context.Canceled
 	}
@@ -30,7 +43,16 @@ func ExecWithCancel(code, input []byte, flags Flags, done <-chan struct{}) (bool
 		lastStart = 1 // Search both wide alignments, including odd byte offsets.
 	}
 	for start := 0; start <= lastStart; start++ {
-		matched, _ := runMatch(code, input, flags, start, done, scan)
+		var matched bool
+		if bs != nil {
+			bs.Prepare(len(code))
+			var nextGen uint32
+			matched, _, nextGen = runMatchWithState(bs.st, bs.gen, code, input, flags, start, done, scan)
+			bs.st.gen = nextGen
+			bs.gen = nextGen
+		} else {
+			matched, _ = runMatch(code, input, flags, start, done, scan)
+		}
 		if vmCanceled(done) {
 			return false, context.Canceled
 		}
@@ -273,13 +295,21 @@ func runAtMatch(code, s []byte, flags Flags, start int, done <-chan struct{}) (b
 }
 
 func runMatch(code, s []byte, flags Flags, start int, done <-chan struct{}, scan bool) (matched bool, length int) { //nolint:cyclop,revive,maintidx,nakedret // performance-critical VM dispatch
+	st, gen := getVMState(len(code))
+	matched, length, nextGen := runMatchWithState(st, gen, code, s, flags, start, done, scan)
+	st.gen = nextGen
+	putVMState(st)
+	return matched, length
+}
+
+//nolint:cyclop,revive,maintidx,nakedret // performance-critical VM dispatch
+func runMatchWithState(st *vmState, gen uint32, code, s []byte, flags Flags, start int, done <-chan struct{}, scan bool) (matched bool, length int, nextGen uint32) {
 	wide := (flags & FlagsWide) != 0
 
-	// Get pooled buffers: visited (generation counter), cur, next thread slices.
-	st, gen := getVMState(len(code))
+	// Reuse caller-supplied buffers: visited (generation counter), cur, next thread slices.
 	visited := st.visited[:len(code)]
-	cur := st.cur
-	next := st.next
+	cur := st.cur[:0]
+	next := st.next[:0]
 
 	// Track the accepting endpoint while surviving continuations run.
 	bestEnd := -1
@@ -350,18 +380,16 @@ func runMatch(code, s []byte, flags Flags, start int, done <-chan struct{}, scan
 		}
 	}
 
-	// Restore pooled buffers on both exhaustion and end of input.
+	// Restore buffers on both exhaustion and end of input.
 	st.cur = cur[:0]
 	st.next = next[:0]
-	st.gen = gen
-	putVMState(st)
 	if exhausted {
-		return matched, length
+		return matched, length, gen
 	}
 	if bestEnd >= 0 {
-		return true, bestEnd
+		return true, bestEnd, gen
 	}
-	return false, 0
+	return false, 0, gen
 }
 
 // runAtMatchBatch is like runAtMatch but uses a pre-pinned VMBatch

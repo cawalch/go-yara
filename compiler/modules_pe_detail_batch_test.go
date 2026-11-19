@@ -15,13 +15,13 @@ func TestPEBatchedDetailViewsRemainDistinct(t *testing.T) {
 		clear(data) // Deferred fields must use the owned export snapshot.
 		for index := len(exports) - 1; index >= 0; index-- {
 			view := exports[index].object
-			if got := view.field("name").String; got != fmt.Sprintf("Function%05d", index) {
+			if got := view.resolveField("name").String; got != fmt.Sprintf("Function%05d", index) {
 				t.Fatalf("export %d: %q", index, got)
 			}
-			if view.field("ordinal").Integer != int64(index+7) || view.field("offset").Integer != 0x220 {
+			if view.resolveField("ordinal").Integer != int64(index+7) || view.resolveField("offset").Integer != 0x220 {
 				t.Fatalf("export %d used another symbol's metadata", index)
 			}
-			if view.field("forward_name").Type != ModuleUndefined || view.field("unknown").Type != ModuleUndefined {
+			if view.resolveField("forward_name").Type != ModuleUndefined || view.resolveField("unknown").Type != ModuleUndefined {
 				t.Fatal("undefined export fields changed")
 			}
 		}
@@ -37,10 +37,10 @@ func TestPEBatchedDetailViewsRemainDistinct(t *testing.T) {
 		for index := len(functions) - 1; index >= 0; index-- {
 			view := functions[index].object
 			want := fmt.Sprintf("ord%d", index)
-			if got := view.field("name").String; got != want {
+			if got := view.resolveField("name").String; got != want {
 				t.Fatalf("import %d: %q want %q", index, got, want)
 			}
-			if view.field("ordinal").Integer != int64(index) || view.field("name").String != want {
+			if view.resolveField("ordinal").Integer != int64(index) || view.resolveField("name").String != want {
 				t.Fatalf("import %d cached another symbol's ordinal name", index)
 			}
 		}

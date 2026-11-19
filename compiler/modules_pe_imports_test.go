@@ -107,7 +107,7 @@ func TestPEImportsLazySnapshot(t *testing.T) {
 	if library.field("library_name").String != "Example.DLL" {
 		t.Fatal("borrowed DLL name")
 	}
-	if library.field("functions").object.elements[0].object.field("name").String != "NamedFunction" {
+	if library.field("functions").object.elements[0].object.resolveField("name").String != "NamedFunction" {
 		t.Fatal("borrowed function name")
 	}
 

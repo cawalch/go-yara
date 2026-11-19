@@ -56,7 +56,7 @@ func TestPEExportQueriesCache(t *testing.T) {
 						t.Fatal("query and counts did not share the snapshot")
 					}
 				}
-				if image.exportField("export_details").object.elements[0].object.field("name").String != "Function00000" {
+				if image.exportField("export_details").object.elements[0].object.resolveField("name").String != "Function00000" {
 					t.Fatal("details did not reuse the query snapshot")
 				}
 				for _, input := range [][]byte{data, nil, pefixture.New(is64)} {

@@ -4,6 +4,8 @@ import (
 	"strings"
 
 	pe "github.com/cawalch/go-pe"
+
+	"github.com/cawalch/go-yara/regex"
 )
 
 func (i *Interpreter) peImports(args []ModuleValue) ModuleValue {
@@ -40,14 +42,18 @@ func (i *Interpreter) peImports(args []ModuleValue) ModuleValue {
 	if !imports.valid {
 		return ModuleValue{}
 	}
-	var count int64
+	if len(args) == 1 {
+		return peImportDLLCount(imports, args[0].String)
+	}
+	if imports.index == nil && imports.scannedSymbols >= 256 {
+		imports.index = buildPEImportIndex(imports.libraries)
+	}
+	if imports.index != nil {
+		return lookupPEImportIndex(imports.index, args[0].String, args[1])
+	}
 	seen := 0
 	for _, library := range imports.libraries {
 		if !peNameEqual(library.DLL, args[0].String) {
-			continue
-		}
-		if len(args) == 1 {
-			count += int64(len(library.Symbols))
 			continue
 		}
 		kind := peMatchOrdinalDLL(library.DLL)
@@ -56,12 +62,76 @@ func (i *Interpreter) peImports(args []ModuleValue) ModuleValue {
 				return ModuleValue{}
 			}
 			seen++
+			imports.scannedSymbols++
 			if peImportSymbolMatches(kind, symbol, args[1]) {
 				return IntegerValue(1)
 			}
 		}
 	}
+	return IntegerValue(0)
+}
+
+func peImportDLLCount(imports *peImportData, dll string) ModuleValue {
+	if len(imports.libraries) >= 4 {
+		if imports.dllCounts == nil {
+			imports.dllCounts = buildPEDLLCounts(imports.libraries)
+		}
+		return IntegerValue(imports.dllCounts[peLowerASCII(dll)])
+	}
+	var count int64
+	for _, library := range imports.libraries {
+		if peNameEqual(library.DLL, dll) {
+			count += int64(len(library.Symbols))
+		}
+	}
 	return IntegerValue(count)
+}
+
+func lookupPEImportIndex(index *peImportIndex, dll string, query ModuleValue) ModuleValue {
+	dllLower := peLowerASCII(dll)
+	if query.Type == ModuleInteger {
+		if _, ok := index.ordHits[peImportOrdKey{dllLower: dllLower, ordinal: query.Integer}]; ok {
+			return IntegerValue(1)
+		}
+		return IntegerValue(0)
+	}
+	if _, ok := index.fnHits[peImportFnKey{dllLower: dllLower, fnLower: peLowerASCII(query.String)}]; ok {
+		return IntegerValue(1)
+	}
+	return IntegerValue(0)
+}
+
+func buildPEDLLCounts(libraries []pe.ImportLibrary) map[string]int64 {
+	counts := make(map[string]int64, len(libraries))
+	for _, library := range libraries {
+		counts[peLowerASCII(library.DLL)] += int64(len(library.Symbols))
+	}
+	return counts
+}
+
+func buildPEImportIndex(libraries []pe.ImportLibrary) *peImportIndex {
+	total := 0
+	for _, library := range libraries {
+		total += len(library.Symbols)
+	}
+	fnHits := make(map[peImportFnKey]struct{}, total)
+	ordHits := make(map[peImportOrdKey]struct{})
+	for _, library := range libraries {
+		dllLower := peLowerASCII(library.DLL)
+		kind := peMatchOrdinalDLL(library.DLL)
+		for _, symbol := range library.Symbols {
+			if !symbol.ByOrdinal {
+				fnHits[peImportFnKey{dllLower: dllLower, fnLower: peLowerASCII(symbol.Name)}] = struct{}{}
+				continue
+			}
+			ordHits[peImportOrdKey{dllLower: dllLower, ordinal: int64(symbol.Ordinal)}] = struct{}{}
+			fnHits[peImportFnKey{dllLower: dllLower, fnLower: peLowerASCII(peImportOrdinalName(kind, symbol.Ordinal))}] = struct{}{}
+		}
+	}
+	return &peImportIndex{
+		fnHits:  fnHits,
+		ordHits: ordHits,
+	}
 }
 
 type peImportRegexQuery struct {
@@ -98,6 +168,10 @@ func (i *Interpreter) peImportsRegex(args []ModuleValue) ModuleValue {
 	if !imports.valid {
 		return ModuleValue{}
 	}
+	var batch *regex.VMBatch
+	if i.matchContext != nil {
+		batch = &i.matchContext.regexBatch
+	}
 	var count int64
 	seen := 0
 	for _, library := range imports.libraries {
@@ -105,7 +179,7 @@ func (i *Interpreter) peImportsRegex(args []ModuleValue) ModuleValue {
 			return ModuleValue{}
 		}
 		seen++
-		dllMatched, err := query.dll.MatchString(library.DLL)
+		dllMatched, err := query.dll.matchStringBatch(library.DLL, batch)
 		if err != nil {
 			return ModuleValue{}
 		}
@@ -118,7 +192,7 @@ func (i *Interpreter) peImportsRegex(args []ModuleValue) ModuleValue {
 				return ModuleValue{}
 			}
 			seen++
-			matched, err := peImportSymbolRegexMatches(kind, symbol, query.fn)
+			matched, err := peImportSymbolRegexMatchesBatch(kind, symbol, query.fn, batch)
 			if err != nil {
 				return ModuleValue{}
 			}
@@ -130,11 +204,12 @@ func (i *Interpreter) peImportsRegex(args []ModuleValue) ModuleValue {
 	return IntegerValue(count)
 }
 
-func peImportSymbolRegexMatches(kind peOrdinalDLLKind, symbol pe.ImportSymbol, query CompiledRegex) (bool, error) {
+//nolint:revive // argument-limit: internal batch matcher
+func peImportSymbolRegexMatchesBatch(kind peOrdinalDLLKind, symbol pe.ImportSymbol, query CompiledRegex, batch *regex.VMBatch) (bool, error) {
 	if !symbol.ByOrdinal {
-		return query.MatchString(symbol.Name)
+		return query.matchStringBatch(symbol.Name, batch)
 	}
-	return peOrdinalRegexMatches(kind, symbol.Ordinal, query)
+	return peOrdinalRegexMatchesBatch(kind, symbol.Ordinal, query, batch)
 }
 
 func peImportSymbolMatches(kind peOrdinalDLLKind, symbol pe.ImportSymbol, query ModuleValue) bool {
