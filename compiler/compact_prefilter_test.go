@@ -470,17 +470,23 @@ func TestCompactPrefilterShortRootRuns(t *testing.T) {
 		t.Fatal(err)
 	}
 	gate := program.compactPrefilter
-	if gate == nil || len(gate.automaton.transitions16) == 0 {
+	if gate == nil || (len(gate.automaton.transitions16) == 0 && len(gate.automaton.flatClass16) == 0) {
 		t.Fatal("missing 16-bit compact prefilter")
 	}
-	trans := gate.automaton.transitions16
+	ac := gate.automaton
 	// Exercise runs ending at EOF, entering an accepting state, and returning
 	// to the root after a partial match, including every short-input boundary.
 	for padding := 0; padding <= 256; padding++ {
 		for _, tail := range []string{"", "r", "rare_", "rare_one", "rare_x rare_two", "rare_x "} {
 			data := []byte(strings.Repeat(" ", padding) + tail)
-			got := compactPrefilterRejectsShort16(data, trans, gate.accepting)
-			want := compactPrefilterRejectsTable(data, gate, trans)
+			var got, want bool
+			if len(ac.flatClass16) > 0 {
+				got = compactPrefilterRejectsShortClass16(data, ac, gate.accepting)
+				want = compactPrefilterRejectsClassTable(data, gate, ac.classRoot16, ac.flatClass16)
+			} else {
+				got = compactPrefilterRejectsShort16(data, ac.transitions16, gate.accepting)
+				want = compactPrefilterRejectsTable(data, gate, ac.transitions16)
+			}
 			if got != want {
 				t.Fatalf("padding=%d tail=%q: rejected=%v, want %v", padding, tail, got, want)
 			}

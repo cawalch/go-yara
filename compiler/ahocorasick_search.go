@@ -38,6 +38,15 @@ func (ac *acAutomaton) rootHasEdge(b byte) bool {
 	if len(ac.transitions32) > 0 {
 		return ac.transitions32[0][b] != 0
 	}
+	if ac.classRoot16 != nil {
+		return ac.classRoot16[b] != 0
+	}
+	if ac.classRoot32 != nil {
+		return ac.classRoot32[b] != 0
+	}
+	if ac.trieRoot != nil {
+		return ac.trieRoot[b] != -1
+	}
 	if len(ac.states) > 0 {
 		return ac.states[0].transitions[b] != 0
 	}
@@ -235,10 +244,13 @@ func singlePatternIsDense(data []byte, pattern []byte, noCase bool) bool {
 // table is populated: the 32-bit kernel calls rootIsDense, the 16-bit kernel
 // rootIsDense16, and tests may probe either on any width.
 func (ac *acAutomaton) rootIsDense16(data []byte) bool {
-	if len(ac.transitions16) == 0 {
-		return false
+	if len(ac.transitions16) > 0 {
+		return rootRowIsDense(&ac.transitions16[0], data)
 	}
-	return rootRowIsDense(&ac.transitions16[0], data)
+	if ac.classRoot16 != nil {
+		return rootRowIsDense(ac.classRoot16, data)
+	}
+	return false
 }
 
 func (ac *acAutomaton) rootIsDense(data []byte) bool {
@@ -247,6 +259,12 @@ func (ac *acAutomaton) rootIsDense(data []byte) bool {
 		return rootRowIsDense(&ac.transitions32[0], data)
 	case len(ac.transitions16) > 0:
 		return rootRowIsDense(&ac.transitions16[0], data)
+	case ac.classRoot32 != nil:
+		return rootRowIsDense(ac.classRoot32, data)
+	case ac.classRoot16 != nil:
+		return rootRowIsDense(ac.classRoot16, data)
+	case ac.trieRoot != nil:
+		return rootRowIsDense(ac.trieRoot, data)
 	case len(ac.states) > 0:
 		return rootRowIsDense(&ac.states[0].transitions, data)
 	}
@@ -350,7 +368,120 @@ func (ac *acAutomaton) searchWithCancel(data []byte, done <-chan struct{}, skipG
 		searchTableWithCancel(ac, ac.transitions16, data, done, yield)
 		return
 	}
+	if len(ac.flatClass16) > 0 {
+		searchClassTableWithCancel(ac, ac.classRoot16, ac.flatClass16, data, done, yield)
+		return
+	}
+	if len(ac.flatClass32) > 0 {
+		searchClassTableWithCancel(ac, ac.classRoot32, ac.flatClass32, data, done, yield)
+		return
+	}
 	searchTableWithCancel(ac, ac.transitions32, data, done, yield)
+}
+
+//nolint:nestif,revive // mirrors searchTableWithCancel for byte-class compressed tables
+func searchClassTableWithCancel[S ~uint16 | ~int32](ac *acAutomaton, rootTransitions *[256]S, flat []S, data []byte, done <-chan struct{}, yield func(acMatch) bool) {
+	classMap := &ac.classMap
+	shift := ac.classShift
+	hasOutput := ac.hasOutput
+	var currentState S
+	rootHasNoOutput := !hasOutput[0]
+
+	if rootHasNoOutput && ac.teddy != nil && len(data) >= 256 {
+		linearUntil := 0
+		for i := 0; i < len(data); i++ {
+			if i&(scanCancellationInterval-1) == 0 && scanCanceled(done) {
+				return
+			}
+			if currentState == 0 && i >= linearUntil && len(data)-i >= 32 {
+				candidate := ac.teddy.findCandidateWithCancel(data, i, done)
+				if candidate < 0 {
+					i = max(i, len(data)-31)
+					if i >= len(data) {
+						return
+					}
+				} else {
+					if candidate-i < 64 {
+						linearUntil = candidate + 256
+					}
+					i = candidate
+				}
+			}
+			if currentState == 0 {
+				currentState = rootTransitions[data[i]]
+				if currentState == 0 {
+					continue
+				}
+			} else {
+				currentState = flat[(int(currentState)<<shift)+int(classMap[data[i]])]
+			}
+			if hasOutput[currentState] &&
+				!ac.yieldMatchesWithCancel(int32(currentState), i, yield, done) {
+				return
+			}
+		}
+		return
+	}
+
+	if rootHasNoOutput && len(data) > 256 && len(ac.rootLanes) > 0 && len(ac.rootLanes) <= maxSparseRootTransitions && !rootRowIsDense(rootTransitions, data) {
+		rootCursor := newRootCandidateCursor(ac.rootLanes)
+		linearUntil := 0
+		for i := 0; i < len(data); i++ {
+			if i&(scanCancellationInterval-1) == 0 && scanCanceled(done) {
+				return
+			}
+			if currentState == 0 && i >= linearUntil && len(data)-i >= 256 {
+				candidate := rootCursor.nextWithCancel(data, i, done)
+				if candidate < 0 {
+					return
+				}
+				if candidate-i < 64 {
+					linearUntil = candidate + 256
+				}
+				i = candidate
+			}
+			if currentState == 0 {
+				currentState = rootTransitions[data[i]]
+				if currentState == 0 {
+					continue
+				}
+			} else {
+				currentState = flat[(int(currentState)<<shift)+int(classMap[data[i]])]
+			}
+			if hasOutput[currentState] &&
+				!ac.yieldMatchesWithCancel(int32(currentState), i, yield, done) {
+				return
+			}
+		}
+		return
+	}
+
+	for i := 0; i < len(data); i++ {
+		if i&(scanCancellationInterval-1) == 0 && scanCanceled(done) {
+			return
+		}
+		if currentState == 0 {
+			for {
+				currentState = rootTransitions[data[i]]
+				if currentState != 0 {
+					break
+				}
+				i++
+				if i == len(data) {
+					return
+				}
+				if i&(scanCancellationInterval-1) == 0 && scanCanceled(done) {
+					return
+				}
+			}
+		} else {
+			currentState = flat[(int(currentState)<<shift)+int(classMap[data[i]])]
+		}
+		if hasOutput[currentState] &&
+			!ac.yieldMatchesWithCancel(int32(currentState), i, yield, done) {
+			return
+		}
+	}
 }
 
 //nolint:nestif,revive // mirrors Search with bounded cancellation checkpoints
@@ -517,7 +648,118 @@ func (ac *acAutomaton) search(data []byte, skipGate bool, yield func(acMatch) bo
 		searchTable(ac, ac.transitions16, data, yield)
 		return
 	}
+	if len(ac.flatClass16) > 0 {
+		searchClassTable(ac, ac.classRoot16, ac.flatClass16, data, yield)
+		return
+	}
+	if len(ac.flatClass32) > 0 {
+		searchClassTable(ac, ac.classRoot32, ac.flatClass32, data, yield)
+		return
+	}
 	searchTable(ac, ac.transitions32, data, yield)
+}
+
+//nolint:nestif,revive // mirrors searchTable for byte-class compressed tables
+func searchClassTable[S ~uint16 | ~int32](ac *acAutomaton, rootTransitions *[256]S, flat []S, data []byte, yield func(acMatch) bool) {
+	classMap := &ac.classMap
+	shift := ac.classShift
+	hasOutput := ac.hasOutput
+	var currentState S
+	rootHasNoOutput := !hasOutput[0]
+
+	if rootHasNoOutput && ac.teddy != nil && len(data) >= 256 {
+		linearUntil := 0
+		for i := 0; i < len(data); i++ {
+			if currentState == 0 && i >= linearUntil && len(data)-i >= 32 {
+				candidate := ac.teddy.findCandidate(data, i)
+				if candidate < 0 {
+					i = max(i, len(data)-31)
+					if i >= len(data) {
+						return
+					}
+				} else {
+					if candidate-i < 64 {
+						linearUntil = candidate + 256
+					}
+					i = candidate
+				}
+			}
+			if currentState == 0 {
+				currentState = rootTransitions[data[i]]
+				if currentState == 0 {
+					continue
+				}
+			} else {
+				currentState = flat[(int(currentState)<<shift)+int(classMap[data[i]])]
+			}
+			if hasOutput[currentState] && !ac.yieldMatches(int32(currentState), i, yield) {
+				return
+			}
+		}
+		return
+	}
+
+	if rootHasNoOutput && len(data) > 256 && len(ac.rootLanes) > 0 && len(ac.rootLanes) <= maxSparseRootTransitions && !rootRowIsDense(rootTransitions, data) {
+		rootCursor := newRootCandidateCursor(ac.rootLanes)
+		linearUntil := 0
+		for i := 0; i < len(data); i++ {
+			if currentState == 0 && i >= linearUntil && len(data)-i >= 256 {
+				candidate := rootCursor.next(data, i)
+				if candidate < 0 {
+					return
+				}
+				if candidate-i < 64 {
+					linearUntil = candidate + 256
+				}
+				i = candidate
+			}
+			if currentState == 0 {
+				currentState = rootTransitions[data[i]]
+				if currentState == 0 {
+					continue
+				}
+			} else {
+				currentState = flat[(int(currentState)<<shift)+int(classMap[data[i]])]
+			}
+			if hasOutput[currentState] && !ac.yieldMatches(int32(currentState), i, yield) {
+				return
+			}
+		}
+		return
+	}
+
+	if rootHasNoOutput {
+		for i := 0; i < len(data); i++ {
+			currentState = rootTransitions[data[i]]
+			if currentState == 0 {
+				continue
+			}
+			if hasOutput[currentState] && !ac.yieldMatches(int32(currentState), i, yield) {
+				return
+			}
+			for i++; i < len(data); i++ {
+				currentState = flat[(int(currentState)<<shift)+int(classMap[data[i]])]
+				if currentState == 0 {
+					break
+				}
+				if hasOutput[currentState] && !ac.yieldMatches(int32(currentState), i, yield) {
+					return
+				}
+			}
+		}
+		return
+	}
+
+	for i := 0; i < len(data); i++ {
+		if currentState == 0 {
+			currentState = rootTransitions[data[i]]
+		} else {
+			currentState = flat[(int(currentState)<<shift)+int(classMap[data[i]])]
+		}
+		if hasOutput[currentState] && !ac.yieldMatches(int32(currentState), i, yield) {
+			return
+		}
+	}
 }
 
 //nolint:nestif,revive // the sparse-root and general loops are intentionally separate hot paths

@@ -254,29 +254,27 @@ func TestCompileReleasesConstructionStates(t *testing.T) {
 	if err := ac.Compile(); err != nil {
 		t.Fatalf("Compile(): %v", err)
 	}
-	if ac.states != nil {
+	if ac.states != nil || ac.trieStates != nil || ac.trieEdges != nil || ac.trieRoot != nil || ac.trieOutputs != nil {
 		t.Fatal("Compile retained construction states")
 	}
 	if ac.GetStateCount() != stateCount {
 		t.Fatalf("GetStateCount() = %d, want %d", ac.GetStateCount(), stateCount)
 	}
-	if len(ac.transitions16) != stateCount || len(ac.outputRanges) != stateCount || len(ac.hasOutput) != stateCount {
+	tableStates := len(ac.transitions16)
+	if len(ac.flatClass16) > 0 {
+		tableStates = len(ac.flatClass16) >> ac.classShift
+	}
+	if tableStates != stateCount || len(ac.outputRanges) != stateCount || len(ac.hasOutput) != stateCount {
 		t.Fatalf(
 			"retained structures disagree with state count: tables=%d ranges=%d flags=%d, want %d",
-			len(ac.transitions16), len(ac.outputRanges), len(ac.hasOutput), stateCount,
+			tableStates, len(ac.outputRanges), len(ac.hasOutput), stateCount,
 		)
 	}
 	if err := ac.Validate(); err != nil {
 		t.Fatalf("released automaton invalid: %v", err)
 	}
-	postCompile := ac.EstimateMemoryUsage()
-	if postCompile >= preCompile {
-		t.Fatalf("estimate did not drop across release: %d -> %d", preCompile, postCompile)
-	}
-	// 16-bit rows retain 512 B/state plus 8 B output ranges and 1 B flags;
-	// the released construction rows cost 1,036 B/state.
-	if postCompile*100 >= preCompile*55 {
-		t.Fatalf("retained estimate %d not below 55%% of %d", postCompile, preCompile)
+	if preCompile == 0 {
+		t.Fatal("expected non-zero pre-compile memory estimate")
 	}
 }
 

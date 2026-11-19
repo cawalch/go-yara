@@ -113,10 +113,14 @@ func (cp *CompiledProgram) buildCompactPrefilter() *compactPrefilter {
 
 func (s *Scanner) compactPrefilterFanoutRejects(ctx context.Context, data []byte) bool {
 	gate := s.program.compactPrefilter
+	if gate == nil {
+		return false
+	}
 	// Non-fanout gates only amortize preparePatternScan setup on short (<256B)
 	// inputs with 16-bit tables; >=256B inputs go straight to sharedAutomaton
 	// where Teddy SIMD and single-pass candidate routing apply.
-	if gate == nil || (!gate.fanoutUseful && (len(data) >= 256 || len(gate.automaton.transitions16) == 0)) {
+	has16 := len(gate.automaton.transitions16) > 0 || len(gate.automaton.flatClass16) > 0
+	if !gate.fanoutUseful && (len(data) >= 256 || !has16) {
 		return false
 	}
 	return s.compactPrefilterRejects(ctx, data)
@@ -174,10 +178,136 @@ func compactPrefilterMatchesAbsent(data []byte, gate *compactPrefilter) bool {
 		}
 		return compactPrefilterRejectsTable(data, gate, ac.transitions16)
 	}
+	if len(ac.flatClass16) > 0 {
+		if len(data) < 256 {
+			return compactPrefilterRejectsShortClass16(data, ac, gate.accepting)
+		}
+		return compactPrefilterRejectsClassTable(data, gate, ac.classRoot16, ac.flatClass16)
+	}
+	if len(ac.flatClass32) > 0 {
+		return compactPrefilterRejectsClassTable(data, gate, ac.classRoot32, ac.flatClass32)
+	}
 	if len(ac.transitions32) > 0 {
 		return compactPrefilterRejectsTable(data, gate, ac.transitions32)
 	}
 	return false
+}
+
+//go:noinline
+func compactPrefilterRejectsShortClass16(data []byte, ac *acAutomaton, accepting []bool) bool {
+	rootTransitions := ac.classRoot16
+	var state uint32
+	for i := 0; i < len(data); i++ {
+		if state == 0 {
+			for {
+				state = uint32(rootTransitions[data[i]])
+				if state != 0 {
+					break
+				}
+				i++
+				if i == len(data) {
+					return true
+				}
+			}
+		} else {
+			state = uint32(ac.flatClass16[(int(state)<<ac.classShift)+int(ac.classMap[data[i]])])
+		}
+		if accepting[state] {
+			return false
+		}
+	}
+	return true
+}
+
+//nolint:nestif,revive // mirrors compactPrefilterRejectsTable for byte-class compressed tables
+func compactPrefilterRejectsClassTable[S ~uint16 | ~int32](data []byte, gate *compactPrefilter, rootTransitions *[256]S, flat []S) bool {
+	ac := gate.automaton
+	accepting := gate.accepting
+	classMap := &ac.classMap
+	shift := ac.classShift
+	var state S
+
+	if !accepting[0] && ac.teddy != nil && len(data) >= 256 {
+		linearUntil := 0
+		for i := 0; i < len(data); i++ {
+			if state == 0 && i >= linearUntil && len(data)-i >= 32 {
+				candidate := ac.teddy.findCandidate(data, i)
+				if candidate < 0 {
+					i = max(i, len(data)-31)
+					if i >= len(data) {
+						return true
+					}
+				} else {
+					if candidate-i < 64 {
+						linearUntil = candidate + 256
+					}
+					i = candidate
+				}
+			}
+			if state == 0 {
+				state = rootTransitions[data[i]]
+				if state == 0 {
+					continue
+				}
+			} else {
+				state = flat[(int(state)<<shift)+int(classMap[data[i]])]
+			}
+			if accepting[state] {
+				return false
+			}
+		}
+		return true
+	}
+
+	if len(data) > 256 && len(ac.rootLanes) > 0 && len(ac.rootLanes) <= maxSparseRootTransitions {
+		rootCursor := newRootCandidateCursor(ac.rootLanes)
+		linearUntil := 0
+		for i := 0; i < len(data); i++ {
+			if state == 0 && i >= linearUntil && len(data)-i >= 256 {
+				candidate := rootCursor.next(data, i)
+				if candidate < 0 {
+					return true
+				}
+				if candidate-i < 64 {
+					linearUntil = candidate + 256
+				}
+				i = candidate
+			}
+			if state == 0 {
+				state = rootTransitions[data[i]]
+				if state == 0 {
+					continue
+				}
+			} else {
+				state = flat[(int(state)<<shift)+int(classMap[data[i]])]
+			}
+			if accepting[state] {
+				return false
+			}
+		}
+		return true
+	}
+
+	for i := 0; i < len(data); i++ {
+		if state == 0 {
+			for {
+				state = rootTransitions[data[i]]
+				if state != 0 {
+					break
+				}
+				i++
+				if i == len(data) {
+					return true
+				}
+			}
+		} else {
+			state = flat[(int(state)<<shift)+int(classMap[data[i]])]
+		}
+		if accepting[state] {
+			return false
+		}
+	}
+	return true
 }
 
 // Keep the short-input kernel separate from the mixed-width dispatcher.

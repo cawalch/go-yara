@@ -30,7 +30,7 @@ func TestACConstructionGrowth(t *testing.T) {
 						}
 					}
 				}
-				grew := grown.compactStates
+				grew := cap(grown.trieStates) > 1
 				if iteration == 0 && length == 65536 && !grew {
 					t.Fatal("large trie did not exercise doubled growth")
 				}
@@ -39,19 +39,26 @@ func TestACConstructionGrowth(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				if !reflect.DeepEqual(grown.states, reserved.states) || !reflect.DeepEqual(grown.outputs, reserved.outputs) || !reflect.DeepEqual(grown.transitions16, reserved.transitions16) || !reflect.DeepEqual(grown.transitions32, reserved.transitions32) || !reflect.DeepEqual(grown.outputRanges, reserved.outputRanges) || !reflect.DeepEqual(grown.hasOutput, reserved.hasOutput) {
+				if !reflect.DeepEqual(grown.outputs, reserved.outputs) ||
+					!reflect.DeepEqual(grown.transitions16, reserved.transitions16) ||
+					!reflect.DeepEqual(grown.transitions32, reserved.transitions32) ||
+					!reflect.DeepEqual(grown.flatClass16, reserved.flatClass16) ||
+					!reflect.DeepEqual(grown.flatClass32, reserved.flatClass32) ||
+					!reflect.DeepEqual(grown.classRoot16, reserved.classRoot16) ||
+					!reflect.DeepEqual(grown.classRoot32, reserved.classRoot32) ||
+					!reflect.DeepEqual(grown.outputRanges, reserved.outputRanges) ||
+					!reflect.DeepEqual(grown.hasOutput, reserved.hasOutput) {
 					t.Fatal("growth changed compiled states or outputs")
 				}
 				// Compile releases the construction states; every retained scan
 				// structure must still agree on the state count.
-				if grown.states != nil || reserved.states != nil {
+				if grown.states != nil || reserved.states != nil ||
+					grown.trieStates != nil || reserved.trieStates != nil ||
+					grown.trieRoot != nil || reserved.trieRoot != nil {
 					t.Fatal("Compile retained construction states")
 				}
 				if grown.GetStateCount() == 0 || grown.GetStateCount() != reserved.GetStateCount() {
 					t.Fatalf("released state counts disagree: %d vs %d", grown.GetStateCount(), reserved.GetStateCount())
-				}
-				if grew && cap(grown.states) != len(grown.states) {
-					t.Fatalf("retained spare state capacity: %d/%d", len(grown.states), cap(grown.states))
 				}
 				input := []byte(prefix + "b " + strings.ToUpper(prefix+"c"))
 				want := collectACBuildMatches(reserved, input)

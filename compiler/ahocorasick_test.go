@@ -448,10 +448,21 @@ func TestSearch16RootRunParity(t *testing.T) {
 	}
 	// Compare the ordinary 16-bit loop against the unchanged 32-bit loop.
 	ac.teddy, ac.rootLanes = nil, nil
-	ac.transitions32 = make([][256]int32, len(ac.transitions16))
-	for state, row := range ac.transitions16 {
-		for b, next := range row {
-			ac.transitions32[state][b] = int32(next)
+	if len(ac.flatClass16) > 0 {
+		ac.classRoot32 = new([256]int32)
+		for b, next := range ac.classRoot16 {
+			ac.classRoot32[b] = int32(next)
+		}
+		ac.flatClass32 = make([]int32, len(ac.flatClass16))
+		for i, next := range ac.flatClass16 {
+			ac.flatClass32[i] = int32(next)
+		}
+	} else {
+		ac.transitions32 = make([][256]int32, len(ac.transitions16))
+		for state, row := range ac.transitions16 {
+			for b, next := range row {
+				ac.transitions32[state][b] = int32(next)
+			}
 		}
 	}
 	for padding := 0; padding <= 257; padding++ {
@@ -459,14 +470,25 @@ func TestSearch16RootRunParity(t *testing.T) {
 			data := []byte(strings.Repeat(" ", padding) + tail)
 			for _, limit := range []int{1, 100} {
 				var got, want []acMatch
-				searchTable(ac, ac.transitions16, data, func(m acMatch) bool {
-					got = append(got, m)
-					return len(got) < limit
-				})
-				searchTable(ac, ac.transitions32, data, func(m acMatch) bool {
-					want = append(want, m)
-					return len(want) < limit
-				})
+				if len(ac.flatClass16) > 0 {
+					searchClassTable(ac, ac.classRoot16, ac.flatClass16, data, func(m acMatch) bool {
+						got = append(got, m)
+						return len(got) < limit
+					})
+					searchClassTable(ac, ac.classRoot32, ac.flatClass32, data, func(m acMatch) bool {
+						want = append(want, m)
+						return len(want) < limit
+					})
+				} else {
+					searchTable(ac, ac.transitions16, data, func(m acMatch) bool {
+						got = append(got, m)
+						return len(got) < limit
+					})
+					searchTable(ac, ac.transitions32, data, func(m acMatch) bool {
+						want = append(want, m)
+						return len(want) < limit
+					})
+				}
 				if !slices.Equal(got, want) {
 					t.Fatalf("padding=%d tail=%q limit=%d: matches=%v, want %v", padding, tail, limit, got, want)
 				}
