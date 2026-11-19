@@ -99,18 +99,6 @@ type boundedRegexBranch struct {
 	AtomOffset int
 }
 
-func cloneBoundedAlternation(plan *regexBoundedAlternation) *regexBoundedAlternation {
-	if plan == nil {
-		return nil
-	}
-	cloned := &regexBoundedAlternation{CheckEncodingOrder: plan.CheckEncodingOrder, Fullword: plan.Fullword, Repeat: cloneRepeatPlan(plan.Repeat), Tail: slices.Clone(plan.Tail), Prefix: slices.Clone(plan.Prefix), Branches: slices.Clone(plan.Branches)}
-	for i := range cloned.Branches {
-		cloned.Branches[i].Literal = slices.Clone(plan.Branches[i].Literal)
-	}
-	cloned.prepareOrder()
-	return cloned
-}
-
 func (plan *regexBoundedAlternation) overlappingPrefixes() bool {
 	for _, shorter := range plan.Branches {
 		for _, longer := range plan.Branches {

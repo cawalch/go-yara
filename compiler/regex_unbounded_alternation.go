@@ -1,7 +1,6 @@
 package compiler
 
 import (
-	"slices"
 	"sync"
 
 	"github.com/cawalch/go-yara/regex"
@@ -57,17 +56,6 @@ func compileUnboundedAlternation(parsed *regex.AST, fullword, dual bool) (*regex
 	plan := &regexBoundedAlternation{Branches: parts[selected].branches, Repeat: rp, Fullword: fullword}
 	plan.prepareEncodingOrder(dual)
 	return plan, nil
-}
-
-func cloneRepeatPlan(plan *regexRepeatPlan) *regexRepeatPlan {
-	if plan == nil {
-		return nil
-	}
-	cloned := &regexRepeatPlan{Prefix: slices.Clone(plan.Prefix), Suffix: slices.Clone(plan.Suffix), Branches: slices.Clone(plan.Branches), Greedy: plan.Greedy, AtomInRepeat: plan.AtomInRepeat, Required: plan.Required}
-	for i := range cloned.Branches {
-		cloned.Branches[i].Literal = slices.Clone(cloned.Branches[i].Literal)
-	}
-	return cloned
 }
 
 type repeatScratch struct {
