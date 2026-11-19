@@ -53,7 +53,7 @@ at most 96 entries; `number_of_sections` preserves the declared count.
 | `pe.import_details[i]` | `library_name`, `number_of_functions`, `functions` |
 | `pe.import_details[i].functions[j]` | `name`, `ordinal` |
 | `pe.linker_version`, `pe.os_version`, `pe.image_version`, `pe.subsystem_version` | `major`, `minor` |
-| `pe.overlay` | `offset`, `size` |
+| `pe.overlay` | `offset`, `size`, `data_offset`, `data_size`, `certificate_size` |
 | `pe.data_directories[i]` | `virtual_address`, `size` |
 | `pe.sections[i]` | `name`, `full_name`, `characteristics`, `virtual_address`, `virtual_size`, `raw_data_offset`, `raw_data_size`, `pointer_to_relocations`, `pointer_to_line_numbers`, `number_of_relocations`, `number_of_line_numbers` |
 | `pe` signatures | `is_signed`, `number_of_signatures` |
@@ -144,12 +144,20 @@ raw section extent (`raw_data_offset + raw_data_size`) across the up to 96
 exposed sections, matching libyara 4.5.8. Offsets are summed as 64-bit integers
 without alignment rounding and without consulting the certificate directory or
 `size_of_headers`. Zero-size raw sections still contribute their
-`raw_data_offset` to the maximum extent.
+`raw_data_offset` to the maximum extent. On Authenticode-signed images,
+`pe.overlay.size == pe.data_directories[4].size` unless additional non-signature
+data is appended.
+
+`pe.overlay.certificate_size` exposes `pe.data_directories[4].size` (`0` when no
+certificate directory is present). `pe.overlay.data_offset` and
+`pe.overlay.data_size` report the overlay extent excluding any overlap with the
+`IMAGE_DIRECTORY_ENTRY_SECURITY` region (`0` and `0` when the entire overlay is
+covered by the certificate table).
 
 For a valid PE with no overlay — including zero sections, all-zero section raw
-extents, or a section extent reaching or exceeding the input size — both
-`offset` and `size` are defined and `0`. Both fields are undefined for non-PE
-input or headers rejected by go-pe.
+extents, or a section extent reaching or exceeding the input size — `offset`,
+`size`, `data_offset`, and `data_size` are defined and `0`. All overlay fields
+are undefined for non-PE input or headers rejected by go-pe.
 
 Overlay fields are computed lazily from the cached raw section records and the
 known input size (full stream length for `ScanReader`, or configured length for
