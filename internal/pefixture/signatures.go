@@ -1,7 +1,9 @@
 package pefixture
 
 import (
+	"crypto"
 	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
@@ -11,6 +13,7 @@ import (
 	"encoding/asn1"
 	"encoding/binary"
 	"math/big"
+	"sync"
 	"time"
 )
 
@@ -190,17 +193,11 @@ func AuthenticodeBlob(opts AuthenticodeOptions) ([]byte, *x509.Certificate) {
 		includeChain: opts.IncludeChain,
 	}
 	if opts.UseRSA {
-		rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
-		if err != nil {
-			panic(err)
-		}
+		rsaKey := cachedTestKey(true, false, testKeyLeaf).(*rsa.PrivateKey)
 		sigOID = oidRSAWithSHA256
 		rootDER, caDER, leafDER, leafCert = createCertSet(rsaKey, &rsaKey.PublicKey, spec)
 	} else {
-		ecKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-		if err != nil {
-			panic(err)
-		}
+		ecKey := cachedTestKey(false, false, testKeyLeaf).(*ecdsa.PrivateKey)
 		sigOID = oidECDSAWithSHA256
 		rootDER, caDER, leafDER, leafCert = createCertSet(ecKey, &ecKey.PublicKey, spec)
 	}
@@ -260,29 +257,14 @@ func AuthenticodeBlob(opts AuthenticodeOptions) ([]byte, *x509.Certificate) {
 		}, &certsBytes)
 	}
 
-	sd := authSignedData{
-		Version:          1,
-		DigestAlgorithms: []pkix.AlgorithmIdentifier{{Algorithm: digestOID}},
-		EncapContentInfo: authContentInfo{
-			ContentType: oidSpcIndirect,
-			Content:     authTag0(indDER),
-		},
-		SignerInfos: asn1.RawValue{
-			Class:      asn1.ClassUniversal,
-			Tag:        asn1.TagSet,
-			IsCompound: true,
-			Bytes:      signerInfosBytes,
-		},
-	}
-	if len(certsBytes) > 0 {
-		sd.Certificates = authTag0(certsBytes)
-	}
-	sdDER, _ := asn1.Marshal(sd)
-	ciDER, _ := asn1.Marshal(authContentInfo{
-		ContentType: asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 7, 2},
-		Content:     authTag0(sdDER),
-	})
-	return ciDER, leafCert
+	return wrapSignedData(signedDataSpec{
+		version:     1,
+		digestOID:   digestOID,
+		contentType: oidSpcIndirect,
+		contentDER:  indDER,
+		certsBytes:  certsBytes,
+		signerInfos: signerInfosBytes,
+	}), leafCert
 }
 
 type certSetSpec struct {
@@ -437,7 +419,7 @@ func buildAuthSignerInfo(spec signerInfoSpec, outerCertsBytes *[]byte) []byte {
 	}
 
 	if !opts.PKCS9CountersignAt.IsZero() {
-		tsKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		tsKey := cachedTestKey(false, false, testKeyTSA).(*ecdsa.PrivateKey)
 		tsTmpl := &x509.Certificate{
 			SerialNumber: big.NewInt(0x7a),
 			Subject:      pkix.Name{CommonName: "PKCS9 Timestamp Authority"},
@@ -473,7 +455,7 @@ func buildAuthSignerInfo(spec signerInfoSpec, outerCertsBytes *[]byte) []byte {
 	}
 
 	if !opts.RFC3161TimestampAt.IsZero() {
-		tsKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		tsKey := cachedTestKey(false, false, testKeyTSA).(*ecdsa.PrivateKey)
 		tsTmpl := &x509.Certificate{
 			SerialNumber: big.NewInt(0x7b),
 			Subject:      pkix.Name{CommonName: "RFC3161 TSA"},
@@ -483,20 +465,16 @@ func buildAuthSignerInfo(spec signerInfoSpec, outerCertsBytes *[]byte) []byte {
 		tsDER, _ := x509.CreateCertificate(rand.Reader, tsTmpl, tsTmpl, &tsKey.PublicKey, tsKey)
 		tsCert, _ := x509.ParseCertificate(tsDER)
 		tsSID := mustIssuerAndSerialSID(tsCert)
-		tst := authTSTInfo{
-			Version:      1,
-			Policy:       asn1.ObjectIdentifier{1, 2, 3, 4},
-			SerialNumber: big.NewInt(88),
-			GenTime:      opts.RFC3161TimestampAt.UTC(),
-		}
-		tst.MessageImprint.HashAlgorithm = pkix.AlgorithmIdentifier{Algorithm: digestOID}
 		imprint := opts.CountersignDigest
 		if len(imprint) == 0 {
 			imprint = make([]byte, 32)
 		}
-		tst.MessageImprint.HashedMessage = imprint
-		tstDER, _ := asn1.Marshal(tst)
-		tstOct, _ := asn1.Marshal(tstDER)
+		_, tstOct := buildTSTInfoDER(tstInfoSpec{
+			hashOID: digestOID,
+			imprint: imprint,
+			serial:  88,
+			genTime: opts.RFC3161TimestampAt.UTC(),
+		})
 		tsSI := authSignerInfo{
 			Version:            1,
 			SID:                tsSID,
@@ -505,20 +483,13 @@ func buildAuthSignerInfo(spec signerInfoSpec, outerCertsBytes *[]byte) []byte {
 			Signature:          []byte{4, 5, 6},
 		}
 		tsSIDER, _ := asn1.Marshal(tsSI)
-		tsSD := authSignedData{
-			Version:          3,
-			DigestAlgorithms: []pkix.AlgorithmIdentifier{{Algorithm: digestOID}},
-			EncapContentInfo: authContentInfo{
-				ContentType: oidTSTInfo,
-				Content:     authTag0(tstOct),
-			},
-			Certificates: authTag0(tsDER),
-			SignerInfos:  asn1.RawValue{Class: asn1.ClassUniversal, Tag: asn1.TagSet, IsCompound: true, Bytes: tsSIDER},
-		}
-		tsSDDER, _ := asn1.Marshal(tsSD)
-		tsCIDER, _ := asn1.Marshal(authContentInfo{
-			ContentType: asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 7, 2},
-			Content:     authTag0(tsSDDER),
+		tsCIDER := wrapSignedData(signedDataSpec{
+			version:     3,
+			digestOID:   digestOID,
+			contentType: oidTSTInfo,
+			contentDER:  tstOct,
+			certsBytes:  tsDER,
+			signerInfos: tsSIDER,
 		})
 		unauthAttrs = append(unauthAttrs, authAttr(oidAuthTS, tsCIDER)...)
 	}
@@ -534,14 +505,151 @@ func buildAuthSignerInfo(spec signerInfoSpec, outerCertsBytes *[]byte) []byte {
 		si.SignedAttrs = authTag0(authAttrs)
 	}
 	if len(unauthAttrs) > 0 {
-		si.UnsignedAttrs = asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: 1, IsCompound: true, Bytes: unauthAttrs}
+		si.UnsignedAttrs = authTag1(unauthAttrs)
 	}
 	siDER, _ := asn1.Marshal(si)
 	return siDER
 }
 
+type testKeyRole uint8
+
+const (
+	testKeyLeaf testKeyRole = iota
+	testKeyCA
+	testKeyTSA
+)
+
+var (
+	cachedRSAKeys = [3]func() *rsa.PrivateKey{
+		sync.OnceValue(mustGenRSA),
+		sync.OnceValue(mustGenRSA),
+		sync.OnceValue(mustGenRSA),
+	}
+	cachedECKeys = [3]func() *ecdsa.PrivateKey{
+		sync.OnceValue(mustGenEC),
+		sync.OnceValue(mustGenEC),
+		sync.OnceValue(mustGenEC),
+	}
+	cachedEdKeys = [3]func() ed25519.PrivateKey{
+		sync.OnceValue(mustGenEd),
+		sync.OnceValue(mustGenEd),
+		sync.OnceValue(mustGenEd),
+	}
+)
+
+func mustGenRSA() *rsa.PrivateKey {
+	k, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		panic(err)
+	}
+	return k
+}
+
+func mustGenEC() *ecdsa.PrivateKey {
+	k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		panic(err)
+	}
+	return k
+}
+
+func mustGenEd() ed25519.PrivateKey {
+	_, k, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		panic(err)
+	}
+	return k
+}
+
+func cachedTestKey(useRSA, useEd25519 bool, role testKeyRole) crypto.Signer {
+	if useRSA {
+		return cachedRSAKeys[role]()
+	}
+	if useEd25519 {
+		return cachedEdKeys[role]()
+	}
+	return cachedECKeys[role]()
+}
+
+type signedDataSpec struct {
+	version     int
+	digestOID   asn1.ObjectIdentifier
+	contentType asn1.ObjectIdentifier
+	contentDER  []byte
+	certsBytes  []byte
+	signerInfos []byte
+}
+
+func wrapSignedData(spec signedDataSpec) []byte {
+	sd := authSignedData{
+		Version:          spec.version,
+		DigestAlgorithms: []pkix.AlgorithmIdentifier{{Algorithm: spec.digestOID}},
+		EncapContentInfo: authContentInfo{
+			ContentType: spec.contentType,
+			Content:     authTag0(spec.contentDER),
+		},
+		SignerInfos: asn1.RawValue{
+			Class:      asn1.ClassUniversal,
+			Tag:        asn1.TagSet,
+			IsCompound: true,
+			Bytes:      spec.signerInfos,
+		},
+	}
+	if len(spec.certsBytes) > 0 {
+		sd.Certificates = authTag0(spec.certsBytes)
+	}
+	sdDER, err := asn1.Marshal(sd)
+	if err != nil {
+		panic(err)
+	}
+	ciDER, err := asn1.Marshal(authContentInfo{
+		ContentType: asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 7, 2},
+		Content:     authTag0(sdDER),
+	})
+	if err != nil {
+		panic(err)
+	}
+	return ciDER
+}
+
+type tstInfoSpec struct {
+	hashOID asn1.ObjectIdentifier
+	imprint []byte
+	serial  int64
+	genTime time.Time
+}
+
+func buildTSTInfoDER(spec tstInfoSpec) (tstDER, octDER []byte) {
+	tst := authTSTInfo{
+		Version:      1,
+		Policy:       asn1.ObjectIdentifier{1, 2, 3, 4},
+		SerialNumber: big.NewInt(spec.serial),
+		GenTime:      spec.genTime,
+	}
+	tst.MessageImprint.HashAlgorithm = pkix.AlgorithmIdentifier{Algorithm: spec.hashOID}
+	tst.MessageImprint.HashedMessage = spec.imprint
+	var err error
+	tstDER, err = asn1.Marshal(tst)
+	if err != nil {
+		panic(err)
+	}
+	octDER, err = asn1.Marshal(tstDER)
+	if err != nil {
+		panic(err)
+	}
+	return tstDER, octDER
+}
+
 func authTag0(der []byte) asn1.RawValue {
 	return asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: 0, IsCompound: true, Bytes: der}
+}
+
+func authTag1(der []byte) asn1.RawValue {
+	return asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: 1, IsCompound: true, Bytes: der}
+}
+
+func appendAuthAttr(dst *[]byte, oid asn1.ObjectIdentifier, valDER []byte) {
+	*dst = append(*dst, authAttr(oid, valDER)...)
 }
 
 func authAttr(oid asn1.ObjectIdentifier, valDER []byte) []byte {

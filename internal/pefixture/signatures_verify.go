@@ -4,7 +4,6 @@ import (
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
-	"crypto/elliptic"
 	"crypto/md5" // #nosec G501 -- Test fixture generates legacy MD5 Authenticode signatures.
 	"crypto/rand"
 	"crypto/rsa"
@@ -92,7 +91,7 @@ func VerifiedAuthenticodeBlob(imageDigest []byte, opts SignedAuthenticodeOptions
 		cmsAlg = imgAlg
 	}
 
-	key := generateTestSignerKey(opts.UseRSA, opts.UseEd25519)
+	key := cachedTestKey(opts.UseRSA, opts.UseEd25519, testKeyLeaf)
 	notBefore := opts.NotBefore
 	if notBefore.IsZero() {
 		notBefore = time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -102,7 +101,7 @@ func VerifiedAuthenticodeBlob(imageDigest []byte, opts SignedAuthenticodeOptions
 		notAfter = time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
 	}
 
-	caKey := generateTestSignerKey(opts.UseRSA, opts.UseEd25519)
+	caKey := cachedTestKey(opts.UseRSA, opts.UseEd25519, testKeyCA)
 	caTmpl := &x509.Certificate{
 		SerialNumber:          big.NewInt(1),
 		Subject:               pkix.Name{CommonName: "Test Code Signing CA"},
@@ -126,7 +125,7 @@ func VerifiedAuthenticodeBlob(imageDigest []byte, opts SignedAuthenticodeOptions
 	}
 	leafCert := createCert(verifiedCertParams{tmpl: leafTmpl, parent: caCert, pub: key.Public(), signer: caKey})
 
-	tsaKey := generateTestSignerKey(opts.UseRSA, opts.UseEd25519)
+	tsaKey := cachedTestKey(opts.UseRSA, opts.UseEd25519, testKeyTSA)
 	tsaTmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(0x2001),
 		Subject:      pkix.Name{CommonName: "Test TSA"},
@@ -194,48 +193,14 @@ func VerifiedAuthenticodeBlob(imageDigest []byte, opts SignedAuthenticodeOptions
 		certBytes = append(certBytes, tsaCert.Raw...)
 	}
 
-	sd := authSignedData{
-		Version:          1,
-		DigestAlgorithms: []pkix.AlgorithmIdentifier{{Algorithm: verifyDigestOID(cmsAlg)}},
-		EncapContentInfo: authContentInfo{
-			ContentType: asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 311, 2, 1, 4},
-			Content: asn1.RawValue{
-				Class:      asn1.ClassContextSpecific,
-				Tag:        0,
-				IsCompound: true,
-				Bytes:      indirectDER,
-			},
-		},
-		Certificates: asn1.RawValue{
-			Class:      asn1.ClassContextSpecific,
-			Tag:        0,
-			IsCompound: true,
-			Bytes:      certBytes,
-		},
-		SignerInfos: asn1.RawValue{
-			Class:      asn1.ClassUniversal,
-			Tag:        asn1.TagSet,
-			IsCompound: true,
-			Bytes:      siBytes,
-		},
-	}
-	sdDER, err := asn1.Marshal(sd)
-	if err != nil {
-		panic(err)
-	}
-	ciDER, err := asn1.Marshal(authContentInfo{
-		ContentType: asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 7, 2},
-		Content: asn1.RawValue{
-			Class:      asn1.ClassContextSpecific,
-			Tag:        0,
-			IsCompound: true,
-			Bytes:      sdDER,
-		},
-	})
-	if err != nil {
-		panic(err)
-	}
-	return ciDER, leafCert
+	return wrapSignedData(signedDataSpec{
+		version:     1,
+		digestOID:   verifyDigestOID(cmsAlg),
+		contentType: asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 311, 2, 1, 4},
+		contentDER:  indirectDER,
+		certsBytes:  certBytes,
+		signerInfos: siBytes,
+	}), leafCert
 }
 
 type verifiedSignerParams struct {
@@ -261,18 +226,6 @@ type verifiedSignerParams struct {
 	corruptTimestampImprint bool
 	corruptTimestampSig     bool
 	nestedBlobs             [][]byte
-}
-
-func appendAuthAttr(dst *[]byte, oid asn1.ObjectIdentifier, valDER []byte) {
-	var rv asn1.RawValue
-	if _, err := asn1.Unmarshal(valDER, &rv); err != nil {
-		panic(err)
-	}
-	b, err := asn1.Marshal(authAttribute{Type: oid, Values: []asn1.RawValue{rv}})
-	if err != nil {
-		panic(err)
-	}
-	*dst = append(*dst, b...)
 }
 
 func buildVerifiedSignedAttrs(p verifiedSignerParams) (authAttrs, toSign []byte) {
@@ -343,14 +296,7 @@ func buildVerifiedSignerInfo(p verifiedSignerParams) []byte {
 		})
 		_, _ = asn1.Unmarshal(raw, &sidVal)
 	} else {
-		sidDER, err := asn1.Marshal(authIssuerAndSerial{
-			Issuer: asn1.RawValue{FullBytes: p.cert.RawIssuer},
-			Serial: p.cert.SerialNumber,
-		})
-		if err != nil {
-			panic(err)
-		}
-		_, _ = asn1.Unmarshal(sidDER, &sidVal)
+		sidVal = mustIssuerAndSerialSID(p.cert)
 	}
 
 	var unauthAttrs []byte
@@ -386,20 +332,10 @@ func buildVerifiedSignerInfo(p verifiedSignerParams) []byte {
 		Signature:          sigBytes,
 	}
 	if !p.omitSignedAttrs {
-		si.SignedAttrs = asn1.RawValue{
-			Class:      asn1.ClassContextSpecific,
-			Tag:        0,
-			IsCompound: true,
-			Bytes:      authAttrs,
-		}
+		si.SignedAttrs = authTag0(authAttrs)
 	}
 	if len(unauthAttrs) > 0 {
-		si.UnsignedAttrs = asn1.RawValue{
-			Class:      asn1.ClassContextSpecific,
-			Tag:        1,
-			IsCompound: true,
-			Bytes:      unauthAttrs,
-		}
+		si.UnsignedAttrs = authTag1(unauthAttrs)
 	}
 	siDER, err := asn1.Marshal(si)
 	if err != nil {
@@ -414,19 +350,12 @@ func buildVerifiedRFC3161(p verifiedSignerParams, sig []byte) []byte {
 		target[0] ^= 0xaa
 	}
 	digest := sha256.Sum256(target)
-	tst := authTSTInfo{
-		Version:      1,
-		Policy:       asn1.ObjectIdentifier{1, 2, 3, 4},
-		SerialNumber: big.NewInt(99),
-		GenTime:      p.rfc3161At.UTC().Truncate(time.Second),
-	}
-	tst.MessageImprint.HashAlgorithm = pkix.AlgorithmIdentifier{Algorithm: verifyDigestOID(crypto.SHA256)}
-	tst.MessageImprint.HashedMessage = digest[:]
-	tstDER, err := asn1.Marshal(tst)
-	if err != nil {
-		panic(err)
-	}
-	octDER, _ := asn1.Marshal(tstDER)
+	tstDER, octDER := buildTSTInfoDER(tstInfoSpec{
+		hashOID: verifyDigestOID(crypto.SHA256),
+		imprint: digest[:],
+		serial:  99,
+		genTime: p.rfc3161At.UTC().Truncate(time.Second),
+	})
 	tstDigest := sha256.Sum256(tstDER)
 
 	siDER := buildVerifiedSignerInfo(verifiedSignerParams{
@@ -437,70 +366,14 @@ func buildVerifiedRFC3161(p verifiedSignerParams, sig []byte) []byte {
 		digestAlg:        crypto.SHA256,
 		corruptSignature: p.corruptTimestampSig,
 	})
-	sd := authSignedData{
-		Version:          3,
-		DigestAlgorithms: []pkix.AlgorithmIdentifier{{Algorithm: verifyDigestOID(crypto.SHA256)}},
-		EncapContentInfo: authContentInfo{
-			ContentType: asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 16, 1, 4},
-			Content: asn1.RawValue{
-				Class:      asn1.ClassContextSpecific,
-				Tag:        0,
-				IsCompound: true,
-				Bytes:      octDER,
-			},
-		},
-		Certificates: asn1.RawValue{
-			Class:      asn1.ClassContextSpecific,
-			Tag:        0,
-			IsCompound: true,
-			Bytes:      p.tsaCert.Raw,
-		},
-		SignerInfos: asn1.RawValue{
-			Class:      asn1.ClassUniversal,
-			Tag:        asn1.TagSet,
-			IsCompound: true,
-			Bytes:      siDER,
-		},
-	}
-	sdDER, err := asn1.Marshal(sd)
-	if err != nil {
-		panic(err)
-	}
-	ciDER, err := asn1.Marshal(authContentInfo{
-		ContentType: asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 7, 2},
-		Content: asn1.RawValue{
-			Class:      asn1.ClassContextSpecific,
-			Tag:        0,
-			IsCompound: true,
-			Bytes:      sdDER,
-		},
+	return wrapSignedData(signedDataSpec{
+		version:     3,
+		digestOID:   verifyDigestOID(crypto.SHA256),
+		contentType: asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 16, 1, 4},
+		contentDER:  octDER,
+		certsBytes:  p.tsaCert.Raw,
+		signerInfos: siDER,
 	})
-	if err != nil {
-		panic(err)
-	}
-	return ciDER
-}
-
-func generateTestSignerKey(useRSA, useEd25519 bool) crypto.Signer {
-	if useRSA {
-		k, err := rsa.GenerateKey(rand.Reader, 2048)
-		if err != nil {
-			panic(err)
-		}
-		return k
-	}
-	if useEd25519 {
-		_, k, err := ed25519.GenerateKey(rand.Reader)
-		if err != nil {
-			panic(err)
-		}
-		return k
-	}
-	k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		panic(err)
-	}
-	return k
 }
 
 type verifiedCertParams struct {
