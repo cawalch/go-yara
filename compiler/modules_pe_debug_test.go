@@ -309,7 +309,7 @@ rule absent { condition: not defined pe.pdb_path }`)
 		if err != nil {
 			t.Fatal(err)
 		}
-		prevProg.moduleSchemas["pe"] = peRichSignatureSchema
+		prevProg.moduleSchemas["pe"] = legacyPESchemas()[10]
 		prevBlob, err := prevProg.MarshalBinary()
 		if err != nil {
 			t.Fatal(err)

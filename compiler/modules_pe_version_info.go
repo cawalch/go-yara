@@ -13,10 +13,7 @@ const (
 	peVersionValMaxUnits  = 255
 )
 
-// newPEVersionInfoSchema extends peResourcesSchema without mutating it so
-// previously serialized programs continue matching isNativePESchema.
-func newPEVersionInfoSchema() *ModuleSchema {
-	schema := cloneModuleSchema(peResourcesSchema)
+func addPEVersionInfoSchemaFields(schema *ModuleSchema) {
 	schema.Fields["version_info"] = ModuleField{
 		Kind:    ModuleDictionary,
 		Element: &ModuleField{Kind: ModuleString},
@@ -32,7 +29,6 @@ func newPEVersionInfoSchema() *ModuleSchema {
 		},
 	}
 	schema.Fields["number_of_version_infos"] = ModuleField{Kind: ModuleInteger}
-	return schema
 }
 
 type peVersionEntry struct {

@@ -1,14 +1,13 @@
 package compiler
 
 import (
-	"maps"
 	"strings"
 
 	pe "github.com/cawalch/go-pe"
 )
 
-func newPEImportsSchema() *ModuleSchema {
-	fields := maps.Clone(peHeaderSchema.Fields)
+func addPEImportsSchemaFields(schema *ModuleSchema) {
+	fields := schema.Fields
 	fields["number_of_imports"] = ModuleField{Kind: ModuleInteger}
 	fields["number_of_imported_functions"] = ModuleField{Kind: ModuleInteger}
 	fields["import_details"] = ModuleField{Kind: ModuleArray, Element: &ModuleField{Kind: ModuleStruct,
@@ -22,7 +21,6 @@ func newPEImportsSchema() *ModuleSchema {
 			}},
 		}},
 	}}
-	return &ModuleSchema{Fields: fields}
 }
 
 // Import errors leave header fields intact and all import fields undefined.

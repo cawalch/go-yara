@@ -5,25 +5,48 @@ import (
 	"math"
 	"reflect"
 	"strings"
+	"sync"
 
 	pe "github.com/cawalch/go-pe"
 )
 
 // The schema is immutable. Runtime values are owned by one scan, not by go-pe
 // or the compiled program. Constants are folded by the condition compiler.
-var peHeaderSchema = newPESchema()
-var peImportsSchema = newPEImportsSchema()
-var peExportsSchema = newPEExportsSchema()
-var peExportTimestampSchema = newPEExportTimestampSchema()
-var peDLLNameSchema = newPEDLLNameSchema()
-var peOverlaySchema = newPEOverlaySchema()
-var peSignaturesSchema = newPESignaturesSchema()
-var peSignatureVerifySchema = newPESignatureVerifySchema()
-var peResourcesSchema = newPEResourcesSchema()
-var peVersionInfoSchema = newPEVersionInfoSchema()
-var peRichSignatureSchema = newPERichSignatureSchema()
-var peDebugSchema = newPEDebugSchema()
-var peSchema = newPEExtentSchema()
+var peSchema = newCanonicalPESchema()
+
+var peSchemaExtensions = []func(*ModuleSchema){
+	addPEImportsSchemaFields,
+	addPEExportsSchemaFields,
+	addPEExportTimestampSchemaFields,
+	addPEDLLNameSchemaFields,
+	addPEOverlaySchemaFields,
+	addPESignaturesSchemaFields,
+	addPESignatureVerifySchemaFields,
+	addPEResourcesSchemaFields,
+	addPEVersionInfoSchemaFields,
+	addPERichSignatureSchemaFields,
+	addPEDebugSchemaFields,
+	addPEExtentSchemaFields,
+}
+
+func newCanonicalPESchema() *ModuleSchema {
+	schema := newPESchema()
+	for _, add := range peSchemaExtensions {
+		add(schema)
+	}
+	return schema
+}
+
+var legacyPESchemas = sync.OnceValue(func() []*ModuleSchema {
+	s := newPESchema()
+	out := make([]*ModuleSchema, 0, len(peSchemaExtensions))
+	for _, add := range peSchemaExtensions {
+		out = append(out, s)
+		s = cloneModuleSchema(s)
+		add(s)
+	}
+	return out
+})
 
 // The semantic validator only reads this type tree. Reuse it so rules that
 // don't import PE don't pay to reconstruct the built-in schema.
@@ -161,7 +184,18 @@ func isNativePEFunction(module Module, name string, function ModuleFunction) boo
 // Preserve loading of programs emitted with earlier native PE schemas.
 // Match complete schemas so unrelated host modules named pe remain custom.
 func isNativePESchema(schema *ModuleSchema) bool {
-	return schema != nil && (schema == peSchema || reflect.DeepEqual(schema, peSchema) || reflect.DeepEqual(schema, peDebugSchema) || reflect.DeepEqual(schema, peRichSignatureSchema) || reflect.DeepEqual(schema, peVersionInfoSchema) || reflect.DeepEqual(schema, peResourcesSchema) || reflect.DeepEqual(schema, peSignatureVerifySchema) || reflect.DeepEqual(schema, peSignaturesSchema) || reflect.DeepEqual(schema, peOverlaySchema) || reflect.DeepEqual(schema, peDLLNameSchema) || reflect.DeepEqual(schema, peExportTimestampSchema) || reflect.DeepEqual(schema, peExportsSchema) || reflect.DeepEqual(schema, peImportsSchema) || reflect.DeepEqual(schema, peHeaderSchema))
+	if schema == nil {
+		return false
+	}
+	if schema == peSchema || reflect.DeepEqual(schema, peSchema) {
+		return true
+	}
+	for _, legacy := range legacyPESchemas() {
+		if reflect.DeepEqual(schema, legacy) {
+			return true
+		}
+	}
+	return false
 }
 
 func newPESchema() *ModuleSchema {

@@ -7,10 +7,7 @@ import (
 	pe "github.com/cawalch/go-pe"
 )
 
-// newPERichSignatureSchema extends peVersionInfoSchema without mutating it so
-// previously serialized programs continue matching isNativePESchema.
-func newPERichSignatureSchema() *ModuleSchema {
-	schema := cloneModuleSchema(peVersionInfoSchema)
+func addPERichSignatureSchemaFields(schema *ModuleSchema) {
 	schema.Fields["rich_signature"] = ModuleField{
 		Kind: ModuleStruct,
 		Struct: &ModuleSchema{Fields: map[string]ModuleField{
@@ -22,7 +19,6 @@ func newPERichSignatureSchema() *ModuleSchema {
 			"version_data": {Kind: ModuleString},
 		}},
 	}
-	return schema
 }
 
 // peRichData caches one scan's parsed Rich header metadata without

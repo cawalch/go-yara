@@ -434,7 +434,7 @@ rule host_absent {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prevProg.moduleSchemas["pe"] = peSignatureVerifySchema
+	prevProg.moduleSchemas["pe"] = legacyPESchemas()[7]
 	blob, err := prevProg.MarshalBinary()
 	if err != nil {
 		t.Fatal(err)

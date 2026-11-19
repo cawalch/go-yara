@@ -1,21 +1,17 @@
 package compiler
 
 import (
-	"maps"
-
 	pe "github.com/cawalch/go-pe"
 )
 
-func newPEOverlaySchema() *ModuleSchema {
-	fields := maps.Clone(peDLLNameSchema.Fields)
-	fields["overlay"] = ModuleField{
+func addPEOverlaySchemaFields(schema *ModuleSchema) {
+	schema.Fields["overlay"] = ModuleField{
 		Kind: ModuleStruct,
 		Struct: &ModuleSchema{Fields: map[string]ModuleField{
 			"offset": {Kind: ModuleInteger},
 			"size":   {Kind: ModuleInteger},
 		}},
 	}
-	return &ModuleSchema{Fields: fields}
 }
 
 func (image *peImage) overlayValue() ModuleValue {

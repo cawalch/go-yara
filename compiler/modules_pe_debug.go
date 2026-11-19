@@ -2,12 +2,8 @@ package compiler
 
 import pe "github.com/cawalch/go-pe"
 
-// newPEDebugSchema extends peRichSignatureSchema without mutating it so
-// previously serialized programs continue matching isNativePESchema.
-func newPEDebugSchema() *ModuleSchema {
-	schema := cloneModuleSchema(peRichSignatureSchema)
+func addPEDebugSchemaFields(schema *ModuleSchema) {
 	schema.Fields["pdb_path"] = ModuleField{Kind: ModuleString}
-	return schema
 }
 
 // peDebugData caches one scan's parsed IMAGE_DEBUG_DIRECTORY entries without
