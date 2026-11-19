@@ -534,48 +534,20 @@ func appendRegexPrefilterMatches(
 	if matchCtx != nil {
 		maxMatchSpan = matchCtx.maxMatchSpan
 	}
-	if entry.AtomMaxOffset < 0 || needsBoundedRegexVerification(pattern, data, maxMatchSpan) {
+	if entry.AtomMaxOffset < 0 || (pattern.verification != nil && needsBoundedRegexVerification(&pattern, data, maxMatchSpan)) {
 		return appendRegexFallbackMatches(dst, rule, strID, pattern, data, flags, entry.IsWide, done, matchCtx)
 	}
 	limit := max(1024, len(data)/4)
-	modifiers := rule.StringModifiers[strID]
-	hasFixedByteSet := !entry.IsWide && pattern.byteSetCount > 0 &&
-		pattern.byteSetMinOffset >= 0 && pattern.byteSetMinOffset == pattern.byteSetMaxOffset
-	var bs *regex.VMBatch
-
-	verifyCandidateStart := func(start int) {
-		if pattern.anchored && start != 0 {
-			return
-		}
-		if !pattern.startMatchesFirstByte(data, start, entry.IsWide) {
-			return
-		}
-		if hasFixedByteSet {
-			checkPos := start + pattern.byteSetMinOffset
-			if checkPos >= len(data) || !pattern.byteSet.Contains(data[checkPos]) {
-				return
-			}
-		}
-		if bs == nil {
-			bs = newRegexMatchBatch(matchCtx, pattern)
-		}
-		scanData, relStart, windowStart := boundedRegexWindow(data, start, pattern, entry.IsWide, maxMatchSpan)
-		matched, startOff, endOff := execRegexMatchAt(bs, pattern, scanData, flags, entry.IsWide, relStart, done)
-		if !matched {
-			if matchCtx != nil && bs.BudgetExceeded() {
-				matchCtx.verificationBudgetRejects++
-			}
-			return
-		}
-		absStart := windowStart + relStart + startOff
-		absEnd := windowStart + relStart + endOff
-		if absEnd < absStart {
-			return
-		}
-		match := Match{Pattern: strID, Offset: int64(absStart), Length: absEnd - absStart}
-		if matchPassesModifiers(data, match, modifiers, entry.IsWide) {
-			dst = append(dst, matchSpan{Offset: match.Offset, Length: match.Length})
-		}
+	verifier := regexPrefilterVerifier{
+		strID:           strID,
+		modifiers:       rule.StringModifiers[strID],
+		data:            data,
+		flags:           flags,
+		isWide:          entry.IsWide,
+		hasFixedByteSet: !entry.IsWide && pattern.byteSetCount > 0 && pattern.byteSetMinOffset >= 0 && pattern.byteSetMinOffset == pattern.byteSetMaxOffset,
+		maxMatchSpan:    maxMatchSpan,
+		done:            done,
+		matchCtx:        matchCtx,
 	}
 
 	atomMinOffset, atomMaxOffset := pattern.atomMinOffset, pattern.atomMaxOffset
@@ -585,15 +557,7 @@ func appendRegexPrefilterMatches(
 			atomMaxOffset *= 2
 		}
 	}
-	if entry.AtomOffset == atomMinOffset && entry.AtomMaxOffset == atomMaxOffset {
-		validCandidates := candidates[:0]
-		for _, atomStart := range candidates {
-			if _, ok := pattern.atomOccurrenceValid(data, atomStart, entry.IsWide); ok {
-				validCandidates = append(validCandidates, atomStart)
-			}
-		}
-		candidates = validCandidates
-	}
+	checkAtomValid := entry.AtomOffset == atomMinOffset && entry.AtomMaxOffset == atomMaxOffset
 
 	if entry.AtomOffset == entry.AtomMaxOffset && len(candidates) <= limit {
 		lastStart := -1
@@ -601,14 +565,27 @@ func appendRegexPrefilterMatches(
 			if scanCanceledAt(done, index) {
 				return dst
 			}
+			if checkAtomValid && !pattern.hasValidAtomOccurrence(data, atomStart, entry.IsWide) {
+				continue
+			}
 			start := atomStart - entry.AtomOffset
 			if start < 0 || start > len(data) || start <= lastStart {
 				continue
 			}
 			lastStart = start
-			verifyCandidateStart(start)
+			dst, verifier.bs = verifier.verifyStart(dst, &pattern, start)
 		}
 		return dst
+	}
+
+	if checkAtomValid {
+		validCandidates := candidates[:0]
+		for _, atomStart := range candidates {
+			if _, ok := pattern.atomOccurrenceValid(data, atomStart, entry.IsWide); ok {
+				validCandidates = append(validCandidates, atomStart)
+			}
+		}
+		candidates = validCandidates
 	}
 
 	var startsBuf [64]int
@@ -628,9 +605,75 @@ func appendRegexPrefilterMatches(
 		if scanCanceledAt(done, index) {
 			return dst
 		}
-		verifyCandidateStart(start)
+		dst, verifier.bs = verifier.verifyStart(dst, &pattern, start)
 	}
 	return dst
+}
+
+type regexPrefilterVerifier struct {
+	strID           string
+	modifiers       []ast.StringModifier
+	data            []byte
+	flags           regex.Flags
+	isWide          bool
+	hasFixedByteSet bool
+	maxMatchSpan    int
+	done            <-chan struct{}
+	matchCtx        *MatchContext
+	bs              *regex.VMBatch
+}
+
+func (pattern *RegexPattern) hasValidAtomOccurrence(data []byte, atomStart int, isWide bool) bool {
+	_, ok := pattern.atomOccurrenceValid(data, atomStart, isWide)
+	return ok
+}
+
+func (v regexPrefilterVerifier) verifyStart(dst []matchSpan, pattern *RegexPattern, start int) ([]matchSpan, *regex.VMBatch) {
+	if pattern.anchored && start != 0 {
+		return dst, v.bs
+	}
+	if !pattern.startMatchesFirstByte(v.data, start, v.isWide) {
+		return dst, v.bs
+	}
+	if v.hasFixedByteSet {
+		checkPos := start + pattern.byteSetMinOffset
+		if checkPos >= len(v.data) || !pattern.byteSet.Contains(v.data[checkPos]) {
+			return dst, v.bs
+		}
+	}
+	if len(pattern.fixedByteSets) > 0 {
+		endOff, matched := fixedRegexMatchAt(pattern.fixedByteSets, v.data, v.isWide, start)
+		if !matched {
+			return dst, v.bs
+		}
+		match := Match{Pattern: v.strID, Offset: int64(start), Length: endOff}
+		if matchPassesModifiers(v.data, match, v.modifiers, v.isWide) {
+			dst = append(dst, matchSpan{Offset: match.Offset, Length: match.Length})
+		}
+		return dst, v.bs
+	}
+	bs := v.bs
+	if bs == nil {
+		bs = newRegexMatchBatch(v.matchCtx, pattern)
+	}
+	scanData, relStart, windowStart := boundedRegexWindow(v.data, start, pattern, v.isWide, v.maxMatchSpan)
+	matched, startOff, endOff := execRegexMatchAt(bs, pattern, scanData, v.flags, v.isWide, relStart, v.done)
+	if !matched {
+		if v.matchCtx != nil && bs.BudgetExceeded() {
+			v.matchCtx.verificationBudgetRejects++
+		}
+		return dst, bs
+	}
+	absStart := windowStart + relStart + startOff
+	absEnd := windowStart + relStart + endOff
+	if absEnd < absStart {
+		return dst, bs
+	}
+	match := Match{Pattern: v.strID, Offset: int64(absStart), Length: absEnd - absStart}
+	if matchPassesModifiers(v.data, match, v.modifiers, v.isWide) {
+		dst = append(dst, matchSpan{Offset: match.Offset, Length: match.Length})
+	}
+	return dst, bs
 }
 
 //nolint:revive // argument-limit: rare fallback keeps hot-path state explicit

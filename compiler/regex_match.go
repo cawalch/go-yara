@@ -9,7 +9,7 @@ import (
 
 //nolint:revive // argument-limit: API surface function; reducing params would require struct indirection
 func addRegexMatches(ctx *MatchContext, id string, regexInfo RegexPattern, data []byte, modifiers []ast.StringModifier, flags regex.Flags, isWide bool) {
-	if needsBoundedRegexVerification(regexInfo, data, ctx.maxMatchSpan) {
+	if needsBoundedRegexVerification(&regexInfo, data, ctx.maxMatchSpan) {
 		addBoundedRegexVerifications(ctx, id, regexInfo, data, modifiers)
 		return
 	}
@@ -36,7 +36,7 @@ func addRegexMatchesCached(
 	}
 
 	if regexInfo.anchored {
-		bs := newRegexMatchBatch(ctx, regexInfo)
+		bs := newRegexMatchBatch(ctx, &regexInfo)
 		addRegexMatchAt(ctx, id, regexInfo, data, modifiers, flags, isWide, bs, 0)
 		return
 	}
@@ -65,7 +65,7 @@ func addRegexMatchesCached(
 			if len(starts) == 0 {
 				return
 			}
-			bs := newRegexMatchBatch(ctx, regexInfo)
+			bs := newRegexMatchBatch(ctx, &regexInfo)
 			for index, start := range starts {
 				if scanCanceledAt(ctx.cancelDone, index) {
 					return
@@ -108,7 +108,7 @@ func addRegexMatchesCached(
 			if len(starts) == 0 {
 				return
 			}
-			bs := newRegexMatchBatch(ctx, regexInfo)
+			bs := newRegexMatchBatch(ctx, &regexInfo)
 			for index, start := range starts {
 				if scanCanceledAt(ctx.cancelDone, index) {
 					return
@@ -133,7 +133,7 @@ func addRegexMatchesCached(
 			if plan.count == 0 {
 				return
 			}
-			bs := newRegexMatchBatch(ctx, regexInfo)
+			bs := newRegexMatchBatch(ctx, &regexInfo)
 			candidates := search.candidateIterator(plan)
 			for index, start, ok := 0, 0, false; ; index++ {
 				start, ok = candidates.next()
@@ -148,7 +148,7 @@ func addRegexMatchesCached(
 		}
 	}
 
-	bs := newRegexMatchBatch(ctx, regexInfo)
+	bs := newRegexMatchBatch(ctx, &regexInfo)
 	addRegexMatchesLinear(ctx, id, regexInfo, data, modifiers, flags, isWide, bs)
 }
 
@@ -343,7 +343,7 @@ func addRegexMatchesFromAlternatives(
 		cursors[index].advance()
 	}
 
-	bs := newRegexMatchBatch(ctx, regexInfo)
+	bs := newRegexMatchBatch(ctx, &regexInfo)
 	checkpoint := 0
 	for {
 		if scanCanceledAt(ctx.cancelDone, checkpoint) {
@@ -386,7 +386,7 @@ func addRegexMatchesFromPrefix(
 	if candidate < 0 {
 		return
 	}
-	bs := newRegexMatchBatch(ctx, regexInfo)
+	bs := newRegexMatchBatch(ctx, &regexInfo)
 	for checkpoint := 0; candidate >= 0; checkpoint++ {
 		if scanCanceledAt(ctx.cancelDone, checkpoint) {
 			return
@@ -433,7 +433,7 @@ const (
 func boundedRegexWindow(
 	data []byte,
 	start int,
-	pattern RegexPattern,
+	pattern *RegexPattern,
 	isWide bool,
 	maxMatchSpan int,
 ) ([]byte, int, int) {
@@ -499,7 +499,7 @@ func boundedRegexWindow(
 	return data[windowStart:windowEnd], start - windowStart, windowStart
 }
 
-func (pattern RegexPattern) startMatchesFirstByte(data []byte, start int, isWide bool) bool {
+func (pattern *RegexPattern) startMatchesFirstByte(data []byte, start int, isWide bool) bool {
 	if !pattern.hasFirstByteSet {
 		return true
 	}
@@ -541,7 +541,7 @@ func countBackwardMatches(data []byte, from, step int, set regex.ByteSet, maxCou
 	return count
 }
 
-func (pattern RegexPattern) atomOccurrenceValidASCII(data []byte, atomStart int, noCase bool) (int, bool) {
+func (pattern *RegexPattern) atomOccurrenceValidASCII(data []byte, atomStart int, noCase bool) (int, bool) {
 	if !matchExactPrefix(data, atomStart, pattern.exactPrefixSuffix, noCase) {
 		return 0, false
 	}
@@ -564,7 +564,7 @@ func (pattern RegexPattern) atomOccurrenceValidASCII(data []byte, atomStart int,
 	return effMaxOffset, true
 }
 
-func (pattern RegexPattern) atomOccurrenceValidWide(data []byte, atomStart int, noCase bool) (int, bool) {
+func (pattern *RegexPattern) atomOccurrenceValidWide(data []byte, atomStart int, noCase bool) (int, bool) {
 	if !matchExactPrefix(data, atomStart, pattern.wideExactPrefix, noCase) {
 		return 0, false
 	}
@@ -587,7 +587,7 @@ func (pattern RegexPattern) atomOccurrenceValidWide(data []byte, atomStart int, 
 	return effMaxOffset, true
 }
 
-func (pattern RegexPattern) atomOccurrenceValid(data []byte, atomStart int, isWide bool) (int, bool) {
+func (pattern *RegexPattern) atomOccurrenceValid(data []byte, atomStart int, isWide bool) (int, bool) {
 	noCase := pattern.atomASCIINoCase || pattern.Flags&regex.FlagsNoCase != 0
 	if isWide {
 		return pattern.atomOccurrenceValidWide(data, atomStart, noCase)
@@ -619,8 +619,8 @@ func addRegexMatchAt(
 	if ctx != nil {
 		maxMatchSpan = ctx.maxMatchSpan
 	}
-	scanData, relStart, windowStart := boundedRegexWindow(data, start, regexInfo, isWide, maxMatchSpan)
-	matched, startOffset, endOffset := execRegexMatchAt(bs, regexInfo, scanData, flags, isWide, relStart, ctx.cancelDone)
+	scanData, relStart, windowStart := boundedRegexWindow(data, start, &regexInfo, isWide, maxMatchSpan)
+	matched, startOffset, endOffset := execRegexMatchAt(bs, &regexInfo, scanData, flags, isWide, relStart, ctx.cancelDone)
 	if !matched {
 		if ctx != nil && bs.BudgetExceeded() {
 			ctx.verificationBudgetRejects++
@@ -638,7 +638,7 @@ func addRegexMatchAt(
 	}
 }
 
-func newRegexMatchBatch(ctx *MatchContext, pattern RegexPattern) *regex.VMBatch {
+func newRegexMatchBatch(ctx *MatchContext, pattern *RegexPattern) *regex.VMBatch {
 	if len(pattern.fixedByteSets) > 0 {
 		return nil
 	}
@@ -650,7 +650,7 @@ func newRegexMatchBatch(ctx *MatchContext, pattern RegexPattern) *regex.VMBatch 
 }
 
 //nolint:revive // cancellation signal accompanies the exact verifier arguments
-func execRegexMatchAt(bs *regex.VMBatch, pattern RegexPattern, data []byte, flags regex.Flags, isWide bool, start int, done <-chan struct{}) (matched bool, startOffset, endOffset int) {
+func execRegexMatchAt(bs *regex.VMBatch, pattern *RegexPattern, data []byte, flags regex.Flags, isWide bool, start int, done <-chan struct{}) (matched bool, startOffset, endOffset int) {
 	if scanCanceled(done) {
 		return false, -1, -1
 	}

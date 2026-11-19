@@ -88,7 +88,7 @@ func TestBoundedClassVMParity(t *testing.T) {
 				for _, b := range []byte{0, 'a', 'A', '0', '_', ' ', '\n', 128, 255} {
 					for _, n := range []int{0, 15, 16, 17, 31, 32, 33, 63, 64, 65} {
 						data := append([]byte("key="), bytes.Repeat([]byte{b}, n)...)
-						got, gs, ge := execRegexMatchAt(nil, pattern, data, pattern.Flags, false, 0, nil)
+						got, gs, ge := execRegexMatchAt(nil, &pattern, data, pattern.Flags, false, 0, nil)
 						want, ws, we := regex.ExecMatchBatch(nil, pattern.Code, data, pattern.Flags, 0)
 						if got != want || got && (gs != ws || ge != we) {
 							t.Fatalf("%s%s %s byte=%d n=%d: %t/%d/%d != %t/%d/%d", cls, suffix, modifier, b, n, got, gs, ge, want, ws, we)
@@ -146,8 +146,8 @@ func TestBoundedClassRuntimeFlags(t *testing.T) {
 	for _, flags := range []regex.Flags{0, regex.FlagsGreedy, regex.FlagsGreedy | regex.FlagsFullwordEnd, regex.FlagsGreedy | regex.FlagsExhaustive, regex.FlagsGreedy | regex.FlagsNoCase, regex.FlagsWide | regex.FlagsGreedy} {
 		for _, data := range [][]byte{[]byte("key=" + strings.Repeat("a", 40)), []byte("KEY=" + strings.Repeat("A", 40)), widenRegexPrefix([]byte("key=" + strings.Repeat("a", 40)))} {
 			wide := flags&regex.FlagsWide != 0
-			got, gs, ge := execRegexMatchAt(nil, pattern, data, flags, wide, 0, nil)
-			want, ws, we := execRegexMatchAt(nil, old, data, flags, wide, 0, nil)
+			got, gs, ge := execRegexMatchAt(nil, &pattern, data, flags, wide, 0, nil)
+			want, ws, we := execRegexMatchAt(nil, &old, data, flags, wide, 0, nil)
 			if got != want || got && (gs != ws || ge != we) {
 				t.Fatal("runtime flags changed match selection")
 			}
@@ -186,8 +186,8 @@ rule bare {strings:$a=/[a-z]{16,64}?/ condition:$a}`)
 			old := pattern
 			old.boundedClass = nil
 			for _, start := range []int{-1, 0, 4, len(input), len(input) + 1} {
-				got, gs, ge := execRegexMatchAt(nil, pattern, input, pattern.Flags, false, start, nil)
-				want, ws, we := execRegexMatchAt(nil, old, input, old.Flags, false, start, nil)
+				got, gs, ge := execRegexMatchAt(nil, &pattern, input, pattern.Flags, false, start, nil)
+				want, ws, we := execRegexMatchAt(nil, &old, input, old.Flags, false, start, nil)
 				if got != want || got && (gs != ws || ge != we) {
 					t.Fatal("bounded plan/VM mismatch")
 				}
