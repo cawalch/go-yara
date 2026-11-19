@@ -632,7 +632,7 @@ rule old_sig { condition: pe.number_of_signatures == 1 and pe.signatures[0].seri
 		if err != nil {
 			t.Fatal(err)
 		}
-		prevProg.moduleSchemas["pe"] = peSignaturesSchema
+		prevProg.moduleSchemas["pe"] = legacyPESchemas()[6]
 		prevBlob, err := prevProg.MarshalBinary()
 		if err != nil {
 			t.Fatal(err)

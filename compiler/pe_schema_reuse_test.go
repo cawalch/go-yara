@@ -15,7 +15,7 @@ func TestLoadedPESchemaReuse(t *testing.T) {
 		native bool
 	}{
 		{"current", peSchema, true},
-		{"legacy", peHeaderSchema, true},
+		{"legacy", legacyPESchemas()[0], true},
 		{"custom", custom, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

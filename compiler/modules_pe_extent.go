@@ -6,13 +6,9 @@ import (
 	pe "github.com/cawalch/go-pe"
 )
 
-// newPEExtentSchema extends peDebugSchema without mutating it so previously
-// serialized programs continue matching isNativePESchema.
-func newPEExtentSchema() *ModuleSchema {
-	schema := cloneModuleSchema(peDebugSchema)
+func addPEExtentSchemaFields(schema *ModuleSchema) {
 	schema.Fields["declared_extent"] = ModuleField{Kind: ModuleInteger}
 	schema.Fields["input_truncated"] = ModuleField{Kind: ModuleInteger}
-	return schema
 }
 
 // extentField reports declared image bounds and input truncation relative to the

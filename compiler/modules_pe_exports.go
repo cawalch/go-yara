@@ -1,13 +1,11 @@
 package compiler
 
 import (
-	"maps"
-
 	pe "github.com/cawalch/go-pe"
 )
 
-func newPEExportsSchema() *ModuleSchema {
-	fields := maps.Clone(peImportsSchema.Fields)
+func addPEExportsSchemaFields(schema *ModuleSchema) {
+	fields := schema.Fields
 	fields["number_of_exports"] = ModuleField{Kind: ModuleInteger}
 	fields["export_details"] = ModuleField{Kind: ModuleArray, Element: &ModuleField{Kind: ModuleStruct,
 		Struct: &ModuleSchema{Fields: map[string]ModuleField{
@@ -15,19 +13,14 @@ func newPEExportsSchema() *ModuleSchema {
 			"name": {Kind: ModuleString}, "forward_name": {Kind: ModuleString},
 		}},
 	}}
-	return &ModuleSchema{Fields: fields}
 }
 
-func newPEExportTimestampSchema() *ModuleSchema {
-	fields := maps.Clone(peExportsSchema.Fields)
-	fields["export_timestamp"] = ModuleField{Kind: ModuleInteger}
-	return &ModuleSchema{Fields: fields}
+func addPEExportTimestampSchemaFields(schema *ModuleSchema) {
+	schema.Fields["export_timestamp"] = ModuleField{Kind: ModuleInteger}
 }
 
-func newPEDLLNameSchema() *ModuleSchema {
-	fields := maps.Clone(peExportTimestampSchema.Fields)
-	fields["dll_name"] = ModuleField{Kind: ModuleString}
-	return &ModuleSchema{Fields: fields}
+func addPEDLLNameSchemaFields(schema *ModuleSchema) {
+	schema.Fields["dll_name"] = ModuleField{Kind: ModuleString}
 }
 
 // A non-nil cache records success or failure independently of import parsing.

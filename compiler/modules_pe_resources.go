@@ -7,10 +7,7 @@ import (
 	pe "github.com/cawalch/go-pe"
 )
 
-// newPEResourcesSchema extends peSignatureVerifySchema without mutating it so
-// previously serialized programs continue matching isNativePESchema.
-func newPEResourcesSchema() *ModuleSchema {
-	schema := cloneModuleSchema(peSignatureVerifySchema)
+func addPEResourcesSchemaFields(schema *ModuleSchema) {
 	schema.Fields["resource_timestamp"] = ModuleField{Kind: ModuleInteger}
 	schema.Fields["resource_version"] = ModuleField{
 		Kind: ModuleStruct,
@@ -41,7 +38,6 @@ func newPEResourcesSchema() *ModuleSchema {
 		value := IntegerValue(number)
 		schema.Fields[name] = ModuleField{Kind: ModuleInteger, Constant: &value}
 	}
-	return schema
 }
 
 // peResourceData caches one scan's parsed resource directory metadata without

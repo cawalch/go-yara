@@ -369,7 +369,7 @@ rule host_absent {
 		if err != nil {
 			t.Fatal(err)
 		}
-		prevProg.moduleSchemas["pe"] = peVersionInfoSchema
+		prevProg.moduleSchemas["pe"] = legacyPESchemas()[9]
 		prevBlob, err := prevProg.MarshalBinary()
 		if err != nil {
 			t.Fatal(err)

@@ -27,8 +27,8 @@ func newPECertificateSchema() *ModuleSchema {
 	}}
 }
 
-func newPESignaturesSchema() *ModuleSchema {
-	fields := maps.Clone(peOverlaySchema.Fields)
+func addPESignaturesSchemaFields(schema *ModuleSchema) {
+	fields := schema.Fields
 	certSchema := newPECertificateSchema()
 	sigFields := maps.Clone(certSchema.Fields)
 	sigFields["digest"] = ModuleField{Kind: ModuleString}
@@ -74,20 +74,14 @@ func newPESignaturesSchema() *ModuleSchema {
 		Kind:    ModuleArray,
 		Element: &ModuleField{Kind: ModuleStruct, Struct: &ModuleSchema{Fields: sigFields}},
 	}
-	return &ModuleSchema{Fields: fields}
 }
 
-// newPESignatureVerifySchema extends peSignaturesSchema without mutating it so
-// old serialized programs compiled against peSignaturesSchema still match
-// isNativePESchema.
-func newPESignatureVerifySchema() *ModuleSchema {
-	schema := cloneModuleSchema(peSignaturesSchema)
+func addPESignatureVerifySchemaFields(schema *ModuleSchema) {
 	schema.Fields["is_signed"] = ModuleField{Kind: ModuleInteger}
 	sigStruct := schema.Fields["signatures"].Element.Struct
 	sigStruct.Fields["verified"] = ModuleField{Kind: ModuleInteger}
 	csStruct := sigStruct.Fields["countersignatures"].Element.Struct
 	csStruct.Fields["verified"] = ModuleField{Kind: ModuleInteger}
-	return schema
 }
 
 // Signature parsing errors leave header fields intact and signature metadata

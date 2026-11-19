@@ -293,7 +293,7 @@ func TestPEDebugSchemaRemainsNativeAfterExtentExtension(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prog.moduleSchemas["pe"] = peDebugSchema
+	prog.moduleSchemas["pe"] = legacyPESchemas()[11]
 	if err := prog.Validate(); err != nil {
 		t.Fatalf("expected peDebugSchema program to validate: %v", err)
 	}
