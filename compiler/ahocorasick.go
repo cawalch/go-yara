@@ -575,7 +575,11 @@ func (ac *acAutomaton) compileSparseTrie() error {
 	}
 
 	ac.collectRootBytesFromRow(ac.trieRoot)
-	classMap, classRep, numClasses := computeByteClassesSparse(ac.trieStates, ac.trieEdges, ac.trieRoot)
+	var classMap, classRep [256]byte
+	numClasses := 256
+	if numStates > 16384 {
+		classMap, classRep, numClasses = computeByteClassesSparse(ac.trieStates, ac.trieEdges, ac.trieRoot)
+	}
 
 	b := &sparseBuildState{
 		ac:              ac,
@@ -624,7 +628,7 @@ type sparseClassSpec struct {
 
 //nolint:revive // argument-limit: internal builder helper
 func (ac *acAutomaton) emitSparseTables(b *sparseBuildState, classMap [256]byte, classRep [256]byte, numClasses int) {
-	if numClasses > 128 {
+	if numClasses > 128 || b.numStates <= 16384 {
 		if b.numStates <= 65536 {
 			ac.transitions16 = buildSparseFlatTable[uint16](b)
 		} else {
