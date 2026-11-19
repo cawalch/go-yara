@@ -1,10 +1,8 @@
 package compiler
 
 import (
-	"bytes"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestHexJumpRangeValidation(t *testing.T) {
@@ -48,41 +46,21 @@ func TestHexJumpRangeValidation(t *testing.T) {
 	}
 }
 
-func TestHexJumpNonMatchingLargeRangePerformance(t *testing.T) {
-	noMatchBuf := bytes.Repeat([]byte{'A'}, 16384)
-	matchAtEndBuf := append(bytes.Repeat([]byte{'A'}, 16384), 'C')
-
-	cases := []struct {
-		name      string
-		pattern   string
-		data      []byte
-		wantCount int
-	}{
-		{name: "max_int32_no_match", pattern: `{ 41 [0-2147483647] 43 }`, data: noMatchBuf, wantCount: 0},
-		{name: "wildcard_then_missing_no_match", pattern: `{ 41 [0-2147483647] ?? 43 }`, data: noMatchBuf, wantCount: 0},
-		{name: "repeated_prefix_then_missing_no_match", pattern: `{ 41 [0-2147483647] 41 43 }`, data: noMatchBuf, wantCount: 0},
-		{name: "unbounded_no_match", pattern: `{ 41 [-] 43 }`, data: noMatchBuf, wantCount: 0},
-		{name: "max_int32_match_at_end", pattern: `{ 41 [0-2147483647] 43 }`, data: matchAtEndBuf, wantCount: 1},
-	}
-
-	for _, tc := range cases {
+// Performance for these cases is compared repeatedly by scripts/perf_gate.sh.
+func TestHexJumpLargeRangeCorrectness(t *testing.T) {
+	for _, tc := range hexJumpLargeRangeCases() {
 		t.Run(tc.name, func(t *testing.T) {
 			src := "rule h { strings: $a = " + tc.pattern + " condition: any of them }"
 			prog, err := NewCompiler().CompileSource(src)
 			if err != nil {
 				t.Fatalf("CompileSource() error = %v", err)
 			}
-			start := time.Now()
 			res, err := prog.Scan(tc.data)
-			elapsed := time.Since(start)
 			if err != nil {
 				t.Fatalf("Scan() error = %v", err)
 			}
 			if len(res.MatchedRules) != tc.wantCount {
 				t.Fatalf("MatchedRules = %d, want %d", len(res.MatchedRules), tc.wantCount)
-			}
-			if elapsed > 250*time.Millisecond {
-				t.Fatalf("Scan(%s) took %v, expected sub-250ms", tc.pattern, elapsed)
 			}
 		})
 	}
