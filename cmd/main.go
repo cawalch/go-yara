@@ -42,18 +42,19 @@ type commandArgs struct {
 	explicitExecute bool
 
 	// Standard YARA parity options
-	recursive    bool
-	threads      int
-	printStrings bool
-	printMeta    bool
-	printTags    bool
-	countOnly    bool
-	tagFilter    string
-	identFilter  string
-	negate       bool
-	fastScan     bool
-	jsonOutput   bool
-	noWarnings   bool
+	recursive     bool
+	threads       int
+	printStrings  bool
+	printMeta     bool
+	printTags     bool
+	countOnly     bool
+	tagFilter     string
+	identFilter   string
+	negate        bool
+	fastScan      bool
+	jsonOutput    bool
+	noWarnings    bool
+	strictLibyara bool
 }
 
 func (args *commandArgs) isStandardScan() bool {
@@ -144,6 +145,7 @@ func parseArgs(rawArgs []string) (*commandArgs, error) {
 	jsonOutput := flagSet.Bool("json", false, "emit structured JSON output")
 	noWarnings := flagSet.Bool("no-warnings", false, "disable compilation warnings")
 	flagSet.BoolVar(noWarnings, "w", false, "disable compilation warnings (shorthand)")
+	strictLibyara := flagSet.Bool("strict-libyara", false, "enforce strict libyara compile-time compatibility rejections")
 
 	flagSet.Usage = func() {
 		_, _ = fmt.Fprintf(flagSet.Output(), "Usage: go-yara <yara-file> [options] [target]\n\n")
@@ -259,6 +261,7 @@ func parseArgs(rawArgs []string) (*commandArgs, error) {
 		fastScan:          *fastScan || *noMatches,
 		jsonOutput:        *jsonOutput,
 		noWarnings:        *noWarnings,
+		strictLibyara:     *strictLibyara,
 	}, nil
 }
 
@@ -281,7 +284,7 @@ func runMode(mode string, content []byte, args *commandArgs) error {
 	case modeParse:
 		return runParserMode(string(content), args.filename)
 	case modeCompile:
-		return runCompileMode(string(content), args.filename)
+		return runCompileMode(string(content), args.filename, args)
 	case modeExecute:
 		return runExecuteMode(string(content), args.dataFile, args.filename, args)
 	default:
@@ -289,9 +292,14 @@ func runMode(mode string, content []byte, args *commandArgs) error {
 	}
 }
 
-func compileRulesQuiet(content, filename string, noWarnings bool) (*compiler.CompiledProgram, error) {
-	comp := compiler.NewCompiler(compiler.WithWarnings(!noWarnings))
-	comp.SetBaseDir(filepath.Dir(filename))
+func compileRulesQuiet(content string, args *commandArgs) (*compiler.CompiledProgram, error) {
+	comp := compiler.NewCompiler(
+		compiler.WithWarnings(args == nil || !args.noWarnings),
+		compiler.WithStrictLibyaraCompatibility(args != nil && args.strictLibyara),
+	)
+	if args != nil {
+		comp.SetBaseDir(filepath.Dir(args.filename))
+	}
 	compiledProgram, err := comp.CompileSourceWithContext(context.Background(), content)
 	if err != nil {
 		for _, cerr := range comp.GetErrors() {
@@ -363,7 +371,7 @@ func buildScannerOptions(args *commandArgs) []compiler.ScannerOption {
 }
 
 func runStandardScan(content string, args *commandArgs) error {
-	compiledProgram, err := compileRulesQuiet(content, args.filename, args.noWarnings)
+	compiledProgram, err := compileRulesQuiet(content, args)
 	if err != nil {
 		return err
 	}

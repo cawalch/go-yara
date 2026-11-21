@@ -706,7 +706,7 @@ func TestRunCompileMode(t *testing.T) {
 }`
 
 	out, err := captureOutputWithError(func() error {
-		return runCompileMode(content, "test.yar")
+		return runCompileMode(content, "test.yar", nil)
 	})
 	if err != nil {
 		t.Fatalf("runCompileMode() error = %v", err)
@@ -1066,7 +1066,7 @@ func TestCompileRulesQuietWarningsAndFlag(t *testing.T) {
 		t.Fatalf("os.Pipe: %v", err)
 	}
 	os.Stderr = w
-	_, compileErr := compileRulesQuiet(source, "rules.yar", false)
+	_, compileErr := compileRulesQuiet(source, &commandArgs{filename: "rules.yar"})
 	_ = w.Close()
 	os.Stderr = origStderr
 	outBytes, _ := io.ReadAll(r)
@@ -1083,7 +1083,7 @@ func TestCompileRulesQuietWarningsAndFlag(t *testing.T) {
 		t.Fatalf("os.Pipe: %v", err)
 	}
 	os.Stderr = w2
-	_, compileErr = compileRulesQuiet(source, "rules.yar", true)
+	_, compileErr = compileRulesQuiet(source, &commandArgs{filename: "rules.yar", noWarnings: true})
 	_ = w2.Close()
 	os.Stderr = origStderr
 	outBytes2, _ := io.ReadAll(r2)
@@ -1093,5 +1093,20 @@ func TestCompileRulesQuietWarningsAndFlag(t *testing.T) {
 	}
 	if len(outBytes2) != 0 {
 		t.Fatalf("expected no stderr warnings with -w, got %q", string(outBytes2))
+	}
+
+	strictArgs, err := parseArgs([]string{"rules.yar", "--strict-libyara", "target_dir"})
+	if err != nil {
+		t.Fatalf("parseArgs(--strict-libyara) failed: %v", err)
+	}
+	if !strictArgs.strictLibyara {
+		t.Fatal("expected --strict-libyara to set strictLibyara=true")
+	}
+	leadingJump := `rule lead { strings: $a = { [1-2] 61 62 } condition: $a }`
+	if _, err := compileRulesQuiet(leadingJump, &commandArgs{filename: "rules.yar", noWarnings: true}); err != nil {
+		t.Fatalf("expected default mode to accept leading hex jump, got %v", err)
+	}
+	if _, err := compileRulesQuiet(leadingJump, &commandArgs{filename: "rules.yar", noWarnings: true, strictLibyara: true}); err == nil {
+		t.Fatal("expected strict mode to reject leading hex jump")
 	}
 }

@@ -50,6 +50,10 @@ func (e *Error) Error() string {
 	if e.Suggestion != "" && !strings.Contains(msg, e.Suggestion) {
 		msg = fmt.Sprintf("%s; did you mean %s?", msg, e.Suggestion)
 	}
+	if e.Rule != "" {
+		return fmt.Sprintf("rule %q semantic error at %d:%d: %s",
+			e.Rule, e.Position.Line, e.Position.Column, msg)
+	}
 	return fmt.Sprintf("semantic error at %d:%d: %s",
 		e.Position.Line, e.Position.Column, msg)
 }
