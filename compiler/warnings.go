@@ -371,6 +371,9 @@ func slowPatternReason(rule *CompiledRule, id string) string {
 		if len(rule.TextPatterns[id]) < 3 {
 			return "is shorter than three bytes"
 		}
+		if hasWideXorModifier(rule.StringModifiers[id]) {
+			return "has a wide xor key range"
+		}
 	case StringKindRegex:
 		pattern, ok := rule.RegexPatterns[id]
 		if !ok || pattern.anchored {
@@ -390,6 +393,9 @@ func slowPatternReason(rule *CompiledRule, id string) string {
 		if pattern == nil {
 			return ""
 		}
+		if hasWideXorModifier(rule.StringModifiers[id]) {
+			return "has a wide xor key range"
+		}
 		if hasLargeHexJump(pattern.Tokens, 65536) {
 			return "has a wide jump range"
 		}
@@ -401,11 +407,19 @@ func slowPatternReason(rule *CompiledRule, id string) string {
 	return ""
 }
 
+func hasWideXorModifier(modifiers []ast.StringModifier) bool {
+	if len(modifiers) == 0 {
+		return false
+	}
+	keys, ok := (&stringCompiler{}).xorKeys(modifiers)
+	return ok && len(keys) >= 64
+}
+
 func hasLargeHexJump(tokens []HexPatternToken, limit int) bool {
 	for _, tok := range tokens {
 		switch tok.Kind {
 		case HexTokenJump:
-			if tok.Max > limit {
+			if tok.Max < 0 || tok.Max > limit {
 				return true
 			}
 		case HexTokenAlt:

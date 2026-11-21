@@ -20,6 +20,9 @@ func (sc *stringCompiler) parseHexPattern(hexStr string) (*HexPattern, error) {
 	if len(tokens) == 0 {
 		return nil, errors.New("empty hex pattern")
 	}
+	if sc.strictLibyaraCompatibility && (tokens[0].Kind == HexTokenJump || tokens[len(tokens)-1].Kind == HexTokenJump) {
+		return nil, errors.New("leading or trailing jump in hex string is not allowed in strict libyara compatibility mode")
+	}
 	return &HexPattern{Tokens: tokens}, nil
 }
 
@@ -38,14 +41,18 @@ func parseHexTokens(hexStr string) ([]HexPatternToken, error) {
 	tokens := make([]HexPatternToken, 0, max(4, len(hexStr)/3))
 	i := 0
 	for i < len(hexStr) {
-		i = skipHexWhitespaceAndComments(hexStr, i)
+		var err error
+		i, err = skipHexWhitespaceAndComments(hexStr, i)
+		if err != nil {
+			return nil, err
+		}
 		if i >= len(hexStr) {
 			break
 		}
 		ch := hexStr[i]
 		switch ch {
 		case '{', '}':
-			i++
+			return nil, fmt.Errorf("unexpected %q in hex pattern at offset %d", ch, i)
 		case '(':
 			alts, next, err := parseHexAlternatives(hexStr, i)
 			if err != nil {
@@ -54,6 +61,9 @@ func parseHexTokens(hexStr string) ([]HexPatternToken, error) {
 			tokens = append(tokens, HexPatternToken{Kind: HexTokenAlt, Alternatives: alts})
 			i = next
 		case '[':
+			if len(tokens) > 0 && tokens[len(tokens)-1].Kind == HexTokenJump {
+				return nil, errors.New("consecutive jumps are not allowed in hex pattern")
+			}
 			jump, next, err := parseHexJump(hexStr, i)
 			if err != nil {
 				return nil, err
@@ -267,7 +277,7 @@ func extractHexGroup(hexStr string, pos int, open, close byte) (int, int, error)
 	return 0, 0, fmt.Errorf("unterminated %c", open)
 }
 
-func skipHexWhitespaceAndComments(hexStr string, pos int) int {
+func skipHexWhitespaceAndComments(hexStr string, pos int) (int, error) {
 	i := pos
 	for i < len(hexStr) {
 		switch {
@@ -275,11 +285,17 @@ func skipHexWhitespaceAndComments(hexStr string, pos int) int {
 			i++
 		case i+1 < len(hexStr) && hexStr[i] == '/' && hexStr[i+1] == '*':
 			i += 2
-			for i+1 < len(hexStr) && (hexStr[i] != '*' || hexStr[i+1] != '/') {
+			closed := false
+			for i+1 < len(hexStr) {
+				if hexStr[i] == '*' && hexStr[i+1] == '/' {
+					i += 2
+					closed = true
+					break
+				}
 				i++
 			}
-			if i+1 < len(hexStr) {
-				i += 2
+			if !closed {
+				return i, errors.New("unterminated block comment in hex pattern")
 			}
 		case i+1 < len(hexStr) && hexStr[i] == '/' && hexStr[i+1] == '/':
 			i += 2
@@ -287,10 +303,10 @@ func skipHexWhitespaceAndComments(hexStr string, pos int) int {
 				i++
 			}
 		default:
-			return i
+			return i, nil
 		}
 	}
-	return i
+	return i, nil
 }
 
 func hexNibble(ch byte) byte {

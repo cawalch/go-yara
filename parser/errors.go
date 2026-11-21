@@ -3,6 +3,7 @@ package parser
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/cawalch/go-yara/internal/lexer"
 	"github.com/cawalch/go-yara/token"
@@ -58,7 +59,12 @@ func formatErrorSummary(prefix string, errs []error) string {
 	if len(errs) == 1 {
 		return fmt.Sprintf("%s with 1 error: %v", prefix, errs[0])
 	}
-	return fmt.Sprintf("%s with %d errors, first error: %v", prefix, len(errs), errs[0])
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s with %d errors:", prefix, len(errs))
+	for _, err := range errs {
+		fmt.Fprintf(&b, "\n  - %v", err)
+	}
+	return b.String()
 }
 
 func newSyntaxError(pos token.Position, format string, args ...any) *SyntaxError {

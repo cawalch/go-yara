@@ -85,10 +85,11 @@ func fastNeedsConversion(data []byte) bool {
 // StringCompiler handles compilation of string patterns to bytecode
 type stringCompiler struct {
 	// Maps for string identifiers to automaton indices
-	stringOffsets map[string]int
-	regexCache    map[string]cachedRegexPattern
-	hexCache      map[string]cachedHexPattern
-	regexParser   regex.Parser
+	stringOffsets              map[string]int
+	regexCache                 map[string]cachedRegexPattern
+	hexCache                   map[string]cachedHexPattern
+	regexParser                regex.Parser
+	strictLibyaraCompatibility bool
 }
 
 type cachedRegexPattern struct {

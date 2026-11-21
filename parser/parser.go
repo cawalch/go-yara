@@ -217,40 +217,43 @@ func (p *Parser) parseProgramElement(ctx context.Context, program *ast.Program) 
 	case p.currentTokenIs(token.INCLUDE):
 		return p.parseIncludeDeclaration(ctx, program)
 	case p.currentTokenIs(token.PRIVATE) || p.currentTokenIs(token.RULE):
-		// Delegate to rule parser with or without error recovery
-		p.updateParserTokens()
-		if p.errorRecovery {
-			beforeErrors := len(p.errors)
-			p.recoveringRule = true
-			rule, ruleErrors := p.ruleParser.ParseRulePartial()
-			p.recoveringRule = false
-
-			allRuleErrors := append([]error(nil), p.errors[beforeErrors:]...)
-			for _, ruleErr := range ruleErrors {
-				if !containsError(allRuleErrors, ruleErr) {
-					p.recordError(ruleErr)
-					allRuleErrors = append(allRuleErrors, ruleErr)
-				}
-			}
-
-			if p.skipInvalidRules && len(allRuleErrors) > 0 {
-				p.invalidRules = append(p.invalidRules, InvalidRule{
-					Rule:   rule,
-					Errors: allRuleErrors,
-				})
-			} else {
-				program.Rules = append(program.Rules, rule)
-			}
-			return nil // Don't return error since we want to continue parsing
-		}
-		rule, err := p.ruleParser.ParseRule()
-		if err == nil {
-			program.Rules = append(program.Rules, rule)
-		}
-		return err
+		return p.parseRuleElement(program)
 	default:
 		return unexpectedTokenError(p.current)
 	}
+}
+
+func (p *Parser) parseRuleElement(program *ast.Program) error {
+	p.updateParserTokens()
+	if p.errorRecovery {
+		beforeErrors := len(p.errors)
+		p.recoveringRule = true
+		rule, ruleErrors := p.ruleParser.ParseRulePartial()
+		p.recoveringRule = false
+
+		allRuleErrors := append([]error(nil), p.errors[beforeErrors:]...)
+		for _, ruleErr := range ruleErrors {
+			if !containsError(allRuleErrors, ruleErr) {
+				p.recordError(ruleErr)
+				allRuleErrors = append(allRuleErrors, ruleErr)
+			}
+		}
+
+		if p.skipInvalidRules && len(allRuleErrors) > 0 {
+			p.invalidRules = append(p.invalidRules, InvalidRule{
+				Rule:   rule,
+				Errors: allRuleErrors,
+			})
+		} else {
+			program.Rules = append(program.Rules, rule)
+		}
+		return nil // Don't return error since we want to continue parsing
+	}
+	rule, err := p.ruleParser.ParseRule()
+	if err == nil {
+		program.Rules = append(program.Rules, rule)
+	}
+	return err
 }
 
 func (p *Parser) parseGlobalDeclaration(ctx context.Context, program *ast.Program) error {
@@ -262,12 +265,7 @@ func (p *Parser) parseGlobalDeclaration(ctx context.Context, program *ast.Progra
 
 	// Check if this is a global variable declaration or a global rule modifier
 	if p.peekTokenIs(token.RULE) || p.peekTokenIs(token.PRIVATE) {
-		// This is a global rule modifier - delegate to rule parser to handle GLOBAL modifier
-		rule, err := p.ruleParser.ParseRule()
-		if err == nil {
-			program.Rules = append(program.Rules, rule)
-		}
-		return err
+		return p.parseRuleElement(program)
 	}
 	// This is a global variable declaration - consume GLOBAL and parse variable
 	p.nextToken() // consume GLOBAL token

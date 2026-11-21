@@ -160,6 +160,22 @@ func TestLibyaraCompatibilityMatrixDifferential(t *testing.T) {
 			data:           []byte("ab"),
 			wantDefaultHit: true,
 		},
+		{
+			name:           "hex-leading-jump",
+			source:         `rule c { strings: $a = { [1-2] 61 62 } condition: $a }`,
+			data:           []byte("xabc"),
+			wantLibyaraErr: "syntax error",
+			wantDefaultHit: true,
+			wantStrictErr:  "leading or trailing jump",
+		},
+		{
+			name:           "hex-trailing-jump",
+			source:         `rule c { strings: $a = { 61 62 [1-2] } condition: $a }`,
+			data:           []byte("xabc"),
+			wantLibyaraErr: "syntax error",
+			wantDefaultHit: true,
+			wantStrictErr:  "leading or trailing jump",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			oracle, oracleErr := scanWithLibyara(t, bin, tc.source, tc.data)

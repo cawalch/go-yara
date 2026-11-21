@@ -176,14 +176,19 @@ func (p *DeclarationParser) ParseStringsSection() ([]*ast.String, error) {
 func (p *DeclarationParser) parseStringDeclarations() []*ast.String {
 	parsedStrings := make([]*ast.String, 0, 4)
 
-	for !p.currentTokenIs(token.EVIDENCE) && !p.currentTokenIs(token.CONDITION) && !p.currentTokenIs(token.RBRACE) {
+	for !p.currentTokenIs(token.EVIDENCE) && !p.currentTokenIs(token.CONDITION) && !p.currentTokenIs(token.RBRACE) && !p.currentTokenIs(token.EOF) {
 		if !p.currentTokenIs(token.StringIdentifier) {
 			break
 		}
 
+		beforePos := p.current.Pos
+		beforeType := p.current.Type
 		str, err := p.parseStringDeclaration()
 		if err != nil {
 			p.addError(err)
+			if p.current.Pos == beforePos && p.current.Type == beforeType {
+				p.nextToken()
+			}
 		} else if str != nil {
 			parsedStrings = append(parsedStrings, str)
 		}
