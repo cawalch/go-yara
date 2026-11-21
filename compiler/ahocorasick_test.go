@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"iter"
 	"math"
 	"slices"
 	"strconv"
@@ -86,6 +87,12 @@ func TestSearchIterWithCancelPreservesSparseRootMatches(t *testing.T) {
 	got := slices.Collect(automaton.searchIterWithCancel(data, ctx.Done()))
 	if !slices.Equal(got, want) {
 		t.Fatalf("context-aware sparse-root matches = %+v, want %+v", got, want)
+	}
+}
+
+func (ac *acAutomaton) searchIterWithCancel(data []byte, done <-chan struct{}) iter.Seq[acMatch] {
+	return func(yield func(acMatch) bool) {
+		ac.SearchWithCancel(data, done, yield)
 	}
 }
 

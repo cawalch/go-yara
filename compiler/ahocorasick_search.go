@@ -584,12 +584,6 @@ func searchTableWithCancel[S ~uint16 | ~int32](ac *acAutomaton, trans [][256]S, 
 	}
 }
 
-func (ac *acAutomaton) searchIterWithCancel(data []byte, done <-chan struct{}) iter.Seq[acMatch] {
-	return func(yield func(acMatch) bool) {
-		ac.SearchWithCancel(data, done, yield)
-	}
-}
-
 //nolint:revive // iterator callback and cancellation signal stay on the hot path
 func (ac *acAutomaton) yieldMatchesWithCancel(
 	state int32,
