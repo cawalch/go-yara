@@ -160,11 +160,11 @@ func (inst *Instruction) String() string {
 func appendLittleUint(buf []byte, value uint64, bits int) []byte {
 	switch bits {
 	case 8:
-		return append(buf, byte(value))
+		return append(buf, byte(value&0xFF))
 	case 16:
-		return binary.LittleEndian.AppendUint16(buf, uint16(value)) // #nosec G115 - masked/bounded by caller
+		return binary.LittleEndian.AppendUint16(buf, uint16(value&0xFFFF)) // #nosec G115 - masked to 16 bits
 	case 32:
-		return binary.LittleEndian.AppendUint32(buf, uint32(value)) // #nosec G115 - masked/bounded by caller
+		return binary.LittleEndian.AppendUint32(buf, uint32(value&0xFFFFFFFF)) // #nosec G115 - masked to 32 bits
 	case 64:
 		return binary.LittleEndian.AppendUint64(buf, value)
 	default:
