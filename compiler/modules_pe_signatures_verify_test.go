@@ -117,6 +117,7 @@ rule both_cs_verified {
 				opts: pefixture.SignedAuthenticodeOptions{
 					UseEd25519:     true,
 					ImageDigestAlg: crypto.SHA256,
+					CMSDigestAlg:   crypto.SHA512,
 				},
 			},
 		}

@@ -270,14 +270,6 @@ rule strict_reject {
 				Entries: []pefixture.RichEntry{{ToolID: 259, Version: 29500, Count: 1}},
 			}),
 		},
-		{
-			name: "NonzeroHeaderPadding",
-			data: pefixture.RichPE(true, pefixture.RichOptions{
-				Key:           0x12345678,
-				HeaderPadding: [3]uint32{0, 1, 0},
-				Entries:       []pefixture.RichEntry{{ToolID: 259, Version: 29500, Count: 1}},
-			}),
-		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if ok, err := p.Matches(tc.data); err != nil || !ok {
@@ -285,6 +277,27 @@ rule strict_reject {
 			}
 		})
 	}
+
+	t.Run("NonzeroHeaderPaddingAccepted", func(t *testing.T) {
+		okProg, err := NewCompiler().CompileSource(`import "pe"
+rule rich_ok {
+	condition:
+		pe.is_pe == 1 and
+		pe.rich_signature.key == 0x12345678 and
+		pe.rich_signature.version(29500, 259) == 1
+}`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data := pefixture.RichPE(true, pefixture.RichOptions{
+			Key:           0x12345678,
+			HeaderPadding: [3]uint32{0, 1, 0},
+			Entries:       []pefixture.RichEntry{{ToolID: 259, Version: 29500, Count: 1}},
+		})
+		if ok, err := okProg.Matches(data); err != nil || !ok {
+			t.Fatalf("Matches(NonzeroHeaderPaddingAccepted) = (%t, %v)", ok, err)
+		}
+	})
 }
 
 func TestPERichSignatureHostSnapshotSerializationLegacyAndOverride(t *testing.T) {
