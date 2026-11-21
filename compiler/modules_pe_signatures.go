@@ -8,6 +8,7 @@ import (
 	"encoding/asn1"
 	"encoding/hex"
 	"maps"
+	"slices"
 	"strings"
 
 	pe "github.com/cawalch/go-pe"
@@ -158,10 +159,8 @@ func (image *peImage) signatureField(name string) ModuleValue {
 		if !ok {
 			return ModuleValue{}
 		}
-		for i := range sigs.verification.Signatures {
-			if peIsSignatureVerified(sigs.verification.Signatures[i]) {
-				return IntegerValue(1)
-			}
+		if slices.ContainsFunc(sigs.verification.Signatures, peIsSignatureVerified) {
+			return IntegerValue(1)
 		}
 		return IntegerValue(0)
 	}

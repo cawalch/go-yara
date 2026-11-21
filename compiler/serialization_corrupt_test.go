@@ -354,7 +354,7 @@ rule r3 {
 			if err != nil {
 				t.Fatalf("MarshalBinary() error = %v", err)
 			}
-			for offset := 0; offset < len(valid); offset++ {
+			for offset := range valid {
 				for _, mask := range []byte{0x01, 0x80, 0xff} {
 					mutated := slices.Clone(valid)
 					mutated[offset] ^= mask

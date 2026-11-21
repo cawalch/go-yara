@@ -143,8 +143,7 @@ rule not_pe {
 		t.Fatal(err)
 	}
 
-	cancelCtx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	cancelCtx := t.Context()
 
 	for _, tc := range []struct {
 		name string

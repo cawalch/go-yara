@@ -351,8 +351,8 @@ func walkChainedLazyDot(node *regex.Node, hasFollower bool, step int) bool {
 	switch node.Kind {
 	case regex.NodeConcat:
 		tailFollows := hasFollower
-		for i := len(node.Children) - 1; i >= 0; i-- {
-			child := node.Children[i]
+		for _, child := range slices.Backward(node.Children) {
+
 			if walkChainedLazyDot(child, tailFollows, step) {
 				return true
 			}

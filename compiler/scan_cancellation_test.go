@@ -43,8 +43,7 @@ func TestScanReaderStopsBetweenReads(t *testing.T) {
 	if err := os.WriteFile(path, []byte("a"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	result, err := scanner.ScanFileWithContext(ctx, path)
 	if err != nil || len(result.MatchedRules) != 1 {
 		t.Fatalf("ScanFile after cancellation = (%v, %v)", result, err)
