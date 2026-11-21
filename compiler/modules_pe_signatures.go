@@ -303,22 +303,50 @@ func peSignatureValue(image *peImage, sigIdx int, sig pe.AuthenticodeSignature) 
 	})
 }
 
-func peSignerInfoValue(image *peImage, signer *pe.AuthenticodeSigner, pool []*x509.Certificate) ModuleValue {
-	var (
-		chainLoaded bool
-		chain       []*x509.Certificate
-		chainArray  ModuleValue
-	)
-	resolveChain := func() []*x509.Certificate {
-		if !chainLoaded {
-			chainLoaded = true
-			if signer != nil {
-				chain = peBuildCertChain(signer, pool)
-			}
+type peCertChainFieldResolver struct {
+	image       *peImage
+	resolve     func() []*x509.Certificate
+	chainLoaded bool
+	chain       []*x509.Certificate
+	chainArray  ModuleValue
+}
+
+func (r *peCertChainFieldResolver) certs() []*x509.Certificate {
+	if !r.chainLoaded {
+		r.chainLoaded = true
+		r.chain = r.resolve()
+	}
+	return r.chain
+}
+
+func (r *peCertChainFieldResolver) field(name string) (ModuleValue, bool) {
+	switch name {
+	case "length_of_chain":
+		return IntegerValue(int64(len(r.certs()))), true
+	case "chain":
+		if r.chainArray.Type == ModuleUndefined {
+			r.chainArray = r.image.certificateArray(r.certs())
 		}
-		return chain
+		return r.chainArray, true
+	default:
+		return ModuleValue{}, false
+	}
+}
+
+func peSignerInfoValue(image *peImage, signer *pe.AuthenticodeSigner, pool []*x509.Certificate) ModuleValue {
+	chains := peCertChainFieldResolver{
+		image: image,
+		resolve: func() []*x509.Certificate {
+			if signer == nil {
+				return nil
+			}
+			return peBuildCertChain(signer, pool)
+		},
 	}
 	return peLazyStruct(func(field string) ModuleValue {
+		if val, ok := chains.field(field); ok {
+			return val
+		}
 		switch field {
 		case "program_name":
 			if signer != nil && signer.OpusInfo != nil && signer.OpusInfo.ProgramName != "" {
@@ -332,13 +360,6 @@ func peSignerInfoValue(image *peImage, signer *pe.AuthenticodeSigner, pool []*x5
 			if signer != nil && len(signer.MessageDigest) > 0 && len(signer.DigestAlgorithm.Algorithm) > 0 {
 				return StringValue(peDigestAlgorithmName(signer.DigestAlgorithm.Algorithm))
 			}
-		case "length_of_chain":
-			return IntegerValue(int64(len(resolveChain())))
-		case "chain":
-			if chainArray.Type == ModuleUndefined {
-				chainArray = image.certificateArray(resolveChain())
-			}
-			return chainArray
 		}
 		return ModuleValue{}
 	})
@@ -352,23 +373,20 @@ func peCountersignatureValue(image *peImage, sigIdx, tsIdx int) ModuleValue {
 	if len(ts.Signers) > 0 {
 		tsSigner = &ts.Signers[0]
 	}
-	var (
-		chainLoaded bool
-		chain       []*x509.Certificate
-		chainArray  ModuleValue
-	)
-	resolveChain := func() []*x509.Certificate {
-		if !chainLoaded {
-			chainLoaded = true
+	chains := peCertChainFieldResolver{
+		image: image,
+		resolve: func() []*x509.Certificate {
 			pool := outerCerts
 			if ts.Kind == pe.AuthenticodeTimestampRFC3161 {
 				pool = ts.Certificates
 			}
-			chain = peBuildCertChain(tsSigner, pool)
-		}
-		return chain
+			return peBuildCertChain(tsSigner, pool)
+		},
 	}
 	return peLazyStruct(func(field string) ModuleValue {
+		if val, ok := chains.field(field); ok {
+			return val
+		}
 		switch field {
 		case "sign_time":
 			if ts.HasSigningTime {
@@ -390,13 +408,6 @@ func peCountersignatureValue(image *peImage, sigIdx, tsIdx int) ModuleValue {
 			} else if tsSigner != nil && len(tsSigner.DigestAlgorithm.Algorithm) > 0 {
 				return StringValue(peDigestAlgorithmName(tsSigner.DigestAlgorithm.Algorithm))
 			}
-		case "length_of_chain":
-			return IntegerValue(int64(len(resolveChain())))
-		case "chain":
-			if chainArray.Type == ModuleUndefined {
-				chainArray = image.certificateArray(resolveChain())
-			}
-			return chainArray
 		case "verified":
 			sigs, ok := image.loadSignatureVerification()
 			if !ok || sigIdx >= len(sigs.verification.Signatures) {

@@ -479,12 +479,27 @@ func (p *ExpressionParser) parseDataTypeFunction() (ast.Expression, error) {
 	if !p.currentTokenIs(token.LPAREN) {
 		return nil, fmt.Errorf("expected '(' after function %s", functionName)
 	}
-	p.nextToken() // consume '('
+	args, err := p.parseCallArgs(false)
+	if err != nil {
+		return nil, err
+	}
 
+	return &ast.FunctionCall{
+		Function: functionName,
+		Args:     args,
+		Pos:      pos,
+	}, nil
+}
+
+func (p *ExpressionParser) parseCallArgs(syntaxErr bool) ([]ast.Expression, error) {
+	p.nextToken() // consume '('
 	var args []ast.Expression
 	for !p.currentTokenIs(token.RPAREN) {
 		arg, err := p.ParseExpression()
 		if err != nil {
+			if syntaxErr {
+				return nil, err
+			}
 			return nil, fmt.Errorf("error parsing function argument: %w", err)
 		}
 		args = append(args, arg)
@@ -492,16 +507,14 @@ func (p *ExpressionParser) parseDataTypeFunction() (ast.Expression, error) {
 		if p.currentTokenIs(token.COMMA) {
 			p.nextToken()
 		} else if !p.currentTokenIs(token.RPAREN) {
+			if syntaxErr {
+				return nil, newSyntaxError(p.current.Pos, "expected ',' or ')' in function arguments, got %s", p.current.Display())
+			}
 			return nil, errors.New("expected ',' or ')' in function arguments")
 		}
 	}
 	p.nextToken() // consume ')'
-
-	return &ast.FunctionCall{
-		Function: functionName,
-		Args:     args,
-		Pos:      pos,
-	}, nil
+	return args, nil
 }
 
 func mapDataTypeToken(tok token.Type, literal string) string {
@@ -685,23 +698,10 @@ func (p *ExpressionParser) parseFunctionCall(base ast.Expression) (ast.Expressio
 	if !ok {
 		return nil, newSyntaxError(base.Position(), "cannot call non-identifier")
 	}
-	p.nextToken() // consume '('
-
-	var args []ast.Expression
-	for !p.currentTokenIs(token.RPAREN) {
-		arg, err := p.ParseExpression()
-		if err != nil {
-			return nil, err
-		}
-		args = append(args, arg)
-
-		if p.currentTokenIs(token.COMMA) {
-			p.nextToken()
-		} else if !p.currentTokenIs(token.RPAREN) {
-			return nil, newSyntaxError(p.current.Pos, "expected ',' or ')' in function arguments, got %s", p.current.Display())
-		}
+	args, err := p.parseCallArgs(true)
+	if err != nil {
+		return nil, err
 	}
-	p.nextToken() // consume ')'
 
 	return &ast.FunctionCall{
 		Function: functionName,

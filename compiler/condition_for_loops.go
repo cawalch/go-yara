@@ -36,7 +36,7 @@ func (cc *conditionCompiler) compileForLoop(forLoop *ast.ForLoop) error {
 
 	// Handle tuple iteration: string set, integer enumeration, or text strings
 	if tuple, ok := forLoop.Range.(*ast.StringTuple); ok {
-		if isStringSetTuple(tuple) {
+		if semantic.IsStringSetExpression(tuple) {
 			return cc.compileForLoopOverStrings(forLoop)
 		}
 		if isIntegerTuple(tuple) {
@@ -166,19 +166,6 @@ func (cc *conditionCompiler) compileForLoopOverIntEnum(forLoop *ast.ForLoop, tup
 
 	// 4. Compile loop body with loopVarSlot = -1 (integer variable, not string variable)
 	return cc.compileForLoopBody(forLoop.Quantifier, forLoop.QuantifierExpr, forLoop.Condition, forLoop.Pos, -1)
-}
-
-func isStringSetTuple(tuple *ast.StringTuple) bool {
-	if len(tuple.Elements) == 0 {
-		return false
-	}
-	for _, elem := range tuple.Elements {
-		ident, ok := elem.(*ast.Identifier)
-		if !ok || (!strings.HasPrefix(ident.Name, "$") && ident.Name != "them") {
-			return false
-		}
-	}
-	return true
 }
 
 func isIntegerTuple(tuple *ast.StringTuple) bool {

@@ -272,7 +272,7 @@ func (cc *conditionCompiler) handleSpecialOperators(binOp *ast.BinaryOp) (bool, 
 		}
 		return true, cc.compileStringOffsetOperator(binOp)
 	case token.DOT:
-		if moduleName, ok := moduleNameFromMemberAccess(binOp); ok {
+		if moduleName, ok := semantic.ModuleNameFromMemberAccess(binOp); ok {
 			return true, unsupportedModuleError(moduleName)
 		}
 		return true, cc.compileExpressions(binOp.Left, binOp.Right)

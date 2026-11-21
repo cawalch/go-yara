@@ -234,85 +234,30 @@ const (
 	OpCategoryTypeFunc   = "type_func"
 )
 
-// isControlOpcode checks if opcode is a control operation
-func isControlOpcode(op Opcode) bool {
-	return op == OpError || op == OpHalt || op == OpNop
-}
-
-// isLogicalOpcode checks if opcode is a logical operation
-func isLogicalOpcode(op Opcode) bool {
-	return op == OpAssertExternal || op == OpEvalAssertions || (op >= OpAssertUint16Eq && op <= OpAssertStringCount) || (op >= OpAnd && op <= OpBitwiseXor) ||
-		op == OpIntToDbl || op == OpStrToBool
-}
-
-// isArithmeticOpcode checks if opcode is an arithmetic operation
-func isArithmeticOpcode(op Opcode) bool {
-	return (op >= OpShl && op <= OpMod) ||
-		(op >= OpIntBegin && op <= OpIntEnd) ||
-		(op >= OpDblBegin && op <= OpDblEnd) ||
-		(op >= OpStrBegin && op <= OpStrEnd)
-}
-
-// isStackOpcode checks if opcode is a stack operation
-func isStackOpcode(op Opcode) bool {
-	return (op >= OpPush && op <= OpCall) ||
-		(op >= OpPush8 && op <= OpPushRuleRef) ||
-		op == OpPushStr || op == OpPushRegex || op == OpLoadVar || op == OpPush64
-}
-
-// isObjectOpcode checks if opcode is an object operation
-func isObjectOpcode(op Opcode) bool {
-	return (op >= OpModuleLoad && op <= OpIterStartModuleArray) || (op >= OpObjLoad && op <= OpOffset) ||
-		(op >= OpOf && op <= OpMatches) ||
-		(op >= OpImport && op <= OpJnundef)
-}
-
-// isJumpOpcode checks if opcode is a jump operation
-func isJumpOpcode(op Opcode) bool {
-	return op >= OpJnundefP && op <= OpJzP
-}
-
-// isIteratorOpcode checks if opcode is an iterator operation
-func isIteratorOpcode(op Opcode) bool {
-	return (op >= OpIterNext && op <= OpIterEnd) || op == OpIterPushTotal
-}
-
-// isStringOpcode checks if opcode is a string operation
-func isStringOpcode(op Opcode) bool {
-	return (op >= OpContains && op <= OpOfPercentAt) ||
-		op == OpCountInOf || op == OpProximity || op == OpConcat || op == OpMatchesValue
-}
-
-// isTypeFuncOpcode checks if opcode is a type function
-func isTypeFuncOpcode(op Opcode) bool {
-	return op >= OpReadInt && op <= OpUint64be
-}
-
-// GetCategory returns category of an opcode
+// GetCategory returns category of an opcode.
 func (op Opcode) GetCategory() string {
-	// Check categories in order of most common to least common for performance
-	categoryChecks := []struct {
-		check    func(Opcode) bool
-		category string
-	}{
-		{isArithmeticOpcode, OpCategoryArithmetic},
-		{isLogicalOpcode, OpCategoryLogical},
-		{isStackOpcode, OpCategoryStack},
-		{isStringOpcode, OpCategoryString},
-		{isJumpOpcode, OpCategoryJump},
-		{isObjectOpcode, OpCategoryObject},
-		{isIteratorOpcode, OpCategoryIterator},
-		{isControlOpcode, OpCategoryControl},
-		{isTypeFuncOpcode, OpCategoryTypeFunc},
+	switch {
+	case (op >= OpShl && op <= OpMod) || (op >= OpIntBegin && op <= OpIntEnd) || (op >= OpDblBegin && op <= OpDblEnd) || (op >= OpStrBegin && op <= OpStrEnd):
+		return OpCategoryArithmetic
+	case op == OpAssertExternal || op == OpEvalAssertions || (op >= OpAssertUint16Eq && op <= OpAssertStringCount) || (op >= OpAnd && op <= OpBitwiseXor) || op == OpIntToDbl || op == OpStrToBool:
+		return OpCategoryLogical
+	case (op >= OpPush && op <= OpCall) || (op >= OpPush8 && op <= OpPushRuleRef) || op == OpPushStr || op == OpPushRegex || op == OpLoadVar || op == OpPush64:
+		return OpCategoryStack
+	case (op >= OpContains && op <= OpOfPercentAt) || op == OpCountInOf || op == OpProximity || op == OpConcat || op == OpMatchesValue:
+		return OpCategoryString
+	case op >= OpJnundefP && op <= OpJzP:
+		return OpCategoryJump
+	case (op >= OpModuleLoad && op <= OpIterStartModuleArray) || (op >= OpObjLoad && op <= OpOffset) || (op >= OpOf && op <= OpMatches) || (op >= OpImport && op <= OpJnundef):
+		return OpCategoryObject
+	case (op >= OpIterNext && op <= OpIterEnd) || op == OpIterPushTotal:
+		return OpCategoryIterator
+	case op == OpError || op == OpHalt || op == OpNop:
+		return OpCategoryControl
+	case op >= OpReadInt && op <= OpUint64be:
+		return OpCategoryTypeFunc
+	default:
+		return "unknown"
 	}
-
-	for _, check := range categoryChecks {
-		if check.check(op) {
-			return check.category
-		}
-	}
-
-	return "unknown"
 }
 
 // opcodeNames maps basic opcodes to their string names.
@@ -451,38 +396,11 @@ var dataTypeNames = []string{
 	"INT64", "UINT64", "INT64BE", "UINT64BE",
 }
 
-// getIntOpName returns the name for integer operation opcodes
-func (op Opcode) getIntOpName() string {
-	offset := int(op - OpIntBegin)
-	if offset < len(intOpNames) {
-		return intOpNames[offset]
-	}
-	return ""
-}
-
-// getDblOpName returns the name for double operation opcodes
-func (op Opcode) getDblOpName() string {
-	offset := int(op - OpDblBegin)
-	if offset < len(dblOpNames) {
-		return dblOpNames[offset]
-	}
-	return ""
-}
-
-// getStrOpName returns the name for string operation opcodes
-func (op Opcode) getStrOpName() string {
-	offset := int(op - OpStrBegin)
-	if offset < len(strOpNames) {
-		return strOpNames[offset]
-	}
-	return ""
-}
-
-// getDataTypeName returns the name for data type function opcodes
-func (op Opcode) getDataTypeName() string {
-	offset := int(op - OpReadInt)
-	if offset < len(dataTypeNames) {
-		return dataTypeNames[offset]
+func (op Opcode) rangeName(base, end Opcode, names []string) string {
+	if op >= base && op <= end {
+		if offset := int(op - base); offset < len(names) {
+			return names[offset]
+		}
 	}
 	return ""
 }
@@ -505,18 +423,20 @@ func (op Opcode) String() string {
 
 // getRangeName returns the name for opcodes in specific ranges
 func (op Opcode) getRangeName() string {
-	switch {
-	case op >= OpIntBegin && op <= OpIntEnd:
-		return op.getIntOpName()
-	case op >= OpDblBegin && op <= OpDblEnd:
-		return op.getDblOpName()
-	case op >= OpStrBegin && op <= OpStrEnd:
-		return op.getStrOpName()
-	case op >= OpReadInt && op <= OpUint64be:
-		return op.getDataTypeName()
-	default:
-		return ""
+	for _, r := range []struct {
+		base, end Opcode
+		names     []string
+	}{
+		{OpIntBegin, OpIntEnd, intOpNames},
+		{OpDblBegin, OpDblEnd, dblOpNames},
+		{OpStrBegin, OpStrEnd, strOpNames},
+		{OpReadInt, OpUint64be, dataTypeNames},
+	} {
+		if name := op.rangeName(r.base, r.end, r.names); name != "" {
+			return name
+		}
 	}
+	return ""
 }
 
 // OperandType represents type of an operand

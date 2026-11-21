@@ -143,9 +143,9 @@ func formatMetaBracket(meta map[string]any) string {
 	return "[" + strings.Join(parts, ",") + "]"
 }
 
-func printRuleMatchStrings(r compiler.RuleMatch, data []byte) {
+func collectSortedMatches(matchesByID map[string][]compiler.Match) []printEntry {
 	var entries []printEntry
-	for id, matches := range r.Matches {
+	for id, matches := range matchesByID {
 		for _, m := range matches {
 			entries = append(entries, printEntry{
 				id:     id,
@@ -160,17 +160,23 @@ func printRuleMatchStrings(r compiler.RuleMatch, data []byte) {
 		}
 		return entries[i].id < entries[j].id
 	})
-	for _, e := range entries {
-		var sVal string
-		if e.offset >= 0 && e.offset+e.length <= len(data) {
-			raw := data[e.offset : e.offset+e.length]
-			if isAllPrintableASCII(raw) {
-				sVal = string(raw)
-			} else {
-				sVal = fmt.Sprintf("%q", raw)
-			}
-		}
-		fmt.Printf("0x%x:%s: %s\n", e.offset, e.id, sVal)
+	return entries
+}
+
+func formatMatchPreview(data []byte, offset, length int) string {
+	if offset < 0 || offset+length > len(data) {
+		return ""
+	}
+	raw := data[offset : offset+length]
+	if isAllPrintableASCII(raw) {
+		return string(raw)
+	}
+	return fmt.Sprintf("%q", raw)
+}
+
+func printRuleMatchStrings(r compiler.RuleMatch, data []byte) {
+	for _, e := range collectSortedMatches(r.Matches) {
+		fmt.Printf("0x%x:%s: %s\n", e.offset, e.id, formatMatchPreview(data, e.offset, e.length))
 	}
 }
 
@@ -187,38 +193,14 @@ func collectJSONMatches(r compiler.RuleMatch, data []byte) []jsonMatchEntry {
 	if len(r.Matches) == 0 {
 		return nil
 	}
-	var entries []printEntry
-	for id, ms := range r.Matches {
-		for _, m := range ms {
-			entries = append(entries, printEntry{
-				id:     id,
-				offset: int(m.Offset),
-				length: m.Length,
-			})
-		}
-	}
-	sort.Slice(entries, func(i, j int) bool {
-		if entries[i].offset != entries[j].offset {
-			return entries[i].offset < entries[j].offset
-		}
-		return entries[i].id < entries[j].id
-	})
+	entries := collectSortedMatches(r.Matches)
 	jsonEntries := make([]jsonMatchEntry, 0, len(entries))
 	for _, e := range entries {
-		var sVal string
-		if e.offset >= 0 && e.offset+e.length <= len(data) {
-			raw := data[e.offset : e.offset+e.length]
-			if isAllPrintableASCII(raw) {
-				sVal = string(raw)
-			} else {
-				sVal = fmt.Sprintf("%q", raw)
-			}
-		}
 		jsonEntries = append(jsonEntries, jsonMatchEntry{
 			Identifier: e.id,
 			Offset:     int64(e.offset),
 			Length:     e.length,
-			Data:       sVal,
+			Data:       formatMatchPreview(data, e.offset, e.length),
 		})
 	}
 	return jsonEntries

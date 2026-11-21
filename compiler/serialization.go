@@ -131,17 +131,7 @@ func sortedMapEntries[K cmp.Ordered, V, S any](values map[K]V, build func(K, V) 
 }
 
 func sortedMapEntriesIdentity[K cmp.Ordered, V any](values map[K]V) []serializedEntry[K, V] {
-	if len(values) == 0 {
-		return nil
-	}
-	out := make([]serializedEntry[K, V], 0, len(values))
-	for key, val := range values {
-		out = append(out, serializedEntry[K, V]{Key: key, Value: val})
-	}
-	if len(out) > 1 {
-		slices.SortFunc(out, compareSerializedEntries[K, V])
-	}
-	return out
+	return sortedMapEntries(values, func(_ K, val V) V { return val })
 }
 
 func sortedMapEntriesErr[K cmp.Ordered, V, S any](values map[K]V, build func(K, V) (S, error)) ([]serializedEntry[K, S], error) {

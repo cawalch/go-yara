@@ -104,7 +104,7 @@ func (v *Validator) validateStringModifiers(rule *ast.Rule) {
 						Rule:     rule.Name,
 					})
 				}
-				if err := validateSemanticBase64Alphabet(mod.Value); err != nil {
+				if err := ast.ValidateBase64Alphabet(mod.Value); err != nil {
 					v.addError(&Error{
 						Code:     ErrCodeInvalidModifier,
 						Message:  err.Error(),
@@ -122,7 +122,7 @@ func (v *Validator) validateStringModifiers(rule *ast.Rule) {
 						Rule:     rule.Name,
 					})
 				}
-				if err := validateSemanticBase64Alphabet(mod.Value); err != nil {
+				if err := ast.ValidateBase64Alphabet(mod.Value); err != nil {
 					v.addError(&Error{
 						Code:     ErrCodeInvalidModifier,
 						Message:  err.Error(),
@@ -186,28 +186,6 @@ func (v *Validator) validateStringModifiers(rule *ast.Rule) {
 			}
 		}
 	}
-}
-
-func validateSemanticBase64Alphabet(value any) error {
-	alphabet, ok := value.(string)
-	if !ok || alphabet == "" {
-		return nil
-	}
-	if len(alphabet) != 64 {
-		return fmt.Errorf("invalid base64 alphabet length: expected 64, got %d", len(alphabet))
-	}
-	var seen [256]bool
-	for i := 0; i < len(alphabet); i++ {
-		ch := alphabet[i]
-		if ch == '=' {
-			return errors.New("invalid base64 alphabet: '=' is not allowed")
-		}
-		if seen[ch] {
-			return errors.New("invalid base64 alphabet: duplicate characters")
-		}
-		seen[ch] = true
-	}
-	return nil
 }
 
 func validateSemanticXorModifier(value any) error {

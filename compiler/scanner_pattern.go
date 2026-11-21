@@ -618,27 +618,7 @@ func (s *Scanner) SetExternalVariables(vars map[string]any) error {
 	return nil
 }
 
-type externalValue struct {
-	valueType ValueType
-	intVal    int64
-	doubleVal float64
-	stringVal string
-}
-
-func (v externalValue) toInterpreterValue(interp *Interpreter) Value {
-	switch v.valueType {
-	case ValueTypeInt:
-		return Value{Type: ValueTypeInt, IntVal: v.intVal}
-	case ValueTypeDouble:
-		return Value{Type: ValueTypeDouble, DoubleVal: v.doubleVal}
-	case ValueTypeString:
-		idx := len(interp.stringArena)
-		interp.stringArena = append(interp.stringArena, v.stringVal)
-		return Value{Type: ValueTypeString, StringRef: int64(idx)}
-	default:
-		return Value{Type: ValueTypeUndefined}
-	}
-}
+type externalValue = compiledGlobalValue
 
 func normalizeExternalVariables(program *CompiledProgram, vars map[string]any) (map[string]externalValue, error) {
 	if program != nil && program.preparationErr != nil {

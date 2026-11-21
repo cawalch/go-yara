@@ -365,6 +365,19 @@ func createCertSet(signer any, pub any, spec certSetSpec) (rootDER, caDER, leafD
 	return rootDER, caDER, leafDER, leafCert
 }
 
+func createSelfSignedTSACert(serial int64, commonName string) ([]byte, *x509.Certificate) {
+	tsKey := cachedTestKey(false, false, testKeyTSA).(*ecdsa.PrivateKey)
+	tsTmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(serial),
+		Subject:      pkix.Name{CommonName: commonName},
+		NotBefore:    time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+		NotAfter:     time.Date(2032, 1, 1, 0, 0, 0, 0, time.UTC),
+	}
+	tsDER, _ := x509.CreateCertificate(rand.Reader, tsTmpl, tsTmpl, &tsKey.PublicKey, tsKey)
+	tsCert, _ := x509.ParseCertificate(tsDER)
+	return tsDER, tsCert
+}
+
 func buildAuthSignerInfo(spec signerInfoSpec, outerCertsBytes *[]byte) []byte {
 	leafCert := spec.leafCert
 	digestOID := spec.digestOID
@@ -419,15 +432,7 @@ func buildAuthSignerInfo(spec signerInfoSpec, outerCertsBytes *[]byte) []byte {
 	}
 
 	if !opts.PKCS9CountersignAt.IsZero() {
-		tsKey := cachedTestKey(false, false, testKeyTSA).(*ecdsa.PrivateKey)
-		tsTmpl := &x509.Certificate{
-			SerialNumber: big.NewInt(0x7a),
-			Subject:      pkix.Name{CommonName: "PKCS9 Timestamp Authority"},
-			NotBefore:    time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-			NotAfter:     time.Date(2032, 1, 1, 0, 0, 0, 0, time.UTC),
-		}
-		tsDER, _ := x509.CreateCertificate(rand.Reader, tsTmpl, tsTmpl, &tsKey.PublicKey, tsKey)
-		tsCert, _ := x509.ParseCertificate(tsDER)
+		tsDER, tsCert := createSelfSignedTSACert(0x7a, "PKCS9 Timestamp Authority")
 		if !opts.OmitCertificates {
 			*outerCertsBytes = append(*outerCertsBytes, tsDER...)
 		}
@@ -455,15 +460,7 @@ func buildAuthSignerInfo(spec signerInfoSpec, outerCertsBytes *[]byte) []byte {
 	}
 
 	if !opts.RFC3161TimestampAt.IsZero() {
-		tsKey := cachedTestKey(false, false, testKeyTSA).(*ecdsa.PrivateKey)
-		tsTmpl := &x509.Certificate{
-			SerialNumber: big.NewInt(0x7b),
-			Subject:      pkix.Name{CommonName: "RFC3161 TSA"},
-			NotBefore:    time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-			NotAfter:     time.Date(2032, 1, 1, 0, 0, 0, 0, time.UTC),
-		}
-		tsDER, _ := x509.CreateCertificate(rand.Reader, tsTmpl, tsTmpl, &tsKey.PublicKey, tsKey)
-		tsCert, _ := x509.ParseCertificate(tsDER)
+		tsDER, tsCert := createSelfSignedTSACert(0x7b, "RFC3161 TSA")
 		tsSID := mustIssuerAndSerialSID(tsCert)
 		imprint := opts.CountersignDigest
 		if len(imprint) == 0 {

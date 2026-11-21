@@ -462,17 +462,17 @@ func (p *DeclarationParser) validateStringModifiers(modifiers []ast.StringModifi
 			hasASCII = true
 		case ast.StringModifierBase64:
 			hasBase64 = true
-			if err := validateBase64Alphabet(mod.Value); err != nil {
+			if err := ast.ValidateBase64Alphabet(mod.Value); err != nil {
 				p.addError(err)
 			}
 		case ast.StringModifierBase64Wide:
 			hasBase64Wide = true
-			if err := validateBase64Alphabet(mod.Value); err != nil {
+			if err := ast.ValidateBase64Alphabet(mod.Value); err != nil {
 				p.addError(err)
 			}
 		case ast.StringModifierXor:
 			hasXor = true
-			if err := validateXorModifierValue(mod.Value); err != nil {
+			if err := ast.ValidateXorModifier(mod.Value); err != nil {
 				p.addError(err)
 			}
 		case ast.StringModifierNocase:
@@ -491,59 +491,6 @@ func (p *DeclarationParser) validateStringModifiers(modifiers []ast.StringModifi
 	if (hasBase64 || hasBase64Wide) && (hasWide || hasASCII) {
 		p.addError(errors.New("base64 modifiers are incompatible with 'wide' or 'ascii'"))
 	}
-}
-
-func validateBase64Alphabet(value any) error {
-	alphabet, ok := value.(string)
-	if !ok || alphabet == "" {
-		return nil
-	}
-	if len(alphabet) != 64 {
-		return fmt.Errorf("invalid base64 alphabet length: expected 64, got %d", len(alphabet))
-	}
-	seen := make(map[byte]struct{}, 64)
-	for i := 0; i < len(alphabet); i++ {
-		ch := alphabet[i]
-		if ch == '=' {
-			return errors.New("invalid base64 alphabet: '=' is not allowed")
-		}
-		if _, exists := seen[ch]; exists {
-			return errors.New("invalid base64 alphabet: duplicate characters")
-		}
-		seen[ch] = struct{}{}
-	}
-	return nil
-}
-
-func validateXorModifierValue(value any) error {
-	if value == nil {
-		return nil
-	}
-	switch v := value.(type) {
-	case ast.XorRange:
-		return validateXorRange(v.Min, v.Max)
-	case *ast.XorRange:
-		if v == nil {
-			return nil
-		}
-		return validateXorRange(v.Min, v.Max)
-	case int64:
-		return validateXorRange(v, v)
-	case int:
-		return validateXorRange(int64(v), int64(v))
-	default:
-		return nil
-	}
-}
-
-func validateXorRange(min, max int64) error {
-	if min < 0 || max < 0 || min > 255 || max > 255 {
-		return errors.New("xor range must be within 0..255")
-	}
-	if max < min {
-		return errors.New("xor range max must be >= min")
-	}
-	return nil
 }
 
 func (p *DeclarationParser) parseOptionalIntLiteral() (int64, bool) {

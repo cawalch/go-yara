@@ -292,12 +292,7 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (result *Sca
 				return nil, err
 			}
 		}
-		if result.RuleResults != nil {
-			result.RuleResults[rule.Name] = evaluation.matched
-		}
-		if evaluation.matched && !rule.IsPrivate && s.hasMatchingTag(rule) {
-			s.matchedRuleIndices = append(s.matchedRuleIndices, rule.Index)
-		}
+		s.recordRuleOutcome(result, rule, evaluation.matched)
 	}
 
 	if scanCanceled(done) {

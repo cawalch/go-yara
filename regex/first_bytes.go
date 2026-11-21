@@ -574,7 +574,7 @@ func nodeRepeatInfo(node *Node, flags Flags) (class ByteSet, minCount, maxCount 
 		return ByteSet{}, 0, 0, false
 	}
 	switch node.Kind {
-	case NodePlus:
+	case NodePlus, NodeStar, NodeRange:
 		if len(node.Children) != 1 {
 			return ByteSet{}, 0, 0, false
 		}
@@ -582,29 +582,18 @@ func nodeRepeatInfo(node *Node, flags Flags) (class ByteSet, minCount, maxCount 
 		if !ok {
 			return ByteSet{}, 0, 0, false
 		}
-		return set, 1, -1, true
-	case NodeStar:
-		if len(node.Children) != 1 {
-			return ByteSet{}, 0, 0, false
+		switch node.Kind {
+		case NodePlus:
+			return set, 1, -1, true
+		case NodeStar:
+			return set, 0, -1, true
+		default:
+			maxC := int(node.End)
+			if node.End == math.MaxUint16 {
+				maxC = -1
+			}
+			return set, int(node.Start), maxC, true
 		}
-		set, ok := nodeByteSet(node.Children[0], flags)
-		if !ok {
-			return ByteSet{}, 0, 0, false
-		}
-		return set, 0, -1, true
-	case NodeRange:
-		if len(node.Children) != 1 {
-			return ByteSet{}, 0, 0, false
-		}
-		set, ok := nodeByteSet(node.Children[0], flags)
-		if !ok {
-			return ByteSet{}, 0, 0, false
-		}
-		maxC := int(node.End)
-		if node.End == math.MaxUint16 {
-			maxC = -1
-		}
-		return set, int(node.Start), maxC, true
 	case NodeRangeAny:
 		set := fullByteSet()
 		if flags&FlagsDotAll == 0 {

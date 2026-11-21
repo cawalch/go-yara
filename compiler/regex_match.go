@@ -62,16 +62,7 @@ func addRegexMatchesCached(
 		starts, handled := regexAtomCandidateStartsInto(ctx, data, atom, regexInfo, flags, isWide, ctx.cancelDone)
 		ctx.retainRegexCandidates(starts)
 		if handled {
-			if len(starts) == 0 {
-				return
-			}
-			bs := newRegexMatchBatch(ctx, &regexInfo)
-			for index, start := range starts {
-				if scanCanceledAt(ctx.cancelDone, index) {
-					return
-				}
-				addRegexMatchAt(ctx, id, regexInfo, data, modifiers, flags, isWide, bs, start)
-			}
+			addRegexMatchesFromStarts(ctx, id, regexInfo, data, modifiers, flags, isWide, starts)
 			return
 		}
 		if len(prefix) > 0 {
@@ -105,16 +96,7 @@ func addRegexMatchesCached(
 		starts, handled := leadingGapRegexCandidateStartsInto(ctx.regexCandidates, data, regexInfo.leadingGap, flags, ctx.cancelDone)
 		ctx.retainRegexCandidates(starts)
 		if handled {
-			if len(starts) == 0 {
-				return
-			}
-			bs := newRegexMatchBatch(ctx, &regexInfo)
-			for index, start := range starts {
-				if scanCanceledAt(ctx.cancelDone, index) {
-					return
-				}
-				addRegexMatchAt(ctx, id, regexInfo, data, modifiers, flags, isWide, bs, start)
-			}
+			addRegexMatchesFromStarts(ctx, id, regexInfo, data, modifiers, flags, isWide, starts)
 			return
 		}
 	}
@@ -150,6 +132,20 @@ func addRegexMatchesCached(
 
 	bs := newRegexMatchBatch(ctx, &regexInfo)
 	addRegexMatchesLinear(ctx, id, regexInfo, data, modifiers, flags, isWide, bs)
+}
+
+//nolint:revive // argument-limit: hot path avoids struct allocation
+func addRegexMatchesFromStarts(ctx *MatchContext, id string, regexInfo RegexPattern, data []byte, modifiers []ast.StringModifier, flags regex.Flags, isWide bool, starts []int) {
+	if len(starts) == 0 {
+		return
+	}
+	bs := newRegexMatchBatch(ctx, &regexInfo)
+	for index, start := range starts {
+		if scanCanceledAt(ctx.cancelDone, index) {
+			return
+		}
+		addRegexMatchAt(ctx, id, regexInfo, data, modifiers, flags, isWide, bs, start)
+	}
 }
 
 //nolint:revive // caller-owned candidate storage remains explicit

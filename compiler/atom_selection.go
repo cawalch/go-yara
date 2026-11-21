@@ -168,26 +168,35 @@ func widenRegexPrefilterAtoms(atoms []regexPrefilterAtom) []regexPrefilterAtom {
 	return wide
 }
 
-func betterRegexPrefilterAtom(candidate, current regexPrefilterAtom) bool {
-	if len(candidate.data) != len(current.data) {
-		return len(candidate.data) > len(current.data)
+type atomRank struct {
+	length, score, minOffset, maxOffset int
+}
+
+func (cand atomRank) betterThan(cur atomRank) bool {
+	if cand.length != cur.length {
+		return cand.length > cur.length
 	}
-	candidateBounded := candidate.maxOffset >= 0
-	currentBounded := current.maxOffset >= 0
-	if candidateBounded != currentBounded {
-		return candidateBounded
+	candBounded := cand.maxOffset >= 0
+	curBounded := cur.maxOffset >= 0
+	if candBounded != curBounded {
+		return candBounded
 	}
-	if candidate.score != current.score {
-		return candidate.score > current.score
+	if cand.score != cur.score {
+		return cand.score > cur.score
 	}
-	if candidateBounded {
-		candidateWidth := candidate.maxOffset - candidate.minOffset
-		currentWidth := current.maxOffset - current.minOffset
-		if candidateWidth != currentWidth {
-			return candidateWidth < currentWidth
+	if candBounded {
+		candWidth := cand.maxOffset - cand.minOffset
+		curWidth := cur.maxOffset - cur.minOffset
+		if candWidth != curWidth {
+			return candWidth < curWidth
 		}
 	}
 	return true
+}
+
+func betterRegexPrefilterAtom(candidate, current regexPrefilterAtom) bool {
+	return (atomRank{len(candidate.data), candidate.score, candidate.minOffset, candidate.maxOffset}).
+		betterThan(atomRank{len(current.data), current.score, current.minOffset, current.maxOffset})
 }
 
 func selectMandatoryRegexByteSetAtom(atoms []regex.ByteSetAtom, flags regex.Flags) (regexByteSetPrefilter, bool) {
@@ -217,22 +226,8 @@ func selectMandatoryRegexByteSetAtom(atoms []regex.ByteSetAtom, flags regex.Flag
 }
 
 func betterRegexByteSetPrefilter(candidate, current regexByteSetPrefilter) bool {
-	candidateBounded := candidate.maxOffset >= 0
-	currentBounded := current.maxOffset >= 0
-	if candidateBounded != currentBounded {
-		return candidateBounded
-	}
-	if candidate.count != current.count {
-		return candidate.count < current.count
-	}
-	if candidateBounded {
-		candidateWidth := candidate.maxOffset - candidate.minOffset
-		currentWidth := current.maxOffset - current.minOffset
-		if candidateWidth != currentWidth {
-			return candidateWidth < currentWidth
-		}
-	}
-	return true
+	return (atomRank{0, -candidate.count, candidate.minOffset, candidate.maxOffset}).
+		betterThan(atomRank{0, -current.count, current.minOffset, current.maxOffset})
 }
 
 func alternativeAtomsBeatPrefix(atoms []regexPrefilterAtom, prefix []byte) bool {
@@ -321,25 +316,8 @@ func betterHexPrefilterAtom(candidate, current prefilterAtom) bool {
 	if len(current.data) == 0 {
 		return true
 	}
-	if len(candidate.data) != len(current.data) {
-		return len(candidate.data) > len(current.data)
-	}
-	candidateBounded := candidate.maxOffset >= 0
-	currentBounded := current.maxOffset >= 0
-	if candidateBounded != currentBounded {
-		return candidateBounded
-	}
-	if candidate.score != current.score {
-		return candidate.score > current.score
-	}
-	if candidateBounded {
-		candidateWidth := candidate.maxOffset - candidate.offset
-		currentWidth := current.maxOffset - current.offset
-		if candidateWidth != currentWidth {
-			return candidateWidth < currentWidth
-		}
-	}
-	return true
+	return (atomRank{len(candidate.data), candidate.score, candidate.offset, candidate.maxOffset}).
+		betterThan(atomRank{len(current.data), current.score, current.offset, current.maxOffset})
 }
 
 func hexTokensAlternativesLengthRange(alts [][]HexPatternToken) (int, int) {

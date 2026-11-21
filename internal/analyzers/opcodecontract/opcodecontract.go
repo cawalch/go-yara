@@ -4,10 +4,10 @@ package opcodecontract
 import (
 	"go/ast"
 	"go/constant"
-	"go/token"
 	"go/types"
-	"path/filepath"
 	"strings"
+
+	"github.com/cawalch/go-yara/internal/analyzers/opcoderef"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
@@ -23,12 +23,6 @@ var Analyzer = &analysis.Analyzer{
 	Run:      run,
 }
 
-type opcodeRef struct {
-	name  string
-	value uint64
-	expr  ast.Expr
-}
-
 type contractChecker struct {
 	pass          *analysis.Pass
 	inspectResult *inspector.Inspector
@@ -36,7 +30,7 @@ type contractChecker struct {
 }
 
 func run(pass *analysis.Pass) (any, error) {
-	opcodeType := findOpcodeType(pass)
+	opcodeType := opcoderef.FindNamedType(pass, "Opcode")
 	if opcodeType == nil {
 		return nil, nil
 	}
@@ -52,9 +46,9 @@ func run(pass *analysis.Pass) (any, error) {
 	for value, handler := range handlers {
 		if _, ok := names[value]; !ok {
 			checker.pass.Reportf(
-				handler.expr.Pos(),
+				handler.Expr.Pos(),
 				"dispatched opcode %s has no opcodeNames entry",
-				handler.name,
+				handler.Name,
 			)
 		}
 	}
@@ -63,17 +57,8 @@ func run(pass *analysis.Pass) (any, error) {
 	return nil, nil
 }
 
-func findOpcodeType(pass *analysis.Pass) *types.Named {
-	typeName, ok := pass.Pkg.Scope().Lookup("Opcode").(*types.TypeName)
-	if !ok {
-		return nil
-	}
-	opcodeType, _ := typeName.Type().(*types.Named)
-	return opcodeType
-}
-
-func (checker *contractChecker) collectOpcodeNames() map[uint64]opcodeRef {
-	names := make(map[uint64]opcodeRef)
+func (checker *contractChecker) collectOpcodeNames() map[uint64]opcoderef.Ref {
+	names := make(map[uint64]opcoderef.Ref)
 	checker.inspectResult.Preorder([]ast.Node{(*ast.GenDecl)(nil)}, func(node ast.Node) {
 		decl := node.(*ast.GenDecl)
 		for _, spec := range decl.Specs {
@@ -97,8 +82,8 @@ func (checker *contractChecker) collectOpcodeNames() map[uint64]opcodeRef {
 					if !ok {
 						continue
 					}
-					if ref, ok := checker.opcodeConstant(entry.Key); ok {
-						names[ref.value] = ref
+					if ref, ok := opcoderef.Constant(checker.pass, checker.opcodeType, entry.Key); ok {
+						names[ref.Value] = ref
 					}
 				}
 			}
@@ -108,7 +93,7 @@ func (checker *contractChecker) collectOpcodeNames() map[uint64]opcodeRef {
 }
 
 func (checker *contractChecker) addRangeOpcodeNames(
-	names map[uint64]opcodeRef,
+	names map[uint64]opcoderef.Ref,
 	tableName string,
 	expression ast.Expr,
 ) {
@@ -136,49 +121,49 @@ func (checker *contractChecker) addRangeOpcodeNames(
 	}
 	for offset, element := range literal.Elts {
 		value := startValue + uint64(offset)
-		names[value] = opcodeRef{name: tableName, value: value, expr: element}
+		names[value] = opcoderef.Ref{Name: tableName, Value: value, Expr: element}
 	}
 }
 
-func (checker *contractChecker) collectOpcodeHandlers() map[uint64]opcodeRef {
-	handlers := make(map[uint64]opcodeRef)
+func (checker *contractChecker) collectOpcodeHandlers() map[uint64]opcoderef.Ref {
+	handlers := make(map[uint64]opcoderef.Ref)
 	checker.inspectResult.Preorder([]ast.Node{(*ast.AssignStmt)(nil)}, func(node ast.Node) {
 		assignment := node.(*ast.AssignStmt)
 		for _, left := range assignment.Lhs {
 			index, ok := left.(*ast.IndexExpr)
-			if !ok || !isIdentifier(index.X, "opcodeTable") {
+			if !ok || !opcoderef.IsIdentifier(index.X, "opcodeTable") {
 				continue
 			}
 
-			ref, ok := checker.opcodeConstant(index.Index)
+			ref, ok := opcoderef.Constant(checker.pass, checker.opcodeType, index.Index)
 			if !ok {
 				checker.pass.Reportf(index.Index.Pos(), "opcodeTable index must be an Opcode constant")
 				continue
 			}
-			if previous, exists := handlers[ref.value]; exists {
+			if previous, exists := handlers[ref.Value]; exists {
 				checker.pass.Report(analysis.Diagnostic{
-					Pos:     ref.expr.Pos(),
-					End:     ref.expr.End(),
+					Pos:     ref.Expr.Pos(),
+					End:     ref.Expr.End(),
 					Message: "opcode value assigned more than once in opcodeTable",
 					Related: []analysis.RelatedInformation{{
-						Pos:     previous.expr.Pos(),
-						End:     previous.expr.End(),
+						Pos:     previous.Expr.Pos(),
+						End:     previous.Expr.End(),
 						Message: "first assignment is here",
 					}},
 				})
 				continue
 			}
-			handlers[ref.value] = ref
+			handlers[ref.Value] = ref
 		}
 	})
 	return handlers
 }
 
-func (checker *contractChecker) checkEmittedOpcodes(handlers map[uint64]opcodeRef) {
+func (checker *contractChecker) checkEmittedOpcodes(handlers map[uint64]opcoderef.Ref) {
 	reported := make(map[uint64]bool)
 	checker.inspectResult.Preorder([]ast.Node{(*ast.CallExpr)(nil)}, func(node ast.Node) {
 		call := node.(*ast.CallExpr)
-		if checker.isTestFile(call.Pos()) {
+		if opcoderef.IsTestFile(checker.pass, call.Pos()) {
 			return
 		}
 		signature, ok := checker.emitterCallSignature(call)
@@ -186,14 +171,14 @@ func (checker *contractChecker) checkEmittedOpcodes(handlers map[uint64]opcodeRe
 			return
 		}
 		for _, ref := range checker.emittedOpcodeConstants(signature, call) {
-			if _, ok := handlers[ref.value]; ok || reported[ref.value] {
+			if _, ok := handlers[ref.Value]; ok || reported[ref.Value] {
 				continue
 			}
-			reported[ref.value] = true
+			reported[ref.Value] = true
 			checker.pass.Reportf(
-				ref.expr.Pos(),
+				ref.Expr.Pos(),
 				"emitted opcode %s has no opcodeTable dispatch handler",
-				ref.name,
+				ref.Name,
 			)
 		}
 	})
@@ -216,7 +201,7 @@ func (checker *contractChecker) emitterCallSignature(call *ast.CallExpr) (*types
 	if !ok || signature.Recv() == nil {
 		return nil, false
 	}
-	receiver := dereference(signature.Recv().Type())
+	receiver := opcoderef.Dereference(signature.Recv().Type())
 	named, ok := receiver.(*types.Named)
 	if !ok || named.Obj().Pkg() != checker.pass.Pkg || named.Obj().Name() != "Emitter" {
 		return nil, false
@@ -227,12 +212,12 @@ func (checker *contractChecker) emitterCallSignature(call *ast.CallExpr) (*types
 func (checker *contractChecker) emittedOpcodeConstants(
 	signature *types.Signature,
 	call *ast.CallExpr,
-) []opcodeRef {
-	var refs []opcodeRef
+) []opcoderef.Ref {
+	var refs []opcoderef.Ref
 	if len(call.Args) > 0 &&
 		signature.Params().Len() > 0 &&
 		types.Identical(signature.Params().At(0).Type(), checker.opcodeType) {
-		if ref, ok := checker.opcodeConstant(call.Args[0]); ok {
+		if ref, ok := opcoderef.Constant(checker.pass, checker.opcodeType, call.Args[0]); ok {
 			refs = append(refs, ref)
 		}
 	}
@@ -240,59 +225,14 @@ func (checker *contractChecker) emittedOpcodeConstants(
 	for _, argument := range call.Args {
 		ast.Inspect(argument, func(node ast.Node) bool {
 			entry, ok := node.(*ast.KeyValueExpr)
-			if !ok || !isIdentifier(entry.Key, "Opcode") {
+			if !ok || !opcoderef.IsIdentifier(entry.Key, "Opcode") {
 				return true
 			}
-			if ref, ok := checker.opcodeConstant(entry.Value); ok {
+			if ref, ok := opcoderef.Constant(checker.pass, checker.opcodeType, entry.Value); ok {
 				refs = append(refs, ref)
 			}
 			return true
 		})
 	}
 	return refs
-}
-
-func (checker *contractChecker) opcodeConstant(expression ast.Expr) (opcodeRef, bool) {
-	identifier, ok := expression.(*ast.Ident)
-	if !ok {
-		return opcodeRef{}, false
-	}
-	object, ok := checker.pass.TypesInfo.Uses[identifier].(*types.Const)
-	if !ok || !checker.isOpcodeConstant(object) {
-		return opcodeRef{}, false
-	}
-	value, ok := constant.Uint64Val(constant.ToInt(object.Val()))
-	if !ok {
-		return opcodeRef{}, false
-	}
-	return opcodeRef{name: object.Name(), value: value, expr: expression}, true
-}
-
-func (checker *contractChecker) isOpcodeConstant(object *types.Const) bool {
-	if types.Identical(object.Type(), checker.opcodeType) {
-		return true
-	}
-	basic, ok := object.Type().(*types.Basic)
-	return ok &&
-		basic.Info()&types.IsInteger != 0 &&
-		basic.Info()&types.IsUntyped != 0 &&
-		strings.HasPrefix(object.Name(), "Op") &&
-		object.Pkg() == checker.opcodeType.Obj().Pkg()
-}
-
-func dereference(valueType types.Type) types.Type {
-	if pointer, ok := valueType.(*types.Pointer); ok {
-		return pointer.Elem()
-	}
-	return valueType
-}
-
-func isIdentifier(expression ast.Expr, name string) bool {
-	identifier, ok := expression.(*ast.Ident)
-	return ok && identifier.Name == name
-}
-
-func (checker *contractChecker) isTestFile(position token.Pos) bool {
-	filename := checker.pass.Fset.PositionFor(position, false).Filename
-	return strings.HasSuffix(filepath.Base(filename), "_test.go")
 }

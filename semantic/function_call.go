@@ -56,7 +56,7 @@ var builtinFunctions = map[string]struct {
 }
 
 func (v *Validator) validateFunctionCallExpression(funcCall *ast.FunctionCall) (*TypeInfo, []error) {
-	if moduleName, ok := moduleNameFromDottedName(funcCall.Function); ok {
+	if moduleName, ok := ModuleNameFromDottedName(funcCall.Function); ok {
 		return v.validateDottedFunctionCall(funcCall, moduleName)
 	}
 
@@ -214,17 +214,21 @@ func (v *Validator) validateModuleFunctionCall(
 	return &TypeInfo{DataType: function.ReturnType}, errors
 }
 
+func (v *Validator) argTypeError(funcCall *ast.FunctionCall, index int, wantType string) *Error {
+	return &Error{
+		Code:     ErrCodeInvalidArgumentType,
+		Message:  fmt.Sprintf("function '%s' argument %d must be %s", funcCall.Function, index+1, wantType),
+		Position: funcCall.Args[index].Position(),
+		Rule:     v.currentRule,
+	}
+}
+
 func (v *Validator) validateFunctionArgumentTypes(funcCall *ast.FunctionCall, argTypes []*TypeInfo) []error {
 	var errors []error
 	switch {
 	case isIntegerReadFunction(funcCall.Function):
 		if len(argTypes) == 1 && !isIntegerCompatible(argTypes[0]) {
-			errors = append(errors, &Error{
-				Code:     ErrCodeInvalidArgumentType,
-				Message:  fmt.Sprintf("function '%s' argument 1 must be integer", funcCall.Function),
-				Position: funcCall.Args[0].Position(),
-				Rule:     v.currentRule,
-			})
+			errors = append(errors, v.argTypeError(funcCall, 0, "integer"))
 		}
 	case isHashFunction(funcCall.Function):
 		errors = append(errors, v.validateHashFunctionArguments(funcCall, argTypes)...)
@@ -236,30 +240,15 @@ func (v *Validator) validateHashFunctionArguments(funcCall *ast.FunctionCall, ar
 	switch len(argTypes) {
 	case 1:
 		if !isStringCompatible(argTypes[0]) {
-			return []error{&Error{
-				Code:     ErrCodeInvalidArgumentType,
-				Message:  fmt.Sprintf("function '%s' argument 1 must be string", funcCall.Function),
-				Position: funcCall.Args[0].Position(),
-				Rule:     v.currentRule,
-			}}
+			return []error{v.argTypeError(funcCall, 0, "string")}
 		}
 	case 2:
 		var errors []error
 		if !isIntegerCompatible(argTypes[0]) {
-			errors = append(errors, &Error{
-				Code:     ErrCodeInvalidArgumentType,
-				Message:  fmt.Sprintf("function '%s' argument 1 must be integer", funcCall.Function),
-				Position: funcCall.Args[0].Position(),
-				Rule:     v.currentRule,
-			})
+			errors = append(errors, v.argTypeError(funcCall, 0, "integer"))
 		}
 		if !isIntegerCompatible(argTypes[1]) {
-			errors = append(errors, &Error{
-				Code:     ErrCodeInvalidArgumentType,
-				Message:  fmt.Sprintf("function '%s' argument 2 must be integer", funcCall.Function),
-				Position: funcCall.Args[1].Position(),
-				Rule:     v.currentRule,
-			})
+			errors = append(errors, v.argTypeError(funcCall, 1, "integer"))
 		}
 		return errors
 	}
@@ -327,7 +316,8 @@ func (v *Validator) unsupportedModuleError(moduleName string, pos token.Position
 	return err
 }
 
-func moduleNameFromDottedName(name string) (string, bool) {
+// ModuleNameFromDottedName extracts the leading module identifier from a dotted name.
+func ModuleNameFromDottedName(name string) (string, bool) {
 	moduleName, _, found := strings.Cut(name, ".")
 	if !found || moduleName == "" {
 		return "", false
@@ -335,7 +325,8 @@ func moduleNameFromDottedName(name string) (string, bool) {
 	return moduleName, true
 }
 
-func moduleNameFromMemberAccess(expr ast.Expression) (string, bool) {
+// ModuleNameFromMemberAccess extracts the leading module name from a dotted member expression.
+func ModuleNameFromMemberAccess(expr ast.Expression) (string, bool) {
 	binOp, ok := expr.(*ast.BinaryOp)
 	if !ok || binOp.Op != token.DOT {
 		return "", false
@@ -352,7 +343,7 @@ func leftmostIdentifierName(expr ast.Expression) (string, bool) {
 		if e.Name == "" {
 			return "", false
 		}
-		if moduleName, ok := moduleNameFromDottedName(e.Name); ok {
+		if moduleName, ok := ModuleNameFromDottedName(e.Name); ok {
 			return moduleName, true
 		}
 		return e.Name, true

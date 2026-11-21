@@ -223,6 +223,35 @@ func (s *Scanner) preparePatternScanCore(ctx context.Context, data []byte) (bool
 	return true, nil
 }
 
+func (s *Scanner) recordRuleOutcome(result *ScanResult, rule *CompiledRule, matched bool) {
+	if rule.Index >= 0 && rule.Index < len(s.ruleResultsDense) {
+		s.ruleResultsDense[rule.Index] = matched
+	}
+	if result.RuleResults != nil {
+		result.RuleResults[rule.Name] = matched
+	}
+	if matched && !rule.IsPrivate && s.hasMatchingTag(rule) {
+		s.matchedRuleIndices = append(s.matchedRuleIndices, rule.Index)
+	}
+}
+
+func (s *Scanner) configureRuleMatchContext(ctx context.Context, rule *CompiledRule) {
+	s.matchCtx.cancelDone = ctx.Done()
+	s.matchCtx.maxMatchesPerPattern = 0
+	if s.fastScan && rule.FastScanSafe {
+		s.matchCtx.maxMatchesPerPattern = 1
+	}
+	s.matchCtx.maxMatchSpan = s.maxMatchSpan
+}
+
+//nolint:revive // argument-limit: shared rule text match dispatch
+func (s *Scanner) addRuleTextMatches(ctx context.Context, rule *CompiledRule, data []byte, useShared bool) error {
+	if useShared {
+		return s.addStaticMatchesInt(ctx, rule, data, s.globalMatches[rule.Index])
+	}
+	return s.addLocalTextMatches(ctx, rule, data)
+}
+
 func (s *Scanner) populateRuleMatchContext(
 	ctx context.Context,
 	rule *CompiledRule,
@@ -239,20 +268,9 @@ func (s *Scanner) populateRuleMatchContext(
 	s.matchCtx.ResetForRule(rule, input.data)
 	s.matchCtx.moduleCache = &s.moduleCache
 	s.matchCtx.assertionResults = s.assertionResults
-	s.matchCtx.cancelDone = ctx.Done()
-	s.matchCtx.maxMatchesPerPattern = 0
-	if s.fastScan && rule.FastScanSafe {
-		s.matchCtx.maxMatchesPerPattern = 1
-	}
-	s.matchCtx.maxMatchSpan = s.maxMatchSpan
-	if input.usesharedAutomaton {
-		if err := s.addStaticMatchesInt(ctx, rule, input.data, s.globalMatches[rule.Index]); err != nil {
-			return err
-		}
-	} else {
-		if err := s.addLocalTextMatches(ctx, rule, input.data); err != nil {
-			return err
-		}
+	s.configureRuleMatchContext(ctx, rule)
+	if err := s.addRuleTextMatches(ctx, rule, input.data, input.usesharedAutomaton); err != nil {
+		return err
 	}
 
 	if !s.prefilterDisabled && input.skipUnmatchedContext && s.hasForbiddenStringMatch(rule, input.usesharedAutomaton) {

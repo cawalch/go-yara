@@ -362,18 +362,9 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 			}
 
 			s.matchCtx.ResetForRule(rule, windowData)
-			s.matchCtx.cancelDone = ctx.Done()
-			s.matchCtx.maxMatchesPerPattern = 0
-			if s.fastScan && rule.FastScanSafe {
-				s.matchCtx.maxMatchesPerPattern = 1
-			}
-			s.matchCtx.maxMatchSpan = s.maxMatchSpan
+			s.configureRuleMatchContext(ctx, rule)
 
-			if usesharedAutomaton {
-				if err := s.addStaticMatchesInt(ctx, rule, windowData, s.globalMatches[rule.Index]); err != nil {
-					return nil, err
-				}
-			} else if err := s.addLocalTextMatches(ctx, rule, windowData); err != nil {
+			if err := s.addRuleTextMatches(ctx, rule, windowData, usesharedAutomaton); err != nil {
 				return nil, err
 			}
 			if s.fastScan && rule.FastScanSafe {
@@ -581,11 +572,7 @@ func (s *Scanner) evaluateStreamMatches(
 		s.matchCtx.ResetForRule(rule, nil)
 		s.matchCtx.moduleCache = &s.moduleCache
 		s.matchCtx.assertionResults = s.assertionResults
-		s.matchCtx.cancelDone = done
-		s.matchCtx.maxMatchesPerPattern = 0
-		if s.fastScan && rule.FastScanSafe {
-			s.matchCtx.maxMatchesPerPattern = 1
-		}
+		s.configureRuleMatchContext(ctx, rule)
 		s.matchCtx.Blocks = blocks
 		s.matchCtx.FileSize = acc.fileSize
 
@@ -598,10 +585,7 @@ func (s *Scanner) evaluateStreamMatches(
 
 		state.populated = true
 		if !s.prefilterDisabled && rule.RequiresStringMatch && !s.matchCtx.hasSpans() {
-			s.recordRuleResult(rule, false)
-			if result.RuleResults != nil {
-				result.RuleResults[rule.Name] = false
-			}
+			s.recordRuleOutcome(result, rule, false)
 			continue
 		}
 
@@ -612,16 +596,7 @@ func (s *Scanner) evaluateStreamMatches(
 			return nil, err
 		}
 		matched := s.interp.ruleResultByIndex(rule.Index, rule.Name)
-
-		if rule.Index >= 0 && rule.Index < len(s.ruleResultsDense) {
-			s.ruleResultsDense[rule.Index] = matched
-		}
-		if result.RuleResults != nil {
-			result.RuleResults[rule.Name] = matched
-		}
-		if matched && !rule.IsPrivate && s.hasMatchingTag(rule) {
-			s.matchedRuleIndices = append(s.matchedRuleIndices, rule.Index)
-		}
+		s.recordRuleOutcome(result, rule, matched)
 		s.recordRuleEvaluatedHooks(rule, matched, state)
 		if !s.omitMatches && !s.reportedMatchesOnly && result.Matches != nil {
 			if ruleMatches := materializeStreamRuleMatches(acc, rule); ruleMatches != nil {

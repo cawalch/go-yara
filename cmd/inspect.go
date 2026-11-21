@@ -137,23 +137,11 @@ func runCompileMode(content, filename string) error {
 	compiledProgram, err := comp.CompileSourceWithContext(context.Background(), content)
 	if err != nil {
 		fmt.Printf("Compilation error: %v\n", err)
-		// Print detailed errors
-		compilationErrors := comp.GetErrors()
-		if len(compilationErrors) > 0 {
-			fmt.Printf("\nCompilation errors (%d):\n", len(compilationErrors))
-			for _, cerr := range compilationErrors {
-				fmt.Printf("  [%s] %s\n", cerr.Phase, cerr.Message)
-			}
-		}
+		printCompilationErrors(comp)
 		return fmt.Errorf("compilation failed: %w", err)
 	}
 
-	compilationErrors := comp.GetErrors()
-	if len(compilationErrors) > 0 {
-		fmt.Printf("\nCompilation errors (%d):\n", len(compilationErrors))
-		for _, cerr := range compilationErrors {
-			fmt.Printf("  [%s] %s\n", cerr.Phase, cerr.Message)
-		}
+	if printCompilationErrors(comp) {
 		return errors.New("compilation errors detected")
 	}
 

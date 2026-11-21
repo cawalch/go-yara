@@ -6,6 +6,8 @@ import (
 	"slices"
 
 	"github.com/cawalch/go-yara/ast"
+	"github.com/cawalch/go-yara/semantic"
+	"github.com/cawalch/go-yara/token"
 )
 
 const maxCaptureBindings = 32
@@ -14,104 +16,12 @@ func validateCaptureAndEvidenceDeclarations(rule *ast.Rule) error {
 	if rule == nil {
 		return errors.New("cannot compile nil rule")
 	}
-
-	captureNames := make(map[string]struct{})
-	for _, str := range rule.Strings {
-		if str == nil {
-			continue
-		}
-		captureModifiers := 0
-		private := false
-		for _, modifier := range str.Modifiers {
-			switch modifier.Type {
-			case ast.StringModifierPrivate:
-				private = true
-			case ast.StringModifierCapture:
-				captureModifiers++
-			}
-		}
-		if captureModifiers == 0 {
-			continue
-		}
-		if captureModifiers > 1 {
-			return fmt.Errorf("string %s has more than one capture modifier", str.Identifier)
-		}
-		if str.Identifier == "" || str.Identifier == "$" {
-			return fmt.Errorf("anonymous string %s cannot declare captures", str.Identifier)
-		}
-		if private {
-			return fmt.Errorf("string %s cannot combine private and capture modifiers", str.Identifier)
-		}
-
-		bindings := captureBindingsFromModifiers(str.Modifiers)
-		if len(bindings) == 0 {
-			return fmt.Errorf("string %s has an empty capture modifier", str.Identifier)
-		}
-		if len(bindings) > maxCaptureBindings {
-			return fmt.Errorf("string %s declares %d capture bindings; maximum is %d", str.Identifier, len(bindings), maxCaptureBindings)
-		}
-		seen := make(map[string]struct{}, len(bindings))
-		for _, binding := range bindings {
-			if binding.Name == "" {
-				return fmt.Errorf("string %s has an empty capture name", str.Identifier)
-			}
-			if _, duplicate := seen[binding.Name]; duplicate {
-				return fmt.Errorf("string %s declares capture name %q more than once", str.Identifier, binding.Name)
-			}
-			seen[binding.Name] = struct{}{}
-			captureNames[binding.Name] = struct{}{}
-			if binding.Group < 0 {
-				return fmt.Errorf("string %s capture %q has invalid group %d", str.Identifier, binding.Name, binding.Group)
-			}
-			if binding.Group > 0 {
-				if _, ok := str.Pattern.(*ast.RegexPattern); !ok {
-					return fmt.Errorf("string %s capture %q references group %d on a non-regex pattern", str.Identifier, binding.Name, binding.Group)
-				}
-			}
-		}
-	}
-
-	evidenceNames := make(map[string]struct{}, len(rule.Evidence))
-	for _, declaration := range rule.Evidence {
-		if declaration == nil {
-			continue
-		}
-		if declaration.Name == "" {
-			return errors.New("evidence declaration has an empty name")
-		}
-		if _, duplicate := evidenceNames[declaration.Name]; duplicate {
-			return fmt.Errorf("evidence declaration %q is duplicated", declaration.Name)
-		}
-		evidenceNames[declaration.Name] = struct{}{}
-		if declaration.Within < 0 {
-			return fmt.Errorf("evidence declaration %q has a negative window", declaration.Name)
-		}
-		if len(declaration.Fields) == 0 {
-			return fmt.Errorf("evidence declaration %q has no fields", declaration.Name)
-		}
-		seenFields := make(map[string]struct{}, len(declaration.Fields))
-		anchorIncluded := false
-		for _, field := range declaration.Fields {
-			if _, duplicate := seenFields[field]; duplicate {
-				return fmt.Errorf("evidence declaration %q repeats field %q", declaration.Name, field)
-			}
-			seenFields[field] = struct{}{}
-			if field == declaration.Anchor {
-				anchorIncluded = true
-			}
-			if _, declared := captureNames[field]; !declared {
-				return fmt.Errorf("evidence declaration %q references undeclared capture %q", declaration.Name, field)
-			}
-		}
-		if declaration.Anchor == "" {
-			return fmt.Errorf("evidence declaration %q has an empty anchor", declaration.Name)
-		}
-		if !anchorIncluded {
-			return fmt.Errorf("evidence declaration %q anchor %q is not in its field list", declaration.Name, declaration.Anchor)
-		}
-	}
-
-	return nil
+	var firstErr error
+	semantic.ValidateCaptureAndEvidence(rule, false, func(_ token.Position, message string) bool {
+		firstErr = errors.New(message)
+		return false
+	})
+	return firstErr
 }
 
 func captureBindingsFromModifiers(modifiers []ast.StringModifier) []ast.CaptureBinding {
