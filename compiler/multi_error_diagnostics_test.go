@@ -19,6 +19,8 @@ func TestMultiRuleDiagnosticsInSinglePass(t *testing.T) {
 		}
 		msg := err.Error()
 		for _, want := range []string{
+			"bad_negative_range",
+			"bad_reversed_range",
 			"range lower bound can not be negative",
 			"range lower bound must be less than upper bound",
 			"bad_indexed_count",
@@ -44,7 +46,7 @@ func TestMultiRuleDiagnosticsInSinglePass(t *testing.T) {
 			t.Fatal("expected compilation error, got nil")
 		}
 		msg := err.Error()
-		for _, want := range []string{"bad_global", "bad_second", "undefined_rule"} {
+		for _, want := range []string{"bad_global", "bad_second", "bad_sem", "undefined_rule"} {
 			if !strings.Contains(msg, want) {
 				t.Fatalf("expected error %q to contain %q", msg, want)
 			}
