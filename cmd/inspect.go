@@ -127,9 +127,12 @@ func printIncludeSummary(includes []*ast.Include) {
 	}
 }
 
-func runCompileMode(content, filename string) error {
+func runCompileMode(content, filename string, args *commandArgs) error {
 	// Create compiler
-	comp := compiler.NewCompiler()
+	comp := compiler.NewCompiler(
+		compiler.WithWarnings(args == nil || !args.noWarnings),
+		compiler.WithStrictLibyaraCompatibility(args != nil && args.strictLibyara),
+	)
 	// Set base directory for resolving includes
 	comp.SetBaseDir(filepath.Dir(filename))
 
@@ -144,6 +147,7 @@ func runCompileMode(content, filename string) error {
 	if printCompilationErrors(comp) {
 		return errors.New("compilation errors detected")
 	}
+	printCompilationWarnings(comp)
 
 	fmt.Printf("Compilation: Successfully compiled %d rules\n", len(compiledProgram.Rules))
 
