@@ -35,6 +35,10 @@ func TestParseHexDigit(t *testing.T) {
 // handleEscapeSequence: a trailing backslash, a complete \xNN escape, and a
 // truncated \xN that must fall back to a literal 'x' without reading past the
 // end of the pattern.
+func newLexer(s string) *lexer {
+	return &lexer{s: s, len: len(s)}
+}
+
 func TestLexerEscapeBoundaries(t *testing.T) {
 	t.Run("trailing backslash", func(t *testing.T) {
 		l := newLexer(`\`)

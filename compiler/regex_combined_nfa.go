@@ -73,11 +73,6 @@ type combinedRegexScratch struct {
 	enabled          []bool
 }
 
-func decodeCombinedRegex(pattern RegexPattern) ([]combinedRegexInstruction, bool) {
-	var decoder combinedRegexDecoder
-	return decoder.decode(pattern)
-}
-
 func (decoder *combinedRegexDecoder) decode(pattern RegexPattern) ([]combinedRegexInstruction, bool) {
 	code := pattern.Code
 	if len(code) == 0 || len(code) > 16384 || len(pattern.CaptureCode) > 0 || pattern.anchored ||

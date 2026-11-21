@@ -11,6 +11,11 @@ import (
 	"github.com/cawalch/go-yara/regex"
 )
 
+func decodeCombinedRegex(pattern RegexPattern) ([]combinedRegexInstruction, bool) {
+	var decoder combinedRegexDecoder
+	return decoder.decode(pattern)
+}
+
 func TestCombinedRegexPriority(t *testing.T) {
 	expressions := []string{`key=[a-z]{16,32}!`, `key=[a-z]{16,32}?!`, `key=(ab|a)[a-z]{16}!`, `key=(a|ab)[a-z]{16}!`, `key=[a-z]{16,32}a`, `key=[a-z]{16,32}?a`, `key=(a?|ab)[a-z]{16}`}
 	for _, expression := range expressions {

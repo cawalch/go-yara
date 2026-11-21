@@ -93,11 +93,6 @@ func peHostImphash(data ModuleValue, done <-chan struct{}) ModuleValue {
 	return StringValue(builder.sum())
 }
 
-func peImphashLibraries(libraries []pe.ImportLibrary) string {
-	sum, _ := peImphashLibrariesWithCancel(libraries, nil)
-	return sum
-}
-
 func peImphashLibrariesWithCancel(libraries []pe.ImportLibrary, done <-chan struct{}) (string, bool) {
 	builder := newPEImphashBuilder()
 	seen := 0

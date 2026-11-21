@@ -44,10 +44,6 @@ type lexer struct {
 	len int
 }
 
-func newLexer(s string) *lexer {
-	return &lexer{s: s, len: len(s)}
-}
-
 // simpleTokenMapping maps simple regex characters to token types (tEOF == 0 means unmapped).
 var simpleTokenMapping = [256]tokenKind{
 	'.': tDot,

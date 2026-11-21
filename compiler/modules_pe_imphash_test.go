@@ -304,7 +304,7 @@ func BenchmarkPEImphashLargeImports(b *testing.B) {
 	}
 	b.ReportAllocs()
 	for b.Loop() {
-		_ = peImphashLibraries(imports.libraries)
+		_, _ = peImphashLibrariesWithCancel(imports.libraries, nil)
 	}
 }
 
@@ -326,7 +326,7 @@ func TestPEImphashOrdinalCompatibility(t *testing.T) {
 		{"WS2_32.DLL\x00ignored", "d982b153ed5b21204ff6abc59ecdd086"},
 	} {
 		t.Run(tc.dll, func(t *testing.T) {
-			got := peImphashLibraries([]pe.ImportLibrary{{DLL: tc.dll, Symbols: symbols}})
+			got, _ := peImphashLibrariesWithCancel([]pe.ImportLibrary{{DLL: tc.dll, Symbols: symbols}}, nil)
 			if got != tc.want {
 				t.Fatalf("ordinal imphash = %s, want %s", got, tc.want)
 			}
