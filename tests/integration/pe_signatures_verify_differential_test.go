@@ -205,7 +205,8 @@ rule lib_zero { condition: defined pe.is_signed and pe.is_signed == 0 }`
 		}
 
 		edSigned, _ := pefixture.SignedAuthenticodePE(false, nil, pefixture.SignedAuthenticodeOptions{
-			UseEd25519: true,
+			UseEd25519:   true,
+			CMSDigestAlg: crypto.SHA512,
 		})
 		ge, err := sDup.Scan(edSigned)
 		if err != nil || !ge.RuleResults["v"] {
