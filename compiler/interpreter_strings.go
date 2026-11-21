@@ -9,8 +9,8 @@ import (
 )
 
 // executeLengthOperation executes OpLength.
-func (i *Interpreter) executeLengthOperation() error {
-	if err := i.validateStackUnderflowN(OpLength, 2); err != nil {
+func (i *Interpreter) executeIndexedMatchMetric(op Opcode, extract func(matchSpan) int64) error {
+	if err := i.validateStackUnderflowN(op, 2); err != nil {
 		return err
 	}
 
@@ -21,27 +21,24 @@ func (i *Interpreter) executeLengthOperation() error {
 	if pattern.Type == ValueTypeUndefined || index.Type == ValueTypeUndefined {
 		return i.push(Value{Type: ValueTypeUndefined})
 	}
-
 	if pattern.Type != ValueTypeString {
 		return &InterpreterError{Type: ErrorTypeMismatch, Message: "string pattern operand required"}
 	}
-
 	if index.Type != ValueTypeInt {
 		return &InterpreterError{Type: ErrorTypeMismatch, Message: "integer index operand required"}
 	}
-
-	if i.matchContext == nil {
-		return i.push(Value{Type: ValueTypeUndefined})
-	}
-
-	if index.IntVal < 1 {
+	if i.matchContext == nil || index.IntVal < 1 {
 		return i.push(Value{Type: ValueTypeUndefined})
 	}
 	match, exists := i.matchContext.matchAt(i.getString(pattern), int(index.IntVal-1))
 	if !exists {
 		return i.push(Value{Type: ValueTypeUndefined})
 	}
-	return i.push(Value{Type: ValueTypeInt, IntVal: int64(match.Length)})
+	return i.push(Value{Type: ValueTypeInt, IntVal: extract(match)})
+}
+
+func (i *Interpreter) executeLengthOperation() error {
+	return i.executeIndexedMatchMetric(OpLength, func(m matchSpan) int64 { return int64(m.Length) })
 }
 
 // executeCountOperation executes OpCount.
@@ -256,38 +253,7 @@ func (i *Interpreter) executeProximityOperation() error {
 
 // executeOffsetOperation executes OpOffset.
 func (i *Interpreter) executeOffsetOperation() error {
-	if err := i.validateStackUnderflowN(OpOffset, 2); err != nil {
-		return err
-	}
-
-	index := i.stack[len(i.stack)-1]
-	pattern := i.stack[len(i.stack)-2]
-	i.stack = i.stack[:len(i.stack)-2]
-
-	if pattern.Type == ValueTypeUndefined || index.Type == ValueTypeUndefined {
-		return i.push(Value{Type: ValueTypeUndefined})
-	}
-
-	if pattern.Type != ValueTypeString {
-		return &InterpreterError{Type: ErrorTypeMismatch, Message: "string pattern operand required"}
-	}
-
-	if index.Type != ValueTypeInt {
-		return &InterpreterError{Type: ErrorTypeMismatch, Message: "integer index operand required"}
-	}
-
-	if i.matchContext == nil {
-		return i.push(Value{Type: ValueTypeUndefined})
-	}
-
-	if index.IntVal < 1 {
-		return i.push(Value{Type: ValueTypeUndefined})
-	}
-	match, exists := i.matchContext.matchAt(i.getString(pattern), int(index.IntVal-1))
-	if !exists {
-		return i.push(Value{Type: ValueTypeUndefined})
-	}
-	return i.push(Value{Type: ValueTypeInt, IntVal: match.Offset})
+	return i.executeIndexedMatchMetric(OpOffset, func(m matchSpan) int64 { return m.Offset })
 }
 
 // executeOfOperation executes OpOf.

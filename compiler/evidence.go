@@ -443,17 +443,21 @@ func assignCaptureCandidate(
 	within int64,
 	captureSlab *[]Capture,
 ) {
+	assignCapture := func(index int) {
+		existing := findings[index].Fields[field]
+		if len(existing) == 0 && len(*captureSlab) < cap(*captureSlab) {
+			pos := len(*captureSlab)
+			*captureSlab = append(*captureSlab, candidate.capture)
+			findings[index].Fields[field] = (*captureSlab)[pos : pos+1 : pos+1]
+		} else {
+			findings[index].Fields[field] = append(existing, candidate.capture)
+		}
+	}
+
 	for index, at := range anchors {
 		anchor := occurrences[at]
 		if candidate.parent == anchor.parent {
-			existing := findings[index].Fields[field]
-			if len(existing) == 0 && len(*captureSlab) < cap(*captureSlab) {
-				pos := len(*captureSlab)
-				*captureSlab = append(*captureSlab, candidate.capture)
-				findings[index].Fields[field] = (*captureSlab)[pos : pos+1 : pos+1]
-			} else {
-				findings[index].Fields[field] = append(existing, candidate.capture)
-			}
+			assignCapture(index)
 			return
 		}
 	}
@@ -476,14 +480,7 @@ func assignCaptureCandidate(
 		}
 	}
 	for _, index := range nearest {
-		existing := findings[index].Fields[field]
-		if len(existing) == 0 && len(*captureSlab) < cap(*captureSlab) {
-			pos := len(*captureSlab)
-			*captureSlab = append(*captureSlab, candidate.capture)
-			findings[index].Fields[field] = (*captureSlab)[pos : pos+1 : pos+1]
-		} else {
-			findings[index].Fields[field] = append(existing, candidate.capture)
-		}
+		assignCapture(index)
 		if len(nearest) > 1 {
 			ambiguous[index] = true
 		}

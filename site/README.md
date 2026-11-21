@@ -54,8 +54,6 @@ The engine comparison records separate versions for libyara and YARA-X. During r
 
 The [browser playground](playground/README.md) has native fixture tests, byte-budget and memory-section tests, and a headed Chromium/Firefox/WebKit suite. All three engines must pass before Pages deploys. The same suite opens the longer documentation examples and checks diagram bounds and horizontal overflow in desktop/light and mobile/dark layouts. Browser binaries and traces are ignored; generated runtime assets are included only in the Pages artifact. Astro checks the UI/client; the worker is syntax-checked and exercised by the browser suite. CI uses Go 1.27.2 to build the runtime; review the memory-section transformation when changing toolchains.
 
-The [Wasm spike](spikes/wasm/README.md) remains a dated experiment, separate from the maintained playground. Its WASI probe does not establish a supported host ABI.
-
 Keep the README as the repository entry point and the site as the task-oriented guide. API details belong in Go doc comments and pkg.go.dev. Avoid adding a second handwritten API signature table.
 
 ## Release check

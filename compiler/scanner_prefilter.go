@@ -223,6 +223,28 @@ func (s *Scanner) preparePatternScanCore(ctx context.Context, data []byte) (bool
 	return true, nil
 }
 
+func (s *Scanner) initStreamScanResult() *ScanResult {
+	var ruleResults map[string]bool
+	if !s.omitRuleResults {
+		ruleResults = make(map[string]bool, len(s.program.Rules))
+	}
+	var matches map[string]map[string][]Match
+	if !s.omitMatches {
+		matches = make(map[string]map[string][]Match)
+	}
+	s.clearRuleResultsIfDirty()
+	s.matchedRuleIndices = s.matchedRuleIndices[:0]
+	s.interp.ResetIterationCount()
+	s.moduleCache.reset()
+	clear(s.assertionResults)
+	return &ScanResult{
+		MatchedRules: make([]RuleMatch, 0),
+		PrunedRules:  make([]string, 0),
+		RuleResults:  ruleResults,
+		Matches:      matches,
+	}
+}
+
 func (s *Scanner) recordRuleOutcome(result *ScanResult, rule *CompiledRule, matched bool) {
 	if rule.Index >= 0 && rule.Index < len(s.ruleResultsDense) {
 		s.ruleResultsDense[rule.Index] = matched

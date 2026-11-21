@@ -55,6 +55,6 @@ When changing Go versions, inspect the new linker layout and rerun all tests. Do
 
 ## Scope
 
-This is a documentation playground, not a general JavaScript SDK or a security sandbox for arbitrary workloads. It scans supplied byte buffers with go-yara semantics. There are no native file paths, mmap calls, application-defined host modules, or Wasm/WASI host ABI exposed by this UI. The [earlier spike](../spikes/wasm/README.md) records the separate WASI feasibility work.
+This is a documentation playground, not a general JavaScript SDK or a security sandbox for arbitrary workloads. It scans supplied byte buffers with go-yara semantics. There are no native file paths, mmap calls, application-defined host modules, or Wasm/WASI host ABI exposed by this UI.
 
 Review this directory when changing scanner result semantics, the compiler, the Go toolchain, limits, or the documented release. All versioned assets must come from one build; stale pages with deleted asset paths should fail visibly and ask the reader to reload, rather than run a different engine silently.

@@ -5,7 +5,17 @@ import (
 	"fmt"
 
 	"github.com/cawalch/go-yara/ast"
+	"github.com/cawalch/go-yara/token"
 )
+
+func (v *Validator) addModifierError(pos token.Position, ruleName, message string) {
+	v.addError(&Error{
+		Code:     ErrCodeInvalidModifier,
+		Message:  message,
+		Position: pos,
+		Rule:     ruleName,
+	})
+}
 
 func (v *Validator) validateStringModifiers(rule *ast.Rule) {
 	for _, str := range rule.Strings {
@@ -45,135 +55,65 @@ func (v *Validator) validateStringModifiers(rule *ast.Rule) {
 				unknownModifiers[mod.Type] = true
 			}
 			if duplicate {
-				v.addError(&Error{
-					Code:     ErrCodeInvalidModifier,
-					Message:  fmt.Sprintf("string %s declares duplicate modifier '%s' (previously at %v)", str.Identifier, modifierTypeName(mod.Type), str.Pos),
-					Position: str.Pos,
-					Rule:     rule.Name,
-				})
+				v.addModifierError(str.Pos, rule.Name, fmt.Sprintf("string %s declares duplicate modifier '%s' (previously at %v)", str.Identifier, modifierTypeName(mod.Type), str.Pos))
 			}
 
 			switch mod.Type {
 			case ast.StringModifierWide:
 				hasWide = true
 				if isHex {
-					v.addError(&Error{
-						Code:     ErrCodeInvalidModifier,
-						Message:  fmt.Sprintf("hex string %s cannot have 'wide' modifier", str.Identifier),
-						Position: str.Pos,
-						Rule:     rule.Name,
-					})
+					v.addModifierError(str.Pos, rule.Name, fmt.Sprintf("hex string %s cannot have 'wide' modifier", str.Identifier))
 				}
 			case ast.StringModifierASCII:
 				hasASCII = true
 				if isHex {
-					v.addError(&Error{
-						Code:     ErrCodeInvalidModifier,
-						Message:  fmt.Sprintf("hex string %s cannot have 'ascii' modifier", str.Identifier),
-						Position: str.Pos,
-						Rule:     rule.Name,
-					})
+					v.addModifierError(str.Pos, rule.Name, fmt.Sprintf("hex string %s cannot have 'ascii' modifier", str.Identifier))
 				}
 			case ast.StringModifierNocase:
 				hasNocase = true
 				if isHex {
-					v.addError(&Error{
-						Code:     ErrCodeInvalidModifier,
-						Message:  fmt.Sprintf("hex string %s cannot have 'nocase' modifier", str.Identifier),
-						Position: str.Pos,
-						Rule:     rule.Name,
-					})
+					v.addModifierError(str.Pos, rule.Name, fmt.Sprintf("hex string %s cannot have 'nocase' modifier", str.Identifier))
 				}
 			case ast.StringModifierFullword:
 				hasFullword = true
 				if isHex {
-					v.addError(&Error{
-						Code:     ErrCodeInvalidModifier,
-						Message:  fmt.Sprintf("hex string %s cannot have 'fullword' modifier", str.Identifier),
-						Position: str.Pos,
-						Rule:     rule.Name,
-					})
+					v.addModifierError(str.Pos, rule.Name, fmt.Sprintf("hex string %s cannot have 'fullword' modifier", str.Identifier))
 				}
 			case ast.StringModifierBase64:
 				hasBase64 = true
 				if isHex || isRegex {
-					v.addError(&Error{
-						Code:     ErrCodeInvalidModifier,
-						Message:  "base64 modifiers are only supported for text strings",
-						Position: str.Pos,
-						Rule:     rule.Name,
-					})
+					v.addModifierError(str.Pos, rule.Name, "base64 modifiers are only supported for text strings")
 				}
 				if err := ast.ValidateBase64Alphabet(mod.Value); err != nil {
-					v.addError(&Error{
-						Code:     ErrCodeInvalidModifier,
-						Message:  err.Error(),
-						Position: str.Pos,
-						Rule:     rule.Name,
-					})
+					v.addModifierError(str.Pos, rule.Name, err.Error())
 				}
 			case ast.StringModifierBase64Wide:
 				hasBase64Wide = true
 				if isHex || isRegex {
-					v.addError(&Error{
-						Code:     ErrCodeInvalidModifier,
-						Message:  "base64 modifiers are only supported for text strings",
-						Position: str.Pos,
-						Rule:     rule.Name,
-					})
+					v.addModifierError(str.Pos, rule.Name, "base64 modifiers are only supported for text strings")
 				}
 				if err := ast.ValidateBase64Alphabet(mod.Value); err != nil {
-					v.addError(&Error{
-						Code:     ErrCodeInvalidModifier,
-						Message:  err.Error(),
-						Position: str.Pos,
-						Rule:     rule.Name,
-					})
+					v.addModifierError(str.Pos, rule.Name, err.Error())
 				}
 			case ast.StringModifierXor:
 				hasXor = true
 				if isRegex {
-					v.addError(&Error{
-						Code:     ErrCodeInvalidModifier,
-						Message:  fmt.Sprintf("regex string %s cannot have 'xor' modifier", str.Identifier),
-						Position: str.Pos,
-						Rule:     rule.Name,
-					})
+					v.addModifierError(str.Pos, rule.Name, fmt.Sprintf("regex string %s cannot have 'xor' modifier", str.Identifier))
 				}
 				if err := validateSemanticXorModifier(mod.Value); err != nil {
-					v.addError(&Error{
-						Code:     ErrCodeInvalidModifier,
-						Message:  err.Error(),
-						Position: str.Pos,
-						Rule:     rule.Name,
-					})
+					v.addModifierError(str.Pos, rule.Name, err.Error())
 				}
 			}
 		}
 
 		if hasBase64 && hasBase64Wide {
-			v.addError(&Error{
-				Code:     ErrCodeInvalidModifier,
-				Message:  "cannot use both 'base64' and 'base64wide' modifiers",
-				Position: str.Pos,
-				Rule:     rule.Name,
-			})
+			v.addModifierError(str.Pos, rule.Name, "cannot use both 'base64' and 'base64wide' modifiers")
 		}
 		if (hasBase64 || hasBase64Wide) && (hasXor || hasNocase || hasFullword) {
-			v.addError(&Error{
-				Code:     ErrCodeInvalidModifier,
-				Message:  "base64 modifiers are incompatible with 'xor', 'nocase', or 'fullword'",
-				Position: str.Pos,
-				Rule:     rule.Name,
-			})
+			v.addModifierError(str.Pos, rule.Name, "base64 modifiers are incompatible with 'xor', 'nocase', or 'fullword'")
 		}
 		if (hasBase64 || hasBase64Wide) && (hasWide || hasASCII) {
-			v.addError(&Error{
-				Code:     ErrCodeInvalidModifier,
-				Message:  "base64 modifiers are incompatible with 'wide' or 'ascii'",
-				Position: str.Pos,
-				Rule:     rule.Name,
-			})
+			v.addModifierError(str.Pos, rule.Name, "base64 modifiers are incompatible with 'wide' or 'ascii'")
 		}
 		if isRegex {
 			if parsed, err := v.regexParser.Parse(cleanSemanticRegexPattern(regexPat.Value)); err == nil && parsed.HasMixedQuantifierGreediness() {
