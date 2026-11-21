@@ -516,26 +516,7 @@ func (s *Scanner) evaluateStreamMatches(
 		}()
 	}
 
-	var ruleResults map[string]bool
-	if !s.omitRuleResults {
-		ruleResults = make(map[string]bool, len(s.program.Rules))
-	}
-	var matches map[string]map[string][]Match
-	if !s.omitMatches {
-		matches = make(map[string]map[string][]Match)
-	}
-	result = &ScanResult{
-		MatchedRules: make([]RuleMatch, 0),
-		PrunedRules:  make([]string, 0),
-		RuleResults:  ruleResults,
-		Matches:      matches,
-	}
-
-	s.clearRuleResultsIfDirty()
-	s.matchedRuleIndices = s.matchedRuleIndices[:0]
-	s.interp.ResetIterationCount()
-	s.moduleCache.reset()
-	clear(s.assertionResults)
+	result = s.initStreamScanResult()
 
 	blocks := []MemoryBlock{}
 	if len(acc.headerBlock) > 0 {

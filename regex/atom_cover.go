@@ -351,6 +351,22 @@ func repeatedSingleByteSet(node *Node, flags Flags) (ByteSet, int, int, bool) {
 	return set, minimum, maximum, ok
 }
 
+func cloneMandatoryLiteralAtoms(atoms []LiteralAtom, minimumLength int, requireBounded bool) []LiteralAtom {
+	group := make([]LiteralAtom, 0, len(atoms))
+	for _, atom := range atoms {
+		if len(atom.Data) < minimumLength || (requireBounded && atom.MaxOffset < 0) {
+			continue
+		}
+		group = append(group, LiteralAtom{
+			Data:      append([]byte(nil), atom.Data...),
+			MinOffset: atom.MinOffset,
+			MaxOffset: atom.MaxOffset,
+			MaxSuffix: atom.MaxSuffix,
+		})
+	}
+	return group
+}
+
 func suffixLiteralAtomGroups(node *Node, minimumLength int) ([][]LiteralAtom, bool) {
 	leaves := alternativeLeaves(&AST{Root: node})
 	if len(leaves) == 0 {
@@ -358,19 +374,7 @@ func suffixLiteralAtomGroups(node *Node, minimumLength int) ([][]LiteralAtom, bo
 	}
 	groups := make([][]LiteralAtom, 0, len(leaves))
 	for _, leaf := range leaves {
-		analysis := analyzeAtoms(leaf)
-		group := make([]LiteralAtom, 0, len(analysis.atoms))
-		for _, atom := range analysis.atoms {
-			if len(atom.Data) < minimumLength || atom.MaxOffset < 0 {
-				continue
-			}
-			group = append(group, LiteralAtom{
-				Data:      append([]byte(nil), atom.Data...),
-				MinOffset: atom.MinOffset,
-				MaxOffset: atom.MaxOffset,
-				MaxSuffix: atom.MaxSuffix,
-			})
-		}
+		group := cloneMandatoryLiteralAtoms(analyzeAtoms(leaf).atoms, minimumLength, true)
 		if len(group) == 0 {
 			return nil, false
 		}
@@ -432,18 +436,7 @@ func literalAtomCover(node *Node, minimumLength int) (literalAtomCoverPlan, bool
 }
 
 func literalAtomCoverFromMandatory(atoms []LiteralAtom, minimumLength int) (literalAtomCoverPlan, bool) {
-	group := make([]LiteralAtom, 0, len(atoms))
-	for _, atom := range atoms {
-		if len(atom.Data) < minimumLength {
-			continue
-		}
-		group = append(group, LiteralAtom{
-			Data:      append([]byte(nil), atom.Data...),
-			MinOffset: atom.MinOffset,
-			MaxOffset: atom.MaxOffset,
-			MaxSuffix: atom.MaxSuffix,
-		})
-	}
+	group := cloneMandatoryLiteralAtoms(atoms, minimumLength, false)
 	if len(group) == 0 {
 		return literalAtomCoverPlan{}, false
 	}
