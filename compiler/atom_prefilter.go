@@ -829,30 +829,28 @@ func appendHexPrefilterMatches(
 	if len(pattern.Tokens) > 0 {
 		firstByte, hasFirstByte = definiteHexByte(pattern.Tokens[0], xorKey)
 	}
+	appendIfValid := func(start, end int) {
+		if end <= start {
+			return
+		}
+		match := Match{Pattern: strID, Offset: int64(start), Length: end - start}
+		if matchPassesModifiers(data, match, rule.StringModifiers[strID], false) {
+			dst = append(dst, matchSpan{Offset: match.Offset, Length: match.Length})
+		}
+	}
 	verifyCandidateStart := func(start int) {
 		if hasFirstByte && (start >= len(data) || data[start] != firstByte) {
 			return
 		}
 		if linear {
-			end, ok := matchLinearHexPattern(pattern.Tokens, data, start, xorKey)
-			if !ok || end <= start {
-				return
-			}
-			match := Match{Pattern: strID, Offset: int64(start), Length: end - start}
-			if matchPassesModifiers(data, match, rule.StringModifiers[strID], false) {
-				dst = append(dst, matchSpan{Offset: match.Offset, Length: match.Length})
+			if end, ok := matchLinearHexPattern(pattern.Tokens, data, start, xorKey); ok {
+				appendIfValid(start, end)
 			}
 			return
 		}
 
 		scratch.matchEach(pattern.Tokens, data, start, xorKey, func(end int) bool {
-			if end <= start {
-				return true
-			}
-			match := Match{Pattern: strID, Offset: int64(start), Length: end - start}
-			if matchPassesModifiers(data, match, rule.StringModifiers[strID], false) {
-				dst = append(dst, matchSpan{Offset: match.Offset, Length: match.Length})
-			}
+			appendIfValid(start, end)
 			return true
 		})
 	}

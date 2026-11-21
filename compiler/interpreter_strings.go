@@ -45,6 +45,16 @@ func (i *Interpreter) executeLengthOperation() error {
 }
 
 // executeCountOperation executes OpCount.
+func (i *Interpreter) pushPatternBool(pattern Value, fn func(string) bool) error {
+	if pattern.Type != ValueTypeString {
+		return &InterpreterError{Type: ErrorTypeMismatch, Message: "string pattern operand required"}
+	}
+	if i.matchContext == nil {
+		return i.push(Value{Type: ValueTypeInt, IntVal: 0})
+	}
+	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(fn(i.getString(pattern)))})
+}
+
 func (i *Interpreter) executeCountOperation() error {
 	if err := i.validateStackUnderflow(OpCount); err != nil {
 		return err
@@ -100,20 +110,11 @@ func (i *Interpreter) executeFoundOperation() error {
 	if err := i.validateStackUnderflow(OpFound); err != nil {
 		return err
 	}
-
 	pattern := i.stack[len(i.stack)-1]
 	i.stack = i.stack[:len(i.stack)-1]
-
-	if pattern.Type != ValueTypeString {
-		return &InterpreterError{Type: ErrorTypeMismatch, Message: "string pattern operand required"}
-	}
-
-	if i.matchContext == nil {
-		return i.push(Value{Type: ValueTypeInt, IntVal: 0})
-	}
-
-	found := i.matchContext.matchCount(i.getString(pattern)) > 0
-	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(found)})
+	return i.pushPatternBool(pattern, func(id string) bool {
+		return i.matchContext.matchCount(id) > 0
+	})
 }
 
 // executeFoundAtOperation executes OpFoundAt.
@@ -126,23 +127,15 @@ func (i *Interpreter) executeFoundAtOperation() error {
 	pattern := i.stack[len(i.stack)-2]
 	i.stack = i.stack[:len(i.stack)-2]
 
-	if pattern.Type != ValueTypeString {
-		return &InterpreterError{Type: ErrorTypeMismatch, Message: "string pattern operand required"}
-	}
-
-	if offset.Type != ValueTypeInt {
+	if pattern.Type == ValueTypeString && offset.Type != ValueTypeInt {
 		if offset.Type == ValueTypeUndefined {
 			return i.push(Value{Type: ValueTypeUndefined})
 		}
 		return &InterpreterError{Type: ErrorTypeMismatch, Message: "integer offset operand required"}
 	}
-
-	if i.matchContext == nil {
-		return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(false)})
-	}
-
-	found := i.matchContext.hasMatchAt(i.getString(pattern), offset.IntVal)
-	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(found)})
+	return i.pushPatternBool(pattern, func(id string) bool {
+		return i.matchContext.hasMatchAt(id, offset.IntVal)
+	})
 }
 
 // executeFoundInOperation executes OpFoundIn.
@@ -156,24 +149,16 @@ func (i *Interpreter) executeFoundInOperation() error {
 	pattern := i.stack[len(i.stack)-3]
 	i.stack = i.stack[:len(i.stack)-3]
 
-	if pattern.Type != ValueTypeString {
-		return &InterpreterError{Type: ErrorTypeMismatch, Message: "string pattern operand required"}
-	}
-
-	if startOffset.Type != ValueTypeInt || endOffset.Type != ValueTypeInt {
+	if pattern.Type == ValueTypeString && (startOffset.Type != ValueTypeInt || endOffset.Type != ValueTypeInt) {
 		if (startOffset.Type == ValueTypeInt || startOffset.Type == ValueTypeUndefined) &&
 			(endOffset.Type == ValueTypeInt || endOffset.Type == ValueTypeUndefined) {
 			return i.push(Value{Type: ValueTypeUndefined})
 		}
 		return &InterpreterError{Type: ErrorTypeMismatch, Message: "integer offset operands required"}
 	}
-
-	if i.matchContext == nil {
-		return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(false)})
-	}
-
-	found := i.matchContext.hasMatchInRange(i.getString(pattern), startOffset.IntVal, endOffset.IntVal)
-	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(found)})
+	return i.pushPatternBool(pattern, func(id string) bool {
+		return i.matchContext.hasMatchInRange(id, startOffset.IntVal, endOffset.IntVal)
+	})
 }
 
 // executeCountInRange executes OpCountIn.
@@ -326,6 +311,20 @@ func (i *Interpreter) executeOfOperation() error {
 // executeOfPercentOperation executes OpOfPercent.
 // Stack: [percentage, string_set_id]
 // Result: true if (matched/total)*100 >= percentage
+func (i *Interpreter) pushOfPercent(set []string, percent Value, matchFn func(string) bool) error {
+	if len(set) == 0 {
+		return i.push(Value{Type: ValueTypeInt, IntVal: 0})
+	}
+	matched := 0
+	for _, id := range set {
+		if matchFn(id) {
+			matched++
+		}
+	}
+	percentFloat := float64(matched) / float64(len(set)) * 100.0
+	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(percentFloat >= float64(percent.IntVal))})
+}
+
 func (i *Interpreter) executeOfPercentOperation() error {
 	if err := i.validateStackUnderflowN(OpOfPercent, 2); err != nil {
 		return err
@@ -346,28 +345,24 @@ func (i *Interpreter) executeOfPercentOperation() error {
 	if percent.Type != ValueTypeInt {
 		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpOfPercent, Message: "percentage must be an integer"}
 	}
-
-	total := len(set)
-	matched := 0
-	for _, id := range set {
-		if i.matchContext.matchCount(id) > 0 {
-			matched++
-		}
-	}
-
-	if total == 0 {
-		return i.push(Value{Type: ValueTypeInt, IntVal: 0})
-	}
-
-	percentFloat := float64(matched) / float64(total) * 100.0
-	result := percentFloat >= float64(percent.IntVal)
-	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(result)})
+	return i.pushOfPercent(set, percent, func(id string) bool {
+		return i.matchContext.matchCount(id) > 0
+	})
 }
 
 // executeOfFoundIn executes OpOfFoundIn.
 // Stack: [count, string_set_id, min, max] (bottom to top)
 // Counts how many strings in the set have at least one match within [min, max].
 // Returns true if matched_count >= count.
+func (i *Interpreter) pushStringSetCount(stringsID, count Value, matchFn func(string) bool) error {
+	set, err := i.resolveStringSet(stringsID)
+	if err != nil {
+		return err
+	}
+	result := i.evaluateStringSetCount(set, count, matchFn)
+	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(result)})
+}
+
 func (i *Interpreter) executeOfFoundIn() error {
 	if err := i.validateStackUnderflowN(OpOfFoundIn, 4); err != nil {
 		return err
@@ -386,16 +381,9 @@ func (i *Interpreter) executeOfFoundIn() error {
 		}
 		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpOfFoundIn, Message: "range bounds must be integers"}
 	}
-
-	set, err := i.resolveStringSet(stringsID)
-	if err != nil {
-		return err
-	}
-
-	result := i.evaluateStringSetCount(set, count, func(id string) bool {
+	return i.pushStringSetCount(stringsID, count, func(id string) bool {
 		return i.matchContext.hasMatchInRange(id, minVal.IntVal, maxVal.IntVal)
 	})
-	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(result)})
 }
 
 // executeOfFoundAt executes OpOfFoundAt.
@@ -418,16 +406,9 @@ func (i *Interpreter) executeOfFoundAt() error {
 		}
 		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpOfFoundAt, Message: "offset must be integer"}
 	}
-
-	set, err := i.resolveStringSet(stringsID)
-	if err != nil {
-		return err
-	}
-
-	result := i.evaluateStringSetCount(set, count, func(id string) bool {
+	return i.pushStringSetCount(stringsID, count, func(id string) bool {
 		return i.matchContext.hasMatchAt(id, offsetVal.IntVal)
 	})
-	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(result)})
 }
 
 // executeOfPercentIn executes OpOfPercentIn.
@@ -453,21 +434,9 @@ func (i *Interpreter) executeOfPercentIn() error {
 	if err != nil {
 		return err
 	}
-
-	matched := 0
-	for _, id := range set {
-		if i.matchContext.hasMatchInRange(id, minVal.IntVal, maxVal.IntVal) {
-			matched++
-		}
-	}
-
-	if len(set) == 0 {
-		return i.push(Value{Type: ValueTypeInt, IntVal: 0})
-	}
-
-	percentFloat := float64(matched) / float64(len(set)) * 100.0
-	result := percentFloat >= float64(percent.IntVal)
-	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(result)})
+	return i.pushOfPercent(set, percent, func(id string) bool {
+		return i.matchContext.hasMatchInRange(id, minVal.IntVal, maxVal.IntVal)
+	})
 }
 
 // executeOfPercentAt executes OpOfPercentAt.
@@ -492,21 +461,9 @@ func (i *Interpreter) executeOfPercentAt() error {
 	if err != nil {
 		return err
 	}
-
-	matched := 0
-	for _, id := range set {
-		if i.matchContext.hasMatchAt(id, offsetVal.IntVal) {
-			matched++
-		}
-	}
-
-	if len(set) == 0 {
-		return i.push(Value{Type: ValueTypeInt, IntVal: 0})
-	}
-
-	percentFloat := float64(matched) / float64(len(set)) * 100.0
-	result := percentFloat >= float64(percent.IntVal)
-	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(result)})
+	return i.pushOfPercent(set, percent, func(id string) bool {
+		return i.matchContext.hasMatchAt(id, offsetVal.IntVal)
+	})
 }
 
 func (i *Interpreter) resolveStringSet(stringsID Value) ([]string, error) {

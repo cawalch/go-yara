@@ -86,8 +86,8 @@ func TestNormalizeXorRangeClamp(t *testing.T) {
 }
 
 func TestValidateXorModifierNilPointer(t *testing.T) {
-	if err := validateXorModifier((*ast.XorRange)(nil)); err != nil {
-		t.Fatalf("validateXorModifier(nil *XorRange) = %v, want nil", err)
+	if err := ast.ValidateXorModifier((*ast.XorRange)(nil)); err != nil {
+		t.Fatalf("ast.ValidateXorModifier(nil *XorRange) = %v, want nil", err)
 	}
 }
 
@@ -143,16 +143,16 @@ func TestApplyNocaseToWideCaseEdges(t *testing.T) {
 }
 
 func TestValidateXorRangeBounds(t *testing.T) {
-	if err := validateXorRange(0, 0); err != nil {
-		t.Fatalf("validateXorRange(0,0) = %v, want nil", err)
+	if err := ast.ValidateXorRange(0, 0); err != nil {
+		t.Fatalf("ast.ValidateXorRange(0,0) = %v, want nil", err)
 	}
-	if err := validateXorRange(255, 255); err != nil {
-		t.Fatalf("validateXorRange(255,255) = %v, want nil", err)
+	if err := ast.ValidateXorRange(255, 255); err != nil {
+		t.Fatalf("ast.ValidateXorRange(255,255) = %v, want nil", err)
 	}
-	if err := validateXorRange(-1, 0); err == nil {
-		t.Fatal("validateXorRange(-1,0) = nil, want error")
+	if err := ast.ValidateXorRange(-1, 0); err == nil {
+		t.Fatal("ast.ValidateXorRange(-1,0) = nil, want error")
 	}
-	if err := validateXorRange(0, 256); err == nil {
-		t.Fatal("validateXorRange(0,256) = nil, want error")
+	if err := ast.ValidateXorRange(0, 256); err == nil {
+		t.Fatal("ast.ValidateXorRange(0,256) = nil, want error")
 	}
 }

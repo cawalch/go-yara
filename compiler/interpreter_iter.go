@@ -74,15 +74,9 @@ func (i *Interpreter) executeIterStartStringSet() error {
 	stringIDVal := i.stack[len(i.stack)-1]
 	i.stack = i.stack[:len(i.stack)-1]
 
-	var inRange, atOffset bool
-	var offsetMin, offsetMax, atOffsetValue int64
-
-	if markerVal.Type == ValueTypeInt {
-		var err error
-		inRange, atOffset, offsetMin, offsetMax, atOffsetValue, err = i.parseConstraintMarker(markerVal.IntVal)
-		if err != nil {
-			return err
-		}
+	inRange, atOffset, offsetMin, offsetMax, atOffsetValue, err := i.parseConstraintMarkerValue(markerVal)
+	if err != nil {
+		return err
 	}
 
 	var ids []string
@@ -138,6 +132,13 @@ func (i *Interpreter) executeIterStartStringSet() error {
 	return i.pushIterator(OpIterStartStringSet, iter)
 }
 
+func (i *Interpreter) parseConstraintMarkerValue(markerVal Value) (inRange, atOffset bool, offsetMin, offsetMax, atOffsetValue int64, err error) {
+	if markerVal.Type == ValueTypeInt {
+		return i.parseConstraintMarker(markerVal.IntVal)
+	}
+	return false, false, 0, 0, 0, nil
+}
+
 // executeIterStartTextStringSet starts iterating over a set of literal text strings.
 // Used for: for any s in ("text1", "text2") : (condition)
 // Stack: [textStringSetRef, constraintMarker]
@@ -154,15 +155,9 @@ func (i *Interpreter) executeIterStartTextStringSet() error {
 	textSetVal := i.stack[len(i.stack)-1]
 	i.stack = i.stack[:len(i.stack)-1]
 
-	var inRange, atOffset bool
-	var offsetMin, offsetMax, atOffsetValue int64
-
-	if markerVal.Type == ValueTypeInt {
-		var err error
-		inRange, atOffset, offsetMin, offsetMax, atOffsetValue, err = i.parseConstraintMarker(markerVal.IntVal)
-		if err != nil {
-			return err
-		}
+	inRange, atOffset, offsetMin, offsetMax, atOffsetValue, err := i.parseConstraintMarkerValue(markerVal)
+	if err != nil {
+		return err
 	}
 
 	var textStrings []string

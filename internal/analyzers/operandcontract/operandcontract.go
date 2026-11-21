@@ -6,8 +6,8 @@ import (
 	"go/constant"
 	"go/token"
 	"go/types"
-	"path/filepath"
-	"strings"
+
+	"github.com/cawalch/go-yara/internal/analyzers/opcoderef"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
@@ -60,14 +60,8 @@ var contractSpecs = map[string]operandSpec{
 	"OpJfalse":                 {kind: "OperandRelative32", bytes: 4},
 }
 
-type opcodeRef struct {
-	name  string
-	value uint64
-	expr  ast.Expr
-}
-
 type resolvedContract struct {
-	ref  opcodeRef
+	ref  opcoderef.Ref
 	spec operandSpec
 }
 
@@ -84,7 +78,7 @@ func run(pass *analysis.Pass) (any, error) {
 	if pass.Pkg.Name() != "compiler" {
 		return nil, nil
 	}
-	opcodeType := findNamedType(pass, "Opcode")
+	opcodeType := opcoderef.FindNamedType(pass, "Opcode")
 	if opcodeType == nil {
 		return nil, nil
 	}
@@ -114,10 +108,10 @@ func resolveContracts(pass *analysis.Pass) map[uint64]resolvedContract {
 			continue
 		}
 		contracts[value] = resolvedContract{
-			ref: opcodeRef{
-				name:  name,
-				value: value,
-				expr:  identifierAt(object.Pos(), name),
+			ref: opcoderef.Ref{
+				Name:  name,
+				Value: value,
+				Expr:  identifierAt(object.Pos(), name),
 			},
 			spec: spec,
 		}
@@ -132,25 +126,25 @@ func identifierAt(position token.Pos, name string) *ast.Ident {
 func (checker *contractChecker) checkEmissions() {
 	checker.inspectResult.Preorder([]ast.Node{(*ast.CallExpr)(nil)}, func(node ast.Node) {
 		call := node.(*ast.CallExpr)
-		if checker.isTestFile(call.Pos()) {
+		if opcoderef.IsTestFile(checker.pass, call.Pos()) {
 			return
 		}
 		name, ok := checker.emitterCallName(call)
 		if !ok || len(call.Args) == 0 {
 			return
 		}
-		ref, ok := checker.opcodeConstant(call.Args[0])
+		ref, ok := opcoderef.Constant(checker.pass, checker.opcodeType, call.Args[0])
 		if !ok {
 			return
 		}
-		contract, hasOperand := checker.contracts[ref.value]
+		contract, hasOperand := checker.contracts[ref.Value]
 		switch name {
 		case "EmitOpcode", "NewInstruction":
 			if hasOperand {
 				checker.pass.Reportf(
-					ref.expr.Pos(),
+					ref.Expr.Pos(),
 					"opcode %s requires %s, not %s",
-					ref.name,
+					ref.Name,
 					contract.spec.kind,
 					name,
 				)
@@ -162,12 +156,12 @@ func (checker *contractChecker) checkEmissions() {
 }
 
 func (checker *contractChecker) checkOperandEmission(
-	ref opcodeRef,
+	ref opcoderef.Ref,
 	call *ast.CallExpr,
 ) {
-	contract, hasOperand := checker.contracts[ref.value]
+	contract, hasOperand := checker.contracts[ref.Value]
 	if !hasOperand {
-		checker.pass.Reportf(ref.expr.Pos(), "opcode %s does not accept an operand", ref.name)
+		checker.pass.Reportf(ref.Expr.Pos(), "opcode %s does not accept an operand", ref.Name)
 		return
 	}
 	if len(call.Args) < 2 {
@@ -178,7 +172,7 @@ func (checker *contractChecker) checkOperandEmission(
 		checker.pass.Reportf(
 			call.Args[1].Pos(),
 			"operand kind for opcode %s is not statically known; want %s",
-			ref.name,
+			ref.Name,
 			contract.spec.kind,
 		)
 		return
@@ -187,7 +181,7 @@ func (checker *contractChecker) checkOperandEmission(
 		checker.pass.Reportf(
 			call.Args[1].Pos(),
 			"opcode %s requires %s, got %s",
-			ref.name,
+			ref.Name,
 			contract.spec.kind,
 			kind,
 		)
@@ -205,7 +199,7 @@ func (checker *contractChecker) emitterCallName(call *ast.CallExpr) (string, boo
 		if !ok {
 			return "", false
 		}
-		receiver := dereference(selection.Recv())
+		receiver := opcoderef.Dereference(selection.Recv())
 		named, ok := receiver.(*types.Named)
 		if !ok || named.Obj().Pkg() != checker.pass.Pkg || named.Obj().Name() != "Emitter" {
 			return "", false
@@ -234,7 +228,7 @@ func (checker *contractChecker) operandKind(expression ast.Expr) (string, bool) 
 	}
 	for _, element := range literal.Elts {
 		entry, ok := element.(*ast.KeyValueExpr)
-		if !ok || !isIdentifier(entry.Key, "Type") {
+		if !ok || !opcoderef.IsIdentifier(entry.Key, "Type") {
 			continue
 		}
 		identifier, ok := entry.Value.(*ast.Ident)
@@ -310,7 +304,7 @@ func (checker *contractChecker) opcodeParameterNames(
 func (checker *contractChecker) checkConsumption() {
 	checker.inspectResult.Preorder([]ast.Node{(*ast.CallExpr)(nil)}, func(node ast.Node) {
 		call := node.(*ast.CallExpr)
-		if checker.isTestFile(call.Pos()) || len(call.Args) == 0 {
+		if opcoderef.IsTestFile(checker.pass, call.Pos()) || len(call.Args) == 0 {
 			return
 		}
 		name := calledName(call.Fun)
@@ -322,7 +316,7 @@ func (checker *contractChecker) checkConsumption() {
 		if !ok {
 			return
 		}
-		ref, ok := checker.opcodeConstant(call.Args[0])
+		ref, ok := opcoderef.Constant(checker.pass, checker.opcodeType, call.Args[0])
 		if ok {
 			checker.checkConsumedWidth(ref, width, call.Args[0].Pos())
 		}
@@ -333,7 +327,7 @@ func (checker *contractChecker) checkDirectConsumption(call *ast.CallExpr) {
 	if len(call.Args) < 2 {
 		return
 	}
-	ref, ok := checker.opcodeConstant(call.Args[0])
+	ref, ok := opcoderef.Constant(checker.pass, checker.opcodeType, call.Args[0])
 	if !ok {
 		return
 	}
@@ -344,26 +338,26 @@ func (checker *contractChecker) checkDirectConsumption(call *ast.CallExpr) {
 }
 
 func (checker *contractChecker) checkConsumedWidth(
-	ref opcodeRef,
+	ref opcoderef.Ref,
 	width int,
 	position token.Pos,
 ) {
-	contract, ok := checker.contracts[ref.value]
+	contract, ok := checker.contracts[ref.Value]
 	if !ok {
 		checker.pass.Reportf(
 			position,
 			"opcode %s consumes %d operand bytes but has no operand contract",
-			ref.name,
+			ref.Name,
 			width,
 		)
 		return
 	}
-	checker.consumed[ref.value] = true
+	checker.consumed[ref.Value] = true
 	if width != contract.spec.bytes {
 		checker.pass.Reportf(
 			position,
 			"opcode %s consumes %d operand bytes; contract requires %d",
-			ref.name,
+			ref.Name,
 			width,
 			contract.spec.bytes,
 		)
@@ -376,49 +370,12 @@ func (checker *contractChecker) checkMissingConsumption() {
 			continue
 		}
 		checker.pass.Reportf(
-			contract.ref.expr.Pos(),
+			contract.ref.Expr.Pos(),
 			"opcode %s requires a %d-byte operand but no interpreter consumption was found",
-			contract.ref.name,
+			contract.ref.Name,
 			contract.spec.bytes,
 		)
 	}
-}
-
-func (checker *contractChecker) opcodeConstant(expression ast.Expr) (opcodeRef, bool) {
-	identifier, ok := expression.(*ast.Ident)
-	if !ok {
-		return opcodeRef{}, false
-	}
-	object, ok := checker.pass.TypesInfo.Uses[identifier].(*types.Const)
-	if !ok || !checker.isOpcodeConstant(object) {
-		return opcodeRef{}, false
-	}
-	value, ok := constant.Uint64Val(constant.ToInt(object.Val()))
-	if !ok {
-		return opcodeRef{}, false
-	}
-	return opcodeRef{name: object.Name(), value: value, expr: expression}, true
-}
-
-func (checker *contractChecker) isOpcodeConstant(object *types.Const) bool {
-	if types.Identical(object.Type(), checker.opcodeType) {
-		return true
-	}
-	basic, ok := object.Type().(*types.Basic)
-	return ok &&
-		basic.Info()&types.IsInteger != 0 &&
-		basic.Info()&types.IsUntyped != 0 &&
-		strings.HasPrefix(object.Name(), "Op") &&
-		object.Pkg() == checker.opcodeType.Obj().Pkg()
-}
-
-func findNamedType(pass *analysis.Pass, name string) *types.Named {
-	typeName, ok := pass.Pkg.Scope().Lookup(name).(*types.TypeName)
-	if !ok {
-		return nil
-	}
-	named, _ := typeName.Type().(*types.Named)
-	return named
 }
 
 func calledName(function ast.Expr) string {
@@ -442,24 +399,7 @@ func integerLiteral(expression ast.Expr) (int, bool) {
 	return int(result), ok
 }
 
-func dereference(valueType types.Type) types.Type {
-	if pointer, ok := valueType.(*types.Pointer); ok {
-		return pointer.Elem()
-	}
-	return valueType
-}
-
 func isNamedType(valueType types.Type, pkg *types.Package, name string) bool {
-	named, ok := dereference(valueType).(*types.Named)
+	named, ok := opcoderef.Dereference(valueType).(*types.Named)
 	return ok && named.Obj().Pkg() == pkg && named.Obj().Name() == name
-}
-
-func isIdentifier(expression ast.Expr, name string) bool {
-	identifier, ok := expression.(*ast.Ident)
-	return ok && identifier.Name == name
-}
-
-func (checker *contractChecker) isTestFile(position token.Pos) bool {
-	filename := checker.pass.Fset.PositionFor(position, false).Filename
-	return strings.HasSuffix(filepath.Base(filename), "_test.go")
 }

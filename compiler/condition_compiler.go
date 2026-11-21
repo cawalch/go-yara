@@ -519,7 +519,7 @@ func (cc *conditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 		return cc.compileAnonymousIdentifier(ident.Pos.Line, ident.Pos.Column)
 	}
 
-	if moduleName, ok := moduleNameFromDottedName(ident.Name); ok {
+	if moduleName, ok := semantic.ModuleNameFromDottedName(ident.Name); ok {
 		return cc.emitModuleFunctionCall(moduleName, ident.Pos.Line, ident.Pos.Column)
 	}
 
@@ -717,7 +717,7 @@ var builtinFunctionOpcodes = map[string]Opcode{
 
 func (cc *conditionCompiler) compileFunctionCall(call *ast.FunctionCall) error {
 	moduleFunction, isModuleFunction := cc.moduleFunctions[call.Function]
-	if moduleName, dotted := moduleNameFromDottedName(call.Function); dotted && !isModuleFunction {
+	if moduleName, dotted := semantic.ModuleNameFromDottedName(call.Function); dotted && !isModuleFunction {
 		return unsupportedModuleError(moduleName)
 	}
 
@@ -835,43 +835,4 @@ func (*conditionCompiler) emitModuleFunctionCall(moduleName string, _, _ int) er
 
 func unsupportedModuleError(moduleName string) error {
 	return fmt.Errorf("unsupported module: %s", moduleName)
-}
-
-func moduleNameFromDottedName(name string) (string, bool) {
-	moduleName, _, found := strings.Cut(name, ".")
-	if !found || moduleName == "" {
-		return "", false
-	}
-	return moduleName, true
-}
-
-func moduleNameFromMemberAccess(expr ast.Expression) (string, bool) {
-	binOp, ok := expr.(*ast.BinaryOp)
-	if !ok || binOp.Op != token.DOT {
-		return "", false
-	}
-	if _, ok := binOp.Right.(*ast.Identifier); !ok {
-		return "", false
-	}
-	return leftmostIdentifierName(binOp.Left)
-}
-
-func leftmostIdentifierName(expr ast.Expression) (string, bool) {
-	switch e := expr.(type) {
-	case *ast.Identifier:
-		if e.Name == "" {
-			return "", false
-		}
-		if moduleName, ok := moduleNameFromDottedName(e.Name); ok {
-			return moduleName, true
-		}
-		return e.Name, true
-	case *ast.BinaryOp:
-		if e.Op != token.DOT {
-			return "", false
-		}
-		return leftmostIdentifierName(e.Left)
-	default:
-		return "", false
-	}
 }

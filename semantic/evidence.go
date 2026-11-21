@@ -11,8 +11,19 @@ import (
 const maxCaptureBindings = 32
 
 func (v *Validator) validateEvidence(rule *ast.Rule) {
+	ValidateCaptureAndEvidence(rule, true, func(position token.Position, message string) bool {
+		v.addEvidenceError(position, message)
+		return true
+	})
+}
+
+// ValidateCaptureAndEvidence validates capture modifiers and evidence declarations on rule.
+func ValidateCaptureAndEvidence(rule *ast.Rule, checkRegexGroups bool, onError func(token.Position, string) bool) {
 	captureNames := make(map[string]struct{})
 	for _, str := range rule.Strings {
+		if str == nil {
+			continue
+		}
 		captureModifiers := 0
 		private := false
 		var bindings []ast.CaptureBinding
@@ -28,44 +39,63 @@ func (v *Validator) validateEvidence(rule *ast.Rule) {
 		if captureModifiers == 0 {
 			continue
 		}
-		if captureModifiers > 1 {
-			v.addEvidenceError(str.Pos, fmt.Sprintf("string %s has more than one capture modifier", str.Identifier))
+		if captureModifiers > 1 && !onError(str.Pos, fmt.Sprintf("string %s has more than one capture modifier", str.Identifier)) {
+			return
 		}
-		if str.Identifier == "" || str.Identifier == "$" {
-			v.addEvidenceError(str.Pos, fmt.Sprintf("anonymous string %s cannot declare captures", str.Identifier))
+		if (str.Identifier == "" || str.Identifier == "$") && !onError(str.Pos, fmt.Sprintf("anonymous string %s cannot declare captures", str.Identifier)) {
+			return
 		}
-		if private {
-			v.addEvidenceError(str.Pos, fmt.Sprintf("string %s cannot combine private and capture modifiers", str.Identifier))
+		if private && !onError(str.Pos, fmt.Sprintf("string %s cannot combine private and capture modifiers", str.Identifier)) {
+			return
 		}
 		if len(bindings) == 0 {
-			v.addEvidenceError(str.Pos, fmt.Sprintf("string %s has an empty capture modifier", str.Identifier))
+			if !onError(str.Pos, fmt.Sprintf("string %s has an empty capture modifier", str.Identifier)) {
+				return
+			}
 			continue
 		}
-		if len(bindings) > maxCaptureBindings {
-			v.addEvidenceError(str.Pos, fmt.Sprintf(
-				"string %s declares %d capture bindings; maximum is %d",
-				str.Identifier, len(bindings), maxCaptureBindings,
-			))
+		if len(bindings) > maxCaptureBindings && !onError(str.Pos, fmt.Sprintf(
+			"string %s declares %d capture bindings; maximum is %d",
+			str.Identifier, len(bindings), maxCaptureBindings,
+		)) {
+			return
 		}
-		groupCount, isRegex := semanticRegexGroupCount(str.Pattern)
+		var groupCount int
+		var isRegex bool
+		if checkRegexGroups {
+			groupCount, isRegex = semanticRegexGroupCount(str.Pattern)
+		} else {
+			_, isRegex = str.Pattern.(*ast.RegexPattern)
+		}
 		seen := make(map[string]struct{}, len(bindings))
 		for _, binding := range bindings {
+			if !checkRegexGroups && binding.Name == "" && !onError(str.Pos, fmt.Sprintf("string %s has an empty capture name", str.Identifier)) {
+				return
+			}
 			if _, duplicate := seen[binding.Name]; duplicate {
-				v.addEvidenceError(str.Pos, fmt.Sprintf("string %s declares capture name %q more than once", str.Identifier, binding.Name))
+				if !onError(str.Pos, fmt.Sprintf("string %s declares capture name %q more than once", str.Identifier, binding.Name)) {
+					return
+				}
 				continue
 			}
 			seen[binding.Name] = struct{}{}
 			captureNames[binding.Name] = struct{}{}
 			switch {
 			case binding.Group < 0:
-				v.addEvidenceError(str.Pos, fmt.Sprintf("string %s capture %q has invalid group %d", str.Identifier, binding.Name, binding.Group))
+				if !onError(str.Pos, fmt.Sprintf("string %s capture %q has invalid group %d", str.Identifier, binding.Name, binding.Group)) {
+					return
+				}
 			case binding.Group > 0 && !isRegex:
-				v.addEvidenceError(str.Pos, fmt.Sprintf(
+				if !onError(str.Pos, fmt.Sprintf(
 					"string %s capture %q references group %d on a non-regex pattern",
 					str.Identifier, binding.Name, binding.Group,
-				))
-			case binding.Group > groupCount:
-				v.addEvidenceError(str.Pos, fmt.Sprintf("capture group %d is out of range for string %s", binding.Group, str.Identifier))
+				)) {
+					return
+				}
+			case checkRegexGroups && binding.Group > groupCount:
+				if !onError(str.Pos, fmt.Sprintf("capture group %d is out of range for string %s", binding.Group, str.Identifier)) {
+					return
+				}
 			}
 		}
 	}
@@ -75,40 +105,46 @@ func (v *Validator) validateEvidence(rule *ast.Rule) {
 		if declaration == nil {
 			continue
 		}
-		if declaration.Name == "" {
-			v.addEvidenceError(declaration.Pos, "evidence declaration has an empty name")
+		if declaration.Name == "" && !onError(declaration.Pos, "evidence declaration has an empty name") {
+			return
 		}
-		if _, duplicate := declarationNames[declaration.Name]; duplicate {
-			v.addEvidenceError(declaration.Pos, fmt.Sprintf("evidence declaration %q is duplicated", declaration.Name))
+		if _, duplicate := declarationNames[declaration.Name]; duplicate && !onError(declaration.Pos, fmt.Sprintf("evidence declaration %q is duplicated", declaration.Name)) {
+			return
 		}
 		declarationNames[declaration.Name] = struct{}{}
-		if len(declaration.Fields) == 0 {
-			v.addEvidenceError(declaration.Pos, fmt.Sprintf("evidence declaration %q has no fields", declaration.Name))
+		if !checkRegexGroups && declaration.Within < 0 && !onError(declaration.Pos, fmt.Sprintf("evidence declaration %q has a negative window", declaration.Name)) {
+			return
 		}
-		if declaration.Within < 0 {
-			v.addEvidenceError(declaration.Pos, fmt.Sprintf("evidence declaration %q has a negative window", declaration.Name))
+		if len(declaration.Fields) == 0 && !onError(declaration.Pos, fmt.Sprintf("evidence declaration %q has no fields", declaration.Name)) {
+			return
 		}
-		if declaration.Anchor == "" {
-			v.addEvidenceError(declaration.Pos, fmt.Sprintf("evidence declaration %q has an empty anchor", declaration.Name))
+		if checkRegexGroups && declaration.Within < 0 && !onError(declaration.Pos, fmt.Sprintf("evidence declaration %q has a negative window", declaration.Name)) {
+			return
+		}
+		if checkRegexGroups && declaration.Anchor == "" && !onError(declaration.Pos, fmt.Sprintf("evidence declaration %q has an empty anchor", declaration.Name)) {
+			return
 		}
 		seenFields := make(map[string]struct{}, len(declaration.Fields))
 		anchorIncluded := false
 		for _, field := range declaration.Fields {
-			if _, duplicate := seenFields[field]; duplicate {
-				v.addEvidenceError(declaration.Pos, fmt.Sprintf("evidence declaration %q repeats field %q", declaration.Name, field))
+			if _, duplicate := seenFields[field]; duplicate && !onError(declaration.Pos, fmt.Sprintf("evidence declaration %q repeats field %q", declaration.Name, field)) {
+				return
 			}
 			seenFields[field] = struct{}{}
 			anchorIncluded = anchorIncluded || field == declaration.Anchor
-			if _, declared := captureNames[field]; !declared {
-				v.addEvidenceError(declaration.Pos, fmt.Sprintf(
-					"evidence declaration %q references undeclared capture %q", declaration.Name, field,
-				))
+			if _, declared := captureNames[field]; !declared && !onError(declaration.Pos, fmt.Sprintf(
+				"evidence declaration %q references undeclared capture %q", declaration.Name, field,
+			)) {
+				return
 			}
 		}
-		if !anchorIncluded {
-			v.addEvidenceError(declaration.Pos, fmt.Sprintf(
-				"evidence declaration %q anchor %q is not in its field list", declaration.Name, declaration.Anchor,
-			))
+		if !checkRegexGroups && declaration.Anchor == "" && !onError(declaration.Pos, fmt.Sprintf("evidence declaration %q has an empty anchor", declaration.Name)) {
+			return
+		}
+		if !anchorIncluded && !onError(declaration.Pos, fmt.Sprintf(
+			"evidence declaration %q anchor %q is not in its field list", declaration.Name, declaration.Anchor,
+		)) {
+			return
 		}
 	}
 }

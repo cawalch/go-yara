@@ -8,6 +8,25 @@ import (
 	"github.com/cawalch/go-yara/regex"
 )
 
+func (i *Interpreter) peImportContext(hostFn func(ModuleValue, <-chan struct{}) ModuleValue) (*peImportData, <-chan struct{}, ModuleValue, bool) {
+	done := peCancelDone(i.matchContext)
+	if scanCanceled(done) {
+		return nil, nil, ModuleValue{}, true
+	}
+	if data, supplied := i.moduleData["pe"]; supplied {
+		return nil, nil, hostFn(data, done), true
+	}
+	image := loadPE(i.matchContext)
+	if image.file == nil {
+		return nil, nil, ModuleValue{}, true
+	}
+	imports := image.loadImports()
+	if !imports.valid {
+		return nil, nil, ModuleValue{}, true
+	}
+	return imports, done, ModuleValue{}, false
+}
+
 func (i *Interpreter) peImports(args []ModuleValue) ModuleValue {
 	// A serialized custom module must not fall back to native parsing when
 	// loaded without its callback, even if the function signatures match.
@@ -27,20 +46,11 @@ func (i *Interpreter) peImports(args []ModuleValue) ModuleValue {
 	if len(args) == 2 && args[1].Type == ModuleString {
 		args[1].String, _, _ = strings.Cut(args[1].String, "\x00")
 	}
-	done := peCancelDone(i.matchContext)
-	if scanCanceled(done) {
-		return ModuleValue{}
-	}
-	if data, supplied := i.moduleData["pe"]; supplied {
+	imports, done, hostVal, handled := i.peImportContext(func(data ModuleValue, done <-chan struct{}) ModuleValue {
 		return peHostImports(data, args, done)
-	}
-	image := loadPE(i.matchContext)
-	if image.file == nil {
-		return ModuleValue{}
-	}
-	imports := image.loadImports()
-	if !imports.valid {
-		return ModuleValue{}
+	})
+	if handled {
+		return hostVal
 	}
 	if len(args) == 1 {
 		return peImportDLLCount(imports, args[0].String)
@@ -152,21 +162,12 @@ func (i *Interpreter) peImportsRegex(args []ModuleValue) ModuleValue {
 	if !ok {
 		return ModuleValue{}
 	}
-	done := peCancelDone(i.matchContext)
-	if scanCanceled(done) {
-		return ModuleValue{}
-	}
 	query := peImportRegexQuery{dll: dllRegex, fn: fnRegex}
-	if data, supplied := i.moduleData["pe"]; supplied {
+	imports, done, hostVal, handled := i.peImportContext(func(data ModuleValue, done <-chan struct{}) ModuleValue {
 		return peHostImportsRegex(data, query, done)
-	}
-	image := loadPE(i.matchContext)
-	if image.file == nil {
-		return ModuleValue{}
-	}
-	imports := image.loadImports()
-	if !imports.valid {
-		return ModuleValue{}
+	})
+	if handled {
+		return hostVal
 	}
 	var batch *regex.VMBatch
 	if i.matchContext != nil {
@@ -222,30 +223,45 @@ func peImportSymbolMatches(kind peOrdinalDLLKind, symbol pe.ImportSymbol, query 
 	return peOrdinalNameMatches(kind, symbol.Ordinal, query.String)
 }
 
-// Host snapshots take precedence over file parsing, including absent fields.
-// They are already schema-checked and own their values.
-func peHostImports(data ModuleValue, args []ModuleValue, done <-chan struct{}) ModuleValue {
+func peHostImportLibraries(data ModuleValue) ([]ModuleValue, bool) {
 	if data.object == nil {
-		return ModuleValue{}
+		return nil, false
 	}
 	details := data.object.fields["import_details"]
 	if details.object == nil {
+		return nil, false
+	}
+	return details.object.elements, true
+}
+
+func peHostLibraryEntry(library ModuleValue) (string, []ModuleValue, bool) {
+	if library.object == nil {
+		return "", nil, false
+	}
+	name := library.object.fields["library_name"]
+	functions := library.object.fields["functions"]
+	if name.Type != ModuleString || functions.object == nil {
+		return "", nil, false
+	}
+	return peCString(name.String), functions.object.elements, true
+}
+
+// Host snapshots take precedence over file parsing, including absent fields.
+// They are already schema-checked and own their values.
+func peHostImports(data ModuleValue, args []ModuleValue, done <-chan struct{}) ModuleValue {
+	libraries, ok := peHostImportLibraries(data)
+	if !ok {
 		return ModuleValue{}
 	}
 	var count int64
 	seen := 0
-	for _, library := range details.object.elements {
-		if library.object == nil {
+	for _, library := range libraries {
+		dll, symbols, ok := peHostLibraryEntry(library)
+		if !ok || !peNameEqual(dll, args[0].String) {
 			continue
 		}
-		name := library.object.fields["library_name"]
-		functions := library.object.fields["functions"]
-		name.String, _, _ = strings.Cut(name.String, "\x00")
-		if name.Type != ModuleString || !peNameEqual(name.String, args[0].String) || functions.object == nil {
-			continue
-		}
-		kind := peMatchOrdinalDLL(name.String)
-		for _, symbol := range functions.object.elements {
+		kind := peMatchOrdinalDLL(dll)
+		for _, symbol := range symbols {
 			if scanCanceledAt(done, seen) {
 				return ModuleValue{}
 			}
@@ -283,38 +299,30 @@ func peHostImportSymbolMatches(kind peOrdinalDLLKind, symbol, query ModuleValue)
 }
 
 func peHostImportsRegex(data ModuleValue, query peImportRegexQuery, done <-chan struct{}) ModuleValue {
-	if data.object == nil {
-		return ModuleValue{}
-	}
-	details := data.object.fields["import_details"]
-	if details.object == nil {
+	libraries, ok := peHostImportLibraries(data)
+	if !ok {
 		return ModuleValue{}
 	}
 	var count int64
 	seen := 0
-	for _, library := range details.object.elements {
+	for _, library := range libraries {
 		if scanCanceledAt(done, seen) {
 			return ModuleValue{}
 		}
 		seen++
-		if library.object == nil {
+		dll, symbols, ok := peHostLibraryEntry(library)
+		if !ok {
 			continue
 		}
-		name := library.object.fields["library_name"]
-		functions := library.object.fields["functions"]
-		if name.Type != ModuleString || functions.object == nil {
-			continue
-		}
-		name.String, _, _ = strings.Cut(name.String, "\x00")
-		dllMatched, err := query.dll.MatchString(name.String)
+		dllMatched, err := query.dll.MatchString(dll)
 		if err != nil {
 			return ModuleValue{}
 		}
 		if !dllMatched {
 			continue
 		}
-		kind := peMatchOrdinalDLL(name.String)
-		for _, symbol := range functions.object.elements {
+		kind := peMatchOrdinalDLL(dll)
+		for _, symbol := range symbols {
 			if scanCanceledAt(done, seen) {
 				return ModuleValue{}
 			}

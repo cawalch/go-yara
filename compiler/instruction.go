@@ -157,80 +157,43 @@ func (inst *Instruction) String() string {
 	return inst.Opcode.String() + inst.formatOperand()
 }
 
-// appendImmediateOperand appends immediate operand bytes to buffer
-func (inst *Instruction) appendImmediateOperand(buf []byte, bits int) []byte {
-	value := inst.Operand.Value
-
+func appendLittleUint(buf []byte, value uint64, bits int) []byte {
 	switch bits {
 	case 8:
-		if value > 0xFF {
-			value &= 0xFF
-		}
-		buf = append(buf, byte(value))
+		return append(buf, byte(value))
 	case 16:
-		if value > 0xFFFF {
-			value &= 0xFFFF
-		}
-		tmp := make([]byte, 2)
-		binary.LittleEndian.PutUint16(tmp, uint16(value)) // #nosec G115 - bounds checked above
-		buf = append(buf, tmp...)
+		return binary.LittleEndian.AppendUint16(buf, uint16(value)) // #nosec G115 - masked/bounded by caller
 	case 32:
-		if value > 0xFFFFFFFF {
-			value &= 0xFFFFFFFF
-		}
-		tmp := make([]byte, 4)
-		binary.LittleEndian.PutUint32(tmp, uint32(value)) // #nosec G115 - bounds checked above
-		buf = append(buf, tmp...)
+		return binary.LittleEndian.AppendUint32(buf, uint32(value)) // #nosec G115 - masked/bounded by caller
 	case 64:
-		buf = binary.LittleEndian.AppendUint64(buf, value)
+		return binary.LittleEndian.AppendUint64(buf, value)
+	default:
+		return buf
 	}
-	return buf
+}
+
+// appendImmediateOperand appends immediate operand bytes to buffer
+func (inst *Instruction) appendImmediateOperand(buf []byte, bits int) []byte {
+	return appendLittleUint(buf, inst.Operand.Value, bits)
 }
 
 // appendRelativeOperand appends relative operand bytes to buffer
 func (inst *Instruction) appendRelativeOperand(buf []byte, bits int) []byte {
 	value := inst.Operand.Value
-
 	switch bits {
 	case 8:
-		if value > 0x7F {
-			value = 0x7F
-		}
-		buf = append(buf, byte(value))
+		value = min(value, 0x7F)
 	case 16:
-		if value > 0x7FFF {
-			value = 0x7FFF
-		}
-		tmp := make([]byte, 2)
-		binary.LittleEndian.PutUint16(tmp, uint16(value)) // #nosec G115 - bounds checked above
-		buf = append(buf, tmp...)
+		value = min(value, 0x7FFF)
 	case 32:
-		if value > 0x7FFFFFFF {
-			value = 0x7FFFFFFF
-		}
-		tmp := make([]byte, 4)
-		binary.LittleEndian.PutUint32(tmp, uint32(value)) // #nosec G115 - bounds checked above
-		buf = append(buf, tmp...)
+		value = min(value, 0x7FFFFFFF)
 	}
-	return buf
+	return appendLittleUint(buf, value, bits)
 }
 
 // appendAbsoluteOperand appends absolute operand bytes to buffer
 func (inst *Instruction) appendAbsoluteOperand(buf []byte, bits int) []byte {
-	value := inst.Operand.Value
-
-	switch bits {
-	case 32:
-		if value > 0xFFFFFFFF {
-			value &= 0xFFFFFFFF
-		}
-		tmp := make([]byte, 4)
-		binary.LittleEndian.PutUint32(tmp, uint32(value)) // #nosec G115 - bounds checked above
-		buf = append(buf, tmp...)
-	case 64:
-		buf = binary.LittleEndian.AppendUint64(buf, value)
-	}
-	return buf
+	return appendLittleUint(buf, inst.Operand.Value, bits)
 }
 
 // appendOperand appends operand bytes to buffer

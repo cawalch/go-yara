@@ -535,15 +535,7 @@ func (p *QuantifierParser) createCommaExpression(pos token.Position, expressions
 
 // isQuantifierToken checks if current token could be part of a quantifier
 func (p *QuantifierParser) isQuantifierToken() bool {
-	return p.isKeywordQuantifier() || p.isNumericQuantifierToken()
-}
-
-// isNumericQuantifierToken checks if current token is a numeric quantifier
-func (p *QuantifierParser) isNumericQuantifierToken() bool {
-	isNumber := p.CurrentTokenIs(token.IntegerLit) ||
-		p.CurrentTokenIs(token.HexIntegerLit) ||
-		p.CurrentTokenIs(token.OctalIntegerLit)
-	return isNumber && p.PeekTokenIs(token.OF)
+	return p.isKeywordQuantifier() || p.isNumericQuantifier()
 }
 
 // CurrentTokenIs reports whether the current token matches type t.

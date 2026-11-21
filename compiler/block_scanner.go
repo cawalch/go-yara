@@ -149,17 +149,8 @@ func (scanner *BlockScanner) ScanWithContext(ctx context.Context, base int64, da
 			clear(s.localProfileCandidates)
 		}
 		s.matchCtx.ResetForRule(rule, blockData)
-		s.matchCtx.cancelDone = ctx.Done()
-		s.matchCtx.maxMatchesPerPattern = 0
-		if s.fastScan && rule.FastScanSafe {
-			s.matchCtx.maxMatchesPerPattern = 1
-		}
-		s.matchCtx.maxMatchSpan = s.maxMatchSpan
-		if usesharedAutomaton {
-			if err := s.addStaticMatchesInt(ctx, rule, blockData, s.globalMatches[rule.Index]); err != nil {
-				return err
-			}
-		} else if err := s.addLocalTextMatches(ctx, rule, blockData); err != nil {
+		s.configureRuleMatchContext(ctx, rule)
+		if err := s.addRuleTextMatches(ctx, rule, blockData, usesharedAutomaton); err != nil {
 			return err
 		}
 		if err := s.addLocalNonTextMatches(ctx, rule, blockData, &s.nonTextCache, usesharedAutomaton, false); err != nil {
@@ -304,12 +295,7 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (result *Sca
 			s.finishPrefilter(PrefilterDecision{Stage: PrefilterStageHeaderConstraints, Rejected: !headerMatches}, headerStart)
 		}
 		if !headerMatches {
-			if rule.Index >= 0 && rule.Index < len(s.ruleResultsDense) {
-				s.ruleResultsDense[rule.Index] = false
-			}
-			if result.RuleResults != nil {
-				result.RuleResults[rule.Name] = false
-			}
+			s.recordRuleOutcome(result, rule, false)
 			result.PrunedRules = append(result.PrunedRules, rule.Name)
 			s.recordPrunedRule(rule, state)
 			continue
@@ -319,11 +305,7 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (result *Sca
 		s.matchCtx.Reset(nil)
 		s.matchCtx.moduleCache = &s.moduleCache
 		s.matchCtx.assertionResults = s.assertionResults
-		s.matchCtx.cancelDone = ctx.Done()
-		s.matchCtx.maxMatchesPerPattern = 0
-		if s.fastScan && rule.FastScanSafe {
-			s.matchCtx.maxMatchesPerPattern = 1
-		}
+		s.configureRuleMatchContext(ctx, rule)
 		s.matchCtx.Blocks = blocks
 		s.matchCtx.FileSize = scanner.fileSize
 		for id, matches := range perRule {
@@ -333,12 +315,7 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (result *Sca
 		}
 		state.populated = true
 		if !s.prefilterDisabled && rule.RequiresStringMatch && !s.matchCtx.hasSpans() {
-			if rule.Index >= 0 && rule.Index < len(s.ruleResultsDense) {
-				s.ruleResultsDense[rule.Index] = false
-			}
-			if result.RuleResults != nil {
-				result.RuleResults[rule.Name] = false
-			}
+			s.recordRuleOutcome(result, rule, false)
 			if s.hookMask&(hookBitTelemetry|hookBitRuleProfile) != 0 {
 				s.recordRuleEvaluatedHooks(rule, false, state)
 			}
@@ -355,9 +332,7 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (result *Sca
 		if s.hookMask&(hookBitTelemetry|hookBitRuleProfile) != 0 {
 			s.recordRuleEvaluatedHooks(rule, matched, state)
 		}
-		if rule.Index >= 0 && rule.Index < len(s.ruleResultsDense) {
-			s.ruleResultsDense[rule.Index] = matched
-		}
+		s.recordRuleOutcome(result, rule, matched)
 		materialize := !s.omitMatches && (!s.reportedMatchesOnly || (matched && !rule.IsPrivate))
 		if materialize && len(perRule) > 0 && result.Matches != nil {
 			publicMatches := clonePublicRuleMatches(rule, perRule)
@@ -367,12 +342,6 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (result *Sca
 				}
 				result.Matches[rule.Name] = publicMatches
 			}
-		}
-		if result.RuleResults != nil {
-			result.RuleResults[rule.Name] = matched
-		}
-		if matched && !rule.IsPrivate && s.hasMatchingTag(rule) {
-			s.matchedRuleIndices = append(s.matchedRuleIndices, rule.Index)
 		}
 	}
 

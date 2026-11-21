@@ -16,20 +16,9 @@ func (i *Interpreter) peImphash() ModuleValue {
 	if i.currentCompiledRule == nil || !i.currentCompiledRule.nativePE {
 		return ModuleValue{}
 	}
-	done := peCancelDone(i.matchContext)
-	if scanCanceled(done) {
-		return ModuleValue{}
-	}
-	if data, supplied := i.moduleData["pe"]; supplied {
-		return peHostImphash(data, done)
-	}
-	image := loadPE(i.matchContext)
-	if image.file == nil {
-		return ModuleValue{}
-	}
-	imports := image.loadImports()
-	if !imports.valid {
-		return ModuleValue{}
+	imports, done, hostVal, handled := i.peImportContext(peHostImphash)
+	if handled {
+		return hostVal
 	}
 	hash, ok := peImphashLibrariesWithCancel(imports.libraries, done)
 	if !ok {
@@ -41,31 +30,20 @@ func (i *Interpreter) peImphash() ModuleValue {
 // Host snapshots take precedence over file parsing. An absent import_details
 // array leaves the hash undefined; an empty array hashes as an empty sequence.
 func peHostImphash(data ModuleValue, done <-chan struct{}) ModuleValue {
-	if data.object == nil {
-		return ModuleValue{}
-	}
-	details, exists := data.object.fields["import_details"]
-	if !exists || details.object == nil {
+	libraries, ok := peHostImportLibraries(data)
+	if !ok {
 		return ModuleValue{}
 	}
 	builder := newPEImphashBuilder()
 	seen := 0
-	for _, library := range details.object.elements {
-		if library.object == nil {
+	for _, library := range libraries {
+		dll, symbols, ok := peHostLibraryEntry(library)
+		if !ok {
 			continue
 		}
-		libraryName := library.object.fields["library_name"]
-		if libraryName.Type != ModuleString {
-			continue
-		}
-		dll := peCString(libraryName.String)
 		hashName := peImphashLibraryName(dll)
 		kind := peMatchOrdinalDLL(dll)
-		functions := library.object.fields["functions"]
-		if functions.object == nil {
-			continue
-		}
-		for _, symbol := range functions.object.elements {
+		for _, symbol := range symbols {
 			if scanCanceledAt(done, seen) {
 				return ModuleValue{}
 			}

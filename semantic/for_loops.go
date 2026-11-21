@@ -100,7 +100,8 @@ func isAnonymousPlaceholder(expr ast.Expression) bool {
 	return ok && ident.Name == "$"
 }
 
-func isStringSetExpression(expr ast.Expression) bool {
+// IsStringSetExpression reports whether expr is a tuple/set of string identifiers or "them".
+func IsStringSetExpression(expr ast.Expression) bool {
 	switch e := expr.(type) {
 	case nil:
 		return false
@@ -108,13 +109,13 @@ func isStringSetExpression(expr ast.Expression) bool {
 		return e.Name == "them" || (strings.HasPrefix(e.Name, "$") && e.Name != "$")
 	case *ast.StringTuple:
 		for _, element := range e.Elements {
-			if !isStringSetExpression(element) {
+			if !IsStringSetExpression(element) {
 				return false
 			}
 		}
 		return true
 	case *ast.BinaryOp:
-		return e.Op == token.COMMA && isStringSetExpression(e.Left) && isStringSetExpression(e.Right)
+		return e.Op == token.COMMA && IsStringSetExpression(e.Left) && IsStringSetExpression(e.Right)
 	default:
 		return false
 	}
@@ -154,7 +155,7 @@ func (v *Validator) isIntegerTuple(tuple *ast.StringTuple) bool {
 }
 
 func (v *Validator) validateTupleElementTypes(tuple *ast.StringTuple, loopVarType string) []error {
-	if isStringSetExpression(tuple) {
+	if IsStringSetExpression(tuple) {
 		return nil
 	}
 	var errs []error
@@ -201,7 +202,7 @@ func (v *Validator) validateForLoopExpression(forLoop *ast.ForLoop) (*TypeInfo, 
 	switch r := forLoop.Range.(type) {
 	case *ast.StringTuple:
 		switch {
-		case isStringSetExpression(r):
+		case IsStringSetExpression(r):
 			loopVarType = "string"
 		case v.isIntegerTuple(r):
 			loopVarType = "integer"
@@ -231,7 +232,7 @@ func (v *Validator) validateForLoopExpression(forLoop *ast.ForLoop) (*TypeInfo, 
 			}
 		}
 	}
-	if loopVarType == "" && isStringSetExpression(forLoop.Range) {
+	if loopVarType == "" && IsStringSetExpression(forLoop.Range) {
 		loopVarType = "string"
 	}
 	if containsAnonymousPlaceholder(forLoop.Range) {

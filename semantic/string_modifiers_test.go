@@ -73,7 +73,7 @@ func TestBase64AlphabetByteTracking(t *testing.T) {
 				}
 				seen[ch] = true
 			}
-			err := validateSemanticBase64Alphabet(string(candidate))
+			err := ast.ValidateBase64Alphabet(string(candidate))
 			got := ""
 			if err != nil {
 				got = err.Error()
@@ -84,12 +84,12 @@ func TestBase64AlphabetByteTracking(t *testing.T) {
 		}
 	}
 	for _, value := range []any{nil, 42, ""} {
-		if err := validateSemanticBase64Alphabet(value); err != nil {
+		if err := ast.ValidateBase64Alphabet(value); err != nil {
 			t.Fatalf("%v: %v", value, err)
 		}
 	}
 	for _, length := range []int{1, 63, 65} {
-		if err := validateSemanticBase64Alphabet(strings.Repeat("x", length)); err == nil || !strings.Contains(err.Error(), "invalid base64 alphabet length") {
+		if err := ast.ValidateBase64Alphabet(strings.Repeat("x", length)); err == nil || !strings.Contains(err.Error(), "invalid base64 alphabet length") {
 			t.Fatalf("length %d: got %v", length, err)
 		}
 	}

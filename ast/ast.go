@@ -3,7 +3,12 @@
 // in a tree format that can be traversed and analyzed.
 package ast
 
-import "github.com/cawalch/go-yara/token"
+import (
+	"errors"
+	"fmt"
+
+	"github.com/cawalch/go-yara/token"
+)
 
 // Node is the base interface for all AST nodes
 type Node interface {
@@ -23,4 +28,60 @@ type Expression interface {
 type Statement interface {
 	Node
 	statement()
+}
+
+// ValidateBase64Alphabet validates a custom 64-character base64 alphabet modifier value.
+func ValidateBase64Alphabet(value any) error {
+	alphabet, ok := value.(string)
+	if !ok || alphabet == "" {
+		return nil
+	}
+	if len(alphabet) != 64 {
+		return fmt.Errorf("invalid base64 alphabet length: expected 64, got %d", len(alphabet))
+	}
+	var seen [256]bool
+	for i := 0; i < len(alphabet); i++ {
+		ch := alphabet[i]
+		if ch == '=' {
+			return errors.New("invalid base64 alphabet: '=' is not allowed")
+		}
+		if seen[ch] {
+			return errors.New("invalid base64 alphabet: duplicate characters")
+		}
+		seen[ch] = true
+	}
+	return nil
+}
+
+// ValidateXorModifier validates a xor modifier value (single byte or XorRange).
+func ValidateXorModifier(value any) error {
+	if value == nil {
+		return nil
+	}
+	switch v := value.(type) {
+	case XorRange:
+		return ValidateXorRange(v.Min, v.Max)
+	case *XorRange:
+		if v == nil {
+			return nil
+		}
+		return ValidateXorRange(v.Min, v.Max)
+	case int64:
+		return ValidateXorRange(v, v)
+	case int:
+		return ValidateXorRange(int64(v), int64(v))
+	default:
+		return nil
+	}
+}
+
+// ValidateXorRange validates an inclusive xor byte range [0, 255].
+func ValidateXorRange(minVal, maxVal int64) error {
+	if minVal < 0 || maxVal < 0 || minVal > 255 || maxVal > 255 {
+		return errors.New("xor range must be within 0..255")
+	}
+	if maxVal < minVal {
+		return errors.New("xor range max must be >= min")
+	}
+	return nil
 }

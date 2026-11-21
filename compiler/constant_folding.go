@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"cmp"
 	"math"
 	"strconv"
 	"strings"
@@ -190,43 +191,40 @@ func isDefinedBoolean(expr ast.Expression) bool {
 	}
 }
 
+func evalOrderedCompare[T cmp.Ordered](op token.Type, valL, valR T) (bool, bool) {
+	switch op {
+	case token.EQ:
+		return valL == valR, true
+	case token.NEQ:
+		return valL != valR, true
+	case token.LT:
+		return valL < valR, true
+	case token.LE:
+		return valL <= valR, true
+	case token.GT:
+		return valL > valR, true
+	case token.GE:
+		return valL >= valR, true
+	default:
+		return false, false
+	}
+}
+
 func foldComparison(b *ast.BinaryOp, left, right ast.Expression) (ast.Expression, bool) {
 	op := b.Op
 	pos := b.Pos
 	if valL, okL := evaluateConstantInt(left); okL {
 		if valR, okR := evaluateConstantInt(right); okR {
-			switch op {
-			case token.EQ:
-				return boolLiteral(valL == valR, pos), true
-			case token.NEQ:
-				return boolLiteral(valL != valR, pos), true
-			case token.LT:
-				return boolLiteral(valL < valR, pos), true
-			case token.LE:
-				return boolLiteral(valL <= valR, pos), true
-			case token.GT:
-				return boolLiteral(valL > valR, pos), true
-			case token.GE:
-				return boolLiteral(valL >= valR, pos), true
+			if res, ok := evalOrderedCompare(op, valL, valR); ok {
+				return boolLiteral(res, pos), true
 			}
 		}
 	}
 
 	if valL, okL := evaluateConstantFloat(left); okL {
 		if valR, okR := evaluateConstantFloat(right); okR {
-			switch op {
-			case token.EQ:
-				return boolLiteral(valL == valR, pos), true
-			case token.NEQ:
-				return boolLiteral(valL != valR, pos), true
-			case token.LT:
-				return boolLiteral(valL < valR, pos), true
-			case token.LE:
-				return boolLiteral(valL <= valR, pos), true
-			case token.GT:
-				return boolLiteral(valL > valR, pos), true
-			case token.GE:
-				return boolLiteral(valL >= valR, pos), true
+			if res, ok := evalOrderedCompare(op, valL, valR); ok {
+				return boolLiteral(res, pos), true
 			}
 		}
 	}

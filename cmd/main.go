@@ -514,6 +514,18 @@ func runExecuteMode(content, dataFile, filename string, args *commandArgs) error
 	return executeRules(compiledProgram, data, args)
 }
 
+func printCompilationErrors(comp *compiler.Compiler) bool {
+	compilationErrors := comp.GetErrors()
+	if len(compilationErrors) == 0 {
+		return false
+	}
+	fmt.Printf("\nCompilation errors (%d):\n", len(compilationErrors))
+	for _, cerr := range compilationErrors {
+		fmt.Printf("  [%s] %s\n", cerr.Phase, cerr.Message)
+	}
+	return true
+}
+
 func compileRules(content, filename string) (*compiler.CompiledProgram, error) {
 	comp := compiler.NewCompiler()
 	comp.SetBaseDir(filepath.Dir(filename))
@@ -522,12 +534,7 @@ func compileRules(content, filename string) (*compiler.CompiledProgram, error) {
 		return nil, fmt.Errorf("compiling rules: %w", err)
 	}
 
-	compilationErrors := comp.GetErrors()
-	if len(compilationErrors) > 0 {
-		fmt.Printf("\nCompilation errors (%d):\n", len(compilationErrors))
-		for _, cerr := range compilationErrors {
-			fmt.Printf("  [%s] %s\n", cerr.Phase, cerr.Message)
-		}
+	if printCompilationErrors(comp) {
 		return nil, errors.New("compilation errors detected")
 	}
 

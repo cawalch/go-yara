@@ -405,7 +405,7 @@ func (v *Validator) tryAlternativeIdentifierLookups(ident *ast.Identifier, error
 	// Bare dotted identifiers are structured module/member references. The
 	// current module registry exposes typed function calls, not object fields,
 	// so fail explicitly instead of guessing a placeholder type.
-	if moduleName, ok := moduleNameFromDottedName(ident.Name); ok {
+	if moduleName, ok := ModuleNameFromDottedName(ident.Name); ok {
 		errors = append(errors, v.unsupportedModuleError(moduleName, ident.Position()))
 		return &TypeInfo{DataType: TypeUnknown}, errors
 	}
@@ -436,7 +436,7 @@ func (v *Validator) validateBinaryOpExpression(binOp *ast.BinaryOp) (*TypeInfo, 
 
 	// Special handling for module access (dot notation)
 	if binOp.Op == token.DOT {
-		if moduleName, handled := moduleNameFromMemberAccess(binOp); handled {
+		if moduleName, handled := ModuleNameFromMemberAccess(binOp); handled {
 			errors = append(errors, v.unsupportedModuleError(moduleName, binOp.Position()))
 			return &TypeInfo{DataType: TypeUnknown}, errors
 		}
