@@ -20,3 +20,4 @@ Each row below is verified against `libyara 4.6.0` in [libyara_compatibility_dif
 | Mixed greedy/ungreedy regex quantifiers (`/a+b??/`) | Error: `greedy and ungreedy quantifiers can't be mixed` | Rejected (compile error) | Rejected (compile error) | Enforced unconditionally for rule regex strings (`#514`). |
 | Expression quantifiers (`(1+1) of them`, `#a of them`, `for uint8(255) of them : ($)`) | Accepted | Accepted | Accepted | Enforced unconditionally (`#516`). |
 | Duplicate `meta:` keys (`meta: hash = "1" hash = "2"`) | Accepted | Accepted | Accepted | Multiple metadata entries with the same key are preserved. |
+| Leading or trailing hex jump (`{ [1-2] 61 62 }`, `{ 61 62 [1-2] }`) | Syntax error: `invalid hex string "$a": syntax error` | Accepted | Rejected | Preserves permissive default for existing corpora while enforcing strict `libyara` hex grammar under `WithStrictLibyaraCompatibility(true)`. |

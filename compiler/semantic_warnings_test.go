@@ -246,6 +246,26 @@ func TestWarningDisabled(t *testing.T) {
 	}
 }
 
+func TestSlowPatternWarningsWideXorAndUnboundedHexJump(t *testing.T) {
+	source := `
+		rule xor_wide_literal {
+			strings: $a = "abcd" ascii xor(0x01-0xff)
+			condition: $a
+		}
+		rule unbounded_hex_jump {
+			strings: $h = { 61 62 [-] 63 64 }
+			condition: $h
+		}
+	`
+	comp := NewCompiler()
+	if _, err := comp.CompileSource(source); err != nil {
+		t.Fatalf("CompileSource failed: %v", err)
+	}
+	warnings := comp.GetWarnings()
+	assertWarning(t, warnings, WarningSlowPattern, "xor_wide_literal", "$a")
+	assertWarning(t, warnings, WarningSlowPattern, "unbounded_hex_jump", "$h")
+}
+
 func TestWildcardAbsorptionWarnings(t *testing.T) {
 	t.Run("habersham_c_wildcard_collision", func(t *testing.T) {
 		c := NewCompiler()

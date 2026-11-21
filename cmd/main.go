@@ -53,6 +53,7 @@ type commandArgs struct {
 	negate       bool
 	fastScan     bool
 	jsonOutput   bool
+	noWarnings   bool
 }
 
 func (args *commandArgs) isStandardScan() bool {
@@ -141,6 +142,8 @@ func parseArgs(rawArgs []string) (*commandArgs, error) {
 	noMatches := flagSet.Bool("no-matches", false, "alias for --fast-scan")
 
 	jsonOutput := flagSet.Bool("json", false, "emit structured JSON output")
+	noWarnings := flagSet.Bool("no-warnings", false, "disable compilation warnings")
+	flagSet.BoolVar(noWarnings, "w", false, "disable compilation warnings (shorthand)")
 
 	flagSet.Usage = func() {
 		_, _ = fmt.Fprintf(flagSet.Output(), "Usage: go-yara <yara-file> [options] [target]\n\n")
@@ -255,6 +258,7 @@ func parseArgs(rawArgs []string) (*commandArgs, error) {
 		negate:            *negate,
 		fastScan:          *fastScan || *noMatches,
 		jsonOutput:        *jsonOutput,
+		noWarnings:        *noWarnings,
 	}, nil
 }
 
@@ -285,22 +289,31 @@ func runMode(mode string, content []byte, args *commandArgs) error {
 	}
 }
 
-func compileRulesQuiet(content, filename string) (*compiler.CompiledProgram, error) {
-	comp := compiler.NewCompiler()
+func compileRulesQuiet(content, filename string, noWarnings bool) (*compiler.CompiledProgram, error) {
+	comp := compiler.NewCompiler(compiler.WithWarnings(!noWarnings))
 	comp.SetBaseDir(filepath.Dir(filename))
 	compiledProgram, err := comp.CompileSourceWithContext(context.Background(), content)
 	if err != nil {
-		return nil, fmt.Errorf("compiling rules: %w", err)
-	}
-
-	compilationErrors := comp.GetErrors()
-	if len(compilationErrors) > 0 {
-		for _, cerr := range compilationErrors {
+		for _, cerr := range comp.GetErrors() {
 			fmt.Fprintf(os.Stderr, "  [%s] %s\n", cerr.Phase, cerr.Message)
 		}
-		return nil, errors.New("compilation errors detected")
+		return nil, fmt.Errorf("compiling rules: %w", err)
 	}
+	printCompilationWarnings(comp)
 	return compiledProgram, nil
+}
+
+func printCompilationWarnings(comp *compiler.Compiler) {
+	for _, w := range comp.GetWarnings() {
+		switch {
+		case w.Rule != "" && w.Line > 0:
+			fmt.Fprintf(os.Stderr, "warning: rule %q (%d:%d): %s\n", w.Rule, w.Line, w.Column, w.Message)
+		case w.Rule != "":
+			fmt.Fprintf(os.Stderr, "warning: rule %q: %s\n", w.Rule, w.Message)
+		default:
+			fmt.Fprintf(os.Stderr, "warning: %s\n", w.Message)
+		}
+	}
 }
 
 func collectTargets(target string, recursive bool) ([]string, error) {
@@ -350,7 +363,7 @@ func buildScannerOptions(args *commandArgs) []compiler.ScannerOption {
 }
 
 func runStandardScan(content string, args *commandArgs) error {
-	compiledProgram, err := compileRulesQuiet(content, args.filename)
+	compiledProgram, err := compileRulesQuiet(content, args.filename, args.noWarnings)
 	if err != nil {
 		return err
 	}
@@ -531,12 +544,10 @@ func compileRules(content, filename string) (*compiler.CompiledProgram, error) {
 	comp.SetBaseDir(filepath.Dir(filename))
 	compiledProgram, err := comp.CompileSourceWithContext(context.Background(), content)
 	if err != nil {
+		printCompilationErrors(comp)
 		return nil, fmt.Errorf("compiling rules: %w", err)
 	}
-
-	if printCompilationErrors(comp) {
-		return nil, errors.New("compilation errors detected")
-	}
+	printCompilationWarnings(comp)
 
 	fmt.Printf("Compilation: Successfully compiled %d rules\n\n", len(compiledProgram.Rules))
 	return compiledProgram, nil

@@ -96,19 +96,49 @@ func TestExtractHexGroup(t *testing.T) {
 
 func TestSkipHexWhitespaceAndComments(t *testing.T) {
 	tests := []struct {
-		in   string
-		pos  int
-		want int
+		in      string
+		pos     int
+		want    int
+		wantErr bool
 	}{
 		{in: "  DE", pos: 0, want: 2},
 		{in: "/*x*/DE", pos: 0, want: 5},
-		{in: "/*ab", pos: 0, want: 3},
+		{in: "/*ab", pos: 0, want: 3, wantErr: true},
 		{in: "//x\nDE", pos: 0, want: 4},
 		{in: "DE", pos: 0, want: 0},
 	}
 	for _, tt := range tests {
-		if got := skipHexWhitespaceAndComments(tt.in, tt.pos); got != tt.want {
+		got, err := skipHexWhitespaceAndComments(tt.in, tt.pos)
+		if (err != nil) != tt.wantErr {
+			t.Fatalf("skipHexWhitespaceAndComments(%q,%d) err = %v, wantErr = %v", tt.in, tt.pos, err, tt.wantErr)
+		}
+		if !tt.wantErr && got != tt.want {
 			t.Fatalf("skipHexWhitespaceAndComments(%q,%d) = %d, want %d", tt.in, tt.pos, got, tt.want)
+		}
+	}
+}
+
+func TestHexPatternGrammarRejectionsAndStrictJumps(t *testing.T) {
+	sc := newStringCompiler()
+	for _, bad := range []string{
+		"{ 61 [1-2] [3-4] 62 }",
+		"{ 61 { 62 } }",
+		"{ 61 } 62 }",
+		"{ 61 /* unterminated 62 }",
+	} {
+		if _, err := sc.parseHexPattern(bad); err == nil {
+			t.Fatalf("parseHexPattern(%q) succeeded; expected syntax error", bad)
+		}
+	}
+
+	for _, jumpEdge := range []string{"{ [1-2] 61 62 }", "{ 61 62 [1-2] }"} {
+		if _, err := sc.parseHexPattern(jumpEdge); err != nil {
+			t.Fatalf("default parseHexPattern(%q) unexpected err: %v", jumpEdge, err)
+		}
+		strict := newStringCompiler()
+		strict.strictLibyaraCompatibility = true
+		if _, err := strict.parseHexPattern(jumpEdge); err == nil {
+			t.Fatalf("strict parseHexPattern(%q) succeeded; expected error", jumpEdge)
 		}
 	}
 }

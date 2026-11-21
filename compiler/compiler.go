@@ -285,18 +285,16 @@ func (c *Compiler) compileParseWithContext(ctx context.Context, source string) (
 	c.parser = parser.NewWithOptions(freshLexer, parser.Options{
 		MaxRecursionDepth: c.options.MaxRecursionDepth,
 	})
-	if c.options.IgnoreInvalidRules {
-		c.parser.SetErrorRecovery(true)
-		c.parser.SetSkipInvalidRules(true)
-	}
+	c.parser.SetErrorRecovery(true)
+	c.parser.SetSkipInvalidRules(true)
 
 	// Parse with context support
 	program, err := c.parser.ParseRulesWithContext(ctx)
 	if err != nil {
+		var partialErr *parser.PartialParseError
 		partialErr, ok := errors.AsType[*parser.PartialParseError](err)
 		if !c.options.IgnoreInvalidRules || !ok || len(c.parser.ProgramErrors()) != 0 {
-			c.recordParserDiagnostics(err)
-			return nil, fmt.Errorf("parsing rules: %w", err)
+			return nil, c.handleStrictParseFailure(ctx, err, partialErr)
 		}
 		program = partialErr.Program
 		for _, invalid := range c.parser.InvalidRules() {
@@ -327,6 +325,25 @@ func (c *Compiler) compileParseWithContext(ctx context.Context, source string) (
 	}
 
 	return program, nil
+}
+
+func (c *Compiler) handleStrictParseFailure(ctx context.Context, err error, partialErr *parser.PartialParseError) error {
+	c.recordParserDiagnostics(err)
+	wrappedErr := err
+	if partialErr != nil {
+		wrappedErr = &parser.ParseError{Errors: partialErr.Errors}
+	}
+	parseErr := fmt.Errorf("parsing rules: %w", wrappedErr)
+	if c.options.IgnoreInvalidRules || partialErr == nil || len(c.parser.ProgramErrors()) != 0 || len(partialErr.Program.Rules) == 0 {
+		return parseErr
+	}
+	if len(partialErr.Program.Imports) > 0 {
+		_ = c.processImportsWithContext(ctx, partialErr.Program)
+	}
+	if semErr := c.compileSemanticWithContext(ctx, partialErr.Program); semErr != nil {
+		return errors.Join(parseErr, fmt.Errorf("semantic analysis failed: %w", semErr))
+	}
+	return parseErr
 }
 
 func (c *Compiler) recordParserDiagnostics(fallback error) {
@@ -590,7 +607,7 @@ func (c *Compiler) compileSemanticWithContext(ctx context.Context, program *ast.
 				Column:  col,
 			})
 		}
-		return fmt.Errorf("%d semantic errors: first: %w", len(errs), errs[0])
+		return errors.Join(errs...)
 	}
 
 	c.stats.SemanticTime = time.Since(start)
@@ -625,6 +642,8 @@ func (c *Compiler) compileCodeGenWithContext(ctx context.Context, program *ast.P
 		if moduleErr != nil {
 			return nil, fmt.Errorf("configuring modules: %w", moduleErr)
 		}
+		generator.SetStrictLibyaraCompatibility(c.options.StrictLibyaraCompatibility)
+		generator.ignoreInvalid = c.options.IgnoreInvalidRules
 		c.generator = generator
 
 		var err error
@@ -651,12 +670,19 @@ func (c *Compiler) compileCodeGenWithContext(ctx context.Context, program *ast.P
 			continue
 		}
 
-		c.stats.Errors = append(c.stats.Errors, CompilationError{
-			Phase:   "codegen",
-			Message: err.Error(),
-			Line:    0,
-			Column:  0,
-		})
+		if joined, ok := err.(interface{ Unwrap() []error }); ok {
+			for _, subErr := range joined.Unwrap() {
+				c.stats.Errors = append(c.stats.Errors, CompilationError{
+					Phase:   "codegen",
+					Message: subErr.Error(),
+				})
+			}
+		} else {
+			c.stats.Errors = append(c.stats.Errors, CompilationError{
+				Phase:   "codegen",
+				Message: err.Error(),
+			})
+		}
 		return nil, err
 	}
 

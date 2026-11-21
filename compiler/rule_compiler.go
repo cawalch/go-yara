@@ -31,6 +31,14 @@ type ruleCompiler struct {
 	externalNames     []string
 	globalNames       []string
 	globalValues      map[string]compiledGlobalValue
+	ignoreInvalid     bool
+}
+
+// SetStrictLibyaraCompatibility enables strict libyara compatibility checks during codegen.
+func (rc *ruleCompiler) SetStrictLibyaraCompatibility(enabled bool) {
+	if rc.stringCompiler != nil {
+		rc.stringCompiler.strictLibyaraCompatibility = enabled
+	}
 }
 
 // newRuleCompiler creates a new rule compiler
@@ -501,13 +509,22 @@ func (rc *ruleCompiler) CompileProgram(program *ast.Program) ([]*CompiledRule, e
 	rc.conditionCompiler.setRuleIndexMap(ruleIndexMap)
 
 	dependencies := semantic.RuleDependencies(program)
+	var ruleErrs []error
 	for _, rule := range program.Rules {
 		compiledRule, err := rc.CompileRule(rule)
 		if err != nil {
-			return nil, &RuleCompileError{Rule: rule.Name, Err: err}
+			ruleErr := &RuleCompileError{Rule: rule.Name, Err: err}
+			if rc.ignoreInvalid {
+				return nil, ruleErr
+			}
+			ruleErrs = append(ruleErrs, ruleErr)
+			continue
 		}
 		compiledRule.dependencies = slices.Clone(dependencies[rule.Name])
 		compiledRules = append(compiledRules, compiledRule)
+	}
+	if len(ruleErrs) > 0 {
+		return nil, errors.Join(ruleErrs...)
 	}
 
 	return compiledRules, nil

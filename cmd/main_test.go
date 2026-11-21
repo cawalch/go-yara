@@ -1048,3 +1048,50 @@ func TestParseArgsStandardOptions(t *testing.T) {
 		t.Fatalf("unexpected parsed options: %+v", args)
 	}
 }
+
+func TestCompileRulesQuietWarningsAndFlag(t *testing.T) {
+	args, err := parseArgs([]string{"rules.yar", "-w", "target_dir"})
+	if err != nil {
+		t.Fatalf("parseArgs(-w) failed: %v", err)
+	}
+	if !args.noWarnings {
+		t.Fatal("expected -w to set noWarnings=true")
+	}
+
+	source := `rule xor_short { strings: $a = "ab" ascii xor(0x01-0xff) condition: $a }`
+
+	origStderr := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	os.Stderr = w
+	_, compileErr := compileRulesQuiet(source, "rules.yar", false)
+	_ = w.Close()
+	os.Stderr = origStderr
+	outBytes, _ := io.ReadAll(r)
+	_ = r.Close()
+	if compileErr != nil {
+		t.Fatalf("compileRulesQuiet() failed: %v", compileErr)
+	}
+	if !strings.Contains(string(outBytes), "warning:") || !strings.Contains(string(outBytes), "may slow scanning") {
+		t.Fatalf("expected warning on stderr, got %q", string(outBytes))
+	}
+
+	r2, w2, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	os.Stderr = w2
+	_, compileErr = compileRulesQuiet(source, "rules.yar", true)
+	_ = w2.Close()
+	os.Stderr = origStderr
+	outBytes2, _ := io.ReadAll(r2)
+	_ = r2.Close()
+	if compileErr != nil {
+		t.Fatalf("compileRulesQuiet(noWarnings=true) failed: %v", compileErr)
+	}
+	if len(outBytes2) != 0 {
+		t.Fatalf("expected no stderr warnings with -w, got %q", string(outBytes2))
+	}
+}
