@@ -747,7 +747,7 @@ func searchClassTable[S ~uint16 | ~int32](ac *acAutomaton, rootTransitions *[256
 		return
 	}
 
-	for i := 0; i < len(data); i++ {
+	for i := range data {
 		if currentState == 0 {
 			currentState = rootTransitions[data[i]]
 		} else {

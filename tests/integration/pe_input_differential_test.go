@@ -92,8 +92,7 @@ func TestLibyaraPEInputAvailabilityParity(t *testing.T) {
 			}
 			assertReleaseScanResult(t, want, rFile)
 
-			cancelCtx, cancel := context.WithCancel(context.Background())
-			defer cancel()
+			cancelCtx := t.Context()
 			var rCancel *compiler.ScanResult
 			if len(data) >= fs.MinMmapFileSize {
 				rCancel, err = s.ScanFileWithContext(cancelCtx, path)

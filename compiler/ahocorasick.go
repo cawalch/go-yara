@@ -665,19 +665,13 @@ func buildSparseClassTable[S ~uint16 | ~int32](b *sparseBuildState, spec sparseC
 	numStates := b.numStates
 	flat := make([]S, numStates*spec.stride)
 	rootRow := new([256]S)
-	for byteVal := 0; byteVal < 256; byteVal++ {
-		target := ac.trieRoot[byteVal]
-		if target < 0 {
-			target = 0
-		}
+	for byteVal := range 256 {
+		target := max(ac.trieRoot[byteVal], 0)
 		//checkednarrow:ignore target is in [0, numStates) and S is uint16 only when numStates <= 65536
 		rootRow[byteVal] = S(target)
 	}
 	for c := 0; c < spec.numClasses; c++ {
-		target := ac.trieRoot[spec.classRep[c]]
-		if target < 0 {
-			target = 0
-		}
+		target := max(ac.trieRoot[spec.classRep[c]], 0)
 		//checkednarrow:ignore target is in [0, numStates) and S is uint16 only when numStates <= 65536
 		flat[c] = S(target)
 	}
@@ -730,11 +724,8 @@ func buildSparseFlatTable[S ~uint16 | ~int32](b *sparseBuildState) [][256]S {
 	ac := b.ac
 	numStates := b.numStates
 	table := make([][256]S, numStates)
-	for byteVal := 0; byteVal < 256; byteVal++ {
-		target := ac.trieRoot[byteVal]
-		if target < 0 {
-			target = 0
-		}
+	for byteVal := range 256 {
+		target := max(ac.trieRoot[byteVal], 0)
 		//checkednarrow:ignore target is in [0, numStates) and S is uint16 only when numStates <= 65536
 		table[0][byteVal] = S(target)
 	}
@@ -813,7 +804,7 @@ func computeByteClassesSparse(trieStates []acTrieState, trieEdges []acTrieEdge, 
 	var hashes [256]uint64
 	var counts [256]int32
 
-	for b := 0; b < 256; b++ {
+	for b := range 256 {
 		if target := trieRoot[b]; target != -1 {
 			used[b] = true
 			hashes[b] ^= mixAC64(0, uint64(target))
@@ -830,7 +821,7 @@ func computeByteClassesSparse(trieStates []acTrieState, trieEdges []acTrieEdge, 
 	}
 
 	unusedClass := -1
-	for b := 0; b < 256; b++ {
+	for b := range 256 {
 		if !used[b] {
 			if unusedClass == -1 {
 				if numClasses >= 128 {

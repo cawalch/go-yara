@@ -525,7 +525,7 @@ func TestFastForwardTruncatedTerminalLoops(t *testing.T) {
 			if len(initial) != 1 {
 				t.Fatalf("expected one consuming state, got %v", initial)
 			}
-			for n := 0; n < len(code); n++ {
+			for n := range code {
 				cur := append([]thread(nil), initial...)
 				pos, end := 0, -1
 				if fastForwardGreedyTerminalLoop(code[:n], &cur, []byte("aaa"), &pos, 0, &end, nil) {

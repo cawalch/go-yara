@@ -94,10 +94,7 @@ func DebugPE(is64 bool, specs ...DebugEntrySpec) []byte {
 		mappedCursor += (len(spec.Payload) + 15) &^ 15
 	}
 
-	rawDataSize := ((mappedCursor + 0x1ff) / 0x200) * 0x200
-	if rawDataSize < 0x200 {
-		rawDataSize = 0x200
-	}
+	rawDataSize := max(((mappedCursor+0x1ff)/0x200)*0x200, 0x200)
 	overlayCursor := tableRaw + rawDataSize
 	for i, spec := range specs {
 		if !spec.InOverlay && spec.OutOfPrefix <= 0 {
@@ -123,10 +120,7 @@ func DebugPE(is64 bool, specs ...DebugEntrySpec) []byte {
 		}
 	}
 
-	totalSize := max(len(base), tableRaw+rawDataSize)
-	if maxOverlayEnd > totalSize {
-		totalSize = maxOverlayEnd
-	}
+	totalSize := max(maxOverlayEnd, max(len(base), tableRaw+rawDataSize))
 	out := make([]byte, totalSize)
 	copy(out, base)
 

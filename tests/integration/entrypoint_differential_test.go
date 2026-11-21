@@ -58,7 +58,7 @@ rule ep_eq_220 { condition: entrypoint == 0x220 }
 				t.Fatalf("yara failed: %v (%s)", err, string(out))
 			}
 			var want []string
-			for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
 				if line == "" {
 					continue
 				}

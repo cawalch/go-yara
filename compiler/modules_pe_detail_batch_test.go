@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/cawalch/go-yara/internal/pefixture"
@@ -13,8 +14,8 @@ func TestPEBatchedDetailViewsRemainDistinct(t *testing.T) {
 		image := loadPE(&MatchContext{Data: data, FileSize: int64(len(data))})
 		exports := image.exportField("export_details").object.elements
 		clear(data) // Deferred fields must use the owned export snapshot.
-		for index := len(exports) - 1; index >= 0; index-- {
-			view := exports[index].object
+		for index, export := range slices.Backward(exports) {
+			view := export.object
 			if got := view.resolveField("name").String; got != fmt.Sprintf("Function%05d", index) {
 				t.Fatalf("export %d: %q", index, got)
 			}
@@ -34,8 +35,8 @@ func TestPEBatchedDetailViewsRemainDistinct(t *testing.T) {
 		library := image.importField("import_details").object.elements[0].object
 		functions := library.field("functions").object.elements
 		clear(data)
-		for index := len(functions) - 1; index >= 0; index-- {
-			view := functions[index].object
+		for index, function := range slices.Backward(functions) {
+			view := function.object
 			want := fmt.Sprintf("ord%d", index)
 			if got := view.resolveField("name").String; got != want {
 				t.Fatalf("import %d: %q want %q", index, got, want)

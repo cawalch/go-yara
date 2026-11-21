@@ -194,11 +194,9 @@ func TestDeferredAutomatonConcurrentBuild(t *testing.T) {
 	results := make([][]acMatch, workers)
 	var wg sync.WaitGroup
 	for i := range workers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			results[i] = slices.Collect(deferred.SearchIter(data))
-		}()
+		})
 	}
 	wg.Wait()
 

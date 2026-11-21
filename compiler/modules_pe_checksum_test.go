@@ -139,8 +139,7 @@ rule large { condition: pe.calculate_checksum() == %d }`, wantSmall, wantMid, wa
 		t.Fatal(err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	// Complete <= 64 KiB stream & buffer succeed.
 	for label, fn := range map[string]func() (*ScanResult, error){

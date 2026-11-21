@@ -2,7 +2,6 @@ package compiler
 
 import (
 	"bytes"
-	"context"
 	"encoding/binary"
 	"fmt"
 	"os"
@@ -147,8 +146,7 @@ func TestPEImportsReaderLimit(t *testing.T) {
 	if err := os.WriteFile(path, pefixture.Imports(false, 16384), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	r, err = s.ScanFileWithContext(ctx, path)
 	if err != nil || !r.RuleResults["headers"] || !r.RuleResults["unavailable"] {
 		t.Fatalf("cancellable file: %v %v", r, err)

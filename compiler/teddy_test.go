@@ -188,8 +188,7 @@ func TestTeddyCancelableWindowCandidates(t *testing.T) {
 		if prefilter == nil {
 			continue // Not every architecture supports both bank counts.
 		}
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		for _, from := range []int{0, 7} {
 			for _, offset := range []int{cancelableSearchWindow - 2, cancelableSearchWindow - 1, cancelableSearchWindow, cancelableSearchWindow + 1, 3 * cancelableSearchWindow / 2} {
 				data := make([]byte, 2*cancelableSearchWindow+64)
