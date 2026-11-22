@@ -21,3 +21,5 @@ Each row below is verified against `libyara 4.6.0` in [libyara_compatibility_dif
 | Expression quantifiers (`(1+1) of them`, `#a of them`, `for uint8(255) of them : ($)`) | Accepted | Accepted | Accepted | Enforced unconditionally (`#516`). |
 | Duplicate `meta:` keys (`meta: hash = "1" hash = "2"`) | Accepted | Accepted | Accepted | Multiple metadata entries with the same key are preserved. |
 | Leading or trailing hex jump (`{ [1-2] 61 62 }`, `{ 61 62 [1-2] }`) | Syntax error: `invalid hex string "$a": syntax error` | Accepted | Rejected | Preserves permissive default for existing corpora while enforcing strict `libyara` hex grammar under `WithStrictLibyaraCompatibility(true)`. |
+| `xor` + `nocase` (`$a = "abc" nocase xor`) | Error: `invalid modifier combination: xor nocase` | Accepted | Rejected | Preserves permissive default while matching `libyara`'s modifier restriction under strict mode. |
+| `xor` on hex strings (`$a = { 61 62 } xor`) | Syntax error: `unexpected <xor>` | Accepted | Rejected | `libyara` only permits `private` on hex strings (`nocase`/`ascii`/`wide`/`fullword` are rejected unconditionally); strict mode also rejects `xor` on hex strings. |

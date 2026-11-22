@@ -73,4 +73,22 @@ func TestMultiRuleDiagnosticsInSinglePass(t *testing.T) {
 			t.Fatalf("expected 2 codegen errors, got %d: %+v", len(comp.GetErrors()), comp.GetErrors())
 		}
 	})
+
+	t.Run("malformed meta entry does not hang and reports later rule errors", func(t *testing.T) {
+		source := `
+			rule bad_meta { meta: a b = 1 c = d condition: true }
+			rule bad_sem_after_meta { condition: undefined_after_meta }
+		`
+		comp := NewCompiler()
+		_, err := comp.CompileSource(source)
+		if err == nil {
+			t.Fatal("expected compilation error, got nil")
+		}
+		msg := err.Error()
+		for _, want := range []string{"bad_meta", "bad_sem_after_meta", "undefined_after_meta"} {
+			if !strings.Contains(msg, want) {
+				t.Fatalf("expected error %q to contain %q", msg, want)
+			}
+		}
+	})
 }

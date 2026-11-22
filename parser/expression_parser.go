@@ -494,7 +494,7 @@ func (p *ExpressionParser) parseDataTypeFunction() (ast.Expression, error) {
 func (p *ExpressionParser) parseCallArgs(syntaxErr bool) ([]ast.Expression, error) {
 	p.nextToken() // consume '('
 	var args []ast.Expression
-	for !p.currentTokenIs(token.RPAREN) {
+	for !p.currentTokenIs(token.RPAREN) && !p.currentTokenIs(token.EOF) {
 		arg, err := p.ParseExpression()
 		if err != nil {
 			if syntaxErr {

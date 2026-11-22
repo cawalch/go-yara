@@ -512,7 +512,7 @@ func runExecuteMode(content, dataFile, filename string, args *commandArgs) error
 		if err := printStreamingDataSummary(dataFile); err != nil {
 			return err
 		}
-		compiledProgram, err := compileRules(content, filename)
+		compiledProgram, err := compileRules(content, args)
 		if err != nil {
 			return err
 		}
@@ -527,7 +527,7 @@ func runExecuteMode(content, dataFile, filename string, args *commandArgs) error
 
 	printDataSummary(dataFile, data)
 
-	compiledProgram, err := compileRules(content, filename)
+	compiledProgram, err := compileRules(content, args)
 	if err != nil {
 		return err
 	}
@@ -547,9 +547,14 @@ func printCompilationErrors(comp *compiler.Compiler) bool {
 	return true
 }
 
-func compileRules(content, filename string) (*compiler.CompiledProgram, error) {
-	comp := compiler.NewCompiler()
-	comp.SetBaseDir(filepath.Dir(filename))
+func compileRules(content string, args *commandArgs) (*compiler.CompiledProgram, error) {
+	comp := compiler.NewCompiler(
+		compiler.WithWarnings(args == nil || !args.noWarnings),
+		compiler.WithStrictLibyaraCompatibility(args != nil && args.strictLibyara),
+	)
+	if args != nil {
+		comp.SetBaseDir(filepath.Dir(args.filename))
+	}
 	compiledProgram, err := comp.CompileSourceWithContext(context.Background(), content)
 	if err != nil {
 		printCompilationErrors(comp)
