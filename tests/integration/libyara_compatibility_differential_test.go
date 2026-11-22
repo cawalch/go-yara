@@ -176,6 +176,30 @@ func TestLibyaraCompatibilityMatrixDifferential(t *testing.T) {
 			wantDefaultHit: true,
 			wantStrictErr:  "leading or trailing jump",
 		},
+		{
+			name:           "xor-nocase-modifier",
+			source:         `rule c { strings: $a = "abc" nocase xor condition: $a }`,
+			data:           []byte("abc"),
+			wantLibyaraErr: "invalid modifier combination",
+			wantDefaultHit: true,
+			wantStrictErr:  "xor and nocase",
+		},
+		{
+			name:           "hex-xor-modifier",
+			source:         `rule c { strings: $a = { 61 62 } xor condition: $a }`,
+			data:           []byte("ab"),
+			wantLibyaraErr: "syntax error",
+			wantDefaultHit: true,
+			wantStrictErr:  "text-only string modifiers",
+		},
+		{
+			name:           "hex-nocase-modifier",
+			source:         `rule c { strings: $a = { 61 62 } nocase condition: $a }`,
+			data:           []byte("ab"),
+			wantLibyaraErr: "syntax error",
+			wantDefaultErr: "cannot have 'nocase' modifier",
+			wantStrictErr:  "cannot have 'nocase' modifier",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			oracle, oracleErr := scanWithLibyara(t, bin, tc.source, tc.data)

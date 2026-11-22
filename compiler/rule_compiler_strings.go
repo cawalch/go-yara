@@ -367,6 +367,9 @@ func (rc *ruleCompiler) compileHexString(value string, modifiers []ast.StringMod
 		rc.stringCompiler.hasModifier(modifiers, ast.StringModifierBase64Wide) {
 		return nil, errors.New("base64 modifiers are only supported for text strings")
 	}
+	if rc.stringCompiler.strictLibyaraCompatibility && hasTextOnlyHexModifier(modifiers) {
+		return nil, errors.New("text-only string modifiers are not allowed on hex strings in strict libyara compatibility mode")
+	}
 	hexPattern, err := rc.stringCompiler.parseHexPattern(value)
 	if err != nil {
 		return nil, err
@@ -385,10 +388,24 @@ func (rc *ruleCompiler) compileHexString(value string, modifiers []ast.StringMod
 	}, nil
 }
 
+func hasTextOnlyHexModifier(modifiers []ast.StringModifier) bool {
+	for _, mod := range modifiers {
+		switch mod.Type {
+		case ast.StringModifierASCII, ast.StringModifierWide, ast.StringModifierNocase,
+			ast.StringModifierFullword, ast.StringModifierXor, ast.StringModifierBase64, ast.StringModifierBase64Wide:
+			return true
+		}
+	}
+	return false
+}
+
 func (rc *ruleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers []ast.StringModifier) (*stringCompilationResult, error) {
 	if rc.stringCompiler.hasModifier(modifiers, ast.StringModifierBase64) ||
 		rc.stringCompiler.hasModifier(modifiers, ast.StringModifierBase64Wide) {
 		return nil, errors.New("base64 modifiers are only supported for text strings")
+	}
+	if rc.stringCompiler.strictLibyaraCompatibility && hasTextOnlyHexModifier(modifiers) {
+		return nil, errors.New("text-only string modifiers are not allowed on hex strings in strict libyara compatibility mode")
 	}
 	code, parsed, err := rc.stringCompiler.compileRegexWithAST(pattern.Value, modifiers)
 	if err != nil {

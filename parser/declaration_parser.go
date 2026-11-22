@@ -69,14 +69,19 @@ func (p *DeclarationParser) parseMetaDeclarations() []*ast.Meta {
 	meta := make([]*ast.Meta, 0)
 
 	for !p.currentTokenIs(token.STRINGS) && !p.currentTokenIs(token.EVIDENCE) &&
-		!p.currentTokenIs(token.CONDITION) && !p.currentTokenIs(token.RBRACE) {
+		!p.currentTokenIs(token.CONDITION) && !p.currentTokenIs(token.RBRACE) && !p.currentTokenIs(token.EOF) {
 		if !p.currentTokenIs(token.IDENTIFIER) && !p.isIdentifierKeyword(p.current.Type) {
 			break
 		}
 
+		beforePos := p.current.Pos
+		beforeType := p.current.Type
 		metaEntry, err := p.parseMetaEntry()
 		if err != nil {
 			p.addError(err)
+			if p.current.Pos == beforePos && p.current.Type == beforeType {
+				p.nextToken()
+			}
 		} else if metaEntry != nil {
 			meta = append(meta, metaEntry)
 		}

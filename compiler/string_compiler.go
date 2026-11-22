@@ -556,6 +556,10 @@ func (sc *stringCompiler) ValidateStringModifiers(modifiers []ast.StringModifier
 		return errors.New("base64 modifiers are incompatible with 'wide' or 'ascii'")
 	}
 
+	if sc.strictLibyaraCompatibility && hasXor && hasNocase {
+		return errors.New("invalid modifier combination: xor and nocase")
+	}
+
 	return nil
 }
 
