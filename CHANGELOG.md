@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+* **CLI `-w`/`--no-warnings` and `--strict-libyara` flags:** Surface compiler warnings (`WarningSlowPattern`, `WarningUnusedString`, etc.) and collected compilation errors on `stderr`, and expose `-w`/`--no-warnings` and `--strict-libyara` across scan, `--mode=compile`, and `--mode=execute` ([#638](https://github.com/cawalch/go-yara/pull/638), [#640](https://github.com/cawalch/go-yara/pull/640), [#644](https://github.com/cawalch/go-yara/pull/644); closes [#634](https://github.com/cawalch/go-yara/issues/634), [#643](https://github.com/cawalch/go-yara/issues/643)).
+* **Costly-pattern warnings (`WarningSlowPattern`):** Flag wide `xor` key ranges on text/hex patterns and unbounded hex jumps (`[-]`, `[n-]`) (`Max < 0`) ([#638](https://github.com/cawalch/go-yara/pull/638); closes [#633](https://github.com/cawalch/go-yara/issues/633), [#637](https://github.com/cawalch/go-yara/issues/637)).
+
+### Changed
+
+* Updated `github.com/cawalch/go-pe` dependency from `v0.1.0` to `v0.2.0` ([#625](https://github.com/cawalch/go-yara/pull/625)).
+* Removed test-only helpers from production files, deduplicated shared helpers across `compiler`, `parser`, `semantic`, `regex`, and `internal/pefixture`, and applied Go 1.27 `go fix` modernizations ([#626](https://github.com/cawalch/go-yara/pull/626), [#627](https://github.com/cawalch/go-yara/pull/627), [#628](https://github.com/cawalch/go-yara/pull/628), [#630](https://github.com/cawalch/go-yara/pull/630)).
+
+### Fixed
+
+* **Strict `libyara` compatibility (`hex` and string modifiers):** Reject leading/trailing hex jumps, `xor` + `nocase`, and `xor` on hex strings under `WithStrictLibyaraCompatibility(true)` with updated compatibility docs and differential tests, and reject consecutive hex jumps, stray `{`/`}`, and unterminated `/*` block comments unconditionally ([#638](https://github.com/cawalch/go-yara/pull/638), [#644](https://github.com/cawalch/go-yara/pull/644); closes [#631](https://github.com/cawalch/go-yara/issues/631), [#635](https://github.com/cawalch/go-yara/issues/635), [#642](https://github.com/cawalch/go-yara/issues/642)).
+* **Multi-rule diagnostics and parser recovery:** Report all collected parser, semantic, and codegen errors in a single compile pass (including `rule %q` context in `semantic.Error.Error()`), continue semantic analysis on valid rules after parse errors, honor recovery on `global rule` declarations, and fix infinite recovery loops in `parseStringDeclarations` and `parseMetaDeclarations` ([#638](https://github.com/cawalch/go-yara/pull/638), [#640](https://github.com/cawalch/go-yara/pull/640), [#644](https://github.com/cawalch/go-yara/pull/644); closes [#632](https://github.com/cawalch/go-yara/issues/632), [#636](https://github.com/cawalch/go-yara/issues/636), [#641](https://github.com/cawalch/go-yara/issues/641)).
+
 ## [v0.11.1] - 2026-11-19
 
 ### Performance
