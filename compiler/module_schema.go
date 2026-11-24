@@ -3,6 +3,7 @@ package compiler
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/cawalch/go-yara/semantic"
@@ -105,6 +106,9 @@ func validateModuleField(field ModuleField, depth int) error {
 	if field.Constant != nil {
 		if field.Kind < ModuleInteger || field.Kind > ModuleBoolean || field.Constant.Type != field.Kind {
 			return errors.New("module constant must match its scalar field type")
+		}
+		if field.Kind == ModuleFloat && math.IsNaN(field.Constant.Float) {
+			return errors.New("module float constant cannot be NaN")
 		}
 	}
 	switch field.Kind {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/cawalch/go-yara/regex"
 )
@@ -101,8 +100,40 @@ func parseModuleRegexLiteral(literal string) (string, regex.Flags, error) {
 	if len(literal) < 2 || literal[0] != '/' {
 		return "", 0, errors.New("module regex must be delimited with '/'")
 	}
-	endIdx := strings.LastIndexByte(literal, '/')
-	if endIdx <= 0 || isEscapedSlash(literal, endIdx) {
+	endIdx := -1
+	inClass := false
+	classStart := false
+	classNegated := false
+	for idx := 1; idx < len(literal); idx++ {
+		ch := literal[idx]
+		if ch == '\\' {
+			idx++
+			classStart = false
+			continue
+		}
+		if inClass {
+			if classStart && ch == '^' && !classNegated {
+				classNegated = true
+				continue
+			}
+			if ch == ']' && !classStart {
+				inClass = false
+			}
+			classStart = false
+			continue
+		}
+		if ch == '[' {
+			inClass = true
+			classStart = true
+			classNegated = false
+			continue
+		}
+		if ch == '/' {
+			endIdx = idx
+			break
+		}
+	}
+	if endIdx <= 0 {
 		return "", 0, errors.New("unterminated module regex literal")
 	}
 	var flags regex.Flags
@@ -117,14 +148,6 @@ func parseModuleRegexLiteral(literal string) (string, regex.Flags, error) {
 		}
 	}
 	return literal[1:endIdx], flags, nil
-}
-
-func isEscapedSlash(s string, slashIdx int) bool {
-	backslashes := 0
-	for idx := slashIdx - 1; idx >= 0 && s[idx] == '\\'; idx-- {
-		backslashes++
-	}
-	return backslashes%2 == 1
 }
 
 func validateCompiledModuleRegex(entry *compiledModuleRegex) error {

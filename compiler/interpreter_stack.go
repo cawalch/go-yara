@@ -306,25 +306,12 @@ func (i *Interpreter) executeModuleCall(id builtinFunction, function ModuleFunct
 
 func normalizeModuleArguments(signatures []ModuleSignature, args []ModuleValue) bool {
 	for _, signature := range signatures {
-		if len(signature.Arguments) != len(args) {
-			continue
+		if matchModuleSignature(signature.Arguments, args, false) {
+			return true
 		}
-		matches := true
-		for index, expected := range signature.Arguments {
-			actual := args[index]
-			if expected == ModuleRegex {
-				if actual.Type != ModuleRegex || actual.regex.program == nil {
-					matches = false
-					break
-				}
-				continue
-			}
-			if actual.Type != expected && (actual.Type != ModuleInteger || (expected != ModuleFloat && expected != ModuleBoolean)) {
-				matches = false
-				break
-			}
-		}
-		if !matches {
+	}
+	for _, signature := range signatures {
+		if !matchModuleSignature(signature.Arguments, args, true) {
 			continue
 		}
 		for index, expected := range signature.Arguments {
@@ -338,6 +325,28 @@ func normalizeModuleArguments(signatures []ModuleSignature, args []ModuleValue) 
 		return true
 	}
 	return false
+}
+
+func matchModuleSignature(expectedTypes []ModuleValueType, args []ModuleValue, allowCoerce bool) bool {
+	if len(expectedTypes) != len(args) {
+		return false
+	}
+	for index, expected := range expectedTypes {
+		actual := args[index]
+		if expected == ModuleRegex {
+			if actual.Type != ModuleRegex || actual.regex.program == nil {
+				return false
+			}
+			continue
+		}
+		if actual.Type == expected {
+			continue
+		}
+		if !allowCoerce || actual.Type != ModuleInteger || (expected != ModuleFloat && expected != ModuleBoolean) {
+			return false
+		}
+	}
+	return true
 }
 
 func (i *Interpreter) pushModuleValue(result ModuleValue) error {
