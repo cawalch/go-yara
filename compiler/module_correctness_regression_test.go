@@ -225,16 +225,24 @@ rule r {
 }
 
 func TestMathModeEmptyRangeAndHashEmptyBlock(t *testing.T) {
-	// math.mode(0, 0) on "abc" must return undefined.
+	// Match libyara parity: math.mode(0, 0) on non-empty input returns 0,
+	// while math.mode(0, 0) on empty input is undefined.
 	mathProg, err := NewCompiler().CompileSourceWithContext(
 		context.Background(),
-		`import "math" rule r { condition: not defined math.mode(0, 0) }`,
+		`import "math"
+rule zero_len_nonempty { condition: math.mode(0, 0) == 0 }
+rule zero_len_undef { condition: not defined math.mode(0, 0) }`,
 	)
 	if err != nil {
 		t.Fatalf("compile math failed: %v", err)
 	}
-	if yes, err := mathProg.Matches([]byte("abc")); err != nil || !yes {
-		t.Fatalf("math.mode(0, 0) did not evaluate to undefined: matched=%t err=%v", yes, err)
+	resNonEmpty, err := mathProg.Scan([]byte("abc"))
+	if err != nil || !resNonEmpty.RuleResults["zero_len_nonempty"] {
+		t.Fatalf("math.mode(0, 0) on non-empty input did not return 0: res=%v err=%v", resNonEmpty, err)
+	}
+	resEmpty, err := mathProg.Scan(nil)
+	if err != nil || !resEmpty.RuleResults["zero_len_undef"] {
+		t.Fatalf("math.mode(0, 0) on empty input did not evaluate to undefined: res=%v err=%v", resEmpty, err)
 	}
 
 	// hash.md5(0, 8) across blocks [0,4), [4,4), [4,8) must succeed.

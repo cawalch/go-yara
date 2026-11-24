@@ -159,9 +159,9 @@ func moduleDistribution(ctx ModuleContext, name string, args []ModuleValue) Modu
 		}
 		return IntegerValue(count)
 	}
-	if len(data) == 0 {
-		return ModuleValue{}
-	}
+	// Match libyara's math.mode() behavior: when moduleDataRange succeeds with
+	// a zero-length slice (e.g., math.mode(0, 0) on non-empty input), all byte
+	// counts are 0 and the lowest-byte tie-breaker returns 0.
 	var counts [256]int64
 	for _, b := range data {
 		counts[b]++
