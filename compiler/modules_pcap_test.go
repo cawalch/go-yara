@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"io"
 	"math/big"
+	"os"
 	"slices"
 	"testing"
 
@@ -207,5 +208,35 @@ func TestPCAPLazyReads(t *testing.T) {
 	t.Logf("TLS random reads: unused=0, one rule=%d, two rules=%d", one, two)
 	if one == 0 || two != one {
 		t.Fatalf("one TLS rule: %d reads, two: %d", one, two)
+	}
+}
+
+func TestPCAPExampleRules(t *testing.T) {
+	rules, err := os.ReadFile("../examples/pcap/tls.yar")
+	if err != nil {
+		t.Fatal(err)
+	}
+	program, err := NewCompiler().CompileSourceWithContext(t.Context(), string(rules))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name              string
+		sans              []string
+		mismatch, missing bool
+	}{
+		{"wildcard", []string{"*.example.test"}, false, false},
+		{"wrong certificate", []string{"other.example.test"}, true, false},
+		{"unavailable certificate", nil, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := program.Scan(pcapNameFixture(t, tc.sans))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.RuleResults["tls_name_mismatch"] != tc.mismatch || result.RuleResults["tls_name_evidence_missing"] != tc.missing {
+				t.Fatalf("unexpected matches: %v", result.RuleResults)
+			}
+		})
 	}
 }
