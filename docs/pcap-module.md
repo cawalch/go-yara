@@ -1,19 +1,33 @@
-# TLS certificate-name rules for captures
+# Detecting network activity with go-pcap and go-yara
 
-Import `pcap` to inspect TLS handshakes in a classic PCAP or PcapNG capture.
-This rule flags a capture when at least one observed client DNS name disagrees
-with the DNS names on that flow’s server leaf certificate.
+Use the built-in `pcap` module to evaluate TLS certificate names across a
+capture. For other protocol fields, a Go application can decode records with
+go-pcap and pass the field of interest to a YARA rule. The DNS example below
+shows how to carry the matching packet and flow into a finding.
 
-```yara
-import "pcap"
+Run these examples from a go-yara checkout containing the pilot (commit
+`0871b5b` or later). The published v0.11.1 CLI predates `import "pcap"`.
+The commands use synthetic PcapNG fixtures from the pinned go-pcap dependency.
 
-rule tls_name_mismatch {
-    condition:
-        for any row in pcap.tls : (
-            defined row.server_name_match and not row.server_name_match
-        )
-}
+## Triage a certificate-name alert after a proxy change
+
+After a proxy or load-balancer certificate rotation, a listener might present
+its default certificate for the wrong hostname. The [TLS rules](../examples/pcap/tls.yar)
+compare each observed ClientHello server name (SNI) with the DNS names on the
+server leaf certificate for that same flow.
+
+```sh
+go mod download github.com/cawalch/go-pcap
+fixtures="$(go list -m -f '{{.Dir}}' github.com/cawalch/go-pcap)/testdata/deployments"
+go run ./cmd examples/pcap/tls.yar "$fixtures/proxy.pcapng"
 ```
+
+The CLI prints the rule name followed by the input path. On the proxy fixture
+the only hit is `tls_name_evidence_missing`. Both proxy legs have a TLS 1.3
+handshake, but the capture has no keys to recover either leaf certificate.
+On a capture with visible certificates, `tls_name_mismatch` fires if any flow
+has a **defined false** comparison. Check which proxy leg presented the
+certificate and whether its configured SANs cover the requested hostname.
 
 | `row.server_name_match` | Example |
 | --- | --- |
@@ -26,6 +40,37 @@ Flows without a TLS handshake can precede it. For example, a rule can require
 `row.flow_index == 3` alongside its name check. A rule match identifies the
 rule and input. The comparison alone makes no assertion about certificate trust
 or malicious activity.
+
+To reproduce a confirmed mismatch, run the integration test. Its synthetic
+capture includes a wildcard match, a mismatch on flow 2, a missing leaf,
+and a name beyond the SAN limit. It exercises both slice and seekable inputs.
+
+```sh
+go test ./compiler -run '^TestPCAP(Example|Name)Rules$' -v
+```
+
+## Identify devices querying a watched DNS name
+
+During a collector migration, you may want to find devices still querying the
+old hostname. The [DNS watch example](../examples/pcap/dns-watch/main.go)
+uses go-pcap to decode questions, skips responses, and scans each question name
+with a compiled YARA rule. The rule matches the complete name case-insensitively.
+The application retains the packet and flow indices from that DNS record.
+
+```sh
+go run ./examples/pcap/dns-watch "$fixtures/iot.pcapng"
+```
+
+```text
+watched_dns_question packet=2 flow=2 name="collector.example"
+```
+
+The indices are zero-based, so open frame 3 in a packet viewer. The same command
+on `client.pcapng` produces no output because its question is for `trace.example`.
+A hit establishes that the device queried the name. A completed connection or
+successful migration requires separate evidence.
+
+## Capture and reader limits
 
 The scanner opens the capture and extracts TLS on first evaluated access to `pcap.tls`, then
 reuses the results across rules in that scan. Importing the module or testing `defined pcap` alone incurs
