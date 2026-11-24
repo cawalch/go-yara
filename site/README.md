@@ -34,7 +34,7 @@ The deployment workflow resolves the latest stable GitHub release on every build
 
 Every page shows its release version and links to that release. The site has one current version; older release notes remain on GitHub. A release publication or completion of the Release workflow rebuilds the site. The latter also covers releases created with `GITHUB_TOKEN`, which do not trigger another release event workflow. Pushes to `main` rebuild it too, so prose fixes do not need a Go release. Internal links, anchors, local assets, canonical URLs, page metadata, and the nine-page sitemap are checked on every build. External links are checked before deployment.
 
-Automated checks cannot establish that every explanatory sentence still matches the implementation. Use this table during code review. For an unreleased behavior change, add a documentation task to the changelog and finish the corresponding prose change before publishing the release. Do not update a page to promise unreleased behavior.
+Automated checks cannot establish that every explanatory sentence still matches the implementation. Use this table during code review. For an unreleased behavior change, add a documentation task to the changelog and finish the corresponding prose change before publishing the release. Explicitly marked unreleased examples may be published separately from the stable reference: require a source checkout, state the release exclusion beside the commands, and validate them only against HEAD. The modules page uses this boundary for go-pcap examples.
 
 | Changed code or contract | Pages to review |
 | --- | --- |
