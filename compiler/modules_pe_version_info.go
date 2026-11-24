@@ -54,12 +54,15 @@ func (image *peImage) loadVersionInfo() *peVersionData {
 		return &peVersionData{}
 	}
 	res := image.loadResources()
-	image.versionInfo = &peVersionData{}
+	if scanCanceled(done) {
+		return &peVersionData{}
+	}
 	if !res.valid {
+		image.versionInfo = &peVersionData{}
 		return image.versionInfo
 	}
 	if !res.present || len(res.records) == 0 {
-		image.versionInfo.valid = true
+		image.versionInfo = &peVersionData{valid: true}
 		return image.versionInfo
 	}
 
@@ -67,22 +70,24 @@ func (image *peImage) loadVersionInfo() *peVersionData {
 	var entries []peVersionEntry
 	for idx := range res.records {
 		if scanCanceledAt(done, idx) {
-			image.versionInfo = &peVersionData{}
-			return image.versionInfo
+			return &peVersionData{}
 		}
 		rec := res.records[idx]
 		if len(rec.Path) == 0 || rec.Path[0].Named || rec.Path[0].ID != peVersionResourceType {
 			continue
 		}
 		if rec.Size == 0 || uint64(rec.Size) > uint64(len(data)) || uint64(rec.Size) > pe.MaxVersionPayloadBytes {
+			image.versionInfo = &peVersionData{}
 			return image.versionInfo
 		}
 		payload, err := image.file.ResourcePayload(data, rec)
 		if err != nil {
+			image.versionInfo = &peVersionData{}
 			return image.versionInfo
 		}
 		vi, err := pe.ParseVersionInfo(payload)
 		if err != nil {
+			image.versionInfo = &peVersionData{}
 			return image.versionInfo
 		}
 		for _, tbl := range vi.StringTables {
@@ -94,8 +99,13 @@ func (image *peImage) loadVersionInfo() *peVersionData {
 			}
 		}
 	}
-	image.versionInfo.entries = entries
-	image.versionInfo.valid = true
+	if scanCanceled(done) {
+		return &peVersionData{}
+	}
+	image.versionInfo = &peVersionData{
+		entries: entries,
+		valid:   true,
+	}
 	return image.versionInfo
 }
 

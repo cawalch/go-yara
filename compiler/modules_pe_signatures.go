@@ -567,6 +567,9 @@ func peCertSignatureAlgorithmOID(cert *x509.Certificate) asn1.ObjectIdentifier {
 }
 
 func peFormatColonHex(b []byte) string {
+	if len(b) == 0 {
+		return ""
+	}
 	const hexDigits = "0123456789abcdef"
 	buf := make([]byte, len(b)*3-1)
 	for i, v := range b {

@@ -357,6 +357,7 @@ func (scanner *BlockScanner) Reset() {
 	scanner.blocks = scanner.blocks[:0]
 	if scanner.scanner != nil {
 		scanner.scanner.matchCtx.Reset(nil)
+		scanner.scanner.moduleCache.reset()
 	}
 	clear(scanner.matches)
 	clear(scanner.profileCounts)

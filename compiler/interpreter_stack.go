@@ -281,7 +281,7 @@ func (i *Interpreter) executeModuleCall(id builtinFunction, function ModuleFunct
 		case "pe.rich_signature.version", "pe.rich_signature.toolid":
 			result = i.peRichQuery(moduleArgs, name == "pe.rich_signature.toolid")
 		}
-		if cache != nil {
+		if cache != nil && !scanCanceled(done) {
 			cache.put(key, result)
 		}
 		return i.pushModuleValue(result)
@@ -298,7 +298,7 @@ func (i *Interpreter) executeModuleCall(id builtinFunction, function ModuleFunct
 	if result.Type != ModuleUndefined && result.Type != moduleResultType(function, moduleArgs) {
 		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpCall, Message: "module returned an unexpected value type"}
 	}
-	if cache != nil {
+	if cache != nil && !scanCanceled(done) {
 		cache.put(key, result)
 	}
 	return i.pushModuleValue(result)
