@@ -216,11 +216,34 @@ func (ac *acAutomaton) insertPatternEdges(config stringConfig, stringIndex int32
 		ac.insertPatternEdgesDense(config, stringIndex)
 		return
 	}
-	currentState := int32(0)
-	noCase := config.Flags&regex.FlagsNoCase != 0
-	root := ac.trieRoot
+	ac.insertPatternEdgesFrom(0, config, stringIndex)
+}
 
-	for _, b := range config.Data {
+func (ac *acAutomaton) lookupSparseVariants(currentState int32, variants [2]byte, n int) (int32, int32) {
+	if currentState == 0 {
+		t0 := ac.trieRoot[variants[0]]
+		t1 := int32(-1)
+		if n == 2 {
+			t1 = ac.trieRoot[variants[1]]
+		}
+		return t0, t1
+	}
+	t0, t1 := int32(-1), int32(-1)
+	v0 := variants[0]
+	for e := ac.trieStates[currentState].firstEdge; e != -1; e = ac.trieEdges[e].next {
+		eb := ac.trieEdges[e].b
+		if eb == v0 {
+			t0 = ac.trieEdges[e].to
+		} else if n == 2 && eb == variants[1] {
+			t1 = ac.trieEdges[e].to
+		}
+	}
+	return t0, t1
+}
+
+func (ac *acAutomaton) insertPatternEdgesFrom(currentState int32, config stringConfig, stringIndex int32) {
+	noCase := config.Flags&regex.FlagsNoCase != 0
+	for idx, b := range config.Data {
 		var variants [2]byte
 		n := 1
 		variants[0] = b
@@ -231,25 +254,23 @@ func (ac *acAutomaton) insertPatternEdges(config stringConfig, stringIndex int32
 			}
 		}
 
-		nextState := int32(-1)
-		if currentState == 0 {
-			for k := 0; k < n; k++ {
-				if t := root[variants[k]]; t != -1 {
-					nextState = t
-					break
-				}
-			}
-		} else {
-			v0 := variants[0]
-			for e := ac.trieStates[currentState].firstEdge; e != -1; e = ac.trieEdges[e].next {
-				eb := ac.trieEdges[e].b
-				if eb == v0 || (n == 2 && eb == variants[1]) {
-					nextState = ac.trieEdges[e].to
-					break
-				}
-			}
+		t0, t1 := ac.lookupSparseVariants(currentState, variants, n)
+
+		// When both ASCII cases already lead to distinct states (from prior
+		// case-sensitive patterns), insert the remaining suffix down both
+		// branches so neither case drops this nocase pattern.
+		if n == 2 && t0 != -1 && t1 != -1 && t0 != t1 {
+			branch := config
+			branch.Data = config.Data[idx+1:]
+			ac.insertPatternEdgesFrom(t1, branch, stringIndex)
+			currentState = t0
+			continue
 		}
 
+		nextState := t0
+		if nextState == -1 {
+			nextState = t1
+		}
 		if nextState == -1 {
 			nextState = mustACIndex(len(ac.trieStates))
 			ac.trieStates = append(ac.trieStates, acTrieState{firstEdge: -1})
@@ -308,11 +329,12 @@ func (ac *acAutomaton) addSparseEdge(state int32, b byte, nextState int32) {
 }
 
 func (ac *acAutomaton) insertPatternEdgesDense(config stringConfig, stringIndex int32) {
-	// Build trie for pattern matching
-	currentState := int32(0) // Start at root
-	noCase := config.Flags&regex.FlagsNoCase != 0
+	ac.insertPatternEdgesDenseFrom(0, config, stringIndex)
+}
 
-	for _, b := range config.Data {
+func (ac *acAutomaton) insertPatternEdgesDenseFrom(currentState int32, config stringConfig, stringIndex int32) {
+	noCase := config.Flags&regex.FlagsNoCase != 0
+	for idx, b := range config.Data {
 		// For nocase strings the pattern is already lowercased; register both
 		// ASCII cases of each alphabetic byte so the shared automaton fires on
 		// any case. Case-sensitive strings keep a single transition. Because
@@ -330,13 +352,22 @@ func (ac *acAutomaton) insertPatternEdgesDense(config stringConfig, stringIndex 
 			}
 		}
 
-		// Reuse an existing transition across any variant if present.
-		nextState := int32(-1)
-		for k := 0; k < n; k++ {
-			if t := ac.states[currentState].transitions[variants[k]]; t != -1 {
-				nextState = t
-				break
-			}
+		t0 := ac.states[currentState].transitions[variants[0]]
+		t1 := int32(-1)
+		if n == 2 {
+			t1 = ac.states[currentState].transitions[variants[1]]
+		}
+		if n == 2 && t0 != -1 && t1 != -1 && t0 != t1 {
+			branch := config
+			branch.Data = config.Data[idx+1:]
+			ac.insertPatternEdgesDenseFrom(t1, branch, stringIndex)
+			currentState = t0
+			continue
+		}
+
+		nextState := t0
+		if nextState == -1 {
+			nextState = t1
 		}
 		if nextState == -1 {
 			// Create new state

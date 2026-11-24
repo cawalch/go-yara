@@ -240,10 +240,13 @@ func (s *Scanner) populateFixedRegexCache(
 	done := ctx.Done()
 	for position, value := range data {
 		if scanCanceledAt(done, position) {
+			for _, cacheIndex := range dispatch.cacheIndices {
+				cache.matches[cacheIndex] = cache.matches[cacheIndex][:0]
+			}
 			return ctx.Err()
 		}
 		for _, entryIndex := range dispatch.buckets[value] {
-			entry := dispatch.entries[entryIndex]
+			entry := &dispatch.entries[entryIndex]
 			if entry.wide && (position+1 >= len(data) || data[position+1] != 0) {
 				continue
 			}
@@ -255,7 +258,7 @@ func (s *Scanner) populateFixedRegexCache(
 			if entry.wide {
 				flags |= regex.FlagsWide
 			}
-			matched, startOffset, endOffset := execRegexMatchAt(nil, &entry.pattern, data, flags, entry.wide, start, ctx.Done())
+			matched, startOffset, endOffset := execRegexMatchAt(nil, &entry.pattern, data, flags, entry.wide, start, done)
 			if !matched {
 				continue
 			}
@@ -443,17 +446,19 @@ func (s *Scanner) addLocalNonTextMatches(
 				continue
 			}
 		}
+		stoppedEarly := false
 		findPreparedHexMatchesEach(entry.pattern, data, done, &s.hexScratch, func(m Match) bool {
 			m.Pattern = entry.id
 			if matchPassesModifiers(data, m, entry.modifiers, false) {
 				s.matchCtx.addMatchSpanSlot(entry.slot, entry.id, matchSpan{Offset: m.Offset, Length: m.Length})
 				if canShortCircuit && len(s.matchCtx.spansForSlot(entry.slot, entry.id)) > 0 && s.isRuleConditionSatisfied(rule) {
+					stoppedEarly = true
 					return false
 				}
 			}
 			return true
 		})
-		if entry.pattern != nil {
+		if entry.pattern != nil && !stoppedEarly && !scanCanceled(done) {
 			s.storeNonTextCacheSlot(cache, entry.pattern.cacheIndex, entry.slot, entry.id)
 		}
 		if canShortCircuit && len(s.matchCtx.spansForSlot(entry.slot, entry.id)) > 0 && s.isRuleConditionSatisfied(rule) {
@@ -510,17 +515,19 @@ func (s *Scanner) addLocalNonTextMatchesFromMaps(
 				continue
 			}
 		}
+		stoppedEarly := false
 		findPreparedHexMatchesEach(pattern, data, done, &s.hexScratch, func(m Match) bool {
 			m.Pattern = id
 			if matchPassesModifiers(data, m, rule.StringModifiers[id], false) {
 				s.matchCtx.AddMatch(m)
 				if canShortCircuit && len(s.matchCtx.spansFor(id)) > 0 && s.isRuleConditionSatisfied(rule) {
+					stoppedEarly = true
 					return false
 				}
 			}
 			return true
 		})
-		if pattern != nil {
+		if pattern != nil && !stoppedEarly && !scanCanceled(done) {
 			s.storeNonTextCacheSlot(cache, pattern.cacheIndex, -1, id)
 		}
 		if canShortCircuit && len(s.matchCtx.spansFor(id)) > 0 && s.isRuleConditionSatisfied(rule) {

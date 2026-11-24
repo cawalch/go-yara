@@ -240,12 +240,13 @@ func compactPrefilterRejectsClassTable[S ~uint16 | ~int32](data []byte, gate *co
 	var state S
 
 	if !accepting[0] && ac.teddy != nil && len(data) >= 256 {
+		tailBytes := ac.teddy.tailBytes()
 		linearUntil := 0
 		for i := 0; i < len(data); i++ {
-			if state == 0 && i >= linearUntil && len(data)-i >= 32 {
+			if state == 0 && i >= linearUntil && len(data)-i > tailBytes {
 				candidate := ac.teddy.findCandidate(data, i)
 				if candidate < 0 {
-					i = max(i, len(data)-31)
+					i = max(i, len(data)-tailBytes)
 					if i >= len(data) {
 						return true
 					}
@@ -363,12 +364,13 @@ func compactPrefilterRejectsTable[S ~uint16 | ~int32](data []byte, gate *compact
 	var state S
 
 	if !accepting[0] && ac.teddy != nil && len(data) >= 256 {
+		tailBytes := ac.teddy.tailBytes()
 		linearUntil := 0
 		for i := 0; i < len(data); i++ {
-			if state == 0 && i >= linearUntil && len(data)-i >= 32 {
+			if state == 0 && i >= linearUntil && len(data)-i > tailBytes {
 				candidate := ac.teddy.findCandidate(data, i)
 				if candidate < 0 {
-					i = max(i, len(data)-31)
+					i = max(i, len(data)-tailBytes)
 					if i >= len(data) {
 						return true
 					}
