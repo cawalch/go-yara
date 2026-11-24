@@ -311,3 +311,190 @@ func TestModuleCachePreservesFloatSign(t *testing.T) {
 		}
 	}
 }
+
+func TestModuleArgsBufCallbackMutationAndNestedCalls(t *testing.T) {
+	demo := Module{
+		Name: "demo",
+		Functions: map[string]ModuleFunction{
+			"id": {
+				Signatures: []ModuleSignature{{Arguments: []ModuleValueType{ModuleInteger}}},
+				ReturnType: ModuleInteger,
+				Evaluate: func(_ ModuleContext, args []ModuleValue) (ModuleValue, error) {
+					v := args[0].Integer
+					// Mutate args[0] to verify expectedType validation and outer calls are unaffected.
+					args[0] = StringValue("mutated")
+					return IntegerValue(v + 1), nil
+				},
+			},
+			"sum": {
+				Signatures: []ModuleSignature{{Arguments: []ModuleValueType{ModuleInteger, ModuleInteger}}},
+				ReturnType: ModuleInteger,
+				Evaluate: func(_ ModuleContext, args []ModuleValue) (ModuleValue, error) {
+					return IntegerValue(args[0].Integer + args[1].Integer), nil
+				},
+			},
+		},
+	}
+	program, err := NewCompiler(WithModule(demo)).CompileSource(`
+import "demo"
+rule nested {
+	condition:
+		demo.sum(demo.id(10), demo.id(20)) == 32
+}
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scanner := program.NewScanner(WithoutMatches(), WithoutRuleResults())
+	defer scanner.Close()
+	if yes, err := scanner.Matches(nil); err != nil || !yes {
+		t.Fatalf("nested call Matches() = %t, %v, want true", yes, err)
+	}
+	if allocs := testing.AllocsPerRun(100, func() {
+		if yes, err := scanner.Matches(nil); err != nil || !yes {
+			panic("unexpected result")
+		}
+	}); allocs != 0 {
+		t.Fatalf("uncached custom module calls allocated %g times, want 0", allocs)
+	}
+}
+
+func TestModuleZeroCopyStringCallsAndAllocations(t *testing.T) {
+	payload := strings.Repeat("A\x80\x80B", 4096)
+	crcFn := hashModule().Functions["crc32"]
+	wantCRC, err := crcFn.Evaluate(ModuleContext{}, []ModuleValue{StringValue(payload)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	program, err := NewCompiler().CompileSource(fmt.Sprintf(`
+import "hash"
+import "math"
+import "string"
+rule zero_copy {
+	condition:
+		string.length(%q) == %d and
+		hash.crc32(%q) == %d and
+		math.mean(%q) < 0
+}
+`, payload, len(payload), payload, wantCRC.Integer, payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	scanner := program.NewScanner(WithoutMatches(), WithoutRuleResults())
+	defer scanner.Close()
+	if allocs := testing.AllocsPerRun(100, func() {
+		if yes, err := scanner.Matches(nil); err != nil || !yes {
+			panic("unexpected result")
+		}
+	}); allocs != 0 {
+		t.Fatalf("read-only string module calls allocated %g times, want 0", allocs)
+	}
+}
+
+func TestMathCountAndPercentageParity(t *testing.T) {
+	data := []byte{0x00, 0x01, 0x7f, 0x80, 0xff, 0x80, 0x00, 0x41}
+	referenceCount := func(slice []byte, target int64) (int64, bool) {
+		if target < 0 || target > 255 {
+			return 0, false
+		}
+		var counts [256]int64
+		for _, b := range slice {
+			counts[b]++
+		}
+		return counts[target], true
+	}
+
+	countFn := mathModule().Functions["count"]
+	pctFn := mathModule().Functions["percentage"]
+	ctx := ModuleContext{Data: data}
+
+	assertCountAndPct := func(label string, args []ModuleValue, slice []byte, target int64) {
+		t.Helper()
+		gotCount, err := countFn.Evaluate(ctx, args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		gotPct, err := pctFn.Evaluate(ctx, args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want, ok := referenceCount(slice, target)
+		if !ok {
+			if gotCount.Type != ModuleUndefined || gotPct.Type != ModuleUndefined {
+				t.Fatalf("%s target=%d: got (%+v, %+v), want undefined", label, target, gotCount, gotPct)
+			}
+			return
+		}
+		wantPct := float64(float32(want) / float32(len(slice)))
+		if gotCount.Type != ModuleInteger || gotCount.Integer != want {
+			t.Fatalf("%s count(%d) = %+v, want %d", label, target, gotCount, want)
+		}
+		if gotPct.Type != ModuleFloat || gotPct.Float != wantPct {
+			t.Fatalf("%s percentage(%d) = %+v, want %v", label, target, gotPct, wantPct)
+		}
+	}
+
+	for _, target := range []int64{-128, -1, 0, 1, 0x7f, 0x80, 0xff, 256} {
+		assertCountAndPct("whole", []ModuleValue{IntegerValue(target)}, data, target)
+		assertCountAndPct("range", []ModuleValue{IntegerValue(target), IntegerValue(2), IntegerValue(4)}, data[2:6], target)
+	}
+
+	// Empty range (0, 0): count is 0, percentage is NaN (becomes undefined on VM stack).
+	emptyCount, err := countFn.Evaluate(ctx, []ModuleValue{IntegerValue(0), IntegerValue(0), IntegerValue(0)})
+	if err != nil || emptyCount.Type != ModuleInteger || emptyCount.Integer != 0 {
+		t.Fatalf("empty range count = %+v, %v, want 0", emptyCount, err)
+	}
+	emptyPct, err := pctFn.Evaluate(ctx, []ModuleValue{IntegerValue(0), IntegerValue(0), IntegerValue(0)})
+	if err != nil || emptyPct.Type != ModuleFloat || !math.IsNaN(emptyPct.Float) {
+		t.Fatalf("empty range percentage = %+v, %v, want NaN", emptyPct, err)
+	}
+
+	// Signed-char string semantics vs unsigned-byte range semantics for statistical functions.
+	highBytes := []byte{0x80, 0xff}
+	meanFn := mathModule().Functions["mean"]
+	strMean, err := meanFn.Evaluate(ModuleContext{}, []ModuleValue{StringValue(string(highBytes))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rangeMean, err := meanFn.Evaluate(ModuleContext{Data: highBytes}, []ModuleValue{IntegerValue(0), IntegerValue(2)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantSignedMean := (-128.0 + -1.0) / 2.0
+	wantUnsignedMean := (128.0 + 255.0) / 2.0
+	if strMean.Float != wantSignedMean {
+		t.Fatalf("string mean = %v, want %v (signed chars)", strMean.Float, wantSignedMean)
+	}
+	if rangeMean.Float != wantUnsignedMean {
+		t.Fatalf("range mean = %v, want %v (unsigned bytes)", rangeMean.Float, wantUnsignedMean)
+	}
+}
+
+func BenchmarkModuleCalls(b *testing.B) {
+	data := bytes.Repeat([]byte("A"), 1024)
+	cases := []struct {
+		name   string
+		source string
+	}{
+		{"StringLength", `import "string" rule r { condition: string.length("abcdefgh") == 8 }`},
+		{"MathCount", `import "math" rule r { condition: math.count(65, 0, filesize) == 1024 }`},
+		{"HashSHA256String", `import "hash" rule r { condition: hash.sha256("abcdefgh") != "" }`},
+		{"HashCRC32String", `import "hash" rule r { condition: hash.crc32("abcdefgh") != 0 }`},
+	}
+	for _, tc := range cases {
+		program, err := NewCompiler().CompileSource(tc.source)
+		if err != nil {
+			b.Fatal(err)
+		}
+		scanner := program.NewScanner(WithoutMatches(), WithoutRuleResults())
+		b.Run(tc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				if _, err := scanner.Matches(data); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+		scanner.Close()
+	}
+}

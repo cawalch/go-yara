@@ -380,3 +380,45 @@ func TestStructuredModuleDiagnosticPositions(t *testing.T) {
 		}
 	}
 }
+
+func TestStructuredModuleValidationAndKindDiagnostics(t *testing.T) {
+	t.Run("top-level function collides with schema field", func(t *testing.T) {
+		mod := Module{
+			Name:   "collide",
+			Schema: &ModuleSchema{Fields: map[string]ModuleField{"status": {Kind: ModuleInteger}}},
+			Functions: map[string]ModuleFunction{
+				"status": {
+					Signatures: []ModuleSignature{{}},
+					ReturnType: ModuleInteger,
+					Evaluate:   func(ModuleContext, []ModuleValue) (ModuleValue, error) { return IntegerValue(1), nil },
+				},
+			},
+		}
+		if _, err := NewCompiler(WithModule(mod)).CompileSource(`import "collide" rule r { condition: true }`); err == nil ||
+			!strings.Contains(err.Error(), `invalid function name "status"`) {
+			t.Fatalf("expected top-level collision error, got %v", err)
+		}
+	})
+
+	t.Run("schema invalid kind uses human-readable name", func(t *testing.T) {
+		mod := Module{
+			Name:   "badschema",
+			Schema: &ModuleSchema{Fields: map[string]ModuleField{"x": {Kind: ModuleUndefined}}},
+		}
+		if _, err := NewCompiler(WithModule(mod)).CompileSource(`import "badschema" rule r { condition: true }`); err == nil ||
+			!strings.Contains(err.Error(), "invalid module field kind undefined") {
+			t.Fatalf("expected human-readable kind error, got %v", err)
+		}
+	})
+
+	t.Run("data binding mismatch uses human-readable kind name", func(t *testing.T) {
+		scanner := compileTelemetry(t, `telemetry.header.type == 42`).NewScanner()
+		defer scanner.Close()
+		err := scanner.SetModuleData("telemetry", map[string]any{
+			"header": map[string]any{"type": "not-an-int"},
+		})
+		if err == nil || !strings.Contains(err.Error(), "does not match module kind integer") {
+			t.Fatalf("expected human-readable kind mismatch, got %v", err)
+		}
+	})
+}

@@ -880,7 +880,7 @@ func deserializeModuleRegexes(serialized []serializedModuleRegex) ([]*compiledMo
 			flags: item.Flags,
 		}
 		if err := validateCompiledModuleRegex(entry); err != nil {
-			return nil, fmt.Errorf("module regex %d: %w", index, err)
+			return nil, fmt.Errorf("%w: module regex %d: %w", ErrCorruptProgram, index, err)
 		}
 		out[index] = entry
 	}

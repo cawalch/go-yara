@@ -121,6 +121,12 @@ rule test { condition: math.mean("bad", 1) > 0 }`,
 rule test { condition: math.unknown(0, 1) > 0 }`,
 			message: "unsupported module: math",
 		},
+		{
+			name: "unknown function on schema-only module",
+			source: `import "pcap"
+rule test { condition: pcap.bogus() }`,
+			message: "unknown function",
+		},
 	}
 
 	for _, tt := range tests {

@@ -1,6 +1,7 @@
 package semantic
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -107,4 +108,33 @@ func errorsContain(errs []error, want string) bool {
 		}
 	}
 	return false
+}
+
+func TestValidatorSchemaOnlyModuleUnknownFunction(t *testing.T) {
+	pos := token.Position{Line: 1, Column: 1}
+	program := &ast.Program{
+		Imports: []*ast.Import{{Pos: pos, Module: "pcap"}},
+		Rules: []*ast.Rule{
+			{
+				Pos:  pos,
+				Name: "test",
+				Condition: &ast.FunctionCall{
+					Pos:      pos,
+					Function: "pcap.bogus",
+				},
+			},
+		},
+	}
+
+	validator := NewValidatorWithModuleSchemas(nil, map[string]*TypeInfo{
+		"pcap": {DataType: TypeStruct, Fields: map[string]*TypeInfo{}},
+	})
+	errs := validator.ValidateProgram(program)
+	if !errorsContain(errs, `unknown function "pcap.bogus"`) {
+		t.Fatalf("ValidateProgram() errors = %v, want unknown function error", errs)
+	}
+	var semErr *Error
+	if len(errs) == 0 || !errors.As(errs[0], &semErr) || semErr.Code != ErrCodeInvalidFunction {
+		t.Fatalf("ValidateProgram() error code = %v, want %v", errs, ErrCodeInvalidFunction)
+	}
 }

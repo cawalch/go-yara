@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"bytes"
 	"math"
 	"strconv"
 )
@@ -150,27 +151,28 @@ func moduleDistribution(ctx ModuleContext, name string, args []ModuleValue) Modu
 	if !ok {
 		return ModuleValue{}
 	}
+	if name != "mode" {
+		target := [1]byte{byte(args[0].Integer)} // #nosec G115 -- checkednarrow:ignore bounded 0..255 above
+		count := int64(bytes.Count(data, target[:]))
+		if name == "percentage" {
+			return FloatValue(float64(float32(count) / float32(len(data))))
+		}
+		return IntegerValue(count)
+	}
+	if len(data) == 0 {
+		return ModuleValue{}
+	}
 	var counts [256]int64
 	for _, b := range data {
 		counts[b]++
 	}
-	if name == "mode" {
-		if len(data) == 0 {
-			return ModuleValue{}
+	mode := 0
+	for b, count := range counts {
+		if count > counts[mode] {
+			mode = b
 		}
-		mode := 0
-		for b, count := range counts {
-			if count > counts[mode] {
-				mode = b
-			}
-		}
-		return IntegerValue(int64(mode))
 	}
-	count := counts[args[0].Integer]
-	if name == "percentage" {
-		return FloatValue(float64(float32(count) / float32(len(data))))
-	}
-	return IntegerValue(count)
+	return IntegerValue(int64(mode))
 }
 
 func moduleWholeData(ctx ModuleContext) ([]byte, bool) {

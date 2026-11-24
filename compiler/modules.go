@@ -346,7 +346,11 @@ func validModuleFunctionName(schema *ModuleSchema, name string) bool {
 		return false
 	}
 	if !strings.Contains(name, ".") {
-		return true
+		if schema == nil {
+			return true
+		}
+		_, collides := schema.Fields[name]
+		return !collides
 	}
 	if schema == nil {
 		return false

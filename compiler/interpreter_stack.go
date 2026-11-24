@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"slices"
 	"strconv"
 	"strings"
 )
@@ -286,16 +285,28 @@ func (i *Interpreter) executeModuleCall(id builtinFunction, function ModuleFunct
 		}
 		return i.pushModuleValue(result)
 	}
+	expectedType := moduleResultType(function, moduleArgs)
+	var evalArgs []ModuleValue
+	if len(moduleArgs) > 0 {
+		if cap(i.moduleArgsBuf) < len(moduleArgs) {
+			i.moduleArgsBuf = make([]ModuleValue, len(moduleArgs))
+		} else {
+			i.moduleArgsBuf = i.moduleArgsBuf[:len(moduleArgs)]
+		}
+		copy(i.moduleArgsBuf, moduleArgs)
+		evalArgs = i.moduleArgsBuf
+	}
 	ctx := ModuleContext{RuleName: i.currentRule, cancelDone: done}
 	if i.matchContext != nil {
 		ctx.Data = i.matchContext.Data
 		ctx.Blocks = i.matchContext.Blocks
 	}
-	result, err := function.Evaluate(ctx, slices.Clone(moduleArgs))
+	result, err := function.Evaluate(ctx, evalArgs)
+	clear(evalArgs)
 	if err != nil {
 		return &InterpreterError{Type: ErrorRuntime, Opcode: OpCall, Message: err.Error(), cause: err}
 	}
-	if result.Type != ModuleUndefined && result.Type != moduleResultType(function, moduleArgs) {
+	if result.Type != ModuleUndefined && result.Type != expectedType {
 		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpCall, Message: "module returned an unexpected value type"}
 	}
 	if cache != nil && !scanCanceled(done) {
