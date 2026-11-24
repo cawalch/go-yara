@@ -27,10 +27,10 @@ Flows without a TLS handshake can precede it. For example, a rule can require
 rule and input. The comparison alone makes no assertion about certificate trust
 or malicious activity.
 
-The scanner opens the capture and extracts TLS on first evaluated access, then
-reuses the results across rules in that scan. Importing the module alone incurs
+The scanner opens the capture and extracts TLS on first evaluated access to `pcap.tls`, then
+reuses the results across rules in that scan. Importing the module or testing `defined pcap` alone incurs
 zero TLS scans. A valid capture without TLS yields an empty array. Malformed
-input, parser errors and inputs larger than 64 MiB yield undefined module data.
+input, parser errors and inputs larger than 64 MiB make `pcap.tls` undefined.
 Go-pcap can use secrets embedded in PcapNG to recover a TLS 1.3 certificate.
 
 For slice scans, pass the complete capture. For streaming scans, pass a reader

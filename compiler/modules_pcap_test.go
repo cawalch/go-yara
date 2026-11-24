@@ -112,7 +112,8 @@ rule mismatch { condition: for any row in pcap.tls : (row.flow_index == 2 and de
 rule missing_leaf { condition: pcap.tls[2].flow_index == 3 and not defined pcap.tls[2].server_name_match }
 rule incomplete_sans { condition: pcap.tls[3].flow_index == 4 and not defined pcap.tls[3].server_name_match }
 rule wrong_flow { condition: for any row in pcap.tls : (row.flow_index != 2 and defined row.server_name_match and not row.server_name_match) }
-rule no_extra_rows { condition: not defined pcap.tls[4].flow_index }`
+rule no_extra_rows { condition: not defined pcap.tls[4].flow_index }
+rule unavailable { condition: not defined pcap.tls }`
 	p, err := NewCompiler().CompileSource(source)
 	if err != nil {
 		t.Fatal(err)
@@ -139,6 +140,9 @@ rule no_extra_rows { condition: not defined pcap.tls[4].flow_index }`
 					t.Fatalf("%s failed: %+v", name, result.RuleResults)
 				}
 			}
+			if result.RuleResults["unavailable"] {
+				t.Fatal("capture unavailable")
+			}
 			if result.RuleResults["wrong_flow"] {
 				t.Fatal("mismatch attributed to the wrong flow")
 			}
@@ -153,7 +157,7 @@ rule no_extra_rows { condition: not defined pcap.tls[4].flow_index }`
 			t.Fatal("seekable stream never used ReadAt")
 		}
 		res, err := s.ScanReader(io.LimitReader(bytes.NewReader(data), int64(len(data))))
-		if err != nil || res.RuleResults["wildcard"] || res.RuleResults["mismatch"] {
+		if err != nil || !res.RuleResults["unavailable"] || res.RuleResults["wildcard"] || res.RuleResults["mismatch"] {
 			t.Fatalf("sequential reader with partial header: result=%v err=%v", res, err)
 		}
 		res, err = s.Scan(pcapNameFixture(t, []string{"service.example.test"}))
@@ -177,9 +181,21 @@ func TestPCAPLazyReads(t *testing.T) {
 		if err != nil || !result.RuleResults["check"] {
 			t.Fatalf("result=%v, err=%v", result, err)
 		}
+		s := p.NewScanner()
+		defer s.Close()
+		if _, err := s.Scan(data); err != nil {
+			t.Fatal(err)
+		}
+		if (s.moduleCache.pcap == nil) != (r.reads == 0) {
+			t.Fatal("slice and reader disagree on whether TLS was scanned")
+		}
 		return r.reads
 	}
-	for _, rule := range []string{`rule check { condition: true }`, `import "pcap" rule check { condition: true }`} {
+	for _, rule := range []string{
+		`rule check { condition: true }`,
+		`import "pcap" rule check { condition: true }`,
+		`import "pcap" rule check { condition: defined pcap }`,
+	} {
 		if got := reads(rule); got != 0 {
 			t.Fatalf("unused TLS: %d random reads", got)
 		}

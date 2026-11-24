@@ -9,10 +9,17 @@ var pcapSchema = &ModuleSchema{Fields: map[string]ModuleField{
 	}}}},
 }}
 
-// Loading the pcap module is the first TLS reference in the pilot schema.
-// Cache undefined results too, so a malformed capture is attempted only once.
+// Keep a module-presence probe independent of capture parsing. Only a
+// request for the tls field needs to inspect the input.
+type pcapModuleRoot struct{ ctx *MatchContext }
+
 func loadPCAP(ctx *MatchContext) ModuleValue {
-	if ctx == nil {
+	return ModuleValue{Type: ModuleStruct, object: &moduleObject{kind: ModuleStruct, getter: pcapModuleRoot{ctx}}}
+}
+
+func (root pcapModuleRoot) field(name string) ModuleValue {
+	ctx := root.ctx
+	if ctx == nil || name != "tls" {
 		return ModuleValue{}
 	}
 	cache := ctx.moduleCache
@@ -41,7 +48,7 @@ func scanPCAP(ctx *MatchContext) ModuleValue {
 		row := pcapTLSRow{flowIndex: record.FlowIndex, match: match, known: known}
 		rows[idx] = ModuleValue{Type: ModuleStruct, object: &moduleObject{kind: ModuleStruct, getter: row}}
 	}
-	return peStruct(map[string]ModuleValue{"tls": peArray(rows)})
+	return ModuleValue{Type: ModuleArray, object: &moduleObject{kind: ModuleArray, elements: rows}}
 }
 
 func captureTLSRecords(ctx *MatchContext) ([]pcap.TLSRecord, error) {
