@@ -77,9 +77,9 @@ func pcapTLSHandshake(kind byte, body []byte) []byte {
 }
 
 func pcapTCPPacket(port uint16, server bool, payload []byte) []byte {
-	ip := make([]byte, 40)
+	ip := make([]byte, 40+len(payload))
 	ip[0], ip[8], ip[9] = 0x45, 64, 6
-	binary.BigEndian.PutUint16(ip[2:4], uint16(len(ip)+len(payload)))
+	binary.BigEndian.PutUint16(ip[2:4], uint16(len(ip)))
 	src, dst := byte(1), byte(2)
 	sport, dport := port, uint16(443)
 	if server {
@@ -92,7 +92,8 @@ func pcapTCPPacket(port uint16, server bool, payload []byte) []byte {
 	binary.BigEndian.PutUint16(ip[22:24], dport)
 	binary.BigEndian.PutUint32(ip[24:28], 1)
 	ip[32], ip[33] = 5<<4, 0x10
-	return append(ip, payload...)
+	copy(ip[40:], payload)
+	return ip
 }
 
 type pcapCountingReader struct {
@@ -203,6 +204,7 @@ func TestPCAPLazyReads(t *testing.T) {
 	const first = `import "pcap" rule check { condition: pcap.tls[0].server_name_match }`
 	one := reads(first)
 	two := reads(first + ` rule again { condition: pcap.tls[0].flow_index == 1 and pcap.tls[0].server_name_match }`)
+	t.Logf("TLS random reads: unused=0, one rule=%d, two rules=%d", one, two)
 	if one == 0 || two != one {
 		t.Fatalf("one TLS rule: %d reads, two: %d", one, two)
 	}
