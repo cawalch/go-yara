@@ -310,6 +310,8 @@ rule match_overload_and_comments {
 	}
 	if _, err := deserializeModuleRegexes([]serializedModuleRegex{{Code: nil, Flags: 0}}); err == nil {
 		t.Fatal("expected deserializeModuleRegexes to reject empty bytecode")
+	} else if !errors.Is(err, ErrCorruptProgram) {
+		t.Fatalf("deserializeModuleRegexes() error = %v, want wrapping ErrCorruptProgram", err)
 	}
 }
 

@@ -83,6 +83,7 @@ type Interpreter struct {
 	allStrings          []string                 // All string identifiers for current rule
 	anonymousStrings    []string                 // Anonymous string identifiers for current rule
 	stringArena         []string                 // Arena for dynamic strings
+	moduleArgsBuf       []ModuleValue            // Scratch buffer reused across module callbacks
 	regexCache          map[string]compiledRegex
 	PreserveRuleResults bool // If true, Reset() will not clear ruleResults
 	itersmax            int  // Max total iterations across all for-loops (0 = unlimited)
@@ -164,12 +165,14 @@ func (i *Interpreter) resetForPool() {
 	clear(i.stack[:cap(i.stack)])
 	clear(i.stringArena[:cap(i.stringArena)])
 	clear(i.iterators[:cap(i.iterators)])
+	clear(i.moduleArgsBuf[:cap(i.moduleArgsBuf)])
 	clear(i.regexCache)
 	*i = Interpreter{
 		assertionRegisters: i.assertionRegisters[:0],
 		stack:              i.stack[:0],
 		stringArena:        i.stringArena[:0],
 		iterators:          i.iterators[:0],
+		moduleArgsBuf:      i.moduleArgsBuf[:0],
 		regexCache:         i.regexCache,
 	}
 }

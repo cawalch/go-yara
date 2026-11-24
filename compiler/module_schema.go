@@ -134,7 +134,7 @@ func validateModuleField(field ModuleField, depth int) error {
 		}
 		return validateModuleField(*field.Element, depth+1)
 	default:
-		return fmt.Errorf("invalid module field kind %d", field.Kind)
+		return fmt.Errorf("invalid module field kind %s", field.Kind)
 	}
 	return nil
 }

@@ -120,7 +120,7 @@ func (v *Validator) validateFunctionCallExpression(funcCall *ast.FunctionCall) (
 func (v *Validator) validateDottedFunctionCall(funcCall *ast.FunctionCall, moduleName string) (*TypeInfo, []error) {
 	moduleFunction, exists := v.moduleFunctions[funcCall.Function]
 	if !exists {
-		if v.moduleFunctions.hasModule(moduleName) {
+		if v.moduleFunctions.hasModule(moduleName) || v.moduleSchemas[moduleName] != nil {
 			return &TypeInfo{DataType: TypeUnknown}, []error{v.unknownModuleFunctionError(funcCall, moduleName)}
 		}
 		return &TypeInfo{DataType: TypeUnknown}, []error{v.unsupportedModuleError(moduleName, funcCall.Pos)}

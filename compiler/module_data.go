@@ -116,7 +116,7 @@ func bindModuleValue(field ModuleField, data reflect.Value, depth int) (ModuleVa
 			return bindModuleDictionary(*field.Element, data, depth)
 		}
 	}
-	return ModuleValue{}, fmt.Errorf("value %s does not match module kind %d", data.Type(), field.Kind)
+	return ModuleValue{}, fmt.Errorf("value %s does not match module kind %s", data.Type(), field.Kind)
 }
 
 func bindModuleStruct(schema *ModuleSchema, data reflect.Value, depth int) (ModuleValue, error) {
@@ -212,7 +212,11 @@ func bindModuleArray(element ModuleField, data reflect.Value, depth int) (Module
 }
 
 func bindModuleDictionary(element ModuleField, data reflect.Value, depth int) (ModuleValue, error) {
-	object := &moduleObject{kind: ModuleDictionary, fields: make(map[string]ModuleValue, data.Len())}
+	object := &moduleObject{
+		kind:   ModuleDictionary,
+		fields: make(map[string]ModuleValue, data.Len()),
+		keys:   make([]string, 0, data.Len()),
+	}
 	iter := data.MapRange()
 	for iter.Next() {
 		key := iter.Key().String()

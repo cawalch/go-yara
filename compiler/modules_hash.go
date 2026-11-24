@@ -7,6 +7,7 @@ import (
 	"crypto/sha512"
 	"encoding/hex"
 	"hash/crc32"
+	"unsafe"
 )
 
 func hashModule() Module {
@@ -56,9 +57,11 @@ func dataModuleFunction(resultType ModuleValueType, eval func([]byte) ModuleValu
 
 // moduleDataRange follows YARA's range rules: a range must start inside a
 // block, may extend past EOF, and cannot cross a gap between blocks.
+// Callers must treat the returned slice as read-only.
 func moduleDataRange(ctx ModuleContext, args []ModuleValue) ([]byte, bool) {
 	if len(args) == 1 && args[0].Type == ModuleString {
-		return []byte(args[0].String), true
+		s := args[0].String
+		return unsafe.Slice(unsafe.StringData(s), len(s)), true // #nosec G103 -- callers only read the returned bytes; Go strings are immutable.
 	}
 	if len(args) != 2 || args[0].Type != ModuleInteger || args[1].Type != ModuleInteger {
 		return nil, false
