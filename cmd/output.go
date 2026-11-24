@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 
@@ -37,15 +38,14 @@ type fileJob struct {
 }
 
 type fileScanResult struct {
-	target  string
-	res     *compiler.ScanResult
-	data    []byte
-	cleanup func()
+	target string
+	res    *compiler.ScanResult
+	data   []byte
 }
 
 type printEntry struct {
 	id                   string
-	offset               int
+	offset               int64
 	length               int
 	matchedData          []byte
 	contextBefore        []byte
@@ -53,14 +53,33 @@ type printEntry struct {
 	matchedDataTruncated bool
 }
 
-func filterNegatedRules(res *compiler.ScanResult, identFilter string) []compiler.RuleMatch {
+func filterNegatedRules(program *compiler.CompiledProgram, res *compiler.ScanResult, args *commandArgs) []compiler.RuleMatch {
 	var rules []compiler.RuleMatch
-	for ruleName, matched := range res.RuleResults {
-		if !matched {
-			if identFilter != "" && ruleName != identFilter {
-				continue
+	if program == nil {
+		for ruleName, matched := range res.RuleResults {
+			if !matched && (args.identFilter == "" || ruleName == args.identFilter) {
+				rules = append(rules, compiler.RuleMatch{Rule: ruleName})
 			}
-			rules = append(rules, compiler.RuleMatch{Rule: ruleName})
+		}
+		return rules
+	}
+	for _, compiled := range program.Rules {
+		if compiled == nil || compiled.IsPrivate {
+			continue
+		}
+		if args.identFilter != "" && compiled.Name != args.identFilter {
+			continue
+		}
+		if args.tagFilter != "" && !slices.Contains(compiled.Tags, args.tagFilter) {
+			continue
+		}
+		matched, evaluated := res.RuleResults[compiled.Name]
+		if evaluated && !matched {
+			rules = append(rules, compiler.RuleMatch{
+				Rule: compiled.Name,
+				Tags: compiled.Tags,
+				Meta: compiled.Meta,
+			})
 		}
 	}
 	return rules
@@ -77,10 +96,10 @@ func filterMatchedRules(res *compiler.ScanResult, identFilter string) []compiler
 	return rules
 }
 
-func filterScanRules(res *compiler.ScanResult, args *commandArgs) []compiler.RuleMatch {
+func filterScanRules(program *compiler.CompiledProgram, res *compiler.ScanResult, args *commandArgs) []compiler.RuleMatch {
 	var rules []compiler.RuleMatch
 	if args.negate {
-		rules = filterNegatedRules(res, args.identFilter)
+		rules = filterNegatedRules(program, res, args)
 	} else {
 		rules = filterMatchedRules(res, args.identFilter)
 	}
@@ -90,8 +109,9 @@ func filterScanRules(res *compiler.ScanResult, args *commandArgs) []compiler.Rul
 	return rules
 }
 
-func outputFileResult(r fileScanResult, args *commandArgs, isMultiTarget bool) error {
-	matchedRules := filterScanRules(r.res, args)
+//nolint:revive // argument-limit: CLI output helper keeps program, result, args, and multi-target flag explicit
+func outputFileResult(program *compiler.CompiledProgram, r fileScanResult, args *commandArgs, isMultiTarget bool) error {
+	matchedRules := filterScanRules(program, r.res, args)
 
 	if args.jsonOutput {
 		return outputJSONResult(r, matchedRules, args)
@@ -148,9 +168,11 @@ func collectSortedMatches(matchesByID map[string][]compiler.Match) []printEntry 
 	for id, matches := range matchesByID {
 		for _, m := range matches {
 			entries = append(entries, printEntry{
-				id:     id,
-				offset: int(m.Offset),
-				length: m.Length,
+				id:                   id,
+				offset:               m.Offset,
+				length:               m.Length,
+				matchedData:          m.MatchedData,
+				matchedDataTruncated: m.MatchedDataTruncated,
 			})
 		}
 	}
@@ -163,20 +185,30 @@ func collectSortedMatches(matchesByID map[string][]compiler.Match) []printEntry 
 	return entries
 }
 
-func formatMatchPreview(data []byte, offset, length int) string {
-	if offset < 0 || offset+length > len(data) {
-		return ""
-	}
-	raw := data[offset : offset+length]
+func formatBytesPreview(raw []byte) string {
 	if isAllPrintableASCII(raw) {
 		return string(raw)
 	}
 	return fmt.Sprintf("%q", raw)
 }
 
+func formatMatchPreview(data []byte, offset int64, length int) string {
+	if offset < 0 || length < 0 || offset > int64(len(data)) || int64(length) > int64(len(data))-offset {
+		return ""
+	}
+	return formatBytesPreview(data[offset : offset+int64(length)])
+}
+
+func formatEntryPreview(e printEntry, data []byte) string {
+	if len(e.matchedData) > 0 {
+		return formatBytesPreview(e.matchedData)
+	}
+	return formatMatchPreview(data, e.offset, e.length)
+}
+
 func printRuleMatchStrings(r compiler.RuleMatch, data []byte) {
 	for _, e := range collectSortedMatches(r.Matches) {
-		fmt.Printf("0x%x:%s: %s\n", e.offset, e.id, formatMatchPreview(data, e.offset, e.length))
+		fmt.Printf("0x%x:%s: %s\n", e.offset, e.id, formatEntryPreview(e, data))
 	}
 }
 
@@ -198,9 +230,9 @@ func collectJSONMatches(r compiler.RuleMatch, data []byte) []jsonMatchEntry {
 	for _, e := range entries {
 		jsonEntries = append(jsonEntries, jsonMatchEntry{
 			Identifier: e.id,
-			Offset:     int64(e.offset),
+			Offset:     e.offset,
 			Length:     e.length,
-			Data:       formatMatchPreview(data, e.offset, e.length),
+			Data:       formatEntryPreview(e, data),
 		})
 	}
 	return jsonEntries
@@ -285,7 +317,7 @@ func matchEntriesFromMatches(rule *compiler.CompiledRule, matchesByID map[string
 		for _, m := range matches {
 			entries = append(entries, printEntry{
 				id:                   id,
-				offset:               int(m.Offset),
+				offset:               m.Offset,
 				length:               m.Length,
 				matchedData:          m.MatchedData,
 				contextBefore:        m.ContextBefore,

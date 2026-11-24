@@ -38,6 +38,7 @@ type commandArgs struct {
 	matchDataBytes    int
 	matchContextBytes int
 	maxMatchSpan      int
+	timeout           time.Duration
 
 	explicitExecute bool
 
@@ -111,6 +112,7 @@ func parseArgs(rawArgs []string) (*commandArgs, error) {
 	matchData := flagSet.Int("match-data", 0, "include up to n matched bytes in execute output")
 	matchContext := flagSet.Int("match-context", 0, "include n bytes before and after each match in execute output")
 	maxMatchSpan := flagSet.Int("max-match-span", 0, "bound maximum bytes evaluated for a single regex match (default: unlimited)")
+	timeout := flagSet.Duration("timeout", 0, "optional timeout for streaming scans (0 = no timeout)")
 
 	recursive := flagSet.Bool("recursive", false, "recursively search directories")
 	flagSet.BoolVar(recursive, "r", false, "recursively search directories (shorthand)")
@@ -233,6 +235,9 @@ func parseArgs(rawArgs []string) (*commandArgs, error) {
 	if *maxMatchSpan < 0 {
 		return nil, errors.New("--max-match-span must be non-negative")
 	}
+	if *timeout < 0 {
+		return nil, errors.New("--timeout must be non-negative")
+	}
 	if *threads < 0 {
 		return nil, errors.New("--threads must be non-negative")
 	}
@@ -248,6 +253,7 @@ func parseArgs(rawArgs []string) (*commandArgs, error) {
 		matchDataBytes:    *matchData,
 		matchContextBytes: *matchContext,
 		maxMatchSpan:      *maxMatchSpan,
+		timeout:           *timeout,
 		explicitExecute:   explicitExecute,
 		recursive:         *recursive,
 		threads:           *threads,
@@ -364,7 +370,7 @@ func buildScannerOptions(args *commandArgs) []compiler.ScannerOption {
 	if args.maxMatchSpan > 0 {
 		opts = append(opts, compiler.WithMaxMatchSpan(args.maxMatchSpan))
 	}
-	if args.printStrings && !args.fastScan {
+	if (args.printStrings || args.jsonOutput) && !args.fastScan {
 		opts = append(opts, compiler.WithMatchData(1024))
 	}
 	return opts
@@ -439,8 +445,8 @@ func scanTargets(compiledProgram *compiler.CompiledProgram, targets []string, ar
 				}
 
 				res, err := scanner.Scan(data)
+				cleanup()
 				if err != nil {
-					cleanup()
 					errMu.Lock()
 					if firstErr == nil {
 						firstErr = fmt.Errorf("scanning target %s: %w", job.path, err)
@@ -449,28 +455,11 @@ func scanTargets(compiledProgram *compiler.CompiledProgram, targets []string, ar
 					continue
 				}
 
-				// If string matches or JSON output aren't requested, data is no longer needed;
-				// release the memory mapping immediately to minimize active memory footprint.
-				needsData := (args.printStrings || args.jsonOutput) && len(res.MatchedRules) > 0
-				if !needsData {
-					cleanup()
-					cleanup = nil
-					data = nil
-				}
-
-				results[job.idx] = fileScanResult{target: job.path, res: res, data: data, cleanup: cleanup}
+				results[job.idx] = fileScanResult{target: job.path, res: res}
 			}
 		})
 	}
 	wg.Wait()
-
-	defer func() {
-		for _, r := range results {
-			if r.cleanup != nil {
-				r.cleanup()
-			}
-		}
-	}()
 
 	if firstErr != nil {
 		return firstErr
@@ -479,13 +468,9 @@ func scanTargets(compiledProgram *compiler.CompiledProgram, targets []string, ar
 	isMulti := len(targets) > 1
 	for i := range results {
 		if results[i].res != nil {
-			if err := outputFileResult(results[i], args, isMulti); err != nil {
+			if err := outputFileResult(compiledProgram, results[i], args, isMulti); err != nil {
 				return err
 			}
-		}
-		if results[i].cleanup != nil {
-			results[i].cleanup()
-			results[i].cleanup = nil
 		}
 	}
 	return nil
@@ -616,9 +601,12 @@ func executeRulesStreaming(compiledProgram *compiler.CompiledProgram, dataFile s
 	compiledProgram.SetStreamingChunkSize(args.chunkSize)
 	compiledProgram.EnableStreamingEarlyTermination(args.earlyTermination)
 
-	// Create context with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	ctx := context.Background()
+	var cancel context.CancelFunc
+	if args.timeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, args.timeout)
+		defer cancel()
+	}
 
 	// Process with streaming
 	start := time.Now()
