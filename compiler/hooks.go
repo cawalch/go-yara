@@ -481,7 +481,13 @@ func (s *Scanner) dispatchPoll(ctx context.Context, progress PollProgress) error
 		runtime.Gosched()
 	case PollThrottle:
 		if throttle > 0 {
-			time.Sleep(throttle)
+			timer := time.NewTimer(throttle)
+			defer timer.Stop()
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-timer.C:
+			}
 		}
 	case PollContinue:
 	}

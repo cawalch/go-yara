@@ -40,7 +40,16 @@ func validateRuleHexPatterns(cr *CompiledRule) error {
 	return nil
 }
 
+const maxHexAltValidationDepth = 64
+
 func validateHexPatternTokens(tokens []HexPatternToken) error {
+	return validateHexPatternTokensDepth(tokens, 0)
+}
+
+func validateHexPatternTokensDepth(tokens []HexPatternToken, depth int) error {
+	if depth > maxHexAltValidationDepth {
+		return errors.New("hex pattern alternation nesting exceeds limit")
+	}
 	for _, tok := range tokens {
 		switch tok.Kind {
 		case HexTokenJump:
@@ -55,7 +64,7 @@ func validateHexPatternTokens(tokens []HexPatternToken) error {
 			}
 		case HexTokenAlt:
 			for _, alt := range tok.Alternatives {
-				if err := validateHexPatternTokens(alt); err != nil {
+				if err := validateHexPatternTokensDepth(alt, depth+1); err != nil {
 					return err
 				}
 			}

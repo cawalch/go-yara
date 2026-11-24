@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"slices"
 	"sync"
+	"sync/atomic"
 
 	"github.com/cawalch/go-yara/internal/wordmatch"
 )
@@ -48,7 +49,7 @@ type CompiledProgram struct {
 	Rules           []*CompiledRule
 	sharedAutomaton *acAutomaton
 	Stats           map[string]any
-	externalValues  map[string]externalValue
+	externalValues  *atomic.Pointer[map[string]externalValue]
 
 	// Lookup table: shared automaton entry -> exact text/regex/hex verifier.
 	// Built once at compile time, used by extractGlobalMatches for O(1) routing.
@@ -104,7 +105,11 @@ func NewCompiledProgram(rules []*CompiledRule) *CompiledProgram {
 }
 
 func newCompiledProgram(rules []*CompiledRule) *CompiledProgram {
-	program := &CompiledProgram{Rules: rules, Stats: make(map[string]any)}
+	program := &CompiledProgram{
+		Rules:          rules,
+		Stats:          make(map[string]any),
+		externalValues: new(atomic.Pointer[map[string]externalValue]),
+	}
 	program.scannerPool = &sync.Pool{
 		New: func() any {
 			return NewScanner(program)
@@ -114,19 +119,30 @@ func newCompiledProgram(rules []*CompiledRule) *CompiledProgram {
 	return program
 }
 
+func (cp *CompiledProgram) loadExternalValues() map[string]externalValue {
+	if cp == nil || cp.externalValues == nil {
+		return nil
+	}
+	if extPtr := cp.externalValues.Load(); extPtr != nil {
+		return *extPtr
+	}
+	return nil
+}
+
 func (cp *CompiledProgram) acquireScanner() *Scanner {
 	if cp == nil || cp.scannerPool == nil {
 		return NewScanner(cp)
 	}
-	if s, ok := cp.scannerPool.Get().(*Scanner); ok && s != nil {
-		if len(cp.externalValues) > 0 {
-			s.externalValues = maps.Clone(cp.externalValues)
-		} else {
-			s.externalValues = nil
-		}
-		return s
+	s, ok := cp.scannerPool.Get().(*Scanner)
+	if !ok || s == nil {
+		return NewScanner(cp)
 	}
-	return NewScanner(cp)
+	if ext := cp.loadExternalValues(); len(ext) > 0 {
+		s.externalValues = maps.Clone(ext)
+	} else {
+		s.externalValues = nil
+	}
+	return s
 }
 
 func (cp *CompiledProgram) releaseScanner(s *Scanner) {
@@ -246,7 +262,14 @@ func (cp *CompiledProgram) SetExternalVariables(vars map[string]any) error {
 	if err != nil {
 		return err
 	}
-	cp.externalValues = values
+	if cp.externalValues == nil {
+		cp.externalValues = new(atomic.Pointer[map[string]externalValue])
+	}
+	if len(values) == 0 {
+		cp.externalValues.Store(nil)
+	} else {
+		cp.externalValues.Store(&values)
+	}
 	return nil
 }
 

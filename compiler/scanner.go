@@ -392,15 +392,22 @@ func NewScanner(program *CompiledProgram, opts ...ScannerOption) *Scanner {
 	}
 	if program != nil {
 		s.assertionResults = make([]assertionResult, len(program.sharedAssertions))
-		s.externalValues = cloneExternalValues(program.externalValues)
+		if program.externalValues != nil {
+			if extPtr := program.externalValues.Load(); extPtr != nil {
+				s.externalValues = cloneExternalValues(*extPtr)
+			}
+		}
 	}
 	for _, opt := range opts {
+		if opt == nil {
+			continue
+		}
 		opt(s)
 	}
 	s.recomputeHookMask()
 	s.selectEvaluatedRules()
 	s.allEvaluatedRulesRequireSharedPatterns = s.computeAllEvaluatedRulesRequireSharedPatterns()
-	if s.booleanRoutingEnabled && len(s.tagsFilter) == 0 && program != nil &&
+	if s.booleanRoutingEnabled && len(s.tagsFilter) == 0 && s.ruleGate == nil && program != nil &&
 		program.preparationErr == nil && program.booleanRouting != nil {
 		if plan := program.booleanRouting(); plan != nil {
 			s.booleanRouting = plan.NewScanner()
