@@ -52,6 +52,33 @@ and a name beyond the SAN limit. It exercises both slice and seekable inputs.
 go test ./compiler -run '^TestPCAP(Example|Name)Rules$' -v
 ```
 
+## Classify TLS evidence across the capture
+
+The [TLS triage rules](../examples/pcap/tls-triage.yar) use only `import "pcap"`:
+
+| Rule | Capture evidence required |
+| --- | --- |
+| `tls_multiple_name_mismatches` | At least two TLS rows with defined false comparisons. |
+| `tls_mixed_name_results` | At least one agreement and one defined mismatch. |
+| `tls_mismatch_with_evidence_gaps` | A defined mismatch and a separate undefined comparison. |
+| `tls_all_observed_names_match` | At least one TLS row, with every row defined and matching. |
+
+```sh
+go run ./cmd examples/pcap/tls-triage.yar "$fixtures/proxy.pcapng"
+go test ./compiler -run '^TestPCAPTriageRules$' -v
+```
+
+The proxy fixture produces no triage matches: missing leaf certificates leave
+all comparisons undefined. Tests cover positive findings, missing-only evidence,
+empty TLS collections, malformed input, scanner reuse, slice/ReaderAt parity,
+and serialized rules. `for 2` is an at-least threshold; `for all` needs an
+existence guard because an empty collection satisfies universal quantification.
+
+These are capture-wide observations. The current module exposes only
+`flow_index` and `server_name_match`, so mixed results cannot establish a common
+hostname, listener, or time window. Name agreement does not establish trust,
+and an undefined comparison is never positive mismatch evidence.
+
 ## Identify devices querying a watched DNS name
 
 During a collector migration, you may want to find devices still querying the

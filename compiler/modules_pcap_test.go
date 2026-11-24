@@ -240,3 +240,72 @@ func TestPCAPExampleRules(t *testing.T) {
 		})
 	}
 }
+
+func TestPCAPTriageRules(t *testing.T) {
+	rules, err := os.ReadFile("../examples/pcap/tls-triage.yar")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := NewCompiler().CompileSource(string(rules))
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob, err := p.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := UnmarshalCompiledProgram(blob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const multiple = "tls_multiple_name_mismatches"
+	const mixed = "tls_mixed_name_results"
+	const gaps = "tls_mismatch_with_evidence_gaps"
+	const all = "tls_all_observed_names_match"
+	good, bad := []string{"*.example.test"}, []string{"other.example.test"}
+	for _, program := range []*CompiledProgram{p, loaded} {
+		scanner := program.NewScanner()
+		for _, tc := range []struct {
+			name  string
+			names [][]string
+			want  []string
+		}{
+			{"no TLS", nil, nil},
+			{"match", [][]string{good}, []string{all}},
+			{"two matches", [][]string{good, good}, []string{all}},
+			{"one mismatch", [][]string{bad}, nil},
+			{"two mismatches", [][]string{bad, bad}, []string{multiple}},
+			{"mixed", [][]string{good, bad}, []string{mixed}},
+			{"missing only", [][]string{nil}, nil},
+			{"match and missing", [][]string{good, nil}, nil},
+			{"mismatch and missing", [][]string{bad, nil}, []string{gaps}},
+			{"all outcomes", [][]string{good, bad, bad, nil}, []string{multiple, mixed, gaps}},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				data := pcapNameFixture(t, tc.names...)
+				for _, reader := range []bool{false, true} {
+					var result *ScanResult
+					var err error
+					if reader {
+						result, err = scanner.ScanReader(bytes.NewReader(data))
+					} else {
+						result, err = scanner.Scan(data)
+					}
+					if err != nil {
+						t.Fatal(err)
+					}
+					for _, name := range []string{multiple, mixed, gaps, all} {
+						if result.RuleResults[name] != slices.Contains(tc.want, name) {
+							t.Fatalf("reader=%v %s: %v", reader, name, result.RuleResults)
+						}
+					}
+				}
+			})
+		}
+		result, err := scanner.Scan([]byte("not a capture"))
+		if err != nil || len(result.MatchedRules) != 0 {
+			t.Fatalf("malformed capture: %v %v", result, err)
+		}
+		scanner.Close()
+	}
+}
