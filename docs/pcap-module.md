@@ -73,6 +73,33 @@ on `client.pcapng` produces no output because its question is for `trace.example
 A hit establishes that the device queried the name. A completed connection or
 successful migration requires separate evidence.
 
+## Investigate a required service that fails to resolve
+
+Run this command from the **go-yara** repository root. It uses the example’s
+synthetic capture and the [required-service rule](../examples/pcap/dns-failure/required-service.yar).
+
+```sh
+go run ./examples/pcap/dns-failure ./examples/pcap/dns-failure/testdata/service.pcap
+```
+
+```text
+required_service_dns_failure name="api.example" resolver=192.0.2.53:53 rcode=3 query_frame=1 reply_frame=2
+required_service_dns_failure name="api.example" resolver=192.0.2.53:53 rcode=2 query_frame=3 reply_frame=4
+```
+
+Open frame 2 in Wireshark for the NXDOMAIN reply (name does not exist) and
+frame 4 for SERVFAIL (resolver failed to complete the lookup). To check another
+service, edit `$service` in the rule and rerun with your capture path.
+
+The [Go adapter](../examples/pcap/dns-failure/main.go) pairs ordinary
+single-question DNS on port 53 by flow, directional endpoints, ID, and decoded
+question. It gives YARA the complete name as input and the DNS response code
+as an external integer. Use a capture from one observation point. Repeated
+identical outstanding questions make that key ambiguous for the rest of the
+capture. The fixture includes a healthy reply, another service, an unanswered
+query, an orphan reply, an ambiguous retry, and an extended response code.
+Only the two paired failures above produce findings.
+
 ## Capture and reader limits
 
 The scanner opens the capture and extracts TLS on first evaluated access to `pcap.tls`, then
