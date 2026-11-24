@@ -4,6 +4,7 @@ description: Look up go-yara module signatures, understand range arguments and u
 ---
 
 import { Code } from '@astrojs/starlight/components';
+import tlsTriageRules from '../../../../examples/pcap/tls-triage.yar?raw';
 import tlsRules from '../../../../examples/pcap/tls.yar?raw';
 import customExample from '../../../examples/custom-module/main.go?raw';
 import customExampleOutput from '../../../examples/custom-module/output.txt?raw';
@@ -45,6 +46,34 @@ go run ./cmd examples/pcap/tls.yar "$fixtures/proxy.pcapng"
 The synthetic proxy capture matches only `tls_name_evidence_missing`: its TLS 1.3 handshakes have no keys to recover the leaf certificates. A defined false comparison indicates a name mismatch; undefined means the comparison lacks evidence, including missing SNI, a missing leaf, or a potentially omitted SAN at the parser limit. Neither result establishes certificate trust or malicious activity.
 
 TLS extraction runs on first evaluated access to `pcap.tls` and is reused within the scan. Invalid captures, parser errors, or inputs larger than 64 MiB make the array undefined. For streaming, use an `io.ReaderAt` and `io.Seeker`, such as an open file; sequential-only inputs must fit completely in the retained 64 KiB header. See [capture limits and flow indices](https://github.com/cawalch/go-yara/blob/main/docs/pcap-module.md#capture-and-reader-limits).
+
+### Classify TLS evidence across a capture
+
+These rules operate directly on `pcap.tls`, without a Go adapter. They combine outcomes across parsed TLS flows rather than search the raw capture for certificate strings:
+
+<Code code={tlsTriageRules} lang="text" title="examples/pcap/tls-triage.yar" />
+
+```sh
+go run ./cmd examples/pcap/tls-triage.yar "$fixtures/proxy.pcapng"
+```
+
+The proxy fixture produces no triage matches because every name comparison is undefined. Missing evidence never counts as a mismatch or an agreement. The integration tests supply the positive and negative controls:
+
+| Observed comparisons | Matching triage rules |
+| --- | --- |
+| Two mismatches | `tls_multiple_name_mismatches` |
+| An agreement and a mismatch | `tls_mixed_name_results` |
+| A mismatch and an undefined comparison | `tls_mismatch_with_evidence_gaps` |
+| One or more agreements, with no other outcomes | `tls_all_observed_names_match` |
+| No TLS rows, invalid capture, or only undefined comparisons | None |
+
+```sh
+go test ./compiler -run '^TestPCAPTriageRules$' -v
+```
+
+`for 2` requires at least two matching rows. The existence guard before `for all` prevents an empty capture from passing. A mixed result can guide a certificate-rollout investigation, but the current schema cannot establish that those flows share a hostname, listener, or time window. All-agreement means only that every observed TLS row has a defined matching name; it does not establish certificate trust or capture completeness.
+
+The useful composition here is a YARA condition over go-pcap's parsed, flow-scoped evidence in an offline capture. Other network tools also inspect protocol fields: [Suricata supports raw and normalized HTTP URI buffers](https://docs.suricata.io/en/latest/rules/http-keywords.html), [Zeek supports signatures](https://docs.zeek.org/en/current/frameworks/signatures.html), and [Sigma supports event correlations](https://sigmahq.io/docs/meta/correlations.html). These examples demonstrate module collections, count thresholds, and undefined handling; they do not establish detection coverage unavailable in those tools. The built-in module currently exposes only TLS flow indices and name-comparison results. DNS and HTTP below use Go adapters.
 
 ### Find DNS questions and paired failures
 

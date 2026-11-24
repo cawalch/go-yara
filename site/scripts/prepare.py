@@ -56,7 +56,7 @@ def prepare(ref, check_only):
                 if output != expected:
                     raise ValueError(f"HEAD: {name}: expected {expected!r}, got {output!r}")
                 print(f"HEAD: {name} capture example passed", flush=True)
-            run(["go", "test", "./compiler", "-run", "^TestPCAP(Example|Name)Rules$"], source, env=env)
+            run(["go", "test", "./compiler", "-run", "^TestPCAP(Example|Name|Triage)Rules$"], source, env=env)
         catalog = json.loads(run(["go", "run", str(SITE / "examples/catalog/main.go")], source, env=env))
         binary = temp / "go-yara"
         run(["go", "build", "-o", str(binary), "./cmd"], source, env=env)
@@ -70,6 +70,9 @@ def prepare(ref, check_only):
             tls = run([str(binary), "examples/pcap/tls.yar", proxy], source, env=env)
             if tls.split() != ["tls_name_evidence_missing", proxy]:
                 raise ValueError(f"Unexpected TLS capture output: {tls!r}")
+            triage = run([str(binary), "examples/pcap/tls-triage.yar", proxy], source, env=env)
+            if triage:
+                raise ValueError(f"Missing certificates must not produce TLS triage matches: {triage!r}")
             print("HEAD: DNS watch and TLS capture examples passed", flush=True)
         cli_env = {**env, "PATH": str(temp) + os.pathsep + env["PATH"]}
         output = run(["sh", str(SITE / "examples/cli.sh")], temp, env=cli_env)
