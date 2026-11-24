@@ -1,60 +1,54 @@
-package httphunts
+package main
 
 import (
-	_ "embed"
+	"bytes"
+	"os"
+	"slices"
 	"testing"
 
 	pcap "github.com/cawalch/go-pcap"
-
-	"github.com/cawalch/go-yara/compiler"
 )
 
-//go:embed requests.yar
-var rules string
-
 func TestCaptureHunts(t *testing.T) {
-	p, err := compiler.NewCompiler().CompileSourceWithContext(t.Context(), rules)
+	const path = "testdata/hunts.pcap"
+	const want = "unexpected_server_webhook_post frame=2 time_ns=1700000000002469134 flow=0 stream=0 source=192.0.2.10 POST webhook.site\n" +
+		"unapproved_decoy_route_access frame=11 time_ns=1700000000013580237 flow=5 stream=3 source=192.0.2.12 GET app.example\n"
+
+	var readerReport bytes.Buffer
+	if err := run(path, &readerReport); err != nil {
+		t.Fatal(err)
+	}
+	if got := readerReport.String(); got != want {
+		t.Fatalf("ReaderAt findings:\n%s", got)
+	}
+
+	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	scanner := p.NewScanner()
-	defer scanner.Close()
-	cases := []struct {
-		name, host, method, path                       string
-		restricted, approvedCollector, approvedScanner bool
-		want                                           string
-	}{
-		{"unexpected collector POST", "WEBHOOK.SITE", "POST", "/example", true, false, false, "unexpected_server_webhook_post"},
-		{"approved integration", "webhook.site", "POST", "/example", true, true, false, ""},
-		{"developer workstation", "webhook.site", "POST", "/example", false, false, false, ""},
-		{"similar destination", "webhook.site.example", "POST", "/example", true, false, false, ""},
-		{"ordinary GET", "webhook.site", "GET", "/example", true, false, false, ""},
-		{"private decoy", "app.example", "GET", "/unused-canary", false, false, false, "unapproved_decoy_route_access"},
-		{"approved scanner", "app.example", "GET", "/unused-canary", false, false, true, ""},
-		{"ordinary route", "app.example", "GET", "/health", false, false, false, ""},
+	c, err := pcap.New(data)
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			wire := tc.method + " " + tc.path + " HTTP/1.1\r\nHost: " + tc.host + "\r\nContent-Length: 0\r\n\r\n"
-			req, _, err := pcap.ParseHTTPRequest([]byte(wire))
-			if err != nil {
-				t.Fatal(err)
-			}
-			vars := map[string]any{"destination_host": req.Host, "http_method": req.Method, "restricted_server": tc.restricted,
-				"approved_webhook": tc.approvedCollector, "approved_scanner": tc.approvedScanner,
-				"decoy_route": req.Host == "app.example" && req.Path == "/unused-canary"}
-			if err := scanner.SetExternalVariables(vars); err != nil {
-				t.Fatal(err)
-			}
-			result, err := scanner.Scan(nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			for _, rule := range []string{"unexpected_server_webhook_post", "unapproved_decoy_route_access"} {
-				if result.RuleResults[rule] != (tc.want == rule) {
-					t.Fatalf("%s: got %v, want %q", rule, result.RuleResults, tc.want)
-				}
-			}
-		})
+	requests, err := c.HTTPRequests(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Ensure the approved integration, scanner, unknown source, ordinary routes,
+	// and both requests in frame 7 actually reached the rule adapter. The TCP
+	// retransmission in frame 4 must not contribute a duplicate request.
+	var frames []int
+	for _, r := range requests {
+		frames = append(frames, r.PacketIndex+1)
+	}
+	if !slices.Equal(frames, []int{1, 2, 5, 6, 7, 7, 8, 9, 11}) {
+		t.Fatalf("observed frames: %v", frames)
+	}
+	var sliceReport bytes.Buffer
+	if err := report(requests, &sliceReport); err != nil {
+		t.Fatal(err)
+	}
+	if got := sliceReport.String(); got != want {
+		t.Fatalf("slice findings:\n%s", got)
 	}
 }
