@@ -632,6 +632,7 @@ func (cc *conditionCompiler) ResetForRule() {
 	cc.pendingJumps = cc.pendingJumps[:0]
 	cc.stringSets = cc.stringSets[:0]
 	clear(cc.stringSetIndex)
+	cc.textStringSets = cc.textStringSets[:0]
 	clear(cc.globalVariables)
 }
 

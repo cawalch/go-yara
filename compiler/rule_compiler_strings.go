@@ -404,9 +404,6 @@ func (rc *ruleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers
 		rc.stringCompiler.hasModifier(modifiers, ast.StringModifierBase64Wide) {
 		return nil, errors.New("base64 modifiers are only supported for text strings")
 	}
-	if rc.stringCompiler.strictLibyaraCompatibility && hasTextOnlyHexModifier(modifiers) {
-		return nil, errors.New("text-only string modifiers are not allowed on hex strings in strict libyara compatibility mode")
-	}
 	code, parsed, err := rc.stringCompiler.compileRegexWithAST(pattern.Value, modifiers)
 	if err != nil {
 		return nil, fmt.Errorf("compile regex pattern: %w", err)

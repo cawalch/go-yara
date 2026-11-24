@@ -87,7 +87,7 @@ func headerConstraintFromExpression(expr ast.Expression) (HeaderConstraint, bool
 	}
 	if binaryExpr.Op == token.AT {
 		identifier, ok := binaryExpr.Left.(*ast.Identifier)
-		if !ok || !strings.HasPrefix(identifier.Name, "$") || identifier.Quantifier != "" {
+		if !ok || !strings.HasPrefix(identifier.Name, "$") || identifier.Name == "$" || identifier.Quantifier != "" {
 			return HeaderConstraint{}, false
 		}
 		offset, ok := nonNegativeLiteral(binaryExpr.Right)

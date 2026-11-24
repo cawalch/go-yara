@@ -101,7 +101,8 @@ type Iterator struct {
 	IntValues     []int64
 	Count         int // Number of matches
 	Index         int // Current iteration index
-	Total         int // Total number of elements
+	Total         int // Total number of elements to iterate
+	ExpectedTotal int // Original unfiltered set size for string-set quantifiers (0 = use Total)
 	Quantifier    int // Quantifier for condition (e.g. ForAll, ForAny, ForNone, ForExpression)
 	QuantExpr     int // Target expression count if Quantifier == ForExpression
 	StartIP       int // Instruction pointer immediately following OpIterStart*
@@ -114,6 +115,7 @@ type Iterator struct {
 	Type          Opcode // The type of iterator (e.g. OpIterStartIntRange)
 	InRange       bool   // Filter matches to those within [OffsetMin..OffsetMax]
 	AtOffset      bool   // Filter matches to those at exactly AtOffsetValue
+	TotalPushed   bool   // Tracks whether OpIterPushTotal was already used for the empty-loop guard
 }
 
 type compiledRegex struct {

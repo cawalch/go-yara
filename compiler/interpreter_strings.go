@@ -281,14 +281,19 @@ func (i *Interpreter) pushOfPercent(set []string, percent Value, matchFn func(st
 	if len(set) == 0 {
 		return i.push(Value{Type: ValueTypeInt, IntVal: 0})
 	}
+	if percent.IntVal <= 0 {
+		return i.push(Value{Type: ValueTypeInt, IntVal: 1})
+	}
+	if percent.IntVal > 100 {
+		return i.push(Value{Type: ValueTypeInt, IntVal: 0})
+	}
 	matched := 0
 	for _, id := range set {
 		if matchFn(id) {
 			matched++
 		}
 	}
-	percentFloat := float64(matched) / float64(len(set)) * 100.0
-	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(percentFloat >= float64(percent.IntVal))})
+	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(int64(matched)*100 >= percent.IntVal*int64(len(set)))})
 }
 
 func (i *Interpreter) executeOfPercentOperation() error {
@@ -312,7 +317,7 @@ func (i *Interpreter) executeOfPercentOperation() error {
 		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpOfPercent, Message: "percentage must be an integer"}
 	}
 	return i.pushOfPercent(set, percent, func(id string) bool {
-		return i.matchContext.matchCount(id) > 0
+		return i.matchContext != nil && i.matchContext.matchCount(id) > 0
 	})
 }
 
@@ -348,7 +353,7 @@ func (i *Interpreter) executeOfFoundIn() error {
 		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpOfFoundIn, Message: "range bounds must be integers"}
 	}
 	return i.pushStringSetCount(stringsID, count, func(id string) bool {
-		return i.matchContext.hasMatchInRange(id, minVal.IntVal, maxVal.IntVal)
+		return i.matchContext != nil && i.matchContext.hasMatchInRange(id, minVal.IntVal, maxVal.IntVal)
 	})
 }
 
@@ -373,7 +378,7 @@ func (i *Interpreter) executeOfFoundAt() error {
 		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpOfFoundAt, Message: "offset must be integer"}
 	}
 	return i.pushStringSetCount(stringsID, count, func(id string) bool {
-		return i.matchContext.hasMatchAt(id, offsetVal.IntVal)
+		return i.matchContext != nil && i.matchContext.hasMatchAt(id, offsetVal.IntVal)
 	})
 }
 
@@ -393,7 +398,17 @@ func (i *Interpreter) executeOfPercentIn() error {
 	i.stack = i.stack[:len(i.stack)-4]
 
 	if minVal.Type != ValueTypeInt || maxVal.Type != ValueTypeInt {
+		if (minVal.Type == ValueTypeInt || minVal.Type == ValueTypeUndefined) &&
+			(maxVal.Type == ValueTypeInt || maxVal.Type == ValueTypeUndefined) {
+			return i.push(Value{Type: ValueTypeUndefined})
+		}
 		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpOfPercentIn, Message: "range bounds must be integers"}
+	}
+	if percent.Type == ValueTypeUndefined {
+		return i.push(Value{Type: ValueTypeUndefined})
+	}
+	if percent.Type != ValueTypeInt {
+		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpOfPercentIn, Message: "percentage must be an integer"}
 	}
 
 	set, err := i.resolveStringSet(stringsID)
@@ -401,7 +416,7 @@ func (i *Interpreter) executeOfPercentIn() error {
 		return err
 	}
 	return i.pushOfPercent(set, percent, func(id string) bool {
-		return i.matchContext.hasMatchInRange(id, minVal.IntVal, maxVal.IntVal)
+		return i.matchContext != nil && i.matchContext.hasMatchInRange(id, minVal.IntVal, maxVal.IntVal)
 	})
 }
 
@@ -420,7 +435,16 @@ func (i *Interpreter) executeOfPercentAt() error {
 	i.stack = i.stack[:len(i.stack)-3]
 
 	if offsetVal.Type != ValueTypeInt {
+		if offsetVal.Type == ValueTypeUndefined {
+			return i.push(Value{Type: ValueTypeUndefined})
+		}
 		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpOfPercentAt, Message: "offset must be integer"}
+	}
+	if percent.Type == ValueTypeUndefined {
+		return i.push(Value{Type: ValueTypeUndefined})
+	}
+	if percent.Type != ValueTypeInt {
+		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpOfPercentAt, Message: "percentage must be an integer"}
 	}
 
 	set, err := i.resolveStringSet(stringsID)
@@ -428,7 +452,7 @@ func (i *Interpreter) executeOfPercentAt() error {
 		return err
 	}
 	return i.pushOfPercent(set, percent, func(id string) bool {
-		return i.matchContext.hasMatchAt(id, offsetVal.IntVal)
+		return i.matchContext != nil && i.matchContext.hasMatchAt(id, offsetVal.IntVal)
 	})
 }
 

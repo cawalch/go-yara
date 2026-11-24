@@ -251,6 +251,10 @@ func (inst *Instruction) Size() int {
 
 // IsJump returns true if this instruction is a jump
 func (inst *Instruction) IsJump() bool {
-	return (inst.Opcode >= OpJundef && inst.Opcode <= OpJzP) ||
-		inst.Opcode == OpIterNext
+	switch inst.Opcode {
+	case OpJundef, OpJnundef, OpJnundefP, OpJfalse, OpJfalseP, OpJtrue, OpJtrueP, OpJlP, OpJleP, OpJz, OpJzP, OpIterNext:
+		return true
+	default:
+		return false
+	}
 }

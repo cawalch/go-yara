@@ -190,10 +190,16 @@ func parseDiffExpr(expr ast.Expression, b proximityBinding) bool {
 func applyDiffOp(op token.Type, k, minDist, maxDist int64) (newMin, newMax int64, ok bool) {
 	switch op {
 	case token.LT:
+		if k == math.MinInt64 {
+			return 1, 0, true
+		}
 		return minDist, min(maxDist, k-1), true
 	case token.LE:
 		return minDist, min(maxDist, k), true
 	case token.GT:
+		if k == math.MaxInt64 {
+			return 1, 0, true
+		}
 		return max(minDist, k+1), maxDist, true
 	case token.GE:
 		return max(minDist, k), maxDist, true
@@ -208,10 +214,16 @@ func applyDiffOp(op token.Type, k, minDist, maxDist int64) (newMin, newMax int64
 func applyDiffOpSwapped(op token.Type, k, minDist, maxDist int64) (newMin, newMax int64, ok bool) {
 	switch op {
 	case token.LT: // k < diff <=> diff > k
+		if k == math.MaxInt64 {
+			return 1, 0, true
+		}
 		return max(minDist, k+1), maxDist, true
 	case token.LE: // k <= diff <=> diff >= k
 		return max(minDist, k), maxDist, true
 	case token.GT: // k > diff <=> diff < k
+		if k == math.MinInt64 {
+			return 1, 0, true
+		}
 		return minDist, min(maxDist, k-1), true
 	case token.GE: // k >= diff <=> diff <= k
 		return minDist, min(maxDist, k), true

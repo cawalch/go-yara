@@ -245,12 +245,12 @@ func (op Opcode) GetCategory() string {
 		return OpCategoryStack
 	case (op >= OpContains && op <= OpOfPercentAt) || op == OpCountInOf || op == OpProximity || op == OpConcat || op == OpMatchesValue:
 		return OpCategoryString
-	case op >= OpJnundefP && op <= OpJzP:
-		return OpCategoryJump
-	case (op >= OpModuleLoad && op <= OpIterStartModuleArray) || (op >= OpObjLoad && op <= OpOffset) || (op >= OpOf && op <= OpMatches) || (op >= OpImport && op <= OpJnundef):
-		return OpCategoryObject
-	case (op >= OpIterNext && op <= OpIterEnd) || op == OpIterPushTotal:
+	case (op >= OpIterNext && op <= OpIterEnd) || op == OpIterPushTotal || op == OpIterStartModuleArray:
 		return OpCategoryIterator
+	case op >= OpJundef && op <= OpJzP:
+		return OpCategoryJump
+	case (op >= OpModuleLoad && op <= OpModuleGetIndex) || (op >= OpObjLoad && op <= OpOffset) || (op >= OpOf && op <= OpMatches) || (op >= OpImport && op <= OpMatchRule):
+		return OpCategoryObject
 	case op == OpError || op == OpHalt || op == OpNop:
 		return OpCategoryControl
 	case op >= OpReadInt && op <= OpUint64be:

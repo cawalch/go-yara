@@ -15,6 +15,7 @@ type noStringTruth uint8
 const (
 	noStringFalse noStringTruth = 1 << iota
 	noStringTrue
+	noStringUndefined
 	noStringUnknown = noStringFalse | noStringTrue
 )
 
@@ -42,7 +43,7 @@ func analyzeNoStringBoolean(expr ast.Expression) (noStringTruth, bool) {
 			left, leftSafe := analyzeNoStringBoolean(e.Left)
 			right, rightSafe := analyzeNoStringBoolean(e.Right)
 			shortCircuit := e.Op == token.AND && left&noStringTrue == 0 ||
-				e.Op == token.OR && left&noStringFalse == 0
+				e.Op == token.OR && left&(noStringFalse|noStringUndefined) == 0
 			return logicalNoStringTruth(e.Op, left, right), leftSafe && (shortCircuit || rightSafe)
 		}
 	}
@@ -73,7 +74,7 @@ func evaluationSafeWithoutStringMatches(expr ast.Expression) bool {
 			}
 			return evaluationSafeWithoutStringMatches(e.Right)
 		case token.OR:
-			if leftTruth&noStringFalse == 0 {
+			if leftTruth&(noStringFalse|noStringUndefined) == 0 {
 				return true
 			}
 			return evaluationSafeWithoutStringMatches(e.Right)
@@ -115,12 +116,12 @@ func truthWithoutStringMatches(expr ast.Expression) noStringTruth {
 		return noStringFalse
 	case *ast.StringOffset:
 		if staticStringOccurrenceIndex(e.Index) {
-			return noStringFalse
+			return noStringUndefined
 		}
 		return noStringUnknown
 	case *ast.StringLength:
 		if staticStringOccurrenceIndex(e.Index) {
-			return noStringFalse
+			return noStringUndefined
 		}
 		return noStringUnknown
 	case *ast.BinaryOp:
@@ -196,8 +197,17 @@ func scalarTruth(value any) noStringTruth {
 	}
 }
 
+func coerceNoStringBool(value noStringTruth) noStringTruth {
+	if value&noStringUndefined != 0 {
+		value = (value &^ noStringUndefined) | noStringFalse
+	}
+	return value
+}
+
 // logicalNoStringTruth combines the possible outcomes of boolean operands.
 func logicalNoStringTruth(op token.Type, left, right noStringTruth) noStringTruth {
+	left = coerceNoStringBool(left)
+	right = coerceNoStringBool(right)
 	if op == token.AND {
 		return (left|right)&noStringFalse | (left&right)&noStringTrue
 	}
@@ -288,11 +298,11 @@ func integerWithoutStringMatches(expr ast.Expression) (int64, bool) {
 		case token.MULTIPLY:
 			return left * right, true
 		case token.IntDivide:
-			if right != 0 {
+			if right != 0 && (left != math.MinInt64 || right != -1) {
 				return left / right, true
 			}
 		case token.MODULO:
-			if right != 0 {
+			if right != 0 && (left != math.MinInt64 || right != -1) {
 				return left % right, true
 			}
 		case token.BitwiseAnd:
@@ -321,6 +331,9 @@ func invertTruth(value noStringTruth) noStringTruth {
 	}
 	if value&noStringTrue != 0 {
 		result |= noStringFalse
+	}
+	if value&noStringUndefined != 0 {
+		result |= noStringUndefined
 	}
 	return result
 }

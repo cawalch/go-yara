@@ -170,7 +170,7 @@ func (i *Interpreter) executeIntToDouble() error {
 		i.stack[len(i.stack)-1] = Value{Type: ValueTypeDouble, DoubleVal: float64(v.IntVal)}
 		return nil
 	}
-	if v.Type == ValueTypeUndefined {
+	if v.Type == ValueTypeDouble || v.Type == ValueTypeUndefined {
 		return nil
 	}
 

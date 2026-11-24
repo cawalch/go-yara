@@ -52,7 +52,9 @@ func (i *Interpreter) peCalculateChecksum() ModuleValue {
 // It returns the checksum, the byte count examined, and false if canceled.
 func peCalculateChecksumBytes(data []byte, eLfanew uint32, done <-chan struct{}) (checksum, examined int64, complete bool) {
 	checksumOffset := uint64(eLfanew) + 88
-	skipAlignedChecksum := checksumOffset%4 == 0 && checksumOffset+4 <= uint64(len(data))
+	checksumEnd := checksumOffset + 4
+	skipAlignedChecksum := checksumOffset%4 == 0 && checksumEnd <= uint64(len(data))
+	hasUnalignedChecksum := !skipAlignedChecksum && checksumOffset < uint64(len(data))
 	alignedLen := len(data) &^ 3
 
 	var sum uint64
@@ -74,6 +76,12 @@ func peCalculateChecksumBytes(data []byte, eLfanew uint32, done <-chan struct{})
 		}
 		if skipAlignedChecksum && checksumOffset >= uint64(chunkStart) && checksumOffset < uint64(chunkEnd) {
 			chunkSum -= uint64(binary.LittleEndian.Uint32(data[checksumOffset : checksumOffset+4]))
+		} else if hasUnalignedChecksum && checksumOffset < uint64(chunkEnd) && checksumEnd > uint64(chunkStart) {
+			start := max(checksumOffset, uint64(chunkStart))
+			end := min(checksumEnd, uint64(chunkEnd))
+			for k := start; k < end; k++ {
+				chunkSum -= uint64(data[k]) << (8 * (k & 3))
+			}
 		}
 		sum += chunkSum
 		sum = (sum & 0xffffffff) + (sum >> 32)
@@ -86,6 +94,10 @@ func peCalculateChecksumBytes(data []byte, eLfanew uint32, done <-chan struct{})
 		}
 		var tail uint32
 		for j := range len(data) - alignedLen {
+			pos := uint64(alignedLen + j)
+			if pos >= checksumOffset && pos < checksumEnd {
+				continue
+			}
 			tail |= uint32(data[alignedLen+j]) << (8 * j)
 		}
 		sum += uint64(tail)
