@@ -102,6 +102,9 @@ func (cc *conditionCompiler) compileModuleLoop(loop *ast.ForLoop, collection *se
 	if err := cc.compileExpression(loop.Range); err != nil {
 		return err
 	}
+	outerVars := cc.variableMap
+	cc.variableMap = maps.Clone(outerVars)
+	defer func() { cc.variableMap = outerVars }()
 	slots, err := cc.allocateVariables(loop.Variables)
 	if err != nil {
 		return err

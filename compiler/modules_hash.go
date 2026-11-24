@@ -76,6 +76,9 @@ func moduleDataRange(ctx ModuleContext, args []ModuleValue) ([]byte, bool) {
 	var data []byte
 	started, owned := false, false
 	for _, block := range ctx.Blocks {
+		if len(block.Data) == 0 {
+			continue
+		}
 		relative := offset - block.Base
 		if relative < 0 || relative >= int64(len(block.Data)) {
 			if started {

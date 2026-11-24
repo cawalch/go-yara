@@ -155,6 +155,9 @@ func moduleDistribution(ctx ModuleContext, name string, args []ModuleValue) Modu
 		counts[b]++
 	}
 	if name == "mode" {
+		if len(data) == 0 {
+			return ModuleValue{}
+		}
 		mode := 0
 		for b, count := range counts {
 			if count > counts[mode] {

@@ -14,7 +14,7 @@ import (
 // are returned by scan methods. Missing fields and keys evaluate as undefined.
 func WithModuleData(name string, data any) ScannerOption {
 	return func(scanner *Scanner) {
-		if err := scanner.SetModuleData(name, data); err != nil {
+		if err := scanner.setModuleData(name, data); err != nil {
 			scanner.moduleErr = err
 		}
 	}
@@ -23,6 +23,14 @@ func WithModuleData(name string, data any) ScannerOption {
 // SetModuleData replaces one module's data with an owned, schema-checked snapshot.
 // Like other scanner setters, it must not run concurrently with a scan.
 func (s *Scanner) SetModuleData(name string, data any) error {
+	if err := s.setModuleData(name, data); err != nil {
+		return err
+	}
+	s.moduleErr = nil
+	return nil
+}
+
+func (s *Scanner) setModuleData(name string, data any) error {
 	if s == nil || s.program == nil {
 		return errors.New("module data requires a compiled program")
 	}
@@ -67,10 +75,14 @@ func bindModuleValue(field ModuleField, data reflect.Value, depth int) (ModuleVa
 	if !data.IsValid() {
 		return ModuleValue{}, nil
 	}
-	if data.CanInterface() {
-		if value, ok := reflect.TypeAssert[ModuleValue](data); ok && (value.Type == ModuleUndefined || value.Type == field.Kind && field.Kind <= ModuleBoolean) {
+	if value, ok := moduleValueFromReflect(data); ok {
+		if value.Type == ModuleUndefined {
+			return ModuleValue{}, nil
+		}
+		if value.Type == field.Kind && field.Kind <= ModuleBoolean {
 			return value, nil
 		}
+		return ModuleValue{}, fmt.Errorf("value %s does not match module kind %d", data.Type(), field.Kind)
 	}
 	switch field.Kind {
 	case ModuleInteger:
@@ -122,12 +134,30 @@ func bindModuleStruct(schema *ModuleSchema, data reflect.Value, depth int) (Modu
 	return ModuleValue{Type: ModuleStruct, object: object}, nil
 }
 
+func moduleValueFromReflect(data reflect.Value) (ModuleValue, bool) {
+	if !data.CanInterface() {
+		return ModuleValue{}, false
+	}
+	return reflect.TypeAssert[ModuleValue](data)
+}
+
 func moduleStructField(data reflect.Value, name string) reflect.Value {
 	if data.Kind() == reflect.Map {
 		return data.MapIndex(reflect.ValueOf(name).Convert(data.Type().Key()))
 	}
-	for index := 0; index < data.NumField(); index++ {
-		field := data.Type().Field(index)
+	field, _ := findStructField(data, name, 0)
+	return field
+}
+
+func findStructField(data reflect.Value, name string, depth int) (reflect.Value, bool) {
+	if depth > 32 || data.Kind() != reflect.Struct {
+		return reflect.Value{}, false
+	}
+	t := data.Type()
+	var fallback reflect.Value
+	var embedded []reflect.Value
+	for index := range t.NumField() {
+		field := t.Field(index)
 		if field.PkgPath != "" {
 			continue
 		}
@@ -135,11 +165,38 @@ func moduleStructField(data reflect.Value, name string) reflect.Value {
 		if tag == "-" {
 			continue
 		}
-		if tagged && tag == name || !tagged && strings.EqualFold(field.Name, name) {
-			return data.Field(index)
+		if tagged && tag == name {
+			return data.Field(index), true
+		}
+		if !tagged && !fallback.IsValid() && strings.EqualFold(field.Name, name) {
+			fallback = data.Field(index)
+		}
+		if field.Anonymous && !tagged {
+			if fv, ok := derefEmbeddedStruct(data.Field(index)); ok {
+				embedded = append(embedded, fv)
+			}
 		}
 	}
-	return reflect.Value{}
+	for _, fv := range embedded {
+		match, exactTag := findStructField(fv, name, depth+1)
+		if exactTag {
+			return match, true
+		}
+		if match.IsValid() && !fallback.IsValid() {
+			fallback = match
+		}
+	}
+	return fallback, false
+}
+
+func derefEmbeddedStruct(fv reflect.Value) (reflect.Value, bool) {
+	for fv.Kind() == reflect.Pointer {
+		if fv.IsNil() {
+			return reflect.Value{}, false
+		}
+		fv = fv.Elem()
+	}
+	return fv, fv.Kind() == reflect.Struct
 }
 
 func bindModuleArray(element ModuleField, data reflect.Value, depth int) (ModuleValue, error) {
