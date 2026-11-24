@@ -264,14 +264,7 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 	_, suppliedPCAP := s.moduleData["pcap"]
 	needsPCAP := s.program.nativePCAP && !suppliedPCAP
 	if needsPCAP {
-		if src, ok := r.(interface {
-			io.ReaderAt
-			io.Seeker
-		}); ok {
-			if start, err := src.Seek(0, io.SeekCurrent); err == nil && start >= 0 {
-				acc.pcapReader = io.NewSectionReader(src, start, math.MaxInt64-start)
-			}
-		}
+		acc.pcapReader = streamPCAPReader(ctx, r)
 	}
 	defer func() {
 		s.streamHeaderBuf = acc.headerBlock[:0]
@@ -680,4 +673,58 @@ func (s *Scanner) populateStreamRuleEvidence(
 			base:  match.Offset,
 		}, true
 	})
+}
+
+type contextReaderAt struct {
+	ctx    context.Context
+	reader io.ReaderAt
+}
+
+func (r contextReaderAt) ReadAt(data []byte, off int64) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.reader.ReadAt(data, off)
+}
+
+type fdContextReaderAt struct {
+	contextReaderAt
+	fd interface{ Fd() uintptr }
+}
+
+func (r fdContextReaderAt) Fd() uintptr {
+	return r.fd.Fd()
+}
+
+func wrapContextReaderAt(ctx context.Context, r io.ReaderAt) io.ReaderAt {
+	if fd, ok := r.(interface{ Fd() uintptr }); ok {
+		return fdContextReaderAt{
+			contextReaderAt: contextReaderAt{ctx: ctx, reader: r},
+			fd:              fd,
+		}
+	}
+	return contextReaderAt{ctx: ctx, reader: r}
+}
+
+func streamPCAPReader(ctx context.Context, r io.Reader) io.ReaderAt {
+	src, ok := r.(interface {
+		io.ReaderAt
+		io.Seeker
+	})
+	if !ok {
+		return nil
+	}
+	start, err := src.Seek(0, io.SeekCurrent)
+	if err != nil || start < 0 {
+		return nil
+	}
+	var readerAt io.ReaderAt = src
+	if start > 0 {
+		// Shift ReaderAt offsets so relative capture offsets start at 0.
+		readerAt = io.NewSectionReader(src, start, math.MaxInt64-start)
+	}
+	if ctx.Done() != nil {
+		return wrapContextReaderAt(ctx, readerAt)
+	}
+	return readerAt
 }

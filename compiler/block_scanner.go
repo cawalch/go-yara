@@ -25,6 +25,9 @@ type MemoryBlock struct {
 // against a discrete address space region (such as a single memory page), see
 // Scanner.MatchingRulesInBlock instead.
 //
+// Native pcap requires a single contiguous block starting at offset 0 covering
+// the full logical file size; multi-block captures evaluate pcap.tls as undefined.
+//
 // BlockScanner is not safe for concurrent use.
 type BlockScanner struct {
 	program       *CompiledProgram

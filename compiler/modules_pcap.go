@@ -27,26 +27,38 @@ func (root pcapModuleRoot) field(name string) ModuleValue {
 		return *cache.pcap
 	}
 	result := scanPCAP(ctx)
-	if cache != nil {
+	if cache != nil && !scanCanceled(ctx.cancelDone) {
 		cache.pcap = &result
 	}
 	return result
 }
 
 func scanPCAP(ctx *MatchContext) ModuleValue {
+	if scanCanceled(ctx.cancelDone) {
+		return ModuleValue{}
+	}
 	if ctx.FileSize <= 0 || ctx.FileSize > pcap.MaxReaderAtScanBytes {
 		return ModuleValue{}
 	}
 	records, err := captureTLSRecords(ctx)
-	if err != nil {
+	if err != nil || scanCanceled(ctx.cancelDone) {
 		return ModuleValue{}
 	}
 	rows := make([]ModuleValue, len(records))
+	rowData := make([]pcapTLSRow, len(records))
+	objs := make([]moduleObject, len(records))
 	for idx := range records {
+		if scanCanceledAt(ctx.cancelDone, idx) {
+			return ModuleValue{}
+		}
 		record := &records[idx]
 		match, known := record.Handshake.ServerNameMatch()
-		row := pcapTLSRow{flowIndex: record.FlowIndex, match: match, known: known}
-		rows[idx] = ModuleValue{Type: ModuleStruct, object: &moduleObject{kind: ModuleStruct, getter: row}}
+		rowData[idx] = pcapTLSRow{flowIndex: record.FlowIndex, match: match, known: known}
+		objs[idx] = moduleObject{kind: ModuleStruct, getter: &rowData[idx]}
+		rows[idx] = ModuleValue{Type: ModuleStruct, object: &objs[idx]}
+	}
+	if scanCanceled(ctx.cancelDone) {
+		return ModuleValue{}
 	}
 	return ModuleValue{Type: ModuleArray, object: &moduleObject{kind: ModuleArray, elements: rows}}
 }
@@ -75,7 +87,10 @@ type pcapTLSRow struct {
 	match, known bool
 }
 
-func (row pcapTLSRow) field(name string) ModuleValue {
+func (row *pcapTLSRow) field(name string) ModuleValue {
+	if row == nil {
+		return ModuleValue{}
+	}
 	switch name {
 	case "flow_index":
 		return IntegerValue(int64(row.flowIndex))
