@@ -138,9 +138,10 @@ rule HexTupleLoop {
 	require.True(t, res.RuleResults["HexTupleLoop"])
 }
 
-func TestPECalculateChecksumUnalignedELfanew(t *testing.T) {
-	// Construct a buffer where e_lfanew is unaligned (e.g. 0x41 -> checksumOffset = 0x41 + 88 = 153).
-	const eLfanew uint32 = 0x41
+func TestPECalculateChecksumUnalignedELfanewLibyaraParity(t *testing.T) {
+	// Libyara iterates 32-bit aligned words and only skips OptionalHeader.CheckSum
+	// when its offset is 4-byte aligned. Verify unaligned e_lfanew preserves parity.
+	const eLfanew uint32 = 0x82
 	checksumOff := int(eLfanew) + 88
 	bufWithZero := make([]byte, 256)
 	for i := range bufWithZero {
@@ -152,13 +153,13 @@ func TestPECalculateChecksumUnalignedELfanew(t *testing.T) {
 	bufWithZero[checksumOff+3] = 0
 
 	bufWithNonZero := append([]byte(nil), bufWithZero...)
-	binary.LittleEndian.PutUint32(bufWithNonZero[checksumOff:checksumOff+4], 0xDEADBEEF)
+	binary.LittleEndian.PutUint32(bufWithNonZero[checksumOff:checksumOff+4], 0x12345678)
 
 	c1, _, ok1 := peCalculateChecksumBytes(bufWithZero, eLfanew, nil)
 	c2, _, ok2 := peCalculateChecksumBytes(bufWithNonZero, eLfanew, nil)
 	require.True(t, ok1)
 	require.True(t, ok2)
-	require.Equal(t, c1, c2, "checksum field must be excluded regardless of e_lfanew alignment")
+	require.NotEqual(t, c1, c2, "unaligned CheckSum field must match libyara aligned-only exclusion")
 }
 
 func TestInterpreterCleanupStackPreservesCapacity(t *testing.T) {
