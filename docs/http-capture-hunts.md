@@ -45,8 +45,18 @@ Google reported observing both CAIRN and PentAGI in real investigations in
 November 2026. To hunt for automated discovery across tools, start with an
 unapproved source touching a private decoy and investigate nearby requests to
 distinct routes on the same application. Compare against vulnerability scanner
-schedules, synthetic monitors and ordinary deployment traffic. Use web access
-logs for request timestamps when calculating a time window. Go-pcap HTTP/1
-records expose a flow index, while HTTP/2 also exposes a stream ID. A flow's
-start time cannot date every request on a persistent connection.
+schedules, synthetic monitors and ordinary deployment traffic. For a cleartext capture or the plaintext side of an intercepting proxy,
+go-pcap's `HTTPRequestsFromReaderAt` provides the flow, request direction,
+zero-based packet index, and nanosecond capture timestamp. HTTP/2 also supplies
+the request stream ID. Inspect frame `PacketIndex + 1` for the decoy hit, then
+compare the other requests from that client to the same application within
+your investigation window. Several requests in one packet can have the same
+timestamp. A zero or backward capture timestamp needs independent timing
+evidence.
+
+The packet-attribution API was added after go-yara's pinned go-pcap version.
+Use a go-pcap revision containing [the request timeline](https://github.com/cawalch/go-pcap/pull/155)
+in a consuming application. For a TLS-only capture, use proxy or application
+access logs for the per-request timeline. The cleartext scan cannot attribute
+decrypted TLS plaintext to its original packet.
 [Google threat tracker, November 16, 2026](https://cloud.google.com/blog/topics/threat-intelligence/agentic-threat-activity-crosses-a-significant-threshold).
