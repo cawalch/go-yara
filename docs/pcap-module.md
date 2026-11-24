@@ -5,6 +5,9 @@ capture. For other protocol fields, a Go application can decode records with
 go-pcap and pass the field of interest to a YARA rule. The DNS example below
 shows how to carry the matching packet and flow into a finding.
 
+For web investigations, see [hunting ARTEX-like activity in captured HTTP](http-capture-hunts.md)
+for tested rules covering unexpected webhook uploads and private decoy routes.
+
 Run these examples from a go-yara checkout containing the pilot (commit
 `0871b5b` or later). The published v0.11.1 CLI predates `import "pcap"`.
 The commands use synthetic PcapNG fixtures from the pinned go-pcap dependency.
