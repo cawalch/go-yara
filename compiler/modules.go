@@ -132,8 +132,8 @@ type Module struct {
 var builtinModules = buildBuiltinModules()
 
 func buildBuiltinModules() map[string]Module {
-	modules := make(map[string]Module, 5)
-	for _, module := range []Module{hashModule(), mathModule(), stringModule(), timeModule(), peModule()} {
+	modules := make(map[string]Module, 6)
+	for _, module := range []Module{hashModule(), mathModule(), stringModule(), timeModule(), peModule(), {Name: "pcap", Schema: pcapSchema}} {
 		modules[module.Name] = module
 	}
 	return modules

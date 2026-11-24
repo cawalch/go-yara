@@ -20,6 +20,9 @@ func (i *Interpreter) executeModuleLoad() error {
 		return err
 	}
 	value, supplied := i.moduleData[name]
+	if !supplied && name == "pcap" && i.currentCompiledRule.nativePCAP {
+		return i.pushModuleValue(loadPCAP(i.matchContext))
+	}
 	if supplied || name != "pe" || !i.currentCompiledRule.nativePE {
 		return i.pushModuleValue(value)
 	}

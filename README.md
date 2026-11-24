@@ -260,6 +260,11 @@ The compiler includes [go-pe](https://github.com/cawalch/go-pe) as a pure-Go
 build dependency. Go fetches it automatically; no separate checkout or CGO is
 required. Rules that do not use PE metadata do not invoke the PE parser.
 
+With `import "pcap"`, a rule can compare the observed TLS server name with
+the leaf certificate's DNS names and identify the capture flow. See the
+[certificate-name pilot](docs/pcap-module.md) for a mismatch rule and examples
+of missing evidence.
+
 Hash functions accept a string or `(offset, size)`. Statistical functions accept
 strings or ranges; `count` and `percentage` accept a byte value with an optional
 range, and `mode` accepts an optional range. Invalid ranges and conversions yield

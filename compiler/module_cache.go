@@ -1,15 +1,20 @@
 package compiler
 
-import "math"
+import (
+	"io"
+	"math"
+)
 
 // Keep memoization bounded even when a rule calls a function on millions of
 // distinct offsets. Once full, retain the first entries and evaluate misses.
 // Keys use qualified names, since deserialized rules can assign different IDs
 // to the same function. String arguments are deliberately not retained.
 type moduleCallCache struct {
-	pe      *peImage
-	entries [16]moduleCallCacheEntry
-	count   int
+	pe         *peImage
+	pcap       *ModuleValue // nil until the first TLS reference in this scan
+	pcapReader io.ReaderAt
+	entries    [16]moduleCallCacheEntry
+	count      int
 }
 type moduleCallCacheEntry struct {
 	name   string
@@ -27,6 +32,8 @@ func (cache *moduleCallCache) reset() {
 	clear(cache.entries[:cache.count])
 	cache.count = 0
 	cache.pe = nil
+	cache.pcap = nil
+	cache.pcapReader = nil
 }
 
 func moduleCallKey(name string, args []ModuleValue) (moduleCallCacheEntry, bool) {
