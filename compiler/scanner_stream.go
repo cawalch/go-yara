@@ -335,23 +335,9 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 			}
 		}
 
-		// Reset per-chunk scratch caches
-		s.nonTextCache.reset(s.program.nonTextCacheSize)
-		if err := s.populateFixedRegexCache(ctx, windowData, &s.nonTextCache); err != nil {
-			return nil, err
-		}
-		s.regexByteSetCache.reset()
-
-		usesharedAutomaton := false
-		if len(s.program.Rules) > 1 {
-			var prepErr error
-			usesharedAutomaton, prepErr = s.preparePatternScan(ctx, windowData)
-			if prepErr != nil {
-				return nil, prepErr
-			}
-			if usesharedAutomaton {
-				s.markChunkCandidateRules()
-			}
+		usesharedAutomaton, prepErr := s.prepareChunkPatternScan(ctx, windowData)
+		if prepErr != nil {
+			return nil, prepErr
 		}
 
 		evalCount := len(s.program.Rules)
@@ -452,12 +438,13 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 			})
 		}
 
+		currentStreamOffset = primaryEnd
+
 		// A short read cannot establish whether the capture is complete.
 		if !needsPCAP && s.checkStreamEarlyTermination(ctx, acc, currentStreamOffset) {
 			break
 		}
 
-		currentStreamOffset = primaryEnd
 		if readErr == io.EOF || readErr == io.ErrUnexpectedEOF {
 			break
 		}
@@ -472,6 +459,25 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 
 	acc.fileSize = currentStreamOffset
 	return s.evaluateStreamMatches(ctx, acc)
+}
+
+func (s *Scanner) prepareChunkPatternScan(ctx context.Context, chunkData []byte) (bool, error) {
+	if len(s.program.Rules) <= 1 {
+		s.nonTextCache.reset(s.program.nonTextCacheSize)
+		if err := s.populateFixedRegexCache(ctx, chunkData, &s.nonTextCache); err != nil {
+			return false, err
+		}
+		s.regexByteSetCache.reset()
+		return false, nil
+	}
+	usesharedAutomaton, err := s.preparePatternScan(ctx, chunkData)
+	if err != nil {
+		return false, err
+	}
+	if usesharedAutomaton {
+		s.markChunkCandidateRules()
+	}
+	return usesharedAutomaton, nil
 }
 
 func (s *Scanner) checkStreamEarlyTermination(
@@ -521,6 +527,7 @@ func (s *Scanner) evaluateStreamMatches(
 	ctx context.Context,
 	acc *streamAccumulator,
 ) (result *ScanResult, err error) {
+	s.resetBorrowedEvidence()
 	if s.hookMask&(hookBitTelemetry|hookBitScanLifecycle) != 0 {
 		started := s.beginScan(ctx, acc.fileSize)
 		defer func() {
@@ -596,7 +603,9 @@ func (s *Scanner) evaluateStreamMatches(
 		}
 		matched := s.interp.ruleResultByIndex(rule.Index, rule.Name)
 		s.recordRuleOutcome(result, rule, matched)
-		s.recordRuleEvaluatedHooks(rule, matched, state)
+		if s.hookMask&(hookBitTelemetry|hookBitRuleProfile) != 0 {
+			s.recordRuleEvaluatedHooks(rule, matched, state)
+		}
 		if !s.omitMatches && !s.reportedMatchesOnly && result.Matches != nil {
 			if ruleMatches := materializeStreamRuleMatches(acc, rule); ruleMatches != nil {
 				result.Matches[rule.Name] = ruleMatches

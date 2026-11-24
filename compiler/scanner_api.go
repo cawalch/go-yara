@@ -28,6 +28,9 @@ func (s *Scanner) MatchesReader(r io.Reader) (bool, error) {
 // MatchesReaderWithContext reports whether at least one public rule matches r using constant-memory streaming.
 // Integer reads have the same retained-header limit as ScanReaderWithContext.
 func (s *Scanner) MatchesReaderWithContext(ctx context.Context, r io.Reader) (bool, error) {
+	if s == nil || s.program == nil {
+		return false, nil
+	}
 	prevOmitMatches := s.omitMatches
 	prevOmitRuleResults := s.omitRuleResults
 	prevReportedMatchesOnly := s.reportedMatchesOnly
@@ -79,7 +82,7 @@ func (s *Scanner) MatchesWithContext(ctx context.Context, data []byte) (matched 
 		if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
 			s.telemetrySink.PrefilterRejects++
 		}
-		if s.hookMask&hookBitScanLifecycle != 0 {
+		if s.hookMask&(hookBitTelemetry|hookBitScanLifecycle) != 0 {
 			start := s.beginScan(ctx, int64(len(data)))
 			start.finish(nil, 0, nil)
 		}
@@ -196,7 +199,7 @@ func (s *Scanner) ScanFileWithContext(ctx context.Context, filename string) (*Sc
 		return nil, err
 	}
 	info, statErr := os.Stat(filename)
-	if statErr == nil && info.Mode().IsRegular() && info.Size() >= fs.MinMmapFileSize {
+	if statErr == nil && info.Mode().IsRegular() && info.Size() >= fs.MinMmapFileSize && (s == nil || !s.evidenceBorrowed) {
 		data, cleanup, err := fs.MapFile(filename)
 		if err == nil {
 			defer cleanup()

@@ -387,10 +387,13 @@ func (s *Scanner) correlateEvidence(plans []EvidencePlan, occurrences []captureO
 		}
 		var captureSlab []Capture
 		if s != nil && s.evidenceBorrowed {
-			if cap(s.borrowedCaptureSlab) < len(occurrences) {
+			needed := len(s.borrowedCaptureSlab) + len(occurrences)
+			if cap(s.borrowedCaptureSlab) < needed {
+				// Allocate a fresh slab so slices handed out to earlier plans/rules
+				// in the same scan keep their backing array intact.
 				s.borrowedCaptureSlab = make([]Capture, 0, max(len(occurrences), 2*cap(s.borrowedCaptureSlab)))
 			}
-			captureSlab = s.borrowedCaptureSlab[:0]
+			captureSlab = s.borrowedCaptureSlab
 		} else {
 			captureSlab = make([]Capture, 0, len(occurrences))
 		}

@@ -106,21 +106,9 @@ func (scanner *BlockScanner) ScanWithContext(ctx context.Context, base int64, da
 	}
 
 	s := scanner.scanner
-	s.nonTextCache.reset(scanner.program.nonTextCacheSize)
-	if err := s.populateFixedRegexCache(ctx, blockData, &s.nonTextCache); err != nil {
+	usesharedAutomaton, err := s.prepareChunkPatternScan(ctx, blockData)
+	if err != nil {
 		return err
-	}
-	s.regexByteSetCache.reset()
-	usesharedAutomaton := false
-	if len(scanner.program.Rules) > 1 {
-		var err error
-		usesharedAutomaton, err = s.preparePatternScan(ctx, blockData)
-		if err != nil {
-			return err
-		}
-		if usesharedAutomaton {
-			s.markChunkCandidateRules()
-		}
 	}
 
 	evalCount := len(scanner.program.Rules)
@@ -327,6 +315,7 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (result *Sca
 		}
 	}
 
+	s.resetBorrowedEvidence()
 	err = s.finalizeMatchedRules(ctx, result, func(rule *CompiledRule) (map[string][]Match, map[string][]EvidenceFinding, error) {
 		var matches map[string][]Match
 		if !s.omitMatches && result.Matches != nil {
@@ -400,9 +389,9 @@ func sortAndDedupeMatches(matches []Match) []Match {
 			return -1
 		case left.Offset > right.Offset:
 			return 1
-		case left.Length < right.Length:
-			return -1
 		case left.Length > right.Length:
+			return -1
+		case left.Length < right.Length:
 			return 1
 		default:
 			return 0
