@@ -187,6 +187,10 @@ func (p *ExpressionParser) parsePrimary() (ast.Expression, error) {
 
 	// Handle unary operators
 	if isUnaryOperator(p.current.Type) {
+		if err := p.incrementDepth(); err != nil {
+			return nil, err
+		}
+		defer p.decrementDepth()
 		op := p.current.Type
 		p.nextToken()
 		prec := 11

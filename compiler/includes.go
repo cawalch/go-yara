@@ -31,23 +31,45 @@ func (c *Compiler) processIncludesWithBaseDir(program *ast.Program, baseDir stri
 	return c.processIncludesWithBaseDirContext(context.Background(), program, baseDir)
 }
 
+const maxIncludeDepth = 64
+
 // processIncludesWithBaseDirContext processes includes with a specific base directory and context support
 func (c *Compiler) processIncludesWithBaseDirContext(ctx context.Context, program *ast.Program, baseDir string) error {
-	traversal := includeTraversal{
-		compiler:    c,
-		ctx:         ctx,
-		activePaths: make(map[string]struct{}),
+	if program == nil || len(program.Includes) == 0 {
+		return nil
 	}
-	return traversal.processTree(program, baseDir)
+	absRootBase, err := filepath.Abs(baseDir)
+	if err != nil {
+		return fmt.Errorf("failed to resolve base directory: %w", err)
+	}
+	absRootBase, err = filepath.EvalSymlinks(filepath.Clean(absRootBase))
+	if err != nil {
+		return fmt.Errorf("failed to resolve include base directory: %w", err)
+	}
+	traversal := includeTraversal{
+		compiler:      c,
+		ctx:           ctx,
+		rootBaseDir:   absRootBase,
+		activePaths:   make(map[string]struct{}),
+		includedPaths: make(map[string]struct{}),
+	}
+	return traversal.processTree(program, absRootBase, 0)
 }
 
 type includeTraversal struct {
-	compiler    *Compiler
-	ctx         context.Context
-	activePaths map[string]struct{}
+	compiler      *Compiler
+	ctx           context.Context
+	rootBaseDir   string
+	activePaths   map[string]struct{}
+	includedPaths map[string]struct{}
 }
 
-func (traversal *includeTraversal) processTree(program *ast.Program, baseDir string) error {
+func (traversal *includeTraversal) processTree(program *ast.Program, baseDir string, depth int) error {
+	if depth > maxIncludeDepth {
+		return fmt.Errorf("include nesting depth exceeds maximum (%d)", maxIncludeDepth)
+	}
+	var includedRules []*ast.Rule
+	var includedImports []*ast.Import
 	for _, include := range program.Includes {
 		select {
 		case <-traversal.ctx.Done():
@@ -55,47 +77,51 @@ func (traversal *includeTraversal) processTree(program *ast.Program, baseDir str
 		default:
 		}
 
-		if err := traversal.processInclude(program, baseDir, include); err != nil {
+		rules, imports, err := traversal.processInclude(baseDir, include, depth)
+		if err != nil {
 			return err
 		}
+		includedRules = append(includedRules, rules...)
+		includedImports = append(includedImports, imports...)
+	}
+	if len(includedRules) > 0 {
+		program.Rules = append(includedRules, program.Rules...)
+	}
+	if len(includedImports) > 0 {
+		program.Imports = append(includedImports, program.Imports...)
 	}
 
 	return nil
 }
 
-func (traversal *includeTraversal) processInclude(program *ast.Program, baseDir string, include *ast.Include) error {
+//nolint:revive // argument-limit: internal traversal helper tracks baseDir and depth
+func (traversal *includeTraversal) processInclude(baseDir string, include *ast.Include, depth int) ([]*ast.Rule, []*ast.Import, error) {
 	cleanIncludePath := filepath.Clean(filepath.Join(baseDir, include.File))
-
-	absBaseDir, err := filepath.Abs(baseDir)
-	if err != nil {
-		return fmt.Errorf("failed to resolve base directory: %w", err)
-	}
-	absBaseDir, err = filepath.EvalSymlinks(filepath.Clean(absBaseDir))
-	if err != nil {
-		return fmt.Errorf("failed to resolve include base directory: %w", err)
-	}
 
 	absIncludePath, err := filepath.Abs(cleanIncludePath)
 	if err != nil {
-		return fmt.Errorf("failed to resolve include path: %w", err)
+		return nil, nil, fmt.Errorf("failed to resolve include path: %w", err)
 	}
 	absIncludePath, err = filepath.EvalSymlinks(filepath.Clean(absIncludePath))
 	if err != nil {
-		return fmt.Errorf("failed to read include file %s: %w", include.File, err)
+		return nil, nil, fmt.Errorf("failed to read include file %s: %w", include.File, err)
 	}
 
-	if !pathWithinBase(absBaseDir, absIncludePath) {
-		return fmt.Errorf("failed to read include file %s: path traversal detected", include.File)
+	if !pathWithinBase(traversal.rootBaseDir, absIncludePath) {
+		return nil, nil, fmt.Errorf("failed to read include file %s: path traversal detected", include.File)
 	}
 	if _, exists := traversal.activePaths[absIncludePath]; exists {
-		return fmt.Errorf("circular include detected: %s", include.File)
+		return nil, nil, fmt.Errorf("circular include detected: %s", include.File)
+	}
+	if _, alreadyIncluded := traversal.includedPaths[absIncludePath]; alreadyIncluded {
+		return nil, nil, nil
 	}
 	traversal.activePaths[absIncludePath] = struct{}{}
 	defer delete(traversal.activePaths, absIncludePath)
 
 	includedContent, err := readFileWithLimit(absIncludePath, traversal.compiler.options.MaxIncludeSize)
 	if err != nil {
-		return fmt.Errorf("failed to read include file %s: %w", include.File, err)
+		return nil, nil, fmt.Errorf("failed to read include file %s: %w", include.File, err)
 	}
 
 	includedLexer := lexer.New(string(includedContent))
@@ -112,7 +138,7 @@ func (traversal *includeTraversal) processInclude(program *ast.Program, baseDir 
 		if !traversal.compiler.options.IgnoreInvalidRules ||
 			!ok ||
 			len(includedParser.ProgramErrors()) != 0 {
-			return fmt.Errorf("failed to parse include file %s: %w", include.File, parseErr)
+			return nil, nil, fmt.Errorf("failed to parse include file %s: %w", include.File, parseErr)
 		}
 		includedProgram = partialErr.Program
 		for _, invalid := range includedParser.InvalidRules() {
@@ -120,18 +146,17 @@ func (traversal *includeTraversal) processInclude(program *ast.Program, baseDir 
 		}
 	}
 	if len(includedParser.Errors()) > 0 && !traversal.compiler.options.IgnoreInvalidRules {
-		return fmt.Errorf("parser errors in include file %s: %v", include.File, includedParser.Errors())
+		return nil, nil, fmt.Errorf("parser errors in include file %s: %v", include.File, includedParser.Errors())
 	}
 
 	if len(includedProgram.Includes) > 0 {
-		if err := traversal.processTree(includedProgram, filepath.Dir(absIncludePath)); err != nil {
-			return fmt.Errorf("failed to process includes in %s: %w", include.File, err)
+		if err := traversal.processTree(includedProgram, filepath.Dir(absIncludePath), depth+1); err != nil {
+			return nil, nil, fmt.Errorf("failed to process includes in %s: %w", include.File, err)
 		}
 	}
 
-	program.Rules = append(program.Rules, includedProgram.Rules...)
-	program.Imports = append(program.Imports, includedProgram.Imports...)
-	return nil
+	traversal.includedPaths[absIncludePath] = struct{}{}
+	return includedProgram.Rules, includedProgram.Imports, nil
 }
 
 // ProcessIncludes is a public wrapper for processIncludesWithBaseDir

@@ -22,9 +22,30 @@ func (l *Lexer) readHexString() string {
 
 	braceCount := 1 // We've already seen the opening brace
 	for braceCount > 0 && l.reader.Current() != 0 {
-		if l.reader.Current() == '{' {
+		ch := l.reader.Current()
+		if ch == '/' && l.reader.PeekChar() == '*' {
+			l.reader.ReadChar() // skip '/'
+			l.reader.ReadChar() // skip '*'
+			for l.reader.Current() != 0 {
+				if l.reader.Current() == '*' && l.reader.PeekChar() == '/' {
+					l.reader.ReadChar()
+					l.reader.ReadChar()
+					break
+				}
+				l.reader.ReadChar()
+			}
+			continue
+		}
+		if ch == '/' && l.reader.PeekChar() == '/' {
+			for l.reader.Current() != 0 && l.reader.Current() != '\n' {
+				l.reader.ReadChar()
+			}
+			continue
+		}
+		switch ch {
+		case '{':
 			braceCount++
-		} else if l.reader.Current() == '}' {
+		case '}':
 			braceCount--
 		}
 		l.reader.ReadChar()

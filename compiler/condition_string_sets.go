@@ -49,9 +49,17 @@ func (cc *conditionCompiler) compileOfExpression(ofExpr *ast.OfExpression) error
 	// Compile optional constraint and adjust opcode
 	isPercent := isPercentOpcode(opcode)
 	if ofExpr.InRange != nil {
-		opcode = cc.compileInRangeConstraint(ofExpr.InRange, ofExpr.Pos, opcode, isPercent)
+		var err error
+		opcode, err = cc.compileInRangeConstraint(ofExpr.InRange, ofExpr.Pos, opcode, isPercent)
+		if err != nil {
+			return err
+		}
 	} else if ofExpr.AtOffset != nil {
-		opcode = cc.compileAtOffsetConstraint(ofExpr.AtOffset, ofExpr.Pos, opcode, isPercent)
+		var err error
+		opcode, err = cc.compileAtOffsetConstraint(ofExpr.AtOffset, ofExpr.Pos, opcode, isPercent)
+		if err != nil {
+			return err
+		}
 	}
 
 	cc.emitter.EmitOpcode(opcode, ofExpr.Pos.Line, ofExpr.Pos.Column)
@@ -68,21 +76,21 @@ func (cc *conditionCompiler) compileInRangeConstraint(
 	_ token.Position,
 	baseOpcode Opcode,
 	isPercent bool,
-) Opcode {
+) (Opcode, error) {
 	rangeOp, ok := expr.(*ast.BinaryOp)
 	if !ok || rangeOp.Op != token.DOT {
-		return baseOpcode // fallback; error will be caught elsewhere
+		return baseOpcode, errors.New("in-range constraint requires a range expression")
 	}
 	if err := cc.compileExpression(rangeOp.Left); err != nil {
-		return baseOpcode
+		return baseOpcode, err
 	}
 	if err := cc.compileExpression(rangeOp.Right); err != nil {
-		return baseOpcode
+		return baseOpcode, err
 	}
 	if isPercent {
-		return OpOfPercentIn
+		return OpOfPercentIn, nil
 	}
-	return OpOfFoundIn
+	return OpOfFoundIn, nil
 }
 
 //nolint:revive // argument-limit: internal helper
@@ -91,14 +99,14 @@ func (cc *conditionCompiler) compileAtOffsetConstraint(
 	_ token.Position,
 	baseOpcode Opcode,
 	isPercent bool,
-) Opcode {
+) (Opcode, error) {
 	if err := cc.compileExpression(expr); err != nil {
-		return baseOpcode
+		return baseOpcode, err
 	}
 	if isPercent {
-		return OpOfPercentAt
+		return OpOfPercentAt, nil
 	}
-	return OpOfFoundAt
+	return OpOfFoundAt, nil
 }
 
 func (cc *conditionCompiler) compileCountExpression(countExpr ast.Expression) error {

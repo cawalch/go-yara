@@ -442,12 +442,10 @@ func (s *Scanner) applyPollHookConfig(h *ScanHooks) {
 		return
 	}
 	s.hookMask |= hookBitPoll
-	if s.pollByteStride <= 0 {
-		if h.PollByteStride > 0 {
-			s.pollByteStride = h.PollByteStride
-		} else {
-			s.pollByteStride = defaultPollByteStride
-		}
+	if h.PollByteStride > 0 {
+		s.pollByteStride = h.PollByteStride
+	} else if s.pollByteStride <= 0 {
+		s.pollByteStride = defaultPollByteStride
 	}
 }
 
