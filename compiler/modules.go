@@ -36,6 +36,32 @@ const (
 	ModuleRegex
 )
 
+// String returns a human-readable name for the ModuleValueType.
+func (t ModuleValueType) String() string {
+	switch t {
+	case ModuleUndefined:
+		return "undefined"
+	case ModuleInteger:
+		return "integer"
+	case ModuleFloat:
+		return "float"
+	case ModuleString:
+		return "string"
+	case ModuleBoolean:
+		return "boolean"
+	case ModuleStruct:
+		return "struct"
+	case ModuleArray:
+		return "array"
+	case ModuleDictionary:
+		return "dictionary"
+	case ModuleRegex:
+		return "regex"
+	default:
+		return fmt.Sprintf("ModuleValueType(%d)", t)
+	}
+}
+
 // ModuleValue is a value passed to or returned from a module function.
 type ModuleValue struct {
 	Type    ModuleValueType

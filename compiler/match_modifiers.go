@@ -1,6 +1,8 @@
 package compiler
 
 import (
+	"bytes"
+
 	"github.com/cawalch/go-yara/ast"
 	"github.com/cawalch/go-yara/regex"
 )
@@ -121,12 +123,7 @@ func verifyTextMatch(data []byte, m Match, pattern []byte, noCase bool) bool {
 		}
 		return true
 	}
-	for i := 0; i < m.Length; i++ {
-		if data[offset+i] != pattern[i] {
-			return false
-		}
-	}
-	return true
+	return bytes.Equal(data[offset:offset+m.Length], pattern)
 }
 
 //nolint:revive // argument-limit: internal helper

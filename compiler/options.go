@@ -46,6 +46,11 @@ type CompilationError struct {
 	Column  int
 }
 
+// Error implements the error interface for CompilationError.
+func (e CompilationError) Error() string {
+	return e.Message
+}
+
 // CompilationWarning represents a compilation warning
 type CompilationWarning struct {
 	Code    string

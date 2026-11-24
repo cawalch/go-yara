@@ -477,15 +477,15 @@ func scanTargets(compiledProgram *compiler.CompiledProgram, targets []string, ar
 	}
 
 	isMulti := len(targets) > 1
-	for _, r := range results {
-		if r.res != nil {
-			if err := outputFileResult(r, args, isMulti); err != nil {
+	for i := range results {
+		if results[i].res != nil {
+			if err := outputFileResult(results[i], args, isMulti); err != nil {
 				return err
 			}
 		}
-		if r.cleanup != nil {
-			r.cleanup()
-			r.cleanup = nil
+		if results[i].cleanup != nil {
+			results[i].cleanup()
+			results[i].cleanup = nil
 		}
 	}
 	return nil
