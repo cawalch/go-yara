@@ -118,7 +118,7 @@ func (plan *regexBoundedAlternation) execRepeat(data []byte, flags regex.Flags, 
 	terminal := rp.AtomInRepeat && len(rp.Suffix) == 0 && (!rp.Greedy || !plan.Fullword && flags&regex.FlagsGreedy != 0)
 	firstCopy := terminal && !plan.Fullword && flags&regex.FlagsGreedy == 0
 	for pos := 0; pos <= frontier; pos++ {
-		if scanCanceled(done) {
+		if scanCanceledAt(done, pos) {
 			return -1, boundedAtomOrder{}
 		}
 		absolute := base + pos*step
@@ -160,7 +160,7 @@ func (plan *regexBoundedAlternation) execRepeat(data []byte, flags regex.Flags, 
 		scratch.ends[i] = -1
 	}
 	for pos := frontier; pos >= 0; pos-- {
-		if scanCanceled(done) {
+		if scanCanceledAt(done, frontier-pos) {
 			return -1, boundedAtomOrder{}
 		}
 		if !scratch.has(pos) {

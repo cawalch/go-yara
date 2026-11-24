@@ -52,8 +52,8 @@ func addBoundedRegexVerifications(ctx *MatchContext, id string, pattern RegexPat
 				limit = min(limit, 1)
 			}
 
-			for at := 0; at < limit; at++ {
-				if scanCanceled(ctx.cancelDone) {
+			for at, iter := 0, 0; at < limit; at, iter = at+1, iter+1 {
+				if scanCanceledAt(ctx.cancelDone, iter) {
 					return
 				}
 				if width > 0 && !anchoredStart {

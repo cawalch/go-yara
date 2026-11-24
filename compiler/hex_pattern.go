@@ -241,17 +241,24 @@ func (m *xorKeyMask) contains(k byte) bool {
 	return (m[k/64] & (uint64(1) << (k % 64))) != 0
 }
 
+const maxPooledHexDiffBuf = 1 << 20 // 1 MiB cap on retained scratch diff buffer
+
 func (scratch *hexMatchScratch) ensureDiffData(data []byte) []byte {
 	n := len(data) - 1
 	if n <= 0 {
 		return nil
 	}
-	if cap(scratch.diffBuf) < n {
-		scratch.diffBuf = make([]byte, n)
+	var diff []byte
+	if n > maxPooledHexDiffBuf {
+		diff = make([]byte, n)
 	} else {
-		scratch.diffBuf = scratch.diffBuf[:n]
+		if cap(scratch.diffBuf) < n {
+			scratch.diffBuf = make([]byte, n)
+		} else {
+			scratch.diffBuf = scratch.diffBuf[:n]
+		}
+		diff = scratch.diffBuf
 	}
-	diff := scratch.diffBuf
 	i := 0
 	for ; i+8 <= n; i += 8 {
 		v0 := binary.LittleEndian.Uint64(data[i:])
