@@ -100,7 +100,7 @@ func (s *Scanner) extractGlobalMatchesInt(
 				Length:  info.Length,
 			}
 			if !verifyTextMatch(data, candidate, info.Data, isNocase) ||
-				!matchPassesModifiers(data, candidate, rule.StringModifiers[strID], isWide) {
+				(entry.hasFullword && !isFullwordMatch(data, int(offset), info.Length, isWide)) {
 				return true
 			}
 			if fastDedup {

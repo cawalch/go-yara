@@ -228,9 +228,10 @@ func (builder *sharedPatternAutomatonBuilder) addTextPatterns(ruleIndex int, rul
 			return fmt.Errorf("adding %s to shared automaton: %w", globalID, err)
 		}
 		builder.lookup = append(builder.lookup, sharedAutomatonEntry{
-			RuleIndex: ruleIndex,
-			StringIdx: rule.ResolveStringIndex(strID),
-			Kind:      StringKindText,
+			RuleIndex:   ruleIndex,
+			StringIdx:   rule.ResolveStringIndex(strID),
+			Kind:        StringKindText,
+			hasFullword: hasModifier(rule.StringModifiers[strID], ast.StringModifierFullword),
 		})
 	}
 	return nil

@@ -312,49 +312,57 @@ func (t *teddyNeon2Bank) findCandidate(data []byte, from int) int {
 	offsetShift := t.prefixLen - 1
 	limit32 := len(data) - 32 - offsetShift
 
+	b0Lo0, b0Hi0 := t.bank0Lo0, t.bank0Hi0
+	b1Lo0, b1Hi0 := t.bank1Lo0, t.bank1Hi0
+	b0Lo1, b0Hi1 := t.bank0Lo1, t.bank0Hi1
+	b1Lo1, b1Hi1 := t.bank1Lo1, t.bank1Hi1
+	b0Lo2, b0Hi2 := t.bank0Lo2, t.bank0Hi2
+	b1Lo2, b1Hi2 := t.bank1Lo2, t.bank1Hi2
+	prefixLen := t.prefixLen
+
 	pos := from
 	for ; pos <= limit32; pos += 32 {
 		v0 := archsimd.LoadUint8x16(data[pos : pos+16])
 		v0Lo := v0.And(lowMask)
 		v0Hi := v0.ShiftAllRight(4)
-		res0A := t.bank0Lo0.LookupOrZero(v0Lo).And(t.bank0Hi0.LookupOrZero(v0Hi))
-		res1A := t.bank1Lo0.LookupOrZero(v0Lo).And(t.bank1Hi0.LookupOrZero(v0Hi))
+		res0A := b0Lo0.LookupOrZero(v0Lo).And(b0Hi0.LookupOrZero(v0Hi))
+		res1A := b1Lo0.LookupOrZero(v0Lo).And(b1Hi0.LookupOrZero(v0Hi))
 
-		if t.prefixLen >= 2 {
+		if prefixLen >= 2 {
 			v1 := archsimd.LoadUint8x16(data[pos+1 : pos+17])
 			v1Lo := v1.And(lowMask)
 			v1Hi := v1.ShiftAllRight(4)
-			res0A = res0A.And(t.bank0Lo1.LookupOrZero(v1Lo).And(t.bank0Hi1.LookupOrZero(v1Hi)))
-			res1A = res1A.And(t.bank1Lo1.LookupOrZero(v1Lo).And(t.bank1Hi1.LookupOrZero(v1Hi)))
+			res0A = res0A.And(b0Lo1.LookupOrZero(v1Lo).And(b0Hi1.LookupOrZero(v1Hi)))
+			res1A = res1A.And(b1Lo1.LookupOrZero(v1Lo).And(b1Hi1.LookupOrZero(v1Hi)))
 		}
-		if t.prefixLen >= 3 {
+		if prefixLen >= 3 {
 			v2 := archsimd.LoadUint8x16(data[pos+2 : pos+18])
 			v2Lo := v2.And(lowMask)
 			v2Hi := v2.ShiftAllRight(4)
-			res0A = res0A.And(t.bank0Lo2.LookupOrZero(v2Lo).And(t.bank0Hi2.LookupOrZero(v2Hi)))
-			res1A = res1A.And(t.bank1Lo2.LookupOrZero(v2Lo).And(t.bank1Hi2.LookupOrZero(v2Hi)))
+			res0A = res0A.And(b0Lo2.LookupOrZero(v2Lo).And(b0Hi2.LookupOrZero(v2Hi)))
+			res1A = res1A.And(b1Lo2.LookupOrZero(v2Lo).And(b1Hi2.LookupOrZero(v2Hi)))
 		}
 		combA := res0A.Or(res1A)
 
 		v0b := archsimd.LoadUint8x16(data[pos+16 : pos+32])
 		v0bLo := v0b.And(lowMask)
 		v0bHi := v0b.ShiftAllRight(4)
-		res0B := t.bank0Lo0.LookupOrZero(v0bLo).And(t.bank0Hi0.LookupOrZero(v0bHi))
-		res1B := t.bank1Lo0.LookupOrZero(v0bLo).And(t.bank1Hi0.LookupOrZero(v0bHi))
+		res0B := b0Lo0.LookupOrZero(v0bLo).And(b0Hi0.LookupOrZero(v0bHi))
+		res1B := b1Lo0.LookupOrZero(v0bLo).And(b1Hi0.LookupOrZero(v0bHi))
 
-		if t.prefixLen >= 2 {
+		if prefixLen >= 2 {
 			v1b := archsimd.LoadUint8x16(data[pos+17 : pos+33])
 			v1bLo := v1b.And(lowMask)
 			v1bHi := v1b.ShiftAllRight(4)
-			res0B = res0B.And(t.bank0Lo1.LookupOrZero(v1bLo).And(t.bank0Hi1.LookupOrZero(v1bHi)))
-			res1B = res1B.And(t.bank1Lo1.LookupOrZero(v1bLo).And(t.bank1Hi1.LookupOrZero(v1bHi)))
+			res0B = res0B.And(b0Lo1.LookupOrZero(v1bLo).And(b0Hi1.LookupOrZero(v1bHi)))
+			res1B = res1B.And(b1Lo1.LookupOrZero(v1bLo).And(b1Hi1.LookupOrZero(v1bHi)))
 		}
-		if t.prefixLen >= 3 {
+		if prefixLen >= 3 {
 			v2b := archsimd.LoadUint8x16(data[pos+18 : pos+34])
 			v2bLo := v2b.And(lowMask)
 			v2bHi := v2b.ShiftAllRight(4)
-			res0B = res0B.And(t.bank0Lo2.LookupOrZero(v2bLo).And(t.bank0Hi2.LookupOrZero(v2bHi)))
-			res1B = res1B.And(t.bank1Lo2.LookupOrZero(v2bLo).And(t.bank1Hi2.LookupOrZero(v2bHi)))
+			res0B = res0B.And(b0Lo2.LookupOrZero(v2bLo).And(b0Hi2.LookupOrZero(v2bHi)))
+			res1B = res1B.And(b1Lo2.LookupOrZero(v2bLo).And(b1Hi2.LookupOrZero(v2bHi)))
 		}
 		combB := res0B.Or(res1B)
 
@@ -376,24 +384,24 @@ func (t *teddyNeon2Bank) findCandidate(data []byte, from int) int {
 		v0Lo := v0.And(lowMask)
 		v0Hi := v0.ShiftAllRight(4)
 
-		res0 := t.bank0Lo0.LookupOrZero(v0Lo).And(t.bank0Hi0.LookupOrZero(v0Hi))
-		res1 := t.bank1Lo0.LookupOrZero(v0Lo).And(t.bank1Hi0.LookupOrZero(v0Hi))
+		res0 := b0Lo0.LookupOrZero(v0Lo).And(b0Hi0.LookupOrZero(v0Hi))
+		res1 := b1Lo0.LookupOrZero(v0Lo).And(b1Hi0.LookupOrZero(v0Hi))
 
-		if t.prefixLen >= 2 {
+		if prefixLen >= 2 {
 			v1 := archsimd.LoadUint8x16(data[pos+1 : pos+17])
 			v1Lo := v1.And(lowMask)
 			v1Hi := v1.ShiftAllRight(4)
 
-			res0 = res0.And(t.bank0Lo1.LookupOrZero(v1Lo).And(t.bank0Hi1.LookupOrZero(v1Hi)))
-			res1 = res1.And(t.bank1Lo1.LookupOrZero(v1Lo).And(t.bank1Hi1.LookupOrZero(v1Hi)))
+			res0 = res0.And(b0Lo1.LookupOrZero(v1Lo).And(b0Hi1.LookupOrZero(v1Hi)))
+			res1 = res1.And(b1Lo1.LookupOrZero(v1Lo).And(b1Hi1.LookupOrZero(v1Hi)))
 		}
-		if t.prefixLen >= 3 {
+		if prefixLen >= 3 {
 			v2 := archsimd.LoadUint8x16(data[pos+2 : pos+18])
 			v2Lo := v2.And(lowMask)
 			v2Hi := v2.ShiftAllRight(4)
 
-			res0 = res0.And(t.bank0Lo2.LookupOrZero(v2Lo).And(t.bank0Hi2.LookupOrZero(v2Hi)))
-			res1 = res1.And(t.bank1Lo2.LookupOrZero(v2Lo).And(t.bank1Hi2.LookupOrZero(v2Hi)))
+			res0 = res0.And(b0Lo2.LookupOrZero(v2Lo).And(b0Hi2.LookupOrZero(v2Hi)))
+			res1 = res1.And(b1Lo2.LookupOrZero(v2Lo).And(b1Hi2.LookupOrZero(v2Hi)))
 		}
 
 		combined := res0.Or(res1)

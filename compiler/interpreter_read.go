@@ -36,12 +36,12 @@ func (i *Interpreter) executeReadIntCommon(size int, signed, bigEndian bool) err
 
 	var val int64
 	var err error
-	if bigEndian {
-		if err = i.validateReadIntAccess(offset); err == nil {
+	if err = i.validateReadIntAccess(offset); err == nil {
+		if bigEndian {
 			val, err = i.readIntBE(data, 0, size, signed)
+		} else {
+			val, err = i.readIntLE(data, size, !signed)
 		}
-	} else {
-		val, err = i.executeReadInt(offset, size, !signed)
 	}
 	if err != nil {
 		return err
@@ -138,6 +138,10 @@ func (i *Interpreter) executeReadInt(offset int64, size int, unsigned bool) (int
 			Message: fmt.Sprintf("%d-bit read extends beyond available data", size*8),
 		}
 	}
+	return i.readIntLE(data, size, unsigned)
+}
+
+func (i *Interpreter) readIntLE(data []byte, size int, unsigned bool) (int64, error) {
 	switch size {
 	case 1:
 		return i.readInt8(data, 0, unsigned)

@@ -58,6 +58,11 @@ func putVMState(st *vmState) {
 	} else {
 		st.ends = st.ends[:0]
 	}
+	if cap(st.failureMasks) > 4096 {
+		st.failureMasks = nil
+	} else {
+		st.failureMasks = st.failureMasks[:0]
+	}
 	if cap(st.visited) > 4096 {
 		// Too large to pool; let GC handle it.
 		return

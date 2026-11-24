@@ -32,6 +32,7 @@ type sharedAutomatonEntry struct {
 	IsWide          bool
 	canTriggerRule  bool
 	singleRuleCache bool
+	hasFullword     bool
 }
 
 // CompiledProgram represents an immutable, thread-safe collection of compiled YARA rules.
