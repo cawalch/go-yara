@@ -103,6 +103,9 @@ func NewCompiler(opts ...Option) *Compiler {
 	// keep using the immutable registry.
 	detached := false
 	for _, opt := range opts {
+		if opt == nil {
+			continue
+		}
 		if !detached && optionMayMutateModules(opt) {
 			options.Modules = cloneModules(options.Modules)
 			detached = true
@@ -162,6 +165,9 @@ func (c *Compiler) CompileSource(source string) (*CompiledProgram, error) {
 
 // CompileSourceWithContext compiles YARA source code to bytecode with context support
 func (c *Compiler) CompileSourceWithContext(ctx context.Context, source string) (*CompiledProgram, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	// Check for cancellation early
 	select {
 	case <-ctx.Done():
@@ -241,6 +247,9 @@ func (c *Compiler) CompileFile(filename string) (*CompiledProgram, error) {
 
 // CompileFileWithContext compiles a YARA file to bytecode with context support
 func (c *Compiler) CompileFileWithContext(ctx context.Context, filename string) (*CompiledProgram, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	// Check for cancellation early
 	select {
 	case <-ctx.Done():

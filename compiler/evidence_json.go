@@ -5,6 +5,7 @@ import (
 	"io"
 	"slices"
 	"strconv"
+	"unicode/utf8"
 )
 
 // AppendEvidenceJSON appends the JSON representation of evidence findings to dst
@@ -138,27 +139,38 @@ func (c *Capture) WriteJSON(w io.Writer) error {
 
 func appendJSONString(dst []byte, s string) []byte {
 	dst = append(dst, '"')
-	for i := 0; i < len(s); i++ {
+	for i := 0; i < len(s); {
 		b := s[i]
-		switch b {
-		case '"':
-			dst = append(dst, '\\', '"')
-		case '\\':
-			dst = append(dst, '\\', '\\')
-		case '\n':
-			dst = append(dst, '\\', 'n')
-		case '\r':
-			dst = append(dst, '\\', 'r')
-		case '\t':
-			dst = append(dst, '\\', 't')
-		default:
-			if b < 0x20 {
-				const hex = "0123456789abcdef"
-				dst = append(dst, '\\', 'u', '0', '0', hex[b>>4], hex[b&0xf])
-			} else {
-				dst = append(dst, b)
+		if b < utf8.RuneSelf {
+			switch b {
+			case '"':
+				dst = append(dst, '\\', '"')
+			case '\\':
+				dst = append(dst, '\\', '\\')
+			case '\n':
+				dst = append(dst, '\\', 'n')
+			case '\r':
+				dst = append(dst, '\\', 'r')
+			case '\t':
+				dst = append(dst, '\\', 't')
+			default:
+				if b < 0x20 {
+					const hex = "0123456789abcdef"
+					dst = append(dst, '\\', 'u', '0', '0', hex[b>>4], hex[b&0xf])
+				} else {
+					dst = append(dst, b)
+				}
 			}
+			i++
+			continue
 		}
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if r == utf8.RuneError && size == 1 {
+			dst = append(dst, `\ufffd`...)
+		} else {
+			dst = append(dst, s[i:i+size]...)
+		}
+		i += size
 	}
 	dst = append(dst, '"')
 	return dst

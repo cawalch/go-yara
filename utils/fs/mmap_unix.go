@@ -24,6 +24,9 @@ func mapFileOS(filename string) ([]byte, func(), error) {
 	if info.IsDir() {
 		return nil, nil, fmt.Errorf("cannot mmap directory: %s", filename)
 	}
+	if !info.Mode().IsRegular() {
+		return nil, nil, fmt.Errorf("cannot mmap non-regular file: %s", filename)
+	}
 
 	size := info.Size()
 	if size == 0 {

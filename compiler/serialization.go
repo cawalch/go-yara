@@ -440,6 +440,8 @@ func serializeRule(rule *CompiledRule) (serializedRule, error) {
 		MetaEntries:         metaEntries,
 		IsGlobal:            rule.IsGlobal,
 		IsPrivate:           rule.IsPrivate,
+		IsDead:              rule.IsDead,
+		DeadStrings:         slices.Sorted(maps.Keys(rule.DeadStrings)),
 		FastScanSafe:        rule.FastScanSafe,
 		ConditionMonotonic:  rule.ConditionMonotonic,
 		RequiresStringMatch: rule.RequiresStringMatch,
@@ -699,6 +701,7 @@ func deserializeRule(serialized serializedRule, bindings map[string]compiledModu
 		Meta:                meta,
 		IsGlobal:            serialized.IsGlobal,
 		IsPrivate:           serialized.IsPrivate,
+		IsDead:              serialized.IsDead,
 		FastScanSafe:        serialized.FastScanSafe,
 		ConditionMonotonic:  serialized.ConditionMonotonic,
 		RequiresStringMatch: serialized.RequiresStringMatch,
@@ -711,6 +714,12 @@ func deserializeRule(serialized serializedRule, bindings map[string]compiledModu
 		mandatoryAssertions: serialized.MandatoryAssertions,
 		requiredStrings:     serialized.RequiredStrings,
 		forbiddenStrings:    serialized.ForbiddenStrings,
+	}
+	if len(serialized.DeadStrings) > 0 {
+		rule.DeadStrings = make(map[string]bool, len(serialized.DeadStrings))
+		for _, id := range serialized.DeadStrings {
+			rule.DeadStrings[id] = true
+		}
 	}
 	rule.resolveAssertionStringSlots()
 	for _, rawID := range slices.Sorted(maps.Keys(rawModuleNames)) {

@@ -569,6 +569,24 @@ func sortAndDedupeMatchSpans(matches []matchSpan) []matchSpan {
 }
 
 //nolint:revive // argument-limit: hot-path helper keeps candidate verification direct
+//nolint:revive // argument-limit: hot-path helper avoids mutating shared fanout slices
+func filterValidRegexCandidates(pattern *RegexPattern, data []byte, candidates []int, isWide bool) []int {
+	for i, atomStart := range candidates {
+		if _, ok := pattern.atomOccurrenceValid(data, atomStart, isWide); !ok {
+			valid := make([]int, i, len(candidates)-1)
+			copy(valid, candidates[:i])
+			for _, next := range candidates[i+1:] {
+				if _, ok := pattern.atomOccurrenceValid(data, next, isWide); ok {
+					valid = append(valid, next)
+				}
+			}
+			return valid
+		}
+	}
+	return candidates
+}
+
+//nolint:revive // argument-limit: hot-path helper avoids allocating a parameter struct
 func appendRegexPrefilterMatches(
 	dst []matchSpan,
 	rule *CompiledRule,
@@ -639,13 +657,7 @@ func appendRegexPrefilterMatches(
 	}
 
 	if checkAtomValid {
-		validCandidates := candidates[:0]
-		for _, atomStart := range candidates {
-			if _, ok := pattern.atomOccurrenceValid(data, atomStart, entry.IsWide); ok {
-				validCandidates = append(validCandidates, atomStart)
-			}
-		}
-		candidates = validCandidates
+		candidates = filterValidRegexCandidates(&pattern, data, candidates, entry.IsWide)
 	}
 
 	if !entry.IsWide {
@@ -1099,7 +1111,7 @@ func buildHexFanoutDiscriminator(rules []*CompiledRule, leader sharedAutomatonEn
 			continue
 		}
 		score := distinct*1024 + hits
-		if score > bestScore {
+		if score > bestScore || (score == bestScore && relOffset < bestOffset) {
 			bestScore = score
 			bestOffset = relOffset
 			bestDistinct = distinct

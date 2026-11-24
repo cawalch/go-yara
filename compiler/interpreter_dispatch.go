@@ -300,8 +300,10 @@ func (i *Interpreter) storeExecutionResult() {
 
 func (i *Interpreter) cleanupStack() {
 	// Only clean up stack if execution was successful and there are excess values.
-	// Leave the final result value on stack for compatibility with tests.
+	// Leave the final result value on stack for compatibility with tests without
+	// advancing the slice base pointer (which would permanently shrink capacity).
 	if i.result == nil && len(i.stack) > 1 {
-		i.stack = i.stack[len(i.stack)-1:]
+		i.stack[0] = i.stack[len(i.stack)-1]
+		i.stack = i.stack[:1]
 	}
 }

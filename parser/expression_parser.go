@@ -513,6 +513,12 @@ func (p *ExpressionParser) parseCallArgs(syntaxErr bool) ([]ast.Expression, erro
 			return nil, errors.New("expected ',' or ')' in function arguments")
 		}
 	}
+	if !p.currentTokenIs(token.RPAREN) {
+		if syntaxErr {
+			return nil, newSyntaxError(p.current.Pos, "expected ')' to close function arguments, got %s", p.current.Display())
+		}
+		return nil, errors.New("expected ')' to close function arguments")
+	}
 	p.nextToken() // consume ')'
 	return args, nil
 }
@@ -611,7 +617,7 @@ func (p *ExpressionParser) parseStringOperation() (ast.Expression, error) {
 	if p.currentTokenIs(token.LBRACKET) {
 		p.nextToken()
 		var err error
-		index, err = p.parsePrimary()
+		index, err = p.ParseExpression()
 		if err != nil {
 			return nil, fmt.Errorf("error parsing string operation index: %w", err)
 		}

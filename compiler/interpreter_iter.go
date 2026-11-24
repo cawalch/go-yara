@@ -1,6 +1,9 @@
 package compiler
 
-import "fmt"
+import (
+	"fmt"
+	"math"
+)
 
 const maxIteratorDepth = 64
 
@@ -42,17 +45,23 @@ func (i *Interpreter) executeIterStartIntRange() error {
 		return err
 	}
 
+	var total int
+	if startVal.IntVal <= endVal.IntVal {
+		diff := uint64(endVal.IntVal) - uint64(startVal.IntVal)
+		if diff >= uint64(math.MaxInt) {
+			total = math.MaxInt
+		} else {
+			total = int(diff) + 1
+		}
+	}
+
 	iter := Iterator{
 		Type:         OpIterStartIntRange,
 		VariableSlot: slot1,
 		StartValue:   startVal.IntVal,
 		EndValue:     endVal.IntVal,
 		Index:        0,
-		Total:        int(endVal.IntVal - startVal.IntVal + 1),
-	}
-
-	if iter.Total <= 0 {
-		iter.Total = 0
+		Total:        total,
 	}
 
 	return i.pushIterator(OpIterStartIntRange, iter)
@@ -99,6 +108,7 @@ func (i *Interpreter) executeIterStartStringSet() error {
 		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpIterStartStringSet, Message: "invalid string set type"}
 	}
 
+	fullTotal := len(ids)
 	// Filter string IDs based on constraints
 	if (inRange || atOffset) && i.matchContext != nil {
 		filtered := make([]string, 0, len(ids))
@@ -122,11 +132,12 @@ func (i *Interpreter) executeIterStartStringSet() error {
 	}
 
 	iter := Iterator{
-		Type:         OpIterStartStringSet,
-		VariableSlot: slot1,
-		StringIDs:    ids,
-		Index:        0,
-		Total:        len(ids),
+		Type:          OpIterStartStringSet,
+		VariableSlot:  slot1,
+		StringIDs:     ids,
+		Index:         0,
+		Total:         len(ids),
+		ExpectedTotal: fullTotal,
 	}
 
 	return i.pushIterator(OpIterStartStringSet, iter)
@@ -399,8 +410,13 @@ func (i *Interpreter) executeIterPushTotal() error {
 		return &InterpreterError{Type: ErrorRuntime, Opcode: OpIterPushTotal, Message: "no active iterator"}
 	}
 
-	iter := i.iterators[len(i.iterators)-1]
-	return i.push(Value{Type: ValueTypeInt, IntVal: int64(iter.Total)})
+	iter := &i.iterators[len(i.iterators)-1]
+	total := iter.Total
+	if iter.TotalPushed && iter.ExpectedTotal > 0 {
+		total = iter.ExpectedTotal
+	}
+	iter.TotalPushed = true
+	return i.push(Value{Type: ValueTypeInt, IntVal: int64(total)})
 }
 
 // executeIterEnd ends the current iterator and pushes the match count.
@@ -414,7 +430,7 @@ func (i *Interpreter) executeIterEnd() error {
 
 	// libyara makes an empty range or collection false for every quantifier.
 	// A negative count fails each of the compiler's quantifier comparisons.
-	if iter.Total == 0 && (iter.Type == OpIterStartIntRange || iter.Type == OpIterStartModuleArray) {
+	if iter.Total == 0 && (iter.Type == OpIterStartIntRange || iter.Type == OpIterStartModuleArray || (iter.Type == OpIterStartStringSet && iter.ExpectedTotal == 0)) {
 		return i.push(Value{Type: ValueTypeInt, IntVal: -1})
 	}
 	return i.push(Value{Type: ValueTypeInt, IntVal: int64(iter.Count)})

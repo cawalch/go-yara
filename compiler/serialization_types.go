@@ -40,6 +40,8 @@ type serializedRule struct {
 	Tags                []string
 	IsGlobal            bool
 	IsPrivate           bool
+	IsDead              bool
+	DeadStrings         []string
 	FastScanSafe        bool
 	ConditionMonotonic  bool
 	RequiresStringMatch bool

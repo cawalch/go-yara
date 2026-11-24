@@ -517,7 +517,7 @@ func (v *Validator) validateUnaryOpExpression(unaryOp *ast.UnaryOp) (*TypeInfo, 
 
 	// Special handling for string operators before validating the operand
 	// This is needed because we need to check if the operand is a string identifier
-	if unaryOp.Op == token.NOT || unaryOp.Op == token.HASH || unaryOp.Op == token.AT {
+	if unaryOp.Op == token.HASH || unaryOp.Op == token.AT || unaryOp.Op == token.StringLength {
 		if resultType, handled := v.handleStringOperators(unaryOp, errors); handled {
 			return resultType, errors
 		}

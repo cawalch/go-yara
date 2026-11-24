@@ -514,7 +514,14 @@ func matchExactPrefix(data []byte, atomStart int, prefix []byte, noCase bool) bo
 		return false
 	}
 	if noCase {
-		return bytes.EqualFold(data[atomStart-len(prefix):atomStart], prefix)
+		slice := data[atomStart-len(prefix) : atomStart]
+		for i := range len(prefix) {
+			a, b := slice[i], prefix[i]
+			if a != b && toLowerTable[a] != toLowerTable[b] {
+				return false
+			}
+		}
+		return true
 	}
 	return bytes.Equal(data[atomStart-len(prefix):atomStart], prefix)
 }

@@ -75,7 +75,7 @@ var simpleTokenMapping = [256]token.Type{
 // trySimpleToken attempts to create a simple single-character token
 func trySimpleToken[T TokenMethods](ch byte, pos token.Position, lexer T) (token.Token, bool) {
 	if tokenType := simpleTokenMapping[ch]; tokenType != 0 {
-		return lexer.makeSimpleToken(tokenType, string(ch), pos), true
+		return lexer.makeSimpleToken(tokenType, singleCharLiterals[ch], pos), true
 	}
 	return token.Token{}, false
 }

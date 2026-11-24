@@ -423,14 +423,13 @@ func inferStringOperationType(left, right *TypeInfo) (*TypeInfo, error) {
 func inferAtOperatorType(left, right *TypeInfo) (*TypeInfo, error) {
 	// AT operator: $string at offset
 	// Left should be string identifier (boolean), right should be integer offset
-	if left.DataType != TypeBoolean {
+	if left.DataType != TypeBoolean && left.DataType != TypeUnknown {
 		return nil, errors.New("AT operator requires string identifier as left operand")
 	}
-	if right.DataType != TypeInteger {
+	if right.DataType != TypeInteger && right.DataType != TypeUnknown {
 		return nil, errors.New("AT operator requires integer offset as right operand")
 	}
-	// The result is integer (the offset where the string appears)
-	return &TypeInfo{DataType: TypeInteger}, nil
+	return &TypeInfo{DataType: TypeBoolean}, nil
 }
 
 // inferInOperatorType infers the result type of IN operator
@@ -438,10 +437,10 @@ func inferInOperatorType(left, right *TypeInfo) (*TypeInfo, error) {
 	// IN operator has two forms:
 	// 1. $string in (start..end) — left is string identifier (boolean), right is integer range
 	// 2. #string in (min..max) — left is integer (count), right is integer range
-	if left.DataType != TypeBoolean && left.DataType != TypeInteger {
+	if left.DataType != TypeBoolean && left.DataType != TypeInteger && left.DataType != TypeUnknown {
 		return nil, errors.New("IN operator requires string identifier or count as left operand")
 	}
-	if right.DataType != TypeInteger {
+	if right.DataType != TypeInteger && right.DataType != TypeUnknown {
 		return nil, errors.New("IN operator requires integer range as right operand")
 	}
 	return &TypeInfo{DataType: TypeBoolean}, nil
@@ -451,10 +450,10 @@ func inferInOperatorType(left, right *TypeInfo) (*TypeInfo, error) {
 func inferDotOperatorType(left, right *TypeInfo) (*TypeInfo, error) {
 	// DOT operator (..) represents range expression: start..end
 	// Both operands should be integers, result is integer (represents the range)
-	if left.DataType != TypeInteger {
+	if left.DataType != TypeInteger && left.DataType != TypeUnknown {
 		return nil, errors.New("range expression requires integer start value")
 	}
-	if right.DataType != TypeInteger {
+	if right.DataType != TypeInteger && right.DataType != TypeUnknown {
 		return nil, errors.New("range expression requires integer end value")
 	}
 	return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}, nil

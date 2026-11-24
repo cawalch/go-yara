@@ -137,34 +137,73 @@ func findAnchorByte(tokens []HexPatternToken) anchorInfo {
 
 // xorDiffAnchor describes an XOR-invariant adjacent differential sequence for skip-based matching.
 type xorDiffAnchor struct {
-	offset   int
-	byteVal0 byte
-	diff     []byte
-	ok       bool
+	offset    int // min byte offset from pattern start
+	maxOffset int // max byte offset from pattern start
+	byteVal0  byte
+	diff      []byte
+	ok        bool
 }
 
-// findXorDiffAnchor searches for the longest contiguous run of definite, non-negated literal bytes.
+// findXorDiffAnchor searches for the longest contiguous run of definite, non-negated literal bytes
+// at a bounded byte offset from the start of the pattern.
 func findXorDiffAnchor(tokens []HexPatternToken) xorDiffAnchor {
-	bestOffset := -1
+	bestTokIdx := -1
+	bestMinOffset := 0
+	bestMaxOffset := 0
 	bestLen := 0
-	currOffset := -1
+
+	currTokIdx := -1
+	currMinOffset := 0
+	currMaxOffset := 0
 	currLen := 0
+
+	minByteOffset := 0
+	maxByteOffset := 0
 
 	for i, tok := range tokens {
 		isDefinite := (tok.Kind == HexTokenByte && !tok.Negated) ||
 			(tok.Kind == HexTokenMasked && tok.Mask == 0xFF && !tok.Negated)
-		if isDefinite {
+		if isDefinite && maxByteOffset >= 0 {
 			if currLen == 0 {
-				currOffset = i
+				currTokIdx = i
+				currMinOffset = minByteOffset
+				currMaxOffset = maxByteOffset
 			}
 			currLen++
 			if currLen > bestLen {
 				bestLen = currLen
-				bestOffset = currOffset
+				bestTokIdx = currTokIdx
+				bestMinOffset = currMinOffset
+				bestMaxOffset = currMaxOffset
 			}
 		} else {
 			currLen = 0
-			currOffset = -1
+			currTokIdx = -1
+		}
+
+		switch tok.Kind {
+		case HexTokenByte, HexTokenMasked, HexTokenWildcard:
+			minByteOffset++
+			if maxByteOffset >= 0 {
+				maxByteOffset++
+			}
+		case HexTokenJump:
+			if tok.Min > 0 {
+				minByteOffset += tok.Min
+			}
+			if tok.Max < 0 || maxByteOffset < 0 {
+				maxByteOffset = -1
+			} else {
+				maxByteOffset += tok.Max
+			}
+		case HexTokenAlt:
+			altMin, altMax := hexTokensAlternativesLengthRange(tok.Alternatives)
+			minByteOffset += altMin
+			if altMax < 0 || maxByteOffset < 0 {
+				maxByteOffset = -1
+			} else {
+				maxByteOffset += altMax
+			}
 		}
 	}
 
@@ -174,16 +213,17 @@ func findXorDiffAnchor(tokens []HexPatternToken) xorDiffAnchor {
 
 	diff := make([]byte, bestLen-1)
 	for j := 0; j < bestLen-1; j++ {
-		b0 := tokens[bestOffset+j].Value
-		b1 := tokens[bestOffset+j+1].Value
+		b0 := tokens[bestTokIdx+j].Value
+		b1 := tokens[bestTokIdx+j+1].Value
 		diff[j] = b0 ^ b1
 	}
 
 	return xorDiffAnchor{
-		offset:   bestOffset,
-		byteVal0: tokens[bestOffset].Value,
-		diff:     diff,
-		ok:       true,
+		offset:    bestMinOffset,
+		maxOffset: bestMaxOffset,
+		byteVal0:  tokens[bestTokIdx].Value,
+		diff:      diff,
+		ok:        true,
 	}
 }
 
@@ -323,6 +363,12 @@ func findHexMatchesXorDiffEach(
 	pos := 0
 	singleByteDiff := len(anchor.diff) == 1
 	targetByte := anchor.diff[0]
+	var lastChecked [256]int
+	if anchor.maxOffset > anchor.offset {
+		for i := range lastChecked {
+			lastChecked[i] = -1
+		}
+	}
 
 	for {
 		if scanCanceledAt(done, checkpoint) {
@@ -340,38 +386,44 @@ func findHexMatchesXorDiffEach(
 			break
 		}
 		diffPos := pos + idx
-		candidateStart := diffPos - anchor.offset
 		pos = diffPos + 1
-
-		if candidateStart < 0 || candidateStart >= len(data) {
-			continue
-		}
 
 		candidateKey := data[diffPos] ^ anchor.byteVal0
 		if !mask.contains(candidateKey) {
 			continue
 		}
 
-		if linear {
-			end, ok := matchLinearHexPattern(tokens, data, candidateStart, &candidateKey)
-			if !ok {
+		firstStart := max(0, diffPos-anchor.maxOffset)
+		lastStart := min(len(data)-1, diffPos-anchor.offset)
+		if anchor.maxOffset > anchor.offset {
+			firstStart = max(firstStart, lastChecked[candidateKey]+1)
+			if firstStart > lastStart {
 				continue
 			}
-			if !onMatch(Match{Offset: int64(candidateStart), Length: end - candidateStart}) {
+			lastChecked[candidateKey] = lastStart
+		}
+		for candidateStart := firstStart; candidateStart <= lastStart; candidateStart++ {
+			if linear {
+				end, ok := matchLinearHexPattern(tokens, data, candidateStart, &candidateKey)
+				if !ok {
+					continue
+				}
+				if !onMatch(Match{Offset: int64(candidateStart), Length: end - candidateStart}) {
+					return
+				}
+				continue
+			}
+			if !scratch.matchEach(tokens, data, candidateStart, &candidateKey, func(end int) bool {
+				if end <= candidateStart {
+					return true
+				}
+				return onMatch(Match{
+					Offset: int64(candidateStart),
+					Length: end - candidateStart,
+				})
+			}) {
 				return
 			}
-			continue
-		}
-		if !scratch.matchEach(tokens, data, candidateStart, &candidateKey, func(end int) bool {
-			if end <= candidateStart {
-				return true
-			}
-			return onMatch(Match{
-				Offset: int64(candidateStart),
-				Length: end - candidateStart,
-			})
-		}) {
-			return
 		}
 	}
 }

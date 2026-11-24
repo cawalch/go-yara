@@ -40,7 +40,7 @@ func run() error {
 		// Column, and Message. The wrapped semantic.Error above is the first.
 		for _, item := range c.GetErrors() {
 			if item.Phase != "semantic" || item.Line < 1 || item.Column < 1 {
-				return fmt.Errorf("missing semantic diagnostic location: %+v", item)
+				return fmt.Errorf("missing semantic diagnostic location (phase=%s line=%d col=%d): %w", item.Phase, item.Line, item.Column, item)
 			}
 		}
 	}

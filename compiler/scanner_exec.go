@@ -143,14 +143,19 @@ func (s *Scanner) markChunkCandidateRules() {
 	}
 }
 
-func (s *Scanner) resetScanState() {
-	s.populatedMatchCtxRuleIndex = -1
-	clear(s.assertionResults)
+func (s *Scanner) resetBorrowedEvidence() {
 	if s.evidenceBorrowed {
 		s.borrowedFieldsMapIdx = 0
 		s.borrowedFindingsIdx = 0
 		s.borrowedPlanMapIdx = 0
+		s.borrowedCaptureSlab = s.borrowedCaptureSlab[:0]
 	}
+}
+
+func (s *Scanner) resetScanState() {
+	s.populatedMatchCtxRuleIndex = -1
+	clear(s.assertionResults)
+	s.resetBorrowedEvidence()
 }
 
 func (s *Scanner) recordScanRejection(
@@ -361,25 +366,11 @@ func (s *Scanner) finalizeMatchedRules(
 		if err != nil {
 			return err
 		}
-		if len(evidence) != 0 {
-			if result.Evidence == nil {
-				switch {
-				case s.evidenceBorrowed && s.borrowedEvidenceRuleMap != nil:
-					result.Evidence = s.borrowedEvidenceRuleMap
-					clear(result.Evidence)
-				case s.evidenceBorrowed:
-					s.borrowedEvidenceRuleMap = make(map[string]map[string][]EvidenceFinding)
-					result.Evidence = s.borrowedEvidenceRuleMap
-				default:
-					result.Evidence = make(map[string]map[string][]EvidenceFinding)
-				}
-			}
-			result.Evidence[rule.Name] = evidence
-		}
 		ruleMatch := newPublicRuleMatch(rule, matches, evidence)
 		if s.hookMask&hookBitMatch != 0 && s.matchHook != nil {
 			switch s.matchHook(rule, ruleMatch) {
 			case MatchActionStopScan:
+				s.recordRuleEvidence(result, rule.Name, evidence)
 				result.MatchedRules = append(result.MatchedRules, ruleMatch)
 				return nil
 			case MatchActionSkipRule:
@@ -387,12 +378,32 @@ func (s *Scanner) finalizeMatchedRules(
 			case MatchActionContinue:
 			}
 		}
+		s.recordRuleEvidence(result, rule.Name, evidence)
 		result.MatchedRules = append(result.MatchedRules, ruleMatch)
 		if s.streamEarlyTermination {
 			return nil
 		}
 	}
 	return nil
+}
+
+func (s *Scanner) recordRuleEvidence(result *ScanResult, ruleName string, evidence map[string][]EvidenceFinding) {
+	if len(evidence) == 0 {
+		return
+	}
+	if result.Evidence == nil {
+		switch {
+		case s.evidenceBorrowed && s.borrowedEvidenceRuleMap != nil:
+			result.Evidence = s.borrowedEvidenceRuleMap
+			clear(result.Evidence)
+		case s.evidenceBorrowed:
+			s.borrowedEvidenceRuleMap = make(map[string]map[string][]EvidenceFinding)
+			result.Evidence = s.borrowedEvidenceRuleMap
+		default:
+			result.Evidence = make(map[string]map[string][]EvidenceFinding)
+		}
+	}
+	result.Evidence[ruleName] = evidence
 }
 
 func (s *Scanner) evaluatePublicRules(

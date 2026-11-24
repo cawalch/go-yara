@@ -128,10 +128,10 @@ func (v *Validator) isIntegerTuple(tuple *ast.StringTuple) bool {
 	for _, elem := range tuple.Elements {
 		switch e := elem.(type) {
 		case *ast.Literal:
-			if e.Type == token.IntegerLit {
+			switch e.Type {
+			case token.IntegerLit, token.HexIntegerLit, token.OctalIntegerLit, token.SizeLit:
 				return true
-			}
-			if e.Type == token.StringLit {
+			case token.StringLit:
 				return false
 			}
 		case *ast.Identifier:
