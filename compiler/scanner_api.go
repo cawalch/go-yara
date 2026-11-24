@@ -167,6 +167,9 @@ func (s *Scanner) ScanReader(r io.Reader) (*ScanResult, error) {
 // Cancellation is checked between chunk reads and pattern evaluation.
 // Integer reads in conditions must lie entirely within the first 64 KiB of input;
 // reads outside that retained header are undefined, even for longer streams.
+// The pcap module can also read capture data from a seekable io.ReaderAt,
+// starting at the current stream position. For sequential readers, the entire
+// capture must fit in the retained header for TLS metadata to be available.
 func (s *Scanner) ScanReaderWithContext(ctx context.Context, r io.Reader) (*ScanResult, error) {
 	if ctx == nil {
 		ctx = context.Background()

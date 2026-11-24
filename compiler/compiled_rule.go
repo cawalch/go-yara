@@ -11,6 +11,7 @@ import (
 // CompiledRule represents a compiled YARA rule
 type CompiledRule struct {
 	nativePE          bool
+	nativePCAP        bool
 	moduleSchemas     map[string]*ModuleSchema
 	moduleAccessNames []string
 	moduleIterations  []moduleIterationPlan

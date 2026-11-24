@@ -178,6 +178,7 @@ func (s *Scanner) canRuleEarlyTerminate(rule *CompiledRule) bool {
 }
 
 type streamAccumulator struct {
+	pcapReader         io.ReaderAt
 	fileSize           int64
 	headerBlock        []byte
 	accumulatedSpans   map[string]map[string][]matchSpan
@@ -258,6 +259,20 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 			accumulatedMatches: accumulatedMatches,
 		}
 	)
+	// ReaderAt offsets are absolute while Read starts at the current position.
+	// Only seek when the compiled program can request native capture data.
+	_, suppliedPCAP := s.moduleData["pcap"]
+	needsPCAP := s.program.nativePCAP && !suppliedPCAP
+	if needsPCAP {
+		if src, ok := r.(interface {
+			io.ReaderAt
+			io.Seeker
+		}); ok {
+			if start, err := src.Seek(0, io.SeekCurrent); err == nil && start >= 0 {
+				acc.pcapReader = io.NewSectionReader(src, start, math.MaxInt64-start)
+			}
+		}
+	}
 	defer func() {
 		s.streamHeaderBuf = acc.headerBlock[:0]
 	}()
@@ -437,7 +452,8 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 			})
 		}
 
-		if s.checkStreamEarlyTermination(ctx, acc, currentStreamOffset) {
+		// A short read cannot establish whether the capture is complete.
+		if !needsPCAP && s.checkStreamEarlyTermination(ctx, acc, currentStreamOffset) {
 			break
 		}
 
@@ -517,6 +533,8 @@ func (s *Scanner) evaluateStreamMatches(
 	}
 
 	result = s.initStreamScanResult()
+	s.moduleCache.pcapReader = acc.pcapReader
+	defer func() { s.moduleCache.pcapReader = nil }()
 
 	blocks := []MemoryBlock{}
 	if len(acc.headerBlock) > 0 {

@@ -44,6 +44,7 @@ type sharedAutomatonEntry struct {
 // explicit Scanner via NewScanner.
 type CompiledProgram struct {
 	moduleSchemas   map[string]*ModuleSchema
+	nativePCAP      bool
 	Rules           []*CompiledRule
 	sharedAutomaton *acAutomaton
 	Stats           map[string]any
@@ -169,7 +170,6 @@ func (cp *CompiledProgram) prepare() error {
 				pattern.scanMetadata = prepareHexScanMetadata(pattern)
 			}
 		}
-		rule.nativePE = false
 		rule.BuildStringIndex()
 		if len(rule.HeaderConstraints) > 0 || len(rule.mandatoryAssertions) > 0 {
 			cp.hasHeaderOrMandatoryAssertions = true
@@ -181,10 +181,12 @@ func (cp *CompiledProgram) prepare() error {
 	}
 	// Schemas agree across rules. Compare the built-in schema once, including
 	// when deserialization has reconstructed it at a different address.
-	if isNativePESchema(cp.moduleSchemas["pe"]) {
-		for _, rule := range cp.Rules {
-			rule.nativePE = rule.moduleSchemas["pe"] != nil
-		}
+	nativePE := isNativePESchema(cp.moduleSchemas["pe"])
+	schema := cp.moduleSchemas["pcap"]
+	cp.nativePCAP = schema == pcapSchema || (schema != nil && reflect.DeepEqual(schema, pcapSchema))
+	for _, rule := range cp.Rules {
+		rule.nativePE = nativePE && rule.moduleSchemas["pe"] != nil
+		rule.nativePCAP = cp.nativePCAP && rule.moduleSchemas["pcap"] != nil
 	}
 	cp.assignSharedAssertions()
 	cp.nonTextCacheSize = assignNonTextCacheIndices(cp.Rules)

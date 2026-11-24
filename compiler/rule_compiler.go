@@ -753,12 +753,22 @@ func cloneStatsValue(value any) any {
 
 func (rc *ruleCompiler) ruleModuleSchemas() map[string]*ModuleSchema {
 	schemas := rc.conditionCompiler.moduleSchemas
-	if !slices.Contains(rc.conditionCompiler.moduleAccessNames, "pe") && (schemas["pe"] == peSchema || reflect.DeepEqual(schemas["pe"], peSchema)) {
-		if len(schemas) == 1 {
+	unused := func(name string, builtin *ModuleSchema) bool {
+		schema := schemas[name]
+		return schema != nil && !slices.Contains(rc.conditionCompiler.moduleAccessNames, name) && (schema == builtin || reflect.DeepEqual(schema, builtin))
+	}
+	dropPE, dropPCAP := unused("pe", peSchema), unused("pcap", pcapSchema)
+	if dropPE || dropPCAP {
+		if len(schemas) == 1 || (len(schemas) == 2 && dropPE && dropPCAP) {
 			return nil
 		}
 		schemas = maps.Clone(schemas)
-		delete(schemas, "pe")
+		if dropPE {
+			delete(schemas, "pe")
+		}
+		if dropPCAP {
+			delete(schemas, "pcap")
+		}
 	}
 	return schemas
 }
