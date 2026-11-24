@@ -144,6 +144,11 @@ func (r *ReaderFast) SetPosition(pos int) {
 // SkipWhitespace efficiently skips whitespace characters.
 // Optimized version that processes multiple characters at once.
 func (r *ReaderFast) SkipWhitespace() {
+	switch r.ch {
+	case ' ', '\t', '\r', '\n':
+	default:
+		return
+	}
 	for r.readPosition < len(r.input) {
 		ch := r.input[r.readPosition]
 		switch ch {

@@ -56,6 +56,10 @@ func execMatchEnds(bs *VMBatch, code, input []byte, flags Flags, start, distance
 	gen := bs.gen
 	defer func() {
 		bs.gen = gen + 1
+		if bs.gen == 0 {
+			clear(st.visited)
+			bs.gen = 1
+		}
 		st.gen = gen
 		st.cur, st.next = cur[:0], next[:0]
 		st.ends = ends[:0]
