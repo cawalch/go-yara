@@ -93,11 +93,10 @@ func ReadCompiledProgram(reader io.Reader, modules ...Module) (*CompiledProgram,
 		return nil, fmt.Errorf("%w: unsupported compiled program version %d; rebuild with format version %d", ErrCorruptProgram, version, compiledProgramVersion)
 	}
 
-	if _, ok := reader.(io.ByteReader); !ok {
-		reader = compiledProgramReader{reader}
-	}
+	const maxCompiledProgramBytes = 256 << 20 // 256 MiB safety bound for gob decode
+	limited := io.LimitReader(reader, maxCompiledProgramBytes)
 	var payload serializedProgram
-	if err := gob.NewDecoder(reader).Decode(&payload); err != nil {
+	if err := gob.NewDecoder(compiledProgramReader{limited}).Decode(&payload); err != nil {
 		return nil, fmt.Errorf("%w: decoding compiled program: %w", ErrCorruptProgram, err)
 	}
 	return deserializeProgram(payload, modules)

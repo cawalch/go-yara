@@ -37,7 +37,16 @@ func stripHexBraces(hexStr string) string {
 	return trimmed
 }
 
+const maxHexParseDepth = 64
+
 func parseHexTokens(hexStr string) ([]HexPatternToken, error) {
+	return parseHexTokensDepth(hexStr, 0)
+}
+
+func parseHexTokensDepth(hexStr string, depth int) ([]HexPatternToken, error) {
+	if depth > maxHexParseDepth {
+		return nil, errors.New("hex pattern nesting depth exceeded")
+	}
 	tokens := make([]HexPatternToken, 0, max(4, len(hexStr)/3))
 	i := 0
 	for i < len(hexStr) {
@@ -54,7 +63,7 @@ func parseHexTokens(hexStr string) ([]HexPatternToken, error) {
 		case '{', '}':
 			return nil, fmt.Errorf("unexpected %q in hex pattern at offset %d", ch, i)
 		case '(':
-			alts, next, err := parseHexAlternatives(hexStr, i)
+			alts, next, err := parseHexAlternativesDepth(hexStr, i, depth+1)
 			if err != nil {
 				return nil, err
 			}
@@ -124,7 +133,7 @@ func parseHexAtom(hexStr string, pos int) (HexPatternToken, int, error) {
 	return HexPatternToken{}, pos, fmt.Errorf("invalid hex token at %d", pos)
 }
 
-func parseHexAlternatives(hexStr string, pos int) ([][]HexPatternToken, int, error) {
+func parseHexAlternativesDepth(hexStr string, pos, depth int) ([][]HexPatternToken, int, error) {
 	start, end, err := extractHexGroup(hexStr, pos, '(', ')')
 	if err != nil {
 		return nil, pos, err
@@ -132,7 +141,7 @@ func parseHexAlternatives(hexStr string, pos int) ([][]HexPatternToken, int, err
 	segments := splitHexAlternatives(hexStr[start:end])
 	alts := make([][]HexPatternToken, 0, len(segments))
 	for _, seg := range segments {
-		tokens, err := parseHexTokens(seg)
+		tokens, err := parseHexTokensDepth(seg, depth)
 		if err != nil {
 			return nil, pos, err
 		}
@@ -169,11 +178,39 @@ func hasUnboundedJump(tokens []HexPatternToken) bool {
 	return false
 }
 
+func skipHexCommentEnd(s string, i int) (int, bool) {
+	if i+1 >= len(s) || s[i] != '/' {
+		return i, false
+	}
+	if s[i+1] == '*' {
+		j := i + 2
+		for j+1 < len(s) {
+			if s[j] == '*' && s[j+1] == '/' {
+				return j + 2, true
+			}
+			j++
+		}
+		return len(s), true
+	}
+	if s[i+1] == '/' {
+		j := i + 2
+		for j < len(s) && s[j] != '\n' {
+			j++
+		}
+		return j, true
+	}
+	return i, false
+}
+
 func splitHexAlternatives(content string) []string {
 	parts := make([]string, 0, 2)
 	depth := 0
 	last := 0
-	for i := 0; i < len(content); i++ {
+	for i := 0; i < len(content); {
+		if next, skipped := skipHexCommentEnd(content, i); skipped {
+			i = next
+			continue
+		}
 		switch content[i] {
 		case '(':
 			depth++
@@ -187,6 +224,7 @@ func splitHexAlternatives(content string) []string {
 				last = i + 1
 			}
 		}
+		i++
 	}
 	parts = append(parts, content[last:])
 	for i, p := range parts {
@@ -263,6 +301,10 @@ func extractHexGroup(hexStr string, pos int, open, close byte) (int, int, error)
 	depth := 1
 	i := pos + 1
 	for i < len(hexStr) && depth > 0 {
+		if next, skipped := skipHexCommentEnd(hexStr, i); skipped {
+			i = next
+			continue
+		}
 		switch hexStr[i] {
 		case open:
 			depth++

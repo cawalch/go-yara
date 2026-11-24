@@ -6,12 +6,15 @@ import (
 	"slices"
 )
 
+const maxRegexNestingDepth = 128
+
 // Parser provides a hand-written lexer+parser pipeline (incremental).
 type Parser struct {
 	lx           lexer
 	cur          token
 	strictEscape bool // validate escape sequences strictly (ParserFlagEnableStrictEscapeSequences)
 	groupCount   int
+	depth        int
 	concatBuf    []*Node
 }
 
@@ -108,6 +111,12 @@ func walkQuantifierGreediness(n *Node) (greedy, ungreedy bool) {
 
 // alternative := concatenation ( '|' concatenation )*
 func (p *Parser) parseAlternative() (*Node, error) {
+	p.depth++
+	if p.depth > maxRegexNestingDepth {
+		p.depth--
+		return nil, errors.New("regex nesting depth exceeded")
+	}
+	defer func() { p.depth-- }()
 	left, err := p.parseConcat()
 	if err != nil {
 		return nil, err
