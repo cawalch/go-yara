@@ -299,7 +299,8 @@ func (s *Scanner) populateRuleMatchContext(
 		return nil
 	}
 
-	canShortCircuit := rule.ConditionMonotonic &&
+	canShortCircuit := !s.blockScan &&
+		rule.ConditionMonotonic &&
 		input.booleanMatchOnly &&
 		(len(rule.RegexPatterns) > 0 || len(rule.HexPatterns) > 0)
 

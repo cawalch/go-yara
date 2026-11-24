@@ -282,10 +282,14 @@ func parsePE(ctx *MatchContext) *peImage {
 	if uint64(file.DOSHeader.AddressOfNewEXEHeader)+24+optionalSize > uint64(len(data)) {
 		return notPE
 	}
+	declaredExtent, declaredExtentValid := file.DeclaredExtent()
 	// libyara exposes and maps at most 96 sections, while go-pe validates up
 	// to 256. Keep the declared number_of_sections unchanged.
 	file.Sections = file.Sections[:min(len(file.Sections), peSectionExposureLimit)]
-	return peFields(file, data, ctx)
+	image := peFields(file, data, ctx)
+	image.declaredExtent = declaredExtent
+	image.declaredExtentValid = declaredExtentValid
+	return image
 }
 
 func peScanData(ctx *MatchContext) []byte {
@@ -342,6 +346,8 @@ type peImage struct {
 	names                 []string
 	fileSize              int64
 	entryPoint            int64
+	declaredExtent        uint64
+	declaredExtentValid   bool
 	overlay               ModuleValue
 	sections              ModuleValue
 	directories           ModuleValue
@@ -369,7 +375,17 @@ func peFields(file *pe.File, data []byte, ctx *MatchContext) *peImage {
 		}
 		names[i] = string(raw)
 	}
-	image := &peImage{file: file, context: ctx, names: names, fileSize: ctx.FileSize, entryPoint: peRVAToOffset(file, file.OptionalHeader.AddressOfEntryPoint, ctx.FileSize)}
+	var fileSize int64
+	if ctx != nil {
+		fileSize = ctx.FileSize
+	}
+	image := &peImage{
+		file:       file,
+		context:    ctx,
+		names:      names,
+		fileSize:   fileSize,
+		entryPoint: peRVAToOffset(file, file.OptionalHeader.AddressOfEntryPoint, fileSize),
+	}
 	if ctx != nil {
 		ctx.EntryPoint = image.entryPoint
 		ctx.HasEntryPoint = true

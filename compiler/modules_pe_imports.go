@@ -140,19 +140,24 @@ func peValidImportSymbolName(name string) bool {
 // Apply libyara 4.5.8's name filters and 16,384-function limit here, not in
 // go-pe. Empty libraries are omitted; duplicate descriptors remain separate.
 func peFilterImportsWithCancel(libraries []pe.ImportLibrary, done <-chan struct{}) ([]pe.ImportLibrary, int, bool) {
-	kept, total := 0, 0
+	kept, total, iter := 0, 0, 0
 	for _, library := range libraries {
 		if total == 16384 {
 			break
 		}
+		if scanCanceledAt(done, iter) {
+			return nil, 0, true
+		}
+		iter++
 		if !peValidImportDLL(library.DLL) {
 			continue
 		}
 		symbols := library.Symbols[:0]
 		for _, symbol := range library.Symbols[:min(len(library.Symbols), 16384)] {
-			if scanCanceledAt(done, total) {
+			if scanCanceledAt(done, iter) {
 				return nil, 0, true
 			}
+			iter++
 			if total == 16384 {
 				break
 			}

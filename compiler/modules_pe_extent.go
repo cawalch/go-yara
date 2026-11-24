@@ -14,13 +14,10 @@ func addPEExtentSchemaFields(schema *ModuleSchema) {
 // extentField reports declared image bounds and input truncation relative to the
 // scan's logical file size rather than any retained streaming header prefix.
 func (image *peImage) extentField(name string) ModuleValue {
-	if image.file == nil {
+	if image.file == nil || !image.declaredExtentValid {
 		return ModuleValue{}
 	}
-	extent, ok := image.file.DeclaredExtent()
-	if !ok {
-		return ModuleValue{}
-	}
+	extent := image.declaredExtent
 	switch name {
 	case "declared_extent":
 		if extent > math.MaxInt64 {
