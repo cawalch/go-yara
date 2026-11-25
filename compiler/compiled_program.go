@@ -278,9 +278,12 @@ func (cp *CompiledProgram) SetExternalVariables(vars map[string]any) error {
 	return nil
 }
 
-// SetsharedAutomaton attaches the global multi-rule search tree to the compiled program
-func (cp *CompiledProgram) SetsharedAutomaton(automaton *acAutomaton) {
-	cp.sharedAutomaton = automaton
+// SetsharedAutomaton returns an error because the shared automaton and its
+// routing tables are built together when the program is created.
+//
+// Deprecated: Create a new compiled program to change its rules and automaton.
+func (*CompiledProgram) SetsharedAutomaton(*acAutomaton) error {
+	return errors.New("cannot replace a compiled program's shared automaton")
 }
 
 // GetRuleCount returns the number of compiled rules

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -320,12 +321,28 @@ func TestCompactPrefilterAutomatonReplacement(t *testing.T) {
 	if gate == nil || gate.automaton != program.sharedAutomaton {
 		t.Fatal("compact gate must retain the original shared automaton")
 	}
-	program.SetsharedAutomaton(nil)
-	scanner := program.NewScanner()
-	defer scanner.Close()
-	if scanner.compactPrefilterRejects(context.Background(), []byte("event")) {
-		t.Fatal("replaced shared automaton must bypass the compact gate")
+	data := []byte("event rare_one value=1234 rare_two")
+	want, err := program.Scan(data)
+	if err != nil || len(want.MatchedRules) != 2 {
+		t.Fatalf("initial Scan = (%+v, %v), want first and second", want, err)
 	}
+	var workers sync.WaitGroup
+	workers.Go(func() {
+		for range 20 {
+			if err := program.SetsharedAutomaton(nil); err == nil {
+				t.Error("SetsharedAutomaton accepted replacement")
+			}
+		}
+	})
+	workers.Go(func() {
+		for range 20 {
+			got, err := program.Scan(data)
+			if err != nil || !reflect.DeepEqual(got, want) {
+				t.Errorf("Scan during attempted replacement = (%+v, %v), want %+v", got, err, want)
+			}
+		}
+	})
+	workers.Wait()
 	compactPrefilterParity(t, program, [][]byte{[]byte("event"), []byte("event rare_one"), []byte("event rare_two"), nil})
 }
 
