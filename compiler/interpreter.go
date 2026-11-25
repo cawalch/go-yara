@@ -172,7 +172,7 @@ func (i *Interpreter) Release() {
 	scratch := i.interpreterScratch
 	*i = Interpreter{}
 	if scratch != nil {
-		scratch.reset()
+		scratch.resetForReuse()
 		interpreterScratchPool.Put(scratch)
 	}
 }
@@ -183,14 +183,14 @@ func (i *Interpreter) releaseToPool() {
 }
 
 func (i *Interpreter) resetForPool() {
-	i.interpreterScratch.reset()
+	i.resetForReuse()
 	*i = Interpreter{
 		assertionRegisters: i.assertionRegisters[:0],
 		interpreterScratch: i.interpreterScratch,
 	}
 }
 
-func (scratch *interpreterScratch) reset() {
+func (scratch *interpreterScratch) resetForReuse() {
 	clear(scratch.memory[:])
 	clear(scratch.memoryWritten[:])
 	clear(scratch.stack[:cap(scratch.stack)])
