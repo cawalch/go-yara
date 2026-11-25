@@ -145,10 +145,25 @@ func (s *Scanner) markChunkCandidateRules() {
 
 func (s *Scanner) resetBorrowedEvidence() {
 	if s.evidenceBorrowed {
+		fieldsLimit := min(s.borrowedFieldsMapIdx, len(s.borrowedFieldsMaps))
+		for i := range fieldsLimit {
+			clear(s.borrowedFieldsMaps[i])
+		}
 		s.borrowedFieldsMapIdx = 0
+
+		findingsLimit := min(s.borrowedFindingsIdx, len(s.borrowedFindings))
+		clear(s.borrowedFindings[:findingsLimit])
 		s.borrowedFindingsIdx = 0
+
+		planLimit := min(s.borrowedPlanMapIdx, len(s.borrowedPlanMaps))
+		for i := range planLimit {
+			clear(s.borrowedPlanMaps[i])
+		}
 		s.borrowedPlanMapIdx = 0
+
+		clear(s.borrowedCaptureSlab)
 		s.borrowedCaptureSlab = s.borrowedCaptureSlab[:0]
+		clear(s.borrowedEvidenceRuleMap)
 	}
 }
 
@@ -343,6 +358,16 @@ func (s *Scanner) finalizeMatchedRules(
 	result *ScanResult,
 	extract func(*CompiledRule) (map[string][]Match, map[string][]EvidenceFinding, error),
 ) error {
+	return s.finalizeMatchedRulesCore(ctx, result, false, extract)
+}
+
+//nolint:nestif,revive // argument-limit,nestif: security-sensitive result boundary mirrors private/global filtering
+func (s *Scanner) finalizeMatchedRulesCore(
+	ctx context.Context,
+	result *ScanResult,
+	streamingEarlyStop bool,
+	extract func(*CompiledRule) (map[string][]Match, map[string][]EvidenceFinding, error),
+) error {
 	done := ctx.Done()
 	allGlobalMatched := s.allEvaluatedGlobalsMatched(result.RuleResults)
 	if len(s.matchedRuleIndices) > 0 {
@@ -380,7 +405,7 @@ func (s *Scanner) finalizeMatchedRules(
 		}
 		s.recordRuleEvidence(result, rule.Name, evidence)
 		result.MatchedRules = append(result.MatchedRules, ruleMatch)
-		if s.streamEarlyTermination {
+		if streamingEarlyStop {
 			return nil
 		}
 	}
