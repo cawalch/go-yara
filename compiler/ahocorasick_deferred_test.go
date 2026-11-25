@@ -57,6 +57,70 @@ func buildUncompiledDeferredAutomaton(tb testing.TB) *acAutomaton {
 	return ac
 }
 
+func TestDeferredAutomatonDiagnostics(t *testing.T) {
+	const source = `rule greeting { strings: $greeting = "hello world" condition: $greeting }`
+	data := []byte("a hello world greeting")
+	for range 8 {
+		program, err := NewCompiler().CompileSource(source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		before, err := program.MarshalBinary()
+		if err != nil {
+			t.Fatal(err)
+		}
+		usage := program.GetTotalMemoryUsage()
+		rule := program.Rules[0]
+		if rule.automaton.compiled {
+			t.Fatal("diagnostics materialized the local automaton")
+		}
+
+		var workers sync.WaitGroup
+		start := make(chan struct{})
+		workers.Go(func() {
+			<-start
+			blocks := program.NewBlockScanner()
+			defer blocks.Close()
+			if err := blocks.Scan(0, data); err != nil {
+				t.Errorf("BlockScanner.Scan: %v", err)
+				return
+			}
+			got, err := blocks.Finish()
+			if err != nil || len(got.MatchedRules) != 1 {
+				t.Errorf("BlockScanner.Finish = (%+v, %v), want greeting", got, err)
+			}
+		})
+		workers.Go(func() {
+			<-start
+			ctx := BuildMatchContext(rule, data)
+			defer ctx.Release()
+			if got := ctx.Matches["$greeting"]; len(got) != 1 || got[0].Offset != 2 {
+				t.Errorf("BuildMatchContext greeting matches = %v", got)
+			}
+		})
+		workers.Go(func() {
+			<-start
+			for range 4 {
+				if err := program.Validate(); err != nil {
+					t.Errorf("Validate: %v", err)
+				}
+				if got := program.GetTotalMemoryUsage(); got < usage {
+					t.Errorf("GetTotalMemoryUsage = %d, want at least %d", got, usage)
+				}
+				snapshot, err := program.MarshalBinary()
+				if err != nil || !bytes.Equal(before, snapshot) {
+					t.Errorf("MarshalBinary changed during table construction: %v", err)
+				}
+			}
+		})
+		close(start)
+		workers.Wait()
+		if !rule.automaton.compiled || program.GetTotalMemoryUsage() <= usage {
+			t.Fatal("memory estimate did not account for the built local automaton")
+		}
+	}
+}
+
 var deferredScanInputs = [][]byte{
 	{},
 	[]byte("no hits here"),

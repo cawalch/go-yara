@@ -100,7 +100,9 @@ type acAutomaton struct {
 	// construction so concurrent scanners sharing a program build it once.
 	deferred  bool
 	buildOnce sync.Once
-	buildErr  error
+	// buildMu lets diagnostics inspect the tables without starting a deferred build.
+	buildMu  sync.RWMutex
+	buildErr error
 
 	// Exported metadata retained for compatibility with existing callers.
 	StringCount int
@@ -468,6 +470,9 @@ func (ac *acAutomaton) ensureCompiled() {
 // buildOnce, mirroring the original AddString insertion order so the resulting
 // automaton is identical to an eagerly built one.
 func (ac *acAutomaton) buildDeferred() {
+	ac.buildMu.Lock()
+	defer ac.buildMu.Unlock()
+
 	// Trie states are bounded by the total pattern length (plus the root).
 	capacity := 1
 	totalOutputs := 0
@@ -1415,6 +1420,13 @@ func (ac *acAutomaton) BuildFailureLinks() error {
 
 // Validate checks if the automaton is correctly constructed
 func (ac *acAutomaton) Validate() error {
+	if ac.deferred {
+		ac.buildMu.RLock()
+		defer ac.buildMu.RUnlock()
+		if ac.buildErr != nil {
+			return ac.buildErr
+		}
+	}
 	hasFlatTable := len(ac.transitions16) > 0 || len(ac.transitions32) > 0 ||
 		len(ac.flatClass16) > 0 || len(ac.flatClass32) > 0
 	hasConstructionStates := len(ac.states) > 0 || len(ac.trieStates) > 0
@@ -1434,6 +1446,10 @@ func (ac *acAutomaton) Validate() error {
 
 // Clone creates a copy of the automaton
 func (ac *acAutomaton) Clone() *acAutomaton {
+	if ac.deferred {
+		ac.buildMu.RLock()
+		defer ac.buildMu.RUnlock()
+	}
 	internalStrings := cloneacStringInfos(ac.strings)
 	var trieRootCopy *[256]int32
 	if ac.trieRoot != nil {
@@ -1524,6 +1540,10 @@ type stringConfig struct {
 // states are released after Compile, so the count is served from stateCount;
 // deferred automatons that have not built a trie yet report their estimate.
 func (ac *acAutomaton) GetStateCount() int {
+	if ac.deferred {
+		ac.buildMu.RLock()
+		defer ac.buildMu.RUnlock()
+	}
 	if len(ac.trieStates) > 0 {
 		return len(ac.trieStates)
 	}
@@ -1561,6 +1581,10 @@ func (ac *acAutomaton) GetPatternData() map[string][]byte {
 // Released construction states contribute nothing; the retained flat table,
 // output ranges, and outputs are what scans actually read.
 func (ac *acAutomaton) EstimateMemoryUsage() int {
+	if ac.deferred {
+		ac.buildMu.RLock()
+		defer ac.buildMu.RUnlock()
+	}
 	stateMemory := len(ac.states) * (256*4 + 8) // transitions + failure + output indices
 	stateMemory += len(ac.trieStates)*12 + len(ac.trieEdges)*12
 	if ac.trieRoot != nil {
