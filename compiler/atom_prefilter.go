@@ -469,17 +469,20 @@ func (s *Scanner) populateNonTextPrefilterCache(
 	if s.matchCtx != nil {
 		s.matchCtx.maxMatchSpan = s.maxMatchSpan
 	}
-	slices.Sort(s.touchedPrefilterCandidates)
+	if len(s.touchedPrefilterCandidates) > 1 {
+		slices.Sort(s.touchedPrefilterCandidates)
+	}
+	done := ctx.Done()
 	for touchedIndex := 0; touchedIndex < len(s.touchedPrefilterCandidates); {
-		if err := ctx.Err(); err != nil {
-			return err
+		if scanCanceled(done) {
+			return ctx.Err()
 		}
 		lookupIdx := s.touchedPrefilterCandidates[touchedIndex]
 		if lookupIdx < 0 || lookupIdx >= len(s.program.sharedLookup) {
 			touchedIndex++
 			continue
 		}
-		entry := s.program.sharedLookup[lookupIdx]
+		entry := &s.program.sharedLookup[lookupIdx]
 		if entry.Kind == StringKindText || entry.CacheIndex < 0 || entry.CacheIndex >= len(cache.matches) {
 			touchedIndex++
 			continue
@@ -497,7 +500,7 @@ func (s *Scanner) populateNonTextPrefilterCache(
 		if entry.Kind == StringKindRegex && entry.alternativeAtom {
 			lookupGroupStart := lookupIdx
 			for lookupGroupStart > 0 {
-				previous := s.program.sharedLookup[lookupGroupStart-1]
+				previous := &s.program.sharedLookup[lookupGroupStart-1]
 				if !previous.alternativeAtom || previous.Kind != StringKindRegex ||
 					previous.CacheIndex != entry.CacheIndex || previous.IsWide != entry.IsWide {
 					break
@@ -506,7 +509,7 @@ func (s *Scanner) populateNonTextPrefilterCache(
 			}
 			groupEnd := lookupIdx + 1
 			for groupEnd < len(s.program.sharedLookup) {
-				next := s.program.sharedLookup[groupEnd]
+				next := &s.program.sharedLookup[groupEnd]
 				if !next.alternativeAtom ||
 					next.Kind != StringKindRegex ||
 					next.CacheIndex != entry.CacheIndex ||
@@ -516,7 +519,7 @@ func (s *Scanner) populateNonTextPrefilterCache(
 				groupEnd++
 			}
 
-			groupEntry := s.program.sharedLookup[lookupGroupStart]
+			groupEntry := &s.program.sharedLookup[lookupGroupStart]
 			rule := s.program.Rules[groupEntry.RuleIndex]
 			if groupEntry.StringIdx < 0 || groupEntry.StringIdx >= len(rule.IndexToStringID) {
 				touchedIndex++
@@ -534,7 +537,7 @@ func (s *Scanner) populateNonTextPrefilterCache(
 			dst := cache.matches[entry.CacheIndex]
 			matchGroupStart := len(dst)
 			for candidateIndex := lookupGroupStart; candidateIndex < groupEnd; candidateIndex++ {
-				candidateEntry := s.program.sharedLookup[candidateIndex]
+				candidateEntry := &s.program.sharedLookup[candidateIndex]
 				candidates := s.prefilterCandidates[candidateIndex]
 				if len(candidates) > 0 {
 					dst = appendRegexPrefilterMatches(
@@ -544,7 +547,7 @@ func (s *Scanner) populateNonTextPrefilterCache(
 						candidateEntry,
 						data,
 						candidates,
-						ctx.Done(),
+						done,
 						s.matchCtx,
 					)
 				}
@@ -569,23 +572,26 @@ func (s *Scanner) populateNonTextPrefilterCache(
 		}
 		if len(candidates) > 0 {
 			if entry.hexDisc != nil {
-				s.verifyHexFanoutDiscriminated(ctx, entry, data, candidates, cache)
+				s.verifyHexFanoutDiscriminated(done, *entry, data, candidates, cache)
 			} else {
-				s.verifySharedNonTextEntry(ctx, entry, data, candidates, cache)
-				for _, extra := range entry.fanout {
-					s.verifySharedNonTextEntry(ctx, extra, data, candidates, cache)
+				s.verifySharedNonTextEntry(done, entry, data, candidates, cache)
+				for index := range entry.fanout {
+					s.verifySharedNonTextEntry(done, &entry.fanout[index], data, candidates, cache)
 				}
 			}
 		}
 		touchedIndex++
 	}
-	return ctx.Err()
+	if scanCanceled(done) {
+		return ctx.Err()
+	}
+	return nil
 }
 
 //nolint:revive // argument-limit: hot-path helper avoids struct allocation
 func (s *Scanner) verifySharedNonTextEntry(
-	ctx context.Context,
-	entry sharedAutomatonEntry,
+	done <-chan struct{},
+	entry *sharedAutomatonEntry,
 	data []byte,
 	candidates []int,
 	cache *nonTextMatchCache,
@@ -604,13 +610,13 @@ func (s *Scanner) verifySharedNonTextEntry(
 	case StringKindRegex:
 		dst := cache.matches[entry.CacheIndex]
 		if len(candidates) > 0 {
-			dst = appendRegexPrefilterMatches(dst, rule, strID, entry, data, candidates, ctx.Done(), s.matchCtx)
+			dst = appendRegexPrefilterMatches(dst, rule, strID, entry, data, candidates, done, s.matchCtx)
 		}
 		cache.set(entry.CacheIndex, dst)
 	case StringKindHex:
 		dst := cache.matches[entry.CacheIndex]
 		if len(candidates) > 0 {
-			dst = appendHexPrefilterMatches(dst, rule, strID, entry, data, candidates, ctx.Done(), &s.hexScratch)
+			dst = appendHexPrefilterMatches(dst, rule, strID, *entry, data, candidates, done, &s.hexScratch)
 		}
 		cache.set(entry.CacheIndex, dst)
 	}
@@ -620,7 +626,7 @@ func (s *Scanner) verifySharedNonTextEntry(
 	}
 }
 
-func (s *Scanner) canSkipSharedNonTextEntry(entry sharedAutomatonEntry, rule *CompiledRule, data []byte) bool {
+func (s *Scanner) canSkipSharedNonTextEntry(entry *sharedAutomatonEntry, rule *CompiledRule, data []byte) bool {
 	return !s.prefilterDisabled &&
 		s.skipUnmatchedNonText &&
 		entry.singleRuleCache &&
@@ -629,6 +635,9 @@ func (s *Scanner) canSkipSharedNonTextEntry(entry sharedAutomatonEntry, rule *Co
 }
 
 func sortAndDedupeMatchSpans(matches []matchSpan) []matchSpan {
+	if len(matches) < 2 {
+		return matches
+	}
 	slices.SortFunc(matches, func(left, right matchSpan) int {
 		switch {
 		case left.Offset < right.Offset:
@@ -643,9 +652,6 @@ func sortAndDedupeMatchSpans(matches []matchSpan) []matchSpan {
 			return 0
 		}
 	})
-	if len(matches) < 2 {
-		return matches
-	}
 	unique := 1
 	for _, candidate := range matches[1:] {
 		if candidate.Offset == matches[unique-1].Offset {
@@ -680,7 +686,7 @@ func appendRegexPrefilterMatches(
 	dst []matchSpan,
 	rule *CompiledRule,
 	strID string,
-	entry sharedAutomatonEntry,
+	entry *sharedAutomatonEntry,
 	data []byte,
 	candidates []int,
 	done <-chan struct{},
@@ -816,7 +822,7 @@ func (pattern *RegexPattern) hasValidAtomOccurrence(data []byte, atomStart int, 
 	return ok
 }
 
-func (v regexPrefilterVerifier) verifyStart(dst []matchSpan, pattern *RegexPattern, start int) ([]matchSpan, *regex.VMBatch) {
+func (v *regexPrefilterVerifier) verifyStart(dst []matchSpan, pattern *RegexPattern, start int) ([]matchSpan, *regex.VMBatch) {
 	if pattern.anchored && start != 0 {
 		return dst, v.bs
 	}
@@ -1231,7 +1237,7 @@ func buildHexFanoutDiscriminator(rules []*CompiledRule, leader sharedAutomatonEn
 
 //nolint:revive // argument-limit: hot-path helper avoids struct allocation
 func (s *Scanner) verifyHexFanoutDiscriminated(
-	ctx context.Context,
+	done <-chan struct{},
 	leader sharedAutomatonEntry,
 	data []byte,
 	candidates []int,
@@ -1263,20 +1269,20 @@ func (s *Scanner) verifyHexFanoutDiscriminated(
 	}
 
 	for _, target := range touched {
-		entry := leader
+		entry := &leader
 		if target > 0 {
-			entry = leader.fanout[target-1]
+			entry = &leader.fanout[target-1]
 		}
-		s.verifySharedNonTextEntry(ctx, entry, data, fanout[target], cache)
+		s.verifySharedNonTextEntry(done, entry, data, fanout[target], cache)
 		fanout[target] = fanout[target][:0]
 	}
 	s.hexScratch.fanoutTouched = touched[:0]
 
 	for _, target := range disc.wildcard {
-		entry := leader
+		entry := &leader
 		if target > 0 {
-			entry = leader.fanout[target-1]
+			entry = &leader.fanout[target-1]
 		}
-		s.verifySharedNonTextEntry(ctx, entry, data, candidates, cache)
+		s.verifySharedNonTextEntry(done, entry, data, candidates, cache)
 	}
 }

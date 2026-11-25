@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+* Reuse existing match state for single-string fast scans and avoid copying shared lookup entries during candidate verification.
 * Consolidated size-literal parsing on `internal/int64ops.ParseSizeLiteral`, requiring uppercase `KB`/`MB`/`GB`/`TB` suffixes and accepting `0x`/`0X` hexadecimal prefixes consistently.
 * Default `parser.New` to the compiler’s 1,000-level recursion limit and apply it to nested quantifier expressions.
 * Documented unsigned byte ordering for string comparisons and classified libyara’s signed-byte ordering in differential tests ([#727](https://github.com/cawalch/go-yara/issues/727)).
@@ -26,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * `BlockScanner.ScanWithContext` and `FinishWithContext` normalize nil contexts, matching the other `*WithContext` entry points.
 * Nested quantifiers participate in parser recursion limits, quantifier target lists are capped at 1,024 elements, oversized global integer declarations fail instead of silently becoming zero, and `Parser.Errors` returns an owned slice.
 * Regex alternation branch chains are capped at 1,024 branches to bound left-deep AST recursion, legacy artifacts with an absent atom use unbounded atom-window limits, masked verification atoms iterate candidates instead of rejecting all positions, and the rare regex fallback honors the caller's per-pattern occurrence cap.
-* Loaded compiled artifacts reject automaton pattern payloads above 1 MiB per pattern or 16 MiB per program, rejecting crafted trie-amplification artifacts before materialization.
+* Compilation and artifact loading cap automaton payloads at 1 MiB per pattern and 16 MiB per automaton to bound trie construction.
 * Loaded regex and hex patterns with conflicting shared cache keys are rejected instead of reusing verified spans from a different pattern.
 * The CLI bounds rule-file reads at the compiler’s 100 MiB default input limit, and `token.EXTERNAL` now has a printable name.
 

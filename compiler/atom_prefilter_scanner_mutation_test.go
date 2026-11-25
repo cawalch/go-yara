@@ -156,7 +156,7 @@ func TestCanSkipSharedNonTextEntryHookMask(t *testing.T) {
 		prefilterStrings: []prefilterStringInfo{{class: prefilterStringText}},
 	}
 	entry := sharedAutomatonEntry{singleRuleCache: true}
-	if !s.canSkipSharedNonTextEntry(entry, rule, nil) {
+	if !s.canSkipSharedNonTextEntry(&entry, rule, nil) {
 		t.Fatal("canSkipSharedNonTextEntry = false with zero hook mask, want true")
 	}
 }

@@ -36,20 +36,15 @@ func (s *Scanner) extractGlobalMatchesInt(
 	rules := s.program.Rules
 	globalByRule := s.globalMatches
 	fastSeen := s.fastSeen
-	if s.fastScan {
-		if fastSeen == nil {
-			fastSeen = make(map[uint64]bool)
-			s.fastSeen = fastSeen
-		} else if len(fastSeen) > 0 {
-			clear(fastSeen)
-		}
+	if s.fastScan && len(fastSeen) > 0 {
+		clear(fastSeen)
 	}
 	yield := func(match acMatch) bool {
 		if match.StringIndex < 0 || match.StringIndex >= len(lookup) {
 			return true
 		}
 
-		entry := lookup[match.StringIndex]
+		entry := &lookup[match.StringIndex]
 		if entry.combined != nil {
 			match.StringIndex = entry.combined.leader
 			previous := s.prefilterCandidates[match.StringIndex]
@@ -82,8 +77,12 @@ func (s *Scanner) extractGlobalMatchesInt(
 		isWide := (info.Flags & regex.FlagsWide) != 0
 		isNocase := (info.Flags & regex.FlagsNoCase) != 0
 		fastDedup := s.fastScan && rule.FastScanSafe
+		useSeen := fastDedup && len(rule.IndexToStringID) > 1
+		if fastDedup && !useSeen && len(globalByRule[entry.RuleIndex]) != 0 {
+			return true
+		}
 		var fastKey uint64
-		if fastDedup {
+		if useSeen {
 			var ok bool
 			fastKey, ok = packFastScanKey(entry.RuleIndex, entry.StringIdx)
 			if !ok {
@@ -91,6 +90,10 @@ func (s *Scanner) extractGlobalMatchesInt(
 			}
 			if fastSeen[fastKey] {
 				return true
+			}
+			if fastSeen == nil {
+				fastSeen = make(map[uint64]bool)
+				s.fastSeen = fastSeen
 			}
 		}
 		if fastDedup || s.hookMask&hookBitPatternProfile == 0 {
@@ -103,9 +106,9 @@ func (s *Scanner) extractGlobalMatchesInt(
 				(entry.hasFullword && !isFullwordMatch(data, int(offset), info.Length, isWide)) {
 				return true
 			}
-			if fastDedup {
-				fastSeen[fastKey] = true
-			}
+		}
+		if useSeen {
+			fastSeen[fastKey] = true
 		}
 		globalEntry := globalMatchEntry{
 			offset:        offset,

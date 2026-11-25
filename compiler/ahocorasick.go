@@ -69,13 +69,15 @@ type acAutomaton struct {
 	// Byte-equivalence-class compressed transition tables when classShift > 0.
 	// classRoot retains the expanded 256-entry root row so root misses need no
 	// class indirection.
-	classMap    [256]byte
-	classShift  uint8
-	classCount  int
-	classRoot16 *[256]uint16
-	classRoot32 *[256]int32
-	flatClass16 []uint16
-	flatClass32 []int32
+	classMap   [256]byte
+	classShift uint8
+	// patternBytes bounds the stored payload before trie construction.
+	patternBytes uint32
+	classCount   int
+	classRoot16  *[256]uint16
+	classRoot32  *[256]int32
+	flatClass16  []uint16
+	flatClass32  []int32
 
 	// hasOutput indicates whether a state has any outputs. 1 byte per state.
 	hasOutput []bool
@@ -105,11 +107,6 @@ type acAutomaton struct {
 
 	// Exported metadata retained for compatibility with existing callers.
 	StringCount int
-
-	// patternBytes tracks stored pattern payload. Trie construction amplifies
-	// each byte into construction states and edges, so both per-pattern and
-	// total storage are bounded for untrusted compiled artifacts.
-	patternBytes int
 }
 
 const (
@@ -194,10 +191,10 @@ func (ac *acAutomaton) addStringToAutomaton(config stringConfig) error {
 	// from this stored copy.
 	patternLength := len(config.Data)
 	if patternLength > maxAutomatonPatternLength ||
-		ac.patternBytes > maxAutomatonPatternBytes-patternLength {
+		int(ac.patternBytes) > maxAutomatonPatternBytes-patternLength {
 		return errors.New("automaton pattern storage limit exceeded")
 	}
-	ac.patternBytes += patternLength
+	ac.patternBytes += uint32(patternLength)
 	patternData := make([]byte, patternLength)
 	copy(patternData, config.Data)
 	stringInfo := acStringInfo{

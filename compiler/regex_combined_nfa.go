@@ -389,7 +389,7 @@ func (s *Scanner) populateCombinedRegex(ctx context.Context, data []byte, cache 
 	scratch.enabled = scratch.enabled[:len(n.targets)]
 	for i, target := range n.targets {
 		rule := s.program.Rules[target.entry.RuleIndex]
-		scratch.enabled[i] = !s.canSkipSharedNonTextEntry(target.entry, rule, data)
+		scratch.enabled[i] = !s.canSkipSharedNonTextEntry(&target.entry, rule, data)
 	}
 	for _, target := range n.targets {
 		cache.set(target.entry.CacheIndex, cache.matches[target.entry.CacheIndex])
