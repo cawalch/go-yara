@@ -16,7 +16,7 @@ func (s *Scanner) Scan(data []byte) (*ScanResult, error) {
 // Matches reports whether at least one public rule matches data.
 // It leverages the allocation-free prefilter rejection fast-path for non-matching inputs.
 func (s *Scanner) Matches(data []byte) (bool, error) {
-	return s.MatchesWithContext(context.Background(), data)
+	return s.matchesWithContext(context.Background(), data, false)
 }
 
 // MatchesReader reports whether at least one public rule matches r.
@@ -58,7 +58,7 @@ func (s *Scanner) MatchesReaderWithContext(ctx context.Context, r io.Reader) (bo
 	return len(result.MatchedRules) > 0, nil
 }
 
-func (s *Scanner) prepareScanCall(ctx context.Context) (context.Context, bool, error) {
+func (s *Scanner) prepareScanCall(ctx context.Context, checkCancellation bool) (context.Context, bool, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -68,23 +68,29 @@ func (s *Scanner) prepareScanCall(ctx context.Context) (context.Context, bool, e
 	if err := s.scanError(); err != nil {
 		return ctx, false, err
 	}
-	if err := ctx.Err(); err != nil {
-		return ctx, false, err
+	if checkCancellation {
+		if err := ctx.Err(); err != nil {
+			return ctx, false, err
+		}
 	}
 	s.skipSharedTeddyGate = false
 	return ctx, true, nil
 }
 
 // MatchesWithContext reports whether at least one public rule matches data.
-func (s *Scanner) MatchesWithContext(ctx context.Context, data []byte) (matched bool, err error) {
-	ctx, ready, err := s.prepareScanCall(ctx)
+func (s *Scanner) MatchesWithContext(ctx context.Context, data []byte) (bool, error) {
+	return s.matchesWithContext(ctx, data, true)
+}
+
+func (s *Scanner) matchesWithContext(ctx context.Context, data []byte, checkCancellation bool) (bool, error) {
+	ctx, ready, err := s.prepareScanCall(ctx, checkCancellation)
 	if !ready || err != nil {
 		return false, err
 	}
 	if s.hookMask&(hookBitPoll|hookBitTelemetry|hookBitScanLifecycle) != 0 {
 		return s.matchesWithObservedLifecycle(ctx, data)
 	}
-	if rejected, done := s.checkCompactPrefilterFanout(ctx, data); rejected {
+	if rejected, done := s.checkCompactPrefilterFanout(ctx, data, checkCancellation); rejected {
 		if scanCanceled(done) {
 			return false, ctx.Err()
 		}
@@ -150,7 +156,7 @@ func (s *Scanner) MatchingRules(data []byte) ([]RuleMatch, error) {
 // MatchingRulesWithContext returns detailed public rule matches without
 // constructing the all-rules maps in ScanResult.
 func (s *Scanner) MatchingRulesWithContext(ctx context.Context, data []byte) ([]RuleMatch, error) {
-	ctx, ready, err := s.prepareScanCall(ctx)
+	ctx, ready, err := s.prepareScanCall(ctx, true)
 	if !ready || err != nil {
 		return nil, err
 	}

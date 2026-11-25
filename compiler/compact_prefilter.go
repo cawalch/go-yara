@@ -124,11 +124,11 @@ func compactEntryUsesNonTextCache(entry sharedAutomatonEntry, nonText []bool) bo
 }
 
 func (s *Scanner) compactPrefilterFanoutRejects(ctx context.Context, data []byte) bool {
-	rejected, _ := s.checkCompactPrefilterFanout(ctx, data)
+	rejected, _ := s.checkCompactPrefilterFanout(ctx, data, true)
 	return rejected
 }
 
-func (s *Scanner) checkCompactPrefilterFanout(ctx context.Context, data []byte) (bool, <-chan struct{}) {
+func (s *Scanner) checkCompactPrefilterFanout(ctx context.Context, data []byte, checkCancellation bool) (bool, <-chan struct{}) {
 	gate := s.program.compactPrefilter
 	if gate == nil {
 		return false, nil
@@ -144,7 +144,7 @@ func (s *Scanner) checkCompactPrefilterFanout(ctx context.Context, data []byte) 
 		if teddySIMDEnabled && gate.automaton.teddyGate != nil && len(data) >= 256 && len(data) <= 512 &&
 			!s.prefilterDisabled && s.program.sharedAutomaton == gate.automaton &&
 			s.hookMask&(hookBitPrefilter|hookBitTelemetryLatency) == 0 {
-			done := ctx.Done()
+			done := compactPrefilterCancellation(ctx, checkCancellation)
 			if !gate.automaton.teddyGate.mayMatch(data, done) || scanCanceled(done) {
 				return true, done
 			}
@@ -152,21 +152,29 @@ func (s *Scanner) checkCompactPrefilterFanout(ctx context.Context, data []byte) 
 		}
 		return false, nil
 	}
-	return s.checkCompactPrefilter(ctx, data, gate)
+	return s.checkCompactPrefilter(ctx, data, gate, checkCancellation)
 }
 
 func (s *Scanner) compactPrefilterRejects(ctx context.Context, data []byte) bool {
-	rejected, _ := s.checkCompactPrefilter(ctx, data, s.program.compactPrefilter)
+	rejected, _ := s.checkCompactPrefilter(ctx, data, s.program.compactPrefilter, true)
 	return rejected
 }
 
-func (s *Scanner) checkCompactPrefilter(ctx context.Context, data []byte, gate *compactPrefilter) (bool, <-chan struct{}) {
+func compactPrefilterCancellation(ctx context.Context, checkCancellation bool) <-chan struct{} {
+	if checkCancellation {
+		return ctx.Done()
+	}
+	return nil
+}
+
+//nolint:revive // keep the prepared gate and cancellation policy explicit
+func (s *Scanner) checkCompactPrefilter(ctx context.Context, data []byte, gate *compactPrefilter, checkCancellation bool) (bool, <-chan struct{}) {
 	s.skipSharedTeddyGate = false
 	// Large positive records would pay for two full passes.
 	if gate == nil || s.prefilterDisabled || len(data) > 1024 || s.program.sharedAutomaton != gate.automaton {
 		return false, nil
 	}
-	done := ctx.Done()
+	done := compactPrefilterCancellation(ctx, checkCancellation)
 	var rejected bool
 	if s.hookMask&(hookBitPrefilter|hookBitTelemetryLatency) != 0 {
 		rejected = s.compactPrefilterRejectsWithHooks(ctx, data, gate, done)
