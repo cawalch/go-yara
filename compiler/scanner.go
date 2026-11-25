@@ -595,9 +595,7 @@ func (cp *CompiledProgram) ScanWithContext(ctx context.Context, data []byte) (*S
 // Performance note: Matches leverages a pooled reusable Scanner and the allocation-free
 // prefilter rejection fast-path.
 func (cp *CompiledProgram) Matches(data []byte) (bool, error) {
-	scanner := cp.acquireScanner()
-	defer cp.releaseScanner(scanner)
-	return scanner.Matches(data)
+	return cp.MatchesWithContext(context.Background(), data)
 }
 
 // MatchesWithContext reports whether this compiled program has at least one public rule match.

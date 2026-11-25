@@ -193,7 +193,7 @@ func (s *Scanner) recordScanRejection(
 
 // ScanWithContext scans the provided byte slice against the compiled rules.
 func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (result *ScanResult, err error) {
-	ctx, ready, err := s.prepareScanCall(ctx, true)
+	ctx, ready, err := s.prepareScanCall(ctx)
 	if err != nil {
 		return nil, err
 	}
