@@ -55,7 +55,9 @@ func (s *Scanner) beginScan(ctx context.Context, size int64) scanObservation {
 	}
 	if s.telemetrySink != nil {
 		s.telemetrySink.TotalScans++
-		s.telemetrySink.BytesScanned += size
+		if size >= 0 {
+			s.telemetrySink.BytesScanned += size
+		}
 	}
 	s.dispatchScanStart(ctx, size)
 	return scanObservation{scanner: s, ctx: ctx, started: start}
@@ -81,6 +83,18 @@ func (observation scanObservation) finish(result *ScanResult, matches int, err e
 	if err == nil {
 		s.dispatchScanComplete(observation.ctx, result, duration)
 	}
+}
+
+func (observation scanObservation) finishReader(result *ScanResult, boolean bool, err error) {
+	count := 0
+	if result != nil {
+		count = len(result.MatchedRules)
+	}
+	if boolean {
+		observation.finish(nil, min(count, 1), err)
+		return
+	}
+	observation.finish(result, count, err)
 }
 
 func (observation scanObservation) finishRuleList(matches []RuleMatch, err error) {
@@ -218,4 +232,39 @@ func (s *Scanner) collectSharedProfileCandidates() {
 			s.sharedProfileCandidates[entry.CacheIndex] += len(s.prefilterCandidates[index])
 		}
 	}
+}
+
+type windowProfileCounts struct{ candidates, falseCandidates int }
+
+func (s *Scanner) recordWindowPatternProfiles(rule *CompiledRule, shared bool, byRule *map[string]windowProfileCounts) {
+	s.recordPatternProfiles(rule, shared)
+	if s.hookMask&(hookBitTelemetry|hookBitRuleProfile) == 0 {
+		return
+	}
+	if *byRule == nil {
+		*byRule = make(map[string]windowProfileCounts)
+	}
+	counts := (*byRule)[rule.Name]
+	for _, id := range rule.IndexToStringID {
+		if rule.IsStringDead(id) {
+			continue
+		}
+		candidates, known := s.patternCandidateCount(rule, id, shared)
+		if known {
+			counts.candidates += candidates
+			counts.falseCandidates += max(candidates-len(s.matchCtx.spansFor(id)), 0)
+		}
+	}
+	(*byRule)[rule.Name] = counts
+}
+
+func (s *Scanner) streamHeaderConstraintsMatch(ctx context.Context, rule *CompiledRule, header *MatchContext) bool {
+	started := s.prefilterStart()
+	previous := s.enterScanPhase(PhasePrefilter)
+	matched := s.ruleConstraintsMatchContext(rule, header, s.omitMatches || s.reportedMatchesOnly)
+	s.leaveScanPhase(previous)
+	if !started.IsZero() && ctx.Err() == nil && (len(rule.HeaderConstraints) > 0 || len(rule.mandatoryAssertions) > 0) {
+		s.finishPrefilter(PrefilterDecision{Stage: PrefilterStageHeaderConstraints, Rejected: !matched}, started)
+	}
+	return matched
 }

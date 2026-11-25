@@ -193,6 +193,14 @@ func requiredStringSet(expr ast.Expression, patterns []*ast.String, anonymousStr
 	}
 }
 
+func requiredStringIndex(rule *CompiledRule, id string) (int, bool) {
+	if len(rule.IndexToStringID) == 1 && rule.IndexToStringID[0] == id {
+		return 0, true
+	}
+	index, ok := rule.StringIDToIndex[id]
+	return index, ok
+}
+
 func (s *Scanner) missingRequiredString(rule *CompiledRule) bool {
 	// Dense candidates fall back to normal evaluation after bounded gate work.
 	budget := 128
@@ -201,7 +209,7 @@ func (s *Scanner) missingRequiredString(rule *CompiledRule) bool {
 			return false
 		}
 		budget--
-		index, ok := rule.StringIDToIndex[id]
+		index, ok := requiredStringIndex(rule, id)
 		if !ok {
 			continue
 		}
@@ -265,7 +273,7 @@ func (s *Scanner) ruleRejectedBeforeNonText(rule *CompiledRule, data []byte) boo
 			return false
 		}
 		budget--
-		index, ok := rule.StringIDToIndex[id]
+		index, ok := requiredStringIndex(rule, id)
 		if !ok || index < 0 || index >= len(rule.prefilterStrings) {
 			continue
 		}

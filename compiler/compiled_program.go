@@ -74,6 +74,7 @@ type CompiledProgram struct {
 	// Streaming support
 	streamingProcessor             *StreamingProcessor
 	sharedHasTextOrAlternative     bool
+	allRulesUseSharedPatterns      bool
 	hasHeaderOrMandatoryAssertions bool
 	enableStreaming                bool
 
@@ -225,6 +226,13 @@ func (cp *CompiledProgram) prepare(validateCacheKeys bool) error {
 		return err
 	}
 	cp.sharedNonTextCaches = sharedNonTextCacheCoverage(cp.nonTextCacheSize, cp.sharedLookup)
+	cp.allRulesUseSharedPatterns = true
+	for _, rule := range cp.Rules {
+		if !cp.ruleAllStringsInSharedPrefilter(rule) {
+			cp.allRulesUseSharedPatterns = false
+			break
+		}
+	}
 	markSharedLookupCandidateTriggers(cp.Rules, cp.sharedLookup, cp.sharedNonTextCaches)
 	cp.sharedNonTextCacheRules = sharedNonTextCacheRuleLookup(cp.Rules, cp.sharedNonTextCaches)
 	cp.prepareCombinedRegex()

@@ -66,7 +66,7 @@ func (s *Scanner) evaluateRuleCondition(
 	}
 
 	if !s.prefilterDisabled && input.skipUnmatchedContext && input.usesharedAutomaton && s.missingRequiredString(rule) {
-		return s.finishRuleEvaluation(rule, false, state)
+		return s.rejectRuleEvaluation(rule, state)
 	}
 
 	if err := s.populateRuleMatchContext(ctx, rule, input); err != nil {
@@ -77,10 +77,10 @@ func (s *Scanner) evaluateRuleCondition(
 		s.recordPatternProfiles(rule, input.usesharedAutomaton)
 	}
 	if !s.prefilterDisabled && input.skipUnmatchedContext && s.hasForbiddenStringMatch(rule, input.usesharedAutomaton) {
-		return s.finishRuleEvaluation(rule, false, state)
+		return s.rejectRuleEvaluation(rule, state)
 	}
 	if !s.prefilterDisabled && rule.RequiresStringMatch && !s.matchCtx.hasSpans() {
-		return s.finishRuleEvaluation(rule, false, state)
+		return s.rejectRuleEvaluation(rule, state)
 	}
 
 	if err := s.executeCondition(rule); err != nil {
@@ -93,12 +93,16 @@ func (s *Scanner) evaluateRuleCondition(
 	return s.finishRuleEvaluation(rule, matched, state)
 }
 
+func (s *Scanner) rejectRuleEvaluation(rule *CompiledRule, state ruleProfileState) (ruleEvaluation, error) {
+	s.recordRuleResult(rule, false)
+	return s.finishRuleEvaluation(rule, false, state)
+}
+
 func (s *Scanner) finishRuleEvaluation(
 	rule *CompiledRule,
 	matched bool,
 	state ruleProfileState,
 ) (ruleEvaluation, error) {
-	s.recordRuleResult(rule, matched)
 	if s.hookMask&(hookBitTelemetry|hookBitRuleProfile) != 0 {
 		s.recordRuleEvaluatedHooks(rule, matched, state)
 	}
@@ -117,9 +121,11 @@ func (s *Scanner) recordRuleEvaluatedHooks(
 				continue
 			}
 			verified := len(s.matchCtx.spansFor(id))
-			count, known := s.patternCandidateCount(rule, id, state.shared)
 			matches += verified
-			if known && !state.accumulated {
+			if state.accumulated {
+				continue
+			}
+			if count, known := s.patternCandidateCount(rule, id, state.shared); known {
 				candidates += count
 				falseCandidates += max(count-verified, 0)
 			}
@@ -149,7 +155,11 @@ func (s *Scanner) recordRuleEvaluatedHooks(
 }
 
 func (s *Scanner) ruleHeaderConstraintsMatchInput(ctx context.Context, rule *CompiledRule, input ruleScanInput) (matched bool) {
-	if s.hookMask&hookBitPrefilter != 0 && (len(rule.HeaderConstraints) > 0 || len(rule.mandatoryAssertions) > 0) {
+	hasConstraints := len(rule.HeaderConstraints) != 0 || len(rule.mandatoryAssertions) != 0
+	if !hasConstraints && s.hookMask&hookBitTelemetryLatency == 0 {
+		return true
+	}
+	if hasConstraints && s.hookMask&hookBitPrefilter != 0 {
 		started := s.prefilterStart()
 		defer func() {
 			if ctx.Err() == nil {
@@ -313,15 +323,15 @@ func (s *Scanner) populateRuleMatchContext(
 		return nil
 	}
 
-	canShortCircuit := !s.blockScan &&
-		rule.ConditionMonotonic &&
-		input.booleanMatchOnly &&
-		(len(rule.RegexPatterns) > 0 || len(rule.HexPatterns) > 0)
-
-	if !canShortCircuit || !s.matchCtx.hasSpans() || !s.isRuleConditionSatisfied(rule) {
+	hasNonText := len(rule.RegexPatterns) > 0 || len(rule.HexPatterns) > 0
+	canShortCircuit := !s.blockScan && rule.ConditionMonotonic && input.booleanMatchOnly
+	if hasNonText && (!canShortCircuit || !s.matchCtx.hasSpans() || !s.isRuleConditionSatisfied(rule)) {
 		if err := s.addLocalNonTextMatches(ctx, rule, input.data, &s.nonTextCache, input.usesharedAutomaton, canShortCircuit); err != nil {
 			return err
 		}
+	}
+	if !hasNonText && scanCanceled(s.matchCtx.cancelDone) {
+		return ctx.Err()
 	}
 	if s.matchLimitErr != nil {
 		return s.matchLimitErr
@@ -329,7 +339,9 @@ func (s *Scanner) populateRuleMatchContext(
 	if len(rule.fixedOffsets) != 0 {
 		s.matchCtx.filterFixedOffsets(rule.fixedOffsets, base)
 	}
-	s.matchCtx.normalizeMatches()
+	if s.matchCtx.maxMatchesPerPattern != 1 {
+		s.matchCtx.normalizeMatches()
+	}
 	if s.blockScan {
 		s.matchCtx.forEachSpanSlice(func(_ string, spans []matchSpan) {
 			for index := range spans {

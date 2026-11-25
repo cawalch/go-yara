@@ -116,11 +116,9 @@ rule slow_rule {
 	data := []byte("target target target")
 
 	// Case A: PollContinue
-	pollCount := 0
-	scannerA := NewScanner(program, WithPollHook(func(ctx context.Context, p PollProgress) (PollAction, time.Duration) {
-		pollCount++
-		require.Equal(t, PhaseRuleCondition, p.Phase)
-		require.Equal(t, int64(len(data)), p.BytesScanned)
+	var polls []PollProgress
+	scannerA := NewScanner(program, WithPollHook(func(_ context.Context, p PollProgress) (PollAction, time.Duration) {
+		polls = append(polls, p)
 		return PollContinue, 0
 	}, 1024))
 	defer scannerA.Close()
@@ -128,7 +126,12 @@ rule slow_rule {
 	resA, err := scannerA.Scan(data)
 	require.NoError(t, err)
 	require.Len(t, resA.MatchedRules, 1)
-	require.Greater(t, pollCount, 0)
+	require.Len(t, polls, 2)
+	require.Equal(t, PhasePatternSearch, polls[0].Phase)
+	require.Zero(t, polls[0].BytesScanned)
+	require.Equal(t, int64(len(data)), polls[0].TotalBytes)
+	require.Equal(t, PhaseRuleCondition, polls[1].Phase)
+	require.Equal(t, int64(len(data)), polls[1].BytesScanned)
 
 	// Case B: PollYield
 	yieldCount := 0

@@ -117,6 +117,15 @@ rule aggregate {
 	if len(matches) != 2 || matches[0].Offset != 0 || matches[1].Offset != 1001 {
 		t.Fatalf("matches = %+v, want offsets 0 and 1001", matches)
 	}
+	matches[1].Offset = 42
+	again, err := scanner.Finish()
+	if err != nil {
+		t.Fatalf("second Finish() error = %v", err)
+	}
+	matches = again.Matches["aggregate"]["$a"]
+	if len(matches) != 2 || matches[0].Offset != 0 || matches[1].Offset != 1001 {
+		t.Fatalf("second Finish() matches = %+v, want offsets 0 and 1001", matches)
+	}
 }
 
 func TestBlockScannerDeduplicatesOverlaps(t *testing.T) {

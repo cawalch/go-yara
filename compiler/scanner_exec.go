@@ -90,7 +90,10 @@ func (s *Scanner) recordSkippedCandidateRule(
 }
 
 func (s *Scanner) recordAllRulesRejected(ctx context.Context, result *ScanResult, scanInput ruleScanInput) error {
-	done := ctx.Done()
+	var done <-chan struct{}
+	if ctx != context.Background() {
+		done = ctx.Done()
+	}
 	if scanCanceled(done) {
 		return ctx.Err()
 	}
@@ -98,11 +101,12 @@ func (s *Scanner) recordAllRulesRejected(ctx context.Context, result *ScanResult
 		return nil
 	}
 	checkHeaders := s.program.hasHeaderOrMandatoryAssertions
+	filterRules := s.evaluatedRules != nil || s.hookMask&hookBitRuleGate != 0
 	for i, rule := range s.program.Rules {
 		if i&63 == 63 && scanCanceled(done) {
 			return ctx.Err()
 		}
-		if !s.shouldEvaluateRule(rule) {
+		if filterRules && !s.shouldEvaluateRule(rule) {
 			continue
 		}
 		if result.RuleResults != nil {
@@ -131,6 +135,9 @@ func (s *Scanner) rejectAllRules(ctx context.Context, result *ScanResult, scanIn
 func (s *Scanner) markChunkCandidateRules() {
 	for _, ruleIndex := range s.touchedGlobalMatches {
 		s.markCandidateRule(ruleIndex)
+	}
+	if s.program.allRulesUseSharedPatterns && !s.sharedNonTextMatched && s.hookMask&hookBitRuleGate == 0 {
+		return
 	}
 	for _, rule := range s.program.Rules {
 		if !s.shouldEvaluateRule(rule) || s.isCandidateRule(rule.Index) {
@@ -186,10 +193,13 @@ func (s *Scanner) recordScanRejection(
 // ScanWithContext scans the provided byte slice against the compiled rules.
 func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (result *ScanResult, err error) {
 	ctx, ready, err := s.prepareScanCall(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var ruleResults map[string]bool
 	if s == nil || !s.omitRuleResults {
 		ruleCount := 0
-		if s != nil && s.program != nil {
+		if ready {
 			ruleCount = len(s.program.Rules)
 		}
 		ruleResults = make(map[string]bool, ruleCount)
@@ -202,14 +212,11 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (result *Sca
 	if s == nil || (!s.reportedMatchesOnly && !s.omitMatches) {
 		result.Matches = make(map[string]map[string][]Match)
 	}
-	if !ready || err != nil {
-		if err != nil {
-			return nil, err
-		}
+	if !ready {
 		return result, nil
 	}
 
-	if s.hookMask&(hookBitTelemetry|hookBitScanLifecycle) != 0 {
+	if s.hookMask&(hookBitTelemetry|hookBitScanLifecycle|hookBitPoll) != 0 {
 		scanStart := s.beginScan(ctx, int64(len(data)))
 		defer func() {
 			matches := 0
@@ -218,6 +225,12 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (result *Sca
 			}
 			scanStart.finish(result, matches, err)
 		}()
+		if s.hookMask&hookBitPoll != 0 {
+			err = s.pollByteInput(ctx, len(data))
+		}
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	s.resetScanState()
@@ -234,7 +247,8 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (result *Sca
 	if err != nil {
 		return nil, err
 	}
-	if usesharedAutomaton && !s.reportedMatchesOnly {
+	if usesharedAutomaton && !s.reportedMatchesOnly &&
+		(len(s.touchedGlobalMatches) != 0 || s.sharedNonTextMatched || !s.program.allRulesUseSharedPatterns || s.hookMask&hookBitRuleGate != 0) {
 		s.markChunkCandidateRules()
 	}
 	scanInput := ruleScanInput{data: data, usesharedAutomaton: usesharedAutomaton, skipUnmatchedContext: s.reportedMatchesOnly}
@@ -432,6 +446,12 @@ func (s *Scanner) evaluatePublicRules(
 	data []byte,
 	matchedRuleIndices *[]int,
 ) (publicRuleEvaluation, error) {
+	if s.hookMask&hookBitPoll != 0 {
+		if err := s.pollByteInput(ctx, len(data)); err != nil {
+			return publicRuleEvaluation{}, err
+		}
+	}
+
 	if s.compactPrefilterFanoutRejects(ctx, data) {
 		if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
 			s.telemetrySink.PrefilterRejects++

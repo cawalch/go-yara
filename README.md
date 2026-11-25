@@ -507,7 +507,7 @@ You can monitor scanning execution, track latency, or throttle CPU usage in back
 | :--- | :--- |
 | `WithTelemetry(sink *ScanTelemetry)` | Updates counters (scans, rejects, rules evaluated, candidate hits) in-place without heap allocations. |
 | `WithTelemetryLatency(sink *ScanTelemetry)` | Measures execution phase durations and total scan duration. |
-| `WithPollHook(hook PollHook, byteStride int)` | Cooperative callback for progress reporting, CPU yielding (`PollYield`), throttling (`PollThrottle`), or early cancellation (`PollAbort`). |
+| `WithPollHook(hook PollHook, stride int)` | Cooperative progress, yield, throttle, or abort at scan checkpoints. The stride argument is retained for compatibility. |
 | `WithRuleProfiling(hook RuleEfficiencyHook)` | Emits per-rule duration, loop-iteration deltas, candidate hits, and retained occurrence counts. |
 | `WithMatchHook(hook MatchHook)` | Callback during public match delivery; `MatchActionStopScan` returns the current match and stops later delivery without an error. |
 | `WithMaxMatches(limit int, onExceeded func)` | Caps retained occurrences across all patterns of each rule. On overflow a nil callback aborts with `ErrMatchLimitExceeded`. A callback receives the rule name and limit + 1 once and scanning continues with the retained occurrences. This can change counts, offsets, lengths and rule outcomes. Reader scans apply the limit after resolving matches in each chunk. Chunk-local matcher scratch and evidence byte sizes have separate costs. |

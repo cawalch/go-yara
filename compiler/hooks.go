@@ -29,20 +29,20 @@ const (
 	hookBitRuleGate         hookMask = 1 << 8
 	hookBitMaxMatches       hookMask = 1 << 9
 	hookBitChunkBoundary    hookMask = 1 << 10
-
-	defaultPollByteStride = 64 * 1024
 )
 
 // ScanTelemetry tracks aggregate and phase metrics for scans.
 // Keep one sink per scanner; fields are not atomic. Read/reset between scans.
 // Counters-only mode does not read the clock. Latency mode also accounts for
 // failed attempts after preflight; failures do not increment TotalMatches.
-// Reader/file I/O and caller idle time between block operations are excluded.
+// Reader scans include time spent reading and processing the stream. File
+// setup and caller idle time between block operations are excluded.
 type ScanTelemetry struct {
 	// TotalScans counts calls passing preflight; BlockScanner counts Finish calls.
 	TotalScans uint64
-	// BytesScanned counts supplied bytes, including repeated/overlapping blocks,
-	// not the logical filesize. BlockScanner records their sum at Finish.
+	// BytesScanned counts supplied bytes. Reader calls count bytes delivered
+	// to primary scan windows and exclude lookahead and overlap. BlockScanner
+	// counts all supplied block bytes at Finish, including overlap.
 	BytesScanned int64
 	// TotalMatches counts returned public rules; Matches records 1 for true.
 	TotalMatches uint64
@@ -136,7 +136,10 @@ type PollProgress struct {
 	TotalRules     int
 }
 
-// PollHook is invoked cooperatively at stride intervals during scans.
+// PollHook runs at cooperative checkpoints. Byte scans poll before pattern
+// search, and Scan also polls during rule evaluation. Reader scans poll before
+// each primary chunk. Block scanners poll before each block and during Finish.
+// Use context cancellation between checkpoints.
 type PollHook func(ctx context.Context, p PollProgress) (PollAction, time.Duration)
 
 // RuleProfile captures performance attributes of an evaluated rule.
@@ -154,7 +157,7 @@ type RuleProfile struct {
 }
 
 // PatternProfile describes a live pattern in a completed rule match context.
-// It is emitted once per evaluated rule context (per block for BlockScanner),
+// It is emitted once per evaluated rule context (per block or reader window),
 // before condition evaluation, and not again during result materialization.
 // Optimized-away rules/patterns and failed contexts have no profile. Boolean
 // and fast scans may retain only enough occurrences to decide the condition.
@@ -245,14 +248,17 @@ const (
 // MatchHook is invoked immediately when a public rule matches.
 type MatchHook func(rule *CompiledRule, match RuleMatch) MatchAction
 
-// ChunkHook is called at chunk or block boundaries in streaming scans.
+// ChunkHook runs after processing each reader window or block. Reader offsets
+// and sizes describe primary bytes. matchesFound counts rules with retained
+// occurrences so far, before final condition evaluation.
 type ChunkHook func(offset int64, chunkSize int, matchesFound int)
 
 // ScanHooks groups synchronous scanner callbacks. Callbacks must not mutate or
 // reenter the active scanner. OnScanStart runs after preflight; OnScanComplete
 // runs once on successful return, after final telemetry updates, including an
-// intentional stop-on-match. Errors have no completion callback. For Matches,
-// its result argument is nil; for rule-list methods only MatchedRules is set.
+// intentional stop-on-match. Errors have no completion callback. Matches and
+// MatchesReader pass a nil result. Rule-list methods populate only MatchedRules.
+// Reader start callbacks receive -1 because the input length is unknown.
 // BlockScanner emits lifecycle events at Finish; OnChunk observes block input.
 type ScanHooks struct {
 	OnScanStart    func(ctx context.Context, inputLen int64)
@@ -261,7 +267,8 @@ type ScanHooks struct {
 	OnPrefilter PrefilterHook
 	RuleGate    RuleGateFunc
 
-	OnPoll         PollHook
+	OnPoll PollHook
+	// Deprecated: polling uses scan checkpoints. This field is ignored.
 	PollByteStride int
 
 	OnRuleEvaluated  RuleEfficiencyHook
@@ -303,14 +310,14 @@ func WithTelemetryLatency(sink *ScanTelemetry) ScannerOption {
 	}
 }
 
-// WithPollHook configures cooperative polling and throttling.
-func WithPollHook(hook PollHook, byteStride int) ScannerOption {
+// WithPollHook configures cooperative polling and throttling at scan
+// checkpoints. The stride argument is retained for source compatibility.
+func WithPollHook(hook PollHook, _ int) ScannerOption {
 	return func(s *Scanner) {
 		if s.hooks == nil {
 			s.hooks = &ScanHooks{}
 		}
 		s.hooks.OnPoll = hook
-		s.hooks.PollByteStride = byteStride
 		s.recomputeHookMask()
 	}
 }
@@ -418,7 +425,9 @@ func (s *Scanner) applyHooksConfig() {
 			s.ruleGate = h.RuleGate
 		}
 	}
-	s.applyPollHookConfig(h)
+	if h.OnPoll != nil {
+		s.hookMask |= hookBitPoll
+	}
 	if h.OnRuleEvaluated != nil {
 		s.hookMask |= hookBitRuleProfile
 	}
@@ -443,18 +452,6 @@ func (s *Scanner) applyHooksConfig() {
 	}
 }
 
-func (s *Scanner) applyPollHookConfig(h *ScanHooks) {
-	if h.OnPoll == nil {
-		return
-	}
-	s.hookMask |= hookBitPoll
-	if h.PollByteStride > 0 {
-		s.pollByteStride = h.PollByteStride
-	} else if s.pollByteStride <= 0 {
-		s.pollByteStride = defaultPollByteStride
-	}
-}
-
 func (s *Scanner) dispatchScanStart(ctx context.Context, inputLen int64) {
 	if s.hooks != nil && s.hooks.OnScanStart != nil {
 		s.hooks.OnScanStart(ctx, inputLen)
@@ -471,6 +468,14 @@ func (s *Scanner) dispatchPrefilter(decision PrefilterDecision) {
 	if s.hooks != nil && s.hooks.OnPrefilter != nil {
 		s.hooks.OnPrefilter(decision)
 	}
+}
+
+func (s *Scanner) pollByteInput(ctx context.Context, length int) error {
+	return s.dispatchPoll(ctx, PollProgress{
+		TotalBytes: int64(length),
+		Phase:      PhasePatternSearch,
+		TotalRules: len(s.program.Rules),
+	})
 }
 
 func (s *Scanner) dispatchPoll(ctx context.Context, progress PollProgress) error {

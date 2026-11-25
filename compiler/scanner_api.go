@@ -51,7 +51,7 @@ func (s *Scanner) MatchesReaderWithContext(ctx context.Context, r io.Reader) (bo
 		s.streamEarlyTermination = prevEarly
 	}()
 
-	result, err := s.ScanReaderWithContext(ctx, r)
+	result, err := s.scanReaderWithContext(ctx, r, true)
 	if err != nil {
 		return false, err
 	}
@@ -81,6 +81,25 @@ func (s *Scanner) MatchesWithContext(ctx context.Context, data []byte) (matched 
 	if !ready || err != nil {
 		return false, err
 	}
+	if s.hookMask&(hookBitPoll|hookBitTelemetry|hookBitScanLifecycle) != 0 {
+		return s.matchesWithObservedLifecycle(ctx, data)
+	}
+	if s.compactPrefilterFanoutRejects(ctx, data) {
+		if ctx == context.Background() {
+			return false, nil
+		}
+		return false, ctx.Err()
+	}
+	s.clearRuleResultsIfDirty()
+	return s.matchesUnobserved(ctx, data)
+}
+
+func (s *Scanner) matchesWithObservedLifecycle(ctx context.Context, data []byte) (matched bool, err error) {
+	if s.hookMask&hookBitPoll != 0 {
+		if err := s.pollByteInput(ctx, len(data)); err != nil {
+			return false, err
+		}
+	}
 	if s.compactPrefilterFanoutRejects(ctx, data) {
 		err := ctx.Err()
 		if err == nil && s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
@@ -93,13 +112,10 @@ func (s *Scanner) MatchesWithContext(ctx context.Context, data []byte) (matched 
 		return false, err
 	}
 	s.clearRuleResultsIfDirty()
-	if s.hookMask&(hookBitTelemetry|hookBitScanLifecycle) != 0 {
-		return s.matchesWithObservedLifecycle(ctx, data)
+	if s.hookMask&(hookBitTelemetry|hookBitScanLifecycle) == 0 {
+		return s.matchesUnobserved(ctx, data)
 	}
-	return s.matchesUnobserved(ctx, data)
-}
 
-func (s *Scanner) matchesWithObservedLifecycle(ctx context.Context, data []byte) (matched bool, err error) {
 	start := s.beginScan(ctx, int64(len(data)))
 	defer func() {
 		count := 0
@@ -181,13 +197,17 @@ func (s *Scanner) ScanReader(r io.Reader) (*ScanResult, error) {
 // starting at the current stream position. For sequential readers, the entire
 // capture must fit in the retained header for TLS metadata to be available.
 func (s *Scanner) ScanReaderWithContext(ctx context.Context, r io.Reader) (*ScanResult, error) {
+	return s.scanReaderWithContext(ctx, r, false)
+}
+
+func (s *Scanner) scanReaderWithContext(ctx context.Context, r io.Reader, boolean bool) (*ScanResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return s.scanReaderStream(ctx, r)
+	return s.scanReaderStream(ctx, r, boolean)
 }
 
 // ScanFile scans the given file.
