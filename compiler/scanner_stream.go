@@ -3,10 +3,12 @@ package compiler
 import (
 	"bufio"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"math"
+	"slices"
 	"time"
 
 	"github.com/cawalch/go-yara/regex"
@@ -37,9 +39,7 @@ func (cp *CompiledProgram) maxStreamingOverlap() int {
 			maxLen = max(maxLen, streamingRegexLength(pattern))
 		}
 		for _, p := range rule.HexPatterns {
-			if p != nil && len(p.Tokens) > maxLen {
-				maxLen = len(p.Tokens)
-			}
+			maxLen = max(maxLen, streamingHexLength(p))
 		}
 	}
 	// Add 4096 context margin for lookahead, fullword boundaries, and bounded regex spans.
@@ -47,6 +47,76 @@ func (cp *CompiledProgram) maxStreamingOverlap() int {
 		return math.MaxInt
 	}
 	return maxLen + 4096
+}
+
+func addSaturatedInt(a, b int) int {
+	if a >= math.MaxInt-b {
+		return math.MaxInt
+	}
+	return a + b
+}
+
+func streamingHexLength(p *HexPattern) int {
+	if p == nil {
+		return 0
+	}
+	minSpan, maxSpan, bounded := hexTokensSpanRange(p.Tokens)
+	if bounded {
+		return maxSpan
+	}
+	return max(minSpan, 2*regexVerificationDistance)
+}
+
+func hexTokensSpanRange(tokens []HexPatternToken) (minSpan, maxSpan int, bounded bool) {
+	bounded = true
+	for _, tok := range tokens {
+		switch tok.Kind {
+		case HexTokenByte, HexTokenMasked, HexTokenWildcard:
+			minSpan = addSaturatedInt(minSpan, 1)
+			if bounded {
+				maxSpan = addSaturatedInt(maxSpan, 1)
+			}
+		case HexTokenJump:
+			if tok.Min > 0 {
+				minSpan = addSaturatedInt(minSpan, tok.Min)
+			}
+			if tok.Max < 0 {
+				bounded = false
+			} else if bounded && tok.Max > 0 {
+				maxSpan = addSaturatedInt(maxSpan, tok.Max)
+			}
+		case HexTokenAlt:
+			altMin, altMax, altBounded := hexAltSpanRange(tok.Alternatives)
+			minSpan = addSaturatedInt(minSpan, altMin)
+			if !altBounded {
+				bounded = false
+			} else if bounded {
+				maxSpan = addSaturatedInt(maxSpan, altMax)
+			}
+		}
+	}
+	return minSpan, maxSpan, bounded
+}
+
+func hexAltSpanRange(alts [][]HexPatternToken) (minSpan, maxSpan int, bounded bool) {
+	if len(alts) == 0 {
+		return 0, 0, true
+	}
+	bounded = true
+	first := true
+	for _, alt := range alts {
+		subMin, subMax, subBounded := hexTokensSpanRange(alt)
+		if first || subMin < minSpan {
+			minSpan = subMin
+			first = false
+		}
+		if !subBounded {
+			bounded = false
+		} else if bounded && subMax > maxSpan {
+			maxSpan = subMax
+		}
+	}
+	return minSpan, maxSpan, bounded
 }
 
 // streamingRegexLength is the maximum byte length across the enabled encodings.
@@ -147,31 +217,65 @@ func (s *Scanner) effectiveStreamOverlapSize() (int, error) {
 	return overlap, nil
 }
 
-func ruleObservesFilesize(rule *CompiledRule) bool {
+func ruleStreamEarlyTerminationProfile(rule *CompiledRule) (forbidden, readsHeader bool) {
 	if rule == nil {
-		return false
+		return false, false
 	}
-	for _, b := range rule.Bytecode {
-		if b == byte(OpFilesize) || b == byte(OpAssertFilesize) {
-			return true
+	bc := rule.Bytecode
+	for ip := 0; ip < len(bc); {
+		op := Opcode(bc[ip])
+		operandSize, valid := bytecodeOperandSize(op)
+		if !valid || ip+1+operandSize > len(bc) {
+			return true, false
 		}
+		switch {
+		case op == OpFilesize || op == OpAssertFilesize || op == OpEntrypoint ||
+			op == OpPushRule || op == OpPushRuleRef || op == OpInitRule:
+			return true, false
+		case (op >= OpReadInt && op <= OpUint64be) || op == OpAssertUint16Eq || op == OpAssertUint32Eq:
+			readsHeader = true
+		case op == OpCall:
+			fn, _ := decodeBuiltinCall(binary.LittleEndian.Uint32(bc[ip+1 : ip+5]))
+			if fn == builtinMD5 || fn == builtinSHA1 || fn == builtinSHA256 || fn >= firstModuleFunctionID {
+				readsHeader = true
+			}
+		}
+		ip += 1 + operandSize
 	}
 	for _, a := range rule.assertions {
-		if a.Opcode == OpAssertFilesize {
-			return true
+		switch a.Opcode {
+		case OpAssertFilesize:
+			return true, false
+		case OpAssertUint16Eq, OpAssertUint32Eq:
+			readsHeader = true
 		}
 	}
-	return false
+	for _, hc := range rule.HeaderConstraints {
+		if hc.Kind == HeaderIntegerEquals {
+			readsHeader = true
+		}
+	}
+	if len(rule.ModuleFunctions) > 0 {
+		readsHeader = true
+	}
+	return false, readsHeader
 }
 
-func (s *Scanner) canRuleEarlyTerminate(rule *CompiledRule) bool {
+func (s *Scanner) canRuleEarlyTerminate(rule *CompiledRule, headerLen int) bool {
 	if rule == nil || rule.IsPrivate || !rule.ConditionMonotonic {
 		return false
 	}
 	if len(rule.moduleAccessNames) > 0 {
 		return false
 	}
-	if ruleObservesFilesize(rule) {
+	if s.program != nil && len(s.program.dependencies[rule.Name]) > 0 {
+		return false
+	}
+	forbidden, readsHeader := ruleStreamEarlyTerminationProfile(rule)
+	if forbidden {
+		return false
+	}
+	if readsHeader && headerLen < streamingHeaderSize {
 		return false
 	}
 	return true
@@ -183,6 +287,7 @@ type streamAccumulator struct {
 	headerBlock        []byte
 	accumulatedSpans   map[string]map[string][]matchSpan
 	accumulatedMatches map[string]map[string][]Match
+	captureInputs      map[string]map[string][]captureInput
 }
 
 // retainHeader appends only the unseen prefix bytes from a contiguous scan window.
@@ -218,6 +323,12 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+
+	s.skipUnmatchedNonText = false
+	fastScan := s.fastScan
+	defer func() {
+		s.fastScan = fastScan
+	}()
 
 	reader := contextReader{ctx: ctx, reader: r}
 	chunkSize := s.effectiveStreamChunkSize()
@@ -328,7 +439,9 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 			}
 		}
 
+		s.fastScan = false
 		usesharedAutomaton, prepErr := s.prepareChunkPatternScan(ctx, windowData)
+		s.fastScan = fastScan
 		if prepErr != nil {
 			return nil, prepErr
 		}
@@ -357,10 +470,14 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 
 			s.matchCtx.ResetForRule(rule, windowData)
 			s.configureRuleMatchContext(ctx, rule)
-
+			savedMaxMatches := s.matchCtx.maxMatchesPerPattern
+			// Never clip text patterns per-window before window.owns() runs;
+			// a boundary fullword match at index 0 can be provisional/unowned.
+			s.matchCtx.maxMatchesPerPattern = 0
 			if err := s.addRuleTextMatches(ctx, rule, windowData, usesharedAutomaton); err != nil {
 				return nil, err
 			}
+			s.matchCtx.maxMatchesPerPattern = savedMaxMatches
 			if s.fastScan && rule.FastScanSafe {
 				// Filter non-text candidates before clipping: the first local
 				// occurrence may be provisional or belong to an earlier window.
@@ -389,16 +506,14 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 					horizon = s.streamRegexHorizon(pattern)
 				}
 				needsEvidenceData := s.evidenceMax > 0 && len(rule.CaptureBindings[strID]) > 0
-				copyMatchData := recordMatches
 				for _, sp := range spans {
 					if !window.owns(sp, horizon) {
 						continue
 					}
-					absStart := chunkOffset + sp.Offset
-
 					if s.fastScan && rule.FastScanSafe && len(acc.accumulatedSpans[rule.Name][strID]) > 0 {
 						continue
 					}
+					absStart := chunkOffset + sp.Offset
 					if acc.accumulatedSpans[rule.Name] == nil {
 						acc.accumulatedSpans[rule.Name] = make(map[string][]matchSpan)
 					}
@@ -406,25 +521,16 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 						Offset: absStart,
 						Length: sp.Length,
 					})
-
-					if copyMatchData {
-						if acc.accumulatedMatches[rule.Name] == nil {
-							acc.accumulatedMatches[rule.Name] = make(map[string][]Match)
-						}
-						raw := windowData[sp.Offset : sp.Offset+int64(sp.Length)]
-						copyLen := len(raw)
-						truncated := false
-						if !needsEvidenceData && s.matchDataMax > 0 && copyLen > s.matchDataMax {
-							copyLen = s.matchDataMax
-							truncated = true
-						}
-						mBytes := copyBytes(raw[:copyLen])
-						acc.accumulatedMatches[rule.Name][strID] = append(acc.accumulatedMatches[rule.Name][strID], Match{
-							Pattern:              strID,
-							Offset:               absStart,
-							Length:               sp.Length,
-							MatchedData:          mBytes,
-							MatchedDataTruncated: truncated,
+					if recordMatches {
+						acc.recordSpanMatch(streamMatchRecord{
+							rule:              rule,
+							strID:             strID,
+							span:              sp,
+							absStart:          absStart,
+							chunkOffset:       chunkOffset,
+							windowData:        windowData,
+							matchDataMax:      s.matchDataMax,
+							needsEvidenceData: needsEvidenceData,
 						})
 					}
 				}
@@ -455,6 +561,7 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 }
 
 func (s *Scanner) prepareChunkPatternScan(ctx context.Context, chunkData []byte) (bool, error) {
+	s.skipUnmatchedNonText = false
 	if len(s.program.Rules) <= 1 {
 		s.nonTextCache.reset(s.program.nonTextCacheSize)
 		if err := s.populateFixedRegexCache(ctx, chunkData, &s.nonTextCache); err != nil {
@@ -488,7 +595,7 @@ func (s *Scanner) checkStreamEarlyTermination(
 	headerCtx := &MatchContext{Blocks: blocks, FileSize: currentStreamOffset, cancelDone: ctx.Done()}
 
 	for _, rule := range s.program.Rules {
-		if !s.canRuleEarlyTerminate(rule) || !s.hasMatchingTag(rule) {
+		if !s.shouldEvaluateRule(rule) || !s.hasMatchingTag(rule) || !s.canRuleEarlyTerminate(rule, len(acc.headerBlock)) {
 			continue
 		}
 		if len(acc.accumulatedSpans[rule.Name]) == 0 {
@@ -606,7 +713,7 @@ func (s *Scanner) evaluateStreamMatches(
 		}
 	}
 
-	err = s.finalizeMatchedRules(ctx, result, func(rule *CompiledRule) (map[string][]Match, map[string][]EvidenceFinding, error) {
+	err = s.finalizeMatchedRulesCore(ctx, result, s.streamEarlyTermination, func(rule *CompiledRule) (map[string][]Match, map[string][]EvidenceFinding, error) {
 		var ruleMatches map[string][]Match
 		if !s.omitMatches {
 			ruleMatches = materializeStreamRuleMatches(acc, rule)
@@ -614,7 +721,7 @@ func (s *Scanner) evaluateStreamMatches(
 				result.Matches[rule.Name] = ruleMatches
 			}
 		}
-		evidence, evErr := s.populateStreamRuleEvidence(ctx, rule, ruleMatches)
+		evidence, evErr := s.populateStreamRuleEvidence(ctx, acc, rule, ruleMatches)
 		return ruleMatches, evidence, evErr
 	})
 	s.clearRuleResultsIfDirty()
@@ -625,8 +732,72 @@ func (s *Scanner) evaluateStreamMatches(
 	return result, nil
 }
 
+type streamMatchRecord struct {
+	rule              *CompiledRule
+	strID             string
+	span              matchSpan
+	absStart          int64
+	chunkOffset       int64
+	windowData        []byte
+	matchDataMax      int
+	needsEvidenceData bool
+}
+
+func (acc *streamAccumulator) recordSpanMatch(rec streamMatchRecord) {
+	if rec.rule.IsPrivateString(rec.strID) {
+		return
+	}
+	if acc.accumulatedMatches[rec.rule.Name] == nil {
+		acc.accumulatedMatches[rec.rule.Name] = make(map[string][]Match)
+	}
+	raw := rec.windowData[rec.span.Offset : rec.span.Offset+int64(rec.span.Length)]
+	copyLen := len(raw)
+	truncated := false
+	if rec.matchDataMax > 0 && copyLen > rec.matchDataMax {
+		copyLen = rec.matchDataMax
+		truncated = true
+	}
+	acc.accumulatedMatches[rec.rule.Name][rec.strID] = append(acc.accumulatedMatches[rec.rule.Name][rec.strID], Match{
+		Pattern:              rec.strID,
+		Offset:               rec.absStart,
+		Length:               rec.span.Length,
+		MatchedData:          copyBytes(raw[:copyLen]),
+		MatchedDataTruncated: truncated,
+	})
+	if !rec.needsEvidenceData {
+		return
+	}
+	if acc.captureInputs == nil {
+		acc.captureInputs = make(map[string]map[string][]captureInput)
+	}
+	if acc.captureInputs[rec.rule.Name] == nil {
+		acc.captureInputs[rec.rule.Name] = make(map[string][]captureInput)
+	}
+	margin := 0
+	if hasPositiveBindingGroups(rec.rule.CaptureBindings[rec.strID]) {
+		margin = streamingLookaheadContext
+	}
+	srcStart := max(0, int(rec.span.Offset)-margin)
+	srcEnd := min(len(rec.windowData), int(rec.span.Offset)+rec.span.Length+margin)
+	startInSrc := int(rec.span.Offset) - srcStart
+	acc.captureInputs[rec.rule.Name][rec.strID] = append(acc.captureInputs[rec.rule.Name][rec.strID], captureInput{
+		data:  copyBytes(rec.windowData[srcStart:srcEnd]),
+		start: startInSrc,
+		end:   startInSrc + rec.span.Length,
+		base:  rec.chunkOffset + int64(srcStart),
+	})
+}
+
 func materializeStreamRuleMatches(acc *streamAccumulator, rule *CompiledRule) map[string][]Match {
 	if existing := acc.accumulatedMatches[rule.Name]; existing != nil {
+		for strID, ms := range existing {
+			if rule.IsPrivateString(strID) || len(ms) == 0 {
+				delete(existing, strID)
+			}
+		}
+		if len(existing) == 0 {
+			return nil
+		}
 		return existing
 	}
 	spansByPattern := acc.accumulatedSpans[rule.Name]
@@ -654,25 +825,84 @@ func materializeStreamRuleMatches(acc *streamAccumulator, rule *CompiledRule) ma
 	return out
 }
 
+//nolint:revive // argument-limit: stream evidence replay needs accumulator capture sources
 func (s *Scanner) populateStreamRuleEvidence(
 	ctx context.Context,
+	acc *streamAccumulator,
 	rule *CompiledRule,
 	ruleMatches map[string][]Match,
 ) (map[string][]EvidenceFinding, error) {
 	if s.evidenceMax <= 0 || len(rule.CaptureBindings) == 0 {
 		return nil, nil
 	}
+	var ruleCaptureInputs map[string][]captureInput
+	if acc != nil {
+		ruleCaptureInputs = acc.captureInputs[rule.Name]
+		for _, inputs := range ruleCaptureInputs {
+			if !slices.IsSortedFunc(inputs, compareCaptureInputs) {
+				slices.SortStableFunc(inputs, compareCaptureInputs)
+			}
+		}
+	}
 	return s.populateRuleEvidence(ctx, rule, ruleMatches, func(match Match) (captureInput, bool) {
-		if len(match.MatchedData) == 0 {
+		if inputs := ruleCaptureInputs[match.Pattern]; len(inputs) > 0 {
+			if input, ok := findStreamCaptureInput(inputs, match); ok {
+				return input, true
+			}
+		}
+		if match.Length < 0 || (match.Length > 0 && len(match.MatchedData) < match.Length) {
 			return captureInput{}, false
 		}
 		return captureInput{
 			data:  match.MatchedData,
 			start: 0,
-			end:   len(match.MatchedData),
+			end:   match.Length,
 			base:  match.Offset,
 		}, true
 	})
+}
+
+func compareCaptureInputs(left, right captureInput) int {
+	leftOff := left.base + int64(left.start)
+	rightOff := right.base + int64(right.start)
+	if leftOff < rightOff {
+		return -1
+	}
+	if leftOff > rightOff {
+		return 1
+	}
+	leftLen := left.end - left.start
+	rightLen := right.end - right.start
+	if leftLen < rightLen {
+		return -1
+	}
+	if leftLen > rightLen {
+		return 1
+	}
+	return 0
+}
+
+func findStreamCaptureInput(inputs []captureInput, match Match) (captureInput, bool) {
+	idx, _ := slices.BinarySearchFunc(inputs, match.Offset, func(in captureInput, target int64) int {
+		off := in.base + int64(in.start)
+		if off < target {
+			return -1
+		}
+		if off > target {
+			return 1
+		}
+		return 0
+	})
+	for i := idx; i < len(inputs); i++ {
+		in := inputs[i]
+		if in.base+int64(in.start) != match.Offset {
+			break
+		}
+		if in.end-in.start == match.Length {
+			return in, true
+		}
+	}
+	return captureInput{}, false
 }
 
 type contextReaderAt struct {

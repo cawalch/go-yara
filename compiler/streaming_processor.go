@@ -225,7 +225,11 @@ func (sp *StreamingProcessor) processFileChunks(
 		chunkOffset := primaryStart - int64(overlapLen)
 		windowLen := overlapLen + n
 
-		if lookahead, _ := reader.Peek(streamingBoundaryContext); len(lookahead) > 0 {
+		lookahead, peekErr := reader.Peek(streamingBoundaryContext)
+		if peekErr != nil && peekErr != io.EOF {
+			return nil, fmt.Errorf("peek streaming input: %w", peekErr)
+		}
+		if len(lookahead) > 0 {
 			copy(buf[windowLen:], lookahead)
 			windowLen += len(lookahead)
 		}
