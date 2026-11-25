@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,13 +18,31 @@ import (
 	"github.com/cawalch/go-yara/compiler"
 )
 
-// libyaraOracle locates the reference `yara` binary. When it is absent the
-// differential tests skip instead of failing, so the suite stays portable.
-func libyaraOracle(t testing.TB) string {
-	t.Helper()
+//go:embed oracle-version.txt
+var oracleVersion string
+
+var locateOracle = sync.OnceValues(func() (string, error) {
 	bin, err := exec.LookPath("yara")
 	if err != nil {
-		t.Skip("libyara `yara` binary not found; differential test requires it")
+		return "", err
+	}
+	output, err := exec.Command(bin, "--version").Output()
+	if err != nil {
+		return "", fmt.Errorf("%s --version: %w", bin, err)
+	}
+	want := strings.TrimSpace(oracleVersion)
+	if got := strings.TrimSpace(string(output)); got != want {
+		return "", fmt.Errorf("found yara %s at %s; put yara %s first on PATH", got, bin, want)
+	}
+	return bin, nil
+})
+
+// libyaraOracle skips differential tests when the pinned CLI is unavailable.
+func libyaraOracle(t testing.TB) string {
+	t.Helper()
+	bin, err := locateOracle()
+	if err != nil {
+		t.Skipf("libyara differential oracle unavailable: %v", err)
 	}
 	return bin
 }

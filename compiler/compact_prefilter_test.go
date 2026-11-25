@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -320,12 +321,28 @@ func TestCompactPrefilterAutomatonReplacement(t *testing.T) {
 	if gate == nil || gate.automaton != program.sharedAutomaton {
 		t.Fatal("compact gate must retain the original shared automaton")
 	}
-	program.SetsharedAutomaton(nil)
-	scanner := program.NewScanner()
-	defer scanner.Close()
-	if scanner.compactPrefilterRejects(context.Background(), []byte("event")) {
-		t.Fatal("replaced shared automaton must bypass the compact gate")
+	data := []byte("event rare_one value=1234 rare_two")
+	want, err := program.Scan(data)
+	if err != nil || len(want.MatchedRules) != 2 {
+		t.Fatalf("initial Scan = (%+v, %v), want first and second", want, err)
 	}
+	var workers sync.WaitGroup
+	workers.Go(func() {
+		for range 20 {
+			if err := program.SetsharedAutomaton(nil); err == nil {
+				t.Error("SetsharedAutomaton accepted replacement")
+			}
+		}
+	})
+	workers.Go(func() {
+		for range 20 {
+			got, err := program.Scan(data)
+			if err != nil || !reflect.DeepEqual(got, want) {
+				t.Errorf("Scan during attempted replacement = (%+v, %v), want %+v", got, err, want)
+			}
+		}
+	})
+	workers.Wait()
 	compactPrefilterParity(t, program, [][]byte{[]byte("event"), []byte("event rare_one"), []byte("event rare_two"), nil})
 }
 
@@ -503,5 +520,42 @@ func TestCompactPrefilterMatchesAbsentWithoutTables(t *testing.T) {
 	empty := &compactPrefilter{automaton: &acAutomaton{}}
 	if compactPrefilterMatchesAbsent([]byte("anything"), empty) {
 		t.Fatal("gate without tables rejected input")
+	}
+}
+
+// cancelAfterPreflight cancels a real context immediately after its first Err check.
+type cancelAfterPreflight struct {
+	context.Context
+	cancel context.CancelFunc
+}
+
+func (ctx cancelAfterPreflight) Err() error {
+	err := ctx.Context.Err()
+	ctx.cancel()
+	return err
+}
+
+func TestMatchesCanceledAfterPreflight(t *testing.T) {
+	p, err := NewCompiler().CompileSource(compactPrefilterRules)
+	if err != nil || p.compactPrefilter == nil {
+		t.Fatalf("compile compact prefilter: %v", err)
+	}
+	for _, options := range [][]ScannerOption{nil, {WithTelemetryLatency(&ScanTelemetry{})}} {
+		scanner := p.NewScanner(options...)
+		for _, reader := range []bool{false, true} {
+			ctx, cancel := context.WithCancel(t.Context())
+			probe := cancelAfterPreflight{ctx, cancel}
+			var matched bool
+			if reader {
+				matched, err = scanner.MatchesReaderWithContext(probe, strings.NewReader("event rare_two"))
+			} else {
+				matched, err = scanner.MatchesWithContext(probe, []byte("event rare_two"))
+			}
+			cancel()
+			if matched || !errors.Is(err, context.Canceled) {
+				t.Fatalf("reader=%v, matched=%v, err=%v", reader, matched, err)
+			}
+		}
+		scanner.Close()
 	}
 }

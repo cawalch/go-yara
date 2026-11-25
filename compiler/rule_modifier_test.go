@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -145,7 +146,7 @@ rule normal {
 }
 
 func TestGlobalRuleOneFails(t *testing.T) {
-	// One global rule fails -> non-global rules are skipped
+	// A failed global suppresses all public matches.
 	source := `
 global rule global1 {
 	condition: true
@@ -170,13 +171,33 @@ rule normal {
 		t.Fatalf("Scan: %v", err)
 	}
 
-	// Only global1 should appear in results (global2 fails, normal is skipped)
-	if len(result.MatchedRules) != 1 {
-		t.Fatalf("Expected 1 match, got %d: %v", len(result.MatchedRules), result.MatchedRules)
+	check := func(method string, result *ScanResult, err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatalf("%s: %v", method, err)
+		}
+		if len(result.MatchedRules) != 0 || !result.RuleResults["global1"] || result.RuleResults["global2"] {
+			t.Errorf("%s: got matched rules %v, rule results %v", method, result.MatchedRules, result.RuleResults)
+		}
 	}
-	if result.MatchedRules[0].Rule != "global1" {
-		t.Errorf("Expected global1, got %s", result.MatchedRules[0].Rule)
+	check("Scan", result, err)
+	matched, err := scanner.Matches([]byte("dummy"))
+	if err != nil || matched {
+		t.Fatalf("Matches = %v, %v", matched, err)
 	}
+	matches, err := scanner.MatchingRules([]byte("dummy"))
+	if err != nil || len(matches) != 0 {
+		t.Fatalf("MatchingRules = %v, %v", matches, err)
+	}
+	result, err = scanner.ScanReader(strings.NewReader("dummy"))
+	check("ScanReader", result, err)
+	block := program.NewBlockScanner()
+	defer block.Close()
+	if err := block.Scan(0, []byte("dummy")); err != nil {
+		t.Fatal(err)
+	}
+	result, err = block.Finish()
+	check("BlockScanner.Finish", result, err)
 }
 
 func TestGlobalRuleWithData(t *testing.T) {
