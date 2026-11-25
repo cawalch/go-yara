@@ -85,9 +85,6 @@ func (s *Scanner) MatchesWithContext(ctx context.Context, data []byte) (matched 
 		return s.matchesWithObservedLifecycle(ctx, data)
 	}
 	if s.compactPrefilterFanoutRejects(ctx, data) {
-		if ctx == context.Background() {
-			return false, nil
-		}
 		return false, ctx.Err()
 	}
 	s.clearRuleResultsIfDirty()

@@ -312,8 +312,10 @@ func (s *Scanner) populateRuleMatchContext(
 	if s.matchBudgets != nil {
 		s.limitRuleMatches(rule, base)
 	}
-	if err := s.addRuleTextMatches(ctx, rule, input.data, input.usesharedAutomaton, !input.booleanMatchOnly && !s.omitMatches); err != nil {
-		return err
+	if rule.automaton != nil {
+		if err := s.addRuleTextMatches(ctx, rule, input.data, input.usesharedAutomaton, !input.booleanMatchOnly && !s.omitMatches); err != nil {
+			return err
+		}
 	}
 
 	if s.matchLimitErr != nil {

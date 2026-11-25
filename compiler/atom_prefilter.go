@@ -145,17 +145,14 @@ type prefilterStringInfo struct {
 // Must run after cache indices are assigned, since it captures cacheIndex.
 func buildPrefilterStrings(rule *CompiledRule) {
 	infos := make([]prefilterStringInfo, len(rule.IndexToStringID))
+	rule.hasUnusedText = false
 	for i, identifier := range rule.IndexToStringID {
 		infos[i] = resolvePrefilterString(rule, identifier)
-	}
-	rule.prefilterStrings = infos
-	rule.hasUnusedText = false
-	for identifier := range rule.TextPatterns {
-		if rule.IsStringDead(identifier) {
+		if infos[i].class == prefilterStringDead && rule.StringKinds[identifier] == StringKindText {
 			rule.hasUnusedText = true
-			break
 		}
 	}
+	rule.prefilterStrings = infos
 	buildLocalNonTextEntries(rule)
 }
 
