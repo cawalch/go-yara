@@ -27,6 +27,9 @@ func addBoundedRegexVerifications(ctx *MatchContext, id string, pattern RegexPat
 	ascii := hasModifier(modifiers, ast.StringModifierASCII)
 	encodings, count := regexEncodingOrder(pattern.Flags, wide, ascii)
 	greedy := pattern.Flags&regex.FlagsGreedy != 0
+	cappedSuffix := pattern.verification.CappedLiteralSuffix && ctx.maxMatchSpan > 0 && ctx.maxMatchSpan <= regexVerificationDistance
+	directLazy := cappedSuffix && !greedy && count == 1 && !encodings[0] && ctx.matchFilter == nil
+	lastLazyStart := -1
 	for _, isWide := range encodings[:count] {
 		flags := pattern.Flags &^ (regex.FlagsWide | regex.FlagsExhaustive | regex.FlagsFullwordEnd | regex.FlagsBackwards)
 		step := 1
@@ -109,7 +112,7 @@ func addBoundedRegexVerifications(ctx *MatchContext, id string, pattern RegexPat
 				starts := []int{at}
 				backwardExceeded := false
 				backwardLimit := regexVerificationDistance
-				if ctx.maxMatchSpan > 0 && ctx.maxMatchSpan <= regexVerificationDistance && pattern.verification.CappedLiteralSuffix {
+				if cappedSuffix {
 					// Every start consumes the same suffix. A start farther back cannot fit.
 					backwardLimit = ctx.maxMatchSpan - (end - at)
 					if backwardLimit < 0 {
@@ -122,6 +125,19 @@ func addBoundedRegexVerifications(ctx *MatchContext, id string, pattern RegexPat
 						return
 					}
 					backwardExceeded = backwardLimit == regexVerificationDistance && bs.BudgetExceeded()
+				}
+				if directLazy {
+					// Backward verification returns starts in descending order. With
+					// one repeated byte and one literal suffix, a later suffix that
+					// reaches a previous start also reaches every intervening start.
+					// The first suffix wins each of those starts for a lazy repeat.
+					for i := len(starts) - 1; i >= 0; i-- {
+						if start := starts[i]; start > lastLazyStart {
+							ctx.AddMatch(Match{Pattern: id, Offset: int64(start), Length: end - start})
+							lastLazyStart = start
+						}
+					}
+					continue
 				}
 				kept := 0
 				for _, start := range starts {
