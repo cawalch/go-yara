@@ -3,6 +3,7 @@ package integration
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"testing"
 
 	"github.com/cawalch/go-yara/compiler"
@@ -141,4 +142,46 @@ func TestLibyaraStringStatisticsCompatibility(t *testing.T) {
 			assertReleaseScanResult(t, map[string][]span{"signed_chars": nil}, result)
 		})
 	}
+}
+
+// Treat native char signedness as an oracle property and check the other
+// ordering operators against the variant identified by the probe.
+func TestLibyaraStringOrderingCompatibility(t *testing.T) {
+	const source = `
+rule signed_probe { condition: "\xff" < "a" }
+rule signed_order {
+    condition:
+        "\x80" < "a" and "\xff" <= "\x01" and "a" > "\x80" and "\x01" >= "\xff"
+}
+rule unsigned_order {
+    condition:
+        "\x80" > "a" and "\xff" >= "\x01" and "a" < "\x80" and "\x01" <= "\xff"
+}
+rule common_order {
+    condition: "\x80" < "\x81" and "\x80" <= "\x80" and "a" < "a\x80"
+}`
+	oracle, err := scanWithLibyara(t, libyaraOracle(t), source, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unsigned := map[string][]span{"unsigned_order": nil, "common_order": nil}
+	wantOracle := unsigned
+	_, signed := oracle["signed_probe"]
+	if signed {
+		wantOracle = map[string][]span{"signed_probe": nil, "signed_order": nil, "common_order": nil}
+	}
+	if !reflect.DeepEqual(oracle, wantOracle) {
+		t.Fatalf("libyara ordering = %v, want %v for signed char = %t", oracle, wantOracle, signed)
+	}
+	t.Logf("libyara uses signed char for string ordering: %t", signed)
+
+	program, err := compiler.NewCompiler().CompileSourceWithContext(context.Background(), source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := program.Scan(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertReleaseScanResult(t, unsigned, result)
 }
