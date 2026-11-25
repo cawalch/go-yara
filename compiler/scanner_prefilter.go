@@ -323,15 +323,15 @@ func (s *Scanner) populateRuleMatchContext(
 		return nil
 	}
 
-	canShortCircuit := !s.blockScan &&
-		rule.ConditionMonotonic &&
-		input.booleanMatchOnly &&
-		(len(rule.RegexPatterns) > 0 || len(rule.HexPatterns) > 0)
-
-	if !canShortCircuit || !s.matchCtx.hasSpans() || !s.isRuleConditionSatisfied(rule) {
+	hasNonText := len(rule.RegexPatterns) > 0 || len(rule.HexPatterns) > 0
+	canShortCircuit := !s.blockScan && rule.ConditionMonotonic && input.booleanMatchOnly
+	if hasNonText && (!canShortCircuit || !s.matchCtx.hasSpans() || !s.isRuleConditionSatisfied(rule)) {
 		if err := s.addLocalNonTextMatches(ctx, rule, input.data, &s.nonTextCache, input.usesharedAutomaton, canShortCircuit); err != nil {
 			return err
 		}
+	}
+	if !hasNonText && scanCanceled(s.matchCtx.cancelDone) {
+		return ctx.Err()
 	}
 	if s.matchLimitErr != nil {
 		return s.matchLimitErr
@@ -339,7 +339,9 @@ func (s *Scanner) populateRuleMatchContext(
 	if len(rule.fixedOffsets) != 0 {
 		s.matchCtx.filterFixedOffsets(rule.fixedOffsets, base)
 	}
-	s.matchCtx.normalizeMatches()
+	if s.matchCtx.maxMatchesPerPattern != 1 {
+		s.matchCtx.normalizeMatches()
+	}
 	if s.blockScan {
 		s.matchCtx.forEachSpanSlice(func(_ string, spans []matchSpan) {
 			for index := range spans {
