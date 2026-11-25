@@ -14,8 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-* Consolidated size-literal parsing on `internal/int64ops.ParseSizeLiteral`, matching libyara’s uppercase `KB`/`MB`/`GB`/`TB` grammar and accepting `0x`/`0X` hexadecimal prefixes consistently.
-* Default `parser.New` to the compiler’s 1,000-level recursion limit and propagate the limit through nested quantifier expressions.
+* Consolidated size-literal parsing on `internal/int64ops.ParseSizeLiteral`, requiring uppercase `KB`/`MB`/`GB`/`TB` suffixes and accepting `0x`/`0X` hexadecimal prefixes consistently.
+* Default `parser.New` to the compiler’s 1,000-level recursion limit and apply it to nested quantifier expressions.
 * Documented unsigned byte ordering for string comparisons and classified libyara’s signed-byte ordering in differential tests ([#727](https://github.com/cawalch/go-yara/issues/727)).
 * Updated `github.com/cawalch/go-pe` dependency from `v0.1.0` to `v0.2.0` ([#625](https://github.com/cawalch/go-yara/pull/625)).
 * Removed test-only helpers from production files, deduplicated shared helpers across `compiler`, `parser`, `semantic`, `regex`, and `internal/pefixture`, and applied Go 1.27 `go fix` modernizations ([#626](https://github.com/cawalch/go-yara/pull/626), [#627](https://github.com/cawalch/go-yara/pull/627), [#628](https://github.com/cawalch/go-yara/pull/628), [#630](https://github.com/cawalch/go-yara/pull/630)).

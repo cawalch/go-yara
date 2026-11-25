@@ -1501,6 +1501,7 @@ func (ac *acAutomaton) Clone() *acAutomaton {
 		outputRanges:  slices.Clone(ac.outputRanges),
 		stateCount:    ac.stateCount,
 		stateHint:     ac.stateHint,
+		patternBytes:  ac.patternBytes,
 		deferred:      ac.deferred,
 		compiled:      ac.compiled,
 		StringCount:   len(internalStrings),
@@ -1677,6 +1678,7 @@ func (ac *acAutomaton) Reset() {
 	ac.outputRanges = nil
 	ac.stateCount = 0
 	ac.stateHint = 1
+	ac.patternBytes = 0
 
 	// Reset compilation state
 	ac.compiledOnce = sync.Once{}

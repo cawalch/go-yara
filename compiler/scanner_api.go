@@ -197,7 +197,8 @@ func (s *Scanner) ScanFile(filename string) (*ScanResult, error) {
 
 // ScanFileWithContext scans the given file.
 // For regular files >= 128 KB, it attempts to use zero-copy memory mapping via fs.MapFile.
-// If memory mapping fails, file is < 128 KB, or for special files, it falls back to standard file read.
+// Smaller regular files and mapping failures use a standard read or the reader
+// lane when the context is cancellable. Non-regular files use the reader lane.
 func (s *Scanner) ScanFileWithContext(ctx context.Context, filename string) (*ScanResult, error) {
 	if ctx == nil {
 		ctx = context.Background()

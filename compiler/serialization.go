@@ -588,7 +588,7 @@ func deserializeProgram(payload serializedProgram, modules []Module) (*CompiledP
 		rules[index] = rule
 	}
 
-	program := newCompiledProgram(rules)
+	program := newCompiledProgramWithCacheValidation(rules, true)
 	program.Stats = map[string]any{
 		"rule_count":          len(rules),
 		"total_bytecode_size": program.GetTotalBytecodeSize(),

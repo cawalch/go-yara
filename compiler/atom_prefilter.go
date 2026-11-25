@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"math"
@@ -224,7 +225,7 @@ func resolvePrefilterString(rule *CompiledRule, identifier string) prefilterStri
 	}
 }
 
-func assignNonTextCacheIndices(rules []*CompiledRule) (int, error) {
+func assignNonTextCacheIndices(rules []*CompiledRule, validateCacheKeys bool) (int, error) {
 	entries := make(map[nonTextCacheKey]nonTextCacheEntry)
 	for ruleIndex, rule := range rules {
 		if rule.IsDead {
@@ -240,15 +241,16 @@ func assignNonTextCacheIndices(rules []*CompiledRule) (int, error) {
 			if pattern.cacheKey != "" {
 				key := nonTextCacheKey{kind: StringKindRegex, cacheKey: pattern.cacheKey}
 				entry, exists := entries[key]
-				if exists {
+				if !exists {
+					entry = nonTextCacheEntry{index: len(entries), ruleIndex: ruleIndex, strID: strID}
+					entries[key] = entry
+				} else if validateCacheKeys {
 					prior := rules[entry.ruleIndex]
-					if !sameRegexCachePattern(prior.RegexPatterns[entry.strID], pattern) ||
+					priorPattern := prior.RegexPatterns[entry.strID]
+					if !sameRegexCachePattern(&priorPattern, &pattern) ||
 						regexCacheModifiers(prior.StringModifiers[entry.strID]) != regexCacheModifiers(rule.StringModifiers[strID]) {
 						return 0, fmt.Errorf("conflicting regex cache key %q", pattern.cacheKey)
 					}
-				} else {
-					entry = nonTextCacheEntry{index: len(entries), ruleIndex: ruleIndex, strID: strID}
-					entries[key] = entry
 				}
 				pattern.cacheIndex = entry.index
 			}
@@ -268,14 +270,14 @@ func assignNonTextCacheIndices(rules []*CompiledRule) (int, error) {
 			}
 			key := nonTextCacheKey{kind: StringKindHex, cacheKey: pattern.cacheKey}
 			entry, exists := entries[key]
-			if exists {
+			if !exists {
+				entry = nonTextCacheEntry{index: len(entries), ruleIndex: ruleIndex, strID: strID}
+				entries[key] = entry
+			} else if validateCacheKeys {
 				representative := rules[entry.ruleIndex].HexPatterns[entry.strID]
 				if !sameHexCachePattern(representative, pattern) {
 					return 0, fmt.Errorf("conflicting hex cache key %q", pattern.cacheKey)
 				}
-			} else {
-				entry = nonTextCacheEntry{index: len(entries), ruleIndex: ruleIndex, strID: strID}
-				entries[key] = entry
 			}
 			pattern.cacheIndex = entry.index
 		}
@@ -295,13 +297,45 @@ type nonTextCacheEntry struct {
 	strID     string
 }
 
-func sameRegexCachePattern(left, right RegexPattern) bool {
-	// Matching plans can affect which spans are verified. Capture replay uses
-	// its own bytecode after a span has already been selected.
-	left.cacheIndex, right.cacheIndex = 0, 0
-	left.CaptureCode, right.CaptureCode = nil, nil
-	left.CaptureGroups, right.CaptureGroups = nil, nil
-	return reflect.DeepEqual(left, right)
+func sameRegexCachePattern(left, right *RegexPattern) bool {
+	// Capture replay is independent of the selected span. Bounded-class
+	// matching is derived from Code and Flags.
+	return left.Flags == right.Flags && bytes.Equal(left.Code, right.Code) &&
+		sameRegexCacheAtoms(left, right) &&
+		sameRegexCacheByteSets(left, right) &&
+		reflect.DeepEqual(left.boundedAlternation, right.boundedAlternation) &&
+		reflect.DeepEqual(left.verification, right.verification) &&
+		reflect.DeepEqual(left.leadingGap, right.leadingGap)
+}
+
+func sameRegexCacheAtoms(left, right *RegexPattern) bool {
+	return left.maxLength == right.maxLength && left.streamPriorityBound == right.streamPriorityBound &&
+		left.anchored == right.anchored && left.atomASCIINoCase == right.atomASCIINoCase &&
+		left.atomMinOffset == right.atomMinOffset && left.atomMaxOffset == right.atomMaxOffset &&
+		left.atomMaxSuffix == right.atomMaxSuffix &&
+		bytes.Equal(left.atom, right.atom) && bytes.Equal(left.wideAtom, right.wideAtom) &&
+		bytes.Equal(left.prefix, right.prefix) && bytes.Equal(left.widePrefix, right.widePrefix) &&
+		bytes.Equal(left.exactPrefixSuffix, right.exactPrefixSuffix) && bytes.Equal(left.wideExactPrefix, right.wideExactPrefix) &&
+		slices.EqualFunc(left.alternativeAtoms, right.alternativeAtoms, sameRegexPrefilterAtom) &&
+		slices.EqualFunc(left.wideAlternativeAtoms, right.wideAlternativeAtoms, sameRegexPrefilterAtom)
+}
+
+func sameRegexPrefilterAtom(left, right regexPrefilterAtom) bool {
+	return left.minOffset == right.minOffset && left.maxOffset == right.maxOffset &&
+		left.maxSuffix == right.maxSuffix && left.score == right.score &&
+		left.asciiNoCase == right.asciiNoCase && bytes.Equal(left.data, right.data)
+}
+
+func sameRegexCacheByteSets(left, right *RegexPattern) bool {
+	return left.byteSet == right.byteSet && left.byteSetMinOffset == right.byteSetMinOffset &&
+		left.byteSetMaxOffset == right.byteSetMaxOffset && left.byteSetCount == right.byteSetCount &&
+		left.byteSetLower == right.byteSetLower && left.byteSetUpper == right.byteSetUpper &&
+		left.byteSetContiguous == right.byteSetContiguous && bytes.Equal(left.byteSetValues, right.byteSetValues) &&
+		slices.Equal(left.fixedByteSets, right.fixedByteSets) &&
+		left.hasFirstByteSet == right.hasFirstByteSet && left.firstByteSet == right.firstByteSet &&
+		left.hasPrecedingByteSet == right.hasPrecedingByteSet && left.precedingByteSet == right.precedingByteSet &&
+		left.hasPrefixRepeat == right.hasPrefixRepeat && left.prefixRepeatClass == right.prefixRepeatClass &&
+		left.prefixRepeatMin == right.prefixRepeatMin && left.prefixRepeatMax == right.prefixRepeatMax
 }
 
 func regexCacheModifiers(modifiers []ast.StringModifier) uint {
@@ -316,8 +350,16 @@ func regexCacheModifiers(modifiers []ast.StringModifier) uint {
 }
 
 func sameHexCachePattern(left, right *HexPattern) bool {
-	return reflect.DeepEqual(left.Tokens, right.Tokens) &&
+	return slices.EqualFunc(left.Tokens, right.Tokens, sameHexCacheToken) &&
 		slices.Equal(left.XorKeys, right.XorKeys) && slices.Equal(left.XorRange, right.XorRange)
+}
+
+func sameHexCacheToken(left, right HexPatternToken) bool {
+	return left.Kind == right.Kind && left.Value == right.Value && left.Mask == right.Mask &&
+		left.Min == right.Min && left.Max == right.Max && left.Negated == right.Negated &&
+		slices.EqualFunc(left.Alternatives, right.Alternatives, func(a, b []HexPatternToken) bool {
+			return slices.EqualFunc(a, b, sameHexCacheToken)
+		})
 }
 
 func buildFixedRegexDispatch(rules []*CompiledRule) *fixedRegexDispatch {
