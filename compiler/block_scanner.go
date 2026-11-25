@@ -1,9 +1,11 @@
 package compiler
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"slices"
+	"sort"
 	"time"
 )
 
@@ -28,16 +30,30 @@ type MemoryBlock struct {
 // Native pcap requires a single contiguous block starting at offset 0 covering
 // the full logical file size; multi-block captures evaluate pcap.tls as undefined.
 //
+// With an active match limit, an error after a block is added is returned by
+// subsequent Scan and Finish calls until Reset discards the partial scan.
 // BlockScanner is not safe for concurrent use.
 type BlockScanner struct {
 	program       *CompiledProgram
 	scanner       *Scanner
 	blocks        []MemoryBlock
+	sortedBlocks  []MemoryBlock
+	outOfOrder    bool
+	blockLookup   map[int64]blockLookupEntry
+	indexedBlocks int
+	inputBytes    int64
 	matches       map[string]map[string][]Match
 	fileSize      int64
 	fileSizeSet   bool
 	profileCounts map[string]blockProfileCounts
 	scanErr       error // A capped scan stopped after the block was added.
+}
+
+// Each extension is a later block at the same base that is longer than every
+// earlier block at that base. This preserves first-covering-block lookup.
+type blockLookupEntry struct {
+	first      int
+	extensions []int
 }
 
 // NewBlockScanner creates an incremental scanner for a compiled program.
@@ -66,25 +82,42 @@ func (scanner *BlockScanner) SetFileSize(size int64) error {
 	return nil
 }
 
-// Scan adds and immediately pattern-scans one block.
+// Scan copies one block and immediately pattern-scans it.
 func (scanner *BlockScanner) Scan(base int64, data []byte) error {
 	return scanner.ScanWithContext(context.Background(), base, data)
 }
 
-// ScanWithContext adds and immediately pattern-scans one block. With an active
-// match limit, an error after adding the block is returned by subsequent Scan
-// and Finish calls until Reset discards the partially scanned input.
-func (scanner *BlockScanner) ScanWithContext(ctx context.Context, base int64, data []byte) (err error) {
+// ScanWithContext copies one block and immediately pattern-scans it.
+func (scanner *BlockScanner) ScanWithContext(ctx context.Context, base int64, data []byte) error {
+	return scanner.scanBlock(ctx, MemoryBlock{Base: base, Data: data}, false)
+}
+
+// ScanBorrowed adds and immediately pattern-scans one block without copying it.
+// Keep data unchanged until Reset or Close. The scanner can read it on every
+// call to Finish.
+func (scanner *BlockScanner) ScanBorrowed(base int64, data []byte) error {
+	return scanner.ScanBorrowedWithContext(context.Background(), base, data)
+}
+
+// ScanBorrowedWithContext adds and immediately pattern-scans one block without
+// copying it. Keep data unchanged until Reset or Close, even if a scan returns
+// an error.
+func (scanner *BlockScanner) ScanBorrowedWithContext(ctx context.Context, base int64, data []byte) error {
+	return scanner.scanBlock(ctx, MemoryBlock{Base: base, Data: data}, true)
+}
+
+func (scanner *BlockScanner) scanBlock(ctx context.Context, block MemoryBlock, borrowed bool) (err error) {
 	if scanner == nil || scanner.program == nil || scanner.scanner == nil {
 		return errors.New("block scanner is closed or has no program")
 	}
 	if scanner.scanErr != nil {
 		return scanner.scanErr
 	}
+	base := block.Base
 	if base < 0 {
 		return errors.New("block base must be non-negative")
 	}
-	if int64(len(data)) > int64(^uint64(0)>>1)-base {
+	if int64(len(block.Data)) > int64(^uint64(0)>>1)-base {
 		return errors.New("block end offset overflows int64")
 	}
 	if err := ctx.Err(); err != nil {
@@ -107,9 +140,15 @@ func (scanner *BlockScanner) ScanWithContext(ctx context.Context, base int64, da
 		previous := scanner.scanner.enterScanPhase(PhasePatternSearch)
 		defer scanner.scanner.leaveScanPhase(previous)
 	}
-	blockData := append([]byte(nil), data...)
-	block := MemoryBlock{Base: base, Data: blockData}
+	if !borrowed {
+		block.Data = append([]byte(nil), block.Data...)
+	}
+	if previous := len(scanner.blocks) - 1; previous >= 0 && base < scanner.blocks[previous].Base {
+		scanner.outOfOrder = true
+	}
 	scanner.blocks = append(scanner.blocks, block)
+	blockData := block.Data
+	scanner.inputBytes += int64(len(blockData))
 	if !scanner.fileSizeSet && base+int64(len(blockData)) > scanner.fileSize {
 		scanner.fileSize = base + int64(len(blockData))
 	}
@@ -214,7 +253,7 @@ func (scanner *BlockScanner) ScanWithContext(ctx context.Context, base int64, da
 		})
 	}
 	if s.hookMask&hookBitChunkBoundary != 0 {
-		s.dispatchChunk(base, len(data), len(scanner.matches))
+		s.dispatchChunk(base, len(blockData), len(scanner.matches))
 	}
 	return nil
 }
@@ -240,12 +279,8 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (result *Sca
 	if err := s.scanError(); err != nil {
 		return nil, err
 	}
-	var size int64
-	for _, block := range scanner.blocks {
-		size += int64(len(block.Data))
-	}
 	if s.hookMask&(hookBitTelemetry|hookBitScanLifecycle) != 0 {
-		started := s.beginScan(ctx, size)
+		started := s.beginScan(ctx, scanner.inputBytes)
 		defer func() {
 			count := 0
 			if result != nil {
@@ -256,17 +291,10 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (result *Sca
 	}
 	result = s.initStreamScanResult()
 
-	blocks := append([]MemoryBlock(nil), scanner.blocks...)
-	slices.SortStableFunc(blocks, func(left, right MemoryBlock) int {
-		switch {
-		case left.Base < right.Base:
-			return -1
-		case left.Base > right.Base:
-			return 1
-		default:
-			return 0
-		}
-	})
+	blocks := scanner.blocksInBaseOrder()
+	if !s.omitMatches && len(scanner.matches) > 0 && (s.matchDataMax > 0 || s.matchContextEnabled || s.evidenceMax > 0) {
+		scanner.indexMatchBlocks()
+	}
 	headerContext := &MatchContext{Blocks: blocks, FileSize: scanner.fileSize, cancelDone: ctx.Done()}
 
 	for _, rule := range scanner.program.Rules {
@@ -381,17 +409,38 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (result *Sca
 	return result, nil
 }
 
+func (scanner *BlockScanner) blocksInBaseOrder() []MemoryBlock {
+	if !scanner.outOfOrder {
+		return scanner.blocks
+	}
+	if len(scanner.sortedBlocks) != len(scanner.blocks) {
+		scanner.sortedBlocks = append(scanner.sortedBlocks[:0], scanner.blocks...)
+		slices.SortStableFunc(scanner.sortedBlocks, func(left, right MemoryBlock) int {
+			return cmp.Compare(left.Base, right.Base)
+		})
+	}
+	return scanner.sortedBlocks
+}
+
 // Reset discards all blocks and accumulated matches while retaining options.
+// It invalidates evidence returned with WithBorrowedEvidence.
 func (scanner *BlockScanner) Reset() {
 	if scanner == nil {
 		return
 	}
 	clear(scanner.blocks)
 	scanner.blocks = scanner.blocks[:0]
+	clear(scanner.sortedBlocks)
+	scanner.sortedBlocks = scanner.sortedBlocks[:0]
+	scanner.outOfOrder = false
+	clear(scanner.blockLookup)
+	scanner.indexedBlocks = 0
+	scanner.inputBytes = 0
 	if scanner.scanner != nil {
 		scanner.scanner.resetMatchLimits()
 		scanner.scanner.matchCtx.Reset(nil)
 		scanner.scanner.moduleCache.reset()
+		scanner.scanner.resetBorrowedEvidence()
 	}
 	scanner.scanErr = nil
 	clear(scanner.matches)
@@ -500,15 +549,59 @@ func (scanner *BlockScanner) populateMatchEvidence(ctx context.Context, matches 
 	return nil
 }
 
-func (scanner *BlockScanner) blockForMatch(match Match) *MemoryBlock {
-	for index := range scanner.blocks {
-		block := &scanner.blocks[index]
-		if block.Base == match.Base && match.Offset >= block.Base &&
-			match.Offset+int64(match.Length) <= block.Base+int64(len(block.Data)) {
-			return block
+func (scanner *BlockScanner) indexMatchBlocks() {
+	if len(scanner.blocks) <= 1 {
+		return
+	}
+	if scanner.blockLookup == nil {
+		scanner.blockLookup = make(map[int64]blockLookupEntry, len(scanner.blocks))
+	}
+	for index := scanner.indexedBlocks; index < len(scanner.blocks); index++ {
+		block := scanner.blocks[index]
+		entry, found := scanner.blockLookup[block.Base]
+		if !found {
+			scanner.blockLookup[block.Base] = blockLookupEntry{first: index}
+			continue
+		}
+		longest := entry.first
+		if count := len(entry.extensions); count > 0 {
+			longest = entry.extensions[count-1]
+		}
+		if len(block.Data) > len(scanner.blocks[longest].Data) {
+			entry.extensions = append(entry.extensions, index)
+			scanner.blockLookup[block.Base] = entry
 		}
 	}
-	return nil
+	scanner.indexedBlocks = len(scanner.blocks)
+}
+
+func (scanner *BlockScanner) blockForMatch(match Match) *MemoryBlock {
+	if match.Offset < match.Base {
+		return nil
+	}
+	end := match.Offset - match.Base + int64(match.Length)
+	if len(scanner.blocks) == 1 {
+		block := &scanner.blocks[0]
+		if block.Base == match.Base && end <= int64(len(block.Data)) {
+			return block
+		}
+		return nil
+	}
+	entry, found := scanner.blockLookup[match.Base]
+	if !found {
+		return nil
+	}
+	first := &scanner.blocks[entry.first]
+	if end <= int64(len(first.Data)) {
+		return first
+	}
+	index := sort.Search(len(entry.extensions), func(i int) bool {
+		return end <= int64(len(scanner.blocks[entry.extensions[i]].Data))
+	})
+	if index == len(entry.extensions) {
+		return nil
+	}
+	return &scanner.blocks[entry.extensions[index]]
 }
 
 type blockProfileCounts struct{ candidates, falseCandidates int }

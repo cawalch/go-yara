@@ -7,14 +7,14 @@ import (
 
 func TestProgramPreparationPreservesBorrowedRules(t *testing.T) {
 	program, err := NewCompiler().CompileSource(`
-rule first { strings: $a = /abc/ $b = { 61 62 63 } condition: all of them }
+rule first { strings: $a = /abc/ $b = { 61 62 63 } condition: $a at 0 and $b in (0..2) }
 rule second { strings: $a = "def" condition: first and $a }
 `)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var workers sync.WaitGroup
-	workers.Add(2)
+	workers.Add(3)
 	go func() {
 		defer workers.Done()
 		for range 20 {
@@ -29,6 +29,14 @@ rule second { strings: $a = "def" condition: first and $a }
 			rebuilt := NewCompiledProgram(program.Rules)
 			if matched, err := rebuilt.Matches([]byte("abcdef")); err != nil || !matched {
 				t.Errorf("rebuilt scan = (%v, %v)", matched, err)
+			}
+		}
+	}()
+	go func() {
+		defer workers.Done()
+		for range 20 {
+			if _, err := program.MarshalBinary(); err != nil {
+				t.Errorf("MarshalBinary: %v", err)
 			}
 		}
 	}()

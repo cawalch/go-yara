@@ -81,8 +81,10 @@ type CompiledProgram struct {
 }
 
 // NewCompiledProgram prepares compiled rules for scanning. Preparation errors
-// are returned by Validate and scan methods. Input rules remain borrowed and
-// immutable; derived per-program caches are owned by the returned program.
+// are returned by Validate and scan methods. The returned program owns its
+// rule structs, assertions, required and forbidden string lists, regex map,
+// hex map and pattern structs, and derived caches. It borrows the remaining
+// rule data, which callers must treat as immutable.
 func NewCompiledProgram(rules []*CompiledRule) *CompiledProgram {
 	owned := make([]*CompiledRule, len(rules))
 	for index, rule := range rules {
@@ -90,6 +92,7 @@ func NewCompiledProgram(rules []*CompiledRule) *CompiledProgram {
 			continue
 		}
 		copyRule := *rule
+		copyRule.assertions = slices.Clone(rule.assertions)
 		copyRule.requiredStrings = slices.Clone(rule.requiredStrings)
 		copyRule.forbiddenStrings = slices.Clone(rule.forbiddenStrings)
 		copyRule.RegexPatterns = maps.Clone(rule.RegexPatterns)
@@ -275,9 +278,12 @@ func (cp *CompiledProgram) SetExternalVariables(vars map[string]any) error {
 	return nil
 }
 
-// SetsharedAutomaton attaches the global multi-rule search tree to the compiled program
-func (cp *CompiledProgram) SetsharedAutomaton(automaton *acAutomaton) {
-	cp.sharedAutomaton = automaton
+// SetsharedAutomaton returns an error because the shared automaton and its
+// routing tables are built together when the program is created.
+//
+// Deprecated: Create a new compiled program to change its rules and automaton.
+func (*CompiledProgram) SetsharedAutomaton(*acAutomaton) error {
+	return errors.New("cannot replace a compiled program's shared automaton")
 }
 
 // GetRuleCount returns the number of compiled rules
