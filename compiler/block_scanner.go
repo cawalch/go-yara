@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"maps"
 	"slices"
 	"sort"
 	"time"
@@ -471,15 +472,30 @@ func (scanner *BlockScanner) Close() {
 }
 
 func normalizedBlockMatches(matches map[string][]Match) map[string][]Match {
-	if len(matches) == 0 {
-		return nil
-	}
-	result := make(map[string][]Match, len(matches))
+	// Finish only reads these slices and copies the matches it returns.
+	var result map[string][]Match
 	for id, perString := range matches {
-		copyMatches := append([]Match(nil), perString...)
-		result[id] = sortAndDedupeMatches(copyMatches)
+		if orderedBlockMatches(perString) {
+			continue
+		}
+		if result == nil {
+			result = maps.Clone(matches)
+		}
+		result[id] = sortAndDedupeMatches(slices.Clone(perString))
+	}
+	if result == nil {
+		return matches
 	}
 	return result
+}
+
+func orderedBlockMatches(matches []Match) bool {
+	for i := 1; i < len(matches); i++ {
+		if matches[i-1].Offset >= matches[i].Offset {
+			return false
+		}
+	}
+	return true
 }
 
 func sortAndDedupeMatches(matches []Match) []Match {
