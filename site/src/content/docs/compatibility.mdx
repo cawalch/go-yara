@@ -92,6 +92,7 @@ This input puts the same bytes under three kinds of rules. The text rule require
 | Integer `math.min` and `math.max` | Compare integers as unsigned values, matching YARA. |
 | Float or mixed numeric `min` and `max` | A go-yara extension: returns a float and uses signed numeric ordering. |
 | `string.to_int` without a base | Autodetects decimal, octal, and hexadecimal consistently across platforms. `"0b10"` is undefined; use `string.to_int("10", 2)`. |
+| String ordering (`<`, `<=`, `>`, `>=`) | Compares strings lexicographically by unsigned byte value. For example, `"\xff" > "a"`. Native libyara can order high bytes differently when C `char` is signed. |
 | String statistics on high bytes | Treats bytes as signed characters. Native results can differ where C `char` is unsigned. |
 | Range statistics | Treats bytes as unsigned values. |
 | Invalid ranges or conversions | Produces YARA's undefined value. A valid range beginning inside the input is truncated at EOF. |
