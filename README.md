@@ -24,7 +24,7 @@ The engine is designed for high-throughput scanning pipelines. It uses literal p
 
 | Engine | Strengths | Trade-offs |
 | --- | --- | --- |
-| **go-yara** | Pure Go (zero CGO, static cross-compilation, Wasm builds); direct Go host modules & `WithBorrowedEvidence` JSON streaming; deterministic format 20 caches; optional `GOEXPERIMENT=simd` prefiltering. | No bundled `elf`, `cuckoo`, or `dotnet` parsers; delayed PE imports and `signatures[i].valid_on`/`file_digest` remain unsupported. |
+| **go-yara** | Pure Go (zero CGO, static cross-compilation, Wasm builds); direct Go host modules & `WithBorrowedEvidence` JSON streaming; deterministic compiled rule caches; optional `GOEXPERIMENT=simd` prefiltering. | No bundled `elf`, `cuckoo`, or `dotnet` parsers; delayed PE imports and `signatures[i].valid_on`/`file_digest` remain unsupported. |
 | **libyara** | Reference YARA implementation with full `pe`, `elf`, `dotnet`, and `cuckoo` modules and broad ecosystem compatibility. | C library requiring CGO or native bindings in Go; single-engine C API. |
 | **YARA-X** | Rust engine with bundled `pe`/`elf`/`dotnet`, WebAssembly-compiled conditions, and strict modernized rule diagnostics. | Official Go binding requires CGO + native Rust/C library; documented syntax/regex differences from libyara. |
 
