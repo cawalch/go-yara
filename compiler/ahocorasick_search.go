@@ -397,6 +397,9 @@ func searchClassTableWithCancel[S ~uint16 | ~int32](ac *acAutomaton, rootTransit
 			if currentState == 0 && i >= linearUntil && len(data)-i > tailBytes {
 				candidate := ac.teddy.findCandidateWithCancel(data, i, done)
 				if candidate < 0 {
+					if scanCanceled(done) {
+						return
+					}
 					i = max(i, len(data)-tailBytes)
 					if i >= len(data) {
 						return
@@ -502,6 +505,9 @@ func searchTableWithCancel[S ~uint16 | ~int32](ac *acAutomaton, trans [][256]S, 
 			if currentState == 0 && i >= linearUntil && len(data)-i > tailBytes {
 				candidate := ac.teddy.findCandidateWithCancel(data, i, done)
 				if candidate < 0 {
+					if scanCanceled(done) {
+						return
+					}
 					i = max(i, len(data)-tailBytes)
 					if i >= len(data) {
 						return

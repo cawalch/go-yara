@@ -212,9 +212,14 @@ func TestStringCompilerEncodeToWideBytes(t *testing.T) {
 			want:  []byte{},
 		},
 		{
-			name:  "unicode_character",
+			name:  "utf8_raw_bytes",
 			input: "é",
-			want:  []byte{0xE9, 0x00},
+			want:  []byte{0xC3, 0x00, 0xA9, 0x00},
+		},
+		{
+			name:  "invalid_utf8_raw_bytes",
+			input: "\xff\x80",
+			want:  []byte{0xFF, 0x00, 0x80, 0x00},
 		},
 	}
 

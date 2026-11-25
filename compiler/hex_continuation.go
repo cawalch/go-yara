@@ -109,9 +109,8 @@ func (scratch *hexMatchScratch) matchSingleJump(tokens []HexPatternToken, data [
 	if head.Max < 0 || head.Max-minJump > hexLargeJumpSpan {
 		return scratch.matchLargeSingleJump(head, tail, data, pos, minJump, xorKey, onEnd)
 	}
-	for jump := minJump; jump <= head.Max; jump++ {
-		// Caller-built patterns can end in a jump. Preserve the original
-		// small-jump endpoint behavior even beyond the end of the input.
+	maxJump := min(head.Max, len(data)-pos)
+	for jump := minJump; jump <= maxJump; jump++ {
 		if len(tail) == 0 {
 			if !onEnd(pos + jump) {
 				return false
@@ -119,7 +118,7 @@ func (scratch *hexMatchScratch) matchSingleJump(tokens []HexPatternToken, data [
 		} else if end, ok := matchLinearHexPattern(tail, data, pos+jump, xorKey); ok && !onEnd(end) {
 			return false
 		}
-		if jump == head.Max {
+		if jump == maxJump {
 			break // Caller-built bounds may reach the platform's maximum int.
 		}
 	}
