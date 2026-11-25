@@ -440,6 +440,8 @@ _ = scanner.Scan(0x8000, payloadBlock)
 result, err := scanner.Finish()
 ```
 
+`Scan` copies each block for later condition evaluation. Use `ScanBorrowed` or `ScanBorrowedWithContext` to avoid that copy when the supplied bytes can remain unchanged until `Reset` or `Close`.
+
 > [!NOTE]
 > If a pattern spans a block boundary, you must supply overlapping bytes in the adjoining blocks. The scanner does not infer data across unprovided address ranges.
 
