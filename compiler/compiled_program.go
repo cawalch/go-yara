@@ -81,8 +81,10 @@ type CompiledProgram struct {
 }
 
 // NewCompiledProgram prepares compiled rules for scanning. Preparation errors
-// are returned by Validate and scan methods. Input rules remain borrowed and
-// immutable; derived per-program caches are owned by the returned program.
+// are returned by Validate and scan methods. The returned program owns its
+// rule structs, assertions, required and forbidden string lists, regex map,
+// hex map and pattern structs, and derived caches. It borrows the remaining
+// rule data, which callers must treat as immutable.
 func NewCompiledProgram(rules []*CompiledRule) *CompiledProgram {
 	owned := make([]*CompiledRule, len(rules))
 	for index, rule := range rules {
@@ -90,6 +92,7 @@ func NewCompiledProgram(rules []*CompiledRule) *CompiledProgram {
 			continue
 		}
 		copyRule := *rule
+		copyRule.assertions = slices.Clone(rule.assertions)
 		copyRule.requiredStrings = slices.Clone(rule.requiredStrings)
 		copyRule.forbiddenStrings = slices.Clone(rule.forbiddenStrings)
 		copyRule.RegexPatterns = maps.Clone(rule.RegexPatterns)
