@@ -133,7 +133,7 @@ func appendFixedByteSets(dst []ByteSet, node *Node, flags Flags) ([]ByteSet, boo
 		}
 		return dst, true
 	case NodeRange:
-		if node.Start != node.End || len(node.Children) != 1 {
+		if node.Unbounded || node.Start != node.End || len(node.Children) != 1 {
 			return nil, false
 		}
 		start := len(dst)

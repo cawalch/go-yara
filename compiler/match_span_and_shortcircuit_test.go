@@ -281,3 +281,116 @@ rule bounded_routing {
 		t.Fatalf("WithBooleanRouting + WithMaxMatchSpan(20) = %v, want %v (false)", got, want)
 	}
 }
+
+func TestWithMaxMatchSpanNoSyntheticEOF(t *testing.T) {
+	tests := []struct {
+		name    string
+		source  string
+		span    int
+		input   []byte
+		wantLen int // -1 means no match
+	}{
+		{
+			name:    "dollar_rejected_before_eof",
+			source:  `rule r { strings: $s = /abc[0-9]+$/ condition: $s }`,
+			span:    6,
+			input:   []byte("abc123456"),
+			wantLen: -1,
+		},
+		{
+			name:    "dollar_matches_at_real_eof",
+			source:  `rule r { strings: $s = /abc[0-9]+$/ condition: $s }`,
+			span:    6,
+			input:   []byte("abc123"),
+			wantLen: 6,
+		},
+		{
+			name:    "word_boundary_rejected_before_word_char",
+			source:  `rule r { strings: $s = /abc[0-9]+\b/ condition: $s }`,
+			span:    6,
+			input:   []byte("abc123456"),
+			wantLen: -1,
+		},
+		{
+			name:    "word_boundary_matches_before_nonword",
+			source:  `rule r { strings: $s = /abc[0-9]+\b/ condition: $s }`,
+			span:    6,
+			input:   []byte("abc123!"),
+			wantLen: 6,
+		},
+		{
+			name:    "non_word_boundary_matches_before_word_char",
+			source:  `rule r { strings: $s = /abc[0-9]{3}\B/ condition: $s }`,
+			span:    6,
+			input:   []byte("abc123456"),
+			wantLen: 6,
+		},
+		{
+			name:    "non_word_boundary_rejected_at_real_eof",
+			source:  `rule r { strings: $s = /abc[0-9]{3}\B/ condition: $s }`,
+			span:    6,
+			input:   []byte("abc123"),
+			wantLen: -1,
+		},
+		{
+			name:    "greedy_truncation_without_anchor_preserved",
+			source:  `rule r { strings: $s = /abc[0-9]+/ condition: $s }`,
+			span:    6,
+			input:   []byte("abc123456"),
+			wantLen: 6,
+		},
+		{
+			name:    "bounded_verification_dollar_rejected_before_eof",
+			source:  `rule r { strings: $s = /^a+[0-9]+$/ condition: $s }`,
+			span:    5003,
+			input:   []byte(strings.Repeat("a", 5000) + "123456"),
+			wantLen: -1,
+		},
+		{
+			name:    "bounded_verification_dollar_matches_at_real_eof",
+			source:  `rule r { strings: $s = /^a+[0-9]+$/ condition: $s }`,
+			span:    5003,
+			input:   []byte(strings.Repeat("a", 5000) + "123"),
+			wantLen: 5003,
+		},
+		{
+			name:    "wide_dollar_rejected_before_eof",
+			source:  `rule r { strings: $s = /abc[0-9]+$/ wide condition: $s }`,
+			span:    12,
+			input:   []byte{'a', 0, 'b', 0, 'c', 0, '1', 0, '2', 0, '3', 0, '4', 0},
+			wantLen: -1,
+		},
+		{
+			name:    "wide_dollar_matches_at_real_eof",
+			source:  `rule r { strings: $s = /abc[0-9]+$/ wide condition: $s }`,
+			span:    12,
+			input:   []byte{'a', 0, 'b', 0, 'c', 0, '1', 0, '2', 0, '3', 0},
+			wantLen: 12,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			program, err := NewCompiler().CompileSource(tc.source)
+			if err != nil {
+				t.Fatalf("CompileSource() error = %v", err)
+			}
+			s := NewScanner(program, WithMaxMatchSpan(tc.span))
+			defer s.Close()
+			res, err := s.Scan(tc.input)
+			if err != nil {
+				t.Fatalf("Scan() error = %v", err)
+			}
+			matches := res.Matches["r"]["$s"]
+			if tc.wantLen < 0 {
+				if len(matches) != 0 {
+					t.Fatalf("got %+v, want no match", matches)
+				}
+				return
+			}
+			if len(matches) != 1 || matches[0].Length != tc.wantLen {
+				t.Fatalf("got %+v, want 1 match of length %d", matches, tc.wantLen)
+			}
+		})
+	}
+}

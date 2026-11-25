@@ -243,10 +243,10 @@ func splitVerificationNode(node, target *regex.Node) (before, after *regex.Node,
 			right = verificationConcat(right, rest)
 		case regex.NodeRange:
 			end := node.End
-			if end != 65535 {
+			if !node.Unbounded && end > 0 {
 				end--
 			}
-			rest := &regex.Node{Kind: regex.NodeRange, Start: node.Start - 1, End: end, Greedy: node.Greedy, Children: node.Children}
+			rest := &regex.Node{Kind: regex.NodeRange, Start: node.Start - 1, End: end, Unbounded: node.Unbounded, Greedy: node.Greedy, Children: node.Children}
 			right = verificationConcat(right, rest)
 		}
 		return left, right, true
@@ -265,7 +265,7 @@ func reverseVerificationNode(node *regex.Node) *regex.Node {
 	if node.Kind == regex.NodeConcat {
 		slices.Reverse(children)
 	}
-	return &regex.Node{Kind: node.Kind, Start: node.Start, End: node.End, Greedy: node.Greedy, Children: children}
+	return &regex.Node{Kind: node.Kind, Start: node.Start, End: node.End, Unbounded: node.Unbounded, Greedy: node.Greedy, Children: children}
 }
 
 func compileVerificationPrefix(node *regex.Node) ([]byte, error) {

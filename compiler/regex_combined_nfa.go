@@ -76,7 +76,8 @@ type combinedRegexScratch struct {
 func (decoder *combinedRegexDecoder) decode(pattern RegexPattern) ([]combinedRegexInstruction, bool) {
 	code := pattern.Code
 	if len(code) == 0 || len(code) > 16384 || len(pattern.CaptureCode) > 0 || pattern.anchored ||
-		pattern.Flags&(regex.FlagsWide|regex.FlagsBackwards|regex.FlagsScan|regex.FlagsExhaustive|regex.FlagsFullwordEnd) != 0 {
+		pattern.boundedAlternation != nil ||
+		pattern.Flags&(regex.FlagsWide|regex.FlagsBackwards|regex.FlagsScan|regex.FlagsExhaustive|regex.FlagsFullwordEnd|regexForwardPriority) != 0 {
 		return nil, false
 	}
 	instructions := decoder.instructions[:0]

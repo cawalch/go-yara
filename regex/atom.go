@@ -41,6 +41,7 @@ type atomAnalysis struct {
 const (
 	maxLiteralAlternatives     = 256
 	maxLiteralAlternativeBytes = 16 << 10
+	maxExactAtomBytes          = 4096
 )
 
 // MandatoryLiteralAtoms returns only literals that are present in every match
@@ -496,22 +497,30 @@ func analyzeRangeAtoms(node *Node) atomAnalysis {
 		minLength: multiplyLength(child.minLength, minimum),
 		maxLength: multiplyLength(child.maxLength, maximum),
 	}
-	if node.End == math.MaxUint16 && child.maxLength > 0 {
+	if node.Unbounded && child.maxLength > 0 {
 		result.maxLength = -1
 	}
+	var repeated []byte
 	if minimum > 0 {
 		result.atoms = literalAtomsWithSuffix(child.atoms, repeatTailLength(node, 1))
 		result.byteAtoms = cloneByteSetAtoms(child.byteAtoms)
 		if child.isExact && len(child.exact) > 0 {
-			result.atoms = append(result.atoms, LiteralAtom{
-				Data:      repeatLiteral(child.exact, minimum),
-				MaxSuffix: repeatTailLength(node, minimum),
-			})
+			repeated = repeatLiteral(child.exact, minimum)
+			if repeated != nil {
+				result.atoms = append(result.atoms, LiteralAtom{
+					Data:      repeated,
+					MaxSuffix: repeatTailLength(node, minimum),
+				})
+			}
 		}
 	}
-	if minimum == maximum && child.isExact {
-		result.exact = repeatLiteral(child.exact, minimum)
-		result.isExact = true
+	if !node.Unbounded && minimum == maximum && child.isExact {
+		if len(child.exact) == 0 || minimum == 0 {
+			result.isExact = true
+		} else if repeated != nil {
+			result.exact = repeated
+			result.isExact = true
+		}
 	}
 	return result
 }
@@ -522,7 +531,7 @@ func repeatTailLength(node *Node, copies int) int {
 	if childMax == 0 {
 		return 0
 	}
-	if node.Kind == NodePlus || (node.End == math.MaxUint16 && node.Start != node.End) {
+	if node.Kind == NodePlus || node.Unbounded {
 		return -1
 	}
 	if int(node.End) <= copies {
@@ -780,7 +789,7 @@ func repeatLiteral(data []byte, count int) []byte {
 	if len(data) == 0 || count <= 0 {
 		return nil
 	}
-	if count > math.MaxInt/len(data) {
+	if count > maxExactAtomBytes/len(data) {
 		return nil
 	}
 	result := make([]byte, 0, len(data)*count)

@@ -121,7 +121,7 @@ func addBoundedRegexVerifications(ctx *MatchContext, id string, pattern RegexPat
 						if at > limit {
 							continue
 						}
-						capped, err := regex.ExecVerifyBatchWithCancel(nil, atom.Forward, data[:limit], flags, at, min(regexVerificationDistance, limit-at), ctx.cancelDone)
+						capped, err := regex.ExecVerifyBatchWithCancel(nil, atom.Forward, data, flags, at, min(regexVerificationDistance, limit-at), ctx.cancelDone)
 						if err != nil {
 							return
 						}

@@ -410,14 +410,14 @@ func TestParseOmittedLowerBound(t *testing.T) {
 		t.Fatalf("Parse(\"a{,0}\") want range {0, 0}")
 	}
 
-	// a{,} should parse as NodeRange with Start=0, End=65535 (unbounded)
+	// a{,} should not parse as a quantifier bound (falls back to literal characters)
 	ast, err = p.Parse("a{,}")
 	if err != nil {
 		t.Fatalf("Parse(\"a{,}\") unexpected error: %v", err)
 	}
 	n = ast.Root
-	if n.Kind != NodeRange || n.Start != 0 || n.End != 65535 {
-		t.Fatalf("Parse(\"a{,}\") want range {0, 65535}")
+	if n.Kind == NodeRange {
+		t.Fatalf("Parse(\"a{,}\") unexpectedly parsed as NodeRange %+v", n)
 	}
 
 	// In YARA, a{} parses as literal characters rather than being rejected
@@ -429,23 +429,23 @@ func TestParseOmittedLowerBound(t *testing.T) {
 func TestParseBoundWithWhitespace(t *testing.T) {
 	p := NewParser(0)
 	tests := []struct {
-		pattern  string
-		wantMin  uint16
-		wantMax  uint16
-		ungreedy bool
+		pattern   string
+		wantMin   uint16
+		wantMax   uint16
+		unbounded bool
+		ungreedy  bool
 	}{
-		{"a{ 3, 8 }", 3, 8, false},
-		{"a{3, 8}", 3, 8, false},
-		{"a{3 ,8}", 3, 8, false},
-		{"a{3 , 8}", 3, 8, false},
-		{"a{ , 5 }", 0, 5, false},
-		{"a{, 5}", 0, 5, false},
-		{"a{7, }", 7, 65535, false},
-		{"a{ 7 , }", 7, 65535, false},
-		{"a{ , }", 0, 65535, false},
-		{"a{ 5 }", 5, 5, false},
-		{"a{ 3, 8 }?", 3, 8, true},
-		{"a{ , 3 }?", 0, 3, true},
+		{"a{ 3, 8 }", 3, 8, false, false},
+		{"a{3, 8}", 3, 8, false, false},
+		{"a{3 ,8}", 3, 8, false, false},
+		{"a{3 , 8}", 3, 8, false, false},
+		{"a{ , 5 }", 0, 5, false, false},
+		{"a{, 5}", 0, 5, false, false},
+		{"a{7, }", 7, 65535, true, false},
+		{"a{ 7 , }", 7, 65535, true, false},
+		{"a{ 5 }", 5, 5, false, false},
+		{"a{ 3, 8 }?", 3, 8, false, true},
+		{"a{ , 3 }?", 0, 3, false, true},
 	}
 
 	for _, tt := range tests {
@@ -454,10 +454,19 @@ func TestParseBoundWithWhitespace(t *testing.T) {
 			t.Fatalf("Parse(%q) unexpected error: %v", tt.pattern, err)
 		}
 		n := ast.Root
-		if n.Kind != NodeRange || n.Start != tt.wantMin || n.End != tt.wantMax || n.Greedy != !tt.ungreedy {
-			t.Fatalf("Parse(%q) = {Start: %d, End: %d, Greedy: %v}, want {Start: %d, End: %d, Greedy: %v}",
-				tt.pattern, n.Start, n.End, n.Greedy, tt.wantMin, tt.wantMax, !tt.ungreedy)
+		if n.Kind != NodeRange || n.Start != tt.wantMin || n.End != tt.wantMax || n.Unbounded != tt.unbounded || n.Greedy != !tt.ungreedy {
+			t.Fatalf("Parse(%q) = {Start: %d, End: %d, Unbounded: %v, Greedy: %v}, want {Start: %d, End: %d, Unbounded: %v, Greedy: %v}",
+				tt.pattern, n.Start, n.End, n.Unbounded, n.Greedy, tt.wantMin, tt.wantMax, tt.unbounded, !tt.ungreedy)
 		}
+	}
+
+	// a{ , } with whitespace should also fall back to literals rather than NodeRange.
+	ast, err := p.Parse("a{ , }")
+	if err != nil {
+		t.Fatalf("Parse(\"a{ , }\") unexpected error: %v", err)
+	}
+	if ast.Root.Kind == NodeRange {
+		t.Fatalf("Parse(\"a{ , }\") unexpectedly parsed as NodeRange %+v", ast.Root)
 	}
 }
 

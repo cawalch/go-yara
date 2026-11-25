@@ -746,11 +746,11 @@ func (v regexPrefilterVerifier) verifyStart(dst []matchSpan, pattern *RegexPatte
 	}
 	if len(pattern.fixedByteSets) > 0 {
 		endOff, matched := fixedRegexMatchAt(pattern.fixedByteSets, v.data, v.isWide, start)
-		if !matched {
+		if !matched || (v.maxMatchSpan > 0 && endOff > v.maxMatchSpan) {
 			return dst, v.bs
 		}
 		match := Match{Pattern: v.strID, Offset: int64(start), Length: endOff}
-		if matchPassesModifiers(v.data, match, v.modifiers, v.isWide) {
+		if matchPassesModifiers(v.data, match, v.modifiers, v.isWide && v.flags&regexASCIIWordBoundary == 0) {
 			dst = append(dst, matchSpan{Offset: match.Offset, Length: match.Length})
 		}
 		return dst, v.bs
@@ -760,7 +760,7 @@ func (v regexPrefilterVerifier) verifyStart(dst []matchSpan, pattern *RegexPatte
 		bs = newRegexMatchBatch(v.matchCtx, pattern)
 	}
 	scanData, relStart, windowStart := boundedRegexWindow(v.data, start, pattern, v.isWide, v.maxMatchSpan)
-	matched, startOff, endOff := execRegexMatchAt(bs, pattern, scanData, v.flags, v.isWide, relStart, v.done)
+	matched, startOff, endOff := execRegexMatchAtBounded(bs, pattern, scanData, v.flags, v.isWide, relStart, v.maxMatchSpan, v.done)
 	if !matched {
 		if v.matchCtx != nil && bs.BudgetExceeded() {
 			v.matchCtx.verificationBudgetRejects++
@@ -773,7 +773,7 @@ func (v regexPrefilterVerifier) verifyStart(dst []matchSpan, pattern *RegexPatte
 		return dst, bs
 	}
 	match := Match{Pattern: v.strID, Offset: int64(absStart), Length: absEnd - absStart}
-	if matchPassesModifiers(v.data, match, v.modifiers, v.isWide) {
+	if matchPassesModifiers(v.data, match, v.modifiers, v.isWide && v.flags&regexASCIIWordBoundary == 0) {
 		dst = append(dst, matchSpan{Offset: match.Offset, Length: match.Length})
 	}
 	return dst, bs

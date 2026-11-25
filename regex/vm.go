@@ -47,7 +47,7 @@ func execBatchWithCancel(bs *VMBatch, code, input []byte, flags Flags, done <-ch
 		if bs != nil {
 			bs.Prepare(len(code))
 			var nextGen uint32
-			matched, _, nextGen = runMatchWithState(bs.st, bs.gen, code, input, flags, start, done, scan)
+			matched, _, nextGen = runMatchWithState(bs.st, bs.gen, code, input, flags, start, 0, done, scan)
 			bs.st.gen = nextGen
 			bs.gen = nextGen
 		} else {
@@ -112,6 +112,21 @@ func ExecMatchBatch(bs *VMBatch, code, input []byte, flags Flags, start int) (ma
 //
 //nolint:revive // cancellation signal accompanies the existing VM arguments
 func ExecMatchBatchWithCancel(bs *VMBatch, code, input []byte, flags Flags, start int, done <-chan struct{}) (bool, int, int, error) {
+	return execMatchBatchWithCancel(bs, code, input, flags, start, 0, done)
+}
+
+// ExecMatchBatchBoundedWithCancel is like ExecMatchBatchWithCancel, but caps
+// the maximum consumed match span at maxSpan bytes (when maxSpan > 0) while
+// preserving the full input slice so zero-width assertions ($, \b, \B) and
+// fullword checks see real trailing bytes rather than a synthetic EOF.
+//
+//nolint:revive // explicit span bound accompanies the existing VM arguments
+func ExecMatchBatchBoundedWithCancel(bs *VMBatch, code, input []byte, flags Flags, start, maxSpan int, done <-chan struct{}) (bool, int, int, error) {
+	return execMatchBatchWithCancel(bs, code, input, flags, start, maxSpan, done)
+}
+
+//nolint:revive // argument-limit: shared VM entry point
+func execMatchBatchWithCancel(bs *VMBatch, code, input []byte, flags Flags, start, maxSpan int, done <-chan struct{}) (bool, int, int, error) {
 	if vmCanceled(done) {
 		return false, -1, -1, context.Canceled
 	}
@@ -121,11 +136,11 @@ func ExecMatchBatchWithCancel(bs *VMBatch, code, input []byte, flags Flags, star
 	var matched bool
 	var end int
 	if bs == nil {
-		matched, end = runAtMatch(code, input, flags, start, done)
+		matched, end = runAtMatchBounded(code, input, flags, start, maxSpan, done)
 	} else {
 		bs.prepareFailureReuse(code, input, flags)
 		gen := bs.gen
-		matched, end = runAtMatchBatchWithCancel(bs, code, input, flags, start, done)
+		matched, end = runAtMatchBatchBoundedWithCancel(bs, code, input, flags, start, maxSpan, done)
 		bs.finishFailureReuse(matched, vmCanceled(done), int64(bs.gen-gen))
 	}
 	if vmCanceled(done) {
@@ -291,19 +306,36 @@ func newVMStep(code, s []byte, flags Flags, visited []uint32, cur, next *[]threa
 
 //nolint:revive // VM arguments shared with the batch entry point
 func runAtMatch(code, s []byte, flags Flags, start int, done <-chan struct{}) (bool, int) {
-	return runMatch(code, s, flags, start, done, false)
+	return runMatchBounded(code, s, flags, start, 0, done, false)
+}
+
+//nolint:revive // VM arguments shared with the bounded batch entry point
+func runAtMatchBounded(code, s []byte, flags Flags, start, maxSpan int, done <-chan struct{}) (bool, int) {
+	return runMatchBounded(code, s, flags, start, maxSpan, done, false)
 }
 
 func runMatch(code, s []byte, flags Flags, start int, done <-chan struct{}, scan bool) (matched bool, length int) { //nolint:cyclop,revive,maintidx,nakedret // performance-critical VM dispatch
+	return runMatchBounded(code, s, flags, start, 0, done, scan)
+}
+
+func runMatchBounded(code, s []byte, flags Flags, start, maxSpan int, done <-chan struct{}, scan bool) (matched bool, length int) { //nolint:cyclop,revive,maintidx,nakedret // performance-critical VM dispatch
 	st, gen := getVMState(len(code))
-	matched, length, nextGen := runMatchWithState(st, gen, code, s, flags, start, done, scan)
+	matched, length, nextGen := runMatchWithState(st, gen, code, s, flags, start, maxSpan, done, scan)
 	st.gen = nextGen
 	putVMState(st)
 	return matched, length
 }
 
+func boundedInputLimit(s []byte, start, maxSpan int) int {
+	limit := len(s)
+	if maxSpan > 0 && maxSpan < limit-start {
+		limit = start + maxSpan
+	}
+	return limit
+}
+
 //nolint:cyclop,revive,maintidx,nakedret // performance-critical VM dispatch
-func runMatchWithState(st *vmState, gen uint32, code, s []byte, flags Flags, start int, done <-chan struct{}, scan bool) (matched bool, length int, nextGen uint32) {
+func runMatchWithState(st *vmState, gen uint32, code, s []byte, flags Flags, start, maxSpan int, done <-chan struct{}, scan bool) (matched bool, length int, nextGen uint32) {
 	wide := (flags & FlagsWide) != 0
 
 	// Reuse caller-supplied buffers: visited (generation counter), cur, next thread slices.
@@ -326,9 +358,10 @@ func runMatchWithState(st *vmState, gen uint32, code, s []byte, flags Flags, sta
 	if wide {
 		advance = 2
 	}
+	limit := boundedInputLimit(s, start, maxSpan)
 	exhausted := false
 	pos := start
-	for ; pos < len(s); pos += advance {
+	for ; pos < limit; pos += advance {
 		if done != nil && (pos-start)&(vmCancellationInterval-1) == 0 && vmCanceled(done) {
 			exhausted = true
 			break
@@ -337,7 +370,7 @@ func runMatchWithState(st *vmState, gen uint32, code, s []byte, flags Flags, sta
 		if scan && addThread(code, s, &cur, 0, pos, visited, gen, flags) {
 			bestEnd = pos
 		}
-		if (scan && bestEnd >= 0) || pos+advance > len(s) {
+		if (scan && bestEnd >= 0) || pos+advance > limit {
 			break
 		}
 		if wide && !isWidePair(s, pos) {
@@ -353,7 +386,7 @@ func runMatchWithState(st *vmState, gen uint32, code, s []byte, flags Flags, sta
 			continue
 		}
 		if !scan && !wide && len(cur) == 1 {
-			if fastForwardGreedyTerminalLoop(code, &cur, s, &pos, flags, &bestEnd, done) {
+			if fastForwardGreedyTerminalLoop(code, &cur, s[:limit], &pos, flags, &bestEnd, done) {
 				if checkAndReturnIfExhausted(cur, &matched, &length, bestEnd) {
 					exhausted = true
 					break
@@ -374,7 +407,7 @@ func runMatchWithState(st *vmState, gen uint32, code, s []byte, flags Flags, sta
 		}
 	}
 
-	if !exhausted && scan && bestEnd < 0 && pos == len(s) {
+	if !exhausted && scan && bestEnd < 0 && pos == limit {
 		if addThread(code, s, &cur, 0, pos, visited, gen, flags) {
 			bestEnd = pos
 		}
@@ -395,7 +428,11 @@ func runMatchWithState(st *vmState, gen uint32, code, s []byte, flags Flags, sta
 // runAtMatchBatch is like runAtMatch but uses a pre-pinned VMBatch
 // to avoid sync.Pool Get/Put overhead. Use when calling runAtMatch
 // thousands of times in a tight loop (e.g., addRegexMatches).
-func runAtMatchBatchWithCancel(bs *VMBatch, code, s []byte, flags Flags, start int, done <-chan struct{}) (matched bool, length int) { //nolint:nestif,revive // argument-limit: performance-critical VM hot path; nested wide/ascii loops are intentional for VM dispatch
+func runAtMatchBatchWithCancel(bs *VMBatch, code, s []byte, flags Flags, start int, done <-chan struct{}) (matched bool, length int) { //nolint:revive // argument-limit: performance-critical VM hot path
+	return runAtMatchBatchBoundedWithCancel(bs, code, s, flags, start, 0, done)
+}
+
+func runAtMatchBatchBoundedWithCancel(bs *VMBatch, code, s []byte, flags Flags, start, maxSpan int, done <-chan struct{}) (matched bool, length int) { //nolint:nestif,revive // argument-limit: performance-critical VM hot path; nested wide/ascii loops are intentional for VM dispatch
 	wide := (flags & FlagsWide) != 0
 	var reuse *failureReuse
 	if bs.failure.learning || bs.failure.ready {
@@ -423,9 +460,10 @@ func runAtMatchBatchWithCancel(bs *VMBatch, code, s []byte, flags Flags, start i
 
 	stepFn := newVMStep(code, s, flags, visited, &cur, &next, &gen, &bestEnd)
 
+	limit := boundedInputLimit(s, start, maxSpan)
 	var exhausted bool
 	if wide { //nolint:nestif // wide/ascii loop dispatch is intentional for VM
-		for pos := start; pos+1 < len(s); pos += 2 {
+		for pos := start; pos+1 < limit; pos += 2 {
 			if done != nil && (pos-start)&(vmCancellationInterval-1) == 0 && vmCanceled(done) {
 				exhausted = true
 				break
@@ -453,7 +491,7 @@ func runAtMatchBatchWithCancel(bs *VMBatch, code, s []byte, flags Flags, start i
 			}
 		}
 	} else {
-		for pos := start; pos < len(s); pos++ {
+		for pos := start; pos < limit; pos++ {
 			if done != nil && (pos-start)&(vmCancellationInterval-1) == 0 && vmCanceled(done) {
 				exhausted = true
 				break
@@ -464,7 +502,7 @@ func runAtMatchBatchWithCancel(bs *VMBatch, code, s []byte, flags Flags, start i
 				break
 			}
 			if len(cur) == 1 {
-				if fastForwardGreedyTerminalLoop(code, &cur, s, &pos, flags, &bestEnd, done) {
+				if fastForwardGreedyTerminalLoop(code, &cur, s[:limit], &pos, flags, &bestEnd, done) {
 					if checkAndReturnIfExhausted(cur, &matched, &length, bestEnd) {
 						exhausted = true
 						break
