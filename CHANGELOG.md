@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+* Documented unsigned byte ordering for string comparisons and classified libyara’s signed-byte ordering in differential tests ([#727](https://github.com/cawalch/go-yara/issues/727)).
 * Updated `github.com/cawalch/go-pe` dependency from `v0.1.0` to `v0.2.0` ([#625](https://github.com/cawalch/go-yara/pull/625)).
 * Removed test-only helpers from production files, deduplicated shared helpers across `compiler`, `parser`, `semantic`, `regex`, and `internal/pefixture`, and applied Go 1.27 `go fix` modernizations ([#626](https://github.com/cawalch/go-yara/pull/626), [#627](https://github.com/cawalch/go-yara/pull/627), [#628](https://github.com/cawalch/go-yara/pull/628), [#630](https://github.com/cawalch/go-yara/pull/630)).
 

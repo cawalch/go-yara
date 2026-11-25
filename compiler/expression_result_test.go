@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/cawalch/go-yara/ast"
@@ -59,6 +60,51 @@ func TestComparisonExpressionResults(t *testing.T) {
 					t.Fatalf("Matches = (%v, %v), want %v", matched, err, test.want)
 				}
 			}
+		})
+	}
+}
+
+func TestStringOrderingUsesUnsignedBytes(t *testing.T) {
+	for _, tc := range []struct {
+		name, left, op, right string
+		want                  bool
+	}{
+		{"max_before_ascii", "\xff", "<", "a", false},
+		{"high_bit_before_ascii", "\x80", "<", "a", false},
+		{"max_after_ascii", "\xff", ">", "a", true},
+		{"max_before_control", "\xff", "<", "\x01", false},
+		{"high_bit_after_ascii", "\x80", ">", "a", true},
+		{"adjacent_high_bytes", "\x80", "<", "\x81", true},
+		{"max_at_most_ascii", "\xff", "<=", "a", false},
+		{"high_bit_at_least_ascii", "\x80", ">=", "a", true},
+		{"equal_high_bytes", "\xff", "<=", "\xff", true},
+		{"high_byte_after_prefix", "x\x80", ">", "xa", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Run("literal", func(t *testing.T) {
+				source := fmt.Sprintf(`rule r { condition: %q %s %q }`, tc.left, tc.op, tc.right)
+				program, err := NewCompiler().CompileSourceWithContext(context.Background(), source)
+				if err != nil {
+					t.Fatal(err)
+				}
+				got, err := program.Matches(nil)
+				if err != nil || got != tc.want {
+					t.Fatalf("Matches() = (%t, %v), want %t", got, err, tc.want)
+				}
+			})
+			t.Run("external", func(t *testing.T) {
+				source := `external left external right rule r { condition: left ` + tc.op + ` right }`
+				program, err := NewCompiler().CompileSourceWithContext(context.Background(), source)
+				if err != nil {
+					t.Fatal(err)
+				}
+				scanner := program.NewScanner(WithExternalVariables(map[string]any{"left": tc.left, "right": tc.right}))
+				defer scanner.Close()
+				got, err := scanner.Matches(nil)
+				if err != nil || got != tc.want {
+					t.Fatalf("Matches() = (%t, %v), want %t", got, err, tc.want)
+				}
+			})
 		})
 	}
 }
