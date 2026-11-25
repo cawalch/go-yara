@@ -96,12 +96,11 @@ type acAutomaton struct {
 	compactStates bool
 
 	// deferred marks per-rule automatons whose trie and transition tables are
-	// materialized lazily on the first local search. buildOnce guards that
+	// materialized lazily on the first local search. compiledOnce guards that
 	// construction so concurrent scanners sharing a program build it once.
-	deferred  bool
-	buildOnce sync.Once
+	deferred bool
 	// buildMu lets diagnostics inspect the tables without starting a deferred build.
-	buildMu  sync.RWMutex
+	buildMu  sync.Mutex
 	buildErr error
 
 	// Exported metadata retained for compatibility with existing callers.
@@ -414,16 +413,12 @@ func (ac *acAutomaton) insertPatternEdgesDenseFrom(currentState int32, config st
 // idempotent: it materializes the trie and tables immediately if a search has
 // not already done so.
 func (ac *acAutomaton) Compile() error {
+	if ac.deferred {
+		ac.ensureCompiled()
+		return ac.buildErr
+	}
 	var compileErr error
-
 	ac.compiledOnce.Do(func() {
-		if ac.deferred {
-			// Search entry points use buildOnce directly, so a search that ran
-			// first leaves nothing to do here.
-			ac.buildOnce.Do(ac.buildDeferred)
-			compileErr = ac.buildErr
-			return
-		}
 		if ac.compiled {
 			compileErr = errors.New("already compiled")
 			return
@@ -462,12 +457,12 @@ func (ac *acAutomaton) ensureCompiled() {
 	if !ac.deferred {
 		return
 	}
-	ac.buildOnce.Do(ac.buildDeferred)
+	ac.compiledOnce.Do(ac.buildDeferred)
 }
 
 // buildDeferred constructs the trie from the stored pattern metadata and then
 // runs the same compile pipeline as the eager path. It always executes inside
-// buildOnce, mirroring the original AddString insertion order so the resulting
+// compiledOnce, mirroring the original AddString insertion order so the resulting
 // automaton is identical to an eagerly built one.
 func (ac *acAutomaton) buildDeferred() {
 	ac.buildMu.Lock()
@@ -1421,8 +1416,8 @@ func (ac *acAutomaton) BuildFailureLinks() error {
 // Validate checks if the automaton is correctly constructed
 func (ac *acAutomaton) Validate() error {
 	if ac.deferred {
-		ac.buildMu.RLock()
-		defer ac.buildMu.RUnlock()
+		ac.buildMu.Lock()
+		defer ac.buildMu.Unlock()
 		if ac.buildErr != nil {
 			return ac.buildErr
 		}
@@ -1447,8 +1442,8 @@ func (ac *acAutomaton) Validate() error {
 // Clone creates a copy of the automaton
 func (ac *acAutomaton) Clone() *acAutomaton {
 	if ac.deferred {
-		ac.buildMu.RLock()
-		defer ac.buildMu.RUnlock()
+		ac.buildMu.Lock()
+		defer ac.buildMu.Unlock()
 	}
 	internalStrings := cloneacStringInfos(ac.strings)
 	var trieRootCopy *[256]int32
@@ -1497,7 +1492,6 @@ func (ac *acAutomaton) Clone() *acAutomaton {
 	}
 	if ac.compiled {
 		newAC.compiledOnce.Do(func() {})
-		newAC.buildOnce.Do(func() {})
 	}
 
 	return newAC
@@ -1541,8 +1535,8 @@ type stringConfig struct {
 // deferred automatons that have not built a trie yet report their estimate.
 func (ac *acAutomaton) GetStateCount() int {
 	if ac.deferred {
-		ac.buildMu.RLock()
-		defer ac.buildMu.RUnlock()
+		ac.buildMu.Lock()
+		defer ac.buildMu.Unlock()
 	}
 	if len(ac.trieStates) > 0 {
 		return len(ac.trieStates)
@@ -1582,8 +1576,8 @@ func (ac *acAutomaton) GetPatternData() map[string][]byte {
 // output ranges, and outputs are what scans actually read.
 func (ac *acAutomaton) EstimateMemoryUsage() int {
 	if ac.deferred {
-		ac.buildMu.RLock()
-		defer ac.buildMu.RUnlock()
+		ac.buildMu.Lock()
+		defer ac.buildMu.Unlock()
 	}
 	stateMemory := len(ac.states) * (256*4 + 8) // transitions + failure + output indices
 	stateMemory += len(ac.trieStates)*12 + len(ac.trieEdges)*12
@@ -1672,7 +1666,6 @@ func (ac *acAutomaton) Reset() {
 	// Reset compilation state
 	ac.compiledOnce = sync.Once{}
 	ac.compiled = false
-	ac.buildOnce = sync.Once{}
 	ac.buildErr = nil
 }
 
