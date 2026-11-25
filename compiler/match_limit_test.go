@@ -2,7 +2,9 @@ package compiler
 
 import (
 	"bytes"
+	"context"
 	"errors"
+	"reflect"
 	"testing"
 )
 
@@ -166,5 +168,66 @@ rule fixed {strings:$x="aba" condition:$x at 4}`)
 		if err != nil || len(r.MatchedRules) != 2 || len(r.Matches["presence"]["$a"]) != 1 || r.Matches["fixed"]["$x"][0].Offset != 4 {
 			t.Fatalf("reader=%v: %v, %v", reader, r, err)
 		}
+	}
+}
+
+func TestReaderMatchLimitPreservesEncodingSelection(t *testing.T) {
+	p, err := NewCompiler().CompileSource(`rule ex { strings: $a=/a?/ ascii wide condition: !a[1] == 2 }`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scan := func(limit int) *ScanResult {
+		t.Helper()
+		s := p.NewScanner(WithStreamChunkSize(1), WithStreamOverlapSize(1), WithMaxMatches(limit, nil))
+		defer s.Close()
+		r, err := s.ScanReader(bytes.NewReader([]byte{'a', 0}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	want := scan(0)
+	if !want.RuleResults["ex"] || want.Matches["ex"]["$a"][0].Length != 2 {
+		t.Fatalf("expected the two-byte wide match: %+v", want)
+	}
+	if got := scan(2); !reflect.DeepEqual(got, want) {
+		t.Fatalf("capped reader = %+v; want %+v", got, want)
+	}
+}
+
+func TestBlockMatchLimitCancellation(t *testing.T) {
+	p, err := NewCompiler().CompileSource(`rule ex { strings: $a="x" condition: #a > 0 }`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	b := p.NewBlockScanner(WithMaxMatches(1, func(string, int) { cancel() }))
+	defer b.Close()
+
+	alreadyCanceled, stop := context.WithCancel(context.Background())
+	stop()
+	if err := b.ScanWithContext(alreadyCanceled, 0, []byte("x")); !errors.Is(err, context.Canceled) {
+		t.Fatalf("pre-canceled block: %v", err)
+	}
+	if err := b.Scan(2, []byte("other")); err != nil {
+		t.Fatalf("pre-canceled scan should be retryable: %v", err)
+	}
+	if err := b.ScanWithContext(ctx, 0, []byte("xx")); !errors.Is(err, context.Canceled) {
+		t.Fatalf("interrupted block: %v", err)
+	}
+	if err := b.Scan(10, []byte("x")); !errors.Is(err, context.Canceled) {
+		t.Fatalf("next block: %v", err)
+	}
+	if r, err := b.Finish(); r != nil || !errors.Is(err, context.Canceled) {
+		t.Fatalf("partial result: %+v, %v", r, err)
+	}
+	b.Reset()
+	if err := b.Scan(10, []byte("x")); err != nil {
+		t.Fatal(err)
+	}
+	r, err := b.Finish()
+	if err != nil || !r.RuleResults["ex"] || r.Matches["ex"]["$a"][0].Offset != 10 {
+		t.Fatalf("reset result: %+v, %v", r, err)
 	}
 }

@@ -300,7 +300,7 @@ func (s *Scanner) populateRuleMatchContext(
 		base = s.blockContext[0].Base
 	}
 	if s.matchBudgets != nil {
-		s.limitRuleMatches(rule, base, nil)
+		s.limitRuleMatches(rule, base)
 	}
 	if err := s.addRuleTextMatches(ctx, rule, input.data, input.usesharedAutomaton); err != nil {
 		return err

@@ -37,6 +37,7 @@ type BlockScanner struct {
 	fileSize      int64
 	fileSizeSet   bool
 	profileCounts map[string]blockProfileCounts
+	scanErr       error // A capped scan stopped after the block was added.
 }
 
 // NewBlockScanner creates an incremental scanner for a compiled program.
@@ -70,13 +71,15 @@ func (scanner *BlockScanner) Scan(base int64, data []byte) error {
 	return scanner.ScanWithContext(context.Background(), base, data)
 }
 
-// ScanWithContext adds and immediately pattern-scans one block.
-func (scanner *BlockScanner) ScanWithContext(ctx context.Context, base int64, data []byte) error {
+// ScanWithContext adds and immediately pattern-scans one block. With an active
+// match limit, an error after adding the block is returned by subsequent Scan
+// and Finish calls until Reset discards the partially scanned input.
+func (scanner *BlockScanner) ScanWithContext(ctx context.Context, base int64, data []byte) (err error) {
 	if scanner == nil || scanner.program == nil || scanner.scanner == nil {
 		return errors.New("block scanner is closed or has no program")
 	}
-	if err := scanner.scanner.matchLimitErr; err != nil {
-		return err
+	if scanner.scanErr != nil {
+		return scanner.scanErr
 	}
 	if base < 0 {
 		return errors.New("block base must be non-negative")
@@ -112,6 +115,13 @@ func (scanner *BlockScanner) ScanWithContext(ctx context.Context, base int64, da
 	}
 
 	s := scanner.scanner
+	if s.matchBudgets != nil {
+		defer func() {
+			if err != nil {
+				scanner.scanErr = err
+			}
+		}()
+	}
 	usesharedAutomaton, err := s.prepareChunkPatternScan(ctx, blockData)
 	if err != nil {
 		return err
@@ -145,7 +155,7 @@ func (scanner *BlockScanner) ScanWithContext(ctx context.Context, base int64, da
 		s.matchCtx.ResetForRule(rule, blockData)
 		s.configureRuleMatchContext(ctx, rule)
 		if s.matchBudgets != nil {
-			s.limitRuleMatches(rule, base, nil)
+			s.limitRuleMatches(rule, base)
 		}
 		if err := s.addRuleTextMatches(ctx, rule, blockData, usesharedAutomaton); err != nil {
 			return err
@@ -219,14 +229,14 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (result *Sca
 	if scanner == nil || scanner.program == nil || scanner.scanner == nil {
 		return nil, errors.New("block scanner is closed or has no program")
 	}
+	if scanner.scanErr != nil {
+		return nil, scanner.scanErr
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
 	s := scanner.scanner
-	if s.matchLimitErr != nil {
-		return nil, s.matchLimitErr
-	}
 	if err := s.scanError(); err != nil {
 		return nil, err
 	}
@@ -383,6 +393,7 @@ func (scanner *BlockScanner) Reset() {
 		scanner.scanner.matchCtx.Reset(nil)
 		scanner.scanner.moduleCache.reset()
 	}
+	scanner.scanErr = nil
 	clear(scanner.matches)
 	clear(scanner.profileCounts)
 	scanner.fileSize = 0
