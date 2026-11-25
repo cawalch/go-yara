@@ -351,11 +351,10 @@ func (cp *CompiledProgram) totalInstructionCount() int {
 	return total
 }
 
-// Streaming reports exact text-pattern matches only. Use Scan, ScanReader, or
-// ScanFile for full rule evaluation.
-//
-// The streaming configuration and latest progress pointer are protected by
-// streamingMu. Holding the lock never requires waiting for a scan.
+// streamingMu guards program streaming configuration and publication of the
+// latest progress pointer. Programs may be shallow-copied or initialized
+// without a constructor, so the lock lives outside the program. It is held
+// only for configuration, scan setup, and progress snapshots.
 var streamingMu sync.Mutex
 
 // EnableStreaming enables or disables pattern-only streaming for future scans.
@@ -397,7 +396,7 @@ func (cp *CompiledProgram) EnableStreamingEarlyTermination(enable bool) {
 
 // ProcessFileStreaming returns text-pattern matches from a file using chunked
 // streaming. Concurrent calls use independent scan state and the configuration
-// in effect when each call starts.
+// in effect when each call starts. Use ScanFile for full rule evaluation.
 func (cp *CompiledProgram) ProcessFileStreaming(ctx context.Context, filename string) ([]StreamingMatch, error) {
 	scan, err := cp.startStreamingScan()
 	if err != nil {
@@ -408,7 +407,8 @@ func (cp *CompiledProgram) ProcessFileStreaming(ctx context.Context, filename st
 
 // ProcessBytesStreaming returns text-pattern matches from byte data using
 // chunked streaming. Concurrent calls use independent scan state and the
-// configuration in effect when each call starts.
+// configuration in effect when each call starts. Use Scan for full rule
+// evaluation.
 func (cp *CompiledProgram) ProcessBytesStreaming(ctx context.Context, data []byte) ([]StreamingMatch, error) {
 	scan, err := cp.startStreamingScan()
 	if err != nil {
