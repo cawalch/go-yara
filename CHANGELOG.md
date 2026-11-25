@@ -19,7 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+* A failed global rule suppresses every public match, including other matching global rules. Boolean scans now propagate cancellation observed by the compact prefilter.
+
 * Clarified that `ScanReader` and `MatchesReader` bound input buffering. Retained occurrences, reported match data, and evidence can grow with matches ([#702](https://github.com/cawalch/go-yara/issues/702)).
+
 * **Strict `libyara` compatibility (`hex` and string modifiers):** Reject leading/trailing hex jumps, `xor` + `nocase`, and `xor` on hex strings under `WithStrictLibyaraCompatibility(true)` with updated compatibility docs and differential tests, and reject consecutive hex jumps, stray `{`/`}`, and unterminated `/*` block comments unconditionally ([#638](https://github.com/cawalch/go-yara/pull/638), [#644](https://github.com/cawalch/go-yara/pull/644); closes [#631](https://github.com/cawalch/go-yara/issues/631), [#635](https://github.com/cawalch/go-yara/issues/635), [#642](https://github.com/cawalch/go-yara/issues/642)).
 * **Multi-rule diagnostics and parser recovery:** Report all collected parser, semantic, and codegen errors in a single compile pass (including `rule %q` context in `semantic.Error.Error()`), continue semantic analysis on valid rules after parse errors, honor recovery on `global rule` declarations, and fix infinite recovery loops in `parseStringDeclarations` and `parseMetaDeclarations` ([#638](https://github.com/cawalch/go-yara/pull/638), [#640](https://github.com/cawalch/go-yara/pull/640), [#644](https://github.com/cawalch/go-yara/pull/644); closes [#632](https://github.com/cawalch/go-yara/issues/632), [#636](https://github.com/cawalch/go-yara/issues/636), [#641](https://github.com/cawalch/go-yara/issues/641)).
 

@@ -82,14 +82,15 @@ func (s *Scanner) MatchesWithContext(ctx context.Context, data []byte) (matched 
 		return false, err
 	}
 	if s.compactPrefilterFanoutRejects(ctx, data) {
-		if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
+		err := ctx.Err()
+		if err == nil && s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
 			s.telemetrySink.PrefilterRejects++
 		}
 		if s.hookMask&(hookBitTelemetry|hookBitScanLifecycle) != 0 {
 			start := s.beginScan(ctx, int64(len(data)))
-			start.finish(nil, 0, nil)
+			start.finish(nil, 0, err)
 		}
-		return false, nil
+		return false, err
 	}
 	s.clearRuleResultsIfDirty()
 	if s.hookMask&(hookBitTelemetry|hookBitScanLifecycle) != 0 {
@@ -120,10 +121,7 @@ func (s *Scanner) matchesUnobserved(ctx context.Context, data []byte) (bool, err
 	if err != nil {
 		return false, err
 	}
-	hasMatch := evaluation.matchedPublicGlobal ||
-		evaluation.allGlobalMatched && evaluation.matchedPublicNonGlobal
-
-	return hasMatch, nil
+	return evaluation.allGlobalMatched && evaluation.matchedPublic, nil
 }
 
 // MatchingRules returns detailed public rule matches without constructing the

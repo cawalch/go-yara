@@ -71,3 +71,10 @@ rule lazy {strings:$a=/a.{0,3}?b/ condition:#a==2 and !a[1]==2}`
 		}
 	}
 }
+
+func TestLibyaraGlobalGate(t *testing.T) {
+	const source = `global rule first {condition: true}
+global private rule gate {strings: $a="yes" condition: $a}
+rule ordinary {condition: true}`
+	checkLibyaraScanMatrix(t, differentialScanCase{source: source, inputs: [][]byte{[]byte("no"), []byte("yes"), nil}, readerChunks: []int{1, 3}})
+}

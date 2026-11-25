@@ -39,24 +39,15 @@ func (s *Scanner) materializeMatchingRules(
 	data []byte,
 	evaluation publicRuleEvaluation,
 ) ([]RuleMatch, error) {
-	resultCount := 0
-	for _, ruleIndex := range s.matchedRuleIndices {
-		if ruleIndex < 0 || ruleIndex >= len(s.program.Rules) {
-			continue
-		}
-		if s.program.Rules[ruleIndex].IsGlobal || evaluation.allGlobalMatched {
-			resultCount++
-		}
-	}
-	if resultCount == 0 {
-		return nil, nil
+	if !evaluation.allGlobalMatched || len(s.matchedRuleIndices) == 0 {
+		return nil, ctx.Err()
 	}
 
 	matchBase := int64(0)
 	if s.blockScan {
 		matchBase = s.blockContext[0].Base
 	}
-	result := make([]RuleMatch, 0, resultCount)
+	result := make([]RuleMatch, 0, len(s.matchedRuleIndices))
 	for _, ruleIndex := range s.matchedRuleIndices {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -65,9 +56,6 @@ func (s *Scanner) materializeMatchingRules(
 			continue
 		}
 		rule := s.program.Rules[ruleIndex]
-		if !rule.IsGlobal && !evaluation.allGlobalMatched {
-			continue
-		}
 		var publicMatches map[string][]Match
 		var evidence map[string][]EvidenceFinding
 		if !s.omitMatches {
