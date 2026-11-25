@@ -234,7 +234,7 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (result *Sca
 	if err != nil {
 		return nil, err
 	}
-	if !s.reportedMatchesOnly {
+	if usesharedAutomaton && !s.reportedMatchesOnly {
 		s.markChunkCandidateRules()
 	}
 	scanInput := ruleScanInput{data: data, usesharedAutomaton: usesharedAutomaton, skipUnmatchedContext: s.reportedMatchesOnly}
@@ -256,14 +256,8 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (result *Sca
 	s.clearRuleResultsIfDirty()
 	defer s.clearRuleResultsIfDirty()
 
-	// YARA spec: global rules are evaluated first and ALL must match
-	// before non-global rules are evaluated.
-	// Private rules are never reported in MatchedRules.
-	// Tag filtering includes dependencies during evaluation, but not reporting.
-	//
-	// Two-pass approach:
-	// 1. Evaluate all rules to populate match context and rule results.
-	// 2. Build MatchedRules, skipping non-global rules if any global rule failed.
+	// Keep the outcomes of all evaluated rules, including private rules and
+	// dependencies. Report public matches only when every global rule matched.
 
 	done := ctx.Done()
 	// Pass 1: evaluate candidate rules and retain the full result map.
