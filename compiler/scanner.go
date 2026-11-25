@@ -113,7 +113,6 @@ type Scanner struct {
 	trackTelemetryLatency   bool
 	ruleGate                RuleGateFunc
 	matchHook               MatchHook
-	pollByteStride          int
 	matchBudgets            map[int]*ruleMatchBudget
 	matchLimitErr           error
 	maxMatchesLimit         int

@@ -419,19 +419,20 @@ func (s *Scanner) addLocalNonTextMatches(
 			return ctx.Err()
 		}
 		entry := &rule.localRegexes[i]
+		hasMorePatterns := i+1 < len(rule.localRegexes) || len(rule.localHexes) != 0
 		if matches, ok := s.getNonTextMatches(cache, entry.pattern.cacheIndex, usesharedAutomaton); ok {
 			s.matchCtx.addMatchSpansSlot(entry.slot, entry.id, matches)
 			if entry.wideAndASCII {
 				s.matchCtx.normalizeRegexEncodingMatchesSlot(entry.slot, entry.id)
 			}
-			if canShortCircuit && len(s.matchCtx.spansForSlot(entry.slot, entry.id)) > 0 && s.isRuleConditionSatisfied(rule) {
+			if canShortCircuit && hasMorePatterns && len(s.matchCtx.spansForSlot(entry.slot, entry.id)) > 0 && s.isRuleConditionSatisfied(rule) {
 				return nil
 			}
 			continue
 		}
 		addRegexMatchesWithModifiersCached(s.matchCtx, entry.id, entry.pattern, data, entry.modifiers, &s.regexByteSetCache)
 		s.storeNonTextCacheSlot(cache, entry.pattern.cacheIndex, entry.slot, entry.id)
-		if canShortCircuit && len(s.matchCtx.spansForSlot(entry.slot, entry.id)) > 0 && s.isRuleConditionSatisfied(rule) {
+		if canShortCircuit && hasMorePatterns && len(s.matchCtx.spansForSlot(entry.slot, entry.id)) > 0 && s.isRuleConditionSatisfied(rule) {
 			return nil
 		}
 	}
@@ -443,7 +444,7 @@ func (s *Scanner) addLocalNonTextMatches(
 		if entry.pattern != nil {
 			if matches, ok := s.getNonTextMatches(cache, entry.pattern.cacheIndex, usesharedAutomaton); ok {
 				s.matchCtx.addMatchSpansSlot(entry.slot, entry.id, matches)
-				if canShortCircuit && len(s.matchCtx.spansForSlot(entry.slot, entry.id)) > 0 && s.isRuleConditionSatisfied(rule) {
+				if canShortCircuit && i+1 < len(rule.localHexes) && len(s.matchCtx.spansForSlot(entry.slot, entry.id)) > 0 && s.isRuleConditionSatisfied(rule) {
 					return nil
 				}
 				continue
@@ -464,7 +465,7 @@ func (s *Scanner) addLocalNonTextMatches(
 		if entry.pattern != nil && !stoppedEarly && !scanCanceled(done) {
 			s.storeNonTextCacheSlot(cache, entry.pattern.cacheIndex, entry.slot, entry.id)
 		}
-		if canShortCircuit && len(s.matchCtx.spansForSlot(entry.slot, entry.id)) > 0 && s.isRuleConditionSatisfied(rule) {
+		if canShortCircuit && i+1 < len(rule.localHexes) && len(s.matchCtx.spansForSlot(entry.slot, entry.id)) > 0 && s.isRuleConditionSatisfied(rule) {
 			return nil
 		}
 	}

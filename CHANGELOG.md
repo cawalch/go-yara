@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+* Poll hooks run at scan checkpoints across byte, reader, and block scans. The legacy byte-stride setting is deprecated. Context cancellation remains available between checkpoints.
+* Skip speculative condition evaluation after the last non-text pattern has already been processed in boolean scans.
 * Reuse existing match state for single-string fast scans, pass shared lookup entries by reference, and reset only the affected rule slot when a scan evaluates one rule. Use the shared SIMD gate before allocating or resetting candidate state for eligible inputs.
 * Consolidated size-literal parsing on `internal/int64ops.ParseSizeLiteral`, requiring uppercase `KB`/`MB`/`GB`/`TB` suffixes and accepting `0x`/`0X` hexadecimal prefixes consistently.
 * Default `parser.New` to the compiler’s 1,000-level recursion limit and apply it to nested quantifier expressions.
@@ -23,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+* Reader scans report lifecycle events from before the first read, dispatch chunk and pattern hooks, and record rule and header-prefilter telemetry. The start callback receives an unknown input size. Reader latency includes I/O.
+<!-- Before release, update reader hook ordering and latency in the scanning and performance guides. -->
 * Reader scans honor `WithMatchData`’s non-positive-disables contract instead of copying matched bytes for every occurrence, and `ScanFile` streams devices, FIFOs, and other non-regular files rather than reading them unbounded into memory.
 * `BlockScanner.ScanWithContext` and `FinishWithContext` normalize nil contexts, matching the other `*WithContext` entry points.
 * Nested quantifiers participate in parser recursion limits, quantifier target lists are capped at 1,024 elements, oversized global integer declarations fail instead of silently becoming zero, and `Parser.Errors` returns an owned slice.

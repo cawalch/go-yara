@@ -220,6 +220,12 @@ func (s *Scanner) ScanWithContext(ctx context.Context, data []byte) (result *Sca
 		}()
 	}
 
+	if s.hookMask&hookBitPoll != 0 {
+		if err := s.pollByteInput(ctx, len(data)); err != nil {
+			return nil, err
+		}
+	}
+
 	s.resetScanState()
 	if (s.reportedMatchesOnly || s.omitMatches) && s.compactPrefilterFanoutRejects(ctx, data) {
 		scanInput := ruleScanInput{data: data, usesharedAutomaton: false, skipUnmatchedContext: true}
@@ -432,6 +438,12 @@ func (s *Scanner) evaluatePublicRules(
 	data []byte,
 	matchedRuleIndices *[]int,
 ) (publicRuleEvaluation, error) {
+	if s.hookMask&hookBitPoll != 0 {
+		if err := s.pollByteInput(ctx, len(data)); err != nil {
+			return publicRuleEvaluation{}, err
+		}
+	}
+
 	if s.compactPrefilterFanoutRejects(ctx, data) {
 		if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
 			s.telemetrySink.PrefilterRejects++

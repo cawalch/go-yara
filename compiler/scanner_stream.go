@@ -288,6 +288,7 @@ type streamAccumulator struct {
 	accumulatedSpans   map[string]map[string][]matchSpan
 	accumulatedMatches map[string]map[string][]Match
 	captureInputs      map[string]map[string][]captureInput
+	profileCounts      map[string]windowProfileCounts
 }
 
 // retainHeader appends only the unseen prefix bytes from a contiguous scan window.
@@ -310,7 +311,7 @@ func (acc *streamAccumulator) retainHeader(window []byte, offset int64) {
 
 // scanReaderStream reuses a sliding input buffer bounded by chunk size,
 // overlap capacity, and lookahead. Retained matches are accumulated separately.
-func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *ScanResult, err error) {
+func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader, boolean bool) (result *ScanResult, err error) {
 	if s == nil || s.program == nil {
 		return &ScanResult{
 			MatchedRules: make([]RuleMatch, 0),
@@ -344,6 +345,20 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 		return nil, errors.New("streaming chunk size is invalid")
 	}
 
+	var currentStreamOffset int64
+	if s.hookMask&(hookBitTelemetry|hookBitScanLifecycle) != 0 {
+		started := s.beginScan(ctx, -1)
+		defer func() {
+			if s.telemetrySink != nil {
+				s.telemetrySink.BytesScanned += currentStreamOffset
+			}
+			started.finishReader(result, boolean, err)
+		}()
+	}
+	if s.hookMask&hookBitTelemetryLatency != 0 {
+		defer s.leaveScanPhase(PhaseUnknown)
+	}
+
 	if s.streamBufReader == nil {
 		s.streamBufReader = bufio.NewReaderSize(reader, 64*1024)
 	} else {
@@ -365,9 +380,8 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 		accumulatedMatches = make(map[string]map[string][]Match)
 	}
 	var (
-		currentStreamOffset int64
-		overlapLen          int
-		acc                 = &streamAccumulator{
+		overlapLen int
+		acc        = &streamAccumulator{
 			headerBlock:        s.streamHeaderBuf[:0],
 			accumulatedSpans:   make(map[string]map[string][]matchSpan),
 			accumulatedMatches: accumulatedMatches,
@@ -401,9 +415,21 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
+		if s.hookMask&hookBitPoll != 0 {
+			if err := s.dispatchPoll(ctx, PollProgress{
+				BytesScanned: currentStreamOffset,
+				TotalBytes:   -1,
+				Phase:        PhasePatternSearch,
+				TotalRules:   len(s.program.Rules),
+			}); err != nil {
+				return nil, err
+			}
+		}
 
 		targetSlice := buf[overlapLen : overlapLen+chunkSize]
 		n, readErr := io.ReadFull(bufReader, targetSlice)
+		primaryStart := currentStreamOffset
+		currentStreamOffset += int64(n)
 		if readErr != nil && readErr != io.EOF && readErr != io.ErrUnexpectedEOF {
 			return nil, readErr
 		}
@@ -411,8 +437,7 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 			break
 		}
 
-		primaryStart := currentStreamOffset
-		primaryEnd := primaryStart + int64(n)
+		primaryEnd := currentStreamOffset
 		chunkOffset := primaryStart - int64(overlapLen)
 		windowLen := overlapLen + n
 
@@ -432,6 +457,8 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 			overlapCapacity: overlapCapacity,
 			final:           readErr != nil || peekErr == io.EOF && len(lookahead) == 0,
 		}
+
+		previousPhase := s.enterScanPhase(PhasePatternSearch)
 
 		// Integer reads use the retained prefix, regardless of chunk boundaries.
 		if len(acc.headerBlock) < streamingHeaderSize {
@@ -471,6 +498,9 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 				continue
 			}
 
+			if s.hookMask&(hookBitPatternProfile|hookBitTelemetry|hookBitRuleProfile) != 0 {
+				clear(s.localProfileCandidates)
+			}
 			s.matchCtx.ResetForRule(rule, windowData)
 			s.configureRuleMatchContext(ctx, rule)
 			savedMaxMatches := s.matchCtx.maxMatchesPerPattern
@@ -494,6 +524,9 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 				s.matchCtx.filterFixedOffsets(rule.fixedOffsets, chunkOffset)
 			}
 			s.matchCtx.normalizeMatches()
+			if s.hookMask&(hookBitPatternProfile|hookBitTelemetry|hookBitRuleProfile) != 0 {
+				s.recordWindowPatternProfiles(rule, usesharedAutomaton, &acc.profileCounts)
+			}
 			if s.telemetrySink != nil {
 				s.telemetrySink.VerificationBudgetRejects += uint64(s.matchCtx.verificationBudgetRejects)
 				s.matchCtx.verificationBudgetRejects = 0
@@ -557,14 +590,17 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 			}
 		}
 
-		currentStreamOffset = primaryEnd
+		s.leaveScanPhase(previousPhase)
+		if s.hookMask&hookBitChunkBoundary != 0 {
+			s.dispatchChunk(primaryStart, n, len(acc.accumulatedSpans))
+		}
 
 		// A short read cannot establish whether the capture is complete.
 		if !needsPCAP && s.checkStreamEarlyTermination(ctx, acc, currentStreamOffset) {
 			break
 		}
 
-		if readErr == io.EOF || readErr == io.ErrUnexpectedEOF {
+		if window.final {
 			break
 		}
 
@@ -651,16 +687,7 @@ func (s *Scanner) evaluateStreamMatches(
 	acc *streamAccumulator,
 ) (result *ScanResult, err error) {
 	s.resetBorrowedEvidence()
-	if s.hookMask&(hookBitTelemetry|hookBitScanLifecycle) != 0 {
-		started := s.beginScan(ctx, acc.fileSize)
-		defer func() {
-			count := 0
-			if result != nil {
-				count = len(result.MatchedRules)
-			}
-			started.finish(result, count, err)
-		}()
-	}
+	defer s.clearRuleResultsIfDirty()
 
 	result = s.initStreamScanResult()
 	s.moduleCache.pcapReader = acc.pcapReader
@@ -681,14 +708,20 @@ func (s *Scanner) evaluateStreamMatches(
 			continue
 		}
 
-		counts := s.localProfileCandidates[rule.Name]
-		state := ruleProfileState{iterations: s.interp.iterations, candidates: counts}
+		counts := acc.profileCounts[rule.Name]
+		state := ruleProfileState{
+			iterations: s.interp.iterations, accumulated: true,
+			candidates: counts.candidates, falseCandidates: counts.falseCandidates,
+		}
 		if s.hookMask&hookBitRuleProfile != 0 {
 			state.started = time.Now()
 		}
 
 		// Check fixed-offset header constraints
-		if !s.ruleConstraintsMatchContext(rule, headerContext, s.omitMatches || s.reportedMatchesOnly) {
+		if !s.streamHeaderConstraintsMatch(ctx, rule, headerContext) {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			s.recordRuleResult(rule, false)
 			if result.RuleResults != nil {
 				result.RuleResults[rule.Name] = false
@@ -715,6 +748,9 @@ func (s *Scanner) evaluateStreamMatches(
 		state.populated = true
 		if !s.prefilterDisabled && rule.RequiresStringMatch && !s.matchCtx.hasSpans() {
 			s.recordRuleOutcome(result, rule, false)
+			if s.hookMask&(hookBitTelemetry|hookBitRuleProfile) != 0 {
+				s.recordRuleEvaluatedHooks(rule, false, state)
+			}
 			continue
 		}
 
@@ -747,7 +783,6 @@ func (s *Scanner) evaluateStreamMatches(
 		evidence, evErr := s.populateStreamRuleEvidence(ctx, acc, rule, ruleMatches)
 		return ruleMatches, evidence, evErr
 	})
-	s.clearRuleResultsIfDirty()
 	s.matchCtx.Reset(nil)
 	if err != nil {
 		return nil, err

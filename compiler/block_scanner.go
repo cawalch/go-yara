@@ -45,7 +45,7 @@ type BlockScanner struct {
 	matches       map[string]map[string][]Match
 	fileSize      int64
 	fileSizeSet   bool
-	profileCounts map[string]blockProfileCounts
+	profileCounts map[string]windowProfileCounts
 }
 
 // Each extension is a later block at the same base that is longer than every
@@ -129,6 +129,18 @@ func (scanner *BlockScanner) scanBlock(ctx context.Context, block MemoryBlock, b
 		return err
 	}
 
+	s := scanner.scanner
+	if s.hookMask&hookBitPoll != 0 {
+		if err := s.dispatchPoll(ctx, PollProgress{
+			BytesScanned: scanner.inputBytes,
+			TotalBytes:   -1,
+			Phase:        PhaseBlockScan,
+			TotalRules:   len(scanner.program.Rules),
+		}); err != nil {
+			return err
+		}
+	}
+
 	var started time.Time
 	if scanner.scanner.hookMask&hookBitTelemetryLatency != 0 {
 		started = time.Now()
@@ -155,7 +167,6 @@ func (scanner *BlockScanner) scanBlock(ctx context.Context, block MemoryBlock, b
 		scanner.fileSize = base + int64(len(blockData))
 	}
 
-	s := scanner.scanner
 	if s.matchBudgets != nil {
 		defer func() {
 			if err != nil {
@@ -212,8 +223,9 @@ func (scanner *BlockScanner) scanBlock(ctx context.Context, block MemoryBlock, b
 			s.matchCtx.filterFixedOffsets(rule.fixedOffsets, base)
 		}
 		s.matchCtx.normalizeMatches()
-		s.recordPatternProfiles(rule, usesharedAutomaton)
-		scanner.recordPatternCounts(rule)
+		if s.hookMask&(hookBitPatternProfile|hookBitTelemetry|hookBitRuleProfile) != 0 {
+			s.recordWindowPatternProfiles(rule, usesharedAutomaton, &scanner.profileCounts)
+		}
 		if s.telemetrySink != nil {
 			s.telemetrySink.VerificationBudgetRejects += uint64(s.matchCtx.verificationBudgetRejects)
 			s.matchCtx.verificationBudgetRejects = 0
@@ -326,14 +338,10 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (result *Sca
 		if s.hookMask&hookBitRuleProfile != 0 {
 			state.started = time.Now()
 		}
-		headerStart := s.prefilterStart()
-		previous := s.enterScanPhase(PhasePrefilter)
-		headerMatches := s.ruleConstraintsMatchContext(rule, headerContext, s.omitMatches || s.reportedMatchesOnly)
-		s.leaveScanPhase(previous)
-		if ctx.Err() == nil && (len(rule.HeaderConstraints) > 0 || len(rule.mandatoryAssertions) > 0) {
-			s.finishPrefilter(PrefilterDecision{Stage: PrefilterStageHeaderConstraints, Rejected: !headerMatches}, headerStart)
-		}
-		if !headerMatches {
+		if !s.streamHeaderConstraintsMatch(ctx, rule, headerContext) {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			s.recordRuleOutcome(result, rule, false)
 			result.PrunedRules = append(result.PrunedRules, rule.Name)
 			s.recordPrunedRule(rule, state)
@@ -606,28 +614,4 @@ func (scanner *BlockScanner) blockForMatch(match Match) *MemoryBlock {
 		return nil
 	}
 	return &scanner.blocks[entry.extensions[index]]
-}
-
-type blockProfileCounts struct{ candidates, falseCandidates int }
-
-func (scanner *BlockScanner) recordPatternCounts(rule *CompiledRule) {
-	s := scanner.scanner
-	if s.hookMask&(hookBitTelemetry|hookBitRuleProfile) == 0 {
-		return
-	}
-	if scanner.profileCounts == nil {
-		scanner.profileCounts = make(map[string]blockProfileCounts)
-	}
-	counts := scanner.profileCounts[rule.Name]
-	for _, id := range rule.IndexToStringID {
-		if rule.IsStringDead(id) {
-			continue
-		}
-		candidates, known := s.patternCandidateCount(rule, id, false)
-		if known {
-			counts.candidates += candidates
-			counts.falseCandidates += max(candidates-len(s.matchCtx.spansFor(id)), 0)
-		}
-	}
-	scanner.profileCounts[rule.Name] = counts
 }

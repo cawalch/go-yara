@@ -209,7 +209,7 @@ External variables supply scalar values used by conditions. Structured modules s
 
 `WithMatchHook` can stop after the first matching public rule. `MatchActionStopScan` includes that rule in the result and returns no error. It stops delivery of later matches; their conditions may already have been evaluated. Track the stop decision in application state so a partial rule result is not mistaken for complete coverage.
 
-A polling callback can instead return `PollAbort`, which makes the scan return `ErrScanAborted`. Check it with `errors.Is`. Context cancellation has its own error and remains useful for deadlines. Polling is cooperative: the byte stride is a checkpoint setting, not a wall-clock deadline. `PollThrottle` sleeps for the requested duration, which can also delay cancellation.
+A polling callback can return `PollAbort` to stop the scan with `ErrScanAborted`. Check the error with `errors.Is`. Polling runs at checkpoints during a scan. Use a context to set a scan deadline. `PollThrottle` requests a pause at the current checkpoint.
 
 <details>
 <summary>Complete Go example: distinguish stop-on-match from a poll abort</summary>
