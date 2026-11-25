@@ -281,8 +281,8 @@ func (s *Scanner) configureRuleMatchContext(ctx context.Context, rule *CompiledR
 }
 
 //nolint:revive // argument-limit: shared rule text match dispatch
-func (s *Scanner) addRuleTextMatches(ctx context.Context, rule *CompiledRule, data []byte, useShared bool) error {
-	if useShared {
+func (s *Scanner) addRuleTextMatches(ctx context.Context, rule *CompiledRule, data []byte, useShared, reportUnused bool) error {
+	if useShared && (!reportUnused || !rule.hasUnusedText) {
 		return s.addStaticMatchesInt(ctx, rule, data, s.globalMatches[rule.Index])
 	}
 	return s.addLocalTextMatches(ctx, rule, data)
@@ -312,7 +312,7 @@ func (s *Scanner) populateRuleMatchContext(
 	if s.matchBudgets != nil {
 		s.limitRuleMatches(rule, base)
 	}
-	if err := s.addRuleTextMatches(ctx, rule, input.data, input.usesharedAutomaton); err != nil {
+	if err := s.addRuleTextMatches(ctx, rule, input.data, input.usesharedAutomaton, !input.booleanMatchOnly && !s.omitMatches); err != nil {
 		return err
 	}
 

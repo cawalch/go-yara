@@ -11,7 +11,7 @@ import (
 )
 
 // compileStrings compiles all strings in a rule and builds the automaton
-func (rc *ruleCompiler) compileStrings(rule *ast.Rule, deadStrings map[string]bool, fixedOffsets map[string]int64) error {
+func (rc *ruleCompiler) compileStrings(rule *ast.Rule, fixedOffsets map[string]int64) error {
 	// First pass: validate and prepare strings
 	if err := rc.validateRuleStrings(rule); err != nil {
 		return err
@@ -22,8 +22,7 @@ func (rc *ruleCompiler) compileStrings(rule *ast.Rule, deadStrings map[string]bo
 
 	// Second pass: compile strings and build automaton
 	for _, str := range rule.Strings {
-		isDead := deadStrings != nil && deadStrings[str.Identifier]
-		if err := rc.compileSingleStringWithDead(str, isDead, fixedOffsets); err != nil {
+		if err := rc.compileStringWithOffsets(str, fixedOffsets); err != nil {
 			return fmt.Errorf("compiling string %s: %w", str.Identifier, err)
 		}
 	}
@@ -33,10 +32,10 @@ func (rc *ruleCompiler) compileStrings(rule *ast.Rule, deadStrings map[string]bo
 
 // compileSingleString compiles a single string and adds it to the automaton
 func (rc *ruleCompiler) compileSingleString(str *ast.String) error {
-	return rc.compileSingleStringWithDead(str, false, nil)
+	return rc.compileStringWithOffsets(str, nil)
 }
 
-func (rc *ruleCompiler) compileSingleStringWithDead(str *ast.String, isDead bool, fixedOffsets map[string]int64) error {
+func (rc *ruleCompiler) compileStringWithOffsets(str *ast.String, fixedOffsets map[string]int64) error {
 	rc.ensurePatternMaps()
 	if rc.tryApplyCachedStringPattern(str, fixedOffsets) {
 		return nil

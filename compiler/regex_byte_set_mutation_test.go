@@ -8,6 +8,28 @@ import (
 	"github.com/cawalch/go-yara/regex"
 )
 
+func TestCancelableRegexSearchWindowBoundaries(t *testing.T) {
+	done := make(chan struct{})
+	data := make([]byte, cancelableSearchWindow+12)
+	copy(data[cancelableSearchWindow+2:], []byte("XYZ"))
+	literal := newRegexLiteralSearcher(data, []byte("xyz"), regex.FlagsNoCase)
+	if got := literal.indexWithCancel(0, done); got != cancelableSearchWindow+2 {
+		t.Fatalf("literal index = %d, want %d", got, cancelableSearchWindow+2)
+	}
+	data[cancelableSearchWindow-1] = 'q'
+	search := regexByteSetSearch{
+		data: data, done: done, wide: true,
+		pattern: RegexPattern{byteSet: regex.NewByteSet([]byte{'q'})},
+	}
+	if got := search.index(0); got != cancelableSearchWindow-1 {
+		t.Fatalf("wide index = %d, want %d", got, cancelableSearchWindow-1)
+	}
+	close(done)
+	if literal.indexWithCancel(0, done) != -1 || search.index(0) != -1 {
+		t.Fatal("canceled search reported a match")
+	}
+}
+
 // Residual gremlins survivors for regex_byte_set.go are classified at the
 // bottom of this file per the #311 acceptance criteria.
 

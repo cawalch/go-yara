@@ -167,6 +167,9 @@ func (search regexByteSetSearch) planScannedPositions(entry *regexByteSetCacheEn
 		searchFrom = position + 1
 	}
 
+	if scanCanceled(search.done) {
+		return regexByteSetCandidatePlan{}, true
+	}
 	search.finishCacheEntry(entry, complete)
 	plan := regexByteSetCandidatePlan{count: counter.count}
 	if entry != nil && entry.complete {
@@ -471,6 +474,35 @@ func (searcher *regexLiteralSearcher) index(pos int) int {
 }
 
 func (search *regexByteSetSearch) index(pos int) int {
+	if search.done != nil {
+		return search.indexWithCancel(pos)
+	}
+	return search.indexWindow(pos)
+}
+
+func (search regexByteSetSearch) indexWithCancel(pos int) int {
+	last := len(search.data)
+	overlap := 0
+	if search.wide {
+		last--
+		overlap = 1
+	}
+	data := search.data
+	for pos = max(0, pos); pos < last; {
+		if scanCanceled(search.done) {
+			return -1
+		}
+		end := pos + min(cancelableSearchWindow, last-pos)
+		search.data = data[:end+overlap]
+		if candidate := search.indexWindow(pos); candidate >= 0 {
+			return candidate
+		}
+		pos = end
+	}
+	return -1
+}
+
+func (search *regexByteSetSearch) indexWindow(pos int) int {
 	if search.pattern.byteSetContiguous {
 		return search.indexContiguous(pos)
 	}

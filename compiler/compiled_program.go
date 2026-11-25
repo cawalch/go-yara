@@ -228,7 +228,7 @@ func (cp *CompiledProgram) prepare(validateCacheKeys bool) error {
 	cp.sharedNonTextCaches = sharedNonTextCacheCoverage(cp.nonTextCacheSize, cp.sharedLookup)
 	cp.allRulesUseSharedPatterns = true
 	for _, rule := range cp.Rules {
-		if !cp.ruleAllStringsInSharedPrefilter(rule) {
+		if len(rule.DeadStrings) > 0 || !cp.ruleAllStringsInSharedPrefilter(rule) {
 			cp.allRulesUseSharedPatterns = false
 			break
 		}

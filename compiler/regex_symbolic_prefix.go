@@ -6,11 +6,11 @@ import "github.com/cawalch/go-yara/regex"
 // strings. Each reachable boundary uses the existing atom/tail verifier.
 //
 //nolint:revive // verifier arguments keep the whole-match start explicit
-func (plan *regexBoundedAlternation) execPrefix(bs *regex.VMBatch, data []byte, flags regex.Flags, start int, done <-chan struct{}) (int, boundedAtomOrder) {
+func (plan *regexBoundedAlternation) execPrefix(bs *regex.VMBatch, data []byte, flags regex.Flags, start, endLimit int, done <-chan struct{}) (int, boundedAtomOrder) {
 	if len(plan.Branches) == 0 || plan.Fullword && !isFullwordStart(data, start, flags&regex.FlagsWide != 0) {
 		return -1, boundedAtomOrder{}
 	}
-	ends, err := regex.ExecMatchEndsBatchWithCancel(bs, plan.Prefix, data, flags&^regex.FlagsFullwordEnd, start, done)
+	ends, err := regex.ExecMatchEndsBatchWithCancel(bs, plan.Prefix, data[:endLimit], flags&^regex.FlagsFullwordEnd, start, done)
 	if err != nil || len(ends) == 0 {
 		return -1, boundedAtomOrder{}
 	}
@@ -39,7 +39,7 @@ func (plan *regexBoundedAlternation) execPrefix(bs *regex.VMBatch, data []byte, 
 		if scanCanceled(done) {
 			return -1, boundedAtomOrder{}
 		}
-		end, order := plan.execBranches(bs, data, flags, start, pos, done)
+		end, order := plan.execBranches(bs, data, flags, start, pos, endLimit, done)
 		if end >= 0 && (bestEnd < 0 || (flags&regex.FlagsGreedy != 0) == bestOrder.before(order)) {
 			bestEnd, bestOrder = end, order
 		}

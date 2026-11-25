@@ -349,6 +349,7 @@ func analyzeConcatAtoms(children []*Node) atomAnalysis {
 	runActive := false
 	var run []byte
 	runEndChildIdx := 0
+	runTailBytes := 0
 
 	flushRun := func() {
 		if !runActive || len(run) == 0 {
@@ -356,11 +357,15 @@ func analyzeConcatAtoms(children []*Node) atomAnalysis {
 			runActive = false
 			return
 		}
+		suffix := suffixMax[runEndChildIdx]
+		if suffix >= 0 {
+			suffix = addLength(runTailBytes, suffix)
+		}
 		result.atoms = append(result.atoms, LiteralAtom{
 			Data:      append([]byte(nil), run...),
 			MinOffset: runMinOffset,
 			MaxOffset: runMaxOffset,
-			MaxSuffix: suffixMax[runEndChildIdx],
+			MaxSuffix: suffix,
 		})
 		run = run[:0]
 		runActive = false
@@ -380,13 +385,14 @@ func analyzeConcatAtoms(children []*Node) atomAnalysis {
 				runMaxOffset = result.maxLength
 				runActive = true
 			}
-			run = append(run, child.Value)
-			runEndChildIdx = i + 1
+			if len(run) < maxLiteralAlternativeBytes {
+				run = append(run, child.Value)
+				runEndChildIdx = i + 1
+				runTailBytes = 0
+			}
 			result.minLength = addLength(result.minLength, 1)
 			result.maxLength = addLength(result.maxLength, 1)
-			if result.isExact {
-				result.exact = append(result.exact, child.Value)
-			}
+			result.appendExact(singleByteLiterals[child.Value][:])
 			continue
 		}
 
@@ -410,8 +416,12 @@ func analyzeConcatAtoms(children []*Node) atomAnalysis {
 				runMaxOffset = result.maxLength
 				runActive = true
 			}
-			run = append(run, analysis.exact...)
-			runEndChildIdx = i + 1
+			if available := maxLiteralAlternativeBytes - len(run); available > 0 {
+				kept := min(available, len(analysis.exact))
+				run = append(run, analysis.exact[:kept]...)
+				runEndChildIdx = i + 1
+				runTailBytes = len(analysis.exact) - kept
+			}
 		} else {
 			flushRun()
 			result.isExact = false
@@ -419,12 +429,22 @@ func analyzeConcatAtoms(children []*Node) atomAnalysis {
 
 		result.minLength = addLength(result.minLength, analysis.minLength)
 		result.maxLength = addLength(result.maxLength, analysis.maxLength)
-		if result.isExact {
-			result.exact = append(result.exact, analysis.exact...)
-		}
+		result.appendExact(analysis.exact)
 	}
 	flushRun()
 	return result
+}
+
+func (analysis *atomAnalysis) appendExact(literal []byte) {
+	if !analysis.isExact {
+		return
+	}
+	if len(literal) > maxLiteralAlternativeBytes-len(analysis.exact) {
+		analysis.isExact = false
+		analysis.exact = nil
+		return
+	}
+	analysis.exact = append(analysis.exact, literal...)
 }
 
 func analyzeAltAtoms(children []*Node) atomAnalysis {

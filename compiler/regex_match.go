@@ -217,15 +217,29 @@ func (searcher *regexLiteralSearcher) indexWithCancel(from int, done <-chan stru
 		return -1
 	}
 	data := searcher.data
+	if len(data)-from <= cancelableSearchWindow {
+		if scanCanceled(done) {
+			return -1
+		}
+		return searcher.index(from)
+	}
 	last := len(data) - literalLength
 	for from <= last {
 		if scanCanceled(done) {
 			return -1
 		}
 		end := from + min(cancelableSearchWindow, last-from+1)
-		searcher.data = data[:end+(literalLength-1)]
-		candidate := searcher.index(from)
-		searcher.data = data
+		window := *searcher
+		window.data = data[:end+(literalLength-1)]
+		if window.noCase {
+			window.cursor = newASCIIFoldByteCursor(window.literal[window.anchor])
+		}
+		candidate := window.index(from)
+		if window.noCase && window.anchorSampled && !searcher.anchorSampled {
+			searcher.anchor = window.anchor
+			searcher.anchorSampled = true
+			searcher.cursor = newASCIIFoldByteCursor(searcher.literal[searcher.anchor])
+		}
 		if candidate >= 0 {
 			return candidate
 		}
@@ -237,6 +251,7 @@ func (searcher *regexLiteralSearcher) indexWithCancel(from int, done <-chan stru
 type regexAlternativeCursor struct {
 	atom         regexPrefilterAtom
 	searcher     regexLiteralSearcher
+	done         <-chan struct{}
 	searchFrom   int
 	start        int
 	rangeEnd     int
@@ -273,7 +288,7 @@ func unboundedRegexAlternativePresent(
 			searchFlags |= regex.FlagsNoCase
 		}
 		searcher := newRegexLiteralSearcher(data, atom.data, searchFlags)
-		if searcher.index(0) >= 0 {
+		if searcher.indexWithCancel(0, done) >= 0 {
 			return true
 		}
 	}
@@ -318,7 +333,7 @@ func (cursor *regexAlternativeCursor) nextRange() (int, int, bool) {
 
 func (cursor *regexAlternativeCursor) nextAtomRange() (int, int, bool) {
 	for cursor.searchFrom <= len(cursor.searcher.data) {
-		occurrence := cursor.searcher.index(cursor.searchFrom)
+		occurrence := cursor.searcher.indexWithCancel(cursor.searchFrom, cursor.done)
 		if occurrence < 0 {
 			return 0, 0, false
 		}
@@ -367,6 +382,7 @@ func addRegexMatchesFromAlternatives(
 		index := cursorIndex
 		cursorIndex++
 		cursors[index].atom = atom
+		cursors[index].done = ctx.cancelDone
 		searchFlags := flags
 		if atom.asciiNoCase {
 			searchFlags |= regex.FlagsNoCase
@@ -415,7 +431,7 @@ func addRegexMatchesFromPrefix(
 	prefix []byte,
 ) {
 	searcher := newRegexLiteralSearcher(data, prefix, flags)
-	candidate := searcher.index(0)
+	candidate := searcher.indexWithCancel(0, ctx.cancelDone)
 	if candidate < 0 {
 		return
 	}
@@ -434,7 +450,7 @@ func addRegexMatchesFromPrefix(
 		if searchFrom > len(data) {
 			return
 		}
-		candidate = searcher.index(searchFrom)
+		candidate = searcher.indexWithCancel(searchFrom, ctx.cancelDone)
 	}
 }
 
@@ -693,12 +709,11 @@ func execRegexMatchAtBounded(bs *regex.VMBatch, pattern *RegexPattern, data []by
 		return true, 0, ends[0] - start
 	}
 	if pattern.boundedAlternation != nil {
-		if maxMatchSpan <= 0 || maxMatchSpan >= len(data)-start {
-			return execBoundedAlternation(bs, pattern.boundedAlternation, data, flags, start, done)
+		endLimit := len(data)
+		if maxMatchSpan > 0 && maxMatchSpan < endLimit-start {
+			endLimit = start + maxMatchSpan
 		}
-		if !pattern.boundedAlternation.Fullword && flags&regex.FlagsFullwordEnd == 0 {
-			return execBoundedAlternation(bs, pattern.boundedAlternation, data[:start+maxMatchSpan], flags, start, done)
-		}
+		return execBoundedAlternation(bs, pattern.boundedAlternation, data, flags, start, endLimit, done)
 	}
 	if pattern.boundedClass != nil && !isWide && flags&(regex.FlagsWide|regex.FlagsFullwordEnd|regex.FlagsExhaustive|regex.FlagsBackwards|regex.FlagsScan) == 0 &&
 		(flags&regex.FlagsNoCase != 0) == pattern.boundedClass.noCase {
@@ -771,7 +786,7 @@ func regexAtomCandidateStartsInto(
 		flags |= regex.FlagsNoCase
 	}
 	searcher := newRegexLiteralSearcher(data, atom, flags)
-	first := searcher.index(0)
+	first := searcher.indexWithCancel(0, done)
 	if first < 0 {
 		return ctx.regexCandidates[:0], true
 	}
@@ -793,7 +808,7 @@ func regexAtomCandidateStartsInto(
 		if scanCanceledAt(done, checkpoint) {
 			return nil, true
 		}
-		next := searcher.index(searchFrom)
+		next := searcher.indexWithCancel(searchFrom, done)
 		if next < 0 {
 			break
 		}

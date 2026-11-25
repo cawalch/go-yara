@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+* Bound binary expression chains before recursive compiler passes. Reuse diagnostic storage and limit the number of errors reported for a single condition.
+* Check cancellation during regex literal and byte-set searches and cap the literal bytes retained while analyzing concatenated regex atoms.
+* Include unreferenced strings in reported matches consistently across byte, reader, and block scans. The text-only streaming API also reports unreferenced text strings.
+* Preserve regex alternation priority with a match-span cap and check fullword boundaries against the original input.
 * Reader scans report lifecycle events from before the first read, dispatch chunk and pattern hooks, and record rule and header-prefilter telemetry. The start callback receives an unknown input size. Reader latency includes I/O.
 <!-- Before release, update reader hook ordering and latency in the scanning and performance guides. -->
 * Reader scans honor `WithMatchData`’s non-positive-disables contract instead of copying matched bytes for every occurrence, and `ScanFile` streams devices, FIFOs, and other non-regular files rather than reading them unbounded into memory.

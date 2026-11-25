@@ -327,10 +327,10 @@ func (cp *streamingChunkProcessor) processChunk(ctx context.Context, window stre
 	if hasShared {
 		matches = cp.processChunkShared(ctx, window, matches)
 	}
-	// Dead rules (e.g. condition: false) are excluded from sharedAutomaton, so
-	// scan them locally if present so StreamingProcessor still reports their text hits.
+	// The shared automaton omits unreferenced strings. The text-only
+	// StreamingProcessor still reports those occurrences.
 	for _, rule := range cp.program.Rules {
-		if rule == nil || rule.automaton == nil || (!rule.IsDead && hasShared) {
+		if rule == nil || rule.automaton == nil || (hasShared && !rule.hasUnusedText) {
 			continue
 		}
 		if err := ctx.Err(); err != nil {
@@ -338,6 +338,9 @@ func (cp *streamingChunkProcessor) processChunk(ctx context.Context, window stre
 		}
 		yield := func(match acMatch) bool {
 			if match.StringIndex < 0 || match.StringIndex >= len(rule.automaton.strings) {
+				return true
+			}
+			if hasShared && !rule.IsStringDead(match.StringID) {
 				return true
 			}
 			matches = appendStreamingMatch(matches, window, rule, match.StringID, rule.automaton.strings[match.StringIndex], match.Backtrack)

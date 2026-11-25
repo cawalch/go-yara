@@ -62,7 +62,7 @@ func addBoundedRegexVerifications(ctx *MatchContext, id string, pattern RegexPat
 					return
 				}
 				if size > 0 && !anchoredStart {
-					at = searcher.index(at)
+					at = searcher.indexWithCancel(at, ctx.cancelDone)
 					if at < 0 {
 						break
 					}
@@ -284,9 +284,9 @@ func sparseCappedRegexSuffix(pattern *RegexPattern, data []byte, ctx *MatchConte
 		if scanCanceledAt(ctx.cancelDone, hits) {
 			return false
 		}
-		hit := searcher.index(at)
+		hit := searcher.indexWithCancel(at, ctx.cancelDone)
 		if hit < 0 {
-			return true
+			return !scanCanceled(ctx.cancelDone)
 		}
 		at = hit + 1 // Count overlapping literal occurrences too.
 	}
