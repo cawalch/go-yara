@@ -640,6 +640,7 @@ func (cp *CompiledProgram) MatchingRulesInBlockWithContext(
 }
 
 // ScanReader reads from r and evaluates all rules in this compiled program.
+// Its memory use is described by Scanner.ScanReaderWithContext.
 // Integer reads in conditions must lie entirely within the first 64 KiB of input;
 // reads outside that retained header are undefined, even for longer streams.
 //
@@ -650,7 +651,7 @@ func (cp *CompiledProgram) ScanReader(r io.Reader) (*ScanResult, error) {
 }
 
 // ScanReaderWithContext reads from r and evaluates all rules in this compiled program.
-// Integer reads have the same retained-header limit as ScanReader.
+// Its memory use and retained-header limit are described by Scanner.ScanReaderWithContext.
 //
 // Performance note: ScanReaderWithContext borrows and returns a reusable Scanner from an
 // internal sync.Pool on CompiledProgram.
@@ -667,6 +668,7 @@ func (cp *CompiledProgram) MatchesReader(r io.Reader) (bool, error) {
 }
 
 // MatchesReaderWithContext reports whether this compiled program has at least one public rule match against r.
+// Its memory use is described by Scanner.MatchesReaderWithContext.
 // Integer reads have the same retained-header limit as ScanReader.
 func (cp *CompiledProgram) MatchesReaderWithContext(ctx context.Context, r io.Reader) (bool, error) {
 	scanner := cp.acquireScanner()

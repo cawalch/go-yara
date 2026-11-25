@@ -139,7 +139,7 @@ for _, ignored := range c.GetIgnoredRules() {
 // Scan an in-memory byte slice:
 result, err := program.Scan(data)
 
-// Scan an io.Reader sequentially with constant bounded memory:
+// Scan an io.Reader sequentially with a bounded input buffer:
 result, err = program.ScanReader(reader)
 
 // Check if an io.Reader matches any rule with early termination:
@@ -598,7 +598,7 @@ go-yara rules.yar --mode=execute --data large_sample.bin --streaming --chunk-siz
 ### Limitations
 
 - **Other module features**: Delayed PE imports, flagged import queries, single-argument/mixed regex `pe.imports`, `signatures[i].valid_on(timestamp)`, and `signatures[i].file_digest` fail compilation. The `elf`, `cuckoo`, and `dotnet` modules are not bundled. Applications can supply structured schemas and host data or Go callback functions with `compiler.WithModule`.
-- **Streaming**: Full rule conditions, regex, and hex patterns are evaluated with constant-memory streaming via `ScanReader` and `MatchesReader` (#352). The legacy `StreamingProcessor` and CLI `--streaming` utility remain available for literal text-pattern occurrences.
+- **Streaming**: `ScanReader` and `MatchesReader` evaluate full rule conditions, including regex and hex patterns, with a bounded input window. Retained occurrence spans, reported match data, and evidence can grow with the number and size of matches (#352). The legacy `StreamingProcessor` and CLI `--streaming` utility remain available for literal text-pattern occurrences.
 - **Block Boundary Spanning**: In `BlockScanner`, patterns crossing segmented block boundaries require overlapping bytes in the caller-provided buffers.
 
 ## Repository Layout
