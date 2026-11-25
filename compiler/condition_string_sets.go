@@ -13,22 +13,6 @@ import (
 func (cc *conditionCompiler) compileOfExpression(ofExpr *ast.OfExpression) error {
 	var opcode Opcode
 
-	// Special case: "#a in (min..max) of ($a*)" — count-in-range with string set.
-	// We handle this before the general flow to avoid emitting OpOf which would
-	// consume the setIndex we need for OpOfFoundIn.
-	if _, ok := ofExpr.Count.(*ast.StringCount); ok && ofExpr.InRange != nil {
-		// #a in (min..max) of ($str*)
-		// Resolve the string set and emit OpCountInOf.
-		// Stack: [setIndex, min, max] → OpCountInOf counts matched strings in set, checks if count is within [min, max].
-		setIndex, pos := cc.resolveStringSetIndex(ofExpr.Strings)
-		cc.emitter.EmitPush(uint64(setIndex), pos.Line, pos.Column)
-		if err := cc.compileExpression(ofExpr.InRange); err != nil {
-			return err
-		}
-		cc.emitter.EmitOpcode(OpCountInOf, ofExpr.Pos.Line, ofExpr.Pos.Column)
-		return nil
-	}
-
 	// Check if the count is a percent expression ("N % of")
 	if percentExpr, ok := ofExpr.Count.(*ast.PercentExpression); ok {
 		if err := cc.compileExpression(percentExpr.Value); err != nil {

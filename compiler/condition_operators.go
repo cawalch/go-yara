@@ -50,11 +50,9 @@ func (cc *conditionCompiler) compileStringOffsetOperator(binOp *ast.BinaryOp) er
 }
 
 // compileCountInRange compiles "#a in (min..max)" expressions.
-// Stack layout (bottom to top): count, min, max → OpCountIn → result
-func (cc *conditionCompiler) compileCountInRange(binOp *ast.BinaryOp) error {
-	// Compile the count expression (#a)
-	if err := cc.compileExpression(binOp.Left); err != nil {
-		return fmt.Errorf("compiling count expression: %w", err)
+func (cc *conditionCompiler) compileCountInRange(count *ast.StringCount, binOp *ast.BinaryOp) error {
+	if err := cc.compileCountPattern(count); err != nil {
+		return err
 	}
 
 	// The right side should be a range expression (min..max)
@@ -73,7 +71,7 @@ func (cc *conditionCompiler) compileCountInRange(binOp *ast.BinaryOp) error {
 		return fmt.Errorf("compiling range maximum: %w", err)
 	}
 
-	cc.emitter.EmitOpcode(OpCountIn, binOp.Pos.Line, binOp.Pos.Column)
+	cc.emitter.EmitOpcode(OpCountMatchesIn, binOp.Pos.Line, binOp.Pos.Column)
 	return nil
 }
 
@@ -267,8 +265,8 @@ func (cc *conditionCompiler) handleSpecialOperators(binOp *ast.BinaryOp) (bool, 
 		return true, cc.compileStringOffsetOperator(binOp)
 	case token.IN:
 		// Handle "#a in (min..max)" — count range check
-		if _, ok := binOp.Left.(*ast.StringCount); ok {
-			return true, cc.compileCountInRange(binOp)
+		if count, ok := binOp.Left.(*ast.StringCount); ok {
+			return true, cc.compileCountInRange(count, binOp)
 		}
 		return true, cc.compileStringOffsetOperator(binOp)
 	case token.DOT:
@@ -543,6 +541,14 @@ func (cc *conditionCompiler) compileStringOffset(strOffset *ast.StringOffset) er
 
 // compileStringCount compiles string count expressions (#a)
 func (cc *conditionCompiler) compileStringCount(strCount *ast.StringCount) error {
+	if err := cc.compileCountPattern(strCount); err != nil {
+		return err
+	}
+	cc.emitter.EmitOpcode(OpCount, strCount.Pos.Line, strCount.Pos.Column)
+	return nil
+}
+
+func (cc *conditionCompiler) compileCountPattern(strCount *ast.StringCount) error {
 	id, ok := strCount.String.(*ast.Identifier)
 	if !ok {
 		return errors.New("STRING COUNT (#) expects a string identifier operand")
@@ -562,7 +568,6 @@ func (cc *conditionCompiler) compileStringCount(strCount *ast.StringCount) error
 		cc.emitStringIdentifier(offset, id.Name, strCount.Pos.Line, strCount.Pos.Column)
 	}
 
-	cc.emitter.EmitOpcode(OpCount, strCount.Pos.Line, strCount.Pos.Column)
 	return nil
 }
 

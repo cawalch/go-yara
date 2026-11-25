@@ -123,20 +123,12 @@ func assertOfExpression(t *testing.T, rule *ast.Rule) {
 	if !ok {
 		t.Fatalf("expected *ast.OfExpression, got %T", rule.Condition)
 	}
-	if _, ok := ofExpr.Count.(*ast.StringCount); !ok {
-		t.Errorf("expected *ast.StringCount for count, got %T", ofExpr.Count)
+	count, ok := ofExpr.Count.(*ast.BinaryOp)
+	if !ok || count.Op != token.IN || ofExpr.InRange != nil {
+		t.Fatalf("expected a count-in-range quantifier, got %+v", ofExpr)
 	}
-	if ofExpr.InRange == nil {
-		t.Error("expected InRange to be set")
-		return
-	}
-	rangeOp, ok := ofExpr.InRange.(*ast.BinaryOp)
-	if !ok {
-		t.Errorf("expected *ast.BinaryOp for InRange, got %T", ofExpr.InRange)
-		return
-	}
-	if rangeOp.Op != token.DOT {
-		t.Errorf("expected DOT operator for range, got %s", rangeOp.Op)
+	if _, ok := count.Left.(*ast.StringCount); !ok {
+		t.Errorf("expected *ast.StringCount, got %T", count.Left)
 	}
 }
 

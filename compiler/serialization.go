@@ -20,7 +20,8 @@ import (
 const (
 	compiledProgramMagic = "GOYARA\x00"
 	// Version 20 replaces map wire fields with sorted entry slices for byte-deterministic output.
-	compiledProgramVersion = uint16(20)
+	// Version 21 adds OpCountMatchesIn without changing earlier opcodes.
+	compiledProgramVersion = uint16(21)
 )
 
 // ErrCorruptProgram indicates a malformed, truncated, incompatible-version, or

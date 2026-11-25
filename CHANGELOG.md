@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+* Return an integer occurrence count for `#a in (min..max)` using inclusive start offsets. Format 21 preserves the behavior of older compiled artifacts. Recompile source caches to pick up the correction ([#725](https://github.com/cawalch/go-yara/issues/725)).
+
 * A failed global rule suppresses every public match, including other matching global rules. Boolean scans now propagate cancellation observed by the compact prefilter.
 
 * Clarified that `ScanReader` and `MatchesReader` bound input buffering. Retained occurrences, reported match data, and evidence can grow with matches ([#702](https://github.com/cawalch/go-yara/issues/702)).

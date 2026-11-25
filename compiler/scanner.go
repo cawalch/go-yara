@@ -374,6 +374,7 @@ func WithExternalVariables(vars map[string]any) ScannerOption {
 // NewScanner creates a new Scanner for the given compiled program.
 func NewScanner(program *CompiledProgram, opts ...ScannerOption) *Scanner {
 	interp := acquireScannerInterpreter()
+	interp.scannerOwned = true
 	if program != nil && program.preparationErr == nil {
 		// CompiledProgram owns this slice for the scanner's lifetime, so avoid
 		// the public API's defensive copy on scanner construction.
