@@ -635,7 +635,15 @@ func (s *Scanner) canSkipSharedNonTextEntry(entry *sharedAutomatonEntry, rule *C
 }
 
 func sortAndDedupeMatchSpans(matches []matchSpan) []matchSpan {
-	if len(matches) < 2 {
+	// Streams that already emit distinct starts need no sorting or compaction.
+	ordered := true
+	for i := 1; i < len(matches); i++ {
+		if matches[i-1].Offset >= matches[i].Offset {
+			ordered = false
+			break
+		}
+	}
+	if ordered {
 		return matches
 	}
 	slices.SortFunc(matches, func(left, right matchSpan) int {
