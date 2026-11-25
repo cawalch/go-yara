@@ -133,6 +133,18 @@ func (s *Scanner) compactPrefilterFanoutRejects(ctx context.Context, data []byte
 	// where Teddy SIMD and single-pass candidate routing apply.
 	has16 := len(gate.automaton.transitions16) > 0 || len(gate.automaton.flatClass16) > 0
 	if !gate.fanoutUseful && (len(data) >= 256 || !has16) {
+		// Test the same whole-corpus cover used by shared search before
+		// allocating or resetting its candidate state. Positive inputs go
+		// straight to exact matching without repeating the SIMD test.
+		if teddySIMDEnabled && gate.automaton.teddyGate != nil && len(data) >= 256 && len(data) <= 512 &&
+			!s.prefilterDisabled && s.program.sharedAutomaton == gate.automaton &&
+			s.hookMask&(hookBitPrefilter|hookBitTelemetryLatency) == 0 {
+			done := ctx.Done()
+			if !gate.automaton.teddyGate.mayMatch(data, done) || scanCanceled(done) {
+				return true
+			}
+			s.skipSharedTeddyGate = true
+		}
 		return false
 	}
 	return s.compactPrefilterRejects(ctx, data)

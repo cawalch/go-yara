@@ -67,7 +67,7 @@ type Scanner struct {
 	allEvaluatedRulesRequireSharedPatterns bool
 	sharedNonTextMatched                   bool
 	skipUnmatchedNonText                   bool
-	ruleResultsDirty                       bool
+	dirtyRuleResult                        int // 0: clean, positive: rule index + 1, -1: multiple rules
 	alwaysEvaluateSharedRules              []int
 	evaluatedGlobalRules                   []int
 	// Candidate rule indices are deduplicated and sorted before sparse exact
@@ -501,11 +501,25 @@ func (s *Scanner) resetCandidateRules(size int) {
 	}
 }
 
-func (s *Scanner) clearRuleResultsIfDirty() {
-	if s.ruleResultsDirty {
-		clear(s.ruleResultsDense)
-		s.ruleResultsDirty = false
+func (s *Scanner) markRuleResultDirty(ruleIndex int) {
+	slot := ruleIndex + 1
+	if s.dirtyRuleResult == 0 || s.dirtyRuleResult == slot {
+		s.dirtyRuleResult = slot
+		return
 	}
+	s.dirtyRuleResult = -1
+}
+
+func (s *Scanner) clearRuleResultsIfDirty() {
+	if s.dirtyRuleResult == 0 {
+		return
+	}
+	if s.dirtyRuleResult > 0 && s.dirtyRuleResult <= len(s.ruleResultsDense) {
+		s.ruleResultsDense[s.dirtyRuleResult-1] = false
+	} else {
+		clear(s.ruleResultsDense)
+	}
+	s.dirtyRuleResult = 0
 }
 
 func (s *Scanner) isCandidateRule(index int) bool {

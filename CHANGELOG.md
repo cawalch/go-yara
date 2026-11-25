@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-* Reuse existing match state for single-string fast scans and avoid copying shared lookup entries during candidate verification.
+* Reuse existing match state for single-string fast scans, pass shared lookup entries by reference, and reset only the affected rule slot when a scan evaluates one rule. Use the shared SIMD gate before allocating or resetting candidate state for eligible inputs.
 * Consolidated size-literal parsing on `internal/int64ops.ParseSizeLiteral`, requiring uppercase `KB`/`MB`/`GB`/`TB` suffixes and accepting `0x`/`0X` hexadecimal prefixes consistently.
 * Default `parser.New` to the compiler’s 1,000-level recursion limit and apply it to nested quantifier expressions.
 * Documented unsigned byte ordering for string comparisons and classified libyara’s signed-byte ordering in differential tests ([#727](https://github.com/cawalch/go-yara/issues/727)).

@@ -1687,3 +1687,29 @@ func TestScannerCandidateRuleEpochWrapping(t *testing.T) {
 		t.Fatal("rule 3 must be cleared upon epoch wrap-around")
 	}
 }
+
+func TestScannerClearsPriorRuleResults(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+rule source { strings: $a = "first" condition: $a }
+rule dependent { strings: $a = "second" condition: $a and source }
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scanner := program.NewScanner()
+	defer scanner.Close()
+
+	for _, tc := range []struct {
+		input string
+		want  int
+	}{{"first", 1}, {"first second", 2}} {
+		got, err := scanner.MatchingRules([]byte(tc.input))
+		if err != nil || len(got) != tc.want {
+			t.Fatalf("MatchingRules(%q) = %v, %v", tc.input, got, err)
+		}
+		got, err = scanner.MatchingRules([]byte("second"))
+		if err != nil || len(got) != 0 {
+			t.Fatalf("after %q, MatchingRules(second) = %v, %v", tc.input, got, err)
+		}
+	}
+}
