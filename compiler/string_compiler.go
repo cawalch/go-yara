@@ -1,13 +1,11 @@
 package compiler
 
 import (
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"maps"
 	"slices"
 	"strconv"
-	"unicode/utf16"
 
 	"github.com/cawalch/go-yara/ast"
 	"github.com/cawalch/go-yara/regex"
@@ -135,20 +133,10 @@ func (sc *stringCompiler) hasModifier(modifiers []ast.StringModifier, modType as
 // encodeTextBytes converts text to bytes with appropriate encoding
 func (sc *stringCompiler) encodeTextBytes(text string, isWide bool) []byte {
 	if isWide {
-		// Optimized UTF-16LE encoding without intermediate []rune allocation
-		runes := []rune(text)                // This allocation is unavoidable for proper Unicode handling
-		result := make([]byte, len(runes)*2) // Pre-allocate exact size
-
-		// Convert runes to UTF-16LE bytes in single pass
-		for i, r := range runes {
-			v := uint16(r) //checkednarrow:ignore existing wide-string encoding keeps the low UTF-16 code unit
-			result[i*2] = byte(v & 0xff)
-			result[i*2+1] = byte(v >> 8)
-		}
-		return result
+		return sc.encodeToWideBytes(text)
 	}
 
-	// ASCII/UTF-8 encoding - optimize for common case
+	// ASCII/raw-byte encoding
 	result := make([]byte, len(text))
 	copy(result, text)
 	return result
@@ -166,13 +154,21 @@ func (sc *stringCompiler) applyXorModifier(data []byte, modifiers []ast.StringMo
 	return data
 }
 
-// encodeToWideBytes converts a string to UTF-16LE encoded bytes
+func widenBytes(src []byte) []byte {
+	result := make([]byte, len(src)*2)
+	for i, b := range src {
+		result[i*2] = b
+		result[i*2+1] = 0x00
+	}
+	return result
+}
+
+// encodeToWideBytes interleaves each raw byte of text with 0x00, matching libyara's wide modifier.
 func (sc *stringCompiler) encodeToWideBytes(text string) []byte {
-	utf16Data := utf16.Encode([]rune(text))
-	result := make([]byte, len(utf16Data)*2)
-	for i, v := range utf16Data {
-		result[i*2] = byte(v & 0xff)
-		result[i*2+1] = byte(v >> 8)
+	result := make([]byte, len(text)*2)
+	for i := 0; i < len(text); i++ {
+		result[i*2] = text[i]
+		result[i*2+1] = 0x00
 	}
 	return result
 }
@@ -228,7 +224,11 @@ func (sc *stringCompiler) EncodeTextPatterns(text string, modifiers []ast.String
 	patterns := basePatterns
 
 	if keys, hasXor := sc.xorKeys(modifiers); hasXor {
-		patterns = sc.applyXorKeysWithFlags(patterns, keys)
+		var err error
+		patterns, err = sc.applyXorKeysWithFlags(patterns, keys)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if mod, ok := sc.base64Modifier(modifiers); ok {
@@ -324,22 +324,74 @@ func (sc *stringCompiler) normalizeXorRange(min, max int) xorRange {
 	return xorRange{min: min, max: max}
 }
 
-func (sc *stringCompiler) applyXorKeysWithFlags(patterns []TextPattern, keys []byte) []TextPattern {
+const (
+	defaultBase64Alphabet         = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+	maxXorNocaseExpandedPatterns  = 32768
+	maxXorNocaseExpandedAlphaBits = 15
+)
+
+func xorNoCaseLetterPositions(data []byte, wide bool) []int {
+	step := 1
+	if wide {
+		step = 2
+	}
+	var positions []int
+	for i := 0; i < len(data); i += step {
+		b := data[i]
+		if (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') {
+			positions = append(positions, i)
+		}
+	}
+	return positions
+}
+
+func (sc *stringCompiler) applyXorKeysWithFlags(patterns []TextPattern, keys []byte) ([]TextPattern, error) {
 	if len(keys) == 0 {
-		return patterns
+		return patterns, nil
 	}
 	out := make([]TextPattern, 0, len(patterns)*len(keys))
 	for _, p := range patterns {
-		for _, key := range keys {
-			dup := make([]byte, len(p.Data))
-			copy(dup, p.Data)
-			for i := range dup {
-				dup[i] ^= key
+		if p.Flags&regex.FlagsNoCase == 0 {
+			for _, key := range keys {
+				dup := make([]byte, len(p.Data))
+				for i, b := range p.Data {
+					dup[i] = b ^ key
+				}
+				out = append(out, TextPattern{Data: dup, Flags: p.Flags})
 			}
-			out = append(out, TextPattern{Data: dup, Flags: p.Flags})
+			continue
+		}
+		if len(keys) == 1 && keys[0] == 0 {
+			out = append(out, TextPattern{Data: slices.Clone(p.Data), Flags: p.Flags})
+			continue
+		}
+		alphaPos := xorNoCaseLetterPositions(p.Data, p.Flags&regex.FlagsWide != 0)
+		if len(alphaPos) > maxXorNocaseExpandedAlphaBits {
+			return nil, errors.New("xor and nocase modifier combination exceeds case-variant expansion limit")
+		}
+		variantCount := 1 << len(alphaPos)
+		if variantCount > (maxXorNocaseExpandedPatterns-len(out))/len(keys) {
+			return nil, errors.New("xor and nocase modifier combination exceeds case-variant expansion limit")
+		}
+		// Clear FlagsNoCase after expanding pre-XOR ASCII case variants so case folding
+		// is never applied to post-XOR bytes.
+		flags := p.Flags &^ regex.FlagsNoCase
+		for _, key := range keys {
+			for mask := range variantCount {
+				dup := make([]byte, len(p.Data))
+				for i, b := range p.Data {
+					dup[i] = b ^ key
+				}
+				for bit, pos := range alphaPos {
+					if mask&(1<<bit) != 0 {
+						dup[pos] ^= 0x20
+					}
+				}
+				out = append(out, TextPattern{Data: dup, Flags: flags})
+			}
 		}
 	}
-	return out
+	return out, nil
 }
 
 func (sc *stringCompiler) base64Modifier(modifiers []ast.StringModifier) (ast.StringModifier, bool) {
@@ -381,10 +433,44 @@ func (sc *stringCompiler) applyBase64AlignmentWithFlags(patterns []TextPattern, 
 	return out
 }
 
+func encodeBase64Raw(alphabet string, src []byte) ([]byte, error) {
+	if alphabet == "" {
+		alphabet = defaultBase64Alphabet
+	} else if len(alphabet) != 64 {
+		return nil, fmt.Errorf("invalid base64 alphabet length: expected 64, got %d", len(alphabet))
+	}
+	encodedLen := ((len(src) + 2) / 3) * 4
+	out := make([]byte, encodedLen)
+	si, di := 0, 0
+	for si+3 <= len(src) {
+		v := uint(src[si])<<16 | uint(src[si+1])<<8 | uint(src[si+2])
+		out[di] = alphabet[(v>>18)&0x3f]
+		out[di+1] = alphabet[(v>>12)&0x3f]
+		out[di+2] = alphabet[(v>>6)&0x3f]
+		out[di+3] = alphabet[v&0x3f]
+		si += 3
+		di += 4
+	}
+	switch len(src) - si {
+	case 1:
+		v := uint(src[si]) << 16
+		out[di] = alphabet[(v>>18)&0x3f]
+		out[di+1] = alphabet[(v>>12)&0x3f]
+		out[di+2] = '='
+		out[di+3] = '='
+	case 2:
+		v := uint(src[si])<<16 | uint(src[si+1])<<8
+		out[di] = alphabet[(v>>18)&0x3f]
+		out[di+1] = alphabet[(v>>12)&0x3f]
+		out[di+2] = alphabet[(v>>6)&0x3f]
+		out[di+3] = '='
+	}
+	return out, nil
+}
+
 func (sc *stringCompiler) base64AlignedPatterns(data []byte, alphabet string, wide bool) ([][]byte, error) {
-	enc := base64.StdEncoding
-	if alphabet != "" {
-		enc = base64.NewEncoding(alphabet)
+	if alphabet != "" && len(alphabet) != 64 {
+		return nil, fmt.Errorf("invalid base64 alphabet length: expected 64, got %d", len(alphabet))
 	}
 
 	var patterns [][]byte
@@ -403,7 +489,10 @@ func (sc *stringCompiler) base64AlignedPatterns(data []byte, alphabet string, wi
 		}
 		copy(tmp[i:], data)
 
-		encoded := enc.EncodeToString(tmp)
+		encoded, err := encodeBase64Raw(alphabet, tmp)
+		if err != nil {
+			return nil, err
+		}
 		leading := 0
 		if i > 0 {
 			leading = i + 1
@@ -417,9 +506,9 @@ func (sc *stringCompiler) base64AlignedPatterns(data []byte, alphabet string, wi
 		}
 		trimmed := encoded[leading : len(encoded)-trailing]
 		if wide {
-			patterns = append(patterns, sc.encodeToWideBytes(trimmed))
+			patterns = append(patterns, widenBytes(trimmed))
 		} else {
-			patterns = append(patterns, []byte(trimmed))
+			patterns = append(patterns, trimmed)
 		}
 	}
 

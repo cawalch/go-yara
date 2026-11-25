@@ -23,6 +23,9 @@ func (scratch *hexMatchScratch) referenceMatchEach(
 		// Fast linear path: consume non-branching tokens in a loop.
 		for {
 			if len(toks) == 0 {
+				if dp > len(data) {
+					goto nextItem
+				}
 				if !onEnd(dp) {
 					return false
 				}
@@ -91,6 +94,7 @@ func (scratch *hexMatchScratch) referenceMatchEach(
 					scratch.pushLargeJumpBranches(tail, 0, data, dp, minJ, maxJ, xorKey)
 					goto nextItem
 				}
+				maxJ = min(maxJ, len(data)-dp)
 				if maxJ < minJ {
 					goto nextItem
 				}

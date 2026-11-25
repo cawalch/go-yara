@@ -255,17 +255,18 @@ func TestCompileReleasesConstructionStates(t *testing.T) {
 	if ac.states != nil || ac.trieStates != nil || ac.trieEdges != nil || ac.trieRoot != nil || ac.trieOutputs != nil {
 		t.Fatal("Compile retained construction states")
 	}
-	if ac.GetStateCount() != stateCount {
-		t.Fatalf("GetStateCount() = %d, want %d", ac.GetStateCount(), stateCount)
+	compiledStates := ac.GetStateCount()
+	if compiledStates < stateCount {
+		t.Fatalf("GetStateCount() = %d, want >= %d", compiledStates, stateCount)
 	}
 	tableStates := len(ac.transitions16)
 	if len(ac.flatClass16) > 0 {
 		tableStates = len(ac.flatClass16) >> ac.classShift
 	}
-	if tableStates != stateCount || len(ac.outputRanges) != stateCount || len(ac.hasOutput) != stateCount {
+	if tableStates != compiledStates || len(ac.outputRanges) != compiledStates || len(ac.hasOutput) != compiledStates {
 		t.Fatalf(
 			"retained structures disagree with state count: tables=%d ranges=%d flags=%d, want %d",
-			tableStates, len(ac.outputRanges), len(ac.hasOutput), stateCount,
+			tableStates, len(ac.outputRanges), len(ac.hasOutput), compiledStates,
 		)
 	}
 	if err := ac.Validate(); err != nil {

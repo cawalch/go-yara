@@ -63,11 +63,10 @@ func regexEncodingOrder(flags regex.Flags, wide, ascii bool) ([2]bool, int) {
 // strings it registers both ASCII cases of each letter, which means a
 // case-sensitive string sharing a trie state could fire on the wrong case.
 // This re-check rejects those false candidates. For legitimate candidates the
-// check is a no-op. For nocase we lowercase both sides: plain nocase patterns
-// are already lowercased, but xor+nocase applies xor after lowercasing so the
-// stored variant bytes may be uppercase. Wide strings are handled
-// transparently because they are byte-interleaved with 0x00 (unaffected by
-// case folding).
+// check is a no-op. For nocase we lowercase both sides; wide strings are
+// handled transparently because they are byte-interleaved with 0x00 (unaffected
+// by case folding). Non-zero xor+nocase variants are pre-expanded before XOR
+// with FlagsNoCase cleared so they verify as exact byte matches.
 //
 // acceptAutomatonMatch verifies and records a single Aho-Corasick candidate.
 // The automaton is a candidate finder: for nocase strings it registers both

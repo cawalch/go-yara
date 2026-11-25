@@ -636,7 +636,7 @@ func (ac *acAutomaton) compileSparseTrie() error {
 	ac.outputs = b.retainedOutputs
 	ac.hasOutput = b.hasOutput
 	ac.outputRanges = b.outputRanges
-	ac.stateCount = numStates
+	ac.stateCount = b.numStates
 	ac.trieStates = nil
 	ac.trieEdges = nil
 	ac.trieRoot = nil
@@ -659,14 +659,94 @@ type sparseClassSpec struct {
 	classRep   [256]byte
 }
 
+type acCloneKey struct {
+	orig int32
+	fail int32
+}
+
+func maxTableStates[S ~uint16 | ~int32]() int {
+	if ^S(0) > 0 {
+		return math.MaxUint16 + 1
+	}
+	return math.MaxInt32
+}
+
+func (b *sparseBuildState) resetOutputs(origNumStates int) {
+	b.numStates = origNumStates
+	b.hasOutput = b.hasOutput[:origNumStates]
+	clear(b.hasOutput)
+	b.outputRanges = b.outputRanges[:origNumStates]
+	clear(b.outputRanges)
+	b.retainedOutputs = b.retainedOutputs[:0]
+}
+
+type sparseConflictState[S ~uint16 | ~int32] struct {
+	b          *sparseBuildState
+	trieStates []acTrieState
+	failures   []int32
+	seen       []bool
+	queue      []int32
+	table      [][256]S
+	flat       []S
+	clones     map[acCloneKey]int32
+	stride     int
+	maxStates  int
+}
+
+//go:noinline
+func handleSparseFlatConflict[S ~uint16 | ~int32](
+	s *sparseConflictState[S],
+	edge acTrieEdge,
+	targetFail int32,
+) (int32, bool) {
+	key := acCloneKey{orig: edge.to, fail: targetFail}
+	if existing, exists := s.clones[key]; exists {
+		return existing, true
+	}
+	if len(s.failures) >= s.maxStates {
+		return 0, false
+	}
+	cloneIdx := mustACIndex(len(s.failures))
+	if s.clones == nil {
+		s.clones = make(map[acCloneKey]int32)
+	}
+	s.clones[key] = cloneIdx
+	s.trieStates = append(s.trieStates, s.trieStates[edge.to])
+	s.failures = slices.Grow(s.failures, 1)
+	s.failures = s.failures[:len(s.failures)+1]
+	s.failures[cloneIdx] = targetFail
+	s.seen = slices.Grow(s.seen, 1)
+	s.seen = s.seen[:len(s.seen)+1]
+	s.seen[cloneIdx] = true
+	s.b.appendClonedOutput()
+	if s.stride > 0 {
+		s.flat = slices.Grow(s.flat, s.stride)
+		s.flat = s.flat[:len(s.flat)+s.stride]
+	} else {
+		s.table = slices.Grow(s.table, 1)
+		s.table = s.table[:len(s.table)+1]
+	}
+	s.queue = append(s.queue, cloneIdx)
+	return cloneIdx, true
+}
+
+func (b *sparseBuildState) appendClonedOutput() {
+	b.hasOutput = append(b.hasOutput, false)
+	b.outputRanges = append(b.outputRanges, [2]int32{})
+}
+
 //nolint:revive // argument-limit: internal builder helper
 func (ac *acAutomaton) emitSparseTables(b *sparseBuildState, classMap [256]byte, classRep [256]byte, numClasses int) {
-	if numClasses > 128 || b.numStates <= 16384 {
-		if b.numStates <= 65536 {
-			ac.transitions16 = buildSparseFlatTable[uint16](b)
-		} else {
-			ac.transitions32 = buildSparseFlatTable[int32](b)
+	origNumStates := b.numStates
+	if numClasses > 128 || origNumStates <= 16384 {
+		if origNumStates <= 65536 {
+			if table16, ok := buildSparseFlatTable[uint16](b); ok {
+				ac.transitions16 = table16
+				return
+			}
+			b.resetOutputs(origNumStates)
 		}
+		ac.transitions32, _ = buildSparseFlatTable[int32](b)
 		return
 	}
 	stride := 1
@@ -684,33 +764,45 @@ func (ac *acAutomaton) emitSparseTables(b *sparseBuildState, classMap [256]byte,
 		classMap:   classMap,
 		classRep:   classRep,
 	}
-	if b.numStates <= 65536 {
-		ac.flatClass16, ac.classRoot16 = buildSparseClassTable[uint16](b, spec)
-	} else {
-		ac.flatClass32, ac.classRoot32 = buildSparseClassTable[int32](b, spec)
+	if origNumStates <= 65536 {
+		if flat16, root16, ok := buildSparseClassTable[uint16](b, spec); ok {
+			ac.flatClass16, ac.classRoot16 = flat16, root16
+			return
+		}
+		b.resetOutputs(origNumStates)
 	}
+	ac.flatClass32, ac.classRoot32, _ = buildSparseClassTable[int32](b, spec)
 }
 
-func buildSparseClassTable[S ~uint16 | ~int32](b *sparseBuildState, spec sparseClassSpec) ([]S, *[256]S) {
+func (ac *acAutomaton) hasNoCasePattern() bool {
+	for i := range ac.strings {
+		if ac.strings[i].Flags&regex.FlagsNoCase != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func buildSparseClassTable[S ~uint16 | ~int32](b *sparseBuildState, spec sparseClassSpec) ([]S, *[256]S, bool) {
 	ac := b.ac
-	numStates := b.numStates
-	flat := make([]S, numStates*spec.stride)
+	origNumStates := b.numStates
+	flat := make([]S, origNumStates*spec.stride)
 	rootRow := new([256]S)
 	for byteVal := range 256 {
 		target := max(ac.trieRoot[byteVal], 0)
-		//checkednarrow:ignore target is in [0, numStates) and S is uint16 only when numStates <= 65536
+		//checkednarrow:ignore target is in [0, origNumStates) and S is uint16 only when origNumStates <= 65536
 		rootRow[byteVal] = S(target)
 	}
 	for c := 0; c < spec.numClasses; c++ {
 		target := max(ac.trieRoot[spec.classRep[c]], 0)
-		//checkednarrow:ignore target is in [0, numStates) and S is uint16 only when numStates <= 65536
+		//checkednarrow:ignore target is in [0, origNumStates) and S is uint16 only when origNumStates <= 65536
 		flat[c] = S(target)
 	}
 
-	failures := make([]int32, numStates)
+	failures := make([]int32, origNumStates)
 	failures[0] = -1
-	queue := make([]int32, 0, numStates)
-	seen := make([]bool, numStates)
+	queue := make([]int32, 0, origNumStates)
+	seen := make([]bool, origNumStates)
 	seen[0] = true
 
 	b.initRootOutput()
@@ -723,10 +815,33 @@ func buildSparseClassTable[S ~uint16 | ~int32](b *sparseBuildState, spec sparseC
 		}
 	}
 
+	if !ac.hasNoCasePattern() {
+		fillSparseClassTree(b, spec, flat, failures, seen, queue)
+		return flat, rootRow, true
+	}
+	flat, finalStates, ok := fillSparseClassDAG(b, spec, flat, failures, seen, queue)
+	if !ok {
+		return nil, nil, false
+	}
+	b.numStates = finalStates
+	return flat, rootRow, true
+}
+
+//nolint:revive // argument-limit: internal BFS kernel keeps slices unescaped
+func fillSparseClassTree[S ~uint16 | ~int32](
+	b *sparseBuildState,
+	spec sparseClassSpec,
+	flat []S,
+	failures []int32,
+	seen []bool,
+	queue []int32,
+) {
+	ac := b.ac
+	trieStates := ac.trieStates
 	for head := 0; head < len(queue); head++ {
 		cur := queue[head]
 		fail := failures[cur]
-		st := ac.trieStates[cur]
+		st := trieStates[cur]
 
 		b.mergeNodeOutputs(cur, fail, st)
 
@@ -739,7 +854,7 @@ func buildSparseClassTable[S ~uint16 | ~int32](b *sparseBuildState, spec sparseC
 			next := edge.to
 			cls := int(spec.classMap[edge.b])
 			failures[next] = int32(flat[failOff+cls])
-			//checkednarrow:ignore next is in [0, numStates) and S is uint16 only when numStates <= 65536
+			//checkednarrow:ignore next is in [0, origNumStates) and S is uint16 only when origNumStates <= 65536
 			flat[curOff+cls] = S(next)
 			if !seen[next] {
 				seen[next] = true
@@ -747,24 +862,88 @@ func buildSparseClassTable[S ~uint16 | ~int32](b *sparseBuildState, spec sparseC
 			}
 		}
 	}
-
-	return flat, rootRow
 }
 
-func buildSparseFlatTable[S ~uint16 | ~int32](b *sparseBuildState) [][256]S {
+//nolint:revive // argument-limit: internal BFS kernel keeps slices unescaped
+func fillSparseClassDAG[S ~uint16 | ~int32](
+	b *sparseBuildState,
+	spec sparseClassSpec,
+	flat []S,
+	failures []int32,
+	seen []bool,
+	queue []int32,
+) ([]S, int, bool) {
 	ac := b.ac
-	numStates := b.numStates
-	table := make([][256]S, numStates)
+	maxStates := maxTableStates[S]()
+	trieStates := ac.trieStates
+	var conflict *sparseConflictState[S]
+	for head := 0; head < len(queue); head++ {
+		cur := queue[head]
+		fail := failures[cur]
+		st := trieStates[cur]
+
+		b.mergeNodeOutputs(cur, fail, st)
+
+		curOff := int(cur) * spec.stride
+		failOff := int(fail) * spec.stride
+		copy(flat[curOff:curOff+spec.numClasses], flat[failOff:failOff+spec.numClasses])
+
+		for e := st.firstEdge; e != -1; e = ac.trieEdges[e].next {
+			edge := ac.trieEdges[e]
+			next := edge.to
+			cls := int(spec.classMap[edge.b])
+			targetFail := int32(flat[failOff+cls])
+			if !seen[next] {
+				seen[next] = true
+				failures[next] = targetFail
+				queue = append(queue, next)
+				//checkednarrow:ignore next is in [0, maxStates) and S is uint16 only when maxStates <= 65536
+				flat[curOff+cls] = S(next)
+				continue
+			}
+			if failures[next] != targetFail {
+				if conflict == nil {
+					conflict = &sparseConflictState[S]{
+						b:          b,
+						trieStates: trieStates,
+						failures:   failures,
+						seen:       seen,
+						queue:      queue,
+						flat:       flat,
+						stride:     spec.stride,
+						maxStates:  maxStates,
+					}
+				} else {
+					conflict.queue = queue
+				}
+				var ok bool
+				next, ok = handleSparseFlatConflict(conflict, edge, targetFail)
+				if !ok {
+					return nil, 0, false
+				}
+				trieStates, failures, seen, queue, flat = conflict.trieStates, conflict.failures, conflict.seen, conflict.queue, conflict.flat
+			}
+			//checkednarrow:ignore next is in [0, maxStates) and S is uint16 only when maxStates <= 65536
+			flat[curOff+cls] = S(next)
+		}
+	}
+	return flat, len(failures), true
+}
+
+func buildSparseFlatTable[S ~uint16 | ~int32](b *sparseBuildState) ([][256]S, bool) {
+	ac := b.ac
+	origNumStates := b.numStates
+	table := make([][256]S, origNumStates)
 	for byteVal := range 256 {
 		target := max(ac.trieRoot[byteVal], 0)
-		//checkednarrow:ignore target is in [0, numStates) and S is uint16 only when numStates <= 65536
+		//checkednarrow:ignore target is in [0, origNumStates) and S is uint16 only when origNumStates <= 65536
 		table[0][byteVal] = S(target)
 	}
 
-	failures := make([]int32, numStates)
+	failures := make([]int32, origNumStates)
 	failures[0] = -1
-	queue := make([]int32, 0, numStates)
-	seen := make([]bool, numStates)
+	queue := make([]int32, 0, origNumStates)
+	seen := make([]bool, origNumStates)
 	seen[0] = true
 
 	b.initRootOutput()
@@ -777,10 +956,32 @@ func buildSparseFlatTable[S ~uint16 | ~int32](b *sparseBuildState) [][256]S {
 		}
 	}
 
+	if !ac.hasNoCasePattern() {
+		fillSparseFlatTree(b, table, failures, seen, queue)
+		return table, true
+	}
+	table, finalStates, ok := fillSparseFlatDAG(b, table, failures, seen, queue)
+	if !ok {
+		return nil, false
+	}
+	b.numStates = finalStates
+	return table, true
+}
+
+//nolint:revive // argument-limit: internal BFS kernel keeps slices unescaped
+func fillSparseFlatTree[S ~uint16 | ~int32](
+	b *sparseBuildState,
+	table [][256]S,
+	failures []int32,
+	seen []bool,
+	queue []int32,
+) {
+	ac := b.ac
+	trieStates := ac.trieStates
 	for head := 0; head < len(queue); head++ {
 		cur := queue[head]
 		fail := failures[cur]
-		st := ac.trieStates[cur]
+		st := trieStates[cur]
 
 		b.mergeNodeOutputs(cur, fail, st)
 
@@ -789,7 +990,7 @@ func buildSparseFlatTable[S ~uint16 | ~int32](b *sparseBuildState) [][256]S {
 			edge := ac.trieEdges[e]
 			next := edge.to
 			failures[next] = int32(table[fail][edge.b])
-			//checkednarrow:ignore next is in [0, numStates) and S is uint16 only when numStates <= 65536
+			//checkednarrow:ignore next is in [0, origNumStates) and S is uint16 only when origNumStates <= 65536
 			table[cur][edge.b] = S(next)
 			if !seen[next] {
 				seen[next] = true
@@ -797,8 +998,66 @@ func buildSparseFlatTable[S ~uint16 | ~int32](b *sparseBuildState) [][256]S {
 			}
 		}
 	}
+}
 
-	return table
+//nolint:revive // argument-limit: internal BFS kernel keeps slices unescaped
+func fillSparseFlatDAG[S ~uint16 | ~int32](
+	b *sparseBuildState,
+	table [][256]S,
+	failures []int32,
+	seen []bool,
+	queue []int32,
+) ([][256]S, int, bool) {
+	ac := b.ac
+	maxStates := maxTableStates[S]()
+	trieStates := ac.trieStates
+	var conflict *sparseConflictState[S]
+	for head := 0; head < len(queue); head++ {
+		cur := queue[head]
+		fail := failures[cur]
+		st := trieStates[cur]
+
+		b.mergeNodeOutputs(cur, fail, st)
+
+		table[cur] = table[fail]
+		for e := st.firstEdge; e != -1; e = ac.trieEdges[e].next {
+			edge := ac.trieEdges[e]
+			next := edge.to
+			targetFail := int32(table[fail][edge.b])
+			if !seen[next] {
+				seen[next] = true
+				failures[next] = targetFail
+				queue = append(queue, next)
+				//checkednarrow:ignore next is in [0, maxStates) and S is uint16 only when maxStates <= 65536
+				table[cur][edge.b] = S(next)
+				continue
+			}
+			if failures[next] != targetFail {
+				if conflict == nil {
+					conflict = &sparseConflictState[S]{
+						b:          b,
+						trieStates: trieStates,
+						failures:   failures,
+						seen:       seen,
+						queue:      queue,
+						table:      table,
+						maxStates:  maxStates,
+					}
+				} else {
+					conflict.queue = queue
+				}
+				var ok bool
+				next, ok = handleSparseFlatConflict(conflict, edge, targetFail)
+				if !ok {
+					return nil, 0, false
+				}
+				trieStates, failures, seen, queue, table = conflict.trieStates, conflict.failures, conflict.seen, conflict.queue, conflict.table
+			}
+			//checkednarrow:ignore next is in [0, maxStates) and S is uint16 only when maxStates <= 65536
+			table[cur][edge.b] = S(next)
+		}
+	}
+	return table, len(failures), true
 }
 
 func (b *sparseBuildState) initRootOutput() {
@@ -927,35 +1186,79 @@ func mixAC64(a, b uint64) uint64 {
 	return x ^ (x >> 31)
 }
 
+type denseFailureCloner struct {
+	ac     *acAutomaton
+	queue  []int32
+	seen   []bool
+	clones map[acCloneKey]int32
+}
+
+func (c *denseFailureCloner) resolve(nextState, targetFail int32) int32 {
+	if !c.seen[nextState] {
+		c.seen[nextState] = true
+		c.ac.states[nextState].failure = targetFail
+		c.queue = append(c.queue, nextState)
+		return nextState
+	}
+	if c.ac.states[nextState].failure == targetFail {
+		return nextState
+	}
+	key := acCloneKey{orig: nextState, fail: targetFail}
+	if cloneIdx, exists := c.clones[key]; exists {
+		return cloneIdx
+	}
+	cloneIdx := mustACIndex(len(c.ac.states))
+	if c.clones == nil {
+		c.clones = make(map[acCloneKey]int32)
+	}
+	c.clones[key] = cloneIdx
+	if len(c.ac.states) == cap(c.ac.states) && len(c.ac.states) >= 32768 {
+		states := make([]acState, len(c.ac.states), len(c.ac.states)*2)
+		copy(states, c.ac.states)
+		c.ac.states = states
+		c.ac.compactStates = true
+	}
+	clone := c.ac.states[nextState]
+	clone.failure = targetFail
+	c.ac.states = append(c.ac.states, clone)
+	c.seen = slices.Grow(c.seen, 1)
+	c.seen = c.seen[:len(c.seen)+1]
+	c.seen[cloneIdx] = true
+	c.queue = append(c.queue, cloneIdx)
+	return cloneIdx
+}
+
 // buildFailureLinks builds failure links for the optimized automaton
 func (ac *acAutomaton) buildFailureLinks() error {
 	if len(ac.states) == 0 {
 		return errors.New("no states in automaton")
 	}
 
-	queue := make([]int32, 0, len(ac.states))
-	seen := make([]bool, len(ac.states))
-	seen[0] = true
+	cloner := denseFailureCloner{
+		ac:    ac,
+		queue: make([]int32, 0, len(ac.states)),
+		seen:  make([]bool, len(ac.states)),
+	}
+	cloner.seen[0] = true
 	for _, nextState := range &ac.states[0].transitions {
-		if nextState != -1 && !seen[nextState] {
-			seen[nextState] = true
+		if nextState != -1 && !cloner.seen[nextState] {
+			cloner.seen[nextState] = true
 			ac.states[nextState].failure = 0
-			queue = append(queue, nextState)
+			cloner.queue = append(cloner.queue, nextState)
 		}
 	}
 
-	for len(queue) > 0 {
-		current := queue[0]
-		queue = queue[1:]
+	for head := 0; head < len(cloner.queue); head++ {
+		current := cloner.queue[head]
 		ac.mergeFailureOutput(current)
-		for byteVal, nextState := range ac.states[current].transitions {
+		for byteVal := range 256 {
+			nextState := ac.states[current].transitions[byteVal]
 			if nextState == -1 {
 				continue
 			}
-			ac.states[nextState].failure = ac.failureState(current, byte(byteVal))
-			if !seen[nextState] {
-				seen[nextState] = true
-				queue = append(queue, nextState)
+			targetFail := ac.failureState(current, byte(byteVal))
+			if resolved := cloner.resolve(nextState, targetFail); resolved != nextState {
+				ac.states[current].transitions[byteVal] = resolved
 			}
 		}
 	}

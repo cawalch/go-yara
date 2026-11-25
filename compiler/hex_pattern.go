@@ -473,6 +473,7 @@ func scanHexAnchorKey(tokens []HexPatternToken, data []byte, anchor anchorInfo, 
 		targetByte ^= *key
 	}
 	pos := 0
+	lastChecked := -1
 	for {
 		if scanCanceledAt(done, *checkpoint) {
 			return false
@@ -487,6 +488,13 @@ func scanHexAnchorKey(tokens []HexPatternToken, data []byte, anchor anchorInfo, 
 
 		first := max(0, matchPos-anchor.maxOffset)
 		last := min(len(data), matchPos-anchor.offset)
+		if anchor.maxOffset > anchor.offset {
+			first = max(first, lastChecked+1)
+			if first > last {
+				continue
+			}
+			lastChecked = last
+		}
 		for candidateStart := first; candidateStart <= last; candidateStart++ {
 			if linear {
 				end, ok := matchLinearHexPattern(tokens, data, candidateStart, key)
@@ -1024,6 +1032,9 @@ func (scratch *hexMatchScratch) matchEach(
 		// Fast linear path: consume non-branching tokens in a loop.
 		for {
 			if len(toks) == 0 {
+				if dp > len(data) {
+					goto nextItem
+				}
 				if continuation != 0 {
 					tail := scratch.continuations[continuation-1]
 					scratch.worklist = append(scratch.worklist, hexWorkItem{tokens: tail.tokens, dataPos: dp, continuation: tail.next})
@@ -1098,6 +1109,7 @@ func (scratch *hexMatchScratch) matchEach(
 					scratch.pushLargeJumpBranches(tail, continuation, data, dp, minJ, maxJ, xorKey)
 					goto nextItem
 				}
+				maxJ = min(maxJ, len(data)-dp)
 				if maxJ < minJ {
 					goto nextItem
 				}
