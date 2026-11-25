@@ -274,17 +274,17 @@ func foldStringOp(b *ast.BinaryOp, left, right ast.Expression) (ast.Expression, 
 	case token.CONTAINS:
 		return boolLiteral(strings.Contains(sL, sR), pos), true
 	case token.ICONTAINS:
-		return boolLiteral(strings.Contains(strings.ToLower(sL), strings.ToLower(sR)), pos), true
+		return boolLiteral(asciiContainsFold(sL, sR), pos), true
 	case token.STARTSWITH:
 		return boolLiteral(strings.HasPrefix(sL, sR), pos), true
 	case token.ISTARTSWITH:
-		return boolLiteral(strings.HasPrefix(strings.ToLower(sL), strings.ToLower(sR)), pos), true
+		return boolLiteral(asciiHasPrefixFold(sL, sR), pos), true
 	case token.ENDSWITH:
 		return boolLiteral(strings.HasSuffix(sL, sR), pos), true
 	case token.IENDSWITH:
-		return boolLiteral(strings.HasSuffix(strings.ToLower(sL), strings.ToLower(sR)), pos), true
+		return boolLiteral(asciiHasSuffixFold(sL, sR), pos), true
 	case token.IEQUALS:
-		return boolLiteral(strings.EqualFold(sL, sR), pos), true
+		return boolLiteral(asciiEqualFold(sL, sR), pos), true
 	default:
 		return nil, false
 	}

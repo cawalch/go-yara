@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+* `icontains`, `iequals`, `istartswith`, and `iendswith` now fold ASCII letters and compare all other bytes exactly. Recompile cached rules to update conditions that were folded from string literals ([#726](https://github.com/cawalch/go-yara/issues/726)).
+
 * A failed global rule suppresses every public match, including other matching global rules. Boolean scans now propagate cancellation observed by the compact prefilter.
 
 * Clarified that `ScanReader` and `MatchesReader` bound input buffering. Retained occurrences, reported match data, and evidence can grow with matches ([#702](https://github.com/cawalch/go-yara/issues/702)).

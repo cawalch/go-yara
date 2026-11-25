@@ -15,8 +15,19 @@ func TestInterpreterStringOpsExtended(t *testing.T) {
 		{"startswith_true", OpStartswith, "hello world", "hello", 1},
 		{"endswith_true", OpEndswith, "hello world", "world", 1},
 		{"icontains_true", OpIcontains, "Hello World", "world", 1},
+		{"istartswith_true", OpIstartswith, "Hello World", "HELLO", 1},
 		{"iendswith_true", OpIendswith, "Hello World", "WORLD", 1},
 		{"iequals_true", OpIequals, "Hello", "hello", 1},
+		{"icontains_invalid_utf8", OpIcontains, "prefix\xffsuffix", "\xfe", 0},
+		{"istartswith_invalid_utf8", OpIstartswith, "\xffsuffix", "\xfe", 0},
+		{"iendswith_invalid_utf8", OpIendswith, "prefix\xff", "\xfe", 0},
+		{"iequals_invalid_utf8", OpIequals, "\xff", "\xfe", 0},
+		{"icontains_dotted_i", OpIcontains, "İ", "i", 0},
+		{"istartswith_nul", OpIstartswith, "Ab\x00C", "aB\x00", 1},
+		{"iendswith_nul", OpIendswith, "Ab\x00C", "B\x00c", 1},
+		{"iequals_kelvin", OpIequals, "K", "K", 0},
+		{"iequals_non_ascii", OpIequals, "Ä", "ä", 0},
+		{"iequals_nul", OpIequals, "ab\x00c", "AB\x00D", 0},
 	}
 
 	for _, tt := range tests {
@@ -31,6 +42,7 @@ func TestInterpreterStringOpsExtended(t *testing.T) {
 				t.Fatalf("bytecode: %v", err)
 			}
 			interp := NewInterpreter(bytecode)
+			defer interp.Release()
 			interp.SetStringLiterals(emitter.GetStringLiterals())
 			if err := interp.Execute(); err != nil {
 				t.Fatalf("execute: %v", err)

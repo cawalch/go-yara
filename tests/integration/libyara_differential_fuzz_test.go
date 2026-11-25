@@ -185,7 +185,7 @@ func skipSource(src string) bool {
 }
 
 //nolint:revive // argument-limit: oracle plumbing keeps the libyara binary path explicit.
-func scanWithLibyara(t testing.TB, bin, src string, data []byte) (map[string][]span, error) {
+func scanWithLibyara(t testing.TB, bin, src string, data []byte, extraArgs ...string) (map[string][]span, error) {
 	t.Helper()
 	dir := t.TempDir()
 	rp := filepath.Join(dir, "r.yar")
@@ -196,7 +196,8 @@ func scanWithLibyara(t testing.TB, bin, src string, data []byte) (map[string][]s
 	if err := os.WriteFile(dp, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	out, err := exec.Command(bin, "-s", "-L", "--no-warnings", rp, dp).Output()
+	args := append([]string{"-s", "-L", "--no-warnings"}, extraArgs...)
+	out, err := exec.Command(bin, append(args, rp, dp)...).Output()
 	if err != nil {
 		var ee *exec.ExitError
 		if !errors.As(err, &ee) {
