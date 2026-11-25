@@ -28,6 +28,8 @@ var ErrCorruptProgram = errors.New("corrupt compiled program")
 
 // MarshalBinary serializes a compiled program using the current versioned
 // go-yara format. Runtime external-variable values are deliberately omitted.
+// Automata are serialized as pattern metadata, without materializing deferred
+// transition tables.
 // Output is byte-identical for equal compilation inputs.
 func (cp *CompiledProgram) MarshalBinary() ([]byte, error) {
 	if cp == nil {

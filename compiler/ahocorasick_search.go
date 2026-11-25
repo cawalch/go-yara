@@ -733,10 +733,14 @@ func searchClassTable[S ~uint16 | ~int32](ac *acAutomaton, rootTransitions *[256
 
 	if rootHasNoOutput {
 		for i := 0; i < len(data); i++ {
-			currentState = rootTransitions[data[i]]
-			if currentState == 0 {
-				continue
+			i = skipSparseRoot8(rootTransitions, data, i)
+			for i < len(data) && rootTransitions[data[i]] == 0 {
+				i++
 			}
+			if i == len(data) {
+				return
+			}
+			currentState = rootTransitions[data[i]]
 			if hasOutput[currentState] && !ac.yieldMatches(int32(currentState), i, yield) {
 				return
 			}
