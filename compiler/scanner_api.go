@@ -25,7 +25,10 @@ func (s *Scanner) MatchesReader(r io.Reader) (bool, error) {
 	return s.MatchesReaderWithContext(context.Background(), r)
 }
 
-// MatchesReaderWithContext reports whether at least one public rule matches r using constant-memory streaming.
+// MatchesReaderWithContext reports whether at least one public rule matches r.
+// It uses the bounded input window described by ScanReaderWithContext.
+// Occurrence spans needed for condition evaluation can grow with the number
+// of matches, even though the result is a boolean.
 // Integer reads have the same retained-header limit as ScanReaderWithContext.
 func (s *Scanner) MatchesReaderWithContext(ctx context.Context, r io.Reader) (bool, error) {
 	if s == nil || s.program == nil {
@@ -79,14 +82,15 @@ func (s *Scanner) MatchesWithContext(ctx context.Context, data []byte) (matched 
 		return false, err
 	}
 	if s.compactPrefilterFanoutRejects(ctx, data) {
-		if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
+		err := ctx.Err()
+		if err == nil && s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
 			s.telemetrySink.PrefilterRejects++
 		}
 		if s.hookMask&(hookBitTelemetry|hookBitScanLifecycle) != 0 {
 			start := s.beginScan(ctx, int64(len(data)))
-			start.finish(nil, 0, nil)
+			start.finish(nil, 0, err)
 		}
-		return false, nil
+		return false, err
 	}
 	s.clearRuleResultsIfDirty()
 	if s.hookMask&(hookBitTelemetry|hookBitScanLifecycle) != 0 {
@@ -117,10 +121,7 @@ func (s *Scanner) matchesUnobserved(ctx context.Context, data []byte) (bool, err
 	if err != nil {
 		return false, err
 	}
-	hasMatch := evaluation.matchedPublicGlobal ||
-		evaluation.allGlobalMatched && evaluation.matchedPublicNonGlobal
-
-	return hasMatch, nil
+	return evaluation.allGlobalMatched && evaluation.matchedPublic, nil
 }
 
 // MatchingRules returns detailed public rule matches without constructing the
@@ -161,12 +162,16 @@ func (s *Scanner) matchingRulesWithContextCore(ctx context.Context, data []byte)
 }
 
 // ScanReader reads from the reader and scans the data.
-// Integer reads have the same retained-header limit as ScanReaderWithContext.
+// Its memory use and retained-header limit are described by ScanReaderWithContext.
 func (s *Scanner) ScanReader(r io.Reader) (*ScanResult, error) {
 	return s.ScanReaderWithContext(context.Background(), r)
 }
 
-// ScanReaderWithContext reads from the reader and scans the data using constant-memory streaming.
+// ScanReaderWithContext reads from the reader and scans the data in chunks.
+// Its input buffer is bounded by the chunk size, overlap, lookahead, and
+// retained header. Retained occurrence spans grow with the number of matches.
+// Reported match bytes and evidence add storage that can grow with their size
+// and number. WithFastScan reduces occurrence retention for eligible rules.
 // Cancellation is checked between chunk reads and pattern evaluation.
 // Integer reads in conditions must lie entirely within the first 64 KiB of input;
 // reads outside that retained header are undefined, even for longer streams.

@@ -72,6 +72,26 @@ func TestVMBatchReleaseNilGuards(t *testing.T) {
 	(&VMBatch{}).Release()
 }
 
+func TestVMBatchReleaseOfValueCopy(t *testing.T) {
+	owner, release := NewVMBatch(8)
+	defer release()
+	owner.st.visited = owner.st.visited[:8]
+	copyBeforeRelease, copyAfterRelease := *owner, *owner
+	copyBeforeRelease.Release()
+	if got := len(owner.st.visited); got != 8 {
+		t.Fatalf("releasing a value copy changed the owner's visited length to %d", got)
+	}
+	release()
+
+	next, releaseNext := NewVMBatch(4)
+	defer releaseNext()
+	next.st.visited = next.st.visited[:4]
+	copyAfterRelease.Release()
+	if got := len(next.st.visited); got != 4 {
+		t.Fatalf("releasing a value copy changed a later owner's visited length to %d", got)
+	}
+}
+
 // Mutation-test classification for regex/pool.go (gremlins v0.6.0, --workers 1):
 //   - getVMState 36:21 (cap < codeLen -> <=): equivalent-mode. Reallocating when
 //     cap == codeLen yields a functionally identical, generation-tagged slice;

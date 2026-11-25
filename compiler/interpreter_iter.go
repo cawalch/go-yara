@@ -338,15 +338,15 @@ func (i *Interpreter) executeIterNext() error {
 				return err
 			}
 		case OpIterStartIntRange:
-			i.memory[iter.VariableSlot] = Value{Type: ValueTypeInt, IntVal: iter.StartValue + int64(iter.Index)}
+			i.storeMemory(iter.VariableSlot, Value{Type: ValueTypeInt, IntVal: iter.StartValue + int64(iter.Index)})
 		case OpIterStartIntEnum:
-			i.memory[iter.VariableSlot] = Value{Type: ValueTypeInt, IntVal: iter.IntValues[iter.Index]}
+			i.storeMemory(iter.VariableSlot, Value{Type: ValueTypeInt, IntVal: iter.IntValues[iter.Index]})
 		case OpIterStartStringSet:
 			id := iter.StringIDs[iter.Index]
-			i.memory[iter.VariableSlot] = Value{Type: ValueTypeString, StringRef: i.resolveStringRef(id)}
+			i.storeMemory(iter.VariableSlot, Value{Type: ValueTypeString, StringRef: i.resolveStringRef(id)})
 		case OpIterStartTextStringSet:
 			text := iter.TextStrings[iter.Index]
-			i.memory[iter.VariableSlot] = Value{Type: ValueTypeString, StringRef: int64(len(i.stringArena))}
+			i.storeMemory(iter.VariableSlot, Value{Type: ValueTypeString, StringRef: int64(len(i.stringArena))})
 			i.stringArena = append(i.stringArena, text)
 		}
 

@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+* A failed global rule suppresses every public match, including other matching global rules. Boolean scans now propagate cancellation observed by the compact prefilter.
+
+* Clarified that `ScanReader` and `MatchesReader` bound input buffering. Retained occurrences, reported match data, and evidence can grow with matches ([#702](https://github.com/cawalch/go-yara/issues/702)).
+
 * **Strict `libyara` compatibility (`hex` and string modifiers):** Reject leading/trailing hex jumps, `xor` + `nocase`, and `xor` on hex strings under `WithStrictLibyaraCompatibility(true)` with updated compatibility docs and differential tests, and reject consecutive hex jumps, stray `{`/`}`, and unterminated `/*` block comments unconditionally ([#638](https://github.com/cawalch/go-yara/pull/638), [#644](https://github.com/cawalch/go-yara/pull/644); closes [#631](https://github.com/cawalch/go-yara/issues/631), [#635](https://github.com/cawalch/go-yara/issues/635), [#642](https://github.com/cawalch/go-yara/issues/642)).
 * **Multi-rule diagnostics and parser recovery:** Report all collected parser, semantic, and codegen errors in a single compile pass (including `rule %q` context in `semantic.Error.Error()`), continue semantic analysis on valid rules after parse errors, honor recovery on `global rule` declarations, and fix infinite recovery loops in `parseStringDeclarations` and `parseMetaDeclarations` ([#638](https://github.com/cawalch/go-yara/pull/638), [#640](https://github.com/cawalch/go-yara/pull/640), [#644](https://github.com/cawalch/go-yara/pull/644); closes [#632](https://github.com/cawalch/go-yara/issues/632), [#636](https://github.com/cawalch/go-yara/issues/636), [#641](https://github.com/cawalch/go-yara/issues/641)).
 
@@ -202,7 +206,7 @@ Measurements compare individual changes with their preceding commits, not v0.8.2
 
 ### Fixed
 
-* **Constant-Memory Streaming**: Replaced `io.ReadAll` inside `Scanner.ScanReader` and `ScanReaderWithContext` with sequential sliding-window streaming ($C + W$ memory), eliminating buffer slurping and OOM crashes on unbounded/large streams ([#352](https://github.com/cawalch/go-yara/issues/352), [#360](https://github.com/cawalch/go-yara/pull/360)).
+* **Bounded Input Buffering**: Replaced `io.ReadAll` inside `Scanner.ScanReader` and `ScanReaderWithContext` with bounded sliding input windows ($C + W$). Retained occurrences and evidence can still grow with matches ([#352](https://github.com/cawalch/go-yara/issues/352), [#360](https://github.com/cawalch/go-yara/pull/360)).
 * **Exact Boundary Deduplication**: Invariant claims matches uniquely by the chunk containing their terminal byte offset (`absEnd > primaryStart && absEnd <= primaryEnd`), guaranteeing zero duplicates and zero missed boundary patterns across chunk seams. Preserved `fullword` boundary context using non-consuming 2-byte lookahead.
 * **Stream Condition Evaluation**: Evaluates complete rule condition ASTs at EOF, supporting exact stream `filesize`, fixed header inspections (`uint16(0)` via 64 KB block retention), counts (`#a`), offsets (`@a`), lengths (`!a`), boolean logic (`$a and $b`, `not $c`), global rules, and evidence extraction.
 * **Build Metadata**: Ignore root release build and archive directories so later cross-platform builds do not acquire `vcs.modified=true` from earlier generated outputs.
@@ -214,7 +218,7 @@ Measurements compare individual changes with their preceding commits, not v0.8.2
 
 ### Documentation
 
-* Updated README, input scanning guides, compatibility, and performance documentation to reflect constant-memory streaming semantics ($C + W$) for `ScanReader`.
+* Updated README, input scanning guides, compatibility, and performance documentation to describe the bounded input window ($C + W$) used by `ScanReader`.
 * Added architectural RFC for native pure-Go PE parsing and Authenticode inspection ([#359](https://github.com/cawalch/go-yara/issues/359)).
 
 ## [v0.8.1] - 2026-10-24

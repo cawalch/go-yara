@@ -164,7 +164,7 @@ help:
 	@echo "  test-all               Run the unit tests and libyara bugproof differential suite"
 	@echo "  test-race              Run the full test suite with the race detector"
 	@echo "  test-simd              Run SIMD byte search tests (Go 1.27+)"
-	@echo "  test-bugproof          Run the libyara 4.5.8 differential proof test suite"
+	@echo "  test-bugproof          Run differential proofs (requires yara $(shell cat tests/integration/oracle-version.txt) on PATH)"
 	@echo "  coverage               Generate HTML test coverage report (coverage.html)"
 	@echo "  analyze                Run repository-specific static analyzers"
 	@echo "  fuzz FUZZTIME=30s      Run every fuzz target sequentially"

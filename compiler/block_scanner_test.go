@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"context"
 	"crypto/md5" // #nosec G501 -- compatibility test.
 	"fmt"
 	"testing"
@@ -316,5 +317,100 @@ rule overlap_header {
 	}
 	if !result.RuleResults["overlap_header"] || len(result.PrunedRules) != 0 {
 		t.Fatalf("result = %+v, want overlap_header match", result)
+	}
+}
+
+func TestBlockScannerIndexedMatchDataAcrossOverlaps(t *testing.T) {
+	program := mustCompileStreamingProgram(t, `rule words {
+    strings:
+        $word = /w(or)d/ capture(token = 1)
+    condition:
+        $word
+}`)
+	scanner := program.NewBlockScanner(WithMatchData(8), WithMatchContext(2, 8), WithEvidence(8))
+	defer scanner.Close()
+
+	for _, block := range []MemoryBlock{
+		{Base: 100, Data: []byte("word a")},
+		{Base: 5, Data: []byte("word t")},
+		{Base: 100, Data: []byte("word and")},
+	} {
+		if err := scanner.Scan(block.Base, block.Data); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	type outcome struct {
+		base, offset int64
+		after        string
+	}
+	check := func(want []outcome) {
+		t.Helper()
+		result, err := scanner.Finish()
+		if err != nil {
+			t.Fatal(err)
+		}
+		matches := result.Matches["words"]["$word"]
+		if len(matches) != len(want) {
+			t.Fatalf("got %d matches, want %d", len(matches), len(want))
+		}
+		for i, match := range matches {
+			got := outcome{base: match.Base, offset: match.Offset, after: string(match.ContextAfter)}
+			if got != want[i] || string(match.MatchedData) != "word" || captureDataByName(match.Captures)["token"] != "or" {
+				t.Fatalf("match %d = %+v with context %q, want %+v with match data and capture", i, match, got.after, want[i])
+			}
+		}
+	}
+
+	first := []outcome{{5, 5, " t"}, {100, 100, " a"}}
+	check(first)
+	check(first)
+	if err := scanner.Scan(100, []byte("word and word b")); err != nil {
+		t.Fatal(err)
+	}
+	check(append(first, outcome{100, 109, " b"}))
+
+	scanner.Reset()
+	if err := scanner.Scan(0, []byte("word c")); err != nil {
+		t.Fatal(err)
+	}
+	check([]outcome{{0, 0, " c"}})
+}
+
+func TestBlockScannerBorrowedInputOwnership(t *testing.T) {
+	program := mustCompileStreamingProgram(t, `rule words {
+    strings:
+        $word = "word"
+    condition:
+        #word == 2 and uint8(100) == 119
+}`)
+	scanner := program.NewBlockScanner(WithMatchData(8))
+	defer scanner.Close()
+
+	borrowed := []byte("word")
+	copied := []byte("word")
+	if err := scanner.ScanBorrowedWithContext(context.Background(), 100, borrowed); err != nil {
+		t.Fatal(err)
+	}
+	if err := scanner.Scan(0, copied); err != nil {
+		t.Fatal(err)
+	}
+	if &scanner.blocks[0].Data[0] != &borrowed[0] || &scanner.blocks[1].Data[0] == &copied[0] {
+		t.Fatal("block borrowing and copying did not honor input ownership")
+	}
+	copied[0] = 'x'
+	result, err := scanner.Finish()
+	if err != nil {
+		t.Fatal(err)
+	}
+	matches := result.Matches["words"]["$word"]
+	if !result.RuleResults["words"] || len(matches) != 2 ||
+		string(matches[0].MatchedData) != "word" || string(matches[1].MatchedData) != "word" {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+	scanner.Reset()
+	borrowed[0] = 'x'
+	if got := string(matches[1].MatchedData); got != "word" {
+		t.Fatalf("result data after Reset = %q, want word", got)
 	}
 }
