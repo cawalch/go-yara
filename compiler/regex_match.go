@@ -154,29 +154,38 @@ func leadingGapRegexCandidateStartsInto(dst []int, data []byte, plan *regexLeadi
 		return nil, false
 	}
 	limit := max(1024, len(data)/4)
+	// Dense suffix hits can revisit the same gap repeatedly, even when no
+	// candidate survives. Fall back to the exact matcher after linear work.
+	probeLimit := max(scanCancellationInterval, len(data))
 	starts := dst[:0]
-	checkpoint := 0
+	probes := 0
 	for _, atom := range plan.atoms {
+		if atom.minOffset < 0 || atom.maxOffset < atom.minOffset ||
+			atom.maxOffset-atom.minOffset > maxLeadingGapAtomOffsetWidth {
+			return nil, false
+		}
 		searcher := newRegexLiteralSearcher(data, atom.data, flags)
-		for occurrence := searcher.index(0); occurrence >= 0; occurrence = searcher.index(occurrence + 1) {
-			if scanCanceledAt(done, checkpoint) {
-				return nil, true
-			}
-			checkpoint++
-			for offset := atom.minOffset; offset <= atom.maxOffset; offset++ {
+		for occurrence := searcher.indexWithCancel(0, done); occurrence >= 0; occurrence = searcher.indexWithCancel(occurrence+1, done) {
+			// There must be a leading byte before the suffix. Clamp the
+			// offset range before iterating so it only covers input bytes.
+			maxOffset := min(atom.maxOffset, occurrence-1)
+			for offset := atom.minOffset; offset <= maxOffset; offset++ {
 				suffixStart := occurrence - offset
-				if suffixStart < 1 || suffixStart > len(data) {
-					continue
-				}
 				maxGap := suffixStart - 1
 				if plan.gapMax >= 0 {
 					maxGap = min(maxGap, plan.gapMax)
 				}
+				if maxGap < plan.gapMin {
+					continue
+				}
 				for gapLength := 0; gapLength <= maxGap; gapLength++ {
-					if scanCanceledAt(done, checkpoint) {
+					if scanCanceledAt(done, probes) {
 						return nil, true
 					}
-					checkpoint++
+					if probes == probeLimit {
+						return nil, false
+					}
+					probes++
 					leadingPosition := suffixStart - gapLength - 1
 					if gapLength >= plan.gapMin && plan.leadingSet.Contains(data[leadingPosition]) {
 						if len(starts) >= limit {
@@ -184,17 +193,45 @@ func leadingGapRegexCandidateStartsInto(dst []int, data []byte, plan *regexLeadi
 						}
 						starts = append(starts, leadingPosition)
 					}
-					if gapLength == maxGap || !plan.gapSet.Contains(data[leadingPosition]) {
+					if !plan.gapSet.Contains(data[leadingPosition]) {
 						break
 					}
 				}
 			}
-			if occurrence == len(data) {
-				break
-			}
 		}
 	}
+	if scanCanceled(done) {
+		return nil, true
+	}
 	return sortedUniqueRegexStarts(starts), true
+}
+
+// indexWithCancel limits each literal search while preserving hits that span
+// the boundary between consecutive search windows.
+func (searcher *regexLiteralSearcher) indexWithCancel(from int, done <-chan struct{}) int {
+	if done == nil {
+		return searcher.index(from)
+	}
+	literalLength := len(searcher.literal)
+	if literalLength == 0 || from < 0 {
+		return -1
+	}
+	data := searcher.data
+	last := len(data) - literalLength
+	for from <= last {
+		if scanCanceled(done) {
+			return -1
+		}
+		end := from + min(cancelableSearchWindow, last-from+1)
+		searcher.data = data[:end+(literalLength-1)]
+		candidate := searcher.index(from)
+		searcher.data = data
+		if candidate >= 0 {
+			return candidate
+		}
+		from = end
+	}
+	return -1
 }
 
 type regexAlternativeCursor struct {
@@ -434,7 +471,7 @@ func boundedRegexWindow(
 	maxMatchSpan int,
 ) ([]byte, int, int) {
 	dataLen := len(data)
-	if dataLen == 0 || start >= dataLen {
+	if start < 0 || start >= dataLen {
 		return data, start, 0
 	}
 
@@ -456,37 +493,20 @@ func boundedRegexWindow(
 		windowEnd = start + maxMatchSpan + margin
 	}
 
+	maxLen := pattern.maxLength
 	if pattern.atomMaxOffset >= 0 && pattern.atomMaxSuffix >= 0 {
-		maxOffset := pattern.atomMaxOffset
+		maxLen = addSaturatedInt(pattern.atomMaxOffset, pattern.atomMaxSuffix)
 		atomLen := len(pattern.atom)
 		if isWide {
-			maxOffset *= 2
+			maxLen = addSaturatedInt(maxLen, maxLen)
 			atomLen = len(pattern.wideAtom)
 		}
-		maxSuffix := pattern.atomMaxSuffix
-		if isWide {
-			maxSuffix *= 2
-		}
-		tightEnd := start + maxOffset + atomLen + maxSuffix + margin
-		if tightEnd < windowEnd {
-			windowEnd = tightEnd
-		}
-	} else if pattern.maxLength >= 0 {
-		maxLen := pattern.maxLength
-		if isWide {
-			maxLen *= 2
-		}
-		tightEnd := start + maxLen + margin
-		if tightEnd < windowEnd {
-			windowEnd = tightEnd
-		}
+		maxLen = addSaturatedInt(maxLen, atomLen)
+	} else if isWide && maxLen >= 0 {
+		maxLen = addSaturatedInt(maxLen, maxLen)
 	}
-
-	if windowEnd > dataLen {
-		windowEnd = dataLen
-	}
-	if windowEnd < windowStart {
-		windowEnd = windowStart
+	if maxLen >= 0 && maxLen < windowEnd-start-margin {
+		windowEnd = start + maxLen + margin
 	}
 
 	return data[windowStart:windowEnd], start - windowStart, windowStart

@@ -52,6 +52,14 @@ func TestExecCapturesReplaySpans(t *testing.T) {
 
 	tests := []tc{
 		{
+			name: "greedy optional prefix", pattern: "(x{0,12})(x*)y", groups: []int{1, 2}, slotCount: 2,
+			input: "xxxy", want: matchedSpans(2, 0, 3, 3, 3),
+		},
+		{
+			name: "lazy optional prefix", pattern: "(x{0,12}?)(x*)y", groups: []int{1, 2}, slotCount: 2,
+			input: "xxxy", want: matchedSpans(2, 0, 0, 0, 3),
+		},
+		{
 			name: "two groups", pattern: "(abc)(def)", groups: []int{1, 2}, slotCount: 2,
 			input: "abcdef", want: matchedSpans(2, 0, 3, 3, 6),
 		},

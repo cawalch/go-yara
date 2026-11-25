@@ -24,12 +24,14 @@ type captureThread struct {
 type CaptureScratch struct {
 	cur     []captureThread
 	next    []captureThread
+	pending []captureThread
 	visited []bool
 	spans   []CaptureSpan
 }
 
 type captureReplayState struct {
 	code           []byte
+	pending        []captureThread
 	input          []byte
 	visited        []bool
 	acceptedSlots  []int
@@ -58,7 +60,7 @@ func ExecCapturesAtWithScratch(
 	flags Flags,
 	start, end, slotCount int,
 ) ([]CaptureSpan, bool) {
-	if len(code) == 0 || start < 0 || end < start || end > len(input) || slotCount < 0 {
+	if len(code) == 0 || start < 0 || end < start || end > len(input) || slotCount < 0 || slotCount > 256 {
 		return nil, false
 	}
 	coordCount := slotCount * 2
@@ -97,6 +99,10 @@ func ExecCapturesAtWithScratch(
 		coordCount:  coordCount,
 		expectedEnd: end,
 		wide:        wide,
+	}
+	if scratch != nil {
+		state.pending = scratch.pending[:0]
+		defer func() { scratch.pending = state.pending }()
 	}
 	addCaptureThread(&state, &cur, initThread, start)
 	if start == end && state.hasAccepted {
@@ -218,88 +224,92 @@ func addCaptureThread(
 	wide := state.wide
 	pc := thread.pc
 	for {
-		if pc < 0 || pc >= len(code) || visited[pc] {
-			return
-		}
-		visited[pc] = true
-		switch code[pc] {
-		case OpSplitA, OpSplitB:
-			if pc+2 >= len(code) {
-				return
-			}
-			rel := int(int16(binary.LittleEndian.Uint16(code[pc+1 : pc+3]))) //checkednarrow:ignore uint16 bits encode a signed relative offset
-			nextPC, altPC := pc+3, pc+rel
-			first, second := nextPC, altPC
-			if code[pc] == OpSplitB {
-				first, second = altPC, nextPC
-			}
-			branch := thread
-			branch.pc = first
-			if branch.slots != nil {
-				branch.slots = cloneCaptureSlots(branch.slots)
-			}
-			addCaptureThread(state, list, branch, pos)
-			thread.pc = second
-			addCaptureThread(state, list, thread, pos)
-			return
-		case OpJump:
-			if pc+2 >= len(code) {
-				return
-			}
-			pc += int(int16(binary.LittleEndian.Uint16(code[pc+1 : pc+3]))) //checkednarrow:ignore uint16 bits encode a signed relative offset
-		case OpSaveStart, OpSaveEnd:
-			if pc+1 >= len(code) {
-				return
-			}
-			slot := int(code[pc+1]) * 2
-			if code[pc] == OpSaveEnd {
-				slot++
-			}
-			if slot >= state.coordCount {
-				return
-			}
-			if thread.slots != nil {
-				thread.slots = cloneCaptureSlots(thread.slots)
-				thread.slots[slot] = pos
-			} else {
-				thread.inline[slot] = pos
-			}
-			pc += 2
-		case OpMatchAtStart:
-			if pos != 0 {
-				return
-			}
-			pc++
-		case OpMatchAtEnd:
-			if pos != len(input) {
-				return
-			}
-			pc++
-		case OpWordBoundary:
-			if wide && !isWordBoundaryWide(input, pos) || !wide && !isWordBoundary(input, pos) {
-				return
-			}
-			pc++
-		case OpNonWordBoundary:
-			if wide && isWordBoundaryWide(input, pos) || !wide && isWordBoundary(input, pos) {
-				return
-			}
-			pc++
-		case OpMatch:
-			if pos == state.expectedEnd && !state.hasAccepted {
-				state.hasAccepted = true
-				if thread.slots != nil {
-					state.acceptedSlots = cloneCaptureSlots(thread.slots)
-				} else {
-					state.acceptedInline = thread.inline
+	path:
+		for pc >= 0 && pc < len(code) && !visited[pc] {
+			visited[pc] = true
+			switch code[pc] {
+			case OpSplitA, OpSplitB:
+				if pc+2 >= len(code) {
+					break path
 				}
+				rel := int(int16(binary.LittleEndian.Uint16(code[pc+1 : pc+3]))) //checkednarrow:ignore uint16 bits encode a signed relative offset
+				nextPC, altPC := pc+3, pc+rel
+				first, second := nextPC, altPC
+				if code[pc] == OpSplitB {
+					first, second = altPC, nextPC
+				}
+				// Save instructions copy slot slices on write. Both successors
+				// can share the current slice until one of them updates a slot.
+				thread.pc = second
+				state.pending = append(state.pending, thread)
+				pc = first
+			case OpJump:
+				if pc+2 >= len(code) {
+					break path
+				}
+				pc += int(int16(binary.LittleEndian.Uint16(code[pc+1 : pc+3]))) //checkednarrow:ignore uint16 bits encode a signed relative offset
+			case OpSaveStart, OpSaveEnd:
+				if pc+1 >= len(code) {
+					break path
+				}
+				slot := int(code[pc+1]) * 2
+				if code[pc] == OpSaveEnd {
+					slot++
+				}
+				if slot >= state.coordCount {
+					break path
+				}
+				if thread.slots != nil {
+					thread.slots = cloneCaptureSlots(thread.slots)
+					thread.slots[slot] = pos
+				} else {
+					thread.inline[slot] = pos
+				}
+				pc += 2
+			case OpMatchAtStart:
+				if pos != 0 {
+					break path
+				}
+				pc++
+			case OpMatchAtEnd:
+				if pos != len(input) {
+					break path
+				}
+				pc++
+			case OpWordBoundary:
+				if wide && !isWordBoundaryWide(input, pos) || !wide && !isWordBoundary(input, pos) {
+					break path
+				}
+				pc++
+			case OpNonWordBoundary:
+				if wide && isWordBoundaryWide(input, pos) || !wide && isWordBoundary(input, pos) {
+					break path
+				}
+				pc++
+			case OpMatch:
+				if pos == state.expectedEnd && !state.hasAccepted {
+					state.hasAccepted = true
+					if thread.slots != nil {
+						state.acceptedSlots = cloneCaptureSlots(thread.slots)
+					} else {
+						state.acceptedInline = thread.inline
+					}
+				}
+				break path
+			default:
+				thread.pc = pc
+				*list = append(*list, thread)
+				break path
 			}
-			return
-		default:
-			thread.pc = pc
-			*list = append(*list, thread)
+		}
+		if len(state.pending) == 0 {
 			return
 		}
+		last := len(state.pending) - 1
+		thread = state.pending[last]
+		state.pending[last].slots = nil
+		state.pending = state.pending[:last]
+		pc = thread.pc
 	}
 }
 

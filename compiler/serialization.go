@@ -13,6 +13,7 @@ import (
 	"slices"
 
 	"github.com/cawalch/go-yara/ast"
+	"github.com/cawalch/go-yara/internal/goblimit"
 	"github.com/cawalch/go-yara/regex"
 )
 
@@ -74,7 +75,7 @@ func (cp *CompiledProgram) WriteTo(writer io.Writer) (int64, error) {
 // UnmarshalCompiledProgram loads a compiled program. Built-in modules are
 // rebound automatically; pass custom modules used by the original compiler.
 func UnmarshalCompiledProgram(data []byte, modules ...Module) (*CompiledProgram, error) {
-	return ReadCompiledProgram(bytes.NewReader(data), modules...)
+	return ReadCompiledProgram(bytes.NewBuffer(data), modules...)
 }
 
 // ReadCompiledProgram reads a versioned compiled program. Built-in modules are
@@ -95,22 +96,30 @@ func ReadCompiledProgram(reader io.Reader, modules ...Module) (*CompiledProgram,
 		return nil, fmt.Errorf("%w: unsupported compiled program version %d; rebuild with format version %d", ErrCorruptProgram, version, compiledProgramVersion)
 	}
 
-	const maxCompiledProgramBytes = 256 << 20 // 256 MiB safety bound for gob decode
-	limited := io.LimitReader(reader, maxCompiledProgramBytes)
+	const maxCompiledProgramBytes = 256 << 20
+	var data []byte
+	var err error
+	buf, buffered := reader.(*bytes.Buffer)
+	if buffered {
+		data = buf.Bytes()[:min(buf.Len(), maxCompiledProgramBytes)]
+	} else {
+		data, err = goblimit.Read(reader, maxCompiledProgramBytes)
+		if err != nil {
+			return nil, fmt.Errorf("%w: reading compiled program: %w", ErrCorruptProgram, err)
+		}
+	}
+	used, err := goblimit.Check(data, reflect.TypeFor[serializedProgram](), maxCompiledProgramBytes)
+	if err != nil {
+		return nil, fmt.Errorf("%w: inspecting compiled program: %w", ErrCorruptProgram, err)
+	}
+	if buffered {
+		buf.Next(used)
+	}
 	var payload serializedProgram
-	if err := gob.NewDecoder(compiledProgramReader{limited}).Decode(&payload); err != nil {
+	if err := gob.NewDecoder(bytes.NewReader(data[:used])).Decode(&payload); err != nil {
 		return nil, fmt.Errorf("%w: decoding compiled program: %w", ErrCorruptProgram, err)
 	}
 	return deserializeProgram(payload, modules)
-}
-
-// ReadByte prevents gob from buffering bytes belonging to the next artifact.
-type compiledProgramReader struct{ io.Reader }
-
-func (reader compiledProgramReader) ReadByte() (byte, error) {
-	var data [1]byte
-	_, err := io.ReadFull(reader.Reader, data[:])
-	return data[0], err
 }
 
 func compareSerializedEntries[K cmp.Ordered, V any](a, b serializedEntry[K, V]) int {
@@ -626,7 +635,12 @@ func deserializeRule(serialized serializedRule, bindings map[string]compiledModu
 	regexPatternsMap, err := decodeConvertedMap(
 		serialized.RegexPatternEntries,
 		serialized.RegexPatterns,
-		func(_ string, p serializedRegexPattern) (RegexPattern, error) { return deserializeRegexPattern(p), nil },
+		func(id string, p serializedRegexPattern) (RegexPattern, error) {
+			if err := validateSerializedRegexPattern(p); err != nil {
+				return RegexPattern{}, fmt.Errorf("%w: regex %q: %w", ErrCorruptProgram, id, err)
+			}
+			return deserializeRegexPattern(p), nil
+		},
 	)
 	if err != nil {
 		return nil, err
@@ -880,6 +894,9 @@ func deserializeModuleRegexes(serialized []serializedModuleRegex) ([]*compiledMo
 		entry := &compiledModuleRegex{
 			code:  item.Code,
 			flags: item.Flags,
+		}
+		if err := regex.ValidateBytecode(entry.code); err != nil {
+			return nil, fmt.Errorf("%w: module regex %d: %w", ErrCorruptProgram, index, err)
 		}
 		if err := validateCompiledModuleRegex(entry); err != nil {
 			return nil, fmt.Errorf("%w: module regex %d: %w", ErrCorruptProgram, index, err)

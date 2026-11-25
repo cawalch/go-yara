@@ -545,82 +545,82 @@ func runAtMatchBatchBoundedWithCancel(bs *VMBatch, code, s []byte, flags Flags, 
 // addThread computes the epsilon/assertion closure from (pc,pos) and appends
 // consuming states into list. Returns true if OpMatch is reachable in the
 // closure at the given position.
-// visited is a generation-counter []int; gen is the current generation token.
-func addThread(code, s []byte, list *[]thread, pc, pos int, visited []uint32, gen uint32, flags Flags) bool { //nolint:revive,cyclop // argument-limit and complexity are explicit for VM closure clarity
-	wide := flags&FlagsWide != 0
-	for {
-		if pc < 0 || pc >= len(code) {
-			return false
-		}
-		if visited[pc] == gen {
-			return false
-		}
-		visited[pc] = gen
-		op := code[pc]
-		switch op {
-		case OpSplitA, OpSplitB:
-			// Layout: [op][u16 rel]
-			if pc+2 >= len(code) {
-				return false
-			}
-			u16 := binary.LittleEndian.Uint16(code[pc+1 : pc+3])
-			rel := int16(u16) //checkednarrow:ignore uint16 bits encode a signed relative offset
-			// sequential next
-			nextPC := pc + 3
-			altPC := pc + int(rel)
-			return addSplitThreads(code, s, list, nextPC, altPC, pos, visited, gen, flags, op)
-		case OpJump:
-			// Layout: [op][u16 rel]
-			if pc+2 >= len(code) {
-				return false
-			}
-			u16 := binary.LittleEndian.Uint16(code[pc+1 : pc+3])
-			rel := int16(u16) //checkednarrow:ignore uint16 bits encode a signed relative offset
-			pc += int(rel)
-			continue
-		case OpMatchAtStart:
-			if pos != 0 {
-				return false
-			}
-			pc++
-			continue
-		case OpMatchAtEnd:
-			if pos != len(s) {
-				return false
-			}
-			pc++
-			continue
-		case OpWordBoundary:
-			if wide {
-				if !isWordBoundaryWide(s, pos) {
-					return false
-				}
-			} else {
-				if !isWordBoundary(s, pos) {
-					return false
-				}
-			}
-			pc++
-			continue
-		case OpNonWordBoundary:
-			if wide {
-				if isWordBoundaryWide(s, pos) {
-					return false
-				}
-			} else {
-				if isWordBoundary(s, pos) {
-					return false
-				}
-			}
-			pc++
-			continue
-		case OpMatch:
-			return flags&FlagsFullwordEnd == 0 || fullwordEnd(s, pos, wide)
-		default:
-			// A consuming op: add to list and stop closure expansion
+// gen identifies the entries marked in visited for this closure.
+func addThread(code, s []byte, list *[]thread, pc, pos int, visited []uint32, gen uint32, flags Flags) bool { //nolint:revive,cyclop // VM closure keeps branch priority and generation marking together.
+	// Consuming opcodes precede the assertions, with OpMatch in their midst.
+	// A consuming start has no epsilon transitions and needs no worklist.
+	if pc >= 0 && pc < len(code) && code[pc] < OpMatchAtEnd && code[pc] != OpMatch {
+		if visited[pc] != gen {
+			visited[pc] = gen
 			*list = append(*list, thread{pc: pc})
-			return false
 		}
+		return false
+	}
+	wide := flags&FlagsWide != 0
+	var local [8]int
+	pending := local[:0]
+	matched := false
+	for {
+	path:
+		for pc >= 0 && pc < len(code) && visited[pc] != gen {
+			visited[pc] = gen
+			op := code[pc]
+			switch op {
+			case OpSplitA, OpSplitB, OpJump:
+				if pc+2 >= len(code) {
+					break path
+				}
+				rel := int(int16(binary.LittleEndian.Uint16(code[pc+1 : pc+3]))) //checkednarrow:ignore bytecode encodes a signed relative offset
+				first := pc + rel
+				if op != OpJump {
+					second := pc + 3
+					if op == OpSplitA {
+						first, second = second, first
+					}
+					// LIFO preserves the compiler's ordered split without recursion.
+					pending = append(pending, second)
+				}
+				pc = first
+			case OpMatchAtStart:
+				if pos != 0 {
+					break path
+				}
+				pc++
+			case OpMatchAtEnd:
+				if pos != len(s) {
+					break path
+				}
+				pc++
+			case OpWordBoundary, OpNonWordBoundary:
+				boundary := false
+				if wide {
+					boundary = isWordBoundaryWide(s, pos)
+				} else {
+					boundary = isWordBoundary(s, pos)
+				}
+				if boundary != (op == OpWordBoundary) {
+					break path
+				}
+				pc++
+			case OpMatch:
+				if flags&FlagsFullwordEnd == 0 || fullwordEnd(s, pos, wide) {
+					if flags&FlagsExhaustive == 0 {
+						return true
+					}
+					matched = true
+				}
+				break path
+			default:
+				*list = append(*list, thread{pc: pc})
+				break path
+			}
+		}
+		if len(pending) == 0 {
+			return matched
+		}
+		last := len(pending) - 1
+		pc = pending[last]
+		pending = pending[:last]
 	}
 }
 
@@ -706,21 +706,6 @@ func checkAndReturnIfExhausted(cur []thread, matched *bool, length *int, bestEnd
 		return true
 	}
 	return false
-}
-
-// addSplitThreads preserves split priority unless exhaustive verification is requested.
-//
-//nolint:revive // argument-limit: performance-critical VM hot path
-func addSplitThreads(code, s []byte, list *[]thread, nextPC, altPC, pos int, visited []uint32, gen uint32, flags Flags, op uint8) bool {
-	if op == OpSplitB {
-		nextPC, altPC = altPC, nextPC
-	}
-	matched := addThread(code, s, list, nextPC, pos, visited, gen, flags)
-	if matched && flags&FlagsExhaustive == 0 {
-		return true
-	}
-	alternativeMatched := addThread(code, s, list, altPC, pos, visited, gen, flags)
-	return matched || alternativeMatched
 }
 
 // fullword uses alphanumeric bytes, unlike \b, which also treats '_' as a word byte.

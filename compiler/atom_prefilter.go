@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"context"
+	"math"
 	"slices"
 	"sort"
 
@@ -293,6 +294,7 @@ func buildFixedRegexDispatch(rules []*CompiledRule) *fixedRegexDispatch {
 				len(pattern.prefix) >= minPrefilterAtomLength ||
 				len(pattern.atom) >= minPrefilterAtomLength ||
 				pattern.byteSetCount == 0 ||
+				pattern.byteSetMinOffset < 0 ||
 				pattern.byteSetMinOffset != pattern.byteSetMaxOffset ||
 				pattern.cacheIndex < 0 {
 				continue
@@ -302,15 +304,18 @@ func buildFixedRegexDispatch(rules []*CompiledRule) *fixedRegexDispatch {
 			encodings, count := regexEncodingOrder(pattern.Flags, hasModifier(modifiers, ast.StringModifierWide), hasModifier(modifiers, ast.StringModifierASCII))
 
 			for _, wide := range encodings[:count] {
+				atomOffset := pattern.byteSetMinOffset
+				if wide {
+					if atomOffset > math.MaxInt/2 {
+						continue
+					}
+					atomOffset *= 2
+				}
 				key := prefilterDedupKey{kind: StringKindRegex, cacheKey: pattern.cacheKey, wide: wide}
 				if _, exists := seen[key]; exists {
 					continue
 				}
 				seen[key] = struct{}{}
-				atomOffset := pattern.byteSetMinOffset
-				if wide {
-					atomOffset *= 2
-				}
 				entries = append(entries, fixedRegexDispatchEntry{
 					pattern:    pattern,
 					modifiers:  modifiers,
@@ -739,8 +744,8 @@ func (v regexPrefilterVerifier) verifyStart(dst []matchSpan, pattern *RegexPatte
 		return dst, v.bs
 	}
 	if v.hasFixedByteSet {
-		checkPos := start + pattern.byteSetMinOffset
-		if checkPos >= len(v.data) || !pattern.byteSet.Contains(v.data[checkPos]) {
+		offset := pattern.byteSetMinOffset
+		if offset >= len(v.data)-start || !pattern.byteSet.Contains(v.data[start+offset]) {
 			return dst, v.bs
 		}
 	}
