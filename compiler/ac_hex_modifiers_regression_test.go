@@ -11,7 +11,7 @@ import (
 	"github.com/cawalch/go-yara/regex"
 )
 
-func TestIssue688ACMixedNocaseFailureLinks(t *testing.T) {
+func TestACMixedNocaseFailureLinks(t *testing.T) {
 	t.Run("rule_repro_xb_nocase_and_B", func(t *testing.T) {
 		sources := []string{
 			`
@@ -214,7 +214,7 @@ rule NocaseWrap { strings: $d = "axcdef" nocase condition: $d }
 	})
 }
 
-func TestIssue688XorNocaseNoPostXorFolding(t *testing.T) {
+func TestXorNocaseNoPostXorFolding(t *testing.T) {
 	xorBytes := func(in []byte, key byte) []byte {
 		out := make([]byte, len(in))
 		for i, b := range in {
@@ -327,7 +327,7 @@ rule R {
 	})
 }
 
-func TestIssue688CustomBase64AlphabetNewlinesAndRawBytes(t *testing.T) {
+func TestCustomBase64AlphabetNewlinesAndRawBytes(t *testing.T) {
 	t.Run("newline_and_cr_in_alphabet_no_panic", func(t *testing.T) {
 		alphabet := "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01234567\n\r+/"
 		if len(alphabet) != 64 {
@@ -400,7 +400,7 @@ rule B64 {
 	})
 }
 
-func TestIssue688ScanHexAnchorKeyDedupe(t *testing.T) {
+func TestScanHexAnchorKeyDedupe(t *testing.T) {
 	sc := newStringCompiler()
 	t.Run("large_overlapping_jump_no_duplicates", func(t *testing.T) {
 		pat, err := sc.parseHexPattern(`{ [0-500] AA }`)
@@ -454,7 +454,7 @@ func TestIssue688ScanHexAnchorKeyDedupe(t *testing.T) {
 	})
 }
 
-func TestIssue688TrailingHexJumpEOFClamp(t *testing.T) {
+func TestTrailingHexJumpEOFClamp(t *testing.T) {
 	sc := newStringCompiler()
 
 	for _, tc := range []struct {
@@ -532,7 +532,7 @@ rule TrailingJump {
 	})
 }
 
-func TestIssue688WideRawByteInterleaving(t *testing.T) {
+func TestWideRawByteInterleaving(t *testing.T) {
 	prog, err := NewCompiler().CompileSource(`
 rule WideRaw {
 	strings:
@@ -594,7 +594,7 @@ func (testCancelTeddyPrefilter) findCandidateWithCancel(data []byte, from int, d
 
 func (testCancelTeddyPrefilter) tailBytes() int { return 31 }
 
-func TestIssue688TeddyTailNotScannedAfterCancellation(t *testing.T) {
+func TestTeddyTailNotScannedAfterCancellation(t *testing.T) {
 	buildTeddyAC := func(t *testing.T, padStates int) *acAutomaton {
 		t.Helper()
 		ac := newacAutomaton()
