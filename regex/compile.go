@@ -285,8 +285,8 @@ func (c *Compiler) emitPlusNode(n *Node) error {
 func (c *Compiler) emitRangeNode(n *Node) error {
 	// General lowering for e{min,max}:
 	// - Emit 'min' copies of e
-	// - If max == min: done
-	// - If max is unbounded (we use 65535): then emit a star loop for extra
+	// - If not unbounded and max == min: done
+	// - If unbounded: then emit a star loop for extra
 	// - Else emit (max-min) optional copies via chained splits.
 	child := n.Children[0]
 	// Emit required minimum copies
@@ -295,11 +295,11 @@ func (c *Compiler) emitRangeNode(n *Node) error {
 			return err
 		}
 	}
-	if n.End == n.Start {
+	if !n.Unbounded && n.End == n.Start {
 		return nil
 	}
 	// Unbounded tail -> star
-	if n.End == 65535 {
+	if n.Unbounded {
 		star := &Node{Kind: NodeStar, Children: []*Node{child}, Greedy: n.Greedy}
 		return c.emitNode(star)
 	}

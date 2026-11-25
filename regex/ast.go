@@ -107,15 +107,16 @@ type Class struct {
 // Nodes must not be modified or copied after atom analysis begins. Analysis of
 // an immutable tree may be shared across goroutines.
 type Node struct {
-	Kind     NodeKind
-	Value    byte   // For literal kinds
-	Mask     byte   // For masked literal kinds
-	Start    uint16 // For {m,n}
-	End      uint16 // For {m,n}
-	Greedy   bool
-	Class    *Class
-	Group    int // One-based source group number for NodeGroup.
-	Children []*Node
+	Kind      NodeKind
+	Value     byte   // For literal kinds
+	Mask      byte   // For masked literal kinds
+	Start     uint16 // For {m,n}
+	End       uint16 // For {m,n}
+	Unbounded bool   // For {m,} where the upper bound is omitted
+	Greedy    bool
+	Class     *Class
+	Group     int // One-based source group number for NodeGroup.
+	Children  []*Node
 
 	// atoms memoizes analyzeAtoms for this node; AST nodes are immutable after parsing.
 	atomsOnce sync.Once

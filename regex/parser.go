@@ -204,7 +204,7 @@ func (p *Parser) parsePrimary() (*Node, error) {
 	case tLBrace:
 		savedI := p.lx.i
 		savedCur := p.cur
-		minVal, maxVal, err2 := p.parseBound()
+		minVal, maxVal, unbounded, err2 := p.parseBound()
 		if err2 != nil {
 			if err2.Error() == "bad repeat interval" {
 				return nil, err2
@@ -217,6 +217,7 @@ func (p *Parser) parsePrimary() (*Node, error) {
 		n.Children = p.allocChild1(base)
 		n.Start = minVal
 		n.End = maxVal
+		n.Unbounded = unbounded
 		p.maybeMakeUngreedy(n)
 		base = n
 	default:
@@ -338,33 +339,35 @@ func skipSpaces(l *lexer) {
 }
 
 // parseBound parses {m}, {m,}, {m,n}, or {,m}. After '}', it advances p.cur to the next meaningful token.
-func (p *Parser) parseBound() (minVal, maxVal uint16, err error) {
+func (p *Parser) parseBound() (minVal, maxVal uint16, unbounded bool, err error) {
 	l := &p.lx // current index is just after '{'
 	skipSpaces(l)
 
+	hasMin := true
 	if l.i < l.len && l.s[l.i] == ',' {
 		minVal = 0
+		hasMin = false
 	} else {
 		minVal, err = p.readBoundNumber(l)
 		if err != nil {
-			return 0, 0, err
+			return 0, 0, false, err
 		}
 	}
 
-	maxVal, err = p.parseMaxBound(l, minVal)
+	maxVal, unbounded, err = p.parseMaxBound(l, minVal, hasMin)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, false, err
 	}
 
 	if err := p.finalizeBound(l); err != nil {
-		return 0, 0, err
+		return 0, 0, false, err
 	}
 
-	if minVal > maxVal {
-		return 0, 0, errors.New("bad repeat interval")
+	if !unbounded && minVal > maxVal {
+		return 0, 0, false, errors.New("bad repeat interval")
 	}
 
-	return minVal, maxVal, nil
+	return minVal, maxVal, unbounded, nil
 }
 
 // readBoundNumber reads a numeric value from the bound specification
@@ -386,20 +389,21 @@ func (p *Parser) readBoundNumber(l *lexer) (uint16, error) {
 }
 
 // parseMaxBound parses the maximum value part of a bound specification
-func (p *Parser) parseMaxBound(l *lexer, minVal uint16) (uint16, error) {
+func (p *Parser) parseMaxBound(l *lexer, minVal uint16, hasMin bool) (uint16, bool, error) {
 	skipSpaces(l)
 	if l.i >= l.len || l.s[l.i] != ',' {
-		return minVal, nil
+		return minVal, false, nil
 	}
 
 	l.i++ // skip comma
 	skipSpaces(l)
 
-	if l.i < l.len && l.s[l.i] == '}' {
-		return 65535, nil // unbounded
+	if hasMin && l.i < l.len && l.s[l.i] == '}' {
+		return 65535, true, nil // unbounded
 	}
 
-	return p.readBoundNumber(l)
+	maxVal, err := p.readBoundNumber(l)
+	return maxVal, false, err
 }
 
 // finalizeBound validates and finalizes bound parsing

@@ -258,7 +258,7 @@ func (s *Scanner) populateFixedRegexCache(
 			if entry.wide {
 				flags |= regex.FlagsWide
 			}
-			matched, startOffset, endOffset := execRegexMatchAt(nil, &entry.pattern, data, flags, entry.wide, start, done)
+			matched, startOffset, endOffset := execRegexMatchAtBounded(nil, &entry.pattern, data, flags, entry.wide, start, s.maxMatchSpan, done)
 			if !matched {
 				continue
 			}
@@ -268,7 +268,7 @@ func (s *Scanner) populateFixedRegexCache(
 				continue
 			}
 			match := Match{Offset: int64(absoluteStart), Length: absoluteEnd - absoluteStart}
-			if matchPassesModifiers(data, match, entry.modifiers, entry.wide) {
+			if matchPassesModifiers(data, match, entry.modifiers, entry.wide && flags&regexASCIIWordBoundary == 0) {
 				cache.matches[entry.cacheIndex] = append(cache.matches[entry.cacheIndex], matchSpan{
 					Offset: match.Offset,
 					Length: match.Length,

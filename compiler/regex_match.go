@@ -452,11 +452,8 @@ func boundedRegexWindow(
 	}
 
 	windowEnd := dataLen
-	if maxMatchSpan > 0 {
-		spanEnd := start + maxMatchSpan
-		if spanEnd < windowEnd {
-			windowEnd = spanEnd
-		}
+	if maxMatchSpan > 0 && maxMatchSpan < windowEnd-start-margin {
+		windowEnd = start + maxMatchSpan + margin
 	}
 
 	if pattern.atomMaxOffset >= 0 && pattern.atomMaxSuffix >= 0 {
@@ -624,7 +621,7 @@ func addRegexMatchAt(
 		maxMatchSpan = ctx.maxMatchSpan
 	}
 	scanData, relStart, windowStart := boundedRegexWindow(data, start, &regexInfo, isWide, maxMatchSpan)
-	matched, startOffset, endOffset := execRegexMatchAt(bs, &regexInfo, scanData, flags, isWide, relStart, ctx.cancelDone)
+	matched, startOffset, endOffset := execRegexMatchAtBounded(bs, &regexInfo, scanData, flags, isWide, relStart, maxMatchSpan, ctx.cancelDone)
 	if !matched {
 		if ctx != nil && bs.BudgetExceeded() {
 			ctx.verificationBudgetRejects++
@@ -655,23 +652,41 @@ func newRegexMatchBatch(ctx *MatchContext, pattern *RegexPattern) *regex.VMBatch
 
 //nolint:revive // cancellation signal accompanies the exact verifier arguments
 func execRegexMatchAt(bs *regex.VMBatch, pattern *RegexPattern, data []byte, flags regex.Flags, isWide bool, start int, done <-chan struct{}) (matched bool, startOffset, endOffset int) {
+	return execRegexMatchAtBounded(bs, pattern, data, flags, isWide, start, 0, done)
+}
+
+//nolint:revive // cancellation signal and span cap accompany the exact verifier arguments
+func execRegexMatchAtBounded(bs *regex.VMBatch, pattern *RegexPattern, data []byte, flags regex.Flags, isWide bool, start, maxMatchSpan int, done <-chan struct{}) (matched bool, startOffset, endOffset int) {
 	if scanCanceled(done) {
 		return false, -1, -1
 	}
 
-	if pattern.verification != nil && pattern.verification.ForwardOnly && len(data)-start > regexVerificationDistance {
-		ends, err := regex.ExecVerifyBatchWithCancel(bs, pattern.verification.Atoms[0].Forward, data, flags, start, regexVerificationDistance, done)
+	dist := regexVerificationDistance
+	if maxMatchSpan > 0 && maxMatchSpan < dist {
+		dist = maxMatchSpan
+	}
+	if pattern.verification != nil && pattern.verification.ForwardOnly && len(data)-start > dist {
+		ends, err := regex.ExecVerifyBatchWithCancel(bs, pattern.verification.Atoms[0].Forward, data, flags, start, dist, done)
 		if err != nil || len(ends) == 0 {
 			return false, -1, -1
 		}
 		return true, 0, ends[0] - start
 	}
 	if pattern.boundedAlternation != nil {
-		return execBoundedAlternation(bs, pattern.boundedAlternation, data, flags, start, done)
+		if maxMatchSpan <= 0 || maxMatchSpan >= len(data)-start {
+			return execBoundedAlternation(bs, pattern.boundedAlternation, data, flags, start, done)
+		}
+		if !pattern.boundedAlternation.Fullword && flags&regex.FlagsFullwordEnd == 0 {
+			return execBoundedAlternation(bs, pattern.boundedAlternation, data[:start+maxMatchSpan], flags, start, done)
+		}
 	}
 	if pattern.boundedClass != nil && !isWide && flags&(regex.FlagsWide|regex.FlagsFullwordEnd|regex.FlagsExhaustive|regex.FlagsBackwards|regex.FlagsScan) == 0 &&
 		(flags&regex.FlagsNoCase != 0) == pattern.boundedClass.noCase {
-		length, ok := pattern.boundedClass.match(data, start, flags&(regex.FlagsGreedy|regexForwardPriority) != 0, done)
+		matchData := data
+		if maxMatchSpan > 0 && maxMatchSpan < len(data)-start {
+			matchData = data[:start+maxMatchSpan]
+		}
+		length, ok := pattern.boundedClass.match(matchData, start, flags&(regex.FlagsGreedy|regexForwardPriority) != 0, done)
 		if !ok {
 			return false, -1, -1
 		}
@@ -679,7 +694,7 @@ func execRegexMatchAt(bs *regex.VMBatch, pattern *RegexPattern, data []byte, fla
 	}
 	if len(pattern.fixedByteSets) > 0 {
 		length, ok := fixedRegexMatchAt(pattern.fixedByteSets, data, isWide, start)
-		if !ok {
+		if !ok || (maxMatchSpan > 0 && length > maxMatchSpan) {
 			return false, -1, -1
 		}
 		return true, 0, length
@@ -689,7 +704,7 @@ func execRegexMatchAt(bs *regex.VMBatch, pattern *RegexPattern, data []byte, fla
 	if flags&regexForwardPriority != 0 {
 		flags |= regex.FlagsGreedy
 	}
-	matched, startOffset, endOffset, _ = regex.ExecMatchBatchWithCancel(bs, pattern.Code, data, flags, start, done)
+	matched, startOffset, endOffset, _ = regex.ExecMatchBatchBoundedWithCancel(bs, pattern.Code, data, flags, start, maxMatchSpan, done)
 	return matched, startOffset, endOffset
 }
 

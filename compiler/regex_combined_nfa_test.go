@@ -333,3 +333,39 @@ func TestCombinedRegexGroupingBudget(t *testing.T) {
 		}
 	}
 }
+
+func TestCombinedRegexRejectsBoundedAlternationAndForwardPriority(t *testing.T) {
+	if _, ok := decodeCombinedRegex(RegexPattern{
+		Code:               []byte{regex.OpLiteral, 'a', regex.OpMatch},
+		boundedAlternation: &regexBoundedAlternation{},
+	}); ok {
+		t.Fatal("decodeCombinedRegex accepted pattern with boundedAlternation")
+	}
+	if _, ok := decodeCombinedRegex(RegexPattern{
+		Code:  []byte{regex.OpLiteral, 'a', regex.OpMatch},
+		Flags: regexForwardPriority,
+	}); ok {
+		t.Fatal("decodeCombinedRegex accepted pattern with regexForwardPriority")
+	}
+
+	var source strings.Builder
+	for i := range 6 {
+		fmt.Fprintf(&source, "rule r%d { strings: $a = /        (a|ab){1,%d}/ condition: #a == 1 and !a == 10 }\n", i, i+2)
+	}
+	p := mustCompileStreamingProgram(t, source.String())
+	for _, entry := range p.sharedLookup {
+		if entry.combined != nil {
+			t.Fatal("boundedAlternation pattern was absorbed into combinedRegexNFA")
+		}
+	}
+	input := []byte("        ab")
+	res, err := p.Scan(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range 6 {
+		if !res.RuleResults[fmt.Sprintf("r%d", i)] {
+			t.Fatalf("r%d failed on %q: %+v", i, input, res)
+		}
+	}
+}

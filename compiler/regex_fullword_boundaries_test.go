@@ -97,3 +97,64 @@ func TestWideFullwordFormat9Compatibility(t *testing.T) {
 		t.Fatal("legacy artifact lost its compiled wide boundary policy")
 	}
 }
+
+func TestWideFullwordClassOnlyPrefilterAndFixedCache(t *testing.T) {
+	// Single-rule verifyStart path with fixedByteSets and general VM.
+	for _, expr := range []string{`/[a]{1}/`, `/[Aa][Bb]/`} {
+		p := mustCompileStreamingProgram(t, "rule r { strings: $a = "+expr+" wide fullword condition: $a }")
+		if expr == `/[a]{1}/` {
+			res, err := p.Scan([]byte{'a', 0, 'a', 0})
+			if err != nil || !res.RuleResults["r"] || len(res.Matches["r"]["$a"]) != 1 || res.Matches["r"]["$a"][0].Offset != 2 {
+				t.Fatalf("%s on a\\x00a\\x00 = %+v, err=%v", expr, res, err)
+			}
+		} else {
+			for _, tc := range []struct {
+				input []byte
+				want  bool
+			}{
+				{[]byte{'a', 0, 'b', 0}, true},
+				{[]byte{'a', 0, 'b', 0, 'c', 0}, false},
+				{[]byte{'x', 'a', 0, 'b', 0}, false},
+				{[]byte{'x', 0, 'a', 0, 'b', 0}, true},
+				{[]byte{'x', 1, 'a', 0, 'b', 0}, true},
+				{[]byte{'a', 1, 'b', 0}, false},
+			} {
+				res, err := p.Scan(tc.input)
+				if err != nil || res.RuleResults["r"] != tc.want {
+					t.Fatalf("%s on %v: got=%v err=%v, want=%v", expr, tc.input, res.RuleResults["r"], err, tc.want)
+				}
+			}
+		}
+	}
+
+	// 4+ fixed class-only wide fullword rules (non-case-pair so no ASCII-folded literal atom is extracted)
+	// trigger buildFixedRegexDispatch / populateFixedRegexCache.
+	src := `
+rule r0 { strings: $s = /[ax][by]/ wide fullword condition: $s }
+rule r1 { strings: $s = /[cz][dw]/ wide fullword condition: $s }
+rule r2 { strings: $s = /[eu][fv]/ wide fullword condition: $s }
+rule r3 { strings: $s = /[gt][hs]/ wide fullword condition: $s }
+`
+	p := mustCompileStreamingProgram(t, src)
+	if p.fixedRegexScan == nil {
+		t.Fatal("expected fixedRegexScan dispatch for 4 fixed class-only rules")
+	}
+	// Repeat candidate bytes so shouldUseFixedRegexDispatch selects populateFixedRegexCache.
+	// In "x\x00a\x00b\x00", ASCII boundary before 'a' is '\x00' (non-word), so wide fullword with regexASCIIWordBoundary matches r0.
+	// In "...c\x00d\x00x\x01", ASCII boundary after "d\x00" is 'x' (word), so r1 must NOT match despite non-zero hi byte 0x01.
+	input := append([]byte{'x', 0, 'a', 0, 'b', 0, ' '}, bytes.Repeat([]byte{'c', 0, 'd', 0}, 128)...)
+	input = append(input, 'x', 1)
+	if !shouldUseFixedRegexDispatch(input, p.fixedRegexScan) {
+		t.Fatal("expected fixedRegexScan to be selected for candidate-rich input")
+	}
+	res, err := p.Scan(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.RuleResults["r0"] {
+		t.Fatalf("fixedRegexScan missed wide fullword r0 after NUL byte: %+v", res)
+	}
+	if res.RuleResults["r1"] {
+		t.Fatalf("fixedRegexScan false positive on c\\x00d\\x00 before x\\x01: %+v", res)
+	}
+}

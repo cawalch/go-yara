@@ -293,7 +293,7 @@ func TestAnalyzePlusAtomsUnboundedAndZeroWidth(t *testing.T) {
 
 func TestAnalyzeRangeAtomsExactness(t *testing.T) {
 	unboundedZero := analyzeRangeAtoms(&Node{
-		Kind: NodeRange, Start: 0, End: math.MaxUint16,
+		Kind: NodeRange, Start: 0, End: math.MaxUint16, Unbounded: true,
 		Children: []*Node{{Kind: NodeAnchorStart}},
 	})
 	if unboundedZero.maxLength != 0 {
@@ -301,7 +301,7 @@ func TestAnalyzeRangeAtomsExactness(t *testing.T) {
 	}
 
 	unbounded := analyzeRangeAtoms(&Node{
-		Kind: NodeRange, Start: 0, End: math.MaxUint16,
+		Kind: NodeRange, Start: 0, End: math.MaxUint16, Unbounded: true,
 		Children: []*Node{{Kind: NodeLiteral, Value: 'a'}},
 	})
 	if unbounded.maxLength != -1 {

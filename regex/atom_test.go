@@ -440,3 +440,38 @@ func TestRequiredLiteralAlternationAtomsExpandsBoundedConcatRuns(t *testing.T) {
 		})
 	}
 }
+
+func TestAnalyzeRangeAtomsNestedExactRepeatCap(t *testing.T) {
+	ast, err := NewParser(0).Parse("(((((a{100}){100}){100}){100}){100})")
+	if err != nil {
+		t.Fatal(err)
+	}
+	atoms := MandatoryLiteralAtoms(ast)
+	if len(atoms) == 0 {
+		t.Fatal("expected retained child atoms")
+	}
+	for _, atom := range atoms {
+		if len(atom.Data) == 0 || len(atom.Data) > maxExactAtomBytes {
+			t.Fatalf("atom length %d out of (0, %d]", len(atom.Data), maxExactAtomBytes)
+		}
+	}
+	if analysis := analyzeAtoms(ast.Root); analysis.isExact {
+		t.Fatal("nested oversized exact repeat marked isExact")
+	}
+
+	atCap, err := NewParser(0).Parse("a{4096}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if analysis := analyzeAtoms(atCap.Root); !analysis.isExact || len(analysis.exact) != maxExactAtomBytes {
+		t.Fatalf("a{4096} analysis = isExact:%v len:%d, want true/%d", analysis.isExact, len(analysis.exact), maxExactAtomBytes)
+	}
+
+	overCap, err := NewParser(0).Parse("a{4097}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if analysis := analyzeAtoms(overCap.Root); analysis.isExact || len(analysis.atoms) == 0 || len(analysis.atoms[0].Data) != 1 {
+		t.Fatalf("a{4097} analysis = isExact:%v atoms:%+v, want false with retained 'a'", analysis.isExact, analysis.atoms)
+	}
+}
