@@ -124,9 +124,14 @@ func compactEntryUsesNonTextCache(entry sharedAutomatonEntry, nonText []bool) bo
 }
 
 func (s *Scanner) compactPrefilterFanoutRejects(ctx context.Context, data []byte) bool {
+	rejected, _ := s.checkCompactPrefilterFanout(ctx, data)
+	return rejected
+}
+
+func (s *Scanner) checkCompactPrefilterFanout(ctx context.Context, data []byte) (bool, <-chan struct{}) {
 	gate := s.program.compactPrefilter
 	if gate == nil {
-		return false
+		return false, nil
 	}
 	// Non-fanout gates only amortize preparePatternScan setup on short (<256B)
 	// inputs with 16-bit tables; >=256B inputs go straight to sharedAutomaton
@@ -141,35 +146,41 @@ func (s *Scanner) compactPrefilterFanoutRejects(ctx context.Context, data []byte
 			s.hookMask&(hookBitPrefilter|hookBitTelemetryLatency) == 0 {
 			done := ctx.Done()
 			if !gate.automaton.teddyGate.mayMatch(data, done) || scanCanceled(done) {
-				return true
+				return true, done
 			}
 			s.skipSharedTeddyGate = true
 		}
-		return false
+		return false, nil
 	}
-	return s.compactPrefilterRejects(ctx, data)
+	return s.checkCompactPrefilter(ctx, data)
 }
 
 func (s *Scanner) compactPrefilterRejects(ctx context.Context, data []byte) bool {
+	rejected, _ := s.checkCompactPrefilter(ctx, data)
+	return rejected
+}
+
+func (s *Scanner) checkCompactPrefilter(ctx context.Context, data []byte) (bool, <-chan struct{}) {
 	s.skipSharedTeddyGate = false
 	gate := s.program.compactPrefilter
 	// Large positive records would pay for two full passes.
 	if gate == nil || s.prefilterDisabled || len(data) > 1024 || s.program.sharedAutomaton != gate.automaton {
-		return false
+		return false, nil
 	}
+	done := ctx.Done()
 	var rejected bool
 	if s.hookMask&(hookBitPrefilter|hookBitTelemetryLatency) != 0 {
 		rejected = s.compactPrefilterRejectsWithHooks(ctx, data, gate)
 	} else {
-		if scanCanceled(ctx.Done()) {
-			return true
+		if scanCanceled(done) {
+			return true, done
 		}
 		rejected = compactPrefilterMatchesAbsent(data, gate)
 	}
 	if !rejected && teddySIMDEnabled && gate.automaton.teddyGate != nil && len(data) >= 256 {
 		s.skipSharedTeddyGate = true
 	}
-	return rejected
+	return rejected, done
 }
 
 func (s *Scanner) compactPrefilterRejectsWithHooks(ctx context.Context, data []byte, gate *compactPrefilter) (rejected bool) {

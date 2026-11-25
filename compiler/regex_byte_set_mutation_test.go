@@ -13,7 +13,8 @@ func TestCancelableRegexSearchWindowBoundaries(t *testing.T) {
 	data := make([]byte, cancelableSearchWindow+12)
 	copy(data[cancelableSearchWindow+2:], []byte("XYZ"))
 	literal := newRegexLiteralSearcher(data, []byte("xyz"), regex.FlagsNoCase)
-	if got := literal.indexWithCancel(0, done); got != cancelableSearchWindow+2 {
+	literal.done = done
+	if got := literal.index(0); got != cancelableSearchWindow+2 {
 		t.Fatalf("literal index = %d, want %d", got, cancelableSearchWindow+2)
 	}
 	data[cancelableSearchWindow-1] = 'q'
@@ -25,7 +26,7 @@ func TestCancelableRegexSearchWindowBoundaries(t *testing.T) {
 		t.Fatalf("wide index = %d, want %d", got, cancelableSearchWindow-1)
 	}
 	close(done)
-	if literal.indexWithCancel(0, done) != -1 || search.index(0) != -1 {
+	if literal.index(0) != -1 || search.index(0) != -1 {
 		t.Fatal("canceled search reported a match")
 	}
 }

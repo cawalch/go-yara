@@ -84,8 +84,11 @@ func (s *Scanner) MatchesWithContext(ctx context.Context, data []byte) (matched 
 	if s.hookMask&(hookBitPoll|hookBitTelemetry|hookBitScanLifecycle) != 0 {
 		return s.matchesWithObservedLifecycle(ctx, data)
 	}
-	if s.compactPrefilterFanoutRejects(ctx, data) {
-		return false, ctx.Err()
+	if rejected, done := s.checkCompactPrefilterFanout(ctx, data); rejected {
+		if scanCanceled(done) {
+			return false, ctx.Err()
+		}
+		return false, nil
 	}
 	s.clearRuleResultsIfDirty()
 	return s.matchesUnobserved(ctx, data)

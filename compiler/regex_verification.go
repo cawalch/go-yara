@@ -51,6 +51,7 @@ func addBoundedRegexVerifications(ctx *MatchContext, id string, pattern RegexPat
 				size += step
 			}
 			searcher := newRegexLiteralSearcher(data, literal[:size], flags)
+			searcher.done = ctx.cancelDone
 			anchoredStart := pattern.Flags&regexStartAtomEntries != 0 && slices.Contains(atom.Backward, regex.OpMatchAtStart)
 			limit := len(data)
 			if anchoredStart {
@@ -62,7 +63,7 @@ func addBoundedRegexVerifications(ctx *MatchContext, id string, pattern RegexPat
 					return
 				}
 				if size > 0 && !anchoredStart {
-					at = searcher.indexWithCancel(at, ctx.cancelDone)
+					at = searcher.index(at)
 					if at < 0 {
 						break
 					}
@@ -278,13 +279,14 @@ func sparseCappedRegexSuffix(pattern *RegexPattern, data []byte, ctx *MatchConte
 		literal = wideLiteral[:2*len(literal)]
 	}
 	searcher := newRegexLiteralSearcher(data, literal, pattern.Flags)
+	searcher.done = ctx.cancelDone
 	limit := max(2, len(data)/ctx.maxMatchSpan)
 	at := 0
 	for hits := 0; hits <= limit; hits++ {
 		if scanCanceledAt(ctx.cancelDone, hits) {
 			return false
 		}
-		hit := searcher.indexWithCancel(at, ctx.cancelDone)
+		hit := searcher.index(at)
 		if hit < 0 {
 			return !scanCanceled(ctx.cancelDone)
 		}

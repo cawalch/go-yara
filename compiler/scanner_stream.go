@@ -507,7 +507,7 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader, boolean boo
 			// Never clip text patterns per-window before window.owns() runs;
 			// a boundary fullword match at index 0 can be provisional/unowned.
 			s.matchCtx.maxMatchesPerPattern = 0
-			if err := s.addRuleTextMatches(ctx, rule, windowData, usesharedAutomaton, !s.omitMatches); err != nil {
+			if err := s.addRuleTextMatches(ctx, rule, windowData, usesharedAutomaton && (!rule.hasUnusedText || s.omitMatches)); err != nil {
 				return nil, err
 			}
 			s.matchCtx.maxMatchesPerPattern = savedMaxMatches

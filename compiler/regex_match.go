@@ -165,7 +165,8 @@ func leadingGapRegexCandidateStartsInto(dst []int, data []byte, plan *regexLeadi
 			return nil, false
 		}
 		searcher := newRegexLiteralSearcher(data, atom.data, flags)
-		for occurrence := searcher.indexWithCancel(0, done); occurrence >= 0; occurrence = searcher.indexWithCancel(occurrence+1, done) {
+		searcher.done = done
+		for occurrence := searcher.index(0); occurrence >= 0; occurrence = searcher.index(occurrence + 1) {
 			// There must be a leading byte before the suffix. Clamp the
 			// offset range before iterating so it only covers input bytes.
 			maxOffset := min(atom.maxOffset, occurrence-1)
@@ -206,40 +207,18 @@ func leadingGapRegexCandidateStartsInto(dst []int, data []byte, plan *regexLeadi
 	return sortedUniqueRegexStarts(starts), true
 }
 
-// indexWithCancel limits each literal search while preserving hits that span
+// indexCancelable limits each literal search while preserving hits that span
 // the boundary between consecutive search windows.
-func (searcher *regexLiteralSearcher) indexWithCancel(from int, done <-chan struct{}) int {
-	if done == nil {
-		return searcher.index(from)
-	}
+func (searcher *regexLiteralSearcher) indexCancelable(from int) int {
 	literalLength := len(searcher.literal)
-	if literalLength == 0 || from < 0 {
-		return -1
-	}
 	data := searcher.data
-	if len(data)-from <= cancelableSearchWindow {
-		if scanCanceled(done) {
-			return -1
-		}
-		return searcher.index(from)
-	}
 	last := len(data) - literalLength
 	for from <= last {
-		if scanCanceled(done) {
+		if scanCanceled(searcher.done) {
 			return -1
 		}
 		end := from + min(cancelableSearchWindow, last-from+1)
-		window := *searcher
-		window.data = data[:end+(literalLength-1)]
-		if window.noCase {
-			window.cursor = newASCIIFoldByteCursor(window.literal[window.anchor])
-		}
-		candidate := window.index(from)
-		if window.noCase && window.anchorSampled && !searcher.anchorSampled {
-			searcher.anchor = window.anchor
-			searcher.anchorSampled = true
-			searcher.cursor = newASCIIFoldByteCursor(searcher.literal[searcher.anchor])
-		}
+		candidate := searcher.indexWindow(data[:end+(literalLength-1)], from)
 		if candidate >= 0 {
 			return candidate
 		}
@@ -248,10 +227,25 @@ func (searcher *regexLiteralSearcher) indexWithCancel(from int, done <-chan stru
 	return -1
 }
 
+func (searcher *regexLiteralSearcher) indexWindow(data []byte, from int) int {
+	if !searcher.noCase {
+		return indexRegexLiteral(data, searcher.literal, from)
+	}
+	window := *searcher
+	window.data = data
+	window.cursor = newASCIIFoldByteCursor(window.literal[window.anchor])
+	candidate := window.indexFolded(from)
+	if window.anchorSampled && !searcher.anchorSampled {
+		searcher.anchor = window.anchor
+		searcher.anchorSampled = true
+		searcher.cursor = newASCIIFoldByteCursor(searcher.literal[searcher.anchor])
+	}
+	return candidate
+}
+
 type regexAlternativeCursor struct {
 	atom         regexPrefilterAtom
 	searcher     regexLiteralSearcher
-	done         <-chan struct{}
 	searchFrom   int
 	start        int
 	rangeEnd     int
@@ -288,7 +282,8 @@ func unboundedRegexAlternativePresent(
 			searchFlags |= regex.FlagsNoCase
 		}
 		searcher := newRegexLiteralSearcher(data, atom.data, searchFlags)
-		if searcher.indexWithCancel(0, done) >= 0 {
+		searcher.done = done
+		if searcher.index(0) >= 0 {
 			return true
 		}
 	}
@@ -333,7 +328,7 @@ func (cursor *regexAlternativeCursor) nextRange() (int, int, bool) {
 
 func (cursor *regexAlternativeCursor) nextAtomRange() (int, int, bool) {
 	for cursor.searchFrom <= len(cursor.searcher.data) {
-		occurrence := cursor.searcher.indexWithCancel(cursor.searchFrom, cursor.done)
+		occurrence := cursor.searcher.index(cursor.searchFrom)
 		if occurrence < 0 {
 			return 0, 0, false
 		}
@@ -382,12 +377,12 @@ func addRegexMatchesFromAlternatives(
 		index := cursorIndex
 		cursorIndex++
 		cursors[index].atom = atom
-		cursors[index].done = ctx.cancelDone
 		searchFlags := flags
 		if atom.asciiNoCase {
 			searchFlags |= regex.FlagsNoCase
 		}
 		cursors[index].searcher = newRegexLiteralSearcher(data, atom.data, searchFlags)
+		cursors[index].searcher.done = ctx.cancelDone
 		cursors[index].start = -1
 		cursors[index].advance()
 	}
@@ -431,7 +426,8 @@ func addRegexMatchesFromPrefix(
 	prefix []byte,
 ) {
 	searcher := newRegexLiteralSearcher(data, prefix, flags)
-	candidate := searcher.indexWithCancel(0, ctx.cancelDone)
+	searcher.done = ctx.cancelDone
+	candidate := searcher.index(0)
 	if candidate < 0 {
 		return
 	}
@@ -450,7 +446,7 @@ func addRegexMatchesFromPrefix(
 		if searchFrom > len(data) {
 			return
 		}
-		candidate = searcher.indexWithCancel(searchFrom, ctx.cancelDone)
+		candidate = searcher.index(searchFrom)
 	}
 }
 
@@ -786,7 +782,8 @@ func regexAtomCandidateStartsInto(
 		flags |= regex.FlagsNoCase
 	}
 	searcher := newRegexLiteralSearcher(data, atom, flags)
-	first := searcher.indexWithCancel(0, done)
+	searcher.done = done
+	first := searcher.index(0)
 	if first < 0 {
 		return ctx.regexCandidates[:0], true
 	}
@@ -808,7 +805,7 @@ func regexAtomCandidateStartsInto(
 		if scanCanceledAt(done, checkpoint) {
 			return nil, true
 		}
-		next := searcher.indexWithCancel(searchFrom, done)
+		next := searcher.index(searchFrom)
 		if next < 0 {
 			break
 		}
