@@ -271,6 +271,7 @@ type ScanHooks struct {
 
 	OnChunk ChunkHook
 
+	// MaxMatchesPerRule and OnMaxMatchesExceeded follow WithMaxMatches.
 	MaxMatchesPerRule    int
 	OnMaxMatchesExceeded func(rule string, count int)
 }
@@ -352,7 +353,12 @@ func WithMatchHook(hook MatchHook) ScannerOption {
 	}
 }
 
-// WithMaxMatches configures a safety ceiling on matches per rule.
+// WithMaxMatches limits the number of distinct (pattern, offset) occurrences
+// retained per rule. A nonpositive limit disables the ceiling. On the first
+// excess occurrence, a nil callback aborts with ErrMatchLimitExceeded. A
+// callback receives the rule name and limit+1 once and scanning continues
+// with the retained occurrences. Counts, offsets and rule outcomes may change.
+// Fast scans count only occurrences they would otherwise retain.
 func WithMaxMatches(limit int, onExceeded func(rule string, count int)) ScannerOption {
 	return func(s *Scanner) {
 		s.maxMatchesLimit = limit

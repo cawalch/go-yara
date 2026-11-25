@@ -324,6 +324,9 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 		return nil, err
 	}
 
+	if s.matchBudgets != nil {
+		s.resetMatchLimits()
+	}
 	s.skipUnmatchedNonText = false
 	fastScan := s.fastScan
 	defer func() {
@@ -500,6 +503,12 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 				continue
 			}
 
+			// Budget settled occurrences after ASCII/wide normalization and window
+			// ownership. Provisional matches remain local to the current chunk.
+			var budget *ruleMatchBudget
+			if s.matchBudgets != nil {
+				budget = s.ruleMatchBudget(rule)
+			}
 			s.matchCtx.forEachSpanSlice(func(strID string, spans []matchSpan) {
 				horizon := -1
 				if pattern, ok := rule.RegexPatterns[strID]; ok {
@@ -514,6 +523,14 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 						continue
 					}
 					absStart := chunkOffset + sp.Offset
+					if budget != nil {
+						if s.matchLimitErr != nil {
+							return
+						}
+						if _, retained := budget.positions[strID][absStart]; retained || !budget.reserve(s, strID, absStart) {
+							continue
+						}
+					}
 					if acc.accumulatedSpans[rule.Name] == nil {
 						acc.accumulatedSpans[rule.Name] = make(map[string][]matchSpan)
 					}
@@ -535,6 +552,9 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 					}
 				}
 			})
+			if s.matchLimitErr != nil {
+				return nil, s.matchLimitErr
+			}
 		}
 
 		currentStreamOffset = primaryEnd
@@ -562,6 +582,9 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 
 func (s *Scanner) prepareChunkPatternScan(ctx context.Context, chunkData []byte) (bool, error) {
 	s.skipUnmatchedNonText = false
+	if s.matchBudgets != nil {
+		return s.preparePatternScan(ctx, chunkData)
+	}
 	if len(s.program.Rules) <= 1 {
 		s.nonTextCache.reset(s.program.nonTextCacheSize)
 		if err := s.populateFixedRegexCache(ctx, chunkData, &s.nonTextCache); err != nil {

@@ -30,6 +30,8 @@ type MemoryBlock struct {
 // Native pcap requires a single contiguous block starting at offset 0 covering
 // the full logical file size; multi-block captures evaluate pcap.tls as undefined.
 //
+// With an active match limit, an error after a block is added is returned by
+// subsequent Scan and Finish calls until Reset discards the partial scan.
 // BlockScanner is not safe for concurrent use.
 type BlockScanner struct {
 	program       *CompiledProgram
@@ -103,9 +105,12 @@ func (scanner *BlockScanner) ScanBorrowedWithContext(ctx context.Context, base i
 	return scanner.scanBlock(ctx, MemoryBlock{Base: base, Data: data}, true)
 }
 
-func (scanner *BlockScanner) scanBlock(ctx context.Context, block MemoryBlock, borrowed bool) error {
+func (scanner *BlockScanner) scanBlock(ctx context.Context, block MemoryBlock, borrowed bool) (err error) {
 	if scanner == nil || scanner.program == nil || scanner.scanner == nil {
 		return errors.New("block scanner is closed or has no program")
+	}
+	if err := scanner.scanner.matchLimitErr; err != nil {
+		return err
 	}
 	base := block.Base
 	if base < 0 {
@@ -148,6 +153,13 @@ func (scanner *BlockScanner) scanBlock(ctx context.Context, block MemoryBlock, b
 	}
 
 	s := scanner.scanner
+	if s.matchBudgets != nil {
+		defer func() {
+			if err != nil {
+				s.matchLimitErr = err
+			}
+		}()
+	}
 	usesharedAutomaton, err := s.prepareChunkPatternScan(ctx, blockData)
 	if err != nil {
 		return err
@@ -180,6 +192,9 @@ func (scanner *BlockScanner) scanBlock(ctx context.Context, block MemoryBlock, b
 		}
 		s.matchCtx.ResetForRule(rule, blockData)
 		s.configureRuleMatchContext(ctx, rule)
+		if s.matchBudgets != nil {
+			s.limitRuleMatches(rule, base)
+		}
 		if err := s.addRuleTextMatches(ctx, rule, blockData, usesharedAutomaton); err != nil {
 			return err
 		}
@@ -187,6 +202,9 @@ func (scanner *BlockScanner) scanBlock(ctx context.Context, block MemoryBlock, b
 			return err
 		}
 
+		if s.matchLimitErr != nil {
+			return s.matchLimitErr
+		}
 		if len(rule.fixedOffsets) != 0 {
 			s.matchCtx.filterFixedOffsets(rule.fixedOffsets, base)
 		}
@@ -210,12 +228,23 @@ func (scanner *BlockScanner) scanBlock(ctx context.Context, block MemoryBlock, b
 				return
 			}
 			for _, span := range spans {
-				perRule[id] = append(perRule[id], Match{
+				match := Match{
 					Pattern: id,
 					Offset:  base + span.Offset,
 					Base:    base,
 					Length:  span.Length,
-				})
+				}
+				if budget := s.matchBudgets[rule.Index]; budget != nil {
+					positions := budget.positions[id]
+					if i := positions[match.Offset]; i > 0 {
+						if match.Length > perRule[id][i-1].Length {
+							perRule[id][i-1] = match
+						}
+						continue
+					}
+					positions[match.Offset] = len(perRule[id]) + 1
+				}
+				perRule[id] = append(perRule[id], match)
 				if s.fastScan && rule.FastScanSafe {
 					break
 				}
@@ -237,6 +266,9 @@ func (scanner *BlockScanner) Finish() (*ScanResult, error) {
 func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (result *ScanResult, err error) {
 	if scanner == nil || scanner.program == nil || scanner.scanner == nil {
 		return nil, errors.New("block scanner is closed or has no program")
+	}
+	if err := scanner.scanner.matchLimitErr; err != nil {
+		return nil, err
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -404,6 +436,7 @@ func (scanner *BlockScanner) Reset() {
 	scanner.indexedBlocks = 0
 	scanner.inputBytes = 0
 	if scanner.scanner != nil {
+		scanner.scanner.resetMatchLimits()
 		scanner.scanner.matchCtx.Reset(nil)
 		scanner.scanner.moduleCache.reset()
 		scanner.scanner.resetBorrowedEvidence()
