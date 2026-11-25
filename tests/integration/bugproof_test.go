@@ -29,17 +29,6 @@ type occ struct {
 	Len int
 }
 
-func requireLibyara(t *testing.T) string {
-	t.Helper()
-	bin, err := exec.LookPath("yara")
-	if err != nil {
-		t.Skip("libyara `yara` binary not found")
-	}
-	v, _ := exec.Command(bin, "--version").Output()
-	t.Logf("oracle: %s", strings.TrimSpace(string(v)))
-	return bin
-}
-
 //nolint:revive // test helper requires multiple testing arguments
 func libyaraSpans(t *testing.T, bin, src string, data []byte) ([]occ, error) {
 	t.Helper()
@@ -210,7 +199,7 @@ func assertAgreementOnValues(t *testing.T, bin, tmpl string, data []byte, values
 // ---------------------------------------------------------------------------
 
 func TestBug01_OperatorPrecedence(t *testing.T) {
-	bin := requireLibyara(t)
+	bin := libyaraOracle(t)
 	cases := []struct {
 		tmpl string
 		vals []int
@@ -233,7 +222,7 @@ func TestBug01_OperatorPrecedence(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBug02_AndBindsTighterThanOr(t *testing.T) {
-	bin := requireLibyara(t)
+	bin := libyaraOracle(t)
 	assertAgreementOnValues(t, bin, `rule t { strings: $s = "abc" condition: 1 or 0 and 0 == %d and $s }`, []byte("abcabcxx"), []int{0, 1})
 	assertAgreementOnValues(t, bin, `rule t { strings: $s = "abc" condition: 1 or 1 and 0 == %d and $s }`, []byte("abcabcxx"), []int{0, 1})
 	assertAgreementOnValues(t, bin, `rule t { strings: $s = "abc" condition: 0 and 1 or 1 == %d and $s }`, []byte("abcabcxx"), []int{0, 1})
@@ -245,7 +234,7 @@ func TestBug02_AndBindsTighterThanOr(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBug03_OutOfRangeOffsetAbortsScan(t *testing.T) {
-	bin := requireLibyara(t)
+	bin := libyaraOracle(t)
 	assertGoScanSucceeds(t, bin, `rule t { strings: $a = "abc" condition: @a[3] == 0 }`, []byte("abcabc"))
 	assertGoScanSucceeds(t, bin, `rule t { strings: $a = "abc" condition: @a[99] != 0 }`, []byte("abcabc"))
 	// The canonical YARA idiom: iterate a fixed range over occurrences.
@@ -270,7 +259,7 @@ func TestBug03_OutOfRangeOffsetAbortsScan(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBug04_ModuloByZeroAbortsScan(t *testing.T) {
-	bin := requireLibyara(t)
+	bin := libyaraOracle(t)
 	assertGoScanSucceeds(t, bin, `rule t { strings: $a = "abc" condition: (2 % @a[1]) == 0 and $a }`, []byte("abcabc"))
 	assertGoScanSucceeds(t, bin, `rule t { strings: $a = "abc" condition: (for any i in (0..3) : ( 10 % i == 0 )) and $a }`, []byte("abcabc"))
 }
@@ -282,7 +271,7 @@ func TestBug04_ModuloByZeroAbortsScan(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBug05_FullwordUnderscoreBoundary(t *testing.T) {
-	bin := requireLibyara(t)
+	bin := libyaraOracle(t)
 	assertSameOccurrenceSet(t, bin, `rule t { strings: $a = "abc" fullword condition: $a }`, []byte("abc_"))
 	assertSameOccurrenceSet(t, bin, `rule t { strings: $a = "abc" fullword condition: $a }`, []byte("_abc"))
 	assertSameOccurrenceSet(t, bin, `rule t { strings: $a = "a" fullword condition: $a }`, []byte("a_a_a"))
@@ -291,7 +280,7 @@ func TestBug05_FullwordUnderscoreBoundary(t *testing.T) {
 }
 
 func TestBug05_FullwordAllBoundaryBytes(t *testing.T) {
-	bin := requireLibyara(t)
+	bin := libyaraOracle(t)
 	for c := 0; c < 256; c++ {
 		for _, mode := range []string{"lead", "trail"} {
 			var data []byte
@@ -319,7 +308,7 @@ func TestBug05_FullwordAllBoundaryBytes(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBug06_SpuriousZeroLengthMatchAtEndOfBuffer(t *testing.T) {
-	bin := requireLibyara(t)
+	bin := libyaraOracle(t)
 	assertSameOccurrenceSet(t, bin, `rule t { strings: $a = /0*/ condition: $a }`, []byte("0"))
 	assertSameOccurrenceSet(t, bin, `rule t { strings: $a = /0*/ condition: $a }`, []byte("00"))
 	assertSameOccurrenceSet(t, bin, `rule t { strings: $a = /a{0,2}/ condition: $a }`, []byte("aaaa"))
@@ -339,7 +328,7 @@ func TestBug06_SpuriousZeroLengthMatchAtEndOfBuffer(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBug07_HexJumpDuplicateOccurrences(t *testing.T) {
-	bin := requireLibyara(t)
+	bin := libyaraOracle(t)
 	assertSameOccurrenceSet(t, bin, `rule t { strings: $a = { 41 [-] 43 } condition: $a }`, []byte("ACC"))
 	assertSameOccurrenceSet(t, bin, `rule t { strings: $a = { 41 [-] 43 } condition: $a }`, []byte("ABCAXXC"))
 	assertSameOccurrenceSet(t, bin, `rule t { strings: $a = { 41 [-] 43 } condition: $a }`, []byte("ACAC"))
@@ -353,7 +342,7 @@ func TestBug07_HexJumpDuplicateOccurrences(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBug08_WideAsciiDuplicateOccurrences(t *testing.T) {
-	bin := requireLibyara(t)
+	bin := libyaraOracle(t)
 	assertSameOccurrenceSet(t, bin, `rule t { strings: $a = "a" wide ascii condition: $a }`, []byte("a\x00a\x00a"))
 	assertSameOccurrenceSet(t, bin, `rule t { strings: $a = "abc" wide ascii condition: $a }`, []byte("abc\x00a\x00b\x00c\x00"))
 	assertAgreementOnValues(t, bin, `rule t { strings: $a = "a" wide ascii condition: #a == %d and $a }`, []byte("a\x00a\x00a"), []int{0, 1, 2, 3, 4, 5})
@@ -366,7 +355,7 @@ func TestBug08_WideAsciiDuplicateOccurrences(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBug09_RegexMatchLengthSemantics(t *testing.T) {
-	bin := requireLibyara(t)
+	bin := libyaraOracle(t)
 	assertSameOccurrenceSet(t, bin, `rule t { strings: $a = /(ab|a)/ condition: $a }`, []byte("ab"))
 	assertSameOccurrenceSet(t, bin, `rule t { strings: $a = /(a0|a)/ condition: $a }`, []byte("aa0"))
 	assertSameOccurrenceSet(t, bin, `rule t { strings: $a = /(abc|ab)/ condition: $a }`, []byte("abcd"))
@@ -379,7 +368,7 @@ func TestBug09_RegexMatchLengthSemantics(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBug10_NotOnIntegerRejected(t *testing.T) {
-	bin := requireLibyara(t)
+	bin := libyaraOracle(t)
 	for _, src := range []string{
 		`rule t { strings: $a = "abc" condition: not 0 and $a }`,
 		`rule t { strings: $a = "abc" condition: not #a and $a }`,
@@ -394,7 +383,7 @@ func TestBug10_NotOnIntegerRejected(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBug11_IntegerDivisionOperator(t *testing.T) {
-	bin := requireLibyara(t)
+	bin := libyaraOracle(t)
 	assertGoAccepts(t, bin, `rule t { strings: $a = "abc" condition: 10 \ 2 == 5 and $a }`)
 	assertGoAccepts(t, bin, `rule t { strings: $a = "abc" condition: 100 \ 5 \ 2 == 10 and $a }`)
 }
@@ -405,7 +394,7 @@ func TestBug11_IntegerDivisionOperator(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBug12_UnknownRegexEscapeRejected(t *testing.T) {
-	bin := requireLibyara(t)
+	bin := libyaraOracle(t)
 	for _, src := range []string{
 		`rule t { strings: $a = /\_/ condition: $a }`,
 		`rule t { strings: $a = /(a\_b)/ condition: $a }`,
@@ -422,7 +411,7 @@ func TestBug12_UnknownRegexEscapeRejected(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBug13_LiteralRegexMetacharactersRejected(t *testing.T) {
-	bin := requireLibyara(t)
+	bin := libyaraOracle(t)
 	for _, src := range []string{
 		`rule t { strings: $a = /,/ condition: $a }`,
 		`rule t { strings: $a = /]/ condition: $a }`,
@@ -438,7 +427,7 @@ func TestBug13_LiteralRegexMetacharactersRejected(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBug14_EmptyAlternationBranch(t *testing.T) {
-	bin := requireLibyara(t)
+	bin := libyaraOracle(t)
 	assertGoAccepts(t, bin, `rule t { strings: $a = /(o|)/ condition: $a }`)
 	assertGoAccepts(t, bin, `rule t { strings: $a = /^(b|)c$/ condition: $a }`)
 	assertSameOccurrenceSet(t, bin, `rule t { strings: $a = /^(b|)c$/ condition: $a }`, []byte("dbc"))
@@ -449,7 +438,7 @@ func TestBug14_EmptyAlternationBranch(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBug15_SingleValueForRange(t *testing.T) {
-	bin := requireLibyara(t)
+	bin := libyaraOracle(t)
 	assertGoAccepts(t, bin, `rule t { strings: $a = "0" condition: for any i in (0) : ( $a ) and $a }`)
 }
 
@@ -458,7 +447,7 @@ func TestBug15_SingleValueForRange(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBug16_BitwiseAndShiftPrecedence(t *testing.T) {
-	bin := requireLibyara(t)
+	bin := libyaraOracle(t)
 	assertAgreementOnValues(t, bin, `rule t { strings: $s = "abc" condition: 3 | 1 & 2 == %d and $s }`, []byte("abcabcxx"), []int{2, 3})
 	assertAgreementOnValues(t, bin, `rule t { strings: $s = "abc" condition: 3 ^ 1 & 2 == %d and $s }`, []byte("abcabcxx"), []int{2, 3})
 	assertAgreementOnValues(t, bin, `rule t { strings: $s = "abc" condition: 1 | 3 & 2 == %d and $s }`, []byte("abcabcxx"), []int{2, 3})
@@ -485,7 +474,7 @@ func assertBothReject(t *testing.T, bin, src string) {
 // ---------------------------------------------------------------------------
 
 func TestBug17_DefinedOperator(t *testing.T) {
-	bin := requireLibyara(t)
+	bin := libyaraOracle(t)
 	assertSameOccurrenceSet(t, bin, `rule t { strings: $a = "foo" condition: defined @a[1] and $a }`, []byte("foobar"))
 	assertSameOccurrenceSet(t, bin, `rule t { strings: $a = "foo" condition: not defined @a[2] and $a }`, []byte("foobar"))
 	assertSameOccurrenceSet(t, bin, `rule t { strings: $a = "foo" condition: defined !a[1] and $a }`, []byte("foobar"))
@@ -498,7 +487,7 @@ func TestBug17_DefinedOperator(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBug18_HexAlternationUnboundedJumps(t *testing.T) {
-	bin := requireLibyara(t)
+	bin := libyaraOracle(t)
 	assertBothReject(t, bin, `rule t { strings: $a = { 01 ( 02 | 03 [-] 04 ) 05 } condition: $a }`)
 	assertBothReject(t, bin, `rule t { strings: $a = { 01 ( 02 | 03 [1-] 04 ) 05 } condition: $a }`)
 	assertBothReject(t, bin, `rule t { strings: $a = { 01 ( 02 | ( 03 | 04 [-] 05 ) ) 06 } condition: $a }`)
@@ -512,7 +501,7 @@ func TestBug18_HexAlternationUnboundedJumps(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBug19_ConstantDivisionByZeroRejected(t *testing.T) {
-	bin := requireLibyara(t)
+	bin := libyaraOracle(t)
 	assertBothReject(t, bin, `rule t { condition: 1 \ 0 == 0 }`)
 	assertBothReject(t, bin, `rule t { condition: 1 % 0 == 0 }`)
 	assertBothReject(t, bin, `rule t { condition: filesize \ 0 == 0 }`)
@@ -525,7 +514,7 @@ func TestBug19_ConstantDivisionByZeroRejected(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBug20_IntegerEnumerationInForLoop(t *testing.T) {
-	bin := requireLibyara(t)
+	bin := libyaraOracle(t)
 	assertSameOccurrenceSet(t, bin, `rule t { strings: $a = "abc" condition: for any i in (1, 2, 3) : ( i == 2 ) and $a }`, []byte("abc"))
 	assertSameOccurrenceSet(t, bin, `rule t { strings: $a = "abc" condition: for all i in (1, 2, 3) : ( i >= 1 ) and $a }`, []byte("abc"))
 	assertSameOccurrenceSet(t, bin, `rule t { strings: $a = "abc" condition: for none i in (1, 2, 3) : ( i == 9 ) and $a }`, []byte("abc"))
