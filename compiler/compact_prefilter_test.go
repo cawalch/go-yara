@@ -505,3 +505,40 @@ func TestCompactPrefilterMatchesAbsentWithoutTables(t *testing.T) {
 		t.Fatal("gate without tables rejected input")
 	}
 }
+
+// cancelAfterPreflight cancels a real context immediately after its first Err check.
+type cancelAfterPreflight struct {
+	context.Context
+	cancel context.CancelFunc
+}
+
+func (ctx cancelAfterPreflight) Err() error {
+	err := ctx.Context.Err()
+	ctx.cancel()
+	return err
+}
+
+func TestMatchesCanceledAfterPreflight(t *testing.T) {
+	p, err := NewCompiler().CompileSource(compactPrefilterRules)
+	if err != nil || p.compactPrefilter == nil {
+		t.Fatalf("compile compact prefilter: %v", err)
+	}
+	for _, options := range [][]ScannerOption{nil, {WithTelemetryLatency(&ScanTelemetry{})}} {
+		scanner := p.NewScanner(options...)
+		for _, reader := range []bool{false, true} {
+			ctx, cancel := context.WithCancel(t.Context())
+			probe := cancelAfterPreflight{ctx, cancel}
+			var matched bool
+			if reader {
+				matched, err = scanner.MatchesReaderWithContext(probe, strings.NewReader("event rare_two"))
+			} else {
+				matched, err = scanner.MatchesWithContext(probe, []byte("event rare_two"))
+			}
+			cancel()
+			if matched || !errors.Is(err, context.Canceled) {
+				t.Fatalf("reader=%v, matched=%v, err=%v", reader, matched, err)
+			}
+		}
+		scanner.Close()
+	}
+}

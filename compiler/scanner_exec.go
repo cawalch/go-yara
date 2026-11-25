@@ -8,11 +8,10 @@ import (
 )
 
 type publicRuleEvaluation struct {
-	scanInput              ruleScanInput
-	allGlobalMatched       bool
-	matchedPublicGlobal    bool
-	matchedPublicNonGlobal bool
-	matchedRuleIndices     *[]int
+	scanInput          ruleScanInput
+	allGlobalMatched   bool
+	matchedPublic      bool
+	matchedRuleIndices *[]int
 }
 
 func (s *Scanner) scanError() error {
@@ -381,7 +380,7 @@ func (s *Scanner) finalizeMatchedRulesCore(
 		if scanCanceled(done) {
 			return ctx.Err()
 		}
-		if (!rule.IsGlobal && !allGlobalMatched) || !s.hasMatchingTag(rule) {
+		if !allGlobalMatched || !s.hasMatchingTag(rule) {
 			if s.reportedMatchesOnly && !s.omitMatches && result.Matches != nil {
 				delete(result.Matches, rule.Name)
 			}
@@ -546,11 +545,7 @@ func (s *Scanner) evaluatePublicRule(
 	if rule.IsPrivate || !s.hasMatchingTag(rule) || !evaluation.matched {
 		return nil
 	}
-	if rule.IsGlobal {
-		result.matchedPublicGlobal = true
-	} else {
-		result.matchedPublicNonGlobal = true
-	}
+	result.matchedPublic = true
 	if result.matchedRuleIndices != nil {
 		*result.matchedRuleIndices = append(*result.matchedRuleIndices, rule.Index)
 	}

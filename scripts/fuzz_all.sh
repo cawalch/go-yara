@@ -129,7 +129,7 @@ fi
 if [ "$REQUIRE_ORACLE" = true ]; then
     oracle_version=$(yara --version)
     echo "libyara oracle: $oracle_version"
-    test "$oracle_version" = "4.5.8"
+    test "$oracle_version" = "$(cat tests/integration/oracle-version.txt)"
 fi
 
 # Use while read to iterate over the lines
