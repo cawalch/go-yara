@@ -193,14 +193,14 @@ func (s *Scanner) preparePatternScanCore(ctx context.Context, data []byte) (bool
 	s.sharedNonTextMatched = false
 	s.nonTextCache.reset(s.program.nonTextCacheSize)
 	s.regexByteSetCache.reset()
-	s.resetGlobalMatches(len(s.program.Rules))
-	s.resetPrefilterCandidates(len(s.program.sharedLookup))
-	s.resetCandidateRules(len(s.program.Rules))
 
 	// Rule-local matching applies the limit before shared occurrence lists can grow.
 	if s.matchBudgets != nil {
 		return false, ctx.Err()
 	}
+	s.resetGlobalMatches(len(s.program.Rules))
+	s.resetPrefilterCandidates(len(s.program.sharedLookup))
+	s.resetCandidateRules(len(s.program.Rules))
 	if err := s.populateFixedRegexCache(ctx, data, &s.nonTextCache); err != nil {
 		return false, err
 	}
