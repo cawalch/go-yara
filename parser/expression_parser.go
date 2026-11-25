@@ -374,6 +374,10 @@ func (p *ExpressionParser) parseRangeExpression() (ast.Expression, error) {
 
 func (p *ExpressionParser) parseQuantifierPrimary() (ast.Expression, error) {
 	if p.quantifierParser != nil {
+		if err := p.incrementDepth(); err != nil {
+			return nil, err
+		}
+		defer p.decrementDepth()
 		p.quantifierParser.SetCurrentTokens(p.current, p.peek)
 		expr, err := p.quantifierParser.ParseQuantifier(p.current.Pos)
 		if err != nil {
@@ -857,10 +861,10 @@ func (p *ExpressionParser) SetMaxRecursionDepth(maxDepth int) {
 }
 
 func (p *ExpressionParser) incrementDepth() error {
-	p.depth++
-	if p.maxRecursionDepth > 0 && p.depth > p.maxRecursionDepth {
-		return fmt.Errorf("recursion depth %d exceeds maximum allowed %d", p.depth, p.maxRecursionDepth)
+	if p.maxRecursionDepth > 0 && p.depth >= p.maxRecursionDepth {
+		return fmt.Errorf("recursion depth %d exceeds maximum allowed %d", p.depth+1, p.maxRecursionDepth)
 	}
+	p.depth++
 	return nil
 }
 

@@ -374,3 +374,38 @@ func TestInstrumentationNilSink(t *testing.T) {
 	_, err = blocks.Finish()
 	require.NoError(t, err)
 }
+
+func TestPublicScansReturnSharedPrefilterCancellation(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+rule a { strings: $a = "first" condition: $a }
+rule b { strings: $b = "second" condition: $b }
+`)
+	require.NoError(t, err)
+
+	for _, scan := range []struct {
+		name string
+		run  func(*Scanner, context.Context, []byte) error
+	}{
+		{"Matches", func(s *Scanner, ctx context.Context, data []byte) error {
+			_, err := s.MatchesWithContext(ctx, data)
+			return err
+		}},
+		{"MatchingRules", func(s *Scanner, ctx context.Context, data []byte) error {
+			_, err := s.MatchingRulesWithContext(ctx, data)
+			return err
+		}},
+	} {
+		t.Run(scan.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			scanner := program.NewScanner(WithPrefilterHook(func(d PrefilterDecision) {
+				if d.Stage == PrefilterStagesharedAutomaton && d.Rejected {
+					cancel()
+				}
+			}))
+			defer scanner.Close()
+			// Bypass the compact gate and reject in the shared automaton.
+			require.ErrorIs(t, scan.run(scanner, ctx, make([]byte, 2048)), context.Canceled)
+		})
+	}
+}

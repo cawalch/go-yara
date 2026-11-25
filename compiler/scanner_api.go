@@ -172,6 +172,8 @@ func (s *Scanner) ScanReader(r io.Reader) (*ScanResult, error) {
 // retained header. Retained occurrence spans grow with the number of matches.
 // Reported match bytes and evidence add storage that can grow with their size
 // and number. WithFastScan reduces occurrence retention for eligible rules.
+// WithMatchContext byte windows are not retained for reader scans; use Scan or
+// BlockScanner when surrounding match context is required.
 // Cancellation is checked between chunk reads and pattern evaluation.
 // Integer reads in conditions must lie entirely within the first 64 KiB of input;
 // reads outside that retained header are undefined, even for longer streams.
@@ -195,7 +197,8 @@ func (s *Scanner) ScanFile(filename string) (*ScanResult, error) {
 
 // ScanFileWithContext scans the given file.
 // For regular files >= 128 KB, it attempts to use zero-copy memory mapping via fs.MapFile.
-// If memory mapping fails, file is < 128 KB, or for special files, it falls back to standard file read.
+// Smaller regular files and mapping failures use a standard read or the reader
+// lane when the context is cancellable. Non-regular files use the reader lane.
 func (s *Scanner) ScanFileWithContext(ctx context.Context, filename string) (*ScanResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -210,6 +213,17 @@ func (s *Scanner) ScanFileWithContext(ctx context.Context, filename string) (*Sc
 			defer cleanup()
 			return s.ScanWithContext(ctx, data)
 		}
+	}
+	if statErr == nil && !info.Mode().IsRegular() {
+		// Devices, FIFOs, and sockets have no finite size. Stream them so an
+		// endless source (for example /dev/zero) cannot be read into memory
+		// without bound.
+		file, err := os.Open(filename) // #nosec G304 - caller intentionally scans this path
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = file.Close() }()
+		return s.ScanReaderWithContext(ctx, file)
 	}
 	if ctx.Done() == nil {
 		data, err := os.ReadFile(filename) // #nosec G304 - caller intentionally scans this path

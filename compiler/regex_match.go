@@ -730,17 +730,28 @@ func execRegexMatchAtBounded(bs *regex.VMBatch, pattern *RegexPattern, data []by
 
 //nolint:revive // argument-limit: fixed-width hot path avoids options indirection
 func fixedRegexMatchAt(sets []regex.ByteSet, data []byte, wide bool, start int) (int, bool) {
-	step := 1
-	if wide {
-		step = 2
+	if !wide {
+		length := len(sets)
+		if start < 0 || start > len(data)-length {
+			return 0, false
+		}
+		window := data[start : start+length]
+		for index, set := range sets {
+			if !set.Contains(window[index]) {
+				return 0, false
+			}
+		}
+		return length, true
 	}
-	length := len(sets) * step
+
+	length := len(sets) * 2
 	if start < 0 || start > len(data)-length {
 		return 0, false
 	}
+	window := data[start : start+length]
 	for index, set := range sets {
-		position := start + index*step
-		if !set.Contains(data[position]) || wide && data[position+1] != 0 {
+		position := index * 2
+		if !set.Contains(window[position]) || window[position+1] != 0 {
 			return 0, false
 		}
 	}

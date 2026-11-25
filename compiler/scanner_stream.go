@@ -774,17 +774,21 @@ func (acc *streamAccumulator) recordSpanMatch(rec streamMatchRecord) {
 		acc.accumulatedMatches[rec.rule.Name] = make(map[string][]Match)
 	}
 	raw := rec.windowData[rec.span.Offset : rec.span.Offset+int64(rec.span.Length)]
-	copyLen := len(raw)
+	var matchedData []byte
 	truncated := false
-	if rec.matchDataMax > 0 && copyLen > rec.matchDataMax {
-		copyLen = rec.matchDataMax
-		truncated = true
+	if rec.matchDataMax > 0 {
+		copyLen := len(raw)
+		if copyLen > rec.matchDataMax {
+			copyLen = rec.matchDataMax
+			truncated = true
+		}
+		matchedData = copyBytes(raw[:copyLen])
 	}
 	acc.accumulatedMatches[rec.rule.Name][rec.strID] = append(acc.accumulatedMatches[rec.rule.Name][rec.strID], Match{
 		Pattern:              rec.strID,
 		Offset:               rec.absStart,
 		Length:               rec.span.Length,
-		MatchedData:          copyBytes(raw[:copyLen]),
+		MatchedData:          matchedData,
 		MatchedDataTruncated: truncated,
 	})
 	if !rec.needsEvidenceData {

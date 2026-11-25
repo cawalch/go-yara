@@ -55,7 +55,11 @@ func compileVerificationPlan(parsed *regex.AST, flags regex.Flags, modifiers []a
 	}
 	var forwardRoots []*regex.Node
 	for _, selected := range choices.atoms {
-		before, after, _ := splitVerificationNode(parsed.Root, selected[0])
+		before, after, found := splitVerificationNode(parsed.Root, selected[0])
+		if !found {
+			// A partial plan would skip matches that require the missing atom.
+			return nil, nil
+		}
 		backward, err := compileVerificationPrefix(before)
 		if err != nil {
 			return nil, err
@@ -260,6 +264,10 @@ func splitVerificationNode(node, target *regex.Node) (before, after *regex.Node,
 	node = ungroupRegexNode(node)
 	if node == target {
 		return &regex.Node{Kind: regex.NodeEmpty}, node, true
+	}
+	if node.Kind == regex.NodeRange && node.Start == 0 {
+		// A {0,n} range has no mandatory leading copy to split before.
+		return nil, nil, false
 	}
 	for i, child := range node.Children {
 		left, right, ok := splitVerificationNode(child, target)

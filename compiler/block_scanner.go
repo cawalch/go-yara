@@ -106,6 +106,9 @@ func (scanner *BlockScanner) ScanBorrowedWithContext(ctx context.Context, base i
 }
 
 func (scanner *BlockScanner) scanBlock(ctx context.Context, block MemoryBlock, borrowed bool) (err error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if scanner == nil || scanner.program == nil || scanner.scanner == nil {
 		return errors.New("block scanner is closed or has no program")
 	}
@@ -264,6 +267,9 @@ func (scanner *BlockScanner) Finish() (*ScanResult, error) {
 
 // FinishWithContext evaluates rule conditions against all accumulated blocks.
 func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (result *ScanResult, err error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if scanner == nil || scanner.program == nil || scanner.scanner == nil {
 		return nil, errors.New("block scanner is closed or has no program")
 	}

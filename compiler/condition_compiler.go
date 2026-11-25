@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/cawalch/go-yara/ast"
+	"github.com/cawalch/go-yara/internal/int64ops"
 	"github.com/cawalch/go-yara/semantic"
 	"github.com/cawalch/go-yara/token"
 )
@@ -69,66 +70,7 @@ type conditionCompiler struct {
 }
 
 func parseSizeLiteral(literal string) (int64, error) {
-	trimmed := strings.TrimSpace(literal)
-	if len(trimmed) < 3 {
-		return 0, fmt.Errorf("invalid size literal format: %s", literal)
-	}
-	var multiplier int64
-	switch trimmed[len(trimmed)-2:] {
-	case "KB":
-		multiplier = 1 << 10
-	case "MB":
-		multiplier = 1 << 20
-	case "GB":
-		multiplier = 1 << 30
-	case "TB":
-		multiplier = 1 << 40
-	default:
-		return 0, fmt.Errorf("invalid size literal format: %s", literal)
-	}
-	number := trimmed[:len(trimmed)-2]
-	base := sizeLiteralNumberBase(number)
-	if base == 0 {
-		return 0, fmt.Errorf("invalid size literal format: %s", literal)
-	}
-	// Validate the original grammar before ParseInt, which also accepts signs
-	// and (with base 0) underscores and other radix prefixes.
-	digits := number
-	if base == 16 {
-		digits = digits[2:]
-	}
-	num, err := strconv.ParseInt(digits, base, 64)
-	if err != nil {
-		return 0, fmt.Errorf("invalid number in size literal: %s", number)
-	}
-	if num > math.MaxInt64/multiplier {
-		return 0, fmt.Errorf("size literal exceeds int64 range: %s", literal)
-	}
-	return num * multiplier, nil
-}
-
-// sizeLiteralNumberBase accepts only decimal digits or a lowercase 0x prefix
-// followed by hexadecimal digits. Leading zeroes remain decimal.
-func sizeLiteralNumberBase(number string) int {
-	base := 10
-	if strings.HasPrefix(number, "0x") {
-		base = 16
-		number = number[2:]
-	}
-	if len(number) == 0 {
-		return 0
-	}
-	for i := range number {
-		b := number[i]
-		if b >= '0' && b <= '9' {
-			continue
-		}
-		if base == 16 && b|0x20 >= 'a' && b|0x20 <= 'f' {
-			continue
-		}
-		return 0
-	}
-	return base
+	return int64ops.ParseSizeLiteral(literal)
 }
 
 // pendingJump represents a pending jump operation in bytecode generation

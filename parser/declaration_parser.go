@@ -624,7 +624,10 @@ func (p *DeclarationParser) ParseInclude() (*ast.Include, error) {
 // parseExpression parses the literal values accepted by global declarations.
 func (p *DeclarationParser) parseExpression() (ast.Expression, error) {
 	if p.currentTokenIs(token.IntegerLit) {
-		value := p.parseIntegerLiteral()
+		value, err := strconv.ParseInt(p.current.Literal, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid integer literal: %s at %v", p.current.Literal, p.current.Pos)
+		}
 		pos := p.current.Pos
 		p.nextToken()
 		return p.builder.Literal(pos, token.IntegerLit, value), nil

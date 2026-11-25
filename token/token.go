@@ -208,6 +208,7 @@ var tokenTypeNames = map[Type]string{
 	THEM:             "THEM",
 	DEFINED:          "DEFINED",
 	GLOBAL:           "GLOBAL",
+	EXTERNAL:         "EXTERNAL",
 	IMPORT:           "IMPORT",
 	INCLUDE:          "INCLUDE",
 	CONTAINS:         "CONTAINS",

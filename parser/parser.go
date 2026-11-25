@@ -4,6 +4,7 @@ package parser
 import (
 	"context"
 	"errors"
+	"slices"
 
 	"github.com/cawalch/go-yara/ast"
 	"github.com/cawalch/go-yara/internal/lexer"
@@ -64,11 +65,14 @@ type Parser struct {
 	ruleParser  *RuleParser
 }
 
-// New creates a new parser instance with specialized sub-parsers
+// defaultMaxRecursionDepth matches the compiler's default nesting limit.
+const defaultMaxRecursionDepth = 1000
+
+// New creates a new parser instance with specialized sub-parsers.
 func New(l *lexer.Lexer) *Parser {
 	return NewWithOptions(
 		l,
-		Options{MaxRecursionDepth: 0},
+		Options{MaxRecursionDepth: defaultMaxRecursionDepth},
 	)
 }
 
@@ -330,7 +334,7 @@ func checkContext(ctx context.Context) error {
 
 // Errors returns any parsing errors encountered
 func (p *Parser) Errors() []error {
-	return p.errors
+	return slices.Clone(p.errors)
 }
 
 // Token management methods

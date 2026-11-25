@@ -113,7 +113,7 @@ func (s *Scanner) executeCondition(rule *CompiledRule) error {
 		previous := s.enterScanPhase(PhaseRuleCondition)
 		defer s.leaveScanPhase(previous)
 	}
-	s.ruleResultsDirty = true
+	s.markRuleResultDirty(rule.Index)
 	if len(rule.assertionProgram) > 0 && len(rule.Bytecode) > 0 && rule.Bytecode[0] == byte(OpEvalAssertions) {
 		return s.executeAssertionProgram(rule)
 	}

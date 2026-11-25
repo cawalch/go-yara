@@ -1,8 +1,11 @@
 package compiler
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"math"
+	"reflect"
 	"slices"
 	"sort"
 
@@ -222,10 +225,9 @@ func resolvePrefilterString(rule *CompiledRule, identifier string) prefilterStri
 	}
 }
 
-func assignNonTextCacheIndices(rules []*CompiledRule) int {
-	indices := make(map[nonTextCacheKey]int)
-	nextIndex := 0
-	for _, rule := range rules {
+func assignNonTextCacheIndices(rules []*CompiledRule, validateCacheKeys bool) (int, error) {
+	entries := make(map[nonTextCacheKey]nonTextCacheEntry)
+	for ruleIndex, rule := range rules {
 		if rule.IsDead {
 			continue
 		}
@@ -235,15 +237,22 @@ func assignNonTextCacheIndices(rules []*CompiledRule) int {
 			}
 			pattern := rule.RegexPatterns[strID]
 			pattern.cacheIndex = -1
+			//nolint:nestif // cache-key identity check keeps the conflict diagnostic beside the lookup
 			if pattern.cacheKey != "" {
 				key := nonTextCacheKey{kind: StringKindRegex, cacheKey: pattern.cacheKey}
-				index, exists := indices[key]
+				entry, exists := entries[key]
 				if !exists {
-					index = nextIndex
-					nextIndex++
-					indices[key] = index
+					entry = nonTextCacheEntry{index: len(entries), ruleIndex: ruleIndex, strID: strID}
+					entries[key] = entry
+				} else if validateCacheKeys {
+					prior := rules[entry.ruleIndex]
+					priorPattern := prior.RegexPatterns[entry.strID]
+					if !sameRegexCachePattern(&priorPattern, &pattern) ||
+						regexCacheModifiers(prior.StringModifiers[entry.strID]) != regexCacheModifiers(rule.StringModifiers[strID]) {
+						return 0, fmt.Errorf("conflicting regex cache key %q", pattern.cacheKey)
+					}
 				}
-				pattern.cacheIndex = index
+				pattern.cacheIndex = entry.index
 			}
 			rule.RegexPatterns[strID] = pattern
 		}
@@ -260,13 +269,17 @@ func assignNonTextCacheIndices(rules []*CompiledRule) int {
 				continue
 			}
 			key := nonTextCacheKey{kind: StringKindHex, cacheKey: pattern.cacheKey}
-			index, exists := indices[key]
+			entry, exists := entries[key]
 			if !exists {
-				index = nextIndex
-				nextIndex++
-				indices[key] = index
+				entry = nonTextCacheEntry{index: len(entries), ruleIndex: ruleIndex, strID: strID}
+				entries[key] = entry
+			} else if validateCacheKeys {
+				representative := rules[entry.ruleIndex].HexPatterns[entry.strID]
+				if !sameHexCachePattern(representative, pattern) {
+					return 0, fmt.Errorf("conflicting hex cache key %q", pattern.cacheKey)
+				}
 			}
-			pattern.cacheIndex = index
+			pattern.cacheIndex = entry.index
 		}
 	}
 	// Every cacheIndex is final at this point, so the reject path's per-string
@@ -275,7 +288,78 @@ func assignNonTextCacheIndices(rules []*CompiledRule) int {
 	for _, rule := range rules {
 		buildPrefilterStrings(rule)
 	}
-	return nextIndex
+	return len(entries), nil
+}
+
+type nonTextCacheEntry struct {
+	index     int
+	ruleIndex int
+	strID     string
+}
+
+func sameRegexCachePattern(left, right *RegexPattern) bool {
+	// Capture replay is independent of the selected span. Bounded-class
+	// matching is derived from Code and Flags.
+	return left.Flags == right.Flags && bytes.Equal(left.Code, right.Code) &&
+		sameRegexCacheAtoms(left, right) &&
+		sameRegexCacheByteSets(left, right) &&
+		reflect.DeepEqual(left.boundedAlternation, right.boundedAlternation) &&
+		reflect.DeepEqual(left.verification, right.verification) &&
+		reflect.DeepEqual(left.leadingGap, right.leadingGap)
+}
+
+func sameRegexCacheAtoms(left, right *RegexPattern) bool {
+	return left.maxLength == right.maxLength && left.streamPriorityBound == right.streamPriorityBound &&
+		left.anchored == right.anchored && left.atomASCIINoCase == right.atomASCIINoCase &&
+		left.atomMinOffset == right.atomMinOffset && left.atomMaxOffset == right.atomMaxOffset &&
+		left.atomMaxSuffix == right.atomMaxSuffix &&
+		bytes.Equal(left.atom, right.atom) && bytes.Equal(left.wideAtom, right.wideAtom) &&
+		bytes.Equal(left.prefix, right.prefix) && bytes.Equal(left.widePrefix, right.widePrefix) &&
+		bytes.Equal(left.exactPrefixSuffix, right.exactPrefixSuffix) && bytes.Equal(left.wideExactPrefix, right.wideExactPrefix) &&
+		slices.EqualFunc(left.alternativeAtoms, right.alternativeAtoms, sameRegexPrefilterAtom) &&
+		slices.EqualFunc(left.wideAlternativeAtoms, right.wideAlternativeAtoms, sameRegexPrefilterAtom)
+}
+
+func sameRegexPrefilterAtom(left, right regexPrefilterAtom) bool {
+	return left.minOffset == right.minOffset && left.maxOffset == right.maxOffset &&
+		left.maxSuffix == right.maxSuffix && left.score == right.score &&
+		left.asciiNoCase == right.asciiNoCase && bytes.Equal(left.data, right.data)
+}
+
+func sameRegexCacheByteSets(left, right *RegexPattern) bool {
+	return left.byteSet == right.byteSet && left.byteSetMinOffset == right.byteSetMinOffset &&
+		left.byteSetMaxOffset == right.byteSetMaxOffset && left.byteSetCount == right.byteSetCount &&
+		left.byteSetLower == right.byteSetLower && left.byteSetUpper == right.byteSetUpper &&
+		left.byteSetContiguous == right.byteSetContiguous && bytes.Equal(left.byteSetValues, right.byteSetValues) &&
+		slices.Equal(left.fixedByteSets, right.fixedByteSets) &&
+		left.hasFirstByteSet == right.hasFirstByteSet && left.firstByteSet == right.firstByteSet &&
+		left.hasPrecedingByteSet == right.hasPrecedingByteSet && left.precedingByteSet == right.precedingByteSet &&
+		left.hasPrefixRepeat == right.hasPrefixRepeat && left.prefixRepeatClass == right.prefixRepeatClass &&
+		left.prefixRepeatMin == right.prefixRepeatMin && left.prefixRepeatMax == right.prefixRepeatMax
+}
+
+func regexCacheModifiers(modifiers []ast.StringModifier) uint {
+	var mask uint
+	for _, modifier := range modifiers {
+		switch modifier.Type {
+		case ast.StringModifierASCII, ast.StringModifierWide, ast.StringModifierFullword:
+			mask |= 1 << uint(modifier.Type)
+		}
+	}
+	return mask
+}
+
+func sameHexCachePattern(left, right *HexPattern) bool {
+	return slices.EqualFunc(left.Tokens, right.Tokens, sameHexCacheToken) &&
+		slices.Equal(left.XorKeys, right.XorKeys) && slices.Equal(left.XorRange, right.XorRange)
+}
+
+func sameHexCacheToken(left, right HexPatternToken) bool {
+	return left.Kind == right.Kind && left.Value == right.Value && left.Mask == right.Mask &&
+		left.Min == right.Min && left.Max == right.Max && left.Negated == right.Negated &&
+		slices.EqualFunc(left.Alternatives, right.Alternatives, func(a, b []HexPatternToken) bool {
+			return slices.EqualFunc(a, b, sameHexCacheToken)
+		})
 }
 
 func buildFixedRegexDispatch(rules []*CompiledRule) *fixedRegexDispatch {
@@ -385,17 +469,20 @@ func (s *Scanner) populateNonTextPrefilterCache(
 	if s.matchCtx != nil {
 		s.matchCtx.maxMatchSpan = s.maxMatchSpan
 	}
-	slices.Sort(s.touchedPrefilterCandidates)
+	if len(s.touchedPrefilterCandidates) > 1 {
+		slices.Sort(s.touchedPrefilterCandidates)
+	}
+	done := ctx.Done()
 	for touchedIndex := 0; touchedIndex < len(s.touchedPrefilterCandidates); {
-		if err := ctx.Err(); err != nil {
-			return err
+		if scanCanceled(done) {
+			return ctx.Err()
 		}
 		lookupIdx := s.touchedPrefilterCandidates[touchedIndex]
 		if lookupIdx < 0 || lookupIdx >= len(s.program.sharedLookup) {
 			touchedIndex++
 			continue
 		}
-		entry := s.program.sharedLookup[lookupIdx]
+		entry := &s.program.sharedLookup[lookupIdx]
 		if entry.Kind == StringKindText || entry.CacheIndex < 0 || entry.CacheIndex >= len(cache.matches) {
 			touchedIndex++
 			continue
@@ -413,7 +500,7 @@ func (s *Scanner) populateNonTextPrefilterCache(
 		if entry.Kind == StringKindRegex && entry.alternativeAtom {
 			lookupGroupStart := lookupIdx
 			for lookupGroupStart > 0 {
-				previous := s.program.sharedLookup[lookupGroupStart-1]
+				previous := &s.program.sharedLookup[lookupGroupStart-1]
 				if !previous.alternativeAtom || previous.Kind != StringKindRegex ||
 					previous.CacheIndex != entry.CacheIndex || previous.IsWide != entry.IsWide {
 					break
@@ -422,7 +509,7 @@ func (s *Scanner) populateNonTextPrefilterCache(
 			}
 			groupEnd := lookupIdx + 1
 			for groupEnd < len(s.program.sharedLookup) {
-				next := s.program.sharedLookup[groupEnd]
+				next := &s.program.sharedLookup[groupEnd]
 				if !next.alternativeAtom ||
 					next.Kind != StringKindRegex ||
 					next.CacheIndex != entry.CacheIndex ||
@@ -432,7 +519,7 @@ func (s *Scanner) populateNonTextPrefilterCache(
 				groupEnd++
 			}
 
-			groupEntry := s.program.sharedLookup[lookupGroupStart]
+			groupEntry := &s.program.sharedLookup[lookupGroupStart]
 			rule := s.program.Rules[groupEntry.RuleIndex]
 			if groupEntry.StringIdx < 0 || groupEntry.StringIdx >= len(rule.IndexToStringID) {
 				touchedIndex++
@@ -450,7 +537,7 @@ func (s *Scanner) populateNonTextPrefilterCache(
 			dst := cache.matches[entry.CacheIndex]
 			matchGroupStart := len(dst)
 			for candidateIndex := lookupGroupStart; candidateIndex < groupEnd; candidateIndex++ {
-				candidateEntry := s.program.sharedLookup[candidateIndex]
+				candidateEntry := &s.program.sharedLookup[candidateIndex]
 				candidates := s.prefilterCandidates[candidateIndex]
 				if len(candidates) > 0 {
 					dst = appendRegexPrefilterMatches(
@@ -460,7 +547,7 @@ func (s *Scanner) populateNonTextPrefilterCache(
 						candidateEntry,
 						data,
 						candidates,
-						ctx.Done(),
+						done,
 						s.matchCtx,
 					)
 				}
@@ -485,23 +572,26 @@ func (s *Scanner) populateNonTextPrefilterCache(
 		}
 		if len(candidates) > 0 {
 			if entry.hexDisc != nil {
-				s.verifyHexFanoutDiscriminated(ctx, entry, data, candidates, cache)
+				s.verifyHexFanoutDiscriminated(done, *entry, data, candidates, cache)
 			} else {
-				s.verifySharedNonTextEntry(ctx, entry, data, candidates, cache)
-				for _, extra := range entry.fanout {
-					s.verifySharedNonTextEntry(ctx, extra, data, candidates, cache)
+				s.verifySharedNonTextEntry(done, entry, data, candidates, cache)
+				for index := range entry.fanout {
+					s.verifySharedNonTextEntry(done, &entry.fanout[index], data, candidates, cache)
 				}
 			}
 		}
 		touchedIndex++
 	}
-	return ctx.Err()
+	if scanCanceled(done) {
+		return ctx.Err()
+	}
+	return nil
 }
 
 //nolint:revive // argument-limit: hot-path helper avoids struct allocation
 func (s *Scanner) verifySharedNonTextEntry(
-	ctx context.Context,
-	entry sharedAutomatonEntry,
+	done <-chan struct{},
+	entry *sharedAutomatonEntry,
 	data []byte,
 	candidates []int,
 	cache *nonTextMatchCache,
@@ -520,13 +610,13 @@ func (s *Scanner) verifySharedNonTextEntry(
 	case StringKindRegex:
 		dst := cache.matches[entry.CacheIndex]
 		if len(candidates) > 0 {
-			dst = appendRegexPrefilterMatches(dst, rule, strID, entry, data, candidates, ctx.Done(), s.matchCtx)
+			dst = appendRegexPrefilterMatches(dst, rule, strID, entry, data, candidates, done, s.matchCtx)
 		}
 		cache.set(entry.CacheIndex, dst)
 	case StringKindHex:
 		dst := cache.matches[entry.CacheIndex]
 		if len(candidates) > 0 {
-			dst = appendHexPrefilterMatches(dst, rule, strID, entry, data, candidates, ctx.Done(), &s.hexScratch)
+			dst = appendHexPrefilterMatches(dst, rule, strID, *entry, data, candidates, done, &s.hexScratch)
 		}
 		cache.set(entry.CacheIndex, dst)
 	}
@@ -536,7 +626,7 @@ func (s *Scanner) verifySharedNonTextEntry(
 	}
 }
 
-func (s *Scanner) canSkipSharedNonTextEntry(entry sharedAutomatonEntry, rule *CompiledRule, data []byte) bool {
+func (s *Scanner) canSkipSharedNonTextEntry(entry *sharedAutomatonEntry, rule *CompiledRule, data []byte) bool {
 	return !s.prefilterDisabled &&
 		s.skipUnmatchedNonText &&
 		entry.singleRuleCache &&
@@ -545,6 +635,9 @@ func (s *Scanner) canSkipSharedNonTextEntry(entry sharedAutomatonEntry, rule *Co
 }
 
 func sortAndDedupeMatchSpans(matches []matchSpan) []matchSpan {
+	if len(matches) < 2 {
+		return matches
+	}
 	slices.SortFunc(matches, func(left, right matchSpan) int {
 		switch {
 		case left.Offset < right.Offset:
@@ -559,9 +652,6 @@ func sortAndDedupeMatchSpans(matches []matchSpan) []matchSpan {
 			return 0
 		}
 	})
-	if len(matches) < 2 {
-		return matches
-	}
 	unique := 1
 	for _, candidate := range matches[1:] {
 		if candidate.Offset == matches[unique-1].Offset {
@@ -596,7 +686,7 @@ func appendRegexPrefilterMatches(
 	dst []matchSpan,
 	rule *CompiledRule,
 	strID string,
-	entry sharedAutomatonEntry,
+	entry *sharedAutomatonEntry,
 	data []byte,
 	candidates []int,
 	done <-chan struct{},
@@ -732,7 +822,7 @@ func (pattern *RegexPattern) hasValidAtomOccurrence(data []byte, atomStart int, 
 	return ok
 }
 
-func (v regexPrefilterVerifier) verifyStart(dst []matchSpan, pattern *RegexPattern, start int) ([]matchSpan, *regex.VMBatch) {
+func (v *regexPrefilterVerifier) verifyStart(dst []matchSpan, pattern *RegexPattern, start int) ([]matchSpan, *regex.VMBatch) {
 	if pattern.anchored && start != 0 {
 		return dst, v.bs
 	}
@@ -801,6 +891,7 @@ func appendRegexFallbackMatches(
 	ctx.cancelDone = done
 	if matchCtx != nil {
 		ctx.maxMatchSpan = matchCtx.maxMatchSpan
+		ctx.maxMatchesPerPattern = matchCtx.maxMatchesPerPattern
 	}
 	addRegexMatches(ctx, strID, pattern, data, rule.StringModifiers[strID], flags, isWide)
 	dst = append(dst, ctx.spansFor(strID)...)
@@ -1146,7 +1237,7 @@ func buildHexFanoutDiscriminator(rules []*CompiledRule, leader sharedAutomatonEn
 
 //nolint:revive // argument-limit: hot-path helper avoids struct allocation
 func (s *Scanner) verifyHexFanoutDiscriminated(
-	ctx context.Context,
+	done <-chan struct{},
 	leader sharedAutomatonEntry,
 	data []byte,
 	candidates []int,
@@ -1178,20 +1269,20 @@ func (s *Scanner) verifyHexFanoutDiscriminated(
 	}
 
 	for _, target := range touched {
-		entry := leader
+		entry := &leader
 		if target > 0 {
-			entry = leader.fanout[target-1]
+			entry = &leader.fanout[target-1]
 		}
-		s.verifySharedNonTextEntry(ctx, entry, data, fanout[target], cache)
+		s.verifySharedNonTextEntry(done, entry, data, fanout[target], cache)
 		fanout[target] = fanout[target][:0]
 	}
 	s.hexScratch.fanoutTouched = touched[:0]
 
 	for _, target := range disc.wildcard {
-		entry := leader
+		entry := &leader
 		if target > 0 {
-			entry = leader.fanout[target-1]
+			entry = &leader.fanout[target-1]
 		}
-		s.verifySharedNonTextEntry(ctx, entry, data, candidates, cache)
+		s.verifySharedNonTextEntry(done, entry, data, candidates, cache)
 	}
 }

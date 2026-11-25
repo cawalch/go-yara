@@ -11,7 +11,7 @@ func TestSizeLiteralSyntaxAndRange(t *testing.T) {
 		input string
 		want  int64
 	}{
-		{"0KB", 0}, {"0009KB", 9 << 10}, {"0xAbMB", 0xab << 20},
+		{"0KB", 0}, {"0009KB", 9 << 10}, {"0xAbMB", 0xab << 20}, {"0X10KB", 0x10 << 10},
 		{"2GB", 2 << 30}, {"3TB", 3 << 40}, {"\u2003\t10KB\r\n", 10 << 10},
 	} {
 		got, err := parseSizeLiteral(tc.input)
@@ -21,8 +21,7 @@ func TestSizeLiteralSyntaxAndRange(t *testing.T) {
 	}
 	for _, input := range []string{
 		"", "KB", "1B", "1kb", "1Kb", "1kB", "1PB", "1 KB", "1\nKB",
-		"+1KB", "-1KB", "1.5KB", "1e3KB", "1_000KB", "0xKB", "0X10KB",
-		"0b10KB", "0o10KB", "0x_1KB", "0x1_0KB", "0xgKB", "١KB", "１KB", "1KB\x00",
+		"+1KB", "-1KB", "1.5KB", "1e3KB", "1_000KB", "0xKB", "0b10KB", "0o10KB", "0x_1KB", "0x1_0KB", "0xgKB", "١KB", "１KB", "1KB\x00",
 	} {
 		want := "invalid size literal format: " + input
 		if _, err := parseSizeLiteral(input); err == nil || err.Error() != want {

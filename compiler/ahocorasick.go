@@ -69,13 +69,15 @@ type acAutomaton struct {
 	// Byte-equivalence-class compressed transition tables when classShift > 0.
 	// classRoot retains the expanded 256-entry root row so root misses need no
 	// class indirection.
-	classMap    [256]byte
-	classShift  uint8
-	classCount  int
-	classRoot16 *[256]uint16
-	classRoot32 *[256]int32
-	flatClass16 []uint16
-	flatClass32 []int32
+	classMap   [256]byte
+	classShift uint8
+	// patternBytes bounds the stored payload before trie construction.
+	patternBytes uint32
+	classCount   int
+	classRoot16  *[256]uint16
+	classRoot32  *[256]int32
+	flatClass16  []uint16
+	flatClass32  []int32
 
 	// hasOutput indicates whether a state has any outputs. 1 byte per state.
 	hasOutput []bool
@@ -106,6 +108,11 @@ type acAutomaton struct {
 	// Exported metadata retained for compatibility with existing callers.
 	StringCount int
 }
+
+const (
+	maxAutomatonPatternLength = 1 << 20
+	maxAutomatonPatternBytes  = 16 << 20
+)
 
 // newacAutomaton creates a new Aho-Corasick automaton with compact initial capacity.
 func newacAutomaton() *acAutomaton {
@@ -183,6 +190,11 @@ func (ac *acAutomaton) addStringToAutomaton(config stringConfig) error {
 	// Own the pattern bytes exactly once; the trie, if constructed, works
 	// from this stored copy.
 	patternLength := len(config.Data)
+	if patternLength > maxAutomatonPatternLength ||
+		int(ac.patternBytes) > maxAutomatonPatternBytes-patternLength {
+		return errors.New("automaton pattern storage limit exceeded")
+	}
+	ac.patternBytes += uint32(patternLength)
 	patternData := make([]byte, patternLength)
 	copy(patternData, config.Data)
 	stringInfo := acStringInfo{
@@ -1486,6 +1498,7 @@ func (ac *acAutomaton) Clone() *acAutomaton {
 		outputRanges:  slices.Clone(ac.outputRanges),
 		stateCount:    ac.stateCount,
 		stateHint:     ac.stateHint,
+		patternBytes:  ac.patternBytes,
 		deferred:      ac.deferred,
 		compiled:      ac.compiled,
 		StringCount:   len(internalStrings),
@@ -1662,6 +1675,7 @@ func (ac *acAutomaton) Reset() {
 	ac.outputRanges = nil
 	ac.stateCount = 0
 	ac.stateHint = 1
+	ac.patternBytes = 0
 
 	// Reset compilation state
 	ac.compiledOnce = sync.Once{}

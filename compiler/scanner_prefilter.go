@@ -39,8 +39,8 @@ func (s *Scanner) recordRuleResult(rule *CompiledRule, matched bool) {
 	if rule.Index >= 0 && rule.Index < len(s.ruleResultsDense) {
 		if matched {
 			s.ruleResultsDense[rule.Index] = true
-			s.ruleResultsDirty = true
-		} else if s.ruleResultsDirty {
+			s.markRuleResultDirty(rule.Index)
+		} else if s.dirtyRuleResult != 0 {
 			s.ruleResultsDense[rule.Index] = false
 		}
 	}

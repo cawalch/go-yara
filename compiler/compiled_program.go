@@ -105,10 +105,14 @@ func NewCompiledProgram(rules []*CompiledRule) *CompiledProgram {
 		}
 		owned[index] = &copyRule
 	}
-	return newCompiledProgram(owned)
+	return newCompiledProgramWithCacheValidation(owned, true)
 }
 
 func newCompiledProgram(rules []*CompiledRule) *CompiledProgram {
+	return newCompiledProgramWithCacheValidation(rules, false)
+}
+
+func newCompiledProgramWithCacheValidation(rules []*CompiledRule, validateCacheKeys bool) *CompiledProgram {
 	program := &CompiledProgram{
 		Rules:          rules,
 		Stats:          make(map[string]any),
@@ -119,7 +123,7 @@ func newCompiledProgram(rules []*CompiledRule) *CompiledProgram {
 			return NewScanner(program)
 		},
 	}
-	program.preparationErr = program.prepare()
+	program.preparationErr = program.prepare(validateCacheKeys)
 	return program
 }
 
@@ -162,7 +166,7 @@ func (cp *CompiledProgram) releaseScanner(s *Scanner) {
 	cp.scannerPool.Put(s)
 }
 
-func (cp *CompiledProgram) prepare() error {
+func (cp *CompiledProgram) prepare(validateCacheKeys bool) error {
 	if err := cp.Validate(); err != nil {
 		return err
 	}
@@ -210,9 +214,12 @@ func (cp *CompiledProgram) prepare() error {
 		rule.nativePCAP = cp.nativePCAP && rule.moduleSchemas["pcap"] != nil
 	}
 	cp.assignSharedAssertions()
-	cp.nonTextCacheSize = assignNonTextCacheIndices(cp.Rules)
-	cp.fixedRegexScan = buildFixedRegexDispatch(cp.Rules)
 	var err error
+	cp.nonTextCacheSize, err = assignNonTextCacheIndices(cp.Rules, validateCacheKeys)
+	if err != nil {
+		return err
+	}
+	cp.fixedRegexScan = buildFixedRegexDispatch(cp.Rules)
 	cp.sharedAutomaton, cp.sharedLookup, err = buildSharedPatternAutomaton(cp.Rules)
 	if err != nil {
 		return err
