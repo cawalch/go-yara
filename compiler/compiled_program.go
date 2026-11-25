@@ -159,6 +159,7 @@ func (cp *CompiledProgram) releaseScanner(s *Scanner) {
 	s.moduleCache.reset()
 	s.blockContext[0].Data = nil
 	s.skipUnmatchedNonText = false
+	s.trimRetainedScratch()
 	cp.scannerPool.Put(s)
 }
 
@@ -210,9 +211,12 @@ func (cp *CompiledProgram) prepare() error {
 		rule.nativePCAP = cp.nativePCAP && rule.moduleSchemas["pcap"] != nil
 	}
 	cp.assignSharedAssertions()
-	cp.nonTextCacheSize = assignNonTextCacheIndices(cp.Rules)
-	cp.fixedRegexScan = buildFixedRegexDispatch(cp.Rules)
 	var err error
+	cp.nonTextCacheSize, err = assignNonTextCacheIndices(cp.Rules)
+	if err != nil {
+		return err
+	}
+	cp.fixedRegexScan = buildFixedRegexDispatch(cp.Rules)
 	cp.sharedAutomaton, cp.sharedLookup, err = buildSharedPatternAutomaton(cp.Rules)
 	if err != nil {
 		return err

@@ -1,8 +1,11 @@
 package compiler
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"math"
+	"reflect"
 	"slices"
 	"sort"
 
@@ -222,10 +225,11 @@ func resolvePrefilterString(rule *CompiledRule, identifier string) prefilterStri
 	}
 }
 
-func assignNonTextCacheIndices(rules []*CompiledRule) int {
+func assignNonTextCacheIndices(rules []*CompiledRule) (int, error) {
 	indices := make(map[nonTextCacheKey]int)
+	identities := make(map[nonTextCacheKey]nonTextCacheIdentity)
 	nextIndex := 0
-	for _, rule := range rules {
+	for ruleIndex, rule := range rules {
 		if rule.IsDead {
 			continue
 		}
@@ -235,13 +239,20 @@ func assignNonTextCacheIndices(rules []*CompiledRule) int {
 			}
 			pattern := rule.RegexPatterns[strID]
 			pattern.cacheIndex = -1
+			//nolint:nestif // cache-key identity check keeps the conflict diagnostic beside the lookup
 			if pattern.cacheKey != "" {
 				key := nonTextCacheKey{kind: StringKindRegex, cacheKey: pattern.cacheKey}
 				index, exists := indices[key]
-				if !exists {
+				if exists {
+					representative := rules[identities[key].ruleIndex].RegexPatterns[identities[key].strID]
+					if !sameRegexCachePattern(representative, pattern) {
+						return 0, fmt.Errorf("conflicting regex cache key %q", pattern.cacheKey)
+					}
+				} else {
 					index = nextIndex
 					nextIndex++
 					indices[key] = index
+					identities[key] = nonTextCacheIdentity{ruleIndex: ruleIndex, strID: strID}
 				}
 				pattern.cacheIndex = index
 			}
@@ -261,10 +272,16 @@ func assignNonTextCacheIndices(rules []*CompiledRule) int {
 			}
 			key := nonTextCacheKey{kind: StringKindHex, cacheKey: pattern.cacheKey}
 			index, exists := indices[key]
-			if !exists {
+			if exists {
+				representative := rules[identities[key].ruleIndex].HexPatterns[identities[key].strID]
+				if !sameHexCachePattern(representative, pattern) {
+					return 0, fmt.Errorf("conflicting hex cache key %q", pattern.cacheKey)
+				}
+			} else {
 				index = nextIndex
 				nextIndex++
 				indices[key] = index
+				identities[key] = nonTextCacheIdentity{ruleIndex: ruleIndex, strID: strID}
 			}
 			pattern.cacheIndex = index
 		}
@@ -275,7 +292,29 @@ func assignNonTextCacheIndices(rules []*CompiledRule) int {
 	for _, rule := range rules {
 		buildPrefilterStrings(rule)
 	}
-	return nextIndex
+	return nextIndex, nil
+}
+
+type nonTextCacheIdentity struct {
+	ruleIndex int
+	strID     string
+}
+
+func sameRegexCachePattern(left, right RegexPattern) bool {
+	// Code and flags define the match spans stored in the shared cache. The
+	// remaining fields are candidate-selection accelerators for those same
+	// bytes; including them here would make duplicate patterns recompare large
+	// plans on every load without changing the cached result.
+	return left.Flags == right.Flags && bytes.Equal(left.Code, right.Code)
+}
+
+func sameHexCachePattern(left, right *HexPattern) bool {
+	if left == nil || right == nil {
+		return left == right
+	}
+	leftCopy, rightCopy := *left, *right
+	leftCopy.cacheIndex, rightCopy.cacheIndex = 0, 0
+	return reflect.DeepEqual(leftCopy, rightCopy)
 }
 
 func buildFixedRegexDispatch(rules []*CompiledRule) *fixedRegexDispatch {
@@ -359,19 +398,23 @@ func buildFixedRegexDispatch(rules []*CompiledRule) *fixedRegexDispatch {
 	return dispatch
 }
 
-func (s *Scanner) resetPrefilterCandidates(size int) {
+func (s *Scanner) resetPrefilterCandidates(size int) (oversized bool) {
 	if cap(s.prefilterCandidates) < size {
 		s.prefilterCandidates = make([][]int, size)
 		s.touchedPrefilterCandidates = s.touchedPrefilterCandidates[:0]
-		return
+		return false
 	}
 	for _, index := range s.touchedPrefilterCandidates {
 		if index >= 0 && index < len(s.prefilterCandidates) {
-			s.prefilterCandidates[index] = s.prefilterCandidates[index][:0]
+			if cap(s.prefilterCandidates[index]) > maxRetainedOccurrences {
+				oversized = true
+			}
+			s.prefilterCandidates[index] = trimRetainedOccurrences(s.prefilterCandidates[index])
 		}
 	}
 	s.touchedPrefilterCandidates = s.touchedPrefilterCandidates[:0]
 	s.prefilterCandidates = s.prefilterCandidates[:size]
+	return oversized
 }
 
 func (s *Scanner) populateNonTextPrefilterCache(

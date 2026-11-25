@@ -14,12 +14,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+* Retain at most 4,096 transient occurrences per pattern/rule in a reusable `Scanner`. A single dense scan no longer pins match, candidate, span, hex-walk, or borrowed-evidence backing arrays proportional to its match count; larger buffers are dropped at the next reset or when the scanner returns to the program pool.
+* Consolidated size-literal parsing on `internal/int64ops.ParseSizeLiteral`, matching libyara’s uppercase `KB`/`MB`/`GB`/`TB` grammar and accepting `0x`/`0X` hexadecimal prefixes consistently.
+* Default `parser.New` to the compiler’s 1,000-level recursion limit and propagate the limit through nested quantifier expressions.
 * Documented unsigned byte ordering for string comparisons and classified libyara’s signed-byte ordering in differential tests ([#727](https://github.com/cawalch/go-yara/issues/727)).
 * Updated `github.com/cawalch/go-pe` dependency from `v0.1.0` to `v0.2.0` ([#625](https://github.com/cawalch/go-yara/pull/625)).
 * Removed test-only helpers from production files, deduplicated shared helpers across `compiler`, `parser`, `semantic`, `regex`, and `internal/pefixture`, and applied Go 1.27 `go fix` modernizations ([#626](https://github.com/cawalch/go-yara/pull/626), [#627](https://github.com/cawalch/go-yara/pull/627), [#628](https://github.com/cawalch/go-yara/pull/628), [#630](https://github.com/cawalch/go-yara/pull/630)).
 
 ### Fixed
 
+* Reader scans honor `WithMatchData`’s non-positive-disables contract instead of copying matched bytes for every occurrence, and `ScanFile` streams devices, FIFOs, and other non-regular files rather than reading them unbounded into memory.
+* `BlockScanner.ScanWithContext` and `FinishWithContext` normalize nil contexts, matching the other `*WithContext` entry points.
+* Boolean and rule-list scans propagate cancellation when the compact prefilter leaves no candidate rules.
+* Nested quantifiers participate in parser recursion limits, quantifier target lists are capped at 1,024 elements, oversized global integer declarations fail instead of silently becoming zero, and `Parser.Errors` returns an owned slice.
+* Loaded compiled artifacts reject automaton pattern payloads above 1 MiB per pattern or 16 MiB per program, rejecting crafted trie-amplification artifacts before materialization.
+* Loaded regex and hex patterns with conflicting shared cache keys are rejected instead of reusing verified spans from a different pattern.
+* The CLI bounds rule-file reads at the compiler’s 100 MiB default input limit, and `token.EXTERNAL` now has a printable name.
 * A failed global rule suppresses every public match, including other matching global rules. Boolean scans now propagate cancellation observed by the compact prefilter.
 
 * Clarified that `ScanReader` and `MatchesReader` bound input buffering. Retained occurrences, reported match data, and evidence can grow with matches ([#702](https://github.com/cawalch/go-yara/issues/702)).

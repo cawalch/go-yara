@@ -90,6 +90,7 @@ func (s *Scanner) MatchesWithContext(ctx context.Context, data []byte) (matched 
 			start := s.beginScan(ctx, int64(len(data)))
 			start.finish(nil, 0, err)
 		}
+		s.resetScanState()
 		return false, err
 	}
 	s.clearRuleResultsIfDirty()
@@ -172,6 +173,8 @@ func (s *Scanner) ScanReader(r io.Reader) (*ScanResult, error) {
 // retained header. Retained occurrence spans grow with the number of matches.
 // Reported match bytes and evidence add storage that can grow with their size
 // and number. WithFastScan reduces occurrence retention for eligible rules.
+// WithMatchContext byte windows are not retained for reader scans; use Scan or
+// BlockScanner when surrounding match context is required.
 // Cancellation is checked between chunk reads and pattern evaluation.
 // Integer reads in conditions must lie entirely within the first 64 KiB of input;
 // reads outside that retained header are undefined, even for longer streams.
@@ -210,6 +213,17 @@ func (s *Scanner) ScanFileWithContext(ctx context.Context, filename string) (*Sc
 			defer cleanup()
 			return s.ScanWithContext(ctx, data)
 		}
+	}
+	if statErr == nil && !info.Mode().IsRegular() {
+		// Devices, FIFOs, and sockets have no finite size. Stream them so an
+		// endless source (for example /dev/zero) cannot be read into memory
+		// without bound.
+		file, err := os.Open(filename) // #nosec G304 - caller intentionally scans this path
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = file.Close() }()
+		return s.ScanReaderWithContext(ctx, file)
 	}
 	if ctx.Done() == nil {
 		data, err := os.ReadFile(filename) // #nosec G304 - caller intentionally scans this path

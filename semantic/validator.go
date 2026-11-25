@@ -3,6 +3,7 @@ package semantic
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/cawalch/go-yara/ast"
@@ -99,7 +100,7 @@ func (v *Validator) ValidateProgram(program *ast.Program) []error {
 		v.validateRule(rule)
 	}
 
-	return v.errors
+	return slices.Clone(v.errors)
 }
 
 // collectSymbols collects all symbols from a rule
@@ -601,9 +602,9 @@ func (v *Validator) addErrors(errs []error) {
 	}
 }
 
-// GetErrors returns all semantic errors
+// GetErrors returns an owned snapshot of all semantic errors.
 func (v *Validator) GetErrors() []error {
-	return v.errors
+	return slices.Clone(v.errors)
 }
 
 // HasErrors returns true if there are semantic errors

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -272,9 +273,18 @@ func parseArgs(rawArgs []string) (*commandArgs, error) {
 }
 
 func readFileContent(filename string) ([]byte, error) {
-	content, err := fs.ReadFile("", filename) // #nosec G304 - file reading is intentional
+	const maxRuleFileBytes = 100 << 20 // keep CLI reads under the compiler's default input limit
+	file, err := os.Open(filename)     // #nosec G304 - file reading is intentional
 	if err != nil {
 		return nil, fmt.Errorf("reading YARA file: %w", err)
+	}
+	defer func() { _ = file.Close() }()
+	content, err := io.ReadAll(io.LimitReader(file, maxRuleFileBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("reading YARA file: %w", err)
+	}
+	if len(content) > maxRuleFileBytes {
+		return nil, fmt.Errorf("reading YARA file: input exceeds %d bytes", maxRuleFileBytes)
 	}
 	return content, nil
 }

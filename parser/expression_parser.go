@@ -381,6 +381,10 @@ func (p *ExpressionParser) parseRangeExpression() (ast.Expression, error) {
 
 func (p *ExpressionParser) parseQuantifierPrimary() (ast.Expression, error) {
 	if p.quantifierParser != nil {
+		if err := p.incrementDepth(); err != nil {
+			return nil, err
+		}
+		defer p.decrementDepth()
 		p.quantifierParser.SetCurrentTokens(p.current, p.peek)
 		expr, err := p.quantifierParser.ParseQuantifier(p.current.Pos)
 		if err != nil {

@@ -955,16 +955,23 @@ func deserializeAutomaton(infos []acStringInfo) (*acAutomaton, error) {
 	}
 	_ = mustACIndex(len(infos) - 1)
 	stateHint := 1
+	patternBytes := 0
 	for i := range infos {
-		infos[i].Length = len(infos[i].Data)
-		stateHint += infos[i].Length
+		length := len(infos[i].Data)
+		if length > maxAutomatonPatternLength || patternBytes > maxAutomatonPatternBytes-length {
+			return nil, errors.New("automaton pattern storage limit exceeded")
+		}
+		patternBytes += length
+		infos[i].Length = length
+		stateHint += length
 	}
 	automaton := &acAutomaton{
-		outputs:     make([]int32, 0, max(16, len(infos))),
-		strings:     infos,
-		StringCount: len(infos),
-		deferred:    true,
-		stateHint:   stateHint,
+		outputs:      make([]int32, 0, max(16, len(infos))),
+		strings:      infos,
+		StringCount:  len(infos),
+		deferred:     true,
+		stateHint:    stateHint,
+		patternBytes: patternBytes,
 	}
 	return automaton, nil
 }

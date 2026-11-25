@@ -58,7 +58,7 @@ func TestStreamBoundedRegexAutomaticOverlap(t *testing.T) {
 			}
 			data = expanded
 		}
-		s := p.NewScanner(WithStreamChunkSize(1024))
+		s := p.NewScanner(WithStreamChunkSize(1024), WithMatchData(len(data)))
 		result, err := s.ScanReader(bytes.NewReader(data))
 		s.Close()
 		if err != nil || len(result.MatchedRules) != 1 {

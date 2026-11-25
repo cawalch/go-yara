@@ -586,7 +586,9 @@ func (s *Scanner) prepareChunkPatternScan(ctx context.Context, chunkData []byte)
 		return s.preparePatternScan(ctx, chunkData)
 	}
 	if len(s.program.Rules) <= 1 {
-		s.nonTextCache.reset(s.program.nonTextCacheSize)
+		if s.nonTextCache.reset(s.program.nonTextCacheSize) {
+			s.trimRetainedScanScratch()
+		}
 		if err := s.populateFixedRegexCache(ctx, chunkData, &s.nonTextCache); err != nil {
 			return false, err
 		}
@@ -774,17 +776,21 @@ func (acc *streamAccumulator) recordSpanMatch(rec streamMatchRecord) {
 		acc.accumulatedMatches[rec.rule.Name] = make(map[string][]Match)
 	}
 	raw := rec.windowData[rec.span.Offset : rec.span.Offset+int64(rec.span.Length)]
-	copyLen := len(raw)
+	var matchedData []byte
 	truncated := false
-	if rec.matchDataMax > 0 && copyLen > rec.matchDataMax {
-		copyLen = rec.matchDataMax
-		truncated = true
+	if rec.matchDataMax > 0 {
+		copyLen := len(raw)
+		if copyLen > rec.matchDataMax {
+			copyLen = rec.matchDataMax
+			truncated = true
+		}
+		matchedData = copyBytes(raw[:copyLen])
 	}
 	acc.accumulatedMatches[rec.rule.Name][rec.strID] = append(acc.accumulatedMatches[rec.rule.Name][rec.strID], Match{
 		Pattern:              rec.strID,
 		Offset:               rec.absStart,
 		Length:               rec.span.Length,
-		MatchedData:          copyBytes(raw[:copyLen]),
+		MatchedData:          matchedData,
 		MatchedDataTruncated: truncated,
 	})
 	if !rec.needsEvidenceData {

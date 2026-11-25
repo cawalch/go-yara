@@ -129,6 +129,67 @@ type Scanner struct {
 	combinedRegexScratch   combinedRegexScratch
 }
 
+// maxRetainedOccurrences bounds per-pattern and per-rule scratch retained by a
+// reusable Scanner between scans. A single dense scan can produce millions of
+// transient candidates, matches, and spans; keeping those backing arrays would
+// pin memory proportional to the largest input ever scanned. Larger buffers are
+// dropped at the next reset (or when the scanner returns to the program pool)
+// and rebuilt on demand.
+const maxRetainedOccurrences = 4096
+
+// trimRetainedOccurrences clears a reusable occurrence buffer while dropping
+// backing storage that exceeds the retention bound.
+func trimRetainedOccurrences[T any](values []T) []T {
+	if cap(values) > maxRetainedOccurrences {
+		return nil
+	}
+	return values[:0]
+}
+
+// trimRetainedScratch drops oversize per-pattern and per-rule buffers before a
+// scanner is parked in the program pool. Result values handed to the caller own
+// their matches, so the scanner no longer needs the backing arrays.
+func (s *Scanner) trimRetainedScratch() {
+	if s == nil {
+		return
+	}
+	for _, index := range s.touchedGlobalMatches {
+		if index >= 0 && index < len(s.globalMatches) {
+			s.globalMatches[index] = trimRetainedOccurrences(s.globalMatches[index])
+		}
+	}
+	for _, index := range s.touchedPrefilterCandidates {
+		if index >= 0 && index < len(s.prefilterCandidates) {
+			s.prefilterCandidates[index] = trimRetainedOccurrences(s.prefilterCandidates[index])
+		}
+	}
+	for _, index := range s.nonTextCache.touched {
+		if index >= 0 && index < len(s.nonTextCache.matches) {
+			s.nonTextCache.matches[index] = trimRetainedOccurrences(s.nonTextCache.matches[index])
+		}
+	}
+	s.trimRetainedScanScratch()
+}
+
+// trimRetainedScanScratch drops oversize match-context and hex-walk buffers
+// that are not covered by the per-slot resets.
+func (s *Scanner) trimRetainedScanScratch() {
+	if s.matchCtx != nil {
+		s.matchCtx.trimRetainedSpans()
+	}
+	hexScratch := &s.hexScratch
+	hexScratch.worklist = trimRetainedOccurrences(hexScratch.worklist)
+	hexScratch.continuations = trimRetainedOccurrences(hexScratch.continuations)
+	hexScratch.failureFrames = trimRetainedOccurrences(hexScratch.failureFrames)
+	hexScratch.candidateStarts = trimRetainedOccurrences(hexScratch.candidateStarts)
+	for index := range hexScratch.fanoutCandidates {
+		hexScratch.fanoutCandidates[index] = trimRetainedOccurrences(hexScratch.fanoutCandidates[index])
+	}
+	if len(hexScratch.failed) > maxRetainedOccurrences {
+		hexScratch.failed = nil
+	}
+}
+
 // ScanResult represents the result of scanning data against compiled rules.
 type ScanResult struct {
 	MatchedRules []RuleMatch
@@ -714,16 +775,21 @@ type nonTextMatchCache struct {
 	touched []int
 }
 
-func (cache *nonTextMatchCache) reset(size int) {
+// reset clears touched cache slots and reports whether any buffer exceeded the
+// retention bound.
+func (cache *nonTextMatchCache) reset(size int) (oversized bool) {
 	if cap(cache.matches) < size || cap(cache.ready) < size {
 		cache.matches = make([][]matchSpan, size)
 		cache.ready = make([]bool, size)
 		cache.touched = cache.touched[:0]
-		return
+		return false
 	}
 	for _, index := range cache.touched {
 		if index >= 0 && index < len(cache.matches) {
-			cache.matches[index] = cache.matches[index][:0]
+			if cap(cache.matches[index]) > maxRetainedOccurrences {
+				oversized = true
+			}
+			cache.matches[index] = trimRetainedOccurrences(cache.matches[index])
 		}
 		if index >= 0 && index < len(cache.ready) {
 			cache.ready[index] = false
@@ -732,6 +798,7 @@ func (cache *nonTextMatchCache) reset(size int) {
 	cache.matches = cache.matches[:size]
 	cache.ready = cache.ready[:size]
 	cache.touched = cache.touched[:0]
+	return oversized
 }
 
 func (cache *nonTextMatchCache) get(index int) ([]matchSpan, bool) {

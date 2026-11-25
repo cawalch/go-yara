@@ -43,7 +43,7 @@ func TestStreamUnboundedRegexLongMatch(t *testing.T) {
 		data := append(bytes.Repeat([]byte("!"), 13000), body...)
 		data = append(data, bytes.Repeat([]byte("!"), 9000)...)
 		for _, chunk := range []int{511, 2048, 4096} {
-			s := p.NewScanner(WithStreamChunkSize(chunk), WithStreamOverlapSize(1))
+			s := p.NewScanner(WithStreamChunkSize(chunk), WithStreamOverlapSize(1), WithMatchData(len(body)))
 			result, err := s.ScanReader(bytes.NewReader(data))
 			s.Close()
 			if err != nil || len(result.MatchedRules) != 1 {

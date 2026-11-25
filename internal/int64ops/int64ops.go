@@ -116,6 +116,8 @@ func ParseIntLiteral(s string) (int64, error) {
 }
 
 // ParseSizeLiteral parses YARA size literals such as "10KB" or "0x10KB".
+// Units are case-sensitive (KB, MB, GB, TB), matching libyara. The numeric part
+// must be unsigned decimal or a 0x/0X hexadecimal literal without separators.
 func ParseSizeLiteral(literal string) (int64, error) {
 	trimmed := strings.TrimSpace(literal)
 	if len(trimmed) < 3 {
@@ -135,26 +137,36 @@ func ParseSizeLiteral(literal string) (int64, error) {
 	default:
 		return 0, fmt.Errorf("invalid size literal format: %s", literal)
 	}
-	prefix := trimmed[:len(trimmed)-2]
-	var (
-		num int64
-		err error
-	)
-	if strings.HasPrefix(prefix, "0x") || strings.HasPrefix(prefix, "0X") {
-		num, err = strconv.ParseInt(prefix, 0, 64)
-	} else {
-		for i := 0; i < len(prefix); i++ {
-			if prefix[i] < '0' || prefix[i] > '9' {
-				return 0, fmt.Errorf("invalid size literal format: %s", literal)
-			}
-		}
-		num, err = strconv.ParseInt(prefix, 10, 64)
+	number := trimmed[:len(trimmed)-2]
+	base := 10
+	digits := number
+	if strings.HasPrefix(number, "0x") || strings.HasPrefix(number, "0X") {
+		base = 16
+		digits = number[2:]
 	}
+	if digits == "" || !validSizeLiteralDigits(digits, base) {
+		return 0, fmt.Errorf("invalid size literal format: %s", literal)
+	}
+	num, err := strconv.ParseInt(digits, base, 64)
 	if err != nil {
-		return 0, fmt.Errorf("invalid number in size literal: %s", prefix)
+		return 0, fmt.Errorf("invalid number in size literal: %s", number)
 	}
 	if num > math.MaxInt64/multiplier {
 		return 0, fmt.Errorf("size literal exceeds int64 range: %s", literal)
 	}
 	return num * multiplier, nil
+}
+
+func validSizeLiteralDigits(digits string, base int) bool {
+	for i := range digits {
+		b := digits[i]
+		if b >= '0' && b <= '9' {
+			continue
+		}
+		if base == 16 && (b|0x20) >= 'a' && (b|0x20) <= 'f' {
+			continue
+		}
+		return false
+	}
+	return true
 }

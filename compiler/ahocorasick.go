@@ -105,7 +105,17 @@ type acAutomaton struct {
 
 	// Exported metadata retained for compatibility with existing callers.
 	StringCount int
+
+	// patternBytes tracks stored pattern payload. Trie construction amplifies
+	// each byte into construction states and edges, so both per-pattern and
+	// total storage are bounded for untrusted compiled artifacts.
+	patternBytes int
 }
+
+const (
+	maxAutomatonPatternLength = 1 << 20
+	maxAutomatonPatternBytes  = 16 << 20
+)
 
 // newacAutomaton creates a new Aho-Corasick automaton with compact initial capacity.
 func newacAutomaton() *acAutomaton {
@@ -183,6 +193,11 @@ func (ac *acAutomaton) addStringToAutomaton(config stringConfig) error {
 	// Own the pattern bytes exactly once; the trie, if constructed, works
 	// from this stored copy.
 	patternLength := len(config.Data)
+	if patternLength > maxAutomatonPatternLength ||
+		ac.patternBytes > maxAutomatonPatternBytes-patternLength {
+		return errors.New("automaton pattern storage limit exceeded")
+	}
+	ac.patternBytes += patternLength
 	patternData := make([]byte, patternLength)
 	copy(patternData, config.Data)
 	stringInfo := acStringInfo{

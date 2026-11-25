@@ -493,11 +493,16 @@ func (p *QuantifierParser) parseFirstParenthesizedExpression(pos token.Position)
 	}
 }
 
+const maxQuantifierTargets = 1024
+
 // parseCommaSeparatedExpressions parses comma-separated expressions after the first one
 func (p *QuantifierParser) parseCommaSeparatedExpressions(pos token.Position, firstExpr ast.Expression) ([]ast.Expression, error) {
 	expressions := []ast.Expression{firstExpr}
 
 	for p.CurrentTokenIs(token.COMMA) {
+		if len(expressions) >= maxQuantifierTargets {
+			return nil, fmt.Errorf("quantifier target list exceeds %d elements", maxQuantifierTargets)
+		}
 		p.nextToken() // consume ','
 		nextExpr, err := p.parseNextParenthesizedExpression(pos)
 		if err != nil {

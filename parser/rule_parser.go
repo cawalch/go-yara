@@ -3,11 +3,10 @@ package parser
 import (
 	"errors"
 	"fmt"
-	"math"
 	"strconv"
-	"strings"
 
 	"github.com/cawalch/go-yara/ast"
+	"github.com/cawalch/go-yara/internal/int64ops"
 	internal "github.com/cawalch/go-yara/internal/lexer"
 	"github.com/cawalch/go-yara/token"
 )
@@ -352,27 +351,18 @@ func (p *RuleParser) parseEvidenceDistance() (int64, error) {
 		return 0, errors.New("expected non-negative integer or size after 'within'")
 	}
 	p.nextToken()
-	if typeOf != token.SizeLit {
-		value, err := strconv.ParseInt(literal, 0, 64)
+	if typeOf == token.SizeLit {
+		value, err := int64ops.ParseSizeLiteral(literal)
 		if err != nil || value < 0 {
 			return 0, fmt.Errorf("invalid evidence distance %q", literal)
 		}
 		return value, nil
 	}
-	upper := strings.ToUpper(literal)
-	units := map[string]int64{"KB": 1 << 10, "MB": 1 << 20, "GB": 1 << 30, "TB": 1 << 40}
-	for suffix, multiplier := range units {
-		if !strings.HasSuffix(upper, suffix) {
-			continue
-		}
-		number := strings.TrimSuffix(upper, suffix)
-		value, err := strconv.ParseInt(number, 0, 64)
-		if err != nil || value < 0 || value > math.MaxInt64/multiplier {
-			return 0, fmt.Errorf("invalid evidence distance %q", literal)
-		}
-		return value * multiplier, nil
+	value, err := strconv.ParseInt(literal, 0, 64)
+	if err != nil || value < 0 {
+		return 0, fmt.Errorf("invalid evidence distance %q", literal)
 	}
-	return 0, fmt.Errorf("invalid evidence distance %q", literal)
+	return value, nil
 }
 
 // createMinimalCondition creates a minimal fallback condition for error recovery

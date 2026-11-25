@@ -191,16 +191,22 @@ func (s *Scanner) preparePatternScanWithLatency(ctx context.Context, data []byte
 func (s *Scanner) preparePatternScanCore(ctx context.Context, data []byte) (bool, error) {
 	s.moduleCache.reset()
 	s.sharedNonTextMatched = false
-	s.nonTextCache.reset(s.program.nonTextCacheSize)
+	oversized := s.nonTextCache.reset(s.program.nonTextCacheSize)
 	s.regexByteSetCache.reset()
 
 	// Rule-local matching applies the limit before shared occurrence lists can grow.
 	if s.matchBudgets != nil {
 		return false, ctx.Err()
 	}
-	s.resetGlobalMatches(len(s.program.Rules))
-	s.resetPrefilterCandidates(len(s.program.sharedLookup))
+	oversized = s.resetGlobalMatches(len(s.program.Rules)) || oversized
+	oversized = s.resetPrefilterCandidates(len(s.program.sharedLookup)) || oversized
 	s.resetCandidateRules(len(s.program.Rules))
+	// A previous dense scan may leave match-context and hex-walk buffers above
+	// the retention bound. The per-slot resets above report that condition so
+	// the trim stays off the ordinary scan path.
+	if oversized {
+		s.trimRetainedScanScratch()
+	}
 	if err := s.populateFixedRegexCache(ctx, data, &s.nonTextCache); err != nil {
 		return false, err
 	}
@@ -414,19 +420,23 @@ func (s *Scanner) rulePrefilterStatus(rule *CompiledRule, usesharedAutomaton boo
 	return rulePrefilterRejected
 }
 
-func (s *Scanner) resetGlobalMatches(size int) {
+func (s *Scanner) resetGlobalMatches(size int) (oversized bool) {
 	if cap(s.globalMatches) < size {
 		s.globalMatches = make([][]globalMatchEntry, size)
 		s.touchedGlobalMatches = s.touchedGlobalMatches[:0]
-		return
+		return false
 	}
 	for _, index := range s.touchedGlobalMatches {
 		if index >= 0 && index < len(s.globalMatches) {
-			s.globalMatches[index] = s.globalMatches[index][:0]
+			if cap(s.globalMatches[index]) > maxRetainedOccurrences {
+				oversized = true
+			}
+			s.globalMatches[index] = trimRetainedOccurrences(s.globalMatches[index])
 		}
 	}
 	s.touchedGlobalMatches = s.touchedGlobalMatches[:0]
 	s.globalMatches = s.globalMatches[:size]
+	return oversized
 }
 
 func (s *Scanner) recordPrunedRule(rule *CompiledRule, state ruleProfileState) {
