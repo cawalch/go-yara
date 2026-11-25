@@ -40,7 +40,7 @@ v0.9.0 compiled artifacts use format **18**, compared with format **7** in v0.8.
 
 ## Changes in v0.8.2
 
-v0.8.2 upgrades `ScanReader` and `ScanReaderWithContext` to use constant-memory streaming ($C + W$) with full rule condition evaluation, eliminating unbounded buffer slurping (`io.ReadAll`) on large streams ([#352](https://github.com/cawalch/go-yara/issues/352)). It introduces `MatchesReader` for early-exit boolean matching. The input window is bounded independently of stream length; retained occurrences, result data, and evidence can still grow with matches.
+v0.8.2 upgrades `ScanReader` and `ScanReaderWithContext` to evaluate full rule conditions using a bounded sliding input window ($C + W$), replacing `io.ReadAll` on large streams ([#352](https://github.com/cawalch/go-yara/issues/352)). It introduces `MatchesReader` for early-exit boolean matching. Retained occurrences, result data, and evidence can grow with matches.
 
 ## Changes in v0.8.1
 
