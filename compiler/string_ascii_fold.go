@@ -42,25 +42,36 @@ func asciiContainsFold(s, needle string) bool {
 	case 0:
 		return true
 	case 1:
-		lower := toLowerTable[needle[0]]
-		return strings.IndexByte(s, lower) >= 0 || lower >= 'a' && lower <= 'z' && strings.IndexByte(s, lower-'a'+'A') >= 0
+		return asciiContainsFoldByte(s, needle[0])
+	}
+	if len(s) <= 256 {
+		var haystack, pattern [256]byte
+		return bytes.Contains(foldASCII(haystack[:], s), foldASCII(pattern[:], needle))
 	}
 	if len(needle) <= maxShortFoldedNeedle {
-		if len(s) > 256 {
-			return asciiContainsFoldWindows(s, needle)
-		}
-		// Both operands are small, so direct comparisons avoid preparing a buffer.
-		first, last := toLowerTable[needle[0]], toLowerTable[needle[len(needle)-1]]
-		middle := needle[1 : len(needle)-1]
-		for start := 0; start <= len(s)-len(needle); start++ {
-			end := start + len(needle) - 1
-			if toLowerTable[s[start]] == first && toLowerTable[s[end]] == last && asciiEqualFold(s[start+1:end], middle) {
-				return true
-			}
-		}
+		return asciiContainsFoldWindows(s, needle)
+	}
+	if strings.HasPrefix(s, needle) {
+		return true
+	}
+	last := len(needle) - 1
+	if len(s)-last <= 16 && !asciiContainsFoldByte(s[last:], needle[last]) {
 		return false
 	}
 	return asciiContainsFoldTwoWay(s, needle)
+}
+
+func asciiContainsFoldByte(s string, ch byte) bool {
+	lower := toLowerTable[ch]
+	return strings.IndexByte(s, lower) >= 0 || lower >= 'a' && lower <= 'z' && strings.IndexByte(s, lower-'a'+'A') >= 0
+}
+
+func foldASCII(dst []byte, s string) []byte {
+	dst = dst[:len(s)]
+	for i := range len(s) {
+		dst[i] = toLowerTable[s[i]]
+	}
+	return dst
 }
 
 // Fixed-size windows let the byte search skip dense near matches while keeping
@@ -68,15 +79,10 @@ func asciiContainsFold(s, needle string) bool {
 func asciiContainsFoldWindows(s, needle string) bool {
 	var foldedNeedle [maxShortFoldedNeedle]byte
 	var window [asciiFoldWindowSize]byte
-	for i := range len(needle) {
-		foldedNeedle[i] = toLowerTable[needle[i]]
-	}
+	pattern := foldASCII(foldedNeedle[:], needle)
 	for {
 		chunk := s[:min(len(s), len(window))]
-		for i := range len(chunk) {
-			window[i] = toLowerTable[chunk[i]]
-		}
-		if bytes.Contains(window[:len(chunk)], foldedNeedle[:len(needle)]) {
+		if bytes.Contains(foldASCII(window[:], chunk), pattern) {
 			return true
 		}
 		if len(chunk) == len(s) {
