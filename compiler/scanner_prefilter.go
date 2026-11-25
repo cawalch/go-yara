@@ -312,17 +312,17 @@ func (s *Scanner) populateRuleMatchContext(
 	if s.matchBudgets != nil {
 		s.limitRuleMatches(rule, base)
 	}
-	useSharedText := input.usesharedAutomaton && (input.booleanMatchOnly || !rule.hasUnusedText || s.omitMatches)
-	var textErr error
-	if useSharedText {
-		if entries := s.globalMatches[rule.Index]; len(entries) != 0 {
-			textErr = s.addStaticMatchesInt(ctx, rule, input.data, entries)
+	if rule.automaton != nil {
+		useSharedText := input.usesharedAutomaton && (input.booleanMatchOnly || !rule.hasUnusedText || s.omitMatches)
+		var textErr error
+		if useSharedText {
+			textErr = s.addStaticMatchesInt(ctx, rule, input.data, s.globalMatches[rule.Index])
+		} else {
+			textErr = s.addLocalTextMatches(ctx, rule, input.data)
 		}
-	} else if rule.automaton != nil {
-		textErr = s.addLocalTextMatches(ctx, rule, input.data)
-	}
-	if textErr != nil {
-		return textErr
+		if textErr != nil {
+			return textErr
+		}
 	}
 
 	if s.matchLimitErr != nil {
