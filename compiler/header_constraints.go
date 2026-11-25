@@ -263,6 +263,7 @@ func compiledPatternMatchesAtWithCancel(rule *CompiledRule, id string, data []by
 		modifiers := rule.StringModifiers[id]
 		wide := hasModifier(modifiers, ast.StringModifierWide)
 		ascii := hasModifier(modifiers, ast.StringModifierASCII)
+		fullword := hasModifier(modifiers, ast.StringModifierFullword)
 		for _, useWide := range []bool{wide, false} {
 			if !useWide && wide && !ascii {
 				continue
@@ -272,9 +273,16 @@ func compiledPatternMatchesAtWithCancel(rule *CompiledRule, id string, data []by
 				flags |= regex.FlagsWide
 			}
 			matched, start, end := execRegexMatchAt(nil, &pattern, data, flags, useWide, int(offset), done)
-			candidate := Match{Pattern: id, Offset: offset + int64(start), Length: end - start}
-			if matched && start == 0 && matchPassesModifiers(data, candidate, modifiers, useWide) {
-				return true
+			if matched && start == 0 {
+				candidate := Match{Pattern: id, Offset: offset + int64(start), Length: end - start}
+				if matchPassesModifiers(data, candidate, modifiers, useWide && flags&regexASCIIWordBoundary == 0) {
+					return true
+				}
+				// ForwardOnly verification past regexVerificationDistance only returns ends[0];
+				// avoid falsely pruning if a different endpoint satisfies fullword.
+				if fullword && pattern.verification != nil && pattern.verification.ForwardOnly && len(data)-int(offset) > regexVerificationDistance {
+					return true
+				}
 			}
 			if !wide || !ascii {
 				break

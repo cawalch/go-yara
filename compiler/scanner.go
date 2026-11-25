@@ -407,7 +407,7 @@ func NewScanner(program *CompiledProgram, opts ...ScannerOption) *Scanner {
 	s.recomputeHookMask()
 	s.selectEvaluatedRules()
 	s.allEvaluatedRulesRequireSharedPatterns = s.computeAllEvaluatedRulesRequireSharedPatterns()
-	if s.booleanRoutingEnabled && len(s.tagsFilter) == 0 && s.ruleGate == nil && program != nil &&
+	if s.booleanRoutingEnabled && s.maxMatchSpan == 0 && len(s.tagsFilter) == 0 && s.ruleGate == nil && program != nil &&
 		program.preparationErr == nil && program.booleanRouting != nil {
 		if plan := program.booleanRouting(); plan != nil {
 			s.booleanRouting = plan.NewScanner()

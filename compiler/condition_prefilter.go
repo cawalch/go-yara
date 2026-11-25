@@ -375,7 +375,10 @@ func ofTruthWithoutStringMatches(expr *ast.OfExpression) noStringTruth {
 			return noStringUnknown
 		}
 		if percent <= 0 {
-			return noStringTrue
+			if stringSetStaticallyNonEmpty(expr.Strings) {
+				return noStringTrue
+			}
+			return noStringUnknown
 		}
 		if stringSetStaticallyNonEmpty(expr.Strings) {
 			return noStringFalse
@@ -417,9 +420,14 @@ func stringSetStaticallyNonEmpty(expr ast.Expression) bool {
 		if e.Name == "them" {
 			return true
 		}
-		return e.Name != "$" && strings.HasPrefix(e.Name, "$") && !strings.HasSuffix(e.Name, "*")
+		return e.Name != "$" && strings.HasPrefix(e.Name, "$") && !strings.HasSuffix(e.Name, "*") && e.Quantifier == ""
 	case *ast.StringTuple:
-		return len(e.Elements) > 0
+		for _, element := range e.Elements {
+			if stringSetStaticallyNonEmpty(element) {
+				return true
+			}
+		}
+		return false
 	case *ast.BinaryOp:
 		return e.Op == token.COMMA && (stringSetStaticallyNonEmpty(e.Left) || stringSetStaticallyNonEmpty(e.Right))
 	default:

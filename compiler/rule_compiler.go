@@ -164,7 +164,7 @@ func (rc *ruleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 		return nil, fmt.Errorf("generating bytecode: %w", err)
 	}
 
-	requiredStrings, forbiddenStrings := deriveStringPresenceBounds(rule.Condition, rule.Strings)
+	requiredStrings, forbiddenStrings := deriveStringPresenceBounds(rule.Condition, rule.Strings, anonymousStrings)
 	moduleFunctions, moduleNames := rc.conditionCompiler.moduleFunctionsForRule()
 	fastScanSafe := !conditionObservesMatchOccurrences(rule.Condition) && !ruleDeclaresEvidence(rule)
 	headerConstraints := deriveHeaderConstraints(rule.Condition)
@@ -214,7 +214,7 @@ func (rc *ruleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 		mandatoryAssertions: mandatoryAssertionIndices(rule.Condition, headerConstraints, rc.conditionCompiler.assertions),
 		requiredStrings:     requiredStrings,
 		forbiddenStrings:    forbiddenStrings,
-		booleanPatterns:     booleanRoutingPatterns(rule),
+		booleanPatterns:     booleanRoutingPatterns(rule, anonymousStrings),
 	}
 
 	rc.ruleIndex++

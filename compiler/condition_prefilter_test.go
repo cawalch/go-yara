@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"testing"
@@ -31,6 +32,12 @@ func TestConditionRequiresStringMatch(t *testing.T) {
 		{name: "for none string", condition: "for none of them : ($)", want: false},
 		{name: "for all negated", condition: "for all of them : (not $)", want: false},
 		{name: "possibly empty all set", condition: "all of ($missing*)", want: false},
+		{name: "empty wildcard dynamic zero percent", condition: "#a% of ($missing*)", want: false},
+		{name: "negated empty wildcard dynamic zero percent", condition: "not (#a% of ($missing*))", want: false},
+		{name: "empty wildcard tuple dynamic zero percent", condition: "#a% of ($missing*, $also_missing*)", want: false},
+		{name: "negated empty wildcard tuple dynamic zero percent", condition: "not (#a% of ($missing*, $also_missing*))", want: false},
+		{name: "non-empty tuple dynamic zero percent", condition: "#a% of ($missing*, $b)", want: false},
+		{name: "negated non-empty tuple dynamic zero percent", condition: "not (#a% of ($missing*, $b))", want: true},
 		{name: "filesize only", condition: "filesize > 0", want: false},
 		{name: "always true", condition: "true", want: false},
 		{name: "always false", condition: "false", want: true},
@@ -169,5 +176,74 @@ rule test {
 	}
 	if result.RuleResults["test"] {
 		t.Fatal("short-circuited rule unexpectedly matched")
+	}
+}
+
+func compilePrefilterTestProgram(t *testing.T, source string, skipSemantic bool) *CompiledProgram {
+	t.Helper()
+	if !skipSemantic {
+		program, err := NewCompiler().CompileSource(source)
+		if err != nil {
+			t.Fatalf("CompileSource() error = %v", err)
+		}
+		return program
+	}
+	parsed, err := NewCompiler().compileParseWithContext(context.Background(), source)
+	if err != nil {
+		t.Fatalf("compileParseWithContext() error = %v", err)
+	}
+	rules, err := newRuleCompiler().CompileProgram(parsed)
+	if err != nil {
+		t.Fatalf("CompileProgram() error = %v", err)
+	}
+	return newCompiledProgram(rules)
+}
+
+func TestZeroPercentEmptyWildcardPrefilterParity(t *testing.T) {
+	for _, tc := range []struct {
+		condition     string
+		skipSemantic  bool
+		wantNoAlpha   bool
+		wantWithAlpha bool
+	}{
+		{condition: "#a% of ($z*)", wantNoAlpha: false, wantWithAlpha: false},
+		{condition: "not (#a% of ($z*))", wantNoAlpha: true, wantWithAlpha: true},
+		{condition: "#a% of ($z*, $y*)", wantNoAlpha: false, wantWithAlpha: false},
+		{condition: "not (#a% of ($z*, $y*))", wantNoAlpha: true, wantWithAlpha: true},
+		{condition: "#a% of ($z*, $b)", wantNoAlpha: true, wantWithAlpha: false},
+		{condition: "not (#a% of ($z*, $b))", wantNoAlpha: false, wantWithAlpha: true},
+		{condition: "0% of ($z*)", skipSemantic: true, wantNoAlpha: false, wantWithAlpha: false},
+		{condition: "not (0% of ($z*))", skipSemantic: true, wantNoAlpha: true, wantWithAlpha: true},
+		{condition: "0% of ($z*, $y*)", skipSemantic: true, wantNoAlpha: false, wantWithAlpha: false},
+		{condition: "not (0% of ($z*, $y*))", skipSemantic: true, wantNoAlpha: true, wantWithAlpha: true},
+		{condition: "0% of ($z*, $b)", skipSemantic: true, wantNoAlpha: true, wantWithAlpha: true},
+		{condition: "not (0% of ($z*, $b))", skipSemantic: true, wantNoAlpha: false, wantWithAlpha: false},
+		{condition: "0% of ($)", skipSemantic: true, wantNoAlpha: false, wantWithAlpha: false},
+		{condition: "not (0% of ($))", skipSemantic: true, wantNoAlpha: true, wantWithAlpha: true},
+	} {
+		t.Run(tc.condition, func(t *testing.T) {
+			source := fmt.Sprintf(`rule test { strings: $a = "alpha" $b = "beta" condition: %s }`, tc.condition)
+			program := compilePrefilterTestProgram(t, source, tc.skipSemantic)
+			scanner := program.NewScanner(WithFastScan())
+			defer scanner.Close()
+			for _, input := range []struct {
+				data []byte
+				want bool
+			}{
+				{data: []byte("clean"), want: tc.wantNoAlpha},
+				{data: []byte("alpha"), want: tc.wantWithAlpha},
+			} {
+				got, err := scanner.Matches(input.data)
+				if err != nil {
+					t.Fatal(err)
+				}
+				scanner.prefilterDisabled = true
+				want, err := scanner.Matches(input.data)
+				scanner.prefilterDisabled = false
+				if err != nil || got != want || got != input.want {
+					t.Fatalf("data=%q: got=%v want=%v expected=%v err=%v", input.data, got, want, input.want, err)
+				}
+			}
+		})
 	}
 }

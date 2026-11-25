@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"math"
 	"reflect"
 	"testing"
 
@@ -396,5 +397,73 @@ func TestConstantFoldingBooleanScalarConstants(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func TestConstantFoldingFloatEpsilonAndSpecials(t *testing.T) {
+	interp := NewInterpreter(nil)
+	tests := []struct {
+		name  string
+		left  float64
+		right float64
+		op    token.Type
+		vmOp  Opcode
+		want  bool
+	}{
+		{name: "within epsilon eq", left: 0.0, right: 0.00000000000000001, op: token.EQ, vmOp: OpDblEq, want: true},
+		{name: "within epsilon neq", left: 0.0, right: 0.00000000000000001, op: token.NEQ, vmOp: OpDblNeq, want: false},
+		{name: "at epsilon boundary eq", left: 0.0, right: 0x1p-52, op: token.EQ, vmOp: OpDblEq, want: false},
+		{name: "at epsilon boundary neq", left: 0.0, right: 0x1p-52, op: token.NEQ, vmOp: OpDblNeq, want: true},
+		{name: "nan eq", left: math.NaN(), right: math.NaN(), op: token.EQ, vmOp: OpDblEq, want: false},
+		{name: "nan neq", left: math.NaN(), right: math.NaN(), op: token.NEQ, vmOp: OpDblNeq, want: false},
+		{name: "pos inf eq pos inf", left: math.Inf(1), right: math.Inf(1), op: token.EQ, vmOp: OpDblEq, want: false},
+		{name: "pos inf neq pos inf", left: math.Inf(1), right: math.Inf(1), op: token.NEQ, vmOp: OpDblNeq, want: false},
+		{name: "pos inf eq neg inf", left: math.Inf(1), right: math.Inf(-1), op: token.EQ, vmOp: OpDblEq, want: false},
+		{name: "pos inf neq neg inf", left: math.Inf(1), right: math.Inf(-1), op: token.NEQ, vmOp: OpDblNeq, want: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			expr := &ast.BinaryOp{
+				Left:  floatLiteral(tc.left, token.Position{}),
+				Op:    tc.op,
+				Right: floatLiteral(tc.right, token.Position{}),
+			}
+			got := FoldConstants(expr)
+			val, ok := evaluateConstantBool(got)
+			if !ok || val != tc.want {
+				t.Fatalf("FoldConstants = %#v (ok=%v, val=%v), want %v", got, ok, val, tc.want)
+			}
+			vmVal, err := interp.compareDoubles(
+				Value{Type: ValueTypeDouble, DoubleVal: tc.left},
+				Value{Type: ValueTypeDouble, DoubleVal: tc.right},
+				tc.vmOp,
+			)
+			if err != nil || vmVal != val {
+				t.Fatalf("compareDoubles = %v, %v; FoldConstants = %v", vmVal, err, val)
+			}
+		})
+	}
+
+	// Verify compiled source parity between constant-folded expression and runtime comparison.
+	program, err := NewCompiler().CompileSource(`
+external x
+rule folded_eq { condition: 0.0 == 0.00000000000000001 }
+rule folded_neq { condition: 0.0 != 0.00000000000000001 }
+rule runtime_eq { condition: x == 0.00000000000000001 }
+rule runtime_neq { condition: x != 0.00000000000000001 }
+`)
+	if err != nil {
+		t.Fatalf("CompileSource() error = %v", err)
+	}
+	scanner := program.NewScanner(WithExternalVariables(map[string]any{"x": 0.0}))
+	defer scanner.Close()
+	res, err := scanner.Scan([]byte("x"))
+	if err != nil {
+		t.Fatalf("Scan() error = %v", err)
+	}
+	if !res.RuleResults["folded_eq"] || res.RuleResults["folded_neq"] ||
+		!res.RuleResults["runtime_eq"] || res.RuleResults["runtime_neq"] {
+		t.Fatalf("RuleResults = %+v", res.RuleResults)
 	}
 }

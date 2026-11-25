@@ -17,11 +17,11 @@ type stringPresenceBounds struct {
 
 // deriveStringPresenceBounds accepts only pure string-presence Boolean conditions.
 // Skipping other expressions preserves runtime errors and evaluation order.
-func deriveStringPresenceBounds(expr ast.Expression, patterns []*ast.String) ([]string, []string) {
+func deriveStringPresenceBounds(expr ast.Expression, patterns []*ast.String, anonymousStrings []string) ([]string, []string) {
 	if len(patterns) < 2 {
 		return nil, nil
 	}
-	bounds, safe := stringPresence(expr, patterns)
+	bounds, safe := stringPresence(expr, patterns, anonymousStrings)
 	if !safe {
 		return nil, nil
 	}
@@ -37,7 +37,7 @@ func deriveStringPresenceBounds(expr ast.Expression, patterns []*ast.String) ([]
 	return required, forbidden
 }
 
-func stringPresence(expr ast.Expression, patterns []*ast.String) (stringPresenceBounds, bool) {
+func stringPresence(expr ast.Expression, patterns []*ast.String, anonymousStrings []string) (stringPresenceBounds, bool) {
 	switch e := expr.(type) {
 	case *ast.Identifier:
 		if strings.HasPrefix(e.Name, "$") && !strings.Contains(e.Name, "*") && e.Name != "$" {
@@ -50,12 +50,12 @@ func stringPresence(expr ast.Expression, patterns []*ast.String) (stringPresence
 	case *ast.Literal:
 		return stringPresenceBounds{}, e.Type == token.TRUE || e.Type == token.FALSE
 	case *ast.BinaryOp:
-		return binaryStringPresence(e, patterns)
+		return binaryStringPresence(e, patterns, anonymousStrings)
 	case *ast.UnaryOp:
 		if e.Op != token.NOT {
 			return stringPresenceBounds{}, false
 		}
-		inner, safe := stringPresence(e.Right, patterns)
+		inner, safe := stringPresence(e.Right, patterns, anonymousStrings)
 		if !safe {
 			return stringPresenceBounds{}, false
 		}
@@ -64,18 +64,18 @@ func stringPresence(expr ast.Expression, patterns []*ast.String) (stringPresence
 			sufficient: inner.forbidden,
 		}, true
 	case *ast.OfExpression:
-		return ofExpressionStringPresence(e, patterns)
+		return ofExpressionStringPresence(e, patterns, anonymousStrings)
 	default:
 		return stringPresenceBounds{}, false
 	}
 }
 
-func binaryStringPresence(e *ast.BinaryOp, patterns []*ast.String) (stringPresenceBounds, bool) {
+func binaryStringPresence(e *ast.BinaryOp, patterns []*ast.String, anonymousStrings []string) (stringPresenceBounds, bool) {
 	if e.Op != token.AND && e.Op != token.OR {
 		return stringPresenceBounds{}, false
 	}
-	left, leftSafe := stringPresence(e.Left, patterns)
-	right, rightSafe := stringPresence(e.Right, patterns)
+	left, leftSafe := stringPresence(e.Left, patterns, anonymousStrings)
+	right, rightSafe := stringPresence(e.Right, patterns, anonymousStrings)
 	if !leftSafe || !rightSafe {
 		return stringPresenceBounds{}, false
 	}
@@ -93,7 +93,7 @@ func binaryStringPresence(e *ast.BinaryOp, patterns []*ast.String) (stringPresen
 	}, true
 }
 
-func ofExpressionStringPresence(e *ast.OfExpression, patterns []*ast.String) (stringPresenceBounds, bool) {
+func ofExpressionStringPresence(e *ast.OfExpression, patterns []*ast.String, anonymousStrings []string) (stringPresenceBounds, bool) {
 	if e.InRange != nil || e.AtOffset != nil {
 		return stringPresenceBounds{}, false
 	}
@@ -101,7 +101,7 @@ func ofExpressionStringPresence(e *ast.OfExpression, patterns []*ast.String) (st
 	if !ok {
 		return stringPresenceBounds{}, false
 	}
-	ids, safe := requiredStringSet(e.Strings, patterns)
+	ids, safe := requiredStringSet(e.Strings, patterns, anonymousStrings)
 	if !safe || len(ids) == 0 {
 		return stringPresenceBounds{}, safe
 	}
@@ -146,26 +146,48 @@ func intersectStrings(left, right []string) []string {
 	return result
 }
 
-func requiredStringSet(expr ast.Expression, patterns []*ast.String) ([]string, bool) {
+func requiredStringSet(expr ast.Expression, patterns []*ast.String, anonymousStrings []string) ([]string, bool) {
 	switch e := expr.(type) {
 	case *ast.Identifier:
 		var result []string
-		for _, pattern := range patterns {
-			if e.Name == "them" || e.Name == pattern.Identifier || strings.HasSuffix(e.Name, "*") && strings.HasPrefix(pattern.Identifier, strings.TrimSuffix(e.Name, "*")) {
-				result = append(result, pattern.Identifier)
+		if e.Name == "$" {
+			result = slices.Clone(anonymousStrings)
+		} else {
+			for _, pattern := range patterns {
+				if e.Name == "them" || e.Name == pattern.Identifier ||
+					(strings.HasPrefix(e.Name, "$") && strings.HasSuffix(e.Name, "*") && strings.HasPrefix(pattern.Identifier, strings.TrimSuffix(e.Name, "*"))) {
+					result = append(result, pattern.Identifier)
+				}
 			}
 		}
-		return result, true
+		slices.Sort(result)
+		return slices.Compact(result), true
 	case *ast.StringTuple:
 		var result []string
 		for _, element := range e.Elements {
-			ids, ok := requiredStringSet(element, patterns)
+			ids, ok := requiredStringSet(element, patterns, anonymousStrings)
 			if !ok {
 				return nil, false
 			}
 			result = append(result, ids...)
 		}
-		return result, true
+		slices.Sort(result)
+		return slices.Compact(result), true
+	case *ast.BinaryOp:
+		if e.Op != token.COMMA {
+			return nil, false
+		}
+		left, ok := requiredStringSet(e.Left, patterns, anonymousStrings)
+		if !ok {
+			return nil, false
+		}
+		right, ok := requiredStringSet(e.Right, patterns, anonymousStrings)
+		if !ok {
+			return nil, false
+		}
+		result := slices.Concat(left, right)
+		slices.Sort(result)
+		return slices.Compact(result), true
 	default:
 		return nil, false
 	}

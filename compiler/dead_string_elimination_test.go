@@ -424,3 +424,57 @@ func TestDeadStringEliminationMultipleRules(t *testing.T) {
 		}
 	}
 }
+
+func TestDeadStringEliminationPreservesCaptureBindings(t *testing.T) {
+	prog, err := NewCompiler().CompileSource(`
+rule alive_capture_folded {
+    strings:
+        $a = /foo(bar)/ capture(val=1)
+    evidence:
+        ev = (val) within 0 of val
+    condition:
+        $a or true
+}
+
+rule dead_rule_capture {
+    strings:
+        $a = /foo(bar)/ capture(val=1)
+    condition:
+        false
+}
+`)
+	if err != nil {
+		t.Fatalf("CompileSource() error = %v", err)
+	}
+
+	aliveRule, _ := prog.GetRuleByName("alive_capture_folded")
+	if aliveRule.IsDead {
+		t.Fatal("alive_capture_folded should not be marked dead")
+	}
+	if aliveRule.IsStringDead("$a") {
+		t.Fatal("capture-bound string $a must not be marked dead when rule is alive")
+	}
+
+	deadRule, _ := prog.GetRuleByName("dead_rule_capture")
+	if !deadRule.IsDead || !deadRule.IsStringDead("$a") {
+		t.Fatalf("dead_rule_capture IsDead=%v IsStringDead=$a:%v, want true/true", deadRule.IsDead, deadRule.IsStringDead("$a"))
+	}
+
+	scanner := prog.NewScanner(WithEvidence(64))
+	defer scanner.Close()
+	res, err := scanner.Scan([]byte("xxfoobarxx"))
+	if err != nil {
+		t.Fatalf("Scan() error = %v", err)
+	}
+	if !res.RuleResults["alive_capture_folded"] || res.RuleResults["dead_rule_capture"] {
+		t.Fatalf("RuleResults = %+v", res.RuleResults)
+	}
+	matches := res.Matches["alive_capture_folded"]["$a"]
+	if len(matches) != 1 || len(matches[0].Captures) != 1 || string(matches[0].Captures[0].Data) != "bar" {
+		t.Fatalf("captures = %+v, want [bar]", matches)
+	}
+	ev := res.Evidence["alive_capture_folded"]["ev"]
+	if len(ev) != 1 || ev[0].Status != EvidenceStatusReady || len(ev[0].Fields["val"]) != 1 || string(ev[0].Fields["val"][0].Data) != "bar" {
+		t.Fatalf("evidence = %+v, want val=[bar]", ev)
+	}
+}

@@ -223,8 +223,15 @@ func foldComparison(b *ast.BinaryOp, left, right ast.Expression) (ast.Expression
 
 	if valL, okL := evaluateConstantFloat(left); okL {
 		if valR, okR := evaluateConstantFloat(right); okR {
-			if res, ok := evalOrderedCompare(op, valL, valR); ok {
-				return boolLiteral(res, pos), true
+			switch op {
+			case token.EQ:
+				return boolLiteral(math.Abs(valL-valR) < 0x1p-52, pos), true
+			case token.NEQ:
+				return boolLiteral(math.Abs(valL-valR) >= 0x1p-52, pos), true
+			default:
+				if res, ok := evalOrderedCompare(op, valL, valR); ok {
+					return boolLiteral(res, pos), true
+				}
 			}
 		}
 	}
