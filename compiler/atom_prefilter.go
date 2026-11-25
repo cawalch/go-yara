@@ -145,8 +145,12 @@ type prefilterStringInfo struct {
 // Must run after cache indices are assigned, since it captures cacheIndex.
 func buildPrefilterStrings(rule *CompiledRule) {
 	infos := make([]prefilterStringInfo, len(rule.IndexToStringID))
+	rule.hasUnusedText = false
 	for i, identifier := range rule.IndexToStringID {
 		infos[i] = resolvePrefilterString(rule, identifier)
+		if infos[i].class == prefilterStringDead && rule.StringKinds[identifier] == StringKindText {
+			rule.hasUnusedText = true
+		}
 	}
 	rule.prefilterStrings = infos
 	buildLocalNonTextEntries(rule)
@@ -228,15 +232,13 @@ func resolvePrefilterString(rule *CompiledRule, identifier string) prefilterStri
 func assignNonTextCacheIndices(rules []*CompiledRule, validateCacheKeys bool) (int, error) {
 	entries := make(map[nonTextCacheKey]nonTextCacheEntry)
 	for ruleIndex, rule := range rules {
-		if rule.IsDead {
-			continue
-		}
 		for _, strID := range sortedPatternIDs(rule.RegexPatterns) {
-			if rule.IsStringDead(strID) {
-				continue
-			}
 			pattern := rule.RegexPatterns[strID]
 			pattern.cacheIndex = -1
+			if rule.IsDead || rule.IsStringDead(strID) {
+				rule.RegexPatterns[strID] = pattern
+				continue
+			}
 			//nolint:nestif // cache-key identity check keeps the conflict diagnostic beside the lookup
 			if pattern.cacheKey != "" {
 				key := nonTextCacheKey{kind: StringKindRegex, cacheKey: pattern.cacheKey}
@@ -257,15 +259,12 @@ func assignNonTextCacheIndices(rules []*CompiledRule, validateCacheKeys bool) (i
 			rule.RegexPatterns[strID] = pattern
 		}
 		for _, strID := range sortedPatternIDs(rule.HexPatterns) {
-			if rule.IsStringDead(strID) {
-				continue
-			}
 			pattern := rule.HexPatterns[strID]
 			if pattern == nil {
 				continue
 			}
 			pattern.cacheIndex = -1
-			if pattern.cacheKey == "" {
+			if rule.IsDead || rule.IsStringDead(strID) || pattern.cacheKey == "" {
 				continue
 			}
 			key := nonTextCacheKey{kind: StringKindHex, cacheKey: pattern.cacheKey}

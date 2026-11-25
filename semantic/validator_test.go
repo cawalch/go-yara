@@ -3,6 +3,7 @@ package semantic
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/cawalch/go-yara/ast"
@@ -10,6 +11,17 @@ import (
 	"github.com/cawalch/go-yara/parser"
 	"github.com/cawalch/go-yara/token"
 )
+
+func TestConditionDiagnosticsAreBounded(t *testing.T) {
+	source := "rule r { condition: " + strings.Repeat("unknown and ", 200) + "true }"
+	errs, err := parseAndValidateProgram(t, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(errs) != 101 || !strings.Contains(errs[100].Error(), "diagnostics omitted") {
+		t.Fatalf("got %d condition errors, want 100 errors and a truncation diagnostic", len(errs))
+	}
+}
 
 // validatorTestCase represents a single validator test case
 type validatorTestCase struct {

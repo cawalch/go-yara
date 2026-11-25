@@ -167,6 +167,9 @@ func (search regexByteSetSearch) planScannedPositions(entry *regexByteSetCacheEn
 		searchFrom = position + 1
 	}
 
+	if scanCanceled(search.done) {
+		return regexByteSetCandidatePlan{}, true
+	}
 	search.finishCacheEntry(entry, complete)
 	plan := regexByteSetCandidatePlan{count: counter.count}
 	if entry != nil && entry.complete {
@@ -366,6 +369,7 @@ func widenRegexPrefix(prefix []byte) []byte {
 type regexLiteralSearcher struct {
 	data          []byte
 	literal       []byte
+	done          <-chan struct{}
 	noCase        bool
 	wide          bool
 	anchorSampled bool
@@ -438,14 +442,31 @@ func (searcher *regexLiteralSearcher) index(pos int) int {
 	if len(literal) == 0 || pos < 0 || pos > len(data) {
 		return -1
 	}
-	if !searcher.noCase {
-		idx := bytes.Index(data[pos:], literal)
-		if idx < 0 {
+	if done := searcher.done; done != nil {
+		if len(data)-pos > cancelableSearchWindow {
+			return searcher.indexCancelable(pos)
+		}
+		if scanCanceled(done) {
 			return -1
 		}
-		return pos + idx
 	}
+	if !searcher.noCase {
+		return indexRegexLiteral(data, literal, pos)
+	}
+	return searcher.indexFolded(pos)
+}
 
+func indexRegexLiteral(data, literal []byte, pos int) int {
+	index := bytes.Index(data[pos:], literal)
+	if index < 0 {
+		return -1
+	}
+	return pos + index
+}
+
+func (searcher *regexLiteralSearcher) indexFolded(pos int) int {
+	data := searcher.data
+	literal := searcher.literal
 	last := len(data) - len(literal)
 	anchor := searcher.anchor
 	searchFrom := pos + anchor
@@ -471,6 +492,35 @@ func (searcher *regexLiteralSearcher) index(pos int) int {
 }
 
 func (search *regexByteSetSearch) index(pos int) int {
+	if search.done != nil {
+		return search.indexWithCancel(pos)
+	}
+	return search.indexWindow(pos)
+}
+
+func (search regexByteSetSearch) indexWithCancel(pos int) int {
+	last := len(search.data)
+	overlap := 0
+	if search.wide {
+		last--
+		overlap = 1
+	}
+	data := search.data
+	for pos = max(0, pos); pos < last; {
+		if scanCanceled(search.done) {
+			return -1
+		}
+		end := pos + min(cancelableSearchWindow, last-pos)
+		search.data = data[:end+overlap]
+		if candidate := search.indexWindow(pos); candidate >= 0 {
+			return candidate
+		}
+		pos = end
+	}
+	return -1
+}
+
+func (search *regexByteSetSearch) indexWindow(pos int) int {
 	if search.pattern.byteSetContiguous {
 		return search.indexContiguous(pos)
 	}

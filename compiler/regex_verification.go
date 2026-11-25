@@ -19,6 +19,7 @@ type regexVerifiedSpan struct {
 //
 //nolint:revive // scanner context and pattern metadata stay explicit
 func addBoundedRegexVerifications(ctx *MatchContext, id string, pattern RegexPattern, data []byte, modifiers []ast.StringModifier) {
+	done := ctx.cancelDone
 	best := ctx.regexVerifiedStarts
 	ctx.regexVerifiedStarts = nil
 	clear(best)
@@ -51,6 +52,7 @@ func addBoundedRegexVerifications(ctx *MatchContext, id string, pattern RegexPat
 				size += step
 			}
 			searcher := newRegexLiteralSearcher(data, literal[:size], flags)
+			searcher.done = ctx.cancelDone
 			anchoredStart := pattern.Flags&regexStartAtomEntries != 0 && slices.Contains(atom.Backward, regex.OpMatchAtStart)
 			limit := len(data)
 			if anchoredStart {
@@ -58,17 +60,26 @@ func addBoundedRegexVerifications(ctx *MatchContext, id string, pattern RegexPat
 			}
 
 			for at, iter := 0, 0; at < limit; at, iter = at+1, iter+1 {
-				if scanCanceledAt(ctx.cancelDone, iter) {
+				if scanCanceledAt(done, iter) {
 					return
 				}
 				if size > 0 && !anchoredStart {
-					at = searcher.index(at)
-					if at < 0 {
-						break
+					// The literal cursor already handles cancellation within
+					// large searches. Preserve the one-byte exact fast path.
+					if size == 1 && done == nil && flags&regex.FlagsNoCase == 0 {
+						at = indexRegexByte(data, at, literal[0])
+					} else {
+						at = searcher.index(at)
 					}
 				}
-				if !guard.allows(data, at, ctx.cancelDone) {
-					if !scanCanceled(ctx.cancelDone) {
+				if at < 0 {
+					if scanCanceled(done) {
+						return
+					}
+					break
+				}
+				if !guard.allows(data, at, done) {
+					if !scanCanceled(done) {
 						ctx.verificationBudgetRejects++
 					}
 					continue
@@ -87,7 +98,7 @@ func addBoundedRegexVerifications(ctx *MatchContext, id string, pattern RegexPat
 				// Check them before a potentially long forward attempt; a failed
 				// anchor must not rescan the suffix at every later atom hit.
 				if pattern.Flags&regexStartAtomEntries != 0 && len(atom.Backward) > 1 {
-					starts, err := regex.ExecVerifyBatchWithCancel(bs, atom.Backward, data, flags|regex.FlagsBackwards, at, 0, ctx.cancelDone)
+					starts, err := regex.ExecVerifyBatchWithCancel(bs, atom.Backward, data, flags|regex.FlagsBackwards, at, 0, done)
 					if err != nil {
 						return
 					}
@@ -95,7 +106,7 @@ func addBoundedRegexVerifications(ctx *MatchContext, id string, pattern RegexPat
 						continue
 					}
 				}
-				ends, err := regex.ExecVerifyBatchWithCancel(bs, atom.Forward, data, flags, at, regexVerificationDistance, ctx.cancelDone)
+				ends, err := regex.ExecVerifyBatchWithCancel(bs, atom.Forward, data, flags, at, regexVerificationDistance, done)
 				if err != nil {
 					return
 				}
@@ -247,10 +258,12 @@ func needsBoundedRegexVerification(pattern *RegexPattern, data []byte, ctx *Matc
 			continue
 		}
 		left, right := at, at+1
-		for left > 0 && right-left <= regexVerificationDistance && plan.Allowed[data[left-1]] {
+		leftLimit := at - regexVerificationDistance
+		for left > leftLimit && plan.Allowed[data[left-1]] {
 			left--
 		}
-		for right < len(data) && right-left <= regexVerificationDistance && plan.Allowed[data[right]] {
+		rightLimit := left + min(len(data)-left, regexVerificationDistance+1)
+		for right < rightLimit && plan.Allowed[data[right]] {
 			right++
 		}
 		if right-left > regexVerificationDistance {
@@ -278,6 +291,7 @@ func sparseCappedRegexSuffix(pattern *RegexPattern, data []byte, ctx *MatchConte
 		literal = wideLiteral[:2*len(literal)]
 	}
 	searcher := newRegexLiteralSearcher(data, literal, pattern.Flags)
+	searcher.done = ctx.cancelDone
 	limit := max(2, len(data)/ctx.maxMatchSpan)
 	at := 0
 	for hits := 0; hits <= limit; hits++ {
@@ -286,7 +300,7 @@ func sparseCappedRegexSuffix(pattern *RegexPattern, data []byte, ctx *MatchConte
 		}
 		hit := searcher.index(at)
 		if hit < 0 {
-			return true
+			return !scanCanceled(ctx.cancelDone)
 		}
 		at = hit + 1 // Count overlapping literal occurrences too.
 	}

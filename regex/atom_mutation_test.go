@@ -452,6 +452,28 @@ func TestLiteralAlternativesByteCap(t *testing.T) {
 	}
 }
 
+func TestConcatAtomCapPreservesSuffixLength(t *testing.T) {
+	const first = 12_000
+	const second = 8_000
+	analysis := analyzeConcatAtoms([]*Node{literalConcatNode(first), literalConcatNode(second)})
+	if analysis.isExact || analysis.exact != nil || analysis.maxLength != first+second {
+		t.Fatalf("exact=%t, literal bytes=%d, maximum length=%d", analysis.isExact, len(analysis.exact), analysis.maxLength)
+	}
+	found := false
+	for _, atom := range analysis.atoms {
+		if len(atom.Data) > maxLiteralAlternativeBytes {
+			t.Fatalf("retained oversized atom of %d bytes", len(atom.Data))
+		}
+		if len(atom.Data) == maxLiteralAlternativeBytes && atom.MinOffset == 0 &&
+			atom.MaxSuffix == first+second-maxLiteralAlternativeBytes {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("missing capped run with the original suffix distance")
+	}
+}
+
 func TestAlternativeMandatoryLiteralAtomsByteCap(t *testing.T) {
 	// A concat of 8192 literals yields 8192 single-byte atoms plus the merged
 	// 8192-byte run, i.e. exactly maxLiteralAlternativeBytes of atom data.

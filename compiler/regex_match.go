@@ -165,7 +165,8 @@ func leadingGapRegexCandidateStartsInto(dst []int, data []byte, plan *regexLeadi
 			return nil, false
 		}
 		searcher := newRegexLiteralSearcher(data, atom.data, flags)
-		for occurrence := searcher.indexWithCancel(0, done); occurrence >= 0; occurrence = searcher.indexWithCancel(occurrence+1, done) {
+		searcher.done = done
+		for occurrence := searcher.index(0); occurrence >= 0; occurrence = searcher.index(occurrence + 1) {
 			// There must be a leading byte before the suffix. Clamp the
 			// offset range before iterating so it only covers input bytes.
 			maxOffset := min(atom.maxOffset, occurrence-1)
@@ -206,32 +207,40 @@ func leadingGapRegexCandidateStartsInto(dst []int, data []byte, plan *regexLeadi
 	return sortedUniqueRegexStarts(starts), true
 }
 
-// indexWithCancel limits each literal search while preserving hits that span
+// indexCancelable limits each literal search while preserving hits that span
 // the boundary between consecutive search windows.
-func (searcher *regexLiteralSearcher) indexWithCancel(from int, done <-chan struct{}) int {
-	if done == nil {
-		return searcher.index(from)
-	}
+func (searcher *regexLiteralSearcher) indexCancelable(from int) int {
 	literalLength := len(searcher.literal)
-	if literalLength == 0 || from < 0 {
-		return -1
-	}
 	data := searcher.data
 	last := len(data) - literalLength
 	for from <= last {
-		if scanCanceled(done) {
+		if scanCanceled(searcher.done) {
 			return -1
 		}
 		end := from + min(cancelableSearchWindow, last-from+1)
-		searcher.data = data[:end+(literalLength-1)]
-		candidate := searcher.index(from)
-		searcher.data = data
+		candidate := searcher.indexWindow(data[:end+(literalLength-1)], from)
 		if candidate >= 0 {
 			return candidate
 		}
 		from = end
 	}
 	return -1
+}
+
+func (searcher *regexLiteralSearcher) indexWindow(data []byte, from int) int {
+	if !searcher.noCase {
+		return indexRegexLiteral(data, searcher.literal, from)
+	}
+	window := *searcher
+	window.data = data
+	window.cursor = newASCIIFoldByteCursor(window.literal[window.anchor])
+	candidate := window.indexFolded(from)
+	if window.anchorSampled && !searcher.anchorSampled {
+		searcher.anchor = window.anchor
+		searcher.anchorSampled = true
+		searcher.cursor = newASCIIFoldByteCursor(searcher.literal[searcher.anchor])
+	}
+	return candidate
 }
 
 type regexAlternativeCursor struct {
@@ -273,6 +282,7 @@ func unboundedRegexAlternativePresent(
 			searchFlags |= regex.FlagsNoCase
 		}
 		searcher := newRegexLiteralSearcher(data, atom.data, searchFlags)
+		searcher.done = done
 		if searcher.index(0) >= 0 {
 			return true
 		}
@@ -372,6 +382,7 @@ func addRegexMatchesFromAlternatives(
 			searchFlags |= regex.FlagsNoCase
 		}
 		cursors[index].searcher = newRegexLiteralSearcher(data, atom.data, searchFlags)
+		cursors[index].searcher.done = ctx.cancelDone
 		cursors[index].start = -1
 		cursors[index].advance()
 	}
@@ -415,6 +426,7 @@ func addRegexMatchesFromPrefix(
 	prefix []byte,
 ) {
 	searcher := newRegexLiteralSearcher(data, prefix, flags)
+	searcher.done = ctx.cancelDone
 	candidate := searcher.index(0)
 	if candidate < 0 {
 		return
@@ -693,12 +705,11 @@ func execRegexMatchAtBounded(bs *regex.VMBatch, pattern *RegexPattern, data []by
 		return true, 0, ends[0] - start
 	}
 	if pattern.boundedAlternation != nil {
-		if maxMatchSpan <= 0 || maxMatchSpan >= len(data)-start {
-			return execBoundedAlternation(bs, pattern.boundedAlternation, data, flags, start, done)
+		endLimit := len(data)
+		if maxMatchSpan > 0 && maxMatchSpan < endLimit-start {
+			endLimit = start + maxMatchSpan
 		}
-		if !pattern.boundedAlternation.Fullword && flags&regex.FlagsFullwordEnd == 0 {
-			return execBoundedAlternation(bs, pattern.boundedAlternation, data[:start+maxMatchSpan], flags, start, done)
-		}
+		return execBoundedAlternation(bs, pattern.boundedAlternation, data, flags, start, endLimit, done)
 	}
 	if pattern.boundedClass != nil && !isWide && flags&(regex.FlagsWide|regex.FlagsFullwordEnd|regex.FlagsExhaustive|regex.FlagsBackwards|regex.FlagsScan) == 0 &&
 		(flags&regex.FlagsNoCase != 0) == pattern.boundedClass.noCase {
@@ -771,6 +782,7 @@ func regexAtomCandidateStartsInto(
 		flags |= regex.FlagsNoCase
 	}
 	searcher := newRegexLiteralSearcher(data, atom, flags)
+	searcher.done = done
 	first := searcher.index(0)
 	if first < 0 {
 		return ctx.regexCandidates[:0], true

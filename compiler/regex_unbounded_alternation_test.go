@@ -100,7 +100,7 @@ func TestUnboundedAtomReachabilityAndCancellation(t *testing.T) {
 	}
 	for _, n := range []int{0, 1, 2, 3, 4, 63, 64, 65, 129, 1024} {
 		data := []byte(strings.Repeat("a", n) + "xyz")
-		end, _ := plan.execRepeat(data, 0, 0, nil)
+		end, _ := plan.execRepeat(data, 0, 0, len(data), nil)
 		want := len(data)
 		if n < 2 {
 			want = -1
@@ -111,10 +111,10 @@ func TestUnboundedAtomReachabilityAndCancellation(t *testing.T) {
 	}
 	done := make(chan struct{})
 	close(done)
-	if end, _ := plan.execRepeat([]byte("aaaaxyz"), 0, 0, done); end != -1 {
+	if end, _ := plan.execRepeat([]byte("aaaaxyz"), 0, 0, 7, done); end != -1 {
 		t.Fatalf("canceled end=%d", end)
 	}
-	if end, _ := plan.execRepeat([]byte("aaaaxyz"), 0, 0, nil); end != 7 {
+	if end, _ := plan.execRepeat([]byte("aaaaxyz"), 0, 0, 7, nil); end != 7 {
 		t.Fatalf("reused end=%d", end)
 	}
 }

@@ -2,8 +2,41 @@ package regex
 
 import (
 	"reflect"
+	"regexp"
 	"testing"
 )
+
+func TestCaptureReplayPriorityAgainstRegexp(t *testing.T) {
+	for _, test := range []struct{ pattern, input string }{
+		{`((a)|(a))`, "a"},
+		{`((a)|(ab))(b)?`, "ab"},
+		{`((a)?)(a)?`, "a"},
+		{`((a)|(aa))+?`, "aaa"},
+	} {
+		t.Run(test.pattern, func(t *testing.T) {
+			reference := regexp.MustCompile(`\A(?:` + test.pattern + `)\z`)
+			want := reference.FindStringSubmatchIndex(test.input)
+			if want == nil {
+				t.Fatal("reference failed to match")
+			}
+			groups := make([]int, reference.NumSubexp())
+			for i := range groups {
+				groups[i] = i + 1
+			}
+			code := mustCompileCaptures(t, test.pattern, groups)
+			got, ok := ExecCapturesAt(code, []byte(test.input), 0, 0, len(test.input), len(groups))
+			if !ok || len(got) != len(groups) {
+				t.Fatalf("capture replay = %v, %t", got, ok)
+			}
+			for i, span := range got {
+				start, end := want[2*i+2], want[2*i+3]
+				if span.Matched != (start >= 0) || span.Matched && (span.Start != start || span.End != end) {
+					t.Errorf("group %d = %+v, want [%d,%d)", i+1, span, start, end)
+				}
+			}
+		})
+	}
+}
 
 func mustCompileCaptures(t *testing.T, pattern string, groups []int) []byte {
 	t.Helper()

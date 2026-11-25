@@ -20,6 +20,7 @@ type ExpressionParser struct {
 	current           token.Token
 	peek              token.Token
 	depth             int
+	binaryOperators   int
 	depthStack        []int
 	src               tokenSource
 	maxRecursionDepth int
@@ -41,6 +42,9 @@ func NewExpressionParser(src tokenSource) *ExpressionParser {
 
 // ParseExpression parses an expression using a Pratt (precedence climbing) parser.
 func (p *ExpressionParser) ParseExpression() (ast.Expression, error) {
+	if p.depth == 0 {
+		p.binaryOperators = 0
+	}
 	if err := p.incrementDepth(); err != nil {
 		return nil, err
 	}
@@ -118,6 +122,10 @@ func isUnaryOperator(tok token.Type) bool {
 
 // ---------- Pratt parser core ----------
 
+// Pratt parsing is iterative for left-associative operators, but downstream
+// passes recursively walk the tree it builds.
+const maxBinaryOperators = 4096
+
 // parseBinaryExpressionWithPrecedence parses binary expressions with operator precedence climbing.
 func (p *ExpressionParser) parseBinaryExpressionWithPrecedence(minPrecedence int) (ast.Expression, error) {
 	left, err := p.parsePrimary()
@@ -131,6 +139,10 @@ func (p *ExpressionParser) parseBinaryExpressionWithPrecedence(minPrecedence int
 		if opPrec < minPrecedence {
 			break
 		}
+		if p.binaryOperators >= maxBinaryOperators {
+			return nil, fmt.Errorf("expression exceeds the limit of %d binary operators", maxBinaryOperators)
+		}
+		p.binaryOperators++
 
 		rightPrec := opPrec
 		if leftAssoc {

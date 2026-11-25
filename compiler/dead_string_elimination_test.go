@@ -1,9 +1,63 @@
 package compiler
 
 import (
+	"bytes"
+	"context"
 	"strings"
 	"testing"
 )
+
+func TestUnreferencedStringsReportAcrossScanLanes(t *testing.T) {
+	p := mustCompileStreamingProgram(t, `rule report {
+		strings: $live = "required" $text = "extra" $regex = /value=[0-9]+/ $hex = { 01 02 03 }
+		condition: $live
+	}
+	rule other { strings: $x = "unrelated" condition: $x }`)
+	for _, prefix := range []string{"", "required "} {
+		data := append([]byte(prefix+"extra value=1234 "), 1, 2, 3)
+		s := p.NewScanner()
+		block := p.NewBlockScanner()
+		processor := streamingChunkProcessor{program: p}
+		streamMatches, err := processor.processChunk(context.Background(), streamingWindow{
+			data: data, primaryEnd: int64(len(data)),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		unusedText := 0
+		for _, match := range streamMatches {
+			if match.Rule == "report" && match.Pattern == "$text" {
+				unusedText++
+			}
+		}
+		if unusedText != 1 {
+			t.Fatalf("streaming processor reported %d unreferenced text matches", unusedText)
+		}
+		if err := block.Scan(0, data); err != nil {
+			t.Fatal(err)
+		}
+		for name, scan := range map[string]func() (*ScanResult, error){
+			"bytes":  func() (*ScanResult, error) { return s.Scan(data) },
+			"reader": func() (*ScanResult, error) { return s.ScanReader(bytes.NewReader(data)) },
+			"block":  block.Finish,
+		} {
+			result, err := scan()
+			if err != nil {
+				t.Fatalf("%s: %v", name, err)
+			}
+			for _, id := range []string{"$text", "$regex", "$hex"} {
+				if got := len(result.Matches["report"][id]); got != 1 {
+					t.Fatalf("%s prefix %q: %s count %d, want 1", name, prefix, id, got)
+				}
+			}
+			if got := result.RuleResults["report"]; got != (prefix != "") {
+				t.Fatalf("%s prefix %q: condition = %t", name, prefix, got)
+			}
+		}
+		s.Close()
+		block.Close()
+	}
+}
 
 func TestDeadStringEliminationBasic(t *testing.T) {
 	c := NewCompiler()

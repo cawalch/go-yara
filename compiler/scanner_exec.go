@@ -143,7 +143,8 @@ func (s *Scanner) markChunkCandidateRules() {
 		if !s.shouldEvaluateRule(rule) || s.isCandidateRule(rule.Index) {
 			continue
 		}
-		if !s.program.ruleAllStringsInSharedPrefilter(rule) || s.ruleHasMatchedSharedNonText(rule) {
+		if !s.program.ruleAllStringsInSharedPrefilter(rule) || s.ruleHasMatchedSharedNonText(rule) ||
+			(!s.omitMatches && len(rule.DeadStrings) > 0) {
 			s.markCandidateRule(rule.Index)
 		}
 	}

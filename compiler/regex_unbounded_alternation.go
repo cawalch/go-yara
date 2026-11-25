@@ -92,13 +92,14 @@ func (s *repeatScratch) release() {
 // No candidate runs another regex VM over an already-verified suffix.
 //
 //nolint:revive // exact verifier parameters avoid an options allocation
-func (plan *regexBoundedAlternation) execRepeat(data []byte, flags regex.Flags, start int, done <-chan struct{}) (int, boundedAtomOrder) {
+func (plan *regexBoundedAlternation) execRepeat(data []byte, flags regex.Flags, start, endLimit int, done <-chan struct{}) (int, boundedAtomOrder) {
 	rp := plan.Repeat
 	wide := flags&regex.FlagsWide != 0
 	if plan.Fullword && !isFullwordStart(data, start, wide) {
 		return -1, boundedAtomOrder{}
 	}
-	base, ok := boundedLiteralEnd(data, start, rp.Prefix, flags)
+	bounded := data[:endLimit]
+	base, ok := boundedLiteralEnd(bounded, start, rp.Prefix, flags)
 	if !ok {
 		return -1, boundedAtomOrder{}
 	}
@@ -129,7 +130,7 @@ func (plan *regexBoundedAlternation) execRepeat(data []byte, flags regex.Flags, 
 			continue
 		}
 		for i, branch := range rp.Branches {
-			end, matched := boundedLiteralEnd(data, absolute, branch.Literal, flags)
+			end, matched := boundedLiteralEnd(bounded, absolute, branch.Literal, flags)
 			if !matched {
 				continue
 			}
@@ -168,7 +169,7 @@ func (plan *regexBoundedAlternation) execRepeat(data []byte, flags regex.Flags, 
 			continue
 		}
 		absolute := base + pos*step
-		suffixEnd, suffixMatch := boundedLiteralEnd(data, absolute, rp.Suffix, flags)
+		suffixEnd, suffixMatch := boundedLiteralEnd(bounded, absolute, rp.Suffix, flags)
 		continuation := -1
 		if suffixMatch {
 			continuation = suffixEnd
@@ -176,7 +177,7 @@ func (plan *regexBoundedAlternation) execRepeat(data []byte, flags regex.Flags, 
 		// Forward branch priority is independent of the selected atom's rank.
 		follow := rp.Greedy || continuation < 0
 		for i, branch := range plan.Branches {
-			next, matches := boundedLiteralEnd(data, absolute, branch.Literal, flags)
+			next, matches := boundedLiteralEnd(bounded, absolute, branch.Literal, flags)
 			if !matches {
 				continue
 			}

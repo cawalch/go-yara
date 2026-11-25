@@ -312,18 +312,27 @@ func (s *Scanner) populateRuleMatchContext(
 	if s.matchBudgets != nil {
 		s.limitRuleMatches(rule, base)
 	}
-	if err := s.addRuleTextMatches(ctx, rule, input.data, input.usesharedAutomaton); err != nil {
-		return err
+	if rule.automaton != nil {
+		useSharedText := input.usesharedAutomaton && (input.booleanMatchOnly || !rule.hasUnusedText || s.omitMatches)
+		var textErr error
+		if useSharedText {
+			textErr = s.addStaticMatchesInt(ctx, rule, input.data, s.globalMatches[rule.Index])
+		} else {
+			textErr = s.addLocalTextMatches(ctx, rule, input.data)
+		}
+		if textErr != nil {
+			return textErr
+		}
 	}
 
 	if s.matchLimitErr != nil {
 		return s.matchLimitErr
 	}
-	if !s.prefilterDisabled && input.skipUnmatchedContext && s.hasForbiddenStringMatch(rule, input.usesharedAutomaton) {
+	hasNonText := len(rule.RegexPatterns) > 0 || len(rule.HexPatterns) > 0
+	if hasNonText && !s.prefilterDisabled && input.skipUnmatchedContext && s.hasForbiddenStringMatch(rule, input.usesharedAutomaton) {
 		return nil
 	}
 
-	hasNonText := len(rule.RegexPatterns) > 0 || len(rule.HexPatterns) > 0
 	canShortCircuit := !s.blockScan && rule.ConditionMonotonic && input.booleanMatchOnly
 	if hasNonText && (!canShortCircuit || !s.matchCtx.hasSpans() || !s.isRuleConditionSatisfied(rule)) {
 		if err := s.addLocalNonTextMatches(ctx, rule, input.data, &s.nonTextCache, input.usesharedAutomaton, canShortCircuit); err != nil {

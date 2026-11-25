@@ -129,7 +129,7 @@ func (rc *ruleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 	}
 
 	// Compile strings first
-	if err := rc.compileStrings(rule, deadStrings, fixedOffsets); err != nil {
+	if err := rc.compileStrings(rule, fixedOffsets); err != nil {
 		return nil, fmt.Errorf("compiling strings: %w", err)
 	}
 	if len(fixedOffsets) == 0 {

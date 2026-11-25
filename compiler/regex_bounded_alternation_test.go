@@ -36,6 +36,48 @@ func TestBoundedAlternationCapturesAndFixedOffset(t *testing.T) {
 	}
 }
 
+func TestBoundedFullwordAlternationAtSpanCap(t *testing.T) {
+	for _, mode := range []struct {
+		modifier string
+		encode   func(string) []byte
+	}{
+		{"ascii", func(s string) []byte { return []byte(s) }},
+		{"wide", func(s string) []byte {
+			data := make([]byte, len(s)*2)
+			for i := range len(s) {
+				data[i*2] = s[i]
+			}
+			return data
+		}},
+	} {
+		t.Run(mode.modifier, func(t *testing.T) {
+			program := mustCompileStreamingProgram(t, `rule r {
+				strings: $a = /(a|ab|bcde|c){1,2}/ fullword `+mode.modifier+`
+				condition: $a
+			}`)
+			data := mode.encode("ab!")
+			capBytes := len(mode.encode("ab"))
+			for _, input := range []struct {
+				data []byte
+				want int
+			}{{data, 1}, {mode.encode("abx"), 0}} {
+				for _, limit := range []int{0, capBytes} {
+					scanner := program.NewScanner(WithMaxMatchSpan(limit))
+					result, err := scanner.Scan(input.data)
+					scanner.Close()
+					if err != nil {
+						t.Fatal(err)
+					}
+					matches := result.Matches["r"]["$a"]
+					if len(matches) != input.want || len(matches) > 0 && matches[0].Length != capBytes {
+						t.Fatalf("input %q, span %d: matches = %+v, want %d of length %d", input.data, limit, matches, input.want, capBytes)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestBoundedAlternationFastReuseAndLargeAlternation(t *testing.T) {
 	alternatives := []string{"a", "ab"}
 	for i := range 257 {

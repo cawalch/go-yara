@@ -210,7 +210,7 @@ func (scanner *BlockScanner) scanBlock(ctx context.Context, block MemoryBlock, b
 		if s.matchBudgets != nil {
 			s.limitRuleMatches(rule, base)
 		}
-		if err := s.addRuleTextMatches(ctx, rule, blockData, usesharedAutomaton); err != nil {
+		if err := s.addRuleTextMatches(ctx, rule, blockData, usesharedAutomaton && (!rule.hasUnusedText || s.omitMatches)); err != nil {
 			return err
 		}
 		if err := s.addLocalNonTextMatches(ctx, rule, blockData, &s.nonTextCache, usesharedAutomaton, false); err != nil {

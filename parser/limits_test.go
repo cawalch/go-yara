@@ -23,6 +23,16 @@ func TestDefaultParserRecursionLimit(t *testing.T) {
 	}
 }
 
+func TestBinaryExpressionChainLimit(t *testing.T) {
+	for _, operand := range []string{"true", "unknown"} {
+		source := "rule r { condition: " + strings.Repeat(operand+" and ", maxBinaryOperators+1) + "true }"
+		p := New(lexer.New(source))
+		if _, err := p.ParseRules(); err == nil || !strings.Contains(err.Error(), "binary operators") {
+			t.Fatalf("ParseRules() error = %v, want binary operator limit", err)
+		}
+	}
+}
+
 func TestQuantifierTargetListIsBounded(t *testing.T) {
 	var target strings.Builder
 	for i := 0; i <= maxQuantifierTargets; i++ {

@@ -48,6 +48,7 @@ type CompiledRule struct {
 	// assignNonTextCacheIndices, immutable afterwards, so it is safe to share
 	// across concurrent scanners alongside the rest of the program.
 	prefilterStrings  []prefilterStringInfo
+	hasUnusedText     bool
 	localNonTextBuilt bool
 	localRegexes      []localRegexEntry
 	localHexes        []localHexEntry
@@ -62,7 +63,7 @@ type CompiledRule struct {
 	IsGlobal    bool            // Rule is marked as global
 	IsPrivate   bool            // Rule is marked as private
 	IsDead      bool            // Rule condition statically folded to false
-	DeadStrings map[string]bool // Unreferenced strings pruned from automaton compilation
+	DeadStrings map[string]bool // Unreferenced strings excluded from shared pattern search
 	// FastScanSafe is true when the condition only observes whether strings
 	// matched, not occurrence counts, offsets, lengths, or constrained ranges.
 	FastScanSafe bool

@@ -231,6 +231,17 @@ func (v *Validator) validateStrings(stringsSlice []*ast.String) {
 func (v *Validator) validateCondition(condition ast.Expression) {
 	if condition != nil {
 		conditionType, errs := v.validateExpression(condition)
+		const maxConditionErrors = 100
+		if len(errs) > maxConditionErrors {
+			v.addErrors(errs[:maxConditionErrors])
+			v.addError(&Error{
+				Code:     ErrCodeInvalidCondition,
+				Message:  "additional condition diagnostics omitted",
+				Position: condition.Position(),
+				Rule:     v.currentRule,
+			})
+			return
+		}
 		v.addErrors(errs)
 
 		// Condition should evaluate to boolean or numeric (integers/floats are truthy/falsy)
@@ -446,7 +457,7 @@ func (v *Validator) validateBinaryOpExpression(binOp *ast.BinaryOp) (*TypeInfo, 
 	leftType, leftErrs := v.validateExpression(binOp.Left)
 	rightType, rightErrs := v.validateExpression(binOp.Right)
 
-	errors = append(errors, leftErrs...)
+	errors = leftErrs
 	errors = append(errors, rightErrs...)
 
 	if leftType == nil || rightType == nil {

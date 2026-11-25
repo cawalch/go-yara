@@ -149,9 +149,16 @@ func (s *Scanner) addStaticMatchesInt(
 	data []byte,
 	entries []globalMatchEntry,
 ) error {
-	done := ctx.Done()
+	done := s.matchCtx.cancelDone
 	sharedStrings := s.program.sharedAutomaton.strings
 	verifyInAdd := s.hookMask&hookBitPatternProfile != 0
+	if len(entries) == 1 && !verifyInAdd && done == nil {
+		entry := entries[0]
+		id := rule.IndexToStringID[entry.ruleStringIdx]
+		length := sharedStrings[entry.sharedString].Length
+		s.matchCtx.addMatchSpanSlot(int(entry.ruleStringIdx), id, matchSpan{Offset: entry.offset, Length: length})
+		return nil
+	}
 	for index, e := range entries {
 		if scanCanceledAt(done, index) {
 			return ctx.Err()

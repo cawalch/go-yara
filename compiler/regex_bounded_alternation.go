@@ -111,13 +111,13 @@ func (plan *regexBoundedAlternation) overlappingPrefixes() bool {
 }
 
 //nolint:revive // shared verifier arguments stay explicit
-func execBoundedAlternation(bs *regex.VMBatch, plan *regexBoundedAlternation, data []byte, flags regex.Flags, start int, done <-chan struct{}) (bool, int, int) {
-	end, order := plan.execEncoding(bs, data, flags, start, done)
+func execBoundedAlternation(bs *regex.VMBatch, plan *regexBoundedAlternation, data []byte, flags regex.Flags, start, endLimit int, done <-chan struct{}) (bool, int, int) {
+	end, order := plan.execEncoding(bs, data, flags, start, endLimit, done)
 	if end < 0 {
 		return false, -1, -1
 	}
 	if plan.CheckEncodingOrder {
-		otherEnd, otherOrder := plan.execEncoding(bs, data, flags^regex.FlagsWide, start, done)
+		otherEnd, otherOrder := plan.execEncoding(bs, data, flags^regex.FlagsWide, start, endLimit, done)
 		if otherEnd >= 0 && (flags&regex.FlagsGreedy != 0) == order.before(otherOrder) {
 			return false, -1, -1
 		}
@@ -126,18 +126,18 @@ func execBoundedAlternation(bs *regex.VMBatch, plan *regexBoundedAlternation, da
 }
 
 //nolint:revive // shared verifier arguments stay explicit
-func (plan *regexBoundedAlternation) execEncoding(bs *regex.VMBatch, data []byte, flags regex.Flags, start int, done <-chan struct{}) (int, boundedAtomOrder) {
+func (plan *regexBoundedAlternation) execEncoding(bs *regex.VMBatch, data []byte, flags regex.Flags, start, endLimit int, done <-chan struct{}) (int, boundedAtomOrder) {
 	if plan.Repeat != nil {
-		return plan.execRepeat(data, flags, start, done)
+		return plan.execRepeat(data, flags, start, endLimit, done)
 	}
 	if plan.Prefix != nil {
-		return plan.execPrefix(bs, data, flags, start, done)
+		return plan.execPrefix(bs, data, flags, start, endLimit, done)
 	}
-	return plan.execBranches(bs, data, flags, start, start, done)
+	return plan.execBranches(bs, data, flags, start, start, endLimit, done)
 }
 
 //nolint:revive // whole-match start and atom start differ for symbolic prefixes
-func (plan *regexBoundedAlternation) execBranches(bs *regex.VMBatch, data []byte, flags regex.Flags, start, atomStart int, done <-chan struct{}) (int, boundedAtomOrder) {
+func (plan *regexBoundedAlternation) execBranches(bs *regex.VMBatch, data []byte, flags regex.Flags, start, atomStart, endLimit int, done <-chan struct{}) (int, boundedAtomOrder) {
 	bestEnd := -1
 	var bestOrder boundedAtomOrder
 	wide := flags&regex.FlagsWide != 0
@@ -154,7 +154,7 @@ func (plan *regexBoundedAlternation) execBranches(bs *regex.VMBatch, data []byte
 		if scanCanceled(done) {
 			return -1, boundedAtomOrder{}
 		}
-		next, ok := boundedLiteralEnd(data, atomStart, branch.Literal, flags)
+		next, ok := boundedLiteralEnd(data[:endLimit], atomStart, branch.Literal, flags)
 		if !ok {
 			continue
 		}
@@ -165,7 +165,14 @@ func (plan *regexBoundedAlternation) execBranches(bs *regex.VMBatch, data []byte
 		}
 		end := next
 		if len(plan.Tail) != 1 || plan.Tail[0] != regex.OpMatch || flags&regex.FlagsFullwordEnd != 0 {
-			matched, _, tailEnd, _ := regex.ExecMatchBatchWithCancel(bs, plan.Tail, data, flags|regex.FlagsGreedy, next, done)
+			tailData := data
+			// A zero max span means unlimited in the VM. At the limit the
+			// literal tail can only accept empty. Check fullword on the
+			// original data below.
+			if next == endLimit {
+				tailData = data[:endLimit]
+			}
+			matched, _, tailEnd, _ := regex.ExecMatchBatchBoundedWithCancel(bs, plan.Tail, tailData, flags|regex.FlagsGreedy, next, endLimit-next, done)
 			if !matched {
 				continue
 			}
