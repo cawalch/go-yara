@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 * Poll hooks run at scan checkpoints across byte, reader, and block scans. The legacy byte-stride setting is deprecated. Context cancellation remains available between checkpoints.
-* Skip speculative condition evaluation after the last non-text pattern in boolean scans. Keep match spans that already have distinct, ordered start offsets without another sort.
+* Skip speculative condition evaluation after the last non-text pattern in boolean scans. Reuse prepared regex metadata, skip candidate collection when the shared automaton covers every pattern and finds no matches, and keep already ordered match spans without another sort.
 * Reuse existing match state for single-string fast scans, pass shared lookup entries by reference, and reset only the affected rule slot when a scan evaluates one rule. Use the shared SIMD gate before allocating or resetting candidate state for eligible inputs.
 * Consolidated size-literal parsing on `internal/int64ops.ParseSizeLiteral`, requiring uppercase `KB`/`MB`/`GB`/`TB` suffixes and accepting `0x`/`0X` hexadecimal prefixes consistently.
 * Default `parser.New` to the compiler’s 1,000-level recursion limit and apply it to nested quantifier expressions.

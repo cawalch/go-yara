@@ -81,6 +81,20 @@ func (s *Scanner) MatchesWithContext(ctx context.Context, data []byte) (matched 
 	if !ready || err != nil {
 		return false, err
 	}
+	if s.hookMask&(hookBitPoll|hookBitTelemetry|hookBitScanLifecycle) != 0 {
+		return s.matchesWithObservedLifecycle(ctx, data)
+	}
+	if s.compactPrefilterFanoutRejects(ctx, data) {
+		if ctx == context.Background() {
+			return false, nil
+		}
+		return false, ctx.Err()
+	}
+	s.clearRuleResultsIfDirty()
+	return s.matchesUnobserved(ctx, data)
+}
+
+func (s *Scanner) matchesWithObservedLifecycle(ctx context.Context, data []byte) (matched bool, err error) {
 	if s.hookMask&hookBitPoll != 0 {
 		if err := s.pollByteInput(ctx, len(data)); err != nil {
 			return false, err
@@ -98,13 +112,10 @@ func (s *Scanner) MatchesWithContext(ctx context.Context, data []byte) (matched 
 		return false, err
 	}
 	s.clearRuleResultsIfDirty()
-	if s.hookMask&(hookBitTelemetry|hookBitScanLifecycle) != 0 {
-		return s.matchesWithObservedLifecycle(ctx, data)
+	if s.hookMask&(hookBitTelemetry|hookBitScanLifecycle) == 0 {
+		return s.matchesUnobserved(ctx, data)
 	}
-	return s.matchesUnobserved(ctx, data)
-}
 
-func (s *Scanner) matchesWithObservedLifecycle(ctx context.Context, data []byte) (matched bool, err error) {
 	start := s.beginScan(ctx, int64(len(data)))
 	defer func() {
 		count := 0

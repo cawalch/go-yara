@@ -700,8 +700,19 @@ func appendRegexPrefilterMatches(
 	done <-chan struct{},
 	matchCtx *MatchContext,
 ) []matchSpan {
-	pattern, ok := rule.RegexPatterns[strID]
-	if !ok || len(pattern.Code) == 0 {
+	var pattern *RegexPattern
+	var modifiers []ast.StringModifier
+	if len(rule.localRegexes) == 1 && rule.localRegexes[0].id == strID {
+		local := &rule.localRegexes[0]
+		pattern, modifiers = &local.pattern, local.modifiers
+	} else {
+		compiled, ok := rule.RegexPatterns[strID]
+		if !ok {
+			return dst
+		}
+		pattern, modifiers = &compiled, rule.StringModifiers[strID]
+	}
+	if len(pattern.Code) == 0 {
 		return dst
 	}
 	flags := pattern.Flags &^ regex.FlagsWide
@@ -715,13 +726,13 @@ func appendRegexPrefilterMatches(
 	if matchCtx != nil {
 		maxMatchSpan = matchCtx.maxMatchSpan
 	}
-	if entry.AtomMaxOffset < 0 || (pattern.verification != nil && needsBoundedRegexVerification(&pattern, data, matchCtx)) {
-		return appendRegexFallbackMatches(dst, rule, strID, pattern, data, flags, entry.IsWide, done, matchCtx)
+	if entry.AtomMaxOffset < 0 || (pattern.verification != nil && needsBoundedRegexVerification(pattern, data, matchCtx)) {
+		return appendRegexFallbackMatches(dst, rule, strID, *pattern, data, flags, entry.IsWide, done, matchCtx)
 	}
 	limit := max(1024, len(data)/4)
 	verifier := regexPrefilterVerifier{
 		strID:           strID,
-		modifiers:       rule.StringModifiers[strID],
+		modifiers:       modifiers,
 		data:            data,
 		flags:           flags,
 		isWide:          entry.IsWide,
@@ -754,13 +765,13 @@ func appendRegexPrefilterMatches(
 				continue
 			}
 			lastStart = start
-			dst, verifier.bs = verifier.verifyStart(dst, &pattern, start)
+			dst, verifier.bs = verifier.verifyStart(dst, pattern, start)
 		}
 		return dst
 	}
 
 	if checkAtomValid {
-		candidates = filterValidRegexCandidates(&pattern, data, candidates, entry.IsWide)
+		candidates = filterValidRegexCandidates(pattern, data, candidates, entry.IsWide)
 	}
 
 	if !entry.IsWide {
@@ -772,7 +783,7 @@ func appendRegexPrefilterMatches(
 			limit,
 			done,
 			func(start int) {
-				dst, verifier.bs = verifier.verifyStart(dst, &pattern, start)
+				dst, verifier.bs = verifier.verifyStart(dst, pattern, start)
 			},
 		)
 		if canceled {
@@ -801,13 +812,13 @@ func appendRegexPrefilterMatches(
 		matchCtx.retainRegexCandidates(starts)
 	}
 	if !handled {
-		return appendRegexFallbackMatches(dst, rule, strID, pattern, data, flags, entry.IsWide, done, matchCtx)
+		return appendRegexFallbackMatches(dst, rule, strID, *pattern, data, flags, entry.IsWide, done, matchCtx)
 	}
 	for index, start := range starts {
 		if scanCanceledAt(done, index) {
 			return dst
 		}
-		dst, verifier.bs = verifier.verifyStart(dst, &pattern, start)
+		dst, verifier.bs = verifier.verifyStart(dst, pattern, start)
 	}
 	return dst
 }
