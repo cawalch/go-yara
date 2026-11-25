@@ -9,7 +9,7 @@ import (
 
 //nolint:revive // argument-limit: API surface function; reducing params would require struct indirection
 func addRegexMatches(ctx *MatchContext, id string, regexInfo RegexPattern, data []byte, modifiers []ast.StringModifier, flags regex.Flags, isWide bool) {
-	if needsBoundedRegexVerification(&regexInfo, data, ctx.maxMatchSpan) {
+	if needsBoundedRegexVerification(&regexInfo, data, ctx) {
 		addBoundedRegexVerifications(ctx, id, regexInfo, data, modifiers)
 		return
 	}

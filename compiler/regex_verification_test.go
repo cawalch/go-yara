@@ -280,3 +280,43 @@ func TestCappedRegexSuffixScannerReuse(t *testing.T) {
 		}
 	}
 }
+
+func TestCappedRegexDenseTerminators(t *testing.T) {
+	data := bytes.Repeat([]byte("a;"), 8192)
+	for _, tc := range []struct {
+		pattern string
+		cap     int
+	}{{".+?;", 4096}, {"a+;", 4096}, {".+;", 256}} {
+		t.Run(tc.pattern, func(t *testing.T) {
+			p := mustCompileStreamingProgram(t, "rule r {strings: $a=/"+tc.pattern+"/ condition: $a}")
+			rp := p.Rules[0].RegexPatterns["$a"]
+			s := p.NewScanner(WithMaxMatchSpan(tc.cap))
+			defer s.Close()
+			if needsBoundedRegexVerification(&rp, data, s.matchCtx) {
+				t.Fatal("dense suffix selected overlapping backwards verification")
+			}
+			res, err := s.Scan(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var want []matchSpan
+			for start := 0; start < len(data)-1; start++ {
+				var end int
+				switch tc.pattern {
+				case "a+;":
+					if start%2 != 0 {
+						continue
+					}
+					end = start + 2
+				case ".+?;":
+					end = start + 2 + start%2
+				case ".+;":
+					end = min(len(data), start+tc.cap)
+					end -= end % 2
+				}
+				want = append(want, matchSpan{Offset: int64(start), Length: end - start})
+			}
+			checkCappedRegexSpans(t, tc.cap, res.Matches["r"]["$a"], want)
+		})
+	}
+}

@@ -68,3 +68,33 @@ func BenchmarkRegexAtomlessRecords(b *testing.B) {
 		}
 	}
 }
+
+// Repeated short fields exercise both early lazy acceptance and greedy runs
+// stopped by the terminator. The output size is the same on each iteration.
+func BenchmarkRegexCappedDenseTerminators(b *testing.B) {
+	data := bytes.Repeat([]byte("a;"), 8192)
+	for _, tc := range []struct {
+		name, pattern string
+		occurrences   int
+	}{
+		{"lazy", ".+?;", len(data) - 1},
+		{"greedy", "a+;", len(data) / 2},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
+			p, err := NewCompiler().CompileSource("rule r {strings: $a=/" + tc.pattern + "/ condition: $a}")
+			if err != nil {
+				b.Fatal(err)
+			}
+			s := p.NewScanner(WithMaxMatchSpan(4096))
+			defer s.Close()
+			b.SetBytes(int64(len(data)))
+			b.ReportAllocs()
+			for b.Loop() {
+				res, err := s.Scan(data)
+				if err != nil || len(res.Matches["r"]["$a"]) != tc.occurrences {
+					b.Fatalf("wrong occurrence count or scan error: %v", err)
+				}
+			}
+		})
+	}
+}

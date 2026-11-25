@@ -11,6 +11,7 @@ MAX_ALLOC_PCT="${MAX_ALLOC_PCT:-15}"
 SCALAR_PATTERNS=(
     '^BenchmarkHexJumpLargeRange$'
     '^BenchmarkRegexMaxMatchSpan$'
+    '^BenchmarkRegexCappedDenseTerminators$'
     '^BenchmarkRegexAtomlessRecords$/^printable$/^(Matches|Scan)$/^bytes=65536$'
     '^BenchmarkHighEPSSelectivity$/^(literal|regex|mixed)$/^((clean|sparse|dense|near_miss))$'
     '^BenchmarkHighEPSMatchingRulesSelectivity$/^mixed$/^(sparse|dense)$'
