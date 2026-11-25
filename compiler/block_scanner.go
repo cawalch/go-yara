@@ -46,7 +46,6 @@ type BlockScanner struct {
 	fileSize      int64
 	fileSizeSet   bool
 	profileCounts map[string]blockProfileCounts
-	scanErr       error // A capped scan stopped after the block was added.
 }
 
 // Each extension is a later block at the same base that is longer than every
@@ -110,8 +109,8 @@ func (scanner *BlockScanner) scanBlock(ctx context.Context, block MemoryBlock, b
 	if scanner == nil || scanner.program == nil || scanner.scanner == nil {
 		return errors.New("block scanner is closed or has no program")
 	}
-	if scanner.scanErr != nil {
-		return scanner.scanErr
+	if err := scanner.scanner.matchLimitErr; err != nil {
+		return err
 	}
 	base := block.Base
 	if base < 0 {
@@ -157,7 +156,7 @@ func (scanner *BlockScanner) scanBlock(ctx context.Context, block MemoryBlock, b
 	if s.matchBudgets != nil {
 		defer func() {
 			if err != nil {
-				scanner.scanErr = err
+				s.matchLimitErr = err
 			}
 		}()
 	}
@@ -268,8 +267,8 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (result *Sca
 	if scanner == nil || scanner.program == nil || scanner.scanner == nil {
 		return nil, errors.New("block scanner is closed or has no program")
 	}
-	if scanner.scanErr != nil {
-		return nil, scanner.scanErr
+	if err := scanner.scanner.matchLimitErr; err != nil {
+		return nil, err
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -442,7 +441,6 @@ func (scanner *BlockScanner) Reset() {
 		scanner.scanner.moduleCache.reset()
 		scanner.scanner.resetBorrowedEvidence()
 	}
-	scanner.scanErr = nil
 	clear(scanner.matches)
 	clear(scanner.profileCounts)
 	scanner.fileSize = 0

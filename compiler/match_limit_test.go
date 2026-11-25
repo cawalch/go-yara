@@ -213,7 +213,7 @@ func TestBlockMatchLimitCancellation(t *testing.T) {
 	if err := b.Scan(2, []byte("other")); err != nil {
 		t.Fatalf("pre-canceled scan should be retryable: %v", err)
 	}
-	if err := b.ScanWithContext(ctx, 0, []byte("xx")); !errors.Is(err, context.Canceled) {
+	if err := b.ScanBorrowedWithContext(ctx, 0, []byte("xx")); !errors.Is(err, context.Canceled) {
 		t.Fatalf("interrupted block: %v", err)
 	}
 	if err := b.Scan(10, []byte("x")); !errors.Is(err, context.Canceled) {
