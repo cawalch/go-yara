@@ -86,7 +86,7 @@ func (scanner *BlockScanner) Scan(base int64, data []byte) error {
 
 // ScanWithContext copies one block and immediately pattern-scans it.
 func (scanner *BlockScanner) ScanWithContext(ctx context.Context, base int64, data []byte) error {
-	return scanner.scanBlock(ctx, base, data, false)
+	return scanner.scanBlock(ctx, MemoryBlock{Base: base, Data: data}, false)
 }
 
 // ScanBorrowed adds and immediately pattern-scans one block without copying it.
@@ -100,17 +100,18 @@ func (scanner *BlockScanner) ScanBorrowed(base int64, data []byte) error {
 // copying it. Keep data unchanged until Reset or Close, even if a scan returns
 // an error.
 func (scanner *BlockScanner) ScanBorrowedWithContext(ctx context.Context, base int64, data []byte) error {
-	return scanner.scanBlock(ctx, base, data, true)
+	return scanner.scanBlock(ctx, MemoryBlock{Base: base, Data: data}, true)
 }
 
-func (scanner *BlockScanner) scanBlock(ctx context.Context, base int64, blockData []byte, borrowed bool) error {
+func (scanner *BlockScanner) scanBlock(ctx context.Context, block MemoryBlock, borrowed bool) error {
 	if scanner == nil || scanner.program == nil || scanner.scanner == nil {
 		return errors.New("block scanner is closed or has no program")
 	}
+	base := block.Base
 	if base < 0 {
 		return errors.New("block base must be non-negative")
 	}
-	if int64(len(blockData)) > int64(^uint64(0)>>1)-base {
+	if int64(len(block.Data)) > int64(^uint64(0)>>1)-base {
 		return errors.New("block end offset overflows int64")
 	}
 	if err := ctx.Err(); err != nil {
@@ -134,12 +135,13 @@ func (scanner *BlockScanner) scanBlock(ctx context.Context, base int64, blockDat
 		defer scanner.scanner.leaveScanPhase(previous)
 	}
 	if !borrowed {
-		blockData = append([]byte(nil), blockData...)
+		block.Data = append([]byte(nil), block.Data...)
 	}
 	if previous := len(scanner.blocks) - 1; previous >= 0 && base < scanner.blocks[previous].Base {
 		scanner.outOfOrder = true
 	}
-	scanner.blocks = append(scanner.blocks, MemoryBlock{Base: base, Data: blockData})
+	scanner.blocks = append(scanner.blocks, block)
+	blockData := block.Data
 	scanner.inputBytes += int64(len(blockData))
 	if !scanner.fileSizeSet && base+int64(len(blockData)) > scanner.fileSize {
 		scanner.fileSize = base + int64(len(blockData))
