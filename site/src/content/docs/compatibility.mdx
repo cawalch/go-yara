@@ -101,6 +101,8 @@ For `min` and `max`, untyped external arguments retain the declared integer resu
 
 Native `string.to_int` behavior for a binary prefix can vary with the host C library and build. A native result on one machine is not a portable rule contract.
 
+The current source checkout aligns `icontains`, `iequals`, `istartswith`, and `iendswith` with libyara's byte comparisons. They fold ASCII letters and compare every other byte exactly, including embedded NULs. This correction is unreleased. Recompile rules whose cached conditions were folded from string literals to apply it.
+
 ## go-yara extensions
 
 `hash.sha512` and float overloads of `math.min` and `math.max` extend the libyara 4.5.x function set. The two-argument `math.deviation(offset, size)` computes standard deviation. YARA-compatible mean absolute deviation uses `math.deviation(offset, size, mean)` or `math.deviation(string, mean)`, with a floating-point mean.

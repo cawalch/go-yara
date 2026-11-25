@@ -1,7 +1,6 @@
 package compiler
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"math"
@@ -226,9 +225,7 @@ func resolvePrefilterString(rule *CompiledRule, identifier string) prefilterStri
 }
 
 func assignNonTextCacheIndices(rules []*CompiledRule) (int, error) {
-	indices := make(map[nonTextCacheKey]int)
-	identities := make(map[nonTextCacheKey]nonTextCacheIdentity)
-	nextIndex := 0
+	entries := make(map[nonTextCacheKey]nonTextCacheEntry)
 	for ruleIndex, rule := range rules {
 		if rule.IsDead {
 			continue
@@ -242,19 +239,18 @@ func assignNonTextCacheIndices(rules []*CompiledRule) (int, error) {
 			//nolint:nestif // cache-key identity check keeps the conflict diagnostic beside the lookup
 			if pattern.cacheKey != "" {
 				key := nonTextCacheKey{kind: StringKindRegex, cacheKey: pattern.cacheKey}
-				index, exists := indices[key]
+				entry, exists := entries[key]
 				if exists {
-					representative := rules[identities[key].ruleIndex].RegexPatterns[identities[key].strID]
-					if !sameRegexCachePattern(representative, pattern) {
+					prior := rules[entry.ruleIndex]
+					if !sameRegexCachePattern(prior.RegexPatterns[entry.strID], pattern) ||
+						regexCacheModifiers(prior.StringModifiers[entry.strID]) != regexCacheModifiers(rule.StringModifiers[strID]) {
 						return 0, fmt.Errorf("conflicting regex cache key %q", pattern.cacheKey)
 					}
 				} else {
-					index = nextIndex
-					nextIndex++
-					indices[key] = index
-					identities[key] = nonTextCacheIdentity{ruleIndex: ruleIndex, strID: strID}
+					entry = nonTextCacheEntry{index: len(entries), ruleIndex: ruleIndex, strID: strID}
+					entries[key] = entry
 				}
-				pattern.cacheIndex = index
+				pattern.cacheIndex = entry.index
 			}
 			rule.RegexPatterns[strID] = pattern
 		}
@@ -271,19 +267,17 @@ func assignNonTextCacheIndices(rules []*CompiledRule) (int, error) {
 				continue
 			}
 			key := nonTextCacheKey{kind: StringKindHex, cacheKey: pattern.cacheKey}
-			index, exists := indices[key]
+			entry, exists := entries[key]
 			if exists {
-				representative := rules[identities[key].ruleIndex].HexPatterns[identities[key].strID]
+				representative := rules[entry.ruleIndex].HexPatterns[entry.strID]
 				if !sameHexCachePattern(representative, pattern) {
 					return 0, fmt.Errorf("conflicting hex cache key %q", pattern.cacheKey)
 				}
 			} else {
-				index = nextIndex
-				nextIndex++
-				indices[key] = index
-				identities[key] = nonTextCacheIdentity{ruleIndex: ruleIndex, strID: strID}
+				entry = nonTextCacheEntry{index: len(entries), ruleIndex: ruleIndex, strID: strID}
+				entries[key] = entry
 			}
-			pattern.cacheIndex = index
+			pattern.cacheIndex = entry.index
 		}
 	}
 	// Every cacheIndex is final at this point, so the reject path's per-string
@@ -292,29 +286,38 @@ func assignNonTextCacheIndices(rules []*CompiledRule) (int, error) {
 	for _, rule := range rules {
 		buildPrefilterStrings(rule)
 	}
-	return nextIndex, nil
+	return len(entries), nil
 }
 
-type nonTextCacheIdentity struct {
+type nonTextCacheEntry struct {
+	index     int
 	ruleIndex int
 	strID     string
 }
 
 func sameRegexCachePattern(left, right RegexPattern) bool {
-	// Code and flags define the match spans stored in the shared cache. The
-	// remaining fields are candidate-selection accelerators for those same
-	// bytes; including them here would make duplicate patterns recompare large
-	// plans on every load without changing the cached result.
-	return left.Flags == right.Flags && bytes.Equal(left.Code, right.Code)
+	// Matching plans can affect which spans are verified. Capture replay uses
+	// its own bytecode after a span has already been selected.
+	left.cacheIndex, right.cacheIndex = 0, 0
+	left.CaptureCode, right.CaptureCode = nil, nil
+	left.CaptureGroups, right.CaptureGroups = nil, nil
+	return reflect.DeepEqual(left, right)
+}
+
+func regexCacheModifiers(modifiers []ast.StringModifier) uint {
+	var mask uint
+	for _, modifier := range modifiers {
+		switch modifier.Type {
+		case ast.StringModifierASCII, ast.StringModifierWide, ast.StringModifierFullword:
+			mask |= 1 << uint(modifier.Type)
+		}
+	}
+	return mask
 }
 
 func sameHexCachePattern(left, right *HexPattern) bool {
-	if left == nil || right == nil {
-		return left == right
-	}
-	leftCopy, rightCopy := *left, *right
-	leftCopy.cacheIndex, rightCopy.cacheIndex = 0, 0
-	return reflect.DeepEqual(leftCopy, rightCopy)
+	return reflect.DeepEqual(left.Tokens, right.Tokens) &&
+		slices.Equal(left.XorKeys, right.XorKeys) && slices.Equal(left.XorRange, right.XorRange)
 }
 
 func buildFixedRegexDispatch(rules []*CompiledRule) *fixedRegexDispatch {
@@ -398,23 +401,19 @@ func buildFixedRegexDispatch(rules []*CompiledRule) *fixedRegexDispatch {
 	return dispatch
 }
 
-func (s *Scanner) resetPrefilterCandidates(size int) (oversized bool) {
+func (s *Scanner) resetPrefilterCandidates(size int) {
 	if cap(s.prefilterCandidates) < size {
 		s.prefilterCandidates = make([][]int, size)
 		s.touchedPrefilterCandidates = s.touchedPrefilterCandidates[:0]
-		return false
+		return
 	}
 	for _, index := range s.touchedPrefilterCandidates {
 		if index >= 0 && index < len(s.prefilterCandidates) {
-			if cap(s.prefilterCandidates[index]) > maxRetainedOccurrences {
-				oversized = true
-			}
-			s.prefilterCandidates[index] = trimRetainedOccurrences(s.prefilterCandidates[index])
+			s.prefilterCandidates[index] = s.prefilterCandidates[index][:0]
 		}
 	}
 	s.touchedPrefilterCandidates = s.touchedPrefilterCandidates[:0]
 	s.prefilterCandidates = s.prefilterCandidates[:size]
-	return oversized
 }
 
 func (s *Scanner) populateNonTextPrefilterCache(

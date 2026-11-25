@@ -177,7 +177,7 @@ func (ctx *MatchContext) Reset(data []byte) {
 func (ctx *MatchContext) resetCompactStorage() {
 	for _, slot := range ctx.touchedSlots {
 		if slot >= 0 && slot < len(ctx.spansByIndex) {
-			ctx.spansByIndex[slot] = trimRetainedOccurrences(ctx.spansByIndex[slot])
+			ctx.spansByIndex[slot] = ctx.spansByIndex[slot][:0]
 		}
 	}
 	ctx.touchedSlots = ctx.touchedSlots[:0]
@@ -193,32 +193,8 @@ func (ctx *MatchContext) resetCompactStorage() {
 		}
 		clear(ctx.spans)
 	}
-	for id, spans := range ctx.spanBuffers {
-		if cap(spans) > maxRetainedOccurrences {
-			delete(ctx.spanBuffers, id)
-		}
-	}
 	if len(ctx.Matches) > 0 {
 		clear(ctx.Matches)
-	}
-}
-
-// trimRetainedSpans drops oversize reusable span buffers. Result values own
-// their Match entries, so a scanner does not need the backing arrays after a
-// scan completes.
-func (ctx *MatchContext) trimRetainedSpans() {
-	if ctx == nil {
-		return
-	}
-	for _, slot := range ctx.touchedSlots {
-		if slot >= 0 && slot < len(ctx.spansByIndex) {
-			ctx.spansByIndex[slot] = trimRetainedOccurrences(ctx.spansByIndex[slot])
-		}
-	}
-	for id, spans := range ctx.spanBuffers {
-		if cap(spans) > maxRetainedOccurrences {
-			delete(ctx.spanBuffers, id)
-		}
 	}
 }
 
@@ -251,7 +227,7 @@ func (ctx *MatchContext) releaseToPool() {
 func (ctx *MatchContext) resetForPool() {
 	for _, slot := range ctx.touchedSlots {
 		if slot >= 0 && slot < len(ctx.spansByIndex) {
-			ctx.spansByIndex[slot] = trimRetainedOccurrences(ctx.spansByIndex[slot])
+			ctx.spansByIndex[slot] = ctx.spansByIndex[slot][:0]
 		}
 	}
 	ctx.touchedSlots = ctx.touchedSlots[:0]

@@ -159,7 +159,6 @@ func (cp *CompiledProgram) releaseScanner(s *Scanner) {
 	s.moduleCache.reset()
 	s.blockContext[0].Data = nil
 	s.skipUnmatchedNonText = false
-	s.trimRetainedScratch()
 	cp.scannerPool.Put(s)
 }
 

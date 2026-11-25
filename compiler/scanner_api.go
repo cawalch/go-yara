@@ -90,7 +90,6 @@ func (s *Scanner) MatchesWithContext(ctx context.Context, data []byte) (matched 
 			start := s.beginScan(ctx, int64(len(data)))
 			start.finish(nil, 0, err)
 		}
-		s.resetScanState()
 		return false, err
 	}
 	s.clearRuleResultsIfDirty()

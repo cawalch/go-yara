@@ -124,10 +124,8 @@ func (p *Parser) parseAlternative() (*Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	branches := 0
-	for p.cur.kind == tBar {
-		branches++
-		if branches > maxRegexAlternationBranches {
+	for branches := 1; p.cur.kind == tBar; branches++ {
+		if branches >= maxRegexAlternationBranches {
 			return nil, errors.New("regex alternation branch count exceeded")
 		}
 		p.next()

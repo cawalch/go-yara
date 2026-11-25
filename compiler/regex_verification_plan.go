@@ -57,7 +57,8 @@ func compileVerificationPlan(parsed *regex.AST, flags regex.Flags, modifiers []a
 	for _, selected := range choices.atoms {
 		before, after, found := splitVerificationNode(parsed.Root, selected[0])
 		if !found {
-			continue
+			// A partial plan would skip matches that require the missing atom.
+			return nil, nil
 		}
 		backward, err := compileVerificationPrefix(before)
 		if err != nil {
@@ -77,9 +78,6 @@ func compileVerificationPlan(parsed *regex.AST, flags regex.Flags, modifiers []a
 			atom.Mask = append(atom.Mask, mask)
 		}
 		plan.Atoms = append(plan.Atoms, atom)
-	}
-	if len(plan.Atoms) == 0 {
-		return nil, nil
 	}
 	compileForward := regex.Compile
 	if verificationStartsAtMatch(plan) {

@@ -3,6 +3,7 @@ package compiler
 import (
 	"fmt"
 	"slices"
+	"sort"
 	"strings"
 
 	"github.com/cawalch/go-yara/regex"
@@ -158,6 +159,51 @@ func (i *Interpreter) executeFoundInOperation() error {
 	})
 }
 
+func (i *Interpreter) executeCountMatchesIn() error {
+	if err := i.validateStackUnderflowN(OpCountMatchesIn, 3); err != nil {
+		return err
+	}
+	base := len(i.stack) - 3
+	pattern, lower, upper := i.stack[base], i.stack[base+1], i.stack[base+2]
+	i.stack = i.stack[:base]
+	if pattern.Type == ValueTypeUndefined || lower.Type == ValueTypeUndefined || upper.Type == ValueTypeUndefined {
+		return i.push(Value{Type: ValueTypeUndefined})
+	}
+	if pattern.Type != ValueTypeString || lower.Type != ValueTypeInt || upper.Type != ValueTypeInt {
+		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpCountMatchesIn, Message: "count-in requires a string pattern and integer offsets"}
+	}
+
+	count := i.countMatchesIn(i.getString(pattern), lower.IntVal, upper.IntVal)
+	return i.push(Value{Type: ValueTypeInt, IntVal: count})
+}
+
+func (i *Interpreter) countMatchesIn(id string, lower, upper int64) int64 {
+	if i.matchContext == nil || lower > upper {
+		return 0
+	}
+	// Scanner conditions evaluate normalized spans. A monotonic rule can
+	// also run during collection, before its spans are sorted.
+	if i.scannerOwned && i.currentCompiledRule != nil && !i.currentCompiledRule.ConditionMonotonic {
+		spans := i.matchContext.spansFor(id)
+		if len(spans) != 0 && lower <= spans[0].Offset && spans[len(spans)-1].Offset <= upper {
+			return int64(len(spans))
+		}
+		start := sort.Search(len(spans), func(n int) bool { return spans[n].Offset >= lower })
+		spans = spans[start:]
+		return int64(sort.Search(len(spans), func(n int) bool { return spans[n].Offset > upper }))
+	}
+
+	var count int64
+	i.matchContext.eachMatch(id, func(match matchSpan) bool {
+		if lower <= match.Offset && match.Offset <= upper {
+			count++
+		}
+		return true
+	})
+	return count
+}
+
+// Legacy compiled artifacts retain the original count predicates.
 // executeCountInRange executes OpCountIn.
 // Stack: count, min, max → pops 3, pushes (count >= min && count <= max)
 func (i *Interpreter) executeCountInRange() error {
@@ -178,9 +224,6 @@ func (i *Interpreter) executeCountInRange() error {
 	return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(result)})
 }
 
-// executeCountInOf executes OpCountInOf: "#a in (min..max) of ($str*)".
-// Stack: [setIndex, min, max]
-// Counts how many strings in the set have at least one match, then checks if that count is within [min, max].
 func (i *Interpreter) executeCountInOf() error {
 	if err := i.validateStackUnderflowN(OpCountInOf, 3); err != nil {
 		return err
@@ -675,25 +718,19 @@ func (i *Interpreter) executeEndswithOperation() error {
 }
 
 func (i *Interpreter) executeIcontainsOperation() error {
-	return i.executeStringBinaryOp(OpIcontains, func(a, b string) bool {
-		return strings.Contains(strings.ToLower(a), strings.ToLower(b))
-	})
+	return i.executeStringBinaryOp(OpIcontains, asciiContainsFold)
 }
 
 func (i *Interpreter) executeIstartswithOperation() error {
-	return i.executeStringBinaryOp(OpIstartswith, func(a, b string) bool {
-		return len(a) >= len(b) && strings.EqualFold(a[:len(b)], b)
-	})
+	return i.executeStringBinaryOp(OpIstartswith, asciiHasPrefixFold)
 }
 
 func (i *Interpreter) executeIendswithOperation() error {
-	return i.executeStringBinaryOp(OpIendswith, func(a, b string) bool {
-		return len(a) >= len(b) && strings.EqualFold(a[len(a)-len(b):], b)
-	})
+	return i.executeStringBinaryOp(OpIendswith, asciiHasSuffixFold)
 }
 
 func (i *Interpreter) executeIequalsOperation() error {
-	return i.executeStringBinaryOp(OpIequals, strings.EqualFold)
+	return i.executeStringBinaryOp(OpIequals, asciiEqualFold)
 }
 
 // executeStringBinaryOp executes a two-operand string operation.

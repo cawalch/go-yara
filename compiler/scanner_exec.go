@@ -153,9 +153,6 @@ func (s *Scanner) resetBorrowedEvidence() {
 		findingsLimit := min(s.borrowedFindingsIdx, len(s.borrowedFindings))
 		clear(s.borrowedFindings[:findingsLimit])
 		s.borrowedFindingsIdx = 0
-		if cap(s.borrowedFindings) > maxRetainedOccurrences {
-			s.borrowedFindings = nil
-		}
 
 		planLimit := min(s.borrowedPlanMapIdx, len(s.borrowedPlanMaps))
 		for i := range planLimit {
@@ -163,12 +160,8 @@ func (s *Scanner) resetBorrowedEvidence() {
 		}
 		s.borrowedPlanMapIdx = 0
 
-		if cap(s.borrowedCaptureSlab) > maxRetainedOccurrences {
-			s.borrowedCaptureSlab = nil
-		} else {
-			clear(s.borrowedCaptureSlab)
-			s.borrowedCaptureSlab = s.borrowedCaptureSlab[:0]
-		}
+		clear(s.borrowedCaptureSlab)
+		s.borrowedCaptureSlab = s.borrowedCaptureSlab[:0]
 		clear(s.borrowedEvidenceRuleMap)
 	}
 }
@@ -446,7 +439,6 @@ func (s *Scanner) evaluatePublicRules(
 		if scanCanceled(ctx.Done()) {
 			return publicRuleEvaluation{}, ctx.Err()
 		}
-		s.resetScanState()
 		return publicRuleEvaluation{}, nil
 	}
 	return s.evaluatePublicRulesAfterCompact(ctx, data, matchedRuleIndices)
@@ -503,8 +495,8 @@ func (s *Scanner) evaluateSharedPublicRules(
 	result publicRuleEvaluation,
 ) (publicRuleEvaluation, error) {
 	if len(s.candidateRuleIndices) == 0 {
-		if err := ctx.Err(); err != nil {
-			return publicRuleEvaluation{}, err
+		if scanCanceled(ctx.Done()) {
+			return publicRuleEvaluation{}, ctx.Err()
 		}
 		if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
 			s.telemetrySink.PrefilterRejects++
@@ -526,8 +518,8 @@ func (s *Scanner) evaluateSharedPublicRules(
 			return publicRuleEvaluation{}, err
 		}
 	}
-	if err := ctx.Err(); err != nil {
-		return publicRuleEvaluation{}, err
+	if scanCanceled(ctx.Done()) {
+		return publicRuleEvaluation{}, ctx.Err()
 	}
 	return result, nil
 }

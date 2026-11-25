@@ -83,10 +83,11 @@ type Interpreter struct {
 	textStringSets      [][]string               // Text string sets for text-string-set iteration
 	allStrings          []string                 // All string identifiers for current rule
 	anonymousStrings    []string                 // Anonymous string identifiers for current rule
-	PreserveRuleResults bool                     // If true, Reset() will not clear ruleResults
-	itersmax            int                      // Max total iterations across all for-loops (0 = unlimited)
-	iterations          int                      // Current total iteration count
-	scratchOwner        *Interpreter             // Release ownership for public handles
+	scannerOwned        bool
+	PreserveRuleResults bool         // If true, Reset() will not clear ruleResults
+	itersmax            int          // Max total iterations across all for-loops (0 = unlimited)
+	iterations          int          // Current total iteration count
+	scratchOwner        *Interpreter // Release ownership for public handles
 }
 
 // interpreterScratch can be recycled without reusing a caller's interpreter.

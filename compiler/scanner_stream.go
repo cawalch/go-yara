@@ -586,9 +586,7 @@ func (s *Scanner) prepareChunkPatternScan(ctx context.Context, chunkData []byte)
 		return s.preparePatternScan(ctx, chunkData)
 	}
 	if len(s.program.Rules) <= 1 {
-		if s.nonTextCache.reset(s.program.nonTextCacheSize) {
-			s.trimRetainedScanScratch()
-		}
+		s.nonTextCache.reset(s.program.nonTextCacheSize)
 		if err := s.populateFixedRegexCache(ctx, chunkData, &s.nonTextCache); err != nil {
 			return false, err
 		}

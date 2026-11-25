@@ -199,6 +199,9 @@ const OpMatchesValue Opcode = 94
 // OpPushRegex pushes a precompiled module regex reference by index into the rule regex pool.
 const OpPushRegex Opcode = 95
 
+// OpCountMatchesIn counts occurrences whose offsets fall within the bounds.
+const OpCountMatchesIn Opcode = 96
+
 // Fused condition instructions index the rule's immutable assertion pool.
 // Existing opcode values are preserved for serialized-program compatibility.
 const (
@@ -243,7 +246,7 @@ func (op Opcode) GetCategory() string {
 		return OpCategoryLogical
 	case (op >= OpPush && op <= OpCall) || (op >= OpPush8 && op <= OpPushRuleRef) || op == OpPushStr || op == OpPushRegex || op == OpLoadVar || op == OpPush64:
 		return OpCategoryStack
-	case (op >= OpContains && op <= OpOfPercentAt) || op == OpCountInOf || op == OpProximity || op == OpConcat || op == OpMatchesValue:
+	case (op >= OpContains && op <= OpOfPercentAt) || op == OpCountInOf || op == OpCountMatchesIn || op == OpProximity || op == OpConcat || op == OpMatchesValue:
 		return OpCategoryString
 	case (op >= OpIterNext && op <= OpIterEnd) || op == OpIterPushTotal || op == OpIterStartModuleArray:
 		return OpCategoryIterator
@@ -362,6 +365,7 @@ var opcodeNames = map[Opcode]string{
 	OpOfPercent:              "OF_PERCENT",
 	OpOfFoundIn:              "OF_FOUND_IN",
 	OpCountIn:                "COUNT_IN",
+	OpCountMatchesIn:         "COUNT_MATCHES_IN",
 	OpDefined:                "DEFINED",
 	OpIterStartTextStringSet: "ITER_START_TEXT_STRING_SET",
 	OpOfFoundAt:              "OF_FOUND_AT",

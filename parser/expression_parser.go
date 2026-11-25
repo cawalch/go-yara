@@ -167,13 +167,6 @@ func (p *ExpressionParser) parseBinaryExpressionWithPrecedence(minPrecedence int
 			Pos:   p.current.Pos,
 		}
 
-		// Special case: "#a in (min..max) of ($a*)" — count-in-range with string set constraint
-		if ofExpr, err := p.tryParseCountInOf(left); err != nil {
-			return nil, err
-		} else if ofExpr != nil {
-			left = ofExpr
-			continue
-		}
 	}
 
 	return left, nil
@@ -641,7 +634,16 @@ func (p *ExpressionParser) parseStringOperation() (ast.Expression, error) {
 	case token.AT:
 		return &ast.StringOffset{String: stringIdent, Index: index, Pos: pos}, nil
 	case token.HASH:
-		return &ast.StringCount{String: stringIdent, Index: index, Pos: pos}, nil
+		count := &ast.StringCount{String: stringIdent, Pos: pos}
+		if !p.currentTokenIs(token.IN) {
+			return count, nil
+		}
+		p.nextToken()
+		offsets, err := p.parseRangeExpression()
+		if err != nil {
+			return nil, err
+		}
+		return &ast.BinaryOp{Left: count, Op: token.IN, Right: offsets, Pos: pos}, nil
 	default:
 		return nil, fmt.Errorf("unsupported string operation: %v", op)
 	}
@@ -859,10 +861,10 @@ func (p *ExpressionParser) SetMaxRecursionDepth(maxDepth int) {
 }
 
 func (p *ExpressionParser) incrementDepth() error {
-	p.depth++
-	if p.maxRecursionDepth > 0 && p.depth > p.maxRecursionDepth {
-		return fmt.Errorf("recursion depth %d exceeds maximum allowed %d", p.depth, p.maxRecursionDepth)
+	if p.maxRecursionDepth > 0 && p.depth >= p.maxRecursionDepth {
+		return fmt.Errorf("recursion depth %d exceeds maximum allowed %d", p.depth+1, p.maxRecursionDepth)
 	}
+	p.depth++
 	return nil
 }
 
@@ -957,48 +959,6 @@ func (p *ExpressionParser) parseLengthOf() (ast.Expression, error) {
 	}, nil
 }
 
-// parseOfInExpression parses an "of" expression that appears after a "in" operator
-// Returns the parsed *ast.OfExpression on success, (nil, nil) if it's not a count-in-of expression.
-func (p *ExpressionParser) tryParseCountInOf(left ast.Expression) (*ast.OfExpression, error) {
-	binOp, ok := left.(*ast.BinaryOp)
-	if !ok || binOp.Op != token.IN {
-		return nil, nil
-	}
-
-	// Check if left side is a StringCount (#a) and right side is a range (BinaryOp with DOT)
-	count, isCount := binOp.Left.(*ast.StringCount)
-	rangeOp, isRange := binOp.Right.(*ast.BinaryOp)
-	if !isCount || !isRange {
-		return nil, nil
-	}
-	if rangeOp.Op != token.DOT {
-		return nil, nil
-	}
-
-	if !p.currentTokenIs(token.OF) {
-		return nil, nil
-	}
-
-	p.nextToken() // consume OF
-
-	target, err := p.parseQuantifierTarget(binOp.Pos)
-	if err != nil {
-		return nil, err
-	}
-
-	ofExpr := &ast.OfExpression{
-		Pos:     binOp.Pos,
-		Count:   count,
-		InRange: binOp.Right,
-		Strings: target,
-	}
-	ofExpr, err = p.parseOfConstraints(ofExpr)
-	if err != nil {
-		return nil, err
-	}
-	return ofExpr, nil
-}
-
 // tryParseExprOf parses "<expr> of <target>" when op is OF.
 func (p *ExpressionParser) tryParseExprOf(left ast.Expression, op token.Type) (*ast.OfExpression, error) {
 	if left == nil || op != token.OF {
@@ -1030,6 +990,10 @@ func isValidOfCountExpr(expr ast.Expression) bool {
 	case *ast.Literal:
 		return e.Type != token.TRUE && e.Type != token.FALSE
 	case *ast.BinaryOp:
+		if e.Op == token.IN {
+			_, ok := e.Left.(*ast.StringCount)
+			return ok
+		}
 		switch e.Op {
 		case token.PLUS, token.MINUS, token.MULTIPLY, token.DIVIDE, token.IntDivide,
 			token.MODULO, token.PERCENT, token.BitwiseAnd, token.BitwiseOr,
