@@ -258,10 +258,12 @@ func needsBoundedRegexVerification(pattern *RegexPattern, data []byte, ctx *Matc
 			continue
 		}
 		left, right := at, at+1
-		for left > 0 && right-left <= regexVerificationDistance && plan.Allowed[data[left-1]] {
+		leftLimit := at - regexVerificationDistance
+		for left > leftLimit && plan.Allowed[data[left-1]] {
 			left--
 		}
-		for right < len(data) && right-left <= regexVerificationDistance && plan.Allowed[data[right]] {
+		rightLimit := left + min(len(data)-left, regexVerificationDistance+1)
+		for right < rightLimit && plan.Allowed[data[right]] {
 			right++
 		}
 		if right-left > regexVerificationDistance {
