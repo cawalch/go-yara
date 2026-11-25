@@ -675,25 +675,19 @@ func (i *Interpreter) executeEndswithOperation() error {
 }
 
 func (i *Interpreter) executeIcontainsOperation() error {
-	return i.executeStringBinaryOp(OpIcontains, func(a, b string) bool {
-		return strings.Contains(strings.ToLower(a), strings.ToLower(b))
-	})
+	return i.executeStringBinaryOp(OpIcontains, asciiContainsFold)
 }
 
 func (i *Interpreter) executeIstartswithOperation() error {
-	return i.executeStringBinaryOp(OpIstartswith, func(a, b string) bool {
-		return len(a) >= len(b) && strings.EqualFold(a[:len(b)], b)
-	})
+	return i.executeStringBinaryOp(OpIstartswith, asciiHasPrefixFold)
 }
 
 func (i *Interpreter) executeIendswithOperation() error {
-	return i.executeStringBinaryOp(OpIendswith, func(a, b string) bool {
-		return len(a) >= len(b) && strings.EqualFold(a[len(a)-len(b):], b)
-	})
+	return i.executeStringBinaryOp(OpIendswith, asciiHasSuffixFold)
 }
 
 func (i *Interpreter) executeIequalsOperation() error {
-	return i.executeStringBinaryOp(OpIequals, strings.EqualFold)
+	return i.executeStringBinaryOp(OpIequals, asciiEqualFold)
 }
 
 // executeStringBinaryOp executes a two-operand string operation.
