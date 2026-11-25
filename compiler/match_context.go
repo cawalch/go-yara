@@ -159,7 +159,6 @@ func (ctx *MatchContext) ResetForRule(rule *CompiledRule, data []byte) {
 // Reset clears the match context for reuse
 func (ctx *MatchContext) Reset(data []byte) {
 	ctx.matchFilter = nil
-	ctx.maxMatchesPerPattern = 0
 	ctx.moduleCache = nil
 	ctx.assertionResults = nil
 	ctx.externalValues = nil

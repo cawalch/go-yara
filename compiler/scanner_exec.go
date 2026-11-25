@@ -468,7 +468,7 @@ func (s *Scanner) evaluatePublicRulesAfterCompact(
 	}
 	s.interp.ResetIterationCount()
 	if !s.prefilterDisabled && usesharedAutomaton {
-		return s.evaluateSharedPublicRules(ctx, result)
+		return s.evaluateSharedPublicRules(ctx, done, result)
 	}
 	if !s.prefilterDisabled && s.allEvaluatedRulesPrefilterRejected(ctx, data, usesharedAutomaton) {
 		if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
@@ -492,10 +492,11 @@ func (s *Scanner) evaluatePublicRulesAfterCompact(
 
 func (s *Scanner) evaluateSharedPublicRules(
 	ctx context.Context,
+	done <-chan struct{},
 	result publicRuleEvaluation,
 ) (publicRuleEvaluation, error) {
 	if len(s.candidateRuleIndices) == 0 {
-		if scanCanceled(ctx.Done()) {
+		if scanCanceled(done) {
 			return publicRuleEvaluation{}, ctx.Err()
 		}
 		if s.hookMask&hookBitTelemetry != 0 && s.telemetrySink != nil {
@@ -503,7 +504,9 @@ func (s *Scanner) evaluateSharedPublicRules(
 		}
 		return result, nil
 	}
-	slices.Sort(s.candidateRuleIndices)
+	if len(s.candidateRuleIndices) > 1 {
+		slices.Sort(s.candidateRuleIndices)
+	}
 	for _, ruleIndex := range s.evaluatedGlobalRules {
 		if !s.isCandidateRule(ruleIndex) {
 			result.allGlobalMatched = false
@@ -517,9 +520,6 @@ func (s *Scanner) evaluateSharedPublicRules(
 		if err := s.evaluatePublicRule(ctx, s.program.Rules[ruleIndex], &result); err != nil {
 			return publicRuleEvaluation{}, err
 		}
-	}
-	if scanCanceled(ctx.Done()) {
-		return publicRuleEvaluation{}, ctx.Err()
 	}
 	return result, nil
 }
