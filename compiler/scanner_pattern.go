@@ -149,7 +149,7 @@ func (s *Scanner) addStaticMatchesInt(
 	data []byte,
 	entries []globalMatchEntry,
 ) error {
-	done := ctx.Done()
+	done := s.matchCtx.cancelDone
 	sharedStrings := s.program.sharedAutomaton.strings
 	verifyInAdd := s.hookMask&hookBitPatternProfile != 0
 	for index, e := range entries {

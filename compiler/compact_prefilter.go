@@ -152,17 +152,16 @@ func (s *Scanner) checkCompactPrefilterFanout(ctx context.Context, data []byte) 
 		}
 		return false, nil
 	}
-	return s.checkCompactPrefilter(ctx, data)
+	return s.checkCompactPrefilter(ctx, data, gate)
 }
 
 func (s *Scanner) compactPrefilterRejects(ctx context.Context, data []byte) bool {
-	rejected, _ := s.checkCompactPrefilter(ctx, data)
+	rejected, _ := s.checkCompactPrefilter(ctx, data, s.program.compactPrefilter)
 	return rejected
 }
 
-func (s *Scanner) checkCompactPrefilter(ctx context.Context, data []byte) (bool, <-chan struct{}) {
+func (s *Scanner) checkCompactPrefilter(ctx context.Context, data []byte, gate *compactPrefilter) (bool, <-chan struct{}) {
 	s.skipSharedTeddyGate = false
-	gate := s.program.compactPrefilter
 	// Large positive records would pay for two full passes.
 	if gate == nil || s.prefilterDisabled || len(data) > 1024 || s.program.sharedAutomaton != gate.automaton {
 		return false, nil
@@ -170,7 +169,7 @@ func (s *Scanner) checkCompactPrefilter(ctx context.Context, data []byte) (bool,
 	done := ctx.Done()
 	var rejected bool
 	if s.hookMask&(hookBitPrefilter|hookBitTelemetryLatency) != 0 {
-		rejected = s.compactPrefilterRejectsWithHooks(ctx, data, gate)
+		rejected = s.compactPrefilterRejectsWithHooks(ctx, data, gate, done)
 	} else {
 		if scanCanceled(done) {
 			return true, done
@@ -183,7 +182,8 @@ func (s *Scanner) checkCompactPrefilter(ctx context.Context, data []byte) (bool,
 	return rejected, done
 }
 
-func (s *Scanner) compactPrefilterRejectsWithHooks(ctx context.Context, data []byte, gate *compactPrefilter) (rejected bool) {
+//nolint:revive // reuse the cancellation channel already obtained by the prefilter
+func (s *Scanner) compactPrefilterRejectsWithHooks(ctx context.Context, data []byte, gate *compactPrefilter, done <-chan struct{}) (rejected bool) {
 	if s.hookMask&hookBitPrefilter != 0 {
 		started := s.prefilterStart()
 		defer func() {
@@ -196,7 +196,7 @@ func (s *Scanner) compactPrefilterRejectsWithHooks(ctx context.Context, data []b
 		previous := s.enterScanPhase(PhasePrefilter)
 		defer s.leaveScanPhase(previous)
 	}
-	if scanCanceled(ctx.Done()) {
+	if scanCanceled(done) {
 		return true
 	}
 	return compactPrefilterMatchesAbsent(data, gate)
