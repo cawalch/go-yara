@@ -844,6 +844,7 @@ func appendRegexFallbackMatches(
 	ctx.cancelDone = done
 	if matchCtx != nil {
 		ctx.maxMatchSpan = matchCtx.maxMatchSpan
+		ctx.maxMatchesPerPattern = matchCtx.maxMatchesPerPattern
 	}
 	addRegexMatches(ctx, strID, pattern, data, rule.StringModifiers[strID], flags, isWide)
 	dst = append(dst, ctx.spansFor(strID)...)

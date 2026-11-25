@@ -6,7 +6,10 @@ import (
 	"slices"
 )
 
-const maxRegexNestingDepth = 128
+const (
+	maxRegexNestingDepth        = 128
+	maxRegexAlternationBranches = 1024
+)
 
 // Parser provides a hand-written lexer+parser pipeline (incremental).
 type Parser struct {
@@ -121,7 +124,12 @@ func (p *Parser) parseAlternative() (*Node, error) {
 	if err != nil {
 		return nil, err
 	}
+	branches := 0
 	for p.cur.kind == tBar {
+		branches++
+		if branches > maxRegexAlternationBranches {
+			return nil, errors.New("regex alternation branch count exceeded")
+		}
 		p.next()
 		var right *Node
 		right, err = p.parseConcat()

@@ -61,7 +61,7 @@ func addBoundedRegexVerifications(ctx *MatchContext, id string, pattern RegexPat
 				if scanCanceledAt(ctx.cancelDone, iter) {
 					return
 				}
-				if width > 0 && !anchoredStart {
+				if size > 0 && !anchoredStart {
 					at = searcher.index(at)
 					if at < 0 {
 						break

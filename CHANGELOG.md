@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * `BlockScanner.ScanWithContext` and `FinishWithContext` normalize nil contexts, matching the other `*WithContext` entry points.
 * Boolean and rule-list scans propagate cancellation when the compact prefilter leaves no candidate rules.
 * Nested quantifiers participate in parser recursion limits, quantifier target lists are capped at 1,024 elements, oversized global integer declarations fail instead of silently becoming zero, and `Parser.Errors` returns an owned slice.
+* Regex alternation branch chains are capped at 1,024 branches to bound left-deep AST recursion, legacy artifacts with an absent atom normalize to `-1` atom bounds, masked verification atoms iterate candidates instead of rejecting all positions, and the rare regex fallback honors the caller's per-pattern occurrence cap.
 * Loaded compiled artifacts reject automaton pattern payloads above 1 MiB per pattern or 16 MiB per program, rejecting crafted trie-amplification artifacts before materialization.
 * Loaded regex and hex patterns with conflicting shared cache keys are rejected instead of reusing verified spans from a different pattern.
 * The CLI bounds rule-file reads at the compiler’s 100 MiB default input limit, and `token.EXTERNAL` now has a printable name.

@@ -1034,6 +1034,14 @@ func serializeRegexPattern(pattern RegexPattern) serializedRegexPattern {
 }
 
 func deserializeRegexPattern(serialized serializedRegexPattern) RegexPattern {
+	atomMinOffset := serialized.AtomMinOffset
+	atomMaxOffset := serialized.AtomMaxOffset
+	atomMaxSuffix := serialized.AtomMaxSuffix
+	if len(serialized.Atom) == 0 {
+		// Formats 4-19 omitted atom fields, leaving zero values. Treat them as
+		// absent so the bounded-window path cannot truncate to the atom margin.
+		atomMinOffset, atomMaxOffset, atomMaxSuffix = 0, -1, -1
+	}
 	pattern := RegexPattern{
 		boundedAlternation:   serialized.BoundedAlternation,
 		verification:         serialized.Verification,
@@ -1045,9 +1053,9 @@ func deserializeRegexPattern(serialized serializedRegexPattern) RegexPattern {
 		widePrefix:           serialized.WidePrefix,
 		atom:                 serialized.Atom,
 		wideAtom:             serialized.WideAtom,
-		atomMinOffset:        serialized.AtomMinOffset,
-		atomMaxOffset:        serialized.AtomMaxOffset,
-		atomMaxSuffix:        serialized.AtomMaxSuffix,
+		atomMinOffset:        atomMinOffset,
+		atomMaxOffset:        atomMaxOffset,
+		atomMaxSuffix:        atomMaxSuffix,
 		streamPriorityBound:  serialized.StreamPriorityBound,
 		maxLength:            serialized.MaxLength,
 		atomASCIINoCase:      serialized.AtomASCIINoCase,
