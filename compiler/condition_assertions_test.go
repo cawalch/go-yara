@@ -378,3 +378,53 @@ rule header { condition: uint16(0) == 0x1234 }`, true)
 		}
 	}
 }
+
+func TestHeaderConstraintsPreserveExternalTypeMismatch(t *testing.T) {
+	source := `
+external gate
+rule guarded {
+    strings:
+        $a = "MZ"
+    condition:
+        uint16(0) == 0x5a4d and gate == 1 and $a
+}
+`
+	program, err := NewCompiler().CompileSource(source)
+	if err != nil {
+		t.Fatalf("CompileSource() error = %v", err)
+	}
+	rule, _ := program.GetRuleByName("guarded")
+	if len(rule.HeaderConstraints) == 0 {
+		t.Fatal("expected HeaderConstraints on uint16(0) == 0x5a4d")
+	}
+
+	for _, options := range [][]ScannerOption{
+		{WithExternalVariables(map[string]any{"gate": "not_an_int"})},
+		{WithFastScan(), WithExternalVariables(map[string]any{"gate": "not_an_int"})},
+	} {
+		scanner := program.NewScanner(options...)
+		defer scanner.Close()
+		for _, data := range [][]byte{[]byte("XXXX"), []byte("MZ")} {
+			_, err := scanner.Scan(data)
+			var interpErr *InterpreterError
+			if !errors.As(err, &interpErr) || interpErr.Type != ErrorTypeMismatch {
+				t.Fatalf("Scan(%q) err = %v, want ErrorTypeMismatch", data, err)
+			}
+			_, matchErr := scanner.Matches(data)
+			if !errors.As(matchErr, &interpErr) || interpErr.Type != ErrorTypeMismatch {
+				t.Fatalf("Matches(%q) err = %v, want ErrorTypeMismatch", data, matchErr)
+			}
+		}
+	}
+
+	// Verify integer external still allows HeaderConstraints pruning on non-matching headers.
+	validScanner := program.NewScanner(WithFastScan(), WithExternalVariables(map[string]any{"gate": 1}))
+	defer validScanner.Close()
+	res, err := validScanner.Scan([]byte("XXXX"))
+	if err != nil {
+		t.Fatalf("Scan(valid int gate) err = %v", err)
+	}
+	if res.RuleResults["guarded"] || len(res.PrunedRules) != 1 || res.PrunedRules[0] != "guarded" {
+		t.Fatalf("expected guarded to be pruned with valid gate, got %+v", res)
+	}
+}

@@ -70,6 +70,11 @@ func TestExternalAssertionsEquivalent(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
+				if index == 0 {
+					for _, rule := range rules {
+						rule.HeaderConstraints = nil
+					}
+				}
 				programs[index] = newCompiledProgram(rules)
 			}
 			for _, value := range []any{nil, false, true, 0, 1, 2, "yes", "no", 1.5} {
@@ -81,10 +86,16 @@ func TestExternalAssertionsEquivalent(t *testing.T) {
 				var failures [2]string
 				for index, program := range programs {
 					scanner := program.NewScanner(WithExternalVariables(values))
+					if index == 0 {
+						scanner.prefilterDisabled = true
+					}
 					results[index], err = scanner.Scan([]byte("x"))
 					scanner.Close()
 					if err != nil {
 						failures[index] = err.Error()
+					}
+					if results[index] != nil {
+						results[index].PrunedRules = nil
 					}
 				}
 				if failures[0] != failures[1] || !reflect.DeepEqual(results[0], results[1]) {

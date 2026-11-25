@@ -230,3 +230,54 @@ rule non_mono {
 		t.Fatalf("deserialized non_mono ConditionMonotonic=%v, want false", nonMonoRule.ConditionMonotonic)
 	}
 }
+
+func TestBooleanRoutingDisabledWithMaxMatchSpan(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+rule bounded_routing {
+    strings:
+        $a = /TOKENXYZ12345678.{0,20}END/
+    condition:
+        $a
+}
+`)
+	if err != nil {
+		t.Fatalf("CompileSource() error = %v", err)
+	}
+
+	input := []byte("TOKENXYZ12345678" + strings.Repeat("a", 15) + "END")
+
+	routedDefault := NewScanner(program, WithBooleanRouting())
+	defer routedDefault.Close()
+	if routedDefault.booleanRouting == nil {
+		t.Fatal("expected booleanRouting active when maxMatchSpan == 0")
+	}
+	if matched, err := routedDefault.Matches(input); err != nil || !matched {
+		t.Fatalf("routedDefault Matches = %v, %v; want true", matched, err)
+	}
+
+	routedZeroSpan := NewScanner(program, WithBooleanRouting(), WithMaxMatchSpan(0))
+	defer routedZeroSpan.Close()
+	if routedZeroSpan.booleanRouting == nil {
+		t.Fatal("expected booleanRouting active with WithMaxMatchSpan(0)")
+	}
+
+	routedBounded := NewScanner(program, WithBooleanRouting(), WithMaxMatchSpan(20))
+	defer routedBounded.Close()
+	if routedBounded.booleanRouting != nil {
+		t.Fatal("booleanRouting must be disabled when WithMaxMatchSpan > 0")
+	}
+	got, err := routedBounded.Matches(input)
+	if err != nil {
+		t.Fatalf("routedBounded Matches() error = %v", err)
+	}
+
+	plainBounded := NewScanner(program, WithMaxMatchSpan(20))
+	defer plainBounded.Close()
+	want, err := plainBounded.Matches(input)
+	if err != nil {
+		t.Fatalf("plainBounded Matches() error = %v", err)
+	}
+	if got != want || got {
+		t.Fatalf("WithBooleanRouting + WithMaxMatchSpan(20) = %v, want %v (false)", got, want)
+	}
+}

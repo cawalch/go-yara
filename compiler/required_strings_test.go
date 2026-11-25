@@ -317,3 +317,93 @@ rule unprefiltered_raw_secret {
 		t.Fatalf("MatchingRules(leaked) = %+v, %v; want ready evidence", matches, err)
 	}
 }
+
+func TestRequiredStringsAnonymousSetExpansion(t *testing.T) {
+	tests := []struct {
+		name          string
+		strings       string
+		condition     string
+		wantRequired  []string
+		wantForbidden []string
+		inputs        []string
+	}{
+		{
+			name:         "any of anonymous and named",
+			strings:      `$ = "alpha" $a = "beta"`,
+			condition:    `any of ($, $a)`,
+			wantRequired: nil,
+			inputs:       []string{"", "alpha", "beta", "alpha beta"},
+		},
+		{
+			name:          "not all of anonymous and named",
+			strings:       `$ = "alpha" $a = "beta"`,
+			condition:     `not (all of ($, $a))`,
+			wantForbidden: nil,
+			inputs:        []string{"", "alpha", "beta", "alpha beta"},
+		},
+		{
+			name:         "all of multiple anonymous",
+			strings:      `$ = "alpha" $ = "beta" $c = "gamma"`,
+			condition:    `all of ($)`,
+			wantRequired: []string{"$__anon1", "$__anon2"},
+			inputs:       []string{"", "alpha", "beta", "alpha beta", "gamma"},
+		},
+		{
+			name:         "any of single anonymous with named present",
+			strings:      `$ = "alpha" $a = "beta"`,
+			condition:    `any of ($)`,
+			wantRequired: []string{"$__anon1"},
+			inputs:       []string{"", "alpha", "beta", "alpha beta"},
+		},
+		{
+			name:          "none of anonymous and named",
+			strings:       `$ = "alpha" $a = "beta" $c = "gamma"`,
+			condition:     `none of ($, $a)`,
+			wantForbidden: []string{"$__anon1", "$a"},
+			inputs:        []string{"", "alpha", "beta", "gamma", "alpha gamma"},
+		},
+		{
+			name:         "all of anonymous and wildcard",
+			strings:      `$ = "alpha" $p1 = "beta" $p2 = "gamma"`,
+			condition:    `all of ($, $p*)`,
+			wantRequired: []string{"$__anon1", "$p1", "$p2"},
+			inputs:       []string{"", "alpha beta", "alpha beta gamma"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			source := fmt.Sprintf("rule test { strings: %s condition: %s }", tc.strings, tc.condition)
+			parsed, err := NewCompiler().compileParseWithContext(context.Background(), source)
+			if err != nil {
+				t.Fatalf("compileParseWithContext() error = %v", err)
+			}
+			rules, err := newRuleCompiler().CompileProgram(parsed)
+			if err != nil {
+				t.Fatalf("CompileProgram() error = %v", err)
+			}
+			program := newCompiledProgram(rules)
+			rule := program.Rules[0]
+			if !slices.Equal(rule.requiredStrings, tc.wantRequired) {
+				t.Fatalf("requiredStrings = %v, want %v", rule.requiredStrings, tc.wantRequired)
+			}
+			if !slices.Equal(rule.forbiddenStrings, tc.wantForbidden) {
+				t.Fatalf("forbiddenStrings = %v, want %v", rule.forbiddenStrings, tc.wantForbidden)
+			}
+			scanner := program.NewScanner()
+			defer scanner.Close()
+			for _, input := range tc.inputs {
+				got, err := scanner.Matches([]byte(input))
+				if err != nil {
+					t.Fatal(err)
+				}
+				scanner.prefilterDisabled = true
+				want, err := scanner.Matches([]byte(input))
+				scanner.prefilterDisabled = false
+				if err != nil || got != want {
+					t.Fatalf("input %q: got %v, want %v (err=%v)", input, got, want, err)
+				}
+			}
+		})
+	}
+}

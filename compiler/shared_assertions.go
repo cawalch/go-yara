@@ -59,6 +59,21 @@ func assertionFromHeader(header HeaderConstraint) (conditionAssertion, bool) {
 func (s *Scanner) ruleConstraintsMatchContext(rule *CompiledRule, ctx *MatchContext, pruneFilesize bool) bool {
 	ctx.assertionResults = s.assertionResults
 	ctx.externalValues = s.externalValues
+	if len(s.externalValues) > 0 && len(rule.ExternalSlots) > 0 {
+		// Never let a false guard hide a dynamic type error elsewhere in the rule.
+		for index, assertion := range rule.assertions {
+			if assertion.Opcode != OpAssertExternal {
+				continue
+			}
+			cacheIndex := -1
+			if index < len(rule.assertionCacheIndices) {
+				cacheIndex = rule.assertionCacheIndices[index]
+			}
+			if cachedInputAssertion(&rule.assertions[index], ctx, cacheIndex) == assertionTypeMismatch {
+				return true
+			}
+		}
+	}
 	for index, constraint := range rule.HeaderConstraints {
 		if index < len(rule.headerCacheIndices) && rule.headerCacheIndices[index] >= 0 {
 			sharedIndex := rule.headerCacheIndices[index]
@@ -80,12 +95,6 @@ func (s *Scanner) ruleConstraintsMatchContext(rule *CompiledRule, ctx *MatchCont
 	}
 	if !pruneFilesize || len(rule.mandatoryAssertions) == 0 {
 		return true
-	}
-	// Never let a false guard hide a dynamic type error elsewhere in the rule.
-	for index, assertion := range rule.assertions {
-		if assertion.Opcode == OpAssertExternal && cachedInputAssertion(&rule.assertions[index], ctx, rule.assertionCacheIndices[index]) == assertionTypeMismatch {
-			return true
-		}
 	}
 	for _, index := range rule.mandatoryAssertions {
 		if cachedInputAssertion(&rule.assertions[index], ctx, rule.assertionCacheIndices[index]) != assertionTrue {

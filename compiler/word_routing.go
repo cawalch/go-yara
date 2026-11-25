@@ -48,8 +48,8 @@ func (cp *CompiledProgram) buildBooleanRouting() *wordmatch.RoutedProgram {
 
 // Keep owned source only for exact conjunctions; parsing and route construction
 // remain lazy. The ordinary requiredStrings metadata proves necessity only.
-func booleanRoutingPatterns(rule *ast.Rule) []*ast.String {
-	ids, ok := booleanRoutingConjunction(rule.Condition, rule.Strings)
+func booleanRoutingPatterns(rule *ast.Rule, anonymousStrings []string) []*ast.String {
+	ids, ok := booleanRoutingConjunction(rule.Condition, rule.Strings, anonymousStrings)
 	if !ok || len(ids) == 0 {
 		return nil
 	}
@@ -85,7 +85,7 @@ func booleanRoutingPatterns(rule *ast.Rule) []*ast.String {
 	return patterns
 }
 
-func booleanRoutingConjunction(expr ast.Expression, patterns []*ast.String) ([]string, bool) {
+func booleanRoutingConjunction(expr ast.Expression, patterns []*ast.String, anonymousStrings []string) ([]string, bool) {
 	switch e := expr.(type) {
 	case *ast.Identifier:
 		return []string{e.Name}, strings.HasPrefix(e.Name, "$") && e.Name != "$" && !strings.Contains(e.Name, "*")
@@ -93,15 +93,15 @@ func booleanRoutingConjunction(expr ast.Expression, patterns []*ast.String) ([]s
 		if e.Op != token.AND {
 			return nil, false
 		}
-		left, leftOK := booleanRoutingConjunction(e.Left, patterns)
-		right, rightOK := booleanRoutingConjunction(e.Right, patterns)
+		left, leftOK := booleanRoutingConjunction(e.Left, patterns, anonymousStrings)
+		right, rightOK := booleanRoutingConjunction(e.Right, patterns, anonymousStrings)
 		return append(left, right...), leftOK && rightOK
 	case *ast.OfExpression:
 		count, ok := e.Count.(*ast.Identifier)
 		if !ok || count.Name != QuantifierAll || e.InRange != nil || e.AtOffset != nil {
 			return nil, false
 		}
-		ids, ok := requiredStringSet(e.Strings, patterns)
+		ids, ok := requiredStringSet(e.Strings, patterns, anonymousStrings)
 		return ids, ok && len(ids) > 0
 	default:
 		return nil, false

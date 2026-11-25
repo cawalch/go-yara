@@ -44,8 +44,11 @@ func detectDeadStrings(rule *ast.Rule, anonymousStrings []string, isDeadRule boo
 	collectConditionStringReferences(rule.Condition, refs)
 
 	for _, str := range rule.Strings {
+		if str == nil {
+			continue
+		}
 		isAnon := slices.Contains(anonymousStrings, str.Identifier)
-		if !isStringReferenced(str.Identifier, isAnon, refs) {
+		if len(captureBindingsFromModifiers(str.Modifiers)) == 0 && !isStringReferenced(str.Identifier, isAnon, refs) {
 			dead[str.Identifier] = true
 		}
 	}

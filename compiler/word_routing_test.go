@@ -246,22 +246,41 @@ func TestBooleanRoutingUnknownFallsBack(t *testing.T) {
 }
 
 func TestBooleanRoutingAnonymousAndUnusedPatterns(t *testing.T) {
-	for _, source := range []string{
-		`rule anonymous { strings: $="FIRST_LITERAL_0123456789" $="SECOND_LITERAL_0123456789" condition: all of them }`,
-		`rule unused { strings: $a="FIRST_LITERAL_0123456789" $b="SECOND_LITERAL_0123456789" $unused=/a+b/ condition: $a and $b }`,
-		`rule folded { strings: $a="FIRST_LITERAL_0123456789" nocase $b=/SECOND_LITERAL_[0-9]{10}/ condition: all of them }`,
+	for _, tc := range []struct {
+		source    string
+		skipCheck bool
+	}{
+		{source: `rule anonymous { strings: $="FIRST_LITERAL_0123456789" $="SECOND_LITERAL_0123456789" condition: all of them }`},
+		{source: `rule anonymous_wildcard { strings: $="FIRST_LITERAL_0123456789" $="SECOND_LITERAL_0123456789" condition: all of ($*) }`},
+		{source: `rule anonymous_set { strings: $="FIRST_LITERAL_0123456789" condition: all of ($) }`, skipCheck: true},
+		{source: `rule anonymous_tuple { strings: $="FIRST_LITERAL_0123456789" $a="SECOND_LITERAL_0123456789" condition: all of ($, $a) }`, skipCheck: true},
+		{source: `rule unused { strings: $a="FIRST_LITERAL_0123456789" $b="SECOND_LITERAL_0123456789" $unused=/a+b/ condition: $a and $b }`},
+		{source: `rule folded { strings: $a="FIRST_LITERAL_0123456789" nocase $b=/SECOND_LITERAL_[0-9]{10}/ condition: all of them }`},
 	} {
-		program := compileBooleanRouting(t, source)
+		var program *CompiledProgram
+		if tc.skipCheck {
+			parsed, err := NewCompiler().compileParseWithContext(context.Background(), tc.source)
+			if err != nil {
+				t.Fatalf("compileParseWithContext() error = %v", err)
+			}
+			rules, err := newRuleCompiler().CompileProgram(parsed)
+			if err != nil {
+				t.Fatalf("CompileProgram() error = %v", err)
+			}
+			program = newCompiledProgram(rules)
+		} else {
+			program = compileBooleanRouting(t, tc.source)
+		}
 		scanner := NewScanner(program, WithBooleanRouting())
 		defer scanner.Close()
 		if scanner.booleanRouting == nil {
-			t.Fatalf("eligible portfolio declined: %s", source)
+			t.Fatalf("eligible portfolio declined: %s", tc.source)
 		}
-		for _, input := range []string{"", "FIRST_LITERAL_0123456789", "FIRST_LITERAL_0123456789 SECOND_LITERAL_0123456789", "first_literal_0123456789 SECOND_LITERAL_0123456789"} {
+		for _, input := range []string{"", "FIRST_LITERAL_0123456789", "SECOND_LITERAL_0123456789", "FIRST_LITERAL_0123456789 SECOND_LITERAL_0123456789", "first_literal_0123456789 SECOND_LITERAL_0123456789"} {
 			got, err := scanner.Matches([]byte(input))
 			want, wantErr := program.Matches([]byte(input))
 			if got != want || fmt.Sprint(err) != fmt.Sprint(wantErr) {
-				t.Fatalf("%s, %q: (%v,%v) != (%v,%v)", source, input, got, err, want, wantErr)
+				t.Fatalf("%s, %q: (%v,%v) != (%v,%v)", tc.source, input, got, err, want, wantErr)
 			}
 		}
 	}
