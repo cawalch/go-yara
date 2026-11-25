@@ -34,7 +34,7 @@ func TestUnboundedRegexAlternativePresent(t *testing.T) {
 
 func TestNewRegexMatchBatch(t *testing.T) {
 	ctx := matchContextPool.Get().(*MatchContext)
-	defer ctx.Release()
+	defer ctx.releaseToPool()
 	ctx.Reset([]byte("abc"))
 
 	if bs := newRegexMatchBatch(ctx, &RegexPattern{}); bs == nil {

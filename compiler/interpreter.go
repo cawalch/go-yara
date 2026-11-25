@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"maps"
 	"math"
+	"math/bits"
 	"slices"
 	"strconv"
 	"sync"
@@ -57,15 +58,13 @@ const (
 
 // Interpreter represents a bytecode interpreter for YARA rules
 type Interpreter struct {
+	*interpreterScratch
 	assertionRegisters  []assertionResult
 	directCondition     bool
 	directResult        assertionResult
 	moduleData          map[string]ModuleValue
 	bytecode            []byte
-	ip                  int                               // Instruction pointer
-	stack               []Value                           // Execution stack
-	memory              [interpreterMemorySlotCount]Value // Memory slots for variables
-	iterators           []Iterator                        // Stack of active iteration frames for loops
+	ip                  int // Instruction pointer
 	stopped             bool
 	result              error
 	matchContext        *MatchContext            // Pattern matching context
@@ -82,12 +81,22 @@ type Interpreter struct {
 	textStringSets      [][]string               // Text string sets for text-string-set iteration
 	allStrings          []string                 // All string identifiers for current rule
 	anonymousStrings    []string                 // Anonymous string identifiers for current rule
-	stringArena         []string                 // Arena for dynamic strings
-	moduleArgsBuf       []ModuleValue            // Scratch buffer reused across module callbacks
-	regexCache          map[string]compiledRegex
-	PreserveRuleResults bool // If true, Reset() will not clear ruleResults
-	itersmax            int  // Max total iterations across all for-loops (0 = unlimited)
-	iterations          int  // Current total iteration count
+	PreserveRuleResults bool                     // If true, Reset() will not clear ruleResults
+	itersmax            int                      // Max total iterations across all for-loops (0 = unlimited)
+	iterations          int                      // Current total iteration count
+}
+
+// interpreterScratch can be recycled without reusing a caller's interpreter.
+type interpreterScratch struct {
+	stack []Value
+	// Writes of defined values must go through storeMemory so resetMemory can
+	// clear only the used slots, including external slots at the end of memory.
+	memory        [interpreterMemorySlotCount]Value
+	memoryWritten [interpreterMemorySlotCount / 64]uint64
+	iterators     []Iterator
+	stringArena   []string
+	moduleArgsBuf []ModuleValue
+	regexCache    map[string]compiledRegex
 }
 
 // Iterator defines the state for a runtime for-loop
@@ -124,15 +133,13 @@ type compiledRegex struct {
 	flags regex.Flags
 }
 
-// interpreterPool reuses interpreter allocations between executions.
-var interpreterPool = sync.Pool{
-	New: func() any {
-		return &Interpreter{
-			stack:      make([]Value, 0, 256),
-			regexCache: make(map[string]compiledRegex),
-		}
-	},
-}
+var interpreterPool = sync.Pool{New: func() any {
+	return &Interpreter{interpreterScratch: interpreterScratchPool.Get().(*interpreterScratch)}
+}}
+
+var interpreterScratchPool = sync.Pool{New: func() any {
+	return &interpreterScratch{stack: make([]Value, 0, 256), regexCache: make(map[string]compiledRegex)}
+}}
 
 // SetItersmax sets the maximum number of for-loop iterations.
 // A value of 0 means unlimited.
@@ -145,36 +152,88 @@ func (i *Interpreter) ResetIterationCount() {
 	i.iterations = 0
 }
 
-// NewInterpreter creates a bytecode interpreter with an owned snapshot of
-// bytecode. Callers may reuse or modify the input after construction.
+// NewInterpreter creates a caller-owned bytecode interpreter with a snapshot
+// of bytecode. Callers may reuse or modify the input after construction and
+// call Release when they are done using the interpreter.
 func NewInterpreter(bytecode []byte) *Interpreter {
-	i := interpreterPool.Get().(*Interpreter)
-	i.bytecode = slices.Clone(bytecode)
-	i.matchContext = &MatchContext{Matches: make(map[string][]Match)}
-
-	return i
+	return &Interpreter{
+		interpreterScratch: interpreterScratchPool.Get().(*interpreterScratch),
+		bytecode:           slices.Clone(bytecode),
+		matchContext:       &MatchContext{Matches: make(map[string][]Match)},
+	}
 }
 
-// Release returns the interpreter to the pool for reuse
+// Release discards the interpreter's execution state. Sequential calls may
+// repeat it. Stop using the interpreter before calling Release.
 func (i *Interpreter) Release() {
+	if i == nil {
+		return
+	}
+	scratch := i.interpreterScratch
+	*i = Interpreter{}
+	if scratch != nil {
+		scratch.reset()
+		interpreterScratchPool.Put(scratch)
+	}
+}
+
+func (i *Interpreter) releaseToPool() {
 	i.resetForPool()
 	interpreterPool.Put(i)
 }
 
 func (i *Interpreter) resetForPool() {
-	clear(i.stack[:cap(i.stack)])
-	clear(i.stringArena[:cap(i.stringArena)])
-	clear(i.iterators[:cap(i.iterators)])
-	clear(i.moduleArgsBuf[:cap(i.moduleArgsBuf)])
-	clear(i.regexCache)
+	i.interpreterScratch.reset()
 	*i = Interpreter{
 		assertionRegisters: i.assertionRegisters[:0],
-		stack:              i.stack[:0],
-		stringArena:        i.stringArena[:0],
-		iterators:          i.iterators[:0],
-		moduleArgsBuf:      i.moduleArgsBuf[:0],
-		regexCache:         i.regexCache,
+		interpreterScratch: i.interpreterScratch,
 	}
+}
+
+func (scratch *interpreterScratch) reset() {
+	clear(scratch.memory[:])
+	clear(scratch.memoryWritten[:])
+	clear(scratch.stack[:cap(scratch.stack)])
+	clear(scratch.stringArena[:cap(scratch.stringArena)])
+	clear(scratch.iterators[:cap(scratch.iterators)])
+	clear(scratch.moduleArgsBuf[:cap(scratch.moduleArgsBuf)])
+	clear(scratch.regexCache)
+	scratch.stack = scratch.stack[:0]
+	scratch.stringArena = scratch.stringArena[:0]
+	scratch.iterators = scratch.iterators[:0]
+	scratch.moduleArgsBuf = scratch.moduleArgsBuf[:0]
+}
+
+func (i *Interpreter) ensureScratch() {
+	if i.interpreterScratch == nil {
+		i.interpreterScratch = interpreterScratchPool.Get().(*interpreterScratch)
+	}
+}
+
+func (i *Interpreter) storeMemory(slot int, value Value) {
+	i.memory[slot] = value
+	i.memoryWritten[slot/64] |= uint64(1) << (slot % 64)
+}
+
+func (i *Interpreter) resetMemory() {
+	if i.memoryWritten == ([interpreterMemorySlotCount / 64]uint64{}) {
+		return
+	}
+	for word, written := range i.memoryWritten {
+		for written != 0 {
+			slot := word*64 + bits.TrailingZeros64(written)
+			i.memory[slot] = Value{Type: ValueTypeUndefined}
+			written &= written - 1
+		}
+	}
+	clear(i.memoryWritten[:])
+}
+
+func (i *Interpreter) initializeMemory() {
+	for slot := range i.memory {
+		i.memory[slot] = Value{Type: ValueTypeUndefined}
+	}
+	clear(i.memoryWritten[:])
 }
 
 // pushString appends a string to the arena and pushes a Value pointing to it
@@ -192,7 +251,7 @@ func (i *Interpreter) getString(v Value) string {
 	// Nonnegative references index the arena; negative references encode
 	// stringLiterals as -(index + 1).
 	if v.StringRef >= 0 {
-		if int(v.StringRef) < len(i.stringArena) {
+		if i.interpreterScratch != nil && int(v.StringRef) < len(i.stringArena) {
 			return i.stringArena[v.StringRef]
 		}
 		return ""
@@ -265,6 +324,7 @@ func (i *Interpreter) GetString(v Value) string {
 
 // PushString appends a string to the arena and pushes a Value pointing to it (exported)
 func (i *Interpreter) PushString(s string) error {
+	i.ensureScratch()
 	return i.pushString(s)
 }
 
@@ -298,13 +358,14 @@ func (i *Interpreter) SetTextStringSets(sets [][]string) {
 
 // SetMemoryString sets a string identifier in memory at the specified index
 func (i *Interpreter) SetMemoryString(index int, identifier string) {
-	if index >= 0 && index < len(i.memory) {
+	if index >= 0 && index < interpreterMemorySlotCount {
+		i.ensureScratch()
 		idx := len(i.stringArena)
 		i.stringArena = append(i.stringArena, identifier)
-		i.memory[index] = Value{
+		i.storeMemory(index, Value{
 			Type:      ValueTypeString,
 			StringRef: int64(idx),
-		}
+		})
 	}
 }
 
@@ -331,6 +392,9 @@ func (i *Interpreter) GetStack() []Value {
 		}
 		return []Value{{Type: ValueTypeInt, IntVal: boolToInt(i.directResult == assertionTrue)}}
 	}
+	if i.interpreterScratch == nil {
+		return []Value{}
+	}
 	stackCopy := make([]Value, len(i.stack))
 	copy(stackCopy, i.stack)
 	return stackCopy
@@ -338,12 +402,18 @@ func (i *Interpreter) GetStack() []Value {
 
 // GetMemory returns a copy of the current memory state (for debugging)
 func (i *Interpreter) GetMemory() [256]Value {
+	if i.interpreterScratch == nil {
+		return [256]Value{}
+	}
 	return i.memory
 }
 
 // GetMemoryAt returns the value at a specific memory address
 func (i *Interpreter) GetMemoryAt(address int) Value {
-	if address >= 0 && address < len(i.memory) {
+	if address >= 0 && address < interpreterMemorySlotCount {
+		if i.interpreterScratch == nil {
+			return Value{}
+		}
 		return i.memory[address]
 	}
 	return Value{Type: ValueTypeUndefined}
@@ -351,17 +421,14 @@ func (i *Interpreter) GetMemoryAt(address int) Value {
 
 // Reset resets the interpreter state for new execution
 func (i *Interpreter) Reset() {
+	i.ensureScratch()
 	i.ip = 0
 	i.directCondition = false
 	i.directResult = assertionUnknown
 	i.stack = i.stack[:0]
-	// Memory is cleared by prepareInterpreter before Execute().
-	// This method is also called standalone (e.g., in tests), so clear
-	// memory only when not using the scanner's prepareInterpreter path.
+	// Preserve slots provided to an execution with a match context.
 	if i.matchContext == nil {
-		for idx := range i.memory {
-			i.memory[idx] = Value{Type: ValueTypeUndefined}
-		}
+		i.initializeMemory()
 	}
 	i.stopped = false
 	i.result = nil

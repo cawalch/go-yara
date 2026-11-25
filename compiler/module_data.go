@@ -49,7 +49,7 @@ func (s *Scanner) setModuleData(name string, data any) error {
 	if s.interp != nil {
 		clear(s.interp.stack[:cap(s.interp.stack)])
 		clear(s.interp.iterators[:cap(s.interp.iterators)])
-		clear(s.interp.memory[:])
+		s.interp.resetMemory()
 	}
 	s.moduleData[name] = value
 	return nil

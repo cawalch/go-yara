@@ -569,7 +569,7 @@ func (i *Interpreter) executePopMemory() error {
 	if err != nil {
 		return err
 	}
-	i.memory[slot] = i.stack[len(i.stack)-1]
+	i.storeMemory(slot, i.stack[len(i.stack)-1])
 	i.stack = i.stack[:len(i.stack)-1]
 	return nil
 }
@@ -590,14 +590,16 @@ func (i *Interpreter) executeIncrementMemory() error {
 	if err != nil {
 		return err
 	}
-	switch i.memory[slot].Type {
+	value := i.memory[slot]
+	switch value.Type {
 	case ValueTypeInt:
-		i.memory[slot].IntVal++
+		value.IntVal++
 	case ValueTypeUndefined:
-		i.memory[slot] = Value{Type: ValueTypeInt, IntVal: 1}
+		value = Value{Type: ValueTypeInt, IntVal: 1}
 	default:
 		return &InterpreterError{Type: ErrorTypeMismatch, Opcode: OpIncrM, Message: "memory slot contains non-integer value"}
 	}
+	i.storeMemory(slot, value)
 	return nil
 }
 

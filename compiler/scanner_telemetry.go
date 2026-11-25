@@ -119,7 +119,9 @@ func (s *Scanner) executeCondition(rule *CompiledRule) error {
 	}
 	s.prepareInterpreter(rule)
 	s.interp.SetItersmax(s.itersmax)
-	return s.interp.Execute()
+	err := s.interp.Execute()
+	s.interp.resetMemory()
+	return err
 }
 
 // Candidate counts describe retained automaton hits, not individual verifier

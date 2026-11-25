@@ -10,17 +10,22 @@ import (
 
 var matchContextPool = sync.Pool{
 	New: func() any {
-		return &MatchContext{
-			Matches:     make(map[string][]Match),
-			spans:       make(map[string][]matchSpan),
-			spanBuffers: make(map[string][]matchSpan),
-		}
+		return newMatchContext()
 	},
 }
 
-// BuildMatchContext scans data for all patterns in the rule and returns a populated match context.
+func newMatchContext() *MatchContext {
+	return &MatchContext{
+		Matches:     make(map[string][]Match),
+		spans:       make(map[string][]matchSpan),
+		spanBuffers: make(map[string][]matchSpan),
+	}
+}
+
+// BuildMatchContext scans data for all patterns in the rule and returns a
+// caller-owned match context. The context borrows data until Reset or Release.
 func BuildMatchContext(rule *CompiledRule, data []byte) *MatchContext {
-	ctx := matchContextPool.Get().(*MatchContext)
+	ctx := newMatchContext()
 	PopulateMatchContext(ctx, rule, data)
 	return ctx
 }
@@ -202,8 +207,17 @@ func (ctx *MatchContext) acquireRegexBatch(codeLen int) *regex.VMBatch {
 	return &ctx.regexBatch
 }
 
-// Release returns the match context to the pool
+// Release discards the match context's state and releases its regex scratch
+// space. Sequential calls may repeat it. Stop using the context before calling
+// Release.
 func (ctx *MatchContext) Release() {
+	if ctx != nil {
+		ctx.regexBatch.Release()
+		*ctx = MatchContext{}
+	}
+}
+
+func (ctx *MatchContext) releaseToPool() {
 	ctx.regexBatch.Release()
 	ctx.resetForPool()
 	matchContextPool.Put(ctx)
