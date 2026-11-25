@@ -279,7 +279,7 @@ jobs:
         run: |
           oracle_version=$("$HOME/.cache/yara-oracle/bin/yara" --version)
           echo "libyara oracle: $oracle_version"
-          test "$oracle_version" = "4.5.8"
+          test "$oracle_version" = "$(cat tests/integration/oracle-version.txt)"
           echo "$HOME/.cache/yara-oracle/bin" >> "$GITHUB_PATH"
 
       - name: Run race tests and coverage
@@ -533,7 +533,7 @@ jobs:
         run: |
           oracle_version=$("$HOME/.cache/yara-oracle/bin/yara" --version)
           echo "libyara oracle: $oracle_version"
-          test "$oracle_version" = "4.5.8"
+          test "$oracle_version" = "$(cat tests/integration/oracle-version.txt)"
           echo "$HOME/.cache/yara-oracle/bin" >> "$GITHUB_PATH"
 
       - name: Run fuzz gate
