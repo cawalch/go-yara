@@ -29,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * Enforce the configured per-rule occurrence limit across byte, reader, and block scans, including error or callback notification on overflow.
 
+* Return an integer occurrence count for `#a in (min..max)` using inclusive start offsets. Format 21 preserves the behavior of older compiled artifacts. Recompile source caches to pick up the correction ([#725](https://github.com/cawalch/go-yara/issues/725)).
+
 ## [v0.11.1] - 2026-11-19
 
 ### Performance

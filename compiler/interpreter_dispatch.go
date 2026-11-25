@@ -148,6 +148,7 @@ func init() {
 	opcodeTable[OpOfFoundAt] = (*Interpreter).executeOfFoundAt
 	opcodeTable[OpOfPercentIn] = (*Interpreter).executeOfPercentIn
 	opcodeTable[OpOfPercentAt] = (*Interpreter).executeOfPercentAt
+	opcodeTable[OpCountMatchesIn] = (*Interpreter).executeCountMatchesIn
 	opcodeTable[OpCountIn] = (*Interpreter).executeCountInRange
 	opcodeTable[OpCountInOf] = (*Interpreter).executeCountInOf
 	opcodeTable[OpProximity] = (*Interpreter).executeProximityOperation

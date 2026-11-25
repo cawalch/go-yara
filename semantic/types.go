@@ -434,16 +434,16 @@ func inferAtOperatorType(left, right *TypeInfo) (*TypeInfo, error) {
 
 // inferInOperatorType infers the result type of IN operator
 func inferInOperatorType(left, right *TypeInfo) (*TypeInfo, error) {
-	// IN operator has two forms:
-	// 1. $string in (start..end) — left is string identifier (boolean), right is integer range
-	// 2. #string in (min..max) — left is integer (count), right is integer range
 	if left.DataType != TypeBoolean && left.DataType != TypeInteger && left.DataType != TypeUnknown {
 		return nil, errors.New("IN operator requires string identifier or count as left operand")
 	}
 	if right.DataType != TypeInteger && right.DataType != TypeUnknown {
 		return nil, errors.New("IN operator requires integer range as right operand")
 	}
-	return &TypeInfo{DataType: TypeBoolean}, nil
+	if left.DataType == TypeInteger {
+		return &TypeInfo{DataType: TypeInteger, IntegerType: Int64Type}, nil
+	}
+	return singletonBooleanType, nil
 }
 
 // inferDotOperatorType infers the result type of DOT operator

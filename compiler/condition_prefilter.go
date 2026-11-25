@@ -344,11 +344,6 @@ func isStringPresenceExpression(expr ast.Expression) bool {
 }
 
 func ofTruthWithoutStringMatches(expr *ast.OfExpression) noStringTruth {
-	// This is the count-in-range form rather than a normal quantifier. Zero
-	// may fall inside its dynamic range, so it is not safe to reject.
-	if _, countInRange := expr.Count.(*ast.StringCount); countInRange && expr.InRange != nil {
-		return noStringUnknown
-	}
 	if expr.InRange != nil && !staticStringConstraint(token.IN, expr.InRange) {
 		return noStringUnknown
 	}
