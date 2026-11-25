@@ -357,67 +357,90 @@ func (cp *CompiledProgram) totalInstructionCount() int {
 	return total
 }
 
-// Streaming methods for CompiledProgram.
-//
-// Streaming reports exact text-pattern matches only. It does not report regex
-// or hex matches and does not evaluate rule condition bytecode. Use Scan,
-// ScanReader, or ScanFile for full rule evaluation.
+// streamingMu guards program streaming configuration and publication of the
+// latest progress pointer. Programs may be shallow-copied or initialized
+// without a constructor, so the lock lives outside the program. It is held
+// only for configuration, scan setup, and progress snapshots.
+var streamingMu sync.Mutex
 
-// EnableStreaming enables or disables pattern-only streaming for large files.
+// EnableStreaming enables or disables pattern-only streaming for future scans.
 func (cp *CompiledProgram) EnableStreaming(enable bool) {
+	streamingMu.Lock()
+	defer streamingMu.Unlock()
 	cp.enableStreaming = enable
 	if enable && cp.streamingProcessor == nil {
 		cp.streamingProcessor = NewStreamingProcessor(cp)
 	}
 }
 
-// IsStreamingEnabled returns true if streaming is enabled
+// IsStreamingEnabled reports whether streaming is enabled for future scans.
 func (cp *CompiledProgram) IsStreamingEnabled() bool {
+	streamingMu.Lock()
+	defer streamingMu.Unlock()
 	return cp.enableStreaming
 }
 
-// SetStreamingChunkSize sets the chunk size for streaming processing
+// SetStreamingChunkSize sets the chunk size for future scans after the first
+// call to EnableStreaming(true).
 func (cp *CompiledProgram) SetStreamingChunkSize(chunkSize int) {
+	streamingMu.Lock()
+	defer streamingMu.Unlock()
 	if cp.streamingProcessor != nil {
 		cp.streamingProcessor.SetChunkSize(chunkSize)
 	}
 }
 
-// EnableStreamingEarlyTermination enables or disables early termination in streaming
+// EnableStreamingEarlyTermination sets whether future scans stop after the
+// first matching chunk, after the first call to EnableStreaming(true).
 func (cp *CompiledProgram) EnableStreamingEarlyTermination(enable bool) {
+	streamingMu.Lock()
+	defer streamingMu.Unlock()
 	if cp.streamingProcessor != nil {
 		cp.streamingProcessor.EnableEarlyTermination(enable)
 	}
 }
 
-// ProcessFileStreaming returns text-pattern matches from a file using chunked streaming.
+// ProcessFileStreaming returns text-pattern matches from a file using chunked
+// streaming. Concurrent calls use independent scan state and the configuration
+// in effect when each call starts. Use ScanFile for full rule evaluation.
 func (cp *CompiledProgram) ProcessFileStreaming(ctx context.Context, filename string) ([]StreamingMatch, error) {
-	if !cp.enableStreaming {
-		return nil, errors.New("streaming is not enabled")
+	scan, err := cp.startStreamingScan()
+	if err != nil {
+		return nil, err
 	}
-
-	if cp.streamingProcessor == nil {
-		cp.streamingProcessor = NewStreamingProcessor(cp)
-	}
-
-	return cp.streamingProcessor.ProcessFile(ctx, filename)
+	return scan.ProcessFile(ctx, filename)
 }
 
-// ProcessBytesStreaming returns text-pattern matches from byte data using chunked streaming.
+// ProcessBytesStreaming returns text-pattern matches from byte data using
+// chunked streaming. Concurrent calls use independent scan state and the
+// configuration in effect when each call starts. Use Scan for full rule
+// evaluation.
 func (cp *CompiledProgram) ProcessBytesStreaming(ctx context.Context, data []byte) ([]StreamingMatch, error) {
-	if !cp.enableStreaming {
-		return nil, errors.New("streaming is not enabled")
+	scan, err := cp.startStreamingScan()
+	if err != nil {
+		return nil, err
 	}
-
-	if cp.streamingProcessor == nil {
-		cp.streamingProcessor = NewStreamingProcessor(cp)
-	}
-
-	return cp.streamingProcessor.ProcessBytes(ctx, data)
+	return scan.ProcessBytes(ctx, data)
 }
 
-// GetStreamingProgress returns progress information for streaming operations
+func (cp *CompiledProgram) startStreamingScan() (StreamingProcessor, error) {
+	streamingMu.Lock()
+	defer streamingMu.Unlock()
+	if !cp.enableStreaming {
+		return StreamingProcessor{}, errors.New("streaming is not enabled")
+	}
+
+	scan := *cp.streamingProcessor
+	scan.progress = &streamingProgress{}
+	cp.streamingProcessor.progress = scan.progress
+	return scan, nil
+}
+
+// GetStreamingProgress returns progress for the most recently started scan,
+// even if an earlier scan is still running.
 func (cp *CompiledProgram) GetStreamingProgress() (processed, total int64, percent float64, matches int) {
+	streamingMu.Lock()
+	defer streamingMu.Unlock()
 	if cp.streamingProcessor != nil {
 		return cp.streamingProcessor.GetProgress()
 	}

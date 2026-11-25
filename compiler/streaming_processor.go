@@ -34,10 +34,9 @@ type StreamingProcessor struct {
 	EarlyTermination bool // Stop processing after the first chunk containing matches
 	ChunkHook        ChunkHook
 
-	compiledProgram *CompiledProgram
-	chunkProcessor  *streamingChunkProcessor
-	maxPatternLen   int
-	progress        *streamingProgress
+	chunkProcessor streamingChunkProcessor
+	maxPatternLen  int
+	progress       *streamingProgress
 }
 
 type streamingChunkProcessor struct {
@@ -65,7 +64,7 @@ type StreamingMatch struct {
 }
 
 type streamingProgress struct {
-	mu           sync.RWMutex
+	mu           sync.Mutex
 	totalBytes   int64
 	processed    int64
 	matchesFound int
@@ -89,7 +88,7 @@ func NewStreamingProcessor(program *CompiledProgram) *StreamingProcessor {
 		ChunkSize:        defaultStreamingChunkSize,
 		BufferSize:       defaultStreamingBufferSize,
 		EarlyTermination: true,
-		compiledProgram:  program,
+		chunkProcessor:   streamingChunkProcessor{program: program},
 		maxPatternLen:    maxPatternLen,
 		progress:         &streamingProgress{},
 	}
@@ -115,7 +114,6 @@ func (sp *StreamingProcessor) ProcessFile(ctx context.Context, filename string) 
 	}
 
 	sp.resetProgress(fileInfo.Size())
-	sp.prepareScan()
 	return sp.processFileChunks(ctx, file, fileInfo)
 }
 
@@ -127,7 +125,6 @@ func (sp *StreamingProcessor) ProcessBytes(ctx context.Context, data []byte) ([]
 		return nil, err
 	}
 
-	sp.prepareScan()
 	return sp.processDataChunks(ctx, data)
 }
 
@@ -136,12 +133,6 @@ func streamingContext(ctx context.Context) context.Context {
 		return context.Background()
 	}
 	return ctx
-}
-
-func (sp *StreamingProcessor) prepareScan() {
-	sp.chunkProcessor = &streamingChunkProcessor{
-		program: sp.compiledProgram,
-	}
 }
 
 func (sp *StreamingProcessor) effectiveChunkSize() int {
@@ -456,8 +447,8 @@ func (sp *StreamingProcessor) updateProgress(bytesProcessed int64, matchesFound 
 
 // GetProgress returns progress for the current or most recent streaming scan.
 func (sp *StreamingProcessor) GetProgress() (processed, total int64, percent float64, matches int) {
-	sp.progress.mu.RLock()
-	defer sp.progress.mu.RUnlock()
+	sp.progress.mu.Lock()
+	defer sp.progress.mu.Unlock()
 
 	processed = sp.progress.processed
 	total = sp.progress.totalBytes
