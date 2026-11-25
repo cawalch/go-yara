@@ -3,6 +3,7 @@ package compiler
 import (
 	"slices"
 
+	"github.com/cawalch/go-yara/ast"
 	"github.com/cawalch/go-yara/regex"
 )
 
@@ -15,14 +16,18 @@ const regexVerificationDistance = 4096
 type regexVerificationPlan struct {
 	Atoms       []regexVerificationAtom
 	ForwardOnly bool
-	Allowed     [256]bool
+	// CappedLiteralSuffix permits the same atom order under a caller's span
+	// cap. Older serialized plans omit it and keep the original verifier.
+	CappedLiteralSuffix bool
+	Allowed             [256]bool
 }
 
 type regexVerificationAtom struct {
 	Bytes, Mask, Forward, Backward []byte
 }
 
-func compileVerificationPlan(parsed *regex.AST, flags regex.Flags, wide bool) (*regexVerificationPlan, error) {
+func compileVerificationPlan(parsed *regex.AST, flags regex.Flags, modifiers []ast.StringModifier) (*regexVerificationPlan, error) {
+	wide := hasModifier(modifiers, ast.StringModifierWide)
 	step := 1
 	if wide {
 		step = 2
@@ -87,7 +92,35 @@ func compileVerificationPlan(parsed *regex.AST, flags regex.Flags, wide bool) (*
 			return nil, nil
 		}
 	}
+	// Fullword and dual-encoding arbitration can choose a different endpoint.
+	dualEncoding := wide && hasModifier(modifiers, ast.StringModifierASCII)
+	plan.CappedLiteralSuffix = len(forwardRoots) == 1 && isLiteralRegexNode(forwardRoots[0]) &&
+		!hasModifier(modifiers, ast.StringModifierFullword) && !dualEncoding &&
+		hasSingleRepeatLiteralSuffix(parsed.Root)
 	return plan, nil
+}
+
+// With a single repeated byte followed by literals, the preferred match is
+// exactly the first (lazy) or last (greedy) eligible suffix for each start.
+func hasSingleRepeatLiteralSuffix(root *regex.Node) bool {
+	root = ungroupRegexNode(root)
+	if root.Kind != regex.NodeConcat || len(root.Children) < 2 {
+		return false
+	}
+	prefix := ungroupRegexNode(root.Children[0])
+	if (prefix.Kind != regex.NodeStar && prefix.Kind != regex.NodePlus) || len(prefix.Children) != 1 {
+		return false
+	}
+	body := ungroupRegexNode(prefix.Children[0])
+	if len(body.Children) != 0 || regex.ASTMaxLength(&regex.AST{Root: body}) != 1 {
+		return false
+	}
+	for _, node := range root.Children[1:] {
+		if !isLiteralRegexNode(node) {
+			return false
+		}
+	}
+	return true
 }
 
 // Match-start atoms may have backward assertions, but cannot consume a prefix.

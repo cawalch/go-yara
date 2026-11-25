@@ -653,6 +653,7 @@ func (c *Compiler) compileCodeGenWithContext(ctx context.Context, program *ast.P
 		}
 		generator.SetStrictLibyaraCompatibility(c.options.StrictLibyaraCompatibility)
 		generator.ignoreInvalid = c.options.IgnoreInvalidRules
+		generator.rejectSlowPatterns = c.options.RejectSlowPatterns
 		c.generator = generator
 
 		var err error
@@ -666,13 +667,18 @@ func (c *Compiler) compileCodeGenWithContext(ctx context.Context, program *ast.P
 			if rule == nil {
 				return nil, fmt.Errorf("code generation identified unknown rule %q: %w", ruleErr.Rule, err)
 			}
+			diagnostic := codegenDiagnostic(ruleErr.Err)
+			if diagnostic.Line == 0 {
+				diagnostic.Line, diagnostic.Column = rule.Pos.Line, rule.Pos.Column
+			}
 			c.recordIgnoredRule(IgnoredRule{
 				Rule:    rule.Name,
-				Phase:   "codegen",
+				Code:    diagnostic.Code,
+				Phase:   diagnostic.Phase,
 				Message: ruleErr.Err.Error(),
 				Global:  ruleHasModifier(rule, ast.ModifierGlobal),
-				Line:    rule.Pos.Line,
-				Column:  rule.Pos.Column,
+				Line:    diagnostic.Line,
+				Column:  diagnostic.Column,
 			})
 			c.propagateIgnoredRuleDependencies(program)
 			program.Rules = filterIgnoredRules(program.Rules, c.ignoredRuleNameSet())
@@ -681,16 +687,10 @@ func (c *Compiler) compileCodeGenWithContext(ctx context.Context, program *ast.P
 
 		if joined, ok := err.(interface{ Unwrap() []error }); ok {
 			for _, subErr := range joined.Unwrap() {
-				c.stats.Errors = append(c.stats.Errors, CompilationError{
-					Phase:   "codegen",
-					Message: subErr.Error(),
-				})
+				c.stats.Errors = append(c.stats.Errors, codegenDiagnostic(subErr))
 			}
 		} else {
-			c.stats.Errors = append(c.stats.Errors, CompilationError{
-				Phase:   "codegen",
-				Message: err.Error(),
-			})
+			c.stats.Errors = append(c.stats.Errors, codegenDiagnostic(err))
 		}
 		return nil, err
 	}
@@ -717,6 +717,15 @@ func (c *Compiler) compileCodeGenWithContext(ctx context.Context, program *ast.P
 	c.stats.TotalBytecodeSize = compiledProgram.GetTotalBytecodeSize()
 
 	return compiledProgram, nil
+}
+
+func codegenDiagnostic(err error) CompilationError {
+	diagnostic, ok := errors.AsType[CompilationError](err)
+	if !ok {
+		diagnostic.Phase = "codegen"
+	}
+	diagnostic.Message = err.Error()
+	return diagnostic
 }
 
 func findRule(rules []*ast.Rule, name string) *ast.Rule {

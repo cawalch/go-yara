@@ -19,7 +19,9 @@ type regexVerifiedSpan struct {
 //
 //nolint:revive // scanner context and pattern metadata stay explicit
 func addBoundedRegexVerifications(ctx *MatchContext, id string, pattern RegexPattern, data []byte, modifiers []ast.StringModifier) {
-	var best map[int]regexVerifiedSpan
+	best := ctx.regexVerifiedStarts
+	ctx.regexVerifiedStarts = nil
+	clear(best)
 	bs := ctx.acquireRegexBatch(len(pattern.Code))
 	wide := hasModifier(modifiers, ast.StringModifierWide)
 	ascii := hasModifier(modifiers, ast.StringModifierASCII)
@@ -107,11 +109,20 @@ func addBoundedRegexVerifications(ctx *MatchContext, id string, pattern RegexPat
 				starts := []int{at}
 				backwardExceeded := false
 				if len(atom.Backward) > 1 && pattern.Flags&regexStartAtomEntries == 0 {
-					starts, err = regex.ExecVerifyBatchWithCancel(bs, atom.Backward, data, flags|regex.FlagsBackwards, at, regexVerificationDistance, ctx.cancelDone)
+					backwardLimit := regexVerificationDistance
+					if ctx.maxMatchSpan > 0 && ctx.maxMatchSpan <= regexVerificationDistance && pattern.verification.CappedLiteralSuffix {
+						// Every start consumes the same suffix. A start farther back
+						// cannot fit, even if the prefix accepts it.
+						backwardLimit = ctx.maxMatchSpan - (end - at)
+						if backwardLimit < 0 {
+							continue
+						}
+					}
+					starts, err = regex.ExecVerifyBatchWithCancel(bs, atom.Backward, data, flags|regex.FlagsBackwards, at, backwardLimit, ctx.cancelDone)
 					if err != nil {
 						return
 					}
-					backwardExceeded = bs.BudgetExceeded()
+					backwardExceeded = backwardLimit == regexVerificationDistance && bs.BudgetExceeded()
 				}
 				kept := 0
 				for _, start := range starts {
@@ -148,6 +159,11 @@ func addBoundedRegexVerifications(ctx *MatchContext, id string, pattern RegexPat
 				}
 			}
 		}
+	}
+	// Retain only small result maps. Large scans and canceled attempts release
+	// the scratch map when this call returns.
+	if len(best) <= 256 {
+		ctx.regexVerifiedStarts = best
 	}
 	starts := ctx.regexCandidates[:0]
 	for start := range best {
@@ -201,7 +217,10 @@ func needsBoundedRegexVerification(pattern *RegexPattern, data []byte, maxSpan i
 	if plan != nil && pattern.Flags&regexStartAtomEntries != 0 {
 		return true
 	}
-	if plan == nil || plan.ForwardOnly || len(data) <= regexVerificationDistance || maxSpan > 0 && maxSpan <= regexVerificationDistance {
+	if plan == nil || plan.ForwardOnly || len(data) <= regexVerificationDistance {
+		return false
+	}
+	if maxSpan > 0 && maxSpan <= regexVerificationDistance && !plan.CappedLiteralSuffix {
 		return false
 	}
 	// Any match longer than the budget crosses one of these grid points.

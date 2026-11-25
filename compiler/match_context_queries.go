@@ -20,6 +20,7 @@ type MatchContext struct {
 	cancelDone                <-chan struct{}
 	regexAtomHits             []int
 	regexCandidates           []int
+	regexVerifiedStarts       map[int]regexVerifiedSpan
 	regexBatch                regex.VMBatch
 	moduleCache               *moduleCallCache
 	assertionResults          []assertionResult

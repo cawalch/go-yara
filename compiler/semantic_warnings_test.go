@@ -362,3 +362,36 @@ rule LoopCollision {
 		assertWarning(t, warnings, WarningWildcardAbsorption, "LoopCollision", "$css1")
 	})
 }
+
+func TestRejectSlowPatterns(t *testing.T) {
+	const source = `rule slow {
+	strings: $letters = /[a-z]+/
+	condition: $letters
+}
+rule dependent { condition: slow }
+rule allowed { strings: $tag = "record" condition: $tag }`
+	for _, warnings := range []bool{false, true} {
+		c := NewCompiler(WithWarnings(warnings), WithRejectSlowPatterns(true))
+		p, err := c.CompileSource(source)
+		if err == nil || p != nil {
+			t.Fatalf("warnings=%v program=%v err=%v", warnings, p, err)
+		}
+		errs := c.GetErrors()
+		if len(errs) != 1 || errs[0].Code != WarningSlowPattern || errs[0].Phase != "performance" ||
+			errs[0].Line != 2 || errs[0].Column == 0 {
+			t.Fatalf("unexpected diagnostics: %+v", errs)
+		}
+	}
+
+	c := NewCompiler(WithWarnings(false), WithRejectSlowPatterns(true), WithIgnoreInvalidRules(true))
+	p, err := c.CompileSource(source)
+	if err != nil || len(p.Rules) != 1 || p.Rules[0].Name != "allowed" {
+		t.Fatalf("unexpected retained program: %+v, %v", p, err)
+	}
+	ignored := c.GetIgnoredRules()
+	assertIgnoredRule(t, ignored, "slow", "performance", "")
+	assertIgnoredRule(t, ignored, "dependent", "dependency", "slow")
+	if len(ignored) != 2 || ignored[0].Code != WarningSlowPattern || ignored[0].Line != 2 {
+		t.Fatalf("unexpected ignored rules: %+v", ignored)
+	}
+}

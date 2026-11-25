@@ -170,3 +170,113 @@ func TestRegexVerificationCaptureAndScanPaths(t *testing.T) {
 		}
 	}
 }
+
+func TestCappedRegexSuffixVerification(t *testing.T) {
+	for _, tc := range []struct {
+		pattern, modifiers   string
+		eligible, lazy, wide bool
+	}{
+		{pattern: ".+;", eligible: true},
+		{pattern: ".*?;", eligible: true, lazy: true},
+		{pattern: ".+;", modifiers: "wide", eligible: true, wide: true},
+		{pattern: "[a;]+;", modifiers: "nocase", eligible: true},
+		{pattern: ".+;", modifiers: "fullword"},
+		{pattern: ".+;", modifiers: "wide ascii"},
+		{pattern: ".+;$"},
+		{pattern: "(a|ab)+xyz"},
+	} {
+		t.Run(tc.pattern+"_"+tc.modifiers, func(t *testing.T) {
+			p := mustCompileStreamingProgram(t, "rule r {strings: $a=/"+tc.pattern+"/ "+tc.modifiers+" condition: $a}")
+			encoded, err := p.MarshalBinary()
+			if err != nil {
+				t.Fatal(err)
+			}
+			loaded, err := UnmarshalCompiledProgram(encoded)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			step := 1
+			if tc.wide {
+				step = 2
+			}
+			// The two record terminators straddle the 4096-byte span boundary.
+			plain := []byte(strings.Repeat("a", regexVerificationDistance/step-1) + ";a;")
+			data := plain
+			if tc.wide {
+				data = widenRegexPrefix(plain)
+			}
+			for _, program := range []*CompiledProgram{p, loaded} {
+				rp := program.Rules[0].RegexPatterns["$a"]
+				if rp.verification == nil || rp.verification.CappedLiteralSuffix != tc.eligible {
+					t.Fatalf("unexpected plan: %+v", rp.verification)
+				}
+				if !tc.eligible {
+					continue
+				}
+				for _, cap := range []int{256, 4095, 4096, 4097} {
+					var want []matchSpan
+					for start := range plain {
+						first := start
+						if !tc.lazy { // The positive-repeat cases consume at least one character.
+							first++
+						}
+						window := plain[first:min(len(plain), start+cap/step)]
+						end := bytes.LastIndexByte(window, ';')
+						if tc.lazy {
+							end = bytes.IndexByte(window, ';')
+						}
+						if end >= 0 {
+							want = append(want, matchSpan{Offset: int64(start * step), Length: (first + end + 1 - start) * step})
+						}
+					}
+					s := program.NewScanner(WithMaxMatchSpan(cap), WithStreamChunkSize(513))
+					res, err := s.Scan(data)
+					if err != nil {
+						t.Fatal(err)
+					}
+					checkCappedRegexSpans(t, cap, res.Matches["r"]["$a"], want)
+					res, err = s.ScanReader(bytes.NewReader(data))
+					s.Close()
+					if err != nil {
+						t.Fatal(err)
+					}
+					checkCappedRegexSpans(t, cap, res.Matches["r"]["$a"], want)
+				}
+			}
+		})
+	}
+}
+
+//nolint:revive // Include the tested cap in failures for both scan paths.
+func checkCappedRegexSpans(t *testing.T, cap int, got []Match, want []matchSpan) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("cap %d: got %d occurrences, want %d", cap, len(got), len(want))
+	}
+	for i, w := range want {
+		if got[i].Offset != w.Offset || got[i].Length != w.Length {
+			t.Fatalf("cap %d occurrence %d: got (%d,%d), want %+v", cap, i, got[i].Offset, got[i].Length, w)
+		}
+	}
+}
+
+func TestCappedRegexSuffixScannerReuse(t *testing.T) {
+	p := mustCompileStreamingProgram(t, "rule r {strings: $a=/.+;/ $b=/.+!/ condition: any of them}")
+	s := p.NewScanner(WithMaxMatchSpan(regexVerificationDistance))
+	defer s.Close()
+	for _, tc := range []struct{ record, id string }{{"x;", "$a"}, {"y!", "$b"}, {"", ""}, {"z;", "$a"}} {
+		data := []byte(strings.Repeat("a", regexVerificationDistance+1) + "\n" + tc.record)
+		res, err := s.Scan(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, id := range []string{"$a", "$b"} {
+			var want []matchSpan
+			if id == tc.id {
+				want = []matchSpan{{Offset: regexVerificationDistance + 2, Length: 2}}
+			}
+			checkCappedRegexSpans(t, regexVerificationDistance, res.Matches["r"][id], want)
+		}
+	}
+}
