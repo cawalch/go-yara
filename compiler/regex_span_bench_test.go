@@ -104,3 +104,27 @@ func BenchmarkRegexCappedDenseTerminators(b *testing.B) {
 		})
 	}
 }
+
+// Four sparse suffixes produce 3,063 distinct match starts in 4,800 bytes.
+func BenchmarkCappedSparseSuffixResults(b *testing.B) {
+	program, err := NewCompiler().CompileSource("rule r { strings: $s = /.+?XYZ/ condition: $s }")
+	if err != nil {
+		b.Fatal(err)
+	}
+	data := bytes.Repeat([]byte("XYa"), 1600)
+	for at := 0; at < len(data); at += 1200 {
+		copy(data[at:], "XYZ")
+	}
+	scanner := program.NewScanner(WithMaxMatchSpan(1024))
+	defer scanner.Close()
+	b.ReportAllocs()
+	for b.Loop() {
+		result, err := scanner.Scan(data)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if got := len(result.Matches["r"]["$s"]); got != 3063 {
+			b.Fatalf("got %d matches, want 3063", got)
+		}
+	}
+}

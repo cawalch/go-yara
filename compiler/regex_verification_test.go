@@ -175,9 +175,11 @@ func TestCappedRegexSuffixVerification(t *testing.T) {
 	for _, tc := range []struct {
 		pattern, modifiers   string
 		eligible, lazy, wide bool
+		emptyPrefix          bool
 	}{
 		{pattern: ".+;", eligible: true},
-		{pattern: ".*?;", eligible: true, lazy: true},
+		{pattern: ".*?;", eligible: true, lazy: true, emptyPrefix: true},
+		{pattern: ".+?;", eligible: true, lazy: true},
 		{pattern: ".+;", modifiers: "wide", eligible: true, wide: true},
 		{pattern: "[a;]+;", modifiers: "nocase", eligible: true},
 		{pattern: ".+;", modifiers: "fullword"},
@@ -218,7 +220,7 @@ func TestCappedRegexSuffixVerification(t *testing.T) {
 					var want []matchSpan
 					for start := range plain {
 						first := start
-						if !tc.lazy { // The positive-repeat cases consume at least one character.
+						if !tc.emptyPrefix { // A positive repeat consumes at least one character.
 							first++
 						}
 						window := plain[first:min(len(plain), start+cap/step)]
