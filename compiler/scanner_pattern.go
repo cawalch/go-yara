@@ -562,6 +562,7 @@ func addCachedMatches(ctx *MatchContext, id string, matches []matchSpan) {
 func (s *Scanner) prepareInterpreter(rule *CompiledRule) {
 	s.matchCtx.externalValues = s.externalValues
 	s.interp.moduleData = s.moduleData
+	s.interp.resetMemory()
 	s.interp.stringArena = s.interp.stringArena[:0]
 
 	s.interp.setCurrentCompiledRule(rule)
@@ -581,7 +582,7 @@ func (s *Scanner) setExternalVariables(rule *CompiledRule) {
 			s.interp.memory[slot] = Value{Type: ValueTypeUndefined}
 			continue
 		}
-		s.interp.memory[slot] = value.toInterpreterValue(s.interp)
+		s.interp.storeMemory(slot, value.toInterpreterValue(s.interp))
 	}
 }
 
@@ -595,7 +596,7 @@ func (s *Scanner) setGlobalVariables(rule *CompiledRule) {
 			s.interp.memory[slot] = Value{Type: ValueTypeUndefined}
 			continue
 		}
-		s.interp.memory[slot] = value.toInterpreterValue(s.interp)
+		s.interp.storeMemory(slot, value.toInterpreterValue(s.interp))
 	}
 }
 

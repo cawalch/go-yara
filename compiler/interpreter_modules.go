@@ -114,7 +114,7 @@ func (i *Interpreter) nextModuleElement(iter *Iterator) error {
 		if err := i.pushString(key); err != nil {
 			return err
 		}
-		i.memory[iter.modulePlan.KeySlot] = i.stack[len(i.stack)-1]
+		i.storeMemory(iter.modulePlan.KeySlot, i.stack[len(i.stack)-1])
 		i.stack = i.stack[:len(i.stack)-1]
 	} else {
 		value = iter.moduleObject.elements[iter.Index]
@@ -122,7 +122,7 @@ func (i *Interpreter) nextModuleElement(iter *Iterator) error {
 	if err := i.pushModuleValue(value); err != nil {
 		return err
 	}
-	i.memory[iter.modulePlan.ValueSlot] = i.stack[len(i.stack)-1]
+	i.storeMemory(iter.modulePlan.ValueSlot, i.stack[len(i.stack)-1])
 	i.stack = i.stack[:len(i.stack)-1]
 	return nil
 }

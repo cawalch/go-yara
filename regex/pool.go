@@ -74,12 +74,14 @@ func putVMState(st *vmState) {
 }
 
 // VMBatch provides reusable VM execution state for repeated anchored attempts.
-// Callers pass it to ExecMatchBatch for repeated anchored attempts.
+// Callers pass it to ExecMatchBatch for repeated anchored attempts. A value
+// copy aliases the original's scratch. Use the original pointer after Prepare.
 type VMBatch struct {
 	st             *vmState
 	gen            uint32
 	failure        failureReuse
 	budgetExceeded bool
+	owner          *VMBatch
 }
 
 // BudgetExceeded reports whether the most recent verification call stopped at
@@ -95,6 +97,7 @@ func (b *VMBatch) Prepare(codeLen int) {
 	b.budgetExceeded = false
 	if b.st == nil {
 		b.st = vmPool.Get().(*vmState)
+		b.owner = b
 	}
 	if cap(b.st.visited) < codeLen {
 		b.st.visited = make([]uint32, codeLen)
@@ -107,17 +110,18 @@ func (b *VMBatch) Prepare(codeLen int) {
 	b.gen = b.st.gen
 }
 
-// Release returns the pinned vmState back to the internal pool.
+// Release returns the pinned state to the internal pool. Releasing a value
+// copy leaves the original's state intact.
 func (b *VMBatch) Release() {
 	if b == nil || b.st == nil {
 		return
 	}
 	st := b.st
-	b.failure = failureReuse{}
-	b.budgetExceeded = false
-	b.st = nil
-	b.gen = 0
-	putVMState(st)
+	owned := b.owner == b
+	*b = VMBatch{}
+	if owned {
+		putVMState(st)
+	}
 }
 
 // NewVMBatch acquires a vmState for a batch of runAtMatch calls.

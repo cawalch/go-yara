@@ -111,3 +111,139 @@ func TestMatchContextPoolReset(t *testing.T) {
 		t.Fatal("match context retained previous scan state")
 	}
 }
+
+func TestStandaloneRuntimeRelease(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`rule greeting { strings: $a = "hello" condition: $a }`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rule := program.Rules[0]
+	const input = "hello"
+	firstCtx := BuildMatchContext(rule, []byte(input))
+	firstInterp := NewInterpreter(rule.Bytecode)
+	firstCtx.Release()
+	firstInterp.Release()
+
+	ctx := BuildMatchContext(rule, []byte(input))
+	t.Cleanup(ctx.Release)
+	secondCtx := BuildMatchContext(rule, []byte("other"))
+	t.Cleanup(secondCtx.Release)
+	interp := NewInterpreter(rule.Bytecode)
+	t.Cleanup(interp.Release)
+	secondInterp := NewInterpreter(rule.Bytecode)
+	t.Cleanup(secondInterp.Release)
+	interp.SetCompiledRules(program.Rules)
+	interp.SetCurrentRule(rule.Name)
+	interp.SetMatchContext(ctx)
+	firstCtx.Release()
+	firstInterp.Release()
+
+	if ctx == secondCtx || string(ctx.Data) != input || len(ctx.Matches["$a"]) != 1 || len(secondCtx.Matches) != 0 {
+		t.Fatal("standalone match contexts lost independent results")
+	}
+	if interp == secondInterp {
+		t.Fatal("standalone interpreters have the same identity")
+	}
+	if err := interp.Execute(); err != nil || !interp.GetRuleResults()[rule.Name] {
+		t.Fatalf("standalone interpreter lost its prepared state: %v", err)
+	}
+}
+
+func TestInterpreterReleaseOfValueCopy(t *testing.T) {
+	for _, setup := range []struct {
+		name string
+		new  func() *Interpreter
+	}{
+		{"constructor", func() *Interpreter { return NewInterpreter(nil) }},
+		{"zero value", func() *Interpreter { return &Interpreter{} }},
+	} {
+		t.Run(setup.name, func(t *testing.T) {
+			const slot = 2
+			owner := setup.new()
+			defer owner.Release()
+			owner.SetMemoryString(slot, "owner")
+			copyBeforeRelease, copyAfterRelease := *owner, *owner
+			copyBeforeRelease.Release()
+			if value := owner.GetMemoryAt(slot); owner.GetString(value) != "owner" {
+				t.Fatal("releasing a value copy changed the owner's memory")
+			}
+			owner.Release()
+
+			next := NewInterpreter(nil)
+			defer next.Release()
+			next.SetMemoryString(slot, "next")
+			copyAfterRelease.Release()
+			if value := next.GetMemoryAt(slot); next.GetString(value) != "next" {
+				t.Fatal("releasing a value copy changed a later owner's memory")
+			}
+		})
+	}
+}
+
+func TestMatchContextReleaseOfValueCopy(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`rule greeting { strings: $a = /h[a-z]+o/ condition: $a }`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rule := program.Rules[0]
+	assertMatch := func(ctx *MatchContext, offset int64) {
+		t.Helper()
+		if got := ctx.Matches["$a"]; len(got) != 1 || got[0].Offset != offset || got[0].Length != 5 {
+			t.Fatalf("matches = %v, want one five-byte match at %d", got, offset)
+		}
+	}
+	owner := &MatchContext{}
+	defer owner.Release()
+	PopulateMatchContext(owner, rule, []byte("hello"))
+	copyBeforeRelease, copyAfterRelease := *owner, *owner
+	copyBeforeRelease.Release()
+	assertMatch(owner, 0)
+	PopulateMatchContext(owner, rule, []byte(" hello"))
+	assertMatch(owner, 1)
+	owner.Release()
+
+	next := BuildMatchContext(rule, []byte("  hello"))
+	defer next.Release()
+	copyAfterRelease.Release()
+	assertMatch(next, 2)
+	PopulateMatchContext(next, rule, []byte("   hello"))
+	assertMatch(next, 3)
+}
+
+func TestScannerMemoryScope(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`
+external lower
+rule loop { condition: for all j in (1..3) : (j >= lower) }
+rule next { condition: loop }
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scanner := program.NewScanner(WithExternalVariables(map[string]any{"lower": 1}))
+	defer scanner.Close()
+	assertClean := func() {
+		t.Helper()
+		for slot, value := range scanner.interp.GetMemory() {
+			if value != (Value{Type: ValueTypeUndefined}) {
+				t.Fatalf("memory slot %d retained %+v", slot, value)
+			}
+		}
+	}
+	scanner.prepareInterpreter(program.Rules[0])
+	if got := scanner.interp.GetMemoryAt(program.Rules[0].ExternalSlots["lower"]); got.Type != ValueTypeInt || got.IntVal != 1 {
+		t.Fatalf("external slot = %+v, want 1", got)
+	}
+	const scratchSlot = interpreterMemorySlotCount - 2
+	scanner.interp.SetMemoryString(scratchSlot, "scratch")
+	scanner.prepareInterpreter(program.Rules[1])
+	if got := scanner.interp.GetMemoryAt(scratchSlot); got.Type != ValueTypeUndefined {
+		t.Fatalf("scratch slot = %+v, want undefined", got)
+	}
+	for range 2 {
+		matches, err := scanner.MatchingRules(nil)
+		if err != nil || len(matches) != 2 {
+			t.Fatalf("MatchingRules = (%+v, %v), want loop and next", matches, err)
+		}
+		assertClean()
+	}
+}

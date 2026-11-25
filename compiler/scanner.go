@@ -524,6 +524,7 @@ func (s *Scanner) markNonTextCacheRules(cacheIndex int) {
 
 func acquireScannerInterpreter() *Interpreter {
 	interp := interpreterPool.Get().(*Interpreter)
+	interp.initializeMemory()
 	interp.PreserveRuleResults = true
 	return interp
 }
@@ -534,10 +535,10 @@ func (s *Scanner) Close() {
 		return
 	}
 	if s.interp != nil {
-		s.interp.Release()
+		s.interp.releaseToPool()
 	}
 	if s.matchCtx != nil {
-		s.matchCtx.Release()
+		s.matchCtx.releaseToPool()
 	}
 	*s = Scanner{}
 }

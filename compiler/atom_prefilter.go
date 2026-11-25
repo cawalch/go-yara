@@ -802,7 +802,7 @@ func appendRegexFallbackMatches(
 	if matchCtx != nil {
 		matchCtx.verificationBudgetRejects += ctx.verificationBudgetRejects
 	}
-	ctx.Release()
+	ctx.releaseToPool()
 	return dst
 }
 

@@ -7,7 +7,8 @@ import (
 	"github.com/cawalch/go-yara/regex"
 )
 
-// MatchContext holds pattern matching state
+// MatchContext holds pattern matching state. A value copy aliases the
+// original's maps and scratch. Use the original pointer after population.
 type MatchContext struct {
 	Data                      []byte
 	Blocks                    []MemoryBlock

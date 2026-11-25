@@ -29,21 +29,22 @@ func ExecVerifyBatchWithCancel(bs *VMBatch, code, input []byte, flags Flags, sta
 }
 
 //nolint:revive // shared directional endpoint driver
-func execMatchEnds(bs *VMBatch, code, input []byte, flags Flags, start, distance int, verify bool, done <-chan struct{}) ([]int, error) {
+func execMatchEnds(batch *VMBatch, code, input []byte, flags Flags, start, distance int, verify bool, done <-chan struct{}) ([]int, error) {
 	if vmCanceled(done) {
 		return nil, context.Canceled
 	}
 	if len(code) == 0 || start < 0 || start > len(input) {
 		return nil, nil
 	}
-	if bs == nil {
-		bs = &VMBatch{}
-		defer bs.Release()
-		ends, err := execMatchEnds(bs, code, input, flags, start, distance, verify, done)
-		return slices.Clone(ends), err
-	}
-	if bs.st == nil {
-		bs.Prepare(len(code))
+	bs := batch
+	if batch == nil {
+		// The temporary batch never leaves this call. Borrow the VM state
+		// directly so the batch can remain on the stack.
+		st, gen := getVMState(len(code))
+		bs = &VMBatch{st: st, gen: gen}
+		defer putVMState(st)
+	} else if batch.st == nil {
+		batch.Prepare(len(code))
 	}
 	bs.budgetExceeded = false
 	st := bs.st
@@ -141,6 +142,9 @@ func execMatchEnds(bs *VMBatch, code, input []byte, flags Flags, start, distance
 
 	if vmCanceled(done) {
 		return nil, context.Canceled
+	}
+	if batch == nil {
+		return slices.Clone(ends), nil
 	}
 	return ends, nil
 }
