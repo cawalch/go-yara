@@ -56,7 +56,9 @@ const (
 	quantifierExpr = "expr"
 )
 
-// Interpreter represents a bytecode interpreter for YARA rules
+// Interpreter represents a bytecode interpreter for YARA rules.
+// A value copy aliases the original's scratch. Use the original pointer
+// after initialization, and do not use a copy after the original is released.
 type Interpreter struct {
 	*interpreterScratch
 	assertionRegisters  []assertionResult
@@ -84,6 +86,7 @@ type Interpreter struct {
 	PreserveRuleResults bool                     // If true, Reset() will not clear ruleResults
 	itersmax            int                      // Max total iterations across all for-loops (0 = unlimited)
 	iterations          int                      // Current total iteration count
+	scratchOwner        *Interpreter             // Release ownership for public handles
 }
 
 // interpreterScratch can be recycled without reusing a caller's interpreter.
@@ -156,22 +159,25 @@ func (i *Interpreter) ResetIterationCount() {
 // of bytecode. Callers may reuse or modify the input after construction and
 // call Release when they are done using the interpreter.
 func NewInterpreter(bytecode []byte) *Interpreter {
-	return &Interpreter{
-		interpreterScratch: interpreterScratchPool.Get().(*interpreterScratch),
-		bytecode:           slices.Clone(bytecode),
-		matchContext:       &MatchContext{Matches: make(map[string][]Match)},
+	i := &Interpreter{
+		bytecode:     slices.Clone(bytecode),
+		matchContext: &MatchContext{Matches: make(map[string][]Match)},
 	}
+	i.ensureScratch()
+	return i
 }
 
 // Release discards the interpreter's execution state. Sequential calls may
-// repeat it. Stop using the interpreter before calling Release.
+// repeat it. Releasing a value copy leaves the original's scratch intact.
+// Stop using the interpreter before calling Release.
 func (i *Interpreter) Release() {
 	if i == nil {
 		return
 	}
 	scratch := i.interpreterScratch
+	owned := i.scratchOwner == i
 	*i = Interpreter{}
-	if scratch != nil {
+	if owned && scratch != nil {
 		scratch.resetForReuse()
 		interpreterScratchPool.Put(scratch)
 	}
@@ -187,6 +193,7 @@ func (i *Interpreter) resetForPool() {
 	*i = Interpreter{
 		assertionRegisters: i.assertionRegisters[:0],
 		interpreterScratch: i.interpreterScratch,
+		scratchOwner:       i.scratchOwner,
 	}
 }
 
@@ -207,6 +214,7 @@ func (scratch *interpreterScratch) resetForReuse() {
 func (i *Interpreter) ensureScratch() {
 	if i.interpreterScratch == nil {
 		i.interpreterScratch = interpreterScratchPool.Get().(*interpreterScratch)
+		i.scratchOwner = i
 	}
 }
 

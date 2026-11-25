@@ -208,8 +208,8 @@ func (ctx *MatchContext) acquireRegexBatch(codeLen int) *regex.VMBatch {
 }
 
 // Release discards the match context's state and releases its regex scratch
-// space. Sequential calls may repeat it. Stop using the context before calling
-// Release.
+// space. Sequential calls may repeat it. Releasing a value copy leaves the
+// original's scratch intact. Stop using the context before calling Release.
 func (ctx *MatchContext) Release() {
 	if ctx != nil {
 		ctx.regexBatch.Release()

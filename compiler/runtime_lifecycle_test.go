@@ -149,6 +149,67 @@ func TestStandaloneRuntimeRelease(t *testing.T) {
 	}
 }
 
+func TestInterpreterReleaseOfValueCopy(t *testing.T) {
+	for _, setup := range []struct {
+		name string
+		new  func() *Interpreter
+	}{
+		{"constructor", func() *Interpreter { return NewInterpreter(nil) }},
+		{"zero value", func() *Interpreter { return &Interpreter{} }},
+	} {
+		t.Run(setup.name, func(t *testing.T) {
+			const slot = 2
+			owner := setup.new()
+			defer owner.Release()
+			owner.SetMemoryString(slot, "owner")
+			copyBeforeRelease, copyAfterRelease := *owner, *owner
+			copyBeforeRelease.Release()
+			if value := owner.GetMemoryAt(slot); owner.GetString(value) != "owner" {
+				t.Fatal("releasing a value copy changed the owner's memory")
+			}
+			owner.Release()
+
+			next := NewInterpreter(nil)
+			defer next.Release()
+			next.SetMemoryString(slot, "next")
+			copyAfterRelease.Release()
+			if value := next.GetMemoryAt(slot); next.GetString(value) != "next" {
+				t.Fatal("releasing a value copy changed a later owner's memory")
+			}
+		})
+	}
+}
+
+func TestMatchContextReleaseOfValueCopy(t *testing.T) {
+	program, err := NewCompiler().CompileSource(`rule greeting { strings: $a = /h[a-z]+o/ condition: $a }`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rule := program.Rules[0]
+	assertMatch := func(ctx *MatchContext, offset int64) {
+		t.Helper()
+		if got := ctx.Matches["$a"]; len(got) != 1 || got[0].Offset != offset || got[0].Length != 5 {
+			t.Fatalf("matches = %v, want one five-byte match at %d", got, offset)
+		}
+	}
+	owner := &MatchContext{}
+	defer owner.Release()
+	PopulateMatchContext(owner, rule, []byte("hello"))
+	copyBeforeRelease, copyAfterRelease := *owner, *owner
+	copyBeforeRelease.Release()
+	assertMatch(owner, 0)
+	PopulateMatchContext(owner, rule, []byte(" hello"))
+	assertMatch(owner, 1)
+	owner.Release()
+
+	next := BuildMatchContext(rule, []byte("  hello"))
+	defer next.Release()
+	copyAfterRelease.Release()
+	assertMatch(next, 2)
+	PopulateMatchContext(next, rule, []byte("   hello"))
+	assertMatch(next, 3)
+}
+
 func TestScannerMemoryScope(t *testing.T) {
 	program, err := NewCompiler().CompileSource(`
 external lower
