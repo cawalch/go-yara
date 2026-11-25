@@ -19,6 +19,38 @@ func TestLeadingGapRegexCandidateStartsGuards(t *testing.T) {
 	}
 }
 
+func TestLeadingGapRegexCandidatesAtWindowBoundary(t *testing.T) {
+	program := mustCompileStreamingProgram(t, `rule gaps {
+		strings:
+			$word = /[ab][xy]{1,3}[0-9]{1,2}quartz/
+		condition:
+			#word == 2
+	}`)
+	pattern := program.Rules[0].RegexPatterns["$word"]
+	if pattern.leadingGap == nil {
+		t.Fatal("expected a leading-gap plan")
+	}
+
+	first := cancelableSearchWindow - len("ax1") - 1
+	second := cancelableSearchWindow + len("quartz ")
+	data := make([]byte, second+len("byyy22quartz"))
+	copy(data, "quartz")
+	copy(data[first:], "ax1quartz")
+	copy(data[second:], "byyy22quartz")
+
+	want := []int{first, second}
+	done := make(chan struct{})
+	got, handled := leadingGapRegexCandidateStarts(data, pattern.leadingGap, pattern.Flags, done)
+	if !handled || !slices.Equal(got, want) {
+		t.Fatalf("leading-gap starts = (%v, %t), want (%v, true)", got, handled, want)
+	}
+	close(done)
+	got, handled = leadingGapRegexCandidateStarts(data, pattern.leadingGap, pattern.Flags, done)
+	if !handled || len(got) > 0 {
+		t.Fatalf("canceled leading-gap search = (%v, %t)", got, handled)
+	}
+}
+
 func TestUnboundedRegexAlternativePresent(t *testing.T) {
 	atoms := []regexPrefilterAtom{{data: []byte("ab"), maxOffset: -1}}
 	if !unboundedRegexAlternativePresent([]byte("xaby"), atoms, 0, nil) {

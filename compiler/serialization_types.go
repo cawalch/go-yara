@@ -166,7 +166,7 @@ type serializedRegexPattern struct {
 	ByteSetUpper         byte
 	ByteSetContiguous    bool
 	ByteSetValues        []byte
-	FixedByteSets        [][]byte
+	FixedByteSets        [][]byte `gobmax:"256"`
 	Anchored             bool
 	CacheKey             string
 	FirstByteSet         []byte

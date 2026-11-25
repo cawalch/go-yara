@@ -46,8 +46,7 @@ func compile(ast *AST, repeatEntries bool) ([]byte, error) {
 	if err := c.emitNode(ast.Root); err != nil {
 		return nil, err
 	}
-	c.e.Emit(OpMatch)
-	return c.e.Bytes(), nil
+	return c.finish()
 }
 
 // CompileCaptures emits a replay-only regex program with save instructions for
@@ -80,6 +79,15 @@ func compileCaptures(ast *AST, groups []int, repeatEntries bool) ([]byte, error)
 	}
 	if err := c.emitNode(ast.Root); err != nil {
 		return nil, err
+	}
+	return c.finish()
+}
+
+// Check again after emission: a final class, capture tag or backedge can
+// extend beyond the last node's entry check.
+func (c *Compiler) finish() ([]byte, error) {
+	if c.cur() >= MaxBytecodeSize {
+		return nil, errors.New("regex too large")
 	}
 	c.e.Emit(OpMatch)
 	return c.e.Bytes(), nil

@@ -421,3 +421,36 @@ rule fuzz_seed {
 		_, _ = prog.ScanWithContext(ctx, sample)
 	})
 }
+
+func TestRegexMetadataRejectedByBothLoaders(t *testing.T) {
+	program := mustCompileStreamingProgram(t, `rule sample { strings: $r = /[ab][cd]/ condition: $r }`)
+	for _, legacy := range []bool{false, true} {
+		payload, err := serializeDeterministicProgram(program)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rule := &payload.Rules[0]
+		// An inconsistent count is sufficient to exercise the loader boundary.
+		rule.RegexPatternEntries[0].Value.ByteSetCount++
+		version := compiledProgramVersion
+		if legacy {
+			version = 19
+			rule.RegexPatterns = map[string]serializedRegexPattern{"$r": rule.RegexPatternEntries[0].Value}
+			rule.RegexPatternEntries = nil
+		}
+		var encoded bytes.Buffer
+		encoded.WriteString(compiledProgramMagic)
+		if err := binary.Write(&encoded, binary.BigEndian, version); err != nil {
+			t.Fatal(err)
+		}
+		if err := gob.NewEncoder(&encoded).Encode(payload); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := UnmarshalCompiledProgram(encoded.Bytes()); !errors.Is(err, ErrCorruptProgram) {
+			t.Fatalf("format %d UnmarshalCompiledProgram: %v", version, err)
+		}
+		if _, err := ReadCompiledProgram(bytes.NewReader(encoded.Bytes())); !errors.Is(err, ErrCorruptProgram) {
+			t.Fatalf("format %d ReadCompiledProgram: %v", version, err)
+		}
+	}
+}
