@@ -47,9 +47,7 @@ func BenchmarkRegexAtomlessRecords(b *testing.B) {
 				b.Run(fmt.Sprintf("%s/%s/bytes=%d", tc.name, method, size), func(b *testing.B) {
 					s := p.NewScanner()
 					defer s.Close()
-					b.SetBytes(int64(len(data)))
-					b.ReportAllocs()
-					for b.Loop() {
+					scan := func() {
 						var matched bool
 						var scanErr error
 						if method == "Matches" {
@@ -62,6 +60,14 @@ func BenchmarkRegexAtomlessRecords(b *testing.B) {
 						if scanErr != nil || matched != tc.matches {
 							b.Fatalf("matched=%v err=%v", matched, scanErr)
 						}
+					}
+					// A scanner acquires VM and rule-evaluation scratch on its first
+					// use. Measure scanning with that same initialized scanner.
+					scan()
+					b.SetBytes(int64(len(data)))
+					b.ReportAllocs()
+					for b.Loop() {
+						scan()
 					}
 				})
 			}
