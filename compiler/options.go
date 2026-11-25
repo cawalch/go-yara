@@ -10,6 +10,7 @@ import (
 // These options control compiler behavior, modules, and security limits.
 // Prefer NewCompiler with functional options for custom settings.
 type CompilationOptions struct {
+	RejectSlowPatterns         bool // Reject rules with a slow-pattern diagnostic (default: false)
 	EnableWarnings             bool // Collect and report compilation warnings (default: true)
 	IgnoreInvalidRules         bool // Compile valid rules while reporting invalid rules (default: false)
 	StrictLibyaraCompatibility bool // Reproduce stricter libyara compile-time rejections (default: false)
@@ -102,6 +103,7 @@ type Option func(*CompilationOptions)
 // toolchains generate call-site-specific closure code when they are inlined,
 // which would make this code-pointer identity check unreliable.
 var libraryModuleSafeOptions = map[uintptr]struct{}{
+	reflect.ValueOf(WithRejectSlowPatterns(true)).Pointer():         {},
 	reflect.ValueOf(WithWarnings(true)).Pointer():                   {},
 	reflect.ValueOf(WithIgnoreInvalidRules(true)).Pointer():         {},
 	reflect.ValueOf(WithStrictLibyaraCompatibility(true)).Pointer(): {},
@@ -127,6 +129,17 @@ func optionMayMutateModules(opt Option) bool {
 func WithWarnings(enabled bool) Option {
 	return func(opts *CompilationOptions) {
 		opts.EnableWarnings = enabled
+	}
+}
+
+// WithRejectSlowPatterns rejects source rules that would produce a slow-pattern
+// warning, even when warning collection is disabled. WithIgnoreInvalidRules
+// omits these rules and their dependents. The default is false.
+//
+//go:noinline
+func WithRejectSlowPatterns(enabled bool) Option {
+	return func(opts *CompilationOptions) {
+		opts.RejectSlowPatterns = enabled
 	}
 }
 

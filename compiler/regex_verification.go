@@ -19,7 +19,9 @@ type regexVerifiedSpan struct {
 //
 //nolint:revive // scanner context and pattern metadata stay explicit
 func addBoundedRegexVerifications(ctx *MatchContext, id string, pattern RegexPattern, data []byte, modifiers []ast.StringModifier) {
-	var best map[int]regexVerifiedSpan
+	best := ctx.regexVerifiedStarts
+	ctx.regexVerifiedStarts = nil
+	clear(best)
 	bs := ctx.acquireRegexBatch(len(pattern.Code))
 	wide := hasModifier(modifiers, ast.StringModifierWide)
 	ascii := hasModifier(modifiers, ast.StringModifierASCII)
@@ -106,12 +108,20 @@ func addBoundedRegexVerifications(ctx *MatchContext, id string, pattern RegexPat
 				}
 				starts := []int{at}
 				backwardExceeded := false
+				backwardLimit := regexVerificationDistance
+				if ctx.maxMatchSpan > 0 && ctx.maxMatchSpan <= regexVerificationDistance && pattern.verification.CappedLiteralSuffix {
+					// Every start consumes the same suffix. A start farther back cannot fit.
+					backwardLimit = ctx.maxMatchSpan - (end - at)
+					if backwardLimit < 0 {
+						continue
+					}
+				}
 				if len(atom.Backward) > 1 && pattern.Flags&regexStartAtomEntries == 0 {
-					starts, err = regex.ExecVerifyBatchWithCancel(bs, atom.Backward, data, flags|regex.FlagsBackwards, at, regexVerificationDistance, ctx.cancelDone)
+					starts, err = regex.ExecVerifyBatchWithCancel(bs, atom.Backward, data, flags|regex.FlagsBackwards, at, backwardLimit, ctx.cancelDone)
 					if err != nil {
 						return
 					}
-					backwardExceeded = bs.BudgetExceeded()
+					backwardExceeded = backwardLimit == regexVerificationDistance && bs.BudgetExceeded()
 				}
 				kept := 0
 				for _, start := range starts {
@@ -148,6 +158,11 @@ func addBoundedRegexVerifications(ctx *MatchContext, id string, pattern RegexPat
 				}
 			}
 		}
+	}
+	// Retain only small result maps. Large scans and canceled attempts release
+	// the scratch map when this call returns.
+	if len(best) <= 256 {
+		ctx.regexVerifiedStarts = best
 	}
 	starts := ctx.regexCandidates[:0]
 	for start := range best {
@@ -196,12 +211,16 @@ func verificationAtomOrder(atom regexVerificationAtom, data []byte, at, index, s
 	return order, true
 }
 
-func needsBoundedRegexVerification(pattern *RegexPattern, data []byte, maxSpan int) bool {
+func needsBoundedRegexVerification(pattern *RegexPattern, data []byte, ctx *MatchContext) bool {
 	plan := pattern.verification
 	if plan != nil && pattern.Flags&regexStartAtomEntries != 0 {
 		return true
 	}
-	if plan == nil || plan.ForwardOnly || len(data) <= regexVerificationDistance || maxSpan > 0 && maxSpan <= regexVerificationDistance {
+	if plan == nil || plan.ForwardOnly || len(data) <= regexVerificationDistance {
+		return false
+	}
+	shortCap := ctx != nil && ctx.maxMatchSpan > 0 && ctx.maxMatchSpan <= regexVerificationDistance
+	if shortCap && !plan.CappedLiteralSuffix {
 		return false
 	}
 	// Any match longer than the budget crosses one of these grid points.
@@ -219,8 +238,41 @@ func needsBoundedRegexVerification(pattern *RegexPattern, data []byte, maxSpan i
 			right++
 		}
 		if right-left > regexVerificationDistance {
+			return !shortCap || sparseCappedRegexSuffix(pattern, data, ctx)
+		}
+	}
+	return false
+}
+
+// A backwards search can visit maxMatchSpan starts at every suffix. Keep this
+// work within about one pass over the input; two hits also fit small inputs.
+// When suffixes are common, the per-start VM can finish quickly, especially
+// for lazy repetitions and short runs such as "a;".
+func sparseCappedRegexSuffix(pattern *RegexPattern, data []byte, ctx *MatchContext) bool {
+	atoms := pattern.verification.Atoms
+	if len(atoms) != 1 || len(atoms[0].Bytes) == 0 || len(atoms[0].Bytes) > 4 {
+		return false
+	}
+	literal := atoms[0].Bytes
+	var wideLiteral [8]byte
+	if pattern.Flags&regex.FlagsWide != 0 {
+		for i, b := range literal {
+			wideLiteral[i*2] = b
+		}
+		literal = wideLiteral[:2*len(literal)]
+	}
+	searcher := newRegexLiteralSearcher(data, literal, pattern.Flags)
+	limit := max(2, len(data)/ctx.maxMatchSpan)
+	at := 0
+	for hits := 0; hits <= limit; hits++ {
+		if scanCanceledAt(ctx.cancelDone, hits) {
+			return false
+		}
+		hit := searcher.index(at)
+		if hit < 0 {
 			return true
 		}
+		at = hit + 1 // Count overlapping literal occurrences too.
 	}
 	return false
 }

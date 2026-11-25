@@ -346,23 +346,28 @@ func (c *Compiler) collectCompiledPatternWarnings(program *ast.Program, compiled
 
 	for _, rule := range compiledRules {
 		for _, id := range rule.StringIdentifiers() {
-			reason := slowPatternReason(rule, id)
-			if reason == "" {
-				continue
+			if warning, ok := compiledPatternWarning(astRules[rule.Name], rule, id); ok {
+				c.addRuleWarning(warning)
 			}
-			line, column := 0, 0
-			if sourceRule := astRules[rule.Name]; sourceRule != nil {
-				if sourceString := findASTString(sourceRule.Strings, id); sourceString != nil {
-					line, column = sourceString.Pos.Line, sourceString.Pos.Column
-				}
-			}
-			c.addRuleWarning(CompilationWarning{
-				Code: WarningSlowPattern, Phase: "performance",
-				Message: fmt.Sprintf("String '%s' %s and may slow scanning", id, reason),
-				Rule:    rule.Name, String: id, Line: line, Column: column,
-			})
 		}
 	}
+}
+
+func compiledPatternWarning(source *ast.Rule, rule *CompiledRule, id string) (CompilationWarning, bool) {
+	reason := slowPatternReason(rule, id)
+	if reason == "" {
+		return CompilationWarning{}, false
+	}
+	warning := CompilationWarning{
+		Code: WarningSlowPattern, Phase: "performance", Rule: rule.Name, String: id,
+		Message: fmt.Sprintf("String '%s' %s and may slow scanning", id, reason),
+	}
+	if source != nil {
+		if str := findASTString(source.Strings, id); str != nil {
+			warning.Line, warning.Column = str.Pos.Line, str.Pos.Column
+		}
+	}
+	return warning, true
 }
 
 func slowPatternReason(rule *CompiledRule, id string) string {

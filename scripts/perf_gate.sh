@@ -10,6 +10,9 @@ MAX_ALLOC_PCT="${MAX_ALLOC_PCT:-15}"
 
 SCALAR_PATTERNS=(
     '^BenchmarkHexJumpLargeRange$'
+    '^BenchmarkRegexMaxMatchSpan$'
+    '^BenchmarkRegexCappedDenseTerminators$'
+    '^BenchmarkRegexAtomlessRecords$/^printable$/^(Matches|Scan)$/^bytes=65536$'
     '^BenchmarkHighEPSSelectivity$/^(literal|regex|mixed)$/^((clean|sparse|dense|near_miss))$'
     '^BenchmarkHighEPSMatchingRulesSelectivity$/^mixed$/^(sparse|dense)$'
     '^BenchmarkHighEPSParallel10K$/^mixed$/^(sparse|dense)$'
@@ -90,6 +93,27 @@ with open(sys.argv[1]) as source:
 if set(samples) != expected or any(n != int(sys.argv[2]) for n in samples.values()):
     sys.exit(f"Incomplete hex-jump benchmark samples in {sys.argv[1]}: {dict(samples)}")
 PY
+        if [[ "$dir" == "$REPO_ROOT" ]]; then
+            python3 - "$out_scalar" "$COUNT" <<'PYGATE'
+import collections
+import re
+import statistics
+import sys
+
+samples = collections.defaultdict(list)
+with open(sys.argv[1]) as source:
+    for line in source:
+        match = re.match(r'^BenchmarkRegexMaxMatchSpan/span=(\d+)(?:-\d+)?\s+\d+\s+([\d.]+)\s+ns/op\b', line)
+        if match:
+            samples[int(match[1])].append(float(match[2]))
+if set(samples) != {0, 256, 4096, 65536} or any(len(v) != int(sys.argv[2]) for v in samples.values()):
+    sys.exit("Incomplete regex span benchmark samples")
+ratio = statistics.median(samples[4096]) / statistics.median(samples[0])
+print(f"Regex span=4096 / default time ratio: {ratio:.2f}")
+if ratio > 2:
+    sys.exit("Regex span=4096 exceeded twice the default scan time")
+PYGATE
+        fi
         if [[ "$RUN_SIMD" = "1" ]]; then
             GOEXPERIMENT=simd go test -c -o "$bin_simd" ./compiler
             : > "$out_simd"
@@ -239,6 +263,7 @@ git -C "$REPO_ROOT" worktree add --detach "$BASE_WT" "$RESOLVED_BASE" >/dev/null
 # Measure identical synthetic inputs even when the base predates this benchmark.
 # Only the test harness is copied; the baseline scanner implementation is intact.
 cp "$REPO_ROOT/compiler/hex_jump_bench_test.go" "$BASE_WT/compiler/hex_jump_bench_test.go"
+cp "$REPO_ROOT/compiler/regex_span_bench_test.go" "$BASE_WT/compiler/regex_span_bench_test.go"
 
 run_benches "$BASE_WT" "$TMP_DIR/base_scalar.txt" "$TMP_DIR/base_simd.txt"
 run_benches "$REPO_ROOT" "$TMP_DIR/head_scalar.txt" "$TMP_DIR/head_simd.txt"

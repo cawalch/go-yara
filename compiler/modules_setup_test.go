@@ -120,6 +120,7 @@ func TestLibraryCompilerOptionsReuseBuiltinRegistry(t *testing.T) {
 		opt  Option
 	}{
 		{"warnings", WithWarnings(false)},
+		{"reject-slow", WithRejectSlowPatterns(true)},
 		{"ignore-invalid", WithIgnoreInvalidRules(true)},
 		{"max-input", WithMaxInputSize(1024)},
 		{"max-include", WithMaxIncludeSize(1024)},

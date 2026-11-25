@@ -612,7 +612,7 @@ func appendRegexPrefilterMatches(
 	if matchCtx != nil {
 		maxMatchSpan = matchCtx.maxMatchSpan
 	}
-	if entry.AtomMaxOffset < 0 || (pattern.verification != nil && needsBoundedRegexVerification(&pattern, data, maxMatchSpan)) {
+	if entry.AtomMaxOffset < 0 || (pattern.verification != nil && needsBoundedRegexVerification(&pattern, data, matchCtx)) {
 		return appendRegexFallbackMatches(dst, rule, strID, pattern, data, flags, entry.IsWide, done, matchCtx)
 	}
 	limit := max(1024, len(data)/4)

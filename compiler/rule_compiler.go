@@ -31,7 +31,9 @@ type ruleCompiler struct {
 	externalNames     []string
 	globalNames       []string
 	globalValues      map[string]compiledGlobalValue
-	ignoreInvalid     bool
+
+	ignoreInvalid      bool
+	rejectSlowPatterns bool
 }
 
 // SetStrictLibyaraCompatibility enables strict libyara compatibility checks during codegen.
@@ -217,6 +219,17 @@ func (rc *ruleCompiler) CompileRule(rule *ast.Rule) (*CompiledRule, error) {
 		booleanPatterns:     booleanRoutingPatterns(rule, anonymousStrings),
 	}
 
+	if rc.rejectSlowPatterns {
+		for _, id := range compiledRule.StringIdentifiers() {
+			if warning, ok := compiledPatternWarning(rule, compiledRule, id); ok {
+				return nil, CompilationError{
+					Code: warning.Code, Phase: warning.Phase,
+					Message: fmt.Sprintf("%s: %s", warning.Code, warning.Message),
+					Line:    warning.Line, Column: warning.Column,
+				}
+			}
+		}
+	}
 	rc.ruleIndex++
 	return compiledRule, nil
 }

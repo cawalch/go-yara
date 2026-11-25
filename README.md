@@ -153,6 +153,10 @@ result, err = program.ScanFile("sample.bin")
 
 `MatchesReader` can exit once a monotonic condition is satisfied by finalized occurrences. Input buffering is bounded independently of stream length; accumulated occurrence spans, returned match data, and evidence grow with the number and size of matches. Legacy compiled unbounded expressions without a finite verification horizon require recompilation or an explicit `WithMaxMatchSpan` before reader scanning; otherwise the scan returns an error before reading input.
 
+A regex without a selective literal can require a verification attempt at each input byte. Long runs of matching characters make these patterns expensive on large files. `WithMaxMatchSpan` limits the bytes a match can consume. Total scan time also depends on the number of candidate starts. On an Apple M3 Max, `BenchmarkRegexAtomlessRecords` measured 10 MB/s for `Scan` returning occurrences on a 1 MiB buffer of two-character lines and 20 MB/s for a printable-run regex with no matches on the same input. Longer records can reduce throughput substantially.
+
+To reject rules that produce a `slow-pattern` diagnostic at ingestion, construct the source compiler with `compiler.WithRejectSlowPatterns(true)`. This also covers flagged text and hex patterns and applies with warning collection disabled. The default compiler accepts these rules. Recompile an earlier artifact from source to apply the ingestion policy and pick up the capped literal-suffix optimization.
+
 The returned `ScanResult` contains:
 - `MatchedRules`: Slice of `RuleMatch` structs for rules evaluating to `true`.
 - `RuleResults`: Map of boolean outcomes for all evaluated rules (`map[string]bool`).

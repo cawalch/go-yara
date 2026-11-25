@@ -442,7 +442,7 @@ func (rc *ruleCompiler) compileRegexPattern(pattern *ast.RegexPattern, modifiers
 			return nil, err
 		}
 	}
-	verification, err := compileVerificationPlan(parsed, flags, hasModifier(modifiers, ast.StringModifierWide))
+	verification, err := compileVerificationPlan(parsed, flags, modifiers)
 	if err != nil {
 		return nil, err
 	}
