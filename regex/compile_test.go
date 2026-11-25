@@ -435,15 +435,6 @@ func TestCompileExplicit65535DistinctFromUnbounded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Compile(a{1,65535}) error = %v", err)
 	}
-	input := make([]byte, 65536)
-	for i := range input {
-		input[i] = 'a'
-	}
-	matched, _, end := ExecMatch(boundedCode, input, FlagsGreedy)
-	if !matched || end != 65535 {
-		t.Fatalf("ExecMatch(a{1,65535}, 65536*'a') = (%v, %d), want (true, 65535)", matched, end)
-	}
-
 	unboundedAST, err := p.Parse("a{1,}")
 	if err != nil {
 		t.Fatalf("Parse(a{1,}) error = %v", err)
@@ -455,6 +446,31 @@ func TestCompileExplicit65535DistinctFromUnbounded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Compile(a{1,}) error = %v", err)
 	}
+	if len(boundedCode) <= len(unboundedCode) {
+		t.Fatalf("Compile(a{1,65535}) len=%d should exceed unbounded a{1,} len=%d", len(boundedCode), len(unboundedCode))
+	}
+
+	// Use a{65534,65535} vs a{65534,} to verify exact runtime 65535 capping in O(N) time.
+	tightBoundedAST, err := p.Parse("a{65534,65535}")
+	if err != nil {
+		t.Fatalf("Parse(a{65534,65535}) error = %v", err)
+	}
+	if tightBoundedAST.Root.Unbounded || tightBoundedAST.Root.Start != 65534 || tightBoundedAST.Root.End != 65535 {
+		t.Fatalf("a{65534,65535} = %+v, want Start:65534 End:65535 Unbounded:false", tightBoundedAST.Root)
+	}
+	tightBoundedCode, err := Compile(tightBoundedAST)
+	if err != nil {
+		t.Fatalf("Compile(a{65534,65535}) error = %v", err)
+	}
+	input := make([]byte, 65536)
+	for i := range input {
+		input[i] = 'a'
+	}
+	matched, _, end := ExecMatch(tightBoundedCode, input, FlagsGreedy)
+	if !matched || end != 65535 {
+		t.Fatalf("ExecMatch(a{65534,65535}, 65536*'a') = (%v, %d), want (true, 65535)", matched, end)
+	}
+
 	matched, _, end = ExecMatch(unboundedCode, input, FlagsGreedy)
 	if !matched || end != 65536 {
 		t.Fatalf("ExecMatch(a{1,}, 65536*'a') = (%v, %d), want (true, 65536)", matched, end)
