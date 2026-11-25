@@ -2786,43 +2786,7 @@ rule test {
 		}
 	}
 
-	// Test 3: #a in (1..3) of ($a*)
-	{
-		src := `
-rule test {
-    strings:
-        $a1 = "hello"
-        $a2 = "world"
-        $a3 = "foo"
-        $a4 = "bar"
-    condition:
-        #a in (1..3) of ($a*)
-}`
-		compiler := NewCompiler()
-		program, err := compiler.CompileSource(src)
-		if err != nil {
-			t.Fatalf("CompileSource() error = %v", err)
-		}
-		scanner := NewScanner(program)
-		// 2 strings match, in range (1..3)
-		results, err := scanner.Scan([]byte("hello world"))
-		if err != nil {
-			t.Fatalf("Scan() error = %v", err)
-		}
-		if len(results.MatchedRules) != 1 {
-			t.Errorf("Test 3 (count-in-range): expected 1 match (2 in 1..3), got %d", len(results.MatchedRules))
-		}
-		// 4 strings match, NOT in range (1..3)
-		results, err = scanner.Scan([]byte("hello world foo bar"))
-		if err != nil {
-			t.Fatalf("Scan() error = %v", err)
-		}
-		if len(results.MatchedRules) != 0 {
-			t.Errorf("Test 3 (count-in-range fail): expected 0 matches (4 not in 1..3), got %d", len(results.MatchedRules))
-		}
-	}
-
-	// Test 4: 2 of ($a*)
+	// Test 3: 2 of ($a*)
 	{
 		src := `
 rule test {
@@ -2843,11 +2807,11 @@ rule test {
 			t.Fatalf("Scan() error = %v", err)
 		}
 		if len(results.MatchedRules) != 1 {
-			t.Errorf("Test 4 (2 of $a*): expected 1 match, got %d", len(results.MatchedRules))
+			t.Errorf("Test 3 (2 of $a*): expected 1 match, got %d", len(results.MatchedRules))
 		}
 	}
 
-	// Test 5: multiple wildcards in one rule
+	// Test 4: multiple wildcards in one rule
 	{
 		src := `
 rule test {
@@ -2870,34 +2834,10 @@ rule test {
 			t.Fatalf("Scan() error = %v", err)
 		}
 		if len(results.MatchedRules) != 1 {
-			t.Errorf("Test 5 (multiple wildcards): expected 1 match, got %d", len(results.MatchedRules))
+			t.Errorf("Test 4 (multiple wildcards): expected 1 match, got %d", len(results.MatchedRules))
 		}
 	}
 
-	// Test 6: #a in (0..5) of ($a*) — 0 matches in range
-	{
-		src := `
-rule test {
-    strings:
-        $a1 = "hello"
-        $a2 = "world"
-    condition:
-        #a in (0..5) of ($a*)
-}`
-		compiler := NewCompiler()
-		program, err := compiler.CompileSource(src)
-		if err != nil {
-			t.Fatalf("CompileSource() error = %v", err)
-		}
-		scanner := NewScanner(program)
-		results, err := scanner.Scan([]byte("nothing here"))
-		if err != nil {
-			t.Fatalf("Scan() error = %v", err)
-		}
-		if len(results.MatchedRules) != 1 {
-			t.Errorf("Test 6 (0 in range): expected 1 match (0 in 0..5), got %d", len(results.MatchedRules))
-		}
-	}
 }
 
 // TestLengthOfEndToEnd tests "length of" expressions in YARA conditions.

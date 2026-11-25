@@ -18,6 +18,7 @@ func TestCountInRangeEndToEnd(t *testing.T) {
 		{"#a in (0..4) + #a in (8..8) == 3", true},
 		{"1 + #a in (0..2) == 2", true},
 		{"#a in (3..4) of ($a, $b)", true},
+		{"#a in (3..4) of ($a*)", true},
 		{"#a in (0..8) of them", false},
 		{"#a in (0..4) of them in (4..6)", true},
 		{"for all of ($a) : (# in (0..4) == 2)", true},
