@@ -324,6 +324,9 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 		return nil, err
 	}
 
+	if s.matchBudgets != nil {
+		s.resetMatchLimits()
+	}
 	s.skipUnmatchedNonText = false
 	fastScan := s.fastScan
 	defer func() {
@@ -474,11 +477,14 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 			// Never clip text patterns per-window before window.owns() runs;
 			// a boundary fullword match at index 0 can be provisional/unowned.
 			s.matchCtx.maxMatchesPerPattern = 0
+			if s.matchBudgets != nil {
+				s.limitRuleMatches(rule, chunkOffset, &window)
+			}
 			if err := s.addRuleTextMatches(ctx, rule, windowData, usesharedAutomaton); err != nil {
 				return nil, err
 			}
 			s.matchCtx.maxMatchesPerPattern = savedMaxMatches
-			if s.fastScan && rule.FastScanSafe {
+			if s.matchBudgets == nil && s.fastScan && rule.FastScanSafe {
 				// Filter non-text candidates before clipping: the first local
 				// occurrence may be provisional or belong to an earlier window.
 				currentRule = rule
@@ -486,6 +492,9 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 			}
 			if err := s.addLocalNonTextMatches(ctx, rule, windowData, &s.nonTextCache, usesharedAutomaton, false); err != nil {
 				return nil, err
+			}
+			if s.matchLimitErr != nil {
+				return nil, s.matchLimitErr
 			}
 			if len(rule.fixedOffsets) != 0 {
 				s.matchCtx.filterFixedOffsets(rule.fixedOffsets, chunkOffset)
@@ -514,6 +523,9 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 						continue
 					}
 					absStart := chunkOffset + sp.Offset
+					if s.matchBudgets != nil {
+						s.matchBudgets[rule.Index].positions[strID][absStart] = 1
+					}
 					if acc.accumulatedSpans[rule.Name] == nil {
 						acc.accumulatedSpans[rule.Name] = make(map[string][]matchSpan)
 					}
@@ -562,6 +574,9 @@ func (s *Scanner) scanReaderStream(ctx context.Context, r io.Reader) (result *Sc
 
 func (s *Scanner) prepareChunkPatternScan(ctx context.Context, chunkData []byte) (bool, error) {
 	s.skipUnmatchedNonText = false
+	if s.matchBudgets != nil {
+		return s.preparePatternScan(ctx, chunkData)
+	}
 	if len(s.program.Rules) <= 1 {
 		s.nonTextCache.reset(s.program.nonTextCacheSize)
 		if err := s.populateFixedRegexCache(ctx, chunkData, &s.nonTextCache); err != nil {

@@ -168,6 +168,9 @@ func (s *Scanner) resetBorrowedEvidence() {
 }
 
 func (s *Scanner) resetScanState() {
+	if s.matchBudgets != nil {
+		s.resetMatchLimits()
+	}
 	s.populatedMatchCtxRuleIndex = -1
 	clear(s.assertionResults)
 	s.resetBorrowedEvidence()

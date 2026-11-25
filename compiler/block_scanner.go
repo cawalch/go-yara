@@ -75,6 +75,9 @@ func (scanner *BlockScanner) ScanWithContext(ctx context.Context, base int64, da
 	if scanner == nil || scanner.program == nil || scanner.scanner == nil {
 		return errors.New("block scanner is closed or has no program")
 	}
+	if err := scanner.scanner.matchLimitErr; err != nil {
+		return err
+	}
 	if base < 0 {
 		return errors.New("block base must be non-negative")
 	}
@@ -141,6 +144,9 @@ func (scanner *BlockScanner) ScanWithContext(ctx context.Context, base int64, da
 		}
 		s.matchCtx.ResetForRule(rule, blockData)
 		s.configureRuleMatchContext(ctx, rule)
+		if s.matchBudgets != nil {
+			s.limitRuleMatches(rule, base, nil)
+		}
 		if err := s.addRuleTextMatches(ctx, rule, blockData, usesharedAutomaton); err != nil {
 			return err
 		}
@@ -148,6 +154,9 @@ func (scanner *BlockScanner) ScanWithContext(ctx context.Context, base int64, da
 			return err
 		}
 
+		if s.matchLimitErr != nil {
+			return s.matchLimitErr
+		}
 		if len(rule.fixedOffsets) != 0 {
 			s.matchCtx.filterFixedOffsets(rule.fixedOffsets, base)
 		}
@@ -171,12 +180,23 @@ func (scanner *BlockScanner) ScanWithContext(ctx context.Context, base int64, da
 				return
 			}
 			for _, span := range spans {
-				perRule[id] = append(perRule[id], Match{
+				match := Match{
 					Pattern: id,
 					Offset:  base + span.Offset,
 					Base:    base,
 					Length:  span.Length,
-				})
+				}
+				if budget := s.matchBudgets[rule.Index]; budget != nil {
+					positions := budget.positions[id]
+					if i := positions[match.Offset]; i > 0 {
+						if match.Length > perRule[id][i-1].Length {
+							perRule[id][i-1] = match
+						}
+						continue
+					}
+					positions[match.Offset] = len(perRule[id]) + 1
+				}
+				perRule[id] = append(perRule[id], match)
 				if s.fastScan && rule.FastScanSafe {
 					break
 				}
@@ -204,6 +224,9 @@ func (scanner *BlockScanner) FinishWithContext(ctx context.Context) (result *Sca
 	}
 
 	s := scanner.scanner
+	if s.matchLimitErr != nil {
+		return nil, s.matchLimitErr
+	}
 	if err := s.scanError(); err != nil {
 		return nil, err
 	}
@@ -356,6 +379,7 @@ func (scanner *BlockScanner) Reset() {
 	clear(scanner.blocks)
 	scanner.blocks = scanner.blocks[:0]
 	if scanner.scanner != nil {
+		scanner.scanner.resetMatchLimits()
 		scanner.scanner.matchCtx.Reset(nil)
 		scanner.scanner.moduleCache.reset()
 	}

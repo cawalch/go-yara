@@ -189,11 +189,11 @@ func (s *Scanner) addLocalTextMatches(ctx context.Context, rule *CompiledRule, d
 		}
 		return nil
 	}
-	if s.matchCtx.maxMatchesPerPattern <= 0 {
+	if s.matchCtx.maxMatchesPerPattern <= 0 || s.matchCtx.matchFilter != nil {
 		yield := func(match acMatch) bool {
 			s.recordLocalCandidate(match.StringID)
 			acceptAutomatonMatch(s.matchCtx, rule, data, match)
-			return true
+			return s.matchLimitErr == nil
 		}
 		if done == nil {
 			rule.automaton.Search(data, yield)
@@ -542,7 +542,7 @@ func (s *Scanner) addLocalNonTextMatchesFromMaps(
 
 //nolint:revive // argument-limit: hot-path helper avoids string-keyed map lookup
 func (s *Scanner) storeNonTextCacheSlot(cache *nonTextMatchCache, cacheIndex, slot int, id string) {
-	if s.matchCtx.maxMatchesPerPattern <= 0 && cacheIndex >= 0 && cacheIndex < len(cache.matches) {
+	if s.matchCtx.matchFilter == nil && s.matchCtx.maxMatchesPerPattern <= 0 && cacheIndex >= 0 && cacheIndex < len(cache.matches) {
 		dst := cache.matches[cacheIndex][:0]
 		if slot >= 0 {
 			dst = append(dst, s.matchCtx.spansForSlot(slot, id)...)

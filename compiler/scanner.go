@@ -114,6 +114,8 @@ type Scanner struct {
 	ruleGate                RuleGateFunc
 	matchHook               MatchHook
 	pollByteStride          int
+	matchBudgets            map[int]*ruleMatchBudget
+	matchLimitErr           error
 	maxMatchesLimit         int
 	onMaxMatchesExceeded    func(rule string, count int)
 	maxMatchSpan            int
@@ -405,9 +407,12 @@ func NewScanner(program *CompiledProgram, opts ...ScannerOption) *Scanner {
 		opt(s)
 	}
 	s.recomputeHookMask()
+	if s.hookMask&hookBitMaxMatches != 0 {
+		s.matchBudgets = make(map[int]*ruleMatchBudget)
+	}
 	s.selectEvaluatedRules()
 	s.allEvaluatedRulesRequireSharedPatterns = s.computeAllEvaluatedRulesRequireSharedPatterns()
-	if s.booleanRoutingEnabled && s.maxMatchSpan == 0 && len(s.tagsFilter) == 0 && s.ruleGate == nil && program != nil &&
+	if s.booleanRoutingEnabled && s.maxMatchesLimit <= 0 && s.maxMatchSpan == 0 && len(s.tagsFilter) == 0 && s.ruleGate == nil && program != nil &&
 		program.preparationErr == nil && program.booleanRouting != nil {
 		if plan := program.booleanRouting(); plan != nil {
 			s.booleanRouting = plan.NewScanner()

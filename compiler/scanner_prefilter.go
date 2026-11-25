@@ -192,14 +192,18 @@ func (s *Scanner) preparePatternScanCore(ctx context.Context, data []byte) (bool
 	s.moduleCache.reset()
 	s.sharedNonTextMatched = false
 	s.nonTextCache.reset(s.program.nonTextCacheSize)
-	if err := s.populateFixedRegexCache(ctx, data, &s.nonTextCache); err != nil {
-		return false, err
-	}
 	s.regexByteSetCache.reset()
 	s.resetGlobalMatches(len(s.program.Rules))
 	s.resetPrefilterCandidates(len(s.program.sharedLookup))
 	s.resetCandidateRules(len(s.program.Rules))
 
+	// Rule-local matching applies the limit before shared occurrence lists can grow.
+	if s.matchBudgets != nil {
+		return false, ctx.Err()
+	}
+	if err := s.populateFixedRegexCache(ctx, data, &s.nonTextCache); err != nil {
+		return false, err
+	}
 	usesharedAutomaton := shouldUseSharedPatternAutomaton(data, s.program)
 	if !usesharedAutomaton {
 		return false, nil
@@ -291,10 +295,20 @@ func (s *Scanner) populateRuleMatchContext(
 	s.matchCtx.moduleCache = &s.moduleCache
 	s.matchCtx.assertionResults = s.assertionResults
 	s.configureRuleMatchContext(ctx, rule)
+	base := int64(0)
+	if s.blockScan {
+		base = s.blockContext[0].Base
+	}
+	if s.matchBudgets != nil {
+		s.limitRuleMatches(rule, base, nil)
+	}
 	if err := s.addRuleTextMatches(ctx, rule, input.data, input.usesharedAutomaton); err != nil {
 		return err
 	}
 
+	if s.matchLimitErr != nil {
+		return s.matchLimitErr
+	}
 	if !s.prefilterDisabled && input.skipUnmatchedContext && s.hasForbiddenStringMatch(rule, input.usesharedAutomaton) {
 		return nil
 	}
@@ -309,16 +323,14 @@ func (s *Scanner) populateRuleMatchContext(
 			return err
 		}
 	}
-	base := int64(0)
-	if s.blockScan {
-		base = s.blockContext[0].Base
+	if s.matchLimitErr != nil {
+		return s.matchLimitErr
 	}
 	if len(rule.fixedOffsets) != 0 {
 		s.matchCtx.filterFixedOffsets(rule.fixedOffsets, base)
 	}
 	s.matchCtx.normalizeMatches()
 	if s.blockScan {
-		base := s.blockContext[0].Base
 		s.matchCtx.forEachSpanSlice(func(_ string, spans []matchSpan) {
 			for index := range spans {
 				spans[index].Offset += base
