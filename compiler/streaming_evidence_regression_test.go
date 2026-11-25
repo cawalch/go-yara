@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-func TestIssue689_SkipUnmatchedNonTextNotLeakedAcrossScannerReuse(t *testing.T) {
+func TestSkipUnmatchedNonTextNotLeakedAcrossScannerReuse(t *testing.T) {
 	source := `
 rule helper_pad {
 	strings:
@@ -85,7 +85,7 @@ rule gated_regex {
 	}
 }
 
-func TestIssue689_EarlyTerminationDependenciesHeaderEntrypointAndRuleGate(t *testing.T) {
+func TestEarlyTerminationDependenciesHeaderEntrypointAndRuleGate(t *testing.T) {
 	t.Run("negated_rule_dependency", func(t *testing.T) {
 		program := mustCompileStreamingProgram(t, `
 private rule blocker {
@@ -214,7 +214,7 @@ rule allowed {
 	})
 }
 
-func TestIssue689_ScanReaderPrivateStringsAndMatchDataTruncationWithEvidence(t *testing.T) {
+func TestScanReaderPrivateStringsAndMatchDataTruncationWithEvidence(t *testing.T) {
 	program := mustCompileStreamingProgram(t, `
 rule redact_and_capture {
 	strings:
@@ -267,7 +267,7 @@ rule redact_and_capture {
 	}
 }
 
-func TestIssue689_ScanReaderFastScanFullwordTextParity(t *testing.T) {
+func TestScanReaderFastScanFullwordTextParity(t *testing.T) {
 	programs := map[string]string{
 		"single_rule": `
 rule fw {
@@ -329,7 +329,7 @@ rule fw {
 	}
 }
 
-func TestIssue689_MaxStreamingOverlapHexPatterns(t *testing.T) {
+func TestMaxStreamingOverlapHexPatterns(t *testing.T) {
 	t.Run("long_jump_and_nested_alt", func(t *testing.T) {
 		program := mustCompileStreamingProgram(t, `
 rule long_hex {
@@ -394,7 +394,7 @@ rule u {
 	})
 }
 
-func TestIssue689_ScanReaderBoundaryAndZeroLengthCaptureReplay(t *testing.T) {
+func TestScanReaderBoundaryAndZeroLengthCaptureReplay(t *testing.T) {
 	t.Run("ascii_and_wide_word_boundaries", func(t *testing.T) {
 		program := mustCompileStreamingProgram(t, `
 rule boundaries {
@@ -472,7 +472,7 @@ rule zero_len {
 	})
 }
 
-func TestIssue689_BorrowedEvidenceClearsRetainedReferences(t *testing.T) {
+func TestBorrowedEvidenceClearsRetainedReferences(t *testing.T) {
 	program := mustCompileStreamingProgram(t, `
 rule leak {
 	strings:
@@ -549,7 +549,7 @@ func (c *stepCancelContext) Err() error {
 	return nil
 }
 
-func TestIssue689_StreamingProcessorPropagatesPeekError(t *testing.T) {
+func TestStreamingProcessorPropagatesPeekError(t *testing.T) {
 	program := mustCompileStreamingProgram(t, `
 rule hit {
 	strings:
@@ -580,7 +580,7 @@ rule hit {
 	}
 }
 
-func TestIssue689_StreamEarlyTerminationDoesNotTruncateScanOrBlockScanner(t *testing.T) {
+func TestStreamEarlyTerminationDoesNotTruncateScanOrBlockScanner(t *testing.T) {
 	program := mustCompileStreamingProgram(t, `
 rule first {
 	strings:
