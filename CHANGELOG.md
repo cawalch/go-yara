@@ -19,8 +19,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-* Return an integer occurrence count for `#a in (min..max)` using inclusive start offsets. Format 21 preserves the behavior of older compiled artifacts. Recompile source caches to pick up the correction ([#725](https://github.com/cawalch/go-yara/issues/725)).
-
 * A failed global rule suppresses every public match, including other matching global rules. Boolean scans now propagate cancellation observed by the compact prefilter.
 
 * Clarified that `ScanReader` and `MatchesReader` bound input buffering. Retained occurrences, reported match data, and evidence can grow with matches ([#702](https://github.com/cawalch/go-yara/issues/702)).
@@ -29,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * **Multi-rule diagnostics and parser recovery:** Report all collected parser, semantic, and codegen errors in a single compile pass (including `rule %q` context in `semantic.Error.Error()`), continue semantic analysis on valid rules after parse errors, honor recovery on `global rule` declarations, and fix infinite recovery loops in `parseStringDeclarations` and `parseMetaDeclarations` ([#638](https://github.com/cawalch/go-yara/pull/638), [#640](https://github.com/cawalch/go-yara/pull/640), [#644](https://github.com/cawalch/go-yara/pull/644); closes [#632](https://github.com/cawalch/go-yara/issues/632), [#636](https://github.com/cawalch/go-yara/issues/636), [#641](https://github.com/cawalch/go-yara/issues/641)).
 
 * Enforce the configured per-rule occurrence limit across byte, reader, and block scans, including error or callback notification on overflow.
+
+* Return an integer occurrence count for `#a in (min..max)` using inclusive start offsets. Format 21 preserves the behavior of older compiled artifacts. Recompile source caches to pick up the correction ([#725](https://github.com/cawalch/go-yara/issues/725)).
 
 ## [v0.11.1] - 2026-11-19
 
