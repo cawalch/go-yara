@@ -19,11 +19,25 @@ import (
 	pcap "github.com/cawalch/go-pcap"
 )
 
-// Each names entry makes a TLS flow with SNI service.example.test. A nil
-// entry omits the server flight, as in a partial capture.
 func pcapNameFixture(t *testing.T, names ...[]string) []byte {
 	t.Helper()
+	// Put the TLS records beyond the scanner's 64 KiB retained header.
+	noise := pcapTCPPacket(41000, false, make([]byte, 33000))
+	return pcapNameFixtureWithNoise(t, pcapFixtureNoise{frame: noise, count: 2}, names...)
+}
+
+type pcapFixtureNoise struct {
+	frame []byte
+	count int
+}
+
+// Each names entry makes a TLS flow with SNI service.example.test. A nil
+// entry omits the server flight, as in a partial capture.
+func pcapNameFixtureWithNoise(t *testing.T, noise pcapFixtureNoise, names ...[]string) []byte {
+	t.Helper()
 	var buf bytes.Buffer
+	// Classic PCAP adds a 16-byte header to each captured frame.
+	buf.Grow(noise.count*(len(noise.frame)+16) + 4096)
 	w, err := pcap.NewPCAPWriter(&buf, pcap.LinkTypeIPv4, 65535)
 	if err != nil {
 		t.Fatal(err)
@@ -35,12 +49,13 @@ func pcapNameFixture(t *testing.T, names ...[]string) []byte {
 		}
 	}
 
-	// Flow zero is unrelated traffic. Place all TLS records beyond the
-	// scanner's 64 KiB retained header to exercise actual random access.
-	for seq := uint32(1); seq < 66001; seq += 33000 {
-		pkt := pcapTCPPacket(41000, false, make([]byte, 33000))
-		binary.BigEndian.PutUint32(pkt[24:28], seq)
-		write(pkt)
+	// Flow zero is unrelated traffic. Advance sequence numbers in TCP
+	// fixtures so the repeated payload tests selective reads of a long flow.
+	for i := range noise.count {
+		if noise.frame[9] == pcap.IPProtoTCP {
+			binary.BigEndian.PutUint32(noise.frame[24:28], uint32(1+i*(len(noise.frame)-40)))
+		}
+		write(noise.frame)
 	}
 
 	const host = "service.example.test"
@@ -103,12 +118,86 @@ func pcapTCPPacket(port uint16, server bool, payload []byte) []byte {
 
 type pcapCountingReader struct {
 	*bytes.Reader
-	reads int
+	reads     int
+	bytesRead int
 }
 
 func (r *pcapCountingReader) ReadAt(b []byte, off int64) (int, error) {
 	r.reads++
-	return r.Reader.ReadAt(b, off)
+	n, err := r.Reader.ReadAt(b, off)
+	r.bytesRead += n
+	return n, err
+}
+
+func TestPCAPSeekableLargeCapture(t *testing.T) {
+	const source = `import "pcap"
+rule wildcard { condition: pcap.tls[0].flow_index == 1 and pcap.tls[0].server_name_match }
+rule unavailable { condition: not defined pcap.tls }`
+	program, err := NewCompiler().CompileSource(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scanner := program.NewScanner()
+	defer scanner.Close()
+
+	noise := pcapTCPPacket(41000, false, make([]byte, 60<<10))
+	data := pcapNameFixtureWithNoise(t, pcapFixtureNoise{
+		frame: noise,
+		count: pcap.MaxReaderAtScanBytes/len(noise) + 1,
+	}, []string{"*.example.test"})
+	if len(data) <= pcap.MaxReaderAtScanBytes {
+		t.Fatalf("fixture bytes=%d, want more than %d", len(data), pcap.MaxReaderAtScanBytes)
+	}
+	reader := &pcapCountingReader{Reader: bytes.NewReader(data)}
+	result, err := scanner.ScanReader(reader)
+	if err != nil || !result.RuleResults["wildcard"] || result.RuleResults["unavailable"] {
+		t.Fatalf("seekable large capture: result=%v, err=%v", result, err)
+	}
+	t.Logf("large capture bytes=%d, PCAP random bytes=%d in %d reads", len(data), reader.bytesRead, reader.reads)
+	if reader.bytesRead == 0 || reader.bytesRead > 1<<20 {
+		t.Fatalf("PCAP random bytes=%d, want between 1 and 1 MiB", reader.bytesRead)
+	}
+
+	result, err = scanner.Scan(data)
+	if err != nil || result.RuleResults["wildcard"] || !result.RuleResults["unavailable"] {
+		t.Fatalf("oversized slice capture: result=%v, err=%v", result, err)
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	canceled := &pcapCancelOnReadAt{Reader: bytes.NewReader(data), onReadAt: cancel}
+	if _, err := scanner.ScanReaderWithContext(ctx, canceled); !errors.Is(err, context.Canceled) || canceled.reads != 1 {
+		t.Fatalf("large capture cancellation: reads=%d, err=%v", canceled.reads, err)
+	}
+}
+
+func TestPCAPSeekableReadBudget(t *testing.T) {
+	// Header and 256-byte packet prefix reads alone exceed the PCAP budget.
+	// Use UDP so the fixture exercises I/O limits before TCP reassembly limits.
+	noise := pcapTCPPacket(41000, false, make([]byte, 256-40))
+	noise[9] = pcap.IPProtoUDP
+	binary.BigEndian.PutUint16(noise[24:26], uint16(len(noise)-20))
+	data := pcapNameFixtureWithNoise(t, pcapFixtureNoise{
+		frame: noise,
+		count: pcap.MaxReaderAtScanBytes/(16+len(noise)) + 1,
+	}, []string{"*.example.test"})
+	reader := bytes.NewReader(data)
+	capture, err := pcap.NewFromReaderAt(reader, reader.Size())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := capture.TLSFromReaderAt(reader); !errors.Is(err, pcap.ErrPacketLimit) {
+		t.Fatalf("go-pcap scan budget: err=%v, want ErrPacketLimit", err)
+	}
+
+	program, err := NewCompiler().CompileSource(`import "pcap" rule unavailable { condition: not defined pcap.tls }`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := program.ScanReader(reader)
+	if err != nil || !result.RuleResults["unavailable"] {
+		t.Fatalf("PCAP budget exhaustion: result=%v, err=%v", result, err)
+	}
 }
 
 func TestPCAPNameRules(t *testing.T) {

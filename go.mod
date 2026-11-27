@@ -3,7 +3,7 @@ module github.com/cawalch/go-yara
 go 1.27.0
 
 require (
-	github.com/cawalch/go-pcap v0.1.2-0.20261124023805-b6e9c60b5813
+	github.com/cawalch/go-pcap v0.2.1-0.20261127032101-1d44b70897c2
 	github.com/cawalch/go-pe v0.2.0
 	github.com/stretchr/testify v1.12.1
 	golang.org/x/tools v0.53.0
