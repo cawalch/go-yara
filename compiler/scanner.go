@@ -722,16 +722,24 @@ type globalMatchEntry struct {
 	ruleStringIdx int32
 }
 
+type nonTextCacheState uint8
+
+const (
+	nonTextCacheEmpty nonTextCacheState = iota
+	nonTextCacheComplete
+	nonTextCacheFirstMatch
+)
+
 type nonTextMatchCache struct {
 	matches [][]matchSpan
-	ready   []bool
+	state   []nonTextCacheState
 	touched []int
 }
 
 func (cache *nonTextMatchCache) reset(size int) {
-	if cap(cache.matches) < size || cap(cache.ready) < size {
+	if cap(cache.matches) < size || cap(cache.state) < size {
 		cache.matches = make([][]matchSpan, size)
-		cache.ready = make([]bool, size)
+		cache.state = make([]nonTextCacheState, size)
 		cache.touched = cache.touched[:0]
 		return
 	}
@@ -739,29 +747,41 @@ func (cache *nonTextMatchCache) reset(size int) {
 		if index >= 0 && index < len(cache.matches) {
 			cache.matches[index] = cache.matches[index][:0]
 		}
-		if index >= 0 && index < len(cache.ready) {
-			cache.ready[index] = false
+		if index >= 0 && index < len(cache.state) {
+			cache.state[index] = nonTextCacheEmpty
 		}
 	}
 	cache.matches = cache.matches[:size]
-	cache.ready = cache.ready[:size]
+	cache.state = cache.state[:size]
 	cache.touched = cache.touched[:0]
 }
 
 func (cache *nonTextMatchCache) get(index int) ([]matchSpan, bool) {
-	if index < 0 || index >= len(cache.ready) || !cache.ready[index] {
+	return cache.getForLimit(index, false)
+}
+
+func (cache *nonTextMatchCache) getForLimit(index int, firstOnly bool) ([]matchSpan, bool) {
+	if index < 0 || index >= len(cache.state) {
 		return nil, false
 	}
-	return cache.matches[index], true
+	state := cache.state[index]
+	if state == nonTextCacheComplete || (firstOnly && state == nonTextCacheFirstMatch) {
+		return cache.matches[index], true
+	}
+	return nil, false
 }
 
 func (cache *nonTextMatchCache) set(index int, matches []matchSpan) {
-	if index < 0 || index >= len(cache.ready) {
+	cache.setWithState(index, matches, nonTextCacheComplete)
+}
+
+func (cache *nonTextMatchCache) setWithState(index int, matches []matchSpan, state nonTextCacheState) {
+	if index < 0 || index >= len(cache.state) {
 		return
 	}
-	if !cache.ready[index] {
+	if cache.state[index] == nonTextCacheEmpty {
 		cache.touched = append(cache.touched, index)
 	}
 	cache.matches[index] = matches
-	cache.ready[index] = true
+	cache.state[index] = state
 }

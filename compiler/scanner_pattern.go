@@ -16,10 +16,20 @@ func (s *Scanner) getNonTextMatches(
 	index int,
 	usesharedAutomaton bool,
 ) ([]matchSpan, bool) {
-	if matches, ready := cache.get(index); ready {
+	return s.getNonTextMatchesForLimit(cache, index, usesharedAutomaton, false)
+}
+
+func (s *Scanner) getRuleNonTextMatches(cache *nonTextMatchCache, index int, useShared bool) ([]matchSpan, bool) {
+	firstOnly := s.matchCtx.maxMatchesPerPattern == 1 && s.matchCtx.matchFilter == nil
+	return s.getNonTextMatchesForLimit(cache, index, useShared, firstOnly)
+}
+
+//nolint:revive // argument-limit: cache limits stay explicit on the hot path
+func (s *Scanner) getNonTextMatchesForLimit(cache *nonTextMatchCache, index int, useShared, firstOnly bool) ([]matchSpan, bool) {
+	if matches, ready := cache.getForLimit(index, firstOnly); ready {
 		return matches, true
 	}
-	if usesharedAutomaton && index >= 0 && index < len(s.program.sharedNonTextCaches) &&
+	if useShared && index >= 0 && index < len(s.program.sharedNonTextCaches) &&
 		s.program.sharedNonTextCaches[index] {
 		return nil, true
 	}
@@ -427,7 +437,7 @@ func (s *Scanner) addLocalNonTextMatches(
 		}
 		entry := &rule.localRegexes[i]
 		hasMorePatterns := i+1 < len(rule.localRegexes) || len(rule.localHexes) != 0
-		if matches, ok := s.getNonTextMatches(cache, entry.pattern.cacheIndex, usesharedAutomaton); ok {
+		if matches, ok := s.getRuleNonTextMatches(cache, entry.pattern.cacheIndex, usesharedAutomaton); ok {
 			s.matchCtx.addMatchSpansSlot(entry.slot, entry.id, matches)
 			if entry.wideAndASCII {
 				s.matchCtx.normalizeRegexEncodingMatchesSlot(entry.slot, entry.id)
@@ -449,7 +459,7 @@ func (s *Scanner) addLocalNonTextMatches(
 		}
 		entry := &rule.localHexes[i]
 		if entry.pattern != nil {
-			if matches, ok := s.getNonTextMatches(cache, entry.pattern.cacheIndex, usesharedAutomaton); ok {
+			if matches, ok := s.getRuleNonTextMatches(cache, entry.pattern.cacheIndex, usesharedAutomaton); ok {
 				s.matchCtx.addMatchSpansSlot(entry.slot, entry.id, matches)
 				if canShortCircuit && i+1 < len(rule.localHexes) && len(s.matchCtx.spansForSlot(entry.slot, entry.id)) > 0 && s.isRuleConditionSatisfied(rule) {
 					return nil
@@ -497,7 +507,7 @@ func (s *Scanner) addLocalNonTextMatchesFromMaps(
 			return ctx.Err()
 		}
 		modifiers := rule.StringModifiers[id]
-		if matches, ok := s.getNonTextMatches(cache, regexInfo.cacheIndex, usesharedAutomaton); ok {
+		if matches, ok := s.getRuleNonTextMatches(cache, regexInfo.cacheIndex, usesharedAutomaton); ok {
 			addCachedMatches(s.matchCtx, id, matches)
 			if hasModifier(modifiers, ast.StringModifierWide) && hasModifier(modifiers, ast.StringModifierASCII) {
 				s.matchCtx.normalizeRegexEncodingMatches(id)
@@ -518,7 +528,7 @@ func (s *Scanner) addLocalNonTextMatchesFromMaps(
 			return ctx.Err()
 		}
 		if pattern != nil {
-			if matches, ok := s.getNonTextMatches(cache, pattern.cacheIndex, usesharedAutomaton); ok {
+			if matches, ok := s.getRuleNonTextMatches(cache, pattern.cacheIndex, usesharedAutomaton); ok {
 				addCachedMatches(s.matchCtx, id, matches)
 				if canShortCircuit && len(s.matchCtx.spansFor(id)) > 0 && s.isRuleConditionSatisfied(rule) {
 					return nil
@@ -553,15 +563,25 @@ func (s *Scanner) addLocalNonTextMatchesFromMaps(
 
 //nolint:revive // argument-limit: hot-path helper avoids string-keyed map lookup
 func (s *Scanner) storeNonTextCacheSlot(cache *nonTextMatchCache, cacheIndex, slot int, id string) {
-	if s.matchCtx.matchFilter == nil && s.matchCtx.maxMatchesPerPattern <= 0 && cacheIndex >= 0 && cacheIndex < len(cache.matches) {
-		dst := cache.matches[cacheIndex][:0]
-		if slot >= 0 {
-			dst = append(dst, s.matchCtx.spansForSlot(slot, id)...)
-		} else {
-			dst = append(dst, s.matchCtx.spansFor(id)...)
-		}
-		cache.set(cacheIndex, dst)
+	if cacheIndex < 0 || cacheIndex >= len(cache.matches) || s.matchCtx.matchFilter != nil || scanCanceled(s.matchCtx.cancelDone) {
+		return
 	}
+	var spans []matchSpan
+	if slot < 0 {
+		spans = s.matchCtx.spansFor(id)
+	} else {
+		spans = s.matchCtx.spansForSlot(slot, id)
+	}
+	state := nonTextCacheComplete
+	// An empty result is complete even with a cap. A retained span at the
+	// cap may hide later occurrences that another rule needs.
+	if limit := s.matchCtx.maxMatchesPerPattern; limit > 0 && len(spans) >= limit {
+		if limit != 1 {
+			return
+		}
+		state = nonTextCacheFirstMatch
+	}
+	cache.setWithState(cacheIndex, append(cache.matches[cacheIndex][:0], spans...), state)
 }
 
 func addCachedMatches(ctx *MatchContext, id string, matches []matchSpan) {

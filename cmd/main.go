@@ -375,13 +375,18 @@ func buildScannerOptions(args *commandArgs) []compiler.ScannerOption {
 		opts = append(opts, compiler.WithTagsFilter([]string{args.tagFilter}))
 	}
 	if args.fastScan {
-		opts = append(opts, compiler.WithFastScan(), compiler.WithoutMatches())
+		opts = append(opts, compiler.WithFastScan())
 	}
 	if args.maxMatchSpan > 0 {
 		opts = append(opts, compiler.WithMaxMatchSpan(args.maxMatchSpan))
 	}
-	if (args.printStrings || args.jsonOutput) && !args.fastScan {
+	if !args.negate {
+		opts = append(opts, compiler.WithoutRuleResults())
+	}
+	if (args.printStrings || args.jsonOutput) && !args.fastScan && !args.countOnly && !args.negate {
 		opts = append(opts, compiler.WithMatchData(1024))
+	} else {
+		opts = append(opts, compiler.WithoutMatches())
 	}
 	return opts
 }
@@ -401,89 +406,79 @@ func runStandardScan(content string, args *commandArgs) error {
 }
 
 func scanTargets(compiledProgram *compiler.CompiledProgram, targets []string, args *commandArgs) error {
+	if len(targets) == 0 {
+		return nil
+	}
 	numWorkers := args.threads
 	if numWorkers <= 0 {
 		numWorkers = runtime.NumCPU()
 	}
-	if numWorkers > len(targets) {
-		numWorkers = len(targets)
-	}
-	if numWorkers <= 0 {
-		numWorkers = 1
-	}
+	numWorkers = min(numWorkers, len(targets))
 
 	scannerOptions := buildScannerOptions(args)
-	results := make([]fileScanResult, len(targets))
-
-	jobs := make(chan fileJob, numWorkers*2)
-	go func() {
-		for i, t := range targets {
-			jobs <- fileJob{idx: i, path: t}
-		}
-		close(jobs)
-	}()
-
-	var firstErr error
-	var errMu sync.Mutex
+	// Reuse each result slot only after its previous target has been emitted.
+	// This bounds retention even when the first target takes the longest.
+	window := numWorkers + min(numWorkers, len(targets)-numWorkers)
+	results := make([]chan fileScanResult, window)
+	jobs := make(chan fileJob, window)
 	var wg sync.WaitGroup
-
-	for w := 0; w < numWorkers; w++ {
+	defer func() {
+		close(jobs)
+		wg.Wait()
+	}()
+	for range numWorkers {
 		wg.Go(func() {
 			scanner := compiler.NewScanner(compiledProgram, scannerOptions...)
 			defer scanner.Close()
 
 			for job := range jobs {
-				var data []byte
-				var cleanup func()
-				var err error
-
-				info, statErr := os.Stat(job.path)
-				if statErr == nil && info.Mode().IsRegular() && info.Size() >= fs.MinMmapFileSize {
-					data, cleanup, err = fs.MapFile(job.path)
-				}
-				if data == nil || err != nil {
-					data, err = os.ReadFile(job.path) // #nosec G304,G703 - user specified target
-					cleanup = func() {}
-				}
-				if err != nil {
-					errMu.Lock()
-					if firstErr == nil {
-						firstErr = fmt.Errorf("reading target %s: %w", job.path, err)
-					}
-					errMu.Unlock()
-					continue
-				}
-
-				res, err := scanner.Scan(data)
-				cleanup()
-				if err != nil {
-					errMu.Lock()
-					if firstErr == nil {
-						firstErr = fmt.Errorf("scanning target %s: %w", job.path, err)
-					}
-					errMu.Unlock()
-					continue
-				}
-
-				results[job.idx] = fileScanResult{target: job.path, res: res}
+				job.result <- scanTarget(scanner, job.path)
 			}
 		})
 	}
-	wg.Wait()
-
-	if firstErr != nil {
-		return firstErr
+	for i := range results {
+		results[i] = make(chan fileScanResult, 1)
+		jobs <- fileJob{path: targets[i], result: results[i]}
 	}
 
 	isMulti := len(targets) > 1
-	for i := range results {
-		if results[i].res != nil {
-			if err := outputFileResult(compiledProgram, results[i], args, isMulti); err != nil {
-				return err
-			}
+	for i := range targets {
+		slot := results[i%window]
+		result := <-slot
+		if result.err != nil {
+			return result.err
+		}
+		if err := outputFileResult(compiledProgram, result, args, isMulti); err != nil {
+			return err
+		}
+		if i+window < len(targets) {
+			jobs <- fileJob{path: targets[i+window], result: slot}
 		}
 	}
 	return nil
+}
+
+func scanTarget(scanner *compiler.Scanner, path string) fileScanResult {
+	var data []byte
+	var cleanup func()
+	var err error
+	info, statErr := os.Stat(path)
+	if statErr == nil && info.Mode().IsRegular() && info.Size() >= fs.MinMmapFileSize {
+		data, cleanup, err = fs.MapFile(path)
+	}
+	if data == nil || err != nil {
+		data, err = os.ReadFile(path) // #nosec G304,G703 - user specified target
+		if err != nil {
+			return fileScanResult{err: fmt.Errorf("reading target %s: %w", path, err)}
+		}
+	} else {
+		defer cleanup()
+	}
+	res, err := scanner.Scan(data)
+	if err != nil {
+		return fileScanResult{err: fmt.Errorf("scanning target %s: %w", path, err)}
+	}
+	return fileScanResult{target: path, res: res}
 }
 
 func readOrMapDataFile(dataFile string) ([]byte, func(), error) {

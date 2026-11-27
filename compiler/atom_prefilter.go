@@ -146,12 +146,17 @@ type prefilterStringInfo struct {
 func buildPrefilterStrings(rule *CompiledRule) {
 	infos := make([]prefilterStringInfo, len(rule.IndexToStringID))
 	rule.hasUnusedText = false
+	hasLiveText := false
 	for i, identifier := range rule.IndexToStringID {
 		infos[i] = resolvePrefilterString(rule, identifier)
 		if infos[i].class == prefilterStringDead && rule.StringKinds[identifier] == StringKindText {
 			rule.hasUnusedText = true
 		}
+		if infos[i].class == prefilterStringText {
+			hasLiveText = true
+		}
 	}
+	rule.onlyUnusedText = rule.hasUnusedText && !hasLiveText
 	rule.prefilterStrings = infos
 	buildLocalNonTextEntries(rule)
 }

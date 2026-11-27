@@ -2,9 +2,53 @@ package compiler
 
 import (
 	"bytes"
+	"fmt"
 	"math"
 	"testing"
 )
+
+func TestFastScanNonTextCachePreservesFullOccurrences(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		pattern string
+		match   []byte
+	}{
+		{"regex", `/cmd_run_[0-9a-f]{8}/`, []byte("cmd_run_deadbeef")},
+		{"hex", `{ 4D 5A ?? ?? 90 00 }`, []byte{0x4d, 0x5a, 1, 2, 0x90, 0x00}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			source := fmt.Sprintf(`
+rule first { strings: $a = %[1]s condition: $a }
+rule second { strings: $b = %[1]s condition: $b }
+rule occurrences { strings: $c = %[1]s condition: #c == 2 and @c[2] == %[2]d }
+`, tc.pattern, len(tc.match)+1)
+			program, err := NewCompiler().CompileSource(source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			data := bytes.Join([][]byte{tc.match, tc.match}, []byte{' '})
+			if shouldUseSharedPatternAutomaton(data, program) || shouldUseFixedRegexDispatch(data, program.fixedRegexScan) {
+				t.Fatal("test requires local pattern matching")
+			}
+			scanner := program.NewScanner(WithFastScan())
+			defer scanner.Close()
+			for _, sample := range [][]byte{data, []byte("no occurrences"), data} {
+				result, err := scanner.Scan(sample)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if bytes.Equal(sample, data) {
+					if len(result.MatchedRules) != 3 || len(result.Matches["first"]["$a"]) != 1 ||
+						len(result.Matches["second"]["$b"]) != 1 || len(result.Matches["occurrences"]["$c"]) != 2 {
+						t.Fatalf("unexpected results after sharing the pattern: %+v", result)
+					}
+				} else if len(result.MatchedRules) != 0 {
+					t.Fatalf("cache retained matches from the previous input: %+v", result)
+				}
+			}
+		})
+	}
+}
 
 // Residual gremlins survivors for scanner_pattern.go are classified at the
 // bottom of this file per the #311 acceptance criteria.

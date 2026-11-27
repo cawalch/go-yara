@@ -281,8 +281,15 @@ func (s *Scanner) configureRuleMatchContext(ctx context.Context, rule *CompiledR
 }
 
 //nolint:revive // argument-limit: shared rule text match dispatch
-func (s *Scanner) addRuleTextMatches(ctx context.Context, rule *CompiledRule, data []byte, useShared bool) error {
-	if useShared {
+func (s *Scanner) addRuleTextMatches(ctx context.Context, rule *CompiledRule, data []byte, useShared, conditionOnly bool) error {
+	if rule.automaton == nil {
+		return nil
+	}
+	conditionOnly = conditionOnly || s.omitMatches
+	if conditionOnly && rule.onlyUnusedText && s.matchBudgets == nil {
+		return nil
+	}
+	if useShared && (conditionOnly || !rule.hasUnusedText) {
 		return s.addStaticMatchesInt(ctx, rule, data, s.globalMatches[rule.Index])
 	}
 	return s.addLocalTextMatches(ctx, rule, data)
@@ -312,17 +319,8 @@ func (s *Scanner) populateRuleMatchContext(
 	if s.matchBudgets != nil {
 		s.limitRuleMatches(rule, base)
 	}
-	if rule.automaton != nil {
-		useSharedText := input.usesharedAutomaton && (input.booleanMatchOnly || !rule.hasUnusedText || s.omitMatches)
-		var textErr error
-		if useSharedText {
-			textErr = s.addStaticMatchesInt(ctx, rule, input.data, s.globalMatches[rule.Index])
-		} else {
-			textErr = s.addLocalTextMatches(ctx, rule, input.data)
-		}
-		if textErr != nil {
-			return textErr
-		}
+	if err := s.addRuleTextMatches(ctx, rule, input.data, input.usesharedAutomaton, input.booleanMatchOnly); err != nil {
+		return err
 	}
 
 	if s.matchLimitErr != nil {
