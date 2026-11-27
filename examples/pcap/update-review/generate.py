@@ -1,4 +1,4 @@
-"""Write two synthetic Ethernet PCAPs for the update rule regression."""
+"""Write synthetic Ethernet PCAPs for the update rule and entity regressions."""
 
 from pathlib import Path
 from struct import pack
@@ -42,9 +42,15 @@ def dns():
     return [udp(CLIENT, RESOLVER, 42000, 53, query), udp(RESOLVER, CLIENT, 53, 42000, answer)]
 
 
-def exchange(port, target, body):
-    request = f"GET {target} HTTP/1.1\r\nHost: {HOST}\r\n\r\n".encode()
-    response = f"HTTP/1.1 200 OK\r\nContent-Length: {len(body)}\r\n\r\n".encode() + body
+def exchange(port, target, body, byte_range=None):
+    request = f"GET {target} HTTP/1.1\r\nHost: {HOST}\r\n"
+    status = "200 OK\r\n"
+    if byte_range is not None:
+        start, end, size = byte_range
+        request += f"Range: bytes={start}-{end}\r\n"
+        status = f"206 Partial Content\r\nContent-Range: bytes {start}-{end}/{size}\r\n"
+    request = (request + "\r\n").encode()
+    response = f"HTTP/1.1 {status}Content-Length: {len(body)}\r\n\r\n".encode() + body
     return [
         tcp(CLIENT, PROXY, port, 80, 100, 0, 0x02),
         tcp(PROXY, CLIENT, 80, port, 500, 101, 0x12),
@@ -66,3 +72,8 @@ good = b"artifact_id=APPROVED-BUILD-042\n"
 write("positive.pcap", dns() + exchange(41000, "/updates/client", marker))
 write("control.pcap", dns() + exchange(41000, "/updates/client", good)
       + exchange(41001, "/diagnostics", marker))
+write("entities.pcap",
+      exchange(41000, "/updates/client", marker)
+      + exchange(41001, "/diagnostics", b"diagnostics-only\n")
+      + exchange(41002, "/updates/range", marker, (3, len(marker) + 2, len(marker) + 3))
+      + exchange(41003, "/updates/unseen", b"")[:-1])

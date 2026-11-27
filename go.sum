@@ -1,5 +1,5 @@
-github.com/cawalch/go-pcap v0.2.1-0.20261127132816-9a10f5306155 h1:x85yMMK8QWlpdcbdD8BWpRt87/sRSBYu6MT2bArcXvs=
-github.com/cawalch/go-pcap v0.2.1-0.20261127132816-9a10f5306155/go.mod h1:oHKdU5VdhATGAsmALv2KO6BXJKrzFjMcKq6sDwCmxCo=
+github.com/cawalch/go-pcap v0.2.1-0.20261127161534-e7e1ceb4ac70 h1:BssEQruw0q/Tza0iE83V6HJiu5bL9BeG2pwS+pI/ky4=
+github.com/cawalch/go-pcap v0.2.1-0.20261127161534-e7e1ceb4ac70/go.mod h1:oHKdU5VdhATGAsmALv2KO6BXJKrzFjMcKq6sDwCmxCo=
 github.com/cawalch/go-pe v0.2.0 h1:6zsv3db7z2A03SXC+H6xCuyHYvx/AIcF9rRDNq3O6Lo=
 github.com/cawalch/go-pe v0.2.0/go.mod h1:EoVGEYn1l0W480qiRMsr++ZaaqHabaHBEeMwu1BH3MU=
 github.com/google/go-cmp v0.6.0 h1:ofyhxvXcZhMsU5ulbFiLKl/XBFqE1GSq7atu8tAmTRI=

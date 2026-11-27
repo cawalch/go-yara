@@ -45,14 +45,14 @@ def prepare(ref, check_only):
         # Unreleased capture examples are explicitly marked on the modules page.
         # They belong to HEAD, not to the stable-release reference build.
         if ref == "HEAD":
-            capture_outputs = {
-                "dns-failure": 'required_service_dns_failure name="api.example" resolver=192.0.2.53:53 rcode=3 query_frame=1 reply_frame=2\nrequired_service_dns_failure name="api.example" resolver=192.0.2.53:53 rcode=2 query_frame=3 reply_frame=4\n',
-                "http-hunts": 'unexpected_server_webhook_post frame=2 time_ns=1700000000002469134 flow=0 stream=0 source=192.0.2.10 POST webhook.site\nunapproved_decoy_route_access frame=11 time_ns=1700000000013580237 flow=5 stream=3 source=192.0.2.12 GET app.example\n',
+            capture_examples = {
+                "dns-failure": ("testdata/service.pcap", 'required_service_dns_failure name="api.example" resolver=192.0.2.53:53 rcode=3 query_frame=1 reply_frame=2\nrequired_service_dns_failure name="api.example" resolver=192.0.2.53:53 rcode=2 query_frame=3 reply_frame=4\n'),
+                "http-hunts": ("testdata/hunts.pcap", 'unexpected_server_webhook_post frame=2 time_ns=1700000000002469134 flow=0 stream=0 source=192.0.2.10 POST webhook.site\nunapproved_decoy_route_access frame=11 time_ns=1700000000013580237 flow=5 stream=3 source=192.0.2.12 GET app.example\n'),
+                "update-review": ("entities.pcap", (source / "examples/pcap/update-review/entity-output.txt").read_text()),
             }
-            for name, expected in capture_outputs.items():
-                fixture = "service.pcap" if name == "dns-failure" else "hunts.pcap"
+            for name, (fixture, expected) in capture_examples.items():
                 output = run(["go", "run", f"./examples/pcap/{name}",
-                              f"./examples/pcap/{name}/testdata/{fixture}"], source, env=env)
+                              f"./examples/pcap/{name}/{fixture}"], source, env=env)
                 if output != expected:
                     raise ValueError(f"HEAD: {name}: expected {expected!r}, got {output!r}")
                 print(f"HEAD: {name} capture example passed", flush=True)

@@ -5,6 +5,7 @@ description: Look up go-yara module signatures, understand range arguments and u
 
 import { Code } from '@astrojs/starlight/components';
 import PCAPReview from '../../components/PCAPReview.astro';
+import entityOutput from '../../../../examples/pcap/update-review/entity-output.txt?raw';
 import customExample from '../../../examples/custom-module/main.go?raw';
 import customExampleOutput from '../../../examples/custom-module/output.txt?raw';
 import ModuleTable from '../../components/ModuleTable.astro';
@@ -43,6 +44,18 @@ go run ./cmd/compare -baseline "$fixture/baseline.yar" -candidate "$fixture/cand
 ```
 
 The JSON report contains added and removed rule names, fixture digests, and compiled-rule digests. Capture packet indices locate the observed exchange. Decoded body bytes have their own offsets. [Packet capture fields](https://github.com/cawalch/go-yara/blob/main/docs/pcap-module.md)
+
+### Scan a captured response with a file rule
+
+From a source checkout, use `Scanner.ScanHTTP1Response` to run a compiled file rule on an artifact from `HTTP1Transaction.ResponseArtifact()`. This example uses one scanner across four responses. The rule checks the decoded entity's size and the identifier's offset and occurrence count.
+
+```sh
+go run ./examples/pcap/update-review examples/pcap/update-review/entities.pcap
+```
+
+<Code code={entityOutput} lang="text" title="Output" />
+
+The `206` carries the same 30 bytes as the complete response. Its `Content-Range` covers bytes 3–32 of a 33-byte representation. The adapter skips partial and unavailable artifacts. The match offset counts decoded entity bytes. `response_packet` is the zero-based index in the original capture.
 
 ### Capture fields and coverage
 
