@@ -1,0 +1,4 @@
+/updates/client bytes=30 rule=revoked_update_entity entity_offset=12 response_packet=3
+/diagnostics bytes=17 inspected, no match
+/updates/range bytes=30 partial, skipped
+/updates/unseen bytes=0 unavailable, skipped
