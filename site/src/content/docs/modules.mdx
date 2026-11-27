@@ -45,6 +45,18 @@ go run ./cmd/compare -baseline "$fixture/baseline.yar" -candidate "$fixture/cand
 
 The JSON report contains added and removed rule names, fixture digests, and compiled-rule digests. Capture packet indices locate the observed exchange. Decoded body bytes have their own offsets. [Packet capture fields](https://github.com/cawalch/go-yara/blob/main/docs/pcap-module.md)
 
+Use the versioned manifest to also check which exchange supports a match. Each fixture pins its capture digest and names a public rule in both revisions.
+
+```sh
+go run ./cmd/compare -baseline "$fixture/baseline.yar" -candidate "$fixture/candidate.yar" \
+  -expect "$fixture/corpus.json" positive="$fixture/positive.pcap" control="$fixture/control.pcap" \
+  split="$fixture/positive-split.pcap" unavailable="$fixture/unavailable.pcap"
+```
+
+The control removes `revoked_update` from the candidate. The split request has the same decoded evidence as the positive capture and a different response packet index. The clipped response is unobservable. The built comparator exits with `2` for a mismatch and `1` for an execution failure.
+
+`http` mode tests each complete response row in isolation within the original capture context. A rule that matches with no rows, or requires multiple rows, can report a match with an empty evidence list. `artifact` mode runs file rules on complete decoded responses and compares entity-relative match spans. For external variables, supply a non-secret `-binding-revision` alongside `-externals`.
+
 ### Scan a captured response with a file rule
 
 From a source checkout, use `Scanner.ScanHTTP1Response` to run a compiled file rule on an artifact from `HTTP1Transaction.ResponseArtifact()`. This example uses one scanner across four responses. The rule checks the decoded entity's size and the identifier's offset and occurrence count.

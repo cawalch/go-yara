@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "fixtures": [
+    {
+      "id": "positive",
+      "sha256": "9a4e5bd4b1cd95557f4ebe3a6d39a0dc0470b11f5507e21b6efe293ce0662887",
+      "rule": "revoked_update",
+      "mode": "http",
+      "baseline": {
+        "outcome": "match",
+        "evidence": [{"request_packet": 4, "request_offset": 0, "response_packet": 5, "response_offset": 0}]
+      },
+      "candidate": {
+        "outcome": "match",
+        "evidence": [{"request_packet": 4, "request_offset": 0, "response_packet": 5, "response_offset": 0}]
+      }
+    },
+    {
+      "id": "split",
+      "sha256": "d7c34ea9a93c122470d7a58c8007ee2432feef9880cc9525beeea64f3e685af9",
+      "rule": "revoked_update",
+      "mode": "http",
+      "equivalent_to": "positive",
+      "baseline": {
+        "outcome": "match",
+        "evidence": [{"request_packet": 4, "request_offset": 0, "response_packet": 6, "response_offset": 0}]
+      },
+      "candidate": {
+        "outcome": "match",
+        "evidence": [{"request_packet": 4, "request_offset": 0, "response_packet": 6, "response_offset": 0}]
+      }
+    },
+    {
+      "id": "control",
+      "sha256": "ba86bb73ff940afff49c403bdceb00e44d46cd5d49dff13733621091623e1496",
+      "rule": "revoked_update",
+      "mode": "http",
+      "baseline": {"outcome": "match"},
+      "candidate": {"outcome": "complete_negative"}
+    },
+    {
+      "id": "unavailable",
+      "sha256": "bb8e549512bdd5b2c725855675a8737fec0da378892cb503b22ae68cd5cf82e3",
+      "rule": "revoked_update",
+      "mode": "http",
+      "baseline": {"outcome": "unobservable"},
+      "candidate": {"outcome": "unobservable"}
+    }
+  ]
+}
