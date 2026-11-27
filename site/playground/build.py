@@ -88,12 +88,17 @@ def build():
         revision = subprocess.check_output(
             ['git', 'rev-parse', '--short=12', 'HEAD'], cwd=SITE.parent, text=True
         ).strip()
-        build_engine(SITE.parent, temp / 'pcap.wasm', f'preview {revision}', limits, env, public, 'pcap-preview.json')
+        build_engine(SITE.parent, temp / 'pcap.wasm', f'preview {revision}', limits, env, public, 'pcap-preview.json', preview=True)
+        subprocess.run([
+            'python3', 'scripts/pcap-parity.py', '--native-only',
+            '--output', str(SITE / 'src/generated/pcap-references.json'),
+        ], cwd=SITE.parent, env=env, check=True)
 
 
-def build_engine(source, binary, version, limits, env, public, config_name):
+def build_engine(source, binary, version, limits, env, public, config_name, *, preview=False):
     subprocess.run(['go', 'test', './site/playground/engine'], cwd=source, env=env, check=True)
-    subprocess.run(['go', 'build', '-trimpath', '-ldflags=-s -w', '-o', str(binary), './site/playground/browser'],
+    tags = ['-tags=pcap_preview'] if preview else []
+    subprocess.run(['go', 'build', *tags, '-trimpath', '-ldflags=-s -w', '-o', str(binary), './site/playground/browser'],
                    cwd=source, env={**env, 'GOOS': 'js', 'GOARCH': 'wasm'}, check=True)
     goroot = Path(subprocess.check_output(['go', 'env', 'GOROOT'], cwd=source, env=env, text=True).strip())
     go_version = subprocess.check_output(['go', 'version'], cwd=source, env=env, text=True).strip()

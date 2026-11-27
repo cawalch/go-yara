@@ -2,16 +2,23 @@
 import config from '../generated/pcap-preview.json';
 import baseline from '../../../examples/pcap/update-review/baseline.yar?raw';
 import candidate from '../../../examples/pcap/update-review/candidate.yar?raw';
+import alternate from '../../../examples/pcap/update-review/alternate.yar?raw';
 import positive from '../../../examples/pcap/update-review/positive.pcap?url&inline';
 import control from '../../../examples/pcap/update-review/control.pcap?url&inline';
+import split from '../../../examples/pcap/update-review/positive-split.pcap?url&inline';
+import unavailable from '../../../examples/pcap/update-review/unavailable.pcap?url&inline';
+import different from '../../../examples/pcap/update-review/entities.pcap?url&inline';
 ---
 <section class="pcap-review not-content" aria-label="PCAP rule comparison"
-  data-config={JSON.stringify(config)}>
+  data-config={JSON.stringify(config)} data-candidate={candidate} data-alternate={alternate}>
   <label for="pcap-review-capture">Capture</label>
   <select id="pcap-review-capture">
-    <option value={control}>Control with unrelated marker</option>
-    <option value={positive}>Matching update response</option>
-    <option value="local">Local capture</option>
+    <option value={control} data-id="control">Control with unrelated marker</option>
+    <option value={positive} data-id="positive">Matching update response</option>
+    <option value={split} data-id="split">Resegmented update request</option>
+    <option value={unavailable} data-id="unavailable">Clipped update response</option>
+    <option value={different} data-id="different">Same rule, different response</option>
+    <option value="local" data-id="local">Local capture</option>
   </select>
   <div class="local-capture" hidden>
     <label for="pcap-review-file">Local capture (up to 1 MiB)</label>
@@ -19,21 +26,36 @@ import control from '../../../examples/pcap/update-review/control.pcap?url&inlin
   </div>
   <details>
     <summary>Edit rules</summary>
+    <label for="pcap-review-rule">Evidence rule</label>
+    <input id="pcap-review-rule" value="revoked_update" maxlength="128" spellcheck="false" />
     <label for="pcap-review-baseline">Baseline</label>
     <textarea id="pcap-review-baseline" rows="9" maxlength={config.limits.rulesBytes} spellcheck="false">{baseline}</textarea>
     <label for="pcap-review-candidate">Candidate</label>
     <textarea id="pcap-review-candidate" rows="9" maxlength={config.limits.rulesBytes} spellcheck="false">{candidate}</textarea>
   </details>
   <button type="button">Compare rules</button>
+  <button type="button" data-cancel hidden>Cancel</button>
   <p role="status" aria-live="polite">Unreleased engine. The first scan downloads {(config.wasmBytes / 1048576).toFixed(1)} MiB.</p>
+  <div class="comparison-result" hidden>
+    <p data-evidence-summary></p>
+    <table>
+      <caption>HTTP evidence for <code data-rule></code></caption>
+      <thead><tr><th scope="col">Revision</th><th scope="col">Outcome</th><th scope="col">Original packet and payload offset</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Baseline</th><td data-outcome></td><td data-packets></td></tr>
+        <tr><th scope="row">Candidate</th><td data-outcome></td><td data-packets></td></tr>
+      </tbody>
+    </table>
+  </div>
 </section>
 
 <script>
-  import { scan, type Config } from '../../playground/client';
+  import { comparePCAP, type Config, type PCAPObservation } from '../../playground/client';
 
   const root = document.querySelector<HTMLElement>('.pcap-review');
   if (root) {
     const button = root.querySelector<HTMLButtonElement>('button')!;
+    const cancel = root.querySelector<HTMLButtonElement>('[data-cancel]')!;
     const fixtures = root.querySelector<HTMLSelectElement>('select')!;
     const status = root.querySelector<HTMLParagraphElement>('[role=status]')!;
     const config: Config = JSON.parse(root.dataset.config!);
@@ -41,53 +63,95 @@ import control from '../../../examples/pcap/update-review/control.pcap?url&inlin
     const local = root.querySelector<HTMLElement>('.local-capture')!;
     const baselineRules = root.querySelector<HTMLTextAreaElement>('#pcap-review-baseline')!;
     const candidateRules = root.querySelector<HTMLTextAreaElement>('#pcap-review-candidate')!;
+    const rule = root.querySelector<HTMLInputElement>('#pcap-review-rule')!;
+    const result = root.querySelector<HTMLElement>('.comparison-result')!;
+    const defaultCandidate = root.dataset.candidate!;
+    const alternateCandidate = root.dataset.alternate!;
+    let previousPreset = defaultCandidate;
+    let controller: AbortController | undefined;
 
-    for (const input of [file, baselineRules, candidateRules]) {
-      input.addEventListener('input', () => { status.textContent = 'Ready to compare.'; });
+    function reset() {
+      result.hidden = true;
+      status.textContent = 'Ready to compare.';
     }
+    function describe(observation: PCAPObservation) {
+      const outcome = { match:'Match', complete_negative:'Complete negative', unobservable:'Unobservable' }[observation.outcome];
+      const packets = observation.evidence.map(row =>
+        `request ${row.request_packet}:${row.request_offset} → response ${row.response_packet}:${row.response_offset}`);
+      return { outcome, packets: packets.join(', ') || (observation.outcome === 'match' ? 'No single response located' : '—') };
+    }
+
+    for (const input of [file, baselineRules, candidateRules, rule]) input.addEventListener('input', reset);
     fixtures.addEventListener('change', () => {
       local.hidden = fixtures.value !== 'local';
-      status.textContent = 'Ready to compare.';
+      const preset = fixtures.selectedOptions[0].dataset.id === 'different' ? alternateCandidate : defaultCandidate;
+      if (candidateRules.value === previousPreset) candidateRules.value = preset;
+      previousPreset = preset;
+      reset();
     });
+    cancel.addEventListener('click', () => controller?.abort());
     button.addEventListener('click', async () => {
       button.disabled = true;
+      cancel.hidden = false;
       fixtures.disabled = true;
       file.disabled = true;
       baselineRules.disabled = true;
       candidateRules.disabled = true;
+      rule.disabled = true;
+      result.hidden = true;
       status.textContent = 'Running both rule revisions locally…';
-      const controller = new AbortController();
-      const stop = () => controller.abort();
+      const request = new AbortController();
+      controller = request;
+      const stop = () => request.abort();
       window.addEventListener('pagehide', stop, { once: true });
       try {
-        let input: ArrayBuffer;
+        let input: ArrayBuffer | File;
         if (fixtures.value === 'local') {
           const selected = file.files?.[0];
           if (!selected) throw new Error('Choose a capture file.');
           if (selected.size > config.limits.inputBytes) throw new Error('Input exceeds 1 MiB.');
-          input = await selected.arrayBuffer();
+          input = selected;
         } else {
-          const response = await fetch(fixtures.value, { signal: controller.signal });
+          const response = await fetch(fixtures.value, { signal: request.signal });
           if (!response.ok) throw new Error('Could not open the example capture.');
           input = await response.arrayBuffer();
         }
-        const baseline = await scan(config, baselineRules.value, input.slice(0), controller.signal);
-        if (baseline.error) throw new Error(baseline.error);
-        const candidate = await scan(config, candidateRules.value, input, controller.signal);
-        if (candidate.error) throw new Error(candidate.error);
-        const added = candidate.rules.filter(rule => !baseline.rules.includes(rule));
-        const removed = baseline.rules.filter(rule => !candidate.rules.includes(rule));
-        const active = candidate.rules.join(', ') || 'none';
+        const report = await comparePCAP(config, {
+          input, baseline:baselineRules.value, candidate:candidateRules.value,
+          rule:rule.value.trim(), fixture:fixtures.selectedOptions[0].dataset.id!,
+        }, request.signal);
+        const row = report.fixtures?.[0];
+        if (report.error || row?.error) throw new Error(report.error || row?.error);
+        if (report.schema_version !== 1 || !row?.evidence) throw new Error('Could not read the comparison report.');
+        const {baseline, candidate, evidence_changed} = row.evidence;
+        const before = baseline.matches ?? [];
+        const after = candidate.matches ?? [];
+        const added = after.filter(name => !before.includes(name));
+        const removed = before.filter(name => !after.includes(name));
+        const active = after.join(', ') || 'none';
         status.textContent = `Candidate matches: ${active}. Added: ${added.join(', ') || 'none'}. Removed: ${removed.join(', ') || 'none'}.`;
+        result.querySelector('[data-rule]')!.textContent = row.evidence.rule;
+        result.querySelector('[data-evidence-summary]')!.textContent = evidence_changed ? 'The supporting response changed.' : '';
+        const outcomes = result.querySelectorAll('[data-outcome]');
+        const packets = result.querySelectorAll('[data-packets]');
+        [baseline, candidate].map(describe).forEach((stage, index) => {
+          outcomes[index].textContent = stage.outcome;
+          packets[index].textContent = stage.packets;
+        });
+        result.hidden = false;
       } catch (error) {
-        status.textContent = error instanceof Error ? error.message : 'The comparison did not complete.';
+        status.textContent = request.signal.aborted ? 'Comparison cancelled. No complete result is available.' :
+          error instanceof Error ? error.message : 'The comparison did not complete.';
       } finally {
         window.removeEventListener('pagehide', stop);
         button.disabled = false;
+        cancel.hidden = true;
+        controller = undefined;
         fixtures.disabled = false;
         file.disabled = false;
         baselineRules.disabled = false;
         candidateRules.disabled = false;
+        rule.disabled = false;
       }
     });
   }
@@ -99,7 +163,7 @@ import control from '../../../examples/pcap/update-review/control.pcap?url&inlin
     padding: 1rem;
     margin-block: 1rem;
   }
-  select, button {
+  select, button, input {
     font: inherit;
     color: var(--sl-color-white);
     background: var(--sl-color-gray-6);
@@ -119,4 +183,8 @@ import control from '../../../examples/pcap/update-review/control.pcap?url&inlin
   }
   details { margin-block: .75rem; }
   p { margin-block-end: 0; }
+  .comparison-result { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; text-align: start; }
+  caption { text-align: start; font-weight: 600; }
+  th, td { padding: .3rem .45rem; border-bottom: 1px solid var(--sl-color-gray-5); text-align: start; }
 </style>

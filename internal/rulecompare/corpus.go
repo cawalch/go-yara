@@ -1,4 +1,4 @@
-package main
+package rulecompare
 
 import (
 	"cmp"
@@ -62,6 +62,7 @@ type ruleComparison struct {
 type observation struct {
 	Outcome  string             `json:"outcome"`
 	Evidence []observedEvidence `json:"evidence"`
+	Matches  []string           `json:"matches,omitempty"`
 }
 
 type observedEvidence struct {
@@ -88,7 +89,7 @@ func (pair revisions) validate(ctx context.Context, data []byte, want fixtureExp
 	row := change{Fixture: want.ID, SHA256: digest(data), Added: []string{}, Removed: []string{}}
 	report := &ruleComparison{Rule: want.Rule, Mode: want.Mode, Mismatches: []string{}}
 	row.Evidence = report
-	if row.SHA256 != want.SHA256 {
+	if want.SHA256 != "" && row.SHA256 != want.SHA256 {
 		report.Mismatches = append(report.Mismatches, "fixture_digest")
 		return row
 	}
@@ -113,8 +114,10 @@ func (pair revisions) validate(ctx context.Context, data []byte, want fixtureExp
 		return row
 	}
 	report.Candidate = &candidate
-	report.check("baseline", baseline, want.Baseline)
-	report.check("candidate", candidate, want.Candidate)
+	if want.SHA256 != "" {
+		report.check("baseline", baseline, want.Baseline)
+		report.check("candidate", candidate, want.Candidate)
+	}
 	matchedBefore, matchedAfter := baseline.Outcome == outcomeMatch, candidate.Outcome == outcomeMatch
 	switch {
 	case !matchedBefore && matchedAfter:
@@ -173,6 +176,10 @@ func (input corpusInput) observe(ctx context.Context, scanner *compiler.Scanner,
 		if err != nil {
 			return observation{}, err
 		}
+		for _, match := range full.MatchedRules {
+			result.Matches = append(result.Matches, match.Rule)
+		}
+		slices.Sort(result.Matches)
 		if !hasRuleMatch(full, input.rule) {
 			return result, nil
 		}

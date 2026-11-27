@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+* The capture comparison preview shows when the same rule matches a different HTTP response. The native and WASI corpus harness checks those results against the browser reference fixtures.
 * `compare -expect` checks HTTP transaction and decoded artifact evidence against a versioned capture corpus. The report distinguishes rule, packet evidence, and observability changes.
 * `Scanner.ScanHTTP1Response` runs compiled file rules on complete go-pcap HTTP/1 response artifacts and returns scan results with original capture references. Partial and unavailable artifacts retain their coverage without a scan result.
 * **CLI `-w`/`--no-warnings` and `--strict-libyara` flags:** Surface compiler warnings (`WarningSlowPattern`, `WarningUnusedString`, etc.) and collected compilation errors on `stderr`, and expose `-w`/`--no-warnings` and `--strict-libyara` across scan, `--mode=compile`, and `--mode=execute` ([#638](https://github.com/cawalch/go-yara/pull/638), [#640](https://github.com/cawalch/go-yara/pull/640), [#644](https://github.com/cawalch/go-yara/pull/644); closes [#634](https://github.com/cawalch/go-yara/issues/634), [#643](https://github.com/cawalch/go-yara/issues/643)).

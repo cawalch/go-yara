@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "fixtures": [{
+    "id": "different",
+    "sha256": "8e44c36a5b5c4184328c5d93fbe75fe7090c94d028e9cf7a4365f6d043e3f634",
+    "rule": "revoked_update",
+    "mode": "http",
+    "baseline": {
+      "outcome": "match",
+      "evidence": [{"request_packet": 2, "request_offset": 0, "response_packet": 3, "response_offset": 0}]
+    },
+    "candidate": {
+      "outcome": "match",
+      "evidence": [{"request_packet": 6, "request_offset": 0, "response_packet": 7, "response_offset": 0}]
+    }
+  }]
+}
