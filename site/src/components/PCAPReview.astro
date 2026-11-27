@@ -1,0 +1,122 @@
+---
+import config from '../generated/pcap-preview.json';
+import baseline from '../../../examples/pcap/update-review/baseline.yar?raw';
+import candidate from '../../../examples/pcap/update-review/candidate.yar?raw';
+import positive from '../../../examples/pcap/update-review/positive.pcap?url&inline';
+import control from '../../../examples/pcap/update-review/control.pcap?url&inline';
+---
+<section class="pcap-review not-content" aria-label="PCAP rule comparison"
+  data-config={JSON.stringify(config)}>
+  <label for="pcap-review-capture">Capture</label>
+  <select id="pcap-review-capture">
+    <option value={control}>Control with unrelated marker</option>
+    <option value={positive}>Matching update response</option>
+    <option value="local">Local capture</option>
+  </select>
+  <div class="local-capture" hidden>
+    <label for="pcap-review-file">Local capture (up to 1 MiB)</label>
+    <input id="pcap-review-file" type="file" accept=".pcap,.pcapng" />
+  </div>
+  <details>
+    <summary>Edit rules</summary>
+    <label for="pcap-review-baseline">Baseline</label>
+    <textarea id="pcap-review-baseline" rows="9" maxlength={config.limits.rulesBytes} spellcheck="false">{baseline}</textarea>
+    <label for="pcap-review-candidate">Candidate</label>
+    <textarea id="pcap-review-candidate" rows="9" maxlength={config.limits.rulesBytes} spellcheck="false">{candidate}</textarea>
+  </details>
+  <button type="button">Compare rules</button>
+  <p role="status" aria-live="polite">Unreleased engine. The first scan downloads {(config.wasmBytes / 1048576).toFixed(1)} MiB.</p>
+</section>
+
+<script>
+  import { scan, type Config } from '../../playground/client';
+
+  const root = document.querySelector<HTMLElement>('.pcap-review');
+  if (root) {
+    const button = root.querySelector<HTMLButtonElement>('button')!;
+    const fixtures = root.querySelector<HTMLSelectElement>('select')!;
+    const status = root.querySelector<HTMLParagraphElement>('[role=status]')!;
+    const config: Config = JSON.parse(root.dataset.config!);
+    const file = root.querySelector<HTMLInputElement>('[type=file]')!;
+    const local = root.querySelector<HTMLElement>('.local-capture')!;
+    const baselineRules = root.querySelector<HTMLTextAreaElement>('#pcap-review-baseline')!;
+    const candidateRules = root.querySelector<HTMLTextAreaElement>('#pcap-review-candidate')!;
+
+    for (const input of [file, baselineRules, candidateRules]) {
+      input.addEventListener('input', () => { status.textContent = 'Ready to compare.'; });
+    }
+    fixtures.addEventListener('change', () => {
+      local.hidden = fixtures.value !== 'local';
+      status.textContent = 'Ready to compare.';
+    });
+    button.addEventListener('click', async () => {
+      button.disabled = true;
+      fixtures.disabled = true;
+      file.disabled = true;
+      baselineRules.disabled = true;
+      candidateRules.disabled = true;
+      status.textContent = 'Running both rule revisions locally…';
+      const controller = new AbortController();
+      const stop = () => controller.abort();
+      window.addEventListener('pagehide', stop, { once: true });
+      try {
+        let input: ArrayBuffer;
+        if (fixtures.value === 'local') {
+          const selected = file.files?.[0];
+          if (!selected) throw new Error('Choose a capture file.');
+          if (selected.size > config.limits.inputBytes) throw new Error('Input exceeds 1 MiB.');
+          input = await selected.arrayBuffer();
+        } else {
+          const response = await fetch(fixtures.value, { signal: controller.signal });
+          if (!response.ok) throw new Error('Could not open the example capture.');
+          input = await response.arrayBuffer();
+        }
+        const baseline = await scan(config, baselineRules.value, input.slice(0), controller.signal);
+        if (baseline.error) throw new Error(baseline.error);
+        const candidate = await scan(config, candidateRules.value, input, controller.signal);
+        if (candidate.error) throw new Error(candidate.error);
+        const added = candidate.rules.filter(rule => !baseline.rules.includes(rule));
+        const removed = baseline.rules.filter(rule => !candidate.rules.includes(rule));
+        const active = candidate.rules.join(', ') || 'none';
+        status.textContent = `Candidate matches: ${active}. Added: ${added.join(', ') || 'none'}. Removed: ${removed.join(', ') || 'none'}.`;
+      } catch (error) {
+        status.textContent = error instanceof Error ? error.message : 'The comparison did not complete.';
+      } finally {
+        window.removeEventListener('pagehide', stop);
+        button.disabled = false;
+        fixtures.disabled = false;
+        file.disabled = false;
+        baselineRules.disabled = false;
+        candidateRules.disabled = false;
+      }
+    });
+  }
+</script>
+
+<style>
+  .pcap-review {
+    border: 1px solid var(--sl-color-gray-5);
+    padding: 1rem;
+    margin-block: 1rem;
+  }
+  select, button {
+    font: inherit;
+    color: var(--sl-color-white);
+    background: var(--sl-color-gray-6);
+    border: 1px solid var(--sl-color-gray-4);
+    border-radius: .35rem;
+    padding: .35rem .6rem;
+    max-width: 100%;
+    margin: .25rem;
+  }
+  textarea {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    font: var(--sl-text-sm)/1.5 var(--sl-font-mono);
+    color: var(--sl-color-white);
+    background: var(--sl-color-gray-6);
+  }
+  details { margin-block: .75rem; }
+  p { margin-block-end: 0; }
+</style>

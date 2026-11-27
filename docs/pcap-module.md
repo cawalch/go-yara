@@ -1,16 +1,13 @@
 # Detecting network activity with go-pcap and go-yara
 
-Use the built-in `pcap` module to evaluate TLS certificate names across a
-capture. For other protocol fields, a Go application can decode records with
-go-pcap and pass the field of interest to a YARA rule. The DNS example below
-shows how to carry the matching packet and flow into a finding.
+Use the built-in `pcap` module to evaluate cleartext HTTP/1 transactions,
+unicast DNS exchanges, and TLS certificate-name evidence in a capture.
+[Compare an update rule revision](#review-an-update-detection-rule) using two
+synthetic captures. The docs site runs the same rules in a local Wasm worker.
 
-For web investigations, see [hunting ARTEX-like activity in captured HTTP](http-capture-hunts.md)
-for tested rules covering unexpected webhook uploads and private decoy routes.
-
-Run these examples from a go-yara checkout containing the pilot (commit
-`0871b5b` or later). The published v0.11.1 CLI predates `import "pcap"`.
-The commands use synthetic PcapNG fixtures from the pinned go-pcap dependency.
+Use a current go-yara source checkout for the CLI commands. The published
+v0.11.1 CLI predates `import "pcap"`. The TLS examples use synthetic PcapNG
+fixtures from the pinned go-pcap dependency.
 
 ## Triage a certificate-name alert after a proxy change
 
@@ -74,7 +71,7 @@ empty TLS collections, malformed input, scanner reuse, slice/ReaderAt parity,
 and serialized rules. `for 2` is an at-least threshold; `for all` needs an
 existence guard because an empty collection satisfies universal quantification.
 
-These are capture-wide observations. The current module exposes only
+These are capture-wide observations. The TLS collection exposes
 `flow_index` and `server_name_match`, so mixed results cannot establish a common
 hostname, listener, or time window. Name agreement does not establish trust,
 and an undefined comparison is never positive mismatch evidence.
@@ -142,3 +139,41 @@ limits protocol scan reads to 64 MiB. Exceeding its read budget leaves
 `pcap.tls` undefined. Offsets are relative to the starting stream position.
 For a sequential-only reader the complete capture must fit in the retained
 64 KiB header.
+
+## Review an update detection rule
+
+Run the baseline and candidate against the same inputs.
+
+```sh
+fixture=examples/pcap/update-review
+go run ./cmd/compare -baseline "$fixture/baseline.yar" -candidate "$fixture/candidate.yar" \
+  positive="$fixture/positive.pcap" control="$fixture/control.pcap"
+```
+
+The control removes `revoked_update`. Both revisions match the positive capture.
+The candidate checks the request target and the complete response body in one
+HTTP/1 transaction. The fixtures contain synthetic build identifiers. Pass `-externals bindings.json`
+to apply the same declared values to both scanners. The report lists binding names.
+
+`pcap.http` exposes endpoint addresses and ports, `flow_index`, `method`,
+`target`, `authority`, `pairing`, `status`, `request_headers`, `response_headers`,
+`request_body`, `response_body`, and their corresponding `*_body_state` fields.
+Pairing is `confirmed`, `ambiguous`, or `unseen`. A body can be `complete`,
+`partial`, `unknown`, or `unsupported`. The last two states leave body bytes
+undefined. Header rows preserve the name, raw value, and wire order.
+`request_packet`, `request_offset`, `response_packet`, and `packets` locate
+the original HTTP evidence. Timestamps are in nanoseconds when available.
+
+`pcap.dns` exposes standard unicast port-53 exchanges. `pairing` is `paired`,
+`no_reply_observed`, `no_query_observed`, `ambiguous`, or `unsupported`.
+Each observed `query` and `reply` has `id`, `rcode`, endpoint addresses and
+ports, `flow_index`, `packet_index`, `timestamp_ns`, `questions`, `answers`,
+declared counts, and `complete`. Answer rows expose addresses and CNAME targets
+when available. Flow indices identify transport observations. Use endpoints,
+capture scope and time when relating DNS to HTTP.
+
+Collections are evaluated lazily and cached per scan. An unavailable collection
+is undefined. `pcap.capture_truncated` reports a clipped container tail. A
+complete DNS record describes the observed message; a complete HTTP body
+describes the observed entity. Use packet locations to inspect the
+observation point and original capture.
