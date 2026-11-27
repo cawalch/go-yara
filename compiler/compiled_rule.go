@@ -49,6 +49,7 @@ type CompiledRule struct {
 	// across concurrent scanners alongside the rest of the program.
 	prefilterStrings  []prefilterStringInfo
 	hasUnusedText     bool
+	onlyUnusedText    bool
 	localNonTextBuilt bool
 	localRegexes      []localRegexEntry
 	localHexes        []localHexEntry

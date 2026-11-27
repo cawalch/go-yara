@@ -952,6 +952,37 @@ func TestStandardScanDirectoryWithoutRecursiveFails(t *testing.T) {
 	}
 }
 
+func TestScanTargetsEmitsInOrderBeforeReadError(t *testing.T) {
+	dir := t.TempDir()
+	var targets []string
+	var want strings.Builder
+	for _, name := range []string{"a", "b", "c", "d", "e", "missing", "z"} {
+		path := filepath.Join(dir, name)
+		targets = append(targets, path)
+		if name != "missing" {
+			if err := os.WriteFile(path, []byte("target"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if name < "missing" {
+			want.WriteString(path + ": 1\n")
+		}
+	}
+	program, err := compiler.NewCompiler().CompileSourceWithContext(context.Background(), `rule R { strings: $a = "target" $unused = "unused" condition: #a == 1 }`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := captureOutputWithError(func() error {
+		return scanTargets(program, targets, &commandArgs{threads: 2, countOnly: true})
+	})
+	if !errors.Is(err, os.ErrNotExist) || !strings.Contains(err.Error(), targets[5]) {
+		t.Fatalf("wanted a read error for %s, got %v", targets[5], err)
+	}
+	if out != want.String() {
+		t.Fatalf("output = %q, want %q", out, want.String())
+	}
+}
+
 func TestStandardScanFastScan(t *testing.T) {
 	tmpDir := t.TempDir()
 	ruleFile := filepath.Join(tmpDir, "rules.yar")
@@ -986,6 +1017,7 @@ func TestStandardScanJSONOutput(t *testing.T) {
 			author = "developer"
 		strings:
 			$a = "json_target"
+			$unused = "end"
 		condition:
 			$a
 	}`
@@ -1017,7 +1049,8 @@ func TestStandardScanJSONOutput(t *testing.T) {
 	if rep.Meta["author"] != "developer" {
 		t.Fatalf("unexpected JSON meta: %v", rep.Meta)
 	}
-	if len(rep.Matches) != 1 || rep.Matches[0].Identifier != "$a" || rep.Matches[0].Offset != 6 || rep.Matches[0].Data != "json_target" {
+	if len(rep.Matches) != 2 || rep.Matches[0].Identifier != "$a" || rep.Matches[0].Offset != 6 || rep.Matches[0].Data != "json_target" ||
+		rep.Matches[1].Identifier != "$unused" || rep.Matches[1].Offset != 18 || rep.Matches[1].Data != "end" {
 		t.Fatalf("unexpected JSON matches: %+v", rep.Matches)
 	}
 }

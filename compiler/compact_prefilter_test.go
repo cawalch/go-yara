@@ -80,7 +80,7 @@ func TestCompactPrefilterRejectionAndReuse(t *testing.T) {
 	if got, err := scanner.Matches(data); got || err != nil {
 		t.Fatalf("Matches = %v,%v", got, err)
 	}
-	if len(scanner.globalMatches) != 0 || len(scanner.nonTextCache.ready) != 0 || len(scanner.matchCtx.spans) != 0 || len(scanner.prefilterCandidates) != 0 {
+	if len(scanner.globalMatches) != 0 || len(scanner.nonTextCache.state) != 0 || len(scanner.matchCtx.spans) != 0 || len(scanner.prefilterCandidates) != 0 {
 		t.Fatal("raw rejection prepared spans or candidate/cache storage")
 	}
 	report, err := scanner.Scan(data)

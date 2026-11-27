@@ -33,14 +33,15 @@ type jsonCountReport struct {
 }
 
 type fileJob struct {
-	idx  int
-	path string
+	path   string
+	result chan<- fileScanResult
 }
 
 type fileScanResult struct {
 	target string
 	res    *compiler.ScanResult
 	data   []byte
+	err    error
 }
 
 type printEntry struct {

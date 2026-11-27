@@ -20,6 +20,7 @@ SCALAR_PATTERNS=(
     '^BenchmarkPrefilterRejectScale$/^rules=64$/^strings=12$'
     '^BenchmarkEvidenceScanPaths$/^(normal|match_heavy_evidence_enabled|match_heavy_borrowed_evidence_enabled)$'
     '^BenchmarkCorpusPrefixAtoms$/^rules=512$/^(clean|shared_atom|match)$'
+    '^BenchmarkSharedNonTextFastScan$/^(regex|hex)$/^(full|fast)$'
     '^(BenchmarkStreamingScan_1MB|BenchmarkMatchesReaderEarlyTermination_10MB)$'
 )
 SIMD_PATTERNS=(
@@ -40,12 +41,8 @@ done
 
 REPO_ROOT=$(git rev-parse --show-toplevel)
 TMP_DIR=$(mktemp -d)
-BASE_WT=""
 
 cleanup() {
-    if [[ -n "$BASE_WT" ]]; then
-        git -C "$REPO_ROOT" worktree remove --force "$BASE_WT" >/dev/null 2>&1 || true
-    fi
     rm -rf "$TMP_DIR"
 }
 trap cleanup EXIT
@@ -65,6 +62,7 @@ run_benches() {
     local out_simd="$3"
     local bin_scalar="$TMP_DIR/compiler_scalar.test"
     local bin_simd="$TMP_DIR/compiler_simd.test"
+    local bin_cli="$TMP_DIR/cli_scalar.test"
     (
         cd "$dir"
         go test -c -o "$bin_scalar" ./compiler
@@ -72,6 +70,8 @@ run_benches() {
         for pat in "${SCALAR_PATTERNS[@]}"; do
             "$bin_scalar" -test.run '^$' -test.bench "$pat" -test.benchmem -test.benchtime="$BENCHTIME" -test.count="$COUNT" >> "$out_scalar"
         done
+        go test -c -o "$bin_cli" ./cmd
+        "$bin_cli" -test.run '^$' -test.bench '^BenchmarkCLIScanUnusedText$' -test.benchmem -test.benchtime="$BENCHTIME" -test.count="$COUNT" >> "$out_scalar"
         # A new or renamed benchmark must not silently disappear on either side
         # of the comparison (benchstat otherwise accepts unmatched rows).
         python3 - "$out_scalar" "$COUNT" <<'PY'
@@ -101,17 +101,36 @@ import statistics
 import sys
 
 samples = collections.defaultdict(list)
+scan_samples = collections.defaultdict(list)
 with open(sys.argv[1]) as source:
     for line in source:
         match = re.match(r'^BenchmarkRegexMaxMatchSpan/span=(\d+)(?:-\d+)?\s+\d+\s+([\d.]+)\s+ns/op\b', line)
         if match:
             samples[int(match[1])].append(float(match[2]))
+        match = re.match(r'^(Benchmark(?:CLIScanUnusedText|SharedNonTextFastScan)/[^\s-]+)(?:-\d+)?\s+\d+\s+([\d.]+)\s+ns/op\b', line)
+        if match:
+            scan_samples[match[1]].append(float(match[2]))
 if set(samples) != {0, 256, 4096, 65536} or any(len(v) != int(sys.argv[2]) for v in samples.values()):
     sys.exit("Incomplete regex span benchmark samples")
 ratio = statistics.median(samples[4096]) / statistics.median(samples[0])
 print(f"Regex span=4096 / default time ratio: {ratio:.2f}")
 if ratio > 2:
     sys.exit("Regex span=4096 exceeded twice the default scan time")
+
+comparisons = (
+    ("CLIScanUnusedText/unused", "CLIScanUnusedText/referenced"),
+    ("CLIScanUnusedText/regex_range_with_unused", "CLIScanUnusedText/regex_range"),
+    ("SharedNonTextFastScan/regex/fast", "SharedNonTextFastScan/regex/full"),
+    ("SharedNonTextFastScan/hex/fast", "SharedNonTextFastScan/hex/full"),
+)
+for candidate, control in comparisons:
+    times = [scan_samples["Benchmark" + name] for name in (candidate, control)]
+    if any(len(group) != int(sys.argv[2]) for group in times):
+        sys.exit(f"Incomplete scanner benchmark samples for {candidate} and {control}")
+    ratio = statistics.median(times[0]) / statistics.median(times[1])
+    print(f"{candidate} / {control} time ratio: {ratio:.2f}")
+    if ratio > 4:
+        sys.exit(f"{candidate} exceeded four times the control scan time")
 PYGATE
         fi
         if [[ "$RUN_SIMD" = "1" ]]; then
@@ -257,15 +276,18 @@ if [[ -z "$RESOLVED_BASE" ]] || { [[ "$RESOLVED_BASE" = "$HEAD_SHA" ]] && [[ -z 
 fi
 
 echo "Comparing HEAD against base $RESOLVED_BASE..."
-BASE_WT="$TMP_DIR/base_wt"
-git -C "$REPO_ROOT" worktree add --detach "$BASE_WT" "$RESOLVED_BASE" >/dev/null
+BASE_SRC="$TMP_DIR/base_src"
+mkdir "$BASE_SRC"
+git -C "$REPO_ROOT" archive "$RESOLVED_BASE" | tar -x -C "$BASE_SRC"
 
 # Measure identical synthetic inputs even when the base predates this benchmark.
 # Only the test harness is copied; the baseline scanner implementation is intact.
-cp "$REPO_ROOT/compiler/hex_jump_bench_test.go" "$BASE_WT/compiler/hex_jump_bench_test.go"
-cp "$REPO_ROOT/compiler/regex_span_bench_test.go" "$BASE_WT/compiler/regex_span_bench_test.go"
+cp "$REPO_ROOT/compiler/hex_jump_bench_test.go" "$BASE_SRC/compiler/hex_jump_bench_test.go"
+cp "$REPO_ROOT/compiler/regex_span_bench_test.go" "$BASE_SRC/compiler/regex_span_bench_test.go"
+cp "$REPO_ROOT/compiler/nontext_cache_bench_test.go" "$BASE_SRC/compiler/nontext_cache_bench_test.go"
+cp "$REPO_ROOT/cmd/scan_bench_test.go" "$BASE_SRC/cmd/scan_bench_test.go"
 
-run_benches "$BASE_WT" "$TMP_DIR/base_scalar.txt" "$TMP_DIR/base_simd.txt"
+run_benches "$BASE_SRC" "$TMP_DIR/base_scalar.txt" "$TMP_DIR/base_simd.txt"
 run_benches "$REPO_ROOT" "$TMP_DIR/head_scalar.txt" "$TMP_DIR/head_simd.txt"
 
 check_benchstat_regression "scalar" "$TMP_DIR/base_scalar.txt" "$TMP_DIR/head_scalar.txt"
