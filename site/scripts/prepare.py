@@ -57,6 +57,8 @@ def prepare(ref, check_only):
                     raise ValueError(f"HEAD: {name}: expected {expected!r}, got {output!r}")
                 print(f"HEAD: {name} capture example passed", flush=True)
             run(["go", "test", "./compiler", "-run", "^TestPCAP(Example|Name|Triage)Rules$"], source, env=env)
+            run(["go", "test", "./compiler", "./cmd/compare",
+                 "-run", "^Test(PCAPTransactionRules|ComparePCAP)$"], source, env=env)
         catalog = json.loads(run(["go", "run", str(SITE / "examples/catalog/main.go")], source, env=env))
         binary = temp / "go-yara"
         run(["go", "build", "-o", str(binary), "./cmd"], source, env=env)

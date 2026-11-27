@@ -209,7 +209,7 @@ func (cp *CompiledProgram) prepare(validateCacheKeys bool) error {
 	// when deserialization has reconstructed it at a different address.
 	nativePE := isNativePESchema(cp.moduleSchemas["pe"])
 	schema := cp.moduleSchemas["pcap"]
-	cp.nativePCAP = schema == pcapSchema || (schema != nil && reflect.DeepEqual(schema, pcapSchema))
+	cp.nativePCAP = nativePCAPSchema(schema)
 	for _, rule := range cp.Rules {
 		rule.nativePE = nativePE && rule.moduleSchemas["pe"] != nil
 		rule.nativePCAP = cp.nativePCAP && rule.moduleSchemas["pcap"] != nil

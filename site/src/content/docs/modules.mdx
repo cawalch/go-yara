@@ -4,8 +4,7 @@ description: Look up go-yara module signatures, understand range arguments and u
 ---
 
 import { Code } from '@astrojs/starlight/components';
-import tlsTriageRules from '../../../../examples/pcap/tls-triage.yar?raw';
-import tlsRules from '../../../../examples/pcap/tls.yar?raw';
+import PCAPReview from '../../components/PCAPReview.astro';
 import customExample from '../../../examples/custom-module/main.go?raw';
 import customExampleOutput from '../../../examples/custom-module/output.txt?raw';
 import ModuleTable from '../../components/ModuleTable.astro';
@@ -25,99 +24,33 @@ Starting in v0.10.0, the built-in pure-Go `pe` module adds PE32/PE32+ header, se
 
 ## Packet capture examples (unreleased)
 
-:::caution[Unreleased: requires a source checkout]
-The `pcap` module and these go-pcap examples are on `main`; they are absent from v0.11.1. Run the commands below from a current go-yara checkout, using `go run` rather than an installed release CLI. The rest of this page describes the release shown in the version stamp.
+:::caution[Source checkout and browser preview]
+These fields are available in the browser preview below. Use a current source checkout for the CLI commands.
 :::
 
-Use the built-in `pcap` module for TLS certificate-name comparisons. For DNS and HTTP fields, the Go examples decode records with go-pcap and pass the selected fields to YARA while retaining packet and flow evidence.
+### Review an update detection rule
 
-### Compare TLS certificate names
+A responder has a revoked build identifier and a proxy capture. The baseline checks for the update request and the identifier anywhere among the capture's HTTP transactions. The candidate requires both in one confirmed transaction with a complete response body. The control contains a legitimate update and the identifier in an unrelated diagnostics response.
 
-The checked-in rules compare each flow's ClientHello SNI with the server leaf certificate's DNS names:
+<PCAPReview />
 
-<Code code={tlsRules} lang="text" title="examples/pcap/tls.yar" />
-
-```sh
-go mod download github.com/cawalch/go-pcap
-fixtures="$(go list -m -f '{{.Dir}}' github.com/cawalch/go-pcap)/testdata/deployments"
-go run ./cmd examples/pcap/tls.yar "$fixtures/proxy.pcapng"
-```
-
-The synthetic proxy capture matches only `tls_name_evidence_missing`: its TLS 1.3 handshakes have no keys to recover the leaf certificates. A defined false comparison indicates a name mismatch; undefined means the comparison lacks evidence, including missing SNI, a missing leaf, or a potentially omitted SAN at the parser limit. Neither result establishes certificate trust or malicious activity.
-
-TLS extraction runs on first evaluated access to `pcap.tls` and is reused within the scan. Invalid captures, parser errors, or inputs larger than 64 MiB make the array undefined. For streaming, use an `io.ReaderAt` and `io.Seeker`, such as an open file; sequential-only inputs must fit completely in the retained 64 KiB header. See [capture limits and flow indices](https://github.com/cawalch/go-yara/blob/main/docs/pcap-module.md#capture-and-reader-limits).
-
-### Classify TLS evidence across a capture
-
-These rules operate directly on `pcap.tls`, without a Go adapter. They combine outcomes across parsed TLS flows rather than search the raw capture for certificate strings:
-
-<Code code={tlsTriageRules} lang="text" title="examples/pcap/tls-triage.yar" />
+The preview runs the Go scanner and go-pcap decoder in a local worker. Capture bytes stay in the browser. Edit either rule or choose a local PCAP or PcapNG up to 1 MiB. The control should remove `revoked_update`. Both revisions match the update containing the identifier and independently report the observed DNS answer.
 
 ```sh
-go run ./cmd examples/pcap/tls-triage.yar "$fixtures/proxy.pcapng"
+fixture=examples/pcap/update-review
+go run ./cmd/compare -baseline "$fixture/baseline.yar" -candidate "$fixture/candidate.yar" \
+  positive="$fixture/positive.pcap" control="$fixture/control.pcap"
 ```
 
-The proxy fixture produces no triage matches because every name comparison is undefined. Missing evidence never counts as a mismatch or an agreement. The integration tests supply the positive and negative controls:
+The JSON report contains added and removed rule names, fixture digests, and compiled-rule digests. Capture packet indices locate the observed exchange. Decoded body bytes have their own offsets. [Packet capture fields](https://github.com/cawalch/go-yara/blob/main/docs/pcap-module.md)
 
-| Observed comparisons | Matching triage rules |
-| --- | --- |
-| Two mismatches | `tls_multiple_name_mismatches` |
-| An agreement and a mismatch | `tls_mixed_name_results` |
-| A mismatch and an undefined comparison | `tls_mismatch_with_evidence_gaps` |
-| One or more agreements, with no other outcomes | `tls_all_observed_names_match` |
-| No TLS rows, invalid capture, or only undefined comparisons | None |
+### Capture fields and coverage
 
-```sh
-go test ./compiler -run '^TestPCAPTriageRules$' -v
-```
+- `pcap.http` holds cleartext HTTP/1 rows. Use `pairing`, the body states, and `packets` to assess and locate evidence. Header arrays retain duplicates in wire order.
+- `pcap.dns` holds unicast DNS rows on TCP or UDP port 53. Each row exposes `pairing` and the observed `query` or `reply`. Use the record's `complete` field and original packet index when interpreting answers.
+- `pcap.tls` exposes flow indices and observed TLS certificate name agreement. Undefined name agreement means the comparison lacks evidence.
 
-`for 2` requires at least two matching rows. The existence guard before `for all` prevents an empty capture from passing. A mixed result can guide a certificate-rollout investigation, but the current schema cannot establish that those flows share a hostname, listener, or time window. All-agreement means only that every observed TLS row has a defined matching name; it does not establish certificate trust or capture completeness.
-
-The useful composition here is a YARA condition over go-pcap's parsed, flow-scoped evidence in an offline capture. Other network tools also inspect protocol fields: [Suricata supports raw and normalized HTTP URI buffers](https://docs.suricata.io/en/latest/rules/http-keywords.html), [Zeek supports signatures](https://docs.zeek.org/en/current/frameworks/signatures.html), and [Sigma supports event correlations](https://sigmahq.io/docs/meta/correlations.html). These examples demonstrate module collections, count thresholds, and undefined handling; they do not establish detection coverage unavailable in those tools. The built-in module currently exposes only TLS flow indices and name-comparison results. DNS and HTTP below use Go adapters.
-
-### Find DNS questions and paired failures
-
-Run the DNS watch adapter against the synthetic IoT capture using the `fixtures` variable above:
-
-```sh
-go run ./examples/pcap/dns-watch "$fixtures/iot.pcapng"
-```
-
-```text
-watched_dns_question packet=2 flow=2 name="collector.example"
-```
-
-Packet and flow indices are zero-based; inspect frame 3 in a packet viewer. This finding establishes a DNS question, not a completed connection.
-
-The required-service adapter pairs questions and replies, then scans the complete question name with the response code as an external integer:
-
-```sh
-go run ./examples/pcap/dns-failure ./examples/pcap/dns-failure/testdata/service.pcap
-```
-
-```text
-required_service_dns_failure name="api.example" resolver=192.0.2.53:53 rcode=3 query_frame=1 reply_frame=2
-required_service_dns_failure name="api.example" resolver=192.0.2.53:53 rcode=2 query_frame=3 reply_frame=4
-```
-
-Inspect frame 2 for NXDOMAIN and frame 4 for SERVFAIL. Edit `$service` in the [required-service rule](https://github.com/cawalch/go-yara/blob/main/examples/pcap/dns-failure/required-service.yar) to watch another name. Pairing requires ordinary single-question DNS on port 53 from one observation point; repeated identical outstanding questions make the pairing key ambiguous for the rest of the capture. See the [Go adapter and DNS examples](https://github.com/cawalch/go-yara/blob/main/docs/pcap-module.md#investigate-a-required-service-that-fails-to-resolve).
-
-### Hunt decoded HTTP requests
-
-The HTTP adapter applies inventory and approval policies to decoded HTTP/1 and HTTP/2 requests:
-
-```sh
-go run ./examples/pcap/http-hunts ./examples/pcap/http-hunts/testdata/hunts.pcap
-```
-
-```text
-unexpected_server_webhook_post frame=2 time_ns=1700000000002469134 flow=0 stream=0 source=192.0.2.10 POST webhook.site
-unapproved_decoy_route_access frame=11 time_ns=1700000000013580237 flow=5 stream=3 source=192.0.2.12 GET app.example
-```
-
-Frames identify the start of each request, even when it spans packets; stream zero denotes HTTP/1. Replace the fixture's source inventory, webhook approvals, and private decoy route before using a real capture. Unknown sources produce no findings. Encrypted-only traffic cannot establish an HTTP method or route from SNI. A webhook POST establishes an attempted transfer; acceptance and contents require separate evidence. See [HTTP rules, benign controls, and packet attribution](https://github.com/cawalch/go-yara/blob/main/docs/http-capture-hunts.md).
-
-<span id="read-the-arguments"></span>
+Extraction runs on first evaluated access to each collection. An undefined collection means the input or scan could not supply it. `pcap.capture_truncated` identifies a captured container with an incomplete tail. Check the capture point and decoded row coverage when interpreting absence. [TLS triage and capture limits](https://github.com/cawalch/go-yara/blob/main/docs/pcap-module.md)
 
 ## Function arguments
 

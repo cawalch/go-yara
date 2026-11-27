@@ -11,7 +11,7 @@ import (
 // to the same function. String arguments are deliberately not retained.
 type moduleCallCache struct {
 	pe         *peImage
-	pcap       *ModuleValue // nil until the first TLS reference in this scan
+	pcap       *pcapModuleCache // allocated only on evaluated PCAP access
 	pcapReader io.ReaderAt
 	entries    [16]moduleCallCacheEntry
 	count      int

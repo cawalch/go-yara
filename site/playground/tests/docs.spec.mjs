@@ -36,3 +36,30 @@ for (const layout of [
     }
   });
 }
+
+test('PCAP preview compares actual HTTP transaction rules in Wasm', async ({page}) => {
+  const requests = [];
+  page.on('request', request => {
+    if (request.url().includes('scanner.wasm')) requests.push(request.url());
+  });
+  await page.goto('/go-yara/modules/');
+  const preview = page.getByRole('region', {name:'PCAP rule comparison'});
+  const status = preview.getByRole('status');
+  expect(requests).toEqual([]);
+  await preview.getByRole('button', {name:'Compare rules'}).click();
+  await expect(status).toContainText('Candidate matches: observed_update_dns. Added: none. Removed: revoked_update.');
+  expect(requests.length).toBeGreaterThan(0);
+  await preview.getByLabel('Capture', {exact:true}).selectOption({label:'Matching update response'});
+  await preview.getByRole('button', {name:'Compare rules'}).click();
+  await expect(status).toContainText('Candidate matches: observed_update_dns, revoked_update. Added: none. Removed: none.');
+  const source = await preview.getByLabel('Capture', {exact:true}).inputValue();
+  await preview.getByLabel('Capture', {exact:true}).selectOption('local');
+  await preview.locator('summary').click();
+  const baseline = await preview.getByLabel('Baseline', {exact:true}).inputValue();
+  await preview.getByLabel('Candidate', {exact:true}).fill(baseline + '\nrule local_change { condition: defined pcap.http[0].request_packet }');
+  await preview.getByLabel('Local capture (up to 1 MiB)').setInputFiles({
+    name: 'local.pcap', mimeType: 'application/vnd.tcpdump.pcap', buffer: Buffer.from(source.split(',')[1], 'base64'),
+  });
+  await preview.getByRole('button', {name:'Compare rules'}).click();
+  await expect(status).toContainText('Added: local_change. Removed: none.');
+});
