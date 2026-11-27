@@ -33,52 +33,69 @@ func loadPCAP(ctx *MatchContext) ModuleValue {
 	return ModuleValue{Type: ModuleStruct, object: &moduleObject{kind: ModuleStruct, getter: pcapModuleRoot{ctx}}}
 }
 
+type pcapModuleCache struct {
+	capture *pcap.Capture
+	results [4]*ModuleValue
+}
+
 func (root pcapModuleRoot) field(name string) ModuleValue {
 	ctx := root.ctx
 	if ctx == nil || scanCanceled(ctx.cancelDone) {
 		return ModuleValue{}
 	}
+	var index int
+	switch name {
+	case "tls":
+		index = 0
+	case "http":
+		index = 1
+	case "dns":
+		index = 2
+	case "capture_truncated":
+		index = 3
+	default:
+		return ModuleValue{}
+	}
 	cache := ctx.moduleCache
+	var state *pcapModuleCache
+	if cache != nil {
+		state = cache.pcap
+	}
+	if state == nil {
+		state = new(pcapModuleCache)
+	} else if value := state.results[index]; value != nil {
+		return *value
+	}
 	var result ModuleValue
 	switch name {
 	case "capture_truncated":
-		capture, _, _, err := pcapInput(ctx)
-		if err == nil && !scanCanceled(ctx.cancelDone) {
-			return BooleanValue(capture.InputTruncated())
+		capture, _, _, err := pcapInput(ctx, state)
+		if err == nil {
+			result = BooleanValue(capture.InputTruncated())
 		}
 	case "tls":
-		if cache != nil && cache.pcap != nil {
-			return *cache.pcap
-		}
-		result = scanPCAP(ctx)
-		if cache != nil && !scanCanceled(ctx.cancelDone) {
-			cache.pcap = &result
-		}
+		result = scanPCAP(ctx, state)
 	case "http", "dns":
-		if cache != nil {
-			if value, ok := cache.pcapTransactions[name]; ok {
-				return value
-			}
-		}
-		result = scanPCAPTransactions(ctx, name)
-		if cache != nil && !scanCanceled(ctx.cancelDone) {
-			if cache.pcapTransactions == nil {
-				cache.pcapTransactions = make(map[string]ModuleValue, 2)
-			}
-			cache.pcapTransactions[name] = result
-		}
+		result = scanPCAPTransactions(ctx, state, name)
+	}
+	if scanCanceled(ctx.cancelDone) {
+		return ModuleValue{}
+	}
+	if cache != nil {
+		state.results[index] = &result
+		cache.pcap = state
 	}
 	return result
 }
 
-func scanPCAP(ctx *MatchContext) ModuleValue {
+func scanPCAP(ctx *MatchContext, state *pcapModuleCache) ModuleValue {
 	if scanCanceled(ctx.cancelDone) {
 		return ModuleValue{}
 	}
 	if ctx.FileSize <= 0 {
 		return ModuleValue{}
 	}
-	records, err := captureTLSRecords(ctx)
+	records, err := captureTLSRecords(ctx, state)
 	if err != nil || scanCanceled(ctx.cancelDone) {
 		return ModuleValue{}
 	}
@@ -101,7 +118,7 @@ func scanPCAP(ctx *MatchContext) ModuleValue {
 	return ModuleValue{Type: ModuleArray, object: &moduleObject{kind: ModuleArray, elements: rows}}
 }
 
-func pcapInput(ctx *MatchContext) (*pcap.Capture, []byte, io.ReaderAt, error) {
+func pcapInput(ctx *MatchContext, state *pcapModuleCache) (*pcap.Capture, []byte, io.ReaderAt, error) {
 	cache := ctx.moduleCache
 	var data []byte
 	var reader io.ReaderAt
@@ -118,8 +135,8 @@ func pcapInput(ctx *MatchContext) (*pcap.Capture, []byte, io.ReaderAt, error) {
 			return nil, nil, nil, pcap.ErrInvalidHeader
 		}
 	}
-	if cache != nil && cache.pcapCapture != nil {
-		return cache.pcapCapture, data, reader, nil
+	if state.capture != nil {
+		return state.capture, data, reader, nil
 	}
 	var capture *pcap.Capture
 	var err error
@@ -128,14 +145,14 @@ func pcapInput(ctx *MatchContext) (*pcap.Capture, []byte, io.ReaderAt, error) {
 	} else {
 		capture, err = pcap.New(data)
 	}
-	if err == nil && cache != nil && !scanCanceled(ctx.cancelDone) {
-		cache.pcapCapture = capture
+	if err == nil && !scanCanceled(ctx.cancelDone) {
+		state.capture = capture
 	}
 	return capture, data, reader, err
 }
 
-func captureTLSRecords(ctx *MatchContext) ([]pcap.TLSRecord, error) {
-	capture, data, reader, err := pcapInput(ctx)
+func captureTLSRecords(ctx *MatchContext, state *pcapModuleCache) ([]pcap.TLSRecord, error) {
+	capture, data, reader, err := pcapInput(ctx, state)
 	if err != nil {
 		return nil, err
 	}

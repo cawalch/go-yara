@@ -3,8 +3,6 @@ package compiler
 import (
 	"io"
 	"math"
-
-	pcap "github.com/cawalch/go-pcap"
 )
 
 // Keep memoization bounded even when a rule calls a function on millions of
@@ -12,13 +10,11 @@ import (
 // Keys use qualified names, since deserialized rules can assign different IDs
 // to the same function. String arguments are deliberately not retained.
 type moduleCallCache struct {
-	pe               *peImage
-	pcap             *ModuleValue // nil until the first TLS reference in this scan
-	pcapReader       io.ReaderAt
-	pcapTransactions map[string]ModuleValue
-	pcapCapture      *pcap.Capture
-	entries          [16]moduleCallCacheEntry
-	count            int
+	pe         *peImage
+	pcap       *pcapModuleCache // allocated only on evaluated PCAP access
+	pcapReader io.ReaderAt
+	entries    [16]moduleCallCacheEntry
+	count      int
 }
 type moduleCallCacheEntry struct {
 	name   string
@@ -38,8 +34,6 @@ func (cache *moduleCallCache) reset() {
 	cache.pe = nil
 	cache.pcap = nil
 	cache.pcapReader = nil
-	cache.pcapTransactions = nil
-	cache.pcapCapture = nil
 }
 
 func moduleCallKey(name string, args []ModuleValue) (moduleCallCacheEntry, bool) {

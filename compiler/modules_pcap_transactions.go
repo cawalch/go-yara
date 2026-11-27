@@ -46,11 +46,11 @@ var pcapDNSField = func() ModuleField {
 	}))
 }()
 
-func scanPCAPTransactions(ctx *MatchContext, name string) ModuleValue {
+func scanPCAPTransactions(ctx *MatchContext, state *pcapModuleCache, name string) ModuleValue {
 	if ctx.FileSize <= 0 || scanCanceled(ctx.cancelDone) {
 		return ModuleValue{}
 	}
-	capture, data, reader, err := pcapInput(ctx)
+	capture, data, reader, err := pcapInput(ctx, state)
 	if err != nil {
 		return ModuleValue{}
 	}

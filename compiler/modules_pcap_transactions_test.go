@@ -128,7 +128,7 @@ rule visible { condition: defined pcap.tls[0].flow_index }`)
 	defer scanner.Close()
 	result, err := scanner.Scan(raw)
 	if err != nil || result.RuleResults["visible"] || scanner.moduleCache.pcap == nil ||
-		scanner.moduleCache.pcap.Type != ModuleArray {
+		scanner.moduleCache.pcap.results[0] == nil || scanner.moduleCache.pcap.results[0].Type != ModuleArray {
 		t.Fatalf("legacy TLS scan = %+v, %v", result, err)
 	}
 }
