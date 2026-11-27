@@ -42,7 +42,7 @@ def dns():
     return [udp(CLIENT, RESOLVER, 42000, 53, query), udp(RESOLVER, CLIENT, 53, 42000, answer)]
 
 
-def exchange(port, target, body, byte_range=None):
+def exchange(port, target, body, byte_range=None, *, split_request=False):
     request = f"GET {target} HTTP/1.1\r\nHost: {HOST}\r\n"
     status = "200 OK\r\n"
     if byte_range is not None:
@@ -51,12 +51,17 @@ def exchange(port, target, body, byte_range=None):
         status = f"206 Partial Content\r\nContent-Range: bytes {start}-{end}/{size}\r\n"
     request = (request + "\r\n").encode()
     response = f"HTTP/1.1 {status}Content-Length: {len(body)}\r\n\r\n".encode() + body
-    return [
+    frames = [
         tcp(CLIENT, PROXY, port, 80, 100, 0, 0x02),
         tcp(PROXY, CLIENT, 80, port, 500, 101, 0x12),
-        tcp(CLIENT, PROXY, port, 80, 101, 501, 0x18, request),
-        tcp(PROXY, CLIENT, 80, port, 501, 101 + len(request), 0x18, response),
     ]
+    if split_request:
+        frames.append(tcp(CLIENT, PROXY, port, 80, 101, 501, 0x18, request[:8]))
+        frames.append(tcp(CLIENT, PROXY, port, 80, 109, 501, 0x18, request[8:]))
+    else:
+        frames.append(tcp(CLIENT, PROXY, port, 80, 101, 501, 0x18, request))
+    frames.append(tcp(PROXY, CLIENT, 80, port, 501, 101 + len(request), 0x18, response))
+    return frames
 
 
 def write(name, frames):
@@ -72,6 +77,8 @@ good = b"artifact_id=APPROVED-BUILD-042\n"
 write("positive.pcap", dns() + exchange(41000, "/updates/client", marker))
 write("control.pcap", dns() + exchange(41000, "/updates/client", good)
       + exchange(41001, "/diagnostics", marker))
+write("positive-split.pcap", dns() + exchange(41000, "/updates/client", marker, split_request=True))
+(OUT / "unavailable.pcap").write_bytes((OUT / "positive.pcap").read_bytes()[:-10])
 write("entities.pcap",
       exchange(41000, "/updates/client", marker)
       + exchange(41001, "/diagnostics", b"diagnostics-only\n")

@@ -50,6 +50,9 @@ func scanPCAPTransactions(ctx *MatchContext, state *pcapModuleCache, name string
 	if ctx.FileSize <= 0 || scanCanceled(ctx.cancelDone) {
 		return ModuleValue{}
 	}
+	if cache := ctx.moduleCache; name == "http" && cache != nil && cache.pcapHTTPRows != nil {
+		return pcapRows(ctx, *cache.pcapHTTPRows, pcapHTTPValue)
+	}
 	capture, data, reader, err := pcapInput(ctx, state)
 	if err != nil {
 		return ModuleValue{}
