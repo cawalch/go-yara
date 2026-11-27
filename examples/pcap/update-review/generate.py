@@ -84,3 +84,11 @@ write("entities.pcap",
       + exchange(41001, "/diagnostics", b"diagnostics-only\n")
       + exchange(41002, "/updates/range", marker, (3, len(marker) + 2, len(marker) + 3))
       + exchange(41003, "/updates/unseen", b"")[:-1])
+
+# The introductory guide uses only HTTP; no DNS lookup or executable payload.
+intro = OUT.parent / "config-response"
+demo = b'{"label":"demo-tampered"}'
+write(intro / "tampered.pcap", exchange(41000, "/config.json", demo))
+write(intro / "unrelated.pcap",
+      exchange(41000, "/config.json", b'{"label":"normal"}')
+      + exchange(41001, "/debug", demo))
