@@ -43,7 +43,11 @@ test('PCAP preview compares actual HTTP transaction rules in Wasm', async ({page
     if (request.url().includes('scanner.wasm')) requests.push(request.url());
   });
   await page.goto('/go-yara/modules/');
+  await expect(page.getByRole('heading', {name:'Check what an app received over HTTP'})).toBeVisible();
+  await expect(page.locator('pre').filter({hasText:'tampered_config_response'})).toBeVisible();
   const preview = page.getByRole('region', {name:'PCAP rule comparison'});
+  await expect(preview).toBeHidden();
+  await page.locator('summary').filter({hasText:'Advanced walkthrough: review an update detection rule'}).click();
   const status = preview.getByRole('status');
   expect(requests).toEqual([]);
   await preview.getByRole('button', {name:'Compare rules'}).click();

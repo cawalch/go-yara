@@ -5,6 +5,7 @@ description: Look up go-yara module signatures, understand range arguments and u
 
 import { Code } from '@astrojs/starlight/components';
 import PCAPReview from '../../components/PCAPReview.astro';
+import configRule from '../../../../examples/pcap/config-response/config.yar?raw';
 import entityOutput from '../../../../examples/pcap/update-review/entity-output.txt?raw';
 import customExample from '../../../examples/custom-module/main.go?raw';
 import customExampleOutput from '../../../examples/custom-module/output.txt?raw';
@@ -26,10 +27,31 @@ Starting in v0.10.0, the built-in pure-Go `pe` module adds PE32/PE32+ header, se
 ## Packet capture examples (unreleased)
 
 :::caution[Source checkout and browser preview]
-These fields are available in the browser preview below. Use a current source checkout for the CLI commands.
+Use a current source checkout for the CLI commands. The PCAP fields in these examples are not available in the stable release.
 :::
 
-### Review an update detection rule
+### Check what an app received over HTTP
+
+An app requests `/config.json`. To find a tampered response, check the request and its response together. The rule below matches only when the complete response to that request contains the test marker `demo-tampered`.
+
+<Code code={configRule} lang="text" title="config.yar" />
+
+From the go-yara repository root:
+
+```sh
+fixture=examples/pcap/config-response
+go run ./cmd "$fixture/config.yar" "$fixture/tampered.pcap"
+go run ./cmd "$fixture/config.yar" "$fixture/unrelated.pcap"
+```
+
+The first command prints `tampered_config_response examples/pcap/config-response/tampered.pcap`. The second prints nothing: `/config.json` returns normal content, and only the response to `/debug` contains the marker. A missing or incomplete response can also produce no match; that does not show that the response was clean.
+
+Both captures contain synthetic, cleartext HTTP/1 traffic and inert JSON. The scenario is inspired by [ESET's report on SlippyNunchucks tampering with Sogou configuration traffic](https://www.eset.com/blog/en/research/slippynunchucks-hijacks-sogou-input-methods-brand-promotion-mechanism-to-distribute-malware/). The example does not detect that campaign or analyze encrypted HTTP.
+
+### Compare capture rule revisions
+
+<details>
+<summary>Advanced walkthrough: review an update detection rule</summary>
 
 A responder has a revoked build identifier and a proxy capture. The baseline checks for the update request and the identifier anywhere among the capture's HTTP transactions. The candidate requires both in one confirmed transaction with a complete response body. The control contains a legitimate update and the identifier in an unrelated diagnostics response.
 
@@ -58,6 +80,8 @@ The control removes `revoked_update` from the candidate. The split request has t
 `http` mode tests each complete response row in isolation within the original capture context. A rule that matches with no rows, or requires multiple rows, can report a match with an empty evidence list. `artifact` mode runs file rules on complete decoded responses and compares entity-relative match spans. For external variables, supply a non-secret `-binding-revision` alongside `-externals`.
 
 Run `python3 scripts/pcap-parity.py` from a source checkout with Go and Node installed to compare the native and WASI Preview 1 corpus reports. The browser tests use the native report as their reference.
+
+</details>
 
 ### Scan a captured response with a file rule
 

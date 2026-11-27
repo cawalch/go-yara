@@ -3,7 +3,8 @@ import { expect, test } from '@playwright/test';
 
 const references = JSON.parse(readFileSync(new URL('../../src/generated/pcap-references.json', import.meta.url)));
 
-function preview(page) {
+async function preview(page) {
+  await page.locator('summary').filter({hasText:'Advanced walkthrough: review an update detection rule'}).click();
   return page.getByRole('region', {name:'PCAP rule comparison'});
 }
 
@@ -21,7 +22,7 @@ test('HTTP evidence agrees with the native corpus', async ({page}) => {
     };
   });
   await page.goto('/go-yara/modules/');
-  const region = preview(page);
+  const region = await preview(page);
   for (const [label, id] of [
     ['Control with unrelated marker', 'control'],
     ['Matching update response', 'positive'],
@@ -52,7 +53,7 @@ test('local PCAP input stays in the worker and failures clear the comparison', a
   const posts = [];
   page.on('request', request => { if (request.method() === 'POST') posts.push(request.url()); });
   await page.goto('/go-yara/modules/');
-  const region = preview(page);
+  const region = await preview(page);
   const capture = region.getByLabel('Capture', {exact:true});
   await capture.selectOption({label:'Matching update response'});
   const source = Buffer.from((await capture.inputValue()).split(',')[1], 'base64');
@@ -84,7 +85,7 @@ test('cancelling a PCAP comparison leaves no verdict', async ({page}) => {
   });
   try {
     await page.goto('/go-yara/modules/');
-    const region = preview(page);
+    const region = await preview(page);
     await region.getByRole('button', {name:'Compare rules'}).click();
     await region.getByRole('button', {name:'Cancel'}).click();
     await expect(region.getByRole('status')).toHaveText('Comparison cancelled. No complete result is available.');
@@ -97,7 +98,7 @@ test('cancelling a PCAP comparison leaves no verdict', async ({page}) => {
 
 test('worker-local seekable and whole reads recover the same late response', async ({page, browserName}) => {
   await page.goto('/go-yara/modules/');
-  const region = preview(page);
+  const region = await preview(page);
   const capture = region.getByLabel('Capture', {exact:true});
   await capture.selectOption({label:'Matching update response'});
   const positive = Buffer.from((await capture.inputValue()).split(',')[1], 'base64');
