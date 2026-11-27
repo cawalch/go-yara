@@ -132,11 +132,13 @@ Only the two paired failures above produce findings.
 The scanner opens the capture and extracts TLS on first evaluated access to `pcap.tls`, then
 reuses the results across rules in that scan. Importing the module or testing `defined pcap` alone incurs
 zero TLS scans. A valid capture without TLS yields an empty array. Malformed
-input, parser errors and inputs larger than 64 MiB make `pcap.tls` undefined.
-Go-pcap can use secrets embedded in PcapNG to recover a TLS 1.3 certificate.
+input and parser errors make `pcap.tls` undefined. Go-pcap can use secrets
+embedded in PcapNG to recover a TLS 1.3 certificate.
 
-For slice scans, pass the complete capture. For streaming scans, pass a reader
-that implements both `io.ReaderAt` and `io.Seeker` (such as an open file or
-`bytes.Reader`). Offsets are relative to the starting stream position. For a
-sequential-only reader the complete capture must fit in the retained 64 KiB
-header. A partial capture prefix cannot supply TLS evidence.
+Pass a complete capture of at most 64 MiB to a slice scan, including the
+default CLI path. To scan a larger capture, use `ScanReader` with a reader
+that implements `io.ReaderAt` and `io.Seeker`, such as an open file. Go-pcap
+limits protocol scan reads to 64 MiB. Exceeding its read budget leaves
+`pcap.tls` undefined. Offsets are relative to the starting stream position.
+For a sequential-only reader the complete capture must fit in the retained
+64 KiB header.

@@ -37,7 +37,7 @@ func scanPCAP(ctx *MatchContext) ModuleValue {
 	if scanCanceled(ctx.cancelDone) {
 		return ModuleValue{}
 	}
-	if ctx.FileSize <= 0 || ctx.FileSize > pcap.MaxReaderAtScanBytes {
+	if ctx.FileSize <= 0 {
 		return ModuleValue{}
 	}
 	records, err := captureTLSRecords(ctx)
@@ -70,6 +70,9 @@ func captureTLSRecords(ctx *MatchContext) ([]pcap.TLSRecord, error) {
 			return nil, err
 		}
 		return capture.TLSFromReaderAt(cache.pcapReader)
+	}
+	if ctx.FileSize > pcap.MaxReaderAtScanBytes {
+		return nil, pcap.ErrPacketLimit
 	}
 	data, ok := peFullScanData(ctx)
 	if !ok {
