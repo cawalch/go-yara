@@ -1,4 +1,4 @@
-package main
+package rulecompare
 
 import (
 	"bytes"
@@ -20,11 +20,11 @@ func TestCompareCorpus(t *testing.T) {
 		"positive=" + corpusFixtures + "positive.pcap",
 	}
 	var output, repeat bytes.Buffer
-	if err := compare(t.Context(), args, &output); err != nil {
+	if err := RunCLI(t.Context(), args, &output); err != nil {
 		t.Fatalf("%v\n%s", err, output.Bytes())
 	}
 	slices.Reverse(args[6:])
-	if err := compare(t.Context(), args, &repeat); err != nil || !bytes.Equal(output.Bytes(), repeat.Bytes()) {
+	if err := RunCLI(t.Context(), args, &repeat); err != nil || !bytes.Equal(output.Bytes(), repeat.Bytes()) {
 		t.Fatalf("manifest report changed with fixture argument order: %v", err)
 	}
 	var report comparison
@@ -74,8 +74,8 @@ rule revoked_update {
 	args := []string{"-baseline", baseline, "-candidate", candidate, "-expect", manifest,
 		"-externals", bindings, "-binding-revision", "binding-17", "fixture=" + fixture}
 	var output bytes.Buffer
-	err = compare(t.Context(), args, &output)
-	if !errors.Is(err, errExpectationMismatch) || exitCode(err) != 2 {
+	err = RunCLI(t.Context(), args, &output)
+	if !errors.Is(err, errExpectationMismatch) || ExitCode(err) != 2 {
 		t.Fatalf("wrong transaction: %v\n%s", err, output.Bytes())
 	}
 	var report comparison
@@ -95,12 +95,12 @@ rule revoked_update {
 	// A different fixture at the same path label cannot reuse the old packet locators.
 	args[len(args)-1] = "fixture=" + corpusFixtures + "control.pcap"
 	output.Reset()
-	if err := compare(t.Context(), args, &output); exitCode(err) != 2 || !bytes.Contains(output.Bytes(), []byte("fixture_digest")) {
+	if err := RunCLI(t.Context(), args, &output); ExitCode(err) != 2 || !bytes.Contains(output.Bytes(), []byte("fixture_digest")) {
 		t.Fatalf("fixture digest mismatch: %v\n%s", err, output.Bytes())
 	}
 	args[len(args)-1] = "fixture=" + filepath.Join(dir, "missing.pcap")
 	output.Reset()
-	if err := compare(t.Context(), args, &output); exitCode(err) != 1 || !bytes.Contains(output.Bytes(), []byte("fixture read failed")) {
+	if err := RunCLI(t.Context(), args, &output); ExitCode(err) != 1 || !bytes.Contains(output.Bytes(), []byte("fixture read failed")) {
 		t.Fatalf("fixture execution failure: %v\n%s", err, output.Bytes())
 	}
 }
@@ -135,7 +135,7 @@ func TestCompareCorpusArtifact(t *testing.T) {
 	}
 	manifest := writeTestManifest(t, dir, spec)
 	var output bytes.Buffer
-	err := compare(t.Context(), append([]string{"-baseline", rule, "-candidate", rule, "-expect", manifest}, paths...), &output)
+	err := RunCLI(t.Context(), append([]string{"-baseline", rule, "-candidate", rule, "-expect", manifest}, paths...), &output)
 	if err != nil {
 		t.Fatalf("artifact scan: %v\n%s", err, output.Bytes())
 	}

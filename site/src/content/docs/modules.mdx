@@ -35,7 +35,7 @@ A responder has a revoked build identifier and a proxy capture. The baseline che
 
 <PCAPReview />
 
-The preview runs the Go scanner and go-pcap decoder in a local worker. Capture bytes stay in the browser. Edit either rule or choose a local PCAP or PcapNG up to 1 MiB. The control should remove `revoked_update`. Both revisions match the update containing the identifier and independently report the observed DNS answer.
+The preview runs both revisions in one local Go worker. Choose **Same rule, different response** to see both revisions match `revoked_update` while the supporting response moves from packet 3 to packet 7. **Clipped update response** shows an unobservable result. Edit the rules and evidence rule name or choose a local PCAP or PcapNG up to 1 MiB. The worker reads local files inside the browser.
 
 ```sh
 fixture=examples/pcap/update-review
@@ -56,6 +56,8 @@ go run ./cmd/compare -baseline "$fixture/baseline.yar" -candidate "$fixture/cand
 The control removes `revoked_update` from the candidate. The split request has the same decoded evidence as the positive capture and a different response packet index. The clipped response is unobservable. The built comparator exits with `2` for a mismatch and `1` for an execution failure.
 
 `http` mode tests each complete response row in isolation within the original capture context. A rule that matches with no rows, or requires multiple rows, can report a match with an empty evidence list. `artifact` mode runs file rules on complete decoded responses and compares entity-relative match spans. For external variables, supply a non-secret `-binding-revision` alongside `-externals`.
+
+Run `python3 scripts/pcap-parity.py` from a source checkout with Go and Node installed to compare the native and WASI Preview 1 corpus reports. The browser tests use the native report as their reference.
 
 ### Scan a captured response with a file rule
 

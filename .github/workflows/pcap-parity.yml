@@ -1,0 +1,55 @@
+name: Capture comparison parity
+
+on:
+  push:
+    branches: [main]
+    paths: &capture_paths
+      - '.github/workflows/pcap-parity.yml'
+      - 'cmd/compare/**'
+      - 'compiler/**'
+      - 'examples/pcap/update-review/**'
+      - 'internal/rulecompare/**'
+      - 'go.mod'
+      - 'go.sum'
+      - 'scripts/pcap-parity.py'
+      - 'scripts/wasi-compare.mjs'
+  pull_request:
+    paths: *capture_paths
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pcap-parity-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  windows:
+    name: Native Windows corpus
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: '1.27.x'
+      - run: go test ./cmd/compare ./internal/rulecompare
+      - run: python scripts/pcap-parity.py --native-only
+
+  wasi:
+    name: WASI Preview 1 corpus
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: '1.27.x'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '26'
+      - run: python3 scripts/pcap-parity.py

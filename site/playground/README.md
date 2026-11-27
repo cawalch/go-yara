@@ -58,3 +58,8 @@ When changing Go versions, inspect the new linker layout and rerun all tests. Do
 This is a documentation playground, not a general JavaScript SDK or a security sandbox for arbitrary workloads. It scans supplied byte buffers with go-yara semantics. There are no native file paths, mmap calls, application-defined host modules, or Wasm/WASI host ABI exposed by this UI.
 
 Review this directory when changing scanner result semantics, the compiler, the Go toolchain, limits, or the documented release. All versioned assets must come from one build; stale pages with deleted asset paths should fail visibly and ask the reader to reload, rather than run a different engine silently.
+## PCAP comparison parity
+
+From the repository root, run `python3 scripts/pcap-parity.py` with Go and Node installed. The harness builds the native command and the stripped `wasip1/wasm` command from that checkout, then compares their reports and exit codes against staged read-only fixtures. It prints startup, wall time, peak Wasm linear memory, and peak Node RSS. It uses [Node's WASI Preview 1 host](https://nodejs.org/api/wasi.html) for the repository-built module.
+
+The browser build generates native reference reports for the same fixtures. Playwright compares the worker's outcomes and evidence against them in Chromium, Firefox, and WebKit. The sparse-input test measures whole-file and seekable decoding in separate workers. It reports the bytes and reads requested from the local File, elapsed decoding time, and peak Wasm linear memory. The comparison preview accepts files up to 1 MiB.

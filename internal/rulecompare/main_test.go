@@ -1,4 +1,4 @@
-package main
+package rulecompare
 
 import (
 	"bytes"
@@ -28,12 +28,12 @@ rule example { strings: $a = "approved" $b = "ordinary" condition: active and an
 	bindings := write("externals.json", `{"active": true}`)
 	var out bytes.Buffer
 	args := []string{"-baseline", baseline, "-candidate", candidate, "-externals", bindings, "positive=" + positive, "negative=" + negative}
-	if err := compare(t.Context(), args, &out); err != nil {
+	if err := RunCLI(t.Context(), args, &out); err != nil {
 		t.Fatal(err)
 	}
 	first := bytes.Clone(out.Bytes())
 	out.Reset()
-	if err := compare(t.Context(), args, &out); err != nil || !bytes.Equal(first, out.Bytes()) {
+	if err := RunCLI(t.Context(), args, &out); err != nil || !bytes.Equal(first, out.Bytes()) {
 		t.Fatalf("repeat report differs: %v", err)
 	}
 	var report comparison
@@ -50,7 +50,7 @@ rule example { strings: $a = "approved" $b = "ordinary" condition: active and an
 func TestComparePCAP(t *testing.T) {
 	const dir = "../../examples/pcap/update-review/"
 	var out bytes.Buffer
-	if err := compare(t.Context(), []string{"-baseline", dir + "baseline.yar", "-candidate", dir + "candidate.yar",
+	if err := RunCLI(t.Context(), []string{"-baseline", dir + "baseline.yar", "-candidate", dir + "candidate.yar",
 		"positive=" + dir + "positive.pcap", "control=" + dir + "control.pcap"}, &out); err != nil {
 		t.Fatal(err)
 	}
