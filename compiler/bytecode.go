@@ -202,6 +202,9 @@ const OpPushRegex Opcode = 95
 // OpCountMatchesIn counts occurrences whose offsets fall within the bounds.
 const OpCountMatchesIn Opcode = 96
 
+// OpPushRule32 pushes the result of a rule referenced by a 32-bit index.
+const OpPushRule32 Opcode = 97
+
 // Fused condition instructions index the rule's immutable assertion pool.
 // Existing opcode values are preserved for serialized-program compatibility.
 const (
@@ -244,7 +247,7 @@ func (op Opcode) GetCategory() string {
 		return OpCategoryArithmetic
 	case op == OpAssertExternal || op == OpEvalAssertions || (op >= OpAssertUint16Eq && op <= OpAssertStringCount) || (op >= OpAnd && op <= OpBitwiseXor) || op == OpIntToDbl || op == OpStrToBool:
 		return OpCategoryLogical
-	case (op >= OpPush && op <= OpCall) || (op >= OpPush8 && op <= OpPushRuleRef) || op == OpPushStr || op == OpPushRegex || op == OpLoadVar || op == OpPush64:
+	case (op >= OpPush && op <= OpCall) || (op >= OpPush8 && op <= OpPushRuleRef) || op == OpPushStr || op == OpPushRegex || op == OpLoadVar || op == OpPush64 || op == OpPushRule32:
 		return OpCategoryStack
 	case (op >= OpContains && op <= OpOfPercentAt) || op == OpCountInOf || op == OpCountMatchesIn || op == OpProximity || op == OpConcat || op == OpMatchesValue:
 		return OpCategoryString
@@ -366,6 +369,7 @@ var opcodeNames = map[Opcode]string{
 	OpOfFoundIn:              "OF_FOUND_IN",
 	OpCountIn:                "COUNT_IN",
 	OpCountMatchesIn:         "COUNT_MATCHES_IN",
+	OpPushRule32:             "PUSH_RULE_32",
 	OpDefined:                "DEFINED",
 	OpIterStartTextStringSet: "ITER_START_TEXT_STRING_SET",
 	OpOfFoundAt:              "OF_FOUND_AT",

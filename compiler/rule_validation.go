@@ -259,13 +259,20 @@ func validateProgramBytecodeRuleRefs(cp *CompiledProgram) error {
 			if !valid || ip+1+operandSize > len(bc) {
 				return fmt.Errorf("rule %d (%s): invalid bytecode at offset %d", i, rule.Name, ip)
 			}
-			if op == OpPushRuleRef || op == OpPushRule || op == OpInitRule {
-				ruleIdx := int(bc[ip+1])
-				if ruleIdx >= len(cp.Rules) {
-					return fmt.Errorf("rule %d (%s): rule reference %d out of range", i, rule.Name, ruleIdx)
-				}
+			operandStart := ip + 1
+			ip = operandStart + operandSize
+			var ruleIdx uint32
+			switch op {
+			case OpPushRuleRef, OpPushRule, OpInitRule:
+				ruleIdx = uint32(bc[operandStart])
+			case OpPushRule32:
+				ruleIdx = binary.LittleEndian.Uint32(bc[operandStart:ip])
+			default:
+				continue
 			}
-			ip += 1 + operandSize
+			if uint64(ruleIdx) >= uint64(len(cp.Rules)) {
+				return fmt.Errorf("rule %d (%s): rule reference %d out of range", i, rule.Name, ruleIdx)
+			}
 		}
 	}
 	return nil
@@ -284,7 +291,7 @@ func bytecodeOperandSize(op Opcode) (int, bool) {
 		return 1, true
 	case OpPush16:
 		return 2, true
-	case OpPush32, OpPushStr, OpPushRegex, OpCall,
+	case OpPush32, OpPushStr, OpPushRegex, OpPushRule32, OpCall,
 		OpJz, OpJzP, OpJtrue, OpJfalse,
 		OpPushM, OpPopM, OpClearM, OpIncrM, OpLoadVar,
 		OpModuleLoad, OpModuleGetField, OpIterStartModuleArray,

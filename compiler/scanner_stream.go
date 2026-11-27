@@ -230,7 +230,7 @@ func ruleStreamEarlyTerminationProfile(rule *CompiledRule) (forbidden, readsHead
 		}
 		switch {
 		case op == OpFilesize || op == OpAssertFilesize || op == OpEntrypoint ||
-			op == OpPushRule || op == OpPushRuleRef || op == OpInitRule:
+			op == OpPushRule || op == OpPushRuleRef || op == OpPushRule32 || op == OpInitRule:
 			return true, false
 		case (op >= OpReadInt && op <= OpUint64be) || op == OpAssertUint16Eq || op == OpAssertUint32Eq:
 			readsHeader = true

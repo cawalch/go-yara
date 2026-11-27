@@ -231,12 +231,9 @@ func (sc *stringCompiler) EncodeTextPatterns(text string, modifiers []ast.String
 		}
 	}
 
-	if mod, ok := sc.base64Modifier(modifiers); ok {
-		alphabet, err := sc.base64Alphabet(mod)
-		if err != nil {
-			return nil, err
-		}
-		patterns = sc.applyBase64AlignmentWithFlags(patterns, alphabet, mod.Type == ast.StringModifierBase64Wide)
+	patterns, err := sc.applyBase64Modifiers(patterns, modifiers)
+	if err != nil {
+		return nil, err
 	}
 
 	return sc.uniqueTextPatterns(patterns), nil
@@ -325,7 +322,6 @@ func (sc *stringCompiler) normalizeXorRange(min, max int) xorRange {
 }
 
 const (
-	defaultBase64Alphabet         = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 	maxXorNocaseExpandedPatterns  = 32768
 	maxXorNocaseExpandedAlphaBits = 15
 )
@@ -394,13 +390,27 @@ func (sc *stringCompiler) applyXorKeysWithFlags(patterns []TextPattern, keys []b
 	return out, nil
 }
 
-func (sc *stringCompiler) base64Modifier(modifiers []ast.StringModifier) (ast.StringModifier, bool) {
+func (sc *stringCompiler) applyBase64Modifiers(patterns []TextPattern, modifiers []ast.StringModifier) ([]TextPattern, error) {
+	var encoded []TextPattern
 	for _, mod := range modifiers {
-		if mod.Type == ast.StringModifierBase64 || mod.Type == ast.StringModifierBase64Wide {
-			return mod, true
+		if mod.Type != ast.StringModifierBase64 && mod.Type != ast.StringModifierBase64Wide {
+			continue
+		}
+		alphabet, err := sc.base64Alphabet(mod)
+		if err != nil {
+			return nil, err
+		}
+		variants := sc.applyBase64AlignmentWithFlags(patterns, alphabet, mod.Type == ast.StringModifierBase64Wide)
+		if encoded == nil {
+			encoded = variants
+		} else {
+			encoded = append(encoded, variants...)
 		}
 	}
-	return ast.StringModifier{}, false
+	if encoded == nil {
+		return patterns, nil
+	}
+	return encoded, nil
 }
 
 func (sc *stringCompiler) base64Alphabet(mod ast.StringModifier) (string, error) {
@@ -435,7 +445,7 @@ func (sc *stringCompiler) applyBase64AlignmentWithFlags(patterns []TextPattern, 
 
 func encodeBase64Raw(alphabet string, src []byte) ([]byte, error) {
 	if alphabet == "" {
-		alphabet = defaultBase64Alphabet
+		alphabet = ast.DefaultBase64Alphabet
 	} else if len(alphabet) != 64 {
 		return nil, fmt.Errorf("invalid base64 alphabet length: expected 64, got %d", len(alphabet))
 	}
@@ -596,30 +606,15 @@ func (sc *stringCompiler) GetStringOffsets() map[string]int {
 
 // ValidateStringModifiers validates that string modifiers are compatible
 func (sc *stringCompiler) ValidateStringModifiers(modifiers []ast.StringModifier) error {
-	hasWide := false
-	hasASCII := false
 	hasBase64 := false
-	hasBase64Wide := false
 	hasXor := false
 	hasNocase := false
 	hasFullword := false
 
 	for _, mod := range modifiers {
 		switch mod.Type {
-		case ast.StringModifierWide:
-			hasWide = true
-		case ast.StringModifierASCII:
-			hasASCII = true
-		case ast.StringModifierBase64:
+		case ast.StringModifierBase64, ast.StringModifierBase64Wide:
 			hasBase64 = true
-			if err := ast.ValidateBase64Alphabet(mod.Value); err != nil {
-				return err
-			}
-		case ast.StringModifierBase64Wide:
-			hasBase64Wide = true
-			if err := ast.ValidateBase64Alphabet(mod.Value); err != nil {
-				return err
-			}
 		case ast.StringModifierXor:
 			hasXor = true
 			if err := ast.ValidateXorModifier(mod.Value); err != nil {
@@ -632,17 +627,13 @@ func (sc *stringCompiler) ValidateStringModifiers(modifiers []ast.StringModifier
 		}
 	}
 
-	// Check for incompatible modifiers
-	if hasBase64 && hasBase64Wide {
-		return errors.New("cannot use both 'base64' and 'base64wide' modifiers")
-	}
-
-	if (hasBase64 || hasBase64Wide) && (hasXor || hasNocase || hasFullword) {
-		return errors.New("base64 modifiers are incompatible with 'xor', 'nocase', or 'fullword'")
-	}
-
-	if (hasBase64 || hasBase64Wide) && (hasWide || hasASCII) {
-		return errors.New("base64 modifiers are incompatible with 'wide' or 'ascii'")
+	if hasBase64 {
+		if err := ast.ValidateBase64Modifiers(modifiers); err != nil {
+			return err
+		}
+		if hasXor || hasNocase || hasFullword {
+			return errors.New("base64 modifiers are incompatible with 'xor', 'nocase', or 'fullword'")
+		}
 	}
 
 	if sc.strictLibyaraCompatibility && hasXor && hasNocase {

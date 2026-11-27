@@ -257,8 +257,20 @@ func TestConditionCompiler_RuleReferences(t *testing.T) {
 		}
 	})
 
-	t.Run("compileRuleReference overflow", func(t *testing.T) {
-		cc.setRuleIndexMap(map[string]int{"test_rule": 256})
+	t.Run("compileRuleReference wide operand", func(t *testing.T) {
+		cc.setRuleIndexMap(map[string]int{"test_rule": 65536})
+		if err := cc.compileRuleReference("test_rule", 1, 1); err != nil {
+			t.Fatalf("compileRuleReference() error = %v", err)
+		}
+		instructions := emitter.GetInstructions()
+		instruction := instructions[len(instructions)-1]
+		if instruction.Opcode != OpPushRule32 || instruction.Operand.Type != OperandImmediate32 || instruction.Operand.Value != 65536 {
+			t.Fatalf("rule reference instruction = %#v", instruction)
+		}
+	})
+
+	t.Run("compileRuleReference negative index", func(t *testing.T) {
+		cc.setRuleIndexMap(map[string]int{"test_rule": -1})
 		err := cc.compileRuleReference("test_rule", 1, 1)
 		if err == nil || !strings.Contains(err.Error(), "exceeds bytecode capacity") {
 			t.Fatalf("compileRuleReference() error = %v, want capacity error", err)

@@ -25,10 +25,7 @@ func (v *Validator) validateStringModifiers(rule *ast.Rule) {
 
 		var seenModifiers [ast.StringModifierCapture + 1]bool
 		var unknownModifiers map[ast.StringModifierType]bool
-		hasWide := false
-		hasASCII := false
 		hasBase64 := false
-		hasBase64Wide := false
 		hasXor := false
 		hasNocase := false
 		hasFullword := false
@@ -60,12 +57,10 @@ func (v *Validator) validateStringModifiers(rule *ast.Rule) {
 
 			switch mod.Type {
 			case ast.StringModifierWide:
-				hasWide = true
 				if isHex {
 					v.addModifierError(str.Pos, rule.Name, fmt.Sprintf("hex string %s cannot have 'wide' modifier", str.Identifier))
 				}
 			case ast.StringModifierASCII:
-				hasASCII = true
 				if isHex {
 					v.addModifierError(str.Pos, rule.Name, fmt.Sprintf("hex string %s cannot have 'ascii' modifier", str.Identifier))
 				}
@@ -79,21 +74,10 @@ func (v *Validator) validateStringModifiers(rule *ast.Rule) {
 				if isHex {
 					v.addModifierError(str.Pos, rule.Name, fmt.Sprintf("hex string %s cannot have 'fullword' modifier", str.Identifier))
 				}
-			case ast.StringModifierBase64:
+			case ast.StringModifierBase64, ast.StringModifierBase64Wide:
 				hasBase64 = true
 				if isHex || isRegex {
 					v.addModifierError(str.Pos, rule.Name, "base64 modifiers are only supported for text strings")
-				}
-				if err := ast.ValidateBase64Alphabet(mod.Value); err != nil {
-					v.addModifierError(str.Pos, rule.Name, err.Error())
-				}
-			case ast.StringModifierBase64Wide:
-				hasBase64Wide = true
-				if isHex || isRegex {
-					v.addModifierError(str.Pos, rule.Name, "base64 modifiers are only supported for text strings")
-				}
-				if err := ast.ValidateBase64Alphabet(mod.Value); err != nil {
-					v.addModifierError(str.Pos, rule.Name, err.Error())
 				}
 			case ast.StringModifierXor:
 				hasXor = true
@@ -106,14 +90,13 @@ func (v *Validator) validateStringModifiers(rule *ast.Rule) {
 			}
 		}
 
-		if hasBase64 && hasBase64Wide {
-			v.addModifierError(str.Pos, rule.Name, "cannot use both 'base64' and 'base64wide' modifiers")
-		}
-		if (hasBase64 || hasBase64Wide) && (hasXor || hasNocase || hasFullword) {
-			v.addModifierError(str.Pos, rule.Name, "base64 modifiers are incompatible with 'xor', 'nocase', or 'fullword'")
-		}
-		if (hasBase64 || hasBase64Wide) && (hasWide || hasASCII) {
-			v.addModifierError(str.Pos, rule.Name, "base64 modifiers are incompatible with 'wide' or 'ascii'")
+		if hasBase64 {
+			if err := ast.ValidateBase64Modifiers(str.Modifiers); err != nil {
+				v.addModifierError(str.Pos, rule.Name, err.Error())
+			}
+			if hasXor || hasNocase || hasFullword {
+				v.addModifierError(str.Pos, rule.Name, "base64 modifiers are incompatible with 'xor', 'nocase', or 'fullword'")
+			}
 		}
 		if isRegex {
 			if parsed, err := v.regexParser.Parse(cleanSemanticRegexPattern(regexPat.Value)); err == nil && parsed.HasMixedQuantifierGreediness() {
