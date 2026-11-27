@@ -456,30 +456,15 @@ func (p *DeclarationParser) parseBase64Modifier(modifierType ast.StringModifierT
 }
 
 func (p *DeclarationParser) validateStringModifiers(modifiers []ast.StringModifier) {
-	hasWide := false
-	hasASCII := false
 	hasBase64 := false
-	hasBase64Wide := false
 	hasXor := false
 	hasNocase := false
 	hasFullword := false
 
 	for _, mod := range modifiers {
 		switch mod.Type {
-		case ast.StringModifierWide:
-			hasWide = true
-		case ast.StringModifierASCII:
-			hasASCII = true
-		case ast.StringModifierBase64:
+		case ast.StringModifierBase64, ast.StringModifierBase64Wide:
 			hasBase64 = true
-			if err := ast.ValidateBase64Alphabet(mod.Value); err != nil {
-				p.addError(err)
-			}
-		case ast.StringModifierBase64Wide:
-			hasBase64Wide = true
-			if err := ast.ValidateBase64Alphabet(mod.Value); err != nil {
-				p.addError(err)
-			}
 		case ast.StringModifierXor:
 			hasXor = true
 			if err := ast.ValidateXorModifier(mod.Value); err != nil {
@@ -492,14 +477,13 @@ func (p *DeclarationParser) validateStringModifiers(modifiers []ast.StringModifi
 		}
 	}
 
-	if hasBase64 && hasBase64Wide {
-		p.addError(errors.New("cannot use both 'base64' and 'base64wide' modifiers"))
-	}
-	if (hasBase64 || hasBase64Wide) && (hasXor || hasNocase || hasFullword) {
-		p.addError(errors.New("base64 modifiers are incompatible with 'xor', 'nocase', or 'fullword'"))
-	}
-	if (hasBase64 || hasBase64Wide) && (hasWide || hasASCII) {
-		p.addError(errors.New("base64 modifiers are incompatible with 'wide' or 'ascii'"))
+	if hasBase64 {
+		if err := ast.ValidateBase64Modifiers(modifiers); err != nil {
+			p.addError(err)
+		}
+		if hasXor || hasNocase || hasFullword {
+			p.addError(errors.New("base64 modifiers are incompatible with 'xor', 'nocase', or 'fullword'"))
+		}
 	}
 }
 

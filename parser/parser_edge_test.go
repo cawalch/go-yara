@@ -301,15 +301,15 @@ func TestParseInvalidStringModifierCombos(t *testing.T) {
 		wantSubstr string
 	}{
 		{
-			name: "base64_with_wide",
+			name: "base64_and_base64wide_different_alphabets",
 			input: `
 rule bad1 {
 	strings:
-		$s = "test" base64 wide
+		$s = "test" base64("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_") base64wide
 	condition:
 		$s
 }`,
-			wantSubstr: "base64 modifiers are incompatible with 'wide' or 'ascii'",
+			wantSubstr: "cannot specify multiple alphabets",
 		},
 		{
 			name: "base64_with_xor",

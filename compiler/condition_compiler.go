@@ -430,16 +430,7 @@ func (cc *conditionCompiler) compileIdentifier(ident *ast.Identifier) error {
 	}
 
 	if ruleIndex, exists := cc.ruleIndexMap[ident.Name]; exists {
-		if ruleIndex < 0 || ruleIndex > math.MaxUint8 {
-			return fmt.Errorf("rule reference index %d exceeds bytecode capacity", ruleIndex)
-		}
-		cc.emitter.EmitOpcodeWithOperand(
-			OpPushRule,
-			Operand{Type: OperandImmediate8, Value: uint64(ruleIndex)},
-			ident.Pos.Line,
-			ident.Pos.Column,
-		)
-		return nil
+		return cc.emitRuleReference(ruleIndex, OpPushRule, ident.Pos)
 	}
 
 	switch ident.Name {
@@ -762,13 +753,18 @@ func (cc *conditionCompiler) compileRuleReference(ruleName string, line, column 
 	if !exists {
 		return fmt.Errorf("undefined rule reference: %s", ruleName)
 	}
-	if ruleIndex < 0 || ruleIndex > math.MaxUint8 {
+	return cc.emitRuleReference(ruleIndex, OpPushRuleRef, token.Position{Line: line, Column: column})
+}
+
+func (cc *conditionCompiler) emitRuleReference(ruleIndex int, compact Opcode, pos token.Position) error {
+	if ruleIndex < 0 || uint64(ruleIndex) > math.MaxUint32 {
 		return fmt.Errorf("rule reference index %d exceeds bytecode capacity", ruleIndex)
 	}
-
-	cc.emitter.EmitOpcodeWithOperand(OpPushRuleRef,
-		Operand{Type: OperandImmediate8, Value: uint64(ruleIndex)},
-		line, column)
+	if ruleIndex <= math.MaxUint8 {
+		cc.emitter.EmitOpcodeWithOperand(compact, Operand{Type: OperandImmediate8, Value: uint64(ruleIndex)}, pos.Line, pos.Column)
+		return nil
+	}
+	cc.emitter.EmitOpcodeWithOperand(OpPushRule32, Operand{Type: OperandImmediate32, Value: uint64(ruleIndex)}, pos.Line, pos.Column)
 	return nil
 }
 

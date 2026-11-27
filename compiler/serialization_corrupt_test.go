@@ -261,6 +261,14 @@ func TestCompiledProgramRejectsCorruptBytecode(t *testing.T) {
 			name:     "rule_ref_out_of_range",
 			bytecode: []byte{byte(OpPushRuleRef), 2, byte(OpHalt)},
 		},
+		{
+			name:     "wide_rule_ref_out_of_range",
+			bytecode: []byte{byte(OpPushRule32), 0, 1, 0, 0, byte(OpHalt)},
+		},
+		{
+			name:     "wide_rule_ref_truncated",
+			bytecode: []byte{byte(OpPushRule32), 0, 1, byte(OpHalt)},
+		},
 	}
 
 	for _, tc := range cases {

@@ -66,9 +66,17 @@ func TestStringCompilerValidateModifiers(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "base64_and_base64wide_conflict",
+			name: "base64_and_base64wide",
 			modifiers: []ast.StringModifier{
 				{Type: ast.StringModifierBase64},
+				{Type: ast.StringModifierBase64Wide},
+			},
+			wantErr: false,
+		},
+		{
+			name: "base64_and_base64wide_different_alphabets",
+			modifiers: []ast.StringModifier{
+				{Type: ast.StringModifierBase64, Value: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"},
 				{Type: ast.StringModifierBase64Wide},
 			},
 			wantErr: true,
@@ -79,7 +87,7 @@ func TestStringCompilerValidateModifiers(t *testing.T) {
 				{Type: ast.StringModifierBase64},
 				{Type: ast.StringModifierWide},
 			},
-			wantErr: true,
+			wantErr: false,
 		},
 		{
 			name: "base64wide_with_ascii",
@@ -87,7 +95,7 @@ func TestStringCompilerValidateModifiers(t *testing.T) {
 				{Type: ast.StringModifierBase64Wide},
 				{Type: ast.StringModifierASCII},
 			},
-			wantErr: true,
+			wantErr: false,
 		},
 		{
 			name: "base64_with_nocase",

@@ -30,6 +30,9 @@ type Statement interface {
 	statement()
 }
 
+// DefaultBase64Alphabet is the alphabet used by base64 modifiers without an argument.
+const DefaultBase64Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+
 // ValidateBase64Alphabet validates a custom 64-character base64 alphabet modifier value.
 func ValidateBase64Alphabet(value any) error {
 	alphabet, ok := value.(string)
@@ -49,6 +52,29 @@ func ValidateBase64Alphabet(value any) error {
 			return errors.New("invalid base64 alphabet: duplicate characters")
 		}
 		seen[ch] = true
+	}
+	return nil
+}
+
+// ValidateBase64Modifiers validates the alphabets of base64 and base64wide.
+// Both modifiers may be present if their effective alphabets agree.
+func ValidateBase64Modifiers(modifiers []StringModifier) error {
+	var alphabet string
+	for _, mod := range modifiers {
+		if mod.Type != StringModifierBase64 && mod.Type != StringModifierBase64Wide {
+			continue
+		}
+		if err := ValidateBase64Alphabet(mod.Value); err != nil {
+			return err
+		}
+		effective, _ := mod.Value.(string)
+		if effective == "" {
+			effective = DefaultBase64Alphabet
+		}
+		if alphabet != "" && alphabet != effective {
+			return errors.New("cannot specify multiple alphabets for 'base64' and 'base64wide'")
+		}
+		alphabet = effective
 	}
 	return nil
 }

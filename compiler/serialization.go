@@ -21,7 +21,8 @@ const (
 	compiledProgramMagic = "GOYARA\x00"
 	// Version 20 replaces map wire fields with sorted entry slices for byte-deterministic output.
 	// Version 21 adds OpCountMatchesIn without changing earlier opcodes.
-	compiledProgramVersion = uint16(21)
+	// Version 22 adds OpPushRule32 and retains the earlier compact rule-reference opcodes.
+	compiledProgramVersion = uint16(22)
 )
 
 // ErrCorruptProgram indicates a malformed, truncated, incompatible-version, or

@@ -333,13 +333,13 @@ func TestProgrammaticModifierValidation(t *testing.T) {
 		expectedSubstr string
 	}{
 		{
-			name: "base64 and base64wide conflict",
+			name: "base64 and base64wide use different alphabets",
 			modifiers: []ast.StringModifier{
-				{Type: ast.StringModifierBase64},
+				{Type: ast.StringModifierBase64, Value: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"},
 				{Type: ast.StringModifierBase64Wide},
 			},
 			expectedCode:   ErrCodeInvalidModifier,
-			expectedSubstr: "cannot use both 'base64' and 'base64wide'",
+			expectedSubstr: "cannot specify multiple alphabets",
 		},
 		{
 			name: "base64 invalid alphabet length",

@@ -4,6 +4,7 @@ import (
 	"crypto/md5"  // #nosec G501 -- required for YARA hash compatibility
 	"crypto/sha1" // #nosec G505 -- required for YARA hash compatibility
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -84,12 +85,25 @@ func (i *Interpreter) executePushRule(op Opcode) error {
 	if err := i.validateBytecodeBounds(op, 1); err != nil {
 		return err
 	}
-	ruleIdx := int(i.bytecode[i.ip])
+	ruleIdx := uint32(i.bytecode[i.ip])
 	i.ip++
-	if ruleIdx >= len(i.compiledRules) {
+	return i.pushRuleResult(op, ruleIdx)
+}
+
+func (i *Interpreter) executePushRule32() error {
+	if err := i.validateBytecodeBounds(OpPushRule32, 4); err != nil {
+		return err
+	}
+	ruleIdx := binary.LittleEndian.Uint32(i.bytecode[i.ip : i.ip+4])
+	i.ip += 4
+	return i.pushRuleResult(OpPushRule32, ruleIdx)
+}
+
+func (i *Interpreter) pushRuleResult(op Opcode, ruleIdx uint32) error {
+	if uint64(ruleIdx) >= uint64(len(i.compiledRules)) {
 		return &InterpreterError{Type: ErrorInvalidBytecode, Opcode: op, Message: fmt.Sprintf("rule index %d out of range", ruleIdx)}
 	}
-	if ruleIdx < len(i.ruleResultsDense) {
+	if uint64(ruleIdx) < uint64(len(i.ruleResultsDense)) {
 		return i.push(Value{Type: ValueTypeInt, IntVal: boolToInt(i.ruleResultsDense[ruleIdx])})
 	}
 	ruleName := i.compiledRules[ruleIdx].Name
