@@ -209,6 +209,10 @@ func scanWithLibyara(t testing.TB, bin, src string, data []byte, extraArgs ...st
 		}
 		return map[string][]span{}, nil
 	}
+	return parseLibyaraScanOutput(out)
+}
+
+func parseLibyaraScanOutput(out []byte) (map[string][]span, error) {
 	res := map[string][]span{}
 	var lastRule string
 	for line := range strings.SplitSeq(string(out), "\n") {

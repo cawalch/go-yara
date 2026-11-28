@@ -230,7 +230,7 @@ jobs:
   test-integration:
     name: Integration Tests
     needs: changes
-    if: ${{ needs.changes.outputs.go == 'true' }}
+    if: ${{ needs.changes.outputs.go == 'true' || github.event_name == 'pull_request' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -282,7 +282,21 @@ jobs:
           test "$oracle_version" = "$(cat tests/integration/oracle-version.txt)"
           echo "$HOME/.cache/yara-oracle/bin" >> "$GITHUB_PATH"
 
+      - name: Check pinned Elastic corpus compatibility
+        if: ${{ github.event_name == 'pull_request' }}
+        run: |
+          set -euo pipefail
+          revision=418cfd9aaa89ffc4b6a55e3d01c384facf4fd548
+          corpus=$(mktemp -d "$RUNNER_TEMP/elastic-corpus.XXXXXX")
+          git init -q "$corpus"
+          git -C "$corpus" fetch --depth=1 https://github.com/elastic/protections-artifacts.git "$revision"
+          test "$(git -C "$corpus" rev-parse FETCH_HEAD)" = "$revision"
+          git -C "$corpus" archive FETCH_HEAD LICENSE.txt yara/rules | tar -xf - -C "$corpus"
+          GO_YARA_ELASTIC_RULES="$corpus/yara/rules" \
+            go test -race ./tests/integration -run '^TestElasticCorpusCompatibility$' -count=1 -v
+
       - name: Run race tests and coverage
+        if: ${{ needs.changes.outputs.go == 'true' }}
         run: |
           mkdir -p coverage/integration
           go list ./... > coverage/integration/all.txt
@@ -294,6 +308,7 @@ jobs:
           go test -race -coverprofile=coverage/integration/coverage.out -timeout=15m "${packages[@]}"
 
       - name: Upload coverage and package inventory
+        if: ${{ needs.changes.outputs.go == 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-integration
@@ -302,6 +317,7 @@ jobs:
           retention-days: 7
 
       - name: Run libyara differential oracle tests
+        if: ${{ needs.changes.outputs.go == 'true' }}
         run: go test -tags bugproof -race ./tests/integration/ -run TestBug
 
   test-coverage:
@@ -582,12 +598,20 @@ jobs:
             false) expected_test_result=skipped ;;
             *) echo "Invalid Go change classification"; exit 1 ;;
           esac
-          for result in "${{ needs.test-unit.result }}" "${{ needs.test-integration.result }}" "${{ needs.test-coverage.result }}"; do
+          for result in "${{ needs.test-unit.result }}" "${{ needs.test-coverage.result }}"; do
             if [ "$result" != "$expected_test_result" ]; then
               echo "Test lanes and coverage must be $expected_test_result; got $result"
               exit 1
             fi
           done
+          expected_integration_result=$expected_test_result
+          if [ "${{ github.event_name }}" = pull_request ]; then
+            expected_integration_result=success
+          fi
+          if [ "${{ needs.test-integration.result }}" != "$expected_integration_result" ]; then
+            echo "Integration Tests must be $expected_integration_result; got ${{ needs.test-integration.result }}"
+            exit 1
+          fi
           check_job "Security" "${{ needs.security.result }}"
           check_job "Experimental SIMD" "${{ needs.simd.result }}"
           check_job "Performance Gate" "${{ needs.perf.result }}"
